@@ -50,9 +50,19 @@ volume/muted 真控制。**双重启动门控均已解除**：① M0 音频环�
     __zwWA* 桥 → Rust 合成 → NullSink 帧数（≈48000/秒）+ 过零率 ≈880 断言 +
     stop 后活跃源清零。media 45 单测、webview 679 全绿、browser xvfb 411 全绿、
     clippy（media/webview/browser）零警告。
+- **WPT webaudio 可执行子集首批导入（同日）**：`webaudio/the-audio-api` 2 用例
+  （audionode-connect-return-value + destination）全绿——配套 shim 面扩展：
+  AudioNode 接口反射（numberOfInputs/numberOfOutputs/channelCount(2)/
+  maxChannelCount(32)/channelCountMode/channelInterpretation）+ channelCount
+  setter 语义（0 → NotSupportedError / >max → IndexSizeError——destination 断言面）+
+  connect 非法目标 TypeError（audionode 断言面）+ OfflineAudioContext 构造兼容面
+  （构造/length/sampleRate 反射 + startRendering rejected promise——RFC §0 简化
+  记录，无离线渲染）。runner 新 `testharness-webaudio` 子命令（WEBAUDIO_TEST_FILES
+  白名单 + make 目标 + fetch-webaudio-subset.sh 拉取脚本）。
+  evidence：`evidence/2026-09-02-webaudio-wpt-subset.json`（2P/0F）。
 - **余项**：createGain 的 per-node 桥推（当前 per-osc gain 由 WebAudioContext 承接，
-  gain 节点 → 桥映射挂真出声/设备切片）；WPT webaudio 可执行子集评估导入（构造/
-  属性反射面——随下批评估）。
+  gain 节点 → 桥映射挂真出声/设备切片）；WPT 余面（ctor-oscillator/osc-basic-waveform
+  依赖 audit.js 框架 harness——批量导入需 runner 支持 audit.js，随下批评估）。
 
 **M0 已收口（2026-09-01）**：
 - 环境实测：内核层 HDA 声卡在；**ALSA dev 头缺失（libasound2-dev 未装）→ cpal 默认

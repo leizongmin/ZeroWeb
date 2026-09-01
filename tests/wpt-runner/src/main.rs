@@ -39,6 +39,7 @@ Commands:
   testharness-canvas  Run imported html/canvas testharness cases (Canvas 2D goal M1)
   testharness-dom  Run imported dom/ testharness cases (js-dom goal M4 / DC-3)
   testharness-media  Run imported media-elements testharness cases (media-elements goal M1 / DC-1)
+  testharness-webaudio  Run imported Web Audio testharness cases (media-audio goal M3)
   testharness-indexeddb  Run imported IndexedDB testharness cases (storage-indexeddb goal M1)
   testharness-cache-storage  Run pinned CacheStorage window testharness cases
   testharness-service-workers  Run pinned Service Worker M1 core testharness cases
@@ -231,6 +232,7 @@ fn main() {
         "testharness-canvas-worker" => cmd_testharness_canvas_worker(&options, filter.as_deref()),
         "testharness-dom" => cmd_testharness_dom(&options, filter.as_deref()),
         "testharness-media" => cmd_testharness_media(&options, filter.as_deref()),
+        "testharness-webaudio" => cmd_testharness_webaudio(&options, filter.as_deref()),
         "testharness-indexeddb" => cmd_testharness_indexeddb(&options, filter.as_deref()),
         "testharness-cache-storage" => cmd_testharness_cache_storage(&options, filter.as_deref()),
         "testharness-service-workers" => cmd_testharness_service_workers(&options, filter.as_deref()),
@@ -515,6 +517,46 @@ fn cmd_testharness_media(options: &CliOptions, filter: Option<&str>) {
         .map(std::path::PathBuf::from)
         .unwrap_or_else(|| std::path::PathBuf::from("tests/wpt-runner/wpt-data"));
     let cases = testharness::run_media_cases(&wpt_root, filter);
+    let failed = cases.iter().any(|(_, results)| {
+        results
+            .iter()
+            .any(|result| result.status != testharness::HarnessStatus::Pass)
+    });
+
+    match options.format {
+        OutputFormat::Json => {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&cases).unwrap_or_else(|_| "[]".into())
+            );
+        }
+        OutputFormat::Text | OutputFormat::Tap => {
+            for (case, results) in &cases {
+                for result in results {
+                    println!("{:?} {case} :: {}", result.status, result.name);
+                    if let Some(message) = &result.message {
+                        println!("  {message}");
+                    }
+                }
+            }
+        }
+    }
+    if failed || cases.is_empty() {
+        std::process::exit(1);
+    }
+}
+
+/// `testharness-webaudio` 子命令 — 跑导入的上游 Web Audio testharness 用例
+/// （media-audio goal M3 切片 2 WPT 可执行子集）。
+///
+/// 退出码：有用例非 Pass 或用例集为空 → 1（同 testharness-media）。
+fn cmd_testharness_webaudio(options: &CliOptions, filter: Option<&str>) {
+    let wpt_root = options
+        .wpt_data
+        .as_deref()
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::path::PathBuf::from("tests/wpt-runner/wpt-data"));
+    let cases = testharness::run_webaudio_cases(&wpt_root, filter);
     let failed = cases.iter().any(|(_, results)| {
         results
             .iter()

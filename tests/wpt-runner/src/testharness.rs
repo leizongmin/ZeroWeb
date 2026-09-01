@@ -1437,6 +1437,51 @@ pub const MEDIA_TEST_FILES: &[&str] = &[
     "html/semantics/embedded-content/media-elements/src_reflects_attribute_not_source_elements.html",
 ];
 
+/// media-audio M3：Web Audio 最小面（AudioContext 构造/节点接口/connect 语义——
+/// D1 批复切片 2 WPT 可执行子集）。逐文件白名单；依赖真渲染（startRendering/
+/// OfflineAudioContext 渲染/worklet）的用例不导入（RFC §0 不做清单）。
+pub const WEBAUDIO_TEST_FILES: &[&str] = &[
+    // connect 返回值面（OfflineAudioContext 构造 + createGain + connect 链）。
+    "webaudio/the-audio-api/the-audionode-interface/audionode-connect-return-value.html",
+    // destination 接口面（channelCount 2 缺省 + maxChannelCount ≥ 2 + 断言
+    // destination 为 AudioDestinationNode——identity/实例面）。
+    "webaudio/the-audio-api/the-destinationnode-interface/destination.html",
+];
+
+/// Run the pinned upstream Web Audio testharness subset（media-audio M3 切片 2）。
+pub fn run_webaudio_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    let harness_source = match std::fs::read_to_string(wpt_root.join("resources/testharness.js")) {
+        Ok(source) => source,
+        Err(error) => {
+            return vec![(
+                "resources/testharness.js".to_string(),
+                vec![HarnessSubtestResult {
+                    name: "load testharness.js".into(),
+                    status: HarnessStatus::Fail,
+                    message: Some(error.to_string()),
+                }],
+            )];
+        }
+    };
+
+    WEBAUDIO_TEST_FILES
+        .iter()
+        .filter(|path| filter.is_none_or(|filter| path.contains(filter)))
+        .map(|path| {
+            let source = std::fs::read_to_string(wpt_root.join(path));
+            let results = match source {
+                Ok(source) => run_testharness_html(wpt_root, path, &source, &harness_source, CASE_TIMEOUT),
+                Err(error) => vec![HarnessSubtestResult {
+                    name: "load WPT case".into(),
+                    status: HarnessStatus::Fail,
+                    message: Some(error.to_string()),
+                }],
+            };
+            ((*path).to_string(), results)
+        })
+        .collect()
+}
+
 /// Run the pinned upstream media-elements testharness subset.
 pub fn run_media_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
     let harness_source = match std::fs::read_to_string(wpt_root.join("resources/testharness.js")) {

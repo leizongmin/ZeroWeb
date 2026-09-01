@@ -7026,9 +7026,59 @@
     node._zwCtx = ctxId;
     node._zwHandle = handle;
     node._zwConnected = null;
+    // AudioNode 接口面（WPT audionode/destination 断言——最小面静态拓扑）：
+    // 源类节点（oscillator/gain 等）0 入 1 出；destination 1 入 1 出；
+    // channelCount 2（destination 缺省立体声，maxChannelCount ≥ 2）。
+    node._zwInputs = (kind === 'destination') ? 1 : 0;
+    node._zwOutputs = 1;
+    node._zwChannelCount = 2;
+    node._zwMaxChannelCount = 32;
     return node;
   }
+  Object.defineProperty(_zwWANode.prototype, 'numberOfInputs', {
+    get: function () { return this._zwInputs; },
+    configurable: true,
+  });
+  Object.defineProperty(_zwWANode.prototype, 'numberOfOutputs', {
+    get: function () { return this._zwOutputs; },
+    configurable: true,
+  });
+  Object.defineProperty(_zwWANode.prototype, 'channelCount', {
+    get: function () { return this._zwChannelCount; },
+    set: function (v) {
+      // spec AudioDestinationNode.channelCount setter 语义（WPT destination 断言面）：
+      // 0 → NotSupportedError；> maxChannelCount → IndexSizeError；合法值原样写。
+      var n = Number(v);
+      var max = (this._zwKind === 'destination') ? this._zwMaxChannelCount : this._zwChannelCount;
+      if (n === 0) {
+        throw new (globalThis.DOMException || Error)('channelCount 0 not supported.', 'NotSupportedError');
+      }
+      if (n > max) {
+        throw new (globalThis.DOMException || Error)(
+          'channelCount ' + n + ' exceeds maxChannelCount ' + max + '.', 'IndexSizeError');
+      }
+      this._zwChannelCount = n;
+    },
+    configurable: true,
+  });
+  Object.defineProperty(_zwWANode.prototype, 'maxChannelCount', {
+    get: function () { return this._zwKind === 'destination' ? this._zwMaxChannelCount : this._zwChannelCount; },
+    configurable: true,
+  });
+  Object.defineProperty(_zwWANode.prototype, 'channelCountMode', {
+    get: function () { return 'max'; },
+    configurable: true,
+  });
+  Object.defineProperty(_zwWANode.prototype, 'channelInterpretation', {
+    get: function () { return 'speakers'; },
+    configurable: true,
+  });
   _zwWANode.prototype.connect = function (target) {
+    // spec AudioNode.connect 连接校验：非 AudioNode/AudioParam 目标 → TypeError
+    //（WPT audionode「connect() method with illegal values」断言面——0/null 目标）。
+    if (!target || (typeof target !== 'object') || (typeof target.connect !== 'function' && target._zwKind !== 'destination' && target._zwKind !== 'audioparam')) {
+      throw new TypeError("Failed to execute 'connect' on 'AudioNode': parameter 1 is not of type 'AudioNode'.");
+    }
     // spec：connect 返回目标节点（链式——osc.connect(gain).connect(destination)）。
     this._zwConnected = target || null;
     return target;
@@ -7052,11 +7102,51 @@
     self._zwOscs = {};
   }
   globalThis.AudioContext = globalThis.AudioContext || AudioContext;
-  // OfflineAudioContext 占位（illegal constructor——最小面不做离线渲染，RFC §0）。
-  function OfflineAudioContext() {
-    throw new TypeError('OfflineAudioContext is not supported in this build.');
+  // OfflineAudioContext：构造 + 节点工厂兼容面（numberOfWorkers/length/sampleRate
+  // 反射；**无离线渲染**——startRendering 返 rejected promise，RFC §0 简化记录）。
+  // WPT audionode-connect-return-value 等构造面用例依赖。
+  function OfflineAudioContext(numberOfChannels, length, sampleRate) {
+    if (!(this instanceof OfflineAudioContext)) {
+      throw new TypeError("Failed to construct 'OfflineAudioContext': Please use the 'new' operator, this DOM object constructor cannot be called as a function.");
+    }
+    var self = this;
+    self._zwCtxId = ++_zwWASeq;
+    self._zwState = 'suspended';
+    self._zwChannels = Number(numberOfChannels) || 1;
+    self._zwLength = Number(length) || 0;
+    self._zwSampleRate = Number(sampleRate) || 44100;
+    self._zwDestination = _zwWANode('destination', self._zwCtxId, 0);
   }
   globalThis.OfflineAudioContext = globalThis.OfflineAudioContext || OfflineAudioContext;
+  Object.defineProperty(OfflineAudioContext.prototype, 'state', {
+    get: function () { return this._zwState; },
+    configurable: true,
+  });
+  Object.defineProperty(OfflineAudioContext.prototype, 'sampleRate', {
+    get: function () { return this._zwSampleRate; },
+    configurable: true,
+  });
+  Object.defineProperty(OfflineAudioContext.prototype, 'length', {
+    get: function () { return this._zwLength; },
+    configurable: true,
+  });
+  Object.defineProperty(OfflineAudioContext.prototype, 'destination', {
+    get: function () { return this._zwDestination; },
+    configurable: true,
+  });
+  Object.defineProperty(OfflineAudioContext.prototype, 'currentTime', {
+    get: function () { return 0; },
+    configurable: true,
+  });
+  // 节点工厂共享（Online/Offline 同面——最小面节点对象与上下文类型无关）。
+  // 注：createOscillator/createGain 的 AudioContext.prototype 赋值在本块**之后**
+  //（7214 行附近）——此处仅引用函数对象会在赋值前拿到 undefined，工厂共享段
+  // 随 createGain 定义点之后补接（见下方 _zwWAShareFactories）。
+  // 离线渲染不做（RFC §0）——startRendering 恒 rejected（spec promise 面保留）。
+  OfflineAudioContext.prototype.startRendering = function () {
+    return Promise.reject(new (globalThis.DOMException || Error)(
+      'OfflineAudioContext rendering is not supported in this build.', 'NotSupportedError'));
+  };
   Object.defineProperty(AudioContext.prototype, 'state', {
     get: function () { return this._zwState; },
     configurable: true,
@@ -7151,6 +7241,12 @@
     });
     return node;
   };
+  // 节点工厂共享补接（OfflineAudioContext 面在 AudioContext 工厂定义之后——
+  // 见上方 OfflineAudioContext 块内注记）。
+  if (typeof globalThis.OfflineAudioContext !== 'undefined') {
+    OfflineAudioContext.prototype.createOscillator = AudioContext.prototype.createOscillator;
+    OfflineAudioContext.prototype.createGain = AudioContext.prototype.createGain;
+  }
   // createBufferSource/createBiquadFilter 等未实现面——spec 其它节点类型不属最小面
   //（RFC §0 不做清单），undefined 返回（调用方 try/catch 容错）。
   // track 元素 src 的 headless 加载模拟——data:text/vtt 解析填 cue + load 事件；

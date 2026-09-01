@@ -1,0 +1,22 @@
+[
+  [
+    "webaudio/the-audio-api/the-audionode-interface/audionode-connect-return-value.html",
+    [
+      {
+        "name": "connect should return the node connected to.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "webaudio/the-audio-api/the-destinationnode-interface/destination.html",
+    [
+      {
+        "name": "\n      AudioDestinationNode\n    ",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ]
+]
