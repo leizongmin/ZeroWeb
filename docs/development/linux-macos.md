@@ -49,10 +49,14 @@ sudo apt-get install -y \
   libxrandr-dev \
   libxi-dev \
   libgl1-mesa-dev \
-  mesa-vulkan-drivers
+  mesa-vulkan-drivers \
+  libasound2-dev \
+  libdav1d-dev
 ```
 
 `libclang-dev` 提供 `rquickjs-sys` 的 bindgen 构建脚本需要的动态库。`mesa-vulkan-drivers` 提供 wgpu Vulkan 后端；缺失时 GPU 渲染可能回退到 GL 或 llvmpipe。
+`libasound2-dev` 提供 ALSA 开发头文件——`cpal` 的默认 ALSA host（feature `audio-cpal`）编译必需，缺失时编译失败（NullSink 默认路径不依赖它）。
+`libdav1d-dev` 提供 AV1 解码器 dav1d 的头文件，供 pkg-config 发现系统 `libdav1d.so.7`（media-playback M3 AV1 解码切片的依赖前置）。
 
 需要检查 Vulkan 设备枚举时，可额外安装 `vulkan-tools`：
 

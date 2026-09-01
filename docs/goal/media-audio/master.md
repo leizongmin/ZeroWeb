@@ -2,11 +2,14 @@
 
 **入口文档**: [../media-audio.md](../media-audio.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-01（**D2 获批项闭环**——libasound2-dev 在位，cpal 编译 +
-39 测全绿 + **CpalSink 真设备流冒烟通过**（Ok 分支：构造/start/write/pause/resume
-全链——[evidence](evidence/2026-09-01-cpalsink-device-smoke.md)）；M2 A/V 同步主体
+**最后更新**: 2026-09-01（**D1 获批（D-WA-1 批准 + D-WA-2 选先 NullSink）**——
+Web Audio AudioContext 最小面实施开工（切片 1+2，NullSink 设备面挂真出声切片），
+RFC 见 [../../specs/web-audio-audiocontext-minimal-face-spec-rfc.md](../../specs/web-audio-audiocontext-minimal-face-spec-rfc.md)。
+此前：D2 获批项闭环——libasound2-dev 在位，cpal 编译 + 39 测全绿 +
+**CpalSink 真设备流冒烟通过**（Ok 分支：构造/start/write/pause/resume 全链——
+[evidence](evidence/2026-09-01-cpalsink-device-smoke.md)）；M2 A/V 同步主体
 由 media-playback 流切片 D+E 兑现；opus 解码面转正。本档余：Mixer 接线（挂真出声
-切片，可选）+ D1 Web Audio 实施决策）
+切片，可选））
 
 ---
 
@@ -86,12 +89,15 @@ volume/muted 真控制。**双重启动门控均已解除**：① M0 音频环�
 
 | # | 事项 | 状态 |
 |---|------|------|
-| D1 | AudioContext（Web Audio）最小面可行性 RFC → 是否实施 | 🔄 **RFC 已成文 + 已征询（2026-09-01 GB-20260901，飞书 msg `om_x100b6659bc706ca4c366b9337b1c321`，建议批准 D-WA-1 + D-WA-2 选先 NullSink）**——待用户批复（不批准不影响本 goal DONE） |
+| D1 | AudioContext（Web Audio）最小面可行性 RFC → 是否实施 | ✅ 获批（2026-09-01，GB-20260901 批复）——D-WA-1 批准切片 1+2；D-WA-2 选**先 NullSink**（设备面挂 media-audio M1 CpalSink 真出声切片）。RFC：[../../specs/web-audio-audiocontext-minimal-face-spec-rfc.md](../../specs/web-audio-audiocontext-minimal-face-spec-rfc.md) |
 | D2 | 安装 `libasound2-dev`（系统级 apt 变更）以解锁 cpal 编译验证 | ✅ 获批（2026-09-01）——装包后补 cpal 编译实测 |
 
 ## 下一步计划
 
-1. **M1 收口评估（余项收窄）**：Mixer 多源混音接线**决策注记（2026-09-01）**——
+1. **Web Audio 最小面实施（D1 已批准）**：切片 1（AudioContext/`BaseAudioContext`
+   shim 面 + NullSink 可观测链）→ 切片 2（oscillator/destination 连接语义 +
+   WPT webaudio 可执行子集评估导入）；设备面挂 M1 CpalSink 真出声切片（D-WA-2）。
+2. **M1 收口评估（余项收窄）**：Mixer 多源混音接线**决策注记（2026-09-01）**——
    现播放管线 per-entry NullSink 直连已覆盖多源并发语义面（per-source 增益/独立
    解码流/并发泵）；Mixer（M1 切片 3 组件，7 单测常驻）的价值在**单设备输出流的
    N→1 合流**——即 CpalSink 真设备输出时的前置组件。NullSink 阶段接 Mixer 只添
@@ -110,7 +116,7 @@ volume/muted 真控制。**双重启动门控均已解除**：① M0 音频环�
 | M0 — 环境验证 + 验证策略（门控） | ✅ 完成（2026-09-01，含 D2 后 cpal 编译实测补录） |
 | M1 — 首个声音输出 | 🔄 切片 1-3 + 解码链 e2e + 播放管线宿主接线落地（2026-09-01）；**D2 获批项闭环（2026-09-01）**——cpal 编译 + 39 测全绿 + CpalSink 真设备流冒烟通过（Ok 分支：构造/start/write/pause/resume 全链，[evidence](evidence/2026-09-01-cpalsink-device-smoke.md)）；余 Mixer 接线（挂真出声切片，可选） |
 | M2 — A/V 同步 + 控制 | 🔄 主体落地（2026-09-01，media-playback 流切片 D+E：audio clock 主时钟 + 组合时钟 + seek 对齐）；余 CpalSink 真出声冒烟（可选） |
-| M3 — `<audio>` 全路径 + Web Audio 评估 | 🔄 `<audio>` 纯音频播放全路径 e2e 已常驻（M2c 后续切片 A/B：settle → 桥 play → 泵推进）；Web Audio 最小面 RFC 已成文（2026-09-01，待 D1 批准——不批准不影响 DONE） |
+| M3 — `<audio>` 全路径 + Web Audio 评估 | 🔄 `<audio>` 纯音频播放全路径 e2e 已常驻（M2c 后续切片 A/B：settle → 桥 play → 泵推进）；Web Audio 最小面 **D1 已批准**（2026-09-01，D-WA-2 选先 NullSink）——切片 1+2 待实施 |
 
 ## 验证基线
 

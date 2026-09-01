@@ -2,11 +2,12 @@
 
 **入口文档**: [../media-playback.md](../media-playback.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-01（**M2c opus 面落地**——`opus-decoder 0.1.1` 纯 Rust
-（RFC 6716/8251，零 unsafe 零 FFI，MIT OR Apache-2.0）补齐 symphonia 0.6 缺位：
-`opus_decode::open_ogg_opus`（symphonia ogg reader 容器 demux + OpusHead extra_data
-解析 + pre-skip 丢弃）→ registry 双面回落登记（symphonia → opus）。`sample-ogg-opus
-.oga` 从「不登记回落」转正为可播面。media 38+1 / webview 677 / engine 2546 全绿）
+**最后更新**: 2026-09-01（**D2 获批（选 A：libdav1d-dev）+ 已安装闭环**——
+`libdav1d-dev 1.5.1-1` 在位，pkg-config 发现 dav1d 1.5.1（复用既有 libdav1d.so.7
+运行时，零 meson/ninja 源码构建）；已记入
+[docs/development/linux-macos.md](../../development/linux-macos.md) apt 清单。
+M3 AV1 解码切片解锁（dav1d 绑定 + `open_webm` V_AV1 路由，以
+`sample-webm-av1.webm` 资产验证））
 
 ---
 
@@ -232,17 +233,18 @@ engine 2539 / media 27 / webview 668 全绿；testharness-media 372P/0F/41PF 维
   dav1d-sys 走 system_deps：优先 pkg-config 系统库，缺则**从源码构建**（git clone
   videolan/dav1d + meson + ninja——本机 meson/ninja 均未装）。两条路都需系统级安装
   （`apt install libdav1d-dev` 或 `apt install meson ninja`），按 run-rules 须用户
-  批准；三平台 CI 构建矩阵成本同 RFC §6 风险面 | ⬜ **待批——已征询（2026-09-01
-  GB-20260901，飞书 msg `om_x100b6659bc706ca4c366b9337b1c321`，建议选 A：
-  libdav1d-dev 只补头文件复用既有运行时库）**（不阻塞 M3 其余面——
+  批准；三平台 CI 构建矩阵成本同 RFC §6 风险面 | ✅ 获批选 A（2026-09-01，
+  GB-20260901 批复）——`libdav1d-dev 1.5.1-1` 已装，pkg-config 发现 dav1d 1.5.1；
+  apt 清单已记入 [docs/development/linux-macos.md](../../development/linux-macos.md)（不阻塞 M3 其余面——
   WPT 子集导入可先行） |
 
 ## 下一步计划
 
-1. **M3 多格式收尾**（当前首选）：AV1（dav1d 绑定，D-RFC-2）与 H.264 立项
-   （D-RFC-3）；上游 WPT 可执行子集导入。**M3 预备资产已落库（2026-09-01）**——
+1. **M3 多格式收尾**（当前首选）：AV1（dav1d 绑定，D-RFC-2——D2 已批准选 A，
+   libdav1d-dev 在位）与 H.264 立项（D-RFC-3）；上游 WPT 可执行子集导入。
+   **M3 预备资产已落库（2026-09-01）**——
    `sample-webm-av1.webm`（libaom-av1 生成，README 命令记录）；matroska-demuxer
-   实测可枚举 V_AV1 轨（CodecPrivate 在）——demux 面就绪，D2 批准后解码切片
+   实测可枚举 V_AV1 轨（CodecPrivate 在）——demux 面就绪，解码切片
    （dav1d 绑定 + `open_webm` track 路由 V_AV1）直接以本资产验证。
    **runner 桥注入可行性分析（2026-09-01）**：wpt-runner 沙箱可注入
    `register_video_bridge_callbacks`（tab_worker 同款）+ take_probe 泵 tick——
