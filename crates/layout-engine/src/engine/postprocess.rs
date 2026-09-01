@@ -757,6 +757,62 @@ pub(super) fn exclude_floats_from_non_bfc_auto_height(
 /// 注：仅修 loc。abspos stretch 尺寸（width/height:auto + 双向 inset）虽同源（taffy 按
 /// border-box CB 多算 border），但 R1399 A/B 证 chromium 对真实 form-control 案也按 border-box
 /// stretch（spec-purist padding-box 修正反致 semi-replaced-input/other 微退），故不改。
+/// R3905（CSS2 §10.3.7）：horizontal-tb + direction:rtl 包含块中，inset 全 auto 的
+/// absolute 元素静态位置镜像——左缘贴 CB 右缘（x = CB content right − margin-box 宽），
+/// 非 taffy 默认的 LTR 左贴。taffy 对全-auto inset abspos 按文档序静态位（LTR 语义）定位。
+/// 仅 horizontal-tb（vertical 模式由 fix_vertical_mode_abs_pos 轴交换处理）。
+/// driving: CSS2/positioning absolute-non-replaced-width-002/005/012（rtl CB + 全 auto inset，
+/// 蓝方块应右上非左上）。
+pub(super) fn fix_rtl_abspos_static_position(root: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) {
+    use zero_css_parser::values::{LengthValue, PositionValue};
+    use zero_style_system::property::types::DirectionValue;
+    fn walk(box_node: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>, cb_rtl: bool, cb_content_width: f32) {
+        // 本盒若为 positioned，成为其 abspos 子的 CB（更新 rtl 上下文与 content 宽）。
+        let self_positioned = box_node.node_id.and_then(|id| styles.get(&id)).is_some_and(|s| {
+            matches!(
+                s.position,
+                PositionValue::Relative | PositionValue::Absolute | PositionValue::Fixed
+            )
+        });
+        let (child_cb_rtl, child_cb_w) = if self_positioned {
+            // rtl CB 仅 horizontal-tb 生效（vertical 的 inline 轴镜像由 fix_vertical_mode_abs_pos 处理）。
+            let rtl = box_node
+                .node_id
+                .and_then(|id| styles.get(&id))
+                .is_some_and(|s| {
+                    matches!(s.direction, DirectionValue::Rtl)
+                        && matches!(s.writing_mode, zero_style_system::WritingModeValue::HorizontalTb)
+                });
+            (rtl, box_node.content_width)
+        } else {
+            (cb_rtl, cb_content_width)
+        };
+        for child in &mut box_node.children {
+            if child.is_absolute
+                && child_cb_rtl
+                && child.node_id.and_then(|id| styles.get(&id)).is_some_and(|s| {
+                    matches!(s.left, LengthValue::Auto)
+                        && matches!(s.right, LengthValue::Auto)
+                        && matches!(s.top, LengthValue::Auto)
+                        && matches!(s.bottom, LengthValue::Auto)
+                })
+            {
+                // 静态位置镜像：左缘 = CB content 右缘 − margin-box（margin_right + width）。
+                let mb = child.margin_right;
+                child.x = (child_cb_w - mb - child.width - child.margin_left).max(0.0);
+            }
+            walk(child, styles, child_cb_rtl, child_cb_w);
+        }
+    }
+    // 根无 CB 语义；从根开始递归（根自身非 positioned 时 cb_rtl=false）。
+    let root_rtl = root
+        .node_id
+        .and_then(|id| styles.get(&id))
+        .is_some_and(|s| matches!(s.direction, DirectionValue::Rtl));
+    let _ = root_rtl;
+    walk(root, styles, false, root.content_width);
+}
+
 pub(super) fn fix_abspos_cb_border(root: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) {
     use zero_css_parser::values::PositionValue;
     // 本盒是否为 positioned（是其直接 abspos 子的 CB）

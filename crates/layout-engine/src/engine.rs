@@ -755,6 +755,8 @@ impl LayoutEngine {
 
         // R1398：修正 abspos CB-border 偏移（taffy 把 positioned 祖先 border 计入 abspos loc）。
         fix_abspos_cb_border(&mut root_box, styles);
+        // R3905（CSS2 §10.3.7）：rtl CB 中全-auto inset abspos 静态位置镜像（左缘贴 CB 右缘）。
+        fix_rtl_abspos_static_position(&mut root_box, styles);
 
         // 11.5 后处理：修正没有 positioned ancestor 的 absolute 元素的**百分比**
         // inset 与尺寸。
