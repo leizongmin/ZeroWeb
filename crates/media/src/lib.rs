@@ -23,6 +23,8 @@
 //! [docs/specs/video-decode-playback-spec-rfc.md]: ../../../docs/specs/video-decode-playback-spec-rfc.md
 
 mod audio;
+#[cfg(feature = "audio-cpal")]
+mod audio_cpalsink;
 mod clock;
 mod decode;
 
@@ -30,5 +32,7 @@ mod decode;
 mod tests;
 
 pub use audio::*;
+#[cfg(feature = "audio-cpal")]
+pub use audio_cpalsink::*;
 pub use clock::*;
 pub use decode::*;

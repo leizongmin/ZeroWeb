@@ -85,6 +85,9 @@ unicode-bidi-mirroring = "0.4"
 unicode-segmentation = "=1.12.0"
 wuff = { version = "0.2.8", default-features = false, features = ["brotli"] }
 
+# 音频输出（media-audio M1 CpalSink，optional feature-gated）
+cpal = "0.16"
+
 # 窗口与平台
 winit = { version = "0.30", features = ["android-native-activity"] }
 arboard = "3"

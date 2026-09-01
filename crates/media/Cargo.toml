@@ -8,7 +8,14 @@ license.workspace = true
 [lib]
 path = "src/lib.rs"
 
+[features]
+default = []
+# 真实设备输出（CpalSink）——编译需 ALSA dev 头（Linux），headless/CI 默认关闭。
+audio-cpal = ["dep:cpal"]
+
 [dependencies]
+cpal = { workspace = true, optional = true }
+tracing = { workspace = true }
 matroska-demuxer = { workspace = true }
 rusty_vp9 = { workspace = true }
 thiserror = { workspace = true }

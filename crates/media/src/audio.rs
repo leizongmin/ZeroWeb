@@ -40,6 +40,12 @@ pub enum AudioSinkError {
         /// start 时声明的声道数。
         channels: u16,
     },
+    /// 无可用输出设备（CpalSink 构造面——调用方回落 NullSink）。
+    #[error("no output device available")]
+    NoOutputDevice,
+    /// 设备/流层错误（cpal 构建、play/pause 失败等）。
+    #[error("device error: {0}")]
+    Device(String),
 }
 
 /// 音频输出端点 — PCM f32 交错帧消费者（media-audio M1 输出面契约）。
