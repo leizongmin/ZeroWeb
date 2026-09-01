@@ -637,8 +637,11 @@ impl StyleSystem {
                         quirks_mode,
                         Some("marker"),
                     );
+                    // R3911：letter-spacing/word-spacing 等 ::marker 支持的文本属性也触发存储
+                    //（css-pseudo-4 #content-properties；driving: marker-letter-spacing 显式臂）。
                     if !matches!(marker.content, property::types::ContentComputedValue::Normal)
                         || marker.color != elem_style.color
+                        || marker.letter_spacing != elem_style.letter_spacing
                     {
                         computed.marker_pseudo = Some(Box::new(marker));
                     }

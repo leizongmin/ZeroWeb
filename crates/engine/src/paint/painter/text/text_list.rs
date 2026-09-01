@@ -1065,6 +1065,18 @@ impl super::super::Painter {
         let variation_style = style.marker_pseudo.as_deref().unwrap_or(style);
         let variations = crate::text_metrics::paint_font_variations(&variation_style.font_variation_settings);
         let font_variation_id = self.primitives.intern_font_variations(&variations);
+        // R3911：::marker 支持 letter-spacing（css-pseudo-4 #content-properties；显式 ::
+        // :marker { letter-spacing } 或继承自祖先 li）。marker_pseudo（Some 时）已按
+        // ::marker 层叠+继承计算；None 回退 li 自身 letter-spacing（继承语义等价）。
+        // 每个 marker 字形后追加该间距（css-text-3：字符间空隙；driving:
+        // marker-letter-spacing 显式+继承臂 25px）。
+        let marker_letter_spacing: f32 = {
+            let ls = variation_style.letter_spacing.clone();
+            match ls {
+                LengthValue::Px(v) => v as f32,
+                ref other => zero_style_system::computed::resolve_length(other, font_size as f64, None, None) as f32,
+            }
+        };
         let marker_size = font_size * 0.4;
         let marker_x = abs_x + box_node.border_left;
         let marker_y = abs_y + box_node.border_top + box_node.padding_top;
@@ -1112,7 +1124,8 @@ impl super::super::Painter {
                                 rotation: 0.0,
                                 synthetic_italic: false,
                             });
-                            char_x += self.measure_char_cached(default_font_id.0, ch, text_marker_font_size, false);
+                            char_x += self.measure_char_cached(default_font_id.0, ch, text_marker_font_size, false)
+                                + marker_letter_spacing;
                         }
                         return;
                     }
@@ -1195,7 +1208,8 @@ impl super::super::Painter {
                         rotation: 0.0,
                         synthetic_italic: false,
                     });
-                    char_x += self.measure_char_cached(default_font_id.0, ch, text_marker_font_size, false);
+                    char_x += self.measure_char_cached(default_font_id.0, ch, text_marker_font_size, false)
+                        + marker_letter_spacing;
                 }
             }
             ListStyleTypeValue::LowerAlpha | ListStyleTypeValue::UpperAlpha => {
@@ -1231,7 +1245,8 @@ impl super::super::Painter {
                         rotation: 0.0,
                         synthetic_italic: false,
                     });
-                    char_x += self.measure_char_cached(default_font_id.0, ch, text_marker_font_size, false);
+                    char_x += self.measure_char_cached(default_font_id.0, ch, text_marker_font_size, false)
+                        + marker_letter_spacing;
                 }
             }
             ListStyleTypeValue::LowerRoman | ListStyleTypeValue::UpperRoman => {
@@ -1266,7 +1281,8 @@ impl super::super::Painter {
                         rotation: 0.0,
                         synthetic_italic: false,
                     });
-                    char_x += self.measure_char_cached(default_font_id.0, ch, text_marker_font_size, false);
+                    char_x += self.measure_char_cached(default_font_id.0, ch, text_marker_font_size, false)
+                        + marker_letter_spacing;
                 }
             }
             // R2445：lower-greek / persian 预定义计数器样式（CSS Counter Styles 3 §6）。
@@ -1340,7 +1356,8 @@ impl super::super::Painter {
                         rotation: 0.0,
                         synthetic_italic: false,
                     });
-                    char_x += self.measure_char_cached(default_font_id.0, ch, text_marker_font_size, false);
+                    char_x += self.measure_char_cached(default_font_id.0, ch, text_marker_font_size, false)
+                        + marker_letter_spacing;
                 }
             }
             ListStyleTypeValue::None => {}
@@ -1370,7 +1387,8 @@ impl super::super::Painter {
                         rotation: 0.0,
                         synthetic_italic: false,
                     });
-                    char_x += self.measure_char_cached(default_font_id.0, ch, text_marker_font_size, false);
+                    char_x += self.measure_char_cached(default_font_id.0, ch, text_marker_font_size, false)
+                        + marker_letter_spacing;
                 }
             }
             // list-style-type: <string>（CSS Lists 3）：固定字符串标记（非计数器，每个 li 同值）。
@@ -1394,7 +1412,8 @@ impl super::super::Painter {
                         rotation: 0.0,
                         synthetic_italic: false,
                     });
-                    char_x += self.measure_char_cached(default_font_id.0, ch, text_marker_font_size, false);
+                    char_x += self.measure_char_cached(default_font_id.0, ch, text_marker_font_size, false)
+                        + marker_letter_spacing;
                 }
             }
             // R2392：自定义计数器样式（@counter-style）。查注册表 → 按 system 生成 body
@@ -1427,7 +1446,8 @@ impl super::super::Painter {
                         rotation: 0.0,
                         synthetic_italic: false,
                     });
-                    char_x += self.measure_char_cached(default_font_id.0, ch, text_marker_font_size, false);
+                    char_x += self.measure_char_cached(default_font_id.0, ch, text_marker_font_size, false)
+                        + marker_letter_spacing;
                 }
             }
         }

@@ -302,3 +302,79 @@ fn test_transform_matrix_translate_percent() {
         tp2.ty
     );
 }
+
+// ── R3911：::marker letter-spacing ──────────────────────────────────
+
+/// ::marker 支持 letter-spacing（css-pseudo-4 #content-properties）：显式
+/// `::marker { letter-spacing }` 或继承自 li 的间距须应用到 marker 字形推进。
+/// driving: WPT marker-letter-spacing（显式+继承臂，25px Ahem 间隔）。
+#[test]
+fn r3911_marker_letter_spacing_applied_to_glyph_advance() {
+    use zero_css_parser::values::ListStyleTypeValue;
+
+    let mut doc = zero_dom::Document::new();
+    let root = doc.root();
+    let ol = doc.create_element("ol");
+    let nid = doc.create_element("li");
+    let _ = doc.append_child(root, ol);
+    let _ = doc.append_child(ol, nid);
+    let layout = super::visual::make_box(Some(nid), 0.0, 0.0, 100.0, 40.0);
+
+    let mut style = ComputedStyle::default();
+    style.list_style_type = ListStyleTypeValue::Decimal;
+    style.font_size = LengthValue::Px(25.0);
+    // ::marker 伪样式携带 25px letter-spacing（模拟 ::marker { letter-spacing: 25px }）。
+    let mut marker = ComputedStyle::default();
+    marker.font_size = LengthValue::Px(25.0);
+    marker.letter_spacing = LengthValue::Px(25.0);
+    style.marker_pseudo = Some(Box::new(marker));
+
+    let mut styles = std::collections::HashMap::new();
+    styles.insert(nid, style);
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, Some(&doc));
+
+    // "1." 两字形：x2 − x1 = 字宽 + 25px 间距。
+    let mut glyph_xs: Vec<f32> = painter.primitives().glyphs.iter().map(|g| g.x).collect();
+    glyph_xs.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    assert!(
+        glyph_xs.len() >= 2,
+        "decimal marker should emit ≥2 glyphs, got {glyph_xs:?}"
+    );
+    let advance = glyph_xs[1] - glyph_xs[0];
+    assert!(
+        advance > 30.0,
+        "glyph advance must include the 25px letter-spacing (measure ~13-15px + 25 = ~40), got {advance}"
+    );
+}
+
+/// ::marker 无 letter-spacing（默认 0）时 marker 字形推进不含额外间距（回归守卫）。
+#[test]
+fn r3911_marker_letter_spacing_zero_no_extra_advance() {
+    use zero_css_parser::values::ListStyleTypeValue;
+
+    let mut doc = zero_dom::Document::new();
+    let root = doc.root();
+    let ol = doc.create_element("ol");
+    let nid = doc.create_element("li");
+    let _ = doc.append_child(root, ol);
+    let _ = doc.append_child(ol, nid);
+    let layout = super::visual::make_box(Some(nid), 0.0, 0.0, 100.0, 40.0);
+
+    let mut style = ComputedStyle::default();
+    style.list_style_type = ListStyleTypeValue::Decimal;
+    style.font_size = LengthValue::Px(25.0);
+    let mut styles = std::collections::HashMap::new();
+    styles.insert(nid, style);
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, Some(&doc));
+
+    let mut glyph_xs: Vec<f32> = painter.primitives().glyphs.iter().map(|g| g.x).collect();
+    glyph_xs.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    assert!(glyph_xs.len() >= 2);
+    let advance = glyph_xs[1] - glyph_xs[0];
+    assert!(
+        advance < 25.0,
+        "no letter-spacing → advance = bare glyph width (~13-15px), got {advance}"
+    );
+}
