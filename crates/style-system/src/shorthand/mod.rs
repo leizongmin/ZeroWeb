@@ -2333,6 +2333,9 @@ fn expand_font(value: &str, important: bool, specificity: (u32, u32, u32)) -> Ve
 
     let mut weight = "normal".to_string();
     let mut style = "normal".to_string();
+    // R3890：font 简写的 font-variant 位（CSS2.1 语法仅 normal | small-caps；
+    // Fonts 4 将其扩展为 <'font-variant-caps'> 值域）。
+    let mut variant_caps: Option<String> = None;
     let mut size = "medium".to_string();
     let mut line_height = "normal".to_string();
     let mut family = String::new();
@@ -2377,6 +2380,14 @@ fn expand_font(value: &str, important: bool, specificity: (u32, u32, u32)) -> Ve
     };
 
     let is_style = |s: &str| matches!(s.to_ascii_lowercase().as_str(), "normal" | "italic" | "oblique");
+    // R3890：font 简写 font-variant 位可接受的 token——CSS2.1 为 normal | small-caps；
+    // Fonts 4 扩展为 <'font-variant-caps'> 全值域（与 expand_font_variant 的 caps 臂同表）。
+    let is_variant_caps_token = |s: &str| {
+        matches!(
+            s.to_ascii_lowercase().as_str(),
+            "normal" | "small-caps" | "all-small-caps" | "petite-caps" | "all-petite-caps" | "unicase" | "titling-caps"
+        )
+    };
 
     let is_font_size = |s: &str| {
         use zero_css_parser::values::LengthValue;
@@ -2464,6 +2475,11 @@ fn expand_font(value: &str, important: bool, specificity: (u32, u32, u32)) -> Ve
             weight = part.to_string();
         } else if !size_found && is_style(part) {
             style = part.to_string();
+        } else if variant_caps.is_none() && is_variant_caps_token(part) {
+            // R3890：font 简写的 font-variant 位（CSS2.1 §15.8 语法位 [normal | small-caps]）。
+            // 旧实现未知 token 直接丢弃整条声明——font-011..015 族
+            // （`font: italic small-caps bold 1in Ahem`）整简写失效。
+            variant_caps = Some(part.to_string());
         } else {
             return vec![];
         }
@@ -2495,7 +2511,8 @@ fn expand_font(value: &str, important: bool, specificity: (u32, u32, u32)) -> Ve
         mk("font-family", &family),
         // CSS Fonts 4 §4: font shorthand resets font-variant, font-stretch, and font-kerning.
         mk("font-variant-ligatures", "normal"),
-        mk("font-variant-caps", "normal"),
+        // R3890：font-variant 位存在时以其值覆盖 reset（否则保持 reset 到 normal）。
+        mk("font-variant-caps", variant_caps.as_deref().unwrap_or("normal")),
         mk("font-variant-numeric", "normal"),
         mk("font-variant-east-asian", "normal"),
         mk("font-variant-position", "normal"),
