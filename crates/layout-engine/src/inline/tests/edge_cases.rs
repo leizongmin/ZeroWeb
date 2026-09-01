@@ -361,11 +361,14 @@ fn test_inline_block_margin_top_offsets_box_y() {
 
     assert_eq!(ctx.lines.len(), 1);
     let run = &ctx.lines[0].runs[0];
-    // R1720：margin_top 不下移 border box——run.y 应 == 0.0（valign:baseline 定位），
-    // 非 16.0（旧 R536 shift）。border box 留在 valign 位，margin 在其外扩 line box。
+    // R3904（订正 R1720 对 baseline 分支的连带改动）：margin box 参与对齐——
+    // ascent = max(strut, mt + baseline) = max(strut, 16+30) = 46 → baseline_y = 46 →
+    // run.y = baseline_y − baseline = 46 − 30 = 16 = margin_top（border box 下推，
+    // chromium 语义；flexbox_flex-* 68 案 A/B 实证）。R1720 的 over-shift 证据仅涉
+    // valign:middle 分支，baseline 分支的「不下移」为连带误伤。
     assert!(
-        run.y.abs() < 0.01,
-        "inline-block margin_top 不应下移 border box，run.y 应 == 0，实际 {}",
+        (run.y - 16.0).abs() < 0.01,
+        "inline-block margin_top 应下移 border box（R3904 baseline 分支），run.y 应 == 16，实际 {}",
         run.y
     );
     // 行盒高度应含 margin box（box 30 + margin_top 16 = 46）——margin 扩 line-box。

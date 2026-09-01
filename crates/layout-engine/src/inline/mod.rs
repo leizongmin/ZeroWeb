@@ -1711,10 +1711,13 @@ impl InlineFormattingContext {
                         max_ascent = max_ascent.max(run.font_size * run_ratio);
                     } else {
                         // 原子行内级盒（font_size==0 标识）：
-                        // 使用 baseline 字段决定 ascent
-                        // inline-block: baseline = height（底部边缘）
-                        // inline-flex/inline-grid: baseline 从第一个 item 合成
-                        max_ascent = max_ascent.max(run.baseline);
+                        // 使用 baseline 字段决定 ascent（inline-block: baseline = height 底边；
+                        // inline-flex/inline-grid: 从首个 item 合成）。
+                        // R3904：margin box 参与对齐（CSS §10.8.1，同 R3809 top/bottom 语境）——
+                        // margin_top 把盒下推，baseline 距 margin-box 顶 = margin_top + baseline。
+                        // 漏计则 baseline 对齐的 atomic margin-top 丢失（flexbox_flex REF 页 span
+                        // y=17 vs flex test 页 y=33，3.87pp 族）。
+                        max_ascent = max_ascent.max(run.margin_top + run.baseline);
                     }
                 }
             }
@@ -1732,8 +1735,11 @@ impl InlineFormattingContext {
                             // 文本运行：保持原有计算方式（片段底部对齐到基线）
                             baseline_y - run.height
                         } else {
-                            // 原子行内级盒：使用 baseline 字段定位
-                            // baseline 表示从顶部到基线的距离
+                            // 原子行内级盒：使用 baseline 字段定位（baseline = 顶部到基线距离）。
+                            // R3904：margin box 参与对齐——baseline_y（行顶→基线）已含
+                            // max_ascent 的 margin_top 抬升（见上方 ascent 循环），border y =
+                            // baseline_y − baseline 即行顶 + margin_top + (baseline_offset)，
+                            // 与 Top/Bottom 分支 R3809 的 margin-box 语义一致。
                             baseline_y - run.baseline
                         }
                     }
