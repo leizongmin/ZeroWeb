@@ -224,6 +224,13 @@ engine 2539 / media 27 / webview 668 全绿；testharness-media 372P/0F/41PF 维
 |---|------|------|
 | D1 | **RFC 审批**（路线 C：VP9/AV1 开源先行 + 进程内 crate；附 D-RFC-2 AV1 时点、
   D-RFC-3 H.264 增量立项——见 RFC §5） | ✅ 获批（2026-09-01）——三项决议见 RFC §5 |
+| D2 | **AV1 dav1d 依赖引入方式**（M3 解锁前置）：本机实测——系统有 libdav1d7 运行时
+  （.so.7）但**无 libdav1d-dev 头**（pkg-config 找不到）；`dav1d 0.11` crate 的
+  dav1d-sys 走 system_deps：优先 pkg-config 系统库，缺则**从源码构建**（git clone
+  videolan/dav1d + meson + ninja——本机 meson/ninja 均未装）。两条路都需系统级安装
+  （`apt install libdav1d-dev` 或 `apt install meson ninja`），按 run-rules 须用户
+  批准；三平台 CI 构建矩阵成本同 RFC §6 风险面 | ⬜ 待批（不阻塞 M3 其余面——
+  WPT 子集导入可先行） |
 
 ## 下一步计划
 
