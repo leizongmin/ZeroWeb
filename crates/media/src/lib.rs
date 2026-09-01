@@ -28,6 +28,8 @@ mod audio;
 #[cfg(feature = "audio-cpal")]
 mod audio_cpalsink;
 mod audio_decode;
+#[cfg(feature = "decode-av1")]
+mod av1_decode;
 mod av_decode;
 mod clock;
 mod decode;

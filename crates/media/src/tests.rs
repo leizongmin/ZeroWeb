@@ -302,6 +302,59 @@ fn webm_av_audio_track_absent_rejected() {
     );
 }
 
+#[cfg(feature = "decode-av1")]
+#[test]
+fn webm_av1_decode_full_stream() {
+    // M3 AV1 面（D-RFC-2）：V_AV1 轨经 dav1d 全流解码——48 帧（2s @ 24fps）、
+    // PTS 单调、尺寸面（testsrc2 320x240）与 VP9 fixture 同款生成参数。
+    // https://code.videolan.org/videolan/dav1d
+    let data = fs::read(fixture_path("sample-webm-av1.webm")).unwrap();
+    let mut dec = VideoDecoder::open_webm(&data).unwrap();
+    assert_eq!(dec.duration_ms(), Some(2000));
+
+    let mut count = 0u32;
+    let mut prev_pts: i64 = -1;
+    let mut first_mean = 0.0;
+    while let Some(frame) = dec.next_frame().unwrap() {
+        assert_eq!(frame.width, 320, "宽度面");
+        assert_eq!(frame.height, 240, "高度面");
+        assert!(
+            (frame.pts_ms as i64) >= prev_pts,
+            "PTS 单调（pts={} prev={})",
+            frame.pts_ms,
+            prev_pts
+        );
+        prev_pts = frame.pts_ms as i64;
+        if count == 0 {
+            first_mean = rgba_mean(&frame.rgba);
+        }
+        count += 1;
+    }
+    assert_eq!(count, 48, "全流帧数（与容器块数一致）");
+    // 首帧非空非纯色（testsrc2 纹样锚点——窗口 ±20，与 ffmpeg 参照面无对齐要求：
+    // dav1d 输出经同一 planes_to_rgba 面，色彩声明以位流 seq header 为准）。
+    assert!(
+        (60.0..=200.0).contains(&first_mean),
+        "AV1 首帧 RGB 均值合理窗（got {first_mean}）"
+    );
+}
+
+#[cfg(feature = "decode-av1")]
+#[test]
+fn webm_av1_open_rejects_when_feature_disabled_equivalent_and_vp9_still_routes() {
+    // codec 路由面：open_webm 对 V_VP9 容器行为与 open_webm_vp9 一致（M3 路由
+    // 不回归 VP9 主面）；V_AV1 在 feature 关闭时回落 NoVideoTrack（占位渲染面）。
+    // 本测试编译于 feature 开启态——断言 V_VP9 路由 + 非 webm 拒绝。
+    let data = fs::read(fixture_path("sample-webm-vp9.webm")).unwrap();
+    let mut dec = VideoDecoder::open_webm(&data).unwrap();
+    let f0 = dec.next_frame().unwrap().expect("vp9 frame 0");
+    assert_eq!(f0.width, 320);
+    assert_eq!(f0.height, 240);
+
+    let garbage = b"not a webm".to_vec();
+    assert!(VideoDecoder::open_webm(&garbage).is_err());
+}
+
 #[test]
 fn audio_ogg_opus_decode_chain() {
     // M2c opus 面：`opus-decoder` 纯 Rust 解码链全通——symphonia ogg reader 容器

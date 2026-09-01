@@ -361,7 +361,7 @@ impl VideoPlayerRegistry {
             let Some(bytes) = self.sources.remove(&key) else {
                 return false;
             };
-            let Ok(decoder) = VideoDecoder::open_webm_vp9(&bytes) else {
+            let Ok(decoder) = VideoDecoder::open_webm(&bytes) else {
                 return false;
             };
             self.players.insert(key, VideoPlayer::new(decoder));

@@ -12,9 +12,13 @@ path = "src/lib.rs"
 default = []
 # 真实设备输出（CpalSink）——编译需 ALSA dev 头（Linux），headless/CI 默认关闭。
 audio-cpal = ["dep:cpal"]
+# AV1 解码（media-playback M3 / D-RFC-2 获批选 A）——链接系统 libdav1d
+#（Linux 需 libdav1d-dev；headless/CI 默认关闭）。
+decode-av1 = ["dep:dav1d"]
 
 [dependencies]
 cpal = { workspace = true, optional = true }
+dav1d = { workspace = true, optional = true }
 symphonia = { workspace = true }
 opus-decoder = { workspace = true }
 tracing = { workspace = true }

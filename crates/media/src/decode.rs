@@ -18,6 +18,9 @@ pub enum DecodeError {
     /// VP9 位流解码失败（malformed 或 unsupported feature）。
     #[error("vp9 decode error: {0}")]
     Vp9(String),
+    /// AV1 位流解码失败（feature `decode-av1` 面，M3）。
+    #[error("av1 decode error: {0}")]
+    Av1(String),
 }
 
 impl From<matroska_demuxer::DemuxError> for DecodeError {
@@ -48,6 +51,66 @@ pub struct DecodedVideoFrame {
     pub height: u32,
 }
 
+/// 视频位流解码器路由（M3 多格式面——同一 demux 循环下的 codec 分派）。
+enum VideoCodec {
+    /// VP9（rusty_vp9 纯 Rust——路线 C 主面）。
+    Vp9(Box<rusty_vp9::Vp9Decoder>),
+    /// AV1（dav1d 绑定——D-RFC-2 批复面，feature `decode-av1`）。
+    #[cfg(feature = "decode-av1")]
+    Av1(Box<crate::av1_decode::Av1Decoder>),
+}
+
+impl VideoCodec {
+    fn push(&mut self, data: &[u8], pts_ms: i64) -> Result<(), DecodeError> {
+        match self {
+            VideoCodec::Vp9(d) => d.push(data, Some(pts_ms)).map_err(DecodeError::from),
+            #[cfg(feature = "decode-av1")]
+            VideoCodec::Av1(d) => d.push(data, pts_ms),
+        }
+    }
+    /// 取一帧（VP9 路径：push 后必有输出——无前瞻重排）；流缓冲末返回 None。
+    /// 色彩描述 `color` 由持有方（VideoDecoder）传入——VP9 平面 → RGBA 的
+    /// 转换依赖容器声明面。
+    fn next_frame(&mut self, color: &ColorSpace) -> Result<Option<DecodedVideoFrame>, DecodeError> {
+        match self {
+            VideoCodec::Vp9(d) => match d.next_frame() {
+                Ok(f) => Ok(Some(to_rgba(f, color))),
+                Err(rusty_vp9::Error::Eof | rusty_vp9::Error::Again) => Ok(None),
+                Err(e) => Err(e.into()),
+            },
+            #[cfg(feature = "decode-av1")]
+            VideoCodec::Av1(d) => d.next_frame(),
+        }
+    }
+    /// 冲刷解码器内部缓冲（流末残余帧）。
+    fn flush(&mut self, color: &ColorSpace) {
+        match self {
+            VideoCodec::Vp9(d) => {
+                d.flush();
+                // flush 后残余帧同样走颜色转换（调用方 next_frame 会再拉取——
+                // 此处仅作 flush 语义）。
+                let _ = color;
+            }
+            #[cfg(feature = "decode-av1")]
+            VideoCodec::Av1(d) => d.flush(),
+        }
+    }
+    /// 重建（seek 参考链作废——新解码器从 keyframe 重启）。
+    fn reset(&mut self) -> Result<(), DecodeError> {
+        match self {
+            VideoCodec::Vp9(d) => {
+                **d = rusty_vp9::Vp9Decoder::new();
+                Ok(())
+            }
+            #[cfg(feature = "decode-av1")]
+            VideoCodec::Av1(d) => {
+                **d = crate::av1_decode::Av1Decoder::new()?;
+                Ok(())
+            }
+        }
+    }
+}
+
 /// 逐帧读取的 webm/VP9 视频解码器。
 ///
 /// 用法（push/pull 迭代）：
@@ -63,7 +126,8 @@ pub struct DecodedVideoFrame {
 /// ```
 pub struct VideoDecoder {
     demuxer: matroska_demuxer::MatroskaFile<Cursor<Vec<u8>>>,
-    vp9: rusty_vp9::Vp9Decoder,
+    /// 位流解码器（VP9 rusty_vp9 / AV1 dav1d——M3 codec 路由）。
+    codec: VideoCodec,
     /// 视频轨号（Matroska track number）。
     video_track: u64,
     /// 时间戳缩放（ns/tick；frame.timestamp 的单位为 tick）。
@@ -94,7 +158,42 @@ impl VideoDecoder {
         Ok(Self {
             timestamp_scale: demuxer.info().timestamp_scale().get(),
             demuxer,
-            vp9: rusty_vp9::Vp9Decoder::new(),
+            codec: VideoCodec::Vp9(Box::new(rusty_vp9::Vp9Decoder::new())),
+            video_track,
+            eof: false,
+            pending: None,
+            color,
+        })
+    }
+
+    /// 从 webm/Matroska 字节打开视频解码器（codec 自路由——M3 多格式面）。
+    ///
+    /// 候选序：V_VP9（纯 Rust）→ V_AV1（dav1d，feature `decode-av1`）。
+    /// 编解码位流解码失败按 [`DecodeError::NoVideoTrack`] 语义回落（调用方
+    /// 占位渲染——不可解码 src 零回归契约）。
+    pub fn open_webm(data: &[u8]) -> Result<Self, DecodeError> {
+        let cursor = Cursor::new(data.to_vec());
+        let demuxer = matroska_demuxer::MatroskaFile::open(cursor)?;
+        let tracks = demuxer.tracks();
+        // 首个视频轨（不分 codec）——同一容器混多视频轨非本面（webm 惯例单视频轨）。
+        let track = tracks
+            .iter()
+            .find(|t| t.track_type() == matroska_demuxer::TrackType::Video)
+            .ok_or(DecodeError::NoVideoTrack)?;
+        let video_track = track.track_number().get();
+        let color = track.video().map(ColorSpace::from_track).unwrap_or_default();
+        let codec = match track.codec_id() {
+            "V_VP9" => VideoCodec::Vp9(Box::new(rusty_vp9::Vp9Decoder::new())),
+            #[cfg(feature = "decode-av1")]
+            "V_AV1" => VideoCodec::Av1(Box::new(crate::av1_decode::Av1Decoder::new()?)),
+            #[cfg(not(feature = "decode-av1"))]
+            "V_AV1" => return Err(DecodeError::NoVideoTrack),
+            _ => return Err(DecodeError::NoVideoTrack),
+        };
+        Ok(Self {
+            timestamp_scale: demuxer.info().timestamp_scale().get(),
+            demuxer,
+            codec,
             video_track,
             eof: false,
             pending: None,
@@ -139,7 +238,7 @@ impl VideoDecoder {
         // ① cue 路径：定位 + keyframe 验证（cue 点即 keyframe；非 keyframe 落点
         //   ——无 Cues 的线性搜索——不可解后续参考链 → 回退）。
         self.demuxer.seek(target_tick)?;
-        self.vp9 = rusty_vp9::Vp9Decoder::new();
+        self.codec.reset()?;
         self.eof = false;
         let mut block = matroska_demuxer::Frame::default();
         if matches!(self.demuxer.next_frame(&mut block), Ok(true))
@@ -148,15 +247,15 @@ impl VideoDecoder {
         {
             // keyframe 落点：解码此块并暂存（下一次 next_frame 消费——不丢帧）。
             let pts_ms = block.timestamp * self.timestamp_scale / 1_000_000;
-            self.vp9.push(&block.data, Some(pts_ms as i64))?;
-            let frame = self.vp9.next_frame()?;
-            self.pending = Some(to_rgba(frame, &self.color));
+            self.codec.push(&block.data, pts_ms as i64)?;
+            let frame = self.codec.next_frame(&self.color)?;
+            self.pending = frame;
             return Ok(());
         }
 
         // ② 回退：从流首 keyframe 前向解码到 target（spec precise-seek）。
         self.demuxer.seek(0)?;
-        self.vp9 = rusty_vp9::Vp9Decoder::new();
+        self.codec.reset()?;
         self.eof = false;
         loop {
             // EOF 前必有 ≥ target 的帧（target ≤ duration 由调用方保证；越界时
@@ -204,22 +303,19 @@ impl VideoDecoder {
                     // https://www.matroska.org/technical/basics.html#timestampscale
                     // block timestamp 为 timebase tick（scale ns/tick）→ 毫秒。
                     let pts_ms = block.timestamp * self.timestamp_scale / 1_000_000;
-                    self.vp9.push(&block.data, Some(pts_ms as i64))?;
-                    // push 后必有输出（rusty_vp9 无前瞻重排——VP9 位流本身
-                    // 按 display 顺序编码 show_existing_frame 重发）。
-                    let frame = self.vp9.next_frame()?;
-                    return Ok(Some(to_rgba(frame, &self.color)));
+                    self.codec.push(&block.data, pts_ms as i64)?;
+                    // push 后必有输出（VP9 无前瞻重排；AV1 面自身缓冲 reorder，
+                    // 缓冲空时 next_frame 返 None → 继续推进 demux 喂下一块）。
+                    match self.codec.next_frame(&self.color)? {
+                        Some(frame) => return Ok(Some(frame)),
+                        None => continue,
+                    }
                 }
                 Ok(false) => {
                     // 容器末：冲刷解码器残余帧（若有）。
                     self.eof = true;
-                    self.vp9.flush();
-                    match self.vp9.next_frame() {
-                        Ok(frame) => return Ok(Some(to_rgba(frame, &self.color))),
-                        // Eof/Again 均为无残余——正常收尾。
-                        Err(rusty_vp9::Error::Eof | rusty_vp9::Error::Again) => return Ok(None),
-                        Err(e) => return Err(e.into()),
-                    }
+                    self.codec.flush(&self.color);
+                    return self.codec.next_frame(&self.color);
                 }
                 Err(e) => return Err(e.into()),
             }
@@ -292,15 +388,42 @@ impl Default for ColorSpace {
 }
 
 /// `rusty_vp9::DecodedFrame`（YUV 平面）→ [`DecodedVideoFrame`]（RGBA）。
+fn to_rgba(frame: rusty_vp9::DecodedFrame, color: &ColorSpace) -> DecodedVideoFrame {
+    planes_to_rgba(
+        &frame.planes,
+        &frame.strides,
+        frame.width as usize,
+        frame.height as usize,
+        frame.bit_depth as usize,
+        frame.subsampling_x as usize,
+        frame.subsampling_y as usize,
+        color,
+        frame.pts.map(|p| p.max(0) as u64).unwrap_or(0),
+    )
+}
+
+/// YUV 平面 → RGBA 通用转换（VP9/AV1 共用——M3 codec 路由下的转换面统一）。
 ///
 /// 支持 8/10/12 bit 与 4:2:0/4:2:2/4:4:4（逐平面定点转换）；当前 fixture 与
-/// 上游 webm 系素材主面为 8bit 4:2:0。
-fn to_rgba(frame: rusty_vp9::DecodedFrame, color: &ColorSpace) -> DecodedVideoFrame {
-    let w = frame.width as usize;
-    let h = frame.height as usize;
-    let shift = frame.bit_depth - 8; // 10/12 bit → 8 bit 的高位移除
-    let chroma_w = w.div_ceil(1 + frame.subsampling_x as usize);
-    let chroma_h = h.div_ceil(1 + frame.subsampling_y as usize);
+/// 上游 webm 系素材主面为 8bit 4:2:0。`bit_depth` 为存储位宽（8 → u8 样本 /
+/// >8 → LE u16 高位对齐）；10/12 bit 经移位归一 8bit。`sx/sy` 为色度次采样
+///
+/// （0=无，1=半分辨率）。
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn planes_to_rgba(
+    planes: &[Vec<u8>],
+    strides: &[usize],
+    w: usize,
+    h: usize,
+    bit_depth: usize,
+    sx: usize,
+    sy: usize,
+    color: &ColorSpace,
+    pts_ms: u64,
+) -> DecodedVideoFrame {
+    let shift = bit_depth - 8; // 10/12 bit → 8 bit 的高位移除
+    let chroma_w = w.div_ceil(1 + sx);
+    let chroma_h = h.div_ceil(1 + sy);
 
     // 色度定点索引（65536 = 1.0）：luma 像素 → 色度平面最近邻采样位置。
     // 比例 = luma 尺寸 → chroma 尺寸（420: ×0.5）；除数必须是 luma 维——
@@ -310,8 +433,8 @@ fn to_rgba(frame: rusty_vp9::DecodedFrame, color: &ColorSpace) -> DecodedVideoFr
     let fy = |y: usize, lh: usize, ch: usize| y * ch * 65536 / lh;
 
     let sample = |plane: &[u8], stride: usize, x: usize, y: usize| -> u32 {
-        let idx = y * stride + x * if frame.bit_depth > 8 { 2 } else { 1 };
-        if frame.bit_depth > 8 {
+        let idx = y * stride + x * if bit_depth > 8 { 2 } else { 1 };
+        if bit_depth > 8 {
             (u16::from_le_bytes([plane[idx], plane[idx + 1]]) >> shift) as u32
         } else {
             plane[idx] as u32
@@ -323,9 +446,9 @@ fn to_rgba(frame: rusty_vp9::DecodedFrame, color: &ColorSpace) -> DecodedVideoFr
         let cy = fy(y, h, chroma_h) >> 16;
         for x in 0..w {
             let cx = fx(x, w, chroma_w) >> 16;
-            let yy = sample(&frame.planes[0], frame.strides[0], x, y) as f32;
-            let cb = sample(&frame.planes[1], frame.strides[1], cx, cy) as f32;
-            let cr = sample(&frame.planes[2], frame.strides[2], cx, cy) as f32;
+            let yy = sample(&planes[0], strides[0], x, y) as f32;
+            let cb = sample(&planes[1], strides[1], cx, cy) as f32;
+            let cr = sample(&planes[2], strides[2], cx, cy) as f32;
 
             // 色彩面（M2 精化）：identity（GBR 全范围）通道直传；YUV 面按
             // 声明矩阵 + 值域转换。
@@ -366,10 +489,10 @@ fn to_rgba(frame: rusty_vp9::DecodedFrame, color: &ColorSpace) -> DecodedVideoFr
     }
 
     DecodedVideoFrame {
-        pts_ms: frame.pts.map(|p| p.max(0) as u64).unwrap_or(0),
+        pts_ms,
         rgba,
-        width: frame.width,
-        height: frame.height,
+        width: w as u32,
+        height: h as u32,
     }
 }
 
