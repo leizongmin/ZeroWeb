@@ -11446,11 +11446,13 @@
           // 'probably'）；type+codecs 全支持 → 'probably'；否则 ''。
           // VP8/Opus/Theora/AAC/H.264 不在解码面 → ''（不虚报）。
           // https://html.spec.whatwg.org/multipage/media.html#dom-navigator-canplaytype
+          // M2c opus 面（2026-09-01）：opus-decoder 纯 Rust 落地 → ogg 容器 opus
+          // 转入支持面（webm 容器 A_OPUS demux 未实施，audio/webm opus 仍 ''）。
           var _cptTable = {
             'audio/mpeg': { audio: ['mp3'], video: [] },
-            'audio/ogg': { audio: ['vorbis'], video: [] },
+            'audio/ogg': { audio: ['vorbis', 'opus'], video: [] },
             'audio/webm': { audio: ['vorbis'], video: [] },
-            'video/ogg': { audio: ['vorbis'], video: [] },
+            'video/ogg': { audio: ['vorbis', 'opus'], video: [] },
             'video/webm': { audio: ['vorbis'], video: ['vp9'] }
           };
           return function (type) {

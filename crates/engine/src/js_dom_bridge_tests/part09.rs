@@ -3589,7 +3589,11 @@ fn test_media_can_play_type_capability_table_m4gd() {
     assert_eq!(get("pair"), "probably", "vp9+vorbis 双 codec → probably");
     // 不在解码面 → ''（不虚报）。
     assert_eq!(get("vp8"), "", "vp8 不在解码面 → ''");
-    assert_eq!(get("opus"), "", "opus 不在解码面 → ''");
+    assert_eq!(
+        get("opus"),
+        "probably",
+        "opus → probably（M2c opus 面：opus-decoder 纯 Rust 落地，ogg 容器）"
+    );
     assert_eq!(get("bogus"), "", "bogus codec → ''");
     assert_eq!(get("h264"), "", "H.264（D-RFC-3 未立项）→ ''");
     assert_eq!(get("mp4"), "", "video/mp4 容器不在面 → ''");
