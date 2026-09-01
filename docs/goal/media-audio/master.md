@@ -2,8 +2,9 @@
 
 **入口文档**: [../media-audio.md](../media-audio.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-01（D2 收口——libasound2-dev 已装，cpal 0.16 编译实测通过
-（ALSA host，枚举出 HDA 设备），见 evidence/2026-09-01-d2-cpal-compile-probe.md）
+**最后更新**: 2026-09-01（M1 切片 1 落地——`AudioSink` trait + `NullSink` 可观测层
+入 `zero-media::audio`：start/write f32 交错/pause/resume/underrun + 帧数与过零率
+可观测统计，单测 5 件常驻；`CpalSink`（`audio-cpal` feature）留后续切片）
 
 ---
 
@@ -30,14 +31,19 @@ volume/muted 真控制。**双重启动门控均已解除**：① M0 音频环�
   III 落地：非有限 TypeError/同值短路/queued volumechange/load 清 pending）
 - js-dom — volume/muted 反射段共享，`git log` 核对（run-rules §9）
 
-## 实测基线（2026-08-17 立项时 + 2026-09-01 M0 探测更新）
+## 实测基线（2026-08-17 立项时 + 2026-09-01 M0 探测 / M1 切片 1 更新）
 
 ### 现有实现
 
 - ✅ 反射底座：muted/volume 属性反射（R3040 + M3 扩批 III IDL 语义全对齐）
 - ✅ 时钟底座：rAF 帧驱动（P1a）——音频时钟对齐可挂
 - ✅ 环境/策略底座：M0 收口（AudioSink trait + NullSink 验证策略成文）
-- ⚠️ 零音频管线（无 cpal/音频依赖，无解码/混音/输出代码）——M1 实施项（门控已解除）
+- ✅ **输出面（M1 切片 1）**：`zero-media::audio`——`AudioSink` trait（start/
+  write f32 交错/pause/resume/underrun_count）+ `NullSink`（写入帧数 + 过零率
+  频域代理（2×频率锚定）+ 暂停拒写计 underrun）；单测 5 件常驻（启动前拒写/
+  暂停门控/非整帧拒收/440Hz 过零率/重启累计语义）
+- ⚠️ 音频解码/重采样/混音未实施——M1 后续切片（symphonia 归 M2c 对接）
+- ⚠️ CpalSink 未接入（`audio-cpal` feature；编译面已由 D2 验证）
 - 🔄 cpal 编译面：已实测通过（D2 收口，2026-09-01）——cpal 0.16 默认 feature 编译成功，
   ALSA host 枚举出 HDA 设备；运行时真出声仍受 WSLg pulse 限制（冒烟可选）
 - ✅ 选型已对齐（media-playback RFC 获批：路线 C，symphonia 音频解码面归 M2c）
@@ -50,9 +56,9 @@ volume/muted 真控制。**双重启动门控均已解除**：① M0 音频环�
 |---|------|------|
 | A1 | 音频环境验证 + headless 验证策略 | ✅ M0 收口（2026-09-01） |
 | A2 | 解码选型未对齐（外部门控：media-playback M0） | ✅ 已对齐（RFC 获批，2026-09-01） |
-| A3 | 零音频管线（解码/重采样/混音/输出） | ⬜ M1（双门控均已解除，可启动） |
+| A3 | 零音频管线（解码/重采样/混音/输出） | 🔄 M1 切片 1 落地（输出面 trait + NullSink）；解码/混音待续 |
 | A4 | A/V 同步机制缺失 | ⬜ M2（依赖 media-playback M2 视频时钟） |
-| A5 | 音频 e2e 资产 | ✅ fixture 已备（mp3/oga + mp4/webm 见 tests/fixtures/media/） |
+| A5 | 音频 e2e 资产 | 🔄 NullSink 可观测断言面就绪；解码链 e2e 待解码面落地 |
 
 ## 待用户决策
 
@@ -63,8 +69,11 @@ volume/muted 真控制。**双重启动门控均已解除**：① M0 音频环�
 
 ## 下一步计划
 
-1. **M1 启动（双门控均已解除）**：AudioSink trait + NullSink 可观测层实施。
-2. **D2 已收口**：cpal 编译实测通过（evidence/2026-09-01-d2-cpal-compile-probe.md）；
+1. **M1 切片 2**：`CpalSink`（feature-gated `audio-cpal`，设备枚举失败回落
+   NullSink）+ workspace 依赖接入（cpal 0.16，D2 已验证编译面）。
+2. **M1 切片 3**：混音总线（f32 帧多源叠加 + per-source volume/muted 增益）+
+   解码面首验（sine fixture 经 NullSink 过零率断言——解码→混音→sink 全链 e2e）。
+3. **D2 已收口**：cpal 编译实测通过（evidence/2026-09-01-d2-cpal-compile-probe.md）；
    CpalSink 真出声冒烟为可选项，留待桌面环境。
 
 ## 里程碑状态
@@ -72,13 +81,16 @@ volume/muted 真控制。**双重启动门控均已解除**：① M0 音频环�
 | 里程碑 | 状态 |
 |--------|------|
 | M0 — 环境验证 + 验证策略（门控） | ✅ 完成（2026-09-01，含 D2 后 cpal 编译实测补录） |
-| M1 — 首个声音输出 | 🔄 已解锁（双门控 2026-09-01 全部解除） |
+| M1 — 首个声音输出 | 🔄 切片 1 落地（AudioSink trait + NullSink，2026-09-01）；CpalSink + 混音总线 + 解码链 e2e 待续 |
 | M2 — A/V 同步 + 控制 | ⬜ |
 | M3 — `<audio>` 全路径 + Web Audio 评估 | ⬜ |
 
 ## 验证基线
 
-- 测试基线：立项时点全绿；clippy 零警告（本目标至今零源码改动）
-- 音频 e2e 面：NullSink 可观测断言形态已定（写入帧数/过零率）；fixture 已备
+- 测试基线：`make test` 全绿（66 套件 18587；含 zero-media 10 单测 + 1 doctest，
+  其中 audio 5 件）；clippy 零警告
+- NullSink 可观测锚点：440Hz 正弦 @48kHz 过零率 ≈880（2×频率；修正 M0 evidence
+  的 ≈440 笔误——evidence 只追加不修改，以代码与本档为事实源）；暂停拒写计
+  underrun；非整帧写入拒收
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过
 - evidence：[evidence/2026-09-01-m0-environment-probe.md](evidence/2026-09-01-m0-environment-probe.md)
