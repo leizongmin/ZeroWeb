@@ -27,6 +27,7 @@ mod audio;
 mod audio_cpalsink;
 mod clock;
 mod decode;
+mod mixer;
 
 #[cfg(test)]
 mod tests;
@@ -36,3 +37,4 @@ pub use audio::*;
 pub use audio_cpalsink::*;
 pub use clock::*;
 pub use decode::*;
+pub use mixer::*;
