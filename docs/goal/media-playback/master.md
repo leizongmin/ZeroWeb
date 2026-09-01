@@ -238,7 +238,15 @@ engine 2539 / media 27 / webview 668 全绿；testharness-media 372P/0F/41PF 维
 ## 下一步计划
 
 1. **M3 多格式收尾**（当前首选）：AV1（dav1d 绑定，D-RFC-2）与 H.264 立项
-   （D-RFC-3）；上游 WPT 可执行子集导入。
+   （D-RFC-3）；上游 WPT 可执行子集导入。**M3 预备资产已落库（2026-09-01）**——
+   `sample-webm-av1.webm`（libaom-av1 生成，README 命令记录）；matroska-demuxer
+   实测可枚举 V_AV1 轨（CodecPrivate 在）——demux 面就绪，D2 批准后解码切片
+   （dav1d 绑定 + `open_webm` track 路由 V_AV1）直接以本资产验证。
+   **runner 桥注入可行性分析（2026-09-01）**：wpt-runner 沙箱可注入
+   `register_video_bridge_callbacks`（tab_worker 同款）+ take_probe 泵 tick——
+   但 WPT corpus 无 settle 真源（play() 桥 play 返 false 回落 headless），注入后
+   行为零变化、无新增可跑用例；待 D2（AV1 fixture 资产面）落地后一并评估
+   fixture-mounted runner 播放用例面。
 2. ~~**A/V 同步精化余项**~~ ✅ 2026-09-01 收口：ended 面回归守卫落地
    （切片 F——伴音流末 video player 走到 Ended、泵停）；音频设备面（CpalSink
    真出声）挂 media-audio M1 可选切片。

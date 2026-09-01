@@ -9,6 +9,7 @@
 | `sample-mp4-h264.mp4` | mp4 | H.264 (baseline, yuv420p) | AAC LC | 320x240 / 44.1kHz 单声道 | 2s | 92KB |
 | `sample-webm-vp9.webm` | webm | VP9 (yuv420p) | 无 | 320x240 | 2s | 41KB |
 | `sample-webm-vp9-vorbis.webm` | webm | VP9 (yuv420p) | Vorbis (q4) | 320x240 / 44.1kHz 单声道 | 2s | 49KB |
+| `sample-webm-av1.webm` | webm | AV1 (yuv420p, libaom) | 无 | 320x240 | 2s | 57KB |
 | `sample-mp3.mp3` | mp3 | 无 | MP3 (libmp3lame 64k) | 44.1kHz 单声道 | 2s | 16KB |
 | `sample-ogg-opus.oga` | ogg | 无 | Opus (48k) | 48kHz 单声道 | 2s | 14KB |
 | `sample-ogg-vorbis.oga` | ogg | 无 | Vorbis (q4) | 44.1kHz 单声道 | 2s | 7KB |
@@ -61,3 +62,10 @@ ffmpeg -f lavfi -i "sine=frequency=440:duration=2" \
 - 分辨率 320x240（非 16 对齐的 256/512 之间取值，可暴露 stride/行对齐处理 bug）。
 - H.264 用 baseline profile + yuv420p（硬件/软解最大兼容面；B 帧缺失简化帧序语义）。
 - 无字幕轨/多轨道/章节（首期解码面最简；后续需要时另生成多轨 fixture 并记录于此）。
+
+# AV1（media-playback M3 预备资产——`sample-webm-av1.webm`：libaom-av1 生成、
+# 来源清白。解码引入（dav1d 绑定）待 master.md D2 用户批准后实施；fixture 先行
+# 落库使 D2 批准后解码切片可直接以本资产验证。matroska-demuxer 已实测可枚举
+# V_AV1 轨（CodecPrivate 在）——demux 面就绪，仅解码器面缺位）
+ffmpeg -f lavfi -i "testsrc2=size=320x240:rate=24:duration=2" \
+       -c:v libaom-av1 -b:v 200k -pix_fmt yuv420p -y sample-webm-av1.webm
