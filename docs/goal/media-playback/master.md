@@ -2,10 +2,11 @@
 
 **入口文档**: [../media-playback.md](../media-playback.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-01（**M2a 切片 3 落地**——videoWidth/videoHeight IDL 真值面：
-get trap VIDEO-gated 读 `_resourceStates.width/height`（切片 2 探针真值）+ has 白名单
-tag-gated（audio 无此接口成员）；未 settle 恒 0（spec 元数据未就绪）。单测 5 断言组
-常驻；testharness-media 372P/0F/0T/41PF 维持零回归）
+**最后更新**: 2026-09-01（**M2a 切片 4 落地**——生产侧帧注入：async_load 的 video
+settle 探针扩为「时长 + 首帧 RGBA」→ `ImageData::from_rgba` 注入 webview ImageCache
+（键 = `image_resource_key`，painter 通路同键）——生产侧 `<video>` settle 即出首帧
+（M1b harness 同款两段式闭环）。负例（非 webm）不注入保持占位。e2e 双测常驻（真实
+fixture 驱动）；webview 662 全绿）
 
 ---
 
@@ -38,8 +39,14 @@ video 资源 fetch 成功后经 `probe_video_media_meta`（容器时长 + 首帧
 trap，VIDEO-gated 读 `_resourceStates.width/height`——切片 2 探针真值；未 settle 恒 0
 per spec 元数据未就绪）+ has 白名单 tag-gated 分支（part05，`'videoWidth' in audio`
 恒 false——接口成员归属面）。单测 `test_media_video_width_height_truth_m2a` 5 断言组
-常驻；testharness-media 372P/0F/0T/41PF 维持（零回归）。**下一切片：生产侧帧注入
-（ImageCache 接线）+ currentTime 真值推进**。
+常驻；testharness-media 372P/0F/0T/41PF 维持（零回归）。**M2a 切片 4 已落地**（同日）：生产侧帧注入——`probe_video_media_meta` 扩为返回
+首帧 RGBA（时长/尺寸/像素三真值一体），settle 时经 `ImageData::from_rgba` 注入
+`webview.image_cache`（`ImageKey(image_resource_key(abs_url))`——与 painter
+`image_resource_key(src, document_url)` 解析后同键，img/canvas 同款两段式）；非 webm
+负例不注入（渲染占位零回归）。e2e 双测常驻（`video_settle_injects_first_frame_and_
+truth_m2a` 真实 webm fixture 驱动 + `video_settle_non_webm_stays_headless_and_
+placeholder` 负例）；webview 662 全绿。**生产侧首帧出图闭环达成；下一切片：
+currentTime 真值推进（VideoPlayer 挂 rAF + 语义层接线）**。
 
 **与兄弟 goal 的边界**：
 - media-elements — 语义面（状态机/事件/canPlayType）归其管；本目标产出 readyState 真实
@@ -99,10 +106,9 @@ per spec 元数据未就绪）+ has 白名单 tag-gated 分支（part05，`'vide
 
 ## 下一步计划
 
-1. **M2a 切片 4（下一项）**：生产侧帧注入——webview/async_load 媒体字节 → 解码 →
-   生产渲染线程 ImageCache（harness 通路 M1b 已通；生产侧接线使 `<video>` 实际出图）。
-2. **M2a 切片 5**：currentTime 真值推进——`VideoPlayer` 挂 rAF event loop，语义层
-   `_mediaState.currentTime` 从 player 读真值（RFC §3.1 驱动源替换完成面）。
+1. **M2a 切片 5（下一项）**：currentTime 真值推进——`VideoPlayer` 挂 rAF event
+   loop，语义层 `_mediaState.currentTime` 从 player 读真值（RFC §3.1 驱动源替换
+   完成面）；顺接 `play()`/`pause()` 宿主桥（shim→Rust 调用面）。
 3. **M2b**：seek（关键帧粒度）+ playbackRate 变速语义；**M2c**：音频解码（symphonia）+
    AudioSink/Mixer 接入（media-audio 输出面三切片已备）。
 4. **M2 解码精化项**（M1b 揭示）：WebM Colour 元素解析（colourRange/matrix）→
@@ -119,9 +125,9 @@ per spec 元数据未就绪）+ has 白名单 tag-gated 分支（part05，`'vide
 
 ## 验证基线
 
-- 测试基线：`make test` 全绿（zero-media default 23 单测 + 1 doctest：decode 5 +
-  NullSink 5 + mixer 7 + player 6；`audio-cpal` feature 另增 CpalSink 冒烟 1 件）+
-  engine `video_frame_display_tests` 4 件 + wpt-runner M1b e2e 2 件；clippy 零警告
+- 测试基线：`make test` 全绿（zero-media default 23 单测 + 1 doctest；engine 2538
+  含 video_frame_display 4 + 真值注入 2 组；webview 662 含 M2a 切片 4 settle e2e 2 件；
+  wpt-runner M1b e2e 2 件）；clippy 零警告
 - 解码正确性锚点：fixture `sample-webm-vp9.webm` 首帧与 ffmpeg 7.1.5 rawvideo 参照
   逐字节一致（YUV 面）；全流 48 帧（2s @ 24fps）PTS 单调（0→1958ms）
 - 上屏 e2e 锚点：帧区 RGB 均值 138-168（testsrc2 ≈153.5）+ 帧界外白底 + 不可解码

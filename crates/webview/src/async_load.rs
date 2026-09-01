@@ -113,15 +113,17 @@ pub struct ResourceElementEvent {
     pub media_duration_ms: Option<u64>,
 }
 
-/// media-playback M2a：video 资源的容器时长/固有尺寸探针（webm/VP9 头部读取，
-/// 不解帧——O(容器头) 便宜）。非 webm-VP9 返 `None`（语义层回落 headless 近似）。
-fn probe_video_media_meta(bytes: &[u8]) -> Option<(u64, u32, u32)> {
+/// media-playback M2a：video 资源的容器时长/首帧探针（webm/VP9 头部 + 首帧解码）。
+/// 非 webm-VP9 返 `None`（语义层回落 headless 近似、渲染侧保持占位）。
+/// 首帧 RGBA 供生产侧帧注入（`insert_with_key` 与 painter `image_resource_key`
+/// 同键——canvas/img 同款两段式上屏）。
+fn probe_video_media_meta(bytes: &[u8]) -> Option<(u64, u32, u32, Vec<u8>)> {
     let mut decoder = zero_media::VideoDecoder::open_webm_vp9(bytes).ok()?;
     let duration_ms = decoder.duration_ms()?;
     // 容器头无固有尺寸——取首帧（2s@24fps fixture 解码 ~10ms 级，可接受；
     // 真实流面 M2b 背压优化时改为读 TrackEntry 像素维）。
     let frame = decoder.next_frame().ok()??;
-    Some((duration_ms, frame.width, frame.height))
+    Some((duration_ms, frame.width, frame.height, frame.rgba))
 }
 
 /// in-process 异步抓取宿主：经 webview net_pool 线程池抓取（tabworker 默认）。
@@ -1192,12 +1194,22 @@ impl AsyncPageLoad {
                     url: url.clone(),
                 });
             }
-            // media-playback M2a：video 资源 fetch 成功 → 容器时长/固有尺寸真值
-            // 探针（webm/VP9 头 + 首帧；其余格式 None/0——语义层回落 headless 近似）。
-            // 真值经 ResourceElementEvent 链喂语义层 duration/videoWidth（RFC §3.1）。
+            // media-playback M2a：video 资源 fetch 成功 → 容器时长/首帧真值探针
+            //（webm/VP9 头 + 首帧；其余格式 None/0——语义层回落 headless 近似）。
+            // 真值经 ResourceElementEvent 链喂语义层 duration/videoWidth（RFC §3.1）；
+            // 首帧 RGBA 注入 ImageCache（painter video 通路同键）——生产侧出图。
             let (media_duration_ms, natural_width, natural_height) = match (fetched, kind) {
                 (Some(bytes), MediaResourceElementKind::Video) => match probe_video_media_meta(bytes) {
-                    Some((duration_ms, w, h)) => (Some(duration_ms), w, h),
+                    Some((duration_ms, w, h, rgba)) => {
+                        // 帧上屏注入（M1b harness 同款两段式）：键 = image_resource_key
+                        //（绝对 URL，与 painter document_url 解析后一致）。
+                        let frame_key = ImageKey::new(image_resource_key(url, None));
+                        if let Ok(data) = zero_render_foundation::image_cache::ImageData::from_rgba(rgba, w, h) {
+                            webview.image_cache().insert_with_key(frame_key, data);
+                            *changed = true;
+                        }
+                        (Some(duration_ms), w, h)
+                    }
                     None => (None, 0, 0),
                 },
                 _ => (None, 0, 0),
@@ -2092,5 +2104,74 @@ mod tests {
             let _ = load.tick(&mut wv, &mut host, 500.0);
         }
         assert_eq!(wv.title(), Some("correct"));
+    }
+
+    #[cfg(test)]
+    fn media_fixture_bytes(name: &str) -> Vec<u8> {
+        let mut p = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        p.pop(); // crates/
+        p.pop(); // workspace root
+        p.push("tests/fixtures/media");
+        p.push(name);
+        std::fs::read(p).expect("media fixture present")
+    }
+
+    #[test]
+    fn video_settle_injects_first_frame_and_truth_m2a() {
+        // media-playback M2a 切片 4：video 资源 settle → 首帧注入 ImageCache（键与
+        // painter image_resource_key 同源）+ 时长/固有尺寸真值进 ResourceElementEvent
+        //（喂语义层 duration/videoWidth）。真实 webm fixture 驱动（非 mock 充数）。
+        let webm = media_fixture_bytes("sample-webm-vp9.webm");
+        let html = r#"<html><body><video src="sample-webm-vp9.webm"></video></body></html>"#;
+        let mut load = AsyncPageLoad::from_html("https://example.com/media/", html.to_string());
+        let mut wv = WebView::new(WebViewConfig::default());
+        let mut host = MockFetchHost::new().with_bytes(webm);
+        while load.is_active() {
+            let _ = load.tick(&mut wv, &mut host, 500.0);
+        }
+
+        // ① settle 事件真值面：duration 2000ms + 固有尺寸 320x240（M1a 实测锚点）。
+        let events = load.take_resource_element_events();
+        assert_eq!(events.len(), 1, "video settle 应产出恰好一个事件");
+        let event = &events[0];
+        assert_eq!(event.tag, "video");
+        assert_eq!(event.outcome, ResourceElementOutcome::Available);
+        assert_eq!(event.media_duration_ms, Some(2000), "容器时长真值");
+        assert_eq!(
+            (event.natural_width, event.natural_height),
+            (320, 240),
+            "首帧固有尺寸真值"
+        );
+
+        // ② 帧注入面：ImageCache 在 painter 同键上持有 320x240 RGBA。
+        // 键 = image_resource_key(绝对 URL, None)（async_load 与 painter document_url
+        // 解析后同串同哈希）。
+        let frame_key = ImageKey::new(image_resource_key(
+            "https://example.com/media/sample-webm-vp9.webm",
+            None,
+        ));
+        let data = wv.image_cache().get(&frame_key).expect("首帧应已注入 ImageCache");
+        assert_eq!((data.width, data.height), (320, 240));
+        assert_eq!(data.pixels.len(), 320 * 240 * 4, "RGBA 面完整");
+    }
+
+    #[test]
+    fn video_settle_non_webm_stays_headless_and_placeholder() {
+        // 负例：mp4（非 webm-VP9，选型后续面）→ 探针失败 → 无真值（None/0）+
+        // 无帧注入（渲染保持占位，painter gate 不发图元）。
+        let mp4 = media_fixture_bytes("sample-mp4-h264.mp4");
+        let html = r#"<html><body><video src="clip.mp4"></video></body></html>"#;
+        let mut load = AsyncPageLoad::from_html("https://example.com/media/", html.to_string());
+        let mut wv = WebView::new(WebViewConfig::default());
+        let mut host = MockFetchHost::new().with_bytes(mp4);
+        while load.is_active() {
+            let _ = load.tick(&mut wv, &mut host, 500.0);
+        }
+        let events = load.take_resource_element_events();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].media_duration_ms, None, "非 webm-VP9 无时长真值");
+        assert_eq!((events[0].natural_width, events[0].natural_height), (0, 0));
+        let frame_key = ImageKey::new(image_resource_key("https://example.com/media/clip.mp4", None));
+        assert!(wv.image_cache().get(&frame_key).is_none(), "非 webm 不注入帧");
     }
 }
