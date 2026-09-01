@@ -12,6 +12,11 @@
 #   bash scripts/generate-monthly-report.sh            # 上月（默认）
 #   bash scripts/generate-monthly-report.sh 2026-07    # 指定月份
 #   bash scripts/generate-monthly-report.sh --dry-run  # 只打印将生成的路径
+#   bash scripts/generate-monthly-report.sh --force    # 目标文件已存在时也重新生成
+#
+# 目标文件已存在时默认跳过：报告含人工补充章节（决策与亮点），无脑覆盖会把
+# 它抹掉（2026-08-08 weekly CI 曾重生成 2026-07.md，抹掉 08-07 补充的整章）。
+# weekly CI 不带 --force——首月生成后自然幂等；仅明确要求重生成时才传 --force。
 
 set -euo pipefail
 
@@ -22,8 +27,12 @@ TREND_CSV="${REPO_ROOT}/docs/goal/rendering-compat/evidence/wpt-trends/trend.csv
 
 MONTH="${1:-}"
 DRY_RUN=false
+FORCE=false
 if [[ "$MONTH" == "--dry-run" ]]; then
   DRY_RUN=true
+  MONTH="${2:-}"
+elif [[ "$MONTH" == "--force" ]]; then
+  FORCE=true
   MONTH="${2:-}"
 fi
 if [[ -z "$MONTH" ]]; then
@@ -34,6 +43,11 @@ OUT_FILE="${OUT_DIR}/${MONTH}.md"
 
 if [[ "$DRY_RUN" == "true" ]]; then
   echo "将生成: ${OUT_FILE}"
+  exit 0
+fi
+
+if [[ "$FORCE" != "true" && -f "$OUT_FILE" ]]; then
+  echo "已存在: ${OUT_FILE}（含人工补充内容，跳过重新生成；确需覆盖请加 --force）"
   exit 0
 fi
 

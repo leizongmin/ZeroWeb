@@ -64,14 +64,17 @@ endif
 # reftest / reftest-oracle 会自动前置触发；以 reftest-manifest.json 为完整套件
 # 标志（不能以目录非空判断——wpt-data 内有少量被 git 跟踪的资产文件，
 # fresh checkout 后目录非空但套件缺失，会误跳 clone），刷新需先 rm -rf。
+# rm -rf 会连带删掉那些 tracked 资产（working tree 出现 unstaged deletion，
+# 曾致 CI 回写步骤 git pull --rebase 被拒、测量丢失），clone 后用
+# git checkout -- 恢复。
 WPT_DATA_REPO ?= https://github.com/leizongmin/zeroweb-wpt-data.git
 WPT_DATA_REF  ?= v1.10
 WPT_DATA_DIR  ?= tests/wpt-runner/wpt-data
 fetch-wpt-data:
 ifeq ($(OS),Windows_NT)
-	@$(WPT_BASH) -c 'if [ -f "$(WPT_DATA_DIR)/reftest-manifest.json" ]; then echo "wpt-data 已存在 ($(WPT_DATA_DIR), ref=$(WPT_DATA_REF))；刷新请先 rm -rf 该目录"; else echo "fetch wpt-data $(WPT_DATA_REF) → $(WPT_DATA_DIR)"; rm -rf "$(WPT_DATA_DIR)"; git clone --depth=1 --branch $(WPT_DATA_REF) $(WPT_DATA_REPO) "$(WPT_DATA_DIR)"; rm -rf "$(WPT_DATA_DIR)/.git"; fi'
+	@$(WPT_BASH) -c 'if [ -f "$(WPT_DATA_DIR)/reftest-manifest.json" ]; then echo "wpt-data 已存在 ($(WPT_DATA_DIR), ref=$(WPT_DATA_REF))；刷新请先 rm -rf 该目录"; else echo "fetch wpt-data $(WPT_DATA_REF) → $(WPT_DATA_DIR)"; rm -rf "$(WPT_DATA_DIR)"; git clone --depth=1 --branch $(WPT_DATA_REF) $(WPT_DATA_REPO) "$(WPT_DATA_DIR)"; rm -rf "$(WPT_DATA_DIR)/.git"; git checkout -- "$(WPT_DATA_DIR)" 2>/dev/null || true; fi'
 else
-	@if [ -f "$(WPT_DATA_DIR)/reftest-manifest.json" ]; then echo "wpt-data 已存在 ($(WPT_DATA_DIR), ref=$(WPT_DATA_REF))；刷新请先 rm -rf 该目录"; else echo "fetch wpt-data $(WPT_DATA_REF) → $(WPT_DATA_DIR)"; rm -rf "$(WPT_DATA_DIR)"; git clone --depth=1 --branch $(WPT_DATA_REF) $(WPT_DATA_REPO) "$(WPT_DATA_DIR)"; rm -rf "$(WPT_DATA_DIR)/.git"; fi
+	@if [ -f "$(WPT_DATA_DIR)/reftest-manifest.json" ]; then echo "wpt-data 已存在 ($(WPT_DATA_DIR), ref=$(WPT_DATA_REF))；刷新请先 rm -rf 该目录"; else echo "fetch wpt-data $(WPT_DATA_REF) → $(WPT_DATA_DIR)"; rm -rf "$(WPT_DATA_DIR)"; git clone --depth=1 --branch $(WPT_DATA_REF) $(WPT_DATA_REPO) "$(WPT_DATA_DIR)"; rm -rf "$(WPT_DATA_DIR)/.git"; git checkout -- "$(WPT_DATA_DIR)" 2>/dev/null || true; fi
 endif
 	@$(WPT_BASH) scripts/fetch-wpt-smoke-subdirs.sh
 	@$(WPT_BASH) tests/wpt-runner/scripts/sync-imported-resources.sh
