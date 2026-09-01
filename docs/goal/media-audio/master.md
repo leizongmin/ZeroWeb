@@ -89,12 +89,17 @@ volume/muted 真控制。**双重启动门控均已解除**：① M0 音频环�
 
 ## 下一步计划
 
-1. **M1 收口评估（余项）**：播放管线宿主侧接线已由 M2c 后续切片 A/B 兑现
-   （NullSink 直连 + 增益联动）——余 = Mixer 多源混音接线（注册表当前 per-entry
-   NullSink 直连，多元素并发混音面未接 Mixer）+ CpalSink 真出声冒烟（可选项，
-   D2 已验证编译/枚举面，留桌面环境）。
-2. **M2**：A/V 同步接口对齐（audio clock 主时钟）——media-playback M2a/M2c 时钟面
-   与音频面已齐备，可开工（video play 时音频轨同步 + drift 校正）。
+1. **M1 收口评估（余项收窄）**：Mixer 多源混音接线**决策注记（2026-09-01）**——
+   现播放管线 per-entry NullSink 直连已覆盖多源并发语义面（per-source 增益/独立
+   解码流/并发泵）；Mixer（M1 切片 3 组件，7 单测常驻）的价值在**单设备输出流的
+   N→1 合流**——即 CpalSink 真设备输出时的前置组件。NullSink 阶段接 Mixer 只添
+   无行为变化的中间层（且破坏 per-entry sink 可观测断言面）。**结论：Mixer 接线
+   挂到 CpalSink 真出声切片**（可选/桌面环境），M1 的 CI 可验面已收口。
+   CpalSink 真出声冒烟仍留桌面环境（编译/枚举面 D2 已验证）。
+2. **M2**：~~A/V 同步接口对齐~~ ✅ 2026-09-01 主体兑现（media-playback 流切片
+   D+E：audio clock 主时钟 + 组合时钟 + seek 双轨对齐）；A/V pair ended 面回归
+   守卫落地（webview `registry_av_pair_reaches_ended_after_audio_exhausted`——
+   伴音流末 video player 走到 Ended、泵停）。
 
 ## 里程碑状态
 
