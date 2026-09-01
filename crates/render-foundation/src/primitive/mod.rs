@@ -266,7 +266,7 @@ pub struct ShadowPrimitive {
 /// 图片图元
 #[derive(Debug, Clone)]
 pub struct ImagePrimitive {
-    /// 图片绘制区域（原始、未裁剪；source 始终映射到整个 rect）
+    /// 图片绘制区域（原始、未裁剪；source 始终映射到整个 rect，除非 `source` 指定源子矩形）
     pub rect: Rect,
     /// 图片缓存键
     pub image_key: ImageKey,
@@ -276,6 +276,10 @@ pub struct ImagePrimitive {
     /// 但 source 仍按完整 rect 映射（保持原始分辨率，不因裁剪而缩放）。
     /// None = 无裁剪，绘制整个 rect。
     pub clip: Option<Rect>,
+    /// R3906：可选源子矩形（源图像素坐标）。Some 时把源的该子区域映射到整个 rect
+    ///（CSS border-image 9-slice：每片把 slice 切出的源区域拉伸到对应目标片）。
+    /// None = 整张源映射到 rect（既有行为，全部既有构造点零变更）。
+    pub source: Option<Rect>,
 }
 
 /// Glyph 对应的源文本 cluster。

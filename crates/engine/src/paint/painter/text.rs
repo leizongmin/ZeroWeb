@@ -495,6 +495,7 @@ impl super::Painter {
             rect: Rect::new(img_x, img_y, img_w, img_h),
             image_key,
             clip: Some(Rect::new(content_x, content_y, container_w, container_h)),
+            source: None,
         });
     }
 
@@ -565,6 +566,7 @@ impl super::Painter {
             rect: Rect::new(img_x, img_y, img_w, img_h),
             image_key,
             clip: Some(Rect::new(content_x, content_y, container_w, container_h)),
+            source: None,
         });
     }
 

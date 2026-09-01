@@ -11,7 +11,8 @@ use zero_render_foundation::image_cache::ImageKey;
 use zero_render_foundation::primitive::{ImagePrimitive, LineCap, LineStyle, StrokePrimitive};
 use zero_style_system::{
     AppearanceComputedValue, BorderCollapseValue, BorderImageOutsetComputedComponent, BorderImageRepeatComputedMode,
-    BorderImageSourceComputedValue, BorderImageWidthComputedComponent, BorderStyleValue, ComputedStyle,
+    BorderImageSliceComputedComponent, BorderImageSourceComputedValue, BorderImageWidthComputedComponent,
+    BorderStyleValue, ComputedStyle,
 };
 
 use super::super::color::{color_value_to_render, resolve_color_current};
@@ -27,6 +28,20 @@ pub(super) struct BorderEdgeSpec {
     pub is_horizontal: bool,
     /// 垂直边框时，填充区域是否向左延伸（右侧边框为 true）。
     pub extend_left: bool,
+}
+
+/// R3906：border-image 9-slice 源子矩形表（CSS Backgrounds 3 §6.2）——源图按
+/// border-image-slice 偏移切出的九片在源图中的**归一化 [0,1]** 矩形。
+pub(super) struct NineSliceSources {
+    pub top_left: Rect,
+    pub top_right: Rect,
+    pub bottom_right: Rect,
+    pub bottom_left: Rect,
+    pub top: Rect,
+    pub right: Rect,
+    pub bottom: Rect,
+    pub left: Rect,
+    pub center: Rect,
 }
 
 impl super::Painter {
@@ -301,12 +316,73 @@ impl super::Painter {
 
         let key = image_resource_key(&url, self.document_url.as_deref());
 
-        // 辅助：创建 ImagePrimitive（每次创建新的 ImageKey，因为 ImageKey 不是 Copy）
-        let make_img = |rect: Rect| ImagePrimitive {
+        // R3906：9-slice 源矩形（CSS Backgrounds 3 §6.2 border-image-slice）。旧实现忽略
+        // slice 偏移——每片把**整张源图**拉伸到目标片（whole-image 拉伸近似），slice 切出的
+        // 源区域语义丢失（border-image-slice/repeat 族红）。现按 slice 值把源图切成 9 片，
+        // 每片 dest rect 携带对应源子矩形（ImagePrimitive.source），渲染器只重采样该区域。
+        // Number = 源图像素；Percent = 源图对应轴百分比。源图尺寸取 image_sizes 解码缓存，
+        // 未解码（None）时回退整图映射（旧行为，不因缺尺寸出黑片）。
+        // 源图尺寸优先固有尺寸缓存；ratio-only SVG 等无确定固有尺寸的源回退自然位图
+        // 尺寸（usvg tree.size = viewBox 尺寸——border-image slice 的参照就是源图）。
+        let img_size = self
+            .get_image_size(key)
+            .or_else(|| self.image_natural_sizes.get(&key).copied());
+        let slice_src = |c: &BorderImageSliceComputedComponent, total: f32| -> f32 {
+            match c {
+                BorderImageSliceComputedComponent::Number(n) => *n,
+                BorderImageSliceComputedComponent::Percent(p) => p / 100.0 * total,
+            }
+        };
+        let nine_slice: Option<NineSliceSources> = img_size.and_then(|(iw, ih)| {
+            if iw <= 0.0 || ih <= 0.0 {
+                return None;
+            }
+            let st = slice_src(&style.border_image_slice.top, ih);
+            let sr = slice_src(&style.border_image_slice.right, iw);
+            let sb = slice_src(&style.border_image_slice.bottom, ih);
+            let sl = slice_src(&style.border_image_slice.left, iw);
+            // 片间重叠（slice 值之和超过源图维）→ 按比例缩减（css-backgrounds-3 §6.2
+            //「if the sum of the right and left widths is equal to or greater than the width
+            // of the image …」的实用近似：整体等比缩减使左右/上下恰好相接）。
+            let (sl, sr) = if sl + sr > iw {
+                let k = iw / (sl + sr);
+                (sl * k, sr * k)
+            } else {
+                (sl, sr)
+            };
+            let (st, sb) = if st + sb > ih {
+                let k = ih / (st + sb);
+                (st * k, sb * k)
+            } else {
+                (st, sb)
+            };
+            // source 矩形用**归一化 [0,1] 坐标**（R3906：SVG 源会被按目标尺寸重栅格化，
+            // 位图坐标与源图 px 坐标脱钩；归一化坐标对两类源一致）。
+            let nx = |v: f32| v / iw;
+            let ny = |v: f32| v / ih;
+            Some(NineSliceSources {
+                top_left: Rect::new(0.0, 0.0, nx(sl), ny(st)),
+                top_right: Rect::new(nx(iw - sr), 0.0, nx(sr), ny(st)),
+                bottom_right: Rect::new(nx(iw - sr), ny(ih - sb), nx(sr), ny(sb)),
+                bottom_left: Rect::new(0.0, ny(ih - sb), nx(sl), ny(sb)),
+                top: Rect::new(nx(sl), 0.0, nx((iw - sl - sr).max(0.0)), ny(st)),
+                right: Rect::new(nx(iw - sr), ny(st), nx(sr), ny((ih - st - sb).max(0.0))),
+                bottom: Rect::new(nx(sl), ny(ih - sb), nx((iw - sl - sr).max(0.0)), ny(sb)),
+                left: Rect::new(0.0, ny(st), nx(sl), ny((ih - st - sb).max(0.0))),
+                center: Rect::new(nx(sl), ny(st), nx((iw - sl - sr).max(0.0)), ny((ih - st - sb).max(0.0))),
+            })
+        });
+
+        // 辅助：创建 ImagePrimitive（每次创建新的 ImageKey，因为 ImageKey 不是 Copy）。
+        // src = 该片对应的源子矩形；None = 整图映射（无解码尺寸时的回退）。
+        let make_img = |rect: Rect, src: Option<Rect>| ImagePrimitive {
             rect,
             image_key: ImageKey::new(key),
             clip: None,
+            source: src,
         };
+        // 按片取源矩形的便捷闭包（nine_slice 为 None 时返回 None → 整图映射）。
+        let src_of = |pick: fn(&NineSliceSources) -> &Rect| -> Option<Rect> { nine_slice.as_ref().map(|s| *pick(s)) };
 
         // border-image-outset（CSS Backgrounds 3 §7.2）：border-image 绘制区向外扩展。
         // Number = × 对应边框宽度；Length = 已解析 px。各边 outset 把外矩形向外移，
@@ -354,23 +430,30 @@ impl super::Painter {
 
         // 中心区域（当 fill 为 true 时绘制，始终 stretch）
         if fill && edge_h_w > 0.0 && edge_v_h > 0.0 {
-            self.primitives
-                .add_image(make_img(Rect::new(bx + bl, by + bt, edge_h_w, edge_v_h)));
+            self.primitives.add_image(make_img(
+                Rect::new(bx + bl, by + bt, edge_h_w, edge_v_h),
+                src_of(|s| &s.center),
+            ));
         }
 
         // 四个角（始终 stretch，不受 repeat 模式影响）
         if bl > 0.0 && bt > 0.0 {
-            self.primitives.add_image(make_img(Rect::new(bx, by, bl, bt)));
+            self.primitives
+                .add_image(make_img(Rect::new(bx, by, bl, bt), src_of(|s| &s.top_left)));
         }
         if br > 0.0 && bt > 0.0 {
-            self.primitives.add_image(make_img(Rect::new(bx + w - br, by, br, bt)));
+            self.primitives
+                .add_image(make_img(Rect::new(bx + w - br, by, br, bt), src_of(|s| &s.top_right)));
         }
         if br > 0.0 && bb > 0.0 {
-            self.primitives
-                .add_image(make_img(Rect::new(bx + w - br, by + h - bb, br, bb)));
+            self.primitives.add_image(make_img(
+                Rect::new(bx + w - br, by + h - bb, br, bb),
+                src_of(|s| &s.bottom_right),
+            ));
         }
         if bl > 0.0 && bb > 0.0 {
-            self.primitives.add_image(make_img(Rect::new(bx, by + h - bb, bl, bb)));
+            self.primitives
+                .add_image(make_img(Rect::new(bx, by + h - bb, bl, bb), src_of(|s| &s.bottom_left)));
         }
 
         // 四条边 — 根据 border-image-repeat 模式生成图元
@@ -380,7 +463,8 @@ impl super::Painter {
         // 上边（水平 repeat 模式）
         if edge_h_w > 0.0 && bt > 0.0 {
             self.paint_border_image_edge_h(
-                make_img,
+                &make_img,
+                src_of(|s| &s.top),
                 bx + bl,
                 by,
                 edge_h_w,
@@ -392,7 +476,8 @@ impl super::Painter {
         // 右边（垂直 repeat 模式）
         if br > 0.0 && edge_v_h > 0.0 {
             self.paint_border_image_edge_v(
-                make_img,
+                &make_img,
+                src_of(|s| &s.right),
                 bx + w - br,
                 by + bt,
                 br,
@@ -404,7 +489,8 @@ impl super::Painter {
         // 下边（水平 repeat 模式）
         if edge_h_w > 0.0 && bb > 0.0 {
             self.paint_border_image_edge_h(
-                make_img,
+                &make_img,
+                src_of(|s| &s.bottom),
                 bx + bl,
                 by + h - bb,
                 edge_h_w,
@@ -416,7 +502,8 @@ impl super::Painter {
         // 左边（垂直 repeat 模式）
         if bl > 0.0 && edge_v_h > 0.0 {
             self.paint_border_image_edge_v(
-                make_img,
+                &make_img,
+                src_of(|s| &s.left),
                 bx,
                 by + bt,
                 bl,
@@ -434,7 +521,8 @@ impl super::Painter {
     #[allow(clippy::too_many_arguments)]
     fn paint_border_image_edge_h(
         &mut self,
-        make_img: impl Fn(Rect) -> ImagePrimitive,
+        make_img: &impl Fn(Rect, Option<Rect>) -> ImagePrimitive,
+        src: Option<Rect>,
         start_x: f32,
         y: f32,
         total_w: f32,
@@ -446,7 +534,7 @@ impl super::Painter {
             BorderImageRepeatComputedMode::Stretch => {
                 // 拉伸单个 tile 覆盖整条边
                 self.primitives
-                    .add_image(make_img(Rect::new(start_x, y, total_w, edge_h)));
+                    .add_image(make_img(Rect::new(start_x, y, total_w, edge_h), src));
             }
             BorderImageRepeatComputedMode::Repeat => {
                 // 以自然 tile 大小重复，从中心向两边展开
@@ -456,7 +544,7 @@ impl super::Painter {
                 for _ in 0..n {
                     let clipped = Self::clip_tile(x, y, tile_w, edge_h, start_x, y, total_w, edge_h);
                     if let Some((cx, cy, cw, ch)) = clipped {
-                        self.primitives.add_image(make_img(Rect::new(cx, cy, cw, ch)));
+                        self.primitives.add_image(make_img(Rect::new(cx, cy, cw, ch), src));
                     }
                     x += tile_w;
                 }
@@ -467,7 +555,8 @@ impl super::Painter {
                 let stretched = total_w / n as f32;
                 let mut x = start_x;
                 for _ in 0..n {
-                    self.primitives.add_image(make_img(Rect::new(x, y, stretched, edge_h)));
+                    self.primitives
+                        .add_image(make_img(Rect::new(x, y, stretched, edge_h), src));
                     x += stretched;
                 }
             }
@@ -476,12 +565,13 @@ impl super::Painter {
                 let n = (total_w / tile_w).floor().max(0.0) as usize;
                 if n <= 1 {
                     self.primitives
-                        .add_image(make_img(Rect::new(start_x, y, total_w, edge_h)));
+                        .add_image(make_img(Rect::new(start_x, y, total_w, edge_h), src));
                 } else {
                     let gap = (total_w - n as f32 * tile_w) / (n + 1) as f32;
                     let mut x = start_x + gap;
                     for _ in 0..n {
-                        self.primitives.add_image(make_img(Rect::new(x, y, tile_w, edge_h)));
+                        self.primitives
+                            .add_image(make_img(Rect::new(x, y, tile_w, edge_h), src));
                         x += tile_w + gap;
                     }
                 }
@@ -493,7 +583,8 @@ impl super::Painter {
     #[allow(clippy::too_many_arguments)]
     fn paint_border_image_edge_v(
         &mut self,
-        make_img: impl Fn(Rect) -> ImagePrimitive,
+        make_img: &impl Fn(Rect, Option<Rect>) -> ImagePrimitive,
+        src: Option<Rect>,
         x: f32,
         start_y: f32,
         edge_w: f32,
@@ -504,7 +595,7 @@ impl super::Painter {
         match mode {
             BorderImageRepeatComputedMode::Stretch => {
                 self.primitives
-                    .add_image(make_img(Rect::new(x, start_y, edge_w, total_h)));
+                    .add_image(make_img(Rect::new(x, start_y, edge_w, total_h), src));
             }
             BorderImageRepeatComputedMode::Repeat => {
                 let n = (total_h / tile_h).ceil().max(1.0) as usize;
@@ -513,7 +604,7 @@ impl super::Painter {
                 for _ in 0..n {
                     let clipped = Self::clip_tile(x, y, edge_w, tile_h, x, start_y, edge_w, total_h);
                     if let Some((cx, cy, cw, ch)) = clipped {
-                        self.primitives.add_image(make_img(Rect::new(cx, cy, cw, ch)));
+                        self.primitives.add_image(make_img(Rect::new(cx, cy, cw, ch), src));
                     }
                     y += tile_h;
                 }
@@ -523,7 +614,8 @@ impl super::Painter {
                 let stretched = total_h / n as f32;
                 let mut y = start_y;
                 for _ in 0..n {
-                    self.primitives.add_image(make_img(Rect::new(x, y, edge_w, stretched)));
+                    self.primitives
+                        .add_image(make_img(Rect::new(x, y, edge_w, stretched), src));
                     y += stretched;
                 }
             }
@@ -531,12 +623,13 @@ impl super::Painter {
                 let n = (total_h / tile_h).floor().max(0.0) as usize;
                 if n <= 1 {
                     self.primitives
-                        .add_image(make_img(Rect::new(x, start_y, edge_w, total_h)));
+                        .add_image(make_img(Rect::new(x, start_y, edge_w, total_h), src));
                 } else {
                     let gap = (total_h - n as f32 * tile_h) / (n + 1) as f32;
                     let mut y = start_y + gap;
                     for _ in 0..n {
-                        self.primitives.add_image(make_img(Rect::new(x, y, edge_w, tile_h)));
+                        self.primitives
+                            .add_image(make_img(Rect::new(x, y, edge_w, tile_h), src));
                         y += tile_h + gap;
                     }
                 }

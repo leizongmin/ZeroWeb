@@ -679,12 +679,13 @@ impl WebView {
         combined_css.push('\n');
         combined_css.push_str(&extract_html_style_text(html));
         let css_image_urls = extract_css_image_urls(&combined_css);
-        let (image_sizes, image_ratios, image_no_ratio) =
+        let (image_sizes, image_ratios, image_no_ratio, image_natural_sizes) =
             self.fetch_image_subresources(html, page_url, &css_image_urls);
         self.cached_image_sizes = image_sizes.clone();
         self.cached_image_ratios = image_ratios.clone();
         self.cached_image_no_ratio = image_no_ratio.clone();
         self.pipeline.set_image_sizes(image_sizes);
+        self.pipeline.set_image_natural_sizes(image_natural_sizes);
         // R34xx：@font-face 字体同步加载（headless/testharness 路径——canvas 文本像素光栅
         // 与页面文本的字体栈）。经 image_source_fetcher（wpt-data 文件映射）取字节 →
         // load_font + register_family_alias 进 canvas 注册表共享加载器。浏览器路径
@@ -820,12 +821,13 @@ impl WebView {
             combined_css.push('\n');
             combined_css.push_str(&extract_html_style_text(html));
             let css_image_urls = extract_css_image_urls(&combined_css);
-            let (image_sizes, image_ratios, image_no_ratio) =
+            let (image_sizes, image_ratios, image_no_ratio, image_natural_sizes) =
                 self.fetch_image_subresources(html, &page_url, &css_image_urls);
             self.cached_image_sizes = image_sizes.clone();
             self.cached_image_ratios = image_ratios.clone();
             self.cached_image_no_ratio = image_no_ratio.clone();
             self.pipeline.set_image_sizes(image_sizes);
+            self.pipeline.set_image_natural_sizes(image_natural_sizes);
             self.pipeline.set_image_ratios(image_ratios);
             self.pipeline.set_image_no_ratio(image_no_ratio);
         }
@@ -857,12 +859,13 @@ impl WebView {
             combined_css.push('\n');
             combined_css.push_str(&extract_html_style_text(mutated));
             let css_image_urls = extract_css_image_urls(&combined_css);
-            let (image_sizes, image_ratios, image_no_ratio) =
+            let (image_sizes, image_ratios, image_no_ratio, image_natural_sizes) =
                 self.fetch_image_subresources(mutated, &page_url, &css_image_urls);
             self.cached_image_sizes = image_sizes.clone();
             self.cached_image_ratios = image_ratios.clone();
             self.cached_image_no_ratio = image_no_ratio.clone();
             self.pipeline.set_image_sizes(image_sizes);
+            self.pipeline.set_image_natural_sizes(image_natural_sizes);
             self.pipeline.set_image_ratios(image_ratios);
             self.pipeline.set_image_no_ratio(image_no_ratio);
         }
@@ -963,6 +966,7 @@ impl WebView {
         HashMap<u64, (f32, f32)>,
         HashMap<u64, f32>,
         HashMap<u64, (Option<f32>, Option<f32>)>,
+        HashMap<u64, (f32, f32)>,
     ) {
         // R1794：合并 `<img src>` 与 CSS `url()` 图片引用（background-image /
         // list-style-image / border-image-source）。两类共用同一条 fetch+decode+key 路径：
@@ -975,8 +979,10 @@ impl WebView {
         let mut image_sizes = HashMap::new();
         let mut image_ratios = HashMap::new();
         let mut image_no_ratio = HashMap::new();
+        // R3906：自然位图尺寸（含 ratio-only SVG），paint 层 border-image 9-slice 用。
+        let mut image_natural_sizes = HashMap::new();
         if all_urls.is_empty() {
-            return (image_sizes, image_ratios, image_no_ratio);
+            return (image_sizes, image_ratios, image_no_ratio, image_natural_sizes);
         }
         let base = url::Url::parse(base_url).ok();
         for src in &all_urls {
@@ -1034,6 +1040,7 @@ impl WebView {
             // 阻止 flex ratio-derivation）。no-ratio SVG（CSS §10.3.2，width/height 非双绝对且
             // 无 viewBox）进 image_no_ratio（真实固有维，布局不设 aspect_ratio）——亦保留在
             // image_sizes 供背景图 background-size:auto 读 pixmap 尺寸。其余图像走 image_sizes。
+            image_natural_sizes.insert(key_hash, (img.size().width, img.size().height));
             if let Some(ratio) = img.intrinsic_ratio() {
                 image_ratios.insert(key_hash, ratio);
             } else {
@@ -1049,7 +1056,7 @@ impl WebView {
             }
             self.image_cache.insert_with_key(key, img);
         }
-        (image_sizes, image_ratios, image_no_ratio)
+        (image_sizes, image_ratios, image_no_ratio, image_natural_sizes)
     }
 
     /// R34xx：@font-face 字体同步加载（headless/testharness 路径）。从 CSS 提取 font-face，
@@ -1410,6 +1417,11 @@ impl WebView {
     pub fn set_image_sizes(&mut self, sizes: HashMap<u64, (f32, f32)>) {
         self.cached_image_sizes = sizes.clone();
         self.pipeline.set_image_sizes(sizes);
+    }
+
+    /// R3906：设置图像自然位图尺寸缓存（paint 层 border-image 9-slice 源矩形用）。
+    pub fn set_image_natural_sizes(&mut self, sizes: HashMap<u64, (f32, f32)>) {
+        self.pipeline.set_image_natural_sizes(sizes);
     }
 
     /// 更新 ratio-only 图片信号并同步到 pipeline（CSS §10.3.2，仅 SVG 出现）。

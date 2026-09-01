@@ -163,6 +163,8 @@ pub struct RenderPipeline {
     pub(crate) skip_indicators: bool,
     /// 图像固有尺寸缓存（image_key hash → (width, height)）。
     pub(crate) image_sizes: HashMap<u64, (f32, f32)>,
+    /// R3906：图像自然位图尺寸（image_key hash → (width, height)），paint 层专用。
+    pub(crate) image_natural_sizes: HashMap<u64, (f32, f32)>,
     /// 仅含宽高比、无确定固有尺寸的图像信号（image_key hash → ratio）。
     ///
     /// 仅 %-dim / viewBox-only SVG 出现（CSS §10.3.2）：这些 SVG 无确定固有尺寸，
@@ -353,6 +355,7 @@ impl RenderPipeline {
             cached_stylesheets: Vec::new(),
             skip_indicators: false,
             image_sizes: HashMap::new(),
+            image_natural_sizes: HashMap::new(),
             image_ratios: HashMap::new(),
             image_no_ratio: HashMap::new(),
             font_resolver: HashMap::new(),
@@ -412,6 +415,12 @@ impl RenderPipeline {
     /// default object size（宽 300 / 高 150）回退。
     pub fn set_image_no_ratio(&mut self, no_ratio: HashMap<u64, (Option<f32>, Option<f32>)>) {
         self.image_no_ratio = no_ratio;
+    }
+
+    /// R3906：设置图像自然位图尺寸缓存（所有已解码图像，含 ratio-only SVG 的 usvg
+    /// tree.size）。不参与布局 sizing，仅供 paint 层（border-image 9-slice 源矩形）消费。
+    pub fn set_image_natural_sizes(&mut self, sizes: HashMap<u64, (f32, f32)>) {
+        self.image_natural_sizes = sizes;
     }
 
     /// 一次 DOM 遍历同时构建三个 img 固有尺寸信号（旧实现 3 次全树遍历）。
@@ -881,6 +890,7 @@ impl RenderPipeline {
         let mut painter = Painter::new();
         painter.skip_indicators = self.skip_indicators;
         painter.image_sizes.clone_from(&self.image_sizes);
+        painter.image_natural_sizes.clone_from(&self.image_natural_sizes);
         painter.image_no_ratio_keys = self.image_no_ratio.clone();
         painter.image_ratio_keys = self.image_ratios.clone();
         painter.set_form_control_values(self.form_control_values.clone());
@@ -1097,6 +1107,7 @@ impl RenderPipeline {
         let mut painter = Painter::new();
         painter.skip_indicators = self.skip_indicators;
         painter.image_sizes.clone_from(&self.image_sizes);
+        painter.image_natural_sizes.clone_from(&self.image_natural_sizes);
         painter.image_no_ratio_keys = self.image_no_ratio.clone();
         painter.image_ratio_keys = self.image_ratios.clone();
         painter.set_form_control_values(self.form_control_values.clone());
@@ -1292,6 +1303,7 @@ impl RenderPipeline {
         let mut painter = Painter::new();
         painter.skip_indicators = self.skip_indicators;
         painter.image_sizes.clone_from(&self.image_sizes);
+        painter.image_natural_sizes.clone_from(&self.image_natural_sizes);
         painter.image_no_ratio_keys = self.image_no_ratio.clone();
         painter.image_ratio_keys = self.image_ratios.clone();
         painter.set_form_control_values(self.form_control_values.clone());
@@ -1613,6 +1625,7 @@ impl RenderPipeline {
         let mut painter = Painter::new();
         painter.skip_indicators = self.skip_indicators;
         painter.image_sizes.clone_from(&self.image_sizes);
+        painter.image_natural_sizes.clone_from(&self.image_natural_sizes);
         painter.image_no_ratio_keys = self.image_no_ratio.clone();
         painter.image_ratio_keys = self.image_ratios.clone();
         painter.set_form_control_values(self.form_control_values.clone());
@@ -1732,6 +1745,7 @@ impl RenderPipeline {
         let mut painter = Painter::new();
         painter.skip_indicators = self.skip_indicators;
         painter.image_sizes.clone_from(&self.image_sizes);
+        painter.image_natural_sizes.clone_from(&self.image_natural_sizes);
         painter.image_no_ratio_keys = self.image_no_ratio.clone();
         painter.image_ratio_keys = self.image_ratios.clone();
         painter.set_form_control_values(self.form_control_values.clone());
@@ -1812,6 +1826,7 @@ impl RenderPipeline {
         let mut painter = Painter::new();
         painter.skip_indicators = self.skip_indicators;
         painter.image_sizes.clone_from(&self.image_sizes);
+        painter.image_natural_sizes.clone_from(&self.image_natural_sizes);
         painter.image_no_ratio_keys = self.image_no_ratio.clone();
         painter.image_ratio_keys = self.image_ratios.clone();
         painter.set_form_control_values(self.form_control_values.clone());

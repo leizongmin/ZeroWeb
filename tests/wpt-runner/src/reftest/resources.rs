@@ -862,10 +862,14 @@ pub(super) fn extract_image_metrics(
     std::collections::HashMap<u64, (f32, f32)>,
     std::collections::HashMap<u64, f32>,
     std::collections::HashMap<u64, (Option<f32>, Option<f32>)>,
+    std::collections::HashMap<u64, (f32, f32)>,
 ) {
     let mut sizes = std::collections::HashMap::new();
     let mut ratios = std::collections::HashMap::new();
     let mut no_ratio = std::collections::HashMap::new();
+    // R3906：自然位图尺寸（所有已解码图像，含 ratio-only SVG 的 usvg tree.size）——
+    // paint 层 border-image 9-slice 源矩形用，不参与布局 sizing。
+    let mut natural_sizes = std::collections::HashMap::new();
 
     let mut all_urls = extract_img_srcs(html);
     all_urls.extend(extract_css_urls(html));
@@ -878,6 +882,7 @@ pub(super) fn extract_image_metrics(
     for url in &all_urls {
         let key = ImageKey::new(simple_hash(url));
         if let Some(data) = image_cache.get(&key) {
+            natural_sizes.insert(key.0, (data.size().width, data.size().height));
             // R717：ratio-only SVG 进 ratios、不进 sizes（避免确定 size 阻止 flex ratio-derivation）。
             if let Some(ratio) = data.intrinsic_ratio() {
                 ratios.insert(key.0, ratio);
@@ -896,7 +901,7 @@ pub(super) fn extract_image_metrics(
         }
     }
 
-    (sizes, ratios, no_ratio)
+    (sizes, ratios, no_ratio, natural_sizes)
 }
 
 /// 从 ImageCache 中提取所有图像的固有尺寸（仅 sizes，无 ratios/no_ratio）。

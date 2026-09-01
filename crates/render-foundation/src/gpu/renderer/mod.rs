@@ -1963,11 +1963,22 @@ impl GpuRenderer {
             // crop 语义（R294）：source 始终映射到完整 img.rect（保持原始分辨率）。
             // 绘制区域 = rect ∩ clip（None 时 = rect）；UV 取 clip 窗口在 rect 内的归一化
             // 位置，使裁剪=遮罩而非缩放（clip:rect / overflow:hidden / clip-path inset）。
+            // R3906：img.source = Some(归一化源子矩形) 时 UV 基于该子区（border-image
+            // 9-slice——每片映射 slice 切出的源区域）；None = 全图 [0,1]。
             let r = img.rect;
             let rect_l = r.left();
             let rect_t = r.top();
             let rect_w = (r.right() - r.left()).max(1e-6);
             let rect_h = (r.bottom() - r.top()).max(1e-6);
+            let (sub_u0, sub_v0, sub_u1, sub_v1) = match &img.source {
+                Some(s) if s.size.width > 0.0 && s.size.height > 0.0 => (
+                    s.origin.x.clamp(0.0, 1.0),
+                    s.origin.y.clamp(0.0, 1.0),
+                    (s.origin.x + s.size.width).clamp(0.0, 1.0),
+                    (s.origin.y + s.size.height).clamp(0.0, 1.0),
+                ),
+                _ => (0.0, 0.0, 1.0, 1.0),
+            };
             let (l, t, right, b, u0, v0, u1, v1) = match &img.clip {
                 Some(clip) => {
                     let cl = clip.left();
@@ -1979,10 +1990,10 @@ impl GpuRenderer {
                         ct * scale,
                         cr * scale,
                         cb * scale,
-                        ((cl - rect_l) / rect_w).clamp(0.0, 1.0),
-                        ((ct - rect_t) / rect_h).clamp(0.0, 1.0),
-                        ((cr - rect_l) / rect_w).clamp(0.0, 1.0),
-                        ((cb - rect_t) / rect_h).clamp(0.0, 1.0),
+                        (sub_u0 + (sub_u1 - sub_u0) * ((cl - rect_l) / rect_w).clamp(0.0, 1.0)),
+                        (sub_v0 + (sub_v1 - sub_v0) * ((ct - rect_t) / rect_h).clamp(0.0, 1.0)),
+                        (sub_u0 + (sub_u1 - sub_u0) * ((cr - rect_l) / rect_w).clamp(0.0, 1.0)),
+                        (sub_v0 + (sub_v1 - sub_v0) * ((cb - rect_t) / rect_h).clamp(0.0, 1.0)),
                     )
                 }
                 None => (
@@ -1990,10 +2001,10 @@ impl GpuRenderer {
                     rect_t * scale,
                     r.right() * scale,
                     r.bottom() * scale,
-                    0.0,
-                    0.0,
-                    1.0,
-                    1.0,
+                    sub_u0,
+                    sub_v0,
+                    sub_u1,
+                    sub_v1,
                 ),
             };
             let verts: Vec<f32> = vec![

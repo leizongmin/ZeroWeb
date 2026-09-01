@@ -504,6 +504,7 @@ mod tests {
             rect: Rect::new(0.0, 0.0, 1_600.0, 100.0),
             image_key: ImageKey::new(1),
             clip: Some(Rect::new(0.0, 0.0, 100.0, 100.0)),
+            source: None,
         });
 
         assert_eq!(primitives_content_width(&primitives), 100.0);

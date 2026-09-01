@@ -776,13 +776,10 @@ pub(super) fn fix_rtl_abspos_static_position(root: &mut LayoutBox, styles: &Hash
         });
         let (child_cb_rtl, child_cb_w) = if self_positioned {
             // rtl CB 仅 horizontal-tb 生效（vertical 的 inline 轴镜像由 fix_vertical_mode_abs_pos 处理）。
-            let rtl = box_node
-                .node_id
-                .and_then(|id| styles.get(&id))
-                .is_some_and(|s| {
-                    matches!(s.direction, DirectionValue::Rtl)
-                        && matches!(s.writing_mode, zero_style_system::WritingModeValue::HorizontalTb)
-                });
+            let rtl = box_node.node_id.and_then(|id| styles.get(&id)).is_some_and(|s| {
+                matches!(s.direction, DirectionValue::Rtl)
+                    && matches!(s.writing_mode, zero_style_system::WritingModeValue::HorizontalTb)
+            });
             (rtl, box_node.content_width)
         } else {
             (cb_rtl, cb_content_width)

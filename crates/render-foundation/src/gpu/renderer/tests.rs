@@ -1151,6 +1151,7 @@ fn test_gpu_full_scene_image() {
         rect: Rect::new(0.0, 0.0, 16.0, 16.0),
         image_key: key,
         clip: None,
+        source: None,
     });
     let font_loader = FontLoader::new();
     let mut glyph_cache = GlyphCache::new(64);
@@ -1201,11 +1202,13 @@ fn test_gpu_full_scene_skips_image_primitive_without_cached_data() {
         rect: Rect::new(0.0, 0.0, 8.0, 8.0),
         image_key: crate::image_cache::ImageKey::new(902),
         clip: None,
+        source: None,
     });
     primitives.images.push(crate::primitive::ImagePrimitive {
         rect: Rect::new(0.0, 0.0, 8.0, 8.0),
         image_key: ready_key,
         clip: None,
+        source: None,
     });
     let font_loader = FontLoader::new();
     let mut glyph_cache = GlyphCache::new(16);
@@ -1243,6 +1246,7 @@ fn test_gpu_full_scene_reuses_resources_and_invalidates_changed_image_content() 
         rect: Rect::new(0.0, 0.0, 8.0, 8.0),
         image_key: key.clone(),
         clip: None,
+        source: None,
     });
     let font_loader = FontLoader::new();
     let mut glyph_cache = GlyphCache::new(16);
@@ -1326,6 +1330,7 @@ fn test_gpu_image_texture_cache_evicts_by_byte_budget() {
             rect: Rect::new(0.0, 0.0, 8.0, 8.0),
             image_key: key,
             clip: None,
+            source: None,
         });
         renderer.render_full_scene_gpu(
             &primitives,
@@ -1364,6 +1369,7 @@ fn test_gpu_clear_image_texture_cache() {
         rect: Rect::new(0.0, 0.0, 8.0, 8.0),
         image_key: key,
         clip: None,
+        source: None,
     });
     let font_loader = FontLoader::new();
     let mut glyph_cache = GlyphCache::new(16);

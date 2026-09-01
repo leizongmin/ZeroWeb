@@ -1041,6 +1041,7 @@ impl super::super::Painter {
                     rect: Rect::new(marker_x, marker_y, img_size, img_size),
                     image_key: ImageKey::new(image_resource_key(url, self.document_url.as_deref())),
                     clip: None,
+                    source: None,
                 });
                 return;
             }

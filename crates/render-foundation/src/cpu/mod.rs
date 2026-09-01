@@ -1107,18 +1107,28 @@ fn render_image(fb: &mut FrameBuffer, image: &ImagePrimitive, scale: f32, image_
         return;
     }
 
-    // 双线性插值缩放采样：source 映射到完整 rect，仅绘制 [left,right)×[top,bottom)
-    let src_w_f = data.width as f32;
-    let src_h_f = data.height as f32;
+    // 双线性插值缩放采样：source 映射到完整 rect，仅绘制 [left,right)×[top,bottom)。
+    // R3906：image.source = Some(归一化子矩形) 时只采样源的该区域（border-image 9-slice——
+    // 每片把 slice 切出的源区域拉伸到对应目标片；归一化坐标对位图与 SVG 重栅格化两类源
+    // 一致——SVG 位图是按目标尺寸重渲染的整图，子区随位图等比缩放）；None 保持整图映射。
+    let (src_base_x, src_base_y, src_w_f, src_h_f) = match image.source {
+        Some(s) if s.size.width > 0.0 && s.size.height > 0.0 => (
+            s.origin.x * data.width as f32,
+            s.origin.y * data.height as f32,
+            s.size.width * data.width as f32,
+            s.size.height * data.height as f32,
+        ),
+        _ => (0.0, 0.0, data.width as f32, data.height as f32),
+    };
     for py in top..bottom {
-        // 映射到源图像坐标（中心对齐，相对完整 rect）
-        let src_y = ((py as f32 + 0.5 - rect_top) / rect_h) * src_h_f - 0.5;
+        // 映射到源图像坐标（中心对齐，相对完整 rect；source 子矩形时基点平移到子区原点）
+        let src_y = ((py as f32 + 0.5 - rect_top) / rect_h) * src_h_f - 0.5 + src_base_y;
         let src_y0 = (src_y.floor().max(0.0) as u32).min(data.height.saturating_sub(1));
         let src_y1 = (src_y0 + 1).min(data.height.saturating_sub(1));
         let fy = src_y - src_y0 as f32;
 
         for px in left..right {
-            let src_x = ((px as f32 + 0.5 - rect_left) / rect_w) * src_w_f - 0.5;
+            let src_x = ((px as f32 + 0.5 - rect_left) / rect_w) * src_w_f - 0.5 + src_base_x;
             let src_x0 = (src_x.floor().max(0.0) as u32).min(data.width.saturating_sub(1));
             let src_x1 = (src_x0 + 1).min(data.width.saturating_sub(1));
             let fx = src_x - src_x0 as f32;

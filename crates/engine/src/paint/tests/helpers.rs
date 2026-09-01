@@ -251,6 +251,7 @@ fn test_clip_image_crops_without_rescaling() {
         rect: original_rect,
         image_key: zero_render_foundation::image_cache::ImageKey::new(0),
         clip: None,
+        source: None,
     });
     let clip_rect = Rect::new(25.0, 25.0, 50.0, 50.0); // 交集 = (25,25)-(75,75)
     clip_all_primitives_to_rect(&mut prims, &from, &clip_rect);
@@ -279,6 +280,7 @@ fn test_clip_image_completely_outside() {
         rect: Rect::new(200.0, 200.0, 50.0, 50.0), // 完全在 clip 区外
         image_key: zero_render_foundation::image_cache::ImageKey::new(0),
         clip: None,
+        source: None,
     });
     let clip_rect = Rect::new(0.0, 0.0, 100.0, 100.0);
     clip_all_primitives_to_rect(&mut prims, &from, &clip_rect);
@@ -1084,6 +1086,7 @@ fn test_apply_opacity_all_primitive_types() {
         rect: Rect::new(0.0, 0.0, 50.0, 50.0),
         image_key: zero_render_foundation::image_cache::ImageKey::new(0),
         clip: None,
+        source: None,
     });
 
     apply_opacity_to_new_primitives(&mut prims, &before, 0.5);

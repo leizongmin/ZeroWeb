@@ -225,6 +225,7 @@ pub fn apply_paint_snapshot(snap: &mut TabSnapshot, params: PaintSnapshotParams)
             rect: ipc_rect_to_rect(image.rect),
             image_key: ImageKey::new(image.image_key),
             clip: image.clip.map(ipc_rect_to_rect),
+            source: None,
         });
     }
     for stroke in params.strokes {

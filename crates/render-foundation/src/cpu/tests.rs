@@ -368,6 +368,7 @@ fn render_image_releases_cache_reference_after_draw() {
         rect: Rect::new(0.0, 0.0, 4.0, 4.0),
         image_key: key.clone(),
         clip: None,
+        source: None,
     };
 
     render_image(&mut fb, &primitive, 1.0, &mut cache);
@@ -1282,6 +1283,7 @@ fn image_renders_rgba_data() {
         rect: Rect::new(10.0, 10.0, 30.0, 30.0),
         image_key: key,
         clip: None,
+        source: None,
     });
 
     let font_loader = FontLoader::new();
@@ -1360,6 +1362,7 @@ fn image_clip_crops_not_rescales() {
         rect: Rect::new(0.0, 0.0, 40.0, 40.0),
         image_key: key,
         clip: Some(Rect::new(0.0, 0.0, 20.0, 20.0)),
+        source: None,
     });
 
     let font_loader = FontLoader::new();
@@ -1830,6 +1833,7 @@ fn cpu_full_scene_image_solid_red() {
         rect: Rect::new(0.0, 0.0, 16.0, 16.0),
         image_key: key,
         clip: None,
+        source: None,
     });
     let font_loader = FontLoader::new();
     let mut glyph_cache = GlyphCache::new(64);
@@ -1867,6 +1871,7 @@ fn cpu_scaled_image_at_viewport_edge_does_not_panic() {
         rect: Rect::new(0.0, 0.0, w as f32, h as f32),
         image_key: key,
         clip: None,
+        source: None,
     });
     let font_loader = FontLoader::new();
     let mut glyph_cache = GlyphCache::new(64);

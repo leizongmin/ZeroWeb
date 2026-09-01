@@ -71,6 +71,11 @@ pub struct Painter {
     /// css-backgrounds-3 §3.9：`auto` 双 auto 时按固有宽高比在 positioning area 内
     /// contain-fit（宽 = min(定位区宽, 定位区高 × ratio)）；contain/cover 用同 ratio。
     pub image_ratio_keys: std::collections::HashMap<u64, f32>,
+    /// R3906：图像**自然位图尺寸**（image_key hash → (width, height)）——所有已解码图像
+    /// 的 pixmap 尺寸（含 ratio-only SVG 的 usvg tree.size = viewBox 尺寸），不参与布局
+    /// sizing 语义（与 image_sizes 分离），仅供 paint 层需要源图像素几何的路径消费
+    ///（border-image 9-slice 源矩形归一化）。
+    pub image_natural_sizes: HashMap<u64, (f32, f32)>,
     /// 文本表单控件的 retained 当前值；内容属性仍保留默认值语义。
     pub(crate) form_control_values: HashMap<NodeId, String>,
     /// 文本控件的临时 IME preedit 与其替换选区。
@@ -438,6 +443,7 @@ impl Painter {
             image_sizes: HashMap::new(),
             image_no_ratio_keys: std::collections::HashMap::new(),
             image_ratio_keys: std::collections::HashMap::new(),
+            image_natural_sizes: HashMap::new(),
             form_control_values: HashMap::new(),
             form_control_compositions: HashMap::new(),
             focused_node: None,
@@ -512,6 +518,7 @@ impl Painter {
                 rect: zero_render_foundation::geometry::Rect::new(content_x, content_y, container_w, container_h),
                 image_key: zero_render_foundation::image_cache::ImageKey::new(ctx_id),
                 clip: None,
+                source: None,
             });
         self.canvas_images.push((ctx_id, cw, ch, rgba));
     }

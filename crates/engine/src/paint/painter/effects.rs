@@ -369,6 +369,7 @@ impl super::Painter {
                                     rect: prim_rect,
                                     image_key: ImageKey::new(key),
                                     clip: clip_rect,
+                                    source: None,
                                 });
                             }
                             x += tile_w;

@@ -638,7 +638,8 @@ fn render_with_layout_inner(
     let _zw_t2 = std::time::Instant::now();
     // 先构建图像缓存，提取固有尺寸供 paint 阶段使用
     let mut image_cache = build_image_cache(html, base_dir);
-    let (image_sizes, image_ratios, image_no_ratio) = extract_image_metrics(&mut image_cache, html);
+    let (image_sizes, image_ratios, image_no_ratio, image_natural_sizes) =
+        extract_image_metrics(&mut image_cache, html);
 
     let combined_css = merge_page_css(html, css, base_dir, Some(&media_ctx));
     let _zw_t3 = std::time::Instant::now();
@@ -654,6 +655,7 @@ fn render_with_layout_inner(
     pipeline.set_image_sizes(image_sizes);
     pipeline.set_image_ratios(image_ratios);
     pipeline.set_image_no_ratio(image_no_ratio);
+    pipeline.set_image_natural_sizes(image_natural_sizes);
 
     // 字体查找表（在 render_html 之前，供 Painter 解析 CSS font-family）。
     // 扫描外链/传入 CSS + 内联 <style> 的 @font-face（常声明在内联 <style>）。
@@ -935,7 +937,8 @@ pub fn render_via_webview_to_framebuffer_with_base(
     let html: &str = &styled_html;
 
     let mut image_cache = build_image_cache(html, base_dir);
-    let (image_sizes, image_ratios, image_no_ratio) = extract_image_metrics(&mut image_cache, html);
+    let (image_sizes, image_ratios, image_no_ratio, image_natural_sizes) =
+        extract_image_metrics(&mut image_cache, html);
     let combined_css = merge_page_css(html, css, base_dir, Some(&media_ctx));
 
     let mut font_loader = create_font_loader();
@@ -953,6 +956,7 @@ pub fn render_via_webview_to_framebuffer_with_base(
     webview.set_image_sizes(image_sizes);
     webview.set_image_ratios(image_ratios);
     webview.set_image_no_ratio(image_no_ratio);
+    webview.set_image_natural_sizes(image_natural_sizes);
     let result = webview.load_html(
         html,
         if combined_css.is_empty() {
