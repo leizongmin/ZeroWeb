@@ -44,12 +44,21 @@
     list.item = function (i) { i = Number(i) | 0; return (i >= 0 && i < list.length) ? list[i] : null; };
     return list;
   };
-  globalThis._zwMakeTextTrack = function (kind, label, language, mode) {
+  // M3 扩批 X：第 5 参 id——TextTrack.id 反射关联 track 元素的 id 内容属性
+  //（spec dom-texttrack-id，readonly——赋值被 accessor 吞不落 expando，track-id
+  // 断言「readonly」面；addTextTrack 产物无关联元素 → ''）。
+  globalThis._zwMakeTextTrack = function (kind, label, language, mode, id) {
     var track = Object.create(globalThis.TextTrack.prototype);
     track.kind = String(kind);
     track.label = String(label == null ? '' : label);
     track.language = String(language == null ? '' : language);
     track.mode = String(mode || 'disabled');
+    var _ttId = String(id == null ? '' : id);
+    Object.defineProperty(track, 'id', {
+      get: function () { return _ttId; },
+      set: function () {},
+      configurable: true,
+    });
     track.cues = globalThis._zwMakeTextTrackCueList();
     return track;
   };

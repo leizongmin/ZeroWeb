@@ -1343,6 +1343,14 @@ pub const MEDIA_TEST_FILES: &[&str] = &[
     "html/semantics/embedded-content/media-elements/paused_false_during_play.html",
     "html/semantics/embedded-content/media-elements/paused_true_during_pause.html",
     "html/semantics/embedded-content/media-elements/playing-the-media-resource/playbackRate.html",
+    // M3 扩批 X：track 子元素 ↔ textTracks 集合同步（树序段 + addTextTrack 尾段、
+    // append/remove/innerHTML 同步、TextTrack.id 反射、getTrackById）。
+    "html/semantics/embedded-content/media-elements/track/track-element/track-api-texttracks.html",
+    "html/semantics/embedded-content/media-elements/track/track-element/track-addtrack-kind.html",
+    "html/semantics/embedded-content/media-elements/track/track-element/track-texttracks.html",
+    "html/semantics/embedded-content/media-elements/track/track-element/track-node-add-remove.html",
+    "html/semantics/embedded-content/media-elements/track/track-element/track-id.html",
+    "html/semantics/embedded-content/media-elements/track/track-element/track-element-dom-change.html",
     // M3 扩批 VII：移除文档暂停面（spec「media elements pause on removal」）。
     "html/semantics/embedded-content/media-elements/playing-the-media-resource/pause-remove-from-document.html",
     // M3 扩批 IX：移动面（同文档移动仍 related → 不暂停）。

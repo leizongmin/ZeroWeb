@@ -2,11 +2,9 @@
 
 **入口文档**: [../media-elements.md](../media-elements.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-01（**M4g-d 扩表**——canPlayType opus 面转正：opus-decoder
-纯 Rust 解码链落地（M2c opus 面）→ audio/ogg + video/ogg 的 opus codec 'probably'；
-**392P/0F/0T/25PF（392/417 = 94.0%）**。同日 M3 扩批 IX（pause-on-removal
-adopt/move 守卫 + pause-move-within-document 导入；pause-move-to-other-document
-决策不导入——iframe adopt 面未实施））
+**最后更新**: 2026-09-01（**M3 扩批 X**——track 子元素 ↔ textTracks 集合同步：
+树序段 + addTextTrack 尾段 + append/remove/innerHTML 同步钩子 + TextTrack.id
+readonly；导入 track/track-element 6 用例。**400P/0F/0T/25PF（400/425 = 94.1%）**）
 
 ---
 
@@ -156,6 +154,27 @@ already-playing resolved 断言。**88.3%**（324P/0F/2T/41PF，+80 subtest 全�
 - 单测 `test_media_preload_setter_roundtrip_r395`（2 断言组）。evidence：
   `evidence/2026-09-01-media-preload-setter.json`（90.1% 维持 0 回归）。
 
+**M3 扩批 X 已落地（2026-09-01，track 子 ↔ textTracks 集合同步）**：
+- **共享工厂 `_zwTextTrackForElement`**（part01）：由 track 元素构造/取回关联
+  TextTrack（身份缓存 `_elementTextTrack` 同表）——`track.track` get trap 与集合同步
+  共用；新增 `id` 反射（readonly accessor——赋值被吞，track-id 断言面）。
+- **集合同步 `_zwSyncTextTracksFromChildren`**（part01）：全量重建 track 子段
+  （树序）+ `entry.manual` 保 addTextTrack 产物（添加序保尾）——spec
+  text-tracks-in-media-elements 的列表模型；list 对象身份不变（same object）。
+  子视图：handle 父读 `_handleChildren` registry（detached createElement 形态），
+  sel 父走 `_childNodeList` 融合视图（静态 HTML 形态）。
+- **同步钩子三路**（part04）：appendChild（SOURCE hook 相邻）、removeChild
+  （handle 父 + sel 父双分支）、innerHTML 整体替换（`_handleChildren` 本地子视图
+  更新后、`_mo_notify` 前）。
+- **textTracks getter 接通**（part03）：返回前先同步（首读含既有 track 子）。
+- 导入 track/track-element 6 用例（track-api-texttracks / track-addtrack-kind /
+  track-texttracks / track-node-add-remove / track-id / track-element-dom-change，
+  fetch 脚本逐文件白名单——目录整体含 VTT 解析面不整目录导入）。
+- 单测 `test_media_track_texttracks_sync_m3x`（append/顺序/remove 身份/getTrackById+
+  id readonly/innerHTML 清空 5 断言组）。**400P/0F/0T/25PF（400/425 = 94.1%）**
+  （+8 subtest 全绿 0 回归）。evidence：`evidence/2026-09-01-media-track-sync.json`。
+  make test 66 套件 18662 全绿、fmt/clippy 干净。
+
 **里程碑归档（2026-09-01）**：M1~M3 与六轮扩批的过程记录、排除用例决策清单已归档至
 [archive/2026-08-31_m1-m3-and-2026-09-01_batches.md](archive/2026-08-31_m1-m3-and-2026-09-01_batches.md)
 （只追加不修改；本控制面保留最新态与缺口清单）。
@@ -200,7 +219,7 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
 
 | # | 缺口 | 状态 | 失败聚类 |
 |---|------|------|----------|
-| M1g | WPT media-elements 用例覆盖 | ✅ 60 用例已导入（含 event_* 族 25 + volume/Audio 构造器 + controlsList 面），**90.1%** | — |
+| M1g | WPT media-elements 用例覆盖 | ✅ 66 用例已导入（含 event_* 族 25 + volume/Audio 构造器 + controlsList + track-element 6），**94.1%** | — |
 | M2g | load 算法 + 状态机（事件序列派发） | ✅ M2 落地（13T→**0T**） | F4 闭合 |
 | M3g | 事件序列 headless 近似驱动 | ✅（同 M2g；source-child 触发已落地） | F4 闭合 |
 | M4g-a | 媒体元数据 IDL 反射（初值面） | ✅ 切片 3 落地 | F2 闭合（-9 Fail） |
@@ -244,9 +263,14 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
   → 扩批 IV（同日，controlsList + the-video-element）**372/413 = 90.1%**
   → 扩批 V/VI（同日，playbackRate TypeError + preload setter 补缺）**90.1% 维持**
   （Fail 0 / **Timeout 0** / PF 41）
+  → 扩批 VII~IX + M4g-d 扩表（同日，pause-on-removal 族 + about: src + canPlayType
+  opus）**392/417 = 94.0%**（PF 41→25）
+  → 扩批 X（同日，track 子 ↔ textTracks 集合同步）**400/425 = 94.1%**
+  （+8 subtest 全绿；Fail 0 / Timeout 0 / PF 25）
 - 入口：`make testharness-media`（FILTER 透传，`--json` 捕获 evidence）
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过
 - evidence：`evidence/2026-08-31-media-baseline.md`（+ 同名 .json 机读版）、
   `evidence/2026-09-01-media-event-family.json`、`evidence/2026-09-01-media-source-child.json`、
   `evidence/2026-09-01-media-volume-audio.json`、`evidence/2026-09-01-media-controlslist.json`、
-  `evidence/2026-09-01-media-playbackrate-typeerror.json`、`evidence/2026-09-01-media-preload-setter.json`
+  `evidence/2026-09-01-media-playbackrate-typeerror.json`、`evidence/2026-09-01-media-preload-setter.json`、
+  `evidence/2026-09-01-media-track-sync.json`

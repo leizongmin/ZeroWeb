@@ -3705,3 +3705,100 @@ fn test_media_pause_on_removal_m3b7() {
         "重插后保持 paused（不自动续播）"
     );
 }
+
+#[test]
+fn test_media_track_texttracks_sync_m3x() {
+    // media-elements M3 扩批 X：track 子元素 ↔ video.textTracks 集合同步（spec
+    // text-tracks-in-media-elements：track 子产的 track 按树序在前、addTextTrack 产物
+    // 按添加序保尾；append/remove/innerHTML 实时反映；TextTrack.id readonly 反射）。
+    // WPT track-texttracks / track-node-add-remove / track-id 断言面。
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://wpt.test/t.html".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // ① appendChild track 子 → textTracks 立即可见（kind/label/srclang 同步；detached
+    // video 的 handle 父 registry 面）。
+    sandbox.execute(
+        "var v = document.createElement('video');\
+         globalThis.__v = v;\
+         var t1 = document.createElement('track');\
+         t1.setAttribute('kind', 'captions');\
+         v.appendChild(t1);\
+         globalThis.__r1 = [String(v.textTracks.length), v.textTracks[0].kind, String(v.textTracks === v.textTracks)].join(',');",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r1").unwrap().value,
+        "1,captions,true",
+        "track 子 append 后 textTracks 立即可见 + same object 身份"
+    );
+
+    // ② 顺序面：track 子（树序）在前、addTextTrack 产物（添加序）在后；后加的 track
+    // 子插在 addTextTrack 产物**前面**（track-texttracks 断言序）。
+    sandbox.execute(
+        "var t2 = document.createElement('track'); t2.setAttribute('kind', 'chapters');\
+         globalThis.__v.appendChild(t2);\
+         globalThis.__v.addTextTrack('descriptions', 'D', 'en');\
+         var t3 = document.createElement('track'); t3.setAttribute('kind', 'metadata');\
+         globalThis.__v.appendChild(t3);\
+         globalThis.__r2 = [];\
+         for (var i = 0; i < globalThis.__v.textTracks.length; i++) globalThis.__r2.push(globalThis.__v.textTracks[i].kind);",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r2.join(',')").unwrap().value,
+        "captions,chapters,metadata,descriptions",
+        "树序 track 子段在前、addTextTrack 产物保尾（track-texttracks 断言序）"
+    );
+
+    // ③ removeChild 同步摘除 + 余下 addTextTrack 产物身份稳定（same instance——
+    // track-node-add-remove 断言 identity 面）。
+    sandbox.execute(
+        "var removed = t2;\
+         globalThis.__before = globalThis.__v.textTracks[3];\
+         globalThis.__v.removeChild(removed);\
+         globalThis.__r3 = [String(globalThis.__v.textTracks.length), String(globalThis.__v.textTracks[2] === globalThis.__before)].join(',');",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r3").unwrap().value,
+        "3,true",
+        "removeChild 后列表摘除该 track 且余项身份不变"
+    );
+
+    // ④ getTrackById + TextTrack.id readonly（track-id 断言面）。
+    sandbox.execute(
+        "var v4 = document.createElement('video');\
+         var t4 = document.createElement('track'); t4.id = 'LoremIpsum'; t4.setAttribute('kind', 'captions');\
+         v4.appendChild(t4);\
+         var tt = t4.track;\
+         tt.id = 'newvalue';\
+         globalThis.__r4 = [String(v4.textTracks.getTrackById('LoremIpsum') === tt), tt.id].join(',');",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r4").unwrap().value,
+        "true,LoremIpsum",
+        "getTrackById 命中 + id readonly（赋值被吞）"
+    );
+
+    // ⑤ innerHTML 整体替换清 track 子 → 列表清空。
+    sandbox.execute(
+        "var v5 = document.createElement('video');\
+         var t5 = document.createElement('track'); v5.appendChild(t5);\
+         void v5.textTracks.length;\
+         v5.innerHTML = '';\
+         globalThis.__r5 = String(v5.textTracks.length);",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r5").unwrap().value,
+        "0",
+        "innerHTML 清空后 textTracks 同步清空"
+    );
+}

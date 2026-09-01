@@ -11486,12 +11486,19 @@
         //（kind 枚举精确匹配——大小写敏感，非枚举值/缺省 → TypeError；label/language 为
         // optional DOMString：omitted 或 undefined → 缺省 ''，null → 'null'（WebIDL 转换）；
         // mode 缺省 'hidden'——脚本添加的轨道默认隐藏）。headless 无 VTT 解析——cues 恒空。
+        // M3 扩批 X：getter 返回前先同步 track 子元素产物（树序段在前、addTextTrack
+        // 手动段在后——spec text-tracks-in-media-elements；track-node-add-remove /
+        // track-texttracks 断言面）。
         // https://html.spec.whatwg.org/multipage/media.html#dom-media-addtexttrack
         if ((prop === 'textTracks' || prop === 'addTextTrack') &&
             (_realTag(sel, handle) === 'AUDIO' || _realTag(sel, handle) === 'VIDEO')) {
           var _ttKey = key;
-          var _ttEntry = _textTracksCache[_ttKey] || (_textTracksCache[_ttKey] = { tracks: [], list: null });
+          var _ttEntry = _textTracksCache[_ttKey] || (_textTracksCache[_ttKey] = { tracks: [], list: null, manual: [] });
           if (prop === 'textTracks') {
+            // 扩批 X：track 子树序段 + 手动段全量重排（list 身份不变）。
+            if (typeof globalThis._zwSyncTextTracksFromChildren === 'function') {
+              globalThis._zwSyncTextTracksFromChildren(sel, handle, _ttKey);
+            }
             if (!_ttEntry.list) _ttEntry.list = globalThis._zwMakeTextTrackList(_ttEntry.tracks);
             return _ttEntry.list;
           }
@@ -11505,6 +11512,8 @@
             var _label = (label === undefined) ? '' : String(label);
             var _lang = (language === undefined) ? '' : String(language);
             var _track = globalThis._zwMakeTextTrack(_k, _label, _lang, 'hidden');
+            // 扩批 X：手动段分离记账——同步重建时 addTextTrack 产物保尾不丢。
+            _ttEntry.manual.push(_track);
             _ttEntry.tracks.push(_track);
             // list 已存在（textTracks 先读过）→ 增量同步索引/length（same object 语义）。
             if (_ttEntry.list) {

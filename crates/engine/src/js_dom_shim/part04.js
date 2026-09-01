@@ -206,32 +206,12 @@
         // media-elements M3：`track.track`——HTMLTrackElement 关联的 TextTrack 实例（same
         // object 身份缓存）。mode 按 spec：default 属性存在 → 'showing'，否则 'disabled'。
         // kind/label/srclang 反射值同步进 TextTrack（headless 无 VTT 加载——cues 恒空）。
+        // M3 扩批 X：构造逻辑提为全局 `_zwTextTrackForElement`——textTracks 集合同步
+        //（appendChild/removeChild/innerHTML 路径）须**主动**为 track 子建实例，与本处
+        // 惰性读共用同一工厂（身份缓存 _elementTextTrack 同表）。
         // https://html.spec.whatwg.org/multipage/media.html#dom-trackelement-track
         if (resourceTag === 'TRACK' && prop === 'track') {
-          var _tkInst = _elementTextTrack[key];
-          if (!_tkInst) {
-            var _tkAttrKind = (function () {
-              try {
-                var _raw = handle ? __zw_get_attr_handle(handle, 'kind') : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'kind') : __zw_get_attr(sel, 'kind'));
-                var _lo = String(_raw == null ? '' : _raw).toLowerCase();
-                return (_lo === 'subtitles' || _lo === 'captions' || _lo === 'descriptions' ||
-                        _lo === 'chapters' || _lo === 'metadata') ? _lo
-                  : (_raw == null || _raw === '' ? 'subtitles' : 'metadata');
-              } catch (_eTk) { return 'subtitles'; }
-            })();
-            var _tkLabel = (function () {
-              try { return handle ? (__zw_get_attr_handle(handle, 'label') || '') : ((typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'label') : __zw_get_attr(sel, 'label')) || ''); } catch (_eTl) { return ''; }
-            })();
-            var _tkLang = (function () {
-              try { return handle ? (__zw_get_attr_handle(handle, 'srclang') || '') : ((typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'srclang') : __zw_get_attr(sel, 'srclang')) || ''); } catch (_eTg) { return ''; }
-            })();
-            var _tkDefault = (function () {
-              try { return (handle ? __zw_has_attr_handle(handle, 'default') : __zw_has_attr(sel, 'default')) === '1'; } catch (_eTd) { return false; }
-            })();
-            _tkInst = globalThis._zwMakeTextTrack(_tkAttrKind, _tkLabel, _tkLang, _tkDefault ? 'showing' : 'disabled');
-            _elementTextTrack[key] = _tkInst;
-          }
-          return _tkInst;
+          return _zwTextTrackForElement(sel, handle, key);
         }
         if (resourceTag === 'TRACK' && prop === 'readyState') {
           if (!resourceState) {
@@ -4218,6 +4198,15 @@
                   }
                 } catch (_e140fc) {}
               }
+              // media-elements M3 扩批 X（spec text-tracks-in-media-elements）：track 子入
+              // media 父 → textTracks 集合同步（track-node-add-remove 断言 appendChild 后
+              // textTracks 立即可见；身份经 _elementTextTrack 缓存稳定）。
+              if (child && child.nodeType === 1
+                  && typeof _realTag === 'function'
+                  && (_realTag(sel, handle) === 'AUDIO' || _realTag(sel, handle) === 'VIDEO')
+                  && typeof globalThis._zwSyncTextTracksFromChildren === 'function') {
+                try { globalThis._zwSyncTextTracksFromChildren(sel, handle, _elKey(sel, handle)); } catch (_eTtAp) {}
+              }
               // js-dom M4 R47：spec appendChild(fragment) 的 childList record——addedNodes 为
               // fragment 的**子节点**（flatten 前快照，即 ceAdded；fragment 自身不入树不出现在
               // record，WPT childList "fragment addition mutations" 期望 [f.firstChild, f.lastChild]）。
@@ -4452,6 +4441,12 @@
               } catch (_e294k) {}
               // R2927/R2928：handle 父同步从 registry 移除子节点（保持 querySelector 子树一致）。
               if (handle) _unrecordHandleChild(handle, child);
+              // M3 扩批 X：track 子移除 → textTracks 集合同步（handle 父分支）。
+              if (child && child.nodeType === 1
+                  && (_realTag(sel, handle) === 'AUDIO' || _realTag(sel, handle) === 'VIDEO')
+                  && typeof globalThis._zwSyncTextTracksFromChildren === 'function') {
+                try { globalThis._zwSyncTextTracksFromChildren(sel, handle, _elKey(sel, handle)); } catch (_eTtRmH) {}
+              }
               _mo_notify(sel, handle, { type: 'childList', addedNodes: [], removedNodes: [child], previousSibling: _r294pv, nextSibling: _r294nx });
               // R140：live childNodes 同步（handle 子 removeChild——sel 父的 pending
               // overlay 经 notify 记账后 refresh 生效）。
@@ -4555,6 +4550,14 @@
               // 兄弟解析），读值仍是移除前形态。
               var _r188Prev = null, _r188Next = null;
               try { _r188Prev = child.previousSibling || null; _r188Next = child.nextSibling || null; } catch (_e188s) {}
+              // M3 扩批 X：track 子移除 → textTracks 集合同步（sel 父分支——移除标记
+              // 已设，_childNodeList 的 overlay 不再含该子；静态 HTML 里 querySelector
+              // 产物形态的 track 子由此摘除）。
+              if (child.nodeType === 1
+                  && (_realTag(sel, handle) === 'AUDIO' || _realTag(sel, handle) === 'VIDEO')
+                  && typeof globalThis._zwSyncTextTracksFromChildren === 'function') {
+                try { globalThis._zwSyncTextTracksFromChildren(sel, handle, _elKey(sel, handle)); } catch (_eTtRmS) {}
+              }
               _mo_notify(sel, handle, { type: 'childList', addedNodes: [], removedNodes: [child], previousSibling: _r188Prev, nextSibling: _r188Next });
               _ceApplyConn(child, false);
               // R140：live childNodes 同步（sel 路径 remove）。
@@ -6907,6 +6910,15 @@
                 }
               }
             } catch (_e304s) {}
+            // M3 扩批 X：innerHTML 整体替换后 textTracks 集合同步（track-remove-by-setting-
+            // innerHTML 断言面）。置于本地子视图/父槽更新之后——helper 读 `_childNodeList`
+            //（handle registry `_handleChildren` 与 `_zwSelPendingParent` 挂槽的解析
+            // wrapper 均须已就位，track 子方可见）。
+            if ((sel || handle)
+                && (_realTag(sel, handle) === 'AUDIO' || _realTag(sel, handle) === 'VIDEO')
+                && typeof globalThis._zwSyncTextTracksFromChildren === 'function') {
+              try { globalThis._zwSyncTextTracksFromChildren(sel, handle, _elKey(sel, handle)); } catch (_eTtIh) {}
+            }
             _mo_notify(sel, handle, { type: 'childList', addedNodes: _ihAdded, removedNodes: _ihRemoved });
             // R125：innerHTML 替换后旧子的 pending-ID 索引同步剔除——host 快照未换代前
             // getElementById 的 pending 回落仍会命中已清除的旧子（WPT "remove id attribute

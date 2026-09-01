@@ -147,6 +147,20 @@ TOP_FILES=(
 # HTMLTrackElement 反射面（kind/src/srclang/label/default/track/readyState）。
 fetch_dir "${BASE}/interfaces/HTMLElement/HTMLTrackElement"
 
+# M3 扩批 X：track 子元素 ↔ video.textTracks 集合同步断言面（逐文件白名单——
+# track-element 目录整体含大量 VTT 解析/cue 渲染用例，依赖真字幕加载，不整目录）。
+TRACK_ELEMENT_FILES=(
+  "track/track-element/track-api-texttracks.html"
+  "track/track-element/track-addtrack-kind.html"
+  "track/track-element/track-texttracks.html"
+  "track/track-element/track-node-add-remove.html"
+  "track/track-element/track-id.html"
+  "track/track-element/track-element-dom-change.html"
+)
+for relative in "${TRACK_ELEMENT_FILES[@]}"; do
+  fetch_raw "${BASE}/${relative}"
+done
+
 for relative in "${TOP_FILES[@]}"; do
   fetch_raw "${BASE}/${relative}"
 done

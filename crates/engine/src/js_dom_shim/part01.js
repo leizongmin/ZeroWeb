@@ -93,6 +93,80 @@
   // 实例身份单独缓存（_elementTextTrack）。
   var _textTracksCache = {};
   var _elementTextTrack = {};
+  // media-elements M3 扩批 X：由 track 元素构造/取回关联 TextTrack 实例（`track.track`
+  // get trap 与 textTracks 集合同步共用工厂——spec「associated text track」，same object
+  // 身份经 _elementTextTrack 以元素 key 缓存）。mode：default 属性存在 → 'showing'，
+  // 否则 'disabled'（spec dom-texttrack-mode 初始面）；id 反射元素 id 内容属性
+  //（spec dom-texttrack-id）。https://html.spec.whatwg.org/multipage/media.html#dom-trackelement-track
+  globalThis._zwTextTrackForElement = function (sel, handle, key) {
+    var _tkInst = _elementTextTrack[key];
+    if (_tkInst) return _tkInst;
+    var _tkAttrKind = (function () {
+      try {
+        var _raw = handle ? __zw_get_attr_handle(handle, 'kind') : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'kind') : __zw_get_attr(sel, 'kind'));
+        var _lo = String(_raw == null ? '' : _raw).toLowerCase();
+        return (_lo === 'subtitles' || _lo === 'captions' || _lo === 'descriptions' ||
+                _lo === 'chapters' || _lo === 'metadata') ? _lo
+          : (_raw == null || _raw === '' ? 'subtitles' : 'metadata');
+      } catch (_eTk) { return 'subtitles'; }
+    })();
+    var _tkLabel = (function () {
+      try { return handle ? (__zw_get_attr_handle(handle, 'label') || '') : ((typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'label') : __zw_get_attr(sel, 'label')) || ''); } catch (_eTl) { return ''; }
+    })();
+    var _tkLang = (function () {
+      try { return handle ? (__zw_get_attr_handle(handle, 'srclang') || '') : ((typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'srclang') : __zw_get_attr(sel, 'srclang')) || ''); } catch (_eTg) { return ''; }
+    })();
+    var _tkDefault = (function () {
+      try { return (handle ? __zw_has_attr_handle(handle, 'default') : __zw_has_attr(sel, 'default')) === '1'; } catch (_eTd) { return false; }
+    })();
+    var _tkId = (function () {
+      try { return handle ? (__zw_get_attr_handle(handle, 'id') || '') : ((typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'id') : __zw_get_attr(sel, 'id')) || ''); } catch (_eTi) { return ''; }
+    })();
+    _tkInst = globalThis._zwMakeTextTrack(_tkAttrKind, _tkLabel, _tkLang, _tkDefault ? 'showing' : 'disabled', _tkId);
+    _elementTextTrack[key] = _tkInst;
+    return _tkInst;
+  };
+  // media-elements M3 扩批 X：track 子元素 ↔ media 元素 textTracks 集合同步（spec
+  // https://html.spec.whatwg.org/multipage/media.html#text-tracks-in-media-elements——
+  // 每个-media-元素关联的文本轨道：track 子元素产的 track 按树序在前，addTextTrack()
+  // 产的按添加序在后；子树增删实时反映——track-node-add-remove / track-texttracks 断言面）。
+  // 全量重建 track 子段：list 对象与 addTextTrack 产物身份保持不变，只重排/增删 track
+  // 子对应的轨道（身份经 _zwTextTrackForElement 缓存表稳定）。append/remove/innerHTML
+  // 多路径调用；textTracks getter 首读兜底。
+  globalThis._zwSyncTextTracksFromChildren = function (sel, handle, mediaKey) {
+    try {
+      var _stEntry = _textTracksCache[mediaKey] || (_textTracksCache[mediaKey] = { tracks: [], list: null });
+      // 子视图：handle 父（createElement 产物——detached video/track 用例主形态）读
+      // registry `_handleChildren`（_childNodeList 对 sel 空恒返 []）；sel 父走融合视图。
+      var _stKids = [];
+      if (handle && _handleChildren[handle]) {
+        _stKids = _handleChildren[handle];
+      } else if (typeof _childNodeList === 'function') {
+        _stKids = _childNodeList(sel, handle);
+      }
+      var _stTrackTracks = [];
+      for (var _sti = 0; _sti < _stKids.length; _sti++) {
+        var _stKid = _stKids[_sti];
+        if (!_stKid || _stKid.nodeType !== 1) continue;
+        var _stTag = '';
+        try { _stTag = String(_stKid.tagName || '').toLowerCase(); } catch (_eStT) {}
+        if (_stTag !== 'track') continue;
+        _stTrackTracks.push(_zwTextTrackForElement(_stKid.__zwSelector || null, _stKid.__zwHandle || null, _elKey(_stKid.__zwSelector || null, _stKid.__zwHandle || null)));
+      }
+      // addTextTrack 产物 = 旧 tracks 中非 track 子产物（按添加序保尾）。识别：实例
+      // 不在 _elementTextTrack 任意值的身份集合不可靠——改在 entry 上记分离表：
+      // `entry.manual` 仅存 addTextTrack 产物，track 子产物每次重建。
+      var _stManual = _stEntry.manual || (_stEntry.manual = []);
+      var _stAll = _stTrackTracks.concat(_stManual);
+      _stEntry.tracks = _stAll;
+      if (_stEntry.list) {
+        var _stList = _stEntry.list;
+        for (var _stj = 0; _stj < _stAll.length; _stj++) _stList[_stj] = _stAll[_stj];
+        for (var _stk = _stAll.length; _stk < _stList.length; _stk++) delete _stList[_stk];
+        _stList.length = _stAll.length;
+      }
+    } catch (_eStSync) {}
+  };
   // M2：media 专有事件派发便捷封装（non-bubbling/non-cancelable；sel/handle 双身份）。
   // 声明于 part01 顶层（shim IIFE 闭包）——set trap / play()/pause() / 动态加载模拟共用；
   // 函数声明提升使 part05/part06 的调用点可达。
