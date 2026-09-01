@@ -162,7 +162,11 @@ form-validation——不允许手写 inline 用例替代或充数）。依赖真
 
 ## 活跃里程碑
 
-### M1 — WPT media-elements 基线建立 + 现状摸底
+（M1~M3 均已完成（2026-08-31 ~ 2026-09-01，含七轮扩批，94.0%——详见
+[master.md](media-elements/master.md) 与其 archive）；headless 可导入面吃尽，
+后续增量依赖兄弟目标真值化。以下为历史里程碑定义，保留备查。）
+
+### M1 — WPT media-elements 基线建立 + 现状摸底（✅ 完成）
 
 **目标**：导入用例记录基线；摸清 canPlayType/事件面现状。
 
@@ -171,11 +175,11 @@ form-validation——不允许手写 inline 用例替代或充数）。依赖真
 2. 失败聚类 → 反射面/状态机/事件面的已有 vs 缺失清单
 3. canPlayType + 基础反射深化（preload/crossOrigin/controlsList）
 
-### M2 — 状态机与事件序列
+### M2 — 状态机与事件序列（✅ 完成）
 
 **目标**：load 算法骨架 + readyState/networkState 推进 + 事件序列（headless 近似驱动）。
 
-### M3 — API 语义 + track 面 + 与播放层衔接
+### M3 — API 语义 + track 面 + 与播放层衔接（✅ 完成）
 
 **目标**：play/pause/异常/元数据面/track 反射；与兄弟目标接口对齐（驱动源可替换）。
 
