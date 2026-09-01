@@ -2191,6 +2191,12 @@
                 _zwMediaScheduleLoad(sel, handle, _saTag, _saAbs, v === '');
               } catch (_eSaM) {}
             }
+            // media-elements M3 扩批 XII：setAttribute('src') 入 track → headless 字幕
+            // 加载模拟（data:text/vtt 解析 + load 事件）。
+            if (n === 'src' && typeof _realTag === 'function' && _realTag(sel, handle) === 'TRACK'
+                && typeof _zwTrackScheduleLoad === 'function') {
+              try { _zwTrackScheduleLoad(sel, handle); } catch (_eSaT) {}
+            }
             // R125：id 变更的同步可见性——① sel-based 元素记覆盖表（host 快照不反映
             // 同批 id 变更，getElementById 的 querySelector 路径会命中 stale id）；
             // ② handle 元素重挂 pending-ID 索引新键（与 .id= setter 对称——appendChild
@@ -4232,6 +4238,15 @@
                   && (_realTag(sel, handle) === 'AUDIO' || _realTag(sel, handle) === 'VIDEO')
                   && typeof globalThis._zwSyncTextTracksFromChildren === 'function') {
                 try { globalThis._zwSyncTextTracksFromChildren(sel, handle, _elKey(sel, handle)); } catch (_eTtAp) {}
+                // M3 扩批 XII：track 子入 media 父即触发检索（spec「further handling of
+                // the track element」——parent media element 的 relevant mutation（track
+                // 插入）queue track 处理，**不限 connected**——cues「default attribute」
+                // 断言面：detached video append track 后 stable state 即 cues 非 null）。
+                try {
+                  if (typeof globalThis._zwScheduleChildTrackLoads === 'function') {
+                    globalThis._zwScheduleChildTrackLoads(sel, handle);
+                  }
+                } catch (_eTtSch) {}
               }
               // js-dom M4 R47：spec appendChild(fragment) 的 childList record——addedNodes 为
               // fragment 的**子节点**（flatten 前快照，即 ceAdded；fragment 自身不入树不出现在

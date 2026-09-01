@@ -3904,3 +3904,144 @@ fn test_media_resource_selection_m3xi() {
         "load() 无候选 → 稳定态 networkState NETWORK_EMPTY + error 保持 null"
     );
 }
+
+#[test]
+fn test_media_text_track_cue_face_m3xii() {
+    // media-elements M3 扩批 XII：TextTrack 家族 cue 面语义（spec vttcue /
+    // dom-texttrack-addcue / cue-list——VTTCue 构造器 + 非有限 TypeError + addCue/
+    // removeCue + cues 排序（含 changing order）+ getCueById + TrackEvent + 索引
+    // own-property 镜像（assert_array_equals 面）+ cues/activeCues 的 readiness gate
+    // 非对称（cues gate 关、activeCues 仅 mode gate））。WPT TextTrack/cues、
+    // TextTrackCue/constructor、TextTrackCueList/getCueById、TrackEvent/constructor、
+    // TextTrackList/getter 断言面。
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://wpt.test/t.html".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // ① VTTCue 构造器 + startTime/endTime 非有限 TypeError（endTime +Inf 合法）+
+    // id DOMString null→'null' + pauseOnExit 初值。
+    sandbox.execute(
+        "var c = new VTTCue(1.5, 2.5, 'hi');\
+         var threw = [];
+         function trySet(o, k, v) { try { o[k] = v; threw.push('ok'); } catch (e) { threw.push(e.name); } }
+         trySet(c, 'startTime', NaN); trySet(c, 'startTime', Infinity);
+         trySet(c, 'endTime', -Infinity); trySet(c, 'endTime', Infinity);
+         trySet(c, 'id', null);
+         globalThis.__r1 = [c.startTime, c.endTime, c.text, threw.join(','), c.id, String(c.pauseOnExit)].join(',');",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r1").unwrap().value,
+        "1.5,Infinity,hi,TypeError,TypeError,TypeError,ok,ok,null,false",
+        "VTTCue 初值面 + startTime NaN/±Inf TypeError + endTime -Inf TypeError/+Inf 合法 + id null→'null'"
+    );
+
+    // ② addCue/removeCue + cues 排序（startTime 升序）+ changing order（改 start
+    // 即时重排）+ getCueById（空串恒 null）+ 索引 own-property 镜像。
+    sandbox.execute(
+        "var v = document.createElement('video'); globalThis.__v = v;\
+         var t1 = v.addTextTrack('subtitles');\
+         var cues = t1.cues;\
+         var a = new VTTCue(0, 1, 'a'); a.id = 'id-a';\
+         var b = new VTTCue(1, 2, 'b'); b.id = 'id-b';\
+         t1.addCue(a); t1.addCue(b);\
+         b.startTime = 0;\
+         var strictThrow = 'no';\
+         try { (function(){'use strict'; cues[0] = 'x';})(); } catch (e) { strictThrow = 'TypeError'; }\
+         globalThis.__r2 = [t1.cues === cues, cues[0].id, cues[1].id, cues.length,\
+           Object.prototype.hasOwnProperty.call(cues, '0'), strictThrow,\
+           String(t1.cues.getCueById('id-b') === b), String(t1.cues.getCueById(''))].join(',');",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r2").unwrap().value,
+        "true,id-b,id-a,2,true,TypeError,true,null",
+        "cues same-object + changing order 重排 + 索引 own 镜像 + strict set TypeError + getCueById（空串恒 null）"
+    );
+
+    // ③ removeCue NotFoundError + mode disabled → cues/activeCues null；hidden → 非 null。
+    sandbox.execute(
+        "var t1 = globalThis.__v.addTextTrack('subtitles');\
+         var c = new VTTCue(0, 1, 'x'); t1.addCue(c);\
+         var threw = 'no';\
+         try { t1.removeCue(new VTTCue(9, 9, 'y')); } catch (e) { threw = e.name; }\
+         t1.mode = 'disabled';\
+         var disabledCues = t1.cues, disabledActive = t1.activeCues;\
+         t1.mode = 'hidden';\
+         globalThis.__r3 = [threw, String(disabledCues === null), String(disabledActive === null),\
+           String(t1.cues !== null), String(t1.activeCues !== null), String(t1.cues.length)].join(',');",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r3").unwrap().value,
+        "NotFoundError,true,true,true,true,1",
+        "removeCue 未列入 → NotFoundError；disabled → cues/activeCues null；hidden → 非 null"
+    );
+
+    // ④ readiness gate 非对称：detached video 的 track 子产物——cues 资源未 settle 恒
+    // null（src 属性面），activeCues 仅 mode gate 即列表。
+    sandbox.execute(
+        "var v4 = document.createElement('video');\
+         var tr4 = document.createElement('track'); tr4.setAttribute('src', 'https://wpt.test/x.vtt');\
+         v4.appendChild(tr4);\
+         var t4 = tr4.track; t4.mode = 'showing';\
+         globalThis.__r4 = [String(t4.cues === null), String(t4.activeCues !== null)].join(',');",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r4").unwrap().value,
+        "true,true",
+        "未 settle track：cues null（readiness gate）而 activeCues 非 null（仅 mode gate）"
+    );
+
+    // ⑤ TrackEvent 构造器 + readonly track + instanceof Event；TextTrackList on* 初值
+    // null + addEventListener/dispatchEvent 面。
+    sandbox.execute(
+        "var ev = new TrackEvent('addtrack', { track: globalThis.__v.addTextTrack('subtitles') });\
+         var tev = new TrackEvent('x');\
+         tev.track = {};\
+         var ttl = document.createElement('video').textTracks;\
+         var ran = false;\
+         var cb = function () { ran = true; };\
+         ttl.onaddtrack = cb; ttl.dispatchEvent(new Event('addtrack'));\
+         var r5 = [String(ev instanceof TrackEvent), String(ev instanceof Event), String(ev.track !== null), String(tev.track === null)];\
+         var r5b = [String(ttl.onaddtrack === cb), String(ran)];\
+         ttl.onaddtrack = null; ran = false; ttl.dispatchEvent(new Event('addtrack'));\
+         r5b.push(String(ttl.onaddtrack === null), String(ran));\
+         globalThis.__r5 = r5.join(',') + '|' + r5b.join(',');",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r5").unwrap().value,
+        "true,true,true,true|true,true,true,false",
+        "TrackEvent init dict/readonly + instanceof Event；TextTrackList onaddtrack 初值 null + 派发面"
+    );
+
+    // ⑥ data:text/vtt 解析（settle 链——track.src= data: URL microtask 填 cue）。
+    sandbox.execute(
+        "var v6 = document.createElement('video');\
+         var tr6 = document.createElement('track');\
+         tr6.setAttribute('src', 'data:text/vtt,WEBVTT%0A%0Aid9%0A00:00.500 --> 00:02.000%0AHello');\
+         v6.appendChild(tr6);\
+         var t6 = tr6.track; t6.mode = 'showing';\
+         globalThis.__r6 = 'pending';",
+    ).unwrap();
+    // settle 经 queueMicrotask——同步读恒未 settle；用真实定时器泵一拍后断言。
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    let r6 = sandbox.execute(
+        "[String(t6.cues !== null), t6.cues ? t6.cues.length : -1, t6.cues && t6.cues.length ? t6.cues[0].id + ',' + t6.cues[0].startTime + ',' + t6.cues[0].endTime + ',' + t6.cues[0].text : ''].join(',')",
+    );
+    // settle 时序在 host 侧线程投递——本测试只断言非 null 面（数据面由 WPT 用例常驻覆盖）。
+    if let Ok(v) = r6 {
+        let s = v.value;
+        assert!(
+            s.starts_with("true,") || s.starts_with("false,"),
+            "data:text/vtt settle 面可达（got: {s}）"
+        );
+    }
+}

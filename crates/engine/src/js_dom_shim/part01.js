@@ -98,8 +98,23 @@
   // 身份经 _elementTextTrack 以元素 key 缓存）。mode：default 属性存在 → 'showing'，
   // 否则 'disabled'（spec dom-texttrack-mode 初始面）；id 反射元素 id 内容属性
   //（spec dom-texttrack-id）。https://html.spec.whatwg.org/multipage/media.html#dom-trackelement-track
-  globalThis._zwTextTrackForElement = function (sel, handle, key) {
-    var _tkInst = _elementTextTrack[key];
+  // M3 扩批 XII：track 元素向上找父 media 元素（audio/video）proxy——track 元素产物的
+  // TextTrack.activeCues 播放态查询依赖 media 元素的 _mediaState key。父视图同
+  // _zwSyncTextTracksFromChildren（handle 父读 registry / sel 父走融合视图）。
+  // _zwParentMediaProxy 定义为惰性闭包（_parentNodeFor 在 part03 声明，调用时必已就绪）。
+  globalThis._zwParentMediaProxy = function (sel, handle) {
+    try {
+      if (typeof _parentNodeFor !== 'function') return null;
+      var _pmParent = _parentNodeFor(sel, handle, true);
+      if (!_pmParent) return null;
+      var _pmTag = '';
+      try { _pmTag = String(_pmParent.tagName || '').toUpperCase(); } catch (_ePt) {}
+      if (_pmTag !== 'AUDIO' && _pmTag !== 'VIDEO') return null;
+      return _pmParent;
+    } catch (_ePmp) {}
+    return null;
+  };
+  globalThis._zwTextTrackForElement = function (sel, handle, key) {    var _tkInst = _elementTextTrack[key];
     if (_tkInst) return _tkInst;
     var _tkAttrKind = (function () {
       try {
@@ -122,7 +137,19 @@
     var _tkId = (function () {
       try { return handle ? (__zw_get_attr_handle(handle, 'id') || '') : ((typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'id') : __zw_get_attr(sel, 'id')) || ''); } catch (_eTi) { return ''; }
     })();
-    _tkInst = globalThis._zwMakeTextTrack(_tkAttrKind, _tkLabel, _tkLang, _tkDefault ? 'showing' : 'disabled', _tkId);
+    _tkInst = globalThis._zwMakeTextTrack(_tkAttrKind, _tkLabel, _tkLang, _tkDefault ? 'showing' : 'disabled', _tkId,
+      // M3 扩批 XII：ownerEl = track 元素 proxy（label/language 反射 attr + cues
+      // 可用性 gate）；mediaEl = 父 media 元素 proxy（activeCues 播放态——由同步
+      // helper 在组装时注入，此处经 _zwParentMediaProxy 惰性解析）。
+      (function () {
+        try { return (typeof _makeProxy === 'function') ? _makeProxy(sel, handle) : null; } catch (_eMo) { return null; }
+      })(),
+      (function () {
+        try {
+          if (typeof _zwParentMediaProxy !== 'function') return null;
+          return _zwParentMediaProxy(sel, handle);
+        } catch (_eMp) { return null; }
+      })());
     _elementTextTrack[key] = _tkInst;
     return _tkInst;
   };
@@ -160,10 +187,13 @@
       var _stAll = _stTrackTracks.concat(_stManual);
       _stEntry.tracks = _stAll;
       if (_stEntry.list) {
+        // M3 扩批 XII：list 为索引只读 Proxy——增量同步经 holder（_zwHolder.arr/length）。
         var _stList = _stEntry.list;
-        for (var _stj = 0; _stj < _stAll.length; _stj++) _stList[_stj] = _stAll[_stj];
-        for (var _stk = _stAll.length; _stk < _stList.length; _stk++) delete _stList[_stk];
-        _stList.length = _stAll.length;
+        var _stHolder = _stList._zwHolder;
+        if (_stHolder) {
+          _stHolder.arr = _stAll.slice();
+          globalThis._zwSyncListHolder(_stHolder);
+        }
       }
     } catch (_eStSync) {}
   };

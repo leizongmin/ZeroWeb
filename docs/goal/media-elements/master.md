@@ -2,10 +2,9 @@
 
 **入口文档**: [../media-elements.md](../media-elements.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-02（**M3 扩批 XI**——resource selection 算法 JS 可观察面：
-loading-the-media-resource 资源选择族 30 用例导入，networkState 同步段 NO_SOURCE/
-稳定态 EMPTY + invoke 面 + load() 重跑 + 候选失效中断。**430P/0F/0T/25PF
-（430/455 = 94.5%）**）
+**最后更新**: 2026-09-02（**M3 扩批 XII**——TextTrack 家族接口语义面：VTTCue 构造器 +
+addCue/removeCue + cues 排序 + getCueById + TrackEvent + on* EventTarget 面 + data:text/vtt
+解析，28 用例导入。**496P/0F/0T/25PF（496/521 = 95.2%）**）
 
 ---
 
@@ -219,6 +218,48 @@ already-playing resolved 断言。**88.3%**（324P/0F/2T/41PF，+80 subtest 全�
   `evidence/2026-09-02-media-resource-selection.json`。make test 66 套件 18665 全绿、
   fmt/clippy 干净、reftest 687/687。
 
+**M3 扩批 XII 已落地（2026-09-02，TextTrack 家族接口语义面——上一轮 session 被限额
+打断后的续接收口）**：
+- **背景**：限额前 WIP（shim 六 part + MEDIA_TEST_FILES 28 用例）处于未提交态且
+  9 Fail；本轮续接完成——TrackEvent 缺失 / cues-activity gate 非对称 / 列表索引
+  own-property 不可见 / prototype 链序 四类根因修复。
+- **VTTCue 构造器**（part01b）：脚本创建 cue 唯一入口（与 TextTrackCue 分离接口）；
+  startTime setter NaN/±Inf → TypeError、endTime NaN/-Inf → TypeError 而 **+Inf 合法**
+  （无末尾 cue——dom-vttcue-endtime 断言面）；id DOMString null→'null'；pauseOnExit；
+  track readonly；onenter/onexit 初值 null（赋 undefined → null）；EventTarget 最小派发面
+  （per-cue 内表 `_zwEnsureEventTarget`）。
+- **TextTrack addCue/removeCue/cues**：cue 已属它 track 先移除；removeCue 未列入 →
+  NotFoundError；cues 按 startTime 升序动态重排（tie：end 大者在前→添加序——「changing
+  order」断言面，setter 即时重排经 `_zwInvalidateCues`）；getCueById 空串恒 null；mode
+  枚举归一 setter（invalid 保留旧值）；disabled → cues/activeCues null。
+- **gate 非对称修正（本轮根因 #1）**：cues=readiness gate（track 资源未 settle 恒 null
+  ——cues「default attribute」断言面），activeCues=**仅 mode gate**（spec
+  dom-texttrack-activecues 只关 disabled——detached track 未 settle 亦非 null，此前
+  readiness 同 gate 致 activeCues 6 断言全断）。
+- **track 检索触发不限 connected（根因 #2）**：part04 appendChild 钩子移除 `_elConnected`
+  门——spec「further handling of the track element」随 parent media element 的 relevant
+  mutation（track 插入）queue，detached video 亦触发（cues.html「default attribute」经
+  onplay 时 settle 完成断言非 null）。
+- **TextTrackList/TextTrackCueList 索引 own-property 镜像（根因 #3）**：列表经索引只读
+  Proxy（set trap 恒 false 保「no indexed set/create (strict)」TypeError 面），但
+  assert_array_equals 走 hasOwnProperty → get trap 不可见；补 `_zwSyncListHolder` 在
+  **target** 上镜像索引 own props（页面经 proxy 写仍被拦——traps 与 own props 正交）。
+- **TrackEvent 构造器（根因 #4）**：type + init dict {track}；track readonly accessor
+  （赋值被吞）；prototype **惰性链接** Event（本 part 装载早于 part05 的 Event 定义——
+  装载期链接落 Object.prototype 致 instanceof Event 断败，首次构造时补链）；createEvent
+  ('TrackEvent') 不入 part06 legacy map → NotSupportedError（non-createable 断言面）。
+- **data:text/vtt 解析**（part06 `_zwParseVttDataUrl`）：BOM/WEBVTT 头 + cue 块（id 行+
+  时间行+文本）→ VTTCue 填入关联 TextTrack + settle（`_zwTrackScheduleLoad` microtask
+  幂等）；track.src IDL setter / setAttribute('src') 双路触发。
+- **导入**：interfaces/ 28 文件（TextTrack 10 + TextTrackCue 8 + TextTrackCueList 3 +
+  TextTrackList 5 + TrackEvent 2；fetch 脚本 INTERFACES_FILES 白名单 + MEDIA_TEST_FILES
+  同步）。**496P/0F/0T/25PF（496/521 = 95.2%）**（+66 subtest 全绿 0 回归，PF 25 为
+  canPlayType optional 组既存面）。evidence：
+  `evidence/2026-09-02-media-texttrack-family.json`。engine 2556 全绿、fmt/clippy 干净。
+- 单测 `test_media_text_track_cue_face_m3xii`（VTTCue TypeError 面 / 排序+镜像+strict
+  TypeError+getCueById / removeCue NotFoundError+mode gate / gate 非对称 / TrackEvent+
+  on* 派发 / data:text/vtt settle 六断言组）。
+
 **DC 达成审计（2026-09-01）**：DC-1~4 实质满足——① 60 用例导入 + 8 份 evidence JSON
 （基线演进 46.5→90.1 全程可追溯）；② 状态机/事件序列 WPT 断言面全绿（headless 近似
 驱动逐项记录）；③ API 语义面全对齐（canPlayType 空表 + M4g-d 显式记录为跨 goal 依赖项；
@@ -259,7 +300,7 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
 
 | # | 缺口 | 状态 | 失败聚类 |
 |---|------|------|----------|
-| M1g | WPT media-elements 用例覆盖 | ✅ 91 用例已导入（含 event_* 族 25 + volume/Audio 构造器 + controlsList + track-element 6 + resource-selection 族 25），**94.5%** | — |
+| M1g | WPT media-elements 用例覆盖 | ✅ 119 用例已导入（含 event_* 族 25 + volume/Audio 构造器 + controlsList + track-element 6 + resource-selection 族 25 + interfaces/TextTrack 家族 28），**95.2%** | — |
 | M2g | load 算法 + 状态机（事件序列派发） | ✅ M2 落地（13T→**0T**） | F4 闭合 |
 | M3g | 事件序列 headless 近似驱动 | ✅（同 M2g；source-child 触发已落地） | F4 闭合 |
 | M4g-a | 媒体元数据 IDL 反射（初值面） | ✅ 切片 3 落地 | F2 闭合（-9 Fail） |
@@ -268,6 +309,7 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
 | M4g-d | canPlayType 能力表（空表→选型面更新） | ✅ 2026-09-01 落地（media-playback 流代行——跨 goal 联动兑现）：能力表由解码面真值驱动（webm/ogg 容器 maybe + vp9/vorbis/mp3 probably，VP8/Opus/Theora/H.264/AAC 域外诚实 ''）；单测 `test_media_can_play_type_capability_table_m4gd`（18 断言面） | F5（41→27 PF，in-face 全转 Pass） |
 | M4g-e | play()/pause() 生命周期语义（queued task + 移除暂停） | ✅ M3 扩批 VII 落地（2026-09-01）：play/playing/timeupdate 改 queued task 派发（play() 后注册的 handler 仍收到）；pause-on-removal 两段 defer（tick1 paused=true → tick2 pause 事件，幂等）；导入 pause-remove-from-document.html（387/414 = 93.5%）；单测 `test_media_pause_on_removal_m3b7` | — |
 | M4g-f | resource selection 算法（load 算法正题） | ✅ M3 扩批 XI 落地（2026-09-02）：networkState 同步段 NO_SOURCE(3)/稳定态 EMPTY(0) microtask 续段 + invoke 面（play/pause/load/setAttr-src/insert-source）+ load() 重跑（重置/重调度/epoch）+ 候选失效中断 + source 子 error 面；单测 `test_media_resource_selection_m3xi` | — |
+| M4g-g | TextTrack cue 面（VTTCue/addCue/排序/getCueById/TrackEvent） | ✅ M3 扩批 XII 落地（2026-09-02）：VTTCue 构造器 + 非有限 TypeError + cues 动态重排 + 索引 own 镜像 + TrackEvent 惰性链 + gate 非对称（cues readiness / activeCues mode）；单测 `test_media_text_track_cue_face_m3xii` | F1 尾账闭合 |
 
 ## 下一步计划
 
@@ -275,12 +317,16 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
   （play-in-detached-document——需 detached 文档播放时钟推进，依赖兄弟目标
    media-playback 播放钟接语义层；loop-from-ended.tentative / fragmented-mp4-end
    同域）；the-video-element 反射余面（video-loading-* preload 语义族——视
-   lazy-loading 支撑面）。**headless 可导入面已吃尽（94.5%）**——后续增量依赖
+   lazy-loading 支撑面）。**headless 可导入面已吃尽（95.2%）**——后续增量依赖
    兄弟目标解锁（media-playback 解码/时钟真值化 → 真播放推进面用例）。
 2. ~~**M4g-d**：canPlayType 能力表联动更新~~ ✅ 2026-09-01 兑现（能力表真值化——
    后续新增解码面（AV1/H.264，media-playback M3）时同步扩表）。
 3. ~~**M4g-f**：resource selection 算法面~~ ✅ 2026-09-02 兑现（M3 扩批 XI——
    上一轮「吃尽」判断漏了 loading-the-media-resource 族，本轮 30 案全绿）。
+4. ~~**M4g-g**：TextTrack 家族接口语义面~~ ✅ 2026-09-02 兑现（M3 扩批 XII——
+   限额前 WIP 续接收口，interfaces/ 28 案全绿）。track/track-element 目录余下
+   VTT 解析/渲染用例（cue 视觉呈现、渲染面）仍排除——字幕渲染归渲染域远期，
+   与入口文档排除清单一致。
 
 ## 里程碑状态
 
@@ -312,10 +358,13 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
   （+8 subtest 全绿；Fail 0 / Timeout 0 / PF 25）
   → 扩批 XI（2026-09-02，resource selection 算法族）**430/455 = 94.5%**
   （+30 subtest 全绿；Fail 0 / Timeout 0 / PF 25）
+  → 扩批 XII（2026-09-02，TextTrack 家族接口语义面）**496/521 = 95.2%**
+  （+66 subtest 全绿；Fail 0 / Timeout 0 / PF 25）
 - 入口：`make testharness-media`（FILTER 透传，`--json` 捕获 evidence）
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过
 - evidence：`evidence/2026-08-31-media-baseline.md`（+ 同名 .json 机读版）、
   `evidence/2026-09-01-media-event-family.json`、`evidence/2026-09-01-media-source-child.json`、
   `evidence/2026-09-01-media-volume-audio.json`、`evidence/2026-09-01-media-controlslist.json`、
   `evidence/2026-09-01-media-playbackrate-typeerror.json`、`evidence/2026-09-01-media-preload-setter.json`、
-  `evidence/2026-09-01-media-track-sync.json`、`evidence/2026-09-02-media-resource-selection.json`
+  `evidence/2026-09-01-media-track-sync.json`、`evidence/2026-09-02-media-resource-selection.json`、
+  `evidence/2026-09-02-media-texttrack-family.json`

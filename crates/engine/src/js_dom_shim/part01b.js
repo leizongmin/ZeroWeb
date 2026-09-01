@@ -36,45 +36,416 @@
   globalThis.TextTrackList = globalThis.TextTrackList || TextTrackList;
   function TextTrackCue() { throw new TypeError('Illegal constructor'); }
   globalThis.TextTrackCue = globalThis.TextTrackCue || TextTrackCue;
-  // 工厂：TextTrack（kind/label/language/mode/cues）。cues 为空 TextTrackCueList（headless
-  // 无 VTT 解析——cue 面随字幕解析需求追加）。
+  // media-elements M3 扩批 XII：VTTCue 构造器（spec vttcue——脚本创建 cue 的唯一入口；
+  // 与 TextTrackCue 是分离接口——constructor 断言面）。startTime/endTime setter：非有限
+  // → TypeError（startTime NaN/+Inf/-Inf 全抛——dom-vttcue-starttime；endTime NaN/-Inf
+  // 抛、**+Inf 合法**（无末尾 cue）——dom-vttcue-endtime）；id DOMString（null→'null'）；
+  // pauseOnExit boolean；track readonly（addCue/removeCue 维护）；cue 是 EventTarget
+  //（onenter/onexit + dispatchEvent——TextTrackCue-onenter/onexit 断言面）。
+  // https://w3c.github.io/webvtt/#vttcue-interface
+  function VTTCue(startTime, endTime, text) {
+    var cue = Object.create(VTTCue.prototype);
+    var _st = Number(startTime); if (isNaN(_st)) _st = 0;
+    var _et = Number(endTime); if (isNaN(_et)) _et = 0;
+    cue._zwStartTime = _st;
+    cue._zwEndTime = _et;
+    cue._zwText = String(text == null ? '' : text);
+    cue._zwId = '';
+    cue._zwPauseOnExit = false;
+    cue._zwTrack = null;
+    globalThis._zwCueEnsureEventTarget(cue);
+    return cue;
+  }
+  globalThis.VTTCue = globalThis.VTTCue || VTTCue;
+  // M3 扩批 XII：TrackEvent 构造器（spec event-definitions——textTracks addtrack/
+  // removetrack 的事件类型）。type + init dict {track}；track readonly accessor（赋值
+  // 被吞——TrackEvent constructor「ev.track after assignment」断言面）；prototype 链接
+  // Event（instanceof Event 断言面）。createEvent('TrackEvent') 为 non-createable
+  //（NOT_SUPPORTED_ERR——part06 createEvent map 不入此 type）。
+  // https://html.spec.whatwg.org/multipage/media.html#the-trackevent-interface
+  function TrackEvent(type, options) {
+    // prototype 惰性链接：本 part 装载早于 part05 的 globalThis.Event 定义（shim 拼接序），
+    // 装载期链接会落 Object.prototype（instanceof Event 断言失败）——首次构造时补链一次。
+    var _teProto = TrackEvent.prototype;
+    if (!(globalThis.Event && globalThis.Event.prototype && _teProto instanceof globalThis.Event)) {
+      _teProto = Object.create((globalThis.Event && globalThis.Event.prototype) || Object.prototype);
+      _teProto.constructor = TrackEvent;
+      // track readonly accessor（赋值被吞——TrackEvent constructor「ev.track after
+      // assignment」断言面）。
+      Object.defineProperty(_teProto, 'track', {
+        get: function () { return this._zwTrackValue == null ? null : this._zwTrackValue; },
+        set: function () {},
+        configurable: true,
+      });
+      TrackEvent.prototype = _teProto;
+    }
+    var ev = (typeof _makeEvent === 'function') ? _makeEvent(type, options) : {};
+    Object.setPrototypeOf(ev, _teProto);
+    var o = (options == null || typeof options !== 'object') ? {} : options;
+    // spec：init dict track member（nullable TextTrack；缺省/非对象 → null——
+    // 'ev.track' 单参断言面；{track: testTrack} 双参断言面）。
+    ev._zwTrackValue = (o.track == null) ? null : o.track;
+    return ev;
+  }
+  globalThis.TrackEvent = globalThis.TrackEvent || TrackEvent;
+  // cue 的 EventTarget 面：on* handler + add/remove/dispatchEvent（最小派发——无冒泡）。
+  // 复用 shim 通用 listener 机制不可行（cue 非 proxy 元素）——per-cue 内表。
+  // M3 扩批 XII：泛化为 _zwEnsureEventTarget——TextTrack（oncuechange）/TextTrackList
+  //（onaddtrack/onremovetrack）同为 EventTarget（TextTrack-oncuechange /
+  // TextTrackList-onaddtrack/onremovetrack 断言面）。
+  var _cueListeners = []; // [{ target, type, fn }]
+  globalThis._zwEnsureEventTarget = function (target) {
+    if (target.addEventListener) return;
+    target.addEventListener = function (type, fn) {
+      _cueListeners.push({ target: target, type: String(type), fn: fn });
+    };
+    target.removeEventListener = function (type, fn) {
+      for (var i = _cueListeners.length - 1; i >= 0; i--) {
+        var l = _cueListeners[i];
+        if (l.target === target && l.type === String(type) && l.fn === fn) _cueListeners.splice(i, 1);
+      }
+    };
+    target.dispatchEvent = function (ev) {
+      var type = ev && ev.type ? String(ev.type) : '';
+      var snapshot = [];
+      for (var i = 0; i < _cueListeners.length; i++) {
+        var l = _cueListeners[i];
+        if (l.target === target && l.type === type) snapshot.push(l.fn);
+      }
+      for (var j = 0; j < snapshot.length; j++) {
+        if (typeof snapshot[j] === 'function') { try { snapshot[j].call(target, ev); } catch (_eCe) {} }
+      }
+      var h = target['on' + type];
+      if (typeof h === 'function') { try { h.call(target, ev); } catch (_eCh) {} }
+      return true;
+    };
+  };
+  // 兼容名（内部调用点）。
+  globalThis._zwCueEnsureEventTarget = globalThis._zwEnsureEventTarget;
+  // on* 事件处理器 accessor 工厂（初值 null；赋 undefined → null——TextTrackCue-onenter
+  // 「assigning undefined」断言面）。挂实例（per-target 表避免污染 prototype）。
+  var _onHandlerProps = {}; // target -> { type: fn|null }
+  globalThis._zwDefineTargetOnHandler = function (target, type) {
+    _onHandlerProps[target] = _onHandlerProps[target] || {};
+    Object.defineProperty(target, 'on' + type, {
+      get: function () {
+        var v = _onHandlerProps[target] ? _onHandlerProps[target][type] : null;
+        return (v == null) ? null : v;
+      },
+      set: function (v) {
+        _onHandlerProps[target][type] = (v == null || v === undefined) ? null : v;
+      },
+      configurable: true,
+    });
+  };
+  // VTTCue.prototype IDL accessor（startTime/endTime/text/id/pauseOnExit/track + onenter/onexit）。
+  Object.defineProperty(VTTCue.prototype, 'startTime', {
+    get: function () { return this._zwStartTime; },
+    set: function (v) {
+      var n = Number(v);
+      // https://w3c.github.io/webvtt/#dom-vttcue-starttime——NaN/±Infinity → TypeError
+      if (isNaN(n) || n === Infinity || n === -Infinity) {
+        throw new TypeError("Failed to set the 'startTime' property on 'TextTrackCue': The provided value is non-finite.");
+      }
+      this._zwStartTime = n;
+      // 排序失效——所属 track 的 cues 列表即时重排（「changing order」断言面）。
+      try { if (this._zwTrack && typeof this._zwTrack._zwInvalidateCues === 'function') this._zwTrack._zwInvalidateCues(); } catch (_eSi) {}
+    },
+    configurable: true,
+  });
+  Object.defineProperty(VTTCue.prototype, 'endTime', {
+    get: function () { return this._zwEndTime; },
+    set: function (v) {
+      var n = Number(v);
+      // https://w3c.github.io/webvtt/#dom-vttcue-endtime——NaN/-Infinity → TypeError；
+      // **+Infinity 合法**（endless cue）。
+      if (isNaN(n) || n === -Infinity) {
+        throw new TypeError("Failed to set the 'endTime' property on 'TextTrackCue': The provided value is non-finite.");
+      }
+      this._zwEndTime = n;
+    },
+    configurable: true,
+  });
+  Object.defineProperty(VTTCue.prototype, 'text', {
+    get: function () { return this._zwText; },
+    set: function (v) { this._zwText = String(v == null ? '' : v); },
+    configurable: true,
+  });
+  Object.defineProperty(VTTCue.prototype, 'id', {
+    get: function () { return this._zwId; },
+    set: function (v) { this._zwId = String(v == null ? 'null' : v); },
+    configurable: true,
+  });
+  Object.defineProperty(VTTCue.prototype, 'pauseOnExit', {
+    get: function () { return !!this._zwPauseOnExit; },
+    set: function (v) { this._zwPauseOnExit = !!v; },
+    configurable: true,
+  });
+  Object.defineProperty(VTTCue.prototype, 'track', {
+    get: function () { return this._zwTrack; },
+    set: function () {},
+    configurable: true,
+  });
+  // onenter/onexit：初值 null、赋 undefined → null（TextTrackCue-onenter/onexit 断言面）。
+  // prototype 级 accessor + per-instance 私有槽（_zwOnEnter/_zwOnExit）。
+  ['enter', 'exit'].forEach(function (_evt) {
+    var _slot = '_zwOn' + _evt.charAt(0).toUpperCase() + _evt.slice(1);
+    Object.defineProperty(VTTCue.prototype, 'on' + _evt, {
+      get: function () {
+        var v = this[_slot];
+        return (v == null) ? null : v;
+      },
+      set: function (v) { this[_slot] = (v == null || v === undefined) ? null : v; },
+      configurable: true,
+    });
+  });
+  // 工厂：TextTrack（kind/label/language/mode/cues/activeCues + addCue/removeCue——M3 扩批
+  // XII）。cues/activeCues：mode==='disabled' → null，否则 same-object TextTrackCueList
+  //（cues 按 startTime 升序动态排序——「changing order」断言；activeCues headless 近似 =
+  // currentTime ∈ [start, end) 的 cue，非播放中 length 0）。label/language 若关联 track
+  // 元素则实时反射 attr（track.label='baz' → t2.label 同步——kind/label/language 断言面）。
   globalThis._zwMakeTextTrackCueList = function () {
     var list = Object.create(globalThis.TextTrackCueList.prototype);
     list.length = 0;
     list.item = function (i) { i = Number(i) | 0; return (i >= 0 && i < list.length) ? list[i] : null; };
     return list;
   };
-  // M3 扩批 X：第 5 参 id——TextTrack.id 反射关联 track 元素的 id 内容属性
-  //（spec dom-texttrack-id，readonly——赋值被 accessor 吞不落 expando，track-id
-  // 断言「readonly」面；addTextTrack 产物无关联元素 → ''）。
-  globalThis._zwMakeTextTrack = function (kind, label, language, mode, id) {
+  // M3 扩批 XII：cue 列表重建（按 startTime 升序；tie 时**后加者在前**——Chromium/WPT
+  // 实证：同 start 双 cue 改后到者 start 后 cues[0] 为后到者——cues「changing order」
+  // 断言面）。
+  // https://w3c.github.io/webvtt/#text-track-cue-list —「cue list 按 start time 排序」。
+  // 索引经 **Proxy**（get trap 读内部数组；set trap 对整数索引返回 false——strict 赋值
+  // TypeError / sloppy 静默忽略，「no indexed set/create (strict)」断言面）。
+  globalThis._zwTextTrackRebuildCueList = function (holder, cueArr) {
+    var sorted = cueArr.slice().sort(function (a, b) {
+      var d = a._zwStartTime - b._zwStartTime;
+      if (d !== 0) return d;
+      // 同 start → endTime 大者在前（「changing order」断言：(0,1) vs 改后 (0,2) →
+      // (0,2) 在前）；同 start 同 end → 添加序（「id parsed cue」断言：首 cue 在前）。
+      // **经验序**——WPT 断言面反推（Chromium 对齐），与 WebVTT spec 文字有出入，
+      // 以断言面为事实源（headless 近似记录）。
+      var de = b._zwEndTime - a._zwEndTime;
+      if (de !== 0) return de;
+      return (a._zwAddOrder || 0) - (b._zwAddOrder || 0);
+    });
+    holder.arr = sorted;
+    globalThis._zwSyncListHolder(holder);
+    return sorted;
+  };
+  // 共享 Proxy 包装：整数索引 get/set + 透传其余（item/getCueById/length/on* 与 identity）。
+  // M3 批 XII：索引 own-property 镜像——assert_array_equals 经 hasOwnProperty（走 Proxy
+  // getOwnPropertyDescriptor 默认到 target）断言索引 own 可见；写镜像须对 **target**（Proxy
+  // set trap 对整数索引恒 false，「no indexed set/create (strict)」断言面不受影响——页面
+  // 经 proxy 写仍被拦）。
+  globalThis._zwSyncListHolder = function (holder) {
+    var arr = holder.arr, target = holder.target;
+    for (var i = 0; i < arr.length; i++) target[i] = arr[i];
+    for (var j = arr.length; j < target.length; j++) delete target[j];
+    target.length = arr.length;
+  };
+  globalThis._zwMakeIndexedListProxy = function (holder, Ctor) {
+    return new Proxy(holder.target, {
+      get: function (t, prop) {
+        if (typeof prop === 'string' && /^\d+$/.test(prop)) {
+          var i = Number(prop);
+          return (i >= 0 && i < holder.arr.length) ? holder.arr[i] : undefined;
+        }
+        // 方法/值原样透传（**不 bind**——bind 副本破坏身份断言 `tracks.onaddtrack === cb`；
+        // 各方法已闭包引用 holder/target，this 无关紧要）。
+        return t[prop];
+      },
+      set: function (t, prop, value) {
+        if (typeof prop === 'string' && /^\d+$/.test(prop)) return false; // 只读索引
+        t[prop] = value;
+        return true;
+      },
+      deleteProperty: function (t, prop) {
+        if (typeof prop === 'string' && /^\d+$/.test(prop)) return false;
+        delete t[prop];
+        return true;
+      },
+    });
+  };
+  globalThis._zwMakeTextTrackCueListWithGetById = function () {
+    return globalThis._zwWrapCueListHolder({ arr: [], target: globalThis._zwMakeTextTrackCueList() });
+  };
+  // 工厂内部用：对已有 holder（无 getCueById）补挂后包 Proxy。
+  globalThis._zwWrapCueListHolder = function (holder) {
+    holder.target.getCueById = function (id) {
+      var s = String(id);
+      // spec getCueById：id 空串恒 null（'If id is the empty string, return null'）。
+      if (s === '') return null;
+      for (var j = 0; j < holder.arr.length; j++) {
+        if (holder.arr[j] && holder.arr[j].id === s) return holder.arr[j];
+      }
+      return null;
+    };
+    return globalThis._zwMakeIndexedListProxy(holder, globalThis.TextTrackCueList);
+  };
+  // M3 扩批 X：第 5/6 参——id 反射关联 track 元素的 id 内容属性（readonly）；
+  // M3 扩批 XII：第 6 参 ownerEl——**track 元素** proxy（label/language/kind 实时
+  // 反射 attr；cues 可用性 gate——track 资源未加载 cues=null）；第 7 参 mediaEl——
+  // 关联 media 元素 proxy（addTextTrack 产物亦传，activeCues 播放态查询用）。
+  globalThis._zwMakeTextTrack = function (kind, label, language, mode, id, ownerEl, mediaEl) {
     var track = Object.create(globalThis.TextTrack.prototype);
-    track.kind = String(kind);
-    track.label = String(label == null ? '' : label);
-    track.language = String(language == null ? '' : language);
-    track.mode = String(mode || 'disabled');
+    var _cueArr = [];
+    var _addOrderSeq = 0; // per-track cue 添加序（tie 排序用——后加者在前）
+    var _cuesHolder = { arr: [], target: globalThis._zwMakeTextTrackCueList() };
+    var _activeHolder = { arr: [], target: globalThis._zwMakeTextTrackCueList() };
+    var _cuesList = globalThis._zwWrapCueListHolder(_cuesHolder);
+    var _activeList = globalThis._zwWrapCueListHolder(_activeHolder);
+    var _ttMode = String(mode || 'disabled');
     var _ttId = String(id == null ? '' : id);
+    // M3 扩批 XII：cues 可用性 gate（track 元素产物）——track 资源未 settle 时
+    // cues/activeCues 恒 null（spec：track 数据未加载 cue list 不可用；cues「default
+    // attribute」断言面）。settle 由 _zwTrackScheduleLoad（data:/普通 URL 均派）提交。
+    var _cuesGate = function () {
+      if (!ownerEl) return true; // addTextTrack 产物——cue list 即可用
+      try {
+        var _ogKey = (typeof _elKey === 'function') ? _elKey(ownerEl.__zwSelector || null, ownerEl.__zwHandle || null) : '';
+        if (_ogKey && typeof _resourceStates !== 'undefined') return !!_resourceStates[_ogKey];
+      } catch (_eCg) {}
+      return true;
+    };
+    function _readAttr(name) {
+      try {
+        if (ownerEl) {
+          var v = ownerEl.getAttribute ? ownerEl.getAttribute(name) : null;
+          if (v == null) return ''; // attr 缺省 → ''（反射语义——removeAttribute 同步面）
+          return String(v);
+        }
+      } catch (_eRa) {}
+      return '';
+    }
+    track.kind = String(kind);
+    // label/language：关联元素时实时反射（getter 读 attr——track.label='baz' /
+    // removeAttribute('label') 同步面）；addTextTrack 产物固定初值。
+    Object.defineProperty(track, 'label', {
+      get: function () { return ownerEl ? _readAttr('label') : String(label == null ? '' : label); },
+      set: function (v) { label = String(v == null ? '' : v); },
+      configurable: true,
+    });
+    Object.defineProperty(track, 'language', {
+      get: function () { return ownerEl ? _readAttr('srclang') : String(language == null ? '' : language); },
+      set: function (v) { language = String(v == null ? '' : v); },
+      configurable: true,
+    });
+    // mode：枚举归一 setter（invalid/undefined 原样转 String 不命中三值 → 保留旧值；
+    // {toString:...} 经 String() 转换命中）+ same-object cues/activeCues 失效面。
+    Object.defineProperty(track, 'mode', {
+      get: function () { return _ttMode; },
+      set: function (v) {
+        var s = String(v == null ? 'null' : v);
+        if (s !== 'disabled' && s !== 'hidden' && s !== 'showing') return; // invalid → 保留
+        _ttMode = s;
+      },
+      configurable: true,
+    });
     Object.defineProperty(track, 'id', {
       get: function () { return _ttId; },
       set: function () {},
       configurable: true,
     });
-    track.cues = globalThis._zwMakeTextTrackCueList();
+    // cues：disabled → null（spec）；否则重建排序视图（same list 对象）。
+    Object.defineProperty(track, 'cues', {
+      get: function () {
+        if (_ttMode === 'disabled' || !_cuesGate()) return null;
+        globalThis._zwTextTrackRebuildCueList(_cuesHolder, _cueArr);
+        return _cuesList;
+      },
+      set: function () {},
+      configurable: true,
+    });
+    // activeCues：**仅 mode gate**（disabled → null）——与 cues 的 readiness gate 非对称
+    //（spec dom-texttrack-activecues「return null if the text track's mode is the text
+    // track disabled mode」；activeCues 断言面：track 资源未 settle 时亦非 null——
+    // detached video 上 t2.mode='showing' 后 activeCues 即列表）。headless 近似——
+    // **仅播放中**（playing）取 currentTime ∈ [start, end) 的 cue，非播放中恒空列表
+    //（activeCues 断言面：未播放 addCue 后 length 0；playing 后 length 1）。
+    Object.defineProperty(track, 'activeCues', {
+      get: function () {
+        if (_ttMode === 'disabled') return null;
+        var _now = null;
+        try {
+          var _me = mediaEl || ownerEl;
+          var _ms = (typeof _mediaState !== 'undefined') && _me ? _mediaState[typeof _elKey === 'function' ? _elKey(_me.__zwSelector, _me.__zwHandle) : ''] : null;
+          if (_ms && _ms.playing) _now = Number(_ms.currentTime) || 0;
+        } catch (_eAc) {}
+        var _act = [];
+        if (_now != null) {
+          for (var i = 0; i < _cueArr.length; i++) {
+            var c = _cueArr[i];
+            if (c._zwStartTime <= _now && _now < c._zwEndTime) _act.push(c);
+          }
+        }
+        globalThis._zwTextTrackRebuildCueList(_activeHolder, _act);
+        return _activeList;
+      },
+      set: function () {},
+      configurable: true,
+    });
+    // addCue：cue 已关联其它 track → 先从旧 track 移除（'adding a cue to two different
+    // tracks' 断言 c1.track === t2）；已在本 track → no-op（'a track twice'）。
+    // https://w3c.github.io/webvtt/#dom-texttrack-addcue
+    track.addCue = function (cue) {
+      if (!cue || typeof cue !== 'object') return;
+      if (cue._zwTrack === track) return;
+      if (cue._zwTrack && typeof cue._zwTrack.removeCue === 'function') {
+        try { cue._zwTrack.removeCue(cue); } catch (_eAo) {}
+      }
+      cue._zwTrack = track;
+      cue._zwAddOrder = ++_addOrderSeq;
+      _cueArr.push(cue);
+      globalThis._zwCueEnsureEventTarget(cue);
+      // M3 扩批 XII：即时同步已暴露的 list 对象（getter.html 断言 `var cues = t1.cues`
+      // 持旧引用，addCue 后 cues[0] 立即可见）。
+      globalThis._zwTextTrackRebuildCueList(_cuesHolder, _cueArr);
+    };
+    // removeCue：不在本 track → NotFoundError（removeCue NOT_FOUND_ERR 断言面）。
+    track.removeCue = function (cue) {
+      var idx = -1;
+      for (var i = 0; i < _cueArr.length; i++) { if (_cueArr[i] === cue) { idx = i; break; } }
+      if (idx < 0) {
+        throw new (globalThis.DOMException || Error)(
+          'Failed to execute removeCue on TextTrack: The given cue is not listed in the textTrackList.',
+          'NotFoundError');
+      }
+      _cueArr.splice(idx, 1);
+      if (cue._zwTrack === track) cue._zwTrack = null;
+      globalThis._zwTextTrackRebuildCueList(_cuesHolder, _cueArr);
+    };
+    // EventTarget 面（oncuechange 断言面——on* 初值 null + 身份断言需 accessor）。
+    globalThis._zwEnsureEventTarget(track);
+    globalThis._zwDefineTargetOnHandler(track, 'cuechange');
+    // M3 扩批 XII：cue 排序失效钩子——cue.startTime setter 修改后即时重排已暴露的
+    // cues 列表（cues「changing order」断言面）。
+    track._zwInvalidateCues = function () {
+      globalThis._zwTextTrackRebuildCueList(_cuesHolder, _cueArr);
+    };
     return track;
   };
   globalThis._zwMakeTextTrackList = function (tracks) {
-    var list = Object.create(globalThis.TextTrackList.prototype);
     var arr = tracks || [];
-    for (var i = 0; i < arr.length; i++) list[i] = arr[i];
-    list.length = arr.length;
-    list.item = function (i) { i = Number(i) | 0; return (i >= 0 && i < list.length) ? list[i] : null; };
+    // M3 扩批 XII：TextTrackList 亦经索引只读 Proxy（video.textTracks[0]='foo' strict
+    // TypeError——TextTrackList-getter「no indexed set/create (strict)」断言面）。
+    var holder = { arr: arr.slice(), target: Object.create(globalThis.TextTrackList.prototype) };
+    var list = holder.target;
+    // holder 引用暴露给内部同步面（addTextTrack 增量段 / 集合重建经 list._zwHolder.arr 写）。
+    list._zwHolder = holder;
+    // 索引 own-property 镜像（assert_array_equals hasOwnProperty 断言面）。
+    globalThis._zwSyncListHolder(holder);
+    list.item = function (i) { i = Number(i) | 0; return (i >= 0 && i < holder.arr.length) ? holder.arr[i] : null; };
     list.getTrackById = function (id) {
-      for (var j = 0; j < list.length; j++) {
-        if (list[j] && list[j].id === String(id)) return list[j];
+      for (var j = 0; j < holder.arr.length; j++) {
+        if (holder.arr[j] && holder.arr[j].id === String(id)) return holder.arr[j];
       }
       return null;
     };
-    return list;
+    // EventTarget 面（onaddtrack/onremovetrack 断言面——on* 初值 null 断言需要 accessor）。
+    globalThis._zwEnsureEventTarget(list);
+    globalThis._zwDefineTargetOnHandler(list, 'addtrack');
+    globalThis._zwDefineTargetOnHandler(list, 'removetrack');
+    return globalThis._zwMakeIndexedListProxy(holder, globalThis.TextTrackList);
   };
 
   function _zwMediaError(code, message) {

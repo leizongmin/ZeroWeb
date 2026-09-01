@@ -6942,6 +6942,106 @@
   function _zwSettleResourceSelector(sel, tag, url, outcome, width, height, durationMs) {
     return _zwSettleResourceKey(_elKey(sel, null), sel, null, tag, url, outcome, width, height, undefined, durationMs);
   }
+  // media-elements M3 扩批 XII：data:text/vtt 最小解析 + track 资源 settle（headless
+  // 近似——runner/生产页 track.src 动态设置无宿主抓取通路）。解析产物填入 track 元素
+  // 关联 TextTrack 的 cue 列表并派 load 事件（TextTrackCue parsed-cue 子测断言面：
+  // startTime/endTime/id/text 值面）。WEBVTT 最小面：BOM/头行 → cue 块（可选 id 行 +
+  // 时间行「t1 --> t2」+ 文本行）；时间 HH:MM:SS.mmm / MM:SS.mmm。
+  // https://w3c.github.io/webvtt/#webvtt-parser
+  globalThis._zwParseVttDataUrl = function (url) {
+    try {
+      var marker = 'data:text/vtt,';
+      var idx = String(url).indexOf(marker);
+      if (idx < 0) return null;
+      var raw = decodeURIComponent(String(url).slice(idx + marker.length));
+      var lines = raw.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
+      var i = 0;
+      // 跳 WEBVTT 头（允许 BOM 前缀）。
+      while (i < lines.length && String(lines[i]).replace(/^﻿/, '').indexOf('WEBVTT') !== 0) i++;
+      i++;
+      var cues = [];
+      var _tParse = function (s) {
+        var m = /(?:(\d+):)?(\d{1,2}):(\d{2})\.(\d{3})/.exec(String(s));
+        if (!m) return NaN;
+        return (m[1] ? Number(m[1]) * 3600 : 0) + Number(m[2]) * 60 + Number(m[3]) + Number(m[4]) / 1000;
+      };
+      while (i < lines.length) {
+        var line = String(lines[i]);
+        if (line === '') { i++; continue; }
+        var tm = line.indexOf('-->');
+        var cueId = '';
+        if (tm < 0) {
+          // 可能是 cue id 行——下一行应为时间行。
+          cueId = line;
+          i++;
+          line = String(lines[i] == null ? '' : lines[i]);
+          tm = line.indexOf('-->');
+          if (tm < 0) { continue; }
+        }
+        var parts = line.split('-->');
+        var st = _tParse(parts[0]);
+        var et = _tParse(parts[1]);
+        if (isNaN(st) || isNaN(et)) { i++; continue; }
+        i++;
+        var textLines = [];
+        while (i < lines.length && String(lines[i]) !== '') {
+          textLines.push(String(lines[i]));
+          i++;
+        }
+        var cue = new globalThis.VTTCue(st, et, textLines.join('\n'));
+        if (cueId) cue.id = cueId;
+        cues.push(cue);
+      }
+      return cues;
+    } catch (_eVtt) { return null; }
+  };
+  // M3 扩批 XII：media 元素的所有 track 子 → 触发检索（_zwTrackScheduleLoad 幂等）。
+  // spec：track 检索随 media 元素加载循环启动（connected 时——cues 可用性 gate 开面）。
+  globalThis._zwScheduleChildTrackLoads = function (sel, handle) {
+    try {
+      var _sckKids = (handle && _handleChildren[handle]) ? _handleChildren[handle]
+        : (typeof _childNodeList === 'function' ? _childNodeList(sel, handle) : []);
+      for (var i = 0; i < _sckKids.length; i++) {
+        var k = _sckKids[i];
+        if (!k || k.nodeType !== 1) continue;
+        var tag = String(k.tagName || '').toUpperCase();
+        if (tag !== 'TRACK') continue;
+        if (typeof globalThis._zwTrackScheduleLoad === 'function') {
+          globalThis._zwTrackScheduleLoad(k.__zwSelector || null, k.__zwHandle || null);
+        }
+      }
+    } catch (_eScl) {}
+  };
+  // track 元素 src 的 headless 加载模拟——data:text/vtt 解析填 cue + load 事件；
+  // 非 data: URL 同样派 load（headless 无真字幕抓取， cues 空）。幂等：per-track 一次。
+  globalThis._zwTrackScheduleLoad = function (sel, handle) {
+    var key = _elKey(sel, handle);
+    if (typeof setTimeout !== 'function') return;
+    var _msTrack = _mediaState[key] || (_mediaState[key] = {});
+    if (_msTrack.trackSettled) return;
+    _msTrack.trackSettled = true;
+    var _deferCont = function (fn) {
+      if (typeof queueMicrotask === 'function') queueMicrotask(fn);
+      else setTimeout(fn, 0);
+    };
+    _deferCont(function () {
+      try {
+        var _raw = handle ? __zw_get_attr_handle(handle, 'src') : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'src') : __zw_get_attr(sel, 'src'));
+        var _abs = String(_raw == null ? '' : _raw).replace(/^[\x00-\x20]+/, '').replace(/[\x00-\x20]+$/, '');
+        try { if (typeof _zwResolveFetchUrl === 'function') _abs = _zwResolveFetchUrl(_abs); } catch (_eTsR) {}
+        var cues = (typeof globalThis._zwParseVttDataUrl === 'function') ? globalThis._zwParseVttDataUrl(_abs) : null;
+        if (cues && cues.length) {
+          // 填入关联 TextTrack（track.track getter 建实例）。
+          var el = (typeof _makeProxy === 'function') ? _makeProxy(sel, handle) : null;
+          var tt = el ? el.track : null;
+          if (tt && typeof tt.addCue === 'function') {
+            for (var i = 0; i < cues.length; i++) tt.addCue(cues[i]);
+          }
+        }
+        _zwSettleResourceKey(key, sel, handle, 'track', _abs, 'loaded', 0, 0);
+      } catch (_eTs) {}
+    });
+  };
   function _zwSettleResourceKey(key, sel, handle, tag, url, outcome, width, height, errorCode, durationMs) {
     if (_resourceStates[key]) return false; // 每个资源请求只 settle / 派发一次。
     var state = {

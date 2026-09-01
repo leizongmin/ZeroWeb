@@ -199,4 +199,42 @@ for relative in "${TOP_FILES[@]}"; do
   fetch_raw "${BASE}/${relative}"
 done
 
+# M3 扩批 XII：TextTrack 家族接口语义面（TextTrack/TextTrackCueList/TextTrackList/
+# TextTrackCue/TrackEvent——VTTCue 最小面 + addCue/removeCue/cues 排序/getCueById/
+# mode 枚举归一/on* EventTarget 面）。VTT 解析依赖子测（track.src=data:text/vtt →
+# parsed cue）经 settle 链 data: URL 文本面解锁（shim part06 `_zwParseVttDataUrl`）。
+INTERFACES_FILES=(
+  "interfaces/TextTrack/activeCues.html"
+  "interfaces/TextTrack/addCue.html"
+  "interfaces/TextTrack/constants.html"
+  "interfaces/TextTrack/cues.html"
+  "interfaces/TextTrack/kind.html"
+  "interfaces/TextTrack/label.html"
+  "interfaces/TextTrack/language.html"
+  "interfaces/TextTrack/mode.html"
+  "interfaces/TextTrack/oncuechange.html"
+  "interfaces/TextTrack/removeCue.html"
+  "interfaces/TextTrackCue/constructor.html"
+  "interfaces/TextTrackCue/endTime.html"
+  "interfaces/TextTrackCue/id.html"
+  "interfaces/TextTrackCue/onenter.html"
+  "interfaces/TextTrackCue/onexit.html"
+  "interfaces/TextTrackCue/pauseOnExit.html"
+  "interfaces/TextTrackCue/startTime.html"
+  "interfaces/TextTrackCue/track.html"
+  "interfaces/TextTrackCueList/getCueById.html"
+  "interfaces/TextTrackCueList/getter.html"
+  "interfaces/TextTrackCueList/length.html"
+  "interfaces/TextTrackList/getTrackById.html"
+  "interfaces/TextTrackList/getter.html"
+  "interfaces/TextTrackList/length.html"
+  "interfaces/TextTrackList/onaddtrack.html"
+  "interfaces/TextTrackList/onremovetrack.html"
+  "interfaces/TrackEvent/constructor.html"
+  "interfaces/TrackEvent/createEvent.html"
+)
+for relative in "${INTERFACES_FILES[@]}"; do
+  fetch_raw "${BASE}/${relative}"
+done
+
 echo "Media testharness subset ready (${#TOP_FILES[@]} top files + track dir, WPT ${WPT_REV})"

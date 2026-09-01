@@ -11558,14 +11558,19 @@
             // optional DOMString：undefined（含 omitted）→ 缺省 ''；null → 'null'（WebIDL DOMString 转换）。
             var _label = (label === undefined) ? '' : String(label);
             var _lang = (language === undefined) ? '' : String(language);
-            var _track = globalThis._zwMakeTextTrack(_k, _label, _lang, 'hidden');
+            // M3 扩批 XII：第 7 参 mediaEl = 本 media 元素 proxy——activeCues 播放态查询
+            //（video.play() 后 addTextTrack 产物的 activeCues 面一致）；无 ownerEl（反射
+            // 面用固定初值——label/language 不反射 media 元素 attr）。
+            var _track = globalThis._zwMakeTextTrack(_k, _label, _lang, 'hidden', '', null, (typeof _makeProxy === 'function') ? _makeProxy(sel, handle) : null);
             // 扩批 X：手动段分离记账——同步重建时 addTextTrack 产物保尾不丢。
             _ttEntry.manual.push(_track);
             _ttEntry.tracks.push(_track);
-            // list 已存在（textTracks 先读过）→ 增量同步索引/length（same object 语义）。
-            if (_ttEntry.list) {
-              _ttEntry.list[_ttEntry.list.length] = _track;
-              _ttEntry.list.length = _ttEntry.list.length + 1;
+            // list 已存在（textTracks 先读过）→ 增量同步（M3 扩批 XII：经 holder——
+            // list 是索引只读 Proxy，直写索引被 set trap 拒绝）。
+            if (_ttEntry.list && _ttEntry.list._zwHolder) {
+              var _attHolder = _ttEntry.list._zwHolder;
+              _attHolder.arr.push(_track);
+              globalThis._zwSyncListHolder(_attHolder);
             }
             return _track;
           };

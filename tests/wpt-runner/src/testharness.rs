@@ -1319,6 +1319,38 @@ pub const MEDIA_TEST_FILES: &[&str] = &[
     "html/semantics/embedded-content/media-elements/interfaces/HTMLElement/HTMLMediaElement/addTextTrack.html",
     "html/semantics/embedded-content/media-elements/interfaces/HTMLElement/HTMLMediaElement/crossOrigin.html",
     "html/semantics/embedded-content/media-elements/interfaces/HTMLElement/HTMLMediaElement/textTracks.html",
+    // M3 扩批 XII：TextTrack 家族接口语义面（TextTrack/TextTrackCueList/TextTrackList/
+    // TextTrackCue/TrackEvent——VTTCue 最小面 + addCue/removeCue/cues 排序/getCueById/
+    // mode 枚举归一/on* EventTarget 面）。逐文件全导入——VTT 解析依赖子测（track.src=
+    // data:text/vtt → parsed cue）经 settle 链 data: URL 文本面解锁（见 shim part06）。
+    "html/semantics/embedded-content/media-elements/interfaces/TextTrack/activeCues.html",
+    "html/semantics/embedded-content/media-elements/interfaces/TextTrack/addCue.html",
+    "html/semantics/embedded-content/media-elements/interfaces/TextTrack/constants.html",
+    "html/semantics/embedded-content/media-elements/interfaces/TextTrack/cues.html",
+    "html/semantics/embedded-content/media-elements/interfaces/TextTrack/kind.html",
+    "html/semantics/embedded-content/media-elements/interfaces/TextTrack/label.html",
+    "html/semantics/embedded-content/media-elements/interfaces/TextTrack/language.html",
+    "html/semantics/embedded-content/media-elements/interfaces/TextTrack/mode.html",
+    "html/semantics/embedded-content/media-elements/interfaces/TextTrack/oncuechange.html",
+    "html/semantics/embedded-content/media-elements/interfaces/TextTrack/removeCue.html",
+    "html/semantics/embedded-content/media-elements/interfaces/TextTrackCue/constructor.html",
+    "html/semantics/embedded-content/media-elements/interfaces/TextTrackCue/endTime.html",
+    "html/semantics/embedded-content/media-elements/interfaces/TextTrackCue/id.html",
+    "html/semantics/embedded-content/media-elements/interfaces/TextTrackCue/onenter.html",
+    "html/semantics/embedded-content/media-elements/interfaces/TextTrackCue/onexit.html",
+    "html/semantics/embedded-content/media-elements/interfaces/TextTrackCue/pauseOnExit.html",
+    "html/semantics/embedded-content/media-elements/interfaces/TextTrackCue/startTime.html",
+    "html/semantics/embedded-content/media-elements/interfaces/TextTrackCue/track.html",
+    "html/semantics/embedded-content/media-elements/interfaces/TextTrackCueList/getCueById.html",
+    "html/semantics/embedded-content/media-elements/interfaces/TextTrackCueList/getter.html",
+    "html/semantics/embedded-content/media-elements/interfaces/TextTrackCueList/length.html",
+    "html/semantics/embedded-content/media-elements/interfaces/TextTrackList/getTrackById.html",
+    "html/semantics/embedded-content/media-elements/interfaces/TextTrackList/getter.html",
+    "html/semantics/embedded-content/media-elements/interfaces/TextTrackList/length.html",
+    "html/semantics/embedded-content/media-elements/interfaces/TextTrackList/onaddtrack.html",
+    "html/semantics/embedded-content/media-elements/interfaces/TextTrackList/onremovetrack.html",
+    "html/semantics/embedded-content/media-elements/interfaces/TrackEvent/constructor.html",
+    "html/semantics/embedded-content/media-elements/interfaces/TrackEvent/createEvent.html",
     // M3 扩批 III：the-audio-element 反射面（Audio 构造器 spec 语义——preload=auto +
     // 无 new TypeError + HTMLAudioElement illegal-constructor 调用面）。
     "html/semantics/embedded-content/the-audio-element/audio_constructor.html",
