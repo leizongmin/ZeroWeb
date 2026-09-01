@@ -276,3 +276,8 @@ engine 2539 / media 27 / webview 668 全绿；testharness-media 372P/0F/41PF 维
   swscale 一致）+ 帧界外白底 + 不可解码 src 占位负例；reftest-upstream
   13981/16730（**83.6%**，replaced-element-003 unmask 已收口 ✓）
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过
+
+## 归档
+
+- [archive/2026-09-01_m0-m2-slices.md](archive/2026-09-01_m0-m2-slices.md) —
+  M0 门控收口与 M1/M2 切片全链过程记录（只追加不修改；本控制面保留最新态）。

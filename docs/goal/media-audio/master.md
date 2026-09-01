@@ -122,3 +122,8 @@ volume/muted 真控制。**双重启动门控均已解除**：① M0 音频环�
   underrun；非整帧写入拒收
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过
 - evidence：[evidence/2026-09-01-m0-environment-probe.md](evidence/2026-09-01-m0-environment-probe.md)
+
+## 归档
+
+- [archive/2026-09-01_m0-m2-and-d2-closure.md](archive/2026-09-01_m0-m2-and-d2-closure.md) —
+  M0/M1/M2 过程与 D2 获批项闭环记录（只追加不修改；本控制面保留最新态）。
