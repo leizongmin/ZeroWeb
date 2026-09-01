@@ -83,6 +83,11 @@ impl VideoPlayerRegistry {
         self.players.get(&key).is_some_and(|p| p.is_playing())
     }
 
+    /// 快速检查：是否存在播放中的 player（渲染泵门禁——无播放时零开销跳过 tick）。
+    pub fn is_any_playing(&self) -> bool {
+        self.players.values().any(|p| p.is_playing())
+    }
+
     /// 渲染泵推进：tick 所有播放中的 player，新帧注入 `image_cache`（painter 同键）。
     /// 返回是否有帧更新（宿主据此触发增量渲染）。
     pub fn tick_all(&mut self, now_ms: u64, image_cache: &mut ImageCache) -> bool {
@@ -176,5 +181,177 @@ mod tests {
         assert_eq!(reg.current_time(SRC), 0.0);
         // 释放后重新 play（同 URL 再 settle 场景）需重新登记。
         assert!(!reg.play(SRC, 100));
+    }
+}
+
+/// 宿主桥 — 在 sandbox 上注册 `__zw_video_*` 回调族并注入 `__zwVideoBridge` JS 对象
+///（media-playback M2a 切片 5b）。
+///
+/// JS 侧 `globalThis.__zwVideoBridge = { play(src, nowMs), pause(src),
+/// currentTime(src), isPlaying(src) }`——shim `play()`/`pause()` feature-detect 此对象
+/// 走真值路径；未注册（testharness/reftest 沙箱）时对象不存在，shim 回落 headless
+/// 路径（372 基线零回归）。键 = 资源绝对 URL（settle 登记同串——shim `src` getter
+/// 的 `_zwResolveFetchUrl` 产出）。
+///
+/// 回调签名 `Fn(&[String]) -> String`（script-sandbox 契约）；秒值以字符串往返。
+pub fn register_video_bridge_callbacks(
+    sandbox: &mut dyn zero_script_sandbox::Sandbox,
+    registry: std::sync::Arc<std::sync::Mutex<VideoPlayerRegistry>>,
+) {
+    // __zw_video_play(absSrc, nowMs) -> "1"/"0"（bool 字符串避免 JS↔host 布尔歧义）。
+    let reg_play = std::sync::Arc::clone(&registry);
+    sandbox.register_callback(
+        "__zw_video_play",
+        Box::new(move |args| {
+            let src = args.first().map(String::as_str).unwrap_or("");
+            let now_ms: u64 = args.get(1).and_then(|s| s.parse().ok()).unwrap_or(0);
+            let mut reg = reg_play.lock().unwrap_or_else(|e| e.into_inner());
+            if reg.play(src, now_ms) { "1".into() } else { "0".into() }
+        }),
+    );
+
+    let reg_pause = std::sync::Arc::clone(&registry);
+    sandbox.register_callback(
+        "__zw_video_pause",
+        Box::new(move |args| {
+            let src = args.first().map(String::as_str).unwrap_or("");
+            reg_pause.lock().unwrap_or_else(|e| e.into_inner()).pause(src);
+            "1".into()
+        }),
+    );
+
+    let reg_ct = std::sync::Arc::clone(&registry);
+    sandbox.register_callback(
+        "__zw_video_current_time",
+        Box::new(move |args| {
+            let src = args.first().map(String::as_str).unwrap_or("");
+            let reg = reg_ct.lock().unwrap_or_else(|e| e.into_inner());
+            format!("{}", reg.current_time(src))
+        }),
+    );
+
+    let reg_dur = std::sync::Arc::clone(&registry);
+    sandbox.register_callback(
+        "__zw_video_duration",
+        Box::new(move |args| {
+            let src = args.first().map(String::as_str).unwrap_or("");
+            let reg = reg_dur.lock().unwrap_or_else(|e| e.into_inner());
+            match reg.duration(src) {
+                Some(d) => format!("{d}"),
+                None => "NaN".into(),
+            }
+        }),
+    );
+
+    let reg_playing = std::sync::Arc::clone(&registry);
+    sandbox.register_callback(
+        "__zw_video_is_playing",
+        Box::new(move |args| {
+            let src = args.first().map(String::as_str).unwrap_or("");
+            let reg = reg_playing.lock().unwrap_or_else(|e| e.into_inner());
+            if reg.is_playing(src) { "1".into() } else { "0".into() }
+        }),
+    );
+
+    // JS 侧门面对象：shim 只认它（feature-detect 单点）。
+    let _ = sandbox.execute(
+        "globalThis.__zwVideoBridge = {\
+           play: function (src, nowMs) { return __zw_video_play(src, nowMs | 0) === '1'; },\
+           pause: function (src) { __zw_video_pause(src); },\
+           currentTime: function (src) { return Number(__zw_video_current_time(src)); },\
+           duration: function (src) { return Number(__zw_video_duration(src)); },\
+           isPlaying: function (src) { return __zw_video_is_playing(src) === '1'; }\
+         };",
+    );
+}
+
+#[cfg(all(test, feature = "v8"))]
+mod bridge_tests {
+    use super::*;
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+
+    fn fixture_bytes() -> Vec<u8> {
+        let mut p = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        p.pop();
+        p.pop();
+        p.push("tests/fixtures/media/sample-webm-vp9.webm");
+        std::fs::read(p).expect("webm fixture present")
+    }
+
+    const SRC: &str = "https://example.com/media/sample-webm-vp9.webm";
+
+    /// 宿主桥端到端：register → JS __zwVideoBridge.play → currentTime 推进 → pause 冻结
+    /// → duration NaN/真值两面。真实 fixture 驱动。
+    #[test]
+    fn video_bridge_js_face_roundtrip() {
+        let registry = std::sync::Arc::new(std::sync::Mutex::new(VideoPlayerRegistry::new()));
+        registry
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .register_source(SRC, fixture_bytes());
+        let config = zero_script_sandbox::SandboxConfig {
+            persistent_context: true,
+            ..Default::default()
+        };
+        let mut sandbox = V8Sandbox::with_config(config).expect("v8 sandbox");
+        register_video_bridge_callbacks(&mut sandbox, registry);
+
+        // 未播放：currentTime 0、duration 2（真值）。
+        assert_eq!(
+            sandbox
+                .execute(
+                    "String(globalThis.__zwVideoBridge.currentTime('https://example.com/media/sample-webm-vp9.webm'))"
+                )
+                .unwrap()
+                .value
+                .replace('\0', ""),
+            "0"
+        );
+        // play → isPlaying true → tick 前位置 0。
+        assert_eq!(
+            sandbox
+                .execute(
+                    "String(globalThis.__zwVideoBridge.play('https://example.com/media/sample-webm-vp9.webm', 1000))"
+                )
+                .unwrap()
+                .value,
+            "true"
+        );
+        assert_eq!(
+            sandbox
+                .execute(
+                    "String(globalThis.__zwVideoBridge.isPlaying('https://example.com/media/sample-webm-vp9.webm'))"
+                )
+                .unwrap()
+                .value,
+            "true"
+        );
+        // pause → isPlaying false。
+        sandbox
+            .execute("globalThis.__zwVideoBridge.pause('https://example.com/media/sample-webm-vp9.webm');")
+            .unwrap();
+        assert_eq!(
+            sandbox
+                .execute(
+                    "String(globalThis.__zwVideoBridge.isPlaying('https://example.com/media/sample-webm-vp9.webm'))"
+                )
+                .unwrap()
+                .value,
+            "false"
+        );
+        // duration 真值面（fixture 2.0s）。
+        let dur = sandbox
+            .execute("String(globalThis.__zwVideoBridge.duration('https://example.com/media/sample-webm-vp9.webm'))")
+            .unwrap()
+            .value;
+        assert!(dur.starts_with('2'), "duration 应为 2 秒真值，got {dur}");
+        // 未登记源：play false。
+        assert_eq!(
+            sandbox
+                .execute("String(globalThis.__zwVideoBridge.play('https://x/nope.webm', 0))")
+                .unwrap()
+                .value,
+            "false"
+        );
     }
 }

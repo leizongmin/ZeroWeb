@@ -138,8 +138,26 @@
           if (resourceTag === 'VIDEO' && (prop === 'videoWidth' || prop === 'videoHeight')) {
             return resourceState ? (resourceState[prop === 'videoWidth' ? 'width' : 'height'] | 0) : 0;
           }
+          // 切片 5b：currentTime 真值——桥已接通的元素从 Rust VideoPlayer 读
+          // （spec 媒体时间轴秒）；否则保持 headless 镜像值（零回归）。
+          if (prop === 'currentTime' && _ms && _ms.bridgeOn && _ms.bridgeSrc
+              && typeof globalThis.__zwVideoBridge === 'object') {
+            try {
+              var _ct = globalThis.__zwVideoBridge.currentTime(_ms.bridgeSrc);
+              if (typeof _ct === 'number' && isFinite(_ct)) return _ct;
+            } catch (_eVbCt) {}
+          }
           if (prop === 'currentTime') return _ms ? _ms.currentTime : 0;
-          if (prop === 'duration') return (_ms && _ms.duration != null) ? _ms.duration : NaN;
+          if (prop === 'duration') {
+            // 切片 5b：桥接元素 duration 真值优先（Rust VideoPlayer 容器时长）。
+            if (_ms && _ms.bridgeOn && _ms.bridgeSrc && typeof globalThis.__zwVideoBridge === 'object') {
+              try {
+                var _vd = globalThis.__zwVideoBridge.duration(_ms.bridgeSrc);
+                if (typeof _vd === 'number' && isFinite(_vd)) return _vd;
+              } catch (_eVbD) {}
+            }
+            return (_ms && _ms.duration != null) ? _ms.duration : NaN;
+          }
           if (prop === 'playbackRate') return (_ms && _ms.playbackRate != null) ? _ms.playbackRate : 1;
           if (prop === 'defaultPlaybackRate') return (_ms && _ms.defaultPlaybackRate != null) ? _ms.defaultPlaybackRate : 1;
           // volume：缺省 1（spec）；`_mediaState` entry 可由 muted setter 先建（volume 字段

@@ -263,6 +263,11 @@ fn tab_worker_main(
         builder = builder.external_script(js_worker.executor());
     }
     let mut wv = builder.build();
+    // media-playback M2a 切片 5b：注入播放器注册表（WebView 初始化后发送 Arc 共享——
+    // js_worker 注册 __zwVideoBridge 宿主桥；settle 侧 async_load 写入同 registry）。
+    if let Some(js_worker) = _js_worker.as_ref() {
+        js_worker.set_video_players(wv.video_players());
+    }
     wv.set_prefers_color_scheme(color_scheme);
     // R2413：初始化 font_resolver（系统字体）+ per-family 行度量——镜像 renderer 进程
     // `with_io`（main.rs:170-173）。旧版 tab_worker（in-process 回退路径：
@@ -298,6 +303,8 @@ fn tab_worker_main(
         let _ = msg_tx.send(TabWorkerMessage::Snapshot(snapshot));
     };
 
+    // M2a 切片 5b：播放帧泵时钟锚点（单调，跨命令共享——VideoPlayer 契约是注入式时钟）。
+    let pump_epoch = std::time::Instant::now();
     loop {
         while let Ok(cmd) = cmd_rx.try_recv() {
             match cmd {
@@ -849,6 +856,33 @@ fn tab_worker_main(
                 }
                 async_load = None;
                 push_snapshot(&wv, &msg_tx, _js_worker.as_ref());
+            }
+        }
+
+        // M2a 切片 5b：播放帧泵——有播放中的 video 时按事件循环节拍推进（tick_all
+        // 注入新帧进 ImageCache；painter video 通路同键），帧更新则重渲染上屏。
+        // 无播放时零开销（is_any_playing 快速门）。
+        {
+            let any_playing = wv
+                .video_players()
+                .lock()
+                .map(|reg| reg.is_any_playing())
+                .unwrap_or(false);
+            if any_playing {
+                let now_ms = pump_epoch.elapsed().as_millis() as u64;
+                let changed = wv
+                    .video_players()
+                    .lock()
+                    .map(|mut reg| reg.tick_all(now_ms, wv.image_cache()))
+                    .unwrap_or(false);
+                if changed && wv.last_render().is_some() {
+                    with_measure(&font_loader, font_id, || {
+                        if wv.render_incremental().is_none() {
+                            wv.render();
+                        }
+                    });
+                    push_snapshot(&wv, &msg_tx, _js_worker.as_ref());
+                }
             }
         }
 

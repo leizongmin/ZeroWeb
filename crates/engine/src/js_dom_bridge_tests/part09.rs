@@ -3464,3 +3464,68 @@ fn test_media_video_width_height_truth_m2a() {
         "audio 元素不应有 videoWidth（HTMLVideoElement 专属）"
     );
 }
+
+#[test]
+fn test_media_bridge_playpath_m2a_5b() {
+    // 切片 5b：shim play()/pause()/currentTime/duration 的宿主桥 feature-detect 面
+    //（JS stub __zwVideoBridge——Rust 侧真值由 webview bridge e2e 覆盖；此处断言
+    // shim 契约：桥存在时 play 记录 bridgeSrc + 调 bridge.play、currentTime/duration
+    // getter 读桥真值、pause 调 bridge.pause；无桥元素回落 headless 面零回归）。
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><video id=\"v\" src=\"/media/movie.webm\"></video></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://wpt.test/t.html".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // JS stub 桥：记录调用序列；currentTime 返回真值 1.25s、duration 2s。
+    sandbox.execute(
+        "globalThis.__calls = [];\
+         globalThis.__zwVideoBridge = {\
+           play: function (src, now) { globalThis.__calls.push('play:' + src); return true; },\
+           pause: function (src) { globalThis.__calls.push('pause:' + src); },\
+           currentTime: function (src) { return 1.25; },\
+           duration: function (src) { return 2; },\
+           isPlaying: function (src) { return true; }\
+         };",
+    ).unwrap();
+
+    sandbox.execute(
+        "var v = document.querySelector('#v');\
+         globalThis.__p = v.play();\
+         globalThis.__ct = v.currentTime;\
+         globalThis.__dur = v.duration;",
+    ).unwrap();
+    // play 走桥：bridgeSrc = 绝对 URL（IDL src getter 同源解析）。
+    let calls = sandbox.execute("globalThis.__calls.join('|')").unwrap().value;
+    assert_eq!(
+        calls, "play:https://wpt.test/media/movie.webm",
+        "play 应调桥并传绝对 URL（settle 登记同键）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ct)").unwrap().value,
+        "1.25",
+        "currentTime getter 应读桥真值"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__dur)").unwrap().value,
+        "2",
+        "duration getter 应读桥真值"
+    );
+    // pause 走桥。
+    sandbox.execute("document.querySelector('#v').pause();").unwrap();
+    let calls2 = sandbox.execute("globalThis.__calls.join('|')").unwrap().value;
+    assert!(
+        calls2.contains("pause:https://wpt.test/media/movie.webm"),
+        "pause 应调桥，got {calls2}"
+    );
+}

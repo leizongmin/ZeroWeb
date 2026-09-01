@@ -11341,6 +11341,19 @@
             if (_pMs.playing) return Promise.resolve(undefined);
             _pMs.playing = true;
             _pMs.ended = false;
+            // media-playback M2a 切片 5b：宿主桥 feature-detect——注册了
+            // __zwVideoBridge（生产 worker 注入）时走真值播放（Rust VideoPlayer
+            // 时钟/帧推进）；未注册（testharness/reftest 沙箱）保持 headless 近似
+            //（桥缺失零回归——372 基线）。src 取 IDL getter 同源解析（绝对 URL =
+            // 注册表 settle 登记键）。
+            if (typeof globalThis.__zwVideoBridge === 'object' && globalThis.__zwVideoBridge) {
+              try {
+                var _pSrcRaw = (typeof __zw_get_attr === 'function') ? (__zw_get_attr(sel, 'src') || '') : '';
+                var _pAbs = _pSrcRaw ? _zwResolveFetchUrl(String(_pSrcRaw).replace(/^[\x00-\x20]+/, '').replace(/[\x00-\x20]+$/, '')) : '';
+                if (_pAbs) _pMs.bridgeSrc = _pAbs;
+                if (_pAbs && globalThis.__zwVideoBridge.play(_pAbs, 0)) _pMs.bridgeOn = true;
+              } catch (_eVbP) {}
+            }
             _dispatchWithBubble(_pKey, sel, handle, _makeEvent('play', { bubbles: false, cancelable: false }));
             _dispatchWithBubble(_pKey, sel, handle, _makeEvent('playing', { bubbles: false, cancelable: false }));
             _dispatchWithBubble(_pKey, sel, handle, _makeEvent('timeupdate', { bubbles: false, cancelable: false }));
@@ -11373,6 +11386,10 @@
               var _pMs = _mediaState[_pKey];
               if (_pMs && _pMs.playing) {
                 _pMs.playing = false;
+                // 切片 5b：宿主桥 pause（真值时钟冻结；bridgeOn 标记 play 时桥已接通）。
+                if (_pMs.bridgeOn && _pMs.bridgeSrc && typeof globalThis.__zwVideoBridge === 'object') {
+                  try { globalThis.__zwVideoBridge.pause(_pMs.bridgeSrc); } catch (_eVbPa) {}
+                }
                 _dispatchWithBubble(_pKey, sel, handle, _makeEvent('pause', { bubbles: false, cancelable: false }));
               }
               if (_pMs && _pMs.playPromise) {

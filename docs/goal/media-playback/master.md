@@ -2,11 +2,12 @@
 
 **入口文档**: [../media-playback.md](../media-playback.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-01（**M2a 切片 4 落地**——生产侧帧注入：async_load 的 video
-settle 探针扩为「时长 + 首帧 RGBA」→ `ImageData::from_rgba` 注入 webview ImageCache
-（键 = `image_resource_key`，painter 通路同键）——生产侧 `<video>` settle 即出首帧
-（M1b harness 同款两段式闭环）。负例（非 webm）不注入保持占位。e2e 双测常驻（真实
-fixture 驱动）；webview 662 全绿）
+**最后更新**: 2026-09-01（**M2a 切片 5b 落地**——宿主桥 + 渲染泵接线全通：
+webview `register_video_bridge_callbacks`（五回调族 + `__zwVideoBridge` JS 门面）→
+tab_js_worker `SetVideoPlayers` 注入 → tab_worker 帧泵（`is_any_playing` 门 →
+`tick_all` 注帧 → 增量重渲染）；shim `play()/pause()/currentTime/duration` 桥接
+feature-detect（无桥回落 headless）。testharness-media 372P/0F/41PF 基线维持。
+**M2a 全部切片收口——currentTime 真值推进达成（RFC §3.1 语义层对接完成面）**）
 
 ---
 
@@ -51,10 +52,21 @@ placeholder` 负例）；webview 662 全绿。**生产侧首帧出图闭环达�
 `pause`/`current_time`/`duration`/`is_playing` 真值查询/`tick_all(now, ImageCache)`
 （渲染泵推帧 + painter 同键注入 + changed 返回）/`release`（导航/元素移除资源释放）。
 WebView 持 `video_players()` Arc 句柄；async_load settle 自动登记源字节（e2e 扩断言：
-settle 后 `play` 即成功）。单测 4 件常驻；webview 666 全绿。**切片 5b（下一项）：
-宿主桥回调族（`__zw_video_play/pause/current_time`，webview 侧注册函数 + 两 worker
-接线点）+ 渲染泵 tick（rAF `__zw_raf_tick` 同源时钟）+ shim play()/pause() 桥接
-（feature-detect 回落 headless 保 372 基线）**。
+settle 后 `play` 即成功）。单测 4 件常驻；webview 666 全绿。**M2a 切片 5b 已落地**（同日）：三段接线全通——
+① webview `register_video_bridge_callbacks`：五回调族（play/pause/current_time/
+duration/is_playing，`Fn(&[String]) -> String` 契约）+ `__zwVideoBridge` JS 门面
+（shim feature-detect 单点）；
+② tab_js_worker `SetVideoPlayers` 命令（SetFetchHandler 同款 late-injection 模式）
++ `TabJsWorkerHandle::set_video_players`；tab_worker WebView 构建后注入
+`wv.video_players()` Arc（settle 写入与桥读取同一实例）；
+③ 帧泵：tab_worker 1ms 事件循环节拍——`is_any_playing` 快速门（无播放零开销）→
+`tick_all(pump_epoch.elapsed(), image_cache)` 注帧 → changed 时增量重渲染 + snapshot。
+shim 侧（part03/part04）：`play()` 桥接（bridgeSrc = IDL src getter 同源解析绝对 URL，
+bridgeOn 标记）/`pause()` 桥停/`currentTime`/`duration` getter 桥真值优先——无桥环境
+回落 headless（零回归）。测试：webview 桥 e2e（V8 sandbox + 真实 fixture roundtrip）
++ engine shim 契约测试（JS stub 桥：play 传绝对 URL / currentTime 1.25 / duration 2 /
+pause 记录）；engine 2539 / webview 667 / browser 411 全绿；testharness-media 372
+基线维持。**M2a 全部切片收口**。
 
 **与兄弟 goal 的边界**：
 - media-elements — 语义面（状态机/事件/canPlayType）归其管；本目标产出 readyState 真实
@@ -88,8 +100,10 @@ settle 后 `play` 即成功）。单测 4 件常驻；webview 666 全绿。**切
   openh264 0.9 / ffmpeg-next 9.0 / rav1e 0.8（crates.io 实测版本）；M1a 实测补充——
   `rusty_vp9 0.1.1`（纯 Rust VP9，Apache-2.0，MSRV 1.85）首帧与 ffmpeg 逐字节一致，
   `matroska-demuxer 0.8.1`（Zlib OR MIT OR Apache-2.0）API 干净（双许可证均兼容工作区 MIT）
-- ⚠️ 生产侧渲染线程未接解码注入（harness 通路已通，webview/async_load 的媒体字节
-  → 解码 → ImageCache 为 M2a player 实施项）
+- ✅ **生产侧帧注入 + 播放桥（M2a 切片 4/5）**：settle 首帧注入 ImageCache；
+  `VideoPlayerRegistry` + `__zwVideoBridge` 宿主桥 + tab_worker 帧泵（切片 5a/5b）
+- ⚠️ renderer 多进程路径未接桥注入（tab_worker 路径已通；renderer js_worker 镜像
+  待做——生产双路径一致性）
 - ⚠️ 色度元数据精化：WebM Colour 元素（range/matrix）未读，固定 BT.601 full-range——
   replaced-element-003 unmask 案揭示（M2 解码层精化项）
 - ⚠️ AV1（dav1d 绑定）与 H.264 未引入——M3（D-RFC-2 / D-RFC-3 决议）
@@ -101,9 +115,9 @@ settle 后 `play` 即成功）。单测 4 件常驻；webview 666 全绿。**切
 | V1 | 解码路线选型（专利/依赖/架构三维） | ✅ RFC 获批（路线 C，2026-09-01） |
 | V2 | 零解码管线（demux/解码/帧转换） | ✅ M1a 落地（2026-09-01，`zero-media` crate） |
 | V3 | 播放驱动（帧率时钟/seek/ended）缺失 | 🔄 M2a 落地（时钟/play/pause/ended）；seek 归 M2b |
-| V4 | readyState 真值驱动接口未建 | 🔄 `VideoPlayer` 实现 + duration 真值链已通；currentTime 推进接线待切片 4 |
+| V4 | readyState 真值驱动接口未建 | ✅ 5b 落地：duration/videoWidth/currentTime 真值 + 宿主桥 play/pause + 帧泵（readyState 推进面仍 headless 序列——语义层契约不返工） |
 | V5 | 播放 e2e 资产为零 | ✅ fixture 已落地 + M1b 帧上屏 e2e 常驻 |
-| V6 | 帧上屏通路（video 元素盒 → 图元）缺失 | ✅ M1b 落地（harness 侧全链；生产侧注入归 M2a） |
+| V6 | 帧上屏通路（video 元素盒 → 图元）缺失 | ✅ M1b（harness 全链）+ 切片 4（生产 settle 注入）+ 切片 5b（播放帧泵） |
 
 ## 待用户决策
 
@@ -114,14 +128,12 @@ settle 后 `play` 即成功）。单测 4 件常驻；webview 666 全绿。**切
 
 ## 下一步计划
 
-1. **M2a 切片 5b（下一项）**：宿主桥 + 渲染泵接线——webview 暴露
-   `register_video_bridge_callbacks(sandbox, Arc<Mutex<VideoPlayerRegistry>>)`（零
-   churn 于既有 register_dom_callbacks 调用方）；tab_js_worker/renderer js_worker
-   两处接线；渲染泵经 rAF `__zw_raf_tick` 同源时钟调 `tick_all`；shim `play()`/
-   `pause()` feature-detect 桥（无桥回落 headless 路径——testharness-media 372
-   基线零回归）。
-3. **M2b**：seek（关键帧粒度）+ playbackRate 变速语义；**M2c**：音频解码（symphonia）+
-   AudioSink/Mixer 接入（media-audio 输出面三切片已备）。
+1. **M2b（下一项）**：seek（关键帧粒度——VideoDecoder 增 keyframe 定位面）+
+   playbackRate 变速语义（ratechange 真值桥接 + seeking/seeked 事件化）。
+2. **M2c**：音频解码（symphonia）+ AudioSink/Mixer 接入（media-audio 输出面三切片
+   已备：NullSink/CpalSink/Mixer）；mp3/oga fixture 经 NullSink 过零率全链 e2e。
+3. **renderer 多进程路径对齐**：桥接线当前在 tab_worker 路径（test-support feature）；
+   renderer js_worker 同款 SetVideoPlayers 注入（镜像）——生产双路径一致性。
 4. **M2 解码精化项**（M1b 揭示）：WebM Colour 元素解析（colourRange/matrix）→
    limited-range 与 BT.709 自适应转换（replaced-element-003 unmask 面收口）。
 
@@ -131,14 +143,15 @@ settle 后 `play` 即成功）。单测 4 件常驻；webview 666 全绿。**切
 |--------|------|
 | M0 — 解码器选型 RFC（门控） | ✅ 完成并获批（2026-09-01，路线 C） |
 | M1 — 首个视频帧上屏 | ✅ 完成（2026-09-01：M1a 解码管线 + M1b 帧上屏通路 + e2e 常驻） |
-| M2 — 连续播放 + 语义驱动 | 🔄 M2a 播放驱动落地（2026-09-01，VideoPlayer + 单测 6）；语义层替换 + 生产注入 + seek/音频待续 |
+| M2 — 连续播放 + 语义驱动 | 🔄 M2a 全切片收口（2026-09-01：VideoPlayer + duration/videoWidth/currentTime 真值 + 宿主桥 + 帧泵）；M2b seek / M2c 音频待续 |
 | M3 — 多格式 + 稳定 + 收尾 | ⬜（含 AV1 dav1d（D-RFC-2）与 H.264 立项（D-RFC-3）） |
 
 ## 验证基线
 
-- 测试基线：`make test` 全绿（zero-media default 23 单测 + 1 doctest；engine 2538
-  含 video_frame_display 4 + 真值注入 2 组；webview 662 含 M2a 切片 4 settle e2e 2 件；
-  wpt-runner M1b e2e 2 件）；clippy 零警告
+- 测试基线：`make test` 全绿（zero-media default 23 单测 + 1 doctest；engine 2539
+  含桥契约测试；webview 667 含桥 e2e + registry 4 + settle e2e 2；browser 411 under
+  xvfb）；clippy 零警告；testharness-media 372P/0F/41PF 基线维持（桥 feature-detect
+  回落面零回归实证）
 - 解码正确性锚点：fixture `sample-webm-vp9.webm` 首帧与 ffmpeg 7.1.5 rawvideo 参照
   逐字节一致（YUV 面）；全流 48 帧（2s @ 24fps）PTS 单调（0→1958ms）
 - 上屏 e2e 锚点：帧区 RGB 均值 138-168（testsrc2 ≈153.5）+ 帧界外白底 + 不可解码

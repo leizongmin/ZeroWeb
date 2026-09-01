@@ -68,6 +68,11 @@ enum JsWorkerCommand {
     SetFetchHandler {
         handler: FetchHandler,
     },
+    /// media-playback M2a 切片 5b：注入播放器注册表（tab_worker 在 WebView 初始化后
+    /// 发送 `wv.video_players()` Arc）——worker 据此注册 `__zw_video_*` 宿主桥回调。
+    SetVideoPlayers {
+        registry: std::sync::Arc<std::sync::Mutex<zero_webview::video_registry::VideoPlayerRegistry>>,
+    },
     Shutdown,
 }
 
@@ -240,6 +245,15 @@ impl TabJsWorkerHandle {
     /// `__zw_fetch` 回调读此 handler 抓取后 resolve Promise。
     pub fn set_fetch_handler(&self, handler: FetchHandler) {
         let _ = self.cmd_tx.send(JsWorkerCommand::SetFetchHandler { handler });
+    }
+
+    /// media-playback M2a 切片 5b：注入播放器注册表（WebView 初始化后发送；
+    /// worker 注册 `__zwVideoBridge` 宿主桥——shim play/pause/currentTime 真值面）。
+    pub fn set_video_players(
+        &self,
+        registry: std::sync::Arc<std::sync::Mutex<zero_webview::video_registry::VideoPlayerRegistry>>,
+    ) {
+        let _ = self.cmd_tx.send(JsWorkerCommand::SetVideoPlayers { registry });
     }
 
     /// 关闭 JS 线程。
@@ -471,6 +485,11 @@ fn js_worker_main(
             JsWorkerCommand::SetFetchHandler { handler } => {
                 // P1b S3 incr-a：注入 fetch handler（tab_worker 在 WebView 初始化后发送）。
                 fetch_bridge.set_handler(handler);
+            }
+            JsWorkerCommand::SetVideoPlayers { registry } => {
+                // M2a 切片 5b：注册宿主桥回调族 + 注入 __zwVideoBridge JS 门面
+                //（shim play/pause/currentTime feature-detect 消费）。
+                zero_webview::video_registry::register_video_bridge_callbacks(&mut *sandbox, registry);
             }
             JsWorkerCommand::Shutdown => {
                 // js-dom R386：worker 退出前清原生绑定线程局部（镜像 webview Drop
