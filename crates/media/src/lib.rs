@@ -12,8 +12,10 @@
 //!   `render-foundation` 的 `ImageData`（行优先 RGBA8）同构，M1b 帧上屏走
 //!   R3268 canvas 同款 ImagePrimitive 通路。
 //! - [`clock`]：[`VideoClock`] trait——播放驱动（帧率时钟/play/seek/currentTime）
-//!   对 HTMLMediaElement 语义层的真值化接口。M1a 只定义不实现（M2a 实施）；
-//!   media-elements 语义层现有 headless 近似驱动届时按此接口替换，语义层不返工。
+//!   对 HTMLMediaElement 语义层的真值化接口。
+//! - [`player`]：[`VideoPlayer`]——`VideoClock` 的帧率驱动实现（M2a）：play/pause/
+//!   ended + currentTime 真值推进，调用方注入单调时钟（rAF event loop 挂点）；
+//!   media-elements 语义层 headless 近似驱动按此接口替换，语义层不返工。
 //!
 //! ## 格式范围（路线 C 首期）
 //!
@@ -28,6 +30,7 @@ mod audio_cpalsink;
 mod clock;
 mod decode;
 mod mixer;
+mod player;
 
 #[cfg(test)]
 mod tests;
@@ -38,3 +41,4 @@ pub use audio_cpalsink::*;
 pub use clock::*;
 pub use decode::*;
 pub use mixer::*;
+pub use player::*;
