@@ -466,6 +466,8 @@ fn test_parse_color_mix_lab_oklab_oklch_spaces() {
         ("color-mix(in srgb-linear, red, blue)", ColorMixSpace::SrgbLinear),
         ("color-mix(in xyz, red, blue)", ColorMixSpace::Xyz),
         ("color-mix(in xyz-d65, red, blue)", ColorMixSpace::Xyz),
+        // R3907：`in hsl` 极坐标空间（旧缺失 → 整条声明被丢）。
+        ("color-mix(in hsl, red, blue)", ColorMixSpace::Hsl),
     ] {
         match parse_color(input) {
             Some(ColorValue::Mix(spec)) => assert_eq!(spec.space, expect, "{input}"),

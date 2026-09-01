@@ -1088,6 +1088,14 @@ fn collapsed_border_color(override_color: &Option<u32>, original: &ColorValue) -
 fn resolve_border_current_color(color: ColorValue, current: &ColorValue) -> ColorValue {
     if color == ColorValue::CurrentColor {
         current.clone()
+    } else if matches!(color, ColorValue::Mix(_) | ColorValue::RelativeColor(_)) {
+        // R3907：color-mix/RCS 内嵌 currentColor 须按元素 color 解析——下游
+        // paint_border_edge 用 color_value_to_render（无元素上下文，currentColor 回落
+        // 黑色），keyword 替换覆盖不到嵌套形态（driving:
+        // color-mix-currentcolor-border/outline-repaint，黑色方块应红/绿）。
+        // 全量解析后以 Rgba 回包（paint_border_edge 的 color_value_to_render 恒等）。
+        let c = resolve_color_current(&color, current);
+        ColorValue::Rgba(c.r, c.g, c.b, c.a)
     } else {
         color
     }
@@ -1105,5 +1113,20 @@ mod tests {
         // 非 currentColor 颜色原样返回，不受影响
         let red = ColorValue::Rgba(255, 0, 0, 255);
         assert_eq!(resolve_border_current_color(red.clone(), &green), red);
+    }
+
+    #[test]
+    /// R3907：color-mix 内嵌 currentColor 按元素 color 全量解析（下游
+    /// paint_border_edge 的 color_value_to_render 无元素上下文会回落黑色）。
+    fn test_resolve_border_current_color_resolves_nested_mix() {
+        let red = ColorValue::Rgba(255, 0, 0, 255);
+        let mix = zero_css_parser::values::parse_color("color-mix(in hsl, transparent 0%, currentColor 100%)")
+            .expect("in hsl 应可解析");
+        let resolved = resolve_border_current_color(mix, &red);
+        assert_eq!(
+            resolved,
+            ColorValue::Rgba(255, 0, 0, 255),
+            "嵌套 currentColor 须按元素红解析为不透明红，非黑"
+        );
     }
 }

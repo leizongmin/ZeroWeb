@@ -676,11 +676,17 @@ fn parse_color_mix_space(s: &str) -> Option<(ColorMixSpace, crate::values::parse
         Some("oklab") => ColorMixSpace::OkLab,
         Some("oklch") => ColorMixSpace::OkLch,
         Some("xyz") | Some("xyz-d65") => ColorMixSpace::Xyz,
+        // R3907：`in hsl` 极坐标空间（CSS Color 4 §12.4）。旧缺失 → 整条声明丢弃
+        //（driving: color-mix-currentcolor-{background,border,outline}-repaint ×6）。
+        Some("hsl") => ColorMixSpace::Hsl,
         _ => return None, // 其他色彩空间（xyz-d50/display-p3/…）defer
     };
-    // 可选 hue 插值法（仅 lch/oklch）
+    // 可选 hue 插值法（极坐标空间 lch/oklch/hsl）
     let mut hue = ColorHueMethod::default();
-    if matches!(mix_space, ColorMixSpace::Lch | ColorMixSpace::OkLch) {
+    if matches!(
+        mix_space,
+        ColorMixSpace::Lch | ColorMixSpace::OkLch | ColorMixSpace::Hsl
+    ) {
         let mut it = tokens.iter().skip(2);
         while let Some(w) = it.next() {
             let method = match *w {

@@ -111,6 +111,10 @@ pub enum ColorMixSpace {
     OkLch,
     /// `in xyz`/`in xyz-d65` —— CIE XYZ-D65 笛卡尔插值（X/Y/Z 三通道独立线性）。R2378。
     Xyz,
+    /// `in hsl` —— HSL 极坐标插值（H 按 hue method、S/L 线性；CSS Color 4 §12.4）。
+    /// R3907：缺失时整条 color-mix 声明被丢弃（driving: css-backgrounds
+    /// color-mix-currentcolor-{background,border,outline}-repaint ×6）。
+    Hsl,
 }
 
 /// `color-mix()` 的单个分量（颜色 + 可选百分比）。

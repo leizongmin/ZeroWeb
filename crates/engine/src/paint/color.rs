@@ -74,6 +74,8 @@ pub fn resolve_color_current(color: &ColorValue, element_color: &ColorValue) -> 
                     srgb_u8_to_xyz,
                     xyz_to_srgb_u8,
                 ),
+                // R3907：`in hsl` 极坐标插值（H 按 hue method、S/L 线性）。
+                ColorMixSpace::Hsl => mix_hsl(c1, spec.c1.percentage, c2, spec.c2.percentage, spec.hue),
             }
         }
         // RCS 非 identity：先按元素色解析 origin（currentColor → 元素色），再按函数通道语义计算。
@@ -237,6 +239,37 @@ fn map_hue_method(h: ColorHueMethod) -> HueMethod {
         ColorHueMethod::Increasing => HueMethod::Increasing,
         ColorHueMethod::Decreasing => HueMethod::Decreasing,
     }
+}
+
+/// `color-mix(in hsl, c1 [p1], c2 [p2])` 的 HSL 极坐标插值（CSS Color 4 §12.4，R3907）。
+///
+/// H 按 hue method 短弧插值（`interp_hue`）、S/L 线性；alpha 独立线性插值 + 百分比
+/// 归一化（sum<100 时 alpha ×= sum/100），语义与 mix_lch/mix_oklch 一致。gamma-encoded
+/// HSL 分量直接插值（premultiplied 权重同 srgb）。
+fn mix_hsl(c1: Color, p1: Option<f64>, c2: Color, p2: Option<f64>, hue: ColorHueMethod) -> Color {
+    let (p1, p2) = match (p1, p2) {
+        (Some(a), Some(b)) => (a, b),
+        (Some(a), None) => (a, 100.0 - a),
+        (None, Some(b)) => (100.0 - b, b),
+        (None, None) => (50.0, 50.0),
+    };
+    let sum = p1 + p2;
+    if sum <= 0.0 {
+        return Color::rgba(0, 0, 0, 0);
+    }
+    let alpha_mult = (sum / 100.0).min(1.0);
+    let w2 = p2 / sum;
+    let (h1, s1, l1) = rgba_to_hsl(c1.r, c1.g, c1.b);
+    let (h2, s2, l2) = rgba_to_hsl(c2.r, c2.g, c2.b);
+    let h = interp_hue(h1, h2, w2, map_hue_method(hue));
+    let s = s1 + (s2 - s1) * w2;
+    let l = l1 + (l2 - l1) * w2;
+    let rgb = hsla_to_rgba(h, s, l, 1.0);
+    let a1 = c1.a as f64 / 255.0;
+    let a2 = c2.a as f64 / 255.0;
+    let pa = a1 * (1.0 - w2) + a2 * w2;
+    let final_a = (pa * alpha_mult).clamp(0.0, 1.0);
+    Color::rgba(rgb.r, rgb.g, rgb.b, (final_a * 255.0).round().clamp(0.0, 255.0) as u8)
 }
 
 /// 解析 RCS（CSS Color 5 相对色）非 identity：origin 已解析为 sRGB Color，按函数通道语义计算输出。
@@ -995,4 +1028,26 @@ fn test_mix_lch_hue_method_longer_vs_shorter() {
         shorter,
         longer
     );
+}
+
+#[test]
+/// R3907：`in hsl` 极坐标插值——100% currentColor（元素红）须解析为不透明红
+///（driving: color-mix-currentcolor-border-repaint，旧 `in hsl` 缺失整条声明被丢弃）。
+fn test_mix_hsl_currentcolor_full() {
+    let v = "color-mix(in hsl, transparent 0%, currentColor 100%)";
+    let parsed = zero_css_parser::values::parse_color(v).expect("in hsl 应可解析");
+    let elem = zero_css_parser::values::ColorValue::Rgba(255, 0, 0, 255);
+    let c = resolve_color_current(&parsed, &elem);
+    assert_eq!((c.r, c.g, c.b, c.a), (255, 0, 0, 255), "100% currentColor = 不透明红");
+}
+
+#[test]
+/// R3907：`in hsl` 50/50 混红（h=0）/黄（h=60）——短弧中点 h=30 = 橙色（s/l 保持 100/50）。
+fn test_mix_hsl_red_yellow_orange() {
+    let parsed = zero_css_parser::values::parse_color("color-mix(in hsl, red, yellow)").expect("应可解析");
+    let elem = zero_css_parser::values::ColorValue::Rgba(0, 0, 0, 255);
+    let c = resolve_color_current(&parsed, &elem);
+    assert_eq!(c.a, 255, "双不透明 alpha 保持 255");
+    // hsl(30,100,50) = rgb(255,128,0)
+    assert_eq!((c.r, c.g, c.b), (255, 128, 0), "红+黄短弧中点应为橙色");
 }
