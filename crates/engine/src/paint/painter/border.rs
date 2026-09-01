@@ -290,10 +290,14 @@ impl super::Painter {
         let bb = box_node.border_bottom;
         let bl = box_node.border_left;
 
-        // 至少有一条边框才绘制
-        if bt <= 0.0 && br <= 0.0 && bb <= 0.0 && bl <= 0.0 {
-            return;
-        }
+        // R3906：border-style:none / border-width:0 **不**禁用 border-image（CSS Backgrounds 3
+        // §6.1「the border-style: none will make it disappear — however, border-image-width/outset
+        // can alter the border area into which the image is drawn」）。此前的「至少有一条边框才
+        // 绘制」整体早退把显式 border-image-width（length/percent）创建的绘制区一并丢掉
+        //（driving: border-image-width-005..007 同值 2.10%——`border-width:0 + width:50px` 应
+        // 绘出延伸进 padding/margin 的绿方块，ZW 全白）。移除整体早退：默认 width=Number(1.0)
+        // 在零边框下厚度 0、下方逐块 `> 0` 守卫照旧不绘（与旧行为逐字节一致）；仅显式
+        // width/outset 创建面积时新增绘制，零回归面。
 
         let key = image_resource_key(&url, self.document_url.as_deref());
 

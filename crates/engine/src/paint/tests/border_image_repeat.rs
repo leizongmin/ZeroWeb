@@ -278,3 +278,93 @@ fn test_border_image_repeat_mixed() {
         );
     }
 }
+
+/// R3906：border-width:0（border-style:none）**不**禁用 border-image——显式
+/// border-image-width（CSS Backgrounds 3 §6.1/§7.3）创建的绘制区照常出图。
+///
+/// 旧实现在「至少有一条边框 > 0」处整体早退，零边框 + `border-image-width:50px` 页面
+/// 全白（driving: border-image-width-005..007，chromium 绘出延伸进 padding/margin 的
+/// 绿方块）。修复后：默认 width=Number(1.0) × 0 = 零厚度 → 逐块守卫仍不绘（旧行为）；
+/// 显式 Length 厚度 → 四角出图（厚度 50、区域 100×100 = 四角铺满）。
+#[test]
+fn test_border_image_zero_border_width_with_explicit_image_width() {
+    use zero_style_system::{
+        BorderImageOutsetComputedComponent, BorderImageOutsetComputedValue, BorderImageSourceComputedValue,
+        BorderImageWidthComputedComponent, BorderImageWidthComputedValue,
+    };
+
+    let mut doc = zero_dom::Document::new();
+    let nid = doc.create_element("div");
+    // 50×50 盒、零边框（border-style:none → used border 0）
+    let mut layout = make_box(Some(nid), 0.0, 0.0, 50.0, 50.0);
+    layout.border_top = 0.0;
+    layout.border_right = 0.0;
+    layout.border_bottom = 0.0;
+    layout.border_left = 0.0;
+
+    let mut style = ComputedStyle::default();
+    style.border_image_source = BorderImageSourceComputedValue::Url("border.png".to_string());
+    style.border_image_width = BorderImageWidthComputedValue {
+        top: BorderImageWidthComputedComponent::Length(50.0),
+        right: BorderImageWidthComputedComponent::Length(50.0),
+        bottom: BorderImageWidthComputedComponent::Length(50.0),
+        left: BorderImageWidthComputedComponent::Length(50.0),
+    };
+    style.border_image_outset = BorderImageOutsetComputedValue {
+        top: BorderImageOutsetComputedComponent::Length(25.0),
+        right: BorderImageOutsetComputedComponent::Length(25.0),
+        bottom: BorderImageOutsetComputedComponent::Length(25.0),
+        left: BorderImageOutsetComputedComponent::Length(25.0),
+    };
+    let mut styles = HashMap::new();
+    styles.insert(nid, style);
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, None);
+
+    let images = &painter.primitives().images;
+    assert!(
+        !images.is_empty(),
+        "explicit border-image-width must draw despite zero border-width"
+    );
+    // 边框区域含 outset 外扩 = (0-25, 0-25, 50+50, 50+50) = (-25,-25,100,100)；
+    // 厚度 50 → 四角各 50×50，恰好铺满 100×100。
+    let total: f32 = images
+        .iter()
+        .map(|img| img.rect.size.width * img.rect.size.height)
+        .sum();
+    assert!(
+        (total - 100.0 * 100.0).abs() < 1.0,
+        "four 50x50 corners should tile the full 100x100 outset area, got {total}"
+    );
+    // 绘制区左上角 = border box 原点 − outset
+    let min_x = images.iter().map(|img| img.rect.origin.x).fold(f32::INFINITY, f32::min);
+    let min_y = images.iter().map(|img| img.rect.origin.y).fold(f32::INFINITY, f32::min);
+    assert!((min_x - (-25.0)).abs() < 0.1 && (min_y - (-25.0)).abs() < 0.1);
+}
+
+/// R3906 守卫对称面：零边框 + 默认 border-image-width（Number(1.0)）→ 厚度 0，不出图
+///（与旧「至少一条边框」早退行为逐字节一致，防修复引入越界绘制）。
+#[test]
+fn test_border_image_zero_border_width_default_still_skips() {
+    use zero_style_system::BorderImageSourceComputedValue;
+
+    let mut doc = zero_dom::Document::new();
+    let nid = doc.create_element("div");
+    let mut layout = make_box(Some(nid), 0.0, 0.0, 50.0, 50.0);
+    layout.border_top = 0.0;
+    layout.border_right = 0.0;
+    layout.border_bottom = 0.0;
+    layout.border_left = 0.0;
+
+    let mut style = ComputedStyle::default();
+    style.border_image_source = BorderImageSourceComputedValue::Url("border.png".to_string());
+    let mut styles = HashMap::new();
+    styles.insert(nid, style);
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, None);
+
+    assert!(
+        painter.primitives().images.is_empty(),
+        "default border-image-width (1x border-width=0) must not draw"
+    );
+}
