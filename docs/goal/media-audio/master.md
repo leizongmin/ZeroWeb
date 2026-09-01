@@ -2,11 +2,11 @@
 
 **入口文档**: [../media-audio.md](../media-audio.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-01（M2c 音频解码面落地——zero-media `AudioDecoder`
-（symphonia 0.6：mp3 + ogg/vorbis；**opus 不在其编解码面**，纯 Rust 约束）f32
-交错 PCM → NullSink 全链 e2e 双件常驻（440Hz fixture 过零率 ≈880 锚点——本档
-NullSink 契约的首次真值实证）；新 fixture sample-ogg-vorbis.oga。M1 四要素
-（trait/sink/mixer/解码源）齐备，余混音接线与 A/V 同步）
+**最后更新**: 2026-09-01（M2c 后续切片 A+B 落地（media-playback 流）——播放管线
+宿主侧接线兑现本档「下一步 #1」主体：`<audio>` settle 登记 → 桥 play → 音频泵实时
+节奏解码写 NullSink + volume/muted 增益联动（IDL setter 桥推 + play 起播同步）+
+seek 追赶区静默 + 导航资源释放；tabworker 与 renderer 双路径对齐。余：Mixer 多源
+混音接线（当前 NullSink 直连）+ A/V 同步（M2））
 
 ---
 
@@ -56,6 +56,13 @@ volume/muted 真控制。**双重启动门控均已解除**：① M0 音频环�
   AudioDecoder`（symphonia 0.6：mp3 + ogg/vorbis）——f32 交错 PCM 输出直写
   AudioSink 契约；全链 e2e 双件常驻（mp3 + vorbis fixture → NullSink 过零率 ≈880
   = 2×440Hz，本档 NullSink 断言契约首次真值实证）
+- ✅ **播放管线宿主侧接线（M2c 后续切片 A/B，跨 goal：media-playback 流落地）**：
+  `<audio>` settle → `VideoPlayerRegistry.register_audio_source` → 宿主桥 play →
+  音频泵（tab_worker `audio_advance_all`，实时节奏逐包解码）→ NullSink 写入；
+  volume/muted 增益联动（media-elements IDL setter 桥推 `setGain` + play 起播同步）；
+  seek 追赶区静默（skip_until_ms 丢弃线）；导航离开 `clear()` 释放（DC-4）；
+  tabworker/renderer 双路径对齐（SetVideoPlayers 注入）。e2e 三面常驻
+  （webm video / mp3 audio / oga-opus 不登记负例）
 - ⚠️ opus 解码不在面内（symphonia 0.6 无 opus——libopus 为 C 依赖，违反路线 C）；
   `sample-ogg-opus.oga` 留待后续选型
 - ⚠️ 重采样/混音接线未实施——播放管线把解码帧喂 Mixer 的宿主侧接线待做
@@ -69,7 +76,7 @@ volume/muted 真控制。**双重启动门控均已解除**：① M0 音频环�
 |---|------|------|
 | A1 | 音频环境验证 + headless 验证策略 | ✅ M0 收口（2026-09-01） |
 | A2 | 解码选型未对齐（外部门控：media-playback M0） | ✅ 已对齐（RFC 获批，2026-09-01） |
-| A3 | 零音频管线（解码/重采样/混音/输出） | 🔄 M1 切片 1-3 + M2c 解码面落地（NullSink/CpalSink/Mixer/symphonia）；重采样与宿主侧混音接线待做 |
+| A3 | 零音频管线（解码/重采样/混音/输出） | 🔄 M1 切片 1-3 + M2c 解码面 + M2c 后续宿主接线落地（NullSink/CpalSink/Mixer/symphonia + 播放管线增益联动）；余重采样与 Mixer 多源接线（当前注册表内 NullSink 直连） |
 | A4 | A/V 同步机制缺失 | ⬜ M2（依赖 media-playback M2 视频时钟） |
 | A5 | 音频 e2e 资产 | ✅ 真解码链 e2e 落地（mp3 + vorbis fixture → NullSink 过零率锚点常驻）+ 合成源面 |
 
@@ -82,19 +89,19 @@ volume/muted 真控制。**双重启动门控均已解除**：① M0 音频环�
 
 ## 下一步计划
 
-1. **M1 收口评估**：输出/混音/解码源四要素齐——余项 = 播放管线宿主侧接线
-   （`<video>`/`<audio>` play → Mixer → sink，muted/volume 联动）+ A/V 同步
-   （audio clock 主时钟，media-audio M2；依赖 media-playback M2 时钟面已落地）。
-   CpalSink 真出声冒烟为可选项（D2 已验证编译/枚举面，留桌面环境）。
-2. **M2 前置**：A/V 同步接口对齐（audio clock 主时钟）——依赖 media-playback M2a
-   视频时钟（其 master.md 下一步同源）。
+1. **M1 收口评估（余项）**：播放管线宿主侧接线已由 M2c 后续切片 A/B 兑现
+   （NullSink 直连 + 增益联动）——余 = Mixer 多源混音接线（注册表当前 per-entry
+   NullSink 直连，多元素并发混音面未接 Mixer）+ CpalSink 真出声冒烟（可选项，
+   D2 已验证编译/枚举面，留桌面环境）。
+2. **M2**：A/V 同步接口对齐（audio clock 主时钟）——media-playback M2a/M2c 时钟面
+   与音频面已齐备，可开工（video play 时音频轨同步 + drift 校正）。
 
 ## 里程碑状态
 
 | 里程碑 | 状态 |
 |--------|------|
 | M0 — 环境验证 + 验证策略（门控） | ✅ 完成（2026-09-01，含 D2 后 cpal 编译实测补录） |
-| M1 — 首个声音输出 | 🔄 切片 1-3 落地（NullSink + CpalSink + Mixer，2026-09-01）；余音频解码链 e2e（依赖 symphonia M2c） |
+| M1 — 首个声音输出 | 🔄 切片 1-3 + 解码链 e2e + 播放管线宿主接线落地（2026-09-01）；余 Mixer 多源混音接线 |
 | M2 — A/V 同步 + 控制 | ⬜ |
 | M3 — `<audio>` 全路径 + Web Audio 评估 | ⬜ |
 

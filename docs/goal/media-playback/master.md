@@ -2,11 +2,14 @@
 
 **入口文档**: [../media-playback.md](../media-playback.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-01（**M2c 音频解码面落地**——symphonia 0.6 入 workspace
-（mp3+ogg/vorbis feature 面；**opus 不在其编解码面**——纯 Rust 约束，oga-opus
-fixture 留后续选型）；`AudioDecoder` f32 交错 PCM 逐包输出；新 fixture
-`sample-ogg-vorbis.oga`（440Hz sine，生成命令入 README）；全链 e2e 双件常驻：
-mp3 + vorbis → NullSink 过零率 ≈880 锚点（media-audio M1 契约）。media 30 全绿）
+**最后更新**: 2026-09-01（**M2c 后续切片 A+B 落地**——① 生产链路补全：async_load
+settle → `register_source`/`register_audio_source`（切片 5a 契约此前无生产调用方，
+桥 play 恒 headless——本片接通后 settle → play 全链可达）；② 导航资源释放：
+`prepare_document_state` → `registry.clear()`（DC-4）+ 追赶区静默线（seek 后前向
+解码不入 sink）；③ 增益联动：shim play() 起播同步 setGain（对称 setRate）+ volume/
+muted setter 桥推；④ renderer 多进程路径对齐：SetVideoPlayers 注入（镜像 tabworker）。
+e2e 三面常驻（webm video / mp3 audio / oga-opus 负例）；webview 674 / engine 2540 /
+make test 18636 全绿；testharness-media 372P 基线维持）
 
 ---
 
@@ -66,6 +69,29 @@ bridgeOn 标记）/`pause()` 桥停/`currentTime`/`duration` getter 桥真值优
 + engine shim 契约测试（JS stub 桥：play 传绝对 URL / currentTime 1.25 / duration 2 /
 pause 记录）；engine 2539 / webview 667 / browser 411 全绿；testharness-media 372
 基线维持。**M2a 全部切片收口**。
+**M2c 后续切片 A+B 已落地**（同日）：播放管线接 AudioSink 的生产侧全通——
+① **settle 登记接通**（核心缺口修复）：`async_load::poll_element_resources` 对
+video 源 `register_source` + `register_audio_source` 双登记、audio 源音频登记——
+切片 5a 提交说明声称「async_load settle 自动登记源字节」但代码中从未存在生产调用方
+（`register_source` 仅测试可达），宿主桥 play 在真实浏览器路径恒返 false 回落
+headless；本片补全后 settle → 桥 play → 帧泵/音频泵全链生产可达（e2e
+`media_settle_registers_playback_registry_m2c` 三面断言：webm video play 即成功 /
+mp3 audio 音频 play 成功 / oga-opus 不登记回落）。
+② **资源生命周期（DC-4）**：`prepare_document_state` 清空注册表（导航离开释放
+player/解码器/源字节）+ `register_audio_source` 留存源字节（seek 重建解码器所需）+
+registry `clear()` 单测。
+③ **seek 追赶区静默**：`AudioEntry.skip_until_ms` 丢弃线——音频解码器单向流，seek
+重建后前向解码至 target，target 前采样不入 sink（spec precise-seek；断言见
+audio chain 单测）。
+④ **增益联动全接**：shim play() 起播同步 `setGain`（play 前设置的 volume/muted 生效）
++ volume/muted IDL setter 桥推（切片 A 未提交工作树内容收编）；tab_worker 音频泵
+（audio_advance_all）写入不计入重渲染触发（音频不改帧）。
+⑤ **renderer 多进程路径对齐**（master.md 下一步 #2 兑现）：renderer js_worker 增
+`SetVideoPlayers` 命令 + `set_video_players` 句柄 + runtime WebView 初始化后注入
+`webview.video_players()`——镜像 tab_js_worker 切片 5b 同款，`__zwVideoBridge`
+真值面两路径一致。
+测试：webview 674（+6）/ engine 2540 / make test 18636 全绿；testharness-media
+372P/0F/41PF 基线维持；clippy 零警告。
 **M2c 音频解码面已落地**（同日）：`zero-media::audio_decode::AudioDecoder`——
 symphonia probe 自动识别容器/编码 → f32 交错 PCM 逐包输出（`copy_to_vec_interleaved`
 跨格式直转，值域 [-1,1] 对齐 AudioSink 契约）；损坏包跳过（DecodeError 面继续）；
@@ -128,10 +154,13 @@ engine 2539 / media 27 / webview 668 全绿；testharness-media 372P/0F/41PF 维
   openh264 0.9 / ffmpeg-next 9.0 / rav1e 0.8（crates.io 实测版本）；M1a 实测补充——
   `rusty_vp9 0.1.1`（纯 Rust VP9，Apache-2.0，MSRV 1.85）首帧与 ffmpeg 逐字节一致，
   `matroska-demuxer 0.8.1`（Zlib OR MIT OR Apache-2.0）API 干净（双许可证均兼容工作区 MIT）
-- ✅ **生产侧帧注入 + 播放桥（M2a 切片 4/5）**：settle 首帧注入 ImageCache；
-  `VideoPlayerRegistry` + `__zwVideoBridge` 宿主桥 + tab_worker 帧泵（切片 5a/5b）
-- ⚠️ renderer 多进程路径未接桥注入（tab_worker 路径已通；renderer js_worker 镜像
-  待做——生产双路径一致性）
+- ✅ **生产侧帧注入 + 播放桥（M2a 切片 4/5 + M2c 后续 A/B）**：settle 首帧注入
+  ImageCache + 源字节登记；`VideoPlayerRegistry` + `__zwVideoBridge` 宿主桥 +
+  tab_worker 帧泵（切片 5a/5b）；settle 登记生产链路补全 + renderer 多进程路径
+  SetVideoPlayers 对齐（M2c 后续切片 A/B）——双路径（tabworker/renderer）一致性
+- ✅ **音频播放面（M2c 后续 A/B）**：`<audio>` settle 登记 → 桥 play → 音频泵实时
+  节奏解码写 NullSink + volume/muted 增益联动（IDL setter 桥推 + play 起播同步）+
+  seek 追赶区静默；导航释放（DC-4）
 - ⚠️ 色度元数据精化：WebM Colour 元素（range/matrix）未读，固定 BT.601 full-range——
   replaced-element-003 unmask 案揭示（M2 解码层精化项）
 - ⚠️ AV1（dav1d 绑定）与 H.264 未引入——M3（D-RFC-2 / D-RFC-3 决议）
@@ -156,14 +185,12 @@ engine 2539 / media 27 / webview 668 全绿；testharness-media 372P/0F/41PF 维
 
 ## 下一步计划
 
-1. **M2c 后续（下一项）**：播放管线接 AudioSink——`<video>`/`<audio>` play 时把
-   音频轨解码帧（webm 含音频轨面 symphonia 直解 / 独立音频资源）喂 Mixer → sink，
-   muted/volume 增益联动（media-elements IDL 语义 ↔ mixer 增益）；A/V 同步前置
-   （audio clock 主时钟——media-audio M2 契约）。
-2. **renderer 多进程路径对齐**：桥接线当前在 tab_worker 路径（test-support feature）；
-   renderer js_worker 同款 SetVideoPlayers 注入（镜像）——生产双路径一致性。
-3. **M2 解码精化项**（M1b 揭示）：WebM Colour 元素解析（colourRange/matrix）→
-   limited-range 与 BT.709 自适应转换（replaced-element-003 unmask 面收口）。
+1. **M2 解码精化项**（M1b 揭示，当前首选）：WebM Colour 元素解析（colourRange/
+   matrix）→ limited-range 与 BT.709 自适应转换（replaced-element-003 unmask 面收口）。
+2. **A/V 同步**（media-audio M2 契约）：audio clock 主时钟——视频帧调度对齐音频时间
+   戳 + drift 校正；currentTime 组合时钟驱动（依赖面：本流 M2a/M2c 时钟与音频面已齐）。
+3. **M3 多格式收尾**：AV1（dav1d 绑定，D-RFC-2）与 H.264 立项（D-RFC-3）；上游 WPT
+   可执行子集导入。
 4. **opus 解码选型注记**：symphonia 0.6 无 opus（纯 Rust 面缺位）——后续评估
    （对称面： webinar/opusic 等 pure-Rust crate 成熟度，或维持 mp3+vorbis 面）。
 
@@ -173,7 +200,7 @@ engine 2539 / media 27 / webview 668 全绿；testharness-media 372P/0F/41PF 维
 |--------|------|
 | M0 — 解码器选型 RFC（门控） | ✅ 完成并获批（2026-09-01，路线 C） |
 | M1 — 首个视频帧上屏 | ✅ 完成（2026-09-01：M1a 解码管线 + M1b 帧上屏通路 + e2e 常驻） |
-| M2 — 连续播放 + 语义驱动 | 🔄 M2a + M2b 收口（2026-09-01：播放/真值/桥/帧泵 + 精确 seek + 变速桥接）；M2c 音频待续 |
+| M2 — 连续播放 + 语义驱动 | 🔄 M2a + M2b + M2c 后续 A/B 收口（播放/真值/桥/帧泵/seek/变速 + 音频面生产链路/增益/导航释放/renderer 对齐）；余 A/V 同步（media-audio M2 契约） |
 | M3 — 多格式 + 稳定 + 收尾 | ⬜（含 AV1 dav1d（D-RFC-2）与 H.264 立项（D-RFC-3）） |
 
 ## 验证基线
