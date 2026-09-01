@@ -398,6 +398,14 @@ pub struct LayoutBox {
     /// 子盒（带 fragment_node_ids）渲染。仅 env `R109_WIRE=1` 时由 build_subtree
     /// 标记的 inline 父盒为 true。
     pub is_r109_split: bool,
+    /// R3893 §9.2.1.1 ②：此 block 容器做了混合内容拆分（inline 内容被匿名块盒包裹）。
+    ///
+    /// 当为 true 时，此盒自身的 paint IFC 应跳过——其直接文本已由 Inline 匿名块
+    /// 片段子盒（带 fragment_node_ids）渲染；自身重跑 IFC 会以空 styles 丢失 block
+    /// 子分类、把 block 子树文本吸收进容器流（text concatenation）。与
+    /// [`Self::is_r109_split`]（inline 拆分宿主，同时抑制盒装饰）分立：block-mixed
+    /// 宿主的片段是 plain Block 不继承盒模型，宿主的 bg/border 仍由自身绘制。
+    pub is_r109_block_mixed: bool,
     /// R109 §9.2.1.1：此匿名块片段是其 split inline 片段序列的**首** Inline 片段。
     /// fragment border 边选择：首片段开放右分裂边（shrink 步骤置 border_right=0）。
     pub r109_first_fragment: bool,
@@ -544,6 +552,7 @@ impl Default for LayoutBox {
             taffy_baseline: None,
             fragment_node_ids: None,
             is_r109_split: false,
+            is_r109_block_mixed: false,
             r109_first_fragment: false,
             r109_last_fragment: false,
             table_col_backgrounds: Vec::new(),

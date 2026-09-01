@@ -672,7 +672,12 @@ impl super::Painter {
         if let (Some(doc), Some(node_id)) = (doc, box_node.node_id) {
             // R109 §9.2.1.1：被 in-flow block 子元素拆分的 inline 父盒自身不渲染文本——
             // 其直接文本已由匿名块片段子盒（带 fragment_node_ids）渲染。避免与片段重叠。
-            if box_node.is_r109_split && box_node.fragment_node_ids.is_none() {
+            // R3893：block 容器混合内容拆分（§9.2.1.1 ②）的宿主盒同理——其直接文本由
+            // Inline 匿名块片段渲染；宿主自身 Path B 重跑 IFC（空 styles）会丢失 block
+            // 子分类、把 block 子树文本吸收进容器流（错位 + 丢 span 样式的 text
+            // concatenation）。片段是 plain Block 不继承盒模型，故仅抑制文本（装饰守卫
+            // skip_split_inline_deco 不含此旗标，宿主 bg/border 照绘）。
+            if (box_node.is_r109_split || box_node.is_r109_block_mixed) && box_node.fragment_node_ids.is_none() {
                 return;
             }
             if !has_direct_paintable_text(doc, node_id, styles) {

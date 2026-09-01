@@ -186,6 +186,9 @@ mod r3858_abspos_nested_cb_tests;
 mod r3859_flex_ar_transferred_min_tests;
 /// R3860 grid item stretch 轴钳制 + ratio 传递测试。
 mod r3860_grid_ar_stretch_transfer_tests;
+mod r3893_block_mixed_flag_tests;
+#[allow(dead_code)]
+mod r3893_mixed_body_probe;
 mod r717_flex_ratio_img_tests;
 mod table_layout_tests;
 mod tests_1;

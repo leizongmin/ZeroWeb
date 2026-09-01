@@ -1205,6 +1205,8 @@ impl LayoutEngine {
         let fragment_node_ids = r109.fragment_registry.get(&taffy_id).cloned();
         let is_anon_fragment = fragment_node_ids.is_some();
         let is_r109_split = dom_id.is_some_and(|id| r109.split_parents.contains(&id));
+        // R3893：block 容器混合内容拆分宿主（其直接文本由 Inline 匿名块片段渲染）。
+        let is_r109_block_mixed = dom_id.is_some_and(|id| r109.block_mixed_parents.contains(&id));
         let r109_first_fragment = r109.first_inline_fragments.contains(&taffy_id);
         let r109_last_fragment = r109.last_inline_fragments.contains(&taffy_id);
 
@@ -1649,6 +1651,7 @@ impl LayoutEngine {
             taffy_baseline: None,
             fragment_node_ids,
             is_r109_split,
+            is_r109_block_mixed,
             r109_first_fragment,
             r109_last_fragment,
             table_col_backgrounds: Vec::new(),

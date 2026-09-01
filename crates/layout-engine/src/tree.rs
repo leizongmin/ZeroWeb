@@ -235,6 +235,12 @@ pub(crate) fn container_has_balancing_text_wrap(styles: &HashMap<NodeId, Compute
 pub(crate) struct R109Wiring {
     pub fragment_registry: HashMap<taffy::NodeId, Vec<NodeId>>,
     pub split_parents: HashSet<NodeId>,
+    /// R3893：block 容器混合内容拆分（§9.2.1.1 ②）的宿主容器集合。与 split_parents
+    /// 分立——inline 拆分的宿主（split_parents）paint 侧同时抑制盒装饰（匿名块片段
+    /// 继承宿主盒模型）；block-mixed 宿主的片段是 plain Block（不继承盒模型），宿主
+    /// 的 bg/border 仍由自身绘制，仅文本绘制须抑制（其直接文本已由 Inline 匿名块
+    /// 片段渲染，宿主自身 paint_text 重跑 IFC 会以空 styles 吸收 block 子树文本）。
+    pub block_mixed_parents: HashSet<NodeId>,
     pub first_inline_fragments: HashSet<taffy::NodeId>,
     pub last_inline_fragments: HashSet<taffy::NodeId>,
 }
@@ -1940,6 +1946,9 @@ fn build_subtree(
                 ctx.r109.split_parents.insert(dom_id);
                 compute_inline_block_split(doc, styles, dom_id)
             } else if is_block_mixed {
+                // R3893：登记 block-mixed 宿主，paint 侧抑制宿主自身文本绘制（见
+                // R109Wiring.block_mixed_parents 文档）。
+                ctx.r109.block_mixed_parents.insert(dom_id);
                 compute_block_container_split(doc, styles, dom_id)
             } else {
                 None
