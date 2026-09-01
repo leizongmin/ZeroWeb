@@ -2,11 +2,11 @@
 
 **入口文档**: [../media-audio.md](../media-audio.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-01（**M2 A/V 同步主体由 media-playback 流切片 D+E 兑现**——
-webm 双轨（VP9+Vorbis）伴生音频解码（OGG 重封装 → symphonia）+ audio clock 主时钟
-（视频帧调度 `sync_to_media_time` 对齐音频游标，drift 构造校正）+ currentTime 组合
-时钟（A/V pair 优先报音频游标）+ seek 双轨对齐。本档余：Mixer 多源混音接线 +
-CpalSink 真出声冒烟）
+**最后更新**: 2026-09-01（**D2 获批项闭环**——libasound2-dev 在位，cpal 编译 +
+39 测全绿 + **CpalSink 真设备流冒烟通过**（Ok 分支：构造/start/write/pause/resume
+全链——[evidence](evidence/2026-09-01-cpalsink-device-smoke.md)）；M2 A/V 同步主体
+由 media-playback 流切片 D+E 兑现；opus 解码面转正。本档余：Mixer 接线（挂真出声
+切片，可选）+ D1 Web Audio 实施决策）
 
 ---
 
@@ -108,7 +108,7 @@ volume/muted 真控制。**双重启动门控均已解除**：① M0 音频环�
 | 里程碑 | 状态 |
 |--------|------|
 | M0 — 环境验证 + 验证策略（门控） | ✅ 完成（2026-09-01，含 D2 后 cpal 编译实测补录） |
-| M1 — 首个声音输出 | 🔄 切片 1-3 + 解码链 e2e + 播放管线宿主接线落地（2026-09-01）；余 Mixer 多源混音接线 |
+| M1 — 首个声音输出 | 🔄 切片 1-3 + 解码链 e2e + 播放管线宿主接线落地（2026-09-01）；**D2 获批项闭环（2026-09-01）**——cpal 编译 + 39 测全绿 + CpalSink 真设备流冒烟通过（Ok 分支：构造/start/write/pause/resume 全链，[evidence](evidence/2026-09-01-cpalsink-device-smoke.md)）；余 Mixer 接线（挂真出声切片，可选） |
 | M2 — A/V 同步 + 控制 | 🔄 主体落地（2026-09-01，media-playback 流切片 D+E：audio clock 主时钟 + 组合时钟 + seek 对齐）；余 CpalSink 真出声冒烟（可选） |
 | M3 — `<audio>` 全路径 + Web Audio 评估 | 🔄 `<audio>` 纯音频播放全路径 e2e 已常驻（M2c 后续切片 A/B：settle → 桥 play → 泵推进）；Web Audio 最小面 RFC 已成文（2026-09-01，待 D1 批准——不批准不影响 DONE） |
 
