@@ -11351,7 +11351,13 @@
                 var _pSrcRaw = (typeof __zw_get_attr === 'function') ? (__zw_get_attr(sel, 'src') || '') : '';
                 var _pAbs = _pSrcRaw ? _zwResolveFetchUrl(String(_pSrcRaw).replace(/^[\x00-\x20]+/, '').replace(/[\x00-\x20]+$/, '')) : '';
                 if (_pAbs) _pMs.bridgeSrc = _pAbs;
-                if (_pAbs && globalThis.__zwVideoBridge.play(_pAbs, 0)) _pMs.bridgeOn = true;
+                if (_pAbs && globalThis.__zwVideoBridge.play(_pAbs, 0)) {
+                  _pMs.bridgeOn = true;
+                  // 起播时同步既有速率（play 前设的 playbackRate 经桥生效）。
+                  if (typeof globalThis.__zwVideoBridge.setRate === 'function') {
+                    try { globalThis.__zwVideoBridge.setRate(_pAbs, _pMs.playbackRate || 1); } catch (_eVbR2) {}
+                  }
+                }
               } catch (_eVbP) {}
             }
             _dispatchWithBubble(_pKey, sel, handle, _makeEvent('play', { bubbles: false, cancelable: false }));

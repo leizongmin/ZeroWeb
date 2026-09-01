@@ -67,3 +67,49 @@ fn non_webm_input_rejected() {
 fn empty_input_rejected() {
     assert!(VideoDecoder::open_webm_vp9(&[]).is_err());
 }
+
+#[test]
+fn webm_vp9_seek_to_mid_stream_keyframe() {
+    // M2b：seek 关键帧粒度——seek 到 1s 后 next_frame 应返回 ≥ 定位点的帧，
+    // 后续帧 PTS 单调续播至流末（48 帧 @ 24fps，fixture）。
+    let data = fs::read(fixture_path("sample-webm-vp9.webm")).unwrap();
+    let mut dec = VideoDecoder::open_webm_vp9(&data).unwrap();
+    dec.seek_to_ms(1000).unwrap();
+    let f = dec.next_frame().unwrap().expect("seek 后应有帧");
+    // 精确 seek（spec）：单 keyframe 流回退路径前向解码 → 首帧 pts ≥ 1000。
+    assert!(
+        f.pts_ms >= 1000,
+        "seek(1000ms) 后首帧 PTS 应 ≥ target（precise-seek），got {}",
+        f.pts_ms
+    );
+    // 续播单调至末：剩余帧数 < 48（跳过了前段），PTS 单调。
+    let mut count = 1u32;
+    let mut last = f.pts_ms;
+    while let Some(frame) = dec.next_frame().unwrap() {
+        assert!(frame.pts_ms >= last, "seek 后 PTS 单调性破坏");
+        last = frame.pts_ms;
+        count += 1;
+        assert!(count <= 48, "runaway frame count");
+    }
+    assert!(count < 48, "seek(1s) 后剩余帧应少于全流 48 帧，got {count}");
+    assert!((1700..=2100).contains(&last), "末帧 PTS 应仍在 2s 窗口，got {last}");
+}
+
+#[test]
+fn webm_vp9_seek_to_zero_replays_full_stream() {
+    // seek(0)：回到开头，全流 48 帧可重播（ended 重播路径的解码器面）。
+    let data = fs::read(fixture_path("sample-webm-vp9.webm")).unwrap();
+    let mut dec = VideoDecoder::open_webm_vp9(&data).unwrap();
+    // 先消费几帧再 seek 回 0。
+    let _ = dec.next_frame().unwrap();
+    let _ = dec.next_frame().unwrap();
+    dec.seek_to_ms(0).unwrap();
+    let f0 = dec.next_frame().unwrap().expect("seek(0) 后应有帧");
+    assert_eq!(f0.pts_ms, 0, "seek(0) 后首帧应为 pts=0");
+    let mut count = 1u32;
+    while dec.next_frame().unwrap().is_some() {
+        count += 1;
+        assert!(count <= 48);
+    }
+    assert_eq!(count, 48, "seek(0) 后全流应可重播 48 帧");
+}

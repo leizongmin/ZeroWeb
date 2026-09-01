@@ -2,12 +2,12 @@
 
 **入口文档**: [../media-playback.md](../media-playback.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-01（**M2a 切片 5b 落地**——宿主桥 + 渲染泵接线全通：
-webview `register_video_bridge_callbacks`（五回调族 + `__zwVideoBridge` JS 门面）→
-tab_js_worker `SetVideoPlayers` 注入 → tab_worker 帧泵（`is_any_playing` 门 →
-`tick_all` 注帧 → 增量重渲染）；shim `play()/pause()/currentTime/duration` 桥接
-feature-detect（无桥回落 headless）。testharness-media 372P/0F/41PF 基线维持。
-**M2a 全部切片收口——currentTime 真值推进达成（RFC §3.1 语义层对接完成面）**）
+**最后更新**: 2026-09-01（**M2b 落地**——精确 seek + 变速桥接：VideoDecoder
+`seek_to_ms` 两阶段（Cues keyframe 落点验证 → 无 Cues/非 keyframe 全量回退前向
+解码，spec precise-seek）；VideoPlayer `seek_to_ms`（clamp [0,duration]/播放态保持/
+时钟锚点重置/pending 帧不丢）；registry/桥（`__zw_video_seek`/`set_rate`）+ shim
+`currentTime=`/`playbackRate=` setter 桥推。零回归：engine 2539 / media 27 / webview
+668 / testharness-media 372P/0F/41PF）
 
 ---
 
@@ -67,6 +67,24 @@ bridgeOn 标记）/`pause()` 桥停/`currentTime`/`duration` getter 桥真值优
 + engine shim 契约测试（JS stub 桥：play 传绝对 URL / currentTime 1.25 / duration 2 /
 pause 记录）；engine 2539 / webview 667 / browser 411 全绿；testharness-media 372
 基线维持。**M2a 全部切片收口**。
+**M2b 已落地**（同日）：精确 seek + 变速桥接全链——
+① `VideoDecoder::seek_to_ms`：两阶段精确 seek——phase ① demuxer Cues 定位 +
+  **keyframe 落点验证**（`block.is_keyframe` gate：cue 点即 keyframe；非 keyframe
+  落点——无 Cues 流的线性搜索——参考链断裂不可靠）→ phase ② 全量回退（seek 0 +
+  解码器重建 + 前向解码至 ≥ target 首帧，帧存 `pending` 不丢——spec precise-seek）。
+  实测锚点：fixture 单 keyframe（testsrc2 无 GOP 内刷新，ffprobe 实证全流唯一 K 帧
+  pts=0）→ seek(1000ms) 回退路径命中 pts≥1000 首帧、续播 PTS 单调至末；seek(0)
+  全流 48 帧完整重播；
+② `VideoPlayer::seek_to_ms`：位置 clamp [0,duration]、播放中 seek 保持播放（时钟
+  锚点重置防 Δt 跳变）、暂停中 seek 保持暂停（spec）、pending 帧先弹出；
+③ registry/桥：`seek`（未 play 的已登记源自动建 player 且置暂停——spec「seek 不改
+  paused」）+ `set_playback_rate`；桥回调 `__zw_video_seek`/`__zw_video_set_rate`
+  + JS 门面 `seek`/`setRate`；
+④ shim：`currentTime=` setter 桥推（seeking/seeked 事件序列不变——headless 断言面
+  保持）+ `playbackRate=` setter 桥推（ratechange 不变）+ `play()` 起播时同步既有
+  速率。
+测试：zero-media seek 2 件 + player seek 2 件；registry seek 1 件 + 桥 e2e seek 断言；
+engine 2539 / media 27 / webview 668 全绿；testharness-media 372P/0F/41PF 维持。
 
 **与兄弟 goal 的边界**：
 - media-elements — 语义面（状态机/事件/canPlayType）归其管；本目标产出 readyState 真实
@@ -114,7 +132,7 @@ pause 记录）；engine 2539 / webview 667 / browser 411 全绿；testharness-m
 |---|------|------|
 | V1 | 解码路线选型（专利/依赖/架构三维） | ✅ RFC 获批（路线 C，2026-09-01） |
 | V2 | 零解码管线（demux/解码/帧转换） | ✅ M1a 落地（2026-09-01，`zero-media` crate） |
-| V3 | 播放驱动（帧率时钟/seek/ended）缺失 | 🔄 M2a 落地（时钟/play/pause/ended）；seek 归 M2b |
+| V3 | 播放驱动（帧率时钟/seek/ended）缺失 | ✅ M2a + M2b 落地（时钟/play/pause/ended/精确 seek/playbackRate 变速桥接） |
 | V4 | readyState 真值驱动接口未建 | ✅ 5b 落地：duration/videoWidth/currentTime 真值 + 宿主桥 play/pause + 帧泵（readyState 推进面仍 headless 序列——语义层契约不返工） |
 | V5 | 播放 e2e 资产为零 | ✅ fixture 已落地 + M1b 帧上屏 e2e 常驻 |
 | V6 | 帧上屏通路（video 元素盒 → 图元）缺失 | ✅ M1b（harness 全链）+ 切片 4（生产 settle 注入）+ 切片 5b（播放帧泵） |
@@ -128,8 +146,9 @@ pause 记录）；engine 2539 / webview 667 / browser 411 全绿；testharness-m
 
 ## 下一步计划
 
-1. **M2b（下一项）**：seek（关键帧粒度——VideoDecoder 增 keyframe 定位面）+
-   playbackRate 变速语义（ratechange 真值桥接 + seeking/seeked 事件化）。
+1. **M2c（下一项）**：音频解码（symphonia）+ AudioSink/Mixer 接入（media-audio
+   输出面三切片已备：NullSink/CpalSink/Mixer）；mp3/oga fixture 经 NullSink 过零率
+   全链 e2e；A/V 同步前置（audio clock 主时钟——media-audio M2 契约）。
 2. **M2c**：音频解码（symphonia）+ AudioSink/Mixer 接入（media-audio 输出面三切片
    已备：NullSink/CpalSink/Mixer）；mp3/oga fixture 经 NullSink 过零率全链 e2e。
 3. **renderer 多进程路径对齐**：桥接线当前在 tab_worker 路径（test-support feature）；
@@ -143,7 +162,7 @@ pause 记录）；engine 2539 / webview 667 / browser 411 全绿；testharness-m
 |--------|------|
 | M0 — 解码器选型 RFC（门控） | ✅ 完成并获批（2026-09-01，路线 C） |
 | M1 — 首个视频帧上屏 | ✅ 完成（2026-09-01：M1a 解码管线 + M1b 帧上屏通路 + e2e 常驻） |
-| M2 — 连续播放 + 语义驱动 | 🔄 M2a 全切片收口（2026-09-01：VideoPlayer + duration/videoWidth/currentTime 真值 + 宿主桥 + 帧泵）；M2b seek / M2c 音频待续 |
+| M2 — 连续播放 + 语义驱动 | 🔄 M2a + M2b 收口（2026-09-01：播放/真值/桥/帧泵 + 精确 seek + 变速桥接）；M2c 音频待续 |
 | M3 — 多格式 + 稳定 + 收尾 | ⬜（含 AV1 dav1d（D-RFC-2）与 H.264 立项（D-RFC-3）） |
 
 ## 验证基线

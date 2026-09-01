@@ -79,6 +79,25 @@ impl VideoPlayer {
         self.presented_pts = None;
     }
 
+    /// seek 到目标位置（毫秒）——M2b 精确 seek（spec「seek」算法：
+    /// 位置设为 target，解码器定位（关键帧粒度 + 前向精确解码），下一 tick
+    /// 呈现 ≥ target 的首帧；播放中 seek 保持播放（时钟锚点重置防 Δt 跳变），
+    /// 暂停中 seek 保持暂停（spec「seeking 不改 paused」）。
+    /// https://html.spec.whatwg.org/multipage/media.html#seek
+    pub fn seek_to_ms(&mut self, target_ms: u64) -> Result<(), crate::DecodeError> {
+        // clamp 到 [0, duration]（spec seek 步 5：位置 clamp 到可 seek 范围）。
+        let clamped = match self.duration() {
+            Some(d) => (target_ms as f64).min(d * 1000.0).max(0.0) as u64,
+            None => target_ms,
+        };
+        self.decoder.seek_to_ms(clamped)?;
+        self.position_ms = clamped as f64;
+        // 时钟锚点重置：下次 tick 从现在起算 Δt（播放中 seek 无跳变）。
+        self.last_tick_ms = None;
+        self.presented_pts = None;
+        Ok(())
+    }
+
     /// 设置播放速率（clamp 到 (0, 16]——spec dom-media-playbackrate「归零即静默
     /// 忽略」的保守面；变速精细语义归 M2b）。
     pub fn set_playback_rate(&mut self, rate: f64) {
@@ -249,6 +268,32 @@ mod tests {
         assert_eq!(p.playback_rate(), 2.0);
         p.set_playback_rate(100.0);
         assert_eq!(p.playback_rate(), 16.0, "上界 clamp 16");
+    }
+
+    #[test]
+    fn player_seek_mid_stream_and_resume() {
+        // M2b：seek 后位置 = target、下一 tick 呈现 ≥ target 首帧、时钟续走不跳变。
+        let mut p = fixture_player();
+        p.play(0);
+        p.tick(16).unwrap(); // 首帧
+        p.seek_to_ms(1000).unwrap();
+        assert!((p.current_time() - 1.0).abs() < 1e-9, "seek 后位置 = target");
+        assert_eq!(p.state(), PlayerState::Playing, "播放中 seek 保持播放");
+        // tick：呈现 ≥ 1000ms 首帧（precise-seek），后续 PTS 单调。
+        let f = p.tick(2000).unwrap().expect("seek 后 tick 应有帧");
+        assert!(f.pts_ms >= 1000, "seek 后呈现帧应 ≥ target，got {}", f.pts_ms);
+        // 暂停中 seek：保持暂停（spec）。
+        p.pause();
+        p.seek_to_ms(500).unwrap();
+        assert_eq!(p.state(), PlayerState::Ready, "暂停中 seek 不改 paused");
+        assert!((p.current_time() - 0.5).abs() < 1e-9);
+    }
+
+    #[test]
+    fn player_seek_clamps_to_duration() {
+        let mut p = fixture_player();
+        p.seek_to_ms(99_999).unwrap();
+        assert!((p.current_time() - 2.0).abs() < 1e-6, "越界 seek clamp 到 duration");
     }
 
     #[test]

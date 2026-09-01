@@ -70,6 +70,9 @@ pub struct VideoDecoder {
     timestamp_scale: u64,
     /// 流是否已到末尾（`next_frame` 返回 `Err(Eof)` 后置位）。
     eof: bool,
+    /// seek 前向推进时暂存的「已解出但未消费」帧（`seek_to_ms` 命中 target 时
+    /// 写入；下一次 `next_frame` 先弹出——spec precise-seek 不丢帧）。
+    pending: Option<DecodedVideoFrame>,
 }
 
 impl VideoDecoder {
@@ -91,6 +94,7 @@ impl VideoDecoder {
             vp9: rusty_vp9::Vp9Decoder::new(),
             video_track,
             eof: false,
+            pending: None,
         })
     }
 
@@ -104,10 +108,85 @@ impl VideoDecoder {
             .map(|d| (d * self.timestamp_scale as f64 / 1e6).round() as u64)
     }
 
+    /// seek 到目标位置（毫秒，媒体时间轴）——M2b 精确 seek（spec「seek」算法面）。
+    ///
+    /// 两阶段：
+    /// ① demuxer 经 Cues（cue 二分）定位 ≤ target 的最近块并重建 VP9 解码器
+    ///   （cue 点即 keyframe；旧参考链作废）。落点帧可解 → 完成（cue 齐全的流
+    ///   O(log n) 到位）。
+    /// ② 回退：无 Cues 或落点为非 keyframe（VP9 参考链断裂不可解——如 testsrc2
+    ///   单 keyframe 流）→ 全量回退（demuxer seek 0 + 解码器重建），**前向解码**
+    ///   至 ≥ target 的首帧后定位完成（spec precise-seek：从最近 keyframe 解码到
+    ///   精确呈现点）。
+    ///
+    /// 语义契约：完成后的「下一次 [`Self::next_frame`]」返回 pts ≥ target 的首帧
+    ///（② 路径精确命中；① 路径为 cue 点帧，调用方 VideoPlayer 把播放位置对齐到
+    /// 实际帧 pts）。
+    /// https://www.matroska.org/technical/cues.html
+    /// https://html.spec.whatwg.org/multipage/media.html#seek
+    pub fn seek_to_ms(&mut self, target_ms: u64) -> Result<(), DecodeError> {
+        // 容器 timebase：block.timestamp 为 tick（scale ns/tick）；demuxer seek
+        // 参数同 timebase（默认 1e6 ns = 毫秒 tick）。ms→tick 与 next_frame 的
+        // tick→ms 互逆。
+        // https://www.matroska.org/technical/basics.html#timestampscale
+        let target_tick = (target_ms as u128 * 1_000_000 / self.timestamp_scale as u128) as u64;
+        let target_ns = target_ms as u128 * 1_000_000;
+
+        // ① cue 路径：定位 + keyframe 验证（cue 点即 keyframe；非 keyframe 落点
+        //   ——无 Cues 的线性搜索——不可解后续参考链 → 回退）。
+        self.demuxer.seek(target_tick)?;
+        self.vp9 = rusty_vp9::Vp9Decoder::new();
+        self.eof = false;
+        let mut block = matroska_demuxer::Frame::default();
+        if matches!(self.demuxer.next_frame(&mut block), Ok(true))
+            && block.track == self.video_track
+            && block.is_keyframe == Some(true)
+        {
+            // keyframe 落点：解码此块并暂存（下一次 next_frame 消费——不丢帧）。
+            let pts_ms = block.timestamp * self.timestamp_scale / 1_000_000;
+            self.vp9.push(&block.data, Some(pts_ms as i64))?;
+            let frame = self.vp9.next_frame()?;
+            self.pending = Some(to_rgba(frame));
+            return Ok(());
+        }
+
+        // ② 回退：从流首 keyframe 前向解码到 target（spec precise-seek）。
+        self.demuxer.seek(0)?;
+        self.vp9 = rusty_vp9::Vp9Decoder::new();
+        self.eof = false;
+        loop {
+            // EOF 前必有 ≥ target 的帧（target ≤ duration 由调用方保证；越界时
+            // EOF 返回 None 亦为合法终态——调用方按 ended 处理）。
+            match self.try_decode_next_frame() {
+                Ok(Some(frame)) => {
+                    if frame.pts_ms as u128 * 1_000_000 >= target_ns {
+                        self.pending = Some(frame);
+                        return Ok(());
+                    }
+                }
+                Ok(None) => return Ok(()),
+                Err(e) => return Err(e),
+            }
+        }
+    }
+
+    /// 试解下一帧（seek 定位探测/前向推进共用）；EOF → Ok(None)。
+    fn try_decode_next_frame(&mut self) -> Result<Option<DecodedVideoFrame>, DecodeError> {
+        match self.next_frame() {
+            Ok(frame) => Ok(frame),
+            // seek 后参考链断裂的坏帧：VP9 解码错误 → 交由调用方回退判定。
+            Err(e @ DecodeError::Vp9(_)) => Err(e),
+            Err(e) => Err(e),
+        }
+    }
+
     /// 解码并返回下一帧；流结束返回 `Ok(None)`。
     ///
     /// 内部维持 demux→decode 推进，直到产出一帧可展示帧或流末。
     pub fn next_frame(&mut self) -> Result<Option<DecodedVideoFrame>, DecodeError> {
+        if let Some(frame) = self.pending.take() {
+            return Ok(Some(frame));
+        }
         if self.eof {
             return Ok(None);
         }

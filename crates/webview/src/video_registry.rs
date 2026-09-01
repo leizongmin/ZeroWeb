@@ -65,6 +65,37 @@ impl VideoPlayerRegistry {
         }
     }
 
+    /// playbackRate 变速（clamp 面 player 内置；未建 player 时登记于建时生效——
+    /// registry 存储待用速率）。
+    pub fn set_playback_rate(&mut self, abs_src: &str, rate: f64) {
+        let key = image_resource_key(abs_src, None);
+        if let Some(player) = self.players.get_mut(&key) {
+            player.set_playback_rate(rate);
+        }
+    }
+
+    /// seek：精确 seek（关键帧定位 + 前向解码）；播放态保持（时钟锚点重置在
+    /// player 内）。返回是否作用于存在的 player。
+    pub fn seek(&mut self, abs_src: &str, target_ms: u64) -> bool {
+        let key = image_resource_key(abs_src, None);
+        match self.players.get_mut(&key) {
+            Some(player) => player.seek_to_ms(target_ms).is_ok(),
+            // 未建 player（未 play 过）：登记源存在时建之再 seek——spec seekable
+            // 面（ HAVE_METADATA 即可 seek）。
+            None => {
+                if self.play(abs_src, 0) {
+                    // spec「seek 不改 paused」：自动建的 player 置回暂停
+                    //（HAVE_METADATA 可 seek 面，未起播）。
+                    self.pause(abs_src);
+                    if let Some(player) = self.players.get_mut(&key) {
+                        return player.seek_to_ms(target_ms).is_ok();
+                    }
+                }
+                false
+            }
+        }
+    }
+
     /// currentTime 真值（秒；未播放/不存在 → 0——spec HAVE_NOTHING 语义面）。
     pub fn current_time(&self, abs_src: &str) -> f64 {
         let key = image_resource_key(abs_src, None);
@@ -172,6 +203,18 @@ mod tests {
     }
 
     #[test]
+    fn registry_seek_creates_player_and_positions() {
+        // M2b：未 play 的已登记源 seek → 自动建 player + 精确定位（currentTime ≥ target）。
+        let mut reg = VideoPlayerRegistry::new();
+        reg.register_source(SRC, fixture_bytes());
+        assert!(reg.seek(SRC, 1000), "已登记源 seek 应成功");
+        assert!(reg.current_time(SRC) >= 1.0, "seek 后 currentTime ≥ 1s");
+        assert!(!reg.is_playing(SRC), "seek 不改 paused（spec）");
+        // 未登记源 seek 失败。
+        assert!(!reg.seek("https://x/nope.webm", 500));
+    }
+
+    #[test]
     fn registry_release_drops_source_and_player() {
         let mut reg = VideoPlayerRegistry::new();
         reg.register_source(SRC, fixture_bytes());
@@ -243,6 +286,35 @@ pub fn register_video_bridge_callbacks(
         }),
     );
 
+    let reg_rate = std::sync::Arc::clone(&registry);
+    sandbox.register_callback(
+        "__zw_video_set_rate",
+        Box::new(move |args| {
+            let src = args.first().map(String::as_str).unwrap_or("");
+            let rate: f64 = args.get(1).and_then(|s| s.parse().ok()).unwrap_or(1.0);
+            reg_rate
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .set_playback_rate(src, rate);
+            "1".into()
+        }),
+    );
+
+    let reg_seek = std::sync::Arc::clone(&registry);
+    sandbox.register_callback(
+        "__zw_video_seek",
+        Box::new(move |args| {
+            let src = args.first().map(String::as_str).unwrap_or("");
+            let target_ms: u64 = args.get(1).and_then(|s| s.parse().ok()).unwrap_or(0);
+            let mut reg = reg_seek.lock().unwrap_or_else(|e| e.into_inner());
+            if reg.seek(src, target_ms) {
+                "1".into()
+            } else {
+                "0".into()
+            }
+        }),
+    );
+
     let reg_playing = std::sync::Arc::clone(&registry);
     sandbox.register_callback(
         "__zw_video_is_playing",
@@ -258,9 +330,11 @@ pub fn register_video_bridge_callbacks(
         "globalThis.__zwVideoBridge = {\
            play: function (src, nowMs) { return __zw_video_play(src, nowMs | 0) === '1'; },\
            pause: function (src) { __zw_video_pause(src); },\
+           seek: function (src, targetMs) { return __zw_video_seek(src, targetMs | 0) === '1'; },\
            currentTime: function (src) { return Number(__zw_video_current_time(src)); },\
            duration: function (src) { return Number(__zw_video_duration(src)); },\
-           isPlaying: function (src) { return __zw_video_is_playing(src) === '1'; }\
+           isPlaying: function (src) { return __zw_video_is_playing(src) === '1'; },\
+           setRate: function (src, rate) { __zw_video_set_rate(src, Number(rate)); }\
          };",
     );
 }
@@ -345,6 +419,22 @@ mod bridge_tests {
             .unwrap()
             .value;
         assert!(dur.starts_with('2'), "duration 应为 2 秒真值，got {dur}");
+        // seek 面：seek(1000ms) → currentTime ≥ 1s（精确 seek 真值）。
+        assert_eq!(
+            sandbox
+                .execute(
+                    "String(globalThis.__zwVideoBridge.seek('https://example.com/media/sample-webm-vp9.webm', 1000))"
+                )
+                .unwrap()
+                .value,
+            "true"
+        );
+        let ct = sandbox
+            .execute("String(globalThis.__zwVideoBridge.currentTime('https://example.com/media/sample-webm-vp9.webm'))")
+            .unwrap()
+            .value;
+        let ct: f64 = ct.parse().unwrap_or(0.0);
+        assert!(ct >= 1.0, "seek(1000) 后 currentTime ≥ 1s，got {ct}");
         // 未登记源：play false。
         assert_eq!(
             sandbox

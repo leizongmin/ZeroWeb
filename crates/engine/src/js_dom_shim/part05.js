@@ -44,6 +44,12 @@
                   "Failed to set the 'playbackRate' property on 'HTMLMediaElement': The provided value is non-finite.");
               }
               _mst.playbackRate = _mv;
+              // M2b：宿主桥变速——bridgeOn 元素把速率真值推给 Rust VideoPlayer
+              //（tick Δt×rate；clamp 面桥内置）。
+              if (_mst.bridgeOn && _mst.bridgeSrc && typeof globalThis.__zwVideoBridge === 'object'
+                  && typeof globalThis.__zwVideoBridge.setRate === 'function') {
+                try { globalThis.__zwVideoBridge.setRate(_mst.bridgeSrc, _mv); } catch (_eVbR) {}
+              }
               _mediaFireSel(sel, handle, key, 'ratechange');
             } else if (p === 'defaultPlaybackRate') {
               // spec dom-media-defaultplaybackrate：非有限 → TypeError（同 playbackRate）。
@@ -55,6 +61,12 @@
               _mst.defaultPlaybackRate = _mv;
             } else if (p === 'currentTime') {
               _mst.currentTime = isNaN(_mv) ? 0 : _mv;
+              // M2b：宿主桥 seek——bridgeOn 元素把 seek 真值推给 Rust VideoPlayer
+              //（精确 seek：关键帧定位 + 前向解码；帧更新由渲染泵下一节拍呈现）。
+              if (_mst.bridgeOn && _mst.bridgeSrc && typeof globalThis.__zwVideoBridge === 'object'
+                  && typeof globalThis.__zwVideoBridge.seek === 'function') {
+                try { globalThis.__zwVideoBridge.seek(_mst.bridgeSrc, Math.max(0, _mst.currentTime * 1000)); } catch (_eVbSk) {}
+              }
               // spec seek：媒体可 seek（headless：已加载 readyState>=1）→ seeking=true +
               // 派 seeking，随后 seeked 异步回落（setTimeout 队列，runner/沙箱均可触发）。
               if ((_mst.readyState | 0) >= 1) {
