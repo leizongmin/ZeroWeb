@@ -1819,6 +1819,10 @@ pub(crate) fn adjust_float_positions_with_context(
         && !box_node.is_absolute
         && !box_node.is_fixed
         && !box_node.is_replaced
+        // R3903（CSS Flexbox §4 / Grid §4）：布局项的尺寸由 flex/grid 算法决定——
+        // taffy align-stretch 定高的 item（如 inline-block item）被本重算按「无子 →
+        // content_bottom=0」清零（flexbox_flex-1-* 24 案 10.41% 簇）。排除。
+        && !box_node.is_flex_grid_item
         && (box_node.is_flow_root || matches!(box_node.float, FloatValue::Left | FloatValue::Right))
     {
         // 本重算的语义是「BFC 的 auto height 包含其浮动后代」，仅适用于参与文档流的

@@ -325,6 +325,48 @@ fn test_inline_block_inside_flex_container() {
     );
 }
 
+/// R3903：inline-block flex item 的 cross stretch 须存活（CSS Flexbox §4）。
+///
+/// 回归背景：inline-block item 满足 is_flow_root（BFC），曾被 float 后处理的
+/// 「BFC auto-height 含浮动后代」重算按「无子 → content_bottom=0」把 taffy
+/// align-stretch 定高清零（flexbox_flex-1-* 24 案 10.41% 簇）。is_flex_grid_item
+/// 旗标排除后 stretch 高度须存活。
+#[test]
+fn r3903_inline_block_flex_item_stretch_survives() {
+    let (mut doc, body) = make_doc_with_body();
+    let container = doc.create_element("div");
+    doc.append_child(body, container).unwrap();
+    let span = doc.create_element("span");
+    doc.append_child(container, span).unwrap();
+
+    let mut styles = HashMap::new();
+    let mut cs = ComputedStyle::default();
+    cs.display = DisplayValue::Flex;
+    cs.width = LengthValue::Px(600.0);
+    cs.height = LengthValue::Px(100.0);
+    styles.insert(container, cs);
+    let mut ss = ComputedStyle::default();
+    ss.display = DisplayValue::InlineBlock;
+    ss.width = LengthValue::Px(150.0);
+    styles.insert(span, ss.clone());
+
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    let b = find_child_by_node_id(&result.root, span).expect("span found");
+    assert_eq!(
+        b.height, 100.0,
+        "inline-block flex item 的 align-stretch 高度须存活（不得被 BFC auto-height 重算清零）"
+    );
+
+    // 对照：display:block 的同几何 item 高度一致
+    let mut sb = ss;
+    sb.display = DisplayValue::Block;
+    styles.insert(span, sb);
+    let result2 = engine.compute(&doc, &styles);
+    let b2 = find_child_by_node_id(&result2.root, span).expect("span2 found");
+    assert_eq!(b2.height, 100.0, "block flex item stretch 高度");
+}
+
 /// 测试嵌套 grid 容器（外层 grid > 内层 grid > 子元素）。
 ///
 /// 外层 grid 2x2，第一个单元格中放置一个内嵌 grid 容器（也是 2 列）。

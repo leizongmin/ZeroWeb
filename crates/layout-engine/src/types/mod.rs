@@ -136,6 +136,13 @@ pub struct LayoutBox {
     pub fixed_y_insets_all_auto: bool,
     /// 是否为 sticky 定位（需宿主层在滚动时动态调整偏移）。
     pub is_sticky: bool,
+    /// 是否为 flex/grid 容器的布局项（R3903）。
+    ///
+    /// CSS Flexbox §4 / Grid §4：布局项的 float/clear 计算为 none，尺寸由 flex/grid
+    /// 算法决定——其 BFC auto-height「包含浮动后代」重算不适用（taffy stretch 定高被
+    /// 重算清零：inline-block item 无子 → content_bottom=0 → h=0，flexbox_flex-1-*
+    /// 24 案 10.41% 簇）。tree 构建时按父 display 判定，extract 提取。
+    pub is_flex_grid_item: bool,
     /// 是否为 abspos/fixed 后代的 containing block（R3902）。
     ///
     /// CSS Containment §3.1：`contain: layout` 使元素成为 absolute/fixed 后代的包含块；
@@ -507,6 +514,7 @@ impl Default for LayoutBox {
             fixed_x_insets_all_auto: false,
             fixed_y_insets_all_auto: false,
             is_sticky: false,
+            is_flex_grid_item: false,
             is_abspos_cb: false,
             float: FloatValue::None,
             clear: ClearValue::None,

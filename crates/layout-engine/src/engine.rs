@@ -452,6 +452,7 @@ impl LayoutEngine {
             &WritingModeValue::HorizontalTb,
             doc,
             &r109,
+            false,
         );
 
         // 3.1 两趟固有宽度布局：width:max-content/min-content 的 flex/grid 容器
@@ -561,6 +562,7 @@ impl LayoutEngine {
                 &WritingModeValue::HorizontalTb,
                 doc,
                 &r109,
+                false,
             );
         }
         // CSS 2.1 §9.4.3：position:relative 的根元素（如 <html style="position:relative">）
@@ -1089,6 +1091,7 @@ impl LayoutEngine {
             &WritingModeValue::HorizontalTb,
             doc,
             &cached.r109,
+            false,
         );
         adjust_fixed_to_viewport(&mut root_box, 0.0, 0.0);
         // margin 折叠由 taffy 0.7 内置处理
@@ -1189,6 +1192,7 @@ impl LayoutEngine {
 
     /// 当父元素具有垂直书写模式时，taffy 的布局结果是轴交换后的，
     /// 需要在提取时交换回来以获得正确的视觉坐标。
+    #[allow(clippy::too_many_arguments)]
     fn extract_layout(
         taffy: &TaffyTree<NodeId>,
         taffy_id: taffy::NodeId,
@@ -1197,6 +1201,7 @@ impl LayoutEngine {
         parent_writing_mode: &WritingModeValue,
         doc: &Document,
         r109: &R109Wiring,
+        parent_is_flex_grid: bool,
     ) -> LayoutBox {
         let layout = taffy.layout(taffy_id).cloned().unwrap_or_default();
         let dom_id = taffy_to_dom.get(&taffy_id).copied();
@@ -1557,6 +1562,10 @@ impl LayoutEngine {
                 &own_writing_mode,
                 doc,
                 r109,
+                matches!(
+                    computed.map(|s| &s.display),
+                    Some(DisplayValue::Flex | DisplayValue::InlineFlex | DisplayValue::Grid | DisplayValue::InlineGrid)
+                ),
             ));
         }
 
@@ -1624,6 +1633,7 @@ impl LayoutEngine {
             fixed_x_insets_all_auto,
             fixed_y_insets_all_auto,
             is_sticky,
+            is_flex_grid_item: parent_is_flex_grid,
             is_abspos_cb,
             float,
             clear,
