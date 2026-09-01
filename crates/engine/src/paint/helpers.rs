@@ -349,6 +349,91 @@ pub fn apply_transform(style: &ComputedStyle, rect: &Rect, primitives: &mut Rend
     }
 }
 
+/// 求纯 translate 列表的累计位移 `(tx, ty)`（CSS Transforms §translate）。
+///
+/// R3901：旧实现承诺「仅 translate 的列表由 offset 路径处理」（compute_transform_matrix
+/// 对纯 translate 返回 None），但 offset 路径（apply_transform_offset）无任何生产调用方——
+/// 纯 px translate 的位移从未进入渲染（driving: transform-overflow-001 /
+/// ttwf-transform-translatex-001 / translate.html 等 4.17% 簇）。
+/// 混合列表（含非 translate 函数）返回 None（走 matrix 路径，平移分量已并入矩阵）。
+pub fn translate_offset(style: &ComputedStyle) -> Option<(f32, f32)> {
+    let funcs = match &style.transform {
+        TransformValue::None => return None,
+        TransformValue::List(f) => f,
+    };
+    let only_translate = funcs.iter().all(|f| {
+        matches!(
+            f,
+            TransformFunction::Translate(_, _) | TransformFunction::TranslateX(_) | TransformFunction::TranslateY(_)
+        )
+    });
+    if !only_translate {
+        return None;
+    }
+    let mut tx = 0.0_f32;
+    let mut ty = 0.0_f32;
+    for f in funcs {
+        match f {
+            TransformFunction::Translate(dx, dy) => {
+                tx += *dx as f32;
+                ty += *dy as f32;
+            }
+            TransformFunction::TranslateX(dx) => tx += *dx as f32,
+            TransformFunction::TranslateY(dy) => ty += *dy as f32,
+            _ => {}
+        }
+    }
+    if tx == 0.0 && ty == 0.0 {
+        return None;
+    }
+    Some((tx, ty))
+}
+
+/// 对快照 `from` 之后新增的图元应用平移（R3901：纯 translate 的图元级实现）。
+///
+/// CSS Transforms §transform-rendering：transform 作用于元素**及其整个子树**的渲染结果，
+/// 故调用方须传「自子树图元起点」快照（paint_node 的 counts_before），对该元素及其全部
+/// 后代产生的图元直接平移坐标。不用 TransformPrimitive 的原因：raster 侧
+/// apply_transform_post 是全场景像素后处理（rect 内清白+反向采样），会破坏与元素框相交的
+/// 祖先/兄弟内容（transform-descendant-001 回归实证）；图元级平移只动该子树自己的图元。
+/// transform-origin 对平移无影响（origin 只固定 rotate/scale/skew）。
+pub fn translate_primitives_since(primitives: &mut RenderPrimitives, from: &PrimitiveCounts, tx: f32, ty: f32) {
+    for f in primitives.fills.iter_mut().skip(from.fills) {
+        f.rect.origin.x += tx;
+        f.rect.origin.y += ty;
+    }
+    for rr in primitives.rounded_rects.iter_mut().skip(from.rounded_rects) {
+        rr.rect.origin.x += tx;
+        rr.rect.origin.y += ty;
+    }
+    // 渐变：rect 随动；端点/圆心是绝对坐标但 GradientKind 字段非 pub，translate 内
+    // gradient 组合罕见，A/B 无回归即保持（FIXME: 梯度端点绝对坐标未随平移）。
+    for g in primitives.gradients.iter_mut().skip(from.gradients) {
+        g.rect.origin.x += tx;
+        g.rect.origin.y += ty;
+    }
+    for s in primitives.shadows.iter_mut().skip(from.shadows) {
+        s.rect.origin.x += tx;
+        s.rect.origin.y += ty;
+    }
+    for i in primitives.images.iter_mut().skip(from.images) {
+        i.rect.origin.x += tx;
+        i.rect.origin.y += ty;
+    }
+    for g in primitives.glyphs.iter_mut().skip(from.glyphs) {
+        g.x += tx;
+        g.y += ty;
+    }
+    for s in primitives.strokes.iter_mut().skip(from.strokes) {
+        s.x1 += tx;
+        s.y1 += ty;
+        s.x2 += tx;
+        s.y2 += ty;
+    }
+    // path_fills/path_strokes：PrimitiveCounts 无对应计数（path 来自 canvas/SVG 桥，
+    // 与 CSS transform 组合罕见），不覆盖。
+}
+
 /// 将填充矩形裁剪到指定区域内（原地修改）。
 ///
 /// 从 `start` 索引开始的所有填充矩形会被裁剪到 `clip_rect` 内。
@@ -1119,6 +1204,81 @@ mod tests {
     use zero_style_system::ComputedStyle;
 
     // ── apply_transform_offset ──────────────────────────────────────────
+
+    // ── R3901：translate_offset / translate_primitives_since ────────────
+
+    #[test]
+    fn test_translate_offset_pure_px_list() {
+        let mut style = ComputedStyle::default();
+        style.transform = TransformValue::List(vec![TransformFunction::Translate(15.0, 25.0)]);
+        assert_eq!(translate_offset(&style), Some((15.0, 25.0)));
+        // X/Y 变体累计
+        style.transform = TransformValue::List(vec![
+            TransformFunction::TranslateX(30.0),
+            TransformFunction::TranslateY(40.0),
+        ]);
+        assert_eq!(translate_offset(&style), Some((30.0, 40.0)));
+        // 混合列表（含 scale）→ None（matrix 路径）
+        style.transform = TransformValue::List(vec![
+            TransformFunction::Translate(5.0, 5.0),
+            TransformFunction::Scale(2.0, None),
+        ]);
+        assert_eq!(translate_offset(&style), None);
+        // 零位移 → None
+        style.transform = TransformValue::List(vec![TransformFunction::Translate(0.0, 0.0)]);
+        assert_eq!(translate_offset(&style), None);
+    }
+
+    #[test]
+    fn test_translate_primitives_since_shifts_snapshot_only() {
+        let mut p = RenderPrimitives::new();
+        p.fills.push(FillPrimitive {
+            rect: Rect::new(0.0, 0.0, 10.0, 10.0),
+            color: Color::BLACK,
+        });
+        p.glyphs.push(GlyphPrimitive {
+            x: 1.0,
+            y: 2.0,
+            font_size: 16.0,
+            color: Color::BLACK,
+            glyph_id: 'a' as u32,
+            font_glyph_index: None,
+            source: None,
+            font_id: FontId(0),
+            font_variation_id: None,
+            bitmap_width: None,
+            bitmap_height: None,
+            rotation: 0.0,
+            synthetic_italic: false,
+        });
+        let from = PrimitiveCounts::snapshot(&p);
+        // 快照之后新增的图元才被平移
+        p.fills.push(FillPrimitive {
+            rect: Rect::new(100.0, 100.0, 10.0, 10.0),
+            color: Color::BLACK,
+        });
+        p.glyphs.push(GlyphPrimitive {
+            x: 101.0,
+            y: 102.0,
+            font_size: 16.0,
+            color: Color::BLACK,
+            glyph_id: 'b' as u32,
+            font_glyph_index: None,
+            source: None,
+            font_id: FontId(0),
+            font_variation_id: None,
+            bitmap_width: None,
+            bitmap_height: None,
+            rotation: 0.0,
+            synthetic_italic: false,
+        });
+        translate_primitives_since(&mut p, &from, 5.0, 7.0);
+        assert_eq!(p.fills[0].rect.origin.x, 0.0, "快照前图元不动");
+        assert_eq!(p.glyphs[0].x, 1.0, "快照前 glyph 不动");
+        assert_eq!(p.fills[1].rect.origin.x, 105.0, "快照后 fill 平移");
+        assert_eq!(p.glyphs[1].x, 106.0, "快照后 glyph 平移 x+5");
+        assert_eq!(p.glyphs[1].y, 109.0, "快照后 glyph 平移 y+7");
+    }
 
     #[test]
     fn test_transform_offset_none() {

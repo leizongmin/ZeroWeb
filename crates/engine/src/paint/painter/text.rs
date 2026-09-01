@@ -651,7 +651,12 @@ impl super::Painter {
         // table.rs position_cells 设置；其他盒默认 0.0，零影响）。
         let content_y = abs_y + box_node.border_top + box_node.padding_top + box_node.valign_offset;
 
-        let (tx, ty) = super::super::helpers::apply_transform_offset(style, abs_x, abs_y);
+        // R3901：transform translate 不在此偏移——paint_node 末段对自子树全部图元统一做
+        // 图元级平移（translate_primitives_since，单一平移点）。旧实现仅直属文本 +tx/ty，
+        // 背景/边框/marker/后代不动（transform-overflow-001 等 4.17% 簇的根因：translate
+        // 只对文字生效）。此处 tx/ty 恒 0，保留变量供下游排版度量（content_right 等 + tx
+        // 语义不变——transform 本就不该影响排版度量）。
+        let (tx, ty) = (0.0_f32, 0.0_f32);
 
         let (default_font_id, default_resolved_italic) = self.resolve_style_font_id(&style.font_family, style);
         let default_variations = crate::text_metrics::paint_font_variations(&style.font_variation_settings);

@@ -1583,6 +1583,13 @@ impl Painter {
         {
             let rect = Rect::new(abs_x, abs_y, box_node.width, box_node.height);
             super::helpers::apply_transform(style, &rect, &mut self.primitives);
+            // R3901：纯 translate 列表走图元级平移（CSS Transforms §transform-rendering：
+            // transform 作用于元素及其整个子树）。counts_before = paint_node 起点快照，
+            // 差集即自子树全部图元。不用 TransformPrimitive（raster 全场景像素后处理会
+            // 清白与元素框相交的祖先/兄弟内容，transform-descendant-001 回归实证）。
+            if let Some((tx, ty)) = super::helpers::translate_offset(style) {
+                super::helpers::translate_primitives_since(&mut self.primitives, &counts_before, tx, ty);
+            }
         }
 
         // 应用 opacity（对当前节点及其子节点产生的所有图元进行 alpha 衰减）

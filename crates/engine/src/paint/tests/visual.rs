@@ -521,9 +521,11 @@ fn test_paint_text_with_transform() {
     let mut painter = Painter::new();
     painter.paint_text(&layout, 0.0, 0.0, &styles[&elem], None, None);
 
+    // R3901：paint_text 不再做 transform 偏移（paint_node 末段统一平移自子树图元，
+    // 本测试直调 paint_text 无 paint_node 包裹 → 无偏移）。
     let glyph = &painter.primitives().glyphs[0];
-    assert_eq!(glyph.x, 5.0); // 0 + translate_x(5)
-    assert_eq!(glyph.y, 26.0); // 0 + translate_y(10) + font_size(16)
+    assert_eq!(glyph.x, 0.0);
+    assert_eq!(glyph.y, 16.0); // 0 + font_size(16)
 }
 
 // ── 新增测试：paint_in_rect 增量绘制 ──────────────────────
@@ -680,15 +682,16 @@ fn test_paint_page_with_css_transform_translate() {
     let mut painter = Painter::new();
     painter.paint(&layout, &styles, None);
 
-    // Background fill should still be at original position
+    // R3901：transform translate 作用于元素及其整个子树（CSS Transforms
+    // §transform-rendering）——背景 fill 与直属文本 glyph 均由 paint_node 末段的
+    // translate_primitives_since 统一平移（旧实现仅 glyph +tx，背景不动）。
     assert_eq!(painter.primitives().fills.len(), 1);
-    assert_eq!(painter.primitives().fills[0].rect.origin.x, 10.0);
-    assert_eq!(painter.primitives().fills[0].rect.origin.y, 20.0);
+    assert_eq!(painter.primitives().fills[0].rect.origin.x, 25.0);
+    assert_eq!(painter.primitives().fills[0].rect.origin.y, 45.0);
 
-    // paint() 现在调用 paint_text()，应生成带 transform 偏移的 glyph
+    // glyph 同样平移一次（abs_x(10) + tx(15) = 25）
     assert_eq!(painter.primitives().glyphs.len(), 1);
     let glyph = &painter.primitives().glyphs[0];
-    // text_x = abs_x(10), tx = 15 → glyph_x = 10 + 15 = 25
     assert_eq!(glyph.x, 25.0);
     // text_y = abs_y(20), ty = 25, + font_size(14) → glyph_y = 20 + 25 + 14 = 59
     assert_eq!(glyph.y, 59.0);
