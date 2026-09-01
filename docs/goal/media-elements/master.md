@@ -2,10 +2,11 @@
 
 **入口文档**: [../media-elements.md](../media-elements.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-01（**M4g-d canPlayType 能力表落地**（media-playback M0 选型
-联动——跨 goal 依赖兑现）：webm/ogg 容器 'maybe' + vp9/vorbis/mp3 'probably'，
-域外 codec 诚实 ''；**93.5%**（386P/0F/0T/27PF，90.1%→93.5%，+14P）；
-Fail/Timeout 维持双清零）
+**最后更新**: 2026-09-01（M3 扩批 VII 落地——**pause-on-removal + play() 事件
+queued task 化**：播放中 media 元素移除文档两段 defer（tick1 paused=true → tick2
+pause 事件）+ play/playing/timeupdate 改 queued task 派发；导入
+playing-the-media-resource/pause-remove-from-document.html；**93.5%**
+（387P/0F/0T/27PF，+1P·387/414 = 93.5%））
 
 ---
 
@@ -110,6 +111,20 @@ already-playing resolved 断言。**88.3%**（324P/0F/2T/41PF，+80 subtest 全�
   `test_media_playback_rate_non_finite_r394`（3 断言组）。evidence：
   `evidence/2026-09-01-media-playbackrate-typeerror.json`（90.1% 维持）。
 
+**M3 扩批 VII 已落地（2026-09-01，pause-on-removal + play() queued task 化）**：
+- **pause-on-removal**（part04 removeChild sel 路径）：播放中 media 元素移除文档 →
+  两段 defer 对齐上游观察序——tick1 置 `paused=true`（afterStableState 的 volumechange
+  回调内「paused after stable state」断言可观测）、tick2 派 pause 事件（回调内挂的
+  onpause 仍收到——「paused in pause event」断言面）；`removedPauseFired` 幂等防重复；
+  重插文档不自动续播。
+- **play() 事件 queued task 化**（part03）：play/playing/timeupdate 从同步派发改
+  setTimeout(0)（spec dom-media-play「queue a media element task」）——play() 返回后
+  注册的 onplaying/listener 仍收到；paused 状态翻转保持同步（spec dom-media-paused）；
+  无 setTimeout 环境回落同步（零回归面）。
+- 导入 playing-the-media-resource/pause-remove-from-document.html；单测
+  `test_media_pause_on_removal_m3b7`（时序/幂等/重插 5 断言面）。**93.5%**
+  （387P/0F/0T/27PF，387/414；+1P 0 回归）。
+
 **M3 扩批 VI 已落地（2026-09-01，preload setter 补缺 + sweep 巡检收口）**：
 - `preload` IDL setter：enumerated 反射（写 preload 内容属性原样值——invalid 原样写、
   getter 归一 'metadata' 分离面；DOMString 非 nullable，null→'null' 串）。旧无 setter
@@ -170,15 +185,17 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
 | M4g-a | 媒体元数据 IDL 反射（初值面） | ✅ 切片 3 落地 | F2 闭合（-9 Fail） |
 | M4g-b | `<track>` 反射 + TextTrack 最小面 | ✅ M3 落地（TextTrack 接口/addTextTrack/textTracks/track.track 全绿） | F1/F3 闭合 |
 | M4g-c | track.src URL 解析 + \0 剥离 | ✅ 切片 3 落地（含 `<a href="">` 修复） | F6 闭合（-6 Fail） |
-| M4g-d | canPlayType 能力表（空表→选型面更新） | ✅ 2026-09-01 落地（media-playback 流代行——跨 goal 联动兑现）：能力表由解码面真值驱动（webm/ogg 容器 maybe + vp9/vorbis/mp3 probably，VP8/Opus/Theora/H.264/AAC 域外诚实 ''）；**93.5%**（386P/0F/0T/27PF，+14P）；单测 `test_media_can_play_type_capability_table_m4gd`（18 断言面） | F5（41→27 PF，in-face 全转 Pass） |
+| M4g-d | canPlayType 能力表（空表→选型面更新） | ✅ 2026-09-01 落地（media-playback 流代行——跨 goal 联动兑现）：能力表由解码面真值驱动（webm/ogg 容器 maybe + vp9/vorbis/mp3 probably，VP8/Opus/Theora/H.264/AAC 域外诚实 ''）；单测 `test_media_can_play_type_capability_table_m4gd`（18 断言面） | F5（41→27 PF，in-face 全转 Pass） |
+| M4g-e | play()/pause() 生命周期语义（queued task + 移除暂停） | ✅ M3 扩批 VII 落地（2026-09-01）：play/playing/timeupdate 改 queued task 派发（play() 后注册的 handler 仍收到）；pause-on-removal 两段 defer（tick1 paused=true → tick2 pause 事件，幂等）；导入 pause-remove-from-document.html（387/414 = 93.5%）；单测 `test_media_pause_on_removal_m3b7` | — |
 
 ## 下一步计划
 
-1. **扩大导入面（下一轮首选）**：the-video-element 反射面（video-tabindex / video_crash_empty_src
-   等）+ media-elements 剩余可跑面（loading-the-media-resource 的 resource-selection
-   pointer 族——依赖真网络 fetch 判定，视 mutation 面支撑情况）→ 扩大基线盘子。
-2. ~~**M4g-d**：canPlayType 能力表联动更新~~ ✅ 2026-09-01 兑现（能力表真值化，
-   93.5%——后续新增解码面（AV1/H.264，media-playback M3）时同步扩表）。
+1. **扩大导入面（下一轮首选）**：the-video-element 反射面（video_crash_empty_src
+   的 error 事件面 / video_initially_paused reftest 面——后者依赖真解码，视兄弟目标
+   进度）+ playing-the-media-resource 剩余面（pause-move-to-other-document /
+   play-in-detached-document 的 document 移动语义）→ 扩大基线盘子。
+2. ~~**M4g-d**：canPlayType 能力表联动更新~~ ✅ 2026-09-01 兑现（能力表真值化——
+   后续新增解码面（AV1/H.264，media-playback M3）时同步扩表）。
 
 ## 里程碑状态
 
@@ -192,7 +209,7 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
 
 | # | 事项 | 状态 |
 |---|------|------|
-| D1 | canPlayType 能力表（依赖 media-playback M0 解码选型——选型决定支持面） | ⬜ 跨 goal 联动，media-playback master.md D1 同源 |
+| D1 | canPlayType 能力表（依赖 media-playback M0 解码选型——选型决定支持面） | ✅ 2026-09-01 兑现（能力表真值化，见 M4g-d）——后续 AV1/H.264 解码面扩表时同步 |
 
 ## 验证基线
 
