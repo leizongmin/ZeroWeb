@@ -45,8 +45,16 @@ per spec 元数据未就绪）+ has 白名单 tag-gated 分支（part05，`'vide
 `image_resource_key(src, document_url)` 解析后同键，img/canvas 同款两段式）；非 webm
 负例不注入（渲染占位零回归）。e2e 双测常驻（`video_settle_injects_first_frame_and_
 truth_m2a` 真实 webm fixture 驱动 + `video_settle_non_webm_stays_headless_and_
-placeholder` 负例）；webview 662 全绿。**生产侧首帧出图闭环达成；下一切片：
-currentTime 真值推进（VideoPlayer 挂 rAF + 语义层接线）**。
+placeholder` 负例）；webview 662 全绿。**生产侧首帧出图闭环达成。
+**M2a 切片 5a 已落地**（同日）：`VideoPlayerRegistry`（webview `video_registry`
+新模块）——`register_source`（settle 登记）/`play`（懒建 player，源未登记 no-op）/
+`pause`/`current_time`/`duration`/`is_playing` 真值查询/`tick_all(now, ImageCache)`
+（渲染泵推帧 + painter 同键注入 + changed 返回）/`release`（导航/元素移除资源释放）。
+WebView 持 `video_players()` Arc 句柄；async_load settle 自动登记源字节（e2e 扩断言：
+settle 后 `play` 即成功）。单测 4 件常驻；webview 666 全绿。**切片 5b（下一项）：
+宿主桥回调族（`__zw_video_play/pause/current_time`，webview 侧注册函数 + 两 worker
+接线点）+ 渲染泵 tick（rAF `__zw_raf_tick` 同源时钟）+ shim play()/pause() 桥接
+（feature-detect 回落 headless 保 372 基线）**。
 
 **与兄弟 goal 的边界**：
 - media-elements — 语义面（状态机/事件/canPlayType）归其管；本目标产出 readyState 真实
@@ -106,9 +114,12 @@ currentTime 真值推进（VideoPlayer 挂 rAF + 语义层接线）**。
 
 ## 下一步计划
 
-1. **M2a 切片 5（下一项）**：currentTime 真值推进——`VideoPlayer` 挂 rAF event
-   loop，语义层 `_mediaState.currentTime` 从 player 读真值（RFC §3.1 驱动源替换
-   完成面）；顺接 `play()`/`pause()` 宿主桥（shim→Rust 调用面）。
+1. **M2a 切片 5b（下一项）**：宿主桥 + 渲染泵接线——webview 暴露
+   `register_video_bridge_callbacks(sandbox, Arc<Mutex<VideoPlayerRegistry>>)`（零
+   churn 于既有 register_dom_callbacks 调用方）；tab_js_worker/renderer js_worker
+   两处接线；渲染泵经 rAF `__zw_raf_tick` 同源时钟调 `tick_all`；shim `play()`/
+   `pause()` feature-detect 桥（无桥回落 headless 路径——testharness-media 372
+   基线零回归）。
 3. **M2b**：seek（关键帧粒度）+ playbackRate 变速语义；**M2c**：音频解码（symphonia）+
    AudioSink/Mixer 接入（media-audio 输出面三切片已备）。
 4. **M2 解码精化项**（M1b 揭示）：WebM Colour 元素解析（colourRange/matrix）→

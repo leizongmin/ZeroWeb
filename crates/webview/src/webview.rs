@@ -495,6 +495,9 @@ pub struct WebView {
     /// 供下游渲染器（browser 的 render_cpu/render_gpu）绘制时消费——`<img>` 才能
     /// 显示真实像素而非占位（goal doc DC-13 P1「图片子资源 / ImageCache 未贯通」）。
     image_cache: ImageCache,
+    /// media-playback M2a 切片 5：生产侧播放器注册表（settle 登记源字节；宿主桥
+    /// play/pause/currentTime 真值 + 渲染泵 tick_all 帧推进——后续接线消费）。
+    video_players: std::sync::Arc<std::sync::Mutex<crate::video_registry::VideoPlayerRegistry>>,
     /// 已抓取图片的固有尺寸（url hash → (w,h)），resize/render 时回填 pipeline。
     cached_image_sizes: HashMap<u64, (f32, f32)>,
     /// ratio-only 图片信号（url hash → width/height 比，CSS §10.3.2 仅 SVG 出现）。
@@ -615,6 +618,9 @@ impl WebView {
             next_worker_id: 1,
             wasm_instances: HashMap::new(),
             image_cache: ImageCache::default(),
+            video_players: std::sync::Arc::new(
+                std::sync::Mutex::new(crate::video_registry::VideoPlayerRegistry::new()),
+            ),
             cached_image_sizes: HashMap::new(),
             cached_image_ratios: HashMap::new(),
             cached_image_no_ratio: HashMap::new(),
@@ -1119,6 +1125,12 @@ impl WebView {
     /// 图片缓存只读引用（快照用）。
     pub fn image_cache_ref(&self) -> &ImageCache {
         &self.image_cache
+    }
+
+    /// media-playback M2a 切片 5：播放器注册表共享句柄（宿主桥回调注册 /
+    /// 渲染泵 tick 消费；settle 侧经 async_load 写入）。
+    pub fn video_players(&self) -> std::sync::Arc<std::sync::Mutex<crate::video_registry::VideoPlayerRegistry>> {
+        std::sync::Arc::clone(&self.video_players)
     }
 
     /// 复制图片缓存供 UI 线程快照。
