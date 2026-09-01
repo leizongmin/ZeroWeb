@@ -2060,11 +2060,16 @@ fn pop_counter_scopes_static(counters: &mut HashMap<String, Vec<i64>>, pushed: &
 /// （取代 R3885 的逐元素启发式 counter_value_before_paint——后者无法覆盖兄弟累计，
 /// content-counter-009 的 28 个 span 序列即此）。
 /// 返回 (宿主元素 id → (::before 值表, ::after 值表))，值表为 counter 名 → 值。
-fn simulate_document_counters(doc: &Document, styles: &HashMap<NodeId, ComputedStyle>) -> CounterValueMaps {
+fn simulate_document_counters(
+    doc: &Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+) -> (CounterValueMaps, CounterStackMaps) {
     use zero_style_system::property::types::ContentComputedValue;
 
     // 预收集「需要 counter 值的宿主元素」——walk 只需在这些元素的 ::before/::after
     // 时刻快照（全量快照浪费内存）。
+    // R3891：Counters（counters()）需要**整栈快照**（嵌套作用域由外到内 join），
+    // 用第三张表单独记录；Counter 只需栈顶值。
     let mut need_names: HashMap<NodeId, (Vec<String>, Vec<String>)> = HashMap::new();
     for (&nid, st) in styles {
         let collect = |items: &[zero_css_parser::values::ContentListItem]| -> Vec<String> {
@@ -2100,12 +2105,13 @@ fn simulate_document_counters(doc: &Document, styles: &HashMap<NodeId, ComputedS
         }
     }
     if need_names.is_empty() {
-        return HashMap::new();
+        return (HashMap::new(), HashMap::new());
     }
 
     // 树序遍历。counter 状态 = 名 → 作用域栈（栈顶为当前值）。
     // 关键：先到达元素自身时应用其 reset/set/increment，再快照 ::before（继承含自身
     // increment 后的值），子树遍历完毕弹出本元素 reset 的作用域。
+    #[allow(clippy::too_many_arguments)]
     fn walk(
         doc: &Document,
         id: NodeId,
@@ -2113,6 +2119,7 @@ fn simulate_document_counters(doc: &Document, styles: &HashMap<NodeId, ComputedS
         counters: &mut HashMap<String, Vec<i64>>,
         need_names: &HashMap<NodeId, (Vec<String>, Vec<String>)>,
         out: &mut CounterValueMaps,
+        stacks: &mut CounterStackMaps,
     ) {
         let Some(node) = doc.get(id) else { return };
         let is_element = matches!(node.kind, zero_dom::NodeKind::Element(_));
@@ -2170,21 +2177,29 @@ fn simulate_document_counters(doc: &Document, styles: &HashMap<NodeId, ComputedS
                     );
                 }
                 let mut snapshot: HashMap<String, i64> = HashMap::new();
+                let mut stack_snapshot: HashMap<String, Vec<i64>> = HashMap::new();
                 for name in before_names {
                     if let Some(v) = counters.get(name).and_then(|s| s.last()).copied() {
                         snapshot.insert(name.clone(), v);
+                    }
+                    // R3891：counters() 需要整栈（嵌套作用域由外到内 join）。
+                    if let Some(stack) = counters.get(name) {
+                        stack_snapshot.insert(name.clone(), stack.clone());
                     }
                 }
                 pop_counter_scopes_static(counters, &pushed);
                 if !snapshot.is_empty() {
                     out.insert(id, (snapshot, HashMap::new()));
                 }
+                if !stack_snapshot.is_empty() {
+                    stacks.insert(id, (stack_snapshot, HashMap::new()));
+                }
             }
         }
 
         // 3. 递归子树（文档序）。
         for child in &children {
-            walk(doc, *child, styles, counters, need_names, out);
+            walk(doc, *child, styles, counters, need_names, out, stacks);
         }
 
         // 4. ::after 快照（子树结束、作用域弹出前——本元素 reset 的作用域仍存活）。
@@ -2205,9 +2220,13 @@ fn simulate_document_counters(doc: &Document, styles: &HashMap<NodeId, ComputedS
                 );
             }
             let mut snapshot: HashMap<String, i64> = HashMap::new();
+            let mut stack_snapshot: HashMap<String, Vec<i64>> = HashMap::new();
             for name in after_names {
                 if let Some(v) = counters.get(name).and_then(|s| s.last()).copied() {
                     snapshot.insert(name.clone(), v);
+                }
+                if let Some(stack) = counters.get(name) {
+                    stack_snapshot.insert(name.clone(), stack.clone());
                 }
             }
             pop_counter_scopes_static(counters, &pushed);
@@ -2215,6 +2234,11 @@ fn simulate_document_counters(doc: &Document, styles: &HashMap<NodeId, ComputedS
                 entry.1 = snapshot;
             } else if !snapshot.is_empty() {
                 out.insert(id, (HashMap::new(), snapshot));
+            }
+            if let Some(entry) = stacks.get_mut(&id) {
+                entry.1 = stack_snapshot;
+            } else if !stack_snapshot.is_empty() {
+                stacks.insert(id, (HashMap::new(), stack_snapshot));
             }
         }
 
@@ -2231,12 +2255,23 @@ fn simulate_document_counters(doc: &Document, styles: &HashMap<NodeId, ComputedS
 
     let mut counters: HashMap<String, Vec<i64>> = HashMap::new();
     let mut out: CounterValueMaps = HashMap::new();
-    walk(doc, doc.root(), styles, &mut counters, &need_names, &mut out);
-    out
+    let mut stacks: CounterStackMaps = HashMap::new();
+    walk(
+        doc,
+        doc.root(),
+        styles,
+        &mut counters,
+        &need_names,
+        &mut out,
+        &mut stacks,
+    );
+    (out, stacks)
 }
 
 /// R3887：文档树序 counter 模拟输出——宿主元素 → (::before 时刻值表, ::after 时刻值表)。
-type CounterValueMaps = HashMap<NodeId, (HashMap<String, i64>, HashMap<String, i64>)>;
+/// R3891：新增整栈快照表（::before 时刻, ::after 时刻）供 counters() 嵌套 join。
+pub(crate) type CounterValueMaps = HashMap<NodeId, (HashMap<String, i64>, HashMap<String, i64>)>;
+pub(crate) type CounterStackMaps = HashMap<NodeId, (HashMap<String, Vec<i64>>, HashMap<String, Vec<i64>>)>;
 
 pub(crate) fn inject_pseudo_text_nodes(
     doc: &mut Document,
@@ -2258,7 +2293,7 @@ pub(crate) fn inject_pseudo_text_nodes(
 
     // R3887：全文档树序 counter 模拟——为 increment 语境的伪元素求真值（兄弟累计、
     // 同元素 reset+increment 组合均精确；与 paint 期 update_counters 同构）。
-    let counter_value_maps = simulate_document_counters(doc, styles);
+    let (counter_value_maps, counter_stack_maps) = simulate_document_counters(doc, styles);
 
     // 先收集待注入项，避免在遍历 styles 时变更它。
     // (parent, is_before, text, pseudo_style)
@@ -2287,14 +2322,11 @@ pub(crate) fn inject_pseudo_text_nodes(
                     // R3885 的 counter_value_before_paint（逐元素启发式）仅作模拟缺席时的
                     // 静态兜底。
                     ContentComputedValue::Counter { name, style } => {
-                        let sim = counter_value_maps
+                        let value = counter_value_maps
                             .get(&nid)
                             .and_then(|(b, a)| if is_before { b.get(name) } else { a.get(name) })
-                            .copied();
-                        let value = match sim {
-                            Some(v) => Some(v),
-                            None => counter_value_before_paint_by_name(doc, nid, name, styles),
-                        };
+                            .copied()
+                            .or_else(|| counter_value_before_paint_by_name(doc, nid, name, styles));
                         match value {
                             Some(v) => {
                                 let text = crate::paint::painter::text::text_list::format_counter_text(
@@ -2308,7 +2340,29 @@ pub(crate) fn inject_pseudo_text_nodes(
                             None => pseudo_disclosure_counter_text(style, pseudo_style, &counter_styles),
                         }
                     }
-                    ContentComputedValue::Counters { .. } => None,
+                    // R3891：counters(name, sep[, style])——嵌套作用域由外到内逐层表示后
+                    // 用 sep 连接（CSS Lists §counters）。值取树序模拟的整栈快照；空栈 =
+                    // 计数器未声明 → 按隐式 0 单层表示（counter(name) 等价单层语义）。
+                    ContentComputedValue::Counters { name, separator, style } => {
+                        let stack = counter_stack_maps
+                            .get(&nid)
+                            .and_then(|(b, a)| if is_before { b.get(name) } else { a.get(name) })
+                            .cloned()
+                            .unwrap_or_else(|| vec![0]);
+                        let mut text = String::new();
+                        for (i, v) in stack.iter().enumerate() {
+                            if i > 0 {
+                                text.push_str(separator);
+                            }
+                            text.push_str(&crate::paint::painter::text::text_list::format_counter_text(
+                                *v,
+                                style,
+                                pseudo_style,
+                                &counter_styles,
+                            ));
+                        }
+                        (!text.is_empty()).then_some(text)
+                    }
                     ContentComputedValue::List(items) => {
                         let mut text = String::new();
                         for item in items {
@@ -2316,14 +2370,11 @@ pub(crate) fn inject_pseudo_text_nodes(
                                 ContentListItem::Str(value) => text.push_str(value),
                                 ContentListItem::Counter { name, style } => {
                                     // R3887：与单 Counter 分支同源——树序模拟值优先，静态兜底。
-                                    let sim = counter_value_maps
+                                    let value = counter_value_maps
                                         .get(&nid)
                                         .and_then(|(b, a)| if is_before { b.get(name) } else { a.get(name) })
-                                        .copied();
-                                    let value = match sim {
-                                        Some(v) => Some(v),
-                                        None => counter_value_before_paint_by_name(doc, nid, name, styles),
-                                    };
+                                        .copied()
+                                        .or_else(|| counter_value_before_paint_by_name(doc, nid, name, styles));
                                     match pseudo_disclosure_counter_text(style, pseudo_style, &counter_styles) {
                                         Some(t) => text.push_str(&t),
                                         None => {
@@ -2342,7 +2393,34 @@ pub(crate) fn inject_pseudo_text_nodes(
                                         }
                                     }
                                 }
-                                ContentListItem::Counters { .. } => return None,
+                                // R3891：List 内 counters() 同单 Counters 分支（整栈 join）。
+                                ContentListItem::Counters { name, separator, style } => {
+                                    let stack = counter_stack_maps
+                                        .get(&nid)
+                                        .and_then(|(b, a)| if is_before { b.get(name) } else { a.get(name) })
+                                        .cloned()
+                                        .unwrap_or_else(|| vec![0]);
+                                    for (i, v) in stack.iter().enumerate() {
+                                        if i > 0 {
+                                            text.push_str(separator);
+                                        }
+                                        match pseudo_disclosure_counter_text(style, pseudo_style, &counter_styles) {
+                                            Some(t) => text.push_str(&t),
+                                            None => {
+                                                let t = crate::paint::painter::text::text_list::format_counter_text(
+                                                    *v,
+                                                    style,
+                                                    pseudo_style,
+                                                    &counter_styles,
+                                                );
+                                                if t.is_empty() {
+                                                    return None;
+                                                }
+                                                text.push_str(&t);
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
                         Some(text)
