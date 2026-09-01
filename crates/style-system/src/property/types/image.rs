@@ -135,6 +135,9 @@ pub enum BackgroundClipComputedValue {
     ContentBox,
     /// text — 背景绘制到文本区域内。
     Text,
+    /// border-area（css-backgrounds-4 §2.1）— 背景仅绘制在边框环带内，border 绘制其上。
+    /// R3908。
+    BorderArea,
 }
 
 /// CSS background-origin 属性值。

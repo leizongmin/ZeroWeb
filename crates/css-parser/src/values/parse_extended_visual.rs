@@ -1264,6 +1264,9 @@ pub enum BackgroundClipValue {
     ContentBox,
     /// text — 背景绘制到文本区域内。
     Text,
+    /// border-area（css-backgrounds-4 §2.1）— 背景仅绘制在边框区域内（border 环带），
+    /// border 绘制其上。R3908。
+    BorderArea,
 }
 
 /// 解析 CSS background-clip 属性值。
@@ -1273,6 +1276,8 @@ pub fn parse_background_clip(value: &str) -> Option<BackgroundClipValue> {
         "padding-box" => Some(BackgroundClipValue::PaddingBox),
         "content-box" => Some(BackgroundClipValue::ContentBox),
         "text" => Some(BackgroundClipValue::Text),
+        // R3908：css-backgrounds-4 §2.1 border-area。
+        "border-area" => Some(BackgroundClipValue::BorderArea),
         _ => None,
     }
 }

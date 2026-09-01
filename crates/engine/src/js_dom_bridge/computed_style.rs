@@ -3083,6 +3083,7 @@ fn background_clip_to_css(c: &BackgroundClipComputedValue) -> String {
         BackgroundClipComputedValue::PaddingBox => "padding-box",
         BackgroundClipComputedValue::ContentBox => "content-box",
         BackgroundClipComputedValue::Text => "text",
+        BackgroundClipComputedValue::BorderArea => "border-area",
     }
     .to_string()
 }

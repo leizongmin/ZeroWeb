@@ -1754,6 +1754,7 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
                     zero_css_parser::values::BackgroundClipValue::PaddingBox => BackgroundClipComputedValue::PaddingBox,
                     zero_css_parser::values::BackgroundClipValue::ContentBox => BackgroundClipComputedValue::ContentBox,
                     zero_css_parser::values::BackgroundClipValue::Text => BackgroundClipComputedValue::Text,
+                    zero_css_parser::values::BackgroundClipValue::BorderArea => BackgroundClipComputedValue::BorderArea,
                 };
                 return true;
             }

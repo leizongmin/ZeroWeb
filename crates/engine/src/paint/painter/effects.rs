@@ -124,8 +124,13 @@ impl super::Painter {
         // 旧 impl 误把 origin box 当 clip，致 background-position 负偏移露出 border/padding 区时
         // 被错误裁掉（origin-content-box_with_position 等），且 background-clip≠origin 时图像
         // 裁剪/平铺区域错误。text 变体按既有简化当 content-box（无 glyph-mask 能力）。
+        // R3908：border-area（css-backgrounds-4 §2.1）——painting area = border-box；
+        // 环带裁剪（border-box 减 padding-box）在 paint_bg_image_in_origin 的 tile 发射处
+        // 按 4 条带实施（border_area_ring = Some）。
         let (clip_x, clip_y, clip_w, clip_h) = match style.background_clip {
-            BackgroundClipComputedValue::BorderBox => (abs_x, abs_y, box_node.width, box_node.height),
+            BackgroundClipComputedValue::BorderBox | BackgroundClipComputedValue::BorderArea => {
+                (abs_x, abs_y, box_node.width, box_node.height)
+            }
             BackgroundClipComputedValue::PaddingBox => (
                 abs_x + box_node.border_left,
                 abs_y + box_node.border_top,
@@ -140,8 +145,46 @@ impl super::Painter {
             ),
         };
 
+        // R3908：border-area 环带 = border-box 减 padding-box（4 条带，互不重叠）。
+        let border_area_ring: Option<Vec<Rect>> =
+            if matches!(style.background_clip, BackgroundClipComputedValue::BorderArea) {
+                let bx = clip_x;
+                let by = clip_y;
+                let bw = clip_w;
+                let bh = clip_h;
+                let px = bx + box_node.border_left;
+                let py = by + box_node.border_top;
+                let pw = bw - box_node.border_left - box_node.border_right;
+                let ph = bh - box_node.border_top - box_node.border_bottom;
+                if pw > 0.0 && ph > 0.0 && (px > bx || py > by) {
+                    Some(vec![
+                        Rect::new(bx, by, bw, py - by),
+                        Rect::new(bx, py + ph, bw, by + bh - py - ph),
+                        Rect::new(bx, py, px - bx, ph),
+                        Rect::new(px + pw, py, bx + bw - px - pw, ph),
+                    ])
+                } else {
+                    // 无边框 → 环带为空（空条带集 = 所有 tile 不绘；与 None=非 border-area
+                    // 正常路径区分）。
+                    Some(Vec::new())
+                }
+            } else {
+                None
+            };
+
         self.paint_bg_image_in_origin(
-            origin_x, origin_y, origin_w, origin_h, clip_x, clip_y, clip_w, clip_h, style, 0.0, 0.0,
+            origin_x,
+            origin_y,
+            origin_w,
+            origin_h,
+            clip_x,
+            clip_y,
+            clip_w,
+            clip_h,
+            style,
+            0.0,
+            0.0,
+            border_area_ring,
         );
     }
 
@@ -211,6 +254,7 @@ impl super::Painter {
             style,
             0.0,
             0.0,
+            None,
         );
     }
 
@@ -238,6 +282,7 @@ impl super::Painter {
         style: &ComputedStyle,
         anchor_x: f32,
         anchor_y: f32,
+        border_area_ring: Option<Vec<Rect>>,
     ) {
         use zero_render_foundation::image_cache::ImageKey;
         use zero_render_foundation::primitive::ImagePrimitive;
@@ -346,6 +391,11 @@ impl super::Painter {
                         sized_h,
                     );
 
+                    // R3908：background-clip: border-area（css-backgrounds-4 §2.1）——背景
+                    // 仅绘制在边框环带。环带由调用方按 border-box 减 padding-box 预计算
+                    // （4 条带互不重叠，tile 逐带求交集发射无双绘）。
+                    let ring_strips = border_area_ring.as_deref();
+
                     let mut y = repeat_y.0;
                     while y < repeat_y.1 {
                         let mut x = repeat_x.0;
@@ -364,13 +414,32 @@ impl super::Painter {
                                     || x + tile_w > clip_x + clip_w
                                     || y + tile_h > clip_y + clip_h;
                                 let prim_rect = Rect::new(x, y, tile_w, tile_h);
-                                let clip_rect = overflows.then(|| Rect::new(cx, cy, cw, ch));
-                                self.primitives.add_image(ImagePrimitive {
-                                    rect: prim_rect,
-                                    image_key: ImageKey::new(key),
-                                    clip: clip_rect,
-                                    source: None,
-                                });
+                                if let Some(strips) = ring_strips {
+                                    // border-area：tile 按环带条带分别发射（各带独立 clip，
+                                    // 交集为空跳过；角部 tile 同时入 top/bottom 与 left/right
+                                    // 带——条带互不重叠故无双绘）。
+                                    for strip in strips {
+                                        if let Some(rc) = strip.intersection(&prim_rect)
+                                            && rc.size.width > 0.0
+                                            && rc.size.height > 0.0
+                                        {
+                                            self.primitives.add_image(ImagePrimitive {
+                                                rect: prim_rect,
+                                                image_key: ImageKey::new(key),
+                                                clip: Some(rc),
+                                                source: None,
+                                            });
+                                        }
+                                    }
+                                } else {
+                                    let clip_rect = overflows.then(|| Rect::new(cx, cy, cw, ch));
+                                    self.primitives.add_image(ImagePrimitive {
+                                        rect: prim_rect,
+                                        image_key: ImageKey::new(key),
+                                        clip: clip_rect,
+                                        source: None,
+                                    });
+                                }
                             }
                             x += tile_w;
                         }

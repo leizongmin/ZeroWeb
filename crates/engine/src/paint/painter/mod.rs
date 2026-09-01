@@ -685,6 +685,7 @@ impl Painter {
                     ps,
                     anchor_x,
                     anchor_y,
+                    None,
                 );
             }
         }
@@ -2043,7 +2044,9 @@ impl Painter {
                     zero_style_system::BackgroundAttachmentComputedValue::Fixed
                 )
             {
-                self.paint_bg_image_in_origin(rect_x, content_y, *w, h, rect_x, content_y, *w, h, style, 0.0, 0.0);
+                self.paint_bg_image_in_origin(
+                    rect_x, content_y, *w, h, rect_x, content_y, *w, h, style, 0.0, 0.0, None,
+                );
             }
         }
     }
@@ -2076,7 +2079,11 @@ impl Painter {
 
         // 根据 background-clip 决定背景绘制区域
         let (clip_x, mut clip_y, clip_w, mut clip_h) = match style.background_clip {
-            BackgroundClipComputedValue::BorderBox => (abs_x, abs_y, box_node.width, box_node.height),
+            // R3908：border-area 的背景**色**按 border-box 绘制（环带裁剪只作用于背景
+            // 图像——chromium bg-color 仍铺满 painting area，border 绘其上遮盖 padding 区）。
+            BackgroundClipComputedValue::BorderBox | BackgroundClipComputedValue::BorderArea => {
+                (abs_x, abs_y, box_node.width, box_node.height)
+            }
             BackgroundClipComputedValue::PaddingBox => (
                 abs_x + box_node.border_left,
                 abs_y + box_node.border_top,

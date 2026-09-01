@@ -429,7 +429,20 @@ fn r1428_canvas_bg_image_anchor_shifts_gradient_position() {
 
     // anchor=(50,50)（canvas 根盒偏移）：positioned = origin(0) + offset(0,bg-pos 默认) + anchor(50) = 50。
     let mut p1 = Painter::new();
-    p1.paint_bg_image_in_origin(0.0, 0.0, 100.0, 100.0, 0.0, 0.0, 100.0, 100.0, &mk_style(), 50.0, 50.0);
+    p1.paint_bg_image_in_origin(
+        0.0,
+        0.0,
+        100.0,
+        100.0,
+        0.0,
+        0.0,
+        100.0,
+        100.0,
+        &mk_style(),
+        50.0,
+        50.0,
+        None,
+    );
     let g1 = &p1.primitives().gradients;
     assert!(g1.len() >= 1, "R1428: anchor 测试应生成 gradient primitive");
     assert!(
@@ -441,7 +454,20 @@ fn r1428_canvas_bg_image_anchor_shifts_gradient_position() {
 
     // anchor=(0,0)（正常元素）：positioned = 0。
     let mut p0 = Painter::new();
-    p0.paint_bg_image_in_origin(0.0, 0.0, 100.0, 100.0, 0.0, 0.0, 100.0, 100.0, &mk_style(), 0.0, 0.0);
+    p0.paint_bg_image_in_origin(
+        0.0,
+        0.0,
+        100.0,
+        100.0,
+        0.0,
+        0.0,
+        100.0,
+        100.0,
+        &mk_style(),
+        0.0,
+        0.0,
+        None,
+    );
     let g0 = &p0.primitives().gradients;
     assert!(g0.len() >= 1);
     assert!(
@@ -488,7 +514,20 @@ fn r2063_bg_attachment_fixed_positions_against_viewport() {
 
     // R2063 fixed：positioning area（origin）= 视口 (0,0,800,600)，painting area（clip）= 元素盒 (72,72,96,192)。
     let mut painter = Painter::new();
-    painter.paint_bg_image_in_origin(0.0, 0.0, 800.0, 600.0, 72.0, 72.0, 96.0, 192.0, &mk_style(), 0.0, 0.0);
+    painter.paint_bg_image_in_origin(
+        0.0,
+        0.0,
+        800.0,
+        600.0,
+        72.0,
+        72.0,
+        96.0,
+        192.0,
+        &mk_style(),
+        0.0,
+        0.0,
+        None,
+    );
     let g = &painter.primitives().gradients;
     assert!(g.len() >= 1, "R2063: fixed bg 应生成 gradient primitive");
     // fixed：positioning area = 视口 → positioned 锚定 (0,0)，非元素盒 (72,72)。
@@ -501,7 +540,20 @@ fn r2063_bg_attachment_fixed_positions_against_viewport() {
 
     // 对照 scroll：origin ≡ clip = 元素盒 (72,72,96,192) → positioned 锚定 (72,72)。
     let mut painter2 = Painter::new();
-    painter2.paint_bg_image_in_origin(72.0, 72.0, 96.0, 192.0, 72.0, 72.0, 96.0, 192.0, &mk_style(), 0.0, 0.0);
+    painter2.paint_bg_image_in_origin(
+        72.0,
+        72.0,
+        96.0,
+        192.0,
+        72.0,
+        72.0,
+        96.0,
+        192.0,
+        &mk_style(),
+        0.0,
+        0.0,
+        None,
+    );
     let g2 = &painter2.primitives().gradients;
     assert!(g2.len() >= 1);
     assert!(
@@ -509,5 +561,112 @@ fn r2063_bg_attachment_fixed_positions_against_viewport() {
         "scroll bg gradient 应锚定元素盒 (72,72)，got ({}, {})",
         g2[0].rect.left(),
         g2[0].rect.top()
+    );
+}
+
+/// R3908：background-clip: border-area（css-backgrounds-4 §2.1）——背景图仅绘制在边框
+/// 环带（border-box 减 padding-box，4 条带）。tile 覆盖整盒时，逐带 clip 发射 4 枚
+/// ImagePrimitive（条带互不重叠无双绘），clip 外（padding 区）无图元覆盖。
+#[test]
+fn test_background_clip_border_area_ring() {
+    use zero_style_system::{BackgroundClipComputedValue, BackgroundImageComputedValue, BackgroundRepeatComputedValue};
+
+    let mk_style = || {
+        let mut style = ComputedStyle::default();
+        style.background_image = vec![BackgroundImageComputedValue::Url("test.png".to_string())];
+        style.background_repeat = vec![BackgroundRepeatComputedValue::NoRepeat];
+        style.background_clip = BackgroundClipComputedValue::BorderArea;
+        style.color = zero_css_parser::values::ColorValue::Rgba(0, 0, 0, 255);
+        style
+    };
+
+    // 100×100 盒、border 20 → 环带 = 外 100×100 减内 60×60。
+    let ring = Some(vec![
+        zero_render_foundation::geometry::Rect::new(0.0, 0.0, 100.0, 20.0),
+        zero_render_foundation::geometry::Rect::new(0.0, 80.0, 100.0, 20.0),
+        zero_render_foundation::geometry::Rect::new(0.0, 20.0, 20.0, 60.0),
+        zero_render_foundation::geometry::Rect::new(80.0, 20.0, 20.0, 60.0),
+    ]);
+
+    let mut painter = Painter::new();
+    painter.paint_bg_image_in_origin(
+        0.0,
+        0.0,
+        100.0,
+        100.0,
+        0.0,
+        0.0,
+        100.0,
+        100.0,
+        &mk_style(),
+        0.0,
+        0.0,
+        ring,
+    );
+
+    let images = &painter.primitives().images;
+    assert!(!images.is_empty(), "border-area 环带应发射图元");
+    // 每枚图元 clip 必须完全落在环带内：clip 矩形与内盒 (20,20,60,60) 无重叠。
+    let inner = zero_render_foundation::geometry::Rect::new(20.0, 20.0, 60.0, 60.0);
+    for img in images {
+        if let Some(clip) = &img.clip {
+            let overlap = !(clip.right() <= inner.left()
+                || clip.left() >= inner.right()
+                || clip.bottom() <= inner.top()
+                || clip.top() >= inner.bottom());
+            assert!(
+                !overlap,
+                "border-area 图元 clip 不得伸入 padding 区：clip=({}, {}, {}, {})",
+                clip.left(),
+                clip.top(),
+                clip.size.width,
+                clip.size.height
+            );
+        } else {
+            panic!("border-area 图元必须携带环带 clip，不得整 tile 无裁剪发射");
+        }
+    }
+    // 环带覆盖率 = 4 条带面积和（tile 覆盖整盒时）：10000 - 3600 = 6400。
+    let covered: f32 = images
+        .iter()
+        .filter_map(|img| img.clip.as_ref())
+        .map(|c| c.size.width * c.size.height)
+        .sum();
+    assert!(
+        (covered - 6400.0).abs() < 1.0,
+        "环带 clip 面积和应 = border 面积 6400，got {covered}"
+    );
+}
+
+/// R3908 守卫：border-area 但无 border（环带为空）→ 不发射任何图元。
+#[test]
+fn test_background_clip_border_area_no_border_emits_nothing() {
+    use zero_style_system::{BackgroundClipComputedValue, BackgroundImageComputedValue, BackgroundRepeatComputedValue};
+
+    let mut style = ComputedStyle::default();
+    style.background_image = vec![BackgroundImageComputedValue::Url("test.png".to_string())];
+    style.background_repeat = vec![BackgroundRepeatComputedValue::NoRepeat];
+    style.background_clip = BackgroundClipComputedValue::BorderArea;
+    style.color = zero_css_parser::values::ColorValue::Rgba(0, 0, 0, 255);
+
+    let mut painter = Painter::new();
+    // 无边框 → 调用方传空条带集（Some(empty)）：所有 tile 不绘。
+    painter.paint_bg_image_in_origin(
+        0.0,
+        0.0,
+        100.0,
+        100.0,
+        0.0,
+        0.0,
+        100.0,
+        100.0,
+        &style,
+        0.0,
+        0.0,
+        Some(Vec::new()),
+    );
+    assert!(
+        painter.primitives().images.is_empty(),
+        "环带为空（空条带集）时 tile 全部不绘"
     );
 }
