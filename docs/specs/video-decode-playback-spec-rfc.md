@@ -1,8 +1,8 @@
 # Spec RFC：视频解码与帧播放（media-playback M0 解码器选型）
 
-**版本**：v1.0（草案——待用户审批）
-**日期**：2026-09-01
-**状态**：Draft（Mission 级决策——按 run-rules rule 11，**批准前不动源码**）
+**版本**：v1.1
+**日期**：2026-09-01（v1.0 草案；同日获批，见 §5 决议记录）
+**状态**：Approved（2026-09-01 用户批复 D-RFC-1=批准路线 C，D-RFC-2=M3 再含，D-RFC-3=单独立项）
 **关联**：[media-playback goal](../goal/media-playback.md)（M0 门控项）·
 [media-elements goal](../goal/media-elements.md)（语义层消费方）·
 [media-audio goal](../goal/media-audio/master.md)（AudioSink 输出面，与选型解耦）
@@ -126,6 +126,14 @@ H.264/HEVC 作为路线 C 后续增量（届时按 §5 决策点单独立项）�
 | D-RFC-1 | **本 RFC 是否批准**（解锁 M1a 起源码实施） | 批准路线 C / 改选 A / 改选 B / 暂缓 | 批准路线 C |
 | D-RFC-2 | AV1 的 `dav1d` C 绑定是否接受（M1 可不含 AV1——纯 Rust VP9 先行） | M1 含 AV1 / M3 再含 | M3 再含（M1 零 C 依赖） |
 | D-RFC-3 | H.264/HEVC 后续增量（专利池评估）是否单独立项 | 单独立项 / 放弃 | 单独立项（media-playback M3 时点） |
+
+### 决议记录（2026-09-01）
+
+| # | 决议 | 备注 |
+|---|---|---|
+| D-RFC-1 | ✅ **批准路线 C** | 解锁 M1a 起源码实施 |
+| D-RFC-2 | ✅ **M3 再含 AV1** | M1 保持零 C 依赖；`decode-av1` feature 默认关 |
+| D-RFC-3 | ✅ **单独立项** | media-playback M3 时点按本节决策点评估 H.264/HEVC |
 
 ## 6. 风险与回滚
 

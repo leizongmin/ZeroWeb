@@ -1,0 +1,14 @@
+[package]
+name = "zero-media"
+description = "ZeroWeb 媒体解码管线 — webm/Matroska demux、VP9 解码、YUV→RGBA 帧转换"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+matroska-demuxer = { workspace = true }
+rusty_vp9 = { workspace = true }
+thiserror = { workspace = true }

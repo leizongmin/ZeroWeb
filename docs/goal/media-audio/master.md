@@ -2,16 +2,16 @@
 
 **入口文档**: [../media-audio.md](../media-audio.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-01（M0 收口——环境验证 + headless 验证策略成文，见 evidence/
-2026-09-01-m0-environment-probe.md；cpal 编译面阻塞于 libasound2-dev 缺失，列入待用户决策）
+**最后更新**: 2026-09-01（D2 收口——libasound2-dev 已装，cpal 0.16 编译实测通过
+（ALSA host，枚举出 HDA 设备），见 evidence/2026-09-01-d2-cpal-compile-probe.md）
 
 ---
 
 ## 当前状态
 
 **专项定位**：媒体方向三拆之三（门控最深）。音频输出（解码→混音→设备）+ A/V 同步 +
-volume/muted 真控制。**双重启动门控**：① M0 音频环境验证与验证策略成文（自持，
-**已完成**）；② media-playback M0 解码选型 RFC 获批（解码路线绑定其选型）。
+volume/muted 真控制。**双重启动门控均已解除**：① M0 音频环境验证与验证策略成文
+（2026-09-01 完成）；② media-playback M0 解码选型 RFC 获批（2026-09-01，路线 C）。
 
 **M0 已收口（2026-09-01）**：
 - 环境实测：内核层 HDA 声卡在；**ALSA dev 头缺失（libasound2-dev 未装）→ cpal 默认
@@ -37,9 +37,10 @@ volume/muted 真控制。**双重启动门控**：① M0 音频环境验证与�
 - ✅ 反射底座：muted/volume 属性反射（R3040 + M3 扩批 III IDL 语义全对齐）
 - ✅ 时钟底座：rAF 帧驱动（P1a）——音频时钟对齐可挂
 - ✅ 环境/策略底座：M0 收口（AudioSink trait + NullSink 验证策略成文）
-- ⚠️ 零音频管线（无 cpal/音频依赖，无解码/混音/输出代码）——M1 实施项
-- ⚠️ cpal 编译面阻塞于 libasound2-dev（待用户决策 D2）
-- ⚠️ 选型未对齐（待 media-playback M0 落地）
+- ⚠️ 零音频管线（无 cpal/音频依赖，无解码/混音/输出代码）——M1 实施项（门控已解除）
+- 🔄 cpal 编译面：已实测通过（D2 收口，2026-09-01）——cpal 0.16 默认 feature 编译成功，
+  ALSA host 枚举出 HDA 设备；运行时真出声仍受 WSLg pulse 限制（冒烟可选）
+- ✅ 选型已对齐（media-playback RFC 获批：路线 C，symphonia 音频解码面归 M2c）
 - ✅ 音频 e2e 资产：`tests/fixtures/media/`（sample-mp3.mp3 / sample-ogg-opus.oga，
   ffmpeg 生成、来源清白、生成命令记录于该目录 README）
 
@@ -48,8 +49,8 @@ volume/muted 真控制。**双重启动门控**：① M0 音频环境验证与�
 | # | 缺口 | 状态 |
 |---|------|------|
 | A1 | 音频环境验证 + headless 验证策略 | ✅ M0 收口（2026-09-01） |
-| A2 | 解码选型未对齐（外部门控：media-playback M0） | ⬜ 等待 |
-| A3 | 零音频管线（解码/重采样/混音/输出） | ⬜ M1（双门控解除后；trait+NullSink 层可先行设计） |
+| A2 | 解码选型未对齐（外部门控：media-playback M0） | ✅ 已对齐（RFC 获批，2026-09-01） |
+| A3 | 零音频管线（解码/重采样/混音/输出） | ⬜ M1（双门控均已解除，可启动） |
 | A4 | A/V 同步机制缺失 | ⬜ M2（依赖 media-playback M2 视频时钟） |
 | A5 | 音频 e2e 资产 | ✅ fixture 已备（mp3/oga + mp4/webm 见 tests/fixtures/media/） |
 
@@ -58,21 +59,20 @@ volume/muted 真控制。**双重启动门控**：① M0 音频环境验证与�
 | # | 事项 | 状态 |
 |---|------|------|
 | D1 | AudioContext（Web Audio）最小面可行性 RFC → 是否实施 | ⬜ M3 时点提交 |
-| D2 | 安装 `libasound2-dev`（系统级 apt 变更）以解锁 cpal 编译验证 | ⬜ 新增（M0 探测发现；不阻塞 NullSink 层） |
+| D2 | 安装 `libasound2-dev`（系统级 apt 变更）以解锁 cpal 编译验证 | ✅ 获批（2026-09-01）——装包后补 cpal 编译实测 |
 
 ## 下一步计划
 
-1. **M1 前置（双门控部分解除）**：AudioSink trait + NullSink 可观测层设计稿
-   （与 media-playback RFC 的接口对齐记录——驱动源替换不返工原则同款）。
-2. **等 media-playback M0 RFC**：解码选型获批后启动 M1 解码/混音/输出管线。
-3. **等 D2 拍板**：装包后补 cpal 编译实测（CpalSink 冒烟记录追加到 evidence）。
+1. **M1 启动（双门控均已解除）**：AudioSink trait + NullSink 可观测层实施。
+2. **D2 已收口**：cpal 编译实测通过（evidence/2026-09-01-d2-cpal-compile-probe.md）；
+   CpalSink 真出声冒烟为可选项，留待桌面环境。
 
 ## 里程碑状态
 
 | 里程碑 | 状态 |
 |--------|------|
-| M0 — 环境验证 + 验证策略（门控） | ✅ 完成（2026-09-01，cpal 编译实测面留待 D2） |
-| M1 — 首个声音输出 | ⬜ 门控：media-playback 选型落地（M0 已解除一半） |
+| M0 — 环境验证 + 验证策略（门控） | ✅ 完成（2026-09-01，含 D2 后 cpal 编译实测补录） |
+| M1 — 首个声音输出 | 🔄 已解锁（双门控 2026-09-01 全部解除） |
 | M2 — A/V 同步 + 控制 | ⬜ |
 | M3 — `<audio>` 全路径 + Web Audio 评估 | ⬜ |
 
