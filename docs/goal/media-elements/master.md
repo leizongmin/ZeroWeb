@@ -2,11 +2,10 @@
 
 **入口文档**: [../media-elements.md](../media-elements.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-01（M3 扩批 VII 落地——**pause-on-removal + play() 事件
-queued task 化**：播放中 media 元素移除文档两段 defer（tick1 paused=true → tick2
-pause 事件）+ play/playing/timeupdate 改 queued task 派发；导入
-playing-the-media-resource/pause-remove-from-document.html；**93.5%**
-（387P/0F/0T/27PF，+1P·387/414 = 93.5%））
+**最后更新**: 2026-09-01（M3 扩批 VIII 落地——**about: src 资源选择失败路径 +
+play() promise 单 task settle（定时器竞态修复）**；导入
+video_crash_empty_src.html（2 subtest）；**389P/0F/0T/27PF（389/416 = 93.5%）**
+四连跑稳定）
 
 ---
 
@@ -124,6 +123,18 @@ already-playing resolved 断言。**88.3%**（324P/0F/2T/41PF，+80 subtest 全�
 - 导入 playing-the-media-resource/pause-remove-from-document.html；单测
   `test_media_pause_on_removal_m3b7`（时序/幂等/重插 5 断言面）。**93.5%**
   （387P/0F/0T/27PF，387/414；+1P 0 回归）。
+
+**M3 扩批 VIII 已落地（2026-09-01，about: src 失败路径 + play promise 竞态修复）**：
+- **about: src 资源选择失败**（part06 `_zwMediaScheduleLoad`）：非空 about:（about:blank
+  等）src → 资源获取不产出可播媒体资源 → error 事件 + code 4（同空 src 面）。
+  导入 the-video-element/video_crash_empty_src.html（2 subtest 全绿）。
+- **play() promise 单 task settle**（part03）：play Promise 的 settle 与事件派发合并
+  同一个 queued task——宿主 `__zw_setTimeout` 每定时器独立线程投递，两个 0ms 定时器
+  顺序不保证，竞态下 promise-check 先跑会误 resolve、丢 AbortError 契约
+  （event_play_noautoplay 全量 2 Fail、FILTER 单跑不可复现的调度非确定性根因）。
+  task 内序：先派事件（listener pause() 同步 reject）→ 后查 playPromise 身份 → resolve。
+  **教训**：全量跑与 FILTER 跑不一致 = 定时器竞态信号，不是用例间状态泄漏。
+- **389P/0F/0T/27PF（389/416 = 93.5%）四连跑稳定**；engine 2544 全绿。
 
 **M3 扩批 VI 已落地（2026-09-01，preload setter 补缺 + sweep 巡检收口）**：
 - `preload` IDL setter：enumerated 反射（写 preload 内容属性原样值——invalid 原样写、
