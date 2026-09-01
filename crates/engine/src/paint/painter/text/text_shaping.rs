@@ -1006,7 +1006,9 @@ fn glyph_sources_in_run(
 /// 判断是否为须绘制占位框的非空白 Cc 控制字符。
 pub(super) fn is_cc_control_char(ch: char) -> bool {
     let cp = ch as u32;
-    ((cp <= 0x1F) || (0x7F..=0x9F).contains(&cp)) && !matches!(cp, 0x09 | 0x0A | 0x0C | 0x0D)
+    // R3892：FF U+000C 非 newline、不可折叠 → 亦须可见占位（与 layout 侧
+    // is_cc_control_visible 同表；control-chars-00C 驱动）。
+    ((cp <= 0x1F) || (0x7F..=0x9F).contains(&cp)) && !matches!(cp, 0x09 | 0x0A | 0x0D)
 }
 
 /// R3868：`::first-letter` 首字母单元的 P*（Unicode 标点类）判定——css-pseudo-4

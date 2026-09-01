@@ -396,7 +396,25 @@ pub(crate) fn collapse_whitespace(text: &str) -> String {
 /// 旧实现 `is_whitespace()` / `split_whitespace()` 含 U+00A0 → `&nbsp;` 被折叠为普通空格再被
 /// 行首尾 trim → 仅含 `&nbsp;` 的元素塌缩为 0 行盒（`line-height-applies-to` 簇 4.75%）。
 pub(crate) fn is_collapsible_ws(ch: char) -> bool {
+    // R3892：CSS Text 3 §3 white space processing——可折叠白空间仅限 document white
+    // space 字符（SPACE/TAB/LF/CR，及折叠阶段视为空格的其他格式字符如 U+3000 等
+    // White_Space 成员）。**Cc 控制字符（VT U+000B 等）不是可折叠白空间**：须保留
+    // 原字符进入字形循环，由 R644 的 Cc 可见占位框渲染（WPT control-chars-00B/C/085
+    // mismatch 族：旧实现把 VT 折叠成空格 → test 与空白 ref 恒等 → mismatch 恒 fail）。
+    // U+00A0 保留既有 non-break 语义（R1985）。
+    if is_cc_control_visible(ch) {
+        return false;
+    }
     ch.is_whitespace() && ch != '\u{00A0}'
+}
+
+/// 须渲染为可见占位（不可折叠、不可丢弃）的 Cc 控制字符——与 R644 的
+/// `is_cc_control_char` 同表（排除 TAB/LF/FF/CR 这些参与折叠的 document white space）。
+fn is_cc_control_visible(ch: char) -> bool {
+    let cp = ch as u32;
+    // 仅 TAB/LF/CR 参与折叠（CSS Text §3.1 document white space；FF U+000C 不是
+    // newline 也不可折叠——WPT control-chars-00C 期望其可见）。
+    ((cp <= 0x1F) || (0x7F..=0x9F).contains(&cp)) && !matches!(cp, 0x09 | 0x0A | 0x0D)
 }
 
 /// CSS word-break 行为 — 控制单词内的断行规则。
@@ -434,12 +452,18 @@ mod tests {
     /// R1085：U+00A0 (NO-BREAK SPACE) 是 preserved + non-breaking，不可折叠。
     /// 旧实现 `char::is_whitespace()` 含 U+00A0 → 仅含 `&nbsp;` 的元素塌缩为 0 行盒
     ///（line-height-applies-to 簇）。本测试守此 CSS 语义。
+    /// R3892：Cc 控制字符（VT/FF 等）不可折叠——CSS Text §3.1 须渲染为可见字形
+    ///（WPT control-chars-00B/00C/085 mismatch 族）。
     #[test]
     fn nbsp_is_not_collapsible_ws() {
         assert!(!is_collapsible_ws('\u{00A0}'), "U+00A0 must not be collapsible");
-        // 标准 CSS 白空格仍可折叠。
-        for ch in [' ', '\t', '\n', '\x0C', '\r'] {
+        // 标准 CSS 白空格仍可折叠（TAB/LF/CR；FF U+000C 除外——见下）。
+        for ch in [' ', '\t', '\n', '\r'] {
             assert!(is_collapsible_ws(ch), "{:?} should be collapsible", ch);
+        }
+        // Cc 控制字符不可折叠（须渲染为可见占位字形，R644 + control-chars mismatch 族）。
+        for ch in ['\u{000B}', '\u{000C}', '\u{0085}', '\u{0001}'] {
+            assert!(!is_collapsible_ws(ch), "{:?} must not be collapsible", ch);
         }
         // 其他 Unicode 空白（U+3000 等）按既有行为仍可折叠（WPT 实证：窄集合回归 css-text）。
         assert!(is_collapsible_ws('\u{3000}'), "U+3000 keeps broad-whitespace behavior");
