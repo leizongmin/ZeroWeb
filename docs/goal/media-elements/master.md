@@ -2,10 +2,11 @@
 
 **入口文档**: [../media-elements.md](../media-elements.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-01（M3 扩批 IX 落地——**pause-on-removal adopt/move 守卫**：
-appendChild 移动（同文档/adopt）不触发移除暂停（`_zwIsRemovedNode` tick 检查）；
-导入 pause-move-within-document.html；pause-move-to-other-document 决策不导入
-（iframe adopt 面未实施——fetch 脚本注记）；**390P/0F/0T/27PF（390/417 = 93.5%）**）
+**最后更新**: 2026-09-01（**M4g-d 扩表**——canPlayType opus 面转正：opus-decoder
+纯 Rust 解码链落地（M2c opus 面）→ audio/ogg + video/ogg 的 opus codec 'probably'；
+**392P/0F/0T/25PF（392/417 = 94.0%）**。同日 M3 扩批 IX（pause-on-removal
+adopt/move 守卫 + pause-move-within-document 导入；pause-move-to-other-document
+决策不导入——iframe adopt 面未实施））
 
 ---
 
