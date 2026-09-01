@@ -147,6 +147,10 @@ png = "0.18"
 # 媒体解码（media-playback M1a，RFC 路线 C：纯 Rust 零 C 依赖）
 matroska-demuxer = "0.8"
 rusty_vp9 = "0.1"
+# 音频解码（media-playback M2c / media-audio M1：symphonia 纯 Rust——mp3 + ogg/vorbis
+# 面；symphonia 0.6 无 opus 解码器（C 侧 libopus 才有，违反路线 C 零 C 依赖——oga
+# fixture 的 opus 面留待后续选型，见 master.md M2c 注记）
+symphonia = { version = "0.6", default-features = false, features = ["mp3", "ogg", "vorbis", "pcm"] }
 
 # 内部 crate 依赖
 zero-dom = { path = "crates/dom" }

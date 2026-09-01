@@ -113,3 +113,85 @@ fn webm_vp9_seek_to_zero_replays_full_stream() {
     }
     assert_eq!(count, 48, "seek(0) 后全流应可重播 48 帧");
 }
+
+#[test]
+fn audio_mp3_decode_to_nullsink_zero_crossing_chain() {
+    // M2c 全链 e2e：mp3 fixture（440Hz sine）→ symphonia 解码 f32 → AudioSink
+    //（NullSink 可观测断言——过零率 ≈ 880 = 2×频率，media-audio M1 契约锚点）。
+    use crate::audio::NullSink;
+    use crate::audio::{AudioFormat, AudioSink};
+    use crate::audio_decode::AudioDecoder;
+
+    let data = fs::read(fixture_path("sample-mp3.mp3")).unwrap();
+    let mut dec = AudioDecoder::open(&data).unwrap();
+    let (rate, channels) = (dec.sample_rate(), dec.channels());
+    assert_eq!(channels, 1, "fixture 为单声道");
+
+    let mut sink = NullSink::new();
+    sink.start(AudioFormat {
+        sample_rate: rate,
+        channels,
+    })
+    .unwrap();
+    let mut batches = 0u32;
+    let mut wrote_any = false;
+    while let Some(batch) = dec.next_batch().unwrap() {
+        assert_eq!(batch.sample_rate, rate);
+        assert_eq!(batch.channels, channels);
+        sink.write(&batch.samples).unwrap();
+        wrote_any = true;
+        batches += 1;
+        assert!(batches <= 200, "runaway batch count");
+    }
+    assert!(wrote_any, "解码应产出采样");
+
+    // 时长面：2s @ rate 采样 ≈ frames_written（MP3 延迟/padding 容差 ±5%）。
+    let frames = sink.frames_written();
+    let expect = u64::from(rate) * 2;
+    assert!(
+        (frames as i64 - expect as i64).abs() < (expect as i64 / 20),
+        "写入帧数应 ≈ 2s 采样数：got {frames}, expect ≈{expect}"
+    );
+    // 频域代理锚点：440Hz sine 过零率 ≈ 880（2×频率；media-audio NullSink 契约）。
+    let zcr = sink.zero_crossings_per_second().expect("写入后应有过零率");
+    assert!((zcr - 880.0).abs() < 90.0, "440Hz sine 过零率应 ≈880，got {zcr}");
+}
+
+#[test]
+fn audio_ogg_vorbis_decode_to_nullsink_chain() {
+    // 同链 ogg/vorbis 面：fixture（440Hz sine）→ 解码 → NullSink 过零率锚点。
+    use crate::audio::{AudioFormat, AudioSink, NullSink};
+    use crate::audio_decode::AudioDecoder;
+
+    let data = fs::read(fixture_path("sample-ogg-vorbis.oga")).unwrap();
+    let mut dec = AudioDecoder::open(&data).unwrap();
+    let (rate, channels) = (dec.sample_rate(), dec.channels());
+
+    let mut sink = NullSink::new();
+    sink.start(AudioFormat {
+        sample_rate: rate,
+        channels,
+    })
+    .unwrap();
+    let mut wrote_any = false;
+    while let Some(batch) = dec.next_batch().unwrap() {
+        sink.write(&batch.samples).unwrap();
+        wrote_any = true;
+    }
+    assert!(wrote_any);
+    let frames = sink.frames_written();
+    let expect = u64::from(rate) * 2;
+    assert!(
+        (frames as i64 - expect as i64).abs() < (expect as i64 / 20),
+        "vorbis 写入帧数应 ≈ 2s：got {frames}, expect ≈{expect}"
+    );
+    let zcr = sink.zero_crossings_per_second().expect("写入后应有过零率");
+    assert!((zcr - 880.0).abs() < 90.0, "440Hz sine 过零率应 ≈880，got {zcr}");
+}
+
+#[test]
+fn audio_non_audio_bytes_rejected() {
+    use crate::audio_decode::AudioDecoder;
+    let garbage = b"definitely not an audio container".to_vec();
+    assert!(AudioDecoder::open(&garbage).is_err());
+}

@@ -2,12 +2,11 @@
 
 **入口文档**: [../media-playback.md](../media-playback.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-01（**M2b 落地**——精确 seek + 变速桥接：VideoDecoder
-`seek_to_ms` 两阶段（Cues keyframe 落点验证 → 无 Cues/非 keyframe 全量回退前向
-解码，spec precise-seek）；VideoPlayer `seek_to_ms`（clamp [0,duration]/播放态保持/
-时钟锚点重置/pending 帧不丢）；registry/桥（`__zw_video_seek`/`set_rate`）+ shim
-`currentTime=`/`playbackRate=` setter 桥推。零回归：engine 2539 / media 27 / webview
-668 / testharness-media 372P/0F/41PF）
+**最后更新**: 2026-09-01（**M2c 音频解码面落地**——symphonia 0.6 入 workspace
+（mp3+ogg/vorbis feature 面；**opus 不在其编解码面**——纯 Rust 约束，oga-opus
+fixture 留后续选型）；`AudioDecoder` f32 交错 PCM 逐包输出；新 fixture
+`sample-ogg-vorbis.oga`（440Hz sine，生成命令入 README）；全链 e2e 双件常驻：
+mp3 + vorbis → NullSink 过零率 ≈880 锚点（media-audio M1 契约）。media 30 全绿）
 
 ---
 
@@ -67,6 +66,17 @@ bridgeOn 标记）/`pause()` 桥停/`currentTime`/`duration` getter 桥真值优
 + engine shim 契约测试（JS stub 桥：play 传绝对 URL / currentTime 1.25 / duration 2 /
 pause 记录）；engine 2539 / webview 667 / browser 411 全绿；testharness-media 372
 基线维持。**M2a 全部切片收口**。
+**M2c 音频解码面已落地**（同日）：`zero-media::audio_decode::AudioDecoder`——
+symphonia probe 自动识别容器/编码 → f32 交错 PCM 逐包输出（`copy_to_vec_interleaved`
+跨格式直转，值域 [-1,1] 对齐 AudioSink 契约）；损坏包跳过（DecodeError 面继续）；
+依赖 `symphonia = { 0.6, default-features = false, features = [mp3, ogg, vorbis, pcm] }`
+（纯 Rust 零 C 依赖，路线 C 约束保持）。**opus 选型注记**：symphonia 0.6 无 opus
+解码器（libopus 为 C 依赖）——`sample-ogg-opus.oga` 不在 M2c 面，留待后续选型评估
+（新增 vorbis fixture 补齐 ogg 容器面）。全链 e2e 双件常驻：`audio_mp3_decode_to_
+nullsink_zero_crossing_chain` / `audio_ogg_vorbis_decode_to_nullsink_chain`——fixture
+（440Hz sine）→ 解码 → NullSink 过零率 ≈880（2×频率锚点）+ 采样数 ≈2s 容差面；
+media 30 全绿。**余：A/V 同步（media-audio M2，audio clock 主时钟）+ 播放管线接
+AudioSink（video play 时同步音频面——M2c 后续切片）**。
 **M2b 已落地**（同日）：精确 seek + 变速桥接全链——
 ① `VideoDecoder::seek_to_ms`：两阶段精确 seek——phase ① demuxer Cues 定位 +
   **keyframe 落点验证**（`block.is_keyframe` gate：cue 点即 keyframe；非 keyframe
@@ -146,15 +156,16 @@ engine 2539 / media 27 / webview 668 全绿；testharness-media 372P/0F/41PF 维
 
 ## 下一步计划
 
-1. **M2c（下一项）**：音频解码（symphonia）+ AudioSink/Mixer 接入（media-audio
-   输出面三切片已备：NullSink/CpalSink/Mixer）；mp3/oga fixture 经 NullSink 过零率
-   全链 e2e；A/V 同步前置（audio clock 主时钟——media-audio M2 契约）。
-2. **M2c**：音频解码（symphonia）+ AudioSink/Mixer 接入（media-audio 输出面三切片
-   已备：NullSink/CpalSink/Mixer）；mp3/oga fixture 经 NullSink 过零率全链 e2e。
-3. **renderer 多进程路径对齐**：桥接线当前在 tab_worker 路径（test-support feature）；
+1. **M2c 后续（下一项）**：播放管线接 AudioSink——`<video>`/`<audio>` play 时把
+   音频轨解码帧（webm 含音频轨面 symphonia 直解 / 独立音频资源）喂 Mixer → sink，
+   muted/volume 增益联动（media-elements IDL 语义 ↔ mixer 增益）；A/V 同步前置
+   （audio clock 主时钟——media-audio M2 契约）。
+2. **renderer 多进程路径对齐**：桥接线当前在 tab_worker 路径（test-support feature）；
    renderer js_worker 同款 SetVideoPlayers 注入（镜像）——生产双路径一致性。
-4. **M2 解码精化项**（M1b 揭示）：WebM Colour 元素解析（colourRange/matrix）→
+3. **M2 解码精化项**（M1b 揭示）：WebM Colour 元素解析（colourRange/matrix）→
    limited-range 与 BT.709 自适应转换（replaced-element-003 unmask 面收口）。
+4. **opus 解码选型注记**：symphonia 0.6 无 opus（纯 Rust 面缺位）——后续评估
+   （对称面： webinar/opusic 等 pure-Rust crate 成熟度，或维持 mp3+vorbis 面）。
 
 ## 里程碑状态
 

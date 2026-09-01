@@ -10,6 +10,7 @@
 | `sample-webm-vp9.webm` | webm | VP9 (yuv420p) | 无 | 320x240 | 2s | 41KB |
 | `sample-mp3.mp3` | mp3 | 无 | MP3 (libmp3lame 64k) | 44.1kHz 单声道 | 2s | 16KB |
 | `sample-ogg-opus.oga` | ogg | 无 | Opus (48k) | 48kHz 单声道 | 2s | 14KB |
+| `sample-ogg-vorbis.oga` | ogg | 无 | Vorbis (q4) | 44.1kHz 单声道 | 2s | 7KB |
 
 ## 生成命令
 
@@ -23,6 +24,11 @@ ffmpeg -f lavfi -i "testsrc2=size=320x240:rate=24:duration=2" \
 # VP9（webm）——开源编解码路线（RFC 三路线之「开源先行」的评估对象）
 ffmpeg -f lavfi -i "testsrc2=size=320x240:rate=24:duration=2" \
        -c:v libvpx-vp9 -b:v 200k -pix_fmt yuv420p -y sample-webm-vp9.webm
+
+# Vorbis（音频，media-playback M2c——symphonia 纯 Rust 解码面；opus 不在其 0.6
+# 编解码面内，oga-opus fixture 保留作后续选型对照）
+ffmpeg -f lavfi -i "sine=frequency=440:duration=2" \
+       -c:a libvorbis -q:a 4 -y sample-ogg-vorbis.oga
 
 # MP3（音频，media-audio 目标）
 ffmpeg -f lavfi -i "sine=frequency=440:duration=2" \
