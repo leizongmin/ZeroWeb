@@ -2,10 +2,10 @@
 
 **入口文档**: [../media-audio.md](../media-audio.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-01（M1 切片 2 落地——`CpalSink`（feature-gated
-`audio-cpal`，cpal 0.16 入 workspace）: f32 直通设备流 + 队列饿死 underrun 计数 +
-pause/resume 流控；环境自适应冒烟常驻（构造失败回落 NullSink 语义）；依赖新增
-同提交记录）
+**最后更新**: 2026-09-01（M1 切片 3 落地——`Mixer` 混音总线：多源 attach/detach
++ per-source volume [0,1] clamp / muted 增益 + mix_into 软削幅写入下游 sink；
+单测 7 件常驻（反相抵消/削幅等 NullSink 可观测化断言）。M1 输出面三切片齐备，
+解码面（symphonia）归 M2c 对接）
 
 ---
 
@@ -48,7 +48,10 @@ volume/muted 真控制。**双重启动门控均已解除**：① M0 音频环�
   pause/resume 流控（write 拒收 + 流暂停双闸）、格式变更须重建（显式报错防
   流错配）；环境自适应冒烟常驻（无设备/格式不支持 → 构造报错回落 NullSink，
   本环境实测构造成功 + start/pause/resume 全通）
-- ⚠️ 音频解码/重采样/混音未实施——M1 后续切片（symphonia 归 M2c 对接）
+- ✅ **混音面（M1 切片 3）**：`Mixer`——attach/detach 源句柄（资源生命周期面）+
+  per-source volume/muted 增益 + mix_into 软削幅（clamp [-1,1]）写下游 sink；
+  短源补零不断流；单测 7 件常驻
+- ⚠️ 音频解码/重采样未实施——M2c 对接面（symphonia；全链 e2e 同步解锁）
 - ✅ 选型已对齐（media-playback RFC 获批：路线 C，symphonia 音频解码面归 M2c）
 - ✅ 音频 e2e 资产：`tests/fixtures/media/`（sample-mp3.mp3 / sample-ogg-opus.oga，
   ffmpeg 生成、来源清白、生成命令记录于该目录 README）
@@ -59,9 +62,9 @@ volume/muted 真控制。**双重启动门控均已解除**：① M0 音频环�
 |---|------|------|
 | A1 | 音频环境验证 + headless 验证策略 | ✅ M0 收口（2026-09-01） |
 | A2 | 解码选型未对齐（外部门控：media-playback M0） | ✅ 已对齐（RFC 获批，2026-09-01） |
-| A3 | 零音频管线（解码/重采样/混音/输出） | 🔄 M1 切片 1+2 落地（NullSink 可观测 + CpalSink 设备面）；解码/混音待续 |
+| A3 | 零音频管线（解码/重采样/混音/输出） | 🔄 M1 切片 1-3 落地（NullSink + CpalSink + Mixer）；解码/重采样待 M2c |
 | A4 | A/V 同步机制缺失 | ⬜ M2（依赖 media-playback M2 视频时钟） |
-| A5 | 音频 e2e 资产 | 🔄 NullSink 可观测断言面就绪；解码链 e2e 待解码面落地 |
+| A5 | 音频 e2e 资产 | 🔄 NullSink 可观测断言 + 合成源全链常驻；真解码链 e2e 待 M2c |
 
 ## 待用户决策
 
@@ -72,25 +75,26 @@ volume/muted 真控制。**双重启动门控均已解除**：① M0 音频环�
 
 ## 下一步计划
 
-1. **M1 切片 3**：混音总线（f32 帧多源叠加 + per-source volume/muted 增益）+
-   解码面首验（sine fixture 经 NullSink 过零率断言——解码→混音→sink 全链 e2e）。
-2. **D2 已收口**：cpal 编译实测通过（evidence/2026-09-01-d2-cpal-compile-probe.md）；
-   CpalSink 真出声冒烟为可选项，留待桌面环境。
+1. **M1 收口评估**：输出/混音面已齐——余项 = 音频解码面（symphonia，RFC M2c 归
+   media-playback 流）+ mp3/oga fixture 经 NullSink 过零率全链 e2e（随解码面落地）。
+   CpalSink 真出声冒烟为可选项（D2 已验证编译/枚举面，留桌面环境）。
+2. **M2 前置**：A/V 同步接口对齐（audio clock 主时钟）——依赖 media-playback M2a
+   视频时钟（其 master.md 下一步同源）。
 
 ## 里程碑状态
 
 | 里程碑 | 状态 |
 |--------|------|
 | M0 — 环境验证 + 验证策略（门控） | ✅ 完成（2026-09-01，含 D2 后 cpal 编译实测补录） |
-| M1 — 首个声音输出 | 🔄 切片 1+2 落地（NullSink + CpalSink，2026-09-01）；混音总线 + 解码链 e2e 待续 |
+| M1 — 首个声音输出 | 🔄 切片 1-3 落地（NullSink + CpalSink + Mixer，2026-09-01）；余音频解码链 e2e（依赖 symphonia M2c） |
 | M2 — A/V 同步 + 控制 | ⬜ |
 | M3 — `<audio>` 全路径 + Web Audio 评估 | ⬜ |
 
 ## 验证基线
 
-- 测试基线：`make test` 全绿（含 zero-media 10 单测 + 1 doctest，其中 audio 5 件；
-  `audio-cpal` feature 增 CpalSink 环境自适应冒烟 1 件）；clippy 零警告（default 与
-  `--features audio-cpal` 双配置）
+- 测试基线：`make test` 全绿（zero-media default feature：17 单测 + 1 doctest =
+  decode 5 + NullSink 5 + mixer 7；`audio-cpal` feature 另增 CpalSink 环境自适应
+  冒烟 1 件）；clippy 零警告（default 与 `--features audio-cpal` 双配置）
 - NullSink 可观测锚点：440Hz 正弦 @48kHz 过零率 ≈880（2×频率；修正 M0 evidence
   的 ≈440 笔误——evidence 只追加不修改，以代码与本档为事实源）；暂停拒写计
   underrun；非整帧写入拒收
