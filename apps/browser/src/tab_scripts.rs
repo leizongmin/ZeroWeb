@@ -252,6 +252,7 @@ fn dispatch_resource_element_event(js_worker: Option<&TabJsWorkerHandle>, event:
         event.outcome.as_str(),
         event.natural_width,
         event.natural_height,
+        event.media_duration_ms,
     );
     if let Err(e) = worker.execute_script_direct(&report) {
         warn!("commit resource state ({} {}): {e}", event.tag, event.url);

@@ -254,6 +254,7 @@ fn dispatch_resource_element_event(js_worker: &RendererJsWorker, event: &Resourc
         event.outcome.as_str(),
         event.natural_width,
         event.natural_height,
+        event.media_duration_ms,
     );
     if let Err(e) = js_worker.execute_script_direct(&report) {
         warn!("commit resource state ({} {}): {e}", event.tag, event.url);
@@ -1625,6 +1626,7 @@ mod tests {
                 outcome: ResourceElementOutcome::Loaded,
                 natural_width: 3,
                 natural_height: 2,
+                media_duration_ms: None,
             }],
             Vec::new(),
             Vec::new(),

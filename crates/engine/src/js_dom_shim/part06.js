@@ -6772,7 +6772,15 @@
     _zwMediaFire(sel, handle, key, 'loadstart');
     _zwMediaFire(sel, handle, key, 'progress');
     ms.readyState = 1;
-    if (ms.duration == null) ms.duration = 600; // headless 元数据定值（无真解码；用例只断言可写/类型面）
+    // media-playback M2a：容器时长真值优先（宿主解码器头部读取，经 _resourceStates
+    // .durationMs 传入）；无真值（非 webm/探针失败）回落 headless 定值 600（无真解码；
+    // 用例只断言可写/类型面）。
+    var _settled = _resourceStates[key];
+    if (ms.duration == null) {
+      // 真值链传入毫秒 → spec 秒（dom-media-duration）；headless 定值 600 保持
+      // 既有单位（历史近似值，用例只断言类型/可写面，不回改——零回归）。
+      ms.duration = (_settled && _settled.durationMs != null) ? _settled.durationMs / 1000 : 600;
+    }
     _zwMediaFire(sel, handle, key, 'durationchange');
     // spec resize：视频尺寸变为已知时派发（audio 无此事件）——时序在 durationchange 后、
     // loadedmetadata 前（event_order_durationchange_resize_loadedmetadata 断言面）。
@@ -6812,14 +6820,17 @@
       _zwSettleResourceKey(key, sel, handle, tag, absUrl, 'loaded', 0, 0);
     }, 0);
   }
-  function _zwSettleResourceSelector(sel, tag, url, outcome, width, height) {
-    return _zwSettleResourceKey(_elKey(sel, null), sel, null, tag, url, outcome, width, height);
+  function _zwSettleResourceSelector(sel, tag, url, outcome, width, height, durationMs) {
+    return _zwSettleResourceKey(_elKey(sel, null), sel, null, tag, url, outcome, width, height, undefined, durationMs);
   }
-  function _zwSettleResourceKey(key, sel, handle, tag, url, outcome, width, height, errorCode) {
+  function _zwSettleResourceKey(key, sel, handle, tag, url, outcome, width, height, errorCode, durationMs) {
     if (_resourceStates[key]) return false; // 每个资源请求只 settle / 派发一次。
     var state = {
       url: String(url), outcome: String(outcome),
       width: Math.max(0, Number(width) || 0), height: Math.max(0, Number(height) || 0),
+      // media-playback M2a：容器时长真值（毫秒，宿主解码器头部读取；video 面专用）。
+      // null/undefined → 语义层 _zwMediaLoadSequence 回落 headless 定值（测试零回归）。
+      durationMs: durationMs == null ? null : Math.max(0, Number(durationMs) || 0),
       // errorCode 缺省 2（NETWORK_ERROR——fetch 失败路径）；空 src 资源选择失败路径
       // 传 4（MEDIA_ERR_SRC_NOT_SUPPORTED，spec「failed with attribute」步）。
       error: outcome === 'error' ? _zwMediaError(Number(errorCode) || 2, 'Error loading resource: ' + String(url)) : null
@@ -6838,7 +6849,7 @@
     }
     return true;
   }
-  globalThis.__zw_commit_resource_element_state = function (tag, absUrl, outcome, width, height) {
+  globalThis.__zw_commit_resource_element_state = function (tag, absUrl, outcome, width, height, durationMs) {
     try {
       tag = String(tag).toLowerCase();
       if (typeof __zw_query_all !== 'function') return;
@@ -6862,13 +6873,13 @@
           } catch (_e) {}
         }
         if (resolved !== target) continue;
-        var committed = _zwSettleResourceSelector(sel, tag, target, outcome, width, height);
+        var committed = _zwSettleResourceSelector(sel, tag, target, outcome, width, height, durationMs);
         if (!committed || tag !== 'source') continue;
         var parent = _parentNodeFor(sel, null);
         var parentTag = parent && parent.tagName ? String(parent.tagName).toLowerCase() : '';
         if (parentTag !== 'audio' && parentTag !== 'video') continue;
         if (outcome !== 'error') {
-          _zwSettleResourceSelector(parent.__zwSelector, parentTag, target, 'available', 0, 0);
+          _zwSettleResourceSelector(parent.__zwSelector, parentTag, target, 'available', 0, 0, durationMs);
           continue;
         }
         var candidates = parent.querySelectorAll ? parent.querySelectorAll('source') : [];
@@ -6877,7 +6888,7 @@
           var candidateState = _resourceStates[_elKey(candidates[j].__zwSelector, null)];
           if (!candidateState || candidateState.outcome !== 'error') { allFailed = false; break; }
         }
-        if (allFailed) _zwSettleResourceSelector(parent.__zwSelector, parentTag, target, 'error', 0, 0);
+        if (allFailed) _zwSettleResourceSelector(parent.__zwSelector, parentTag, target, 'error', 0, 0, durationMs);
       }
     } catch (_e) {}
   };

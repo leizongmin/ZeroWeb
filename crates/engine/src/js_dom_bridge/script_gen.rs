@@ -405,12 +405,19 @@ pub fn script_commit_resource_element_state(
     outcome: &str,
     natural_width: u32,
     natural_height: u32,
+    media_duration_ms: Option<u64>,
 ) -> String {
     let esc_tag = escape_js_string(tag);
     let esc_url = escape_js_string(abs_url);
     let esc_outcome = escape_js_string(outcome);
+    // media-playback M2a：video 容器时长真值（毫秒；None → 'null'——shim 回落
+    // headless 近似 duration，测试面零回归）。
+    let duration = match media_duration_ms {
+        Some(ms) => ms.to_string(),
+        None => "null".to_string(),
+    };
     format!(
-        "__zw_commit_resource_element_state('{esc_tag}', '{esc_url}', '{esc_outcome}', {natural_width}, {natural_height})"
+        "__zw_commit_resource_element_state('{esc_tag}', '{esc_url}', '{esc_outcome}', {natural_width}, {natural_height}, {duration})"
     )
 }
 

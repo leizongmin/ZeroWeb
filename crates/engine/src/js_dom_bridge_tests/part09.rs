@@ -3315,3 +3315,82 @@ fn test_media_preload_setter_roundtrip_r395() {
         "invalid value 原样写内容属性（getter 归一面分离）"
     );
 }
+
+#[test]
+fn test_media_duration_truth_injection_m2a() {
+    // media-playback M2a：容器时长真值注入——__zw_commit_resource_element_state 的
+    // durationMs 参数经 _zwSettleResourceKey 存入 _resourceStates，_zwMediaLoadSequence
+    // 以真值设置 ms.duration（durationchange 派发后可读）；无真值（null）回落 headless
+    // 定值 600（测试零回归面）。
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><video id=\"v1\" src=\"/media/movie.webm\"></video><video id=\"v3\" src=\"/media/a.mp4\"></video></body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://wpt.test/t.html".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // runner timer stub（同 r389 harness）。
+    sandbox.execute(
+        "globalThis.__zw_pending = {}; globalThis.__zw_timers = [];\
+         globalThis.__zw_setTimeout = function(id, delay) {\
+           globalThis.__zw_timers.push({ id: id, at: Date.now() + (delay | 0) }); };\
+         globalThis.__zw_fire_due_timers = function() {\
+           var now = Date.now(); var rest = [], due = [];\
+           var timers = globalThis.__zw_timers || [];\
+           for (var i = 0; i < timers.length; i++) {\
+             if (timers[i].at <= now) due.push(timers[i]); else rest.push(timers[i]); }\
+           globalThis.__zw_timers = rest;\
+           for (var d = 0; d < due.length; d++) {\
+             var fn = globalThis.__zw_pending[due[d].id];\
+             if (fn) { delete globalThis.__zw_pending[due[d].id]; try { fn(); } catch (_e) {} } } };",
+    ).unwrap();
+
+    // ① 真值注入：文档内静态 video#v1 + 宿主 settle（真流程：async_load 抓取完成 →
+    // 宿主 commit durationMs=2000 → settle 链喂语义层）→ duration 读 2。src= 的
+    // headless schedule 定时器因真值 settle 先落 _resourceStates 而跳过（幂等门）。
+    sandbox.execute(
+        "__zw_commit_resource_element_state('video', 'https://wpt.test/media/movie.webm', 'loaded', 320, 240, 2000);\
+         __zw_fire_due_timers();\
+         globalThis.__d1 = document.querySelector('#v1').duration;",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__d1)").unwrap().value,
+        "2",
+        "容器时长真值（2000ms → duration 2 秒）应经 settle 链喂语义层"
+    );
+
+    // ② 无真值回落：video src 动态设置（headless 模拟路径，无宿主 settle）→ duration 600。
+    sandbox.execute(
+        "globalThis.__v2 = document.createElement('video');\
+         globalThis.__v2.src = '/media/headless.mp4';\
+         __zw_fire_due_timers();\
+         globalThis.__d2 = globalThis.__v2.duration;",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__d2)").unwrap().value,
+        "600",
+        "无真值（headless 模拟路径）应回落定值 600（测试零回归面）"
+    );
+
+    // ③ durationMs=null 显式 null（非 webm 格式）同样回落 600（文档内静态 video#v3）。
+    sandbox.execute(
+        "__zw_commit_resource_element_state('video', 'https://wpt.test/media/a.mp4', 'loaded', 0, 0, null);\
+         __zw_fire_due_timers();\
+         globalThis.__d3 = document.querySelector('#v3').duration;",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__d3)").unwrap().value,
+        "600",
+        "显式 null（非 webm-VP9）应回落 headless 定值"
+    );
+}

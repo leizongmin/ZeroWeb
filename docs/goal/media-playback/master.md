@@ -2,9 +2,11 @@
 
 **入口文档**: [../media-playback.md](../media-playback.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-01（**M2a 落地**——`VideoPlayer` 播放驱动：帧率时钟 +
-play/pause/ended + currentTime 真值化（`VideoClock` 帧率驱动实现，调用方注入
-单调时钟挂 rAF 底座）；单测 6 件常驻。语义层驱动源替换与生产侧注入为下一切片）
+**最后更新**: 2026-09-01（**M2a 切片 2 落地**——duration 真值注入链：webview
+async_load 对 video 资源做容器头/首帧探针（`zero-media`，webview 新依赖）→
+ResourceElementEvent.media_duration_ms → script_gen/shim settle 链 →
+`_mediaState.duration` 真值（spec 秒）；无真值回落 headless 定值（测试零回归，
+testharness-media 372P/0F/0T/41PF 维持）。VideoPlayer 真值喂语义层的首条通路接通）
 
 ---
 
@@ -25,8 +27,16 @@ RGB 均值锚点；负例：不可解码 src 保持占位）。
 **M2a 已落地**（同日）：`zero-media::player::VideoPlayer`——`VideoClock` 的帧率
 驱动实现（PlayerState Ready/Playing/Ended 状态机 + play(now)/pause + tick(now)
 位置推进与帧调度（pts ≤ position 呈现最新帧）+ playback_rate clamp + reset 重播）；
-调用方注入单调时钟（rAF event loop P1a 挂点），单测 6 件常驻。**下一切片：语义层
-驱动源替换 + 生产侧注入**。
+调用方注入单调时钟（rAF event loop P1a 挂点），单测 6 件常驻。
+**M2a 切片 2 已落地**（同日）：duration 真值注入链全通——webview async_load 对
+video 资源 fetch 成功后经 `probe_video_media_meta`（容器时长 + 首帧固有尺寸）真值化
+`ResourceElementEvent`（新增 `media_duration_ms`，webview → zero-media 依赖）→
+`script_commit_resource_element_state` 增第 6 参 → shim `_zwSettleResourceKey
+.durationMs` → `_zwMediaLoadSequence` 以真值（ms→spec 秒）设 `duration`；无真值
+（非 webm-VP9/headless 路径）回落定值 600——**testharness-media 372P/0F/0T/41PF
+维持（零回归）**，单测 `test_media_duration_truth_injection_m2a` 3 断言组常驻。
+**下一切片：生产侧帧注入（ImageCache 接线）+ videoWidth/videoHeight IDL 面（尺寸
+真值已在 `_resourceStates.width/height` 就位）**。
 
 **与兄弟 goal 的边界**：
 - media-elements — 语义面（状态机/事件/canPlayType）归其管；本目标产出 readyState 真实
@@ -73,7 +83,7 @@ RGB 均值锚点；负例：不可解码 src 保持占位）。
 | V1 | 解码路线选型（专利/依赖/架构三维） | ✅ RFC 获批（路线 C，2026-09-01） |
 | V2 | 零解码管线（demux/解码/帧转换） | ✅ M1a 落地（2026-09-01，`zero-media` crate） |
 | V3 | 播放驱动（帧率时钟/seek/ended）缺失 | 🔄 M2a 落地（时钟/play/pause/ended）；seek 归 M2b |
-| V4 | readyState 真值驱动接口未建 | 🔄 M2a `VideoPlayer` 实现；语义层驱动源替换为下一切片 |
+| V4 | readyState 真值驱动接口未建 | 🔄 `VideoPlayer` 实现 + duration 真值链已通；currentTime 推进接线待切片 4 |
 | V5 | 播放 e2e 资产为零 | ✅ fixture 已落地 + M1b 帧上屏 e2e 常驻 |
 | V6 | 帧上屏通路（video 元素盒 → 图元）缺失 | ✅ M1b 落地（harness 侧全链；生产侧注入归 M2a） |
 
@@ -86,11 +96,11 @@ RGB 均值锚点；负例：不可解码 src 保持占位）。
 
 ## 下一步计划
 
-1. **M2a 切片 2（下一项）**：语义层驱动源替换——media-elements `_mediaState` 的
-   readyState/duration/currentTime 从 headless 近似改由 `VideoPlayer` 真值喂（语义层
-   代码不返工，RFC §3.1 契约）。
-2. **M2a 切片 3**：生产侧注入——webview/async_load 媒体字节 → 解码 → ImageCache
-   （harness 通路 M1b 已通，生产渲染线程接线）。
+1. **M2a 切片 3（下一项）**：生产侧帧注入——webview/async_load 媒体字节 → 解码 →
+   ImageCache（harness 通路 M1b 已通，生产渲染线程接线）；顺接 videoWidth/videoHeight
+   IDL 面（尺寸真值已在 `_resourceStates.width/height` 就位）。
+2. **M2a 切片 4**：currentTime 真值推进——`VideoPlayer` 挂 rAF event loop，语义层
+   `_mediaState.currentTime` 从 player 读真值（RFC §3.1 驱动源替换完成面）。
 4. **M2b**：seek（关键帧粒度）+ playbackRate 变速语义；**M2c**：音频解码（symphonia）+
    AudioSink/Mixer 接入（media-audio 输出面三切片已备）。
 5. **M2 解码精化项**（M1b 揭示）：WebM Colour 元素解析（colourRange/matrix）→

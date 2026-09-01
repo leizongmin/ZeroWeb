@@ -6883,6 +6883,7 @@ dependencies = [
  "url",
  "zero-engine",
  "zero-host-runtime",
+ "zero-media",
  "zero-net",
  "zero-page-runtime",
  "zero-protocol",

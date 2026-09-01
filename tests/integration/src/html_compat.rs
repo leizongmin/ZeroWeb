@@ -1128,6 +1128,7 @@ fn commit_resource_events(webview: &mut WebView, events: &[ResourceElementEvent]
             event.outcome.as_str(),
             event.natural_width,
             event.natural_height,
+            event.media_duration_ms,
         );
         webview.execute_script(&script).expect("commit resource state");
     }

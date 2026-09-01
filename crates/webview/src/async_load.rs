@@ -107,6 +107,21 @@ pub struct ResourceElementEvent {
     pub natural_width: u32,
     /// 图片解码成功后的固有高度，其他元素或失败为 0。
     pub natural_height: u32,
+    /// media-playback M2a：video 资源容器声明时长（毫秒，解码器头部读取；真实
+    /// duration 真值喂语义层）。非 video / 非 webm-VP9 / 解码失败为 `None`
+    /// （语义层回落 headless 近似值——零回归）。
+    pub media_duration_ms: Option<u64>,
+}
+
+/// media-playback M2a：video 资源的容器时长/固有尺寸探针（webm/VP9 头部读取，
+/// 不解帧——O(容器头) 便宜）。非 webm-VP9 返 `None`（语义层回落 headless 近似）。
+fn probe_video_media_meta(bytes: &[u8]) -> Option<(u64, u32, u32)> {
+    let mut decoder = zero_media::VideoDecoder::open_webm_vp9(bytes).ok()?;
+    let duration_ms = decoder.duration_ms()?;
+    // 容器头无固有尺寸——取首帧（2s@24fps fixture 解码 ~10ms 级，可接受；
+    // 真实流面 M2b 背压优化时改为读 TrackEntry 像素维）。
+    let frame = decoder.next_frame().ok()??;
+    Some((duration_ms, frame.width, frame.height))
 }
 
 /// in-process 异步抓取宿主：经 webview net_pool 线程池抓取（tabworker 默认）。
@@ -838,6 +853,7 @@ impl AsyncPageLoad {
                             outcome: ResourceElementOutcome::Loaded,
                             natural_width: data.width,
                             natural_height: data.height,
+                            media_duration_ms: None,
                         });
                         webview.image_cache().insert_with_key(ImageKey::new(key), data);
                     }
@@ -853,6 +869,7 @@ impl AsyncPageLoad {
                             outcome: ResourceElementOutcome::Error,
                             natural_width: 0,
                             natural_height: 0,
+                            media_duration_ms: None,
                         });
                     }
                 }
@@ -997,6 +1014,7 @@ impl AsyncPageLoad {
                                     outcome: ResourceElementOutcome::Loaded,
                                     natural_width: img.width,
                                     natural_height: img.height,
+                                    media_duration_ms: None,
                                 });
                                 webview.image_cache().insert_with_key(ImageKey::new(*key), img);
                             }
@@ -1012,6 +1030,7 @@ impl AsyncPageLoad {
                                     outcome: ResourceElementOutcome::Error,
                                     natural_width: 0,
                                     natural_height: 0,
+                                    media_duration_ms: None,
                                 });
                             }
                         }
@@ -1028,6 +1047,7 @@ impl AsyncPageLoad {
                             outcome: ResourceElementOutcome::Error,
                             natural_width: 0,
                             natural_height: 0,
+                            media_duration_ms: None,
                         });
                     }
                 }
@@ -1084,6 +1104,7 @@ impl AsyncPageLoad {
                                 outcome: ResourceElementOutcome::Loaded,
                                 natural_width,
                                 natural_height,
+                                media_duration_ms: None,
                             });
                         }
                         Err(e) => {
@@ -1098,6 +1119,7 @@ impl AsyncPageLoad {
                                 outcome: ResourceElementOutcome::Error,
                                 natural_width: 0,
                                 natural_height: 0,
+                                media_duration_ms: None,
                             });
                         }
                     },
@@ -1113,6 +1135,7 @@ impl AsyncPageLoad {
                             outcome: ResourceElementOutcome::Error,
                             natural_width: 0,
                             natural_height: 0,
+                            media_duration_ms: None,
                         });
                     }
                 }
@@ -1158,26 +1181,36 @@ impl AsyncPageLoad {
             let Ok(result) = rx.try_recv() else {
                 return true;
             };
-            let outcome = if result.is_ok() {
-                ResourceElementOutcome::Available
-            } else {
-                ResourceElementOutcome::Error
+            let (outcome, fetched) = match &result {
+                Ok(bytes) => (ResourceElementOutcome::Available, Some(bytes)),
+                Err(_) => (ResourceElementOutcome::Error, None),
             };
-            if let Err(error) = result {
+            if let Err(error) = &result {
                 tracing::warn!(tag = kind.tag_name(), "resource {url} fetch failed: {error}");
                 self.failed_resources.push(FailedResource {
                     kind: kind.tag_name(),
                     url: url.clone(),
                 });
             }
+            // media-playback M2a：video 资源 fetch 成功 → 容器时长/固有尺寸真值
+            // 探针（webm/VP9 头 + 首帧；其余格式 None/0——语义层回落 headless 近似）。
+            // 真值经 ResourceElementEvent 链喂语义层 duration/videoWidth（RFC §3.1）。
+            let (media_duration_ms, natural_width, natural_height) = match (fetched, kind) {
+                (Some(bytes), MediaResourceElementKind::Video) => match probe_video_media_meta(bytes) {
+                    Some((duration_ms, w, h)) => (Some(duration_ms), w, h),
+                    None => (None, 0, 0),
+                },
+                _ => (None, 0, 0),
+            };
             self.resource_settled.push((
                 *index,
                 ResourceElementEvent {
                     tag: kind.tag_name(),
                     url: url.clone(),
                     outcome,
-                    natural_width: 0,
-                    natural_height: 0,
+                    natural_width,
+                    natural_height,
+                    media_duration_ms,
                 },
             ));
             *changed = true;
