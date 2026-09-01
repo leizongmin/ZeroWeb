@@ -23,11 +23,12 @@ fn webm_vp9_first_frame_matches_ffmpeg_reference() {
     assert_eq!(f0.width, 320);
     assert_eq!(f0.height, 240);
     assert_eq!(f0.pts_ms, 0);
-    // 首帧 testsrc2 纹样锚点——RGBA 面的 RGB 均值观测窗（BT.601 下 RGB 均值
-    // 与 YUV 的 Y 均值 122 不同，实测 153.5；窗口取 ±15 防像素级抖动误报）。
+    // 首帧 testsrc2 纹样锚点——RGBA 面的 RGB 均值观测窗。M2 色度精化后 limited
+    // range 转换与 ffmpeg swscale RGBA 参照（实测 123.27）一致——窗口 ±15。
+    // （旧锚点 153.5 源于全范围误释 + 色度索引坍缩两个缺陷的叠加，本窗同步收紧。）
     let mean = rgba_mean(&f0.rgba);
     assert!(
-        (138.0..=168.0).contains(&mean),
+        (108.0..=138.0).contains(&mean),
         "first frame RGB mean out of reference window: {mean}"
     );
     // 哈希稳定性：同一输入两次解码逐像素一致（转换无随机性）。
@@ -112,6 +113,40 @@ fn webm_vp9_seek_to_zero_replays_full_stream() {
         assert!(count <= 48);
     }
     assert_eq!(count, 48, "seek(0) 后全流应可重播 48 帧");
+}
+
+#[test]
+fn webm_colour_identity_full_range_passthrough() {
+    // M2 色度精化：reftest-upstream replaced-element-003 的 support 素材
+    //（2x2-green.webm，ffprobe: color_range=pc + color_space=gbr）→ identity
+    // 矩阵 + full range → 平面 GBR 直传不做 YUV 数学。解码位形 = 位面内容
+    //（0,127,0——上游编码器的位面真值）vs ref #008000 差 1 ≤ fuzzy 0-30
+    //（chromium 同样在此预算内通过——identity 直传即正确行为面）。
+    let path =
+        super::decode::workspace_path("tests/wpt-runner/wpt-data/css/css-sizing/aspect-ratio/support/2x2-green.webm");
+    let data = fs::read(&path).unwrap();
+    let mut dec = VideoDecoder::open_webm_vp9(&data).unwrap();
+    let f = dec.next_frame().unwrap().expect("2x2 帧应可解");
+    assert_eq!((f.width, f.height), (2, 2));
+    // identity 直传：位面序 G/B/R → RGBA = (R=Cr, G=Y, B=Cb) = (0,127,0)。
+    for px in f.rgba.as_chunks::<4>().0 {
+        assert_eq!((px[0], px[1], px[2], px[3]), (0, 127, 0, 255), "identity 直传位面真值");
+    }
+}
+
+#[test]
+fn webm_colour_broadcast_range_luma_not_clipped() {
+    // 本仓 fixture（libvpx）：Colour 元素 range=Broadcast（limited）、matrix 缺省。
+    // limited 面正确转换后 RGB 均值应落 ffmpeg swscale RGBA 参照（123.3）的观测窗
+    //——旧全范围 BT.601 数学下为 153.5（值域误释 +25% 亮度失真，本测试防回退）。
+    let data = fs::read(fixture_path("sample-webm-vp9.webm")).unwrap();
+    let mut dec = VideoDecoder::open_webm_vp9(&data).unwrap();
+    let f = dec.next_frame().unwrap().expect("frame 0");
+    let mean = rgba_mean(&f.rgba);
+    assert!(
+        (108.0..=138.0).contains(&mean),
+        "limited-range 转换后 RGB 均值应近 ffmpeg 参照 123.3，got {mean}"
+    );
 }
 
 #[test]

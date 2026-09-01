@@ -73,6 +73,8 @@ pub struct VideoDecoder {
     /// seek 前向推进时暂存的「已解出但未消费」帧（`seek_to_ms` 命中 target 时
     /// 写入；下一次 `next_frame` 先弹出——spec precise-seek 不丢帧）。
     pending: Option<DecodedVideoFrame>,
+    /// 色彩描述（TrackEntry Video.Colour，开流时解析一次——M2 色度精化）。
+    color: ColorSpace,
 }
 
 impl VideoDecoder {
@@ -82,12 +84,13 @@ impl VideoDecoder {
     pub fn open_webm_vp9(data: &[u8]) -> Result<Self, DecodeError> {
         let cursor = Cursor::new(data.to_vec());
         let demuxer = matroska_demuxer::MatroskaFile::open(cursor)?;
-        let video_track = demuxer
+        let track = demuxer
             .tracks()
             .iter()
             .find(|t| t.track_type() == matroska_demuxer::TrackType::Video && t.codec_id() == "V_VP9")
-            .map(|t| t.track_number().get())
             .ok_or(DecodeError::NoVideoTrack)?;
+        let video_track = track.track_number().get();
+        let color = track.video().map(ColorSpace::from_track).unwrap_or_default();
         Ok(Self {
             timestamp_scale: demuxer.info().timestamp_scale().get(),
             demuxer,
@@ -95,6 +98,7 @@ impl VideoDecoder {
             video_track,
             eof: false,
             pending: None,
+            color,
         })
     }
 
@@ -146,7 +150,7 @@ impl VideoDecoder {
             let pts_ms = block.timestamp * self.timestamp_scale / 1_000_000;
             self.vp9.push(&block.data, Some(pts_ms as i64))?;
             let frame = self.vp9.next_frame()?;
-            self.pending = Some(to_rgba(frame));
+            self.pending = Some(to_rgba(frame, &self.color));
             return Ok(());
         }
 
@@ -204,14 +208,14 @@ impl VideoDecoder {
                     // push 后必有输出（rusty_vp9 无前瞻重排——VP9 位流本身
                     // 按 display 顺序编码 show_existing_frame 重发）。
                     let frame = self.vp9.next_frame()?;
-                    return Ok(Some(to_rgba(frame)));
+                    return Ok(Some(to_rgba(frame, &self.color)));
                 }
                 Ok(false) => {
                     // 容器末：冲刷解码器残余帧（若有）。
                     self.eof = true;
                     self.vp9.flush();
                     match self.vp9.next_frame() {
-                        Ok(frame) => return Ok(Some(to_rgba(frame))),
+                        Ok(frame) => return Ok(Some(to_rgba(frame, &self.color))),
                         // Eof/Again 均为无残余——正常收尾。
                         Err(rusty_vp9::Error::Eof | rusty_vp9::Error::Again) => return Ok(None),
                         Err(e) => return Err(e.into()),
@@ -223,11 +227,75 @@ impl VideoDecoder {
     }
 }
 
+/// YUV→RGB 转换的色彩描述（WebM Colour 元素解析结果，M2 解码精化）。
+///
+/// https://www.matroska.org/technical/elements.html#colour-element
+/// 未声明时的缺省与 ffmpeg/浏览器通行解释一致：BT.601 矩阵 + limited range
+///（SD webm 系素材的主面）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ColorSpace {
+    /// YUV→RGB 转换矩阵。
+    pub matrix: ColorMatrix,
+    /// 采样值域（limited [16,235] ↔ full [0,255]）。
+    pub full_range: bool,
+}
+
+/// YCbCr→RGB 矩阵选择（WebM MatrixCoefficients 的转换相关子集；
+/// 未列出的（FCC/SMPTE240/YCoCg/BT2020 等）按 BT.709 近似并留扩展位）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ColorMatrix {
+    /// Identity（GBR 顺序全范围——纯 RGB 流，通道直传不做 YUV 数学）。
+    Identity,
+    /// BT.709（HD 主面）。
+    Bt709,
+    /// BT.601（SD 缺省面）。
+    #[default]
+    Bt601,
+}
+
+impl ColorSpace {
+    /// 从容器 TrackEntry 的 Colour 元素解析（缺省字段按通行解释回落）。
+    ///
+    /// 缺省依据：Matroska spec 各字段缺省值 + ffmpeg `webmdshow`/浏览器对
+    /// unspecified 的处理——matrix 缺省 BT.601（MatrixCoefficients 缺省值 1 的
+    /// 实际语义为 BT.709，但 SD 素材声明缺失时业界按 BT.601 解；声明面优先）。
+    fn from_track(video: &matroska_demuxer::Video) -> Self {
+        use matroska_demuxer::{MatrixCoefficients as Mc, Range};
+        let Some(colour) = video.colour() else {
+            return Self::default();
+        };
+        let matrix = match colour.matrix_coefficients() {
+            Some(Mc::Identity) => ColorMatrix::Identity,
+            Some(Mc::Bt709) => ColorMatrix::Bt709,
+            Some(Mc::Smpte170 | Mc::Bt470bg) => ColorMatrix::Bt601,
+            // None（元素缺省值 1 = BT.709 声明面）/Unknown/其余矩阵：limited-range
+            // YUV 语义面下 BT.709 声明语义优先（spec 缺省）——本仓 fixture
+            // （libvpx 编码）声明面 None → BT.709 路径。
+            None | Some(Mc::Unknown) => ColorMatrix::Bt709,
+            // BT.2020 等 HDR 面留 M3；此处不做 HDR tone mapping，按 BT.709 近似。
+            _ => ColorMatrix::Bt709,
+        };
+        // range：声明 Broadcast → limited；Full → full；None/Defined 按 limited
+        //（Matroska 缺省仅 full range 的 identity 面显式声明——YUV 面通行 limited）。
+        let full_range = matches!(colour.range(), Some(Range::Full));
+        Self { matrix, full_range }
+    }
+}
+
+impl Default for ColorSpace {
+    fn default() -> Self {
+        Self {
+            matrix: ColorMatrix::Bt601,
+            full_range: false,
+        }
+    }
+}
+
 /// `rusty_vp9::DecodedFrame`（YUV 平面）→ [`DecodedVideoFrame`]（RGBA）。
 ///
 /// 支持 8/10/12 bit 与 4:2:0/4:2:2/4:4:4（逐平面定点转换）；当前 fixture 与
 /// 上游 webm 系素材主面为 8bit 4:2:0。
-fn to_rgba(frame: rusty_vp9::DecodedFrame) -> DecodedVideoFrame {
+fn to_rgba(frame: rusty_vp9::DecodedFrame, color: &ColorSpace) -> DecodedVideoFrame {
     let w = frame.width as usize;
     let h = frame.height as usize;
     let shift = frame.bit_depth - 8; // 10/12 bit → 8 bit 的高位移除
@@ -235,8 +303,11 @@ fn to_rgba(frame: rusty_vp9::DecodedFrame) -> DecodedVideoFrame {
     let chroma_h = h.div_ceil(1 + frame.subsampling_y as usize);
 
     // 色度定点索引（65536 = 1.0）：luma 像素 → 色度平面最近邻采样位置。
-    let fx = |x: usize, sw: usize| x * 65536 / sw;
-    let fy = |y: usize, sh: usize| y * 65536 / sh;
+    // 比例 = luma 尺寸 → chroma 尺寸（420: ×0.5）；除数必须是 luma 维——
+    // 旧实现误用 chroma 维，索引坍缩进 {0,1}（4:2:0 全行/列只采样前两个
+    // 色度样点——M2 精化揭示，BT.601 全范围锚点掩盖了该缺陷）。
+    let fx = |x: usize, lw: usize, cw: usize| x * cw * 65536 / lw;
+    let fy = |y: usize, lh: usize, ch: usize| y * ch * 65536 / lh;
 
     let sample = |plane: &[u8], stride: usize, x: usize, y: usize| -> u32 {
         let idx = y * stride + x * if frame.bit_depth > 8 { 2 } else { 1 };
@@ -249,19 +320,40 @@ fn to_rgba(frame: rusty_vp9::DecodedFrame) -> DecodedVideoFrame {
 
     let mut rgba = vec![0u8; w * h * 4];
     for y in 0..h {
-        let cy = fy(y, chroma_h) >> 16;
+        let cy = fy(y, h, chroma_h) >> 16;
         for x in 0..w {
-            let cx = fx(x, chroma_w) >> 16;
+            let cx = fx(x, w, chroma_w) >> 16;
             let yy = sample(&frame.planes[0], frame.strides[0], x, y) as f32;
             let cb = sample(&frame.planes[1], frame.strides[1], cx, cy) as f32;
             let cr = sample(&frame.planes[2], frame.strides[2], cx, cy) as f32;
 
-            // https://www.itu.int/rec/T-REC-BT.601 （业界通行的 YCbCr→RGB 转换矩阵）
-            let u = cb - 128.0;
-            let v = cr - 128.0;
-            let r = yy + 1.402 * v;
-            let g = yy - 0.344136 * u - 0.714136 * v;
-            let b = yy + 1.772 * u;
+            // 色彩面（M2 精化）：identity（GBR 全范围）通道直传；YUV 面按
+            // 声明矩阵 + 值域转换。
+            // https://www.itu.int/rec/T-REC-BT.601 （BT.601 系数）
+            // https://www.itu.int/rec/T-REC-BT.709 （BT.709 系数）
+            // https://www.itu.int/rec/T-REC-BT.1650 （limited→full 值域映射）
+            let (r, g, b) = if color.matrix == ColorMatrix::Identity {
+                // identity 矩阵 = 平面即 GBR 顺序全范围（VP9 语义，WebM gbr 惯例）：
+                // 平面 0/1/2 实为 G/B/R 直传，不做 YUV 数学。
+                (cr, yy, cb)
+            } else {
+                // limited [16,235]：luma 归一到 [0,255]（不移零点）；色度恒以
+                // 128 为零点。full range：luma 直用，色度移零点。
+                // ITU-R BT.601-7 §2.5 / BT.709-6 §2.5 标准形：
+                //   limited: R = 1.164·(Y−16) + kR·(Cr−128)（kR/kB 按矩阵）
+                //   full:    R = Y + kR·(Cr−128)
+                let (y, u, v) = if color.full_range {
+                    (yy, cb - 128.0, cr - 128.0)
+                } else {
+                    ((yy - 16.0) * 255.0 / 219.0, cb - 128.0, cr - 128.0)
+                };
+                match color.matrix {
+                    // BT.709: kR=1.5748, kG=(0.2126,0.7152,0.0722), kB=1.8556。
+                    ColorMatrix::Bt709 => (y + 1.5748 * v, y - 0.1873 * u - 0.4681 * v, y + 1.8556 * u),
+                    // BT.601: kR=1.402, kG=(0.299,0.587,0.114), kB=1.772。
+                    _ => (y + 1.402 * v, y - 0.344136 * u - 0.714136 * v, y + 1.772 * u),
+                }
+            };
 
             // 色度最近邻采样；双线性插值属 M2 平滑优化（OPTIMIZATION：省两次
             // 平面采样与两次乘加——单采样在 320x240@24 无可观测差异）。
@@ -299,10 +391,15 @@ pub(crate) fn rgba_mean(rgba: &[u8]) -> f64 {
 /// 测试 fixture 路径（workspace 相对）；非测试编译不可达。
 #[cfg(test)]
 pub(crate) fn fixture_path(name: &str) -> std::path::PathBuf {
+    workspace_path(&format!("tests/fixtures/media/{name}"))
+}
+
+/// workspace 相对路径（非测试编译不可达）。
+#[cfg(test)]
+pub(crate) fn workspace_path(rel: &str) -> std::path::PathBuf {
     let mut p = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     p.pop(); // crates/
     p.pop(); // workspace root
-    p.push("tests/fixtures/media");
-    p.push(name);
+    p.push(rel);
     p
 }

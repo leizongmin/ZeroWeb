@@ -1780,8 +1780,10 @@ fn m1b_video_first_frame_renders_to_framebuffer() {
     let cfg = ReftestConfig::default();
     let fb = render_to_framebuffer_with_base(html, "", &cfg, base);
 
-    // 帧区（(0,0)-(320,240)）采样：testsrc2 纹样 RGB 均值 ≈153.5（zero-media 单测
-    // 实测锚点，窗口 ±15）。占位行为（无解码像素）下该区为白底 → 均值 ≈255。
+    // 帧区（(0,0)-(320,240)）采样：testsrc2 纹样 RGB 均值 ≈123.3（zero-media M2
+    // 色度精化后 limited-range 转换与 ffmpeg swscale RGBA 一致；窗口 ±15）。
+    // 占位行为（无解码像素）下该区为白底 → 均值 ≈255。
+    // （旧锚点 ≈153.5 为全范围误释 + 色度索引坍缩的叠加伪值，M2 精化同步更正。）
     let (mut sum, mut n) = (0u64, 0u64);
     for y in (0..240).step_by(4) {
         for x in (0..320).step_by(4) {
@@ -1794,8 +1796,8 @@ fn m1b_video_first_frame_renders_to_framebuffer() {
     }
     let mean = sum as f64 / (n.max(1) as f64 * 3.0);
     assert!(
-        (138.0..=168.0).contains(&mean),
-        "video first frame should paint decoded pixels (RGB mean {mean:.1}, expect ~153.5); \
+        (108.0..=138.0).contains(&mean),
+        "video first frame should paint decoded pixels (RGB mean {mean:.1}, expect ~123.3); \
          placeholder-white would be ~255 — decode/inject/primitive chain broken"
     );
 
