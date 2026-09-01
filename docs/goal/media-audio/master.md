@@ -86,7 +86,7 @@ volume/muted 真控制。**双重启动门控均已解除**：① M0 音频环�
 
 | # | 事项 | 状态 |
 |---|------|------|
-| D1 | AudioContext（Web Audio）最小面可行性 RFC → 是否实施 | 🔄 **RFC 已成文**（2026-09-01，[docs/specs/web-audio-audiocontext-minimal-face-spec-rfc.md](../../specs/web-audio-audiocontext-minimal-face-spec-rfc.md)）——结论：最小面可行（底座零新增依赖，1~2 切片）；**实施与否待用户批准**（D-WA-1/2；不批准不影响本 goal DONE） |
+| D1 | AudioContext（Web Audio）最小面可行性 RFC → 是否实施 | 🔄 **RFC 已成文 + 已征询（2026-09-01 GB-20260901，飞书 msg `om_x100b6659bc706ca4c366b9337b1c321`，建议批准 D-WA-1 + D-WA-2 选先 NullSink）**——待用户批复（不批准不影响本 goal DONE） |
 | D2 | 安装 `libasound2-dev`（系统级 apt 变更）以解锁 cpal 编译验证 | ✅ 获批（2026-09-01）——装包后补 cpal 编译实测 |
 
 ## 下一步计划

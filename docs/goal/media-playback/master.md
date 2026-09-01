@@ -232,7 +232,9 @@ engine 2539 / media 27 / webview 668 全绿；testharness-media 372P/0F/41PF 维
   dav1d-sys 走 system_deps：优先 pkg-config 系统库，缺则**从源码构建**（git clone
   videolan/dav1d + meson + ninja——本机 meson/ninja 均未装）。两条路都需系统级安装
   （`apt install libdav1d-dev` 或 `apt install meson ninja`），按 run-rules 须用户
-  批准；三平台 CI 构建矩阵成本同 RFC §6 风险面 | ⬜ 待批（不阻塞 M3 其余面——
+  批准；三平台 CI 构建矩阵成本同 RFC §6 风险面 | ⬜ **待批——已征询（2026-09-01
+  GB-20260901，飞书 msg `om_x100b6659bc706ca4c366b9337b1c321`，建议选 A：
+  libdav1d-dev 只补头文件复用既有运行时库）**（不阻塞 M3 其余面——
   WPT 子集导入可先行） |
 
 ## 下一步计划
