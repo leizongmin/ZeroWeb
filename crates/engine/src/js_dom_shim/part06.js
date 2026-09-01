@@ -7012,6 +7012,147 @@
       }
     } catch (_eScl) {}
   };
+  // media-audio M3 切片 2（D1 批复 / D-WA-2 NullSink 先行）：Web Audio 最小面——
+  // AudioContext 构造器 + createOscillator/createGain + destination + start/stop。
+  // 宿主桥 `__zwWA*` 回调族（tab_worker/webview 构建时注入，register_webaudio_bridge_
+  // callbacks 同款字符串契约）未注册时构造仍成功、节点对象语义面完整（属性反射 +
+  // connect 链式），仅不产声（headless 近似——RFC §3.2 简化记录）。state 恒 'running'
+  //（无 autoplay 政策域——suspended 归用户手势策略，不模拟）。
+  // https://webaudio.github.io/web-audio-api/#AudioContext
+  var _zwWASeq = 0;
+  function _zwWANode(kind, ctxId, handle) {
+    var node = Object.create(_zwWANode.prototype);
+    node._zwKind = kind;
+    node._zwCtx = ctxId;
+    node._zwHandle = handle;
+    node._zwConnected = null;
+    return node;
+  }
+  _zwWANode.prototype.connect = function (target) {
+    // spec：connect 返回目标节点（链式——osc.connect(gain).connect(destination)）。
+    this._zwConnected = target || null;
+    return target;
+  };
+  _zwWANode.prototype.disconnect = function () {
+    this._zwConnected = null;
+  };
+  function AudioContext() {
+    // WebIDL：无 new 调用抛 TypeError（构造器语义——同 Audio() 面但不走工厂）。
+    if (!(this instanceof AudioContext)) {
+      throw new TypeError("Failed to construct 'AudioContext': Please use the 'new' operator, this DOM object constructor cannot be called as a function.");
+    }
+    var ctxId = ++_zwWASeq;
+    var self = this;
+    self._zwCtxId = ctxId;
+    self._zwBridge = (typeof globalThis.__zw_wa_create_osc === 'function');
+    // spec BaseAudioContext.state：headless 恒 'running'（RFC §3.2）。
+    self._zwState = 'running';
+    self._zwSampleRate = 48000;
+    self._zwDestination = _zwWANode('destination', ctxId, 0);
+    self._zwOscs = {};
+  }
+  globalThis.AudioContext = globalThis.AudioContext || AudioContext;
+  // OfflineAudioContext 占位（illegal constructor——最小面不做离线渲染，RFC §0）。
+  function OfflineAudioContext() {
+    throw new TypeError('OfflineAudioContext is not supported in this build.');
+  }
+  globalThis.OfflineAudioContext = globalThis.OfflineAudioContext || OfflineAudioContext;
+  Object.defineProperty(AudioContext.prototype, 'state', {
+    get: function () { return this._zwState; },
+    configurable: true,
+  });
+  Object.defineProperty(AudioContext.prototype, 'sampleRate', {
+    get: function () { return this._zwSampleRate; },
+    configurable: true,
+  });
+  Object.defineProperty(AudioContext.prototype, 'destination', {
+    get: function () { return this._zwDestination; },
+    configurable: true,
+  });
+  // BaseAudioContext 面：currentTime（上下文时钟秒——headless 无真音频钟，近似
+  // performance.now 换算；真值面挂 audio clock 主时钟承接）。
+  Object.defineProperty(AudioContext.prototype, 'currentTime', {
+    get: function () {
+      try {
+        return (typeof __zw_performance_now === 'function') ? __zw_performance_now() / 1000 : 0;
+      } catch (_eWact) { return 0; }
+    },
+    configurable: true,
+  });
+  AudioContext.prototype.createOscillator = function () {
+    var self = this;
+    var node = _zwWANode('oscillator', self._zwCtxId, 0);
+    var _type = 'sine';
+    var _freq = 440;
+    var _gain = 1.0;
+    var _started = false;
+    var _stopped = false;
+    // 宿主桥可用时立即建 Rust 侧源（freq/type 变更经桥推）。
+    if (self._zwBridge) {
+      try { node._zwHandle = Number(globalThis.__zw_wa_create_osc(_type, String(_freq))) || 0; } catch (_eWao) {}
+    }
+    Object.defineProperty(node, 'type', {
+      get: function () { return _type; },
+      set: function (v) {
+        var s = String(v == null ? '' : v);
+        if (s !== 'sine' && s !== 'square' && s !== 'sawtooth' && s !== 'triangle') return;
+        _type = s;
+      },
+      configurable: true,
+    });
+    // frequency AudioParam 最小值面（value 反射 + setValueAtTime 即时近似）。
+    var _freqParam = {
+      value: _freq,
+      setValueAtTime: function (v /*, startTime */) { _freq = Number(v) || 0; this.value = _freq; },
+      linearRampToValueAtTime: function (v /*, endTime */) { _freq = Number(v) || 0; this.value = _freq; },
+      exponentialRampToValueAtTime: function (v /*, endTime */) { _freq = Number(v) || 0; this.value = _freq; },
+    };
+    Object.defineProperty(node, 'frequency', {
+      get: function () { return _freqParam; },
+      configurable: true,
+    });
+    // detune AudioParam 占位（值恒 0——cent 偏移归后续切片）。
+    var _detuneParam = { value: 0, setValueAtTime: function () {} };
+    Object.defineProperty(node, 'detune', {
+      get: function () { return _detuneParam; },
+      configurable: true,
+    });
+    node.start = function (when) {
+      if (_started) return;
+      _started = true;
+      if (self._zwBridge && typeof globalThis.__zw_wa_start === 'function') {
+        try { globalThis.__zw_wa_start(String(node._zwHandle), String(Math.max(0, Number(when) || 0) * 1000)); } catch (_eWas) {}
+      }
+    };
+    node.stop = function (when) {
+      if (!_started || _stopped) return;
+      _stopped = true;
+      if (self._zwBridge && typeof globalThis.__zw_wa_stop === 'function') {
+        try { globalThis.__zw_wa_stop(String(node._zwHandle), String(Math.max(0, Number(when) || 0) * 1000)); } catch (_eWax) {}
+      }
+    };
+    node.onended = null;
+    return node;
+  };
+  // createGain：gain AudioParam 值面（per-source 增益经桥的 reserved 面——最小面
+  // per-osc gain 在 Rust 侧由 WebAudioContext 源增益承接，桥 set-gain 归设备切片）。
+  AudioContext.prototype.createGain = function () {
+    var node = _zwWANode('gain', this._zwCtxId, 0);
+    var _gainVal = 1.0;
+    var _gainParam = {
+      get value() { return _gainVal; },
+      set value(v) { _gainVal = Number(v); if (isNaN(_gainVal)) _gainVal = 1.0; },
+      setValueAtTime: function (v /*, startTime */) { _gainVal = Number(v); if (isNaN(_gainVal)) _gainVal = 1.0; },
+      linearRampToValueAtTime: function (v /*, endTime */) { _gainVal = Number(v); if (isNaN(_gainVal)) _gainVal = 1.0; },
+    };
+    Object.defineProperty(node, 'gain', {
+      get: function () { return _gainParam; },
+      configurable: true,
+    });
+    return node;
+  };
+  // createBufferSource/createBiquadFilter 等未实现面——spec 其它节点类型不属最小面
+  //（RFC §0 不做清单），undefined 返回（调用方 try/catch 容错）。
   // track 元素 src 的 headless 加载模拟——data:text/vtt 解析填 cue + load 事件；
   // 非 data: URL 同样派 load（headless 无真字幕抓取， cues 空）。幂等：per-track 一次。
   globalThis._zwTrackScheduleLoad = function (sel, handle, opts) {

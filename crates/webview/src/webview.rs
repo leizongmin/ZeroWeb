@@ -498,6 +498,9 @@ pub struct WebView {
     /// media-playback M2a 切片 5：生产侧播放器注册表（settle 登记源字节；宿主桥
     /// play/pause/currentTime 真值 + 渲染泵 tick_all 帧推进——后续接线消费）。
     video_players: std::sync::Arc<std::sync::Mutex<crate::video_registry::VideoPlayerRegistry>>,
+    /// media-audio M3 切片 2（D1 批复）：Web Audio 最小面注册表（AudioContext
+    /// 图推进 + NullSink 可观测；宿主桥 __zwWA* 回调 + 音频泵 advance 消费）。
+    webaudio: std::sync::Arc<std::sync::Mutex<crate::webaudio_registry::WebAudioRegistry>>,
     /// 已抓取图片的固有尺寸（url hash → (w,h)），resize/render 时回填 pipeline。
     cached_image_sizes: HashMap<u64, (f32, f32)>,
     /// ratio-only 图片信号（url hash → width/height 比，CSS §10.3.2 仅 SVG 出现）。
@@ -621,6 +624,7 @@ impl WebView {
             video_players: std::sync::Arc::new(
                 std::sync::Mutex::new(crate::video_registry::VideoPlayerRegistry::new()),
             ),
+            webaudio: std::sync::Arc::new(std::sync::Mutex::new(crate::webaudio_registry::WebAudioRegistry::new())),
             cached_image_sizes: HashMap::new(),
             cached_image_ratios: HashMap::new(),
             cached_image_no_ratio: HashMap::new(),
@@ -1138,6 +1142,12 @@ impl WebView {
     /// 渲染泵 tick 消费；settle 侧经 async_load 写入）。
     pub fn video_players(&self) -> std::sync::Arc<std::sync::Mutex<crate::video_registry::VideoPlayerRegistry>> {
         std::sync::Arc::clone(&self.video_players)
+    }
+
+    /// media-audio M3 切片 2：Web Audio 注册表共享句柄（宿主桥回调注册 /
+    /// 音频泵 advance 消费）。
+    pub fn webaudio(&self) -> std::sync::Arc<std::sync::Mutex<crate::webaudio_registry::WebAudioRegistry>> {
+        std::sync::Arc::clone(&self.webaudio)
     }
 
     /// 复制图片缓存供 UI 线程快照。

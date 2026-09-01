@@ -18,6 +18,7 @@ mod image_decoder;
 mod indexed_db_owner;
 mod net_pool;
 pub mod video_registry;
+pub mod webaudio_registry;
 pub mod webview;
 pub mod webview_builder;
 

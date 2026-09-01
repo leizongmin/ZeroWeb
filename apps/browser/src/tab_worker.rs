@@ -267,6 +267,9 @@ fn tab_worker_main(
     // js_worker 注册 __zwVideoBridge 宿主桥；settle 侧 async_load 写入同 registry）。
     if let Some(js_worker) = _js_worker.as_ref() {
         js_worker.set_video_players(wv.video_players());
+        // media-audio M3 切片 2：Web Audio 宿主桥注入（__zwWA*——AudioContext
+        // 最小面 NullSink 可观测；音频泵 advance 与视频泵同节拍）。
+        js_worker.set_webaudio(wv.webaudio());
     }
     wv.set_prefers_color_scheme(color_scheme);
     // R2413：初始化 font_resolver（系统字体）+ per-family 行度量——镜像 renderer 进程
@@ -878,6 +881,11 @@ fn tab_worker_main(
                         // M2c 后续：音频实时节奏解码（NullSink 写入；增益联动）——
                         // 音频写入不改变帧内容，不触发重渲染。
                         reg.audio_advance_all(now_ms);
+                        // media-audio M3 切片 2：Web Audio 振荡器图推进（同一 1ms
+                        // 泵节拍；无活跃源时 advance 内部快速门零开销）。
+                        if let Ok(mut wa) = wv.webaudio().lock() {
+                            wa.advance(now_ms);
+                        }
                         frames
                     })
                     .unwrap_or(false);

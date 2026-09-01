@@ -73,6 +73,9 @@ enum JsWorkerCommand {
     SetVideoPlayers {
         registry: std::sync::Arc<std::sync::Mutex<zero_webview::video_registry::VideoPlayerRegistry>>,
     },
+    SetWebAudio {
+        registry: std::sync::Arc<std::sync::Mutex<zero_webview::webaudio_registry::WebAudioRegistry>>,
+    },
     Shutdown,
 }
 
@@ -254,6 +257,15 @@ impl TabJsWorkerHandle {
         registry: std::sync::Arc<std::sync::Mutex<zero_webview::video_registry::VideoPlayerRegistry>>,
     ) {
         let _ = self.cmd_tx.send(JsWorkerCommand::SetVideoPlayers { registry });
+    }
+
+    /// media-audio M3 切片 2：注入 Web Audio 注册表（WebView 初始化后发送；
+    /// worker 注册 `__zwWA*` 宿主桥——shim AudioContext 最小面 NullSink 可观测）。
+    pub fn set_webaudio(
+        &self,
+        registry: std::sync::Arc<std::sync::Mutex<zero_webview::webaudio_registry::WebAudioRegistry>>,
+    ) {
+        let _ = self.cmd_tx.send(JsWorkerCommand::SetWebAudio { registry });
     }
 
     /// 关闭 JS 线程。
@@ -490,6 +502,11 @@ fn js_worker_main(
                 // M2a 切片 5b：注册宿主桥回调族 + 注入 __zwVideoBridge JS 门面
                 //（shim play/pause/currentTime feature-detect 消费）。
                 zero_webview::video_registry::register_video_bridge_callbacks(&mut *sandbox, registry);
+            }
+            JsWorkerCommand::SetWebAudio { registry } => {
+                // media-audio M3 切片 2：注册 Web Audio 宿主桥（__zwWA* 回调族——
+                // shim AudioContext createOscillator/start/stop 桥推 NullSink 面）。
+                zero_webview::webaudio_registry::register_webaudio_bridge_callbacks(&mut *sandbox, registry);
             }
             JsWorkerCommand::Shutdown => {
                 // js-dom R386：worker 退出前清原生绑定线程局部（镜像 webview Drop

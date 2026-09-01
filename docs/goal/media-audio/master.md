@@ -2,7 +2,13 @@
 
 **入口文档**: [../media-audio.md](../media-audio.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-01（**D1 获批（D-WA-1 批准 + D-WA-2 选先 NullSink）**——
+**最后更新**: 2026-09-02（**Web Audio 最小面切片 1+2 落地**——zero-media `webaudio`
+模块（振荡器四型波形合成 + WebAudioContext 图推进 + 过零率锚点单测 7 件）+
+shim `AudioContext` 门面（createOscillator/createGain/destination/start/stop +
+connect 链式 + AudioParam 最小值面）+ webview `WebAudioRegistry` + `__zwWA*`
+宿主桥 + tab_worker/webview 泵接线 + e2e（JS 全链 → NullSink 帧数/过零率可观测，
+`webaudio_bridge_nullsink_observable_chain`）。此前 2026-09-01：**D1 获批（D-WA-1
+批准 + D-WA-2 选先 NullSink）**——
 Web Audio AudioContext 最小面实施开工（切片 1+2，NullSink 设备面挂真出声切片），
 RFC 见 [../../specs/web-audio-audiocontext-minimal-face-spec-rfc.md](../../specs/web-audio-audiocontext-minimal-face-spec-rfc.md)。
 此前：D2 获批项闭环——libasound2-dev 在位，cpal 编译 + 39 测全绿 +
@@ -18,6 +24,35 @@ RFC 见 [../../specs/web-audio-audiocontext-minimal-face-spec-rfc.md](../../spec
 **专项定位**：媒体方向三拆之三（门控最深）。音频输出（解码→混音→设备）+ A/V 同步 +
 volume/muted 真控制。**双重启动门控均已解除**：① M0 音频环境验证与验证策略成文
 （2026-09-01 完成）；② media-playback M0 解码选型 RFC 获批（2026-09-01，路线 C）。
+
+**M3 Web Audio 切片 1+2 已落地（2026-09-02，D1 批复 / D-WA-2 NullSink 先行）**：
+- **切片 1（zero-media `webaudio` 模块）**：`OscillatorState`（sine/square/sawtooth/
+  triangle 四型纯函数合成——相位累积 mod 2π 防 alias/长流漂移；start/stop 时序
+  gate）+ `WebAudioContext`（源列表 → per-source 增益 → destination 总增益 →
+  软削幅 → 下游 sink 写入；调用方注入单调钟——VideoPlayer 同款可测试性）；
+  单测 7 件常驻（440Hz sine 过零率 ≈880 M1 契约锚点 / 方波同阶 / 未 start 静默 /
+  stop 后静默 / 增益幅度 / 锯齿三角周期精确 / 双源并发）。
+- **切片 2（shim + webview 接线）**：
+  - shim part06 `AudioContext` 构造器（无 new TypeError；state 恒 'running'、
+    sampleRate 48000、destination/currentTime 面）+ `createOscillator`（type 枚举
+    归一 setter + frequency/detune AudioParam 最小值面 + start/stop 桥推）+
+    `createGain`（gain AudioParam）+ connect 链式返回（spec connect 返回目标节点）；
+    OfflineAudioContext 占位（illegal——RFC §0 不做清单）。宿主桥未注册时语义面
+    完整不产声（headless 近似零回归面）。
+  - webview `webaudio_registry`：`WebAudioRegistry`（ctx + NullSink 端点 + JS 节点
+    句柄映射 + epoch 时钟）+ `register_webaudio_bridge_callbacks`（`__zwWA*` 五回调
+    ——create_osc/start/stop/set_freq/active，字符串契约同 __zwVideoBridge 模式）；
+    WebView 持 `webaudio()` Arc 句柄。
+  - 生产接线：tab_worker `SetWebAudio` 命令 + worker 注入 `__zwWA*`（SetVideoPlayers
+    同款 late-injection）；音频泵同 1ms 节拍推进（`wa.advance(now_ms)`，无活跃源
+    快速门零开销）。
+  - e2e：`webaudio_bridge_nullsink_observable_chain`——JS AudioContext → shim →
+    __zwWA* 桥 → Rust 合成 → NullSink 帧数（≈48000/秒）+ 过零率 ≈880 断言 +
+    stop 后活跃源清零。media 45 单测、webview 679 全绿、browser xvfb 411 全绿、
+    clippy（media/webview/browser）零警告。
+- **余项**：createGain 的 per-node 桥推（当前 per-osc gain 由 WebAudioContext 承接，
+  gain 节点 → 桥映射挂真出声/设备切片）；WPT webaudio 可执行子集评估导入（构造/
+  属性反射面——随下批评估）。
 
 **M0 已收口（2026-09-01）**：
 - 环境实测：内核层 HDA 声卡在；**ALSA dev 头缺失（libasound2-dev 未装）→ cpal 默认
@@ -94,9 +129,10 @@ volume/muted 真控制。**双重启动门控均已解除**：① M0 音频环�
 
 ## 下一步计划
 
-1. **Web Audio 最小面实施（D1 已批准）**：切片 1（AudioContext/`BaseAudioContext`
-   shim 面 + NullSink 可观测链）→ 切片 2（oscillator/destination 连接语义 +
-   WPT webaudio 可执行子集评估导入）；设备面挂 M1 CpalSink 真出声切片（D-WA-2）。
+1. ~~**Web Audio 最小面实施（D1 已批准）**~~ 🔄 切片 1+2 ✅ 2026-09-02 落地
+   （zero-media webaudio 模块 + shim AudioContext 门面 + __zwWA* 宿主桥 + 泵接线 +
+   e2e——见当前状态）；余：WPT webaudio 可执行子集评估导入（构造/属性反射面）+
+   设备面挂 M1 CpalSink 真出声切片（D-WA-2）。
 2. **M1 收口评估（余项收窄）**：Mixer 多源混音接线**决策注记（2026-09-01）**——
    现播放管线 per-entry NullSink 直连已覆盖多源并发语义面（per-source 增益/独立
    解码流/并发泵）；Mixer（M1 切片 3 组件，7 单测常驻）的价值在**单设备输出流的

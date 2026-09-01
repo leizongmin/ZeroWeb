@@ -1101,4 +1101,75 @@ mod audio_tests {
             "false"
         );
     }
+
+    #[test]
+    fn webaudio_bridge_nullsink_observable_chain() {
+        // media-audio M3 切片 2 e2e（D1 批复）：AudioContext 全链 NullSink 可观测——
+        // JS AudioContext 门面（shim part06）→ __zwWA* 宿主桥 → WebAudioRegistry
+        // advance → NullSink 帧数 + 过零率锚点（440Hz sine ≈880，M1 契约同款）。
+        use zero_script_sandbox::{Sandbox, V8Sandbox};
+        let registry = std::sync::Arc::new(std::sync::Mutex::new(crate::webaudio_registry::WebAudioRegistry::new()));
+        let config = zero_script_sandbox::SandboxConfig {
+            persistent_context: true,
+            ..Default::default()
+        };
+        let mut sandbox = V8Sandbox::with_config(config).expect("v8 sandbox");
+        crate::webaudio_registry::register_webaudio_bridge_callbacks(&mut sandbox, std::sync::Arc::clone(&registry));
+        // JS AudioContext 门面在 js_dom_shim（part06）——测试沙箱需装载 shim
+        //（生产侧 webview.rs 构建 sandbox 后同款 execute）。
+        sandbox
+            .execute(zero_engine::generate_js_dom_shim())
+            .expect("load js_dom_shim");
+
+        // JS 面：AudioContext + createOscillator + start（桥注入面）。
+        sandbox
+            .execute(
+                "var ctx = new AudioContext();\
+                 globalThis.__osc = ctx.createOscillator();\
+                 globalThis.__osc.type = 'sine';\
+                 globalThis.__osc.frequency.value = 440;\
+                 globalThis.__state = ctx.state;\
+                 globalThis.__sr = ctx.sampleRate;\
+                 globalThis.__osc.start(0);",
+            )
+            .unwrap();
+        assert_eq!(
+            sandbox.execute("globalThis.__state").unwrap().value,
+            "running",
+            "state 恒 running（headless 面）"
+        );
+        assert_eq!(
+            sandbox.execute("String(globalThis.__sr)").unwrap().value,
+            "48000",
+            "sampleRate NullSink 固定值"
+        );
+        assert_eq!(
+            sandbox.execute("String(globalThis.__zw_wa_active())").unwrap().value,
+            "1",
+            "start 后存在活跃源"
+        );
+        // 泵推进 ~1 秒（1ms 泵节拍 × 1000 tick——tab_worker 同款节拍；
+        // advance 每 tick 写 48 帧 = 48000Hz/1000）→ NullSink 可观测断言。
+        {
+            let mut reg = registry.lock().unwrap_or_else(|e| e.into_inner());
+            for tick in 0..1000u64 {
+                reg.advance(tick);
+            }
+            // 1000 tick × 48 帧 = 48000；宿主调度取整差 ~3% 容差（首 tick gate）。
+            assert!(
+                reg.frames_written() >= 45_000,
+                "1 秒推进应写入 ≈48000 帧（got {}）",
+                reg.frames_written()
+            );
+            let zps = reg.zero_crossings_per_second().unwrap();
+            assert!((zps - 880.0).abs() < 25.0, "440Hz sine 过零率锚点 ≈880（got {zps}）");
+        }
+        // stop(0) → 活跃源清零。
+        sandbox.execute("globalThis.__osc.stop(0);").unwrap();
+        {
+            let reg = registry.lock().unwrap_or_else(|e| e.into_inner());
+            std::thread::sleep(std::time::Duration::from_millis(5));
+            assert!(!reg.is_any_active(), "stop 后无活跃源");
+        }
+    }
 }

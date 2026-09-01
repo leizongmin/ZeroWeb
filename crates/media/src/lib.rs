@@ -36,6 +36,7 @@ mod decode;
 mod mixer;
 mod opus_decode;
 mod player;
+mod webaudio;
 
 #[cfg(test)]
 mod tests;
@@ -50,3 +51,4 @@ pub use decode::*;
 pub use mixer::*;
 pub use opus_decode::*;
 pub use player::*;
+pub use webaudio::*;
