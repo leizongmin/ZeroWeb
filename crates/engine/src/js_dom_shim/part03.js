@@ -11427,7 +11427,45 @@
           };
         }
         if (prop === 'canPlayType' && (_realTag(sel, handle) === 'AUDIO' || _realTag(sel, handle) === 'VIDEO')) {
-          return function () { return ''; };
+          // media-elements M4g-d（media-playback M0 选型落地联动）：能力表由解码面
+          // 真值驱动——zero-media 路线 C 实装面：webm/ogg 容器 + VP9 视频 + Vorbis 音频。
+          // spec「canPlayType(type)」：容器支持 → 'maybe'（无 codecs 参数时不给
+          // 'probably'）；type+codecs 全支持 → 'probably'；否则 ''。
+          // VP8/Opus/Theora/AAC/H.264 不在解码面 → ''（不虚报）。
+          // https://html.spec.whatwg.org/multipage/media.html#dom-navigator-canplaytype
+          var _cptTable = {
+            'audio/mpeg': { audio: ['mp3'], video: [] },
+            'audio/ogg': { audio: ['vorbis'], video: [] },
+            'audio/webm': { audio: ['vorbis'], video: [] },
+            'video/ogg': { audio: ['vorbis'], video: [] },
+            'video/webm': { audio: ['vorbis'], video: ['vp9'] }
+          };
+          return function (type) {
+            var _t = String(type == null ? '' : type);
+            // 容器名 = 分号前的媒体类型段（trim；大小写不敏感——MIME 语义）。
+            var _semi = _t.indexOf(';');
+            var _container = (_semi < 0 ? _t : _t.slice(0, _semi)).trim().toLowerCase();
+            var _entry = _cptTable[_container];
+            if (!_entry) return '';
+            var _m = /codecs\s*=\s*"([^"]*)"/.exec(_t) || /codecs\s*=\s*([^\s;]+)/.exec(_t);
+            if (!_m) return 'maybe';
+            var _codecs = _m[1].split(',').map(function (c) { return c.trim().toLowerCase(); });
+            if (_codecs.length === 0 || (_codecs.length === 1 && _codecs[0] === '')) return 'maybe';
+            // mp3 codec 别名归一（'mp3' 与 'mp4a.69'/'mp4a.6b' 同物——MPEG-1 Layer III）；
+            // vp9.0/vp8.0 尾缀版本号归一（Chromium 同面——WPT video/webm codecs 表）。
+            var _alias = { 'mp4a.69': 'mp3', 'mp4a.6b': 'mp3', 'vp9.0': 'vp9', 'vp8.0': 'vp8' };
+            _codecs = _codecs.map(function (c) { return _alias[c] || c; });
+            var _known = {};
+            var _i;
+            for (_i = 0; _i < _entry.audio.length; _i++) _known[_entry.audio[_i]] = 1;
+            for (_i = 0; _i < _entry.video.length; _i++) _known[_entry.video[_i]] = 1;
+            // 全部 codec 都在支持面 → 'probably'；任一不认识 → ''（spec：部分支持
+            // 不报 'maybe'——「can the resource be played」保守面）。
+            for (_i = 0; _i < _codecs.length; _i++) {
+              if (!_known[_codecs[_i]]) return '';
+            }
+            return 'probably';
+          };
         }
         // media-elements M3：textTracks（TextTrackList，same object 身份）+ addTextTrack
         //（kind 枚举精确匹配——大小写敏感，非枚举值/缺省 → TypeError；label/language 为

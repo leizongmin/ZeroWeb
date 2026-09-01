@@ -294,8 +294,8 @@ fn test_audio_constructor_and_media_methods_r2835() {
     );
     assert_eq!(
         sandbox.execute("String(globalThis.__cpt)").unwrap().value,
-        "",
-        "audio.canPlayType 返空串（保守不可播放）"
+        "maybe",
+        "audio.canPlayType('audio/mpeg') → maybe（M4g-d 能力表：MP3 解码面容器支持）"
     );
     // play().then 回调经 microtask checkpoint 派发——下个 execute 读到 __played。
     sandbox.execute("void 0").unwrap(); // 触发 microtask checkpoint
@@ -3528,4 +3528,75 @@ fn test_media_bridge_playpath_m2a_5b() {
         calls2.contains("pause:https://wpt.test/media/movie.webm"),
         "pause 应调桥，got {calls2}"
     );
+}
+
+#[test]
+fn test_media_can_play_type_capability_table_m4gd() {
+    // media-elements M4g-d（跨 goal 联动：media-playback M0 选型落地后能力表更新）——
+    // canPlayType 由解码面真值驱动（zero-media 路线 C：webm/ogg 容器 + VP9 视频 +
+    // Vorbis/MP3 音频）。spec 语义：容器支持无 codecs → 'maybe'；type+codecs 全
+    // 支持 → 'probably'；不在面内（VP8/Opus/Theora/H.264/AAC）或未知容器 → ''。
+    // WPT mime-types/canPlayType.html 断言面（41 PF → 面 in-face 子测转 Pass）。
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://wpt.test/t.html".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox.execute(
+        "var a = document.createElement('audio');\
+         var v = document.createElement('video');\
+         globalThis.__r = {\
+           webmType: v.canPlayType('video/webm'),\
+           oggType: a.canPlayType('audio/ogg'),\
+           webmAudio: a.canPlayType('audio/webm'),\
+           mp3Type: a.canPlayType('audio/mpeg'),\
+           vp9: v.canPlayType('video/webm; codecs=\"vp9\"'),\
+           vp9Dot: v.canPlayType('video/webm; codecs=\"vp9.0\"'),\
+           vorbis: v.canPlayType('video/webm; codecs=\"vorbis\"'),\
+           pair: v.canPlayType('video/webm; codecs=\"vp9, vorbis\"'),\
+           vp8: v.canPlayType('video/webm; codecs=\"vp8\"'),\
+           opus: a.canPlayType('audio/ogg; codecs=\"opus\"'),\
+           bogus: v.canPlayType('video/webm; codecs=\"bogus\"'),\
+           h264: v.canPlayType('video/mp4; codecs=\"avc1.42E01E\"'),\
+           mp4: v.canPlayType('video/mp4'),\
+           unknown: v.canPlayType('video/x-new-fictional-format'),\
+           octet: v.canPlayType('application/octet-stream'),\
+           caseIns: v.canPlayType('VIDEO/WEBM'),\
+           noSemis: v.canPlayType('video/webm;'),\
+           agree: a.canPlayType('video/webm') === v.canPlayType('video/webm')\
+         };",
+    ).unwrap();
+
+    let mut get = |k: &str| sandbox.execute(&format!("String(globalThis.__r.{k})")).unwrap().value;
+    // 容器支持无 codecs → 'maybe'（spec：不给 'probably'）。
+    assert_eq!(get("webmType"), "maybe", "video/webm 容器 → maybe");
+    assert_eq!(get("oggType"), "maybe", "audio/ogg 容器 → maybe");
+    assert_eq!(get("webmAudio"), "maybe", "audio/webm 容器 → maybe");
+    assert_eq!(get("mp3Type"), "maybe", "audio/mpeg 容器 → maybe（MP3 解码面）");
+    // type+codecs 全在解码面 → 'probably'。
+    assert_eq!(get("vp9"), "probably", "vp9 → probably");
+    assert_eq!(get("vp9Dot"), "probably", "vp9.0 别名 → probably");
+    assert_eq!(get("vorbis"), "probably", "vorbis → probably");
+    assert_eq!(get("pair"), "probably", "vp9+vorbis 双 codec → probably");
+    // 不在解码面 → ''（不虚报）。
+    assert_eq!(get("vp8"), "", "vp8 不在解码面 → ''");
+    assert_eq!(get("opus"), "", "opus 不在解码面 → ''");
+    assert_eq!(get("bogus"), "", "bogus codec → ''");
+    assert_eq!(get("h264"), "", "H.264（D-RFC-3 未立项）→ ''");
+    assert_eq!(get("mp4"), "", "video/mp4 容器不在面 → ''");
+    assert_eq!(get("unknown"), "", "未知容器 → ''");
+    assert_eq!(get("octet"), "", "application/octet-stream → ''");
+    // 语义边界：MIME 大小写不敏感、悬空分号 = 无 codecs → maybe、audio/video 一致。
+    assert_eq!(get("caseIns"), "maybe", "容器名大小写不敏感");
+    assert_eq!(get("noSemis"), "maybe", "悬空分号 = 无 codecs → maybe");
+    assert_eq!(get("agree"), "true", "audio/video canPlayType 一致（WPT 断言面）");
 }

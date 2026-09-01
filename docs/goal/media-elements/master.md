@@ -2,8 +2,10 @@
 
 **入口文档**: [../media-elements.md](../media-elements.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-01（M3 扩批 VI 落地——preload IDL setter 反射补缺 + 全 IDL
-setter sweep 巡检收口；90.1% 维持，60 用例 Fail/Timeout 保持双清零）
+**最后更新**: 2026-09-01（**M4g-d canPlayType 能力表落地**（media-playback M0 选型
+联动——跨 goal 依赖兑现）：webm/ogg 容器 'maybe' + vp9/vorbis/mp3 'probably'，
+域外 codec 诚实 ''；**93.5%**（386P/0F/0T/27PF，90.1%→93.5%，+14P）；
+Fail/Timeout 维持双清零）
 
 ---
 
@@ -149,8 +151,8 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
 - ✅ FR-009 资源 settle：audio/video/source/track 的 fetch 状态提交 + load/error 事件
   （error/readyState/networkState 初值、src 反射、historical 面均绿——**修正 2026-08-17
   立项时低估**：初值面与状态常量并非全缺）
-- ✅ R2835 四方法：play()/pause()/load()/canPlayType()（canPlayType 恒 ''——合法保守值，
-  能力表为空）
+- ✅ R2835 四方法：play()/pause()/load()/canPlayType()（canPlayType 能力表 2026-09-01
+  真值化——webm/ogg 容器 maybe + vp9/vorbis/mp3 probably，域外 ''）
 - ⚠️ 媒体专有 IDL 属性面缺失：currentTime/duration(NaN)/playbackRate/preload/
   crossOrigin 归一/seeking/paused 等（F2）
 - ⚠️ `<track>` 反射 + TextTrack/TextTrackList/addTextTrack/textTracks 全缺（F1/F3）
@@ -168,14 +170,15 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
 | M4g-a | 媒体元数据 IDL 反射（初值面） | ✅ 切片 3 落地 | F2 闭合（-9 Fail） |
 | M4g-b | `<track>` 反射 + TextTrack 最小面 | ✅ M3 落地（TextTrack 接口/addTextTrack/textTracks/track.track 全绿） | F1/F3 闭合 |
 | M4g-c | track.src URL 解析 + \0 剥离 | ✅ 切片 3 落地（含 `<a href="">` 修复） | F6 闭合（-6 Fail） |
-| M4g-d | canPlayType 能力表（空表→选型面更新） | ⬜ 等 media-playback M0 选型 | F5（41 PF，非 bug） |
+| M4g-d | canPlayType 能力表（空表→选型面更新） | ✅ 2026-09-01 落地（media-playback 流代行——跨 goal 联动兑现）：能力表由解码面真值驱动（webm/ogg 容器 maybe + vp9/vorbis/mp3 probably，VP8/Opus/Theora/H.264/AAC 域外诚实 ''）；**93.5%**（386P/0F/0T/27PF，+14P）；单测 `test_media_can_play_type_capability_table_m4gd`（18 断言面） | F5（41→27 PF，in-face 全转 Pass） |
 
 ## 下一步计划
 
 1. **扩大导入面（下一轮首选）**：the-video-element 反射面（video-tabindex / video_crash_empty_src
    等）+ media-elements 剩余可跑面（loading-the-media-resource 的 resource-selection
    pointer 族——依赖真网络 fetch 判定，视 mutation 面支撑情况）→ 扩大基线盘子。
-2. **M4g-d**：canPlayType 能力表等 media-playback M0 选型落地后联动更新（跨 goal 依赖）。
+2. ~~**M4g-d**：canPlayType 能力表联动更新~~ ✅ 2026-09-01 兑现（能力表真值化，
+   93.5%——后续新增解码面（AV1/H.264，media-playback M3）时同步扩表）。
 
 ## 里程碑状态
 
