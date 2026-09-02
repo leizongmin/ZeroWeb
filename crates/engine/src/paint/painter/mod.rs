@@ -576,6 +576,67 @@ impl Painter {
         self.canvas_images.push((ctx_id, cw, ch, rgba));
     }
 
+    /// R3933（CSS2 replaced elements + SVG2）：inline `<svg>` 元素内容栅格化绘制。
+    ///
+    /// inline `<svg>` 无外部 URL——序列化其 DOM 子树为 SVG 文本（zero-dom serializer，
+    /// 根无 xmlns 时补默认命名空间供 usvg 解析），按盒尺寸矢量栅格化产 rgba，经
+    /// `canvas_images` 通路注入 ImageCache（key = 序列化字节哈希，与 canvas ctx_id 同槽）。
+    /// 样式/尺寸已由 CSS 处理（R3932 前缀拆分后选择器命中），此处只取盒几何。
+    /// 背景色：SVG 根默认透明，元素的 CSS background 已由盒装饰路径绘制，不在此处理。
+    pub(crate) fn paint_svg_element(&mut self, box_node: &LayoutBox, abs_x: f32, abs_y: f32, doc: &Document) {
+        // R3933 kill-switch：inline svg paint 默认关——激活后暴露 102 案「双白假绿」
+        // （ref 页同含 svg，此前双页不渲 svg 恒等假 PASS；真渲染后 svg transform/
+        // viewport 语义差异显形，净 corpus -84）。待 svg transform-origin/viewport
+        // 语义切片落地后再默认放开（ZW_INLINE_SVG_PAINT=1 手动验证）。
+        if std::env::var("ZW_INLINE_SVG_PAINT").as_deref() != Ok("1") {
+            return;
+        }
+        let Some(node_id) = box_node.node_id else {
+            return;
+        };
+        let Some(node) = doc.get(node_id) else {
+            return;
+        };
+        let NodeKind::Element(elem) = &node.kind else {
+            return;
+        };
+        if elem.local_name() != "svg" {
+            return;
+        }
+        let container_w = box_node.content_width;
+        let container_h = box_node.content_height;
+        if container_w <= 1.0 || container_h <= 1.0 {
+            return;
+        }
+        // 序列化子树为 SVG 源文本；usvg 要求根有 SVG 命名空间——序列化保留属性但
+        // XHTML 文档的默认 xmlns 在根 html 上、svg 元素可能只有 xmlns:svg 前缀声明，
+        // 检测根 open tag 无 `xmlns=` 时补默认命名空间（替换/插入一次）。
+        let mut source = doc.outer_html(node_id);
+        if !source.contains("xmlns=")
+            && let Some(idx) = source.find('>')
+        {
+            source.insert_str(idx, " xmlns=\"http://www.w3.org/2000/svg\"");
+        }
+        let key_hash = crate::paint::simple_hash(&source);
+        let target_w = container_w.round().max(1.0) as u32;
+        let target_h = container_h.round().max(1.0) as u32;
+        let Ok(data) = zero_render_foundation::image_cache::rasterize_svg_at(source.as_bytes(), target_w, target_h)
+        else {
+            return; // 解析失败（畸形 SVG）→ 无图元，与 img 404 行为一致
+        };
+        let content_x = abs_x + box_node.border_left + box_node.padding_left;
+        let content_y = abs_y + box_node.border_top + box_node.padding_top;
+        self.primitives
+            .add_image(zero_render_foundation::primitive::ImagePrimitive {
+                rect: zero_render_foundation::geometry::Rect::new(content_x, content_y, container_w, container_h),
+                image_key: zero_render_foundation::image_cache::ImageKey::new(key_hash),
+                clip: None,
+                source: None,
+            });
+        self.canvas_images
+            .push((key_hash, data.width, data.height, data.pixels));
+    }
+
     /// R3268 canvas 显示链路：设置 CanvasRegistry（JS getContext 侧与 painter 共享）。
     pub fn set_canvas_registry(
         &mut self,
@@ -1255,6 +1316,10 @@ impl Painter {
                     // 4b0. <canvas> 元素绘制（R3268 canvas 显示链路——canvas 像素 →
                     // ImagePrimitive → 渲染侧 ImageCache）
                     self.paint_canvas_element(box_node, abs_x, abs_y, doc);
+
+                    // 4b0c. inline <svg> 元素绘制（R3933——DOM 子树序列化 → 栅格化 →
+                    // ImagePrimitive，canvas 同款两段式通路）
+                    self.paint_svg_element(box_node, abs_x, abs_y, doc);
 
                     // 4b0b. <video> 当前帧绘制（media-playback M1b——解码像素 →
                     // ImagePrimitive → 渲染侧 ImageCache，canvas/img 同款通路）

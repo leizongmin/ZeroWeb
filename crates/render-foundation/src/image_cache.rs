@@ -282,7 +282,10 @@ fn inject_svg_target_dims(source: &[u8], target_w: u32, target_h: u32) -> Vec<u8
 /// 解析——百分比内容按真实 viewport 解析（usvg 对缺失 width/height 用默认 100×100，
 /// 位图缩放会把 10% stroke 之类的 viewport 相对值错位）。双 abs SVG 保持固有 viewport
 /// 等比 `Transform::from_scale` 放大。目标含 0 维返回 Err。
-fn rasterize_svg_at(source: &[u8], target_w: u32, target_h: u32) -> Result<ImageData, String> {
+/// R3933（inline `<svg>` paint）：按目标尺寸矢量栅格化 SVG 源字节——
+/// inline `<svg>` 元素无外部 URL，painter 序列化其 DOM 子树后直接调用本函数产像素
+/// （canvas/video 同款两段式：painter 产 rgba + ImagePrimitive，调用方注入 ImageCache）。
+pub fn rasterize_svg_at(source: &[u8], target_w: u32, target_h: u32) -> Result<ImageData, String> {
     if target_w == 0 || target_h == 0 {
         return Err("SVG 目标尺寸为 0".to_string());
     }

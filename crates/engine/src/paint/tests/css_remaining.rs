@@ -459,3 +459,53 @@ fn test_all_indicators_combined() {
     let painter = paint_with_style(&style);
     assert!(painter.primitives().fills.len() >= 10);
 }
+
+/// R3933（CSS2 replaced elements + SVG2）：inline `<svg>` paint 栅格化。
+/// kill-switch `ZW_INLINE_SVG_PAINT=1` 激活后：svg 元素产 ImagePrimitive +
+/// canvas_images 像素（canvas 同款两段式通路）；默认关（svg transform/viewport
+/// 语义切片前 102 案双白假绿 unmask 域）。
+#[test]
+fn r3933_inline_svg_paint_rasterizes_under_kill_switch() {
+    let html = r#"<html><body style="margin:0"><div style="position: relative; width: 200px; height: 100px;"><svg width="100" height="50" xmlns="http://www.w3.org/2000/svg" style="position: absolute; left: 0; top: 0; width: 100px; height: 50px;"><rect width="100" height="50" fill="blue"/></svg></div></body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let svg_id = doc
+        .get_elements_by_tag_name("svg")
+        .into_iter()
+        .next()
+        .expect("svg element");
+
+    let mut sys = zero_style_system::StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let mut engine = zero_layout_engine::LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+
+    fn find(id: zero_dom::NodeId, b: &LayoutBox) -> Option<&LayoutBox> {
+        if b.node_id == Some(id) {
+            return Some(b);
+        }
+        b.children.iter().find_map(|c| find(id, c))
+    }
+    let box_node = find(svg_id, &result.root).expect("svg box");
+
+    // 默认关：无图元。
+    let mut painter = Painter::new();
+    let style = ComputedStyle::default();
+    painter.paint_svg_element(box_node, 0.0, 0.0, &doc);
+    assert_eq!(painter.primitives().images.len(), 0, "默认关应无 svg 图元");
+    assert!(painter.canvas_images.is_empty(), "默认关应无像素注入");
+
+    // 开关开：1 图元 + canvas_images 像素（100x50 盒）。
+    // SAFETY：单线程测试环境（cargo test 默认多线程但本断言窗口内无其他读线程）。
+    // 2024 edition 起 set_var/remove_var 为 unsafe。
+    unsafe { std::env::set_var("ZW_INLINE_SVG_PAINT", "1") };
+    let mut painter_on = Painter::new();
+    painter_on.paint_svg_element(box_node, 0.0, 0.0, &doc);
+    unsafe { std::env::remove_var("ZW_INLINE_SVG_PAINT") };
+    assert_eq!(painter_on.primitives().images.len(), 1, "开关开应有 1 个 svg 图元");
+    assert_eq!(painter_on.canvas_images.len(), 1, "canvas_images 应携带栅格化像素");
+    let (key, w, h, rgba) = &painter_on.canvas_images[0];
+    assert_eq!((*w, *h), (100, 50), "栅格化尺寸应等于盒尺寸");
+    assert!(!rgba.is_empty(), "像素非空");
+    assert_ne!(*key, 0, "哈希键非零");
+}
