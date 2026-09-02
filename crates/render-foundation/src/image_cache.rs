@@ -282,6 +282,252 @@ fn inject_svg_target_dims(source: &[u8], target_w: u32, target_h: u32) -> Vec<u8
 /// 解析——百分比内容按真实 viewport 解析（usvg 对缺失 width/height 用默认 100×100，
 /// 位图缩放会把 10% stroke 之类的 viewport 相对值错位）。双 abs SVG 保持固有 viewport
 /// 等比 `Transform::from_scale` 放大。目标含 0 维返回 Err。
+/// R3935 隔离验证结论：usvg 0.47 对 transform-origin 的 **px 值**形式处理正确
+///（attr 与手写等价链渲染逐字节一致），**关键字**形式（center/left/right/top/bottom——
+/// WPT svg-origin 簇全用）解析有缺陷（渲染错位）。本预处理把非 px 值翻译成 px 值，
+/// 交 usvg 已验证正确的路径。
+///
+/// R3936（CSS Transforms 1 §transform-origin + SVG2 + css-transforms-1 §svg-transform）：
+/// 把 SVG 文本中 `transform-origin="<value>"` 的**关键字/百分比**值翻译成 px（按 origin
+/// 所在 `<rect>` 元素 bbox，即 fill-box 语义——WPT svg-origin-relative-length 簇形态；
+/// 与 usvg 0.47 px origin 参照 = 元素 bbox 一致，r3936c 可区分对照实证）。非法组合
+/// 按声明忽略回落 bbox 中心。**纯 px/无单位数值**透传：usvg 按用户空间绝对坐标解释，
+/// 与 view-box 参照原点重合，本就正确（svg-origin-length 簇全绿实证）。非 rect 元素/
+/// 几何缺失 → 原样保留（fail-closed，语义保守勿误翻）。
+///
+/// 注：WPT 案的 `transform-box: fill-box` 声明位于 HTML `<head>` 的 `<style>` 内，
+/// 序列化 SVG 子树时不可见——参照系只能以值形态判别（关键字/百分比 → bbox 翻译）。
+pub(crate) fn preprocess_svg_transform_origin(source: &[u8]) -> Vec<u8> {
+    let Ok(text) = std::str::from_utf8(source) else {
+        return source.to_vec();
+    };
+    if !text.contains("transform-origin") {
+        return source.to_vec();
+    }
+    let token = "transform-origin=\"";
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    let mut changed = false;
+    while let Some(pos) = rest.find(token) {
+        let value_start = pos + token.len();
+        let Some(value_len) = rest[value_start..].find('"') else {
+            // 未闭合（畸形）——原样拷贝余下文本退出，fail-closed。
+            out.push_str(rest);
+            return out.into_bytes();
+        };
+        let raw_value = &rest[value_start..value_start + value_len];
+        out.push_str(&rest[..value_start]);
+        // 纯数值双值（px/无单位，可负）→ 透传（usvg 用户空间绝对坐标 = view-box 语义，
+        // svg-origin-length 簇全绿实证）；单值数字/关键字/百分比 → rect bbox 翻译；
+        // 非法组合 → 删除 attr（CSS 声明忽略——usvg 缺省 pivot = viewport 中心，与
+        // chromium 对无效 SVG attr origin 的行为一致——PROBE23 实证）。
+        // rect 几何从 **token 前缀**解析（origin 所在元素的开标签必在 token 之前；
+        // 传全文会 rfind 到其后标签）。
+        let token_count = raw_value.split_whitespace().count();
+        // 未知单位（cm/in/pt/mm/q/em 等）：view-box 语义下 usvg 自行解析物理单位
+        //（svg-origin-length-{cm,in,pt} 簇 run1 透传全绿实证）——Keep 勿动。
+        // 识别集：无单位数字 / px / 百分比 / 关键字。
+        let known = raw_value.split_whitespace().all(|t| {
+            origin_value_is_two_numbers(t)
+                || t.ends_with('%')
+                || matches!(t, "left" | "center" | "right" | "top" | "bottom")
+        });
+        let action = if !known {
+            OriginAction::Keep
+        } else if token_count == 1 && origin_value_is_two_numbers(raw_value) {
+            // 单值数字：CSS 第二轴缺省 center，usvg 单值 Y 缺省 = 0（缺陷）——
+            // 翻成「值 + bbox 中心 Y」双值（PROBE22：012/013 案实证）。
+            match resolve_transform_origin_rect_bbox_single(&rest[..pos], raw_value) {
+                Some(px) => OriginAction::Rewrite(px),
+                None => OriginAction::Keep,
+            }
+        } else if origin_value_is_two_numbers(raw_value) {
+            // 双值纯数值 → 透传（usvg 用户空间绝对坐标 = view-box 语义）。
+            OriginAction::Keep
+        } else {
+            match resolve_transform_origin_rect_bbox(&rest[..pos], raw_value) {
+                Some(px) => OriginAction::Rewrite(px),
+                None => OriginAction::Drop,
+            }
+        };
+        match action {
+            OriginAction::Rewrite(px) => {
+                out.push_str(&px);
+                changed = true;
+            }
+            OriginAction::Keep => out.push_str(raw_value),
+            OriginAction::Drop => {
+                // 删除整个 attr：回退到 token 前面已写入的部分去掉尾部 `transform-origin="`。
+                // out 当前以 `...transform-origin="` 结尾——截掉 token 本身。
+                let truncate = out.len() - token.len();
+                out.truncate(truncate);
+                // 若截断后尾部残留多余空白，保留原样（无害）。
+                changed = true;
+                rest = &rest[value_start + value_len..]; // 跳过值，闭引号由下一轮外的 push 处理
+                // 注意：value 后的闭引号 `"` 属于 rest 的第一个字符——也须删除。
+                rest = rest.strip_prefix('"').unwrap_or(rest);
+                // 此时 rest 以空格或 `/>` 开头，正常继续。
+                continue;
+            }
+        }
+        rest = &rest[value_start + value_len..];
+    }
+    out.push_str(rest);
+    if changed { out.into_bytes() } else { source.to_vec() }
+}
+
+/// 预处理对单个 transform-origin attr 的动作。
+#[derive(Clone, PartialEq, Debug)]
+enum OriginAction {
+    /// 改写为给定 px 值。
+    Rewrite(String),
+    /// 原样保留。
+    Keep,
+    /// 删除 attr（CSS 声明无效 → 忽略整条声明）。
+    Drop,
+}
+
+/// origin 值是否全部为纯数值 token（px 或无单位数字，可负；1-2 个空白分隔）。
+fn origin_value_is_two_numbers(value: &str) -> bool {
+    let parts: Vec<&str> = value.split_whitespace().collect();
+    !parts.is_empty()
+        && parts.len() <= 2
+        && parts.iter().all(|t| {
+            let n = t.strip_suffix("px").unwrap_or(t).trim();
+            n.parse::<f32>().is_ok()
+        })
+}
+
+/// rect bbox 参照：从 origin attr 所在元素的开标签前缀解析 rect 几何（x/y/width/height
+/// attr；缺 x/y 默认 0），按 fill-box 语义翻译 origin 分量为绝对 px。
+/// 非 rect 元素或几何缺失 → None（调用方落 Drop/Keep，fail-closed）。
+fn resolve_transform_origin_rect_bbox(prefix: &str, value: &str) -> Option<String> {
+    let tag_open = prefix.rfind('<')?;
+    let tag = &prefix[tag_open..];
+    let after_tag_name = tag
+        .strip_prefix("<rect")
+        .filter(|t| t.starts_with(char::is_whitespace))?;
+    let attr = |name: &str| -> Option<f64> {
+        // 左边界要求空白前缀，防 `x="` 误匹配 `rx="` / `width="` 内子串。
+        let pat = format!(r#" {name}=""#);
+        let idx = after_tag_name.find(&pat)?;
+        let after = &after_tag_name[idx + pat.len()..];
+        let end = after.find('"')?;
+        after[..end].trim().parse::<f64>().ok()
+    };
+    let x = attr("x").unwrap_or(0.0) as f32;
+    let y = attr("y").unwrap_or(0.0) as f32;
+    let w = attr("width")? as f32;
+    let h = attr("height")? as f32;
+    resolve_origin_components(value, (x, y), (x + w, y + h))
+}
+
+/// 单值数字的 bbox 参照翻译：x = 值（相对 bbox 左缘），y = bbox 垂直中心（CSS 单值
+/// 第二轴缺省 center——usvg 单值时 Y 缺省 0 是缺陷，须补齐）。
+/// 非 rect 元素或几何缺失 → None（保留原样）。
+fn resolve_transform_origin_rect_bbox_single(prefix: &str, value: &str) -> Option<String> {
+    let tag_open = prefix.rfind('<')?;
+    let tag = &prefix[tag_open..];
+    let after_tag_name = tag
+        .strip_prefix("<rect")
+        .filter(|t| t.starts_with(char::is_whitespace))?;
+    let attr = |name: &str| -> Option<f64> {
+        let pat = format!(r#" {name}=""#);
+        let idx = after_tag_name.find(&pat)?;
+        let after = &after_tag_name[idx + pat.len()..];
+        let end = after.find('"')?;
+        after[..end].trim().parse::<f64>().ok()
+    };
+    let x = attr("x").unwrap_or(0.0) as f32;
+    let y = attr("y").unwrap_or(0.0) as f32;
+    let h = attr("height")? as f32;
+    let v = value.strip_suffix("px").unwrap_or(value).trim().parse::<f32>().ok()?;
+    Some(format!("{}px {}px", x + v, y + h / 2.0))
+}
+
+/// origin 分量 → px：`origin` = 参照盒左上，`extent` = 右下。关键字 = 对应缘/中点；
+/// 百分比 = origin + p%×轴跨；px 长度 = origin + 值。返回 `Some` = 绝对 px 改写；
+/// `None` = 非法组合 → 调用方 Drop（删除 attr；CSS 声明忽略语义——usvg 缺省 pivot
+/// = viewport 中心，与 chromium 忽略无效 SVG presentation attr 一致——PROBE23 实证）。
+///
+/// 词法（CSS Position §4 `<position>`）：单值 = 水平词/长度（垂直单关键字 top/bottom
+/// 翻为水平 center + 该词）；双词歧义交换（垂直关键字首词或 center+水平词）；同轴对
+/// / 垂直首词+偏移（`top 100%`）等非法组合 → None（Drop）。
+fn resolve_origin_components(value: &str, origin: (f32, f32), extent: (f32, f32)) -> Option<String> {
+    let (ox, oy) = origin;
+    let (ex, ey) = extent;
+    let parts: Vec<&str> = value.split_whitespace().collect();
+    if parts.is_empty() || parts.len() > 2 {
+        return None;
+    }
+    let is_h = |t: &str| matches!(t, "left" | "center" | "right");
+    let is_v = |t: &str| matches!(t, "top" | "center" | "bottom");
+    let is_len = |t: &str| {
+        t.strip_suffix('%').map_or_else(
+            || {
+                let v = t.strip_suffix("px").unwrap_or(t).trim();
+                v.parse::<f32>().is_ok() && (t.ends_with("px") || !v.is_empty() && !t.contains(['e', 'm']))
+            },
+            |p| p.trim().parse::<f32>().is_ok(),
+        )
+    };
+    let (h_word, v_word) = match parts.len() {
+        2 => {
+            let (a, b) = (parts[0], parts[1]);
+            // 词法按 WPT svg-origin-relative-length 全簇（含 invalid 12 案）校准：
+            // 合法 = 直排（水平词/长度 + 垂直词/长度）、交换（垂直关键字首词 +
+            // 水平关键字：`top left`/`center right`——CSS Position §4 关键字无歧义
+            // 可换序）；非法（`top 100%` 垂直首词+偏移、`left left` 同轴）→ 声明
+            // 忽略（None = Drop，删 attr 走 usvg 缺省 pivot——PROBE23 实证）。
+            let pair = if matches!(a, "top" | "bottom") {
+                if is_h(b) { Some((b, a)) } else { None }
+            } else if a == "center" && matches!(b, "left" | "right") {
+                Some((b, a))
+            } else if (is_h(a) || is_len(a)) && (is_v(b) || is_len(b)) {
+                Some((a, b))
+            } else {
+                None
+            };
+            match pair {
+                Some((h, v)) => (h, v),
+                // 非法组合 → None = Drop（删除 attr；usvg 缺省 pivot = viewport 中心，
+                // 与 chromium 对无效 SVG presentation attr 的忽略行为一致——PROBE23）。
+                None => return None,
+            }
+        }
+        _ => {
+            // 单值：水平词/长度（垂直缺省 center）或垂直单关键字（水平缺省 center）。
+            if is_v(parts[0]) && !is_h(parts[0]) {
+                ("center", parts[0])
+            } else {
+                (parts[0], "center")
+            }
+        }
+    };
+    let axis = |component: &str, o: f32, lo: f32, mid: f32, hi: f32, span: f32| -> Option<f32> {
+        match component {
+            "left" | "top" => Some(lo),
+            "center" => Some(mid),
+            "right" | "bottom" => Some(hi),
+            other => {
+                if let Some(pct) = other.strip_suffix('%') {
+                    let v = pct.trim().parse::<f32>().ok()?;
+                    return Some(o + v / 100.0 * span);
+                }
+                let v = other.strip_suffix("px").unwrap_or(other).trim().parse::<f32>().ok()?;
+                if other.ends_with("px") || !other.contains(['e', 'm']) {
+                    Some(o + v)
+                } else {
+                    None
+                }
+            }
+        }
+    };
+    let x = axis(h_word, ox, ox, ox + (ex - ox) / 2.0, ex, ex - ox)?;
+    let y = axis(v_word, oy, oy, oy + (ey - oy) / 2.0, ey, ey - oy)?;
+    Some(format!("{x}px {y}px"))
+}
+
 /// R3933（inline `<svg>` paint）：按目标尺寸矢量栅格化 SVG 源字节——
 /// inline `<svg>` 元素无外部 URL，painter 序列化其 DOM 子树后直接调用本函数产像素
 /// （canvas/video 同款两段式：painter 产 rgba + ImagePrimitive，调用方注入 ImageCache）。
@@ -289,7 +535,10 @@ pub fn rasterize_svg_at(source: &[u8], target_w: u32, target_h: u32) -> Result<I
     if target_w == 0 || target_h == 0 {
         return Err("SVG 目标尺寸为 0".to_string());
     }
-    let bytes = inject_svg_target_dims(source, target_w, target_h);
+    // R3936：transform-origin 预处理（fill-box/单 rect 参照，px 输出与源 viewport
+    // 无关）；须在 inject 之前保持源结构可解析。
+    let bytes = preprocess_svg_transform_origin(source);
+    let bytes = inject_svg_target_dims(&bytes, target_w, target_h);
     let tree = resvg::usvg::Tree::from_data(&bytes, &resvg::usvg::Options::default())
         .map_err(|e| format!("SVG 解析失败: {e}"))?;
     let size = tree.size();
@@ -2407,4 +2656,145 @@ fn r3935b_usvg_transform_origin_keyword_semantics() {
         (b.pixels[i], b.pixels[i + 1], b.pixels[i + 2])
     };
     println!("R3935b: A center={:?} B center={:?}", pa(50, 50), pb(50, 50));
+}
+
+#[cfg(test)]
+mod r3936_tests {
+    use super::*;
+
+    /// R3936：关键字 origin 按 rect bbox 改写（"center right" 对 rect(75,75,150,150)
+    /// → (225,150)）；纯 px 数值透传（usvg 用户空间绝对坐标 = view-box 语义）。
+    #[test]
+    fn r3936_preprocess_rewrites_keyword_origin() {
+        let kw = br##"<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200"><rect x="75" y="75" width="150" height="150" transform="rotate(90)" transform-origin="center right"/></svg>"##;
+        let out = preprocess_svg_transform_origin(kw);
+        let text = std::str::from_utf8(&out).unwrap();
+        assert!(
+            text.contains(r#"transform-origin="225px 150px""#),
+            "关键字 origin 应按 rect bbox 改写为 px 值: {text}"
+        );
+        // 纯数值：透传不翻。
+        let num = br##"<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200"><rect x="100" width="100" height="100" transform="rotate(90)" transform-origin="100px 0"/></svg>"##;
+        assert_eq!(
+            preprocess_svg_transform_origin(num),
+            num.to_vec(),
+            "纯数值 origin 应透传（usvg 用户空间绝对坐标）"
+        );
+    }
+
+    /// R3936：百分比/词序变体/单垂直关键字/非法回落/无 attr 不变（bbox 参照）。
+    #[test]
+    fn r3936_preprocess_variants() {
+        let rect = br##"<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200"><rect x="0" y="0" width="200" height="200" transform-origin="%ORIGIN%"/></svg>"##;
+        let with_origin = |o: &str| -> String {
+            let src = String::from_utf8_lossy(rect).replacen("%ORIGIN%", o, 1);
+            String::from_utf8_lossy(&preprocess_svg_transform_origin(src.as_bytes())).into_owned()
+        };
+        // 百分比（bbox=viewport 200×200）：50% → 100px。
+        assert!(with_origin("50%").contains(r#"transform-origin="100px 100px""#));
+        // 词序交换：top right → h=right(200), v=top(0)。
+        assert!(with_origin("top right").contains(r#"transform-origin="200px 0px""#));
+        // 单水平关键字 left → x=0, y=center=100。
+        assert!(with_origin("left").contains(r#"transform-origin="0px 100px""#));
+        // 单垂直关键字 top → x=center=100, y=0（018/019 案形态）。
+        assert!(with_origin("top").contains(r#"transform-origin="100px 0px""#));
+        assert!(with_origin("bottom").contains(r#"transform-origin="100px 200px""#));
+        // 非法组合（top 100%/left left，invalid 簇形态）→ attr 删除（声明忽略，
+        // usvg 缺省 pivot = viewport 中心，与 chromium 忽略无效 attr 一致）。
+        assert!(!with_origin("top 100%").contains("transform-origin"));
+        assert!(!with_origin("left left").contains("transform-origin"));
+        // 无该 attr：原字节不变。
+        let e = preprocess_svg_transform_origin(br##"<rect fill="red"/>"##);
+        assert_eq!(e, br##"<rect fill="red"/>"##);
+    }
+
+    /// R3936：单值数字 origin（"75"，svg-origin-relative-length-001/012/013 案形态）
+    /// → 「值 + bbox 垂直中心」双值 px（usvg 单值 Y 缺省 0 是缺陷，CSS 语义第二轴
+    /// = center）；未知单位（"2cm"，svg-origin-length-{cm,in,pt} 案形态）→ 原样透传。
+    #[test]
+    fn r3936_preprocess_single_value_and_unknown_units() {
+        let src = br##"<svg xmlns="http://www.w3.org/2000/svg"><rect width="150" height="150" transform="rotate(90)" transform-origin="75"/></svg>"##;
+        let out = preprocess_svg_transform_origin(src);
+        assert!(
+            String::from_utf8_lossy(&out).contains(r#"transform-origin="75px 75px""#),
+            "单值数字应翻成「值+bbox中心」双值: {}",
+            String::from_utf8_lossy(&out)
+        );
+        // 单值数字 + 非 0 bbox 原点（x=20,y=10）：x = 20+75, y = 10+75/2。
+        let src2 = br##"<svg xmlns="http://www.w3.org/2000/svg"><rect x="20" y="10" width="75" height="75" transform-origin="75"/></svg>"##;
+        let out2 = preprocess_svg_transform_origin(src2);
+        assert!(String::from_utf8_lossy(&out2).contains(r#"transform-origin="95px 47.5px""#));
+        // 未知物理单位：透传（usvg 自行解析，view-box 簇实证正确）。
+        let cm = br##"<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200"><rect width="150" height="150" transform="rotate(90)" transform-origin="2cm 0"/></svg>"##;
+        assert_eq!(preprocess_svg_transform_origin(cm), cm.to_vec());
+    }
+
+    /// R3936：单值数字翻成双值后端到端渲染与 ref 期望一致（012 案精确形态——
+    /// transform="rotate(90) translate(-75,-75)" origin="0" 期望 (0,75)）。
+    #[test]
+    fn r3936_single_value_render_matches_ref_expectation() {
+        let wrap = |inner: &str| {
+            format!(
+                r##"<svg xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="grad" x2="0%" y2="100%"><stop offset="50%" stop-color="orange"/><stop offset="50%" stop-color="fuchsia"/></linearGradient></defs><rect x="1" y="1" width="148" height="148" fill="red"/>{inner}</svg>"##
+            )
+        };
+        let ref_svg = r##"<svg xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="grad"><stop offset="50%" stop-color="fuchsia"/><stop offset="50%" stop-color="orange"/></linearGradient></defs><rect width="150" height="150" fill="url(#grad)"/></svg>"##;
+        let r = rasterize_svg_at(ref_svg.as_bytes(), 200, 200).expect("ref");
+        let t = rasterize_svg_at(
+            wrap(r##"<rect width="150" height="150" fill="url(#grad)" transform="rotate(90) translate(-75,-75)" transform-origin="0"/>"##).as_bytes(),
+            200, 200,
+        )
+        .expect("test");
+        let diff = t
+            .pixels
+            .chunks(4)
+            .zip(r.pixels.chunks(4))
+            .filter(|(a, b)| a != b)
+            .count();
+        assert_eq!(diff, 0, "预处理后单值 origin 渲染应与 ref 期望一致（diff={diff}）");
+    }
+
+    /// R3936 隔离：usvg 0.47 px origin 参照系（可区分对照——origin (100,100) 对
+    /// rect bbox 中点 (150,150) 与 viewport 中心 (100,100)）。
+    #[test]
+    fn r3936c_usvg_px_origin_reference_frame() {
+        let svg = |extra: &str| -> ImageData {
+            rasterize_svg_at(
+                format!(r##"<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200"><rect x="75" y="75" width="150" height="150" fill="#00ff00" {extra}/></svg>"##).as_bytes(),
+                100,
+                100,
+            )
+            .expect("rasterize")
+        };
+        let attr = svg(r#"transform="rotate(90)" transform-origin="100px 100px""#);
+        let vp_manual = svg(r#"transform="translate(100 100) rotate(90) translate(-100 -100)""#);
+        let bb_manual = svg(r#"transform="translate(150 150) rotate(90) translate(-150 -150)""#);
+        let d = |x: &ImageData, y: &ImageData| x.pixels.iter().zip(y.pixels.iter()).filter(|(a, b)| a != b).count();
+        println!(
+            "R3936c: attr-vs-viewport(100,100)={} attr-vs-bbox-center(150,150)={}",
+            d(&attr, &vp_manual),
+            d(&attr, &bb_manual)
+        );
+    }
+
+    /// R3936：端到端——预处理后关键字 origin（042 案形态）渲染与手写
+    /// 等价链一致（origin 绝对位 = bbox 右缘中点 (225,150)）。
+    #[test]
+    fn r3936_keyword_origin_render_matches_manual_after_preprocess() {
+        let attr_form = rasterize_svg_at(
+            br##"<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200"><rect x="75" y="75" width="150" height="150" fill="#00ff00" transform="rotate(90)" transform-origin="center right"/></svg>"##,
+            100, 100,
+        ).expect("attr form");
+        let manual = rasterize_svg_at(
+            br##"<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200"><rect x="75" y="75" width="150" height="150" fill="#00ff00" transform="translate(225 150) rotate(90) translate(-225 -150)"/></svg>"##,
+            100, 100,
+        ).expect("manual form");
+        let diff = attr_form
+            .pixels
+            .iter()
+            .zip(manual.pixels.iter())
+            .filter(|(a, b)| a != b)
+            .count();
+        assert_eq!(diff, 0, "预处理后关键字 origin 渲染应与手写等价链一致（diff={diff}）");
+    }
 }
