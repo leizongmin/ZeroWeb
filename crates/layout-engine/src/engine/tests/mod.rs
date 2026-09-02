@@ -631,10 +631,7 @@ fn r3918_atomic_inline_after_clamp_point_hidden() {
                 b.height
             );
         } else {
-            assert!(
-                b.line_clamp_hidden,
-                "span {i} after clamp point must be hidden"
-            );
+            assert!(b.line_clamp_hidden, "span {i} after clamp point must be hidden");
         }
     }
 }

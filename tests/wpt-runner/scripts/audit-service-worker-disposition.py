@@ -47,6 +47,7 @@ CORE_ASSET_MANIFESTS = [
     EVIDENCE_DIR / "2026-08-21-m3-update-not-allowed-assets.tsv",
     EVIDENCE_DIR / "2026-08-21-m3-skip-waiting-no-client-assets.tsv",
     EVIDENCE_DIR / "2026-08-21-m3-clients-matchall-evaluation-assets.tsv",
+    EVIDENCE_DIR / "2026-08-31-m3-message-lifecycle-assets.tsv",
 ]
 REVIEW_FILES = [
     EVIDENCE_DIR / "2026-08-19-m1-next-wave-review.tsv",
@@ -64,7 +65,17 @@ REVIEW_FILES = [
 IDL_SOURCE = "service-workers/idlharness.https.any.js"
 EXPECTED_SOURCE_COUNT = 294
 EXPECTED_URL_COUNT = 331
-EXPECTED_LANES = Counter(core=37, defer=46, gated=169, skip=42)
+EXPECTED_LANES = Counter(core=39, defer=44, gated=169, skip=42)
+CORE_PROMOTIONS = {
+    "service-workers/service-worker/registration-end-to-end.https.html": (
+        "message-lifecycle-core",
+        "2026-09-01-m3-registration-lifecycle.md",
+    ),
+    "service-workers/service-worker/registration-events.https.html": (
+        "message-lifecycle-core",
+        "2026-09-01-m3-registration-lifecycle.md",
+    ),
+}
 SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 
 
@@ -217,6 +228,9 @@ def build_contract() -> tuple[str, Counter[str]]:
         elif disposition == "review":
             decision, evidence = review[source]
             lane = classify_review(decision)
+            if source in CORE_PROMOTIONS:
+                lane = "core"
+                decision, evidence = CORE_PROMOTIONS[source]
         else:
             raise ValueError(f"unrecognized inventory disposition: {disposition}")
 

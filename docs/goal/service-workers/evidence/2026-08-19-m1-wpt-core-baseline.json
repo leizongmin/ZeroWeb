@@ -1,8 +1,8 @@
 {
-  "cases": 35,
-  "subtests": 158,
+  "cases": 39,
+  "subtests": 164,
   "status": {
-    "Pass": 158
+    "Pass": 164
   },
   "deterministic": true,
   "results": [
@@ -301,6 +301,26 @@
         },
         {
           "name": "Registering same scope as the script directory",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/registration-end-to-end.https.html",
+      [
+        {
+          "name": "Registration: end-to-end",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/registration-events.https.html",
+      [
+        {
+          "name": "Registration: events",
           "status": "Pass",
           "message": null
         }
@@ -781,6 +801,36 @@
         },
         {
           "name": "Unregister twice",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/skip-waiting-using-registration.https.html",
+      [
+        {
+          "name": "skipWaiting",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Test skipWaiting while a client is using the registration",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/skip-waiting-without-using-registration.https.html",
+      [
+        {
+          "name": "skipWaiting",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Test skipWaiting while a client is not being controlled",
           "status": "Pass",
           "message": null
         }

@@ -826,6 +826,8 @@ pub const SERVICE_WORKER_CORE_CASES: &[&str] = &[
     "service-workers/service-worker/multiple-update.https.html",
     "service-workers/service-worker/register-default-scope.https.html",
     "service-workers/service-worker/registration-basic.https.html",
+    "service-workers/service-worker/registration-end-to-end.https.html",
+    "service-workers/service-worker/registration-events.https.html",
     "service-workers/service-worker/registration-scope.https.html",
     "service-workers/service-worker/registration-scope-module-static-import.https.html",
     "service-workers/service-worker/registration-script-module.https.html",
@@ -4060,18 +4062,22 @@ async_test(function(test) {
     }
 
     #[test]
-    fn service_worker_core_manifest_has_thirty_seven_unique_cases() {
+    fn service_worker_core_manifest_has_thirty_nine_unique_cases() {
         let unique = SERVICE_WORKER_CORE_CASES
             .iter()
             .copied()
             .collect::<std::collections::BTreeSet<_>>();
-        assert_eq!(SERVICE_WORKER_CORE_CASES.len(), 37);
-        assert_eq!(unique.len(), 37);
+        assert_eq!(SERVICE_WORKER_CORE_CASES.len(), 39);
+        assert_eq!(unique.len(), 39);
         assert!(
             SERVICE_WORKER_CORE_CASES
                 .iter()
                 .all(|path| path.starts_with("service-workers/service-worker/") && path.ends_with(".html"))
         );
+        assert!(
+            SERVICE_WORKER_CORE_CASES.contains(&"service-workers/service-worker/registration-end-to-end.https.html")
+        );
+        assert!(SERVICE_WORKER_CORE_CASES.contains(&"service-workers/service-worker/registration-events.https.html"));
         assert!(
             SERVICE_WORKER_CORE_CASES
                 .contains(&"service-workers/service-worker/skip-waiting-using-registration.https.html")

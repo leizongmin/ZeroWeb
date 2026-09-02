@@ -13,7 +13,9 @@ Added a focused Service Worker lifecycle wave covering:
 - `service-workers/service-worker/registration-end-to-end.https.html`
 
 Both cases execute through the real Service Worker runtime path and passed as
-single-case WPT runs after rebuilding `zero-wpt-runner`.
+single-case WPT runs after rebuilding `zero-wpt-runner`. The follow-up
+`registration-updateviacache.https.html` hang has since been fixed, so these
+cases are now promoted into the full Service Worker core baseline.
 
 ## Validation
 
@@ -27,12 +29,14 @@ single-case WPT runs after rebuilding `zero-wpt-runner`.
   passed, 1/1 subtest.
 - `zero-wpt-runner testharness-service-workers ... registration-end-to-end.https.html`:
   passed, 1/1 subtest.
+- `make testharness-service-workers-core`: passed after promotion,
+  39 case / 164 subtest / 164 Pass.
+- `make baseline-wpt-service-workers-core`: passed after updating the
+  baseline shape to 39/164; two consecutive runs matched
+  `(case, subtest, status)`.
 
-## Follow-up
+## Result
 
-The full Service Worker core runner was not promoted to a new all-green
-baseline in this slice. While diagnosing the expanded corpus, the existing
-`registration-updateviacache.https.html` case exposed a long-runner issue in
-the full four-value matrix. Reduced `updateViaCache` matrices passed after the
-page-side no-op projection fix, but the complete case still needs a separate
-focused follow-up before the core expected subtest total can be raised safely.
+The full Service Worker core runner now includes both lifecycle cases. The
+baseline increased from 37 case / 162 subtest to 39 case / 164 subtest with
+0 Fail, 0 Timeout, and 0 Unsupported.
