@@ -138,3 +138,38 @@ fn r3930_ltr_flow_parent_keeps_static_position() {
     let (x, _y) = find_absolute_position_by_node_id(&result.root, tid).expect("target box");
     assert!(x.abs() < 1.0, "R3930: ltr 流父 abspos 静态位应保持左贴 x=0，实际 x={x}");
 }
+
+/// R3932（XML QName + CSS Selectors §6.3 类型选择器）：XHTML+SVG DTD 文档中
+/// `<svg:svg>` 的 local_name 须为 "svg"（html5ever HTML 模式存整名 "svg:svg"，
+/// CSS 类型选择器 `svg` 不命中 → absolute-replaced-width-038 的 svg 样式全丢）。
+/// content_is_xml 文档解析完成后拆 `:` 前缀。
+#[test]
+fn r3932_xhtml_dtd_prefixed_element_name_split() {
+    let html = r#"<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1 plus MathML 2.0 plus SVG 1.1//EN" "http://www.w3.org/2002/04/xhtml-math-svg/xhtml-math-svg.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml"><body>
+<svg:svg version="1.1" xmlns:svg="http://www.w3.org/2000/svg" height="50"><svg:rect width="10" height="10"/></svg:svg>
+</body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    assert!(doc.content_is_xml(), "XHTML DTD 应置位 content_is_xml");
+    let hits = doc.get_elements_by_tag_name("svg").len();
+    assert_eq!(hits, 1, "R3932: 前缀拆分后 getElementsByTagName('svg') 应命中 1 个元素");
+    let id = doc.get_elements_by_tag_name("svg").into_iter().next().unwrap();
+    let local = doc.get(id).map(|n| match &n.kind {
+        zero_dom::NodeKind::Element(e) => e.local_name().to_string(),
+        _ => String::new(),
+    });
+    assert_eq!(local.as_deref(), Some("svg"), "R3932: local_name 应为 'svg'");
+}
+
+/// R3932 守卫对照：纯 HTML 文档（无 XHTML DTD）中 `<svg:svg>` 不拆——chromium
+/// text/html 同样按未知元素处理，行为保持。
+#[test]
+fn r3932_html_doc_prefixed_element_untouched() {
+    let html = r#"<html><body>
+<svg:svg version="1.1" xmlns:svg="http://www.w3.org/2000/svg" height="50"><svg:rect width="10" height="10"/></svg:svg>
+</body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    assert!(!doc.content_is_xml());
+    let hits = doc.get_elements_by_tag_name("svg").len();
+    assert_eq!(hits, 0, "R3932: HTML 文档不拆前缀，'svg' 查询不命中");
+}

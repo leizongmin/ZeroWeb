@@ -1244,6 +1244,38 @@ impl Document {
                 _ => false,
             });
         self.set_content_is_xml(is_xml);
+        if is_xml {
+            self.split_prefixed_foreign_element_names();
+        }
+    }
+
+    /// R3932（XML QName）：XHTML 文档中带前缀的元素名拆分——html5ever HTML 模式把
+    /// `<svg:svg>` 整体存为 `local = "svg:svg"`（前缀不拆），CSS 类型选择器 `svg` 与
+    /// `get_elements_by_tag_name("svg")` 均不命中 → 元素样式全丢
+    /// （absolute-replaced-width-038：svg 的 position:absolute/height 全丢，渲成流内 0 高）。
+    /// XML 模式（content_is_xml）下前缀 tag 是合法 QName，local 应为 `:` 后段
+    ///（XML Namespaces §3：QName = prefix `:` local）。仅修正 local，ns/prefix 不动
+    ///（matcher 按 local 比较，与既有 namespace 语义正交）。仅 content_is_xml 文档启用，
+    /// 纯 HTML 文档中 `<svg:svg>` 本是未知元素（chromium text/html 同样不识别），不拆。
+    fn split_prefixed_foreign_element_names(&mut self) {
+        fn walk(doc: &mut Document, id: NodeId) {
+            if let Some(NodeKind::Element(elem)) = doc.get_mut(id).map(|n| &mut n.kind) {
+                // 零分配快路径：绝大多数元素名无 ':'（ borrow 检查用裸字节扫描），
+                // 仅含 ':' 时才拆（XHTML 前缀元素是少数）。
+                let local = &elem.name.local;
+                let bytes = local.as_bytes();
+                if let Some(colon) = bytes.iter().position(|&b| b == b':')
+                    && colon + 1 < bytes.len()
+                {
+                    let after = local[colon + 1..].to_string();
+                    elem.name.local = markup5ever::LocalName::from(after);
+                }
+            }
+            for c in doc.child_nodes(id) {
+                walk(doc, c);
+            }
+        }
+        walk(self, self.root);
     }
 
     // ── MutationObserver ────────────────────────────────────────
