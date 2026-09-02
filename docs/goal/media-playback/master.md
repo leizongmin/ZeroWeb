@@ -2,12 +2,13 @@
 
 **入口文档**: [../media-playback.md](../media-playback.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-01（**D2 获批（选 A：libdav1d-dev）+ 已安装闭环**——
-`libdav1d-dev 1.5.1-1` 在位，pkg-config 发现 dav1d 1.5.1（复用既有 libdav1d.so.7
-运行时，零 meson/ninja 源码构建）；已记入
-[docs/development/linux-macos.md](../../development/linux-macos.md) apt 清单。
-M3 AV1 解码切片解锁（dav1d 绑定 + `open_webm` V_AV1 路由，以
-`sample-webm-av1.webm` 资产验证））
+**最后更新**: 2026-09-02（**M3 AV1 解码切片落地 + H.264 立项 RFC 起草**——
+AV1：dav1d 绑定 feature `decode-av1` + VideoCodec 自路由 + fixture 48 帧全解
+（ffmpeg 参照 ±15 窗）；H.264：[h264-increment-project-spec-rfc.md](../../specs/h264-increment-project-spec-rfc.md)
+Proposed 态——D-RFC-3a 专利授权链 / 3b OpenH264 分发形态 / 3c AAC 随期 三决策
+点**待用户批复**（D-RFC-3「单独立项」决议的立项评估文档，批准前不动源码）。
+此前 2026-09-01：D2 获批（选 A：libdav1d-dev 1.5.1 在位，pkg-config 发现，
+apt 清单已记入 development/linux-macos.md））
 
 ---
 
@@ -249,8 +250,11 @@ engine 2539 / media 27 / webview 668 全绿；testharness-media 372P/0F/41PF 维
 
 ## 下一步计划
 
-1. **M3 多格式收尾**（当前首选）：AV1（dav1d 绑定，D-RFC-2——D2 已批准选 A，
-   libdav1d-dev 在位）与 H.264 立项（D-RFC-3）；上游 WPT 可执行子集导入。
+1. **M3 多格式收尾**（当前首选）：~~AV1~~ ✅ 2026-09-02 落地（解码切片 +
+   codec 自路由 + fixture 48 帧全解——见当前状态）；**H.264 立项 RFC 已起草
+   （2026-09-02，[h264-increment-project-spec-rfc.md](../../specs/h264-increment-project-spec-rfc.md)
+   ——Proposed 态，D-RFC-3a（专利授权链）/3b（OpenH264 分发形态）/3c（AAC 随期）
+   三决策点待用户批复，批准前不动源码）**；上游 WPT 可执行子集导入。
    **M3 预备资产已落库（2026-09-01）**——
    `sample-webm-av1.webm`（libaom-av1 生成，README 命令记录）；matroska-demuxer
    实测可枚举 V_AV1 轨（CodecPrivate 在）——demux 面就绪，解码切片
