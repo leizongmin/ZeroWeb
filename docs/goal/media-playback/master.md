@@ -226,6 +226,20 @@ engine 2539 / media 27 / webview 668 全绿；testharness-media 372P/0F/41PF 维
   组合时钟 + seek 双轨对齐（media-audio M2 契约兑现——drift 构造校正）
 - ⚠️ AV1（dav1d 绑定）与 H.264 未引入——M3（D-RFC-2 / D-RFC-3 决议）
 
+## 深结构缺口发现（2026-09-02，Web Audio 多进程接线巡检）
+
+**renderer 路径无播放泵**（记录不修——深结构）：browser tab_worker 主循环有 1ms
+帧泵/音频泵（`is_any_playing` 门 → `tick_all` + `audio_advance_all` + WebAudio
+`wa.advance`）；renderer 路径 M2c 切片 ⑤ 仅对齐了**桥面**（`__zwVideoBridge` 注入
+js_worker）而**从未 tick**——renderer 的 VideoPlayerRegistry Arc 注入后无消费方，
+play 真值面在 renderer 播放请求可登记但帧/音频永不推进（`is_any_playing` 恒真
+即自旋、无泵即永不推进——实际为「play 登记后静默」）。Web Audio 同理：本轮已补
+`SetWebAudio`/`__zwWA*` 注入（桥面一致性），但 `WebAudioRegistry.advance` 无
+renderer 主循环节拍驱动。**修复方向**：renderer 主循环（`runtime.run`，当前
+事件驱动无固定节拍）引入播放泵节拍或迁移独立泵线程——架构决策域（进程内线程
+模型 vs 事件循环节拍），待用户点名后实施；在此前 renderer 路径播放面维持
+「登记但不推进」现状（与 M2c 切片 ⑤ 交付态一致，非回归）。
+
 ## DC 达成审计（2026-09-02，对照入口文档 Done Criteria 逐项核验）
 
 **DC-1（选型 RFC 已批准并落地）✅**：主 RFC 获批（D-RFC-1/2/3 三决议，2026-09-01）；

@@ -299,6 +299,10 @@ impl RendererRuntime {
         // `__zwVideoBridge` 宿主桥（多进程路径媒体播放真值面；async_load settle 写入
         // 与桥读取同一 Arc 实例）。
         js_worker.set_video_players(webview.video_players());
+        // media-audio M3（镜像 browser tab_worker）：Web Audio 注册表注入 js_worker——
+        // `__zwWA*` 宿主桥（多进程路径 AudioContext 最小面 NullSink 可观测；
+        // 音频泵 advance 在 renderer 主循环节拍，与 tab 路径 1ms 泵同构）。
+        js_worker.set_webaudio(webview.webaudio());
         Self {
             outbound,
             inbound_rx,

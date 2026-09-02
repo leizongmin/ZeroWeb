@@ -75,6 +75,9 @@ enum JsWorkerCommand {
     SetVideoPlayers {
         registry: std::sync::Arc<std::sync::Mutex<zero_webview::video_registry::VideoPlayerRegistry>>,
     },
+    SetWebAudio {
+        registry: std::sync::Arc<std::sync::Mutex<zero_webview::webaudio_registry::WebAudioRegistry>>,
+    },
     ResetDocumentState {
         reply: Sender<()>,
     },
@@ -368,6 +371,15 @@ impl RendererJsWorker {
         let _ = self.cmd_tx.send(JsWorkerCommand::SetVideoPlayers { registry });
     }
 
+    /// media-audio M3：注入 Web Audio 注册表（镜像 browser tab_js_worker 同名方法；
+    /// worker 注册 `__zwWA*` 宿主桥——多进程路径 AudioContext 最小面 NullSink 可观测）。
+    pub fn set_webaudio(
+        &self,
+        registry: std::sync::Arc<std::sync::Mutex<zero_webview::webaudio_registry::WebAudioRegistry>>,
+    ) {
+        let _ = self.cmd_tx.send(JsWorkerCommand::SetWebAudio { registry });
+    }
+
     pub fn dispatch_indexed_db_connection_event(
         &self,
         connection_id: u64,
@@ -631,6 +643,11 @@ fn js_worker_main(
                 // M2c 后续：注册宿主桥回调族 + 注入 __zwVideoBridge JS 门面（镜像
                 // browser tab_js_worker 同名分支——多进程路径媒体播放真值面）。
                 zero_webview::video_registry::register_video_bridge_callbacks(&mut *sandbox, registry);
+            }
+            JsWorkerCommand::SetWebAudio { registry } => {
+                // media-audio M3：注册 Web Audio 宿主桥（`__zwWA*` 回调族——多进程
+                // 路径 AudioContext 最小面 NullSink 可观测，镜像 browser 路径）。
+                zero_webview::webaudio_registry::register_webaudio_bridge_callbacks(&mut *sandbox, registry);
             }
             JsWorkerCommand::ResetDocumentState { reply } => {
                 // https://html.spec.whatwg.org/multipage/browsing-the-web.html#navigate
