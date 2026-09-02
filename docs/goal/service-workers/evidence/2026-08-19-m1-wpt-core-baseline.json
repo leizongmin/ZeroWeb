@@ -1,8 +1,8 @@
 {
-  "cases": 41,
-  "subtests": 167,
+  "cases": 42,
+  "subtests": 169,
   "status": {
-    "Pass": 167
+    "Pass": 169
   },
   "deterministic": true,
   "results": [
@@ -46,6 +46,21 @@
       [
         {
           "name": "Test Clients.matchAll() on script evaluation",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/ServiceWorkerGlobalScope/close.https.html",
+      [
+        {
+          "name": "ServiceWorkerGlobalScope close operation",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "ServiceWorkerGlobalScope: close operation",
           "status": "Pass",
           "message": null
         }

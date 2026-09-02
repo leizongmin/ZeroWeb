@@ -442,6 +442,13 @@ fetch baseline，不改变本目标的 window/SW CacheStorage 分母。
   - `make baseline-wpt-service-workers-core OUTPUT=docs/goal/service-workers/evidence/2026-08-19-m1-wpt-core-baseline.json`：
     41 cases / 167 subtests / 167 Pass，double-run deterministic
   - 证据：[M3 Service Worker InstallEvent Type](../service-workers/evidence/2026-09-02-m3-install-event-type.md)
+- 2026-09-02 Service Worker global close absence：
+  - `ServiceWorkerGlobalScope/close.https.html` 纳入 Service Worker core runner，确认 SW
+    global 不暴露 `close()`。该切片不改变 CacheStorage window/SW 分母，但继续收敛
+    worker-harness 依赖的 Service Worker global 接口面。
+  - `make baseline-wpt-service-workers-core OUTPUT=docs/goal/service-workers/evidence/2026-08-19-m1-wpt-core-baseline.json`：
+    42 cases / 169 subtests / 169 Pass，double-run deterministic
+  - 证据：[M3 Service Worker Global Close Absence](../service-workers/evidence/2026-09-02-m3-worker-close.md)
 - 2026-08-22 M3 CacheStorage 持久化首片：
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- cargo check -p zero-storage -p zero-page-runtime -p zero-webview --all-targets`：passed
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- cargo test -p zero-storage cache_storage_persistence -- --nocapture`：3 passed
