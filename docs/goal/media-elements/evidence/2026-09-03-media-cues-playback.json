@@ -20,7 +20,7 @@
     "excluded_this_slice": [
       {
         "case": "track-cues-enter-exit.html",
-        "reason": "单跑 1/4 概率 Timeout——桥 play 重试命中与 runner 源登记的竞态（播放钟推进偶发晚于 case 10s 预算）；seek/missed 两件在区间捕获 + 事件时间序派发下稳定全绿。随 runner 泵节拍精化复评。 另评得 track-cues-seeking（per-seek activeCues 重建）与 track-cues-pause-on-exit（exit 内 paused 即时可观察时序）暂不导入，根因已记录。"
+        "reason": "宿主观察实证：march 正常推进（bo=true/last 前进）但 cue1 enter 缺席至 p=false@3.49s（未知暂停源）；加 dormant setTimeout(7000) 即确定性全绿——execute_script 预 drain 与 pending_timer 计数的调度耦合是主嫌疑。随 runner 泵节拍精化（双通道定时器语义收敛）复评。另 track-cues-seeking/pause-on-exit 根因已记录。"
       }
     ],
     "regressions": 0
@@ -31,11 +31,14 @@
     "pending seek 补推（seek-before-play 桥落位）",
     "seeked 后 cue active 同步（_zwMediaSeekSync）",
     "time-marches-on：区间捕获 + 事件时间序派发 + ended 面（exit flush + timeupdate + ended）",
-    "registry：play 未命中不消费源字节 + contains_source + is_ended 桥面"
+    "registry：play 未命中不消费源字节 + contains_source + is_ended 桥面",
+    "march 首拍区间基线 = 播放起点（0）而非首个采样时刻——起点落采样边界的 cue 不再永久跳过",
+    "pending seek 补推时同步记账 march 区间基线 = seek 目标（seeked 回调缺席路径的 missed-cue 语义）"
   ],
   "runner_changes_verified": [
     "install_playback_bridge 前置于页面脚本（canplaythrough 内同步 play 可达桥）",
-    "逐 tick 动态媒体登记（contains_source 幂等 + 字节缓存）+ settle 提交"
+    "逐 tick 动态媒体登记（contains_source 幂等 + 字节缓存）+ settle 提交",
+    "媒体源字节按需供给方（MediaSourceProvider）——宿主桥 play 未命中同步补登记后重评，消除 probe-tick 时序依赖"
   ],
   "stability": "track-cues-missed / track-cues-enter-seeking / track-cues-sorted-before-dispatch / track-default-attribute 连续 3+ 次全绿；track-cues-enter-exit 1/4 flake（本片排除）"
 }

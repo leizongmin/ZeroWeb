@@ -2,15 +2,15 @@
 
 **入口文档**: [../media-elements.md](../media-elements.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-03（**M3 扩批 XVI+XVII 落地**——track-cues-* 播放推进族
-解锁：fixture-mounted runner 播放桥前置 + 逐 tick 动态源登记 + time-marches-on
-区间捕获/事件时间序/ended 面 + play() 桥 latest-wins 读/退避重试/pending seek
-补推 + registry play 未命中不消费源字节 + is_ended 桥面。**532P/0F/24PF，
-532/556 = 95.7%**（+3 净涨零回归：track-cues-enter-seeking +
-track-cues-missed + track-cues-sorted-before-dispatch；enter-exit 单件因注册
-竞态 flake 暂排除复评）。此前 2026-09-02：**M3 扩批 XV**——http VTT
-文件加载 + WebVTT 解析深化 + 静态 track 调度触发面 + window.event，12 用例
-导入（529P/0F/24PF））
+**最后更新**: 2026-09-03（**M3 扩批 XVI+XVII+XVIII 落地**——track-cues-* 播放
+推进族解锁：fixture-mounted runner 播放桥前置 + 逐 tick 动态源登记 +
+MediaSourceProvider 按需补登记 + time-marches-on 区间捕获/事件时间序/ended 面 +
+play() 桥 latest-wins 读/退避重试/pending seek 补推 + march 区间基线修正 +
+registry play 未命中不消费源字节 + is_ended 桥面。**532P/0F/24PF，532/556 =
+95.7%**（+3 净涨零回归：track-cues-enter-seeking + track-cues-missed +
+track-cues-sorted-before-dispatch；enter-exit 单件随双通道定时器语义收敛复评）。
+此前 2026-09-02：**M3 扩批 XV**——http VTT 文件加载 + WebVTT 解析深化 + 静态
+track 调度触发面 + window.event，12 用例导入（529P/0F/24PF））
 
 ---
 
@@ -412,6 +412,28 @@ already-playing resolved 断言。**88.3%**（324P/0F/2T/41PF，+80 subtest 全�
   的 onexit 内 `assert_true(video.paused)` 依赖 pauseOnExit 中断播放的即时可
   观察时序（当前泵粒度下 exit 与 paused 翻转存在同 tick 交错）。两者根因已
   记录，随泵节拍精化 + seek 面深化复评。
+
+**M3 扩批 XVIII 已落地（2026-09-03 续，注册竞态消除 + march 区间基线修正）**：
+- **MediaSourceProvider（webview/runner）**：宿主桥 play 未命中（源未登记）时
+  **同步**回调嵌入方取字节补登记后重评一次——消除「重试等下一 probe tick」的
+  时序依赖（全套件并行负载下 tick 延迟放大是 enter-exit flake 的放大器）。
+  WebView 增 `set_media_source_provider` + `MediaSourceProvider` 类型别名；
+  `register_video_bridge_callbacks` 增第三参（tab_worker/renderer 生产路径传
+  None 零回归）；runner 注入 wpt-data 字节供给方。
+- **march 首拍区间基线**：`lastMs` 未记账时取 **0（播放起点）**而非首个采样
+  时刻——旧初始化把首拍捕获区间置空，采样粒度 ~1s 时起点落采样边界的 cue
+  （enter-exit 的 cue1@1.0s）被永久跳过。
+- **pending seek 的 march 记账**：seek-before-play（pending seek 补推）路径
+  同步置 `_zwLastMarchMs = seek 目标`——该路径无 seeked 回调，基线须 = 目标
+  （spec seeked missed-cue 语义；修复 sorted-before-dispatch 在源供给方落位后
+  暴露的「cue0（4.0-4.5，目标前）误入捕获区间」16≠14 回归，恢复确定性全绿）。
+- **enter-exit 维持排除（宿主观察实证）**：march 正常推进（bo=true/last 前进
+  至 3.4s）但 cue1 enter 缺席，且 p=false@3.49s 出现未知暂停源；加 dormant
+  `setTimeout(7000)` 即确定性全绿——execute_script 预 drain 的 20ms 等待与
+  pending_timer 计数的调度耦合是主嫌疑（双通道定时器：宿主线程 rx + probe
+  recorded-timer）。随 runner 泵节拍精化复评。
+- 532P/0F/24PF 维持（sorted 恢复确定性）；make test 66 套件全绿、fmt/clippy
+  零警告。
 - **排除注记（本片暂排除）**：track-cues-enter-exit——单跑 1/4 概率 Timeout
   （桥 play 重试命中与 runner 源登记竞态：播放钟推进偶发晚于 case 10s 预算；
   全套件并行负载下复现率上升），随 runner 泵节拍精化（march 采样粒度收敛）

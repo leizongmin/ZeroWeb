@@ -11451,6 +11451,10 @@
                                 globalThis.__zwVideoBridge.seek(_pAbs, _pMs._zwSeekPendingMs | 0);
                               }
                             } catch (_eVbSk2) {}
+                            // M3 扩批 XVIII：march 区间基线 = seek 目标（播放时间线从
+                            // 目标起——目标前的 cue 不入捕获区间，spec seeked missed-cue
+                            // 语义；pending seek 路径无 seeked 回调，在此记账）。
+                            _pMs._zwLastMarchMs = _pMs._zwSeekPendingMs;
                             delete _pMs._zwSeekPendingMs;
                           }
                           if (typeof globalThis.__zwVideoBridge.setRate === 'function') {
@@ -11480,6 +11484,8 @@
                         globalThis.__zwVideoBridge.seek(_pAbs, _pMs._zwSeekPendingMs | 0);
                       }
                     } catch (_eVbSk3) {}
+                    // M3 扩批 XVIII：march 区间基线 = seek 目标（同步命中路径，同上）。
+                    _pMs._zwLastMarchMs = _pMs._zwSeekPendingMs;
                     delete _pMs._zwSeekPendingMs;
                   }
                   // 起播时同步既有速率（play 前设的 playbackRate 经桥生效）。

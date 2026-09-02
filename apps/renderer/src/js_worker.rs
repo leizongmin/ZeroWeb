@@ -642,7 +642,7 @@ fn js_worker_main(
             JsWorkerCommand::SetVideoPlayers { registry } => {
                 // M2c 后续：注册宿主桥回调族 + 注入 __zwVideoBridge JS 门面（镜像
                 // browser tab_js_worker 同名分支——多进程路径媒体播放真值面）。
-                zero_webview::video_registry::register_video_bridge_callbacks(&mut *sandbox, registry);
+                zero_webview::video_registry::register_video_bridge_callbacks(&mut *sandbox, registry, None);
             }
             JsWorkerCommand::SetWebAudio { registry } => {
                 // media-audio M3：注册 Web Audio 宿主桥（`__zwWA*` 回调族——多进程

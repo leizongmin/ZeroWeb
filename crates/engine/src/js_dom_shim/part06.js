@@ -8375,7 +8375,12 @@
           } catch (_eTmoB) {}
         }
         var nowMs = (typeof ms.currentTime === 'number' && isFinite(ms.currentTime)) ? ms.currentTime * 1000 : 0;
-        var lastMs = (typeof ms._zwLastMarchMs === 'number') ? ms._zwLastMarchMs : nowMs;
+        // M3 扩批 XVIII：首拍区间基线 = 0（播放起点）而非 nowMs——旧初始化把首个 march
+        // tick 的捕获区间置空（(nowMs, nowMs] 空），随后采样粒度 ~1s 时起点恰落在采样
+        // 边界附近的 cue（track-cues-enter-exit 的 cue1@1.0s）被永久跳过（startMs >
+        // lastMs 判定在其后每拍都为假）→ exit 缺席 → done 永不。播放起点即时间线
+        // 原点：上游用例 play() 后从 0 起推进。
+        var lastMs = (typeof ms._zwLastMarchMs === 'number') ? ms._zwLastMarchMs : 0;
         // seek 面检测：**时钟回退** 或 seeking 标志在位（spec time-marches-on seek 步：
         // missed cues 不派 enter；此前 active 的 cue 按目标时刻重建）。M3 扩批 XVI 修正：
         // **前进大跳不再判 seek**——桥真值时钟按泵节拍推进，tick 合并产生 >250ms 的前进

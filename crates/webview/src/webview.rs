@@ -133,6 +133,9 @@ pub type ExternalScriptExecutor = std::sync::Arc<dyn Fn(&str) -> Result<String, 
 /// 与 reftest 一致）。与 `external_script`（多进程执行委托，互斥）独立——本获取器仅进程内 sandbox 路径消费。
 pub type ScriptSourceFetcher = std::sync::Arc<dyn Fn(&str, &str) -> Result<String, String> + Send + Sync>;
 
+/// media-playback M3 切片 2：媒体源字节按需供给方（绝对 URL → 字节；None = 无法供给）。
+pub type MediaSourceProvider = std::sync::Arc<dyn Fn(&str) -> Option<Vec<u8>> + Send + Sync>;
+
 /// Service Worker script response fetcher for embedded/headless hosts.
 ///
 /// Unlike [`ScriptSourceFetcher`], this preserves status, headers, final URL, and redirect metadata
@@ -498,6 +501,11 @@ pub struct WebView {
     /// media-playback M2a 切片 5：生产侧播放器注册表（settle 登记源字节；宿主桥
     /// play/pause/currentTime 真值 + 渲染泵 tick_all 帧推进——后续接线消费）。
     video_players: std::sync::Arc<std::sync::Mutex<crate::video_registry::VideoPlayerRegistry>>,
+    /// media-playback M3 切片 2（2026-09-03，WPT runner 注册竞态消除）：媒体源字节
+    /// 按需供给方——宿主桥 play 未命中（源未登记）时同步取字节补登记，消除「重试
+    /// 等下一 tick」的时序依赖（fixture-mounted runner 形态：嵌入方持 wpt-data 根
+    /// 路径知识，registry/webview 不感知文件系统布局）。
+    media_source_provider: std::sync::Mutex<Option<MediaSourceProvider>>,
     /// media-audio M3 切片 2（D1 批复）：Web Audio 最小面注册表（AudioContext
     /// 图推进 + NullSink 可观测；宿主桥 __zwWA* 回调 + 音频泵 advance 消费）。
     webaudio: std::sync::Arc<std::sync::Mutex<crate::webaudio_registry::WebAudioRegistry>>,
@@ -624,6 +632,7 @@ impl WebView {
             video_players: std::sync::Arc::new(
                 std::sync::Mutex::new(crate::video_registry::VideoPlayerRegistry::new()),
             ),
+            media_source_provider: std::sync::Mutex::new(None),
             webaudio: std::sync::Arc::new(std::sync::Mutex::new(crate::webaudio_registry::WebAudioRegistry::new())),
             cached_image_sizes: HashMap::new(),
             cached_image_ratios: HashMap::new(),
@@ -1156,6 +1165,11 @@ impl WebView {
     /// 生产路径（tab_worker/renderer）经 `SetVideoPlayers` 命令注入；本方法是
     /// **同进程嵌入方**（wpt-runner testharness / 测试）的等价入口——run_page_scripts
     /// 首次调用后沙箱已初始化，此后注册即被 shim feature-detect 消费。
+    pub fn set_media_source_provider(&mut self, provider: impl Fn(&str) -> Option<Vec<u8>> + Send + Sync + 'static) {
+        *self.media_source_provider.lock().unwrap_or_else(|e| e.into_inner()) = Some(std::sync::Arc::new(provider));
+    }
+
+    /// media-playback M3 切片 2：在 WebView 沙箱上注册播放宿主桥（含源供给方注入）。
     ///
     /// # Errors
     /// 沙箱未初始化（run_page_scripts 前调用）或门面注入执行失败。
@@ -1165,7 +1179,12 @@ impl WebView {
             return Err(WebViewError::Script("no js sandbox".to_string()));
         };
         let registry = std::sync::Arc::clone(&self.video_players);
-        crate::video_registry::register_video_bridge_callbacks(&mut **sandbox, registry);
+        let provider = self
+            .media_source_provider
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone();
+        crate::video_registry::register_video_bridge_callbacks(&mut **sandbox, registry, provider);
         Ok(())
     }
 

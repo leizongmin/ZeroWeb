@@ -1449,9 +1449,6 @@ pub const MEDIA_TEST_FILES: &[&str] = &[
     // ---- M3 扩批 XVI（2026-09-02）：track-cues-* 播放推进族（fixture-mounted 切片 2——
     // 播放桥 + 泵 + time-marches-on/seek sync 就绪后解锁）。movie_5.webm（VP9+Opus 5s）
     // 为媒体源；cue enter/exit 由桥真值钟驱动（runner 泵每 tick 调 _zwMediaTimeMarchesOn）。
-    // enter-exit 单件暂时排除：单跑 1/4 概率 Timeout（重试注册与首播竞态——播放钟推进
-    // 晚于 case 10s 预算；seek/missed 两件在区间捕获 + 事件时间序派发下稳定全绿），
-    // 随 runner 泵节拍精化复评。
     "html/semantics/embedded-content/media-elements/track/track-element/track-cues-enter-seeking.html",
     "html/semantics/embedded-content/media-elements/track/track-element/track-cues-missed.html",
     // M3 扩批 XVII（2026-09-03）：播放推进族续批评估——seeking 面的 activeCues
@@ -3250,6 +3247,22 @@ fn run_testharness_html_inner(
     // 播放钟推进面失联）。execute_script 空转预热 = ensure_sandbox + ensure_js_shim
     //（install_playback_bridge 的回调注册前提）。
     let _ = webview.execute_script("0;");
+    // M3 扩批 XVIII（2026-09-03，注册竞态消除）：媒体源按需供给方——宿主桥 play
+    // 未命中（源未登记）时**同步**读 wpt-data 字节补登记，消除「重试等下一 probe
+    // tick」的时序依赖（全套件并行负载下 tick 延迟放大，track-cues-enter-exit 的
+    // 1/4 Timeout 根因）。URL → wpt-data 相对路径解析与逐 tick 登记同款。
+    {
+        let wpt_root = wpt_root.to_path_buf();
+        webview.set_media_source_provider(move |url| {
+            let path_part = url.split("://").nth(1)?;
+            let (_, path) = path_part.split_once('/')?;
+            let clean = path.split(['?', '#']).next().unwrap_or(path);
+            if clean.is_empty() {
+                return None;
+            }
+            std::fs::read(wpt_root.join(clean)).ok()
+        });
+    }
     let _ = webview.install_playback_bridge();
     let _zw_hb2 = std::fs::write("/tmp/zw-hb.txt", format!("pre-scripts {}\n", case_name));
     let script_result = webview.run_page_scripts_strict();

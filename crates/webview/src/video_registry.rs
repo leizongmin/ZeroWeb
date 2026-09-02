@@ -816,9 +816,14 @@ mod tests {
 /// 的 `_zwResolveFetchUrl` 产出）。
 ///
 /// 回调签名 `Fn(&[String]) -> String`（script-sandbox 契约）；秒值以字符串往返。
+///
+/// M3 切片 2（2026-09-03）：`source_provider` 可选——play 未命中（源未登记）时同步
+/// 回调取字节补登记后重评一次（WPT runner 注册竞态消除：宿主侧已知 wpt-data 布局，
+/// registry 不感知文件系统；None = 未设置，维持「未登记 → false」原语义零回归）。
 pub fn register_video_bridge_callbacks(
     sandbox: &mut dyn zero_script_sandbox::Sandbox,
     registry: std::sync::Arc<std::sync::Mutex<VideoPlayerRegistry>>,
+    source_provider: Option<crate::MediaSourceProvider>,
 ) {
     // __zw_video_play(absSrc, nowMs) -> "1"/"0"（bool 字符串避免 JS↔host 布尔歧义）。
     // M2c 后续：audio 回退——video 面未命中（非 webm/纯音频源）时试 audio 条目。
@@ -829,6 +834,24 @@ pub fn register_video_bridge_callbacks(
             let src = args.first().map(String::as_str).unwrap_or("");
             let now_ms: u64 = args.get(1).and_then(|s| s.parse().ok()).unwrap_or(0);
             let mut reg = reg_play.lock().unwrap_or_else(|e| e.into_inner());
+            if !reg.play(src, now_ms) && !reg.audio_play(src, now_ms) {
+                // M3 切片 2：供给方在位且源未登记 → 同步补登记后重评一次（decode
+                // 可达性仍由 open_webm 决定——失败回落 false，字节留存可重试）。
+                if let Some(provider) = source_provider.as_ref() {
+                    let present = {
+                        let key = image_resource_key(src, None);
+                        let sources = &reg.sources;
+                        sources.contains_key(&key)
+                    };
+                    if !present && let Some(bytes) = provider(src) {
+                        let audio_guess = src.ends_with(".oga") || src.ends_with(".mp3");
+                        reg.register_source(src, bytes.clone());
+                        if audio_guess {
+                            reg.register_audio_source(src, bytes);
+                        }
+                    }
+                }
+            }
             if reg.play(src, now_ms) || reg.audio_play(src, now_ms) {
                 "1".into()
             } else {
@@ -985,7 +1008,7 @@ mod bridge_tests {
             ..Default::default()
         };
         let mut sandbox = V8Sandbox::with_config(config).expect("v8 sandbox");
-        register_video_bridge_callbacks(&mut sandbox, registry);
+        register_video_bridge_callbacks(&mut sandbox, registry, None);
 
         // 未播放：currentTime 0、duration 2（真值）。
         assert_eq!(
@@ -1191,7 +1214,7 @@ mod audio_tests {
             ..Default::default()
         };
         let mut sandbox = V8Sandbox::with_config(config).expect("v8 sandbox");
-        register_video_bridge_callbacks(&mut sandbox, registry);
+        register_video_bridge_callbacks(&mut sandbox, registry, None);
 
         // play（video 未命中 → audio 回退）→ advance 由泵驱动；此处直调泵面等价：
         assert_eq!(
