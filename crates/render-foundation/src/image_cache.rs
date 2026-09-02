@@ -2360,3 +2360,51 @@ mod tests {
         assert_eq!(cache.generation(), 3);
     }
 }
+
+// R3935 隔离验证：usvg 0.47 对 transform-origin presentation attribute 的支持语义。
+#[test]
+fn r3935_usvg_transform_origin_attr_semantics() {
+    // rect 150x150 位于 (75,75)，viewBox/viewport 200x200。
+    // A 版：SVG2 attr 形式。
+    let a = rasterize_svg_at(
+        br##"<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200"><rect x="75" y="75" width="150" height="150" fill="#00ff00" transform="rotate(90)" transform-origin="150px 75px"/></svg>"##,
+        100, 100,
+    ).expect("rasterize A");
+    // B 版：等价手写 transform（绕 origin (150,75) 旋转 90°）。
+    let b = rasterize_svg_at(
+        br##"<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200"><rect x="75" y="75" width="150" height="150" fill="#00ff00" transform="translate(150 75) rotate(90) translate(-150 -75)"/></svg>"##,
+        100, 100,
+    ).expect("rasterize B");
+    let diff = a.pixels.iter().zip(b.pixels.iter()).filter(|(x, y)| x != y).count();
+    println!("R3935: pixel-byte diffs between attr-form and manual-form = {diff}");
+    assert_eq!(diff, 0, "usvg 应把 transform-origin attr 等价合成为手写 transform");
+}
+
+#[test]
+fn r3935b_usvg_transform_origin_keyword_semantics() {
+    // 关键字 "center right"（= origin x=150,y=75 对 200x200 viewport 中的 150 rect at 75,75
+    // ——center of x（75+150/2=150），right? "center right" = y center? CSS 语法：第一词水平
+    // 或垂直。SVG2 transform-origin 关键字相对 reference box。此处比较 attr 关键字版与
+    // 手写等价版；不等价即 usvg 关键字解析有缺陷。
+    let a = rasterize_svg_at(
+        br##"<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200"><rect x="75" y="75" width="150" height="150" fill="#00ff00" transform="rotate(90)" transform-origin="center right"/></svg>"##,
+        100, 100,
+    ).expect("A");
+    let b = rasterize_svg_at(
+        br##"<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200"><rect x="75" y="75" width="150" height="150" fill="#00ff00" transform="translate(150 150) rotate(90) translate(-150 -150)"/></svg>"##,
+        100, 100,
+    ).expect("B");
+    let diff = a.pixels.iter().zip(b.pixels.iter()).filter(|(x, y)| x != y).count();
+    println!("R3935b: keyword-form vs manual(center,center) diffs = {diff}");
+    // center right 对 viewport 200x200：x=right(200)? y=center(100)？或相对 bbox？
+    // 不做硬断言，先观测——打印两版中心像素颜色供归因。
+    let pa = |x: usize, y: usize| {
+        let i = (y * 100 + x) * 4;
+        (a.pixels[i], a.pixels[i + 1], a.pixels[i + 2])
+    };
+    let pb = |x: usize, y: usize| {
+        let i = (y * 100 + x) * 4;
+        (b.pixels[i], b.pixels[i + 1], b.pixels[i + 2])
+    };
+    println!("R3935b: A center={:?} B center={:?}", pa(50, 50), pb(50, 50));
+}

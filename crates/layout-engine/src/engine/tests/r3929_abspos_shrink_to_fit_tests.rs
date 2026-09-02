@@ -173,3 +173,27 @@ fn r3932_html_doc_prefixed_element_untouched() {
     let hits = doc.get_elements_by_tag_name("svg").len();
     assert_eq!(hits, 0, "R3932: HTML 文档不拆前缀，'svg' 查询不命中");
 }
+
+/// R3935（inline svg paint 前置锚）：outer_html 对 svg 子树的属性保真——
+/// transform / transform-origin 等 SVG presentation attribute 须完整保留
+///（paint_svg_element 序列化 → usvg 栅格化的语义输入）。
+#[test]
+fn r3935_outer_html_preserves_svg_presentation_attrs() {
+    let html = r#"<html><body>
+<svg width="200" height="200" xmlns="http://www.w3.org/2000/svg">
+<rect x="75" y="75" width="150" height="150" fill="green" transform="rotate(90) translate(0 150)" transform-origin="center right"/>
+</svg>
+</body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let sid = doc.get_elements_by_tag_name("svg").into_iter().next().expect("svg");
+    let s = doc.outer_html(sid);
+    assert!(
+        s.contains(r#"transform="rotate(90) translate(0 150)""#),
+        "transform attr 须保留: {s}"
+    );
+    assert!(
+        s.contains(r#"transform-origin="center right""#),
+        "transform-origin attr 须保留: {s}"
+    );
+    assert!(s.contains(r#"fill="green""#), "fill attr 须保留: {s}");
+}
