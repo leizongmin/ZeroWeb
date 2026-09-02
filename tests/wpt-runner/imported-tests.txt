@@ -251,3 +251,5 @@ css/css-backgrounds/background-size-027.html css/css-backgrounds/reference/backg
 css/css-backgrounds/background-size-029.html css/css-backgrounds/reference/background-size-029-ref.xht == 2026-09-02 R3927 round 缩放一轴后 background-size auto 维按固有比跟随（css-backgrounds §3.4）——旧实现另一轴留原值
 css/css-backgrounds/background-color-body-propagation-010.html css/css-backgrounds/background-color-no-body-propagation-ref.html == 2026-09-02 R3928 body::before 块级伪元素带背景走独立盒路径（engine 注入门控 root/body 收窄）——文本节点路径丢失伪元素背景
 css/css-backgrounds/background-color-root-propagation-003.html css/css-backgrounds/background-color-no-body-propagation-ref.html == 2026-09-02 R3928 html::before 同族——root 伪元素背景需独立盒
+css/CSS2/positioning/absolute-non-replaced-max-height-002.xht css/CSS2/positioning/absolute-non-replaced-max-height-002-ref.xht == 2026-09-03 R3929 abspos shrink-to-fit 宽回填
+css/CSS2/positioning/absolute-non-replaced-max-height-009.xht css/CSS2/positioning/absolute-non-replaced-max-height-009-ref.xht == 2026-09-03 R3929 abspos shrink-to-fit 高回填

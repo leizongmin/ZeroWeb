@@ -506,6 +506,10 @@ impl LayoutEngine {
         // 百分比 height 的页面失效。改为先求值再合并，确保四趟都执行。
         let changed_intrinsic =
             Self::apply_intrinsic_content_sizing(&mut taffy_tree, &root_box, &dom_to_taffy, styles, doc);
+        // R3929：全 auto 水平 inset 的 abspos 收缩适配宽度（taffy 给 0，§10.3.7 应为内容
+        // shrink-to-fit）。与 intrinsic pass 同一 re-run 组（set_style+mark_dirty 后重跑 taffy）。
+        let changed_abspos_shrink =
+            Self::apply_abspos_shrink_to_fit_width(&mut taffy_tree, &root_box, &dom_to_taffy, styles, doc);
         // R1544 Phase 2 layout-time（两阶段 content-size 传播）：vertical 容器把 Auto 维度
         // 的正确 content-size（Σ 子宽 / max 子高）喂回 taffy + mark_dirty，让父级 re-layout
         // 时按正确 container width 传播——解 R1545 postprocess width-set 不传播的缺口（经 taffy
@@ -531,6 +535,7 @@ impl LayoutEngine {
             || changed_pct_padding
             || changed_ratio_img
             || changed_intrinsic
+            || changed_abspos_shrink
             || changed_vertical
             || changed_ar_container
             || changed_ar_flex_cross

@@ -172,6 +172,121 @@ impl LayoutEngine {
         changed
     }
 
+    /// R3929（CSS2 §10.3.7/§10.6.4）：abspos 元素 shrink-to-fit 尺寸。
+    ///
+    /// 宽：width:auto + 水平 inset 非双定（双定 = stretch，taffy 已解）→ 宽 = 内容
+    /// max-content（≤CB−已定 inset）。taffy 对全/半 auto inset 的 abspos 不做内容测量
+    /// （layout dump 实证 0 宽，absolute-non-replaced-max-height-002：`&nbsp;` + Ahem
+    /// 100px 应 100 宽，taffy 给 0）。
+    /// 高：height:auto + 垂直 inset 非双定 → 高 = 行高（单行近似；taffy max_size 已按
+    /// max-height 钳，002 案 100→50；009 案 top:25 定 + bottom:auto 同样收缩）。多行
+    /// 折行测量独立 gap（FIXME）。
+    pub(super) fn apply_abspos_shrink_to_fit_width(
+        taffy_tree: &mut TaffyTree<NodeId>,
+        root: &LayoutBox,
+        dom_to_taffy: &HashMap<NodeId, taffy::NodeId>,
+        styles: &HashMap<NodeId, ComputedStyle>,
+        doc: &Document,
+    ) -> bool {
+        use zero_css_parser::values::LengthValue;
+        let mut changed = false;
+        let mut stack: Vec<(&LayoutBox, f32)> = vec![(root, f32::INFINITY)];
+        while let Some((b, cb_width)) = stack.pop() {
+            // CB 更新在 push 时——positioned 盒（含 contain CB）的子代 CB = 本盒宽。
+            let child_cb = if b.is_abspos_cb
+                || b.node_id.and_then(|id| styles.get(&id)).is_some_and(|s| {
+                    matches!(
+                        s.position,
+                        zero_css_parser::values::PositionValue::Relative
+                            | zero_css_parser::values::PositionValue::Absolute
+                            | zero_css_parser::values::PositionValue::Fixed
+                    )
+                }) {
+                b.width
+            } else {
+                cb_width
+            };
+            for child in &b.children {
+                stack.push((child, child_cb));
+            }
+            let Some(id) = b.node_id else { continue };
+            let Some(s) = styles.get(&id) else { continue };
+            if !b.is_absolute || b.is_replaced {
+                continue;
+            }
+            // 内含 float 后代时跳过：float 子的 max-width/约束宽度参与 shrink-to-fit
+            // preferred width（width-019/020），max-content 测量不含此语义。
+            if Self::subtree_has_float(b) {
+                continue;
+            }
+            let res_px = |v: &LengthValue| -> Option<f32> {
+                match v {
+                    LengthValue::Px(p) => Some(*p as f32),
+                    _ => None,
+                }
+            };
+            let left_def = res_px(&s.left);
+            let right_def = res_px(&s.right);
+            let top_def = res_px(&s.top);
+            let bottom_def = res_px(&s.bottom);
+            let mut width_fix = matches!(s.width, LengthValue::Auto) && !(left_def.is_some() && right_def.is_some());
+            let mut height_fix = matches!(s.height, LengthValue::Auto) && !(top_def.is_some() && bottom_def.is_some());
+            // taffy 已解出非 0 宽/高（如 width-019 的 float 内容、margin-applies-to 族）时不
+            // 覆写——本 pass 只救 taffy 恒 0 的场景（全/半 auto inset 无内容测量）。
+            if !width_fix && !height_fix {
+                continue;
+            }
+            if width_fix && b.width > 0.5 {
+                width_fix = false;
+            }
+            if height_fix && b.height > 0.5 {
+                height_fix = false;
+            }
+            if !width_fix && !height_fix {
+                continue;
+            }
+            let Some(&taffy_id) = dom_to_taffy.get(&id) else {
+                continue;
+            };
+            if let Ok(mut style) = taffy_tree.style(taffy_id).cloned() {
+                if width_fix {
+                    let used = left_def.unwrap_or(0.0) + right_def.unwrap_or(0.0);
+                    let available = (cb_width - used).max(0.0);
+                    let measured = crate::intrinsic_sizing::block_max_content_width(b, doc, styles).max(0.0);
+                    if measured > 0.5 {
+                        let target = if available.is_finite() {
+                            measured.min(available)
+                        } else {
+                            measured
+                        };
+                        let frame = b.padding_left + b.padding_right + b.border_left + b.border_right;
+                        let target_bw = (target + frame).max(0.0);
+                        if b.width < target_bw - 0.5 {
+                            style.size.width = taffy::style::Dimension::length(target_bw);
+                        }
+                    }
+                }
+                if height_fix {
+                    let (fs, lh) = crate::inline::resolve_font_metrics(Some(s));
+                    style.size.height = taffy::style::Dimension::length(lh.max(fs).max(1.0));
+                }
+                let _ = taffy_tree.set_style(taffy_id, style);
+                let _ = taffy_tree.mark_dirty(taffy_id);
+                changed = true;
+            }
+        }
+        changed
+    }
+
+    /// R3929 辅助：子树内是否有 float 盒（abspos 容器含 float 子时 shrink-to-fit 的
+    /// preferred width 须含 float 约束语义，max-content 近似失准，见 width-019/020）。
+    fn subtree_has_float(b: &LayoutBox) -> bool {
+        if b.float != FloatValue::None {
+            return true;
+        }
+        b.children.iter().any(Self::subtree_has_float)
+    }
+
     /// R717（CSS §10.3.2 + Flexbox §4.5）：`aspect-ratio` flex item（ratio-only SVG `<img>`
     /// 或 CSS `aspect-ratio` 的 leaf 块）在 flex 容器内时，第一趟 taffy 对该 leaf 项无法
     /// 从 `aspect_ratio` + Auto-cross（容器 cross 尺寸在 computed style 中为 Auto，但实际
