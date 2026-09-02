@@ -900,6 +900,7 @@ pub const SERVICE_WORKER_FETCH_CASES: &[&str] = &[
 
 /// Fixed Service Worker CacheStorage corpus at the pinned WPT revision.
 pub const SERVICE_WORKER_CACHE_STORAGE_CASES: &[&str] = &[
+    "service-workers/cache-storage/cache-keys-attributes-for-service-worker.https.html",
     "service-workers/cache-storage/serviceworker/cache-storage.https.html",
     "service-workers/cache-storage/serviceworker/cache-storage-keys.https.html",
     "service-workers/cache-storage/serviceworker/cache-delete.https.html",
@@ -4264,13 +4265,16 @@ async_test(function(test) {
             .iter()
             .copied()
             .collect::<std::collections::BTreeSet<_>>();
-        assert_eq!(SERVICE_WORKER_CACHE_STORAGE_CASES.len(), 12);
-        assert_eq!(unique.len(), 12);
+        assert_eq!(SERVICE_WORKER_CACHE_STORAGE_CASES.len(), 13);
+        assert_eq!(unique.len(), 13);
         assert!(
             SERVICE_WORKER_CACHE_STORAGE_CASES
                 .iter()
-                .all(|path| path.starts_with("service-workers/cache-storage/serviceworker/")
-                    && path.ends_with(".https.html"))
+                .all(|path| path.starts_with("service-workers/cache-storage/") && path.ends_with(".https.html"))
+        );
+        assert!(
+            SERVICE_WORKER_CACHE_STORAGE_CASES
+                .contains(&"service-workers/cache-storage/cache-keys-attributes-for-service-worker.https.html")
         );
         assert!(
             SERVICE_WORKER_CACHE_STORAGE_CASES

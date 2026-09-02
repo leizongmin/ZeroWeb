@@ -59,6 +59,9 @@ CORE_ASSET_MANIFESTS = [
     EVIDENCE_DIR / "2026-08-21-m3-clients-matchall-evaluation-assets.tsv",
     EVIDENCE_DIR / "2026-08-31-m3-message-lifecycle-assets.tsv",
 ]
+CACHE_STORAGE_ASSET_MANIFESTS = [
+    EVIDENCE_DIR / "2026-08-23-m2-cache-storage-serviceworker-assets.tsv",
+]
 REVIEW_FILES = [
     EVIDENCE_DIR / "2026-08-19-m1-next-wave-review.tsv",
     EVIDENCE_DIR / "2026-08-19-m1-iframe-review.tsv",
@@ -75,8 +78,12 @@ REVIEW_FILES = [
 IDL_SOURCE = "service-workers/idlharness.https.any.js"
 EXPECTED_SOURCE_COUNT = 294
 EXPECTED_URL_COUNT = 331
-EXPECTED_LANES = Counter(core=49, defer=34, gated=169, skip=42)
+EXPECTED_LANES = Counter(core=50, defer=34, gated=168, skip=42)
 CORE_PROMOTIONS = {
+    "service-workers/cache-storage/cache-keys-attributes-for-service-worker.https.html": (
+        "cache-storage-top-level-navigation-attributes-core",
+        "2026-09-02-m2-cache-storage-top-level-navigation-attributes.md",
+    ),
     "service-workers/service-worker/ServiceWorkerGlobalScope/unregister.https.html": (
         "worker-global-unregister-core",
         "2026-09-02-m3-worker-global-unregister.md",
@@ -158,11 +165,16 @@ def classify_review(decision: str) -> str:
 def audit_core_inputs(
     core_sources: set[str], inventory: dict[str, dict[str, str]]
 ) -> None:
+    service_worker_core_sources = {
+        source
+        for source in core_sources
+        if source.startswith("service-workers/service-worker/")
+    }
     imported: dict[str, str] = {}
     with IMPORTED_LEDGER.open(encoding="utf-8") as stream:
         for line_number, line in enumerate(stream, start=1):
             fields = line.split()
-            if not fields or not fields[0].startswith("service-workers/service-worker/"):
+            if not fields or not fields[0].startswith("service-workers/"):
                 continue
             if len(fields) != 4:
                 raise ValueError(
@@ -172,11 +184,11 @@ def audit_core_inputs(
             if source in imported:
                 raise ValueError(f"duplicate Service Worker import: {source}")
             imported[source] = revision
-    missing_imports = core_sources - set(imported)
+    missing_imports = service_worker_core_sources - set(imported)
     if missing_imports:
         sample = ", ".join(sorted(missing_imports)[:5])
         raise ValueError(f"core disposition sources missing from runner imports: {sample}")
-    for source in core_sources:
+    for source in service_worker_core_sources:
         revision = imported[source]
         expected_revision = CORE_REVISION_OVERRIDES.get(source, WPT_REVISION)
         if revision != expected_revision:
@@ -193,14 +205,50 @@ def audit_core_inputs(
                 raise ValueError(f"duplicate core case asset: {source}")
             asset_cases[source] = row["git_blob_sha"]
             asset_revisions[source] = row.get("source_revision") or WPT_REVISION
-    if set(asset_cases) != core_sources:
-        raise ValueError("core case assets do not match core disposition sources")
+    if set(asset_cases) != service_worker_core_sources:
+        raise ValueError("core case assets do not match Service Worker core disposition sources")
     for source, blob_sha in asset_cases.items():
         if blob_sha != inventory[source]["manifest_sha"]:
             raise ValueError(f"core case asset SHA does not match inventory: {source}")
         expected_revision = CORE_REVISION_OVERRIDES.get(source, WPT_REVISION)
         if asset_revisions[source] != expected_revision:
             raise ValueError(f"core case asset revision does not match import: {source}")
+
+    cache_storage_core_sources = {
+        source
+        for source in core_sources
+        if source.startswith("service-workers/cache-storage/")
+    }
+    cache_storage_cases: dict[str, str] = {}
+    cache_storage_revisions: dict[str, str] = {}
+    for path in CACHE_STORAGE_ASSET_MANIFESTS:
+        for row in read_tsv(path):
+            if row["manifest_type"] != "testharness" or row["roles"] != "case":
+                continue
+            source = row["path"]
+            if source in cache_storage_cases:
+                raise ValueError(f"duplicate CacheStorage case asset: {source}")
+            cache_storage_cases[source] = row["git_blob_sha"]
+            cache_storage_revisions[source] = row.get("source_revision") or WPT_REVISION
+    missing_cache_storage = cache_storage_core_sources - set(cache_storage_cases)
+    if missing_cache_storage:
+        sample = ", ".join(sorted(missing_cache_storage)[:5])
+        raise ValueError(
+            f"core disposition sources missing from CacheStorage assets: {sample}"
+        )
+    for source in cache_storage_core_sources:
+        revision = imported.get(source)
+        expected_revision = CORE_REVISION_OVERRIDES.get(source, WPT_REVISION)
+        if revision != expected_revision:
+            raise ValueError(f"runner import has wrong revision: {source}")
+        if cache_storage_cases[source] != inventory[source]["manifest_sha"]:
+            raise ValueError(
+                f"CacheStorage core case asset SHA does not match inventory: {source}"
+            )
+        if cache_storage_revisions[source] != expected_revision:
+            raise ValueError(
+                f"CacheStorage core case asset revision does not match import: {source}"
+            )
 
 
 def build_contract() -> tuple[str, Counter[str]]:
@@ -265,6 +313,9 @@ def build_contract() -> tuple[str, Counter[str]]:
             lane = "gated"
             decision = "gated-initial-inventory"
             evidence = INVENTORY.name
+            if source in CORE_PROMOTIONS:
+                lane = "core"
+                decision, evidence = CORE_PROMOTIONS[source]
         elif disposition == "candidate":
             candidate = candidates[source]
             decision = candidate["decision"]

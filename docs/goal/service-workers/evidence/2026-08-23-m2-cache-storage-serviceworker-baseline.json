@@ -1,11 +1,26 @@
 {
-  "cases": 12,
-  "subtests": 157,
+  "cases": 13,
+  "subtests": 159,
   "status": {
-    "Pass": 157
+    "Pass": 159
   },
   "deterministic": true,
   "results": [
+    [
+      "service-workers/cache-storage/cache-keys-attributes-for-service-worker.https.html",
+      [
+        {
+          "name": "Request.IsReloadNavigation should persist.",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Request.IsHistoryNavigation should persist.",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
     [
       "service-workers/cache-storage/serviceworker/cache-storage.https.html",
       [

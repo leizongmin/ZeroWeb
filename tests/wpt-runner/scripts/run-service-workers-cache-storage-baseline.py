@@ -10,8 +10,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-EXPECTED_CASES = 12
-EXPECTED_SUBTESTS = 157
+EXPECTED_CASES = 13
+EXPECTED_SUBTESTS = 159
 
 
 def parse_args() -> argparse.Namespace:
@@ -79,8 +79,8 @@ def render_markdown(summary: dict) -> str:
         [
             "# Service Worker CacheStorage WPT Baseline",
             "",
-            "- Date: 2026-08-23",
-            "- WPT revision: `24197a11e8c5bd29a5cb7bdf18135a82be8a8546`",
+            "- Date: 2026-09-02",
+            "- WPT revisions: `24197a11e8c5bd29a5cb7bdf18135a82be8a8546`, `04067ce9c7c2165e71ad7d0dde10a4c5cb394a83`",
             f"- Cases: {summary['cases']}",
             f"- Subtests: {summary['subtests']}",
             f"- Pass: {status.get('Pass', 0)}",
@@ -92,7 +92,8 @@ def render_markdown(summary: dict) -> str:
             "## Scope",
             "",
             "This pinned Service Worker M2 CacheStorage baseline covers the "
-            "twelve serviceworker CacheStorage wrappers. They run the upstream "
+            "twelve serviceworker CacheStorage wrappers plus the top-level "
+            "`cache-keys-attributes-for-service-worker.https.html` page. They run the upstream "
             "`script-tests/cache-storage*.js`, `cache-delete.js`, `cache-keys.js`, "
             "`cache-abort.js`, `cache-add.js`, `cache-match.js`, `cache-matchAll.js`, "
             "`cache-put.js`, `cache-storage-match.js`, the navigation-attribute "
