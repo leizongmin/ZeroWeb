@@ -7097,7 +7097,7 @@
   _zwWANode.prototype.disconnect = function () {
     this._zwConnected = null;
   };
-  function AudioContext() {
+  function AudioContext(options) {
     // WebIDL：无 new 调用抛 TypeError（构造器语义——同 Audio() 面但不走工厂）。
     if (!(this instanceof AudioContext)) {
       throw new TypeError("Failed to construct 'AudioContext': Please use the 'new' operator, this DOM object constructor cannot be called as a function.");
@@ -7109,10 +7109,73 @@
     // spec BaseAudioContext.state：headless 恒 'running'（RFC §3.2）。
     self._zwState = 'running';
     self._zwSampleRate = 48000;
+    // AudioContextOptions dict（spec §AudioContextOptions——latencyHint enum/
+    // double + sampleRate 面；headless baseLatency 固定档：interactive ≈ 5ms）。
+    // WPT audiocontextoptions 断言面：合法 latencyHint 构造不抛 + baseLatency
+    // ≥ 0 + 无效 enum → TypeError。sampleRate 选项暂不反射（设备面归 CpalSink
+    // 切片——上下文采样率固定 48k）。
+    if (options !== undefined && options !== null && typeof options !== 'object') {
+      // WebIDL dict 面非对象 → TypeError（WPT new AudioContext('latencyHint') 断言面）。
+      throw new TypeError("Failed to construct 'AudioContext': The provided value is not of type 'AudioContextOptions'.");
+    }
+    var o = options || {};
+    var _hint = (o.latencyHint !== undefined) ? o.latencyHint : 'interactive';
+    var _hintNum = Number(_hint);
+    if (typeof _hint === 'string') {
+      var _hl = String(_hint).toLowerCase();
+      if (_hl !== 'interactive' && _hl !== 'balanced' && _hl !== 'playback') {
+        throw new TypeError("Failed to construct 'AudioContext': Failed to read the 'latencyHint' property from 'AudioContextOptions': The provided value '" + _hint + "' is not a valid enum value.");
+      }
+      self._zwBaseLatency = (_hl === 'interactive') ? 0.005 : (_hl === 'balanced' ? 0.015 : 0.04);
+    } else if (isNaN(_hintNum)) {
+      throw new TypeError("Failed to construct 'AudioContext': Failed to read the 'latencyHint' property from 'AudioContextOptions': The provided double value is non-finite.");
+    } else {
+      // double 档：baseLatency = hint 值本身（WPT 断言 high-latency 两上下文相等
+      // 且 = 大 hint 值——headless 直接采用，不 clamp）。
+      self._zwBaseLatency = Math.max(0, _hintNum);
+    }
+    // AudioContextOptions.sampleRate（spec：[3000, 768000] 外 → NotSupportedError；
+    // 范围内 → 上下文采样率反射——headless 合成面以该率运行）。
+    if (o.sampleRate !== undefined) {
+      var _sr = Number(o.sampleRate);
+      if (isNaN(_sr) || _sr < 3000 || _sr > 768000) {
+        throw new (globalThis.DOMException || Error)(
+          "Failed to construct 'AudioContext': sampleRate " + o.sampleRate + " is not in range [3000, 768000].", 'NotSupportedError');
+      }
+      self._zwSampleRate = _sr;
+    }
     self._zwDestination = _zwWANode('destination', ctxId, 0);
     self._zwOscs = {};
+    // close()（spec BaseAudioContext.close——state → 'closed' + settled Promise；
+    // closed 后 suspend/resume reject InvalidStateError）。headless 无音频流，
+    // 纯状态面。
+    self._zwClose = function () {
+      self._zwState = 'closed';
+      return Promise.resolve();
+    };
+    self._zwSuspend = function () {
+      if (self._zwState === 'closed') {
+        return Promise.reject(new (globalThis.DOMException || Error)('Cannot suspend a closed context.', 'InvalidStateError'));
+      }
+      self._zwState = 'suspended';
+      return Promise.resolve();
+    };
+    self._zwResume = function () {
+      if (self._zwState === 'closed') {
+        return Promise.reject(new (globalThis.DOMException || Error)('Cannot resume a closed context.', 'InvalidStateError'));
+      }
+      self._zwState = 'running';
+      return Promise.resolve();
+    };
   }
   globalThis.AudioContext = globalThis.AudioContext || AudioContext;
+  Object.defineProperty(AudioContext.prototype, 'baseLatency', {
+    get: function () { return this._zwBaseLatency == null ? 0.005 : this._zwBaseLatency; },
+    configurable: true,
+  });
+  AudioContext.prototype.close = function () { return this._zwClose ? this._zwClose() : Promise.resolve(); };
+  AudioContext.prototype.suspend = function () { return this._zwSuspend ? this._zwSuspend() : Promise.resolve(); };
+  AudioContext.prototype.resume = function () { return this._zwResume ? this._zwResume() : Promise.resolve(); };
   // OfflineAudioContext：构造 + 节点工厂兼容面（numberOfWorkers/length/sampleRate
   // 反射；**无离线渲染**——startRendering 返 rejected promise，RFC §0 简化记录）。
   // WPT audionode-connect-return-value 等构造面用例依赖。

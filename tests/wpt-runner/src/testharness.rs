@@ -1449,6 +1449,11 @@ pub const WEBAUDIO_TEST_FILES: &[&str] = &[
     // OscillatorNode 构造器面（audit.js 框架——invalid/default ctor + type/
     // frequency 440 属性反射断言；runner 内联 webaudio/resources/audit*.js）。
     "webaudio/the-audio-api/the-oscillatornode-interface/ctor-oscillator.html",
+    // audiocontextoptions 不导入：latencyHint double 档断言 Chromium 设备专用
+    // baseLatency 档位值（playbackLatency×10 → 0.8 恒等断言——Linux Chromium 实测
+    // 档），headless 无设备延迟模型不可复现；构造/enum/double/sampleRange 语义面
+    // 已落 shim（AudioContextOptions + close/suspend/resume + baseLatency），随设备
+    // 面（CpalSink 真出声切片）复评。
 ];
 
 /// audit.js 框架脚本（wpt-data 内 vendored 原文件——与 canvas-tests.js 同款

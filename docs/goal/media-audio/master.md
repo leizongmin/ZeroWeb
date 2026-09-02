@@ -79,9 +79,20 @@ volume/muted 真控制。**双重启动门控均已解除**：① M0 音频环�
     channelInterpretation 可写枚举（invalid 静默保留——setter 面与 ctor dict
     面严格度分离，spec WebIDL enum 惯例）。
   evidence：`evidence/2026-09-02-webaudio-ctor-oscillator.json`（64P/0F）。
+- **AudioContextOptions + 生命周期面落地（同日第三批评估）**：shim part06
+  `AudioContext(options)` 扩 AudioContextOptions dict（latencyHint enum 三值/
+  double——enum invalid → TypeError、非 dict 对象 → TypeError、non-finite double
+  → TypeError）+ `sampleRate` 选项（[3000,768000] 外 → NotSupportedError、范围
+  内反射——headless 合成面以该率运行）+ `baseLatency` 反射（enum 档 5/15/40ms、
+  double 档 = hint 值）+ `close()`（state → 'closed' + settled Promise）/
+  `suspend()`/`resume()`（closed 后 reject InvalidStateError）。
+  **audiocontextoptions.html 不导入**——latencyHint double 档断言 Chromium 设备
+  专用 baseLatency 档位值（playbackLatency×10 → 0.8 恒等——Linux Chromium 实测
+  档），headless 无设备延迟模型不可复现；语义面已落 shim，随设备面（CpalSink
+  真出声切片）复评。
 - **余项**：createGain 的 per-node 桥推（当前 per-osc gain 由 WebAudioContext 承接，
-  gain 节点 → 桥映射挂真出声/设备切片）；WPT 余面（osc-basic-waveform 依赖
-  渲染量化面——startRendering/AnalyserFFT，随渲染面评估）。
+  gain 节点 → 桥映射挂真出声/设备切片）；WPT 余面（osc-basic-waveform/
+  sub-sample-start/detune-* 依赖渲染量化面——startRendering，随渲染面评估）。
 
 **M0 已收口（2026-09-01）**：
 - 环境实测：内核层 HDA 声卡在；**ALSA dev 头缺失（libasound2-dev 未装）→ cpal 默认
