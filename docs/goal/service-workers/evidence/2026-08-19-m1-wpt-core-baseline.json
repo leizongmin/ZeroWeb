@@ -1,8 +1,8 @@
 {
-  "cases": 42,
-  "subtests": 169,
+  "cases": 43,
+  "subtests": 173,
   "status": {
-    "Pass": 169
+    "Pass": 173
   },
   "deterministic": true,
   "results": [
@@ -216,6 +216,31 @@
         },
         {
           "name": "Fetch importScripts tests from service worker",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/interface-requirements-sw.https.html",
+      [
+        {
+          "name": "Event constructors",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "xhr is not exposed",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "URL.createObjectURL is not exposed",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Interfaces and attributes in ServiceWorkerGlobalScope",
           "status": "Pass",
           "message": null
         }

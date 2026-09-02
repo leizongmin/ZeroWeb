@@ -1615,7 +1615,13 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
   class FetchEvent extends ExtendableEvent {
     constructor(type, init) {
       super(type);
-      this.request = init.request;
+      // https://webidl.spec.whatwg.org/#required-dictionary-member
+      init = Object(init);
+      const request = init.request;
+      if (!(request instanceof Request)) {
+        throw new TypeError('FetchEventInit.request must be a Request');
+      }
+      this.request = request;
       this.clientId = init.clientId || '';
       this.resultingClientId = init.resultingClientId || '';
       this._respondWith = null;
@@ -4858,6 +4864,43 @@ mod tests {
                    throw new Error('WorkerGlobalScope.prototype missing isSecureContext');
                  }
                  if (self.isSecureContext !== true) throw new Error('wrong secure context value');",
+                "https://example.test/sw.js",
+            )
+            .unwrap();
+        assert!(matches!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::Evaluated { .. }
+        ));
+    }
+
+    #[test]
+    fn fetch_event_constructor_requires_request_member() {
+        let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
+        runtime
+            .evaluate(
+                "function assertTypeError(callback, label) {
+                   let threw = false;
+                   try {
+                     callback();
+                   } catch (error) {
+                     threw = error instanceof TypeError;
+                   }
+                   if (!threw) throw new Error(label);
+                 }
+                 assertTypeError(() => new FetchEvent('FetchEvent'), 'missing init was accepted');
+                 assertTypeError(() => new FetchEvent('FetchEvent', {}), 'missing request was accepted');
+                 assertTypeError(
+                   () => new FetchEvent('FetchEvent', {request: null}),
+                   'null request was accepted'
+                 );
+                 const request = new Request('https://example.test/data');
+                 const event = new FetchEvent('FetchEvent', {request, clientId: 'client-1'});
+                 if (event.type !== 'FetchEvent') throw new Error('wrong type');
+                 if (event.request !== request) throw new Error('wrong request');
+                 if (event.clientId !== 'client-1') throw new Error('wrong clientId');
+                 if (event.cancelable !== false) throw new Error('wrong cancelable');
+                 if (event.bubbles !== false) throw new Error('wrong bubbles');
+                 if (event.isReload !== undefined) throw new Error('unexpected isReload');",
                 "https://example.test/sw.js",
             )
             .unwrap();

@@ -33,6 +33,7 @@ CORE_ASSET_MANIFESTS = [
     EVIDENCE_DIR / "2026-09-02-m3-worker-secure-context-assets.tsv",
     EVIDENCE_DIR / "2026-09-02-m3-install-event-type-assets.tsv",
     EVIDENCE_DIR / "2026-09-02-m3-worker-close-assets.tsv",
+    EVIDENCE_DIR / "2026-09-02-m3-worker-interface-assets.tsv",
     EVIDENCE_DIR / "2026-08-20-m3-update-assets.tsv",
     EVIDENCE_DIR / "2026-08-20-m3-import-response-assets.tsv",
     EVIDENCE_DIR / "2026-08-20-m3-import-dynamic-assets.tsv",
@@ -68,8 +69,12 @@ REVIEW_FILES = [
 IDL_SOURCE = "service-workers/idlharness.https.any.js"
 EXPECTED_SOURCE_COUNT = 294
 EXPECTED_URL_COUNT = 331
-EXPECTED_LANES = Counter(core=42, defer=41, gated=169, skip=42)
+EXPECTED_LANES = Counter(core=43, defer=40, gated=169, skip=42)
 CORE_PROMOTIONS = {
+    "service-workers/service-worker/interface-requirements-sw.https.html": (
+        "worker-interface-core",
+        "2026-09-02-m3-worker-interface.md",
+    ),
     "service-workers/service-worker/ServiceWorkerGlobalScope/close.https.html": (
         "worker-close-core",
         "2026-09-02-m3-worker-close.md",
