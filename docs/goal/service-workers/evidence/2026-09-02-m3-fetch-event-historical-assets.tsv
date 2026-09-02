@@ -1,0 +1,4 @@
+path	manifest_type	roles	referenced_by	bytes	templated	git_blob_sha	source_revision
+resources/testharness.js	support	harness	1	198291	no	c7ce4f51e1db075809f861255417c27478b2c179	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
+resources/testharnessreport.js	support	harness-report	1	1231	no	405a2d8b06f00fe8292e0e9d5b917e193cfd416c	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
+service-workers/service-worker/historical.https.any.js	testharness	case	1	152	no	20b3ddfbf7b883026b70692cf0f907dc93f5ad2b	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83

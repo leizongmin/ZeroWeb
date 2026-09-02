@@ -1,8 +1,8 @@
 {
-  "cases": 43,
-  "subtests": 173,
+  "cases": 44,
+  "subtests": 175,
   "status": {
-    "Pass": 173
+    "Pass": 175
   },
   "deterministic": true,
   "results": [
@@ -76,6 +76,21 @@
         },
         {
           "name": "isSecureContext",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/historical.https.any.js",
+      [
+        {
+          "name": "targetClientId should not be on FetchEvent",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "service-workers/service-worker/historical.https.any.js",
           "status": "Pass",
           "message": null
         }

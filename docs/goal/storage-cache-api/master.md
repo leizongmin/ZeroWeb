@@ -2,7 +2,7 @@
 
 **入口文档**: [../storage-cache-api.md](../storage-cache-api.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-02（Service Worker interface requirements core promotion）
+**最后更新**: 2026-09-02（FetchEvent historical interface core promotion）
 
 ---
 
@@ -457,6 +457,13 @@ fetch baseline，不改变本目标的 window/SW CacheStorage 分母。
   - `make baseline-wpt-service-workers-core OUTPUT=docs/goal/service-workers/evidence/2026-08-19-m1-wpt-core-baseline.json`：
     43 cases / 173 subtests / 173 Pass，double-run deterministic
   - 证据：[M3 Service Worker Interface Requirements](../service-workers/evidence/2026-09-02-m3-worker-interface.md)
+- 2026-09-02 FetchEvent historical interface：
+  - `historical.https.any.js` 纳入 Service Worker core runner，确认
+    `FetchEvent.prototype.targetClientId` 不暴露。该切片不改变 CacheStorage window/SW
+    分母，只收敛 CacheStorage serviceworker wrapper 依赖的 FetchEvent 接口面。
+  - `make baseline-wpt-service-workers-core OUTPUT=docs/goal/service-workers/evidence/2026-08-19-m1-wpt-core-baseline.json`：
+    44 cases / 175 subtests / 175 Pass，double-run deterministic
+  - 证据：[M3 FetchEvent Historical Interface](../service-workers/evidence/2026-09-02-m3-fetch-event-historical.md)
 - 2026-08-22 M3 CacheStorage 持久化首片：
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- cargo check -p zero-storage -p zero-page-runtime -p zero-webview --all-targets`：passed
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- cargo test -p zero-storage cache_storage_persistence -- --nocapture`：3 passed

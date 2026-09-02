@@ -819,6 +819,7 @@ pub const SERVICE_WORKER_CORE_CASES: &[&str] = &[
     "service-workers/service-worker/clients-matchall-on-evaluation.https.html",
     "service-workers/service-worker/ServiceWorkerGlobalScope/close.https.html",
     "service-workers/service-worker/ServiceWorkerGlobalScope/isSecureContext.https.html",
+    "service-workers/service-worker/historical.https.any.js",
     "service-workers/service-worker/import-scripts-cross-origin.https.html",
     "service-workers/service-worker/import-scripts-data-url.https.html",
     "service-workers/service-worker/import-scripts-mime-types.https.html",
@@ -4100,17 +4101,18 @@ async_test(function(test) {
     }
 
     #[test]
-    fn service_worker_core_manifest_has_forty_three_unique_cases() {
+    fn service_worker_core_manifest_has_forty_four_unique_cases() {
         let unique = SERVICE_WORKER_CORE_CASES
             .iter()
             .copied()
             .collect::<std::collections::BTreeSet<_>>();
-        assert_eq!(SERVICE_WORKER_CORE_CASES.len(), 43);
-        assert_eq!(unique.len(), 43);
+        assert_eq!(SERVICE_WORKER_CORE_CASES.len(), 44);
+        assert_eq!(unique.len(), 44);
         assert!(
             SERVICE_WORKER_CORE_CASES
                 .iter()
-                .all(|path| path.starts_with("service-workers/service-worker/") && path.ends_with(".html"))
+                .all(|path| path.starts_with("service-workers/service-worker/")
+                    && (path.ends_with(".html") || path.ends_with(".any.js")))
         );
         assert!(
             SERVICE_WORKER_CORE_CASES.contains(&"service-workers/service-worker/registration-end-to-end.https.html")
@@ -4127,6 +4129,7 @@ async_test(function(test) {
         assert!(
             SERVICE_WORKER_CORE_CASES.contains(&"service-workers/service-worker/interface-requirements-sw.https.html")
         );
+        assert!(SERVICE_WORKER_CORE_CASES.contains(&"service-workers/service-worker/historical.https.any.js"));
         assert!(SERVICE_WORKER_CORE_CASES.contains(&"service-workers/service-worker/install-event-type.https.html"));
         assert!(
             SERVICE_WORKER_CORE_CASES
