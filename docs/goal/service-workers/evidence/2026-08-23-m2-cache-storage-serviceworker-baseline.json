@@ -1,11 +1,66 @@
 {
-  "cases": 24,
-  "subtests": 308,
+  "cases": 25,
+  "subtests": 318,
   "status": {
-    "Pass": 308
+    "Pass": 318
   },
   "deterministic": true,
   "results": [
+    [
+      "service-workers/cache-storage/cache-abort.https.any.js",
+      [
+        {
+          "name": "put() on an already-aborted request should reject with AbortError",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "put() synchronously followed by abort should reject with AbortError",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "put() followed by abort after headers received should reject with AbortError",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "add() on an already-aborted request should reject with AbortError",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "add() synchronously followed by abort should reject with AbortError",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "add() followed by abort after headers received should reject with AbortError",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "addAll() on an already-aborted request should reject with AbortError",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "addAll() synchronously followed by abort should reject with AbortError",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "addAll() followed by abort after headers received should reject with AbortError",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "service-workers/cache-storage/cache-abort.https.any.js",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
     [
       "service-workers/cache-storage/cache-add.https.any.js",
       [

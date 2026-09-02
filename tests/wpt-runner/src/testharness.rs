@@ -900,6 +900,7 @@ pub const SERVICE_WORKER_FETCH_CASES: &[&str] = &[
 
 /// Fixed Service Worker CacheStorage corpus at the pinned WPT revision.
 pub const SERVICE_WORKER_CACHE_STORAGE_CASES: &[&str] = &[
+    "service-workers/cache-storage/cache-abort.https.any.js",
     "service-workers/cache-storage/cache-add.https.any.js",
     "service-workers/cache-storage/cache-delete.https.any.js",
     "service-workers/cache-storage/cache-keys.https.any.js",
@@ -1901,6 +1902,11 @@ fn service_worker_any_js_wrapper(path: &str, case_source: &str) -> String {
 fn service_worker_any_js_source(path: &str, case_source: &str) -> String {
     let case_source = apply_wpt_substitutions(case_source);
     let meta_scripts = wpt_meta_scripts(path, &case_source);
+    let fixture = if path.contains("cache-abort") {
+        format!("{CACHE_ABORT_FETCH_FIXTURE}\n")
+    } else {
+        String::new()
+    };
     let imports = if service_worker_any_js_is_module(&case_source) {
         meta_scripts
             .iter()
@@ -1918,9 +1924,9 @@ fn service_worker_any_js_source(path: &str, case_source: &str) -> String {
         format!("importScripts({scripts});\n")
     };
     if service_worker_any_js_is_module(&case_source) {
-        format!("import '/resources/testharness.js';\n{imports}\n{case_source}")
+        format!("import '/resources/testharness.js';\n{imports}\n{fixture}{case_source}")
     } else {
-        format!("importScripts('/resources/testharness.js');\n{imports}{case_source}")
+        format!("importScripts('/resources/testharness.js');\n{imports}{fixture}{case_source}")
     }
 }
 
@@ -4316,8 +4322,8 @@ async_test(function(test) {
             .iter()
             .copied()
             .collect::<std::collections::BTreeSet<_>>();
-        assert_eq!(SERVICE_WORKER_CACHE_STORAGE_CASES.len(), 24);
-        assert_eq!(unique.len(), 24);
+        assert_eq!(SERVICE_WORKER_CACHE_STORAGE_CASES.len(), 25);
+        assert_eq!(unique.len(), 25);
         assert!(
             SERVICE_WORKER_CACHE_STORAGE_CASES
                 .iter()
@@ -4549,6 +4555,39 @@ async_test(function(test) {
             "importScripts('/service-workers/service-worker/ServiceWorkerGlobalScope/resources/helper.js');"
         ));
         assert!(source.contains("test(() => {}, 'worker side');"));
+
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn service_worker_fixture_fetcher_wraps_cache_abort_any_js_with_dynamic_fetch_fixture() {
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "zero-wpt-runner-cache-abort-any-js-{}-{nonce}",
+            std::process::id()
+        ));
+        let case_path = root.join("service-workers/cache-storage/cache-abort.https.any.js");
+        std::fs::create_dir_all(case_path.parent().unwrap()).unwrap();
+        std::fs::write(
+            &case_path,
+            "// META: script=./resources/test-helpers.js\npromise_test(async () => {}, 'abort side');\n",
+        )
+        .unwrap();
+
+        let fetcher = wpt_data_service_worker_script_fetcher(&root).unwrap();
+        let response = fetcher(
+            "https://wpt.test/page",
+            "https://wpt.test/service-workers/cache-storage/cache-abort.https.any.js",
+        )
+        .unwrap();
+        let source = String::from_utf8(response.body).unwrap();
+        assert!(source.starts_with("importScripts('/resources/testharness.js');\n"));
+        assert!(source.contains("__zw_cache_abort_stash"));
+        assert!(source.contains("fetch/api/resources/stash-take.py"));
+        assert!(source.contains("promise_test(async () => {}, 'abort side');"));
 
         std::fs::remove_dir_all(&root).unwrap();
     }

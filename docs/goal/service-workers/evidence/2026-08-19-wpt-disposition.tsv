@@ -1,5 +1,5 @@
 source_path	revision	manifest_sha	generated_urls	lane	decision	evidence
-service-workers/cache-storage/cache-abort.https.any.js	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83	99f29b0a08bae82f4be0c0dee98ce5b31a941a48	4	gated	gated-initial-inventory	2026-08-19-m0-wpt-case-inventory.tsv
+service-workers/cache-storage/cache-abort.https.any.js	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83	99f29b0a08bae82f4be0c0dee98ce5b31a941a48	4	core	cache-abort-any-serviceworker-core	2026-09-02-m2-cache-abort-any-serviceworker.md
 service-workers/cache-storage/cache-add.https.any.js	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83	c4846eaae40afa38d9bf000169a4917d45a6df81	4	core	cache-add-any-serviceworker-core	2026-09-02-m2-cache-storage-any-batch.md
 service-workers/cache-storage/cache-api-nested-worker.https.html	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83	769200f66aa377840ba9c827d374c9cfaff7ec60	1	gated	gated-initial-inventory	2026-08-19-m0-wpt-case-inventory.tsv
 service-workers/cache-storage/cache-delete.https.any.js	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83	3eae2b6a08b7954a6a5e644b8248f6ebab562a83	4	core	cache-delete-any-serviceworker-core	2026-09-02-m2-cache-storage-any-batch.md

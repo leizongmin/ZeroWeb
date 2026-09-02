@@ -78,8 +78,12 @@ REVIEW_FILES = [
 IDL_SOURCE = "service-workers/idlharness.https.any.js"
 EXPECTED_SOURCE_COUNT = 294
 EXPECTED_URL_COUNT = 331
-EXPECTED_LANES = Counter(core=61, defer=34, gated=157, skip=42)
+EXPECTED_LANES = Counter(core=62, defer=34, gated=156, skip=42)
 CORE_PROMOTIONS = {
+    "service-workers/cache-storage/cache-abort.https.any.js": (
+        "cache-abort-any-serviceworker-core",
+        "2026-09-02-m2-cache-abort-any-serviceworker.md",
+    ),
     "service-workers/cache-storage/cache-storage-buckets.https.any.js": (
         "cache-storage-buckets-any-serviceworker-core",
         "2026-09-02-m2-cache-storage-buckets-serviceworker.md",

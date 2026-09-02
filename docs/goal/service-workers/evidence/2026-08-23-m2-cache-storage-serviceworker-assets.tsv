@@ -2,10 +2,13 @@ path	manifest_type	roles	referenced_by	bytes	templated	git_blob_sha	source_revis
 resources/testharness.js	support	harness	9	182422	no	ca0a92a89d9950253ed0a5e7b2fe69afba711a3b	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
 resources/testharnessreport.js	support	harness-report	9	2268	no	e5cb40fe0ef652be407d4c48b1c59391864cec7b	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
 common/get-host-info.sub.js	support	worker-script	2	2787	no	9b8c2b5de63f282663cab92231fe1c35184e6f02	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
-common/utils.js	support	worker-script	1	2447	no	62e742bee7f67cf3bd92a217a0a92b23fddf3017	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
+common/utils.js	support	worker-script	2	2447	no	62e742bee7f67cf3bd92a217a0a92b23fddf3017	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
+fetch/api/resources/infinite-slow-response.py	support	fetch-body	1	986	no	a26cd8064c88531e6877d2561cd16df964eb7f6e	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
+fetch/api/resources/stash-take.py	support	fetch-body	1	302	no	e6db80dd86df1e5a80e177b78bd40a59234885b0	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
+fetch/api/resources/stash-put.py	support	fetch-body	1	745	no	dbc7ceebb882ebb77a0202b3c9a828e2c70dc3bc	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
 service-workers/service-worker/resources/test-helpers.sub.js	support	page-script	9	10485	yes	74301523e7355ad8d62bcb568280edbc23fdaacf	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
-service-workers/cache-storage/resources/test-helpers.js	support	worker-script	11	9266	no	050ac0b542455ceb53ed36038af5b9b0810977cf	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
-service-workers/cache-storage/resources/simple.txt	support	fetch-body	4	19	no	9e3cb91fb9b95d6e51de85b82e6f86e92f59ac6d	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
+service-workers/cache-storage/resources/test-helpers.js	support	worker-script	12	9266	no	050ac0b542455ceb53ed36038af5b9b0810977cf	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
+service-workers/cache-storage/resources/simple.txt	support	fetch-body	5	19	no	9e3cb91fb9b95d6e51de85b82e6f86e92f59ac6d	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
 service-workers/cache-storage/resources/blank.html	support	fetch-body	2	41	no	a3c3a4689a62b45b1e429f6b7a94690e556a1259	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
 service-workers/cache-storage/resources/vary.py	support	fetch-body	3	1039	no	7fde1b1094ed4ce4018f17688e55d3be06fff993	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
 service-workers/cache-storage/resources/fetch-status.py	support	fetch-body	2	77	no	b7109f4787fd6d659a192f7f29157862eef36ae9	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
@@ -20,6 +23,7 @@ service-workers/cache-storage/script-tests/cache-match.js	support	worker-script	
 service-workers/cache-storage/script-tests/cache-put.js	support	worker-script	1	14860	no	f4251105cab0e0e397c65304f784f9af62d17af7	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
 service-workers/cache-storage/script-tests/cache-add.js	support	worker-script	1	13938	no	62b44c7880168b5762785ed9f75c2dfa167f9401	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
 service-workers/cache-storage/script-tests/cache-abort.js	support	worker-script	1	3085	no	3c7aa5cd2ffc9ef975e45456b10a60d1c4281693	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
+service-workers/cache-storage/cache-abort.https.any.js	testharness	case	1	3102	no	99f29b0a08bae82f4be0c0dee98ce5b31a941a48	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
 service-workers/cache-storage/cache-add.https.any.js	testharness	case	1	13923	no	c4846eaae40afa38d9bf000169a4917d45a6df81	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
 service-workers/cache-storage/cache-delete.https.any.js	testharness	case	1	5978	no	3eae2b6a08b7954a6a5e644b8248f6ebab562a83	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
 service-workers/cache-storage/cache-keys.https.any.js	testharness	case	1	7568	no	232fb760d4080a02051ba5cf5e8d2964771fda9a	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83

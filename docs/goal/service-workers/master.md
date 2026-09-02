@@ -40,10 +40,10 @@ serviceworker wrapper 已
 `cache-keys-attributes-for-service-worker`、`credentials` 与 top-level
 `cache-storage.https.any.js`、`cache-add.https.any.js`、`cache-delete.https.any.js`、
 `cache-keys.https.any.js`、`cache-match.https.any.js`、`cache-matchAll.https.any.js`、
-`cache-put.https.any.js`、`cache-storage-buckets.https.any.js`、
+`cache-put.https.any.js`、`cache-abort.https.any.js`、`cache-storage-buckets.https.any.js`、
 `cache-storage-keys.https.any.js` 与 `cache-storage-match.https.any.js`
 Service Worker global variants、`cache-keys-attributes-for-service-worker` /
-`credentials` 24 case / 308 subtest / 308 Pass 确定性
+`credentials` 25 case / 318 subtest / 318 Pass 确定性
 baseline，覆盖 worker-global
 `caches.open()`、`CacheStorage.has/delete/keys/match()`、opened `Cache` identity、
 delete dooming、缺参 TypeError、`Cache.match/delete/keys/matchAll()`、query options、Vary
@@ -469,8 +469,7 @@ JSON，private profile 继续只保留内存态。
   Service Worker `.any.js` harness 下直接运行，包括 add/addAll fetch→put、put body/cacheability、
   match/matchAll/delete/keys query options、Vary matching、Blob/FormData/redirect response
   round-trip、CacheStorage.keys/match 和 DOMString cache names。`cache-abort.https.any.js`
-  top-level variant 暂留 gated：当前本地 WPT stash 动态资源响应协议与该 `.any.js` 期望不一致，
-  但既有 `serviceworker/cache-abort.https.html` wrapper 仍保持通过。
+  top-level variant 已在 M2-45 纳入 core。
 - ✅ M2-44：Service Worker CacheStorage WPT baseline 纳入
   `service-workers/cache-storage/cache-storage-buckets.https.any.js` 的 Service Worker
   global variant；SW runtime 补齐 `WorkerNavigator.storageBuckets` 最小面，bucket-local
@@ -478,6 +477,12 @@ JSON，private profile 继续只保留内存态。
   拒绝语义；classic `importScripts()` 现在会把 imported helper 的顶层 function 声明投影到
   `globalThis`，使 WPT META support helper 在后续 case 中可见。资产清单固定到 48 asset，
   runner 双跑 24 case / 308 subtest / 308 Pass / 0 Fail / 0 Timeout / deterministic true。
+- ✅ M2-45：Service Worker CacheStorage WPT baseline 纳入
+  `service-workers/cache-storage/cache-abort.https.any.js` 的 Service Worker global variant；
+  WPT runner 将既有 `cache-abort` 动态 fetch/stash fixture 注入扩展到 `.any.js`
+  worker 包装路径，使 headers-received abort 场景拿到等价 JSON stash 响应。资产清单固定到
+  52 asset，runner 双跑 25 case / 318 subtest / 318 Pass / 0 Fail / 0 Timeout /
+  deterministic true。
 - ✅ M2-22：Service Worker fetch/interception WPT baseline 扩展到
   `service-workers/service-worker/fetch-event-within-sw.https.html`；fetch-wave 资产清单
   扩展到 23 asset，runner 双跑 7 case / 12 subtest / 12 Pass / 0 Fail /
@@ -653,7 +658,7 @@ second（replacement）worker 只处理 awaitInstallEvent（messageSequence=1）
 
 - 测试基线：storage crate 既有单测全绿（立项时点）；clippy 零警告
 - WPT service-workers 面：当前 core runner 49 case / 193 subtest 全绿，fetch/message runner
-  26 case / 70 subtest 全绿，CacheStorage runner 24 case / 308 subtest 全绿；
+  26 case / 70 subtest 全绿，CacheStorage runner 25 case / 318 subtest 全绿；
   上游完整分母 294 个 testharness 源 / 331 URL，
   正文覆盖 294/294；分层与依赖信号见
   [M0 WPT evidence](evidence/2026-08-19-m0-wpt-executable-surface.md)，逐文件机器清单见
@@ -721,7 +726,7 @@ second（replacement）worker 只处理 awaitInstallEvent（messageSequence=1）
   `make test-wpt-service-workers-import-event-wave-assets` 固化篡改/修复回归
 - Fetch-wave 资产恢复/审计：68 assets / 70 subtest；
   `make test-wpt-service-workers-fetch-wave-assets` 固化篡改/修复回归
-- CacheStorage serviceworker-wave 资产恢复/审计：48 assets / 308 subtest；
+- CacheStorage serviceworker-wave 资产恢复/审计：52 assets / 318 subtest；
   `make test-wpt-service-workers-cache-storage-wave-assets` 固化篡改/修复回归
 - Dynamic-import-update-wave 资产恢复/审计：17 assets / 7 subtest；
   `make test-wpt-service-workers-dynamic-import-update-wave-assets` 固化篡改/修复回归
@@ -906,8 +911,8 @@ second（replacement）worker 只处理 awaitInstallEvent（messageSequence=1）
   restore、normal profile mutation dirtying 与 owner 重建读回见
   [M3 Service Worker CacheStorage Persistence](evidence/2026-08-22-m3-registration-cache-storage-persistence.md)
 - M2 Service Worker CacheStorage WPT baseline：12 个 serviceworker CacheStorage
-  wrapper 加 2 个顶层 CacheStorage 页面和 10 个 `.any.js` Service Worker global variants，
-  资产清单与 24/308 deterministic baseline 见
+  wrapper 加 2 个顶层 CacheStorage 页面和 11 个 `.any.js` Service Worker global variants，
+  资产清单与 25/318 deterministic baseline 见
   [Service Worker CacheStorage WPT Baseline](evidence/2026-08-23-m2-cache-storage-serviceworker-baseline.md)
 - M1-5 core WPT：固定 12-case runner、两轮确定性 baseline 与 13 个红项分组见
   [M1 core WPT baseline](evidence/2026-08-19-m1-wpt-core-baseline.md)
@@ -1137,6 +1142,7 @@ second（replacement）worker 只处理 awaitInstallEvent（messageSequence=1）
 | 2026-09-02 | M2 fetch stream body error baseline | `fetch-error.https.html` 纳入 fetch runner；`respondWith(new Response(stream))` 后续 body error 在页面 `response.text()` 阶段 reject；26 case / 70 subtest 全绿 |
 | 2026-09-02 | M2 CacheStorage `.any.js` batch baseline | 8 个额外 top-level CacheStorage `.any.js` Service Worker global variants 纳入 CacheStorage runner；23 case / 305 subtest 全绿 |
 | 2026-09-02 | M2 CacheStorage buckets Service Worker baseline | `cache-storage-buckets.https.any.js` Service Worker variant 纳入 CacheStorage runner；24 case / 308 subtest 全绿 |
+| 2026-09-02 | M2 CacheStorage abort Service Worker baseline | `cache-abort.https.any.js` Service Worker variant 纳入 CacheStorage runner；WPT runner 对 `.any.js` worker 包装注入 cache-abort 动态 fetch/stash fixture；25 case / 318 subtest 全绿 |
 | 2026-08-21 | M2-1 fetch runtime foundation | `FetchEvent`/`Request`/`Response` MVP；manager longest-scope dispatch；browser/renderer IPC command/event；生产页面 fetch/Cache 集成仍待后续 |
 | 2026-08-19 | 三方案对比 | 拒绝同线程 context（无调度隔离）；拒绝从零线程（复制安全基建）；推荐抽取 Worker 线程核 |
 | 2026-08-19 | owner | production browser process 单一 owner；WebView 只做同算法 in-process adapter |
