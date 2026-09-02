@@ -1,8 +1,8 @@
 {
-  "cases": 25,
-  "subtests": 67,
+  "cases": 26,
+  "subtests": 70,
   "status": {
-    "Pass": 67
+    "Pass": 70
   },
   "deterministic": true,
   "results": [
@@ -367,6 +367,26 @@
       ]
     ],
     [
+      "service-workers/service-worker/fetch-error.https.html",
+      [
+        {
+          "name": "Setup service worker",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Make sure a load that makes progress does not time out",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Unregister service worker",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
       "service-workers/service-worker/iso-latin1-header.https.html",
       [
         {
@@ -450,12 +470,12 @@
       "service-workers/service-worker/unregister-controller.https.html",
       [
         {
-          "name": "Unregister does not affect existing controller",
+          "name": "Unregister prevents control of subsequent navigations",
           "status": "Pass",
           "message": null
         },
         {
-          "name": "Unregister prevents control of subsequent navigations",
+          "name": "Unregister does not affect existing controller",
           "status": "Pass",
           "message": null
         },

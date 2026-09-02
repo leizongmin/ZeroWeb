@@ -778,7 +778,7 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
     return name === 'set-cookie' || name === 'set-cookie2';
   }
   function isInternalResponseHeader(name) {
-    return name === 'x-zero-final-url' || name === 'x-zero-response-type';
+    return name === 'x-zero-final-url' || name === 'x-zero-response-type' || name === 'x-zero-body-error';
   }
   function isHiddenResponseHeader(headers, name) {
     return headers._guard === 'response' && (isForbiddenResponseHeader(name) || isInternalResponseHeader(name));
@@ -860,6 +860,108 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
   function normalizeBody(body) {
     if (body === undefined || body === null) return '';
     return utf8Decode(bodyPartBytes(body));
+  }
+  const MAX_FETCH_BODY_BYTES = 16 * 1024 * 1024;
+  if (typeof globalThis.ReadableStream !== 'function') {
+    globalThis.ReadableStream = class ReadableStream {
+      constructor(underlyingSource) {
+        const source = underlyingSource || {};
+        const queue = [];
+        const waiting = [];
+        let state = 'readable';
+        let errorValue;
+        let pulling = false;
+        const flushPull = function() {
+          if (pulling || state !== 'readable' || typeof source.pull !== 'function') return;
+          pulling = true;
+          try { source.pull(controller); } catch (error) { errorStream(error); }
+          pulling = false;
+        };
+        const enqueueChunk = function(chunk) {
+          if (state !== 'readable') return;
+          if (waiting.length > 0) {
+            waiting.shift().resolve({done: false, value: chunk});
+          } else {
+            queue.push(chunk);
+          }
+        };
+        const closeStream = function() {
+          if (state !== 'readable') return;
+          state = 'closed';
+          while (waiting.length > 0) waiting.shift().resolve({done: true, value: undefined});
+        };
+        const errorStream = function(error) {
+          if (state !== 'readable') return;
+          errorValue = error;
+          state = 'errored';
+          while (waiting.length > 0) waiting.shift().reject(error);
+        };
+        const controller = {
+          enqueue: enqueueChunk,
+          close: closeStream,
+          error: errorStream,
+          get desiredSize() { return state === 'errored' ? null : (state === 'closed' ? 0 : 1); }
+        };
+        this.getReader = function() {
+          return {
+            read: function() {
+              return new Promise(function(resolve, reject) {
+                if (state === 'errored') { reject(errorValue); return; }
+                if (queue.length > 0) {
+                  resolve({done: false, value: queue.shift()});
+                  flushPull();
+                  return;
+                }
+                if (state === 'closed') { resolve({done: true, value: undefined}); return; }
+                waiting.push({resolve, reject});
+                flushPull();
+              });
+            },
+            releaseLock: function() {}
+          };
+        };
+      }
+    };
+  }
+  function isReadableStreamLike(body) {
+    return body && typeof body.getReader === 'function';
+  }
+  function collectReadableStreamBody(stream) {
+    const reader = stream.getReader();
+    const chunks = [];
+    let total = 0;
+    function pump() {
+      return reader.read().then(function(result) {
+        if (result.done) {
+          const out = new Uint8Array(total);
+          let offset = 0;
+          for (const chunk of chunks) {
+            out.set(chunk, offset);
+            offset += chunk.length;
+          }
+          return utf8Decode(out);
+        }
+        const bytes = bodyPartBytes(result.value);
+        chunks.push(bytes);
+        total += bytes.length;
+        if (total > MAX_FETCH_BODY_BYTES) {
+          throw new TypeError('Service Worker fetch response body exceeds the size limit');
+        }
+        return pump();
+      });
+    }
+    function releaseReader() {
+      if (reader && typeof reader.releaseLock === 'function') {
+        try { reader.releaseLock(); } catch (_error) {}
+      }
+    }
+    return pump().then(function(body) {
+      releaseReader();
+      return body;
+    }, function(error) {
+      releaseReader();
+      return {__zwBodyError: String(error && error.message || error)};
+    });
   }
   function normalizeRequestURL(input) {
     const source = String(input);
@@ -949,9 +1051,13 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
           this.headers.set('content-type', multipart.contentType);
         }
         this._body = utf8Decode(multipart.body);
+      } else if (isReadableStreamLike(body)) {
+        this._body = '';
+        this._bodyStream = body;
       } else {
         this._body = normalizeBody(body);
       }
+      this._bodyError = '';
       this.bodyUsed = false;
       this.ok = status >= 200 && status <= 299;
       this.type = 'default';
@@ -1016,17 +1122,30 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
       if (value instanceof Response) return value;
       throw new TypeError('FetchEvent.respondWith must resolve with a Response');
     }
-    static _serialize(response) {
+    static _serialize(response, options) {
       if (response.bodyUsed) throw new TypeError('Response body has already been used');
-      const headers = Array.from(response.headers);
-      if (response.url) headers.push(['x-zero-final-url', response.url]);
-      return {
-        status: response.status,
-        statusText: response.statusText,
-        type: response.type || 'default',
-        headers,
-        body: response._body
+      options = options || {};
+      const finish = function(body) {
+        const headers = Array.from(response.headers);
+        let bodyText = body;
+        if (body && typeof body === 'object' && body.__zwBodyError !== undefined) {
+          if (options.rejectBodyError) throw new TypeError(String(body.__zwBodyError));
+          bodyText = '';
+          headers.push(['x-zero-body-error', String(body.__zwBodyError)]);
+        }
+        if (response.url) headers.push(['x-zero-final-url', response.url]);
+        return {
+          status: response.status,
+          statusText: response.statusText,
+          type: response.type || 'default',
+          headers,
+          body: bodyText
+        };
       };
+      if (response._bodyStream) {
+        return collectReadableStreamBody(response._bodyStream).then(finish);
+      }
+      return finish(response._body);
     }
   }
   Object.defineProperty(Response.prototype, Symbol.toStringTag, {value: 'Response'});
@@ -1293,10 +1412,17 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
     const hostRequest = {
       op: 'put',
       request: cacheRequestWire(request),
-      response: Response._serialize(cacheResponse)
     };
     cacheSetNameWire(hostRequest, 'cacheName', cache._name);
     cacheSetIdWire(hostRequest, cache);
+    const serialized = Response._serialize(cacheResponse, {rejectBodyError: true});
+    if (serialized && typeof serialized.then === 'function') {
+      return serialized.then(function(response) {
+        hostRequest.response = response;
+        return hostRequest;
+      });
+    }
+    hostRequest.response = serialized;
     return hostRequest;
   }
   // https://w3c.github.io/ServiceWorker/#cache-interface
@@ -1323,7 +1449,7 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
       } catch (error) {
         return Promise.reject(error);
       }
-      return cacheStorageHost(request).then(function() {
+      return Promise.resolve(request).then(cacheStorageHost).then(function() {
         return undefined;
       });
     }
@@ -2112,8 +2238,10 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
         pending.push(Promise.resolve(value).then(function(response) {
           if (result.failed) return;
           response = Response._from(response);
-          result.responded = true;
-          result.response = Response._serialize(response);
+          return Promise.resolve(Response._serialize(response)).then(function(serialized) {
+            result.responded = true;
+            result.response = serialized;
+          });
         }));
       };
       const callbacks = (listeners.fetch || []).slice();
@@ -8399,6 +8527,61 @@ mod tests {
                 ..
             } if message.contains("body has already been used")
         ));
+    }
+
+    #[test]
+    fn fetch_event_readable_stream_body_error_is_serialized() {
+        let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
+        runtime
+            .evaluate(
+                "addEventListener('fetch', event => {
+                   let counter = 0;
+                   const stream = new ReadableStream({ pull: controller => {
+                     counter += 1;
+                     if (counter === 1) {
+                       controller.enqueue(new Uint8Array([80, 65, 83, 83]));
+                     } else {
+                       setTimeout(() => controller.error('stream failed'), 0);
+                     }
+                   }});
+                   event.respondWith(new Response(stream));
+                 });",
+                "https://example.test/sw.js",
+            )
+            .unwrap();
+        let _ = runtime.recv_timeout(Duration::from_secs(5)).unwrap();
+
+        runtime
+            .dispatch_fetch(
+                53,
+                ServiceWorkerFetchRequest {
+                    url: "https://example.test/app/page".into(),
+                    method: "GET".into(),
+                    headers: Vec::new(),
+                    body: None,
+                    credentials: None,
+                    client_id: None,
+                    resulting_client_id: None,
+                    referrer: None,
+                    is_reload_navigation: false,
+                    is_history_navigation: false,
+                },
+            )
+            .unwrap();
+        let event = runtime.recv_timeout(Duration::from_secs(5)).unwrap();
+        assert!(
+            matches!(
+                event,
+                ServiceWorkerEvent::FetchSettled {
+                event_id: 53,
+                response: Some(ServiceWorkerFetchResponse { ref headers, ref body, .. }),
+                failed: false,
+                ..
+            } if body.is_empty()
+                && headers.iter().any(|(name, value)| name == "x-zero-body-error" && value == "stream failed")
+            ),
+            "unexpected event: {event:?}"
+        );
     }
 
     #[test]

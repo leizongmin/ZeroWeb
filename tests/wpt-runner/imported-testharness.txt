@@ -252,6 +252,7 @@ service-workers/service-worker/fetch-event-add-async.https.html 04067ce9c7c2165e
 service-workers/service-worker/fetch-event-async-respond-with.https.html 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-08-22 SW-M2-fetch-baseline
 service-workers/service-worker/fetch-event-respond-with-argument.https.html 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-08-22 SW-M2-fetch-baseline
 service-workers/service-worker/fetch-event-network-error.https.html 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-08-22 SW-M2-fetch-baseline
+service-workers/service-worker/fetch-error.https.html 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-09-02 SW-M2-fetch-stream-error
 service-workers/service-worker/iso-latin1-header.https.html 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-08-22 SW-M2-fetch-header-baseline
 service-workers/service-worker/invalid-header.https.html 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-08-31 SW-M2-fetch-invalid-header
 service-workers/service-worker/invalid-blobtype.https.html 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-08-31 SW-M2-fetch-invalid-blobtype

@@ -1270,6 +1270,7 @@
     var headers = _parseHeadersWire(headersWire);
     var finalUrl = _takeHeaderValue(headers, 'x-zero-final-url');
     var responseType = _takeHeaderValue(headers, 'x-zero-response-type') || 'default';
+    var bodyError = _takeHeaderValue(headers, 'x-zero-body-error');
     _takeHeaderValue(headers, 'x-zero-resource-type');
     // R3021：二进制 response body 经 `__zw_bytes:` csv-decimal wire → Uint8Array（response.blob()/arrayBuffer() 保真）；
     // 文本 body 原样字符串。
@@ -1280,6 +1281,7 @@
     // https://fetch.spec.whatwg.org/#concept-response-url
     response.url = finalUrl;
     response.type = responseType;
+    response._bodyError = bodyError;
     return response;
   }
   function _zwBytesFromBodyPart(part) {
@@ -1332,9 +1334,21 @@
   function _zwMarkBodyUsed(target) {
     if (!target._bodyNull) target._bodyUsed = true;
   }
+  function _zwBodyErrorPromise(target) {
+    if (!target._bodyError) return null;
+    return Promise.reject(new TypeError(String(target._bodyError)));
+  }
   function _zwCreateBodyStream(target) {
     var source = target._bodyBytes != null ? target._bodyBytes : target._bodyText;
-    var stream = _bodyToStream(source);
+    var stream = target._bodyError
+      ? new ReadableStream({
+          start: function (controller) {
+            var bytes = source instanceof Uint8Array ? source : _zw_utf8_encode(source || '');
+            if (bytes.length > 0) controller.enqueue(bytes);
+            controller.error(new TypeError(String(target._bodyError)));
+          }
+        })
+      : _bodyToStream(source);
     var originalGetReader = stream.getReader;
     stream.getReader = function () {
       _zwMarkBodyUsed(target);
@@ -1699,13 +1713,21 @@
       get: function () { return !!self._bodyUsed; },
       configurable: true
     });
-    this.text = function () { _zwMarkBodyUsed(self); return Promise.resolve(self._bodyText); };
-    this.json = function () { _zwMarkBodyUsed(self); return Promise.resolve(JSON.parse(self._bodyText)); };
+    this.text = function () {
+      _zwMarkBodyUsed(self);
+      return _zwBodyErrorPromise(self) || Promise.resolve(self._bodyText);
+    };
+    this.json = function () {
+      _zwMarkBodyUsed(self);
+      return _zwBodyErrorPromise(self) || Promise.resolve(JSON.parse(self._bodyText));
+    };
     // R2978/R3021：补全 Response body-consumption 表面（spec：text/json/blob/arrayBuffer/formData）。
     // blob()：body 包成 Blob（二进制 body 用 _bodyBytes 字节保真）；arrayBuffer()：二进制 body 返 _bodyBytes，
     // 文本 body UTF-8 编码；formData()：application/x-www-form-urlencoded 解析。
     this.blob = function () {
       _zwMarkBodyUsed(self);
+      var bodyError = _zwBodyErrorPromise(self);
+      if (bodyError) return bodyError;
       var contentType = self.headers && typeof self.headers.get === 'function'
         ? (self.headers.get('content-type') || '')
         : '';
@@ -1713,6 +1735,8 @@
     };
     this.arrayBuffer = function () {
       _zwMarkBodyUsed(self);
+      var bodyError = _zwBodyErrorPromise(self);
+      if (bodyError) return bodyError;
       if (self._bodyBytes != null) {
         var cp = new Uint8Array(self._bodyBytes.length);
         for (var j = 0; j < self._bodyBytes.length; j++) cp[j] = self._bodyBytes[j];
@@ -1725,6 +1749,8 @@
     };
     this.formData = function () {
       _zwMarkBodyUsed(self);
+      var bodyError = _zwBodyErrorPromise(self);
+      if (bodyError) return bodyError;
       var contentType = self.headers && typeof self.headers.get === 'function'
         ? (self.headers.get('content-type') || '')
         : '';
@@ -1745,6 +1771,7 @@
       cloned._zwOpaqueBodyText = self._zwOpaqueBodyText;
       cloned._zwOpaqueBodyBytes = self._zwOpaqueBodyBytes;
       cloned._bodyNull = self._bodyNull;
+      cloned._bodyError = self._bodyError;
       return cloned;
     };
   };

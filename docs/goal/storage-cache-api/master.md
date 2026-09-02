@@ -418,6 +418,14 @@ fetch baseline，不改变本目标的 window/SW CacheStorage 分母。
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 600 -- target/release/zero-wpt-runner testharness-cache-storage --wpt-data tests/wpt-runner/wpt-data/.cache-storage-window-root credentials.https.html --json`：1 case / 1 subtest / 1 Pass
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 900 -- make baseline-wpt-cache-storage OUTPUT=docs/goal/storage-cache-api/evidence/2026-08-31-cache-storage-window-credentials-baseline.json SUMMARY=docs/goal/storage-cache-api/evidence/2026-08-31-cache-storage-window-credentials-baseline.md`：37 cases / 439 subtests / 439 Pass，double-run deterministic
   - 证据：[M2 CacheStorage Credentials Baseline](evidence/2026-08-31-cache-storage-window-credentials-baseline.md)
+- 2026-09-02 Service Worker fetch stream body error：
+  - `service-workers/service-worker/fetch-error.https.html` 纳入 Service Worker
+    fetch/message runner，覆盖 `respondWith(new Response(stream))` 的 body stream
+    先产生进展、后续 error 时，页面 `response.text()` body 消费 reject。该行为同
+    `Cache.add()` / worker `fetch()` 共享 Response body 桥接路径，避免将 errored stream
+    错误快照为成功文本 body。
+  - `make baseline-wpt-service-workers-fetch OUTPUT=docs/goal/service-workers/evidence/2026-08-31-m3-extendable-message-event-constructor-baseline.json SUMMARY=docs/goal/service-workers/evidence/2026-08-31-m3-extendable-message-event-constructor-baseline.md`：26 cases / 70 subtests / 70 Pass，double-run deterministic
+  - 证据：[Service Worker Fetch WPT Baseline](../service-workers/evidence/2026-08-31-m3-extendable-message-event-constructor-baseline.md)
 - 2026-08-22 M3 CacheStorage 持久化首片：
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- cargo check -p zero-storage -p zero-page-runtime -p zero-webview --all-targets`：passed
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- cargo test -p zero-storage cache_storage_persistence -- --nocapture`：3 passed
