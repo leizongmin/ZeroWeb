@@ -997,6 +997,7 @@ impl ServiceWorkerHostCommandParams {
                 data_json,
                 client_id,
                 client_url,
+                client_frame_type,
                 transferred_port_ids,
                 data_port_index,
                 target_port_id,
@@ -1008,6 +1009,9 @@ impl ServiceWorkerHostCommandParams {
                 }
                 if client_id.len() > MAX_URL_BYTES || client_url.len() > MAX_URL_BYTES {
                     return Err("Service Worker host message client fields exceed the length limit");
+                }
+                if !matches!(client_frame_type.as_str(), "top-level" | "auxiliary" | "nested") {
+                    return Err("Service Worker host message client frame type is invalid");
                 }
                 if data_json.len() > MAX_SCRIPT_BYTES {
                     return Err("Service Worker host message payload exceeds the size limit");
@@ -1423,6 +1427,10 @@ pub enum ServiceWorkerHostCommand {
         client_id: String,
         /// 发起消息的 client URL。
         client_url: String,
+        /// Frame type of the originating window client.
+        client_frame_type: String,
+        /// Whether the originating window client currently has focus.
+        client_focused: bool,
         /// MessagePort endpoint IDs transferred into the worker.
         transferred_port_ids: Vec<u64>,
         /// Index of the transferred port used as the payload itself.

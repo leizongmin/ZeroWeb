@@ -5,7 +5,8 @@ use std::collections::{HashMap, HashSet};
 use zero_script_sandbox::{
     SandboxConfig, ServiceWorkerCacheStorageRequest, ServiceWorkerCacheStorageResult, ServiceWorkerClientInfo,
     ServiceWorkerEvent, ServiceWorkerFetchRequest, ServiceWorkerFetchResponse, ServiceWorkerLifecyclePhase,
-    ServiceWorkerMessagePorts, ServiceWorkerOutboundMessage, ServiceWorkerRuntime, ServiceWorkerScriptErrorKind,
+    ServiceWorkerMessagePorts, ServiceWorkerMessageSource, ServiceWorkerOutboundMessage, ServiceWorkerPeerInfo,
+    ServiceWorkerRegistrationPeers, ServiceWorkerRuntime, ServiceWorkerScriptErrorKind, ServiceWorkerWorkerMessage,
 };
 use zero_storage::{
     Cache, CacheQueryOptions, CacheRequest, CacheResponse, CacheStorage, CacheStorageSnapshot,
@@ -616,6 +617,7 @@ pub struct ServiceWorkerManager {
     evaluated: HashSet<u64>,
     restoring_active: HashSet<u64>,
     runtime_limit: usize,
+    next_worker_message_event_id: u64,
 }
 
 /// One page-to-worker message dispatch with manager-owned state attached.
@@ -628,6 +630,10 @@ pub struct ServiceWorkerClientMessageDispatch<'a> {
     pub client_id: &'a str,
     /// Originating client URL.
     pub client_url: &'a str,
+    /// Frame type of the originating window client.
+    pub client_frame_type: &'a str,
+    /// Whether the originating window client currently has focus.
+    pub client_focused: bool,
     /// MessagePort metadata for transferred or addressed endpoints.
     pub ports: &'a ServiceWorkerMessagePorts,
     /// Whether `clients.claim()` is allowed for this dispatched event.
@@ -662,6 +668,20 @@ pub trait ServiceWorkerRuntimeHost: Send {
         &mut self,
         registration_id: u64,
         message: ServiceWorkerClientMessageDispatch<'_>,
+    ) -> Result<(), ServiceWorkerManagerError>;
+    /// Dispatch one worker-to-worker message into a live runtime.
+    fn dispatch_worker_message(
+        &mut self,
+        registration_id: u64,
+        event_id: u64,
+        message: ServiceWorkerWorkerMessage,
+        clients_claim_allowed: bool,
+    ) -> Result<(), ServiceWorkerManagerError>;
+    /// Synchronize one runtime's visible registration slot projections.
+    fn sync_registration_peers(
+        &mut self,
+        registration_id: u64,
+        peers: ServiceWorkerRegistrationPeers,
     ) -> Result<(), ServiceWorkerManagerError>;
     /// Dispatch one fetch event into a live runtime.
     fn dispatch_fetch(
@@ -801,11 +821,55 @@ impl ServiceWorkerRuntimeHost for LocalServiceWorkerHost {
             .dispatch_message_with_ports_with_claim_allowed(
                 message.event_id,
                 message.data_json,
-                message.client_id,
-                message.client_url,
+                ServiceWorkerMessageSource {
+                    client_id: message.client_id,
+                    client_url: message.client_url,
+                    client_frame_type: message.client_frame_type,
+                    client_focused: message.client_focused,
+                },
                 message.ports,
                 message.clients_claim_allowed,
             )
+            .map_err(|error| ServiceWorkerManagerError::Runtime(error.to_string()))
+    }
+
+    fn dispatch_worker_message(
+        &mut self,
+        registration_id: u64,
+        event_id: u64,
+        message: ServiceWorkerWorkerMessage,
+        clients_claim_allowed: bool,
+    ) -> Result<(), ServiceWorkerManagerError> {
+        let runtime = self
+            .runtimes
+            .get_mut(&registration_id)
+            .ok_or(ServiceWorkerManagerError::UnknownRegistration(registration_id))?;
+        runtime
+            .dispatch_worker_message(
+                event_id,
+                &message.data_json,
+                message.source,
+                &ServiceWorkerMessagePorts {
+                    transferred_port_ids: message.transferred_port_ids,
+                    data_port_index: message.data_port_index,
+                    target_port_id: None,
+                },
+                clients_claim_allowed,
+            )
+            .map_err(|error| ServiceWorkerManagerError::Runtime(error.to_string()))
+    }
+
+    fn sync_registration_peers(
+        &mut self,
+        registration_id: u64,
+        peers: ServiceWorkerRegistrationPeers,
+    ) -> Result<(), ServiceWorkerManagerError> {
+        let runtime = self
+            .runtimes
+            .get_mut(&registration_id)
+            .ok_or(ServiceWorkerManagerError::UnknownRegistration(registration_id))?;
+        runtime
+            .sync_registration_peers(registration_id, peers)
             .map_err(|error| ServiceWorkerManagerError::Runtime(error.to_string()))
     }
 
@@ -981,6 +1045,7 @@ impl ServiceWorkerManager {
             evaluated: HashSet::new(),
             restoring_active: HashSet::new(),
             runtime_limit: DEFAULT_RUNTIME_LIMIT,
+            next_worker_message_event_id: 1,
         }
     }
 
@@ -1717,6 +1782,16 @@ impl ServiceWorkerManager {
                         self.route_client_messages(registration_id, pending_fetch_client_id.as_deref(), outbound);
                     }
                 }
+                ServiceWorkerEvent::WorkerMessagesEmitted { messages } => {
+                    for message in messages {
+                        if let Err(error) = self.dispatch_worker_message(registration_id, message) {
+                            output.push(ServiceWorkerManagerEvent::CoordinationFailed {
+                                registration_id,
+                                message: error.to_string(),
+                            });
+                        }
+                    }
+                }
                 ServiceWorkerEvent::ClientsClaimRequested => {
                     if self
                         .registry
@@ -2259,6 +2334,14 @@ impl ServiceWorkerManager {
             .any(|record| record.controller_registration_id == Some(registration_id))
     }
 
+    /// Return whether any known client is controlled by this registration version.
+    pub fn has_controlled_client(&self, registration_id: u64) -> Result<bool, ServiceWorkerManagerError> {
+        if self.registry.get(registration_id).is_none() {
+            return Err(ServiceWorkerManagerError::UnknownRegistration(registration_id));
+        }
+        Ok(self.client_is_controlled_by(registration_id))
+    }
+
     fn forget_registration(&mut self, registration_id: u64) {
         self.registration_keys.remove(&registration_id);
         self.state_changes.remove(&registration_id);
@@ -2351,7 +2434,10 @@ impl ServiceWorkerManager {
         client_url: &str,
         ports: &ServiceWorkerMessagePorts,
     ) -> Result<(), ServiceWorkerManagerError> {
-        self.observe_window_client(client_id, client_url)?;
+        let known_client_before_dispatch = self.clients.contains_key(client_id);
+        if !known_client_before_dispatch {
+            self.observe_window_client(client_id, client_url)?;
+        }
         let state = self
             .registration(registration_id)
             .ok_or(ServiceWorkerManagerError::UnknownRegistration(registration_id))?
@@ -2397,6 +2483,13 @@ impl ServiceWorkerManager {
             ));
         }
         let key = (registration_id, client_id.to_string());
+        let client_frame_type = self
+            .clients
+            .get(client_id)
+            .map(|record| record.info.frame_type.clone())
+            .unwrap_or_else(|| "top-level".to_string());
+        let client_focused = self.clients.get(client_id).is_none_or(|record| record.info.focused)
+            || (!known_client_before_dispatch && client_frame_type == "top-level");
         let pending = self.pending_client_messages.get(&key).copied().unwrap_or(0);
         let known_client = self.client_messages.contains_key(&key) || self.pending_client_messages.contains_key(&key);
         if let Some(batches) = self.client_messages.get(&key)
@@ -2429,6 +2522,7 @@ impl ServiceWorkerManager {
         );
         *self.pending_client_messages.entry(key.clone()).or_default() += 1;
         let clients_claim_allowed = state == ServiceWorkerState::Activated;
+        self.sync_runtime_registration_peers(registration_id)?;
         let result = self.host.dispatch_client_message(
             registration_id,
             ServiceWorkerClientMessageDispatch {
@@ -2436,6 +2530,8 @@ impl ServiceWorkerManager {
                 data_json,
                 client_id,
                 client_url,
+                client_frame_type: &client_frame_type,
+                client_focused,
                 ports,
                 clients_claim_allowed,
             },
@@ -2797,9 +2893,6 @@ impl ServiceWorkerManager {
             {
                 return Ok(());
             }
-            if self.clients.get(client_id).is_some_and(|record| record.info.focused) {
-                return Ok(());
-            }
             let focus_sequence = self.next_client_focus_sequence;
             self.next_client_focus_sequence = self.next_client_focus_sequence.saturating_add(1);
             for record in self.clients.values_mut() {
@@ -3103,6 +3196,59 @@ impl ServiceWorkerManager {
     /// Inspect version slots for one origin/scope key.
     pub fn slots(&self, key: &ServiceWorkerRegistrationKey) -> Option<ServiceWorkerVersionSlots> {
         self.slots.get(key).copied()
+    }
+
+    fn worker_peer_info(&self, registration_id: u64) -> Option<ServiceWorkerPeerInfo> {
+        let registration = self.registry.get(registration_id)?;
+        Some(ServiceWorkerPeerInfo {
+            id: registration.id,
+            script_url: registration.script_url.clone(),
+            state: registration.state.to_string(),
+        })
+    }
+
+    fn registration_peers(
+        &self,
+        registration_id: u64,
+    ) -> Result<ServiceWorkerRegistrationPeers, ServiceWorkerManagerError> {
+        let key = self.key_for(registration_id)?;
+        let slots = self
+            .slots
+            .get(key)
+            .ok_or(ServiceWorkerManagerError::UnknownRegistration(registration_id))?;
+        Ok(ServiceWorkerRegistrationPeers {
+            installing: slots.installing.and_then(|id| self.worker_peer_info(id)),
+            waiting: slots.waiting.and_then(|id| self.worker_peer_info(id)),
+            active: slots.active.and_then(|id| self.worker_peer_info(id)),
+        })
+    }
+
+    fn sync_runtime_registration_peers(&mut self, registration_id: u64) -> Result<(), ServiceWorkerManagerError> {
+        let peers = self.registration_peers(registration_id)?;
+        self.host.sync_registration_peers(registration_id, peers)
+    }
+
+    fn dispatch_worker_message(
+        &mut self,
+        source_registration_id: u64,
+        message: ServiceWorkerWorkerMessage,
+    ) -> Result<(), ServiceWorkerManagerError> {
+        let target_registration_id = message.target_registration_id;
+        let target_state = self
+            .registration(target_registration_id)
+            .ok_or(ServiceWorkerManagerError::UnknownRegistration(target_registration_id))?
+            .state;
+        self.sync_runtime_registration_peers(target_registration_id)?;
+        let event_id = self.next_worker_message_event_id;
+        self.next_worker_message_event_id = self.next_worker_message_event_id.saturating_add(1);
+        self.host.dispatch_worker_message(
+            target_registration_id,
+            event_id,
+            message,
+            target_state == ServiceWorkerState::Activated,
+        )?;
+        if let Ok(()) = self.sync_runtime_registration_peers(source_registration_id) {}
+        Ok(())
     }
 
     /// Find the active registration with the longest matching scope.
@@ -5180,6 +5326,79 @@ mod tests {
             std::thread::sleep(Duration::from_millis(1));
         }
         assert!(!manager.claims_clients(waiting));
+    }
+
+    #[test]
+    fn worker_to_worker_message_can_reply_to_page_client() {
+        let mut manager = manager_under_test();
+        let active = start_active(
+            &mut manager,
+            "/app/",
+            "addEventListener('message', event => {
+               if (event.data.type === 'start') {
+                 registration.waiting.postMessage({type: 'ping', client_id: event.source.id});
+               } else if (event.data.type === 'pong') {
+                 clients.get(event.data.client_id).then(client => {
+                   client.postMessage({type: 'record', from: 'active', source: event.source.state});
+                   client.postMessage({type: 'finish'});
+                 });
+               }
+             });",
+        );
+        let ServiceWorkerUpdateOutcome::Started {
+            registration_id: waiting,
+        } = manager
+            .start_update(
+                active,
+                "addEventListener('message', event => {
+                   if (event.data.type === 'ping') {
+                     clients.get(event.data.client_id).then(client => {
+                       client.postMessage({type: 'record', from: 'waiting', source: event.source.state});
+                       event.source.postMessage({type: 'pong', client_id: event.data.client_id});
+                     });
+                   }
+                 });",
+            )
+            .unwrap()
+        else {
+            panic!("changed update must start a waiting candidate");
+        };
+        wait_for_state(&mut manager, waiting, ServiceWorkerState::Installed);
+
+        manager
+            .post_message(
+                active,
+                96,
+                r#"{"type":"start"}"#,
+                "client-1",
+                "https://example.test/app/page",
+            )
+            .unwrap();
+
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let mut seen_events = Vec::new();
+        loop {
+            seen_events.extend(manager.poll());
+            let (_, active_messages) = manager.client_messages_since(active, "client-1", 0);
+            let (_, waiting_messages) = manager.client_messages_since(waiting, "client-1", 0);
+            if active_messages.len() >= 2 && !waiting_messages.is_empty() {
+                assert_eq!(
+                    waiting_messages[0].data_json,
+                    r#"{"type":"record","from":"waiting","source":"activated"}"#
+                );
+                assert_eq!(
+                    active_messages[0].data_json,
+                    r#"{"type":"record","from":"active","source":"installed"}"#
+                );
+                assert_eq!(active_messages[1].data_json, r#"{"type":"finish"}"#);
+                break;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "worker-to-worker page reply timed out: events={seen_events:?} active={active_messages:?} waiting={waiting_messages:?}"
+            );
+            std::thread::sleep(Duration::from_millis(1));
+        }
     }
 
     #[test]

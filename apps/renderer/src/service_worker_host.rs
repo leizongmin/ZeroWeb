@@ -26,7 +26,8 @@ use zero_protocol::{IpcChannel, IpcMessage, IpcMessageKind};
 use zero_script_sandbox::{
     SandboxConfig, ServiceWorkerCacheQueryOptions, ServiceWorkerCacheStorageRequest, ServiceWorkerCacheStorageResult,
     ServiceWorkerClientInfo, ServiceWorkerEvent, ServiceWorkerFetchRequest, ServiceWorkerFetchResponse,
-    ServiceWorkerLifecyclePhase, ServiceWorkerMessagePorts, ServiceWorkerRuntime, ServiceWorkerScriptErrorKind,
+    ServiceWorkerLifecyclePhase, ServiceWorkerMessagePorts, ServiceWorkerMessageSource, ServiceWorkerRuntime,
+    ServiceWorkerScriptErrorKind,
 };
 
 use crate::compositor_publish_thread::SharedWriter;
@@ -123,6 +124,8 @@ impl HostThread {
                 data_json,
                 client_id,
                 client_url,
+                client_frame_type,
+                client_focused,
                 transferred_port_ids,
                 data_port_index,
                 target_port_id,
@@ -134,6 +137,8 @@ impl HostThread {
                     data_json: &data_json,
                     client_id: &client_id,
                     client_url: &client_url,
+                    client_frame_type: &client_frame_type,
+                    client_focused,
                     ports: &ServiceWorkerMessagePorts {
                         transferred_port_ids,
                         data_port_index,
@@ -293,8 +298,12 @@ impl HostThread {
         if let Err(error) = runtime.dispatch_message_with_ports_with_claim_allowed(
             message.event_id,
             message.data_json,
-            message.client_id,
-            message.client_url,
+            ServiceWorkerMessageSource {
+                client_id: message.client_id,
+                client_url: message.client_url,
+                client_frame_type: message.client_frame_type,
+                client_focused: message.client_focused,
+            },
             message.ports,
             message.clients_claim_allowed,
         ) {
@@ -757,6 +766,11 @@ fn host_event(event: ServiceWorkerEvent) -> ServiceWorkerHostEvent {
                 })
                 .collect(),
         },
+        ServiceWorkerEvent::WorkerMessagesEmitted { .. } => ServiceWorkerHostEvent::MessageFailed {
+            event_id: 0,
+            client_id: String::new(),
+            message: "cross-process ServiceWorker-to-ServiceWorker postMessage is not implemented".into(),
+        },
         ServiceWorkerEvent::ClientsClaimRequested => ServiceWorkerHostEvent::ClientsClaimRequested,
         ServiceWorkerEvent::Closed => ServiceWorkerHostEvent::Closed,
         ServiceWorkerEvent::ModuleScriptsRequested {
@@ -985,6 +999,8 @@ mod tests {
                 data_json: "\"ping\"".into(),
                 client_id: "tab-1".into(),
                 client_url: "https://example.test/page".into(),
+                client_frame_type: "top-level".into(),
+                client_focused: true,
                 transferred_port_ids: Vec::new(),
                 data_port_index: None,
                 target_port_id: None,

@@ -3154,7 +3154,7 @@
           );
         }
         worker._messagePollTarget++;
-        scheduleClientMessagePoll(worker);
+        scheduleRegistrationMessagePoll(worker);
       }
       globalThis.ServiceWorker.prototype.postMessage = function (message, transfer) {
         postSWMessage(this, message, transfer, null);
@@ -3268,6 +3268,51 @@
         } else {
           pollClientMessages(worker);
         }
+      }
+      function scheduleRegistrationMessagePoll(worker) {
+        var seen = {};
+        function schedule(candidate, target, force) {
+          if (!candidate || candidate._id == null) return;
+          var id = String(candidate._id);
+          if (!force) {
+            if (seen[id]) return;
+            seen[id] = true;
+          }
+          candidate._messagePollTarget = Math.max(
+            candidate._messagePollTarget || 0,
+            target
+          );
+          candidate._messagePollDeadline = Date.now() + 1000;
+          scheduleClientMessagePoll(candidate);
+        }
+        var nextTarget = (worker._messageSequence || 0) + 1;
+        var workerScheduled = false;
+        for (var i = 0; i < _registrations.length; i++) {
+          var reg = _registrations[i];
+          if (!reg || !worker) continue;
+          var workerId = String(worker._id);
+          var matchesRegistration =
+            String(reg._id) === workerId ||
+            (reg._worker && String(reg._worker._id) === workerId) ||
+            (reg.installing && String(reg.installing._id) === workerId) ||
+            (reg.waiting && String(reg.waiting._id) === workerId) ||
+            (reg.active && String(reg.active._id) === workerId);
+          if (!matchesRegistration) continue;
+          if (reg.active && reg.waiting && String(reg.active._id) === workerId) {
+            schedule(reg.waiting, nextTarget);
+            schedule(worker, worker._messagePollTarget || nextTarget, true);
+            workerScheduled = true;
+          }
+          if (!workerScheduled) {
+            schedule(worker, worker._messagePollTarget || nextTarget, true);
+            workerScheduled = true;
+          }
+          schedule(reg._worker, nextTarget);
+          schedule(reg.installing, nextTarget);
+          schedule(reg.waiting, nextTarget);
+          schedule(reg.active, nextTarget);
+        }
+        if (!workerScheduled) schedule(worker, worker._messagePollTarget || nextTarget, true);
       }
       globalThis.__zwServiceWorkerFetchSettled = function () {
         ensureDocument();
@@ -3445,6 +3490,12 @@
       }
       function hasControlledClientForWorker(worker) {
         if (!worker || worker._id == null) return false;
+        if (typeof __zw_sw_has_controlled_client === 'function') {
+          try {
+            var wire = JSON.parse(__zw_sw_has_controlled_client(String(worker._id)));
+            if (wire && wire.ok && wire.controlled === true) return true;
+          } catch (_eControlled) {}
+        }
         var workerId = String(worker._id);
         if (_controller && String(_controller._id) === workerId) return true;
         if (typeof _iframeDocCache !== 'object') return false;
@@ -3710,7 +3761,8 @@
       }
       function upsertSnapshot(snapshot, deferPoll) {
         if (!snapshot) return null;
-        var reg = findReg(snapshot.id, snapshot.scope);
+        var reg = findReg(snapshot.id, null);
+        if (!reg && snapshot.scope) reg = findReg(null, snapshot.scope);
         if (!reg) {
           reg = makeReg(
             snapshot.id,

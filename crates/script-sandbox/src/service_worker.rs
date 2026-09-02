@@ -47,8 +47,21 @@ enum ServiceWorkerCommand {
         data_json: String,
         client_id: String,
         client_url: String,
+        client_frame_type: String,
+        client_focused: bool,
         ports: ServiceWorkerMessagePorts,
         clients_claim_allowed: bool,
+    },
+    DispatchWorkerMessage {
+        event_id: u64,
+        data_json: String,
+        source: ServiceWorkerPeerInfo,
+        ports: ServiceWorkerMessagePorts,
+        clients_claim_allowed: bool,
+    },
+    SyncRegistrationPeers {
+        registration_id: u64,
+        peers: ServiceWorkerRegistrationPeers,
     },
     DispatchFetch {
         event_id: u64,
@@ -179,7 +192,9 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
   }
   class InstallEvent extends ExtendableEvent {}
   const outboundMessages = [];
+  const workerMessages = [];
   const portEndpoints = Object.create(null);
+  const serviceWorkersById = Object.create(null);
   let nextWorkerPortId = 1;
   const transferredPortMarker = '__zwServiceWorkerTransferredPortIndex';
   function cloneWithTransferredPortMarkers(value, ports, seen) {
@@ -247,6 +262,16 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
     wire.targetClientId = targetClientId;
     outboundMessages.push(wire);
   }
+  function queueWorkerMessage(targetRegistrationId, data, transfer) {
+    const wire = preparePortTransfer(data, transfer);
+    wire.targetRegistrationId = String(targetRegistrationId);
+    wire.source = {
+      id: currentServiceWorker._id || '',
+      scriptURL: currentServiceWorker.scriptURL,
+      state: currentServiceWorker.state
+    };
+    workerMessages.push(wire);
+  }
   globalThis.queueMicrotask = globalThis.queueMicrotask || function(callback) {
     if (typeof callback !== 'function') {
       throw new TypeError('queueMicrotask callback must be callable');
@@ -269,6 +294,13 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
     postMessage(data, transfer) {
       queueOutbound(data, transfer, null, this.id);
     }
+  }
+  // https://w3c.github.io/ServiceWorker/#windowclient-interface
+  class WindowClient extends Client {}
+  function clientFromInfo(info) {
+    return info && info.type === 'window'
+      ? new WindowClient(info, clientToken)
+      : new Client(info, clientToken);
   }
   class MessagePort {
     constructor() {
@@ -389,6 +421,13 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
       this.lastEventId = event.lastEventId;
       this.source = event.source;
       this.ports = event.ports.slice();
+    }
+  }
+  function originOf(url) {
+    try {
+      return new URL(String(url)).origin;
+    } catch (_error) {
+      return '';
     }
   }
   class DOMException extends Error {
@@ -2193,7 +2232,7 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
       if (!response || response.ok !== true) {
         return Promise.reject(new TypeError(response && response.error || 'Clients.get failed'));
       }
-      return Promise.resolve(response.client === null ? undefined : new Client(response.client, clientToken));
+      return Promise.resolve(response.client === null ? undefined : clientFromInfo(response.client));
     }
     matchAll(options) {
       options = options === undefined ? {} : Object(options);
@@ -2213,7 +2252,7 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
         return Promise.reject(new TypeError(response && response.error || 'Clients.matchAll failed'));
       }
       return Promise.resolve(response.clients.map(function(info) {
-        return new Client(info, clientToken);
+        return clientFromInfo(info);
       }));
     }
     claim() {
@@ -2234,6 +2273,7 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
     }
   }
   globalThis.Clients = Clients;
+  globalThis.WindowClient = WindowClient;
   globalThis.clients = new Clients();
   const serviceWorkerToken = {};
   class ServiceWorker {
@@ -2252,8 +2292,10 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
         const wire = preparePortTransfer(data, transfer);
         const source = this;
         queueMicrotask(function() {
-          const event = new MessageEvent('message', {
+          // https://w3c.github.io/ServiceWorker/#extendablemessageevent-interface
+          const event = new ExtendableMessageEvent('message', {
             data: wire.dataPortIndex === null ? JSON.parse(wire.dataJSON) : null,
+            origin: originOf(globalThis.location && globalThis.location.href || ''),
             ports: [],
             source: source
           });
@@ -2265,12 +2307,28 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
         });
         return;
       }
+      if (this._id !== undefined && this._id !== null) {
+        queueWorkerMessage(this._id, data, transfer);
+        return;
+      }
       queueOutbound(data, transfer, null, null);
     }
   }
   Object.defineProperty(ServiceWorker.prototype, Symbol.toStringTag, {value: 'ServiceWorker'});
   const workerScriptURL = String(globalThis.location && globalThis.location.href || '');
   const currentServiceWorker = new ServiceWorker(workerScriptURL, 'parsed', serviceWorkerToken);
+  function serviceWorkerFromInfo(info) {
+    if (!info) return null;
+    const id = String(info.id);
+    const worker = id === String(currentServiceWorker._id || '')
+      ? currentServiceWorker
+      : (serviceWorkersById[id] || new ServiceWorker(info.scriptURL || '', info.state || 'parsed', serviceWorkerToken));
+    worker._id = id;
+    worker._scriptURL = String(info.scriptURL || worker._scriptURL || '');
+    worker._state = String(info.state || worker._state || 'parsed');
+    serviceWorkersById[id] = worker;
+    return worker;
+  }
   const registration = {
     installing: null,
     waiting: null,
@@ -2310,6 +2368,13 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
     configurable: true
   });
   globalThis.registration = registration;
+  globalThis.__zwSyncRegistrationPeers = function(currentId, peers) {
+    currentServiceWorker._id = String(currentId);
+    serviceWorkersById[String(currentId)] = currentServiceWorker;
+    registration.installing = serviceWorkerFromInfo(peers && peers.installing);
+    registration.waiting = serviceWorkerFromInfo(peers && peers.waiting);
+    registration.active = serviceWorkerFromInfo(peers && peers.active);
+  };
   function setCurrentServiceWorkerState(state) {
     currentServiceWorker._state = String(state);
   }
@@ -2424,11 +2489,12 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
     return value;
   }
   globalThis.__zwDispatchMessage = function(
-      eventId, data, clientId, clientURL, portIds, dataPortIndex, targetPortId) {
+      eventId, data, clientId, clientURL, clientFrameType, clientFocused, portIds, dataPortIndex, targetPortId) {
     outboundMessages.splice(0, outboundMessages.length);
     const ports = materializeTransferredPorts(portIds || []);
     const eventData = dataPortIndex === null ? reviveTransferredPorts(data, ports) : ports[dataPortIndex];
-    const event = new MessageEvent('message', {data: eventData, ports: ports});
+    const EventClass = targetPortId !== null ? MessageEvent : ExtendableMessageEvent;
+    const event = new EventClass('message', {data: eventData, origin: originOf(clientURL), ports: ports});
     const pending = [];
     currentWaitUntil = function(value) {
       pending.push(Promise.resolve(value));
@@ -2441,14 +2507,14 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
         }
         port.dispatchEvent(event);
       } else {
-        event.source = new Client({
+        event.source = clientFromInfo({
           id: clientId,
           url: clientURL,
           type: 'window',
-          frameType: 'top-level',
+          frameType: clientFrameType || 'top-level',
           visibilityState: 'visible',
-          focused: false
-        }, clientToken);
+          focused: clientFocused === true
+        });
         const callbacks = (listeners.message || []).slice();
         for (let i = 0; i < callbacks.length; i++) callbacks[i].call(globalThis, event);
         if (typeof globalThis.onmessage === 'function') {
@@ -2464,8 +2530,42 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
       throw error;
     }
   };
+  globalThis.__zwDispatchWorkerMessage = function(eventId, data, sourceInfo, portIds, dataPortIndex) {
+    outboundMessages.splice(0, outboundMessages.length);
+    const ports = materializeTransferredPorts(portIds || []);
+    const eventData = dataPortIndex === null ? reviveTransferredPorts(data, ports) : ports[dataPortIndex];
+    const source = serviceWorkerFromInfo(sourceInfo);
+    const event = new ExtendableMessageEvent('message', {
+      data: eventData,
+      origin: originOf(source && source.scriptURL || ''),
+      ports: ports,
+      source: source
+    });
+    const pending = [];
+    currentWaitUntil = function(value) {
+      pending.push(Promise.resolve(value));
+    };
+    try {
+      const callbacks = (listeners.message || []).slice();
+      for (let i = 0; i < callbacks.length; i++) callbacks[i].call(globalThis, event);
+      if (typeof globalThis.onmessage === 'function') {
+        globalThis.onmessage.call(globalThis, event);
+      }
+      Promise.all(pending).catch(function() {});
+      currentWaitUntil = null;
+      return String(eventId);
+    } catch (error) {
+      currentWaitUntil = null;
+      outboundMessages.splice(0, outboundMessages.length);
+      workerMessages.splice(0, workerMessages.length);
+      throw error;
+    }
+  };
   globalThis.__zwTakeOutboundMessages = function() {
     return outboundMessages.splice(0, outboundMessages.length);
+  };
+  globalThis.__zwTakeWorkerMessages = function() {
+    return workerMessages.splice(0, workerMessages.length);
   };
   globalThis.__zwTakeClientsClaimRequested = function() {
     const requested = activeEventClaimClientsRequested;
@@ -2722,6 +2822,11 @@ pub enum ServiceWorkerEvent {
         /// Messages with explicit target client identities.
         outbound: Vec<ServiceWorkerOutboundMessage>,
     },
+    /// A worker emitted messages targeting another Service Worker version.
+    WorkerMessagesEmitted {
+        /// Worker-to-worker messages with explicit target version IDs.
+        messages: Vec<ServiceWorkerWorkerMessage>,
+    },
     /// The worker called `clients.claim()` outside lifecycle event settlement.
     ClientsClaimRequested,
     /// The runtime thread exited.
@@ -2750,6 +2855,43 @@ pub struct ServiceWorkerOutboundMessage {
     pub data_port_index: Option<usize>,
     /// Browser-owned target client identity for `Client.postMessage()`.
     pub target_client_id: Option<String>,
+}
+
+/// Pure-value Service Worker object projection for worker-to-worker messages.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ServiceWorkerPeerInfo {
+    /// Registration version ID represented by the worker object.
+    pub id: u64,
+    /// Worker script URL.
+    pub script_url: String,
+    /// Worker lifecycle state exposed to script.
+    pub state: String,
+}
+
+/// Current visible Service Worker version slots for one registration object.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ServiceWorkerRegistrationPeers {
+    /// Installing worker projection.
+    pub installing: Option<ServiceWorkerPeerInfo>,
+    /// Waiting worker projection.
+    pub waiting: Option<ServiceWorkerPeerInfo>,
+    /// Active worker projection.
+    pub active: Option<ServiceWorkerPeerInfo>,
+}
+
+/// One worker-to-worker message emitted during a worker event.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ServiceWorkerWorkerMessage {
+    /// Target registration version ID.
+    pub target_registration_id: u64,
+    /// Source worker projection exposed through `ExtendableMessageEvent.source`.
+    pub source: ServiceWorkerPeerInfo,
+    /// JSON-compatible structured payload.
+    pub data_json: String,
+    /// MessagePort endpoint IDs transferred with this message.
+    pub transferred_port_ids: Vec<u64>,
+    /// Index of the transferred port used as the payload itself.
+    pub data_port_index: Option<usize>,
 }
 
 /// Pure-value Service Worker client projection.
@@ -2932,6 +3074,19 @@ pub struct ServiceWorkerMessagePorts {
     pub data_port_index: Option<usize>,
     /// Existing endpoint addressed by this message.
     pub target_port_id: Option<u64>,
+}
+
+/// Browser-owned source metadata for one page-to-worker message.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ServiceWorkerMessageSource<'a> {
+    /// Browser-owned identity of the originating client.
+    pub client_id: &'a str,
+    /// Originating client URL.
+    pub client_url: &'a str,
+    /// Frame type of the originating window client.
+    pub client_frame_type: &'a str,
+    /// Whether the originating window client currently has focus.
+    pub client_focused: bool,
 }
 
 /// Lifecycle state of a [`ServiceWorkerRuntime`].
@@ -3479,20 +3634,11 @@ impl ServiceWorkerRuntime {
                         let _ = event_sender.send(event);
                         pending_lifecycle = None;
                     }
-                    if (pending_lifecycle.is_some() || pending_fetch.is_some())
-                        && let Ok(outbound) = take_outbound_messages(sandbox.as_mut())
-                        && !outbound.is_empty()
-                    {
-                        let _ = event_sender.send(ServiceWorkerEvent::ClientMessagesEmitted { outbound });
-                    }
+                    emit_queued_messages(sandbox.as_mut(), &event_sender);
                     if let Some(pending) = pending_fetch.as_ref()
                         && let Some(event) = poll_fetch(sandbox.as_mut(), pending, lifecycle_timeout_ms)
                     {
-                        if let Ok(outbound) = take_outbound_messages(sandbox.as_mut())
-                            && !outbound.is_empty()
-                        {
-                            let _ = event_sender.send(ServiceWorkerEvent::ClientMessagesEmitted { outbound });
-                        }
+                        emit_queued_messages(sandbox.as_mut(), &event_sender);
                         emit_clients_claim_requested(sandbox.as_mut(), &event_sender);
                         let _ = event_sender.send(event);
                         pending_fetch = None;
@@ -3504,11 +3650,7 @@ impl ServiceWorkerRuntime {
                     } else {
                         false
                     };
-                    if let Ok(outbound) = take_outbound_messages(sandbox.as_mut())
-                        && !outbound.is_empty()
-                    {
-                        let _ = event_sender.send(ServiceWorkerEvent::ClientMessagesEmitted { outbound });
-                    }
+                    emit_queued_messages(sandbox.as_mut(), &event_sender);
                     emit_clients_claim_requested(sandbox.as_mut(), &event_sender);
 
                     let command =
@@ -3548,12 +3690,7 @@ impl ServiceWorkerRuntime {
                             });
                             let event = match evaluation {
                                 Ok(()) => {
-                                    if let Ok(outbound) = take_outbound_messages(sandbox.as_mut())
-                                        && !outbound.is_empty()
-                                    {
-                                        let _ =
-                                            event_sender.send(ServiceWorkerEvent::ClientMessagesEmitted { outbound });
-                                    }
+                                    emit_queued_messages(sandbox.as_mut(), &event_sender);
                                     emit_clients_claim_requested(sandbox.as_mut(), &event_sender);
                                     ServiceWorkerEvent::Evaluated { script_url }
                                 }
@@ -3598,15 +3735,19 @@ impl ServiceWorkerRuntime {
                             data_json,
                             client_id,
                             client_url,
+                            client_frame_type,
+                            client_focused,
                             ports,
                             clients_claim_allowed,
                         } => {
                             let dispatch = format!(
-                                "globalThis.__zwDispatchMessage({}, {}, {}, {}, {}, {}, {});",
+                                "globalThis.__zwDispatchMessage({}, {}, {}, {}, {}, {}, {}, {}, {});",
                                 event_id,
                                 data_json,
                                 serde_json::to_string(&client_id).unwrap(),
                                 serde_json::to_string(&client_url).unwrap(),
+                                serde_json::to_string(&client_frame_type).unwrap(),
+                                serde_json::to_string(&client_focused).unwrap(),
                                 serde_json::to_string(&ports.transferred_port_ids).unwrap(),
                                 serde_json::to_string(&ports.data_port_index).unwrap(),
                                 serde_json::to_string(&ports.target_port_id).unwrap(),
@@ -3616,6 +3757,7 @@ impl ServiceWorkerRuntime {
                             {
                                 Ok(_) => match take_outbound_messages(sandbox.as_mut()) {
                                     Ok(outbound) => {
+                                        emit_queued_worker_messages(sandbox.as_mut(), &event_sender);
                                         emit_clients_claim_requested(sandbox.as_mut(), &event_sender);
                                         ServiceWorkerEvent::MessageDispatched {
                                             event_id,
@@ -3636,6 +3778,49 @@ impl ServiceWorkerRuntime {
                                 },
                             };
                             let _ = event_sender.send(event);
+                        }
+                        ServiceWorkerCommand::DispatchWorkerMessage {
+                            event_id,
+                            data_json,
+                            source,
+                            ports,
+                            clients_claim_allowed,
+                        } => {
+                            let dispatch = format!(
+                                "globalThis.__zwDispatchWorkerMessage({}, {}, {}, {}, {});",
+                                event_id,
+                                data_json,
+                                serde_json::to_string(&service_worker_peer_json(&source)).unwrap(),
+                                serde_json::to_string(&ports.transferred_port_ids).unwrap(),
+                                serde_json::to_string(&ports.data_port_index).unwrap(),
+                            );
+                            let event = match set_clients_claim_allowed(sandbox.as_mut(), clients_claim_allowed)
+                                .and_then(|()| sandbox.execute(&dispatch))
+                            {
+                                Ok(_) => {
+                                    emit_queued_messages(sandbox.as_mut(), &event_sender);
+                                    emit_clients_claim_requested(sandbox.as_mut(), &event_sender);
+                                    ServiceWorkerEvent::MessageDispatched {
+                                        event_id,
+                                        client_id: String::new(),
+                                        outbound: Vec::new(),
+                                    }
+                                }
+                                Err(error) => ServiceWorkerEvent::MessageFailed {
+                                    event_id,
+                                    client_id: String::new(),
+                                    message: error.to_string(),
+                                },
+                            };
+                            let _ = event_sender.send(event);
+                        }
+                        ServiceWorkerCommand::SyncRegistrationPeers { registration_id, peers } => {
+                            let script = format!(
+                                "globalThis.__zwSyncRegistrationPeers({}, {});",
+                                registration_id,
+                                serde_json::to_string(&service_worker_peers_json(&peers)).unwrap(),
+                            );
+                            let _ = sandbox.execute(&script);
                         }
                         ServiceWorkerCommand::DispatchFetch {
                             event_id,
@@ -3758,11 +3943,12 @@ impl ServiceWorkerRuntime {
         client_id: &str,
         client_url: &str,
     ) -> Result<(), ScriptError> {
-        self.dispatch_message_with_ports(
+        self.dispatch_message_with_ports_and_frame_type(
             event_id,
             data_json,
             client_id,
             client_url,
+            "top-level",
             &ServiceWorkerMessagePorts::default(),
         )
     }
@@ -3776,7 +3962,31 @@ impl ServiceWorkerRuntime {
         client_url: &str,
         ports: &ServiceWorkerMessagePorts,
     ) -> Result<(), ScriptError> {
-        self.dispatch_message_with_ports_with_claim_allowed(event_id, data_json, client_id, client_url, ports, true)
+        self.dispatch_message_with_ports_and_frame_type(event_id, data_json, client_id, client_url, "top-level", ports)
+    }
+
+    /// Dispatch a page message from a specific window-client frame type.
+    pub fn dispatch_message_with_ports_and_frame_type(
+        &mut self,
+        event_id: u64,
+        data_json: &str,
+        client_id: &str,
+        client_url: &str,
+        client_frame_type: &str,
+        ports: &ServiceWorkerMessagePorts,
+    ) -> Result<(), ScriptError> {
+        self.dispatch_message_with_ports_with_claim_allowed(
+            event_id,
+            data_json,
+            ServiceWorkerMessageSource {
+                client_id,
+                client_url,
+                client_frame_type,
+                client_focused: true,
+            },
+            ports,
+            true,
+        )
     }
 
     /// Dispatch a page message with explicit `clients.claim()` eligibility.
@@ -3784,13 +3994,17 @@ impl ServiceWorkerRuntime {
         &mut self,
         event_id: u64,
         data_json: &str,
-        client_id: &str,
-        client_url: &str,
+        source: ServiceWorkerMessageSource<'_>,
         ports: &ServiceWorkerMessagePorts,
         clients_claim_allowed: bool,
     ) -> Result<(), ScriptError> {
         serde_json::from_str::<serde_json::Value>(data_json)
             .map_err(|error| ScriptError::InvalidInput(format!("invalid Service Worker message JSON: {error}")))?;
+        if !matches!(source.client_frame_type, "top-level" | "auxiliary" | "nested") {
+            return Err(ScriptError::InvalidInput(
+                "invalid Service Worker client frame type".into(),
+            ));
+        }
         if ports.transferred_port_ids.len() > MAX_MESSAGE_PORTS
             || ports.transferred_port_ids.contains(&0)
             || ports.transferred_port_ids.iter().collect::<HashSet<_>>().len() != ports.transferred_port_ids.len()
@@ -3812,8 +4026,54 @@ impl ServiceWorkerRuntime {
             .send(ServiceWorkerCommand::DispatchMessage {
                 event_id,
                 data_json: data_json.to_string(),
-                client_id: client_id.to_string(),
-                client_url: client_url.to_string(),
+                client_id: source.client_id.to_string(),
+                client_url: source.client_url.to_string(),
+                client_frame_type: source.client_frame_type.to_string(),
+                client_focused: source.client_focused,
+                ports: ports.clone(),
+                clients_claim_allowed,
+            })
+            .map_err(|_| ScriptError::RuntimeError("Service Worker runtime disconnected".into()))
+    }
+
+    /// Synchronize the Service Worker global registration's visible worker slots.
+    pub fn sync_registration_peers(
+        &mut self,
+        registration_id: u64,
+        peers: ServiceWorkerRegistrationPeers,
+    ) -> Result<(), ScriptError> {
+        if self.core.is_terminated() {
+            return Err(ScriptError::InvalidInput(
+                "Cannot synchronize Service Worker peers on terminated runtime".into(),
+            ));
+        }
+        self.core
+            .send(ServiceWorkerCommand::SyncRegistrationPeers { registration_id, peers })
+            .map_err(|_| ScriptError::RuntimeError("Service Worker runtime disconnected".into()))
+    }
+
+    /// Dispatch one worker-to-worker message.
+    pub fn dispatch_worker_message(
+        &mut self,
+        event_id: u64,
+        data_json: &str,
+        source: ServiceWorkerPeerInfo,
+        ports: &ServiceWorkerMessagePorts,
+        clients_claim_allowed: bool,
+    ) -> Result<(), ScriptError> {
+        serde_json::from_str::<serde_json::Value>(data_json).map_err(|error| {
+            ScriptError::InvalidInput(format!("invalid Service Worker worker message JSON: {error}"))
+        })?;
+        if !ports.transferred_port_ids.is_empty() || ports.data_port_index.is_some() || ports.target_port_id.is_some() {
+            return Err(ScriptError::InvalidInput(
+                "worker-to-worker MessagePort transfer is not supported".into(),
+            ));
+        }
+        self.core
+            .send(ServiceWorkerCommand::DispatchWorkerMessage {
+                event_id,
+                data_json: data_json.to_string(),
+                source,
                 ports: ports.clone(),
                 clients_claim_allowed,
             })
@@ -5058,6 +5318,39 @@ fn emit_clients_claim_requested(sandbox: &mut dyn Sandbox, event_sender: &mpsc::
     }
 }
 
+fn emit_queued_messages(sandbox: &mut dyn Sandbox, event_sender: &mpsc::Sender<ServiceWorkerEvent>) {
+    if let Ok(outbound) = take_outbound_messages(sandbox)
+        && !outbound.is_empty()
+    {
+        let _ = event_sender.send(ServiceWorkerEvent::ClientMessagesEmitted { outbound });
+    }
+    emit_queued_worker_messages(sandbox, event_sender);
+}
+
+fn emit_queued_worker_messages(sandbox: &mut dyn Sandbox, event_sender: &mpsc::Sender<ServiceWorkerEvent>) {
+    if let Ok(messages) = take_worker_messages(sandbox)
+        && !messages.is_empty()
+    {
+        let _ = event_sender.send(ServiceWorkerEvent::WorkerMessagesEmitted { messages });
+    }
+}
+
+fn service_worker_peer_json(peer: &ServiceWorkerPeerInfo) -> serde_json::Value {
+    serde_json::json!({
+        "id": peer.id,
+        "scriptURL": peer.script_url,
+        "state": peer.state,
+    })
+}
+
+fn service_worker_peers_json(peers: &ServiceWorkerRegistrationPeers) -> serde_json::Value {
+    serde_json::json!({
+        "installing": peers.installing.as_ref().map(service_worker_peer_json),
+        "waiting": peers.waiting.as_ref().map(service_worker_peer_json),
+        "active": peers.active.as_ref().map(service_worker_peer_json),
+    })
+}
+
 fn take_outbound_messages(sandbox: &mut dyn Sandbox) -> Result<Vec<ServiceWorkerOutboundMessage>, ScriptError> {
     const MAX_OUTBOUND_MESSAGES: usize = 1024;
     const MAX_MESSAGE_BYTES: usize = 1024 * 1024;
@@ -5119,6 +5412,75 @@ fn take_outbound_messages(sandbox: &mut dyn Sandbox) -> Result<Vec<ServiceWorker
                 transferred_port_ids,
                 data_port_index,
                 target_client_id,
+            })
+        })
+        .collect()
+}
+
+fn take_worker_messages(sandbox: &mut dyn Sandbox) -> Result<Vec<ServiceWorkerWorkerMessage>, ScriptError> {
+    const MAX_WORKER_MESSAGES: usize = 1024;
+    const MAX_MESSAGE_BYTES: usize = 1024 * 1024;
+    const MAX_WORKER_BATCH_BYTES: usize = 16 * 1024 * 1024;
+    let result = sandbox.execute("JSON.stringify(globalThis.__zwTakeWorkerMessages())")?;
+    let values = serde_json::from_str::<Vec<serde_json::Value>>(&result.value)
+        .map_err(|error| ScriptError::RuntimeError(format!("invalid worker message list: {error}")))?;
+    if values.len() > MAX_WORKER_MESSAGES {
+        return Err(ScriptError::InvalidInput(
+            "Service Worker emitted too many worker messages in one event".into(),
+        ));
+    }
+    let mut total_bytes = 0usize;
+    values
+        .into_iter()
+        .map(|value| {
+            let data_json = value["dataJSON"]
+                .as_str()
+                .ok_or_else(|| ScriptError::RuntimeError("worker message data is missing".into()))?
+                .to_string();
+            serde_json::from_str::<serde_json::Value>(&data_json)
+                .map_err(|error| ScriptError::RuntimeError(format!("invalid worker message data: {error}")))?;
+            if data_json.len() > MAX_MESSAGE_BYTES {
+                return Err(ScriptError::InvalidInput(
+                    "Service Worker worker message exceeds the size limit".into(),
+                ));
+            }
+            total_bytes = total_bytes.saturating_add(data_json.len());
+            if total_bytes > MAX_WORKER_BATCH_BYTES {
+                return Err(ScriptError::InvalidInput(
+                    "Service Worker worker message batch exceeds the size limit".into(),
+                ));
+            }
+            let target_registration_id = value["targetRegistrationId"]
+                .as_str()
+                .and_then(|id| id.parse::<u64>().ok())
+                .ok_or_else(|| ScriptError::RuntimeError("worker message target is missing".into()))?;
+            let source = &value["source"];
+            let source_id = source["id"]
+                .as_str()
+                .and_then(|id| id.parse::<u64>().ok())
+                .ok_or_else(|| ScriptError::RuntimeError("worker message source is missing".into()))?;
+            let transferred_port_ids = value["transferredPortIds"]
+                .as_array()
+                .map(|values| values.iter().filter_map(serde_json::Value::as_u64).collect::<Vec<_>>())
+                .unwrap_or_default();
+            let data_port_index = value["dataPortIndex"]
+                .as_u64()
+                .and_then(|index| usize::try_from(index).ok());
+            if !transferred_port_ids.is_empty() || data_port_index.is_some() {
+                return Err(ScriptError::InvalidInput(
+                    "worker-to-worker MessagePort transfer is not supported".into(),
+                ));
+            }
+            Ok(ServiceWorkerWorkerMessage {
+                target_registration_id,
+                source: ServiceWorkerPeerInfo {
+                    id: source_id,
+                    script_url: source["scriptURL"].as_str().unwrap_or_default().to_string(),
+                    state: source["state"].as_str().unwrap_or("parsed").to_string(),
+                },
+                data_json,
+                transferred_port_ids,
+                data_port_index,
             })
         })
         .collect()
@@ -6068,9 +6430,9 @@ mod tests {
         runtime
             .evaluate(
                 "addEventListener('message', event => {
-                    if (!(event instanceof MessageEvent)) throw new Error('wrong event');
+                    if (!(event instanceof ExtendableMessageEvent)) throw new Error('wrong event');
                     globalThis.messageValue = event.data.name + ':' + event.data.items[1];
-                    if (!(event.source instanceof Client)) throw new Error('wrong source');
+                    if (!(event.source instanceof WindowClient)) throw new Error('wrong source');
                     event.source.postMessage({
                         echo: event.data.name,
                         source: event.source.id + ':' + event.source.url
@@ -6622,8 +6984,12 @@ mod tests {
             .dispatch_message_with_ports_with_claim_allowed(
                 23,
                 "null",
-                "client-1",
-                "https://example.test/page",
+                ServiceWorkerMessageSource {
+                    client_id: "client-1",
+                    client_url: "https://example.test/page",
+                    client_frame_type: "top-level",
+                    client_focused: true,
+                },
                 &ServiceWorkerMessagePorts::default(),
                 false,
             )
@@ -6666,8 +7032,12 @@ mod tests {
             .dispatch_message_with_ports_with_claim_allowed(
                 24,
                 r#"{"port":{"__zwServiceWorkerTransferredPortIndex":0}}"#,
-                "client-1",
-                "https://example.test/page",
+                ServiceWorkerMessageSource {
+                    client_id: "client-1",
+                    client_url: "https://example.test/page",
+                    client_frame_type: "top-level",
+                    client_focused: true,
+                },
                 &ServiceWorkerMessagePorts {
                     transferred_port_ids: vec![2],
                     data_port_index: None,

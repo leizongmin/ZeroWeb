@@ -1,0 +1,5 @@
+path	manifest_type	roles	referenced_by	bytes	templated	git_blob_sha	source_revision
+service-workers/service-worker/ServiceWorkerGlobalScope/extendable-message-event.https.html	testharness	case	1	8539	no	89efd7a4a615c1a3ef35b045690fa40b67fb5393	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
+service-workers/service-worker/ServiceWorkerGlobalScope/resources/extendable-message-event-ping-worker.js	support	worker-script	1	786	no	d07b22959cc0018cc31096929fd6ea380883ca78	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
+service-workers/service-worker/ServiceWorkerGlobalScope/resources/extendable-message-event-pong-worker.js	support	worker-script	1	615	no	5e9669e83c4b80a05765ee758957d82a4fe389dd	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
+service-workers/service-worker/ServiceWorkerGlobalScope/resources/extendable-message-event-utils.js	support	helper	1	2218	no	d6a3b483f5394c2034cfc92a73ffdcdbbdcacc51	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83

@@ -289,3 +289,4 @@ service-workers/service-worker/fetch-event-respond-with-readable-stream-chunk.ht
 service-workers/service-worker/immutable-prototype-serviceworker.https.html 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-09-02 SW-M3-immutable-prototype
 service-workers/service-worker/ServiceWorkerGlobalScope/unregister.https.html 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-09-02 SW-M3-worker-global-unregister
 service-workers/service-worker/ServiceWorkerGlobalScope/message-event-ports.https.html 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-09-02 SW-M3-message-event-ports
+service-workers/service-worker/ServiceWorkerGlobalScope/extendable-message-event.https.html 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-09-02 SW-M3-extendable-message-event

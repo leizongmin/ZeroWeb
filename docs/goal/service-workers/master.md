@@ -291,6 +291,9 @@ JSON，private profile 继续只保留内存态。
 - ✅ M3-51：`ServiceWorkerGlobalScope/message-event-ports.https.html` 纳入 core baseline；
   worker-side `MessageEvent.ports` getter 在同一事件对象上重复读取返回同一 ports array
   identity；core WPT 50/194
+- ✅ M3-52：`ServiceWorkerGlobalScope/extendable-message-event.https.html` 纳入 core
+  baseline；page/nested client → worker、worker loopback、active ↔ waiting worker
+  `ExtendableMessageEvent` source/ports/origin 语义通过；core WPT 51/198
 - ✅ M2-1：Service Worker `FetchEvent` runtime foundation、manager longest-scope dispatch
   与 renderer/browser IPC command/event 已接通；`respondWith(new Response(...))`、未调用
   `respondWith` pass-through、重复 `respondWith` failure、跨 origin/out-of-scope pass-through
@@ -1050,6 +1053,9 @@ second（replacement）worker 只处理 awaitInstallEvent（messageSequence=1）
 - M3-51 Service Worker message event ports：worker-side `MessageEvent.ports` getter
   identity 语义见
   [M3 message event ports](evidence/2026-09-02-m3-message-event-ports.md)
+- M3-52 Service Worker ExtendableMessageEvent：page/nested client source 投影与
+  active/waiting worker 互发消息见
+  [M3 ExtendableMessageEvent](evidence/2026-09-02-m3-extendable-message-event.md)
 - M2-1 fetch runtime foundation：runtime `FetchEvent`/`Request`/`Response` MVP、
   manager longest-scope dispatch、IPC command/event 与定向验证见
   [M2 fetch runtime foundation](evidence/2026-08-21-m2-fetch-runtime-foundation.md)
@@ -1148,6 +1154,7 @@ second（replacement）worker 只处理 awaitInstallEvent（messageSequence=1）
 | 2026-09-02 | M3-49 immutable prototype core promotion | `immutable-prototype-serviceworker.https.html` 纳入 core runner；worker global prototype chain 不可变语义通过；`make baseline-wpt-service-workers-core` 双跑 48/189 deterministic Pass |
 | 2026-09-02 | M3-50 worker-global unregister core promotion | `ServiceWorkerGlobalScope/unregister.https.html` 纳入 core runner；worker-global `registration.unregister()` 在 evaluation/install/activate/message 场景通过；`make baseline-wpt-service-workers-core` 双跑 49/193 deterministic Pass |
 | 2026-09-02 | M3-51 message event ports core promotion | `ServiceWorkerGlobalScope/message-event-ports.https.html` 纳入 core runner；worker-side `MessageEvent.ports` getter identity 语义通过；`make baseline-wpt-service-workers-core` 双跑 50/194 deterministic Pass |
+| 2026-09-02 | M3-52 extendable message event core promotion | `ServiceWorkerGlobalScope/extendable-message-event.https.html` 纳入 core runner；`ExtendableMessageEvent` page/nested client source、worker loopback 与 active/waiting worker message 语义通过；单 case 4/4 Pass |
 | 2026-08-22 | M3 registration CacheStorage persistence | SW active registration-local CacheStorage snapshot/restore；normal profile persistence dirtying |
 | 2026-08-22 | M2 worker Cache delete/listing | SW runtime `Cache.delete()` 与 `CacheStorage.delete/has/keys` 贯穿 runtime/renderer/browser/manager/protocol |
 | 2026-08-22 | storage-cache-api M3 persistence support | page/WebView owner CacheStorage per-origin 落盘 |

@@ -239,6 +239,8 @@ impl ServiceWorkerRuntimeHost for IpcServiceWorkerHost {
                     data_json: message.data_json.to_string(),
                     client_id: message.client_id.to_string(),
                     client_url: message.client_url.to_string(),
+                    client_frame_type: message.client_frame_type.to_string(),
+                    client_focused: message.client_focused,
                     transferred_port_ids: message.ports.transferred_port_ids.clone(),
                     data_port_index: message.ports.data_port_index,
                     target_port_id: message.ports.target_port_id,
@@ -246,6 +248,26 @@ impl ServiceWorkerRuntimeHost for IpcServiceWorkerHost {
                 },
             },
         });
+        Ok(())
+    }
+
+    fn dispatch_worker_message(
+        &mut self,
+        _registration_id: u64,
+        _event_id: u64,
+        _message: zero_script_sandbox::ServiceWorkerWorkerMessage,
+        _clients_claim_allowed: bool,
+    ) -> Result<(), ServiceWorkerManagerError> {
+        Err(ServiceWorkerManagerError::Runtime(
+            "cross-process ServiceWorker-to-ServiceWorker postMessage is not implemented".into(),
+        ))
+    }
+
+    fn sync_registration_peers(
+        &mut self,
+        _registration_id: u64,
+        _peers: zero_script_sandbox::ServiceWorkerRegistrationPeers,
+    ) -> Result<(), ServiceWorkerManagerError> {
         Ok(())
     }
 

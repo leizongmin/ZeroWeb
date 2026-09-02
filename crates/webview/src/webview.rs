@@ -3578,6 +3578,28 @@ impl WebView {
             }),
         );
 
+        let controlled_client_manager = manager.clone();
+        sandbox.register_callback(
+            "__zw_sw_has_controlled_client",
+            Box::new(move |args| {
+                let Some(registration_id) = args.first().and_then(|value| value.parse::<u64>().ok()) else {
+                    return serde_json::json!({"ok": false, "error": "invalid registration id"}).to_string();
+                };
+                let result = controlled_client_manager
+                    .lock()
+                    .map_err(|_| "Service Worker manager lock poisoned".to_string())
+                    .and_then(|manager| {
+                        manager
+                            .has_controlled_client(registration_id)
+                            .map_err(|error| error.to_string())
+                    });
+                match result {
+                    Ok(controlled) => serde_json::json!({"ok": true, "controlled": controlled}).to_string(),
+                    Err(error) => serde_json::json!({"ok": false, "error": error}).to_string(),
+                }
+            }),
+        );
+
         let post_message_manager = manager.clone();
         let post_message_client_id = client_id.clone();
         let post_message_generation = client_generation.clone();
