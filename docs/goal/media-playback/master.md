@@ -226,6 +226,41 @@ engine 2539 / media 27 / webview 668 全绿；testharness-media 372P/0F/41PF 维
   组合时钟 + seek 双轨对齐（media-audio M2 契约兑现——drift 构造校正）
 - ⚠️ AV1（dav1d 绑定）与 H.264 未引入——M3（D-RFC-2 / D-RFC-3 决议）
 
+## DC 达成审计（2026-09-02，对照入口文档 Done Criteria 逐项核验）
+
+**DC-1（选型 RFC 已批准并落地）✅**：主 RFC 获批（D-RFC-1/2/3 三决议，2026-09-01）；
+实现与 RFC 一致（路线 C：进程内 crate + feature gate——`decode-av1` 默认关、VP9
+纯 Rust 主线）；偏离处零（dav1d 为 RFC §4 明示的 M3 面）。H.264 增量按 D-RFC-3
+「单独立项」决议起草独立 RFC（Proposed，待批复）——不属 DC-1 范围。
+
+**DC-2（首个视频端到端播放）✅**：① 真实 fixture → demux → 解码 → 首帧上屏
+（M1a/M1b，`load_video_first_frames` + settle e2e 双测常驻）；② 连续播放
+（M2a VideoPlayer：帧率驱动/currentTime 推进/play/pause/seek/ended——单测 6 件
++ 桥 e2e）；③ 帧渲染走页面图元通路（painter `paint_video_element` →
+ImagePrimitive，与 canvas R3268 同通路）。
+
+**DC-3（语义驱动真值化）✅（buffered/seekable 注记）**：duration 真值注入链全通
+（M2a 切片 2——容器时长 → settle → shim `_zwMediaLoadSequence`）；readyState 由
+settle 事实驱动（headless 加载序列推进 HAVE_METADATA→HAVE_ENOUGH_DATA）；videoWidth/
+videoHeight 解码器探针真值（M2a 切片 3）。**buffered/seekable TimeRanges 未实施**
+——上游 WPT 无该断言用例（corpus 内仅 historical 的 bufferedBytes 字符串面），
+真值化依赖真解码流的缓冲区间追踪（随播放面背压优化一并评估，记录为后续项）。
+
+**DC-4（多格式 + 稳定性）🔄（余 WPT 子集导入）**：① 选型面内容器/编解码 e2e
+（VP9 单轨/双轨 + AV1 decode→settle→play→canPlayType 全链 ✅）；② 资源生命周期
+（`prepare_document_state` 清空注册表 + `clear()` 单测——DC-4 导航释放面 ✅）；
+③ **上游 WPT 可执行子集导入未启动**（master.md 下一步 #1 尾项——runner 桥注入
+可行性分析已记：WPT corpus 无 settle 真源，注入后行为零变化；待 fixture-mounted
+runner 播放用例面评估，随 D-RFC-3 批复状态一并决策）。
+
+**DC-5（测试与质量不可退让）✅**：make test 18694 全绿（2026-09-02 组合树实测）、
+clippy 零警告、每切片带单测 + e2e/fixture 资产化（AV1 全流单测 + settle e2e +
+桥 roundtrip）。
+
+**结论**：DC-1/2/3/5 满足；DC-4 余 WPT 可执行子集导入一项（外部门控：D-RFC-3
+批复影响其形态——H.264 批准则 mp4 面 WPT 用例可随实施导入，不批准则 webm 面
+维持 headless 饱和态）。
+
 ## 缺口清单
 
 | # | 缺口 | 状态 |
@@ -286,7 +321,7 @@ engine 2539 / media 27 / webview 668 全绿；testharness-media 372P/0F/41PF 维
 | M0 — 解码器选型 RFC（门控） | ✅ 完成并获批（2026-09-01，路线 C） |
 | M1 — 首个视频帧上屏 | ✅ 完成（2026-09-01：M1a 解码管线 + M1b 帧上屏通路 + e2e 常驻） |
 | M2 — 连续播放 + 语义驱动 | 🔄 M2a + M2b + M2c + 切片 C/D/E/F 收口（播放/真值/桥/帧泵/seek/变速 + 音频面生产链路/增益/导航释放/renderer 对齐 + 色彩面全对齐 + A/V 同步 audio clock 主时钟 + A/V pair ended 面回归守卫）；余音频设备面（media-audio M1 CpalSink，可选） |
-| M3 — 多格式 + 稳定 + 收尾 | ⬜（含 AV1 dav1d（D-RFC-2）与 H.264 立项（D-RFC-3）） |
+| M3 — 多格式 + 稳定 + 收尾 | 🔄 AV1 ✅（2026-09-02，D-RFC-2：解码/settle/播放/canPlayType 全链 + fixture e2e）；余 H.264 立项（D-RFC-3，RFC Proposed 待批复）+ WPT 可执行子集导入（外部门控：随 D-RFC-3 批复状态决策形态） |
 
 ## 验证基线
 
