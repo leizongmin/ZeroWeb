@@ -542,7 +542,7 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
     if (part === undefined || part === null) return new Uint8Array(0);
     if (typeof part === 'string') return utf8Encode(part);
     if (part instanceof ArrayBuffer) return new Uint8Array(part);
-    if (part.buffer instanceof ArrayBuffer) {
+    if (ArrayBuffer.isView(part) && part.buffer instanceof ArrayBuffer) {
       const offset = part.byteOffset || 0;
       return new Uint8Array(part.buffer.slice(offset, offset + (part.byteLength || 0)));
     }
@@ -927,6 +927,10 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
           error: errorStream,
           get desiredSize() { return state === 'errored' ? null : (state === 'closed' ? 0 : 1); }
         };
+        // https://streams.spec.whatwg.org/#rs-constructor
+        if (typeof source.start === 'function') {
+          try { source.start(controller); } catch (error) { errorStream(error); }
+        }
         this.getReader = function() {
           return {
             read: function() {
@@ -9389,6 +9393,119 @@ mod tests {
                 && headers.iter().any(|(name, value)| name == "x-zero-body-error" && value == "stream failed")
             ),
             "unexpected event: {event:?}"
+        );
+    }
+
+    #[test]
+    fn fetch_event_readable_stream_start_body_is_serialized() {
+        let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
+        runtime
+            .evaluate(
+                "addEventListener('fetch', event => {
+                   const encoder = new TextEncoder();
+                   const stream = new ReadableStream({ start: controller => {
+                     controller.enqueue(encoder.encode('PASS'));
+                     controller.close();
+                   }});
+                   event.respondWith(new Response(stream));
+                 });",
+                "https://example.test/sw.js",
+            )
+            .unwrap();
+        let _ = runtime.recv_timeout(Duration::from_secs(5)).unwrap();
+
+        runtime
+            .dispatch_fetch(
+                53,
+                ServiceWorkerFetchRequest {
+                    url: "https://example.test/app/body-stream-start".into(),
+                    method: "GET".into(),
+                    headers: Vec::new(),
+                    body: None,
+                    credentials: None,
+                    client_id: None,
+                    resulting_client_id: None,
+                    referrer: None,
+                    is_reload_navigation: false,
+                    is_history_navigation: false,
+                },
+            )
+            .unwrap();
+        assert_eq!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::FetchSettled {
+                event_id: 53,
+                request_url: "https://example.test/app/body-stream-start".into(),
+                response: Some(ServiceWorkerFetchResponse {
+                    status: 200,
+                    status_text: String::new(),
+                    response_type: "default".into(),
+                    headers: Vec::new(),
+                    body: "PASS".into(),
+                }),
+                failed: false,
+                message: String::new(),
+            }
+        );
+    }
+
+    #[test]
+    fn fetch_event_readable_stream_body_chunks_are_serialized() {
+        let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
+        runtime
+            .evaluate(
+                "addEventListener('fetch', event => {
+                   let counter = 0;
+                   const encoder = new TextEncoder();
+                   const stream = new ReadableStream({ pull: controller => {
+                     counter += 1;
+                     if (counter === 1) {
+                       controller.enqueue(encoder.encode('chunk #1'));
+                     } else if (counter === 2) {
+                       controller.enqueue(encoder.encode(' chunk #2'));
+                     } else {
+                       controller.close();
+                     }
+                   }});
+                   event.respondWith(new Response(stream));
+                 });",
+                "https://example.test/sw.js",
+            )
+            .unwrap();
+        let _ = runtime.recv_timeout(Duration::from_secs(5)).unwrap();
+
+        runtime
+            .dispatch_fetch(
+                54,
+                ServiceWorkerFetchRequest {
+                    url: "https://example.test/app/body-stream".into(),
+                    method: "GET".into(),
+                    headers: Vec::new(),
+                    body: None,
+                    credentials: None,
+                    client_id: None,
+                    resulting_client_id: None,
+                    referrer: None,
+                    is_reload_navigation: false,
+                    is_history_navigation: false,
+                },
+            )
+            .unwrap();
+        assert_eq!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::FetchSettled {
+                event_id: 54,
+                request_url: "https://example.test/app/body-stream".into(),
+                response: Some(ServiceWorkerFetchResponse {
+                    status: 200,
+                    status_text: String::new(),
+                    response_type: "default".into(),
+                    headers: Vec::new(),
+                    body: "chunk #1 chunk #2".into(),
+                }),
+                failed: false,
+                message: String::new(),
+            }
         );
     }
 

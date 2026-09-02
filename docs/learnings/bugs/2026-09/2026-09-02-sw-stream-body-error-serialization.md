@@ -9,7 +9,10 @@ modules: script-sandbox, engine, service-worker
 
 `service-workers/service-worker/fetch-error.https.html` 构造 `respondWith(new Response(stream))`，
 其中 `ReadableStream` 先 `enqueue()` 一个 chunk，随后异步 `controller.error()`。规范期望
-受控页面的 `fetch()` 先 resolve，随后 `response.text()` 在 body 消费阶段 reject。
+受控页面的 `fetch()` 先 resolve，随后 `response.text()` 在 body 消费阶段 reject。后续
+`fetch-event-respond-with-readable-stream.https.html` 又暴露出另一条同类路径：
+`ReadableStream({ start(controller) { enqueue(...); close(); } })` 返回的 body 被受控
+iframe 的 `contentWindow.fetch()` 读成空字符串。
 
 ZeroWeb 原实现把 Service Worker `Response` body 在 `respondWith()` 边界同步快照为字符串。
 当 body 是 stream 时，`normalizeBody()` 走 `String(stream)`，后续 stream error 被丢失，页面
@@ -21,13 +24,19 @@ Service Worker runtime 与页面 runtime 之间的 `ServiceWorkerFetchResponse` 
 string/blob/typed-array body 可以在 `respondWith()` 时快照，但 stream body 的错误是异步产生的，
 必须先 drain stream，再把“body 已产生进展但最终 error”的状态跨边界传出去。
 
+同时，SW runtime 内置的最小 `ReadableStream` 不能只支持 pull source。WPT 和真实站点常用
+push source：构造函数调用 `underlyingSource.start(controller)`，在 `start()` 中立即
+`enqueue()`/`close()`。若构造器不执行 `start()`，后续 `getReader().read()` 只能看到空队列
+和 closed 状态，表现为 Service Worker 已拦截但页面 response body 为空。
+
 如果直接把 `respondWith()` 标为失败，会把 fetch promise 变成 reject，违背该 WPT 的核心语义：
 网络响应已经开始，失败发生在 body 消费阶段。
 
 ## 解决方案
 
 - 在 Service Worker sandbox 中提供最小 `ReadableStream` 支撑，覆盖 constructor、
-  `controller.enqueue/close/error`、`getReader().read()` 与 timer 驱动的异步 error。
+  `underlyingSource.start(controller)`、`controller.enqueue/close/error`、`getReader().read()`
+  与 timer 驱动的异步 error。
 - `Response._serialize()` 对 stream body 异步 drain；成功时输出正常 body，失败时保持 response
   成功，但写入内部 header `x-zero-body-error`。
 - 页面 `Response` shim 从 wire 中取出 `x-zero-body-error` 并从公开 headers 中移除；`text()`、

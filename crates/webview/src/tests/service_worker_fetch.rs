@@ -400,6 +400,102 @@ fn controlled_iframe_fetch_delivers_async_respond_with_result_message() {
 
 #[test]
 #[serial_test::serial(service_worker_runtime)]
+fn controlled_iframe_fetch_reads_service_worker_readable_stream_response_body() {
+    const PAGE_URL: &str =
+        "https://example.test/service-workers/service-worker/fetch-event-respond-with-readable-stream.https.html";
+    let fallback_requests = Arc::new(Mutex::new(Vec::new()));
+    let fallback_log = Arc::clone(&fallback_requests);
+    let mut webview = crate::WebView::new(WebViewConfig {
+        service_worker_script_fetcher: Some(Arc::new(|_, script| {
+            if script
+                != "https://example.test/service-workers/service-worker/resources/fetch-event-respond-with-readable-stream-worker.js"
+            {
+                return Err(format!("unexpected script URL: {script}"));
+            }
+            Ok(zero_net::HttpResponse {
+                status_code: 200,
+                headers: vec![("Content-Type".into(), "application/javascript".into())],
+                body: "addEventListener('fetch', event => {
+                         const url = new URL(event.request.url);
+                         if (!url.searchParams.has('stream')) return;
+                         const stream = new ReadableStream({
+                           start(controller) {
+                             const encoder = new TextEncoder();
+                             controller.enqueue(encoder.encode('PASS'));
+                             controller.close();
+                           }
+                         });
+                         event.respondWith(new Response(stream));
+                       });"
+                .as_bytes()
+                .to_vec(),
+                url: script.to_string(),
+                redirect_count: 0,
+            })
+        })),
+        fetch_handler: Some(Arc::new(move |request| {
+            fallback_log.lock().unwrap().push(request.url.clone());
+            Ok(FetchResponse {
+                status: 200,
+                status_text: "OK".into(),
+                headers: vec![("content-type".into(), "text/html".into())],
+                body: "fallback".into(),
+                body_bytes: None,
+            })
+        })),
+        ..Default::default()
+    });
+
+    webview.load_url(PAGE_URL);
+    let registration_id = webview
+        .register_service_worker_runtime(
+            "resources/fetch-event-respond-with-readable-stream-worker.js",
+            Some("resources/blank.html"),
+            PAGE_URL,
+        )
+        .unwrap();
+    wait_for_state(&mut webview, registration_id, ServiceWorkerState::Activated);
+
+    webview.complete_load(
+        "<iframe id=\"frame\" src=\"resources/blank.html\"></iframe>
+         <script>
+           globalThis.__swReadableStreamFetchResult = 'pending';
+           const frame = document.getElementById('frame');
+           frame.contentWindow.fetch('?stream').then(response => {
+             return response.text();
+           }).then(body => {
+             globalThis.__swReadableStreamFetchResult = body;
+           }, error => {
+             globalThis.__swReadableStreamFetchResult = 'error:' + error.name + ':' + error.message;
+           });
+         </script>",
+        None,
+    );
+    webview.run_page_scripts_strict().unwrap();
+
+    let deadline = Instant::now() + Duration::from_secs(20);
+    loop {
+        let value = webview
+            .execute_script("String(globalThis.__swReadableStreamFetchResult)")
+            .unwrap();
+        if value != "pending" {
+            assert_eq!(value, "PASS");
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "Service Worker ReadableStream fetch timed out"
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert_eq!(
+        fallback_requests.lock().unwrap().as_slice(),
+        &["https://example.test/service-workers/service-worker/resources/blank.html".to_string()]
+    );
+}
+
+#[test]
+#[serial_test::serial(service_worker_runtime)]
 fn controlled_iframe_fetch_waits_for_message_port_backed_response() {
     const PAGE_URL: &str =
         "https://example.test/service-workers/service-worker/fetch-event-throws-after-respond-with.https.html";
