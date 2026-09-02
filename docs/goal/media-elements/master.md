@@ -2,10 +2,11 @@
 
 **入口文档**: [../media-elements.md](../media-elements.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-02（**M3 扩批 XV**——http VTT 文件加载 + WebVTT 解析深化：
-同步 `__zw_fetch` 通路 + `_zwParseVtt`（header 校验/cue id 错误恢复/cue settings/
-实体/tag 截断）+ 静态 track 调度触发面 + window.event，12 用例导入。
-**528P/0F/0T/25PF（528/553 = 95.5%）**）
+**最后更新**: 2026-09-02（**M3 扩批 XV**——http VTT 文件加载 + WebVTT 解析深化 +
+静态 track 调度触发面 + window.event，12 用例导入，528/553 = 95.5%。同日
+**兄弟目标 fixture-mounted 播放面切片 1 落地**（media-playback 流）：播放桥 +
+泵 + `_zwMediaTimeMarchesOn` cue 调度钩子——真播放推进面（track-cues-* 族）
+解锁前置就绪；canPlayType webm-opus 扩表 +1P（**529P/0F/24PF，529/553**））
 
 ---
 

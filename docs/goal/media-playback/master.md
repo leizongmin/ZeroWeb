@@ -2,7 +2,11 @@
 
 **入口文档**: [../media-playback.md](../media-playback.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-02（**M3 AV1 解码切片落地 + H.264 立项 RFC 起草**——
+**最后更新**: 2026-09-02（**M3 fixture-mounted runner 播放面切片 1 落地**——webview
+`install_playback_bridge` + wpt-runner 播放泵/源登记 + shim `_zwMediaTimeMarchesOn`
+cue 调度钩子；webm A_OPUS 解码切片（WebmOpusAudioTrack + registry codec 泛化 +
+canPlayType webm-opus 扩表）；media-elements 529P/0F 零回归。此前同日：**M3 AV1
+解码切片落地 + H.264 立项 RFC 起草**——
 AV1：dav1d 绑定 feature `decode-av1` + VideoCodec 自路由 + fixture 48 帧全解
 （ffmpeg 参照 ±15 窗）；H.264：[h264-increment-project-spec-rfc.md](../../specs/h264-increment-project-spec-rfc.md)
 Proposed 态——D-RFC-3a 专利授权链 / 3b OpenH264 分发形态 / 3c AAC 随期 三决策
@@ -343,6 +347,22 @@ clippy 零警告、每切片带单测 + e2e/fixture 资产化（AV1 全流单测
    但 WPT corpus 无 settle 真源（play() 桥 play 返 false 回落 headless），注入后
    行为零变化、无新增可跑用例；待 D2（AV1 fixture 资产面）落地后一并评估
    fixture-mounted runner 播放用例面。
+   **切片 1 落地（2026-09-02，DC-4 WPT 子集导入前置）**：① webm A_OPUS 解码
+   （`WebmOpusAudioTrack`——Matroska demux + CodecPrivate=OpusHead 解析 +
+   opus-decoder 逐包直解，无 OGG 重封装；movie_5.webm 实测 5.01s/pts 单调/
+   48kHz）+ registry 伴生轨 codec 泛化（`WebmAudioTrackKind`，Vorbis/Opus 双形态
+   Box 装箱）+ canPlayType video/webm opus 扩表（'vp9, opus' → probably——WPT
+   common/media.js getVideoURI 判定串解锁，此前该判定 '' 使 URI 落不存在的
+   .mp4）；② wpt-runner 播放面：webview `install_playback_bridge()`（同进程嵌入方
+   桥注册入口）+ 页面脚本后 media src 提取登记（extract_media_resources →
+   wpt-data 字节 → registry）+ probe 循环播放泵（tick_all + audio_advance_all，
+   playback_clock_origin 单调时钟与桥 play(0) 对齐——tab_worker pump_epoch 同
+   契约）+ shim `_zwMediaTimeMarchesOn` cue 调度钩子（桥真值钟推进 enter/exit/
+   pauseOnExit——media-elements track-cues-* 播放推进族解锁面）。探针实证
+   play→playing→promise resolve→currentTime 真值推进（0.53s@500ms）全链通；
+   media-elements 529P/0F/24PF 零回归。**余**：WPT 播放推进用例导入
+   （track-cues-enter-exit / missed / seeking 等——cue 时钟推进面已就绪，
+   seek 语义面待切片 2）。
 2. ~~**A/V 同步精化余项**~~ ✅ 2026-09-01 收口：ended 面回归守卫落地
    （切片 F——伴音流末 video player 走到 Ended、泵停）；音频设备面（CpalSink
    真出声）挂 media-audio M1 可选切片。
