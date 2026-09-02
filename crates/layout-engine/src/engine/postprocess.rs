@@ -2064,6 +2064,42 @@ pub(super) fn apply_cross_block_line_clamp(
         auto_mode: bool,
     ) -> bool {
         let child_count = b.children.len();
+        // R3918：**单 IFC 容器的原子内线隐藏**——容器自身 IFC 被 R2431 cap（stored
+        // inline_layout 截到 n 行，`line_clamp_clamped=true`）时，行文本已被裁，但容器
+        // 的**原子内线子盒**（inline-block/inline-flex/inline-grid/inline-table span，
+        // line-clamp-032/033 的红 span）是独立 LayoutBox，仍被 paint 常规路径绘制——
+        // clamp 点之后的原子内线须隐藏（css-overflow-4：atomic inlines after the clamp
+        // point should be hidden）。判据：子盒 y（相对本层内容盒顶）≥ cap 边界
+        //（n × 容器 used line-height）。未 clamped（行数 < cap）不触发。
+        // 非原子内线的普通 inline 文本片段盒不在此列——其 glyph 已被 stored 截断。
+        if b.line_clamp_clamped
+            && let Some(cap) = b.line_clamp_cap
+        {
+            let container_style = b.node_id.and_then(|id| styles.get(&id));
+            let lh = container_style
+                .and_then(|s| {
+                    crate::inline::container_used_line_height_px(
+                        s,
+                        zero_style_system::computed::resolve_length(&s.font_size, 16.0, None, None),
+                    )
+                })
+                .unwrap_or(19.2) as f32;
+            let boundary = cap as f32 * lh;
+            for child in b.children.iter_mut() {
+                let is_atomic_inline = child.node_id.and_then(|id| styles.get(&id)).is_some_and(|s| {
+                    matches!(
+                        s.display,
+                        DisplayValue::InlineBlock
+                            | DisplayValue::InlineFlex
+                            | DisplayValue::InlineGrid
+                            | DisplayValue::InlineTable
+                    )
+                });
+                if is_atomic_inline && child.y >= boundary - 0.5 && child.height > 0.5 {
+                    hide_subtree(child);
+                }
+            }
+        }
         let mut exhausted = false;
         for idx in 0..child_count {
             let (is_in_flow_block, has_lines) = {
@@ -2200,6 +2236,55 @@ pub(super) fn apply_cross_block_line_clamp(
                                 c.height = visible_h;
                             }
                             out.boundary_y = c.y + c.height;
+                        } else {
+                            *remaining -= lines;
+                            out.boundary_y = c.y + c.height;
+                        }
+                    }
+                }
+                // R3918：**原子内线行计数与隐藏**——inline-block/inline-flex/inline-grid/
+                // inline-table 子盒（line-clamp-032/033 的绿/红 span）各占 clamp 容器流的
+                // 独立行（宽度 > 容器时换行，行数 = round(高/容器 lh)），预算按行消耗；
+                // clamp 点落其上/后 → 隐藏（css-overflow-4：atomic inlines after the clamp
+                // point should be hidden）。容器无直接文本（IFC 零行）时旧实现无任何计数
+                // → 整簇不 clamp。
+                {
+                    let c = &b.children[idx];
+                    let style = c.node_id.and_then(|id| styles.get(&id));
+                    let in_flow = !c.is_absolute && !c.is_fixed && matches!(c.float, FloatValue::None);
+                    let is_atomic_inline = style.is_some_and(|s| {
+                        matches!(
+                            s.display,
+                            DisplayValue::InlineBlock
+                                | DisplayValue::InlineFlex
+                                | DisplayValue::InlineGrid
+                                | DisplayValue::InlineTable
+                        )
+                    });
+                    // R3918 探针记录：替换元素（img）同为原子内线，但 033 的 img 流经
+                    // R109 split-inline 载体（display:Inline 盒持有跨块流），原子计数在
+                    // 载体内部第二层递归重复消耗预算 → 绿行误隐藏。img 计数须等载体
+                    // 内层 walk 的预算语义厘清（归 R3773 载体域）。
+                    if in_flow && is_atomic_inline && c.height > 0.5 {
+                        let container_style = b.node_id.and_then(|id| styles.get(&id));
+                        let lh = container_style
+                            .and_then(|s| {
+                                crate::inline::container_used_line_height_px(
+                                    s,
+                                    zero_style_system::computed::resolve_length(&s.font_size, 16.0, None, None),
+                                )
+                            })
+                            .unwrap_or(19.2) as f32;
+                        let lines = ((c.height / lh).round() as usize).max(1);
+                        // lines > remaining：clamp point 落在该原子内线的行内/之前 →
+                        // 隐藏（css-overflow-4：clamp 点后的原子内线不显示）。
+                        // lines == remaining：恰耗尽预算——本盒保留，后续由
+                        // remaining==0 的既有隐藏分支接管（046 語义：最后一行内原子
+                        // 内线可见）。
+                        if lines > *remaining {
+                            hide_subtree(&mut b.children[idx]);
+                            *remaining = 0;
+                            exhausted = true;
                         } else {
                             *remaining -= lines;
                             out.boundary_y = c.y + c.height;

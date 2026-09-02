@@ -577,3 +577,64 @@ fn r3913_no_ratio_item_untouched() {
         container_box.height
     );
 }
+
+// ── R3918：单 IFC 容器的原子内线 clamp 隐藏 ──
+
+/// line-clamp-032 语义（css-overflow-4）：容器 line-clamp:4 全由原子内线（inline-block
+/// span）组成、无直接文本时，clamp 点后的原子内线须隐藏。跨块 clamp pass 的原子内线
+/// 行计数（round(高/容器 lh)）消耗预算，耗尽后隐藏后续。
+#[test]
+fn r3918_atomic_inline_after_clamp_point_hidden() {
+    use zero_css_parser::values::{DisplayValue, LengthValue};
+
+    let mut doc = zero_dom::Document::new();
+    let root = doc.root();
+    let html = doc.create_element("html");
+    let body = doc.create_element("body");
+    let container = doc.create_element("div");
+    let mut spans = Vec::new();
+    let _ = doc.append_child(root, html);
+    let _ = doc.append_child(html, body);
+    let _ = doc.append_child(body, container);
+    for _ in 0..8 {
+        let s = doc.create_element("span");
+        let _ = doc.append_child(container, s);
+        spans.push(s);
+    }
+
+    let mut styles = std::collections::HashMap::new();
+    for id in [html, body] {
+        styles.insert(id, zero_style_system::ComputedStyle::default());
+    }
+    let mut c = zero_style_system::ComputedStyle::default();
+    c.display = DisplayValue::Block;
+    c.height = LengthValue::Px(200.0);
+    c.line_clamp = zero_style_system::property::types::LineClampComputedValue::Count(4);
+    styles.insert(container, c);
+    for (i, &id) in spans.iter().enumerate() {
+        let mut s = zero_style_system::ComputedStyle::default();
+        s.display = DisplayValue::InlineBlock;
+        s.width = LengthValue::Px(150.0);
+        s.height = LengthValue::Px(25.0);
+        styles.insert(id, s);
+        let _ = i;
+    }
+
+    let result = crate::LayoutEngine::new(800.0, 600.0).compute(&doc, &styles);
+    // 前 4 个 span（clamp 预算内）保持可见几何；后 4 个（clamp 点后）隐藏清零。
+    for (i, &id) in spans.iter().enumerate() {
+        let b = find_box(&result.root, id).expect("span LayoutBox");
+        if i < 4 {
+            assert!(
+                b.height > 0.5,
+                "span {i} before clamp point must stay visible, got h={}",
+                b.height
+            );
+        } else {
+            assert!(
+                b.line_clamp_hidden,
+                "span {i} after clamp point must be hidden"
+            );
+        }
+    }
+}
