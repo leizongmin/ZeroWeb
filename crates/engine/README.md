@@ -14,8 +14,9 @@
 - **合成层提升**（`promote_compositing_layers`）— 根据透明度、固定定位等条件将元素提升为独立合成层，优化渲染性能
 - **CSS 动画与过渡运行时**（`animation` / `transition`）— 关键帧插值与 AnimationClock、TransitionClock 样式变化过渡插值，与渲染管线集成
 - **资源预加载**（`preload`）— 解析 `<link rel="preload/prefetch">` 提示，按优先级调度资源预取
-- **DOM/JS 桥接**（`dom_bridge` / `dom_bindings` / `js_dom_bridge`）— 页面 JavaScript 与 DOM 的 polyfill 桥与 V8/QuickJS 原生绑定、MutationObserver、事件派发
-- **命中测试**（`hit_test`）— 坐标到 DOM 节点/元素的命中判定
+- **DOM/JS 桥接**（`dom_bridge` / `dom_bindings` / `js_dom_bridge` / `quickjs_dom_bindings`）— 页面 JavaScript 与 DOM 的 polyfill 桥与 V8/QuickJS 原生绑定、MutationObserver、事件派发
+- **存储/网络/导航/定时器桥接**（`cache_storage_bridge` / `indexed_db_bridge` / `fetch_bridge` / `navigation_bridge` / `timer_bridge` / `font_load_bridge`）— 页面脚本对 Cache API、IndexedDB、fetch、导航历史、setTimeout、字体加载的宿主桥
+- **命中测试**（`hit_test` / `element_from_point`）— 坐标到 DOM 节点/元素的命中判定
 - **性能计时**（`PipelineTimings`）— 记录管线各阶段耗时，便于性能分析和优化
 
 ## 使用示例

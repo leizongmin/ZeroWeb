@@ -38,9 +38,11 @@ zero-browser
 ├── compositor_client.rs — zero-compositor 子进程发现与连接（ZW_COMPOSITOR_BIN）
 ├── paint_ipc.rs         — compositor 绘制帧导入与呈现
 ├── process_backend.rs   — renderer/image-decoder 子进程管理
+├── fetch_proxy.rs       — 页面网络请求代理（renderer IPC → 浏览器网络栈）
 ├── headless.rs          — headless 调试模式（renderer IPC 驱动）
 ├── tab_manager.rs       — 标签页状态管理
 ├── tab_snapshot.rs      — 页面快照/元数据（标题、favicon、缩略图）
+├── favicon_fetch.rs     — favicon 抓取
 ├── service_worker_owner.rs — Service Worker 生命周期归属
 ├── pages.rs             — 内置页面（设置页等）
 ├── main.rs              — 应用入口

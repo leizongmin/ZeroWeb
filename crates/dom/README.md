@@ -13,6 +13,9 @@
 - **树操作 API** — append_child、remove_child、insert_before、replace_child、clone_node，含循环检测
 - **属性操作** — get/set/remove/has attribute，自动维护 id 和 class 缓存索引
 - **元素查询** — getElementById（O(1)）、getElementsByTagName、getElementsByClassName、querySelector/querySelectorAll（支持标签、ID、类名、属性选择器）
+- **Range 与遍历** — Range 边界点/比较/内容抽取（`range`），TreeWalker / NodeIterator 深度优先遍历（`traversal`）
+- **事件与焦点** — Event 传播/stopPropagation/stopImmediatePropagation（`event`）、`FocusManager` Tab 导航与禁用态判定（`focus`）
+- **Shadow DOM** — ShadowRoot（open/closed 模式）与 slot 分配解析
 - **HTML 序列化** — 将 DOM 节点序列化为 HTML 字符串，支持 innerHTML / outerHTML
 - **MutationObserver** — 追踪 childList、attributes、characterData 变更并通知观察者
 - **文本内容** — 递归获取或设置节点的 textContent

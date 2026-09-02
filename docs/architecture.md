@@ -21,7 +21,7 @@
 
 ## 工作区分层
 
-整个工作区共 30 个 workspace member：20 个库 crate、7 个应用入口（`apps/`）、2 个测试工具（`tests/`）和 1 个开发工具（`tools/icon-gen`，不随发布产物分发）。下文按「应用与进程入口 / 产品层和 API 层 / 引擎层 / 基础设施层 / 测试基础设施」分组列出。
+整个工作区共 31 个 workspace member：21 个库 crate、7 个应用入口（`apps/`）、2 个测试工具（`tests/`）和 1 个开发工具（`tools/icon-gen`，不随发布产物分发）。下文按「应用与进程入口 / 产品层和 API 层 / 引擎层 / 基础设施层 / 测试基础设施」分组列出。
 
 ### 应用与进程入口
 
@@ -52,6 +52,7 @@
 | `crates/layout-engine` | 布局整合层（基于 taffy，Block / Flex / Grid / Position），把样式转换成布局树和几何输出，含 inline formatting（text-align / indent / float 排除 / tab-size / word-break 等） |
 | `crates/engine` | 渲染主管线，负责串起解析、样式、布局、paint、dirty tracking、compositing；包含 DOM Bridge（V8 polyfill）、资源预加载、CSS 动画 / 过渡运行时 |
 | `crates/canvas` | Canvas 2D 绘制能力（路径、变换、drawImage、shadow、Path2D、合成等） |
+| `crates/media` | 媒体解码管线（media-playback / media-audio goal 的进程内 crate）：webm/Matroska demux、VP9 解码（纯 Rust `rusty_vp9`）、AV1（`decode-av1` feature，系统 libdav1d）、YUV→RGBA 帧转换、音频解码（mp3 / ogg-vorbis / opus）、播放驱动（`VideoPlayer` + `VideoClock` trait）、音频输出面（`NullSink` 可观测 / `audio-cpal` 真设备）、混音总线与 Web Audio 振荡器合成最小面 |
 
 ### 基础设施层
 
@@ -103,7 +104,7 @@
 
 粗略说，仓库现在分成三档：
 
-- **核心内核已有实质实现**: dom、css-parser、style-system、layout-engine、engine、render-foundation、host-runtime、net、security、storage、protocol、canvas、wasm-sandbox、script-sandbox、page-runtime、product-version、psl、webview 都有可运行代码和对应测试。
+- **核心内核已有实质实现**: dom、css-parser、style-system、layout-engine、engine、render-foundation、host-runtime、net、security、storage、protocol、canvas、media、wasm-sandbox、script-sandbox、page-runtime、product-version、psl、webview 都有可运行代码和对应测试。
 - **产品层骨架已成，持续打磨**: `apps/browser`（桌面入口 + headless / remote debugging）、`browser-shell`（标签页 / 书签 / 历史 / 下载 / 设置 / 上下文菜单等数据模型）、`apps/renderer`（多进程渲染进程入口）、`apps/image-decoder`（D1 图像解码进程）、`apps/compositor`（C2 合成器进程）、`apps/webdriver`（WebDriver 服务）已打通，`apps/android-browser`（M0 bootstrap）已落地，但产品形态、稳定性和真实站点兼容性仍在推进。
 - **当前主线**: P1b V8 原生 DOM 绑定（2026-08-09 RFC 获批，R3095 起持续落地：S0 PoC 验证 native ~15.6×、S1 原生只读属性族 + NodeId 映射、S2 生产接线 + 树写/属性写原生、live Document 共享、S3 查询原生、S4 EventTarget 与事件派发/冒泡/stopPropagation 原生化，命名空间/序列化 spec 合规 R3181–R3208，**S5 customElements/Web Components 里程碑完成 R3262–R3269**，DOM/CSS 表单状态选择器一致化 R3277–R3284，**js-dom M1-M5 已达成——R383/R384 双引擎 `native_dom` default-on land、kill-switch 已删除**；P1a DOM/JS Bridge 原生化已主体落地）；渲染兼容性（WPT/CSSWG reftest 对齐 Chromium Oracle）2026-08-04 起降频守成、2026-08-09 字体栈重建 RFC v0.2.3 获批后恢复主动实施——多切片已落地（OpenType features 贯通、shaped fallback default-on、two-value `font-size-adjust` 全栈贯通 css-fonts Oracle 净改善 14.34pp、font-synthesis/font-size 绝对关键字）——Chromium Oracle 真一致约 47.5%、self-source 约 77%、strict 处低位 plateau，自主 clean-lever 轻量修复面已 11 vein 审计穷尽；残余缺口为 vertical writing modes（部分切片已落地，整体仍 user-gated）、multicol 碎片化、R109 inline-as-block 等结构性问题，根因是 layout↔paint IFC 度量不一致（Phase-A spread），Phase A IFC / R1043 / R2174 等深方向仍需用户点名授权。完整 Web API 与真实网站交互兼容性是后续阶段。详见 [路线图](../ROADMAP.md)。
 

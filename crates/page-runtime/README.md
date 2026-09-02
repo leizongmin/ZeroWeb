@@ -19,6 +19,9 @@
 - **`frame_invalidation`** — `FrameInvalidation` / `FrameTransaction` 帧失效与事务批处理
 - **`form_control`** — `FormControlStateStore` / `PageInteractionState` 表单控件与页面交互状态跟踪（焦点、值基线、change-on-blur）
 - **`html_actions`** — `HtmlActionPlan` / `HtmlUserAction` / `PageEffect` 等 HTML 用户动作的计划、执行与副作用（导航 / 聚焦 / 表单提交）
+- **`cache_storage_host`** — Cache API 宿主桥接契约（SW / 页面两侧共用的 `caches` 存储 host 面）
+- **`indexed_db_host`** — IndexedDB 宿主桥接契约（factory schema / 事务 wire / cursor stepping）
+- **`service_worker_manager` / `service_worker_registration`** — Service Worker 管理器与注册表投影（claim / controller / update）
 
 ## 使用示例
 

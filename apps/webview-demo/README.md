@@ -10,7 +10,7 @@
 
 - **GPU 渲染** — 经 `GpuRenderer` 使用 wgpu 渲染「Hello ZeroWeb!」文本（32px 深灰字、白色背景、水平居中）
 - **CPU 后备** — GPU 不可用时自动降级为 softbuffer 软件渲染；同时将渲染结果输出到 `demo_output.ppm`
-- **渲染模式切换** — `--renderer auto|gpu|cpu` 命令行参数（或 `ZEROWEB_RENDERER` 环境变量），默认 `auto`（优先 GPU，失败降级 CPU）
+- **渲染模式切换** — `--renderer auto|gpu|cpu` 命令行参数，默认 `auto`（优先 GPU，失败降级 CPU）
 - **字体管线** — 加载系统字体并光栅化 glyph；未找到系统字体时回退到内置 5x7 点阵字体
 
 ## 使用示例

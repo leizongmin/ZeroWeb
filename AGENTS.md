@@ -118,7 +118,7 @@ ZeroWeb — 用 Rust 构建的跨平台浏览器。两个交付物：
 项目自建浏览器核心：DOM、CSSOM、样式系统、布局、渲染管线、导航、安全/运行时边界。外部 Rust crate 用于底层能力（html5ever、v8/rquickjs、wasmtime/wasmi、wgpu+winit、taffy）。
 
 - 语言：Rust（edition 2024，MSRV 1.85）
-- 工作区：30 个 workspace member（20 个库 + 7 个应用 + 2 个测试工具 + 1 个开发工具）
+- 工作区：31 个 workspace member（21 个库 + 7 个应用 + 2 个测试工具 + 1 个开发工具）
 - 许可证：MIT
 
 ## Setup 命令
@@ -148,7 +148,7 @@ ZeroWeb — 用 Rust 构建的跨平台浏览器。两个交付物：
 
 ## 架构指南
 
-工作区布局（30 个 workspace member，分 5 类）：
+工作区布局（31 个 workspace member，分 5 类）：
 
 ```
 apps/
@@ -167,6 +167,7 @@ crates/
 ├── layout-engine/    # zero-layout-engine — 基于 Taffy 的布局（Block/Inline/Flex/Grid）
 ├── engine/           # zero-engine — 页面内核（协调所有子系统）
 ├── canvas/           # zero-canvas — Canvas 2D API
+├── media/            # zero-media — 媒体解码管线（webm demux、VP9/AV1 解码、音频、播放驱动）
 ├── render-foundation/ # zero-render-foundation — GPU/CPU 渲染、字体栈、图像缓存
 ├── host-runtime/     # zero-host-runtime — 窗口、事件循环、surface、IME（winit）
 ├── net/              # zero-net — HTTP/HTTPS 网络栈
@@ -195,6 +196,7 @@ tools/
 - `zero-webview` 是稳定嵌入边界。`zero-browser` 也应像外部宿主一样优先通过它接入页面能力，不要随意绕过到更底层 crate。
 - `zero-protocol` + `apps/renderer` 定义多进程边界。涉及导航、输入、存储、网络代理时，先确认消息契约，再同步修改浏览器主进程和渲染进程两端。
 - `zero-engine` 负责把 DOM / CSS / 样式 / 布局 / 绘制串成页面管线；`render-foundation` 负责真正的 GPU/CPU 图元输出，二者不要混写职责。
+- `zero-media` 是解码与播放的进程内管线（webm demux / VP9/AV1 视频 / 音频解码 / 播放驱动 / 音频输出面），解码与播放解耦；HTMLMediaElement 语义层在 engine/webview，不与本 crate 混写。
 - `script-sandbox` 和 `wasm-sandbox` 是隔离执行层。改动脚本或 WASM 集成时，优先保持 feature gate、宿主桥接和错误边界清晰。
 - `tests/integration` 覆盖跨 crate 管线，`tests/wpt-runner` 覆盖规范兼容性和 reftest。行为变化优先补这两层里最贴近的测试。
 

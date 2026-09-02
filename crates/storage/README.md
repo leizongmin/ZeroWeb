@@ -1,15 +1,15 @@
 # ZeroWeb Storage (`zero-storage`)
 
-> 浏览器端存储后端 — 提供 localStorage、sessionStorage 和 IndexedDB 的 Rust 实现。
+> 浏览器端存储后端 — 提供 localStorage、sessionStorage、IndexedDB、Cache API 与 Service Worker 注册表的 Rust 实现。
 
 ## 概述
 
-`ZeroWeb Storage` (`zero-storage`) 实现了 Web 标准中的客户端存储机制，包括 Web Storage（localStorage/sessionStorage）和 IndexedDB。作为 ZeroWeb 渲染管线的存储层，它为上层引擎提供按源（origin）隔离的键值存储和结构化数据库能力，同时支持配额管理和多种键类型的索引查询。
+`ZeroWeb Storage` (`zero-storage`) 实现了 Web 标准中的客户端存储机制，包括 Web Storage（localStorage/sessionStorage）、IndexedDB（含事务、索引、游标与持久化）、Cache API 与 Service Worker 注册表。作为 ZeroWeb 渲染管线的存储层，它为上层引擎提供按源（origin）隔离的键值存储和结构化数据库能力，同时支持配额管理和多种键类型的索引查询。
 
 ## 主要功能
 
-- **Web Storage** — localStorage（持久）和 sessionStorage（会话），支持配额限制、按键索引、容量估算
-- **IndexedDB** — 结构化数据库，支持 Object Store 的创建/删除、记录的增删改查、自增主键、复合键排序
+- **Web Storage** — localStorage（持久）和 sessionStorage（会话），支持配额限制、按键索引、容量估算、插入序保留的键序（indexmap）
+- **IndexedDB** — 结构化数据库，支持 Object Store 的创建/删除、记录的增删改查、自增主键、复合键排序、Index/Cursor/KeyRange、事务任务生命周期、跨 renderer 连接与数据库持久化
 - **存储管理器** — 按源（origin）隔离管理多个 localStorage/sessionStorage 实例，支持按源清除和批量清除
 - **Cache API** — 缓存 Request/Response 对，支持按方法（GET、POST 等）与 URL 匹配、缓存命中查询和删除
 - **Service Worker 注册表** — 管理 Service Worker 的注册与生命周期状态机（Registered → Installing → Installed → Activating → Activated → Redundant），支持 Fetch 拦截
