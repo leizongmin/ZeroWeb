@@ -1554,8 +1554,14 @@ fn resolve_repeat_params(
     // space/round 按 positioning area（origin box）适配（见下方 space/round 分支用 origin_*）。
     let x_range = |do_repeat: bool| {
         if do_repeat {
-            // 从 clip 左边界开始，确保覆盖整个 painting area
-            let start = clip_x - ((clip_x - positioned_x) % sized_w).abs();
+            // R3923：tile 网格相位锚定 background-position（CSS Backgrounds §3.4——首 tile
+            // 左上角位于 positioned 点，向两侧平铺覆盖 painting area），非对齐 clip 边。
+            // 旧式 `clip - |(clip - positioned) % sized|` 把网格对齐到 clip 边，positioned >
+            // clip 时整网格相位偏移（chromium 实证：origin≠clip 时 tile 内容错位 16px）。
+            // n = 覆盖 clip 左边所需的后退周期数（positioned ≤ clip 时 n=0，start=positioned，
+            // 与旧行为 byte-identical）。
+            let n = (((positioned_x - clip_x) / sized_w).ceil()).max(0.0);
+            let start = positioned_x - n * sized_w;
             (start, clip_x + clip_w)
         } else {
             (positioned_x, positioned_x + sized_w)
@@ -1564,7 +1570,8 @@ fn resolve_repeat_params(
 
     let y_range = |do_repeat: bool| {
         if do_repeat {
-            let start = clip_y - ((clip_y - positioned_y) % sized_h).abs();
+            let n = (((positioned_y - clip_y) / sized_h).ceil()).max(0.0);
+            let start = positioned_y - n * sized_h;
             (start, clip_y + clip_h)
         } else {
             (positioned_y, positioned_y + sized_h)

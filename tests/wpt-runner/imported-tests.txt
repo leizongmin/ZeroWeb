@@ -240,3 +240,6 @@ css/css-sizing/aspect-ratio/flex-aspect-ratio-023.html css/reference/ref-filled-
 css/css-transforms/transform-origin-007.html css/css-transforms/reference/transform-origin-ref.html == 2026-09-02 R3915 TransformPrimitive rect 扩为原矩形∪变换 bbox
 css/css-overflow/overflow-clip-margin-001.html css/css-overflow/overflow-clip-margin-001-ref.html == 2026-09-02 R3922 scope flush 定位后代 overflow 裁剪（CSS §11.1.1）——relative 子逃逸裁剪修复
 css/css-overflow/overflow-clip-margin-011.html css/css-overflow/overflow-clip-margin-011-ref.html == 2026-09-02 R3922 scope flush 定位后代 overflow 裁剪——嵌套 overflow-hidden 外层 + clip-margin 500px
+css/css-backgrounds/background-origin/origin-padding-box_with_size.html css/css-backgrounds/reference/origin-padding-box_with_size-ref.html == 2026-09-02 R3923 background-repeat tile 网格相位锚定 background-position（CSS Backgrounds §3.4）——origin≠clip 时相位偏移修复
+css/css-backgrounds/background-origin/origin-content-box_with_size.html css/css-backgrounds/reference/origin-content-box_with_size-ref.html == 2026-09-02 R3923 background-repeat tile 网格相位锚定——content-box origin 同相位缺陷
+css/css-backgrounds/background-origin/origin-border-box_with_size.html css/css-backgrounds/reference/origin-border-box_with_size-ref.html == 2026-09-02 R3923 body overflow 传播到视口（CSS Overflow 3 §3.3）——ref 页 body overflow-y:hidden 自裁缺陷

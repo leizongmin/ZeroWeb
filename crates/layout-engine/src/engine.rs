@@ -13,14 +13,16 @@ use taffy::prelude::*;
 
 use zero_css_parser::values::{
     BoxSizingValue, ClearValue, DisplayValue, FlexDirectionValue, FloatValue, LengthValue, OverflowClipMarginBox,
-    PositionValue,
+    OverflowValue, PositionValue,
 };
 // ComputedStyle.direction 是 style-system 自有的 DirectionValue（与 css-parser 的不同枚举）。
 use zero_style_system::DirectionValue;
 
 use zero_dom::{Document, NodeId, NodeKind};
 
-use zero_style_system::{ClipPathComputedValue, ComputedStyle, IsolationValue, MixBlendModeComputedValue, ZIndexValue};
+use zero_style_system::{
+    ClipPathComputedValue, ComputedStyle, ContainComputedValue, IsolationValue, MixBlendModeComputedValue, ZIndexValue,
+};
 
 /// 将逻辑 `float` 值（`inline-start`/`inline-end`）按方向解析为物理 `left`/`right`
 /// （CSS Logical §float-clear）。物理值（Left/Right/None）原样返回。
@@ -1375,8 +1377,34 @@ impl LayoutEngine {
         // `overflow: hidden/clip/auto/scroll` 与普通块盒一致产生裁剪/滚动效果。
         // 旧 CSS 2.1 §17.5「cell 即使 overflow:hidden 也增长含内容、不裁剪」已被现代规范
         // 取代（chromium/IE 现行行为 = 裁剪）。此处 table cell 与非 cell 用同一 overflow 映射。
-        let overflow_x = computed.map_or(OverflowClip::Visible, |s| convert_overflow_to_clip(&s.overflow_x));
-        let overflow_y = computed.map_or(OverflowClip::Visible, |s| convert_overflow_to_clip(&s.overflow_y));
+        let mut overflow_x = computed.map_or(OverflowClip::Visible, |s| convert_overflow_to_clip(&s.overflow_x));
+        let mut overflow_y = computed.map_or(OverflowClip::Visible, |s| convert_overflow_to_clip(&s.overflow_y));
+        // R3923（CSS Overflow 3 §3.3 / CSS2.1 §11.1.1 overflow propagation）：html 的 overflow
+        // 为 visible 时，body（html 的 body 子元素）的非 visible overflow 传播到视口，body
+        // 自身 used value = visible（不再按自身 padding-box 裁剪）。ZW 无视口滚动，传播值
+        // 无消费方（静态画布 = 视口裁剪近似 no-op），只需落实「body 不自裁」半边。
+        // driving：background-origin/*-box_with_size ref 页（body overflow-y:hidden 拉行元素
+        // 此前被裁掉底 border，chromium 全可见）+ CSS2/visufx overflow-propagation-*。
+        // CSS Containment 1/2：body 或 html 任一含非 none containment（layout/size/style/paint
+        // 任一，strict/content/Custom 含之）→ 传播被抑制（driving: css-contain
+        // contain-body-overflow-001/003/004 + contain-html-overflow-001..004）。
+        // 逐轴判定（html 两轴均 visible 才触发传播；body 非可见轴清为 Visible）。
+        if computed.is_some_and(|s| s.overflow_x != OverflowValue::Visible || s.overflow_y != OverflowValue::Visible)
+            && let Some(zero_dom::NodeKind::Element(body_elem)) = dom_id.and_then(|id| doc.get(id)).map(|n| &n.kind)
+            && body_elem.local_name() == "body"
+            && let Some(html_id) = dom_id.and_then(|id| doc.get(id)).and_then(|n| n.parent)
+            && doc
+                .get(html_id)
+                .is_some_and(|p| matches!(&p.kind, zero_dom::NodeKind::Element(pe) if pe.local_name() == "html"))
+            && let Some(html_style) = styles.get(&html_id)
+            && html_style.overflow_x == OverflowValue::Visible
+            && html_style.overflow_y == OverflowValue::Visible
+            && matches!(html_style.contain, ContainComputedValue::None)
+            && computed.is_some_and(|s| matches!(s.contain, ContainComputedValue::None))
+        {
+            overflow_x = OverflowClip::Visible;
+            overflow_y = OverflowClip::Visible;
+        }
         // CSS Overflow 3 §3：overflow-clip-margin 仅对 overflow:clip 生效（paint 期消费）。
         // length 在此 resolve 为 px（em 按本元素 font-size；%/auto/vmin 等无意义 → 0 = 裁到基准盒边）。
         // box_kind 初值 PaddingBox、length 初值 0 → 与既有 overflow 裁剪到 padding-box 一致（零行为变更）。

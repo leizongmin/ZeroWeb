@@ -670,3 +670,51 @@ fn test_background_clip_border_area_no_border_emits_nothing() {
         "环带为空（空条带集）时 tile 全部不绘"
     );
 }
+
+/// R3923：repeat tile 网格相位锚定 background-position（CSS Backgrounds §3.4）。
+/// origin=padding-box（8..92）且 clip=border-box（0..100）时 positioned=(8,8) > clip 原点：
+/// 网格 = positioned + k*sized（…,-40, 8, 56,…），非旧「对齐 clip 边」（-8, 40, 88）。
+/// driving：css-backgrounds background-origin/origin-padding-box_with_size（chromium 实证
+/// tile 内容偏移 16px 缺陷）。
+#[test]
+fn test_r3923_repeat_grid_phase_anchored_at_position() {
+    let mut doc = zero_dom::Document::new();
+    let elem = doc.create_element("div");
+    let mut layout = make_box(Some(elem), 0.0, 0.0, 100.0, 100.0);
+    layout.border_top = 8.0;
+    layout.border_left = 8.0;
+
+    let mut styles = HashMap::new();
+    let mut style = ComputedStyle::default();
+    style.background_image = vec![BackgroundImageComputedValue::Url("tile.png".to_string())];
+    // 48px tile：positioned=(8,8)；网格相位 ≡ 8 (mod 48)。
+    style.background_size = vec![BackgroundSizeComputedValue::Length(48.0)];
+    style.color = ColorValue::CurrentColor;
+    styles.insert(elem, style);
+
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, None);
+
+    let prims = painter.primitives();
+    let xs: Vec<f32> = prims.images.iter().map(|i| i.rect.origin.x).collect();
+    // 相位正确性：所有 tile x ≡ 8 (mod 48)（covering clip 0..100：-40, 8, 56）。
+    let phase_ok = xs
+        .iter()
+        .all(|x| ((x - 8.0) % 48.0).abs() < 0.001 || ((x - 8.0) % 48.0 + 48.0).abs() < 0.001);
+    assert!(
+        phase_ok,
+        "tile x 应满足 x ≡ 8 (mod 48)（相位锚定 positioned），实际 {xs:?}"
+    );
+    assert!(
+        xs.iter().any(|&x| (x + 40.0).abs() < 0.001),
+        "应存在后向 tile x=-40（覆盖 clip 左条带），实际 {xs:?}"
+    );
+    assert!(
+        xs.iter().any(|&x| (x - 8.0).abs() < 0.001),
+        "首 tile 应锚定 positioned x=8，实际 {xs:?}"
+    );
+    assert!(
+        !xs.iter().any(|&x| (x + 8.0).abs() < 0.001),
+        "不应出现旧 clip 对齐相位 x=-8，实际 {xs:?}"
+    );
+}

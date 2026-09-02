@@ -6,7 +6,7 @@
 use super::*;
 use zero_css_parser::values::{DisplayValue, FlexDirectionValue, LengthValue, OverflowValue, PositionValue};
 use zero_dom::Document;
-use zero_style_system::ComputedStyle;
+use zero_style_system::{ComputedStyle, ContainComputedValue};
 
 /// 辅助：创建 html > body 并返回 (doc, html_id, body_id)。
 fn make_doc() -> (Document, NodeId, NodeId) {
@@ -480,4 +480,105 @@ fn test_compute_flex_container() {
     assert_eq!(flex_box.children.len(), 2);
     // flex 行方向：两个 item 应水平排列
     assert!(flex_box.children[1].x > flex_box.children[0].x);
+}
+
+// ---- R3923：body overflow 传播到视口（CSS Overflow 3 §3.3 / CSS2.1 §11.1.1）----
+
+#[test]
+fn test_r3923_body_overflow_propagates_to_viewport_not_self_clip() {
+    // body{overflow:hidden} + html overflow visible → body used overflow = visible
+    //（传播到视口；ZW 无视口滚动，只需 body 不按自身 padding-box 裁剪）。
+    let (mut doc, html, body) = make_doc();
+    let div = doc.create_element("div");
+    doc.append_child(body, div).unwrap();
+
+    let html_style = block_style(0.0, 0.0);
+    let mut body_style = block_style(100.0, 100.0);
+    body_style.overflow_x = OverflowValue::Hidden;
+    body_style.overflow_y = OverflowValue::Hidden;
+
+    let mut styles = std::collections::HashMap::new();
+    styles.insert(html, html_style);
+    styles.insert(body, body_style);
+
+    let mut engine = crate::engine::LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    let body_box = find_child_by_node_id(&result.root, body).expect("body");
+    assert_eq!(body_box.overflow_x, crate::types::OverflowClip::Visible);
+    assert_eq!(body_box.overflow_y, crate::types::OverflowClip::Visible);
+}
+
+#[test]
+fn test_r3923_body_overflow_no_propagation_when_html_hidden() {
+    // html{overflow:hidden} → html 自身传播，body 保持自身 overflow（继续自裁）。
+    let (mut doc, html, body) = make_doc();
+    let div = doc.create_element("div");
+    doc.append_child(body, div).unwrap();
+
+    let mut html_style = block_style(0.0, 0.0);
+    html_style.overflow_x = OverflowValue::Hidden;
+    html_style.overflow_y = OverflowValue::Hidden;
+    let mut body_style = block_style(100.0, 100.0);
+    body_style.overflow_x = OverflowValue::Hidden;
+    body_style.overflow_y = OverflowValue::Hidden;
+
+    let mut styles = std::collections::HashMap::new();
+    styles.insert(html, html_style);
+    styles.insert(body, body_style);
+
+    let mut engine = crate::engine::LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    let body_box = find_child_by_node_id(&result.root, body).expect("body");
+    assert_eq!(body_box.overflow_x, crate::types::OverflowClip::Hidden);
+    assert_eq!(body_box.overflow_y, crate::types::OverflowClip::Hidden);
+}
+
+#[test]
+fn test_r3923_body_overflow_no_propagation_with_containment() {
+    // CSS Containment：body{contain:layout} → 传播被抑制，body 保持自身 overflow。
+    // driving: css-contain contain-body-overflow-001（layout）/ 003（size）/ 004（style）。
+    let (mut doc, html, body) = make_doc();
+    let div = doc.create_element("div");
+    doc.append_child(body, div).unwrap();
+
+    let html_style = block_style(0.0, 0.0);
+    let mut body_style = block_style(100.0, 100.0);
+    body_style.overflow_x = OverflowValue::Hidden;
+    body_style.overflow_y = OverflowValue::Hidden;
+    body_style.contain = ContainComputedValue::Layout;
+
+    let mut styles = std::collections::HashMap::new();
+    styles.insert(html, html_style);
+    styles.insert(body, body_style);
+
+    let mut engine = crate::engine::LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    let body_box = find_child_by_node_id(&result.root, body).expect("body");
+    assert_eq!(body_box.overflow_x, crate::types::OverflowClip::Hidden);
+    assert_eq!(body_box.overflow_y, crate::types::OverflowClip::Hidden);
+}
+
+#[test]
+fn test_r3923_body_overflow_no_propagation_when_html_contained() {
+    // CSS Containment：html{contain:layout} → body 传播同样被抑制
+    //（driving: css-contain contain-html-overflow-001..004）。
+    let (mut doc, html, body) = make_doc();
+    let div = doc.create_element("div");
+    doc.append_child(body, div).unwrap();
+
+    let mut html_style = block_style(0.0, 0.0);
+    html_style.contain = ContainComputedValue::Layout;
+    let mut body_style = block_style(100.0, 100.0);
+    body_style.overflow_x = OverflowValue::Hidden;
+    body_style.overflow_y = OverflowValue::Hidden;
+
+    let mut styles = std::collections::HashMap::new();
+    styles.insert(html, html_style);
+    styles.insert(body, body_style);
+
+    let mut engine = crate::engine::LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    let body_box = find_child_by_node_id(&result.root, body).expect("body");
+    assert_eq!(body_box.overflow_x, crate::types::OverflowClip::Hidden);
+    assert_eq!(body_box.overflow_y, crate::types::OverflowClip::Hidden);
 }
