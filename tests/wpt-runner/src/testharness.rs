@@ -761,6 +761,10 @@ pub const CACHE_STORAGE_WINDOW_CASES: &[(&str, &[&str])] = &[
     ("service-workers/cache-storage/worker/cache-put.https.html", &[]),
     ("service-workers/cache-storage/worker/cache-add.https.html", &[]),
     ("service-workers/cache-storage/worker/cache-abort.https.html", &[]),
+    (
+        "service-workers/cache-storage/crashtests/cache-response-clone.https.html",
+        &[],
+    ),
 ];
 
 const ZEROWEB_CACHE_FILTERED_RESPONSE_TYPES_SOURCE: &str = r#"
@@ -3250,13 +3254,8 @@ fn run_testharness_html_inner(
         }
     }
     if let Err(error) = script_result {
-        // R151（js-dom M4）：**crash 用例的 vacuous pass 语义**——文件未声明任何 test()
-        //（纯 "no crash should occur" 回归用例，如 dom/events/keypress-dispatch-crash.html：
-        // spec `dom-document-createevent` 别名表无 KeyboardEvents 复数 → 真实浏览器
-        // createEvent 同样抛 NotSupportedError 中断顶层脚本），页面脚本抛错但引擎未崩
-        // = 用例目的达成。判 Pass（带注记）；声明了 test() 的文件保持 Fail（脚本中断
-        // 使已声明断言无法跑完，真失败）。判据 = 注入 probe 的 state.tests（test 函数
-        // 被调次数）——脚本在首个 test() 前中断为 0。
+        // 无 testharness 引用的 crash/no-harness 用例只有在脚本执行完成且未崩溃时才可
+        // 由下方 terminal 分支判 PASS；脚本抛错不能按“未注册 test()”误判为通过。
         let declared = webview
             .execute_script(
                 "(function(){try{var st=typeof globalThis.__zw_harness_state==='function'?globalThis.__zw_harness_state():null;return st&&st.tests?st.tests:0;}catch(_e){return 0;}})()",
@@ -3264,14 +3263,9 @@ fn run_testharness_html_inner(
             .ok()
             .and_then(|v| v.trim().parse::<usize>().ok())
             .unwrap_or(0);
-        let status = if !has_harness_ref && declared == 0 {
-            HarnessStatus::Pass
-        } else {
-            HarnessStatus::Fail
-        };
         return vec![HarnessSubtestResult {
             name: case_name.to_string(),
-            status,
+            status: HarnessStatus::Fail,
             message: Some(format!("page script threw (declared tests: {declared}): {error}")),
         }];
     }
@@ -3281,6 +3275,7 @@ fn run_testharness_html_inner(
     let mut last_test_function = "unknown".to_string();
     let mut last_harness_hook = "unknown".to_string();
     let mut last_state = serde_json::Value::Null;
+    let mut last_test_wait = false;
     // R347：testdriver 命令解析重试计数——目标元素由 pending mutation 异步 apply
     //（body 在 timer 回调里 enqueue，host 侧 next pump 才 materialize），probe 每帧
     // 排空队列的首次解析可能先于元素落 doc。同 id 最多重试 20 帧，超限按原错误处理。
@@ -3292,7 +3287,7 @@ fn run_testharness_html_inner(
                 name: case_name.to_string(),
                 status: HarnessStatus::Timeout,
                 message: Some(format!(
-                    "testharness completion callback was not called (test={}, hook={}, scripts={script_lengths:?}, state={last_state})",
+                    "testharness completion callback was not called (test={}, hook={}, scripts={script_lengths:?}, state={last_state}, test_wait={last_test_wait})",
                     last_test_function, last_harness_hook
                 )),
             });
@@ -3356,6 +3351,7 @@ fn run_testharness_html_inner(
         last_test_function = probe.test_function;
         last_harness_hook = probe.harness_hook;
         last_state = probe.state;
+        last_test_wait = probe.test_wait;
         for command in probe.commands {
             let result = apply_testdriver_command(&mut webview, &command);
             // R347：目标未解析（元素尚未 materialize）→ 重新入队下帧重试。
@@ -3398,6 +3394,10 @@ fn run_testharness_html_inner(
                 // completion 回调已调）且 run_page_scripts_strict 未报脚本抛错（报错早在
                 // 上方 return Fail）→ 按上游浏览器语义记 PASS（伪 subtest「did not crash」）。
                 if !has_harness_ref {
+                    if probe.test_wait {
+                        std::thread::sleep(Duration::from_millis(1));
+                        continue;
+                    }
                     return vec![HarnessSubtestResult {
                         name: case_name.to_string(),
                         status: HarnessStatus::Pass,
@@ -3414,6 +3414,13 @@ fn run_testharness_html_inner(
                 }];
             }
             return map_harness_results(partial_results);
+        }
+        if !has_harness_ref && partial_results.is_empty() && !probe.test_wait {
+            return vec![HarnessSubtestResult {
+                name: case_name.to_string(),
+                status: HarnessStatus::Pass,
+                message: None,
+            }];
         }
         if probe.due_timer {
             std::thread::yield_now();
@@ -3526,9 +3533,7 @@ add_completion_callback(function() {
     let mut html = if has_harness_ref {
         replace_script_source(source, "/resources/testharness.js", &harness)
     } else {
-        let mut injected = harness.clone();
-        injected.push_str(source);
-        injected
+        inject_harness_script_before_page_scripts(source, &harness)
     };
     html = replace_script_source(&html, "/resources/testharnessreport.js", "");
     html = replace_script_source(&html, "/resources/testdriver.js", TESTDRIVER_STUB);
@@ -3656,6 +3661,23 @@ fn replace_script_source(source: &str, script_src: &str, replacement: &str) -> S
         }
         remaining = &candidate[end..];
     }
+    output
+}
+
+fn inject_harness_script_before_page_scripts(source: &str, harness: &str) -> String {
+    for tag in ["<head>", "<HEAD>", "<html>", "<HTML>"] {
+        if let Some(pos) = source.find(tag) {
+            let insert_at = pos + tag.len();
+            let mut output = String::with_capacity(source.len() + harness.len());
+            output.push_str(&source[..insert_at]);
+            output.push_str(harness);
+            output.push_str(&source[insert_at..]);
+            return output;
+        }
+    }
+    let mut output = String::with_capacity(source.len() + harness.len());
+    output.push_str(harness);
+    output.push_str(source);
     output
 }
 
@@ -3792,6 +3814,7 @@ struct HarnessProbe {
     harness_hook: String,
     state: serde_json::Value,
     due_timer: bool,
+    test_wait: bool,
 }
 
 #[derive(Deserialize)]
@@ -3857,6 +3880,8 @@ fn take_probe(webview: &mut WebView) -> Result<HarnessProbe, String> {
              harness_hook:typeof globalThis.__zw_mark_harness_loaded,\
              state:typeof globalThis.__zw_harness_state==='function'?globalThis.__zw_harness_state():null,\
              due_timer:(globalThis.__zw_timers||[]).some(function(timer){ return timer.at <= Date.now(); }),\
+             test_wait:!!(document.documentElement && document.documentElement.classList\
+               && document.documentElement.classList.contains('test-wait')),\
              commands:(globalThis.__zw_td_queue||[]).splice(0)})",
         )
         .map_err(|error| error.to_string())?;
@@ -4181,6 +4206,62 @@ promise_test(async function() {
     }
 
     #[test]
+    fn no_harness_script_error_is_failure() {
+        let html = r#"<script>throw new Error('boom');</script>"#;
+        let results = run_testharness_html(
+            Path::new("/nonexistent-wpt-root-for-tests"),
+            "no-harness-error.html",
+            html,
+            MINI_HARNESS,
+            Duration::from_secs(1),
+        );
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].status, HarnessStatus::Fail);
+        assert!(results[0].message.as_deref().unwrap().contains("boom"));
+    }
+
+    #[test]
+    fn no_harness_test_wait_must_clear_before_pass() {
+        let html = r#"<html class="test-wait"><script></script></html>"#;
+        let results = run_testharness_html(
+            Path::new("/nonexistent-wpt-root-for-tests"),
+            "no-harness-test-wait.html",
+            html,
+            MINI_HARNESS,
+            Duration::from_millis(10),
+        );
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].status, HarnessStatus::Timeout);
+        assert!(results[0].message.as_deref().unwrap().contains("test_wait=true"));
+    }
+
+    #[test]
+    fn no_harness_module_script_can_clear_test_wait() {
+        let html = r#"
+<!doctype html>
+<html class="test-wait">
+<meta charset="utf-8">
+<script type="module">
+  await Promise.resolve();
+  document.documentElement.classList.remove('test-wait');
+</script>
+</html>
+"#;
+        let results = run_testharness_html(
+            Path::new("/nonexistent-wpt-root-for-tests"),
+            "no-harness-module.html",
+            html,
+            MINI_HARNESS,
+            Duration::from_secs(1),
+        );
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].status, HarnessStatus::Pass);
+    }
+
+    #[test]
     fn registered_tests_cannot_complete_with_empty_results() {
         let html = r#"
 <script src="/resources/testharness.js"></script>
@@ -4501,8 +4582,8 @@ async_test(function(test) {
             .iter()
             .map(|(path, _)| *path)
             .collect::<std::collections::BTreeSet<_>>();
-        assert_eq!(CACHE_STORAGE_WINDOW_CASES.len(), 38);
-        assert_eq!(unique.len(), 38);
+        assert_eq!(CACHE_STORAGE_WINDOW_CASES.len(), 39);
+        assert_eq!(unique.len(), 39);
         assert!(CACHE_STORAGE_WINDOW_CASES.iter().all(|(path, support)| {
             if !path.starts_with("service-workers/cache-storage/")
                 || !(path.ends_with(".https.any.js")
@@ -4534,7 +4615,8 @@ async_test(function(test) {
                 "service-workers/cache-storage/common.https.window.js"
                 | "service-workers/cache-storage/common.https.html"
                 | "service-workers/cache-storage/cache-api-nested-worker.https.html"
-                | "service-workers/cache-storage/sandboxed-iframes.https.html" => support.is_empty(),
+                | "service-workers/cache-storage/sandboxed-iframes.https.html"
+                | "service-workers/cache-storage/crashtests/cache-response-clone.https.html" => support.is_empty(),
                 "service-workers/cache-storage/credentials.https.html" => {
                     *support == ["../service-worker/resources/test-helpers.sub.js"]
                 }

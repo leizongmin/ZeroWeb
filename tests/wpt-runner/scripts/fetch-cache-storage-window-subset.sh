@@ -23,7 +23,7 @@ else
   FALLBACK_BASE="https://cdn.jsdelivr.net/gh/web-platform-tests/wpt@"
 fi
 CORPUS_LABEL="${WPT_CORPUS_LABEL:-CacheStorage window}"
-EXPECTED_ASSET_COUNT="${WPT_EXPECTED_ASSET_COUNT:-67}"
+EXPECTED_ASSET_COUNT="${WPT_EXPECTED_ASSET_COUNT:-68}"
 MODE="restore"
 
 if [[ "${1:-}" == "--verify-only" ]]; then

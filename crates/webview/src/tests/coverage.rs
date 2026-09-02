@@ -236,6 +236,32 @@ fn test_module_script_executes_r3083() {
     assert_eq!(flag.unwrap(), "true", "module body 经转换后执行（__modBodyRan 设置）");
 }
 
+#[test]
+fn test_module_top_level_await_completes_r3083() {
+    let mut wv = WebView::new(WebViewConfig::default());
+    wv.load_html(
+        "<html class=\"test-wait\"><body><script type=\"module\">\
+         await Promise.resolve();\
+         document.documentElement.classList.remove('test-wait');\
+         globalThis.__modAwaitRan = 'yes';\
+         </script></body></html>",
+        None,
+    );
+    let r = wv.run_page_scripts_strict();
+    assert!(r.is_ok(), "module top-level await should execute, got: {:?}", r.err());
+    assert_eq!(
+        wv.execute_script("String(globalThis.__modAwaitRan === 'yes')").unwrap(),
+        "true",
+        "module body after top-level await should run"
+    );
+    assert_eq!(
+        wv.execute_script("String(document.documentElement.classList.contains('test-wait'))")
+            .unwrap(),
+        "false",
+        "module script should mutate documentElement.classList after await"
+    );
+}
+
 // ── document.currentScript（R3258，HTML §4.11.3.1）──
 // classic 脚本执行期间 currentScript 指向自身 <script> 元素；执行期外为 null；module 执行期恒 null。
 // 宿主经 __zw_set_current_script(idx) / __zw_clear_current_script() 在每个 classic 脚本执行前后设/清，

@@ -2,7 +2,7 @@
 
 **入口文档**: [../storage-cache-api.md](../storage-cache-api.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-02（CacheStorage top-level abort WPT promotion）
+**最后更新**: 2026-09-02（CacheStorage response clone crashtest promotion）
 
 ---
 
@@ -71,6 +71,12 @@ credentialed request URL 作为 Cache key 在页面 runner 下也可经 worker f
 把 `Cache.put()` / `Cache.add()` / `Cache.addAll()` 的 already-aborted、same-task abort
 与 headers-received abort 行为从 wrapper 覆盖提升到 `.any.js` window 入口，当前
 CacheStorage window runner 基线为 38 case / 448 subtest / 448 Pass / 0 Fail。
+随后补入上游 `crashtests/cache-response-clone.https.html` no-harness crashtest，
+runner 对无 testharness 页改为等待 `<html class="test-wait">` 清除后才判 pass，并收紧
+脚本抛错不再假绿；同时模块脚本转换支持顶层 `await` 的 async IIFE 执行路径。该用例固定
+`Cache.add("")` / `Cache.match("")` 后对 cached `Response.body` 打开 reader、再 `clone()`
+并继续 read 的不崩溃路径，当前 CacheStorage window runner 基线为 39 case / 449 subtest /
+449 Pass / 0 Fail。
 M3 首片已补齐 page/WebView `StorageManager` owner 的 per-origin CacheStorage 持久化：
 CacheStorage 以 origin hash `.cache` 文件落盘，请求/响应元数据和 body bytes JSON 保真，
 写入采用临时文件 + sync + 原子替换，并在启动时清理 `.tmp` / 恢复 `.bak`；页面 host 的
@@ -137,7 +143,7 @@ fetch baseline，不改变本目标的 window/SW CacheStorage 分母。
   iframe `contentWindow` 可 `open` 后 `put/match/matchAll/delete/keys`，并可 `has/keys/match`
 - ✅ 持久化首片：page/WebView `StorageManager` owner 已支持 per-origin CacheStorage 落盘；
   SW registration-local CacheStorage 已随 active registration snapshot/restore 验证
-- ✅ WPT `cache-storage` window runner 基线已导入：38 case / 448 subtest，448 Pass / 0 Fail
+- ✅ WPT `cache-storage` window runner 基线已导入：39 case / 449 subtest，449 Pass / 0 Fail
 - 🚧 add/addAll 的页面 fetch 链路、Cache API 返回对象 brand、缺参 TypeError、
   `CacheStorage.keys()` 创建顺序、Vary 匹配、delete-dooming、DOMString name wire 与
   Storage Buckets cache namespace
@@ -160,7 +166,7 @@ fetch baseline，不改变本目标的 window/SW CacheStorage 分母。
 
 ## 下一步计划
 
-1. **M2 切片 17**：继续评估剩余 dynamic-server / cross-origin CacheStorage WPT case；`cross-partition.https.tentative.html` 仍需 dispatcher/popup/SharedWorker/partitioned-storage 支撑，`cache-keys-attributes-for-service-worker.https.html` 更适合 service-workers 目标收口
+1. **M2 切片 18**：继续评估剩余 dynamic-server / cross-origin CacheStorage WPT case；`cross-partition.https.tentative.html` 仍需 dispatcher/popup/SharedWorker/partitioned-storage 支撑，`cache-keys-attributes-for-service-worker.https.html` 已归 service-workers 目标收口
 2. **service-workers 后续**：继续扩展 SW cache-storage / fetch-cache WPT 验收；fetch runner 已覆盖 uncontrolled-page scope bypass、message-time `clients.claim()` iframe control、claim longest-match boundary 与 ReadableStream pull-source chunk serialization，持久化能力已由 registration-local snapshot/restore 覆盖
 
 **碰撞管理**：开工前先 `git log --since="14 days ago" -- crates/engine/src/js_dom_shim/`
@@ -171,7 +177,7 @@ fetch baseline，不改变本目标的 window/SW CacheStorage 分母。
 | 里程碑 | 状态 |
 |--------|------|
 | M1 — WPT cache-storage 基线 + caches 骨架 | ✅ 页面骨架 + 32-case window runner WPT 基线已接入 |
-| M2 — Cache 全 API + 查询语义 | 🚧 `Cache.matchAll()` / `Cache.keys()`、`Cache.match()`、`CacheStorage.match()`、`ignoreSearch`/`ignoreMethod`/`ignoreVary`、页面 `add/addAll` GET fetch→store、iframe `contentWindow.caches` + `Cache.add()` iframe fetch context、返回对象 brand、缺参 TypeError、`CacheStorage.keys()` 创建顺序、delete-dooming、DOMString name wire、Storage Buckets cache namespace、`Cache.put` 核心可缓存性拒绝/body 消费语义、cached `Response.type`/`Response.url` 读回保真、`Response.error()` 可缓存读回、opaque response 忽略 Vary 与内部 metadata 可缓存、`Response.redirect()`/Blob/FormData response 路径、ArrayBuffer/ArrayBufferView response body 与 multipart `Response.formData()` 文本字段读回、`addAll` 原子失败、undefined entry 拒绝、Vary-aware duplicate 判定、`basic`/`cors`/`opaque`/`opaqueredirect` filtered response 生成、Window/Dedicated Worker/nested Dedicated Worker owner 共享路径、`cache-abort` window/worker abort 语义、sandboxed iframe top-level/window CacheStorage 安全边界、credentialed request URL cache key top-level/SW wrapper、SW runtime `Cache.delete()` 与 `CacheStorage.delete/has/keys` 已接入；更大 WPT 覆盖待完成 |
+| M2 — Cache 全 API + 查询语义 | 🚧 `Cache.matchAll()` / `Cache.keys()`、`Cache.match()`、`CacheStorage.match()`、`ignoreSearch`/`ignoreMethod`/`ignoreVary`、页面 `add/addAll` GET fetch→store、iframe `contentWindow.caches` + `Cache.add()` iframe fetch context、返回对象 brand、缺参 TypeError、`CacheStorage.keys()` 创建顺序、delete-dooming、DOMString name wire、Storage Buckets cache namespace、`Cache.put` 核心可缓存性拒绝/body 消费语义、cached `Response.type`/`Response.url` 读回保真、`Response.error()` 可缓存读回、opaque response 忽略 Vary 与内部 metadata 可缓存、`Response.redirect()`/Blob/FormData response 路径、ArrayBuffer/ArrayBufferView response body 与 multipart `Response.formData()` 文本字段读回、`addAll` 原子失败、undefined entry 拒绝、Vary-aware duplicate 判定、cached `Response.body` reader + `Response.clone()` 不崩溃路径、`basic`/`cors`/`opaque`/`opaqueredirect` filtered response 生成、Window/Dedicated Worker/nested Dedicated Worker owner 共享路径、`cache-abort` window/worker abort 语义、sandboxed iframe top-level/window CacheStorage 安全边界、credentialed request URL cache key top-level/SW wrapper、SW runtime `Cache.delete()` 与 `CacheStorage.delete/has/keys` 已接入；更大 WPT 覆盖待完成 |
 | M3 — 持久化 + 剩余语义收尾 | 🚧 page/WebView owner per-origin 持久化与 SW registration-local CacheStorage 持久化已完成；继续用扩面 WPT 收敛剩余语义 |
 
 ## 验证基线
@@ -422,6 +428,19 @@ fetch baseline，不改变本目标的 window/SW CacheStorage 分母。
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 600 -- target/release/zero-wpt-runner testharness-cache-storage --wpt-data tests/wpt-runner/wpt-data/.cache-storage-window-root credentials.https.html --json`：1 case / 1 subtest / 1 Pass
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 900 -- make baseline-wpt-cache-storage OUTPUT=docs/goal/storage-cache-api/evidence/2026-08-31-cache-storage-window-credentials-baseline.json SUMMARY=docs/goal/storage-cache-api/evidence/2026-08-31-cache-storage-window-credentials-baseline.md`：37 cases / 439 subtests / 439 Pass，double-run deterministic
   - 证据：[M2 CacheStorage Credentials Baseline](evidence/2026-08-31-cache-storage-window-credentials-baseline.md)
+- 2026-09-02 M2 CacheStorage response clone crashtest 扩面：
+  - 新增 WPT：`service-workers/cache-storage/crashtests/cache-response-clone.https.html`
+  - runner 对无 testharness 的 `test-wait` crashtest 改为等待根元素清除 `test-wait`
+    后才判 pass，并收紧脚本抛错不再作为 crash 用例通过
+  - `<script type="module">` 转换支持顶层 `await`，用于执行该 crashtest 的 module body
+  - 固定 `Cache.add("")` / `Cache.match("")` 读回 cached `Response.body` 后，先打开
+    reader、再 `Response.clone()`、再继续 read 的不崩溃路径
+  - `./target/test-guard --time-limit 90 --total-mem 4 --per-proc-mem 3 -- cargo test -p zero-script-sandbox test_top_level_await_wraps_module_in_async_iife -- --nocapture`：1 passed
+  - `./target/test-guard --time-limit 90 --total-mem 4 --per-proc-mem 3 -- cargo test -p zero-webview test_module_top_level_await_completes_r3083 -- --nocapture`：1 passed
+  - `./target/test-guard --time-limit 90 --total-mem 4 --per-proc-mem 3 -- cargo test -p zero-wpt-runner no_harness -- --nocapture`：3 passed
+  - `./target/test-guard --time-limit 120 --total-mem 4 --per-proc-mem 3 -- cargo run -p zero-wpt-runner -- testharness-cache-storage cache-response-clone --wpt-data /tmp/zw-wpt-cache-storage --json`：1 case / 1 subtest / 1 Pass
+  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 900 -- make baseline-wpt-cache-storage OUTPUT=docs/goal/storage-cache-api/evidence/2026-09-02-m2-cache-response-clone-baseline.json SUMMARY=docs/goal/storage-cache-api/evidence/2026-09-02-m2-cache-response-clone-baseline.md`：39 cases / 449 subtests / 449 Pass，double-run deterministic
+  - 证据：[M2 CacheStorage Response Clone Crashtest](evidence/2026-09-02-m2-cache-response-clone-crashtest.md)、[M2 CacheStorage Response Clone Baseline](evidence/2026-09-02-m2-cache-response-clone-baseline.md)
 - 2026-09-02 Service Worker fetch stream body error：
   - `service-workers/service-worker/fetch-error.https.html` 纳入 Service Worker
     fetch/message runner，覆盖 `respondWith(new Response(stream))` 的 body stream

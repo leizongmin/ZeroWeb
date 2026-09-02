@@ -164,8 +164,9 @@ impl std::fmt::Debug for EsModuleSandbox {
 
 /// 将 ES Module 源码编译为可在 V8 中执行的 IIFE 脚本（内联依赖）。
 pub fn compile_module_script(source: &str, url: &str, registry: &ModuleRegistry) -> Result<String, ScriptError> {
-    let body = build_module_script(source, url, registry, &mut HashSet::new())?;
-    if source.contains("import(") {
+    let uses_await = source.contains("await");
+    let body = build_module_script(source, url, registry, uses_await, &mut HashSet::new())?;
+    if source.contains("import(") || uses_await {
         Ok(format!("(async function() {{\n{body}\n}})();\n"))
     } else {
         Ok(body)
@@ -301,10 +302,15 @@ fn build_module_script(
     source: &str,
     url: &str,
     registry: &ModuleRegistry,
+    async_body: bool,
     visited: &mut HashSet<String>,
 ) -> Result<String, ScriptError> {
     let mut output = String::with_capacity(source.len() * 3);
-    output.push_str("(function() {\n");
+    if async_body {
+        output.push_str("(async function() {\n");
+    } else {
+        output.push_str("(function() {\n");
+    }
     output.push_str("  'use strict';\n");
     output.push_str("  var _exports = {};\n");
     output.push_str(&format!("  var _importMeta = {{ url: {} }};\n", json_stringify(url)));
@@ -1172,6 +1178,19 @@ mod tests {
         )
         .unwrap();
         assert!(!compiled.contains("import {"));
+    }
+
+    #[test]
+    fn test_top_level_await_wraps_module_in_async_iife() {
+        let registry = ModuleRegistry::new();
+        let compiled = compile_module_script(
+            "await Promise.resolve();\nglobalThis.ready = true;",
+            "https://example.test/module.js",
+            &registry,
+        )
+        .unwrap();
+        assert!(compiled.starts_with("(async function() {"));
+        assert!(compiled.contains("await Promise.resolve();"));
     }
 
     #[test]

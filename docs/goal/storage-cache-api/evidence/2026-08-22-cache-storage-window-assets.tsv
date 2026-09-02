@@ -66,3 +66,4 @@ storage/buckets/resources/util.js	support	page-script	1	1459	no	5fff4894442a214f
 fetch/api/resources/infinite-slow-response.py	support	fetch-body	1	986	no	a26cd8064c88531e6877d2561cd16df964eb7f6e	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
 fetch/api/resources/stash-take.py	support	fetch-body	1	302	no	e6db80dd86df1e5a80e177b78bd40a59234885b0	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
 fetch/api/resources/stash-put.py	support	fetch-body	1	745	no	dbc7ceebb882ebb77a0202b3c9a828e2c70dc3bc	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
+service-workers/cache-storage/crashtests/cache-response-clone.https.html	crashtest	case	1	658	no	ec930a87d934c4b232d42c9d411457a1776e86ca	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83

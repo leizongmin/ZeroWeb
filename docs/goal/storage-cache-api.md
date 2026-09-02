@@ -32,8 +32,9 @@
 >   落盘与跨 WebView 重建读回；Service Worker registration-local CacheStorage 已纳入
 >   active registration persistence snapshot/restore。
 > - **WPT 面**：已接入上游 `cache-storage` window / Dedicated Worker / nested Worker
->   可执行面与 1 个 ZeroWeb filtered response 回归 fixture，基线为 38 case / 448 subtest
->   （448 Pass / 0 Fail），扩大覆盖与剩余语义修复继续以该基线为回归锚点。
+>   可执行面、1 个 ZeroWeb filtered response 回归 fixture 与 1 个 no-harness crashtest，
+>   基线为 39 case / 449 subtest（449 Pass / 0 Fail），扩大覆盖与剩余语义修复继续以该
+>   基线为回归锚点。
 
 ---
 
@@ -113,8 +114,8 @@ form-validation——不允许手写 inline 用例替代或充数）。通过率
 - ✅ **缺口 2 — 持久化**：page/WebView owner per-origin CacheStorage 已落盘；SW
   registration-local CacheStorage 已随 active registration snapshot/restore 验证
 - ✅ **缺口 3 — WPT 基线**：上游 `cache-storage` window / Dedicated Worker / nested Worker
-  可执行面与 1 个 ZeroWeb filtered response 回归 fixture 已纳入 38 case / 448 subtest 绿线；
-  扩大覆盖与提升通过率继续推进
+  可执行面、1 个 ZeroWeb filtered response 回归 fixture 与 1 个 no-harness crashtest
+  已纳入 39 case / 449 subtest 绿线；扩大覆盖与提升通过率继续推进
 - 🚧 **缺口 4 — Request/Response 集成**：add/addAll 的 fetch→put 链路已接通，页面 `fetch()`
   已生成 `basic`/`cors`/`opaque`/`opaqueredirect` filtered response 并经 CacheStorage
   round-trip 回归 fixture 固定；页面 Response body shim 已覆盖 ArrayBuffer/ArrayBufferView
