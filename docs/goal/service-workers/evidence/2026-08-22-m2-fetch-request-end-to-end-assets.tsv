@@ -76,3 +76,6 @@ service-workers/service-worker/ServiceWorkerGlobalScope/resources/postmessage-po
 service-workers/service-worker/fetch-event-respond-with-body-loaded-in-chunk.https.html	testharness	case	1	1064	no	932f9030c51ce6e09d4dba08f0dab19dec6e8b15	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
 service-workers/service-worker/resources/fetch-event-respond-with-body-loaded-in-chunk-worker.js	support	worker-script	1	219	no	d3ba8a8df2e7a4e07bc647a2f634901b7041734c	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
 fetch/api/resources/trickle.py	support	fetch-body	1	475	no	99833f1b38d50555b3268f42de34466a740ce23f	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
+service-workers/service-worker/fetch-event-respond-with-response-body-with-invalid-chunk.https.html	testharness	case	1	1837	no	2a44811461a649c6ead9460c4a5a911bbd8e608b	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
+service-workers/service-worker/resources/fetch-event-respond-with-response-body-with-invalid-chunk-worker.js	support	worker-script	1	444	no	0254e24f94a2ef5210767af5d717e8866e09db0e	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
+service-workers/service-worker/resources/fetch-event-respond-with-response-body-with-invalid-chunk-iframe.html	support	iframe-document	1	445	no	d15454daa5be75bbaefd29f279dc2e0247f596f5	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83

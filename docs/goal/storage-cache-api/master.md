@@ -166,7 +166,7 @@ fetch baseline，不改变本目标的 window/SW CacheStorage 分母。
 
 ## 下一步计划
 
-1. **M2 切片 18**：继续评估剩余 dynamic-server / cross-origin CacheStorage WPT case；`cross-partition.https.tentative.html` 仍需 dispatcher/popup/SharedWorker/partitioned-storage 支撑，`cache-keys-attributes-for-service-worker.https.html` 已归 service-workers 目标收口
+1. **M2 切片 18**：本轮已复核剩余 window 面 CacheStorage WPT；`cross-partition.https.tentative.html` 仍需 dispatcher/popup/SharedWorker/partitioned-storage 支撑，继续留在 gated，不纳入当前 Cache API 语义 baseline；`cache-keys-attributes-for-service-worker.https.html` 已归 service-workers 目标收口
 2. **service-workers 后续**：继续扩展 SW cache-storage / fetch-cache WPT 验收；fetch runner 已覆盖 uncontrolled-page scope bypass、message-time `clients.claim()` iframe control、claim longest-match boundary 与 ReadableStream pull-source chunk serialization，持久化能力已由 registration-local snapshot/restore 覆盖
 
 **碰撞管理**：开工前先 `git log --since="14 days ago" -- crates/engine/src/js_dom_shim/`

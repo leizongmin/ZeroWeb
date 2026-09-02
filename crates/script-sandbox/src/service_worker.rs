@@ -1071,6 +1071,12 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
           }
           return utf8Decode(out);
         }
+        // https://fetch.spec.whatwg.org/#concept-bodyinit-extract
+        // Response body streams must yield Uint8Array chunks; other chunk
+        // types error the transferred body rather than being stringified.
+        if (!(result.value instanceof Uint8Array)) {
+          throw new TypeError('ReadableStream response body chunk is not a Uint8Array');
+        }
         const bytes = bodyPartBytes(result.value);
         chunks.push(bytes);
         total += bytes.length;
@@ -10293,6 +10299,57 @@ mod tests {
                 failed: false,
                 message: String::new(),
             }
+        );
+    }
+
+    #[test]
+    fn fetch_event_readable_stream_invalid_chunk_errors_body() {
+        let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
+        runtime
+            .evaluate(
+                "addEventListener('fetch', event => {
+                   const stream = new ReadableStream({ start: controller => {
+                     controller.enqueue('not bytes');
+                   }});
+                   event.respondWith(new Response(stream));
+                 });",
+                "https://example.test/sw.js",
+            )
+            .unwrap();
+        let _ = runtime.recv_timeout(Duration::from_secs(5)).unwrap();
+
+        runtime
+            .dispatch_fetch(
+                55,
+                ServiceWorkerFetchRequest {
+                    url: "https://example.test/app/body-stream-invalid-chunk".into(),
+                    method: "GET".into(),
+                    headers: Vec::new(),
+                    body: None,
+                    credentials: None,
+                    client_id: None,
+                    resulting_client_id: None,
+                    referrer: None,
+                    is_reload_navigation: false,
+                    is_history_navigation: false,
+                },
+            )
+            .unwrap();
+        let event = runtime.recv_timeout(Duration::from_secs(5)).unwrap();
+        assert!(
+            matches!(
+                event,
+                ServiceWorkerEvent::FetchSettled {
+                    event_id: 55,
+                    response: Some(ServiceWorkerFetchResponse { ref headers, ref body, .. }),
+                    failed: false,
+                    ..
+                } if body.is_empty()
+                    && headers.iter().any(|(name, value)| {
+                        name == "x-zero-body-error" && value.contains("Uint8Array")
+                    })
+            ),
+            "unexpected event: {event:?}"
         );
     }
 
