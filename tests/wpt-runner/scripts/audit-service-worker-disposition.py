@@ -58,8 +58,12 @@ CORE_ASSET_MANIFESTS = [
     EVIDENCE_DIR / "2026-08-21-m3-skip-waiting-no-client-assets.tsv",
     EVIDENCE_DIR / "2026-08-21-m3-clients-matchall-evaluation-assets.tsv",
     EVIDENCE_DIR / "2026-08-31-m3-message-lifecycle-assets.tsv",
+    EVIDENCE_DIR / "2026-09-02-m3-extendable-message-event-assets.tsv",
     EVIDENCE_DIR / "2026-09-02-m3-message-event-ports-assets.tsv",
     EVIDENCE_DIR / "2026-09-02-m2-fetch-readable-stream-chunk-assets.tsv",
+]
+FETCH_ASSET_MANIFESTS = [
+    EVIDENCE_DIR / "2026-08-22-m2-fetch-request-end-to-end-assets.tsv",
 ]
 CACHE_STORAGE_ASSET_MANIFESTS = [
     EVIDENCE_DIR / "2026-08-23-m2-cache-storage-serviceworker-assets.tsv",
@@ -80,8 +84,12 @@ REVIEW_FILES = [
 IDL_SOURCE = "service-workers/idlharness.https.any.js"
 EXPECTED_SOURCE_COUNT = 294
 EXPECTED_URL_COUNT = 331
-EXPECTED_LANES = Counter(core=64, defer=34, gated=154, skip=42)
+EXPECTED_LANES = Counter(core=65, fetch=3, defer=34, gated=150, skip=42)
 CORE_PROMOTIONS = {
+    "service-workers/service-worker/ServiceWorkerGlobalScope/extendable-message-event.https.html": (
+        "extendable-message-event-core",
+        "2026-09-02-m3-extendable-message-event.md",
+    ),
     "service-workers/service-worker/fetch-event-respond-with-readable-stream-chunk.https.html": (
         "readable-stream-chunk-fetch-core",
         "2026-09-02-m2-fetch-readable-stream-chunk.md",
@@ -191,6 +199,20 @@ CORE_PROMOTIONS = {
         "2026-09-01-m3-registration-lifecycle.md",
     ),
 }
+FETCH_PROMOTIONS = {
+    "service-workers/service-worker/ServiceWorkerGlobalScope/postmessage.https.html": (
+        "message-worker-ports-fetch",
+        "2026-09-02-m3-postmessage-worker-ports.md",
+    ),
+    "service-workers/service-worker/fetch-event-respond-with-body-loaded-in-chunk.https.html": (
+        "body-loaded-in-chunk-fetch-core",
+        "2026-09-02-m2-fetch-body-loaded-in-chunk.md",
+    ),
+    "service-workers/service-worker/fetch-event-respond-with-response-body-with-invalid-chunk.https.html": (
+        "invalid-stream-chunk-fetch-core",
+        "2026-09-02-m2-fetch-invalid-stream-chunk.md",
+    ),
+}
 SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 
 
@@ -220,9 +242,14 @@ def classify_review(decision: str) -> str:
     raise ValueError(f"unrecognized review decision: {decision}")
 
 
-def audit_core_inputs(
-    core_sources: set[str], inventory: dict[str, dict[str, str]]
+def audit_promoted_inputs(
+    core_sources: set[str], fetch_sources: set[str], inventory: dict[str, dict[str, str]]
 ) -> None:
+    promoted_service_worker_sources = {
+        source
+        for source in core_sources | fetch_sources
+        if source.startswith("service-workers/service-worker/")
+    }
     service_worker_core_sources = {
         source
         for source in core_sources
@@ -242,11 +269,11 @@ def audit_core_inputs(
             if source in imported:
                 raise ValueError(f"duplicate Service Worker import: {source}")
             imported[source] = revision
-    missing_imports = service_worker_core_sources - set(imported)
+    missing_imports = promoted_service_worker_sources - set(imported)
     if missing_imports:
         sample = ", ".join(sorted(missing_imports)[:5])
-        raise ValueError(f"core disposition sources missing from runner imports: {sample}")
-    for source in service_worker_core_sources:
+        raise ValueError(f"promoted disposition sources missing from runner imports: {sample}")
+    for source in promoted_service_worker_sources:
         revision = imported[source]
         expected_revision = CORE_REVISION_OVERRIDES.get(source, WPT_REVISION)
         if revision != expected_revision:
@@ -271,6 +298,28 @@ def audit_core_inputs(
         expected_revision = CORE_REVISION_OVERRIDES.get(source, WPT_REVISION)
         if asset_revisions[source] != expected_revision:
             raise ValueError(f"core case asset revision does not match import: {source}")
+
+    fetch_asset_cases: dict[str, str] = {}
+    fetch_asset_revisions: dict[str, str] = {}
+    for path in FETCH_ASSET_MANIFESTS:
+        for row in read_tsv(path):
+            if row["manifest_type"] != "testharness" or row["roles"] != "case":
+                continue
+            source = row["path"]
+            if source in fetch_asset_cases:
+                raise ValueError(f"duplicate fetch case asset: {source}")
+            fetch_asset_cases[source] = row["git_blob_sha"]
+            fetch_asset_revisions[source] = row.get("source_revision") or WPT_REVISION
+    missing_fetch_assets = fetch_sources - set(fetch_asset_cases)
+    if missing_fetch_assets:
+        sample = ", ".join(sorted(missing_fetch_assets)[:5])
+        raise ValueError(f"fetch disposition sources missing from fetch assets: {sample}")
+    for source in fetch_sources:
+        if fetch_asset_cases[source] != inventory[source]["manifest_sha"]:
+            raise ValueError(f"fetch case asset SHA does not match inventory: {source}")
+        expected_revision = CORE_REVISION_OVERRIDES.get(source, WPT_REVISION)
+        if fetch_asset_revisions[source] != expected_revision:
+            raise ValueError(f"fetch case asset revision does not match import: {source}")
 
     cache_storage_core_sources = {
         source
@@ -374,6 +423,9 @@ def build_contract() -> tuple[str, Counter[str]]:
             if source in CORE_PROMOTIONS:
                 lane = "core"
                 decision, evidence = CORE_PROMOTIONS[source]
+            elif source in FETCH_PROMOTIONS:
+                lane = "fetch"
+                decision, evidence = FETCH_PROMOTIONS[source]
         elif disposition == "candidate":
             candidate = candidates[source]
             decision = candidate["decision"]
@@ -387,12 +439,18 @@ def build_contract() -> tuple[str, Counter[str]]:
             if source in CORE_PROMOTIONS:
                 lane = "core"
                 decision, evidence = CORE_PROMOTIONS[source]
+            elif source in FETCH_PROMOTIONS:
+                lane = "fetch"
+                decision, evidence = FETCH_PROMOTIONS[source]
         elif disposition == "review":
             decision, evidence = review[source]
             lane = classify_review(decision)
             if source in CORE_PROMOTIONS:
                 lane = "core"
                 decision, evidence = CORE_PROMOTIONS[source]
+            elif source in FETCH_PROMOTIONS:
+                lane = "fetch"
+                decision, evidence = FETCH_PROMOTIONS[source]
         else:
             raise ValueError(f"unrecognized inventory disposition: {disposition}")
 
@@ -420,7 +478,10 @@ def build_contract() -> tuple[str, Counter[str]]:
     core_sources = {
         row["source_path"] for row in output_rows if row["lane"] == "core"
     }
-    audit_core_inputs(core_sources, inventory)
+    fetch_sources = {
+        row["source_path"] for row in output_rows if row["lane"] == "fetch"
+    }
+    audit_promoted_inputs(core_sources, fetch_sources, inventory)
 
     output = io.StringIO(newline="")
     writer = csv.DictWriter(
