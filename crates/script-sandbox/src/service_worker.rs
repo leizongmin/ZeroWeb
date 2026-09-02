@@ -76,6 +76,19 @@ enum ServiceWorkerUpdateResponse {
     Shutdown,
 }
 
+enum ServiceWorkerUnregisterResponse {
+    Completed {
+        request_id: u64,
+        removed: bool,
+    },
+    Failed {
+        request_id: u64,
+        exception_name: String,
+        message: String,
+    },
+    Shutdown,
+}
+
 enum ServiceWorkerClientsResponse {
     Completed {
         request_id: u64,
@@ -2128,6 +2141,19 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
         response && response.message || 'Service Worker update failed',
         response && response.name || 'TypeError'
       ));
+    },
+    unregister: function() {
+      let response;
+      try {
+        response = JSON.parse(globalThis.__zwRequestUnregister());
+      } catch (_error) {
+        response = {ok: false, name: 'TypeError', message: 'invalid Service Worker unregister response'};
+      }
+      if (response && response.ok === true) return Promise.resolve(!!response.removed);
+      return Promise.reject(new globalThis.DOMException(
+        response && response.message || 'Service Worker unregister failed',
+        response && response.name || 'TypeError'
+      ));
     }
   };
   globalThis.ServiceWorker = ServiceWorker;
@@ -2510,6 +2536,11 @@ pub enum ServiceWorkerEvent {
         /// Runtime-local request ID used to correlate the blocking response.
         request_id: u64,
     },
+    /// The worker global called `registration.unregister()`.
+    UnregisterRequested {
+        /// Runtime-local request ID used to correlate the blocking response.
+        request_id: u64,
+    },
     /// The worker global requested a browser-owned client snapshot.
     ClientsMatchAllRequested {
         /// Runtime-local request ID used to correlate the blocking response.
@@ -2774,6 +2805,7 @@ pub struct ServiceWorkerRuntime {
     core: ThreadedRuntimeCore<ServiceWorkerCommand, ServiceWorkerEvent>,
     import_response_sender: mpsc::Sender<ServiceWorkerImportResponse>,
     update_response_sender: mpsc::Sender<ServiceWorkerUpdateResponse>,
+    unregister_response_sender: mpsc::Sender<ServiceWorkerUnregisterResponse>,
     clients_response_sender: mpsc::Sender<ServiceWorkerClientsResponse>,
     cache_storage_response_sender: mpsc::Sender<ServiceWorkerCacheStorageResponse>,
     fetch_response_sender: mpsc::Sender<ServiceWorkerFetchHostResponse>,
@@ -2787,6 +2819,7 @@ impl ServiceWorkerRuntime {
         let (init_sender, init_receiver) = mpsc::sync_channel(1);
         let (import_response_sender, import_response_receiver) = mpsc::channel();
         let (update_response_sender, update_response_receiver) = mpsc::channel();
+        let (unregister_response_sender, unregister_response_receiver) = mpsc::channel();
         let (clients_response_sender, clients_response_receiver) = mpsc::channel();
         let (cache_storage_response_sender, cache_storage_response_receiver) = mpsc::channel();
         let (fetch_response_sender, fetch_response_receiver) = mpsc::channel();
@@ -2952,6 +2985,64 @@ impl ServiceWorkerRuntime {
                                 Ok(_) => continue,
                                 Err(mpsc::RecvTimeoutError::Timeout) => {
                                     return update_failure_json("TimeoutError", "Service Worker update timed out");
+                                }
+                                Err(mpsc::RecvTimeoutError::Disconnected) => {
+                                    return update_failure_json(
+                                        "InvalidStateError",
+                                        "Service Worker host disconnected",
+                                    );
+                                }
+                            }
+                        }
+                    }),
+                );
+                let unregister_event_sender = event_sender.clone();
+                let unregister_response_receiver = Arc::new(Mutex::new(unregister_response_receiver));
+                let next_unregister_request_id = Arc::new(AtomicU64::new(1));
+                sandbox.register_callback(
+                    "__zwRequestUnregister",
+                    Box::new(move |_args| {
+                        let request_id = next_unregister_request_id.fetch_add(1, Ordering::Relaxed);
+                        if unregister_event_sender
+                            .send(ServiceWorkerEvent::UnregisterRequested { request_id })
+                            .is_err()
+                        {
+                            return update_failure_json("InvalidStateError", "Service Worker host disconnected");
+                        }
+                        let deadline =
+                            std::time::Instant::now() + std::time::Duration::from_millis(lifecycle_timeout_ms);
+                        loop {
+                            let now = std::time::Instant::now();
+                            if now >= deadline {
+                                return update_failure_json("TimeoutError", "Service Worker unregister timed out");
+                            }
+                            let response = unregister_response_receiver
+                                .lock()
+                                .expect("unregister response lock")
+                                .recv_timeout(deadline.saturating_duration_since(now));
+                            match response {
+                                Ok(ServiceWorkerUnregisterResponse::Completed {
+                                    request_id: response_id,
+                                    removed,
+                                }) if response_id == request_id => {
+                                    return serde_json::json!({"ok": true, "removed": removed}).to_string();
+                                }
+                                Ok(ServiceWorkerUnregisterResponse::Failed {
+                                    request_id: response_id,
+                                    exception_name,
+                                    message,
+                                }) if response_id == request_id => {
+                                    return update_failure_json(&exception_name, &message);
+                                }
+                                Ok(ServiceWorkerUnregisterResponse::Shutdown) => {
+                                    return update_failure_json(
+                                        "InvalidStateError",
+                                        "Service Worker runtime is shutting down",
+                                    );
+                                }
+                                Ok(_) => continue,
+                                Err(mpsc::RecvTimeoutError::Timeout) => {
+                                    return update_failure_json("TimeoutError", "Service Worker unregister timed out");
                                 }
                                 Err(mpsc::RecvTimeoutError::Disconnected) => {
                                     return update_failure_json(
@@ -3441,6 +3532,7 @@ impl ServiceWorkerRuntime {
                 core,
                 import_response_sender,
                 update_response_sender,
+                unregister_response_sender,
                 clients_response_sender,
                 cache_storage_response_sender,
                 fetch_response_sender,
@@ -3679,6 +3771,25 @@ impl ServiceWorkerRuntime {
             .map_err(|_| ScriptError::RuntimeError("Service Worker runtime disconnected".into()))
     }
 
+    /// Complete one blocking worker-global `registration.unregister()` request.
+    pub fn complete_unregister(
+        &self,
+        request_id: u64,
+        result: Result<bool, (String, String)>,
+    ) -> Result<(), ScriptError> {
+        let response = match result {
+            Ok(removed) => ServiceWorkerUnregisterResponse::Completed { request_id, removed },
+            Err((exception_name, message)) => ServiceWorkerUnregisterResponse::Failed {
+                request_id,
+                exception_name,
+                message,
+            },
+        };
+        self.unregister_response_sender
+            .send(response)
+            .map_err(|_| ScriptError::RuntimeError("Service Worker runtime disconnected".into()))
+    }
+
     /// Complete one blocking worker-global `clients.matchAll()` request.
     pub fn complete_clients_match_all(
         &self,
@@ -3822,6 +3933,9 @@ impl ServiceWorkerRuntime {
     pub fn shutdown(&mut self) {
         let _ = self.import_response_sender.send(ServiceWorkerImportResponse::Shutdown);
         let _ = self.update_response_sender.send(ServiceWorkerUpdateResponse::Shutdown);
+        let _ = self
+            .unregister_response_sender
+            .send(ServiceWorkerUnregisterResponse::Shutdown);
         let _ = self
             .clients_response_sender
             .send(ServiceWorkerClientsResponse::Shutdown);
@@ -5995,6 +6109,47 @@ mod tests {
                 client_id: "client-1".into(),
                 outbound: vec![ServiceWorkerOutboundMessage {
                     data_json: r#"{"success":false,"exception":"InvalidStateError"}"#.into(),
+                    port_id: None,
+                    transferred_port_ids: Vec::new(),
+                    data_port_index: None,
+                    target_client_id: Some("client-1".into()),
+                }],
+            }
+        );
+    }
+
+    #[test]
+    fn worker_registration_unregister_round_trips_through_host() {
+        let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
+        runtime
+            .evaluate(
+                "addEventListener('message', event => {
+                   registration.unregister().then(
+                     result => event.source.postMessage({success: result}),
+                     error => event.source.postMessage({success: false, exception: error.name})
+                   );
+                 });",
+                "https://example.test/sw.js",
+            )
+            .unwrap();
+        let _ = runtime.recv_timeout(Duration::from_secs(5)).unwrap();
+
+        runtime
+            .dispatch_message(21, "null", "client-1", "https://example.test/page")
+            .unwrap();
+        let ServiceWorkerEvent::UnregisterRequested { request_id } =
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap()
+        else {
+            panic!("missing worker unregister request");
+        };
+        runtime.complete_unregister(request_id, Ok(true)).unwrap();
+        assert_eq!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::MessageDispatched {
+                event_id: 21,
+                client_id: "client-1".into(),
+                outbound: vec![ServiceWorkerOutboundMessage {
+                    data_json: r#"{"success":true}"#.into(),
                     port_id: None,
                     transferred_port_ids: Vec::new(),
                     data_port_index: None,

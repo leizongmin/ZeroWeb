@@ -1063,6 +1063,17 @@ impl ServiceWorkerHostCommandParams {
                 }
                 Ok(())
             }
+            ServiceWorkerHostCommand::CompleteUnregister { request_id, result } => {
+                if *request_id == 0 {
+                    return Err("Service Worker unregister request id is required");
+                }
+                if let Err(error) = result
+                    && (error.exception_name.len() > 64 || error.message.len() > MAX_URL_BYTES)
+                {
+                    return Err("Service Worker unregister error exceeds the length limit");
+                }
+                Ok(())
+            }
             ServiceWorkerHostCommand::CompleteClientsMatchAll { request_id, result } => {
                 if *request_id == 0 {
                     return Err("Service Worker clients request id is required");
@@ -1446,6 +1457,13 @@ pub enum ServiceWorkerHostCommand {
         /// Success or DOMException-shaped failure.
         result: Result<(), ServiceWorkerUpdateError>,
     },
+    /// Complete a blocking worker-global `registration.unregister()` request.
+    CompleteUnregister {
+        /// Renderer runtime assigned request ID.
+        request_id: u64,
+        /// Removal result or DOMException-shaped failure.
+        result: Result<bool, ServiceWorkerUpdateError>,
+    },
     /// Complete a blocking worker-global `clients.matchAll()` request.
     CompleteClientsMatchAll {
         /// Renderer runtime assigned request ID.
@@ -1677,6 +1695,12 @@ impl ServiceWorkerHostEventParams {
                     return Err("Service Worker clients.get request is invalid");
                 }
             }
+            ServiceWorkerHostEvent::UpdateRequested { request_id }
+            | ServiceWorkerHostEvent::UnregisterRequested { request_id } => {
+                if *request_id == 0 {
+                    return Err("Service Worker request id is required");
+                }
+            }
             ServiceWorkerHostEvent::CacheStorageRequested { request_id, request } => {
                 if *request_id == 0 {
                     return Err("Service Worker cache request id is required");
@@ -1825,6 +1849,11 @@ pub enum ServiceWorkerHostEvent {
     },
     /// Worker global called `registration.update()`.
     UpdateRequested {
+        /// Renderer runtime assigned request ID.
+        request_id: u64,
+    },
+    /// Worker global called `registration.unregister()`.
+    UnregisterRequested {
         /// Renderer runtime assigned request ID.
         request_id: u64,
     },

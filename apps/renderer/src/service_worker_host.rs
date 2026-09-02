@@ -164,6 +164,13 @@ impl HostThread {
                     result.map_err(|error| (error.exception_name, error.message)),
                 );
             }
+            ServiceWorkerHostCommand::CompleteUnregister { request_id, result } => {
+                self.complete_unregister(
+                    params.registration_id,
+                    request_id,
+                    result.map_err(|error| (error.exception_name, error.message)),
+                );
+            }
             ServiceWorkerHostCommand::CompleteClientsMatchAll { request_id, result } => {
                 self.complete_clients_match_all(
                     params.registration_id,
@@ -344,6 +351,16 @@ impl HostThread {
         };
         if let Err(error) = runtime.complete_update(request_id, result) {
             tracing::warn!("Service Worker update response failed: {error}");
+        }
+    }
+
+    fn complete_unregister(&mut self, registration_id: u64, request_id: u64, result: Result<bool, (String, String)>) {
+        let Some(runtime) = self.runtimes.get(&registration_id) else {
+            tracing::warn!("Service Worker unregister response for unknown registration {registration_id}");
+            return;
+        };
+        if let Err(error) = runtime.complete_unregister(request_id, result) {
+            tracing::warn!("Service Worker unregister response failed: {error}");
         }
     }
 
@@ -713,6 +730,9 @@ fn host_event(event: ServiceWorkerEvent) -> ServiceWorkerHostEvent {
             ServiceWorkerHostEvent::ImportScriptsRequested { request_id, specifiers }
         }
         ServiceWorkerEvent::UpdateRequested { request_id } => ServiceWorkerHostEvent::UpdateRequested { request_id },
+        ServiceWorkerEvent::UnregisterRequested { request_id } => {
+            ServiceWorkerHostEvent::UnregisterRequested { request_id }
+        }
         ServiceWorkerEvent::ClientsMatchAllRequested {
             request_id,
             include_uncontrolled,

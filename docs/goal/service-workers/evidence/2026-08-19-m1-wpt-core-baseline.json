@@ -1,8 +1,8 @@
 {
-  "cases": 48,
-  "subtests": 189,
+  "cases": 49,
+  "subtests": 193,
   "status": {
-    "Pass": 189
+    "Pass": 193
   },
   "deterministic": true,
   "results": [
@@ -76,6 +76,31 @@
         },
         {
           "name": "isSecureContext",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/ServiceWorkerGlobalScope/unregister.https.html",
+      [
+        {
+          "name": "Unregister on script evaluation",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Unregister on installing event",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Unregister on activate event",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Unregister controlling service worker",
           "status": "Pass",
           "message": null
         }

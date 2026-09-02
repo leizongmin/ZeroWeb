@@ -456,6 +456,15 @@ pub enum ServiceWorkerManagerEvent {
         /// Current registration version whose script must be fetched.
         target_registration_id: u64,
     },
+    /// A worker-global `registration.unregister()` request completed.
+    WorkerUnregistered {
+        /// Worker version that called `registration.unregister()`.
+        registration_id: u64,
+        /// Runtime-local request ID.
+        request_id: u64,
+        /// Whether a registration was removed.
+        removed: bool,
+    },
     /// A worker-global `fetch()` call is blocked on a browser-owned network request.
     WorkerFetchRequested {
         /// Active registration version that called `fetch()`.
@@ -676,6 +685,13 @@ pub trait ServiceWorkerRuntimeHost: Send {
         request_id: u64,
         result: Result<(), (String, String)>,
     ) -> Result<(), ServiceWorkerManagerError>;
+    /// Complete one worker-global `registration.unregister()` request.
+    fn complete_unregister(
+        &mut self,
+        registration_id: u64,
+        request_id: u64,
+        result: Result<bool, (String, String)>,
+    ) -> Result<(), ServiceWorkerManagerError>;
     /// Complete one worker-global `clients.matchAll()` request.
     fn complete_clients_match_all(
         &mut self,
@@ -832,6 +848,19 @@ impl ServiceWorkerRuntimeHost for LocalServiceWorkerHost {
             .get(&registration_id)
             .ok_or(ServiceWorkerManagerError::UnknownRegistration(registration_id))?
             .complete_update(request_id, result)
+            .map_err(|error| ServiceWorkerManagerError::Runtime(error.to_string()))
+    }
+
+    fn complete_unregister(
+        &mut self,
+        registration_id: u64,
+        request_id: u64,
+        result: Result<bool, (String, String)>,
+    ) -> Result<(), ServiceWorkerManagerError> {
+        self.runtimes
+            .get(&registration_id)
+            .ok_or(ServiceWorkerManagerError::UnknownRegistration(registration_id))?
+            .complete_unregister(request_id, result)
             .map_err(|error| ServiceWorkerManagerError::Runtime(error.to_string()))
     }
 
@@ -1482,6 +1511,20 @@ impl ServiceWorkerManager {
                         }
                     }
                 }
+                ServiceWorkerEvent::UnregisterRequested { request_id } => {
+                    let removed = self.unregister_from_worker_global(registration_id);
+                    if let Err(error) = self.host.complete_unregister(registration_id, request_id, Ok(removed)) {
+                        output.push(ServiceWorkerManagerEvent::CoordinationFailed {
+                            registration_id,
+                            message: error.to_string(),
+                        });
+                    }
+                    output.push(ServiceWorkerManagerEvent::WorkerUnregistered {
+                        registration_id,
+                        request_id,
+                        removed,
+                    });
+                }
                 ServiceWorkerEvent::LifecycleSettled {
                     phase,
                     succeeded,
@@ -1498,6 +1541,13 @@ impl ServiceWorkerManager {
                         claim_clients,
                         message,
                     });
+                    if self
+                        .registry
+                        .get(registration_id)
+                        .is_some_and(|registration| registration.state == ServiceWorkerState::Redundant)
+                    {
+                        continue;
+                    }
                     if phase == ServiceWorkerLifecyclePhase::Activate && succeeded && claim_clients {
                         self.claimed_clients.insert(registration_id);
                         self.claim_matching_clients(registration_id);
@@ -2111,6 +2161,45 @@ impl ServiceWorkerManager {
             } else {
                 self.mark_redundant_and_stop(active_id);
                 self.forget_registration(active_id);
+                removed = true;
+            }
+        }
+        removed
+    }
+
+    fn unregister_from_worker_global(&mut self, registration_id: u64) -> bool {
+        let Some(key) = self.registration_keys.get(&registration_id).cloned() else {
+            return false;
+        };
+        let Some(slots) = self.slots.remove(&key) else {
+            return false;
+        };
+        let mut removed = false;
+        for id in [slots.installing, slots.waiting].into_iter().flatten() {
+            if id == registration_id {
+                self.mark_redundant_after_worker_unregister(id);
+                removed = true;
+            } else {
+                self.mark_redundant_and_stop(id);
+                self.forget_registration(id);
+                removed = true;
+            }
+        }
+        if let Some(active_id) = slots.active {
+            if active_id == registration_id {
+                if self.client_is_controlled_by(active_id) {
+                    self.unregistered_active.insert(active_id);
+                } else {
+                    self.mark_redundant_after_worker_unregister(active_id);
+                }
+                removed = true;
+            } else {
+                if self.client_is_controlled_by(active_id) {
+                    self.unregistered_active.insert(active_id);
+                } else {
+                    self.mark_redundant_and_stop(active_id);
+                    self.forget_registration(active_id);
+                }
                 removed = true;
             }
         }
@@ -3242,6 +3331,36 @@ impl ServiceWorkerManager {
     }
 
     fn mark_redundant_and_stop(&mut self, registration_id: u64) {
+        self.mark_redundant_without_stopping(registration_id);
+        self.host.shutdown(registration_id);
+    }
+
+    fn mark_redundant_after_worker_unregister(&mut self, registration_id: u64) {
+        let changed = if let Some(registration) = self.registry.get_mut(registration_id) {
+            let changed = registration.state != ServiceWorkerState::Redundant;
+            registration.mark_redundant();
+            changed
+        } else {
+            false
+        };
+        if changed {
+            self.record_state_change(registration_id, ServiceWorkerState::Redundant);
+        }
+        self.unregistered_active.remove(&registration_id);
+        self.clear_controller_for_registration(registration_id);
+        self.claimed_clients.remove(&registration_id);
+        self.restoring_active.remove(&registration_id);
+        self.pending_import_requests.retain(|(id, _), _| *id != registration_id);
+        self.update_predecessors.remove(&registration_id);
+        self.pending_worker_updates
+            .retain(|candidate_id, (caller_id, _)| *candidate_id != registration_id && *caller_id != registration_id);
+        self.pending_fetch_events
+            .retain(|_, pending| pending.registration_id != registration_id);
+        self.script_sources.remove(&registration_id);
+        self.imported_scripts.remove(&registration_id);
+    }
+
+    fn mark_redundant_without_stopping(&mut self, registration_id: u64) {
         let changed = if let Some(registration) = self.registry.get_mut(registration_id) {
             let changed = registration.state != ServiceWorkerState::Redundant;
             registration.mark_redundant();
@@ -3266,7 +3385,6 @@ impl ServiceWorkerManager {
             .retain(|_, pending| pending.registration_id != registration_id);
         self.script_sources.remove(&registration_id);
         self.imported_scripts.remove(&registration_id);
-        self.host.shutdown(registration_id);
     }
 
     fn record_state_change(&mut self, registration_id: u64, state: ServiceWorkerState) {
@@ -3754,6 +3872,117 @@ mod tests {
             assert!(Instant::now() < deadline, "worker update completion timed out");
             std::thread::sleep(Duration::from_millis(1));
         }
+    }
+
+    #[test]
+    fn active_worker_unregister_removes_future_matching_and_reports_result() {
+        let mut manager = manager_under_test();
+        let active = start_active(
+            &mut manager,
+            "/app/",
+            "addEventListener('message', event => {
+               registration.unregister().then(result => {
+                 event.source.postMessage({removed: result});
+               });
+             });",
+        );
+        manager
+            .observe_window_client("client-1", "https://example.test/app/page")
+            .unwrap();
+        assert_eq!(
+            manager
+                .active_registration_for_client("https://example.test", "client-1")
+                .map(|registration| registration.id),
+            Some(active)
+        );
+        manager
+            .post_message(active, 83, "null", "client-1", "https://example.test/app/page")
+            .unwrap();
+
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let mut unregister_reported = false;
+        loop {
+            for event in manager.poll() {
+                if let ServiceWorkerManagerEvent::WorkerUnregistered {
+                    registration_id,
+                    removed,
+                    ..
+                } = event
+                    && registration_id == active
+                {
+                    assert!(removed);
+                    unregister_reported = true;
+                    assert!(
+                        manager
+                            .registration_for_url("https://example.test", "https://example.test/app/next")
+                            .is_none(),
+                        "unregistered registration must not match later navigations"
+                    );
+                }
+            }
+            let (_, messages) = manager.client_messages_since(active, "client-1", 0);
+            if unregister_reported && !messages.is_empty() {
+                assert_eq!(messages[0].data_json, r#"{"removed":true}"#);
+                assert_eq!(
+                    manager
+                        .active_registration_for_client("https://example.test", "client-1")
+                        .map(|registration| registration.id),
+                    Some(active),
+                    "existing clients keep their controller after unregister"
+                );
+                manager
+                    .observe_window_client("client-2", "https://example.test/app/next")
+                    .unwrap();
+                assert!(
+                    manager
+                        .active_registration_for_client("https://example.test", "client-2")
+                        .is_none(),
+                    "new clients must not be controlled by an unregistered registration"
+                );
+                return;
+            }
+            assert!(Instant::now() < deadline, "worker unregister completion timed out");
+            std::thread::sleep(Duration::from_millis(1));
+        }
+    }
+
+    #[test]
+    fn installing_worker_unregister_becomes_redundant_and_removes_future_matching() {
+        let mut manager = manager_under_test();
+        let id = start(
+            &mut manager,
+            "/app/",
+            "registration.unregister();
+             addEventListener('install', () => {});",
+        );
+        wait_for_state(&mut manager, id, ServiceWorkerState::Redundant);
+
+        assert!(
+            manager
+                .registration_for_url("https://example.test", "https://example.test/app/next")
+                .is_none()
+        );
+        assert!(manager.slots(&key("/app/")).is_none());
+    }
+
+    #[test]
+    fn activating_worker_unregister_becomes_redundant_and_removes_future_matching() {
+        let mut manager = manager_under_test();
+        let id = start(
+            &mut manager,
+            "/app/",
+            "addEventListener('activate', event => {
+               event.waitUntil(registration.unregister());
+             });",
+        );
+        wait_for_state(&mut manager, id, ServiceWorkerState::Redundant);
+
+        assert!(
+            manager
+                .registration_for_url("https://example.test", "https://example.test/app/next")
+                .is_none()
+        );
+        assert!(manager.slots(&key("/app/")).is_none());
     }
 
     #[test]

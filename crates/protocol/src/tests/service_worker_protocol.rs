@@ -1509,6 +1509,7 @@ fn service_worker_message_port_and_update_wires_round_trip() {
         registration_id: 7,
         event: ServiceWorkerHostEvent::UpdateRequested { request_id: 11 },
     };
+    assert!(event.validate().is_ok());
     let decoded = roundtrip(IpcMessage {
         id: 71,
         kind: IpcMessageKind::ServiceWorkerHostEvent(event.clone()),
@@ -1554,6 +1555,37 @@ fn service_worker_message_port_and_update_wires_round_trip() {
         panic!("expected ServiceWorkerHostEvent");
     };
     assert_eq!(decoded_event, event);
+
+    let event = ServiceWorkerHostEventParams {
+        registration_id: 7,
+        event: ServiceWorkerHostEvent::UnregisterRequested { request_id: 14 },
+    };
+    assert!(event.validate().is_ok());
+    let decoded = roundtrip(IpcMessage {
+        id: 78,
+        kind: IpcMessageKind::ServiceWorkerHostEvent(event.clone()),
+    });
+    let IpcMessageKind::ServiceWorkerHostEvent(decoded_event) = decoded.kind else {
+        panic!("expected ServiceWorkerHostEvent");
+    };
+    assert_eq!(decoded_event, event);
+
+    let command = ServiceWorkerHostCommandParams {
+        registration_id: 7,
+        command: ServiceWorkerHostCommand::CompleteUnregister {
+            request_id: 14,
+            result: Ok(true),
+        },
+    };
+    assert!(command.validate().is_ok());
+    let decoded = roundtrip(IpcMessage {
+        id: 79,
+        kind: IpcMessageKind::ServiceWorkerHostCommand(command.clone()),
+    });
+    let IpcMessageKind::ServiceWorkerHostCommand(decoded_command) = decoded.kind else {
+        panic!("expected ServiceWorkerHostCommand");
+    };
+    assert_eq!(decoded_command, command);
 
     let command = ServiceWorkerHostCommandParams {
         registration_id: 7,
@@ -1641,6 +1673,14 @@ fn service_worker_message_port_and_update_wires_round_trip() {
         panic!("expected ServiceWorkerHostEvent");
     };
     assert_eq!(decoded_event, emitted);
+    assert!(
+        ServiceWorkerHostEventParams {
+            registration_id: 7,
+            event: ServiceWorkerHostEvent::UnregisterRequested { request_id: 0 },
+        }
+        .validate()
+        .is_err()
+    );
     assert!(
         ServiceWorkerHostEventParams {
             registration_id: 7,

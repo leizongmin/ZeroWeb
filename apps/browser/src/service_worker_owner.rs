@@ -331,6 +331,32 @@ impl ServiceWorkerRuntimeHost for IpcServiceWorkerHost {
         Ok(())
     }
 
+    fn complete_unregister(
+        &mut self,
+        registration_id: u64,
+        request_id: u64,
+        result: Result<bool, (String, String)>,
+    ) -> Result<(), ServiceWorkerManagerError> {
+        let Some(tab_id) = self.channels.take_owned_tab(registration_id) else {
+            return Err(ServiceWorkerManagerError::UnknownRegistration(registration_id));
+        };
+        self.channels.record_owned(registration_id, tab_id);
+        self.channels.push_outgoing(ServiceWorkerHostOutgoing {
+            tab_id,
+            params: ServiceWorkerHostCommandParams {
+                registration_id,
+                command: ServiceWorkerHostCommand::CompleteUnregister {
+                    request_id,
+                    result: result.map_err(|(exception_name, message)| ServiceWorkerUpdateError {
+                        exception_name,
+                        message,
+                    }),
+                },
+            },
+        });
+        Ok(())
+    }
+
     fn complete_clients_match_all(
         &mut self,
         registration_id: u64,
@@ -733,6 +759,9 @@ fn sandbox_event(event: ServiceWorkerHostEvent) -> ServiceWorkerEvent {
             ServiceWorkerEvent::ImportScriptsRequested { request_id, specifiers }
         }
         ServiceWorkerHostEvent::UpdateRequested { request_id } => ServiceWorkerEvent::UpdateRequested { request_id },
+        ServiceWorkerHostEvent::UnregisterRequested { request_id } => {
+            ServiceWorkerEvent::UnregisterRequested { request_id }
+        }
         ServiceWorkerHostEvent::ClientsMatchAllRequested {
             request_id,
             include_uncontrolled,
@@ -2253,6 +2282,11 @@ impl BrowserServiceWorkerOwner {
                                 )),
                             );
                         }
+                    }
+                }
+                ServiceWorkerManagerEvent::WorkerUnregistered { removed, .. } if profile == ProfileKey::Normal => {
+                    if removed {
+                        persistence_dirty = true;
                     }
                 }
                 ServiceWorkerManagerEvent::WorkerFetchRequested {
