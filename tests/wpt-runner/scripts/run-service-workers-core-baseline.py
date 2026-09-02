@@ -10,8 +10,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-EXPECTED_CASES = 49
-EXPECTED_SUBTESTS = 193
+EXPECTED_CASES = 50
+EXPECTED_SUBTESTS = 194
 
 
 def parse_args() -> argparse.Namespace:

@@ -58,6 +58,7 @@ CORE_ASSET_MANIFESTS = [
     EVIDENCE_DIR / "2026-08-21-m3-skip-waiting-no-client-assets.tsv",
     EVIDENCE_DIR / "2026-08-21-m3-clients-matchall-evaluation-assets.tsv",
     EVIDENCE_DIR / "2026-08-31-m3-message-lifecycle-assets.tsv",
+    EVIDENCE_DIR / "2026-09-02-m3-message-event-ports-assets.tsv",
     EVIDENCE_DIR / "2026-09-02-m2-fetch-readable-stream-chunk-assets.tsv",
 ]
 CACHE_STORAGE_ASSET_MANIFESTS = [
@@ -79,11 +80,15 @@ REVIEW_FILES = [
 IDL_SOURCE = "service-workers/idlharness.https.any.js"
 EXPECTED_SOURCE_COUNT = 294
 EXPECTED_URL_COUNT = 331
-EXPECTED_LANES = Counter(core=63, defer=34, gated=155, skip=42)
+EXPECTED_LANES = Counter(core=64, defer=34, gated=154, skip=42)
 CORE_PROMOTIONS = {
     "service-workers/service-worker/fetch-event-respond-with-readable-stream-chunk.https.html": (
         "readable-stream-chunk-fetch-core",
         "2026-09-02-m2-fetch-readable-stream-chunk.md",
+    ),
+    "service-workers/service-worker/ServiceWorkerGlobalScope/message-event-ports.https.html": (
+        "message-event-ports-core",
+        "2026-09-02-m3-message-event-ports.md",
     ),
     "service-workers/cache-storage/cache-abort.https.any.js": (
         "cache-abort-any-serviceworker-core",
