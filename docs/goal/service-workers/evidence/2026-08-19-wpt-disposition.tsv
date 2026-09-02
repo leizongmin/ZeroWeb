@@ -13,7 +13,7 @@ service-workers/cache-storage/cache-storage-keys.https.any.js	04067ce9c7c2165e71
 service-workers/cache-storage/cache-storage-match.https.any.js	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83	0c31b726294b14b1b849ecbeb369d23a59d126d8	4	gated	gated-initial-inventory	2026-08-19-m0-wpt-case-inventory.tsv
 service-workers/cache-storage/cache-storage.https.any.js	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83	b7d5af7b532036351ab842de451002ca36f7b4af	4	gated	gated-initial-inventory	2026-08-19-m0-wpt-case-inventory.tsv
 service-workers/cache-storage/common.https.window.js	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83	eba312c273de149ae9007d69bb4796b147e03841	1	gated	gated-initial-inventory	2026-08-19-m0-wpt-case-inventory.tsv
-service-workers/cache-storage/credentials.https.html	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83	0fe4a0a0ac0de1097a3ba35689df5396eaa613ec	1	gated	gated-initial-inventory	2026-08-19-m0-wpt-case-inventory.tsv
+service-workers/cache-storage/credentials.https.html	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83	0fe4a0a0ac0de1097a3ba35689df5396eaa613ec	1	core	cache-storage-top-level-credentials-core	2026-09-02-m2-cache-storage-top-level-credentials.md
 service-workers/cache-storage/cross-partition.https.tentative.html	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83	1cfc2569088e94530b193e24e5c0415883a76330	1	gated	gated-initial-inventory	2026-08-19-m0-wpt-case-inventory.tsv
 service-workers/cache-storage/sandboxed-iframes.https.html	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83	098fa89daf446f57da6313c865e53a0a67983059	1	gated	gated-initial-inventory	2026-08-19-m0-wpt-case-inventory.tsv
 service-workers/idlharness.https.any.js	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83	8db5d4d10ff7b90f990d77394dac2dddbd2aa45f	4	defer	defer-mixed-idlharness	2026-08-19-idlharness-review.md

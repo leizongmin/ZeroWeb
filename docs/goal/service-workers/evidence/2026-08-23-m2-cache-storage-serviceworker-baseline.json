@@ -1,8 +1,8 @@
 {
-  "cases": 13,
-  "subtests": 159,
+  "cases": 14,
+  "subtests": 160,
   "status": {
-    "Pass": 159
+    "Pass": 160
   },
   "deterministic": true,
   "results": [
@@ -16,6 +16,16 @@
         },
         {
           "name": "Request.IsHistoryNavigation should persist.",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/cache-storage/credentials.https.html",
+      [
+        {
+          "name": "Cache API matching includes credentials",
           "status": "Pass",
           "message": null
         }

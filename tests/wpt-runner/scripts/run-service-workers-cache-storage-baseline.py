@@ -10,8 +10,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-EXPECTED_CASES = 13
-EXPECTED_SUBTESTS = 159
+EXPECTED_CASES = 14
+EXPECTED_SUBTESTS = 160
 
 
 def parse_args() -> argparse.Namespace:
@@ -93,7 +93,8 @@ def render_markdown(summary: dict) -> str:
             "",
             "This pinned Service Worker M2 CacheStorage baseline covers the "
             "twelve serviceworker CacheStorage wrappers plus the top-level "
-            "`cache-keys-attributes-for-service-worker.https.html` page. They run the upstream "
+            "`cache-keys-attributes-for-service-worker.https.html` and `credentials.https.html` pages. "
+            "They run the upstream "
             "`script-tests/cache-storage*.js`, `cache-delete.js`, `cache-keys.js`, "
             "`cache-abort.js`, `cache-add.js`, `cache-match.js`, `cache-matchAll.js`, "
             "`cache-put.js`, `cache-storage-match.js`, the navigation-attribute "

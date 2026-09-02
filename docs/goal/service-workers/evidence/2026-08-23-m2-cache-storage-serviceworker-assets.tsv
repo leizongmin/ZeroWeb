@@ -21,6 +21,7 @@ service-workers/cache-storage/script-tests/cache-put.js	support	worker-script	1	
 service-workers/cache-storage/script-tests/cache-add.js	support	worker-script	1	13938	no	62b44c7880168b5762785ed9f75c2dfa167f9401	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
 service-workers/cache-storage/script-tests/cache-abort.js	support	worker-script	1	3085	no	3c7aa5cd2ffc9ef975e45456b10a60d1c4281693	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
 service-workers/cache-storage/cache-keys-attributes-for-service-worker.https.html	testharness	case	1	2563	no	3c96348e0e033cf0b0a14b1f025b70d787febb35	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
+service-workers/cache-storage/credentials.https.html	testharness	case	1	1814	no	0fe4a0a0ac0de1097a3ba35689df5396eaa613ec	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
 service-workers/cache-storage/serviceworker/cache-storage.https.html	testharness	case	1	414	no	3934258f28f7daf9180998aebbc6401f9ef7dedf	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
 service-workers/cache-storage/serviceworker/cache-storage-keys.https.html	testharness	case	1	424	no	adde95eb85b0a83e787089ef91c573478db1fee7	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
 service-workers/cache-storage/serviceworker/cache-delete.https.html	testharness	case	1	412	no	6ff27be300d89f5eaf84fc2805b4b8c516cca8ce	24197a11e8c5bd29a5cb7bdf18135a82be8a8546

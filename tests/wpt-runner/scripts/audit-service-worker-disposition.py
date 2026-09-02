@@ -78,11 +78,15 @@ REVIEW_FILES = [
 IDL_SOURCE = "service-workers/idlharness.https.any.js"
 EXPECTED_SOURCE_COUNT = 294
 EXPECTED_URL_COUNT = 331
-EXPECTED_LANES = Counter(core=50, defer=34, gated=168, skip=42)
+EXPECTED_LANES = Counter(core=51, defer=34, gated=167, skip=42)
 CORE_PROMOTIONS = {
     "service-workers/cache-storage/cache-keys-attributes-for-service-worker.https.html": (
         "cache-storage-top-level-navigation-attributes-core",
         "2026-09-02-m2-cache-storage-top-level-navigation-attributes.md",
+    ),
+    "service-workers/cache-storage/credentials.https.html": (
+        "cache-storage-top-level-credentials-core",
+        "2026-09-02-m2-cache-storage-top-level-credentials.md",
     ),
     "service-workers/service-worker/ServiceWorkerGlobalScope/unregister.https.html": (
         "worker-global-unregister-core",
