@@ -686,6 +686,32 @@ fn resolve_length_field(
         LengthValue::MinContent | LengthValue::MaxContent => {}
         // 包含百分比的 calc 表达式保留，由布局引擎处理
         LengthValue::Calc(expr) if calc_contains_percentage(expr) => {}
+        // R3925（css-sizing-3 §fit-content(length-percentage)）：fit-content() 的百分比参数
+        // 须由布局引擎按包含块解析——通用 resolve_length 对 Percentage 返回原始数值，
+        // 在此解析会把 fit-content(50%) 变成 Px(50)（百分比数值被当 px，css-sizing
+        // fit-content-length-percentage-008 的 min-width 渲染 50px 而非 100px 根因）。
+        // 参数含百分比 → 原样保留（converter 透传给 taffy 按容器解析）；纯绝对单位 →
+        // 解析内部值但**保留 FitContent 包装**——布局引擎（layout-engine intrinsic pass）依赖
+        // 该标记区分「fit-content 上限」与「定宽」，剥掉包装会让 fit-content(200px) 被当
+        // 定宽 200px（内容窄于 arg 不收缩，fit-content-length-percentage-003 案）。
+        LengthValue::FitContent(inner)
+            if matches!(inner.as_ref(), LengthValue::Percentage(_))
+                || matches!(inner.as_ref(), LengthValue::Calc(e) if calc_contains_percentage(e)) => {}
+        LengthValue::FitContent(_) => {
+            if let LengthValue::FitContent(inner) = field {
+                if !matches!(inner.as_ref(), LengthValue::Px(_) | LengthValue::Auto) {
+                    let px = resolve_length_with_font_metrics(
+                        inner,
+                        font_size,
+                        viewport_width,
+                        viewport_height,
+                        font_metrics,
+                        root_metrics,
+                    );
+                    **inner = LengthValue::Px(px);
+                }
+            }
+        }
         _ => {
             let px = resolve_length_with_font_metrics(
                 field,

@@ -852,3 +852,30 @@ fn test_block_width_min_content_sized_to_intrinsic() {
         t.width
     );
 }
+
+/// R3925（css-sizing-3 §fit-content(length-percentage)）：width:fit-content(arg) 的 arg 是
+/// 上限不是定宽——fit-content = min(max-content, max(min-content, arg))。converter 定宽 arg
+/// 时内容窄于 arg 不收缩（fit-content-length-percentage-003：arg 200 内容 100 渲 200）。
+/// intrinsic pass 钳 target = min(arg, intrinsic)。min-content 钳（arg < W_min 回升 W_min，
+/// 002 案）需真 min-content 测量，RFC 域留账。
+#[test]
+fn test_r3925_fit_content_arg_is_upper_bound_not_fixed() {
+    let html = r#"<html><body style="margin:0">
+          <div id="t" style="width:fit-content(200px);height:40px;background:green">
+            <div style="display:inline-block;width:50px;height:30px"></div>
+            <div style="display:inline-block;width:50px;height:30px"></div>
+          </div>
+        </body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    let t = find("t", &doc, &result.root).expect("#t");
+    assert!(
+        (t.width - 100.0).abs() < 3.0,
+        "fit-content(200px) with 100px content should shrink to max-content 100px, got w={}",
+        t.width
+    );
+}

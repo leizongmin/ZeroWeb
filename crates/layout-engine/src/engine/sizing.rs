@@ -76,7 +76,14 @@ impl LayoutEngine {
                     s.display,
                     DisplayValue::Flex | DisplayValue::InlineFlex | DisplayValue::Block
                 );
-            if !is_max_min && !is_auto_float {
+            // R3925（css-sizing-3 §fit-content(length-percentage)）：width:fit-content(arg) 的
+            // arg 是上限不是定宽——fit-content = min(max-content, max(min-content, arg))。
+            // converter 把它映射为定长 arg，内容超出 arg 时溢出、内容窄于 arg 时不收缩。
+            // 任意 arg 形态都进入本 pass（百分比 arg 的解析值即第一趟布局宽 b.width），
+            // target = min(解析 arg, intrinsic)（min-content 测量未实现，max-content 近似同 R1304）。
+            let is_fitcontent = matches!(s.width, LengthValue::FitContent(_));
+            let fitcontent_clamp = is_fitcontent.then_some(()).filter(|_| b.width > 1.0);
+            if !is_max_min && !is_auto_float && !is_fitcontent {
                 continue;
             }
             // R1018：block-level 仅在 width:MaxContent 或 auto-float 时触发（bare fit-content 经
@@ -87,7 +94,13 @@ impl LayoutEngine {
             // 簇（固定宽 .content 子）min==max 精确命中。kill-switch ZW_MINCONTENT_BLOCK=0 回退旧行为。
             let mincontent_block = std::env::var("ZW_MINCONTENT_BLOCK").as_deref() != Ok("0")
                 && matches!(s.width, LengthValue::MinContent);
-            if is_block && !matches!(s.width, LengthValue::MaxContent) && !mincontent_block && !is_auto_float {
+            let fitcontent_block = is_block && fitcontent_clamp.is_some();
+            if is_block
+                && !matches!(s.width, LengthValue::MaxContent)
+                && !mincontent_block
+                && !is_auto_float
+                && !fitcontent_block
+            {
                 continue;
             }
             // R1018：block-level 用 block_max_content_width（对 flex/grid 子分发到专用 intrinsic）。
@@ -127,7 +140,13 @@ impl LayoutEngine {
                 }
                 continue;
             }
-            let should_apply = if is_auto_float {
+            let should_apply = if is_fitcontent {
+                // R3925：fit-content(arg) 双向钳制——target = min(解析后 arg, intrinsic)
+                //（spec min(W_max, max(W_min, arg)) 的 max-content 近似），当前宽偏离
+                // target >1px 即重设（converter 定宽 arg 在内容窄于 arg 时不会收缩）。
+                let target = b.width.min(intrinsic);
+                (b.width - target).abs() > 1.0
+            } else if is_auto_float {
                 b.width > intrinsic + 1.0
             } else {
                 b.width < intrinsic + 1.0
@@ -139,7 +158,12 @@ impl LayoutEngine {
                 continue;
             };
             if let Ok(mut style) = taffy_tree.style(taffy_id).cloned() {
-                style.size.width = taffy::style::Dimension::length(intrinsic);
+                let width = if is_fitcontent {
+                    b.width.min(intrinsic)
+                } else {
+                    intrinsic
+                };
+                style.size.width = taffy::style::Dimension::length(width);
                 let _ = taffy_tree.set_style(taffy_id, style);
                 let _ = taffy_tree.mark_dirty(taffy_id);
                 changed = true;

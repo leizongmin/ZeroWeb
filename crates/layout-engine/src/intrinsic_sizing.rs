@@ -17,7 +17,7 @@ use zero_style_system::property::types::{ColumnSpanComputedValue, FlexBasisValue
 
 use crate::types::LayoutBox;
 
-fn resolve_intrinsic_real_length(value: &LengthValue, style: &ComputedStyle) -> Option<f32> {
+pub(crate) fn resolve_intrinsic_real_length(value: &LengthValue, style: &ComputedStyle) -> Option<f32> {
     match value {
         LengthValue::Auto
         | LengthValue::Percentage(_)

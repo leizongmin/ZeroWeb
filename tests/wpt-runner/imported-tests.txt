@@ -244,3 +244,5 @@ css/css-backgrounds/background-origin/origin-padding-box_with_size.html css/css-
 css/css-backgrounds/background-origin/origin-content-box_with_size.html css/css-backgrounds/reference/origin-content-box_with_size-ref.html == 2026-09-02 R3923 background-repeat tile 网格相位锚定——content-box origin 同相位缺陷
 css/css-backgrounds/background-origin/origin-border-box_with_size.html css/css-backgrounds/reference/origin-border-box_with_size-ref.html == 2026-09-02 R3923 body overflow 传播到视口（CSS Overflow 3 §3.3）——ref 页 body overflow-y:hidden 自裁缺陷
 css/css-backgrounds/background-origin/origin-border-box_with_position.html css/css-backgrounds/reference/origin-border-box_with_position-ref.html == 2026-09-02 R3924 clip:rect() auto 因侧解析（CSS2 §11.1.2）——top/left=0、right/bottom=边框盒对应边；旧解析期折叠成 0 致负宽高裁剪区图元全灭
+css/css-sizing/fit-content-length-percentage-003.html css/reference/ref-filled-green-100px-square.xht == 2026-09-02 R3925 fit-content(arg) 上限语义（css-sizing-3）——arg>max-content 时收缩到内容宽
+css/css-sizing/fit-content-length-percentage-008.html css/reference/ref-filled-green-100px-square.xht == 2026-09-02 R3925 fit-content() 百分比参数计算值保留——resolve_length_field 不再把百分比折叠成 px 数值
