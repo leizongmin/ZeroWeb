@@ -451,6 +451,65 @@ fn r1080_multicol_column_positioned_descendant_not_dropped() {
     );
 }
 
+/// R3922：overflow:clip 容器内的 position:relative 子经 scope flush（step 6）绘制时，
+/// 必须被裁剪到容器的 padding-box ± overflow-clip-margin（CSS §11.1.1 / Overflow 3 §3）。
+/// 修复前 relative 子被提升到根 scope 收集，flush 晚于容器 clip 步骤 → 200×200 绿块
+/// 完整渲染（应只 120×120 可见）。driving: WPT css-overflow overflow-clip-margin-001。
+#[test]
+fn r3922_relative_child_in_overflow_clip_clipped_at_scope_flush() {
+    use crate::pipeline::RenderPipeline;
+    let mut pipeline = RenderPipeline::new(400.0, 400.0);
+    let html = "<html><body style=\"margin:0\">\
+                <div style=\"width:100px;height:100px;overflow:clip;overflow-clip-margin:10px\">\
+                <div style=\"width:200px;height:200px;position:relative;top:-50px;left:-50px;background:rgb(0,128,0)\"></div>\
+                </div></body></html>";
+    let result = pipeline.render_html(html, "");
+    // 裁剪生效：绿色 fill 的矩形须收窄到 clip 窗口 (−10,−10,120,120) 相对 body，
+    // 即宽 ≤120（修复前为完整 200×200）。逐 fill 检查绿色矩形尺寸。
+    let green_widths: Vec<f32> = result
+        .primitives()
+        .fills
+        .iter()
+        .filter(|f| f.color.g > 100 && f.color.r < 60 && f.color.b < 60)
+        .map(|f| f.rect.size.width)
+        .collect();
+    assert!(!green_widths.is_empty(), "R3922: green relative child should render");
+    assert!(
+        green_widths.iter().all(|w| *w <= 120.5),
+        "R3922: green rect widths must be clipped to <=120 (overflow-clip-margin 10px), got {:?}",
+        green_widths
+    );
+}
+
+/// R3922 对照：abspos 子的 CB 在非 positioned overflow 容器之上 → **不**被该容器裁剪
+///（CSS §11.1.1 既有语义，defer_abspos 注释）。绿色 abspos 位于容器 padding-box 之外
+/// 仍须完整渲染。
+#[test]
+fn r3922_abspos_child_escapes_non_positioned_overflow_clip() {
+    use crate::pipeline::RenderPipeline;
+    let mut pipeline = RenderPipeline::new(400.0, 400.0);
+    let html = "<html><body style=\"margin:0\">\
+                <div style=\"width:100px;height:100px;overflow:hidden\">\
+                <div style=\"width:60px;height:60px;position:absolute;left:150px;top:150px;background:rgb(0,128,0)\"></div>\
+                </div></body></html>";
+    let result = pipeline.render_html(html, "");
+    let green: Vec<_> = result
+        .primitives()
+        .fills
+        .iter()
+        .filter(|f| f.color.g > 100 && f.color.r < 60 && f.color.b < 60)
+        .collect();
+    assert!(
+        !green.is_empty(),
+        "R3922: abspos outside non-positioned overflow container must render (escape clip)"
+    );
+    assert!(
+        green.iter().all(|f| f.rect.size.width >= 59.5),
+        "R3922: abspos rect must NOT be clipped to container padding-box, got {:?}",
+        green.iter().map(|f| f.rect.size.width).collect::<Vec<_>>()
+    );
+}
+
 /// R1446：multicol 容器内 **inline 元素（`<span>`）** 的 Ahem 文本须按列宽换行填满列。
 ///
 /// 驱动案 css-multicol/multicol-basic-001（`column-count:3` + 3 个 `<span>` 各含 7 个 Ahem

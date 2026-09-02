@@ -204,10 +204,19 @@ fn child_paint_sort_key(box_node: &LayoutBox) -> (u8, i32) {
 ///
 /// 收集时记录**已累积的绝对坐标**，flush 时以 `offset = abs - node.xy` 调用 paint，
 /// 使 paint_node 内部 `offset + node.xy = abs` 还原到正确位置。
+///
+/// R3922：另携带收集路径上**最近 overflow 裁剪祖先**的裁剪矩形（CSS §11.1.1——
+/// overflow 裁剪适用于 CB 为该元素或其后代的 positioned 后代；relative/sticky 子的
+/// CB 即该 overflow 元素，须被裁）。flush 时对该项新增图元应用裁剪（R1080 multicol
+/// 同款模式）——scope flush 在中间层 overflow 元素的 clip 步骤之后执行，不在收集处
+/// 裁剪则 relative 后代永久逃逸裁剪（overflow-clip-margin-001 等 ×11 根因）。
+/// abspos/fixed 的 CB 在上方（defer_abspos 语义）不受此约束，但其裁剪祖先若存在于
+/// 收集路径中（中间 positioned 层），同样正确适用。
 struct DeferredPositioned<'a> {
     node: &'a LayoutBox,
     abs_x: f32,
     abs_y: f32,
+    clip_rect: Option<Rect>,
 }
 
 /// 子节点的 content-box origin（父 abs + padding + border，扣除 scroll 偏移）。
@@ -353,6 +362,16 @@ fn overflow_clip_rect(box_node: &LayoutBox, abs_x: f32, abs_y: f32) -> Rect {
 /// 下钻以找嵌套 positioned。镜像 paint_node 的 defer_abspos 排除（非 positioned overflow 的
 /// 直接 abspos/fixed 子元素由 defer_abspos 循环绘制，不纳入 flush）与 multicol column-span
 /// 跳过（由 multicol 循环处理）。flush 时按 z_index 分 step 2(<0)/6(==0)/7(>0) 绘制。
+///
+/// R3922：下钻时携带路径上最近 overflow 裁剪祖先的裁剪矩形（`clip_rect`），收集项原样
+/// 记录、flush 时应用（CSS §11.1.1——relative/sticky 后代的 CB 是该 overflow 元素，
+/// scope flush 晚于中间层 clip 步骤，不在 flush 处补裁则逃逸；R1080 multicol 同款）。
+/// 收集路径上所有中间层均非 positioned → 任意收集项的 CB 恒为 scope 根：
+/// - 裁剪祖先 = scope 根自身 → CB 在裁剪元素内，abspos/relative/sticky 全部适用；
+/// - 裁剪祖先 = 路径中间层（scope 根的 in-flow 后代）→ abspos/fixed 的 CB 在其上方，
+///   维持既有「abspos 逃逸非 positioned overflow 裁剪」语义，收集时清除矩形
+///   （CSS §11.1.1 + paint_node defer_abspos 注释；relative/sticky 的 CB = overflow
+///   中间层本身 = static 父，适用裁剪、保留矩形）。
 fn collect_positioned_descendants<'a>(
     box_node: &'a LayoutBox,
     abs_x: f32,
@@ -360,8 +379,32 @@ fn collect_positioned_descendants<'a>(
     styles: &HashMap<NodeId, ComputedStyle>,
     out: &mut Vec<DeferredPositioned<'a>>,
 ) {
+    collect_positioned_descendants_inner(box_node, abs_x, abs_y, styles, None, false, out);
+}
+
+fn collect_positioned_descendants_inner<'a>(
+    box_node: &'a LayoutBox,
+    abs_x: f32,
+    abs_y: f32,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    clip_rect: Option<Rect>,
+    clip_is_scope_root: bool,
+    out: &mut Vec<DeferredPositioned<'a>>,
+) {
     let (cx, cy) = child_content_origin(box_node, abs_x, abs_y);
     let needs_clip = compute_needs_clip(box_node, styles);
+    // R3922：本节点自身即 overflow 裁剪祖先 → 更新携带矩形（最近者优先覆盖外层）。
+    // line_clamp_clip（R3790 隐式裁剪）**不**进入携带矩形——其 clamp 语义由布局期
+    // hide 与既有主循环 clip 承担；迟延 positioned 子树（CB 链在 clamp 容器之外，如
+    // line-clamp-with-abspos-023 的 abspos 在 clamp 点后容器外可见）不适用容器
+    // padding-box 裁剪，携带会误裁（A/B 实证）。
+    let css_overflow_clips = needs_clip && !box_node.line_clamp_clip;
+    let clip_rect = if css_overflow_clips {
+        Some(overflow_clip_rect(box_node, abs_x, abs_y))
+    } else {
+        clip_rect
+    };
+    let clip_is_scope_root = if css_overflow_clips { clip_is_scope_root } else { false };
     let self_positioned = is_positioned_child(box_node);
     let is_multicol = box_node.is_multicol;
     let defer_abspos = needs_clip && !self_positioned && !is_multicol;
@@ -377,12 +420,20 @@ fn collect_positioned_descendants<'a>(
             if defer_abspos && (child.is_absolute || child.is_fixed) {
                 continue;
             }
+            // CB 恒为 scope 根：矩形来自 scope 根自身 → 保留；来自中间层且本项是
+            // abspos/fixed（CB 在中间层上方）→ 清除。
+            let child_clip = if (child.is_absolute || child.is_fixed) && !clip_is_scope_root {
+                None
+            } else {
+                clip_rect
+            };
             // 所有 positioned（z-index:auto pseudo-SC + real-SC）收集到所属 scope，
             // 不下钻（positioned 自成 scope），flush 时按 z_index 分 step 2/6/7。
             out.push(DeferredPositioned {
                 node: child,
                 abs_x: child_abs_x,
                 abs_y: child_abs_y,
+                clip_rect: child_clip,
             });
         } else if child.creates_stacking_context {
             // in-flow 但建立堆叠上下文（opacity<1/transform/filter 等 CSS3 SC 触发器）：
@@ -392,7 +443,7 @@ fn collect_positioned_descendants<'a>(
             continue;
         } else {
             // in-flow/float 非 scope：下钻找嵌套 positioned
-            collect_positioned_descendants(child, child_abs_x, child_abs_y, styles, out);
+            collect_positioned_descendants_inner(child, child_abs_x, child_abs_y, styles, clip_rect, true, out);
         }
     }
 }
@@ -1300,6 +1351,8 @@ impl Painter {
         }
 
         // step 2：负 z-index SC（normal flow 之前；collected 已 tree-order，按 z_index 升序稳定排序）
+        // R3922：flush 晚于中间层 overflow 裁剪步骤，收集项携带的裁剪矩形在此补裁
+        //（CSS §11.1.1 relative/sticky 后代 CB = overflow 元素；R1080 multicol 同款模式）。
         if is_scope {
             let mut neg_z: Vec<&DeferredPositioned> =
                 collected_positioned.iter().filter(|i| i.node.z_index < 0).collect();
@@ -1307,7 +1360,11 @@ impl Painter {
             for item in &neg_z {
                 let off_x = item.abs_x - item.node.x;
                 let off_y = item.abs_y - item.node.y;
+                let counts_before_item = PrimitiveCounts::snapshot(&self.primitives);
                 self.paint_node(item.node, styles, off_x, off_y, doc, false);
+                if let Some(clip) = item.clip_rect {
+                    super::helpers::clip_all_primitives_to_rect(&mut self.primitives, &counts_before_item, &clip);
+                }
             }
         }
 
@@ -1336,7 +1393,12 @@ impl Painter {
             for item in collected_positioned.iter().filter(|i| i.node.z_index == 0) {
                 let off_x = item.abs_x - item.node.x;
                 let off_y = item.abs_y - item.node.y;
+                // R3922：收集项携带的 overflow 裁剪矩形在此补裁（CSS §11.1.1）
+                let counts_before_item = PrimitiveCounts::snapshot(&self.primitives);
                 self.paint_node(item.node, styles, off_x, off_y, doc, false);
+                if let Some(clip) = item.clip_rect {
+                    super::helpers::clip_all_primitives_to_rect(&mut self.primitives, &counts_before_item, &clip);
+                }
             }
         }
 
@@ -1349,7 +1411,12 @@ impl Painter {
             for item in &pos_z {
                 let off_x = item.abs_x - item.node.x;
                 let off_y = item.abs_y - item.node.y;
+                // R3922：收集项携带的 overflow 裁剪矩形在此补裁（CSS §11.1.1）
+                let counts_before_item = PrimitiveCounts::snapshot(&self.primitives);
                 self.paint_node(item.node, styles, off_x, off_y, doc, false);
+                if let Some(clip) = item.clip_rect {
+                    super::helpers::clip_all_primitives_to_rect(&mut self.primitives, &counts_before_item, &clip);
+                }
             }
         }
 
@@ -1435,9 +1502,23 @@ impl Painter {
                         for item in &local_positioned {
                             let off_x = item.abs_x - item.node.x;
                             let off_y = item.abs_y - item.node.y;
+                            // R3922：逐项补裁收集项自带的最近 overflow 裁剪矩形（collect
+                            // 时经 overflow_clip_rect 计算，含 overflow-clip-margin，语义
+                            // 覆盖原整批 child_clip padding-box 裁剪——列子元素自身为
+                            // 裁剪祖先时其矩形已进 item.clip_rect）。
+                            let counts_before_item = PrimitiveCounts::snapshot(&self.primitives);
                             self.paint_node(item.node, styles, off_x, off_y, doc, false);
+                            if let Some(clip) = item.clip_rect {
+                                super::helpers::clip_all_primitives_to_rect(
+                                    &mut self.primitives,
+                                    &counts_before_item,
+                                    &clip,
+                                );
+                            }
                         }
-                        if compute_needs_clip(child, styles) {
+                        // 列子元素自身为裁剪祖先但个别收集项不带矩形（理论不可达，防御
+                        // R1080 原语义：整批 child_clip 兜底）。
+                        if compute_needs_clip(child, styles) && local_positioned.iter().all(|i| i.clip_rect.is_none()) {
                             let child_clip = Rect::new(
                                 frag_abs_x + child.border_left,
                                 frag_abs_y + child.border_top,
