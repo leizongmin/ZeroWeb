@@ -313,8 +313,19 @@ clippy 零警告、每切片带单测 + e2e/fixture 资产化（AV1 全流单测
   ② 官方预编译二进制——授权链最强但分发矩阵成本回潮）；
   **3c** AAC 是否随期（推荐随期——symphonia feature 扩展成本 ≈0）。
   为何需用户：专利/授权属 Mission 级决策（run-rules rule 11 + 主 RFC D-RFC-3
-  「单独立项」决议），agent 不可代判 | ⏳ 待批复（2026-09-02 起草，飞书已征询；
-  批准前不动源码；不批准亦请明示「维持不实施」以便归档） |
+  「单独立项」决议），agent 不可代判 | ⏳ 待批复（2026-09-02 起草，飞书已征询
+  msg `om_x100b664d8a6f44b0dee3398474de92b`；批准前不动源码；不批准亦请明示
+  「维持不实施」以便归档） |
+| D4 | **renderer 路径播放泵架构决策**（2026-09-02 深结构缺口发现，2026-09-02 巡检
+  补入决策表）：browser tab_worker 主循环有 1ms 帧泵/音频泵（`is_any_playing` 门
+  → `tick_all` + `audio_advance_all` + WebAudio `wa.advance`），renderer 路径桥面
+  已对齐（VideoPlayerRegistry Arc + `SetWebAudio`/`__zwWA*` 注入）但**主循环无节拍
+  驱动 advance**——play 登记后帧/音频永不推进（「登记但不推进」现状，非回归）。
+  修复须架构决策：进程内独立泵线程 vs 事件循环节拍（renderer `runtime.run` 当前
+  事件驱动无固定节拍）
+  为何需用户：多进程线程模型属架构决策域（run-rules rule 11 深结构），待点名后
+  实施 | ⬜ 待点名（此前仅记于「深结构缺口发现」块，决策表不可见——2026-09-02
+  巡检补登；不影响 tab_worker 路径现有功能） |
 
 ## 下一步计划
 
