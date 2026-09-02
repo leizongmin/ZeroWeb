@@ -1102,6 +1102,7 @@ mod audio_tests {
         );
     }
 
+    #[cfg(feature = "v8")]
     #[test]
     fn webaudio_bridge_nullsink_observable_chain() {
         // media-audio M3 切片 2 e2e（D1 批复）：AudioContext 全链 NullSink 可观测——
