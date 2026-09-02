@@ -641,6 +641,10 @@ pub const CACHE_STORAGE_WINDOW_CASES: &[(&str, &[&str])] = &[
         &["resources/test-helpers.js", "/common/get-host-info.sub.js"],
     ),
     (
+        "service-workers/cache-storage/cache-abort.https.any.js",
+        &["resources/test-helpers.js", "/common/utils.js"],
+    ),
+    (
         "service-workers/cache-storage/zeroweb-filtered-response-types.https.any.js",
         &["resources/test-helpers.js"],
     ),
@@ -4284,8 +4288,8 @@ async_test(function(test) {
             .iter()
             .map(|(path, _)| *path)
             .collect::<std::collections::BTreeSet<_>>();
-        assert_eq!(CACHE_STORAGE_WINDOW_CASES.len(), 37);
-        assert_eq!(unique.len(), 37);
+        assert_eq!(CACHE_STORAGE_WINDOW_CASES.len(), 38);
+        assert_eq!(unique.len(), 38);
         assert!(CACHE_STORAGE_WINDOW_CASES.iter().all(|(path, support)| {
             if !path.starts_with("service-workers/cache-storage/")
                 || !(path.ends_with(".https.any.js")
@@ -4310,6 +4314,9 @@ async_test(function(test) {
                             "/common/get-host-info.sub.js",
                             "/storage/buckets/resources/util.js",
                         ]
+                }
+                "service-workers/cache-storage/cache-abort.https.any.js" => {
+                    *support == ["resources/test-helpers.js", "/common/utils.js"]
                 }
                 "service-workers/cache-storage/common.https.window.js"
                 | "service-workers/cache-storage/common.https.html"

@@ -10,7 +10,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-EXPECTED_CASES = 37
+EXPECTED_CASES = 38
 
 
 def parse_args() -> argparse.Namespace:
@@ -83,7 +83,7 @@ def markdown_summary(summary: dict) -> str:
     lines = [
         "# CacheStorage Window WPT Baseline",
         "",
-        "- Date: 2026-08-31",
+        "- Date: 2026-09-02",
         "- Default WPT revision: `04067ce9c7c2165e71ad7d0dde10a4c5cb394a83`",
         "- Asset revisions: see `2026-08-22-cache-storage-window-assets.tsv`",
         f"- Cases: {summary['cases']}",

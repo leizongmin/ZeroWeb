@@ -2,7 +2,7 @@
 
 **入口文档**: [../storage-cache-api.md](../storage-cache-api.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-02（FetchEvent historical interface core promotion）
+**最后更新**: 2026-09-02（CacheStorage top-level abort WPT promotion）
 
 ---
 
@@ -67,6 +67,10 @@ credentialed request URL 作为 Cache key 在页面 runner 下也可经 worker f
 `Cache.put()`、`Cache.match()` / `Cache.matchAll()` / `CacheStorage.match()` 与
 `Cache.keys()` 往返保真，当前 CacheStorage window runner 基线为 37 case / 439 subtest /
 439 Pass / 0 Fail。
+随后补入上游 top-level `cache-abort.https.any.js`，复用已通过的 abort 动态 fetch fixture，
+把 `Cache.put()` / `Cache.add()` / `Cache.addAll()` 的 already-aborted、same-task abort
+与 headers-received abort 行为从 wrapper 覆盖提升到 `.any.js` window 入口，当前
+CacheStorage window runner 基线为 38 case / 448 subtest / 448 Pass / 0 Fail。
 M3 首片已补齐 page/WebView `StorageManager` owner 的 per-origin CacheStorage 持久化：
 CacheStorage 以 origin hash `.cache` 文件落盘，请求/响应元数据和 body bytes JSON 保真，
 写入采用临时文件 + sync + 原子替换，并在启动时清理 `.tmp` / 恢复 `.bak`；页面 host 的
@@ -133,7 +137,7 @@ fetch baseline，不改变本目标的 window/SW CacheStorage 分母。
   iframe `contentWindow` 可 `open` 后 `put/match/matchAll/delete/keys`，并可 `has/keys/match`
 - ✅ 持久化首片：page/WebView `StorageManager` owner 已支持 per-origin CacheStorage 落盘；
   SW registration-local CacheStorage 已随 active registration snapshot/restore 验证
-- ✅ WPT `cache-storage` window runner 基线已导入：37 case / 439 subtest，439 Pass / 0 Fail
+- ✅ WPT `cache-storage` window runner 基线已导入：38 case / 448 subtest，448 Pass / 0 Fail
 - 🚧 add/addAll 的页面 fetch 链路、Cache API 返回对象 brand、缺参 TypeError、
   `CacheStorage.keys()` 创建顺序、Vary 匹配、delete-dooming、DOMString name wire 与
   Storage Buckets cache namespace
@@ -156,7 +160,7 @@ fetch baseline，不改变本目标的 window/SW CacheStorage 分母。
 
 ## 下一步计划
 
-1. **M2 切片 16**：继续评估剩余 dynamic-server / cross-origin CacheStorage WPT case；`cross-partition.https.tentative.html` 仍需 dispatcher/popup/SharedWorker/partitioned-storage 支撑，优先寻找更小 fetch/CacheStorage 交互切片
+1. **M2 切片 17**：继续评估剩余 dynamic-server / cross-origin CacheStorage WPT case；`cross-partition.https.tentative.html` 仍需 dispatcher/popup/SharedWorker/partitioned-storage 支撑，`cache-keys-attributes-for-service-worker.https.html` 更适合 service-workers 目标收口
 2. **service-workers 后续**：继续扩展 SW cache-storage / fetch-cache WPT 验收；fetch runner 已覆盖 uncontrolled-page scope bypass、message-time `clients.claim()` iframe control 与 claim longest-match boundary，持久化能力已由 registration-local snapshot/restore 覆盖
 
 **碰撞管理**：开工前先 `git log --since="14 days ago" -- crates/engine/src/js_dom_shim/`

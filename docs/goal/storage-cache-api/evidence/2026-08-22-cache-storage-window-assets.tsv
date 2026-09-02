@@ -18,6 +18,7 @@ service-workers/cache-storage/cache-keys.https.any.js	testharness	case	1	7568	no
 service-workers/cache-storage/cache-matchAll.https.any.js	testharness	case	1	9173	no	93c55178918c333df25104e69ca74af5dbf04be9	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
 service-workers/cache-storage/cache-storage-match.https.any.js	testharness	case	1	9077	no	0c31b726294b14b1b849ecbeb369d23a59d126d8	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
 service-workers/cache-storage/cache-put.https.any.js	testharness	case	1	16193	no	dbf2650a75a5ff051f222ccb736b14f65d98f1b9	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
+service-workers/cache-storage/cache-abort.https.any.js	testharness	case	1	3102	no	99f29b0a08bae82f4be0c0dee98ce5b31a941a48	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
 service-workers/cache-storage/common.https.window.js	testharness	case	1	1609	no	eba312c273de149ae9007d69bb4796b147e03841	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
 service-workers/cache-storage/common.https.html	testharness	case	1	1842	no	c06e1f13a67f145c5d0bfb3b0555236db515d3f5	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
 service-workers/cache-storage/cache-api-nested-worker.https.html	testharness	case	1	641	no	769200f66aa377840ba9c827d374c9cfaff7ec60	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83

@@ -1,8 +1,8 @@
 {
-  "cases": 34,
-  "subtests": 432,
+  "cases": 38,
+  "subtests": 448,
   "status": {
-    "Pass": 432
+    "Pass": 448
   },
   "deterministic": true,
   "results": [
@@ -326,6 +326,81 @@
         },
         {
           "name": "Cache.put called with simple Request and form data Response",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/cache-storage/cache-abort.https.any.js",
+      [
+        {
+          "name": "put() on an already-aborted request should reject with AbortError",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "put() synchronously followed by abort should reject with AbortError",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "put() followed by abort after headers received should reject with AbortError",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "add() on an already-aborted request should reject with AbortError",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "add() synchronously followed by abort should reject with AbortError",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "add() followed by abort after headers received should reject with AbortError",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "addAll() on an already-aborted request should reject with AbortError",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "addAll() synchronously followed by abort should reject with AbortError",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "addAll() followed by abort after headers received should reject with AbortError",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/cache-storage/zeroweb-filtered-response-types.https.any.js",
+      [
+        {
+          "name": "CacheStorage stores same-origin fetch() as a basic filtered response",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "CacheStorage stores cross-origin CORS fetch() as a CORS filtered response",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "CacheStorage stores cross-origin no-cors fetch() as an opaque filtered response",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "CacheStorage stores manual redirect fetch() as an opaque-redirect filtered response",
           "status": "Pass",
           "message": null
         }
@@ -771,6 +846,31 @@
       [
         {
           "name": "Cache API in nested worker",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/cache-storage/sandboxed-iframes.https.html",
+      [
+        {
+          "name": "Sandboxed iframe with allow-same-origin is allowed access",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Sandboxed iframe without allow-same-origin is denied access",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/cache-storage/credentials.https.html",
+      [
+        {
+          "name": "Cache API matching includes credentials",
           "status": "Pass",
           "message": null
         }

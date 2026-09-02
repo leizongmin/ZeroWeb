@@ -231,6 +231,7 @@ service-workers/cache-storage/cache-keys.https.any.js 04067ce9c7c2165e71ad7d0dde
 service-workers/cache-storage/cache-matchAll.https.any.js 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-08-22 CACHE-M2-window-expansion
 service-workers/cache-storage/cache-storage-match.https.any.js 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-08-22 CACHE-M2-window-expansion
 service-workers/cache-storage/cache-put.https.any.js 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-08-22 CACHE-M2-window-expansion
+service-workers/cache-storage/cache-abort.https.any.js 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-09-02 CACHE-M2-cache-abort-top-level
 service-workers/cache-storage/common.https.html 24197a11e8c5bd29a5cb7bdf18135a82be8a8546 2026-08-24 CACHE-M2-worker-sharing-html-wrapper
 service-workers/cache-storage/cache-storage-buckets.https.any.js 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-08-22 CACHE-M2-storage-buckets
 service-workers/cache-storage/credentials.https.html 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-08-31 CACHE-M2-credentialed-cache-key-top-level
