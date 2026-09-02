@@ -763,27 +763,34 @@ pub(super) fn exclude_floats_from_non_bfc_auto_height(
 /// 仅 horizontal-tb（vertical 模式由 fix_vertical_mode_abs_pos 轴交换处理）。
 /// driving: CSS2/positioning absolute-non-replaced-width-002/005/012（rtl CB + 全 auto inset，
 /// 蓝方块应右上非左上）。
+/// R3930：rtl 静态位上下文扩至**流父**——static position 由静态位置所在 flow 父的
+/// direction 决定（§10.3.7 static position 定义），非 positioned 的 rtl 流父（body rtl
+/// 直接包 abspos，width-021~024）同样镜像；镜像 x 的可用宽取该流父 content 宽
+///（abspos 脱流后流父即其静态位置参照，与 R3905 positioned CB 的 content_width 同义）。
 pub(super) fn fix_rtl_abspos_static_position(root: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) {
     use zero_css_parser::values::{LengthValue, PositionValue};
     use zero_style_system::property::types::DirectionValue;
     fn walk(box_node: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>, cb_rtl: bool, cb_content_width: f32) {
-        // 本盒若为 positioned，成为其 abspos 子的 CB（更新 rtl 上下文与 content 宽）。
+        // R3930：rtl 上下文按本盒 direction 判定（positioned CB 或 rtl 流父均建立），
+        // 可用宽 = 本盒 content 宽。positioned 盒是 abspos 子的 CB；非 positioned 盒仅
+        // 提供静态位置参照（其内 abspos 的真实 CB 仍是视口/positioned 祖先，但全 auto
+        // inset 的静态位锚定参照是 flow 父）。
+        let self_rtl = box_node.node_id.and_then(|id| styles.get(&id)).is_some_and(|s| {
+            matches!(s.direction, DirectionValue::Rtl)
+                && matches!(s.writing_mode, zero_style_system::WritingModeValue::HorizontalTb)
+        });
         let self_positioned = box_node.node_id.and_then(|id| styles.get(&id)).is_some_and(|s| {
             matches!(
                 s.position,
                 PositionValue::Relative | PositionValue::Absolute | PositionValue::Fixed
             )
         });
-        let (child_cb_rtl, child_cb_w) = if self_positioned {
-            // rtl CB 仅 horizontal-tb 生效（vertical 的 inline 轴镜像由 fix_vertical_mode_abs_pos 处理）。
-            let rtl = box_node.node_id.and_then(|id| styles.get(&id)).is_some_and(|s| {
-                matches!(s.direction, DirectionValue::Rtl)
-                    && matches!(s.writing_mode, zero_style_system::WritingModeValue::HorizontalTb)
-            });
-            (rtl, box_node.content_width)
+        let (child_cb_rtl, child_cb_w) = if self_rtl {
+            (true, box_node.content_width)
         } else {
             (cb_rtl, cb_content_width)
         };
+        let _ = self_positioned;
         for child in &mut box_node.children {
             if child.is_absolute
                 && child_cb_rtl
@@ -801,12 +808,6 @@ pub(super) fn fix_rtl_abspos_static_position(root: &mut LayoutBox, styles: &Hash
             walk(child, styles, child_cb_rtl, child_cb_w);
         }
     }
-    // 根无 CB 语义；从根开始递归（根自身非 positioned 时 cb_rtl=false）。
-    let root_rtl = root
-        .node_id
-        .and_then(|id| styles.get(&id))
-        .is_some_and(|s| matches!(s.direction, DirectionValue::Rtl));
-    let _ = root_rtl;
     walk(root, styles, false, root.content_width);
 }
 

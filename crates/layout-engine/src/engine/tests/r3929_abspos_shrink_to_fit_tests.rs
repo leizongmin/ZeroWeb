@@ -104,3 +104,37 @@ fn r3929_float_descendant_skipped() {
         "R3929: float 后代盒不应被 max-content（≈960）覆写——gate 应跳过，实际 {w}"
     );
 }
+
+/// R3930（CSS2 §10.3.7 static position）：流父 direction:rtl（非 positioned）的 abspos
+/// 全 auto inset 静态位镜像——absolute-non-replaced-width-021/022（body rtl + inline-block
+/// max-width 子）。静态位置由 flow 父 direction 决定，非 positioned 的 rtl 流父同样镜像。
+#[test]
+fn r3930_rtl_flow_parent_mirrors_static_position() {
+    use crate::engine::tests::find_absolute_position_by_node_id;
+    let html = r#"<html><body style="margin:0; direction: rtl;">
+<div style="position: absolute; width: auto;"><span style="display: inline-block; max-width: 120px; width: 120px; height: 120px;"></span></div>
+</body></html>"#;
+    let (doc, result) = layout(html);
+    let divs = doc.get_elements_by_tag_name("div");
+    let tid = *divs.last().expect("target div");
+    let (x, _y) = find_absolute_position_by_node_id(&result.root, tid).expect("target box");
+    // 静态位镜像：左缘贴流父 content 右缘（800−120=680），非 LTR 左贴 x=0。
+    assert!(
+        x > 400.0,
+        "R3930: rtl 流父 abspos 静态位应镜像到右缘（x≈680），实际 x={x}"
+    );
+}
+
+/// R3930 对照：流父 ltr 时静态位保持左贴（taffy 默认语义不破坏）。
+#[test]
+fn r3930_ltr_flow_parent_keeps_static_position() {
+    use crate::engine::tests::find_absolute_position_by_node_id;
+    let html = r#"<html><body style="margin:0; direction: ltr;">
+<div style="position: absolute; width: auto;"><span style="display: inline-block; max-width: 120px; width: 120px; height: 120px;"></span></div>
+</body></html>"#;
+    let (doc, result) = layout(html);
+    let divs = doc.get_elements_by_tag_name("div");
+    let tid = *divs.last().expect("target div");
+    let (x, _y) = find_absolute_position_by_node_id(&result.root, tid).expect("target box");
+    assert!(x.abs() < 1.0, "R3930: ltr 流父 abspos 静态位应保持左贴 x=0，实际 x={x}");
+}

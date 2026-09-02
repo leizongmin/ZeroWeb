@@ -253,3 +253,4 @@ css/css-backgrounds/background-color-body-propagation-010.html css/css-backgroun
 css/css-backgrounds/background-color-root-propagation-003.html css/css-backgrounds/background-color-no-body-propagation-ref.html == 2026-09-02 R3928 html::before 同族——root 伪元素背景需独立盒
 css/CSS2/positioning/absolute-non-replaced-max-height-002.xht css/CSS2/positioning/absolute-non-replaced-max-height-002-ref.xht == 2026-09-03 R3929 abspos shrink-to-fit 宽回填
 css/CSS2/positioning/absolute-non-replaced-max-height-009.xht css/CSS2/positioning/absolute-non-replaced-max-height-009-ref.xht == 2026-09-03 R3929 abspos shrink-to-fit 高回填
+css/CSS2/positioning/absolute-non-replaced-width-021.xht css/CSS2/positioning/absolute-non-replaced-width-021-ref.xht == 2026-09-03 R3930 rtl 流父 abspos 静态位镜像
