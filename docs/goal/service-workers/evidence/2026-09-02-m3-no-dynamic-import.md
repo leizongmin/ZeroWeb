@@ -11,7 +11,7 @@
 - 固化 classic no-dynamic-import wave asset manifest：
   [2026-09-02-m3-no-dynamic-import-assets.tsv](2026-09-02-m3-no-dynamic-import-assets.tsv)。
 - 该用例确认 classic Service Worker global 中 `import(url)` 返回 rejected promise，
-  维持动态 import 禁用语义；module worker 版本仍留在 defer。
+  维持动态 import 禁用语义；module worker 版本已在 M3-47 跟进纳入 core。
 
 ## 验证
 
@@ -20,6 +20,9 @@
 - `make test-wpt-service-workers-no-dynamic-import-wave-assets`：PASS
 - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- ./target/release/zero-wpt-runner testharness-service-workers --wpt-data tests/wpt-runner/wpt-data/.service-workers-tier-a-root --json no-dynamic-import`：
   1 case / 1 subtest / 1 Pass
+- 2026-09-02 follow-up：`.any.js` worker wrapper 扩展到 plain `.any.js` 后重跑
+  `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 600 -- cargo run --release --bin zero-wpt-runner -- testharness-service-workers --wpt-data tests/wpt-runner/wpt-data/.service-workers-tier-a-root no-dynamic-import.any.js`：
+  1 case / 4 subtests / 4 Pass
 - `make baseline-wpt-service-workers-core OUTPUT=docs/goal/service-workers/evidence/2026-08-19-m1-wpt-core-baseline.json`：
   45 cases / 176 subtests / 176 Pass，double-run deterministic
 

@@ -30,7 +30,7 @@
 >   installing/waiting/active 字段经 setTimeout(0) 逐态推进）。**但是**：无真实 worker 执行
 >   （register 的 scriptURL **不被下载执行**）、无 fetch 事件拦截、无 install/activate/message
 >   真事件。
-> - **WPT 面**：已接入 service-workers core runner 45 case / 176 subtest 全绿、
+> - **WPT 面**：已接入 service-workers core runner 46 case / 183 subtest 全绿、
 >   fetch/message runner 26 case / 70 subtest 全绿，以及 CacheStorage serviceworker
 >   runner 12 case / 157 subtest 全绿；上游 `service-workers` 仍有大量用例依赖更完整的
 >   iframe/多客户端/动态服务器语义，继续按 skip/defer/gated 清单推进。

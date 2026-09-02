@@ -1,0 +1,7 @@
+path	manifest_type	roles	referenced_by	bytes	templated	git_blob_sha	source_revision
+resources/testharness.js	support	harness	1	198291	no	c7ce4f51e1db075809f861255417c27478b2c179	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
+resources/testharnessreport.js	support	harness-report	1	1231	no	405a2d8b06f00fe8292e0e9d5b917e193cfd416c	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
+service-workers/service-worker/resources/no-dynamic-import.js	support	worker-script	1	533	no	ecedd6c5d75c7d667543a2cbd2ea849194d31bc8	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
+service-workers/service-worker/resources/basic-module.js	support	static-module,dynamic-import-target	1	25	no	789a89bc630847e4cdc115f0d29f103c97bedeeb	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
+service-workers/service-worker/resources/basic-module-2.js	support	static-module,dynamic-import-target	2	31	no	189b1c87fee75c86ca08351872e402b84b8b844f	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
+service-workers/service-worker/no-dynamic-import-in-module.any.js	testharness	case	1	243	no	f7c2ef37b8b938df9b8ccae12511dfbe58d8e694	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83

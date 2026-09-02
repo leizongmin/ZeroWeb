@@ -3,7 +3,7 @@
 use crate::threaded_runtime::ThreadedRuntimeCore;
 use crate::{
     ModuleRegistry, Sandbox, SandboxConfig, ScriptError, compile_module_script, expose_classic_script_lexicals,
-    extract_dynamic_import_specifiers, extract_static_module_import_specifiers,
+    extract_static_module_import_specifiers, rewrite_dynamic_imports,
 };
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -26,6 +26,10 @@ const MAX_FETCH_STATUS_TEXT_BYTES: usize = 1024;
 const MAX_FETCH_BODY_BYTES: usize = 16 * 1024 * 1024;
 const MAX_CACHE_NAME_BYTES: usize = 1024;
 const MAX_CACHE_RESULTS: usize = 1024;
+const SERVICE_WORKER_DYNAMIC_IMPORT_PRELUDE: &str = "\
+globalThis.__zw_dynamic_import = function() {\
+  return Promise.reject(new TypeError('dynamic import is unavailable in Service Worker scripts'));\
+};";
 
 enum ServiceWorkerCommand {
     Evaluate {
@@ -2071,6 +2075,9 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
   function importScriptsNetworkError(message) {
     return new globalThis.DOMException(String(message), 'NetworkError');
   }
+  function rewriteServiceWorkerDynamicImport(source) {
+    return String(source).split('import(').join('__zw_dynamic_import(');
+  }
   globalThis.__zwModuleScriptMode = false;
   globalThis.importScripts = function() {
     if (globalThis.__zwModuleScriptMode) {
@@ -2091,7 +2098,7 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
       throw importScriptsNetworkError(response && response.error || 'importScripts failed');
     }
     for (let i = 0; i < response.sources.length; i++) {
-      (0, eval)(String(response.sources[i]));
+      (0, eval)(rewriteServiceWorkerDynamicImport(response.sources[i]));
     }
   };
   globalThis.__zwDispatchLifecycle = function(type, eventId) {
@@ -3211,7 +3218,7 @@ impl ServiceWorkerRuntime {
                                         lifecycle_timeout_ms,
                                     )
                                 } else {
-                                    sandbox.execute(source).map(|_| ())
+                                    evaluate_classic_script(sandbox.as_mut(), source)
                                 }
                             });
                             let event = match evaluation {
@@ -4439,11 +4446,6 @@ fn evaluate_module_graph(
     next_request_id: &AtomicU64,
     timeout_ms: u64,
 ) -> Result<(), ScriptError> {
-    if !extract_dynamic_import_specifiers(source).is_empty() {
-        return Err(ScriptError::CompileError(
-            "dynamic import is unavailable in Service Worker modules".into(),
-        ));
-    }
     let mut main_url = url::Url::parse(script_url)
         .map_err(|error| ScriptError::InvalidInput(format!("invalid Service Worker module URL: {error}")))?;
     main_url.set_fragment(None);
@@ -4461,8 +4463,21 @@ fn evaluate_module_graph(
         timeout_ms,
     )?;
     let compiled = compile_module_script(source, &main_url, &registry)?;
-    sandbox.execute("globalThis.__zwModuleScriptMode = true;")?;
+    // https://w3c.github.io/ServiceWorker/#service-worker-script-request
+    // Service Worker scripts do not perform dynamic imports; preserve evaluation and reject at call sites.
+    sandbox.execute(&format!(
+        "globalThis.__zwModuleScriptMode = true;{SERVICE_WORKER_DYNAMIC_IMPORT_PRELUDE}"
+    ))?;
     sandbox.execute(&compiled).map(|_| ())
+}
+
+fn evaluate_classic_script(sandbox: &mut dyn Sandbox, source: &str) -> Result<(), ScriptError> {
+    // https://w3c.github.io/ServiceWorker/#service-worker-script-request
+    // Dynamic import is unavailable in Service Worker scripts; V8's host hook reports a generic
+    // Error, so rewrite import() to the same TypeError rejected promise used by module workers.
+    sandbox.execute(SERVICE_WORKER_DYNAMIC_IMPORT_PRELUDE)?;
+    let source = rewrite_dynamic_imports(source);
+    sandbox.execute(&source).map(|_| ())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -4519,11 +4534,6 @@ fn collect_module_graph(
         ));
     }
     for ((_, url), dependency_source) in pending.into_iter().zip(sources) {
-        if !extract_dynamic_import_specifiers(&dependency_source).is_empty() {
-            return Err(ScriptError::CompileError(
-                "dynamic import is unavailable in Service Worker modules".into(),
-            ));
-        }
         registry.register(&url, &dependency_source);
         collect_module_graph(
             &dependency_source,
@@ -5142,18 +5152,73 @@ mod tests {
     }
 
     #[test]
-    fn module_evaluation_rejects_dynamic_import() {
+    fn module_dynamic_import_rejects_at_runtime() {
         let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
         runtime
-            .evaluate_module("import('./late.js');", "https://example.test/workers/sw.js")
+            .evaluate_module(
+                "import('./late.js').then(
+                   () => { throw new Error('dynamic import resolved'); },
+                   error => {
+                     if (!(error instanceof TypeError)) throw error;
+                   }
+                 );",
+                "https://example.test/workers/sw.js",
+            )
             .unwrap();
         assert!(matches!(
             runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
-            ServiceWorkerEvent::ScriptError {
-                kind: ServiceWorkerScriptErrorKind::Compile,
-                message,
-                ..
-            } if message.contains("dynamic import")
+            ServiceWorkerEvent::Evaluated { .. }
+        ));
+    }
+
+    #[test]
+    fn classic_dynamic_import_rejects_with_type_error() {
+        let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
+        runtime
+            .evaluate(
+                "import('./late.js').then(
+                   () => { throw new Error('dynamic import resolved'); },
+                   error => {
+                     if (!(error instanceof TypeError)) throw error;
+                   }
+                 );",
+                "https://example.test/workers/sw.js",
+            )
+            .unwrap();
+        assert!(matches!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::Evaluated { .. }
+        ));
+    }
+
+    #[test]
+    fn classic_imported_script_dynamic_import_rejects_with_type_error() {
+        let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
+        runtime
+            .evaluate("importScripts('./helper.js');", "https://example.test/workers/sw.js")
+            .unwrap();
+        let ServiceWorkerEvent::ImportScriptsRequested { request_id, .. } =
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap()
+        else {
+            panic!("missing importScripts request");
+        };
+        runtime
+            .complete_import_scripts(
+                request_id,
+                Ok(vec![
+                    "import('./late.js').then(
+                       () => { throw new Error('dynamic import resolved'); },
+                       error => {
+                         if (!(error instanceof TypeError)) throw error;
+                       }
+                     );"
+                    .into(),
+                ]),
+            )
+            .unwrap();
+        assert!(matches!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::Evaluated { .. }
         ));
     }
 

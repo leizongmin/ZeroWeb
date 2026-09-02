@@ -830,6 +830,7 @@ pub const SERVICE_WORKER_CORE_CASES: &[&str] = &[
     "service-workers/service-worker/import-scripts-updated-flag.https.html",
     "service-workers/service-worker/multiple-update.https.html",
     "service-workers/service-worker/no-dynamic-import.any.js",
+    "service-workers/service-worker/no-dynamic-import-in-module.any.js",
     "service-workers/service-worker/register-default-scope.https.html",
     "service-workers/service-worker/registration-basic.https.html",
     "service-workers/service-worker/registration-end-to-end.https.html",
@@ -1802,7 +1803,7 @@ fn run_service_worker_case_set(
         .into_iter()
         .map(|path| {
             let results = match std::fs::read_to_string(wpt_root.join(path)) {
-                Ok(source) if path.ends_with(".https.any.js") => {
+                Ok(source) if is_service_worker_any_js(path) => {
                     let html = service_worker_any_js_wrapper(path, &source);
                     run_testharness_html(wpt_root, path, &html, &harness_source, CASE_TIMEOUT)
                 }
@@ -1852,6 +1853,11 @@ fn service_worker_any_js_wrapper(path: &str, case_source: &str) -> String {
     };
     let script = serde_json::to_string(&format!("/{path}")).unwrap_or_else(|_| "\"\"".into());
     let scope = serde_json::to_string(&format!("/{path}.scope/")).unwrap_or_else(|_| "\"\"".into());
+    let type_option = if service_worker_any_js_is_module(case_source) {
+        ", type: 'module'"
+    } else {
+        ""
+    };
     let description = serde_json::to_string(path).unwrap_or_else(|_| "\"Service Worker any.js\"".into());
     format!(
         "<!doctype html><meta charset=\"utf-8\">{timeout_meta}\
@@ -1859,7 +1865,7 @@ fn service_worker_any_js_wrapper(path: &str, case_source: &str) -> String {
          <script src=\"/resources/testharnessreport.js\"></script>\
          <script>\
          promise_test(async function(test) {{\
-           const registration = await navigator.serviceWorker.register({script}, {{scope: {scope}}});\
+           const registration = await navigator.serviceWorker.register({script}, {{scope: {scope}{type_option}}});\
            test.add_cleanup(function() {{ return registration.unregister(); }});\
            const worker = registration.installing || registration.waiting || registration.active;\
            assert_true(!!worker, 'registration exposes a worker');\
@@ -1871,7 +1877,21 @@ fn service_worker_any_js_wrapper(path: &str, case_source: &str) -> String {
 
 fn service_worker_any_js_source(case_source: &str) -> String {
     let case_source = apply_wpt_substitutions(case_source);
-    format!("importScripts('/resources/testharness.js');\n{case_source}")
+    if service_worker_any_js_is_module(&case_source) {
+        format!("import '/resources/testharness.js';\n{case_source}")
+    } else {
+        format!("importScripts('/resources/testharness.js');\n{case_source}")
+    }
+}
+
+fn is_service_worker_any_js(path: &str) -> bool {
+    path.ends_with(".any.js")
+}
+
+fn service_worker_any_js_is_module(source: &str) -> bool {
+    source
+        .lines()
+        .any(|line| line.trim().eq_ignore_ascii_case("// META: global=serviceworker-module"))
 }
 
 fn wpt_js_has_long_timeout(source: &str) -> bool {
@@ -2545,7 +2565,7 @@ fn wpt_data_service_worker_script_fetcher(
                 .replace("{{ports[https][0]}}", "443");
             if clean.ends_with("/script-tests/cache-abort.js") {
                 format!("{CACHE_ABORT_FETCH_FIXTURE}\n{source}").into_bytes()
-            } else if clean.ends_with(".https.any.js") {
+            } else if is_service_worker_any_js(clean) {
                 service_worker_any_js_source(&source).into_bytes()
             } else {
                 source.into_bytes()
@@ -4102,13 +4122,13 @@ async_test(function(test) {
     }
 
     #[test]
-    fn service_worker_core_manifest_has_forty_five_unique_cases() {
+    fn service_worker_core_manifest_has_forty_six_unique_cases() {
         let unique = SERVICE_WORKER_CORE_CASES
             .iter()
             .copied()
             .collect::<std::collections::BTreeSet<_>>();
-        assert_eq!(SERVICE_WORKER_CORE_CASES.len(), 45);
-        assert_eq!(unique.len(), 45);
+        assert_eq!(SERVICE_WORKER_CORE_CASES.len(), 46);
+        assert_eq!(unique.len(), 46);
         assert!(
             SERVICE_WORKER_CORE_CASES
                 .iter()
@@ -4132,6 +4152,9 @@ async_test(function(test) {
         );
         assert!(SERVICE_WORKER_CORE_CASES.contains(&"service-workers/service-worker/historical.https.any.js"));
         assert!(SERVICE_WORKER_CORE_CASES.contains(&"service-workers/service-worker/no-dynamic-import.any.js"));
+        assert!(
+            SERVICE_WORKER_CORE_CASES.contains(&"service-workers/service-worker/no-dynamic-import-in-module.any.js")
+        );
         assert!(SERVICE_WORKER_CORE_CASES.contains(&"service-workers/service-worker/install-event-type.https.html"));
         assert!(
             SERVICE_WORKER_CORE_CASES
@@ -4435,6 +4458,40 @@ async_test(function(test) {
         let source = String::from_utf8(response.body).unwrap();
         assert!(source.starts_with("importScripts('/resources/testharness.js');\n"));
         assert!(source.contains("test(() => {}, 'worker side');"));
+
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn service_worker_fixture_fetcher_wraps_module_any_js_with_module_harness() {
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("zero-wpt-runner-module-any-js-{}-{nonce}", std::process::id()));
+        let case_path = root.join("service-workers/service-worker/no-dynamic-import-in-module.any.js");
+        std::fs::create_dir_all(case_path.parent().unwrap()).unwrap();
+        std::fs::write(
+            &case_path,
+            "// META: global=serviceworker-module\npromise_test(async () => {}, 'module side');\n",
+        )
+        .unwrap();
+
+        let html = service_worker_any_js_wrapper(
+            "service-workers/service-worker/no-dynamic-import-in-module.any.js",
+            &std::fs::read_to_string(&case_path).unwrap(),
+        );
+        assert!(html.contains("type: 'module'"));
+
+        let fetcher = wpt_data_service_worker_script_fetcher(&root).unwrap();
+        let response = fetcher(
+            "https://wpt.test/page",
+            "https://wpt.test/service-workers/service-worker/no-dynamic-import-in-module.any.js",
+        )
+        .unwrap();
+        let source = String::from_utf8(response.body).unwrap();
+        assert!(source.starts_with("import '/resources/testharness.js';\n"));
+        assert!(source.contains("promise_test(async () => {}, 'module side');"));
 
         std::fs::remove_dir_all(&root).unwrap();
     }

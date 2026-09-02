@@ -201,7 +201,7 @@ pub fn build_module_runtime_prelude(registry: &ModuleRegistry) -> Result<String,
     Ok(out)
 }
 
-fn rewrite_dynamic_imports(source: &str) -> String {
+pub(crate) fn rewrite_dynamic_imports(source: &str) -> String {
     let mut out = String::new();
     let mut i = 0;
     while i < source.len() {

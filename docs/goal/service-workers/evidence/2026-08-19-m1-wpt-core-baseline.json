@@ -1,8 +1,8 @@
 {
-  "cases": 45,
-  "subtests": 176,
+  "cases": 46,
+  "subtests": 183,
   "status": {
-    "Pass": 176
+    "Pass": 183
   },
   "deterministic": true,
   "results": [
@@ -350,7 +350,47 @@
       "service-workers/service-worker/no-dynamic-import.any.js",
       [
         {
+          "name": "Module URL",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Another module URL",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Module data: URL",
+          "status": "Pass",
+          "message": null
+        },
+        {
           "name": "service-workers/service-worker/no-dynamic-import.any.js",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/no-dynamic-import-in-module.any.js",
+      [
+        {
+          "name": "Module URL",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Another module URL",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Module data: URL",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "service-workers/service-worker/no-dynamic-import-in-module.any.js",
           "status": "Pass",
           "message": null
         }

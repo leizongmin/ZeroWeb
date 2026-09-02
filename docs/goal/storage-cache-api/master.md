@@ -471,6 +471,14 @@ fetch baseline，不改变本目标的 window/SW CacheStorage 分母。
   - `make baseline-wpt-service-workers-core OUTPUT=docs/goal/service-workers/evidence/2026-08-19-m1-wpt-core-baseline.json`：
     45 cases / 176 subtests / 176 Pass，double-run deterministic
   - 证据：[M3 Classic Service Worker Dynamic Import Rejection](../service-workers/evidence/2026-09-02-m3-no-dynamic-import.md)
+- 2026-09-02 Module Service Worker dynamic import rejection：
+  - `no-dynamic-import-in-module.any.js` 纳入 Service Worker core runner，确认
+    `serviceworker-module` wrapper 以 module 类型注册 worker，且 module worker 动态
+    `import(url)` 返回 rejected `TypeError` promise。该切片不改变 CacheStorage window/SW
+    分母，只补齐 CacheStorage serviceworker wrapper 依赖的 module worker 负面能力面。
+  - `make baseline-wpt-service-workers-core OUTPUT=docs/goal/service-workers/evidence/2026-08-19-m1-wpt-core-baseline.json`：
+    46 cases / 183 subtests / 183 Pass，double-run deterministic
+  - 证据：[M3 Module Service Worker Dynamic Import Rejection](../service-workers/evidence/2026-09-02-m3-module-no-dynamic-import.md)
 - 2026-08-22 M3 CacheStorage 持久化首片：
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- cargo check -p zero-storage -p zero-page-runtime -p zero-webview --all-targets`：passed
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- cargo test -p zero-storage cache_storage_persistence -- --nocapture`：3 passed
