@@ -144,7 +144,13 @@
               && typeof globalThis.__zwVideoBridge === 'object') {
             try {
               var _ct = globalThis.__zwVideoBridge.currentTime(_ms.bridgeSrc);
-              if (typeof _ct === 'number' && isFinite(_ct)) return _ct;
+              if (typeof _ct === 'number' && isFinite(_ct)) {
+                // M3 扩批（fixture-mounted 播放切片）：桥真值镜像写回 _mediaState——
+                // activeCues/time-marches-on 的 cue 调度读 _ms.currentTime（与 IDL
+                // getter 同源真值）。
+                _ms.currentTime = _ct;
+                return _ct;
+              }
             } catch (_eVbCt) {}
           }
           if (prop === 'currentTime') return _ms ? _ms.currentTime : 0;

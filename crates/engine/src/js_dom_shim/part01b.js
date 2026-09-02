@@ -445,8 +445,11 @@
             && typeof globalThis._zwTrackScheduleLoad === 'function') {
           try {
             // mode gate bypass——本路径就是 spec 的「mode 变更启动加载」入口（绕过
-            // _zwScheduleChildTrackLoads 的 default 属性过滤）。
-            globalThis._zwTrackScheduleLoad(ownerEl.__zwSelector || null, ownerEl.__zwHandle || null);
+            // _zwScheduleChildTrackLoads 的 default 属性过滤）。**handle 恒传 null**：
+            // 静态 HTML wrapper 的 handle 不在 mutations attr registry（__zw_get_attr_handle
+            // 只读同步脚本写入），传 handle 会使 src 读空 → 误 error settle；sel 路径
+            // 走宿主 HTML 快照（静态/动态 attr 均真值）。
+            globalThis._zwTrackScheduleLoad(ownerEl.__zwSelector || null, null);
           } catch (_eModeT) {}
         }
       },
@@ -513,6 +516,11 @@
       globalThis._zwTextTrackRebuildCueList(_cuesHolder, _cueArr);
     };
     // removeCue：不在本 track → NotFoundError（removeCue NOT_FOUND_ERR 断言面）。
+    // M3 扩批（fixture-mounted 播放切片）：time-marches-on 推进面——实例上暴露内部
+    // cue 数组引用（闭包数组本体，addCue/removeCue/_zwClearCues 实时可见）+ per-track
+    // active 状态表。全局钩子 _zwMediaTimeMarchesOn 消费。
+    track._zwCueArrInternal = _cueArr;
+    track._zwMarchState = [];
     track.removeCue = function (cue) {
       var idx = -1;
       for (var i = 0; i < _cueArr.length; i++) { if (_cueArr[i] === cue) { idx = i; break; } }

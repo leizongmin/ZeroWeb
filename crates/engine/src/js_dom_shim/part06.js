@@ -8107,10 +8107,10 @@
               'trackvtt:' + key + ':' + (++_zwTrackFetchSeq),
               'GET', _abs, '', '', '', '', '', '', '', ''
             ) || '');
-          } catch (_eTvF) { _failed = true; }
+          } catch (_eTvF) { _failed = true; globalThis.__zwTrackFetchDebug = 'threw:' + _eTvF.message; }
           if (!_failed) {
             if (_wire.indexOf('__zw_fetch_error') === 0) {
-              _failed = true;
+              _failed = true; globalThis.__zwTrackFetchDebug = 'wire:' + _wire.slice(0, 80);
             } else {
               // `__zwfr:` wire（status\x1fstatusText\x1fheadersWire\x1fbody）取 body；
               // 旧 body-only wire 兜底整串。
@@ -8301,6 +8301,75 @@
     try { ev._zwUaDispatch = false; } catch (_e312ua) {}
     return ok ? 'ok' : 'prevented';
   };
+  // M3 扩批（2026-09-02，fixture-mounted 播放切片）：time-marches-on 钩子——宿主播放泵
+  // 每 tick 调用，按**真值媒体时钟**推进全部 TextTrack 的 cue 调度（spec
+  // https://html.spec.whatwg.org/multipage/media.html#time-marches-on）：
+  // ① currentTime ∈ [start,end) 且未 active → enter 事件 + activeCues 计入；
+  // ② active 且越界 → exit 事件（pauseOnExit → video.pause()）；
+  // ③ missed cues（seek 越过全部区间）→ 不派 enter（seeking 面语义由调用方按
+  //    seeking 标志控制；headless 泵按连续推进处理——cue 在上一 tick 与本 tick 间
+  //    完整过区间时 enter+exit 都派）。
+  // missed cue 语义注记：track-cues-missed 期望 seek 后 play 派发**跳跃** enter——
+  // 本钩子以 lastMs → nowMs 区间判定（cue.start ∈ (last, now] 才 enter），天然实现。
+  // 事件经 cue.dispatchEvent（EventTarget 面——onenter/onexit accessor 断言面）。
+  globalThis._zwMediaTimeMarchesOn = function () {
+    try {
+      if (typeof _mediaState === 'undefined' || typeof _elementTextTrack === 'undefined') return;
+      for (var key in _mediaState) {
+        var ms = _mediaState[key];
+        if (!ms || !ms.playing) continue;
+        // 桥真值时钟优先（bridgeOn 元素主动拉取——getter 镜像只在页面读 IDL 时发生；
+        // 泵 tick 无人读 IDL，须此处主动同步）。
+        if (ms.bridgeOn && ms.bridgeSrc && typeof globalThis.__zwVideoBridge === 'object') {
+          try {
+            var _tmoBct = globalThis.__zwVideoBridge.currentTime(ms.bridgeSrc);
+            if (typeof _tmoBct === 'number' && isFinite(_tmoBct)) ms.currentTime = _tmoBct;
+          } catch (_eTmoB) {}
+        }
+        var nowMs = (typeof ms.currentTime === 'number' && isFinite(ms.currentTime)) ? ms.currentTime * 1000 : 0;
+        var lastMs = (typeof ms._zwLastMarchMs === 'number') ? ms._zwLastMarchMs : nowMs;
+        if (nowMs <= lastMs) { ms._zwLastMarchMs = nowMs; continue; }
+        ms._zwLastMarchMs = nowMs;
+        // 该 media 元素 textTracks 的 track 子产物（_elementTextTrack 以 track 元素 key 存）。
+        for (var tk in _elementTextTrack) {
+          var tt = _elementTextTrack[tk];
+          if (!tt || !tt._zwMarchState || !tt._zwCueArrInternal) continue;
+          var active = tt._zwMarchState; // Array<cue>——引用即身份
+          for (var ci = 0; ci < tt._zwCueArrInternal.length; ci++) {
+            var cue = tt._zwCueArrInternal[ci];
+            if (!cue) continue;
+            var startMs = cue._zwStartTime * 1000;
+            var endMs = cue._zwEndTime * 1000;
+            var wasIdx = -1;
+            for (var ai = 0; ai < active.length; ai++) { if (active[ai] === cue) { wasIdx = ai; break; } }
+            var wasActive = wasIdx >= 0;
+            var shouldBeActive = startMs <= nowMs && nowMs < endMs;
+            // enter：未 active → active（起点 ≤ now——含 poll gap 补偿；seek 越过时
+            // 本钩子按连续推进处理，missed-cues 的「seek 后跳跃不派」语义归 seeking
+            // 面后续切片）。
+            if (shouldBeActive && !wasActive) {
+              active.push(cue);
+              try { cue.dispatchEvent({ type: 'enter', target: cue, currentTarget: cue }); } catch (_eTmo) {}
+            }
+            // exit：曾 active 且已越界。
+            if (wasActive && !shouldBeActive) {
+              active.splice(wasIdx, 1);
+              try { cue.dispatchEvent({ type: 'exit', target: cue, currentTarget: cue }); } catch (_eTmo3) {}
+              if (cue.pauseOnExit) {
+                try {
+                  ms.playing = false;
+                  if (ms.bridgeOn && ms.bridgeSrc && typeof globalThis.__zwVideoBridge === 'object') {
+                    globalThis.__zwVideoBridge.pause(ms.bridgeSrc);
+                  }
+                } catch (_eTmoP) {}
+              }
+            }
+          }
+        }
+      }
+    } catch (_eTmm) {}
+  };
+
 })();
 
 // ── R34xx：DOM 文本几何注册表（selection-rects / index-from-offset 的 DOM 对照侧）──

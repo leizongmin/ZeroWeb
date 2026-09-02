@@ -1150,6 +1150,25 @@ impl WebView {
         std::sync::Arc::clone(&self.webaudio)
     }
 
+    /// M3 扩批（2026-09-02，fixture-mounted 播放切片）：在 WebView 沙箱上注册
+    /// 播放宿主桥（`__zwVideoBridge` 门面 + `__zw_video_*` 回调族）。
+    ///
+    /// 生产路径（tab_worker/renderer）经 `SetVideoPlayers` 命令注入；本方法是
+    /// **同进程嵌入方**（wpt-runner testharness / 测试）的等价入口——run_page_scripts
+    /// 首次调用后沙箱已初始化，此后注册即被 shim feature-detect 消费。
+    ///
+    /// # Errors
+    /// 沙箱未初始化（run_page_scripts 前调用）或门面注入执行失败。
+    pub fn install_playback_bridge(&mut self) -> Result<(), WebViewError> {
+        self.ensure_sandbox()?;
+        let Some(sandbox) = self.js_sandbox.as_mut() else {
+            return Err(WebViewError::Script("no js sandbox".to_string()));
+        };
+        let registry = std::sync::Arc::clone(&self.video_players);
+        crate::video_registry::register_video_bridge_callbacks(&mut **sandbox, registry);
+        Ok(())
+    }
+
     /// 复制图片缓存供 UI 线程快照。
     pub fn snapshot_image_cache(&self) -> ImageCache {
         self.image_cache.duplicate_for_snapshot()

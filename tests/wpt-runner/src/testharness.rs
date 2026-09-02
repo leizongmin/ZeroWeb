@@ -3179,13 +3179,43 @@ fn run_testharness_html_inner(
     });
     webview.prepare_document_state(&format!("https://wpt.test/{case_name}"));
     let page_url = format!("https://wpt.test/{case_name}");
+    // M3 扩批：播放泵时钟原点（tab_worker pump_epoch 同款——registry play/tick 共用
+    // 单调毫秒；桥 play 传 0 即本原点）。
+    let playback_clock_origin = std::time::Instant::now();
     // R34xx：canvas 默认字体（sans-serif）预载系统真字体（带 kern）——无 @font-face 的
     // 页面（2d.text.drawing.style.fontKerning 等）默认字体度量/kerning 面依赖。需
     // resolve_font_id 大小写不敏感修复配套（否则 CanvasTest 显式族 miss 回退 sans-serif）。
     webview.load_canvas_system_sans_font();
     let external_css = webview.fetch_page_images(&html, &page_url);
     webview.load_html(&html, Some(&external_css));
-    if let Err(error) = webview.run_page_scripts_strict() {
+    let script_result = webview.run_page_scripts_strict();
+    // M3 扩批（2026-09-02，fixture-mounted 播放切片）：播放宿主桥 + 媒体源登记。
+    // 页面 <video>/<audio> src（经 extract_media_resources 提取、相对 case 目录解析）
+    // 从 wpt-data 读字节登记进 VideoPlayerRegistry——shim play() 经 __zwVideoBridge
+    // 走真值播放（registry 泵推进帧/音频时钟）。非 webm 源登记后 play 返 false 回落
+    // headless（语义层零回归）。
+    if script_result.is_ok() {
+        let _ = webview.install_playback_bridge();
+        if let Ok(mut reg) = webview.video_players().lock() {
+            for resource in zero_engine::extract_media_resources(&html) {
+                let resolved = zero_engine::resolve_document_url(&page_url, &resource.src);
+                let path_part = resolved
+                    .split("://")
+                    .nth(1)
+                    .and_then(|rest| rest.split_once('/'))
+                    .map(|(_, path)| path)
+                    .unwrap_or("");
+                let clean = path_part.split(['?', '#']).next().unwrap_or(path_part);
+                if clean.is_empty() {
+                    continue;
+                }
+                if let Ok(bytes) = std::fs::read(wpt_root.join(clean)) {
+                    reg.register_source(&resolved, bytes);
+                }
+            }
+        }
+    }
+    if let Err(error) = script_result {
         // R151（js-dom M4）：**crash 用例的 vacuous pass 语义**——文件未声明任何 test()
         //（纯 "no crash should occur" 回归用例，如 dom/events/keypress-dispatch-crash.html：
         // spec `dom-document-createevent` 别名表无 KeyboardEvents 复数 → 真实浏览器
@@ -3262,6 +3292,20 @@ fn run_testharness_html_inner(
                         ev.elapsed,
                     ));
                 }
+            }
+        }
+        // M3 扩批：播放泵——registry 有播放中源时按单调时钟推进（帧 tick + 音频泵；
+        // 时钟原点与桥 play(0) 对齐——tab_worker pump_epoch 同契约）。changed 帧注入
+        // ImageCache（painter 通路）；媒体时间事件（timeupdate 等）由 shim 侧 headless
+        // 序列承载（语义层不回归）。
+        {
+            let now_ms = playback_clock_origin.elapsed().as_millis() as u64;
+            if let Ok(mut reg) = webview.video_players().lock()
+                && reg.is_any_playing()
+            {
+                let cache = webview.image_cache();
+                let _ = reg.tick_all(now_ms, cache);
+                let _ = reg.audio_advance_all(now_ms);
             }
         }
         let probe = match take_probe(&mut webview) {
@@ -3736,6 +3780,14 @@ fn take_probe(webview: &mut WebView) -> Result<HarnessProbe, String> {
     // testharness result callbacks before the state snapshot is serialized.
     webview
         .execute_script("if (typeof globalThis.__zw_fire_due_timers === 'function') globalThis.__zw_fire_due_timers()")
+        .map_err(|error| error.to_string())?;
+    // M3 扩批：time-marches-on——cue enter/exit 调度按桥真值时钟推进（泵 tick 同拍；
+    // spec media.html#time-marches-on——track-cues-* 播放推进族断言面）。与 timer
+    // 泵同一 execute_script 通道（无 registry 锁持有——桥回调各自加锁）。
+    webview
+        .execute_script(
+            "if (typeof globalThis._zwMediaTimeMarchesOn === 'function') globalThis._zwMediaTimeMarchesOn()",
+        )
         .map_err(|error| error.to_string())?;
     webview
         .execute_script(
