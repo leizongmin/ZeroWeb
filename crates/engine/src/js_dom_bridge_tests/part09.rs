@@ -3555,6 +3555,8 @@ fn test_media_can_play_type_capability_table_m4gd() {
            webmAudio: a.canPlayType('audio/webm'),\
            mp3Type: a.canPlayType('audio/mpeg'),\
            vp9: v.canPlayType('video/webm; codecs=\"vp9\"'),\
+           av1: v.canPlayType('video/webm; codecs=\"av1\"'),\
+           av1Pair: v.canPlayType('video/webm; codecs=\"av1, vorbis\"'),\
            vp9Dot: v.canPlayType('video/webm; codecs=\"vp9.0\"'),\
            vorbis: v.canPlayType('video/webm; codecs=\"vorbis\"'),\
            pair: v.canPlayType('video/webm; codecs=\"vp9, vorbis\"'),\
@@ -3580,6 +3582,16 @@ fn test_media_can_play_type_capability_table_m4gd() {
     // type+codecs 全在解码面 → 'probably'。
     assert_eq!(get("vp9"), "probably", "vp9 → probably");
     assert_eq!(get("vp9Dot"), "probably", "vp9.0 别名 → probably");
+    assert_eq!(
+        get("av1"),
+        "probably",
+        "av1 → probably（M3 AV1 面：dav1d 解码切片落地，open_webm codec 自路由）"
+    );
+    assert_eq!(
+        get("av1Pair"),
+        "probably",
+        "av1+vorbis 双 codec → probably"
+    );
     assert_eq!(get("vorbis"), "probably", "vorbis → probably");
     assert_eq!(get("pair"), "probably", "vp9+vorbis 双 codec → probably");
     // 不在解码面 → ''（不虚报）。

@@ -25,6 +25,13 @@ codec 自路由（新 `open_webm`：V_VP9 → rusty_vp9 / V_AV1 → dav1d，feat
 切换 `open_webm`（生产播放面 codec 无关）。fixture `sample-webm-av1.webm` 48 帧
 全解、PTS 单调、首帧 RGB 均值与 ffmpeg 7.1.5 RGBA 参照（123.26）同窗对齐 ±15。
 media 40 单测（default）/ 42（decode-av1）全绿、webview 678 全绿、clippy 双态零警告。
+**AV1 settle 探针接通 + canPlayType 扩表（2026-09-02 补片，跨 goal 联动兑现）**：
+async_load `probe_video_media_meta` 从 `open_webm_vp9` 切 `open_webm`（与播放面
+同一 codec 自路由入口）——修复「play 可路由而 settle 探针 VP9-only」的分叉
+（AV1 源 settle 后 duration 真值 + 首帧注入缺失）；webview `decode-av1` feature
+转发 + AV1 settle e2e（`video_settle_av1_first_frame_and_truth_m3`，feature-gated）；
+media-elements canPlayType 能力表扩 av1（video/webm → probably——M4g-d
+「新增解码面同步扩表」注记兑现）。media-elements 面 510P 维持零回归。
 **M1a 已落地**（2026-09-01）：`crates/media`（`zero-media`）解码管线全通——
 `VideoDecoder::open_webm_vp9` → 逐帧 `next_frame()` → `DecodedVideoFrame`（RGBA +
 pts_ms）；fixture 48 帧全解、PTS 单调、首帧与 ffmpeg 7.1.5 rawvideo 参照**逐字节一致**

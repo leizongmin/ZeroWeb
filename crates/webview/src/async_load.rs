@@ -113,12 +113,16 @@ pub struct ResourceElementEvent {
     pub media_duration_ms: Option<u64>,
 }
 
-/// media-playback M2a：video 资源的容器时长/首帧探针（webm/VP9 头部 + 首帧解码）。
-/// 非 webm-VP9 返 `None`（语义层回落 headless 近似、渲染侧保持占位）。
+/// media-playback M2a：video 资源的容器时长/首帧探针（webm 头部 + 首帧解码）。
+/// 非 webm（或无候选 codec）返 `None`（语义层回落 headless 近似、渲染侧保持占位）。
+/// M3 codec 自路由（D-RFC-2）：`open_webm` 覆盖 V_VP9（rusty_vp9）与 V_AV1
+/// （dav1d，feature `decode-av1`）——与播放面 `video_registry.play` 同一入口，
+/// 消除「play 可路由而 settle 探针 VP9-only」的分叉（AV1 源 settle 后 duration
+/// 真值 + 首帧注入缺失的缺陷面）。
 /// 首帧 RGBA 供生产侧帧注入（`insert_with_key` 与 painter `image_resource_key`
 /// 同键——canvas/img 同款两段式上屏）。
 fn probe_video_media_meta(bytes: &[u8]) -> Option<(u64, u32, u32, Vec<u8>)> {
-    let mut decoder = zero_media::VideoDecoder::open_webm_vp9(bytes).ok()?;
+    let mut decoder = zero_media::VideoDecoder::open_webm(bytes).ok()?;
     let duration_ms = decoder.duration_ms()?;
     // 容器头无固有尺寸——取首帧（2s@24fps fixture 解码 ~10ms 级，可接受；
     // 真实流面 M2b 背压优化时改为读 TrackEntry 像素维）。
@@ -2168,6 +2172,43 @@ mod tests {
         let data = wv.image_cache().get(&frame_key).expect("首帧应已注入 ImageCache");
         assert_eq!((data.width, data.height), (320, 240));
         assert_eq!(data.pixels.len(), 320 * 240 * 4, "RGBA 面完整");
+    }
+
+    // decode-av1 关闭时 open_webm 对 V_AV1 回落 NoVideoTrack（占位面）——本测试
+    // 验证 feature 开启态的 settle 全链（media crate 测试同款 gating）。
+    // 注：webview 的 decode-av1 经 zero-media feature 转发（Cargo.toml zero-media
+    // optional 转发面）——CI 矩阵主线（默认 feature）不含本测试。
+    #[cfg(feature = "decode-av1")]
+    #[test]
+    fn video_settle_av1_first_frame_and_truth_m3() {
+        // media-playback M3 AV1（D-RFC-2）：V_AV1 源 settle → 探针经 open_webm
+        // codec 自路由（与播放面同入口）——duration/尺寸真值 + 首帧注入与 VP9
+        // 面同契约（修复 settle 探针 VP9-only 的分叉缺陷）。
+        let webm = media_fixture_bytes("sample-webm-av1.webm");
+        let html = r#"<html><body><video src="sample-webm-av1.webm"></video></body></html>"#;
+        let mut load = AsyncPageLoad::from_html("https://example.com/media/", html.to_string());
+        let mut wv = WebView::new(WebViewConfig::default());
+        let mut host = MockFetchHost::new().with_bytes(webm);
+        while load.is_active() {
+            let _ = load.tick(&mut wv, &mut host, 500.0);
+        }
+        let events = load.take_resource_element_events();
+        assert_eq!(events.len(), 1, "AV1 video settle 应产出恰好一个事件");
+        let event = &events[0];
+        assert_eq!(event.tag, "video");
+        assert_eq!(event.outcome, ResourceElementOutcome::Available);
+        assert_eq!(event.media_duration_ms, Some(2000), "AV1 容器时长真值");
+        assert_eq!(
+            (event.natural_width, event.natural_height),
+            (320, 240),
+            "AV1 首帧固有尺寸真值"
+        );
+        let frame_key = ImageKey::new(image_resource_key(
+            "https://example.com/media/sample-webm-av1.webm",
+            None,
+        ));
+        let data = wv.image_cache().get(&frame_key).expect("AV1 首帧应已注入 ImageCache");
+        assert_eq!((data.width, data.height), (320, 240));
     }
 
     #[test]

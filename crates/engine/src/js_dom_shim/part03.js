@@ -11495,12 +11495,15 @@
           // https://html.spec.whatwg.org/multipage/media.html#dom-navigator-canplaytype
           // M2c opus 面（2026-09-01）：opus-decoder 纯 Rust 落地 → ogg 容器 opus
           // 转入支持面（webm 容器 A_OPUS demux 未实施，audio/webm opus 仍 ''）。
+          // M3 AV1 面（2026-09-02，D-RFC-2）：dav1d 解码切片落地 → video/webm
+          // av1 转入支持面（`open_webm` codec 自路由 V_AV1——与播放/settle 探针
+          // 同一入口；feature `decode-av1` 门控的构建面由宿主侧启用）。
           var _cptTable = {
             'audio/mpeg': { audio: ['mp3'], video: [] },
             'audio/ogg': { audio: ['vorbis', 'opus'], video: [] },
             'audio/webm': { audio: ['vorbis'], video: [] },
             'video/ogg': { audio: ['vorbis', 'opus'], video: [] },
-            'video/webm': { audio: ['vorbis'], video: ['vp9'] }
+            'video/webm': { audio: ['vorbis'], video: ['vp9', 'av1'] }
           };
           return function (type) {
             var _t = String(type == null ? '' : type);
