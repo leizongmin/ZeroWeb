@@ -37,10 +37,17 @@ fetch_raw() {
 WA_FILES=(
   "webaudio/the-audio-api/the-audionode-interface/audionode-connect-return-value.html"
   "webaudio/the-audio-api/the-destinationnode-interface/destination.html"
+  # OscillatorNode 构造器面（audit.js 框架——runner 内联 webaudio/resources/*.js）。
+  "webaudio/the-audio-api/the-oscillatornode-interface/ctor-oscillator.html"
 )
+
+# audit.js 框架（runner inline_extras 内联——用例以绝对路径引用）。
+for f in audit.js audit-util.js audionodeoptions.js; do
+  fetch_raw "webaudio/resources/${f}"
+done
 
 for relative in "${WA_FILES[@]}"; do
   fetch_raw "${relative}"
 done
 
-echo "Web Audio testharness subset ready (${#WA_FILES[@]} files, WPT ${WPT_REV})"
+echo "Web Audio testharness subset ready (${#WA_FILES[@]} files + audit framework, WPT ${WPT_REV})"

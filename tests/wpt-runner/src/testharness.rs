@@ -1446,6 +1446,20 @@ pub const WEBAUDIO_TEST_FILES: &[&str] = &[
     // destination 接口面（channelCount 2 缺省 + maxChannelCount ≥ 2 + 断言
     // destination 为 AudioDestinationNode——identity/实例面）。
     "webaudio/the-audio-api/the-destinationnode-interface/destination.html",
+    // OscillatorNode 构造器面（audit.js 框架——invalid/default ctor + type/
+    // frequency 440 属性反射断言；runner 内联 webaudio/resources/audit*.js）。
+    "webaudio/the-audio-api/the-oscillatornode-interface/ctor-oscillator.html",
+];
+
+/// audit.js 框架脚本（wpt-data 内 vendored 原文件——与 canvas-tests.js 同款
+/// inline_extras 内联机制；用例以绝对路径 `/webaudio/resources/*.js` 引用）。
+pub const WEBAUDIO_SUPPORT_SCRIPTS: &[(&str, &str)] = &[
+    ("/webaudio/resources/audit-util.js", "webaudio/resources/audit-util.js"),
+    (
+        "/webaudio/resources/audionodeoptions.js",
+        "webaudio/resources/audionodeoptions.js",
+    ),
+    ("/webaudio/resources/audit.js", "webaudio/resources/audit.js"),
 ];
 
 /// Run the pinned upstream Web Audio testharness subset（media-audio M3 切片 2）。
@@ -1463,6 +1477,20 @@ pub fn run_webaudio_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String,
             )];
         }
     };
+    // audit.js 框架内联（canvas-tests.js 同款机制——用例以绝对路径引用
+    // /webaudio/resources/*.js，extract_page_scripts 不加载外部 src）。
+    let inline_extras: Vec<(&str, String)> = WEBAUDIO_SUPPORT_SCRIPTS
+        .iter()
+        .filter_map(|(src, path)| {
+            std::fs::read_to_string(wpt_root.join(path))
+                .ok()
+                .map(|content| (*src, content))
+        })
+        .collect();
+    let inline_refs: Vec<(&str, &str)> = inline_extras
+        .iter()
+        .map(|(src, content)| (*src, content.as_str()))
+        .collect();
 
     WEBAUDIO_TEST_FILES
         .iter()
@@ -1470,7 +1498,9 @@ pub fn run_webaudio_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String,
         .map(|path| {
             let source = std::fs::read_to_string(wpt_root.join(path));
             let results = match source {
-                Ok(source) => run_testharness_html(wpt_root, path, &source, &harness_source, CASE_TIMEOUT),
+                Ok(source) => {
+                    run_testharness_html_inner(wpt_root, path, &source, &harness_source, &inline_refs, CASE_TIMEOUT)
+                }
                 Err(error) => vec![HarnessSubtestResult {
                     name: "load WPT case".into(),
                     status: HarnessStatus::Fail,

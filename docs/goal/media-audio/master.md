@@ -60,9 +60,28 @@ volume/muted 真控制。**双重启动门控均已解除**：① M0 音频环�
   记录，无离线渲染）。runner 新 `testharness-webaudio` 子命令（WEBAUDIO_TEST_FILES
   白名单 + make 目标 + fetch-webaudio-subset.sh 拉取脚本）。
   evidence：`evidence/2026-09-02-webaudio-wpt-subset.json`（2P/0F）。
+- **WPT webaudio audit.js 框架接入 + OscillatorNode ctor 面导入（同日第二批）**：
+  runner `run_webaudio_cases` 增 inline_extras 机制内联 webaudio/resources/*.js
+  （audit.js/audit-util.js/audionodeoptions.js——canvas-tests.js 同款 vendored
+  框架），`ctor-oscillator.html` **64 subtest 全绿**。配套 shim 面扩展（part06）：
+  - `AudioParam` 接口（Illegal constructor + `_zwMakeAudioParam` 工厂——
+    instanceof 面 + 非 finite value TypeError + 调度方法链式 + defaultValue/
+    minValue/maxValue）；frequency/detune/gain 三 param 换用工厂（value setter
+    同步宿主桥 set_freq）。
+  - `OscillatorNode`/`GainNode` 节点构造器（`new X(ctx, options)`——ctx 校验
+    TypeError + AudioNodeOptions dict 校验：channelCount 0/>32 →
+    NotSupportedError、channelCountMode/channelInterpretation enum invalid →
+    TypeError；type='custom' 单给 → InvalidStateError + periodicWave 类型校验
+    TypeError）+ `PeriodicWave` 接口（构造 + real/imag/disableNormalization
+    存储——无 FFT 合成，RFC §0 简化记录）。
+  - AudioNodeOptions 反射面：channelCount setter 0 → NotSupportedError、
+    >32 → IndexSizeError（源节点与 destination 同界）；channelCountMode/
+    channelInterpretation 可写枚举（invalid 静默保留——setter 面与 ctor dict
+    面严格度分离，spec WebIDL enum 惯例）。
+  evidence：`evidence/2026-09-02-webaudio-ctor-oscillator.json`（64P/0F）。
 - **余项**：createGain 的 per-node 桥推（当前 per-osc gain 由 WebAudioContext 承接，
-  gain 节点 → 桥映射挂真出声/设备切片）；WPT 余面（ctor-oscillator/osc-basic-waveform
-  依赖 audit.js 框架 harness——批量导入需 runner 支持 audit.js，随下批评估）。
+  gain 节点 → 桥映射挂真出声/设备切片）；WPT 余面（osc-basic-waveform 依赖
+  渲染量化面——startRendering/AnalyserFFT，随渲染面评估）。
 
 **M0 已收口（2026-09-01）**：
 - 环境实测：内核层 HDA 声卡在；**ALSA dev 头缺失（libasound2-dev 未装）→ cpal 默认
@@ -141,8 +160,8 @@ volume/muted 真控制。**双重启动门控均已解除**：① M0 音频环�
 
 1. ~~**Web Audio 最小面实施（D1 已批准）**~~ 🔄 切片 1+2 ✅ 2026-09-02 落地
    （zero-media webaudio 模块 + shim AudioContext 门面 + __zwWA* 宿主桥 + 泵接线 +
-   e2e——见当前状态）；余：WPT webaudio 可执行子集评估导入（构造/属性反射面）+
-   设备面挂 M1 CpalSink 真出声切片（D-WA-2）。
+   e2e——见当前状态）；WPT webaudio 子集导入 ✅ 两批（2 + 64 subtest 全绿，含
+   audit.js 框架接入）；余：设备面挂 M1 CpalSink 真出声切片（D-WA-2）。
 2. **M1 收口评估（余项收窄）**：Mixer 多源混音接线**决策注记（2026-09-01）**——
    现播放管线 per-entry NullSink 直连已覆盖多源并发语义面（per-source 增益/独立
    解码流/并发泵）；Mixer（M1 切片 3 组件，7 单测常驻）的价值在**单设备输出流的

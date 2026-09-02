@@ -1,0 +1,337 @@
+[
+  [
+    "webaudio/the-audio-api/the-audionode-interface/audionode-connect-return-value.html",
+    [
+      {
+        "name": "connect should return the node connected to.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "webaudio/the-audio-api/the-destinationnode-interface/destination.html",
+    [
+      {
+        "name": "\n      AudioDestinationNode\n    ",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "webaudio/the-audio-api/the-oscillatornode-interface/ctor-oscillator.html",
+    [
+      {
+        "name": "# AUDIT TASK RUNNER STARTED.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "> [initialize] ",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  context = new OfflineAudioContext(...) did not throw an exception.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "< [initialize] All assertions passed. (total 1 assertions)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Executing \"initialize\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "> [invalid constructor] ",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  new OscillatorNode() threw TypeError: \"Failed to construct 'OscillatorNode': parameter 1 is not of type 'BaseAudioContext'.\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  new OscillatorNode(1) threw TypeError: \"Failed to construct 'OscillatorNode': parameter 1 is not of type 'BaseAudioContext'.\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  new OscillatorNode(context, 42) threw TypeError: \"Failed to construct 'OscillatorNode': The provided value is not of type 'object'.\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "< [invalid constructor] All assertions passed. (total 3 assertions)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Executing \"invalid constructor\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "> [default constructor] ",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  node0 = new OscillatorNode(context) did not throw an exception.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  node0 instanceof OscillatorNode is equal to true.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  node0.numberOfInputs is equal to 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  node0.numberOfOutputs is equal to 1.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  node0.channelCount is equal to 2.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  node0.channelCountMode is equal to max.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  node0.channelInterpretation is equal to speakers.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  node0.type is equal to sine.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  node0.frequency.value is equal to 440.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "< [default constructor] All assertions passed. (total 9 assertions)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Executing \"default constructor\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "> [test AudioNodeOptions] ",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  new OscillatorNode(c, {channelCount: 17}) did not throw an exception.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  node.channelCount is equal to 17.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  new OscillatorNode(c, {channelCount: 0}) threw NotSupportedError: \"channelCount 0 not supported.\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  new OscillatorNode(c, {channelCount: 99}) threw NotSupportedError: \"channelCount 99 not supported.\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  new OscillatorNode(c, {channelCountMode: \"max\"} did not throw an exception.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  node.channelCountMode is equal to max.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  new OscillatorNode(c, {channelCountMode: \"max\"}) did not throw an exception.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  node.channelCountMode after valid setter is equal to max.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  new OscillatorNode(c, {channelCountMode: \"clamped-max\"}) did not throw an exception.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  node.channelCountMode after valid setter is equal to clamped-max.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  new OscillatorNode(c, {channelCountMode: \"explicit\"}) did not throw an exception.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  node.channelCountMode after valid setter is equal to explicit.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  new OscillatorNode(c, {channelCountMode: \"foobar\"} threw TypeError: \"Failed to construct 'OscillatorNode': Failed to read the 'channelCountMode' property from 'AudioNodeOptions': The provided value 'foobar' is not a valid enum value.\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  node.channelCountMode after invalid setter is equal to explicit.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  new OscillatorNode(c, {channelInterpretation: \"speakers\"}) did not throw an exception.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  node.channelInterpretation is equal to speakers.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  new OscillatorNode(c, {channelInterpretation: \"discrete\"}) did not throw an exception.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  node.channelInterpretation is equal to discrete.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  new OscillatorNode(c, {channelInterpretation: \"foobar\"}) threw TypeError: \"Failed to construct 'OscillatorNode': Failed to read the 'channelInterpretation' property from 'AudioNodeOptions': The provided value 'foobar' is not a valid enum value.\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  node.channelInterpretation after invalid setter is equal to discrete.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "< [test AudioNodeOptions] All assertions passed. (total 20 assertions)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Executing \"test AudioNodeOptions\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "> [constructor options] ",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  node1 = new OscillatorNode(c, {\"type\":\"sawtooth\",\"detune\":7,\"frequency\":918}) did not throw an exception.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  node1.type is equal to sawtooth.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  node1.detune.value is equal to 7.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  node1.frequency.value is equal to 918.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  node1.channelCount is equal to 2.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  node1.channelCountMode is equal to max.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  node1.channelInterpretation is equal to speakers.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  new OscillatorNode(c, {\"type\":\"sine\",\"periodicWave\":{\"_zwReal\":[1,1],\"_zwImag\":[0],\"_zwDisableNormalization\":false}}) did not throw an exception.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  new OscillatorNode(c, {\"type\":\"custom\"}) threw InvalidStateError: \"Failed to construct 'OscillatorNode': type 'custom' requires a periodicWave.\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  new OscillatorNode(c, {\"type\":\"custom\",\"periodicWave\":{\"_zwReal\":[1,1],\"_zwImag\":[0],\"_zwDisableNormalization\":false}}) did not throw an exception.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  new OscillatorNode(c, {periodicWave: null} threw TypeError: \"Cannot read properties of null (reading '_zwReal')\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "< [constructor options] All assertions passed. (total 11 assertions)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Executing \"constructor options\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "# AUDIT TASK RUNNER FINISHED: 5 tasks ran successfully.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Audit report",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ]
+]

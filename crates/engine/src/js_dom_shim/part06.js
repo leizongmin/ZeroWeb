@@ -7046,16 +7046,19 @@
   Object.defineProperty(_zwWANode.prototype, 'channelCount', {
     get: function () { return this._zwChannelCount; },
     set: function (v) {
-      // spec AudioDestinationNode.channelCount setter 语义（WPT destination 断言面）：
-      // 0 → NotSupportedError；> maxChannelCount → IndexSizeError；合法值原样写。
+      // spec AudioNode channelCount setter：0 → NotSupportedError；destination 上
+      // > maxChannelCount(32) → IndexSizeError（WPT destination 断言面）；非
+      // destination 节点仅 0 抛（testAudioNodeOptions {channelCount:17} 可写面）。
       var n = Number(v);
-      var max = (this._zwKind === 'destination') ? this._zwMaxChannelCount : this._zwChannelCount;
       if (n === 0) {
         throw new (globalThis.DOMException || Error)('channelCount 0 not supported.', 'NotSupportedError');
       }
-      if (n > max) {
+      // spec AudioNode：channelCount N 夹取 [1, 32]（NC max）——0 → NotSupportedError、
+      // > 32 → IndexSizeError（destination 与源节点同界——testAudioNodeOptions
+      // {channelCount:99} 抛面；destination maxChannelCount 面同值）。
+      if (n > 32) {
         throw new (globalThis.DOMException || Error)(
-          'channelCount ' + n + ' exceeds maxChannelCount ' + max + '.', 'IndexSizeError');
+          'channelCount ' + n + ' exceeds maxChannelCount 32.', 'IndexSizeError');
       }
       this._zwChannelCount = n;
     },
@@ -7066,11 +7069,19 @@
     configurable: true,
   });
   Object.defineProperty(_zwWANode.prototype, 'channelCountMode', {
-    get: function () { return 'max'; },
+    get: function () { return this._zwChannelCountMode || 'max'; },
+    set: function (v) {
+      var s = String(v == null ? '' : v);
+      if (s === 'max' || s === 'clamped-max' || s === 'explicit') this._zwChannelCountMode = s;
+    },
     configurable: true,
   });
   Object.defineProperty(_zwWANode.prototype, 'channelInterpretation', {
-    get: function () { return 'speakers'; },
+    get: function () { return this._zwChannelInterpretation || 'speakers'; },
+    set: function (v) {
+      var s = String(v == null ? '' : v);
+      if (s === 'speakers' || s === 'discrete') this._zwChannelInterpretation = s;
+    },
     configurable: true,
   });
   _zwWANode.prototype.connect = function (target) {
@@ -7190,19 +7201,29 @@
       },
       configurable: true,
     });
-    // frequency AudioParam 最小值面（value 反射 + setValueAtTime 即时近似）。
-    var _freqParam = {
-      value: _freq,
-      setValueAtTime: function (v /*, startTime */) { _freq = Number(v) || 0; this.value = _freq; },
-      linearRampToValueAtTime: function (v /*, endTime */) { _freq = Number(v) || 0; this.value = _freq; },
-      exponentialRampToValueAtTime: function (v /*, endTime */) { _freq = Number(v) || 0; this.value = _freq; },
-    };
+    // frequency/detune AudioParam（_zwMakeAudioParam 工厂——instanceof AudioParam
+    // 面 + 非 finite value TypeError + 调度方法链式；value 变更同步宿主桥 freq）。
+    var _freqParam = globalThis._zwMakeAudioParam(_freq);
+    Object.defineProperty(_freqParam, 'value', {
+      get: function () { return _freq; },
+      set: function (v) {
+        var n = Number(v);
+        if (isNaN(n) || n === Infinity || n === -Infinity) {
+          throw new TypeError("Failed to set the 'value' property on 'AudioParam': The provided value is non-finite.");
+        }
+        _freq = n;
+        if (self._zwBridge && typeof globalThis.__zw_wa_set_freq === 'function') {
+          try { globalThis.__zw_wa_set_freq(String(node._zwHandle), String(n)); } catch (_eWaf) {}
+        }
+      },
+      configurable: true,
+    });
     Object.defineProperty(node, 'frequency', {
       get: function () { return _freqParam; },
       configurable: true,
     });
     // detune AudioParam 占位（值恒 0——cent 偏移归后续切片）。
-    var _detuneParam = { value: 0, setValueAtTime: function () {} };
+    var _detuneParam = globalThis._zwMakeAudioParam(0);
     Object.defineProperty(node, 'detune', {
       get: function () { return _detuneParam; },
       configurable: true,
@@ -7229,12 +7250,12 @@
   AudioContext.prototype.createGain = function () {
     var node = _zwWANode('gain', this._zwCtxId, 0);
     var _gainVal = 1.0;
-    var _gainParam = {
-      get value() { return _gainVal; },
-      set value(v) { _gainVal = Number(v); if (isNaN(_gainVal)) _gainVal = 1.0; },
-      setValueAtTime: function (v /*, startTime */) { _gainVal = Number(v); if (isNaN(_gainVal)) _gainVal = 1.0; },
-      linearRampToValueAtTime: function (v /*, endTime */) { _gainVal = Number(v); if (isNaN(_gainVal)) _gainVal = 1.0; },
-    };
+    var _gainParam = globalThis._zwMakeAudioParam(1.0);
+    Object.defineProperty(_gainParam, 'value', {
+      get: function () { return _gainVal; },
+      set: function (v) { _gainVal = Number(v); if (isNaN(_gainVal)) _gainVal = 1.0; },
+      configurable: true,
+    });
     Object.defineProperty(node, 'gain', {
       get: function () { return _gainParam; },
       configurable: true,
@@ -7247,6 +7268,139 @@
     OfflineAudioContext.prototype.createOscillator = AudioContext.prototype.createOscillator;
     OfflineAudioContext.prototype.createGain = AudioContext.prototype.createGain;
   }
+  // AudioParam 接口（spec webaudio §AudioParam——`instanceof AudioParam` 断言面；
+  // 最小值面 value + 调度方法 no-op 存储。param 调度真值化归后续切片）。
+  function AudioParam() {
+    throw new TypeError('Illegal constructor');
+  }
+  globalThis.AudioParam = globalThis.AudioParam || AudioParam;
+  // AudioParam 工厂（createOscillator/createGain 的 frequency/detune/gain 面共用）。
+  globalThis._zwMakeAudioParam = function (initialValue) {
+    var param = Object.create(globalThis.AudioParam.prototype);
+    var _v = Number(initialValue) || 0;
+    // spec：value setter 非 finite → TypeError（AudioParam value 面惯例；
+    // WPT audioparam-exceptional-values 主断言面——NaN/Inf 拒绝）。
+    Object.defineProperty(param, 'value', {
+      get: function () { return _v; },
+      set: function (v) {
+        var n = Number(v);
+        if (isNaN(n) || n === Infinity || n === -Infinity) {
+          throw new TypeError("Failed to set the 'value' property on 'AudioParam': The provided value is non-finite.");
+        }
+        _v = n;
+      },
+      configurable: true,
+    });
+    param.setValueAtTime = function (v /*, startTime */) { this.value = v; return this; };
+    param.linearRampToValueAtTime = function (v /*, endTime */) { this.value = v; return this; };
+    param.exponentialRampToValueAtTime = function (v /*, endTime */) { this.value = v; return this; };
+    param.setTargetAtTime = function (v /*, startTime, timeConstant */) { this.value = v; return this; };
+    param.setValueCurveAtTime = function () { return this; };
+    param.cancelScheduledValues = function () { return this; };
+    param.cancelAndHoldAtTime = function () { return this; };
+    param.defaultValue = Number(initialValue) || 0;
+    param.minValue = -3.4028235e38;
+    param.maxValue = 3.4028235e38;
+    return param;
+  };
+  // Node 构造器面（spec webaudio §OscillatorNode/GainNode——`new OscillatorNode(ctx,
+  // options)` 与 `ctx.createOscillator()` 等价对象；options dict {type, frequency,
+  // detune} / {gain}。非法 ctx/无 ctx → TypeError——audionodeoptions.js
+  // testInvalidConstructor 断言面（new X() / new X(1) / new X(ctx, 42) 全抛）。
+  // AudioNodeOptions dict 面（channelCount/channelCountMode/channelInterpretation）：
+  // channelCount 0 → NotSupportedError、>max → IndexSizeError（destination 同款
+  // setter 语义——testAudioNodeOptions 断言 {channelCount:17} 可写、0/99 抛）。
+  function _zwWANodeCtor(nodeName, ctx, options) {
+    if (!(ctx && typeof ctx === 'object' && (ctx._zwCtxId != null || typeof ctx.createGain === 'function'))) {
+      throw new TypeError("Failed to construct '" + nodeName + "': parameter 1 is not of type 'BaseAudioContext'.");
+    }
+    if (options != null && typeof options !== 'object') {
+      throw new TypeError("Failed to construct '" + nodeName + "': The provided value is not of type 'object'.");
+    }
+    var node = (nodeName === 'OscillatorNode') ? ctx.createOscillator('sine', 440) : ctx.createGain();
+    if (options && typeof options === 'object') {
+      // spec webaudio AudioNodeOptions dict 校验（ctor 面比 setter 严——WPT
+      // testAudioNodeOptions [0,99] → NotSupportedError；enum invalid → TypeError）。
+      if (options.channelCount != null) {
+        var cc = Number(options.channelCount);
+        if (cc === 0 || cc > 32) {
+          throw new (globalThis.DOMException || Error)(
+            'channelCount ' + cc + ' not supported.', 'NotSupportedError');
+        }
+        node.channelCount = cc;
+      }
+      if (options.channelCountMode != null) {
+        var ccm = String(options.channelCountMode);
+        if (ccm !== 'max' && ccm !== 'clamped-max' && ccm !== 'explicit') {
+          throw new TypeError("Failed to construct '" + nodeName + "': Failed to read the 'channelCountMode' property from 'AudioNodeOptions': The provided value '" + ccm + "' is not a valid enum value.");
+        }
+        node.channelCountMode = ccm;
+      }
+      if (options.channelInterpretation != null) {
+        var ci = String(options.channelInterpretation);
+        if (ci !== 'speakers' && ci !== 'discrete') {
+          throw new TypeError("Failed to construct '" + nodeName + "': Failed to read the 'channelInterpretation' property from 'AudioNodeOptions': The provided value '" + ci + "' is not a valid enum value.");
+        }
+        node.channelInterpretation = ci;
+      }
+    }
+    return node;
+  }
+  function OscillatorNode(ctx, options) {
+    var node = _zwWANodeCtor('OscillatorNode', ctx, options);
+    if (options && typeof options === 'object') {
+      // spec：type='custom' 必须与 periodicWave 同给——单独 custom →
+      // InvalidStateError（WPT ctor 断言面）；periodicWave 非对象/非 null 声明
+      // → TypeError（dict 成员类型校验）；periodicWave（PeriodicWave 实例）
+      // 直接应用（type 置 custom）。
+      if (options.type === 'custom' && !options.periodicWave) {
+        throw new (globalThis.DOMException || Error)(
+          "Failed to construct 'OscillatorNode': type 'custom' requires a periodicWave.", 'InvalidStateError');
+      }
+      // WebIDL：nullable 接口成员显式 null 也须类型校验（null 不是 PeriodicWave
+      // ——WPT ctor {periodicWave: null} → TypeError 断言面）。
+      if (options.periodicWave !== undefined
+          && (typeof options.periodicWave !== 'object' || !options.periodicWave._zwReal)) {
+        throw new TypeError("Failed to construct 'OscillatorNode': Failed to read the 'periodicWave' property from 'OscillatorOptions': The provided value is not of type 'PeriodicWave'.");
+      }
+      if (options.periodicWave) {
+        node.type = 'custom';
+      } else if (options.type != null) {
+        node.type = options.type;
+      }
+      if (options.frequency != null) node.frequency.value = Number(options.frequency);
+      if (options.detune != null) node.detune.value = Number(options.detune);
+    }
+    return node;
+  }
+  OscillatorNode.prototype = _zwWANode.prototype;
+  globalThis.OscillatorNode = globalThis.OscillatorNode || OscillatorNode;
+  function GainNode(ctx, options) {
+    var node = _zwWANodeCtor('GainNode', ctx, options);
+    if (options && typeof options === 'object' && options.gain != null) {
+      node.gain.value = Number(options.gain);
+    }
+    return node;
+  }
+  GainNode.prototype = _zwWANode.prototype;
+  globalThis.GainNode = globalThis.GainNode || GainNode;
+  // PeriodicWave 接口（spec webaudio §PeriodicWave——custom waveform 容器；最小面
+  // 仅构造 + real/imag 数组存储，无 FFT 合成——ctor-oscillator 断言 new
+  // PeriodicWave(context, {real, imag}) 不抛 + disableNormalization 反射）。
+  function PeriodicWave(context, options) {
+    if (!(this instanceof PeriodicWave)) {
+      throw new TypeError("Failed to construct 'PeriodicWave': Please use the 'new' operator.");
+    }
+    var o = (options && typeof options === 'object') ? options : {};
+    this._zwReal = o.real || [1, 0];
+    this._zwImag = o.imag || [0];
+    this._zwDisableNormalization = !!o.disableNormalization;
+  }
+  Object.defineProperty(PeriodicWave.prototype, 'disableNormalization', {
+    get: function () { return this._zwDisableNormalization; },
+    configurable: true,
+  });
+  globalThis.PeriodicWave = globalThis.PeriodicWave || PeriodicWave;
   // createBufferSource/createBiquadFilter 等未实现面——spec 其它节点类型不属最小面
   //（RFC §0 不做清单），undefined 返回（调用方 try/catch 容错）。
   // track 元素 src 的 headless 加载模拟——data:text/vtt 解析填 cue + load 事件；
