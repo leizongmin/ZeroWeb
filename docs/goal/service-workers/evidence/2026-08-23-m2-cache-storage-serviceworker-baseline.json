@@ -1,11 +1,71 @@
 {
-  "cases": 14,
-  "subtests": 160,
+  "cases": 15,
+  "subtests": 171,
   "status": {
-    "Pass": 160
+    "Pass": 171
   },
   "deterministic": true,
   "results": [
+    [
+      "service-workers/cache-storage/cache-storage.https.any.js",
+      [
+        {
+          "name": "CacheStorage.open",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "CacheStorage.delete dooms, but does not delete immediately",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "CacheStorage.open with an empty name",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "CacheStorage.open with no arguments",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "CacheStorage.has with existing cache",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "CacheStorage.has with nonexistent cache",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "CacheStorage.open with existing cache",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "CacheStorage.delete with existing cache",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "CacheStorage.delete with nonexistent cache",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "CacheStorage names are DOMStrings not USVStrings",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "service-workers/cache-storage/cache-storage.https.any.js",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
     [
       "service-workers/cache-storage/cache-keys-attributes-for-service-worker.https.html",
       [

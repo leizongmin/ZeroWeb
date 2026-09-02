@@ -900,6 +900,7 @@ pub const SERVICE_WORKER_FETCH_CASES: &[&str] = &[
 
 /// Fixed Service Worker CacheStorage corpus at the pinned WPT revision.
 pub const SERVICE_WORKER_CACHE_STORAGE_CASES: &[&str] = &[
+    "service-workers/cache-storage/cache-storage.https.any.js",
     "service-workers/cache-storage/cache-keys-attributes-for-service-worker.https.html",
     "service-workers/cache-storage/credentials.https.html",
     "service-workers/cache-storage/serviceworker/cache-storage.https.html",
@@ -1884,13 +1885,49 @@ fn service_worker_any_js_wrapper(path: &str, case_source: &str) -> String {
     )
 }
 
-fn service_worker_any_js_source(case_source: &str) -> String {
+fn service_worker_any_js_source(path: &str, case_source: &str) -> String {
     let case_source = apply_wpt_substitutions(case_source);
-    if service_worker_any_js_is_module(&case_source) {
-        format!("import '/resources/testharness.js';\n{case_source}")
+    let meta_scripts = wpt_meta_scripts(path, &case_source);
+    let imports = if service_worker_any_js_is_module(&case_source) {
+        meta_scripts
+            .iter()
+            .map(|script| format!("import '{}';", script.replace('\'', "\\'")))
+            .collect::<Vec<_>>()
+            .join("\n")
+    } else if meta_scripts.is_empty() {
+        String::new()
     } else {
-        format!("importScripts('/resources/testharness.js');\n{case_source}")
+        let scripts = meta_scripts
+            .iter()
+            .map(|script| format!("'{}'", script.replace('\'', "\\'")))
+            .collect::<Vec<_>>()
+            .join(", ");
+        format!("importScripts({scripts});\n")
+    };
+    if service_worker_any_js_is_module(&case_source) {
+        format!("import '/resources/testharness.js';\n{imports}\n{case_source}")
+    } else {
+        format!("importScripts('/resources/testharness.js');\n{imports}{case_source}")
     }
+}
+
+fn wpt_meta_scripts(path: &str, source: &str) -> Vec<String> {
+    let case_dir = path.rsplit_once('/').map(|(dir, _)| dir).unwrap_or("");
+    source
+        .lines()
+        .filter_map(|line| {
+            let trimmed = line.trim();
+            let script = trimmed.strip_prefix("// META: script=")?.trim();
+            if script.is_empty() {
+                return None;
+            }
+            if script.starts_with('/') {
+                Some(script.to_string())
+            } else {
+                Some(format!("/{}", normalize_relative(&format!("{case_dir}/{script}"))))
+            }
+        })
+        .collect()
 }
 
 fn is_service_worker_any_js(path: &str) -> bool {
@@ -2575,7 +2612,7 @@ fn wpt_data_service_worker_script_fetcher(
             if clean.ends_with("/script-tests/cache-abort.js") {
                 format!("{CACHE_ABORT_FETCH_FIXTURE}\n{source}").into_bytes()
             } else if is_service_worker_any_js(clean) {
-                service_worker_any_js_source(&source).into_bytes()
+                service_worker_any_js_source(clean, &source).into_bytes()
             } else {
                 source.into_bytes()
             }
@@ -4266,12 +4303,16 @@ async_test(function(test) {
             .iter()
             .copied()
             .collect::<std::collections::BTreeSet<_>>();
-        assert_eq!(SERVICE_WORKER_CACHE_STORAGE_CASES.len(), 14);
-        assert_eq!(unique.len(), 14);
+        assert_eq!(SERVICE_WORKER_CACHE_STORAGE_CASES.len(), 15);
+        assert_eq!(unique.len(), 15);
         assert!(
             SERVICE_WORKER_CACHE_STORAGE_CASES
                 .iter()
-                .all(|path| path.starts_with("service-workers/cache-storage/") && path.ends_with(".https.html"))
+                .all(|path| path.starts_with("service-workers/cache-storage/")
+                    && (path.ends_with(".https.html") || path.ends_with(".https.any.js")))
+        );
+        assert!(
+            SERVICE_WORKER_CACHE_STORAGE_CASES.contains(&"service-workers/cache-storage/cache-storage.https.any.js")
         );
         assert!(
             SERVICE_WORKER_CACHE_STORAGE_CASES
@@ -4474,7 +4515,14 @@ async_test(function(test) {
         let case_path = root
             .join("service-workers/service-worker/ServiceWorkerGlobalScope/fetch-on-the-right-interface.https.any.js");
         std::fs::create_dir_all(case_path.parent().unwrap()).unwrap();
-        std::fs::write(&case_path, "test(() => {}, 'worker side');\n").unwrap();
+        let support_path = root.join("service-workers/service-worker/ServiceWorkerGlobalScope/resources/helper.js");
+        std::fs::create_dir_all(support_path.parent().unwrap()).unwrap();
+        std::fs::write(&support_path, "self.helperLoaded = true;\n").unwrap();
+        std::fs::write(
+            &case_path,
+            "// META: script=./resources/helper.js\ntest(() => {}, 'worker side');\n",
+        )
+        .unwrap();
 
         let fetcher = wpt_data_service_worker_script_fetcher(&root).unwrap();
         let response = fetcher(
@@ -4484,6 +4532,9 @@ async_test(function(test) {
         .unwrap();
         let source = String::from_utf8(response.body).unwrap();
         assert!(source.starts_with("importScripts('/resources/testharness.js');\n"));
+        assert!(source.contains(
+            "importScripts('/service-workers/service-worker/ServiceWorkerGlobalScope/resources/helper.js');"
+        ));
         assert!(source.contains("test(() => {}, 'worker side');"));
 
         std::fs::remove_dir_all(&root).unwrap();
