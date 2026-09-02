@@ -757,6 +757,41 @@ fn test_paint_clip_rect_relative_lengths() {
     assert_eq!(fills[0].rect.size.height, 60.0);
 }
 
+/// R3924：rect() 内 `auto` 因侧而异（CSS2 §11.1.2）——top/left = 0、right/bottom =
+/// 边框盒对应边。旧解析期把 auto 折叠成 0px，`rect(15px, auto, auto, 15px)` 得
+/// 负宽高裁剪区，元素图元全灭（background-origin with_position ref 页 img 消失根因）。
+#[test]
+fn test_paint_clip_rect_auto_sides_resolve_to_border_box() {
+    let mut doc = zero_dom::Document::new();
+    let elem = doc.create_element("div");
+    let mut layout = make_box(Some(elem), 0.0, 0.0, 100.0, 50.0);
+    layout.is_absolute = true;
+
+    let mut styles = HashMap::new();
+    let mut style = ComputedStyle::default();
+    style.font_size = LengthValue::Px(20.0);
+    style.background_color = ColorValue::Rgba(0, 0, 255, 255);
+    style.color = ColorValue::CurrentColor;
+    style.clip = ClipRectValue::Rect(
+        LengthValue::Px(15.0),
+        LengthValue::Auto,
+        LengthValue::Auto,
+        LengthValue::Px(15.0),
+    );
+    styles.insert(elem, style);
+
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, None);
+
+    let fills = &painter.primitives().fills;
+    assert!(!fills.is_empty(), "auto 右/底下应保留内容而非全灭");
+    // clip 窗口 = (15,15) 到 (100,50)：宽 85、高 35
+    assert_eq!(fills[0].rect.origin.x, 15.0);
+    assert_eq!(fills[0].rect.origin.y, 15.0);
+    assert_eq!(fills[0].rect.size.width, 85.0);
+    assert_eq!(fills[0].rect.size.height, 35.0);
+}
+
 /// 测试 clip-path: circle(<percentage>) 半径按 sqrt(w²+h²)/√2 解析（CSS basic-shape circle）。
 /// driving: R2366 — `circle(50%)` 此前 paint 用 length_to_f32 把百分比丢为 0 → 退化半径 0
 /// → 裁剪区域为零（元素被完全裁掉）；应 radius = 50%×sqrt(w²+h²)/√2。

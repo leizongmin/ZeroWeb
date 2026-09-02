@@ -49,11 +49,12 @@ fn test_clip_rect_apply_math_function_offsets() {
         "clip",
         "rect(min(10px, 20px), auto, clamp(0px, 5px, 10px), 0px)"
     ));
+    // R3924：rect() 内 `auto` 保留 Auto（计算值因侧而异，paint 期按边框盒解析）。
     assert!(matches!(
         style.clip,
         ClipRectComputedValue::Rect(
             LengthValue::Calc(_),
-            LengthValue::Px(0.0),
+            LengthValue::Auto,
             LengthValue::Calc(_),
             LengthValue::Px(0.0)
         )

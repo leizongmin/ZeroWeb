@@ -284,13 +284,14 @@ fn resolve_paint_font_size(font_size: &LengthValue) -> f32 {
     zero_style_system::computed::resolve_length(font_size, 16.0, None, None) as f32
 }
 
-fn resolve_clip_rect_length(value: &LengthValue, font_size_px: f32) -> f32 {
+/// R3924：rect() 单侧长度解析；`auto` 取 `auto_edge`（top/left = 0、
+/// right/bottom = 边框盒对应边，CSS2 §11.1.2）。
+fn resolve_clip_rect_side(value: &LengthValue, font_size_px: f32, auto_edge: f32) -> f32 {
     match value {
-        LengthValue::Auto
-        | LengthValue::Percentage(_)
-        | LengthValue::MinContent
-        | LengthValue::MaxContent
-        | LengthValue::FitContent(_) => 0.0,
+        LengthValue::Auto => auto_edge,
+        LengthValue::Percentage(_) | LengthValue::MinContent | LengthValue::MaxContent | LengthValue::FitContent(_) => {
+            0.0
+        }
         other => zero_style_system::computed::resolve_length(other, font_size_px as f64, None, None) as f32,
     }
 }
@@ -1659,10 +1660,14 @@ impl Painter {
             && let zero_css_parser::values::ClipRectValue::Rect(top, right, bottom, left) = &style.clip
         {
             let fs = resolve_paint_font_size(&style.font_size);
-            let t = resolve_clip_rect_length(top, fs);
-            let r = resolve_clip_rect_length(right, fs);
-            let b = resolve_clip_rect_length(bottom, fs);
-            let l = resolve_clip_rect_length(left, fs);
+            // R3924：rect() 的 `auto` 因侧而异（CSS2 §11.1.2）——top/left = 0，
+            // right/bottom = 边框盒对应边（LayoutBox width/height 即 border-box 尺寸）。
+            // 旧解析期把 auto 折叠成 0，rect(15px, auto, auto, 15px) 得负宽高裁剪区，
+            // 元素图元全灭（background-origin with_position ref 页 img 消失根因）。
+            let t = resolve_clip_rect_side(top, fs, 0.0);
+            let r = resolve_clip_rect_side(right, fs, box_node.width);
+            let b = resolve_clip_rect_side(bottom, fs, box_node.height);
+            let l = resolve_clip_rect_side(left, fs, 0.0);
             // clip: rect() 坐标相对于元素的边框盒
             let clip_rect = Rect::new(abs_x + l, abs_y + t, r - l, b - t);
             super::helpers::clip_all_primitives_to_rect(&mut self.primitives, &counts_before, &clip_rect);

@@ -935,11 +935,15 @@ pub fn parse_clip(value: &str) -> Option<ClipRectValue> {
     None
 }
 
-/// 解析长度值或 `auto`（视为 0px）。
+/// 解析长度值或 `auto`。
+///
+/// https://www.w3.org/TR/CSS2/visufx.html#clipping
+/// rect() 中 `auto` 的计算值因侧而异（top/left = 0、right/bottom = 边框盒对应边），
+/// 解析期不折叠，保留 [`LengthValue::Auto`] 由 paint 期按盒尺寸解析。
 fn parse_length_or_auto_clip(s: &str) -> Option<LengthValue> {
     let v = s.trim();
     if v.eq_ignore_ascii_case("auto") {
-        Some(LengthValue::Px(0.0))
+        Some(LengthValue::Auto)
     } else {
         parse_clip_length(v, true)
     }
@@ -973,11 +977,12 @@ mod tests {
     fn test_parse_clip_rect_function_name_is_case_insensitive() {
         // https://www.w3.org/TR/css-syntax-3/#function-token-diagram
         // CSS function names are ASCII case-insensitive.
+        // R3924：rect() 内 `auto` 保留 Auto（计算值因侧而异，paint 期解析）。
         assert!(matches!(
             parse_clip("RECT(0px, auto, 10px, 0px)"),
             Some(ClipRectValue::Rect(
                 LengthValue::Px(0.0),
-                LengthValue::Px(0.0),
+                LengthValue::Auto,
                 LengthValue::Px(10.0),
                 LengthValue::Px(0.0),
             ))
@@ -986,15 +991,16 @@ mod tests {
 
     #[test]
     fn test_parse_clip_rect_auto_values() {
-        // auto inside rect() is treated as 0px
+        // R3924：rect() 内 `auto` 保留 Auto，不再折叠成 0px（CSS2 §11.1.2：
+        // auto 计算值因侧而异——top/left = 0、right/bottom = 边框盒对应边）。
         let result = parse_clip("rect(auto, auto, auto, auto)");
         assert!(matches!(
             result,
             Some(ClipRectValue::Rect(
-                LengthValue::Px(0.0),
-                LengthValue::Px(0.0),
-                LengthValue::Px(0.0),
-                LengthValue::Px(0.0),
+                LengthValue::Auto,
+                LengthValue::Auto,
+                LengthValue::Auto,
+                LengthValue::Auto,
             ))
         ));
     }
@@ -1009,7 +1015,7 @@ mod tests {
             result,
             Some(ClipRectValue::Rect(
                 LengthValue::Calc(_),
-                LengthValue::Px(0.0),
+                LengthValue::Auto,
                 LengthValue::Calc(_),
                 LengthValue::Px(0.0),
             ))
