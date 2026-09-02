@@ -93,6 +93,14 @@ pub fn computed_style_to_taffy(
             _ => taffy::style::Clear::None,
         },
         box_sizing: convert_box_sizing(&style.box_sizing),
+        // R3931（CSS2 §10.3.7）：direction 接线——taffy 0.12 的 abspos 定位臂（over-constrained
+        // 双 auto margin 负值时 rtl 置 margin-right=0 solve margin-left、双定 inset rtl 时
+        // x = CB宽−宽−right−margin_right、全 auto 静态位 rtl 镜像）按 direction 分支，
+        // 此前恒默认 Ltr，rtl abspos 方程从未生效（width-005：蓝块落 x=100 应 x=0）。
+        direction: match style.direction {
+            zero_style_system::DirectionValue::Rtl => taffy::style::Direction::Rtl,
+            _ => taffy::style::Direction::Ltr,
+        },
         overflow: taffy::geometry::Point {
             x: convert_overflow(&style.overflow_x),
             y: convert_overflow(&style.overflow_y),

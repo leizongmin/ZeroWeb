@@ -840,3 +840,21 @@ fn test_percentage_size_conversion() {
 }
 
 // ── 边界条件测试（第二批）──
+
+/// R3931（CSS2 §10.3.7）：direction 接线——converter 须把 computed direction 喂给
+/// taffy（此前恒默认 Ltr，taffy abspos 定位的 rtl 分支从未生效）。
+#[test]
+fn test_direction_rtl_wired_to_taffy() {
+    let mut style = ComputedStyle::default();
+    style.direction = zero_style_system::DirectionValue::Rtl;
+    let taffy_style = computed_style_to_taffy(&style, None, 800.0, 600.0);
+    assert_eq!(taffy_style.direction, taffy::style::Direction::Rtl);
+}
+
+/// R3931 对照：默认 direction 保持 Ltr。
+#[test]
+fn test_direction_default_ltr() {
+    let style = ComputedStyle::default();
+    let taffy_style = computed_style_to_taffy(&style, None, 800.0, 600.0);
+    assert_eq!(taffy_style.direction, taffy::style::Direction::Ltr);
+}

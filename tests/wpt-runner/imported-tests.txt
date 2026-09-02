@@ -254,3 +254,4 @@ css/css-backgrounds/background-color-root-propagation-003.html css/css-backgroun
 css/CSS2/positioning/absolute-non-replaced-max-height-002.xht css/CSS2/positioning/absolute-non-replaced-max-height-002-ref.xht == 2026-09-03 R3929 abspos shrink-to-fit 宽回填
 css/CSS2/positioning/absolute-non-replaced-max-height-009.xht css/CSS2/positioning/absolute-non-replaced-max-height-009-ref.xht == 2026-09-03 R3929 abspos shrink-to-fit 高回填
 css/CSS2/positioning/absolute-non-replaced-width-021.xht css/CSS2/positioning/absolute-non-replaced-width-021-ref.xht == 2026-09-03 R3930 rtl 流父 abspos 静态位镜像
+css/CSS2/positioning/right-113.xht css/CSS2/positioning/right-103-ref.xht == 2026-09-03 R3931 taffy direction 接线（rtl right 定位链生效）
