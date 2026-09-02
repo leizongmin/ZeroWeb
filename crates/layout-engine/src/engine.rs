@@ -522,12 +522,16 @@ impl LayoutEngine {
         // ZW_AR_CONTAINER_CROSS（default-on）。
         let changed_ar_container =
             Self::apply_aspect_ratio_container_cross_size(&mut taffy_tree, &root_box, &dom_to_taffy, styles);
+        // R3913：row flex 容器 cross 从 item flexed main × ratio 传递（csswg #line-sizing）。
+        let changed_ar_flex_cross =
+            Self::apply_flex_cross_from_flexed_main(&mut taffy_tree, &root_box, &dom_to_taffy, styles);
         if changed_r695
             || changed_pct_padding
             || changed_ratio_img
             || changed_intrinsic
             || changed_vertical
             || changed_ar_container
+            || changed_ar_flex_cross
         {
             // 重跑 taffy 布局：set_style+mark_dirty 后需重新计算受影响子树。
             let available_space = taffy::geometry::Size {

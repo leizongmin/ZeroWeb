@@ -365,6 +365,84 @@ impl LayoutEngine {
         walk(root, None, taffy_tree, dom_to_taffy, styles)
     }
 
+    /// R3913：row flex 容器（自身无 ratio + CSS height Auto）的 cross 从**flexed main ×
+    /// item ratio** 传递（css-flexbox §9.2.3.B + css-sizing-4 §4，csswg #line-sizing 决议：
+    /// aspect-ratio 传递按 **flexed** 主轴尺寸——011 item width:50 + flex:1 在 100px 容器
+    /// flex 到 100 → transferred cross 100 → 容器高 100；ZW 塌 50 = 按指定宽传递）。
+    ///
+    /// 触发面（收窄）：单 item + row + item ratio>0 + 容器 height Auto 且自身无 ratio +
+    /// item main **指定 Px**（flex-basis auto 用 width 作 base，grow 后 flexed ≠ specified
+    /// 才有意义；main auto 的塌缩案归 R1366v2）+ 容器 main definite。首趟 taffy 后读
+    /// LayoutBox 的 flexed main，设 item taffy size.cross 与容器 taffy size.cross =
+    /// flexed_main / ratio（nowrap 假设——wrap 多线容器 max 语义另案），mark_dirty 重跑。
+    /// kill-switch `ZW_AR_FLEX_CROSS_TRANSFER=0`（default-on）。
+    pub(super) fn apply_flex_cross_from_flexed_main(
+        taffy_tree: &mut TaffyTree<NodeId>,
+        root: &LayoutBox,
+        dom_to_taffy: &HashMap<NodeId, taffy::NodeId>,
+        styles: &HashMap<NodeId, ComputedStyle>,
+    ) -> bool {
+        use zero_css_parser::values::{DisplayValue, FlexDirectionValue, FlexWrapValue, LengthValue};
+        if std::env::var("ZW_AR_FLEX_CROSS_TRANSFER").as_deref() == Ok("0") {
+            return false;
+        }
+
+        fn walk(
+            b: &LayoutBox,
+            taffy_tree: &mut TaffyTree<NodeId>,
+            dom_to_taffy: &HashMap<NodeId, taffy::NodeId>,
+            styles: &HashMap<NodeId, ComputedStyle>,
+        ) -> bool {
+            if !matches!(b.writing_mode, WritingModeValue::HorizontalTb) {
+                return false;
+            }
+            let mut changed = false;
+            if b.children.len() == 1
+                && let Some(id) = b.node_id
+                && let Some(cs) = styles.get(&id)
+                && matches!(cs.display, DisplayValue::Flex | DisplayValue::InlineFlex)
+                && matches!(
+                    cs.flex_direction,
+                    FlexDirectionValue::Row | FlexDirectionValue::RowReverse
+                )
+                && matches!(cs.flex_wrap, FlexWrapValue::Nowrap)
+                && matches!(cs.height, LengthValue::Auto)
+                && cs.aspect_ratio.is_none()
+                && resolve_sizing_definite_real_length(&cs.width, cs).is_some()
+                && let Some(item) = b.children.first()
+                && let Some(item_id) = item.node_id
+                && let Some(item_style) = styles.get(&item_id)
+                && !item.is_absolute
+                && let Some(ratio) = item_style.aspect_ratio.filter(|&r| r > 0.0)
+                && matches!(item_style.width, LengthValue::Px(_))
+                && matches!(item_style.height, LengthValue::Auto)
+                && let Some(&item_tid) = dom_to_taffy.get(&item_id)
+                && let Some(&container_tid) = dom_to_taffy.get(&id)
+                && let Ok(mut item_st) = taffy_tree.style(item_tid).cloned()
+                && let Ok(mut container_st) = taffy_tree.style(container_tid).cloned()
+            {
+                // flexed main（row: width）来自首趟布局。
+                let flexed_main = item.width;
+                let transferred_cross = flexed_main / ratio;
+                let container_cross = b.height;
+                if transferred_cross > 0.5 && (container_cross - transferred_cross).abs() > 0.5 {
+                    item_st.size.height = taffy::style::Dimension::length(transferred_cross);
+                    container_st.size.height = taffy::style::Dimension::length(transferred_cross);
+                    let _ = taffy_tree.set_style(item_tid, item_st);
+                    let _ = taffy_tree.mark_dirty(item_tid);
+                    let _ = taffy_tree.set_style(container_tid, container_st);
+                    let _ = taffy_tree.mark_dirty(container_tid);
+                    changed = true;
+                }
+            }
+            for c in &b.children {
+                changed |= walk(c, taffy_tree, dom_to_taffy, styles);
+            }
+            changed
+        }
+        walk(root, taffy_tree, dom_to_taffy, styles)
+    }
+
     /// R3860：grid item「definite 单 row × stretch × aspect-ratio → cross 钳到 row、
     /// main 传递」（css-grid §6.6 + css-sizing-4 §3.2 transferred size）。
     ///

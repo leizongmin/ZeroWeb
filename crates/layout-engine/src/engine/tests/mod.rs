@@ -486,3 +486,94 @@ fn find_box(root: &crate::types::LayoutBox, id: zero_dom::NodeId) -> Option<&cra
     }
     root.children.iter().find_map(|c| find_box(c, id))
 }
+
+// ── R3913：row flex 容器 cross 从 item flexed main × ratio 传递 ──
+
+/// flex-aspect-ratio-011 语义（csswg #line-sizing）：容器 width:100 + item
+/// width:50 + aspect 1/1 + flex:1 → item flexed 到 100 → transferred cross 100
+/// → 容器高 100（旧按指定宽 50 传 → 高 50）。
+#[test]
+fn r3913_flex_container_cross_from_flexed_main() {
+    use zero_css_parser::values::{DisplayValue, LengthValue};
+
+    let mut doc = zero_dom::Document::new();
+    let root = doc.root();
+    let html = doc.create_element("html");
+    let body = doc.create_element("body");
+    let container = doc.create_element("div");
+    let item = doc.create_element("div");
+    let _ = doc.append_child(root, html);
+    let _ = doc.append_child(html, body);
+    let _ = doc.append_child(body, container);
+    let _ = doc.append_child(container, item);
+
+    let mut styles = std::collections::HashMap::new();
+    for id in [html, body] {
+        styles.insert(id, zero_style_system::ComputedStyle::default());
+    }
+    let mut c = zero_style_system::ComputedStyle::default();
+    c.display = DisplayValue::Flex;
+    c.width = LengthValue::Px(100.0);
+    styles.insert(container, c);
+    let mut it = zero_style_system::ComputedStyle::default();
+    it.display = DisplayValue::Block;
+    it.width = LengthValue::Px(50.0);
+    it.aspect_ratio = Some(1.0);
+    it.flex_grow = 1.0;
+    styles.insert(item, it);
+
+    let result = crate::LayoutEngine::new(800.0, 600.0).compute(&doc, &styles);
+    let container_box = find_box(&result.root, container).expect("container LayoutBox");
+    let item_box = find_box(&result.root, item).expect("item LayoutBox");
+    // flexed main = 100（flex:1 grow）→ transferred cross = 100。
+    assert!(
+        (item_box.height - 100.0).abs() < 0.5,
+        "item cross must transfer from flexed main 100, got {}",
+        item_box.height
+    );
+    assert!(
+        (container_box.height - 100.0).abs() < 0.5,
+        "container cross must come from item transferred cross, got {}",
+        container_box.height
+    );
+}
+
+/// 非 flexed 场景守卫：item 无 ratio 时容器 cross 不被本 pass 触碰。
+#[test]
+fn r3913_no_ratio_item_untouched() {
+    use zero_css_parser::values::{DisplayValue, LengthValue};
+
+    let mut doc = zero_dom::Document::new();
+    let root = doc.root();
+    let html = doc.create_element("html");
+    let body = doc.create_element("body");
+    let container = doc.create_element("div");
+    let item = doc.create_element("div");
+    let _ = doc.append_child(root, html);
+    let _ = doc.append_child(html, body);
+    let _ = doc.append_child(body, container);
+    let _ = doc.append_child(container, item);
+
+    let mut styles = std::collections::HashMap::new();
+    for id in [html, body] {
+        styles.insert(id, zero_style_system::ComputedStyle::default());
+    }
+    let mut c = zero_style_system::ComputedStyle::default();
+    c.display = DisplayValue::Flex;
+    c.width = LengthValue::Px(100.0);
+    styles.insert(container, c);
+    let mut it = zero_style_system::ComputedStyle::default();
+    it.display = DisplayValue::Block;
+    it.width = LengthValue::Px(50.0);
+    it.height = LengthValue::Px(30.0);
+    styles.insert(item, it);
+
+    let result = crate::LayoutEngine::new(800.0, 600.0).compute(&doc, &styles);
+    let container_box = find_box(&result.root, container).expect("container LayoutBox");
+    // 无 ratio：cross = item 高 30（taffy 既有）。
+    assert!(
+        (container_box.height - 30.0).abs() < 0.5,
+        "no-ratio item must keep taffy baseline cross 30, got {}",
+        container_box.height
+    );
+}

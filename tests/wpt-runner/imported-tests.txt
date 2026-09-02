@@ -235,3 +235,5 @@ css/css-sizing/div-fit-content-auto-margin.tentative.html css/css-sizing/div-aut
 css/css-sizing/fit-content-block-size-abspos.html css/css-sizing/div-auto-margin-ref.html == 2026-09-02 R3910 abspos height fit-content shrink-to-fit
 css/css-sizing/aspect-ratio/block-aspect-ratio-005.html css/reference/ref-filled-green-100px-square.xht == 2026-09-02 R3912 taffy aspect_ratio border-box 语义 × content-box 盒修正（css-sizing-4 §4.1）
 css/css-sizing/aspect-ratio/block-aspect-ratio-049.html css/reference/ref-filled-green-100px-square.xht == 2026-09-02 R3912 显式 height 不被钳后宽度反推（css-sizing-4 §4.2）
+css/css-sizing/aspect-ratio/flex-aspect-ratio-011.html css/reference/ref-filled-green-100px-square.xht == 2026-09-02 R3913 flex 容器 cross 从 item flexed main × ratio 传递（csswg #line-sizing）
+css/css-sizing/aspect-ratio/flex-aspect-ratio-023.html css/reference/ref-filled-green-100px-square.xht == 2026-09-02 R3913 flex 容器 cross 传递（replaced img item）
