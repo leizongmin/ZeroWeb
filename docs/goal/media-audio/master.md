@@ -160,6 +160,41 @@ volume/muted 真控制。**双重启动门控均已解除**：① M0 音频环�
 | A4 | A/V 同步机制缺失 | 🔄 M2 主体落地（2026-09-01，media-playback 流切片 D+E）——audio clock 主时钟（webm 双轨伴生音频解码 + 视频帧调度对齐音频游标 + drift 构造校正 + currentTime 组合时钟 + seek 双轨对齐）；余设备面真输出（CpalSink 冒烟，可选） |
 | A5 | 音频 e2e 资产 | ✅ 真解码链 e2e 落地（mp3 + vorbis fixture → NullSink 过零率锚点常驻）+ 合成源面 |
 
+## DC 达成审计（2026-09-02，对照入口文档 Done Criteria 逐项核验）
+
+**DC-1（环境验证与验证策略成文）✅**：M0 收口——cpal 集成 PoC（本机 HDA 声卡 +
+D2 获批装 libasound2-dev 后编译/枚举/CpalSink 真设备流冒烟全链通过，
+[evidence](evidence/2026-09-01-cpalsink-device-smoke.md)）；dummy 回退验证 =
+NullSink 双实现策略成文 + e2e 资产化（过零率锚点常驻）。
+
+**DC-2（音频管线端到端）🔄（余设备真输出常驻）**：解码 → 重采样 → 混音 →
+设备输出——解码（symphonia mp3/vorbis + opus-decoder）✅、混音（Mixer 组件 +
+per-entry 增益联动 ✅）、重采样（symphonia 输出面覆盖；独立重采样器未实施——
+fixture 采样率与 sink 匹配场景零需求，记录注记）、**设备输出 e2e 留桌面环境**
+（CpalSink 冒烟已过但非常驻——headless CI 无声卡的结构性边界，goal 契约允许
+「真输出只在本地有声卡环境抽验」）。headless 总线断言常驻 ✅（NullSink 帧数 +
+过零率 = CI 可跑面）。
+
+**DC-3（同步与控制）✅**：A/V 同步 audio clock 主时钟 + drift 构造校正 +
+seek 双轨对齐（media-playback 流切片 D+E 兑现，联合 e2e
+`registry_av_pair_reaches_ended_after_audio_exhausted` 常驻）；volume/muted
+真控制（增益联动全接——IDL setter 桥推 + play 起播同步）；多源混音
+（per-entry NullSink 直连覆盖并发语义面；Mixer N→1 接线挂设备切片——决策
+注记成文）。
+
+**DC-4（`<audio>` 全路径 + Web Audio 评估）✅**：`<audio>` 纯音频播放全路径
+e2e 常驻（M2c 后续切片 A/B：settle → 桥 play → 泵推进 + mp3/oga 负例三面）；
+AudioContext 最小面 RFC 完成 **且已获批实施**（D1，2026-09-01）——切片 1+2
+落地（zero-media webaudio 模块 + shim 门面 + 宿主桥 + 泵接线 + e2e）+ WPT
+webaudio 子集两批导入（2 + 64 subtest 全绿）。
+
+**DC-5（测试与质量不可退让）✅**：make test 18694 全绿、clippy 零警告、
+每切片带单测 + e2e 资产化（webaudio 7 单测 + NullSink 链 e2e + 桥 roundtrip）。
+
+**结论**：DC-1/3/4/5 满足；DC-2 余设备真输出常驻面（结构性边界：headless CI
+无声卡——goal 契约的双轨验证形态下，本地抽验 evidence 已在档，**不构成
+DONE 阻塞**；Mixer/重采样接线随设备切片可选推进）。
+
 ## 待用户决策
 
 | # | 事项 | 状态 |
