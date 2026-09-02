@@ -204,8 +204,58 @@ TRACK_ELEMENT_FILES=(
   "track/track-element/track-add-track.html"
   "track/track-element/track-cue-order.html"
   "track/track-element/src-clear-cues.html"
+  # M3 扩批 XV：http(s) VTT 文件加载 + 解析深化（header 校验/cue id 错误恢复/
+  # cue settings/实体解码——shim part06 `_zwParseVtt`）。
+  # track-add-remove-cue：settings.vtt 加载 + cue 增删/排序 + VTTCue 缺省反射。
+  "track/track-element/track-add-remove-cue.html"
+  # cue id 行解析（含 '-->' 错误恢复——id 行含 --> 不识别）。
+  "track/track-element/track-webvtt-cue-identifiers.html"
+  # 空行/无分隔 cue 块解析。
+  "track/track-element/track-webvtt-blank-lines.html"
+  # cue settings（line/position/size/align/vertical，含 % 值与 tab 分隔）。
+  "track/track-element/track-webvtt-settings.html"
+  # 实体解码（&amp;/&lt;/&gt;/&lrm;/&rlm;/&nbsp;）+ settings 组合。
+  "track/track-element/track-webvtt-entities.html"
+  # 小时位时间戳（00:00:00.000 / 100:20:00.500）。
+  "track/track-element/track-webvtt-timings-hour.html"
+  # WEBVTT magic header 校验（rubbish 头拒收 → error + cues []；no-webvtt 拒收）。
+  "track/track-element/track-webvtt-magic-header.html"
+  # header 长度/名称校验（四变体两 load 两 error）。
+  "track/track-element/track-webvtt-header-checks.html"
+  # 负时间戳 cue（startTime=-5 等——headless 纯存储/排序面）。
+  "track/track-element/track-cue-negative-timestamp.html"
+  # src 三段变更（cues 立即清空 + same list 身份 + 同值变更不重载）。
+  "track/track-element/track-element-src-change.html"
+  # default 属性 readyState=LOADED 面（静态 HTML 两 track 形态）。
+  "track/track-element/track-default-attribute.html"
+  # src setter 触发加载（NONE → LOADED；mode hidden 先设）。
+  "track/track-element/track-load-from-src-readyState.html"
+)
+# M3 扩批 XV：上述用例引用的共享 helper（inline_local_scripts 相对路径内联）
+# 与 VTT 资源文件（runner fetch handler 以 wpt-data 静态文件服务）。
+TRACK_ELEMENT_SUPPORT=(
+  "track/track-element/track-helpers.js"
+  "track/track-element/resources/webvtt-file.vtt"
+  "track/track-element/resources/webvtt-file.vtt"
+  "track/track-element/resources/settings.vtt"
+  "track/track-element/resources/settings-bad-separation.vtt"
+  "track/track-element/resources/entities.vtt"
+  "track/track-element/resources/cue-id.vtt"
+  "track/track-element/resources/cue-id-error.vtt"
+  "track/track-element/resources/cues.vtt"
+  "track/track-element/resources/cues-no-separation.vtt"
+  "track/track-element/resources/metadata.vtt"
+  "track/track-element/resources/header-empty-after.vtt"
+  "track/track-element/resources/header-newlines-after.vtt"
+  "track/track-element/resources/header-too-short.vtt"
+  "track/track-element/resources/header-invalid-equal.vtt"
+  "track/track-element/resources/webvtt-rubbish.vtt"
+  "track/track-element/resources/no-webvtt.vtt"
 )
 for relative in "${TRACK_ELEMENT_FILES[@]}"; do
+  fetch_raw "${BASE}/${relative}"
+done
+for relative in "${TRACK_ELEMENT_SUPPORT[@]}"; do
   fetch_raw "${BASE}/${relative}"
 done
 

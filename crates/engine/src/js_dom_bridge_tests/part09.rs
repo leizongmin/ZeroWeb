@@ -4389,3 +4389,132 @@ fn test_media_play_pending_and_removal_abort_m3x14() {
         "detached handle-only：play promise 保持 queued task resolve（headless 近似）"
     );
 }
+
+#[cfg(feature = "v8")]
+#[test]
+fn test_media_http_vtt_loading_m3xv() {
+    // media-elements M3 扩批 XV：http(s) VTT 文件加载 + WebVTT 解析深化（spec webvtt-parser）。
+    // ① 静态 track 子（sel 形态）经 `track.track` 访问触发检索——`__zw_fetch`（同步契约）
+    //    取回 VTT 文本 → `_zwParseVtt` 解析填 cue（header 校验/cue id/settings/实体）。
+    // ② 非 WEBVTT 头 → error settle（readyState ERROR + onerror）。
+    // ③ mode disabled→hidden 触发加载（enableAllTextTracks 形态）。
+    // ④ cue.text 保持 parser 原文（实体不解码）；getCueAsHTML() 解码（DOM 面）。
+    //    track-webvtt-* 断言族 WPT 常驻覆盖；本单测锁 shim 核心面。
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><video><track src='/media/a.vtt' default></video></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://wpt.test/t.html".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // __zw_fetch 同步契约——按 URL 返对应 VTT 文本（__zwfr: wire）。
+    let vtt_ok = "__zwfr:200\u{001f}OK\u{001f}\u{001f}WEBVTT\n\n1\n00:00:00.000 --> 00:00:30.500 align:start line:42%\nBear is Coming!!!!!\n\n2\n00:00:31.000 --> 00:01:00.500\nI said Bear is coming!!!!";
+    let vtt_bad = "__zwfr:200\u{001f}OK\u{001f}\u{001f}AWEBVTT FILE\n\n1\n00:00:00.000 --> 00:00:30.500\nnope";
+    let ok_store = Arc::new(Mutex::new(vtt_ok.to_string()));
+    let bad_store = Arc::new(Mutex::new(vtt_bad.to_string()));
+    let ok_clone = Arc::clone(&ok_store);
+    let bad_clone = Arc::clone(&bad_store);
+    sandbox.register_callback(
+        "__zw_fetch",
+        Box::new(move |args| {
+            let url = args.get(2).map(String::as_str).unwrap_or("");
+            if url.contains("b.vtt") {
+                return bad_clone.lock().unwrap().clone();
+            }
+            ok_clone.lock().unwrap().clone()
+        }),
+    );
+
+    // ① 静态 track（sel，default 属性 → mode showing）经 track.track 触发检索；
+    //    queueMicrotask settle 后 cue 解析面：数量/id/settings/time/text。
+    sandbox
+        .execute(
+            "var v = document.querySelector('video');\
+             var tr = document.querySelector('track');\
+             globalThis.__tt = tr.track;\
+             globalThis.__log = [];\
+             tr.onload = function () { globalThis.__log.push('load:' + tr.readyState); };\
+             tr.onerror = function () { globalThis.__log.push('error'); };",
+        )
+        .unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(80));
+    let r1 = sandbox
+        .execute(
+            "[globalThis.__log.join(','), String(__tt.cues ? __tt.cues.length : 'null'),\
+             __tt.cues && __tt.cues.length ? __tt.cues[0].id + '|' + __tt.cues[0].startTime + '|' + __tt.cues[0].endTime : '',\
+             __tt.cues && __tt.cues.length ? __tt.cues[0].align + '|' + __tt.cues[0].line + '|' + __tt.cues[1].text : ''].join('~')",
+        )
+        .unwrap();
+    assert_eq!(
+        r1.value,
+        "load:2~2~1|0|30.5~start|42|I said Bear is coming!!!!",
+        "http VTT 加载：settle LOADED + cue id/time/settings 解析 + text 原文（实体不解码）"
+    );
+
+    // ② 非 WEBVTT 头 → error settle。track 元素 src 变更（srcChange 重调度）到 b.vtt。
+    sandbox
+        .execute(
+            "tr.src = '/media/b.vtt';\
+             void 0;",
+        )
+        .unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(80));
+    let r2 = sandbox
+        .execute("[tr.readyState, __tt.cues ? __tt.cues.length : 'null'].join('|')")
+        .unwrap();
+    assert_eq!(
+        r2.value,
+        "3|0",
+        "非 WEBVTT 头：readyState ERROR(3) + cue 列表清空（srcChange 面已置空）"
+    );
+
+    // ③ mode disabled→hidden 触发加载（enableAllTextTracks 形态）：新 track 无 default，
+    //    mode setter 转 hidden 后按 URL 加载。
+    sandbox
+        .execute(
+            "var v2 = document.createElement('video');\
+             var t2 = document.createElement('track');\
+             t2.setAttribute('src', '/media/a.vtt');\
+             v2.appendChild(t2);\
+             globalThis.__t2 = t2.track;\
+             globalThis.__t2el = t2;\
+             globalThis.__log2 = [];\
+             t2.onload = function () { globalThis.__log2.push('load'); };\
+             __t2.mode = 'hidden';",
+        )
+        .unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(80));
+    let r3 = sandbox
+        .execute("[globalThis.__log2.join(','), String(__t2.cues ? __t2.cues.length : 'null')].join('|')")
+        .unwrap();
+    assert_eq!(
+        r3.value,
+        "load|2",
+        "mode disabled→hidden 触发 track URL 处理（settle 后 cues 填充）"
+    );
+
+    // ④ getCueAsHTML() 实体解码面：cue.text 保持 parser 原文；DOM 面解码 character
+    //    references（entities 断言族语义）。
+    sandbox
+        .execute(
+            "var c = new VTTCue(0, 1, 'A &amp; B &lt;');\
+             globalThis.__rawText = c.text;\
+             globalThis.__htmlText = c.getCueAsHTML().textContent;",
+        )
+        .unwrap();
+    let r4 = sandbox.execute("[__rawText, __htmlText].join('|')").unwrap();
+    assert_eq!(
+        r4.value,
+        "A &amp; B &lt;|A & B <",
+        "cue.text 原文 + getCueAsHTML 解码（spec 两面分离）"
+    );
+}

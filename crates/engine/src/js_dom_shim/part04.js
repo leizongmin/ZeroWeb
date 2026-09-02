@@ -211,6 +211,15 @@
         // 惰性读共用同一工厂（身份缓存 _elementTextTrack 同表）。
         // https://html.spec.whatwg.org/multipage/media.html#dom-trackelement-track
         if (resourceTag === 'TRACK' && prop === 'track') {
+          // M3 扩批 XV：静态 HTML `<track src>`（parser 创建——无 appendChild 钩子）
+          // 经 `track.track` 访问时若尚未调度，先给父 media 元素补触发检索（spec
+          // 「further handling of the track element」；track-load-from-src-readyState
+          // 静态形态断言面）。幂等——_zwTrackScheduleLoad 内部 trackScheduled 去重。
+          try {
+            if (typeof globalThis._zwScheduleParentTrackLoad === 'function') {
+              globalThis._zwScheduleParentTrackLoad(sel, handle);
+            }
+          } catch (_eTrkS) {}
           return _zwTextTrackForElement(sel, handle, key);
         }
         if (resourceTag === 'TRACK' && prop === 'readyState') {

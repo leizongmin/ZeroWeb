@@ -277,6 +277,19 @@
       configurable: true,
     });
   })();
+  // M3 扩批 XV：getCueAsHTML 最小面（webvtt cue DOM API——entities 断言族以
+  // `cue.getCueAsHTML().textContent` 消费）。headless 无 cue 文本标记解析（WebVTT
+  // cue text 的 <Tag> 结构归渲染域远期）——DocumentFragment + 单 text node。实体解码
+  // 在本面发生（spec：DOM 面按 character references 产出——cue.text 保持 parser 原文，
+  // track-element-src-change 断言 '&amp;' 字面）。fragment 经 document 工厂产出。
+  VTTCue.prototype.getCueAsHTML = function () {
+    var frag = globalThis.document.createDocumentFragment();
+    var raw = String(this.text == null ? '' : this.text)
+      .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+      .replace(/&lrm;/g, '\u200e').replace(/&rlm;/g, '\u200f').replace(/&nbsp;/g, '\u00a0');
+    frag.appendChild(globalThis.document.createTextNode(raw));
+    return frag;
+  };
   // 工厂：TextTrack（kind/label/language/mode/cues/activeCues + addCue/removeCue——M3 扩批
   // XII）。cues/activeCues：mode==='disabled' → null，否则 same-object TextTrackCueList
   //（cues 按 startTime 升序动态排序——「changing order」断言；activeCues headless 近似 =
@@ -422,7 +435,20 @@
       set: function (v) {
         var s = String(v == null ? 'null' : v);
         if (s !== 'disabled' && s !== 'hidden' && s !== 'showing') return; // invalid → 保留
+        // M3 扩批 XV：mode 从 disabled 变更为 hidden/showing → 触发 track URL 处理
+        //（spec text track mode setter——「若 track 关联 track 元素且未加载，则启动
+        // track URL 处理」；timings-hour/magic-header/header-checks 经
+        // enableAllTextTracks 把非 default track 转 hidden 后 onload 断言面）。
+        var _wasDisabled = (_ttMode === 'disabled');
         _ttMode = s;
+        if (_wasDisabled && s !== 'disabled' && ownerEl
+            && typeof globalThis._zwTrackScheduleLoad === 'function') {
+          try {
+            // mode gate bypass——本路径就是 spec 的「mode 变更启动加载」入口（绕过
+            // _zwScheduleChildTrackLoads 的 default 属性过滤）。
+            globalThis._zwTrackScheduleLoad(ownerEl.__zwSelector || null, ownerEl.__zwHandle || null);
+          } catch (_eModeT) {}
+        }
       },
       configurable: true,
     });

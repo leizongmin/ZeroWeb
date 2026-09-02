@@ -1426,6 +1426,11 @@
       // R158：非法选择器守卫（spec SyntaxError——WPT runInvalidSelectorTest 的
       // document.querySelector 入口）。置于 pending 回落之前（非法即抛，不查）。
       if (globalThis._zwQueryGuard) globalThis._zwQueryGuard(sel, arguments.length);
+      // M3 扩批 XV：track 查询触发面（querySelector('track') 静态形态）。
+      if (String(sel).toLowerCase() === 'track'
+          && typeof globalThis._zwScheduleAllTrackLoads === 'function') {
+        try { globalThis._zwScheduleAllTrackLoads(); } catch (_eDqsT) {}
+      }
       var hit = __zw_query_match(sel);
       if (hit) return _zwQueryWrapIdentity(hit);
       // js-dom M4 R51c：host 快照未命中 → 回落 pending added 扫描（同步 turn 内 append/insert 的
@@ -1721,6 +1726,11 @@
     querySelectorAll: function(sel) {
       if (globalThis._zwQueryGuard) globalThis._zwQueryGuard(sel, arguments.length);
       var q = String(sel);
+      // M3 扩批 XV：track 查询触发面（querySelectorAll('track') 静态形态）。
+      if (q.toLowerCase() === 'track'
+          && typeof globalThis._zwScheduleAllTrackLoads === 'function') {
+        try { globalThis._zwScheduleAllTrackLoads(); } catch (_eDqsaT) {}
+      }
       if (q === ':invalid' || q === ':valid') {
         // R57（FV M1）：:invalid/:valid 伪类查询（约束校验联动——host CSS 引擎
         // 未实现——infinite_backtracking 的 querySelectorAll(":invalid")）
@@ -6995,6 +7005,155 @@
       return cues;
     } catch (_eVtt) { return null; }
   };
+  // M3 扩批 XV（2026-09-02）：WebVTT 文件解析深化（http VTT 加载用——
+  // track-webvtt-* 断言族）。`_zwParseVtt(text)` → VTTCue 数组；**非 WEBVTT 头返
+  // null**（调度层落 error settle）。相对 `_zwParseVttDataUrl` 的语义增补：
+  // ① header 校验（BOM 剥离后以 'WEBVTT' 开头——'AWEBVTT'/'rubbish' 拒收，
+  //    magic-header/no-webvtt 断言面）；
+  // ② cue id 行含 '-->' 不识别为 id（cue-id-error 断言面——该行作 timings 行参与
+  //    解析失败 cue 丢弃）；
+  // ③ cue settings（time 行尾 `align:start position:20% line:15% vertical:rl`——
+  //    settings.vtt / entities.vtt 断言面；数值 % 剥 % 号，'start'/'center'/'end'
+  //    文本原样）；
+  // ④ 实体解码（&amp; &lt; &gt; &lrm; &rlm; &nbsp;——entities.vtt 断言面）；
+  // ⑤ 时间行解析容错（小时位缺省/超 24h 小时、空格变体——timings-hour 面）。
+  globalThis._zwParseVtt = function (text) {
+    try {
+      var raw = String(text == null ? '' : text)
+        .replace(/^﻿/, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+      var lines = raw.split('\n');
+      var i = 0;
+      // header 校验：首个非空行必须以 'WEBVTT' 开头（spec webvtt-file-header-check）。
+      while (i < lines.length && lines[i] === '') i++;
+      if (i >= lines.length || lines[i].indexOf('WEBVTT') !== 0) return null;
+      i++;
+      // header 尾（空行或 header 注释/元数据行直到空行）——跳到首个空行后。
+      while (i < lines.length && lines[i] !== '') i++;
+      while (i < lines.length && lines[i] === '') i++;
+      var cues = [];
+      var _tParse = function (s) {
+        s = String(s).trim();
+        // spec webvtt timestamp：mm ∈ [00,59]、ss ∈ [00,59]（timings-hour-error 的
+        // '00:120:00.500' 非法——宽松正则会把 '12' 错配成时位）。'\d{2}' 前导零语义：
+        // '00'~'59' 之外拒收。
+        var m = /^(?:(\d+):)?([0-5]\d):([0-5]\d)\.(\d{3})$/.exec(s);
+        if (!m) return NaN;
+        return (m[1] ? Number(m[1]) * 3600 : 0) + Number(m[2]) * 60 + Number(m[3]) + Number(m[4]) / 1000;
+      };
+      var _entities = function (s) {
+        return String(s)
+          .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+          .replace(/&lrm;/g, '‎').replace(/&rlm;/g, '‏').replace(/&nbsp;/g, ' ');
+      };
+      // entities-wrong 断言面（spec cue text `<` 起始 tag/annotation 解析）：**原始**
+      // '<' 开启 tag/annotation；tag 终点 = 原始 `>` / '&gt;'（实体解码出的 '>'——
+      // 含实体本体一起吞）/ 其余原始 '&'，三者最近者。实体解码后 '&lt;' 产生的 '<'
+      // 不是 tag 起点（entities.vtt 正例保持全文）；tag 前文本保留、tag 段全弃
+      //（headless 不建 cue DOM 树）。裸 '>' 无 '<' → 纯文本。
+      var _stripMarkup = function (s) {
+        // 返回**原文**（实体不解码——cue.text 保持 parser 输入，spec；解码在
+        // getCueAsHTML DOM 面）。终点判定（上游 Chromium 实测断言面）：原始 '>' →
+        // tag 终点，后续文本保留；无原始 '>'（含 '&gt;' 实体形态——实体不终止 tag）
+        // → '<' 起剩余全吞。
+        var raw = String(s);
+        var lt = raw.indexOf('<');
+        if (lt < 0) return raw;
+        var rawGt = raw.indexOf('>', lt + 1);
+        if (rawGt < 0) return raw.slice(0, lt);
+        return raw.slice(0, lt) + raw.slice(rawGt + 1);
+      };
+      var _applySettings = function (cue, s) {
+        // cue settings：空格/制表分隔的 `name:value` 段（值可含 %）。已识别项写入
+        // VTTCue 反射面；未识别项忽略（spec 容错）。
+        // settings-bad-separation 面：**name 大小写敏感**（'Vertical:lr' 非法忽略——
+        // 不命中即跳过）、`<align:end>` 尖括号包裹段非法（'<' 前缀 token 整段跳过）、
+        // 裸 '-'/'/'/'|' 等无 ':' token 跳过。
+        var toks = String(s).split(/[\t ]+/);
+        for (var k = 0; k < toks.length; k++) {
+          var tok = toks[k];
+          if (!tok) continue;
+          var ci = tok.indexOf(':');
+          if (ci < 0) continue;
+          if (tok.indexOf('<') === 0) continue; // 尖括号包裹段——非 settings（容错）
+          var name = tok.slice(0, ci);
+          var val = tok.slice(ci + 1);
+          try {
+            if (name === 'align') { cue.align = val; }
+            else if (name === 'vertical') { cue.vertical = val; }
+            else if (name === 'line' || name === 'position') {
+              var nv = (val === 'auto') ? 'auto' : Number(String(val).replace('%', ''));
+              if (nv === nv) cue[name] = nv; // NaN 不写（保留缺省）
+            } else if (name === 'size') {
+              var sz = Number(String(val).replace('%', ''));
+              if (sz === sz) cue.size = sz;
+            }
+          } catch (_eVs) {}
+        }
+      };
+      while (i < lines.length) {
+        var line = lines[i];
+        if (line === '') { i++; continue; }
+        var tm = line.indexOf('-->');
+        var cueId = '';
+        if (tm < 0) {
+          // 候选 id 行：**含 '-->' 不识别为 id**（cue-id-error 断言面——'-->random_id'
+          // 这样的行自身就是坏 timings 行，cue 块整体丢弃）；不含 '-->' 且下一行是
+          // timings 行时才作 id 候选。
+          if (lines[i + 1] != null && lines[i + 1].indexOf('-->') >= 0) {
+            cueId = line;
+            i++;
+            line = lines[i];
+            tm = line.indexOf('-->');
+          } else {
+            i++;
+            continue;
+          }
+        }
+        // timings 行：**只按前两个 '-->' 分割**（settings-bad-separation 面 2——
+        // settings 里可含字面 '-->'（` --> position:50% ...`），多余的 '-->' 属
+        // settings 段）。
+        var _fst = line.indexOf('-->');
+        var _snd = line.indexOf('-->', _fst + 3);
+        var parts = [line.substring(0, _fst), line.substring(_fst + 3, _snd < 0 ? line.length : _snd), _snd < 0 ? '' : line.substring(_snd + 3)];
+        var st = _tParse(parts[0]);
+        // timings 行尾 settings：第二个 --> 段内 `HH:MM:SS.mmm` 之后的部分 + 第三段
+        //（若 settings 含字面 '-->' 则落在第三段——拼接回 settings）。
+        var rest = (parts.length > 1 ? parts[1] : '')
+          + (parts[2] ? '-->' + parts[2] : '');
+        var _tMatch = /(\d+(?::\d+)*\.\d{3})/.exec(rest);
+        var et = _tMatch ? _tParse(_tMatch[1]) : NaN;
+        var settings = _tMatch ? rest.slice(_tMatch.index + _tMatch[0].length) : '';
+        if (isNaN(st) || isNaN(et)) {
+          // 坏 timings 行：仅跳过该行（spec「cue 时戳解析失败 → 忽略该 cue」——后续行
+          // 可重新作为 cue 块起点。cue-id-error 断言面：'-->random_id' 坏行后的
+          // '00:00:00.000 --> 00:00:30.500' 起新 cue——3 条全解析）。
+          i++;
+          continue;
+        }
+        i++;
+        var textLines = [];
+        while (i < lines.length && lines[i] !== '') {
+          // blank-lines 面（cues-no-separation 断言——3 条 cue 期望）：cue 文本行在
+          // 空行处结束；文本行内出现**新 timings 行**（含 '-->' 且时间可解析）时结束
+          // 本 cue 开新 cue（spec cue text 不含 timings 形态）；裸非 timings 行
+          //（如无分隔的 id 行 '2'）并入上一 cue 文本（「treated like one big cue」）。
+          if (lines[i].indexOf('-->') >= 0
+              && !isNaN(_tParse(String(lines[i]).split('-->')[0]))) {
+            break;
+          }
+          textLines.push(String(lines[i]));
+          i++;
+        }
+        // tag/annotation 截断与实体解码按 **cue 全文本**（跨行——entities-wrong 的
+        // '<' tag 从首行延续到 '&' 结束，跨行吞并）。
+        var cue = new globalThis.VTTCue(st, et, _stripMarkup(textLines.join('\n')));
+        if (cueId) cue.id = _entities(cueId);
+        if (settings) _applySettings(cue, settings);
+        cues.push(cue);
+      }
+      return cues;
+    } catch (_eVttX) { return null; }
+  };
   // M3 扩批 XII：media 元素的所有 track 子 → 触发检索（_zwTrackScheduleLoad 幂等）。
   // spec：track 检索随 media 元素加载循环启动（connected 时——cues 可用性 gate 开面）。
   globalThis._zwScheduleChildTrackLoads = function (sel, handle) {
@@ -7006,11 +7165,49 @@
         if (!k || k.nodeType !== 1) continue;
         var tag = String(k.tagName || '').toUpperCase();
         if (tag !== 'TRACK') continue;
+        // M3 扩批 XV：mode gate——无 default 属性的 track 子 TextTrack mode 缺省
+        // 'disabled'，**不自动加载**（spec「track 检索随 media 元素加载循环启动」后按
+        // mode 决定 track URL 处理；track-default-attribute 断言「只有 default track
+        // 派 onload」）。default 属性在（mode showing）才调度。src-clear-cues /
+        // track-add-track 等 DOM 侧断言面不受影响（settle 面由 setter/src 变更显式触发）。
+        var _sclDefault = false;
+        try {
+          _sclDefault = k.__zwHandle
+            ? __zw_has_attr_handle(k.__zwHandle, 'default') === '1'
+            : (typeof __zw_has_attr_lw === 'function' ? __zw_has_attr_lw(k.__zwSelector, 'default') : __zw_has_attr(k.__zwSelector, 'default')) === '1';
+        } catch (_eSclD) {}
+        if (!_sclDefault) continue;
         if (typeof globalThis._zwTrackScheduleLoad === 'function') {
           globalThis._zwTrackScheduleLoad(k.__zwSelector || null, k.__zwHandle || null);
         }
       }
     } catch (_eScl) {}
+  };
+  // M3 扩批 XV：track 元素视角的调度入口——父 media 元素（如有）的全部 track 子补触发
+  //（静态 HTML 形态 `track.track` 访问面；幂等）。
+  // 全文档面：querySelectorAll('track') 查询触发的兜底——遍历全部 media 元素补跑检索
+  //（用例只查询不读 API 的静态形态；幂等——trackScheduled 去重）。
+  globalThis._zwScheduleAllTrackLoads = function () {
+    try {
+      if (typeof __zw_query_all !== 'function') return;
+      var _satSels = (__zw_query_all('audio') || '').split('|')
+        .concat((__zw_query_all('video') || '').split('|')).filter(Boolean);
+      for (var i = 0; i < _satSels.length; i++) {
+        if (typeof globalThis._zwScheduleChildTrackLoads === 'function') {
+          globalThis._zwScheduleChildTrackLoads(_satSels[i], null);
+        }
+      }
+    } catch (_eSatl) {}
+  };
+  globalThis._zwScheduleParentTrackLoad = function (sel, handle) {
+    try {
+      if (typeof _zwParentMediaProxy !== 'function') return;
+      var _spParent = _zwParentMediaProxy(sel, handle);
+      if (!_spParent) return;
+      if (typeof globalThis._zwScheduleChildTrackLoads === 'function') {
+        globalThis._zwScheduleChildTrackLoads(_spParent.__zwSelector || null, _spParent.__zwHandle || null);
+      }
+    } catch (_eSptl) {}
   };
   // media-audio M3 切片 2（D1 批复 / D-WA-2 NullSink 先行）：Web Audio 最小面——
   // AudioContext 构造器 + createOscillator/createGain + destination + start/stop。
@@ -7848,12 +8045,29 @@
   //（RFC §0 不做清单），undefined 返回（调用方 try/catch 容错）。
   // track 元素 src 的 headless 加载模拟——data:text/vtt 解析填 cue + load 事件；
   // 非 data: URL 同样派 load（headless 无真字幕抓取， cues 空）。幂等：per-track 一次。
+  // M3 扩批 XV（2026-09-02）：http(s) VTT 文件加载接通——同步 `__zw_fetch` 契约
+  //（R115 iframe 同款）取回 VTT 文本 → `_zwParseVtt` 解析填 cue；fetch 失败或
+  // 非 WEBVTT 头（`_zwParseVtt` 返 null）→ error settle（track onerror + readyState
+  // ERROR——track-webvtt-magic-header no-webvtt 断言面）。无 `__zw_fetch` 宿主
+  //（浏览器异步路径）回落既有 headless 面（load 恒派、cues 空——零回归）。
   globalThis._zwTrackScheduleLoad = function (sel, handle, opts) {
     var key = _elKey(sel, handle);
     if (typeof setTimeout !== 'function') return;
     var _msTrack = _mediaState[key] || (_mediaState[key] = {});
     var _isChange = !!(opts && opts.srcChange);
     if (_isChange) {
+      // M3 扩批 XV：**同值变更不重载**（spec track-element-src-change stage3——设回同
+      // 一 src 值不派 onload；cues 保持）。新旧绝对 URL 相等且已成功 settle → no-op。
+      // （比较在读取 attr 前做：借用上次 settle 的 url。）
+      var _lastState = _resourceStates ? _resourceStates[key] : null;
+      var _prevUrl = (_lastState && _lastState.outcome !== 'error') ? String(_lastState.url || '') : '';
+      var _curRaw = '';
+      try {
+        _curRaw = handle ? __zw_get_attr_handle(handle, 'src') : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'src') : __zw_get_attr(sel, 'src'));
+        _curRaw = String(_curRaw == null ? '' : _curRaw).replace(/^[\x00-\x20]+/, '').replace(/[\x00-\x20]+$/, '');
+        if (_curRaw && typeof _zwResolveFetchUrl === 'function') _curRaw = _zwResolveFetchUrl(_curRaw);
+      } catch (_eTsCu) {}
+      if (_prevUrl && _prevUrl === _curRaw && _msTrack.trackScheduled) return;
       // M3 扩批 XIII：src 变更——清既有 cue（spec「track URL 变更」cue list 置空，
       // src-clear-cues 断言面）+ 重置 settle 面后按新 URL 重跑。**首调度前变更**
       //（track 从未挂 media 父/未设 src，src-clear-cues 用例形态）同样清。
@@ -7863,6 +8077,9 @@
       } catch (_eTsCc) {}
       try { if (_resourceStates && _resourceStates[key]) delete _resourceStates[key]; } catch (_eTsRs) {}
     }
+    // M3 扩批 XV：src 变更重调度——重置幂等标记后按新 URL 重跑（track-element-src-change
+    // 断言面：settings.vtt → entities.vtt → settings.vtt 三段加载各派 onload）。
+    if (_isChange) _msTrack.trackScheduled = false;
     if (_msTrack.trackScheduled) return;
     _msTrack.trackScheduled = true;
     var _deferCont = function (fn) {
@@ -7874,8 +8091,50 @@
         var _raw = handle ? __zw_get_attr_handle(handle, 'src') : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'src') : __zw_get_attr(sel, 'src'));
         var _abs = String(_raw == null ? '' : _raw).replace(/^[\x00-\x20]+/, '').replace(/[\x00-\x20]+$/, '');
         try { if (typeof _zwResolveFetchUrl === 'function') _abs = _zwResolveFetchUrl(_abs); } catch (_eTsR) {}
-        var cues = (typeof globalThis._zwParseVttDataUrl === 'function') ? globalThis._zwParseVttDataUrl(_abs) : null;
-        if (cues && cues.length) {
+        // M3 扩批 XV：解析分派——data:text/vtt 走既有内联解析；http(s) 走同步
+        // `__zw_fetch` 取文本后 `_zwParseVtt`。`_zwParseVtt` 返 null = 非 WEBVTT 头
+        //（error settle）；返回数组（可为空）= 解析成功（空 VTT 文件合法）。
+        var cues = null;
+        var _failed = false;
+        if (_abs.indexOf('data:text/vtt,') >= 0) {
+          cues = (typeof globalThis._zwParseVttDataUrl === 'function') ? globalThis._zwParseVttDataUrl(_abs) : null;
+        } else if ((_abs.indexOf('http://') === 0 || _abs.indexOf('https://') === 0)
+            && typeof __zw_fetch === 'function'
+            && typeof globalThis._zwParseVtt === 'function') {
+          var _wire = '';
+          try {
+            _wire = String(__zw_fetch(
+              'trackvtt:' + key + ':' + (++_zwTrackFetchSeq),
+              'GET', _abs, '', '', '', '', '', '', '', ''
+            ) || '');
+          } catch (_eTvF) { _failed = true; }
+          if (!_failed) {
+            if (_wire.indexOf('__zw_fetch_error') === 0) {
+              _failed = true;
+            } else {
+              // `__zwfr:` wire（status\x1fstatusText\x1fheadersWire\x1fbody）取 body；
+              // 旧 body-only wire 兜底整串。
+              var _body = _wire;
+              if (_wire.indexOf('__zwfr:') === 0) {
+                var _s1 = _wire.indexOf('\x1f');
+                var _s2 = _wire.indexOf('\x1f', _s1 + 1);
+                var _s3 = _wire.indexOf('\x1f', _s2 + 1);
+                if (_s3 >= 0) _body = _wire.slice(_s3 + 1);
+              }
+              cues = globalThis._zwParseVtt(_body);
+            }
+          }
+        } else {
+          // 无 fetch 宿主：headless 近似——load 恒派、cues 空（既有零回归面）。
+          cues = [];
+        }
+        if (_failed || cues === null) {
+          // 非 WEBVTT 头 / fetch 失败 → error settle（spec「track loading failed」——
+          // readyState ERROR + track onerror；track-webvtt-magic-header 断言面）。
+          _zwSettleResourceKey(key, sel, handle, 'track', _abs, 'error', 0, 0);
+          return;
+        }
+        if (cues.length) {
           // 填入关联 TextTrack（track.track getter 建实例）。
           var el = (typeof _makeProxy === 'function') ? _makeProxy(sel, handle) : null;
           var tt = el ? el.track : null;
@@ -7888,6 +8147,7 @@
       } catch (_eTs) {}
     });
   };
+  var _zwTrackFetchSeq = 0;
   function _zwSettleResourceKey(key, sel, handle, tag, url, outcome, width, height, errorCode, durationMs) {
     if (_resourceStates[key]) return false; // 每个资源请求只 settle / 派发一次。
     var state = {

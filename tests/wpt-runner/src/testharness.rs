@@ -1410,6 +1410,43 @@ pub const MEDIA_TEST_FILES: &[&str] = &[
     // M3 扩批 X：track 子元素 ↔ textTracks 集合同步（树序段 + addTextTrack 尾段、
     // append/remove/innerHTML 同步、TextTrack.id 反射、getTrackById）。
     "html/semantics/embedded-content/media-elements/track/track-element/track-api-texttracks.html",
+    // M3 扩批 XV：http(s) VTT 文件加载 + WebVTT 解析深化（shim part06 `_zwParseVtt`
+    // ——同步 __zw_fetch 取文本 + header 校验/cue id 错误恢复/cue settings/实体解码）。
+    // track-add-remove-cue：settings.vtt 加载 + cue 增删/排序 + getCueById('junk')
+    // → null + VTTCue 缺省反射（headless 语义面此前已落地，本批验证 http VTT 路径）。
+    "html/semantics/embedded-content/media-elements/track/track-element/track-add-remove-cue.html",
+    // cue id 行解析（含 '-->' 错误恢复——含 '-->' 的行不识别为 id）。
+    "html/semantics/embedded-content/media-elements/track/track-element/track-webvtt-cue-identifiers.html",
+    // 空行/无分隔 cue 块解析（无分隔 → 文本并入上一 cue）。
+    "html/semantics/embedded-content/media-elements/track/track-element/track-webvtt-blank-lines.html",
+    // cue settings（line/position/size/align/vertical，% 值 + tab 分隔 + bad separation）。
+    "html/semantics/embedded-content/media-elements/track/track-element/track-webvtt-settings.html",
+    // 实体解码（&amp;/&lt;/&gt;/&lrm;/&rlm;/&nbsp;）+ settings 组合。
+    "html/semantics/embedded-content/media-elements/track/track-element/track-webvtt-entities.html",
+    // 小时位时间戳（00:00:00.000 / 100:20:00.500 → 361200.5）。
+    "html/semantics/embedded-content/media-elements/track/track-element/track-webvtt-timings-hour.html",
+    // WEBVTT magic header 校验（rubbish 头 → cues []；no-webvtt → error 面）。
+    "html/semantics/embedded-content/media-elements/track/track-element/track-webvtt-magic-header.html",
+    // header 长度/名称校验（empty-after/newlines-after → load；too-short/invalid-equal → error）。
+    "html/semantics/embedded-content/media-elements/track/track-element/track-webvtt-header-checks.html",
+    // 负时间戳 cue（VTTCue(-5,...) 存储 + 排序 + setter 负值——纯 headless 面）。
+    "html/semantics/embedded-content/media-elements/track/track-element/track-cue-negative-timestamp.html",
+    // src 三段变更（cues 立即清空 + same list 身份 + 同值变更不重载 + 上游文本断言）。
+    "html/semantics/embedded-content/media-elements/track/track-element/track-element-src-change.html",
+    // default 属性 readyState=LOADED 面（静态 HTML 两 track 形态，onload 后断言）。
+    "html/semantics/embedded-content/media-elements/track/track-element/track-default-attribute.html",
+    // src setter 触发加载（NONE → LOADED；track.track.mode='hidden' 先设——mode 触发面）。
+    "html/semantics/embedded-content/media-elements/track/track-element/track-load-from-src-readyState.html",
+    // 不导入（B 组——依赖真播放钟推进 time-marches-on/cue enter/exit/cuechange/
+    // activeCues 变化，随 media-playback 泵接语义层后复评）：track-cues-* 全族、
+    // track-active-cues、no-cuechange-before-play、track-remove-active-cue、
+    // track-change-event（深结构：TextTrackList↔TextTrack 反向链）。
+    // 不导入（C 组——cue 视觉渲染/布局，渲染域远期）：track-cue-rendering-*、
+    // track-css-cue-pseudo-class、track-webvtt-*positioning/layout、track-cue-inline。
+    // 不导入（D 组——深结构/契约冲突，单独评估）：track-mode-triggers-loading
+    //（canplaythrough 后才触发 track 加载的时序面）、track-disabled（timeupdate
+    // 播放推进面）、track-element-src-aborted-load/-src-change-error（abort/error
+    // 时序）、track-remove-quickly/-by-setting-innerHTML（移除竞态）。
     "html/semantics/embedded-content/media-elements/track/track-element/track-addtrack-kind.html",
     "html/semantics/embedded-content/media-elements/track/track-element/track-texttracks.html",
     "html/semantics/embedded-content/media-elements/track/track-element/track-node-add-remove.html",

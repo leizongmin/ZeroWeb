@@ -4487,6 +4487,11 @@
 
   function _dispatchWithBubble(targetKey, targetSel, targetHandle, event, targetSlot) {
     var target = _makeProxy(targetSel, targetHandle);
+    // M3 扩批 XV：window.event（legacy——spec「current event」在 dispatch 期间暴露为
+    // window.event；嵌套 dispatch 栈式恢复。track-default-attribute 用例 handler 内读
+    // 裸 `event.target` 断言面）。
+    var _prevGlobalEvent = globalThis.event;
+    globalThis.event = event;
     event.target = target;
     // R150（js-dom M4）：MouseEvent offsetX/offsetY 的 dispatch 期计算——spec CSSOM
     // View §dom-mouseevent-offsetx：offset = client 坐标 - target 的 padding 边缘
@@ -4865,6 +4870,10 @@
       event.__zw_stop_immediate = false;
       // R106：dispatch flag 复位（嵌套计数——内层 finally 减一，外层结束归零）。
       event._zwDispatching = Math.max(0, (event._zwDispatching || 1) - 1);
+      // M3 扩批 XV：window.event 栈式恢复（嵌套 dispatch 内层先复原上一层事件；
+      // 顶层恢复 undefined——spec dispatch 完成后 current event 置空）。
+      if (event._zwDispatching === 0) globalThis.event = _prevGlobalEvent;
+      else globalThis.event = _prevGlobalEvent === undefined ? undefined : _prevGlobalEvent;
       // R108：legacy-canceled-activation behavior（spec inner invoke 步骤——listener
       // preventDefault 后，pre-click 已执行的 activation 在 dispatch 结束**回滚**：checkbox
       // 恢复翻转前状态；radio 恢复 pre-click 前组态（当前实现：直接取消自身 checked——组内
@@ -8255,6 +8264,11 @@
     function queryOne(sel) {
       if (globalThis._zwQueryGuard) globalThis._zwQueryGuard(sel);
       var a = queryBody(sel, false);
+      // M3 扩批 XV：同 queryAll 的 track 查询触发面（querySelector('track') 形态）。
+      if (typeof sel === 'string' && sel.toLowerCase() === 'track'
+          && typeof globalThis._zwScheduleAllTrackLoads === 'function') {
+        try { globalThis._zwScheduleAllTrackLoads(); } catch (_eQoT) {}
+      }
       // R292：结构元素形态（tag/id）——queryBody 的 detHtml 包装层含
       // `<html><head/><body/></html>`（R159），命中即结构元素自身（HTML 文档
       // 结构元素唯一，无内容树同名歧义）。恒归一 doc 视图对象。
@@ -8273,6 +8287,14 @@
         out.push(_r292sn);
       } else {
         for (var i = 0; i < a.length; i++) out.push(_zwWrapCached(a[i]));
+      }
+      // M3 扩批 XV：track 元素查询（querySelectorAll('track') / getElement*s 同经此口）
+      // 触发父 media 元素的 track 检索补跑（静态 HTML `<track src>` 形态——无
+      // appendChild 钩子、用例可能不读 textTracks/track.track；track-default-attribute /
+      // track-cue-negative-timestamp 断言面）。幂等——_zwTrackScheduleLoad 去重。
+      if (typeof sel === 'string' && sel.toLowerCase() === 'track'
+          && typeof globalThis._zwScheduleAllTrackLoads === 'function') {
+        try { globalThis._zwScheduleAllTrackLoads(); } catch (_eQaT) {}
       }
       out.__zwQSA = true; // R159：instanceof NodeList 标记
       return out;
@@ -11588,6 +11610,13 @@
             if (!_ttEntry.list) _ttEntry.list = globalThis._zwMakeTextTrackList([]);
             if (typeof globalThis._zwSyncTextTracksFromChildren === 'function') {
               globalThis._zwSyncTextTracksFromChildren(sel, handle, _ttKey);
+            }
+            // M3 扩批 XV：静态 HTML `<track src>` 子（parser 创建——无 appendChild 钩子）
+            // 首读 textTracks 时补触发检索（spec「track 检索随 media 元素加载循环启动」；
+            // track-webvtt-* / track-default-attribute 静态形态断言面）。幂等——
+            // _zwTrackScheduleLoad 内部 trackScheduled 去重。
+            if (typeof globalThis._zwScheduleChildTrackLoads === 'function') {
+              try { globalThis._zwScheduleChildTrackLoads(sel, handle); } catch (_eTtSchR) {}
             }
             return _ttEntry.list;
           }
