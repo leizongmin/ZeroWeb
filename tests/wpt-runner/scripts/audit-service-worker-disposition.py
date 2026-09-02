@@ -78,8 +78,40 @@ REVIEW_FILES = [
 IDL_SOURCE = "service-workers/idlharness.https.any.js"
 EXPECTED_SOURCE_COUNT = 294
 EXPECTED_URL_COUNT = 331
-EXPECTED_LANES = Counter(core=52, defer=34, gated=166, skip=42)
+EXPECTED_LANES = Counter(core=60, defer=34, gated=158, skip=42)
 CORE_PROMOTIONS = {
+    "service-workers/cache-storage/cache-add.https.any.js": (
+        "cache-add-any-serviceworker-core",
+        "2026-09-02-m2-cache-storage-any-batch.md",
+    ),
+    "service-workers/cache-storage/cache-delete.https.any.js": (
+        "cache-delete-any-serviceworker-core",
+        "2026-09-02-m2-cache-storage-any-batch.md",
+    ),
+    "service-workers/cache-storage/cache-keys.https.any.js": (
+        "cache-keys-any-serviceworker-core",
+        "2026-09-02-m2-cache-storage-any-batch.md",
+    ),
+    "service-workers/cache-storage/cache-match.https.any.js": (
+        "cache-match-any-serviceworker-core",
+        "2026-09-02-m2-cache-storage-any-batch.md",
+    ),
+    "service-workers/cache-storage/cache-matchAll.https.any.js": (
+        "cache-matchall-any-serviceworker-core",
+        "2026-09-02-m2-cache-storage-any-batch.md",
+    ),
+    "service-workers/cache-storage/cache-put.https.any.js": (
+        "cache-put-any-serviceworker-core",
+        "2026-09-02-m2-cache-storage-any-batch.md",
+    ),
+    "service-workers/cache-storage/cache-storage-keys.https.any.js": (
+        "cache-storage-keys-any-serviceworker-core",
+        "2026-09-02-m2-cache-storage-any-batch.md",
+    ),
+    "service-workers/cache-storage/cache-storage-match.https.any.js": (
+        "cache-storage-match-any-serviceworker-core",
+        "2026-09-02-m2-cache-storage-any-batch.md",
+    ),
     "service-workers/cache-storage/cache-storage.https.any.js": (
         "cache-storage-any-serviceworker-core",
         "2026-09-02-m2-cache-storage-any-serviceworker.md",

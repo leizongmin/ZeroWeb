@@ -900,7 +900,15 @@ pub const SERVICE_WORKER_FETCH_CASES: &[&str] = &[
 
 /// Fixed Service Worker CacheStorage corpus at the pinned WPT revision.
 pub const SERVICE_WORKER_CACHE_STORAGE_CASES: &[&str] = &[
+    "service-workers/cache-storage/cache-add.https.any.js",
+    "service-workers/cache-storage/cache-delete.https.any.js",
+    "service-workers/cache-storage/cache-keys.https.any.js",
+    "service-workers/cache-storage/cache-match.https.any.js",
+    "service-workers/cache-storage/cache-matchAll.https.any.js",
+    "service-workers/cache-storage/cache-put.https.any.js",
     "service-workers/cache-storage/cache-storage.https.any.js",
+    "service-workers/cache-storage/cache-storage-keys.https.any.js",
+    "service-workers/cache-storage/cache-storage-match.https.any.js",
     "service-workers/cache-storage/cache-keys-attributes-for-service-worker.https.html",
     "service-workers/cache-storage/credentials.https.html",
     "service-workers/cache-storage/serviceworker/cache-storage.https.html",
@@ -4303,8 +4311,8 @@ async_test(function(test) {
             .iter()
             .copied()
             .collect::<std::collections::BTreeSet<_>>();
-        assert_eq!(SERVICE_WORKER_CACHE_STORAGE_CASES.len(), 15);
-        assert_eq!(unique.len(), 15);
+        assert_eq!(SERVICE_WORKER_CACHE_STORAGE_CASES.len(), 23);
+        assert_eq!(unique.len(), 23);
         assert!(
             SERVICE_WORKER_CACHE_STORAGE_CASES
                 .iter()
