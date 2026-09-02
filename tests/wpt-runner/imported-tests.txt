@@ -249,3 +249,5 @@ css/css-sizing/fit-content-length-percentage-008.html css/reference/ref-filled-g
 css/css-backgrounds/background-size-025.html css/css-backgrounds/reference/background-size-025-ref.xht == 2026-09-02 R3926 background-size 单 auto 维按已定维×固有比解析（css-backgrounds §3.9）——旧实现从固有维独立解析致 round 相位错
 css/css-backgrounds/background-size-027.html css/css-backgrounds/reference/background-size-027-ref.xht == 2026-09-02 R3926 background-repeat two-keyword 形式（css-backgrounds §3.4）——repeat round 逐轴生效
 css/css-backgrounds/background-size-029.html css/css-backgrounds/reference/background-size-029-ref.xht == 2026-09-02 R3927 round 缩放一轴后 background-size auto 维按固有比跟随（css-backgrounds §3.4）——旧实现另一轴留原值
+css/css-backgrounds/background-color-body-propagation-010.html css/css-backgrounds/background-color-no-body-propagation-ref.html == 2026-09-02 R3928 body::before 块级伪元素带背景走独立盒路径（engine 注入门控 root/body 收窄）——文本节点路径丢失伪元素背景
+css/css-backgrounds/background-color-root-propagation-003.html css/css-backgrounds/background-color-no-body-propagation-ref.html == 2026-09-02 R3928 html::before 同族——root 伪元素背景需独立盒

@@ -2491,13 +2491,44 @@ pub(crate) fn inject_pseudo_text_nodes(
         // 50×100 盒而非空 inline 文本）。非空 content 或 inline-static 伪元素仍走 text-node
         // 路径（保留 102 通过的 generated-content 案 + 不触 content-list 多 token，避 R554
         // net-negative）。kill-switch ZW_PSEUDO_BOX=0。
+        // R3928：块级伪元素（display != inline）即使 content 非空也要独立盒——文本节点
+        // 路径只绘字形，伪元素上的 background/border/padding 全部丢失（css-backgrounds
+        // background-color-body-propagation-010 / -root-propagation-003：`body::before
+        // { content: "…"; display: block; background-color: green }` 应渲染绿底文本带）。
+        // 收窄门控（A/B 实证）：仅「块级 + 有装饰」（背景色非透明 / 背景图 / 边框）走
+        // element 路径——无装饰的块级伪元素保持旧文本路径（query-style-color 等 3 案
+        // 在无门控版本翻红：block 化改变行内上下文布局，装饰缺席时无收益）。
+        let has_decoration = !matches!(
+            pseudo_style.background_color,
+            zero_css_parser::values::ColorValue::Transparent
+        ) || !pseudo_style.background_image.is_empty()
+            || pseudo_style.border_top_style != zero_style_system::property::types::BorderStyleValue::None
+            || pseudo_style.border_bottom_style != zero_style_system::property::types::BorderStyleValue::None
+            || pseudo_style.border_left_style != zero_style_system::property::types::BorderStyleValue::None
+            || pseudo_style.border_right_style != zero_style_system::property::types::BorderStyleValue::None;
+        // 门控再收窄（两轮 A/B 实证）：块级+装饰的 element 化仅对 html/body 宿主伪元素启用
+        //——本轮 driving 案正是 CSS Backgrounds §special-backgrounds 的 root/body 伪元素
+        // 背景（canvas 传播交互域）。通用放开会改变 query-style-color（div::before）与
+        // ruby-inlinize（ruby::before）的行内上下文布局，双页自比对发散（-2 实证）。
+        let parent_is_root_or_body = doc.get(parent).is_some_and(|n| match &n.kind {
+            zero_dom::NodeKind::Element(elem) => {
+                elem.local_name().eq_ignore_ascii_case("html") || elem.local_name().eq_ignore_ascii_case("body")
+            }
+            _ => false,
+        });
         let needs_box = std::env::var("ZW_PSEUDO_BOX").as_deref() != Ok("0")
-            && text.is_empty()
-            && (pseudo_style.position != PositionValue::Static
-                || pseudo_style.float != FloatValue::None
-                || pseudo_style.display != DisplayValue::Inline);
+            && ((text.is_empty()
+                && (pseudo_style.position != PositionValue::Static
+                    || pseudo_style.float != FloatValue::None
+                    || pseudo_style.display != DisplayValue::Inline))
+                || (pseudo_style.display != DisplayValue::Inline && has_decoration && parent_is_root_or_body));
         let new_id = if needs_box {
-            doc.create_element("zw-pseudo")
+            let el = doc.create_element("zw-pseudo");
+            if !text.is_empty() {
+                let text_id = doc.create_text_node(&text);
+                let _ = doc.append_child(el, text_id);
+            }
+            el
         } else {
             doc.create_text_node(&text)
         };
