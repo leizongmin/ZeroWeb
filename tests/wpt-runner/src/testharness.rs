@@ -1446,6 +1446,14 @@ pub const MEDIA_TEST_FILES: &[&str] = &[
     "html/semantics/embedded-content/media-elements/track/track-element/track-default-attribute.html",
     // src setter 触发加载（NONE → LOADED；track.track.mode='hidden' 先设——mode 触发面）。
     "html/semantics/embedded-content/media-elements/track/track-element/track-load-from-src-readyState.html",
+    // ---- M3 扩批 XVI（2026-09-02）：track-cues-* 播放推进族（fixture-mounted 切片 2——
+    // 播放桥 + 泵 + time-marches-on/seek sync 就绪后解锁）。movie_5.webm（VP9+Opus 5s）
+    // 为媒体源；cue enter/exit 由桥真值钟驱动（runner 泵每 tick 调 _zwMediaTimeMarchesOn）。
+    // enter-exit 单件暂时排除：单跑 1/4 概率 Timeout（重试注册与首播竞态——播放钟推进
+    // 晚于 case 10s 预算；seek/missed 两件在区间捕获 + 事件时间序派发下稳定全绿），
+    // 随 runner 泵节拍精化复评。
+    "html/semantics/embedded-content/media-elements/track/track-element/track-cues-enter-seeking.html",
+    "html/semantics/embedded-content/media-elements/track/track-element/track-cues-missed.html",
     // 不导入（B 组——依赖真播放钟推进 time-marches-on/cue enter/exit/cuechange/
     // activeCues 变化，随 media-playback 泵接语义层后复评）：track-cues-* 全族、
     // track-active-cues、no-cuechange-before-play、track-remove-active-cue、
@@ -3219,6 +3227,7 @@ fn run_testharness_html_inner(
     });
     webview.prepare_document_state(&format!("https://wpt.test/{case_name}"));
     let page_url = format!("https://wpt.test/{case_name}");
+    let _zw_hb = std::fs::write("/tmp/zw-hb.txt", format!("prepared {}\n", case_name));
     // M3 扩批：播放泵时钟原点（tab_worker pump_epoch 同款——registry play/tick 共用
     // 单调毫秒；桥 play 传 0 即本原点）。
     let playback_clock_origin = std::time::Instant::now();
@@ -3228,32 +3237,129 @@ fn run_testharness_html_inner(
     webview.load_canvas_system_sans_font();
     let external_css = webview.fetch_page_images(&html, &page_url);
     webview.load_html(&html, Some(&external_css));
+    // M3 扩批 XVI：播放宿主桥**先于页面脚本**安装（canplaythrough handler 在初始脚本
+    // 执行内同步调 video.play()——桥后装则 play 走 headless 分支、bridgeOn 永不置位，
+    // 播放钟推进面失联）。execute_script 空转预热 = ensure_sandbox + ensure_js_shim
+    //（install_playback_bridge 的回调注册前提）。
+    let _ = webview.execute_script("0;");
+    let _ = webview.install_playback_bridge();
+    let _zw_hb2 = std::fs::write("/tmp/zw-hb.txt", format!("pre-scripts {}\n", case_name));
     let script_result = webview.run_page_scripts_strict();
+    let _zw_hb3 = std::fs::write("/tmp/zw-hb2.txt", format!("post-scripts {}\n", case_name));
     // M3 扩批（2026-09-02，fixture-mounted 播放切片）：播放宿主桥 + 媒体源登记。
     // 页面 <video>/<audio> src（经 extract_media_resources 提取、相对 case 目录解析）
     // 从 wpt-data 读字节登记进 VideoPlayerRegistry——shim play() 经 __zwVideoBridge
     // 走真值播放（registry 泵推进帧/音频时钟）。非 webm 源登记后 play 返 false 回落
     // headless（语义层零回归）。
+    // M3 扩批 XVI：动态 `.src=`（页面脚本赋值）登记——runner 初始 extract 只见静态
+    // 标记，脚本赋值产生的媒体源须按 DOM 现值补登记（幂等；webview.borrow 桥回读
+    // 不可行——host 侧持 &mut，经 JS 快照 media 元素 src 列表）。
+    // 返回：本轮新登记的 (kind_tag, abs_url, duration_ms) 列表（供 settle 提交）。
+    fn register_dynamic_media_sources(
+        webview: &mut WebView,
+        wpt_root: &Path,
+        byte_cache: &mut std::collections::HashMap<String, std::rc::Rc<Vec<u8>>>,
+    ) -> Vec<(&'static str, String, Option<u64>)> {
+        // 页面侧快照（DOM 现值）：audio/video 元素的 resolve 后 src（data:/blob: 跳过）。
+        let snapshot = webview
+            .execute_script(
+                "(function(){\
+                   var out=[];\
+                   var els=document.querySelectorAll('audio,video');\
+                   for (var i=0;i<els.length;i++){\
+                     var s=els[i].currentSrc||els[i].src||'';\
+                     if (s) out.push(s);\
+                   }\
+                   return out.join('|');\
+                 })()",
+            )
+            .unwrap_or_default();
+        let mut committed = Vec::new();
+        if snapshot.is_empty() {
+            return committed;
+        }
+        let players_arc = webview.video_players();
+        let Ok(mut reg) = players_arc.lock() else {
+            return committed;
+        };
+        for src in snapshot.split('|') {
+            if src.is_empty() || !src.starts_with("http") {
+                continue;
+            }
+            let path_part = src
+                .split("://")
+                .nth(1)
+                .and_then(|rest| rest.split_once('/'))
+                .map(|(_, path)| path)
+                .unwrap_or("");
+            let clean = path_part.split(['?', '#']).next().unwrap_or(path_part);
+            if clean.is_empty() {
+                continue;
+            }
+            let bytes = match byte_cache.get(clean) {
+                Some(cached) => std::rc::Rc::clone(cached),
+                None => match std::fs::read(wpt_root.join(clean)) {
+                    Ok(bytes) => {
+                        byte_cache.insert(clean.to_string(), std::rc::Rc::new(bytes));
+                        std::rc::Rc::clone(&byte_cache[clean])
+                    }
+                    Err(_) => continue,
+                },
+            };
+            let kind_tag = if clean.ends_with(".oga") || clean.ends_with(".mp3") {
+                "audio"
+            } else {
+                "video"
+            };
+            // 幂等：player 已存在（播放中/已建）或源字节已登记则跳过——泵 tick 高频调用面。
+            if reg.contains_source(src) {
+                continue;
+            }
+            reg.register_source(src, bytes.as_ref().clone());
+            if kind_tag == "audio" {
+                reg.register_audio_source(src, bytes.as_ref().clone());
+            }
+            committed.push((
+                kind_tag,
+                src.to_string(),
+                reg.duration(src).map(|d| (d * 1000.0) as u64),
+            ));
+        }
+        // settle 提交在锁外（execute_script 走 JS 桥，避免锁序交叉）。
+        drop(reg);
+        committed
+    }
+
     if script_result.is_ok() {
-        let _ = webview.install_playback_bridge();
-        if let Ok(mut reg) = webview.video_players().lock() {
-            for resource in zero_engine::extract_media_resources(&html) {
-                let resolved = zero_engine::resolve_document_url(&page_url, &resource.src);
-                let path_part = resolved
-                    .split("://")
-                    .nth(1)
-                    .and_then(|rest| rest.split_once('/'))
-                    .map(|(_, path)| path)
-                    .unwrap_or("");
-                let clean = path_part.split(['?', '#']).next().unwrap_or(path_part);
-                if clean.is_empty() {
-                    continue;
-                }
-                if let Ok(bytes) = std::fs::read(wpt_root.join(clean)) {
-                    reg.register_source(&resolved, bytes);
-                }
+        // 静态标记登记（初始 extract——DOM 快照此时尚未含脚本赋值）+ 首轮动态登记。
+        // settle 提交（readyState/duration 真值链）随登记产出提交。
+        let mut media_byte_cache: std::collections::HashMap<String, std::rc::Rc<Vec<u8>>> =
+            std::collections::HashMap::new();
+        for resource in zero_engine::extract_media_resources(&html) {
+            let resolved = zero_engine::resolve_document_url(&page_url, &resource.src);
+            // M3 扩批（fixture-mounted 切片 2）：静态 HTML media 元素的 headless settle 提交
+            //（tab_scripts finish 同款——testharness 无宿主提交通道，静态 <video src> 此前
+            // 永不 settle → readyState 恒 NONE → seek 门 readyState>=1 不开）。
+            if matches!(
+                resource.kind,
+                zero_engine::MediaResourceElementKind::Video | zero_engine::MediaResourceElementKind::Audio
+            ) {
+                let duration_ms = webview
+                    .video_players()
+                    .lock()
+                    .ok()
+                    .and_then(|reg| reg.duration(&resolved).map(|d| (d * 1000.0) as u64));
+                let _ = webview.execute_script(&zero_engine::script_commit_resource_element_state(
+                    kind_tag(resource.kind),
+                    &resolved,
+                    "loaded",
+                    0,
+                    0,
+                    duration_ms,
+                ));
             }
         }
+        let _ = register_dynamic_media_sources(&mut webview, wpt_root, &mut media_byte_cache);
     }
     if let Err(error) = script_result {
         // 无 testharness 引用的 crash/no-harness 用例只有在脚本执行完成且未崩溃时才可
@@ -3282,7 +3388,24 @@ fn run_testharness_html_inner(
     //（body 在 timer 回调里 enqueue，host 侧 next pump 才 materialize），probe 每帧
     // 排空队列的首次解析可能先于元素落 doc。同 id 最多重试 20 帧，超限按原错误处理。
     let mut td_command_attempts: std::collections::HashMap<u64, u32> = std::collections::HashMap::new();
+    // M3 扩批 XVI：文件字节缓存（同 src 只读盘一次；注册表 contains_source 幂等）。
+    let mut media_byte_cache: std::collections::HashMap<String, std::rc::Rc<Vec<u8>>> =
+        std::collections::HashMap::new();
     loop {
+        // M3 扩批 XVI：逐 tick 动态登记——脚本赋值的 `.src=`（含 script turn 内同步 play 的
+        // canplaythrough handler 形态）在注册表补登记后，同 tick/下一 tick 桥 play 即真值
+        // 可达。已登记的 src 幂等跳过（contains_source）；文件字节缓存避免重复 IO。
+        // settle 提交只在**首次**登记时发（幂等面——_resourceStates 每 key 一次）。
+        for (tag, url, duration_ms) in register_dynamic_media_sources(&mut webview, wpt_root, &mut media_byte_cache) {
+            let _ = webview.execute_script(&zero_engine::script_commit_resource_element_state(
+                tag,
+                &url,
+                "loaded",
+                0,
+                0,
+                duration_ms,
+            ));
+        }
         if Instant::now() >= deadline {
             let mut results = map_harness_results(partial_results);
             results.push(HarnessSubtestResult {
@@ -3331,7 +3454,8 @@ fn run_testharness_html_inner(
         // 序列承载（语义层不回归）。
         {
             let now_ms = playback_clock_origin.elapsed().as_millis() as u64;
-            if let Ok(mut reg) = webview.video_players().lock()
+            if std::env::var("ZW_DISABLE_PUMP").is_err()
+                && let Ok(mut reg) = webview.video_players().lock()
                 && reg.is_any_playing()
             {
                 let cache = webview.image_cache();
@@ -3339,6 +3463,10 @@ fn run_testharness_html_inner(
                 let _ = reg.audio_advance_all(now_ms);
             }
         }
+        let _zw_hb4 = std::fs::write(
+            "/tmp/zw-hb3.txt",
+            format!("loop {}ms\n", playback_clock_origin.elapsed().as_millis()),
+        );
         let probe = match take_probe(&mut webview) {
             Ok(probe) => probe,
             Err(error) => {
@@ -3832,6 +3960,17 @@ struct TestdriverCommand {
     operation: String,
     selector: Option<String>,
     text: Option<String>,
+}
+
+/// M3 扩批（fixture-mounted 切片 2）：`MediaResourceElementKind` → 提交 tag。
+fn kind_tag(kind: zero_engine::MediaResourceElementKind) -> &'static str {
+    use zero_engine::MediaResourceElementKind as K;
+    match kind {
+        K::Audio => "audio",
+        K::Video => "video",
+        K::Source => "source",
+        K::Track => "track",
+    }
 }
 
 fn take_probe(webview: &mut WebView) -> Result<HarnessProbe, String> {

@@ -2,7 +2,11 @@
 
 **入口文档**: [../media-playback.md](../media-playback.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-02（**M3 fixture-mounted runner 播放面切片 1 落地**——webview
+**最后更新**: 2026-09-03（**M3 fixture-mounted runner 播放面切片 2 落地**——
+track-cues-* 播放推进族解锁：runner 播放桥前置 + 逐 tick 动态源登记 + shim play()
+latest-wins 读/退避重试/pending seek 补推 + registry 字节留存/is_ended 桥面 +
+march 区间捕获/事件时间序/ended 面；media-elements 531P/0F/24PF（+2 净涨）。
+此前 2026-09-02：**M3 fixture-mounted runner 播放面切片 1 落地**——webview
 `install_playback_bridge` + wpt-runner 播放泵/源登记 + shim `_zwMediaTimeMarchesOn`
 cue 调度钩子；webm A_OPUS 解码切片（WebmOpusAudioTrack + registry codec 泛化 +
 canPlayType webm-opus 扩表）；media-elements 529P/0F 零回归。此前同日：**M3 AV1
@@ -363,6 +367,24 @@ clippy 零警告、每切片带单测 + e2e/fixture 资产化（AV1 全流单测
    media-elements 529P/0F/24PF 零回归。**余**：WPT 播放推进用例导入
    （track-cues-enter-exit / missed / seeking 等——cue 时钟推进面已就绪，
    seek 语义面待切片 2）。
+   **切片 2 落地（2026-09-03，track-cues-* 播放推进族解锁——media-elements
+   M3 扩批 XVI 兑现）**：① runner 播放桥**前置**页面脚本（execute_script 预热
+   ensure_sandbox/ensure_js_shim 后 install_playback_bridge——canplaythrough 内
+   同步 play 可达桥）；② probe 循环**逐 tick 动态源登记**（JS 快照 media 现值
+   src → wpt-data 字节 → registry；contains_source 幂等 + Rc 字节缓存；settle
+   提交随首次登记）；③ shim play() 桥 src 改 latest-wins 读 + `_hit` 单次调用 +
+   未命中退避重试（setTimeout 0 × 5000 上限）+ pending seek 补推（seek-before-
+   play 落位）；④ registry play 未命中**不消费**源字节（sources.get 克隆、命中
+   才 remove——旧形态一次失败即丢字节，单测
+   `play_miss_retains_source_bytes_for_retry`）+ `contains_source` + `is_ended`
+   桥面（`__zw_video_is_ended`/`isEnded`）；⑤ march 钩子**区间捕获 + 事件时间
+   序派发**（跨 (lastMs, nowMs] 收集 enter@start/exit@end 按时间排序——1ms cue
+   不再整体跳过；seek 判据改「时钟回退 ∨ seeking 标志」）+ **ended 面**（active
+   cue 倒序 exit flush + timeupdate + ended）。WPT 实证：media-elements 531P/
+   0F/24PF（+2 净涨——track-cues-enter-seeking + track-cues-missed 稳定全绿；
+   enter-exit 因注册竞态 1/4 flake 暂排除，随泵节拍精化复评）。**余**：WPT 播放
+   推进用例续批（enter-exit 复评 + seeking/sorted/pause-on-exit 等随基础设施
+   增量逐件）。
 2. ~~**A/V 同步精化余项**~~ ✅ 2026-09-01 收口：ended 面回归守卫落地
    （切片 F——伴音流末 video player 走到 Ended、泵停）；音频设备面（CpalSink
    真出声）挂 media-audio M1 可选切片。

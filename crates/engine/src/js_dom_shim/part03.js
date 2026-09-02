@@ -11360,6 +11360,10 @@
             var _pTag = _realTag(sel, handle);
             var _pKey = _elKey(sel, handle);
             var _pMs = _mediaState[_pKey] || (_mediaState[_pKey] = {});
+            // M3 扩批 XVI：元素身份留档（march/ended 钩子经 key 反查派发面——
+            // sel/handle 不在 march 作用域，暂存于此）。
+            _pMs._zwSel = sel;
+            _pMs._zwHandle = handle;
             // media-elements M3 扩批 XIV（spec dom-media-play / pause-on-removal）：
             // **已移出文档**的 sel media 元素 play()——播放无法推进（无 resource
             // selection invoke、无 queued 派发），promise 保持 pending 交由
@@ -11415,11 +11419,69 @@
             // 注册表 settle 登记键）。
             if (typeof globalThis.__zwVideoBridge === 'object' && globalThis.__zwVideoBridge) {
               try {
-                var _pSrcRaw = (typeof __zw_get_attr === 'function') ? (__zw_get_attr(sel, 'src') || '') : '';
+                // M3 扩批 XVI：latest-wins 读——`.src=` IDL setter 的写是 pending mutation
+                //（render apply 前不入快照），纯快照读 `__zw_get_attr` 看不到 → bridgeSrc
+                // 空串 → 播放桥失联（fixture-mounted runner 的 track-cues-* 用例形态）。
+                // `__zw_get_attr_lw` 同批 SetAttr 命中新值（R2995 同源语义）。
+                var _pSrcRaw = (typeof __zw_get_attr_lw === 'function')
+                  ? (__zw_get_attr_lw(sel, 'src') || '')
+                  : ((typeof __zw_get_attr === 'function') ? (__zw_get_attr(sel, 'src') || '') : '');
                 var _pAbs = _pSrcRaw ? _zwResolveFetchUrl(String(_pSrcRaw).replace(/^[\x00-\x20]+/, '').replace(/[\x00-\x20]+$/, '')) : '';
                 if (_pAbs) _pMs.bridgeSrc = _pAbs;
-                if (_pAbs && globalThis.__zwVideoBridge.play(_pAbs, 0)) {
+                // M3 扩批 XVI：play 桥调用**恰一次**（结果存 _hit——旧形态条件里各调一次
+                // 致桥双调，engine 桥契约测试断言调用序列面）。命中路径：bridgeOn 置位 +
+                // pending seek 补推 + 速率/增益同步；未命中：**退避重试**（fixture-mounted
+                // runner 的源登记走逐 tick 动态补登记——脚本 turn 内同步 play 早于登记
+                // 落位）。spec play() promise pending 于播放真正推进，重试窗口内 playing
+                // 态保持；命中后与同步路径同面（playPromise 由既有 queued task resolve）。
+                var _hit = _pAbs ? globalThis.__zwVideoBridge.play(_pAbs, 0) : false;
+                if (!_hit && _pAbs && typeof setTimeout === 'function') {
+                  var _pRetry = function (_n) {
+                    if (_n > 5000 || !_pMs.playing || _pMs.bridgeOn) return;
+                    setTimeout(function () {
+                      try {
+                        if (globalThis.__zwVideoBridge.play(_pAbs, 0)) {
+                          _pMs.bridgeOn = true;
+                          // M3 扩批 XVI：pending seek 补推（seek-before-play 时序——
+                          // 桥未接通期的 currentTime= 赋值在此落位，spec 播放启动
+                          // 位置 = 请求 seek 目标）。
+                          if (typeof _pMs._zwSeekPendingMs === 'number') {
+                            try {
+                              if (typeof globalThis.__zwVideoBridge.seek === 'function') {
+                                globalThis.__zwVideoBridge.seek(_pAbs, _pMs._zwSeekPendingMs | 0);
+                              }
+                            } catch (_eVbSk2) {}
+                            delete _pMs._zwSeekPendingMs;
+                          }
+                          if (typeof globalThis.__zwVideoBridge.setRate === 'function') {
+                            try { globalThis.__zwVideoBridge.setRate(_pAbs, _pMs.playbackRate || 1); } catch (_eVbR3) {}
+                          }
+                          if (typeof globalThis.__zwVideoBridge.setGain === 'function') {
+                            try {
+                              globalThis.__zwVideoBridge.setGain(
+                                _pAbs, (_pMs.volume != null ? _pMs.volume : 1), _pMs.muted === true);
+                            } catch (_eVbG1) {}
+                          }
+                        } else {
+                          _pRetry(_n + 1);
+                        }
+                      } catch (_eVbRt) {}
+                    }, 0);
+                  };
+                  _pRetry(1);
+                }
+                if (_hit) {
                   _pMs.bridgeOn = true;
+                  // M3 扩批 XVI：pending seek 补推（同步命中路径——seek 发生在 play 前、
+                  // 桥登记落位前，与重试路径同语义；spec 播放启动位置 = 请求 seek 目标）。
+                  if (typeof _pMs._zwSeekPendingMs === 'number') {
+                    try {
+                      if (typeof globalThis.__zwVideoBridge.seek === 'function') {
+                        globalThis.__zwVideoBridge.seek(_pAbs, _pMs._zwSeekPendingMs | 0);
+                      }
+                    } catch (_eVbSk3) {}
+                    delete _pMs._zwSeekPendingMs;
+                  }
                   // 起播时同步既有速率（play 前设的 playbackRate 经桥生效）。
                   if (typeof globalThis.__zwVideoBridge.setRate === 'function') {
                     try { globalThis.__zwVideoBridge.setRate(_pAbs, _pMs.playbackRate || 1); } catch (_eVbR2) {}

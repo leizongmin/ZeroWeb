@@ -362,6 +362,21 @@
   };
   // 工厂内部用：对已有 holder（无 getCueById）补挂后包 Proxy。
   globalThis._zwWrapCueListHolder = function (holder) {
+    // M3 扩批 XVI：for...of 迭代面（TextTrackCueList 是 iterable——track-cues-enter-
+    // seeking 的 `for (let cue of testTrack.track.cues)` 断言形态）。iterator 挂 target
+    //（proxy get 透传）；迭代时经 holder.arr 实时取（快照序——同 item()）。
+    if (typeof Symbol !== 'undefined' && Symbol.iterator && !holder.target[Symbol.iterator]) {
+      holder.target[Symbol.iterator] = function () {
+        var i = 0;
+        return {
+          next: function () {
+            return (i < holder.arr.length)
+              ? { done: false, value: holder.arr[i++] }
+              : { done: true };
+          }
+        };
+      };
+    }
     holder.target.getCueById = function (id) {
       var s = String(id);
       // spec getCueById：id 空串恒 null（'If id is the empty string, return null'）。
@@ -483,7 +498,11 @@
         try {
           var _me = mediaEl || ownerEl;
           var _ms = (typeof _mediaState !== 'undefined') && _me ? _mediaState[typeof _elKey === 'function' ? _elKey(_me.__zwSelector, _me.__zwHandle) : ''] : null;
-          if (_ms && _ms.playing) _now = Number(_ms.currentTime) || 0;
+          // M3 扩批（fixture-mounted 切片 2）：时刻有效性 gate——playing（播放推进中）
+          // 或**已建立媒体时刻**（seek 落点/播放钟推进过——march hook / seek sync 置
+          // _zwMediaTimeKnown）时按当前时刻取；否则空列表（video loading 断言面——
+          // 从未推进的元素无 active 时刻概念）。
+          if (_ms && (_ms.playing || _ms._zwMediaTimeKnown)) _now = Number(_ms.currentTime) || 0;
         } catch (_eAc) {}
         var _act = [];
         if (_now != null) {

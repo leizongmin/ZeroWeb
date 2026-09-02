@@ -2,11 +2,14 @@
 
 **入口文档**: [../media-elements.md](../media-elements.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-02（**M3 扩批 XV**——http VTT 文件加载 + WebVTT 解析深化 +
-静态 track 调度触发面 + window.event，12 用例导入，528/553 = 95.5%。同日
-**兄弟目标 fixture-mounted 播放面切片 1 落地**（media-playback 流）：播放桥 +
-泵 + `_zwMediaTimeMarchesOn` cue 调度钩子——真播放推进面（track-cues-* 族）
-解锁前置就绪；canPlayType webm-opus 扩表 +1P（**529P/0F/24PF，529/553**））
+**最后更新**: 2026-09-03（**M3 扩批 XVI 落地**——track-cues-* 播放推进族解锁：
+fixture-mounted runner 播放桥前置 + 逐 tick 动态源登记 + time-marches-on 区间捕获/
+事件时间序/ended 面 + play() 桥 latest-wins 读/退避重试/pending seek 补推 +
+registry play 未命中不消费源字节 + is_ended 桥面。**531P/0F/24PF，531/555 =
+95.7%**（+2 净涨零回归：track-cues-enter-seeking + track-cues-missed；enter-exit
+单件因注册竞态 flake 暂排除复评）。此前 2026-09-02：**M3 扩批 XV**——http VTT
+文件加载 + WebVTT 解析深化 + 静态 track 调度触发面 + window.event，12 用例
+导入（529P/0F/24PF））
 
 ---
 
@@ -351,6 +354,61 @@ already-playing resolved 断言。**88.3%**（324P/0F/2T/41PF，+80 subtest 全�
   track-cue-rendering-*、track-css-cue-pseudo-class、track-webvtt-*positioning/layout、
   track-cue-inline。D 组（深结构）：track-change-event（既有记录）。
 
+**M3 扩批 XVI 已落地（2026-09-03，track-cues-* 播放推进族——B 组排除清单的
+第一次实质解锁，兄弟目标 media-playback fixture-mounted 切片 2 兑现）**：
+- **背景**：限额中断前 WIP（M3 扩批 XVI 初版：cue iterator + seek sync + kind
+  gate + 延后一拍加载序列）处于未提交态且 1 Fail/2 Timeout；本轮续接收口，
+  逐一定位并修复 **5 类根因**，2 用例稳定全绿 + 1 件（enter-exit）竞态 flake
+  暂排除。
+- **根因 1 — 播放桥后装**：runner 的 `install_playback_bridge()` 在
+  `run_page_scripts` **之后**执行——页面脚本 turn 内（headless settle 链）
+  canplaythrough handler 同步调 video.play() 时桥不存在 → headless 分支、
+  bridgeOn 永不置位。修复：execute_script 空转预热（ensure_sandbox +
+  ensure_js_shim）后**先装桥再跑页面脚本**。
+- **根因 2 — 动态 .src= 不登记**：runner 只在脚本前 extract 静态标记登记源字节
+  ——脚本赋值的 `.src=` 永不登记（bridge.play 恒 false）。修复：runner probe
+  循环逐 tick 动态登记（JS 快照 audio/video 的 currentSrc/src → wpt-data 读
+  字节 → registry；contains_source 幂等 + Rc 字节缓存免重复 IO；settle 提交随
+  首次登记发出）。
+- **根因 3 — 桥 src 读纯快照**：shim play() 经 `__zw_get_attr`（纯快照）读
+  src——IDL `.src=` setter 的写是 pending mutation（apply 前不入快照）→
+  bridgeSrc 空串 → 桥失联。修复：改 `__zw_get_attr_lw`（latest-wins，R2995
+  同源语义）。
+- **根因 4 — 桥未命中即字节丢失 + play 双调**：registry `play()` 的
+  `sources.remove` 前置于 open_webm——解码器构建失败一次即丢字节（重试恒
+  no-op）；且 XVI 初版在条件中各调一次桥 play → 桥双调（engine 桥契约测试
+  `test_media_bridge_playpath_m2a_5b` 捕获）。修复：registry 改 `sources.get`
+  克隆、命中才 remove（单测 `play_miss_retains_source_bytes_for_retry`）；shim
+  改 `_hit` 单次调用 + 未命中**退避重试**（setTimeout 0 × 5000 上限，playing 态
+  保持，spec play() promise pending 于播放真正推进）。
+- **根因 5 — march 采样粗粒度丢 cue**：runner 泵 tick 粒度 ~0.5-1s（execute
+  脚本开销），1ms cue（missed-cues.vtt）整体跳过；且前进大跳被 >250ms 启发式
+  误判为 seek → 清 active 跳过整窗。修复：**区间捕获 + 事件时间序派发**——跨
+  (lastMs, nowMs] 收集 enter@start / exit@end 事件按时间排序派发（上游
+  missed-cues 期望 enter,exit 交错对）；seek 判据改「时钟回退 ∨ seeking 标志」
+  （前进跳变是桥真值钟 tick 合并的常态）。
+- **ended 面**：桥真值钟走到流末（registry player Ended 态，新 `is_ended` 桥
+  面 `__zw_video_is_ended`/`isEnded`）→ active cue 逐个派 exit（倒序 flush）+
+  timeupdate + ended（`ms._zwSel/_zwHandle` 身份留档派发；track-cues-missed 的
+  onended 断言面）。
+- **pending seek 补推**：seek-before-play 时序（currentTime= 早于桥接通）在
+  `_zwSeekPendingMs` 留档，桥命中后 seek 落位（spec 播放启动位置 = 请求 seek
+  目标；missed 用例 currentTime=5.0 → play 形态）。
+- **回退**：XVI 初版的 track 自动加载 kind gate（metadata 排除）回退为 XV 的
+  default gate——track-cues-* 各用例 track 子均带 `default` 属性，kind gate 非
+  必需且致 track-default-attribute「onload 只派 default track」回归。
+- **导入**：track-cues-enter-seeking（+1P）/ track-cues-missed（+1P，含
+  cues-chrono-order / missed-cues VTT 资源已在白名单）。**531P/0F/24PF
+  （531/555 = 95.7%）**（+2 净涨零回归）。evidence：
+  `evidence/2026-09-03-media-cues-playback.json`。make test 66 套件全绿
+  （engine 2571 / webview 682 / integration 781）、fmt/clippy 干净。
+- **排除注记（本片暂排除）**：track-cues-enter-exit——单跑 1/4 概率 Timeout
+  （桥 play 重试命中与 runner 源登记竞态：播放钟推进偶发晚于 case 10s 预算；
+  全套件并行负载下复现率上升），随 runner 泵节拍精化（march 采样粒度收敛）
+  复评。其余 B 组（track-cues-seeking activeCues 断言面 / sorted-before-
+  dispatch / pause-on-exit / add-new-track / no-cuechange-before-play /
+  track-disabled / track-remove-*）维持排除，随本片基础设施增量逐件复评。
+
 **DC 达成审计（2026-09-01）**：DC-1~4 实质满足——① 60 用例导入 + 8 份 evidence JSON
 （基线演进 46.5→90.1 全程可追溯）；② 状态机/事件序列 WPT 断言面全绿（headless 近似
 驱动逐项记录）；③ API 语义面全对齐（canPlayType 空表 + M4g-d 显式记录为跨 goal 依赖项；
@@ -391,7 +449,7 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
 
 | # | 缺口 | 状态 | 失败聚类 |
 |---|------|------|----------|
-| M1g | WPT media-elements 用例覆盖 | ✅ 136 用例已导入（含 event_* 族 25 + volume/Audio 构造器 + controlsList + track-element 23 + resource-selection 族 25 + interfaces/TextTrack 家族 28 + http VTT 加载族 12），**95.5%** | — |
+| M1g | WPT media-elements 用例覆盖 | ✅ 138 用例已导入（136 + M3 扩批 XVI：track-cues-enter-seeking / track-cues-missed——播放推进族首批），**95.7%**（531/555） | — |
 | M2g | load 算法 + 状态机（事件序列派发） | ✅ M2 落地（13T→**0T**） | F4 闭合 |
 | M3g | 事件序列 headless 近似驱动 | ✅（同 M2g；source-child 触发已落地） | F4 闭合 |
 | M4g-a | 媒体元数据 IDL 反射（初值面） | ✅ 切片 3 落地 | F2 闭合（-9 Fail） |
@@ -406,13 +464,17 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
 
 ## 下一步计划
 
-1. **扩大导入面（余面收口）**：playing-the-media-resource 剩余
+1. **扩大导入面（余面收口）**：**track-cues-* 播放推进族续批（当前首选）**——
+   track-cues-enter-exit（本片因注册竞态 flake 暂排除，随 runner 泵节拍精化复评）/
+   track-cues-seeking（activeCues 随 seek 递增断言）/ sorted-before-dispatch /
+   pause-on-exit（pauseOnExit 已在 march 面接通）/ add-new-track 等随基础设施
+   增量逐件复评导入。playing-the-media-resource 剩余
   （play-in-detached-document——需 detached 文档播放时钟推进，依赖兄弟目标
    media-playback 播放钟接语义层；loop-from-ended.tentative / fragmented-mp4-end
    同域）；the-video-element 反射余面（video-loading-* preload 语义族——视
-   lazy-loading 支撑面）。**headless 可导入面已在 95.5% 重饱和（M3 扩批 XV 第二次
-   修正——http VTT 加载族接通后 track/track-element 语义面清空）**——余下增量
-   全部依赖兄弟目标解锁（真播放钟 → track-cues-* 播放推进族 / time-marches-on 面）
+   lazy-loading 支撑面）。**headless 可导入面已在 95.7% 重饱和（M3 扩批 XVI 后
+   第三次修正）**——余下增量依赖兄弟目标解锁（真播放钟 → track-cues-* 剩余件 /
+   time-marches-on 面）
    + 深结构项（TextTrackList change 事件广播反向链、cue 标记树解析）。
 2. ~~**M4g-d**：canPlayType 能力表联动更新~~ ✅ 2026-09-01 兑现（能力表真值化——
    后续新增解码面（AV1/H.264，media-playback M3）时同步扩表）。
@@ -464,6 +526,10 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
   （+2 subtest 全绿；Fail 0 / Timeout 0 / PF 25）
   → 扩批 XV（2026-09-02，http VTT 加载 + WebVTT 解析深化）**528/553 = 95.5%**
   （+16 subtest 全绿；Fail 0 / Timeout 0 / PF 25）
+  → 扩批 XV 尾（2026-09-02，fixture-mounted 切片 1 canPlayType webm-opus 扩表）
+  **529/553**（+1P）
+  → 扩批 XVI（2026-09-03，track-cues-* 播放推进族——enter-seeking + missed 导入；
+  enter-exit 暂排除）**531/555 = 95.7%**（+2 净涨零回归；Fail 0 / Timeout 0 / PF 24）
 - 入口：`make testharness-media`（FILTER 透传，`--json` 捕获 evidence）
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过
 - evidence：`evidence/2026-08-31-media-baseline.md`（+ 同名 .json 机读版）、
@@ -472,4 +538,5 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
   `evidence/2026-09-01-media-playbackrate-typeerror.json`、`evidence/2026-09-01-media-preload-setter.json`、
   `evidence/2026-09-01-media-track-sync.json`、`evidence/2026-09-02-media-resource-selection.json`、
   `evidence/2026-09-02-media-texttrack-family.json`、`evidence/2026-09-02-media-cue-options.json`、
-  `evidence/2026-09-02-media-pause-removal-variants.json`、`evidence/2026-09-02-media-http-vtt.json`
+  `evidence/2026-09-02-media-pause-removal-variants.json`、`evidence/2026-09-02-media-http-vtt.json`、
+  `evidence/2026-09-03-media-cues-playback.json`

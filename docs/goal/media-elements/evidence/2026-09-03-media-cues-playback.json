@@ -1,0 +1,40 @@
+{
+  "date": "2026-09-03",
+  "suite": "make testharness-media",
+  "wpt_rev": "315976933870b34d6ea30e3f6643403edae678ba",
+  "summary": {
+    "pass": 531,
+    "fail": 0,
+    "timeout": 0,
+    "precondition_failed": 24,
+    "total_pass_rate": "531/555 = 95.7%"
+  },
+  "delta_vs_previous": {
+    "previous": "529P/0F/24PF (2026-09-02, M3 扩批 XV + fixture-mounted 切片 1)",
+    "current": "531P/0F/24PF",
+    "new_passes": [
+      "html/semantics/embedded-content/media-elements/track/track-element/track-cues-enter-seeking.html",
+      "html/semantics/embedded-content/media-elements/track/track-element/track-cues-missed.html"
+    ],
+    "excluded_this_slice": [
+      {
+        "case": "track-cues-enter-exit.html",
+        "reason": "单跑 1/4 概率 Timeout——桥 play 重试命中与 runner 源登记的竞态（播放钟推进偶发晚于 case 10s 预算）；seek/missed 两件在区间捕获 + 事件时间序派发下稳定全绿。随 runner 泵节拍精化复评。"
+      }
+    ],
+    "regressions": 0
+  },
+  "engine_changes_verified": [
+    "play() 桥 src 读改 latest-wins（__zw_get_attr_lw）——动态 .src= 登记键一致",
+    "play() 桥调用恰一次 + 未命中退避重试（playing 态保持）",
+    "pending seek 补推（seek-before-play 桥落位）",
+    "seeked 后 cue active 同步（_zwMediaSeekSync）",
+    "time-marches-on：区间捕获 + 事件时间序派发 + ended 面（exit flush + timeupdate + ended）",
+    "registry：play 未命中不消费源字节 + contains_source + is_ended 桥面"
+  ],
+  "runner_changes_verified": [
+    "install_playback_bridge 前置于页面脚本（canplaythrough 内同步 play 可达桥）",
+    "逐 tick 动态媒体登记（contains_source 幂等 + 字节缓存）+ settle 提交"
+  ],
+  "stability": "track-cues-missed / track-cues-enter-seeking / track-default-attribute 连续 3+ 次全绿；track-cues-enter-exit 1/4 flake（本片排除）"
+}

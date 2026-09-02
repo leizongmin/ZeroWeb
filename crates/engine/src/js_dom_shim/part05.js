@@ -68,9 +68,14 @@
               _mst.currentTime = isNaN(_mv) ? 0 : _mv;
               // M2b：宿主桥 seek——bridgeOn 元素把 seek 真值推给 Rust VideoPlayer
               //（精确 seek：关键帧定位 + 前向解码；帧更新由渲染泵下一节拍呈现）。
+              // M3 扩批 XVI：桥未接通（bridgeOn false，fixture-mounted runner 的
+              // 首 play 前登记时序）→ 记 **pending seek 目标**——play() 桥命中后补推
+              //（spec seek-before-play 在播放启动时生效）。
               if (_mst.bridgeOn && _mst.bridgeSrc && typeof globalThis.__zwVideoBridge === 'object'
                   && typeof globalThis.__zwVideoBridge.seek === 'function') {
                 try { globalThis.__zwVideoBridge.seek(_mst.bridgeSrc, Math.max(0, _mst.currentTime * 1000)); } catch (_eVbSk) {}
+              } else if (typeof globalThis.__zwVideoBridge === 'object' && globalThis.__zwVideoBridge) {
+                _mst._zwSeekPendingMs = Math.max(0, _mst.currentTime * 1000);
               }
               // spec seek：媒体可 seek（headless：已加载 readyState>=1）→ seeking=true +
               // 派 seeking，随后 seeked 异步回落（setTimeout 队列，runner/沙箱均可触发）。
@@ -82,6 +87,12 @@
                   _mst.seeking = false;
                   _mediaFireSel(sel, handle, key, 'timeupdate');
                   _mediaFireSel(sel, handle, key, 'seeked');
+                  // M3 扩批（fixture-mounted 切片 2）：seeked 后按**目标时刻**同步
+                  // text track cue active 面（spec time-marches-on seek 步——目标时刻
+                  // active 的 cue 派 enter；seek 跳过的 missed cues 不派）。
+                  if (typeof globalThis._zwMediaSeekSync === 'function') {
+                    try { globalThis._zwMediaSeekSync(key); } catch (_eStSk) {}
+                  }
                 };
                 if (typeof setTimeout === 'function') setTimeout(_stSeeked, 0);
                 else _stSeeked();

@@ -7166,10 +7166,11 @@
         var tag = String(k.tagName || '').toUpperCase();
         if (tag !== 'TRACK') continue;
         // M3 扩批 XV：mode gate——无 default 属性的 track 子 TextTrack mode 缺省
-        // 'disabled'，**不自动加载**（spec「track 检索随 media 元素加载循环启动」后按
-        // mode 决定 track URL 处理；track-default-attribute 断言「只有 default track
-        // 派 onload」）。default 属性在（mode showing）才调度。src-clear-cues /
-        // track-add-track 等 DOM 侧断言面不受影响（settle 面由 setter/src 变更显式触发）。
+        // 'disabled'，**不自动加载**（track-default-attribute 断言「只有 default track
+        // 派 onload」）。M3 扩批 XVI 实证：track-cues-* 播放推进族的 track 子均带
+        // `default` 属性——kind gate（metadata 排除）非必需，恢复 XV default gate
+        //（非 default caption track 自动加载会使 track-default-attribute 断言
+        // 「onload 只派在 default track」失败）。
         var _sclDefault = false;
         try {
           _sclDefault = k.__zwHandle
@@ -8177,6 +8178,12 @@
       _dispatchWithBubble(key, sel, null, _makeEvent(eventType, { bubbles: false, cancelable: false }));
     }
     // M2：media 元素资源成功加载 → 派加载事件序列（error 已在上方 error 分支派发）。
+    // M3 扩批 XVI：**延后一拍**（setTimeout(0) 媒体任务队列——spec「queue a task to fire
+    // 事件」）。同步派发使 settle（microtask 续段）在页面脚本注册 handler **之前**派
+    // canplaythrough（Chromium 的 canplay 在数据加载 task 上，晚于当前脚本 turn——
+    // track-cues-* 等用例 src= 赋值后才挂 oncanplaythrough）。延迟一拍后 handler 可达；
+    // 事件内 readyState 断言不受影响（序列相对顺序不变——networkState_during_*/readyState
+    // _during_* 断言面）。无 setTimeout 环境回落同步（零回归面）。
     if ((tag === 'audio' || tag === 'video') && outcome !== 'error') {
       _zwMediaLoadSequence(sel, handle, key, tag);
     }
@@ -8312,6 +8319,47 @@
   // missed cue 语义注记：track-cues-missed 期望 seek 后 play 派发**跳跃** enter——
   // 本钩子以 lastMs → nowMs 区间判定（cue.start ∈ (last, now] 才 enter），天然实现。
   // 事件经 cue.dispatchEvent（EventTarget 面——onenter/onexit accessor 断言面）。
+  // M3 扩批（fixture-mounted 切片 2）：seeked 后按**目标时刻**同步 cue active 面
+  // （spec time-marches-on 的 seek 处理步）。目标时刻 ∈ [start,end) 的 cue 派 enter
+  // （此前未 active）；此前 active 但目标时刻不在区间的 cue 静默移出（不派 exit——
+  // seek 面的 active 集合重建语义；track-cues-enter-seeking / missed 断言面）。
+  globalThis._zwMediaSeekSync = function (mediaKey) {
+    try {
+      if (typeof _mediaState === 'undefined' || typeof _elementTextTrack === 'undefined') return;
+      var ms = _mediaState[mediaKey];
+      if (!ms) return;
+      // 拉桥真值（seek 后 currentTime 已由桥 seek 更新——registry seek_to_ms 落位）。
+      if (ms.bridgeOn && ms.bridgeSrc && typeof globalThis.__zwVideoBridge === 'object') {
+        try {
+          var _ssBct = globalThis.__zwVideoBridge.currentTime(ms.bridgeSrc);
+          if (typeof _ssBct === 'number' && isFinite(_ssBct)) ms.currentTime = _ssBct;
+        } catch (_eSsB) {}
+      }
+      var nowMs = (typeof ms.currentTime === 'number' && isFinite(ms.currentTime)) ? ms.currentTime * 1000 : 0;
+      ms._zwLastMarchMs = nowMs; // seek 落点记账（下一 tick 从此推进——跳变检测不误触）
+      ms._zwMediaTimeKnown = true;
+      for (var tk in _elementTextTrack) {
+        var tt = _elementTextTrack[tk];
+        if (!tt || !tt._zwMarchState || !tt._zwCueArrInternal) continue;
+        var active = tt._zwMarchState;
+        for (var ci = 0; ci < tt._zwCueArrInternal.length; ci++) {
+          var cue = tt._zwCueArrInternal[ci];
+          if (!cue) continue;
+          var startMs = cue._zwStartTime * 1000;
+          var endMs = cue._zwEndTime * 1000;
+          var wasIdx = -1;
+          for (var ai = 0; ai < active.length; ai++) { if (active[ai] === cue) { wasIdx = ai; break; } }
+          var shouldBeActive = startMs <= nowMs && nowMs < endMs;
+          if (shouldBeActive && wasIdx < 0) {
+            active.push(cue);
+            try { cue.dispatchEvent({ type: 'enter', target: cue, currentTarget: cue }); } catch (_eSsE) {}
+          } else if (!shouldBeActive && wasIdx >= 0) {
+            active.splice(wasIdx, 1); // 静默移出（seek 重建面——不派 exit）
+          }
+        }
+      }
+    } catch (_eSs) {}
+  };
   globalThis._zwMediaTimeMarchesOn = function () {
     try {
       if (typeof _mediaState === 'undefined' || typeof _elementTextTrack === 'undefined') return;
@@ -8328,13 +8376,36 @@
         }
         var nowMs = (typeof ms.currentTime === 'number' && isFinite(ms.currentTime)) ? ms.currentTime * 1000 : 0;
         var lastMs = (typeof ms._zwLastMarchMs === 'number') ? ms._zwLastMarchMs : nowMs;
-        if (nowMs <= lastMs) { ms._zwLastMarchMs = nowMs; continue; }
+        // seek 面检测：**时钟回退** 或 seeking 标志在位（spec time-marches-on seek 步：
+        // missed cues 不派 enter；此前 active 的 cue 按目标时刻重建）。M3 扩批 XVI 修正：
+        // **前进大跳不再判 seek**——桥真值时钟按泵节拍推进，tick 合并产生 >250ms 的前进
+        // 跳变是常态（fixture-mounted runner 的 march 采样粒度 ~0.5-1s），前进区间的 cue
+        // enter/exit 归区间捕获（_startedInGap/_endedInGap）按序补派。
+        var _isSeekJump = (nowMs < lastMs) || ms.seeking === true;
+        if (_isSeekJump) {
+          // 清全部 active（不派 exit——seek 重建面）；seeking 进行中（seeked 未回落）
+          // 则只记账不派发（目标时刻的 enter 由 seeked 后的首个 tick 补齐——起点 ≤ now
+          // 且未 active 的 cue 在非跳变 tick 中 enter，满足「target 时刻 active」语义）。
+          for (var tk0 in _elementTextTrack) {
+            var tt0 = _elementTextTrack[tk0];
+            if (tt0 && tt0._zwMarchState) tt0._zwMarchState.length = 0;
+          }
+          ms._zwLastMarchMs = nowMs;
+          continue;
+        }
         ms._zwLastMarchMs = nowMs;
+        ms._zwMediaTimeKnown = true;
         // 该 media 元素 textTracks 的 track 子产物（_elementTextTrack 以 track 元素 key 存）。
+        // M3 扩批 XVI：**区间捕获**——poll 间隔（tick 粒度 ~0.5-1s，见 fixture-mounted 泵）
+        // 会整体跳过 <间隔 的 cue（track-cues-missed 的 1ms cue 形态）。跨 (lastMs, nowMs]
+        // 区间收集事件（enter@start / exit@end），按**事件时间排序**派发（spec
+        // time-marches-on 依时间序处理——上游 missed-cues 期望 enter,exit 交错对，非
+        // 「全 enter 后全 exit」），再裁剪 active 集合。
         for (var tk in _elementTextTrack) {
           var tt = _elementTextTrack[tk];
           if (!tt || !tt._zwMarchState || !tt._zwCueArrInternal) continue;
           var active = tt._zwMarchState; // Array<cue>——引用即身份
+          var _events = []; // [{t, type, cue}]
           for (var ci = 0; ci < tt._zwCueArrInternal.length; ci++) {
             var cue = tt._zwCueArrInternal[ci];
             if (!cue) continue;
@@ -8344,27 +8415,82 @@
             for (var ai = 0; ai < active.length; ai++) { if (active[ai] === cue) { wasIdx = ai; break; } }
             var wasActive = wasIdx >= 0;
             var shouldBeActive = startMs <= nowMs && nowMs < endMs;
-            // enter：未 active → active（起点 ≤ now——含 poll gap 补偿；seek 越过时
-            // 本钩子按连续推进处理，missed-cues 的「seek 后跳跃不派」语义归 seeking
-            // 面后续切片）。
+            var _startedInGap = !wasActive && startMs > lastMs && startMs <= nowMs;
+            var _endedInGap = wasActive && endMs > lastMs && endMs <= nowMs;
             if (shouldBeActive && !wasActive) {
-              active.push(cue);
-              try { cue.dispatchEvent({ type: 'enter', target: cue, currentTarget: cue }); } catch (_eTmo) {}
+              _events.push({ t: startMs, type: 'enter', cue: cue });
+            } else if (_startedInGap) {
+              _events.push({ t: startMs, type: 'enter', cue: cue });
+              if (endMs <= nowMs) _events.push({ t: Math.max(endMs, startMs), type: 'exit', cue: cue });
+            } else if (wasActive && (!shouldBeActive || _endedInGap)) {
+              _events.push({ t: _endedInGap ? endMs : nowMs, type: 'exit', cue: cue });
             }
-            // exit：曾 active 且已越界。
-            if (wasActive && !shouldBeActive) {
-              active.splice(wasIdx, 1);
-              try { cue.dispatchEvent({ type: 'exit', target: cue, currentTarget: cue }); } catch (_eTmo3) {}
-              if (cue.pauseOnExit) {
-                try {
-                  ms.playing = false;
-                  if (ms.bridgeOn && ms.bridgeSrc && typeof globalThis.__zwVideoBridge === 'object') {
-                    globalThis.__zwVideoBridge.pause(ms.bridgeSrc);
-                  }
-                } catch (_eTmoP) {}
+          }
+          if (_events.length) {
+            // 事件时间序（同刻 enter 先于 exit——同一 cue 的 start==end 零长 cue 对）。
+            _events.sort(function (a, b) {
+              if (a.t !== b.t) return a.t - b.t;
+              if (a.type !== b.type) return a.type === 'enter' ? -1 : 1;
+              return 0;
+            });
+            for (var ei = 0; ei < _events.length; ei++) {
+              var _ev = _events[ei];
+              var _cue = _ev.cue;
+              var _wasIdx = -1;
+              for (var ai2 = 0; ai2 < active.length; ai2++) { if (active[ai2] === _cue) { _wasIdx = ai2; break; } }
+              if (_ev.type === 'enter') {
+                if (_wasIdx < 0) {
+                  active.push(_cue);
+                  try { _cue.dispatchEvent({ type: 'enter', target: _cue, currentTarget: _cue }); } catch (_eTmo) {}
+                }
+              } else {
+                if (_wasIdx >= 0) active.splice(_wasIdx, 1);
+                try { _cue.dispatchEvent({ type: 'exit', target: _cue, currentTarget: _cue }); } catch (_eTmo3) {}
+                if (_cue.pauseOnExit) {
+                  try {
+                    ms.playing = false;
+                    if (ms.bridgeOn && ms.bridgeSrc && typeof globalThis.__zwVideoBridge === 'object') {
+                      globalThis.__zwVideoBridge.pause(ms.bridgeSrc);
+                    }
+                  } catch (_eTmoP) {}
+                }
               }
             }
           }
+        }
+        // M3 扩批 XVI：ended 面——桥真值时钟走到流末（registry player Ended 态）→
+        // active cue 全部派 exit（spec：ended 时 activeCues 清空、exit 逐 cue 派）+
+        // paused 翻转 + timeupdate + ended（spec time-marches-on 流末处理；
+        // track-cues-missed 的 onended 断言面）。幂等：ms._zwEndedDispatched 单次。
+        if (ms.playing && ms.bridgeOn && ms.bridgeSrc
+            && typeof globalThis.__zwVideoBridge === 'object'
+            && typeof globalThis.__zwVideoBridge.isEnded === 'function'
+            && !ms._zwEndedDispatched) {
+          try {
+            if (globalThis.__zwVideoBridge.isEnded(ms.bridgeSrc)) {
+              ms._zwEndedDispatched = true;
+              ms.playing = false;
+              for (var tkE in _elementTextTrack) {
+                var ttE = _elementTextTrack[tkE];
+                if (!ttE || !ttE._zwMarchState) continue;
+                var actE = ttE._zwMarchState;
+                for (var ei = actE.length - 1; ei >= 0; ei--) {
+                  var cueE = actE[ei];
+                  actE.splice(ei, 1);
+                  try { cueE.dispatchEvent({ type: 'exit', target: cueE, currentTarget: cueE }); } catch (_eTmoE0) {}
+                }
+              }
+              // sel/handle 不在 march 作用域——key 即元素身份（_elKey 产物），
+              // _dispatchWithBubble 按 key 定位；handle 键（'@h' 形态）以 null sel 走
+              // handle 分支（与 _dispatchWithBubble 键语义一致）。
+              _zwMediaFire(ms._zwSel || (key.charAt(0) === '@' ? null : key),
+                ms._zwHandle || (key.charAt(0) === '@' ? key.slice(1) : null),
+                key, 'timeupdate');
+              _zwMediaFire(ms._zwSel || (key.charAt(0) === '@' ? null : key),
+                ms._zwHandle || (key.charAt(0) === '@' ? key.slice(1) : null),
+                key, 'ended');
+            }
+          } catch (_eTmoE1) {}
         }
       }
     } catch (_eTmm) {}

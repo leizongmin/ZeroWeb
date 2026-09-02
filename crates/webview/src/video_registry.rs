@@ -257,6 +257,11 @@ impl VideoPlayerRegistry {
         self.sources.insert(image_resource_key(abs_src, None), bytes);
     }
 
+    /// 源字节是否已登记（幂等登记面——WPT runner 逐 tick 动态登记的重复调用守卫）。
+    pub fn contains_source(&self, abs_src: &str) -> bool {
+        self.sources.contains_key(&image_resource_key(abs_src, None))
+    }
+
     /// 元素移除/导航离开时的资源释放（资源生命周期面）。
     pub fn release(&mut self, abs_src: &str) {
         let key = image_resource_key(abs_src, None);
@@ -389,12 +394,16 @@ impl VideoPlayerRegistry {
     pub fn play(&mut self, abs_src: &str, now_ms: u64) -> bool {
         let key = image_resource_key(abs_src, None);
         if !self.players.contains_key(&key) {
-            let Some(bytes) = self.sources.remove(&key) else {
+            // M3 扩批 XVI：解码器构建失败不再消费源字节（此前 sources.remove 前置——
+            // 非 webm/损坏源一次 play 即丢字节，后续重试/登记恒 no-op）。字节留存，
+            // 换源/重试语义与 AudioEntry 同面；内存占用由 release/clear 释放面兜底。
+            let Some(bytes) = self.sources.get(&key).cloned() else {
                 return false;
             };
             let Ok(decoder) = VideoDecoder::open_webm(&bytes) else {
                 return false;
             };
+            self.sources.remove(&key);
             self.players.insert(key, VideoPlayer::new(decoder));
             // 音频轨伴生（A/V pair）：A_VORBIS（OGG 重封装 + symphonia）优先、
             // A_OPUS（opus-decoder 直解，WPT 源主形态）次之；纯视频 webm 双失败静默
@@ -523,6 +532,16 @@ impl VideoPlayerRegistry {
     pub fn is_playing(&self, abs_src: &str) -> bool {
         let key = image_resource_key(abs_src, None);
         self.players.get(&key).is_some_and(|p| p.is_playing())
+    }
+
+    /// 播放器是否已到流末（Ended 态——桥 `isEnded` 查询面；语义层 ended 事件驱动源）。
+    /// M3 扩批 XVI：fixture-mounted runner 的 track-cues-missed 断言 `onended` ——
+    /// 桥真值时钟走到流末时语义层须能观测 Ended 态。
+    pub fn is_ended(&self, abs_src: &str) -> bool {
+        let key = image_resource_key(abs_src, None);
+        self.players
+            .get(&key)
+            .is_some_and(|p| p.state() == zero_media::PlayerState::Ended)
     }
 
     /// 快速检查：是否存在播放中的 player（渲染泵门禁——无播放时零开销跳过 tick）。
@@ -909,6 +928,18 @@ pub fn register_video_bridge_callbacks(
         }),
     );
 
+    // M3 扩批 XVI：流末查询（桥 isEnded——语义层 ended 事件驱动源；
+    // track-cues-missed 的 onended 断言面）。
+    let reg_ended = std::sync::Arc::clone(&registry);
+    sandbox.register_callback(
+        "__zw_video_is_ended",
+        Box::new(move |args| {
+            let src = args.first().map(String::as_str).unwrap_or("");
+            let reg = reg_ended.lock().unwrap_or_else(|e| e.into_inner());
+            if reg.is_ended(src) { "1".into() } else { "0".into() }
+        }),
+    );
+
     // JS 侧门面对象：shim 只认它（feature-detect 单点）。
     let _ = sandbox.execute(
         "globalThis.__zwVideoBridge = {\
@@ -918,6 +949,7 @@ pub fn register_video_bridge_callbacks(
            currentTime: function (src) { return Number(__zw_video_current_time(src)); },\
            duration: function (src) { return Number(__zw_video_duration(src)); },\
            isPlaying: function (src) { return __zw_video_is_playing(src) === '1'; },\
+           isEnded: function (src) { return __zw_video_is_ended(src) === '1'; },\
            setRate: function (src, rate) { __zw_video_set_rate(src, Number(rate)); },\
            setGain: function (src, volume, muted) { __zw_video_set_gain(src, Number(volume), muted ? '1' : '0'); }\
          };",
@@ -1106,6 +1138,41 @@ mod audio_tests {
         let mut reg = VideoPlayerRegistry::new();
         reg.register_audio_source("https://example.com/x.mp3", b"not audio".to_vec());
         assert!(!reg.audio_play("https://example.com/x.mp3", 0));
+    }
+
+    /// M3 扩批 XVI（media-elements track-cues-* 播放推进族）：源字节生命周期面——
+    /// ① contains_source 幂等登记守卫（runner 逐 tick 动态登记的重复调用面）；
+    /// ② 非 webm 字节 play 未命中**不消费**源字节（旧形态 sources.remove 前置——一次
+    /// play 即丢字节、重试恒 no-op；修复后重试/重登记语义与 AudioEntry 同面）。
+    #[test]
+    fn play_miss_retains_source_bytes_for_retry() {
+        let mut reg = VideoPlayerRegistry::new();
+        let garbage = b"definitely not webm".to_vec();
+        reg.register_source("https://wpt.test/media/noise.webm", garbage);
+        assert!(
+            reg.contains_source("https://wpt.test/media/noise.webm"),
+            "登记后 contains_source 命中"
+        );
+        // 非 webm 字节：play 未命中（解码器构建失败）。
+        assert!(!reg.play("https://wpt.test/media/noise.webm", 0));
+        // 修复面：字节留存——contains_source 仍命中、再次 play 仍可评估（不因字节
+        // 丢失而恒 no-op）。
+        assert!(
+            reg.contains_source("https://wpt.test/media/noise.webm"),
+            "play 未命中后源字节留存（重试语义）"
+        );
+        assert!(!reg.play("https://wpt.test/media/noise.webm", 0));
+        // 真登记：webm fixture 源 → player 懒建成功（命中路径消费源字节——
+        // player 已持有解码器；字节不再需要，播放面由 player 承载）。
+        reg.register_source(
+            "https://wpt.test/media/sample-webm-vp9.webm",
+            fixture_bytes("sample-webm-vp9.webm"),
+        );
+        assert!(reg.play("https://wpt.test/media/sample-webm-vp9.webm", 0));
+        assert!(
+            !reg.contains_source("https://wpt.test/media/sample-webm-vp9.webm"),
+            "命中路径消费源字节（解码器已建，字节不再保留）"
+        );
     }
 
     /// 桥端到端（V8 sandbox）：audio src 走同一 __zwVideoBridge 门面（play 回退到
