@@ -942,11 +942,28 @@ impl Painter {
                 }
                 // R639：仅跨多行 inline 的 background 改由 paint_text 按行片段绘制，box-level 抑制
                 //（与 paint_node 同步；单行/空/定位 inline 保留 box-level）。
+                // R3937：replaced 类元素（svg 等）豁免——其子元素会被 PHASEA 分支误计为
+                // inline 内容使 has_direct_paintable_text 返回 true，但 svg 无文本行片段，
+                // 抑制后 box-level 背景凭空消失（scale-001 等簇 30000px 白区实证）。
                 let inline_fs_px = match style.font_size {
                     LengthValue::Px(s) => s as f32,
                     _ => 16.0,
                 };
-                let skip_inline_box_bg = matches!(style.display, DisplayValue::Inline)
+                let is_replaced_elem = doc.is_some_and(|d| {
+                    d.get(node_id).is_some_and(|n| {
+                        matches!(
+                            &n.kind,
+                            NodeKind::Element(e)
+                                if matches!(
+                                    e.local_name(),
+                                    "img" | "canvas" | "video" | "embed" | "object" | "applet"
+                                        | "iframe" | "svg"
+                                )
+                        )
+                    })
+                });
+                let skip_inline_box_bg = !is_replaced_elem
+                    && matches!(style.display, DisplayValue::Inline)
                     && style.background_color != ColorValue::Transparent
                     && !box_node.is_absolute
                     && !box_node.is_fixed
@@ -1215,7 +1232,23 @@ impl Painter {
                     LengthValue::Px(s) => s as f32,
                     _ => 16.0,
                 };
-                let skip_inline_box_bg = matches!(style.display, DisplayValue::Inline)
+                // R3937：replaced 元素豁免 R639 抑制（同 paint_node_in_rect 处注释——
+                // svg/canvas 等无行片段语义，抑制即背景丢失）。
+                let is_replaced_elem2 = doc.is_some_and(|d| {
+                    d.get(node_id).is_some_and(|n| {
+                        matches!(
+                            &n.kind,
+                            NodeKind::Element(e)
+                                if matches!(
+                                    e.local_name(),
+                                    "img" | "canvas" | "video" | "embed" | "object" | "applet"
+                                        | "iframe" | "svg"
+                                )
+                        )
+                    })
+                });
+                let skip_inline_box_bg = !is_replaced_elem2
+                    && matches!(style.display, DisplayValue::Inline)
                     && style.background_color != ColorValue::Transparent
                     && !box_node.is_absolute
                     && !box_node.is_fixed

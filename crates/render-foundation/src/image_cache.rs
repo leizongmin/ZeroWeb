@@ -398,6 +398,186 @@ fn origin_value_is_two_numbers(value: &str) -> bool {
         })
 }
 
+/// R3937（CSS Transforms 1 §transform-attribute-specificity + SVG2 presentation
+/// attributes）：`style="...transform:..."` **覆盖**同元素 `transform` presentation
+/// attr（CSS 级联序：inline style > presentation attribute）。usvg 0.47 忽略
+/// style attr 的 transform（a-vs-attr=0 探针实证）——本预处理把 style attr 中的
+/// CSS transform 函数串翻译为 SVG transform 语法并改写 transform attr。
+/// CSS transform **非法**（如 `scale(invalid)`）→ 声明忽略，presentation attr 生效
+///（保留原 attr，WPT inline-styles-005/006/010/013 形态）。
+///
+/// stylesheet（`<style>`/外部）的 transform 须 paint_svg_element 级联合成（序列化
+/// 文本不含 stylesheet 规则）——独立切片。
+pub(crate) fn preprocess_svg_style_transform(source: &[u8]) -> Vec<u8> {
+    let Ok(text) = std::str::from_utf8(source) else {
+        return source.to_vec();
+    };
+    if !text.contains("style=") || !text.contains("transform") {
+        return source.to_vec();
+    }
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    let mut changed = false;
+    // 逐个开标签处理：找到 `<tag ...>`（含 >），在开标签内部做 style→transform 合成。
+    while let Some(lt) = rest.find('<') {
+        // 拷贝 '<' 之前的文本。
+        out.push_str(&rest[..lt]);
+        let after_lt = &rest[lt..];
+        let Some(gt_rel) = after_lt.find('>') else {
+            out.push_str(after_lt);
+            rest = "";
+            break;
+        };
+        let tag = &after_lt[..=gt_rel]; // 含 '<' 与 '>'
+        rest = &rest[lt + gt_rel + 1..];
+        // 仅处理带 style=" 的开标签。
+        if let Some(style_pos) = tag.find("style=\"") {
+            let style_val_start = style_pos + "style=\"".len();
+            let style_val = &tag[style_val_start
+                ..tag[style_val_start..]
+                    .find('"')
+                    .map(|i| style_val_start + i)
+                    .unwrap_or(style_val_start)];
+            let css_transform = style_value_decls(style_val)
+                .into_iter()
+                .find(|(prop, _)| prop.eq_ignore_ascii_case("transform"))
+                .map(|(_, v)| v);
+            if let Some(css_value) = css_transform
+                && let Some(svg_value) = css_transform_to_svg(&css_value)
+            {
+                // CSS transform 合法 → 改写/插入 transform attr（覆盖语义）+
+                // **剥掉 style 中的 transform 声明**（usvg 对纯 style transform 的
+                // pivot = CSS 缺省 origin，与 attr 覆盖值语义不同——残留会干扰
+                // style-residue diff=10000 探针实证）。
+                let stripped_style = strip_transform_decl(style_val);
+                let tag_no_style = replace_style_value(tag, &stripped_style);
+                let new_tag = set_transform_attr(&tag_no_style, &svg_value);
+                out.push_str(&new_tag);
+                changed = true;
+                continue;
+            }
+        }
+        out.push_str(tag);
+    }
+    out.push_str(rest);
+    if changed { out.into_bytes() } else { source.to_vec() }
+}
+
+/// 解析 style attr 值为 (属性, 值) 声明列表。
+fn style_value_decls(value: &str) -> Vec<(String, String)> {
+    value
+        .split(';')
+        .filter_map(|decl| decl.split_once(':'))
+        .map(|(p, v)| (p.trim().to_string(), v.trim().to_string()))
+        .collect()
+}
+
+/// 在开标签文本（含 `<` `>`）中改写既有 `transform="..."` 值；无该 attr 则在
+/// `>` 前插入 ` transform="..."`。
+fn set_transform_attr(tag: &str, svg_value: &str) -> String {
+    debug_assert!(tag.starts_with('<') && tag.ends_with('>'));
+    let inner = &tag[..tag.len() - 1]; // 去掉 '>'
+    if let Some(tpos) = inner.find("transform=\"") {
+        let tval_start = tpos + "transform=\"".len();
+        let Some(tval_rel) = inner[tval_start..].find('"') else {
+            return tag.to_string();
+        };
+        let tval_end = tval_start + tval_rel;
+        format!("{}{}{}>", &inner[..tval_start], svg_value, &inner[tval_end..])
+    } else if let Some(stripped) = inner.strip_suffix('/') {
+        // 自闭合标签：插在 `/` 之前。
+        format!("{stripped} transform=\"{svg_value}\"/>")
+    } else {
+        format!("{inner} transform=\"{svg_value}\">")
+    }
+}
+
+/// 把 style attr 值中的 transform 声明剥除（其余声明保留）。
+fn strip_transform_decl(style_val: &str) -> String {
+    style_val
+        .split(';')
+        .filter(|decl| {
+            decl.split_once(':')
+                .map(|(p, _)| !p.trim().eq_ignore_ascii_case("transform"))
+                .unwrap_or(!decl.trim().is_empty())
+        })
+        .collect::<Vec<_>>()
+        .join(";")
+}
+
+/// 把开标签文本中的 style="..." 值替换为给定新值。
+fn replace_style_value(tag: &str, new_style: &str) -> String {
+    debug_assert!(tag.starts_with('<') && tag.ends_with('>'));
+    let inner = &tag[..tag.len() - 1];
+    let Some(spos) = inner.find("style=\"") else {
+        return tag.to_string();
+    };
+    let sval_start = spos + "style=\"".len();
+    let Some(sval_rel) = inner[sval_start..].find('"') else {
+        return tag.to_string();
+    };
+    let sval_end = sval_start + sval_rel;
+    format!("{}{}{}>", &inner[..sval_start], new_style, &inner[sval_end..])
+}
+
+/// CSS transform 函数串 → SVG transform 语法（deg/px 后缀剥除、数值归一）。
+/// 非法（函数名不识别 / 参数非数 / 个数不符）→ None。
+fn css_transform_to_svg(css: &str) -> Option<String> {
+    let mut parts_out: Vec<String> = Vec::new();
+    let bytes = css.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b' ' || bytes[i] == b'\t' {
+            i += 1;
+            continue;
+        }
+        let open_rel = css[i..].find('(')?;
+        let name = css[i..i + open_rel].trim().to_ascii_lowercase();
+        let after_open = i + open_rel + 1;
+        let close = css[after_open..].find(')')? + after_open;
+        let args_raw = &css[after_open..close];
+        let arg_tokens: Vec<&str> = if args_raw.trim().is_empty() {
+            vec![]
+        } else {
+            args_raw.split(',').collect()
+        };
+        let args: Option<Vec<f64>> = arg_tokens
+            .iter()
+            .map(|a| {
+                let v = a.trim().trim_end_matches("deg").trim_end_matches("px").trim();
+                v.parse::<f64>().ok().filter(|n| n.is_finite())
+            })
+            .collect();
+        let args = args?;
+        let n = args.len();
+        let part = match name.as_str() {
+            "rotate" if n == 1 => format!("rotate({})", args[0]),
+            "scale" if n == 1 => format!("scale({})", args[0]),
+            "scale" if n == 2 => format!("scale({} {})", args[0], args[1]),
+            "scalex" if n == 1 => format!("scale({} 1)", args[0]),
+            "scaley" if n == 1 => format!("scale(1 {})", args[0]),
+            "translate" if n == 1 => format!("translate({} {})", args[0], args[0]),
+            "translate" if n == 2 => format!("translate({} {})", args[0], args[1]),
+            "translatex" if n == 1 => format!("translate({} 0)", args[0]),
+            "translatey" if n == 1 => format!("translate(0 {})", args[0]),
+            "skewx" if n == 1 => format!("skewX({})", args[0]),
+            "skewy" if n == 1 => format!("skewY({})", args[0]),
+            "matrix" if n == 6 => format!(
+                "matrix({} {} {} {} {} {})",
+                args[0], args[1], args[2], args[3], args[4], args[5]
+            ),
+            _ => return None,
+        };
+        parts_out.push(part);
+        i = close + 1;
+    }
+    if parts_out.is_empty() {
+        None
+    } else {
+        Some(parts_out.join(" "))
+    }
+}
+
 /// rect bbox 参照：从 origin attr 所在元素的开标签前缀解析 rect 几何（x/y/width/height
 /// attr；缺 x/y 默认 0），按 fill-box 语义翻译 origin 分量为绝对 px。
 /// 非 rect 元素或几何缺失 → None（调用方落 Drop/Keep，fail-closed）。
@@ -537,7 +717,10 @@ pub fn rasterize_svg_at(source: &[u8], target_w: u32, target_h: u32) -> Result<I
     }
     // R3936：transform-origin 预处理（fill-box/单 rect 参照，px 输出与源 viewport
     // 无关）；须在 inject 之前保持源结构可解析。
-    let bytes = preprocess_svg_transform_origin(source);
+    // R3937：style attr transform 覆盖 presentation attr（CSS 级联序 > attr；
+    // usvg 忽略 style transform——预处理把合法 CSS transform 翻译改写 attr）。
+    let bytes = preprocess_svg_style_transform(source);
+    let bytes = preprocess_svg_transform_origin(&bytes);
     let bytes = inject_svg_target_dims(&bytes, target_w, target_h);
     let tree = resvg::usvg::Tree::from_data(&bytes, &resvg::usvg::Options::default())
         .map_err(|e| format!("SVG 解析失败: {e}"))?;
@@ -2796,5 +2979,70 @@ mod r3936_tests {
             .filter(|(a, b)| a != b)
             .count();
         assert_eq!(diff, 0, "预处理后关键字 origin 渲染应与手写等价链一致（diff={diff}）");
+    }
+}
+
+#[cfg(test)]
+mod r3937_tests {
+    use super::*;
+
+    /// R3937：style attr 的合法 CSS transform 覆盖 presentation attr
+    ///（inline-styles-001 形态：rotate(90deg) 胜 scale(0.5)）。
+    #[test]
+    fn r3937_style_attr_overrides_transform_attr() {
+        let src = br##"<svg xmlns="http://www.w3.org/2000/svg"><rect width="100" height="100" transform="scale(0.5)" style="transform: rotate(90deg)"/></svg>"##;
+        let out = preprocess_svg_style_transform(src);
+        let text = std::str::from_utf8(&out).unwrap();
+        assert!(
+            text.contains(r#"transform="rotate(90)""#),
+            "style transform 应覆盖 attr: {text}"
+        );
+    }
+
+    /// R3937：非法 CSS transform → 声明忽略，attr 生效（005/013 形态）。
+    #[test]
+    fn r3937_invalid_css_keeps_attr() {
+        let src = br##"<svg xmlns="http://www.w3.org/2000/svg"><rect width="100" height="100" transform="rotate(90)" style="transform: scale(invalid)"/></svg>"##;
+        assert_eq!(preprocess_svg_style_transform(src), src.to_vec());
+    }
+
+    /// R3937：translate/skew/多函数串 + 无 style 透传。
+    #[test]
+    fn r3937_function_forms() {
+        let multi = br##"<svg xmlns="http://www.w3.org/2000/svg"><rect width="100" height="100" transform="scale(0.5)" style="transform: translate(20px, 20px) rotate(90deg) translate(-20px, -20px)"/></svg>"##;
+        let out_bytes = preprocess_svg_style_transform(multi);
+        let text = std::str::from_utf8(&out_bytes).unwrap();
+        assert!(
+            text.contains(r#"transform="translate(20 20) rotate(90) translate(-20 -20)""#),
+            "多函数串应翻译: {text}"
+        );
+        // translateY 单函数。
+        let ty = br##"<svg xmlns="http://www.w3.org/2000/svg"><rect transform="rotate(90)" style="transform: translateY(-100px)"/></svg>"##;
+        let out_bytes2 = preprocess_svg_style_transform(ty);
+        let text2 = std::str::from_utf8(&out_bytes2).unwrap();
+        assert!(text2.contains(r#"transform="translate(0 -100)""#));
+        // 无 style attr：原样。
+        let none = br##"<svg xmlns="http://www.w3.org/2000/svg"><rect transform="scale(0.5)"/></svg>"##;
+        assert_eq!(preprocess_svg_style_transform(none), none.to_vec());
+    }
+
+    /// R3937：端到端——覆盖后渲染与「attr=rotate(90)」形态一致（001 案语义）。
+    #[test]
+    fn r3937_style_override_render_matches() {
+        let a = rasterize_svg_at(
+            br##"<svg xmlns="http://www.w3.org/2000/svg" width="300" height="300"><rect y="-100" width="100" height="100" fill="#00ff00" transform="scale(0.5)" style="transform: rotate(90deg)"/></svg>"##,
+            300, 300,
+        ).expect("a");
+        let expect = rasterize_svg_at(
+            br##"<svg xmlns="http://www.w3.org/2000/svg" width="300" height="300"><rect y="-100" width="100" height="100" fill="#00ff00" transform="rotate(90)"/></svg>"##,
+            300, 300,
+        ).expect("expect");
+        let diff = a
+            .pixels
+            .chunks(4)
+            .zip(expect.pixels.chunks(4))
+            .filter(|(p, q)| p != q)
+            .count();
+        assert_eq!(diff, 0, "预处理后 style 覆盖应与纯 attr rotate 一致（diff={diff}）");
     }
 }
