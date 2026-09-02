@@ -4498,6 +4498,53 @@
                   globalThis._zwLiveNLSync[sel]();
                 }
               } catch (_e140hr) {}
+              // media-elements M3 扩批 VII/XIV：handle 父分支的 pause-on-removal 面
+              //（sel 分支同款语义——被移除的 handle 子是 audio/video 时，中断播放
+              // 尝试：pending playPromise reject AbortError + playing 复位 + pause
+              // 事件两段 defer）。detached createElement 树（无 sel 身份）的移除
+              // 由此覆盖（cues「default attribute」等 detached 形态断言面）。
+              // spec「media elements pause on removal」。
+              // https://html.spec.whatwg.org/multipage/media.html#dom-media-paused
+              try {
+                if (typeof _realTag === 'function'
+                    && (_realTag(child.__zwSelector, child.__zwHandle) === 'AUDIO'
+                        || _realTag(child.__zwSelector, child.__zwHandle) === 'VIDEO')) {
+                  var _rmhKey = _elKey(child.__zwSelector, child.__zwHandle);
+                  var _rmhMs = _mediaState[_rmhKey];
+                  if (_rmhMs && _rmhMs.playing) {
+                    var _rmhChild = child;
+                    var _rmhStop = function () {
+                      var _shMs = _mediaState[_rmhKey];
+                      if (_shMs && _shMs.playPromise) {
+                        var _shEntry = _shMs.playPromise;
+                        delete _shMs.playPromise;
+                        try {
+                          _shEntry.reject(new (globalThis.DOMException || Error)('play() was interrupted by a pause() or load()', 'AbortError'));
+                        } catch (_eShR) {}
+                      }
+                      if (typeof _zwIsRemovedNode === 'function' && !_zwIsRemovedNode(_rmhChild)) return;
+                      var _shMs2 = _mediaState[_rmhKey];
+                      if (_shMs2 && _shMs2.playing) _shMs2.playing = false;
+                    };
+                    var _rmhFire = function () {
+                      var _fhMs = _mediaState[_rmhKey];
+                      if (_fhMs && !_fhMs.playing && !_fhMs.removedPauseFired) {
+                        _fhMs.removedPauseFired = true;
+                        _mediaFireSel(_rmhChild.__zwSelector, _rmhChild.__zwHandle, _rmhKey, 'pause');
+                      }
+                    };
+                    if (typeof setTimeout === 'function') {
+                      setTimeout(function () {
+                        _rmhStop();
+                        setTimeout(_rmhFire, 0);
+                      }, 0);
+                    } else {
+                      _rmhStop();
+                      _rmhFire();
+                    }
+                  }
+                }
+              } catch (_eMediaRmH) {}
               // R2994 disconnectedCallback：移除子树断连（仅此前已连入的 custom element 分派）。
               _ceApplyConn(child, false);
             }
@@ -4552,6 +4599,22 @@
                     //（pause-move-within/to-other-document 断言面）。tick1 检查
                     // `_zwIsRemovedNode`：已重挂/被移动 → 不置停不派事件。
                     var _rmStop = function () {
+                      var _smMs0 = _mediaState[_rmKey];
+                      // pending play promise 的移除中断面不走 _zwIsRemovedNode 守卫——
+                      // 「pause on removal」对**任何**被移出文档的播放尝试生效
+                      //（cues.html「default attribute」负例：detached video（无
+                      // resource state）play() 后 onplay 永不到来，pending playPromise
+                      // 若被守卫吞 reject 则用例 Timeout——移除即中断播放尝试，与
+                      // adopt/move 的 paused 态面正交）。
+                      // spec dom-media-play「pause() rejects pending play Promises」
+                      // 与 pause-on-removal 中断语义同源。
+                      if (_smMs0 && _smMs0.playPromise) {
+                        var _rpEntry0 = _smMs0.playPromise;
+                        delete _smMs0.playPromise;
+                        try {
+                          _rpEntry0.reject(new (globalThis.DOMException || Error)('play() was interrupted by a pause() or load()', 'AbortError'));
+                        } catch (_eRpR) {}
+                      }
                       if (typeof _zwIsRemovedNode === 'function'
                           && !_zwIsRemovedNode(child)) return;
                       var _smMs = _mediaState[_rmKey];

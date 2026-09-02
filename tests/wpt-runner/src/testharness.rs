@@ -1421,6 +1421,10 @@ pub const MEDIA_TEST_FILES: &[&str] = &[
     "html/semantics/embedded-content/media-elements/track/track-element/src-clear-cues.html",
     // M3 扩批 VII：移除文档暂停面（spec「media elements pause on removal」）。
     "html/semantics/embedded-content/media-elements/playing-the-media-resource/pause-remove-from-document.html",
+    // M3 扩批 XIV：移除暂停两变体——appendChild 后 src 路径（同语义域）+
+    // NETWORK_EMPTY 负例（无候选 play() promise pending → 移除后 AbortError）。
+    "html/semantics/embedded-content/media-elements/playing-the-media-resource/pause-remove-from-document-different-load.html",
+    "html/semantics/embedded-content/media-elements/playing-the-media-resource/pause-remove-from-document-networkState.html",
     // M3 扩批 IX：移动面（同文档移动仍 related → 不暂停）。
     // pause-move-to-other-document 不导入——iframe adopt 面未实施（fetch 脚本注记）。
     "html/semantics/embedded-content/media-elements/playing-the-media-resource/pause-move-within-document.html",

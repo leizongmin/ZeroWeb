@@ -11338,18 +11338,54 @@
             var _pTag = _realTag(sel, handle);
             var _pKey = _elKey(sel, handle);
             var _pMs = _mediaState[_pKey] || (_mediaState[_pKey] = {});
+            // media-elements M3 扩批 XIV（spec dom-media-play / pause-on-removal）：
+            // **已移出文档**的 sel media 元素 play()——播放无法推进（无 resource
+            // selection invoke、无 queued 派发），promise 保持 pending 交由
+            // removeChild 钩子的 playPromise 中断面 reject AbortError。
+            // pause-remove-from-document-networkState 断言面：play() → 移除 →
+            // watcher 等 pause → promise_rejects_dom AbortError。
+            // https://html.spec.whatwg.org/multipage/media.html#dom-media-play
+            // media-elements M3 扩批 XIV（spec dom-media-play）：无候选资源时播放
+            // 无法推进——不 queue play/playing 派发 task，promise **保持 pending**，
+            // 直到移除文档（pause on removal → AbortError）或资源就绪。
+            // **仅 sel 身份**（静态/动态 HTML 形态——`a.src=` 的 latest-wins 覆盖表
+            // 可判存在性）；handle-only（detached createElement）无宿主资源通路，
+            // 保持既有 queued task（cues「default attribute」等 detached 断言面）。
+            var _noCandidate = false;
+            if (!handle && typeof _zwMediaResourceSelect === 'function'
+                && (typeof __zw_has_attr_lw === 'function' ? __zw_has_attr_lw(sel, 'src') : __zw_has_attr(sel, 'src')) !== '1'
+                && !_resourceStates[_pKey]) {
+              _zwMediaResourceSelect(sel, handle, _pKey);
+              var _hasSrc = (typeof __zw_has_attr_lw === 'function' ? __zw_has_attr_lw(sel, 'src') : __zw_has_attr(sel, 'src')) === '1';
+              var _hasSourceChild = false;
+              try {
+                var _psList = _makeProxy(sel, handle).querySelectorAll('source');
+                _hasSourceChild = !!(_psList && _psList.length);
+              } catch (_ePsQ) {}
+              _noCandidate = !_hasSrc && !_hasSourceChild;
+            }
             // media-elements M3 扩批 XI（spec resource selection）——无 src 候选时
             // play() 亦触发资源选择（invoke：同步段 NO_SOURCE；稳定态无候选回落 EMPTY，
             // 不派 loadstart——无加载发生）。
             // https://html.spec.whatwg.org/multipage/media.html#dom-media-play
-            if (typeof _zwMediaResourceSelect === 'function'
-                && (handle ? __zw_has_attr_handle(handle, 'src') !== '1' : __zw_has_attr(sel, 'src') !== '1')
+            if (handle && typeof _zwMediaResourceSelect === 'function'
+                && __zw_has_attr_handle(handle, 'src') !== '1'
                 && !_resourceStates[_pKey]) {
               _zwMediaResourceSelect(sel, handle, _pKey);
             }
             if (_pMs.playing) return Promise.resolve(undefined);
             _pMs.playing = true;
             _pMs.ended = false;
+            // M3 扩批 XIV：无候选资源 → promise pending 挂起（playing 态保持同步
+            // 翻转供脚本观察；无 queued 派发/resolve）。移除文档路径的 pause on
+            // removal 会 reject pending promise（AbortError）——见 removeChild 钩子
+            // 的 playPromise 中断面。
+            if (_noCandidate) {
+              var _ncEntry = null;
+              var _ncPromise = new Promise(function (resolve, reject) { _ncEntry = { resolve: resolve, reject: reject }; });
+              _pMs.playPromise = _ncEntry;
+              return _ncPromise;
+            }
             // media-playback M2a 切片 5b：宿主桥 feature-detect——注册了
             // __zwVideoBridge（生产 worker 注入）时走真值播放（Rust VideoPlayer
             // 时钟/帧推进）；未注册（testharness/reftest 沙箱）保持 headless 近似

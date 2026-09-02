@@ -3656,6 +3656,7 @@ fn test_media_pause_on_removal_m3b7() {
         "var v = document.querySelector('video');\
          globalThis.__log = [];\
          v.onplaying = function () { globalThis.__log.push('playing:' + v.paused); };\
+         v.src = 'https://wpt.test/media/movie_5.webm';\
          v.play();\
          globalThis.__pausedSyncAfterPlay = v.paused;\
          v.parentNode.removeChild(v);\
@@ -4260,5 +4261,131 @@ fn test_webaudio_node_ctor_and_param_exception_face_m3w4() {
         sandbox.execute("globalThis.__r6").unwrap().value,
         "TypeError|TypeError|NotSupportedError|NotSupportedError|NotSupportedError|4|88200|44100|2|true|88200|IndexSizeError",
         "AudioBuffer：必选项 TypeError ×2 + 正义约束 NotSupportedError ×3 + 反射面（duration 2s）+ getChannelData Float32Array 长度 + 越界 IndexSizeError"
+    );
+}
+
+#[cfg(feature = "v8")]
+#[test]
+fn test_media_play_pending_and_removal_abort_m3x14() {
+    // media-elements M3 扩批 XIV：无候选资源的 play() 语义（spec dom-media-play）——
+    // ① sel 元素（静态/动态 HTML 形态）无 src 候选：play() 派 play/playing 序但
+    //    **不 resolve promise**（播放未真正推进——headless 不再「假 resolve」）；
+    //    移除文档后 pause-on-removal 中断面 reject AbortError + pause 事件。
+    //    pause-remove-from-document-networkState 断言面。
+    // ② 有 src 的 sel 元素：既有 queued task resolve 面不变（event_play 族零回归）。
+    // ③ detached handle-only 元素：play 面保持既有 queued task resolve（cues
+    //    「default attribute」等 detached 断言面零回归——无宿主资源通路，headless
+    //    近似驱动即「播放推进」）。
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> =
+        Arc::new(Mutex::new("<html><body><video></video></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://wpt.test/t.html".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // runner timer stub（同 r389 探针——记录式定时器 + 手动泵）。
+    sandbox.execute(
+        "globalThis.__zw_pending = {}; globalThis.__zw_timers = [];\
+         globalThis.__zw_setTimeout = function(id, delay) {\
+           globalThis.__zw_timers.push({ id: id, at: Date.now() + (delay | 0) }); };\
+         globalThis.__zw_fire_due_timers = function() {\
+           var now = Date.now(); var rest = [], due = [];\
+           var timers = globalThis.__zw_timers || [];\
+           for (var i = 0; i < timers.length; i++) {\
+             if (timers[i].at <= now) due.push(timers[i]); else rest.push(timers[i]); }\
+           globalThis.__zw_timers = rest;\
+           for (var j = 0; j < due.length; j++) {\
+             try { (due[j].id)(); } catch (_e) {} }\
+           return due.length; };\
+         globalThis.setTimeout = function(fn, delay) {\
+           var id = function() { fn(); };\
+           globalThis.__zw_setTimeout(id, delay || 0);\
+           return globalThis.__zw_timers.length; };",
+    ).unwrap();
+
+    // ① sel 无 src 候选：play → stable state → 移除 → pause + AbortError。
+    sandbox.execute(
+        "var v = document.querySelector('video');\
+         globalThis.__log = [];\
+         v.onpause = function () { globalThis.__log.push('pause:paused=' + v.paused); };\
+         globalThis.__p = v.play();\
+         globalThis.__pState = 'pending';\
+         globalThis.__p.then(function () { globalThis.__pState = 'resolved'; },\
+           function (e) { globalThis.__pState = 'rejected:' + e.name; });\
+         void 0;",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("String(v.networkState)").unwrap().value,
+        "0",
+        "稳定态后 networkState = NETWORK_EMPTY（无候选回落）"
+    );
+    assert_eq!(
+        sandbox.execute("String(v.paused)").unwrap().value,
+        "false",
+        "play() 后 paused 同步翻转 false（spec dom-media-paused）"
+    );
+    sandbox.execute("globalThis.__zw_fire_due_timers();").unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__pState").unwrap().value,
+        "pending",
+        "无候选：queued task 后 promise 仍 pending（播放未真正推进）"
+    );
+    sandbox.execute(
+        "v.parentNode.removeChild(v);\
+         globalThis.__zw_fire_due_timers();\
+         globalThis.__zw_fire_due_timers();",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__log.join(',')").unwrap().value,
+        "pause:paused=true",
+        "移除后 stable state 派 pause 事件且 paused=true"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__pState").unwrap().value,
+        "rejected:AbortError",
+        "移除后 pending play promise reject AbortError（spec pause on removal）"
+    );
+
+    // ② sel 有 src：queued task 后 promise resolve（既有面零回归）。
+    sandbox.execute(
+        "var v2 = document.createElement('video');\
+         globalThis.__v2 = v2;\
+         v2.src = 'https://wpt.test/media/movie_5.webm';\
+         globalThis.__p2 = v2.play();\
+         globalThis.__p2State = 'pending';\
+         globalThis.__p2.then(function () { globalThis.__p2State = 'resolved'; },\
+           function (e) { globalThis.__p2State = 'rejected:' + e.name; });\
+         void 0;",
+    ).unwrap();
+    sandbox.execute("globalThis.__zw_fire_due_timers();").unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__p2State").unwrap().value,
+        "resolved",
+        "有 src：queued task 后 play promise resolve（既有契约）"
+    );
+
+    // ③ detached handle-only：play 面保持 queued task resolve（detached 断言面零回归）。
+    sandbox.execute(
+        "var v3 = document.createElement('video');\
+         globalThis.__v3 = v3;\
+         globalThis.__p3 = v3.play();\
+         globalThis.__p3State = 'pending';\
+         globalThis.__p3.then(function () { globalThis.__p3State = 'resolved'; },\
+           function (e) { globalThis.__p3State = 'rejected:' + e.name; });\
+         void 0;",
+    ).unwrap();
+    sandbox.execute("globalThis.__zw_fire_due_timers();").unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__p3State").unwrap().value,
+        "resolved",
+        "detached handle-only：play promise 保持 queued task resolve（headless 近似）"
     );
 }
