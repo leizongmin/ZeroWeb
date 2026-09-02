@@ -10,8 +10,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-EXPECTED_CASES = 23
-EXPECTED_SUBTESTS = 305
+EXPECTED_CASES = 24
+EXPECTED_SUBTESTS = 308
 
 
 def parse_args() -> argparse.Namespace:
@@ -92,7 +92,7 @@ def render_markdown(summary: dict) -> str:
             "## Scope",
             "",
             "This pinned Service Worker M2 CacheStorage baseline covers the "
-            "twelve serviceworker CacheStorage wrappers, nine top-level "
+            "twelve serviceworker CacheStorage wrappers, ten top-level "
             "CacheStorage `.any.js` Service Worker global variants, and the "
             "`cache-keys-attributes-for-service-worker.https.html` and `credentials.https.html` pages. "
             "They run the upstream "
@@ -100,7 +100,7 @@ def render_markdown(summary: dict) -> str:
             "`cache-abort.js`, `cache-add.js`, `cache-match.js`, `cache-matchAll.js`, "
             "`cache-put.js`, `cache-storage-match.js`, the navigation-attribute "
             "service worker fixture, and the credentialed request cache-key fixture in a real Service "
-            "Worker global and validate `caches.open()`, `CacheStorage.has/delete/"
+            "Worker global and validate `caches.open()`, bucket-scoped CacheStorage, `CacheStorage.has/delete/"
             "keys/match()`, opened `Cache` identity, delete dooming semantics, "
             "empty cache names, required-argument TypeError behavior, `Cache.match/"
             "delete/keys/matchAll/put/add/addAll()`, query option handling, Vary matching, "

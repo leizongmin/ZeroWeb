@@ -1452,22 +1452,29 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
   }
   // https://w3c.github.io/ServiceWorker/#cache-interface
   class Cache {
-    constructor(name, cacheId) {
+    constructor(name, cacheId, liveCheck) {
       this._name = String(name);
       this._cacheId = cacheId === undefined || cacheId === null ? null : Number(cacheId);
+      this._liveCheck = typeof liveCheck === 'function' ? liveCheck : null;
+    }
+    _assertLive() {
+      if (this._liveCheck && !this._liveCheck()) throw cacheBucketDeletedError();
     }
     match(input, options) {
+      this._assertLive();
       return cacheStorageHost(cacheMatchRequest(input, this._name, options, this)).then(function(response) {
         return response.response === null ? undefined : cachedResponseFromWire(response.response);
       });
     }
     matchAll(input, options) {
+      this._assertLive();
       return cacheStorageHost(cacheMatchAllRequest(this, input, options)).then(function(response) {
         const responses = Array.isArray(response.responses) ? response.responses : [];
         return responses.map(cachedResponseFromWire);
       });
     }
     put(input, response) {
+      this._assertLive();
       let request;
       try {
         request = cachePutRequest(this, input, response);
@@ -1479,6 +1486,7 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
       });
     }
     add(input) {
+      this._assertLive();
       const cache = this;
       let request;
       try {
@@ -1501,6 +1509,7 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
       });
     }
     addAll(inputs) {
+      this._assertLive();
       const cache = this;
       try {
         const requests = Array.from(inputs).map(function(input) {
@@ -1548,12 +1557,14 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
       }
     }
     keys(input, options) {
+      this._assertLive();
       return cacheStorageHost(cacheKeysRequest(this, input, options)).then(function(response) {
         const requests = Array.isArray(response.requests) ? response.requests : [];
         return requests.map(cachedRequestFromWire);
       });
     }
     delete(input, options) {
+      this._assertLive();
       const hasInput = arguments.length >= 1;
       let request;
       try {
@@ -1569,18 +1580,42 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
   }
   Object.defineProperty(Cache.prototype, Symbol.toStringTag, {value: 'Cache'});
 
+  // https://wicg.github.io/storage-buckets/#storagebucket
+  function cacheBucketDeletedError() {
+    try {
+      return new DOMException('Storage bucket is deleted', 'UnknownError');
+    } catch (_error) {
+      const error = new Error('Storage bucket is deleted');
+      error.name = 'UnknownError';
+      return error;
+    }
+  }
+
   // https://w3c.github.io/ServiceWorker/#cache-storage-interface
   class CacheStorage {
+    constructor(namePrefix, liveCheck, keyFromHostName) {
+      this._namePrefix = typeof namePrefix === 'function' ? namePrefix : null;
+      this._liveCheck = typeof liveCheck === 'function' ? liveCheck : null;
+      this._keyFromHostName = typeof keyFromHostName === 'function' ? keyFromHostName : null;
+    }
+    _assertLive() {
+      if (this._liveCheck && !this._liveCheck()) throw cacheBucketDeletedError();
+    }
+    _nameForHost(name) {
+      return this._namePrefix ? this._namePrefix(String(name)) : name;
+    }
     open(name) {
+      const storage = this;
       const hasName = arguments.length >= 1;
       return new Promise(function(resolve, reject) {
         try {
+          storage._assertLive();
           if (!hasName) throw new TypeError('CacheStorage.open requires a name');
           const request = {op: 'open'};
           const fallback = String(name);
-          cacheSetNameWire(request, 'name', fallback);
+          cacheSetNameWire(request, 'name', storage._nameForHost(name));
           cacheStorageHost(request).then(function(response) {
-            resolve(new Cache(cacheNameFromResult(response, fallback), response.cacheId));
+            resolve(new Cache(cacheNameFromResult(response, fallback), response.cacheId, storage._liveCheck));
           }, reject);
         } catch (error) {
           reject(error);
@@ -1588,18 +1623,22 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
       });
     }
     match(input, options) {
+      this._assertLive();
       const cacheName = options === undefined || options === null ? undefined : Object(options).cacheName;
-      return cacheStorageHost(cacheMatchRequest(input, cacheName === undefined ? undefined : String(cacheName), options)).then(function(response) {
+      const hostName = cacheName === undefined ? undefined : this._nameForHost(cacheName);
+      return cacheStorageHost(cacheMatchRequest(input, hostName, options)).then(function(response) {
         return response.response === null ? undefined : cachedResponseFromWire(response.response);
       });
     }
     has(name) {
+      const storage = this;
       const hasName = arguments.length >= 1;
       return new Promise(function(resolve, reject) {
         try {
+          storage._assertLive();
           if (!hasName) throw new TypeError('CacheStorage.has requires a name');
           const request = {op: 'has'};
-          cacheSetNameWire(request, 'name', name);
+          cacheSetNameWire(request, 'name', storage._nameForHost(name));
           cacheStorageHost(request).then(function(response) {
             resolve(Boolean(response.value));
           }, reject);
@@ -1609,12 +1648,14 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
       });
     }
     delete(name) {
+      const storage = this;
       const hasName = arguments.length >= 1;
       return new Promise(function(resolve, reject) {
         try {
+          storage._assertLive();
           if (!hasName) throw new TypeError('CacheStorage.delete requires a name');
           const request = {op: 'storageDelete'};
-          cacheSetNameWire(request, 'name', name);
+          cacheSetNameWire(request, 'name', storage._nameForHost(name));
           cacheStorageHost(request).then(function(response) {
             resolve(Boolean(response.value));
           }, reject);
@@ -1624,15 +1665,108 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
       });
     }
     keys() {
+      const storage = this;
+      storage._assertLive();
       return cacheStorageHost({op: 'storageKeys'}).then(function(response) {
+        let keys;
         if (Array.isArray(response.cacheNameUnits)) {
-          return response.cacheNameUnits.map(cacheDomStringFromWire);
+          keys = response.cacheNameUnits.map(cacheDomStringFromWire);
+        } else {
+          keys = Array.isArray(response.cacheNames) ? response.cacheNames.map(String) : [];
         }
-        return Array.isArray(response.cacheNames) ? response.cacheNames.map(String) : [];
+        if (storage._keyFromHostName) {
+          keys = keys.map(storage._keyFromHostName).filter(function(name) { return name !== null; });
+        }
+        return keys;
       });
     }
   }
   Object.defineProperty(CacheStorage.prototype, Symbol.toStringTag, {value: 'CacheStorage'});
+
+  // https://wicg.github.io/storage-buckets/#storagebucket
+  function storageBucketCachePrefix(bucketName) {
+    return '__zw_storage_bucket__' + cacheDomStringWire(bucketName) + ':';
+  }
+  class StorageBucket {
+    constructor(name, owner) {
+      this.name = String(name);
+      this._owner = owner;
+      this._deleted = false;
+      const prefix = storageBucketCachePrefix(this.name);
+      const bucket = this;
+      this.caches = new CacheStorage(
+        function(cacheName) { return prefix + cacheName; },
+        function() { return !bucket._deleted && owner._bucketExists(bucket.name); },
+        function(hostName) {
+          hostName = String(hostName);
+          return hostName.indexOf(prefix) === 0 ? hostName.slice(prefix.length) : null;
+        }
+      );
+    }
+  }
+  Object.defineProperty(StorageBucket.prototype, Symbol.toStringTag, {value: 'StorageBucket'});
+  class StorageBucketManager {
+    constructor() {
+      this._buckets = {};
+      this._order = [];
+    }
+    _bucketExists(name) {
+      return Object.prototype.hasOwnProperty.call(this._buckets, String(name));
+    }
+    open(name) {
+      const manager = this;
+      return new Promise(function(resolve) {
+        name = String(name);
+        if (!manager._bucketExists(name)) {
+          manager._buckets[name] = new StorageBucket(name, manager);
+          manager._order.push(name);
+        }
+        resolve(manager._buckets[name]);
+      });
+    }
+    keys() {
+      const manager = this;
+      return Promise.resolve(manager._order.filter(function(name) {
+        return manager._bucketExists(name);
+      }));
+    }
+    delete(name) {
+      const manager = this;
+      return new Promise(function(resolve, reject) {
+        try {
+          name = String(name);
+          if (!manager._bucketExists(name)) {
+            resolve(false);
+            return;
+          }
+          const prefix = storageBucketCachePrefix(name);
+          cacheStorageHost({op: 'storageKeys'}).then(function(response) {
+            const keys = Array.isArray(response.cacheNameUnits)
+              ? response.cacheNameUnits.map(cacheDomStringFromWire)
+              : (Array.isArray(response.cacheNames) ? response.cacheNames.map(String) : []);
+            let chain = Promise.resolve();
+            keys.forEach(function(cacheName) {
+              cacheName = String(cacheName);
+              if (cacheName.indexOf(prefix) === 0) {
+                const request = {op: 'storageDelete'};
+                cacheSetNameWire(request, 'name', cacheName);
+                chain = chain.then(function() { return cacheStorageHost(request); });
+              }
+            });
+            return chain.then(function() {
+              manager._buckets[name]._deleted = true;
+              delete manager._buckets[name];
+              manager._order = manager._order.filter(function(bucketName) { return bucketName !== name; });
+              resolve(true);
+            });
+          }, reject);
+        } catch (error) {
+          reject(error);
+        }
+      });
+    }
+  }
+  Object.defineProperty(StorageBucketManager.prototype, Symbol.toStringTag, {value: 'StorageBucketManager'});
 
   // https://w3c.github.io/ServiceWorker/#fetch-event-interface
   class FetchEvent extends ExtendableEvent {
@@ -1913,7 +2047,15 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
   globalThis.Response = globalThis.Response || Response;
   globalThis.Cache = globalThis.Cache || Cache;
   globalThis.CacheStorage = globalThis.CacheStorage || CacheStorage;
+  globalThis.StorageBucket = globalThis.StorageBucket || StorageBucket;
+  globalThis.StorageBucketManager = globalThis.StorageBucketManager || StorageBucketManager;
   globalThis.caches = globalThis.caches || new CacheStorage();
+  // https://html.spec.whatwg.org/multipage/workers.html#the-workernavigator-object
+  // https://wicg.github.io/storage-buckets/#extensions-to-the-navigator-and-workernavigator-interfaces
+  globalThis.navigator = globalThis.navigator || {};
+  if (!globalThis.navigator.storageBuckets) {
+    globalThis.navigator.storageBuckets = new StorageBucketManager();
+  }
   globalThis.FetchEvent = FetchEvent;
   globalThis.DOMException = globalThis.DOMException || DOMException;
   globalThis.AbortController = globalThis.AbortController || AbortController;
@@ -7664,6 +7806,145 @@ mod tests {
                     response_type: "default".into(),
                     headers: Vec::new(),
                     body: "true|runtime|true|true".into(),
+                }),
+                failed: false,
+                message: String::new(),
+            }
+        );
+    }
+
+    #[test]
+    fn storage_bucket_caches_use_prefixed_registration_cache_namespace() {
+        let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
+        runtime
+            .evaluate(
+                "addEventListener('fetch', event => {
+                   event.respondWith((async () => {
+                     const inbox = await navigator.storageBuckets.open('inbox');
+                     const cache = await inbox.caches.open('attachments');
+                     await cache.put('receipt.txt', new Response('bread'));
+                     await navigator.storageBuckets.delete('inbox');
+                     try {
+                       await cache.match('receipt.txt');
+                       throw new Error('deleted bucket cache stayed live');
+                     } catch (error) {
+                       if (error.name !== 'UnknownError') throw error;
+                     }
+                     return new Response('done');
+                   })());
+                 });",
+                "https://example.test/sw.js",
+            )
+            .unwrap();
+        let _ = runtime.recv_timeout(Duration::from_secs(5)).unwrap();
+
+        runtime
+            .dispatch_fetch(
+                48,
+                ServiceWorkerFetchRequest {
+                    url: "https://example.test/app/bucket".into(),
+                    method: "GET".into(),
+                    headers: Vec::new(),
+                    body: None,
+                    credentials: None,
+                    client_id: Some("client-1".into()),
+                    resulting_client_id: None,
+                    referrer: None,
+                    is_reload_navigation: false,
+                    is_history_navigation: false,
+                },
+            )
+            .unwrap();
+
+        let bucket_cache_name = "__zw_storage_bucket__0069006e0062006f0078:attachments";
+        let bucket_cache_name_units = "005f005f007a0077005f00730074006f0072006100670065005f006200750063006b00650074005f005f00300030003600390030003000360065003000300036003200300030003600660030003000370038003a006100740074006100630068006d0065006e00740073";
+
+        let ServiceWorkerEvent::CacheStorageRequested { request_id, request } =
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap()
+        else {
+            panic!("missing bucket CacheStorage.open request");
+        };
+        assert_eq!(
+            request,
+            ServiceWorkerCacheStorageRequest::Open {
+                cache_name: bucket_cache_name.into()
+            }
+        );
+        runtime
+            .complete_cache_storage(
+                request_id,
+                Ok(ServiceWorkerCacheStorageResult::Open {
+                    cache_name: bucket_cache_name.into(),
+                    cache_name_units: bucket_cache_name_units.into(),
+                    cache_id: 11,
+                }),
+            )
+            .unwrap();
+
+        let ServiceWorkerEvent::CacheStorageRequested { request_id, request } =
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap()
+        else {
+            panic!("missing bucket Cache.put request");
+        };
+        let ServiceWorkerCacheStorageRequest::Put {
+            cache_name,
+            cache_id,
+            request,
+            response,
+        } = request
+        else {
+            panic!("expected Cache.put request");
+        };
+        assert_eq!(cache_name, bucket_cache_name);
+        assert_eq!(cache_id, Some(11));
+        assert_eq!(request.url, "https://example.test/receipt.txt");
+        assert_eq!(response.body, "bread");
+        runtime
+            .complete_cache_storage(request_id, Ok(ServiceWorkerCacheStorageResult::Done))
+            .unwrap();
+
+        let ServiceWorkerEvent::CacheStorageRequested { request_id, request } =
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap()
+        else {
+            panic!("missing StorageBucketManager delete keys request");
+        };
+        assert_eq!(request, ServiceWorkerCacheStorageRequest::StorageKeys);
+        runtime
+            .complete_cache_storage(
+                request_id,
+                Ok(ServiceWorkerCacheStorageResult::StorageKeys(vec![
+                    bucket_cache_name.into(),
+                    "outside".into(),
+                ])),
+            )
+            .unwrap();
+
+        let ServiceWorkerEvent::CacheStorageRequested { request_id, request } =
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap()
+        else {
+            panic!("missing bucket CacheStorage.delete request");
+        };
+        assert_eq!(
+            request,
+            ServiceWorkerCacheStorageRequest::StorageDelete {
+                cache_name: bucket_cache_name.into()
+            }
+        );
+        runtime
+            .complete_cache_storage(request_id, Ok(ServiceWorkerCacheStorageResult::Bool(true)))
+            .unwrap();
+
+        assert_eq!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::FetchSettled {
+                event_id: 48,
+                request_url: "https://example.test/app/bucket".into(),
+                response: Some(ServiceWorkerFetchResponse {
+                    status: 200,
+                    status_text: String::new(),
+                    response_type: "default".into(),
+                    headers: Vec::new(),
+                    body: "done".into(),
                 }),
                 failed: false,
                 message: String::new(),

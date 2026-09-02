@@ -32,7 +32,7 @@
 >   真事件。
 > - **WPT 面**：已接入 service-workers core runner 49 case / 193 subtest 全绿、
 >   fetch/message runner 26 case / 70 subtest 全绿，以及 CacheStorage serviceworker
->   runner 23 case / 305 subtest 全绿；上游 `service-workers` 仍有大量用例依赖更完整的
+>   runner 24 case / 308 subtest 全绿；上游 `service-workers` 仍有大量用例依赖更完整的
 >   iframe/多客户端/动态服务器语义，继续按 skip/defer/gated 清单推进。
 
 ---

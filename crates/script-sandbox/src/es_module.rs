@@ -845,7 +845,7 @@ pub(crate) fn expose_classic_script_lexicals(source: &str) -> String {
     let mut names = Vec::new();
     for statement in split_statements(source) {
         let statement = statement.trim_start();
-        for prefix in ["const ", "let ", "class "] {
+        for prefix in ["const ", "let ", "class ", "function ", "async function "] {
             if let Some(declaration) = statement.strip_prefix(prefix) {
                 let name = extract_binding_name(declaration);
                 if name != "unknown" {
@@ -1087,7 +1087,11 @@ mod tests {
         );
         assert_eq!(
             expose_classic_script_lexicals("function load() { const nested = 1; }"),
-            "function load() { const nested = 1; }"
+            "function load() { const nested = 1; }\nglobalThis.load = load;"
+        );
+        assert_eq!(
+            expose_classic_script_lexicals("async function prepare() { return 1; }"),
+            "async function prepare() { return 1; }\nglobalThis.prepare = prepare;"
         );
     }
 

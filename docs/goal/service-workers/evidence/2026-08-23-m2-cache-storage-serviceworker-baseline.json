@@ -1,8 +1,8 @@
 {
-  "cases": 23,
-  "subtests": 305,
+  "cases": 24,
+  "subtests": 308,
   "status": {
-    "Pass": 305
+    "Pass": 308
   },
   "deterministic": true,
   "results": [
@@ -691,6 +691,26 @@
         },
         {
           "name": "service-workers/cache-storage/cache-storage.https.any.js",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/cache-storage/cache-storage-buckets.https.any.js",
+      [
+        {
+          "name": "caches from different buckets have different contents",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "cache.open promise is rejected when bucket is gone",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "service-workers/cache-storage/cache-storage-buckets.https.any.js",
           "status": "Pass",
           "message": null
         }
