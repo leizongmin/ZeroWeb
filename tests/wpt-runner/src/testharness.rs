@@ -900,6 +900,7 @@ pub const SERVICE_WORKER_FETCH_CASES: &[&str] = &[
     "service-workers/service-worker/claim-not-using-registration.https.html",
     "service-workers/service-worker/claim-using-registration.https.html",
     "service-workers/service-worker/unregister-controller.https.html",
+    "service-workers/service-worker/fetch-event-respond-with-body-loaded-in-chunk.https.html",
 ];
 
 /// Fixed Service Worker CacheStorage corpus at the pinned WPT revision.
@@ -2800,6 +2801,24 @@ fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fet
             if req.method != "GET" {
                 return Err(format!("method not supported: {}", req.method));
             }
+            if clean == "fetch/api/resources/trickle.py" {
+                let query = path_part.split_once('?').map(|(_, query)| query).unwrap_or("");
+                let count = wpt_query_value(query, "count")
+                    .and_then(|value| value.parse::<usize>().ok())
+                    .unwrap_or(1);
+                let count = count.min(128);
+                let body = "TEST_TRICKLE\n".repeat(count);
+                let mut headers = wpt_pipe_headers(query);
+                headers.push(("content-type".into(), "text/plain".into()));
+                wpt_add_fetch_metadata(&mut headers, req, 200);
+                return Ok(zero_engine::fetch_bridge::FetchResponse {
+                    status: 200,
+                    status_text: "OK".to_string(),
+                    headers,
+                    body: body.clone(),
+                    body_bytes: Some(body.into_bytes()),
+                });
+            }
             // js-dom R141：dom/nodes/encoding.py（Document-characterSet-normalization 两文件
             // 654 subtest 经 `<iframe src="encoding.py?label=X">` 取子文档）——上游是
             // wptserve Python 脚本，wpt-data 无静态文件。此处内置等价生成器：读 ?label=
@@ -2999,7 +3018,21 @@ fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fet
                         body_bytes: Some(bytes),
                     })
                 }
-                Err(e) => Err(format!("not found: {clean} ({e})")),
+                Err(e) => {
+                    if clean.starts_with("service-workers/service-worker/resources/") && clean.ends_with(".html") {
+                        let status = 404;
+                        let mut headers = vec![("content-type".into(), "text/html".into())];
+                        wpt_add_fetch_metadata(&mut headers, req, status);
+                        return Ok(zero_engine::fetch_bridge::FetchResponse {
+                            status,
+                            status_text: wpt_status_text(status).to_string(),
+                            headers,
+                            body: String::new(),
+                            body_bytes: Some(Vec::new()),
+                        });
+                    }
+                    Err(format!("not found: {clean} ({e})"))
+                }
             }
         },
     ))
@@ -4350,8 +4383,8 @@ async_test(function(test) {
             .iter()
             .copied()
             .collect::<std::collections::BTreeSet<_>>();
-        assert_eq!(SERVICE_WORKER_FETCH_CASES.len(), 28);
-        assert_eq!(unique.len(), 28);
+        assert_eq!(SERVICE_WORKER_FETCH_CASES.len(), 29);
+        assert_eq!(unique.len(), 29);
         assert!(SERVICE_WORKER_FETCH_CASES.contains(
             &"service-workers/service-worker/ServiceWorkerGlobalScope/fetch-on-the-right-interface.https.any.js"
         ));
@@ -4423,6 +4456,10 @@ async_test(function(test) {
         );
         assert!(
             SERVICE_WORKER_FETCH_CASES.contains(&"service-workers/service-worker/unregister-controller.https.html")
+        );
+        assert!(
+            SERVICE_WORKER_FETCH_CASES
+                .contains(&"service-workers/service-worker/fetch-event-respond-with-body-loaded-in-chunk.https.html")
         );
     }
 
@@ -4853,6 +4890,50 @@ async_test(function(test) {
         let post = handler(&make_req("POST", Some("BODY"))).unwrap();
         assert_eq!(post.status, 200);
         assert_eq!(post.body, "BODY");
+    }
+
+    #[test]
+    fn trickle_fixture_generates_requested_chunks() {
+        let handler = wpt_data_fetch_handler(Path::new("/nonexistent-wpt-root")).unwrap();
+        let req = zero_engine::fetch_bridge::FetchRequest {
+            url: "https://wpt.test/fetch/api/resources/trickle.py?count=4".to_string(),
+            method: "GET".to_string(),
+            headers: Vec::new(),
+            body: None,
+            body_bytes: None,
+            credentials: None,
+            mode: None,
+            redirect: None,
+        };
+
+        let resp = handler(&req).unwrap();
+        assert_eq!(resp.status, 200);
+        assert_eq!(resp.body, "TEST_TRICKLE\n".repeat(4));
+        assert_eq!(resp.body_bytes, Some(resp.body.as_bytes().to_vec()));
+    }
+
+    #[test]
+    fn service_worker_missing_scope_html_returns_document_response() {
+        let handler = wpt_data_fetch_handler(Path::new("/nonexistent-wpt-root")).unwrap();
+        let req = zero_engine::fetch_bridge::FetchRequest {
+            url: "https://wpt.test/service-workers/service-worker/resources/missing-scope.html".to_string(),
+            method: "GET".to_string(),
+            headers: Vec::new(),
+            body: None,
+            body_bytes: None,
+            credentials: None,
+            mode: None,
+            redirect: None,
+        };
+
+        let resp = handler(&req).unwrap();
+        assert_eq!(resp.status, 404);
+        assert_eq!(resp.body, "");
+        assert!(
+            resp.headers
+                .iter()
+                .any(|(name, value)| name.eq_ignore_ascii_case("content-type") && value == "text/html")
+        );
     }
 
     #[test]

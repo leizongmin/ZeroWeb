@@ -73,3 +73,6 @@ service-workers/service-worker/ServiceWorkerGlobalScope/postmessage.https.html	t
 service-workers/service-worker/ServiceWorkerGlobalScope/resources/postmessage-loopback-worker.js	support	worker-script	1	525	no	083e9aa2a85d452bd89c64a088def8b58f1d61aa	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
 service-workers/service-worker/ServiceWorkerGlobalScope/resources/postmessage-ping-worker.js	support	worker-script	1	496	no	ebb1eccce2da61484e7b23d5cdda7d6898acf3bd	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
 service-workers/service-worker/ServiceWorkerGlobalScope/resources/postmessage-pong-worker.js	support	worker-script	1	136	no	4a0d90b6182f02b12f044bc577b461c92e9d2100	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
+service-workers/service-worker/fetch-event-respond-with-body-loaded-in-chunk.https.html	testharness	case	1	1064	no	932f9030c51ce6e09d4dba08f0dab19dec6e8b15	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
+service-workers/service-worker/resources/fetch-event-respond-with-body-loaded-in-chunk-worker.js	support	worker-script	1	219	no	d3ba8a8df2e7a4e07bc647a2f634901b7041734c	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
+fetch/api/resources/trickle.py	support	fetch-body	1	475	no	99833f1b38d50555b3268f42de34466a740ce23f	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83

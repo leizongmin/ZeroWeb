@@ -21,9 +21,8 @@ page consumes the response with `response.text()`. It does not require
 
 Adjacent cases were probed but not promoted:
 
-- `fetch-event-respond-with-body-loaded-in-chunk.https.html`: still returns an
-  empty body because forwarding `fetch(...).body` from the worker-side network
-  response needs true response body transfer across the runtime boundary.
+- `fetch-event-respond-with-body-loaded-in-chunk.https.html`: later promoted by
+  adding a deterministic `trickle.py` network fixture for the loaded body path.
 - `fetch-event-respond-with-response-body-with-invalid-chunk.https.html`: still
   times out because the page-side `response.body.getReader()` path is not
   available for the controlled iframe response.

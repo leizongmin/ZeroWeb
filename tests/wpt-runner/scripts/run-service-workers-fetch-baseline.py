@@ -10,8 +10,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-EXPECTED_CASES = 28
-EXPECTED_SUBTESTS = 73
+EXPECTED_CASES = 29
+EXPECTED_SUBTESTS = 74
 
 
 def parse_args() -> argparse.Namespace:
@@ -79,7 +79,7 @@ def render_markdown(summary: dict) -> str:
         [
             "# Service Worker Fetch/Message WPT Baseline",
             "",
-            "- Date: 2026-08-31",
+            "- Date: 2026-09-02",
             "- WPT revision: `04067ce9c7c2165e71ad7d0dde10a4c5cb394a83`",
             "- Additional WPT revision: `24197a11e8c5bd29a5cb7bdf18135a82be8a8546` "
             "for `fetch-event-within-sw.https.html`, "
@@ -99,7 +99,7 @@ def render_markdown(summary: dict) -> str:
             "",
             "## Scope",
             "",
-            "This pinned Service Worker fetch/message baseline covers twenty-eight cases. "
+            "This pinned Service Worker fetch/message baseline covers twenty-nine cases. "
             "`fetch-on-the-right-interface.https.any.js` verifies that `fetch` is inherited "
             "from `WorkerGlobalScope.prototype` rather than installed as an own property on "
             "`ServiceWorkerGlobalScope`. "
@@ -151,6 +151,9 @@ def render_markdown(summary: dict) -> str:
             "`fetch-event-respond-with-readable-stream-chunk.https.html` covers a synthetic "
             "Response built from a ReadableStream whose pull source emits empty and non-empty "
             "Uint8Array chunks across a controlled iframe fetch. "
+            "`fetch-event-respond-with-body-loaded-in-chunk.https.html` covers forwarding a "
+            "worker-side network `fetch(...).body` response through `respondWith(new Response(body))` "
+            "after the network response body has loaded in chunks. "
             "`fetch-error.https.html` covers a `respondWith(new Response(stream))` response "
             "whose body stream makes progress and then errors, ensuring the fetch promise "
             "resolves while later body consumption rejects. "
