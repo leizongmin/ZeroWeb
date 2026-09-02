@@ -18,6 +18,8 @@ service-workers/service-worker/resources/sample.txt	support	worker-fetch	1	12	no
 service-workers/service-worker/fetch-event-respond-with-argument.https.html	testharness	case	1	1404	no	05e22105243f710273f56e21502659ad1781e28c	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
 service-workers/service-worker/resources/fetch-event-respond-with-argument-worker.js	support	worker-script	1	419	no	712c4b73c9bc6da7c828a4c194b09ad9018d47ae	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
 service-workers/service-worker/resources/fetch-event-respond-with-argument-iframe.html	support	iframe-document	1	1497	no	0ebd1ca81537e529aaa0e3e93985b92364e9225f	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
+service-workers/service-worker/fetch-event-respond-with-readable-stream-chunk.https.html	testharness	case	1	995	no	4544a9e08f562c9787153470c0cbd6a9ad6f4dea	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
+service-workers/service-worker/resources/fetch-event-respond-with-readable-stream-chunk-worker.js	support	worker-script	1	1131	no	f954e3a18a5e5ca3b6b4b9a8a6fcc9956911007b	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
 service-workers/service-worker/fetch-event-network-error.https.html	testharness	case	1	1330	no	fea2ad1e3c26effcc9fd7c8d7a66917e420606b4	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
 service-workers/service-worker/resources/fetch-event-network-error-worker.js	support	worker-script	1	1408	no	5bfe3a0bbd9cfe706a72080dcde4cc147344ddc7	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
 service-workers/service-worker/resources/fetch-event-network-error-controllee-iframe.html	support	iframe-document	1	1760	no	f6c1919bbcf63a0f23f7ea4f0f8baa0e5bae4035	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83

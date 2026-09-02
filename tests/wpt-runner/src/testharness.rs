@@ -887,6 +887,7 @@ pub const SERVICE_WORKER_FETCH_CASES: &[&str] = &[
     "service-workers/service-worker/fetch-event-throws-after-respond-with.https.html",
     "service-workers/service-worker/fetch-event-network-error.https.html",
     "service-workers/service-worker/fetch-event-respond-with-argument.https.html",
+    "service-workers/service-worker/fetch-event-respond-with-readable-stream-chunk.https.html",
     "service-workers/service-worker/fetch-error.https.html",
     "service-workers/service-worker/iso-latin1-header.https.html",
     "service-workers/service-worker/invalid-header.https.html",
@@ -4248,8 +4249,8 @@ async_test(function(test) {
             .iter()
             .copied()
             .collect::<std::collections::BTreeSet<_>>();
-        assert_eq!(SERVICE_WORKER_FETCH_CASES.len(), 26);
-        assert_eq!(unique.len(), 26);
+        assert_eq!(SERVICE_WORKER_FETCH_CASES.len(), 27);
+        assert_eq!(unique.len(), 27);
         assert!(SERVICE_WORKER_FETCH_CASES.contains(
             &"service-workers/service-worker/ServiceWorkerGlobalScope/fetch-on-the-right-interface.https.any.js"
         ));
@@ -4297,6 +4298,10 @@ async_test(function(test) {
         assert!(
             SERVICE_WORKER_FETCH_CASES
                 .contains(&"service-workers/service-worker/fetch-event-respond-with-argument.https.html")
+        );
+        assert!(
+            SERVICE_WORKER_FETCH_CASES
+                .contains(&"service-workers/service-worker/fetch-event-respond-with-readable-stream-chunk.https.html")
         );
         assert!(SERVICE_WORKER_FETCH_CASES.contains(&"service-workers/service-worker/fetch-error.https.html"));
         assert!(SERVICE_WORKER_FETCH_CASES.contains(&"service-workers/service-worker/iso-latin1-header.https.html"));

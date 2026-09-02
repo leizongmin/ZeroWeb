@@ -10,8 +10,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-EXPECTED_CASES = 26
-EXPECTED_SUBTESTS = 70
+EXPECTED_CASES = 27
+EXPECTED_SUBTESTS = 71
 
 
 def parse_args() -> argparse.Namespace:
@@ -99,7 +99,7 @@ def render_markdown(summary: dict) -> str:
             "",
             "## Scope",
             "",
-            "This pinned Service Worker fetch/message baseline covers twenty-six cases. "
+            "This pinned Service Worker fetch/message baseline covers twenty-seven cases. "
             "`fetch-on-the-right-interface.https.any.js` verifies that `fetch` is inherited "
             "from `WorkerGlobalScope.prototype` rather than installed as an own property on "
             "`ServiceWorkerGlobalScope`. "
@@ -145,6 +145,9 @@ def render_markdown(summary: dict) -> str:
             "errors, and pass-through after a thrown fetch handler. "
             "`fetch-event-respond-with-argument.https.html` covers Response, "
             "Promise<Response>, and invalid non-Response arguments producing a network error. "
+            "`fetch-event-respond-with-readable-stream-chunk.https.html` covers a synthetic "
+            "Response built from a ReadableStream whose pull source emits empty and non-empty "
+            "Uint8Array chunks across a controlled iframe fetch. "
             "`fetch-error.https.html` covers a `respondWith(new Response(stream))` response "
             "whose body stream makes progress and then errors, ensuring the fetch promise "
             "resolves while later body consumption rejects. "

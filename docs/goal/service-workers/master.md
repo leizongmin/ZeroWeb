@@ -2,7 +2,7 @@
 
 **入口文档**: [../service-workers.md](../service-workers.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-02（Service Worker ReadableStream start-source body fix；broader SW fetch/cache/message baseline 继续）
+**最后更新**: 2026-09-02（Service Worker ReadableStream chunk WPT promotion；broader SW fetch/cache/message baseline 继续）
 
 ---
 
@@ -30,9 +30,9 @@ M2 fetch/interception 上游 WPT
 `fetch-event-after-navigation-within-page.https.html` 与
 `intercepted-referrer.https.html`、`controller-with-no-fetch-event-handler.https.html`、
 `fetch-with-body.https.html`、`fetch-error.https.html`、`invalid-header.https.html` 与
-`invalid-blobtype.https.html` 与
+`invalid-blobtype.https.html`、`fetch-event-respond-with-readable-stream-chunk.https.html` 与
 `ServiceWorkerGlobalScope/extendable-message-event-constructor.https.html` 已形成独立 runner 与
-26 case / 70 subtest / 70 Pass 确定性
+27 case / 71 subtest / 71 Pass 确定性
 baseline；SW CacheStorage
 serviceworker wrapper 已
 扩展到 `cache-storage`、`cache-storage-keys`、`cache-delete`、`cache-keys`、`cache-matchAll`、
@@ -609,6 +609,14 @@ JSON，private profile 继续只保留内存态。
   已通过；剩余 `response.body` 转发与页面 cancel/abort 反传仍需要跨 runtime 边界的真实
   streaming/cancel 语义，故该 WPT 尚未纳入常驻 runner，fetch/message baseline 仍保持
   26 case / 70 subtest 全绿。
+- ✅ M2-41：Service Worker fetch/interception WPT baseline 扩展到
+  `service-workers/service-worker/fetch-event-respond-with-readable-stream-chunk.https.html`；
+  fetch-wave 资产清单扩展到 70 asset，runner 双跑 27 case / 71 subtest /
+  71 Pass / 0 Fail / 0 Timeout / deterministic true。该切片固定
+  `respondWith(new Response(stream))` 的 pull-source `ReadableStream` 可将空 chunk 与
+  非空 `Uint8Array` chunk 串接后经受控 iframe `response.text()` 读回；相邻的
+  network `fetch(...).body` 转发、invalid chunk reader rejection 与 partial stream
+  incremental reader 用例仍留在 streaming/cancel 专项。
 
 ## 缺口清单
 
@@ -616,7 +624,7 @@ JSON，private profile 继续只保留内存态。
 |---|------|------|
 | S1 | SW 执行环境架构与独立 runtime | ✅ production browser owner + renderer discovery 真链路 |
 | S2 | scriptURL 不下载执行 | ✅ production navigator 经 browser fetch/evaluate |
-| S3 | fetch 拦截为零 | 🚧 M2-2 production 页面 fetch respondWith/pass-through 已接入；M2-3/4/5/6 `caches.match()`、`caches.open()`、`Cache.put()`、`Cache.matchAll()`、`Cache.keys()` 与 `ignoreSearch`/`ignoreMethod` 桥接已接入；M2-7 worker-global `fetch()`、SW runtime `Cache.add/addAll` 与 CacheStorage `Response.type` 保真已接入；M2-9 `Cache.delete()` 与 `CacheStorage.delete/has/keys` 已接入；registration-local CacheStorage 持久化已接入；`Response.error()` 可作为 CacheStorage 条目保存/读回，但 FetchEvent 响应结算仍拒绝 status 0；SW fetch/message WPT baseline 已扩展到 request projection + async fetch listener registration + respondWith timing/value validation + synthetic Latin-1 response header over iframe XHR + invalid response header network error + stream body error during body consumption + invalid Blob MIME type not promoted to `Content-Type` + controlled-window `Cache.add()` interception + worker-internal fetch/cache non-self-interception + synthetic custom Response body matrix + `FetchEvent.handled` resolve/reject + same-document iframe navigation interception + intercepted navigation `document.referrer` preservation + controlled client no-fetch-handler CORS/no-cors fallback + controlled client POST body forwarding + `respondWith()` stopImmediatePropagation + throw-after-respondWith iframe navigation + uncontrolled page scope bypass + message-time `clients.claim()` iframe control + claim longest-match boundary + unregister incumbent-controller retention + worker-global fetch prototype placement + historical FetchEvent targetClientId absence + `ExtendableMessageEvent` constructor semantics，26/70 Pass；SW ReadableStream start-source body 已在 runtime/WebView 产品路径固定，但完整 WPT 仍因 response.body 转发与 cancel/abort 反传未纳入 baseline；SW CacheStorage baseline 扩展到 25/318 Pass，并覆盖 cached `Response.url`、Blob/FileReader、Cache.put cacheability、Cache.addAll duplicate/Vary atomicity、AbortError rejection、no-cors opaque readback、navigation request attributes、credentialed request URL cache keys、bucket-scoped CacheStorage 与 `.any.js` Service Worker global META support；broader fetch/cache/message 基线未完成 |
+| S3 | fetch 拦截为零 | 🚧 M2-2 production 页面 fetch respondWith/pass-through 已接入；M2-3/4/5/6 `caches.match()`、`caches.open()`、`Cache.put()`、`Cache.matchAll()`、`Cache.keys()` 与 `ignoreSearch`/`ignoreMethod` 桥接已接入；M2-7 worker-global `fetch()`、SW runtime `Cache.add/addAll` 与 CacheStorage `Response.type` 保真已接入；M2-9 `Cache.delete()` 与 `CacheStorage.delete/has/keys` 已接入；registration-local CacheStorage 持久化已接入；`Response.error()` 可作为 CacheStorage 条目保存/读回，但 FetchEvent 响应结算仍拒绝 status 0；SW fetch/message WPT baseline 已扩展到 request projection + async fetch listener registration + respondWith timing/value validation + synthetic Latin-1 response header over iframe XHR + invalid response header network error + stream body error during body consumption + invalid Blob MIME type not promoted to `Content-Type` + controlled-window `Cache.add()` interception + worker-internal fetch/cache non-self-interception + synthetic custom Response body matrix + `FetchEvent.handled` resolve/reject + same-document iframe navigation interception + intercepted navigation `document.referrer` preservation + controlled client no-fetch-handler CORS/no-cors fallback + controlled client POST body forwarding + `respondWith()` stopImmediatePropagation + throw-after-respondWith iframe navigation + uncontrolled page scope bypass + message-time `clients.claim()` iframe control + claim longest-match boundary + unregister incumbent-controller retention + worker-global fetch prototype placement + historical FetchEvent targetClientId absence + `ExtendableMessageEvent` constructor semantics + ReadableStream pull-source chunk serialization，27/71 Pass；SW ReadableStream start-source body 已在 runtime/WebView 产品路径固定，但完整 WPT 仍因 response.body 转发与 cancel/abort 反传未纳入 baseline；SW CacheStorage baseline 扩展到 25/318 Pass，并覆盖 cached `Response.url`、Blob/FileReader、Cache.put cacheability、Cache.addAll duplicate/Vary atomicity、AbortError rejection、no-cors opaque readback、navigation request attributes、credentialed request URL cache keys、bucket-scoped CacheStorage 与 `.any.js` Service Worker global META support；broader fetch/cache/message 基线未完成 |
 | S4 | 事件为 setTimeout 模拟 | ✅ manager transition log 为状态源；timer 只执行页面 task 投影 |
 | S5 | WPT 覆盖为零 | ✅ core 49/49 case、193/193 Pass、0 Fail/Timeout/Unsupported |
 
@@ -651,7 +659,8 @@ second（replacement）worker 只处理 awaitInstallEvent（messageSequence=1）
 1. **M2 fetch/cache WPT 扩面**：在首个 fetch/interception baseline、SW CacheStorage
    serviceworker 首片与持久化之后，继续挑选当前可执行的 Service Worker fetch/cache 上游用例，
    扩展 pass-rate evidence；`fetch-event-respond-with-readable-stream.https.html` 的剩余
-   `fetch('pass.txt').body` 转发和页面 cancel/abort 反传应作为 streaming/cancel 专项处理
+   `fetch('pass.txt').body` 转发、invalid chunk reader rejection、partial stream reader
+   delivery 和页面 cancel/abort 反传应作为 streaming/cancel 专项处理
 2. **M3 clients follow-up**：popup/auxiliary 真实 browsing context 创建后接入 browser owner
 
 ## 里程碑状态
@@ -660,14 +669,14 @@ second（replacement）worker 只处理 awaitInstallEvent（messageSequence=1）
 |--------|------|
 | M0 — 选型 RFC（门控） | ✅ 方案 C 已批准 |
 | M1 — 脚本真实执行 + 生命周期真事件 | ✅ current core WPT 193/193 Pass |
-| M2 — fetch 拦截 + Cache 集成 | 🚧 M2-2 production fetch respondWith/pass-through 完成；M2-3/4/5/6 `caches.match()`、`caches.open()`、`Cache.put()`、`Cache.matchAll()`、`Cache.keys()`、`ignoreSearch`/`ignoreMethod` 桥接完成；M2-7 worker-global `fetch()`、`Cache.add/addAll`、CacheStorage `Response.type` 保真与 registration-local CacheStorage 持久化完成；`Response.error()` 可作为 CacheStorage 条目保存/读回，FetchEvent 响应结算仍拒绝 status 0；SW fetch/message WPT baseline 已扩展到 request projection + respondWith timing/value validation + synthetic Latin-1 response header over iframe XHR + async fetch listener registration + stream body error during body consumption + invalid Blob MIME type not promoted to `Content-Type` + controlled-window `Cache.add()` interception + worker-internal fetch/cache non-self-interception + synthetic custom Response body matrix + `FetchEvent.handled` resolve/reject + same-document iframe navigation interception + intercepted navigation `document.referrer` preservation + controlled client no-fetch-handler CORS/no-cors fallback + controlled client POST body forwarding + `respondWith()` stopImmediatePropagation + throw-after-respondWith iframe navigation + uncontrolled page scope bypass + message-time `clients.claim()` iframe control + claim longest-match boundary + unregister incumbent-controller retention + worker-global fetch prototype placement + historical FetchEvent targetClientId absence + `ExtendableMessageEvent` constructor semantics，26/70 Pass；SW ReadableStream start-source body 已固定；SW CacheStorage baseline 25/318 Pass；broader fetch/cache/message 基线继续 |
+| M2 — fetch 拦截 + Cache 集成 | 🚧 M2-2 production fetch respondWith/pass-through 完成；M2-3/4/5/6 `caches.match()`、`caches.open()`、`Cache.put()`、`Cache.matchAll()`、`Cache.keys()`、`ignoreSearch`/`ignoreMethod` 桥接完成；M2-7 worker-global `fetch()`、`Cache.add/addAll`、CacheStorage `Response.type` 保真与 registration-local CacheStorage 持久化完成；`Response.error()` 可作为 CacheStorage 条目保存/读回，FetchEvent 响应结算仍拒绝 status 0；SW fetch/message WPT baseline 已扩展到 request projection + respondWith timing/value validation + synthetic Latin-1 response header over iframe XHR + async fetch listener registration + stream body error during body consumption + invalid Blob MIME type not promoted to `Content-Type` + controlled-window `Cache.add()` interception + worker-internal fetch/cache non-self-interception + synthetic custom Response body matrix + `FetchEvent.handled` resolve/reject + same-document iframe navigation interception + intercepted navigation `document.referrer` preservation + controlled client no-fetch-handler CORS/no-cors fallback + controlled client POST body forwarding + `respondWith()` stopImmediatePropagation + throw-after-respondWith iframe navigation + uncontrolled page scope bypass + message-time `clients.claim()` iframe control + claim longest-match boundary + unregister incumbent-controller retention + worker-global fetch prototype placement + historical FetchEvent targetClientId absence + `ExtendableMessageEvent` constructor semantics + ReadableStream pull-source chunk serialization，27/71 Pass；SW ReadableStream start-source body 已固定；SW CacheStorage baseline 25/318 Pass；broader fetch/cache/message 基线继续 |
 | M3 — 控制语义 + 消息 + 收尾 | 🚧 classic startup graph + 控制/消息/update/persistence 完成 |
 
 ## 验证基线
 
 - 测试基线：storage crate 既有单测全绿（立项时点）；clippy 零警告
 - WPT service-workers 面：当前 core runner 49 case / 193 subtest 全绿，fetch/message runner
-  26 case / 70 subtest 全绿，CacheStorage runner 25 case / 318 subtest 全绿；
+  27 case / 71 subtest 全绿，CacheStorage runner 25 case / 318 subtest 全绿；
   上游完整分母 294 个 testharness 源 / 331 URL，
   正文覆盖 294/294；分层与依赖信号见
   [M0 WPT evidence](evidence/2026-08-19-m0-wpt-executable-surface.md)，逐文件机器清单见
@@ -698,7 +707,7 @@ second（replacement）worker 只处理 awaitInstallEvent（messageSequence=1）
 - Runner disposition：294 source / 331 URL 的唯一执行 lane 见
   [WPT disposition contract](evidence/2026-08-19-wpt-disposition.tsv)；
   `make audit-wpt-service-workers-disposition` 从原始账本重建并逐字节校验，同时检查
-  core lane、runner 导入账本与七批 case asset 的双向闭包
+  core lane、runner 导入账本与多批 case asset 的双向闭包
 - Tier A 资产恢复：`make fetch-wpt-service-workers-tier-a`；默认使用独立
   `wpt-data/.service-workers-tier-a-root`，当前环境 19/19 blob SHA 验证通过
 - Tier A 资产审计：`make audit-wpt-service-workers-tier-a`（无网络、只读）；
@@ -733,7 +742,7 @@ second（replacement）worker 只处理 awaitInstallEvent（messageSequence=1）
   `make test-wpt-service-workers-import-dynamic-wave-assets` 固化篡改/修复回归
 - Import-event-wave 资产恢复/审计：3 assets / 5 subtest；
   `make test-wpt-service-workers-import-event-wave-assets` 固化篡改/修复回归
-- Fetch-wave 资产恢复/审计：68 assets / 70 subtest；
+- Fetch-wave 资产恢复/审计：70 assets / 71 subtest；
   `make test-wpt-service-workers-fetch-wave-assets` 固化篡改/修复回归
 - CacheStorage serviceworker-wave 资产恢复/审计：52 assets / 318 subtest；
   `make test-wpt-service-workers-cache-storage-wave-assets` 固化篡改/修复回归
@@ -815,8 +824,9 @@ second（replacement）worker 只处理 awaitInstallEvent（messageSequence=1）
   `fetch-with-body.https.html` +
   `invalid-header.https.html` +
   `invalid-blobtype.https.html` +
+  `fetch-event-respond-with-readable-stream-chunk.https.html` +
   `ServiceWorkerGlobalScope/extendable-message-event-constructor.https.html` 独立 runner、
-  资产清单与 26/70
+  资产清单与 27/71
   deterministic baseline 见
   [Service Worker Fetch WPT Baseline](evidence/2026-08-31-m3-extendable-message-event-constructor-baseline.md)
 - M2-22 fetch custom-response 定向验证：
@@ -916,6 +926,11 @@ second（replacement）worker 只处理 awaitInstallEvent（messageSequence=1）
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- ./target/release/zero-wpt-runner testharness-service-workers-fetch --wpt-data tests/wpt-runner/wpt-data/.service-workers-tier-a-root fetch-error.https.html --json`：3 Pass
   - `make audit-wpt-service-workers-fetch-wave`：68 assets matched pinned manifest
   - `make baseline-wpt-service-workers-fetch OUTPUT=docs/goal/service-workers/evidence/2026-08-31-m3-extendable-message-event-constructor-baseline.json SUMMARY=docs/goal/service-workers/evidence/2026-08-31-m3-extendable-message-event-constructor-baseline.md`：26 cases / 70 subtests / 70 Pass，double-run deterministic
+- M2-41 fetch readable-stream chunk baseline：
+  [ReadableStream chunk WPT evidence](evidence/2026-09-02-m2-fetch-readable-stream-chunk.md)
+  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- cargo run -p zero-wpt-runner -- testharness-service-workers-fetch --wpt-data tests/wpt-runner/wpt-data/.service-workers-tier-a-root fetch-event-respond-with-readable-stream-chunk.https.html --json`：1 Pass
+  - `make audit-wpt-service-workers-fetch-wave`：70 assets matched pinned manifest
+  - `make baseline-wpt-service-workers-fetch`：27 cases / 71 subtests / 71 Pass，double-run deterministic
 - M3 registration-local CacheStorage persistence：active registration `CacheStorage` snapshot/
   restore、normal profile mutation dirtying 与 owner 重建读回见
   [M3 Service Worker CacheStorage Persistence](evidence/2026-08-22-m3-registration-cache-storage-persistence.md)
@@ -1150,6 +1165,7 @@ second（replacement）worker 只处理 awaitInstallEvent（messageSequence=1）
 | 2026-08-31 | M3 message constructor baseline | `ServiceWorkerGlobalScope/extendable-message-event-constructor.https.html` 纳入 fetch/message runner；`ExtendableMessageEvent` 默认值、init 转换、source/ports TypeError 边界；25 case / 67 subtest 全绿 |
 | 2026-09-02 | M2 fetch stream body error baseline | `fetch-error.https.html` 纳入 fetch runner；`respondWith(new Response(stream))` 后续 body error 在页面 `response.text()` 阶段 reject；26 case / 70 subtest 全绿 |
 | 2026-09-02 | M2 fetch readable-stream start-source prework | SW runtime `ReadableStream` 构造器执行 `underlyingSource.start(controller)`；受控 iframe `contentWindow.fetch('?stream')` 可读回 Service Worker `Response(ReadableStream)` body；`fetch-event-respond-with-readable-stream.https.html` 前 4 subtest 通过，完整 WPT 仍因 stream forwarding/cancel 反传暂不纳入 runner |
+| 2026-09-02 | M2 fetch readable-stream chunk baseline | `fetch-event-respond-with-readable-stream-chunk.https.html` 纳入 fetch runner；pull-source empty/non-empty `Uint8Array` chunk 经受控 iframe `response.text()` 串接读回；fetch/message runner 27/71 Pass |
 | 2026-09-02 | M2 CacheStorage `.any.js` batch baseline | 8 个额外 top-level CacheStorage `.any.js` Service Worker global variants 纳入 CacheStorage runner；23 case / 305 subtest 全绿 |
 | 2026-09-02 | M2 CacheStorage buckets Service Worker baseline | `cache-storage-buckets.https.any.js` Service Worker variant 纳入 CacheStorage runner；24 case / 308 subtest 全绿 |
 | 2026-09-02 | M2 CacheStorage abort Service Worker baseline | `cache-abort.https.any.js` Service Worker variant 纳入 CacheStorage runner；WPT runner 对 `.any.js` worker 包装注入 cache-abort 动态 fetch/stash fixture；25 case / 318 subtest 全绿 |
