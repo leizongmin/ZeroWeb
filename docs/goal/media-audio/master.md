@@ -45,7 +45,10 @@ volume/muted 真控制。**双重启动门控均已解除**：① M0 音频环�
     WebView 持 `webaudio()` Arc 句柄。
   - 生产接线：tab_worker `SetWebAudio` 命令 + worker 注入 `__zwWA*`（SetVideoPlayers
     同款 late-injection）；音频泵同 1ms 节拍推进（`wa.advance(now_ms)`，无活跃源
-    快速门零开销）。
+    快速门零开销）。**renderer 多进程路径桥面对齐（2026-09-02 补）**：renderer
+    js_worker `SetWebAudio` + runtime 注入（镜像 tab 路径——`__zwWA*` 面两路径
+    一致）；renderer 泵缺口（主循环无节拍驱动 advance）记录于 media-playback
+    master.md 深结构缺口块（架构决策域待用户点名）。
   - e2e：`webaudio_bridge_nullsink_observable_chain`——JS AudioContext → shim →
     __zwWA* 桥 → Rust 合成 → NullSink 帧数（≈48000/秒）+ 过零率 ≈880 断言 +
     stop 后活跃源清零。media 45 单测、webview 679 全绿、browser xvfb 411 全绿、
