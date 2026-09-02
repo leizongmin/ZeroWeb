@@ -1477,6 +1477,13 @@ pub const WEBAUDIO_TEST_FILES: &[&str] = &[
     // 零时长 → RangeError、exponentialRamp 零值 → RangeError、setValueCurve
     // 曲线非 finite → TypeError——无渲染断言，纯异常语义）。
     "webaudio/the-audio-api/the-audioparam-interface/audioparam-exceptional-values.html",
+    // ---- 第五批（2026-09-02）：AudioBuffer 构造/接口面 ----
+    // AudioBuffer 纯构造 + duration/getChannelData 断言（W3CTH 形态，无渲染）。
+    "webaudio/the-audio-api/the-audiobuffer-interface/audiobuffer.html",
+    // 不导入：ctor-audiobuffer.html（末 task「multiple contexts」依赖
+    // startRendering——audit runner 整文件跑，前段构造面无法单独导入）；
+    // audiobuffer-getChannelData / audiobuffer-copy-channel（copyToChannel/
+    // copyFromChannel 数据面随播放切片）；periodicWave.html（startRendering）。
     // 不导入：audioparam-method-chaining / audioparam-nominal-range（依赖
     // startRendering 渲染断言——RFC §0 不做清单）；audiocontextoptions（设备
     // baseLatency 档——前批已记）。

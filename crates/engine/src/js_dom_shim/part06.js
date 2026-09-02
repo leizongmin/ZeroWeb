@@ -7758,6 +7758,75 @@
   function AnalyserNode(ctx, options) { return _zwWANodeCtor('AnalyserNode', ctx, options); }
   AnalyserNode.prototype = _zwWANode.prototype;
   globalThis.AnalyserNode = globalThis.AnalyserNode || AnalyserNode;
+  // AudioBuffer（spec webaudio §AudioBuffer——独立构造器（不依赖 BaseAudioContext）：
+  // length/sampleRate 必填（缺失 → TypeError）、numberOfChannels 缺省 1；
+  // numberOfChannels ≥ 1 / length ≥ 1 / sampleRate ∈ [8000, 96000]（spec 正义
+  // 约束——ctor-audiobuffer/audiobuffer 断言面：0 通道、0 长、100Hz →
+  // NotSupportedError）；duration = length / sampleRate 反射；getChannelData(i)
+  // 返回 Float32Array（越界 → IndexSizeError）。headless 存储面：零填充通道——
+  // copyToChannel/copyFromChannel 随 AudioBufferSourceNode 播放面切片评估）。
+  // https://webaudio.github.io/web-audio-api/#AudioBuffer
+  function AudioBuffer(options) {
+    if (!(this instanceof AudioBuffer)) {
+      throw new TypeError("Failed to construct 'AudioBuffer': Please use the 'new' operator, this DOM object constructor cannot be called as a function.");
+    }
+    if (options == null || typeof options !== 'object') {
+      throw new TypeError("Failed to construct 'AudioBuffer': The provided value is not of type 'AudioBufferOptions'.");
+    }
+    // WebIDL required members：length/sampleRate 缺失 → TypeError（dict required
+    // 约束——ctor-audiobuffer 'required options' 断言面）。
+    if (options.length === undefined) {
+      throw new TypeError("Failed to construct 'AudioBuffer': Failed to read the 'length' property from 'AudioBufferOptions': Required member is undefined.");
+    }
+    if (options.sampleRate === undefined) {
+      throw new TypeError("Failed to construct 'AudioBuffer': Failed to read the 'sampleRate' property from 'AudioBufferOptions': Required member is undefined.");
+    }
+    var _channels = (options.numberOfChannels !== undefined) ? Number(options.numberOfChannels) : 1;
+    var _length = Number(options.length);
+    var _sampleRate = Number(options.sampleRate);
+    // spec 正义约束（非有限/越界 → NotSupportedError——ctor-audiobuffer
+    // 'invalid option values' 断言面：{0 通道}/{0 长}/{100Hz}）。
+    if (isNaN(_channels) || _channels < 1 || _channels > 32) {
+      throw new (globalThis.DOMException || Error)(
+        "Failed to construct 'AudioBuffer': numberOfChannels " + options.numberOfChannels + " is not in range [1, 32].", 'NotSupportedError');
+    }
+    if (isNaN(_length) || _length < 1) {
+      throw new (globalThis.DOMException || Error)(
+        "Failed to construct 'AudioBuffer': length " + options.length + " is not in range [1, " + 4294967295 + "].", 'NotSupportedError');
+    }
+    // spec sampleRate [8000, 96000]——WPT 断言面 100Hz 拒、48000/16000/54321/24576 收。
+    if (isNaN(_sampleRate) || _sampleRate < 8000 || _sampleRate > 96000) {
+      throw new (globalThis.DOMException || Error)(
+        "Failed to construct 'AudioBuffer': sampleRate " + options.sampleRate + " is not in range [8000, 96000].", 'NotSupportedError');
+    }
+    var _chanData = [];
+    for (var _ci = 0; _ci < _channels; _ci++) _chanData.push(new Float32Array(_length));
+    Object.defineProperty(this, 'numberOfChannels', {
+      get: function () { return _channels; },
+      configurable: true,
+    });
+    Object.defineProperty(this, 'length', {
+      get: function () { return _length; },
+      configurable: true,
+    });
+    Object.defineProperty(this, 'sampleRate', {
+      get: function () { return _sampleRate; },
+      configurable: true,
+    });
+    Object.defineProperty(this, 'duration', {
+      get: function () { return _length / _sampleRate; },
+      configurable: true,
+    });
+    this.getChannelData = function (channel) {
+      var i = Number(channel);
+      if (isNaN(i) || i < 0 || i >= _channels || (i !== Math.floor(i))) {
+        throw new (globalThis.DOMException || Error)(
+          "Failed to execute 'getChannelData' on 'AudioBuffer': channel index " + channel + " is not a valid index.", 'IndexSizeError');
+      }
+      return _chanData[i];
+    };
+  }
+  globalThis.AudioBuffer = globalThis.AudioBuffer || AudioBuffer;
   // PeriodicWave 接口（spec webaudio §PeriodicWave——custom waveform 容器；最小面
   // 仅构造 + real/imag 数组存储，无 FFT 合成——ctor-oscillator 断言 new
   // PeriodicWave(context, {real, imag}) 不抛 + disableNormalization 反射）。

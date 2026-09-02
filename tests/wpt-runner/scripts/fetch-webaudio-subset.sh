@@ -47,8 +47,11 @@ WA_FILES=(
   "webaudio/the-audio-api/the-analysernode-interface/ctor-analyser.html"
   "webaudio/the-audio-api/the-periodicwave-interface/createPeriodicWaveInfiniteValuesThrows.html"
   "webaudio/the-audio-api/the-audioparam-interface/audioparam-exceptional-values.html"
+  # ---- 第五批（2026-09-02）：AudioBuffer 构造/接口面 ----
+  "webaudio/the-audio-api/the-audiobuffer-interface/audiobuffer.html"
   # 不导入：audioparam-method-chaining / audioparam-nominal-range（startRendering
-  # 渲染断言——RFC §0 不做清单）。
+  # 渲染断言——RFC §0 不做清单）；ctor-audiobuffer（末 task multiple contexts 依赖
+  # startRendering——audit runner 整文件跑）；periodicWave.html（startRendering）。
 )
 
 # audit.js 框架（runner inline_extras 内联——用例以绝对路径引用）。

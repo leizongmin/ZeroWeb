@@ -4230,4 +4230,35 @@ fn test_webaudio_node_ctor_and_param_exception_face_m3w4() {
         "TypeError|true|2.5",
         "createPeriodicWave 非 finite TypeError + 工厂产物 instanceof 节点类 + createDelay 参数档"
     );
+
+    // 断言组 6：AudioBuffer 构造/接口面（必选项 TypeError / 正义约束
+    // NotSupportedError / duration 反射 / getChannelData Float32Array + 越界
+    // IndexSizeError——WPT audiobuffer.html 断言面）。
+    sandbox.execute(
+        "var bufErrs = [];\
+         function tb(fn) { try { fn(); bufErrs.push('no-throw'); } catch (e) { bufErrs.push(e.name); } }\
+         tb(function () { new AudioBuffer(); });\
+         tb(function () { new AudioBuffer({length: 1}); });\
+         tb(function () { new AudioBuffer({numberOfChannels: 0, length: 1, sampleRate: 16000}); });\
+         tb(function () { new AudioBuffer({numberOfChannels: 1, length: 0, sampleRate: 16000}); });\
+         tb(function () { new AudioBuffer({numberOfChannels: 1, length: 1, sampleRate: 100}); });\
+         var buf = new AudioBuffer({numberOfChannels: 4, length: 88200, sampleRate: 44100});\
+         var cdErr = '';\
+         try { buf.getChannelData(4); } catch (e) { cdErr = e.name; }\
+         globalThis.__r6 = [\
+           bufErrs.join('|'),\
+           String(buf.numberOfChannels),\
+           String(buf.length),\
+           String(buf.sampleRate),\
+           String(buf.duration),\
+           String(buf.getChannelData(0) instanceof Float32Array),\
+           String(buf.getChannelData(0).length),\
+           cdErr].join('|');\
+         void 0;",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r6").unwrap().value,
+        "TypeError|TypeError|NotSupportedError|NotSupportedError|NotSupportedError|4|88200|44100|2|true|88200|IndexSizeError",
+        "AudioBuffer：必选项 TypeError ×2 + 正义约束 NotSupportedError ×3 + 反射面（duration 2s）+ getChannelData Float32Array 长度 + 越界 IndexSizeError"
+    );
 }

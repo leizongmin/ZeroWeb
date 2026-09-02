@@ -1,0 +1,78 @@
+{
+  "goal": "media-audio",
+  "date": "2026-09-02",
+  "suite": "testharness-webaudio",
+  "wpt_rev": "315976933870b34d6ea30e3f6643403edae678ba",
+  "batch": "第五批（AudioBuffer 构造/接口面）",
+  "summary": {
+    "files": 11,
+    "pass": 324,
+    "fail": 0,
+    "rate": "324/324 = 100.0%"
+  },
+  "files": [
+    {
+      "file": "webaudio/the-audio-api/the-audionode-interface/audionode-connect-return-value.html",
+      "pass": 1,
+      "fail": 0
+    },
+    {
+      "file": "webaudio/the-audio-api/the-destinationnode-interface/destination.html",
+      "pass": 1,
+      "fail": 0
+    },
+    {
+      "file": "webaudio/the-audio-api/the-oscillatornode-interface/ctor-oscillator.html",
+      "pass": 62,
+      "fail": 0
+    },
+    {
+      "file": "webaudio/the-audio-api/the-gainnode-interface/ctor-gain.html",
+      "pass": 4,
+      "fail": 0
+    },
+    {
+      "file": "webaudio/the-audio-api/the-stereopanner-interface/ctor-stereopanner.html",
+      "pass": 51,
+      "fail": 0
+    },
+    {
+      "file": "webaudio/the-audio-api/the-delaynode-interface/ctor-delay.html",
+      "pass": 53,
+      "fail": 0
+    },
+    {
+      "file": "webaudio/the-audio-api/the-biquadfilternode-interface/ctor-biquadfilter.html",
+      "pass": 5,
+      "fail": 0
+    },
+    {
+      "file": "webaudio/the-audio-api/the-analysernode-interface/ctor-analyser.html",
+      "pass": 78,
+      "fail": 0
+    },
+    {
+      "file": "webaudio/the-audio-api/the-periodicwave-interface/createPeriodicWaveInfiniteValuesThrows.html",
+      "pass": 2,
+      "fail": 0
+    },
+    {
+      "file": "webaudio/the-audio-api/the-audioparam-interface/audioparam-exceptional-values.html",
+      "pass": 66,
+      "fail": 0
+    },
+    {
+      "file": "webaudio/the-audio-api/the-audiobuffer-interface/audiobuffer.html",
+      "pass": 1,
+      "fail": 0
+    }
+  ],
+  "shim_changes": [
+    "part06: AudioBuffer 构造器（length/sampleRate required TypeError + numberOfChannels/length/sampleRate 正义约束 NotSupportedError + duration 反射 + getChannelData Float32Array/IndexSizeError）"
+  ],
+  "excluded": [
+    "ctor-audiobuffer.html（末 task multiple contexts 依赖 startRendering——audit runner 整文件跑，前段构造面无法单独导入）",
+    "audiobuffer-getChannelData.html / audiobuffer-copy-channel.html（copyToChannel/copyFromChannel 数据面随播放切片）",
+    "periodicWave.html（startRendering）"
+  ]
+}

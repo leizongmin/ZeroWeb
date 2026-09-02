@@ -126,6 +126,19 @@ volume/muted 真控制。**双重启动门控均已解除**：① M0 音频环�
   - evidence：`evidence/2026-09-02-webaudio-ctor-family.json`。
   - **排除注记**：audioparam-method-chaining / audioparam-nominal-range（依赖
     startRendering 渲染断言——RFC §0 不做清单）。
+- **WPT webaudio 第五批导入（同日，AudioBuffer 构造/接口面）**：
+  - **shim part06 扩展**：`AudioBuffer` 构造器（独立构造不依赖 ctx）——
+    length/sampleRate required 缺失 → TypeError（WebIDL dict required）；
+    numberOfChannels [1,32] / length ≥ 1 / sampleRate [8000,96000] 正义约束 →
+    NotSupportedError；`duration = length/sampleRate` 反射；`getChannelData(i)`
+    返回 Float32Array（零填充通道存储面）+ 越界 → IndexSizeError。
+    audiobuffer.html（W3CTH）1P 全绿——**11 用例 324P/0F = 100%**。
+    单测 m3w4 扩断言组 6（AudioBuffer 必选项/正义约束/反射/getChannelData 面）。
+  - evidence：`evidence/2026-09-02-webaudio-audiobuffer.json`。
+  - **排除注记**：ctor-audiobuffer.html（末 task multiple contexts 依赖
+    startRendering——audit runner 整文件跑，前段构造面无法单独导入）；
+    audiobuffer-getChannelData / audiobuffer-copy-channel（copyToChannel/
+    copyFromChannel 数据面随播放切片）；periodicWave.html（startRendering）。
 - **余项**：createGain 的 per-node 桥推（当前 per-osc gain 由 WebAudioContext 承接，
   gain 节点 → 桥映射挂真出声/设备切片）；WPT 余面（osc-basic-waveform/
   sub-sample-start/detune-* 依赖渲染量化面——startRendering，随渲染面评估）。
@@ -222,11 +235,11 @@ seek 双轨对齐（media-playback 流切片 D+E 兑现，联合 e2e
 e2e 常驻（M2c 后续切片 A/B：settle → 桥 play → 泵推进 + mp3/oga 负例三面）；
 AudioContext 最小面 RFC 完成 **且已获批实施**（D1，2026-09-01）——切片 1+2
 落地（zero-media webaudio 模块 + shim 门面 + 宿主桥 + 泵接线 + e2e）+ WPT
-webaudio 子集三批导入（2 + 62 + 259 subtest，合计 10 用例 323P/0F）。
+webaudio 子集四批导入（2 + 62 + 259 + 1 subtest，合计 11 用例 324P/0F）。
 
-**DC-5（测试与质量不可退让）✅**：make test 18701 全绿（2026-09-02 组合树实测）、
+**DC-5（测试与质量不可退让）✅**：make test 18705 全绿（2026-09-02 组合树实测）、
 clippy 零警告、每切片带单测 + e2e 资产化（webaudio 7 单测 + NullSink 链 e2e +
-桥 roundtrip + ctor 族契约单测 m3w4）。
+桥 roundtrip + ctor 族契约单测 m3w4 六断言组）。
 
 **结论**：DC-1/3/4/5 满足；DC-2 余设备真输出常驻面（结构性边界：headless CI
 无声卡——goal 契约的双轨验证形态下，本地抽验 evidence 已在档，**不构成
@@ -243,11 +256,12 @@ DONE 阻塞**；Mixer/重采样接线随设备切片可选推进）。
 
 1. ~~**Web Audio 最小面实施（D1 已批准）**~~ 🔄 切片 1+2 ✅ 2026-09-02 落地
    （zero-media webaudio 模块 + shim AudioContext 门面 + __zwWA* 宿主桥 + 泵接线 +
-   e2e——见当前状态）；WPT webaudio 子集导入 ✅ 三批（2 + 62 + 259 subtest，
-   10 用例 323P/0F = 100%，含 audit.js 框架接入 + ctor 族 + AudioParam 异常面）；
-   余：设备面挂 M1 CpalSink 真出声切片（D-WA-2）。**接口语义族 headless 可导入面
-   已吃尽**——余下用例全部依赖 startRendering 渲染量化面 / AudioBufferSourceNode
-   播放推进面 / worklet，随渲染面或后续切片评估。
+   e2e——见当前状态）；WPT webaudio 子集导入 ✅ 四批（2 + 62 + 259 + 1 subtest，
+   11 用例 324P/0F = 100%，含 audit.js 框架接入 + ctor 族 + AudioParam 异常面 +
+   AudioBuffer 面）；余：设备面挂 M1 CpalSink 真出声切片（D-WA-2）。**接口语义族
+   headless 可导入面已吃尽**——余下用例全部依赖 startRendering 渲染量化面 /
+   AudioBufferSourceNode 播放推进面 / copyToChannel 数据面 / worklet，随渲染面或
+   后续切片评估。
 2. **M1 收口评估（余项收窄）**：Mixer 多源混音接线**决策注记（2026-09-01）**——
    现播放管线 per-entry NullSink 直连已覆盖多源并发语义面（per-source 增益/独立
    解码流/并发泵）；Mixer（M1 切片 3 组件，7 单测常驻）的价值在**单设备输出流的
@@ -271,16 +285,18 @@ DONE 阻塞**；Mixer/重采样接线随设备切片可选推进）。
 
 ## 验证基线
 
-- 测试基线：`make test` 全绿 18701（2026-09-02 组合树实测；zero-media default
+- 测试基线：`make test` 全绿 18705（2026-09-02 组合树实测；zero-media default
   feature：17 单测 + 1 doctest = decode 5 + NullSink 5 + mixer 7；`audio-cpal`
   feature 另增 CpalSink 环境自适应冒烟 1 件）；clippy 零警告（default 与
   `--features audio-cpal` 双配置）
-- WPT webaudio：10 用例 323P/0F = 100%（2026-09-02 四批累计——connect 返回值 +
+- WPT webaudio：11 用例 324P/0F = 100%（2026-09-02 五批累计——connect 返回值 +
   destination + ctor-oscillator 62 + ctor-gain/stereopanner/delay/biquadfilter/
-  analyser + createPeriodicWave 异常面 + audioparam-exceptional-values 66）；
+  analyser + createPeriodicWave 异常面 + audioparam-exceptional-values 66 +
+  audiobuffer 面）；
   evidence：`evidence/2026-09-02-webaudio-wpt-subset.json`（首批）、
   `evidence/2026-09-02-webaudio-ctor-oscillator.json`（第二批）、
-  `evidence/2026-09-02-webaudio-ctor-family.json`（第四批）
+  `evidence/2026-09-02-webaudio-ctor-family.json`（第四批）、
+  `evidence/2026-09-02-webaudio-audiobuffer.json`（第五批）
 - NullSink 可观测锚点：440Hz 正弦 @48kHz 过零率 ≈880（2×频率；修正 M0 evidence
   的 ≈440 笔误——evidence 只追加不修改，以代码与本档为事实源）；暂停拒写计
   underrun；非整帧写入拒收
