@@ -29,6 +29,21 @@ fn is_service_worker_window_frame_type(frame_type: &str) -> bool {
     matches!(frame_type, "top-level" | "auxiliary" | "nested")
 }
 
+fn service_worker_registration_scope_url(
+    key: &ServiceWorkerRegistrationKey,
+) -> Result<String, ServiceWorkerManagerError> {
+    let mut base = url::Url::parse(&key.origin)
+        .map_err(|_| ServiceWorkerManagerError::InvalidInput("Service Worker origin is invalid".into()))?;
+    base.set_path("/");
+    base.set_query(None);
+    base.set_fragment(None);
+    let mut scope = base
+        .join(&key.scope)
+        .map_err(|_| ServiceWorkerManagerError::InvalidInput("Service Worker scope URL is invalid".into()))?;
+    scope.set_fragment(None);
+    Ok(scope.to_string())
+}
+
 fn service_worker_response_from_cache(
     response: &CacheResponse,
 ) -> Result<ServiceWorkerFetchResponse, ServiceWorkerManagerError> {
@@ -654,8 +669,10 @@ pub trait ServiceWorkerRuntimeHost: Send {
         &mut self,
         registration_id: u64,
         script_url: &str,
+        scope_url: &str,
         script: &str,
         script_type: ServiceWorkerScriptType,
+        initial_peers: ServiceWorkerRegistrationPeers,
     ) -> Result<(), ServiceWorkerManagerError>;
     /// Dispatch the install or activate event inside one live runtime.
     fn dispatch_lifecycle(
@@ -770,14 +787,20 @@ impl ServiceWorkerRuntimeHost for LocalServiceWorkerHost {
         &mut self,
         registration_id: u64,
         script_url: &str,
+        scope_url: &str,
         script: &str,
         script_type: ServiceWorkerScriptType,
+        initial_peers: ServiceWorkerRegistrationPeers,
     ) -> Result<(), ServiceWorkerManagerError> {
         let mut runtime = ServiceWorkerRuntime::new(self.config.clone())
             .map_err(|error| ServiceWorkerManagerError::Runtime(error.to_string()))?;
         match script_type {
-            ServiceWorkerScriptType::Classic => runtime.evaluate(script, script_url),
-            ServiceWorkerScriptType::Module => runtime.evaluate_module(script, script_url),
+            ServiceWorkerScriptType::Classic => {
+                runtime.evaluate_with_scope_and_peers(script, script_url, scope_url, initial_peers)
+            }
+            ServiceWorkerScriptType::Module => {
+                runtime.evaluate_module_with_scope_and_peers(script, script_url, scope_url, initial_peers)
+            }
         }
         .map_err(|error| ServiceWorkerManagerError::Runtime(error.to_string()))?;
         self.runtimes.insert(registration_id, runtime);
@@ -1243,7 +1266,12 @@ impl ServiceWorkerManager {
         registration.update_via_cache = options.update_via_cache;
         registration.script_type = options.script_type;
         registration.cache_storage = options.restored_cache_storage;
-        if let Err(error) = self.host.evaluate(id, script_url, script, options.script_type) {
+        let scope_url = service_worker_registration_scope_url(&key)?;
+        let initial_peers = self.registration_peers_for_key(&key)?;
+        if let Err(error) = self
+            .host
+            .evaluate(id, script_url, &scope_url, script, options.script_type, initial_peers)
+        {
             self.registry.unregister(id);
             return Err(error);
         }
@@ -2108,6 +2136,7 @@ impl ServiceWorkerManager {
         if !self.evaluated.contains(&registration_id) {
             return Err(ServiceWorkerManagerError::EvaluationPending(registration_id));
         }
+        self.sync_runtime_registration_peers(registration_id)?;
         self.host
             .dispatch_lifecycle(registration_id, ServiceWorkerLifecyclePhase::Install, false)
     }
@@ -2152,6 +2181,7 @@ impl ServiceWorkerManager {
     /// Dispatch the real activate event for an activating version.
     fn dispatch_activate(&mut self, registration_id: u64) -> Result<(), ServiceWorkerManagerError> {
         self.require_state(registration_id, ServiceWorkerState::Activating)?;
+        self.sync_runtime_registration_peers(registration_id)?;
         self.host
             .dispatch_lifecycle(registration_id, ServiceWorkerLifecyclePhase::Activate, true)
     }
@@ -2493,8 +2523,12 @@ impl ServiceWorkerManager {
             .get(client_id)
             .map(|record| record.info.frame_type.clone())
             .unwrap_or_else(|| "top-level".to_string());
-        let client_focused = self.clients.get(client_id).is_none_or(|record| record.info.focused)
-            || (!known_client_before_dispatch && client_frame_type == "top-level");
+        let has_focused_window = self
+            .clients
+            .values()
+            .any(|record| record.info.client_type == "window" && record.info.focused);
+        let client_focused = self.clients.get(client_id).is_some_and(|record| record.info.focused)
+            || (!has_focused_window && client_frame_type == "top-level");
         let pending = self.pending_client_messages.get(&key).copied().unwrap_or(0);
         let known_client = self.client_messages.contains_key(&key) || self.pending_client_messages.contains_key(&key);
         if let Some(batches) = self.client_messages.get(&key)
@@ -3253,10 +3287,14 @@ impl ServiceWorkerManager {
         registration_id: u64,
     ) -> Result<ServiceWorkerRegistrationPeers, ServiceWorkerManagerError> {
         let key = self.key_for(registration_id)?;
-        let slots = self
-            .slots
-            .get(key)
-            .ok_or(ServiceWorkerManagerError::UnknownRegistration(registration_id))?;
+        self.registration_peers_for_key(key)
+    }
+
+    fn registration_peers_for_key(
+        &self,
+        key: &ServiceWorkerRegistrationKey,
+    ) -> Result<ServiceWorkerRegistrationPeers, ServiceWorkerManagerError> {
+        let slots = self.slots.get(key).copied().unwrap_or_default();
         Ok(ServiceWorkerRegistrationPeers {
             installing: slots.installing.and_then(|id| self.worker_peer_info(id)),
             waiting: slots.waiting.and_then(|id| self.worker_peer_info(id)),
@@ -3693,7 +3731,10 @@ mod tests {
             {
                 return events;
             }
-            assert!(Instant::now() < deadline, "manager state timed out");
+            assert!(
+                Instant::now() < deadline,
+                "manager state timed out while waiting for {expected:?}; events: {events:?}"
+            );
             std::thread::sleep(Duration::from_millis(10));
         }
     }
@@ -4710,6 +4751,31 @@ mod tests {
                 }]),
             )
             .unwrap();
+        wait_for_state(&mut manager, id, ServiceWorkerState::Activated);
+    }
+
+    #[test]
+    fn lifecycle_events_see_current_registration_slots() {
+        let mut manager = manager_under_test();
+        let id = start(
+            &mut manager,
+            "https://example.test/",
+            "if (registration.installing !== null) throw new Error('initial installing');
+             if (registration.waiting !== null) throw new Error('initial waiting');
+             if (registration.active !== null) throw new Error('initial active');
+             addEventListener('install', () => {
+               if (registration.installing !== serviceWorker) throw new Error('install installing');
+               if (registration.waiting !== null) throw new Error('install waiting');
+               if (registration.active !== null) throw new Error('install active');
+               if (registration.installing.state !== 'installing') throw new Error('install state');
+             });
+             addEventListener('activate', () => {
+               if (registration.installing !== null) throw new Error('activate installing');
+               if (registration.waiting !== null) throw new Error('activate waiting');
+               if (registration.active !== serviceWorker) throw new Error('activate active');
+               if (registration.active.state !== 'activating') throw new Error('activate state');
+             });",
+        );
         wait_for_state(&mut manager, id, ServiceWorkerState::Activated);
     }
 

@@ -22,14 +22,16 @@ use zero_protocol::message::{
     ServiceWorkerCacheStorageResultWire, ServiceWorkerClientInfoWire, ServiceWorkerClientMessages, ServiceWorkerError,
     ServiceWorkerErrorCode, ServiceWorkerFetchRequestWire, ServiceWorkerFetchResponseWire, ServiceWorkerHostCommand,
     ServiceWorkerHostCommandParams, ServiceWorkerHostEvent, ServiceWorkerHostEventParams, ServiceWorkerLifecycleWire,
-    ServiceWorkerOperation, ServiceWorkerRequestParams, ServiceWorkerResponseParams, ServiceWorkerResult,
-    ServiceWorkerScriptErrorKindWire, ServiceWorkerScriptTypeWire, ServiceWorkerSnapshot, ServiceWorkerStateChanges,
-    ServiceWorkerStateWire, ServiceWorkerUpdateError, ServiceWorkerUpdateViaCacheWire,
+    ServiceWorkerOperation, ServiceWorkerPeerInfoWire, ServiceWorkerRegistrationPeersWire, ServiceWorkerRequestParams,
+    ServiceWorkerResponseParams, ServiceWorkerResult, ServiceWorkerScriptErrorKindWire, ServiceWorkerScriptTypeWire,
+    ServiceWorkerSnapshot, ServiceWorkerStateChanges, ServiceWorkerStateWire, ServiceWorkerUpdateError,
+    ServiceWorkerUpdateViaCacheWire,
 };
 use zero_script_sandbox::{
     ServiceWorkerCacheQueryOptions, ServiceWorkerCacheStorageRequest, ServiceWorkerCacheStorageResult,
     ServiceWorkerClientInfo, ServiceWorkerEvent, ServiceWorkerFetchRequest, ServiceWorkerFetchResponse,
-    ServiceWorkerLifecyclePhase, ServiceWorkerMessagePorts, ServiceWorkerScriptErrorKind,
+    ServiceWorkerLifecyclePhase, ServiceWorkerMessagePorts, ServiceWorkerPeerInfo, ServiceWorkerRegistrationPeers,
+    ServiceWorkerScriptErrorKind,
 };
 use zero_storage::{
     ServiceWorkerRegistration, ServiceWorkerScriptType, ServiceWorkerState, ServiceWorkerUpdateViaCache,
@@ -86,6 +88,7 @@ struct SharedHostChannels {
     pending_tab: Arc<Mutex<Option<TabId>>>,
     /// registration_id → 托管 renderer tab（runtime 存活集合；断连时反查注入 Closed）。
     owned: Arc<Mutex<HashMap<u64, TabId>>>,
+    pending_peers: Arc<Mutex<HashMap<u64, ServiceWorkerRegistrationPeers>>>,
 }
 
 impl SharedHostChannels {
@@ -126,7 +129,26 @@ impl SharedHostChannels {
             .insert(registration_id, tab_id);
     }
 
+    fn set_pending_peers(&self, registration_id: u64, peers: ServiceWorkerRegistrationPeers) {
+        self.pending_peers
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .insert(registration_id, peers);
+    }
+
+    fn take_pending_peers(&self, registration_id: u64) -> ServiceWorkerRegistrationPeers {
+        self.pending_peers
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .remove(&registration_id)
+            .unwrap_or_default()
+    }
+
     fn remove_owned(&self, registration_id: u64) -> Option<TabId> {
+        self.pending_peers
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .remove(&registration_id);
         self.owned
             .lock()
             .unwrap_or_else(|error| error.into_inner())
@@ -143,6 +165,10 @@ impl SharedHostChannels {
             .collect();
         for id in &ids {
             owned.remove(id);
+        }
+        let mut pending_peers = self.pending_peers.lock().unwrap_or_else(|error| error.into_inner());
+        for id in &ids {
+            pending_peers.remove(id);
         }
         ids
     }
@@ -169,8 +195,10 @@ impl ServiceWorkerRuntimeHost for IpcServiceWorkerHost {
         &mut self,
         registration_id: u64,
         script_url: &str,
+        scope_url: &str,
         script: &str,
         script_type: ServiceWorkerScriptType,
+        initial_peers: ServiceWorkerRegistrationPeers,
     ) -> Result<(), ServiceWorkerManagerError> {
         let Some(tab_id) = self
             .channels
@@ -189,6 +217,8 @@ impl ServiceWorkerRuntimeHost for IpcServiceWorkerHost {
                 registration_id,
                 command: ServiceWorkerHostCommand::Evaluate {
                     script_url: script_url.to_string(),
+                    scope_url: scope_url.to_string(),
+                    initial_peers: service_worker_registration_peers_wire(initial_peers),
                     script: script.to_string(),
                     script_type: script_type_wire(script_type),
                 },
@@ -215,6 +245,7 @@ impl ServiceWorkerRuntimeHost for IpcServiceWorkerHost {
                 command: ServiceWorkerHostCommand::DispatchLifecycle {
                     phase: wire_phase(phase),
                     clients_claim_allowed,
+                    peers: service_worker_registration_peers_wire(self.channels.take_pending_peers(registration_id)),
                 },
             },
         });
@@ -265,9 +296,10 @@ impl ServiceWorkerRuntimeHost for IpcServiceWorkerHost {
 
     fn sync_registration_peers(
         &mut self,
-        _registration_id: u64,
-        _peers: zero_script_sandbox::ServiceWorkerRegistrationPeers,
+        registration_id: u64,
+        peers: zero_script_sandbox::ServiceWorkerRegistrationPeers,
     ) -> Result<(), ServiceWorkerManagerError> {
+        self.channels.set_pending_peers(registration_id, peers);
         Ok(())
     }
 
@@ -2896,6 +2928,28 @@ fn state_wire(state: ServiceWorkerState) -> ServiceWorkerStateWire {
         ServiceWorkerState::Activating => ServiceWorkerStateWire::Activating,
         ServiceWorkerState::Activated => ServiceWorkerStateWire::Activated,
         ServiceWorkerState::Redundant => ServiceWorkerStateWire::Redundant,
+    }
+}
+
+fn service_worker_peer_wire(peer: ServiceWorkerPeerInfo) -> ServiceWorkerPeerInfoWire {
+    ServiceWorkerPeerInfoWire {
+        id: peer.id,
+        script_url: peer.script_url,
+        state: match peer.state.as_str() {
+            "installed" => ServiceWorkerStateWire::Installed,
+            "activating" => ServiceWorkerStateWire::Activating,
+            "activated" => ServiceWorkerStateWire::Activated,
+            "redundant" => ServiceWorkerStateWire::Redundant,
+            _ => ServiceWorkerStateWire::Installing,
+        },
+    }
+}
+
+fn service_worker_registration_peers_wire(peers: ServiceWorkerRegistrationPeers) -> ServiceWorkerRegistrationPeersWire {
+    ServiceWorkerRegistrationPeersWire {
+        installing: peers.installing.map(service_worker_peer_wire),
+        waiting: peers.waiting.map(service_worker_peer_wire),
+        active: peers.active.map(service_worker_peer_wire),
     }
 }
 

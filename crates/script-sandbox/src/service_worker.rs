@@ -35,6 +35,8 @@ enum ServiceWorkerCommand {
     Evaluate {
         script: String,
         script_url: String,
+        scope_url: String,
+        initial_peers: ServiceWorkerRegistrationPeers,
         is_module: bool,
     },
     DispatchLifecycle {
@@ -163,7 +165,7 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
   const timerTasks = [];
   let nextTimerId = 1;
 
-  class ExtendableEvent {
+  class Event {
     constructor(type) {
       this.type = type;
       // https://dom.spec.whatwg.org/#concept-event-initialize
@@ -182,6 +184,11 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
     stopImmediatePropagation() {
       this._immediateStopped = true;
       this._propagationStopped = true;
+    }
+  }
+  class ExtendableEvent extends Event {
+    constructor(type) {
+      super(type);
     }
     waitUntil(value) {
       if (typeof currentWaitUntil !== 'function') {
@@ -2129,6 +2136,7 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
   globalThis.self = globalThis;
   globalThis.WorkerGlobalScope = WorkerGlobalScope;
   globalThis.ServiceWorkerGlobalScope = ServiceWorkerGlobalScope;
+  globalThis.Event = Event;
   globalThis.ExtendableEvent = ExtendableEvent;
   globalThis.InstallEvent = InstallEvent;
   globalThis.ExtendableMessageEvent = ExtendableMessageEvent;
@@ -2335,12 +2343,32 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
     constructor(scriptURL, state, token) {
       if (token !== serviceWorkerToken) throw new TypeError('Illegal constructor');
       Object.defineProperties(this, {
+        _listeners: {value: Object.create(null), writable: true},
         _scriptURL: {value: String(scriptURL), writable: true},
         _state: {value: String(state), writable: true},
         scriptURL: {get: function() { return this._scriptURL; }, enumerable: true},
         state: {get: function() { return this._state; }, enumerable: true}
       });
       this.onstatechange = null;
+    }
+    addEventListener(type, listener) {
+      if (typeof listener !== 'function') return;
+      const key = String(type);
+      const list = this._listeners[key] || (this._listeners[key] = []);
+      if (list.indexOf(listener) < 0) list.push(listener);
+    }
+    removeEventListener(type, listener) {
+      const list = this._listeners[String(type)] || [];
+      const index = list.indexOf(listener);
+      if (index >= 0) list.splice(index, 1);
+    }
+    dispatchEvent(event) {
+      if (!event || !event.type) throw new TypeError('Invalid event');
+      const callbacks = (this._listeners[String(event.type)] || []).slice();
+      for (let i = 0; i < callbacks.length; i++) callbacks[i].call(this, event);
+      const handler = this['on' + String(event.type)];
+      if (typeof handler === 'function') handler.call(this, event);
+      return !event.defaultPrevented;
     }
     postMessage(data, transfer) {
       if (this === globalThis.serviceWorker) {
@@ -2372,6 +2400,7 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
   Object.defineProperty(ServiceWorker.prototype, Symbol.toStringTag, {value: 'ServiceWorker'});
   const workerScriptURL = String(globalThis.location && globalThis.location.href || '');
   const currentServiceWorker = new ServiceWorker(workerScriptURL, 'parsed', serviceWorkerToken);
+  const registrationListeners = Object.create(null);
   function serviceWorkerFromInfo(info) {
     if (!info) return null;
     const id = String(info.id);
@@ -2380,11 +2409,14 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
       : (serviceWorkersById[id] || new ServiceWorker(info.scriptURL || '', info.state || 'parsed', serviceWorkerToken));
     worker._id = id;
     worker._scriptURL = String(info.scriptURL || worker._scriptURL || '');
-    worker._state = String(info.state || worker._state || 'parsed');
+    if (worker !== currentServiceWorker) {
+      setServiceWorkerState(worker, String(info.state || worker._state || 'parsed'));
+    }
     serviceWorkersById[id] = worker;
     return worker;
   }
   const registration = {
+    scope: '',
     installing: null,
     waiting: null,
     active: null,
@@ -2415,6 +2447,26 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
       ));
     }
   };
+  registration.addEventListener = function(type, listener) {
+    if (typeof listener !== 'function') return;
+    const key = String(type);
+    const list = registrationListeners[key] || (registrationListeners[key] = []);
+    if (list.indexOf(listener) < 0) list.push(listener);
+  };
+  registration.removeEventListener = function(type, listener) {
+    const list = registrationListeners[String(type)] || [];
+    const index = list.indexOf(listener);
+    if (index >= 0) list.splice(index, 1);
+  };
+  registration.dispatchEvent = function(event) {
+    if (!event || !event.type) throw new TypeError('Invalid event');
+    const callbacks = (registrationListeners[String(event.type)] || []).slice();
+    for (let i = 0; i < callbacks.length; i++) callbacks[i].call(registration, event);
+    const handler = registration['on' + String(event.type)];
+    if (typeof handler === 'function') handler.call(registration, event);
+    return !event.defaultPrevented;
+  };
+  registration.onupdatefound = null;
   globalThis.ServiceWorker = ServiceWorker;
   // https://w3c.github.io/ServiceWorker/#serviceworkerglobalscope-serviceworker
   Object.defineProperty(globalThis, 'serviceWorker', {
@@ -2424,20 +2476,38 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
   });
   globalThis.registration = registration;
   globalThis.__zwSyncRegistrationPeers = function(currentId, peers) {
-    currentServiceWorker._id = String(currentId);
-    serviceWorkersById[String(currentId)] = currentServiceWorker;
+    if (currentId !== null && currentId !== undefined) {
+      currentServiceWorker._id = String(currentId);
+    }
+    if (currentServiceWorker._id !== undefined && currentServiceWorker._id !== null) {
+      serviceWorkersById[String(currentServiceWorker._id)] = currentServiceWorker;
+    }
+    const currentIdString = String(currentServiceWorker._id || '');
+    if (peers && peers.installing && String(peers.installing.id) === currentIdString) {
+      currentServiceWorker._state = String(peers.installing.state || currentServiceWorker._state || 'installing');
+    }
+    const hadInstalling = !!registration.installing;
     registration.installing = serviceWorkerFromInfo(peers && peers.installing);
     registration.waiting = serviceWorkerFromInfo(peers && peers.waiting);
     registration.active = serviceWorkerFromInfo(peers && peers.active);
+    if (!hadInstalling && registration.installing) {
+      registration.dispatchEvent(new Event('updatefound'));
+    }
   };
+  function setServiceWorkerState(worker, state) {
+    if (!worker) return;
+    const next = String(state);
+    const changed = worker._state !== next;
+    worker._state = next;
+    if (changed) worker.dispatchEvent(new Event('statechange'));
+  }
   function setCurrentServiceWorkerState(state) {
-    currentServiceWorker._state = String(state);
+    setServiceWorkerState(currentServiceWorker, state);
   }
   function setRegistrationLifecyclePhase(type, running) {
     if (type === 'install') {
       registration.installing = running ? currentServiceWorker : null;
       registration.waiting = running ? null : currentServiceWorker;
-      registration.active = null;
       setCurrentServiceWorkerState(running ? 'installing' : 'installed');
       return;
     }
@@ -2943,6 +3013,12 @@ pub struct ServiceWorkerRegistrationPeers {
     pub waiting: Option<ServiceWorkerPeerInfo>,
     /// Active worker projection.
     pub active: Option<ServiceWorkerPeerInfo>,
+}
+
+impl ServiceWorkerRegistrationPeers {
+    fn is_empty(&self) -> bool {
+        self.installing.is_none() && self.waiting.is_none() && self.active.is_none()
+    }
 }
 
 /// One worker-to-worker message emitted during a worker event.
@@ -3738,24 +3814,35 @@ impl ServiceWorkerRuntime {
                         ServiceWorkerCommand::Evaluate {
                             script,
                             script_url,
+                            scope_url,
+                            initial_peers,
                             is_module,
                         } => {
                             let source = if script.trim().is_empty() { ";" } else { script.as_str() };
-                            let evaluation = set_worker_location(sandbox.as_mut(), &script_url).and_then(|()| {
-                                if is_module {
-                                    evaluate_module_graph(
-                                        sandbox.as_mut(),
-                                        source,
-                                        &script_url,
-                                        &event_sender,
-                                        &import_response_receiver,
-                                        &next_import_request_id,
-                                        lifecycle_timeout_ms,
-                                    )
-                                } else {
-                                    evaluate_classic_script(sandbox.as_mut(), source)
-                                }
-                            });
+                            let evaluation = set_worker_registration_scope(sandbox.as_mut(), &scope_url)
+                                .and_then(|()| {
+                                    if initial_peers.is_empty() {
+                                        Ok(())
+                                    } else {
+                                        sync_worker_registration_peers(sandbox.as_mut(), None, &initial_peers)
+                                    }
+                                })
+                                .and_then(|()| set_worker_location(sandbox.as_mut(), &script_url))
+                                .and_then(|()| {
+                                    if is_module {
+                                        evaluate_module_graph(
+                                            sandbox.as_mut(),
+                                            source,
+                                            &script_url,
+                                            &event_sender,
+                                            &import_response_receiver,
+                                            &next_import_request_id,
+                                            lifecycle_timeout_ms,
+                                        )
+                                    } else {
+                                        evaluate_classic_script(sandbox.as_mut(), source)
+                                    }
+                                });
                             let event = match evaluation {
                                 Ok(()) => {
                                     emit_queued_messages(sandbox.as_mut(), &event_sender);
@@ -3884,12 +3971,7 @@ impl ServiceWorkerRuntime {
                             let _ = event_sender.send(event);
                         }
                         ServiceWorkerCommand::SyncRegistrationPeers { registration_id, peers } => {
-                            let script = format!(
-                                "globalThis.__zwSyncRegistrationPeers({}, {});",
-                                registration_id,
-                                serde_json::to_string(&service_worker_peers_json(&peers)).unwrap(),
-                            );
-                            let _ = sandbox.execute(&script);
+                            let _ = sync_worker_registration_peers(sandbox.as_mut(), Some(registration_id), &peers);
                         }
                         ServiceWorkerCommand::DispatchFetch {
                             event_id,
@@ -3958,6 +4040,22 @@ impl ServiceWorkerRuntime {
 
     /// Queue a script for evaluation in the persistent Service Worker global.
     pub fn evaluate(&mut self, script: &str, script_url: &str) -> Result<(), ScriptError> {
+        self.evaluate_with_scope(script, script_url, script_url)
+    }
+
+    /// Queue a script for evaluation with the registration scope exposed in the worker global.
+    pub fn evaluate_with_scope(&mut self, script: &str, script_url: &str, scope_url: &str) -> Result<(), ScriptError> {
+        self.evaluate_with_scope_and_peers(script, script_url, scope_url, ServiceWorkerRegistrationPeers::default())
+    }
+
+    /// Queue a script for evaluation with the initial registration slot projection.
+    pub fn evaluate_with_scope_and_peers(
+        &mut self,
+        script: &str,
+        script_url: &str,
+        scope_url: &str,
+        initial_peers: ServiceWorkerRegistrationPeers,
+    ) -> Result<(), ScriptError> {
         if self.core.is_terminated() {
             return Err(ScriptError::InvalidInput(
                 "Cannot evaluate script on terminated Service Worker runtime".into(),
@@ -3966,10 +4064,15 @@ impl ServiceWorkerRuntime {
         if script_url.trim().is_empty() {
             return Err(ScriptError::InvalidInput("Service Worker script URL is empty".into()));
         }
+        if scope_url.trim().is_empty() {
+            return Err(ScriptError::InvalidInput("Service Worker scope URL is empty".into()));
+        }
         self.core
             .send(ServiceWorkerCommand::Evaluate {
                 script: script.to_string(),
                 script_url: script_url.to_string(),
+                scope_url: scope_url.to_string(),
+                initial_peers,
                 is_module: false,
             })
             .map_err(|_| ScriptError::RuntimeError("Service Worker runtime disconnected".into()))
@@ -3977,6 +4080,32 @@ impl ServiceWorkerRuntime {
 
     /// Queue a JavaScript module graph for evaluation in the persistent Service Worker global.
     pub fn evaluate_module(&mut self, script: &str, script_url: &str) -> Result<(), ScriptError> {
+        self.evaluate_module_with_scope(script, script_url, script_url)
+    }
+
+    /// Queue a JavaScript module graph with the registration scope exposed in the worker global.
+    pub fn evaluate_module_with_scope(
+        &mut self,
+        script: &str,
+        script_url: &str,
+        scope_url: &str,
+    ) -> Result<(), ScriptError> {
+        self.evaluate_module_with_scope_and_peers(
+            script,
+            script_url,
+            scope_url,
+            ServiceWorkerRegistrationPeers::default(),
+        )
+    }
+
+    /// Queue a JavaScript module graph with the initial registration slot projection.
+    pub fn evaluate_module_with_scope_and_peers(
+        &mut self,
+        script: &str,
+        script_url: &str,
+        scope_url: &str,
+        initial_peers: ServiceWorkerRegistrationPeers,
+    ) -> Result<(), ScriptError> {
         if self.core.is_terminated() {
             return Err(ScriptError::InvalidInput(
                 "Cannot evaluate script on terminated Service Worker runtime".into(),
@@ -3985,10 +4114,15 @@ impl ServiceWorkerRuntime {
         if script_url.trim().is_empty() {
             return Err(ScriptError::InvalidInput("Service Worker script URL is empty".into()));
         }
+        if scope_url.trim().is_empty() {
+            return Err(ScriptError::InvalidInput("Service Worker scope URL is empty".into()));
+        }
         self.core
             .send(ServiceWorkerCommand::Evaluate {
                 script: script.to_string(),
                 script_url: script_url.to_string(),
+                scope_url: scope_url.to_string(),
+                initial_peers,
                 is_module: true,
             })
             .map_err(|_| ScriptError::RuntimeError("Service Worker runtime disconnected".into()))
@@ -5134,6 +5268,14 @@ fn evaluate_module_graph(
         .map_err(|error| ScriptError::InvalidInput(format!("invalid Service Worker module URL: {error}")))?;
     main_url.set_fragment(None);
     let main_url = main_url.to_string();
+    if service_worker_module_source_has_top_level_await(source) {
+        // https://w3c.github.io/ServiceWorker/#service-worker-script-request
+        // FIXME: Replace this fail-closed check once Service Worker module evaluation has
+        // spec-accurate asynchronous module job rejection instead of the current synchronous runner.
+        return Err(ScriptError::RuntimeError(
+            "Service Worker module scripts with top-level await are not supported".into(),
+        ));
+    }
     let mut registry = ModuleRegistry::new();
     let mut visited = HashSet::from([main_url.clone()]);
     collect_module_graph(
@@ -5162,6 +5304,10 @@ fn evaluate_classic_script(sandbox: &mut dyn Sandbox, source: &str) -> Result<()
     sandbox.execute(SERVICE_WORKER_DYNAMIC_IMPORT_PRELUDE)?;
     let source = rewrite_dynamic_imports(source);
     sandbox.execute(&source).map(|_| ())
+}
+
+fn service_worker_module_source_has_top_level_await(source: &str) -> bool {
+    source.contains("await")
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -5295,6 +5441,15 @@ fn set_worker_location(sandbox: &mut dyn Sandbox, script_url: &str) -> Result<()
         .map(|_| ())
 }
 
+fn set_worker_registration_scope(sandbox: &mut dyn Sandbox, scope_url: &str) -> Result<(), ScriptError> {
+    let url = url::Url::parse(scope_url)
+        .map_err(|error| ScriptError::InvalidInput(format!("invalid Service Worker scope URL: {error}")))?;
+    let scope = serde_json::to_string(url.as_str()).expect("URL string is serializable");
+    sandbox
+        .execute(&format!("globalThis.registration.scope = {scope};"))
+        .map(|_| ())
+}
+
 fn set_clients_claim_allowed(sandbox: &mut dyn Sandbox, allowed: bool) -> Result<(), ScriptError> {
     let script = format!(
         "globalThis.__zwSetClientsClaimAllowed({});",
@@ -5321,6 +5476,7 @@ fn poll_lifecycle(
     pending: &PendingLifecycle,
     timeout_ms: u64,
 ) -> Option<ServiceWorkerEvent> {
+    let _ = sandbox.execute("globalThis.__zwRunOneTask && globalThis.__zwRunOneTask();");
     match sandbox.execute("JSON.stringify(globalThis.__zwLifecycleResult)") {
         Ok(result) => match serde_json::from_str::<serde_json::Value>(&result.value) {
             Ok(value) if value["settled"].as_bool() == Some(true) => {
@@ -5357,7 +5513,6 @@ fn poll_lifecycle(
             format!("lifecycle event exceeded {timeout_ms}ms"),
         ));
     }
-    let _ = sandbox.execute("globalThis.__zwRunOneTask && globalThis.__zwRunOneTask();");
     None
 }
 
@@ -5409,6 +5564,22 @@ fn emit_queued_worker_messages(sandbox: &mut dyn Sandbox, event_sender: &mpsc::S
     {
         let _ = event_sender.send(ServiceWorkerEvent::WorkerMessagesEmitted { messages });
     }
+}
+
+fn sync_worker_registration_peers(
+    sandbox: &mut dyn Sandbox,
+    registration_id: Option<u64>,
+    peers: &ServiceWorkerRegistrationPeers,
+) -> Result<(), ScriptError> {
+    let current_id = registration_id
+        .map(|id| id.to_string())
+        .unwrap_or_else(|| "null".to_string());
+    let script = format!(
+        "globalThis.__zwSyncRegistrationPeers({}, {});",
+        current_id,
+        serde_json::to_string(&service_worker_peers_json(peers)).unwrap(),
+    );
+    sandbox.execute(&script).map(|_| ())
 }
 
 fn service_worker_peer_json(peer: &ServiceWorkerPeerInfo) -> serde_json::Value {
@@ -6005,6 +6176,26 @@ mod tests {
     }
 
     #[test]
+    fn service_worker_module_top_level_await_rejects_evaluation() {
+        let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
+        runtime
+            .evaluate_module(
+                "await Promise.resolve(1);
+                 globalThis.ready = true;",
+                "https://example.test/workers/sw.js",
+            )
+            .unwrap();
+        assert!(matches!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::ScriptError {
+                kind: ServiceWorkerScriptErrorKind::Runtime,
+                message,
+                ..
+            } if message.contains("top-level await")
+        ));
+    }
+
+    #[test]
     fn classic_dynamic_import_rejects_with_type_error() {
         let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
         runtime
@@ -6364,6 +6555,81 @@ mod tests {
         assert!(matches!(
             runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
             ServiceWorkerEvent::Evaluated { .. }
+        ));
+    }
+
+    #[test]
+    fn service_worker_global_registration_scope_is_available_during_events() {
+        let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
+        runtime
+            .evaluate_with_scope(
+                "const expectedScope = 'https://example.test/app/';
+                 if (registration.scope !== expectedScope) throw new Error('initial scope');
+                 addEventListener('install', event => {
+                   if (registration.scope !== expectedScope) throw new Error('install scope');
+                 });
+                 addEventListener('activate', event => {
+                   if (registration.scope !== expectedScope) throw new Error('activate scope');
+                 });
+                 addEventListener('fetch', event => {
+                   if (registration.scope !== expectedScope) throw new Error('fetch scope');
+                   event.respondWith(new Response(registration.scope));
+                 });",
+                "https://example.test/app/sw.js",
+                "https://example.test/app/",
+            )
+            .unwrap();
+        assert!(matches!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::Evaluated { .. }
+        ));
+
+        runtime.dispatch_install(81).unwrap();
+        assert!(matches!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::LifecycleSettled {
+                event_id: 81,
+                phase: ServiceWorkerLifecyclePhase::Install,
+                succeeded: true,
+                ..
+            }
+        ));
+
+        runtime.dispatch_activate(82).unwrap();
+        assert!(matches!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::LifecycleSettled {
+                event_id: 82,
+                phase: ServiceWorkerLifecyclePhase::Activate,
+                succeeded: true,
+                ..
+            }
+        ));
+
+        runtime
+            .dispatch_fetch(
+                83,
+                ServiceWorkerFetchRequest {
+                    url: "https://example.test/app/page".into(),
+                    method: "GET".into(),
+                    headers: Vec::new(),
+                    body: None,
+                    credentials: None,
+                    client_id: Some("client-1".into()),
+                    resulting_client_id: None,
+                    referrer: None,
+                    is_reload_navigation: false,
+                    is_history_navigation: false,
+                },
+            )
+            .unwrap();
+        assert!(matches!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::FetchSettled {
+                event_id: 83,
+                response: Some(ServiceWorkerFetchResponse { body, .. }),
+                ..
+            } if body == "https://example.test/app/"
         ));
     }
 

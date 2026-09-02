@@ -3534,17 +3534,22 @@
           upsertSnapshot(replacement, 'manual');
         }
       }
-      function refreshControllerFromHost(container) {
+      function refreshControllerFromHost(container, workerHint, previousHint, eventStateHint) {
         if (container && container !== _container &&
             typeof container.__zwRefreshServiceWorkerController === 'function') {
-          container.__zwRefreshServiceWorkerController();
+          container.__zwRefreshServiceWorkerController(workerHint, previousHint, eventStateHint);
+          return;
+        }
+        if (workerHint) {
+          setController(workerHint, previousHint, eventStateHint);
+          return;
         }
         var snapshot = readControllerSnapshot();
         if (snapshot && snapshot.state === 'activated') {
           var reg = upsertSnapshot(snapshot, 'manual');
           if (reg && reg.active &&
               (!_controller || String(_controller._id) !== String(reg.active._id))) {
-            setController(reg.active);
+            setController(reg.active, _controller, _controller ? 'activating' : null);
           }
         }
         if (typeof _iframeDocCache === 'object') {
@@ -3577,11 +3582,11 @@
         if (sequence === 3) return 'activated';
         return 'installing';
       }
-      function setController(worker) {
-        if (_controller === worker) return;
-        var previous = _controller;
+      function setController(worker, previousHint, eventStateHint) {
+        if (_controller === worker && eventStateHint == null) return;
+        var previous = previousHint || _controller;
         _controller = worker;
-        var eventState = worker ? worker.state : null;
+        var eventState = eventStateHint || (worker ? worker.state : null);
         if (worker && previous &&
             String(previous._id) !== String(worker._id) &&
             eventState === 'activated') {
@@ -3590,32 +3595,43 @@
         _controllerChangeGeneration++;
         var generation = _controllerChangeGeneration;
         var expectedId = worker ? String(worker._id) : '';
-        if (typeof setTimeout === 'function') {
+        var restoreState = worker ? worker._state : null;
+        function scheduleControllerEventStateClear() {
           setTimeout(function () {
-            if (generation !== _controllerChangeGeneration) return;
-            if ((_controller ? String(_controller._id) : '') !== expectedId) return;
-            if (worker) worker._controllerEventState = eventState;
-            _controllerEventWorker = worker;
-            dispatchTargetEvent(_container, 'controllerchange');
             setTimeout(function () {
               if (worker && worker._controllerEventState === eventState) {
                 worker._controllerEventState = null;
               }
+              if (worker && worker._state === eventState && restoreState !== eventState) {
+                worker._state = restoreState;
+              }
               if (_controllerEventWorker === worker) _controllerEventWorker = null;
             }, 0);
+          }, 0);
+        }
+        if (typeof setTimeout === 'function') {
+          setTimeout(function () {
+            if (generation !== _controllerChangeGeneration) return;
+            if ((_controller ? String(_controller._id) : '') !== expectedId) return;
+            if (worker) {
+              restoreState = worker._state;
+              worker._controllerEventState = eventState;
+              if (eventState != null) worker._state = eventState;
+            }
+            _controllerEventWorker = worker;
+            dispatchTargetEvent(_container, 'controllerchange');
             notifyIframeControllerChange(worker, previous, eventState);
+            scheduleControllerEventStateClear();
           }, 0);
         } else {
-          if (worker) worker._controllerEventState = eventState;
+          if (worker) {
+            worker._controllerEventState = eventState;
+            if (eventState != null) worker._state = eventState;
+          }
           _controllerEventWorker = worker;
           dispatchTargetEvent(_container, 'controllerchange');
-          setTimeout(function () {
-            if (worker && worker._controllerEventState === eventState) {
-              worker._controllerEventState = null;
-            }
-            if (_controllerEventWorker === worker) _controllerEventWorker = null;
-          }, 0);
           notifyIframeControllerChange(worker, previous, eventState);
+          scheduleControllerEventStateClear();
         }
       }
       function notifyIframeControllerChange(worker, previous, eventState) {
@@ -3675,8 +3691,10 @@
           }
         } else if (state === 'activated') {
           var replaceController = false;
+          var previousController = null;
           if (reg._previousActive && reg._previousActive !== worker) {
             var previous = reg._previousActive;
+            previousController = previous;
             reg._previousActive = null;
             replaceController = _controller === previous;
             previous.state = 'redundant';
@@ -3691,7 +3709,7 @@
           if (replaceController ||
               (claimController &&
                String(claimController.id) === String(reg._id))) {
-            setController(worker);
+            setController(worker, previousController, replaceController ? 'activating' : null);
           }
           reg._claimClientsPending = false;
         } else if (state === 'redundant' && reg.active === worker) {

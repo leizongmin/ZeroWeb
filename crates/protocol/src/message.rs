@@ -889,6 +889,28 @@ pub struct ServiceWorkerSnapshot {
     pub state: ServiceWorkerStateWire,
 }
 
+/// IPC-safe projection of one Service Worker object.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ServiceWorkerPeerInfoWire {
+    /// Registration version ID represented by the worker object.
+    pub id: u64,
+    /// Worker script URL.
+    pub script_url: String,
+    /// Worker lifecycle state.
+    pub state: ServiceWorkerStateWire,
+}
+
+/// IPC-safe registration slot projection for a worker global.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ServiceWorkerRegistrationPeersWire {
+    /// Installing worker projection.
+    pub installing: Option<ServiceWorkerPeerInfoWire>,
+    /// Waiting worker projection.
+    pub waiting: Option<ServiceWorkerPeerInfoWire>,
+    /// Active worker projection.
+    pub active: Option<ServiceWorkerPeerInfoWire>,
+}
+
 /// IPC-safe Service Worker update cache policy.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ServiceWorkerUpdateViaCacheWire {
@@ -981,16 +1003,29 @@ impl ServiceWorkerHostCommandParams {
         const MAX_URL_BYTES: usize = 64 * 1024;
         const MAX_SCRIPT_BYTES: usize = 16 * 1024 * 1024;
         match &self.command {
-            ServiceWorkerHostCommand::Evaluate { script_url, script, .. } => {
+            ServiceWorkerHostCommand::Evaluate {
+                script_url,
+                scope_url,
+                script,
+                initial_peers,
+                ..
+            } => {
                 if script_url.is_empty() {
                     return Err("Service Worker host script URL is required");
+                }
+                if scope_url.is_empty() {
+                    return Err("Service Worker host scope URL is required");
                 }
                 if script_url.len() > MAX_URL_BYTES {
                     return Err("Service Worker host script URL exceeds the length limit");
                 }
+                if scope_url.len() > MAX_URL_BYTES {
+                    return Err("Service Worker host scope URL exceeds the length limit");
+                }
                 if script.len() > MAX_SCRIPT_BYTES {
                     return Err("Service Worker host script exceeds the size limit");
                 }
+                validate_service_worker_registration_peers(initial_peers)?;
                 Ok(())
             }
             ServiceWorkerHostCommand::DispatchMessage {
@@ -1200,9 +1235,22 @@ impl ServiceWorkerHostCommandParams {
                     Err(_) => Ok(()),
                 }
             }
-            ServiceWorkerHostCommand::DispatchLifecycle { .. } | ServiceWorkerHostCommand::Shutdown => Ok(()),
+            ServiceWorkerHostCommand::DispatchLifecycle { peers, .. } => {
+                validate_service_worker_registration_peers(peers)
+            }
+            ServiceWorkerHostCommand::Shutdown => Ok(()),
         }
     }
+}
+
+fn validate_service_worker_registration_peers(peers: &ServiceWorkerRegistrationPeersWire) -> Result<(), &'static str> {
+    const MAX_URL_BYTES: usize = 64 * 1024;
+    for peer in [&peers.installing, &peers.waiting, &peers.active].into_iter().flatten() {
+        if peer.script_url.is_empty() || peer.script_url.len() > MAX_URL_BYTES {
+            return Err("Service Worker peer script URL is invalid");
+        }
+    }
+    Ok(())
 }
 
 fn validate_service_worker_fetch_request(request: &ServiceWorkerFetchRequestWire) -> Result<(), &'static str> {
@@ -1405,6 +1453,10 @@ pub enum ServiceWorkerHostCommand {
     Evaluate {
         /// 脚本 URL（事件回传关联用）。
         script_url: String,
+        /// Registration scope URL exposed through `self.registration.scope`.
+        scope_url: String,
+        /// Registration slots visible before top-level script evaluation.
+        initial_peers: ServiceWorkerRegistrationPeersWire,
         /// 脚本源码（browser 已完成网络抓取与安全校验）。
         script: String,
         /// Top-level script type.
@@ -1416,6 +1468,8 @@ pub enum ServiceWorkerHostCommand {
         phase: ServiceWorkerLifecycleWire,
         /// Whether `clients.claim()` is allowed for this dispatched event.
         clients_claim_allowed: bool,
+        /// Registration slots visible during this lifecycle event.
+        peers: ServiceWorkerRegistrationPeersWire,
     },
     /// 派发页面到 worker 的 JSON 结构化消息。
     DispatchMessage {

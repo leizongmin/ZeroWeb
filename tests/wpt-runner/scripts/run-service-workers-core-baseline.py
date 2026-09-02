@@ -10,8 +10,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-EXPECTED_CASES = 51
-EXPECTED_SUBTESTS = 198
+EXPECTED_CASES = 52
+EXPECTED_SUBTESTS = 200
 
 
 def parse_args() -> argparse.Namespace:
@@ -19,6 +19,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--runner", required=True, type=Path)
     parser.add_argument("--wpt-data", required=True, type=Path)
     parser.add_argument("--output", type=Path)
+    parser.add_argument("--summary", type=Path)
     return parser.parse_args()
 
 
@@ -54,7 +55,19 @@ def validate_shape(cases: list) -> None:
         raise RuntimeError(f"expected {EXPECTED_CASES} cases, got {len(cases)}")
     subtests = sum(len(results) for _, results in cases)
     if subtests != EXPECTED_SUBTESTS:
-        raise RuntimeError(f"expected {EXPECTED_SUBTESTS} subtests, got {subtests}")
+        short_cases = [
+            f"{case}={len(results)}"
+            for case, results in cases
+            if len(results) <= 1
+        ]
+        failures = [
+            f"{case}: {result['name']}={result['status']} {result.get('message') or ''}".strip()
+            for case, results in cases
+            for result in results
+            if result.get("status") != "Pass"
+        ]
+        detail = "; ".join(short_cases[:8] + failures[:5])
+        raise RuntimeError(f"expected {EXPECTED_SUBTESTS} subtests, got {subtests}: {detail}")
     paths = [case for case, _ in cases]
     if len(paths) != len(set(paths)):
         raise RuntimeError("runner emitted duplicate case paths")
@@ -70,6 +83,36 @@ def validate_all_pass(entries: list[tuple[str, str, str]]) -> None:
             f"expected all {len(entries)} subtests to Pass, "
             f"found {len(failures)} non-Pass: {sample}"
         )
+
+
+def render_markdown(summary: dict) -> str:
+    status = summary["status"]
+    return "\n".join(
+        [
+            "# Service Worker Core WPT Baseline",
+            "",
+            "- Date: 2026-09-02",
+            "- WPT revision: `04067ce9c7c2165e71ad7d0dde10a4c5cb394a83`",
+            f"- Cases: {summary['cases']}",
+            f"- Subtests: {summary['subtests']}",
+            f"- Pass: {status.get('Pass', 0)}",
+            f"- Fail: {status.get('Fail', 0)}",
+            f"- Timeout: {status.get('Timeout', 0)}",
+            f"- Unsupported: {status.get('Unsupported', 0)}",
+            f"- Deterministic: {str(summary['deterministic']).lower()}",
+            "",
+            "## Scope",
+            "",
+            "This pinned Service Worker core baseline covers registration, update, "
+            "install/activate lifecycle, worker-global APIs, messaging, module "
+            "script loading, skipWaiting, and updateViaCache cases. "
+            "`ServiceWorkerGlobalScope/registration-attribute.https.html` extends "
+            "the baseline with worker-global `registration.scope`, "
+            "`registration.installing/waiting/active` slot visibility, "
+            "registration and worker `EventTarget` methods, `updatefound`, and "
+            "`statechange` ordering across initial and replacement workers.",
+        ]
+    ) + "\n"
 
 
 def main() -> int:
@@ -101,6 +144,9 @@ def main() -> int:
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(rendered, encoding="utf-8")
+    if args.summary:
+        args.summary.parent.mkdir(parents=True, exist_ok=True)
+        args.summary.write_text(render_markdown(summary), encoding="utf-8")
     sys.stdout.write(rendered)
     return 0
 

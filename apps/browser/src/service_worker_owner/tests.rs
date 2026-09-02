@@ -527,7 +527,8 @@ fn ipc_event_time_import_uses_owned_renderer_after_evaluation_response() {
         outgoing.params.command,
         ServiceWorkerHostCommand::DispatchLifecycle {
             phase: ServiceWorkerLifecycleWire::Install,
-            clients_claim_allowed: false
+            clients_claim_allowed: false,
+            ..
         }
     )));
 

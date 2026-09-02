@@ -19,15 +19,16 @@ use zero_protocol::message::{
     ServiceWorkerCacheQueryOptionsWire, ServiceWorkerCacheStorageRequestWire, ServiceWorkerCacheStorageResultWire,
     ServiceWorkerFetchRequestWire, ServiceWorkerFetchResponseWire, ServiceWorkerHostCommand,
     ServiceWorkerHostCommandParams, ServiceWorkerHostEvent, ServiceWorkerHostEventParams, ServiceWorkerLifecycleWire,
-    ServiceWorkerScriptErrorKindWire, ServiceWorkerScriptTypeWire,
+    ServiceWorkerPeerInfoWire, ServiceWorkerRegistrationPeersWire, ServiceWorkerScriptErrorKindWire,
+    ServiceWorkerScriptTypeWire, ServiceWorkerStateWire,
 };
 use zero_protocol::transport::PipeTransport;
 use zero_protocol::{IpcChannel, IpcMessage, IpcMessageKind};
 use zero_script_sandbox::{
     SandboxConfig, ServiceWorkerCacheQueryOptions, ServiceWorkerCacheStorageRequest, ServiceWorkerCacheStorageResult,
     ServiceWorkerClientInfo, ServiceWorkerEvent, ServiceWorkerFetchRequest, ServiceWorkerFetchResponse,
-    ServiceWorkerLifecyclePhase, ServiceWorkerMessagePorts, ServiceWorkerMessageSource, ServiceWorkerRuntime,
-    ServiceWorkerScriptErrorKind,
+    ServiceWorkerLifecyclePhase, ServiceWorkerMessagePorts, ServiceWorkerMessageSource, ServiceWorkerPeerInfo,
+    ServiceWorkerRegistrationPeers, ServiceWorkerRuntime, ServiceWorkerScriptErrorKind,
 };
 
 use crate::compositor_publish_thread::SharedWriter;
@@ -108,16 +109,26 @@ impl HostThread {
         match params.command {
             ServiceWorkerHostCommand::Evaluate {
                 script_url,
+                scope_url,
+                initial_peers,
                 script,
                 script_type,
             } => {
-                self.evaluate(params.registration_id, &script_url, &script, script_type);
+                self.evaluate(
+                    params.registration_id,
+                    &script_url,
+                    &scope_url,
+                    &script,
+                    script_type,
+                    initial_peers,
+                );
             }
             ServiceWorkerHostCommand::DispatchLifecycle {
                 phase,
                 clients_claim_allowed,
+                peers,
             } => {
-                self.dispatch_lifecycle(params.registration_id, wire_phase(phase), clients_claim_allowed);
+                self.dispatch_lifecycle(params.registration_id, wire_phase(phase), clients_claim_allowed, peers);
             }
             ServiceWorkerHostCommand::DispatchMessage {
                 event_id,
@@ -257,8 +268,10 @@ impl HostThread {
         &mut self,
         registration_id: u64,
         script_url: &str,
+        scope_url: &str,
         script: &str,
         script_type: ServiceWorkerScriptTypeWire,
+        initial_peers: ServiceWorkerRegistrationPeersWire,
     ) {
         // 同 id 重复求值不应发生（browser 分配唯一 id）；防御性先回收旧 runtime。
         if let Some(mut runtime) = self.runtimes.remove(&registration_id) {
@@ -267,8 +280,18 @@ impl HostThread {
         match ServiceWorkerRuntime::new(SandboxConfig::default()) {
             Ok(mut runtime) => {
                 let evaluation = match script_type {
-                    ServiceWorkerScriptTypeWire::Classic => runtime.evaluate(script, script_url),
-                    ServiceWorkerScriptTypeWire::Module => runtime.evaluate_module(script, script_url),
+                    ServiceWorkerScriptTypeWire::Classic => runtime.evaluate_with_scope_and_peers(
+                        script,
+                        script_url,
+                        scope_url,
+                        service_worker_registration_peers(initial_peers),
+                    ),
+                    ServiceWorkerScriptTypeWire::Module => runtime.evaluate_module_with_scope_and_peers(
+                        script,
+                        script_url,
+                        scope_url,
+                        service_worker_registration_peers(initial_peers),
+                    ),
                 };
                 if let Err(error) = evaluation {
                     tracing::warn!("Service Worker evaluate queue failed: {error}");
@@ -332,11 +355,16 @@ impl HostThread {
         registration_id: u64,
         phase: ServiceWorkerLifecyclePhase,
         clients_claim_allowed: bool,
+        peers: ServiceWorkerRegistrationPeersWire,
     ) {
         let Some(runtime) = self.runtimes.get_mut(&registration_id) else {
             tracing::warn!("Service Worker lifecycle for unknown registration {registration_id}");
             return;
         };
+        if let Err(error) = runtime.sync_registration_peers(registration_id, service_worker_registration_peers(peers)) {
+            tracing::warn!("Service Worker registration peer sync failed: {error}");
+            return;
+        }
         let result = runtime.dispatch_lifecycle_with_claim_allowed(registration_id, phase, clients_claim_allowed);
         if let Err(error) = result {
             tracing::warn!("Service Worker lifecycle dispatch failed: {error}");
@@ -438,6 +466,32 @@ fn wire_phase(phase: ServiceWorkerLifecycleWire) -> ServiceWorkerLifecyclePhase 
     match phase {
         ServiceWorkerLifecycleWire::Install => ServiceWorkerLifecyclePhase::Install,
         ServiceWorkerLifecycleWire::Activate => ServiceWorkerLifecyclePhase::Activate,
+    }
+}
+
+fn state_wire_label(state: ServiceWorkerStateWire) -> &'static str {
+    match state {
+        ServiceWorkerStateWire::Installing => "installing",
+        ServiceWorkerStateWire::Installed => "installed",
+        ServiceWorkerStateWire::Activating => "activating",
+        ServiceWorkerStateWire::Activated => "activated",
+        ServiceWorkerStateWire::Redundant => "redundant",
+    }
+}
+
+fn service_worker_peer(peer: ServiceWorkerPeerInfoWire) -> ServiceWorkerPeerInfo {
+    ServiceWorkerPeerInfo {
+        id: peer.id,
+        script_url: peer.script_url,
+        state: state_wire_label(peer.state).to_string(),
+    }
+}
+
+fn service_worker_registration_peers(peers: ServiceWorkerRegistrationPeersWire) -> ServiceWorkerRegistrationPeers {
+    ServiceWorkerRegistrationPeers {
+        installing: peers.installing.map(service_worker_peer),
+        waiting: peers.waiting.map(service_worker_peer),
+        active: peers.active.map(service_worker_peer),
     }
 }
 
@@ -851,6 +905,8 @@ mod tests {
             registration_id,
             command: ServiceWorkerHostCommand::Evaluate {
                 script_url: "https://example.test/sw.js".into(),
+                scope_url: "https://example.test/".into(),
+                initial_peers: Default::default(),
                 script: script.into(),
                 script_type: ServiceWorkerScriptTypeWire::Classic,
             },
@@ -935,6 +991,8 @@ mod tests {
             registration_id: 13,
             command: ServiceWorkerHostCommand::Evaluate {
                 script_url: "https://example.test/workers/sw.js".into(),
+                scope_url: "https://example.test/workers/".into(),
+                initial_peers: Default::default(),
                 script: "import { value } from './dependency.js'; if (value !== 3) throw new Error('wrong');".into(),
                 script_type: ServiceWorkerScriptTypeWire::Module,
             },
@@ -1690,6 +1748,8 @@ mod tests {
             registration_id: 1,
             command: ServiceWorkerHostCommand::Evaluate {
                 script_url: String::new(),
+                scope_url: "https://example.test/".into(),
+                initial_peers: Default::default(),
                 script: "void 0;".into(),
                 script_type: ServiceWorkerScriptTypeWire::Classic,
             },

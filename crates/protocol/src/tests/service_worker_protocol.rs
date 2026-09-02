@@ -490,6 +490,8 @@ fn service_worker_host_command_round_trips_and_validates() {
             registration_id: 7,
             command: ServiceWorkerHostCommand::Evaluate {
                 script_url: "https://example.test/sw.js".into(),
+                scope_url: "https://example.test/".into(),
+                initial_peers: Default::default(),
                 script: "globalThis.ready = true;".into(),
                 script_type: ServiceWorkerScriptTypeWire::Module,
             },
@@ -504,6 +506,8 @@ fn service_worker_host_command_round_trips_and_validates() {
         params.command,
         ServiceWorkerHostCommand::Evaluate {
             script_url: "https://example.test/sw.js".into(),
+            scope_url: "https://example.test/".into(),
+            initial_peers: Default::default(),
             script: "globalThis.ready = true;".into(),
             script_type: ServiceWorkerScriptTypeWire::Module,
         }
@@ -513,6 +517,8 @@ fn service_worker_host_command_round_trips_and_validates() {
         registration_id: 7,
         command: ServiceWorkerHostCommand::Evaluate {
             script_url: String::new(),
+            scope_url: "https://example.test/".into(),
+            initial_peers: Default::default(),
             script: "void 0;".into(),
             script_type: ServiceWorkerScriptTypeWire::Classic,
         },
