@@ -234,6 +234,12 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
     wire.targetClientId = targetClientId;
     outboundMessages.push(wire);
   }
+  globalThis.queueMicrotask = globalThis.queueMicrotask || function(callback) {
+    if (typeof callback !== 'function') {
+      throw new TypeError('queueMicrotask callback must be callable');
+    }
+    Promise.resolve().then(callback);
+  };
   const clientToken = {};
   class Client {
     constructor(info, token) {
@@ -1827,6 +1833,11 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
       enumerable: true,
       configurable: true
     });
+    if (globalThis.serviceWorker &&
+        Object.prototype.hasOwnProperty.call(globalThis.serviceWorker, '_scriptURL') &&
+        globalThis.serviceWorker._scriptURL === '') {
+      globalThis.serviceWorker._scriptURL = String(parts && parts.href || '');
+    }
   };
 
   function WorkerGlobalScope() {}
@@ -2044,18 +2055,41 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
     constructor(scriptURL, state, token) {
       if (token !== serviceWorkerToken) throw new TypeError('Illegal constructor');
       Object.defineProperties(this, {
-        scriptURL: {value: String(scriptURL), enumerable: true},
-        state: {value: String(state), enumerable: true}
+        _scriptURL: {value: String(scriptURL), writable: true},
+        _state: {value: String(state), writable: true},
+        scriptURL: {get: function() { return this._scriptURL; }, enumerable: true},
+        state: {get: function() { return this._state; }, enumerable: true}
       });
       this.onstatechange = null;
     }
     postMessage(data, transfer) {
+      if (this === globalThis.serviceWorker) {
+        const wire = preparePortTransfer(data, transfer);
+        const source = this;
+        queueMicrotask(function() {
+          const event = new MessageEvent('message', {
+            data: wire.dataPortIndex === null ? JSON.parse(wire.dataJSON) : null,
+            ports: [],
+            source: source
+          });
+          const callbacks = (listeners.message || []).slice();
+          for (let i = 0; i < callbacks.length; i++) callbacks[i].call(globalThis, event);
+          if (typeof globalThis.onmessage === 'function') {
+            globalThis.onmessage.call(globalThis, event);
+          }
+        });
+        return;
+      }
       queueOutbound(data, transfer, null, null);
     }
   }
   Object.defineProperty(ServiceWorker.prototype, Symbol.toStringTag, {value: 'ServiceWorker'});
+  const workerScriptURL = String(globalThis.location && globalThis.location.href || '');
+  const currentServiceWorker = new ServiceWorker(workerScriptURL, 'parsed', serviceWorkerToken);
   const registration = {
-    active: new ServiceWorker('', 'activated', serviceWorkerToken),
+    installing: null,
+    waiting: null,
+    active: null,
     update: function() {
       let response;
       try {
@@ -2071,7 +2105,31 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
     }
   };
   globalThis.ServiceWorker = ServiceWorker;
+  // https://w3c.github.io/ServiceWorker/#serviceworkerglobalscope-serviceworker
+  Object.defineProperty(globalThis, 'serviceWorker', {
+    value: currentServiceWorker,
+    enumerable: true,
+    configurable: true
+  });
   globalThis.registration = registration;
+  function setCurrentServiceWorkerState(state) {
+    currentServiceWorker._state = String(state);
+  }
+  function setRegistrationLifecyclePhase(type, running) {
+    if (type === 'install') {
+      registration.installing = running ? currentServiceWorker : null;
+      registration.waiting = running ? null : currentServiceWorker;
+      registration.active = null;
+      setCurrentServiceWorkerState(running ? 'installing' : 'installed');
+      return;
+    }
+    if (type === 'activate') {
+      registration.installing = null;
+      registration.waiting = null;
+      registration.active = currentServiceWorker;
+      setCurrentServiceWorkerState(running ? 'activating' : 'activated');
+    }
+  }
   function importScriptsNetworkError(message) {
     return new globalThis.DOMException(String(message), 'NetworkError');
   }
@@ -2104,6 +2162,7 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
   globalThis.__zwDispatchLifecycle = function(type, eventId) {
     const pending = [];
     claimClientsRequested = false;
+    setRegistrationLifecyclePhase(type, true);
     const result = {
       eventId: String(eventId),
       phase: String(type),
@@ -2128,15 +2187,18 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
       currentWaitUntil = null;
       result.settled = true;
       result.message = String(error && error.message || error);
+      setRegistrationLifecyclePhase(type, false);
       return;
     }
     currentWaitUntil = null;
     Promise.all(pending).then(function() {
       result.settled = true;
       result.succeeded = true;
+      setRegistrationLifecyclePhase(type, false);
     }, function(error) {
       result.settled = true;
       result.message = String(error && error.message || error);
+      setRegistrationLifecyclePhase(type, false);
     });
   };
   function materializeTransferredPorts(portIds) {
@@ -5450,6 +5512,112 @@ mod tests {
         runtime
             .evaluate(
                 "if (!globalThis.installFinished) throw new Error('not settled');",
+                "https://example.test/check.js",
+            )
+            .unwrap();
+        assert!(matches!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::Evaluated { .. }
+        ));
+    }
+
+    #[test]
+    fn service_worker_global_exposes_current_worker_and_lifecycle_registration() {
+        let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
+        runtime
+            .evaluate(
+                "if (!('serviceWorker' in self)) throw new Error('missing serviceWorker');
+                 if (registration.installing !== null) throw new Error('initial installing');
+                 if (registration.waiting !== null) throw new Error('initial waiting');
+                 if (registration.active !== null) throw new Error('initial active');
+                 if (serviceWorker.state !== 'parsed') throw new Error('initial state');
+                 var desc = Object.getOwnPropertyDescriptor(self, 'serviceWorker');
+                 if (!desc || desc.writable !== false) throw new Error('serviceWorker not readonly');
+                 globalThis.__initialServiceWorker = serviceWorker;
+                 addEventListener('install', event => {
+                   if (serviceWorker !== globalThis.__initialServiceWorker) throw new Error('install identity');
+                   if (registration.installing !== serviceWorker) throw new Error('installing mismatch');
+                   if (registration.waiting !== null) throw new Error('install waiting');
+                   if (registration.active !== null) throw new Error('install active');
+                   if (serviceWorker.state !== 'installing') throw new Error('install state');
+                 });
+                 addEventListener('activate', event => {
+                   if (serviceWorker !== globalThis.__initialServiceWorker) throw new Error('activate identity');
+                   if (registration.installing !== null) throw new Error('activate installing');
+                   if (registration.waiting !== null) throw new Error('activate waiting');
+                   if (registration.active !== serviceWorker) throw new Error('active mismatch');
+                   if (serviceWorker.state !== 'activating') throw new Error('activate state');
+                 });",
+                "https://example.test/sw.js",
+            )
+            .unwrap();
+        assert!(matches!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::Evaluated { .. }
+        ));
+
+        runtime.dispatch_install(71).unwrap();
+        assert_eq!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::LifecycleSettled {
+                event_id: 71,
+                phase: ServiceWorkerLifecyclePhase::Install,
+                succeeded: true,
+                skip_waiting: false,
+                claim_clients: false,
+                message: String::new(),
+            }
+        );
+
+        runtime.dispatch_activate(72).unwrap();
+        assert_eq!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::LifecycleSettled {
+                event_id: 72,
+                phase: ServiceWorkerLifecyclePhase::Activate,
+                succeeded: true,
+                skip_waiting: false,
+                claim_clients: false,
+                message: String::new(),
+            }
+        );
+
+        runtime
+            .evaluate(
+                "if (serviceWorker.scriptURL !== 'https://example.test/sw.js') throw new Error('scriptURL changed');
+                 if (registration.active !== serviceWorker) throw new Error('final active');
+                 if (serviceWorker.state !== 'activated') throw new Error('final state');",
+                "https://example.test/check.js",
+            )
+            .unwrap();
+        assert!(matches!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::Evaluated { .. }
+        ));
+    }
+
+    #[test]
+    fn service_worker_global_self_post_message_dispatches_message_event() {
+        let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
+        runtime
+            .evaluate(
+                "addEventListener('message', event => {
+                   if (!event.data || event.data.messageTest !== true) return;
+                   if (event.source !== serviceWorker) throw new Error('wrong self source');
+                   globalThis.__sawSelfMessage = true;
+                 });
+                 serviceWorker.postMessage({messageTest: true});",
+                "https://example.test/sw.js",
+            )
+            .unwrap();
+        assert!(matches!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::Evaluated { .. }
+        ));
+
+        runtime
+            .evaluate(
+                "if (globalThis.__sawSelfMessage !== true) throw new Error('self message missing');",
                 "https://example.test/check.js",
             )
             .unwrap();

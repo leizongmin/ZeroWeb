@@ -1,8 +1,8 @@
 {
-  "cases": 46,
-  "subtests": 183,
+  "cases": 47,
+  "subtests": 188,
   "status": {
-    "Pass": 183
+    "Pass": 188
   },
   "deterministic": true,
   "results": [
@@ -76,6 +76,36 @@
         },
         {
           "name": "isSecureContext",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/global-serviceworker.https.any.js",
+      [
+        {
+          "name": "First run",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Can post message to self during startup",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "During install",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "During activate",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "service-workers/service-worker/global-serviceworker.https.any.js",
           "status": "Pass",
           "message": null
         }

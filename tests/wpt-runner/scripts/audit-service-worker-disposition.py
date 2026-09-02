@@ -29,6 +29,7 @@ IMPORTED_LEDGER = REPO_ROOT / "tests/wpt-runner/imported-testharness.txt"
 CORE_ASSET_MANIFESTS = [
     EVIDENCE_DIR / "2026-08-19-m1-tier-a-assets.tsv",
     EVIDENCE_DIR / "2026-08-19-m1-next-wave-assets.tsv",
+    EVIDENCE_DIR / "2026-09-02-m3-global-serviceworker-assets.tsv",
     EVIDENCE_DIR / "2026-08-19-worker-global-static-assets.tsv",
     EVIDENCE_DIR / "2026-09-02-m3-worker-secure-context-assets.tsv",
     EVIDENCE_DIR / "2026-09-02-m3-install-event-type-assets.tsv",
@@ -72,8 +73,12 @@ REVIEW_FILES = [
 IDL_SOURCE = "service-workers/idlharness.https.any.js"
 EXPECTED_SOURCE_COUNT = 294
 EXPECTED_URL_COUNT = 331
-EXPECTED_LANES = Counter(core=46, defer=37, gated=169, skip=42)
+EXPECTED_LANES = Counter(core=47, defer=36, gated=169, skip=42)
 CORE_PROMOTIONS = {
+    "service-workers/service-worker/global-serviceworker.https.any.js": (
+        "global-serviceworker-core",
+        "2026-09-02-m3-global-serviceworker.md",
+    ),
     "service-workers/service-worker/no-dynamic-import.any.js": (
         "classic-no-dynamic-import-core",
         "2026-09-02-m3-no-dynamic-import.md",
