@@ -375,6 +375,8 @@ impl super::Painter {
                     let key = image_resource_key(url, self.document_url.as_deref());
 
                     // R2312：repeat 平铺 painting area（clip）/ space·round 适配 positioning area（origin）。
+                    // R3927：img_ratio 传入——round 缩放一轴后另一轴按比例重推导
+                    //（§3.4 round：尺寸调整后 tile 须保持固有比，029 案 52→60 后高 52→60）。
                     let (repeat_x, repeat_y, tile_w, tile_h) = resolve_repeat_params(
                         repeat,
                         origin_x,
@@ -389,6 +391,15 @@ impl super::Painter {
                         positioned_y,
                         sized_w,
                         sized_h,
+                        img_ratio,
+                        matches!(
+                            size,
+                            BackgroundSizeComputedValue::TwoValue(BgSizeComponentComputed::Auto, _)
+                        ),
+                        matches!(
+                            size,
+                            BackgroundSizeComputedValue::TwoValue(_, BgSizeComponentComputed::Auto)
+                        ),
                     );
 
                     // R3908：background-clip: border-area（css-backgrounds-4 §2.1）——背景
@@ -1553,6 +1564,9 @@ fn resolve_repeat_params(
     positioned_y: f32,
     sized_w: f32,
     sized_h: f32,
+    img_ratio: Option<f32>,
+    size_auto_w: bool,
+    size_auto_h: bool,
 ) -> ((f32, f32), (f32, f32), f32, f32) {
     if sized_w <= 0.0 || sized_h <= 0.0 {
         return (
@@ -1653,6 +1667,25 @@ fn resolve_repeat_params(
             } else {
                 sized_h
             };
+            // R3927（§3.4 round + 固有比）：恰一轴被 round 改变尺寸时，另一轴（auto
+            // 跟随维）按比例重推导——029 案 `52px auto` x 轴 52→60 后高应 60（旧留 52）。
+            // 两轴都被 round 改变（025 方图 `auto 61px` round round 双轴 61→70）则
+            // 各自独立取整值（此时两轴 round 值天然同比，跟随会双重缩放）。
+            let (tile_w, tile_h) = if let Some(r) = img_ratio.filter(|r| *r > 0.0) {
+                let w_changed = (tile_w - sized_w).abs() > 0.5;
+                let h_changed = (tile_h - sized_h).abs() > 0.5;
+                // R3927：跟随者必须是 background-size 的 auto 维（auto 维按比例重推导）；
+                // round 作用于 auto 维自身时取整值即终值（025 双 auto`auto 61px` 同理）。
+                if w_changed && !h_changed && size_auto_h {
+                    (tile_w, tile_w / r)
+                } else if h_changed && !w_changed && size_auto_w {
+                    (tile_h * r, tile_h)
+                } else {
+                    (tile_w, tile_h)
+                }
+            } else {
+                (tile_w, tile_h)
+            };
             (
                 (origin_x, origin_x + origin_w),
                 (origin_y, origin_y + origin_h),
@@ -1723,6 +1756,26 @@ fn resolve_repeat_params(
                     (tile, (origin_y, origin_y + origin_h), tile)
                 }
                 _ => (sized_h, y_range(false), sized_h),
+            };
+            // R3927：恰一轴 round 改变时另一轴按比例跟随（029：x round 52→60 → y 52→60）。
+            // 跟随不覆盖 Space 的间隔语义（space 改变的是 effective stride，tile 本体不变）。
+            let (tile_w, tile_h) = if let Some(r) = img_ratio.filter(|r| *r > 0.0) {
+                let w_round_changed =
+                    matches!(&**rx, BackgroundRepeatComputedValue::Round) && (tile_w - sized_w).abs() > 0.5;
+                let h_round_changed =
+                    matches!(&**ry, BackgroundRepeatComputedValue::Round) && (tile_h - sized_h).abs() > 0.5;
+                // R3927：跟随者必须是 background-size 的 auto 维——029（w 定 52、h auto、
+                // x round → 60）h 跟随到 60；027（w 定 52、h auto、y round）y 自身取整
+                // 60，x 定宽保持 52 不跟随。
+                if w_round_changed && !h_round_changed && size_auto_h {
+                    (tile_w, tile_w / r)
+                } else if h_round_changed && !w_round_changed && size_auto_w {
+                    (tile_h * r, tile_h)
+                } else {
+                    (tile_w, tile_h)
+                }
+            } else {
+                (tile_w, tile_h)
             };
             (xr, yr, tile_w, tile_h)
         }
