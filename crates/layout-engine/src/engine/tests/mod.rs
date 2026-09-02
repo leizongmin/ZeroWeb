@@ -324,3 +324,165 @@ fn r57_grid_span_max_content_width() {
         );
     }
 }
+
+// ── R3912：taffy aspect_ratio border-box 语义 × content-box 盒修正 ──
+
+/// R3912（css-sizing-4 §4.1）：box-sizing:content-box（默认）的非替换块盒 + 裸
+/// <ratio> + 一侧显式时，taffy 0.12 把 ratio 施于 border-box → auto 侧推导错误
+///（block-aspect-ratio-005：width:50 + pl:50 → bb 宽 100 → 高 100，应 content
+/// 50/1 = 50）。build_layout_tree 后 taffy size.height 应为 transferred content 高。
+#[test]
+fn r3912_content_box_ratio_transfers_content_height() {
+    use zero_css_parser::values::LengthValue;
+
+    let mut doc = zero_dom::Document::new();
+    let root = doc.root();
+    let html = doc.create_element("html");
+    let body = doc.create_element("body");
+    let div = doc.create_element("div");
+    let _ = doc.append_child(root, html);
+    let _ = doc.append_child(html, body);
+    let _ = doc.append_child(body, div);
+
+    let mut styles = std::collections::HashMap::new();
+    styles.insert(html, zero_style_system::ComputedStyle::default());
+    styles.insert(body, zero_style_system::ComputedStyle::default());
+    let mut s = zero_style_system::ComputedStyle::default();
+    s.display = zero_css_parser::values::DisplayValue::Block;
+    s.width = LengthValue::Px(50.0);
+    s.aspect_ratio = Some(1.0);
+    s.padding_left = LengthValue::Px(50.0);
+    styles.insert(div, s);
+
+    let result = crate::LayoutEngine::new(800.0, 600.0).compute(&doc, &styles);
+    let layout = find_box(&result.root, div).expect("div LayoutBox");
+    // content 50/1 = 50 高（border-box 高 = 50，无垂直 pb）。
+    assert!(
+        (layout.height - 50.0).abs() < 0.5,
+        "content-box ratio must transfer content height 50, got {}",
+        layout.height
+    );
+    assert!((layout.width - 100.0).abs() < 0.5, "border width = 50 + pl 50");
+}
+
+/// R3912（css-sizing-4 §4.2）：transferred 用 **min/max 钳后**显式侧——
+/// width:300 + max-width:100 + ratio 2/1 → 高 = 100/2 = 50（033 div1），
+/// 旧按 300 传 150 溢出。
+#[test]
+fn r3912_ratio_transfer_uses_clamped_width() {
+    use zero_css_parser::values::LengthValue;
+
+    let mut doc = zero_dom::Document::new();
+    let root = doc.root();
+    let html = doc.create_element("html");
+    let body = doc.create_element("body");
+    let div = doc.create_element("div");
+    let _ = doc.append_child(root, html);
+    let _ = doc.append_child(html, body);
+    let _ = doc.append_child(body, div);
+
+    let mut styles = std::collections::HashMap::new();
+    styles.insert(html, zero_style_system::ComputedStyle::default());
+    styles.insert(body, zero_style_system::ComputedStyle::default());
+    let mut s = zero_style_system::ComputedStyle::default();
+    s.display = zero_css_parser::values::DisplayValue::Block;
+    s.width = LengthValue::Px(300.0);
+    s.max_width = LengthValue::Px(100.0);
+    s.aspect_ratio = Some(2.0);
+    styles.insert(div, s);
+
+    let result = crate::LayoutEngine::new(800.0, 600.0).compute(&doc, &styles);
+    let layout = find_box(&result.root, div).expect("div LayoutBox");
+    assert!(
+        (layout.height - 50.0).abs() < 0.5,
+        "transferred height must use max-width-clamped width (100/2=50), got {}",
+        layout.height
+    );
+}
+
+/// R3912 对称面：height 显式 + width:auto + ratio → width = height × ratio，
+/// 且显式 height 不被钳后宽度反推（047：height:50 + min-h:100 + ratio 1/2 +
+/// min-w:100 → 100×100，旧 200 高）。
+#[test]
+fn r3912_explicit_height_not_rederived_from_clamped_width() {
+    use zero_css_parser::values::LengthValue;
+
+    let mut doc = zero_dom::Document::new();
+    let root = doc.root();
+    let html = doc.create_element("html");
+    let body = doc.create_element("body");
+    let div = doc.create_element("div");
+    let _ = doc.append_child(root, html);
+    let _ = doc.append_child(html, body);
+    let _ = doc.append_child(body, div);
+
+    let mut styles = std::collections::HashMap::new();
+    styles.insert(html, zero_style_system::ComputedStyle::default());
+    styles.insert(body, zero_style_system::ComputedStyle::default());
+    let mut s = zero_style_system::ComputedStyle::default();
+    s.display = zero_css_parser::values::DisplayValue::Block;
+    s.height = LengthValue::Px(50.0);
+    s.min_height = LengthValue::Px(100.0);
+    s.min_width = LengthValue::Px(100.0);
+    s.aspect_ratio = Some(0.5);
+    styles.insert(div, s);
+
+    let result = crate::LayoutEngine::new(800.0, 600.0).compute(&doc, &styles);
+    let layout = find_box(&result.root, div).expect("div LayoutBox");
+    assert!(
+        (layout.height - 100.0).abs() < 0.5 && (layout.width - 100.0).abs() < 0.5,
+        "expected 100x100 (min-h lift + transferred width), got {}x{}",
+        layout.width,
+        layout.height
+    );
+}
+
+/// R3912 守卫：带 element 子盒的 width 侧跳过——保持 taffy aspect_ratio 既有行为
+///（043 基线即 1.05% fail：csswg #6071 content-minimum 撑开语义未实现，属后续域；
+/// 本测试锚定 skip-gate 使该场景行为与 R3912 前逐字节一致，防误预设 transferred 50）。
+#[test]
+fn r3912_width_side_with_element_child_skipped() {
+    use zero_css_parser::values::LengthValue;
+
+    let mut doc = zero_dom::Document::new();
+    let root = doc.root();
+    let html = doc.create_element("html");
+    let body = doc.create_element("body");
+    let div = doc.create_element("div");
+    let child = doc.create_element("div");
+    let _ = doc.append_child(root, html);
+    let _ = doc.append_child(html, body);
+    let _ = doc.append_child(body, div);
+    let _ = doc.append_child(div, child);
+
+    let mut styles = std::collections::HashMap::new();
+    styles.insert(html, zero_style_system::ComputedStyle::default());
+    styles.insert(body, zero_style_system::ComputedStyle::default());
+    let mut s = zero_style_system::ComputedStyle::default();
+    s.display = zero_css_parser::values::DisplayValue::Block;
+    s.height = LengthValue::Px(200.0);
+    s.max_height = LengthValue::Px(100.0);
+    s.aspect_ratio = Some(0.5);
+    styles.insert(div, s);
+    let mut cs = zero_style_system::ComputedStyle::default();
+    cs.display = zero_css_parser::values::DisplayValue::Block;
+    cs.width = LengthValue::Px(100.0);
+    styles.insert(child, cs);
+
+    let result = crate::LayoutEngine::new(800.0, 600.0).compute(&doc, &styles);
+    let layout = find_box(&result.root, div).expect("div LayoutBox");
+    // 跳过预设 → taffy aspect_ratio 既有行为（043 基线同值：宽 50 = 100×0.5）。
+    assert!(
+        (layout.width - 50.0).abs() < 0.5,
+        "skip gate must preserve taffy ratio path width 50 (baseline parity), got {}",
+        layout.width
+    );
+}
+
+/// 递归按 NodeId 查找 LayoutBox。
+fn find_box(root: &crate::types::LayoutBox, id: zero_dom::NodeId) -> Option<&crate::types::LayoutBox> {
+    if root.node_id == Some(id) {
+        return Some(root);
+    }
+    root.children.iter().find_map(|c| find_box(c, id))
+}

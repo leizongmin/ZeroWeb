@@ -233,3 +233,5 @@ css/css-backgrounds/border-image-image-type-003.htm css/css-backgrounds/referenc
 css/css-backgrounds/border-image-width-should-extend-to-padding.html css/css-backgrounds/border-image-width-should-extend-to-padding-ref.html == 2026-09-02 R3909 border-image gradient source（linear-gradient + 零边框 width 延伸）
 css/css-sizing/div-fit-content-auto-margin.tentative.html css/css-sizing/div-auto-margin-ref.html == 2026-09-02 R3910 abspos height 内容关键字 shrink-to-fit（css-position-3 §abspos-auto-size）
 css/css-sizing/fit-content-block-size-abspos.html css/css-sizing/div-auto-margin-ref.html == 2026-09-02 R3910 abspos height fit-content shrink-to-fit
+css/css-sizing/aspect-ratio/block-aspect-ratio-005.html css/reference/ref-filled-green-100px-square.xht == 2026-09-02 R3912 taffy aspect_ratio border-box 语义 × content-box 盒修正（css-sizing-4 §4.1）
+css/css-sizing/aspect-ratio/block-aspect-ratio-049.html css/reference/ref-filled-green-100px-square.xht == 2026-09-02 R3912 显式 height 不被钳后宽度反推（css-sizing-4 §4.2）

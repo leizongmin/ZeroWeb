@@ -1595,6 +1595,10 @@ fn build_subtree(
         &ctx.img_intrinsic_no_ratio,
     );
 
+    // R3912：记录**原始** box_sizing（R3854 会把 BorderBox auto <ratio> 转 ContentBox
+    // 输入，转后 taffy_style.box_sizing 不再反映作者声明；R3912 pass 以此为 gate）。
+    let original_box_sizing = taffy_style.box_sizing;
+
     // R3854：CSS Sizing 4 §3.1 `aspect-ratio: auto && <ratio>` 的 ratio 恒作用于 **content box**
     //（裸 `<ratio>` 作用于 box-sizing 指定的盒；两值语义 spec 明文分立）。apply 层剥掉 auto 只留
     // ratio float，taffy 在 box_sizing=BorderBox 时把 ratio 施于 border-box → `auto <ratio>` +
@@ -1647,6 +1651,82 @@ fn build_subtree(
                 (LengthValue::Auto, LengthValue::Px(h)) => {
                     taffy_style.size.height = taffy::style::Dimension::length((*h - pbh).max(0.0) as f32);
                     taffy_style.box_sizing = taffy::style::BoxSizing::ContentBox;
+                }
+                _ => {}
+            }
+        }
+    }
+
+    // R3912：taffy 0.12 的 aspect_ratio 恒作用于 **border-box**（无视 box_sizing）——
+    // box-sizing:content-box 的非替换盒（CSS 默认）一侧显式时，taffy 以 border-box 维
+    // 推导 auto 侧（block-aspect-ratio-005：width:50 content + pl:50 → bb 宽 100 → 高
+    // 100，应 content 50/1=50），且显式侧被 min/max 钳制后 taffy 还会反推显式侧
+    //（block-aspect-ratio-049：height:100 显式 + ratio 1/2 + min-width:100 → taffy 由
+    // 钳后宽 100 反推高 200，应保持显式 100）。修（content-box 侧；BorderBox 侧归
+    // R3854，其 Px 语义为 border-box 须减 pb）：非替换 + 非 flex/grid item + 水平书写
+    // + 恰一侧显式 Px 且另一侧纯 Auto 时，**清除 taffy aspect_ratio 并显式设 auto 侧**
+    //（content-box：specified Px 即 content 维；transferred = **min/max 钳后**显式侧
+    // ×/÷ ratio，css-sizing-4 §4.1/§4.2——033 width:300+max-width:100 应按 100 传高）。
+    // content-box 下 bare <ratio> 与 `auto <ratio>` 同为 content-box 语义（§3.1 前者按
+    // box-sizing 指定盒=content box，后者恒 content box），统一处理。Min/Max/FitContent
+    // 关键字侧归 R3794 系 intrinsic 解析；带 in-flow 子盒的 width 侧跳过（csswg #6071：
+    // transferred max-width 不钳 content-based minimum，043 子宽 100 应撑开——taffy
+    // aspect_ratio 路径既有行为恰已通过）。flex item 跳过（flex-line cross 交互）。
+    // 替换元素归 apply_replaced_element_sizing（固有比覆盖路径不同）。
+    {
+        let is_replaced_tag = doc.get(dom_id).is_some_and(|n| {
+            matches!(&n.kind, NodeKind::Element(e)
+                if matches!(e.local_name(), "img" | "canvas" | "video" | "embed" | "object" | "applet" | "iframe" | "svg"))
+        });
+        let parent_is_flex_grid = doc.parent_node(dom_id).and_then(|p| styles.get(&p)).is_some_and(|ps| {
+            matches!(
+                ps.display,
+                DisplayValue::Flex | DisplayValue::InlineFlex | DisplayValue::Grid | DisplayValue::InlineGrid
+            )
+        });
+        let is_abspos = !matches!(computed.position, PositionValue::Static);
+        let is_auto = |v: &LengthValue| matches!(v, LengthValue::Auto);
+        if std::env::var("ZW_AR_CONTENT_TRANSFER").as_deref() != Ok("0")
+            && let Some(ratio) = computed.aspect_ratio
+            && !is_replaced_tag
+            && !parent_is_flex_grid
+            && !is_abspos
+            && matches!(computed.writing_mode, WritingModeValue::HorizontalTb)
+            && !computed.contain.has_size()
+            && original_box_sizing == taffy::style::BoxSizing::ContentBox
+        {
+            let ratio = f64::from(ratio);
+            // content-box：specified Px = content 维；min/max Px 同为 content 维直接钳制。
+            let clamp_dim = |v: f64, min_v: &LengthValue, max_v: &LengthValue| -> f64 {
+                let mut v = v;
+                if let LengthValue::Px(mx) = max_v {
+                    if mx.is_finite() {
+                        v = v.min(*mx);
+                    }
+                }
+                if let LengthValue::Px(mn) = min_v {
+                    v = v.max(*mn);
+                }
+                v.max(0.0)
+            };
+            match (&computed.width, &computed.height) {
+                (LengthValue::Px(w), h) if *w > 0.0 && is_auto(h) => {
+                    let content_w = clamp_dim(*w, &computed.min_width, &computed.max_width);
+                    taffy_style.aspect_ratio = None;
+                    taffy_style.size.height = taffy::style::Dimension::length((content_w / ratio) as f32);
+                }
+                (w, LengthValue::Px(h)) if *h > 0.0 && is_auto(w) => {
+                    // width 侧：有 element 子盒时跳过（content-based minimum 可能大于
+                    // transferred——043 宽 100 子盒应撑开父宽，预设 50 会塌）。
+                    let has_element_child = doc
+                        .child_nodes(dom_id)
+                        .iter()
+                        .any(|&c| doc.get(c).is_some_and(|n| matches!(&n.kind, NodeKind::Element(_))));
+                    if !has_element_child {
+                        let content_h = clamp_dim(*h, &computed.min_height, &computed.max_height);
+                        taffy_style.aspect_ratio = None;
+                        taffy_style.size.width = taffy::style::Dimension::length((content_h * ratio) as f32);
+                    }
                 }
                 _ => {}
             }
