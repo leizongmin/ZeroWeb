@@ -426,6 +426,14 @@ fetch baseline，不改变本目标的 window/SW CacheStorage 分母。
     错误快照为成功文本 body。
   - `make baseline-wpt-service-workers-fetch OUTPUT=docs/goal/service-workers/evidence/2026-08-31-m3-extendable-message-event-constructor-baseline.json SUMMARY=docs/goal/service-workers/evidence/2026-08-31-m3-extendable-message-event-constructor-baseline.md`：26 cases / 70 subtests / 70 Pass，double-run deterministic
   - 证据：[Service Worker Fetch WPT Baseline](../service-workers/evidence/2026-08-31-m3-extendable-message-event-constructor-baseline.md)
+- 2026-09-02 Service Worker secure-context surface：
+  - `ServiceWorkerGlobalScope/isSecureContext.https.html` 纳入 Service Worker core runner，
+    补齐 `WorkerGlobalScope.prototype.isSecureContext === true`。该切片不改变本目标的
+    CacheStorage window/SW 分母，但解除后续 worker-harness Cache/SW 交叉用例的一个基础
+    global surface 缺口。
+  - `make baseline-wpt-service-workers-core OUTPUT=docs/goal/service-workers/evidence/2026-08-19-m1-wpt-core-baseline.json`：
+    40 cases / 166 subtests / 166 Pass，double-run deterministic
+  - 证据：[M3 Service Worker WorkerGlobalScope.isSecureContext](../service-workers/evidence/2026-09-02-m3-worker-secure-context.md)
 - 2026-08-22 M3 CacheStorage 持久化首片：
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- cargo check -p zero-storage -p zero-page-runtime -p zero-webview --all-targets`：passed
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- cargo test -p zero-storage cache_storage_persistence -- --nocapture`：3 passed

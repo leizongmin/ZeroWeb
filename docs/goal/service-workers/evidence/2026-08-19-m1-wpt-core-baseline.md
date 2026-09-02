@@ -6,10 +6,10 @@
 
 ## 0. Runner contract
 
-`testharness-service-workers` 子命令固定执行 disposition contract 中当前 39 个 core source：
+`testharness-service-workers` 子命令固定执行 disposition contract 中当前 40 个 core source：
 
 - 初始 Tier A + `active.https.html`：9 case / 30 subtest；
-- 后续 import/update/controller/client core：30 case / 134 subtest。
+- 后续 import/update/controller/client/worker-global core：31 case / 136 subtest。
 
 runner 不扫描目录。缺 `testharness.js` 或任一 case 时显式 Fail；Service Worker script URL
 `https://wpt.test/...` 确定映射到 pinned 本地资产，外部 HTTP(S) origin fail closed。
@@ -17,7 +17,7 @@ runner 不扫描目录。缺 `testharness.js` 或任一 case 时显式 Fail；Se
 Make 入口：
 
 - `make testharness-service-workers-core`：全绿门禁，任一非 Pass 时非零退出；
-- `make baseline-wpt-service-workers-core`：连续执行两轮，校验 39/164 与
+- `make baseline-wpt-service-workers-core`：连续执行两轮，校验 40/166 与
   `(case, subtest, status)` 一致；产品 Fail 不掩盖为 runner failure；
 - `OUTPUT=<path>` 可保存结构化 baseline JSON。
 
@@ -26,10 +26,10 @@ Make 入口：
 | Wave | Case | Subtest | Pass | Fail | Timeout | Unsupported |
 |------|-----:|--------:|-----:|-----:|--------:|------------:|
 | 初始 Tier A + active | 9 | 30 | 30 | 0 | 0 | 0 |
-| expanded core | 30 | 134 | 134 | 0 | 0 | 0 |
-| **合计** | **39** | **164** | **164** | **0** | **0** | **0** |
+| expanded core | 31 | 136 | 136 | 0 | 0 | 0 |
+| **合计** | **40** | **166** | **166** | **0** | **0** | **0** |
 
-M3 registration lifecycle 切片后 baseline 两轮得到相同 `(case, subtest, status)`。
+M3 worker secure-context 切片后 baseline 两轮得到相同 `(case, subtest, status)`。
 
 ## 2. 收敛结果
 
@@ -60,7 +60,9 @@ M3 registration lifecycle 切片后 baseline 两轮得到相同 `(case, subtest,
   `controller.state` 保持 `activating`，并完成真实 worker-testharness 结果通道；
 - `registration-events.https.html` 与 `registration-end-to-end.https.html` 覆盖真实
   install/activate 事件回传和完整状态序列；
-- 39/39 case 被发现，0 Unsupported。
+- `ServiceWorkerGlobalScope/isSecureContext.https.html` 覆盖 SW global
+  `WorkerGlobalScope.prototype.isSecureContext === true`；
+- 40/40 case 被发现，0 Unsupported。
 
 ## 3. Runner 修正
 
@@ -80,13 +82,13 @@ TypeError/SecurityError 分类；页面 WebIDL conversion 区分 absent/undefine
 
 ## 4. 完成门禁
 
-- [x] 39/39 case 被 runner 发现。
-- [x] 164/164 subtest 有明确结果。
+- [x] 40/40 case 被 runner 发现。
+- [x] 166/166 subtest 有明确结果。
 - [x] 0 Unsupported。
 - [x] 0 Timeout。
 - [x] 连续两轮 case/subtest/status 一致。
 - [x] 每个 lifecycle 中间态与事件按 task 顺序可观察。
-- [x] 164/164 Pass。
+- [x] 166/166 Pass。
 - [x] 0 Fail。
 
 当前 core baseline 完成；这证明已导入 core corpus 的 lifecycle、registration、

@@ -1,8 +1,8 @@
 {
-  "cases": 39,
-  "subtests": 164,
+  "cases": 40,
+  "subtests": 166,
   "status": {
-    "Pass": 164
+    "Pass": 166
   },
   "deterministic": true,
   "results": [
@@ -46,6 +46,21 @@
       [
         {
           "name": "Test Clients.matchAll() on script evaluation",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/ServiceWorkerGlobalScope/isSecureContext.https.html",
+      [
+        {
+          "name": "Setting up tests",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "isSecureContext",
           "status": "Pass",
           "message": null
         }

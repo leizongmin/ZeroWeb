@@ -1819,6 +1819,11 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
 
   function WorkerGlobalScope() {}
   WorkerGlobalScope.prototype = Object.create(Object.getPrototypeOf(globalThis));
+  // https://w3c.github.io/webappsec-secure-contexts/#dom-windoworworkerglobalscope-issecurecontext
+  Object.defineProperty(WorkerGlobalScope.prototype, 'isSecureContext', {
+    get: function() { return true; },
+    configurable: true
+  });
   function ServiceWorkerGlobalScope() {}
   ServiceWorkerGlobalScope.prototype = Object.create(WorkerGlobalScope.prototype);
   Object.defineProperty(ServiceWorkerGlobalScope.prototype, 'constructor', {
@@ -4831,6 +4836,26 @@ mod tests {
                    throw new Error('WorkerGlobalScope.prototype missing fetch');
                  }
                  if (self.fetch !== workerProto.fetch) throw new Error('fetch identity mismatch');",
+                "https://example.test/sw.js",
+            )
+            .unwrap();
+        assert!(matches!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::Evaluated { .. }
+        ));
+    }
+
+    #[test]
+    fn service_worker_global_is_secure_context() {
+        let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
+        runtime
+            .evaluate(
+                "if (self.hasOwnProperty('isSecureContext')) throw new Error('isSecureContext is an own property');
+                 const workerProto = Object.getPrototypeOf(Object.getPrototypeOf(self));
+                 if (!Object.prototype.hasOwnProperty.call(workerProto, 'isSecureContext')) {
+                   throw new Error('WorkerGlobalScope.prototype missing isSecureContext');
+                 }
+                 if (self.isSecureContext !== true) throw new Error('wrong secure context value');",
                 "https://example.test/sw.js",
             )
             .unwrap();

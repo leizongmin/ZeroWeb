@@ -30,6 +30,7 @@ CORE_ASSET_MANIFESTS = [
     EVIDENCE_DIR / "2026-08-19-m1-tier-a-assets.tsv",
     EVIDENCE_DIR / "2026-08-19-m1-next-wave-assets.tsv",
     EVIDENCE_DIR / "2026-08-19-worker-global-static-assets.tsv",
+    EVIDENCE_DIR / "2026-09-02-m3-worker-secure-context-assets.tsv",
     EVIDENCE_DIR / "2026-08-20-m3-update-assets.tsv",
     EVIDENCE_DIR / "2026-08-20-m3-import-response-assets.tsv",
     EVIDENCE_DIR / "2026-08-20-m3-import-dynamic-assets.tsv",
@@ -65,8 +66,12 @@ REVIEW_FILES = [
 IDL_SOURCE = "service-workers/idlharness.https.any.js"
 EXPECTED_SOURCE_COUNT = 294
 EXPECTED_URL_COUNT = 331
-EXPECTED_LANES = Counter(core=39, defer=44, gated=169, skip=42)
+EXPECTED_LANES = Counter(core=40, defer=43, gated=169, skip=42)
 CORE_PROMOTIONS = {
+    "service-workers/service-worker/ServiceWorkerGlobalScope/isSecureContext.https.html": (
+        "worker-secure-context-core",
+        "2026-09-02-m3-worker-secure-context.md",
+    ),
     "service-workers/service-worker/registration-end-to-end.https.html": (
         "message-lifecycle-core",
         "2026-09-01-m3-registration-lifecycle.md",
