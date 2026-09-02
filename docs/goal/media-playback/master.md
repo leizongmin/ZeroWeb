@@ -289,6 +289,18 @@ clippy 零警告、每切片带单测 + e2e/fixture 资产化（AV1 全流单测
   GB-20260901 批复）——`libdav1d-dev 1.5.1-1` 已装，pkg-config 发现 dav1d 1.5.1；
   apt 清单已记入 [docs/development/linux-macos.md](../../development/linux-macos.md)（不阻塞 M3 其余面——
   WPT 子集导入可先行） |
+| D3 | **H.264/AAC 增量立项批复（D-RFC-3a/3b/3c）**——立项 RFC 已起草
+  （[h264-increment-project-spec-rfc.md](../../specs/h264-increment-project-spec-rfc.md)，
+  2026-09-02 Proposed）：推荐路线 A（Cisco OpenH264 `openh264 0.9` 安全 Rust 绑定 +
+  symphonia aac feature 扩展；本机探针实证 48/48 帧解码）；三决策点：
+  **3a** 专利授权链是否接受（核心门禁——MPEG-LA/Via 池面，Cisco AVC Patent Trust
+  License 授权链 + 源码编译态确定性注记，本 RFC 不构成法律意见）；
+  **3b** OpenH264 分发形态（① 构建期源码编译【推荐，与路线 C 轻依赖一致】/
+  ② 官方预编译二进制——授权链最强但分发矩阵成本回潮）；
+  **3c** AAC 是否随期（推荐随期——symphonia feature 扩展成本 ≈0）。
+  为何需用户：专利/授权属 Mission 级决策（run-rules rule 11 + 主 RFC D-RFC-3
+  「单独立项」决议），agent 不可代判 | ⏳ 待批复（2026-09-02 起草，飞书已征询；
+  批准前不动源码；不批准亦请明示「维持不实施」以便归档） |
 
 ## 下一步计划
 
