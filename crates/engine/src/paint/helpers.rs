@@ -319,8 +319,34 @@ pub fn compute_transform_matrix(style: &ComputedStyle, rect: &Rect) -> Option<Tr
         return None;
     }
 
+    // R3915：rect 扩为「原矩形 ∪ 变换后四角 bbox」——rotate(±90/±270)、skew 等把内容
+    // 映射到原矩形之外（transforms-rotate-degree-90：150×100 盒 rot90 的可视 bbox
+    // 100×150 超出原 rect 上下各 25px）。CPU apply_transform_post 的 clear+反向采样仅
+    // 作用于 rect 内：rect 不含变换 bbox 时溢出部分被丢弃（绿色上下截断露红）。GPU 侧
+    // 顶点按四角独立变换，不受影响。原矩形必须保留在并集内（render_image 等按 rect
+    // 定位源采样基线）。
+    let map_x = |x: f32, y: f32| a * x + c * y + final_tx;
+    let map_y = |x: f32, y: f32| b * x + d * y + final_ty;
+    let (rx0, ry0, rx1, ry1) = (rect.left(), rect.top(), rect.right(), rect.bottom());
+    let mut min_x = map_x(rx0, ry0).min(rect.left());
+    let mut min_y = map_y(rx0, ry0).min(rect.top());
+    let mut max_x = map_x(rx1, ry1).max(rect.right());
+    let mut max_y = map_y(rx1, ry1).max(rect.bottom());
+    for (cx, cy) in [(rx1, ry0), (rx0, ry1)] {
+        min_x = min_x.min(map_x(cx, cy));
+        min_y = min_y.min(map_y(cx, cy));
+        max_x = max_x.max(map_x(cx, cy));
+        max_y = max_y.max(map_y(cx, cy));
+    }
+    // 并集（Rect 无 union 方法，就地 min/max）。
+    let ux0 = rect.left().min(min_x);
+    let uy0 = rect.top().min(min_y);
+    let ux1 = rect.right().max(max_x);
+    let uy1 = rect.bottom().max(max_y);
+    let union_rect = Rect::new(ux0, uy0, ux1 - ux0, uy1 - uy0);
+
     Some(TransformPrimitive {
-        rect: *rect,
+        rect: union_rect,
         origin_x,
         origin_y,
         a,
@@ -1539,6 +1565,56 @@ mod tests {
         let mut p = RenderPrimitives::default();
         apply_transform(&style, &rect, &mut p);
         assert_eq!(p.transforms.len(), 1);
+    }
+
+    /// R3915：TransformPrimitive.rect = 原矩形 ∪ 变换后四角 bbox——rotate(90) 等把
+    /// 内容映射到原矩形之外时，CPU apply_transform_post 的 clear+反向采样区域必须
+    /// 覆盖变换 bbox（transforms-rotate-degree-90：150×100 盒 rot90 bbox 100×150
+    /// 超出原 rect 上下各 25px，旧实现溢出部分被丢弃）。
+    #[test]
+    fn r3915_transform_rect_covers_transformed_bbox() {
+        use zero_css_parser::values::LengthValue;
+        let mut style = ComputedStyle::default();
+        style.transform = TransformValue::List(vec![TransformFunction::Rotate(90.0)]);
+        style.transform_origin_x = LengthValue::Percentage(50.0);
+        style.transform_origin_y = LengthValue::Percentage(50.0);
+        // 150×100 盒于 (100,100)-(250,200)；origin (175,150)；rot90 bbox = (125,75)-(225,225)。
+        let rect = Rect::new(100.0, 100.0, 150.0, 100.0);
+        let prim = compute_transform_matrix(&style, &rect).expect("rotate(90) is not identity");
+        let r = prim.rect;
+        assert!(
+            (r.left() - 100.0).abs() < 0.5 && (r.top() - 75.0).abs() < 0.5,
+            "left={}, top={}",
+            r.left(),
+            r.top()
+        );
+        assert!(
+            (r.right() - 250.0).abs() < 0.5 && (r.bottom() - 225.0).abs() < 0.5,
+            "right={}, bottom={}",
+            r.right(),
+            r.bottom()
+        );
+    }
+
+    /// R3915 守卫：平移不扩 rect（bbox ⊆ 原 rect 时并集 = 原矩形，零行为变化）。
+    /// 纯 translate 走 R3901 图元平移路径（无 TransformPrimitive），此处用含 scale 的
+    /// 缩中盒变换验证 bbox 不超出原 rect 时并集保持原矩形几何。
+    #[test]
+    fn r3915_scale_inside_keeps_rect() {
+        use zero_css_parser::values::LengthValue;
+        let mut style = ComputedStyle::default();
+        // scale(0.5) 以中心 (60,35) 收缩：bbox (35,22.5)-(85,47.5) ⊆ 原 rect (10,10)-(110,60)。
+        style.transform = TransformValue::List(vec![TransformFunction::Scale(0.5, Some(0.5))]);
+        let rect = Rect::new(10.0, 10.0, 100.0, 50.0);
+        let prim = compute_transform_matrix(&style, &rect).expect("scale(0.5) is not identity");
+        assert!(
+            (prim.rect.left() - 10.0).abs() < 0.5
+                && (prim.rect.top() - 10.0).abs() < 0.5
+                && (prim.rect.right() - 110.0).abs() < 0.5
+                && (prim.rect.bottom() - 60.0).abs() < 0.5,
+            "rect must stay the original when bbox is inside, got {:?}",
+            prim.rect
+        );
     }
 
     // ── clip_fills ──────────────────────────────────────────────────────

@@ -237,3 +237,4 @@ css/css-sizing/aspect-ratio/block-aspect-ratio-005.html css/reference/ref-filled
 css/css-sizing/aspect-ratio/block-aspect-ratio-049.html css/reference/ref-filled-green-100px-square.xht == 2026-09-02 R3912 显式 height 不被钳后宽度反推（css-sizing-4 §4.2）
 css/css-sizing/aspect-ratio/flex-aspect-ratio-011.html css/reference/ref-filled-green-100px-square.xht == 2026-09-02 R3913 flex 容器 cross 从 item flexed main × ratio 传递（csswg #line-sizing）
 css/css-sizing/aspect-ratio/flex-aspect-ratio-023.html css/reference/ref-filled-green-100px-square.xht == 2026-09-02 R3913 flex 容器 cross 传递（replaced img item）
+css/css-transforms/transform-origin-007.html css/css-transforms/reference/transform-origin-ref.html == 2026-09-02 R3915 TransformPrimitive rect 扩为原矩形∪变换 bbox
