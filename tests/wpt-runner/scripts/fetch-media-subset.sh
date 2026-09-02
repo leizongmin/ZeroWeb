@@ -259,6 +259,22 @@ for relative in "${TRACK_ELEMENT_SUPPORT[@]}"; do
   fetch_raw "${BASE}/${relative}"
 done
 
+# M3 扩批 XVI 备料（2026-09-02）：真媒体文件——fixture-mounted runner 播放用例面
+# （media-playback M3「上游 WPT 可执行子集导入」+ media-elements track-cues-* 播放
+# 推进族的媒体源）。实测 codec 面：VP9 视频（+Opus 音频轨）——与 zero-media 解码面
+# 对齐（rusty_vp9 / opus-decoder）。sound_5.mp3 = symphonia mp3 面。
+# https://github.com/web-platform-tests/wpt/tree/3159769/media
+MEDIA_FILES=(
+  "media/movie_5.webm"
+  "media/sound_5.mp3"
+  "media/test.webm"
+  "media/test-1s.webm"
+  "media/counting.webm"
+)
+for relative in "${MEDIA_FILES[@]}"; do
+  fetch_raw "${relative}"
+done
+
 for relative in "${TOP_FILES[@]}"; do
   fetch_raw "${BASE}/${relative}"
 done
