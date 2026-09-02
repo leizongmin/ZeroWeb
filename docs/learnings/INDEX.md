@@ -5,10 +5,11 @@
 > 布局契约：`<分类>/<YYYY-MM>/<YYYY-MM-DD>-<topic>.md`，日期以 frontmatter 为准。
 > 方法论蒸馏层见 `.agents/skills/zeroweb-guidelines/SKILL.md`。
 
-## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（99）
+## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（100）
 
 - 2026-09-02 [Service Worker stream body errors must survive response serialization](bugs/2026-09/2026-09-02-sw-stream-body-error-serialization.md) — script-sandbox, engine, service-worker
 - 2026-09-02 [Service Worker Unregister Poll Leak](bugs/2026-09/2026-09-02-service-worker-unregister-poll-leak.md) — service-worker, js-dom-shim, page-runtime, wpt-runner
+- 2026-09-02 [Service Worker Global Prototype Chain Must Reject Prototype Mutation](bugs/2026-09/2026-09-02-service-worker-immutable-prototype-chain.md) — script-sandbox, service-worker, wpt-runner
 - 2026-09-02 [Service Worker Global Self Identity](bugs/2026-09/2026-09-02-service-worker-global-self-identity.md) — script-sandbox, wpt-runner, service-workers
 - 2026-09-02 [Service Worker .any.js Harness Can Hide Worker Subtests](bugs/2026-09/2026-09-02-service-worker-any-js-worker-harness.md) — tests/wpt-runner, crates/script-sandbox
 - 2026-08-31 [Iframe navigation pending ids and load ordering](bugs/2026-08/2026-08-31-iframe-navigation-pending-id-and-load-order.md) — engine, webview, service-worker

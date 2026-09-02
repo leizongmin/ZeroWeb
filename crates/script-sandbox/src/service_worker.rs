@@ -1855,6 +1855,32 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
     writable: true
   });
   Object.setPrototypeOf(globalThis, ServiceWorkerGlobalScope.prototype);
+  // https://webidl.spec.whatwg.org/#dfn-immutable-prototype-exotic-object
+  const immutablePrototypeObjects = [
+    globalThis,
+    ServiceWorkerGlobalScope.prototype,
+    WorkerGlobalScope.prototype,
+    Object.getPrototypeOf(WorkerGlobalScope.prototype),
+    Object.prototype
+  ];
+  const originalObjectSetPrototypeOf = Object.setPrototypeOf;
+  Object.setPrototypeOf = function(target, prototype) {
+    if (immutablePrototypeObjects.indexOf(target) >= 0 &&
+        Object.getPrototypeOf(target) !== prototype) {
+      throw new TypeError('Immutable prototype object');
+    }
+    return originalObjectSetPrototypeOf(target, prototype);
+  };
+  if (typeof Reflect === 'object' && Reflect && typeof Reflect.setPrototypeOf === 'function') {
+    const originalReflectSetPrototypeOf = Reflect.setPrototypeOf;
+    Reflect.setPrototypeOf = function(target, prototype) {
+      if (immutablePrototypeObjects.indexOf(target) >= 0 &&
+          Object.getPrototypeOf(target) !== prototype) {
+        return false;
+      }
+      return originalReflectSetPrototypeOf(target, prototype);
+    };
+  }
   globalThis.self = globalThis;
   globalThis.WorkerGlobalScope = WorkerGlobalScope;
   globalThis.ServiceWorkerGlobalScope = ServiceWorkerGlobalScope;
@@ -4936,6 +4962,46 @@ mod tests {
                    throw new Error('WorkerGlobalScope.prototype missing isSecureContext');
                  }
                  if (self.isSecureContext !== true) throw new Error('wrong secure context value');",
+                "https://example.test/sw.js",
+            )
+            .unwrap();
+        assert!(matches!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::Evaluated { .. }
+        ));
+    }
+
+    #[test]
+    fn service_worker_global_prototype_chain_is_immutable() {
+        let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
+        runtime
+            .evaluate(
+                "const protected = [
+                   self,
+                   ServiceWorkerGlobalScope.prototype,
+                   WorkerGlobalScope.prototype,
+                   Object.getPrototypeOf(WorkerGlobalScope.prototype),
+                   Object.prototype
+                 ];
+                 for (const item of protected) {
+                   const original = Object.getPrototypeOf(item);
+                   let threw = false;
+                   try {
+                     Object.setPrototypeOf(item, {});
+                   } catch (error) {
+                     threw = error instanceof TypeError;
+                   }
+                   if (!threw) throw new Error('Object.setPrototypeOf accepted protected object');
+                   if (Object.getPrototypeOf(item) !== original) throw new Error('prototype changed');
+                   if (Reflect.setPrototypeOf(item, {}) !== false) {
+                     throw new Error('Reflect.setPrototypeOf accepted protected object');
+                   }
+                   if (Object.getPrototypeOf(item) !== original) throw new Error('reflect changed prototype');
+                 }
+                 const ordinary = {};
+                 const proto = {marker: true};
+                 Object.setPrototypeOf(ordinary, proto);
+                 if (Object.getPrototypeOf(ordinary) !== proto) throw new Error('ordinary object blocked');",
                 "https://example.test/sw.js",
             )
             .unwrap();

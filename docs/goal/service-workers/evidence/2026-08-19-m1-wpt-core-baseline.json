@@ -1,8 +1,8 @@
 {
-  "cases": 47,
-  "subtests": 188,
+  "cases": 48,
+  "subtests": 189,
   "status": {
-    "Pass": 188
+    "Pass": 189
   },
   "deterministic": true,
   "results": [
@@ -121,6 +121,16 @@
         },
         {
           "name": "service-workers/service-worker/historical.https.any.js",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/immutable-prototype-serviceworker.https.html",
+      [
+        {
+          "name": "worker prototype chain should be immutable",
           "status": "Pass",
           "message": null
         }

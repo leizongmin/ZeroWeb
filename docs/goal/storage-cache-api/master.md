@@ -487,6 +487,14 @@ fetch baseline，不改变本目标的 window/SW CacheStorage 分母。
   - `make baseline-wpt-service-workers-core OUTPUT=docs/goal/service-workers/evidence/2026-08-19-m1-wpt-core-baseline.json TIME_LIMIT=900`：
     47 cases / 188 subtests / 188 Pass，double-run deterministic
   - 证据：[M3 Service Worker Global Self Identity](../service-workers/evidence/2026-09-02-m3-global-serviceworker.md)
+- 2026-09-02 Service Worker immutable prototype chain：
+  - `immutable-prototype-serviceworker.https.html` 纳入 Service Worker core runner，确认
+    worker global prototype chain 的 `Object.setPrototypeOf()` / `Reflect.setPrototypeOf()`
+    不可变语义。该切片不改变 CacheStorage window/SW 分母，只补齐 CacheStorage
+    serviceworker wrapper 依赖的 worker global 对象模型面。
+  - `make baseline-wpt-service-workers-core OUTPUT=docs/goal/service-workers/evidence/2026-08-19-m1-wpt-core-baseline.json TIME_LIMIT=900`：
+    48 cases / 189 subtests / 189 Pass，double-run deterministic
+  - 证据：[M3 Service Worker Immutable Prototype](../service-workers/evidence/2026-09-02-m3-immutable-prototype.md)
 - 2026-08-22 M3 CacheStorage 持久化首片：
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- cargo check -p zero-storage -p zero-page-runtime -p zero-webview --all-targets`：passed
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- cargo test -p zero-storage cache_storage_persistence -- --nocapture`：3 passed

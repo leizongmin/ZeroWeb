@@ -1,0 +1,5 @@
+path	manifest_type	roles	referenced_by	bytes	templated	git_blob_sha	source_revision
+resources/testharness.js	support	page-script	1	198291	no	c7ce4f51e1db075809f861255417c27478b2c179	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
+resources/testharnessreport.js	support	page-script	1	1231	no	405a2d8b06f00fe8292e0e9d5b917e193cfd416c	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
+service-workers/service-worker/immutable-prototype-serviceworker.https.html	testharness	case	1	833	no	e63f6b348a861345101670b9c3d87aaa4977b0c4	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
+service-workers/service-worker/resources/immutable-prototype-serviceworker.js	support	worker-script	1	409	no	d8a94ad46befb085791d13f21e6870e09284abe0	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
