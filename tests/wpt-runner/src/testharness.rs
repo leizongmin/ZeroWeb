@@ -821,6 +821,7 @@ pub const SERVICE_WORKER_CORE_CASES: &[&str] = &[
     "service-workers/service-worker/import-scripts-cross-origin.https.html",
     "service-workers/service-worker/import-scripts-data-url.https.html",
     "service-workers/service-worker/import-scripts-mime-types.https.html",
+    "service-workers/service-worker/install-event-type.https.html",
     "service-workers/service-worker/import-scripts-redirect.https.html",
     "service-workers/service-worker/import-scripts-resource-map.https.html",
     "service-workers/service-worker/import-scripts-updated-flag.https.html",
@@ -4064,13 +4065,13 @@ async_test(function(test) {
     }
 
     #[test]
-    fn service_worker_core_manifest_has_forty_unique_cases() {
+    fn service_worker_core_manifest_has_forty_one_unique_cases() {
         let unique = SERVICE_WORKER_CORE_CASES
             .iter()
             .copied()
             .collect::<std::collections::BTreeSet<_>>();
-        assert_eq!(SERVICE_WORKER_CORE_CASES.len(), 40);
-        assert_eq!(unique.len(), 40);
+        assert_eq!(SERVICE_WORKER_CORE_CASES.len(), 41);
+        assert_eq!(unique.len(), 41);
         assert!(
             SERVICE_WORKER_CORE_CASES
                 .iter()
@@ -4084,6 +4085,7 @@ async_test(function(test) {
             SERVICE_WORKER_CORE_CASES
                 .contains(&"service-workers/service-worker/ServiceWorkerGlobalScope/isSecureContext.https.html")
         );
+        assert!(SERVICE_WORKER_CORE_CASES.contains(&"service-workers/service-worker/install-event-type.https.html"));
         assert!(
             SERVICE_WORKER_CORE_CASES
                 .contains(&"service-workers/service-worker/skip-waiting-using-registration.https.html")

@@ -6,9 +6,9 @@
 
 ## 0. Runner contract
 
-`testharness-service-workers` 子命令固定执行 disposition contract 中当前 40 个 core source：
+`testharness-service-workers` 子命令固定执行 disposition contract 中当前 41 个 core source：
 
-- 初始 Tier A + `active.https.html`：9 case / 30 subtest；
+- 初始 Tier A + `active.https.html`：10 case / 31 subtest；
 - 后续 import/update/controller/client/worker-global core：31 case / 136 subtest。
 
 runner 不扫描目录。缺 `testharness.js` 或任一 case 时显式 Fail；Service Worker script URL
@@ -17,7 +17,7 @@ runner 不扫描目录。缺 `testharness.js` 或任一 case 时显式 Fail；Se
 Make 入口：
 
 - `make testharness-service-workers-core`：全绿门禁，任一非 Pass 时非零退出；
-- `make baseline-wpt-service-workers-core`：连续执行两轮，校验 40/166 与
+- `make baseline-wpt-service-workers-core`：连续执行两轮，校验 41/167 与
   `(case, subtest, status)` 一致；产品 Fail 不掩盖为 runner failure；
 - `OUTPUT=<path>` 可保存结构化 baseline JSON。
 
@@ -25,11 +25,11 @@ Make 入口：
 
 | Wave | Case | Subtest | Pass | Fail | Timeout | Unsupported |
 |------|-----:|--------:|-----:|-----:|--------:|------------:|
-| 初始 Tier A + active | 9 | 30 | 30 | 0 | 0 | 0 |
+| 初始 Tier A + active | 10 | 31 | 31 | 0 | 0 | 0 |
 | expanded core | 31 | 136 | 136 | 0 | 0 | 0 |
-| **合计** | **40** | **166** | **166** | **0** | **0** | **0** |
+| **合计** | **41** | **167** | **167** | **0** | **0** | **0** |
 
-M3 worker secure-context 切片后 baseline 两轮得到相同 `(case, subtest, status)`。
+M3 install-event-type 切片后 baseline 两轮得到相同 `(case, subtest, status)`。
 
 ## 2. 收敛结果
 
@@ -62,7 +62,9 @@ M3 worker secure-context 切片后 baseline 两轮得到相同 `(case, subtest, 
   install/activate 事件回传和完整状态序列；
 - `ServiceWorkerGlobalScope/isSecureContext.https.html` 覆盖 SW global
   `WorkerGlobalScope.prototype.isSecureContext === true`；
-- 40/40 case 被发现，0 Unsupported。
+- `install-event-type.https.html` 覆盖 install 事件 `InstallEvent` / `ExtendableEvent`
+  identity 以及 `type` / `bubbles` / `cancelable` 基础属性；
+- 41/41 case 被发现，0 Unsupported。
 
 ## 3. Runner 修正
 
@@ -82,13 +84,13 @@ TypeError/SecurityError 分类；页面 WebIDL conversion 区分 absent/undefine
 
 ## 4. 完成门禁
 
-- [x] 40/40 case 被 runner 发现。
-- [x] 166/166 subtest 有明确结果。
+- [x] 41/41 case 被 runner 发现。
+- [x] 167/167 subtest 有明确结果。
 - [x] 0 Unsupported。
 - [x] 0 Timeout。
 - [x] 连续两轮 case/subtest/status 一致。
 - [x] 每个 lifecycle 中间态与事件按 task 顺序可观察。
-- [x] 166/166 Pass。
+- [x] 167/167 Pass。
 - [x] 0 Fail。
 
 当前 core baseline 完成；这证明已导入 core corpus 的 lifecycle、registration、

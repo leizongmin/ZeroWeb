@@ -1,8 +1,8 @@
 {
-  "cases": 40,
-  "subtests": 166,
+  "cases": 41,
+  "subtests": 167,
   "status": {
-    "Pass": 166
+    "Pass": 167
   },
   "deterministic": true,
   "results": [
@@ -201,6 +201,16 @@
         },
         {
           "name": "Fetch importScripts tests from service worker",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/install-event-type.https.html",
+      [
+        {
+          "name": "install event type",
           "status": "Pass",
           "message": null
         }

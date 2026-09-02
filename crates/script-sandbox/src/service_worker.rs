@@ -136,6 +136,8 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
   class ExtendableEvent {
     constructor(type) {
       this.type = type;
+      // https://dom.spec.whatwg.org/#concept-event-initialize
+      this.bubbles = false;
       this.cancelable = false;
       this.defaultPrevented = false;
       this._propagationStopped = false;
@@ -5310,6 +5312,9 @@ mod tests {
             .evaluate(
                 "addEventListener('install', event => {
                     if (!(event instanceof InstallEvent)) throw new Error('wrong event');
+                    if (event.type !== 'install') throw new Error('wrong event type');
+                    if (event.bubbles !== false) throw new Error('wrong bubbles');
+                    if (event.cancelable !== false) throw new Error('wrong cancelable');
                     event.waitUntil(Promise.resolve().then(() => {
                         globalThis.installFinished = true;
                     }));

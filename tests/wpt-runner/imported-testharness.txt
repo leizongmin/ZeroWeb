@@ -216,6 +216,7 @@ service-workers/service-worker/skip-waiting-without-using-registration.https.htm
 service-workers/service-worker/clients-matchall-on-evaluation.https.html 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-08-21 SW-M3-clients-matchall-evaluation
 service-workers/service-worker/ServiceWorkerGlobalScope/fetch-on-the-right-interface.https.any.js 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-08-31 SW-M2-fetch-global-scope
 service-workers/service-worker/ServiceWorkerGlobalScope/isSecureContext.https.html 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-09-02 SW-M3-worker-secure-context
+service-workers/service-worker/install-event-type.https.html 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-09-02 SW-M3-install-event-type
 service-workers/service-worker/historical.https.any.js 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-08-31 SW-M2-fetch-global-scope
 service-workers/cache-storage/cache-storage.https.any.js 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-08-22 CACHE-M1-window-baseline
 service-workers/cache-storage/cache-match.https.any.js 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-08-22 CACHE-M2-window-expansion

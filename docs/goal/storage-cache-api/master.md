@@ -434,6 +434,14 @@ fetch baseline，不改变本目标的 window/SW CacheStorage 分母。
   - `make baseline-wpt-service-workers-core OUTPUT=docs/goal/service-workers/evidence/2026-08-19-m1-wpt-core-baseline.json`：
     40 cases / 166 subtests / 166 Pass，double-run deterministic
   - 证据：[M3 Service Worker WorkerGlobalScope.isSecureContext](../service-workers/evidence/2026-09-02-m3-worker-secure-context.md)
+- 2026-09-02 Service Worker install event type：
+  - `install-event-type.https.html` 纳入 Service Worker core runner，补齐 install 事件
+    `bubbles === false` 基础属性并复用已有 worker-testharness 结果通道。该切片不改变
+    CacheStorage window/SW 分母，但继续收敛 Cache/SW worker-harness 依赖的基础 lifecycle
+    event surface。
+  - `make baseline-wpt-service-workers-core OUTPUT=docs/goal/service-workers/evidence/2026-08-19-m1-wpt-core-baseline.json`：
+    41 cases / 167 subtests / 167 Pass，double-run deterministic
+  - 证据：[M3 Service Worker InstallEvent Type](../service-workers/evidence/2026-09-02-m3-install-event-type.md)
 - 2026-08-22 M3 CacheStorage 持久化首片：
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- cargo check -p zero-storage -p zero-page-runtime -p zero-webview --all-targets`：passed
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- cargo test -p zero-storage cache_storage_persistence -- --nocapture`：3 passed
