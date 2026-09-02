@@ -890,6 +890,29 @@ fn test_parse_background_repeat_invalid() {
     assert_eq!(parse_background_repeat("repeat z"), None);
 }
 
+// R3926（CSS Backgrounds §3.4 two-keyword `<repeat-style> <repeat-style>`）。
+#[test]
+fn test_parse_background_repeat_two_keyword() {
+    use BackgroundRepeatValue as V;
+    // x 轴 = 第一关键字、y 轴 = 第二关键字。
+    assert_eq!(
+        parse_background_repeat("repeat round"),
+        Some(V::TwoValue(Box::new(V::Repeat), Box::new(V::Round)))
+    );
+    assert_eq!(
+        parse_background_repeat("no-repeat space"),
+        Some(V::TwoValue(Box::new(V::NoRepeat), Box::new(V::Space)))
+    );
+    // 相同两关键字归一为单值变体（spec：单关键字设置两轴）。
+    assert_eq!(parse_background_repeat("round round"), Some(V::Round));
+    assert_eq!(parse_background_repeat("space space"), Some(V::Space));
+    // repeat-x/repeat-y 是单值简写，不参与组合。
+    assert_eq!(parse_background_repeat("repeat-x round"), None);
+    assert_eq!(parse_background_repeat("round repeat-y"), None);
+    // 三关键字非法。
+    assert_eq!(parse_background_repeat("repeat round space"), None);
+}
+
 // ── background-size 解析测试 ──
 
 #[test]

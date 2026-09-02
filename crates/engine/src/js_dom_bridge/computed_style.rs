@@ -3052,13 +3052,26 @@ fn background_repeat_to_css(layers: &[BackgroundRepeatComputedValue]) -> String 
     }
     layers
         .iter()
-        .map(|r| match r {
-            BackgroundRepeatComputedValue::Repeat => "repeat",
-            BackgroundRepeatComputedValue::RepeatX => "repeat-x",
-            BackgroundRepeatComputedValue::RepeatY => "repeat-y",
-            BackgroundRepeatComputedValue::NoRepeat => "no-repeat",
-            BackgroundRepeatComputedValue::Space => "space",
-            BackgroundRepeatComputedValue::Round => "round",
+        .map(|r| -> String {
+            // R3926：two-keyword 形式按 x y 序列化。
+            let kw = |v: &BackgroundRepeatComputedValue| match v {
+                BackgroundRepeatComputedValue::Repeat => "repeat",
+                BackgroundRepeatComputedValue::RepeatX => "repeat-x",
+                BackgroundRepeatComputedValue::RepeatY => "repeat-y",
+                BackgroundRepeatComputedValue::NoRepeat => "no-repeat",
+                BackgroundRepeatComputedValue::Space => "space",
+                BackgroundRepeatComputedValue::Round => "round",
+                BackgroundRepeatComputedValue::TwoValue(_, _) => "repeat",
+            };
+            match r {
+                BackgroundRepeatComputedValue::Repeat => "repeat".to_string(),
+                BackgroundRepeatComputedValue::RepeatX => "repeat-x".to_string(),
+                BackgroundRepeatComputedValue::RepeatY => "repeat-y".to_string(),
+                BackgroundRepeatComputedValue::NoRepeat => "no-repeat".to_string(),
+                BackgroundRepeatComputedValue::Space => "space".to_string(),
+                BackgroundRepeatComputedValue::Round => "round".to_string(),
+                BackgroundRepeatComputedValue::TwoValue(x, y) => format!("{} {}", kw(x), kw(y)),
+            }
         })
         .collect::<Vec<_>>()
         .join(", ")

@@ -246,3 +246,5 @@ css/css-backgrounds/background-origin/origin-border-box_with_size.html css/css-b
 css/css-backgrounds/background-origin/origin-border-box_with_position.html css/css-backgrounds/reference/origin-border-box_with_position-ref.html == 2026-09-02 R3924 clip:rect() auto 因侧解析（CSS2 §11.1.2）——top/left=0、right/bottom=边框盒对应边；旧解析期折叠成 0 致负宽高裁剪区图元全灭
 css/css-sizing/fit-content-length-percentage-003.html css/reference/ref-filled-green-100px-square.xht == 2026-09-02 R3925 fit-content(arg) 上限语义（css-sizing-3）——arg>max-content 时收缩到内容宽
 css/css-sizing/fit-content-length-percentage-008.html css/reference/ref-filled-green-100px-square.xht == 2026-09-02 R3925 fit-content() 百分比参数计算值保留——resolve_length_field 不再把百分比折叠成 px 数值
+css/css-backgrounds/background-size-025.html css/css-backgrounds/reference/background-size-025-ref.xht == 2026-09-02 R3926 background-size 单 auto 维按已定维×固有比解析（css-backgrounds §3.9）——旧实现从固有维独立解析致 round 相位错
+css/css-backgrounds/background-size-027.html css/css-backgrounds/reference/background-size-027-ref.xht == 2026-09-02 R3926 background-repeat two-keyword 形式（css-backgrounds §3.4）——repeat round 逐轴生效

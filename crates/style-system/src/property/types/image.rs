@@ -78,6 +78,8 @@ pub enum BackgroundRepeatComputedValue {
     Space,
     /// round — 缩放后重复。
     Round,
+    /// R3926（CSS Backgrounds §3.4 two-keyword）：第一关键字 x 轴、第二关键字 y 轴。
+    TwoValue(Box<BackgroundRepeatComputedValue>, Box<BackgroundRepeatComputedValue>),
 }
 
 /// CSS background-size 属性值。

@@ -1442,17 +1442,30 @@ fn resolve_background_size(
                 // R3761：单 auto 维 §3.9 解析优先级——该轴真实固有维（no_ratio 原始维）
                 // > ratio 推导 > 定位区该维。width-only SVG `auto 32px` → 8×32。
                 None if h_fixed.is_none() => img_w,
-                None => match intrinsic_w {
-                    Some(w) => w,
-                    None => img_ratio.map_or(container_w, |r| img_h * r),
+                // R3926（§3.9 单 auto 维 + 固有比）：另一维已定时 auto 维 = 另一维 × 比例
+                //（§3.9 第二段：ratio + 一侧 definite → 另一侧按比例），而非从固有维独立
+                // 解析。`auto 61px` 在 100×100 图上应 61×61（round 后 70×70，
+                // background-size-025），旧 `img_h * r` = 100 使 round 得 2 列 105px。
+                // 仅当该轴无真实固有维（no_ratio 混合型）时才走固有维优先（R3761 域）。
+                None => match (intrinsic_w, img_ratio) {
+                    (Some(w), _) => w,
+                    (None, Some(r)) if h_fixed.is_some_and(|h| h.is_finite() && h > 0.0) => {
+                        h_fixed.map_or(container_w, |h| h * r)
+                    }
+                    (None, Some(r)) => img_h * r,
+                    (None, None) => container_w,
                 },
             };
             let h = match h_fixed {
                 Some(h) => h,
                 None if w_fixed.is_none() => img_h,
-                None => match intrinsic_h {
-                    Some(h) => h,
-                    None => img_ratio.map_or(container_h, |v| w / v),
+                // R3926：对称臂——w 已定时 auto 高 = w / 比例（如 `52px auto` → 52×52，
+                // background-size-027），旧 `w / v` 的 w 是固有维相关值时同样错位。
+                None => match (intrinsic_h, img_ratio) {
+                    (Some(h), _) => h,
+                    (None, Some(r)) if w.is_finite() && w > 0.0 => w / r,
+                    (None, Some(r)) => img_w / r,
+                    (None, None) => container_h,
                 },
             };
             (w, h)
@@ -1647,6 +1660,72 @@ fn resolve_repeat_params(
                 tile_h,
             )
         }
+        // R3926（CSS Backgrounds §3.4 two-keyword）：逐轴独立套用 repeat 语义——
+        // x 轴按第一关键字、y 轴按第二关键字（round/space 适配用 origin 该维，
+        // repeat 平铺覆盖 clip、no-repeat 单 tile）。单轴 tile 缩放仅影响该轴。
+        BackgroundRepeatComputedValue::TwoValue(rx, ry) => {
+            // x 轴
+            let (tile_w, xr, _) = match &**rx {
+                BackgroundRepeatComputedValue::Repeat => {
+                    let (s, e) = x_range(true);
+                    (sized_w, (s, e), sized_w)
+                }
+                BackgroundRepeatComputedValue::Space => {
+                    let tiles = if sized_w > 0.0 {
+                        (origin_w / sized_w).floor().max(1.0)
+                    } else {
+                        1.0
+                    };
+                    let space = if tiles > 1.0 {
+                        (origin_w - sized_w * tiles) / (tiles - 1.0)
+                    } else {
+                        0.0
+                    };
+                    let eff = sized_w + space;
+                    (eff, (origin_x, origin_x + origin_w), eff)
+                }
+                BackgroundRepeatComputedValue::Round => {
+                    let tile = if origin_w > 0.0 && sized_w > 0.0 {
+                        origin_w / (origin_w / sized_w).round().max(1.0)
+                    } else {
+                        sized_w
+                    };
+                    (tile, (origin_x, origin_x + origin_w), tile)
+                }
+                _ => (sized_w, x_range(false), sized_w),
+            };
+            // y 轴（origin/positioned/sized 换 y 维）
+            let (tile_h, yr, _) = match &**ry {
+                BackgroundRepeatComputedValue::Repeat => {
+                    let (s, e) = y_range(true);
+                    (sized_h, (s, e), sized_h)
+                }
+                BackgroundRepeatComputedValue::Space => {
+                    let tiles = if sized_h > 0.0 {
+                        (origin_h / sized_h).floor().max(1.0)
+                    } else {
+                        1.0
+                    };
+                    let space = if tiles > 1.0 {
+                        (origin_h - sized_h * tiles) / (tiles - 1.0)
+                    } else {
+                        0.0
+                    };
+                    let eff = sized_h + space;
+                    (eff, (origin_y, origin_y + origin_h), eff)
+                }
+                BackgroundRepeatComputedValue::Round => {
+                    let tile = if origin_h > 0.0 && sized_h > 0.0 {
+                        origin_h / (origin_h / sized_h).round().max(1.0)
+                    } else {
+                        sized_h
+                    };
+                    (tile, (origin_y, origin_y + origin_h), tile)
+                }
+                _ => (sized_h, y_range(false), sized_h),
+            };
+            (xr, yr, tile_w, tile_h)
+        }
     }
 }
 
@@ -1716,6 +1795,24 @@ mod tests {
         // 伪固有维 (8, 256=定位区高回退)、无 ratio、真实固有 (Some(8), None)。
         let (w, h) = resolve_background_size(&size, 768.0, 256.0, 8.0, 256.0, None, (Some(8.0), None));
         assert_eq!((w, h), (8.0, 32.0));
+    }
+
+    /// R3926（css-backgrounds §3.9 单 auto 维 + 固有比）：另一维已定时 auto 维 =
+    /// 已定维 × 比例（非固有维独立解析）。`auto 61px` 在 100×100 图上应 61×61；
+    /// 旧实现 `img_h * r` = 100 → round repeat 得 2 列 105px（background-size-025，
+    /// spec 应 3 列 70px）。对称臂 `52px auto` → 52×52（background-size-027）。
+    #[test]
+    fn r3926_auto_dim_resolves_from_resolved_other_dim_with_ratio() {
+        // 普通 PNG：img_w/img_h = 固有 (100,100)，ratio 1.0，intrinsic=(None,None)（调用方
+        // 仅对 no_ratio 图像传真实固有维）。
+        let size =
+            BackgroundSizeComputedValue::TwoValue(BgSizeComponentComputed::Auto, BgSizeComponentComputed::Length(61.0));
+        let (w, h) = resolve_background_size(&size, 210.0, 210.0, 100.0, 100.0, Some(1.0), (None, None));
+        assert_eq!((w, h), (61.0, 61.0));
+        let size2 =
+            BackgroundSizeComputedValue::TwoValue(BgSizeComponentComputed::Length(52.0), BgSizeComponentComputed::Auto);
+        let (w2, h2) = resolve_background_size(&size2, 210.0, 210.0, 100.0, 100.0, Some(1.0), (None, None));
+        assert_eq!((w2, h2), (52.0, 52.0));
     }
 
     /// R3760：单值 12px 在 no-ratio 图像上高取定位区（非伪比推导）。

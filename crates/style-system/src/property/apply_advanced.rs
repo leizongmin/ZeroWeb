@@ -1700,6 +1700,31 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
                         }
                         zero_css_parser::values::BackgroundRepeatValue::Space => BackgroundRepeatComputedValue::Space,
                         zero_css_parser::values::BackgroundRepeatValue::Round => BackgroundRepeatComputedValue::Round,
+                        // R3926：two-keyword 形式（第一关键字 x 轴、第二 y 轴）。
+                        zero_css_parser::values::BackgroundRepeatValue::TwoValue(x, y) => {
+                            let map = |v: zero_css_parser::values::BackgroundRepeatValue| match v {
+                                zero_css_parser::values::BackgroundRepeatValue::Repeat => {
+                                    BackgroundRepeatComputedValue::Repeat
+                                }
+                                zero_css_parser::values::BackgroundRepeatValue::RepeatX
+                                | zero_css_parser::values::BackgroundRepeatValue::RepeatY => {
+                                    unreachable!("repeat-x/y 不参与 two-keyword 组合（parser 保证）")
+                                }
+                                zero_css_parser::values::BackgroundRepeatValue::NoRepeat => {
+                                    BackgroundRepeatComputedValue::NoRepeat
+                                }
+                                zero_css_parser::values::BackgroundRepeatValue::Space => {
+                                    BackgroundRepeatComputedValue::Space
+                                }
+                                zero_css_parser::values::BackgroundRepeatValue::Round => {
+                                    BackgroundRepeatComputedValue::Round
+                                }
+                                zero_css_parser::values::BackgroundRepeatValue::TwoValue(_, _) => {
+                                    unreachable!("two-keyword 不嵌套（parser 保证）")
+                                }
+                            };
+                            BackgroundRepeatComputedValue::TwoValue(Box::new(map(*x)), Box::new(map(*y)))
+                        }
                     })
                     .collect();
                 return true;

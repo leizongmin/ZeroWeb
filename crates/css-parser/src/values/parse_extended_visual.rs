@@ -1055,18 +1055,45 @@ pub enum BackgroundRepeatValue {
     Space,
     /// round — 缩放后重复。
     Round,
+    /// R3926（CSS Backgrounds §3.4 two-keyword）：`⟨repeat-style⟩ ⟨repeat-style⟩`——
+    /// 第一关键字作用 x 轴、第二关键字 y 轴（如 `repeat round` = x repeat / y round）。
+    /// 两关键字相同等价单值（spec：单关键字设置两轴），解析期归一为单值变体。
+    TwoValue(Box<BackgroundRepeatValue>, Box<BackgroundRepeatValue>),
 }
 
 /// 解析 CSS background-repeat 属性值。
 pub fn parse_background_repeat(value: &str) -> Option<BackgroundRepeatValue> {
-    match value.trim().to_ascii_lowercase().as_str() {
+    let v = value.trim();
+    match v.to_ascii_lowercase().as_str() {
         "repeat" => Some(BackgroundRepeatValue::Repeat),
         "repeat-x" => Some(BackgroundRepeatValue::RepeatX),
         "repeat-y" => Some(BackgroundRepeatValue::RepeatY),
         "no-repeat" => Some(BackgroundRepeatValue::NoRepeat),
         "space" => Some(BackgroundRepeatValue::Space),
         "round" => Some(BackgroundRepeatValue::Round),
-        _ => None,
+        _ => {
+            // R3926：two-keyword 形式 `⟨repeat-style⟩ ⟨repeat-style⟩`（CSS Backgrounds
+            // §3.4）——各关键字从 {repeat, space, round, no-repeat}（repeat-x/y 是单值
+            // 简写，不参与组合）。相同两值归一为单值变体（spec：单关键字设置两轴）。
+            let mut parts = v.split_ascii_whitespace();
+            let (a, b) = (parts.next()?, parts.next()?);
+            if parts.next().is_some() {
+                return None;
+            }
+            let axis = |kw: &str| match kw {
+                "repeat" => Some(BackgroundRepeatValue::Repeat),
+                "space" => Some(BackgroundRepeatValue::Space),
+                "round" => Some(BackgroundRepeatValue::Round),
+                "no-repeat" => Some(BackgroundRepeatValue::NoRepeat),
+                _ => None,
+            };
+            let x = axis(&a.to_ascii_lowercase())?;
+            let y = axis(&b.to_ascii_lowercase())?;
+            if std::mem::discriminant(&x) == std::mem::discriminant(&y) {
+                return Some(x);
+            }
+            Some(BackgroundRepeatValue::TwoValue(Box::new(x), Box::new(y)))
+        }
     }
 }
 
