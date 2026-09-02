@@ -230,6 +230,9 @@ TRACK_ELEMENT_FILES=(
   "track/track-element/track-default-attribute.html"
   # src setter 触发加载（NONE → LOADED；mode hidden 先设）。
   "track/track-element/track-load-from-src-readyState.html"
+  # M3 扩批 XVII（2026-09-03）：track-cues-* 播放推进族续批——随 fixture-mounted
+  # 切片 2 基础设施（区间捕获 + 事件时间序 + ended 面）逐件复评导入。
+  "track/track-element/track-cues-sorted-before-dispatch.html"
 )
 # M3 扩批 XV：上述用例引用的共享 helper（inline_local_scripts 相对路径内联）
 # 与 VTT 资源文件（runner fetch handler 以 wpt-data 静态文件服务）。
@@ -243,6 +246,8 @@ TRACK_ELEMENT_SUPPORT=(
   "track/track-element/resources/cue-id.vtt"
   "track/track-element/resources/cue-id-error.vtt"
   "track/track-element/resources/cues.vtt"
+  "track/track-element/resources/cues-overlapping.vtt"
+  "track/track-element/resources/sorted-dispatch.vtt"
   "track/track-element/resources/cues-no-separation.vtt"
   "track/track-element/resources/metadata.vtt"
   "track/track-element/resources/header-empty-after.vtt"

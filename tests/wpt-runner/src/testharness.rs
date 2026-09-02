@@ -1454,6 +1454,14 @@ pub const MEDIA_TEST_FILES: &[&str] = &[
     // 随 runner 泵节拍精化复评。
     "html/semantics/embedded-content/media-elements/track/track-element/track-cues-enter-seeking.html",
     "html/semantics/embedded-content/media-elements/track/track-element/track-cues-missed.html",
+    // M3 扩批 XVII（2026-09-03）：播放推进族续批评估——seeking 面的 activeCues
+    // 递增、跨区间事件时间序、pauseOnExit 暂停面（march 已接通）。
+    // track-cues-seeking / track-cues-pause-on-exit 暂不导入（评估实录）：seeking
+    // 依赖「逐次 seek 后 activeCues 数量重建」语义（当前 seekSync 仅做 active 集合
+    // 重建，无 per-seek 计数窗口）；pause-on-exit 的 onexit 内 paused 断言依赖
+    // pauseOnExit 中断播放的即时可观察时序（当前泵粒度下 exit 与 paused 翻转存在
+    // 同 tick 交错）。两者随泵节拍精化 + seek 面深化复评。
+    "html/semantics/embedded-content/media-elements/track/track-element/track-cues-sorted-before-dispatch.html",
     // 不导入（B 组——依赖真播放钟推进 time-marches-on/cue enter/exit/cuechange/
     // activeCues 变化，随 media-playback 泵接语义层后复评）：track-cues-* 全族、
     // track-active-cues、no-cuechange-before-play、track-remove-active-cue、

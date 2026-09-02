@@ -3,23 +3,24 @@
   "suite": "make testharness-media",
   "wpt_rev": "315976933870b34d6ea30e3f6643403edae678ba",
   "summary": {
-    "pass": 531,
+    "pass": 532,
     "fail": 0,
     "timeout": 0,
     "precondition_failed": 24,
-    "total_pass_rate": "531/555 = 95.7%"
+    "total_pass_rate": "532/556 = 95.7%"
   },
   "delta_vs_previous": {
     "previous": "529P/0F/24PF (2026-09-02, M3 扩批 XV + fixture-mounted 切片 1)",
-    "current": "531P/0F/24PF",
+    "current": "532P/0F/24PF",
     "new_passes": [
       "html/semantics/embedded-content/media-elements/track/track-element/track-cues-enter-seeking.html",
-      "html/semantics/embedded-content/media-elements/track/track-element/track-cues-missed.html"
+      "html/semantics/embedded-content/media-elements/track/track-element/track-cues-missed.html",
+      "html/semantics/embedded-content/media-elements/track/track-element/track-cues-sorted-before-dispatch.html"
     ],
     "excluded_this_slice": [
       {
         "case": "track-cues-enter-exit.html",
-        "reason": "单跑 1/4 概率 Timeout——桥 play 重试命中与 runner 源登记的竞态（播放钟推进偶发晚于 case 10s 预算）；seek/missed 两件在区间捕获 + 事件时间序派发下稳定全绿。随 runner 泵节拍精化复评。"
+        "reason": "单跑 1/4 概率 Timeout——桥 play 重试命中与 runner 源登记的竞态（播放钟推进偶发晚于 case 10s 预算）；seek/missed 两件在区间捕获 + 事件时间序派发下稳定全绿。随 runner 泵节拍精化复评。 另评得 track-cues-seeking（per-seek activeCues 重建）与 track-cues-pause-on-exit（exit 内 paused 即时可观察时序）暂不导入，根因已记录。"
       }
     ],
     "regressions": 0
@@ -36,5 +37,5 @@
     "install_playback_bridge 前置于页面脚本（canplaythrough 内同步 play 可达桥）",
     "逐 tick 动态媒体登记（contains_source 幂等 + 字节缓存）+ settle 提交"
   ],
-  "stability": "track-cues-missed / track-cues-enter-seeking / track-default-attribute 连续 3+ 次全绿；track-cues-enter-exit 1/4 flake（本片排除）"
+  "stability": "track-cues-missed / track-cues-enter-seeking / track-cues-sorted-before-dispatch / track-default-attribute 连续 3+ 次全绿；track-cues-enter-exit 1/4 flake（本片排除）"
 }

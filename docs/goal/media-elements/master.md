@@ -2,12 +2,13 @@
 
 **入口文档**: [../media-elements.md](../media-elements.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-03（**M3 扩批 XVI 落地**——track-cues-* 播放推进族解锁：
-fixture-mounted runner 播放桥前置 + 逐 tick 动态源登记 + time-marches-on 区间捕获/
-事件时间序/ended 面 + play() 桥 latest-wins 读/退避重试/pending seek 补推 +
-registry play 未命中不消费源字节 + is_ended 桥面。**531P/0F/24PF，531/555 =
-95.7%**（+2 净涨零回归：track-cues-enter-seeking + track-cues-missed；enter-exit
-单件因注册竞态 flake 暂排除复评）。此前 2026-09-02：**M3 扩批 XV**——http VTT
+**最后更新**: 2026-09-03（**M3 扩批 XVI+XVII 落地**——track-cues-* 播放推进族
+解锁：fixture-mounted runner 播放桥前置 + 逐 tick 动态源登记 + time-marches-on
+区间捕获/事件时间序/ended 面 + play() 桥 latest-wins 读/退避重试/pending seek
+补推 + registry play 未命中不消费源字节 + is_ended 桥面。**532P/0F/24PF，
+532/556 = 95.7%**（+3 净涨零回归：track-cues-enter-seeking +
+track-cues-missed + track-cues-sorted-before-dispatch；enter-exit 单件因注册
+竞态 flake 暂排除复评）。此前 2026-09-02：**M3 扩批 XV**——http VTT
 文件加载 + WebVTT 解析深化 + 静态 track 调度触发面 + window.event，12 用例
 导入（529P/0F/24PF））
 
@@ -398,10 +399,19 @@ already-playing resolved 断言。**88.3%**（324P/0F/2T/41PF，+80 subtest 全�
   default gate——track-cues-* 各用例 track 子均带 `default` 属性，kind gate 非
   必需且致 track-default-attribute「onload 只派 default track」回归。
 - **导入**：track-cues-enter-seeking（+1P）/ track-cues-missed（+1P，含
-  cues-chrono-order / missed-cues VTT 资源已在白名单）。**531P/0F/24PF
-  （531/555 = 95.7%）**（+2 净涨零回归）。evidence：
+  cues-chrono-order / missed-cues VTT 资源已在白名单）/ **track-cues-sorted-
+  before-dispatch（+1P，XVII 续批复评——区间捕获 + 事件时间序派发直接覆盖其
+  「events sorted by time」断言面，连续 3 次全绿；cues-overlapping /
+  sorted-dispatch VTT 资源入白名单）**。**532P/0F/24PF（532/556 = 95.7%）**
+  （+3 净涨零回归）。evidence：
   `evidence/2026-09-03-media-cues-playback.json`。make test 66 套件全绿
   （engine 2571 / webview 682 / integration 781）、fmt/clippy 干净。
+- **续批评估实录（2026-09-03 同日）**：track-cues-seeking / track-cues-
+  pause-on-exit 评估后**暂不导入**——前者依赖「逐次 seek 后 activeCues 数量
+  重建」语义（当前 seekSync 仅重建 active 集合、无 per-seek 计数窗口）；后者
+  的 onexit 内 `assert_true(video.paused)` 依赖 pauseOnExit 中断播放的即时可
+  观察时序（当前泵粒度下 exit 与 paused 翻转存在同 tick 交错）。两者根因已
+  记录，随泵节拍精化 + seek 面深化复评。
 - **排除注记（本片暂排除）**：track-cues-enter-exit——单跑 1/4 概率 Timeout
   （桥 play 重试命中与 runner 源登记竞态：播放钟推进偶发晚于 case 10s 预算；
   全套件并行负载下复现率上升），随 runner 泵节拍精化（march 采样粒度收敛）
@@ -449,7 +459,7 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
 
 | # | 缺口 | 状态 | 失败聚类 |
 |---|------|------|----------|
-| M1g | WPT media-elements 用例覆盖 | ✅ 138 用例已导入（136 + M3 扩批 XVI：track-cues-enter-seeking / track-cues-missed——播放推进族首批），**95.7%**（531/555） | — |
+| M1g | WPT media-elements 用例覆盖 | ✅ 139 用例已导入（136 + 扩批 XVI/XVII：track-cues-enter-seeking / missed / sorted-before-dispatch——播放推进族首批），**95.7%**（532/556） | — |
 | M2g | load 算法 + 状态机（事件序列派发） | ✅ M2 落地（13T→**0T**） | F4 闭合 |
 | M3g | 事件序列 headless 近似驱动 | ✅（同 M2g；source-child 触发已落地） | F4 闭合 |
 | M4g-a | 媒体元数据 IDL 反射（初值面） | ✅ 切片 3 落地 | F2 闭合（-9 Fail） |
