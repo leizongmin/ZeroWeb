@@ -11561,7 +11561,10 @@
             'audio/ogg': { audio: ['vorbis', 'opus'], video: [] },
             'audio/webm': { audio: ['vorbis'], video: [] },
             'video/ogg': { audio: ['vorbis', 'opus'], video: [] },
-            'video/webm': { audio: ['vorbis'], video: ['vp9', 'av1'] }
+            // M3 扩批（2026-09-02，zero-media A_OPUS demux 落地联动）：video/webm opus
+            // 转入支持面（WebmOpusAudioTrack——opus-decoder 直解；WPT 上游 media/*.webm
+            // 实测全为 VP9+Opus，common/media.js getVideoURI 判定 'vp9, opus' 需本行真值）。
+            'video/webm': { audio: ['vorbis', 'opus'], video: ['vp9', 'av1'] }
           };
           return function (type) {
             var _t = String(type == null ? '' : type);

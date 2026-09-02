@@ -402,3 +402,62 @@ fn audio_ogg_opus_garbage_rejected() {
     let garbage = b"definitely not an opus container".to_vec();
     assert!(open_ogg_opus(&garbage).is_err());
 }
+
+#[test]
+fn webm_av_opus_track_decode_chain() {
+    // M3 扩批（2026-09-02，fixture-mounted 播放切片前置）：webm A_OPUS 轨直解——
+    // Matroska demux + CodecPrivate(OpusHead) 解析 + opus-decoder 逐包解码（无 OGG
+    // 重封装）。WPT 上游 media/*.webm 实测全为 VP9+Opus 双轨——本面是 WPT 播放推进
+    // 族（track-cues-* / time-marches-on）媒体源的解码前置。素材：movie_5.webm
+    //（wpt-data fetch 白名单；5s VP9 视频 + 单声道 Opus 48kHz）。
+    // 输出契约锚点：48kHz / 单声道 / 总时长 ≈ 容器 5.008s（pre-skip 与包边界容差）。
+    use crate::av_decode::open_webm_opus_audio_track;
+
+    let path = super::decode::workspace_path("tests/wpt-runner/wpt-data/media/movie_5.webm");
+    let data = fs::read(&path).unwrap();
+    let mut track = open_webm_opus_audio_track(&data).unwrap();
+    assert_eq!(track.sample_rate(), 48_000, "Opus 规范输出率 48kHz");
+    assert_eq!(track.channels(), 1, "movie_5.webm 单声道 Opus");
+
+    let mut batches = 0u32;
+    let mut total_samples = 0usize;
+    let mut first_pts = None;
+    let mut prev_pts = None;
+    while let Some(batch) = track.next_batch().unwrap() {
+        batches += 1;
+        assert!(batches <= 2000, "runaway batch count");
+        assert_eq!(batch.sample_rate, 48_000);
+        assert_eq!(batch.channels, 1);
+        if first_pts.is_none() {
+            first_pts = Some(batch.pts_ms);
+        }
+        if let Some(prev) = prev_pts {
+            assert!(batch.pts_ms >= prev, "pts 单调递增");
+        }
+        prev_pts = Some(batch.pts_ms);
+        total_samples += batch.samples.len();
+    }
+    assert!(batches > 0, "Opus 轨应产出数据包");
+    assert_eq!(first_pts, Some(0), "首批 pts = 0（pre-skip 丢弃后）");
+    let duration_ms = total_samples as u64 / u64::from(track.channels()) * 1000 / u64::from(track.sample_rate());
+    assert!(
+        (4500..=5600).contains(&duration_ms),
+        "解码时长 ≈ 5s（容器 5.008s，pre-skip/包边界容差）：got {duration_ms}ms"
+    );
+}
+
+#[test]
+fn webm_av_opus_track_rejects_vorbis_only() {
+    // A_OPUS demux 选择面：Vorbis-only 双轨 fixture 无 A_OPUS 轨 → NoTrack（与
+    // open_webm_audio_track 的 A_VORBIS 选择对称）。
+    use crate::av_decode::open_webm_opus_audio_track;
+
+    let data = fs::read(fixture_path("sample-webm-vp9-vorbis.webm")).unwrap();
+    assert!(
+        matches!(
+            open_webm_opus_audio_track(&data),
+            Err(crate::audio_decode::AudioDecodeError::NoTrack)
+        ),
+        "Vorbis-only 源无 A_OPUS 轨 → NoTrack"
+    );
+}

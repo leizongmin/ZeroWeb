@@ -3555,6 +3555,8 @@ fn test_media_can_play_type_capability_table_m4gd() {
            webmAudio: a.canPlayType('audio/webm'),\
            mp3Type: a.canPlayType('audio/mpeg'),\
            vp9: v.canPlayType('video/webm; codecs=\"vp9\"'),\
+           vp9Opus: v.canPlayType('video/webm; codecs=\"vp9, opus\"'),\
+           webmOpus: v.canPlayType('video/webm; codecs=\"opus\"'),\
            av1: v.canPlayType('video/webm; codecs=\"av1\"'),\
            av1Pair: v.canPlayType('video/webm; codecs=\"av1, vorbis\"'),\
            vp9Dot: v.canPlayType('video/webm; codecs=\"vp9.0\"'),\
@@ -3594,6 +3596,13 @@ fn test_media_can_play_type_capability_table_m4gd() {
     );
     assert_eq!(get("vorbis"), "probably", "vorbis → probably");
     assert_eq!(get("pair"), "probably", "vp9+vorbis 双 codec → probably");
+    assert_eq!(
+        get("vp9Opus"),
+        "probably",
+        "vp9+opus → probably（zero-media A_OPUS demux 落地联动——WPT common/media.js
+         getVideoURI 判定串，WPT media/*.webm 实测 VP9+Opus）"
+    );
+    assert_eq!(get("webmOpus"), "probably", "webm 容器 opus → probably");
     // 不在解码面 → ''（不虚报）。
     assert_eq!(get("vp8"), "", "vp8 不在解码面 → ''");
     assert_eq!(

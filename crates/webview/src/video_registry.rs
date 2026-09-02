@@ -10,8 +10,9 @@
 use std::collections::HashMap;
 use zero_engine::image_resource_key;
 use zero_media::{
-    AudioDecoder, AudioFormat, AudioSink, NullSink, OpusAudioTrack, VideoClock, VideoDecoder, VideoPlayer,
-    WebmAudioTrack, open_ogg_opus, open_webm_audio_track,
+    AudioDecodeError, AudioDecoder, AudioFormat, AudioSink, DecodedAudio, NullSink, OpusAudioTrack, VideoClock,
+    VideoDecoder, VideoPlayer, WebmAudioTrack, WebmOpusAudioTrack, open_ogg_opus, open_webm_audio_track,
+    open_webm_opus_audio_track,
 };
 
 use zero_render_foundation::image_cache::{ImageCache, ImageData, ImageKey};
@@ -133,7 +134,9 @@ impl AudioEntry {
 /// 与 [`AudioEntry`]（纯音频源）分立：解码数据来自 `WebmAudioTrack`（OGG 页重封装
 /// + symphonia），生命周期跟随 video player（play 时懒建，pause/clear 释放）。
 struct WebmAudioEntry {
-    track: WebmAudioTrack,
+    /// 伴生音频轨（codec 泛化——A_VORBIS 走 OGG 重封装 + symphonia；A_OPUS 直解
+    /// opus-decoder。同 `sample_rate`/`channels`/`next_batch` 输出契约）。
+    track: WebmAudioTrackKind,
     sink: NullSink,
     playing: bool,
     /// 已解码累计游标（毫秒）——audio clock 主时钟的媒体时间真值面。
@@ -145,8 +148,36 @@ struct WebmAudioEntry {
     muted: bool,
 }
 
+/// webm 伴生音频轨的 codec 形态（M3 扩批 2026-09-02：A_OPUS 加入——WPT 上游
+/// media/*.webm 实测全为 VP9+Opus；此前仅 A_VORBIS）。
+enum WebmAudioTrackKind {
+    Vorbis(Box<WebmAudioTrack>),
+    Opus(Box<WebmOpusAudioTrack>),
+}
+
+impl WebmAudioTrackKind {
+    fn sample_rate(&self) -> u32 {
+        match self {
+            Self::Vorbis(t) => t.sample_rate(),
+            Self::Opus(t) => t.sample_rate(),
+        }
+    }
+    fn channels(&self) -> u16 {
+        match self {
+            Self::Vorbis(t) => t.channels(),
+            Self::Opus(t) => t.channels(),
+        }
+    }
+    fn next_batch(&mut self) -> Result<Option<DecodedAudio>, AudioDecodeError> {
+        match self {
+            Self::Vorbis(t) => t.next_batch(),
+            Self::Opus(t) => t.next_batch(),
+        }
+    }
+}
+
 impl WebmAudioEntry {
-    fn new(track: WebmAudioTrack) -> Self {
+    fn new(track: WebmAudioTrackKind) -> Self {
         Self {
             track,
             sink: NullSink::new(),
@@ -365,9 +396,16 @@ impl VideoPlayerRegistry {
                 return false;
             };
             self.players.insert(key, VideoPlayer::new(decoder));
-            // 音频轨伴生（A/V pair）：symphonia 面内 vorbis 轨存在时构建；纯视频
-            // webm 构建失败静默（视频面照常）。
-            if let Ok(track) = open_webm_audio_track(&bytes) {
+            // 音频轨伴生（A/V pair）：A_VORBIS（OGG 重封装 + symphonia）优先、
+            // A_OPUS（opus-decoder 直解，WPT 源主形态）次之；纯视频 webm 双失败静默
+            //（视频面照常）。
+            let audio_track = match open_webm_audio_track(&bytes) {
+                Ok(track) => Some(WebmAudioTrackKind::Vorbis(Box::new(track))),
+                Err(_) => open_webm_opus_audio_track(&bytes)
+                    .ok()
+                    .map(|t| WebmAudioTrackKind::Opus(Box::new(t))),
+            };
+            if let Some(track) = audio_track {
                 let mut entry = WebmAudioEntry::new(track);
                 let _ = entry.sink.start(AudioFormat {
                     sample_rate: entry.track.sample_rate(),
@@ -436,22 +474,30 @@ impl VideoPlayerRegistry {
         }
         // 伴生音频轨 seek（重建 + 追赶区静默）——master clock 游标对齐 target，
         // 后续 tick 视频 sync_to_media_time 跟随（不脱轨）。
-        if player_ok
-            && self.av_audio_entries.contains_key(&key)
-            && let Some(bytes) = self.av_sources.get(&key)
-            && let Ok(track) = open_webm_audio_track(bytes)
-        {
-            let (rate, channels) = (track.sample_rate(), track.channels());
-            if let Some(entry) = self.av_audio_entries.get_mut(&key) {
-                entry.track = track;
-                let _ = entry.sink.start(AudioFormat {
-                    sample_rate: rate,
-                    channels,
-                });
-                entry.cursor_ms = target_ms;
-                entry.skip_until_ms = target_ms;
-                entry.last_tick_ms = None;
+        // codec 泛化重建（A_VORBIS 优先、A_OPUS 次之——与 play 懒建同序）。
+        let rebuilt = self.av_sources.get(&key).and_then(|bytes| {
+            if let Ok(track) = open_webm_audio_track(bytes) {
+                let (rate, ch) = (track.sample_rate(), track.channels());
+                Some((WebmAudioTrackKind::Vorbis(Box::new(track)), rate, ch))
+            } else if let Ok(track) = open_webm_opus_audio_track(bytes) {
+                let (rate, ch) = (track.sample_rate(), track.channels());
+                Some((WebmAudioTrackKind::Opus(Box::new(track)), rate, ch))
+            } else {
+                None
             }
+        });
+        if player_ok
+            && let Some((track, rate, channels)) = rebuilt
+            && let Some(entry) = self.av_audio_entries.get_mut(&key)
+        {
+            entry.track = track;
+            let _ = entry.sink.start(AudioFormat {
+                sample_rate: rate,
+                channels,
+            });
+            entry.cursor_ms = target_ms;
+            entry.skip_until_ms = target_ms;
+            entry.last_tick_ms = None;
         }
         player_ok
     }

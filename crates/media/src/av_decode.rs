@@ -310,3 +310,137 @@ impl WebmAudioTrack {
         }
     }
 }
+
+// ── A_OPUS 面（M3 扩批 2026-09-02，fixture-mounted 播放切片前置）────────────────
+//
+// webm 内嵌 Opus 与独立 Ogg Opus 的差异同样仅在封装：Matroska A_OPUS 的 CodecPrivate
+// **就是** OpusHead（Matroska spec codec 规定），数据包即 Opus 数据包——无需 OGG 重
+// 封装，逐包直接喂 `opus_decoder::OpusDecoder`（M2c opus 面，纯 Rust RFC 6716/8251）。
+// WPT 上游媒体文件（media/*.webm）实测全为 VP9+Opus 双轨——本面落地后 WPT 播放推进族
+// （track-cues-* / time-marches-on）的媒体源在 zero-media 解码面全部就绪。
+
+/// Matroska A_OPUS 的 CodecPrivate（= OpusHead，RFC 7845 §4.1）解析——声道数 +
+/// pre-skip + 输入采样率。
+/// https://www.matroska.org/technical/codec_specs.html#opus
+fn parse_opus_codec_private(private: &[u8]) -> Result<(u16, u16, u32), AudioDecodeError> {
+    if private.len() < 19 || &private[0..8] != b"OpusHead" {
+        return Err(AudioDecodeError::Probe("missing OpusHead in CodecPrivate".into()));
+    }
+    let channels = private[9];
+    let pre_skip = u16::from_le_bytes([private[10], private[11]]);
+    let input_sample_rate = u32::from_le_bytes([private[12], private[13], private[14], private[15]]);
+    Ok((u16::from(channels), pre_skip, input_sample_rate))
+}
+
+/// 持续解码的 webm A_OPUS 音频轨——Matroska demux + opus-decoder 直解（无 OGG 重封装）。
+///
+/// 输出面与 [`WebmAudioTrack`] 同契约（f32 交错 PCM、`sample_rate`/`channels`/
+/// `next_batch`）；Opus 规范输出率固定 48 kHz。pre-skip（编码器起始补偿静音）在首批
+/// 丢弃。包间隙不填补（webm timestamp 语义由调用方按 pts 推进；WPT 源为连续编码）。
+///
+/// 生命周期：从 [`open_webm_opus_audio_track`] 构建，`next_batch` 前向解码（流末
+/// `Ok(None)`）。
+pub struct WebmOpusAudioTrack {
+    demuxer: matroska_demuxer::MatroskaFile<Cursor<Vec<u8>>>,
+    audio_track: u64,
+    decoder: opus_decoder::OpusDecoder,
+    channels: u16,
+    /// OpusHead pre-skip（首批起始丢弃的采样数，per channel）。
+    pre_skip: u64,
+    /// pre-skip 已丢弃计数（per channel）。
+    skipped: u64,
+    /// 已输出帧数（per channel）——pts 推导。
+    frames_out: u64,
+    eos: bool,
+}
+
+/// 从 webm 字节构建 A_OPUS 音频轨解码器（demux 音频轨 + OpusHead + opus-decoder）。
+pub fn open_webm_opus_audio_track(data: &[u8]) -> Result<WebmOpusAudioTrack, AudioDecodeError> {
+    let cursor = Cursor::new(data.to_vec());
+    let demuxer =
+        matroska_demuxer::MatroskaFile::open(cursor).map_err(|e| AudioDecodeError::Probe(format!("container: {e}")))?;
+    let track = demuxer
+        .tracks()
+        .iter()
+        .find(|t| t.track_type() == matroska_demuxer::TrackType::Audio && t.codec_id() == "A_OPUS")
+        .ok_or(AudioDecodeError::NoTrack)?;
+    let audio_track = track.track_number().get();
+    let Some(private) = track.codec_private() else {
+        return Err(AudioDecodeError::Probe("no CodecPrivate for A_OPUS".into()));
+    };
+    let (channels, pre_skip, _input_rate) = parse_opus_codec_private(private)?;
+    let decoder = opus_decoder::OpusDecoder::new(48_000, usize::from(channels))
+        .map_err(|e| AudioDecodeError::Probe(format!("opus decoder: {e}")))?;
+    Ok(WebmOpusAudioTrack {
+        demuxer,
+        audio_track,
+        decoder,
+        channels,
+        pre_skip: u64::from(pre_skip),
+        skipped: 0,
+        frames_out: 0,
+        eos: false,
+    })
+}
+
+impl WebmOpusAudioTrack {
+    /// 采样率（Hz）——Opus 规范输出率固定 48 kHz。
+    pub fn sample_rate(&self) -> u32 {
+        48_000
+    }
+
+    /// 声道数（OpusHead）。
+    pub fn channels(&self) -> u16 {
+        self.channels
+    }
+
+    /// 解码下一批（f32 交错 PCM；流末 `Ok(None)`）——与 [`WebmAudioTrack`] 同契约。
+    pub fn next_batch(&mut self) -> Result<Option<crate::audio_decode::DecodedAudio>, AudioDecodeError> {
+        if self.eos {
+            return Ok(None);
+        }
+        // Opus 帧最长 120ms @48kHz = 5760 样本/声道（RFC 6716 §2）；缓冲按上限预分配。
+        const MAX_FRAME: usize = 5760;
+        let mut pcm = vec![0.0f32; MAX_FRAME * usize::from(self.channels)];
+        loop {
+            let mut block = matroska_demuxer::Frame::default();
+            match self.demuxer.next_frame(&mut block) {
+                Ok(true) => {
+                    if block.track != self.audio_track {
+                        continue;
+                    }
+                    let per_ch = match self.decoder.decode_float(&block.data, &mut pcm, false) {
+                        Ok(n) => n,
+                        Err(_) => continue, // 损坏包跳过（AudioDecoder 同面）
+                    };
+                    let total = per_ch * usize::from(self.channels);
+                    // pre-skip 丢弃（首解码面按采样序剥除）。
+                    let mut start = 0usize;
+                    if self.skipped < self.pre_skip {
+                        let remain = self.pre_skip - self.skipped;
+                        let drop = (remain as usize).min(per_ch);
+                        self.skipped += drop as u64;
+                        start = drop * usize::from(self.channels);
+                    }
+                    if start >= total {
+                        continue; // 整批都在 pre-skip 内
+                    }
+                    let samples = pcm[start..total].to_vec();
+                    let pts_ms = self.frames_out * 1000 / 48_000;
+                    self.frames_out += (samples.len() / usize::from(self.channels)) as u64;
+                    return Ok(Some(crate::audio_decode::DecodedAudio {
+                        samples,
+                        sample_rate: 48_000,
+                        channels: self.channels,
+                        pts_ms,
+                    }));
+                }
+                Ok(false) => {
+                    self.eos = true;
+                    return Ok(None);
+                }
+                Err(e) => return Err(AudioDecodeError::Decode(e.to_string())),
+            }
+        }
+    }
+}
