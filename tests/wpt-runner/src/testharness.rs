@@ -1480,6 +1480,8 @@ pub const WEBAUDIO_TEST_FILES: &[&str] = &[
     // ---- 第五批（2026-09-02）：AudioBuffer 构造/接口面 ----
     // AudioBuffer 纯构造 + duration/getChannelData 断言（W3CTH 形态，无渲染）。
     "webaudio/the-audio-api/the-audiobuffer-interface/audiobuffer.html",
+    // GainNode.gain instanceof AudioParam 断言（audit 单 task，无渲染）。
+    "webaudio/the-audio-api/the-gainnode-interface/gain-basic.html",
     // 不导入：ctor-audiobuffer.html（末 task「multiple contexts」依赖
     // startRendering——audit runner 整文件跑，前段构造面无法单独导入）；
     // audiobuffer-getChannelData / audiobuffer-copy-channel（copyToChannel/

@@ -1,0 +1,79 @@
+{
+  "goal": "media-audio",
+  "date": "2026-09-02",
+  "suite": "testharness-webaudio",
+  "wpt_rev": "315976933870b34d6ea30e3f6643403edae678ba",
+  "batch": "第六批（gain-basic 单件）",
+  "summary": {
+    "files": 12,
+    "pass": 331,
+    "fail": 0,
+    "rate": "331/331 = 100.0%"
+  },
+  "files": [
+    {
+      "file": "webaudio/the-audio-api/the-audionode-interface/audionode-connect-return-value.html",
+      "pass": 1,
+      "fail": 0
+    },
+    {
+      "file": "webaudio/the-audio-api/the-destinationnode-interface/destination.html",
+      "pass": 1,
+      "fail": 0
+    },
+    {
+      "file": "webaudio/the-audio-api/the-oscillatornode-interface/ctor-oscillator.html",
+      "pass": 62,
+      "fail": 0
+    },
+    {
+      "file": "webaudio/the-audio-api/the-gainnode-interface/ctor-gain.html",
+      "pass": 4,
+      "fail": 0
+    },
+    {
+      "file": "webaudio/the-audio-api/the-stereopanner-interface/ctor-stereopanner.html",
+      "pass": 51,
+      "fail": 0
+    },
+    {
+      "file": "webaudio/the-audio-api/the-delaynode-interface/ctor-delay.html",
+      "pass": 53,
+      "fail": 0
+    },
+    {
+      "file": "webaudio/the-audio-api/the-biquadfilternode-interface/ctor-biquadfilter.html",
+      "pass": 5,
+      "fail": 0
+    },
+    {
+      "file": "webaudio/the-audio-api/the-analysernode-interface/ctor-analyser.html",
+      "pass": 78,
+      "fail": 0
+    },
+    {
+      "file": "webaudio/the-audio-api/the-periodicwave-interface/createPeriodicWaveInfiniteValuesThrows.html",
+      "pass": 2,
+      "fail": 0
+    },
+    {
+      "file": "webaudio/the-audio-api/the-audioparam-interface/audioparam-exceptional-values.html",
+      "pass": 66,
+      "fail": 0
+    },
+    {
+      "file": "webaudio/the-audio-api/the-audiobuffer-interface/audiobuffer.html",
+      "pass": 1,
+      "fail": 0
+    },
+    {
+      "file": "webaudio/the-audio-api/the-gainnode-interface/gain-basic.html",
+      "pass": 7,
+      "fail": 0
+    }
+  ],
+  "excluded": [
+    "no-dezippering.html（gain/stereopanner/delay/biquadfilter 四件——startRendering 渲染断言）",
+    "gain.html（startRendering）"
+  ]
+}
