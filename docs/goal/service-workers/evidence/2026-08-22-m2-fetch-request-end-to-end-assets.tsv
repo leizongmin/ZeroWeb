@@ -69,3 +69,7 @@ service-workers/service-worker/claim-using-registration.https.html	testharness	c
 service-workers/service-worker/unregister-controller.https.html	testharness	case	1	3733	no	3bf4cff7200e71a7ad157f97f60e0bca45693485	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
 service-workers/service-worker/resources/unregister-controller-page.html	support	iframe-document	1	445	no	18a95ee892b1c9ee7ca597cb2655e6c4504a7912	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
 service-workers/service-worker/resources/simple-intercept-worker.js	support	worker-script	2	174	no	f8b5f8c5cb77b153bc98703821e13f00d8702fd7	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
+service-workers/service-worker/ServiceWorkerGlobalScope/postmessage.https.html	testharness	case	1	2797	no	99dedebf2e56c744528fd168c05b4fe734563c57	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
+service-workers/service-worker/ServiceWorkerGlobalScope/resources/postmessage-loopback-worker.js	support	worker-script	1	525	no	083e9aa2a85d452bd89c64a088def8b58f1d61aa	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
+service-workers/service-worker/ServiceWorkerGlobalScope/resources/postmessage-ping-worker.js	support	worker-script	1	496	no	ebb1eccce2da61484e7b23d5cdda7d6898acf3bd	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
+service-workers/service-worker/ServiceWorkerGlobalScope/resources/postmessage-pong-worker.js	support	worker-script	1	136	no	4a0d90b6182f02b12f044bc577b461c92e9d2100	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83

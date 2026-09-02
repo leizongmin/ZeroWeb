@@ -32,7 +32,7 @@ M2 fetch/interception 上游 WPT
 `fetch-with-body.https.html`、`fetch-error.https.html`、`invalid-header.https.html` 与
 `invalid-blobtype.https.html`、`fetch-event-respond-with-readable-stream-chunk.https.html` 与
 `ServiceWorkerGlobalScope/extendable-message-event-constructor.https.html` 已形成独立 runner 与
-27 case / 71 subtest / 71 Pass 确定性
+28 case / 73 subtest / 73 Pass 确定性
 baseline；SW CacheStorage
 serviceworker wrapper 已
 扩展到 `cache-storage`、`cache-storage-keys`、`cache-delete`、`cache-keys`、`cache-matchAll`、
@@ -294,6 +294,9 @@ JSON，private profile 继续只保留内存态。
 - ✅ M3-52：`ServiceWorkerGlobalScope/extendable-message-event.https.html` 纳入 core
   baseline；page/nested client → worker、worker loopback、active ↔ waiting worker
   `ExtendableMessageEvent` source/ports/origin 语义通过；core WPT 51/198
+- ✅ M3-53：`ServiceWorkerGlobalScope/postmessage.https.html` 纳入 fetch/message
+  baseline；worker self-loopback、active → waiting worker transferred `MessagePort`
+  转发以及最终 page port 回信语义通过；fetch/message WPT 28/73
 - ✅ M2-1：Service Worker `FetchEvent` runtime foundation、manager longest-scope dispatch
   与 renderer/browser IPC command/event 已接通；`respondWith(new Response(...))`、未调用
   `respondWith` pass-through、重复 `respondWith` failure、跨 origin/out-of-scope pass-through
@@ -623,6 +626,12 @@ JSON，private profile 继续只保留内存态。
   非空 `Uint8Array` chunk 串接后经受控 iframe `response.text()` 读回；相邻的
   network `fetch(...).body` 转发、invalid chunk reader rejection 与 partial stream
   incremental reader 用例仍留在 streaming/cancel 专项。
+- ✅ M3-53：Service Worker fetch/message WPT baseline 扩展到
+  `service-workers/service-worker/ServiceWorkerGlobalScope/postmessage.https.html`；
+  fetch-wave 资产清单扩展到 74 asset，runner 双跑 28 case / 73 subtest /
+  73 Pass / 0 Fail / 0 Timeout / deterministic true。该切片固定
+  `ServiceWorker.postMessage()` 中 transferred `MessagePort` 的 worker self-loopback、
+  active → waiting worker 转发和最终 page port 回信路径。
 
 ## 缺口清单
 
@@ -681,8 +690,8 @@ second（replacement）worker 只处理 awaitInstallEvent（messageSequence=1）
 ## 验证基线
 
 - 测试基线：storage crate 既有单测全绿（立项时点）；clippy 零警告
-- WPT service-workers 面：当前 core runner 50 case / 194 subtest 全绿，fetch/message runner
-  27 case / 71 subtest 全绿，CacheStorage runner 25 case / 318 subtest 全绿；
+- WPT service-workers 面：当前 core runner 51 case / 198 subtest 全绿，fetch/message runner
+  28 case / 73 subtest 全绿，CacheStorage runner 25 case / 318 subtest 全绿；
   上游完整分母 294 个 testharness 源 / 331 URL，
   正文覆盖 294/294；分层与依赖信号见
   [M0 WPT evidence](evidence/2026-08-19-m0-wpt-executable-surface.md)，逐文件机器清单见
@@ -937,6 +946,11 @@ second（replacement）worker 只处理 awaitInstallEvent（messageSequence=1）
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- cargo run -p zero-wpt-runner -- testharness-service-workers-fetch --wpt-data tests/wpt-runner/wpt-data/.service-workers-tier-a-root fetch-event-respond-with-readable-stream-chunk.https.html --json`：1 Pass
   - `make audit-wpt-service-workers-fetch-wave`：70 assets matched pinned manifest
   - `make baseline-wpt-service-workers-fetch`：27 cases / 71 subtests / 71 Pass，double-run deterministic
+- M3-53 postMessage worker ports baseline：
+  [PostMessage worker ports evidence](evidence/2026-09-02-m3-postmessage-worker-ports.md)
+  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- cargo run -p zero-wpt-runner -- testharness-service-workers-fetch --wpt-data tests/wpt-runner/wpt-data/.service-workers-tier-a-root ServiceWorkerGlobalScope/postmessage.https.html --json`：2 Pass
+  - `make audit-wpt-service-workers-fetch-wave`：74 assets matched pinned manifest
+  - `make baseline-wpt-service-workers-fetch`：28 cases / 73 subtests / 73 Pass，double-run deterministic
 - M3 registration-local CacheStorage persistence：active registration `CacheStorage` snapshot/
   restore、normal profile mutation dirtying 与 owner 重建读回见
   [M3 Service Worker CacheStorage Persistence](evidence/2026-08-22-m3-registration-cache-storage-persistence.md)
@@ -1155,6 +1169,7 @@ second（replacement）worker 只处理 awaitInstallEvent（messageSequence=1）
 | 2026-09-02 | M3-50 worker-global unregister core promotion | `ServiceWorkerGlobalScope/unregister.https.html` 纳入 core runner；worker-global `registration.unregister()` 在 evaluation/install/activate/message 场景通过；`make baseline-wpt-service-workers-core` 双跑 49/193 deterministic Pass |
 | 2026-09-02 | M3-51 message event ports core promotion | `ServiceWorkerGlobalScope/message-event-ports.https.html` 纳入 core runner；worker-side `MessageEvent.ports` getter identity 语义通过；`make baseline-wpt-service-workers-core` 双跑 50/194 deterministic Pass |
 | 2026-09-02 | M3-52 extendable message event core promotion | `ServiceWorkerGlobalScope/extendable-message-event.https.html` 纳入 core runner；`ExtendableMessageEvent` page/nested client source、worker loopback 与 active/waiting worker message 语义通过；单 case 4/4 Pass |
+| 2026-09-02 | M3-53 postMessage worker ports fetch/message promotion | `ServiceWorkerGlobalScope/postmessage.https.html` 纳入 fetch/message runner；worker self-loopback 与 active/waiting transferred `MessagePort` 回信通过；`make baseline-wpt-service-workers-fetch` 双跑 28/73 deterministic Pass |
 | 2026-08-22 | M3 registration CacheStorage persistence | SW active registration-local CacheStorage snapshot/restore；normal profile persistence dirtying |
 | 2026-08-22 | M2 worker Cache delete/listing | SW runtime `Cache.delete()` 与 `CacheStorage.delete/has/keys` 贯穿 runtime/renderer/browser/manager/protocol |
 | 2026-08-22 | storage-cache-api M3 persistence support | page/WebView owner CacheStorage per-origin 落盘 |

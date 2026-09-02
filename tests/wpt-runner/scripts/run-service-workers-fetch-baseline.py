@@ -10,8 +10,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-EXPECTED_CASES = 27
-EXPECTED_SUBTESTS = 71
+EXPECTED_CASES = 28
+EXPECTED_SUBTESTS = 73
 
 
 def parse_args() -> argparse.Namespace:
@@ -99,7 +99,7 @@ def render_markdown(summary: dict) -> str:
             "",
             "## Scope",
             "",
-            "This pinned Service Worker fetch/message baseline covers twenty-seven cases. "
+            "This pinned Service Worker fetch/message baseline covers twenty-eight cases. "
             "`fetch-on-the-right-interface.https.any.js` verifies that `fetch` is inherited "
             "from `WorkerGlobalScope.prototype` rather than installed as an own property on "
             "`ServiceWorkerGlobalScope`. "
@@ -107,6 +107,9 @@ def render_markdown(summary: dict) -> str:
             "global `ExtendableMessageEvent` constructor defaults, initializer conversion, "
             "valid ServiceWorker/MessagePort sources, and invalid source/ports `TypeError` "
             "boundaries. "
+            "`ServiceWorkerGlobalScope/postmessage.https.html` verifies worker self-loopback "
+            "and active/waiting worker `ServiceWorker.postMessage()` delivery over transferred "
+            "`MessagePort` endpoints. "
             "`historical.https.any.js` verifies that the "
             "historical `FetchEvent.prototype.targetClientId` member is absent. "
             "`request-end-to-end.https.html` registers a real service worker, loads a "

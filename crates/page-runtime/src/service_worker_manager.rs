@@ -602,6 +602,7 @@ pub struct ServiceWorkerManager {
     client_messages: HashMap<(u64, String), Vec<Vec<ServiceWorkerOutboundMessage>>>,
     pending_client_messages: HashMap<(u64, String), usize>,
     message_ports: HashSet<(u64, String, u64)>,
+    worker_message_ports: HashMap<(u64, u64), u64>,
     clients: HashMap<String, ClientRecord>,
     unregistered_active: HashSet<u64>,
     next_client_sequence: u64,
@@ -852,7 +853,7 @@ impl ServiceWorkerRuntimeHost for LocalServiceWorkerHost {
                 &ServiceWorkerMessagePorts {
                     transferred_port_ids: message.transferred_port_ids,
                     data_port_index: message.data_port_index,
-                    target_port_id: None,
+                    target_port_id: message.target_port_id,
                 },
                 clients_claim_allowed,
             )
@@ -1030,6 +1031,7 @@ impl ServiceWorkerManager {
             client_messages: HashMap::new(),
             pending_client_messages: HashMap::new(),
             message_ports: HashSet::new(),
+            worker_message_ports: HashMap::new(),
             clients: HashMap::new(),
             unregistered_active: HashSet::new(),
             next_client_sequence: 1,
@@ -1771,13 +1773,16 @@ impl ServiceWorkerManager {
                 }
                 ServiceWorkerEvent::ClientMessagesEmitted { outbound } => {
                     let pending_fetch_client_id = self.pending_fetch_client_id(registration_id);
-                    if self
-                        .record_fetch_outbound_message_ports(
-                            registration_id,
-                            pending_fetch_client_id.as_deref(),
-                            &outbound,
-                        )
-                        .is_ok()
+                    let (outbound, failures) = self.route_worker_port_messages(registration_id, outbound);
+                    output.extend(failures);
+                    if !outbound.is_empty()
+                        && self
+                            .record_fetch_outbound_message_ports(
+                                registration_id,
+                                pending_fetch_client_id.as_deref(),
+                                &outbound,
+                            )
+                            .is_ok()
                     {
                         self.route_client_messages(registration_id, pending_fetch_client_id.as_deref(), outbound);
                     }
@@ -2707,6 +2712,42 @@ impl ServiceWorkerManager {
         self.record_outbound_message_ports(registration_id, default_client_id.unwrap_or(""), &targeted_messages)
     }
 
+    fn route_worker_port_messages(
+        &mut self,
+        registration_id: u64,
+        messages: Vec<ServiceWorkerOutboundMessage>,
+    ) -> (Vec<ServiceWorkerOutboundMessage>, Vec<ServiceWorkerManagerEvent>) {
+        let mut client_messages = Vec::new();
+        let mut failures = Vec::new();
+        for message in messages {
+            if let Some(port_id) = message.port_id
+                && let Some(target_registration_id) =
+                    self.worker_message_ports.get(&(registration_id, port_id)).copied()
+                && let Some(source) = self.worker_peer_info(registration_id)
+            {
+                if let Err(error) = self.dispatch_worker_port_message(
+                    registration_id,
+                    ServiceWorkerWorkerMessage {
+                        target_registration_id,
+                        source,
+                        data_json: message.data_json,
+                        transferred_port_ids: message.transferred_port_ids,
+                        data_port_index: message.data_port_index,
+                        target_port_id: Some(port_id),
+                    },
+                ) {
+                    failures.push(ServiceWorkerManagerEvent::CoordinationFailed {
+                        registration_id,
+                        message: error.to_string(),
+                    });
+                }
+            } else {
+                client_messages.push(message);
+            }
+        }
+        (client_messages, failures)
+    }
+
     fn complete_routed_client_messages(
         &mut self,
         registration_id: u64,
@@ -3234,6 +3275,64 @@ impl ServiceWorkerManager {
         message: ServiceWorkerWorkerMessage,
     ) -> Result<(), ServiceWorkerManagerError> {
         let target_registration_id = message.target_registration_id;
+        if message.target_port_id.is_some() {
+            return self.dispatch_worker_port_message(source_registration_id, message);
+        }
+        let mut client_port_transfers = Vec::new();
+        let mut worker_port_transfers = Vec::new();
+        for &port_id in &message.transferred_port_ids {
+            if let Some(client_id) = self.message_port_client_id(source_registration_id, port_id) {
+                client_port_transfers.push((client_id, port_id));
+            } else {
+                worker_port_transfers.push(port_id);
+            }
+        }
+        let target_state = self
+            .registration(target_registration_id)
+            .ok_or(ServiceWorkerManagerError::UnknownRegistration(target_registration_id))?
+            .state;
+        self.sync_runtime_registration_peers(target_registration_id)?;
+        let event_id = self.next_worker_message_event_id;
+        self.next_worker_message_event_id = self.next_worker_message_event_id.saturating_add(1);
+        self.host.dispatch_worker_message(
+            target_registration_id,
+            event_id,
+            message,
+            target_state == ServiceWorkerState::Activated,
+        )?;
+        self.message_ports.extend(
+            client_port_transfers
+                .into_iter()
+                .map(|(client_id, port_id)| (target_registration_id, client_id, port_id)),
+        );
+        self.worker_message_ports.extend(
+            worker_port_transfers
+                .into_iter()
+                .map(|port_id| ((target_registration_id, port_id), source_registration_id)),
+        );
+        if let Ok(()) = self.sync_runtime_registration_peers(source_registration_id) {}
+        Ok(())
+    }
+
+    fn dispatch_worker_port_message(
+        &mut self,
+        source_registration_id: u64,
+        message: ServiceWorkerWorkerMessage,
+    ) -> Result<(), ServiceWorkerManagerError> {
+        let Some(port_id) = message.target_port_id else {
+            return Err(ServiceWorkerManagerError::InvalidInput(
+                "worker MessagePort target is missing".into(),
+            ));
+        };
+        let Some(target_registration_id) = self
+            .worker_message_ports
+            .get(&(source_registration_id, port_id))
+            .copied()
+        else {
+            return Err(ServiceWorkerManagerError::InvalidInput(
+                "worker MessagePort endpoint does not exist".into(),
+            ));
+        };
         let target_state = self
             .registration(target_registration_id)
             .ok_or(ServiceWorkerManagerError::UnknownRegistration(target_registration_id))?
@@ -5396,6 +5495,80 @@ mod tests {
             assert!(
                 Instant::now() < deadline,
                 "worker-to-worker page reply timed out: events={seen_events:?} active={active_messages:?} waiting={waiting_messages:?}"
+            );
+            std::thread::sleep(Duration::from_millis(1));
+        }
+    }
+
+    #[test]
+    fn worker_to_worker_transferred_port_can_reply_to_page_client() {
+        let mut manager = manager_under_test();
+        let active = start_active(
+            &mut manager,
+            "/app/",
+            "addEventListener('message', event => {
+               if (event.data.port) {
+                 const port = event.data.port;
+                 const channel = new MessageChannel();
+                 channel.port1.onmessage = event => {
+                   if (event.data.pong) port.postMessage(event.data.pong);
+                 };
+                 registration.waiting.postMessage({ping: channel.port2}, [channel.port2]);
+               }
+             });",
+        );
+        let ServiceWorkerUpdateOutcome::Started {
+            registration_id: waiting,
+        } = manager
+            .start_update(
+                active,
+                "addEventListener('message', event => {
+                   if (event.data.ping) event.data.ping.postMessage({pong: 'OK'});
+                 });",
+            )
+            .unwrap()
+        else {
+            panic!("changed update must start a waiting candidate");
+        };
+        wait_for_state(&mut manager, waiting, ServiceWorkerState::Installed);
+
+        manager
+            .post_message_with_ports(
+                active,
+                97,
+                r#"{"port":{"__zwServiceWorkerTransferredPortIndex":0}}"#,
+                "client-1",
+                "https://example.test/app/page",
+                &ServiceWorkerMessagePorts {
+                    transferred_port_ids: vec![2],
+                    data_port_index: None,
+                    target_port_id: None,
+                },
+            )
+            .unwrap();
+
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let mut seen_events = Vec::new();
+        loop {
+            seen_events.extend(manager.poll());
+            let (_, messages) = manager.client_messages_since(active, "client-1", 0);
+            if !messages.is_empty() {
+                assert_eq!(
+                    messages,
+                    [ServiceWorkerOutboundMessage {
+                        data_json: "\"OK\"".into(),
+                        port_id: Some(2),
+                        transferred_port_ids: Vec::new(),
+                        data_port_index: None,
+                        target_client_id: None,
+                    }]
+                );
+                break;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "worker MessagePort reply timed out: events={seen_events:?} active_messages={messages:?} worker_ports={:?}",
+                manager.worker_message_ports
             );
             std::thread::sleep(Duration::from_millis(1));
         }
