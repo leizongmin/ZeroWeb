@@ -2,9 +2,10 @@
 
 **入口文档**: [../media-elements.md](../media-elements.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-02（**M3 扩批 XIII**——TextTrack cue 选项 + 列表增量事件面：
-VTTCue 定位选项 IDL + data:text/vtt 加载 + addtrack 异步派发 + src 变更清 cue，
-6 用例导入。**510P/0F/0T/25PF（510/535 = 95.3%）**）
+**最后更新**: 2026-09-02（**M3 扩批 XV**——http VTT 文件加载 + WebVTT 解析深化：
+同步 `__zw_fetch` 通路 + `_zwParseVtt`（header 校验/cue id 错误恢复/cue settings/
+实体/tag 截断）+ 静态 track 调度触发面 + window.event，12 用例导入。
+**528P/0F/0T/25PF（528/553 = 95.5%）**）
 
 ---
 
@@ -295,6 +296,60 @@ already-playing resolved 断言。**88.3%**（324P/0F/2T/41PF，+80 subtest 全�
   before-play / track-cues-* 播放推进族依赖真播放钟（兄弟目标 media-playback）；
   track-webvtt-* 布局/渲染族归渲染域远期。
 
+**M3 扩批 XV 已落地（2026-09-02，http VTT 文件加载 + WebVTT 解析深化——上一批
+「可导入面吃尽」判断的第二次修正：track/track-element 目录的 **http VTT 加载族**
+此前因「无真字幕抓取通路」整体排除，本批接通同步 fetch 后 12 案全绿）**：
+- **http(s) VTT 加载**（part06 `_zwTrackScheduleLoad`）：同步 `__zw_fetch`（R115
+  iframe 同款契约）取回 VTT 文本 → 新 `_zwParseVtt` 解析填 cue；`__zwfr:` wire 解析
+  取 body；fetch 失败/非 WEBVTT 头 → error settle（track onerror + readyState ERROR
+  ——track-webvtt-magic-header no-webvtt 断言面）；无 fetch 宿主（浏览器异步路径）
+  回落 headless load 恒派（零回归）。
+- **`_zwParseVtt` 解析深化**（part06，data: 版复用 `_zwParseVttDataUrl` 不动）：
+  ① header 校验（BOM 剥离后 'WEBVTT' 开头）；② cue id 行**含 '-->' 不识别**（该行
+  作坏 timings 丢弃、后续行重新起块——cue-id-error 3 cue 恢复面）；③ cue settings
+  （line/position/size/align/vertical：% 剥离 + name 大小写敏感 + `<align:end>` 尖
+  括号段容错 + settings 含字面 '-->' 只按前两个 --> 分割）；④ timings 小时位 +
+  **mm/ss ∈ [00,59] 范围校验**（timings-hour-error '00:120:00.500' 拒收）；⑤ cue 文本
+  tag/annotation 截断（原始 '>' 终点；无原始 '>'（含 '&gt;' 实体）→ '<' 起全吞——
+  entities-wrong 断言面）；⑥ **cue.text 保持 parser 原文**（实体不解码——spec；
+  track-element-src-change '&amp;' 字面断言），解码发生在 getCueAsHTML()（DOM 面）。
+- **getCueAsHTML 最小面**（part01b VTTCue.prototype）：DocumentFragment + 单 text
+  node + 实体解码（entities 断言族以 `getCueAsHTML().textContent` 消费；headless 无
+  cue 标记树——`<Tag>` 结构解析归渲染域远期）。
+- **静态 HTML track 子调度触发面**（parser 创建无 appendChild 钩子——三个入口补跑
+  `_zwScheduleChildTrackLoads`）：document `querySelector(All)('track')`（part06 doc
+  对象口）+ `track.track` 访问（part04，`_zwScheduleParentTrackLoad` 父向）+
+  video.textTracks 首读（part03）。
+- **default 属性 mode gate**（`_zwScheduleChildTrackLoads`）：无 default 属性的 track
+  子 TextTrack mode 缺省 disabled → **不自动加载**（track-default-attribute 断言
+  「只有 default track 派 onload」）；**TextTrack mode disabled→hidden/showing setter
+  触发 track URL 处理**（part01b mode setter——enableAllTextTracks 形态，
+  timings-hour/magic-header/header-checks 断言面）。
+- **src 同值变更不重载**（`_zwTrackScheduleLoad` srcChange 分支前置比较）：新旧绝对
+  URL 相等且已 settle → no-op（track-element-src-change stage3「不派 onload、cues
+  保持」）；srcChange 重置 trackScheduled 幂等标记（三段变更各派 onload）。
+- **window.event（legacy）**（part03 `_dispatchWithBubble`）：dispatch 期间暴露
+  `globalThis.event` + 嵌套派发栈式恢复（spec legacy current event；track-default-
+  attribute handler 内裸 `event.target` 断言面）。
+- **导入**：track/track-element 12 文件（track-add-remove-cue / track-webvtt-cue-
+  identifiers / blank-lines / settings / entities / timings-hour / magic-header /
+  header-checks / track-cue-negative-timestamp / track-element-src-change /
+  track-default-attribute / track-load-from-src-readyState）+ 16 个 VTT 资源 +
+  track-helpers.js（fetch 白名单 TRACK_ELEMENT_SUPPORT + MEDIA_TEST_FILES 同步）。
+  **528P/0F/0T/25PF（528/553 = 95.5%）**（+16 subtest 全绿 0 回归）。evidence：
+  `evidence/2026-09-02-media-http-vtt.json`。make test 18733 全绿、fmt/clippy 干净。
+- **单测**：`test_media_http_vtt_loading_m3xv`（http 加载 settle + cue 解析面 /
+  非 WEBVTT 头 error settle + src 变更重调度 / mode 触发加载 / cue.text 原文 +
+  getCueAsHTML 解码两面分离，4 断言组）。
+- **排除注记**（B 组——真播放钟推进，随 media-playback 泵接语义层复评）：track-cues-*
+  全族（enter/exit/cuechange/missed/seeking/pause-on-exit/sorted-before-dispatch/
+  add-new-track）、track-active-cues、no-cuechange-before-play、track-remove-active-cue、
+  track-disabled（timeupdate 推进面）、track-mode-triggers-loading（canplaythrough
+  后触发时序）、track-element-src-aborted-load/-src-change-error（abort/error 时序）、
+  track-remove-quickly/-by-setting-innerHTML（移除竞态）。C 组（渲染域远期）：
+  track-cue-rendering-*、track-css-cue-pseudo-class、track-webvtt-*positioning/layout、
+  track-cue-inline。D 组（深结构）：track-change-event（既有记录）。
+
 **DC 达成审计（2026-09-01）**：DC-1~4 实质满足——① 60 用例导入 + 8 份 evidence JSON
 （基线演进 46.5→90.1 全程可追溯）；② 状态机/事件序列 WPT 断言面全绿（headless 近似
 驱动逐项记录）；③ API 语义面全对齐（canPlayType 空表 + M4g-d 显式记录为跨 goal 依赖项；
@@ -335,7 +390,7 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
 
 | # | 缺口 | 状态 | 失败聚类 |
 |---|------|------|----------|
-| M1g | WPT media-elements 用例覆盖 | ✅ 124 用例已导入（含 event_* 族 25 + volume/Audio 构造器 + controlsList + track-element 11 + resource-selection 族 25 + interfaces/TextTrack 家族 28），**95.3%** | — |
+| M1g | WPT media-elements 用例覆盖 | ✅ 136 用例已导入（含 event_* 族 25 + volume/Audio 构造器 + controlsList + track-element 23 + resource-selection 族 25 + interfaces/TextTrack 家族 28 + http VTT 加载族 12），**95.5%** | — |
 | M2g | load 算法 + 状态机（事件序列派发） | ✅ M2 落地（13T→**0T**） | F4 闭合 |
 | M3g | 事件序列 headless 近似驱动 | ✅（同 M2g；source-child 触发已落地） | F4 闭合 |
 | M4g-a | 媒体元数据 IDL 反射（初值面） | ✅ 切片 3 落地 | F2 闭合（-9 Fail） |
@@ -346,6 +401,7 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
 | M4g-f | resource selection 算法（load 算法正题） | ✅ M3 扩批 XI 落地（2026-09-02）：networkState 同步段 NO_SOURCE(3)/稳定态 EMPTY(0) microtask 续段 + invoke 面（play/pause/load/setAttr-src/insert-source）+ load() 重跑（重置/重调度/epoch）+ 候选失效中断 + source 子 error 面；单测 `test_media_resource_selection_m3xi` | — |
 | M4g-g | TextTrack cue 面（VTTCue/addCue/排序/getCueById/TrackEvent） | ✅ M3 扩批 XII 落地（2026-09-02）：VTTCue 构造器 + 非有限 TypeError + cues 动态重排 + 索引 own 镜像 + TrackEvent 惰性链 + gate 非对称（cues readiness / activeCues mode）；单测 `test_media_text_track_cue_face_m3xii` | F1 尾账闭合 |
 | M4g-h | TextTrack cue 选项 + 列表增量事件（VTTCue 定位/addtrack 派发/src 清 cue） | ✅ M3 扩批 XIII 落地（2026-09-02）：VTTCue line/position/size/align/vertical/snapToLines IDL + data:text/vtt 加载 + addtrack 异步派发（holder 基线）+ TrackEvent target/类型修复 + src 变更重调度清 cue + readyState settle 面 | — |
+| M4g-i | http VTT 加载 + WebVTT 解析深化（header/id/settings/实体/tag 截断） | ✅ M3 扩批 XV 落地（2026-09-02）：同步 `__zw_fetch` 通路 + `_zwParseVtt` + getCueAsHTML + 静态 track 调度触发面（querySelector/track.track/textTracks 三入口）+ default mode gate + mode setter 触发 + window.event；单测 `test_media_http_vtt_loading_m3xv` | — |
 
 ## 下一步计划
 
@@ -353,8 +409,10 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
   （play-in-detached-document——需 detached 文档播放时钟推进，依赖兄弟目标
    media-playback 播放钟接语义层；loop-from-ended.tentative / fragmented-mp4-end
    同域）；the-video-element 反射余面（video-loading-* preload 语义族——视
-   lazy-loading 支撑面）。**headless 可导入面已吃尽（95.2%）**——后续增量依赖
-   兄弟目标解锁（media-playback 解码/时钟真值化 → 真播放推进面用例）。
+   lazy-loading 支撑面）。**headless 可导入面已在 95.5% 重饱和（M3 扩批 XV 第二次
+   修正——http VTT 加载族接通后 track/track-element 语义面清空）**——余下增量
+   全部依赖兄弟目标解锁（真播放钟 → track-cues-* 播放推进族 / time-marches-on 面）
+   + 深结构项（TextTrackList change 事件广播反向链、cue 标记树解析）。
 2. ~~**M4g-d**：canPlayType 能力表联动更新~~ ✅ 2026-09-01 兑现（能力表真值化——
    后续新增解码面（AV1/H.264，media-playback M3）时同步扩表）。
 3. ~~**M4g-f**：resource selection 算法面~~ ✅ 2026-09-02 兑现（M3 扩批 XI——
@@ -401,6 +459,10 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
   （+66 subtest 全绿；Fail 0 / Timeout 0 / PF 25）
   → 扩批 XIII（2026-09-02，TextTrack cue 选项 + 列表增量事件面）**510/535 = 95.3%**
   （+14 subtest 全绿；Fail 0 / Timeout 0 / PF 25）
+  → 扩批 XIV（2026-09-02，pause-on-removal 两变体 + play() 无候选 pending）**512/537 = 95.3%**
+  （+2 subtest 全绿；Fail 0 / Timeout 0 / PF 25）
+  → 扩批 XV（2026-09-02，http VTT 加载 + WebVTT 解析深化）**528/553 = 95.5%**
+  （+16 subtest 全绿；Fail 0 / Timeout 0 / PF 25）
 - 入口：`make testharness-media`（FILTER 透传，`--json` 捕获 evidence）
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过
 - evidence：`evidence/2026-08-31-media-baseline.md`（+ 同名 .json 机读版）、
@@ -408,4 +470,5 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
   `evidence/2026-09-01-media-volume-audio.json`、`evidence/2026-09-01-media-controlslist.json`、
   `evidence/2026-09-01-media-playbackrate-typeerror.json`、`evidence/2026-09-01-media-preload-setter.json`、
   `evidence/2026-09-01-media-track-sync.json`、`evidence/2026-09-02-media-resource-selection.json`、
-  `evidence/2026-09-02-media-texttrack-family.json`、`evidence/2026-09-02-media-cue-options.json`
+  `evidence/2026-09-02-media-texttrack-family.json`、`evidence/2026-09-02-media-cue-options.json`、
+  `evidence/2026-09-02-media-pause-removal-variants.json`、`evidence/2026-09-02-media-http-vtt.json`
