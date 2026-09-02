@@ -463,6 +463,24 @@ test-wpt-service-workers-fetch-event-historical-wave-assets: fetch-wpt-service-w
 		WPT_TAMPER_ASSET="service-workers/service-worker/historical.https.any.js" \
 		$(WPT_BASH) tests/wpt-runner/scripts/test-service-workers-tier-a-assets.sh
 
+.PHONY: fetch-wpt-service-workers-no-dynamic-import-wave audit-wpt-service-workers-no-dynamic-import-wave test-wpt-service-workers-no-dynamic-import-wave-assets
+fetch-wpt-service-workers-no-dynamic-import-wave:
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-09-02-m3-no-dynamic-import-assets.tsv" \
+		WPT_EXPECTED_ASSET_COUNT=4 WPT_CORPUS_LABEL="Service Worker no dynamic import wave" \
+		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh
+
+audit-wpt-service-workers-no-dynamic-import-wave:
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-09-02-m3-no-dynamic-import-assets.tsv" \
+		WPT_EXPECTED_ASSET_COUNT=4 WPT_CORPUS_LABEL="Service Worker no dynamic import wave" \
+		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh --verify-only
+
+test-wpt-service-workers-no-dynamic-import-wave-assets: fetch-wpt-service-workers-no-dynamic-import-wave
+	WPT_SERVICE_WORKER_SOURCE="$(CURDIR)/tests/wpt-runner/wpt-data/.service-workers-tier-a-root" \
+		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-09-02-m3-no-dynamic-import-assets.tsv" \
+		WPT_EXPECTED_ASSET_COUNT=4 WPT_CORPUS_LABEL="Service Worker no dynamic import wave" \
+		WPT_TAMPER_ASSET="service-workers/service-worker/resources/no-dynamic-import.js" \
+		$(WPT_BASH) tests/wpt-runner/scripts/test-service-workers-tier-a-assets.sh
+
 fetch-wpt-service-workers-update-wave:
 	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-08-20-m3-update-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=5 WPT_CORPUS_LABEL="Service Worker update wave" \
@@ -773,7 +791,7 @@ test-wpt-service-workers-fetch-wave-assets: fetch-wpt-service-workers-fetch-wave
 		WPT_TAMPER_ASSET="service-workers/service-worker/resources/fetch-event-async-respond-with-worker.js" \
 		$(WPT_BASH) tests/wpt-runner/scripts/test-service-workers-tier-a-assets.sh
 
-testharness-service-workers-core: target-disk-guard fetch-wpt-service-workers-tier-a fetch-wpt-service-workers-next-wave fetch-wpt-service-workers-static-wave fetch-wpt-service-workers-worker-secure-context-wave fetch-wpt-service-workers-install-event-type-wave fetch-wpt-service-workers-worker-close-wave fetch-wpt-service-workers-worker-interface-wave fetch-wpt-service-workers-fetch-event-historical-wave fetch-wpt-service-workers-update-wave fetch-wpt-service-workers-import-response-wave fetch-wpt-service-workers-import-dynamic-wave fetch-wpt-service-workers-import-event-wave fetch-wpt-service-workers-module-wave fetch-wpt-service-workers-module-bytecheck-wave fetch-wpt-service-workers-module-cors-wave fetch-wpt-service-workers-module-registration-wave fetch-wpt-service-workers-module-type-update-wave fetch-wpt-service-workers-module-request-metadata-wave fetch-wpt-service-workers-update-via-cache-matrix-wave fetch-wpt-service-workers-dynamic-import-update-wave fetch-wpt-service-workers-update-failure-wave fetch-wpt-service-workers-multiple-update-wave fetch-wpt-service-workers-update-not-allowed-wave fetch-wpt-service-workers-skip-waiting-no-client-wave fetch-wpt-service-workers-clients-matchall-evaluation-wave target/test-guard zero-wpt-runner-release
+testharness-service-workers-core: target-disk-guard fetch-wpt-service-workers-tier-a fetch-wpt-service-workers-next-wave fetch-wpt-service-workers-static-wave fetch-wpt-service-workers-worker-secure-context-wave fetch-wpt-service-workers-install-event-type-wave fetch-wpt-service-workers-worker-close-wave fetch-wpt-service-workers-worker-interface-wave fetch-wpt-service-workers-fetch-event-historical-wave fetch-wpt-service-workers-no-dynamic-import-wave fetch-wpt-service-workers-update-wave fetch-wpt-service-workers-import-response-wave fetch-wpt-service-workers-import-dynamic-wave fetch-wpt-service-workers-import-event-wave fetch-wpt-service-workers-module-wave fetch-wpt-service-workers-module-bytecheck-wave fetch-wpt-service-workers-module-cors-wave fetch-wpt-service-workers-module-registration-wave fetch-wpt-service-workers-module-type-update-wave fetch-wpt-service-workers-module-request-metadata-wave fetch-wpt-service-workers-update-via-cache-matrix-wave fetch-wpt-service-workers-dynamic-import-update-wave fetch-wpt-service-workers-update-failure-wave fetch-wpt-service-workers-multiple-update-wave fetch-wpt-service-workers-update-not-allowed-wave fetch-wpt-service-workers-skip-waiting-no-client-wave fetch-wpt-service-workers-clients-matchall-evaluation-wave target/test-guard zero-wpt-runner-release
 	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),900) -- \
 		./target/release/zero-wpt-runner testharness-service-workers \
 		--wpt-data tests/wpt-runner/wpt-data/.service-workers-tier-a-root $(if $(FILTER),$(FILTER),)
@@ -806,7 +824,7 @@ testharness-service-workers-cache-storage: target-disk-guard fetch-wpt-service-w
 		./target/release/zero-wpt-runner testharness-service-workers-cache-storage \
 		--wpt-data tests/wpt-runner/wpt-data/.service-workers-tier-a-root $(if $(FILTER),$(FILTER),)
 
-baseline-wpt-service-workers-core: target-disk-guard fetch-wpt-service-workers-tier-a fetch-wpt-service-workers-next-wave fetch-wpt-service-workers-static-wave fetch-wpt-service-workers-worker-secure-context-wave fetch-wpt-service-workers-install-event-type-wave fetch-wpt-service-workers-worker-close-wave fetch-wpt-service-workers-worker-interface-wave fetch-wpt-service-workers-fetch-event-historical-wave fetch-wpt-service-workers-update-wave fetch-wpt-service-workers-import-response-wave fetch-wpt-service-workers-import-dynamic-wave fetch-wpt-service-workers-import-event-wave fetch-wpt-service-workers-module-wave fetch-wpt-service-workers-module-bytecheck-wave fetch-wpt-service-workers-module-cors-wave fetch-wpt-service-workers-module-registration-wave fetch-wpt-service-workers-module-type-update-wave fetch-wpt-service-workers-module-request-metadata-wave fetch-wpt-service-workers-update-via-cache-matrix-wave fetch-wpt-service-workers-dynamic-import-update-wave fetch-wpt-service-workers-update-failure-wave fetch-wpt-service-workers-multiple-update-wave fetch-wpt-service-workers-update-not-allowed-wave fetch-wpt-service-workers-skip-waiting-no-client-wave fetch-wpt-service-workers-clients-matchall-evaluation-wave target/test-guard zero-wpt-runner-release
+baseline-wpt-service-workers-core: target-disk-guard fetch-wpt-service-workers-tier-a fetch-wpt-service-workers-next-wave fetch-wpt-service-workers-static-wave fetch-wpt-service-workers-worker-secure-context-wave fetch-wpt-service-workers-install-event-type-wave fetch-wpt-service-workers-worker-close-wave fetch-wpt-service-workers-worker-interface-wave fetch-wpt-service-workers-fetch-event-historical-wave fetch-wpt-service-workers-no-dynamic-import-wave fetch-wpt-service-workers-update-wave fetch-wpt-service-workers-import-response-wave fetch-wpt-service-workers-import-dynamic-wave fetch-wpt-service-workers-import-event-wave fetch-wpt-service-workers-module-wave fetch-wpt-service-workers-module-bytecheck-wave fetch-wpt-service-workers-module-cors-wave fetch-wpt-service-workers-module-registration-wave fetch-wpt-service-workers-module-type-update-wave fetch-wpt-service-workers-module-request-metadata-wave fetch-wpt-service-workers-update-via-cache-matrix-wave fetch-wpt-service-workers-dynamic-import-update-wave fetch-wpt-service-workers-update-failure-wave fetch-wpt-service-workers-multiple-update-wave fetch-wpt-service-workers-update-not-allowed-wave fetch-wpt-service-workers-skip-waiting-no-client-wave fetch-wpt-service-workers-clients-matchall-evaluation-wave target/test-guard zero-wpt-runner-release
 	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),900) -- \
 		python3 tests/wpt-runner/scripts/run-service-workers-core-baseline.py \
 		--runner ./target/release/zero-wpt-runner \

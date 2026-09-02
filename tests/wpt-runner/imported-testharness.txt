@@ -220,6 +220,7 @@ service-workers/service-worker/ServiceWorkerGlobalScope/fetch-on-the-right-inter
 service-workers/service-worker/ServiceWorkerGlobalScope/isSecureContext.https.html 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-09-02 SW-M3-worker-secure-context
 service-workers/service-worker/install-event-type.https.html 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-09-02 SW-M3-install-event-type
 service-workers/service-worker/historical.https.any.js 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-09-02 SW-M3-fetch-event-historical
+service-workers/service-worker/no-dynamic-import.any.js 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-09-02 SW-M3-no-dynamic-import
 service-workers/cache-storage/cache-storage.https.any.js 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-08-22 CACHE-M1-window-baseline
 service-workers/cache-storage/cache-match.https.any.js 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-08-22 CACHE-M2-window-expansion
 service-workers/cache-storage/cache-storage-keys.https.any.js 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-08-22 CACHE-M1-window-baseline

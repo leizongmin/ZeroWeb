@@ -35,6 +35,7 @@ CORE_ASSET_MANIFESTS = [
     EVIDENCE_DIR / "2026-09-02-m3-worker-close-assets.tsv",
     EVIDENCE_DIR / "2026-09-02-m3-worker-interface-assets.tsv",
     EVIDENCE_DIR / "2026-09-02-m3-fetch-event-historical-assets.tsv",
+    EVIDENCE_DIR / "2026-09-02-m3-no-dynamic-import-assets.tsv",
     EVIDENCE_DIR / "2026-08-20-m3-update-assets.tsv",
     EVIDENCE_DIR / "2026-08-20-m3-import-response-assets.tsv",
     EVIDENCE_DIR / "2026-08-20-m3-import-dynamic-assets.tsv",
@@ -70,8 +71,12 @@ REVIEW_FILES = [
 IDL_SOURCE = "service-workers/idlharness.https.any.js"
 EXPECTED_SOURCE_COUNT = 294
 EXPECTED_URL_COUNT = 331
-EXPECTED_LANES = Counter(core=44, defer=39, gated=169, skip=42)
+EXPECTED_LANES = Counter(core=45, defer=38, gated=169, skip=42)
 CORE_PROMOTIONS = {
+    "service-workers/service-worker/no-dynamic-import.any.js": (
+        "classic-no-dynamic-import-core",
+        "2026-09-02-m3-no-dynamic-import.md",
+    ),
     "service-workers/service-worker/historical.https.any.js": (
         "fetch-event-historical-core",
         "2026-09-02-m3-fetch-event-historical.md",

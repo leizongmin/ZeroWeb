@@ -1,8 +1,8 @@
 {
-  "cases": 44,
-  "subtests": 175,
+  "cases": 45,
+  "subtests": 176,
   "status": {
-    "Pass": 175
+    "Pass": 176
   },
   "deterministic": true,
   "results": [
@@ -341,6 +341,16 @@
       [
         {
           "name": "Trigger multiple updates.",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/no-dynamic-import.any.js",
+      [
+        {
+          "name": "service-workers/service-worker/no-dynamic-import.any.js",
           "status": "Pass",
           "message": null
         }
