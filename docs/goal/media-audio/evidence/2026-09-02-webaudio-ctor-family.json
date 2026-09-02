@@ -1,0 +1,75 @@
+{
+  "goal": "media-audio",
+  "date": "2026-09-02",
+  "suite": "testharness-webaudio",
+  "wpt_rev": "315976933870b34d6ea30e3f6643403edae678ba",
+  "batch": "第四批（处理类节点 ctor 族 + AudioParam 异常面 + createPeriodicWave）",
+  "summary": {
+    "files": 10,
+    "pass": 323,
+    "fail": 0,
+    "rate": "323/323 = 100.0%"
+  },
+  "files": [
+    {
+      "file": "webaudio/the-audio-api/the-audionode-interface/audionode-connect-return-value.html",
+      "pass": 1,
+      "fail": 0
+    },
+    {
+      "file": "webaudio/the-audio-api/the-destinationnode-interface/destination.html",
+      "pass": 1,
+      "fail": 0
+    },
+    {
+      "file": "webaudio/the-audio-api/the-oscillatornode-interface/ctor-oscillator.html",
+      "pass": 62,
+      "fail": 0
+    },
+    {
+      "file": "webaudio/the-audio-api/the-gainnode-interface/ctor-gain.html",
+      "pass": 4,
+      "fail": 0
+    },
+    {
+      "file": "webaudio/the-audio-api/the-stereopanner-interface/ctor-stereopanner.html",
+      "pass": 51,
+      "fail": 0
+    },
+    {
+      "file": "webaudio/the-audio-api/the-delaynode-interface/ctor-delay.html",
+      "pass": 53,
+      "fail": 0
+    },
+    {
+      "file": "webaudio/the-audio-api/the-biquadfilternode-interface/ctor-biquadfilter.html",
+      "pass": 5,
+      "fail": 0
+    },
+    {
+      "file": "webaudio/the-audio-api/the-analysernode-interface/ctor-analyser.html",
+      "pass": 78,
+      "fail": 0
+    },
+    {
+      "file": "webaudio/the-audio-api/the-periodicwave-interface/createPeriodicWaveInfiniteValuesThrows.html",
+      "pass": 2,
+      "fail": 0
+    },
+    {
+      "file": "webaudio/the-audio-api/the-audioparam-interface/audioparam-exceptional-values.html",
+      "pass": 66,
+      "fail": 0
+    }
+  ],
+  "shim_changes": [
+    "part06: 处理类节点 builder 族（_zwWABuildStereoPanner/Delay/BiquadFilter/Analyser——工厂与构造器共用防递归）",
+    "part06: AudioParam 调度方法异常面（非 finite TypeError/负时间与零时长 RangeError/exponentialRamp 零值/timeConstant 严格正）",
+    "part06: createPeriodicWave 非 finite TypeError + real/imag 等长校验",
+    "part06: _zwWANode 处理类节点 numberOfInputs 1（oscillator 保持 0）"
+  ],
+  "excluded": [
+    "audioparam-method-chaining.html（startRendering 渲染断言——RFC §0 不做清单）",
+    "audioparam-nominal-range.html（startRendering + AudioListener/automation 渲染量化面）"
+  ]
+}

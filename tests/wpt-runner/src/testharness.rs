@@ -1455,6 +1455,30 @@ pub const WEBAUDIO_TEST_FILES: &[&str] = &[
     // OscillatorNode 构造器面（audit.js 框架——invalid/default ctor + type/
     // frequency 440 属性反射断言；runner 内联 webaudio/resources/audit*.js）。
     "webaudio/the-audio-api/the-oscillatornode-interface/ctor-oscillator.html",
+    // ---- 第四批（2026-09-02）：处理类节点 ctor 族 + AudioParam 异常面 ----
+    // GainNode ctor（W3CTH 形态——invalid/default + AudioNodeOptions + {gain:-2}
+    // 选项反射）。
+    "webaudio/the-audio-api/the-gainnode-interface/ctor-gain.html",
+    // StereoPannerNode ctor（audit——clamped-max 缺省 + channelCount [1,2] 界 +
+    // mode 'max' NotSupportedError + {pan:0.75}）。
+    "webaudio/the-audio-api/the-stereopanner-interface/ctor-stereopanner.html",
+    // DelayNode ctor（audit——delayTime + maxDelayTime 选项 + maxValue 反射）。
+    "webaudio/the-audio-api/the-delaynode-interface/ctor-delay.html",
+    // BiquadFilterNode ctor（W3CTH——type 五枚举 + Q/detune/frequency/gain 缺省
+    // 1/0/350/0 + 选项反射）。
+    "webaudio/the-audio-api/the-biquadfilternode-interface/ctor-biquadfilter.html",
+    // AnalyserNode ctor（audit——fftSize 2048 幂 + frequencyBinCount + min/max
+    // Decibels 交叉校验 + smoothingTimeConstant [0,1]）。
+    "webaudio/the-audio-api/the-analysernode-interface/ctor-analyser.html",
+    // createPeriodicWave 非 finite → TypeError（Float32Array Infinity 面）。
+    "webaudio/the-audio-api/the-periodicwave-interface/createPeriodicWaveInfiniteValuesThrows.html",
+    // AudioParam 调度方法异常面（value/time 非 finite → TypeError、负时间/
+    // 零时长 → RangeError、exponentialRamp 零值 → RangeError、setValueCurve
+    // 曲线非 finite → TypeError——无渲染断言，纯异常语义）。
+    "webaudio/the-audio-api/the-audioparam-interface/audioparam-exceptional-values.html",
+    // 不导入：audioparam-method-chaining / audioparam-nominal-range（依赖
+    // startRendering 渲染断言——RFC §0 不做清单）；audiocontextoptions（设备
+    // baseLatency 档——前批已记）。
     // audiocontextoptions 不导入：latencyHint double 档断言 Chromium 设备专用
     // baseLatency 档位值（playbackLatency×10 → 0.8 恒等断言——Linux Chromium 实测
     // 档），headless 无设备延迟模型不可复现；构造/enum/double/sampleRange 语义面

@@ -7027,9 +7027,11 @@
     node._zwHandle = handle;
     node._zwConnected = null;
     // AudioNode 接口面（WPT audionode/destination 断言——最小面静态拓扑）：
-    // 源类节点（oscillator/gain 等）0 入 1 出；destination 1 入 1 出；
+    // 源类节点（oscillator）0 入 1 出；处理类节点（gain/stereopanner/delay/
+    // biquadfilter/analyser）与 destination 1 入 1 出（ctor-gain/ctor-analyser
+    // testDefaultConstructor numberOfInputs:1 断言面）；
     // channelCount 2（destination 缺省立体声，maxChannelCount ≥ 2）。
-    node._zwInputs = (kind === 'destination') ? 1 : 0;
+    node._zwInputs = (kind === 'oscillator') ? 0 : 1;
     node._zwOutputs = 1;
     node._zwChannelCount = 2;
     node._zwMaxChannelCount = 32;
@@ -7325,11 +7327,52 @@
     });
     return node;
   };
+  // createPeriodicWave（spec §BaseAudioContext.createPeriodicWave——real/imag
+  // sequence<float> 必须同长且逐项有限；非 finite → TypeError——WPT
+  // createPeriodicWaveInfiniteValuesThrows 断言面。存储面：PeriodicWave 实例）。
+  AudioContext.prototype.createPeriodicWave = function (real, imag) {
+    var _toFloat32 = function (src, name) {
+      if (src == null || typeof src.length !== 'number') {
+        throw new TypeError("Failed to execute 'createPeriodicWave' on 'AudioContext': parameter " + (name === 'real' ? 1 : 2) + " is not of type 'Float32Array'.");
+      }
+      var out = new Float32Array(src.length);
+      for (var i = 0; i < src.length; i++) {
+        var n = Number(src[i]);
+        if (isNaN(n) || n === Infinity || n === -Infinity) {
+          throw new TypeError("Failed to execute 'createPeriodicWave' on 'AudioContext': The provided value is non-finite.");
+        }
+        out[i] = n;
+      }
+      return out;
+    };
+    var r = _toFloat32(real, 'real');
+    var im = _toFloat32(imag, 'imag');
+    if (r.length !== im.length) {
+      throw new (globalThis.DOMException || Error)(
+        "Failed to execute 'createPeriodicWave' on 'AudioContext': real and imag arrays must have the same length.", 'IndexSizeError');
+    }
+    var ctxId = this._zwCtxId;
+    return new globalThis.PeriodicWave(this, { real: Array.prototype.slice.call(r), imag: Array.prototype.slice.call(im) });
+  };
+  // createStereoPanner/createDelay/createBiquadFilter/createAnalyser（headless
+  // 语义面——直调 builder 与构造器同对象；createDelay 缺省 maxDelayTime=1.0 spec 档）。
+  AudioContext.prototype.createStereoPanner = function () { return _zwWABuildStereoPanner(this); };
+  AudioContext.prototype.createDelay = function (maxDelayTime) {
+    var opts = (maxDelayTime != null) ? { maxDelayTime: Number(maxDelayTime) } : undefined;
+    return _zwWABuildDelay(this, opts);
+  };
+  AudioContext.prototype.createBiquadFilter = function () { return _zwWABuildBiquadFilter(this); };
+  AudioContext.prototype.createAnalyser = function () { return _zwWABuildAnalyser(this); };
   // 节点工厂共享补接（OfflineAudioContext 面在 AudioContext 工厂定义之后——
   // 见上方 OfflineAudioContext 块内注记）。
   if (typeof globalThis.OfflineAudioContext !== 'undefined') {
     OfflineAudioContext.prototype.createOscillator = AudioContext.prototype.createOscillator;
     OfflineAudioContext.prototype.createGain = AudioContext.prototype.createGain;
+    OfflineAudioContext.prototype.createStereoPanner = AudioContext.prototype.createStereoPanner;
+    OfflineAudioContext.prototype.createDelay = AudioContext.prototype.createDelay;
+    OfflineAudioContext.prototype.createBiquadFilter = AudioContext.prototype.createBiquadFilter;
+    OfflineAudioContext.prototype.createAnalyser = AudioContext.prototype.createAnalyser;
+    OfflineAudioContext.prototype.createPeriodicWave = AudioContext.prototype.createPeriodicWave;
   }
   // AudioParam 接口（spec webaudio §AudioParam——`instanceof AudioParam` 断言面；
   // 最小值面 value + 调度方法 no-op 存储。param 调度真值化归后续切片）。
@@ -7354,13 +7397,67 @@
       },
       configurable: true,
     });
-    param.setValueAtTime = function (v /*, startTime */) { this.value = v; return this; };
-    param.linearRampToValueAtTime = function (v /*, endTime */) { this.value = v; return this; };
-    param.exponentialRampToValueAtTime = function (v /*, endTime */) { this.value = v; return this; };
-    param.setTargetAtTime = function (v /*, startTime, timeConstant */) { this.value = v; return this; };
-    param.setValueCurveAtTime = function () { return this; };
+    // 调度方法参数校验面（spec webaudio §AudioParam 调度方法——WPT
+    // audioparam-exceptional-values 断言：value/time 参数非 finite → TypeError；
+    // 时间负值 → RangeError；exponentialRamp 0/±1e-100 值 → RangeError；
+    // setValueCurve 曲线含非 finite → TypeError、时长 ≤ 0 → RangeError）。
+    // https://webaudio.github.io/web-audio-api/#AudioParam
+    function _zwFiniteOrThrow(v, method) {
+      var n = Number(v);
+      if (isNaN(n) || n === Infinity || n === -Infinity) {
+        throw new TypeError("Failed to execute '" + method + "' on 'AudioParam': The provided value is non-finite.");
+      }
+      return n;
+    }
+    function _zwTimeOrThrow(v, method) {
+      var n = _zwFiniteOrThrow(v, method);
+      if (n < 0) throw new RangeError("Failed to execute '" + method + "' on 'AudioParam': time must be non-negative.");
+      return n;
+    }
+    param.setValueAtTime = function (v, startTime) {
+      this.value = _zwFiniteOrThrow(v, 'setValueAtTime');
+      _zwTimeOrThrow(startTime, 'setValueAtTime');
+      return this;
+    };
+    param.linearRampToValueAtTime = function (v, endTime) {
+      this.value = _zwFiniteOrThrow(v, 'linearRampToValueAtTime');
+      _zwTimeOrThrow(endTime, 'linearRampToValueAtTime');
+      return this;
+    };
+    param.exponentialRampToValueAtTime = function (v, endTime) {
+      var n = _zwFiniteOrThrow(v, 'exponentialRampToValueAtTime');
+      // spec：exponentialRamp 目标值为 0 或次法线（±1e-100 内，指数运算下溢）→
+      // RangeError（WPT [0, -1e-100, 1e-100] 断言面）。
+      if (n === 0 || Math.abs(n) <= 1e-100) {
+        throw new RangeError("Failed to execute 'exponentialRampToValueAtTime' on 'AudioParam': value must be non-zero and same sign.");
+      }
+      _zwTimeOrThrow(endTime, 'exponentialRampToValueAtTime');
+      return this;
+    };
+    param.setTargetAtTime = function (v, startTime, timeConstant) {
+      this.value = _zwFiniteOrThrow(v, 'setTargetAtTime');
+      _zwTimeOrThrow(startTime, 'setTargetAtTime');
+      // spec：timeConstant 严格正——负值 → RangeError（WPT (1,1,-1) 断言面）。
+      var tc = _zwFiniteOrThrow(timeConstant, 'setTargetAtTime');
+      if (tc <= 0) throw new RangeError("Failed to execute 'setTargetAtTime' on 'AudioParam': timeConstant must be strictly positive.");
+      return this;
+    };
+    param.setValueCurveAtTime = function (curve, startTime, duration) {
+      // 曲线序列化（WebIDL sequence<float>）后逐项非 finite → TypeError。
+      try {
+        var arr = Array.prototype.slice.call(curve);
+        for (var i = 0; i < arr.length; i++) _zwFiniteOrThrow(arr[i], 'setValueCurveAtTime');
+      } catch (_eCurve) {
+        if (_eCurve instanceof TypeError) throw _eCurve;
+      }
+      _zwTimeOrThrow(startTime, 'setValueCurveAtTime');
+      // spec：duration 严格正——0/负 → RangeError（WPT (curve,1,0)/(curve,1,-1) 断言面）。
+      var d = _zwFiniteOrThrow(duration, 'setValueCurveAtTime');
+      if (d <= 0) throw new RangeError("Failed to execute 'setValueCurveAtTime' on 'AudioParam': duration must be strictly positive.");
+      return this;
+    };
     param.cancelScheduledValues = function () { return this; };
-    param.cancelAndHoldAtTime = function () { return this; };
+    param.cancelAndHoldAtTime = function (t) { _zwTimeOrThrow(t, 'cancelAndHoldAtTime'); return this; };
     param.defaultValue = Number(initialValue) || 0;
     param.minValue = -3.4028235e38;
     param.maxValue = 3.4028235e38;
@@ -7380,13 +7477,30 @@
     if (options != null && typeof options !== 'object') {
       throw new TypeError("Failed to construct '" + nodeName + "': The provided value is not of type 'object'.");
     }
-    var node = (nodeName === 'OscillatorNode') ? ctx.createOscillator('sine', 440) : ctx.createGain();
+    var node;
+    if (nodeName === 'OscillatorNode') node = ctx.createOscillator();
+    else if (nodeName === 'GainNode') node = ctx.createGain();
+    // 处理类节点：builder 直建（带 options——per-kind 专属选项在 builder 内应用；
+    // 不经 ctx.createX() 工厂防工厂↔构造器互调递归）。
+    else if (nodeName === 'StereoPannerNode') node = _zwWABuildStereoPanner(ctx, options);
+    else if (nodeName === 'DelayNode') node = _zwWABuildDelay(ctx, options);
+    else if (nodeName === 'BiquadFilterNode') node = _zwWABuildBiquadFilter(ctx, options);
+    else if (nodeName === 'AnalyserNode') node = _zwWABuildAnalyser(ctx, options);
+    else node = ctx.createGain();
     if (options && typeof options === 'object') {
       // spec webaudio AudioNodeOptions dict 校验（ctor 面比 setter 严——WPT
       // testAudioNodeOptions [0,99] → NotSupportedError；enum invalid → TypeError）。
       if (options.channelCount != null) {
         var cc = Number(options.channelCount);
-        if (cc === 0 || cc > 32) {
+        // spec StereoPannerNode：channelCount [1,2]（ctor dict 级约束——0/3/99 全
+        // NotSupportedError，ctor-stereopanner 'test AudioNodeOptions' 断言面）；
+        // 其余节点基类界 [1,32]（0 → NotSupportedError、>32 → IndexSizeError）。
+        if (nodeName === 'StereoPannerNode') {
+          if (cc < 1 || cc > 2) {
+            throw new (globalThis.DOMException || Error)(
+              'channelCount ' + cc + ' not supported for StereoPannerNode.', 'NotSupportedError');
+          }
+        } else if (cc === 0 || cc > 32) {
           throw new (globalThis.DOMException || Error)(
             'channelCount ' + cc + ' not supported.', 'NotSupportedError');
         }
@@ -7394,6 +7508,12 @@
       }
       if (options.channelCountMode != null) {
         var ccm = String(options.channelCountMode);
+        // spec StereoPannerNode：mode 'max' 非法 → NotSupportedError（enum 域
+        // clamped-max/explicit——ctor-stereopanner 断言面）。
+        if (nodeName === 'StereoPannerNode' && ccm === 'max') {
+          throw new (globalThis.DOMException || Error)(
+            "Failed to construct 'StereoPannerNode': channelCountMode 'max' not supported for StereoPannerNode.", 'NotSupportedError');
+        }
         if (ccm !== 'max' && ccm !== 'clamped-max' && ccm !== 'explicit') {
           throw new TypeError("Failed to construct '" + nodeName + "': Failed to read the 'channelCountMode' property from 'AudioNodeOptions': The provided value '" + ccm + "' is not a valid enum value.");
         }
@@ -7447,6 +7567,197 @@
   }
   GainNode.prototype = _zwWANode.prototype;
   globalThis.GainNode = globalThis.GainNode || GainNode;
+  // ---- 处理类节点构造器族（media-audio M3 切片 2 第四批 WPT 导入支撑面）----
+  // spec webaudio 各节点 `new X(ctx, options)` 与 `ctx.createX()` 等价对象；共享
+  // _zwWANodeCtor（ctx 校验 + AudioNodeOptions dict 校验），per-kind 专属选项在
+  // 各构造器内补校验。headless 全部为语义面（无 DSP 合成——合成面归
+  // WebAudioContext 源节点，RFC §0 简化记录）。
+  // ---- 处理类节点 builder 族（工厂 createX 与构造器 new X 共用的建节点逻辑；
+  // 工厂直调 builder、构造器经 _zwWANodeCtor 分发 builder——两向都终结于 builder，
+  // 无工厂↔构造器互调递归）。builder 内应用 per-kind 专属选项。
+  // StereoPannerNode（spec §StereoPannerNode——pan AudioParam [-1,1]、
+  // channelCountMode 'clamped-max' 缺省、{pan: 0.75} 选项反射——ctor-stereopanner
+  // 断言面）。
+  function _zwWABuildStereoPanner(ctx, options) {
+    var node = _zwWANode('stereopanner', ctx._zwCtxId, 0);
+    // spec StereoPannerNode：channelCountMode 缺省 'clamped-max'（基类缺省 'max'
+    // 不适用——ctor-stereopanner testDefaultConstructor 断言面）。
+    node._zwChannelCountMode = 'clamped-max';
+    var _panVal = 0;
+    var _panParam = globalThis._zwMakeAudioParam(0);
+    Object.defineProperty(_panParam, 'value', {
+      get: function () { return _panVal; },
+      set: function (v) {
+        var n = Number(v);
+        if (isNaN(n) || n === Infinity || n === -Infinity) {
+          throw new TypeError("Failed to set the 'value' property on 'AudioParam': The provided value is non-finite.");
+        }
+        _panVal = n;
+      },
+      configurable: true,
+    });
+    Object.defineProperty(node, 'pan', {
+      get: function () { return _panParam; },
+      configurable: true,
+    });
+    if (options && typeof options === 'object' && options.pan != null) {
+      node.pan.value = Number(options.pan);
+    }
+    return node;
+  }
+  function StereoPannerNode(ctx, options) { return _zwWANodeCtor('StereoPannerNode', ctx, options); }
+  StereoPannerNode.prototype = _zwWANode.prototype;
+  globalThis.StereoPannerNode = globalThis.StereoPannerNode || StereoPannerNode;
+  // DelayNode（spec §DelayNode——delayTime AudioParam [0, maxDelayTime]、
+  // maxDelayTime 选项反射为 delayTime.maxValue 上界——ctor-delay
+  // {delayTime: 0.5, maxDelayTime: 1.5} 断言面；缺省 maxDelayTime 1.0 spec 档）。
+  function _zwWABuildDelay(ctx, options) {
+    var node = _zwWANode('delay', ctx._zwCtxId, 0);
+    var _delayVal = 0;
+    var _maxDelay = (options && typeof options === 'object' && options.maxDelayTime != null)
+      ? Number(options.maxDelayTime) : 1.0;
+    if (isNaN(_maxDelay) || _maxDelay < 0) {
+      throw new RangeError("Failed to construct 'DelayNode': maxDelayTime must be non-negative.");
+    }
+    var _delayParam = globalThis._zwMakeAudioParam(0);
+    _delayParam.maxValue = _maxDelay;
+    Object.defineProperty(_delayParam, 'value', {
+      get: function () { return _delayVal; },
+      set: function (v) {
+        var n = Number(v);
+        if (isNaN(n) || n === Infinity || n === -Infinity) {
+          throw new TypeError("Failed to set the 'value' property on 'AudioParam': The provided value is non-finite.");
+        }
+        _delayVal = Math.min(Math.max(n, 0), _maxDelay);
+      },
+      configurable: true,
+    });
+    Object.defineProperty(node, 'delayTime', {
+      get: function () { return _delayParam; },
+      configurable: true,
+    });
+    if (options && typeof options === 'object' && options.delayTime != null) {
+      node.delayTime.value = Number(options.delayTime);
+    }
+    return node;
+  }
+  function DelayNode(ctx, options) { return _zwWANodeCtor('DelayNode', ctx, options); }
+  DelayNode.prototype = _zwWANode.prototype;
+  globalThis.DelayNode = globalThis.DelayNode || DelayNode;
+  // BiquadFilterNode（spec §BiquadFilterNode——type 八枚举（缺省 'lowpass'，invalid
+  // 静默保留——setter 面惯例）+ Q/detune/frequency/gain 四 AudioParam 缺省
+  //（1/0/350/0——ctor-biquadfilter testDefaultAttributes 断言面 + {type:'highpass',
+  // frequency:512, detune:1, Q:5, gain:3} 选项反射面）。
+  function _zwWABuildBiquadFilter(ctx, options) {
+    var node = _zwWANode('biquadfilter', ctx._zwCtxId, 0);
+    var _type = 'lowpass';
+    Object.defineProperty(node, 'type', {
+      get: function () { return _type; },
+      set: function (v) {
+        var s = String(v == null ? '' : v);
+        if (s === 'lowpass' || s === 'highpass' || s === 'bandpass' || s === 'lowshelf' || s === 'highshelf' || s === 'notch' || s === 'peaking' || s === 'allpass') {
+          _type = s;
+        }
+      },
+      configurable: true,
+    });
+    var _q = globalThis._zwMakeAudioParam(1);
+    var _detune = globalThis._zwMakeAudioParam(0);
+    var _freq = globalThis._zwMakeAudioParam(350);
+    var _gain = globalThis._zwMakeAudioParam(0);
+    Object.defineProperty(node, 'Q', { get: function () { return _q; }, configurable: true });
+    Object.defineProperty(node, 'detune', { get: function () { return _detune; }, configurable: true });
+    Object.defineProperty(node, 'frequency', { get: function () { return _freq; }, configurable: true });
+    Object.defineProperty(node, 'gain', { get: function () { return _gain; }, configurable: true });
+    if (options && typeof options === 'object') {
+      if (options.type != null) node.type = options.type;
+      if (options.Q != null) node.Q.value = Number(options.Q);
+      if (options.detune != null) node.detune.value = Number(options.detune);
+      if (options.frequency != null) node.frequency.value = Number(options.frequency);
+      if (options.gain != null) node.gain.value = Number(options.gain);
+    }
+    return node;
+  }
+  function BiquadFilterNode(ctx, options) { return _zwWANodeCtor('BiquadFilterNode', ctx, options); }
+  BiquadFilterNode.prototype = _zwWANode.prototype;
+  globalThis.BiquadFilterNode = globalThis.BiquadFilterNode || BiquadFilterNode;
+  // AnalyserNode（spec §AnalyserNode——fftSize 缺省 2048（2 的幂，[32, 32768] 外
+  // → IndexSizeError）、frequencyBinCount 只读反射（fftSize/2）、minDecibels -100 /
+  // maxDecibels -30（min ≥ max → IndexSizeError）、smoothingTimeConstant 0.8
+  //（[0,1] 外 → IndexSizeError）——ctor-analyser 缺省/选项/invalid 三断言面；
+  // getByteTimeDomainData 等数据面无渲染缓冲不做（RFC §0）。
+  function _zwWABuildAnalyser(ctx, options) {
+    var node = _zwWANode('analyser', ctx._zwCtxId, 0);
+    var _fftSize = 2048;
+    var _minDb = -100;
+    var _maxDb = -30;
+    var _smoothing = 0.8;
+    var _crossCheck = function () {
+      if (_minDb >= _maxDb) {
+        throw new (globalThis.DOMException || Error)(
+          'minDecibels must be less than maxDecibels.', 'IndexSizeError');
+      }
+    };
+    var _armed = false;
+    Object.defineProperty(node, 'fftSize', {
+      get: function () { return _fftSize; },
+      set: function (v) {
+        var n = Number(v);
+        // spec：fftSize 2 的幂且 [32, 32768]——否则 IndexSizeError。
+        if (n < 32 || n > 32768 || (n & (n - 1)) !== 0) {
+          throw new (globalThis.DOMException || Error)(
+            'fftSize ' + n + ' is not a power of two in [32, 32768].', 'IndexSizeError');
+        }
+        _fftSize = n;
+      },
+      configurable: true,
+    });
+    Object.defineProperty(node, 'frequencyBinCount', {
+      get: function () { return _fftSize / 2; },
+      configurable: true,
+    });
+    Object.defineProperty(node, 'minDecibels', {
+      get: function () { return _minDb; },
+      // ctor 选项路径（_armed=false）不触发交叉校验——spec ctor 交叉校验在全部
+      // 选项应用后统一进行（ctor-analyser 'setting min/max' 断言面）；ID setter
+      // 路径（_armed=true）即时校验。
+      set: function (v) { _minDb = Number(v); if (_armed) _crossCheck(); },
+      configurable: true,
+    });
+    Object.defineProperty(node, 'maxDecibels', {
+      get: function () { return _maxDb; },
+      set: function (v) { _maxDb = Number(v); if (_armed) _crossCheck(); },
+      configurable: true,
+    });
+    Object.defineProperty(node, 'smoothingTimeConstant', {
+      get: function () { return _smoothing; },
+      set: function (v) {
+        var n = Number(v);
+        if (n < 0 || n > 1) {
+          throw new (globalThis.DOMException || Error)(
+            'smoothingTimeConstant ' + n + ' is out of range [0, 1].', 'IndexSizeError');
+        }
+        _smoothing = n;
+      },
+      configurable: true,
+    });
+    if (options && typeof options === 'object') {
+      // spec：两 option 同给时 min/max 校验在两值都应用后进行（ctor-analyser
+      // 'setting min/max' 断言面——{min:-200, max:-150} 合法、{max:-150, min:-10}
+      // 抛，与给出顺序无关）。
+      var _optOrder = ['fftSize', 'maxDecibels', 'minDecibels', 'smoothingTimeConstant'];
+      for (var _oi = 0; _oi < _optOrder.length; _oi++) {
+        var _k = _optOrder[_oi];
+        if (options[_k] != null) node[_k] = options[_k];
+      }
+    }
+    _armed = true;
+    _crossCheck();
+    return node;
+  }
+  function AnalyserNode(ctx, options) { return _zwWANodeCtor('AnalyserNode', ctx, options); }
+  AnalyserNode.prototype = _zwWANode.prototype;
+  globalThis.AnalyserNode = globalThis.AnalyserNode || AnalyserNode;
   // PeriodicWave 接口（spec webaudio §PeriodicWave——custom waveform 容器；最小面
   // 仅构造 + real/imag 数组存储，无 FFT 合成——ctor-oscillator 断言 new
   // PeriodicWave(context, {real, imag}) 不抛 + disableNormalization 反射）。

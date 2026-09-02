@@ -2,7 +2,12 @@
 
 **入口文档**: [../media-audio.md](../media-audio.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-02（**Web Audio 最小面切片 1+2 落地**——zero-media `webaudio`
+**最后更新**: 2026-09-02（**WPT webaudio 第四批导入——处理类节点 ctor 族 +
+AudioParam 异常面**：StereoPanner/Delay/BiquadFilter/Analyser 四节点构造器 +
+createPeriodicWave 异常面 + audioparam-exceptional-values 全落 shim part06
+（builder 族防工厂↔构造器互调递归），10 用例 **323P/0F = 100%**（+259 subtest
+净涨零回归），evidence：`evidence/2026-09-02-webaudio-ctor-family.json`。此前
+同日：**Web Audio 最小面切片 1+2 落地**——zero-media `webaudio`
 模块（振荡器四型波形合成 + WebAudioContext 图推进 + 过零率锚点单测 7 件）+
 shim `AudioContext` 门面（createOscillator/createGain/destination/start/stop +
 connect 链式 + AudioParam 最小值面）+ webview `WebAudioRegistry` + `__zwWA*`
@@ -66,7 +71,8 @@ volume/muted 真控制。**双重启动门控均已解除**：① M0 音频环�
 - **WPT webaudio audit.js 框架接入 + OscillatorNode ctor 面导入（同日第二批）**：
   runner `run_webaudio_cases` 增 inline_extras 机制内联 webaudio/resources/*.js
   （audit.js/audit-util.js/audionodeoptions.js——canvas-tests.js 同款 vendored
-  框架），`ctor-oscillator.html` **64 subtest 全绿**。配套 shim 面扩展（part06）：
+  框架），`ctor-oscillator.html` **62 subtest 全绿**（runner 计数口径；含框架
+  task 行时 64）。配套 shim 面扩展（part06）：
   - `AudioParam` 接口（Illegal constructor + `_zwMakeAudioParam` 工厂——
     instanceof 面 + 非 finite value TypeError + 调度方法链式 + defaultValue/
     minValue/maxValue）；frequency/detune/gain 三 param 换用工厂（value setter
@@ -93,6 +99,33 @@ volume/muted 真控制。**双重启动门控均已解除**：① M0 音频环�
   专用 baseLatency 档位值（playbackLatency×10 → 0.8 恒等——Linux Chromium 实测
   档），headless 无设备延迟模型不可复现；语义面已落 shim，随设备面（CpalSink
   真出声切片）复评。
+- **WPT webaudio 第四批导入（同日，处理类节点 ctor 族 + AudioParam 异常面）**：
+  - **shim part06 扩展**：① 处理类节点 builder 族
+    `_zwWABuildStereoPanner/_zwWABuildDelay/_zwWABuildBiquadFilter/_zwWABuildAnalyser`
+    ——工厂 `createX()` 与构造器 `new X(ctx, options)` 共用 builder（**构造器经
+    `_zwWANodeCtor` 分发 builder、工厂直调 builder，两向终结于 builder 防互调
+    递归**——首版工厂调 `new X()` 触发 Maximum call stack 教训）；per-kind 专属
+    选项在 builder 内应用（StereoPanner mode 缺省 'clamped-max' + channelCount
+    [1,2] 界 / Delay maxDelayTime 缺省 1.0 + maxValue 反射 + delayTime clamp /
+    BiquadFilter type 八枚举 + Q/detune/frequency/gain 缺省 1/0/350/0 / Analyser
+    fftSize 幂界 [32,32768] + frequencyBinCount 反射 + min/maxDecibels 交叉校验
+    （ctor 选项路径延后统一校验 `_armed` 门——中间态不抛）+ smoothingTimeConstant
+    [0,1]）。`_zwWANode` 处理类节点 numberOfInputs 1（oscillator 保持 0）。
+    ② AudioParam 调度方法异常面：value/time 非 finite → TypeError、负时间/
+    timeConstant ≤ 0/duration ≤ 0 → RangeError、exponentialRamp |v| ≤ 1e-100 →
+    RangeError、setValueCurve 曲线项非 finite → TypeError。
+    ③ createPeriodicWave 非 finite → TypeError + real/imag 等长 IndexSizeError。
+  - **导入 7 用例**：ctor-gain（W3CTH 4 subtest）/ ctor-stereopanner（audit 51）/
+    ctor-delay（audit 53）/ ctor-biquadfilter（W3CTH 5）/ ctor-analyser（audit 78）/
+    createPeriodicWaveInfiniteValuesThrows（2）/ audioparam-exceptional-values
+    （audit 66）。**10 用例 323P/0F = 100%**（+259 净涨零回归——ctor-oscillator
+    62P 口径核对一致）。
+  - 单测 `test_webaudio_node_ctor_and_param_exception_face_m3w4`（五断言组：
+    缺省面/选项反射/ctor 异常六态/AudioParam 调度异常七态/createPeriodicWave+
+    工厂同对象）。
+  - evidence：`evidence/2026-09-02-webaudio-ctor-family.json`。
+  - **排除注记**：audioparam-method-chaining / audioparam-nominal-range（依赖
+    startRendering 渲染断言——RFC §0 不做清单）。
 - **余项**：createGain 的 per-node 桥推（当前 per-osc gain 由 WebAudioContext 承接，
   gain 节点 → 桥映射挂真出声/设备切片）；WPT 余面（osc-basic-waveform/
   sub-sample-start/detune-* 依赖渲染量化面——startRendering，随渲染面评估）。
@@ -189,10 +222,11 @@ seek 双轨对齐（media-playback 流切片 D+E 兑现，联合 e2e
 e2e 常驻（M2c 后续切片 A/B：settle → 桥 play → 泵推进 + mp3/oga 负例三面）；
 AudioContext 最小面 RFC 完成 **且已获批实施**（D1，2026-09-01）——切片 1+2
 落地（zero-media webaudio 模块 + shim 门面 + 宿主桥 + 泵接线 + e2e）+ WPT
-webaudio 子集两批导入（2 + 64 subtest 全绿）。
+webaudio 子集三批导入（2 + 62 + 259 subtest，合计 10 用例 323P/0F）。
 
-**DC-5（测试与质量不可退让）✅**：make test 18694 全绿、clippy 零警告、
-每切片带单测 + e2e 资产化（webaudio 7 单测 + NullSink 链 e2e + 桥 roundtrip）。
+**DC-5（测试与质量不可退让）✅**：make test 18701 全绿（2026-09-02 组合树实测）、
+clippy 零警告、每切片带单测 + e2e 资产化（webaudio 7 单测 + NullSink 链 e2e +
+桥 roundtrip + ctor 族契约单测 m3w4）。
 
 **结论**：DC-1/3/4/5 满足；DC-2 余设备真输出常驻面（结构性边界：headless CI
 无声卡——goal 契约的双轨验证形态下，本地抽验 evidence 已在档，**不构成
@@ -209,8 +243,11 @@ DONE 阻塞**；Mixer/重采样接线随设备切片可选推进）。
 
 1. ~~**Web Audio 最小面实施（D1 已批准）**~~ 🔄 切片 1+2 ✅ 2026-09-02 落地
    （zero-media webaudio 模块 + shim AudioContext 门面 + __zwWA* 宿主桥 + 泵接线 +
-   e2e——见当前状态）；WPT webaudio 子集导入 ✅ 两批（2 + 64 subtest 全绿，含
-   audit.js 框架接入）；余：设备面挂 M1 CpalSink 真出声切片（D-WA-2）。
+   e2e——见当前状态）；WPT webaudio 子集导入 ✅ 三批（2 + 62 + 259 subtest，
+   10 用例 323P/0F = 100%，含 audit.js 框架接入 + ctor 族 + AudioParam 异常面）；
+   余：设备面挂 M1 CpalSink 真出声切片（D-WA-2）。**接口语义族 headless 可导入面
+   已吃尽**——余下用例全部依赖 startRendering 渲染量化面 / AudioBufferSourceNode
+   播放推进面 / worklet，随渲染面或后续切片评估。
 2. **M1 收口评估（余项收窄）**：Mixer 多源混音接线**决策注记（2026-09-01）**——
    现播放管线 per-entry NullSink 直连已覆盖多源并发语义面（per-source 增益/独立
    解码流/并发泵）；Mixer（M1 切片 3 组件，7 单测常驻）的价值在**单设备输出流的
@@ -234,9 +271,16 @@ DONE 阻塞**；Mixer/重采样接线随设备切片可选推进）。
 
 ## 验证基线
 
-- 测试基线：`make test` 全绿（zero-media default feature：17 单测 + 1 doctest =
-  decode 5 + NullSink 5 + mixer 7；`audio-cpal` feature 另增 CpalSink 环境自适应
-  冒烟 1 件）；clippy 零警告（default 与 `--features audio-cpal` 双配置）
+- 测试基线：`make test` 全绿 18701（2026-09-02 组合树实测；zero-media default
+  feature：17 单测 + 1 doctest = decode 5 + NullSink 5 + mixer 7；`audio-cpal`
+  feature 另增 CpalSink 环境自适应冒烟 1 件）；clippy 零警告（default 与
+  `--features audio-cpal` 双配置）
+- WPT webaudio：10 用例 323P/0F = 100%（2026-09-02 四批累计——connect 返回值 +
+  destination + ctor-oscillator 62 + ctor-gain/stereopanner/delay/biquadfilter/
+  analyser + createPeriodicWave 异常面 + audioparam-exceptional-values 66）；
+  evidence：`evidence/2026-09-02-webaudio-wpt-subset.json`（首批）、
+  `evidence/2026-09-02-webaudio-ctor-oscillator.json`（第二批）、
+  `evidence/2026-09-02-webaudio-ctor-family.json`（第四批）
 - NullSink 可观测锚点：440Hz 正弦 @48kHz 过零率 ≈880（2×频率；修正 M0 evidence
   的 ≈440 笔误——evidence 只追加不修改，以代码与本档为事实源）；暂停拒写计
   underrun；非整帧写入拒收

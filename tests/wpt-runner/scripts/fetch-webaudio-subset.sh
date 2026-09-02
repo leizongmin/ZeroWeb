@@ -39,6 +39,16 @@ WA_FILES=(
   "webaudio/the-audio-api/the-destinationnode-interface/destination.html"
   # OscillatorNode 构造器面（audit.js 框架——runner 内联 webaudio/resources/*.js）。
   "webaudio/the-audio-api/the-oscillatornode-interface/ctor-oscillator.html"
+  # ---- 第四批（2026-09-02）：处理类节点 ctor 族 + AudioParam 异常面 ----
+  "webaudio/the-audio-api/the-gainnode-interface/ctor-gain.html"
+  "webaudio/the-audio-api/the-stereopanner-interface/ctor-stereopanner.html"
+  "webaudio/the-audio-api/the-delaynode-interface/ctor-delay.html"
+  "webaudio/the-audio-api/the-biquadfilternode-interface/ctor-biquadfilter.html"
+  "webaudio/the-audio-api/the-analysernode-interface/ctor-analyser.html"
+  "webaudio/the-audio-api/the-periodicwave-interface/createPeriodicWaveInfiniteValuesThrows.html"
+  "webaudio/the-audio-api/the-audioparam-interface/audioparam-exceptional-values.html"
+  # 不导入：audioparam-method-chaining / audioparam-nominal-range（startRendering
+  # 渲染断言——RFC §0 不做清单）。
 )
 
 # audit.js 框架（runner inline_extras 内联——用例以绝对路径引用）。

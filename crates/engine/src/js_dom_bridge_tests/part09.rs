@@ -4097,3 +4097,137 @@ fn test_media_text_track_cue_face_m3xii() {
         "首读 textTracks 的 track 子段异步派 addtrack（handler 注册后仍收到）"
     );
 }
+
+/// media-audio M3 切片 2 第四批（2026-09-02，WPT webaudio ctor 族 + AudioParam
+/// 异常面导入的 shim 契约面）：处理类节点（StereoPanner/Delay/BiquadFilter/
+/// Analyser）构造器 + 工厂同对象、per-kind 选项反射与异常、AudioParam 调度方法
+/// 非有限 TypeError / 负时间与零时长 RangeError / exponentialRamp 零值、
+/// createPeriodicWave 非 finite TypeError。与 testharness-webaudio 323 subtest
+/// 断言面互补（runner 面无 FILTER 单测可达性——此单测固定关键锚点）。
+#[cfg(feature = "v8")]
+#[test]
+fn test_webaudio_node_ctor_and_param_exception_face_m3w4() {
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+
+    // 断言组 1：节点构造器缺省面（numberOfInputs 1 入 / mode / AudioParam 缺省值）。
+    sandbox.execute(
+        "var ctx = new OfflineAudioContext(1, 1, 48000);\
+         var sp = new StereoPannerNode(ctx);\
+         var dl = new DelayNode(ctx);\
+         var bf = new BiquadFilterNode(ctx);\
+         var an = new AnalyserNode(ctx);\
+         globalThis.__r1 = [\
+           String(sp instanceof StereoPannerNode),\
+           String(sp.numberOfInputs),\
+           sp.channelCountMode,\
+           String(sp.pan.value),\
+           String(dl.delayTime.value),\
+           String(dl.delayTime.maxValue),\
+           bf.type,\
+           String(bf.Q.value),\
+           String(bf.frequency.value),\
+           String(an.fftSize),\
+           String(an.frequencyBinCount),\
+           String(an.minDecibels),\
+           String(an.maxDecibels),\
+           String(an.smoothingTimeConstant)].join('|');\
+         void 0;",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r1").unwrap().value,
+        "true|1|clamped-max|0|0|1|lowpass|1|350|2048|1024|-100|-30|0.8",
+        "四节点缺省面：StereoPanner mode clamped-max + Delay maxValue 1.0 + Biquad Q/frequency 1/350 + Analyser fftSize/binCount/db/smoothing"
+    );
+
+    // 断言组 2：选项反射面（ctor dict）。
+    sandbox.execute(
+        "var sp2 = new StereoPannerNode(ctx, {pan: 0.75});\
+         var dl2 = new DelayNode(ctx, {delayTime: 0.5, maxDelayTime: 1.5});\
+         var bf2 = new BiquadFilterNode(ctx, {type: 'highpass', frequency: 512, detune: 1, Q: 5, gain: 3});\
+         var an2 = new AnalyserNode(ctx, {fftSize: 32, maxDecibels: 1, minDecibels: -13, smoothingTimeConstant: 0.125});\
+         globalThis.__r2 = [\
+           String(sp2.pan.value),\
+           String(dl2.delayTime.value),\
+           String(dl2.delayTime.maxValue),\
+           bf2.type,\
+           String(bf2.frequency.value),\
+           String(bf2.Q.value),\
+           String(bf2.gain.value),\
+           String(an2.fftSize),\
+           String(an2.frequencyBinCount),\
+           String(an2.maxDecibels),\
+           String(an2.minDecibels),\
+           String(an2.smoothingTimeConstant)].join('|');\
+         void 0;",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r2").unwrap().value,
+        "0.75|0.5|1.5|highpass|512|5|3|32|16|1|-13|0.125",
+        "ctor options 反射：pan/delayTime+maxDelay/biquad 四参/analyser 四参（frequencyBinCount 随 fftSize 反射）"
+    );
+
+    // 断言组 3：异常面（StereoPanner channelCount/mode 界 + Analyser fftSize/
+    // min≥max/smoothing 界 + Delay 负 maxDelayTime）。
+    sandbox.execute(
+        "var errs = [];\
+         function t(fn) { try { fn(); errs.push(''); } catch (e) { errs.push(e.name + ':' + (e.message || '').slice(0, 24)); } }\
+         t(function () { new StereoPannerNode(ctx, {channelCount: 3}); });\
+         t(function () { new StereoPannerNode(ctx, {channelCountMode: 'max'}); });\
+         t(function () { new AnalyserNode(ctx, {fftSize: 33}); });\
+         t(function () { new AnalyserNode(ctx, {maxDecibels: -150, minDecibels: -10}); });\
+         t(function () { new AnalyserNode(ctx, {smoothingTimeConstant: 2}); });\
+         t(function () { new DelayNode(ctx, {maxDelayTime: -1}); });\
+         t(function () { new AnalyserNode(ctx, {minDecibels: -200, maxDecibels: -150}); });\
+         globalThis.__r3 = errs.join('|');\
+         void 0;",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r3").unwrap().value,
+        "NotSupportedError:channelCount 3 not suppo|NotSupportedError:Failed to construct 'Ste|IndexSizeError:fftSize 33 is not a powe|IndexSizeError:minDecibels must be less|IndexSizeError:smoothingTimeConstant 2 |RangeError:Failed to construct 'Del|",
+        "ctor 异常面六态（name + message 前 24 字符）：StereoPanner 界 NotSupportedError ×2 + Analyser fftSize/min≥max/smoothing IndexSizeError ×3 + Delay 负档 RangeError；min<max 合法不抛（空串尾项）"
+    );
+
+    // 断言组 4：AudioParam 调度方法异常面（非 finite TypeError / 负时间与
+    // timeConstant、零时长 RangeError / exponentialRamp 零值）。
+    sandbox.execute(
+        "var g = ctx.createGain();\
+         var errs4 = [];\
+         function t4(fn) { try { fn(); errs4.push('no-throw'); } catch (e) { errs4.push(e.constructor.name); } }\
+         t4(function () { g.gain.setValueAtTime(Infinity, 1); });\
+         t4(function () { g.gain.setValueAtTime(1, -1); });\
+         t4(function () { g.gain.linearRampToValueAtTime(NaN, 1); });\
+         t4(function () { g.gain.exponentialRampToValueAtTime(0, 1); });\
+         t4(function () { g.gain.setTargetAtTime(1, 1, -1); });\
+         t4(function () { g.gain.setValueCurveAtTime(new Float32Array([1, NaN, 2]), 1, 1); });\
+         t4(function () { g.gain.setValueCurveAtTime(new Float32Array(3), 1, 0); });\
+         t4(function () { g.gain.setValueAtTime(1, 1); });\
+         globalThis.__r4 = errs4.join('|');\
+         void 0;",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r4").unwrap().value,
+        "TypeError|RangeError|TypeError|RangeError|RangeError|TypeError|RangeError|no-throw",
+        "AudioParam 调度异常面七态（非 finite TypeError ×3 + 负时间/零值/负 timeConstant/零时长 RangeError ×4）+ 合法 setValueAtTime 不抛"
+    );
+
+    // 断言组 5：createPeriodicWave 非 finite → TypeError + 工厂与构造器同对象。
+    sandbox.execute(
+        "var pwErr = '';\
+         try { ctx.createPeriodicWave(new Float32Array([0, Infinity]), new Float32Array([0, 1])); } catch (e) { pwErr = e.constructor.name; }\
+         var sp3 = ctx.createStereoPanner();\
+         var dl3 = ctx.createDelay(2.5);\
+         globalThis.__r5 = [pwErr, String(sp3 instanceof StereoPannerNode), String(dl3.delayTime.maxValue)].join('|');\
+         void 0;",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r5").unwrap().value,
+        "TypeError|true|2.5",
+        "createPeriodicWave 非 finite TypeError + 工厂产物 instanceof 节点类 + createDelay 参数档"
+    );
+}
