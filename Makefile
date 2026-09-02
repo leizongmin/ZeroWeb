@@ -545,18 +545,18 @@ test-wpt-service-workers-module-request-metadata-wave-assets: fetch-wpt-service-
 
 fetch-wpt-service-workers-update-via-cache-matrix-wave:
 	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-08-20-m3-update-via-cache-matrix-assets.tsv" \
-		WPT_EXPECTED_ASSET_COUNT=8 WPT_CORPUS_LABEL="Service Worker updateViaCache matrix wave" \
+		WPT_EXPECTED_ASSET_COUNT=9 WPT_CORPUS_LABEL="Service Worker updateViaCache matrix wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh
 
 audit-wpt-service-workers-update-via-cache-matrix-wave:
 	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-08-20-m3-update-via-cache-matrix-assets.tsv" \
-		WPT_EXPECTED_ASSET_COUNT=8 WPT_CORPUS_LABEL="Service Worker updateViaCache matrix wave" \
+		WPT_EXPECTED_ASSET_COUNT=9 WPT_CORPUS_LABEL="Service Worker updateViaCache matrix wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh --verify-only
 
 test-wpt-service-workers-update-via-cache-matrix-wave-assets: fetch-wpt-service-workers-update-via-cache-matrix-wave
 	WPT_SERVICE_WORKER_SOURCE="$(CURDIR)/tests/wpt-runner/wpt-data/.service-workers-tier-a-root" \
 		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-08-20-m3-update-via-cache-matrix-assets.tsv" \
-		WPT_EXPECTED_ASSET_COUNT=8 WPT_CORPUS_LABEL="Service Worker updateViaCache matrix wave" \
+		WPT_EXPECTED_ASSET_COUNT=9 WPT_CORPUS_LABEL="Service Worker updateViaCache matrix wave" \
 		WPT_TAMPER_ASSET="service-workers/service-worker/resources/update-max-aged-worker.py" \
 		$(WPT_BASH) tests/wpt-runner/scripts/test-service-workers-tier-a-assets.sh
 

@@ -3346,6 +3346,10 @@
         reg.waiting = null;
         reg.active = null;
         reg._previousActive = null;
+        // https://w3c.github.io/ServiceWorker/#navigator-service-worker-unregister
+        // The JS registration object remains readable after unregister(), but
+        // it must not keep scheduling host state polls for a removed entry.
+        reg._unregistered = false;
         reg.onupdatefound = null;
         reg.unregister = function () {
             var removed = false;
@@ -3356,6 +3360,7 @@
               if (_registrations[i] === reg) { _registrations.splice(i, 1); break; }
             }
             if (removed && typeof setTimeout === 'function') {
+              reg._unregistered = true;
               setTimeout(function () { applyState(reg, 'redundant'); }, 0);
             }
             return Promise.resolve(removed);
@@ -3671,6 +3676,7 @@
         return state === 'activated' || state === 'redundant';
       }
       function pollRegistration(reg) {
+        if (reg._unregistered) return;
         if (reg._updateFoundPending) {
           reg._updateFoundPending = false;
           dispatchTargetEvent(reg, 'updatefound');

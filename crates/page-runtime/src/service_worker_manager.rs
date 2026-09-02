@@ -907,7 +907,7 @@ impl ServiceWorkerRuntimeHost for LocalServiceWorkerHost {
     }
 
     fn runtime_count(&self) -> usize {
-        self.runtimes.len()
+        self.runtimes.values().filter(|runtime| runtime.is_running()).count()
     }
 }
 
@@ -4741,6 +4741,30 @@ mod tests {
         manager.remove_client("client-1");
         assert!(manager.registration(id).is_none());
         let _ = manager.poll();
+        assert_eq!(manager.runtime_count(), 0);
+    }
+
+    #[test]
+    fn unregister_collects_active_after_controlled_client_is_removed() {
+        let mut manager = manager_under_test();
+        let id = start_active(&mut manager, "/app/", "globalThis.ready = true;");
+        manager
+            .observe_window_client("client-1", "https://example.test/app/page")
+            .unwrap();
+        assert_eq!(manager.runtime_count(), 1);
+
+        assert!(manager.unregister(id));
+        assert_eq!(
+            manager.registration(id).map(|registration| registration.state),
+            Some(ServiceWorkerState::Activated),
+            "controlled unregistered active worker is kept until the client is discarded"
+        );
+        assert_eq!(manager.runtime_count(), 1);
+
+        manager.remove_client("client-1");
+        let _ = manager.poll();
+
+        assert!(manager.registration(id).is_none());
         assert_eq!(manager.runtime_count(), 0);
     }
 

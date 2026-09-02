@@ -258,6 +258,84 @@ fn navigator_register_update_via_cache_noop_keeps_active_projection() {
 
 #[test]
 #[serial_test::serial(service_worker_runtime)]
+fn unregistered_page_registration_stops_state_polling() {
+    let mut webview = WebViewBuilder::new()
+        .url("https://example.test/page.html")
+        .script_source_fetcher(Arc::new(|_, _| {
+            Ok("addEventListener('install', event => {
+                    event.waitUntil(Promise.resolve());
+                });
+                addEventListener('activate', event => {
+                    event.waitUntil(Promise.resolve());
+                });"
+            .to_string())
+        }))
+        .build();
+
+    webview
+        .execute_script(
+            "globalThis.__zw_timers = [];
+             globalThis.__zw_setTimeout = function(id, delay) {
+               globalThis.__zw_timers.push({id: id, at: Date.now() + (delay | 0)});
+             };
+             globalThis.__zw_fire_due_timers = function() {
+               var timers = globalThis.__zw_timers || [];
+               if (!timers.length) return;
+               var due = timers.shift();
+               globalThis.__zw_timers = timers;
+               var fn = globalThis.__zw_pending[due.id];
+               if (fn) {
+                 delete globalThis.__zw_pending[due.id];
+                 try { fn(); } catch (_e) {}
+               }
+             };
+             globalThis.__swUnregisterPoll = 'pending';
+             (async function () {
+               var registration = await navigator.serviceWorker.register('/sw.js', {scope: '/app/'});
+               await navigator.serviceWorker.ready;
+               await registration.unregister();
+               globalThis.__swUnregisterPoll = [
+                 registration.updateViaCache,
+                 registration.active && registration.active.state
+               ].join('|');
+             })().catch(function(error) {
+               globalThis.__swUnregisterPoll = 'error:' + error.name + ':' + error.message;
+             });
+             'started';",
+        )
+        .unwrap();
+
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        let value = webview
+            .execute_script(
+                "if (typeof globalThis.__zw_fire_due_timers === 'function') {
+                   globalThis.__zw_fire_due_timers();
+                 }
+                 String(globalThis.__swUnregisterPoll)",
+            )
+            .unwrap();
+        if value != "pending" {
+            assert_eq!(value, "imports|activated");
+            break;
+        }
+        assert!(Instant::now() < deadline, "registration unregister timed out");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+
+    let pending = webview
+        .execute_script(
+            "for (var i = 0; i < 4; i++) globalThis.__zw_fire_due_timers();
+             Object.keys(globalThis.__zw_pending || {}).filter(function(key) {
+               return key.indexOf('__zwtid:') === 0;
+             }).length",
+        )
+        .unwrap();
+    assert_eq!(pending, "0");
+}
+
+#[test]
+#[serial_test::serial(service_worker_runtime)]
 fn rejected_install_marks_registration_redundant() {
     let mut webview = WebViewBuilder::new()
         .script_source_fetcher(Arc::new(|_, _| {

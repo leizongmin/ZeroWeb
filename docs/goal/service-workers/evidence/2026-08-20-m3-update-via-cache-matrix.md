@@ -18,7 +18,8 @@
 
 - 固定资产：
   [2026-08-20-m3-update-via-cache-matrix-assets.tsv](2026-08-20-m3-update-via-cache-matrix-assets.tsv)，
-  8/8 asset 校验固定 revision、字节数和 Git blob SHA。
+  9/9 asset 校验固定 revision、字节数和 Git blob SHA；2026-09-02 补齐
+  `wait_for_activation_on_sample_scope()` 依赖的 `empty-worker.js`。
 - `registration-updateviacache.https.html`：25/25 Pass：
   - 4 个注册后 update cache policy；
   - 16 个 `updateViaCache` 策略切换与 iframe 同步；
@@ -38,6 +39,9 @@
 - 定向性能报告 `benchmark_20260821_000805.json`：2/2 microbench，
   startup 103.74 ms，peak RSS 155.78 MiB，page p95 18.45 / 528.99 / 119.08 ms，
   retained form p95 0.0468 ms，absolute budgets 通过。
+- 2026-09-02 复验：`registration-updateviacache.https.html` 25/25 Pass；
+  `make audit-wpt-service-workers-update-via-cache-matrix-wave` 与
+  `make test-wpt-service-workers-update-via-cache-matrix-wave-assets` 均通过。
 
 ## 下一步
 

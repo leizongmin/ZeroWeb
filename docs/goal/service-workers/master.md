@@ -247,9 +247,9 @@ JSON，private profile 继续只保留内存态。
 - ✅ M3-37：`skip-waiting-using-registration.https.html` 纳入 core baseline；受控 iframe
   在 replacement 激活期间观测到 `controllerchange`，事件期 `controller.state` 保持
   `activating`，真实 worker-testharness 结果通道完成；core WPT 37/162
-- 🚧 M3-38：`registration-events.https.html` 与 `registration-end-to-end.https.html` 已通过
-  单 case 验证并补齐 7 asset fail-closed manifest；完整 core baseline 因既有
-  `registration-updateviacache.https.html` 长跑/挂起仍待收敛
+- ✅ M3-38：`registration-events.https.html` 与 `registration-end-to-end.https.html` 已通过
+  单 case 验证并补齐 7 asset fail-closed manifest；`registration-updateviacache.https.html`
+  长跑挂起已收敛，25/25 Pass
 - ✅ M2-1：Service Worker `FetchEvent` runtime foundation、manager longest-scope dispatch
   与 renderer/browser IPC command/event 已接通；`respondWith(new Response(...))`、未调用
   `respondWith` pass-through、重复 `respondWith` failure、跨 origin/out-of-scope pass-through
@@ -990,6 +990,7 @@ second（replacement）worker 只处理 awaitInstallEvent（messageSequence=1）
 | 2026-08-24 | M3-36 skipWaiting uncontrolled-client | `skip-waiting-without-using-registration.https.html` 纳入 core runner；未受控 iframe controller 保持 null；core 36/160 |
 | 2026-08-24 | M3-37 skipWaiting controlled-client | `skip-waiting-using-registration.https.html` 纳入 core runner；受控 iframe replacement controllerchange / activating snapshot / worker-testharness result channel；core 37/162 |
 | 2026-09-01 | M3-38 registration lifecycle WPT | `registration-events.https.html` 与 `registration-end-to-end.https.html` 单 case 通过；message lifecycle asset manifest 7 asset fail-closed；完整 core runner 仍被 `registration-updateviacache.https.html` 挂起阻挡 |
+| 2026-09-02 | M3-39 updateViaCache hang closure | `registration-updateviacache.https.html` 25/25 Pass；补齐 `empty-worker.js` asset manifest；注销后 runtime live-count 与页面 registration poll 停止回归 |
 | 2026-08-22 | M3 registration CacheStorage persistence | SW active registration-local CacheStorage snapshot/restore；normal profile persistence dirtying |
 | 2026-08-22 | M2 worker Cache delete/listing | SW runtime `Cache.delete()` 与 `CacheStorage.delete/has/keys` 贯穿 runtime/renderer/browser/manager/protocol |
 | 2026-08-22 | storage-cache-api M3 persistence support | page/WebView owner CacheStorage per-origin 落盘 |
