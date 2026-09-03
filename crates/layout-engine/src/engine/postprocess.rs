@@ -1636,7 +1636,11 @@ pub(super) fn clamp_percentage_max_height(
             &s.max_height,
             LengthValue::FitContent(_) | LengthValue::MaxContent | LengthValue::MinContent
         );
-        if is_content_keyword {
+        let is_min_content_keyword = matches!(
+            &s.min_height,
+            LengthValue::FitContent(_) | LengthValue::MaxContent | LengthValue::MinContent
+        );
+        if is_content_keyword || is_min_content_keyword {
             let content_top = box_node.padding_top + box_node.border_top;
             let pb = box_node.padding_top + box_node.padding_bottom + box_node.border_top + box_node.border_bottom;
             // content_height = max child bottom 相对 content origin（子 y 相对 padding/border box）
@@ -1646,7 +1650,13 @@ pub(super) fn clamp_percentage_max_height(
                 .map(|c| (c.y + c.height - content_top).max(0.0))
                 .fold(0.0_f32, f32::max);
             let cap_box = content_h + pb;
-            if box_node.height > cap_box && cap_box > 0.0 {
+            // R4012：max 关键字 cap + min 关键字 floor（6：abspos min-height:max-content
+            // + height:0 → 100）。
+            if is_content_keyword && box_node.height > cap_box && cap_box > 0.0 {
+                box_node.height = cap_box;
+                box_node.content_height = content_h;
+            }
+            if is_min_content_keyword && box_node.height < cap_box - 0.5 && cap_box > 0.0 {
                 box_node.height = cap_box;
                 box_node.content_height = content_h;
             }
@@ -1670,6 +1680,38 @@ pub(super) fn clamp_percentage_max_height(
             let clamped = max_content_h;
             box_node.content_height = clamped;
             box_node.height = clamped + pb;
+        }
+    }
+
+    // 1b) R4012（css-sizing-3 §5.2）：块盒 min/max-height 的 content 关键字
+    // （min-content/max-content/fit-content）= 内容块尺寸（csswg #3973）。
+    // converter 把关键字映射 auto/0（taffy 无 content-keyword 概念），taffy 后在此
+    // 以「子 max bottom 相对 content origin」为内容高执行钳制——max 侧 cap、min 侧
+    // floor（-2：height:0 + min-height:max-content → 100；3：height:200 + max-height:
+    // max-content → 100）。abspos 分支已在此前处理（R2057）。
+    if let Some(style) = style.as_ref().filter(|_| !box_node.is_absolute) {
+        let content_kw = |v: &LengthValue| {
+            matches!(
+                v,
+                LengthValue::MinContent | LengthValue::MaxContent | LengthValue::FitContent(_)
+            )
+        };
+        let content_top = box_node.padding_top + box_node.border_top;
+        let pb = box_node.padding_top + box_node.padding_bottom + box_node.border_top + box_node.border_bottom;
+        let content_h = box_node
+            .children
+            .iter()
+            .map(|c| (c.y + c.height - content_top).max(0.0))
+            .fold(0.0_f32, f32::max);
+        if content_h > 0.0 {
+            if content_kw(&style.max_height) && box_node.height > content_h + pb + 0.5 {
+                box_node.height = content_h + pb;
+                box_node.content_height = content_h;
+            }
+            if content_kw(&style.min_height) && box_node.height < content_h + pb - 0.5 {
+                box_node.height = content_h + pb;
+                box_node.content_height = content_h;
+            }
         }
     }
 
