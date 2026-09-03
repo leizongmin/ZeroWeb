@@ -2,7 +2,19 @@
 
 **入口文档**: [../media-audio.md](../media-audio.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-02（**WPT webaudio 第四~六批导入——ctor 族 + AudioBuffer +
+**最后更新**: 2026-09-03（**WPT webaudio 第七批导入——ChannelMerger/Splitter/
+ConstantSource ctor 族 + AudioBuffer getChannelData same-object（16 用例
+378P/0F = 100%）**：shim part06 落地 ChannelSplitterNode/ChannelMergerNode
+（固定拓扑 1入N出/N入1出、channelCount 派生、mode 'explicit'、固定通道 setter
+面——赋现值 no-op/它值 InvalidStateError、ctor options 固定值可过/非固定值抛）+
+ConstantSourceNode（offset AudioParam 缺省 1 + 工厂 options 透传）+
+`ctx.createBuffer` + `AudioBuffer.copyToChannel/copyFromChannel` 数据面 +
+`_zwWANodeCtor` 分发三节点；runner WEBAUDIO_SUPPORT_SCRIPTS 增
+audioparam-testing.js。**378P/0F = 100%**（+47 subtest 净涨零回归），
+evidence：`evidence/2026-09-03-webaudio-node-family-batch7.json`；单测
+`test_webaudio_merger_splitter_constant_source_m3xxiv`（固定拓扑/固定面/
+ConstantSource/copy 数据面 4 断言组）；make test 18815/0。此前 2026-09-02：
+**WPT webaudio 第四~六批导入——ctor 族 + AudioBuffer +
 gain-basic（12 用例 331P/0F = 100%，接口语义族 headless 饱和）**。第四批：StereoPanner/Delay/BiquadFilter/Analyser 四节点构造器 +
 createPeriodicWave 异常面 + audioparam-exceptional-values 全落 shim part06
 （builder 族防工厂↔构造器互调递归），10 用例 **323P/0F = 100%**（+259 subtest
@@ -144,6 +156,10 @@ volume/muted 真控制。**双重启动门控均已解除**：① M0 音频环�
     startRendering——audit runner 整文件跑，前段构造面无法单独导入）；
     audiobuffer-getChannelData / audiobuffer-copy-channel（copyToChannel/
     copyFromChannel 数据面随播放切片）；periodicWave.html（startRendering）。
+  **第七批更新（2026-09-03）**：audiobuffer-getChannelData 解除排除导入
+ （same-object 断言面无渲染——copyTo/copyFrom 数据面语义同步落 shim）；
+  audiobuffer-copy-channel 维持排除（同文件 startRendering 后段不可分割——
+  数据面已落 shim，随渲染切片复评）。
 - **余项**：createGain 的 per-node 桥推（当前 per-osc gain 由 WebAudioContext 承接，
   gain 节点 → 桥映射挂真出声/设备切片）；WPT 余面（osc-basic-waveform/
   sub-sample-start/detune-* 依赖渲染量化面——startRendering，随渲染面评估）。
@@ -290,19 +306,19 @@ DONE 阻塞**；Mixer/重采样接线随设备切片可选推进）。
 
 ## 验证基线
 
-- 测试基线：`make test` 全绿 18705（2026-09-02 组合树实测；zero-media default
-  feature：17 单测 + 1 doctest = decode 5 + NullSink 5 + mixer 7；`audio-cpal`
-  feature 另增 CpalSink 环境自适应冒烟 1 件）；clippy 零警告（default 与
-  `--features audio-cpal` 双配置）
-- WPT webaudio：12 用例 331P/0F = 100%（2026-09-02 六批累计——connect 返回值 +
+- 测试基线：`make test` 全绿 18815（2026-09-03 组合树实测）；clippy 零警告
+  （default 与 `--features audio-cpal` 双配置）
+- WPT webaudio：**16 用例 378P/0F = 100%**（2026-09-03 七批累计——connect 返回值 +
   destination + ctor-oscillator 62 + ctor-gain/stereopanner/delay/biquadfilter/
   analyser + createPeriodicWave 异常面 + audioparam-exceptional-values 66 +
-  audiobuffer 面）；
+  audiobuffer 面 + **第七批 ctor-channelmerger/channelsplitter/constantsource +
+  audiobuffer-getChannelData**）；
   evidence：`evidence/2026-09-02-webaudio-wpt-subset.json`（首批）、
   `evidence/2026-09-02-webaudio-ctor-oscillator.json`（第二批）、
   `evidence/2026-09-02-webaudio-ctor-family.json`（第四批）、
   `evidence/2026-09-02-webaudio-audiobuffer.json`（第五批）、
-  `evidence/2026-09-02-webaudio-gain-basic.json`（第六批）
+  `evidence/2026-09-02-webaudio-gain-basic.json`（第六批）、
+  `evidence/2026-09-03-webaudio-node-family-batch7.json`（第七批）
 - NullSink 可观测锚点：440Hz 正弦 @48kHz 过零率 ≈880（2×频率；修正 M0 evidence
   的 ≈440 笔误——evidence 只追加不修改，以代码与本档为事实源）；暂停拒写计
   underrun；非整帧写入拒收

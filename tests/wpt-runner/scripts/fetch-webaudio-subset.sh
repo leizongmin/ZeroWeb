@@ -50,13 +50,19 @@ WA_FILES=(
   # ---- 第五批（2026-09-02）：AudioBuffer 构造/接口面 ----
   "webaudio/the-audio-api/the-audiobuffer-interface/audiobuffer.html"
   "webaudio/the-audio-api/the-gainnode-interface/gain-basic.html"
+  # ---- 第七批（2026-09-03）：ChannelMerger/Splitter/ConstantSource ctor +
+  # AudioBuffer getChannelData same-object 面（无渲染——数据面）。
+  "webaudio/the-audio-api/the-channelmergernode-interface/ctor-channelmerger.html"
+  "webaudio/the-audio-api/the-channelsplitternode-interface/ctor-channelsplitter.html"
+  "webaudio/the-audio-api/the-constantsourcenode-interface/ctor-constantsource.html"
+  "webaudio/the-audio-api/the-audiobuffer-interface/audiobuffer-getChannelData.html"
   # 不导入：audioparam-method-chaining / audioparam-nominal-range（startRendering
   # 渲染断言——RFC §0 不做清单）；ctor-audiobuffer（末 task multiple contexts 依赖
   # startRendering——audit runner 整文件跑）；periodicWave.html（startRendering）。
 )
 
 # audit.js 框架（runner inline_extras 内联——用例以绝对路径引用）。
-for f in audit.js audit-util.js audionodeoptions.js; do
+for f in audit.js audit-util.js audionodeoptions.js audioparam-testing.js; do
   fetch_raw "webaudio/resources/${f}"
 done
 

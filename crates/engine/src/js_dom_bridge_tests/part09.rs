@@ -4690,3 +4690,102 @@ fn test_media_load_invoke_reset_face_m3xxiii() {
         "audio 空 src 失败候选 → onerror IDL handler 触发 + event.target === audio"
     );
 }
+
+#[cfg(feature = "v8")]
+#[test]
+fn test_webaudio_merger_splitter_constant_source_m3xxiv() {
+    // media-audio M3 扩批 XXIV：ChannelMerger/Splitter/ConstantSource 节点 +
+    // ctx.createBuffer + AudioBuffer copyTo/copyFromChannel 数据面（WPT
+    // ctor-channelmerger / ctor-channelsplitter / ctor-constantsource /
+    // audiobuffer-getChannelData 断言面）。
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+
+    // 断言组 1：splitter/merger 固定拓扑（1入N出 / N入1出、channelCount 派生、
+    // mode 'explicit'、interpretation 缺省 discrete/speakers）+ ctor 缺省 N=6。
+    sandbox
+        .execute(
+            "var ctx = new OfflineAudioContext(1, 1, 48000);\
+             var sp = new ChannelSplitterNode(ctx);\
+             var mg = new ChannelMergerNode(ctx);\
+             globalThis.__r1 = [\
+               String(sp.numberOfInputs), String(sp.numberOfOutputs),\
+               String(sp.channelCount), sp.channelCountMode, sp.channelInterpretation,\
+               String(mg.numberOfInputs), String(mg.numberOfOutputs),\
+               String(mg.channelCount), mg.channelCountMode, mg.channelInterpretation\
+             ].join('|');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r1").unwrap().value,
+        "1|6|6|explicit|discrete|6|1|1|explicit|speakers",
+        "splitter 1入6出/explicit/discrete + merger 6入1出/explicit/speakers（spec 固定拓扑缺省）"
+    );
+
+    // 断言组 2：固定面——ctor {numberOfOutputs:2}/{numberOfInputs:3} 反射 +
+    // 固定值赋值 no-op + 它值赋值/ctor options → InvalidStateError。
+    sandbox
+        .execute(
+            "var sp2 = new ChannelSplitterNode(ctx, {numberOfOutputs: 2, channelInterpretation: 'speakers'});\
+             var mg2 = new ChannelMergerNode(ctx, {numberOfInputs: 3});\
+             var _err = '';\
+             try { sp2.channelCount = sp2.channelCount; } catch (e) { _err = 'fixed-assign:' + e.name; }\
+             try { sp2.channelCount = 7; } catch (e) { _err += '|count:' + e.name; }\
+             try { sp2.channelCountMode = 'max'; } catch (e) { _err += '|mode:' + e.name; }\
+             try { new ChannelSplitterNode(ctx, {channelCount: 3}); } catch (e) { _err += '|ctorCount:' + e.name; }\
+             try { new ChannelSplitterNode(ctx, {numberOfOutputs: 99}); } catch (e) { _err += '|outs:' + e.name; }\
+             globalThis.__r2 = [String(sp2.numberOfOutputs), sp2.channelInterpretation, String(mg2.numberOfInputs), _err].join('|');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r2").unwrap().value,
+        "2|speakers|3||count:InvalidStateError|mode:InvalidStateError|ctorCount:InvalidStateError|outs:IndexSizeError",
+        "splitter 2 出反射 + 固定值 no-op/它值 InvalidStateError + ctor 越界 IndexSizeError"
+    );
+
+    // 断言组 3：ConstantSourceNode（offset AudioParam 缺省 1 + 0 入 1 出 +
+    // {offset} 反射 + start/stop 面 + 工厂同 builder）。
+    sandbox
+        .execute(
+            "var cs = new ConstantSourceNode(ctx);\
+             var cs2 = ctx.createConstantSource({offset: 0.5});\
+             cs.start(); cs.stop();\
+             globalThis.__r3 = [String(cs instanceof ConstantSourceNode), String(cs.numberOfInputs), String(cs.numberOfOutputs), String(cs.offset.value), String(cs2.offset.value)].join('|');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r3").unwrap().value,
+        "true|0|1|1|0.5",
+        "ConstantSource offset 缺省 1 + 0入1出 + 选项反射 + 工厂同面"
+    );
+
+    // 断言组 4：ctx.createBuffer + AudioBuffer copyTo/copyFromChannel 数据面
+    // （getChannelData same-object + 越界 IndexSizeError + 拷贝语义）。
+    sandbox
+        .execute(
+            "var buf = ctx.createBuffer(3, 16, ctx.sampleRate);\
+             var a = buf.getChannelData(0);\
+             var same = a === buf.getChannelData(0);\
+             a[0] = 0.25; a[1] = 0.5;\
+             var dst = new Float32Array(4);\
+             buf.copyFromChannel(dst, 0, 1);\
+             var dst2 = new Float32Array(2);\
+             dst2[0] = 9; dst2[1] = -9;\
+             buf.copyToChannel(dst2, 1, 14);\
+             var ch1 = buf.getChannelData(1);\
+             var _idxErr = '';\
+             try { buf.copyFromChannel(dst, 3); } catch (e) { _idxErr = e.name; }\
+             globalThis.__r4 = [String(same), String(dst[0]), String(ch1[14]), String(ch1[15]), String(ch1[0]), _idxErr].join('|');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r4").unwrap().value,
+        "true|0.5|9|-9|0|IndexSizeError",
+        "getChannelData same-object + copyFrom(offset) + copyTo(尾部) + 越界 IndexSizeError"
+    );
+}

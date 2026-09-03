@@ -1,0 +1,38 @@
+{
+  "batch": "WPT webaudio 第七批",
+  "date": "2026-09-03",
+  "topic": "ChannelMerger/Splitter/ConstantSource ctor 族 + AudioBuffer getChannelData same-object 面",
+  "imported": [
+    "webaudio/the-audio-api/the-channelmergernode-interface/ctor-channelmerger.html",
+    "webaudio/the-audio-api/the-channelsplitternode-interface/ctor-channelsplitter.html",
+    "webaudio/the-audio-api/the-constantsourcenode-interface/ctor-constantsource.html",
+    "webaudio/the-audio-api/the-audiobuffer-interface/audiobuffer-getChannelData.html"
+  ],
+  "shim_changes": [
+    "ChannelSplitterNode/ChannelMergerNode builder+ctor：固定拓扑（splitter 1入N出 / merger N入1出，N∈[1,32] 缺省 6）、channelCount=numberOfOutputs 派生、mode 'explicit'、interpretation discrete/speakers 缺省、_zwFixedChannels setter 面（固定值 no-op/它值 InvalidStateError）、ctor options 固定值可过/非固定值 InvalidStateError",
+    "ConstantSourceNode：offset AudioParam 缺省 1、0入1出、start/stop 门控、工厂 createConstantSource(options) 透传",
+    "_zwWANodeCtor 分发补三节点；_zwWANode inputs gate 增 constantsource",
+    "ctx.createBuffer（AudioBuffer 同一正义约束）+ AudioBuffer.copyToChannel/copyFromChannel 数据面（越界 IndexSizeError + offset 语义）",
+    "固定通道 setter 面：_zwFixedChannels 节点 channelCount/Mode/Interpretation 赋现值 no-op、赋它值 InvalidStateError"
+  ],
+  "runner_changes": [
+    "WEBAUDIO_SUPPORT_SCRIPTS 增 audioparam-testing.js（getChannelData 用例引用——脚本加载不触发渲染路径）",
+    "fetch-webaudio-subset.sh 白名单 +4 用例 + audioparam-testing.js"
+  ],
+  "results": {
+    "pass": 378,
+    "fail": 0,
+    "timeout": 0,
+    "net": "+47 subtest 净涨零回归（331→378）"
+  },
+  "unit_test": "test_webaudio_merger_splitter_constant_source_m3xxiv",
+  "gates": {
+    "make_test": "18815 passed / 0 failed",
+    "clippy": "-D warnings 零警告",
+    "fmt": "clean"
+  },
+  "excluded_still": [
+    "audiobuffer-copy-channel（copyTo/copyFrom 异常+数据主面——同文件含 startRendering 后段不可分割；数据面语义已落 shim，随渲染切片复评）",
+    "ctor-audiobuffer / periodicWave / audioparam-method-chaining / audioparam-nominal-range（既有 startRendering 排除维持）"
+  ]
+}

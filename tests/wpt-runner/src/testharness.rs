@@ -1605,10 +1605,18 @@ pub const WEBAUDIO_TEST_FILES: &[&str] = &[
     "webaudio/the-audio-api/the-audiobuffer-interface/audiobuffer.html",
     // GainNode.gain instanceof AudioParam 断言（audit 单 task，无渲染）。
     "webaudio/the-audio-api/the-gainnode-interface/gain-basic.html",
+    // ---- 第七批（2026-09-03）：ChannelMerger/Splitter/ConstantSource ctor 族 +
+    // AudioBuffer getChannelData same-object 面（W3CTH/audit 构造面，无渲染——
+    // shim 第七批：createChannelMerger/Splitter + createConstantSource +
+    // createBuffer + 固定通道 setter 面同步落地）。
+    "webaudio/the-audio-api/the-channelmergernode-interface/ctor-channelmerger.html",
+    "webaudio/the-audio-api/the-channelsplitternode-interface/ctor-channelsplitter.html",
+    "webaudio/the-audio-api/the-constantsourcenode-interface/ctor-constantsource.html",
+    "webaudio/the-audio-api/the-audiobuffer-interface/audiobuffer-getChannelData.html",
     // 不导入：ctor-audiobuffer.html（末 task「multiple contexts」依赖
     // startRendering——audit runner 整文件跑，前段构造面无法单独导入）；
-    // audiobuffer-getChannelData / audiobuffer-copy-channel（copyToChannel/
-    // copyFromChannel 数据面随播放切片）；periodicWave.html（startRendering）。
+    // audiobuffer-copy-channel（startRendering 后段同文件不可分割——数据面已落
+    // shim，随渲染切片复评）；periodicWave.html（startRendering）。
     // 不导入：audioparam-method-chaining / audioparam-nominal-range（依赖
     // startRendering 渲染断言——RFC §0 不做清单）；audiocontextoptions（设备
     // baseLatency 档——前批已记）。
@@ -1628,6 +1636,12 @@ pub const WEBAUDIO_SUPPORT_SCRIPTS: &[(&str, &str)] = &[
         "webaudio/resources/audionodeoptions.js",
     ),
     ("/webaudio/resources/audit.js", "webaudio/resources/audit.js"),
+    // M3 扩批 XXIV：audioparam-testing.js（audiobuffer-getChannelData 引用——
+    // 仅脚本加载，两个 task 不触发 createAudioGraphAndTest 渲染路径）。
+    (
+        "/webaudio/resources/audioparam-testing.js",
+        "webaudio/resources/audioparam-testing.js",
+    ),
 ];
 
 /// Run the pinned upstream Web Audio testharness subset（media-audio M3 切片 2）。

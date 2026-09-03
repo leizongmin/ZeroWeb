@@ -7278,7 +7278,7 @@
     // biquadfilter/analyser）与 destination 1 入 1 出（ctor-gain/ctor-analyser
     // testDefaultConstructor numberOfInputs:1 断言面）；
     // channelCount 2（destination 缺省立体声，maxChannelCount ≥ 2）。
-    node._zwInputs = (kind === 'oscillator') ? 0 : 1;
+    node._zwInputs = (kind === 'oscillator' || kind === 'constantsource') ? 0 : 1;
     node._zwOutputs = 1;
     node._zwChannelCount = 2;
     node._zwMaxChannelCount = 32;
@@ -7295,6 +7295,15 @@
   Object.defineProperty(_zwWANode.prototype, 'channelCount', {
     get: function () { return this._zwChannelCount; },
     set: function (v) {
+      // spec：固定通道拓扑节点（splitter/merger——channelCount 是 numberOfOutputs/
+      // 1 的派生值）count/mode/interpretation 不可变——赋**现值** no-op、赋它值 →
+      // InvalidStateError（ctor-channelsplitter 'AudioNodeOptions immutability'
+      // 断言面：=6 不抛、=7 抛）。
+      if (this._zwFixedChannels) {
+        if (Number(v) === this._zwChannelCount) return;
+        throw new (globalThis.DOMException || Error)(
+          "Failed to set the 'channelCount' property on 'AudioNode': channelCount is fixed.", 'InvalidStateError');
+      }
       // spec AudioNode channelCount setter：0 → NotSupportedError；destination 上
       // > maxChannelCount(32) → IndexSizeError（WPT destination 断言面）；非
       // destination 节点仅 0 抛（testAudioNodeOptions {channelCount:17} 可写面）。
@@ -7321,6 +7330,12 @@
     get: function () { return this._zwChannelCountMode || 'max'; },
     set: function (v) {
       var s = String(v == null ? '' : v);
+      if (this._zwFixedChannels) {
+        // 固定通道：赋现值 no-op、它值 InvalidStateError。
+        if (s === (this._zwChannelCountMode || 'max')) return;
+        throw new (globalThis.DOMException || Error)(
+          "Failed to set the 'channelCountMode' property on 'AudioNode': channelCountMode is fixed.", 'InvalidStateError');
+      }
       if (s === 'max' || s === 'clamped-max' || s === 'explicit') this._zwChannelCountMode = s;
     },
     configurable: true,
@@ -7329,6 +7344,12 @@
     get: function () { return this._zwChannelInterpretation || 'speakers'; },
     set: function (v) {
       var s = String(v == null ? '' : v);
+      if (this._zwFixedChannels) {
+        // 固定通道：赋现值 no-op、它值 InvalidStateError。
+        if (s === (this._zwChannelInterpretation || 'speakers')) return;
+        throw new (globalThis.DOMException || Error)(
+          "Failed to set the 'channelInterpretation' property on 'AudioNode': channelInterpretation is fixed.", 'InvalidStateError');
+      }
       if (s === 'speakers' || s === 'discrete') this._zwChannelInterpretation = s;
     },
     configurable: true,
@@ -7733,6 +7754,9 @@
     else if (nodeName === 'DelayNode') node = _zwWABuildDelay(ctx, options);
     else if (nodeName === 'BiquadFilterNode') node = _zwWABuildBiquadFilter(ctx, options);
     else if (nodeName === 'AnalyserNode') node = _zwWABuildAnalyser(ctx, options);
+    else if (nodeName === 'ConstantSourceNode') node = _zwWABuildConstantSource(ctx, options);
+    else if (nodeName === 'ChannelSplitterNode') node = _zwWABuildChannelSplitter(ctx, options);
+    else if (nodeName === 'ChannelMergerNode') node = _zwWABuildChannelMerger(ctx, options);
     else node = ctx.createGain();
     if (options && typeof options === 'object') {
       // spec webaudio AudioNodeOptions dict 校验（ctor 面比 setter 严——WPT
@@ -8091,6 +8115,208 @@
     configurable: true,
   });
   globalThis.PeriodicWave = globalThis.PeriodicWave || PeriodicWave;
+  // ---- M3 扩批 XXIV（2026-09-03）：ChannelMerger/Splitter/ConstantSource 节点 +
+  // ctx.createBuffer + AudioBuffer copyTo/copyFromChannel 数据面（第七批 WPT 导入
+  // 支撑面——ctor-channelmerger / ctor-channelsplitter / ctor-constantsource /
+  // audiobuffer-getChannelData 同 object 断言面）。headless 全部为语义面（无 DSP——
+  // RFC §0 简化记录）。
+  // spec BaseAudioContext.createBuffer——与 AudioBuffer 构造器同一正义约束
+  //（numberOfChannels/length/sampleRate），返回新 AudioBuffer 实例。
+  // https://webaudio.github.io/web-audio-api/#dom-baseaudiocontext-createbuffer
+  function _zwWACreateBuffer(options) {
+    return new AudioBuffer(options);
+  }
+  AudioContext.prototype.createBuffer = function (numberOfChannels, length, sampleRate) {
+    return _zwWACreateBuffer({ numberOfChannels: numberOfChannels, length: length, sampleRate: sampleRate });
+  };
+  if (typeof globalThis.OfflineAudioContext !== 'undefined') {
+    OfflineAudioContext.prototype.createBuffer = AudioContext.prototype.createBuffer;
+  }
+  // AudioBuffer copyTo/copyFromChannel（spec §AudioBuffer——数据面拷贝；start 越界
+  // → IndexSizeError、buffer 非类型 → TypeError）。源/目标以 Float32Array 读写。
+  function AudioBuffer$copyFromChannel(destination, channelNumber, bufferOffset) {
+    if (!destination || typeof destination.length !== 'number') {
+      throw new TypeError("Failed to execute 'copyFromChannel' on 'AudioBuffer': parameter 1 is not of type 'Float32Array'.");
+    }
+    var ch = Number(channelNumber);
+    if (isNaN(ch) || ch < 0 || ch >= this.numberOfChannels || (ch !== Math.floor(ch))) {
+      throw new (globalThis.DOMException || Error)(
+        "Failed to execute 'copyFromChannel' on 'AudioBuffer': channel index " + channelNumber + " is not a valid index.", 'IndexSizeError');
+    }
+    var off = (bufferOffset === undefined || bufferOffset === null) ? 0 : Number(bufferOffset);
+    if (isNaN(off) || off < 0 || off > this.length) {
+      throw new (globalThis.DOMException || Error)(
+        "Failed to execute 'copyFromChannel' on 'AudioBuffer': bufferOffset " + bufferOffset + " is out of range.", 'IndexSizeError');
+    }
+    var src = this.getChannelData(ch);
+    var n = Math.min(destination.length, src.length - off);
+    for (var i = 0; i < n; i++) destination[i] = src[off + i];
+  }
+  function AudioBuffer$copyToChannel(source, channelNumber, bufferOffset) {
+    if (!source || typeof source.length !== 'number') {
+      throw new TypeError("Failed to execute 'copyToChannel' on 'AudioBuffer': parameter 1 is not of type 'Float32Array'.");
+    }
+    var ch = Number(channelNumber);
+    if (isNaN(ch) || ch < 0 || ch >= this.numberOfChannels || (ch !== Math.floor(ch))) {
+      throw new (globalThis.DOMException || Error)(
+        "Failed to execute 'copyToChannel' on 'AudioBuffer': channel index " + channelNumber + " is not a valid index.", 'IndexSizeError');
+    }
+    var off = (bufferOffset === undefined || bufferOffset === null) ? 0 : Number(bufferOffset);
+    if (isNaN(off) || off < 0 || off > this.length) {
+      throw new (globalThis.DOMException || Error)(
+        "Failed to execute 'copyToChannel' on 'AudioBuffer': bufferOffset " + bufferOffset + " is out of range.", 'IndexSizeError');
+    }
+    var dst = this.getChannelData(ch);
+    var n = Math.min(source.length, dst.length - off);
+    for (var j = 0; j < n; j++) dst[off + j] = source[j];
+  }
+  AudioBuffer.prototype.copyFromChannel = AudioBuffer$copyFromChannel;
+  AudioBuffer.prototype.copyToChannel = AudioBuffer$copyToChannel;
+  // ConstantSourceNode（spec §ConstantSourceNode——offset AudioParam 缺省 1；
+  // start/stop 门控面，headless 无输出）。工厂 createConstantSource 同 builder。
+  function _zwWABuildConstantSource(ctx, options) {
+    var node = _zwWANode('constantsource', ctx._zwCtxId, 0);
+    node._zwInputs = 0;
+    var _started = false;
+    var _offset = globalThis._zwMakeAudioParam(1);
+    Object.defineProperty(node, 'offset', {
+      get: function () { return _offset; },
+      configurable: true,
+    });
+    node.start = function () { _started = true; };
+    node.stop = function () { _started = false; };
+    if (options && typeof options === 'object' && options.offset != null) {
+      node.offset.value = Number(options.offset);
+    }
+    return node;
+  }
+  function ConstantSourceNode(ctx, options) { return _zwWANodeCtor('ConstantSourceNode', ctx, options); }
+  ConstantSourceNode.prototype = _zwWANode.prototype;
+  globalThis.ConstantSourceNode = globalThis.ConstantSourceNode || ConstantSourceNode;
+  AudioContext.prototype.createConstantSource = function (options) { return _zwWABuildConstantSource(this, options); };
+  if (typeof globalThis.OfflineAudioContext !== 'undefined') {
+    OfflineAudioContext.prototype.createConstantSource = AudioContext.prototype.createConstantSource;
+  }
+  // ChannelSplitterNode / ChannelMergerNode（spec §——拆/合通道的固定拓扑节点：
+  // splitter 1 入 N 出（N 缺省 6，[1,32]）、merger N 入 1 出；channelCount =
+  // numberOfOutputs、mode 'explicit'、interpretation 'discrete'（splitter 缺省）/
+  // 'speakers'（merger 缺省）；channelCount/Mode/Interpretation **固定**——ctor
+  // options 面外 Setter 变更 → InvalidStateError。numberOfInputs/Outputs ctor
+  // options 不可写（splitter 恒 1 入 / merger 恒 1 出——ctor-*/testDefaultConstructor
+  // 断言 numberOfInputs 面的 options 忽略语义）。
+  // https://webaudio.github.io/web-audio-api/#ChannelSplitterNode
+  function _zwWABuildChannelSplitter(ctx, options) {
+    var outs = (options && typeof options === 'object' && options.numberOfOutputs != null)
+      ? Number(options.numberOfOutputs) : 6;
+    if (isNaN(outs) || outs < 1 || outs > 32) {
+      throw new (globalThis.DOMException || Error)(
+        "Failed to construct 'ChannelSplitterNode': Number of outputs must be in [1, 32].", 'IndexSizeError');
+    }
+    var node = _zwWANode('channelsplitter', ctx._zwCtxId, 0);
+    node._zwInputs = 1;
+    node._zwOutputs = outs;
+    node._zwChannelCount = outs;
+    node._zwChannelCountMode = 'explicit';
+    node._zwChannelInterpretation = 'discrete';
+    if (options && typeof options === 'object' && options.channelInterpretation != null) {
+      var ci = String(options.channelInterpretation);
+      if (ci !== 'speakers' && ci !== 'discrete') {
+        throw new TypeError("Failed to construct 'ChannelSplitterNode': Failed to read the 'channelInterpretation' property from 'ChannelSplitterOptions': The provided value '" + ci + "' is not a valid enum value.");
+      }
+      node._zwChannelInterpretation = ci;
+    }
+    node._zwFixedChannels = true; // channelCount/Mode/Interpretation 固定——setter 抛 InvalidStateError
+    return node;
+  }
+  function _zwWABuildChannelMerger(ctx, options) {
+    var ins = (options && typeof options === 'object' && options.numberOfInputs != null)
+      ? Number(options.numberOfInputs) : 6;
+    if (isNaN(ins) || ins < 1 || ins > 32) {
+      throw new (globalThis.DOMException || Error)(
+        "Failed to construct 'ChannelMergerNode': Number of inputs must be in [1, 32].", 'IndexSizeError');
+    }
+    var node = _zwWANode('channelmerger', ctx._zwCtxId, 0);
+    node._zwInputs = ins;
+    node._zwOutputs = 1;
+    node._zwChannelCount = 1;
+    node._zwChannelCountMode = 'explicit';
+    node._zwChannelInterpretation = 'speakers';
+    if (options && typeof options === 'object' && options.channelInterpretation != null) {
+      var ci = String(options.channelInterpretation);
+      if (ci !== 'speakers' && ci !== 'discrete') {
+        throw new TypeError("Failed to construct 'ChannelMergerNode': Failed to read the 'channelInterpretation' property from 'ChannelMergerOptions': The provided value '" + ci + "' is not a valid enum value.");
+      }
+      node._zwChannelInterpretation = ci;
+    }
+    node._zwFixedChannels = true;
+    return node;
+  }
+  function ChannelSplitterNode(ctx, options) {
+    // ctor 直建（不经 _zwWANodeCtor 的 channelCount 校验——splitter 的 count 是
+    // numberOfOutputs 派生固定值；AudioNodeOptions 中仅 interpretation 可给）。
+    if (!(ctx && typeof ctx === 'object' && (ctx._zwCtxId != null || typeof ctx.createGain === 'function'))) {
+      throw new TypeError("Failed to construct 'ChannelSplitterNode': parameter 1 is not of type 'BaseAudioContext'.");
+    }
+    if (options != null && typeof options !== 'object') {
+      throw new TypeError("Failed to construct 'ChannelSplitterNode': The provided value is not of type 'object'.");
+    }
+    if (options && typeof options === 'object') {
+      // spec：固定通道节点 ctor options 给 channelCount/channelCountMode →
+      // **非固定值** InvalidStateError、**固定值本身** 可过（W3CTH
+      // testAudioNodeOptions isFixed 面：固定值可写/可过 ctor、+1 值抛）。
+      if (options.channelCount != null) {
+        var _spCc = Number(options.channelCount);
+        var _spFixed = _spCc === ((options.numberOfOutputs != null) ? Number(options.numberOfOutputs) : 6);
+        if (isNaN(_spCc) || !_spFixed) {
+          throw new (globalThis.DOMException || Error)(
+            "Failed to construct 'ChannelSplitterNode': channelCount " + options.channelCount + " is not the fixed value.", 'InvalidStateError');
+        }
+      }
+      if (options.channelCountMode != null && String(options.channelCountMode) !== 'explicit') {
+        throw new (globalThis.DOMException || Error)(
+          "Failed to construct 'ChannelSplitterNode': channelCountMode is fixed ('explicit').", 'InvalidStateError');
+      }
+    }
+    return _zwWABuildChannelSplitter(ctx, options);
+  }
+  function ChannelMergerNode(ctx, options) {
+    if (!(ctx && typeof ctx === 'object' && (ctx._zwCtxId != null || typeof ctx.createGain === 'function'))) {
+      throw new TypeError("Failed to construct 'ChannelMergerNode': parameter 1 is not of type 'BaseAudioContext'.");
+    }
+    if (options != null && typeof options !== 'object') {
+      throw new TypeError("Failed to construct 'ChannelMergerNode': The provided value is not of type 'object'.");
+    }
+    if (options && typeof options === 'object') {
+      // 同 splitter——固定值可过 ctor、非固定值 InvalidStateError。
+      if (options.channelCount != null) {
+        if (Number(options.channelCount) !== 1) {
+          throw new (globalThis.DOMException || Error)(
+            "Failed to construct 'ChannelMergerNode': channelCount " + options.channelCount + " is not the fixed value 1.", 'InvalidStateError');
+        }
+      }
+      if (options.channelCountMode != null && String(options.channelCountMode) !== 'explicit') {
+        throw new (globalThis.DOMException || Error)(
+          "Failed to construct 'ChannelMergerNode': channelCountMode is fixed ('explicit').", 'InvalidStateError');
+      }
+    }
+    return _zwWABuildChannelMerger(ctx, options);
+  }
+  ChannelSplitterNode.prototype = _zwWANode.prototype;
+  ChannelMergerNode.prototype = _zwWANode.prototype;
+  globalThis.ChannelSplitterNode = globalThis.ChannelSplitterNode || ChannelSplitterNode;
+  globalThis.ChannelMergerNode = globalThis.ChannelMergerNode || ChannelMergerNode;
+  AudioContext.prototype.createChannelSplitter = function (numberOfOutputs) {
+    var opts = (numberOfOutputs != null) ? { numberOfOutputs: Number(numberOfOutputs) } : undefined;
+    return _zwWABuildChannelSplitter(this, opts);
+  };
+  AudioContext.prototype.createChannelMerger = function (numberOfInputs) {
+    var opts = (numberOfInputs != null) ? { numberOfInputs: Number(numberOfInputs) } : undefined;
+    return _zwWABuildChannelMerger(this, opts);
+  };
+  if (typeof globalThis.OfflineAudioContext !== 'undefined') {
+    OfflineAudioContext.prototype.createChannelSplitter = AudioContext.prototype.createChannelSplitter;
+    OfflineAudioContext.prototype.createChannelMerger = AudioContext.prototype.createChannelMerger;
+  }
   // createBufferSource/createBiquadFilter 等未实现面——spec 其它节点类型不属最小面
   //（RFC §0 不做清单），undefined 返回（调用方 try/catch 容错）。
   // track 元素 src 的 headless 加载模拟——data:text/vtt 解析填 cue + load 事件；
