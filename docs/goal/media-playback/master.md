@@ -2,7 +2,18 @@
 
 **入口文档**: [../media-playback.md](../media-playback.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-04（**M3 fixture-mounted runner 播放面切片 11 落地（扩批
+**最后更新**: 2026-09-04（**M3 fixture-mounted runner 播放面切片 12 落地（扩批
+XXIX）**——HAVE_NOTHING 期 play() 挂起语义（spec dom-media-play 步 6）：play()
+readyState==0 且有候选（按身份分派判据——handle-only 无 src 无 settle 序列
+可达保持既有 queued task resolve 契约）→ 记 `_zwPlayPendingEvents` 挂起不派
+事件；`_zwMediaLoadSequence` readyState 1 处补派 play、3 处（canplay 后）派
+playing + promise settle——事件严格序 play→canplay→playing→canplaythrough。
+既有「play 先行」同步态断言零回归（engine 契约测试同步序更新：settle 走
+microtask 事件同步可观察——旧 queued task 宏任务面空 log 断言不再成立）。
+media-elements 570P/0F/24PF（+10 净涨零回归——ready-states/autoplay 导入，
+audio+video 各 5 子测：autoplaying flag 与 play()/pause()/load() 交互 +
+事件严格序）。
+此前同日：**M3 fixture-mounted runner 播放面切片 11 落地（扩批
 XXVIII）**——currentTime-move-within-document 导入（同文档移动不重置播放：
 seek(10) 后 appendChild 移动 paused=false + currentTime 保持——headless 时钟
 推进面现成，零改动导入）+ track-mode-triggers-loading 导入（metadata track
