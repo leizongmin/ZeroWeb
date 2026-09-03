@@ -68,6 +68,41 @@ fn extract_video_srcs(html: &str) -> Vec<String> {
     srcs
 }
 
+/// 从 HTML 中提取所有 `<video src="...">` 的 URL（media-playback M1b）。
+///
+/// R3995：`<object data=...>` / `<embed src=...>` 同为 replaced 资源元素（HTML §4.8
+/// embedded content），其位图资源与 img 同链路——harness 此前只抽 img/video/css-url，
+/// object 的 data 资源从不进 ImageCache → 无固有尺寸 + paint 无图元（css-sizing
+/// replaced-element-005/006/012/018… object 簇 20 案 2.10% 同值全红）。
+fn extract_replaced_resource_srcs(html: &str) -> Vec<String> {
+    let mut srcs = Vec::new();
+    for tag_name in ["<object", "<embed", "<applet"] {
+        let mut pos = 0;
+        while let Some(idx) = html[pos..].find(tag_name) {
+            let tag_start = pos + idx;
+            let Some(tag_end) = find_tag_end(&html[tag_start..]) else {
+                break;
+            };
+            let tag = &html[tag_start..tag_start + tag_end];
+            // object 用 data 属性；embed/applet 用 src 属性。
+            for attr in ["data=\"", "data='", "src=\"", "src='"] {
+                if let Some(attr_start) = tag.find(attr) {
+                    let quote = &tag[attr_start + attr.len() - 1..attr_start + attr.len()];
+                    let value_start = attr_start + attr.len();
+                    if let Some(value_end) = tag[value_start..].find(quote) {
+                        let value = &tag[value_start..value_start + value_end];
+                        if !value.is_empty() {
+                            srcs.push(value.to_string());
+                        }
+                    }
+                }
+            }
+            pos = tag_start + tag_end + 1;
+        }
+    }
+    srcs
+}
+
 /// 加载 `<video src>` 资源首帧并注入缓存（media-playback M1b）。
 ///
 /// webm/VP9（RFC 路线 C 首期面）经 `zero-media` 解码首帧 RGBA；解码成功时
@@ -665,6 +700,8 @@ pub(super) fn build_image_cache(html: &str, base_dir: Option<&Path>) -> ImageCac
     // 收集所有需要加载的 URL
     let mut all_urls = extract_img_srcs(html);
     all_urls.extend(extract_css_urls(html));
+    // R3995：object/embed/applet 的 data=/src= 资源与 img 同链路解码进缓存。
+    all_urls.extend(extract_replaced_resource_srcs(html));
     all_urls.sort_unstable();
     all_urls.dedup();
 
@@ -876,6 +913,8 @@ pub(super) fn extract_image_metrics(
     // media-playback M1b：video 首帧固有尺寸（解码已写入 ImageCache）进 sizes——
     // pipeline 据 (NodeId → size) 做 video replaced sizing。
     all_urls.extend(extract_video_srcs(html));
+    // R3995：object/embed/applet 资源（data=/src=）进固有尺寸提取面。
+    all_urls.extend(extract_replaced_resource_srcs(html));
     all_urls.sort_unstable();
     all_urls.dedup();
 

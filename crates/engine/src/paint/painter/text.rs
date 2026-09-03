@@ -455,6 +455,16 @@ impl super::Painter {
                         s
                     }
                 }
+                // R3995（HTML §4.8 embedded content）：`<object data>` / `<embed src>` /
+                // `<applet src>` 与 img 同为图片资源替换元素——paint 发 ImagePrimitive
+                //（image_resource_key 同键），像素由 ImageCache 供（harness 侧已把
+                // object/embed 资源解码入缓存）。此前 object/embed 全不渲染图。
+                NodeKind::Element(elem) if elem.local_name() == "object" => {
+                    elem.get_attribute("data").unwrap_or_default()
+                }
+                NodeKind::Element(elem) if elem.local_name() == "embed" || elem.local_name() == "applet" => {
+                    elem.get_attribute("src").unwrap_or_default()
+                }
                 _ => return,
             }
         };
