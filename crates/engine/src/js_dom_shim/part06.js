@@ -8450,7 +8450,11 @@
                 }
               } else {
                 if (_wasIdx >= 0) active.splice(_wasIdx, 1);
-                try { _cue.dispatchEvent({ type: 'exit', target: _cue, currentTarget: _cue }); } catch (_eTmo3) {}
+                // pauseOnExit 暂停**先于** exit 事件派发（spec time-marches-on 步 5：
+                // cue exit 后「If paused is false... pause」的暂停须在 handler 内可
+                // 同步观察——track-cues-pause-on-exit 的 onexit 内
+                // assert_true(video.paused) 断言面；后置暂停使 handler 读到
+                // paused=false）。handler 内的 play() 会照常续播。
                 if (_cue.pauseOnExit) {
                   try {
                     ms.playing = false;
@@ -8459,6 +8463,7 @@
                     }
                   } catch (_eTmoP) {}
                 }
+                try { _cue.dispatchEvent({ type: 'exit', target: _cue, currentTarget: _cue }); } catch (_eTmo3) {}
               }
             }
           }

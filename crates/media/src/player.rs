@@ -149,11 +149,14 @@ impl VideoPlayer {
                     if frame.pts_ms as f64 <= self.position_ms {
                         newest = Some(frame);
                     } else {
-                        // 首帧超出播放位置：未来帧——播放器不缓冲（单向流），
-                        // 保留给下次 tick（重新解码代价高；此处借由 pts 判定丢弃
-                        // 前必须呈现——fixture 帧率 24fps vs tick 粒度 rAF 16ms，
-                        // 实际不会命中；真命中即时钟快于解码，属 M2b 背压面）。
-                        newest.get_or_insert(frame);
+                        // 首帧超出播放位置：未来帧——**退回解码器队首**（R3936）。
+                        // 旧形态把它返回给调用方（渲染后丢弃），该时间槽永久
+                        // 丢失；粗 tick 背压下逐 tick 丢未来帧使解码器在
+                        // position < duration 处提前耗尽（Ended 早于流末——
+                        // track-cues-enter-exit 的 cue@4-5s 永不触发的根因）。
+                        // spec ended：「currentTime 到达媒体资源末尾」——帧调度
+                        // 不得超越时钟消费时间线。
+                        self.decoder.un_read(frame);
                         break;
                     }
                 }

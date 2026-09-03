@@ -82,6 +82,27 @@ impl VideoCodec {
             VideoCodec::Av1(d) => d.next_frame(),
         }
     }
+    /// 排空态取帧（R3936）：flush 后的残余排空——`Again`（隐藏/非展示帧，位流
+    /// 已解码仅不产出）须**继续拉取**，只有 `Eof`（队列真空）才是真流末。与
+    /// [`Self::next_frame`] 的差别仅在 Again 的语义折叠：排空态把 Again 视为
+    /// 「内部跳过、继续」，非排空态视作「缓冲空、继续 demux」。
+    fn drain_frame(&mut self, color: &ColorSpace) -> Result<Option<DecodedVideoFrame>, DecodeError> {
+        loop {
+            match self {
+                VideoCodec::Vp9(d) => match d.next_frame() {
+                    Ok(f) => return Ok(Some(to_rgba(f, color))),
+                    Err(rusty_vp9::Error::Eof) => return Ok(None),
+                    Err(rusty_vp9::Error::Again) => continue, // 隐藏帧——继续排空
+                    Err(e) => return Err(e.into()),
+                },
+                #[cfg(feature = "decode-av1")]
+                VideoCodec::Av1(d) => match d.next_frame()? {
+                    Some(f) => return Ok(Some(f)),
+                    None => return Ok(None),
+                },
+            }
+        }
+    }
     /// 冲刷解码器内部缓冲（流末残余帧）。
     fn flush(&mut self, color: &ColorSpace) {
         match self {
@@ -134,6 +155,8 @@ pub struct VideoDecoder {
     timestamp_scale: u64,
     /// 流是否已到末尾（`next_frame` 返回 `Err(Eof)` 后置位）。
     eof: bool,
+    /// demux 已耗尽、解码器残余排空中（R3936——排空完成才置 `eof`，防滞留帧）。
+    draining: bool,
     /// seek 前向推进时暂存的「已解出但未消费」帧（`seek_to_ms` 命中 target 时
     /// 写入；下一次 `next_frame` 先弹出——spec precise-seek 不丢帧）。
     pending: Option<DecodedVideoFrame>,
@@ -161,6 +184,7 @@ impl VideoDecoder {
             codec: VideoCodec::Vp9(Box::new(rusty_vp9::Vp9Decoder::new())),
             video_track,
             eof: false,
+            draining: false,
             pending: None,
             color,
         })
@@ -196,6 +220,7 @@ impl VideoDecoder {
             codec,
             video_track,
             eof: false,
+            draining: false,
             pending: None,
             color,
         })
@@ -240,6 +265,7 @@ impl VideoDecoder {
         self.demuxer.seek(target_tick)?;
         self.codec.reset()?;
         self.eof = false;
+        self.draining = false;
         let mut block = matroska_demuxer::Frame::default();
         if matches!(self.demuxer.next_frame(&mut block), Ok(true))
             && block.track == self.video_track
@@ -257,6 +283,7 @@ impl VideoDecoder {
         self.demuxer.seek(0)?;
         self.codec.reset()?;
         self.eof = false;
+        self.draining = false;
         loop {
             // EOF 前必有 ≥ target 的帧（target ≤ duration 由调用方保证；越界时
             // EOF 返回 None 亦为合法终态——调用方按 ended 处理）。
@@ -286,12 +313,31 @@ impl VideoDecoder {
     /// 解码并返回下一帧；流结束返回 `Ok(None)`。
     ///
     /// 内部维持 demux→decode 推进，直到产出一帧可展示帧或流末。
+    ///
+    /// EOF 语义（R3936 修复）：demux 耗尽（`Ok(false)`）只置 `draining`——
+    /// 解码器内部缓冲（superframe 队列 + hidden/alt-ref 帧的输出滞后）须继续
+    /// 逐帧排空，队列真空时才置 `eof` 并报流末。旧形态 demux 末 flush 后仅
+    /// pull 一帧即置 eof，后续调用提前返 `Ok(None)`，滞留帧（实测 test.webm
+    /// 15 帧 ≈0.5s，pts 5.5~6.0s）永不产出——播放器在 position < duration 处
+    /// 提前转 Ended（fixture-mounted runner 的 track-cues-enter-exit 复评
+    /// 阻塞根因：cue@4-5s 永不出 → `t.done()` 永不）。
     pub fn next_frame(&mut self) -> Result<Option<DecodedVideoFrame>, DecodeError> {
         if let Some(frame) = self.pending.take() {
             return Ok(Some(frame));
         }
         if self.eof {
             return Ok(None);
+        }
+        if self.draining {
+            // demux 已尽：排空解码器残余（drain_frame 对隐藏帧 Again 继续拉，
+            // 队列真空才报流末——见 next_frame 文档注释）。
+            match self.codec.drain_frame(&self.color)? {
+                Some(frame) => return Ok(Some(frame)),
+                None => {
+                    self.eof = true;
+                    return Ok(None);
+                }
+            }
         }
         let mut block = matroska_demuxer::Frame::default();
         loop {
@@ -312,14 +358,33 @@ impl VideoDecoder {
                     }
                 }
                 Ok(false) => {
-                    // 容器末：冲刷解码器残余帧（若有）。
-                    self.eof = true;
+                    // 容器末：进入排空态（flush 只做一次；残余帧经上方 draining
+                    // 分支逐帧产出——滞留帧不再被 eof 提前吞掉）。
+                    self.draining = true;
                     self.codec.flush(&self.color);
-                    return self.codec.next_frame(&self.color);
+                    match self.codec.drain_frame(&self.color)? {
+                        Some(frame) => return Ok(Some(frame)),
+                        None => {
+                            self.eof = true;
+                            return Ok(None);
+                        }
+                    }
                 }
                 Err(e) => return Err(e.into()),
             }
         }
+    }
+
+    /// 帧退回（R3936——播放器帧调度背压）：把刚取出的未来帧塞回队首，下一次
+    /// `next_frame` 原样返回（不丢帧、不重解码）。
+    ///
+    /// 背景：`VideoPlayer::present_pending` 逐帧拉取直至 `pts > position`；
+    /// 旧形态把该未来帧**返回给调用方**（渲染消费后丢弃），其时间槽永久丢失
+    /// ——解码器在 position < duration 处提前耗尽（fixture-mounted runner
+    /// 实测 video 在 3.6s wall / position 3.57s 转 Ended，流长 6.0s）。
+    pub fn un_read(&mut self, frame: DecodedVideoFrame) {
+        debug_assert!(self.pending.is_none(), "un_read on occupied pending slot");
+        self.pending = Some(frame);
     }
 }
 

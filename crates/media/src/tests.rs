@@ -461,3 +461,40 @@ fn webm_av_opus_track_rejects_vorbis_only() {
         "Vorbis-only 源无 A_OPUS 轨 → NoTrack"
     );
 }
+
+#[test]
+fn webm_sequential_decode_drains_hidden_tail_frames_r3936() {
+    // R3936（EOF 排空语义）：顺序解码须产出**全部**可展示帧至流末——demux 耗尽
+    // 只进入 draining 态，解码器残余（superframe 队列 + hidden/alt-ref 帧的输出
+    // 滞后）逐帧排空后才报流末。旧形态 demux 末 flush 后仅 pull 一帧即置 eof，
+    // 滞留帧永不产出 → VideoPlayer 在 position < duration 处提前转 Ended
+    //（fixture-mounted runner 的 track-cues-enter-exit 复评阻塞根因）。
+    // 素材：wpt-data 的 test.webm（6.035s VP9+Opus，30fps、含 15 个 alt-ref
+    // hidden 帧——pull-one 调度下输出滞后 ≈15 帧 ≈0.5s，是本缺陷的最小暴露面）。
+    let path = super::decode::workspace_path("tests/wpt-runner/wpt-data/media/test.webm");
+    let Ok(data) = fs::read(&path) else {
+        // wpt-data 为 gitignored 按需 fetch 资产；缺席时跳过（CI 面以 fixture 面
+        // 覆盖同语义——hidden 帧滞留只在高帧率 + alt-ref 流暴露）。
+        eprintln!("wpt-data media/test.webm not present; skipping");
+        return;
+    };
+
+    let mut decoder = crate::VideoDecoder::open_webm(&data).unwrap();
+    let duration_ms = decoder.duration_ms().unwrap();
+    let mut frames = 0u32;
+    let mut last_pts = 0u64;
+    while let Ok(Some(frame)) = decoder.next_frame() {
+        frames += 1;
+        assert!(frames <= 10_000, "runaway frame count");
+        assert!(frame.pts_ms >= last_pts, "pts 单调递增");
+        last_pts = frame.pts_ms;
+    }
+    // 旧缺陷形态：167 帧 / last pts 5525（滞留 14 帧）；修复后全流可解帧到末。
+    assert!(
+        last_pts + 500 >= duration_ms.min(u64::MAX - 500),
+        "末帧 pts 应贴近容器时长（滞留帧已排空）：last={last_pts} duration={duration_ms}"
+    );
+    // 解码器真空后再调用仍稳定返回 None（eof 幂等面）。
+    assert!(decoder.next_frame().unwrap().is_none());
+    assert!(decoder.next_frame().unwrap().is_none());
+}

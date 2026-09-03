@@ -11454,6 +11454,14 @@
                             // M3 扩批 XVIII：march 区间基线 = seek 目标（播放时间线从
                             // 目标起——目标前的 cue 不入捕获区间，spec seeked missed-cue
                             // 语义；pending seek 路径无 seeked 回调，在此记账）。
+                            // R3936：**目标时刻的 cue active 面同步**（_zwMediaSeekSync）
+                            // 也要跑——只记基线不派 enter，起点恰在目标上的 cue
+                            //（pause-on-exit 的 cue0@4.0-4.5，currentTime=4.0 seek）永
+                            // 不进 active → exit/暂停面全部缺席（start > lastMs 判定
+                            // 在后续每拍恒假）。
+                            if (typeof globalThis._zwMediaSeekSync === 'function') {
+                              try { globalThis._zwMediaSeekSync(_pKey); } catch (_eSsP1) {}
+                            }
                             _pMs._zwLastMarchMs = _pMs._zwSeekPendingMs;
                             delete _pMs._zwSeekPendingMs;
                           }
@@ -11485,6 +11493,10 @@
                       }
                     } catch (_eVbSk3) {}
                     // M3 扩批 XVIII：march 区间基线 = seek 目标（同步命中路径，同上）。
+                    // R3936：目标时刻 cue active 面同步（同重试路径注记）。
+                    if (typeof globalThis._zwMediaSeekSync === 'function') {
+                      try { globalThis._zwMediaSeekSync(_pKey); } catch (_eSsP0) {}
+                    }
                     _pMs._zwLastMarchMs = _pMs._zwSeekPendingMs;
                     delete _pMs._zwSeekPendingMs;
                   }
