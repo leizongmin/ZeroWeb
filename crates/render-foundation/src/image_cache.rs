@@ -1784,7 +1784,23 @@ pub fn decode_svg_bytes(bytes: &[u8]) -> Result<ImageData, String> {
         // 旧实现设 intrinsic_ratio 致 layout ratio-only 分支 INLINE 走 default 300×150（错）。
         // flex transferred-size 仍经 image_sizes 的 aspect_ratio 推导（tree.rs:439-441）。
         SvgIntrinsicKind::ComputedIntrinsic(cw, ch) if ch > 0.0 && cw > 0.0 => {
-            data.computed_intrinsic = Some((cw, ch));
+            // R3998：usvg 对「一维 abs + 另一维缺失 + viewBox」的 SVG 栅格化 viewport 不施
+            // viewBox 比（`width="200"` + viewBox 1:1 → pixmap 200×100，内容按
+            // preserveAspectRatio letterbox 居中——两侧透明）。该 bogus 位图若直接进
+            // ImageCache，绘制放大/缩小采样时把透明 letterbox 一并拉进元素盒（010 红边
+            // 根因）。按计算出的真实固有尺寸重栅格化位图（viewport = computed，viewBox
+            // 不 letterbox），像素与固有尺寸一致。
+            if ((cw - data.width as f32).abs() > 0.5 || (ch - data.height as f32).abs() > 0.5)
+                && let Ok(mut true_data) =
+                    rasterize_svg_at(bytes, cw.round().max(1.0) as u32, ch.round().max(1.0) as u32)
+            {
+                true_data.computed_intrinsic = Some((cw, ch));
+                true_data.svg_source = data.svg_source.take();
+                data = true_data;
+            }
+            if data.computed_intrinsic.is_none() {
+                data.computed_intrinsic = Some((cw, ch));
+            }
         }
         // 无 viewBox 比：default object size，无 ratio。
         SvgIntrinsicKind::ComputedIntrinsic(_, _) => {}
@@ -2184,6 +2200,34 @@ mod decode_tests {
         let (bytes4, bg4) = promote_svg_root_background(src4.as_bytes());
         assert_eq!(bg4, None);
         assert_eq!(bytes4, src4.as_bytes());
+    }
+
+    /// R3998：一维 abs attr + viewBox 的 SVG，usvg 栅格化 viewport 不施 viewBox 比
+    ///（`width="200"` + viewBox 1:1 → pixmap 200×100 letterbox，两侧透明）。该 bogus
+    /// 位图直接进 ImageCache 会把透明 letterbox 拉进元素盒采样（flex-aspect-ratio-
+    /// img-row-010/011、img-column-014/015、replaced-element-039/040 红边根因）。
+    /// 修复 = 按 ComputedIntrinsic 真实固有尺寸重栅格化，位图与固有尺寸一致。
+    #[test]
+    fn decode_svg_one_abs_attr_viewbox_rasterizes_at_computed_intrinsic() {
+        let src = r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="200"><rect width="100%" height="100%" fill="green"/></svg>"#;
+        let img = decode_svg_bytes(src.as_bytes()).expect("decode");
+        // 位图尺寸 = 计算出的真实固有尺寸（200×200），不再是 usvg bogus 200×100
+        assert_eq!(img.width, 200, "pixmap must use computed intrinsic width");
+        assert_eq!(
+            img.height, 200,
+            "pixmap must use computed intrinsic height (viewBox ratio)"
+        );
+        assert_eq!(img.computed_intrinsic(), Some((200.0, 200.0)));
+        // 内容无 letterbox：左缘与中央都是绿（旧 200×100 位图左缘透明）
+        let left = img.get_pixel(5, img.height / 2);
+        let center = img.get_pixel(img.width / 2, img.height / 2);
+        assert_eq!(left[1], 128, "left edge must be green (no letterbox): {left:?}");
+        assert_eq!(center[1], 128, "center must be green: {center:?}");
+        // SVG 源字节保留（放大重栅格化路径仍可用）
+        assert!(
+            img.svg_source.is_some(),
+            "svg_source must be preserved through re-raster"
+        );
     }
 
     #[test]
