@@ -1,0 +1,31 @@
+{
+  "batch": "WPT webaudio 第十一批",
+  "date": "2026-09-03",
+  "topic": "源节点语义面——constant-source-basic / stereopannernode-basic / audiobuffersource-basic + AudioScheduledSourceNode 调度异常共享面",
+  "imported": [
+    "webaudio/the-audio-api/the-constantsourcenode-interface/constant-source-basic.html",
+    "webaudio/the-audio-api/the-stereopanner-interface/stereopannernode-basic.html",
+    "webaudio/the-audio-api/the-audiobuffersourcenode-interface/audiobuffersource-basic.html"
+  ],
+  "shim_changes": [
+    "AudioScheduledSourceNode 调度异常共享面 _zwWAInstallSchedSource（ConstantSource/AudioBufferSource 双节点装载，headless 门控状态无桥推）：start/stop 时间非 finite → TypeError、负 → RangeError、stop 先于 start / start 重复 → InvalidStateError、start 多参（offset/duration）任一负 → RangeError",
+    "AudioParam min/max float 界：Math.fround(-3.4028235e38) = -3.4028234663852886e38（constant-source-basic 「offset.minValue should match spec」断言面）",
+    "StereoPannerNode 工厂路径补 _zwWAInstallChannel12Setter（channelCount [1,2] setter 界 + channelCountMode 'max' setter NotSupportedError——stereopannernode-basic 断言面；此前仅 ctor dict 路径覆盖）",
+    "_zwWAInstallChannel12Setter 扩 channelCountMode setter（'max' → NotSupportedError、clamped-max/explicit 可写）"
+  ],
+  "runner_changes": [
+    "WEBAUDIO_SUPPORT_SCRIPTS 增 start-stop-exceptions.js（constant-source-basic 相对路径 ../../resources/ + audiobuffersource-basic 绝对路径双引用）"
+  ],
+  "results": {
+    "pass": 733,
+    "fail": 0,
+    "timeout": 0,
+    "net": "+37 subtest 净涨零回归（696→733）；26 用例"
+  },
+  "unit_test": "test_webaudio_processing_ctor_family2_m3xxvi（扩断言组 7：调度异常八态 + float 界 + StereoPanner 工厂 [1,2]/'max' 拒绝）",
+  "gates": {
+    "make_test": "18826 passed / 0 failed",
+    "clippy": "-D warnings 零警告",
+    "fmt": "clean"
+  }
+}

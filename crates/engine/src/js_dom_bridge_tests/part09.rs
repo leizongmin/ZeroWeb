@@ -4968,4 +4968,37 @@ fn test_webaudio_processing_ctor_family2_m3xxvi() {
         "42/12345/3/explicit/speakers 1 7|one3:TypeError,two:TypeError,none:TypeError,empty:TypeError,noSr:TypeError,noLen:TypeError,ch33:NotSupportedError,len0:NotSupportedError,sr1:NotSupportedError",
         "OfflineAudioContext 3-arg/dict/required/正义约束/destination 通道面（第十批）"
     );
+
+    // 断言组 7（第十一批）：AudioScheduledSourceNode 调度异常共享面——非 finite
+    // TypeError/负 RangeError/先 stop 或重复 start InvalidStateError/start 多参负
+    // offset RangeError + AudioParam float 界（fround min/max）+ StereoPanner
+    // 工厂路径 [1,2]/'max' setter 拒绝。
+    sandbox
+        .execute(
+            "var errs = [];\
+             var cs = ctx.createConstantSource();\
+             try { cs.start(NaN); } catch (e) { errs.push('nanT:' + e.name); }\
+             try { cs.start(Infinity); } catch (e) { errs.push('infT:' + e.name); }\
+             try { cs.start(-1); } catch (e) { errs.push('negR:' + e.name); }\
+             try { cs.stop(); } catch (e) { errs.push('preStop:' + e.name); }\
+             cs.start();\
+             try { cs.start(); } catch (e) { errs.push('twice:' + e.name); }\
+             try { cs.stop(-1); } catch (e) { errs.push('stopNeg:' + e.name); }\
+             cs.stop();\
+             var bs = ctx.createBufferSource();\
+             try { bs.start(0, -1); } catch (e) { errs.push('offR:' + e.name); }\
+             try { bs.start(0, 0, -1); } catch (e) { errs.push('durR:' + e.name); }\
+             var off = ctx.createConstantSource().offset;\
+             var sp = ctx.createStereoPanner();\
+             var spErr = '';\
+             try { sp.channelCount = 3; } catch (e) { spErr = 'c3:' + e.name; }\
+             try { sp.channelCountMode = 'max'; } catch (e) { spErr += ',max:' + e.name; }\
+             globalThis.__r7 = [errs.join(','), String(off.minValue), String(off.maxValue), spErr].join('|');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r7").unwrap().value,
+        "nanT:TypeError,infT:TypeError,negR:RangeError,preStop:InvalidStateError,twice:InvalidStateError,stopNeg:RangeError,offR:RangeError,durR:RangeError|-3.4028234663852886e+38|3.4028234663852886e+38|c3:NotSupportedError,max:NotSupportedError",
+        "调度异常八态 + AudioParam float 界 fround + StereoPanner 工厂 [1,2]/'max' 拒绝（第十一批）"
+    );
 }

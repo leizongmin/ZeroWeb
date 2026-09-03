@@ -7834,8 +7834,10 @@
     param.cancelScheduledValues = function () { return this; };
     param.cancelAndHoldAtTime = function (t) { _zwTimeOrThrow(t, 'cancelAndHoldAtTime'); return this; };
     param.defaultValue = Number(initialValue) || 0;
-    param.minValue = -3.4028235e38;
-    param.maxValue = 3.4028235e38;
+    // spec：min/max 为 float（32 位）界——Math.fround 舍入（constant-source-basic
+    // 「offset.minValue should match spec」断言 -3.4028234663852886e+38 面）。
+    param.minValue = Math.fround(-3.4028235e38);
+    param.maxValue = Math.fround(3.4028235e38);
     return param;
   };
   // Node 构造器面（spec webaudio §OscillatorNode/GainNode——`new OscillatorNode(ctx,
@@ -7964,8 +7966,11 @@
   function _zwWABuildStereoPanner(ctx, options) {
     var node = _zwWANode('stereopanner', ctx._zwCtxId, 0);
     // spec StereoPannerNode：channelCountMode 缺省 'clamped-max'（基类缺省 'max'
-    // 不适用——ctor-stereopanner testDefaultConstructor 断言面）。
+    // 不适用——ctor-stereopanner testDefaultConstructor 断言面）；channelCount
+    // [1,2] 界（stereopannernode-basic setter 断言面：=1 不抛/=3 抛——工厂路径
+    // 与 ctor 路径同面，_zwWANodeCtor 的 dict 校验不覆盖 setter）。
     node._zwChannelCountMode = 'clamped-max';
+    _zwWAInstallChannel12Setter(node);
     var _panVal = 0;
     var _panParam = globalThis._zwMakeAudioParam(0, ctx._zwCtxId);
     Object.defineProperty(_panParam, 'value', {
@@ -8284,19 +8289,62 @@
   }
   AudioBuffer.prototype.copyFromChannel = AudioBuffer$copyFromChannel;
   AudioBuffer.prototype.copyToChannel = AudioBuffer$copyToChannel;
+  // AudioScheduledSourceNode start/stop 调度异常面（spec §AudioScheduledSourceNode
+  // ——constant-source-basic / audiobuffersource-basic start-stop-exceptions 断言面）：
+  // start/stop 时间非 finite → TypeError、负 → RangeError、stop 先于 start /
+  // start 重复 → InvalidStateError。共享安装件（三源节点同面——headless 门控状态，
+  // 无桥推）。
+  function _zwWAInstallSchedSource(node) {
+    var _started = false;
+    var _stopped = false;
+    var _whenCheck = function (when, method) {
+      if (when !== undefined && (typeof when !== 'number' || isNaN(Number(when)) || Number(when) === Infinity || Number(when) === -Infinity)) {
+        throw new TypeError("Failed to execute '" + method + "' on 'AudioScheduledSourceNode': The provided value is non-finite.");
+      }
+      if (when !== undefined && Number(when) < 0) {
+        throw new RangeError("Failed to execute '" + method + "' on 'AudioScheduledSourceNode': when must be non-negative.");
+      }
+    };
+    // 可变参数校验（audiobuffersource-basic {args:[0,-1]}/{args:[0,0,-1]} 断言面
+    // ——start(when, offset, duration) 任一后续位负 → RangeError）。
+    var _argsCheck = function (args, method) {
+      for (var i = 1; i < args.length; i++) {
+        var v = args[i];
+        if (typeof v !== 'number' || isNaN(Number(v)) || Number(v) === Infinity || Number(v) === -Infinity) {
+          throw new TypeError("Failed to execute '" + method + "' on 'AudioScheduledSourceNode': parameter " + (i + 1) + " is non-finite.");
+        }
+        if (Number(v) < 0) {
+          throw new RangeError("Failed to execute '" + method + "' on 'AudioScheduledSourceNode': parameter " + (i + 1) + " (" + v + ") must be non-negative.");
+        }
+      }
+    };
+    node.start = function (when) {
+      _whenCheck(when, 'start');
+      _argsCheck(arguments, 'start');
+      if (_started) {
+        throw new (globalThis.DOMException || Error)("Cannot call 'start' twice on an AudioScheduledSourceNode.", 'InvalidStateError');
+      }
+      _started = true;
+    };
+    node.stop = function (when) {
+      _whenCheck(when, 'stop');
+      if (!_started || _stopped) {
+        throw new (globalThis.DOMException || Error)("Cannot call 'stop' before 'start'.", 'InvalidStateError');
+      }
+      _stopped = true;
+    };
+  }
   // ConstantSourceNode（spec §ConstantSourceNode——offset AudioParam 缺省 1；
-  // start/stop 门控面，headless 无输出）。工厂 createConstantSource 同 builder。
+  // start/stop 调度异常面，headless 无输出）。工厂 createConstantSource 同 builder。
   function _zwWABuildConstantSource(ctx, options) {
     var node = _zwWANode('constantsource', ctx._zwCtxId, 0);
     node._zwInputs = 0;
-    var _started = false;
     var _offset = globalThis._zwMakeAudioParam(1, ctx._zwCtxId);
     Object.defineProperty(node, 'offset', {
       get: function () { return _offset; },
       configurable: true,
     });
-    node.start = function () { _started = true; };
-    node.stop = function () { _started = false; };
+    _zwWAInstallSchedSource(node);
     if (options && typeof options === 'object' && options.offset != null) {
       node.offset.value = Number(options.offset);
     }
@@ -8333,8 +8381,7 @@
     var _detune = globalThis._zwMakeAudioParam(0, ctx._zwCtxId);
     Object.defineProperty(node, 'playbackRate', { get: function () { return _playbackRate; }, configurable: true });
     Object.defineProperty(node, 'detune', { get: function () { return _detune; }, configurable: true });
-    node.start = function () {};
-    node.stop = function () {};
+    _zwWAInstallSchedSource(node);
     if (options && typeof options === 'object') {
       if (options.buffer !== undefined) node.buffer = options.buffer;
       if (options.loop !== undefined) node.loop = options.loop;
@@ -8391,6 +8438,20 @@
     Object.defineProperty(node, 'channelCount', {
       get: function () { return node._zwChannelCount; },
       set: function (v) { _zwWAChannel12Setter(node, v); },
+      configurable: true,
+    });
+    // channelCountMode 'max' setter 拒绝（stereopannernode-basic 断言面——
+    // [1,2] 拓扑与 'max' 不兼容；clamped-max/explicit 可写）。
+    Object.defineProperty(node, 'channelCountMode', {
+      get: function () { return node._zwChannelCountMode || 'clamped-max'; },
+      set: function (v) {
+        var sm = String(v == null ? '' : v);
+        if (sm === 'max') {
+          throw new (globalThis.DOMException || Error)(
+            "Failed to set the 'channelCountMode' property: 'max' not supported for this node.", 'NotSupportedError');
+        }
+        if (sm === 'clamped-max' || sm === 'explicit') node._zwChannelCountMode = sm;
+      },
       configurable: true,
     });
   }

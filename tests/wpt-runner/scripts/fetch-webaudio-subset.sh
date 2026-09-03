@@ -73,6 +73,15 @@ WA_FILES=(
   # shim OfflineAudioContext 构造器扩 OfflineAudioContextOptions 后导入）。
   "webaudio/the-audio-api/the-biquadfilternode-interface/biquadfilternode-basic.html"
   "webaudio/the-audio-api/the-offlineaudiocontext-interface/ctor-offlineaudiocontext.html"
+  # ---- 第十一批（2026-09-03）：源节点语义面——constant-source-basic（offset
+  # min/max float 界 + start/stop 调度异常 W3CTH）/ stereopannernode-basic
+  #（pan AudioParam + channelCount [1,2] setter 面）/ audiobuffersource-basic
+  #（start/stop 异常 audit 面）。配套 shim：AudioScheduledSourceNode 调度异常
+  # 共享面（非 finite TypeError/负 RangeError/先 stop 或重复 start
+  # InvalidStateError）。
+  "webaudio/the-audio-api/the-constantsourcenode-interface/constant-source-basic.html"
+  "webaudio/the-audio-api/the-stereopanner-interface/stereopannernode-basic.html"
+  "webaudio/the-audio-api/the-audiobuffersourcenode-interface/audiobuffersource-basic.html"
   # 不导入：audioparam-method-chaining / audioparam-nominal-range（startRendering
   # 渲染断言——RFC §0 不做清单）；ctor-audiobuffer（末 task multiple contexts 依赖
   # startRendering——audit runner 整文件跑）；periodicWave.html（startRendering）；

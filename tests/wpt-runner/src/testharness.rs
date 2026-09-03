@@ -1642,6 +1642,14 @@ pub const WEBAUDIO_TEST_FILES: &[&str] = &[
     // ——shim OfflineAudioContext 构造器扩 OfflineAudioContextOptions 后导入）。
     "webaudio/the-audio-api/the-biquadfilternode-interface/biquadfilternode-basic.html",
     "webaudio/the-audio-api/the-offlineaudiocontext-interface/ctor-offlineaudiocontext.html",
+    // ---- 第十一批（2026-09-03）：源节点语义面——constant-source-basic（offset
+    // min/max float 界 + start/stop 调度异常 W3CTH）/ stereopannernode-basic
+    //（pan AudioParam + channelCount [1,2] setter 面）/ audiobuffersource-basic
+    //（start/stop 异常 audit 面）。配套 shim：AudioScheduledSourceNode 调度异常
+    // 共享面。
+    "webaudio/the-audio-api/the-constantsourcenode-interface/constant-source-basic.html",
+    "webaudio/the-audio-api/the-stereopanner-interface/stereopannernode-basic.html",
+    "webaudio/the-audio-api/the-audiobuffersourcenode-interface/audiobuffersource-basic.html",
     // 不导入：ctor-audiobuffer.html（末 task「multiple contexts」依赖
     // startRendering——audit runner 整文件跑，前段构造面无法单独导入）；
     // audiobuffer-copy-channel（startRendering 后段同文件不可分割——数据面已落
@@ -1670,6 +1678,13 @@ pub const WEBAUDIO_SUPPORT_SCRIPTS: &[(&str, &str)] = &[
     (
         "/webaudio/resources/audioparam-testing.js",
         "webaudio/resources/audioparam-testing.js",
+    ),
+    // M3 扩批 XXVII：start-stop-exceptions.js（constant-source-basic 以相对路径
+    // ../../resources/ 引用 + audiobuffersource-basic 以绝对路径引用——调度异常
+    // 共享断言 helper，纯语义面）。
+    (
+        "/webaudio/resources/start-stop-exceptions.js",
+        "webaudio/resources/start-stop-exceptions.js",
     ),
 ];
 
