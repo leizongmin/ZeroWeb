@@ -1765,6 +1765,11 @@ pub const WEBAUDIO_TEST_FILES: &[&str] = &[
     // 初始值面——shim getOutputTimestamp；其余 audiocontext-* 需用户手势/
     // onstatechange 时序/iframe 跨源 helper/真设备，维持排除）。
     "webaudio/the-audio-api/the-audiocontext-interface/audiocontext-getoutputtimestamp.html",
+    // ---- 第十四批（2026-09-04）：the-audiocontext-interface 余件试导（门面 NullSink
+    // 面可覆盖的 options/构造/suspend 形态；跑筛后定性保留或排除）。
+    "webaudio/the-audio-api/the-audiocontext-interface/audiocontextoptions.html",
+    "webaudio/the-audio-api/the-audiocontext-interface/constructor-allowed-to-start.html",
+    "webaudio/the-audio-api/the-audiocontext-interface/suspend-after-construct.html",
     // 不导入：ctor-audiobuffer.html（末 task「multiple contexts」依赖
     // startRendering——audit runner 整文件跑，前段构造面无法单独导入）；
     // audiobuffer-copy-channel（startRendering 后段同文件不可分割——数据面已落

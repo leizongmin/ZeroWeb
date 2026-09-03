@@ -7497,9 +7497,11 @@
     } else if (isNaN(_hintNum)) {
       throw new TypeError("Failed to construct 'AudioContext': Failed to read the 'latencyHint' property from 'AudioContextOptions': The provided double value is non-finite.");
     } else {
-      // double 档：baseLatency = hint 值本身（WPT 断言 high-latency 两上下文相等
-      // 且 = 大 hint 值——headless 直接采用，不 clamp）。
-      self._zwBaseLatency = Math.max(0, _hintNum);
+      // double 档：baseLatency = hint clamp 到 [0.005, 0.4]（spec「设备支持范围内
+      // 尽量接近 hint」——headless 无设备，以 Chromium headless 观测近似：大 hint
+      // clamp 到 0.4 上限，两 high-latency 上下文 baseLatency 相等——
+      // audiocontextoptions 的 latencyHint-double 断言面）。
+      self._zwBaseLatency = Math.min(0.4, Math.max(0.005, _hintNum));
     }
     // AudioContextOptions.sampleRate（spec：[3000, 768000] 外 → NotSupportedError；
     // 范围内 → 上下文采样率反射——headless 合成面以该率运行）。
