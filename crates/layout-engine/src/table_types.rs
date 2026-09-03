@@ -116,22 +116,6 @@ pub(crate) fn is_table_internal(display: &DisplayValue) -> bool {
     )
 }
 
-/// 行组的排序优先级。
-///
-/// CSS 规范要求 thead 在 tbody 之前，tbody 在 tfoot 之前，
-/// 无论 DOM 顺序如何。
-pub(crate) fn row_group_sort_priority(display: &DisplayValue) -> u8 {
-    match display {
-        DisplayValue::TableHeaderGroup => 0,
-        // R3829：非 thead/tfoot 行组与其它子元素（匿名行包裹的直接 cell 等）同档——
-        // 稳定排序保留 DOM 顺序。旧实现把 tbody 置 1、其余置 3，致「直接 cell（匿名行
-        // 包裹）在 row-group 之前」的结构（table-anonymous-objects-094：cell×2 → row-
-        // group）被重排为 row-group 行在前、匿名行在后 → 匿名行内容与首行同位重叠
-        // （CSS §17.2.1：匿名行包裹的 cell 保持源序位置）。
-        _ => 1,
-    }
-}
-
 /// 从 DOM 中读取元素的 colspan 属性值。
 pub(crate) fn get_colspan(box_node: &LayoutBox, doc: &zero_dom::Document) -> usize {
     if let Some(node_id) = box_node.node_id {

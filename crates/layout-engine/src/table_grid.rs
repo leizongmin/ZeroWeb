@@ -70,9 +70,43 @@ pub(crate) fn build_grid(
         children_with_priority.push((child_idx, child, child_display));
     }
 
-    // 按行组排序优先级稳定排序（thead=0, tbody=1, tfoot=2, 其他=3）
-    // 稳定排序保留同优先级内的 DOM 顺序
-    children_with_priority.sort_by_key(|(_, _, display)| display.as_ref().map_or(3, row_group_sort_priority));
+    // R4001（CSS22 §17.2.1 + csswg 决议）：仅**首个** thead / **首个** tfoot 参与
+    // 重排（thead → 表头位，tfoot → 表尾位）；后续 thead/tfoot 按 spec「当作普通
+    // 行组」保持 DOM 顺序（driving: row-group-order——thead1/thead2/thead3 混插
+    // tbody，chromium 渲染 thead1 最前、thead2/thead3 留 DOM 位；tfoot1 最后、
+    // tfoot2/tfoot3 留 DOM 位）。旧实现（R3829 后）thead/tfoot 全部置 0/无重排：
+    // tfoot 不挪表尾。稳定排序保留同优先级内 DOM 顺序。
+    // 优先级先按 DOM 序一次性标记（sort 闭包不得有副作用——sort_by_key 对同一
+    // 元素的 key 调用次数不定）。
+    let mut first_thead_seen = false;
+    let mut first_tfoot_seen = false;
+    let mut children_with_prio: Vec<(usize, &LayoutBox, Option<DisplayValue>, u8)> =
+        Vec::with_capacity(children_with_priority.len());
+    for (idx, child, display) in children_with_priority {
+        let prio = match display.as_ref() {
+            Some(DisplayValue::TableHeaderGroup) => {
+                if first_thead_seen {
+                    1
+                } else {
+                    first_thead_seen = true;
+                    0
+                }
+            }
+            Some(DisplayValue::TableFooterGroup) => {
+                if first_tfoot_seen {
+                    1
+                } else {
+                    first_tfoot_seen = true;
+                    2
+                }
+            }
+            _ => 1,
+        };
+        children_with_prio.push((idx, child, display, prio));
+    }
+    children_with_prio.sort_by_key(|&(_, _, _, prio)| prio);
+    let children_with_priority: Vec<(usize, &LayoutBox, Option<DisplayValue>)> =
+        children_with_prio.into_iter().map(|(i, c, d, _)| (i, c, d)).collect();
 
     // R3817：匿名 cell 包裹臂仅限「真表容器」上下文。build_grid 也会对孤立
     // table-internal 盒（table-cell/table-row/table-row-group 的 retrofit 路径）
