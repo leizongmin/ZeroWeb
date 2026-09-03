@@ -1562,6 +1562,10 @@ pub const MEDIA_TEST_FILES: &[&str] = &[
     // M3 扩批 XXVIII 续：track-mode-triggers-loading——metadata track disabled 不
     // 加载，mode 改 hidden 触发（mode 触发加载面 + VTT cue 解析断言）。
     "html/semantics/embedded-content/media-elements/track/track-element/track-mode-triggers-loading.html",
+    // M3 扩批 XXVIII 续二：track 移除不 crash smoke 面（innerHTML 注入 video+track
+    // / seeked 链中 innerHTML 清空后再 seek——testharness.js 兜底 test() 空 body 形态）。
+    "html/semantics/embedded-content/media-elements/track/track-element/track-remove-quickly.html",
+    "html/semantics/embedded-content/media-elements/track/track-element/track-remove-by-setting-innerHTML.html",
     // M3 扩批 IX：移动面（同文档移动仍 related → 不暂停）。
     // pause-move-to-other-document 不导入——iframe adopt 面未实施（fetch 脚本注记）。
     "html/semantics/embedded-content/media-elements/playing-the-media-resource/pause-move-within-document.html",

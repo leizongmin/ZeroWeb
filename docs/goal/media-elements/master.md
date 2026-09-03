@@ -6,7 +6,9 @@
 导入（offsets-into-the-media-resource 末件——同文档移动不重置播放，headless 时钟
 推进面现成零改动导入；fixture 增 movie_300.webm）+ track-mode-triggers-loading
 导入（metadata track disabled 不加载，mode 改 hidden 触发——扩批 XV mode 触发面
-直接覆盖）。**558P/0F/24PF，558/582 = 95.9%**（+2 净涨零回归）。此前同日：**M3 扩批 XXVII 落地**——media fragment #t= 起点解析
+直接覆盖）+ track-remove-quickly / -by-setting-innerHTML 导入（track 移除不
+crash smoke 面——innerHTML 注入 + seeked 计数链中 innerHTML 清空后再 seek）。
+**560P/0F/24PF，560/584 = 95.9%**（+4 净涨零回归）。此前同日：**M3 扩批 XXVII 落地**——media fragment #t= 起点解析
 （settle 加载序列内 currentTime 初始化：npt:/HH:MM:SS/ms/percent-encode 五形态）
 + headless 播放时钟推进（march 内墙钟差 × playbackRate——autoplay 驱动的播放
 currentTime 不再恒 0）+ 周期 timeupdate（250ms 节流——播放推进期页面可收
@@ -660,7 +662,7 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
 
 | # | 缺口 | 状态 | 失败聚类 |
 |---|------|------|----------|
-| M1g | WPT media-elements 用例覆盖 | ✅ 154 用例已导入（136 + 扩批 XVI~XXVIII：播放推进族 6 件 + track-change-event + track-active-cues + played-loop + audio_loop_seek_to_eos + loop-from-ended.tentative + seeking/ 三件 + volume_nonfinite + media_fragment_seek + autoplay-with-broken-track + currentTime-move-within-document + track-mode-triggers-loading），**95.9%**（558/582） | — |
+| M1g | WPT media-elements 用例覆盖 | ✅ 154 用例已导入（136 + 扩批 XVI~XXVIII：播放推进族 6 件 + track-change-event + track-active-cues + played-loop + audio_loop_seek_to_eos + loop-from-ended.tentative + seeking/ 三件 + volume_nonfinite + media_fragment_seek + autoplay-with-broken-track + currentTime-move-within-document + track-mode-triggers-loading + track-remove-quickly + track-remove-by-setting-innerHTML），**95.9%**（560/584） | — |
 | M2g | load 算法 + 状态机（事件序列派发） | ✅ M2 落地（13T→**0T**） | F4 闭合 |
 | M3g | 事件序列 headless 近似驱动 | ✅（同 M2g；source-child 触发已落地） | F4 闭合 |
 | M4g-a | 媒体元数据 IDL 反射（初值面） | ✅ 切片 3 落地 | F2 闭合（-9 Fail） |
@@ -687,7 +689,8 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
    autoplay-with-broken-track——headless 播放时钟推进 + 周期 timeupdate 收口；
    扩批 XXVIII currentTime-move-within-document——同文档移动不重置播放 +
    track-mode-triggers-loading——metadata track mode 触发加载（D 组排除件
-   首次解锁）；
+   首次解锁）+ track-remove-quickly/-by-setting-innerHTML——移除不 crash smoke
+   面（D 组「移除竞态」注记收口）；
    audio/video_volume_check 不导入：越界断言 e.code==1 为旧 spec 语义——现行
    spec 越界 clamp 不抛，导入即恒假失败）。
    playing-the-media-resource

@@ -6,8 +6,9 @@
 XXVIII）**——currentTime-move-within-document 导入（同文档移动不重置播放：
 seek(10) 后 appendChild 移动 paused=false + currentTime 保持——headless 时钟
 推进面现成，零改动导入）+ track-mode-triggers-loading 导入（metadata track
-mode 触发加载——扩批 XV 既有面零改动）；fixture 增 movie_300.webm（VP9 300s）。
-media-elements 558P/0F/24PF（+2 净涨零回归）。此前同日：
+mode 触发加载——扩批 XV 既有面零改动）+ track-remove-quickly /
+-by-setting-innerHTML 导入（track 移除不 crash smoke 面）；fixture 增
+movie_300.webm（VP9 300s）。media-elements 560P/0F/24PF（+4 净涨零回归）。此前同日：
 **切片 10（扩批 XXVII）**——media fragment #t= 起点解析（settle 加载序列内 currentTime 初始化：
 hash 内 & 分隔 k=v 对取 t=、percent-decode、npt: 前缀可选、start,end 取 start、
 HH:MM:SS.ms/MM:SS.ms/SS；settle url 携带 hash 面已被 registry_key strip 兼容）+

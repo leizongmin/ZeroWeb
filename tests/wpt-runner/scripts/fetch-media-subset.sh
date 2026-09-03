@@ -175,6 +175,10 @@ TOP_FILES=(
   # 不加载，mode 改 hidden 触发（扩批 XV mode 触发面 + VTT 解析面既有；cues 12 条
   # + cue[11].startTime==22 断言）。
   "track/track-element/track-mode-triggers-loading.html"
+  # M3 扩批 XXVIII 续二：track-remove-quickly / -by-setting-innerHTML——track 移除
+  # 不 crash smoke 面（innerHTML 注入 + seeked 计数链 + innerHTML 清空后再 seek）。
+  "track/track-element/track-remove-quickly.html"
+  "track/track-element/track-remove-by-setting-innerHTML.html"
   # M3 扩批 IX：移动面（同文档移动仍 related → 不暂停）。
   # pause-move-to-other-document 不导入：跨 iframe 文档 adopt 在 shim 融合视图下
   # appendChild 静默落空（元素保持 detached）——实施需 iframe 文档模型 adopt 面
@@ -297,6 +301,8 @@ TRACK_ELEMENT_SUPPORT=(
   "track/track-element/resources/sorted-dispatch.vtt"
   "track/track-element/resources/cues-no-separation.vtt"
   "track/track-element/resources/metadata.vtt"
+  "track/track-element/resources/simple-captions.vtt"
+  "track/track-element/resources/captions-gaps.vtt"
   "track/track-element/resources/header-empty-after.vtt"
   "track/track-element/resources/header-newlines-after.vtt"
   "track/track-element/resources/header-too-short.vtt"
