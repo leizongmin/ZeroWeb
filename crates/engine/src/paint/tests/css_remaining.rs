@@ -581,12 +581,11 @@ fn r3938_stylesheet_transform_composed_into_serialized_svg() {
     );
 }
 
-/// R3986-P（inline svg sizing 域根因锚，0 修复归档轮）：inline svg 的 CSS
-/// width 应用**依赖子树内空白文本节点存在**——svg 内含换行空白（B7）时盒
-/// 200x200，无空白（B）时盒塌 6x24（IFC 行内容缺失 → width 不应用）。
-/// 修复须动 inline 布局的 width 应用链（深域），本锚固化两态差异防漂移。
+/// R3987（R3986 修复收口锚，CSS Display 3 §2.4 atomic inlines）：inline svg
+/// （replaced 类）的 CSS width 应用**不得依赖子树内空白文本节点**——R3986
+/// 两态差异（200x200 vs 6x24）已由 collect_items 的 replaced-inline 原子化修复。
 #[test]
-fn r3986_probe_inline_svg_width_whitespace_dependence() {
+fn r3986_anchor_replaced_inline_width_ws_independent() {
     let mk = |svg_inner: &str| {
         format!(
             r##"<html><head><style>svg {{ width: 200px; height: 200px; background: green; }}</style></head><body style="margin:0"><svg>{svg_inner}</svg></body></html>"##
@@ -618,9 +617,9 @@ fn r3986_probe_inline_svg_width_whitespace_dependence() {
     );
     let ws = doc_of(&with_ws).expect("ws box");
     let no_ws = doc_of(&without_ws).expect("no-ws box");
-    println!("R3986P: with-ws box={ws:?} without-ws box={no_ws:?}");
-    assert_ne!(
+    assert_eq!(
         ws, no_ws,
-        "空白文本节点应改变 inline svg 盒尺寸（根因锚：两态差异须保持可观测直至修复）"
+        "修复后两态应一致（replaced inline 原子化——空白文本节点不再影响盒尺寸）"
     );
+    assert!(ws.0 >= 200.0, "CSS width:200 应应用（svg 盒宽 ≥200）：{ws:?}");
 }

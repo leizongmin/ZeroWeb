@@ -266,8 +266,23 @@ impl InlineFormattingContext {
 
                         // 检查该元素是否为原子行内级盒（inline-block / inline-flex / inline-grid / inline-table）。
                         // 这些元素参与行内格式化上下文，作为不可拆分的原子盒。
+                        // R3987（CSS Display 3 §2.4 / CSS2 §9.2.1.1）：replaced 类元素的
+                        // display:inline 是 **atomic inline**——内部结构（svg 子元素等）不参与
+                        // 父 IFC，CSS width/height 应用不依赖行内容存在。旧实现 svg 走普通
+                        // inline 递归 → 子树内容为空时 IFC 收集 0 项 → width 不应用（盒塌
+                        // 6×24，r3986 两态锚实证）。img 已有独立原子分支；此处把其余 replaced
+                        // 类（svg 为 driving，canvas 等已有 attr 回退名单不冲突）并入。
+                        let is_replaced_inline = style.is_some_and(|s| {
+                            matches!(s.display, DisplayValue::Inline)
+                                && matches!(
+                                    elem_data.local_name(),
+                                    "svg" | "canvas" | "video" | "iframe" | "embed" | "object"
+                                        | "applet"
+                                )
+                        });
                         let stored_inline_size = self.inline_block_sizes.get(&child_id).copied();
-                        let is_inline_block = stored_inline_size.is_some()
+                        let is_inline_block = is_replaced_inline
+                            || stored_inline_size.is_some()
                             || style.is_some_and(|s| {
                                 matches!(
                                     s.display,
@@ -302,7 +317,8 @@ impl InlineFormattingContext {
                             if w <= 0.0 || h <= 0.0 {
                                 if matches!(
                                     elem_data.local_name(),
-                                    "canvas" | "video" | "iframe" | "embed" | "object" | "applet"
+                                    "svg" | "canvas" | "video" | "iframe" | "embed" | "object"
+                                        | "applet"
                                 ) {
                                     if w <= 0.0 {
                                         w = Self::parse_html_dimension_attr(elem_data.get_attribute("width"));
