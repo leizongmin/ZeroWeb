@@ -472,6 +472,16 @@ track-active-cues 解除排除）**：
   面 + 位置归零/activeCues 清空面 + audio onerror expando 兜底面，3 断言组）。
   make test 66 套件 18806/0。evidence：
   `evidence/2026-09-03-media-load-invoke-reset-r39xx.md`（+同名 .json）。
+- **收口补丁**：invoke 步 6 位置重置改**无条件**（spec 不以 readyState 为前提——
+  readyState>=1 门使 error settle 面（readyState 0）的 currentTime 停留
+  undefined，IDL 读法违约；sandbox probe 实证后修正）。
+- **评估注记（load-events-networkState）**：load() 的 abort/emptied/timeupdate
+  队列派发评估后**不导入**——四 subtest 中 NETWORK_NO_SOURCE 依赖 data:, src 的
+  「fetch 成功但解码探测失败」两段 settle（既有 data:, 排除项，与已导入
+  location currentSrc.html 的 data: loaded settle 断言冲突，两案同夹具互斥）；
+  其余三 subtest 虽可绿但整文件 Timeout 不合「已知失败不导入」纪律；
+  abort/emptied 机制不落地（无既有消费者——避免无消费者投机面），随两段 settle
+  （解码层真失败判定）一并复评。
 
 **M3 扩批 XXI 已落地（2026-09-03 续，TextTrackList change 广播——D 组首个收口）**：
 - **实施**：① 反向链回填三处（`_zwSyncTextTracksFromChildren` holder 同步段 /
