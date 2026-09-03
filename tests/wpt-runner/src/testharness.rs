@@ -1502,8 +1502,13 @@ pub const MEDIA_TEST_FILES: &[&str] = &[
     // set-src/insert source）、src 移除不触发；_zwMediaResourceSelect microtask 续段）。
     // 依赖真资源失败时序的 pointer/candidate/source-media 族与 MSE/iframe/manual 变体
     // 不导入（master.md 排除清单）。data:, 两案（invoke-pause/remove-networkState）
-    // 期望 error settle——与 headless 即时 loaded settle 的 currentSrc 契约冲突，排除。
+    // 排除理由见上方 2026-09-03 复评注记。
     "html/semantics/embedded-content/media-elements/loading-the-media-resource/autoplay-overrides-preload.html",
+    // data:, 两案（invoke-pause/remove-networkState）维持排除（2026-09-03 复评）：
+    // error settle 依赖「fetch 成功但解码探测失败」的两段 settle——现管道单次提交；
+    // 且已导入的 location currentSrc.html 断言 data:, loadstart 后 currentSrc === src
+    //（依赖 loaded settle 置 currentSrc），全局 error 化会回归该案。两段 settle
+    //（fetch loaded → 解码探测 error）随解码层真失败判定重评。
     "html/semantics/embedded-content/media-elements/loading-the-media-resource/load-removes-queued-error-event.html",
     "html/semantics/embedded-content/media-elements/loading-the-media-resource/resource-selection-candidate-insert-before.html",
     "html/semantics/embedded-content/media-elements/loading-the-media-resource/resource-selection-invoke-audio-constructor-no-src.html",
