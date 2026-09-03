@@ -4936,4 +4936,36 @@ fn test_webaudio_processing_ctor_family2_m3xxvi() {
         "noFf:TypeError,noDict:TypeError,noFb:TypeError,len21:NotSupportedError,fb0:InvalidStateError,ffZero:InvalidStateError,nan:TypeError,mismatch:InvalidAccessError,null:TypeError|true|1|1",
         "IIRFilter required/界/校验八面 + 工厂同 builder + getFrequencyResponse 异常面"
     );
+
+    // 断言组 6（第十批）：OfflineAudioContext 构造面——3-arg legacy + 1-arg dict
+    //（required + numberOfChannels 可选缺省 1）+ 0/2 args TypeError + 正义约束
+    //（channels [1,32]/length ≥ 1/sampleRate [8000,96000] → NotSupportedError）+
+    // destination 通道面（channelCount = numberOfChannels + mode 'explicit'）。
+    sandbox
+        .execute(
+            "var r = [];\
+             var c3 = new OfflineAudioContext(3, 42, 12345);\
+             r.push(String(c3.length + '/' + c3.sampleRate + '/' + c3.destination.channelCount + '/' + c3.destination.channelCountMode + '/' + c3.destination.channelInterpretation));\
+             var cd = new OfflineAudioContext({length: 42, sampleRate: 12345});\
+             r.push(String(cd.destination.channelCount));\
+             var c7 = new OfflineAudioContext({length: 1, sampleRate: 8000, numberOfChannels: 7});\
+             r.push(String(c7.destination.channelCount));\
+             var errs = [];\
+             try { new OfflineAudioContext(3); } catch (e) { errs.push('one3:' + e.name); }\
+             try { new OfflineAudioContext(3, 42); } catch (e) { errs.push('two:' + e.name); }\
+             try { new OfflineAudioContext(); } catch (e) { errs.push('none:' + e.name); }\
+             try { new OfflineAudioContext({}); } catch (e) { errs.push('empty:' + e.name); }\
+             try { new OfflineAudioContext({length: 42}); } catch (e) { errs.push('noSr:' + e.name); }\
+             try { new OfflineAudioContext({sampleRate: 12345}); } catch (e) { errs.push('noLen:' + e.name); }\
+             try { new OfflineAudioContext({length: 42, sampleRate: 8000, numberOfChannels: 33}); } catch (e) { errs.push('ch33:' + e.name); }\
+             try { new OfflineAudioContext({length: 0, sampleRate: 8000}); } catch (e) { errs.push('len0:' + e.name); }\
+             try { new OfflineAudioContext({length: 1, sampleRate: 1}); } catch (e) { errs.push('sr1:' + e.name); }\
+             globalThis.__r6 = [r.join(' '), errs.join(',')].join('|');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r6").unwrap().value,
+        "42/12345/3/explicit/speakers 1 7|one3:TypeError,two:TypeError,none:TypeError,empty:TypeError,noSr:TypeError,noLen:TypeError,ch33:NotSupportedError,len0:NotSupportedError,sr1:NotSupportedError",
+        "OfflineAudioContext 3-arg/dict/required/正义约束/destination 通道面（第十批）"
+    );
 }

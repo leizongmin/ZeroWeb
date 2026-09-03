@@ -2,7 +2,16 @@
 
 **入口文档**: [../media-audio.md](../media-audio.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-03（**WPT webaudio 第九批导入——处理类节点 ctor 族第二批
+**最后更新**: 2026-09-03（**WPT webaudio 第十批导入——零渲染候选复评（23 用例
+696P/0F = 100%）**：biquadfilternode-basic 直接导入（type 八枚举 setter 面已由
+ctor-biquadfilter 落 shim——零新增缺口）；ctor-offlineaudiocontext 导入前落 shim
+OfflineAudioContext 构造器扩 OfflineAudioContextOptions dict（3-arg legacy +
+1-arg dict 双形态、length/sampleRate required、numberOfChannels [1,32]/length ≥ 1/
+sampleRate [8000,96000] 正义约束 NotSupportedError、destination 通道面
+channelCount=numberOfChannels + mode 'explicit'）。audiocontext-suspend-resume
+维持排除（task 3 硬依赖 startRendering）。**696P/0F**（+73 净涨零回归），evidence：
+`evidence/2026-09-03-webaudio-zero-gap-review-batch10.json`；单测扩断言组 6；
+make test 18826/0。此前同日：**第九批导入——处理类节点 ctor 族第二批
 （21 用例 623P/0F = 100%）**：shim part06 落地 WaveShaper（curve set 拷贝存储 +
 null 清空 + oversample enum）/ DynamicsCompressor（五 AudioParam 缺省 +
 reduction number + channelCount [1,2] 界 ctor/setter 双面）/ Panner（六 AudioParam
@@ -178,6 +187,17 @@ volume/muted 真控制。**双重启动门控均已解除**：① M0 音频环�
     ——RFC §0 不做清单；语义面 AudioNodeOptions 已落 shim，随渲染切片复评）。
   - **429 中断遗留修复**：上一轮写入的 AudioContext.listener defineProperty
     头行丢失（shim 语法损坏）——本轮拼接全部分片 `node --check` 复现后补回。
+- **WPT webaudio 第十批导入（2026-09-03，零渲染候选复评）**：
+  - **零新增缺口直接导入**：biquadfilternode-basic（audit 29——type 八枚举 setter
+    面已由 ctor-biquadfilter 落 shim，断言 99 不生效）。
+  - **缺口补落后导入**：ctor-offlineaudiocontext（audit 44）——暴露 shim 真缺口
+    （OfflineAudioContext 仅 3-arg 形态），落地 OfflineAudioContextOptions dict
+    构造（双形态/required/正义约束三面/destination 通道面）后导入全绿。
+  - **维持排除**：audiocontext-suspend-resume（task 3 硬依赖 startRendering）。
+  - **23 用例 696P/0F = 100%**（+73 净涨零回归——623→696）。
+  - 单测 `test_webaudio_processing_ctor_family2_m3xxvi` 扩断言组 6
+    （OfflineAudioContext 构造面九态）。
+  - evidence：`evidence/2026-09-03-webaudio-zero-gap-review-batch10.json`。
 - **WPT webaudio 第五批导入（同日，AudioBuffer 构造/接口面）**：
   - **shim part06 扩展**：`AudioBuffer` 构造器（独立构造不依赖 ctx）——
     length/sampleRate required 缺失 → TypeError（WebIDL dict required）；
@@ -346,15 +366,16 @@ DONE 阻塞**；Mixer/重采样接线随设备切片可选推进）。
 
 ## 验证基线
 
-- 测试基线：`make test` 全绿 18824（2026-09-03 组合树实测）；clippy 零警告
+- 测试基线：`make test` 全绿 18826（2026-09-03 组合树实测）；clippy 零警告
   （default 与 `--features audio-cpal` 双配置）
-- WPT webaudio：**21 用例 623P/0F = 100%**（2026-09-03 九批累计——connect 返回值 +
+- WPT webaudio：**23 用例 696P/0F = 100%**（2026-09-03 十批累计——connect 返回值 +
   destination + ctor-oscillator 62 + ctor-gain/stereopanner/delay/biquadfilter/
   analyser + createPeriodicWave 异常面 + audioparam-exceptional-values 66 +
   audiobuffer 面 + 第七批 ctor-channelmerger/channelsplitter/constantsource +
   audiobuffer-getChannelData + 第八批 audionode/different-contexts +
-  **第九批 ctor-waveshaper/ctor-dynamicscompressor/dynamicscompressor-basic/
-  ctor-panner/iirfilter-basic**）；
+  第九批 ctor-waveshaper/ctor-dynamicscompressor/dynamicscompressor-basic/
+  ctor-panner/iirfilter-basic + **第十批 biquadfilternode-basic/
+  ctor-offlineaudiocontext**）；
   evidence：`evidence/2026-09-02-webaudio-wpt-subset.json`（首批）、
   `evidence/2026-09-02-webaudio-ctor-oscillator.json`（第二批）、
   `evidence/2026-09-02-webaudio-ctor-family.json`（第四批）、
@@ -362,7 +383,8 @@ DONE 阻塞**；Mixer/重采样接线随设备切片可选推进）。
   `evidence/2026-09-02-webaudio-gain-basic.json`（第六批）、
   `evidence/2026-09-03-webaudio-node-family-batch7.json`（第七批）、
   `evidence/2026-09-03-webaudio-audionode-batch8.json`（第八批）、
-  `evidence/2026-09-03-webaudio-processing-family2-batch9.json`（第九批）
+  `evidence/2026-09-03-webaudio-processing-family2-batch9.json`（第九批）、
+  `evidence/2026-09-03-webaudio-zero-gap-review-batch10.json`（第十批）
 - NullSink 可观测锚点：440Hz 正弦 @48kHz 过零率 ≈880（2×频率；修正 M0 evidence
   的 ≈440 笔误——evidence 只追加不修改，以代码与本档为事实源）；暂停拒写计
   underrun；非整帧写入拒收

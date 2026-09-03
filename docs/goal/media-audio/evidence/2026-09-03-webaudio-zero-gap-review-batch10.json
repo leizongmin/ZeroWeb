@@ -1,0 +1,27 @@
+{
+  "batch": "WPT webaudio 第十批",
+  "date": "2026-09-03",
+  "topic": "零渲染候选复评——biquadfilternode-basic 直接导入 + ctor-offlineaudiocontext（OfflineAudioContext dict 构造面落地后导入）",
+  "imported": [
+    "webaudio/the-audio-api/the-biquadfilternode-interface/biquadfilternode-basic.html",
+    "webaudio/the-audio-api/the-offlineaudiocontext-interface/ctor-offlineaudiocontext.html"
+  ],
+  "shim_changes": [
+    "OfflineAudioContext 构造器扩双形态：3-arg legacy + 1-arg dict（OfflineAudioContextOptions——length/sampleRate required 缺失 TypeError、numberOfChannels 可选缺省 1）；arg count 0/2 → TypeError（new (3)/new (3,42) 断言面）",
+    "OfflineAudioContextOptions 正义约束：numberOfChannels [1,32] / length ≥ 1 / sampleRate [8000,96000] 外 → NotSupportedError",
+    "Offline destination 通道面：channelCount = numberOfChannels + channelCountMode 'explicit'（interpretation 缺省 speakers）"
+  ],
+  "excluded_note": "audiocontext-suspend-resume 维持排除——task 3 硬依赖 OfflineAudioContext.startRendering（shim 恒 rejected，RFC §0 不做清单）",
+  "results": {
+    "pass": 696,
+    "fail": 0,
+    "timeout": 0,
+    "net": "+73 subtest 净涨零回归（623→696）；23 用例"
+  },
+  "unit_test": "test_webaudio_processing_ctor_family2_m3xxvi（扩断言组 6：OfflineAudioContext 3-arg/dict/required/正义约束/destination 通道面）",
+  "gates": {
+    "make_test": "18826 passed / 0 failed",
+    "clippy": "-D warnings 零警告",
+    "fmt": "clean"
+  }
+}

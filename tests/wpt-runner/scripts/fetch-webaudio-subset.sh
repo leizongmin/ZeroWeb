@@ -67,6 +67,12 @@ WA_FILES=(
   "webaudio/the-audio-api/the-dynamicscompressornode-interface/dynamicscompressor-basic.html"
   "webaudio/the-audio-api/the-pannernode-interface/ctor-panner.html"
   "webaudio/the-audio-api/the-iirfilternode-interface/iirfilter-basic.html"
+  # ---- 第十批（2026-09-03）：零新增缺口复评导入——biquadfilternode-basic
+  #（type 八枚举 setter 面已由 ctor-biquadfilter 落 shim，断言 99 不生效）+
+  # ctor-offlineaudiocontext（dict 构造/required/正义约束/destination 通道面——
+  # shim OfflineAudioContext 构造器扩 OfflineAudioContextOptions 后导入）。
+  "webaudio/the-audio-api/the-biquadfilternode-interface/biquadfilternode-basic.html"
+  "webaudio/the-audio-api/the-offlineaudiocontext-interface/ctor-offlineaudiocontext.html"
   # 不导入：audioparam-method-chaining / audioparam-nominal-range（startRendering
   # 渲染断言——RFC §0 不做清单）；ctor-audiobuffer（末 task multiple contexts 依赖
   # startRendering——audit runner 整文件跑）；periodicWave.html（startRendering）；

@@ -7492,12 +7492,60 @@
       throw new TypeError("Failed to construct 'OfflineAudioContext': Please use the 'new' operator, this DOM object constructor cannot be called as a function.");
     }
     var self = this;
+    var _ch, _len, _rate;
+    // spec OfflineAudioContext 构造：3-arg legacy 形态或 1-arg dict
+    //（OfflineAudioContextOptions——length/sampleRate required）；0/2 args →
+    // TypeError（ctor-offlineaudiocontext 'basic' 断言面：new (3) / new (3,42) 抛）。
+    if (arguments.length === 3) {
+      _ch = numberOfChannels;
+      _len = length;
+      _rate = sampleRate;
+    } else if (arguments.length === 1) {
+      if (numberOfChannels == null || typeof numberOfChannels !== 'object') {
+        throw new TypeError("Failed to construct 'OfflineAudioContext': The provided value is not of type 'OfflineAudioContextOptions'.");
+      }
+      // WebIDL required members：length/sampleRate 缺失 → TypeError。
+      if (numberOfChannels.length === undefined) {
+        throw new TypeError("Failed to construct 'OfflineAudioContext': Failed to read the 'length' property from 'OfflineAudioContextOptions': Required member is undefined.");
+      }
+      if (numberOfChannels.sampleRate === undefined) {
+        throw new TypeError("Failed to construct 'OfflineAudioContext': Failed to read the 'sampleRate' property from 'OfflineAudioContextOptions': Required member is undefined.");
+      }
+      _ch = (numberOfChannels.numberOfChannels === undefined) ? 1 : numberOfChannels.numberOfChannels;
+      _len = numberOfChannels.length;
+      _rate = numberOfChannels.sampleRate;
+    } else {
+      throw new TypeError("Failed to construct 'OfflineAudioContext': Invalid argument count (use 1 dict argument or 3 positional arguments).");
+    }
+    // OfflineAudioContextOptions 正义约束（ctor-offlineaudiocontext 'options-2'
+    // 断言面）：numberOfChannels [1,32] / length ≥ 1 / sampleRate [8000, 96000]
+    // 外 → NotSupportedError。
+    var ch = Number(_ch);
+    var len = Number(_len);
+    var rate = Number(_rate);
+    if (isNaN(ch) || ch < 1 || ch > 32) {
+      throw new (globalThis.DOMException || Error)(
+        "Failed to construct 'OfflineAudioContext': numberOfChannels " + _ch + " is not in range [1, 32].", 'NotSupportedError');
+    }
+    if (isNaN(len) || len < 1) {
+      throw new (globalThis.DOMException || Error)(
+        "Failed to construct 'OfflineAudioContext': length must be positive.", 'NotSupportedError');
+    }
+    if (isNaN(rate) || rate < 8000 || rate > 96000) {
+      throw new (globalThis.DOMException || Error)(
+        "Failed to construct 'OfflineAudioContext': sampleRate " + _rate + " is not in range [8000, 96000].", 'NotSupportedError');
+    }
     self._zwCtxId = ++_zwWASeq;
     self._zwState = 'suspended';
-    self._zwChannels = Number(numberOfChannels) || 1;
-    self._zwLength = Number(length) || 0;
-    self._zwSampleRate = Number(sampleRate) || 44100;
+    self._zwChannels = ch;
+    self._zwLength = len;
+    self._zwSampleRate = rate;
     self._zwDestination = _zwWANode('destination', self._zwCtxId, 0);
+    // 离线 destination 通道面（spec AudioDestinationNode offline——channelCount =
+    // numberOfChannels + mode 'explicit'，interpretation 缺省 speakers——
+    // ctor-offlineaudiocontext destination 断言面；只读面不走过道 setter）。
+    self._zwDestination._zwChannelCount = ch;
+    self._zwDestination._zwChannelCountMode = 'explicit';
   }
   globalThis.OfflineAudioContext = globalThis.OfflineAudioContext || OfflineAudioContext;
   Object.defineProperty(OfflineAudioContext.prototype, 'state', {

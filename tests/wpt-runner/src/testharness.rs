@@ -1635,6 +1635,12 @@ pub const WEBAUDIO_TEST_FILES: &[&str] = &[
     "webaudio/the-audio-api/the-dynamicscompressornode-interface/dynamicscompressor-basic.html",
     "webaudio/the-audio-api/the-pannernode-interface/ctor-panner.html",
     "webaudio/the-audio-api/the-iirfilternode-interface/iirfilter-basic.html",
+    // ---- 第十批（2026-09-03）：零新增缺口复评导入——biquadfilternode-basic
+    //（type 八枚举 setter 面已由 ctor-biquadfilter 落 shim，断言 99 不生效）+
+    // ctor-offlineaudiocontext（dict 构造/required/正义约束/destination 通道面
+    // ——shim OfflineAudioContext 构造器扩 OfflineAudioContextOptions 后导入）。
+    "webaudio/the-audio-api/the-biquadfilternode-interface/biquadfilternode-basic.html",
+    "webaudio/the-audio-api/the-offlineaudiocontext-interface/ctor-offlineaudiocontext.html",
     // 不导入：ctor-audiobuffer.html（末 task「multiple contexts」依赖
     // startRendering——audit runner 整文件跑，前段构造面无法单独导入）；
     // audiobuffer-copy-channel（startRendering 后段同文件不可分割——数据面已落
