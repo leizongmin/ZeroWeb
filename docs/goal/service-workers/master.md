@@ -2,7 +2,7 @@
 
 **入口文档**: [../service-workers.md](../service-workers.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-03（Service Worker getRegistration WPT promotion；broader SW fetch/cache/message baseline 继续）
+**最后更新**: 2026-09-03（Service Worker registration iframe WPT promotion；broader SW fetch/cache/message baseline 继续）
 
 ---
 
@@ -17,7 +17,7 @@ browser-process 页面 fetch 路由和 Service Worker `caches.match()` / `caches
 SW runtime `Cache.add()` / `Cache.addAll()` 可用同一 fetch→put 链路写入 active registration
 `CacheStorage`，`Cache.delete()` 与 `CacheStorage.delete()/has()/keys()` 也已接入同一
 typed host bridge，并复用 `zero-storage` 的请求头快照、Vary/`ignoreVary` 匹配语义；
-M3 worker-global registration 上游 WPT core baseline 已扩展到 56 case / 209 subtest /
+M3 worker-global registration 上游 WPT core baseline 已扩展到 57 case / 212 subtest /
 209 Pass，覆盖 `registration.scope`、worker global `registration.{installing,waiting,active}`
 slot 投影、registration/worker `EventTarget`、`updatefound` 与 `statechange` 可观察顺序，
 message handler 抛错后的 worker-global `ErrorEvent` 字段与 source 回传，以及 page message
@@ -322,6 +322,9 @@ JSON，private profile 继续只保留内存态。
   按 document URL 查找 registration，跨源 document URL reject `SecurityError`，
   fragment 不影响 scope 匹配，controlled iframe 注销后查询返回 `undefined`；
   core WPT 56/209
+- ✅ M3-59：`registration-iframe.https.html` 纳入 core baseline；iframe
+  `register()` 按 iframe document URL 解析 scriptURL/scope，并在 resolved
+  registration 上立即暴露 iframe realm `installing` worker；core WPT 57/212
 - ✅ M3-53：`ServiceWorkerGlobalScope/postmessage.https.html` 纳入 fetch/message
   baseline；worker self-loopback、active → waiting worker transferred `MessagePort`
   转发以及最终 page port 回信语义通过；fetch/message WPT 28/73
@@ -691,7 +694,7 @@ JSON，private profile 继续只保留内存态。
 | S2 | scriptURL 不下载执行 | ✅ production navigator 经 browser fetch/evaluate |
 | S3 | fetch 拦截为零 | 🚧 M2-2 production 页面 fetch respondWith/pass-through 已接入；M2-3/4/5/6 `caches.match()`、`caches.open()`、`Cache.put()`、`Cache.matchAll()`、`Cache.keys()` 与 `ignoreSearch`/`ignoreMethod` 桥接已接入；M2-7 worker-global `fetch()`、SW runtime `Cache.add/addAll` 与 CacheStorage `Response.type` 保真已接入；M2-9 `Cache.delete()` 与 `CacheStorage.delete/has/keys` 已接入；registration-local CacheStorage 持久化已接入；`Response.error()` 可作为 CacheStorage 条目保存/读回，但 FetchEvent 响应结算仍拒绝 status 0；SW fetch/message WPT baseline 已扩展到 request projection + async fetch listener registration + respondWith timing/value validation + synthetic Latin-1 response header over iframe XHR + invalid response header network error + stream body error during body consumption + invalid Blob MIME type not promoted to `Content-Type` + controlled-window `Cache.add()` interception + worker-internal fetch/cache non-self-interception + synthetic custom Response body matrix + `FetchEvent.handled` resolve/reject + same-document iframe navigation interception + intercepted navigation `document.referrer` preservation + controlled client no-fetch-handler CORS/no-cors fallback + controlled client POST body forwarding + `respondWith()` stopImmediatePropagation + throw-after-respondWith iframe navigation + uncontrolled page scope bypass + message-time `clients.claim()` iframe control + claim longest-match boundary + unregister incumbent-controller retention + worker-global fetch prototype placement + historical FetchEvent targetClientId absence + `ExtendableMessageEvent` constructor semantics + ReadableStream pull-source chunk serialization + loaded network body forwarding + non-`Uint8Array` stream chunk body error transfer，30/75 Pass；SW ReadableStream start-source body 已在 runtime/WebView 产品路径固定，但 partial/incremental stream delivery 与 cancel/abort 反传尚未纳入 baseline；SW CacheStorage baseline 扩展到 25/318 Pass，并覆盖 cached `Response.url`、Blob/FileReader、Cache.put cacheability、Cache.addAll duplicate/Vary atomicity、AbortError rejection、no-cors opaque readback、navigation request attributes、credentialed request URL cache keys、bucket-scoped CacheStorage 与 `.any.js` Service Worker global META support；broader fetch/cache/message 基线未完成 |
 | S4 | 事件为 setTimeout 模拟 | ✅ manager transition log 为状态源；timer 只执行页面 task 投影 |
-| S5 | WPT 覆盖为零 | ✅ core 56/56 case、209/209 Pass、0 Fail/Timeout/Unsupported |
+| S5 | WPT 覆盖为零 | ✅ core 57/57 case、212/212 Pass、0 Fail/Timeout/Unsupported |
 
 ## CI 守护记录（2026-08-22）
 
@@ -739,7 +742,7 @@ second（replacement）worker 只处理 awaitInstallEvent（messageSequence=1）
 ## 验证基线
 
 - 测试基线：storage crate 既有单测全绿（立项时点）；clippy 零警告
-- WPT service-workers 面：当前 core runner 56 case / 209 subtest 全绿，fetch/message runner
+- WPT service-workers 面：当前 core runner 57 case / 212 subtest 全绿，fetch/message runner
   30 case / 75 subtest 全绿，CacheStorage runner 25 case / 318 subtest 全绿；
   上游完整分母 294 个 testharness 源 / 331 URL，
   正文覆盖 294/294；分层与依赖信号见
@@ -1013,6 +1016,11 @@ second（replacement）worker 只处理 awaitInstallEvent（messageSequence=1）
   - `./target/test-guard --compile-first --per-proc-mem 4 --total-mem 8 --time-limit 300 -- cargo test -p zero-webview get_registration_rejects_cross_origin_document_url -- --nocapture`：1 passed
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- cargo run -p zero-wpt-runner -- testharness-service-workers --wpt-data tests/wpt-runner/wpt-data/.service-workers-tier-a-root getregistration --json`：6 Pass
   - `make baseline-wpt-service-workers-core OUTPUT=docs/goal/service-workers/evidence/2026-09-03-m3-getregistration-baseline.json SUMMARY=docs/goal/service-workers/evidence/2026-09-03-m3-getregistration-baseline.md TIME_LIMIT=1200`：56 cases / 209 subtests / 209 Pass，double-run deterministic
+- M3-59 registration iframe baseline：
+  [registration iframe evidence](evidence/2026-09-03-m3-registration-iframe.md)
+  - `./target/test-guard --compile-first --per-proc-mem 4 --total-mem 8 --time-limit 300 -- cargo test -p zero-webview iframe_register_resolves_with_installing_worker -- --nocapture`：1 passed
+  - `make testharness-service-workers-core FILTER=registration-iframe TIME_LIMIT=300`：3 Pass
+  - `make baseline-wpt-service-workers-core OUTPUT=docs/goal/service-workers/evidence/2026-09-03-m3-registration-iframe-baseline.json SUMMARY=docs/goal/service-workers/evidence/2026-09-03-m3-registration-iframe-baseline.md TIME_LIMIT=1200`：57 cases / 212 subtests / 212 Pass，double-run deterministic
 - M3-55 worker error event baseline：
   [Worker ErrorEvent evidence](evidence/2026-09-03-m3-worker-error-event.md)
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- cargo test -p zero-script-sandbox service_worker::tests::page_message_error_listener_observes_thrown_error_event -- --nocapture`：1 passed
@@ -1242,6 +1250,7 @@ second（replacement）worker 只处理 awaitInstallEvent（messageSequence=1）
 | 2026-09-03 | M3-56 messageerror event core promotion | `ServiceWorkerGlobalScope/error-message-event.https.html` 纳入 core runner；page `canvas.captureStream()` track transfer 触发 worker-global `messageerror` 并保留 `WindowClient` source；`make baseline-wpt-service-workers-core` 双跑 54/202 deterministic Pass |
 | 2026-09-03 | M3-57 controller on load core promotion | `controller-on-load.https.html` 纳入 core runner；iframe 默认 `getRegistration()` 按 iframe document URL 查询，iframe registration worker slots 使用 iframe realm wrapper，load 时 controller identity 通过；单 case 1/1 Pass |
 | 2026-09-03 | M3-58 getRegistration core promotion | `getregistration.https.html` 纳入 core runner；跨源 document URL `SecurityError`、fragment 忽略匹配与 controlled iframe 注销后查询通过；单 case 6/6 Pass |
+| 2026-09-03 | M3-59 registration iframe core promotion | `registration-iframe.https.html` 纳入 core runner；iframe `register()` 使用 iframe document URL 解析 scriptURL/scope，resolved registration 立即暴露 iframe realm `installing` worker；单 case 3/3 Pass |
 | 2026-09-02 | M2 fetch body-loaded-in-chunk baseline | `fetch-event-respond-with-body-loaded-in-chunk.https.html` 纳入 fetch/message runner；worker-side loaded chunk body 经 `respondWith(new Response(body))` 转发到受控 iframe；`make baseline-wpt-service-workers-fetch` 双跑 29/74 deterministic Pass |
 | 2026-09-02 | M2 fetch invalid stream chunk baseline | `fetch-event-respond-with-response-body-with-invalid-chunk.https.html` 纳入 fetch/message runner；非 `Uint8Array` stream chunk 通过 page-side `response.body` reader 以 TypeError reject；`make baseline-wpt-service-workers-fetch` 双跑 30/75 deterministic Pass |
 | 2026-09-02 | M2 fetch readable-stream fetch-body prework | SW runtime `Response.body` getter 暴露 host fetch body 的 `ReadableStream<Uint8Array>`；`worker_global_fetch_exposes_response_body_stream` 固定 `fetch('./pass.txt').then(r => new Response(r.body))` 转发 `PASS\n`；临时补本地 `resources/pass.txt` probe 显示完整 readable-stream WPT 前 6 subtest 通过，剩余 cancel/abort 反传未纳入 baseline |

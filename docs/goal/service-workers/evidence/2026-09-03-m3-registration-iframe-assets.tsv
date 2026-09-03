@@ -1,0 +1,2 @@
+path	manifest_type	roles	referenced_by	bytes	templated	git_blob_sha	source_revision
+service-workers/service-worker/registration-iframe.https.html	testharness	case	1	4096	no	ae39ddfea3e5186bdea4c6a1a5d9f0c7e6cbc212	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83

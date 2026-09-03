@@ -2435,6 +2435,25 @@
             }
             return Promise.reject(new TypeError(message));
           }
+          if (wire.existing === false &&
+              typeof parentServiceWorker.__zwCreateInstallingRegistration === 'function') {
+            var absoluteScriptURL = new URL(scriptURL, base).href;
+            var absoluteScope = scopeProvided ?
+              new URL(scope, base).href :
+              new URL('./', absoluteScriptURL).href;
+            var registration = parentServiceWorker.__zwCreateInstallingRegistration({
+              id: wire.id,
+              scriptURL: absoluteScriptURL,
+              scope: absoluteScope,
+              updateViaCache: updateViaCache,
+              state: 'installing'
+            });
+            return Promise.resolve(wrapRegistration(registration)).then(function(wrapper) {
+              var raw = registration && registration.installing;
+              if (raw) wrapServiceWorkerController(raw);
+              return wrapper;
+            });
+          }
           return parentServiceWorker.getRegistrations()
             .then(function(registrations) {
               for (var i = 0; i < registrations.length; i++) {

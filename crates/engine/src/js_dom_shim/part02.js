@@ -3551,6 +3551,12 @@
         ensureDocument();
         return upsertSnapshot(snapshot, 'manual') || undefined;
       };
+      _container.__zwCreateInstallingRegistration = function (snapshot) {
+        ensureDocument();
+        var reg = upsertSnapshot(snapshot, 'manual');
+        if (reg) scheduleRegistrationPoll(reg);
+        return reg || undefined;
+      };
       function refreshRegistrationAfterRedundant(reg) {
         // https://w3c.github.io/ServiceWorker/#navigator-service-worker-getRegistration
         var clientURL = _documentURL ||
