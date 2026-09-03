@@ -1566,6 +1566,10 @@ pub const MEDIA_TEST_FILES: &[&str] = &[
     // / seeked 链中 innerHTML 清空后再 seek——testharness.js 兜底 test() 空 body 形态）。
     "html/semantics/embedded-content/media-elements/track/track-element/track-remove-quickly.html",
     "html/semantics/embedded-content/media-elements/track/track-element/track-remove-by-setting-innerHTML.html",
+    // 不导入 track-element-src-change-error：stage3→4 依赖「加载中移除 src」的
+    // in-flight 中断时序——headless settle 同步完成无 in-flight 窗口（2026-09-04
+    // 实证：settings.vtt onload 恒先于 removeAttribute，onload case4 unreached）。
+    // 不导入 track-element-src-aborted-load：WPT trickle pipe 机制不可复现。
     // M3 扩批 IX：移动面（同文档移动仍 related → 不暂停）。
     // pause-move-to-other-document 不导入——iframe adopt 面未实施（fetch 脚本注记）。
     "html/semantics/embedded-content/media-elements/playing-the-media-resource/pause-move-within-document.html",

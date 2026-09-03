@@ -8,7 +8,11 @@
 导入（metadata track disabled 不加载，mode 改 hidden 触发——扩批 XV mode 触发面
 直接覆盖）+ track-remove-quickly / -by-setting-innerHTML 导入（track 移除不
 crash smoke 面——innerHTML 注入 + seeked 计数链中 innerHTML 清空后再 seek）。
-**560P/0F/24PF，560/584 = 95.9%**（+4 净涨零回归）。此前同日：**M3 扩批 XXVII 落地**——media fragment #t= 起点解析
+**560P/0F/24PF，560/584 = 95.9%**（+4 净涨零回归）。**track 空 src 语义
+两处补全**（src=''空串 error settle code 4 + removeAttribute('src') 重调度——
+与 setAttribute 对称）；track-element-src-change-error / -src-aborted-load
+维持排除（in-flight loading 中断时序 / trickle pipe——headless 不可复现，
+实证注记）。此前同日：**M3 扩批 XXVII 落地**——media fragment #t= 起点解析
 （settle 加载序列内 currentTime 初始化：npt:/HH:MM:SS/ms/percent-encode 五形态）
 + headless 播放时钟推进（march 内墙钟差 × playbackRate——autoplay 驱动的播放
 currentTime 不再恒 0）+ 周期 timeupdate（250ms 节流——播放推进期页面可收

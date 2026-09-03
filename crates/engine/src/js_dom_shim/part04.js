@@ -2422,6 +2422,13 @@
             if (n === 'id' && !handle && globalThis._zwIdOverrideSet) globalThis._zwIdOverrideSet(key, null);
             // R297：id 移除清 JS 原值缓存（回落 host 读——attr 已 absent）。
             if (n === 'id') { try { delete _zwRawIds[key]; } catch (_e297m) {} }
+            // M3 扩批 XXVIII：track 的 src 移除 → 重调度（spec「src attribute removed
+            // during loading → fail」——track-element-src-change-error stage4 断言面；
+            // 与 setAttribute('src') 的 srcChange 重调度对称）。
+            if (n === 'src' && typeof _realTag === 'function' && _realTag(sel, handle) === 'TRACK'
+                && typeof _zwTrackScheduleLoad === 'function') {
+              try { _zwTrackScheduleLoad(sel, handle, { srcChange: true }); } catch (_eSaTr) {}
+            }
             if (_rmExisted) _mo_notify(sel, handle, { type: 'attributes', attributeName: n, oldValue: moOld });
             if (ceEntry) _ce_dispatchAttrChange(ceEntry, proxy, n, ceOld, null);
           };

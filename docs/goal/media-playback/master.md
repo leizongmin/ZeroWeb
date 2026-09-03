@@ -7,8 +7,14 @@ XXVIII）**——currentTime-move-within-document 导入（同文档移动不重
 seek(10) 后 appendChild 移动 paused=false + currentTime 保持——headless 时钟
 推进面现成，零改动导入）+ track-mode-triggers-loading 导入（metadata track
 mode 触发加载——扩批 XV 既有面零改动）+ track-remove-quickly /
--by-setting-innerHTML 导入（track 移除不 crash smoke 面）；fixture 增
-movie_300.webm（VP9 300s）。media-elements 560P/0F/24PF（+4 净涨零回归）。此前同日：
+-by-setting-innerHTML 导入（track 移除不 crash smoke 面）+ **track 空 src 语义
+两处补全**（src=''空串 error settle code 4——spec「fail with attribute 之空
+URL」；removeAttribute('src') 触发 track 重调度——与 setAttribute 对称）；
+fixture 增 movie_300.webm（VP9 300s）。media-elements 560P/0F/24PF（+4 净涨
+零回归）。track-element-src-change-error / -src-aborted-load 维持排除：
+「加载中移除 src」in-flight 中断时序 headless 不可复现（settle 同步 microtask
+无 in-flight 窗口，实证 settings.vtt onload 恒先于 removeAttribute）/
+WPT trickle pipe 机制不可复现。此前同日：
 **切片 10（扩批 XXVII）**——media fragment #t= 起点解析（settle 加载序列内 currentTime 初始化：
 hash 内 & 分隔 k=v 对取 t=、percent-decode、npt: 前缀可选、start,end 取 start、
 HH:MM:SS.ms/MM:SS.ms/SS；settle url 携带 hash 面已被 registry_key strip 兼容）+

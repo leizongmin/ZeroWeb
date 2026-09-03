@@ -9107,6 +9107,13 @@
       try {
         var _raw = handle ? __zw_get_attr_handle(handle, 'src') : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'src') : __zw_get_attr(sel, 'src'));
         var _abs = String(_raw == null ? '' : _raw).replace(/^[\x00-\x20]+/, '').replace(/[\x00-\x20]+$/, '');
+        // M3 扩批 XXVIII：空 src——spec「fail with attribute 之空 URL」：error settle
+        //（track-element-src-change-error 的 stage4 空 URL error 断言面——此前空
+        // src 走 fetch 分派恒 loaded）。
+        if (!_abs) {
+          _zwSettleResourceKey(key, sel, handle, 'track', '', 'error', 0, 0, 4);
+          return;
+        }
         try { if (typeof _zwResolveFetchUrl === 'function') _abs = _zwResolveFetchUrl(_abs); } catch (_eTsR) {}
         // M3 扩批 XV：解析分派——data:text/vtt 走既有内联解析；http(s) 走同步
         // `__zw_fetch` 取文本后 `_zwParseVtt`。`_zwParseVtt` 返 null = 非 WEBVTT 头

@@ -179,6 +179,11 @@ TOP_FILES=(
   # 不 crash smoke 面（innerHTML 注入 + seeked 计数链 + innerHTML 清空后再 seek）。
   "track/track-element/track-remove-quickly.html"
   "track/track-element/track-remove-by-setting-innerHTML.html"
+  # 不导入 track-element-src-change-error：stage3→4 依赖「加载中移除 src」的
+  # in-flight 中断时序——headless settle 同步完成（microtask）无 in-flight 窗口，
+  # settings.vtt 的 onload 恒先于 removeAttribute 到达（onload case4 unreached）。
+  # 不导入 track-element-src-aborted-load：WPT 服务器 trickle(d3600) pipe 机制
+  #（pending 加载模拟），runner 无 HTTP 服务器不可复现。
   # M3 扩批 IX：移动面（同文档移动仍 related → 不暂停）。
   # pause-move-to-other-document 不导入：跨 iframe 文档 adopt 在 shim 融合视图下
   # appendChild 静默落空（元素保持 detached）——实施需 iframe 文档模型 adopt 面
