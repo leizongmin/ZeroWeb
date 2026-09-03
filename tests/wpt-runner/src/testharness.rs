@@ -853,6 +853,7 @@ pub const SERVICE_WORKER_CORE_CASES: &[&str] = &[
     "service-workers/service-worker/multiple-update.https.html",
     "service-workers/service-worker/no-dynamic-import.any.js",
     "service-workers/service-worker/no-dynamic-import-in-module.any.js",
+    "service-workers/service-worker/onactivate-script-error.https.html",
     "service-workers/service-worker/oninstall-script-error.https.html",
     "service-workers/service-worker/register-default-scope.https.html",
     "service-workers/service-worker/registration-basic.https.html",
@@ -4664,8 +4665,8 @@ async_test(function(test) {
             .iter()
             .copied()
             .collect::<std::collections::BTreeSet<_>>();
-        assert_eq!(SERVICE_WORKER_CORE_CASES.len(), 61);
-        assert_eq!(unique.len(), 61);
+        assert_eq!(SERVICE_WORKER_CORE_CASES.len(), 62);
+        assert_eq!(unique.len(), 62);
         assert!(
             SERVICE_WORKER_CORE_CASES
                 .iter()
@@ -4728,6 +4729,9 @@ async_test(function(test) {
             SERVICE_WORKER_CORE_CASES.contains(&"service-workers/service-worker/no-dynamic-import-in-module.any.js")
         );
         assert!(SERVICE_WORKER_CORE_CASES.contains(&"service-workers/service-worker/install-event-type.https.html"));
+        assert!(
+            SERVICE_WORKER_CORE_CASES.contains(&"service-workers/service-worker/onactivate-script-error.https.html")
+        );
         assert!(
             SERVICE_WORKER_CORE_CASES.contains(&"service-workers/service-worker/oninstall-script-error.https.html")
         );

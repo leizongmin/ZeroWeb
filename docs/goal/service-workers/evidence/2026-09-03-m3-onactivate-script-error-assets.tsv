@@ -1,0 +1,7 @@
+path	manifest_type	roles	referenced_by	bytes	templated	git_blob_sha	source_revision
+service-workers/service-worker/onactivate-script-error.https.html	testharness	case	1	2286	no	f5e80bb9a456bc57f2a821e1fd69114e6ae8638a	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
+service-workers/service-worker/resources/onactivate-throw-error-worker.js	support	worker-script	1	402	no	1e88ac5c4e7852b4752de3af210566d010b62a86	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
+service-workers/service-worker/resources/onactivate-throw-error-with-empty-onerror-worker.js	support	worker-script	1	127	no	eb12ae862c59099d0546b6183c2d6247f2d9fe3e	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
+service-workers/service-worker/resources/onactivate-throw-error-from-nested-event-worker.js	support	worker-script	1	384	no	7c97014fd042affbd38d77fa538d8a584d7c72f7	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
+service-workers/service-worker/resources/onactivate-throw-error-then-cancel-worker.js	support	worker-script	1	125	no	0bd9d318b241d700ea8f0399396200381233d284	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
+service-workers/service-worker/resources/onactivate-throw-error-then-prevent-default-worker.js	support	worker-script	1	401	no	d56c95113917d8f18a7b510d01c307373b88e5d2	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83

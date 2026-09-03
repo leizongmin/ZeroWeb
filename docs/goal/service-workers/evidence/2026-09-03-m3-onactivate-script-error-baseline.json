@@ -1,0 +1,1460 @@
+{
+  "cases": 62,
+  "subtests": 228,
+  "status": {
+    "Pass": 228
+  },
+  "deterministic": true,
+  "results": [
+    [
+      "service-workers/service-worker/active.https.html",
+      [
+        {
+          "name": "active is set",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "The ServiceWorker objects returned from active attribute getter that represent the same service worker are the same objects",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/activate-event-after-install-state-change.https.html",
+      [
+        {
+          "name": "installed event should be fired before activating service worker",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/activation-after-registration.https.html",
+      [
+        {
+          "name": "activation occurs after registration",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/controller-on-load.https.html",
+      [
+        {
+          "name": "controller is set for a controlled document",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/controller-on-disconnect.https.html",
+      [
+        {
+          "name": "controller is cleared on disconnected window",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/clients-matchall-on-evaluation.https.html",
+      [
+        {
+          "name": "Test Clients.matchAll() on script evaluation",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/ServiceWorkerGlobalScope/close.https.html",
+      [
+        {
+          "name": "ServiceWorkerGlobalScope close operation",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "ServiceWorkerGlobalScope: close operation",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/ServiceWorkerGlobalScope/isSecureContext.https.html",
+      [
+        {
+          "name": "Setting up tests",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "isSecureContext",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/ServiceWorkerGlobalScope/extendable-message-event.https.html",
+      [
+        {
+          "name": "Post an extendable message from a top-level client",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Post an extendable message from a nested client",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Post loopback extendable messages",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Post extendable messages among service workers",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/ServiceWorkerGlobalScope/error-message-event.https.html",
+      [
+        {
+          "name": "Verify error event is received",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/ServiceWorkerGlobalScope/message-event-ports.https.html",
+      [
+        {
+          "name": "Verify MessageEvent.ports getter returns the same object",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/ServiceWorkerGlobalScope/registration-attribute.https.html",
+      [
+        {
+          "name": "Verify registration attributes on ServiceWorkerGlobalScope",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Verify registration attributes on ServiceWorkerGlobalScope of the newer worker",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/ServiceWorkerGlobalScope/service-worker-error-event.https.html",
+      [
+        {
+          "name": "Error handlers inside serviceworker should see the attributes of ErrorEvent",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/ServiceWorkerGlobalScope/unregister.https.html",
+      [
+        {
+          "name": "Unregister on script evaluation",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Unregister on installing event",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Unregister on activate event",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Unregister controlling service worker",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/getregistration.https.html",
+      [
+        {
+          "name": "getRegistration",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "getRegistration with a cross origin URL",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Register then Unregister then getRegistration",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Register then getRegistration",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Register then getRegistration with a URL having a fragment",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Register then Unregister then getRegistration in controlled iframe",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/registration-iframe.https.html",
+      [
+        {
+          "name": "register method should use the \"relevant global object\" to parse its scriptURL and scope - error case",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "A scope url should start with the given script url",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "register method should use the \"relevant global object\" to parse its scriptURL and scope - normal case",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/installing.https.html",
+      [
+        {
+          "name": "installing is set",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "The ServiceWorker objects returned from installing attribute getter that represent the same service worker are the same objects",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/waiting.https.html",
+      [
+        {
+          "name": "waiting is set after installation",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "The ServiceWorker objects returned from waiting attribute getter that represent the same service worker are the same objects",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/global-serviceworker.https.any.js",
+      [
+        {
+          "name": "First run",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Can post message to self during startup",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "During install",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "During activate",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "service-workers/service-worker/global-serviceworker.https.any.js",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/historical.https.any.js",
+      [
+        {
+          "name": "targetClientId should not be on FetchEvent",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "service-workers/service-worker/historical.https.any.js",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/immutable-prototype-serviceworker.https.html",
+      [
+        {
+          "name": "worker prototype chain should be immutable",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/import-scripts-cross-origin.https.html",
+      [
+        {
+          "name": "importScripts() supports cross-origin requests",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/import-scripts-data-url.https.html",
+      [
+        {
+          "name": "importScripts() supports data URLs",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/import-scripts-mime-types.https.html",
+      [
+        {
+          "name": "Global setup",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Importing script with no MIME type ",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Importing script with bad MIME type text/plain",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Importing script with bad MIME type application/json",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Importing script with bad MIME type text/json",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Importing script with bad MIME type application/manifest+json",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Importing script with valid JavaScript MIME type application/ecmascript",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Importing script with valid JavaScript MIME type application/javascript",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Importing script with valid JavaScript MIME type application/x-ecmascript",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Importing script with valid JavaScript MIME type application/x-javascript",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Importing script with valid JavaScript MIME type text/ecmascript",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Importing script with valid JavaScript MIME type text/javascript",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Importing script with valid JavaScript MIME type text/javascript1.0",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Importing script with valid JavaScript MIME type text/javascript1.1",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Importing script with valid JavaScript MIME type text/javascript1.2",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Importing script with valid JavaScript MIME type text/javascript1.3",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Importing script with valid JavaScript MIME type text/javascript1.4",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Importing script with valid JavaScript MIME type text/javascript1.5",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Importing script with valid JavaScript MIME type text/jscript",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Importing script with valid JavaScript MIME type text/livescript",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Importing script with valid JavaScript MIME type text/x-ecmascript",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Importing script with valid JavaScript MIME type text/x-javascript",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Fetch importScripts tests from service worker",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/interface-requirements-sw.https.html",
+      [
+        {
+          "name": "Event constructors",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "xhr is not exposed",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "URL.createObjectURL is not exposed",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Interfaces and attributes in ServiceWorkerGlobalScope",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/install-event-type.https.html",
+      [
+        {
+          "name": "install event type",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/import-scripts-redirect.https.html",
+      [
+        {
+          "name": "importScripts() supports redirects",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "an imported script redirects, and the body changes during the update check",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "an imported script doesn't redirect initially, then redirects during the update check and the body changes",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/import-scripts-resource-map.https.html",
+      [
+        {
+          "name": "import the same script URL multiple times",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "call importScripts() with multiple arguments",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/import-scripts-updated-flag.https.html",
+      [
+        {
+          "name": "initialize global state",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "import script previously imported at worker evaluation time",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "import script previously imported at worker install time",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "import script not previously imported",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Tests for importScripts: import scripts updated flag",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/multiple-update.https.html",
+      [
+        {
+          "name": "Trigger multiple updates.",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/no-dynamic-import.any.js",
+      [
+        {
+          "name": "Module URL",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Another module URL",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Module data: URL",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "service-workers/service-worker/no-dynamic-import.any.js",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/no-dynamic-import-in-module.any.js",
+      [
+        {
+          "name": "Module URL",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Another module URL",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Module data: URL",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "service-workers/service-worker/no-dynamic-import-in-module.any.js",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/onactivate-script-error.https.html",
+      [
+        {
+          "name": "activate handler throws an error",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "activate handler throws an error, error handler does not cancel",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "activate handler dispatches an event that throws an error",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "activate handler throws an error that is cancelled",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "activate handler throws an error and prevents default",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/oninstall-script-error.https.html",
+      [
+        {
+          "name": "install handler throws an error",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "install handler throws an error, error handler does not cancel",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "install handler dispatches an event that throws an error",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "install handler throws an error in the waitUntil",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "install handler throws an error that is cancelled",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "install handler throws an error and prevents default",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/register-default-scope.https.html",
+      [
+        {
+          "name": "default scope",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "undefined scope",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "null scope",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/registration-basic.https.html",
+      [
+        {
+          "name": "Registering normal scope",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Registering scope with fragment",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Registering same scope as the script directory",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/registration-end-to-end.https.html",
+      [
+        {
+          "name": "Registration: end-to-end",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/registration-events.https.html",
+      [
+        {
+          "name": "Registration: events",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/registration-scope.https.html",
+      [
+        {
+          "name": "Scope including URL-encoded slash",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Scope including URL-encoded backslash",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Scope URL scheme is a data: URL",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Scope URL scheme is an ftp: URL",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Scope including URL-encoded multibyte characters",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Scope including non-escaped multibyte characters",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Scope including self-reference",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Scope including parent-reference",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Scope including consecutive slashes",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Scope URL is same-origin filesystem: URL",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/registration-scope-module-static-import.https.html",
+      [
+        {
+          "name": "imported-module-script.js works when used as top-level",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "static imports to outside path restriction should be allowed",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "static imports redirecting to outside path restriction should be allowed",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/registration-script-module.https.html",
+      [
+        {
+          "name": "Registering invalid chunked encoding script",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Registering invalid chunked encoding script with flush",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Registering script including parse error",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Registering script including undefined error: module",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Registering script including uncaught exception: module",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Registering script with top-level await",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Registering script with module instantiation error",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Registering script with module instantiation error and top-level await",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Registering non-existent script",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Registering script including caught exception",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/registration-updateviacache.https.html",
+      [
+        {
+          "name": "register-with-updateViaCache-undefined",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "register-with-updateViaCache-imports",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "register-with-updateViaCache-all",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "register-with-updateViaCache-none",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "register-with-updateViaCache-undefined-then-undefined",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "register-with-updateViaCache-undefined-then-imports",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "register-with-updateViaCache-undefined-then-all",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "register-with-updateViaCache-undefined-then-none",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "register-with-updateViaCache-imports-then-undefined",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "register-with-updateViaCache-imports-then-imports",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "register-with-updateViaCache-imports-then-all",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "register-with-updateViaCache-imports-then-none",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "register-with-updateViaCache-all-then-undefined",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "register-with-updateViaCache-all-then-imports",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "register-with-updateViaCache-all-then-all",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "register-with-updateViaCache-all-then-none",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "register-with-updateViaCache-none-then-undefined",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "register-with-updateViaCache-none-then-imports",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "register-with-updateViaCache-none-then-all",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "register-with-updateViaCache-none-then-none",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "access-updateViaCache-after-unregister-undefined",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "access-updateViaCache-after-unregister-imports",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "access-updateViaCache-after-unregister-all",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "access-updateViaCache-after-unregister-none",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "updateViaCache is not updated if register() rejects",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/skip-waiting-without-client.https.html",
+      [
+        {
+          "name": "skipWaiting",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Test single skipWaiting() when no client attached",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/update-module-request-mode.https.html",
+      [
+        {
+          "name": "headers of a main module script",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/update-no-cache-request-headers.https.html",
+      [
+        {
+          "name": "headers in no-cache mode",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/update-not-allowed.https.html",
+      [
+        {
+          "name": "ServiceWorkerRegistration.update() from client succeeds while installing service worker.",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "ServiceWorkerRegistration.update() from installing service worker throws.",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "ServiceWorkerRegistration.update() from active service worker succeeds while installing service worker.",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/update-registration-with-type.https.html",
+      [
+        {
+          "name": "Update the registration with a different script type (classic => module).",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Update the registration with a different script type (module => classic).",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Update the registration with a different script type (classic => module) and with a same main script.",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Update the registration with a different script type (module => classic) and with a same main script.",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Does not update the registration with the same script type and the same main script.",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Update the registration with a different script type (classic => module) and with a same main script. Expect evaluation failed.",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Update the registration with a different script type (module => classic) and with a same main script. Expect evaluation failed.",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/registration-script-url.https.html",
+      [
+        {
+          "name": "Script URL including URL-encoded slash",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Script URL including uppercase URL-encoded slash",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Script URL including URL-encoded backslash",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Script URL including uppercase URL-encoded backslash",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Script URL is a data URL",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Script URL is a data URL and scope URL is not relative",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Script URL including self-reference",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Script URL including parent-reference",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/registration-service-worker-attributes.https.html",
+      [
+        {
+          "name": "installing/waiting/active after registration",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/rejections.https.html",
+      [
+        {
+          "name": "Rejections are DOMExceptions",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/serviceworkerobject-scripturl.https.html",
+      [
+        {
+          "name": "Verify the scriptURL property: relative",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Verify the scriptURL property: with-fragment",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Verify the scriptURL property: with-query",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Verify the scriptURL property: absolute",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/state.https.html",
+      [
+        {
+          "name": "Service Worker state property and \"statechange\" event",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/synced-state.https.html",
+      [
+        {
+          "name": "worker objects for the same entity have the same state",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/unregister.https.html",
+      [
+        {
+          "name": "Register then unregister",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Unregister twice",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/skip-waiting-using-registration.https.html",
+      [
+        {
+          "name": "skipWaiting",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Test skipWaiting while a client is using the registration",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/skip-waiting-without-using-registration.https.html",
+      [
+        {
+          "name": "skipWaiting",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Test skipWaiting while a client is not being controlled",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/update-bytecheck-cors-import.https.html",
+      [
+        {
+          "name": "Test(main: default, imported: default)",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Test(main: default, imported: time)",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Test(main: time, imported: default)",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Test(main: time, imported: time)",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Test module script(main: default, imported: default)",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Test module script(main: default, imported: time)",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Test module script(main: time, imported: default)",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Test module script(main: time, imported: time)",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/update-bytecheck.https.html",
+      [
+        {
+          "name": "Test(main: default, imported: default)",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Test(main: default, imported: time)",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Test(main: time, imported: default)",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Test(main: time, imported: time)",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Test module script(main: default, imported: default)",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Test module script(main: default, imported: time)",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Test module script(main: time, imported: default)",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Test module script(main: time, imported: time)",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/update-import-scripts.https.html",
+      [
+        {
+          "name": "update() should fail when a new worker imports an unavailable script.",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "update() should succeed when the old imported script no longer exist but the new worker doesn't import it.",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "update() should treat 404 on imported scripts as no change.",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "update() should find an update in an imported script but update() should result in failure due to missing the other imported script.",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "update() should work with cross-origin importScripts.",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/update-missing-import-scripts.https.html",
+      [
+        {
+          "name": "Initialize global state",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Update service worker with new script that's missing importScripts()",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/update-result.https.html",
+      [
+        {
+          "name": "ServiceWorkerRegistration.update() should resolve a registration object",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/update.https.html",
+      [
+        {
+          "name": "update() should succeed when new script is available.",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "update() should fail when mime type is invalid.",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "update() should fail when a response for the main script is redirect.",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "update() should fail when a new script contains a syntax error.",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "update() should resolve when the install event throws.",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "update() should fail when the pending uninstall flag is set.",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "update() should succeed when the script shrinks.",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ]
+  ]
+}
