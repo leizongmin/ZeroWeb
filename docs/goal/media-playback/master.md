@@ -2,7 +2,13 @@
 
 **入口文档**: [../media-playback.md](../media-playback.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-03（**M3 fixture-mounted runner 播放面切片 5 落地**——
+**最后更新**: 2026-09-03（**M3 fixture-mounted runner 播放面切片 6 落地**——
+media load invoke 重置面收口：`_zwMediaScheduleLoad` invoke 入口重置
+`_resourceStates[key]` + invoke 步 6 位置重置（currentTime=0 / HAVE_NOTHING / 
+`_zwMediaTimeKnown` 失效）+ invoke 重置 track 子产物 cue（addTextTrack 产物
+排除）+ settle 的 media/track 元素 load/error 派发改 `_zwMediaFire`
+（handle-only 元素 on\* expando handler 兜底）；track-active-cues 导入——
+**B 组排除件全清**；media-elements 540P/0F/24PF。此前同日：**切片 5**——
 play() 桥 src 读身份分派（handle 身份走 registry 现值——createElement 媒体元素
 形态的桥失联修复）+ march 遍历面统一（addTextTrack 产物 cue 调度）+ disabled
 gate + cuechange 派发；media-elements 539P/0F/24PF。此前同日：**切片 4**——
@@ -417,6 +423,21 @@ clippy 零警告、每切片带单测 + e2e/fixture 资产化（AV1 全流单测
    `webm_sequential_decode_drains_hidden_tail_frames_r3936`。**余**：WPT 播放
    推进用例余面（track-cues-seeking——seek 事件真值化复评；其余 B 组随基础
    设施增量逐件）。
+   **切片 6 落地（2026-09-03 续，media load invoke 重置面——B 组排除件全清）**：
+   扩批 XXII 后 track-active-cues 复评仍 Timeout，dormant 插桩
+   （`__zwPauseWatch` + `ZW_MEDIA_SEEK_DEBUG` runner 门控，验证后移除）定位双
+   根因：① invoke 入口 `_resourceStates[key]` 未重置——settle 幂等门吞掉
+   `src=''` 二次调度的 error 提交；② settle 的 load/error 派发传 handle=null——
+   handle-only（createElement）元素 listener 键恒失配，on\* expando 兜底
+   （`_zwMediaFire`）未接。修复四处（shim part06）：invoke 重置 settle 面 +
+   invoke 步 6 位置重置（currentTime=0 / `_zwMediaTimeKnown` 失效）+ invoke 重置
+   track 子产物 cue（addTextTrack 产物排除）+ settle 的 track/audio/video
+   load|error 派发改 `_zwMediaFire`。track-active-cues 导入（540P/0F/24PF，
+   +1 净涨零回归；单测 `test_media_load_invoke_reset_face_m3xxiii`）。
+   **B 组排除件至此全清**（XX disabled/no-cuechange/remove-active-cue + XXIII
+   track-active-cues）。**余**：WPT 播放推进用例余面（playing-the-media-resource
+   的 play-in-detached-document / loop-from-ended / fragmented-mp4-end——依赖
+   detached 文档播放钟与 loop 面）。
 2. ~~**A/V 同步精化余项**~~ ✅ 2026-09-01 收口：ended 面回归守卫落地
    （切片 F——伴音流末 video player 走到 Ended、泵停）；音频设备面（CpalSink
    真出声）挂 media-audio M1 可选切片。

@@ -4591,3 +4591,102 @@ fn test_media_http_vtt_loading_m3xv() {
         "cue.text 原文 + getCueAsHTML 解码（spec 两面分离）"
     );
 }
+
+#[cfg(feature = "v8")]
+#[test]
+fn test_media_load_invoke_reset_face_m3xxiii() {
+    // media-elements M3 扩批 XXIII：media load 算法 invoke 重置面（spec
+    // dom-media-load / resource selection algorithm——invoke 步「set the current
+    // playback position to 0 ... set readyState to HAVE_NOTHING」+ 失败候选重新
+    // settle 面 + on* IDL handler 派发兜底）。WPT track-active-cues 断言面：
+    // 成功加载后 `video.src=''` → error（code 4 / event.target===video）→
+    // activeCues 清空。
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://wpt.test/t.html".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // ① invoke 重置：成功 settle（about: 失败路径先行 settle error——同 code 4 面）
+    //    后 `src=''` 重新调度 → 失败候选须重新 settle（error 事件 + code 4 + MediaError
+    //    实例），_resourceStates 残留不得使幂等门吞掉（track-active-cues 根因 A）。
+    sandbox
+        .execute(
+            "var v = document.createElement('video');\
+             globalThis.__v = v;\
+             globalThis.__evs = [];\
+             v.onerror = function (e) { globalThis.__evs.push('error:' + String(e.target === v) + ':' + String(v.error && v.error.code)); };\
+             v.setAttribute('src', 'about:blank');",
+        )
+        .unwrap();
+    sandbox.execute("v.src = '';").unwrap();
+    let r1 = sandbox
+        .execute("globalThis.__evs.join('|')")
+        .unwrap();
+    assert_eq!(
+        r1.value, "error:true:4|error:true:4",
+        "src 二次赋值 → 失败候选重新 settle（error 事件 + target 身份 + code 4）"
+    );
+
+    // ② invoke 重置播放位置：成功加载推进后 load() invoke → currentTime 归 0 +
+    //    activeCues headless gate 复位（track-active-cues「unloaded 后无 active cue」面）。
+    sandbox
+        .execute(
+            "var v2 = document.createElement('video');\
+             globalThis.__v2 = v2;\
+             v2.setAttribute('src', 'movie_5.webm');\
+             var tr = document.createElement('track');\
+             tr.setAttribute('src', 'data:text/vtt,WEBVTT%0A%0A1%0A00:00:00.000 --> 00:00:05.000%0ALorem');\
+             tr.setAttribute('default', '');\
+             v2.appendChild(tr);\
+             globalThis.__tt = tr.track;",
+        )
+        .unwrap();
+    // 模拟播放推进已建立媒体时刻（headless 近似 _zwMediaTimeKnown 置位路径）→ currentTime
+    // 手写推进（无真播放钟）；load() invoke 后 readyState HAVE_NOTHING → 时刻面失效。
+    sandbox
+        .execute(
+            "v2.currentTime = 2.0;\
+             void v2.networkState;\
+             v2.load();\
+             globalThis.__afterCt = String(v2.currentTime);",
+        )
+        .unwrap();
+    let r2 = sandbox.execute("globalThis.__afterCt").unwrap();
+    assert_eq!(
+        r2.value, "0",
+        "load() invoke → current playback position 归 0（spec dom-media-load 步 6）"
+    );
+    let r3 = sandbox
+        .execute("String(globalThis.__tt.activeCues === null || globalThis.__tt.activeCues.length === 0)")
+        .unwrap();
+    assert_eq!(
+        r3.value, "true",
+        "invoke 重置后无 active cue（media 时刻面失效——activeCues headless gate）"
+    );
+
+    // ③ on* IDL handler 派发兜底：handle-only 元素 onerror 经 expando 表注册——
+    //    settle 的 error 派发须触发（track-active-cues 根因 B；① 已覆盖视频，此处
+    //    断言 audio 形态 + event.target 身份）。
+    sandbox
+        .execute(
+            "var a = document.createElement('audio');\
+             globalThis.__aTarget = 'unset';\
+             a.onerror = function (e) { globalThis.__aTarget = String(e.target === a); };\
+             a.setAttribute('src', '');",
+        )
+        .unwrap();
+    let r4 = sandbox.execute("globalThis.__aTarget").unwrap();
+    assert_eq!(
+        r4.value, "true",
+        "audio 空 src 失败候选 → onerror IDL handler 触发 + event.target === audio"
+    );
+}

@@ -1,0 +1,34 @@
+{
+  "batch": "M3 扩批 XXIII",
+  "date": "2026-09-03",
+  "topic": "media load invoke 重置面收口——track-active-cues 解除排除",
+  "imported": [
+    "html/semantics/embedded-content/media-elements/track/track-element/track-active-cues.html"
+  ],
+  "root_causes": [
+    "A: _zwMediaScheduleLoad 二次调度未重置 _resourceStates[key]——settle 幂等门吞掉失败候选的 error 提交",
+    "B: handle-only 元素 settle 的 load/error 派发传 handle=null——listener 键失配，on* expando 兜底未接（改 _zwMediaFire）"
+  ],
+  "changes": [
+    "_zwMediaScheduleLoad invoke 入口 delete _resourceStates[key]（spec 资源选择 invoke 重置）",
+    "invoke 步 6：readyState>=1 时 currentTime=0 + _zwMediaTimeKnown=false（HAVE_NOTHING 位置重置）",
+    "invoke 重置 track 子产物 cue（_zwOwnerEl gate；addTextTrack 产物排除）",
+    "settle 的 track/audio/video load|error 派发改 _zwMediaFire（on* expando 兜底）"
+  ],
+  "reverted_wip": "上一 session 的 track settle microtask→macrotask 改动与本三案无关，已回退",
+  "results": {
+    "pass": 540,
+    "fail": 0,
+    "timeout": 0,
+    "precondition_failed": 24,
+    "total": 564,
+    "rate": "95.7%",
+    "net": "+1 零回归"
+  },
+  "unit_test": "test_media_load_invoke_reset_face_m3xxiii",
+  "gates": {
+    "make_test": "18806 passed / 0 failed",
+    "clippy": "-D warnings 零警告（v8 + quickjs）",
+    "fmt": "clean"
+  }
+}

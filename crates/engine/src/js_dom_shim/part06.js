@@ -6887,7 +6887,35 @@
       _zwMediaFire(sel, handle, key, 'timeupdate');
       _zwMediaFire(sel, handle, key, 'pause');
     }
+    // M3 扩批 XXIII：media load 算法 invoke 步 6（spec dom-media-load「set the current
+    // playback position to 0 ... set the readyState attribute to HAVE_NOTHING」）——
+    // 播放位置归零 + 媒体时刻面失效 + 关联文本轨道 cue 清空（spec「further handling of
+    // the track element」加载面随 media load 重置——track-active-cues「unloaded 后无
+    // active cue」断言面：cue@0-5 在位置 0 仍合法 active，清 cue 才为空）。
+    // readyState 0（HAVE_NOTHING）时无位置可复位，跳过（cue 清空照跑——track 资源面
+    // 独立于 video readyState）。
+    if ((ms.readyState | 0) >= 1) {
+      ms.currentTime = 0;
+      ms._zwMediaTimeKnown = false;
+    }
+    try {
+      var _ldiCache = (typeof _textTracksCache !== 'undefined') ? _textTracksCache[key] : null;
+      if (_ldiCache && _ldiCache.tracks) {
+        for (var _ldi = 0; _ldi < _ldiCache.tracks.length; _ldi++) {
+          var _ldiT = _ldiCache.tracks[_ldi];
+          // 仅 track 子产物（_zwOwnerEl 在位）参与重置——addTextTrack 产物无 URL 面，
+          // cue 不随 media load 重置（TextTrack/activeCues「video playing」断言面）。
+          if (_ldiT && _ldiT._zwOwnerEl && typeof _ldiT._zwClearCues === 'function') _ldiT._zwClearCues();
+        }
+      }
+    } catch (_eLdCc) {}
     ms.lastSourceChild = sourceChild || null; // load() 重调度时恢复 source 候选身份
+    // M3 扩批 XXIII：media load invoke 重置既有 settle 面（spec 资源选择算法 invoke
+    // 步「await a stable state」前资源状态归零——track-active-cues 断言面：成功加载
+    // 后 `video.src=''` 的失败候选须重新 settle 并派 error，_resourceStates[key]
+    // 残留使 _zwSettleResourceKey 幂等门误吞）。IDL load()（part03）已先行清——
+    // 此处统一到调度入口，src= setter / setAttribute 路径同语义。
+    try { if (_resourceStates && _resourceStates[key]) delete _resourceStates[key]; } catch (_eRst) {}
     // M3 扩批 XI：load() 纪元——spec dom-media-load「queued tasks and pending events 被
     // 丢弃」——loadstart handler 内的 load() 使本续段余下步骤（候选 error settle）作废
     //（load-removes-queued-error-event 断言 [loadstart, loadstart, error] 序）。
@@ -8196,7 +8224,15 @@
     else if (tag === 'track') eventType = outcome === 'error' ? 'error' : 'load';
     else if ((tag === 'source' || tag === 'audio' || tag === 'video') && outcome === 'error') eventType = 'error';
     if (eventType) {
-      _dispatchWithBubble(key, sel, null, _makeEvent(eventType, { bubbles: false, cancelable: false }));
+      // M3 扩批 XXIII：media/track 元素的 load/error 派发改 _zwMediaFire（listener 未命中
+      // 时 on* IDL handler 兜底——createElement 的 handle-only 元素 onload/onerror 注册于
+      // expando 表，纯 _dispatchWithBubble 不读 expando → handler 永不触发；
+      // track-active-cues 的 video.onerror 断言面）。
+      if (tag === 'track' || tag === 'audio' || tag === 'video' || tag === 'source') {
+        _zwMediaFire(sel, handle, key, eventType);
+      } else {
+        _dispatchWithBubble(key, sel, null, _makeEvent(eventType, { bubbles: false, cancelable: false }));
+      }
     }
     // M2：media 元素资源成功加载 → 派加载事件序列（error 已在上方 error 分支派发）。
     // M3 扩批 XVI：**延后一拍**（setTimeout(0) 媒体任务队列——spec「queue a task to fire

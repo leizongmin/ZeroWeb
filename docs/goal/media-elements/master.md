@@ -2,15 +2,23 @@
 
 **入口文档**: [../media-elements.md](../media-elements.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-03（**M3 扩批 XXII 落地**——B 组排除件复评三案收口：
-march disabled gate（disabled track 跳过 cue 调度 + active 清空——spec
-time-marches-on 步 2）+ march 遍历面统一（addTextTrack 产物纳入——此前 cue
-永不 enter/exit）+ cuechange 派发（per-track 单次异步 + track 元素转发）+
-play() 桥 src 读身份分派（handle 身份走 registry 现值）。track-disabled /
-no-cuechange-before-play / track-remove-active-cue 导入；track-active-cues
-维持排除（EventWatcher 三方竞速窗口，随泵精化复评）。**539P/0F/24PF，
-539/563 = 95.7%**。此前同日：**M3 扩批 XXI**——深结构项 D 组首个收口：
-TextTrackList change 事件广播——TextTrack↔TextTrackList 反向链
+**最后更新**: 2026-09-03（**M3 扩批 XXIII 落地**——media load invoke 重置面收口：
+`_zwMediaScheduleLoad` invoke 入口重置 `_resourceStates[key]`（spec 资源选择 invoke
+步——二次调度失败候选须重新 settle，幂等门不再误吞）+ invoke 步 6 位置重置
+（`readyState>=1` 时 currentTime=0 + `_zwMediaTimeKnown` 失效——spec「set the
+current playback position to 0 ... HAVE_NOTHING」）+ invoke 重置 track 子产物 cue
+（addTextTrack 产物排除——无 URL 面不随 media load 重置）+ settle 的 media/track
+元素 load/error 派发改 `_zwMediaFire`（handle-only 元素 on\* expando handler 兜底——
+此前 `_dispatchWithBubble` 传 handle=null 致 listener 键恒失配）。track-active-cues
+导入（B 组末件解除排除）。**540P/0F/24PF，540/564 = 95.7%**。此前同日：
+**M3 扩批 XXII**——B 组排除件复评三案收口：march disabled gate（disabled track
+跳过 cue 调度 + active 清空——spec time-marches-on 步 2）+ march 遍历面统一
+（addTextTrack 产物纳入——此前 cue 永不 enter/exit）+ cuechange 派发（per-track
+单次异步 + track 元素转发）+ play() 桥 src 读身份分派（handle 身份走 registry
+现值）。track-disabled / no-cuechange-before-play / track-remove-active-cue 导入。
+**539P/0F/24PF，539/563 = 95.7%**。此前同日：
+**M3 扩批 XXI**——深结构项 D 组首个收口：TextTrackList change 事件广播——
+TextTrack↔TextTrackList 反向链
 （`_zwOwnerList` 三处回填）+ addTextTrack 即时建 list（spec：track 创建即属于
 media 元素 track 列表；上游用例 mode setter 先于 textTracks 首读的时序依赖）+
 mode 有效值变更异步派基础 Event('change')（无 track 属性/target=list/同值不派）。
@@ -433,6 +441,38 @@ already-playing resolved 断言。**88.3%**（324P/0F/2T/41PF，+80 subtest 全�
   观察时序（当前泵粒度下 exit 与 paused 翻转存在同 tick 交错）。两者根因已
   记录，随泵节拍精化 + seek 面深化复评。
 
+**M3 扩批 XXIII 已落地（2026-09-03 续，media load invoke 重置面——B 组末件
+track-active-cues 解除排除）**：
+- **根因定位**（dormant 插桩 `__zwPauseWatch` + `ZW_MEDIA_SEEK_DEBUG` runner 门控
+  实证，验证后移除）：扩批 XXII 后复评仍 Timeout——`eventCount==3` 置 `src=''`
+  后见 LOAD-INVOKE-STOP 而 settle-dispatch video error 缺席。两个独立根因相互
+  掩蔽：**A** `_zwMediaScheduleLoad` 二次调度未重置 `_resourceStates[key]`——
+  settle 幂等门「每资源只 settle 一次」吞掉失败候选的 error 提交（`delete` 只在
+  IDL load() 与 src 移除分支存在）；**B** settle 的 load/error 派发传
+  `_dispatchWithBubble(key, sel, null, ev)`——handle-only（createElement）元素
+  listener 键恒失配 0 命中，`_zwMediaFire` 的 on\* expando 兜底才是唯一可达通路
+  而 settle 未走它。
+- **实施**（shim part06）：① invoke 入口 `delete _resourceStates[key]`（spec
+  资源选择 invoke 步「await a stable state」前资源状态归零；IDL load() 已先行
+  清——统一到调度入口，src= setter / setAttribute 路径同语义）；② invoke 步 6
+  位置重置——`readyState>=1` 时 `currentTime=0` + `_zwMediaTimeKnown=false`
+  （spec「set the current playback position to 0 ... HAVE_NOTHING」；activeCues
+  headless gate 复位）；③ invoke 重置 track 子产物 cue（`_textTracksCache[key]`
+  中 `_zwOwnerEl` 在位者 `_zwClearCues()`——cue@0-5 在位置 0 仍合法 active，须清
+  cue 才空；**addTextTrack 产物排除**——无 URL 面不随 media load 重置，
+  TextTrack/activeCues「video playing」断言面零回归约束）；④ settle 的
+  track/audio/video load|error 派发改 `_zwMediaFire`（img/source 等其余 tag 保持
+  原路径——source 的 error 派在 source 元素上由 sourceChild 分支自理）。
+- **WIP 清理**：上一 session 限额中断前试推的 track settle 续段
+  microtask→macrotask 改动经归因与本三案无关（根因 A/B 均在 media 面），已回退
+  原 queueMicrotask 模型。
+- **导入**：track-active-cues（+1P；FILTER 单跑 3 连跑稳定）。testharness-media
+  **540P/0F/24PF（540/564 = 95.7%）**（+1 净涨零回归）。
+- 单测 `test_media_load_invoke_reset_face_m3xxiii`（invoke 重置复 settle error
+  面 + 位置归零/activeCues 清空面 + audio onerror expando 兜底面，3 断言组）。
+  make test 66 套件 18806/0。evidence：
+  `evidence/2026-09-03-media-load-invoke-reset-r39xx.md`（+同名 .json）。
+
 **M3 扩批 XXI 已落地（2026-09-03 续，TextTrackList change 广播——D 组首个收口）**：
 - **实施**：① 反向链回填三处（`_zwSyncTextTracksFromChildren` holder 同步段 /
   textTracks getter list 首建处 / addTextTrack）——`track._zwOwnerList = list`；
@@ -578,7 +618,7 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
 
 | # | 缺口 | 状态 | 失败聚类 |
 |---|------|------|----------|
-| M1g | WPT media-elements 用例覆盖 | ✅ 143 用例已导入（136 + 扩批 XVI/XVII/XIX/XX/XXI：播放推进族 6 件 + track-change-event——深结构 D 组首个收口），**95.7%**（536/560） | — |
+| M1g | WPT media-elements 用例覆盖 | ✅ 144 用例已导入（136 + 扩批 XVI/XVII/XIX/XX/XXI/XXIII：播放推进族 6 件 + track-change-event + track-active-cues——B 组末件解除排除），**95.7%**（540/564） | — |
 | M2g | load 算法 + 状态机（事件序列派发） | ✅ M2 落地（13T→**0T**） | F4 闭合 |
 | M3g | 事件序列 headless 近似驱动 | ✅（同 M2g；source-child 触发已落地） | F4 闭合 |
 | M4g-a | 媒体元数据 IDL 反射（初值面） | ✅ 切片 3 落地 | F2 闭合（-9 Fail） |
@@ -594,12 +634,14 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
 ## 下一步计划
 
 1. **扩大导入面（余面收口）**：track-cues-* 播放推进族全件已导入（扩批 XX
-   seeking 兑现——HAVE_NOTHING 挂起 seek 语义）。playing-the-media-resource
+   seeking 兑现——HAVE_NOTHING 挂起 seek 语义）+ B 组排除件全清（扩批 XXII
+   disabled/no-cuechange/remove-active-cue 三案 + 扩批 XXIII track-active-cues
+   末件——load invoke 重置面收口）。playing-the-media-resource
    剩余（play-in-detached-document——需 detached 文档播放时钟推进，依赖兄弟目标
    media-playback 播放钟接语义层；loop-from-ended.tentative / fragmented-mp4-end
    同域）；the-video-element 反射余面（video-loading-* preload 语义族——视
-   lazy-loading 支撑面）。**headless 可导入面已在 95.7% 重饱和（M3 扩批 XX 后
-   第五次修正）**——余下增量依赖兄弟目标解锁（真播放钟 → time-marches-on 余面
+   lazy-loading 支撑面）。**headless 可导入面已在 95.7% 重饱和（M3 扩批 XXIII 后
+   第六次修正）**——余下增量依赖兄弟目标解锁（真播放钟 → time-marches-on 余面
    / loop-from-ended / fragmented-mp4-end）
    + 深结构项（~~TextTrackList change 事件广播反向链~~ ✅ 扩批 XXI 兑现、
    cue 标记树解析——归渲染域远期）。
@@ -665,6 +707,10 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
   **535/559 = 95.7%**（+1 净涨零回归；Fail 0 / Timeout 0 / PF 24）
   → 扩批 XXI（2026-09-03，TextTrackList change 广播——track-change-event 导入）
   **536/560 = 95.7%**（+1 净涨零回归；Fail 0 / Timeout 0 / PF 24）
+  → 扩批 XXII（2026-09-03，disabled gate + march 遍历统一 + cuechange——三案导入）
+  **539/563 = 95.7%**（+3 净涨零回归；Fail 0 / Timeout 0 / PF 24）
+  → 扩批 XXIII（2026-09-03，media load invoke 重置面——track-active-cues 导入）
+  **540/564 = 95.7%**（+1 净涨零回归；Fail 0 / Timeout 0 / PF 24）
 - 入口：`make testharness-media`（FILTER 透传，`--json` 捕获 evidence）
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过
 - evidence：`evidence/2026-08-31-media-baseline.md`（+ 同名 .json 机读版）、
@@ -678,4 +724,5 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
   `evidence/2026-09-03-media-eof-drain-r3936.md`（+同名 .json）、
   `evidence/2026-09-03-media-deferred-seek-r3937.md`（+同名 .json）、
   `evidence/2026-09-03-media-change-event-r39xx.md`（+同名 .json）、
-  `evidence/2026-09-03-media-b-group-revisit-r39xx.md`（+同名 .json）
+  `evidence/2026-09-03-media-b-group-revisit-r39xx.md`（+同名 .json）、
+  `evidence/2026-09-03-media-load-invoke-reset-r39xx.md`（+同名 .json）

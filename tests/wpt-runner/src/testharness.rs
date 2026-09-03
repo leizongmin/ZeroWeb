@@ -1463,6 +1463,12 @@ pub const MEDIA_TEST_FILES: &[&str] = &[
     "html/semantics/embedded-content/media-elements/track/track-element/track-disabled.html",
     "html/semantics/embedded-content/media-elements/track/track-element/no-cuechange-before-play.html",
     "html/semantics/embedded-content/media-elements/track/track-element/track-remove-active-cue.html",
+    // M3 扩批 XXIII（2026-09-03）：load invoke 重置面收口——media load 算法 invoke 步 6
+    // （spec：current playback position 归 0 + readyState HAVE_NOTHING）+ settle 前
+    // _resourceStates 残留清除 + settle 的 media/track 元素 load/error 派发改
+    // _zwMediaFire（handle-only 元素 on* expando handler 兜底）。track-active-cues 导入
+    //（error 后 activeCues 清空 + video.onerror 断言面）。
+    "html/semantics/embedded-content/media-elements/track/track-element/track-active-cues.html",
     // M3 扩批 XX（2026-09-03）：HAVE_NOTHING 期 seek 挂起语义（spec「default playback
     // start position」）——currentTime setter readyState 0 时挂 _zwSeekDeferred，
     // _zwMediaLoadSequence readyState 0→1 翻转时补跑 seek 算法（seeking + seeked
@@ -1480,8 +1486,11 @@ pub const MEDIA_TEST_FILES: &[&str] = &[
     "html/semantics/embedded-content/media-elements/track/track-element/track-cues-sorted-before-dispatch.html",
     // 不导入（B 组——依赖真播放钟推进 time-marches-on/cue enter/exit/cuechange/
     // activeCues 变化，随 media-playback 泵接语义层后复评）：track-cues-* 全族、
-    // track-active-cues、no-cuechange-before-play、track-remove-active-cue、
+    // no-cuechange-before-play、track-remove-active-cue、
     // track-change-event（深结构：TextTrackList↔TextTrack 反向链）。
+    // （扩批 XXI/XXII/XXIII 更新：change 广播已落地、disabled gate/cuechange 派发/
+    // activeCues 面已落地——track-change-event、track-disabled、no-cuechange-
+    // before-play、track-remove-active-cue、track-active-cues 均已解除排除导入。）
     // 不导入（C 组——cue 视觉渲染/布局，渲染域远期）：track-cue-rendering-*、
     // track-css-cue-pseudo-class、track-webvtt-*positioning/layout、track-cue-inline。
     // 不导入（D 组——深结构/契约冲突，单独评估）：track-mode-triggers-loading
