@@ -439,11 +439,11 @@ fn r3912_explicit_height_not_rederived_from_clamped_width() {
     );
 }
 
-/// R3912 守卫：带 element 子盒的 width 侧跳过——保持 taffy aspect_ratio 既有行为
-///（043 基线即 1.05% fail：csswg #6071 content-minimum 撑开语义未实现，属后续域；
-/// 本测试锚定 skip-gate 使该场景行为与 R3912 前逐字节一致，防误预设 transferred 50）。
+/// R3994（css-sizing-4 §4.1/§4.2）：带 element 子盒的 width 侧——transferred 宽
+/// **不钳** content-based minimum（043 assert）。子 definite Px 宽 100 > transferred 50
+/// → 宽 100（R3912 首版的 skip gate 已被语义实现取代；旧锚定 50 的测试随 043 翻绿废止）。
 #[test]
-fn r3912_width_side_with_element_child_skipped() {
+fn r3994_width_side_transferred_does_not_clamp_content_minimum() {
     use zero_css_parser::values::LengthValue;
 
     let mut doc = zero_dom::Document::new();
@@ -465,18 +465,27 @@ fn r3912_width_side_with_element_child_skipped() {
     s.height = LengthValue::Px(200.0);
     s.max_height = LengthValue::Px(100.0);
     s.aspect_ratio = Some(0.5);
+    // default ComputedStyle 的 border_width = medium Px(3)——清零使 border-box = content-box。
+    s.border_top_width = LengthValue::Px(0.0);
+    s.border_right_width = LengthValue::Px(0.0);
+    s.border_bottom_width = LengthValue::Px(0.0);
+    s.border_left_width = LengthValue::Px(0.0);
     styles.insert(div, s);
     let mut cs = zero_style_system::ComputedStyle::default();
     cs.display = zero_css_parser::values::DisplayValue::Block;
     cs.width = LengthValue::Px(100.0);
+    cs.border_top_width = LengthValue::Px(0.0);
+    cs.border_right_width = LengthValue::Px(0.0);
+    cs.border_bottom_width = LengthValue::Px(0.0);
+    cs.border_left_width = LengthValue::Px(0.0);
     styles.insert(child, cs);
 
     let result = crate::LayoutEngine::new(800.0, 600.0).compute(&doc, &styles);
     let layout = find_box(&result.root, div).expect("div LayoutBox");
-    // 跳过预设 → taffy aspect_ratio 既有行为（043 基线同值：宽 50 = 100×0.5）。
+    // 子 min-content 贡献 100（content 100 + 清零 frame）> transferred 50 → 宽 100。
     assert!(
-        (layout.width - 50.0).abs() < 0.5,
-        "skip gate must preserve taffy ratio path width 50 (baseline parity), got {}",
+        (layout.width - 100.0).abs() < 0.5,
+        "transferred width must not clamp content-based minimum (expect 100), got {}",
         layout.width
     );
 }

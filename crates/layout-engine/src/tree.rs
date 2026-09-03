@@ -1856,17 +1856,40 @@ fn build_subtree(
                     taffy_style.size.height = taffy::style::Dimension::length((content_w / ratio) as f32);
                 }
                 (w, LengthValue::Px(h)) if *h > 0.0 && is_auto(w) => {
-                    // width 侧：有 element 子盒时跳过（content-based minimum 可能大于
-                    // transferred——043 宽 100 子盒应撑开父宽，预设 50 会塌）。
-                    let has_element_child = doc
+                    // width 侧：transferred = 钳后 h × ratio；**automatic content minimum
+                    // 不被 transferred 钳**（css-sizing-4 §4.1/043 assert「The transferred
+                    // maximum width does not clamp the automatic content-based minimum
+                    // width」）——in-flow 块级子的 definite Px content 宽是其 min-content
+                    // 贡献的常见形态（043/015：子宽 100 → 宽 100；无块级子时纯 transferred）。
+                    // 旧实现遇 element 子整体跳过（taffy ar 路径宽 50 塌，015/043 1.05%）。
+                    let content_min_child = doc
                         .child_nodes(dom_id)
                         .iter()
-                        .any(|&c| doc.get(c).is_some_and(|n| matches!(&n.kind, NodeKind::Element(_))));
-                    if !has_element_child {
-                        let content_h = clamp_dim(*h, &computed.min_height, &computed.max_height);
-                        taffy_style.aspect_ratio = None;
-                        taffy_style.size.width = taffy::style::Dimension::length((content_h * ratio) as f32);
-                    }
+                        .filter_map(|&c| {
+                            let cs = styles.get(&c)?;
+                            if !matches!(cs.display, DisplayValue::Block | DisplayValue::FlowRoot)
+                                || !matches!(cs.width, LengthValue::Px(v) if v > 0.0)
+                                || !matches!(cs.position, PositionValue::Static)
+                            {
+                                return None;
+                            }
+                            match &cs.width {
+                                LengthValue::Px(v) => {
+                                    let frame = resolve_tree_definite_real_length(&cs.padding_left, cs).unwrap_or(0.0)
+                                        + resolve_tree_definite_real_length(&cs.padding_right, cs).unwrap_or(0.0)
+                                        + resolve_tree_definite_real_length(&cs.border_left_width, cs).unwrap_or(0.0)
+                                        + resolve_tree_definite_real_length(&cs.border_right_width, cs).unwrap_or(0.0);
+                                    Some(*v as f32 + frame)
+                                }
+                                _ => None,
+                            }
+                        })
+                        .fold(0.0_f32, f32::max);
+                    let content_h = clamp_dim(*h, &computed.min_height, &computed.max_height);
+                    let transferred = (content_h * ratio) as f32;
+                    taffy_style.aspect_ratio = None;
+                    taffy_style.size.width =
+                        taffy::style::Dimension::length(transferred.max(content_min_child).max(0.5));
                 }
                 _ => {}
             }

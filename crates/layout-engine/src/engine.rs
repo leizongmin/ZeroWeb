@@ -691,6 +691,13 @@ impl LayoutEngine {
         // 之后（float 位置已定）自底向上重算。
         exclude_floats_from_non_bfc_auto_height(&mut root_box, styles);
 
+        // 5.2b 后处理（R3994，css-sizing-4 §4.2 transferred size）：plain block 的
+        // aspect-ratio 双 auto 传递——taffy block 布局无 auto→auto 比传递（019 塌 0），
+        // 布局期 pass 又无最终宽度（floats-aspect-ratio-001 的 BFC 避让收缩在 step 5a）。
+        // 本 pass 在 float 定位/收缩后按**最终 content 宽**传高（传递值与内容高取大）。
+        // kill-switch `ZW_AR_TRANSFER=0`（default-on）。
+        crate::aspect_ratio_transfer::transfer_aspect_ratio_height(&mut root_box, styles);
+
         // 5.2a 后处理（R1319 §8.3.1 containment 兄弟位移）：clearance containment 已把
         // cleared 元素的 trailing collapse-through 链含入其 content_height，但 taffy 此前已
         // 按「泄漏的 mb」定位后续兄弟（偏低）。位移后续兄弟 + 祖先缩高（delta 传播）。

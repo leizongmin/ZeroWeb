@@ -764,6 +764,9 @@ impl LayoutEngine {
                 DisplayValue::Flex | DisplayValue::InlineFlex | DisplayValue::Grid | DisplayValue::InlineGrid
             );
             // 仅 ar + main/cross 均 Auto 的容器（taffy 失败案）；非替换（替换走固有尺寸路径）。
+            // R3994 注：plain block 的传递改由 postprocess `transfer_aspect_ratio_height`
+            // 在**最终宽度**上做（first-pass 宽度未含 float 避让/BFC 收缩，floats-aspect-ratio-001
+            // 会传 200 而非避让后 40）。
             if is_flex_grid
                 && !b.is_replaced
                 && let Some(ratio) = style.aspect_ratio.filter(|&r| r > 0.0)
