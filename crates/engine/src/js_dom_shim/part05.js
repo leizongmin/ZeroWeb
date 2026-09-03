@@ -79,6 +79,13 @@
               }
               // spec seek：媒体可 seek（headless：已加载 readyState>=1）→ seeking=true +
               // 派 seeking，随后 seeked 异步回落（setTimeout 队列，runner/沙箱均可触发）。
+              // HAVE_NOTHING（readyState 0）时的 seek：spec「seek」步 1「If the media
+              // element's readyState is HAVE_NOTHING, set the default playback start
+              // position to that time」——seek 不立即跑，但元数据就绪后从该位置起播。
+              // Chromium 可观察语义：seeking/seeked 在 loadedmetadata 后照常派发
+              //（track-cues-seeking 的 track.onload 内 currentTime=0.5 → onseeked
+              // 计数链依赖此面）。实现：挂 pending seek 标记，_zwMediaLoadSequence
+              // readyState 0→1 翻转时补跑 seek 算法（下方 _zwSeekRun）。
               if ((_mst.readyState | 0) >= 1) {
                 _mst.seeking = true;
                 _mediaFireSel(sel, handle, key, 'seeking');
@@ -96,6 +103,11 @@
                 };
                 if (typeof setTimeout === 'function') setTimeout(_stSeeked, 0);
                 else _stSeeked();
+              } else {
+                // R3937：HAVE_NOTHING 期 seek → 挂起至元数据就绪（seeked 计数链，
+                // track-cues-seeking 断言面；「default playback start position」语义
+                // ——_mediaState.currentTime 已由 setter 写入，起播位置即该值）。
+                _mst._zwSeekDeferred = true;
               }
             }
           }

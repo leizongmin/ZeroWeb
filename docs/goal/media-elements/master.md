@@ -2,12 +2,16 @@
 
 **入口文档**: [../media-elements.md](../media-elements.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-03（**M3 扩批 XIX 落地**——解码器 EOF 排空缺陷修复 +
+**最后更新**: 2026-09-03（**M3 扩批 XX 落地**——HAVE_NOTHING 期 seek 挂起
+语义：currentTime setter readyState 0 时挂 `_zwSeekDeferred`，
+`_zwMediaLoadSequence` readyState 0→1 翻转时补跑 seek 算法（seeking + seeked
+异步回落 + cue active 面同步）——spec「default playback start position」；
+track-cues-seeking 导入。**535P/0F/24PF，535/559 = 95.7%**（+1 净涨零回归）。
+此前同日：**M3 扩批 XIX**——解码器 EOF 排空缺陷修复 +
 track-cues-enter-exit / pause-on-exit 导入：zero-media `next_frame` draining
 中间态（demux 尽后排空隐藏帧滞后队列才报流末）+ player `present_pending`
 未来帧 `un_read` 退回 + march pauseOnExit 暂停先于 exit 派发 + pending seek
-补推路径补 seekSync。**534P/0F/24PF，534/558 = 95.7%**（+3 净涨零回归；
-track-cues 5 用例 4 连跑稳定）。此前同日：**M3 扩批 XVI+XVII+XVIII**——
+补推路径补 seekSync（534P/0F/24PF；track-cues 5 用例 4 连跑稳定）。此前同日：**M3 扩批 XVI+XVII+XVIII**——
 track-cues-* 播放推进族解锁：fixture-mounted runner 播放桥前置 + 逐 tick
 动态源登记 + MediaSourceProvider 按需补登记 + time-marches-on 区间捕获/
 事件时间序/ended 面 + play() 桥 latest-wins 读/退避重试/pending seek 补推 +
@@ -416,6 +420,24 @@ already-playing resolved 断言。**88.3%**（324P/0F/2T/41PF，+80 subtest 全�
   观察时序（当前泵粒度下 exit 与 paused 翻转存在同 tick 交错）。两者根因已
   记录，随泵节拍精化 + seek 面深化复评。
 
+**M3 扩批 XX 已落地（2026-09-03 续，HAVE_NOTHING 期 seek 挂起语义）**：
+- **根因**：track-cues-seeking（onseeked 计数链 + activeCues 递增断言）Timeout
+  ——track.onload 内 `video.src=` → `currentTime=0.5` 立即执行，动态 src 的
+  settle 尚未跑（readyState 0），currentTime setter 的 seek 门（`>=1`）关闭 →
+  seeking/seeked 永不派发 → onseeked 永不 → done 永不。旧实现静默丢弃。
+- **spec 语义**（seek 步 1）：HAVE_NOTHING 期 seek 不立即跑，但「set the
+  default playback start position」——元数据就绪后从该位置起播；Chromium
+  可观察面：seeking/seeked 在 loadedmetadata 后照常派发。
+- **修复**：part05 setter readyState 0 时挂 `_zwSeekDeferred`（值已写入
+  `_mediaState.currentTime`——起播位置即该值）；part06 `_zwMediaLoadSequence`
+  的 `readyState = 1` 翻转处消费标记补跑 seek 算法（seeking + seeked 异步
+  回落 + seekSync cue active 面），幂等单次。
+- **导入**：track-cues-seeking（+1P）。testharness-media **535P/0F/24PF
+  （535/559 = 95.7%）**；track-cues 6 用例 3 连跑稳定；关联面回归确认
+  （event_* 116P / resource-selection 23P / networkState 10P / currentTime 3P；
+  engine 2572 全绿）。evidence：
+  `evidence/2026-09-03-media-deferred-seek-r3937.md`（+同名 .json）。
+
 **M3 扩批 XIX 已落地（2026-09-03 续，解码器 EOF 排空缺陷修复——enter-exit
 解除排除的正题）**：
 - **背景**：XVIII 的 enter-exit 维持排除（宿主观察：march 正常推进但 cue1 enter
@@ -528,7 +550,7 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
 
 | # | 缺口 | 状态 | 失败聚类 |
 |---|------|------|----------|
-| M1g | WPT media-elements 用例覆盖 | ✅ 141 用例已导入（136 + 扩批 XVI/XVII/XIX：track-cues-enter-seeking / missed / sorted-before-dispatch / enter-exit / pause-on-exit——播放推进族），**95.7%**（534/558） | — |
+| M1g | WPT media-elements 用例覆盖 | ✅ 142 用例已导入（136 + 扩批 XVI/XVII/XIX/XX：track-cues-enter-seeking / missed / sorted-before-dispatch / enter-exit / pause-on-exit / seeking——播放推进族），**95.7%**（535/559） | — |
 | M2g | load 算法 + 状态机（事件序列派发） | ✅ M2 落地（13T→**0T**） | F4 闭合 |
 | M3g | 事件序列 headless 近似驱动 | ✅（同 M2g；source-child 触发已落地） | F4 闭合 |
 | M4g-a | 媒体元数据 IDL 反射（初值面） | ✅ 切片 3 落地 | F2 闭合（-9 Fail） |
@@ -543,15 +565,14 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
 
 ## 下一步计划
 
-1. **扩大导入面（余面收口）**：track-cues-* 播放推进族余件——
-   track-cues-seeking（activeCues 递增断言，依赖 seek 事件真值化）维持排除
-   随 seek 面深化复评；add-new-track 上游 404 已不存在。playing-the-media-resource
+1. **扩大导入面（余面收口）**：track-cues-* 播放推进族全件已导入（扩批 XX
+   seeking 兑现——HAVE_NOTHING 挂起 seek 语义）。playing-the-media-resource
    剩余（play-in-detached-document——需 detached 文档播放时钟推进，依赖兄弟目标
    media-playback 播放钟接语义层；loop-from-ended.tentative / fragmented-mp4-end
    同域）；the-video-element 反射余面（video-loading-* preload 语义族——视
-   lazy-loading 支撑面）。**headless 可导入面已在 95.7% 重饱和（M3 扩批 XIX 后
-   第四次修正）**——余下增量依赖兄弟目标解锁（真播放钟 → track-cues-seeking /
-   time-marches-on 余面）
+   lazy-loading 支撑面）。**headless 可导入面已在 95.7% 重饱和（M3 扩批 XX 后
+   第五次修正）**——余下增量依赖兄弟目标解锁（真播放钟 → time-marches-on 余面
+   / loop-from-ended / fragmented-mp4-end）
    + 深结构项（TextTrackList change 事件广播反向链、cue 标记树解析）。
 2. ~~**M4g-d**：canPlayType 能力表联动更新~~ ✅ 2026-09-01 兑现（能力表真值化——
    后续新增解码面（AV1/H.264，media-playback M3）时同步扩表）。
@@ -611,6 +632,8 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
   按需补登记 + march 区间基线修正）**532/556 = 95.7%**
   → 扩批 XIX（2026-09-03，解码器 EOF 排空缺陷修复——enter-exit + pause-on-exit
   导入）**534/558 = 95.7%**（+3 净涨零回归；Fail 0 / Timeout 0 / PF 24）
+  → 扩批 XX（2026-09-03，HAVE_NOTHING 期 seek 挂起语义——seeking 导入）
+  **535/559 = 95.7%**（+1 净涨零回归；Fail 0 / Timeout 0 / PF 24）
 - 入口：`make testharness-media`（FILTER 透传，`--json` 捕获 evidence）
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过
 - evidence：`evidence/2026-08-31-media-baseline.md`（+ 同名 .json 机读版）、
@@ -621,4 +644,5 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
   `evidence/2026-09-02-media-texttrack-family.json`、`evidence/2026-09-02-media-cue-options.json`、
   `evidence/2026-09-02-media-pause-removal-variants.json`、`evidence/2026-09-02-media-http-vtt.json`、
   `evidence/2026-09-03-media-cues-playback.json`、
-  `evidence/2026-09-03-media-eof-drain-r3936.md`（+同名 .json）
+  `evidence/2026-09-03-media-eof-drain-r3936.md`（+同名 .json）、
+  `evidence/2026-09-03-media-deferred-seek-r3937.md`（+同名 .json）

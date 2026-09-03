@@ -2,7 +2,11 @@
 
 **入口文档**: [../media-playback.md](../media-playback.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-03（**M3 fixture-mounted runner 播放面切片 3 落地**——
+**最后更新**: 2026-09-03（**M3 fixture-mounted runner 播放面切片 4 落地**——
+HAVE_NOTHING 期 seek 挂起语义：currentTime setter readyState 0 时挂
+`_zwSeekDeferred`，`_zwMediaLoadSequence` readyState 0→1 翻转时补跑 seek 算法
+（spec「default playback start position」）；track-cues-seeking 导入；media-elements
+535P/0F/24PF。此前同日：**M3 fixture-mounted runner 播放面切片 3 落地**——
 解码器 EOF 排空缺陷修复：`VideoDecoder::next_frame` draining 中间态（demux 尽后
 排空 hidden/alt-ref 帧滞后队列才报流末）+ `VideoPlayer::present_pending` 未来帧
 `un_read` 队首退回——此前 position < duration 即提前 Ended（fixture-mounted

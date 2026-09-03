@@ -6782,6 +6782,27 @@
     _zwMediaFire(sel, handle, key, 'loadstart');
     _zwMediaFire(sel, handle, key, 'progress');
     ms.readyState = 1;
+    // R3937：HAVE_NOTHING 期挂起的 seek → 元数据就绪即补跑 seek 算法（seeking +
+    // seeked 异步回落 + cue active 面同步；track-cues-seeking 的 onseeked 计数链）。
+    // 幂等：_zwSeekDeferred 单次消费。
+    if (ms._zwSeekDeferred) {
+      delete ms._zwSeekDeferred;
+      ms.seeking = true;
+      _zwMediaFire(sel, handle, key, 'seeking');
+      _zwMediaFire(sel, handle, key, 'timeupdate');
+      var _deferredSeeked = function () {
+        var _dsMs = _mediaState[key];
+        if (!_dsMs) return;
+        _dsMs.seeking = false;
+        _zwMediaFire(sel, handle, key, 'timeupdate');
+        _zwMediaFire(sel, handle, key, 'seeked');
+        if (typeof globalThis._zwMediaSeekSync === 'function') {
+          try { globalThis._zwMediaSeekSync(key); } catch (_eDfSk) {}
+        }
+      };
+      if (typeof setTimeout === 'function') setTimeout(_deferredSeeked, 0);
+      else _deferredSeeked();
+    }
     // media-playback M2a：容器时长真值优先（宿主解码器头部读取，经 _resourceStates
     // .durationMs 传入）；无真值（非 webm/探针失败）回落 headless 定值 600（无真解码；
     // 用例只断言可写/类型面）。

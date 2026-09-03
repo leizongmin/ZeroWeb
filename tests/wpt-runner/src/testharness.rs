@@ -1450,6 +1450,11 @@ pub const MEDIA_TEST_FILES: &[&str] = &[
     // 播放桥 + 泵 + time-marches-on/seek sync 就绪后解锁）。movie_5.webm（VP9+Opus 5s）
     // 为媒体源；cue enter/exit 由桥真值钟驱动（runner 泵每 tick 调 _zwMediaTimeMarchesOn）。
     "html/semantics/embedded-content/media-elements/track/track-element/track-cues-enter-seeking.html",
+    // M3 扩批 XX（2026-09-03）：HAVE_NOTHING 期 seek 挂起语义（spec「default playback
+    // start position」）——currentTime setter readyState 0 时挂 _zwSeekDeferred，
+    // _zwMediaLoadSequence readyState 0→1 翻转时补跑 seek 算法（seeking + seeked
+    // 异步回落 + cue active 面同步）。track-cues-seeking 的 onseeked 计数链解锁。
+    "html/semantics/embedded-content/media-elements/track/track-element/track-cues-seeking.html",
     // M3 扩批 XIX（2026-09-03）：track-cues-* 播放推进族续批——解码器 EOF 排空
     // 缺陷修复（zero-media decode.rs：demux 尽后解码器残余帧经 drain_frame 排空 +
     // player present_pending 未来帧退回 un_read——此前 position < duration 即提前
@@ -1459,12 +1464,6 @@ pub const MEDIA_TEST_FILES: &[&str] = &[
     "html/semantics/embedded-content/media-elements/track/track-element/track-cues-enter-exit.html",
     "html/semantics/embedded-content/media-elements/track/track-element/track-cues-pause-on-exit.html",
     "html/semantics/embedded-content/media-elements/track/track-element/track-cues-missed.html",
-    // track-cues-seeking 评估后**维持不导入**：上游断言 video.onseeked 每次回调里
-    // `video.currentTime === seekedCount * 0.5`（0.5s 逐次 seek 链）——依赖宿主
-    // seek 的同步 currentTime 落位 + seeked 事件按真实 seek 序计数；当前
-    // fixture-mounted 泵的 seeked 时序由 headless timer 承载，连续 4 次 seek 的
-    // 计数窗口与 activeCues.length 断言（seekedCount-1）无法稳定对齐。随 seek 面
-    // 深化（seek 真值事件化）复评。
     "html/semantics/embedded-content/media-elements/track/track-element/track-cues-sorted-before-dispatch.html",
     // 不导入（B 组——依赖真播放钟推进 time-marches-on/cue enter/exit/cuechange/
     // activeCues 变化，随 media-playback 泵接语义层后复评）：track-cues-* 全族、
