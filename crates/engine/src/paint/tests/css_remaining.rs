@@ -460,12 +460,23 @@ fn test_all_indicators_combined() {
     assert!(painter.primitives().fills.len() >= 10);
 }
 
+/// ZW_INLINE_SVG_PAINT 是进程级 env——svg paint 的 env 断言测试须互斥执行
+///（cargo test 默认多线程，并发 set_var/remove_var 会污染彼此断言）。
+static SVG_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+pub(crate) fn svg_env_lock() -> std::sync::MutexGuard<'static, ()> {
+    match SVG_ENV_LOCK.lock() {
+        Ok(g) => g,
+        Err(poisoned) => poisoned.into_inner(),
+    }
+}
+
 /// R3933（CSS2 replaced elements + SVG2）：inline `<svg>` paint 栅格化。
 /// kill-switch `ZW_INLINE_SVG_PAINT=1` 激活后：svg 元素产 ImagePrimitive +
 /// canvas_images 像素（canvas 同款两段式通路）；默认关（svg transform/viewport
 /// 语义切片前 102 案双白假绿 unmask 域）。
 #[test]
 fn r3933_inline_svg_paint_rasterizes_under_kill_switch() {
+    let _env_guard = svg_env_lock();
     let html = r#"<html><body style="margin:0"><div style="position: relative; width: 200px; height: 100px;"><svg width="100" height="50" xmlns="http://www.w3.org/2000/svg" style="position: absolute; left: 0; top: 0; width: 100px; height: 50px;"><rect width="100" height="50" fill="blue"/></svg></div></body></html>"#;
     let doc = zero_dom::parse_html(html);
     let svg_id = doc
@@ -491,7 +502,7 @@ fn r3933_inline_svg_paint_rasterizes_under_kill_switch() {
     // 默认关：无图元。
     let mut painter = Painter::new();
     let style = ComputedStyle::default();
-    painter.paint_svg_element(box_node, 0.0, 0.0, &doc);
+    painter.paint_svg_element(box_node, 0.0, 0.0, &doc, &styles);
     assert_eq!(painter.primitives().images.len(), 0, "默认关应无 svg 图元");
     assert!(painter.canvas_images.is_empty(), "默认关应无像素注入");
 
@@ -500,7 +511,7 @@ fn r3933_inline_svg_paint_rasterizes_under_kill_switch() {
     // 2024 edition 起 set_var/remove_var 为 unsafe。
     unsafe { std::env::set_var("ZW_INLINE_SVG_PAINT", "1") };
     let mut painter_on = Painter::new();
-    painter_on.paint_svg_element(box_node, 0.0, 0.0, &doc);
+    painter_on.paint_svg_element(box_node, 0.0, 0.0, &doc, &styles);
     unsafe { std::env::remove_var("ZW_INLINE_SVG_PAINT") };
     assert_eq!(painter_on.primitives().images.len(), 1, "开关开应有 1 个 svg 图元");
     assert_eq!(painter_on.canvas_images.len(), 1, "canvas_images 应携带栅格化像素");
@@ -508,4 +519,64 @@ fn r3933_inline_svg_paint_rasterizes_under_kill_switch() {
     assert_eq!((*w, *h), (100, 50), "栅格化尺寸应等于盒尺寸");
     assert!(!rgba.is_empty(), "像素非空");
     assert_ne!(*key, 0, "哈希键非零");
+}
+
+/// R3938（CSS Transforms 1 §transform-attribute-specificity）：stylesheet
+/// transform 在 svg paint 序列化时级联合成——document-styles-001 形态
+/// （`.testRect{transform:rotate(90deg)}` 覆盖 `transform="scale(0.5)"`）。
+#[test]
+fn r3938_stylesheet_transform_composed_into_serialized_svg() {
+    let _env_guard = svg_env_lock();
+    let html = r##"<html><head><style>
+        svg { display: block; width: 300px; height: 300px; }
+        rect.testRect { transform: rotate(90deg); }
+    </style></head><body style="margin:0">
+    <svg><rect class="testRect" y="-100" width="100" height="100" fill="#00ff00" transform="scale(0.5)"/></svg>
+    </body></html>"##;
+    let doc = zero_dom::parse_html(html);
+    let svg_id = doc.get_elements_by_tag_name("svg").into_iter().next().expect("svg");
+    let sheet = zero_css_parser::Parser::parse_stylesheet(
+        "svg { display: block; width: 300px; height: 300px; } rect.testRect { transform: rotate(90deg); }",
+    );
+    let mut sys = zero_style_system::StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[sheet]);
+    let rect_id = doc.get_elements_by_tag_name("rect").into_iter().next().expect("rect");
+    assert!(
+        matches!(
+            styles.get(&rect_id).map(|s| &s.transform),
+            Some(zero_css_parser::values::TransformValue::List(_))
+        ),
+        "stylesheet transform 应入 computed style"
+    );
+    let mut engine = zero_layout_engine::LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    fn find(id: zero_dom::NodeId, b: &LayoutBox) -> Option<&LayoutBox> {
+        if b.node_id == Some(id) {
+            return Some(b);
+        }
+        b.children.iter().find_map(|c| find(id, c))
+    }
+    let box_node = find(svg_id, &result.root).expect("svg box");
+    unsafe { std::env::set_var("ZW_INLINE_SVG_PAINT", "1") };
+    let mut painter = Painter::new();
+    painter.paint_svg_element(box_node, 0.0, 0.0, &doc, &styles);
+    unsafe { std::env::remove_var("ZW_INLINE_SVG_PAINT") };
+    // 合成后栅格化应成功且像素与「attr=rotate(90)」形态一致——用 canvas_images
+    // 内容对照纯 attr 版序列化渲染。
+    assert_eq!(painter.canvas_images.len(), 1, "应有栅格化像素");
+    let expect = zero_render_foundation::image_cache::rasterize_svg_at(
+        br##"<svg xmlns="http://www.w3.org/2000/svg" width="300" height="300"><rect y="-100" width="100" height="100" fill="#00ff00" transform="rotate(90)"/></svg>"##,
+        300, 300,
+    ).expect("expect");
+    let (_, _, _, px) = &painter.canvas_images[0];
+    let diff = px
+        .chunks(4)
+        .zip(expect.pixels.chunks(4))
+        .filter(|(p, q)| p != q)
+        .count();
+    assert_eq!(
+        diff, 0,
+        "stylesheet transform 应覆盖 attr（合成后与 attr=rotate(90) 一致，diff={diff}）"
+    );
 }

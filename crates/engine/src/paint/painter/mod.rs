@@ -583,7 +583,14 @@ impl Painter {
     /// `canvas_images` 通路注入 ImageCache（key = 序列化字节哈希，与 canvas ctx_id 同槽）。
     /// 样式/尺寸已由 CSS 处理（R3932 前缀拆分后选择器命中），此处只取盒几何。
     /// 背景色：SVG 根默认透明，元素的 CSS background 已由盒装饰路径绘制，不在此处理。
-    pub(crate) fn paint_svg_element(&mut self, box_node: &LayoutBox, abs_x: f32, abs_y: f32, doc: &Document) {
+    pub(crate) fn paint_svg_element(
+        &mut self,
+        box_node: &LayoutBox,
+        abs_x: f32,
+        abs_y: f32,
+        doc: &Document,
+        styles: &HashMap<NodeId, ComputedStyle>,
+    ) {
         // R3933 kill-switch：inline svg paint 默认关——激活后暴露 102 案「双白假绿」
         // （ref 页同含 svg，此前双页不渲 svg 恒等假 PASS；真渲染后 svg transform/
         // viewport 语义差异显形，净 corpus -84）。待 svg transform-origin/viewport
@@ -608,6 +615,12 @@ impl Painter {
         if container_w <= 1.0 || container_h <= 1.0 {
             return;
         }
+        // R3938：收集子树内所有 CSS transform（≠None）的元素 → NodeId → SVG 语法串。
+        // CSS 级联序 author stylesheet > presentation attr；usvg 忽略 style attr 的
+        // transform（R3937 实证）——序列化后把 computed transform 翻译改写/插入
+        // transform attr（仅覆盖**有 CSS transform 声明**的元素，无声明勿动 attr）。
+        let mut css_transforms: Vec<(NodeId, String)> = Vec::new();
+        collect_css_transforms(doc, node_id, styles, &mut css_transforms);
         // 序列化子树为 SVG 源文本；usvg 要求根有 SVG 命名空间——序列化保留属性但
         // XHTML 文档的默认 xmlns 在根 html 上、svg 元素可能只有 xmlns:svg 前缀声明，
         // 检测根 open tag 无 `xmlns=` 时补默认命名空间（替换/插入一次）。
@@ -616,6 +629,14 @@ impl Painter {
             && let Some(idx) = source.find('>')
         {
             source.insert_str(idx, " xmlns=\"http://www.w3.org/2000/svg\"");
+        }
+        // R3938：把 CSS transform 合成进序列化文本（逐元素按 attr 文本定位改写）。
+        if !css_transforms.is_empty() {
+            source = apply_css_transforms_to_source(&source, &css_transforms, doc, node_id);
+        }
+        // ZW_DEBUG_SVG_SOURCE=1：dump 合成后序列化源（svg transform 域调试设施）。
+        if std::env::var("ZW_DEBUG_SVG_SOURCE").as_deref() == Ok("1") {
+            eprintln!("R3938-SOURCE: {source}");
         }
         let key_hash = crate::paint::simple_hash(&source);
         let target_w = container_w.round().max(1.0) as u32;
@@ -1352,7 +1373,7 @@ impl Painter {
 
                     // 4b0c. inline <svg> 元素绘制（R3933——DOM 子树序列化 → 栅格化 →
                     // ImagePrimitive，canvas 同款两段式通路）
-                    self.paint_svg_element(box_node, abs_x, abs_y, doc);
+                    self.paint_svg_element(box_node, abs_x, abs_y, doc, styles);
 
                     // 4b0b. <video> 当前帧绘制（media-playback M1b——解码像素 →
                     // ImagePrimitive → 渲染侧 ImageCache，canvas/img 同款通路）
@@ -2377,6 +2398,173 @@ impl Painter {
     pub(crate) fn get_image_size(&self, url_hash: u64) -> Option<(f32, f32)> {
         self.image_sizes.get(&url_hash).copied()
     }
+}
+
+/// R3938（CSS Transforms 1 §transform-attribute-specificity + SVG2 presentation
+/// attributes）：收集 svg 子树内所有 CSS transform（≠None）的元素。
+/// CSS 级联序 author 声明 > presentation attr；style-system 已把非法值丢弃为
+/// None（`scale(invalid)` 不入 List），故此处 List 形态 = 合法覆盖值。
+pub(crate) fn collect_css_transforms(
+    doc: &Document,
+    subtree_root: NodeId,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    out: &mut Vec<(NodeId, String)>,
+) {
+    if let Some(st) = styles.get(&subtree_root)
+        && let Some(svg) = transform_value_to_svg(&st.transform)
+    {
+        out.push((subtree_root, svg));
+    }
+    for child in doc.child_nodes(subtree_root) {
+        collect_css_transforms(doc, child, styles, out);
+    }
+}
+
+/// 把 computed TransformValue 翻译为 SVG transform attr 语法（2D 子集；
+/// 3D 函数 ZW 无 3D 渲染语义——按恒等投影跳过该函数，全 3D 串返回 None 不动 attr）。
+pub(crate) fn transform_value_to_svg(tv: &zero_css_parser::values::TransformValue) -> Option<String> {
+    use zero_css_parser::values::TransformFunction as Tf;
+    let TransformValue::List(funcs) = tv else {
+        return None;
+    };
+    let mut parts: Vec<String> = Vec::new();
+    for f in funcs {
+        let part = match f {
+            Tf::Translate(tx, ty) => format!("translate({tx} {ty})"),
+            Tf::TranslateMixed(tx, txp, ty, typ) => {
+                // 百分比语义相对元素 bbox——SVG attr 无此语义，按 0 处理（保守降级，
+                // 避免误把百分比当用户单位）；两侧皆 0 则整函数无效。
+                let x = if *txp { 0.0 } else { *tx };
+                let y = if *typ { 0.0 } else { *ty };
+                if x == 0.0 && y == 0.0 {
+                    continue;
+                }
+                format!("translate({x} {y})")
+            }
+            Tf::TranslateX(tx) => format!("translate({tx} 0)"),
+            Tf::TranslateY(ty) => format!("translate(0 {ty})"),
+            Tf::TranslateXMixed(tx, txp) => {
+                if *txp {
+                    continue;
+                }
+                format!("translate({tx} 0)")
+            }
+            Tf::TranslateYMixed(ty, typ) => {
+                if *typ {
+                    continue;
+                }
+                format!("translate(0 {ty})")
+            }
+            Tf::Rotate(a) => format!("rotate({a})"),
+            Tf::Scale(sx, Some(sy)) => format!("scale({sx} {sy})"),
+            Tf::Scale(sx, None) => format!("scale({sx})"),
+            Tf::ScaleX(sx) => format!("scale({sx} 1)"),
+            Tf::ScaleY(sy) => format!("scale(1 {sy})"),
+            Tf::Skew(ax, Some(ay)) => format!("skewX({ax}) skewY({ay})"),
+            Tf::Skew(ax, None) => format!("skewX({ax})"),
+            Tf::Matrix(a, b, c, d, e, f_) => {
+                format!("matrix({a} {b} {c} {d} {e} {f_})")
+            }
+            // 3D 函数：ZW 无 3D 渲染语义（css-transforms-2 域挂账），恒等投影跳过。
+            Tf::ScaleZ(_) | Tf::RotateX(_) | Tf::RotateY(_) | Tf::RotateZ(_) => continue,
+            Tf::Translate3d(tx, ty, _) => format!("translate({tx} {ty})"),
+            Tf::Scale3d(sx, sy, _) => {
+                if sx == sy {
+                    format!("scale({sx})")
+                } else {
+                    format!("scale({sx} {sy})")
+                }
+            }
+            Tf::Rotate3d(..) | Tf::Perspective(_) => continue,
+        };
+        parts.push(part);
+    }
+    if parts.is_empty() { None } else { Some(parts.join(" ")) }
+}
+
+/// 把 CSS transform 合成进序列化 SVG 文本：按元素 attr 文本逐一定位改写。
+///
+/// 定位策略：对每个 (NodeId, svg_str)，从序列化文本的**元素序**匹配——子树元素
+/// 在 outer_html 输出中按树序出现，用「第 k 个开标签」对应第 k 个收集元素。
+/// 更稳的做法：对每个目标元素按其 attr 指纹（id/class/transform 原值）在文本中
+/// 找其开标签。这里取 attr 指纹法（树序法对外层 wrapper 顺序敏感）。
+pub(crate) fn apply_css_transforms_to_source(
+    source: &str,
+    targets: &[(NodeId, String)],
+    doc: &Document,
+    subtree_root: NodeId,
+) -> String {
+    let mut out = source.to_string();
+    for (node_id, svg_value) in targets {
+        let Some(new_source) = rewrite_transform_attr_for_node(&out, *node_id, svg_value, doc, subtree_root) else {
+            continue;
+        };
+        out = new_source;
+    }
+    out
+}
+
+/// 对单个元素节点改写序列化文本中其开标签的 transform attr。
+/// 指纹 = 元素在其 attr 中的标识属性（id 优先，退 class 首个）＋ 标签名。
+fn rewrite_transform_attr_for_node(
+    source: &str,
+    node_id: NodeId,
+    svg_value: &str,
+    doc: &Document,
+    subtree_root: NodeId,
+) -> Option<String> {
+    let node = doc.get(node_id)?;
+    let NodeKind::Element(elem) = &node.kind else {
+        return None;
+    };
+    let tag = elem.local_name().to_string();
+    let id_attr = elem.get_attribute("id");
+    let class_attr = elem.get_attribute("class");
+    // 根元素（svg）在序列化文本的开头。
+    if node_id == subtree_root {
+        let gt = source.find('>')?;
+        let head = &source[..gt];
+        return Some(rewrite_or_insert_transform_in_tag(head, svg_value, source, gt));
+    }
+    // 非根：找带指纹的开标签。
+    let needle = if let Some(id) = &id_attr {
+        format!("<{tag} ",).to_string() + &format!(r#"id="{id}""#)
+    } else if let Some(cls) = &class_attr {
+        let first = cls.split_whitespace().next().unwrap_or("");
+        if first.is_empty() {
+            return None;
+        }
+        format!(r#"<{tag} class="{first}"#)
+    } else {
+        return None;
+    };
+    let pos = source.find(&needle)?;
+    let gt_rel = source[pos..].find('>')?;
+    let gt = pos + gt_rel;
+    let head = &source[..gt];
+    Some(rewrite_or_insert_transform_in_tag(head, svg_value, source, gt))
+}
+
+/// 在 `[..tag_end)` 的当前开标签内改写或插入 transform attr，拼回整个文本。
+fn rewrite_or_insert_transform_in_tag(head_to_tag_end: &str, svg_value: &str, full: &str, tag_end: usize) -> String {
+    let lt = head_to_tag_end.rfind('<').unwrap_or(0);
+    let tag_text = &head_to_tag_end[lt..];
+    let inner = &tag_text[..tag_text.len().saturating_sub(0)];
+    let new_tag = if let Some(tpos) = inner.find("transform=\"") {
+        let tval_start = tpos + "transform=\"".len();
+        match inner[tval_start..].find('"') {
+            Some(rel) => {
+                let tval_end = tval_start + rel;
+                format!("{}{}{}", &inner[..tval_start], svg_value, &inner[tval_end..])
+            }
+            None => inner.to_string(),
+        }
+    } else if let Some(stripped) = inner.strip_suffix('/') {
+        format!("{stripped} transform=\"{svg_value}\"/")
+    } else {
+        format!("{inner} transform=\"{svg_value}\"")
+    };
+    format!("{}{}{}", &full[..lt], new_tag, &full[tag_end..])
 }
 
 impl Default for Painter {
