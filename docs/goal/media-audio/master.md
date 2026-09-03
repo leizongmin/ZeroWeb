@@ -2,7 +2,13 @@
 
 **入口文档**: [../media-audio.md](../media-audio.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-03（**WPT webaudio 第十三批导入——headless 零渲染面饱和
+**最后更新**: 2026-09-04（**WPT webaudio 第十四批导入——the-audiocontext-interface
+余件试导（31 用例 833P/0F）**：audiocontextoptions（latencyHint 基本档/数值档/
+sampleRate 面——**AudioContext double latencyHint clamp 语义落地**：baseLatency =
+hint clamp 到 [0.005, 0.4]，spec「设备支持范围内尽量接近 hint」headless 以
+Chromium headless 观测近似——大 hint（×10/×20）clamp 0.4 上限使两 high-latency
+上下文相等，latencyHint-double 断言面）/ constructor-allowed-to-start /
+suspend-after-construct）。此前 2026-09-03：**WPT webaudio 第十三批导入——headless 零渲染面饱和
 （28 用例 787P/0F = 100%）**：audiocontext-getoutputtimestamp 导入（shim 补
 `AudioContext.getOutputTimestamp`——AudioTimestamp {contextTime, performanceTime}
 形状 + 有限非负面）；the-audiocontext-interface 余件逐件核实全排除（用户手势/
