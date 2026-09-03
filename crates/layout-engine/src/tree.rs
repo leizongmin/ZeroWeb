@@ -658,8 +658,9 @@ fn apply_replaced_element_sizing(
     {
         taffy_style.size.width = match dw {
             Some(w) => taffy::style::Dimension::length(w),
-            // width %：taffy 自解析；高度落 default，宽留 auto。
-            None => taffy::style::Dimension::auto(),
+            // width %（含 ratio-only 隐式 100%）：taffy 对 CB 解析（definite 块宽
+            // → fill；max-content 语境 → 0）；高度由比随解析宽推。
+            None => taffy::style::Dimension::percent(100.0),
         };
         // 负 dh = 比信号（width % + viewBox/ar）：保留 aspect_ratio 让 taffy 由解析宽
         // 推高；正 dh = definite 高（default / 无比）。

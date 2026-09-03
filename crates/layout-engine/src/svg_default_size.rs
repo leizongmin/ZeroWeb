@@ -78,9 +78,15 @@ pub(crate) fn svg_default_used_size(elem: &ElementData, style: &ComputedStyle) -
     }
     let width_pct =
         matches!(style.width, LengthValue::Percentage(_)) || attr_w.as_deref().is_some_and(|s| s.trim().ends_with('%'));
-    // (a) viewBox / CSS-ar-only，width auto → 0×0（比不产生尺寸）。
+    // (a) viewBox / CSS-ar-only，width auto → **隐式 width:100%**（SVG 根缺省
+    // width/height = 100%，chromium：body 块流 definite 宽下 fills、max-content
+    // 语境贡献 0——与 (c) 同一条 % 路径）。R4002 勘察统一：(a) 与 (c) 同语义，
+    // 006 max-content=0 由 contribution 谓词承载（intrinsic_sizing），used size
+    // 走 % 解析 + 比推高（aspect-ratio-intrinsic-size-007 ref：viewBox 2:1 svg
+    // 在 body → 784×392）。
     if !width_pct && svg_has_ratio_source(elem, style) {
-        return Some((Some(0.0), 0.0));
+        let ratio = svg_ratio_value(elem, style);
+        return Some((None, -ratio.unwrap_or(SVG_DEFAULT_H)));
     }
     // (c) width %：高度由解析宽 × 比推导（viewBox/ar），无比 → default 150。
     //（006 ref：% 宽 div 高度 ≠ 150——比随解析宽生效；宽 % 解析归调用方容器语境。
@@ -155,12 +161,15 @@ mod tests {
         }
     }
 
-    /// (a) viewBox-only（无任何尺寸来源）→ 贡献 0，used 0×0。
+    /// (a) viewBox-only → max-content 贡献 0；used = 隐式 width:100%（负值比
+    /// 信号，taffy/IFC 对容器解析——R4002 勘察：body 块流 fills、max-content 0）。
     #[test]
     fn viewbox_only_contributes_zero() {
         let (elem, style) = setup(r#"<html><body><svg viewBox="0 0 1 1"></svg></body></html>"#, "");
         assert_eq!(svg_max_content_contribution(&elem, &style), Some(0.0));
-        assert_eq!(svg_default_used_size(&elem, &style), Some((Some(0.0), 0.0)));
+        let (dw, dh) = svg_default_used_size(&elem, &style).expect("used");
+        assert_eq!(dw, None, "ratio-only = 隐式 100% 宽，交容器解析");
+        assert!(dh < 0.0, "负值承载比信号：{dh}");
     }
 
     /// (b) 完全无尺寸来源 → 贡献 300，used 300×150。

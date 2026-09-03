@@ -406,6 +406,13 @@ impl InlineFormattingContext {
                                                 .map(|p| p / 100.0 * self.container_width)
                                                 .unwrap_or(0.0)
                                         }
+                                        // 隐式 width:100%（ratio-only，(a) 路径）：
+                                        // dw None 且负 dh = 比信号 → 宽 = 容器宽
+                                        //（SVG 根缺省 100% 语义；definite 块容器
+                                        // 下 fills，max-content 语境走 contribution 0）。
+                                        _ if dh < 0.0 && self.container_width > 0.0 => {
+                                            self.container_width
+                                        }
                                         _ => dw.unwrap_or(0.0),
                                     };
                                 }
