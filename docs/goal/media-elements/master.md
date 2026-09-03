@@ -719,6 +719,11 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
    维持排除（autoplay-with-slow-text-tracks——trickle pipe + readyState 与
    track 加载耦合面；autoplay-hidden.optional——hidden 节能语义 optional）；
    audio/video_volume_check 维持排除（越界断言 e.code==1 为旧 spec 语义）。
+   video_size_preserved_after_ended 维持排除（2026-09-04 实证：静态 <source>
+   形态 loadedmetadata 与 promise_test EventWatcher 时序 headless 双通道
+   settle 下不稳定）——但其调试过程产出三项基础设施资产（静态 <source>
+   settle/事件链 + 候选可达性判定 + registry probe_dimensions 真值链，
+   engine/webview 回归面零回归落地）。
 2. ~~**M4g-d**：canPlayType 能力表联动更新~~ ✅ 2026-09-01 兑现（能力表真值化——
    后续新增解码面（AV1/H.264，media-playback M3）时同步扩表）。
 3. ~~**M4g-f**：resource selection 算法面~~ ✅ 2026-09-02 兑现（M3 扩批 XI——
