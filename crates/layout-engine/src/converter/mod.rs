@@ -152,11 +152,21 @@ pub fn computed_style_to_taffy(
             taffy::geometry::Size {
                 width: match &style.width {
                     LengthValue::Auto if block_fills_width => taffy::style::Dimension::auto(),
-                    LengthValue::Auto => cis_dim(&style.contain_intrinsic_width),
+                    // R4009（css-sizing-4 §intrinsic-size-override）：intrinsic 关键字
+                    //（min/max/fit-content）与 auto 同为 content-based——contain:size 下
+                    // 内容尺寸被抑制，CIS 替代（020：replaced img inline-size:min-content
+                    // + CIS 100 → 100 应 0）。
+                    LengthValue::Auto
+                    | LengthValue::MinContent
+                    | LengthValue::MaxContent
+                    | LengthValue::FitContent(_) => cis_dim(&style.contain_intrinsic_width),
                     _ => convert_length_to_dimension(&style.width, vw, vh),
                 },
                 height: match &style.height {
                     LengthValue::Auto => cis_dim(&style.contain_intrinsic_height),
+                    LengthValue::MinContent | LengthValue::MaxContent | LengthValue::FitContent(_) => {
+                        cis_dim(&style.contain_intrinsic_height)
+                    }
                     _ => convert_length_to_dimension(&style.height, vw, vh),
                 },
             }
