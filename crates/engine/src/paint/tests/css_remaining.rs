@@ -580,3 +580,47 @@ fn r3938_stylesheet_transform_composed_into_serialized_svg() {
         "stylesheet transform 应覆盖 attr（合成后与 attr=rotate(90) 一致，diff={diff}）"
     );
 }
+
+/// R3986-P（inline svg sizing 域根因锚，0 修复归档轮）：inline svg 的 CSS
+/// width 应用**依赖子树内空白文本节点存在**——svg 内含换行空白（B7）时盒
+/// 200x200，无空白（B）时盒塌 6x24（IFC 行内容缺失 → width 不应用）。
+/// 修复须动 inline 布局的 width 应用链（深域），本锚固化两态差异防漂移。
+#[test]
+fn r3986_probe_inline_svg_width_whitespace_dependence() {
+    let mk = |svg_inner: &str| {
+        format!(
+            r##"<html><head><style>svg {{ width: 200px; height: 200px; background: green; }}</style></head><body style="margin:0"><svg>{svg_inner}</svg></body></html>"##
+        )
+    };
+    let doc_of = |html: &str| {
+        let doc = zero_dom::parse_html(html);
+        let svg_id = doc.get_elements_by_tag_name("svg").into_iter().next().expect("svg");
+        let sheet =
+            zero_css_parser::Parser::parse_stylesheet("svg { width: 200px; height: 200px; background: green; }");
+        let mut sys = zero_style_system::StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[sheet]);
+        let mut engine = zero_layout_engine::LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+        fn find(id: zero_dom::NodeId, b: &LayoutBox) -> Option<&LayoutBox> {
+            if b.node_id == Some(id) {
+                return Some(b);
+            }
+            b.children.iter().find_map(|c| find(id, c))
+        }
+        find(svg_id, &result.root).map(|b| (b.width, b.height))
+    };
+    let with_ws = mk(
+        "\n  <rect x=\"1\" y=\"1\" width=\"196\" height=\"196\" fill=\"red\" transform=\"scale(0.5)\"/>\n  <rect width=\"100\" height=\"100\" fill=\"green\"/>\n",
+    );
+    let without_ws = mk(
+        "<rect x=\"1\" y=\"1\" width=\"196\" height=\"196\" fill=\"red\" transform=\"scale(0.5)\"/><rect width=\"100\" height=\"100\" fill=\"green\"/>",
+    );
+    let ws = doc_of(&with_ws).expect("ws box");
+    let no_ws = doc_of(&without_ws).expect("no-ws box");
+    println!("R3986P: with-ws box={ws:?} without-ws box={no_ws:?}");
+    assert_ne!(
+        ws, no_ws,
+        "空白文本节点应改变 inline svg 盒尺寸（根因锚：两态差异须保持可观测直至修复）"
+    );
+}
