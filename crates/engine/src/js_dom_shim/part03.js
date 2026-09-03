@@ -11580,6 +11580,22 @@
               entry = { resolve: resolve, reject: reject };
             });
             _pMs.playPromise = entry;
+            // M3 扩批 XXIX：HAVE_NOTHING 期 play()（readyState==0 且有候选）——
+            // spec dom-media-play 步 6「readyState is HAVE_NOTHING」分支：promise
+            // **pending**，等 readyState 变化 task 再派 play/playing（play 事件在
+            // canplay 前、playing 在 canplay 后——ready-states/autoplay 的
+            //「autoplay and play()」事件严格序断言面）。事件派发移至
+            // _zwMediaLoadSequence 的 readyState 翻转点（part06）。
+            // 候选判据按身份分派（同上方资源选择）：handle-only 无 src 无 settle
+            // 序列可达——保持既有 queued task resolve 契约（detached 断言面）；
+            // handle-only 有 src 的 settle 由 shim 侧调度承载（与身份无关）。
+            var _hasPendingCandidate = handle
+              ? __zw_has_attr_handle(handle, 'src') === '1'
+              : ((typeof __zw_has_attr_lw === 'function' ? __zw_has_attr_lw(sel, 'src') : __zw_has_attr(sel, 'src')) === '1');
+            if (_hasPendingCandidate && (_pMs.readyState | 0) === 0) {
+              _pMs._zwPlayPendingEvents = { sel: sel, handle: handle, key: _pKey, entry: entry };
+              return promise;
+            }
             var _pf = function () {
               _dispatchWithBubble(_pKey, sel, handle, _makeEvent('play', { bubbles: false, cancelable: false }));
               _dispatchWithBubble(_pKey, sel, handle, _makeEvent('playing', { bubbles: false, cancelable: false }));

@@ -3682,10 +3682,14 @@ fn test_media_pause_on_removal_m3b7() {
         "false",
         "移除后同步 paused 仍 false（spec：异步转暂停）"
     );
+    // M3 扩批 XXIX：HAVE_NOTHING 期 play() 的事件改在 readyState 变化时派（spec
+    // dom-media-play 步 6——play 事件在 canplay 前、playing 在 canplay 后）。
+    // settle 走 microtask（queueMicrotask——V8 script turn 末同步排空），故事件在
+    // play() 同步返回前已派（此前 queued task 宏任务面空 log）。
     assert_eq!(
         sandbox.execute("String(globalThis.__log)").unwrap().value,
-        "",
-        "play() 同步返回时事件未派（queued task 面——defer 到 timer pump）"
+        "playing:false",
+        "settle microtask 内派 play/playing（onplaying 捕获 paused=false）"
     );
     // stable state：泵第一 tick——play/playing 事件先派 + paused 置真（removal stop 落地）；此时与
     // 上游序一致：同 tick 的 afterStableState volumechange 回调里

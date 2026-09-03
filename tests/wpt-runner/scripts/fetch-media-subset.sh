@@ -163,6 +163,10 @@ TOP_FILES=(
   # autoplay 推进（track error settle 面已有，video 照常 settle → 泵 → timeupdate）。
   # 不导入 no-autoplay-audio-history-back-does-not-play（iframe+history+postMessage
   # 导航深结构——pause-move-to-other-document 同域排除）。
+  # M3 扩批 XXIX（2026-09-04）：ready-states/autoplay——autoplaying flag 与
+  # play()/pause()/load() 交互 + 事件严格序（canplay→canplaythrough→play→playing；
+  # play 先行形态 play→canplay→playing→canplaythrough 的 pending promise 面）。
+  "ready-states/autoplay.html"
   "media_fragment_seek.html"
   "autoplay-with-broken-track.html"
   # M3 扩批 XXVIII（2026-09-04）：同文档移动不重置播放（currentTime>=10 保持 +

@@ -1570,6 +1570,9 @@ pub const MEDIA_TEST_FILES: &[&str] = &[
     // in-flight 中断时序——headless settle 同步完成无 in-flight 窗口（2026-09-04
     // 实证：settings.vtt onload 恒先于 removeAttribute，onload case4 unreached）。
     // 不导入 track-element-src-aborted-load：WPT trickle pipe 机制不可复现。
+    // M3 扩批 XXIX（2026-09-04）：ready-states/autoplay——autoplaying flag 交互
+    // + 事件严格序（audio+video 各 5 子测）。
+    "html/semantics/embedded-content/media-elements/ready-states/autoplay.html",
     // M3 扩批 IX：移动面（同文档移动仍 related → 不暂停）。
     // pause-move-to-other-document 不导入——iframe adopt 面未实施（fetch 脚本注记）。
     "html/semantics/embedded-content/media-elements/playing-the-media-resource/pause-move-within-document.html",

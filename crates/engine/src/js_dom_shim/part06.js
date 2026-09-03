@@ -6854,10 +6854,33 @@
     // loadedmetadata 前（event_order_durationchange_resize_loadedmetadata 断言面）。
     if (tag === 'video') _zwMediaFire(sel, handle, key, 'resize');
     _zwMediaFire(sel, handle, key, 'loadedmetadata');
+    // M3 扩批 XXIX：HAVE_NOTHING 期 play() 的挂起事件补派（play 事件在 readyState
+    // 变化 task——此处先于 canplay 派，promise 保持 pending 至 playing 点）。
+    if (ms._zwPlayPendingEvents) {
+      var _pp = ms._zwPlayPendingEvents;
+      delete ms._zwPlayPendingEvents;
+      ms._zwPlayPendingPlaying = _pp;
+      _zwMediaFire(_pp.sel, _pp.handle, _pp.key, 'play');
+    }
     ms.readyState = 2;
     _zwMediaFire(sel, handle, key, 'loadeddata');
     ms.readyState = 3;
     _zwMediaFire(sel, handle, key, 'canplay');
+    // M3 扩批 XXIX：playing 在 canplay 后派（spec「readyState 变为 HAVE_FUTURE_DATA
+    // 或更高且 paused 为 false → 派 playing」——期望序 play→canplay→playing→
+    // canplaythrough 的「autoplay and play()」断言面）。pause() 先行已 settle 的
+    // entry 不再 resolve（playPromise 身份核对同 _pf）。
+    if (ms._zwPlayPendingPlaying) {
+      var _ppp = ms._zwPlayPendingPlaying;
+      delete ms._zwPlayPendingPlaying;
+      _zwMediaFire(_ppp.sel, _ppp.handle, _ppp.key, 'playing');
+      _zwMediaFire(_ppp.sel, _ppp.handle, _ppp.key, 'timeupdate');
+      if (ms.playPromise === _ppp.entry) {
+        delete ms.playPromise;
+        if (ms.playing) _ppp.entry.resolve(undefined);
+        else _ppp.entry.reject(new (globalThis.DOMException || Error)('play() was interrupted by pause()', 'AbortError'));
+      }
+    }
     ms.readyState = 4;
     _zwMediaFire(sel, handle, key, 'canplaythrough');
     ms.networkState = 1; // NETWORK_IDLE——加载完成无错误（spec networkState 稳态）
