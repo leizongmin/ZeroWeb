@@ -1543,6 +1543,13 @@ pub const MEDIA_TEST_FILES: &[&str] = &[
     // 兜底（settle durationMs 即刻生效）+ registry Ended→play 解码器重建 + 泵时钟
     // 注入（play 锚与 tick 同源）解除。
     "html/semantics/embedded-content/media-elements/playing-the-media-resource/loop-from-ended.tentative.html",
+    // M3 扩批 XXVI（2026-09-04）：seeking/ 三件——seekable TimeRanges（headless
+    // [0,duration] 近似 getter 落地后的断言面：clamp 边界 + seeking/timeupdate/
+    // seeked 事件序）+ volume_nonfinite（volume IDL setter 非有限 TypeError）。
+    "html/semantics/embedded-content/media-elements/seeking/seek-to-currentTime.html",
+    "html/semantics/embedded-content/media-elements/seeking/seek-to-max-value.htm",
+    "html/semantics/embedded-content/media-elements/seeking/seek-to-negative-time.htm",
+    "html/semantics/embedded-content/media-elements/volume_nonfinite.html",
     // M3 扩批 IX：移动面（同文档移动仍 related → 不暂停）。
     // pause-move-to-other-document 不导入——iframe adopt 面未实施（fetch 脚本注记）。
     "html/semantics/embedded-content/media-elements/playing-the-media-resource/pause-move-within-document.html",

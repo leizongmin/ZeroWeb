@@ -2,7 +2,19 @@
 
 **入口文档**: [../media-playback.md](../media-playback.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-03（**M3 fixture-mounted runner 播放面切片 8 落地（扩批
+**最后更新**: 2026-09-04（**M3 fixture-mounted runner 播放面切片 9 落地（扩批
+XXVI）**——seekable/buffered TimeRanges headless 近似 getter 落地
+（`__zwMediaSeekableRanges` 共享面：readyState>=1 后 [0,duration] 单区间；
+duration 解析序 桥真值 → _mediaState → settle durationMs → headless 600；
+HAVE_NOTHING 空集合 + IndexSizeError；has-trap 白名单补列）+ **currentTime
+setter seek 语义补全**：clamp 到 seekable 范围（spec seek 步 5——镜像写 clamp
+后值；duration 未知只 clamp 下限 0）+ seeking/timeupdate/seeked 同一排队任务
+序派发（seeking 异步——后挂 onseeking 可达；seeking 翻 false 先于 timeupdate
+——Chromium 可观察语义；事件序 [seeking, timeupdate, seeked]）。
+media-elements 552P/0F/24PF（+9 净涨零回归——seeking/ 三件 + volume_nonfinite
+导入；buffered/seekable「上游无断言用例」的旧注记失效——seeking/ 目录即断言
+面，DC-3 buffered/seekable 注记项收口）。
+此前 2026-09-03：**M3 fixture-mounted runner 播放面切片 8 落地（扩批
 XXV）**——loop-from-ended.tentative 导入 + 四处播放面缺陷收口：
 ① **registry Ended→play 解码器重建**——`play` 的 player Ended 态经 sources/
 av_sources 留存字节 `reset()` 重建 + 伴生轨游标/静默线归零（此前直接置 Playing
@@ -310,9 +322,11 @@ ImagePrimitive，与 canvas R3268 同通路）。
 **DC-3（语义驱动真值化）✅（buffered/seekable 注记）**：duration 真值注入链全通
 （M2a 切片 2——容器时长 → settle → shim `_zwMediaLoadSequence`）；readyState 由
 settle 事实驱动（headless 加载序列推进 HAVE_METADATA→HAVE_ENOUGH_DATA）；videoWidth/
-videoHeight 解码器探针真值（M2a 切片 3）。**buffered/seekable TimeRanges 未实施**
-——上游 WPT 无该断言用例（corpus 内仅 historical 的 bufferedBytes 字符串面），
-真值化依赖真解码流的缓冲区间追踪（随播放面背压优化一并评估，记录为后续项）。
+videoHeight 解码器探针真值（M2a 切片 3）。**buffered/seekable TimeRanges headless
+近似面已收口（2026-09-04 扩批 XXVI）**——`__zwMediaSeekableRanges`（readyState>=1
+后 [0,duration] 单区间 + IndexSizeError）+ seeking/ 三件断言用例导入（此前「上游
+无断言用例」注记失效——seeking/ 目录即断言面）；真值化依赖真解码流的缓冲区间
+追踪（随播放面背压优化一并评估，记录为后续项）。
 
 **DC-4（多格式 + 稳定性）🔄（余 WPT 子集导入）**：① 选型面内容器/编解码 e2e
 （VP9 单轨/双轨 + AV1 decode→settle→play→canPlayType 全链 ✅）；② 资源生命周期
@@ -502,7 +516,21 @@ clippy 零警告、每切片带单测 + e2e/fixture 资产化（AV1 全流单测
    非 loop 分支的 `_zwEndedDispatched` 标记为判定面（loop setter 已把 ms.ended
    翻回 false——spec「looping 媒体不能是 ended」，IDL 态不可靠）+ loop=true
    setter 同步翻 ended=false。loop-from-ended.tentative 导入
-   （543P/0F/24PF，+1 净涨零回归）。**余**：playing-the-media-resource 余面
+   （543P/0F/24PF，+1 净涨零回归）。
+   **切片 9 落地（2026-09-04 续，扩批 XXVI——seekable/buffered TimeRanges +
+   seek clamp）**：① `__zwMediaSeekableRanges`（part06 共享 helper，part04
+   get trap 的 seekable/buffered 统一入口）：readyState>=1 后 [0,duration]
+   单区间、HAVE_NOTHING 空集合、越界 IndexSizeError；duration 解析序 桥真值 →
+   _mediaState.duration → settle durationMs → headless 600；has-trap 白名单补
+   seekable/buffered（part05）。**DC-3 的「buffered/seekable 未实施——上游无
+   断言用例」注记失效**（seeking/ 目录即 seekable 断言面）——headless 近似面
+   收口，流式真值化随播放面背压优化另评。② currentTime setter seek 语义补全：
+   clamp 到 seekable 范围（spec seek 步 5——镜像写 clamp 后值，duration 未知只
+   clamp 下限 0）+ seeking/timeupdate/seeked 同一排队任务序派发（seeking 异步
+   化——后挂 onseeking 可达；seeking 翻 false 先于 timeupdate——Chromium 可
+   观察语义；事件序 [seeking, timeupdate, seeked]）。seeking/ 三件
+   （seek-to-currentTime/max-value/negative-time）+ volume_nonfinite 导入
+   （552P/0F/24PF，+9 净涨零回归）。**余**：playing-the-media-resource 余面
    （play-in-detached-document / fragmented-mp4-end）。
 2. ~~**A/V 同步精化余项**~~ ✅ 2026-09-01 收口：ended 面回归守卫落地
    （切片 F——伴音流末 video player 走到 Ended、泵停）；音频设备面（CpalSink

@@ -149,6 +149,13 @@ TOP_FILES=(
   # 回卷 seeked（crbug 364442 断言面）。duration getter settle 竞态兜底（扩批 XXIV）
   # 解除其 seek 目标真值前置。
   "playing-the-media-resource/loop-from-ended.tentative.html"
+  # M3 扩批 XXVI（2026-09-04）：seeking/ 三件——seekable TimeRanges 面（seek to
+  # currentTime/max/negative：clamp 边界 + seeking/timeupdate/seeked 事件序）。
+  # volume_nonfinite——volume IDL setter 非有限 TypeError（headless 纯 IDL 面）。
+  "seeking/seek-to-currentTime.html"
+  "seeking/seek-to-max-value.htm"
+  "seeking/seek-to-negative-time.htm"
+  "volume_nonfinite.html"
   # M3 扩批 IX：移动面（同文档移动仍 related → 不暂停）。
   # pause-move-to-other-document 不导入：跨 iframe 文档 adopt 在 shim 融合视图下
   # appendChild 静默落空（元素保持 detached）——实施需 iframe 文档模型 adopt 面

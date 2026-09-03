@@ -9179,6 +9179,40 @@
     }
     return true;
   }
+  // M3 扩批 XXVI：seekable/buffered TimeRanges 共享面（part04 get trap 调用）。
+  // headless 近似：readyState>=1 后恒 [0, duration] 单区间；HAVE_NOTHING 空集合。
+  // duration 解析序：桥真值 → _mediaState.duration → settle durationMs → headless
+  // 600（已开始加载）→ 空集合。
+  // https://html.spec.whatwg.org/multipage/media.html#dom-media-seekable
+  globalThis.__zwMediaSeekableRanges = function (ms, key) {
+    var _idxErr = function () { throw new (globalThis.DOMException || Error)('IndexSizeError', 'IndexSizeError'); };
+    var _ready = (ms && (ms.readyState | 0)) >= 1;
+    var _dur = null;
+    if (ms && ms.bridgeOn && ms.bridgeSrc && typeof globalThis.__zwVideoBridge === 'object') {
+      try {
+        var _vd = globalThis.__zwVideoBridge.duration(ms.bridgeSrc);
+        if (typeof _vd === 'number' && isFinite(_vd) && _vd > 0) _dur = _vd;
+      } catch (_eSktVd) {}
+    }
+    if (_dur == null && ms && ms.duration != null && isFinite(ms.duration) && ms.duration > 0) {
+      _dur = ms.duration;
+    }
+    if (_dur == null) {
+      try {
+        var _st = (typeof _resourceStates !== 'undefined') ? _resourceStates[key] : null;
+        if (_st && _st.durationMs != null) _dur = _st.durationMs / 1000;
+        else if (ms && ((ms.networkState | 0) > 0 || (ms.readyState | 0) > 0)) _dur = 600;
+      } catch (_eSktSt) {}
+    }
+    if (!_ready || _dur == null || !(_dur > 0)) {
+      return { length: 0, start: _idxErr, end: _idxErr };
+    }
+    return {
+      length: 1,
+      start: function (i) { if (typeof i !== 'number' || i < 0 || i >= 1) _idxErr(); return 0; },
+      end: function (i) { if (typeof i !== 'number' || i < 0 || i >= 1) _idxErr(); return _dur; },
+    };
+  };
   globalThis.__zw_commit_resource_element_state = function (tag, absUrl, outcome, width, height, durationMs) {
     try {
       tag = String(tag).toLowerCase();

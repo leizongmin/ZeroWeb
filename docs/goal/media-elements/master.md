@@ -2,7 +2,13 @@
 
 **入口文档**: [../media-elements.md](../media-elements.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-03（**M3 扩批 XXV 落地**——loop-from-ended.tentative 导入
+**最后更新**: 2026-09-04（**M3 扩批 XXVI 落地**——seekable/buffered TimeRanges
+headless 近似 getter（`__zwMediaSeekableRanges` 共享面：readyState>=1 后
+[0,duration] 单区间 + IndexSizeError + has-trap 补列）+ currentTime setter
+seek 语义补全（clamp 到 seekable 范围镜像写回 + seeking/timeupdate/seeked
+同一排队任务序派发——seeking 异步化后挂 handler 可达；seeking 翻 false 先于
+timeupdate）。seeking/ 三件 + volume_nonfinite 导入。**552P/0F/24PF，
+552/576 = 95.8%**（+9 净涨零回归）。此前 2026-09-03：**M3 扩批 XXV 落地**——loop-from-ended.tentative 导入
 （playing-the-media-resource/——ended 后设 loop 再 play 须回卷 seeked，Chromium
 crbug 364442 断言面）。配套播放面四处缺陷收口（见 media-playback master.md 切片
 8）：registry Ended→play 解码器重建 + 伴生轨游标归零 / seek 游标 clamp / 泵时钟
@@ -645,7 +651,7 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
 
 | # | 缺口 | 状态 | 失败聚类 |
 |---|------|------|----------|
-| M1g | WPT media-elements 用例覆盖 | ✅ 147 用例已导入（136 + 扩批 XVI/XVII/XIX/XX/XXI/XXIII/XXIV/XXV：播放推进族 6 件 + track-change-event + track-active-cues + played-loop + audio_loop_seek_to_eos + loop-from-ended.tentative），**95.8%**（543/567） | — |
+| M1g | WPT media-elements 用例覆盖 | ✅ 151 用例已导入（136 + 扩批 XVI~XXV/XXVI：播放推进族 6 件 + track-change-event + track-active-cues + played-loop + audio_loop_seek_to_eos + loop-from-ended.tentative + seeking/ 三件 + volume_nonfinite），**95.8%**（552/576） | — |
 | M2g | load 算法 + 状态机（事件序列派发） | ✅ M2 落地（13T→**0T**） | F4 闭合 |
 | M3g | 事件序列 headless 近似驱动 | ✅（同 M2g；source-child 触发已落地） | F4 闭合 |
 | M4g-a | 媒体元数据 IDL 反射（初值面） | ✅ 切片 3 落地 | F2 闭合（-9 Fail） |
@@ -666,16 +672,16 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
    末件——load invoke 重置面收口）+ loop 真面三件导入（扩批 XXIV played-loop /
    audio_loop_seek_to_eos + 扩批 XXV loop-from-ended.tentative——ended 后设
    loop 再 play 回卷 seeked，配套 registry Ended→play 解码器重建 + 泵时钟注入
-   收口）。playing-the-media-resource
+   收口）+ seekable/buffered TimeRanges 面四件导入（扩批 XXVI seeking/ 三件 +
+   volume_nonfinite——seek clamp + seek 事件序排队任务化收口）。
+   playing-the-media-resource
    剩余（play-in-detached-document——需 detached 文档播放时钟推进，依赖兄弟目标
    media-playback 播放钟接语义层；fragmented-mp4-end——MSE 面，归远期）；
    the-video-element 反射余面（video-loading-*
    preload 语义族——视 lazy-loading 支撑面）。**headless 可导入面已在 95.8% 重饱和
-   （M3 扩批 XXV 后第八次修正）**——余下增量依赖兄弟目标解锁（真播放钟 →
+   （M3 扩批 XXVI 后第九次修正）**——余下增量依赖兄弟目标解锁（真播放钟 →
    time-marches-on 余面）+ 深结构项（~~TextTrackList change 事件广播反向链~~ ✅
    扩批 XXI 兑现、cue 标记树解析——归渲染域远期）。
-   + 深结构项（~~TextTrackList change 事件广播反向链~~ ✅ 扩批 XXI 兑现、
-   cue 标记树解析——归渲染域远期）。
 2. ~~**M4g-d**：canPlayType 能力表联动更新~~ ✅ 2026-09-01 兑现（能力表真值化——
    后续新增解码面（AV1/H.264，media-playback M3）时同步扩表）。
 3. ~~**M4g-f**：resource selection 算法面~~ ✅ 2026-09-02 兑现（M3 扩批 XI——

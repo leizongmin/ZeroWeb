@@ -76,6 +76,13 @@
         // https://html.spec.whatwg.org/multipage/media.html#dom-media-networkstate
         var resourceTag = _realTag(sel, handle);
         var resourceState = _resourceStates[key];
+        // M3 扩批 XXVI：seekable/buffered TimeRanges 共享面（headless [0,duration]
+        // 近似；spec dom-media-seekable / dom-media-buffered——readyState>=1 才有
+        // 区间，HAVE_NOTHING 空集合；duration 解析序：桥真值 → _mediaState →
+        // settle durationMs → headless 600）。
+        if ((resourceTag === 'AUDIO' || resourceTag === 'VIDEO') && (prop === 'seekable' || prop === 'buffered')) {
+          return globalThis.__zwMediaSeekableRanges(_mediaState[key], key);
+        }
         if (resourceTag === 'IMG' && prop === 'complete') {
           if (resourceState) return true;
           var completeSrc = handle ? __zw_get_attr_handle(handle, 'src') : __zw_get_attr(sel, 'src');

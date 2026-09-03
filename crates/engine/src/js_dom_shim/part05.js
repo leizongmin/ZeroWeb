@@ -65,7 +65,20 @@
               }
               _mst.defaultPlaybackRate = _mv;
             } else if (p === 'currentTime') {
-              _mst.currentTime = isNaN(_mv) ? 0 : _mv;
+              // M3 扩批 XXVI：seek clamp（spec seek 步 5「if position < 0 → 0；if
+              // position > seekable.end → seekable.end」——seekable [0,duration]
+              // 近似面；duration 未知（HAVE_NOTHING/headless 无真值）只 clamp 下限 0）。
+              // 镜像写 clamp 后值（seek-to-max-value/negative-time 的 currentTime
+              // 赋值后立即断言面）。
+              var _ctClampLow = _mv > 0 ? _mv : 0;
+              var _ctClampDur = null;
+              if (typeof globalThis.__zwMediaSeekableRanges === 'function') {
+                try {
+                  var _ctSeekable = globalThis.__zwMediaSeekableRanges(_mst, key);
+                  if (_ctSeekable && _ctSeekable.length > 0) _ctClampDur = _ctSeekable.end(0);
+                } catch (_eCtSk) {}
+              }
+              _mst.currentTime = _ctClampDur != null ? (_ctClampLow > _ctClampDur ? _ctClampDur : _ctClampLow) : _ctClampLow;
               // M2b：宿主桥 seek——bridgeOn 元素把 seek 真值推给 Rust VideoPlayer
               //（精确 seek：关键帧定位 + 前向解码；帧更新由渲染泵下一节拍呈现）。
               // M3 扩批 XVI：桥未接通（bridgeOn false，fixture-mounted runner 的
@@ -86,23 +99,34 @@
               //（track-cues-seeking 的 track.onload 内 currentTime=0.5 → onseeked
               // 计数链依赖此面）。实现：挂 pending seek 标记，_zwMediaLoadSequence
               // readyState 0→1 翻转时补跑 seek 算法（下方 _zwSeekRun）。
+              // M3 扩批 XXVI：seeking 亦异步派发（spec「queue a task to fire an event
+              // named timeupdate / seek」步——seek-to-currentTime 的 onseeking 在
+              // currentTime 赋值**之后**注册也须收到；同步派发使后挂 handler 错过，
+              // 事件序断言 [seeking, timeupdate, seeked] 失真）。
               if ((_mst.readyState | 0) >= 1) {
                 _mst.seeking = true;
-                _mediaFireSel(sel, handle, key, 'seeking');
-                _mediaFireSel(sel, handle, key, 'timeupdate');
-                var _stSeeked = function () {
+                // M3 扩批 XXVI：seeking/timeupdate/seeked 同一排队任务序派发
+                //（spec seek 步 17「queue a task…fire timeupdate、fire seeking」+
+                // 「queue a task…fire timeupdate、fire seeked」——task 内事件有序；
+                // seek-to-currentTime 的 [seeking, timeupdate, seeked] 断言与
+                // 「seeked 时 seeking 已翻 false」面）。seeked 后按**目标时刻**同步
+                // text track cue active 面（fixture-mounted 切片 2——spec
+                // time-marches-on seek 步：目标时刻 active 的 cue 派 enter；seek
+                // 跳过的 missed cues 不派）。
+                var _stSeekSeq = function () {
+                  _mediaFireSel(sel, handle, key, 'seeking');
+                  // seeking 翻 false 先于 timeupdate（Chromium 可观察语义——
+                  // seek-to-currentTime 的「seeking in timeupdate event」断言面；
+                  // 事件序 [seeking, timeupdate, seeked] 单 timeupdate）。
                   _mst.seeking = false;
                   _mediaFireSel(sel, handle, key, 'timeupdate');
                   _mediaFireSel(sel, handle, key, 'seeked');
-                  // M3 扩批（fixture-mounted 切片 2）：seeked 后按**目标时刻**同步
-                  // text track cue active 面（spec time-marches-on seek 步——目标时刻
-                  // active 的 cue 派 enter；seek 跳过的 missed cues 不派）。
                   if (typeof globalThis._zwMediaSeekSync === 'function') {
                     try { globalThis._zwMediaSeekSync(key); } catch (_eStSk) {}
                   }
                 };
-                if (typeof setTimeout === 'function') setTimeout(_stSeeked, 0);
-                else _stSeeked();
+                if (typeof setTimeout === 'function') setTimeout(_stSeekSeq, 0);
+                else _stSeekSeq();
               } else {
                 // R3937：HAVE_NOTHING 期 seek → 挂起至元数据就绪（seeked 计数链，
                 // track-cues-seeking 断言面；「default playback start position」语义
@@ -608,7 +632,7 @@
             || prop === 'currentTime' || prop === 'duration' || prop === 'playbackRate'
             || prop === 'defaultPlaybackRate' || prop === 'volume' || prop === 'seeking'
             || prop === 'paused' || prop === 'ended' || prop === 'preload'
-            || prop === 'loop' || prop === 'played'
+            || prop === 'loop' || prop === 'played' || prop === 'seekable' || prop === 'buffered'
             || prop === 'kind' || prop === 'label' || prop === 'srclang'
             || prop === 'default' || prop === 'src' || prop === 'textTracks'
             || prop === 'addTextTrack' || prop === 'track' || prop === 'controlsList') {
