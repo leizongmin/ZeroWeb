@@ -669,6 +669,24 @@ impl VideoPlayerRegistry {
         self.players.get(&key).and_then(|p| p.duration())
     }
 
+    /// 固有尺寸真值（W×H；M3 扩批 XXX——runner 静态 settle 提交 videoWidth/Height
+    /// 链：async_load 探针同款开解码器读首帧（webm VP9/AV1 自路由；fixture 级
+    /// 解码 ~10ms 可接受），非 webm/解码失败 → (0,0)（语义层占位）。
+    pub fn probe_dimensions(&self, abs_src: &str) -> (u32, u32) {
+        let key = registry_key(abs_src);
+        let bytes = self.sources.get(&key).or_else(|| self.av_sources.get(&key)).cloned();
+        let Some(bytes) = bytes else {
+            return (0, 0);
+        };
+        let Ok(mut decoder) = zero_media::VideoDecoder::open_webm(&bytes) else {
+            return (0, 0);
+        };
+        match decoder.next_frame() {
+            Ok(Some(frame)) => (frame.width, frame.height),
+            _ => (0, 0),
+        }
+    }
+
     /// 是否在播放（桥查询面）。
     pub fn is_playing(&self, abs_src: &str) -> bool {
         let key = registry_key(abs_src);
@@ -968,6 +986,20 @@ mod tests {
     }
 
     /// M3 扩批 XXIV：loop 真面——音频 entry 流末回卷重播（loop=false 对照照常停）。
+    /// M3 扩批 XXX：probe_dimensions——registry 源字节开解码器读首帧尺寸
+    ///（runner 静态 settle 的 videoWidth/Height 真值链）。
+    #[test]
+    fn registry_probe_dimensions_m3xxx() {
+        let src = "https://example.com/media/probe-dims.webm";
+        let mut reg = VideoPlayerRegistry::new();
+        reg.register_source(src, fixture_bytes_named("sample-webm-vp9.webm"));
+        let (w, h) = reg.probe_dimensions(src);
+        assert_eq!((w, h), (320, 240), "probe 开解码器读首帧尺寸");
+        assert_eq!(reg.probe_dimensions("https://x/nope.webm"), (0, 0));
+        // test-1s.webm 不在 tests/fixtures（runner 侧 wpt-data 资产）——
+        // probe 逻辑一致性已由上方 sample-webm-vp9 面（同 VP9 容器）覆盖。
+    }
+
     #[test]
     fn registry_audio_loop_restarts_at_stream_end() {
         let mut reg = VideoPlayerRegistry::new();
@@ -1545,3 +1577,5 @@ mod audio_tests {
         }
     }
 }
+
+// probe runner-path check appended by debug session

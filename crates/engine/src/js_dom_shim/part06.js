@@ -9307,7 +9307,12 @@
         var parentTag = parent && parent.tagName ? String(parent.tagName).toLowerCase() : '';
         if (parentTag !== 'audio' && parentTag !== 'video') continue;
         if (outcome !== 'error') {
-          _zwSettleResourceSelector(parent.__zwSelector, parentTag, target, 'available', 0, 0, durationMs);
+          // M3 扩批 XXX：source 面候选成功 → 父 settle 携带探针真值（width/height/
+          // durationMs——videoWidth/Height getter 读父键 state；video 尺寸真值链）。
+          // 加载序列（loadedmetadata/canplay 等）由下方 9177 行父 tag+outcome!=='error'
+          // 分支承载（available 亦触发——此前静态 <source> 形态 video 永不派
+          // loadedmetadata；video_size_preserved_after_ended 断言面）。
+          _zwSettleResourceSelector(parent.__zwSelector, parentTag, target, 'available', width, height, durationMs);
           continue;
         }
         var candidates = parent.querySelectorAll ? parent.querySelectorAll('source') : [];

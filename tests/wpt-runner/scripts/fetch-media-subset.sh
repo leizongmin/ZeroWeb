@@ -77,6 +77,9 @@ fetch_raw "html/semantics/embedded-content/the-video-element/video-tabindex.html
 # M3 扩批 VIII：空 src 容错面（about:blank/"" src → error 事件不 crash——
 # M3 扩批 II 的空 src 错误码语义 + 动态 .src= 模拟覆盖面）。
 fetch_raw "html/semantics/embedded-content/the-video-element/video_crash_empty_src.html"
+# 不导入 video_size_preserved_after_ended（2026-09-04 实证）：静态 <source> 形态
+# loadedmetadata 与 promise_test EventWatcher 时序 headless 双通道 settle 下不稳定。
+# 不导入 video_timeupdate_on_seek（WPT CGI src）/ video_initially_paused（reftest）。
 
 # 主目录顶层 testharness 白名单（语义面非解码面）。
 # media-elements M3 扩批（event_* 族——M2 headless 加载序列落地后事件断言可跑；
@@ -167,6 +170,7 @@ TOP_FILES=(
   # play()/pause()/load() 交互 + 事件严格序（canplay→canplaythrough→play→playing；
   # play 先行形态 play→canplay→playing→canplaythrough 的 pending promise 面）。
   "ready-states/autoplay.html"
+
   "media_fragment_seek.html"
   "autoplay-with-broken-track.html"
   # M3 扩批 XXVIII（2026-09-04）：同文档移动不重置播放（currentTime>=10 保持 +

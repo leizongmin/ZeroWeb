@@ -1573,6 +1573,13 @@ pub const MEDIA_TEST_FILES: &[&str] = &[
     // M3 扩批 XXIX（2026-09-04）：ready-states/autoplay——autoplaying flag 交互
     // + 事件严格序（audio+video 各 5 子测）。
     "html/semantics/embedded-content/media-elements/ready-states/autoplay.html",
+    // 不导入 video_size_preserved_after_ended（2026-09-04 实证）：静态 <source>
+    // 形态的 loadedmetadata 与 promise_test EventWatcher 时序在 headless 双通道
+    // settle（runner 静态 commit + shim microtask）下不稳定——md 派发早于
+    // wait_for 挂载或延迟到超时（两形态均实测）。依赖 settle 时序收敛，随
+    // runner/shim 事件通道统一后复评。不导入 video_timeupdate_on_seek（WPT CGI
+    // src）/ video_initially_paused（reftest 型）/ video-loading-* poster 族。
+
     // M3 扩批 IX：移动面（同文档移动仍 related → 不暂停）。
     // pause-move-to-other-document 不导入——iframe adopt 面未实施（fetch 脚本注记）。
     "html/semantics/embedded-content/media-elements/playing-the-media-resource/pause-move-within-document.html",
@@ -3519,19 +3526,51 @@ fn run_testharness_html_inner(
             // 永不 settle → readyState 恒 NONE → seek 门 readyState>=1 不开）。
             if matches!(
                 resource.kind,
-                zero_engine::MediaResourceElementKind::Video | zero_engine::MediaResourceElementKind::Audio
+                zero_engine::MediaResourceElementKind::Video
+                    | zero_engine::MediaResourceElementKind::Audio
+                    | zero_engine::MediaResourceElementKind::Source
             ) {
-                let duration_ms = webview
-                    .video_players()
-                    .lock()
-                    .ok()
-                    .and_then(|reg| reg.duration(&resolved).map(|d| (d * 1000.0) as u64));
+                // M3 扩批 XXX：source 子候选 settle 提交（此前静态 <source> 永不
+                // settle——__zw_commit 的 source 分支处理父级 available settle +
+                // 加载序列派发）。源字节可达性判定（source 候选语义——缺席候选
+                // commit 'error' 走下一候选；可播源登记 + probe 真值链）。
+                let path_part = resolved
+                    .split("://")
+                    .nth(1)
+                    .and_then(|rest| rest.split_once('/'))
+                    .map(|(_, p)| p)
+                    .unwrap_or("");
+                let clean = path_part.split(['?', '#']).next().unwrap_or(path_part);
+                let bytes_ok = (!clean.is_empty())
+                    .then(|| std::fs::read(wpt_root.join(clean)).ok())
+                    .flatten();
+                if let Some(bytes) = bytes_ok.clone()
+                    && let Ok(mut reg) = webview.video_players().lock()
+                    && !reg.contains_source(&resolved)
+                {
+                    reg.register_source(&resolved, bytes);
+                }
+                let outcome = if bytes_ok.is_some() { "loaded" } else { "error" };
+                let (width, height, duration_ms) = match webview.video_players().lock() {
+                    Ok(reg) => match resource.kind {
+                        zero_engine::MediaResourceElementKind::Video
+                        | zero_engine::MediaResourceElementKind::Source
+                            if outcome == "loaded" =>
+                        {
+                            let (w, h) = reg.probe_dimensions(&resolved);
+                            (w, h, reg.duration(&resolved).map(|d| (d * 1000.0) as u64))
+                        }
+                        _ => (0, 0, reg.duration(&resolved).map(|d| (d * 1000.0) as u64)),
+                    },
+                    Err(_) => (0u32, 0u32, None::<u64>),
+                };
+
                 let _ = webview.execute_script(&zero_engine::script_commit_resource_element_state(
                     kind_tag(resource.kind),
                     &resolved,
-                    "loaded",
-                    0,
-                    0,
+                    outcome,
+                    width,
+                    height,
                     duration_ms,
                 ));
             }
