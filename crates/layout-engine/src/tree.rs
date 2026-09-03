@@ -1673,6 +1673,19 @@ fn build_subtree(
     // 转换为 taffy 样式（传入父级区域映射）
     let mut taffy_style = computed_style_to_taffy(&computed, parent_grid_areas, viewport_w, viewport_h);
 
+    // R4008（css-sizing-4 §intrinsic-size-override × Flexbox §9.4 stretch 交互）：converter
+    // 的 contain:size 路径把 auto height 写成 CIS definite（R2256 used-size 近似，块流正确），
+    // 但 flex item 的 cross stretch 是**非 content-based** used size——definite 高压制
+    // stretch（016：item CIS 11/22/33 高应 stretch 到容器 100）。此处对 flex/grid item 恢复
+    // auto（CIS 仍经 measure 参与 intrinsic/base-size 面）。
+    if computed.contain.has_size()
+        && matches!(computed.height, LengthValue::Auto)
+        && computed.contain_intrinsic_height.is_some()
+        && is_flex_grid_item(doc, styles, dom_id)
+    {
+        taffy_style.size.height = taffy::style::Dimension::auto();
+    }
+
     // margin-trim（css-box-4 §margin-trim）：父块容器声明 margin-trim 的 block / block-start /
     // block-end 时，归零首子 block-start（margin-top）与/或末子 block-end（margin-bottom）。
     // 在 taffy 布局前修改 taffy_style.margin，使整个流正确重算（trim 到 0 即移除参与折叠的

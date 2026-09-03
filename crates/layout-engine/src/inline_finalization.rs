@@ -1516,15 +1516,33 @@ pub(crate) fn measure_text_content(
             || matches!(available_space.width, AvailableSpace::MaxContent);
         let measuring_content_h = matches!(available_space.height, AvailableSpace::MinContent)
             || matches!(available_space.height, AvailableSpace::MaxContent);
+        // R4008（css-sizing-4 §intrinsic-size-override）：contain:size 叶在 intrinsic
+        // 测量（max-content/min-content）下内容为 0，但 contain-intrinsic-size 是固有
+        // 尺寸的**替代值**——intrinsic 测量须回报 CIS（002：max-content 父含 CIS 111 宽子
+        // → 父 113 应 4；019 fit-content；024 grid max-content）。显式 width/height 已由
+        // converter 处理（used-size 面），此处补 intrinsic 测量面。CIS 缺失/非 definite
+        // → None → 旧行为 0（零回归）。
+        let cis_intrinsic = |cis: Option<&LengthValue>| -> Option<f32> {
+            let s = style?;
+            if !s.contain.has_size() {
+                return None;
+            }
+            cis.and_then(|v| resolve_definite_real_length(v, s))
+        };
+        let cis_w = style.and_then(|s| s.contain_intrinsic_width.as_ref());
+        let cis_h = style.and_then(|s| s.contain_intrinsic_height.as_ref());
         let explicit_w = known_dimensions.width.or_else(|| {
             if measuring_content_w {
-                return None;
+                // R4008：仅 contain:size（CIS 替代固有尺寸）参与 content 测量；
+                // 无 containment 时显式 width 不回填（min-size:auto 的 content
+                // suggestion 须为纯内容宽——flex-shrink-001 族回归守卫）。
+                return cis_intrinsic(cis_w);
             }
             style.and_then(|s| resolve_definite_real_length(&s.width, s))
         });
         let explicit_h = known_dimensions.height.or_else(|| {
             if measuring_content_h {
-                return None;
+                return cis_intrinsic(cis_h);
             }
             style.and_then(|s| resolve_definite_real_length(&s.height, s))
         });

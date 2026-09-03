@@ -135,11 +135,29 @@ pub(crate) fn box_content_max_width(
     let children_inner = inline_sum.max(block_max);
     // 叶盒回退：无有效子元素贡献时，用自身显式 Px width（content-box 语义）。
     // 显式 width 的叶盒（如 `<div style="width:50px">`）其 max-content 即该宽度。
-    let own_explicit = box_node
-        .node_id
-        .and_then(|id| styles.get(&id))
-        .and_then(|s| resolve_intrinsic_real_length(&s.width, s))
+    let own_style = box_node.node_id.and_then(|id| styles.get(&id));
+    // R4008（css-sizing-4 §intrinsic-size-override）：自身 contain:size 且 width 为
+    // content-based 关键字（min/max/fit-content/Auto）时，intrinsic 宽 = CIS 替代值
+    //（004：width:min-content + CIS 111 → 111 应 0）。显式 Px width 不受影响
+    //（containment 不覆盖显式尺寸）。
+    let own_cis = own_style
+        .filter(|s| s.contain.has_size())
+        .filter(|s| {
+            matches!(
+                s.width,
+                LengthValue::Auto | LengthValue::MinContent | LengthValue::MaxContent | LengthValue::FitContent(_)
+            )
+        })
+        .and_then(|s| {
+            s.contain_intrinsic_width
+                .as_ref()
+                .and_then(|v| resolve_intrinsic_real_length(v, s))
+        })
         .unwrap_or(0.0);
+    let own_explicit = own_style
+        .and_then(|s| resolve_intrinsic_real_length(&s.width, s))
+        .unwrap_or(0.0)
+        .max(own_cis);
     // R3792：aspect-ratio transferred width（css-sizing-4 §4.1 transferred size）——
     // width:auto + aspect_ratio + definite height（Px）的块盒，其 intrinsic 宽贡献 =
     // height × ratio（intrinsic-size-001：`height:100px; aspect-ratio:1/1` 子对
@@ -272,6 +290,20 @@ pub(crate) fn block_max_content_width(
             continue;
         }
         let is_spanner = child_style.is_some_and(|s| matches!(s.column_span, ColumnSpanComputedValue::All));
+        // R4008（css-sizing-4 §intrinsic-size-override）：contain:size 子的固有尺寸由
+        // contain-intrinsic-size 替代（内容不参与）——max-content 计入 CIS 宽（002：CIS
+        // 111 宽子 → max-content 父 113 应 4）。CIS 缺失/非 definite → 0（同旧行为）。
+        if let Some(cs) = child_style
+            && cs.contain.has_size()
+            && let Some(cis_st) = child.node_id.and_then(|cid| styles.get(&cid))
+            && let Some(cis_w) = cs
+                .contain_intrinsic_width
+                .as_ref()
+                .and_then(|v| resolve_intrinsic_real_length(v, cis_st))
+        {
+            block_max = block_max.max(cis_w + child.margin_left + child.margin_right);
+            continue;
+        }
         // block-level 子：若是 flex/grid 容器，dispatch 到专用 intrinsic 函数（R1018 关键）。
         let child_intrinsic = child_style
             .map(|s| match s.display {
@@ -304,11 +336,26 @@ pub(crate) fn block_max_content_width(
     let children_inner = inline_sum.max(block_max);
 
     // leaf 回退同 box_content_max_width：显式 Px width 或文本内容宽。
-    let own_explicit = box_node
-        .node_id
-        .and_then(|id| styles.get(&id))
-        .and_then(|s| resolve_intrinsic_real_length(&s.width, s))
+    // R4008：自身 contain:size + content-based width 关键字 → CIS 替代（同 box_content_max_width）。
+    let own_style = box_node.node_id.and_then(|id| styles.get(&id));
+    let own_cis = own_style
+        .filter(|s| s.contain.has_size())
+        .filter(|s| {
+            matches!(
+                s.width,
+                LengthValue::Auto | LengthValue::MinContent | LengthValue::MaxContent | LengthValue::FitContent(_)
+            )
+        })
+        .and_then(|s| {
+            s.contain_intrinsic_width
+                .as_ref()
+                .and_then(|v| resolve_intrinsic_real_length(v, s))
+        })
         .unwrap_or(0.0);
+    let own_explicit = own_style
+        .and_then(|s| resolve_intrinsic_real_length(&s.width, s))
+        .unwrap_or(0.0)
+        .max(own_cis);
     let inner = if !has_in_flow_child {
         let text_w = box_node
             .node_id
@@ -919,6 +966,36 @@ mod tests {
         }
         let target = find(target_id, &doc, &result.root)?;
         Some(block_max_content_width(target, &doc, &styles))
+    }
+
+    // ── R4008（css-sizing-4 §intrinsic-size-override）：contain:size 的 CIS 替代测量 ──
+
+    /// width:min-content 的 contain:size 叶，intrinsic 宽 = CIS 替代（004：CIS 111 → 111 应 0）。
+    #[test]
+    fn r4008_cis_overrides_min_content_leaf_intrinsic() {
+        let w = compute_block_max_content(
+            r#"<html><body><div id="t" style="width: min-content; contain: size; contain-intrinsic-size: 111px 222px;"></div></body></html>"#,
+            "t",
+        );
+        assert!(
+            (w.unwrap_or(0.0) - 111.0).abs() < 1.0,
+            "CIS width must replace content-based intrinsic width, got {w:?}"
+        );
+    }
+
+    /// max-content 父含 contain:size 子（CIS 宽）→ 父 intrinsic 计入 CIS（002：111+边框 2 → 113）。
+    #[test]
+    fn r4008_cis_child_contributes_to_parent_max_content() {
+        let w = compute_block_max_content(
+            r#"<html><body><div id="t" style="width: max-content; border: 1px solid black;">
+<div style="contain: size; contain-intrinsic-size: 111px 222px;"></div>
+</div></body></html>"#,
+            "t",
+        );
+        assert!(
+            (w.unwrap_or(0.0) - 113.0).abs() < 1.0,
+            "parent max-content must include CIS child (111 + border 2), got {w:?}"
+        );
     }
 
     // ── R1431 L3② spanner-aware multicol intrinsic sizing（multicol-width-005 6 case）──
