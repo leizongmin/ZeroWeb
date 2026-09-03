@@ -1559,6 +1559,9 @@ pub const MEDIA_TEST_FILES: &[&str] = &[
     // paused=false；movie_300.webm 长流）。不导入 loop_base（XXIV 注记）/
     // preserves-pitch/src_object_blob（testdriver 音高/blob 面）。
     "html/semantics/embedded-content/media-elements/offsets-into-the-media-resource/currentTime-move-within-document.html",
+    // M3 扩批 XXVIII 续：track-mode-triggers-loading——metadata track disabled 不
+    // 加载，mode 改 hidden 触发（mode 触发加载面 + VTT cue 解析断言）。
+    "html/semantics/embedded-content/media-elements/track/track-element/track-mode-triggers-loading.html",
     // M3 扩批 IX：移动面（同文档移动仍 related → 不暂停）。
     // pause-move-to-other-document 不导入——iframe adopt 面未实施（fetch 脚本注记）。
     "html/semantics/embedded-content/media-elements/playing-the-media-resource/pause-move-within-document.html",

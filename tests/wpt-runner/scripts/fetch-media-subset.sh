@@ -171,6 +171,10 @@ TOP_FILES=(
   # 不导入 audio/video_loop_base（短 fixture 回卷时序不可观测 + VP8 域外——
   # XXIV 注记）；preserves-pitch/src_object_blob（testdriver 音高检测/blob URL 面）。
   "offsets-into-the-media-resource/currentTime-move-within-document.html"
+  # M3 扩批 XXVIII 续：track-mode-triggers-loading——metadata track 初始 disabled
+  # 不加载，mode 改 hidden 触发（扩批 XV mode 触发面 + VTT 解析面既有；cues 12 条
+  # + cue[11].startTime==22 断言）。
+  "track/track-element/track-mode-triggers-loading.html"
   # M3 扩批 IX：移动面（同文档移动仍 related → 不暂停）。
   # pause-move-to-other-document 不导入：跨 iframe 文档 adopt 在 shim 融合视图下
   # appendChild 静默落空（元素保持 detached）——实施需 iframe 文档模型 adopt 面

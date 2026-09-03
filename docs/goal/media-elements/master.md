@@ -4,8 +4,9 @@
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
 **最后更新**: 2026-09-04（**M3 扩批 XXVIII 落地**——currentTime-move-within-document
 导入（offsets-into-the-media-resource 末件——同文档移动不重置播放，headless 时钟
-推进面现成零改动导入；fixture 增 movie_300.webm）。**557P/0F/24PF，
-557/581 = 95.9%**（+1 净涨零回归）。此前同日：**M3 扩批 XXVII 落地**——media fragment #t= 起点解析
+推进面现成零改动导入；fixture 增 movie_300.webm）+ track-mode-triggers-loading
+导入（metadata track disabled 不加载，mode 改 hidden 触发——扩批 XV mode 触发面
+直接覆盖）。**558P/0F/24PF，558/582 = 95.9%**（+2 净涨零回归）。此前同日：**M3 扩批 XXVII 落地**——media fragment #t= 起点解析
 （settle 加载序列内 currentTime 初始化：npt:/HH:MM:SS/ms/percent-encode 五形态）
 + headless 播放时钟推进（march 内墙钟差 × playbackRate——autoplay 驱动的播放
 currentTime 不再恒 0）+ 周期 timeupdate（250ms 节流——播放推进期页面可收
@@ -659,7 +660,7 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
 
 | # | 缺口 | 状态 | 失败聚类 |
 |---|------|------|----------|
-| M1g | WPT media-elements 用例覆盖 | ✅ 154 用例已导入（136 + 扩批 XVI~XXVIII：播放推进族 6 件 + track-change-event + track-active-cues + played-loop + audio_loop_seek_to_eos + loop-from-ended.tentative + seeking/ 三件 + volume_nonfinite + media_fragment_seek + autoplay-with-broken-track + currentTime-move-within-document），**95.9%**（557/581） | — |
+| M1g | WPT media-elements 用例覆盖 | ✅ 154 用例已导入（136 + 扩批 XVI~XXVIII：播放推进族 6 件 + track-change-event + track-active-cues + played-loop + audio_loop_seek_to_eos + loop-from-ended.tentative + seeking/ 三件 + volume_nonfinite + media_fragment_seek + autoplay-with-broken-track + currentTime-move-within-document + track-mode-triggers-loading），**95.9%**（558/582） | — |
 | M2g | load 算法 + 状态机（事件序列派发） | ✅ M2 落地（13T→**0T**） | F4 闭合 |
 | M3g | 事件序列 headless 近似驱动 | ✅（同 M2g；source-child 触发已落地） | F4 闭合 |
 | M4g-a | 媒体元数据 IDL 反射（初值面） | ✅ 切片 3 落地 | F2 闭合（-9 Fail） |
@@ -684,7 +685,9 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
    volume_nonfinite——seek clamp + seek 事件序排队任务化收口）+ media fragment
    与 autoplay 面三件导入（扩批 XXVII media_fragment_seek +
    autoplay-with-broken-track——headless 播放时钟推进 + 周期 timeupdate 收口；
-   扩批 XXVIII currentTime-move-within-document——同文档移动不重置播放）；
+   扩批 XXVIII currentTime-move-within-document——同文档移动不重置播放 +
+   track-mode-triggers-loading——metadata track mode 触发加载（D 组排除件
+   首次解锁）；
    audio/video_volume_check 不导入：越界断言 e.code==1 为旧 spec 语义——现行
    spec 越界 clamp 不抛，导入即恒假失败）。
    playing-the-media-resource
@@ -694,7 +697,8 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
    pause-move-to-other-document 同域排除）；the-video-element 反射余面
    （video-loading-*
    preload 语义族——视 lazy-loading 支撑面）。**headless 可导入面已在 95.9% 重饱和
-   （M3 扩批 XXVIII 后第十一次修正）**——余下增量依赖兄弟目标解锁（真播放钟 →
+   （M3 扩批 XXVIII 后第十一次修正；track-mode-triggers-loading 的 metadata
+   加载时序由扩批 XV mode 触发面直接覆盖——D 组排除注记失效）**——余下增量依赖兄弟目标解锁（真播放钟 →
    time-marches-on 余面）+ 深结构项（~~TextTrackList change 事件广播反向链~~ ✅
    扩批 XXI 兑现、cue 标记树解析——归渲染域远期）。
 2. ~~**M4g-d**：canPlayType 能力表联动更新~~ ✅ 2026-09-01 兑现（能力表真值化——
