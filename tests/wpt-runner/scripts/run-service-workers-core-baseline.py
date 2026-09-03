@@ -10,8 +10,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-EXPECTED_CASES = 55
-EXPECTED_SUBTESTS = 203
+EXPECTED_CASES = 56
+EXPECTED_SUBTESTS = 209
 
 
 def parse_args() -> argparse.Namespace:
@@ -118,7 +118,10 @@ def render_markdown(summary: dict) -> str:
             "it with worker-global `messageerror` dispatch for unserializable "
             "page messages. `controller-on-load.https.html` extends it with "
             "newly loaded controlled iframe controller projection and "
-            "iframe-realm registration worker identity.",
+            "iframe-realm registration worker identity. "
+            "`getregistration.https.html` extends it with same-origin "
+            "document URL validation, fragment-insensitive lookup, and "
+            "unregistered controlled iframe discovery.",
         ]
     ) + "\n"
 

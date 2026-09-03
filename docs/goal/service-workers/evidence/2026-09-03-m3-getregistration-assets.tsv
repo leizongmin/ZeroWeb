@@ -1,0 +1,2 @@
+path	manifest_type	roles	referenced_by	bytes	templated	git_blob_sha	source_revision
+service-workers/service-worker/getregistration.https.html	testharness	case	1	3905	no	634c2efa12461a811d8e46345ece0298086f64b2	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83

@@ -2455,7 +2455,15 @@
         var base = doc && doc._zwURL ? doc._zwURL : globalThis.location.href;
         var absolute = scope;
         try {
-          absolute = new URL(scope || base, base).href;
+          var parsed = new URL(scope || base, base);
+          var baseUrl = new URL(base, globalThis.location.href);
+          if (parsed.origin !== baseUrl.origin) {
+            // https://w3c.github.io/ServiceWorker/#navigator-service-worker-getRegistration
+            return Promise.reject(new (globalThis.DOMException || Error)(
+              'Service Worker document URL origin mismatch',
+              'SecurityError'));
+          }
+          absolute = parsed.href;
         } catch (_eIframeSwGetRegistration) {}
         return parentServiceWorker.getRegistration(absolute).then(wrapRegistration);
       };

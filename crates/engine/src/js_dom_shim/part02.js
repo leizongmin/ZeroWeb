@@ -3936,7 +3936,14 @@
         ensureDocument();
         var absolute = scope;
         try {
-          absolute = new URL(scope || globalThis.location.href, globalThis.location.href).href;
+          var parsed = new URL(scope || globalThis.location.href, globalThis.location.href);
+          if (parsed.origin !== globalThis.location.origin) {
+            // https://w3c.github.io/ServiceWorker/#navigator-service-worker-getRegistration
+            return Promise.reject(new (globalThis.DOMException || Error)(
+              'Service Worker document URL origin mismatch',
+              'SecurityError'));
+          }
+          absolute = parsed.href;
         } catch (_e) {}
         if (typeof __zw_sw_get_registration === 'function') {
           try {

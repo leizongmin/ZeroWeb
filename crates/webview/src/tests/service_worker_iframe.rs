@@ -210,3 +210,84 @@ fn iframe_register_uses_iframe_url_and_observes_statechange() {
         std::thread::sleep(Duration::from_millis(10));
     }
 }
+
+#[test]
+#[serial_test::serial(service_worker_runtime)]
+fn get_registration_rejects_cross_origin_document_url() {
+    const PAGE_URL: &str = "https://example.test/service-workers/service-worker/getregistration.https.html";
+    let mut webview = crate::WebView::new(WebViewConfig {
+        fetch_handler: Some(Arc::new(|request| {
+            let body = if request
+                .url
+                .ends_with("/service-workers/service-worker/resources/blank.html")
+            {
+                "<!doctype html><title>blank</title>"
+            } else {
+                ""
+            };
+            Ok(FetchResponse {
+                status: 200,
+                status_text: "OK".into(),
+                headers: vec![("content-type".into(), "text/html".into())],
+                body: body.into(),
+                body_bytes: None,
+            })
+        })),
+        ..Default::default()
+    });
+
+    webview.load_url(PAGE_URL);
+    webview.complete_load(
+        "<!doctype html><body>
+           <script>
+             globalThis.__crossOriginGetRegistration = 'pending';
+             Promise.all([
+               navigator.serviceWorker.getRegistration('https://www1.example.test/')
+                 .then(
+                   function() { return 'top:resolved'; },
+                   function(error) { return 'top:' + error.name; }
+                 ),
+               new Promise(function(resolve) {
+                 var frame = document.createElement('iframe');
+                 frame.src = 'resources/blank.html';
+                 frame.onload = function() { resolve(frame); };
+                 document.body.appendChild(frame);
+               }).then(function(frame) {
+                 return frame.contentWindow.navigator.serviceWorker
+                   .getRegistration('https://www1.example.test/')
+                   .then(
+                     function() { return 'iframe:resolved'; },
+                     function(error) {
+                       frame.remove();
+                       return 'iframe:' + error.name;
+                     }
+                   );
+               })
+             ]).then(function(results) {
+               globalThis.__crossOriginGetRegistration = results.join('|');
+             }).catch(function(error) {
+               globalThis.__crossOriginGetRegistration =
+                 'error:' + error.name + ':' + error.message;
+             });
+           </script>
+         </body>",
+        None,
+    );
+    webview.run_page_scripts_strict().unwrap();
+
+    let deadline = Instant::now() + Duration::from_secs(20);
+    loop {
+        let value = webview
+            .execute_script("globalThis.__crossOriginGetRegistration")
+            .unwrap();
+        if value != "pending" {
+            assert_eq!(value, "top:SecurityError|iframe:SecurityError");
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "cross-origin getRegistration regression timed out"
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}

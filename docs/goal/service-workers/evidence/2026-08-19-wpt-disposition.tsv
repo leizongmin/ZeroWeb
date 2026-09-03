@@ -124,7 +124,7 @@ service-workers/service-worker/fetch-response-taint.https.html	04067ce9c7c2165e7
 service-workers/service-worker/fetch-response-xhr.https.html	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83	891eb029422b7bf1cd575270cfa4616bb80da0bc	1	gated	gated-initial-inventory	2026-08-19-m0-wpt-case-inventory.tsv
 service-workers/service-worker/fetch-waits-for-activate.https.html	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83	7c888450f0d5f5fc72ec38909487877f38a1c024	1	gated	gated-initial-inventory	2026-08-19-m0-wpt-case-inventory.tsv
 service-workers/service-worker/fetch-with-body.https.html	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83	21ded3f3272566e5a31fea08c2358bed1438bd29	1	gated	gated-initial-inventory	2026-08-19-m0-wpt-case-inventory.tsv
-service-workers/service-worker/getregistration.https.html	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83	634c2efa12461a811d8e46345ece0298086f64b2	1	defer	defer-single-iframe	2026-08-19-m1-iframe-review.tsv
+service-workers/service-worker/getregistration.https.html	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83	634c2efa12461a811d8e46345ece0298086f64b2	1	core	getregistration-core	2026-09-03-m3-getregistration.md
 service-workers/service-worker/getregistrations.https.html	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83	3a9b9a23317b2bb1370689b553a49c28de4cf8f8	1	skip	skip-mixed-cross-origin-clients	2026-08-19-m1-message-review.tsv
 service-workers/service-worker/global-serviceworker.https.any.js	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83	19d77847c426180e04ac51e507c1714c1309a193	1	core	global-serviceworker-core	2026-09-02-m3-global-serviceworker.md
 service-workers/service-worker/historical.https.any.js	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83	20b3ddfbf7b883026b70692cf0f907dc93f5ad2b	1	core	fetch-event-historical-core	2026-09-02-m3-fetch-event-historical.md
