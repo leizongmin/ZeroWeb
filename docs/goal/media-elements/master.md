@@ -2,7 +2,13 @@
 
 **入口文档**: [../media-elements.md](../media-elements.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-03（**M3 扩批 XXIV 落地**——loop 属性真面 + played
+**最后更新**: 2026-09-03（**M3 扩批 XXV 落地**——loop-from-ended.tentative 导入
+（playing-the-media-resource/——ended 后设 loop 再 play 须回卷 seeked，Chromium
+crbug 364442 断言面）。配套播放面四处缺陷收口（见 media-playback master.md 切片
+8）：registry Ended→play 解码器重建 + 伴生轨游标归零 / seek 游标 clamp / 泵时钟
+注入（桥 play 锚与 tick 同源）/ shim ended 态 play 派 seeking/seeked + loop
+setter 翻回 ended=false。**543P/0F/24PF，543/567 = 95.8%**（+1 净涨零回归）。
+此前同日：**M3 扩批 XXIV 落地**——loop 属性真面 + played
 TimeRanges：registry `set_loop`（音频 entry 流末回卷——解码器重建 + 游标归零 +
 播放态保持；伴生轨同面；`reached_end` 标志补音频面 isEnded 驱动源）+ shim loop
 IDL setter/getter（`_mediaState` 镜像 + 桥推送 + play 起播同步，retry 路径同面）+
@@ -639,7 +645,7 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
 
 | # | 缺口 | 状态 | 失败聚类 |
 |---|------|------|----------|
-| M1g | WPT media-elements 用例覆盖 | ✅ 146 用例已导入（136 + 扩批 XVI/XVII/XIX/XX/XXI/XXIII/XXIV：播放推进族 6 件 + track-change-event + track-active-cues + played-loop + audio_loop_seek_to_eos），**95.8%**（542/566） | — |
+| M1g | WPT media-elements 用例覆盖 | ✅ 147 用例已导入（136 + 扩批 XVI/XVII/XIX/XX/XXI/XXIII/XXIV/XXV：播放推进族 6 件 + track-change-event + track-active-cues + played-loop + audio_loop_seek_to_eos + loop-from-ended.tentative），**95.8%**（543/567） | — |
 | M2g | load 算法 + 状态机（事件序列派发） | ✅ M2 落地（13T→**0T**） | F4 闭合 |
 | M3g | 事件序列 headless 近似驱动 | ✅（同 M2g；source-child 触发已落地） | F4 闭合 |
 | M4g-a | 媒体元数据 IDL 反射（初值面） | ✅ 切片 3 落地 | F2 闭合（-9 Fail） |
@@ -657,16 +663,17 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
 1. **扩大导入面（余面收口）**：track-cues-* 播放推进族全件已导入（扩批 XX
    seeking 兑现——HAVE_NOTHING 挂起 seek 语义）+ B 组排除件全清（扩批 XXII
    disabled/no-cuechange/remove-active-cue 三案 + 扩批 XXIII track-active-cues
-   末件——load invoke 重置面收口）+ loop 真面两件导入（扩批 XXIV played-loop /
-   audio_loop_seek_to_eos）。playing-the-media-resource
+   末件——load invoke 重置面收口）+ loop 真面三件导入（扩批 XXIV played-loop /
+   audio_loop_seek_to_eos + 扩批 XXV loop-from-ended.tentative——ended 后设
+   loop 再 play 回卷 seeked，配套 registry Ended→play 解码器重建 + 泵时钟注入
+   收口）。playing-the-media-resource
    剩余（play-in-detached-document——需 detached 文档播放时钟推进，依赖兄弟目标
-   media-playback 播放钟接语义层；loop-from-ended.tentative——动态 src 的 settle
-   真值晚于 loadedmetadata，headless 600 fallback 使 seek 目标与桥真值钟永不交汇
-   （扩批 XXIV 实测注记），待 register_dynamic 快照先于首拍 timer 的时序修复；
-   fragmented-mp4-end 同域）；the-video-element 反射余面（video-loading-*
+   media-playback 播放钟接语义层；fragmented-mp4-end——MSE 面，归远期）；
+   the-video-element 反射余面（video-loading-*
    preload 语义族——视 lazy-loading 支撑面）。**headless 可导入面已在 95.8% 重饱和
-   （M3 扩批 XXIV 后第七次修正）**——余下增量依赖兄弟目标解锁（真播放钟 →
-   time-marches-on 余面 / loop-from-ended / fragmented-mp4-end）
+   （M3 扩批 XXV 后第八次修正）**——余下增量依赖兄弟目标解锁（真播放钟 →
+   time-marches-on 余面）+ 深结构项（~~TextTrackList change 事件广播反向链~~ ✅
+   扩批 XXI 兑现、cue 标记树解析——归渲染域远期）。
    + 深结构项（~~TextTrackList change 事件广播反向链~~ ✅ 扩批 XXI 兑现、
    cue 标记树解析——归渲染域远期）。
 2. ~~**M4g-d**：canPlayType 能力表联动更新~~ ✅ 2026-09-01 兑现（能力表真值化——

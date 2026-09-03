@@ -8,6 +8,7 @@
 //! 同键，settle 时注册表先收到解码字节（`register_source`），play 即建 player。
 
 use std::collections::HashMap;
+use std::sync::atomic;
 use zero_engine::image_resource_key;
 use zero_media::{
     AudioDecodeError, AudioDecoder, AudioFormat, AudioSink, DecodedAudio, NullSink, OpusAudioTrack, VideoClock,
@@ -520,6 +521,39 @@ impl VideoPlayerRegistry {
             }
         }
         if let Some(player) = self.players.get_mut(&key) {
+            // M3 扩批 XXV：Ended 后 play = 重头播放（spec「ended playback」步 6.4
+            // ——loop-from-ended 断言面）。解码器单向流已耗尽，直接置 Playing 会在
+            // 下一 tick present_pending 即 None 又转 Ended（seek(0) 也救不了——
+            // demux 已尽）；经 reset 重建解码器（源字节留存面，与 AudioEntry.restart
+            // 同语义）。重建失败回落 Ended（桥 play 返 true 语义层照常推进）。
+            if player.state() == zero_media::PlayerState::Ended {
+                // 源字节：单轨源 play 首次即消费（sources.remove），双轨源经 av_sources
+                // 留存（伴生轨 seek 重建共用）——两处任一在即可重建。
+                let bytes = self.sources.get(&key).or_else(|| self.av_sources.get(&key)).cloned();
+                if let Some(bytes) = bytes
+                    && let Ok(decoder) = VideoDecoder::open_webm(&bytes)
+                {
+                    player.reset(decoder);
+                    // 伴生轨同面回卷（audio clock 主时钟——current_time 优先读 av
+                    // 游标，游标不归零则 Ended→play 后桥钟读数仍在流末）。
+                    let rebuilt = open_webm_audio_track(&bytes)
+                        .ok()
+                        .map(|t| WebmAudioTrackKind::Vorbis(Box::new(t)))
+                        .or_else(|| {
+                            open_webm_opus_audio_track(&bytes)
+                                .ok()
+                                .map(|t| WebmAudioTrackKind::Opus(Box::new(t)))
+                        });
+                    if let (Some(entry), Some(track)) = (self.av_audio_entries.get_mut(&key), rebuilt) {
+                        entry.track = track;
+                        entry.cursor_ms = 0;
+                        entry.skip_until_ms = 0;
+                        entry.last_tick_ms = None;
+                    }
+                }
+            }
+            // M3 扩批 XXV：now_ms 由桥回调翻译（clock 在位时 shim 的 0 → 泵时钟
+            // 现值），播放锚与泵 tick 同源。
             player.play(now_ms);
         }
         // 音频伴生起播（与视频同锚点时钟）。
@@ -598,8 +632,18 @@ impl VideoPlayerRegistry {
                 sample_rate: rate,
                 channels,
             });
-            entry.cursor_ms = target_ms;
-            entry.skip_until_ms = target_ms;
+            // M3 扩批 XXV：游标 clamp 到流末（语义层以 headless duration 600 算的
+            // seek 目标可超真实流长——loop-from-ended 的 currentTime=duration-0.5
+            // 形态；audio clock 主时钟游标超界会把视频位置拉出流末，ended 面
+            // currentTime 读数失真）。clamped 后以视频 player 位置为准（seek_to_ms
+            // 内已 clamp 到 [0, duration]）。
+            let clamped_ms = self
+                .players
+                .get(&key)
+                .map(|p| (p.current_time() * 1000.0) as u64)
+                .unwrap_or(target_ms);
+            entry.cursor_ms = clamped_ms;
+            entry.skip_until_ms = clamped_ms;
             entry.last_tick_ms = None;
         }
         player_ok
@@ -888,6 +932,7 @@ mod tests {
         assert!(reg.is_playing(AV));
         assert!(reg.is_any_playing());
         // 音频泵推进（与帧泵同节拍）：伴生轨写 sink（440Hz sine）。
+        // play(0)=无锚起播（M3 扩批 XXV）→ advance 首拍以当拍为起点。
         assert!(reg.audio_advance_all(500), "A/V 伴生轨应写 sink");
         reg.pause(AV);
         assert!(!reg.audio_advance_all(10_000), "pause 后伴生轨冻结");
@@ -983,15 +1028,29 @@ pub fn register_video_bridge_callbacks(
     sandbox: &mut dyn zero_script_sandbox::Sandbox,
     registry: std::sync::Arc<std::sync::Mutex<VideoPlayerRegistry>>,
     source_provider: Option<crate::MediaSourceProvider>,
+    clock: Option<std::sync::Arc<atomic::AtomicU64>>,
 ) {
     // __zw_video_play(absSrc, nowMs) -> "1"/"0"（bool 字符串避免 JS↔host 布尔歧义）。
     // M2c 后续：audio 回退——video 面未命中（非 webm/纯音频源）时试 audio 条目。
+    // M3 扩批 XXV：clock（宿主泵毫秒）在位时 nowMs<=0 翻译为泵时钟现值——shim 无钟
+    // 恒传 0，registry play 锚与泵 tick 时钟必须同源（原点错位使首拍 delta=泵全程，
+    // 位置瞬间跳到流末——loop 回卷/长加载页面的播放推进失真根因）。
     let reg_play = std::sync::Arc::clone(&registry);
     sandbox.register_callback(
         "__zw_video_play",
         Box::new(move |args| {
             let src = args.first().map(String::as_str).unwrap_or("");
-            let now_ms: u64 = args.get(1).and_then(|s| s.parse().ok()).unwrap_or(0);
+            let now_ms: u64 = match clock.as_ref() {
+                Some(c) => {
+                    let v = args.get(1).and_then(|s| s.parse::<i64>().ok()).unwrap_or(0);
+                    if v > 0 {
+                        v as u64
+                    } else {
+                        c.load(atomic::Ordering::Relaxed)
+                    }
+                }
+                None => args.get(1).and_then(|s| s.parse().ok()).unwrap_or(0),
+            };
             let mut reg = reg_play.lock().unwrap_or_else(|e| e.into_inner());
             if !reg.play(src, now_ms) && !reg.audio_play(src, now_ms) {
                 // M3 切片 2：供给方在位且源未登记 → 同步补登记后重评一次（decode
@@ -1184,7 +1243,7 @@ mod bridge_tests {
             ..Default::default()
         };
         let mut sandbox = V8Sandbox::with_config(config).expect("v8 sandbox");
-        register_video_bridge_callbacks(&mut sandbox, registry, None);
+        register_video_bridge_callbacks(&mut sandbox, registry, None, None);
 
         // 未播放：currentTime 0、duration 2（真值）。
         assert_eq!(
@@ -1390,7 +1449,7 @@ mod audio_tests {
             ..Default::default()
         };
         let mut sandbox = V8Sandbox::with_config(config).expect("v8 sandbox");
-        register_video_bridge_callbacks(&mut sandbox, registry, None);
+        register_video_bridge_callbacks(&mut sandbox, registry, None, None);
 
         // play（video 未命中 → audio 回退）→ advance 由泵驱动；此处直调泵面等价：
         assert_eq!(

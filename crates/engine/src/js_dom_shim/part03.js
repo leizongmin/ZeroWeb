@@ -11529,6 +11529,36 @@
                   if (typeof globalThis.__zwVideoBridge.setLoop === 'function') {
                     try { globalThis.__zwVideoBridge.setLoop(_pAbs, _pMs.loop === true); } catch (_eVbL0) {}
                   }
+                  // M3 扩批 XXV：ended 态 play = seek 回最早位置（spec「ended playback」
+                  // 步 6.4——ended 且播放方向向前 → seek to earliest position + 派
+                  // seeking/seeked，非 ended；loop-from-ended 的 onseeked 断言面）。
+                  // 判定面：loop setter 已按 spec 把 ended 翻回 false（looping 媒体
+                  // 不能是 ended）——ms.ended 不可靠；桥侧 restart 前的 Ended 态由
+                  // 「march 非 loop 分支置位过的 _zwEndedDispatched」承载（registry
+                  // reset 后 isEnded 已 false，不能事后查桥）。
+                  // registry 侧 reset 重建解码器（Ended→play 重头），语义层在此补事件对
+                  //（march Ended 分叉只在「播放中走到流末」时跑——ended 后停着再 play
+                  // 的形态不经过 march）。位置真值经 _zwMediaSeekSync 拉取。
+                  if (_pMs._zwEndedDispatched === true) {
+                    delete _pMs._zwEndedDispatched;
+                    _pMs.ended = false;
+                    _pMs.currentTime = 0;
+                    _pMs._zwLastMarchMs = 0;
+                    _pMs.seeking = true;
+                    _zwMediaFire(sel, handle, _pKey, 'seeking');
+                    var _epSeeked = function () {
+                      var _epMs = _mediaState[_pKey];
+                      if (!_epMs) return;
+                      _epMs.seeking = false;
+                      _zwMediaFire(sel, handle, _pKey, 'timeupdate');
+                      _zwMediaFire(sel, handle, _pKey, 'seeked');
+                      if (typeof globalThis._zwMediaSeekSync === 'function') {
+                        try { globalThis._zwMediaSeekSync(_pKey); } catch (_eEpSs) {}
+                      }
+                    };
+                    if (typeof setTimeout === 'function') setTimeout(_epSeeked, 0);
+                    else _epSeeked();
+                  }
                 }
               } catch (_eVbP) {}
             }

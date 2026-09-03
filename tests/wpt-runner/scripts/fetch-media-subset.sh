@@ -143,9 +143,12 @@ TOP_FILES=(
   # 不导入：audio_loop_base / video_loop_base（looped 标志依赖真实时间流逝的二次
   # seeking 回调时序——fixture 0.078s/0.096s 短于泵采样粒度，1 拍内多次回卷不可
   # 观测；且 2x2-green.webm 为 VP8——解码面域外）；played-loop 已导入（见下）。
-  # loop-from-ended.tentative.html 暂不导入（动态 src settle 竞态——见 testharness.rs 注记）
   "played-loop.html"
   "audio_loop_seek_to_eos.html"
+  # M3 扩批 XXV（2026-09-03）：loop-from-ended.tentative——ended 后设 loop 再 play
+  # 回卷 seeked（crbug 364442 断言面）。duration getter settle 竞态兜底（扩批 XXIV）
+  # 解除其 seek 目标真值前置。
+  "playing-the-media-resource/loop-from-ended.tentative.html"
   # M3 扩批 IX：移动面（同文档移动仍 related → 不暂停）。
   # pause-move-to-other-document 不导入：跨 iframe 文档 adopt 在 shim 融合视图下
   # appendChild 静默落空（元素保持 detached）——实施需 iframe 文档模型 adopt 面

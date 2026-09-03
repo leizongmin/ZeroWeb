@@ -121,6 +121,13 @@
           var _lpTag = _realTag(sel, handle);
           var _lpMs = _mediaState[key] || (_mediaState[key] = {});
           _lpMs.loop = !!value;
+          // M3 扩批 XXV：ended 后设 loop=true → ended 翻回 false（spec「ended
+          // playback」步 6.4：looping 媒体元素不能处于 ended 态——loop-from-ended
+          // 「ended after seek」断言面；spec 步 6.4 的 seek 回最早位置由 march 流末
+          // 分叉承接，此处只翻 IDL 态）。
+          if (value && _lpMs.ended === true) {
+            _lpMs.ended = false;
+          }
           if (value) {
             if (handle) __zw_set_attr_handle(handle, 'loop', '');
             else { __zw_set_attr(sel, 'loop', ''); moAttr = 'loop'; }

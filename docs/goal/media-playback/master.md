@@ -2,8 +2,23 @@
 
 **入口文档**: [../media-playback.md](../media-playback.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-03（**M3 fixture-mounted runner 播放面切片 7 落地（扩批
-XXIV）**——loop 属性真面 + played TimeRanges：registry `set_loop`（音频 entry
+**最后更新**: 2026-09-03（**M3 fixture-mounted runner 播放面切片 8 落地（扩批
+XXV）**——loop-from-ended.tentative 导入 + 四处播放面缺陷收口：
+① **registry Ended→play 解码器重建**——`play` 的 player Ended 态经 sources/
+av_sources 留存字节 `reset()` 重建 + 伴生轨游标/静默线归零（此前直接置 Playing
+下一拍即再 Ended——解码器单向流耗尽，重头播放从未真正工作）；
+② **seek 游标 clamp**——av entry seek 后游标 clamp 到 player clamp 后位置
+（语义层以 headless 600 算的 seek 目标可超真实流长，audio clock 主时钟游标超界
+把视频位置拉出流末）；
+③ **泵时钟注入**——`install_playback_bridge_with_clock`：桥 play 的 nowMs=0
+（shim 无钟）翻译为宿主泵时钟现值，播放锚与 tick 同源（原点错位使首拍
+delta=泵全程、位置瞬间跳到流末）；
+④ **shim ended 态 play 语义**——play() 命中 `_zwEndedDispatched` 标记时派
+seeking/seeked 回最早位置（spec「ended playback」步 6.4 在 play 入口生效；
+loop setter 翻 ended 后 ms.ended 不可靠，以 march 非 loop 分支标记为判定面）+
+loop=true IDL setter 翻回 ended=false（looping 媒体不能是 ended）。
+media-elements 543P/0F/24PF（+1 净涨零回归——loop-from-ended 导入）。
+此前同日：**切片 7（扩批 XXIV）**——loop 属性真面 + played TimeRanges：registry `set_loop`（音频 entry
 流末回卷——`restart()` 解码器重建 + 游标归零 + 播放态保持；伴生轨同面；
 `reached_end` 标志补音频面 isEnded 驱动源——此前音频流末对桥不可见）+
 `registry_key` 规范化（strip query/fragment——WPT cache-buster query 与 runner/
@@ -468,9 +483,27 @@ clippy 零警告、每切片带单测 + e2e/fixture 资产化（AV1 全流单测
    零回归——played-loop / audio_loop_seek_to_eos 导入；loop-from-ended 暂不导入，
    动态 src settle 竞态注记于 testharness.rs）。单测
    `registry_audio_loop_restarts_at_stream_end`（回卷 ≥2 次 + 播放态保持 +
-   loop=false 对照停）。**余**：playing-the-media-resource 余面
-   （play-in-detached-document / loop-from-ended（settle 竞态时序）/
-   fragmented-mp4-end）。
+   loop=false 对照停）。
+   **切片 8 落地（2026-09-03 续，扩批 XXV——loop-from-ended 导入 + Ended→play
+   全链收口）**：dormant 探针链（8 轮 probe，验证后全移除）定位四处缺陷：
+   ① registry `play` 的 player Ended 态直接置 Playing——解码器耗尽下一拍即再
+   Ended（seek(0) 也无效）；经 sources/av_sources 留存字节 `reset()` 重建 +
+   伴生轨 `cursor/skip/last_tick` 归零（current_time 优先读 av 游标——不归零则
+   Ended→play 后桥钟读数恒在流末）；② registry `seek` 的 av 游标未 clamp——
+   语义层以 headless duration 600 算的 seek 目标（599.5s）超真实流长（5.008s），
+   audio clock 主时钟游标超界把视频位置拉出流末（ended 面 currentTime 读数
+   失真）；clamp 到 player clamp 后位置；③ **泵时钟原点错位**——shim 桥 play
+   恒传 nowMs=0 而泵 tick 用宿主单调钟 elapsed，首拍 delta=泵全程使位置瞬间跳
+   到流末；`register_video_bridge_callbacks` 增 `clock: Option<Arc<AtomicU64>>`
+   参数 + webview `install_playback_bridge_with_clock`，runner 泵时钟注入——
+   play 锚与 tick 同源（tab_worker pump_epoch 语义同构，后续可同法注入）；
+   ④ shim `play()` 无「ended 态 play」语义——spec「ended playback」步 6.4 在
+   play 入口即生效（seek 回最早位置 + 派 seeking/seeked 非 ended），以 march
+   非 loop 分支的 `_zwEndedDispatched` 标记为判定面（loop setter 已把 ms.ended
+   翻回 false——spec「looping 媒体不能是 ended」，IDL 态不可靠）+ loop=true
+   setter 同步翻 ended=false。loop-from-ended.tentative 导入
+   （543P/0F/24PF，+1 净涨零回归）。**余**：playing-the-media-resource 余面
+   （play-in-detached-document / fragmented-mp4-end）。
 2. ~~**A/V 同步精化余项**~~ ✅ 2026-09-01 收口：ended 面回归守卫落地
    （切片 F——伴音流末 video player 走到 Ended、泵停）；音频设备面（CpalSink
    真出声）挂 media-audio M1 可选切片。

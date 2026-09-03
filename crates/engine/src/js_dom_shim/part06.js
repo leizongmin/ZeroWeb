@@ -9578,6 +9578,9 @@
                 } catch (_eLpPr) {}
                 try { globalThis.__zwVideoBridge.seek(ms.bridgeSrc, 0); } catch (_eLpSk) {}
                 try { globalThis.__zwVideoBridge.play(ms.bridgeSrc, 0); } catch (_eLpPl) {}
+                // M3 扩批 XXV：桥 restart 后游标已在 0，seek(0) 幂等——但「Ended 后
+                // 一直停着」的形态（loop 属性晚设）下 march 采样的桥 currentTime 经
+                // _lpSeeked 拉真值（下方 seekSync 面兜底）。
                 ms.currentTime = 0;
                 ms.ended = false;
                 ms._zwLastMarchMs = 0;

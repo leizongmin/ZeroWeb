@@ -1533,15 +1533,16 @@ pub const MEDIA_TEST_FILES: &[&str] = &[
     // set_loop（音频 entry 流末回卷重建）+ shim loop IDL 面 + march Ended 分叉。
     // played-loop：played TimeRanges 跨 loop 保持（test-1s）；
     // audio_loop_seek_to_eos：loop 音频 seek 到 EOS 仍播放（sound_5.mp3 音频面）。
-    // loop-from-ended 暂不导入：动态 src 的 settle 真值晚于 loadedmetadata——用例在
-    // loadedmetadata 内 seek(duration-0.5) 拿到 headless 600 fallback（599.5），
-    // 桥真值钟（5.008）与 seek 目标永不交汇，ended 面 currentTime 断言恒 fail；
-    // 依赖 register_dynamic 快照先于首拍 timer 的时序修复（mutation apply 顺序），
-    // 随基础设施增量复评。
     // 不导入 audio_loop_base/video_loop_base（短 fixture < 泵采样粒度的回卷时序
     // 不可观测 + 2x2-green 为 VP8 解码域外）。
     "html/semantics/embedded-content/media-elements/played-loop.html",
     "html/semantics/embedded-content/media-elements/audio_loop_seek_to_eos.html",
+    // M3 扩批 XXV（2026-09-03）：loop-from-ended.tentative——ended 后设 loop 再 play
+    // 须回卷 seeked（Chromium crbug 364442 断言面：ended 翻转 + currentTime==duration
+    // + seeked 时 currentTime<duration）。此前排除的 settle 竞态由 duration getter
+    // 兜底（settle durationMs 即刻生效）+ registry Ended→play 解码器重建 + 泵时钟
+    // 注入（play 锚与 tick 同源）解除。
+    "html/semantics/embedded-content/media-elements/playing-the-media-resource/loop-from-ended.tentative.html",
     // M3 扩批 IX：移动面（同文档移动仍 related → 不暂停）。
     // pause-move-to-other-document 不导入——iframe adopt 面未实施（fetch 脚本注记）。
     "html/semantics/embedded-content/media-elements/playing-the-media-resource/pause-move-within-document.html",
@@ -3384,7 +3385,11 @@ fn run_testharness_html_inner(
             std::fs::read(wpt_root.join(clean)).ok()
         });
     }
-    let _ = webview.install_playback_bridge();
+    // M3 扩批 XXV：宿主泵时钟注入——桥 play 的 nowMs=0（shim 无钟）翻译为泵时钟
+    // 现值，播放锚与下方泵 tick 同源（原点错位曾使首拍 delta=泵全程，位置瞬间
+    // 跳到流末——loop 回卷再 play 的推进失真根因）。
+    let pump_clock = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
+    let _ = webview.install_playback_bridge_with_clock(Some(std::sync::Arc::clone(&pump_clock)));
     let _zw_hb2 = std::fs::write("/tmp/zw-hb.txt", format!("pre-scripts {}\n", case_name));
     let script_result = webview.run_page_scripts_strict();
     let _zw_hb3 = std::fs::write("/tmp/zw-hb2.txt", format!("post-scripts {}\n", case_name));
@@ -3596,6 +3601,7 @@ fn run_testharness_html_inner(
         // 序列承载（语义层不回归）。
         {
             let now_ms = playback_clock_origin.elapsed().as_millis() as u64;
+            pump_clock.store(now_ms, std::sync::atomic::Ordering::Relaxed);
             if std::env::var("ZW_DISABLE_PUMP").is_err()
                 && let Ok(mut reg) = webview.video_players().lock()
                 && reg.is_any_playing()

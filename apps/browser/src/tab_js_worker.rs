@@ -501,7 +501,7 @@ fn js_worker_main(
             JsWorkerCommand::SetVideoPlayers { registry } => {
                 // M2a 切片 5b：注册宿主桥回调族 + 注入 __zwVideoBridge JS 门面
                 //（shim play/pause/currentTime feature-detect 消费）。
-                zero_webview::video_registry::register_video_bridge_callbacks(&mut *sandbox, registry, None);
+                zero_webview::video_registry::register_video_bridge_callbacks(&mut *sandbox, registry, None, None);
             }
             JsWorkerCommand::SetWebAudio { registry } => {
                 // media-audio M3 切片 2：注册 Web Audio 宿主桥（__zwWA* 回调族——

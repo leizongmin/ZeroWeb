@@ -1174,6 +1174,17 @@ impl WebView {
     /// # Errors
     /// 沙箱未初始化（run_page_scripts 前调用）或门面注入执行失败。
     pub fn install_playback_bridge(&mut self) -> Result<(), WebViewError> {
+        self.install_playback_bridge_with_clock(None)
+    }
+
+    /// 同 [`Self::install_playback_bridge`]，附宿主泵时钟（毫秒）：桥 play 的
+    /// `nowMs<=0`（shim 无钟恒 0）翻译为泵时钟现值——registry 播放锚与泵 tick
+    /// 同源（M3 扩批 XXV 原点错位修复）。tab_worker/renderer 自持泵时钟的宿主
+    /// 经此注入；无泵时钟面用 [`Self::install_playback_bridge`]（nowMs 透传）。
+    pub fn install_playback_bridge_with_clock(
+        &mut self,
+        clock_ms: Option<std::sync::Arc<AtomicU64>>,
+    ) -> Result<(), WebViewError> {
         self.ensure_sandbox()?;
         let Some(sandbox) = self.js_sandbox.as_mut() else {
             return Err(WebViewError::Script("no js sandbox".to_string()));
@@ -1184,7 +1195,7 @@ impl WebView {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .clone();
-        crate::video_registry::register_video_bridge_callbacks(&mut **sandbox, registry, provider);
+        crate::video_registry::register_video_bridge_callbacks(&mut **sandbox, registry, provider, clock_ms);
         Ok(())
     }
 
