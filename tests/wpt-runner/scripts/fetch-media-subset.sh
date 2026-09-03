@@ -183,6 +183,29 @@ TOP_FILES=(
   # 不加载，mode 改 hidden 触发（扩批 XV mode 触发面 + VTT 解析面既有；cues 12 条
   # + cue[11].startTime==22 断言）。
   "track/track-element/track-mode-triggers-loading.html"
+  # M3 扩批 XXX（2026-09-04）：WebVTT 解析面批量导入——track-helpers.js 断言辅助
+  #（getCueAsHTML textContent 对拍）+ BOM/UTF8（iconv 编码拒收）/header 注释/
+  # 恢复（cue-recovery 三形态）/空 cue/timings 变体（no-hours/whitespace/large/
+  # negative-duration）/markup（voice/class/unsupported/timestamp 标签）/退化形态。
+  # positioning/layout 渲染件维持 C 组排除；markup 结构族（voice/class/markup/
+  # unsupported-markup/timestamp/cue-recovery-header）维持排除——assert_cue_fragment
+  # isEqualNode 对拍 getCueAsHTML 的 span 节点树（<v>/<c> → className/title）——
+  # cue 标记树解析深结构项（归渲染域远期，与既有注记一致）；
+  # track-cue-empty 维持排除——fragment.childNodes[0].constructor.name === 'Text'
+  # 原生 class 语义断言（shim 工厂 constructor.name='Node'，非行为缺陷）。
+  "track/track-element/track-webvtt-bom.html"
+  "track/track-element/track-webvtt-utf8.html"
+  "track/track-element/track-webvtt-header-comment.html"
+  "track/track-element/track-webvtt-interspersed-non-cue.html"
+  "track/track-element/track-webvtt-no-timings.html"
+  "track/track-element/track-webvtt-cue-no-id.html"
+  "track/track-element/track-webvtt-degenerate-cues.html"
+  "track/track-element/track-webvtt-empty-cue.html"
+  "track/track-element/track-webvtt-newlines.html"
+  "track/track-element/track-webvtt-timings-no-hours.html"
+  "track/track-element/track-webvtt-timings-whitespace.html"
+  "track/track-element/track-cue-negative-duration.html"
+  "track/track-element/track-large-timestamp.html"
   # M3 扩批 XXVIII 续二：track-remove-quickly / -by-setting-innerHTML——track 移除
   # 不 crash smoke 面（innerHTML 注入 + seeked 计数链 + innerHTML 清空后再 seek）。
   "track/track-element/track-remove-quickly.html"
@@ -314,6 +337,36 @@ TRACK_ELEMENT_SUPPORT=(
   "track/track-element/resources/sorted-dispatch.vtt"
   "track/track-element/resources/cues-no-separation.vtt"
   "track/track-element/resources/metadata.vtt"
+  # M3 扩批 XXX 解析面波次：track-helpers.js + WebVTT 解析深化用例资源集
+  #（BOM/UTF8/注释/恢复/空 cue/timings 变体/markup/voice 等 27 件）。
+  "track/track-element/track-helpers.js"
+  "track/track-element/resources/bom.vtt"
+  "track/track-element/resources/class-bad.vtt"
+  "track/track-element/resources/class.vtt"
+  "track/track-element/resources/cue-no-id-error.vtt"
+  "track/track-element/resources/cue-no-id.vtt"
+  "track/track-element/resources/cue-recovery-cuetext.vtt"
+  "track/track-element/resources/cue-recovery-header.vtt"
+  "track/track-element/resources/cue-recovery-note.vtt"
+  "track/track-element/resources/degenerate-cues.vtt"
+  "track/track-element/resources/empty-cue.vtt"
+  "track/track-element/resources/interspersed-non-cue.vtt"
+  "track/track-element/resources/iso2022jp3.vtt"
+  "track/track-element/resources/large-timestamp.vtt"
+  "track/track-element/resources/markup-bad.vtt"
+  "track/track-element/resources/markup.vtt"
+  "track/track-element/resources/metadata-area.vtt"
+  "track/track-element/resources/no-newline-at-eof.vtt"
+  "track/track-element/resources/no-timings.vtt"
+  "track/track-element/resources/timestamp-bad.vtt"
+  "track/track-element/resources/timestamp.vtt"
+  "track/track-element/resources/timings-no-hour-errors.vtt"
+  "track/track-element/resources/timings-no-hour.vtt"
+  "track/track-element/resources/timings-whitespace.vtt"
+  "track/track-element/resources/unsupported-markup.vtt"
+  "track/track-element/resources/utf8.vtt"
+  "track/track-element/resources/voice-bad.vtt"
+  "track/track-element/resources/voice.vtt"
   "track/track-element/resources/simple-captions.vtt"
   "track/track-element/resources/captions-gaps.vtt"
   "track/track-element/resources/header-empty-after.vtt"

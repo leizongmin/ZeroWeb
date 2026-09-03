@@ -1562,6 +1562,27 @@ pub const MEDIA_TEST_FILES: &[&str] = &[
     // M3 扩批 XXVIII 续：track-mode-triggers-loading——metadata track disabled 不
     // 加载，mode 改 hidden 触发（mode 触发加载面 + VTT cue 解析断言）。
     "html/semantics/embedded-content/media-elements/track/track-element/track-mode-triggers-loading.html",
+    // M3 扩批 XXX（2026-09-04）：WebVTT 解析面批量导入（track-helpers.js 断言辅助
+    // + 27 件 vtt 资源）——BOM/UTF8 编码面/header 注释/空 cue/timings 变体/
+    // 退化形态/interspersed-non-cue/newlines。markup 结构族（voice/class/markup/
+    // unsupported-markup/timestamp/cue-recovery-header）维持排除——assert_cue_
+    // fragment isEqualNode 对拍 getCueAsHTML 的 span 节点树（<v>/<c> →
+    // className/title）——cue 标记树解析深结构项（归渲染域远期）；
+    // positioning/layout 渲染件维持 C 组排除；track-cue-empty 维持排除
+    //（constructor.name === 'Text' 原生 class 断言——shim 工厂面差异）。
+    "html/semantics/embedded-content/media-elements/track/track-element/track-webvtt-bom.html",
+    "html/semantics/embedded-content/media-elements/track/track-element/track-webvtt-utf8.html",
+    "html/semantics/embedded-content/media-elements/track/track-element/track-webvtt-header-comment.html",
+    "html/semantics/embedded-content/media-elements/track/track-element/track-webvtt-interspersed-non-cue.html",
+    "html/semantics/embedded-content/media-elements/track/track-element/track-webvtt-no-timings.html",
+    "html/semantics/embedded-content/media-elements/track/track-element/track-webvtt-cue-no-id.html",
+    "html/semantics/embedded-content/media-elements/track/track-element/track-webvtt-degenerate-cues.html",
+    "html/semantics/embedded-content/media-elements/track/track-element/track-webvtt-empty-cue.html",
+    "html/semantics/embedded-content/media-elements/track/track-element/track-webvtt-newlines.html",
+    "html/semantics/embedded-content/media-elements/track/track-element/track-webvtt-timings-no-hours.html",
+    "html/semantics/embedded-content/media-elements/track/track-element/track-webvtt-timings-whitespace.html",
+    "html/semantics/embedded-content/media-elements/track/track-element/track-cue-negative-duration.html",
+    "html/semantics/embedded-content/media-elements/track/track-element/track-large-timestamp.html",
     // M3 扩批 XXVIII 续二：track 移除不 crash smoke 面（innerHTML 注入 video+track
     // / seeked 链中 innerHTML 清空后再 seek——testharness.js 兜底 test() 空 body 形态）。
     "html/semantics/embedded-content/media-elements/track/track-element/track-remove-quickly.html",
