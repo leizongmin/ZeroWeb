@@ -5001,4 +5001,23 @@ fn test_webaudio_processing_ctor_family2_m3xxvi() {
         "nanT:TypeError,infT:TypeError,negR:RangeError,preStop:InvalidStateError,twice:InvalidStateError,stopNeg:RangeError,offR:RangeError,durR:RangeError|-3.4028234663852886e+38|3.4028234663852886e+38|c3:NotSupportedError,max:NotSupportedError",
         "调度异常八态 + AudioParam float 界 fround + StereoPanner 工厂 [1,2]/'max' 拒绝（第十一批）"
     );
+
+    // 断言组 8（第十二批）：AudioBufferSourceNode loopStart/loopEnd 反射 +
+    // ctor options 全字段（buffer 同对象/detune/loop/loopEnd/loopStart/
+    // playbackRate）反射等价工厂路径。
+    sandbox
+        .execute(
+            "var buf = ctx.createBuffer(2, 1000, ctx.sampleRate);\
+             var n = new AudioBufferSourceNode(ctx, {buffer: buf, detune: 0.5, loop: true, loopEnd: 500 / ctx.sampleRate, loopStart: 5 / ctx.sampleRate, playbackRate: 0.75});\
+             var f = ctx.createBufferSource();\
+             f.buffer = buf; f.detune.value = 0.5; f.loop = true; f.loopEnd = 500 / ctx.sampleRate; f.loopStart = 5 / ctx.sampleRate; f.playbackRate.value = 0.75;\
+             var d = ctx.createBufferSource();\
+             globalThis.__r8 = [String(n.buffer === buf), String(n.detune.value === f.detune.value), String(n.loop === f.loop), String(n.loopEnd === f.loopEnd), String(n.loopStart === f.loopStart), String(n.playbackRate.value === f.playbackRate.value), String(d.loopStart === 0), String(d.loopEnd === 0)].join('|');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r8").unwrap().value,
+        "true|true|true|true|true|true|true|true",
+        "BufferSource ctor options 全字段反射等价工厂路径 + 缺省节点 loopStart/loopEnd 0（第十二批）"
+    );
 }

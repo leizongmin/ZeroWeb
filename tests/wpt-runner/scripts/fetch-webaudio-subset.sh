@@ -82,6 +82,12 @@ WA_FILES=(
   "webaudio/the-audio-api/the-constantsourcenode-interface/constant-source-basic.html"
   "webaudio/the-audio-api/the-stereopanner-interface/stereopannernode-basic.html"
   "webaudio/the-audio-api/the-audiobuffersourcenode-interface/audiobuffersource-basic.html"
+  # ---- 第十二批（2026-09-03）：ctor-audiobuffersource（全 task 零渲染——
+  # initializeContext 仅构造 OfflineAudioContext；ctor options 面 buffer/detune/
+  # loop/loopEnd/loopStart/playbackRate 反射，shim 补 loopStart/loopEnd 后导入）。
+  # 此前「末 task multiple contexts 依赖 startRendering」排除注记经实测核对失效
+  #（该注记实为 ctor-audiobuffer.html 的排除理由，两文件混淆）。
+  "webaudio/the-audio-api/the-audiobuffersourcenode-interface/ctor-audiobuffersource.html"
   # 不导入：audioparam-method-chaining / audioparam-nominal-range（startRendering
   # 渲染断言——RFC §0 不做清单）；ctor-audiobuffer（末 task multiple contexts 依赖
   # startRendering——audit runner 整文件跑）；periodicWave.html（startRendering）；

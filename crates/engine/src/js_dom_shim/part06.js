@@ -8381,10 +8381,28 @@
     var _detune = globalThis._zwMakeAudioParam(0, ctx._zwCtxId);
     Object.defineProperty(node, 'playbackRate', { get: function () { return _playbackRate; }, configurable: true });
     Object.defineProperty(node, 'detune', { get: function () { return _detune; }, configurable: true });
+    // loopStart/loopEnd 反射面（spec AudioBufferSourceNode——ctor-audiobuffersource
+    // testDefaultAttributes/ctor options 断言面；播放推进仍归 RFC §0 后续）。
+    var _loopStart = 0;
+    var _loopEnd = 0;
+    Object.defineProperty(node, 'loopStart', {
+      get: function () { return _loopStart; },
+      set: function (v) { _loopStart = Number(v); },
+      configurable: true,
+    });
+    Object.defineProperty(node, 'loopEnd', {
+      get: function () { return _loopEnd; },
+      set: function (v) { _loopEnd = Number(v); },
+      configurable: true,
+    });
     _zwWAInstallSchedSource(node);
     if (options && typeof options === 'object') {
       if (options.buffer !== undefined) node.buffer = options.buffer;
       if (options.loop !== undefined) node.loop = options.loop;
+      if (options.loopStart != null) node.loopStart = Number(options.loopStart);
+      if (options.loopEnd != null) node.loopEnd = Number(options.loopEnd);
+      if (options.playbackRate != null) node.playbackRate.value = Number(options.playbackRate);
+      if (options.detune != null) node.detune.value = Number(options.detune);
     }
     return node;
   }

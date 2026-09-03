@@ -2,8 +2,15 @@
 
 **入口文档**: [../media-audio.md](../media-audio.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-03（**WPT webaudio 第十一批导入——源节点语义面（26 用例
-733P/0F = 100%）**：shim 落 AudioScheduledSourceNode 调度异常共享件
+**最后更新**: 2026-09-03（**WPT webaudio 第十二批导入——ctor-audiobuffersource
+（27 用例 777P/0F = 100%）**：排除注记勘误——此前「末 task multiple contexts 依赖
+startRendering」实为 ctor-audiobuffer.html 的排除理由（两文件混淆），
+ctor-audiobuffersource 全 task 零渲染，实测核对后解除；shim 补 AudioBufferSourceNode
+loopStart/loopEnd 反射（缺省 0）+ ctor options 扩 loopStart/loopEnd/playbackRate/
+detune 四字段。**777P/0F**（+44 净涨零回归），evidence：
+`evidence/2026-09-03-webaudio-ctor-buffersource-batch12.json`；单测扩断言组 8；
+make test 18826/0（一次 transient flake 复跑全绿）。此前同日：**第十一批导入——
+源节点语义面（26 用例 733P/0F = 100%）**：shim 落 AudioScheduledSourceNode 调度异常共享件
 `_zwWAInstallSchedSource`（ConstantSource/AudioBufferSource 装载——非 finite
 TypeError/负 RangeError/先 stop 或重复 start InvalidStateError/start 多参负
 RangeError）+ AudioParam min/max float 界 fround（-3.4028234663852886e38 断言面）
@@ -219,6 +226,15 @@ volume/muted 真控制。**双重启动门控均已解除**：① M0 音频环�
     audiobuffersource-basic。**26 用例 733P/0F = 100%**（+37 净涨零回归）。
   - 单测扩断言组 7（调度异常八态 + float 界 + StereoPanner 工厂面）。
   - evidence：`evidence/2026-09-03-webaudio-source-semantics-batch11.json`。
+- **WPT webaudio 第十二批导入（2026-09-03，ctor-audiobuffersource）**：
+  - **排除注记勘误**：此前批五注记「ctor-audiobuffer（末 task multiple contexts
+    依赖 startRendering）」与 ctor-**audio buffersource**.html 混淆——后者全 task
+    零渲染（initializeContext 仅构造 OfflineAudioContext），实测核对后解除排除。
+  - **shim 补缺**：AudioBufferSourceNode loopStart/loopEnd 反射（缺省 0）+
+    ctor options 扩 loopStart/loopEnd/playbackRate/detune。
+  - **27 用例 777P/0F = 100%**（+44 净涨零回归——733→777）。
+  - 单测扩断言组 8（ctor options 全字段反射等价工厂路径）。
+  - evidence：`evidence/2026-09-03-webaudio-ctor-buffersource-batch12.json`。
 - **WPT webaudio 第五批导入（同日，AudioBuffer 构造/接口面）**：
   - **shim part06 扩展**：`AudioBuffer` 构造器（独立构造不依赖 ctx）——
     length/sampleRate required 缺失 → TypeError（WebIDL dict required）；
@@ -389,15 +405,16 @@ DONE 阻塞**；Mixer/重采样接线随设备切片可选推进）。
 
 - 测试基线：`make test` 全绿 18826（2026-09-03 组合树实测）；clippy 零警告
   （default 与 `--features audio-cpal` 双配置）
-- WPT webaudio：**26 用例 733P/0F = 100%**（2026-09-03 十一批累计——connect 返回值 +
+- WPT webaudio：**27 用例 777P/0F = 100%**（2026-09-03 十二批累计——connect 返回值 +
   destination + ctor-oscillator 62 + ctor-gain/stereopanner/delay/biquadfilter/
   analyser + createPeriodicWave 异常面 + audioparam-exceptional-values 66 +
   audiobuffer 面 + 第七批 ctor-channelmerger/channelsplitter/constantsource +
   audiobuffer-getChannelData + 第八批 audionode/different-contexts +
   第九批 ctor-waveshaper/ctor-dynamicscompressor/dynamicscompressor-basic/
   ctor-panner/iirfilter-basic + 第十批 biquadfilternode-basic/
-  ctor-offlineaudiocontext + **第十一批 constant-source-basic/
-  stereopannernode-basic/audiobuffersource-basic**）；
+  ctor-offlineaudiocontext + 第十一批 constant-source-basic/
+  stereopannernode-basic/audiobuffersource-basic + **第十二批
+  ctor-audiobuffersource**）；
   evidence：`evidence/2026-09-02-webaudio-wpt-subset.json`（首批）、
   `evidence/2026-09-02-webaudio-ctor-oscillator.json`（第二批）、
   `evidence/2026-09-02-webaudio-ctor-family.json`（第四批）、
@@ -407,7 +424,8 @@ DONE 阻塞**；Mixer/重采样接线随设备切片可选推进）。
   `evidence/2026-09-03-webaudio-audionode-batch8.json`（第八批）、
   `evidence/2026-09-03-webaudio-processing-family2-batch9.json`（第九批）、
   `evidence/2026-09-03-webaudio-zero-gap-review-batch10.json`（第十批）、
-  `evidence/2026-09-03-webaudio-source-semantics-batch11.json`（第十一批）
+  `evidence/2026-09-03-webaudio-source-semantics-batch11.json`（第十一批）、
+  `evidence/2026-09-03-webaudio-ctor-buffersource-batch12.json`（第十二批）
 - NullSink 可观测锚点：440Hz 正弦 @48kHz 过零率 ≈880（2×频率；修正 M0 evidence
   的 ≈440 笔误——evidence 只追加不修改，以代码与本档为事实源）；暂停拒写计
   underrun；非整帧写入拒收

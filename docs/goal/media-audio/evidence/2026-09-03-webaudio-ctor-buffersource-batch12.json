@@ -1,0 +1,25 @@
+{
+  "batch": "WPT webaudio 第十二批",
+  "date": "2026-09-03",
+  "topic": "ctor-audiobuffersource——排除注记勘误后导入（BufferSource loopStart/loopEnd 反射面）",
+  "imported": [
+    "webaudio/the-audio-api/the-audiobuffersourcenode-interface/ctor-audiobuffersource.html"
+  ],
+  "note": "此前「末 task multiple contexts 依赖 startRendering」排除注记实为 ctor-audiobuffer.html 的排除理由（两文件混淆）；ctor-audiobuffersource 全 task 零渲染（initializeContext 仅构造 OfflineAudioContext(1,1,48000)），实测核对后解除排除。",
+  "shim_changes": [
+    "AudioBufferSourceNode loopStart/loopEnd 反射（getter/setter Number 面，缺省 0）",
+    "ctor options 扩 loopStart/loopEnd/playbackRate/detune 四字段应用（buffer/loop 已有）"
+  ],
+  "results": {
+    "pass": 777,
+    "fail": 0,
+    "timeout": 0,
+    "net": "+44 subtest 净涨零回归（733→777）；27 用例"
+  },
+  "unit_test": "test_webaudio_processing_ctor_family2_m3xxvi（扩断言组 8：BufferSource ctor options 全字段反射等价工厂路径 + 缺省 loopStart/loopEnd 0）",
+  "gates": {
+    "make_test": "18826 passed / 0 failed（一次 transient flake：network_loading::stale_etag_revalidation_is_coalesced 本地回环端口竞态，复跑全绿——与本轮变更无关，测试 2026-08-14 落地且本轮 diff 未触碰 tests/integration）",
+    "clippy": "-D warnings 零警告",
+    "fmt": "clean"
+  }
+}

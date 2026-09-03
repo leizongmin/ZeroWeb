@@ -1650,6 +1650,11 @@ pub const WEBAUDIO_TEST_FILES: &[&str] = &[
     "webaudio/the-audio-api/the-constantsourcenode-interface/constant-source-basic.html",
     "webaudio/the-audio-api/the-stereopanner-interface/stereopannernode-basic.html",
     "webaudio/the-audio-api/the-audiobuffersourcenode-interface/audiobuffersource-basic.html",
+    // ---- 第十二批（2026-09-03）：ctor-audiobuffersource（全 task 零渲染；
+    // ctor options 面 buffer/detune/loop/loopEnd/loopStart/playbackRate 反射——
+    // shim 补 loopStart/loopEnd 后导入。此前排除注记与 ctor-audiobuffer 混淆，
+    // 实测核对后解除）。
+    "webaudio/the-audio-api/the-audiobuffersourcenode-interface/ctor-audiobuffersource.html",
     // 不导入：ctor-audiobuffer.html（末 task「multiple contexts」依赖
     // startRendering——audit runner 整文件跑，前段构造面无法单独导入）；
     // audiobuffer-copy-channel（startRendering 后段同文件不可分割——数据面已落
