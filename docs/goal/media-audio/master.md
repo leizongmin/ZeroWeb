@@ -454,6 +454,11 @@ DONE 阻塞**；Mixer/重采样接线随设备切片可选推进）。
   的 ≈440 笔误——evidence 只追加不修改，以代码与本档为事实源）；暂停拒写计
   underrun；非整帧写入拒收
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过
+- perf-gate（2026-09-03 本轮 shim 代码量积累后定向核查）：两轮全量 GATE FAIL 失败
+  指标集完全轮换（零交集）+ 全部失败指标隔离复测 1.5~3.3× 余量回预算内 + 本轮
+  变更不触达失败 crate 敏感路径（shim 仅 V8 执行期注入）→ 判 ZRG 负载噪声签名
+  （ZRG-2026-08-22/23/24-01 同族），不动基线不 relax——判据沉淀
+  [docs/learnings/performance/2026-09/2026-09-03-bench-gate-rotating-fail-noise-signature.md](../../learnings/performance/2026-09/2026-09-03-bench-gate-rotating-fail-noise-signature.md)
 - evidence：[evidence/2026-09-01-m0-environment-probe.md](evidence/2026-09-01-m0-environment-probe.md)
 
 ## 归档
