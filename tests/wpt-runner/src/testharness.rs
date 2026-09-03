@@ -1455,6 +1455,13 @@ pub const MEDIA_TEST_FILES: &[&str] = &[
     // D 组首个收口；track-change-event 断言 instanceof Event / 无 track 属性 /
     // target 身份）。
     "html/semantics/embedded-content/media-elements/track/track-element/track-change-event.html",
+    // M3 扩批 XXII（2026-09-03）：B 组排除件随 change 广播/播放推进基建复评导入——
+    // track-disabled（disabled track march 跳过 + active 清空——spec time-marches-on
+    // 步 2 disabled gate）/ no-cuechange-before-play（播放前不派 cuechange——march
+    // 仅 playing 态跑，天然满足；EventWatcher + promise_test 框架面验证）。
+    "html/semantics/embedded-content/media-elements/track/track-element/track-disabled.html",
+    "html/semantics/embedded-content/media-elements/track/track-element/no-cuechange-before-play.html",
+    "html/semantics/embedded-content/media-elements/track/track-element/track-remove-active-cue.html",
     // M3 扩批 XX（2026-09-03）：HAVE_NOTHING 期 seek 挂起语义（spec「default playback
     // start position」）——currentTime setter readyState 0 时挂 _zwSeekDeferred，
     // _zwMediaLoadSequence readyState 0→1 翻转时补跑 seek 算法（seeking + seeked

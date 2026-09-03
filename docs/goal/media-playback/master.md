@@ -2,7 +2,10 @@
 
 **入口文档**: [../media-playback.md](../media-playback.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-03（**M3 fixture-mounted runner 播放面切片 4 落地**——
+**最后更新**: 2026-09-03（**M3 fixture-mounted runner 播放面切片 5 落地**——
+play() 桥 src 读身份分派（handle 身份走 registry 现值——createElement 媒体元素
+形态的桥失联修复）+ march 遍历面统一（addTextTrack 产物 cue 调度）+ disabled
+gate + cuechange 派发；media-elements 539P/0F/24PF。此前同日：**切片 4**——
 HAVE_NOTHING 期 seek 挂起语义：currentTime setter readyState 0 时挂
 `_zwSeekDeferred`，`_zwMediaLoadSequence` readyState 0→1 翻转时补跑 seek 算法
 （spec「default playback start position」）；track-cues-seeking 导入；media-elements

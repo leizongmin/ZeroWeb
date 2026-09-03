@@ -430,6 +430,10 @@
       } catch (_eRa) {}
       return '';
     }
+    // M3 扩批 XXII：ownerEl 暴露（track 元素 proxy）——march 的 cuechange 同步派发到
+    // HTMLTrackElement（上游 track-active-cues 监听 trackElement.oncuechange 断言面；
+    // HTMLTrackElement 与其 TextTrack 的事件转发面）。
+    track._zwOwnerEl = ownerEl || null;
     track.kind = String(kind);
     // label/language：关联元素时实时反射（getter 读 attr——track.label='baz' /
     // removeAttribute('label') 同步面）；addTextTrack 产物固定初值。

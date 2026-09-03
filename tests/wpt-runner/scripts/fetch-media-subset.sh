@@ -202,6 +202,11 @@ TRACK_ELEMENT_FILES=(
   # 模式变更前 list 未暴露的 pending 重放（深结构）——2026-09-03 扩批 XXI 收口。
   "track/track-element/vtt-cue-float-precision.html"
   "track/track-element/track-change-event.html"
+  "track/track-element/track-disabled.html"
+  "track/track-element/no-cuechange-before-play.html"
+  "track/track-element/track-active-cues.html"
+  "track/track-element/track-remove-active-cue.html"
+  "track/track-element/resources/captions-fast.vtt"
   "track/track-element/track-data-url.html"
   "track/track-element/track-add-track.html"
   "track/track-element/track-cue-order.html"

@@ -8427,11 +8427,35 @@
         // 区间收集事件（enter@start / exit@end），按**事件时间排序**派发（spec
         // time-marches-on 依时间序处理——上游 missed-cues 期望 enter,exit 交错对，非
         // 「全 enter 后全 exit」），再裁剪 active 集合。
+        // M3 扩批 XXII：遍历面统一——track 子产物（_elementTextTrack，key 索引）+
+        // addTextTrack 产物（_textTracksCache[mediaKey].tracks，此前不参与 march——
+        // track-remove-active-cue 的 addTextTrack + addCue + play 形态 enter 永不派）。
+        // 身份去重（track 子产物同时出现在 cache.tracks——后出现的跳过）。
+        var _marchLists = [];
         for (var tk in _elementTextTrack) {
-          var tt = _elementTextTrack[tk];
+          if (_elementTextTrack[tk]) _marchLists.push(_elementTextTrack[tk]);
+        }
+        var _marchCache = (typeof _textTracksCache !== 'undefined') ? _textTracksCache[key] : null;
+        if (_marchCache && _marchCache.tracks) {
+          for (var _mc = 0; _mc < _marchCache.tracks.length; _mc++) {
+            var _mcT = _marchCache.tracks[_mc];
+            if (_mcT && _marchLists.indexOf(_mcT) < 0) _marchLists.push(_mcT);
+          }
+        }
+        for (var _ml = 0; _ml < _marchLists.length; _ml++) {
+          var tt = _marchLists[_ml];
           if (!tt || !tt._zwMarchState || !tt._zwCueArrInternal) continue;
+          // M3 扩批 XXII：disabled track 不参与 cue 调度（spec time-marches-on 步 2
+          // 「If the text track's ... mode is the text track disabled mode, abort
+          // these steps」——不派 enter/exit、activeCues 恒空）。切到 disabled 时
+          // 静默清空 active 集合（mode setter 已广播 change）。
+          if (tt.mode === 'disabled') {
+            if (tt._zwMarchState.length) tt._zwMarchState.length = 0;
+            continue;
+          }
           var active = tt._zwMarchState; // Array<cue>——引用即身份
           var _events = []; // [{t, type, cue}]
+          var _hasMarchEvents = false;
           for (var ci = 0; ci < tt._zwCueArrInternal.length; ci++) {
             var cue = tt._zwCueArrInternal[ci];
             if (!cue) continue;
@@ -8441,7 +8465,10 @@
             for (var ai = 0; ai < active.length; ai++) { if (active[ai] === cue) { wasIdx = ai; break; } }
             var wasActive = wasIdx >= 0;
             var shouldBeActive = startMs <= nowMs && nowMs < endMs;
-            var _startedInGap = !wasActive && startMs > lastMs && startMs <= nowMs;
+            // R39xx（扩批 XXII）：start ≥ lastMs——**0 起点 cue**（captions-fast 的
+            // cue@0-0.3）在首拍（lastMs=0）也要 enter（start > lastMs 的严格不等使
+            // 起点恰为 0 的 cue 永不入捕获区间）。播放起点即时间线原点，闭区间 [0, now]。
+            var _startedInGap = !wasActive && startMs >= lastMs && startMs <= nowMs;
             var _endedInGap = wasActive && endMs > lastMs && endMs <= nowMs;
             if (shouldBeActive && !wasActive) {
               _events.push({ t: startMs, type: 'enter', cue: cue });
@@ -8453,6 +8480,7 @@
             }
           }
           if (_events.length) {
+            _hasMarchEvents = true;
             // 事件时间序（同刻 enter 先于 exit——同一 cue 的 start==end 零长 cue 对）。
             _events.sort(function (a, b) {
               if (a.t !== b.t) return a.t - b.t;
@@ -8487,6 +8515,28 @@
                 try { _cue.dispatchEvent({ type: 'exit', target: _cue, currentTarget: _cue }); } catch (_eTmo3) {}
               }
             }
+          }
+          // M3 扩批 XXII：cuechange 派发（spec time-marches-on 步 8——本 tick 该 track
+          // 有 enter/exit 派发 → 对 TextTrack 派单次 cuechange；track-active-cues 的
+          // oncuechange 计数断言面）。异步 queued task。
+          if (_hasMarchEvents && typeof tt.dispatchEvent === 'function') {
+            try {
+              var _ccTt = tt;
+              var _ccFire = function () {
+                try { _ccTt.dispatchEvent({ type: 'cuechange', target: _ccTt, currentTarget: _ccTt }); } catch (_eCcE) {}
+                // M3 扩批 XXII：同步转发到 track 元素（HTMLTrackElement.oncuechange——
+                // track-active-cues 监听面）。
+                try {
+                  var _ccOwner = _ccTt._zwOwnerEl;
+                  if (_ccOwner && typeof _ccOwner.dispatchEvent === 'function') {
+                    _ccOwner.dispatchEvent({ type: 'cuechange', target: _ccOwner, currentTarget: _ccOwner });
+                  }
+                } catch (_eCcO) {}
+              };
+              if (typeof queueMicrotask === 'function') queueMicrotask(_ccFire);
+              else if (typeof setTimeout === 'function') setTimeout(_ccFire, 0);
+              else _ccFire();
+            } catch (_eCc1) {}
           }
         }
         // M3 扩批 XVI：ended 面——桥真值时钟走到流末（registry player Ended 态）→

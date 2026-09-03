@@ -2,12 +2,19 @@
 
 **入口文档**: [../media-elements.md](../media-elements.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-03（**M3 扩批 XXI 落地**——深结构项 D 组首个收口：
+**最后更新**: 2026-09-03（**M3 扩批 XXII 落地**——B 组排除件复评三案收口：
+march disabled gate（disabled track 跳过 cue 调度 + active 清空——spec
+time-marches-on 步 2）+ march 遍历面统一（addTextTrack 产物纳入——此前 cue
+永不 enter/exit）+ cuechange 派发（per-track 单次异步 + track 元素转发）+
+play() 桥 src 读身份分派（handle 身份走 registry 现值）。track-disabled /
+no-cuechange-before-play / track-remove-active-cue 导入；track-active-cues
+维持排除（EventWatcher 三方竞速窗口，随泵精化复评）。**539P/0F/24PF，
+539/563 = 95.7%**。此前同日：**M3 扩批 XXI**——深结构项 D 组首个收口：
 TextTrackList change 事件广播——TextTrack↔TextTrackList 反向链
 （`_zwOwnerList` 三处回填）+ addTextTrack 即时建 list（spec：track 创建即属于
 media 元素 track 列表；上游用例 mode setter 先于 textTracks 首读的时序依赖）+
 mode 有效值变更异步派基础 Event('change')（无 track 属性/target=list/同值不派）。
-track-change-event 导入。**536P/0F/24PF，536/560 = 95.7%**。此前同日：
+track-change-event 导入（536P/0F/24PF）。此前同日：
 **M3 扩批 XX**——HAVE_NOTHING 期 seek 挂起
 语义：currentTime setter readyState 0 时挂 `_zwSeekDeferred`，
 `_zwMediaLoadSequence` readyState 0→1 翻转时补跑 seek 算法（seeking + seeked
@@ -670,4 +677,5 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
   `evidence/2026-09-03-media-cues-playback.json`、
   `evidence/2026-09-03-media-eof-drain-r3936.md`（+同名 .json）、
   `evidence/2026-09-03-media-deferred-seek-r3937.md`（+同名 .json）、
-  `evidence/2026-09-03-media-change-event-r39xx.md`（+同名 .json）
+  `evidence/2026-09-03-media-change-event-r39xx.md`（+同名 .json）、
+  `evidence/2026-09-03-media-b-group-revisit-r39xx.md`（+同名 .json）

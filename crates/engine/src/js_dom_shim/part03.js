@@ -11423,9 +11423,16 @@
                 //（render apply 前不入快照），纯快照读 `__zw_get_attr` 看不到 → bridgeSrc
                 // 空串 → 播放桥失联（fixture-mounted runner 的 track-cues-* 用例形态）。
                 // `__zw_get_attr_lw` 同批 SetAttr 命中新值（R2995 同源语义）。
-                var _pSrcRaw = (typeof __zw_get_attr_lw === 'function')
-                  ? (__zw_get_attr_lw(sel, 'src') || '')
-                  : ((typeof __zw_get_attr === 'function') ? (__zw_get_attr(sel, 'src') || '') : '');
+                // M3 扩批 XXII：src 读按身份分派——handle 身份（createElement 产物，
+                // track-active-cues / track-remove-active-cue 形态）走 registry 现值
+                // `__zw_get_attr_handle`（IDL .src= setter 的 handle 路径写 registry——
+                // `__zw_get_attr_lw` 是 sel 文档查询，对 null sel 恒空 → bridgeSrc 空
+                // → 桥失联 + 重试不启动）；sel 身份保持 latest-wins（同批 setter 命中）。
+                var _pSrcRaw = handle
+                  ? ((typeof __zw_get_attr_handle === 'function') ? (__zw_get_attr_handle(handle, 'src') || '') : '')
+                  : ((typeof __zw_get_attr_lw === 'function')
+                      ? (__zw_get_attr_lw(sel, 'src') || '')
+                      : ((typeof __zw_get_attr === 'function') ? (__zw_get_attr(sel, 'src') || '') : ''));
                 var _pAbs = _pSrcRaw ? _zwResolveFetchUrl(String(_pSrcRaw).replace(/^[\x00-\x20]+/, '').replace(/[\x00-\x20]+$/, '')) : '';
                 if (_pAbs) _pMs.bridgeSrc = _pAbs;
                 // M3 扩批 XVI：play 桥调用**恰一次**（结果存 _hit——旧形态条件里各调一次
