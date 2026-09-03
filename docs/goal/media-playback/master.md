@@ -2,8 +2,11 @@
 
 **入口文档**: [../media-playback.md](../media-playback.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-04（**M3 fixture-mounted runner 播放面切片 10 落地（扩批
-XXVII）**——media fragment #t= 起点解析（settle 加载序列内 currentTime 初始化：
+**最后更新**: 2026-09-04（**M3 fixture-mounted runner 播放面切片 11 落地（扩批
+XXVIII）**——currentTime-move-within-document 导入（同文档移动不重置播放：
+seek(10) 后 appendChild 移动 paused=false + currentTime 保持——headless 时钟
+推进面现成，零改动导入）；fixture 增 movie_300.webm（VP9 300s）。此前同日：
+**切片 10（扩批 XXVII）**——media fragment #t= 起点解析（settle 加载序列内 currentTime 初始化：
 hash 内 & 分隔 k=v 对取 t=、percent-decode、npt: 前缀可选、start,end 取 start、
 HH:MM:SS.ms/MM:SS.ms/SS；settle url 携带 hash 面已被 registry_key strip 兼容）+
 **headless 播放时钟推进**（march 内非 bridgeOn 播放按 performance.now 墙钟差 ×
@@ -555,7 +558,12 @@ clippy 零警告、每切片带单测 + e2e/fixture 资产化（AV1 全流单测
    推进期页面无 timeupdate 可收）。dormant 探针实证 headless 时钟 0→0.12s
    推进 + expando handler 可达后移除。media_fragment_seek +
    autoplay-with-broken-track 导入（556P/0F/24PF，+4 净涨零回归）；no-autoplay-
-   audio-history-back 不导入（iframe+history+postMessage 导航深结构）。**余**：
+   audio-history-back 不导入（iframe+history+postMessage 导航深结构）。
+   **切片 11 落地（2026-09-04 续，扩批 XXVIII——同文档移动 currentTime 面）**：
+   currentTime-move-within-document 导入（offsets-into-the-media-resource/ 末件
+   ——seek(10) 后 appendChild 移动 paused=false + currentTime>=10 保持；零改动
+   导入，headless 时钟推进面（切片 10）现成）；fixture 增 movie_300.webm（VP9
+   300s）。media-elements 557P/0F/24PF（+1 净涨零回归）。**余**：
    playing-the-media-resource 余面（play-in-detached-document /
    fragmented-mp4-end）。
 2. ~~**A/V 同步精化余项**~~ ✅ 2026-09-01 收口：ended 面回归守卫落地

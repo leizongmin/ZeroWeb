@@ -1555,6 +1555,10 @@ pub const MEDIA_TEST_FILES: &[&str] = &[
     // 不导入 no-autoplay-audio-history-back（iframe+history+postMessage 导航深结构）。
     "html/semantics/embedded-content/media-elements/media_fragment_seek.html",
     "html/semantics/embedded-content/media-elements/autoplay-with-broken-track.html",
+    // M3 扩批 XXVIII（2026-09-04）：同文档移动不重置播放（currentTime>=10 保持 +
+    // paused=false；movie_300.webm 长流）。不导入 loop_base（XXIV 注记）/
+    // preserves-pitch/src_object_blob（testdriver 音高/blob 面）。
+    "html/semantics/embedded-content/media-elements/offsets-into-the-media-resource/currentTime-move-within-document.html",
     // M3 扩批 IX：移动面（同文档移动仍 related → 不暂停）。
     // pause-move-to-other-document 不导入——iframe adopt 面未实施（fetch 脚本注记）。
     "html/semantics/embedded-content/media-elements/playing-the-media-resource/pause-move-within-document.html",

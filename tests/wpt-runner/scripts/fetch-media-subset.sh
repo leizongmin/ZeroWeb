@@ -165,6 +165,12 @@ TOP_FILES=(
   # 导航深结构——pause-move-to-other-document 同域排除）。
   "media_fragment_seek.html"
   "autoplay-with-broken-track.html"
+  # M3 扩批 XXVIII（2026-09-04）：同文档移动不重置播放（currentTime>=10 保持 +
+  # paused=false——pause-move-within-document 同域的 currentTime 面）。fixture
+  # 增 movie_300.webm（VP9 300s）。
+  # 不导入 audio/video_loop_base（短 fixture 回卷时序不可观测 + VP8 域外——
+  # XXIV 注记）；preserves-pitch/src_object_blob（testdriver 音高检测/blob URL 面）。
+  "offsets-into-the-media-resource/currentTime-move-within-document.html"
   # M3 扩批 IX：移动面（同文档移动仍 related → 不暂停）。
   # pause-move-to-other-document 不导入：跨 iframe 文档 adopt 在 shim 融合视图下
   # appendChild 静默落空（元素保持 detached）——实施需 iframe 文档模型 adopt 面
@@ -308,6 +314,9 @@ done
 # https://github.com/web-platform-tests/wpt/tree/3159769/media
 MEDIA_FILES=(
   "media/movie_5.webm"
+  # M3 扩批 XXVIII：currentTime-move-within-document 媒体源（VP9 300s 长流——
+  # seek(10) 后持续推进面）。
+  "media/movie_300.webm"
   "media/sound_5.mp3"
   "media/test.webm"
   "media/test-1s.webm"
