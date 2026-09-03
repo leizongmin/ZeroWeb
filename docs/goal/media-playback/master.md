@@ -2,7 +2,19 @@
 
 **入口文档**: [../media-playback.md](../media-playback.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-03（**M3 fixture-mounted runner 播放面切片 6 落地**——
+**最后更新**: 2026-09-03（**M3 fixture-mounted runner 播放面切片 7 落地（扩批
+XXIV）**——loop 属性真面 + played TimeRanges：registry `set_loop`（音频 entry
+流末回卷——`restart()` 解码器重建 + 游标归零 + 播放态保持；伴生轨同面；
+`reached_end` 标志补音频面 isEnded 驱动源——此前音频流末对桥不可见）+
+`registry_key` 规范化（strip query/fragment——WPT cache-buster query 与 runner/
+shim 两侧 URL 编码差异同键命中；bridge play 的 audio_guess 同面——`.oga?...`
+此前恒 miss 使音频条目永不登记）+ shim loop IDL setter/getter + march Ended 面
+loop 分叉（seek(0)+play + seeking/seeked 派发非 ended）+ played TimeRanges
+（march 采样 `_zwPlayedRanges` → getter TimeRanges 形状；loop 尾段计入）+
+duration getter settle 竞态兜底。**setLoop 桥回调参数索引修复**
+（args.get(2)→get(1)——门面传 2 参，此前 on 恒 false 使 loop 真面从未生效）。
+media-elements 542P/0F/24PF（+2 净涨零回归——played-loop /
+audio_loop_seek_to_eos 导入）。此前同日：**M3 fixture-mounted runner 播放面切片 6 落地**——
 media load invoke 重置面收口：`_zwMediaScheduleLoad` invoke 入口重置
 `_resourceStates[key]` + invoke 步 6 位置重置（currentTime=0 / HAVE_NOTHING / 
 `_zwMediaTimeKnown` 失效）+ invoke 重置 track 子产物 cue（addTextTrack 产物
@@ -438,6 +450,27 @@ clippy 零警告、每切片带单测 + e2e/fixture 资产化（AV1 全流单测
    track-active-cues）。**余**：WPT 播放推进用例余面（playing-the-media-resource
    的 play-in-detached-document / loop-from-ended / fragmented-mp4-end——依赖
    detached 文档播放钟与 loop 面）。
+   **切片 7 落地（2026-09-03 续，扩批 XXIV——loop 真面 + played TimeRanges）**：
+   registry `set_loop`（音频 entry 流末回卷：`restart()` 解码器重建 + 游标归零 +
+   skip 线清零 + 播放态保持——解码器单向流 fixture 级小源可接受；`WebmAudioEntry`
+   伴生轨同面；`reached_end` 标志——loop=false 流末置位 / play·seek·restart 清除，
+   补齐音频面 `isEnded` 桥驱动源）+ `registry_key` 规范化（strip query/fragment，
+   全查询面统一——WPT cache-buster `?...Math.random()` 与 shim/runner URL 编码
+   差异此前两侧键失配；bridge play 的 `audio_guess` 同面 strip，`.oga?...` 此前恒
+   miss）+ shim loop IDL setter/getter（`_mediaState.loop` 镜像 + 桥推送 +
+   play 起播/retry 路径同步）+ march Ended 面 loop 分叉（seek(0)+play 重头 +
+   seeking/seeked 异步派发非 ended；非 loop 分支补 `ms.ended = true` IDL 置位）+
+   played TimeRanges（march 逐拍采样 `_zwPlayedRanges` 区间合并 250ms 容差 →
+   getter `length/start/end` + IndexSizeError；seek 回退不合并；loop 回卷前尾段
+   `[lastMs, duration]` 按桥真值计入）。**缺陷修复**：`__zw_video_set_loop` 回调
+   读 `args.get(2)` 而门面 `setLoop(src, on)` 只传 2 参——`on` 恒 false，loop 真
+   面从未生效（本片单测实证回卷后修正）。media-elements 542P/0F/24PF（+2 净涨
+   零回归——played-loop / audio_loop_seek_to_eos 导入；loop-from-ended 暂不导入，
+   动态 src settle 竞态注记于 testharness.rs）。单测
+   `registry_audio_loop_restarts_at_stream_end`（回卷 ≥2 次 + 播放态保持 +
+   loop=false 对照停）。**余**：playing-the-media-resource 余面
+   （play-in-detached-document / loop-from-ended（settle 竞态时序）/
+   fragmented-mp4-end）。
 2. ~~**A/V 同步精化余项**~~ ✅ 2026-09-01 收口：ended 面回归守卫落地
    （切片 F——伴音流末 video player 走到 Ended、泵停）；音频设备面（CpalSink
    真出声）挂 media-audio M1 可选切片。

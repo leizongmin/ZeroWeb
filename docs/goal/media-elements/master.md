@@ -2,7 +2,18 @@
 
 **入口文档**: [../media-elements.md](../media-elements.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-03（**M3 扩批 XXIII 落地**——media load invoke 重置面收口：
+**最后更新**: 2026-09-03（**M3 扩批 XXIV 落地**——loop 属性真面 + played
+TimeRanges：registry `set_loop`（音频 entry 流末回卷——解码器重建 + 游标归零 +
+播放态保持；伴生轨同面；`reached_end` 标志补音频面 isEnded 驱动源）+ shim loop
+IDL setter/getter（`_mediaState` 镜像 + 桥推送 + play 起播同步，retry 路径同面）+
+march Ended 面 loop 分叉（seek(0)+play + seeking/seeked 派发非 ended；ended IDL
+属性翻转补置）+ played TimeRanges（march 采样 `_zwPlayedRanges` 250ms 容差合并 →
+getter TimeRanges 形状；loop 回卷前尾段计入）+ duration getter settle 竞态兜底
+（动态 src 真值落位晚于加载序列时读 settle durationMs；已开始无真值回落 600；
+未加载 NaN）。**setLoop 桥回调参数索引修复（args.get(2)→get(1)——门面传 2 参，
+此前 on 恒 false）**。played-loop / audio_loop_seek_to_eos 导入；loop-from-ended
+暂不导入（动态 src settle 竞态注记，随基础设施复评）。**542P/0F/24PF，
+542/566 = 95.8%**（+2 净涨零回归）。此前同日：**M3 扩批 XXIII 落地**——media load invoke 重置面收口：
 `_zwMediaScheduleLoad` invoke 入口重置 `_resourceStates[key]`（spec 资源选择 invoke
 步——二次调度失败候选须重新 settle，幂等门不再误吞）+ invoke 步 6 位置重置
 （`readyState>=1` 时 currentTime=0 + `_zwMediaTimeKnown` 失效——spec「set the
@@ -628,7 +639,7 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
 
 | # | 缺口 | 状态 | 失败聚类 |
 |---|------|------|----------|
-| M1g | WPT media-elements 用例覆盖 | ✅ 144 用例已导入（136 + 扩批 XVI/XVII/XIX/XX/XXI/XXIII：播放推进族 6 件 + track-change-event + track-active-cues——B 组末件解除排除），**95.7%**（540/564） | — |
+| M1g | WPT media-elements 用例覆盖 | ✅ 146 用例已导入（136 + 扩批 XVI/XVII/XIX/XX/XXI/XXIII/XXIV：播放推进族 6 件 + track-change-event + track-active-cues + played-loop + audio_loop_seek_to_eos），**95.8%**（542/566） | — |
 | M2g | load 算法 + 状态机（事件序列派发） | ✅ M2 落地（13T→**0T**） | F4 闭合 |
 | M3g | 事件序列 headless 近似驱动 | ✅（同 M2g；source-child 触发已落地） | F4 闭合 |
 | M4g-a | 媒体元数据 IDL 反射（初值面） | ✅ 切片 3 落地 | F2 闭合（-9 Fail） |
@@ -646,13 +657,16 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
 1. **扩大导入面（余面收口）**：track-cues-* 播放推进族全件已导入（扩批 XX
    seeking 兑现——HAVE_NOTHING 挂起 seek 语义）+ B 组排除件全清（扩批 XXII
    disabled/no-cuechange/remove-active-cue 三案 + 扩批 XXIII track-active-cues
-   末件——load invoke 重置面收口）。playing-the-media-resource
+   末件——load invoke 重置面收口）+ loop 真面两件导入（扩批 XXIV played-loop /
+   audio_loop_seek_to_eos）。playing-the-media-resource
    剩余（play-in-detached-document——需 detached 文档播放时钟推进，依赖兄弟目标
-   media-playback 播放钟接语义层；loop-from-ended.tentative / fragmented-mp4-end
-   同域）；the-video-element 反射余面（video-loading-* preload 语义族——视
-   lazy-loading 支撑面）。**headless 可导入面已在 95.7% 重饱和（M3 扩批 XXIII 后
-   第六次修正）**——余下增量依赖兄弟目标解锁（真播放钟 → time-marches-on 余面
-   / loop-from-ended / fragmented-mp4-end）
+   media-playback 播放钟接语义层；loop-from-ended.tentative——动态 src 的 settle
+   真值晚于 loadedmetadata，headless 600 fallback 使 seek 目标与桥真值钟永不交汇
+   （扩批 XXIV 实测注记），待 register_dynamic 快照先于首拍 timer 的时序修复；
+   fragmented-mp4-end 同域）；the-video-element 反射余面（video-loading-*
+   preload 语义族——视 lazy-loading 支撑面）。**headless 可导入面已在 95.8% 重饱和
+   （M3 扩批 XXIV 后第七次修正）**——余下增量依赖兄弟目标解锁（真播放钟 →
+   time-marches-on 余面 / loop-from-ended / fragmented-mp4-end）
    + 深结构项（~~TextTrackList change 事件广播反向链~~ ✅ 扩批 XXI 兑现、
    cue 标记树解析——归渲染域远期）。
 2. ~~**M4g-d**：canPlayType 能力表联动更新~~ ✅ 2026-09-01 兑现（能力表真值化——
