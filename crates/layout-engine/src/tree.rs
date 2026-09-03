@@ -679,6 +679,33 @@ fn apply_replaced_element_sizing(
         return;
     }
 
+    // R4005 Slice 1（css-flexbox §9.9.1.1 specified size suggestion + §9.9.2
+    // automatic minimum）：replaced flex item 的 CSS main/cross size 为**可解析
+    // 百分比**（flex 容器同轴尺寸 definite Px）时，specified size suggestion =
+    // % × 容器宽，作为 automatic minimum floor 写入 taffy min_size——否则 converter
+    // 把 % 交给 taffy 后 flex base（flex-basis 定值）不受该 specified 约束
+    //（flex-aspect-ratio-img-row-017：width:100% + flex:0 0 10px → base 10 应被
+    // min floor 抬到 100）。内容 size suggestion（replaced min-content ≈ 固有宽）
+    // ≥ specified 时 floor = specified（§9.9.2 min(specified, content)）——此处
+    // 以 specified 近似（min-content 精确测量为 RFC 域）。仅行方向（row）主轴与
+    // 列方向（column）交叉轴的 **width** 面（height % 的 CB 链归 §9.9 深域）。
+    // kill-switch `ZW_FLEX_SPECIFIED_SUGGESTION=0`。
+    if (is_flex_row_item || is_flex_col_item)
+        && std::env::var("ZW_FLEX_SPECIFIED_SUGGESTION").as_deref() != Ok("0")
+        && matches!(computed.writing_mode, WritingModeValue::HorizontalTb)
+        && let Some(LengthValue::Percentage(pct)) = Some(&computed.width)
+        && let Some(parent_id) = doc.parent_node(dom_id)
+        && let Some(ps) = styles.get(&parent_id)
+        && let LengthValue::Px(cw) = ps.width
+        && cw.is_finite()
+        && cw > 0.0
+    {
+        let specified = (*pct as f32 / 100.0) * cw as f32;
+        if specified > 0.0 {
+            taffy_style.min_size.width = taffy::style::Dimension::length(specified);
+        }
+    }
+
     // R2429：`contain: size`（CSS Containment 1）——元素按「无内容」sized，替换元素固有尺寸
     // 须忽略（intrinsic size → 0）。converter（mod.rs:123 `contain.has_size()`）已把 auto 尺寸
     // 解析为 0（含 contain-intrinsic-size 覆盖），此处若再用固有尺寸覆盖会把 0 拉回 intrinsic，
