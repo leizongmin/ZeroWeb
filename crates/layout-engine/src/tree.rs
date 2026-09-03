@@ -216,6 +216,35 @@ pub(crate) fn run_in_following_block_sibling(
     // run-in 自身含块级子 → spec「run-in becomes block」降级（不并入）。display:run-in
     // 子同样阻断（run-in-contains-run-in-00x：.run-in div{display:run-in} 期望不并入；
     // run-in 的 run-in 子按 spec 先行块化处理，此处保守视为阻断）。
+    // R3993：块级子可嵌在 inline 子树的任意深度（run-in-contains-block-inside-inline-001：
+    // `<span><div></div></span>`——inline 子盒不阻断 run-in 判定，其内块级后代同样触发
+    // 「becomes block」降级），故递归下探 inline 级子树；遇块级/run-in 即阻断，OOF/none
+    // 子跳过，文本子不阻断。
+    fn subtree_has_block_descendant(
+        doc: &Document,
+        styles: &HashMap<NodeId, ComputedStyle>,
+        id: NodeId,
+        is_block_level_display: &dyn Fn(&ComputedStyle) -> bool,
+        is_oof: &dyn Fn(NodeId) -> bool,
+    ) -> bool {
+        for &c in doc.child_nodes(id).iter() {
+            let Some(style) = styles.get(&c) else {
+                continue;
+            };
+            if matches!(style.display, DisplayValue::None) || is_oof(c) {
+                continue;
+            }
+            if is_block_level_display(style) || matches!(style.display, DisplayValue::RunIn) {
+                return true;
+            }
+            if doc.get(c).is_some_and(|n| matches!(&n.kind, NodeKind::Element(_)))
+                && subtree_has_block_descendant(doc, styles, c, is_block_level_display, is_oof)
+            {
+                return true;
+            }
+        }
+        false
+    }
     let has_block_child = doc.child_nodes(run_in_id).iter().any(|&c| {
         doc.get(c).is_some_and(|n| matches!(&n.kind, NodeKind::Element(_)))
             && styles.get(&c).is_some_and(|s| {
@@ -223,6 +252,15 @@ pub(crate) fn run_in_following_block_sibling(
                     && !is_oof(c)
                     && !matches!(s.display, DisplayValue::None)
             })
+    }) || doc.child_nodes(run_in_id).iter().any(|&c| {
+        doc.get(c).is_some_and(|n| matches!(&n.kind, NodeKind::Element(_)))
+            && styles.get(&c).is_some_and(|s| {
+                !is_block_level_display(s)
+                    && !matches!(s.display, DisplayValue::RunIn)
+                    && !is_oof(c)
+                    && !matches!(s.display, DisplayValue::None)
+            })
+            && subtree_has_block_descendant(doc, styles, c, &is_block_level_display, &is_oof)
     });
     if has_block_child {
         return None;

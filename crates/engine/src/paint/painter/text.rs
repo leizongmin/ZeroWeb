@@ -687,7 +687,11 @@ impl super::Painter {
             if (box_node.is_r109_split || box_node.is_r109_block_mixed) && box_node.fragment_node_ids.is_none() {
                 return;
             }
-            if !has_direct_paintable_text(doc, node_id, styles) {
+            // R3992：并入本容器首行的 run-in（run_in_prepended）使容器 paint_text 须跑——
+            // 即便容器自身无直接文本子（run-in-block-between-001：run-in 并入**空块**，
+            // run-in 文本由 IFC 前置收集提供，has_direct 早退会丢整行）。与 layout 侧
+            // compute_final 的 has_text_children 放行同源。
+            if !has_direct_paintable_text(doc, node_id, styles) && box_node.run_in_prepended.is_none() {
                 return;
             }
             // R109：匿名块片段跳过 painted_inline_nodes 去重——多个片段共享 inline 的

@@ -831,6 +831,10 @@ pub(crate) fn compute_final_inline_layouts(
             .child_nodes(node_id)
             .iter()
             .any(|child_id| doc.get(*child_id).is_some_and(|n| matches!(&n.kind, NodeKind::Text(_))));
+    // R3992：并入本容器首行的 run-in（run_in_prepended 已注册）须跑 IFC——即便容器自身
+    // 无文本/inline 子（run-in-block-between-001：run-in 并入**空块**，无此放行则 IFC 不跑，
+    // run-in 前置内容无几何且空块高度保持 0，后继行上移重叠）。
+    has_text_children |= root.run_in_prepended.is_some();
     // PHASEA stored-line-boxes 路径（默认启用；env PHASEA_STORE_EXT=0 关闭）：也覆盖含 **inline-level** 元素子节点且**无 block-level
     // 元素子节点**的容器（纯 inline 内容，如 div>span 间接文本）。compute_final 传真实 styles 给
     // IFC（line 1851），存储行盒度量正确，paint use_stored 渲染解 Phase A font_size（font-051 实证）。
@@ -1294,6 +1298,14 @@ fn backfill_run_in_boxes(
     if !found {
         return;
     }
+    // R3992：并入目标是空块（无文本/inline 子）时，taffy 测得容器高 0——run-in 内容
+    // 成为该块首行后块高须包含行盒（CSS2.1 §9.2.4），否则后继块上移与 run-in 行重叠
+    //（run-in-block-between-001）。仅增高不缩减（taffy 对非空容器的高度已含行盒）。
+    let ifc_bottom = inline_ctx.lines.last().map(|l| l.y + l.height).unwrap_or(0.0);
+    if ifc_bottom > root.height + 0.5 {
+        root.content_height = ifc_bottom;
+        root.height = ifc_bottom;
+    }
     root.children.push(LayoutBox {
         node_id: Some(run_in_id),
         x: min_x,
@@ -1327,6 +1339,19 @@ pub(crate) fn measure_text_content(
         && styles
             .get(&dom_id)
             .is_some_and(|s| s.content_visibility_hidden_effective())
+    {
+        return Size::ZERO;
+    }
+
+    // R3992（CSS Display 3 §2.3）：并入态 run-in 的 leaf 盒内容为 0——其 inline 内容已
+    // 被后继块的 IFC 前置收集渲染，自身 box 若按 DOM 文本子测量出高度，会在 taffy 流中
+    // 占一行把后继块推下（run-in-basic-001：target 整体下移 19px，ref 无此盒）。判定与
+    // build_subtree 分派同源（同 gate 同谓词，双路径一致）。
+    if std::env::var("ZW_RUN_IN").as_deref() != Ok("0")
+        && styles
+            .get(&dom_id)
+            .is_some_and(|s| matches!(s.display, zero_css_parser::values::DisplayValue::RunIn))
+        && crate::tree::run_in_following_block_sibling(doc, styles, dom_id).is_some()
     {
         return Size::ZERO;
     }
@@ -1968,8 +1993,21 @@ pub(crate) fn remeasure_inline_only_containers(
             .iter()
             .any(|c| doc.get(*c).is_some_and(|n| matches!(n.kind, NodeKind::Text(_))))
     });
-    let needs_dom_text_remeasure =
-        has_dom_text && box_node.content_height < 1.0 && box_node.children.iter().all(|c| c.is_absolute || c.is_fixed);
+    // R3992：并入态 run-in 跳过 DOM 文本 remeasure——其内容已由后继块 IFC 渲染，
+    // 此处按 DOM 子重测会把单行高回填进 0 高 leaf（run-in-basic-001 target 下移 19px）。
+    // 判定与 measure gate / build_subtree 分派同源。
+    let is_merged_run_in = std::env::var("ZW_RUN_IN").as_deref() != Ok("0")
+        && box_node
+            .node_id
+            .and_then(|id| styles.get(&id))
+            .is_some_and(|s| matches!(s.display, DisplayValue::RunIn))
+        && box_node
+            .node_id
+            .is_some_and(|id| crate::tree::run_in_following_block_sibling(doc, styles, id).is_some());
+    let needs_dom_text_remeasure = !is_merged_run_in
+        && has_dom_text
+        && box_node.content_height < 1.0
+        && box_node.children.iter().all(|c| c.is_absolute || c.is_fixed);
 
     // R57（M3）：R109 匿名块片段（node_id = split inline，内容由 fragment_registry
     // 决定）不参与本 remeasure——按 span 全量 DOM 内容（div + canvas + 空白）测量
@@ -2018,6 +2056,8 @@ pub(crate) fn remeasure_inline_only_containers(
         }
     } else if !has_floats
         && !box_node.is_r109_split
+        // R3992：并入态 run-in 不走 inline-only remeasure（内容归后继块 IFC，0 高 leaf）。
+        && !is_merged_run_in
         && (has_inline_children || needs_dom_text_remeasure)
         && let Some(dom_id) = box_node.node_id
         && let Some(style) = styles.get(&dom_id)

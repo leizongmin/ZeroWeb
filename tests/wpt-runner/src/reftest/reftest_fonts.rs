@@ -76,6 +76,21 @@ fn build_base_font_loader() -> FontLoader {
         }
     }
 
+    // R3993：加载系统 Bold face（与 Regular 同 nameID1 族名注册）——family_map 同族第二
+    // face 使 build_font_resolver 推导 "sans-serif:700" / "serif:700"（CSS font-weight:bold
+    // 的 face 选择）。此前 loader 只载 Regular：bold 请求全部落到 regular face（`<b>` /
+    // font-weight:bold / .run-in{font-weight:bold} 均不渲染，R3992 run-in 残簇同幅度 fail
+    // 的字重差即此）。仅 Linux 路径（macOS/Windows 的 bold 已在各自清单/测试覆盖）。
+    for path in [
+        PathBuf::from("/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"),
+        PathBuf::from("/usr/share/fonts/truetype/liberation/LiberationSerif-Bold.ttf"),
+        PathBuf::from("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"),
+    ] {
+        if let Ok(data) = std::fs::read(&path) {
+            let _ = loader.load_font(&data);
+        }
+    }
+
     // 加载 CJK 字体（Noto Sans CJK）并加入回退链——主字体缺 CJK 字形时回退到此，
     // 使中文/日文/韩文字符可渲染（DC-13 welcome.html 等含 CJK 文本的真实页面）。
     let cjk_font_dir = std::env::var_os("ZW_CJK_FONT_DIR").map(PathBuf::from);

@@ -306,10 +306,14 @@ impl FontLoader {
         // sans-serif
         let sans_id = self.resolve_generic_family(&sans_names).unwrap_or(default_id);
         resolver.insert("sans-serif".to_string(), sans_id);
+        // R3993：generic bold face 取**实际解析到的 sans 族的第二 face**（同族 Regular+Bold
+        // 同 nameID1 注册，bold 加载后 ids.get(1)=Bold），而非「Arial 或任意族的第二 face」
+        //——旧任意族回退会把无关族（如仅一个 face 的族取到别族唯一 face）甚至 regular 当
+        // bold；Liberation Sans 环境下旧逻辑命中不到 Arial → 任意族扫描常空 → bold 请求
+        // 全部落到 regular face（`<b>`/font-weight:bold 不渲染，R3993 probe 实证）。
         let sans_bold_id = self
-            .family_map
-            .get("Arial")
-            .and_then(|ids| ids.get(1).copied())
+            .bold_face_of_same_family(sans_id)
+            .or_else(|| self.family_map.get("Arial").and_then(|ids| ids.get(1).copied()))
             .or_else(|| self.family_map.values().find_map(|ids| ids.get(1).copied()))
             .unwrap_or(sans_id);
         resolver.insert("sans-serif:700".to_string(), sans_bold_id);
@@ -317,6 +321,9 @@ impl FontLoader {
         // serif
         let serif_id = self.resolve_generic_family(&serif_names).unwrap_or(default_id);
         resolver.insert("serif".to_string(), serif_id);
+        // R3993：serif:700 同 sans-serif:700 语义（Liberation Serif Bold / Times New Roman Bold）。
+        let serif_bold_id = self.bold_face_of_same_family(serif_id).unwrap_or(serif_id);
+        resolver.insert("serif:700".to_string(), serif_bold_id);
 
         // monospace
         let mono_id = self.resolve_generic_family(&mono_names).unwrap_or(default_id);
@@ -338,6 +345,18 @@ impl FontLoader {
             }
         }
         None
+    }
+
+    /// R3993：给定 face id，找其同族的 Bold face（family_map 中同族第二 face）。
+    ///
+    /// 生产 `load_platform_fonts` / reftest loader 加载 Bold TTF 时 nameID1 与 Regular
+    /// 同族（"Liberation Sans" + "LiberationSans-Bold.ttf" → 同 "Liberation Sans"），
+    /// 同族 ids = [regular, bold]，第二 face 即 Bold。face 不属于任何已知族 → None。
+    fn bold_face_of_same_family(&self, face_id: u32) -> Option<u32> {
+        self.family_map
+            .values()
+            .find(|ids| ids.first() == Some(&face_id) && ids.len() > 1)
+            .and_then(|ids| ids.get(1).copied())
     }
 
     /// 渲染指定字符的 glyph
@@ -1012,6 +1031,45 @@ mod tests {
     fn load_system_font_data() -> Option<Vec<u8>> {
         let path = find_system_font()?;
         std::fs::read(path).ok()
+    }
+
+    /// R3993：generic bold face 解析必须取**实际解析到的 sans 族的同族第二 face**。
+    ///
+    /// 旧逻辑 `family_map.get("Arial").get(1)` 在无 Arial 环境（Linux Liberation Sans
+    /// 谱系）落到「任意族的第二 face」或 fallback regular——`sans-serif:700` 请求渲染
+    /// regular 字形（`<b>` / font-weight:bold 不生效）。系统无 Liberation Sans 时跳过。
+    #[test]
+    fn r3993_generic_bold_resolves_to_same_family_second_face() {
+        let Some(data) = std::fs::read("/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf").ok() else {
+            eprintln!("r3993: Liberation Sans not found, skip");
+            return;
+        };
+        let Some(bold) = std::fs::read("/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf").ok() else {
+            eprintln!("r3993: Liberation Sans Bold not found, skip");
+            return;
+        };
+        let mut loader = FontLoader::new();
+        let regular_id = loader.load_font(&data).expect("load Liberation Sans");
+        loader.load_font(&bold).expect("load Liberation Sans Bold");
+
+        let resolver = loader.build_font_resolver();
+        let sans_bold = resolver
+            .get("sans-serif:700")
+            .copied()
+            .expect("sans-serif:700 registered");
+        assert_ne!(
+            sans_bold, regular_id,
+            "R3993: sans-serif:700 must resolve to the bold face, not the regular face"
+        );
+        // serif:700 同语义：实际解析到的 serif 族的第二 face（无 serif face 加载时
+        // serif 回落 default sans——此时同族第二 face 仍非 regular，亦合规）。
+        let serif = resolver.get("serif").copied().expect("serif registered");
+        assert_ne!(
+            resolver.get("serif:700"),
+            Some(&regular_id),
+            "R3993: serif:700 must not resolve to the sans regular face"
+        );
+        assert!(resolver.contains_key("serif:700") && serif != u32::MAX);
     }
 
     #[test]
