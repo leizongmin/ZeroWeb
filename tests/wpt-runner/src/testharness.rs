@@ -1579,6 +1579,11 @@ pub const MEDIA_TEST_FILES: &[&str] = &[
     "html/semantics/embedded-content/media-elements/track/track-element/track-load-from-element-readyState.html",
     "html/semantics/embedded-content/media-elements/track/track-element/track-cue-mutable.html",
     "html/semantics/embedded-content/media-elements/track/track-element/src-empty-string.html",
+    // M3 扩批 XXXIII：TextTrackCueList 功能面。track-cue-mutable-fragment 维持排除
+    //（cue 标记树 isEqualNode）；track-selection-task-order 维持排除（宏任务序）。
+    "html/semantics/embedded-content/media-elements/track/track-element/track-text-track-cue-list.html",
+    // M3 扩批 XXXIII：TextTrackCueList 功能面。track-cue-mutable-fragment 维持排除
+    //（cue 标记树 isEqualNode）；track-selection-task-order 维持排除（宏任务序）。
     // M3 扩批 XXXII：readyState/cue-mutable/mode 稳态面批量试导。
     // M3 扩批 XXXI：removetrack 派发落地后试导（selection metadata mode 面 /
     // removetrack TrackEvent 面 / 播放中 add cue 面）。

@@ -202,6 +202,10 @@ TOP_FILES=(
   "track/track-element/track-load-from-element-readyState.html"
   "track/track-element/track-cue-mutable.html"
   "track/track-element/src-empty-string.html"
+  # M3 扩批 XXXIII（2026-09-04）：TextTrackCueList 功能面（length/[]/getCueById）。
+  # track-cue-mutable-fragment 维持排除（captions-html.vtt cue 标记树 isEqualNode
+  # 对拍——深结构项）；track-selection-task-order 维持排除（selection 宏任务序）。
+  "track/track-element/track-text-track-cue-list.html"
   # M3 扩批 XXX 续：mode/cuechange 播放推进面（B 组——headless 时钟 + march 基建）。
   # 资源 captions-fast.vtt/cues-chrono-order.vtt/captions-gaps.vtt 已在清单。
   # counting.webm/test.webm 已在 MEDIA_FILES。track-mode 维持排除——mode 数值
