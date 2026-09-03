@@ -6893,12 +6893,11 @@
     // 播放位置归零 + 媒体时刻面失效 + 关联文本轨道 cue 清空（spec「further handling of
     // the track element」加载面随 media load 重置——track-active-cues「unloaded 后无
     // active cue」断言面：cue@0-5 在位置 0 仍合法 active，清 cue 才为空）。
-    // readyState 0（HAVE_NOTHING）时无位置可复位，跳过（cue 清空照跑——track 资源面
-    // 独立于 video readyState）。
-    if ((ms.readyState | 0) >= 1) {
-      ms.currentTime = 0;
-      ms._zwMediaTimeKnown = false;
-    }
+    // invoke 步 6 位置重置**无条件**（spec「set the current playback position to 0」
+    // 不以 readyState 为前提——error settle 面（readyState 0）同样归零，保 IDL 读法
+    // 恒数值；undefined 泄出曾致 load-events-networkState 族 timeupdate 判定失真）。
+    ms.currentTime = 0;
+    ms._zwMediaTimeKnown = false;
     try {
       var _ldiCache = (typeof _textTracksCache !== 'undefined') ? _textTracksCache[key] : null;
       if (_ldiCache && _ldiCache.tracks) {
