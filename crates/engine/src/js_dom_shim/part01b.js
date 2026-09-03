@@ -242,12 +242,21 @@
       configurable: true,
     });
     var _isAuto = function (v) { return v === 'auto'; };
+    // M3 扩批 XXXII：line/position setter 关键字校验（spec vttcue「line」/「position」
+    // setter——非数字且非关键字（'auto' 等）的字符串 → TypeError（track-cue-mutable
+    // 的 line='gazonk' 断言面；line 合法后保留数值面 42）。position 关键字集
+    // {'auto','line-left','center','line-right'}（spec vttcue position 列表）。
+    var _lineKeyword = function (v) { return v === 'auto'; };
+    var _posKeyword = function (v) { return v === 'auto' || v === 'line-left' || v === 'center' || v === 'line-right'; };
     Object.defineProperty(VTTCue.prototype, 'line', {
       get: function () { return this._zwLine; },
       set: function (v) {
         if (typeof v === 'number' && isNaN(v)) return; // NaN → 保留（invalid double）
-        this._zwLine = (v == null || _isAuto(v)) ? 'auto'
-          : (typeof v === 'number' ? v : (parseFloat(v) == null || isNaN(parseFloat(v)) ? 'auto' : parseFloat(v)));
+        if (typeof v !== 'number' && !_lineKeyword(String(v)) && isNaN(parseFloat(v))) {
+          throw new globalThis.TypeError("Failed to set the 'line' property on 'VTTCue': The provided value is not a valid line value.");
+        }
+        this._zwLine = (v == null || _lineKeyword(v)) ? 'auto'
+          : (typeof v === 'number' ? v : parseFloat(v));
       },
       configurable: true,
     });
@@ -255,7 +264,15 @@
       get: function () { return this._zwPosition; },
       set: function (v) {
         if (typeof v === 'number' && isNaN(v)) return;
-        this._zwPosition = (v == null || _isAuto(v)) ? 'auto' : v;
+        // M3 扩批 XXXII：数值面范围校验（[0,100] 外 → IndexSizeError——
+        // track-cue-mutable 的 position=-200/110 断言面；关键字面照旧）。
+        if (typeof v === 'number' && (v < 0 || v > 100)) {
+          throw new (globalThis.DOMException || Error)('The provided value is outside the range [0, 100].', 'IndexSizeError');
+        }
+        if (typeof v !== 'number' && !_posKeyword(String(v)) && isNaN(parseFloat(v))) {
+          throw new globalThis.TypeError("Failed to set the 'position' property on 'VTTCue': The provided value is not a valid position value.");
+        }
+        this._zwPosition = (v == null || _posKeyword(v)) ? 'auto' : (typeof v === 'number' ? v : parseFloat(v));
       },
       configurable: true,
     });
@@ -264,7 +281,12 @@
       set: function (v) {
         var n = Number(v);
         if (isNaN(n)) return; // invalid → 保留旧值
-        this._zwSize = Math.min(100, Math.max(0, n)); // clamp [0,100]
+        // M3 扩批 XXXII：[-200/110] → IndexSizeError（track-cue-mutable 断言面；
+        // 此前 clamp 面改为 spec 范围校验）。
+        if (n < 0 || n > 100) {
+          throw new (globalThis.DOMException || Error)('The provided value is outside the range [0, 100].', 'IndexSizeError');
+        }
+        this._zwSize = n;
       },
       configurable: true,
     });

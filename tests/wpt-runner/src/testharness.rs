@@ -1569,6 +1569,17 @@ pub const MEDIA_TEST_FILES: &[&str] = &[
     "html/semantics/embedded-content/media-elements/track/track-element/track-selection-metadata.html",
     "html/semantics/embedded-content/media-elements/track/track-element/track-remove-track.html",
     "html/semantics/embedded-content/media-elements/track/track-element/track-cues-missed-no-immediate-events.html",
+    // M3 扩批 XXXII：readyState/cue-mutable/mode 稳态面批量试导。
+    // track-mode-not-changed-by-new-track 维持排除——textTracks 身份对拍切片；
+    // track-remove-insert-ready-state 维持排除——re-attach 播放推进链切片。
+    "html/semantics/embedded-content/media-elements/track/track-element/track-cues-cuechange-dynamically-created-track-element.html",
+    "html/semantics/embedded-content/media-elements/track/track-element/track-disabled-addcue.html",
+    "html/semantics/embedded-content/media-elements/track/track-element/track-insert-after-load.html",
+    "html/semantics/embedded-content/media-elements/track/track-element/track-load-error-readyState.html",
+    "html/semantics/embedded-content/media-elements/track/track-element/track-load-from-element-readyState.html",
+    "html/semantics/embedded-content/media-elements/track/track-element/track-cue-mutable.html",
+    "html/semantics/embedded-content/media-elements/track/track-element/src-empty-string.html",
+    // M3 扩批 XXXII：readyState/cue-mutable/mode 稳态面批量试导。
     // M3 扩批 XXXI：removetrack 派发落地后试导（selection metadata mode 面 /
     // removetrack TrackEvent 面 / 播放中 add cue 面）。
     "html/semantics/embedded-content/media-elements/track/track-element/track-mode-disabled.html",

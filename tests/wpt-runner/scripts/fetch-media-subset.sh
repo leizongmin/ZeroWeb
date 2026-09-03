@@ -189,6 +189,19 @@ TOP_FILES=(
   "track/track-element/track-selection-metadata.html"
   "track/track-element/track-remove-track.html"
   "track/track-element/track-cues-missed-no-immediate-events.html"
+  # M3 扩批 XXXII（2026-09-04）：readyState/cue-mutable/mode 稳态面批量试导
+  #（readyState ERROR/LOADED 断言、VTTCue 属性可变面、src='' 空 URL error 面）。
+  # track-mode-not-changed-by-new-track 维持排除——textTracks 增量同步的 track
+  # 身份对拍（getElementById(x.track.track) same-object 面，身份表切片）；
+  # track-remove-insert-ready-state 维持排除——remove→re-attach 后的播放推进链
+  #（期望 timeupdate 计数 3 got 0，removal 面与推进泵耦合切片）。
+  "track/track-element/track-cues-cuechange-dynamically-created-track-element.html"
+  "track/track-element/track-disabled-addcue.html"
+  "track/track-element/track-insert-after-load.html"
+  "track/track-element/track-load-error-readyState.html"
+  "track/track-element/track-load-from-element-readyState.html"
+  "track/track-element/track-cue-mutable.html"
+  "track/track-element/src-empty-string.html"
   # M3 扩批 XXX 续：mode/cuechange 播放推进面（B 组——headless 时钟 + march 基建）。
   # 资源 captions-fast.vtt/cues-chrono-order.vtt/captions-gaps.vtt 已在清单。
   # counting.webm/test.webm 已在 MEDIA_FILES。track-mode 维持排除——mode 数值
