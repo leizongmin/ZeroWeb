@@ -702,6 +702,23 @@ pub(crate) fn grid_intrinsic_width(
     let gap = style
         .and_then(|s| resolve_intrinsic_real_length(&s.column_gap, s))
         .unwrap_or(0.0);
+    // R4008（css-sizing-4 §intrinsic-size-override）：grid 容器自身 contain:size 时，
+    // 固有宽 = CIS 替代（内容/tracks 不参与——024：width:max-content + CIS 200 应 200，
+    // definite-track sum 170 不得抢先）。CIS 缺失/非 definite → None 走原路径。
+    if style.is_some_and(|s| s.contain.has_size())
+        && matches!(
+            style.unwrap().width,
+            LengthValue::Auto | LengthValue::MinContent | LengthValue::MaxContent | LengthValue::FitContent(_)
+        )
+        && let Some(cis) = style
+            .unwrap()
+            .contain_intrinsic_width
+            .as_ref()
+            .and_then(|v| resolve_intrinsic_real_length(v, style.unwrap()))
+    {
+        let frame = box_node.padding_left + box_node.padding_right + box_node.border_left + box_node.border_right;
+        return Some(cis + frame);
+    }
     let mut sum = 0.0f32;
     let mut max_w = 0.0f32;
     let mut count = 0usize;
