@@ -65,6 +65,7 @@ CORE_ASSET_MANIFESTS = [
     EVIDENCE_DIR / "2026-09-03-m3-getregistration-assets.tsv",
     EVIDENCE_DIR / "2026-09-03-m3-registration-iframe-assets.tsv",
     EVIDENCE_DIR / "2026-09-03-m3-installing-assets.tsv",
+    EVIDENCE_DIR / "2026-09-03-m3-waiting-assets.tsv",
     EVIDENCE_DIR / "2026-09-02-m2-fetch-readable-stream-chunk-assets.tsv",
 ]
 FETCH_ASSET_MANIFESTS = [
@@ -89,8 +90,12 @@ REVIEW_FILES = [
 IDL_SOURCE = "service-workers/idlharness.https.any.js"
 EXPECTED_SOURCE_COUNT = 294
 EXPECTED_URL_COUNT = 331
-EXPECTED_LANES = Counter(core=71, fetch=3, defer=29, gated=149, skip=42)
+EXPECTED_LANES = Counter(core=72, fetch=3, defer=28, gated=149, skip=42)
 CORE_PROMOTIONS = {
+    "service-workers/service-worker/waiting.https.html": (
+        "waiting-core",
+        "2026-09-03-m3-waiting.md",
+    ),
     "service-workers/service-worker/installing.https.html": (
         "installing-core",
         "2026-09-03-m3-installing.md",

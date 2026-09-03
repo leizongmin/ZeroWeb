@@ -1,0 +1,2 @@
+path	manifest_type	roles	referenced_by	bytes	templated	git_blob_sha	source_revision
+service-workers/service-worker/waiting.https.html	testharness	case	1	1854	no	499e581eb353a2e433580e413a730bea2a9b7ad9	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83

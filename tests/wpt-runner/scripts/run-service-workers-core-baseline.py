@@ -10,8 +10,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-EXPECTED_CASES = 58
-EXPECTED_SUBTESTS = 214
+EXPECTED_CASES = 59
+EXPECTED_SUBTESTS = 216
 
 
 def parse_args() -> argparse.Namespace:
@@ -126,7 +126,9 @@ def render_markdown(summary: dict) -> str:
             "scriptURL/scope parsing and immediate installing worker slot "
             "visibility. `installing.https.html` extends it with the top-level "
             "registration installing slot visibility and SameObject identity "
-            "across `getRegistration()`.",
+            "across `getRegistration()`. `waiting.https.html` extends it with "
+            "top-level and iframe registration waiting slot visibility, "
+            "controller nullability, and waiting/active SameObject identity.",
         ]
     ) + "\n"
 
