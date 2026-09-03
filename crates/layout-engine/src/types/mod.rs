@@ -427,6 +427,11 @@ pub struct LayoutBox {
     /// R109 §9.2.1.1：此匿名块片段是其 split inline 片段序列的**末** Inline 片段。
     /// fragment border 边选择：末片段开放左分裂边（shrink 步骤置 border_left=0）。
     pub r109_last_fragment: bool,
+    /// R3991（CSS Display 3 §2.3）：并入本容器首行的 run-in 元素 DOM NodeId。
+    /// build_subtree 判定通过时写入（后继块视角）；layout finalization 与 paint
+    /// Path B 重跑 IFC 时经 `IFC::set_run_in_prepended` 前置收集 run-in 的 inline
+    /// 内容。`None` = 无 run-in 并入。
+    pub run_in_prepended: Option<NodeId>,
     /// 表格列背景绘制信息（CSS Tables §17.5.3 列背景）。
     ///
     /// `<col>`/`<colgroup>` 元素不生成常规流盒，其 `background-color` 须由表格
@@ -572,6 +577,7 @@ impl Default for LayoutBox {
             is_r109_block_mixed: false,
             r109_first_fragment: false,
             r109_last_fragment: false,
+            run_in_prepended: None,
             table_col_backgrounds: Vec::new(),
             valign_offset: 0.0,
         }

@@ -8,6 +8,7 @@ pub(super) struct TreeRuntimeFlags {
     phasea_multi_inline: bool,
     br_inline_no_node: bool,
     inline_box_model_coherence: bool,
+    run_in: bool,
     record_node_map: bool,
 }
 
@@ -22,6 +23,7 @@ impl TreeRuntimeFlags {
             phasea_multi_inline: enabled("ZW_PHASEA_MULTI_INLINE"),
             br_inline_no_node: enabled("ZW_BR_INLINE_NO_NODE"),
             inline_box_model_coherence: enabled("ZW_INLINE_BOX_MODEL_COHERENCE"),
+            run_in: enabled("ZW_RUN_IN"),
             record_node_map: std::env::var("ZW_TREE_NODE_MAP_RECORD").as_deref() == Ok("1"),
         }
     }
@@ -52,6 +54,10 @@ impl TreeRuntimeFlags {
 
     pub(super) fn inline_box_model_coherence(self) -> bool {
         self.value("ZW_INLINE_BOX_MODEL_COHERENCE", self.inline_box_model_coherence)
+    }
+
+    pub(super) fn run_in(self) -> bool {
+        self.value("ZW_RUN_IN", self.run_in)
     }
 
     pub(super) fn record_node_map(self) -> bool {

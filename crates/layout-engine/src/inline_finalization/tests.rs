@@ -312,3 +312,149 @@ fn inline_block_position_reuse_is_complete_and_fail_closed() {
         &mut root, &context, &doc, &styles
     ));
 }
+
+/// R3991（CSS Display 3 §2.3 run-in box）：并入 run-in 的容器 IFC 前置收集 run-in 的
+/// inline 内容（首行开头按 run-in 元素自身扁平化 node_id 记），且 run-in 代理盒回填 +
+/// paint_skip 登记（自身无 taffy 盒，文本由本容器 IFC 绘制）。
+#[test]
+fn r3991_run_in_prepended_collects_run_in_content_first() {
+    use zero_dom::parse_html;
+
+    // <div id=runin>Run-in header</div><div id=target>Start</div>
+    // run-in 并入 target 首行：target 的 IFC 首片段 = run-in 元素（node_id=run-in）。
+    let doc = parse_html("<div><div id=\"runin\">Run-in header</div><div id=\"target\">Start</div></div>");
+    let html = doc.first_child(doc.root()).unwrap();
+    let body = doc.last_child(html).unwrap();
+    let outer = doc.first_child(body).unwrap();
+    let children = doc.child_nodes(outer);
+    let run_in = children[0];
+    let target = children[1];
+
+    let mut styles = HashMap::new();
+    let mut run_in_style = ComputedStyle::default();
+    run_in_style.display = DisplayValue::RunIn;
+    run_in_style.font_family = vec!["Ahem".to_string()];
+    run_in_style.font_size = LengthValue::Px(20.0);
+    styles.insert(run_in, run_in_style);
+    let mut target_style = ComputedStyle::default();
+    target_style.display = DisplayValue::Block;
+    target_style.font_family = vec!["Ahem".to_string()];
+    target_style.font_size = LengthValue::Px(20.0);
+    styles.insert(target, target_style);
+
+    let mut layout_box = LayoutBox {
+        node_id: Some(target),
+        width: 800.0,
+        content_width: 800.0,
+        is_block_level: true,
+        // build_subtree 注册（后继块视角）：run-in 元素并入本容器首行。
+        run_in_prepended: Some(run_in),
+        ..Default::default()
+    };
+    let mut paint_skip = std::collections::HashSet::new();
+    let finalized_inline_blocks = Default::default();
+    let mut context = FinalInlineContext::new(&mut paint_skip, InlineFontContext::default(), &finalized_inline_blocks);
+
+    compute_final_inline_layouts(&mut layout_box, &doc, &styles, &[], &HashMap::new(), &mut context);
+
+    let lines = layout_box
+        .inline_layout
+        .as_ref()
+        .expect("run-in merge container should store inline layout");
+    let first = lines[0].fragments.first().expect("first line should have fragments");
+    // 前置收集：首片段 = run-in 的文本子（node_id = 文本节点，其父 = run-in 元素），
+    // 而非 target 自身的 "Start" 文本。
+    let first_parent = first.node_id.and_then(|id| doc.parent_node(id));
+    assert_eq!(
+        first_parent,
+        Some(run_in),
+        "run-in inline content should be prepended to the first line"
+    );
+    assert!(
+        first.text.contains("Run-in"),
+        "first fragment should be the run-in text, got {:?}",
+        first.text
+    );
+    // run-in 代理盒回填（hit-test 可见）+ paint_skip 登记（防双绘）。
+    let run_in_box = layout_box
+        .children
+        .iter()
+        .find(|c| c.node_id == Some(run_in))
+        .expect("run-in proxy box should be backfilled");
+    assert!(run_in_box.width > 0.0, "run-in proxy box should cover its text");
+    assert!(paint_skip.contains(&run_in), "run-in should be paint-skipped");
+}
+
+/// R3991：run-in 判定——前驱无块级兄弟且后继为块级 → 并入；后继为 inline / 前驱有块级 /
+/// 无后继 / 自身含块级子 → 不并入（返回 None，降级普通块盒）。
+#[test]
+fn r3991_run_in_sibling_predicate() {
+    use zero_dom::parse_html;
+
+    use crate::tree::run_in_following_block_sibling;
+
+    // 并入形态：<div class=run-in>..</div><div>..</div>
+    let doc = parse_html("<div><div id=\"r\">Run-in</div><div id=\"t\">Block</div></div>");
+    let html = doc.first_child(doc.root()).unwrap();
+    let body = doc.last_child(html).unwrap();
+    let outer = doc.first_child(body).unwrap();
+    let r = doc.child_nodes(outer)[0];
+    let t = doc.child_nodes(outer)[1];
+    let mut styles = HashMap::new();
+    let mut run_in_style = ComputedStyle::default();
+    run_in_style.display = DisplayValue::RunIn;
+    styles.insert(r, run_in_style);
+    // 后继块须有样式条目（生产 styles 覆盖全元素；无条目 = 未知 display，不判块）。
+    let mut target_style = ComputedStyle::default();
+    target_style.display = DisplayValue::Block;
+    styles.insert(t, target_style);
+    assert_eq!(run_in_following_block_sibling(&doc, &styles, r), Some(t));
+
+    // 前驱块级兄弟 → 不并入（spec fallback）。
+    let doc = parse_html("<div><div id=\"pre\">Pre</div><div id=\"r\">Run-in</div><div id=\"t\">Block</div></div>");
+    let html = doc.first_child(doc.root()).unwrap();
+    let body = doc.last_child(html).unwrap();
+    let outer = doc.first_child(body).unwrap();
+    let r = doc.child_nodes(outer)[1];
+    let mut styles = HashMap::new();
+    let mut run_in_style = ComputedStyle::default();
+    run_in_style.display = DisplayValue::RunIn;
+    styles.insert(r, run_in_style);
+    assert_eq!(run_in_following_block_sibling(&doc, &styles, r), None);
+
+    // 后继 inline → 不并入。
+    let doc = parse_html("<div><div id=\"r\">Run-in</div><span id=\"t\">Inline</span></div>");
+    let html = doc.first_child(doc.root()).unwrap();
+    let body = doc.last_child(html).unwrap();
+    let outer = doc.first_child(body).unwrap();
+    let r = doc.child_nodes(outer)[0];
+    let mut styles = HashMap::new();
+    let mut run_in_style = ComputedStyle::default();
+    run_in_style.display = DisplayValue::RunIn;
+    styles.insert(r, run_in_style);
+    assert_eq!(run_in_following_block_sibling(&doc, &styles, r), None);
+
+    // 无后继 → 不并入。
+    let doc = parse_html("<div><div id=\"r\">Run-in</div></div>");
+    let html = doc.first_child(doc.root()).unwrap();
+    let body = doc.last_child(html).unwrap();
+    let outer = doc.first_child(body).unwrap();
+    let r = doc.child_nodes(outer)[0];
+    let mut styles = HashMap::new();
+    let mut run_in_style = ComputedStyle::default();
+    run_in_style.display = DisplayValue::RunIn;
+    styles.insert(r, run_in_style);
+    assert_eq!(run_in_following_block_sibling(&doc, &styles, r), None);
+
+    // run-in 自身含块级子 → 降级（不并入）。
+    let doc = parse_html("<div><div id=\"r\">Run-in<div></div></div><div id=\"t\">Block</div></div>");
+    let html = doc.first_child(doc.root()).unwrap();
+    let body = doc.last_child(html).unwrap();
+    let outer = doc.first_child(body).unwrap();
+    let r = doc.child_nodes(outer)[0];
+    let mut styles = HashMap::new();
+    let mut run_in_style = ComputedStyle::default();
+    run_in_style.display = DisplayValue::RunIn;
+    styles.insert(r, run_in_style);
+    assert_eq!(run_in_following_block_sibling(&doc, &styles, r), None);
+}

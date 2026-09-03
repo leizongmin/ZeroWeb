@@ -179,6 +179,102 @@ pub(crate) fn phasea_multi_inline_eligible(
     !crate::inline::InlineFormattingContext::inline_subtree_has_ooflow_descendant(doc, styles, child_id)
 }
 
+/// R3991（CSS Display 3 §2.3 run-in box）：判定 run-in 元素是否满足「并入后继块」
+/// 条件，通过时返回**后继 in-flow 块级兄弟**的 DOM NodeId。
+///
+/// spec 条件：run-in 与后继块之间无任何 in-flow 内容（文本/inline/块级兄弟均阻断，
+/// CSS2 §9.2.4 run-in boxes「if it is followed by an in-flow block-level sibling」；
+/// abspos/fixed 中间层不算内容——run-in-abspos/fixedpos-between-00x 三案均期望并入）；
+/// 前驱不得有 in-flow 块级兄弟（有的话 run-in 降级普通块盒，run-in-basic-014/015/016/017
+/// 形态）。inline 中间层阻断（run-in-inline-between-00x）；float 中间层阻断
+///（run-in-float-between-003）；run-in 子含块级子 → run-in 自身降级块盒
+///（run-in-contains-block-001 / run-in-run-in-between-001）。
+/// 不满足时返回 `None`，run-in 降级为普通块盒（spec fallback）。
+pub(crate) fn run_in_following_block_sibling(
+    doc: &Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    run_in_id: NodeId,
+) -> Option<NodeId> {
+    let parent_id = doc.parent_node(run_in_id)?;
+    let is_block_level_display = |s: &ComputedStyle| {
+        matches!(
+            s.display,
+            DisplayValue::Block
+                | DisplayValue::FlowRoot
+                | DisplayValue::ListItem
+                | DisplayValue::Flex
+                | DisplayValue::Grid
+                | DisplayValue::Table
+                | DisplayValue::InlineTable
+        )
+    };
+    let is_oof = |id: NodeId| {
+        styles.get(&id).is_some_and(|s| {
+            matches!(s.position, PositionValue::Absolute | PositionValue::Fixed) || !matches!(s.float, FloatValue::None)
+        })
+    };
+    // run-in 自身含块级子 → spec「run-in becomes block」降级（不并入）。display:run-in
+    // 子同样阻断（run-in-contains-run-in-00x：.run-in div{display:run-in} 期望不并入；
+    // run-in 的 run-in 子按 spec 先行块化处理，此处保守视为阻断）。
+    let has_block_child = doc.child_nodes(run_in_id).iter().any(|&c| {
+        doc.get(c).is_some_and(|n| matches!(&n.kind, NodeKind::Element(_)))
+            && styles.get(&c).is_some_and(|s| {
+                (is_block_level_display(s) || matches!(s.display, DisplayValue::RunIn))
+                    && !is_oof(c)
+                    && !matches!(s.display, DisplayValue::None)
+            })
+    });
+    if has_block_child {
+        return None;
+    }
+    let mut seen_run_in = false;
+    for &sib in doc.child_nodes(parent_id).iter() {
+        if sib == run_in_id {
+            seen_run_in = true;
+            continue;
+        }
+        // 文本兄弟：**纯空白**不阻断（CSS2.1 §9.2.4：run-in 与后继块之间「anonymous
+        // inline boxes consisting entirely of white space」被忽略——run-in-basic-002/003
+        // 形态：div 间的换行/缩进文本节点不阻断并入）；含非空白字符的文本阻断
+        //（run-in-text-between-001..005）。**容器 white-space 保留态**（pre/pre-wrap）下
+        // 空白 significant，阻断并入（run-in-basic-014..017）。
+        if let Some(node) = doc.get(sib)
+            && !matches!(&node.kind, NodeKind::Element(_))
+        {
+            if seen_run_in {
+                let ws_preserved = styles.get(&parent_id).is_some_and(|s| {
+                    matches!(
+                        s.white_space,
+                        zero_style_system::WhiteSpaceValue::Pre | zero_style_system::WhiteSpaceValue::PreWrap
+                    )
+                });
+                let is_ws_only = matches!(&node.kind, NodeKind::Text(t) if t.content.trim().is_empty());
+                if !is_ws_only || ws_preserved {
+                    return None;
+                }
+            }
+            continue;
+        }
+        if is_oof(sib) {
+            // abspos/fixed 中间层不阻断（不产生 in-flow 内容），继续看下一个兄弟。
+            continue;
+        }
+        let sib_is_block = styles
+            .get(&sib)
+            .is_some_and(|s| is_block_level_display(s) && !matches!(s.display, DisplayValue::None));
+        if seen_run_in {
+            // 后继：须为 in-flow 块级才并入；inline/inline-block 等中间层阻断。
+            return if sib_is_block { Some(sib) } else { None };
+        }
+        if sib_is_block {
+            // 有前驱 in-flow 块级兄弟 → 不并入（spec fallback 块盒）。
+            return None;
+        }
+    }
+    // 无后继块兄弟 → 不并入（run-in-basic-011 单 run-in 形态）。
+    None
+}
+
 /// R2161 Phase A slice 2 gate-tighten：判定容器 `dom_id` 是否处于 multicol 列流上下文
 ///（自身或任一祖先是 multicol 容器，即 column-count / column-width 非 Auto）。multicol 列流
 /// 依赖 taffy 对 inline 内容的精确测量以决定列宽 / 列高 / 断列；multi-inline skip-taffy probe
@@ -243,6 +339,12 @@ pub(crate) struct R109Wiring {
     pub block_mixed_parents: HashSet<NodeId>,
     pub first_inline_fragments: HashSet<taffy::NodeId>,
     pub last_inline_fragments: HashSet<taffy::NodeId>,
+    /// R3991（CSS Display 3 §2.3）：run-in 并入注册表——**后继块** DOM NodeId →
+    /// 并入其首行的 run-in 元素 DOM NodeId。build_subtree 判定通过时登记（run-in
+    /// 自身跳过 taffy 子树收集，后继块照常建子树）；extract_layout 据此写入
+    /// LayoutBox.run_in_prepended；inline_finalization / paint 重跑 IFC 时经
+    /// `IFC::set_run_in_prepended` 把 run-in 的 inline 内容前置到首行收集序列。
+    pub run_in_prepended: HashMap<NodeId, NodeId>,
 }
 
 /// 构建上下文 — 跟踪 DOM 节点与 taffy 节点的映射。
@@ -1890,7 +1992,7 @@ fn build_subtree(
         // 引入 margin collapse（fallback `<p>` 的 16px 上边距塌穿 canvas → canvas 盒下移 16px）
         // 与多余盒（painter 曾叠绘 "FAIL (fallback content)" 文本）。canvas-grid reftest
         // 2d.gradient.colorInterpolationMethod 的格子 38px 偏移即此（oracle A/B）。
-        let children_dom: Vec<NodeId> = if (ctx.flags.content_replace() && is_content_url_element(&computed))
+        let mut children_dom: Vec<NodeId> = if (ctx.flags.content_replace() && is_content_url_element(&computed))
             || is_replaced_with_fallback(&computed, doc, dom_id)
         {
             Vec::new()
@@ -1902,6 +2004,22 @@ fn build_subtree(
         } else {
             children_dom
         };
+
+        // R3991（CSS Display 3 §2.3 run-in box）：run-in 元素并入后继块首行时，自身
+        // 不生成独立块盒（converter 已映射 taffy Inline；此处跳过子树收集使其成 0 内容
+        // leaf，占位高度为空），并把「后继块 → run-in」注册进 r109.run_in_prepended，
+        // 供后继块的 IFC（layout finalization + paint Path B）前置收集 run-in 的
+        // inline 内容。不满足并入条件（后继非块 / 有前驱块）时维持保守块盒
+        //（spec fallback），零行为变化。kill-switch `ZW_RUN_IN=0`。
+        // 限 horizontal-tb（vertical = R1043 域，run-in 域无 driving 案，维持保守块盒）。
+        if ctx.flags.run_in()
+            && matches!(computed.display, DisplayValue::RunIn)
+            && matches!(parent_writing_mode, WritingModeValue::HorizontalTb)
+            && let Some(following) = run_in_following_block_sibling(doc, styles, dom_id)
+        {
+            ctx.r109.run_in_prepended.insert(following, dom_id);
+            children_dom.clear();
+        }
 
         // 检测是否为 flex/grid 容器 — 在这些容器中，文本节点成为匿名 flex/grid 项
         let is_flex_or_grid = matches!(

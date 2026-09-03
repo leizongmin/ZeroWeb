@@ -1026,6 +1026,11 @@ impl super::Painter {
                 if let Some(ref frag) = box_node.fragment_node_ids {
                     ctx.set_fragment_node_ids(frag.clone());
                 }
+                // R3991（CSS Display 3 §2.3）：并入本容器首行的 run-in 元素——前置收集
+                // 其 inline 内容（与 layout IFC 同源，paint 重跑一致）。
+                if let Some(run_in_id) = box_node.run_in_prepended {
+                    ctx.set_run_in_prepended(run_in_id);
+                }
                 ctx.layout(doc, node_id, &HashMap::new());
                 ctx
             };
@@ -1472,8 +1477,21 @@ impl super::Painter {
                             let is_ahem_frag = owner_style_opt.is_some_and(|s| {
                                 s.font_family.iter().any(|f| f.trim_matches('"').eq_ignore_ascii_case("Ahem"))
                             });
+                            // R3991（CSS Display 3 §2.3 run-in）：run-in 并入后其文本片段
+                            // 的 owner（run-in 元素）font-weight 与容器不同（.run-in{font-weight:
+                            // bold}），text_node_font_ids 是按**容器** style 解析的 face（resolve_
+                            // text_node_fonts 无 per-node weight）→ run-in 文本丢 bold。owner 有
+                            // 独立 weight/family 声明时按 owner 重解析 face（普通 inline span 的
+                            // bold face 本就走此差异通道；run-in 的 owner 是块级元素，此前无
+                            // per-fragment 修正路径）。仅 weight/ stretch 语义，family 沿 stored。
                             let frag_font_id = if is_ahem_frag {
                                 ahem_font_id
+                            } else if let Some(owner) = owner_style_opt
+                                && (owner.font_weight != style.font_weight
+                                    || owner.font_stretch != style.font_stretch)
+                            {
+                                let (fid, _) = self.resolve_font_id(&owner.font_family, &owner.font_weight, &owner.font_style, owner.font_stretch);
+                                fid
                             } else {
                                 text_node_font_ids
                                     .get(&$frag_nid)

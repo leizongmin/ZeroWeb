@@ -255,3 +255,9 @@ css/CSS2/positioning/absolute-non-replaced-max-height-002.xht css/CSS2/positioni
 css/CSS2/positioning/absolute-non-replaced-max-height-009.xht css/CSS2/positioning/absolute-non-replaced-max-height-009-ref.xht == 2026-09-03 R3929 abspos shrink-to-fit 高回填
 css/CSS2/positioning/absolute-non-replaced-width-021.xht css/CSS2/positioning/absolute-non-replaced-width-021-ref.xht == 2026-09-03 R3930 rtl 流父 abspos 静态位镜像
 css/CSS2/positioning/right-113.xht css/CSS2/positioning/right-103-ref.xht == 2026-09-03 R3931 taffy direction 接线（rtl right 定位链生效）
+css/css-display/run-in/run-in-contains-block-inside-inline-001.xht css/css-display/run-in/run-in-text-ref.xht == 2026-09-03 R3992 run-in 并入实现翻转
+css/css-display/run-in/run-in-contains-block-inside-inline-002.xht css/css-display/run-in/run-in-text-ref.xht == 2026-09-03 R3992 run-in 并入实现翻转
+css/css-display/run-in/run-in-contains-table-inside-inline-001.xht css/css-display/run-in/run-in-text-ref.xht == 2026-09-03 R3992 run-in 并入实现翻转
+css/css-display/run-in/run-in-contains-table-inside-inline-002.xht css/css-display/run-in/run-in-text-ref.xht == 2026-09-03 R3992 run-in 并入实现翻转
+css/css-display/run-in/run-in-inline-block-between-001.xht css/css-display/run-in/run-in-text-ref.xht == 2026-09-03 R3992 run-in 并入实现翻转
+css/css-display/run-in/run-in-inline-block-between-002.xht css/css-display/run-in/run-in-text-ref.xht == 2026-09-03 R3992 run-in 并入实现翻转

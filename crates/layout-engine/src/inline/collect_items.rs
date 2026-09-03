@@ -35,10 +35,36 @@ impl InlineFormattingContext {
         let mut items = Vec::new();
         // R109 §9.2.1.1：匿名块盒片段只收集该片段的 inline 内容（fragment_node_ids），
         // 而非 container 的全部 DOM 子节点。None = 正常遍历 container 子节点。
-        let children: Vec<NodeId> = match &self.fragment_node_ids {
+        // R3991：run-in 并入——先收集 run-in 元素的 inline 内容（其文本/子 inline
+        // 按其样式渲染，作为本容器首行开头），再收集容器常规子节点。
+        let mut children: Vec<NodeId> = Vec::new();
+        if let Some(run_in_id) = self.run_in_prepended {
+            for &gc in doc.child_nodes(run_in_id).iter() {
+                // 仅 inline 级内容参与（run-in 的块级子按 spec 降级，罕见形态保守跳过
+                // 块级子以保 IFC 纯度——WPT run-in 簇均为文本/inline 子形态）。
+                let is_block_child = doc.get(gc).is_some_and(|n| {
+                    matches!(&n.kind, NodeKind::Element(_))
+                }) && styles.get(&gc).is_some_and(|s| {
+                    matches!(
+                        s.display,
+                        DisplayValue::Block
+                            | DisplayValue::FlowRoot
+                            | DisplayValue::ListItem
+                            | DisplayValue::Flex
+                            | DisplayValue::Grid
+                            | DisplayValue::Table
+                    )
+                });
+                if !is_block_child {
+                    children.push(gc);
+                }
+            }
+        }
+        children.extend(match &self.fragment_node_ids {
             Some(ids) => ids.clone(),
             None => doc.child_nodes(container),
-        };
+        });
+        let children = children;
 
         for &child_id in &children {
             if let Some(node) = doc.get(child_id) {

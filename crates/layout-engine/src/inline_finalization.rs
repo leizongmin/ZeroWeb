@@ -1024,6 +1024,12 @@ pub(crate) fn compute_final_inline_layouts(
         inline_ctx.set_fragment_node_ids(frag);
     }
 
+    // R3991（CSS Display 3 §2.3）：并入本容器首行的 run-in 元素——前置收集其 inline
+    // 内容（行盒首行开头按 run-in 样式渲染）。
+    if let Some(run_in_id) = root.run_in_prepended {
+        inline_ctx.set_run_in_prepended(run_in_id);
+    }
+
     // R84/R355：用真实样式跑 IFC 并存储行盒。仅当容器为**纯 Ahem 字体**时存储：
     // - 纯 Ahem（font-family 恰好为 ["Ahem"]）：避免多字体列表（如 "Courier New, Ahem"）
     //   在真实样式下的 font 解析/fallback 差异导致回归。
@@ -1050,6 +1056,11 @@ pub(crate) fn compute_final_inline_layouts(
     // 见 backfill_phasea_orphan_boxes 文档。须在 store-gate return 之前跑（对所有文本容器，
     // 非 stored-path 独占）——IFC 已在 line 916 跑完，inline_ctx.lines 普遍可用。
     backfill_phasea_orphan_boxes(root, doc, styles, node_id, &inline_ctx, context.paint_skip);
+    // R3991：并入 run-in 的 LayoutBox 回填 + paint_skip 登记——run-in 元素自身无 taffy 盒
+    //（build_subtree 跳过子树收集），其文本由本容器 IFC 片段绘制（node_id = run-in 元素
+    // 自身，扁平化收集路径），回填 hit-test/struct-check 可见的代理盒并注册 paint_skip
+    // 防双绘（同 orphan 先例）。须在 store-gate return 之前跑。
+    backfill_run_in_boxes(root, doc, styles, &inline_ctx, context.paint_skip);
     let is_pure_ahem =
         style.font_family.len() == 1 && style.font_family[0].trim_matches('"').eq_ignore_ascii_case("Ahem");
     let is_floated = !matches!(style.float, FloatValue::None);
@@ -1226,6 +1237,74 @@ fn backfill_phasea_orphan_boxes(
         });
         paint_skip.insert(orphan_id);
     }
+}
+
+/// R3991（CSS Display 3 §2.3）：并入 run-in 元素的 LayoutBox 回填 + paint_skip 登记。
+///
+/// build_subtree 对并入态 run-in 跳过 taffy 子树收集（自身无 LayoutBox）→ hit-test /
+/// struct-check 漏见。本函数复用本容器已跑的 IFC（run-in 的 inline 内容已被前置收集，
+/// TextRun.node_id = run-in 元素自身——collect_items 扁平化路径按元素 id 记），取其片段
+/// bbox 并集建代理盒加入 `root.children`，并注册 `paint_skip`（其文本/bg 已由本容器 IFC
+/// 片段绘制，跳过避免双绘；同 R2197 orphan 先例）。gate = `root.run_in_prepended.is_some()`
+///（与 tree.rs 注册同源）。
+fn backfill_run_in_boxes(
+    root: &mut LayoutBox,
+    doc: &Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    inline_ctx: &crate::inline::InlineFormattingContext,
+    paint_skip: &mut std::collections::HashSet<NodeId>,
+) {
+    let Some(run_in_id) = root.run_in_prepended else {
+        return;
+    };
+    let _ = styles;
+    // 扫描 IFC 行盒片段，取 node_id == run_in_id 的片段 bbox 并集（run-in 内容换行时多片段）。
+    let mut min_x = f32::MAX;
+    let mut min_y = f32::MAX;
+    let mut max_x = f32::MIN;
+    let mut max_y = f32::MIN;
+    let mut found = false;
+    for line in &inline_ctx.lines {
+        for frag in &line.runs {
+            // 片段 node_id = run-in 元素自身（扁平收集）或其文本子/inline 后代——
+            // 两者都在 run-in 子树内（is_descendant），均计入 bbox。
+            let in_run_in = frag.node_id == run_in_id
+                || doc.parent_node(frag.node_id).is_some_and(|mut p| {
+                    loop {
+                        if p == run_in_id {
+                            return true;
+                        }
+                        match doc.parent_node(p) {
+                            Some(next) => p = next,
+                            None => return false,
+                        }
+                    }
+                });
+            if in_run_in {
+                found = true;
+                let fx = frag.x;
+                let fy = line.y + frag.y;
+                min_x = min_x.min(fx);
+                min_y = min_y.min(fy);
+                max_x = max_x.max(fx + frag.width);
+                max_y = max_y.max(fy + frag.height);
+            }
+        }
+    }
+    if !found {
+        return;
+    }
+    root.children.push(LayoutBox {
+        node_id: Some(run_in_id),
+        x: min_x,
+        y: min_y,
+        width: (max_x - min_x).max(0.0),
+        height: (max_y - min_y).max(0.0),
+        // run-in 经 paint_skip 跳过自身绘制（文本由本容器 IFC 绘制），hit-test/struct-check
+        // 只需 node_id + 几何（同 orphan 代理盒）。
+        ..Default::default()
+    });
+    paint_skip.insert(run_in_id);
 }
 
 pub(crate) fn measure_text_content(

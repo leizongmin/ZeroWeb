@@ -233,6 +233,10 @@ pub struct InlineFormattingContext {
     /// 而非遍历 container 的全部 DOM 子节点。`None` = 正常遍历 container 子节点。
     /// 为 tree.rs 匿名块生成接线奠基（当前无调用方设值，默认 None 零回归）。
     pub fragment_node_ids: Option<Vec<NodeId>>,
+    /// R3991（CSS Display 3 §2.3）：run-in 元素并入本容器首行——收集时把该元素的
+    /// **inline 子内容**前置到条目序列开头（run-in 自身 inline 语义透传：文本/子
+    /// inline 均按其自身样式渲染）。None = 无 run-in 并入。
+    pub run_in_prepended: Option<NodeId>,
     /// Phase A font-metric 提供者（可选）。
     ///
     /// `None`（默认）= `apply_vertical_alignment` 回退 `0.8·fs` 启发式（当前行为，零回归）。
@@ -329,6 +333,7 @@ impl InlineFormattingContext {
             margin_overrides: NodeIdMap::default(),
             padding_overrides: NodeIdMap::default(),
             fragment_node_ids: None,
+            run_in_prepended: None,
             font_metric_provider: None,
             advance_source: None,
             font_resolver: None,
@@ -344,6 +349,14 @@ impl InlineFormattingContext {
     /// 的全部 DOM 子节点。供匿名块盒（inline 被 block 子元素拆分）的 IFC 使用。
     pub fn set_fragment_node_ids(&mut self, node_ids: Vec<NodeId>) {
         self.fragment_node_ids = Some(node_ids);
+    }
+
+    /// R3991（CSS Display 3 §2.3）：设置并入本容器首行的 run-in 元素。
+    ///
+    /// collect 时把该 run-in 元素的 inline 子内容前置到条目序列开头（run-in 自身
+    /// inline 语义透传：文本/子 inline 均按其自身样式渲染）。
+    pub fn set_run_in_prepended(&mut self, run_in_id: NodeId) {
+        self.run_in_prepended = Some(run_in_id);
     }
 
     /// 设置文本对齐方式。

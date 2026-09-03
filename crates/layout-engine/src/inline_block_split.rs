@@ -37,6 +37,10 @@ fn is_block_level_display(display: &DisplayValue) -> bool {
             | DisplayValue::Table
             | DisplayValue::ListItem
             | DisplayValue::FlowRoot
+            // R3991：run-in 主盒为块级（并入后继块时其内容从源位消失；fallback 态独立
+            // 块盒）——inline 拆分序列中按块级子对待（run-in-contains-run-in-00x 的
+            // .run-in div{display:run-in} 子）。
+            | DisplayValue::RunIn
     )
 }
 
@@ -88,6 +92,9 @@ pub(crate) fn block_container_has_mixed_content(
                 | DisplayValue::FlowRoot
                 | DisplayValue::ListItem
                 | DisplayValue::Table
+                // R3991：run-in fallback 态（不并入后继块）按 spec 块化——含 inline+block
+                // 混排子时与 Block 容器同走 §9.2.1.② 匿名块拆分（run-in-contains-block-001）。
+                | DisplayValue::RunIn
         )
     });
     if !is_block_container {

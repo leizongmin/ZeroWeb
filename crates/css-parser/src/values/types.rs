@@ -207,6 +207,8 @@ pub enum DisplayValue {
     None,
     /// contents。
     Contents,
+    /// run-in（CSS Display 3 §2.3：并入后继块首行，R3991）。
+    RunIn,
     /// flow。
     Flow,
     /// flow-root。

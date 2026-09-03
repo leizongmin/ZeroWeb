@@ -437,8 +437,12 @@ fn convert_display(value: &DisplayValue) -> taffy::style::Display {
         | DisplayValue::TableRowGroup
         | DisplayValue::TableHeaderGroup
         | DisplayValue::TableFooterGroup => taffy::style::Display::Block,
+        // R3991：run-in 保守映射 Inline（布局语义「并入后继块首行」在 build_subtree
+        // 的 run-in 分派实现——满足条件时 run-in 元素的子内容提升到后继块 IFC 开头，
+        // 自身不生成独立块盒）。
+        DisplayValue::RunIn
         // inline, inline-block, flow, flow-root, list-item, contents 都映射为 Block
-        DisplayValue::Inline
+        | DisplayValue::Inline
         | DisplayValue::InlineBlock
         | DisplayValue::Flow
         | DisplayValue::FlowRoot

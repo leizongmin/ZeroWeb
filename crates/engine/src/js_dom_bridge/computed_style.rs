@@ -1326,6 +1326,7 @@ fn display_value_str(d: &DisplayValue) -> String {
         DisplayValue::Contents => "contents",
         DisplayValue::Flow => "flow",
         DisplayValue::FlowRoot => "flow-root",
+        DisplayValue::RunIn => "run-in",
         DisplayValue::ListItem => "list-item",
         DisplayValue::Table => "table",
         DisplayValue::InlineTable => "inline-table",

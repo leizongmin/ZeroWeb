@@ -22,6 +22,16 @@ pub fn parse_display(value: &str) -> Option<DisplayValue> {
         return None;
     }
 
+    // R3991（CSS Display 3 §2.3 run-in box）：`display: run-in` 及两值形态
+    // `run-in flow`。布局语义 = 无前驱块兄弟且后随块兄弟时并入后继块首行
+    // （layout-engine R3991 分派），此处仅入 legacy 变体 RunIn。
+    if value == "run-in" {
+        return Some(DisplayValue::RunIn);
+    }
+    if tokens.len() == 2 && tokens[0] == "run-in" && tokens[1] == "flow" {
+        return Some(DisplayValue::RunIn);
+    }
+
     match value.as_str() {
         "block" => Some(DisplayValue::Block),
         "inline" => Some(DisplayValue::Inline),

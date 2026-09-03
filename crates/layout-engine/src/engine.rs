@@ -1475,6 +1475,8 @@ impl LayoutEngine {
                     | DisplayValue::Table
                     | DisplayValue::InlineTable
                     | DisplayValue::TableCaption
+                    // R3991：run-in 主盒为块级（并入态自身无独立盒；fallback 态按 spec 块化）。
+                    | DisplayValue::RunIn
             ) || !matches!(s.float, FloatValue::None)
                 && matches!(s.display, DisplayValue::Inline | DisplayValue::InlineBlock)
         }) || is_anon_fragment;
@@ -1734,6 +1736,8 @@ impl LayoutEngine {
             is_r109_block_mixed,
             r109_first_fragment,
             r109_last_fragment,
+            // R3991：并入本容器首行的 run-in 元素（后继块视角，build_subtree 注册）。
+            run_in_prepended: dom_id.and_then(|id| r109.run_in_prepended.get(&id).copied()),
             table_col_backgrounds: Vec::new(),
             valign_offset: 0.0,
         }
