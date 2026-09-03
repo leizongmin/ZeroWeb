@@ -10,8 +10,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-EXPECTED_CASES = 63
-EXPECTED_SUBTESTS = 234
+EXPECTED_CASES = 64
+EXPECTED_SUBTESTS = 248
 
 
 def parse_args() -> argparse.Namespace:
@@ -138,7 +138,10 @@ def render_markdown(summary: dict) -> str:
             "listener exception reporting while preserving lifecycle success. "
             "`extendable-event-waituntil.https.html` extends it with "
             "ExtendableEvent lifetime promise all-settled ordering and "
-            "activate waitUntil rejection non-blocking semantics.",
+            "activate waitUntil rejection non-blocking semantics. "
+            "`extendable-event-async-waituntil.https.html` extends it with "
+            "ExtendableEvent async waitUntil task/microtask eligibility and "
+            "FetchEvent respondWith lifetime extension boundaries.",
         ]
     ) + "\n"
 

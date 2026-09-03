@@ -3607,12 +3607,14 @@
         if (state === 'installed') return 1;
         if (state === 'activating') return 2;
         if (state === 'activated') return 3;
+        if (state === 'redundant') return 4;
         return 0;
       }
       function stateForSequence(sequence) {
         if (sequence === 1) return 'installed';
         if (sequence === 2) return 'activating';
         if (sequence === 3) return 'activated';
+        if (sequence === 4) return 'redundant';
         return 'installing';
       }
       function setController(worker, previousHint, eventStateHint) {

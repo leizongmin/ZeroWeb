@@ -157,11 +157,11 @@ const CACHE_NAME_DOMSTRING_PREFIX: &str = "__zw_domstring16:";
 const SERVICE_WORKER_BOOTSTRAP: &str = r#"
 (function() {
   const listeners = Object.create(null);
-  let currentWaitUntil = null;
   let skipWaitingRequested = false;
   let claimClientsRequested = false;
   let clientsClaimAllowed = false;
   let activeEventClaimClientsRequested = false;
+  const dispatchCheckpointStates = [];
   const timerTasks = [];
   let nextTimerId = 1;
 
@@ -201,12 +201,15 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
   class ExtendableEvent extends Event {
     constructor(type) {
       super(type);
+      this._waitUntilState = null;
     }
     waitUntil(value) {
-      if (typeof currentWaitUntil !== 'function') {
-        throw new Error('InvalidStateError: waitUntil called outside dispatch');
+      const state = this._waitUntilState;
+      // https://w3c.github.io/ServiceWorker/#dom-extendableevent-waituntil
+      if (!state || (!state.dispatching && state.pendingCount === 0)) {
+        throw new DOMException('waitUntil called outside dispatch', 'InvalidStateError');
       }
-      currentWaitUntil(value);
+      addExtendableEventPromise(state, value);
     }
   }
   class InstallEvent extends ExtendableEvent {}
@@ -314,6 +317,88 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
       dataPortIndex: dataPortIndex
     };
   }
+  // https://w3c.github.io/ServiceWorker/#extendableevent
+  function createExtendableEventState(event) {
+    const state = {
+      dispatching: true,
+      closingDispatch: false,
+      pendingCount: 0,
+      firstRejectionSet: false,
+      firstRejection: null,
+      settleResolve: null,
+      settled: null
+    };
+    state.settled = new Promise(function(resolve) {
+      state.settleResolve = resolve;
+    });
+    state.checkSettled = function() {
+      if (state.dispatching || state.pendingCount !== 0 || state.settleResolve === null) return;
+      const resolve = state.settleResolve;
+      state.settleResolve = null;
+      resolve(state);
+    };
+    event._waitUntilState = state;
+    return state;
+  }
+  function closeExtendableEventDispatchAfterMicrotask(state) {
+    if (state.closingDispatch) return;
+    state.closingDispatch = true;
+    Promise.resolve().then(function() {
+      state.dispatching = false;
+      state.checkSettled();
+    });
+  }
+  function addExtendableEventPromise(state, value) {
+    const promise = Promise.resolve(value);
+    state.pendingCount++;
+    const finish = function(rejected, error) {
+      if (rejected && !state.firstRejectionSet) {
+        state.firstRejectionSet = true;
+        state.firstRejection = error;
+      }
+      Promise.resolve().then(function() {
+        state.pendingCount--;
+        state.checkSettled();
+      });
+    };
+    promise.then(function() {
+      finish(false, undefined);
+    }, function(error) {
+      finish(true, error);
+    });
+    return promise;
+  }
+  function addRespondWithLifetimePromise(state, value) {
+    const promise = Promise.resolve(value);
+    state.pendingCount++;
+    const finish = function(rejected, error) {
+      if (rejected && !state.firstRejectionSet) {
+        state.firstRejectionSet = true;
+        state.firstRejection = error;
+      }
+      state.pendingCount--;
+      state.checkSettled();
+    };
+    Promise.resolve().then(function() {
+      promise.then(function() {
+        finish(false, undefined);
+      }, function(error) {
+        finish(true, error);
+      });
+    });
+    return promise;
+  }
+  function closeExtendableEventDispatchAtCheckpoint(state) {
+    dispatchCheckpointStates.push(state);
+  }
+  function closeExtendableEventDispatchCheckpoints() {
+    const states = dispatchCheckpointStates.splice(0, dispatchCheckpointStates.length);
+    for (let i = 0; i < states.length; i++) {
+      closeExtendableEventDispatchAfterMicrotask(states[i]);
+    }
+    return states.length > 0;
+  }
+  globalThis.__zwCloseExtendableEventDispatchCheckpoints = closeExtendableEventDispatchCheckpoints;
   function queueOutbound(data, transfer, portId, targetClientId) {
     const wire = preparePortTransfer(data, transfer, null);
     wire.portId = portId;
@@ -2231,6 +2316,7 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
     }
   };
   globalThis.__zwRunOneTask = function() {
+    if (closeExtendableEventDispatchCheckpoints()) return false;
     const task = timerTasks.shift();
     if (!task) return false;
     task.callback.apply(globalThis, task.args);
@@ -2255,6 +2341,19 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
     const list = listeners[String(type)] || [];
     const index = list.indexOf(listener);
     if (index >= 0) list.splice(index, 1);
+  };
+  globalThis.dispatchEvent = function(event) {
+    if (!event || !event.type) throw new TypeError('Invalid event');
+    const callbacks = (listeners[String(event.type)] || []).slice();
+    for (let i = 0; i < callbacks.length; i++) {
+      dispatchWorkerCallback(callbacks[i], event);
+      if (event._immediateStopped) break;
+    }
+    const handler = globalThis['on' + String(event.type)];
+    if (!event._immediateStopped && typeof handler === 'function') {
+      dispatchWorkerCallback(handler, event);
+    }
+    return !event.defaultPrevented;
   };
   globalThis.skipWaiting = function() {
     skipWaitingRequested = true;
@@ -2595,7 +2694,6 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
     }
   };
   globalThis.__zwDispatchLifecycle = function(type, eventId) {
-    const pending = [];
     claimClientsRequested = false;
     setRegistrationLifecyclePhase(type, true);
     const result = {
@@ -2608,27 +2706,20 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
       claimClientsRequested: false
     };
     globalThis.__zwLifecycleResult = result;
-    currentWaitUntil = function(value) {
-      pending.push(Promise.resolve(value));
-    };
     const EventClass = type === 'install' ? InstallEvent : ExtendableEvent;
     const event = new EventClass(type);
+    const waitUntilState = createExtendableEventState(event);
     const callbacks = (listeners[type] || []).slice();
     for (let i = 0; i < callbacks.length; i++) dispatchWorkerCallback(callbacks[i], event);
     const propertyHandler = globalThis['on' + type];
     if (typeof propertyHandler === 'function') dispatchWorkerCallback(propertyHandler, event);
-    currentWaitUntil = null;
     // https://w3c.github.io/ServiceWorker/#wait-for-asynchronous-extensions
-    let firstRejection = null;
-    Promise.all(pending.map(function(promise) {
-      return promise.then(function() {}, function(error) {
-        if (firstRejection === null) firstRejection = error;
-      });
-    })).then(function() {
+    closeExtendableEventDispatchAtCheckpoint(waitUntilState);
+    waitUntilState.settled.then(function(state) {
       result.settled = true;
-      result.succeeded = firstRejection === null;
-      if (firstRejection !== null) {
-        result.message = String(firstRejection && firstRejection.message || firstRejection);
+      result.succeeded = !state.firstRejectionSet;
+      if (state.firstRejectionSet) {
+        result.message = String(state.firstRejection && state.firstRejection.message || state.firstRejection);
       }
       setRegistrationLifecyclePhase(type, false);
     });
@@ -2744,20 +2835,16 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
           focused: clientFocused === true
         })
       });
-      const pending = [];
-      currentWaitUntil = function(value) {
-        pending.push(Promise.resolve(value));
-      };
+      const waitUntilState = createExtendableEventState(event);
       try {
         const callbacks = (listeners.messageerror || []).slice();
         for (let i = 0; i < callbacks.length; i++) dispatchWorkerCallback(callbacks[i], event);
         if (typeof globalThis.onmessageerror === 'function') {
           dispatchWorkerCallback(globalThis.onmessageerror, event);
         }
-        Promise.all(pending).catch(function() {});
-        currentWaitUntil = null;
+        closeExtendableEventDispatchAtCheckpoint(waitUntilState);
+        waitUntilState.settled.catch(function() {});
       } catch (error) {
-        currentWaitUntil = null;
         outboundMessages.splice(0, outboundMessages.length);
         throw error;
       }
@@ -2765,10 +2852,7 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
     }
     const EventClass = targetPortId !== null ? MessageEvent : ExtendableMessageEvent;
     const event = new EventClass('message', {data: eventData, origin: originOf(clientURL), ports: ports});
-    const pending = [];
-    currentWaitUntil = function(value) {
-      pending.push(Promise.resolve(value));
-    };
+    const waitUntilState = event instanceof ExtendableEvent ? createExtendableEventState(event) : null;
     try {
       if (targetPortId !== null) {
         const port = portEndpoints[String(targetPortId)];
@@ -2791,11 +2875,12 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
           dispatchWorkerCallback(globalThis.onmessage, event);
         }
       }
-      Promise.all(pending).catch(function() {});
-      currentWaitUntil = null;
+      if (waitUntilState !== null) {
+        closeExtendableEventDispatchAtCheckpoint(waitUntilState);
+        waitUntilState.settled.catch(function() {});
+      }
       return String(eventId);
     } catch (error) {
-      currentWaitUntil = null;
       outboundMessages.splice(0, outboundMessages.length);
       throw error;
     }
@@ -2811,10 +2896,7 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
       ports: ports,
       source: source
     });
-    const pending = [];
-    currentWaitUntil = function(value) {
-      pending.push(Promise.resolve(value));
-    };
+    const waitUntilState = createExtendableEventState(event);
     try {
       if (targetPortId !== null) {
         const port = portEndpoints[String(targetPortId)];
@@ -2829,11 +2911,10 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
           dispatchWorkerCallback(globalThis.onmessage, event);
         }
       }
-      Promise.all(pending).catch(function() {});
-      currentWaitUntil = null;
+      closeExtendableEventDispatchAtCheckpoint(waitUntilState);
+      waitUntilState.settled.catch(function() {});
       return String(eventId);
     } catch (error) {
-      currentWaitUntil = null;
       outboundMessages.splice(0, outboundMessages.length);
       workerMessages.splice(0, workerMessages.length);
       throw error;
@@ -2854,7 +2935,6 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
     clientsClaimAllowed = allowed === true;
   };
   globalThis.__zwDispatchFetch = function(eventId, requestInfo) {
-    const pending = [];
     let respondWithCalled = false;
     let respondWithAllowed = true;
     const result = {
@@ -2866,16 +2946,16 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
       failed: false
     };
     globalThis.__zwFetchResult = result;
-    currentWaitUntil = function(value) {
-      pending.push(Promise.resolve(value));
-    };
     let event;
+    let waitUntilState;
+    let responseProcessing = Promise.resolve();
     try {
       event = new FetchEvent('fetch', {
         request: new Request(requestInfo),
         clientId: requestInfo.clientId || '',
         resultingClientId: requestInfo.resultingClientId || ''
       });
+      waitUntilState = createExtendableEventState(event);
       event.cancelable = true;
       event._respondWith = function(value) {
         if (!respondWithAllowed) {
@@ -2893,14 +2973,22 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
         respondWithCalled = true;
         // https://w3c.github.io/ServiceWorker/#fetch-event-respondwith
         event.stopImmediatePropagation();
-        pending.push(Promise.resolve(value).then(function(response) {
+        const responsePromise = Promise.resolve(value);
+        addRespondWithLifetimePromise(waitUntilState, responsePromise);
+        responseProcessing = responsePromise.then(function(response) {
           if (result.failed) return;
           response = Response._from(response);
           return Promise.resolve(Response._serialize(response)).then(function(serialized) {
             result.responded = true;
             result.response = serialized;
           });
-        }));
+        }, function(error) {
+          if (result.failed) return;
+          result.failed = true;
+          result.responded = false;
+          result.response = null;
+          result.message = String(error && error.message || error);
+        });
       };
       const callbacks = (listeners.fetch || []).slice();
       for (let i = 0; i < callbacks.length; i++) {
@@ -2914,9 +3002,9 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
         respondWithAllowed = false;
         event._respondWith = null;
       });
+      closeExtendableEventDispatchAtCheckpoint(waitUntilState);
     } catch (error) {
       respondWithAllowed = false;
-      currentWaitUntil = null;
       if (result.failed || !respondWithCalled) {
         result.responded = false;
         result.response = null;
@@ -2926,10 +3014,16 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
         return;
       }
     }
-    currentWaitUntil = null;
-    Promise.all(pending).then(function() {
+    Promise.all([waitUntilState.settled, responseProcessing]).then(function(values) {
       if (result.failed) return;
-      if (!respondWithCalled && event.defaultPrevented) {
+      const state = values[0];
+      if (state.firstRejectionSet) {
+        result.failed = true;
+        result.response = null;
+        result.responded = false;
+        result.message = String(state.firstRejection && state.firstRejection.message || state.firstRejection);
+        event._settleHandled(false, state.firstRejection);
+      } else if (!respondWithCalled && event.defaultPrevented) {
         result.failed = true;
         result.response = null;
         result.responded = false;
@@ -2939,13 +3033,6 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
         event._settleHandled(true);
       }
       result.settled = true;
-    }, function(error) {
-      result.failed = true;
-      result.response = null;
-      result.responded = false;
-      result.settled = true;
-      result.message = String(error && error.message || error);
-      event._settleHandled(false, error);
     });
   };
 })();
@@ -5270,6 +5357,7 @@ fn script_error_kind(error: &ScriptError) -> ServiceWorkerScriptErrorKind {
 }
 
 fn poll_fetch(sandbox: &mut dyn Sandbox, pending: &PendingFetch, timeout_ms: u64) -> Option<ServiceWorkerEvent> {
+    let _ = sandbox.execute("globalThis.__zwCloseExtendableEventDispatchCheckpoints && globalThis.__zwCloseExtendableEventDispatchCheckpoints();");
     let _ = sandbox.execute("globalThis.__zwRunOneTask && globalThis.__zwRunOneTask();");
     match sandbox.execute("JSON.stringify(globalThis.__zwFetchResult)") {
         Ok(result) => match serde_json::from_str::<serde_json::Value>(&result.value) {
@@ -5627,6 +5715,9 @@ fn poll_lifecycle(
     pending: &PendingLifecycle,
     timeout_ms: u64,
 ) -> Option<ServiceWorkerEvent> {
+    let _ = sandbox.execute(
+        "globalThis.__zwCloseExtendableEventDispatchCheckpoints && globalThis.__zwCloseExtendableEventDispatchCheckpoints();",
+    );
     let _ = sandbox.execute("globalThis.__zwRunOneTask && globalThis.__zwRunOneTask();");
     match sandbox.execute("JSON.stringify(globalThis.__zwLifecycleResult)") {
         Ok(result) => match serde_json::from_str::<serde_json::Value>(&result.value) {
@@ -6843,6 +6934,35 @@ mod tests {
     }
 
     #[test]
+    fn install_event_reports_microtask_rejected_wait_until() {
+        let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
+        runtime
+            .evaluate(
+                "addEventListener('install', event => {
+                    event.waitUntil(new Promise((resolve, reject) => {
+                        Promise.resolve().then(() => reject(new Error('microtask rejected')));
+                    }));
+                });",
+                "https://example.test/sw.js",
+            )
+            .unwrap();
+        let _ = runtime.recv_timeout(Duration::from_secs(5)).unwrap();
+
+        runtime.dispatch_install(19).unwrap();
+        assert!(matches!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::LifecycleSettled {
+                event_id: 19,
+                phase: ServiceWorkerLifecyclePhase::Install,
+                succeeded: false,
+                skip_waiting: false,
+                claim_clients: false,
+                ref message,
+            } if message.contains("microtask rejected")
+        ));
+    }
+
+    #[test]
     fn install_event_rejection_waits_for_all_lifetime_promises() {
         let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
         runtime
@@ -6902,6 +7022,208 @@ mod tests {
             .evaluate(
                 "if (globalThis.__lateInstallPromiseFinished !== true) throw new Error('late promise missing');",
                 "https://example.test/check.js",
+            )
+            .unwrap();
+        assert!(matches!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::Evaluated { .. }
+        ));
+    }
+
+    #[test]
+    fn install_event_rejection_waits_for_port_lifetime_promises() {
+        let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
+        runtime
+            .evaluate(
+                "const pendingPorts = [];
+                 const portResolves = [];
+                 onmessage = event => {
+                   if (event.data && event.data.port) {
+                     const resolve = portResolves.shift();
+                     if (resolve) resolve(event.data.port);
+                     else pendingPorts.push(event.data.port);
+                   }
+                 };
+                 function fulfillFromPort() {
+                   return new Promise(resolve => {
+                     Promise.resolve().then(() => {
+                       const port = pendingPorts.shift();
+                       if (port) resolve(port);
+                       else portResolves.push(resolve);
+                     });
+                   }).then(port => {
+                     port.postMessage('SYNC');
+                     return new Promise(resolve => {
+                       port.onmessage = event => {
+                         if (event.data === 'ACK') resolve();
+                       };
+                     });
+                   });
+                 }
+                 addEventListener('install', event => {
+                   event.waitUntil(fulfillFromPort());
+                   event.waitUntil(new Promise((_resolve, reject) => {
+                     Promise.resolve().then(() => reject(new Error('port rejection')));
+                   }));
+                   event.waitUntil(fulfillFromPort());
+                 });",
+                "https://example.test/sw.js",
+            )
+            .unwrap();
+        let _ = runtime.recv_timeout(Duration::from_secs(5)).unwrap();
+
+        runtime.dispatch_install(19).unwrap();
+        for event_id in [20, 21] {
+            runtime
+                .dispatch_message_with_ports(
+                    event_id,
+                    r#"{"port":{"__zwServiceWorkerTransferredPortIndex":0}}"#,
+                    "client-1",
+                    "https://example.test/page",
+                    &ServiceWorkerMessagePorts {
+                        transferred_port_ids: vec![event_id + 100],
+                        data_port_index: None,
+                        target_port_id: None,
+                    },
+                )
+                .unwrap();
+            let ServiceWorkerEvent::MessageDispatched { outbound, .. } =
+                runtime.recv_timeout(Duration::from_secs(5)).unwrap()
+            else {
+                panic!("missing port sync message");
+            };
+            assert_eq!(outbound.len(), 1);
+            assert_eq!(outbound[0].port_id, Some(event_id + 100));
+            assert_eq!(outbound[0].data_json, "\"SYNC\"");
+            runtime
+                .dispatch_message_with_ports(
+                    event_id + 10,
+                    "\"ACK\"",
+                    "client-1",
+                    "https://example.test/page",
+                    &ServiceWorkerMessagePorts {
+                        target_port_id: Some(event_id + 100),
+                        ..Default::default()
+                    },
+                )
+                .unwrap();
+            assert!(matches!(
+                runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+                ServiceWorkerEvent::MessageDispatched { .. }
+            ));
+        }
+
+        assert!(matches!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::LifecycleSettled {
+                event_id: 19,
+                phase: ServiceWorkerLifecyclePhase::Install,
+                succeeded: false,
+                ref message,
+                ..
+            } if message.contains("port rejection")
+        ));
+    }
+
+    #[test]
+    fn message_event_waituntil_accepts_same_turn_microtask() {
+        let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
+        runtime
+            .evaluate(
+                "addEventListener('message', event => {
+                   Promise.resolve().then(() => {
+                     try {
+                       event.waitUntil(Promise.resolve());
+                       event.source.postMessage({result: 'OK'});
+                     } catch (error) {
+                       event.source.postMessage({result: error.name});
+                     }
+                   });
+                 });",
+                "https://example.test/sw.js",
+            )
+            .unwrap();
+        let _ = runtime.recv_timeout(Duration::from_secs(5)).unwrap();
+
+        runtime
+            .dispatch_message(64, "null", "client-1", "https://example.test/page")
+            .unwrap();
+        assert_eq!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::MessageDispatched {
+                event_id: 64,
+                client_id: "client-1".into(),
+                outbound: vec![ServiceWorkerOutboundMessage {
+                    data_json: r#"{"result":"OK"}"#.into(),
+                    port_id: None,
+                    transferred_port_ids: Vec::new(),
+                    data_port_index: None,
+                    target_client_id: Some("client-1".into()),
+                }],
+            }
+        );
+    }
+
+    #[test]
+    fn message_event_waituntil_rejects_next_task_without_extension() {
+        let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
+        runtime
+            .evaluate(
+                "addEventListener('message', event => {
+                   setTimeout(() => {
+                     try {
+                       event.waitUntil(Promise.resolve());
+                       event.source.postMessage({result: 'OK'});
+                     } catch (error) {
+                       event.source.postMessage({result: error.name});
+                     }
+                   }, 0);
+                 });",
+                "https://example.test/sw.js",
+            )
+            .unwrap();
+        let _ = runtime.recv_timeout(Duration::from_secs(5)).unwrap();
+
+        runtime
+            .dispatch_message(65, "null", "client-1", "https://example.test/page")
+            .unwrap();
+        assert_eq!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::MessageDispatched {
+                event_id: 65,
+                client_id: "client-1".into(),
+                outbound: Vec::new(),
+            }
+        );
+        assert_eq!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::ClientMessagesEmitted {
+                outbound: vec![ServiceWorkerOutboundMessage {
+                    data_json: r#"{"result":"InvalidStateError"}"#.into(),
+                    port_id: None,
+                    transferred_port_ids: Vec::new(),
+                    data_port_index: None,
+                    target_client_id: Some("client-1".into()),
+                }],
+            }
+        );
+    }
+
+    #[test]
+    fn script_constructed_extendable_event_waituntil_is_invalid() {
+        let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
+        runtime
+            .evaluate(
+                "addEventListener('nontrustedevent', event => {
+                   try {
+                     event.waitUntil(Promise.resolve());
+                     throw new Error('waitUntil unexpectedly succeeded');
+                   } catch (error) {
+                     if (error.name !== 'InvalidStateError') throw error;
+                   }
+                 });
+                 self.dispatchEvent(new ExtendableEvent('nontrustedevent'));",
+                "https://example.test/sw.js",
             )
             .unwrap();
         assert!(matches!(
@@ -10488,6 +10810,93 @@ mod tests {
                     Ok(other) => panic!("unexpected runtime event: {other:?}"),
                     Err(error) => panic!("runtime event timed out: {error}"),
                 }
+            }
+        }
+    }
+
+    #[test]
+    fn fetch_respondwith_extension_window_accepts_sync_waituntil() {
+        let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
+        runtime
+            .evaluate(
+                "let port;
+                 addEventListener('message', event => { port = event.data.port; });
+                 addEventListener('fetch', event => {
+                   const response = new Promise(resolve => setTimeout(() => resolve(new Response('OK')), 0));
+                   event.respondWith(response);
+                   response.then(() => {
+                     try {
+                       event.waitUntil(Promise.resolve());
+                       port.postMessage({sync: 'OK'});
+                     } catch (error) {
+                       port.postMessage({sync: error.name});
+                     }
+                   });
+                 });",
+                "https://example.test/sw.js",
+            )
+            .unwrap();
+        let _ = runtime.recv_timeout(Duration::from_secs(5)).unwrap();
+
+        runtime
+            .dispatch_message_with_ports(
+                26,
+                r#"{"port":{"__zwServiceWorkerTransferredPortIndex":0}}"#,
+                "client-1",
+                "https://example.test/page",
+                &ServiceWorkerMessagePorts {
+                    transferred_port_ids: vec![2],
+                    data_port_index: None,
+                    target_port_id: None,
+                },
+            )
+            .unwrap();
+        assert!(matches!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::MessageDispatched { event_id: 26, .. }
+        ));
+
+        runtime
+            .dispatch_fetch(
+                66,
+                ServiceWorkerFetchRequest {
+                    url: "https://example.test/app/respondwith-window".into(),
+                    method: "GET".into(),
+                    headers: Vec::new(),
+                    body: None,
+                    credentials: None,
+                    client_id: Some("client-1".into()),
+                    resulting_client_id: None,
+                    referrer: None,
+                    is_reload_navigation: false,
+                    is_history_navigation: false,
+                },
+            )
+            .unwrap();
+
+        let mut saw_fetch = false;
+        let mut saw_sync = false;
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while !saw_fetch || !saw_sync {
+            match runtime.recv_timeout(deadline.saturating_duration_since(std::time::Instant::now())) {
+                Ok(ServiceWorkerEvent::FetchSettled {
+                    event_id: 66,
+                    response: Some(response),
+                    failed: false,
+                    ..
+                }) => {
+                    assert_eq!(response.body, "OK");
+                    saw_fetch = true;
+                }
+                Ok(ServiceWorkerEvent::ClientMessagesEmitted { outbound }) => {
+                    for message in outbound {
+                        if message.port_id == Some(2) && message.data_json == r#"{"sync":"OK"}"# {
+                            saw_sync = true;
+                        }
+                    }
+                }
+                Ok(other) => panic!("unexpected runtime event: {other:?}"),
+                Err(error) => panic!("runtime event timed out: {error}"),
             }
         }
     }

@@ -835,6 +835,7 @@ pub const SERVICE_WORKER_CORE_CASES: &[&str] = &[
     "service-workers/service-worker/ServiceWorkerGlobalScope/registration-attribute.https.html",
     "service-workers/service-worker/ServiceWorkerGlobalScope/service-worker-error-event.https.html",
     "service-workers/service-worker/ServiceWorkerGlobalScope/unregister.https.html",
+    "service-workers/service-worker/extendable-event-async-waituntil.https.html",
     "service-workers/service-worker/extendable-event-waituntil.https.html",
     "service-workers/service-worker/getregistration.https.html",
     "service-workers/service-worker/registration-iframe.https.html",
@@ -4666,8 +4667,8 @@ async_test(function(test) {
             .iter()
             .copied()
             .collect::<std::collections::BTreeSet<_>>();
-        assert_eq!(SERVICE_WORKER_CORE_CASES.len(), 63);
-        assert_eq!(unique.len(), 63);
+        assert_eq!(SERVICE_WORKER_CORE_CASES.len(), 64);
+        assert_eq!(unique.len(), 64);
         assert!(
             SERVICE_WORKER_CORE_CASES
                 .iter()
@@ -4706,6 +4707,10 @@ async_test(function(test) {
         assert!(
             SERVICE_WORKER_CORE_CASES
                 .contains(&"service-workers/service-worker/ServiceWorkerGlobalScope/unregister.https.html")
+        );
+        assert!(
+            SERVICE_WORKER_CORE_CASES
+                .contains(&"service-workers/service-worker/extendable-event-async-waituntil.https.html")
         );
         assert!(SERVICE_WORKER_CORE_CASES.contains(&"service-workers/service-worker/getregistration.https.html"));
         assert!(SERVICE_WORKER_CORE_CASES.contains(&"service-workers/service-worker/registration-iframe.https.html"));
