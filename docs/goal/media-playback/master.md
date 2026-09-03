@@ -2,7 +2,17 @@
 
 **入口文档**: [../media-playback.md](../media-playback.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-04（**M3 fixture-mounted runner 播放面切片 9 落地（扩批
+**最后更新**: 2026-09-04（**M3 fixture-mounted runner 播放面切片 10 落地（扩批
+XXVII）**——media fragment #t= 起点解析（settle 加载序列内 currentTime 初始化：
+hash 内 & 分隔 k=v 对取 t=、percent-decode、npt: 前缀可选、start,end 取 start、
+HH:MM:SS.ms/MM:SS.ms/SS；settle url 携带 hash 面已被 registry_key strip 兼容）+
+**headless 播放时钟推进**（march 内非 bridgeOn 播放按 performance.now 墙钟差 ×
+playbackRate 推进 ms.currentTime，clock 基点记 play 时——此前 headless 播放无
+推进面，autoplay 驱动的播放 currentTime 恒 0）+ **周期 timeupdate**（march 内
+nowMs > lastMs 时 250ms 节流派发——spec time updates 播放推进面，此前页面在
+播放期无 timeupdate 可收）。media-elements 556P/0F/24PF（+4 净涨零回归——
+media_fragment_seek + autoplay-with-broken-track 导入）。
+此前同日：**M3 fixture-mounted runner 播放面切片 9 落地（扩批
 XXVI）**——seekable/buffered TimeRanges headless 近似 getter 落地
 （`__zwMediaSeekableRanges` 共享面：readyState>=1 后 [0,duration] 单区间；
 duration 解析序 桥真值 → _mediaState → settle durationMs → headless 600；
@@ -530,8 +540,24 @@ clippy 零警告、每切片带单测 + e2e/fixture 资产化（AV1 全流单测
    化——后挂 onseeking 可达；seeking 翻 false 先于 timeupdate——Chromium 可
    观察语义；事件序 [seeking, timeupdate, seeked]）。seeking/ 三件
    （seek-to-currentTime/max-value/negative-time）+ volume_nonfinite 导入
-   （552P/0F/24PF，+9 净涨零回归）。**余**：playing-the-media-resource 余面
-   （play-in-detached-document / fragmented-mp4-end）。
+   （552P/0F/24PF，+9 净涨零回归）。
+   **切片 10 落地（2026-09-04 续，扩批 XXVII——media fragment + headless 播放
+   时钟）**：① media fragment #t= 起点解析（`_zwMediaLoadSequence` 内：settle
+   url hash → & 分隔 k=v 对取 t= → percent-decode → `npt:` 前缀剥离 →
+   start,end 取 start → HH:MM:SS.ms / MM:SS.ms / SS 解析 → 成功置
+   ms.currentTime 起始位置——spec media-frags「seek to the fragment start」，
+   media_fragment_seek 的 5 形态断言面）。② **headless 播放时钟推进**（march
+   内非 bridgeOn 且 playing：performance.now 墙钟差 × playbackRate 推进
+   ms.currentTime，`_zwHeadlessClockOrigin` 记 play 基点只前进不回退——此前
+   headless 播放无推进面，autoplay 驱动的播放 currentTime 恒 0，
+   autoplay-with-broken-track 的 currentTime>0 断言面）。③ **周期 timeupdate**
+   （march 内 nowMs>lastMs 时 ≥250ms 节流派发——spec time updates；此前播放
+   推进期页面无 timeupdate 可收）。dormant 探针实证 headless 时钟 0→0.12s
+   推进 + expando handler 可达后移除。media_fragment_seek +
+   autoplay-with-broken-track 导入（556P/0F/24PF，+4 净涨零回归）；no-autoplay-
+   audio-history-back 不导入（iframe+history+postMessage 导航深结构）。**余**：
+   playing-the-media-resource 余面（play-in-detached-document /
+   fragmented-mp4-end）。
 2. ~~**A/V 同步精化余项**~~ ✅ 2026-09-01 收口：ended 面回归守卫落地
    （切片 F——伴音流末 video player 走到 Ended、泵停）；音频设备面（CpalSink
    真出声）挂 media-audio M1 可选切片。

@@ -2,7 +2,12 @@
 
 **入口文档**: [../media-elements.md](../media-elements.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-04（**M3 扩批 XXVI 落地**——seekable/buffered TimeRanges
+**最后更新**: 2026-09-04（**M3 扩批 XXVII 落地**——media fragment #t= 起点解析
+（settle 加载序列内 currentTime 初始化：npt:/HH:MM:SS/ms/percent-encode 五形态）
++ headless 播放时钟推进（march 内墙钟差 × playbackRate——autoplay 驱动的播放
+currentTime 不再恒 0）+ 周期 timeupdate（250ms 节流——播放推进期页面可收
+timeupdate）。media_fragment_seek + autoplay-with-broken-track 导入。
+**556P/0F/24PF，556/580 = 95.9%**（+4 净涨零回归）。此前同日：**M3 扩批 XXVI 落地**——seekable/buffered TimeRanges
 headless 近似 getter（`__zwMediaSeekableRanges` 共享面：readyState>=1 后
 [0,duration] 单区间 + IndexSizeError + has-trap 补列）+ currentTime setter
 seek 语义补全（clamp 到 seekable 范围镜像写回 + seeking/timeupdate/seeked
@@ -651,7 +656,7 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
 
 | # | 缺口 | 状态 | 失败聚类 |
 |---|------|------|----------|
-| M1g | WPT media-elements 用例覆盖 | ✅ 151 用例已导入（136 + 扩批 XVI~XXV/XXVI：播放推进族 6 件 + track-change-event + track-active-cues + played-loop + audio_loop_seek_to_eos + loop-from-ended.tentative + seeking/ 三件 + volume_nonfinite），**95.8%**（552/576） | — |
+| M1g | WPT media-elements 用例覆盖 | ✅ 153 用例已导入（136 + 扩批 XVI~XXVII：播放推进族 6 件 + track-change-event + track-active-cues + played-loop + audio_loop_seek_to_eos + loop-from-ended.tentative + seeking/ 三件 + volume_nonfinite + media_fragment_seek + autoplay-with-broken-track），**95.9%**（556/580） | — |
 | M2g | load 算法 + 状态机（事件序列派发） | ✅ M2 落地（13T→**0T**） | F4 闭合 |
 | M3g | 事件序列 headless 近似驱动 | ✅（同 M2g；source-child 触发已落地） | F4 闭合 |
 | M4g-a | 媒体元数据 IDL 反射（初值面） | ✅ 切片 3 落地 | F2 闭合（-9 Fail） |
@@ -673,13 +678,19 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
    audio_loop_seek_to_eos + 扩批 XXV loop-from-ended.tentative——ended 后设
    loop 再 play 回卷 seeked，配套 registry Ended→play 解码器重建 + 泵时钟注入
    收口）+ seekable/buffered TimeRanges 面四件导入（扩批 XXVI seeking/ 三件 +
-   volume_nonfinite——seek clamp + seek 事件序排队任务化收口）。
+   volume_nonfinite——seek clamp + seek 事件序排队任务化收口）+ media fragment
+   与 autoplay 面两件导入（扩批 XXVII media_fragment_seek +
+   autoplay-with-broken-track——headless 播放时钟推进 + 周期 timeupdate 收口；
+   audio/video_volume_check 不导入：越界断言 e.code==1 为旧 spec 语义——现行
+   spec 越界 clamp 不抛，导入即恒假失败）。
    playing-the-media-resource
    剩余（play-in-detached-document——需 detached 文档播放时钟推进，依赖兄弟目标
    media-playback 播放钟接语义层；fragmented-mp4-end——MSE 面，归远期）；
-   the-video-element 反射余面（video-loading-*
-   preload 语义族——视 lazy-loading 支撑面）。**headless 可导入面已在 95.8% 重饱和
-   （M3 扩批 XXVI 后第九次修正）**——余下增量依赖兄弟目标解锁（真播放钟 →
+   no-autoplay-audio-history-back（iframe+history+postMessage 导航深结构，
+   pause-move-to-other-document 同域排除）；the-video-element 反射余面
+   （video-loading-*
+   preload 语义族——视 lazy-loading 支撑面）。**headless 可导入面已在 95.9% 重饱和
+   （M3 扩批 XXVII 后第十次修正）**——余下增量依赖兄弟目标解锁（真播放钟 →
    time-marches-on 余面）+ 深结构项（~~TextTrackList change 事件广播反向链~~ ✅
    扩批 XXI 兑现、cue 标记树解析——归渲染域远期）。
 2. ~~**M4g-d**：canPlayType 能力表联动更新~~ ✅ 2026-09-01 兑现（能力表真值化——

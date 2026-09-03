@@ -1550,6 +1550,11 @@ pub const MEDIA_TEST_FILES: &[&str] = &[
     "html/semantics/embedded-content/media-elements/seeking/seek-to-max-value.htm",
     "html/semantics/embedded-content/media-elements/seeking/seek-to-negative-time.htm",
     "html/semantics/embedded-content/media-elements/volume_nonfinite.html",
+    // M3 扩批 XXVII（2026-09-04）：media fragment #t= 起点解析（settle 加载序列
+    // 内 currentTime 初始化）+ broken track 不阻塞 autoplay 推进。
+    // 不导入 no-autoplay-audio-history-back（iframe+history+postMessage 导航深结构）。
+    "html/semantics/embedded-content/media-elements/media_fragment_seek.html",
+    "html/semantics/embedded-content/media-elements/autoplay-with-broken-track.html",
     // M3 扩批 IX：移动面（同文档移动仍 related → 不暂停）。
     // pause-move-to-other-document 不导入——iframe adopt 面未实施（fetch 脚本注记）。
     "html/semantics/embedded-content/media-elements/playing-the-media-resource/pause-move-within-document.html",

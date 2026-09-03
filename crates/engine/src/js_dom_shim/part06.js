@@ -6815,6 +6815,40 @@
     // 真值未落（动态 src 的 settle 与加载序列竞态——loop-from-ended 载入序）时不
     // 再烘焙 headless 600：duration getter 兜底读（settled→600），真值落位后
     // durationchange 语义由 getter 首读暴露。
+    // M3 扩批 XXVII：media fragment（#t=）起点——spec media fragment 语法
+    //（www.w3.org/TR/media-frags/#media-fragment-syntax）：hash 内 & 分隔 k=v 对，
+    // 取 t= 值（可 percent-encoded），`npt:` 前缀可选，`start,end` 取 start，
+    // 时间 HH:MM:SS.ms / MM:SS.ms / SS（.ms 可选）。解析成功 → 起始位置设为
+    // start（spec「seek to the fragment start」——加载序列内 currentTime 初始化，
+    // 先于 durationchange/loadedmetadata 派发；media_fragment_seek 断言面）。
+    var _frUrl = (_settled && _settled.url) ? String(_settled.url) : '';
+    var _frHash = _frUrl.indexOf('#') >= 0 ? _frUrl.slice(_frUrl.indexOf('#') + 1) : '';
+    if (_frHash) {
+      try {
+        var _frPairs = _frHash.split('&');
+        for (var _frI = 0; _frI < _frPairs.length; _frI++) {
+          var _frKv = _frPairs[_frI].split('=');
+          if (_frKv[0] !== 't' || _frKv.length < 2) continue;
+          var _frVal = _frKv.slice(1).join('=');
+          try { _frVal = decodeURIComponent(_frVal); } catch (_eFrDec) {}
+          if (_frVal.indexOf('npt:') === 0) _frVal = _frVal.slice(4);
+          var _frStart = _frVal.split(',')[0];
+          var _frM = /^(\d{1,2}):(\d{1,2}):(\d{1,2}(?:\.\d+)?)$/.exec(_frStart);
+          var _frS = 0;
+          if (_frM) _frS = Number(_frM[1]) * 3600 + Number(_frM[2]) * 60 + Number(_frM[3]);
+          else {
+            var _frM2 = /^(\d{1,2}):(\d{1,2}(?:\.\d+)?)$/.exec(_frStart);
+            if (_frM2) _frS = Number(_frM2[1]) * 60 + Number(_frM2[2]);
+            else if (/^\d+(?:\.\d+)?$/.test(_frStart)) _frS = Number(_frStart);
+            else continue;
+          }
+          if (isFinite(_frS) && _frS > 0) {
+            ms.currentTime = _frS;
+            break;
+          }
+        }
+      } catch (_eFr) {}
+    }
     _zwMediaFire(sel, handle, key, 'durationchange');
     // spec resize：视频尺寸变为已知时派发（audio 无此事件）——时序在 durationchange 后、
     // loadedmetadata 前（event_order_durationchange_resize_loadedmetadata 断言面）。
@@ -9398,6 +9432,21 @@
             if (typeof _tmoBct === 'number' && isFinite(_tmoBct)) ms.currentTime = _tmoBct;
           } catch (_eTmoB) {}
         }
+        // M3 扩批 XXVII：headless 播放时钟推进（非 bridgeOn 且播放中）——墙钟差
+        // 实时推进 ms.currentTime（此前 headless 播放无推进面，autoplay 驱动的
+        // 播放 currentTime 恒 0；playbackRate 缩放同桥面）。clock 基点记 play 时
+        // （_zwHeadlessClockOrigin），pause 清除——seek/loop 面不回退。
+        if (!ms.bridgeOn) {
+          try {
+            var _hwNow = (typeof performance === 'object' && typeof performance.now === 'function')
+              ? performance.now()
+              : (typeof Date.now === 'function' ? Date.now() : 0);
+            if (ms._zwHeadlessClockOrigin == null) ms._zwHeadlessClockOrigin = _hwNow - (ms.currentTime || 0) * 1000;
+            var _rate = (typeof ms.playbackRate === 'number' && isFinite(ms.playbackRate) && ms.playbackRate > 0) ? ms.playbackRate : 1;
+            var _hwMs = (_hwNow - ms._zwHeadlessClockOrigin) * _rate;
+            if (isFinite(_hwMs) && _hwMs > (ms.currentTime || 0) * 1000) ms.currentTime = _hwMs / 1000;
+          } catch (_eHw) {}
+        }
         var nowMs = (typeof ms.currentTime === 'number' && isFinite(ms.currentTime)) ? ms.currentTime * 1000 : 0;
         // M3 扩批 XVIII：首拍区间基线 = 0（播放起点）而非 nowMs——旧初始化把首个 march
         // tick 的捕获区间置空（(nowMs, nowMs] 空），随后采样粒度 ~1s 时起点恰落在采样
@@ -9421,6 +9470,16 @@
             }
           }
           if (!_merged) _pr.push([lastMs, nowMs]);
+          // M3 扩批 XXVII：周期 timeupdate（spec「time updates」——播放推进期
+          // 15-250ms 周期派发；fixture-mounted 泵节拍 ~几十 ms，250ms 节流对齐
+          // 上限。autoplay-with-broken-track 的 ontimeupdate + currentTime>0
+          // 断言面——此前周期 timeupdate 缺位，播放推进期页面无 timeupdate 可收）。
+          if (ms._zwLastTuMs == null || nowMs - ms._zwLastTuMs >= 250) {
+            ms._zwLastTuMs = nowMs;
+            _zwMediaFire(ms._zwSel || (key.charAt(0) === '@' ? null : key),
+              ms._zwHandle || (key.charAt(0) === '@' ? key.slice(1) : null),
+              key, 'timeupdate');
+          }
         }
         // seek 面检测：**时钟回退** 或 seeking 标志在位（spec time-marches-on seek 步：
         // missed cues 不派 enter；此前 active 的 cue 按目标时刻重建）。M3 扩批 XVI 修正：

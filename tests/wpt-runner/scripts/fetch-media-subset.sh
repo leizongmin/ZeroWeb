@@ -156,6 +156,15 @@ TOP_FILES=(
   "seeking/seek-to-max-value.htm"
   "seeking/seek-to-negative-time.htm"
   "volume_nonfinite.html"
+  # M3 扩批 XXVII（2026-09-04）：media_fragment_seek——#t= 媒体片段起点解析
+  # （npt:/HH:MM:SS/ms/percent-encode 面 + src 反射保 fragment）。fragment 起点
+  # 在 settle 加载序列内初始化 currentTime（settle url 携带 hash）。
+  # autoplay-with-broken-track——broken track（invalid://url/404/空）不阻塞
+  # autoplay 推进（track error settle 面已有，video 照常 settle → 泵 → timeupdate）。
+  # 不导入 no-autoplay-audio-history-back-does-not-play（iframe+history+postMessage
+  # 导航深结构——pause-move-to-other-document 同域排除）。
+  "media_fragment_seek.html"
+  "autoplay-with-broken-track.html"
   # M3 扩批 IX：移动面（同文档移动仍 related → 不暂停）。
   # pause-move-to-other-document 不导入：跨 iframe 文档 adopt 在 shim 融合视图下
   # appendChild 静默落空（元素保持 detached）——实施需 iframe 文档模型 adopt 面
