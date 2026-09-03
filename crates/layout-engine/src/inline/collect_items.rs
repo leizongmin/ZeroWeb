@@ -24,6 +24,26 @@ impl InlineFormattingContext {
             .max(0.0)
     }
 
+    /// R3997：inline `<svg>` 的 viewBox 固有宽高比（w/h；无效/缺失 → None）。
+    fn svg_viewbox_ratio(elem: &zero_dom::ElementData) -> Option<f32> {
+        let vb = elem.get_attribute("viewBox").or_else(|| elem.get_attribute("viewbox"))?;
+        let nums: Vec<&str> = vb.split([' ', ',']).filter(|t| !t.is_empty()).collect();
+        if nums.len() != 4 {
+            return None;
+        }
+        let vw: f32 = nums[2].parse().ok()?;
+        let vh: f32 = nums[3].parse().ok()?;
+        (vh > 0.0 && vw.is_finite() && vh.is_finite() && vw > 0.0).then_some(vw / vh)
+    }
+
+    /// R3997：元素参与 IFC 排版的 CSS 宽高比（css-sizing-4 §3 aspect-ratio 值）。
+    /// computed aspect_ratio 已剥 `auto` 前缀（converter 语义同 taffy 直传）；`auto <ratio>`
+    /// 时 replaced 元素固有比优先，但 inline svg 无解码尺寸信号面，直接用显式 ratio
+    ///（与 tree.rs eff_ratio 的 fallback 臂一致）。None = 无有效 ratio。
+    fn css_aspect_ratio(style: &ComputedStyle) -> Option<f32> {
+        style.aspect_ratio.filter(|r| r.is_finite() && *r > 0.0)
+    }
+
     /// 收集容器中所有行内级内容（文本节点 + inline 元素 + `<br>` 元素），
     /// 从 ComputedStyle 中读取 font-size 和 line-height。
     fn collect_inline_items(
@@ -354,6 +374,38 @@ impl InlineFormattingContext {
                                     }
                                 }
                             }
+                            // R3997（css-sizing-4 §4.1/§4.2 transferred size）：CSS aspect-ratio
+                            // （或 `auto <ratio>` 的 ratio 部分）+ 恰一侧显式、另一侧 auto 时，
+                            // auto 侧由显式侧 ×/÷ ratio 推导（img 分支 R1578 固有比推导的 CSS
+                            // ratio 泛化）。driving: css-sizing replaced-element-007/008/015/016
+                            //（inline `<svg>` width:100px + aspect-ratio:1/1 → 100×100，旧塌 6×24）。
+                            // 关 kill-switch `ZW_IFC_AR_TRANSFER=0`。eff_ratio 语义与 tree.rs 一致：
+                            // `auto <ratio>` 时 replaced 元素固有比优先（此处 img_intrinsic 缺失
+                            // 时回落显式 ratio——svg inline 无解码尺寸信号面）。
+                            if std::env::var("ZW_IFC_AR_TRANSFER").as_deref() != Ok("0")
+                                && !self.vertical
+                                && (w > 0.0) != (h > 0.0)
+                                && let Some(s) = style
+                                // R2440 语义（css-sizing-4 §aspect-ratio）：`auto <ratio>` 时
+                                // replaced 元素**固有比**优先（显式 ratio 仅 fallback）。inline
+                                // svg 的固有比直接从 viewBox attr 解析（无需解码信号面——
+                                // SVG2 viewport 建立语义，viewBox w/h 比 = 固有宽高比）。
+                                && let Some(ratio) = {
+                                    let explicit = Self::css_aspect_ratio(s);
+                                    if s.aspect_ratio_auto && elem_data.local_name() == "svg" {
+                                        Self::svg_viewbox_ratio(elem_data).or(explicit)
+                                    } else {
+                                        explicit
+                                    }
+                                }
+                                && ratio > 0.0
+                            {
+                                if w > 0.0 && h <= 0.0 {
+                                    h = (w / ratio).max(0.5);
+                                } else if h > 0.0 && w <= 0.0 {
+                                    w = (h * ratio).max(0.5);
+                                }
+                            }
                             if w > 0.0 && h > 0.0 {
                                 let vertical_align =
                                     style.map(|s| s.vertical_align.clone()).unwrap_or(VerticalAlignValue::Baseline);
@@ -545,7 +597,16 @@ impl InlineFormattingContext {
                             && !self.vertical
                             && Self::inline_elem_has_nested_inline_block(doc, styles, child_id)
                         {
-                            let nested = self.collect_inline_items(doc, child_id, styles);
+                            // R3997：fragment_node_ids 是 **split 容器作用域**的片段成员表
+                            //（R109 §9.2.1.1 ②匿名块），递归进 inline 子元素后必须清除——
+                            // 否则子元素把自己的成员表当容器子列表（子元素 ∈ 成员表 →
+                            // collect_inline_items 以自身为容器无限递归栈溢出，
+                            // css-sizing replaced-element-012 `<picture>` 实证）。
+                            let nested = {
+                                let mut nested_ctx = self.clone();
+                                nested_ctx.fragment_node_ids = None;
+                                nested_ctx.collect_inline_items(doc, child_id, styles)
+                            };
                             items.extend(nested);
                             continue;
                         }

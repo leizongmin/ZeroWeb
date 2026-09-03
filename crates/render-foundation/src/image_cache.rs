@@ -789,11 +789,15 @@ pub fn rasterize_svg_at(source: &[u8], target_w: u32, target_h: u32) -> Result<I
     if target_w == 0 || target_h == 0 {
         return Err("SVG 目标尺寸为 0".to_string());
     }
+    // R3996：根 `background-color` 提升为 viewport 级填充（chromium 语义）。usvg 把根
+    // 背景画成 viewBox 区域的 path（letterbox 居中时不覆盖 viewport 全区），而 chromium
+    // 对 replaced/document SVG 的根背景铺满整个 viewport——剥离该声明改用 `fill()`。
+    let (bytes, root_background) = promote_svg_root_background(source);
     // R3936：transform-origin 预处理（fill-box/单 rect 参照，px 输出与源 viewport
     // 无关）；须在 inject 之前保持源结构可解析。
     // R3937：style attr transform 覆盖 presentation attr（CSS 级联序 > attr；
     // usvg 忽略 style transform——预处理把合法 CSS transform 翻译改写 attr）。
-    let bytes = preprocess_svg_style_transform(source);
+    let bytes = preprocess_svg_style_transform(&bytes);
     // R3988：transform attr 畸形参数列表（尾随逗号等）→ attr 删除（chromium 声明忽略）。
     let bytes = preprocess_svg_transform_attr_syntax(&bytes);
     let bytes = preprocess_svg_transform_origin(&bytes);
@@ -807,12 +811,208 @@ pub fn rasterize_svg_at(source: &[u8], target_w: u32, target_h: u32) -> Result<I
     }
     let mut pixmap = resvg::tiny_skia::Pixmap::new(target_w, target_h)
         .ok_or_else(|| format!("SVG pixmap 分配失败 {target_w}x{target_h}"))?;
+    if let Some(color) = root_background {
+        pixmap.fill(resvg::tiny_skia::Color::from_rgba8(
+            color[0], color[1], color[2], color[3],
+        ));
+    }
     resvg::render(
         &tree,
         resvg::tiny_skia::Transform::from_scale(target_w as f32 / iw, target_h as f32 / ih),
         &mut pixmap.as_mut(),
     );
     ImageData::from_rgba(pixmap.take(), target_w, target_h)
+}
+
+/// R3996：把 `<svg>` 根元素的 `background-color`（presentation attr 或 style 声明）从源中
+/// 剥离并返回（RGBA，未知/非法值返回 None 不动源）。
+///
+/// 根因（css-sizing replaced-element-004/006/010/020 簇实证）：usvg 0.47 把根背景生成为
+/// **viewBox rect** 的 path（`converter.rs` `background_path(background_color, view_box.rect)`），
+/// 位于 viewBox→viewport 的 letterbox transform 之内——`viewBox='0 0 5 1'` 的 SVG 栅格化到
+/// 100×100 时绿带只有中央 20px。chromium 语义（HTML replaced element + CSS backgrounds）：
+/// 根背景铺满整个 viewport（背景在 viewBox transform 之外）。修复 = 剥离声明 + 渲染前
+/// `Pixmap::fill`（viewport 级）。根元素之外的 background 声明不受影响（仅扫根标签）。
+/// https://drafts.csswg.org/css-backgrounds-3/#background-color
+/// https://html.spec.whatwg.org/multipage/rendering.html#replaced-elements
+fn promote_svg_root_background(source: &[u8]) -> (Vec<u8>, Option<[u8; 4]>) {
+    let Ok(text) = std::str::from_utf8(source) else {
+        return (source.to_vec(), None);
+    };
+    let Some(svg_start) = text.find("<svg") else {
+        return (source.to_vec(), None);
+    };
+    let after = &text[svg_start..];
+    let Some(tag_end_rel) = after.find('>') else {
+        return (source.to_vec(), None);
+    };
+    let tag = &after[..tag_end_rel]; // 含 "<svg"
+    // 值来源优先级（与 usvg parse 一致）：style 声明 > presentation attr。两者皆无 → 不动。
+    let style_val = extract_svg_attr(tag, "style");
+    let style_color = style_val.as_deref().and_then(svg_style_background_color);
+    let attr_color = extract_svg_attr(tag, "background-color").and_then(|v| parse_svg_color(&v));
+    let color = style_color.or(attr_color);
+    let Some(color) = color else {
+        return (source.to_vec(), None);
+    };
+    // 改写根标签：删 style 中的 background-color 声明（若来自 style），否则删 attr。
+    let new_tag = if style_color.is_some() {
+        let stripped_style = strip_background_decl(style_val.as_deref().unwrap_or_default());
+        if stripped_style.is_empty() {
+            // style 仅含 background-color → 整个 style attr 删除。
+            remove_svg_attr(tag, "style")
+        } else {
+            replace_svg_attr_value(tag, "style", &stripped_style)
+        }
+    } else {
+        remove_svg_attr(tag, "background-color")
+    };
+    let mut out = String::with_capacity(text.len());
+    out.push_str(&text[..svg_start]);
+    out.push_str(&new_tag);
+    out.push_str(&after[tag_end_rel..]);
+    (out.into_bytes(), Some(color))
+}
+
+/// 从 style 声明值中提取 `background-color`（合法 CSS 颜色 → RGBA）。
+fn svg_style_background_color(style_val: &str) -> Option<[u8; 4]> {
+    style_val
+        .split(';')
+        .filter_map(|decl| decl.split_once(':'))
+        .find_map(|(prop, value)| {
+            prop.trim()
+                .eq_ignore_ascii_case("background-color")
+                .then_some(value.trim())
+                .and_then(parse_svg_color)
+        })
+}
+
+/// 删除 style 声明值中的 background-color 项（返回剩余声明，分号规范化）。
+fn strip_background_decl(style_val: &str) -> String {
+    style_val
+        .split(';')
+        .filter(|decl| {
+            decl.split_once(':')
+                .is_none_or(|(prop, _)| !prop.trim().eq_ignore_ascii_case("background-color"))
+        })
+        .collect::<Vec<_>>()
+        .join(";")
+}
+
+/// 解析 SVG/CSS 颜色字面量为 RGBA（命名色子集 + #rgb/#rrggbb + rgb()/rgba()）。
+fn parse_svg_color(value: &str) -> Option<[u8; 4]> {
+    let v = value.trim();
+    if let Some(hex) = v.strip_prefix('#') {
+        return match hex.len() {
+            3 => {
+                let r = u8::from_str_radix(&hex[0..1].repeat(2), 16).ok()?;
+                let g = u8::from_str_radix(&hex[1..2].repeat(2), 16).ok()?;
+                let b = u8::from_str_radix(&hex[2..3].repeat(2), 16).ok()?;
+                Some([r, g, b, 255])
+            }
+            6 => {
+                let r = u8::from_str_radix(&hex[0..2], 16).ok()?;
+                let g = u8::from_str_radix(&hex[2..4], 16).ok()?;
+                let b = u8::from_str_radix(&hex[4..6], 16).ok()?;
+                Some([r, g, b, 255])
+            }
+            8 => {
+                let r = u8::from_str_radix(&hex[0..2], 16).ok()?;
+                let g = u8::from_str_radix(&hex[2..4], 16).ok()?;
+                let b = u8::from_str_radix(&hex[4..6], 16).ok()?;
+                let a = u8::from_str_radix(&hex[6..8], 16).ok()?;
+                Some([r, g, b, a])
+            }
+            _ => None,
+        };
+    }
+    // rgb()/rgba() 数值形式（逗号或空格分隔）。
+    let lower = v.to_ascii_lowercase();
+    for (prefix, default_a) in [("rgb(", 255u8), ("rgba(", 255)] {
+        if let Some(inner) = lower.strip_prefix(prefix)
+            && let Some(close) = inner.find(')')
+        {
+            let nums: Vec<f32> = inner[..close]
+                .split([',', ' ', '/'])
+                .filter(|t| !t.is_empty())
+                .filter_map(|t| t.trim().parse::<f32>().ok())
+                .collect();
+            if nums.len() >= 3 {
+                let clamp = |x: f32| x.clamp(0.0, 255.0) as u8;
+                let a = nums
+                    .get(3)
+                    .map(|a| (a.clamp(0.0, 1.0) * 255.0) as u8)
+                    .unwrap_or(default_a);
+                return Some([clamp(nums[0]), clamp(nums[1]), clamp(nums[2]), a]);
+            }
+        }
+    }
+    // 命名色（WPT 常用子集；完整表非本切片所需）。
+    let named: &[(&str, [u8; 3])] = &[
+        ("green", [0, 128, 0]),
+        ("lime", [0, 255, 0]),
+        ("red", [255, 0, 0]),
+        ("blue", [0, 0, 255]),
+        ("white", [255, 255, 255]),
+        ("black", [0, 0, 0]),
+        ("yellow", [255, 255, 0]),
+        ("transparent", [0, 0, 0]),
+    ];
+    for (name, rgb) in named {
+        if lower.eq_ignore_ascii_case(name) {
+            if *name == "transparent" {
+                return Some([0, 0, 0, 0]);
+            }
+            return Some([rgb[0], rgb[1], rgb[2], 255]);
+        }
+    }
+    None
+}
+
+/// 把 `name="old"` / `name='old'` 属性值替换为新值（保持引号样式；无该 attr 时原样返回）。
+fn replace_svg_attr_value(tag: &str, name: &str, new_value: &str) -> String {
+    let Some(idx) = tag.find(&format!("{name}=")) else {
+        return tag.to_string();
+    };
+    let after = &tag[idx + name.len() + 1..];
+    let Some(quote) = after.chars().next() else {
+        return tag.to_string();
+    };
+    if quote != '"' && quote != '\'' {
+        return tag.to_string();
+    }
+    let Some(end_rel) = after[1..].find(quote) else {
+        return tag.to_string();
+    };
+    let attr_end = idx + name.len() + 1 + 1 + end_rel + 1;
+    let mut out = String::with_capacity(tag.len());
+    out.push_str(&tag[..idx]);
+    out.push_str(&format!("{name}={quote}{new_value}{quote}"));
+    out.push_str(&tag[attr_end..]);
+    out
+}
+
+/// 从标签片段中删除整个 `name="..."` 属性（含前后一个空格；无该 attr 时原样返回）。
+fn remove_svg_attr(tag: &str, name: &str) -> String {
+    let pat = format!(" {name}=");
+    let Some(idx) = tag.find(&pat) else {
+        return tag.to_string();
+    };
+    let after = &tag[idx + pat.len()..];
+    let Some(quote) = after.chars().next() else {
+        return tag.to_string();
+    };
+    if quote != '"' && quote != '\'' {
+        return tag.to_string();
+    }
+    let Some(end_rel) = after[1..].find(quote) else {
+        return tag.to_string();
+    };
+    let attr_end = idx + pat.len() + 1 + end_rel + 1;
+    let mut out = String::with_capacity(tag.len());
+    out.push_str(&tag[..idx]);
+    out.push_str(&tag[attr_end..]);
+    out
 }
 
 impl ImageCache {
@@ -1937,6 +2137,55 @@ mod decode_tests {
     }
 
     /// 4×3 纯绿 SVG（含 `<?xml` 声明）栅格化往返：断言绿色主导 + alpha=255。
+    /// R3996：根 `background-color` 提升为 viewport 级填充——usvg 把根背景画成 viewBox
+    /// 区域 path（letterbox 内），chromium 铺满整个 viewport（css-sizing replaced-element-004
+    /// 簇根因）。style 声明与 presentation attr 两来源均须剥离；style 仅含背景时整个
+    /// style attr 删除。
+    #[test]
+    fn promote_svg_root_background_fills_viewport() {
+        // style 声明来源（replaced-element-004 形态）
+        let src = r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 5 1" style="background-color: green"></svg>"#;
+        let (bytes, bg) = promote_svg_root_background(src.as_bytes());
+        assert_eq!(bg, Some([0, 128, 0, 255]));
+        let out = String::from_utf8(bytes).unwrap();
+        assert!(!out.contains("background-color"), "declaration must be stripped: {out}");
+        // 提升后栅格化：letterbox 区（viewBox 5:1 → 100×100 视口的上下 40px）也被填充
+        let img = rasterize_svg_at(src.as_bytes(), 100, 100).expect("rasterize");
+        assert_eq!(
+            img.get_pixel(50, 5)[1],
+            128,
+            "top letterbox filled by promoted background"
+        );
+        assert_eq!(
+            img.get_pixel(50, 95)[1],
+            128,
+            "bottom letterbox filled by promoted background"
+        );
+        assert_eq!(img.get_pixel(50, 50)[1], 128, "viewBox content area still green");
+
+        // presentation attr 来源
+        let src2 =
+            r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 5 1" background-color="rgb(0, 128, 0)"></svg>"#;
+        let (bytes2, bg2) = promote_svg_root_background(src2.as_bytes());
+        assert_eq!(bg2, Some([0, 128, 0, 255]));
+        let out2 = String::from_utf8(bytes2).unwrap();
+        assert!(!out2.contains("background-color"), "attr must be stripped: {out2}");
+
+        // style 与其他声明混合：只删 background-color 项
+        let src3 = r#"<svg viewBox="0 0 5 1" style="background-color: green; opacity: 0.5"></svg>"#;
+        let (bytes3, bg3) = promote_svg_root_background(src3.as_bytes());
+        assert_eq!(bg3, Some([0, 128, 0, 255]));
+        let out3 = String::from_utf8(bytes3).unwrap();
+        assert!(out3.contains("opacity: 0.5"), "other decls kept: {out3}");
+        assert!(!out3.contains("background-color"));
+
+        // 无背景声明：源不动、返回 None
+        let src4 = r#"<svg viewBox="0 0 5 1"><rect width="5" height="1" fill="green"/></svg>"#;
+        let (bytes4, bg4) = promote_svg_root_background(src4.as_bytes());
+        assert_eq!(bg4, None);
+        assert_eq!(bytes4, src4.as_bytes());
+    }
+
     #[test]
     fn decode_svg_bytes_green_4x3() {
         let svg = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\
