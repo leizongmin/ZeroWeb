@@ -4806,3 +4806,134 @@ fn test_webaudio_merger_splitter_constant_source_m3xxiv() {
         "跨 context 四面 InvalidAccessError + AudioBufferSource 0入1出 + EventTarget + 索引越界 + 3-arg legacy 拒收"
     );
 }
+
+#[cfg(feature = "v8")]
+#[test]
+fn test_webaudio_processing_ctor_family2_m3xxvi() {
+    // media-audio M3 扩批 XXVI：处理类节点 ctor 族第二批——WaveShaper（curve 拷贝
+    // 语义 + oversample 枚举）/ DynamicsCompressor（五 AudioParam 缺省 + reduction
+    // number 面 + channelCount [1,2] 界）/ Panner（13 属性 + 六 AudioParam + listener
+    // 面 + RangeError/InvalidStateError 校验）/ IIRFilter（required + [1,20] 界 +
+    // fb[0]≠0 校验 + getFrequencyResponse 异常面）（WPT ctor-waveshaper /
+    // ctor-dynamicscompressor / dynamicscompressor-basic / ctor-panner /
+    // ctor-iirfilter / iirfilter-basic 断言面）。
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+
+    // 断言组 1：WaveShaper——curve set 拷贝（后续源数组变更不反映）+ null 清空 +
+    // oversample 枚举（invalid 静默保留）+ 0入1出。
+    sandbox
+        .execute(
+            "var ctx = new OfflineAudioContext(1, 1, 48000);\
+             var ws = new WaveShaperNode(ctx);\
+             var src = new Float32Array([0.25, 0.5]);\
+             ws.curve = src;\
+             src[0] = 9;\
+             var c1 = ws.curve[0];\
+             ws.oversample = '2x';\
+             ws.oversample = 'bogus';\
+             ws.curve = null;\
+             var _typeErr = '';\
+             try { ws.curve = 5; } catch (e) { _typeErr = e.name; }\
+             globalThis.__r1 = [String(ws instanceof WaveShaperNode), String(ws.numberOfInputs), String(ws.numberOfOutputs), String(c1), String(ws.curve), ws.oversample, _typeErr].join('|');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r1").unwrap().value,
+        "true|1|1|0.25|null|2x|TypeError",
+        "WaveShaper 1入1出（处理类节点）+ curve 拷贝语义（源变更不反映）+ null 清空 + oversample '2x' 保留/'bogus' 静默 + 非数组 TypeError"
+    );
+
+    // 断言组 2：DynamicsCompressor——五 AudioParam 缺省（attack Math.fround(0.003)）+
+    // reduction 为 number 非 AudioParam + {threshold} 选项反射 + channelCount
+    // [1,2] 界 ctor/setter 双面（0/3 → NotSupportedError、越界保留旧值）。
+    sandbox
+        .execute(
+            "var dc = new DynamicsCompressorNode(ctx, {threshold: -30});\
+             var errs = [];\
+             try { dc.channelCount = 3; } catch (e) { errs.push('set3:' + e.name); }\
+             try { dc.channelCount = 0; } catch (e) { errs.push('set0:' + e.name); }\
+             try { new DynamicsCompressorNode(ctx, {channelCount: 99}); } catch (e) { errs.push('ctor99:' + e.name); }\
+             try { new DynamicsCompressorNode(ctx, {channelCountMode: 'max'}); } catch (e) { errs.push('ctorMax:' + e.name); }\
+             globalThis.__r2 = [String(dc.threshold.value), String(dc.attack.value), String(dc.knee.value), String(dc.ratio.value), String(dc.release.value), typeof dc.reduction, dc.channelCountMode, String(dc.channelCount), errs.join(',')].join('|');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r2").unwrap().value,
+        "-30|0.003000000026077032|30|12|0.25|number|clamped-max|2|set3:NotSupportedError,set0:NotSupportedError,ctor99:NotSupportedError,ctorMax:NotSupportedError",
+        "DynamicsCompressor 五 param 缺省 + threshold 选项反射 + reduction number + [1,2] 界双面"
+    );
+
+    // 断言组 3：Panner——六 AudioParam 缺省（orientationX=1、float 精度 fround 面）+
+    // 距离模型三属性 + cone 缺省 360/360/0 + maxDistance ≤ 0 / rolloffFactor < 0 →
+    // RangeError、coneOuterGain ∉ [0,1] → InvalidStateError + channelCountMode
+    // 'max' setter → NotSupportedError。
+    sandbox
+        .execute(
+            "var pn = new PannerNode(ctx);\
+             pn.maxDistance = 5000; pn.rolloffFactor = 2; pn.refDistance = 3; pn.coneInnerAngle = 30; pn.coneOuterAngle = 120; pn.coneOuterGain = 0.5; pn.panningModel = 'HRTF'; pn.distanceModel = 'linear';\
+             var sq = Math.fround(Math.SQRT2);\
+             var pfr = new PannerNode(ctx, {positionX: Math.SQRT2});\
+             var errs = [];\
+             try { pn.maxDistance = 0; } catch (e) { errs.push('md:' + e.name); }\
+             try { pn.rolloffFactor = -1; } catch (e) { errs.push('rf:' + e.name); }\
+             try { pn.coneOuterGain = 2; } catch (e) { errs.push('cog:' + e.name); }\
+             try { pn.channelCountMode = 'max'; } catch (e) { errs.push('mode:' + e.name); }\
+             try { new PannerNode(ctx, {coneOuterGain: -0.5}); } catch (e) { errs.push('ctorCog:' + e.name); }\
+             try { new PannerNode(ctx, {distanceModel: 'bogus'}); } catch (e) { errs.push('ctorDm:' + e.name); }\
+             globalThis.__r3 = [pn.panningModel, pn.distanceModel, String(pn.maxDistance), String(pn.rolloffFactor), String(pn.refDistance), String(pn.coneInnerAngle), String(pn.coneOuterAngle), String(pn.coneOuterGain), String(pn.orientationX.value), String(pfr.positionX.value === sq), String(pn.channelCountMode), String(pn.channelCount), errs.join(',')].join('|');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r3").unwrap().value,
+        "HRTF|linear|5000|2|3|30|120|0.5|1|true|clamped-max|2|md:RangeError,rf:RangeError,cog:InvalidStateError,mode:NotSupportedError,ctorCog:InvalidStateError,ctorDm:TypeError",
+        "Panner 13 属性反射 + 六 param 缺省 + ctor options float 舍入 + 校验四面 + ctor dict 校验双面"
+    );
+
+    // 断言组 4：AudioListener——listener 惰性单例（两次取值同对象）+ 九 param 缺省
+    // （forwardZ=-1/upY=1）+ AudioContext/OfflineAudioContext 双面。
+    sandbox
+        .execute(
+            "var oc = new OfflineAudioContext(1, 1, 48000);\
+             var l1 = oc.listener, l2 = oc.listener;\
+             var ac2 = new AudioContext();\
+             globalThis.__r4 = [String(l1 === l2), String(l1.positionX.value), String(l1.forwardZ.value), String(l1.upY.value), String(ac2.listener.forwardZ.value)].join('|');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r4").unwrap().value,
+        "true|0|-1|1|-1",
+        "listener 惰性单例 + forwardZ -1/upY 1 缺省 + Offline/Audio 双 context 面"
+    );
+
+    // 断言组 5：IIRFilter——required 缺失 TypeError + [1,20] 界 NotSupportedError +
+    // fb[0]=0 / ff 全零 InvalidStateError + 非 finite TypeError + createIIRFilter
+    // 工厂同 builder + getFrequencyResponse 长度不齐 InvalidAccessError。
+    sandbox
+        .execute(
+            "var errs = [];\
+             try { new IIRFilterNode(ctx, {feedback: [1]}); } catch (e) { errs.push('noFf:' + e.name); }\
+             try { new IIRFilterNode(ctx); } catch (e) { errs.push('noDict:' + e.name); }\
+             try { new IIRFilterNode(ctx, {feedforward: [1]}); } catch (e) { errs.push('noFb:' + e.name); }\
+             try { new IIRFilterNode(ctx, {feedforward: new Array(21).fill(1), feedback: [1]}); } catch (e) { errs.push('len21:' + e.name); }\
+             try { new IIRFilterNode(ctx, {feedforward: [1], feedback: [0, 1]}); } catch (e) { errs.push('fb0:' + e.name); }\
+             try { new IIRFilterNode(ctx, {feedforward: [0, 0], feedback: [1]}); } catch (e) { errs.push('ffZero:' + e.name); }\
+             try { new IIRFilterNode(ctx, {feedforward: [NaN], feedback: [1]}); } catch (e) { errs.push('nan:' + e.name); }\
+             var iir = ctx.createIIRFilter([0.5, 0.5], [1, -0.5]);\
+             var fr = new Float32Array(3), mg = new Float32Array(2), ph = new Float32Array(3);\
+             try { iir.getFrequencyResponse(fr, mg, ph); } catch (e) { errs.push('mismatch:' + e.name); }\
+             try { iir.getFrequencyResponse(null, mg, ph); } catch (e) { errs.push('null:' + e.name); }\
+             globalThis.__r5 = [errs.join(','), String(iir instanceof IIRFilterNode), String(iir.numberOfInputs), String(iir.numberOfOutputs)].join('|');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r5").unwrap().value,
+        "noFf:TypeError,noDict:TypeError,noFb:TypeError,len21:NotSupportedError,fb0:InvalidStateError,ffZero:InvalidStateError,nan:TypeError,mismatch:InvalidAccessError,null:TypeError|true|1|1",
+        "IIRFilter required/界/校验八面 + 工厂同 builder + getFrequencyResponse 异常面"
+    );
+}

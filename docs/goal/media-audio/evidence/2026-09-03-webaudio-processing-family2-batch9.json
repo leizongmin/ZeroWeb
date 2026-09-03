@@ -1,0 +1,40 @@
+{
+  "batch": "WPT webaudio 第九批",
+  "date": "2026-09-03",
+  "topic": "处理类节点 ctor 族第二批——WaveShaper/DynamicsCompressor/Panner/IIRFilter 语义面",
+  "imported": [
+    "webaudio/the-audio-api/the-waveshapernode-interface/ctor-waveshaper.html",
+    "webaudio/the-audio-api/the-dynamicscompressornode-interface/ctor-dynamicscompressor.html",
+    "webaudio/the-audio-api/the-dynamicscompressornode-interface/dynamicscompressor-basic.html",
+    "webaudio/the-audio-api/the-pannernode-interface/ctor-panner.html",
+    "webaudio/the-audio-api/the-iirfilternode-interface/iirfilter-basic.html"
+  ],
+  "excluded": [
+    "webaudio/the-audio-api/the-iirfilternode-interface/ctor-iirfilter.html（Functional task 依赖 startRendering 渲染对比断言——RFC §0 不做清单；语义面 AudioNodeOptions（{channelCount:17} 反射）已落 shim 并验证，随渲染切片复评）"
+  ],
+  "shim_changes": [
+    "WaveShaperNode：curve set 拷贝存储（源数组后续变更不反映——WPT 断言面）+ null 清空 + 非数组 TypeError + oversample enum（ctor invalid → TypeError / setter invalid 静默保留）",
+    "DynamicsCompressorNode：threshold -24/knee 30/ratio 12/attack fround(0.003)/release 0.25 五 AudioParam 缺省 + reduction number（非 AudioParam）+ channelCount [1,2] 界 ctor/setter 双面（0/3/99 → NotSupportedError、越界保留旧值）+ channelCountMode 'clamped-max' 缺省（'max' → NotSupportedError）",
+    "PannerNode：六 AudioParam（position/orientation 三组、ctor options float 舍入 Math.fround）+ panningModel/distanceModel 枚举 + refDistance 1/maxDistance 10000/rolloffFactor 1 + cone 三属性；maxDistance ≤ 0 / rolloffFactor < 0 → RangeError、coneOuterGain ∉ [0,1] → InvalidStateError（ctor 与 setter 双面）+ channelCount [1,2] 界 + mode 'max' setter NotSupportedError",
+    "AudioListener：ctx.listener 惰性单例（AudioContext/OfflineAudioContext 双面）——position/forward/up 九 AudioParam 缺省（forwardZ=-1/upY=1）",
+    "IIRFilterNode：feedforward/feedback required 缺失 TypeError + 两侧 [1,20] 界 NotSupportedError + fb[0]=0/ff 全零 InvalidStateError + 非 finite TypeError + createIIRFilter 工厂同 builder + getFrequencyResponse 异常面（null → TypeError、长度不齐 → InvalidAccessError）；ctor 经 _zwWANodeCtor 分发——AudioNodeOptions dict 基类界应用（ctor-iirfilter {channelCount:17} 反射面）",
+    " AudioContext/OfflineAudioContext 工厂五件：createWaveShaper/createDynamicsCompressor/createPanner/createIIRFilter"
+  ],
+  "fix_during_landing": [
+    "上一轮 429 中断遗留：AudioContext.listener defineProperty 头行丢失（shim 语法损坏——拼接 node --check 复现）→ 补回",
+    "IIRFilterNode ctor 初版不经 _zwWANodeCtor → AudioNodeOptions 不应用（ctor-iirfilter 'Test AudioNodeOptions' 断言 channelCount 17 失败）→ 改走 _zwWANodeCtor 统一分发"
+  ],
+  "results": {
+    "pass": 623,
+    "fail": 0,
+    "timeout": 0,
+    "net": "+239 subtest 净涨零回归（384→623）；21 用例 21 文件（第九批 +5 导入）"
+  },
+  "unit_test": "test_webaudio_processing_ctor_family2_m3xxvi（五断言组：WaveShaper 拷贝语义/DynamicsCompressor 参数面+界/Panner 13 属性+校验四面/AudioListener 惰性单例/IIRFilter 八异常面）",
+  "gates": {
+    "make_test": "18824 passed / 0 failed",
+    "engine": "2580 全绿",
+    "clippy": "-D warnings 零警告",
+    "fmt": "clean"
+  }
+}

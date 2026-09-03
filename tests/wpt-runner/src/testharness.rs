@@ -1623,6 +1623,18 @@ pub const WEBAUDIO_TEST_FILES: &[&str] = &[
     // 3-arg legacy 拒收（shim 第八批同步落地）。
     "webaudio/the-audio-api/the-audionode-interface/audionode.html",
     "webaudio/the-audio-api/the-audionode-interface/different-contexts.html",
+    // ---- 第九批（2026-09-03）：处理类节点 ctor 第二批——WaveShaper（curve 拷贝
+    // 语义 + oversample enum）/ DynamicsCompressor（五 AudioParam 缺省 + reduction
+    // number + channelCount [1,2] 界）/ Panner（13 属性 + 六 AudioParam + listener
+    // 面 + RangeError/InvalidStateError 校验）/ IIRFilter（feedforward/feedback
+    // required + [1,20] 界 + fb[0]≠0 + getFrequencyResponse 异常面）——全部无渲染。
+    // 不导入 ctor-iirfilter（Functional task 依赖 startRendering 渲染对比——
+    // 语义面 AudioNodeOptions 已落 shim，随渲染切片复评）。
+    "webaudio/the-audio-api/the-waveshapernode-interface/ctor-waveshaper.html",
+    "webaudio/the-audio-api/the-dynamicscompressornode-interface/ctor-dynamicscompressor.html",
+    "webaudio/the-audio-api/the-dynamicscompressornode-interface/dynamicscompressor-basic.html",
+    "webaudio/the-audio-api/the-pannernode-interface/ctor-panner.html",
+    "webaudio/the-audio-api/the-iirfilternode-interface/iirfilter-basic.html",
     // 不导入：ctor-audiobuffer.html（末 task「multiple contexts」依赖
     // startRendering——audit runner 整文件跑，前段构造面无法单独导入）；
     // audiobuffer-copy-channel（startRendering 后段同文件不可分割——数据面已落

@@ -7815,6 +7815,10 @@
     else if (nodeName === 'AnalyserNode') node = _zwWABuildAnalyser(ctx, options);
     else if (nodeName === 'ConstantSourceNode') node = _zwWABuildConstantSource(ctx, options);
     else if (nodeName === 'AudioBufferSourceNode') node = _zwWABuildBufferSource(ctx, options);
+    else if (nodeName === 'WaveShaperNode') node = _zwWABuildWaveShaper(ctx, options);
+    else if (nodeName === 'IIRFilterNode') node = _zwWABuildIIRFilter(ctx, options.feedforward, options.feedback);
+    else if (nodeName === 'DynamicsCompressorNode') node = _zwWABuildDynamicsCompressor(ctx, options);
+    else if (nodeName === 'PannerNode') node = _zwWABuildPanner(ctx, options);
     else if (nodeName === 'ChannelSplitterNode') node = _zwWABuildChannelSplitter(ctx, options);
     else if (nodeName === 'ChannelMergerNode') node = _zwWABuildChannelMerger(ctx, options);
     else node = ctx.createGain();
@@ -8295,6 +8299,467 @@
   AudioContext.prototype.createBufferSource = function () { return _zwWABuildBufferSource(this); };
   if (typeof globalThis.OfflineAudioContext !== 'undefined') {
     OfflineAudioContext.prototype.createBufferSource = AudioContext.prototype.createBufferSource;
+  }
+  // ---- M3 扩批 XXVI（2026-09-03）：处理类节点 ctor 族第二批——WaveShaper/
+  // DynamicsCompressor/Panner/IIRFilter（WPT ctor-waveshaper / ctor-dynamicscompressor
+  // + dynamicscompressor-basic / ctor-panner / ctor-iirfilter + iirfilter-basic
+  // 断言面；全部无渲染）。共性：channelCount [1,2] 夹取面（panner/dc——0/3/99 →
+  // NotSupportedError）+ channelCountMode 'clamped-max' 缺省（'max' 抛）。headless
+  // 全部为语义面（无 DSP——RFC §0 简化记录）。
+  // https://webaudio.github.io/web-audio-api/#WaveShaperNode
+  // 共享：channelCount [1,2] ctor 界校验（panner/dc 专属——基类 [0/32] 界不适用）。
+  function _zwWACtorChannel12(nodeName, options) {
+    if (options && typeof options === 'object' && options.channelCount != null) {
+      var cc = Number(options.channelCount);
+      if (cc !== 1 && cc !== 2) {
+        throw new (globalThis.DOMException || Error)(
+          "Failed to construct '" + nodeName + "': channelCount " + options.channelCount + " not supported (must be 1 or 2).", 'NotSupportedError');
+      }
+    }
+    if (options && typeof options === 'object' && options.channelCountMode != null) {
+      var m = String(options.channelCountMode);
+      if (m !== 'clamped-max' && m !== 'explicit') {
+        if (m === 'max') {
+          throw new (globalThis.DOMException || Error)(
+            "Failed to construct '" + nodeName + "': channelCountMode 'max' not supported.", 'NotSupportedError');
+        }
+        throw new TypeError("Failed to construct '" + nodeName + "': Failed to read the 'channelCountMode' property from 'AudioNodeOptions': The provided value '" + m + "' is not a valid enum value.");
+      }
+    }
+  }
+  // 共享：channelCount [1,2] setter 面（0/3/99 → NotSupportedError、越界赋值保留
+  // 旧值——ctor-panner 断言「after setting to 0 → beEqualTo(2)」）。
+  function _zwWAChannel12Setter(node, v) {
+    var n = Number(v);
+    if (n !== 1 && n !== 2) {
+      throw new (globalThis.DOMException || Error)(
+        'channelCount ' + v + ' not supported (must be 1 or 2).', 'NotSupportedError');
+    }
+    node._zwChannelCount = n;
+  }
+  // [1,2] 界 setter 装载（覆盖原型 setter——NotSupportedError 抛出与基类 [0/32]
+  // 界不同；越界赋值保留旧值——ctor-panner「after setting to 0 → beEqualTo(2)」面）。
+  function _zwWAInstallChannel12Setter(node) {
+    Object.defineProperty(node, 'channelCount', {
+      get: function () { return node._zwChannelCount; },
+      set: function (v) { _zwWAChannel12Setter(node, v); },
+      configurable: true,
+    });
+  }
+  // WaveShaperNode（spec §——curve Float32Array|null（set 时**拷贝**存储——
+  // waveshaper-copy-curve 断言面；get 返回拷贝）+ oversample enum 'none'|'2x'|'4x'
+  //（invalid → TypeError ctor 面/setter 静默保留）。
+  function _zwWABuildWaveShaper(ctx, options) {
+    var node = _zwWANode('waveshaper', ctx._zwCtxId, 0);
+    var _curve = null;
+    var _oversample = 'none';
+    Object.defineProperty(node, 'curve', {
+      get: function () { return _curve ? new Float32Array(_curve) : null; },
+      set: function (v) {
+        if (v === null) { _curve = null; return; }
+        if (typeof v !== 'object' || typeof v.length !== 'number') {
+          throw new TypeError("Failed to set the 'curve' property on 'WaveShaperNode': The provided value is not of type 'Float32Array'.");
+        }
+        _curve = new Float32Array(v); // spec：赋值即拷贝（后续源数组变更不反映）
+      },
+      configurable: true,
+    });
+    Object.defineProperty(node, 'oversample', {
+      get: function () { return _oversample; },
+      set: function (v) {
+        var s = String(v == null ? '' : v);
+        if (s === 'none' || s === '2x' || s === '4x') _oversample = s;
+      },
+      configurable: true,
+    });
+    if (options && typeof options === 'object') {
+      if (options.curve !== undefined && options.curve !== null) {
+        if (typeof options.curve !== 'object' || typeof options.curve.length !== 'number') {
+          throw new TypeError("Failed to construct 'WaveShaperNode': Failed to read the 'curve' property from 'WaveShaperOptions': The provided value is not of type 'Float32Array'.");
+        }
+        node.curve = options.curve;
+      }
+      if (options.oversample != null) {
+        var os = String(options.oversample);
+        if (os !== 'none' && os !== '2x' && os !== '4x') {
+          throw new TypeError("Failed to construct 'WaveShaperNode': Failed to read the 'oversample' property from 'WaveShaperOptions': The provided value '" + os + "' is not a valid enum value.");
+        }
+        _oversample = os;
+      }
+    }
+    return node;
+  }
+  function WaveShaperNode(ctx, options) { return _zwWANodeCtor('WaveShaperNode', ctx, options); }
+  WaveShaperNode.prototype = _zwWANode.prototype;
+  globalThis.WaveShaperNode = globalThis.WaveShaperNode || WaveShaperNode;
+  AudioContext.prototype.createWaveShaper = function () { return _zwWABuildWaveShaper(this); };
+  // DynamicsCompressorNode（spec §——threshold -24 / knee 30 / ratio 12 /
+  // attack 0.003 / release 0.25 五 AudioParam + reduction **number** 缺省 0
+  //（非 AudioParam——dynamicscompressor-basic typeof 断言面）；channelCount [1,2]
+  // 界 + mode 'clamped-max' 缺省（'max' → NotSupportedError）。
+  function _zwWABuildDynamicsCompressor(ctx, options) {
+    var node = _zwWANode('dynamicscompressor', ctx._zwCtxId, 0);
+    node._zwChannelCountMode = 'clamped-max';
+    _zwWAInstallChannel12Setter(node);
+    var defs = [['threshold', -24], ['knee', 30], ['ratio', 12], ['attack', Math.fround(0.003)], ['release', 0.25]];
+    for (var _di = 0; _di < defs.length; _di++) {
+      (function (name, val) {
+        var p = globalThis._zwMakeAudioParam(val, ctx._zwCtxId);
+        Object.defineProperty(node, name, { get: function () { return p; }, configurable: true });
+      })(defs[_di][0], defs[_di][1]);
+    }
+    node._zwReduction = 0;
+    Object.defineProperty(node, 'reduction', {
+      get: function () { return node._zwReduction; },
+      configurable: true,
+    });
+    if (options && typeof options === 'object') {
+      for (var _oi = 0; _oi < defs.length; _oi++) {
+        var nm = defs[_oi][0];
+        if (options[nm] != null) node[nm].value = Number(options[nm]);
+      }
+    }
+    return node;
+  }
+  function DynamicsCompressorNode(ctx, options) {
+    if (!(ctx && typeof ctx === 'object' && (ctx._zwCtxId != null || typeof ctx.createGain === 'function'))) {
+      throw new TypeError("Failed to construct 'DynamicsCompressorNode': parameter 1 is not of type 'BaseAudioContext'.");
+    }
+    if (options != null && typeof options !== 'object') {
+      throw new TypeError("Failed to construct 'DynamicsCompressorNode': The provided value is not of type 'object'.");
+    }
+    _zwWACtorChannel12('DynamicsCompressorNode', options);
+    var node = _zwWABuildDynamicsCompressor(ctx, options);
+    // 合法 channelCount/channelCountMode ctor 值应用（W3CTH 断言 node.channelCount == value 面）。
+    if (options && typeof options === 'object') {
+      if (options.channelCount != null) node.channelCount = Number(options.channelCount);
+      if (options.channelCountMode != null) node.channelCountMode = String(options.channelCountMode);
+    }
+    if (options && typeof options === 'object' && options.channelInterpretation != null) {
+      var ci = String(options.channelInterpretation);
+      if (ci !== 'speakers' && ci !== 'discrete') {
+        throw new TypeError("Failed to construct 'DynamicsCompressorNode': Failed to read the 'channelInterpretation' property from 'AudioNodeOptions': The provided value '" + ci + "' is not a valid enum value.");
+      }
+      node._zwChannelInterpretation = ci;
+    }
+    return node;
+  }
+  DynamicsCompressorNode.prototype = _zwWANode.prototype;
+  globalThis.DynamicsCompressorNode = globalThis.DynamicsCompressorNode || DynamicsCompressorNode;
+  AudioContext.prototype.createDynamicsCompressor = function () { return _zwWABuildDynamicsCompressor(this); };
+  // PannerNode（spec §——panningModel equalpower 缺省 + position/orientation 六
+  // AudioParam + distanceModel 'inverse' 缺省 + refDistance 1/maxDistance 10000/
+  // rolloffFactor 1 + cone 三属性；maxDistance ≤ 0 / rolloffFactor < 0 → RangeError、
+  // coneOuterGain ∉ [0,1] → InvalidStateError（ctor 与 setter 双面）；channelCount
+  // [1,2] 界 + mode 'clamped-max' 缺省。listener 面在 AudioContext 侧补接）。
+  function _zwWABuildPanner(ctx, options) {
+    var node = _zwWANode('panner', ctx._zwCtxId, 0);
+    node._zwChannelCountMode = 'clamped-max';
+    _zwWAInstallChannel12Setter(node);
+    var _panningModel = 'equalpower';
+    var _distanceModel = 'inverse';
+    var _refDistance = 1;
+    var _maxDistance = 10000;
+    var _rolloffFactor = 1;
+    var _coneInner = 360;
+    var _coneOuter = 360;
+    var _coneOuterGain = 0;
+    var pdefs = [['positionX', 0], ['positionY', 0], ['positionZ', 0], ['orientationX', 1], ['orientationY', 0], ['orientationZ', 0]];
+    for (var _pi = 0; _pi < pdefs.length; _pi++) {
+      (function (name, val) {
+        var p = globalThis._zwMakeAudioParam(val, ctx._zwCtxId);
+        Object.defineProperty(node, name, { get: function () { return p; }, configurable: true });
+      })(pdefs[_pi][0], pdefs[_pi][1]);
+    }
+    Object.defineProperty(node, 'panningModel', {
+      get: function () { return _panningModel; },
+      set: function (v) {
+        var s = String(v == null ? '' : v);
+        if (s === 'equalpower' || s === 'HRTF') _panningModel = s;
+      },
+      configurable: true,
+    });
+    // channelCountMode [1,2] 拓扑专属 setter（'max' → NotSupportedError 保留旧值——
+    // ctor-panner「after setting to max → beEqualTo(clamped-max)」面；enum invalid
+    // 静默保留——spec AudioNode setter 惯例）。
+    Object.defineProperty(node, 'channelCountMode', {
+      get: function () { return node._zwChannelCountMode || 'clamped-max'; },
+      set: function (v) {
+        var sm = String(v == null ? '' : v);
+        if (sm === 'max') {
+          throw new (globalThis.DOMException || Error)(
+            "Failed to set the 'channelCountMode' property on 'PannerNode': 'max' not supported.", 'NotSupportedError');
+        }
+        if (sm === 'clamped-max' || sm === 'explicit') node._zwChannelCountMode = sm;
+      },
+      configurable: true,
+    });
+    Object.defineProperty(node, 'distanceModel', {
+      get: function () { return _distanceModel; },
+      set: function (v) {
+        var s = String(v == null ? '' : v);
+        if (s === 'linear' || s === 'inverse' || s === 'exponential') _distanceModel = s;
+      },
+      configurable: true,
+    });
+    Object.defineProperty(node, 'refDistance', {
+      get: function () { return _refDistance; },
+      set: function (v) { _refDistance = Number(v); },
+      configurable: true,
+    });
+    Object.defineProperty(node, 'maxDistance', {
+      get: function () { return _maxDistance; },
+      set: function (v) {
+        var n = Number(v);
+        if (isNaN(n) || n <= 0) {
+          throw new RangeError("Failed to set the 'maxDistance' property on 'PannerNode': The value must be positive.");
+        }
+        _maxDistance = n;
+      },
+      configurable: true,
+    });
+    Object.defineProperty(node, 'rolloffFactor', {
+      get: function () { return _rolloffFactor; },
+      set: function (v) {
+        var n = Number(v);
+        if (isNaN(n) || n < 0) {
+          throw new RangeError("Failed to set the 'rolloffFactor' property on 'PannerNode': The value must be non-negative.");
+        }
+        _rolloffFactor = n;
+      },
+      configurable: true,
+    });
+    Object.defineProperty(node, 'coneInnerAngle', {
+      get: function () { return _coneInner; },
+      set: function (v) { _coneInner = Number(v); },
+      configurable: true,
+    });
+    Object.defineProperty(node, 'coneOuterAngle', {
+      get: function () { return _coneOuter; },
+      set: function (v) { _coneOuter = Number(v); },
+      configurable: true,
+    });
+    Object.defineProperty(node, 'coneOuterGain', {
+      get: function () { return _coneOuterGain; },
+      set: function (v) {
+        var n = Number(v);
+        if (isNaN(n) || n < 0 || n > 1) {
+          throw new (globalThis.DOMException || Error)(
+            "Failed to set the 'coneOuterGain' property on 'PannerNode': The value must be in [0, 1].", 'InvalidStateError');
+        }
+        _coneOuterGain = n;
+      },
+      configurable: true,
+    });
+    if (options && typeof options === 'object') {
+      // 数值属性 ctor 面校验（RangeError/InvalidStateError 同 setter 语义）+ 反射。
+      if (options.maxDistance != null) {
+        var md = Number(options.maxDistance);
+        if (isNaN(md) || md <= 0) {
+          throw new RangeError("Failed to construct 'PannerNode': maxDistance must be positive.");
+        }
+        _maxDistance = md;
+      }
+      if (options.rolloffFactor != null) {
+        var rf = Number(options.rolloffFactor);
+        if (isNaN(rf) || rf < 0) {
+          throw new RangeError("Failed to construct 'PannerNode': rolloffFactor must be non-negative.");
+        }
+        _rolloffFactor = rf;
+      }
+      if (options.coneOuterGain != null) {
+        var cog = Number(options.coneOuterGain);
+        if (isNaN(cog) || cog < 0 || cog > 1) {
+          throw new (globalThis.DOMException || Error)(
+            "Failed to construct 'PannerNode': coneOuterGain must be in [0, 1].", 'InvalidStateError');
+        }
+        _coneOuterGain = cog;
+      }
+      if (options.refDistance != null) _refDistance = Number(options.refDistance);
+      if (options.coneInnerAngle != null) _coneInner = Number(options.coneInnerAngle);
+      if (options.coneOuterAngle != null) _coneOuter = Number(options.coneOuterAngle);
+      if (options.panningModel != null) {
+        var pm = String(options.panningModel);
+        if (pm !== 'equalpower' && pm !== 'HRTF') {
+          throw new TypeError("Failed to construct 'PannerNode': Failed to read the 'panningModel' property from 'PannerOptions': The provided value '" + pm + "' is not a valid enum value.");
+        }
+        _panningModel = pm;
+      }
+      if (options.distanceModel != null) {
+        var dm = String(options.distanceModel);
+        if (dm !== 'linear' && dm !== 'inverse' && dm !== 'exponential') {
+          throw new TypeError("Failed to construct 'PannerNode': Failed to read the 'distanceModel' property from 'PannerOptions': The provided value '" + dm + "' is not a valid enum value.");
+        }
+        _distanceModel = dm;
+      }
+      // position/orientation AudioParam 值为 **float** 精度（spec WebIDL float——
+      // ctor-panner「properly rounded to a float」断言面：Math.fround(Math.SQRT2)）。
+      var _pkeys = ['positionX', 'positionY', 'positionZ', 'orientationX', 'orientationY', 'orientationZ'];
+      for (var _pk = 0; _pk < _pkeys.length; _pk++) {
+        if (options[_pkeys[_pk]] != null) node[_pkeys[_pk]].value = Math.fround(Number(options[_pkeys[_pk]]));
+      }
+    }
+    return node;
+  }
+  function PannerNode(ctx, options) {
+    if (!(ctx && typeof ctx === 'object' && (ctx._zwCtxId != null || typeof ctx.createGain === 'function'))) {
+      throw new TypeError("Failed to construct 'PannerNode': parameter 1 is not of type 'BaseAudioContext'.");
+    }
+    if (options != null && typeof options !== 'object') {
+      throw new TypeError("Failed to construct 'PannerNode': The provided value is not of type 'object'.");
+    }
+    _zwWACtorChannel12('PannerNode', options);
+    var node = _zwWABuildPanner(ctx, options);
+    // 合法 channelCount/channelCountMode ctor 值应用（同 dc 面）。
+    if (options && typeof options === 'object') {
+      if (options.channelCount != null) node.channelCount = Number(options.channelCount);
+      if (options.channelCountMode != null) node.channelCountMode = String(options.channelCountMode);
+    }
+    if (options && typeof options === 'object' && options.channelInterpretation != null) {
+      var ci = String(options.channelInterpretation);
+      if (ci !== 'speakers' && ci !== 'discrete') {
+        throw new TypeError("Failed to construct 'PannerNode': Failed to read the 'channelInterpretation' property from 'AudioNodeOptions': The provided value '" + ci + "' is not a valid enum value.");
+      }
+      node._zwChannelInterpretation = ci;
+    }
+    return node;
+  }
+  PannerNode.prototype = _zwWANode.prototype;
+  globalThis.PannerNode = globalThis.PannerNode || PannerNode;
+  AudioContext.prototype.createPanner = function () { return _zwWABuildPanner(this); };
+  // AudioListener 最小面（context.listener——position/forward/up 三组 AudioParam
+  // 缺省值——ctor-panner listenerAttributes 断言面）。
+  AudioContext.prototype._zwListener = null;
+  Object.defineProperty(AudioContext.prototype, 'listener', {
+    get: function () {
+      if (!this._zwListener) {
+        var l = { _zwKind: 'listener', _zwCtx: this._zwCtxId };
+        var ldefs = [['positionX', 0], ['positionY', 0], ['positionZ', 0], ['forwardX', 0], ['forwardY', 0], ['forwardZ', -1], ['upX', 0], ['upY', 1], ['upZ', 0]];
+        for (var _li = 0; _li < ldefs.length; _li++) {
+          (function (name, val) {
+            var p = globalThis._zwMakeAudioParam(val, l._zwCtx);
+            Object.defineProperty(l, name, { get: function () { return p; }, configurable: true });
+          })(ldefs[_li][0], ldefs[_li][1]);
+        }
+        this._zwListener = l;
+      }
+      return this._zwListener;
+    },
+    configurable: true,
+  });
+  if (typeof globalThis.OfflineAudioContext !== 'undefined') {
+    OfflineAudioContext.prototype._zwListener = null;
+    Object.defineProperty(OfflineAudioContext.prototype, 'listener', {
+      get: function () {
+        // 同 AudioContext listener（ctor-panner initializeContext 走 Offline 面断言）。
+        if (!this._zwListener) {
+          var l = { _zwKind: 'listener', _zwCtx: this._zwCtxId };
+          var ldefs = [['positionX', 0], ['positionY', 0], ['positionZ', 0], ['forwardX', 0], ['forwardY', 0], ['forwardZ', -1], ['upX', 0], ['upY', 1], ['upZ', 0]];
+          for (var _li = 0; _li < ldefs.length; _li++) {
+            (function (name, val) {
+              var p = globalThis._zwMakeAudioParam(val, l._zwCtx);
+              Object.defineProperty(l, name, { get: function () { return p; }, configurable: true });
+            })(ldefs[_li][0], ldefs[_li][1]);
+          }
+          this._zwListener = l;
+        }
+        return this._zwListener;
+      },
+      configurable: true,
+    });
+  }
+  // IIRFilterNode（spec §——feedforward/feedback required（缺失 → TypeError）、
+  // 两侧 [1,20] 长（越界 → NotSupportedError）、fb[0] = 0 / ff 全零 →
+  // InvalidStateError、系数非 finite → TypeError；getFrequencyResponse 异常面
+  //（null 参数 → TypeError、长度不齐 → InvalidAccessError；数值面无 DSP 不做）。
+  // createIIRFilter 工厂同 builder。iirfilter-basic / ctor-iirfilter 断言面。
+  function _zwWAValidateIIRCoefs(ff, fb) {
+    var _toCoefArray = function (src, name) {
+      if (src == null || typeof src !== 'object' || typeof src.length !== 'number') {
+        throw new TypeError("Failed to construct 'IIRFilterNode': Failed to read the '" + name + "' property: The provided value is not of type 'sequence<float>'.");
+      }
+      var arr = [];
+      for (var i = 0; i < src.length; i++) {
+        var n = Number(src[i]);
+        if (isNaN(n) || n === Infinity || n === -Infinity) {
+          throw new TypeError("Failed to construct 'IIRFilterNode': " + name + " coefficient " + i + " is non-finite.");
+        }
+        arr.push(n);
+      }
+      return arr;
+    };
+    var ffa = _toCoefArray(ff, 'feedforward');
+    var fba = _toCoefArray(fb, 'feedback');
+    if (ffa.length < 1 || ffa.length > 20 || fba.length < 1 || fba.length > 20) {
+      throw new (globalThis.DOMException || Error)(
+        "Failed to construct 'IIRFilterNode': feedforward/feedback coefficients must have length in [1, 20].", 'NotSupportedError');
+    }
+    if (fba[0] === 0) {
+      throw new (globalThis.DOMException || Error)(
+        "Failed to construct 'IIRFilterNode': first feedback coefficient must be non-zero.", 'InvalidStateError');
+    }
+    var _allZero = true;
+    for (var j = 0; j < ffa.length; j++) { if (ffa[j] !== 0) { _allZero = false; break; } }
+    if (_allZero) {
+      throw new (globalThis.DOMException || Error)(
+        "Failed to construct 'IIRFilterNode': feedforward coefficients cannot all be zero.", 'InvalidStateError');
+    }
+    return { ff: ffa, fb: fba };
+  }
+  function _zwWABuildIIRFilter(ctx, feedforward, feedback) {
+    var coefs = _zwWAValidateIIRCoefs(feedforward, feedback);
+    var node = _zwWANode('iirfilter', ctx._zwCtxId, 0);
+    node._zwFF = coefs.ff;
+    node._zwFB = coefs.fb;
+    node.getFrequencyResponse = function (frequencyHz, magResponse, phaseResponse) {
+      if (frequencyHz == null || typeof frequencyHz.length !== 'number') {
+        throw new TypeError("Failed to execute 'getFrequencyResponse' on 'IIRFilterNode': parameter 1 is not of type 'Float32Array'.");
+      }
+      if (magResponse == null || typeof magResponse.length !== 'number') {
+        throw new TypeError("Failed to execute 'getFrequencyResponse' on 'IIRFilterNode': parameter 2 is not of type 'Float32Array'.");
+      }
+      if (phaseResponse == null || typeof phaseResponse.length !== 'number') {
+        throw new TypeError("Failed to execute 'getFrequencyResponse' on 'IIRFilterNode': parameter 3 is not of type 'Float32Array'.");
+      }
+      if (magResponse.length !== frequencyHz.length || phaseResponse.length !== frequencyHz.length) {
+        throw new (globalThis.DOMException || Error)(
+          "Failed to execute 'getFrequencyResponse' on 'IIRFilterNode': response arrays must have the same length as frequencyHz.", 'InvalidAccessError');
+      }
+    };
+    return node;
+  }
+  function IIRFilterNode(ctx, options) {
+    if (!(ctx && typeof ctx === 'object' && (ctx._zwCtxId != null || typeof ctx.createGain === 'function'))) {
+      throw new TypeError("Failed to construct 'IIRFilterNode': parameter 1 is not of type 'BaseAudioContext'.");
+    }
+    if (options == null || typeof options !== 'object') {
+      throw new TypeError("Failed to construct 'IIRFilterNode': The provided value is not of type 'IIRFilterOptions'.");
+    }
+    // WebIDL required members：feedforward/feedback 缺失 → TypeError。
+    if (options.feedforward === undefined) {
+      throw new TypeError("Failed to construct 'IIRFilterNode': Failed to read the 'feedforward' property from 'IIRFilterOptions': Required member is undefined.");
+    }
+    if (options.feedback === undefined) {
+      throw new TypeError("Failed to construct 'IIRFilterNode': Failed to read the 'feedback' property from 'IIRFilterOptions': Required member is undefined.");
+    }
+    // 经 _zwWANodeCtor 分发 builder（AudioNodeOptions dict——channelCount [1,32]
+    // 基类界 + mode/interpretation enum——ctor-iirfilter 'Test AudioNodeOptions'
+    // 断言面：{channelCount:17} 反射）。
+    return _zwWANodeCtor('IIRFilterNode', ctx, options);
+  }
+  IIRFilterNode.prototype = _zwWANode.prototype;
+  globalThis.IIRFilterNode = globalThis.IIRFilterNode || IIRFilterNode;
+  AudioContext.prototype.createIIRFilter = function (feedforward, feedback) {
+    if (feedforward === undefined || feedback === undefined) {
+      throw new TypeError("Failed to execute 'createIIRFilter' on 'BaseAudioContext': 2 arguments required.");
+    }
+    return _zwWABuildIIRFilter(this, feedforward, feedback);
+  };
+  if (typeof globalThis.OfflineAudioContext !== 'undefined') {
+    OfflineAudioContext.prototype.createWaveShaper = AudioContext.prototype.createWaveShaper;
+    OfflineAudioContext.prototype.createDynamicsCompressor = AudioContext.prototype.createDynamicsCompressor;
+    OfflineAudioContext.prototype.createPanner = AudioContext.prototype.createPanner;
+    OfflineAudioContext.prototype.createIIRFilter = AudioContext.prototype.createIIRFilter;
   }
   if (typeof globalThis.OfflineAudioContext !== 'undefined') {
     OfflineAudioContext.prototype.createConstantSource = AudioContext.prototype.createConstantSource;

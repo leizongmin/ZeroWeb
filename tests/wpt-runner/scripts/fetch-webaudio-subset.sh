@@ -60,9 +60,18 @@ WA_FILES=(
   # + connect 索引越界 IndexSizeError + AudioBufferSourceNode 接口反射）。
   "webaudio/the-audio-api/the-audionode-interface/audionode.html"
   "webaudio/the-audio-api/the-audionode-interface/different-contexts.html"
+  # ---- 第九批（2026-09-03）：处理类节点 ctor 第二批（WaveShaper/DynamicsCompressor
+  # /Panner/IIRFilter——全部无渲染语义面）。
+  "webaudio/the-audio-api/the-waveshapernode-interface/ctor-waveshaper.html"
+  "webaudio/the-audio-api/the-dynamicscompressornode-interface/ctor-dynamicscompressor.html"
+  "webaudio/the-audio-api/the-dynamicscompressornode-interface/dynamicscompressor-basic.html"
+  "webaudio/the-audio-api/the-pannernode-interface/ctor-panner.html"
+  "webaudio/the-audio-api/the-iirfilternode-interface/iirfilter-basic.html"
   # 不导入：audioparam-method-chaining / audioparam-nominal-range（startRendering
   # 渲染断言——RFC §0 不做清单）；ctor-audiobuffer（末 task multiple contexts 依赖
-  # startRendering——audit runner 整文件跑）；periodicWave.html（startRendering）。
+  # startRendering——audit runner 整文件跑）；periodicWave.html（startRendering）；
+  # ctor-iirfilter（Functional task 依赖 startRendering 渲染对比——语义面
+  # AudioNodeOptions 已落 shim，随渲染切片复评）。
 )
 
 # audit.js 框架（runner inline_extras 内联——用例以绝对路径引用）。
