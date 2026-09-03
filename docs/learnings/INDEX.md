@@ -5,8 +5,12 @@
 > 布局契约：`<分类>/<YYYY-MM>/<YYYY-MM-DD>-<topic>.md`，日期以 frontmatter 为准。
 > 方法论蒸馏层见 `.agents/skills/zeroweb-guidelines/SKILL.md`。
 
-## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（100）
+## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（104）
 
+- 2026-09-03 [Service Worker iframe controllerchange event state must be event-scoped](bugs/2026-09/2026-09-03-sw-iframe-controllerchange-event-state.md) — engine/js-dom-shim, service-worker, wpt-runner
+- 2026-09-03 [Service Worker waitUntil 必须等待全部 lifetime promises settle](bugs/2026-09/2026-09-03-service-worker-waituntil-settlement.md) — script-sandbox,page-runtime,wpt-runner
+- 2026-09-03 [Service Worker Iframe Registration State Sync](bugs/2026-09/2026-09-03-service-worker-iframe-registration-state-sync.md) — engine, webview, wpt-runner
+- 2026-09-02 [WPT no-harness crashtest wait completion](bugs/2026-09/2026-09-02-wpt-no-harness-crashtest-wait.md) — wpt-runner,script-sandbox,webview
 - 2026-09-02 [Service Worker stream body errors must survive response serialization](bugs/2026-09/2026-09-02-sw-stream-body-error-serialization.md) — script-sandbox, engine, service-worker
 - 2026-09-02 [Service Worker Unregister Poll Leak](bugs/2026-09/2026-09-02-service-worker-unregister-poll-leak.md) — service-worker, js-dom-shim, page-runtime, wpt-runner
 - 2026-09-02 [Service Worker Global Prototype Chain Must Reject Prototype Mutation](bugs/2026-09/2026-09-02-service-worker-immutable-prototype-chain.md) — script-sandbox, service-worker, wpt-runner
@@ -124,8 +128,9 @@
 - 2026-08-05 [回调闭包 Send+Sync 约束：不能缓存 Document](patterns/2026-08/2026-08-05-callback-closure-send-sync-no-document.md) — zero-engine（js_dom_bridge.rs）, zero-script-sandbox（register_callback）, zero-dom（Document）
 - 2026-07-20 [经验：reftest 布局诊断必须用 empirical ZW-output 验证，不能只靠 code-trace](patterns/2026-07/2026-07-20-reftest-layout-diagnosis-empirical-verification.md) — tests/wpt-runner（reftest harness）, crates/layout-engine（multicol 等）
 
-## Performance — 性能优化经验（36）
+## Performance — 性能优化经验（37）
 
+- 2026-09-03 [bench-gate 失败指标集轮换 + 隔离复测回基线 = 负载噪声签名（非代码回归的快速判据）](performance/2026-09/2026-09-03-bench-gate-rotating-fail-noise-signature.md) — engine,dom,canvas,css-parser,render-foundation,host-runtime,browser-shell
 - 2026-08-19 [三例「合规修复顺手引入性能回归」的定位与修复（canvas/worker/CSP）](performance/2026-08/2026-08-19-perf-regression-triage-canvas-worker-csp.md) — zero-canvas, zero-script-sandbox, zero-security, 性能门禁体系
 - 2026-08-19 [bench-report.sh 编译/测量相位分离：批量 cargo 调用消掉串行编译开销](performance/2026-08/2026-08-19-bench-report-phase-split.md) — scripts, ci
 - 2026-08-18 [Text-Only Font Overrides](performance/2026-08/2026-08-18-text-only-font-overrides.md) — crates/layout-engine/src/font_resolution.rs, crates/layout-engine/src/inline/mod.rs, crates/layout-engine/src/inline_finalization.rs
