@@ -211,7 +211,12 @@ impl LayoutEngine {
             }
             let Some(id) = b.node_id else { continue };
             let Some(s) = styles.get(&id) else { continue };
-            if !b.is_absolute || b.is_replaced {
+            // R4015：replaced 排除例外——taffy 宽已塌 0 的 abspos replaced（无 attr 固有
+            // 尺寸，如 height-only svg）无固有宽可解析，仍需 shrink-to-fit 补测
+            //（§10.3.8：无固有宽/比 → default object size 300；003 族）。有固有尺寸的
+            // replaced（taffy 已解析非 0 宽）维持排除（R1683/R3935 警告）。
+            let replaced_collapsed = b.is_replaced && b.width <= 0.5;
+            if !b.is_absolute || (b.is_replaced && !replaced_collapsed) {
                 continue;
             }
             // 内含 float 后代时跳过：float 子的 max-width/约束宽度参与 shrink-to-fit
@@ -252,7 +257,15 @@ impl LayoutEngine {
                 if width_fix {
                     let used = left_def.unwrap_or(0.0) + right_def.unwrap_or(0.0);
                     let available = (cb_width - used).max(0.0);
-                    let measured = crate::intrinsic_sizing::block_max_content_width(b, doc, styles).max(0.0);
+                    // R4015：塌 0 的 replaced 叶（height-only svg 等）——子树递归测 0（svg
+                    // 内容不生成 in-flow 子贡献），用 svg default object size contribution
+                    //（css-sizing-3：无固有宽/比 → 300；% 宽 → 300；ratio-only → 0）。
+                    let measured = if replaced_collapsed {
+                        crate::intrinsic_sizing::abspos_replaced_max_content(b, doc, styles)
+                    } else {
+                        crate::intrinsic_sizing::block_max_content_width(b, doc, styles)
+                    }
+                    .max(0.0);
                     if measured > 0.5 {
                         let target = if available.is_finite() {
                             measured.min(available)

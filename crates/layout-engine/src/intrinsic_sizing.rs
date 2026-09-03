@@ -236,6 +236,30 @@ pub(crate) fn box_content_max_width(
 ///
 /// 用于 `width:max-content`/`fit-content` block 的 shrink-to-fit（CSS css-sizing-3）。返回 border-box。
 /// 仅水平书写模式。leaf 文本/显式宽回退同 [`box_content_max_width`]。
+/// R4015：塌 0 的 abspos replaced 叶的 max-content 宽（css-sizing-3 default object size）。
+///
+/// svg（R4000 三件套谓词：no-ratio 无宽 → 300；% 宽 → 300；ratio-only → 0；attr/CSS abs
+/// 宽走既有路径不塌 0 不会进到这里）。非 svg replaced（embed/object/applet 等）回退
+/// `block_max_content_width`（内部递归）。仅用于 R3929 abspos shrink-to-fit 的
+/// replaced-collapse 例外臂。
+pub(crate) fn abspos_replaced_max_content(
+    box_node: &LayoutBox,
+    doc: &Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+) -> f32 {
+    if let Some(id) = box_node.node_id
+        && let Some(node) = doc.get(id)
+        && let zero_dom::NodeKind::Element(elem) = &node.kind
+        && elem.local_name() == "svg"
+        && let Some(style) = box_node.node_id.and_then(|nid| styles.get(&nid))
+        && let Some(contribution) = crate::svg_default_size::svg_max_content_contribution(elem, style)
+    {
+        let frame = box_node.padding_left + box_node.padding_right + box_node.border_left + box_node.border_right;
+        return (contribution + frame).max(0.0);
+    }
+    block_max_content_width(box_node, doc, styles)
+}
+
 pub(crate) fn block_max_content_width(
     box_node: &LayoutBox,
     doc: &Document,
