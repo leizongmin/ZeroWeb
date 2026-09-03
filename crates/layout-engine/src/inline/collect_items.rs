@@ -374,6 +374,52 @@ impl InlineFormattingContext {
                                     }
                                 }
                             }
+                            // R4000（css-sizing-3 §intrinsic-sizes + csswg #1801581）：
+                            // inline `<svg>` 的 IFC 原子盒 used size——CSS/attr 均无 abs 值时
+                            // 按 default object size 规则补齐（viewBox/ar-only → 0×0；无来源
+                            // → 300×150；width % → 宽交容器解析、高 150）。taffy 层已设
+                            // definite 的场景（tree.rs svg gate）经 stored_inline_size 优先生效，
+                            // 此处兜 IFC 直接收集（taffy 节点被跳过）的路径。
+                            // kill-switch `ZW_SVG_DEFAULT_SIZE=0`。
+                            if std::env::var("ZW_SVG_DEFAULT_SIZE").as_deref() != Ok("0")
+                                && elem_data.local_name() == "svg"
+                                && (w <= 0.0 || h <= 0.0)
+                                && let Some(style) = style
+                                && let Some((dw, dh)) =
+                                    crate::svg_default_size::svg_default_used_size(elem_data, style)
+                            {
+                                if w <= 0.0 {
+                                    // width %：按容器宽解析（taffy % 语义；IFC 直收集路径
+                                    // 无 CB 解析——img 分支 Percentage 同款）。
+                                    w = match (&style.width, elem_data.get_attribute("width")) {
+                                        (LengthValue::Percentage(p), _)
+                                            if self.container_width > 0.0 =>
+                                        {
+                                            (*p as f32 / 100.0) * self.container_width
+                                        }
+                                        (_, Some(attr)) if attr.trim().ends_with('%')
+                                            && self.container_width > 0.0 =>
+                                        {
+                                            attr.trim()
+                                                .trim_end_matches('%')
+                                                .parse::<f32>()
+                                                .map(|p| p / 100.0 * self.container_width)
+                                                .unwrap_or(0.0)
+                                        }
+                                        _ => dw.unwrap_or(0.0),
+                                    };
+                                }
+                                if h <= 0.0 {
+                                    // 负 dh = 比信号：h = 解析宽 / |ratio|（svg_default_size
+                                    // 模块注释——% 宽时比随解析宽生效）。
+                                    h = if dh < 0.0 {
+                                        let ratio = -dh;
+                                        if ratio > 0.0 && w > 0.0 { w / ratio } else { 0.0 }
+                                    } else {
+                                        dh
+                                    };
+                                }
+                            }
                             // R3997（css-sizing-4 §4.1/§4.2 transferred size）：CSS aspect-ratio
                             // （或 `auto <ratio>` 的 ratio 部分）+ 恰一侧显式、另一侧 auto 时，
                             // auto 侧由显式侧 ×/÷ ratio 推导（img 分支 R1578 固有比推导的 CSS

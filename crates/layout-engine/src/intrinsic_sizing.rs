@@ -252,6 +252,20 @@ pub(crate) fn block_max_content_width(
             })
             .unwrap_or(false);
         if is_inline_level {
+            // R4000（css-sizing-3 §intrinsic-sizes + csswg #1801581）：inline `<svg>`
+            // 的 max-content 贡献不取已布局宽度（taffy 对 %/auto 无 CB 时给 0/塌缩）
+            // 而按 default object size 规则：viewBox/ar-only → 0；width % 或无来源 →
+            // 300。attr/CSS abs 宽仍走既有 outer_w。kill-switch `ZW_SVG_DEFAULT_SIZE=0`。
+            if let Some(id) = child.node_id
+                && let Some(node) = doc.get(id)
+                && let zero_dom::NodeKind::Element(elem) = &node.kind
+                && elem.local_name() == "svg"
+                && let Some(style) = child_style
+                && let Some(contribution) = crate::svg_default_size::svg_max_content_contribution(elem, style)
+            {
+                inline_sum += (contribution + child.margin_left + child.margin_right).max(0.0);
+                continue;
+            }
             // inline-level 子：用 outer_w（已布局宽度）求和。inline-flex/inline-grid 的
             // intrinsic 测量由 shrink_inline_blocks_to_content（R180/R1017）路径处理，此处不重复。
             inline_sum += (child.width + child.margin_left + child.margin_right).max(0.0);

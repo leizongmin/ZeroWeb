@@ -37,6 +37,7 @@ pub mod multicol_balancing;
 mod node_id_map;
 pub mod print_pagination;
 pub mod r109;
+pub(crate) mod svg_default_size;
 pub mod table;
 pub mod table_borders;
 pub mod table_cell_content;

@@ -631,6 +631,43 @@ fn apply_replaced_element_sizing(
     // R1683：+ <embed>/<object>/<applet>（同为替换元素，HTML width/height 属性定 viewport 固有
     // 尺寸）。此前三者走早返回 → embed 渲成 784×0、object/applet 按 fallback 内容宽。仅当元素
     // 显式带 width/height 属性时应用（无属性回落原行为，避免默认 300×150 改动 ripple）。
+    use crate::svg_default_size::SVG_DEFAULT_W as SVG_DEFAULT_W_SENTINEL;
+
+    /// % 宽且无比时 dh 哨兵 = -150（= -SVG_DEFAULT_H）：清 aspect_ratio。
+    fn svg_ratio_cleared(dh: f32) -> bool {
+        (dh + crate::svg_default_size::SVG_DEFAULT_H).abs() < 0.5
+    }
+    // R4000（css-sizing-3 §intrinsic-sizes + csswg #1801581）：inline `<svg>` 的
+    // default object size 三件套 used size——width auto + viewBox/CSS-ar-only → 0×0；
+    // width auto 无来源 → 300×150；width % → height 150 且不与比复合（% 宽交 taffy
+    // 对 CB 解析）。attr/CSS abs 值仍走下方既有路径（R3935 警告：默认尺寸不走 attr
+    // 双 Some definite 路径，挡 abspos inset 方程）。kill-switch `ZW_SVG_DEFAULT_SIZE=0`。
+    if tag == "svg"
+        && let Some(elem) = doc.get(dom_id).and_then(|n| match &n.kind {
+            NodeKind::Element(e) => Some(e),
+            _ => None,
+        })
+        && let Some((dw, dh)) = crate::svg_default_size::svg_default_used_size(elem, computed)
+    {
+        taffy_style.size.width = match dw {
+            Some(w) => taffy::style::Dimension::length(w),
+            // width %：taffy 自解析；高度落 default，宽留 auto。
+            None => taffy::style::Dimension::auto(),
+        };
+        // 负 dh = 比信号（width % + viewBox/ar）：保留 aspect_ratio 让 taffy 由解析宽
+        // 推高；正 dh = definite 高（default / 无比）。
+        taffy_style.size.height = if dh < 0.0 {
+            taffy::style::Dimension::auto()
+        } else {
+            taffy::style::Dimension::length(dh)
+        };
+        // default（无来源）路径不与 viewBox 比复合（chromium 006：300×150 非 300×300）。
+        // % + 比路径保留比；% 无比（dh=-150 哨兵）路径清比防 150×ratio 膨胀。
+        if dw == Some(SVG_DEFAULT_W_SENTINEL) || (dw.is_none() && dh < 0.0 && svg_ratio_cleared(dh)) {
+            taffy_style.aspect_ratio = None;
+        }
+        return;
+    }
     if tag != "img" && tag != "canvas" && tag != "video" && tag != "embed" && tag != "object" && tag != "applet" {
         return;
     }
