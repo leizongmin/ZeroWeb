@@ -10,8 +10,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-EXPECTED_CASES = 59
-EXPECTED_SUBTESTS = 216
+EXPECTED_CASES = 60
+EXPECTED_SUBTESTS = 217
 
 
 def parse_args() -> argparse.Namespace:
@@ -128,7 +128,9 @@ def render_markdown(summary: dict) -> str:
             "registration installing slot visibility and SameObject identity "
             "across `getRegistration()`. `waiting.https.html` extends it with "
             "top-level and iframe registration waiting slot visibility, "
-            "controller nullability, and waiting/active SameObject identity.",
+            "controller nullability, and waiting/active SameObject identity. "
+            "`controller-on-disconnect.https.html` extends it with clearing "
+            "the Service Worker controller when an iframe global is detached.",
         ]
     ) + "\n"
 

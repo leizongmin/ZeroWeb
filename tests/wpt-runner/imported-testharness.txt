@@ -295,6 +295,7 @@ service-workers/service-worker/ServiceWorkerGlobalScope/registration-attribute.h
 service-workers/service-worker/ServiceWorkerGlobalScope/service-worker-error-event.https.html 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-09-03 SW-M3-worker-error-event
 service-workers/service-worker/ServiceWorkerGlobalScope/error-message-event.https.html 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-09-03 SW-M3-messageerror-event
 service-workers/service-worker/controller-on-load.https.html 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-09-03 SW-M3-controller-on-load
+service-workers/service-worker/controller-on-disconnect.https.html 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-09-03 SW-M3-controller-on-disconnect
 service-workers/service-worker/getregistration.https.html 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-09-03 SW-M3-getregistration
 service-workers/service-worker/registration-iframe.https.html 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-09-03 SW-M3-registration-iframe
 service-workers/service-worker/installing.https.html 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-09-03 SW-M3-installing

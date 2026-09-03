@@ -1,0 +1,2 @@
+path	manifest_type	roles	referenced_by	bytes	templated	git_blob_sha	source_revision
+service-workers/service-worker/controller-on-disconnect.https.html	testharness	case	1	1297	no	f23dfe71bac505f1cc396bcab191dbee7a6461f4	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83

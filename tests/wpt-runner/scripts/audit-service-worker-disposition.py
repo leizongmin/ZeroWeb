@@ -62,6 +62,7 @@ CORE_ASSET_MANIFESTS = [
     EVIDENCE_DIR / "2026-09-02-m3-message-event-ports-assets.tsv",
     EVIDENCE_DIR / "2026-09-03-m3-messageerror-event-assets.tsv",
     EVIDENCE_DIR / "2026-09-03-m3-controller-on-load-assets.tsv",
+    EVIDENCE_DIR / "2026-09-03-m3-controller-on-disconnect-assets.tsv",
     EVIDENCE_DIR / "2026-09-03-m3-getregistration-assets.tsv",
     EVIDENCE_DIR / "2026-09-03-m3-registration-iframe-assets.tsv",
     EVIDENCE_DIR / "2026-09-03-m3-installing-assets.tsv",
@@ -90,7 +91,7 @@ REVIEW_FILES = [
 IDL_SOURCE = "service-workers/idlharness.https.any.js"
 EXPECTED_SOURCE_COUNT = 294
 EXPECTED_URL_COUNT = 331
-EXPECTED_LANES = Counter(core=72, fetch=3, defer=28, gated=149, skip=42)
+EXPECTED_LANES = Counter(core=73, fetch=3, defer=27, gated=149, skip=42)
 CORE_PROMOTIONS = {
     "service-workers/service-worker/waiting.https.html": (
         "waiting-core",
@@ -111,6 +112,10 @@ CORE_PROMOTIONS = {
     "service-workers/service-worker/controller-on-load.https.html": (
         "controller-on-load-core",
         "2026-09-03-m3-controller-on-load.md",
+    ),
+    "service-workers/service-worker/controller-on-disconnect.https.html": (
+        "controller-on-disconnect-core",
+        "2026-09-03-m3-controller-on-disconnect.md",
     ),
     "service-workers/service-worker/ServiceWorkerGlobalScope/error-message-event.https.html": (
         "messageerror-event-core",
