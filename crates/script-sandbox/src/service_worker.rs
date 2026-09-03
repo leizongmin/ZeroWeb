@@ -2977,10 +2977,33 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
         addRespondWithLifetimePromise(waitUntilState, responsePromise);
         responseProcessing = responsePromise.then(function(response) {
           if (result.failed) return;
-          response = Response._from(response);
-          return Promise.resolve(Response._serialize(response)).then(function(serialized) {
+          try {
+            response = Response._from(response);
+          } catch (error) {
+            result.failed = true;
+            result.responded = false;
+            result.response = null;
+            result.message = String(error && error.message || error);
+            return;
+          }
+          let serializedPromise;
+          try {
+            serializedPromise = Promise.resolve(Response._serialize(response));
+          } catch (error) {
+            result.failed = true;
+            result.responded = false;
+            result.response = null;
+            result.message = String(error && error.message || error);
+            return;
+          }
+          return serializedPromise.then(function(serialized) {
             result.responded = true;
             result.response = serialized;
+          }, function(error) {
+            result.failed = true;
+            result.responded = false;
+            result.response = null;
+            result.message = String(error && error.message || error);
           });
         }, function(error) {
           if (result.failed) return;
@@ -3005,6 +3028,7 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
       closeExtendableEventDispatchAtCheckpoint(waitUntilState);
     } catch (error) {
       respondWithAllowed = false;
+          if (waitUntilState) closeExtendableEventDispatchAtCheckpoint(waitUntilState);
       if (result.failed || !respondWithCalled) {
         result.responded = false;
         result.response = null;
@@ -3015,7 +3039,12 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
       }
     }
     Promise.all([waitUntilState.settled, responseProcessing]).then(function(values) {
-      if (result.failed) return;
+          if (result.settled) return;
+          if (result.failed) {
+            event._settleHandled(false, new TypeError(result.message || 'FetchEvent respondWith failed'));
+            result.settled = true;
+            return;
+          }
       const state = values[0];
       if (state.firstRejectionSet) {
         result.failed = true;
@@ -6003,6 +6032,13 @@ mod tests {
 
     fn test_config() -> SandboxConfig {
         SandboxConfig {
+            timeout_ms: DEFAULT_SCRIPT_TIMEOUT_MS,
+            ..Default::default()
+        }
+    }
+
+    fn timeout_test_config() -> SandboxConfig {
+        SandboxConfig {
             timeout_ms: 200,
             ..Default::default()
         }
@@ -6612,7 +6648,7 @@ mod tests {
 
     #[test]
     fn evaluate_timeout_recovers_for_next_script() {
-        let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
+        let mut runtime = ServiceWorkerRuntime::new(timeout_test_config()).unwrap();
         runtime
             .evaluate("while (true) {}", "https://example.test/loop.js")
             .unwrap();

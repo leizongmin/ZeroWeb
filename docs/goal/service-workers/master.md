@@ -2,7 +2,7 @@
 
 **入口文档**: [../service-workers.md](../service-workers.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-03（Service Worker ExtendableEvent async waitUntil WPT promotion；broader SW fetch/cache/message baseline 继续）
+**最后更新**: 2026-09-03（Service Worker controller-on-reload WPT promotion；broader SW fetch/cache/message baseline 继续）
 
 ---
 
@@ -17,8 +17,8 @@ browser-process 页面 fetch 路由和 Service Worker `caches.match()` / `caches
 SW runtime `Cache.add()` / `Cache.addAll()` 可用同一 fetch→put 链路写入 active registration
 `CacheStorage`，`Cache.delete()` 与 `CacheStorage.delete()/has()/keys()` 也已接入同一
 typed host bridge，并复用 `zero-storage` 的请求头快照、Vary/`ignoreVary` 匹配语义；
-M3 worker-global registration 上游 WPT core baseline 已扩展到 64 case / 248 subtest /
-248 Pass，覆盖 `registration.scope`、worker global `registration.{installing,waiting,active}`
+M3 worker-global registration 上游 WPT core baseline 已扩展到 65 case / 249 subtest /
+249 Pass，覆盖 `registration.scope`、worker global `registration.{installing,waiting,active}`
 slot 投影、registration/worker `EventTarget`、`updatefound` 与 `statechange` 可观察顺序，
 message handler 抛错后的 worker-global `ErrorEvent` 字段与 source 回传，以及 page message
 无法在 worker 反序列化时的 worker-global `messageerror` 事件，并覆盖受控 iframe
@@ -30,6 +30,8 @@ rejection 仍失败 install 的 lifecycle error 边界，以及 activate listene
 worker-global `error` 报告且不失败 activate，并覆盖 `ExtendableEvent.waitUntil()`
 等待全部 lifetime promises settle、首个 rejection 诊断和 activate rejection 不阻断激活，并覆盖
 async `waitUntil()` 在 task/microtask 与 `respondWith()` lifetime extension 下的合法窗口；
+并覆盖 iframe reload 后新 document 重新获得 active controller 以及 iframe realm
+`ServiceWorker` identity；
 首个
 M2 fetch/interception 上游 WPT
 `request-end-to-end.https.html`、`fetch-event-async-respond-with.https.html`、
@@ -353,6 +355,9 @@ JSON，private profile 继续只保留内存态。
 - ✅ M3-66：`extendable-event-async-waituntil.https.html` 纳入 core baseline；
   per-event lifetime state 与 microtask checkpoint 收敛 async `waitUntil()` 合法窗口，
   `respondWith()` lifetime extension 边界通过；core WPT 64/248
+- ✅ M3-67：`controller-on-reload.https.html` 纳入 core baseline；iframe reload
+  会注销旧 nested window client，新 document 重新 observe 后获得 active controller，
+  iframe realm `ServiceWorker` identity 保持正确；core WPT 65/249
 - ✅ M3-53：`ServiceWorkerGlobalScope/postmessage.https.html` 纳入 fetch/message
   baseline；worker self-loopback、active → waiting worker transferred `MessagePort`
   转发以及最终 page port 回信语义通过；fetch/message WPT 28/73
@@ -1079,6 +1084,11 @@ second（replacement）worker 只处理 awaitInstallEvent（messageSequence=1）
   - `make testharness-service-workers-core FILTER=service-worker/extendable-event-waituntil.https.html TIME_LIMIT=300`：6 Pass
   - `make testharness-service-workers-core FILTER=service-worker/extendable-event-async-waituntil.https.html TIME_LIMIT=300`：14 Pass
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 1200 -- python3 tests/wpt-runner/scripts/run-service-workers-core-baseline.py --runner ./target/release/zero-wpt-runner --wpt-data tests/wpt-runner/wpt-data/.service-workers-tier-a-root --output docs/goal/service-workers/evidence/2026-09-03-m3-extendable-event-async-waituntil-baseline.json --summary docs/goal/service-workers/evidence/2026-09-03-m3-extendable-event-async-waituntil-baseline.md`：64 cases / 248 subtests / 248 Pass，deterministic
+- M3-67 controller-on-reload baseline：
+  [controller-on-reload evidence](evidence/2026-09-03-m3-controller-on-reload.md)
+  - `BINDGEN_EXTRA_CLANG_ARGS='-isystem /usr/lib/gcc/x86_64-linux-gnu/13/include' ./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 240 -- cargo test -p zero-webview iframe_reload_observes_active_service_worker_controller -- --nocapture`：1 passed
+  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 240 -- cargo run -p zero-wpt-runner -- testharness-service-workers --wpt-data tests/wpt-runner/wpt-data/.service-workers-tier-a-root controller-on-reload.https.html --json`：1 Pass
+  - `make baseline-wpt-service-workers-core OUTPUT=docs/goal/service-workers/evidence/2026-09-03-m3-controller-on-reload-baseline.json SUMMARY=docs/goal/service-workers/evidence/2026-09-03-m3-controller-on-reload-baseline.md TIME_LIMIT=1200`：65 cases / 249 subtests / 249 Pass，deterministic
 - M3-55 worker error event baseline：
   [Worker ErrorEvent evidence](evidence/2026-09-03-m3-worker-error-event.md)
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- cargo test -p zero-script-sandbox service_worker::tests::page_message_error_listener_observes_thrown_error_event -- --nocapture`：1 passed
@@ -1316,6 +1326,7 @@ second（replacement）worker 只处理 awaitInstallEvent（messageSequence=1）
 | 2026-09-03 | M3-64 onactivate script error core promotion | `onactivate-script-error.https.html` 纳入 core runner；activate listener 同步抛错触发 worker-global `error` 但 activate 成功；单 case 5/5 Pass |
 | 2026-09-03 | M3-65 ExtendableEvent waitUntil core promotion | `extendable-event-waituntil.https.html` 纳入 core runner；生命周期 waitUntil 等待全部 promises settle，activate waitUntil rejection 不阻断 activated；单 case 6/6 Pass |
 | 2026-09-03 | M3-66 ExtendableEvent async waitUntil core promotion | `extendable-event-async-waituntil.https.html` 纳入 core runner；async waitUntil task/microtask eligibility 与 respondWith lifetime extension 边界通过；`make baseline-wpt-service-workers-core` 双跑 64/248 deterministic Pass |
+| 2026-09-03 | M3-67 controller on reload core promotion | `controller-on-reload.https.html` 纳入 core runner；iframe reload 释放旧 nested window client，新 document 获得 active controller 且 iframe realm ServiceWorker identity 正确；`make baseline-wpt-service-workers-core` 双跑 65/249 deterministic Pass |
 | 2026-09-02 | M2 fetch body-loaded-in-chunk baseline | `fetch-event-respond-with-body-loaded-in-chunk.https.html` 纳入 fetch/message runner；worker-side loaded chunk body 经 `respondWith(new Response(body))` 转发到受控 iframe；`make baseline-wpt-service-workers-fetch` 双跑 29/74 deterministic Pass |
 | 2026-09-02 | M2 fetch invalid stream chunk baseline | `fetch-event-respond-with-response-body-with-invalid-chunk.https.html` 纳入 fetch/message runner；非 `Uint8Array` stream chunk 通过 page-side `response.body` reader 以 TypeError reject；`make baseline-wpt-service-workers-fetch` 双跑 30/75 deterministic Pass |
 | 2026-09-02 | M2 fetch readable-stream fetch-body prework | SW runtime `Response.body` getter 暴露 host fetch body 的 `ReadableStream<Uint8Array>`；`worker_global_fetch_exposes_response_body_stream` 固定 `fetch('./pass.txt').then(r => new Response(r.body))` 转发 `PASS\n`；临时补本地 `resources/pass.txt` probe 显示完整 readable-stream WPT 前 6 subtest 通过，剩余 cancel/abort 反传未纳入 baseline |

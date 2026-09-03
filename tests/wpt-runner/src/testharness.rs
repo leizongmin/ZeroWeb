@@ -826,6 +826,7 @@ pub const SERVICE_WORKER_CORE_CASES: &[&str] = &[
     "service-workers/service-worker/activation-after-registration.https.html",
     "service-workers/service-worker/controller-on-load.https.html",
     "service-workers/service-worker/controller-on-disconnect.https.html",
+    "service-workers/service-worker/controller-on-reload.https.html",
     "service-workers/service-worker/clients-matchall-on-evaluation.https.html",
     "service-workers/service-worker/ServiceWorkerGlobalScope/close.https.html",
     "service-workers/service-worker/ServiceWorkerGlobalScope/isSecureContext.https.html",
@@ -4667,8 +4668,8 @@ async_test(function(test) {
             .iter()
             .copied()
             .collect::<std::collections::BTreeSet<_>>();
-        assert_eq!(SERVICE_WORKER_CORE_CASES.len(), 64);
-        assert_eq!(unique.len(), 64);
+        assert_eq!(SERVICE_WORKER_CORE_CASES.len(), 65);
+        assert_eq!(unique.len(), 65);
         assert!(
             SERVICE_WORKER_CORE_CASES
                 .iter()
@@ -4719,6 +4720,7 @@ async_test(function(test) {
         assert!(
             SERVICE_WORKER_CORE_CASES.contains(&"service-workers/service-worker/controller-on-disconnect.https.html")
         );
+        assert!(SERVICE_WORKER_CORE_CASES.contains(&"service-workers/service-worker/controller-on-reload.https.html"));
         assert!(
             SERVICE_WORKER_CORE_CASES.contains(&"service-workers/service-worker/interface-requirements-sw.https.html")
         );

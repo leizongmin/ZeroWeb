@@ -10,8 +10,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-EXPECTED_CASES = 64
-EXPECTED_SUBTESTS = 248
+EXPECTED_CASES = 65
+EXPECTED_SUBTESTS = 249
 
 
 def parse_args() -> argparse.Namespace:
@@ -23,7 +23,7 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def run_once(runner: Path, wpt_data: Path) -> list:
+def run_once(runner: Path, wpt_data: Path, filter: str | None = None) -> list:
     command = [
         str(runner),
         "testharness-service-workers",
@@ -31,6 +31,8 @@ def run_once(runner: Path, wpt_data: Path) -> list:
         str(wpt_data),
         "--json",
     ]
+    if filter is not None:
+        command.append(filter)
     completed = subprocess.run(command, capture_output=True, text=True, check=False)
     if completed.returncode not in (0, 1):
         raise RuntimeError(
@@ -40,6 +42,35 @@ def run_once(runner: Path, wpt_data: Path) -> list:
         return json.loads(completed.stdout)
     except json.JSONDecodeError as error:
         raise RuntimeError(f"runner emitted invalid JSON: {error}") from error
+
+
+def load_manifest() -> list[str]:
+    manifest_path = Path(__file__).resolve().parents[1] / "src" / "testharness.rs"
+    source = manifest_path.read_text(encoding="utf-8")
+    start = source.index("pub const SERVICE_WORKER_CORE_CASES")
+    start = source.index("[", start)
+    end = source.index("];", start)
+    cases = []
+    for line in source[start:end].splitlines():
+        line = line.strip()
+        if not line.startswith('"'):
+            continue
+        cases.append(line.split('"', 2)[1])
+    if len(cases) != EXPECTED_CASES:
+        raise RuntimeError(f"expected {EXPECTED_CASES} manifest cases, got {len(cases)}")
+    if len(cases) != len(set(cases)):
+        raise RuntimeError("manifest contains duplicate case paths")
+    return cases
+
+
+def run_isolated(runner: Path, wpt_data: Path) -> list:
+    results = []
+    for case in load_manifest():
+        case_results = run_once(runner, wpt_data, case)
+        if len(case_results) != 1 or case_results[0][0] != case:
+            raise RuntimeError(f"runner emitted unexpected results for {case}: {case_results}")
+        results.extend(case_results)
+    return results
 
 
 def normalized(cases: list) -> list[tuple[str, str, str]]:
@@ -141,7 +172,9 @@ def render_markdown(summary: dict) -> str:
             "activate waitUntil rejection non-blocking semantics. "
             "`extendable-event-async-waituntil.https.html` extends it with "
             "ExtendableEvent async waitUntil task/microtask eligibility and "
-            "FetchEvent respondWith lifetime extension boundaries.",
+            "FetchEvent respondWith lifetime extension boundaries. "
+            "`controller-on-reload.https.html` extends it with iframe reload "
+            "controller acquisition and iframe-realm ServiceWorker identity.",
         ]
     ) + "\n"
 
@@ -153,8 +186,8 @@ def main() -> int:
     if not args.wpt_data.is_dir():
         raise RuntimeError(f"WPT data root does not exist: {args.wpt_data}")
 
-    first = run_once(args.runner, args.wpt_data)
-    second = run_once(args.runner, args.wpt_data)
+    first = run_isolated(args.runner, args.wpt_data)
+    second = run_isolated(args.runner, args.wpt_data)
     validate_shape(first)
     validate_shape(second)
     first_normalized = normalized(first)

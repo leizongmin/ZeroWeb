@@ -3619,7 +3619,14 @@
       }
       function setController(worker, previousHint, eventStateHint) {
         if (_controller === worker && eventStateHint == null) return;
-        var previous = previousHint || _controller;
+        var previous = _controller;
+        if (previousHint &&
+            (!previous ||
+             (previous._id != null &&
+              previousHint._id != null &&
+              String(previous._id) === String(previousHint._id)))) {
+          previous = previousHint;
+        }
         _controller = worker;
         var eventState = eventStateHint || (worker ? worker.state : null);
         if (worker && previous &&

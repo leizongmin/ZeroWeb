@@ -1035,6 +1035,11 @@
     if (nextSrc == null || nextSrc === '') {
       try { nextSrc = frame.__zwHandle ? __zw_get_attr_handle(frame.__zwHandle, 'src') : __zw_get_attr_lw(frame.__zwSelector, 'src'); } catch (_eSrc) { nextSrc = ''; }
     }
+    // https://html.spec.whatwg.org/multipage/document-sequences.html#navigable
+    // Cross-document iframe reload/navigation replaces the nested Document.
+    // Release the old Service Worker client first so the replacement document
+    // is observed as a fresh client and can pick up the active controller.
+    _zwRemoveIframeWindowClient(frameKey);
     var entry = _zwLoadIframeEntry(frameKey, nextSrc, flags || {});
     entry.history = previous && previous.history ? previous.history.slice() : [];
     if (flags && flags.history && entry.history.length > 1) {

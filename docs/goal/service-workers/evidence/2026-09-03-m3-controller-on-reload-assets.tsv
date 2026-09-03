@@ -1,0 +1,2 @@
+path	manifest_type	roles	referenced_by	bytes	templated	git_blob_sha	source_revision
+service-workers/service-worker/controller-on-reload.https.html	testharness	case	1	2086	no	2e966d425788c0a02b1bb25a4c045089fede5ce7	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83

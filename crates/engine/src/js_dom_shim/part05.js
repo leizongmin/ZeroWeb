@@ -2552,7 +2552,7 @@
           var eventController = controller;
           var controllerChanged =
             !iframeServiceWorkerControllerId || iframeServiceWorkerControllerId !== nextId;
-          if (!hint && iframeServiceWorkerControllerId &&
+          if (iframeServiceWorkerControllerId &&
               iframeServiceWorkerControllerId !== nextId &&
               controller.state === 'activated') {
             eventController = {
@@ -2575,7 +2575,7 @@
           iframeServiceWorkerEventController = wrapServiceWorkerController(eventController);
           if (iframeServiceWorkerEventController) {
             iframeServiceWorkerEventController._controllerEventState =
-              eventState || eventController.state || null;
+              eventController.state || eventState || null;
           }
           var event = null;
           if (registered.length > 0 &&
@@ -2596,11 +2596,13 @@
           }
           if (typeof setTimeout === 'function') {
             setTimeout(function() {
-              if (iframeServiceWorkerEventController &&
-                  String(iframeServiceWorkerEventController._id) === nextId) {
-                iframeServiceWorkerEventController._controllerEventState = null;
-                iframeServiceWorkerEventController = null;
-              }
+              setTimeout(function() {
+                if (iframeServiceWorkerEventController &&
+                    String(iframeServiceWorkerEventController._id) === nextId) {
+                  iframeServiceWorkerEventController._controllerEventState = null;
+                  iframeServiceWorkerEventController = null;
+                }
+              }, 0);
             }, 0);
           }
         } catch (_eIframeControllerRefresh) {}
