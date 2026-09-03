@@ -2,9 +2,17 @@
 
 **入口文档**: [../media-audio.md](../media-audio.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-03（**WPT webaudio 第七批导入——ChannelMerger/Splitter/
-ConstantSource ctor 族 + AudioBuffer getChannelData same-object（16 用例
-378P/0F = 100%）**：shim part06 落地 ChannelSplitterNode/ChannelMergerNode
+**最后更新**: 2026-09-03（**WPT webaudio 第八批导入——AudioNode 接口基本面
+（18 用例 384P/0F = 100%）**：shim 落地跨 context connect/disconnect 校验
+（节点/AudioParam 目标 `_zwCtx` 身份 → InvalidAccessError）+ connect output/
+input 索引越界 IndexSizeError + AudioBufferSourceNode 接口最小面（0入1出 +
+buffer/loop/playbackRate/detune 反射）+ `_zwWANode.prototype` 链接 EventTarget
+（instanceof 断言面）+ AudioContext 3-arg legacy 拒收；AudioParam 工厂增 ctxId
+身份（12 处 builder 调用点透传，createOscillator/createGain 作用域修正）。
+audionode / different-contexts 导入。**384P/0F**（+6 净涨零回归），evidence：
+`evidence/2026-09-03-webaudio-audionode-batch8.json`。此前同日：**第七批
+导入——ChannelMerger/Splitter/ConstantSource ctor 族 + AudioBuffer getChannelData
+same-object（16 用例 378P/0F = 100%）**：shim part06 落地 ChannelSplitterNode/ChannelMergerNode
 （固定拓扑 1入N出/N入1出、channelCount 派生、mode 'explicit'、固定通道 setter
 面——赋现值 no-op/它值 InvalidStateError、ctor options 固定值可过/非固定值抛）+
 ConstantSourceNode（offset AudioParam 缺省 1 + 工厂 options 透传）+
@@ -306,9 +314,9 @@ DONE 阻塞**；Mixer/重采样接线随设备切片可选推进）。
 
 ## 验证基线
 
-- 测试基线：`make test` 全绿 18815（2026-09-03 组合树实测）；clippy 零警告
+- 测试基线：`make test` 全绿 18819（2026-09-03 组合树实测）；clippy 零警告
   （default 与 `--features audio-cpal` 双配置）
-- WPT webaudio：**16 用例 378P/0F = 100%**（2026-09-03 七批累计——connect 返回值 +
+- WPT webaudio：**18 用例 384P/0F = 100%**（2026-09-03 八批累计——connect 返回值 +
   destination + ctor-oscillator 62 + ctor-gain/stereopanner/delay/biquadfilter/
   analyser + createPeriodicWave 异常面 + audioparam-exceptional-values 66 +
   audiobuffer 面 + **第七批 ctor-channelmerger/channelsplitter/constantsource +
@@ -318,7 +326,8 @@ DONE 阻塞**；Mixer/重采样接线随设备切片可选推进）。
   `evidence/2026-09-02-webaudio-ctor-family.json`（第四批）、
   `evidence/2026-09-02-webaudio-audiobuffer.json`（第五批）、
   `evidence/2026-09-02-webaudio-gain-basic.json`（第六批）、
-  `evidence/2026-09-03-webaudio-node-family-batch7.json`（第七批）
+  `evidence/2026-09-03-webaudio-node-family-batch7.json`（第七批）、
+  `evidence/2026-09-03-webaudio-audionode-batch8.json`（第八批）
 - NullSink 可观测锚点：440Hz 正弦 @48kHz 过零率 ≈880（2×频率；修正 M0 evidence
   的 ≈440 笔误——evidence 只追加不修改，以代码与本档为事实源）；暂停拒写计
   underrun；非整帧写入拒收

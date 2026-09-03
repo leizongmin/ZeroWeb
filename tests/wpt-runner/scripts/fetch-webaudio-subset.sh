@@ -56,6 +56,10 @@ WA_FILES=(
   "webaudio/the-audio-api/the-channelsplitternode-interface/ctor-channelsplitter.html"
   "webaudio/the-audio-api/the-constantsourcenode-interface/ctor-constantsource.html"
   "webaudio/the-audio-api/the-audiobuffer-interface/audiobuffer-getChannelData.html"
+  # ---- 第八批（2026-09-03）：AudioNode 接口基本面（跨 context InvalidAccessError
+  # + connect 索引越界 IndexSizeError + AudioBufferSourceNode 接口反射）。
+  "webaudio/the-audio-api/the-audionode-interface/audionode.html"
+  "webaudio/the-audio-api/the-audionode-interface/different-contexts.html"
   # 不导入：audioparam-method-chaining / audioparam-nominal-range（startRendering
   # 渲染断言——RFC §0 不做清单）；ctor-audiobuffer（末 task multiple contexts 依赖
   # startRendering——audit runner 整文件跑）；periodicWave.html（startRendering）。

@@ -7354,19 +7354,51 @@
     },
     configurable: true,
   });
-  _zwWANode.prototype.connect = function (target) {
+  _zwWANode.prototype.connect = function (target, output, input) {
     // spec AudioNode.connect 连接校验：非 AudioNode/AudioParam 目标 → TypeError
     //（WPT audionode「connect() method with illegal values」断言面——0/null 目标）。
     if (!target || (typeof target !== 'object') || (typeof target.connect !== 'function' && target._zwKind !== 'destination' && target._zwKind !== 'audioparam')) {
       throw new TypeError("Failed to execute 'connect' on 'AudioNode': parameter 1 is not of type 'AudioNode'.");
     }
+    // M3 扩批 XXV：跨 context 连接 → InvalidAccessError（audionode
+    //「Connecting a node to a different context」/ different-contexts 断言面——
+    // 节点 ctx 身份取 _zwCtxId；destination 也带 ctxId）。
+    if (target._zwCtx != null && this._zwCtx != null && target._zwCtx !== this._zwCtx) {
+      throw new (globalThis.DOMException || Error)(
+        "Failed to execute 'connect' on 'AudioNode': cannot connect to a node belonging to a different AudioContext.", 'InvalidAccessError');
+    }
+    // M3 扩批 XXV：output/input 索引校验（spec connect 步 2——越界 IndexSizeError；
+    // WPT audionode connect(destination, 5, 0) / (destination, 0, 5) 断言面）。
+    var _outIdx = (output === undefined || output === null) ? 0 : Number(output);
+    var _inIdx = (input === undefined || input === null) ? 0 : Number(input);
+    if (isNaN(_outIdx) || _outIdx < 0 || _outIdx >= this._zwOutputs) {
+      throw new (globalThis.DOMException || Error)(
+        "Failed to execute 'connect' on 'AudioNode': output index " + output + " is out of range.", 'IndexSizeError');
+    }
+    var _tgtInputs = (target._zwKind === 'audioparam') ? 1 : (target._zwInputs || 1);
+    if (isNaN(_inIdx) || _inIdx < 0 || _inIdx >= _tgtInputs) {
+      throw new (globalThis.DOMException || Error)(
+        "Failed to execute 'connect' on 'AudioNode': input index " + input + " is out of range.", 'IndexSizeError');
+    }
     // spec：connect 返回目标节点（链式——osc.connect(gain).connect(destination)）。
     this._zwConnected = target || null;
     return target;
   };
-  _zwWANode.prototype.disconnect = function () {
+  _zwWANode.prototype.disconnect = function (target) {
+    // M3 扩批 XXV：跨 context disconnect 目标 → InvalidAccessError
+    //（different-contexts Test 3/4 断言面——目标身份校验先于连接状态）。
+    if (target && typeof target === 'object' && target._zwCtx != null && this._zwCtx != null && target._zwCtx !== this._zwCtx) {
+      throw new (globalThis.DOMException || Error)(
+        "Failed to execute 'disconnect' on 'AudioNode': the provided destination is not part of the same AudioContext.", 'InvalidAccessError');
+    }
     this._zwConnected = null;
   };
+  // M3 扩批 XXV：AudioNode instanceof EventTarget（part05 EventTarget 已装载——
+  // audionode.html「AudioNode is an EventTarget」断言面；原型链一次链接）。
+  if (typeof globalThis.EventTarget !== 'undefined' && globalThis.EventTarget.prototype &&
+      !(_zwWANode.prototype instanceof globalThis.EventTarget)) {
+    Object.setPrototypeOf(_zwWANode.prototype, globalThis.EventTarget.prototype);
+  }
   function AudioContext(options) {
     // WebIDL：无 new 调用抛 TypeError（构造器语义——同 Audio() 面但不走工厂）。
     if (!(this instanceof AudioContext)) {
@@ -7386,6 +7418,12 @@
     // 切片——上下文采样率固定 48k）。
     if (options !== undefined && options !== null && typeof options !== 'object') {
       // WebIDL dict 面非对象 → TypeError（WPT new AudioContext('latencyHint') 断言面）。
+      // M3 扩批 XXV：**3-arg legacy 面删除**——`new AudioContext(1, 44100, 44100)`
+      // 不再构造 offline context（spec 历史面；audionode.html 断言抛 TypeError）。
+      // 数字首参 = legacy 位置形态（ OfflineAudioContext 同款签名），拒收。
+      if (typeof options === 'number') {
+        throw new TypeError("Failed to construct 'AudioContext': Legacy 3-argument AudioContext is not supported.");
+      }
       throw new TypeError("Failed to construct 'AudioContext': The provided value is not of type 'AudioContextOptions'.");
     }
     var o = options || {};
@@ -7536,7 +7574,7 @@
     });
     // frequency/detune AudioParam（_zwMakeAudioParam 工厂——instanceof AudioParam
     // 面 + 非 finite value TypeError + 调度方法链式；value 变更同步宿主桥 freq）。
-    var _freqParam = globalThis._zwMakeAudioParam(_freq);
+    var _freqParam = globalThis._zwMakeAudioParam(_freq, self._zwCtxId);
     Object.defineProperty(_freqParam, 'value', {
       get: function () { return _freq; },
       set: function (v) {
@@ -7556,7 +7594,7 @@
       configurable: true,
     });
     // detune AudioParam 占位（值恒 0——cent 偏移归后续切片）。
-    var _detuneParam = globalThis._zwMakeAudioParam(0);
+    var _detuneParam = globalThis._zwMakeAudioParam(0, self._zwCtxId);
     Object.defineProperty(node, 'detune', {
       get: function () { return _detuneParam; },
       configurable: true,
@@ -7583,7 +7621,7 @@
   AudioContext.prototype.createGain = function () {
     var node = _zwWANode('gain', this._zwCtxId, 0);
     var _gainVal = 1.0;
-    var _gainParam = globalThis._zwMakeAudioParam(1.0);
+    var _gainParam = globalThis._zwMakeAudioParam(1.0, this._zwCtxId);
     Object.defineProperty(_gainParam, 'value', {
       get: function () { return _gainVal; },
       set: function (v) { _gainVal = Number(v); if (isNaN(_gainVal)) _gainVal = 1.0; },
@@ -7649,8 +7687,10 @@
   }
   globalThis.AudioParam = globalThis.AudioParam || AudioParam;
   // AudioParam 工厂（createOscillator/createGain 的 frequency/detune/gain 面共用）。
-  globalThis._zwMakeAudioParam = function (initialValue) {
+  globalThis._zwMakeAudioParam = function (initialValue, ctxId) {
     var param = Object.create(globalThis.AudioParam.prototype);
+    param._zwKind = 'audioparam';
+    param._zwCtx = ctxId != null ? ctxId : param._zwCtx;
     var _v = Number(initialValue) || 0;
     // spec：value setter 非 finite → TypeError（AudioParam value 面惯例；
     // WPT audioparam-exceptional-values 主断言面——NaN/Inf 拒绝）。
@@ -7682,6 +7722,25 @@
       if (n < 0) throw new RangeError("Failed to execute '" + method + "' on 'AudioParam': time must be non-negative.");
       return n;
     }
+    // M3 扩批 XXV：AudioParam 连接面（spec connect(AudioParam)——跨 context →
+    // InvalidAccessError；different-contexts Test 2/4 断言面）。索引可变参数无
+    // 输入界（任意 target 节点输出可接 param）。
+    param.connect = function (target) {
+      if (!target || typeof target !== 'object') {
+        throw new TypeError("Failed to execute 'connect' on 'AudioParam': parameter 1 is not of type 'AudioNode'.");
+      }
+      if (target._zwCtx != null && param._zwCtx != null && target._zwCtx !== param._zwCtx) {
+        throw new (globalThis.DOMException || Error)(
+          "Failed to execute 'connect' on 'AudioParam': cannot connect to a node belonging to a different AudioContext.", 'InvalidAccessError');
+      }
+      return target;
+    };
+    param.disconnect = function (target) {
+      if (target && typeof target === 'object' && target._zwCtx != null && param._zwCtx != null && target._zwCtx !== param._zwCtx) {
+        throw new (globalThis.DOMException || Error)(
+          "Failed to execute 'disconnect' on 'AudioParam': the provided destination is not part of the same AudioContext.", 'InvalidAccessError');
+      }
+    };
     param.setValueAtTime = function (v, startTime) {
       this.value = _zwFiniteOrThrow(v, 'setValueAtTime');
       _zwTimeOrThrow(startTime, 'setValueAtTime');
@@ -7755,6 +7814,7 @@
     else if (nodeName === 'BiquadFilterNode') node = _zwWABuildBiquadFilter(ctx, options);
     else if (nodeName === 'AnalyserNode') node = _zwWABuildAnalyser(ctx, options);
     else if (nodeName === 'ConstantSourceNode') node = _zwWABuildConstantSource(ctx, options);
+    else if (nodeName === 'AudioBufferSourceNode') node = _zwWABuildBufferSource(ctx, options);
     else if (nodeName === 'ChannelSplitterNode') node = _zwWABuildChannelSplitter(ctx, options);
     else if (nodeName === 'ChannelMergerNode') node = _zwWABuildChannelMerger(ctx, options);
     else node = ctx.createGain();
@@ -7855,7 +7915,7 @@
     // 不适用——ctor-stereopanner testDefaultConstructor 断言面）。
     node._zwChannelCountMode = 'clamped-max';
     var _panVal = 0;
-    var _panParam = globalThis._zwMakeAudioParam(0);
+    var _panParam = globalThis._zwMakeAudioParam(0, ctx._zwCtxId);
     Object.defineProperty(_panParam, 'value', {
       get: function () { return _panVal; },
       set: function (v) {
@@ -7890,7 +7950,7 @@
     if (isNaN(_maxDelay) || _maxDelay < 0) {
       throw new RangeError("Failed to construct 'DelayNode': maxDelayTime must be non-negative.");
     }
-    var _delayParam = globalThis._zwMakeAudioParam(0);
+    var _delayParam = globalThis._zwMakeAudioParam(0, ctx._zwCtxId);
     _delayParam.maxValue = _maxDelay;
     Object.defineProperty(_delayParam, 'value', {
       get: function () { return _delayVal; },
@@ -7932,10 +7992,10 @@
       },
       configurable: true,
     });
-    var _q = globalThis._zwMakeAudioParam(1);
-    var _detune = globalThis._zwMakeAudioParam(0);
-    var _freq = globalThis._zwMakeAudioParam(350);
-    var _gain = globalThis._zwMakeAudioParam(0);
+    var _q = globalThis._zwMakeAudioParam(1, ctx._zwCtxId);
+    var _detune = globalThis._zwMakeAudioParam(0, ctx._zwCtxId);
+    var _freq = globalThis._zwMakeAudioParam(350, ctx._zwCtxId);
+    var _gain = globalThis._zwMakeAudioParam(0, ctx._zwCtxId);
     Object.defineProperty(node, 'Q', { get: function () { return _q; }, configurable: true });
     Object.defineProperty(node, 'detune', { get: function () { return _detune; }, configurable: true });
     Object.defineProperty(node, 'frequency', { get: function () { return _freq; }, configurable: true });
@@ -8178,7 +8238,7 @@
     var node = _zwWANode('constantsource', ctx._zwCtxId, 0);
     node._zwInputs = 0;
     var _started = false;
-    var _offset = globalThis._zwMakeAudioParam(1);
+    var _offset = globalThis._zwMakeAudioParam(1, ctx._zwCtxId);
     Object.defineProperty(node, 'offset', {
       get: function () { return _offset; },
       configurable: true,
@@ -8194,6 +8254,48 @@
   ConstantSourceNode.prototype = _zwWANode.prototype;
   globalThis.ConstantSourceNode = globalThis.ConstantSourceNode || ConstantSourceNode;
   AudioContext.prototype.createConstantSource = function (options) { return _zwWABuildConstantSource(this, options); };
+  // AudioBufferSourceNode（M3 扩批 XXV：接口最小面——0入1出 + buffer/loop/
+  // playbackRate/detune 反射 + start/stop 门控；播放推进/DSP 仍归 RFC §0 后续）。
+  // audionode.html「AudioBufferSource.numberOfInputs/Outputs」断言面。
+  function _zwWABuildBufferSource(ctx, options) {
+    var node = _zwWANode('buffersource', ctx._zwCtxId, 0);
+    node._zwInputs = 0;
+    var _buffer = null;
+    var _loop = false;
+    Object.defineProperty(node, 'buffer', {
+      get: function () { return _buffer; },
+      set: function (v) {
+        if (v !== null && (typeof v !== 'object' || typeof v.getChannelData !== 'function')) {
+          throw new TypeError("Failed to set the 'buffer' property on 'AudioBufferSourceNode': The provided value is not of type 'AudioBuffer'.");
+        }
+        _buffer = v;
+      },
+      configurable: true,
+    });
+    Object.defineProperty(node, 'loop', {
+      get: function () { return _loop; },
+      set: function (v) { _loop = !!v; },
+      configurable: true,
+    });
+    var _playbackRate = globalThis._zwMakeAudioParam(1, ctx._zwCtxId);
+    var _detune = globalThis._zwMakeAudioParam(0, ctx._zwCtxId);
+    Object.defineProperty(node, 'playbackRate', { get: function () { return _playbackRate; }, configurable: true });
+    Object.defineProperty(node, 'detune', { get: function () { return _detune; }, configurable: true });
+    node.start = function () {};
+    node.stop = function () {};
+    if (options && typeof options === 'object') {
+      if (options.buffer !== undefined) node.buffer = options.buffer;
+      if (options.loop !== undefined) node.loop = options.loop;
+    }
+    return node;
+  }
+  function AudioBufferSourceNode(ctx, options) { return _zwWANodeCtor('AudioBufferSourceNode', ctx, options); }
+  AudioBufferSourceNode.prototype = _zwWANode.prototype;
+  globalThis.AudioBufferSourceNode = globalThis.AudioBufferSourceNode || AudioBufferSourceNode;
+  AudioContext.prototype.createBufferSource = function () { return _zwWABuildBufferSource(this); };
+  if (typeof globalThis.OfflineAudioContext !== 'undefined') {
+    OfflineAudioContext.prototype.createBufferSource = AudioContext.prototype.createBufferSource;
+  }
   if (typeof globalThis.OfflineAudioContext !== 'undefined') {
     OfflineAudioContext.prototype.createConstantSource = AudioContext.prototype.createConstantSource;
   }

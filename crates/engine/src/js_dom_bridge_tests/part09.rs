@@ -4788,4 +4788,21 @@ fn test_webaudio_merger_splitter_constant_source_m3xxiv() {
         "true|0.5|9|-9|0|IndexSizeError",
         "getChannelData same-object + copyFrom(offset) + copyTo(尾部) + 越界 IndexSizeError"
     );
+
+    // 断言组 5（第八批）：AudioNode 接口基本面——跨 context connect/disconnect
+    // InvalidAccessError（节点 + AudioParam 目标）+ connect 索引越界
+    // IndexSizeError + AudioBufferSourceNode 0入1出 + instanceof EventTarget。
+    sandbox
+        .execute(
+            "var ca = new AudioContext();             var cb = new AudioContext();             var ga = new GainNode(ca);             var gb = new GainNode(cb);             var _errs = [];             try { gb.connect(ga); } catch (e) { _errs.push('node:' + e.name); }             try { gb.connect(ga.gain); } catch (e) { _errs.push('param:' + e.name); }             try { gb.disconnect(ga); } catch (e) { _errs.push('disNode:' + e.name); }             try { gb.disconnect(ga.gain); } catch (e) { _errs.push('disParam:' + e.name); }             var src = new AudioBufferSourceNode(ca);             var _idx = '';             try { src.connect(ca.destination, 5, 0); } catch (e) { _idx = e.name; }             try { src.connect(ca.destination, 0, 5); } catch (e) { _idx += '|' + e.name; }\
+             var _legacy = '';\
+             try { new AudioContext(1, 44100, 44100); } catch (e) { _legacy = e.constructor.name; }\
+             globalThis.__r5 = [_errs.join(','), String(src.numberOfInputs), String(src.numberOfOutputs), String(src instanceof EventTarget), _idx, _legacy].join('|');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r5").unwrap().value,
+        "node:InvalidAccessError,param:InvalidAccessError,disNode:InvalidAccessError,disParam:InvalidAccessError|0|1|true|IndexSizeError|IndexSizeError|TypeError",
+        "跨 context 四面 InvalidAccessError + AudioBufferSource 0入1出 + EventTarget + 索引越界 + 3-arg legacy 拒收"
+    );
 }

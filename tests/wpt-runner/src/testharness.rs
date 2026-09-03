@@ -1614,6 +1614,12 @@ pub const WEBAUDIO_TEST_FILES: &[&str] = &[
     "webaudio/the-audio-api/the-channelsplitternode-interface/ctor-channelsplitter.html",
     "webaudio/the-audio-api/the-constantsourcenode-interface/ctor-constantsource.html",
     "webaudio/the-audio-api/the-audiobuffer-interface/audiobuffer-getChannelData.html",
+    // ---- 第八批（2026-09-03）：AudioNode 接口基本面——跨 context connect/
+    // disconnect InvalidAccessError（ctx 身份校验）+ connect 索引越界
+    // IndexSizeError + AudioBufferSourceNode 0入1出接口反射 + AudioContext
+    // 3-arg legacy 拒收（shim 第八批同步落地）。
+    "webaudio/the-audio-api/the-audionode-interface/audionode.html",
+    "webaudio/the-audio-api/the-audionode-interface/different-contexts.html",
     // 不导入：ctor-audiobuffer.html（末 task「multiple contexts」依赖
     // startRendering——audit runner 整文件跑，前段构造面无法单独导入）；
     // audiobuffer-copy-channel（startRendering 后段同文件不可分割——数据面已落

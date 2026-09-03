@@ -1,0 +1,30 @@
+{
+  "batch": "WPT webaudio 第八批",
+  "date": "2026-09-03",
+  "topic": "AudioNode 接口基本面——跨 context 身份校验 + connect 索引越界 + AudioBufferSourceNode 接口反射",
+  "imported": [
+    "webaudio/the-audio-api/the-audionode-interface/audionode.html",
+    "webaudio/the-audio-api/the-audionode-interface/different-contexts.html"
+  ],
+  "shim_changes": [
+    "AudioNode.connect(target, output, input)：跨 context（_zwCtx 身份）→ InvalidAccessError；output >= numberOfOutputs / input >= target._zwInputs → IndexSizeError",
+    "AudioNode.disconnect(target)：跨 context 目标 → InvalidAccessError（身份校验先于连接状态）",
+    "AudioParam（_zwMakeAudioParam 增 ctxId 参）：_zwKind='audioparam' + _zwCtx 身份 + connect/disconnect 跨 context 校验；12 处 builder 调用点透传 ctx._zwCtxId（createOscillator/createGain 修正 self/this 作用域）",
+    "AudioBufferSourceNode：0入1出 + buffer/loop/playbackRate/detune 反射 + start/stop 门控 + ctor/工厂双路",
+    "_zwWANode.prototype 原型链接 EventTarget（part05 已装载——instanceof 断言面）",
+    "AudioContext 构造器拒收 3-arg legacy 形态（数字首参 TypeError）"
+  ],
+  "results": {
+    "pass": 384,
+    "fail": 0,
+    "timeout": 0,
+    "net": "+6 subtest 净涨零回归（378→384）"
+  },
+  "unit_test": "test_webaudio_merger_splitter_constant_source_m3xxiv（扩断言组 5）",
+  "gates": {
+    "make_test": "18819 passed / 0 failed",
+    "engine": "2579 全绿",
+    "clippy": "-D warnings 零警告",
+    "fmt": "clean"
+  }
+}
