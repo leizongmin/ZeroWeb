@@ -591,13 +591,11 @@ impl Painter {
         doc: &Document,
         styles: &HashMap<NodeId, ComputedStyle>,
     ) {
-        // R3933 kill-switch：inline svg paint 默认关——激活后暴露 102 案「双白假绿」
-        // （ref 页同含 svg，此前双页不渲 svg 恒等假 PASS；真渲染后 svg transform/
-        // viewport 语义差异显形，净 corpus -84）。待 svg transform-origin/viewport
-        // 语义切片落地后再默认放开（ZW_INLINE_SVG_PAINT=1 手动验证）。
-        if std::env::var("ZW_INLINE_SVG_PAINT").as_deref() != Ok("1") {
-            return;
-        }
+        // R3990：R3933 kill-switch 默认放开。依据——真语义域已全绿（transform-origin
+        // 81 案 + bg 豁免 18 + stylesheet 级联 4 等），残红全部归档深域（filter-effects
+        // 为 usvg upstream 语义差、渐变×transform 缺 chromium oracle、css-transforms-2
+        // 独立属性），net≥0 门槛在当前归档态不可达；维持关闭 = 双白假绿假基线长期
+        // 掩盖 inline `<svg>` 真实渲染。放开后净 corpus 14246/16815（-13 已定价归档）。
         let Some(node_id) = box_node.node_id else {
             return;
         };
