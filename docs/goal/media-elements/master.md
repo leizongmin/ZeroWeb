@@ -32,7 +32,17 @@ markup 结构族 6 件 + track-cue-mutable-fragment（assert_cue_fragment isEqua
 track-cue-empty（constructor.name 原生 class 断言——shim 工厂面差异）+
 track-mode-not-changed-by-new-track（textTracks 身份对拍切片）+
 track-remove-insert-ready-state（re-attach 播放推进链切片）+
-track-selection-task-order（selection 宏任务序切片）。此前同日：**M3 扩批 XXIX 落地**——ready-states/autoplay 导入
+track-selection-task-order（selection 宏任务序切片）。**全目录清点收束（2026-09-04
+勘察）**：主目录 24 件缺失全定性（manual×8 / permissions-policy https×6 /
+loop_base×2 / 已注记排除×5——error-sequence MSE-util / no-autoplay iframe /
+preserves-pitch / src_object_blob / volume_check 旧语义）；resize-during-playback
+（双分辨率 mid-stream resize fixture + resize 二次派发——排除注记）；the-video-
+element 余 26 件 / the-audio-element 余 16 件（loading-lazy 族 / poster 族 /
+crash 族——加载与崩溃域）；user-interface muted 面 2 件（UI 域）；
+crashtests GC 面 1 件；ready-states 余 2 件已注记。**缺口面穷尽定性——余下
+增量依赖深结构或新批复解锁**。证据快照：
+[evidence/2026-09-04-media-598p-snapshot.json](evidence/2026-09-04-media-598p-snapshot.json)
+（598/622 = 96.14%，PF 全为 canPlayType optional 中性面）。此前同日：**M3 扩批 XXIX 落地**——ready-states/autoplay 导入
 （audio+video 各 5 子测：autoplaying flag 与 play()/pause()/load() 交互 +
 事件严格序 canplay→canplaythrough→play→playing / play 先行形态
 play→canplay→playing→canplaythrough）。配套 HAVE_NOTHING 期 play() 挂起
