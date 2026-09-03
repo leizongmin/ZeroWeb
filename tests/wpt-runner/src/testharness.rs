@@ -1562,6 +1562,11 @@ pub const MEDIA_TEST_FILES: &[&str] = &[
     // M3 扩批 XXVIII 续：track-mode-triggers-loading——metadata track disabled 不
     // 加载，mode 改 hidden 触发（mode 触发加载面 + VTT cue 解析断言）。
     "html/semantics/embedded-content/media-elements/track/track-element/track-mode-triggers-loading.html",
+    // M3 扩批 XXX 续：mode/cuechange 播放推进面（B 组基建现成试导）。
+    // track-mode 维持排除——mode 数值 setter 回落 + cue 计数 done 链。
+    "html/semantics/embedded-content/media-elements/track/track-element/track-mode-disabled.html",
+    "html/semantics/embedded-content/media-elements/track/track-element/track-cues-cuechange.html",
+    "html/semantics/embedded-content/media-elements/track/track-element/track-cues-add-new-track.html",
     // M3 扩批 XXX（2026-09-04）：WebVTT 解析面批量导入（track-helpers.js 断言辅助
     // + 27 件 vtt 资源）——BOM/UTF8 编码面/header 注释/空 cue/timings 变体/
     // 退化形态/interspersed-non-cue/newlines。markup 结构族（voice/class/markup/

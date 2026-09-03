@@ -7,7 +7,11 @@ track-helpers.js 断言辅助（assert_cues_equal/check_cues_from_track/
 as_textcontent 对拍）+ 27 件 vtt 资源 + 14 用例（BOM/UTF8 编码面（iconv 拒收）/
 header 注释/空 cue/timings 变体（no-hours/whitespace/large-timestamp/
 negative-duration）/interspersed-non-cue/newlines/退化形态）。
-**584P/0F/24PF，584/608 = 96.05%**（+14 净涨零回归）。维持排除（实证注记）：
+**584P/0F/24PF，584/608 = 96.05%**（+14 净涨零回归）。**XXX 续**：mode/
+cuechange 播放推进面 3 件导入（track-mode-disabled / track-cues-cuechange /
+track-cues-add-new-track——B 组基建现成试导全绿；track-mode 维持排除——mode
+数值 setter 回落 + cue 计数 done 链独立切片）。
+**587P/0F/24PF，587/611 = 96.07%**（累计 +17 净涨零回归）。维持排除（实证注记）：
 markup 结构族 6 件（assert_cue_fragment isEqualNode 对拍 getCueAsHTML 的 span
 节点树——cue 标记树解析深结构项归渲染域远期）+ track-cue-empty
 （constructor.name 原生 class 断言——shim 工厂面差异）。此前同日：**M3 扩批 XXIX 落地**——ready-states/autoplay 导入
@@ -680,7 +684,7 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
 
 | # | 缺口 | 状态 | 失败聚类 |
 |---|------|------|----------|
-| M1g | WPT media-elements 用例覆盖 | ✅ 168 用例已导入（136 + 扩批 XVI~XXX：播放推进族 6 件 + track-change-event + track-active-cues + played-loop + audio_loop_seek_to_eos + loop-from-ended.tentative + seeking/ 三件 + volume_nonfinite + media_fragment_seek + autoplay-with-broken-track + currentTime-move-within-document + track-mode-triggers-loading + track-remove-quickly + track-remove-by-setting-innerHTML + ready-states/autoplay + WebVTT 解析面 14 件），**96.05%**（584/608） | — |
+| M1g | WPT media-elements 用例覆盖 | ✅ 168 用例已导入（136 + 扩批 XVI~XXX：播放推进族 6 件 + track-change-event + track-active-cues + played-loop + audio_loop_seek_to_eos + loop-from-ended.tentative + seeking/ 三件 + volume_nonfinite + media_fragment_seek + autoplay-with-broken-track + currentTime-move-within-document + track-mode-triggers-loading + track-remove-quickly + track-remove-by-setting-innerHTML + ready-states/autoplay + WebVTT 解析面 14 件 + mode/cuechange 播放推进面 3 件），**96.07%**（587/611） | — |
 | M2g | load 算法 + 状态机（事件序列派发） | ✅ M2 落地（13T→**0T**） | F4 闭合 |
 | M3g | 事件序列 headless 近似驱动 | ✅（同 M2g；source-child 触发已落地） | F4 闭合 |
 | M4g-a | 媒体元数据 IDL 反射（初值面） | ✅ 切片 3 落地 | F2 闭合（-9 Fail） |
@@ -718,7 +722,7 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
    pause-move-to-other-document 同域排除）；the-video-element 反射余面
    （video-loading-*
    preload 语义族——视 lazy-loading 支撑面）。**headless 可导入面已在 95.9% 重饱和
-   （M3 扩批 XXX 后第十三次修正：96.05%；track-mode-triggers-loading 的 metadata
+   （M3 扩批 XXX 后第十三次修正：96.07%；track-mode-triggers-loading 的 metadata
    加载时序由扩批 XV mode 触发面直接覆盖——D 组排除注记失效）**——余下增量依赖兄弟目标解锁（真播放钟 →
    time-marches-on 余面）+ 深结构项（~~TextTrackList change 事件广播反向链~~ ✅
    扩批 XXI 兑现、cue 标记树解析——归渲染域远期）。
