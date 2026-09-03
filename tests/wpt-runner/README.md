@@ -35,6 +35,11 @@ cargo run --release --bin zero-wpt-runner -- reftest-upstream
 # 产品 fixture 渲染 + oracle 像素对比
 cargo run --release --bin zero-wpt-runner -- product-smoke res/xx.html --oracle oracle.png --out out.png
 
+# 媒体 / Web Audio testharness（首次运行前先拉取 fixture 子集；wpt-data gitignored）
+bash tests/wpt-runner/scripts/fetch-media-subset.sh
+bash tests/wpt-runner/scripts/fetch-webaudio-subset.sh
+make testharness-media
+
 # 性能基准
 cargo run --release --bin zero-wpt-runner -- perf --scenario home:path/to/page.html
 ```

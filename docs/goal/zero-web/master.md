@@ -363,12 +363,12 @@ Limit。**前轮 R3303**：TextMetrics 全 10 字段。**前轮 R3302**：`:focu
 |----|------|
 | 仓库代码 | ✅ Cargo workspace 31 个 member（21 库 + 7 应用 + 2 测试工具 + 1 开发工具，含 runtime-config、android-browser 与 media；全部有实质实现） |
 | 编译状态 | ✅ `cargo build --workspace` 通过 |
-| 测试状态 | ✅ `cargo test --workspace` ~16,000+（2026-08-25 静态统计 16,888 个 `#[test]`，不含宏生成/doctest；R3342 实测 16,737；预存失败 `default_actions_work_without_javascript` 为并行流既存，多轮记录，clean HEAD 同败） |
+| 测试状态 | ✅ `cargo test --workspace` ~17,000+（2026-09-04 静态统计 17,516 个 `#[test]`，不含宏生成/doctest；rendering-compat R4006 轮实测 make test 18,773 Pass / 0 Fail，运行时计数含参数化与集成 subtest；预存失败 `default_actions_work_without_javascript` 为并行流既存，多轮记录，clean HEAD 同败） |
 | Clippy | ✅ 零警告（全 workspace） |
 | 基准测试 | ✅ 16/16 crate 有 criterion 基准（78+ 个基准） |
 | CI | ✅ GitHub Actions（ubuntu/macos/windows）|
 
-### 已实现 crate（20 个）
+### 已实现 crate（21 个）
 
 | Crate | 测试 | 基准 | 说明 |
 |-------|------|------|------|
@@ -392,6 +392,7 @@ Limit。**前轮 R3303**：TextMetrics 全 10 字段。**前轮 R3302**：`:focu
 | page-runtime | 123 | ✅ | WPT / TabWorker / zero-renderer 三条页面路径共享的页面加载与运行时契约（`PageLoadHost` / `AsyncFetchHost` / `BlockingFetchHost`），让 in-process（webview）与 IPC（renderer）两种宿主复用同一套分阶段页面加载逻辑（runtime 统一） |
 | product-version | 2 | — | 产品版本号（从构建日期推导，随 `zero-product-version` 分发） |
 | psl | 25 | — | **公共后缀列表（PSL）解析与注册域名（eTLD+1）提取**：三类规则解析（普通/通配/例外，与上游 `public_suffix_list.dat` 语法一致）、`registrable_domain()`（IP/单标签/公共后缀原样返回）、全局共享实例 `shared()`、`from_rules()` 可注入完整数据；接入 site-isolation（R3380，`Site::from_origin` 经 PSL 计算真 eTLD+1） |
+| media | 50（默认 feature）/ 51（audio-cpal） | — | **媒体解码管线（media-playback / media-audio goal 产物，2026-09-01）**：webm/Matroska demux、VP9 纯 Rust 解码（`rusty_vp9`）、AV1（`decode-av1` feature）、YUV→RGBA、音频解码（symphonia mp3/ogg-vorbis、opus-decoder、webm 音轨重封装）、`VideoPlayer` 播放驱动（`VideoClock` trait）、`AudioSink` 输出面（NullSink 可观测 / CpalSink 真设备）、混音总线、Web Audio 振荡器合成最小面 |
 
 ### 跨 crate 集成测试
 
@@ -1045,7 +1046,7 @@ P1a 低风险、可快速见效（主要改 `dom_bridge.rs` + `script-sandbox` +
 
 **当前状态**：
 - [x] **P1a: 事件循环补全 + fetch/MutationObserver/IO/RO 真实化 — 实质完成（2026-08-13 复核）**。详见下方「P1a 复核结论（2026-08-13）」。剩余仅为非阻塞 follow-up（IO/RO 持续 tick Slice 2b / 纯 host 侧 MO / A 代死代码「提及不删」）。
-- [~] P1b: V8 原生绑定 RFC（**v0.1 已批准 S0（2026-08-09）** [`docs/specs/p1b-v8-native-bindings-rfc.md`](../../specs/p1b-v8-native-bindings-rfc.md)，方案 C 混合 DOM-Node，分阶段切片 S0–S7，S0 PoC 验证 GC/TBD 后逐片 land；**S0–S5 已 land**，S6/S7 = attributeChangedCallback 全化 + 完整 parity + default-on，**default-on 时机须用户拍板**）— **2026-08-08**：已飞书征询审批（om_x100b6847a89f54a0c31f9749fe65ad9）；**2026-08-09**：用户批准 S0 PoC（零行为变更，纯验证 TBD-1/TBD-2，结果回写 RFC）
+- [x] **P1b: V8 原生绑定 RFC — 全部完成（js-dom goal 已收官归档，2026-08-31）**（[`docs/specs/p1b-v8-native-bindings-rfc.md`](../../specs/p1b-v8-native-bindings-rfc.md)，方案 C 混合 DOM-Node；M1–M5 全达成，**R383/R384 双引擎 `native_dom` default-on land + kill-switch 删除（M7 QuickJS 同款 default-on）**，DC-1~8 全 ✅，goal 归档至 [`docs/goal/archive/js-dom/`](../archive/js-dom/master.md)；此前 2026-08-08 飞书征询（om_x100b6847a89f54a0c31f9749fe65ad9）、2026-08-09 用户批准 S0 PoC）
 
 **P1a 复核结论（2026-08-13，本轮核对实际代码后纠正——此前 master 记 P1a 为活跃主线/4 切片待办，现已实质完成）**：
 
@@ -1062,6 +1063,8 @@ P1a 低风险、可快速见效（主要改 `dom_bridge.rs` + `script-sandbox` +
 4. **A 代路径统一**：`DomCommand`/`parse_command`（dom_bridge.rs:200-319）仅剩单测引用 = 死代码（CLAUDE.md「提及不删」）；`webview.execute_script_with_dom`（A 代）或废弃或转注 B 代 shim；**wpt-runner web_api 用例为空洞通过**（runner 不执行内联 JS，test_cases_web_api.rs:161-181），P1a 后需补 JS 执行路径 — **✅ 空洞通过已由 R3076 闭合（见上方复核）**
 
 切片 1-3 均低风险可独立 land；验证基线 = tab_js_worker 既有测试（fetch 端到端 663-810 / 定时器 811-852 / MutationObserver 五连测 906-1065，`wait_for_global` 轮询模式）+ 每切片 `make test` 零回归。P1b（V8 原生绑定）仍需独立 RFC。**P1a 主线实质完成 → 当前活跃推进面 = security/storage/net deep-review（自主域）+ P1b（S6/S7 等用户拍板 default-on）+ P3 GPU/Display（需物理环境）**。
+
+> **2026-09-04 状态勘误**：上行「P1b 待 default-on 拍板」已过时——P1b 全部完成（R383/R384 双引擎 default-on land + kill-switch 删除，js-dom goal 2026-08-31 收官归档，见上方「当前状态」P1b 条）；security/storage/net deep-review 自主域亦经 R3388–R3398 逐文件审后收敛（见「最近完成的改进」）。当前父目标活跃面 = 媒体线（media-playback / media-audio / media-elements 三 goal 并行推进）与零星自主域复扫。
 
 ---
 

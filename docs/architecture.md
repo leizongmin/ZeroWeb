@@ -98,7 +98,7 @@
 9. `webview` 把这条链路包装成嵌入式 API，供 `apps/browser` 或第三方应用调用。
 10. `zero-browser` 固定由 `apps/renderer` 独立进程承担步骤 2–7，经 `protocol` IPC 与浏览器主进程交互，并配合 image-decoder 与 compositor 子进程；`page-runtime` 让 browser IPC 宿主与嵌入式 `ZeroWebView` 的进程内宿主共享同一套页面加载契约。
 
-这条链路已经能在测试、demo 和浏览器应用里跑起来，并且有大量单元 / 集成测试与 WPT 用例兜底；但离「真实网页 + 完整 JavaScript + 完整浏览器 UI」的成熟度仍有距离。当前主线是 P1b V8 原生 DOM 绑定（P1a DOM/JS Bridge 原生化已主体落地），渲染兼容性（reftest 对齐 Chromium）自 2026-08-09 字体栈重建获批后恢复主动实施。
+这条链路已经能在测试、demo 和浏览器应用里跑起来，并且有大量单元 / 集成测试与 WPT 用例兜底；但离「真实网页 + 完整 JavaScript + 完整浏览器 UI」的成熟度仍有距离。js-dom 专项目标（P1b V8 原生 DOM 绑定）已于 2026-08-31 收官归档（双引擎 native_dom default-on）；当前主线是媒体线（media-playback / media-audio / media-elements 三 goal 并行）与渲染兼容性持续收口（上游 WPT reftest corpus 85.2%）。
 
 ## 现在做到哪了
 
@@ -106,7 +106,7 @@
 
 - **核心内核已有实质实现**: dom、css-parser、style-system、layout-engine、engine、render-foundation、host-runtime、net、security、storage、protocol、canvas、media、wasm-sandbox、script-sandbox、page-runtime、product-version、psl、webview 都有可运行代码和对应测试。
 - **产品层骨架已成，持续打磨**: `apps/browser`（桌面入口 + headless / remote debugging）、`browser-shell`（标签页 / 书签 / 历史 / 下载 / 设置 / 上下文菜单等数据模型）、`apps/renderer`（多进程渲染进程入口）、`apps/image-decoder`（D1 图像解码进程）、`apps/compositor`（C2 合成器进程）、`apps/webdriver`（WebDriver 服务）已打通，`apps/android-browser`（M0 bootstrap）已落地，但产品形态、稳定性和真实站点兼容性仍在推进。
-- **当前主线**: P1b V8 原生 DOM 绑定（2026-08-09 RFC 获批，R3095 起持续落地：S0 PoC 验证 native ~15.6×、S1 原生只读属性族 + NodeId 映射、S2 生产接线 + 树写/属性写原生、live Document 共享、S3 查询原生、S4 EventTarget 与事件派发/冒泡/stopPropagation 原生化，命名空间/序列化 spec 合规 R3181–R3208，**S5 customElements/Web Components 里程碑完成 R3262–R3269**，DOM/CSS 表单状态选择器一致化 R3277–R3284，**js-dom M1-M5 已达成——R383/R384 双引擎 `native_dom` default-on land、kill-switch 已删除**；P1a DOM/JS Bridge 原生化已主体落地）；渲染兼容性（WPT/CSSWG reftest 对齐 Chromium Oracle）2026-08-04 起降频守成、2026-08-09 字体栈重建 RFC v0.2.3 获批后恢复主动实施——多切片已落地（OpenType features 贯通、shaped fallback default-on、two-value `font-size-adjust` 全栈贯通 css-fonts Oracle 净改善 14.34pp、font-synthesis/font-size 绝对关键字）——Chromium Oracle 真一致约 47.5%、self-source 约 77%、strict 处低位 plateau，自主 clean-lever 轻量修复面已 11 vein 审计穷尽；残余缺口为 vertical writing modes（部分切片已落地，整体仍 user-gated）、multicol 碎片化、R109 inline-as-block 等结构性问题，根因是 layout↔paint IFC 度量不一致（Phase-A spread），Phase A IFC / R1043 / R2174 等深方向仍需用户点名授权。完整 Web API 与真实网站交互兼容性是后续阶段。详见 [路线图](../ROADMAP.md)。
+- **当前主线**: 媒体线三 goal 并行——[media-playback](goal/media-playback/master.md)（webm/VP9/AV1 解码 + fixture-mounted 播放面，D3 H.264 立项 RFC 待批复）、[media-audio](goal/media-audio/master.md)（WPT webaudio 十三批导入 headless 可导入面饱和收口 787P/0F）、[media-elements](goal/media-elements/master.md)（HTMLMediaElement 语义面 WPT 570P/0F = 96.0%）；js-dom 专项目标（P1b V8 原生 DOM 绑定）2026-08-31 收官归档——M1–M5 全达成（R383/R384 双引擎 `native_dom` default-on land、kill-switch 删除），归档见 [goal/archive/js-dom/](goal/archive/js-dom/master.md)；渲染兼容性（WPT/CSSWG reftest 对齐 Chromium Oracle）持续主动实施——上游 WPT reftest corpus **14316/16816 = 85.2%**（R4006），inline SVG paint 默认放开（R3991，user 点名）后 svg transform/origin/stylesheet 级联、run-in 并入、SVG intrinsic / flex §9.9 / table section / rtl abspos 等系列持续收口（R3936–R4006）；残余缺口为 vertical writing modes、multicol 碎片化、R109 inline-as-block 等结构性问题（Phase A IFC / R1043 / R2174 等深方向仍需用户点名授权）。完整 Web API 与真实网站交互兼容性是后续阶段。详见 [路线图](../ROADMAP.md)。
 
 所以今天的 ZeroWeb 是一个内核已成形、产品层在打磨的浏览器工作区，但还不是一个做完的浏览器产品。
 
