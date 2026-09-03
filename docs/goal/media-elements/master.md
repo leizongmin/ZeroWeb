@@ -2,7 +2,13 @@
 
 **入口文档**: [../media-elements.md](../media-elements.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-03（**M3 扩批 XX 落地**——HAVE_NOTHING 期 seek 挂起
+**最后更新**: 2026-09-03（**M3 扩批 XXI 落地**——深结构项 D 组首个收口：
+TextTrackList change 事件广播——TextTrack↔TextTrackList 反向链
+（`_zwOwnerList` 三处回填）+ addTextTrack 即时建 list（spec：track 创建即属于
+media 元素 track 列表；上游用例 mode setter 先于 textTracks 首读的时序依赖）+
+mode 有效值变更异步派基础 Event('change')（无 track 属性/target=list/同值不派）。
+track-change-event 导入。**536P/0F/24PF，536/560 = 95.7%**。此前同日：
+**M3 扩批 XX**——HAVE_NOTHING 期 seek 挂起
 语义：currentTime setter readyState 0 时挂 `_zwSeekDeferred`，
 `_zwMediaLoadSequence` readyState 0→1 翻转时补跑 seek 算法（seeking + seeked
 异步回落 + cue active 面同步）——spec「default playback start position」；
@@ -420,6 +426,21 @@ already-playing resolved 断言。**88.3%**（324P/0F/2T/41PF，+80 subtest 全�
   观察时序（当前泵粒度下 exit 与 paused 翻转存在同 tick 交错）。两者根因已
   记录，随泵节拍精化 + seek 面深化复评。
 
+**M3 扩批 XXI 已落地（2026-09-03 续，TextTrackList change 广播——D 组首个收口）**：
+- **实施**：① 反向链回填三处（`_zwSyncTextTracksFromChildren` holder 同步段 /
+  textTracks getter list 首建处 / addTextTrack）——`track._zwOwnerList = list`；
+  ② addTextTrack **即时建 list**（spec track 创建即属于列表；上游时序
+  addTextTrack → mode='showing' → textTracks 首读中 setter 先于首读——惰性建
+  list 使 change 广播失联，首版 Timeout 根因）；③ mode setter 有效值变更 →
+  `_zwFireTracksChanged(list)` 异步派基础 Event('change')（无 track 属性——
+  上游 hasOwnProperty('track')===false 断言面；target=list exposed proxy；
+  同值/invalid 不派）。
+- **导入**：track-change-event（+1P）。testharness-media **536P/0F/24PF
+  （536/560 = 95.7%）**；track 族 52 用例 2 连跑稳定。
+- 单测 `test_media_texttrack_list_change_broadcast_m3xxi`（派发面 + 事件形状 +
+  同值/invalid 不派 + 再变更再派）。make test 66 套件 18804/0。evidence：
+  `evidence/2026-09-03-media-change-event-r39xx.md`（+同名 .json）。
+
 **M3 扩批 XX 已落地（2026-09-03 续，HAVE_NOTHING 期 seek 挂起语义）**：
 - **根因**：track-cues-seeking（onseeked 计数链 + activeCues 递增断言）Timeout
   ——track.onload 内 `video.src=` → `currentTime=0.5` 立即执行，动态 src 的
@@ -550,7 +571,7 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
 
 | # | 缺口 | 状态 | 失败聚类 |
 |---|------|------|----------|
-| M1g | WPT media-elements 用例覆盖 | ✅ 142 用例已导入（136 + 扩批 XVI/XVII/XIX/XX：track-cues-enter-seeking / missed / sorted-before-dispatch / enter-exit / pause-on-exit / seeking——播放推进族），**95.7%**（535/559） | — |
+| M1g | WPT media-elements 用例覆盖 | ✅ 143 用例已导入（136 + 扩批 XVI/XVII/XIX/XX/XXI：播放推进族 6 件 + track-change-event——深结构 D 组首个收口），**95.7%**（536/560） | — |
 | M2g | load 算法 + 状态机（事件序列派发） | ✅ M2 落地（13T→**0T**） | F4 闭合 |
 | M3g | 事件序列 headless 近似驱动 | ✅（同 M2g；source-child 触发已落地） | F4 闭合 |
 | M4g-a | 媒体元数据 IDL 反射（初值面） | ✅ 切片 3 落地 | F2 闭合（-9 Fail） |
@@ -573,7 +594,8 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
    lazy-loading 支撑面）。**headless 可导入面已在 95.7% 重饱和（M3 扩批 XX 后
    第五次修正）**——余下增量依赖兄弟目标解锁（真播放钟 → time-marches-on 余面
    / loop-from-ended / fragmented-mp4-end）
-   + 深结构项（TextTrackList change 事件广播反向链、cue 标记树解析）。
+   + 深结构项（~~TextTrackList change 事件广播反向链~~ ✅ 扩批 XXI 兑现、
+   cue 标记树解析——归渲染域远期）。
 2. ~~**M4g-d**：canPlayType 能力表联动更新~~ ✅ 2026-09-01 兑现（能力表真值化——
    后续新增解码面（AV1/H.264，media-playback M3）时同步扩表）。
 3. ~~**M4g-f**：resource selection 算法面~~ ✅ 2026-09-02 兑现（M3 扩批 XI——
@@ -634,6 +656,8 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
   导入）**534/558 = 95.7%**（+3 净涨零回归；Fail 0 / Timeout 0 / PF 24）
   → 扩批 XX（2026-09-03，HAVE_NOTHING 期 seek 挂起语义——seeking 导入）
   **535/559 = 95.7%**（+1 净涨零回归；Fail 0 / Timeout 0 / PF 24）
+  → 扩批 XXI（2026-09-03，TextTrackList change 广播——track-change-event 导入）
+  **536/560 = 95.7%**（+1 净涨零回归；Fail 0 / Timeout 0 / PF 24）
 - 入口：`make testharness-media`（FILTER 透传，`--json` 捕获 evidence）
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过
 - evidence：`evidence/2026-08-31-media-baseline.md`（+ 同名 .json 机读版）、
@@ -645,4 +669,5 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
   `evidence/2026-09-02-media-pause-removal-variants.json`、`evidence/2026-09-02-media-http-vtt.json`、
   `evidence/2026-09-03-media-cues-playback.json`、
   `evidence/2026-09-03-media-eof-drain-r3936.md`（+同名 .json）、
-  `evidence/2026-09-03-media-deferred-seek-r3937.md`（+同名 .json）
+  `evidence/2026-09-03-media-deferred-seek-r3937.md`（+同名 .json）、
+  `evidence/2026-09-03-media-change-event-r39xx.md`（+同名 .json）

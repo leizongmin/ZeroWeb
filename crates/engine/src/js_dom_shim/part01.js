@@ -201,6 +201,11 @@
           }
           _stHolder.arr = _stAll.slice();
           globalThis._zwSyncListHolder(_stHolder);
+          // M3 扩批 XXI：反向链回填——track → 所属 list（mode setter 的 change 广播
+          // 依赖；track-change-event 断言面）。幂等覆盖（list 身份 same-object）。
+          for (var _stb = 0; _stb < _stAll.length; _stb++) {
+            try { _stAll[_stb]._zwOwnerList = _stList; } catch (_eStb) {}
+          }
           if (_stAdded.length && typeof globalThis._zwFireTracksAdded === 'function') {
             globalThis._zwFireTracksAdded(_stList, _stAdded);
           }

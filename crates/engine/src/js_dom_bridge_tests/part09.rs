@@ -3821,6 +3821,70 @@ fn test_media_track_texttracks_sync_m3x() {
 }
 
 #[test]
+#[cfg(feature = "v8")]
+fn test_media_texttrack_list_change_broadcast_m3xxi() {
+    // media-elements M3 扩批 XXI：TextTrack mode 有效值变更 → 所属 TextTrackList
+    // 异步广播 change 事件（spec text-tracks-in-media-elements「fire an event named
+    // change at the TextTrackList object」；track-change-event 断言面：instanceof
+    // Event、无 track 属性、event.target === video.textTracks 身份；同值 setter 不派）。
+    // 深结构项 D 组首个收口：TextTrack→TextTrackList 反向链（_zwOwnerList）+
+    // addTextTrack 即时建 list（不等 textTracks 首读——mode setter 先于首读的时序）。
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://wpt.test/t.html".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // ① addTextTrack（list 即时建）→ mode='showing'（setter 时 _zwOwnerList 已回填）
+    // → 异步 change。事件断言：instanceof Event、target === textTracks、无 track 属性。
+    sandbox.execute(
+        "var v = document.createElement('video');         var t = v.addTextTrack('subtitles', 'test', 'en');         var events = [];         v.textTracks.onchange = function (ev) {           events.push({\
+             isEvent: ev instanceof Event,\
+             hasTrack: ev.hasOwnProperty('track'),\
+             targetIsList: ev.target === v.textTracks\
+           });         };         t.mode = 'showing';         globalThis.__events = events;",
+    ).unwrap();
+    // 泵 microtask（change 经 queueMicrotask 异步派发）。
+    sandbox.execute(
+        "if (typeof globalThis.__zw_fire_due_timers === 'function') globalThis.__zw_fire_due_timers();",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute(
+            "String(globalThis.__events.length) + ',' +             globalThis.__events.map(function(e){return [e.isEvent, e.hasTrack, e.targetIsList].join('/');}).join('|')"
+        )
+        .unwrap()
+        .value,
+        "1,true/false/true",
+        "mode 变更异步派单次 change；instanceof Event、无 track 属性、target 为 list"
+    );
+
+    // ② 同值 setter 不派（events 仍 1）；invalid 值不派；再改 hidden 再派（累计 2）。
+    sandbox.execute(
+        "t.mode = 'showing';         t.mode = 'bogus';         globalThis.__n1 = globalThis.__events.length;         t.mode = 'hidden';         globalThis.__flag = true;",
+    ).unwrap();
+    sandbox.execute(
+        "if (typeof globalThis.__zw_fire_due_timers === 'function') globalThis.__zw_fire_due_timers();",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute(
+            "globalThis.__n1 + ',' + String(globalThis.__events.length)"
+        )
+        .unwrap()
+        .value,
+        "1,2",
+        "同值/invalid setter 不派 change；有效值变更再派"
+    );
+}
+
+#[test]
 fn test_media_resource_selection_m3xi() {
     // media-elements M3 扩批 XI：resource selection 算法 JS 可观察面（spec
     // concept-media-load-algorithm——同步段 networkState=NETWORK_NO_SOURCE(3)、

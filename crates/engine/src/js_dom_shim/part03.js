@@ -11691,6 +11691,13 @@
             // _zwSyncTextTracksFromChildren 的 added 派发段（track-add-track 断言面：
             // 注册 onaddtrack 后 appendChild 的 track 子仍异步收到 addtrack）。
             if (!_ttEntry.list) _ttEntry.list = globalThis._zwMakeTextTrackList([]);
+            // M3 扩批 XXI：反向链回填先行——list 首建时 manual 段已存在的 addTextTrack
+            // 产物也要绑 _zwOwnerList（track-change-event 的时序：addTextTrack → mode=
+            // 'showing' → textTracks 首读——setter 先于 list 首建，回填须覆盖既有段；
+            // 之后 _zwSyncTextTracksFromChildren 的回填段幂等覆盖）。
+            for (var _atb = 0; _atb < _ttEntry.tracks.length; _atb++) {
+              try { _ttEntry.tracks[_atb]._zwOwnerList = _ttEntry.list; } catch (_eAtb) {}
+            }
             if (typeof globalThis._zwSyncTextTracksFromChildren === 'function') {
               globalThis._zwSyncTextTracksFromChildren(sel, handle, _ttKey);
             }
@@ -11719,6 +11726,13 @@
             // 扩批 X：手动段分离记账——同步重建时 addTextTrack 产物保尾不丢。
             _ttEntry.manual.push(_track);
             _ttEntry.tracks.push(_track);
+            // M3 扩批 XXI：list **即时建**（不等 textTracks 首读）+ 反向链回填——
+            // spec：track 一经创建即属于 media element 的 track 列表（该列表对象
+            // 存在与否不依赖脚本是否访问过 textTracks）。track-change-event 时序
+            // （addTextTrack → mode='showing' → 首读 textTracks）中 mode setter
+            // 跑在首读前——惰性建 list 会使 setter 的 change 广播失联。
+            if (!_ttEntry.list) _ttEntry.list = globalThis._zwMakeTextTrackList([]);
+            try { _track._zwOwnerList = _ttEntry.list; } catch (_eAtl) {}
             // list 已存在（textTracks 先读过）→ 增量同步（M3 扩批 XII：经 holder——
             // list 是索引只读 Proxy，直写索引被 set trap 拒绝）。M3 扩批 XIII：异步
             // addtrack 派发（track-add-track 断言面）。

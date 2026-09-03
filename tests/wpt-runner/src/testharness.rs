@@ -1450,6 +1450,11 @@ pub const MEDIA_TEST_FILES: &[&str] = &[
     // 播放桥 + 泵 + time-marches-on/seek sync 就绪后解锁）。movie_5.webm（VP9+Opus 5s）
     // 为媒体源；cue enter/exit 由桥真值钟驱动（runner 泵每 tick 调 _zwMediaTimeMarchesOn）。
     "html/semantics/embedded-content/media-elements/track/track-element/track-cues-enter-seeking.html",
+    // M3 扩批 XXI：TextTrackList change 事件广播（TextTrack↔TextTrackList 反向链
+    // _zwOwnerList + mode 有效值变更异步 Event('change') target=list——深结构项
+    // D 组首个收口；track-change-event 断言 instanceof Event / 无 track 属性 /
+    // target 身份）。
+    "html/semantics/embedded-content/media-elements/track/track-element/track-change-event.html",
     // M3 扩批 XX（2026-09-03）：HAVE_NOTHING 期 seek 挂起语义（spec「default playback
     // start position」）——currentTime setter readyState 0 时挂 _zwSeekDeferred，
     // _zwMediaLoadSequence readyState 0→1 翻转时补跑 seek 算法（seeking + seeked

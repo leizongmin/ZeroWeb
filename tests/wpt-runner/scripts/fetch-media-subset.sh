@@ -197,9 +197,11 @@ TRACK_ELEMENT_FILES=(
   # M3 扩批 XIII：VTTCue 定位选项 IDL 面（headless 仅存储不做视觉布局）+
   # data:text/vtt 加载（crossorigin 属性三态——headless 不区分 CORS 模式）+
   # addtrack 异步派发 / cue order 排序断言 / src 变更清 cue。
-  # track-change-event 不导入：change 事件广播需 TextTrackList↔TextTrack 反向链 +
-  # 模式变更前 list 未暴露的 pending 重放（深结构）——见 master.md 排除清单。
+  # track-change-event（M3 扩批 XXI 已实施反向链 + change 广播——已导入白名单）。
+  # 此前不导入：change 事件广播需 TextTrackList↔TextTrack 反向链 +
+  # 模式变更前 list 未暴露的 pending 重放（深结构）——2026-09-03 扩批 XXI 收口。
   "track/track-element/vtt-cue-float-precision.html"
+  "track/track-element/track-change-event.html"
   "track/track-element/track-data-url.html"
   "track/track-element/track-add-track.html"
   "track/track-element/track-cue-order.html"

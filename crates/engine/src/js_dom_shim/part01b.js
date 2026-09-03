@@ -455,7 +455,15 @@
         // track URL 处理」；timings-hour/magic-header/header-checks 经
         // enableAllTextTracks 把非 default track 转 hidden 后 onload 断言面）。
         var _wasDisabled = (_ttMode === 'disabled');
+        var _prevMode = _ttMode;
         _ttMode = s;
+        // M3 扩批 XXI：mode **有效值变更** → 所属 TextTrackList 异步广播 change
+        //（反向链 _zwOwnerList 由集合同步/addTextTrack 回填；同值 setter 不派——
+        // track-change-event 断言单次派发面）。
+        if (_prevMode !== s && track._zwOwnerList
+            && typeof globalThis._zwFireTracksChanged === 'function') {
+          globalThis._zwFireTracksChanged(track._zwOwnerList);
+        }
         if (_wasDisabled && s !== 'disabled' && ownerEl
             && typeof globalThis._zwTrackScheduleLoad === 'function') {
           try {
@@ -620,6 +628,26 @@
         });
       })(added[i]);
     }
+  };
+
+  // M3 扩批 XXI：TextTrackList change 事件广播（spec
+  // https://html.spec.whatwg.org/multipage/media.html#text-tracks-in-media-elements——
+  // 「fire an event named change at the TextTrackList object」当 track 的 mode 变更）。
+  // 事件为**基础 Event**（无 track 属性——track-change-event 的
+  // hasOwnProperty('track') === false 断言面；event.target === list exposed proxy）。
+  // 异步 queued task（同 addtrack 形态）。
+  globalThis._zwFireTracksChanged = function (list) {
+    var _deferFire = function (fn) {
+      if (typeof queueMicrotask === 'function') queueMicrotask(fn);
+      else if (typeof setTimeout === 'function') setTimeout(fn, 0);
+      else fn();
+    };
+    _deferFire(function () {
+      try {
+        if (typeof globalThis.Event !== 'function' || typeof list.dispatchEvent !== 'function') return;
+        list.dispatchEvent(new globalThis.Event('change'));
+      } catch (_eFtc) {}
+    });
   };
 
   function _zwMediaError(code, message) {
