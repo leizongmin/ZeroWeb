@@ -562,15 +562,26 @@ pub(crate) fn resolve_inline_visual_length(value: &LengthValue, font_size_px: f6
 
 pub(crate) fn extract_inline_visual_metrics(style: &ComputedStyle) -> InlineVisualMetrics {
     let font_size_px = zero_style_system::computed::resolve_length(&style.font_size, 16.0, None, None);
+    // CSS §8.5.3：border-style 为 none/hidden 时该边 border-width 计算为 0
+    //（与 converter border_lp 同一抑制语义）。computed border-width 初始 = medium(3px)，
+    // 不抑制则 inline 子盒被写入幻影 3px 边框（R4007：ratio-only svg 盒 784×392 膨成
+    // 790×398 @ y=-3，007-ref 双页错位 1.48%）。
+    let border_w = |w: &LengthValue, s: &zero_style_system::property::types::BorderStyleValue| -> f32 {
+        match s {
+            zero_style_system::property::types::BorderStyleValue::None
+            | zero_style_system::property::types::BorderStyleValue::Hidden => 0.0,
+            _ => resolve_inline_visual_length(w, font_size_px),
+        }
+    };
     InlineVisualMetrics {
         padding_top: resolve_inline_visual_length(&style.padding_top, font_size_px),
         padding_right: resolve_inline_visual_length(&style.padding_right, font_size_px),
         padding_bottom: resolve_inline_visual_length(&style.padding_bottom, font_size_px),
         padding_left: resolve_inline_visual_length(&style.padding_left, font_size_px),
-        border_top: resolve_inline_visual_length(&style.border_top_width, font_size_px),
-        border_right: resolve_inline_visual_length(&style.border_right_width, font_size_px),
-        border_bottom: resolve_inline_visual_length(&style.border_bottom_width, font_size_px),
-        border_left: resolve_inline_visual_length(&style.border_left_width, font_size_px),
+        border_top: border_w(&style.border_top_width, &style.border_top_style),
+        border_right: border_w(&style.border_right_width, &style.border_right_style),
+        border_bottom: border_w(&style.border_bottom_width, &style.border_bottom_style),
+        border_left: border_w(&style.border_left_width, &style.border_left_style),
     }
 }
 

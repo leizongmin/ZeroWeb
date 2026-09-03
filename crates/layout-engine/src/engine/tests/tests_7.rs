@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use zero_css_parser::values::{DisplayValue, LengthValue, PositionValue};
 use zero_style_system::ComputedStyle;
 use zero_style_system::StyleSystem;
+use zero_style_system::property::types::BorderStyleValue;
 
 // ── 边缘场景补充测试（第九批）──
 
@@ -451,6 +452,12 @@ fn test_inline_child_box_synced_from_ifc_for_empty_span() {
     span_style.border_right_width = LengthValue::Px(25.0);
     span_style.border_bottom_width = LengthValue::Px(25.0);
     span_style.border_left_width = LengthValue::Px(25.0);
+    // CSS §8.5.3：style=none 时 border-width 计算为 0——显式 Solid 声明真实边框
+    //（R4007 起 extract_inline_visual_metrics 与 converter 同语义抑制 none/hidden）。
+    span_style.border_top_style = BorderStyleValue::Solid;
+    span_style.border_right_style = BorderStyleValue::Solid;
+    span_style.border_bottom_style = BorderStyleValue::Solid;
+    span_style.border_left_style = BorderStyleValue::Solid;
     styles.insert(span, span_style);
 
     let mut engine = LayoutEngine::new(800.0, 600.0);
@@ -504,6 +511,9 @@ fn test_inline_child_box_bleeds_upwards_from_ifc() {
     span_style.line_height = zero_style_system::property::types::LineHeightValue::Number(1.0);
     span_style.padding_top = LengthValue::Px(25.0);
     span_style.border_top_width = LengthValue::Px(15.0);
+    // 显式 Solid：本用例验证 border-top/padding-top 向上扩展（CSS §8.5.3——style=none
+    // 时宽度计 0，R4007 起与 converter 同语义）。
+    span_style.border_top_style = BorderStyleValue::Solid;
     // 显式置 0：本用例只验证 border-top/padding-top 向上扩展；border-bottom 默认值
     // 自 R549 起为 medium(3px)（CSS §8.5.1），IFC 按宽度直接计入盒高，会干扰 80px 期望。
     span_style.border_bottom_width = LengthValue::Px(0.0);

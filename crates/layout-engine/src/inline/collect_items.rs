@@ -426,6 +426,26 @@ impl InlineFormattingContext {
                                         dh
                                     };
                                 }
+                                // R4007（css-sizing-3 §5.2.1 stretch-fit min/max constraint +
+                                // 比回传）：h 钳 min-height 后按比回传扩宽（w = min(h×ratio,
+                                // max_width)），替换首次 w。001：50→25→min-h 100→回传 200→max-w
+                                // 钳 100；002：50→50→100→100。仅比信号（dh<0）+ Px 有限值触发。
+                                if dh < 0.0
+                                    && h > 0.0
+                                    && let LengthValue::Px(min_h) = style.min_height
+                                    && min_h.is_finite()
+                                    && min_h > 0.0
+                                    && (min_h as f32) > h
+                                {
+                                    let ratio = -dh;
+                                    let transferred = (min_h as f32) * ratio;
+                                    let max_w = match style.max_width {
+                                        LengthValue::Px(mw) if mw.is_finite() && mw > 0.0 => mw as f32,
+                                        _ => f32::INFINITY,
+                                    };
+                                    h = min_h as f32;
+                                    w = transferred.min(max_w).max(w);
+                                }
                             }
                             // R3997（css-sizing-4 §4.1/§4.2 transferred size）：CSS aspect-ratio
                             // （或 `auto <ratio>` 的 ratio 部分）+ 恰一侧显式、另一侧 auto 时，

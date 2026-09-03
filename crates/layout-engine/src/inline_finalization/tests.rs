@@ -8,8 +8,8 @@ use std::collections::HashMap;
 use zero_css_parser::values::{DisplayValue, LengthValue};
 use zero_dom::Document;
 use zero_style_system::property::{
-    ColumnCountComputedValue, ColumnFillComputedValue, DirectionValue, TextAlignLastValue, TextAlignValue,
-    WhiteSpaceValue,
+    BorderStyleValue, ColumnCountComputedValue, ColumnFillComputedValue, DirectionValue, TextAlignLastValue,
+    TextAlignValue, WhiteSpaceValue,
 };
 
 #[test]
@@ -95,12 +95,37 @@ fn test_extract_inline_visual_metrics_relative_lengths() {
     style.padding_left = LengthValue::Em(1.0);
     style.padding_right = LengthValue::Ch(2.0);
     style.border_right_width = LengthValue::Em(0.5);
+    style.border_right_style = BorderStyleValue::Solid;
 
     let metrics = extract_inline_visual_metrics(&style);
 
     assert_eq!(metrics.padding_left, 20.0);
     assert_eq!(metrics.padding_right, 20.0);
     assert_eq!(metrics.border_right, 10.0);
+}
+
+/// R4007（CSS §8.5.3）：border-style = none/hidden 时该边 border-width 计算为 0——
+/// computed border-width 初始 = medium(3px)，不抑制则 sync_inline_child_boxes 把幻影
+/// 3px 边框写入 display:Inline 的替换元素盒（007-ref svg 784×392 膨成 790×398 @ y=-3）。
+#[test]
+fn r4007_border_style_none_suppresses_width_in_inline_metrics() {
+    let mut style = ComputedStyle::default();
+    style.font_size = LengthValue::Px(20.0);
+    // 默认 border-width = medium(3px)，style 缺省 = None。
+    let metrics = extract_inline_visual_metrics(&style);
+    assert_eq!(metrics.border_top, 0.0);
+    assert_eq!(metrics.border_right, 0.0);
+    assert_eq!(metrics.border_bottom, 0.0);
+    assert_eq!(metrics.border_left, 0.0);
+
+    // 显式宽度 + hidden 同样归零；solid 则保留。
+    style.border_top_width = LengthValue::Px(10.0);
+    style.border_top_style = BorderStyleValue::Hidden;
+    style.border_bottom_width = LengthValue::Px(10.0);
+    style.border_bottom_style = BorderStyleValue::Solid;
+    let metrics = extract_inline_visual_metrics(&style);
+    assert_eq!(metrics.border_top, 0.0, "hidden 边宽度计 0");
+    assert_eq!(metrics.border_bottom, 10.0, "solid 边宽度保留");
 }
 
 /// R3625：空叶节点测量回退到 CSS width/height 时，也要解析 residual real length。

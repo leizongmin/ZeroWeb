@@ -100,7 +100,7 @@ pub(crate) fn svg_default_used_size(elem: &ElementData, style: &ComputedStyle) -
 }
 
 /// svg 的有效比例值（CSS aspect-ratio 优先，回退 viewBox w/h）。
-fn svg_ratio_value(elem: &ElementData, style: &ComputedStyle) -> Option<f32> {
+pub(crate) fn svg_ratio_value(elem: &ElementData, style: &ComputedStyle) -> Option<f32> {
     if let Some(r) = style.aspect_ratio.filter(|r| r.is_finite() && *r > 0.0) {
         return Some(r);
     }
