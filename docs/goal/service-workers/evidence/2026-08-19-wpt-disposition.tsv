@@ -138,7 +138,7 @@ service-workers/service-worker/import-scripts-resource-map.https.html	04067ce9c7
 service-workers/service-worker/import-scripts-updated-flag.https.html	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83	09b4496aa0ec1d28b9e101a6ba8a41a31b654540	1	core	next-wave-event-importScripts-core	2026-08-19-m1-next-wave-review.tsv
 service-workers/service-worker/indexeddb.https.html	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83	be9be4968f7b2d0cbc1f18f88b06b7acb6ad096f	1	defer	defer-worker-indexeddb	2026-08-19-final-remaining-review.tsv
 service-workers/service-worker/install-event-type.https.html	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83	7e74af85c3aee401f99add7a2a0209ddbe700f86	1	core	install-event-type-core	2026-09-02-m3-install-event-type.md
-service-workers/service-worker/installing.https.html	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83	0f257b6aba4f3d65802e7d7f8a7503d6c6aedd42	1	defer	defer-single-iframe	2026-08-19-m1-iframe-review.tsv
+service-workers/service-worker/installing.https.html	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83	0f257b6aba4f3d65802e7d7f8a7503d6c6aedd42	1	core	installing-core	2026-09-03-m3-installing.md
 service-workers/service-worker/intercepted-referrer.https.html	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83	72d789451390f4c90c77b8c6d7203fa814542747	1	defer	defer-navigation-core	2026-08-19-navigation-review.tsv
 service-workers/service-worker/interface-requirements-sw.https.html	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83	eef868c889f04d257055d9f08ce22832b6cc34fd	1	core	worker-interface-core	2026-09-02-m3-worker-interface.md
 service-workers/service-worker/invalid-blobtype.https.html	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83	1c5920fb039101b18fc3c39e53f7cbb9b5e1ebfc	1	defer	defer-fetch-response-validation	2026-08-19-request-response-review.tsv

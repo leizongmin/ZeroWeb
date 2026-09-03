@@ -1,0 +1,2 @@
+path	manifest_type	roles	referenced_by	bytes	templated	git_blob_sha	source_revision
+service-workers/service-worker/installing.https.html	testharness	case	1	1949	no	0f257b6aba4f3d65802e7d7f8a7503d6c6aedd42	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83

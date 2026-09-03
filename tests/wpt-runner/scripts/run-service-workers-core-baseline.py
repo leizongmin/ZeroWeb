@@ -10,8 +10,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-EXPECTED_CASES = 57
-EXPECTED_SUBTESTS = 212
+EXPECTED_CASES = 58
+EXPECTED_SUBTESTS = 214
 
 
 def parse_args() -> argparse.Namespace:
@@ -124,7 +124,9 @@ def render_markdown(summary: dict) -> str:
             "unregistered controlled iframe discovery. "
             "`registration-iframe.https.html` extends it with iframe-global "
             "scriptURL/scope parsing and immediate installing worker slot "
-            "visibility.",
+            "visibility. `installing.https.html` extends it with the top-level "
+            "registration installing slot visibility and SameObject identity "
+            "across `getRegistration()`.",
         ]
     ) + "\n"
 

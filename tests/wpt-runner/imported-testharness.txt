@@ -297,6 +297,7 @@ service-workers/service-worker/ServiceWorkerGlobalScope/error-message-event.http
 service-workers/service-worker/controller-on-load.https.html 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-09-03 SW-M3-controller-on-load
 service-workers/service-worker/getregistration.https.html 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-09-03 SW-M3-getregistration
 service-workers/service-worker/registration-iframe.https.html 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-09-03 SW-M3-registration-iframe
+service-workers/service-worker/installing.https.html 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-09-03 SW-M3-installing
 service-workers/service-worker/fetch-event-respond-with-body-loaded-in-chunk.https.html 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-09-02 SW-M2-fetch-body-loaded-in-chunk
 service-workers/cache-storage/crashtests/cache-response-clone.https.html 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-09-02 CACHE-M2-cache-response-clone-crashtest
 service-workers/service-worker/fetch-event-respond-with-response-body-with-invalid-chunk.https.html 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-09-02 SW-M2-fetch-invalid-stream-chunk
