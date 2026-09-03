@@ -2618,13 +2618,18 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
     const propertyHandler = globalThis['on' + type];
     if (typeof propertyHandler === 'function') dispatchWorkerCallback(propertyHandler, event);
     currentWaitUntil = null;
-    Promise.all(pending).then(function() {
+    // https://w3c.github.io/ServiceWorker/#wait-for-asynchronous-extensions
+    let firstRejection = null;
+    Promise.all(pending.map(function(promise) {
+      return promise.then(function() {}, function(error) {
+        if (firstRejection === null) firstRejection = error;
+      });
+    })).then(function() {
       result.settled = true;
-      result.succeeded = true;
-      setRegistrationLifecyclePhase(type, false);
-    }, function(error) {
-      result.settled = true;
-      result.message = String(error && error.message || error);
+      result.succeeded = firstRejection === null;
+      if (firstRejection !== null) {
+        result.message = String(firstRejection && firstRejection.message || firstRejection);
+      }
       setRegistrationLifecyclePhase(type, false);
     });
   };
@@ -6834,6 +6839,74 @@ mod tests {
                 claim_clients: false,
                 ref message,
             } if message.contains("install rejected")
+        ));
+    }
+
+    #[test]
+    fn install_event_rejection_waits_for_all_lifetime_promises() {
+        let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
+        runtime
+            .evaluate(
+                "let finishLatePromise;
+                 addEventListener('install', event => {
+                    event.waitUntil(Promise.reject(new Error('first install rejection')));
+                    event.waitUntil(new Promise(resolve => {
+                        finishLatePromise = () => {
+                            globalThis.__lateInstallPromiseFinished = true;
+                            resolve();
+                        };
+                    }));
+                 });
+                 addEventListener('message', event => {
+                    finishLatePromise();
+                    event.source.postMessage('late-promise-finished');
+                 });",
+                "https://example.test/sw.js",
+            )
+            .unwrap();
+        let _ = runtime.recv_timeout(Duration::from_secs(5)).unwrap();
+
+        runtime.dispatch_install(17).unwrap();
+        assert!(
+            runtime.recv_timeout(Duration::from_millis(100)).is_err(),
+            "install settled before all lifetime promises completed"
+        );
+        runtime
+            .dispatch_message(18, "null", "client-1", "https://example.test/page")
+            .unwrap();
+
+        let mut message_dispatched = false;
+        let mut install_settled = false;
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while !message_dispatched || !install_settled {
+            match runtime.recv_timeout(deadline.saturating_duration_since(std::time::Instant::now())) {
+                Ok(ServiceWorkerEvent::MessageDispatched {
+                    event_id: 18, outbound, ..
+                }) => {
+                    assert_eq!(outbound.len(), 1);
+                    assert_eq!(outbound[0].data_json, "\"late-promise-finished\"");
+                    message_dispatched = true;
+                }
+                Ok(ServiceWorkerEvent::LifecycleSettled {
+                    event_id: 17,
+                    phase: ServiceWorkerLifecyclePhase::Install,
+                    succeeded: false,
+                    ref message,
+                    ..
+                }) if message.contains("first install rejection") => install_settled = true,
+                Ok(other) => panic!("unexpected runtime event: {other:?}"),
+                Err(error) => panic!("runtime event timed out: {error}"),
+            }
+        }
+        runtime
+            .evaluate(
+                "if (globalThis.__lateInstallPromiseFinished !== true) throw new Error('late promise missing');",
+                "https://example.test/check.js",
+            )
+            .unwrap();
+        assert!(matches!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::Evaluated { .. }
         ));
     }
 

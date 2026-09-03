@@ -305,3 +305,4 @@ service-workers/service-worker/fetch-event-respond-with-body-loaded-in-chunk.htt
 service-workers/cache-storage/crashtests/cache-response-clone.https.html 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-09-02 CACHE-M2-cache-response-clone-crashtest
 service-workers/service-worker/fetch-event-respond-with-response-body-with-invalid-chunk.https.html 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-09-02 SW-M2-fetch-invalid-stream-chunk
 service-workers/service-worker/onactivate-script-error.https.html 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-09-03 SW-M3-onactivate-script-error
+service-workers/service-worker/extendable-event-waituntil.https.html 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-09-03 SW-M3-extendable-event-waituntil

@@ -414,11 +414,11 @@ pub enum ServiceWorkerManagerEvent {
         /// Whether all install lifetime promises fulfilled.
         succeeded: bool,
     },
-    /// Activate result moved the version to active or redundant.
+    /// Activate result moved the version to active.
     ActivationCompleted {
         /// Registration version ID.
         registration_id: u64,
-        /// Whether all activate lifetime promises fulfilled.
+        /// Whether activation completed.
         succeeded: bool,
     },
     /// A page-to-worker message event was dispatched.
@@ -1647,10 +1647,15 @@ impl ServiceWorkerManager {
                         self.claimed_clients.insert(registration_id);
                         self.claim_matching_clients(registration_id);
                     }
+                    let lifecycle_succeeded = match phase {
+                        ServiceWorkerLifecyclePhase::Install => succeeded,
+                        // https://w3c.github.io/ServiceWorker/#activation-algorithm
+                        ServiceWorkerLifecyclePhase::Activate => true,
+                    };
                     let transition = match phase {
                         ServiceWorkerLifecyclePhase::Install => self.apply_install_result(registration_id, succeeded),
                         ServiceWorkerLifecyclePhase::Activate => {
-                            self.apply_activation_result(registration_id, succeeded)
+                            self.apply_activation_result(registration_id, lifecycle_succeeded)
                         }
                     };
                     match transition {
@@ -4853,7 +4858,7 @@ mod tests {
                 event.waitUntil(Promise.reject(new Error('activate rejected')));
             });",
         );
-        let events = wait_for_state(&mut manager, id, ServiceWorkerState::Redundant);
+        let events = wait_for_state(&mut manager, id, ServiceWorkerState::Activated);
         assert!(events.contains(&ServiceWorkerManagerEvent::LifecycleSettled {
             registration_id: id,
             phase: ServiceWorkerLifecyclePhase::Install,
@@ -4878,6 +4883,10 @@ mod tests {
                 ..
             }) if *registration_id == id && message.contains("activate rejected")
         ));
+        assert!(events.contains(&ServiceWorkerManagerEvent::ActivationCompleted {
+            registration_id: id,
+            succeeded: true,
+        }));
     }
 
     #[test]
@@ -4908,7 +4917,7 @@ mod tests {
     }
 
     #[test]
-    fn activation_failure_preserves_existing_active() {
+    fn activation_wait_until_rejection_still_replaces_existing_active() {
         let mut manager = manager_under_test();
         let first = start_active(&mut manager, "/", "globalThis.version = 1;");
         manager
@@ -4924,25 +4933,25 @@ mod tests {
         );
         wait_for_state(&mut manager, second, ServiceWorkerState::Installed);
         manager.activate_waiting(second).unwrap();
-        wait_for_state(&mut manager, second, ServiceWorkerState::Redundant);
+        wait_for_state(&mut manager, second, ServiceWorkerState::Activated);
 
         let slots = manager.slots(&key("/")).unwrap();
-        assert_eq!(slots.active, Some(first));
+        assert_eq!(slots.active, Some(second));
         assert_eq!(slots.waiting, None);
         assert_eq!(
             manager
                 .controller_registration_for_client("https://example.test", "client-1")
                 .map(|registration| registration.id),
-            Some(first),
-            "activation failure should restore clients to the incumbent controller"
+            Some(second),
+            "activate waitUntil rejection should not restore the incumbent controller"
         );
         assert_eq!(
             manager.registration(first).unwrap().state,
-            ServiceWorkerState::Activated
+            ServiceWorkerState::Redundant
         );
         assert_eq!(
             manager.registration(second).unwrap().state,
-            ServiceWorkerState::Redundant
+            ServiceWorkerState::Activated
         );
     }
 

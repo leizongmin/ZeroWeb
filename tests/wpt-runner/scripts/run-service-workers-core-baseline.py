@@ -10,8 +10,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-EXPECTED_CASES = 62
-EXPECTED_SUBTESTS = 228
+EXPECTED_CASES = 63
+EXPECTED_SUBTESTS = 234
 
 
 def parse_args() -> argparse.Namespace:
@@ -135,7 +135,10 @@ def render_markdown(summary: dict) -> str:
             "listener exception reporting while preserving lifecycle success "
             "unless a `waitUntil()` promise rejects. "
             "`onactivate-script-error.https.html` extends it with activate "
-            "listener exception reporting while preserving lifecycle success.",
+            "listener exception reporting while preserving lifecycle success. "
+            "`extendable-event-waituntil.https.html` extends it with "
+            "ExtendableEvent lifetime promise all-settled ordering and "
+            "activate waitUntil rejection non-blocking semantics.",
         ]
     ) + "\n"
 
