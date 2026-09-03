@@ -6808,11 +6808,13 @@
     // .durationMs 传入）；无真值（非 webm/探针失败）回落 headless 定值 600（无真解码；
     // 用例只断言可写/类型面）。
     var _settled = _resourceStates[key];
-    if (ms.duration == null) {
-      // 真值链传入毫秒 → spec 秒（dom-media-duration）；headless 定值 600 保持
-      // 既有单位（历史近似值，用例只断言类型/可写面，不回改——零回归）。
-      ms.duration = (_settled && _settled.durationMs != null) ? _settled.durationMs / 1000 : 600;
+    if (ms.duration == null && _settled && _settled.durationMs != null) {
+      // 真值链传入毫秒 → spec 秒（dom-media-duration）。
+      ms.duration = _settled.durationMs / 1000;
     }
+    // 真值未落（动态 src 的 settle 与加载序列竞态——loop-from-ended 载入序）时不
+    // 再烘焙 headless 600：duration getter 兜底读（settled→600），真值落位后
+    // durationchange 语义由 getter 首读暴露。
     _zwMediaFire(sel, handle, key, 'durationchange');
     // spec resize：视频尺寸变为已知时派发（audio 无此事件）——时序在 durationchange 后、
     // loadedmetadata 前（event_order_durationchange_resize_loadedmetadata 断言面）。
@@ -9369,6 +9371,23 @@
         // lastMs 判定在其后每拍都为假）→ exit 缺席 → done 永不。播放起点即时间线
         // 原点：上游用例 play() 后从 0 起推进。
         var lastMs = (typeof ms._zwLastMarchMs === 'number') ? ms._zwLastMarchMs : 0;
+        // M3 扩批 XXIV：played TimeRanges 采样（spec dom-media-played——「played」
+        // 返回已播放时间区间集合；loop 保持不重置，seek 回退不合并——本拍不计）。
+        // 区间合并：与现有区间重叠/邻接（≤ 250ms 采样容差）则扩展，否则新开区间。
+        if (nowMs > lastMs && !ms.seeking) {
+          if (!ms._zwPlayedRanges) ms._zwPlayedRanges = [];
+          var _pr = ms._zwPlayedRanges;
+          var _merged = false;
+          for (var _pi = 0; _pi < _pr.length; _pi++) {
+            if (lastMs <= _pr[_pi][1] + 250 && nowMs >= _pr[_pi][0] - 250) {
+              if (lastMs < _pr[_pi][0]) _pr[_pi][0] = lastMs;
+              if (nowMs > _pr[_pi][1]) _pr[_pi][1] = nowMs;
+              _merged = true;
+              break;
+            }
+          }
+          if (!_merged) _pr.push([lastMs, nowMs]);
+        }
         // seek 面检测：**时钟回退** 或 seeking 标志在位（spec time-marches-on seek 步：
         // missed cues 不派 enter；此前 active 的 cue 按目标时刻重建）。M3 扩批 XVI 修正：
         // **前进大跳不再判 seek**——桥真值时钟按泵节拍推进，tick 合并产生 >250ms 的前进
@@ -9510,33 +9529,94 @@
         // active cue 全部派 exit（spec：ended 时 activeCues 清空、exit 逐 cue 派）+
         // paused 翻转 + timeupdate + ended（spec time-marches-on 流末处理；
         // track-cues-missed 的 onended 断言面）。幂等：ms._zwEndedDispatched 单次。
+        // M3 扩批 XXIV：loop=true 分叉（spec「ended playback」步 6.4——loop 元素
+        // 不进入 ended playback：位置 seek 回最早位置 + 派 seeked 不派 ended，
+        // playing 保持；registry 音频 entry 面已回卷重播，视频面经 seek(0)+play
+        // 重头）。loop-from-ended / played-loop 断言面。
+        // https://html.spec.whatwg.org/multipage/media.html#ended-playback
         if (ms.playing && ms.bridgeOn && ms.bridgeSrc
             && typeof globalThis.__zwVideoBridge === 'object'
             && typeof globalThis.__zwVideoBridge.isEnded === 'function'
             && !ms._zwEndedDispatched) {
           try {
             if (globalThis.__zwVideoBridge.isEnded(ms.bridgeSrc)) {
-              ms._zwEndedDispatched = true;
-              ms.playing = false;
-              for (var tkE in _elementTextTrack) {
-                var ttE = _elementTextTrack[tkE];
-                if (!ttE || !ttE._zwMarchState) continue;
-                var actE = ttE._zwMarchState;
-                for (var ei = actE.length - 1; ei >= 0; ei--) {
-                  var cueE = actE[ei];
-                  actE.splice(ei, 1);
-                  try { cueE.dispatchEvent({ type: 'exit', target: cueE, currentTarget: cueE }); } catch (_eTmoE0) {}
+              var _keySel = ms._zwSel || (key.charAt(0) === '@' ? null : key);
+              var _keyHandle = ms._zwHandle || (key.charAt(0) === '@' ? key.slice(1) : null);
+              // loop 判定：IDL dirty 镜像优先；未写回落 loop 内容属性 presence
+              //（<audio loop> HTML 属性形态——audio_loop_seek_to_eos 断言面）。
+              var _msLoop = (ms.loop !== undefined) ? ms.loop === true : (function () {
+                try {
+                  return (_keyHandle
+                    ? __zw_has_attr_handle(_keyHandle, 'loop')
+                    : (typeof __zw_has_attr_lw === 'function' ? __zw_has_attr_lw(_keySel, 'loop') : __zw_has_attr(_keySel, 'loop'))) === '1';
+                } catch (_eLpAt) { return false; }
+              })();
+              if (_msLoop && typeof globalThis.__zwVideoBridge.seek === 'function') {
+                // loop 回卷：位置归零 + 重启桥播放（seek 到 0 使 registry player
+                // 离开 Ended；音频 entry 由 set_loop 面自行回卷，此处 seek 幂等）。
+                // 回卷前已播到流末——尾段 [lastMs, duration] 计入 played（bridge
+                // duration 真值优先，settle 600 fallback 不采信——played-loop
+                // 「覆盖全时长」断言面）。
+                try {
+                  var _lpDur = (typeof globalThis.__zwVideoBridge.duration === 'function')
+                    ? globalThis.__zwVideoBridge.duration(ms.bridgeSrc) : 0;
+                  if (!isFinite(_lpDur) || _lpDur <= 0) _lpDur = (ms.duration > 0 && ms.duration < 100) ? ms.duration : 0;
+                  var _lpEndMs = _lpDur * 1000;
+                  if (_lpEndMs > lastMs) {
+                    var _prL = ms._zwPlayedRanges || (ms._zwPlayedRanges = []);
+                    var _lpMerged = false;
+                    for (var _li2 = 0; _li2 < _prL.length; _li2++) {
+                      if (lastMs <= _prL[_li2][1] + 250 && _lpEndMs >= _prL[_li2][0] - 250) {
+                        if (lastMs < _prL[_li2][0]) _prL[_li2][0] = lastMs;
+                        if (_lpEndMs > _prL[_li2][1]) _prL[_li2][1] = _lpEndMs;
+                        _lpMerged = true;
+                        break;
+                      }
+                    }
+                    if (!_lpMerged) _prL.push([lastMs, _lpEndMs]);
+                  }
+                } catch (_eLpPr) {}
+                try { globalThis.__zwVideoBridge.seek(ms.bridgeSrc, 0); } catch (_eLpSk) {}
+                try { globalThis.__zwVideoBridge.play(ms.bridgeSrc, 0); } catch (_eLpPl) {}
+                ms.currentTime = 0;
+                ms.ended = false;
+                ms._zwLastMarchMs = 0;
+                ms.seeking = true;
+                _zwMediaFire(_keySel, _keyHandle, key, 'seeking');
+                var _lpSeeked = function () {
+                  var _lpMs2 = _mediaState[key];
+                  if (!_lpMs2) return;
+                  _lpMs2.seeking = false;
+                  _zwMediaFire(_keySel, _keyHandle, key, 'timeupdate');
+                  _zwMediaFire(_keySel, _keyHandle, key, 'seeked');
+                  if (typeof globalThis._zwMediaSeekSync === 'function') {
+                    try { globalThis._zwMediaSeekSync(key); } catch (_eLpSs) {}
+                  }
+                };
+                if (typeof setTimeout === 'function') setTimeout(_lpSeeked, 0);
+                else _lpSeeked();
+              } else {
+                ms._zwEndedDispatched = true;
+                ms.playing = false;
+                // spec「ended playback」：ended IDL 属性翻转（loop-from-ended 断言
+                // 「ended at ended event」真值面——此前只派事件不置态）。
+                ms.ended = true;
+                for (var tkE in _elementTextTrack) {
+                  var ttE = _elementTextTrack[tkE];
+                  if (!ttE || !ttE._zwMarchState) continue;
+                  var actE = ttE._zwMarchState;
+                  for (var ei = actE.length - 1; ei >= 0; ei--) {
+                    var cueE = actE[ei];
+                    actE.splice(ei, 1);
+                    try { cueE.dispatchEvent({ type: 'exit', target: cueE, currentTarget: cueE }); } catch (_eTmoE0) {}
+                  }
                 }
+                // sel/handle 不在 march 作用域——key 即元素身份（_elKey 产物），
+                // _dispatchWithBubble 按 key 定位；handle 键（'@h' 形态）以 null sel 走
+                // handle 分支（与 _dispatchWithBubble 键语义一致）。
+                _zwMediaFire(_keySel, _keyHandle, key, 'timeupdate');
+                _zwMediaFire(_keySel, _keyHandle, key, 'ended');
               }
-              // sel/handle 不在 march 作用域——key 即元素身份（_elKey 产物），
-              // _dispatchWithBubble 按 key 定位；handle 键（'@h' 形态）以 null sel 走
-              // handle 分支（与 _dispatchWithBubble 键语义一致）。
-              _zwMediaFire(ms._zwSel || (key.charAt(0) === '@' ? null : key),
-                ms._zwHandle || (key.charAt(0) === '@' ? key.slice(1) : null),
-                key, 'timeupdate');
-              _zwMediaFire(ms._zwSel || (key.charAt(0) === '@' ? null : key),
-                ms._zwHandle || (key.charAt(0) === '@' ? key.slice(1) : null),
-                key, 'ended');
             }
           } catch (_eTmoE1) {}
         }

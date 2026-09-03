@@ -11481,6 +11481,11 @@
                                 _pAbs, (_pMs.volume != null ? _pMs.volume : 1), _pMs.muted === true);
                             } catch (_eVbG1) {}
                           }
+                          // M3 扩批 XXIV：重试路径 loop 同步（同 gain 面——retry 命中
+                          // 时把 play 前设的 loop 推给桥）。
+                          if (typeof globalThis.__zwVideoBridge.setLoop === 'function') {
+                            try { globalThis.__zwVideoBridge.setLoop(_pAbs, _pMs.loop === true); } catch (_eVbL1) {}
+                          }
                         } else {
                           _pRetry(_n + 1);
                         }
@@ -11518,6 +11523,11 @@
                       globalThis.__zwVideoBridge.setGain(
                         _pAbs, (_pMs.volume != null ? _pMs.volume : 1), _pMs.muted === true);
                     } catch (_eVbG0) {}
+                  }
+                  // M3 扩批 XXIV：起播时同步既有 loop（play 前设的 loop 经桥生效——
+                  // 同 gain 面；音频 entry 流末回卷 / 视频 march Ended→seek(0)+play 面）。
+                  if (typeof globalThis.__zwVideoBridge.setLoop === 'function') {
+                    try { globalThis.__zwVideoBridge.setLoop(_pAbs, _pMs.loop === true); } catch (_eVbL0) {}
                   }
                 }
               } catch (_eVbP) {}

@@ -111,6 +111,29 @@
               }
             }
           }
+        } else if (p === 'loop' && (_realTag(sel, handle) === 'AUDIO' || _realTag(sel, handle) === 'VIDEO')) {
+          // media-elements M3 扩批 XXIV：`media.loop = x` IDL setter——boolean 反射
+          // `loop` 属性（_REFLECTED_BOOL attr 面已有）+ _mediaState 镜像（get trap
+          // 同源读回，IDL 优先于 attr presence——dirty 面）+ 桥推送 setLoop
+          //（音频 entry 流末回卷 / 视频 Ended 后 play 重头，spec「ended playback」
+          // 步 6.4 loop 分支「seek to earliest position」）。
+          // https://html.spec.whatwg.org/multipage/media.html#ended-playback
+          var _lpTag = _realTag(sel, handle);
+          var _lpMs = _mediaState[key] || (_mediaState[key] = {});
+          _lpMs.loop = !!value;
+          if (value) {
+            if (handle) __zw_set_attr_handle(handle, 'loop', '');
+            else { __zw_set_attr(sel, 'loop', ''); moAttr = 'loop'; }
+          } else if (handle && typeof __zw_remove_attr_handle === 'function') {
+            __zw_remove_attr_handle(handle, 'loop');
+          } else if (!handle && typeof __zw_remove_attr === 'function') {
+            __zw_remove_attr(sel, 'loop'); moAttr = 'loop';
+          }
+          if (_lpMs.bridgeOn && _lpMs.bridgeSrc
+              && typeof globalThis.__zwVideoBridge === 'object'
+              && typeof globalThis.__zwVideoBridge.setLoop === 'function') {
+            try { globalThis.__zwVideoBridge.setLoop(_lpMs.bridgeSrc, !!value); } catch (_eVbLp) {}
+          }
         } else if (p === 'defaultMuted') {
           // `media.defaultMuted = x`——boolean 反射 `muted` 属性（dirty 态：设后不回落，同
           // R2998 defaultChecked 模式——这里简化为 presence 反射，dirty 区分 M2 播放控制时补）。
@@ -578,6 +601,7 @@
             || prop === 'currentTime' || prop === 'duration' || prop === 'playbackRate'
             || prop === 'defaultPlaybackRate' || prop === 'volume' || prop === 'seeking'
             || prop === 'paused' || prop === 'ended' || prop === 'preload'
+            || prop === 'loop' || prop === 'played'
             || prop === 'kind' || prop === 'label' || prop === 'srclang'
             || prop === 'default' || prop === 'src' || prop === 'textTracks'
             || prop === 'addTextTrack' || prop === 'track' || prop === 'controlsList') {

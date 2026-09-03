@@ -162,7 +162,18 @@
                 if (typeof _vd === 'number' && isFinite(_vd)) return _vd;
               } catch (_eVbD) {}
             }
-            return (_ms && _ms.duration != null) ? _ms.duration : NaN;
+            if (_ms && _ms.duration != null) return _ms.duration;
+            // M3 扩批 XXIV：动态 src settle 竞态兜底——真值落位晚于加载序列时，
+            // settle 的 durationMs 即刻生效（loop-from-ended seek 目标真值面）。
+            // 加载已开始（networkState/readyState 非初始）而无真值 → headless 600
+            // 回落（test_media_duration_truth_injection_m2a 零回归面）；完全未加载
+            // （createElement 初始面）→ NaN（spec dom-media-duration）。
+            try {
+              var _st2 = (typeof _resourceStates !== 'undefined') ? _resourceStates[key] : null;
+              if (_st2 && _st2.durationMs != null) return _st2.durationMs / 1000;
+              if (_ms && ((_ms.networkState | 0) > 0 || (_ms.readyState | 0) > 0)) return 600;
+            } catch (_eDr2) {}
+            return NaN;
           }
           if (prop === 'playbackRate') return (_ms && _ms.playbackRate != null) ? _ms.playbackRate : 1;
           if (prop === 'defaultPlaybackRate') return (_ms && _ms.defaultPlaybackRate != null) ? _ms.defaultPlaybackRate : 1;
@@ -180,6 +191,34 @@
           }
           if (prop === 'paused') return _ms ? !_ms.playing : true;
           if (prop === 'ended') return _ms ? !!_ms.ended : false;
+          // played TimeRanges（M3 扩批 XXIV，spec dom-media-played）：march 采样的
+          // 已播放区间集合（_zwPlayedRanges [startMs,endMs] 对）→ TimeRanges 形状
+          //（length/start(i)/end(i)）；无采样（未播放/无桥）→ 空集合。
+          // https://html.spec.whatwg.org/multipage/media.html#dom-media-played
+          if (prop === 'played') {
+            var _playedRanges = (_ms && _ms._zwPlayedRanges) ? _ms._zwPlayedRanges : [];
+            return {
+              length: _playedRanges.length,
+              start: function (i) {
+                if (typeof i !== 'number' || i < 0 || i >= _playedRanges.length) {
+                  throw new (globalThis.DOMException || Error)('IndexSizeError', 'IndexSizeError');
+                }
+                return _playedRanges[i][0] / 1000;
+              },
+              end: function (i) {
+                if (typeof i !== 'number' || i < 0 || i >= _playedRanges.length) {
+                  throw new (globalThis.DOMException || Error)('IndexSizeError', 'IndexSizeError');
+                }
+                return _playedRanges[i][1] / 1000;
+              },
+            };
+          }
+          // loop IDL getter（M3 扩批 XXIV）：dirty 镜像优先（IDL setter 写
+          // `_mediaState.loop`），未写回落 attr presence（loop 内容属性设初始态）。
+          if (prop === 'loop') {
+            if (_ms && _ms.loop !== undefined) return !!_ms.loop;
+            return (handle ? __zw_has_attr_handle(handle, 'loop') : (typeof __zw_has_attr_lw === 'function' ? __zw_has_attr_lw(sel, 'loop') : __zw_has_attr(sel, 'loop'))) === '1';
+          }
           // muted IDL getter：dirty 态镜像优先（IDL muted= setter 写 `_mediaState.muted`），
           // 未写回落 attr presence（spec：muted content attribute 设初始 defaultMuted 态）。
           if (prop === 'muted') {

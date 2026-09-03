@@ -135,6 +135,17 @@ TOP_FILES=(
   # 无候选 play() promise pending → 移除后 AbortError）。
   "playing-the-media-resource/pause-remove-from-document-different-load.html"
   "playing-the-media-resource/pause-remove-from-document-networkState.html"
+  # M3 扩批 XXIV（2026-09-03）：loop 属性真面（spec「ended playback」步 6.4——
+  # loop 元素不进入 ended playback，位置回卷重播 + seeked 非 ended）。配套：
+  # registry set_loop（音频 entry 流末回卷重建解码器 + 伴生轨同面）+ shim loop IDL
+  # setter/getter（_mediaState 镜像 + 桥推送 + play 起播同步）+ march Ended 面
+  # loop 分叉（seek(0)+play + seeking/seeked 派发）。fixture 增 media/sound_0.mp3。
+  # 不导入：audio_loop_base / video_loop_base（looped 标志依赖真实时间流逝的二次
+  # seeking 回调时序——fixture 0.078s/0.096s 短于泵采样粒度，1 拍内多次回卷不可
+  # 观测；且 2x2-green.webm 为 VP8——解码面域外）；played-loop 已导入（见下）。
+  # loop-from-ended.tentative.html 暂不导入（动态 src settle 竞态——见 testharness.rs 注记）
+  "played-loop.html"
+  "audio_loop_seek_to_eos.html"
   # M3 扩批 IX：移动面（同文档移动仍 related → 不暂停）。
   # pause-move-to-other-document 不导入：跨 iframe 文档 adopt 在 shim 融合视图下
   # appendChild 静默落空（元素保持 detached）——实施需 iframe 文档模型 adopt 面
@@ -282,6 +293,10 @@ MEDIA_FILES=(
   "media/test.webm"
   "media/test-1s.webm"
   "media/counting.webm"
+  # M3 扩批 XXIV：audio_loop_seek_to_eos 媒体源（getAudioURI 判定 audio/ogg → .oga；
+  # vorbis → symphonia 面；sound_0.mp3 为对照/复用源）。
+  "media/sound_0.mp3"
+  "media/sound_5.oga"
 )
 for relative in "${MEDIA_FILES[@]}"; do
   fetch_raw "${relative}"

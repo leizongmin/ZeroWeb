@@ -1528,6 +1528,20 @@ pub const MEDIA_TEST_FILES: &[&str] = &[
     // NETWORK_EMPTY 负例（无候选 play() promise pending → 移除后 AbortError）。
     "html/semantics/embedded-content/media-elements/playing-the-media-resource/pause-remove-from-document-different-load.html",
     "html/semantics/embedded-content/media-elements/playing-the-media-resource/pause-remove-from-document-networkState.html",
+    // M3 扩批 XXIV（2026-09-03）：loop 属性真面——spec「ended playback」步 6.4
+    //（loop 元素不进入 ended playback：位置回卷 + seeked 非 ended）。配套 registry
+    // set_loop（音频 entry 流末回卷重建）+ shim loop IDL 面 + march Ended 分叉。
+    // played-loop：played TimeRanges 跨 loop 保持（test-1s）；
+    // audio_loop_seek_to_eos：loop 音频 seek 到 EOS 仍播放（sound_5.mp3 音频面）。
+    // loop-from-ended 暂不导入：动态 src 的 settle 真值晚于 loadedmetadata——用例在
+    // loadedmetadata 内 seek(duration-0.5) 拿到 headless 600 fallback（599.5），
+    // 桥真值钟（5.008）与 seek 目标永不交汇，ended 面 currentTime 断言恒 fail；
+    // 依赖 register_dynamic 快照先于首拍 timer 的时序修复（mutation apply 顺序），
+    // 随基础设施增量复评。
+    // 不导入 audio_loop_base/video_loop_base（短 fixture < 泵采样粒度的回卷时序
+    // 不可观测 + 2x2-green 为 VP8 解码域外）。
+    "html/semantics/embedded-content/media-elements/played-loop.html",
+    "html/semantics/embedded-content/media-elements/audio_loop_seek_to_eos.html",
     // M3 扩批 IX：移动面（同文档移动仍 related → 不暂停）。
     // pause-move-to-other-document 不导入——iframe adopt 面未实施（fetch 脚本注记）。
     "html/semantics/embedded-content/media-elements/playing-the-media-resource/pause-move-within-document.html",

@@ -4,7 +4,7 @@
 //! 真值；渲染泵（rAF `__zw_raf_tick` 同源时钟）每帧调 [`VideoPlayerRegistry::
 //! tick_all`] 推进帧并注入 `ImageCache`（painter video 通路同键）。
 //!
-//! 键契约：`image_resource_key(abs_src, None)`——与 painter/async_load settle 注入
+//! 键契约：`registry_key(abs_src)`——与 painter/async_load settle 注入
 //! 同键，settle 时注册表先收到解码字节（`register_source`），play 即建 player。
 
 use std::collections::HashMap;
@@ -67,6 +67,13 @@ struct AudioEntry {
     last_tick_ms: Option<u64>,
     volume: f32,
     muted: bool,
+    /// loop 属性真面（M3 扩批 XXIV）：流末回卷重播（spec「ended playback」步 6.4
+    /// loop 分支——「seek to earliest position」；解码器单向流经 restart 重建）。
+    /// 语义层 seeked 派发由 shim march 面（ms.loop 时 ended→seeked）承接。
+    loop_on: bool,
+    /// 流末到达标志（loop=false 停止时置位，play/seek/restart 清除）——桥 isEnded
+    /// 的音频面（march ended/loop 分叉的驱动源；此前仅 video player Ended 态可见）。
+    reached_end: bool,
 }
 
 impl AudioEntry {
@@ -86,11 +93,42 @@ impl AudioEntry {
             last_tick_ms: None,
             volume: 1.0,
             muted: false,
+            loop_on: false,
+            reached_end: false,
         }
     }
 
+    /// 流末回卷（loop=true 的 advance_to 流末分支）：重建解码器、游标归零、
+    /// 追赶线清零、播放态保持（spec loop「seek to earliest position」）。
+    /// 解码器单向流 → 重建（fixture 级小源可接受，audio_seek 同款）。
+    /// 重建需源字节——registry 侧 `sources` 留存（register_audio_source 同键共享）。
+    fn restart(&mut self, bytes: &[u8]) {
+        let decoder = match AudioDecoder::open(bytes) {
+            Ok(d) => AudioStreamDecoder::Symphonia(d),
+            Err(_) => match open_ogg_opus(bytes) {
+                Ok(t) => AudioStreamDecoder::Opus(Box::new(t)),
+                Err(_) => {
+                    // 重建失败：回落停止面（语义层照常派 ended）。
+                    self.playing = false;
+                    return;
+                }
+            },
+        };
+        let (rate, channels) = (decoder.sample_rate(), decoder.channels());
+        self.decoder = decoder;
+        let _ = self.sink.start(AudioFormat {
+            sample_rate: rate,
+            channels,
+        });
+        self.cursor_ms = 0;
+        self.skip_until_ms = 0;
+        self.reached_end = false;
+    }
+
     /// 推进到墙钟 `now_ms`（实时节奏解码；带增益写入 sink）。返回是否写入采样。
-    fn advance_to(&mut self, now_ms: u64) -> bool {
+    /// `restart_bytes`：loop=true 时流末回卷所需的源字节（解码器重建）——None 时
+    /// 流末照旧停止。
+    fn advance_to(&mut self, now_ms: u64, restart_bytes: Option<&[u8]>) -> bool {
         if !self.playing {
             return false;
         }
@@ -101,8 +139,24 @@ impl AudioEntry {
         let mut wrote = false;
         while self.cursor_ms < target {
             let Ok(Some(batch)) = self.decoder.next_batch() else {
-                // 流末：停在末尾（ended 面归语义层）。
-                self.playing = false;
+                // 流末：loop=true → 回卷重播（spec「ended playback」步 6.4——
+                // 位置 seek 到最早位置继续播，语义层派 seeked 非 ended）；
+                // loop=false → 停在末尾（ended 面归语义层）。
+                if self.loop_on {
+                    match restart_bytes {
+                        Some(bytes) => {
+                            self.restart(bytes);
+                            self.reached_end = false;
+                        }
+                        None => {
+                            self.playing = false;
+                            self.reached_end = true;
+                        }
+                    }
+                } else {
+                    self.playing = false;
+                    self.reached_end = true;
+                }
                 break;
             };
             let batch_end_ms = batch.pts_ms
@@ -146,6 +200,8 @@ struct WebmAudioEntry {
     last_tick_ms: Option<u64>,
     volume: f32,
     muted: bool,
+    /// loop 真面（M3 扩批 XXIV，AudioEntry 同语义）——伴生轨流末回卷。
+    loop_on: bool,
 }
 
 /// webm 伴生音频轨的 codec 形态（M3 扩批 2026-09-02：A_OPUS 加入——WPT 上游
@@ -187,12 +243,14 @@ impl WebmAudioEntry {
             last_tick_ms: None,
             volume: 1.0,
             muted: false,
+            loop_on: false,
         }
     }
 
     /// 推进到墙钟 `now_ms`（实时节奏解码写 sink；增益同 AudioEntry 面）。
     /// `skip_until_ms` ≥ 0 时为 seek 追赶区静默线（目标前采样不入 sink）。
-    fn advance_to(&mut self, now_ms: u64) -> bool {
+    /// `restart_bytes`：loop=true 时流末回卷所需的 webm 双轨源字节（轨重建）。
+    fn advance_to(&mut self, now_ms: u64, restart_bytes: Option<&[u8]>) -> bool {
         if !self.playing {
             return false;
         }
@@ -203,8 +261,34 @@ impl WebmAudioEntry {
         let mut wrote = false;
         while self.cursor_ms < target {
             let Ok(Some(batch)) = self.track.next_batch() else {
-                // 流末：解码停止（ended 面归语义层）；playing 置假停泵。
-                self.playing = false;
+                // 流末：loop=true → 回卷（重建伴生轨 + 游标归零）；否则停止。
+                if self.loop_on {
+                    // codec 泛化重建序与 play 懒建同：A_VORBIS 优先、A_OPUS 次之。
+                    let rebuilt = restart_bytes.and_then(|bytes| {
+                        if let Ok(track) = open_webm_audio_track(bytes) {
+                            Some(WebmAudioTrackKind::Vorbis(Box::new(track)))
+                        } else {
+                            open_webm_opus_audio_track(bytes)
+                                .ok()
+                                .map(|t| WebmAudioTrackKind::Opus(Box::new(t)))
+                        }
+                    });
+                    match rebuilt {
+                        Some(track) => {
+                            let (rate, ch) = (track.sample_rate(), track.channels());
+                            self.track = track;
+                            let _ = self.sink.start(AudioFormat {
+                                sample_rate: rate,
+                                channels: ch,
+                            });
+                            self.cursor_ms = 0;
+                            self.skip_until_ms = 0;
+                        }
+                        None => self.playing = false,
+                    }
+                } else {
+                    self.playing = false;
+                }
                 break;
             };
             self.cursor_ms = batch.pts_ms
@@ -231,6 +315,15 @@ impl WebmAudioEntry {
     }
 }
 
+/// 注册表规范化键（M3 扩批 XXIV）：query/fragment 不敏感——WPT 用例的 cache-buster
+/// query（`?...Math.random()`）指向同一 fixture 字节；shim 侧 IDL getter 与 runner
+/// 快照的 URL 编码形态可能不一致（空格/括号编码差异），strip 后以路径为键，两侧
+/// 稳定命中。painter/settle 键面不动（仅本注册表作用域）。
+fn registry_key(abs_src: &str) -> u64 {
+    let bare = abs_src.split(['?', '#']).next().unwrap_or(abs_src);
+    image_resource_key(bare, None)
+}
+
 /// 每元素播放器注册表（键 = 资源绝对 URL 的 painter 同款哈希）。
 #[derive(Default)]
 pub struct VideoPlayerRegistry {
@@ -254,17 +347,17 @@ impl VideoPlayerRegistry {
 
     /// settle 时登记源字节（键 = painter 同款资源哈希；重复 settle 幂等覆盖）。
     pub fn register_source(&mut self, abs_src: &str, bytes: Vec<u8>) {
-        self.sources.insert(image_resource_key(abs_src, None), bytes);
+        self.sources.insert(registry_key(abs_src), bytes);
     }
 
     /// 源字节是否已登记（幂等登记面——WPT runner 逐 tick 动态登记的重复调用守卫）。
     pub fn contains_source(&self, abs_src: &str) -> bool {
-        self.sources.contains_key(&image_resource_key(abs_src, None))
+        self.sources.contains_key(&registry_key(abs_src))
     }
 
     /// 元素移除/导航离开时的资源释放（资源生命周期面）。
     pub fn release(&mut self, abs_src: &str) {
-        let key = image_resource_key(abs_src, None);
+        let key = registry_key(abs_src);
         self.players.remove(&key);
         self.sources.remove(&key);
         self.audio_entries.remove(&key);
@@ -274,7 +367,7 @@ impl VideoPlayerRegistry {
 
     /// settle 时登记音频源（`<audio>` settle 面；解码器立即构建——音频探测轻量）。
     pub fn register_audio_source(&mut self, abs_src: &str, bytes: Vec<u8>) {
-        let key = image_resource_key(abs_src, None);
+        let key = registry_key(abs_src);
         let decoder = match AudioDecoder::open(&bytes) {
             Ok(d) => AudioStreamDecoder::Symphonia(d),
             // symphonia 面外（oga-opus 等）→ opus 纯 Rust 面（M2c opus 接线）。
@@ -304,11 +397,12 @@ impl VideoPlayerRegistry {
 
     /// 音频 play（桥面；已登记源 → 播放态 + 时钟锚点）。
     pub fn audio_play(&mut self, abs_src: &str, now_ms: u64) -> bool {
-        let key = image_resource_key(abs_src, None);
+        let key = registry_key(abs_src);
         match self.audio_entries.get_mut(&key) {
             Some(entry) => {
                 entry.playing = true;
                 entry.last_tick_ms = Some(now_ms);
+                entry.reached_end = false;
                 true
             }
             None => false,
@@ -317,7 +411,7 @@ impl VideoPlayerRegistry {
 
     /// 音频 pause（时钟冻结；已解码采样保留在 sink 统计面）。
     pub fn audio_pause(&mut self, abs_src: &str) {
-        let key = image_resource_key(abs_src, None);
+        let key = registry_key(abs_src);
         if let Some(entry) = self.audio_entries.get_mut(&key) {
             entry.playing = false;
             entry.last_tick_ms = None;
@@ -326,7 +420,7 @@ impl VideoPlayerRegistry {
 
     /// 音频 currentTime（毫秒游标 → 秒）。
     pub fn audio_current_time(&self, abs_src: &str) -> f64 {
-        let key = image_resource_key(abs_src, None);
+        let key = registry_key(abs_src);
         self.audio_entries
             .get(&key)
             .map(|e| e.cursor_ms as f64 / 1000.0)
@@ -336,7 +430,7 @@ impl VideoPlayerRegistry {
     /// 音频 seek（游标重置；解码器单向流 → 重建——fixture 级小源可接受，
     /// 真实流面后续做 byte-position 恢复）。
     pub fn audio_seek(&mut self, abs_src: &str, target_ms: u64) -> bool {
-        let key = image_resource_key(abs_src, None);
+        let key = registry_key(abs_src);
         let Some(entry) = self.audio_entries.get_mut(&key) else {
             return false;
         };
@@ -367,7 +461,7 @@ impl VideoPlayerRegistry {
 
     /// 音频增益面（media-elements IDL 联动：volume/muted setter 桥推）。
     pub fn audio_set_gain(&mut self, abs_src: &str, volume: f32, muted: bool) {
-        let key = image_resource_key(abs_src, None);
+        let key = registry_key(abs_src);
         if let Some(entry) = self.audio_entries.get_mut(&key) {
             entry.volume = volume.clamp(0.0, 1.0);
             entry.muted = muted;
@@ -381,7 +475,7 @@ impl VideoPlayerRegistry {
 
     /// 音频播放中检查。
     pub fn audio_is_playing(&self, abs_src: &str) -> bool {
-        let key = image_resource_key(abs_src, None);
+        let key = registry_key(abs_src);
         self.audio_entries.get(&key).is_some_and(|e| e.playing)
     }
 
@@ -392,7 +486,7 @@ impl VideoPlayerRegistry {
     /// 同一时钟注入（audio clock 主时钟的 registry 侧承载；跨轨 drift 校正为
     /// media-audio M2 后续切片）。
     pub fn play(&mut self, abs_src: &str, now_ms: u64) -> bool {
-        let key = image_resource_key(abs_src, None);
+        let key = registry_key(abs_src);
         if !self.players.contains_key(&key) {
             // M3 扩批 XVI：解码器构建失败不再消费源字节（此前 sources.remove 前置——
             // 非 webm/损坏源一次 play 即丢字节，后续重试/登记恒 no-op）。字节留存，
@@ -438,7 +532,7 @@ impl VideoPlayerRegistry {
 
     /// pause：保持位置（未播放/不存在 no-op）；A/V pair 音频同步暂停。
     pub fn pause(&mut self, abs_src: &str) {
-        let key = image_resource_key(abs_src, None);
+        let key = registry_key(abs_src);
         if let Some(player) = self.players.get_mut(&key) {
             player.pause();
         }
@@ -451,7 +545,7 @@ impl VideoPlayerRegistry {
     /// playbackRate 变速（clamp 面 player 内置；未建 player 时登记于建时生效——
     /// registry 存储待用速率）。
     pub fn set_playback_rate(&mut self, abs_src: &str, rate: f64) {
-        let key = image_resource_key(abs_src, None);
+        let key = registry_key(abs_src);
         if let Some(player) = self.players.get_mut(&key) {
             player.set_playback_rate(rate);
         }
@@ -462,7 +556,7 @@ impl VideoPlayerRegistry {
     /// 契约——seek 后视频对齐音频游标，master clock 面不脱轨）。
     /// 返回是否作用于存在的 player。
     pub fn seek(&mut self, abs_src: &str, target_ms: u64) -> bool {
-        let key = image_resource_key(abs_src, None);
+        let key = registry_key(abs_src);
         let mut player_ok = false;
         match self.players.get_mut(&key) {
             Some(player) => {
@@ -515,8 +609,11 @@ impl VideoPlayerRegistry {
     /// A/V pair：audio clock 主时钟游标优先（media-audio M2 契约——currentTime
     /// 由组合时钟驱动；无伴生轨回落视频位置）。
     pub fn current_time(&self, abs_src: &str) -> f64 {
-        let key = image_resource_key(abs_src, None);
+        let key = registry_key(abs_src);
         if let Some(cursor_ms) = self.av_audio_entries.get(&key).map(|e| e.cursor_ms) {
+            return cursor_ms as f64 / 1000.0;
+        }
+        if let Some(cursor_ms) = self.audio_entries.get(&key).map(|e| e.cursor_ms) {
             return cursor_ms as f64 / 1000.0;
         }
         self.players.get(&key).map(|p| p.current_time()).unwrap_or(0.0)
@@ -524,24 +621,26 @@ impl VideoPlayerRegistry {
 
     /// duration 真值（秒；元数据未就绪/不存在 → None——spec NaN 面）。
     pub fn duration(&self, abs_src: &str) -> Option<f64> {
-        let key = image_resource_key(abs_src, None);
+        let key = registry_key(abs_src);
         self.players.get(&key).and_then(|p| p.duration())
     }
 
     /// 是否在播放（桥查询面）。
     pub fn is_playing(&self, abs_src: &str) -> bool {
-        let key = image_resource_key(abs_src, None);
+        let key = registry_key(abs_src);
         self.players.get(&key).is_some_and(|p| p.is_playing())
+            || self.audio_entries.get(&key).is_some_and(|e| e.playing)
     }
 
     /// 播放器是否已到流末（Ended 态——桥 `isEnded` 查询面；语义层 ended 事件驱动源）。
     /// M3 扩批 XVI：fixture-mounted runner 的 track-cues-missed 断言 `onended` ——
     /// 桥真值时钟走到流末时语义层须能观测 Ended 态。
     pub fn is_ended(&self, abs_src: &str) -> bool {
-        let key = image_resource_key(abs_src, None);
+        let key = registry_key(abs_src);
         self.players
             .get(&key)
             .is_some_and(|p| p.state() == zero_media::PlayerState::Ended)
+            || self.audio_entries.get(&key).is_some_and(|e| e.reached_end)
     }
 
     /// 快速检查：是否存在播放中的 player（渲染泵门禁——无播放时零开销跳过 tick）。
@@ -557,8 +656,11 @@ impl VideoPlayerRegistry {
         let keys: Vec<u64> = self.audio_entries.keys().copied().collect();
         let mut wrote = false;
         for key in keys {
+            // loop 回卷所需源字节（entries 以 sources 留存字节——register_audio_source
+            // 同键共享；advance_to 内部仅流末时读）。
+            let restart = self.sources.get(&key).map(Vec::as_slice);
             if let Some(entry) = self.audio_entries.get_mut(&key)
-                && entry.advance_to(now_ms)
+                && entry.advance_to(now_ms, restart)
             {
                 wrote = true;
             }
@@ -566,13 +668,27 @@ impl VideoPlayerRegistry {
         // A/V pair 伴生音频轨同步推进（M2 切片 D）。
         let av_keys: Vec<u64> = self.av_audio_entries.keys().copied().collect();
         for key in av_keys {
+            let restart = self.av_sources.get(&key).map(Vec::as_slice);
             if let Some(entry) = self.av_audio_entries.get_mut(&key)
-                && entry.advance_to(now_ms)
+                && entry.advance_to(now_ms, restart)
             {
                 wrote = true;
             }
         }
         wrote
+    }
+
+    /// loop 属性真面（M3 扩批 XXIV）：settle 前设置在登记建 entry/player 时生效，
+    /// 已建面即时生效。视频面： Ended 后 shim 侧 play()（registry play 已有
+    /// 「Ended 后重头」语义）+ march 面派 seeked；音频面：advance_to 流末回卷。
+    pub fn set_loop(&mut self, abs_src: &str, on: bool) {
+        let key = registry_key(abs_src);
+        if let Some(entry) = self.audio_entries.get_mut(&key) {
+            entry.loop_on = on;
+        }
+        if let Some(entry) = self.av_audio_entries.get_mut(&key) {
+            entry.loop_on = on;
+        }
     }
 
     /// 渲染泵推进：tick 所有播放中的 player，新帧注入 `image_cache`（painter 同键）。
@@ -590,8 +706,9 @@ impl VideoPlayerRegistry {
             .filter(|k| self.players.contains_key(k))
             .collect();
         for key in av_keys {
+            let restart = self.av_sources.get(&key).map(Vec::as_slice);
             if let Some(entry) = self.av_audio_entries.get_mut(&key) {
-                entry.advance_to(now_ms);
+                entry.advance_to(now_ms, restart);
             }
         }
         let mut changed = false;
@@ -804,6 +921,48 @@ mod tests {
         let now2 = now + 500;
         assert!(!reg.tick_all(now2, &mut cache), "ended 后无帧更新");
     }
+
+    /// M3 扩批 XXIV：loop 真面——音频 entry 流末回卷重播（loop=false 对照照常停）。
+    #[test]
+    fn registry_audio_loop_restarts_at_stream_end() {
+        let mut reg = VideoPlayerRegistry::new();
+        reg.register_source(MP3, fixture_bytes_named("sample-mp3.mp3"));
+        reg.register_audio_source(MP3, fixture_bytes_named("sample-mp3.mp3"));
+        // loop=false 对照：advance 越过流末 → 停止（ended 面语义层派）。
+        assert!(reg.audio_play(MP3, 0));
+        reg.set_loop(MP3, false);
+        let mut now = 0u64;
+        while reg.audio_is_playing(MP3) && now < 60_000 {
+            now += 500;
+            reg.audio_advance_all(now);
+        }
+        assert!(now < 60_000, "runaway loop——非 loop 音频未到流末");
+        assert!(!reg.audio_is_playing(MP3), "loop=false 流末应停");
+        // loop=true：流末回卷（游标归零 + 继续播放）。
+        reg.set_loop(MP3, true);
+        assert!(reg.audio_play(MP3, 0), "停止后重 play");
+        let mut now = 0u64;
+        let mut wraps = 0usize;
+        let mut prev_ct = 0.0f64;
+        while now < 30_000 {
+            now += 250;
+            reg.audio_advance_all(now);
+            let ct = reg.audio_current_time(MP3);
+            if ct + 0.25 < prev_ct - 0.001 {
+                wraps += 1; // 游标回退 = 回卷
+            }
+            prev_ct = ct;
+            if wraps >= 2 {
+                break;
+            }
+        }
+        assert!(
+            wraps >= 2,
+            "loop=true 应至少回卷 2 次（实测 {wraps}），音频仍播放={}",
+            reg.audio_is_playing(MP3)
+        );
+        assert!(reg.audio_is_playing(MP3), "loop 回卷后播放态保持");
+    }
 }
 
 /// 宿主桥 — 在 sandbox 上注册 `__zw_video_*` 回调族并注入 `__zwVideoBridge` JS 对象
@@ -839,12 +998,16 @@ pub fn register_video_bridge_callbacks(
                 // 可达性仍由 open_webm 决定——失败回落 false，字节留存可重试）。
                 if let Some(provider) = source_provider.as_ref() {
                     let present = {
-                        let key = image_resource_key(src, None);
+                        let key = registry_key(src);
                         let sources = &reg.sources;
                         sources.contains_key(&key)
                     };
                     if !present && let Some(bytes) = provider(src) {
-                        let audio_guess = src.ends_with(".oga") || src.ends_with(".mp3");
+                        // audio 判定 strip query/fragment（WPT cache-buster URL——
+                        // sound_5.oga?... 以随机数结尾，直接 ends_with 恒 false →
+                        // 音频条目永不登记 → 桥 play 恒 miss，audio_loop_* 族超时）。
+                        let bare = src.split(['?', '#']).next().unwrap_or(src);
+                        let audio_guess = bare.ends_with(".oga") || bare.ends_with(".mp3");
                         reg.register_source(src, bytes.clone());
                         if audio_guess {
                             reg.register_audio_source(src, bytes);
@@ -963,6 +1126,18 @@ pub fn register_video_bridge_callbacks(
         }),
     );
 
+    // M3 扩批 XXIV：loop 真面（音频 entry 流末回卷；视频面由 shim Ended→play 重头）。
+    let reg_loop = std::sync::Arc::clone(&registry);
+    sandbox.register_callback(
+        "__zw_video_set_loop",
+        Box::new(move |args| {
+            let src = args.first().map(String::as_str).unwrap_or("");
+            let on = args.get(1).map(|s| s == "1").unwrap_or(false);
+            reg_loop.lock().unwrap_or_else(|e| e.into_inner()).set_loop(src, on);
+            "1".into()
+        }),
+    );
+
     // JS 侧门面对象：shim 只认它（feature-detect 单点）。
     let _ = sandbox.execute(
         "globalThis.__zwVideoBridge = {\
@@ -974,7 +1149,8 @@ pub fn register_video_bridge_callbacks(
            isPlaying: function (src) { return __zw_video_is_playing(src) === '1'; },\
            isEnded: function (src) { return __zw_video_is_ended(src) === '1'; },\
            setRate: function (src, rate) { __zw_video_set_rate(src, Number(rate)); },\
-           setGain: function (src, volume, muted) { __zw_video_set_gain(src, Number(volume), muted ? '1' : '0'); }\
+           setGain: function (src, volume, muted) { __zw_video_set_gain(src, Number(volume), muted ? '1' : '0'); },\
+           setLoop: function (src, on) { __zw_video_set_loop(src, on ? '1' : '0'); }\
          };",
     );
 }
