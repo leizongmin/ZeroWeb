@@ -183,6 +183,12 @@ TOP_FILES=(
   # 不加载，mode 改 hidden 触发（扩批 XV mode 触发面 + VTT 解析面既有；cues 12 条
   # + cue[11].startTime==22 断言）。
   "track/track-element/track-mode-triggers-loading.html"
+  # M3 扩批 XXXI（2026-09-04）：removetrack 派发落地后试导——selection metadata
+  # mode 初始态面 / removetrack TrackEvent 面 / 播放中 add cue 面。资源
+  # webvtt-file.vtt 补入。
+  "track/track-element/track-selection-metadata.html"
+  "track/track-element/track-remove-track.html"
+  "track/track-element/track-cues-missed-no-immediate-events.html"
   # M3 扩批 XXX 续：mode/cuechange 播放推进面（B 组——headless 时钟 + march 基建）。
   # 资源 captions-fast.vtt/cues-chrono-order.vtt/captions-gaps.vtt 已在清单。
   # counting.webm/test.webm 已在 MEDIA_FILES。track-mode 维持排除——mode 数值

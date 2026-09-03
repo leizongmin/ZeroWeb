@@ -608,6 +608,19 @@
     globalThis._zwEnsureEventTarget(list);
     globalThis._zwDefineTargetOnHandler(list, 'addtrack');
     globalThis._zwDefineTargetOnHandler(list, 'removetrack');
+    // M3 扩批 XXXI：@@iterator（spec TextTrackList iterable——track-selection-metadata
+    // 的 for...of video.textTracks 断言面；数组式值迭代器——holder.arr 快照）。
+    if (typeof Symbol !== 'undefined' && Symbol.iterator && !list[Symbol.iterator]) {
+      list[Symbol.iterator] = function () {
+        var _itArr = (this._zwHolder && this._zwHolder.arr) ? this._zwHolder.arr.slice() : [];
+        var _itIdx = 0;
+        return { next: function () {
+          return _itIdx < _itArr.length
+            ? { value: _itArr[_itIdx++], done: false }
+            : { value: undefined, done: true };
+        } };
+      };
+    }
     return holder.self;
   };
   // M3 扩批 XIII：TextTrackList 增量 addtrack 派发（queued task——spec
@@ -627,10 +640,47 @@
               ? new globalThis.TrackEvent('addtrack', { track: track })
               : null;
             if (!ev) return;
-            if (typeof list.dispatchEvent === 'function') list.dispatchEvent(ev);
+            // M3 扩批 XXXI：dispatch 期 window.event（_dispatchWithBubble 同语义——
+            // handler 内裸 `event` 读法兼容；track-remove-track 断言面）。
+            var _prevEv = globalThis.event;
+            globalThis.event = ev;
+            try {
+              if (typeof list.dispatchEvent === 'function') list.dispatchEvent(ev);
+            } finally {
+              globalThis.event = _prevEv;
+            }
           } catch (_eFta) {}
         });
       })(added[i]);
+    }
+  };
+  // M3 扩批 XXXI：TextTrackList removetrack 派发（_zwFireTracksAdded 同构——
+  // TrackEvent('removetrack', {track}) queued task；track-remove-track 断言面：
+  // event.target === list / event.track 身份 / instanceof TrackEvent）。
+  globalThis._zwFireTracksRemoved = function (list, removed) {
+    var _deferFireR = function (fn) {
+      if (typeof queueMicrotask === 'function') queueMicrotask(fn);
+      else if (typeof setTimeout === 'function') setTimeout(fn, 0);
+      else fn();
+    };
+    for (var i = 0; i < removed.length; i++) {
+      (function (track) {
+        _deferFireR(function () {
+          try {
+            var ev = (typeof globalThis.TrackEvent === 'function')
+              ? new globalThis.TrackEvent('removetrack', { track: track })
+              : null;
+            if (!ev) return;
+            var _prevEv = globalThis.event;
+            globalThis.event = ev;
+            try {
+              if (typeof list.dispatchEvent === 'function') list.dispatchEvent(ev);
+            } finally {
+              globalThis.event = _prevEv;
+            }
+          } catch (_eFtr) {}
+        });
+      })(removed[i]);
     }
   };
 

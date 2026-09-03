@@ -1564,6 +1564,13 @@ pub const MEDIA_TEST_FILES: &[&str] = &[
     "html/semantics/embedded-content/media-elements/track/track-element/track-mode-triggers-loading.html",
     // M3 扩批 XXX 续：mode/cuechange 播放推进面（B 组基建现成试导）。
     // track-mode 维持排除——mode 数值 setter 回落 + cue 计数 done 链。
+    // M3 扩批 XXXI：removetrack 派发落地后试导（selection metadata mode 面 /
+    // removetrack TrackEvent 面 / 播放中 add cue 面）。
+    "html/semantics/embedded-content/media-elements/track/track-element/track-selection-metadata.html",
+    "html/semantics/embedded-content/media-elements/track/track-element/track-remove-track.html",
+    "html/semantics/embedded-content/media-elements/track/track-element/track-cues-missed-no-immediate-events.html",
+    // M3 扩批 XXXI：removetrack 派发落地后试导（selection metadata mode 面 /
+    // removetrack TrackEvent 面 / 播放中 add cue 面）。
     "html/semantics/embedded-content/media-elements/track/track-element/track-mode-disabled.html",
     "html/semantics/embedded-content/media-elements/track/track-element/track-cues-cuechange.html",
     "html/semantics/embedded-content/media-elements/track/track-element/track-cues-add-new-track.html",

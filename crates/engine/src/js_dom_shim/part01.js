@@ -137,7 +137,10 @@
     var _tkId = (function () {
       try { return handle ? (__zw_get_attr_handle(handle, 'id') || '') : ((typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'id') : __zw_get_attr(sel, 'id')) || ''); } catch (_eTi) { return ''; }
     })();
-    _tkInst = globalThis._zwMakeTextTrack(_tkAttrKind, _tkLabel, _tkLang, _tkDefault ? 'showing' : 'disabled', _tkId,
+    // M3 扩批 XXXI：selection 算法 kind-aware 初始 mode——metadata track 经 automatic
+    // selection 置 **hidden**（非 metadata → showing；spec text-tracks-in-media-elements
+    // 的 selection 算法 + track-selection-metadata 断言面）。
+    _tkInst = globalThis._zwMakeTextTrack(_tkAttrKind, _tkLabel, _tkLang, _tkDefault ? (_tkAttrKind === 'metadata' ? 'hidden' : 'showing') : 'disabled', _tkId,
       // M3 扩批 XII：ownerEl = track 元素 proxy（label/language 反射 attr + cues
       // 可用性 gate）；mediaEl = 父 media 元素 proxy（activeCues 播放态——由同步
       // helper 在组装时注入，此处经 _zwParentMediaProxy 惰性解析）。
@@ -199,6 +202,14 @@
           for (var _stn = 0; _stn < _stAll.length; _stn++) {
             if (_stHolder.arr.indexOf(_stAll[_stn]) < 0) _stAdded.push(_stAll[_stn]);
           }
+          // M3 扩批 XXXI：removetrack 派发——以 holder 现内容为基线，消失的 track
+          // 逐个派 removetrack（TrackEvent.track = 被移除 TextTrack；spec
+          // text-tracks-in-media-elements「TextTrackList changes」——track-remove-track
+          // 断言面：event.target === list / instanceof TrackEvent / event.track 身份）。
+          var _stRemoved = [];
+          for (var _str = 0; _str < _stHolder.arr.length; _str++) {
+            if (_stAll.indexOf(_stHolder.arr[_str]) < 0) _stRemoved.push(_stHolder.arr[_str]);
+          }
           _stHolder.arr = _stAll.slice();
           globalThis._zwSyncListHolder(_stHolder);
           // M3 扩批 XXI：反向链回填——track → 所属 list（mode setter 的 change 广播
@@ -208,6 +219,9 @@
           }
           if (_stAdded.length && typeof globalThis._zwFireTracksAdded === 'function') {
             globalThis._zwFireTracksAdded(_stList, _stAdded);
+          }
+          if (_stRemoved.length && typeof globalThis._zwFireTracksRemoved === 'function') {
+            globalThis._zwFireTracksRemoved(_stList, _stRemoved);
           }
         }
       }
