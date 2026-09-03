@@ -280,6 +280,13 @@ pub(crate) fn run_in_following_block_sibling(
             && !matches!(&node.kind, NodeKind::Element(_))
         {
             if seen_run_in {
+                // 注释/处理指令等非元素非文本节点不产生盒，不阻断并入
+                //（run-in-basic-003：run-in 与 target 间的 HTML 注释曾按「非空白」
+                // 处理阻断并入——CSS2.1 §9.2.4 忽略的是全部 anonymous inline
+                // boxes，注释节点同样不渲染）。
+                if matches!(&node.kind, NodeKind::Comment(_)) {
+                    continue;
+                }
                 let ws_preserved = styles.get(&parent_id).is_some_and(|s| {
                     matches!(
                         s.white_space,
