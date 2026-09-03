@@ -708,6 +708,10 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
    加载时序由扩批 XV mode 触发面直接覆盖——D 组排除注记失效）**——余下增量依赖兄弟目标解锁（真播放钟 →
    time-marches-on 余面）+ 深结构项（~~TextTrackList change 事件广播反向链~~ ✅
    扩批 XXI 兑现、cue 标记树解析——归渲染域远期）。
+   **下一轮候选**：ready-states/autoplay.html（autoplaying flag 与 play()/pause()/
+   load() 交互 + 事件严格序断言——需 autoplay 时机面评估：canplay/canplaythrough
+   同步派发与 play/playing 异步派发的序保证，audio+video 各 5 子测）；
+   audio/video_volume_check 维持排除（越界断言 e.code==1 为旧 spec 语义）。
 2. ~~**M4g-d**：canPlayType 能力表联动更新~~ ✅ 2026-09-01 兑现（能力表真值化——
    后续新增解码面（AV1/H.264，media-playback M3）时同步扩表）。
 3. ~~**M4g-f**：resource selection 算法面~~ ✅ 2026-09-02 兑现（M3 扩批 XI——
