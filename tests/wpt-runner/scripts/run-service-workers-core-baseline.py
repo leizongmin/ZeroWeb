@@ -10,8 +10,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-EXPECTED_CASES = 60
-EXPECTED_SUBTESTS = 217
+EXPECTED_CASES = 61
+EXPECTED_SUBTESTS = 223
 
 
 def parse_args() -> argparse.Namespace:
@@ -130,7 +130,10 @@ def render_markdown(summary: dict) -> str:
             "top-level and iframe registration waiting slot visibility, "
             "controller nullability, and waiting/active SameObject identity. "
             "`controller-on-disconnect.https.html` extends it with clearing "
-            "the Service Worker controller when an iframe global is detached.",
+            "the Service Worker controller when an iframe global is detached. "
+            "`oninstall-script-error.https.html` extends it with install "
+            "listener exception reporting while preserving lifecycle success "
+            "unless a `waitUntil()` promise rejects.",
         ]
     ) + "\n"
 

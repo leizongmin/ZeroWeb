@@ -1,0 +1,8 @@
+path	manifest_type	roles	referenced_by	bytes	templated	git_blob_sha	source_revision
+service-workers/service-worker/oninstall-script-error.https.html	testharness	case	1	2493	no	fe7f6e901206e07b611496a191a8023516aa4b84	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
+service-workers/service-worker/resources/oninstall-throw-error-worker.js	support	worker-script	1	397	no	cc2f6d7e5e78fda2c74e9613897931b1eeadbb53	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
+service-workers/service-worker/resources/oninstall-throw-error-with-empty-onerror-worker.js	support	worker-script	1	126	no	8f56d1bf14910132d5656de020d6aafaf9623807	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
+service-workers/service-worker/resources/oninstall-throw-error-from-nested-event-worker.js	support	worker-script	1	382	no	6729ab61a371baf701796e88d1975dc1af77adcf	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
+service-workers/service-worker/resources/oninstall-waituntil-throw-error-worker.js	support	worker-script	1	151	no	6cb8f6ede635a3e71b67feddc2efc326b8af3470	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
+service-workers/service-worker/resources/oninstall-throw-error-then-cancel-worker.js	support	worker-script	1	124	no	c2c499ab1a3757aa4d1d57524eea3646302c226d	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
+service-workers/service-worker/resources/oninstall-throw-error-then-prevent-default-worker.js	support	worker-script	1	400	no	7667c2781d09477e57617beb642c39e244e1d075	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83

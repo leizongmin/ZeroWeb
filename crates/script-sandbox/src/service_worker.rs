@@ -2611,20 +2611,12 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
     currentWaitUntil = function(value) {
       pending.push(Promise.resolve(value));
     };
-    try {
-      const EventClass = type === 'install' ? InstallEvent : ExtendableEvent;
-      const event = new EventClass(type);
-      const callbacks = (listeners[type] || []).slice();
-      for (let i = 0; i < callbacks.length; i++) callbacks[i].call(globalThis, event);
-      const propertyHandler = globalThis['on' + type];
-      if (typeof propertyHandler === 'function') propertyHandler.call(globalThis, event);
-    } catch (error) {
-      currentWaitUntil = null;
-      result.settled = true;
-      result.message = String(error && error.message || error);
-      setRegistrationLifecyclePhase(type, false);
-      return;
-    }
+    const EventClass = type === 'install' ? InstallEvent : ExtendableEvent;
+    const event = new EventClass(type);
+    const callbacks = (listeners[type] || []).slice();
+    for (let i = 0; i < callbacks.length; i++) dispatchWorkerCallback(callbacks[i], event);
+    const propertyHandler = globalThis['on' + type];
+    if (typeof propertyHandler === 'function') dispatchWorkerCallback(propertyHandler, event);
     currentWaitUntil = null;
     Promise.all(pending).then(function() {
       result.settled = true;
@@ -6842,6 +6834,49 @@ mod tests {
                 claim_clients: false,
                 ref message,
             } if message.contains("install rejected")
+        ));
+    }
+
+    #[test]
+    fn install_event_listener_throw_reports_error_without_failing_install() {
+        let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
+        runtime
+            .evaluate(
+                "globalThis.__installErrorReported = false;
+                 addEventListener('error', event => {
+                    globalThis.__installErrorReported = event.message.indexOf('install listener threw') >= 0;
+                 });
+                 addEventListener('install', event => {
+                    throw new Error('install listener threw');
+                });",
+                "https://example.test/sw.js",
+            )
+            .unwrap();
+        let _ = runtime.recv_timeout(Duration::from_secs(5)).unwrap();
+
+        runtime.dispatch_install(16).unwrap();
+        assert_eq!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::LifecycleSettled {
+                event_id: 16,
+                phase: ServiceWorkerLifecyclePhase::Install,
+                succeeded: true,
+                skip_waiting: false,
+                claim_clients: false,
+                message: String::new(),
+            }
+        );
+        runtime
+            .evaluate(
+                "if (globalThis.__installErrorReported !== true) {
+                    throw new Error('install listener error was not reported');
+                 }",
+                "https://example.test/check.js",
+            )
+            .unwrap();
+        assert!(matches!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::Evaluated { .. }
         ));
     }
 

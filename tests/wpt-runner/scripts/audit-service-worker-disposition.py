@@ -63,6 +63,7 @@ CORE_ASSET_MANIFESTS = [
     EVIDENCE_DIR / "2026-09-03-m3-messageerror-event-assets.tsv",
     EVIDENCE_DIR / "2026-09-03-m3-controller-on-load-assets.tsv",
     EVIDENCE_DIR / "2026-09-03-m3-controller-on-disconnect-assets.tsv",
+    EVIDENCE_DIR / "2026-09-03-m3-oninstall-script-error-assets.tsv",
     EVIDENCE_DIR / "2026-09-03-m3-getregistration-assets.tsv",
     EVIDENCE_DIR / "2026-09-03-m3-registration-iframe-assets.tsv",
     EVIDENCE_DIR / "2026-09-03-m3-installing-assets.tsv",
@@ -91,8 +92,12 @@ REVIEW_FILES = [
 IDL_SOURCE = "service-workers/idlharness.https.any.js"
 EXPECTED_SOURCE_COUNT = 294
 EXPECTED_URL_COUNT = 331
-EXPECTED_LANES = Counter(core=73, fetch=3, defer=27, gated=149, skip=42)
+EXPECTED_LANES = Counter(core=74, fetch=3, defer=26, gated=149, skip=42)
 CORE_PROMOTIONS = {
+    "service-workers/service-worker/oninstall-script-error.https.html": (
+        "oninstall-script-error-core",
+        "2026-09-03-m3-oninstall-script-error.md",
+    ),
     "service-workers/service-worker/waiting.https.html": (
         "waiting-core",
         "2026-09-03-m3-waiting.md",
