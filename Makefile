@@ -326,18 +326,18 @@ test-wpt-service-workers-tier-a-assets: fetch-wpt-service-workers-tier-a
 
 fetch-wpt-service-workers-next-wave:
 	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-08-19-m1-next-wave-assets.tsv" \
-		WPT_EXPECTED_ASSET_COUNT=7 WPT_CORPUS_LABEL="Service Worker next-wave" \
+		WPT_EXPECTED_ASSET_COUNT=9 WPT_CORPUS_LABEL="Service Worker next-wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh
 
 audit-wpt-service-workers-next-wave:
 	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-08-19-m1-next-wave-assets.tsv" \
-		WPT_EXPECTED_ASSET_COUNT=7 WPT_CORPUS_LABEL="Service Worker next-wave" \
+		WPT_EXPECTED_ASSET_COUNT=9 WPT_CORPUS_LABEL="Service Worker next-wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh --verify-only
 
 test-wpt-service-workers-next-wave-assets: fetch-wpt-service-workers-next-wave
 	WPT_SERVICE_WORKER_SOURCE="$(CURDIR)/tests/wpt-runner/wpt-data/.service-workers-tier-a-root" \
 		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-08-19-m1-next-wave-assets.tsv" \
-		WPT_EXPECTED_ASSET_COUNT=7 WPT_CORPUS_LABEL="Service Worker next-wave" \
+		WPT_EXPECTED_ASSET_COUNT=9 WPT_CORPUS_LABEL="Service Worker next-wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/test-service-workers-tier-a-assets.sh
 
 fetch-wpt-service-workers-message-lifecycle-wave:

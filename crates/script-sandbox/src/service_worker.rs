@@ -186,6 +186,18 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
       this._propagationStopped = true;
     }
   }
+  // https://html.spec.whatwg.org/multipage/webappapis.html#errorevent
+  class ErrorEvent extends Event {
+    constructor(type, init) {
+      init = eventInit(init);
+      super(type);
+      this.message = init.message === undefined ? '' : String(init.message);
+      this.filename = init.filename === undefined ? '' : String(init.filename);
+      this.lineno = init.lineno === undefined ? 0 : Number(init.lineno);
+      this.colno = init.colno === undefined ? 0 : Number(init.colno);
+      this.error = init.error === undefined ? null : init.error;
+    }
+  }
   class ExtendableEvent extends Event {
     constructor(type) {
       super(type);
@@ -2163,6 +2175,7 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
   globalThis.ServiceWorkerGlobalScope = ServiceWorkerGlobalScope;
   globalThis.Event = Event;
   globalThis.ExtendableEvent = ExtendableEvent;
+  globalThis.ErrorEvent = ErrorEvent;
   globalThis.InstallEvent = InstallEvent;
   globalThis.ExtendableMessageEvent = ExtendableMessageEvent;
   globalThis.MessageEvent = MessageEvent;
@@ -2227,6 +2240,14 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
   };
   globalThis.addEventListener = function(type, listener) {
     if (typeof listener !== 'function') return;
+    if (globalThis.__zwCurrentScriptURL !== undefined) {
+      try {
+        Object.defineProperties(listener, {
+          __zwSourceURL: {value: String(globalThis.__zwCurrentScriptURL), configurable: true},
+          __zwSource: {value: String(globalThis.__zwCurrentScriptSource || ''), configurable: true}
+        });
+      } catch (_error) {}
+    }
     (listeners[String(type)] || (listeners[String(type)] = [])).push(listener);
   };
   globalThis.removeEventListener = function(type, listener) {
@@ -2408,9 +2429,9 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
             source: source
           });
           const callbacks = (listeners.message || []).slice();
-          for (let i = 0; i < callbacks.length; i++) callbacks[i].call(globalThis, event);
+          for (let i = 0; i < callbacks.length; i++) dispatchWorkerCallback(callbacks[i], event);
           if (typeof globalThis.onmessage === 'function') {
-            globalThis.onmessage.call(globalThis, event);
+            dispatchWorkerCallback(globalThis.onmessage, event);
           }
         });
         return;
@@ -2641,6 +2662,71 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
     }
     return value;
   }
+  function sourcePosition(source, offset) {
+    if (typeof source !== 'string' || offset < 0) return {line: 0, column: 0};
+    let line = 1;
+    let column = 1;
+    const end = Math.min(offset, source.length);
+    for (let i = 0; i < end; i++) {
+      if (source.charCodeAt(i) === 10) {
+        line += 1;
+        column = 1;
+      } else {
+        column += 1;
+      }
+    }
+    return {line: line, column: column};
+  }
+  function errorEventInit(error, listener) {
+    let filename = '';
+    let lineno = 0;
+    let colno = 0;
+    const message = String(error && error.message || error);
+    const stack = error && error.stack ? String(error.stack) : '';
+    const stackMatch = stack.match(/(https?:\/\/[^\s:)]+):(\d+):(\d+)/);
+    if (stackMatch) {
+      filename = stackMatch[1];
+      lineno = Number(stackMatch[2]);
+      colno = Number(stackMatch[3]);
+    }
+    if ((!filename || lineno === 0 || colno === 0) && listener) {
+      const sourceURL = listener.__zwSourceURL === undefined ? '' : String(listener.__zwSourceURL);
+      const source = listener.__zwSource === undefined ? '' : String(listener.__zwSource);
+      if (sourceURL) filename = sourceURL;
+      if (source) {
+        let offset = -1;
+        try {
+          const listenerSource = Function.prototype.toString.call(listener);
+          const listenerOffset = source.indexOf(listenerSource);
+          if (listenerOffset >= 0) offset = source.indexOf('throw', listenerOffset);
+        } catch (_error) {}
+        if (offset < 0) offset = source.indexOf('throw');
+        const position = sourcePosition(source, offset);
+        lineno = position.line;
+        colno = position.column;
+      }
+    }
+    if (!filename && globalThis.location && globalThis.location.href) {
+      filename = String(globalThis.location.href);
+    }
+    return {error: error, message: message, filename: filename, lineno: lineno, colno: colno};
+  }
+  function dispatchWorkerError(error, listener) {
+    const event = new ErrorEvent('error', errorEventInit(error, listener));
+    const callbacks = (listeners.error || []).slice();
+    for (let i = 0; i < callbacks.length; i++) callbacks[i].call(globalThis, event);
+    if (typeof globalThis.onerror === 'function') {
+      globalThis.onerror.call(globalThis, event);
+    }
+    return event;
+  }
+  function dispatchWorkerCallback(callback, event) {
+    try {
+      callback.call(globalThis, event);
+    } catch (error) {
+      dispatchWorkerError(error, callback);
+    }
+  }
   globalThis.__zwDispatchMessage = function(
       eventId, data, clientId, clientURL, clientFrameType, clientFocused, portIds, dataPortIndex, targetPortId) {
     outboundMessages.splice(0, outboundMessages.length);
@@ -2669,9 +2755,9 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
           focused: clientFocused === true
         });
         const callbacks = (listeners.message || []).slice();
-        for (let i = 0; i < callbacks.length; i++) callbacks[i].call(globalThis, event);
+        for (let i = 0; i < callbacks.length; i++) dispatchWorkerCallback(callbacks[i], event);
         if (typeof globalThis.onmessage === 'function') {
-          globalThis.onmessage.call(globalThis, event);
+          dispatchWorkerCallback(globalThis.onmessage, event);
         }
       }
       Promise.all(pending).catch(function() {});
@@ -2707,9 +2793,9 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
         port.dispatchEvent(event);
       } else {
         const callbacks = (listeners.message || []).slice();
-        for (let i = 0; i < callbacks.length; i++) callbacks[i].call(globalThis, event);
+        for (let i = 0; i < callbacks.length; i++) dispatchWorkerCallback(callbacks[i], event);
         if (typeof globalThis.onmessage === 'function') {
-          globalThis.onmessage.call(globalThis, event);
+          dispatchWorkerCallback(globalThis.onmessage, event);
         }
       }
       Promise.all(pending).catch(function() {});
@@ -3865,7 +3951,7 @@ impl ServiceWorkerRuntime {
                                             lifecycle_timeout_ms,
                                         )
                                     } else {
-                                        evaluate_classic_script(sandbox.as_mut(), source)
+                                        evaluate_classic_script(sandbox.as_mut(), source, &script_url)
                                     }
                                 });
                             let event = match evaluation {
@@ -5322,13 +5408,22 @@ fn evaluate_module_graph(
     sandbox.execute(&compiled).map(|_| ())
 }
 
-fn evaluate_classic_script(sandbox: &mut dyn Sandbox, source: &str) -> Result<(), ScriptError> {
+fn evaluate_classic_script(sandbox: &mut dyn Sandbox, source: &str, script_url: &str) -> Result<(), ScriptError> {
     // https://w3c.github.io/ServiceWorker/#service-worker-script-request
     // Dynamic import is unavailable in Service Worker scripts; V8's host hook reports a generic
     // Error, so rewrite import() to the same TypeError rejected promise used by module workers.
     sandbox.execute(SERVICE_WORKER_DYNAMIC_IMPORT_PRELUDE)?;
+    let original_source = source;
     let source = rewrite_dynamic_imports(source);
-    sandbox.execute(&source).map(|_| ())
+    let setup = format!(
+        "globalThis.__zwCurrentScriptURL = {}; globalThis.__zwCurrentScriptSource = {};",
+        serde_json::to_string(script_url).unwrap(),
+        serde_json::to_string(original_source).unwrap()
+    );
+    sandbox.execute(&setup)?;
+    let result = sandbox.execute(&source).map(|_| ());
+    let _ = sandbox.execute("delete globalThis.__zwCurrentScriptURL; delete globalThis.__zwCurrentScriptSource;");
+    result
 }
 
 fn service_worker_module_source_has_top_level_await(source: &str) -> bool {
@@ -6848,14 +6943,20 @@ mod tests {
                 "https://example.test/page",
             )
             .unwrap();
-        assert!(matches!(
+        assert_eq!(
             runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
-            ServiceWorkerEvent::MessageFailed {
+            ServiceWorkerEvent::MessageDispatched {
                 event_id: 17,
-                client_id,
-                message,
-            } if client_id == "client-1" && message.contains("message failed")
-        ));
+                client_id: "client-1".into(),
+                outbound: vec![ServiceWorkerOutboundMessage {
+                    data_json: r#"{"echo":"fail","source":"client-1:https://example.test/page"}"#.into(),
+                    port_id: None,
+                    transferred_port_ids: Vec::new(),
+                    data_port_index: None,
+                    target_client_id: Some("client-1".into()),
+                }],
+            }
+        );
         runtime
             .dispatch_message(
                 18,
@@ -6892,6 +6993,53 @@ mod tests {
             runtime.dispatch_message(19, "{", "client-1", "https://example.test/page"),
             Err(ScriptError::InvalidInput(_))
         ));
+    }
+
+    #[test]
+    fn page_message_error_listener_observes_thrown_error_event() {
+        let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
+        runtime
+            .evaluate(
+                concat!(
+                    "var source;\n",
+                    "\n",
+                    "addEventListener('message', function(event) {\n",
+                    "  source = event.source;\n",
+                    "  throw 'testError';\n",
+                    "});\n",
+                    "\n",
+                    "addEventListener('error', function(event) {\n",
+                    "  source.postMessage({\n",
+                    "    error: event.error,\n",
+                    "    message: event.message,\n",
+                    "    filename: event.filename,\n",
+                    "    lineno: event.lineno,\n",
+                    "    colno: event.colno\n",
+                    "  });\n",
+                    "});"
+                ),
+                "https://example.test/service-workers/service-worker/ServiceWorkerGlobalScope/resources/error-worker.js",
+            )
+            .unwrap();
+        let _ = runtime.recv_timeout(Duration::from_secs(5)).unwrap();
+
+        runtime
+            .dispatch_message(20, "\"\"", "client-1", "https://example.test/page")
+            .unwrap();
+        assert_eq!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::MessageDispatched {
+                event_id: 20,
+                client_id: "client-1".into(),
+                outbound: vec![ServiceWorkerOutboundMessage {
+                    data_json: r#"{"error":"testError","message":"testError","filename":"https://example.test/service-workers/service-worker/ServiceWorkerGlobalScope/resources/error-worker.js","lineno":5,"colno":3}"#.into(),
+                    port_id: None,
+                    transferred_port_ids: Vec::new(),
+                    data_port_index: None,
+                    target_client_id: Some("client-1".into()),
+                }],
+            }
+        );
     }
 
     #[test]

@@ -10,8 +10,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-EXPECTED_CASES = 52
-EXPECTED_SUBTESTS = 200
+EXPECTED_CASES = 53
+EXPECTED_SUBTESTS = 201
 
 
 def parse_args() -> argparse.Namespace:
@@ -91,7 +91,7 @@ def render_markdown(summary: dict) -> str:
         [
             "# Service Worker Core WPT Baseline",
             "",
-            "- Date: 2026-09-02",
+            "- Date: 2026-09-03",
             "- WPT revision: `04067ce9c7c2165e71ad7d0dde10a4c5cb394a83`",
             f"- Cases: {summary['cases']}",
             f"- Subtests: {summary['subtests']}",
@@ -110,7 +110,10 @@ def render_markdown(summary: dict) -> str:
             "the baseline with worker-global `registration.scope`, "
             "`registration.installing/waiting/active` slot visibility, "
             "registration and worker `EventTarget` methods, `updatefound`, and "
-            "`statechange` ordering across initial and replacement workers.",
+            "`statechange` ordering across initial and replacement workers. "
+            "`ServiceWorkerGlobalScope/service-worker-error-event.https.html` "
+            "extends it with worker-global `ErrorEvent` dispatch for message "
+            "handler failures.",
         ]
     ) + "\n"
 

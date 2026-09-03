@@ -84,8 +84,12 @@ REVIEW_FILES = [
 IDL_SOURCE = "service-workers/idlharness.https.any.js"
 EXPECTED_SOURCE_COUNT = 294
 EXPECTED_URL_COUNT = 331
-EXPECTED_LANES = Counter(core=65, fetch=3, defer=34, gated=150, skip=42)
+EXPECTED_LANES = Counter(core=66, fetch=3, defer=33, gated=150, skip=42)
 CORE_PROMOTIONS = {
+    "service-workers/service-worker/ServiceWorkerGlobalScope/service-worker-error-event.https.html": (
+        "worker-error-event-core",
+        "2026-09-03-m3-worker-error-event.md",
+    ),
     "service-workers/service-worker/ServiceWorkerGlobalScope/extendable-message-event.https.html": (
         "extendable-message-event-core",
         "2026-09-02-m3-extendable-message-event.md",
