@@ -2,7 +2,13 @@
 
 **入口文档**: [../media-playback.md](../media-playback.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-03（**M3 fixture-mounted runner 播放面切片 2 落地**——
+**最后更新**: 2026-09-03（**M3 fixture-mounted runner 播放面切片 3 落地**——
+解码器 EOF 排空缺陷修复：`VideoDecoder::next_frame` draining 中间态（demux 尽后
+排空 hidden/alt-ref 帧滞后队列才报流末）+ `VideoPlayer::present_pending` 未来帧
+`un_read` 队首退回——此前 position < duration 即提前 Ended（fixture-mounted
+WPT 流的最小暴露面：test.webm 30fps + 15 个 alt-ref hidden 帧）；media-elements
+534P/0F/24PF（+3 净涨——track-cues-enter-exit / pause-on-exit 解除排除）。
+此前同日：**M3 fixture-mounted runner 播放面切片 2 落地**——
 track-cues-* 播放推进族解锁：runner 播放桥前置 + 逐 tick 动态源登记 + shim play()
 latest-wins 读/退避重试/pending seek 补推 + registry 字节留存/is_ended 桥面 +
 march 区间捕获/事件时间序/ended 面；media-elements 531P/0F/24PF（+2 净涨）。
@@ -385,6 +391,25 @@ clippy 零警告、每切片带单测 + e2e/fixture 资产化（AV1 全流单测
    enter-exit 因注册竞态 1/4 flake 暂排除，随泵节拍精化复评）。**余**：WPT 播放
    推进用例续批（enter-exit 复评 + seeking/sorted/pause-on-exit 等随基础设施
    增量逐件）。
+   **切片 3 落地（2026-09-03 续，解码器 EOF 排空缺陷修复——播放推进族余件
+   解锁）**：宿主插桩实证（console→tracing + 泵侧 Rust 快照）定位两类
+   zero-media 解码层缺陷：① `VideoDecoder::next_frame` 的 demux 耗尽分支 flush
+   后仅 pull 一帧即置 `eof`——rusty_vp9 的 hidden/alt-ref 帧（show_frame=0）
+   解码后返 `Again` 不产出，每次消耗一个 pull 机会但其 pts 帧晚一个 demux 块
+   浮现，形成 ~15 帧（≈0.5s）输出滞后；积压帧被提前置位的 eof 吞掉，
+   `present_pending` 在 position < duration 处遇 `Ok(None)` 即转 Ended
+   （test.webm 实测 Ended@媒体时间 3.57s / 流长 6.035s；WPT 形态 =
+   track-cues-enter-exit 的 cue@4-5s 永不触发）。修复：`draining` 中间态 +
+   `drain_frame`（Again=隐藏帧继续拉、Eof=队列真空才停）；seek 双分支同步
+   重置。② `present_pending` 遇 `pts > position` 的未来帧把它返回给调用方
+   （渲染后丢弃）——时间槽永久丢失，粗 tick 背压下逐 tick 丢未来帧使解码器
+   再次提前耗尽。修复：`VideoDecoder::un_read` 队首退回（pending 槽复用）——
+   spec ended「currentTime 到达流末」，帧调度不得超越时钟消费时间线。修复后
+   模拟 181 帧全呈现、position=6.0 才 Ended；WPT：media-elements 534P/0F/24PF
+   （+3 净涨——enter-exit / pause-on-exit 解除排除，4 连跑稳定）。单测
+   `webm_sequential_decode_drains_hidden_tail_frames_r3936`。**余**：WPT 播放
+   推进用例余面（track-cues-seeking——seek 事件真值化复评；其余 B 组随基础
+   设施增量逐件）。
 2. ~~**A/V 同步精化余项**~~ ✅ 2026-09-01 收口：ended 面回归守卫落地
    （切片 F——伴音流末 video player 走到 Ended、泵停）；音频设备面（CpalSink
    真出声）挂 media-audio M1 可选切片。
