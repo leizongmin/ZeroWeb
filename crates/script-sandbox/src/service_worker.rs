@@ -1203,6 +1203,25 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
       this.bodyUsed = true;
       return Promise.resolve(this._body);
     }
+    get body() {
+      if (this._bodyStream) return this._bodyStream;
+      const response = this;
+      let sent = false;
+      this._bodyStream = new ReadableStream({
+        pull(controller) {
+          if (sent) {
+            controller.close();
+            return;
+          }
+          sent = true;
+          response.bodyUsed = true;
+          const bytes = utf8Encode(response._body);
+          if (bytes.length > 0) controller.enqueue(bytes);
+          controller.close();
+        }
+      });
+      return this._bodyStream;
+    }
     json() {
       this.bodyUsed = true;
       return Promise.resolve(JSON.parse(this._body));
@@ -9631,6 +9650,78 @@ mod tests {
                     response_type: "default".into(),
                     headers: Vec::new(),
                     body: "https://example.test/app/asset.html|cors|null|text/html|text/html|bcde".into(),
+                }),
+                failed: false,
+                message: String::new(),
+            }
+        );
+    }
+
+    #[test]
+    fn worker_global_fetch_exposes_response_body_stream() {
+        let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
+        runtime
+            .evaluate(
+                "addEventListener('fetch', event => {
+                   event.respondWith(fetch('./pass.txt').then(function(response) {
+                     if (!response.body || typeof response.body.getReader !== 'function') {
+                       return new Response('missing stream');
+                     }
+                     return new Response(response.body);
+                   }));
+                 });",
+                "https://example.test/app/sw.js",
+            )
+            .unwrap();
+        let _ = runtime.recv_timeout(Duration::from_secs(5)).unwrap();
+
+        runtime
+            .dispatch_fetch(
+                55,
+                ServiceWorkerFetchRequest {
+                    url: "https://example.test/app/page".into(),
+                    method: "GET".into(),
+                    headers: Vec::new(),
+                    body: None,
+                    credentials: None,
+                    client_id: Some("client-1".into()),
+                    resulting_client_id: None,
+                    referrer: None,
+                    is_reload_navigation: false,
+                    is_history_navigation: false,
+                },
+            )
+            .unwrap();
+        let ServiceWorkerEvent::FetchRequested { request_id, request } =
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap()
+        else {
+            panic!("missing worker global fetch request");
+        };
+        assert_eq!(request.url, "https://example.test/app/pass.txt");
+        runtime
+            .complete_fetch(
+                request_id,
+                Ok(ServiceWorkerFetchResponse {
+                    status: 200,
+                    status_text: "OK".into(),
+                    response_type: "default".into(),
+                    headers: Vec::new(),
+                    body: "PASS\n".into(),
+                }),
+            )
+            .unwrap();
+
+        assert_eq!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::FetchSettled {
+                event_id: 55,
+                request_url: "https://example.test/app/page".into(),
+                response: Some(ServiceWorkerFetchResponse {
+                    status: 200,
+                    status_text: String::new(),
+                    response_type: "default".into(),
+                    headers: Vec::new(),
+                    body: "PASS\n".into(),
                 }),
                 failed: false,
                 message: String::new(),

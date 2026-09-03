@@ -628,11 +628,12 @@ JSON，private profile 继续只保留内存态。
 - 🚧 M2-40：`fetch-event-respond-with-readable-stream.https.html` 预推进修复：
   Service Worker runtime 的最小 `ReadableStream` 构造器现在执行
   `underlyingSource.start(controller)`，并保持 typed-array chunk 边界校验；WebView
-  regression 已固定受控 iframe `contentWindow.fetch('?stream')` 可读回 `PASS`。
-  单 case 探测显示前 4 个 subtest（subresource/main resource、含 delayed enqueue）
-  已通过；剩余 `response.body` 转发与页面 cancel/abort 反传仍需要跨 runtime 边界的真实
-  streaming/cancel 语义，故该 WPT 尚未纳入常驻 runner，fetch/message baseline 仍保持
-  26 case / 70 subtest 全绿。
+  regression 已固定受控 iframe `contentWindow.fetch('?stream')` 可读回 `PASS`；worker-global
+  `fetch('pass.txt')` 返回的 `Response.body` 现在可作为 `new Response(response.body)` 的
+  `ReadableStream<Uint8Array>` body 转发。单 case 探测在补齐未登记的本地 `resources/pass.txt`
+  后显示前 6 个 subtest（subresource/main resource、delayed enqueue、fetch stream）
+  已通过；剩余页面 cancel/abort 反传仍需要跨 runtime 边界的真实 streaming/cancel
+  语义，且完整 case 资产闭包尚未纳入 fetch-wave manifest，故该 WPT 尚未纳入常驻 runner。
 - ✅ M2-41：Service Worker fetch/interception WPT baseline 扩展到
   `service-workers/service-worker/fetch-event-respond-with-readable-stream-chunk.https.html`；
   fetch-wave 资产清单扩展到 70 asset，runner 双跑 27 case / 71 subtest /
@@ -704,8 +705,7 @@ second（replacement）worker 只处理 awaitInstallEvent（messageSequence=1）
 1. **M2 fetch/cache WPT 扩面**：在首个 fetch/interception baseline、SW CacheStorage
    serviceworker 首片与持久化之后，继续挑选当前可执行的 Service Worker fetch/cache 上游用例，
    扩展 pass-rate evidence；`fetch-event-respond-with-readable-stream.https.html` 的剩余
-   `fetch('pass.txt').body` 转发、partial stream reader delivery 和页面 cancel/abort
-   反传应作为 streaming/cancel 专项处理
+   资产闭包与页面 cancel/abort 反传应作为 streaming/cancel 专项处理
 2. **M3 clients follow-up**：popup/auxiliary 真实 browsing context 创建后接入 browser owner
 
 ## 里程碑状态
@@ -1211,6 +1211,7 @@ second（replacement）worker 只处理 awaitInstallEvent（messageSequence=1）
 | 2026-09-02 | M3-54 registration attribute core promotion | `ServiceWorkerGlobalScope/registration-attribute.https.html` 纳入 core runner；worker global registration scope/slot/EventTarget 与 lifecycle event ordering 通过；`make baseline-wpt-service-workers-core` 双跑 52/200 deterministic Pass |
 | 2026-09-02 | M2 fetch body-loaded-in-chunk baseline | `fetch-event-respond-with-body-loaded-in-chunk.https.html` 纳入 fetch/message runner；worker-side loaded chunk body 经 `respondWith(new Response(body))` 转发到受控 iframe；`make baseline-wpt-service-workers-fetch` 双跑 29/74 deterministic Pass |
 | 2026-09-02 | M2 fetch invalid stream chunk baseline | `fetch-event-respond-with-response-body-with-invalid-chunk.https.html` 纳入 fetch/message runner；非 `Uint8Array` stream chunk 通过 page-side `response.body` reader 以 TypeError reject；`make baseline-wpt-service-workers-fetch` 双跑 30/75 deterministic Pass |
+| 2026-09-02 | M2 fetch readable-stream fetch-body prework | SW runtime `Response.body` getter 暴露 host fetch body 的 `ReadableStream<Uint8Array>`；`worker_global_fetch_exposes_response_body_stream` 固定 `fetch('./pass.txt').then(r => new Response(r.body))` 转发 `PASS\n`；临时补本地 `resources/pass.txt` probe 显示完整 readable-stream WPT 前 6 subtest 通过，剩余 cancel/abort 反传未纳入 baseline |
 | 2026-08-22 | M3 registration CacheStorage persistence | SW active registration-local CacheStorage snapshot/restore；normal profile persistence dirtying |
 | 2026-08-22 | M2 worker Cache delete/listing | SW runtime `Cache.delete()` 与 `CacheStorage.delete/has/keys` 贯穿 runtime/renderer/browser/manager/protocol |
 | 2026-08-22 | storage-cache-api M3 persistence support | page/WebView owner CacheStorage per-origin 落盘 |
