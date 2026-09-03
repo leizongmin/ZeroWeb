@@ -578,6 +578,80 @@ fn css_transform_to_svg(css: &str) -> Option<String> {
     }
 }
 
+/// R3988（CSS Transforms 1 §svg-transform-functions + SVG2 transform attribute
+/// 语法）：SVG transform attr 的函数参数列表**不允许空参数/尾随逗号**
+///（`rotate(90,)` 整条无效 → 无 transform）。usvg 0.47 宽容解析尾随逗号
+///（rotate 生效，探针 diff=6400 实证）——本预处理把含畸形参数列表的 transform
+/// attr **删除**（chromium 语义 = 声明忽略）。
+///
+/// 判定（保守）：仅当参数列表存在「逗号后紧跟 `)` / 连续逗号 / 开括号后直接
+/// 逗号」形态才删；其余一律不动。已知 usvg 与 chromium 一致的宽容域（如无单位
+/// 数字）不在此列（R3936 已实证透传正确）。
+pub(crate) fn preprocess_svg_transform_attr_syntax(source: &[u8]) -> Vec<u8> {
+    let Ok(text) = std::str::from_utf8(source) else {
+        return source.to_vec();
+    };
+    if !text.contains("transform=\"") {
+        return source.to_vec();
+    }
+    let token = "transform=\"";
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    let mut changed = false;
+    while let Some(pos) = rest.find(token) {
+        // 先拷 token 前文本（Drop 分支也须保留开标签前缀）。
+        out.push_str(&rest[..pos]);
+        let value_start = pos + token.len();
+        let Some(value_len) = rest[value_start..].find('"') else {
+            out.push_str(&rest[pos..]);
+            return out.into_bytes();
+        };
+        let raw_value = &rest[value_start..value_start + value_len];
+        if transform_attr_has_malformed_args(raw_value) {
+            // 删除整个 attr：token+值+闭引号全不拷，直接跳过。
+            changed = true;
+            rest = &rest[value_start + value_len..];
+            rest = rest.strip_prefix('"').unwrap_or(rest);
+            continue;
+        }
+        out.push_str(token);
+        out.push_str(raw_value);
+        out.push('"');
+        rest = &rest[value_start + value_len..];
+    }
+    out.push_str(rest);
+    if changed { out.into_bytes() } else { source.to_vec() }
+}
+
+/// transform attr 值是否含畸形参数列表（空参数/尾随逗号/连续逗号）。
+fn transform_attr_has_malformed_args(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        let open = match value[i..].find('(') {
+            Some(o) => i + o,
+            None => return false,
+        };
+        let after_open = open + 1;
+        let Some(close_rel) = value[after_open..].find(')') else {
+            return false;
+        };
+        let args = &value[after_open..after_open + close_rel];
+        let t = args.trim();
+        // 尾随逗号 / 前导逗号 / 连续逗号 / 纯逗号 = 畸形。
+        if t.ends_with(',')
+            || t.starts_with(',')
+            || t.contains(", ,")
+            || t.contains(",,")
+            || t.is_empty() && !args.is_empty() && args.contains(',')
+        {
+            return true;
+        }
+        i = after_open + close_rel + 1;
+    }
+    false
+}
+
 /// rect bbox 参照：从 origin attr 所在元素的开标签前缀解析 rect 几何（x/y/width/height
 /// attr；缺 x/y 默认 0），按 fill-box 语义翻译 origin 分量为绝对 px。
 /// 非 rect 元素或几何缺失 → None（调用方落 Drop/Keep，fail-closed）。
@@ -720,6 +794,8 @@ pub fn rasterize_svg_at(source: &[u8], target_w: u32, target_h: u32) -> Result<I
     // R3937：style attr transform 覆盖 presentation attr（CSS 级联序 > attr；
     // usvg 忽略 style transform——预处理把合法 CSS transform 翻译改写 attr）。
     let bytes = preprocess_svg_style_transform(source);
+    // R3988：transform attr 畸形参数列表（尾随逗号等）→ attr 删除（chromium 声明忽略）。
+    let bytes = preprocess_svg_transform_attr_syntax(&bytes);
     let bytes = preprocess_svg_transform_origin(&bytes);
     let bytes = inject_svg_target_dims(&bytes, target_w, target_h);
     let tree = resvg::usvg::Tree::from_data(&bytes, &resvg::usvg::Options::default())
@@ -3024,6 +3100,35 @@ mod r3937_tests {
         // 无 style attr：原样。
         let none = br##"<svg xmlns="http://www.w3.org/2000/svg"><rect transform="scale(0.5)"/></svg>"##;
         assert_eq!(preprocess_svg_style_transform(none), none.to_vec());
+    }
+
+    /// R3988：transform attr 畸形参数列表（尾随逗号）→ attr 删除（rotate-3args-
+    /// invalid-002 案语义：`rotate(90,)` 整条无效）；合法值不动。
+    #[test]
+    fn r3988_malformed_transform_attr_dropped() {
+        let src = br##"<svg xmlns="http://www.w3.org/2000/svg"><rect width="80" height="80" transform="rotate(90,)"/></svg>"##;
+        let out = preprocess_svg_transform_attr_syntax(src);
+        let text = std::str::from_utf8(&out).unwrap();
+        assert!(!text.contains("transform="), "尾随逗号 transform attr 应删除: {text}");
+        // 合法值不动。
+        let ok = br##"<svg xmlns="http://www.w3.org/2000/svg"><rect width="80" height="80" transform="rotate(90) translate(0 -100)"/></svg>"##;
+        assert_eq!(preprocess_svg_transform_attr_syntax(ok), ok.to_vec());
+        // 端到端：畸形 attr 删除后渲染 = 无 transform 形态。
+        let with = rasterize_svg_at(
+            br##"<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200"><rect width="80" height="80" fill="#00ff00" transform="rotate(90,)"/></svg>"##,
+            200, 200,
+        ).expect("w");
+        let none = rasterize_svg_at(
+            br##"<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200"><rect width="80" height="80" fill="#00ff00"/></svg>"##,
+            200, 200,
+        ).expect("n");
+        let diff = with
+            .pixels
+            .chunks(4)
+            .zip(none.pixels.chunks(4))
+            .filter(|(p, q)| p != q)
+            .count();
+        assert_eq!(diff, 0, "畸形 attr 删除后应与无 transform 一致（diff={diff}）");
     }
 
     /// R3937：端到端——覆盖后渲染与「attr=rotate(90)」形态一致（001 案语义）。
