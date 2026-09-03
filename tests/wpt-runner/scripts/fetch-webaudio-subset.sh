@@ -88,6 +88,12 @@ WA_FILES=(
   # 此前「末 task multiple contexts 依赖 startRendering」排除注记经实测核对失效
   #（该注记实为 ctor-audiobuffer.html 的排除理由，两文件混淆）。
   "webaudio/the-audio-api/the-audiobuffersourcenode-interface/ctor-audiobuffersource.html"
+  # ---- 第十三批（2026-09-03）：audiocontext-getoutputtimestamp（AudioTimestamp
+  # 初始值面——shim 补 getOutputTimestamp 后导入）。不导入：constructor-allowed-to-start
+  #（test_driver.bless 用户手势 + onstatechange 时序）、suspend-after-construct
+  #（onstatechange 事件计数）、audiocontext-not-fully-active（iframe 跨源 helper
+  # ——超出 webaudio runner 能力）；其余 audiocontext-* 依赖真设备 sinkid/渲染。
+  "webaudio/the-audio-api/the-audiocontext-interface/audiocontext-getoutputtimestamp.html"
   # 不导入：audioparam-method-chaining / audioparam-nominal-range（startRendering
   # 渲染断言——RFC §0 不做清单）；ctor-audiobuffer（末 task multiple contexts 依赖
   # startRendering——audit runner 整文件跑）；periodicWave.html（startRendering）；

@@ -1655,6 +1655,10 @@ pub const WEBAUDIO_TEST_FILES: &[&str] = &[
     // shim 补 loopStart/loopEnd 后导入。此前排除注记与 ctor-audiobuffer 混淆，
     // 实测核对后解除）。
     "webaudio/the-audio-api/the-audiobuffersourcenode-interface/ctor-audiobuffersource.html",
+    // ---- 第十三批（2026-09-03）：audiocontext-getoutputtimestamp（AudioTimestamp
+    // 初始值面——shim getOutputTimestamp；其余 audiocontext-* 需用户手势/
+    // onstatechange 时序/iframe 跨源 helper/真设备，维持排除）。
+    "webaudio/the-audio-api/the-audiocontext-interface/audiocontext-getoutputtimestamp.html",
     // 不导入：ctor-audiobuffer.html（末 task「multiple contexts」依赖
     // startRendering——audit runner 整文件跑，前段构造面无法单独导入）；
     // audiobuffer-copy-channel（startRendering 后段同文件不可分割——数据面已落

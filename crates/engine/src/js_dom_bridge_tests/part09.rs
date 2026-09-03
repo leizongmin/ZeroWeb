@@ -5020,4 +5020,21 @@ fn test_webaudio_processing_ctor_family2_m3xxvi() {
         "true|true|true|true|true|true|true|true",
         "BufferSource ctor options 全字段反射等价工厂路径 + 缺省节点 loopStart/loopEnd 0（第十二批）"
     );
+
+    // 断言组 9（第十三批）：getOutputTimestamp——AudioTimestamp 形状
+    //（contextTime/performanceTime 存在、有限、≥ 0）。
+    sandbox
+        .execute(
+            "var ac = new AudioContext();\
+             var ts = ac.getOutputTimestamp();\
+             var okShape = ts && typeof ts === 'object' && typeof ts.contextTime === 'number' && typeof ts.performanceTime === 'number';\
+             var okRange = okShape && isFinite(ts.contextTime) && ts.contextTime >= 0 && isFinite(ts.performanceTime) && ts.performanceTime >= 0;\
+             globalThis.__r9 = [String(okShape), String(okRange)].join('|');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r9").unwrap().value,
+        "true|true",
+        "getOutputTimestamp AudioTimestamp 形状 + 有限非负（第十三批）"
+    );
 }

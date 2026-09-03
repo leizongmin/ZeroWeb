@@ -7484,6 +7484,17 @@
   AudioContext.prototype.close = function () { return this._zwClose ? this._zwClose() : Promise.resolve(); };
   AudioContext.prototype.suspend = function () { return this._zwSuspend ? this._zwSuspend() : Promise.resolve(); };
   AudioContext.prototype.resume = function () { return this._zwResume ? this._zwResume() : Promise.resolve(); };
+  // getOutputTimestamp（spec §AudioContext.getOutputTimestamp——返回
+  // AudioTimestamp {contextTime, performanceTime}，两值有限且 ≥ 0；headless
+  // 无音频钟——contextTime 近似 currentTime 同源、performanceTime 同
+  // performance.now（audiocontext-getoutputtimestamp 初始值断言面））。
+  AudioContext.prototype.getOutputTimestamp = function () {
+    var ct = (typeof __zw_performance_now === 'function') ? __zw_performance_now() / 1000 : 0;
+    if (!isFinite(ct) || ct < 0) ct = 0;
+    var pt = (typeof __zw_performance_now === 'function') ? __zw_performance_now() : 0;
+    if (!isFinite(pt) || pt < 0) pt = 0;
+    return { contextTime: ct, performanceTime: pt };
+  };
   // OfflineAudioContext：构造 + 节点工厂兼容面（numberOfWorkers/length/sampleRate
   // 反射；**无离线渲染**——startRendering 返 rejected promise，RFC §0 简化记录）。
   // WPT audionode-connect-return-value 等构造面用例依赖。

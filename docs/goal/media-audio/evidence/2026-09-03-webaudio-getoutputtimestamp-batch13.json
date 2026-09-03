@@ -1,0 +1,25 @@
+{
+  "batch": "WPT webaudio 第十三批",
+  "date": "2026-09-03",
+  "topic": "audiocontext-getoutputtimestamp——AudioTimestamp 初始值面（shim getOutputTimestamp 落地后导入）",
+  "imported": [
+    "webaudio/the-audio-api/the-audiocontext-interface/audiocontext-getoutputtimestamp.html"
+  ],
+  "shim_changes": [
+    "AudioContext.getOutputTimestamp：AudioTimestamp {contextTime, performanceTime} 形状面——两值有限且 ≥ 0（headless 无音频钟，contextTime 近似 currentTime 同源 performance.now 换算，真值面挂 audio clock 主时钟切片）"
+  ],
+  "excluded_note": "the-audiocontext-interface 余件全排除：constructor-allowed-to-start（test_driver.bless 用户手势 + onstatechange 时序）、suspend-after-construct（onstatechange 事件计数——headless 无状态迁移机制）、audiocontext-not-fully-active（iframe 跨源 helper 超 webaudio runner 能力）、audiocontext-suspend-resume（task 3 硬依赖 startRendering）、sinkid/render-*.https（真设备域）",
+  "saturation": "headless 零渲染可导入面至此饱和——余下用例全部依赖 startRendering 渲染量化 / 用户手势 / onstatechange 时序 / iframe 跨源 / 真设备 sinkid，随渲染切片或设备切片复评",
+  "results": {
+    "pass": 787,
+    "fail": 0,
+    "timeout": 0,
+    "net": "+10 subtest 净涨零回归（777→787）；28 用例"
+  },
+  "unit_test": "test_webaudio_processing_ctor_family2_m3xxvi（扩断言组 9：AudioTimestamp 形状 + 有限非负）",
+  "gates": {
+    "make_test": "18826 passed / 0 failed",
+    "clippy": "-D warnings 零警告",
+    "fmt": "clean"
+  }
+}

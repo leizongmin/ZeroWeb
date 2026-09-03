@@ -2,7 +2,14 @@
 
 **入口文档**: [../media-audio.md](../media-audio.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-03（**WPT webaudio 第十二批导入——ctor-audiobuffersource
+**最后更新**: 2026-09-03（**WPT webaudio 第十三批导入——headless 零渲染面饱和
+（28 用例 787P/0F = 100%）**：audiocontext-getoutputtimestamp 导入（shim 补
+`AudioContext.getOutputTimestamp`——AudioTimestamp {contextTime, performanceTime}
+形状 + 有限非负面）；the-audiocontext-interface 余件逐件核实全排除（用户手势/
+onstatechange 时序/iframe 跨源/真设备/startRendering）。**余下上游用例全部依赖
+渲染量化/设备/手势面——接口语义族 headless 可导入面吃尽**，随渲染切片复评。
+evidence：`evidence/2026-09-03-webaudio-getoutputtimestamp-batch13.json`；单测扩
+断言组 9；make test 18826/0。此前同日：**第十二批导入——ctor-audiobuffersource
 （27 用例 777P/0F = 100%）**：排除注记勘误——此前「末 task multiple contexts 依赖
 startRendering」实为 ctor-audiobuffer.html 的排除理由（两文件混淆），
 ctor-audiobuffersource 全 task 零渲染，实测核对后解除；shim 补 AudioBufferSourceNode
@@ -235,6 +242,20 @@ volume/muted 真控制。**双重启动门控均已解除**：① M0 音频环�
   - **27 用例 777P/0F = 100%**（+44 净涨零回归——733→777）。
   - 单测扩断言组 8（ctor options 全字段反射等价工厂路径）。
   - evidence：`evidence/2026-09-03-webaudio-ctor-buffersource-batch12.json`。
+- **WPT webaudio 第十三批导入（2026-09-03，headless 零渲染面饱和）**：
+  - **shim 补缺**：`AudioContext.getOutputTimestamp`（AudioTimestamp
+    {contextTime, performanceTime} 形状 + 有限非负面——headless 无音频钟，
+    真值挂 audio clock 主时钟切片）。
+  - **导入 1 用例**：audiocontext-getoutputtimestamp（audit 10 subtest）。
+    **28 用例 787P/0F = 100%**（+10 净涨零回归——777→787）。
+  - **饱和结论**：the-audiocontext-interface 余件逐件核实全排除
+    （constructor-allowed-to-start 用户手势/suspend-after-construct onstatechange
+    计时/not-fully-active iframe 跨源/sinkid 真设备域/startRendering）；
+    nan-param、setValueCurve-exceptions 等 Audioparam 余件断言在渲染管线内
+    （RFC §0）。**接口语义族 headless 可导入面吃尽**——余下用例随渲染切片或
+    设备切片复评。
+  - 单测扩断言组 9（AudioTimestamp 形状）。
+  - evidence：`evidence/2026-09-03-webaudio-getoutputtimestamp-batch13.json`。
 - **WPT webaudio 第五批导入（同日，AudioBuffer 构造/接口面）**：
   - **shim part06 扩展**：`AudioBuffer` 构造器（独立构造不依赖 ctx）——
     length/sampleRate required 缺失 → TypeError（WebIDL dict required）；
@@ -374,12 +395,14 @@ DONE 阻塞**；Mixer/重采样接线随设备切片可选推进）。
 
 1. ~~**Web Audio 最小面实施（D1 已批准）**~~ 🔄 切片 1+2 ✅ 2026-09-02 落地
    （zero-media webaudio 模块 + shim AudioContext 门面 + __zwWA* 宿主桥 + 泵接线 +
-   e2e——见当前状态）；WPT webaudio 子集导入 ✅ 六批（2 + 62 + 259 + 1 + 7 subtest，
-   12 用例 331P/0F = 100%，含 audit.js 框架接入 + ctor 族 + AudioParam 异常面 +
-   AudioBuffer 面）；余：设备面挂 M1 CpalSink 真出声切片（D-WA-2）。**接口语义族
-   headless 可导入面已吃尽**——余下用例全部依赖 startRendering 渲染量化面 /
-   AudioBufferSourceNode 播放推进面 / copyToChannel 数据面 / worklet，随渲染面或
-   后续切片评估。
+   e2e——见当前状态）；WPT webaudio 子集导入 ✅ 十三批（28 用例 787P/0F = 100%，
+   2026-09-03 收口——含 audit.js 框架接入 + ctor 全族 + AudioParam 异常面 +
+   AudioBuffer/OfflineAudioContext 构造面 + AudioScheduledSourceNode 调度异常 +
+   getOutputTimestamp）；余：设备面挂 M1 CpalSink 真出声切片（D-WA-2）。
+   **接口语义族 headless 可导入面已吃尽（第十三批饱和收口）**——余下用例全部
+   依赖 startRendering 渲染量化面 / AudioBufferSourceNode 播放推进面 /
+   copyToChannel 数据面 / worklet / 用户手势 / onstatechange 时序，随渲染切片或
+   设备切片复评。
 2. **M1 收口评估（余项收窄）**：Mixer 多源混音接线**决策注记（2026-09-01）**——
    现播放管线 per-entry NullSink 直连已覆盖多源并发语义面（per-source 增益/独立
    解码流/并发泵）；Mixer（M1 切片 3 组件，7 单测常驻）的价值在**单设备输出流的
@@ -405,7 +428,7 @@ DONE 阻塞**；Mixer/重采样接线随设备切片可选推进）。
 
 - 测试基线：`make test` 全绿 18826（2026-09-03 组合树实测）；clippy 零警告
   （default 与 `--features audio-cpal` 双配置）
-- WPT webaudio：**27 用例 777P/0F = 100%**（2026-09-03 十二批累计——connect 返回值 +
+- WPT webaudio：**28 用例 787P/0F = 100%**（2026-09-03 十三批累计——connect 返回值 +
   destination + ctor-oscillator 62 + ctor-gain/stereopanner/delay/biquadfilter/
   analyser + createPeriodicWave 异常面 + audioparam-exceptional-values 66 +
   audiobuffer 面 + 第七批 ctor-channelmerger/channelsplitter/constantsource +
@@ -413,8 +436,8 @@ DONE 阻塞**；Mixer/重采样接线随设备切片可选推进）。
   第九批 ctor-waveshaper/ctor-dynamicscompressor/dynamicscompressor-basic/
   ctor-panner/iirfilter-basic + 第十批 biquadfilternode-basic/
   ctor-offlineaudiocontext + 第十一批 constant-source-basic/
-  stereopannernode-basic/audiobuffersource-basic + **第十二批
-  ctor-audiobuffersource**）；
+  stereopannernode-basic/audiobuffersource-basic + 第十二批
+  ctor-audiobuffersource + **第十三批 audiocontext-getoutputtimestamp**）；
   evidence：`evidence/2026-09-02-webaudio-wpt-subset.json`（首批）、
   `evidence/2026-09-02-webaudio-ctor-oscillator.json`（第二批）、
   `evidence/2026-09-02-webaudio-ctor-family.json`（第四批）、
@@ -425,7 +448,8 @@ DONE 阻塞**；Mixer/重采样接线随设备切片可选推进）。
   `evidence/2026-09-03-webaudio-processing-family2-batch9.json`（第九批）、
   `evidence/2026-09-03-webaudio-zero-gap-review-batch10.json`（第十批）、
   `evidence/2026-09-03-webaudio-source-semantics-batch11.json`（第十一批）、
-  `evidence/2026-09-03-webaudio-ctor-buffersource-batch12.json`（第十二批）
+  `evidence/2026-09-03-webaudio-ctor-buffersource-batch12.json`（第十二批）、
+  `evidence/2026-09-03-webaudio-getoutputtimestamp-batch13.json`（第十三批）
 - NullSink 可观测锚点：440Hz 正弦 @48kHz 过零率 ≈880（2×频率；修正 M0 evidence
   的 ≈440 笔误——evidence 只追加不修改，以代码与本档为事实源）；暂停拒写计
   underrun；非整帧写入拒收
