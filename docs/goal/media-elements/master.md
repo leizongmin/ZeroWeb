@@ -715,7 +715,9 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
    time-marches-on 余面）+ 深结构项（~~TextTrackList change 事件广播反向链~~ ✅
    扩批 XXI 兑现、cue 标记树解析——归渲染域远期）。
    ~~ready-states/autoplay.html~~ ✅ 扩批 XXIX 兑现（autoplaying flag 交互 +
-   事件严格序——HAVE_NOTHING 期 play() 挂起语义落地）；
+   事件严格序——HAVE_NOTHING 期 play() 挂起语义落地）；ready-states 余两件
+   维持排除（autoplay-with-slow-text-tracks——trickle pipe + readyState 与
+   track 加载耦合面；autoplay-hidden.optional——hidden 节能语义 optional）；
    audio/video_volume_check 维持排除（越界断言 e.code==1 为旧 spec 语义）。
 2. ~~**M4g-d**：canPlayType 能力表联动更新~~ ✅ 2026-09-01 兑现（能力表真值化——
    后续新增解码面（AV1/H.264，media-playback M3）时同步扩表）。
