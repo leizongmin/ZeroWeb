@@ -17,10 +17,18 @@ TrackEvent('removetrack',{track}) + dispatch 期 window.event——addtrack 同�
 补面）+ TextTrackList @@iterator（for...of 断言面）+ selection 算法 kind-aware
 初始 mode（metadata+default → hidden）——track-selection-metadata /
 track-remove-track / track-cues-missed-no-immediate-events 导入。
-**590P/0F/24PF，590/614 = 96.09%**（累计 +20 净涨零回归）。维持排除（实证注记）：
+**590P/0F/24PF，590/614 = 96.09%**（累计 +20 净涨零回归）。**XXXII**：
+VTTCue line/position setter 关键字校验（非数字且非关键字字符串 → TypeError）+
+position/size 范围校验（[0,100] 外 → IndexSizeError——此前 clamp 面改 spec
+范围校验）；readyState/稳态面 7 件导入（load-error/load-from-element/
+src-empty-string 的 readyState 断言 + cuechange-dynamically-created/
+disabled-addcue / insert-after-load / cue-mutable 属性全链）。
+**597P/0F/24PF，597/621 = 96.14%**（累计 +27 净涨零回归）。维持排除（实证注记）：
 markup 结构族 6 件（assert_cue_fragment isEqualNode 对拍 getCueAsHTML 的 span
 节点树——cue 标记树解析深结构项归渲染域远期）+ track-cue-empty
-（constructor.name 原生 class 断言——shim 工厂面差异）。此前同日：**M3 扩批 XXIX 落地**——ready-states/autoplay 导入
+（constructor.name 原生 class 断言——shim 工厂面差异）+
+track-mode-not-changed-by-new-track（textTracks 身份对拍切片）+
+track-remove-insert-ready-state（re-attach 播放推进链切片）。此前同日：**M3 扩批 XXIX 落地**——ready-states/autoplay 导入
 （audio+video 各 5 子测：autoplaying flag 与 play()/pause()/load() 交互 +
 事件严格序 canplay→canplaythrough→play→playing / play 先行形态
 play→canplay→playing→canplaythrough）。配套 HAVE_NOTHING 期 play() 挂起
@@ -690,7 +698,7 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
 
 | # | 缺口 | 状态 | 失败聚类 |
 |---|------|------|----------|
-| M1g | WPT media-elements 用例覆盖 | ✅ 168 用例已导入（136 + 扩批 XVI~XXX：播放推进族 6 件 + track-change-event + track-active-cues + played-loop + audio_loop_seek_to_eos + loop-from-ended.tentative + seeking/ 三件 + volume_nonfinite + media_fragment_seek + autoplay-with-broken-track + currentTime-move-within-document + track-mode-triggers-loading + track-remove-quickly + track-remove-by-setting-innerHTML + ready-states/autoplay + WebVTT 解析面 14 件 + mode/cuechange 播放推进面 3 件 + XXXI 三件），**96.09%**（590/614） | — |
+| M1g | WPT media-elements 用例覆盖 | ✅ 168 用例已导入（136 + 扩批 XVI~XXX：播放推进族 6 件 + track-change-event + track-active-cues + played-loop + audio_loop_seek_to_eos + loop-from-ended.tentative + seeking/ 三件 + volume_nonfinite + media_fragment_seek + autoplay-with-broken-track + currentTime-move-within-document + track-mode-triggers-loading + track-remove-quickly + track-remove-by-setting-innerHTML + ready-states/autoplay + WebVTT 解析面 14 件 + mode/cuechange 播放推进面 3 件 + XXXI 三件 + XXXII 七件），**96.14%**（597/621） | — |
 | M2g | load 算法 + 状态机（事件序列派发） | ✅ M2 落地（13T→**0T**） | F4 闭合 |
 | M3g | 事件序列 headless 近似驱动 | ✅（同 M2g；source-child 触发已落地） | F4 闭合 |
 | M4g-a | 媒体元数据 IDL 反射（初值面） | ✅ 切片 3 落地 | F2 闭合（-9 Fail） |
@@ -728,7 +736,7 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
    pause-move-to-other-document 同域排除）；the-video-element 反射余面
    （video-loading-*
    preload 语义族——视 lazy-loading 支撑面）。**headless 可导入面已在 95.9% 重饱和
-   （M3 扩批 XXXI 后第十四次修正：96.09%；track-mode-triggers-loading 的 metadata
+   （M3 扩批 XXXII 后第十五次修正：96.14%；track-mode-triggers-loading 的 metadata
    加载时序由扩批 XV mode 触发面直接覆盖——D 组排除注记失效）**——余下增量依赖兄弟目标解锁（真播放钟 →
    time-marches-on 余面）+ 深结构项（~~TextTrackList change 事件广播反向链~~ ✅
    扩批 XXI 兑现、cue 标记树解析——归渲染域远期）。
