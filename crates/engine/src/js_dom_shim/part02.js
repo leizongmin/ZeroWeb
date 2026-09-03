@@ -3748,7 +3748,10 @@
           _readyResolve(reg);
           _readyResolve = null;
         }
-        if (changed) dispatchTargetEvent(worker, 'statechange');
+        if (changed) {
+          dispatchTargetEvent(worker, 'statechange');
+          notifyIframeRegistrationChange(reg);
+        }
       }
       function applySnapshot(reg, snapshot) {
         if (!snapshot) return false;

@@ -14,6 +14,7 @@ mod indexed_db_owner;
 mod integration;
 mod more_coverage;
 mod service_worker_fetch;
+mod service_worker_iframe;
 mod service_worker_runtime;
 mod uncovered_paths;
 mod user_actions;

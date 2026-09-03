@@ -3253,7 +3253,7 @@ impl WebView {
                     Some("module") => ServiceWorkerScriptType::Module,
                     _ => ServiceWorkerScriptType::Classic,
                 };
-                let document_url = match register_page_url.lock() {
+                let top_level_document_url = match register_page_url.lock() {
                     Ok(url) => url.clone(),
                     Err(_) => {
                         return serde_json::json!({
@@ -3262,6 +3262,36 @@ impl WebView {
                             "errorName": "TypeError",
                         })
                         .to_string();
+                    }
+                };
+                let requested_document_url = args.get(2).map(String::as_str).unwrap_or("");
+                let document_url = if requested_document_url.is_empty() {
+                    top_level_document_url.clone()
+                } else {
+                    // https://w3c.github.io/ServiceWorker/#service-worker-container-register
+                    // The registration client URL comes from the invoking global; inherited
+                    // `about:blank` has no independent registration origin, so use the host
+                    // document URL while still rejecting explicit cross-origin client URLs.
+                    let requested = url::Url::parse(requested_document_url).ok();
+                    let is_inherited_blank = requested
+                        .as_ref()
+                        .is_some_and(|url| url.scheme() == "about" && url.path() == "blank");
+                    if requested.is_none() || is_inherited_blank {
+                        top_level_document_url.clone()
+                    } else {
+                        let allowed = url::Url::parse(&top_level_document_url)
+                            .ok()
+                            .zip(requested.as_ref())
+                            .is_some_and(|(top_level, requested)| top_level.origin() == requested.origin());
+                        if !allowed {
+                            return serde_json::json!({
+                                "ok": false,
+                                "error": "Service Worker document URL origin mismatch",
+                                "errorName": "SecurityError",
+                            })
+                            .to_string();
+                        }
+                        requested_document_url.to_string()
                     }
                 };
                 let (script_url, scope, origin) =

@@ -2301,7 +2301,11 @@
           enumerable: true,
           get: function() {
             var registration = this._registration;
-            return registration && registration[name];
+            if (!registration) return registration;
+            if (name === 'installing' || name === 'waiting' || name === 'active') {
+              return wrapServiceWorkerController(registration[name]);
+            }
+            return registration[name];
           }
         });
       });
@@ -2313,6 +2317,26 @@
       };
       registrationWrappers.push(wrapper);
       return wrapper;
+    }
+    function refreshRegistrationWorkerSlots(registration) {
+      if (!registration) return;
+      var names = ['installing', 'waiting', 'active'];
+      for (var i = 0; i < names.length; i++) {
+        var rawWorker = registration[names[i]];
+        if (!rawWorker) continue;
+        var id = serviceWorkerControllerIdString(rawWorker);
+        if (id == null) continue;
+        var worker = iframeServiceWorkerControllers[id];
+        if (!worker) continue;
+        var previousState = worker.state;
+        worker.scriptURL = rawWorker.scriptURL || '';
+        worker.state = rawWorker.state || 'activated';
+        if (previousState !== worker.state &&
+            typeof worker.dispatchEvent === 'function' &&
+            typeof globalThis.Event === 'function') {
+          try { worker.dispatchEvent(new globalThis.Event('statechange')); } catch (_eIframeWorkerState) {}
+        }
+      }
     }
     var parentServiceWorker =
       globalThis.navigator && globalThis.navigator.serviceWorker;
@@ -2371,10 +2395,69 @@
         }
       } catch (_eIframeSwReuse) {}
       serviceWorker.register = function(scriptURL, options) {
-        return parentServiceWorker.register(scriptURL, options).then(wrapRegistration);
+        if (typeof __zw_sw_register !== 'function') {
+          return parentServiceWorker.register(scriptURL, options).then(wrapRegistration);
+        }
+        var scopeProvided = options != null && options.scope !== undefined;
+        var scope = scopeProvided ? String(options.scope) : '';
+        var updateViaCache =
+          options != null && options.updateViaCache !== undefined
+            ? String(options.updateViaCache)
+            : 'imports';
+        if (updateViaCache !== 'imports' && updateViaCache !== 'all' && updateViaCache !== 'none') {
+          return Promise.reject(new TypeError('Invalid updateViaCache value'));
+        }
+        var scriptType =
+          options != null && options.type !== undefined ? String(options.type) : 'classic';
+        if (scriptType !== 'classic' && scriptType !== 'module') {
+          return Promise.reject(new TypeError('Invalid Service Worker script type'));
+        }
+        var base = doc && doc._zwURL ? doc._zwURL : globalThis.location.href;
+        try {
+          new URL(base);
+        } catch (_eIframeSwRegisterBase) {
+          return parentServiceWorker.register(scriptURL, options).then(wrapRegistration);
+        }
+        try {
+          // https://w3c.github.io/ServiceWorker/#service-worker-container-register
+          // Resolve iframe registrations against the iframe document URL.
+          var wire = JSON.parse(__zw_sw_register(
+            scriptURL,
+            scope,
+            base,
+            scopeProvided ? 'true' : 'false',
+            updateViaCache,
+            scriptType));
+          if (!wire || !wire.ok) {
+            var message = wire && wire.error || 'Service Worker registration failed';
+            if (wire && wire.errorName === 'SecurityError') {
+              return Promise.reject(new (globalThis.DOMException || Error)(message, 'SecurityError'));
+            }
+            return Promise.reject(new TypeError(message));
+          }
+          return parentServiceWorker.getRegistrations()
+            .then(function(registrations) {
+              for (var i = 0; i < registrations.length; i++) {
+                if (String(registrations[i]._id) === String(wire.id)) {
+                  return registrations[i];
+                }
+              }
+              return parentServiceWorker.getRegistration(new URL(scope || base, base).href);
+            })
+            .then(function(registration) {
+              return wrapRegistration(registration);
+            });
+        } catch (error) {
+          return Promise.reject(error);
+        }
       };
       serviceWorker.getRegistration = function(scope) {
-        return parentServiceWorker.getRegistration(scope).then(wrapRegistration);
+        var base = doc && doc._zwURL ? doc._zwURL : globalThis.location.href;
+        var absolute = scope;
+        try {
+          absolute = new URL(scope || base, base).href;
+        } catch (_eIframeSwGetRegistration) {}
+        return parentServiceWorker.getRegistration(absolute).then(wrapRegistration);
       };
       serviceWorker.getRegistrations = function() {
         return parentServiceWorker.getRegistrations().then(function(registrations) {
@@ -2413,6 +2496,7 @@
     if (serviceWorker) {
       serviceWorker.__zwRefreshServiceWorkerRegistration = function(registration) {
         wrapRegistration(registration);
+        refreshRegistrationWorkerSlots(registration);
       };
       serviceWorker.__zwRefreshServiceWorkerController = function(hint, previous, eventState) {
         if (typeof __zw_sw_controller !== 'function') return;
