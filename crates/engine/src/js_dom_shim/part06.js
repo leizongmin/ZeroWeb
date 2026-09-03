@@ -6666,6 +6666,7 @@
       });
     } catch (_e) {}
   }
+  globalThis.__zwInstallNamedAccess = _installNamedAccess;
   _installNamedAccess();
 
   // R2940 `__zw_report_error(message, source, lineno, colno)`——host 侧未捕获脚本错误报告入口。

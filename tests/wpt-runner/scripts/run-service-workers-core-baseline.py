@@ -10,8 +10,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-EXPECTED_CASES = 53
-EXPECTED_SUBTESTS = 201
+EXPECTED_CASES = 54
+EXPECTED_SUBTESTS = 202
 
 
 def parse_args() -> argparse.Namespace:
@@ -113,7 +113,10 @@ def render_markdown(summary: dict) -> str:
             "`statechange` ordering across initial and replacement workers. "
             "`ServiceWorkerGlobalScope/service-worker-error-event.https.html` "
             "extends it with worker-global `ErrorEvent` dispatch for message "
-            "handler failures.",
+            "handler failures. "
+            "`ServiceWorkerGlobalScope/error-message-event.https.html` extends "
+            "it with worker-global `messageerror` dispatch for unserializable "
+            "page messages.",
         ]
     ) + "\n"
 

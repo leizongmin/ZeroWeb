@@ -828,6 +828,7 @@ pub const SERVICE_WORKER_CORE_CASES: &[&str] = &[
     "service-workers/service-worker/ServiceWorkerGlobalScope/close.https.html",
     "service-workers/service-worker/ServiceWorkerGlobalScope/isSecureContext.https.html",
     "service-workers/service-worker/ServiceWorkerGlobalScope/extendable-message-event.https.html",
+    "service-workers/service-worker/ServiceWorkerGlobalScope/error-message-event.https.html",
     "service-workers/service-worker/ServiceWorkerGlobalScope/message-event-ports.https.html",
     "service-workers/service-worker/ServiceWorkerGlobalScope/registration-attribute.https.html",
     "service-workers/service-worker/ServiceWorkerGlobalScope/service-worker-error-event.https.html",
@@ -4594,8 +4595,8 @@ async_test(function(test) {
             .iter()
             .copied()
             .collect::<std::collections::BTreeSet<_>>();
-        assert_eq!(SERVICE_WORKER_CORE_CASES.len(), 53);
-        assert_eq!(unique.len(), 53);
+        assert_eq!(SERVICE_WORKER_CORE_CASES.len(), 54);
+        assert_eq!(unique.len(), 54);
         assert!(
             SERVICE_WORKER_CORE_CASES
                 .iter()
@@ -4618,6 +4619,10 @@ async_test(function(test) {
             SERVICE_WORKER_CORE_CASES.contains(
                 &"service-workers/service-worker/ServiceWorkerGlobalScope/extendable-message-event.https.html"
             )
+        );
+        assert!(
+            SERVICE_WORKER_CORE_CASES
+                .contains(&"service-workers/service-worker/ServiceWorkerGlobalScope/error-message-event.https.html")
         );
         assert!(
             SERVICE_WORKER_CORE_CASES

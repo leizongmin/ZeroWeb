@@ -2211,6 +2211,7 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
   globalThis.oninstall = null;
   globalThis.onactivate = null;
   globalThis.onmessage = null;
+  globalThis.onmessageerror = null;
   globalThis.onfetch = null;
   globalThis.setTimeout = function(callback, delay) {
     if (typeof callback !== 'function') {
@@ -2732,6 +2733,39 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
     outboundMessages.splice(0, outboundMessages.length);
     const ports = materializeTransferredPorts(portIds || [], null);
     const eventData = dataPortIndex === null ? reviveTransferredPorts(data, ports) : ports[dataPortIndex];
+    if (eventData && eventData.__zwServiceWorkerMessageError === true) {
+      const event = new ExtendableMessageEvent('messageerror', {
+        data: null,
+        origin: originOf(clientURL),
+        ports: [],
+        source: clientFromInfo({
+          id: clientId,
+          url: clientURL,
+          type: 'window',
+          frameType: clientFrameType || 'top-level',
+          visibilityState: 'visible',
+          focused: clientFocused === true
+        })
+      });
+      const pending = [];
+      currentWaitUntil = function(value) {
+        pending.push(Promise.resolve(value));
+      };
+      try {
+        const callbacks = (listeners.messageerror || []).slice();
+        for (let i = 0; i < callbacks.length; i++) dispatchWorkerCallback(callbacks[i], event);
+        if (typeof globalThis.onmessageerror === 'function') {
+          dispatchWorkerCallback(globalThis.onmessageerror, event);
+        }
+        Promise.all(pending).catch(function() {});
+        currentWaitUntil = null;
+      } catch (error) {
+        currentWaitUntil = null;
+        outboundMessages.splice(0, outboundMessages.length);
+        throw error;
+      }
+      return String(eventId);
+    }
     const EventClass = targetPortId !== null ? MessageEvent : ExtendableMessageEvent;
     const event = new EventClass('message', {data: eventData, origin: originOf(clientURL), ports: ports});
     const pending = [];
@@ -7033,6 +7067,46 @@ mod tests {
                 client_id: "client-1".into(),
                 outbound: vec![ServiceWorkerOutboundMessage {
                     data_json: r#"{"error":"testError","message":"testError","filename":"https://example.test/service-workers/service-worker/ServiceWorkerGlobalScope/resources/error-worker.js","lineno":5,"colno":3}"#.into(),
+                    port_id: None,
+                    transferred_port_ids: Vec::new(),
+                    data_port_index: None,
+                    target_client_id: Some("client-1".into()),
+                }],
+            }
+        );
+    }
+
+    #[test]
+    fn page_message_error_marker_dispatches_messageerror_event() {
+        let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
+        runtime
+            .evaluate(
+                "self.onmessageerror = event => {
+                   if (!(event instanceof ExtendableMessageEvent)) throw new Error('wrong event');
+                   if (!(event.source instanceof WindowClient)) throw new Error('wrong source');
+                   event.source.postMessage('received error event');
+                 };
+                 self.onmessage = event => event.source.postMessage('received message event');",
+                "https://example.test/sw.js",
+            )
+            .unwrap();
+        let _ = runtime.recv_timeout(Duration::from_secs(5)).unwrap();
+
+        runtime
+            .dispatch_message(
+                63,
+                r#"{"__zwServiceWorkerMessageError":true}"#,
+                "client-1",
+                "https://example.test/page",
+            )
+            .unwrap();
+        assert_eq!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::MessageDispatched {
+                event_id: 63,
+                client_id: "client-1".into(),
+                outbound: vec![ServiceWorkerOutboundMessage {
+                    data_json: r#""received error event""#.into(),
                     port_id: None,
                     transferred_port_ids: Vec::new(),
                     data_port_index: None,

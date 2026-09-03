@@ -3068,6 +3068,8 @@
       var _nextSWPortId = 2;
       var _swPorts = Object.create(null);
       var SW_PORT_MARKER = '__zwServiceWorkerTransferredPortIndex';
+      var SW_MESSAGE_ERROR_TRANSFER = '__zwServiceWorkerMessageErrorTransfer';
+      var SW_MESSAGE_ERROR_MARKER = '__zwServiceWorkerMessageError';
       function cloneSWMessageWithPortMarkers(value, ports, seen) {
         if (value === null || typeof value !== 'object') return structuredClone(value);
         if (ports.indexOf(value) >= 0) {
@@ -3089,18 +3091,33 @@
         }
         return out;
       }
+      function isSWMessageErrorTransfer(value) {
+        return value !== null && typeof value === 'object' && value[SW_MESSAGE_ERROR_TRANSFER] === true;
+      }
       function transferSWPorts(worker, message, transfer) {
         var ids = [];
         var dataPortIndex = null;
         var ports = [];
+        var messageError = false;
         if (transfer !== undefined && transfer !== null) {
           ports = Array.from(transfer);
           for (var i = 0; i < ports.length; i++) {
             var port = ports[i];
+            if (isSWMessageErrorTransfer(port)) {
+              messageError = true;
+              continue;
+            }
             if (!(port instanceof globalThis.MessagePort) ||
                 port._closed || port._zwSwDetached || !port._other) {
               throw new DOMException('Invalid MessagePort transfer', 'DataCloneError');
             }
+          }
+          if (messageError) {
+            return { ids: [], dataPortIndex: null, message: null, messageError: true };
+          }
+          for (var i = 0; i < ports.length; i++) {
+            var port = ports[i];
+            if (isSWMessageErrorTransfer(port)) continue;
             if (ids.indexOf(port._zwSwPortId) >= 0) {
               throw new DOMException('Duplicate MessagePort transfer', 'DataCloneError');
             }
@@ -3122,14 +3139,24 @@
           dataPortIndex: dataPortIndex,
           message: ids.length && dataPortIndex === null ?
             cloneSWMessageWithPortMarkers(message, ports, typeof WeakMap !== 'undefined' ? new WeakMap() : new Map()) :
-            message
+            message,
+          messageError: false
         };
       }
       function postSWMessage(worker, message, transfer, targetPortId) {
         var ports = transferSWPorts(worker, message, transfer);
         var dataJSON;
         try {
-          dataJSON = ports.dataPortIndex === null ? JSON.stringify(structuredClone(ports.message)) : 'null';
+          if (ports.messageError) {
+            var messageErrorWire = {};
+            messageErrorWire[SW_MESSAGE_ERROR_MARKER] = true;
+            dataJSON = JSON.stringify(messageErrorWire);
+          } else {
+            dataJSON =
+              ports.dataPortIndex === null ?
+                JSON.stringify(structuredClone(ports.message)) :
+                'null';
+          }
         } catch (_e) {
           throw new DOMException('Service Worker message could not be cloned', 'DataCloneError');
         }

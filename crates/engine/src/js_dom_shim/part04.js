@@ -406,6 +406,35 @@
               return undefined;
             };
           }
+          // https://www.w3.org/TR/mediacapture-fromelement/#dom-htmlcanvaselement-capturestream
+          // Minimal canvas capture stream surface for ServiceWorker messageerror WPTs. The track
+          // is deliberately marked as not deserializable in worker globals; real frame capture is
+          // still outside the current media pipeline.
+          if (prop === 'captureStream') {
+            return function () {
+              var track = {
+                kind: 'video',
+                id: 'canvas-track-' + Math.random().toString(36).slice(2),
+                label: 'Canvas',
+                enabled: true,
+                muted: false,
+                readyState: 'live',
+                stop: function () { this.readyState = 'ended'; }
+              };
+              Object.defineProperty(track, '__zwServiceWorkerMessageErrorTransfer', {
+                value: true,
+                configurable: true
+              });
+              var stream = {
+                active: true,
+                id: 'canvas-stream-' + Math.random().toString(36).slice(2),
+                getTracks: function () { return [track]; },
+                getVideoTracks: function () { return [track]; },
+                getAudioTracks: function () { return []; }
+              };
+              return stream;
+            };
+          }
           // R3313：transferControlToOffscreen()——DOM canvas 转 OffscreenCanvas（spec HTML §4.12）。
           // 返回 OffscreenCanvas 对象，其 getContext('2d') **复用** DOM canvas 的 host context handle
           //（共享 bitmap——对 offscreen 的绘制反映到 DOM canvas 显示）。spec：transfer 后 DOM canvas

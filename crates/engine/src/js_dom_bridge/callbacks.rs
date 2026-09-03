@@ -643,6 +643,7 @@ pub fn register_dom_callbacks(
             with_query_doc_live_aware(&snap, true, collect_element_ids_doc)
         }),
     );
+    let _ = sandbox.execute("if (typeof __zwInstallNamedAccess === 'function') __zwInstallNamedAccess();");
 
     let html = Arc::clone(dom_html);
     let m = Arc::clone(mutations);

@@ -2422,7 +2422,7 @@
             controller = {
               id: hint._id,
               scriptURL: hint.scriptURL,
-              state: hint.state
+              state: eventState || hint.state
             };
           } else {
             var wire = JSON.parse(__zw_sw_controller(
@@ -4689,6 +4689,31 @@
       });
       if (typeof cb === 'function') p.then(function (blob) { cb(blob); });
       return undefined; // spec：toBlob 返 undefined（非 Promise）
+    };
+    // https://www.w3.org/TR/mediacapture-fromelement/#dom-htmlcanvaselement-capturestream
+    // Minimal canvas capture stream surface. The synthetic video track is not
+    // deserializable in Service Worker globals and is converted to messageerror.
+    el.captureStream = function () {
+      var track = {
+        kind: 'video',
+        id: 'canvas-track-' + Math.random().toString(36).slice(2),
+        label: 'Canvas',
+        enabled: true,
+        muted: false,
+        readyState: 'live',
+        stop: function () { this.readyState = 'ended'; }
+      };
+      Object.defineProperty(track, '__zwServiceWorkerMessageErrorTransfer', {
+        value: true,
+        configurable: true
+      });
+      return {
+        active: true,
+        id: 'canvas-stream-' + Math.random().toString(36).slice(2),
+        getTracks: function () { return [track]; },
+        getVideoTracks: function () { return [track]; },
+        getAudioTracks: function () { return []; }
+      };
     };
     // R128：原型接线 HTMLCanvasElement.prototype（WPT Node-cloneNode
     // "createElement(canvas)" 断言 **original** instanceof HTMLCanvasElement——旧 plain
