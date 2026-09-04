@@ -1579,12 +1579,12 @@ pub const MEDIA_TEST_FILES: &[&str] = &[
     "html/semantics/embedded-content/media-elements/track/track-element/track-selection-metadata.html",
     "html/semantics/embedded-content/media-elements/track/track-element/track-remove-track.html",
     "html/semantics/embedded-content/media-elements/track/track-element/track-cues-missed-no-immediate-events.html",
-    // track-remove-insert-ready-state 维持排除（XLIV 复评：canplaythrough 时 trackRS=3
-    // 已收敛（XLII/XLIII 顺带，探针实证）+ src 重设同步读保持旧值（readyState hold 落地）；
-    // 但用例的「主文档静态 video removeChild→重插」链在 runner 沙箱 mutation 应用层报
-    // 「set_attr: no match for video」——移除-重插静态元素的 host 通道缺口，非语义面；
-    // 随 runner/shim 事件通道统一后复评）。track-mode-not-changed-by-new-track 维持
-    // 排除——textTracks 身份对拍切片。
+    // track-remove-insert-ready-state 维持排除（XLV 归因升级）：重插 DOM 面（R334 sel 子
+    // 移除标记清除 + 旧父 wire 前读 + parentNode getter 消费 _zwSelPendingParent 槽——
+    // 三处修复落地，纯 DOM 重插探针全绿）+ readyState hold（XLIV）后，用例全链路暴露
+    // **静态 video（src 已加载）removeChild 与 media load 管线的死循环**（90s 看门狗
+    // 截断，非 XLV 引入——XLIII/XLV 修复使 removeChild 走得更深而暴露）。归 media load
+    // 移除竞态独立切片。track-mode-not-changed-by-new-track 维持排除——身份对拍切片。
     "html/semantics/embedded-content/media-elements/track/track-element/track-cues-cuechange-dynamically-created-track-element.html",
     "html/semantics/embedded-content/media-elements/track/track-element/track-disabled-addcue.html",
     "html/semantics/embedded-content/media-elements/track/track-element/track-insert-after-load.html",

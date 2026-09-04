@@ -650,3 +650,23 @@ track-active-cues 解除排除）**：
   runner/shim 事件通道统一后复评。
 - 629P/0F/24PF = 96.32% 维持零回归（played-loop 单轮全量偶发经复跑排除）；clippy/fmt
   干净。
+
+## 扩批 XLV — 静态元素移除-重插 host 通道归因修复（2026-09-04）
+
+- 背景：XLIV 轮「set_attr: no match for video」缺口归因。探针定位出**三处真实缺陷**
+  并修复（纯 DOM 重插探针全绿：parent=BODY / boxKids=1 / bodyContains=true）：
+  1. R334 sel 子 appendChild 分支不清 `_zwRemovedSels`——removeChild→appendChild 重插
+     后标记残留，parentNode getter（_zwIsRemoved 短路）恒 null。修复：分支内补
+     `_zwUnmarkRemoved`。
+  2. R334 旧父在 wire（reparent）之后读——读到的恒 null/新父，removed record 归旧父
+     语义丢失。修复：wire 前读。
+  3. parentNode getter 不消费 `_zwSelPendingParent` 槽——host mutation 异步 apply 期
+     `_parentNodeFor` 读 host 视图返旧父。修复：getter 优先读槽（expando 表 + this
+     dual 读），后回落 _parentNodeFor。
+- **track-remove-insert-ready-state 维持排除（定性再升级）**：三修复 + XLIV hold 后
+  用例全链路暴露**静态 video（src 已加载）removeChild 与 media load 管线死循环**（90s
+  看门狗截断）。归因注记：非 XLV 引入——XLIII/XLV 修复使 removeChild 走得更深而暴露
+  （此前被 set_attr 报错提前截断遮蔽）。归 media load 移除竞态独立切片。
+- 诊断注记：二分期间一次「body.removeChild 卡死」误判系**并行负载下的看门狗偶发**+
+  顶层/track-element 两个同名探针文件的路径混淆——复核后排除。全量 629P/0F/24PF
+  零回归；clippy/fmt 干净。

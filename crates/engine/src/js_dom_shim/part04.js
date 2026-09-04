@@ -1006,6 +1006,21 @@
           // 树——getRootNode composed 经 host 上行不依赖 parentNode；WPT rootNode
           // shadow-including root 断言）。
           if (handle && _shadowHandles[handle]) return null;
+          // M3 扩批 XLV：`_zwSelPendingParent` 槽优先——R334 sel 子 append 后 host
+          // mutation 未应用（异步 apply），_parentNodeFor 读 __zw_parent（host 视图）
+          // 返**旧父**；槽才是 JS 侧权威新父（探针实证：box.removeChild(p1) →
+          // body.appendChild(p1) 后 parentNode 返 DIV——parent 导航面失真）。
+          // 槽经 set trap 落 per-element expando 表（dual 读兜底）；removed 标记已在
+          // 上游 _zwIsRemoved 短路（返 null 优先，spec remove() 后 parentNode null）。
+          try {
+            var _xlPending = null;
+            var _xlEx = _expando[key];
+            if (_xlEx && _xlEx._zwSelPendingParent) _xlPending = _xlEx._zwSelPendingParent;
+            if (!_xlPending) {
+              try { _xlPending = this._zwSelPendingParent || null; } catch (_eXlT) {}
+            }
+            if (_xlPending && _xlPending.parentSel) return _wrapSelector(_xlPending.parentSel);
+          } catch (_eXlPp) {}
           return _parentNodeFor(sel, handle);
         }
         if (prop === 'parentElement') {
@@ -4125,13 +4140,21 @@
                 throw _zwDomException('A Node cannot be appended to itself or its descendant.', 'HierarchyRequestError');
               }
               var _r334ChildSel = child.__zwSelector;
-              try { __zw_insert_adjacent_sel_element(sel, 'beforeend', _r334ChildSel); } catch (_e334w) {}
+              // M3 扩批 XLV（2026-09-04）：旧父在 wire 前读（wire 的 reparent 之后读
+              // 会被 removed 标记/槽未设干扰返 null——record 的 removed 归旧父语义丢失）。
+              var _r334OldSel = null;
               try {
-                var _r334OldSel = null;
-                try {
-                  var _r334op = child.parentNode;
-                  if (_r334op && _r334op.__zwSelector) _r334OldSel = _r334op.__zwSelector;
-                } catch (_e334o) {}
+                var _r334op0 = child.parentNode;
+                if (_r334op0 && _r334op0.__zwSelector) _r334OldSel = _r334op0.__zwSelector;
+              } catch (_e334o0) {}
+              try { __zw_insert_adjacent_sel_element(sel, 'beforeend', _r334ChildSel); } catch (_e334w) {}
+              // M3 扩批 XLV：**sel 子重插的移除标记清除**——静态元素 removeChild→
+              // appendChild 重插后 removed 标记残留使 parentNode getter（_zwIsRemoved
+              // 短路返 null）恒 null、removal-pause tick 误判（track-remove-insert-
+              // ready-state 的 host 通道缺口根因之一）。
+              try { if (typeof _zwUnmarkRemoved === 'function') _zwUnmarkRemoved(_r334ChildSel); } catch (_e334um) {}
+              try {
+                // （_r334OldSel 已在 wire 前读取——XLV）
                 // R334：removed record 的兄弟字段——wire 前的兄弟 getter 快照。
                 var _r334rprev = null, _r334rnext = null;
                 try {
