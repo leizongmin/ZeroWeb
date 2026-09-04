@@ -353,6 +353,20 @@ fn overflow_clip_rect(box_node: &LayoutBox, abs_x: f32, abs_y: f32) -> Rect {
         y = base_y - m;
         h = base_h + 2.0 * m;
     }
+    // R4036（CSS Overflow 3 §3）：`clip` 不像 hidden 那样把另一轴的 visible 强制改为
+    // auto——单轴 clip 时另一轴（visible）**不裁剪**。裁剪矩形在该轴扩到界外值
+    //（clip_all_primitives_to_rect 按矩形求交，±1e5 即等效不裁）。
+    // hidden/scroll 轴维持 padding-box 既有基线（legacy：visible+hidden 组合按 §11.1.1
+    // 折叠语义，既有绿面不动）。
+    const CLIP_UNBOUNDED: f32 = 1.0e5;
+    if box_node.overflow_x == OverflowClip::Clip && box_node.overflow_y == OverflowClip::Visible {
+        y = abs_y - CLIP_UNBOUNDED;
+        h = 2.0 * CLIP_UNBOUNDED;
+    }
+    if box_node.overflow_y == OverflowClip::Clip && box_node.overflow_x == OverflowClip::Visible {
+        x = abs_x - CLIP_UNBOUNDED;
+        w = 2.0 * CLIP_UNBOUNDED;
+    }
     Rect::new(x, y, w, h)
 }
 
@@ -2599,6 +2613,52 @@ mod tests {
     use super::*;
     use zero_css_parser::values::DisplayValue;
     use zero_style_system::ContainComputedValue;
+
+    /// R4036：单轴 `overflow:clip` 时另一轴（visible）的裁剪矩形须扩到界外——
+    /// CSS Overflow 3 §3：clip 不像 hidden 那样把另一轴 visible 折叠为 auto。
+    /// 旧实现对两轴都按 padding-box 裁剪（clip-002/005 的垂直溢出被错误裁掉）。
+    #[test]
+    fn r4036_overflow_clip_single_axis_leaves_visible_axis_unclipped() {
+        fn box_with(ox: OverflowClip, oy: OverflowClip) -> LayoutBox {
+            let mut b = LayoutBox {
+                overflow_x: ox,
+                overflow_y: oy,
+                ..Default::default()
+            };
+            b.content_width = 50.0;
+            b.content_height = 50.0;
+            b
+        }
+        let base = box_with(OverflowClip::Clip, OverflowClip::Visible);
+        let r = overflow_clip_rect(&base, 100.0, 100.0);
+        assert!(
+            r.origin.y < 0.0 && r.size.height > 1.0e5,
+            "overflow-x:clip + y visible → y 轴不裁剪（矩形扩到界外），got {:?}",
+            r
+        );
+        assert!(
+            (r.origin.x - 100.0).abs() < 0.5 && (r.size.width - 50.0).abs() < 0.5,
+            "clip 轴仍按 padding-box 裁剪，got {:?}",
+            r
+        );
+
+        let base = box_with(OverflowClip::Visible, OverflowClip::Clip);
+        let r = overflow_clip_rect(&base, 100.0, 100.0);
+        assert!(
+            r.origin.x < 0.0 && r.size.width > 1.0e5,
+            "overflow-y:clip + x visible → x 轴不裁剪，got {:?}",
+            r
+        );
+
+        // 双轴 clip：两轴都按 padding-box（不扩界）
+        let base = box_with(OverflowClip::Clip, OverflowClip::Clip);
+        let r = overflow_clip_rect(&base, 100.0, 100.0);
+        assert!(
+            (r.origin.x - 100.0).abs() < 0.5 && (r.size.height - 50.0).abs() < 0.5,
+            "双轴 clip → 均按 padding-box，got {:?}",
+            r
+        );
+    }
 
     #[test]
     fn font_resolver_tracks_generic_face_variants() {
