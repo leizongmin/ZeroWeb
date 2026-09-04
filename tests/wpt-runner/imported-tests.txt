@@ -261,3 +261,4 @@ css/css-display/run-in/run-in-contains-table-inside-inline-001.xht css/css-displ
 css/css-display/run-in/run-in-contains-table-inside-inline-002.xht css/css-display/run-in/run-in-text-ref.xht == 2026-09-03 R3992 run-in 并入实现翻转
 css/css-display/run-in/run-in-inline-block-between-001.xht css/css-display/run-in/run-in-text-ref.xht == 2026-09-03 R3992 run-in 并入实现翻转
 css/css-display/run-in/run-in-inline-block-between-002.xht css/css-display/run-in/run-in-text-ref.xht == 2026-09-03 R3992 run-in 并入实现翻转
+css/CSS2/normal-flow/inline-table-width-001a.xht css/CSS2/normal-flow/inline-table-width-001-ref.xht == 2026-09-04 R4022 XHTML style #PCDATA 实体解码——xml char-ref decode 生效锚

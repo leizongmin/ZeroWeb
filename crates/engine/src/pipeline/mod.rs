@@ -2699,11 +2699,75 @@ pub(crate) fn collect_stylesheets(doc: &Document, css: &str) -> Vec<Stylesheet> 
             continue;
         };
         let css_text = strip_cdata(css_text.trim());
+        // R4022（XML #PCDATA 实体解码）：XHTML 文档（content_is_xml）的 <style> 内容
+        // 按 XML 语义是 **已解析字符数据**——`&gt;` 等实体应在文档解析期解码。ZW 对
+        // .xht 用 HTML tokenizer（<style> = raw text，实体保留），致 `body &gt; div`
+        // 以实体串进入 CSS 解析器（选择器损坏：inline-table-width-001a/001b/002a/002b
+        // 的 width/display 规则错位命中父子 div）。纯 HTML 文档 <style> raw text
+        // 不解码实体（HTML 语义，chromium 同），故仅 content_is_xml gate。
+        let css_text = if doc.content_is_xml() {
+            decode_xml_char_references(&css_text)
+        } else {
+            css_text.to_string()
+        };
         if !css_text.is_empty() {
             stylesheets.push(zero_css_parser::Parser::parse_stylesheet(&css_text));
         }
     }
     stylesheets
+}
+
+/// R4022：解码 XML 字符引用（`&gt;` `&lt;` `&amp;` `&quot;` `&apos;` + 十进制/
+/// 十六进制数字实体）——XHTML 文档 <style> #PCDATA 语义（HTML tokenizer raw text
+/// 不解码，需在此补齐）。未知实体原样保留（宽容，避免破坏 CSS 内容中的字面 `&`）。
+pub(crate) fn decode_xml_char_references(text: &str) -> String {
+    if !text.contains('&') {
+        return text.to_string();
+    }
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(amp) = rest.find('&') {
+        out.push_str(&rest[..amp]);
+        let after = &rest[amp + 1..];
+        let semi = after.find(';');
+        let Some(semi) = semi else {
+            out.push('&');
+            rest = after;
+            continue;
+        };
+        let entity = &after[..semi];
+        let decoded: Option<char> = match entity {
+            "gt" => Some('>'),
+            "lt" => Some('<'),
+            "amp" => Some('&'),
+            "quot" => Some('"'),
+            "apos" => Some('\''),
+            _ => {
+                if let Some(num) = entity.strip_prefix('#') {
+                    let value = if let Some(hex) = num.strip_prefix(['x', 'X']) {
+                        u32::from_str_radix(hex, 16).ok()
+                    } else {
+                        num.parse::<u32>().ok()
+                    };
+                    value.and_then(char::from_u32)
+                } else {
+                    None
+                }
+            }
+        };
+        match decoded {
+            Some(ch) => {
+                out.push(ch);
+                rest = &after[semi + 1..];
+            }
+            None => {
+                out.push('&');
+                rest = after;
+            }
+        }
+    }
+    out.push_str(rest);
+    out
 }
 
 /// 从样式表中提取 Print 分页页高（R2010 P4：`@page { size }` 解析）。
