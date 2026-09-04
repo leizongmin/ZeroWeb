@@ -1,0 +1,47 @@
+[
+ [
+  "html/semantics/embedded-content/media-elements/loading-the-media-resource/resource-selection-candidate-remove-no-listener.html",
+  [
+   {
+    "name": "removing the candidate source, no listener",
+    "status": "Pass",
+    "message": null
+   }
+  ]
+ ],
+ [
+  "html/semantics/embedded-content/media-elements/loading-the-media-resource/load-events-networkState.html",
+  [
+   {
+    "name": "NETWORK_IDLE",
+    "status": "Pass",
+    "message": null
+   },
+   {
+    "name": "NETWORK_DISPATCH_EMPTIED_BEFORE_TIMEUPDATE",
+    "status": "Pass",
+    "message": null
+   },
+   {
+    "name": "NETWORK_LOADING",
+    "status": "Pass",
+    "message": null
+   },
+   {
+    "name": "NETWORK_NO_SOURCE",
+    "status": "Pass",
+    "message": null
+   }
+  ]
+ ],
+ [
+  "html/semantics/embedded-content/media-elements/loading-the-media-resource/resource-selection-invoke-pause-networkState.html",
+  [
+   {
+    "name": "NOT invoking resource selection with pause() when networkState is not NETWORK_EMPTY",
+    "status": "Pass",
+    "message": null
+   }
+  ]
+ ]
+]

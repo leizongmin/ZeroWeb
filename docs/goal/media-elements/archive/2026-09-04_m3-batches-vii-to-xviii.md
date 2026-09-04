@@ -523,3 +523,40 @@ track-active-cues 解除排除）**：
   dispatch / pause-on-exit / add-new-track / no-cuechange-before-play /
   track-disabled / track-remove-*）维持排除，随本片基础设施增量逐件复评。
 
+
+## 扩批 XL — loading-the-media-resource 尾件清点（2026-09-04）
+
+- 背景：fetch 全量 vs MEDIA_TEST_FILES diff（comm -23）发现 34 件「已 fetch 未导入
+  未注记」残留——扩批 XI 排除注记未覆盖全部 fetched 文件（fetch 脚本与导入清单的
+  漂移累积）。逐件定性 + 上游核查（wpt.fyi api/search，2026-09-04 master run，
+  edge=Chromium 内核逐件比对 chrome/firefox/safari 无数据时以 edge 为准）。
+- 三件解除排除导入（+6 净涨，609P/0F/24PF = 96.21%）：
+  1. resource-selection-candidate-remove-no-listener——上游 1/1 绿，本地零改动即绿。
+  2. resource-selection-invoke-pause-networkState——data: 媒体候选**两段 settle**：
+     一段 loaded（loadstart/currentSrc 面），二段（再一 queueMicrotask 续段）
+     「failed with media resource」：error 派发 + code 4 + networkState NO_SOURCE；
+     不重置 currentSrc（与 failed with attribute 异——location currentSrc data:,
+     断言面零回归）；_zwMediaLoadSequence 入口 gate（error 覆盖后 setTimeout
+     过期加载序列作废）。
+  3. load-events-networkState——load() invoke 步 5 abort/emptied/timeupdate
+     **排队**派发：queueMicrotask 续段（load() 同步返回时未派——「events should be
+     fired in queued tasks」断言面；先于新加载序列的 setTimeout loadstart）；
+     LOADING/IDLE → abort、非 EMPTY → emptied、旧位置非零 → timeupdate（判定先于
+     位置归零）；epoch 门（load() 重跑丢弃旧排队任务）。
+- 上游亦红维持排除（**坏用例不导入**——Chromium oracle 口径下导入即恒假失败；
+  与 XXIV video_loop_base「结构互斥」不同类的定性）：resource-selection-pointer-*
+  全 7 件（control/insert-source/insert-br/insert-text/remove-source/
+  remove-source-after/remove-text）+ candidate-moved + candidate-remove-onerror
+  ——edge 全红/Timeout（crbug 593289「await a stable state」族：无 src source
+  是否派 error 的指针语义 Chromium 自身未实现，各引擎行为分歧）；candidate-remove-
+  addEventListener——上游无数据 + 本地 Timeout。
+- 其余定性（维持排除，注记已在 fetch 脚本/testharness.rs）：currentSrc（MSE/Blob/
+  MediaStream 断言面）；source-media-env-change（iframe + promise 编排）；
+  stable-state-print/dialogs/beforeunload-manual（print()/对话框交互面，非自动化）。
+  media="not all" 静态面（source-media.html 上游 1/1 绿）——本地 media 属性匹配器
+  未实施（网络眉题外），随媒体查询域复评。
+- 收口：**loading-the-media-resource 目录 47 文件全数定性**（导入 28 / 上游红或
+  深结构排除 19），fetch 与导入清单的漂移归零（新增 3 件已同步 RS_FILES 白名单）。
+- shim 面共 3 处小改（part06.js：data: 二段 settle + 加载序列 gate + invoke 步 5
+  排队）；make test 全绿、clippy/fmt 干净。evidence：
+  evidence/2026-09-04-media-loading-xl.json。

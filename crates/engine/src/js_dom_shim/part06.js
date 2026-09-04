@@ -6779,6 +6779,10 @@
   }
   function _zwMediaLoadSequence(sel, handle, key, tag) {
     var ms = _mediaState[key] || (_mediaState[key] = {});
+    // M3 扩批 XL：error 已覆盖（data: 候选二段 settle）→ 加载序列作废（spec 资源获取
+    // 失败后不进入 have_metadata——setTimeout 媒体任务晚于 error 续段时的过期序列）。
+    var _lsState = _resourceStates[key];
+    if (_lsState && _lsState.outcome === 'error') return;
     ms.networkState = 2; // NETWORK_LOADING——loadstart/progress 期间断言面
     _zwMediaFire(sel, handle, key, 'loadstart');
     _zwMediaFire(sel, handle, key, 'progress');
@@ -6955,6 +6959,30 @@
     // invoke 步 6 位置重置**无条件**（spec「set the current playback position to 0」
     // 不以 readyState 为前提——error settle 面（readyState 0）同样归零，保 IDL 读法
     // 恒数值；undefined 泄出曾致 load-events-networkState 族 timeupdate 判定失真）。
+    // M3 扩批 XL（2026-09-04）：invoke 步 5 的 abort/emptied/timeupdate **排队**派发
+    //（spec dom-media-load——「If networkState is LOADING or IDLE, queue a task to fire
+    // abort；queue a task to fire emptied；If position != 0, queue timeupdate」）。
+    // queueMicrotask 稳定态续段：load() 同步返回时未派（「events should be fired in
+    // queued tasks」同步断言面），先于新加载序列的 setTimeout loadstart（媒体任务延后
+    // 一拍）。NETWORK_IDLE=1 / NETWORK_LOADING=2 派 abort；非 EMPTY（含 NO_SOURCE=3）
+    // 派 emptied；旧位置非零派 timeupdate（判定须先于下方位置归零——spec 步序）。
+    // epoch 门：load() 重跑丢弃旧排队任务（spec dom-media-load「queued tasks 被丢弃」
+    // ——与下方 _ldMyEpoch 同纪元）。
+    var _nsInvoke = ms.networkState | 0;
+    var _posInvoke = (typeof ms.currentTime === 'number' && ms.currentTime > 0) ? ms.currentTime : 0;
+    var _xlQueue = [];
+    if (_nsInvoke === 1 || _nsInvoke === 2) _xlQueue.push('abort');
+    if (_nsInvoke !== 0 || _resourceStates[key]) _xlQueue.push('emptied');
+    if (_posInvoke > 0) _xlQueue.push('timeupdate');
+    if (_xlQueue.length && typeof queueMicrotask === 'function') {
+      var _xlMyEpoch = (ms.loadEpoch || 0) + 1; // 本轮 invoke 的纪元（下方同步递增后）
+      queueMicrotask(function () {
+        if ((ms.loadEpoch || 0) !== _xlMyEpoch) return;
+        for (var _xlI = 0; _xlI < _xlQueue.length; _xlI++) {
+          _zwMediaFire(sel, handle, key, _xlQueue[_xlI]);
+        }
+      });
+    }
     ms.currentTime = 0;
     ms._zwMediaTimeKnown = false;
     try {
@@ -7055,6 +7083,25 @@
         return;
       }
       _zwSettleResourceKey(key, sel, handle, tag, absUrl, 'loaded', 0, 0);
+      // M3 扩批 XL（2026-09-04）：data: 媒体候选两段 settle——spec 资源获取面 data: URL
+      // fetch 恒成功（currentSrc 已置——location currentSrc 断言面零回归），但载荷非可播
+      // 媒体容器 → 解码失败「failed with media resource」：error 事件 + code 4 +
+      // networkState NO_SOURCE（invoke-pause-networkState / load-events-networkState
+      // NETWORK_NO_SOURCE 子测断言面）。第二段再一个稳定态续段（同一 microtask 检查点
+      // 内晚一拍——先于 window load 与后续脚本任务），加载序列（setTimeout 媒体任务）被
+      // error 覆盖后跳过（_zwMediaLoadSequence 入口 gate）。
+      if (String(absUrl).indexOf('data:') === 0 && String(absUrl).indexOf('data:text/vtt,') !== 0
+          && (tag === 'audio' || tag === 'video')) {
+        _deferCont(function () {
+          if ((ms.loadEpoch || 0) !== _ldMyEpoch) return; // load() 已重调度 → 作废
+          var _dMs = _mediaState[key] || (_mediaState[key] = {});
+          _dMs.networkState = 3; // NO_SOURCE——「failed with media resource」终态
+          try { delete _resourceStates[key]; } catch (_eDta) {}
+          // 「failed with media resource」**不重置 currentSrc**（与 failed with attribute
+          // 不同——资源获取已成功、URL 已选定；location currentSrc data:, 断言面）。
+          _zwSettleResourceKey(key, sel, handle, tag, absUrl, 'error', 0, 0, 4);
+        });
+      }
     });
   }
   function _zwSettleResourceSelector(sel, tag, url, outcome, width, height, durationMs) {

@@ -319,6 +319,17 @@ RS_FILES=(
   "resource-selection-remove-source.html"
   "resource-selection-remove-src.html"
   "resource-selection-resumes-onload.html"
+  # M3 扩批 XL（2026-09-04，排除注记复核 + 上游核查）：candidate-remove-no-listener
+  #（上游 edge 1/1 绿——「移除候选不 crash」smoke 面）+ invoke-pause-networkState
+  #（上游 1/1 绿——data:, 两段 settle 落地后「pause() 不重触发资源选择」断言面）+
+  # load-events-networkState（上游 4/4 绿——load() invoke 步 5 abort/emptied/timeupdate
+  # 排队派发落地）。pointer 全 7 件 / candidate-moved / candidate-remove-onerror /
+  # candidate-remove-addEventListener 维持不导入——上游核查（wpt.fyi 2026-09-04 master
+  # run，edge=Chromium 内核）全红/Timeout（crbug 593289「await a stable state」族——
+  # 无 src source 的指针 error 语义 Chromium 自身未实现），坏用例不导入。
+  "resource-selection-candidate-remove-no-listener.html"
+  "resource-selection-invoke-pause-networkState.html"
+  "load-events-networkState.html"
 )
 for relative in "${RS_FILES[@]}"; do
   fetch_raw "${BASE}/loading-the-media-resource/${relative}"

@@ -1684,6 +1684,19 @@ pub const MEDIA_TEST_FILES: &[&str] = &[
     "html/semantics/embedded-content/media-elements/loading-the-media-resource/resource-selection-remove-source.html",
     "html/semantics/embedded-content/media-elements/loading-the-media-resource/resource-selection-remove-src.html",
     "html/semantics/embedded-content/media-elements/loading-the-media-resource/resource-selection-resumes-onload.html",
+    // M3 扩批 XL（2026-09-04，排除注记复核）：pointer/candidate 族试导——扩批 XI 排除
+    // 注记「依赖 source 真实 fetch 失败时序」在 runner 静态 source settle（扩批 XXX）
+    // 落地后复核。上游核查（wpt.fyi 2026-09-04 master run，edge=Chromium 内核）：
+    // pointer 全 7 件 + candidate-moved + candidate-remove-onerror 上游亦红/Timeout
+    //（crbug 593289「await a stable state」族——无 src source 是否派 error 的指针语义
+    // Chromium 自身未实现）；candidate-remove-addEventListener 上游无数据且本地
+    // Timeout。均维持排除（坏用例不导入——与 Chromium oracle 口径一致）。
+    // candidate-remove-no-listener 上游 1/1 绿 → 解除排除导入。
+    "html/semantics/embedded-content/media-elements/loading-the-media-resource/resource-selection-candidate-remove-no-listener.html",
+    // load-events-networkState / invoke-pause-networkState（上游 edge 4/4 与 1/1 绿）
+    // 试导——load() 的 abort/emptied/timeupdate 事件序 + 「pause() 不重触发资源选择」。
+    "html/semantics/embedded-content/media-elements/loading-the-media-resource/load-events-networkState.html",
+    "html/semantics/embedded-content/media-elements/loading-the-media-resource/resource-selection-invoke-pause-networkState.html",
     "html/semantics/embedded-content/media-elements/preload_reflects_none_autoplay.html",
     "html/semantics/embedded-content/media-elements/readyState_during_canplay.html",
     "html/semantics/embedded-content/media-elements/readyState_during_canplaythrough.html",

@@ -2,17 +2,31 @@
 
 **入口文档**: [../media-elements.md](../media-elements.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-04（**M3 扩批 XXXIX 落地**——audio_loop_base 解除排除导入
-（603P/0F/24PF = 96.17%，+1 净涨零回归；3 连跑稳定）：**registry loop 回卷可观测面**
-——dormant 探针实证推翻 XXIV 排除注记：Timeout 根因非「fixture 短于泵采样粒度」，
-而是 loop=true 的音频 entry 流末回卷为静默 restart，语义层 march ended/loop 分叉的
-唯一驱动源 isEnded 恒 false → seeking/seeked 派发不可达。修复：AudioEntry 增
-wrap_pending（回卷置位 / is_ended 读取 / audio_play 消费复位——零新增桥面）。
-video_loop_base 维持排除（结构互斥：fixture 2x2-green.webm 实为 VP8+Opus，解码面
-外——canPlayType 判定串 'vp9, opus' → .webm 变体与可解码 codec 不符，bridge play
-失败回落 headless 无流末界）。单测
-`registry_audio_loop_wrap_observable_via_is_ended_m3xxxix`（三面）；make test
-18872/0。evidence：`evidence/2026-09-04-media-audio-loop-base-xxxix.json`。
+**最后更新**: 2026-09-04（**M3 扩批 XL 落地**——loading-the-media-resource 尾件清点：
+fetch 全量 vs 导入清单 diff 发现 34 件「已 fetch 未导入未注记」残留（22 件 loading 族 +
+track-element 8 件 + playing/candidate 4 件），扩批 XI 排除注记逐件复核 + 上游核查
+（wpt.fyi 2026-09-04 master run，edge=Chromium 内核逐件比对）后三件解除排除导入
+（609P/0F/24PF = 96.21%，+6 净涨零回归）：
+① `resource-selection-candidate-remove-no-listener`（上游 1/1 绿，本地零改动即绿）；
+② `resource-selection-invoke-pause-networkState`（上游 1/1 绿）——**data: 媒体候选两段
+settle**：spec 资源获取面 data: URL fetch 恒成功（currentSrc 已置——location currentSrc
+断言面零回归），载荷非可播媒体容器 → 二段（再一稳定态续段）「failed with media
+resource」error 派发 + code 4 + networkState NO_SOURCE，**不重置 currentSrc**（与
+failed with attribute 异）；加载序列入口 gate（error 覆盖后 setTimeout 过期序列作废）；
+③ `load-events-networkState`（上游 4/4 绿）——**load() invoke 步 5 abort/emptied/
+timeupdate 排队派发**：queueMicrotask 稳定态续段（load() 同步返回时未派——「events
+should be fired in queued tasks」同步断言面；先于新加载序列 setTimeout loadstart），
+LOADING/IDLE 派 abort + 非 EMPTY 派 emptied + 旧位置非零派 timeupdate，epoch 门
+（load() 重跑丢弃旧排队任务）。**上游亦红维持排除（坏用例不导入，新增定性）**：
+pointer 全 7 件 + candidate-moved + candidate-remove-onerror（edge 全红/Timeout——
+crbug 593289「await a stable state」族，无 src source 的指针 error 语义 Chromium 自身
+未实现）+ candidate-remove-addEventListener（上游无数据 + 本地 Timeout）；
+currentSrc（MSE/Blob 断言面）与 source-media-env-change（iframe+promise 编排）维持
+排除注记；stable-state-{print,dialogs,beforeunload}-manual（print()/dialog 交互面）
+排除。shim 面共 3 处小改（part06：data: 二段 + 加载序列 gate + invoke 步 5 排队），
+make test 18705+ 全绿、clippy/fmt 干净。evidence：
+`evidence/2026-09-04-media-loading-xl.json`。
+此前 2026-09-04：**M3 扩批 XXXIX 落地**——audio_loop_base 解除排除导入
 此前 2026-09-04：**M3 扩批 XXXVIII 落地**——track-cue-empty 解除排除导入
 （602P/0F/24PF = 96.17%，+1 净涨零回归）：**Text.prototype.constructor 自引修复**
 （WebIDL §4.6.1 interface prototype object——探针实证 XXX 排除注记「constructor.name
@@ -271,7 +285,7 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
 
 | # | 缺口 | 状态 | 失败聚类 |
 |---|------|------|----------|
-| M1g | WPT media-elements 用例覆盖 | ✅ 171 用例已导入（136 + 扩批 XVI~XXX：播放推进族 6 件 + track-change-event + track-active-cues + played-loop + audio_loop_seek_to_eos + loop-from-ended.tentative + seeking/ 三件 + volume_nonfinite + media_fragment_seek + autoplay-with-broken-track + currentTime-move-within-document + track-mode-triggers-loading + track-remove-quickly + track-remove-by-setting-innerHTML + ready-states/autoplay + WebVTT 解析面 14 件 + mode/cuechange 播放推进面 3 件 + XXXI 三件 + XXXII 七件 + XXXIII 一件 + XXXIV play-in-detached-document + XXXV video-loading-eager + XXXVI audio-loading-eager + XXXVIII track-cue-empty + XXXIX audio_loop_base），**96.17%**（603/627） | — |
+| M1g | WPT media-elements 用例覆盖 | ✅ 174 用例已导入（136 + 扩批 XVI~XXX：播放推进族 6 件 + track-change-event + track-active-cues + played-loop + audio_loop_seek_to_eos + loop-from-ended.tentative + seeking/ 三件 + volume_nonfinite + media_fragment_seek + autoplay-with-broken-track + currentTime-move-within-document + track-mode-triggers-loading + track-remove-quickly + track-remove-by-setting-innerHTML + ready-states/autoplay + WebVTT 解析面 14 件 + mode/cuechange 播放推进面 3 件 + XXXI 三件 + XXXII 七件 + XXXIII 一件 + XXXIV play-in-detached-document + XXXV video-loading-eager + XXXVI audio-loading-eager + XXXVIII track-cue-empty + XXXIX audio_loop_base + XL candidate-remove-no-listener / invoke-pause-networkState / load-events-networkState），**96.21%**（609/633） | — |
 | M2g | load 算法 + 状态机（事件序列派发） | ✅ M2 落地（13T→**0T**） | F4 闭合 |
 | M3g | 事件序列 headless 近似驱动 | ✅（同 M2g；source-child 触发已落地） | F4 闭合 |
 | M4g-a | 媒体元数据 IDL 反射（初值面） | ✅ 切片 3 落地 | F2 闭合（-9 Fail） |
@@ -407,8 +421,12 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
   → 扩批 XXXIX（2026-09-04，registry wrap_pending 可观测面——audio_loop_base
   解除排除；video_loop_base 结构互斥注记）**603/627 = 96.17%**（+1 净涨零回归；
   Fail 0 / Timeout 0 / PF 24）
+  → 扩批 XL（2026-09-04，loading-the-media-resource 尾件清点 + data: 两段 settle +
+  load() invoke 步 5 排队派发——三件解除排除）**609/633 = 96.21%**（+6 净涨零回归；
+  Fail 0 / Timeout 0 / PF 24）
 - 复核（2026-09-04 治理整固后终审）：fresh 跑 603P/0F/24PF（198 文件）与
   本档记录逐位一致；验证基线 evidence 链 26 文件全在盘；make test 18877/0。
+  （扩批 XL 后：fresh 跑 609P/0F/24PF（201 文件）——2026-09-04 本轮实测。）
 - 入口：`make testharness-media`（FILTER 透传，`--json` 捕获 evidence）
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过
 - evidence：`evidence/2026-08-31-media-baseline.md`（+ 同名 .json 机读版）、
@@ -430,7 +448,8 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
   `evidence/2026-09-04-media-audio-loading-eager-xxxvi.json`、
   `evidence/2026-09-04-media-video-intrinsic-sizes-xxxvii.json`、
   `evidence/2026-09-04-media-track-cue-empty-xxxviii.json`、
-  `evidence/2026-09-04-media-audio-loop-base-xxxix.json`
+  `evidence/2026-09-04-media-audio-loop-base-xxxix.json`、
+  `evidence/2026-09-04-media-loading-xl.json`
 
 ## 归档
 
