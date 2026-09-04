@@ -1,0 +1,82 @@
+[
+ [
+  "html/semantics/embedded-content/media-elements/playing-the-media-resource/playbackRate.html",
+  [
+   {
+    "name": "playbackRate initial value",
+    "status": "Pass",
+    "message": null
+   },
+   {
+    "name": "playbackRate set to small positive value",
+    "status": "Pass",
+    "message": null
+   },
+   {
+    "name": "playbackRate set to large positive value",
+    "status": "Pass",
+    "message": null
+   },
+   {
+    "name": "playbackRate set to small negative value",
+    "status": "Pass",
+    "message": null
+   },
+   {
+    "name": "playbackRate set to large negative value",
+    "status": "Pass",
+    "message": null
+   },
+   {
+    "name": "playbackRate set to 0",
+    "status": "Pass",
+    "message": null
+   },
+   {
+    "name": "playbackRate set to -1",
+    "status": "Pass",
+    "message": null
+   }
+  ]
+ ],
+ [
+  "html/semantics/embedded-content/media-elements/playing-the-media-resource/playbackRate.html",
+  [
+   {
+    "name": "playbackRate initial value",
+    "status": "Pass",
+    "message": null
+   },
+   {
+    "name": "playbackRate set to small positive value",
+    "status": "Pass",
+    "message": null
+   },
+   {
+    "name": "playbackRate set to large positive value",
+    "status": "Pass",
+    "message": null
+   },
+   {
+    "name": "playbackRate set to small negative value",
+    "status": "Pass",
+    "message": null
+   },
+   {
+    "name": "playbackRate set to large negative value",
+    "status": "Pass",
+    "message": null
+   },
+   {
+    "name": "playbackRate set to 0",
+    "status": "Pass",
+    "message": null
+   },
+   {
+    "name": "playbackRate set to -1",
+    "status": "Pass",
+    "message": null
+   }
+  ]
+ ]
+]

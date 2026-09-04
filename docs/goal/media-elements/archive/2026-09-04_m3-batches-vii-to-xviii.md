@@ -560,3 +560,28 @@ track-active-cues 解除排除）**：
 - shim 面共 3 处小改（part06.js：data: 二段 settle + 加载序列 gate + invoke 步 5
   排队）；make test 全绿、clippy/fmt 干净。evidence：
   evidence/2026-09-04-media-loading-xl.json。
+
+## 扩批 XLI — 上游核查第二轮：track-element/playing 余件（2026-09-04）
+
+- 背景：XL 轮 diff 出的 34 件残留中 track-element 8 件 + playing 2 件逐件上游核查
+  （wpt.fyi api/search，edge=Chromium 内核 master run）后试导/定性。
+- 解除排除导入（+7 净涨，616P/0F/24PF = 96.25%）：
+  - playing-the-media-resource/playbackRate——第 35 件漂移件（文件早已 fetch，从未
+    入 MEDIA_TEST_FILES 也未注记）；上游 edge 7/7 绿；本地零改动 7 子测全绿
+    （playbackRate setter ratechange 派发面 M2 既有）。
+- 试导回退三件（定性升级，均为「上游绿 + 本地缺口」可回访件）：
+  1. pause-move-to-other-document——本地「paused after stable state got true」：
+     shim 融合视图下 iframe contentDocument.body.appendChild 触发 removal-pause
+     两段 defer；spec related 文档判定含 iframe 文档（移入 related 文档不暂停）。
+     归「pause-on-removal related-document 判定精化」切片。
+  2. track-remove-insert-ready-state——本地 canplaythrough 时 track.readyState
+     got 0（期望 ERROR 3）：video 加载序列与 track settle 双通道时序未收敛，与
+     video_size_preserved_after_ended 同族。
+  3. track-mode——本地 Timeout：mode 切换 no-event 断言依赖 cuechange 计数
+     done 链（4 次 enter/exit），真播放推进 + cue 时序收敛依赖。
+- markup 结构族定性升级：voice/class-markup/cue-recovery/markup/timestamp/
+  unsupported-markup 6 件上游 edge 全绿——排除归域从「渲染域远期」修正为
+  「WebVTT cue text parser 切片」（spec webvtt-cue-text-parsing-rules：
+  i/u/b/ruby/rt/v/c span 树构建 + 恢复规则 + getCueAsHTML DOM 面对拍；中等
+  深结构，上游全绿证明可回访）。
+- evidence：evidence/2026-09-04-media-upstream-audit-xli.json。

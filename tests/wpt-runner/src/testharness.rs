@@ -1581,7 +1581,10 @@ pub const MEDIA_TEST_FILES: &[&str] = &[
     "html/semantics/embedded-content/media-elements/track/track-element/track-cues-missed-no-immediate-events.html",
     // M3 扩批 XXXII：readyState/cue-mutable/mode 稳态面批量试导。
     // track-mode-not-changed-by-new-track 维持排除——textTracks 身份对拍切片；
-    // track-remove-insert-ready-state 维持排除——re-attach 播放推进链切片。
+    // track-remove-insert-ready-state 维持排除（XLI 复核：上游 1/1 绿但本地 canplaythrough
+    // 时 track.readyState got 0——video 加载序列与 track settle 双通道时序未收敛，与
+    // video_size_preserved_after_ended 同族「settle 时序收敛」依赖，随 runner/shim
+    // 事件通道统一后复评）。
     "html/semantics/embedded-content/media-elements/track/track-element/track-cues-cuechange-dynamically-created-track-element.html",
     "html/semantics/embedded-content/media-elements/track/track-element/track-disabled-addcue.html",
     "html/semantics/embedded-content/media-elements/track/track-element/track-insert-after-load.html",
@@ -1591,6 +1594,9 @@ pub const MEDIA_TEST_FILES: &[&str] = &[
     "html/semantics/embedded-content/media-elements/track/track-element/src-empty-string.html",
     // M3 扩批 XXXIII：TextTrackCueList 功能面。track-cue-mutable-fragment 维持排除
     //（cue 标记树 isEqualNode）；track-selection-task-order 维持排除（宏任务序）。
+    // track-mode 维持排除（XLI 试导 Timeout——mode 切换 no-event 断言依赖 cuechange
+    // 计数 done 链（4 次 enter/exit cuechange），真播放推进 + cue 时序收敛依赖；
+    // mode 数值 setter 回落 + disabled cues null 语义面已由其他用例覆盖）。
     "html/semantics/embedded-content/media-elements/track/track-element/track-text-track-cue-list.html",
     // M3 扩批 XXXVIII：track-cue-empty 解除排除（getCueAsHTML 空 cue——fragment 单
     // 空 Text 节点 + constructor.name 断言；Text.prototype.constructor 自引修复后绿）。
@@ -1645,8 +1651,15 @@ pub const MEDIA_TEST_FILES: &[&str] = &[
     // runner/shim 事件通道统一后复评。不导入 video_timeupdate_on_seek（WPT CGI
     // src）/ video_initially_paused（reftest 型）/ video-loading-* poster 族。
 
+    // M3 扩批 XLI（2026-09-04，上游核查试导）：playbackRate（上游 edge 7/7 绿——
+    // setter ratechange 派发面，M2 既有）。pause-move-to-other-document 试导失败回退
+    //（本地「paused after stable state got true」——shim 融合视图下 iframe
+    // contentDocument.body.appendChild 先触发 removal-pause 两段 defer；spec related
+    // 文档判定含 iframe 文档，修复须 pause-on-removal 的 related-document 判定精化，
+    // 归移除暂停精化切片——上游 1/1 绿为可回访断言面）。
+    "html/semantics/embedded-content/media-elements/playing-the-media-resource/playbackRate.html",
     // M3 扩批 IX：移动面（同文档移动仍 related → 不暂停）。
-    // pause-move-to-other-document 不导入——iframe adopt 面未实施（fetch 脚本注记）。
+    // pause-move-to-other-document 维持排除（XLI 试导回退，见上注记）。
     "html/semantics/embedded-content/media-elements/playing-the-media-resource/pause-move-within-document.html",
     // M3 扩批 XI：resource selection 算法 JS 可观察面（loading-the-media-resource 逐文件
     // 白名单——networkState 同步段 NO_SOURCE/稳定态 EMPTY、invoke 面（play/pause/load/

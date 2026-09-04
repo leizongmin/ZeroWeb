@@ -2,7 +2,23 @@
 
 **入口文档**: [../media-elements.md](../media-elements.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-04（**M3 扩批 XL 落地**——loading-the-media-resource 尾件清点：
+**最后更新**: 2026-09-04（**M3 扩批 XLI 落地**——上游核查第二轮（track-element/playing
+余件逐件比对 wpt.fyi edge run）：`playing-the-media-resource/playbackRate` 解除排除导入
+（616P/0F/24PF = 96.25%，+7 净涨零回归——文件早已 fetch 未导入的第 35 件漂移件；setter
+ratechange 派发面 M2 既有零改动 7 子测全绿）。**试导回退三件（定性升级）**：
+pause-move-to-other-document（上游 1/1 绿；本地「paused after stable state got true」
+——shim 融合视图 iframe contentDocument.body.appendChild 先触发 removal-pause 两段
+defer，spec related 文档判定含 iframe 文档——归「pause-on-removal related-document
+判定精化」切片，可回访断言面）；track-remove-insert-ready-state（上游 1/1 绿；本地
+canplaythrough 时 track.readyState got 0——video 加载序列与 track settle 双通道时序
+未收敛，同 video_size_preserved_after_ended 族）；track-mode（上游 1/1 绿；本地
+Timeout——mode 切换 no-event 断言依赖 cuechange 计数 done 链）。
+**markup 结构族定性升级**：voice/class-markup/cue-recovery/markup/timestamp/unsupported-
+markup 6 件上游 edge 全绿（2/2、2/2、3/3、2/2、2/2 等）——排除归域从「渲染域远期」
+修正为「WebVTT cue text parser 切片」（spec webvtt-cue-text-parsing-rules 的
+i/u/b/ruby/rt/v/c span 树构建 + 恢复规则 + getCueAsHTML DOM 面对拍——中等深结构，
+上游全绿证明可回访）。
+此前 2026-09-04：**M3 扩批 XL 落地**——loading-the-media-resource 尾件清点：
 fetch 全量 vs 导入清单 diff 发现 34 件「已 fetch 未导入未注记」残留（22 件 loading 族 +
 track-element 8 件 + playing/candidate 4 件），扩批 XI 排除注记逐件复核 + 上游核查
 （wpt.fyi 2026-09-04 master run，edge=Chromium 内核逐件比对）后三件解除排除导入
@@ -285,7 +301,7 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
 
 | # | 缺口 | 状态 | 失败聚类 |
 |---|------|------|----------|
-| M1g | WPT media-elements 用例覆盖 | ✅ 174 用例已导入（136 + 扩批 XVI~XXX：播放推进族 6 件 + track-change-event + track-active-cues + played-loop + audio_loop_seek_to_eos + loop-from-ended.tentative + seeking/ 三件 + volume_nonfinite + media_fragment_seek + autoplay-with-broken-track + currentTime-move-within-document + track-mode-triggers-loading + track-remove-quickly + track-remove-by-setting-innerHTML + ready-states/autoplay + WebVTT 解析面 14 件 + mode/cuechange 播放推进面 3 件 + XXXI 三件 + XXXII 七件 + XXXIII 一件 + XXXIV play-in-detached-document + XXXV video-loading-eager + XXXVI audio-loading-eager + XXXVIII track-cue-empty + XXXIX audio_loop_base + XL candidate-remove-no-listener / invoke-pause-networkState / load-events-networkState），**96.21%**（609/633） | — |
+| M1g | WPT media-elements 用例覆盖 | ✅ 174 用例已导入（136 + 扩批 XVI~XXX：播放推进族 6 件 + track-change-event + track-active-cues + played-loop + audio_loop_seek_to_eos + loop-from-ended.tentative + seeking/ 三件 + volume_nonfinite + media_fragment_seek + autoplay-with-broken-track + currentTime-move-within-document + track-mode-triggers-loading + track-remove-quickly + track-remove-by-setting-innerHTML + ready-states/autoplay + WebVTT 解析面 14 件 + mode/cuechange 播放推进面 3 件 + XXXI 三件 + XXXII 七件 + XXXIII 一件 + XXXIV play-in-detached-document + XXXV video-loading-eager + XXXVI audio-loading-eager + XXXVIII track-cue-empty + XXXIX audio_loop_base + XL candidate-remove-no-listener / invoke-pause-networkState / load-events-networkState + XLI playbackRate），**96.25%**（616/640） | — |
 | M2g | load 算法 + 状态机（事件序列派发） | ✅ M2 落地（13T→**0T**） | F4 闭合 |
 | M3g | 事件序列 headless 近似驱动 | ✅（同 M2g；source-child 触发已落地） | F4 闭合 |
 | M4g-a | 媒体元数据 IDL 反射（初值面） | ✅ 切片 3 落地 | F2 闭合（-9 Fail） |
@@ -424,9 +440,13 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
   → 扩批 XL（2026-09-04，loading-the-media-resource 尾件清点 + data: 两段 settle +
   load() invoke 步 5 排队派发——三件解除排除）**609/633 = 96.21%**（+6 净涨零回归；
   Fail 0 / Timeout 0 / PF 24）
+  → 扩批 XLI（2026-09-04，上游核查第二轮——playbackRate 漂移件导入 + 三件试导回退
+  定性 + markup 族归域修正）**616/640 = 96.25%**（+7 净涨零回归；Fail 0 / Timeout 0 /
+  PF 24）
 - 复核（2026-09-04 治理整固后终审）：fresh 跑 603P/0F/24PF（198 文件）与
   本档记录逐位一致；验证基线 evidence 链 26 文件全在盘；make test 18877/0。
-  （扩批 XL 后：fresh 跑 609P/0F/24PF（201 文件）——2026-09-04 本轮实测。）
+  （扩批 XL 后：fresh 跑 609P/0F/24PF（201 文件）；扩批 XLI 后：fresh 跑
+  616P/0F/24PF（202 文件）——2026-09-04 本轮实测。）
 - 入口：`make testharness-media`（FILTER 透传，`--json` 捕获 evidence）
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过
 - evidence：`evidence/2026-08-31-media-baseline.md`（+ 同名 .json 机读版）、
@@ -449,7 +469,8 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
   `evidence/2026-09-04-media-video-intrinsic-sizes-xxxvii.json`、
   `evidence/2026-09-04-media-track-cue-empty-xxxviii.json`、
   `evidence/2026-09-04-media-audio-loop-base-xxxix.json`、
-  `evidence/2026-09-04-media-loading-xl.json`
+  `evidence/2026-09-04-media-loading-xl.json`、
+  `evidence/2026-09-04-media-upstream-audit-xli.json`
 
 ## 归档
 
