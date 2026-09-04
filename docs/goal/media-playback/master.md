@@ -1,14 +1,28 @@
-# 媒体播放 — 运行时控制面板（master.md）
-
-**入口文档**: [../media-playback.md](../media-playback.md)
-**创建日期**: 2026-08-17（goal 拆分 bootstrap）
+**最后更新**: 2026-09-05（**D3 切片 1 + D4 双落地**——获批当日实施：
+① **H.264 切片 1（zero-media）**：新增 `mp4_h264` 模块——symphonia `isomp4` demux
+（H264 轨枚举/timescale/avcC extradata/轨时长）+ `openh264` 位流解码（avcC→SPS/PPS
+Annex-B 前缀注入 + 长度前缀 NALU→Annex-B 转换）；`VideoTrackDecoder::open_media`
+容器嗅探路由（Matroska 魔数/ftyp）——player/registry/settle 探针/probe_dimensions
+消费面统一入口；`decode-h264` feature 门控（openh264 0.9 source 源码编译——D-RFC-3b
+决议；无 nasm 自动退纯 C 路径）。fixture 全流单测：48 帧全解、PTS 单调 0~1958ms、
+320x240、首帧 RGB 均值 122（ffmpeg 参照 123.3 同窗 ±15）、容器时长 2000ms 真值；
+mp4 settle e2e（feature-gated）+ 默认面占位负例保持。canPlayType 能力表扩
+video/mp4 + audio/mp4（M4g-d 纪律）。media 48/50 双配置 + webview 691 双配置全绿；
+testharness-media 629P/0F/24PF 保零回归；bench-gate 定向跑 webview_load_html_simple
+单指标超阈值——隔离复测 78.9µs 回预算内（ZRG 噪声签名三层判据，ZRG-2026-09-03
+learning 同法），不动基线。**D-RFC-3a 前置条件注记：任何二进制分发/发布前须完成
+法务复核（实施与分发解耦）。**
+② **D4 renderer 播放泵（事件循环节拍——否决独立泵线程的决议落地）**：runtime.run
+主循环 16ms 节拍上挂 is_any_playing 门控泵（tick_all + audio_advance_all +
+webaudio advance；帧更新 → try_republish_cached 上屏）；pump_epoch/pump_clock 入
+RendererRuntime，SetVideoPlayers 扩 pump_clock → register_video_bridge_callbacks
+clock 注入（桥 play 锚与泵 tick 同源——扩批 XXV 原点错位缺陷的 renderer 路径消除；
+「登记但不推进」深结构缺口收口）。renderer 153 lib 测试全绿、clippy 零警告。）
+**（注：下方「最后更新」2026-09-05 D3/D4 批复块为前轮记录，保留作历史）**
 **最后更新**: 2026-09-05（**D3/D4 双批复落地——GB-20260904 待决策征询跟进**：
 D3=H.264/AAC 立项**有条件批准实施**（分发前须法务复核；3b 源码编译、3c AAC 随期，
 RFC 已转 Approved）；D4=renderer 播放泵获点名**事件循环节拍**（否决独立泵线程）。
-征询凭据 msg `om_x100b669923cd64a4c3e335615ed3d9f`。无代码变更。）
-**（注：下方「最后更新」2026-09-04 巡检/泵时钟块为前轮记录，保留作历史）**
-**最后更新**: 2026-09-04（**泵时钟生产路径注入（扩批 XXV 收口的 tab_worker 面）**：
-tab_js_worker `SetVideoPlayers` 此前以 clock=None 注册宿主桥——shim 桥 play 恒传
+此前以 clock=None 注册宿主桥——shim 桥 play 恒传
 nowMs=0，而 tab_worker 泵 tick 用 `pump_epoch.elapsed()`（原点错位：worker 启动后
 首次桥 play 的首拍 delta=泵全程 → 位置瞬跳流末——runner 侧扩批 XXV 同款缺陷在
 生产路径的残留）。修复：pump_clock（Arc<AtomicU64>）提前至 WebView 构建前创建 +
@@ -294,7 +308,12 @@ clippy 零警告、每切片带单测 + e2e/fixture 资产化（AV1 全流单测
   [h264-increment-project-spec-rfc.md](../../specs/h264-increment-project-spec-rfc.md)
   §5 决议记录）。征询凭据：msg `om_x100b664d8a6f44b0dee3398474de92b` +
   `om_x100b669923cd64a4c3e335615ed3d9f`；批复来源：session 对话（GB-20260904
-  待决策征询跟进） |
+  待决策征询跟进）。**2026-09-05 切片 1 落地**：mp4_h264 模块（symphonia isomp4
+  demux + openh264 解码 + avcC→Annex-B 转换）+ `VideoTrackDecoder::open_media`
+  容器嗅探路由（player/registry/settle 探针/probe_dimensions 统一入口）+
+  `decode-h264` feature 门控 + fixture 全流单测（48 帧/PTS 单调/首帧均值 122 同窗
+  ±15/时长真值）+ mp4 settle e2e（feature-gated）+ canPlayType 扩 video/mp4 &
+  audio/mp4 |
 | D4 | **renderer 路径播放泵架构决策**（2026-09-02 深结构缺口发现，2026-09-02 巡检
   补入决策表）：browser tab_worker 主循环有 1ms 帧泵/音频泵（`is_any_playing` 门
   → `tick_all` + `audio_advance_all` + WebAudio `wa.advance`），renderer 路径桥面
@@ -307,7 +326,11 @@ clippy 零警告、每切片带单测 + e2e/fixture 资产化（AV1 全流单测
   主循环加 `is_any_playing` 门控 tick（镜像 tab_worker 已验证模式；单线程状态变更、
   无新并发域、diff 最小）。**否决独立泵线程**（待 cpal 音频主时钟落地后泵角色自然
   弱化，不值得引入第二个线程模型）。征询凭据：msg `om_x100b669923cd64a4c3e335615ed3d9f`；
-  批复来源：session 对话（GB-20260904 待决策征询跟进） |
+  批复来源：session 对话（GB-20260904 待决策征询跟进）。**2026-09-05 实施落地**：
+  runtime.run 主循环 16ms 节拍 is_any_playing 门控泵（tick_all + audio_advance_all +
+  webaudio advance + 帧更新 try_republish_cached 上屏）+ pump_epoch/pump_clock 入
+  RendererRuntime + SetVideoPlayers 扩 pump_clock（桥 play 锚与泵 tick 同源——
+  「登记但不推进」缺口收口） |
 
 ## 下一步计划
 
@@ -346,7 +369,7 @@ clippy 零警告、每切片带单测 + e2e/fixture 资产化（AV1 全流单测
 | M0 — 解码器选型 RFC（门控） | ✅ 完成并获批（2026-09-01，路线 C） |
 | M1 — 首个视频帧上屏 | ✅ 完成（2026-09-01：M1a 解码管线 + M1b 帧上屏通路 + e2e 常驻） |
 | M2 — 连续播放 + 语义驱动 | 🔄 M2a + M2b + M2c + 切片 C/D/E/F 收口（播放/真值/桥/帧泵/seek/变速 + 音频面生产链路/增益/导航释放/renderer 对齐 + 色彩面全对齐 + A/V 同步 audio clock 主时钟 + A/V pair ended 面回归守卫）；余音频设备面（media-audio M1 CpalSink，可选） |
-| M3 — 多格式 + 稳定 + 收尾 | 🔄 AV1 ✅（2026-09-02，D-RFC-2：解码/settle/播放/canPlayType 全链 + fixture e2e）；余 H.264 立项（D-RFC-3，RFC Proposed 待批复）+ WPT 可执行子集导入（外部门控：随 D-RFC-3 批复状态决策形态） |
+| M3 — 多格式 + 稳定 + 收尾 | 🔄 AV1 ✅（2026-09-02，D-RFC-2）+ **H.264 切片 1 ✅**（2026-09-05，D-RFC-3 获批：mp4 demux + openh264 解码 + open_media 路由 + fixture e2e + canPlayType 扩表）；余 H.264 切片 2（AAC 音频链 + mp4 seek 索引）/ 切片 3（WPT 真解码面评估）|
 
 ## 验证基线
 

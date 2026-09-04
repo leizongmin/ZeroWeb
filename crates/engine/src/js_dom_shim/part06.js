@@ -7741,10 +7741,133 @@
   // 注：createOscillator/createGain 的 AudioContext.prototype 赋值在本块**之后**
   //（7214 行附近）——此处仅引用函数对象会在赋值前拿到 undefined，工厂共享段
   // 随 createGain 定义点之后补接（见下方 _zwWAShareFactories）。
-  // 离线渲染不做（RFC §0）——startRendering 恒 rejected（spec promise 面保留）。
+  // media-audio D3（2026-09-05 获批，窄授权——仅 offline 渲染路径；RFC §0 的实时
+  // 设备输出量化面维持排除）：startRendering 最小面——JS 侧波形合成（振荡器四型
+  // 与 zero-media OscillatorState 同表），渲染长度采样离线合成为 AudioBuffer。
+  // 图形态：线性链解析（osc → [gain]* → destination，沿 _zwConnected 逐级累计
+  // 增益——WPT gain.html 的 osc→gain→destination 主面；并行支路按增益乘积求和）。
+  // spec：startRendering 返回 promise，成功 resolve AudioBuffer（numberOfChannels
+  // 通道 × length 采样），state → 'closed'。
+  // https://webaudio.github.io/web-audio-api/#dom-offlineaudiocontext-startrendering
   OfflineAudioContext.prototype.startRendering = function () {
-    return Promise.reject(new (globalThis.DOMException || Error)(
-      'OfflineAudioContext rendering is not supported in this build.', 'NotSupportedError'));
+    var self = this;
+    if (self._zwRendering) {
+      return Promise.reject(new (globalThis.DOMException || Error)(
+        "Failed to execute 'startRendering' on 'OfflineAudioContext': rendering is already in progress.", 'InvalidStateError'));
+    }
+    self._zwRendering = true;
+    var ch = self._zwChannels;
+    var len = self._zwLength;
+    var rate = self._zwSampleRate;
+    // 振荡器合成（四型波形——与 zero-media OscillatorState 同表；相位连续）。
+    var _oscSample = function (oscType, freq, phase) {
+      var v = 0.0;
+      if (oscType === 'square') {
+        v = Math.sin(phase) >= 0.0 ? 1.0 : -1.0;
+      } else if (oscType === 'sawtooth') {
+        v = 2.0 * (phase / (2.0 * Math.PI)) - 1.0;
+      } else if (oscType === 'triangle') {
+        var t = phase / Math.PI;
+        v = (t <= 1.0) ? 2.0 * t - 1.0 : 3.0 - 2.0 * t;
+      } else {
+        v = Math.sin(phase);
+      }
+      return v;
+    };
+    var nodes = self._zwOfflineNodes || [];
+    var mixed = new Float64Array(len);
+    for (var ni = 0; ni < nodes.length; ni++) {
+      var node = nodes[ni];
+      // startSec=0 是合法值（start() 缺省 when=0）——只跳过「从未 start」
+      //（null/undefined），不以 falsy 判定（0 会被误吞——osc-basic-waveform
+      // 全部用例 start() 无参即 0 时刻）。
+      if (node._zwKind !== 'oscillator') continue;
+      if (node._zwStartedAtSec == null) continue;
+      // 图增益链：沿 connect 链累计 gain 节点值（链外/未连 destination 的源
+      // ——spec：不与 destination 连通的支路不发声；最小面按「连到 destination
+      // 或无连接（隐式直连，ctor-only 单振荡器形态）」双态近似）。
+      var chainGain = 1.0;
+      var target = node._zwConnected;
+      var reachedDest = false;
+      var hops = 0;
+      while (target && hops < 8) {
+        if (target._zwKind === 'gain') {
+          chainGain *= (target.gain && typeof target.gain.value === 'number') ? target.gain.value : 1.0;
+        } else if (target._zwKind === 'destination') {
+          reachedDest = true;
+          break;
+        }
+        target = target._zwConnected;
+        hops++;
+      }
+      // 未连通任何节点的振荡器：spec 图语义「孤立源不发声」——但单振荡器
+      // 无 connect 的最小用例（osc-basic 前置形态）按隐式直连近似。有连接但
+      // 未达 destination（悬空支路）→ 不发声。
+      if (node._zwConnected && !reachedDest) continue;
+      var oscType = node.type || 'sine';
+      var freq = (node.frequency && typeof node.frequency.value === 'number') ? node.frequency.value : 440;
+      var oscGain = (node.gain && typeof node.gain.value === 'number') ? node.gain.value : 1.0;
+      var startSec = node._zwStartedAtSec;
+      var stopSec = node._zwStoppedAtSec;
+      var totalGain = oscGain * chainGain;
+      if (totalGain === 0) continue;
+      var startFrame = Math.floor(startSec * rate);
+      var stopFrame = (stopSec != null) ? Math.floor(stopSec * rate) : len;
+      // custom periodic wave：spec OscillatorNode periodicWave 合成 ——
+      // x(t) = Σ_{n=1}^{N-1} (a[n]·cos(2πnt) + b[n]·sin(2πnt))（real/imag 表；
+      // disableNormalization=false 时按 spec 归一化系数缩放）。
+      var wave = node._zwCustomWave;
+      if (oscType === 'custom' && wave && wave._zwReal) {
+        var real = wave._zwReal, imag = wave._zwImag;
+        var n1 = Math.max(real.length, imag.length);
+        // spec 归一化（§PeriodicWave）：
+        // denominator = max(0.6324555320336759·sqrt(Σ_{n=1}^{N-1}(real[n]²+imag[n]²)),
+        //                   0.6324555320336759)；normalization = 1/denominator。
+        var sigma = 0;
+        for (var nn = 1; nn < n1; nn++) {
+          var ar = (nn < real.length) ? real[nn] : 0;
+          var bi = (nn < imag.length) ? imag[nn] : 0;
+          sigma += ar * ar + bi * bi;
+        }
+        var norm = 1.0;
+        if (!wave._zwDisableNormalization) {
+          var denom = Math.max(0.6324555320336759 * Math.sqrt(sigma), 0.6324555320336759);
+          norm = 1.0 / denom;
+        }
+        for (var s2 = Math.max(0, startFrame); s2 < Math.min(len, stopFrame); s2++) {
+          var t2 = s2 / rate;
+          var acc = 0.0;
+          for (var nn2 = 1; nn2 < n1; nn2++) {
+            var ar2 = (nn2 < real.length) ? real[nn2] : 0;
+            var bi2 = (nn2 < imag.length) ? imag[nn2] : 0;
+            var om = 2.0 * Math.PI * freq * nn2 * t2;
+            acc += ar2 * Math.cos(om) + bi2 * Math.sin(om);
+          }
+          mixed[s2] += acc * totalGain * norm;
+        }
+        continue;
+      }
+      var phase = 0.0;
+      var inc = 2.0 * Math.PI * freq / rate;
+      for (var s = Math.max(0, startFrame); s < Math.min(len, stopFrame); s++) {
+        // 相位随采样推进（首样相位 0——与 spec 波形函数 sin(2πft) 对齐）。
+        mixed[s] += _oscSample(oscType, freq, phase) * totalGain;
+        phase += inc;
+      }
+    }
+    // destination 增益（offline destination 无独立 gain param——恒 1.0）。
+    // 注：offline 渲染**不削幅**（spec：AudioBuffer 采样可超 ±1——实时链的
+    // destination 软削幅不适用；WPT osc-basic-waveform 的 custom wave 幅值 √2 断言面）。
+    var buffer = new globalThis.AudioBuffer({ numberOfChannels: ch, length: len, sampleRate: rate });
+    for (var ci = 0; ci < ch; ci++) {
+      var chan = buffer.getChannelData(ci);
+      for (var sj = 0; sj < len; sj++) chan[sj] = mixed[sj];
+    }
+    self._zwState = 'closed';
+    self._zwRendering = false;
+    // spec：渲染为异步任务——resolve 经 microtask（当前 turn 后；WPT 断言在
+    // .then 内读 buffer，同步 compute + microtask resolve 时序等价）。
+    return Promise.resolve(buffer);
   };
   Object.defineProperty(AudioContext.prototype, 'state', {
     get: function () { return this._zwState; },
@@ -7776,6 +7899,13 @@
     var _gain = 1.0;
     var _started = false;
     var _stopped = false;
+    // media-audio D3：offline 渲染面——offline ctx 的振荡器节点登记（startRendering
+    // 按 _zwOfflineNodes 枚举合成；started/stopped 时刻经节点印记回读）。
+    if (self._zwLength != null) {
+      (self._zwOfflineNodes = self._zwOfflineNodes || []).push(node);
+      Object.defineProperty(node, '_zwStartedAtSec', { value: null, writable: true, configurable: true });
+      Object.defineProperty(node, '_zwStoppedAtSec', { value: null, writable: true, configurable: true });
+    }
     // 宿主桥可用时立即建 Rust 侧源（freq/type 变更经桥推）。
     if (self._zwBridge) {
       try { node._zwHandle = Number(globalThis.__zw_wa_create_osc(_type, String(_freq))) || 0; } catch (_eWao) {}
@@ -7819,6 +7949,9 @@
     node.start = function (when) {
       if (_started) return;
       _started = true;
+      // media-audio D3：offline 渲染读取 start 时刻（秒；缺省 0——spec start(when)
+      // when 缺省 0）。
+      try { node._zwStartedAtSec = Math.max(0, Number(when) || 0); } catch (_eWs) {}
       if (self._zwBridge && typeof globalThis.__zw_wa_start === 'function') {
         try { globalThis.__zw_wa_start(String(node._zwHandle), String(Math.max(0, Number(when) || 0) * 1000)); } catch (_eWas) {}
       }
@@ -7826,6 +7959,8 @@
     node.stop = function (when) {
       if (!_started || _stopped) return;
       _stopped = true;
+      // media-audio D3：offline 渲染读取 stop 时刻（秒）。
+      try { node._zwStoppedAtSec = Math.max(0, Number(when) || 0); } catch (_eWx) {}
       if (self._zwBridge && typeof globalThis.__zw_wa_stop === 'function') {
         try { globalThis.__zw_wa_stop(String(node._zwHandle), String(Math.max(0, Number(when) || 0) * 1000)); } catch (_eWax) {}
       }
@@ -7837,6 +7972,10 @@
   // per-osc gain 在 Rust 侧由 WebAudioContext 源增益承接，桥 set-gain 归设备切片）。
   AudioContext.prototype.createGain = function () {
     var node = _zwWANode('gain', this._zwCtxId, 0);
+    // media-audio D3：offline ctx 的 gain 节点登记（startRendering 沿链读 gain.value）。
+    if (this._zwLength != null) {
+      (this._zwOfflineNodes = this._zwOfflineNodes || []).push(node);
+    }
     var _gainVal = 1.0;
     var _gainParam = globalThis._zwMakeAudioParam(1.0, this._zwCtxId);
     Object.defineProperty(_gainParam, 'value', {
@@ -8105,7 +8244,11 @@
         throw new TypeError("Failed to construct 'OscillatorNode': Failed to read the 'periodicWave' property from 'OscillatorOptions': The provided value is not of type 'PeriodicWave'.");
       }
       if (options.periodicWave) {
-        node.type = 'custom';
+        // media-audio D3：offline 渲染读取 custom 波形表（real/imag + 归一化面）。
+        node._zwCustomWave = options.periodicWave;
+        // type setter 只收四型枚举——custom 以 own data property 覆盖访问器
+        //（configurable 已 true；渲染面读 node.type === 'custom' 分派合成）。
+        Object.defineProperty(node, 'type', { value: 'custom', writable: true, configurable: true });
       } else if (options.type != null) {
         node.type = options.type;
       }

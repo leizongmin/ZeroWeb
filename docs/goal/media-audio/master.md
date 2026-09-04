@@ -2,7 +2,17 @@
 
 **入口文档**: [../media-audio.md](../media-audio.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-05（**D3 获批落地——GB-20260904 待决策征询跟进**：
+**最后更新**: 2026-09-05（**D3 实施落地——startRendering 最小面（窄授权内）**：
+shim 侧 JS 波形合成离线渲染（四型振荡器相位连续 + custom periodic wave spec 归一化
+公式 + 线性 gain 链解析 + 无削幅——spec AudioBuffer 可超 ±1）+ 节点工厂 offline
+登记（started/stopped 时刻印记）。**osc-basic-waveform 解除排除导入（33 subtest
+全绿——sine ±100/±2/1 Hz + custom 100/1 Hz 对 spec 数学期望 SNR≥110dB）**，
+webaudio 累计 **40 用例 907P/0F = 100%**。仍排除：gain.html（AudioBufferSourceNode
+数据播放 + splitter/merger 路由——第二片图调度面）/ audioparam-method-chaining、
+-nominal-range（Param 调度自动化）/ ctor-audiobuffer、periodicWave、ctor-iirfilter
+（渲染对比/谱断言/IIR DSP 随第二片复评）。evidence：
+`evidence/2026-09-05-offline-render-d3.json`。）
+此前 2026-09-05：**D3 获批落地——GB-20260904 待决策征询跟进**：
 OfflineAudioContext.startRendering 扩界**获批（窄授权）**——仅 offline 渲染路径
 + shim↔宿主桥扩展；RFC §0 实时设备输出量化面维持排除。征询凭据 msg
 `om_x100b669923cd64a4c3e335615ed3d9f`。无代码变更。）
@@ -263,7 +273,9 @@ DONE 阻塞**；Mixer/重采样接线随设备切片可选推进）。
 
 - 测试基线：`make test` 全绿 18866（2026-09-04 组合树实测）；clippy 零警告
   （default 与 `--features audio-cpal` 双配置）
-- WPT webaudio：**39 用例 874P/0F = 100%**（2026-09-04 十八批累计——connect 返回值 +
+- WPT webaudio：**40 用例 907P/0F = 100%**（2026-09-05 十九批累计——第八批~第十八批
+  39 用例 874P + **第十九批 osc-basic-waveform（D3 offline 渲染最小面）33 subtest**；
+  原 39 用例 874P 面——connect 返回值 +
   destination + ctor-oscillator 62 + ctor-gain/stereopanner/delay/biquadfilter/
   analyser + createPeriodicWave 异常面 + audioparam-exceptional-values 66 +
   audiobuffer 面 + 第七批 ctor-channelmerger/channelsplitter/constantsource +
@@ -283,7 +295,8 @@ DONE 阻塞**；Mixer/重采样接线随设备切片可选推进）。
   createElementNS iframe 双 gate 修复）——the-audio-api 全接口目录含
   MediaStream 邻域清点收束；
   the-audiocontext-interface + the-audio-api 各接口目录清点收束）；
-  evidence：`evidence/2026-09-02-webaudio-wpt-subset.json`（首批）、
+  evidence：`evidence/2026-09-05-offline-render-d3.json`（第十九批）、
+  `evidence/2026-09-02-webaudio-wpt-subset.json`（首批）、
   `evidence/2026-09-02-webaudio-ctor-oscillator.json`（第二批）、
   `evidence/2026-09-02-webaudio-ctor-family.json`（第四批）、
   `evidence/2026-09-02-webaudio-audiobuffer.json`（第五批）、

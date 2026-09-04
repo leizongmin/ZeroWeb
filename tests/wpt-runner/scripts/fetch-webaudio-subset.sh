@@ -125,11 +125,14 @@ WA_FILES=(
   # localName 回落）后解除排除；decodeAudioData destroyed reject 面（part06）+
   # IframeOfflineAudioContext 绑定构造器（part05）。
   "webaudio/the-audio-api/the-offlineaudiocontext-interface/offlineaudiocontext-detached-execution-context.html"
-  # 不导入：audioparam-method-chaining / audioparam-nominal-range（startRendering
-  # 渲染断言——RFC §0 不做清单）；ctor-audiobuffer（末 task multiple contexts 依赖
-  # startRendering——audit runner 整文件跑）；periodicWave.html（startRendering）；
-  # ctor-iirfilter（Functional task 依赖 startRendering 渲染对比——语义面
-  # AudioNodeOptions 已落 shim，随渲染切片复评）。
+  # ---- 第十九批（2026-09-05，media-audio D3 获批窄授权——offline 渲染路径）----
+  # startRendering 最小面落地（shim 侧 JS 波形合成：四型振荡器 + custom periodic
+  # wave spec 归一化 + 线性 gain 链解析）后解除排除导入。
+  "webaudio/the-audio-api/the-oscillatornode-interface/osc-basic-waveform.html"
+  # gain.html 仍不导入（AudioBufferSourceNode 数据播放 + splitter/merger 通道路由
+  # ——第二片图调度面）；audioparam-method-chaining / audioparam-nominal-range
+  #（Param 调度自动化面）；ctor-audiobuffer（multiple contexts 渲染对比）；
+  # ctor-iirfilter（IIR 滤波 DSP）；periodicWave.html（谱断言随归一化精化复评）。
 )
 
 # audit.js 框架（runner inline_extras 内联——用例以绝对路径引用）。

@@ -1857,12 +1857,16 @@ pub const WEBAUDIO_TEST_FILES: &[&str] = &[
     // 恒 'running' 近似与该异步状态机断言结构性互斥，bless stub 化后仍必 Fail；
     // R142 unsupported 白名单不含 bless，误入清单使 make testharness-webaudio
     // exit 1——第十五批勘误移除）。
-    // 不导入：ctor-audiobuffer.html（末 task「multiple contexts」依赖
-    // startRendering——audit runner 整文件跑，前段构造面无法单独导入）；
-    // audiobuffer-copy-channel（startRendering 后段同文件不可分割——数据面已落
-    // shim，随渲染切片复评）；periodicWave.html（startRendering）。
-    // 不导入：audioparam-method-chaining / audioparam-nominal-range（依赖
-    // startRendering 渲染断言——RFC §0 不做清单）。
+    // ---- 第十九批（2026-09-05，media-audio D3 获批窄授权——offline 渲染路径）：
+    // startRendering 最小面落地（shim 侧 JS 波形合成——四型振荡器 + custom
+    // periodic wave spec 归一化 + 线性 gain 链解析 + 软削幅）后解除排除导入。
+    "webaudio/the-audio-api/the-oscillatornode-interface/osc-basic-waveform.html",
+    // 不导入：ctor-audiobuffer.html（末 task「multiple contexts」渲染对比——
+    // 多 OfflineAudioContext 交叉渲染面随第二片复评）；audiobuffer-copy-channel
+    //（startRendering 后段同文件不可分割——数据面已落 shim，同片复评）；
+    // periodicWave.html（custom wave 谱断言——归一化系数精化后复评）。
+    // 不导入：audioparam-nominal-range（Param 调度自动化面——value 调度表随
+    // AudioParam 调度切片）。
     // baseLatency 档位值（playbackLatency×10 → 0.8 恒等断言——Linux Chromium 实测
     // 档），headless 无设备延迟模型不可复现；构造/enum/double/sampleRange 语义面
     // 已落 shim（AudioContextOptions + close/suspend/resume + baseLatency），随设备
