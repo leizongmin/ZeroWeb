@@ -4743,5 +4743,25 @@
         "message": null
       }
     ]
+  ],
+  [
+    "webaudio/the-audio-api/the-audioparam-interface/audioparam-method-chaining.html",
+    [
+      {
+        "name": "AudioParam: Each method returns the same object to allow chaining",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "AudioParam: Chaining with invalid operations does not apply later effects",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "AudioParam: Chaining of envelope methods schedules values as expected",
+        "status": "Pass",
+        "message": null
+      }
+    ]
   ]
 ]

@@ -1865,6 +1865,9 @@ pub const WEBAUDIO_TEST_FILES: &[&str] = &[
     // ---- 第二十批（D3 第三片——splitter/merger 通道路由图推进）：gain.html
     //（11 note 增益衰减渲染对比——通道 0/1 = gain 缩放、2/3 = 源直通，逐通道 SNR）。
     "webaudio/the-audio-api/the-gainnode-interface/gain.html",
+    // ---- 第二十一批（D3 第三片续——AudioParam automation timeline）：增益包络
+    // 调度事件表 + startRendering 逐采样求值（setValue/linear/exponential/target）。
+    "webaudio/the-audio-api/the-audioparam-interface/audioparam-method-chaining.html",
     // ---- 第二十批（同日，D3 第二片——AudioBufferSourceNode 数据播放 + 链式
     // gain 累计 + 直连 destination 双态 + offset/duration/loop 窗口）：
     // 不导入：gain.html（需 splitter/merger 通道路由图语义——merger 通道选择映射

@@ -7897,10 +7897,75 @@
           var up = evalNode(edge.src);
           if (!up) continue;
           if (node._zwKind === 'gain') {
-            var g = (node.gain && typeof node.gain.value === 'number') ? node.gain.value : 1.0;
-            for (var uc = 0; uc < up.length; uc++) {
-              if (!up[uc]) continue;
-              for (var s6 = 0; s6 < len; s6++) chans[0][s6] += up[uc][s6] * g;
+            var events = node.gain && node.gain._zwEvents;
+            if (events && events.length) {
+              // media-audio D3 第三片：automation timeline 求值（spec
+              // AudioParam——setValue/linearRamp/exponentialRamp/setTarget 逐型
+              // 公式；事件按时间排序后逐采样取值）。
+              var evs = events.slice().sort(function (a, b) { return a.time - b.time; });
+              for (var s10 = 0; s10 < len; s10++) {
+                var tSec = s10 / rate;
+                // 逐段求值：找到 tSec 所处的事件段（prev = 上一事件，next = 下一
+                // 事件——ramp 型事件在 [prev.time, ev.time] 区间内插值）。
+                var v = (node.gain && typeof node.gain.value === 'number') ? node.gain.value : 1.0;
+                var prevV = v, prevT = 0;
+                var applied = false;
+                for (var ee = 0; ee < evs.length; ee++) {
+                  var ev = evs[ee];
+                  if (ev.time <= tSec) {
+                    // 已到时的事件：set/linear/exponential 直接落位（ramp 终点）。
+                    v = ev.value;
+                    prevV = ev.value;
+                    prevT = ev.time;
+                    applied = true;
+                  } else {
+                    // 未来事件：ramp 型在本区间内插值。
+                    if (ev.type === 'linear') {
+                      var dt = ev.time - prevT;
+                      v = (dt > 0) ? prevV + (ev.value - prevV) * ((tSec - prevT) / dt) : prevV;
+                    } else if (ev.type === 'exponential') {
+                      if (prevV > 0 && ev.value > 0 && ev.time > prevT) {
+                        v = prevV * Math.pow(ev.value / prevV, (tSec - prevT) / (ev.time - prevT));
+                      }
+                    }
+                    applied = true;
+                    break;
+                  }
+                }
+                // setTarget 指数趋近（最后一段 target 事件后持续趋近）。
+                var lastTarget = null;
+                for (var ee2 = 0; ee2 < evs.length; ee2++) {
+                  if (evs[ee2].type === 'target' && evs[ee2].time <= tSec) lastTarget = evs[ee2];
+                }
+                if (lastTarget && tSec >= lastTarget.time) {
+                  var anchorV = (function () {
+                    var vv = (node.gain && typeof node.gain.value === 'number') ? node.gain.value : 1.0;
+                    for (var ee3 = 0; ee3 < evs.length; ee3++) {
+                      var e3 = evs[ee3];
+                      if (e3.time > lastTarget.time) break;
+                      if (e3.type !== 'target') vv = e3.value;
+                    }
+                    return vv;
+                  })();
+                  v = lastTarget.value + (anchorV - lastTarget.value) * Math.exp(-(tSec - lastTarget.time) / lastTarget.tc);
+                }
+                if (globalThis.__zwAP && s10 < 3) globalThis.__zwAP.push('s=' + s10 + ',v=' + v.toFixed(5));
+                void applied;
+                for (var uc = 0; uc < up.length; uc++) {
+                  if (up[uc]) chans[0][s10] += up[uc][s10] * v;
+                }
+                // spec：.value 反映 automation 当前值（流末采样后写回——WPT
+                // method-chaining 断言 amp2.gain.value === 0.5 面）。
+                if (s10 === len - 1 && node.gain) {
+                  try { node.gain.value = v; } catch (_eAv) {}
+                }
+              }
+            } else {
+              var g = (node.gain && typeof node.gain.value === 'number') ? node.gain.value : 1.0;
+              for (var uc = 0; uc < up.length; uc++) {
+                if (!up[uc]) continue;
+                for (var s6 = 0; s6 < len; s6++) chans[0][s6] += up[uc][s6] * g;
+              }
             }
           } else if (node._zwKind === 'channelsplitter') {
             // mono 上混：每输出通道 = 上游各通道均值（spec mono→N up-mix 面）。
@@ -8196,13 +8261,17 @@
       }
     };
     param.setValueAtTime = function (v, startTime) {
-      this.value = _zwFiniteOrThrow(v, 'setValueAtTime');
-      _zwTimeOrThrow(startTime, 'setValueAtTime');
+      var n = _zwFiniteOrThrow(v, 'setValueAtTime');
+      var t = _zwTimeOrThrow(startTime, 'setValueAtTime');
+      // media-audio D3 第三片：automation 事件表（startRendering 图推进按表求值
+      // ——spec AudioParam timeline）。
+      (param._zwEvents = param._zwEvents || []).push({ type: 'set', value: n, time: t });
       return this;
     };
     param.linearRampToValueAtTime = function (v, endTime) {
-      this.value = _zwFiniteOrThrow(v, 'linearRampToValueAtTime');
-      _zwTimeOrThrow(endTime, 'linearRampToValueAtTime');
+      var n = _zwFiniteOrThrow(v, 'linearRampToValueAtTime');
+      var t = _zwTimeOrThrow(endTime, 'linearRampToValueAtTime');
+      (param._zwEvents = param._zwEvents || []).push({ type: 'linear', value: n, time: t });
       return this;
     };
     param.exponentialRampToValueAtTime = function (v, endTime) {
@@ -8212,15 +8281,19 @@
       if (n === 0 || Math.abs(n) <= 1e-100) {
         throw new RangeError("Failed to execute 'exponentialRampToValueAtTime' on 'AudioParam': value must be non-zero and same sign.");
       }
-      _zwTimeOrThrow(endTime, 'exponentialRampToValueAtTime');
+      var t = _zwTimeOrThrow(endTime, 'exponentialRampToValueAtTime');
+      (param._zwEvents = param._zwEvents || []).push({ type: 'exponential', value: n, time: t });
       return this;
     };
     param.setTargetAtTime = function (v, startTime, timeConstant) {
-      this.value = _zwFiniteOrThrow(v, 'setTargetAtTime');
-      _zwTimeOrThrow(startTime, 'setTargetAtTime');
+      var n = _zwFiniteOrThrow(v, 'setTargetAtTime');
+      var t = _zwTimeOrThrow(startTime, 'setTargetAtTime');
       // spec：timeConstant 严格正——负值 → RangeError（WPT (1,1,-1) 断言面）。
       var tc = _zwFiniteOrThrow(timeConstant, 'setTargetAtTime');
       if (tc <= 0) throw new RangeError("Failed to execute 'setTargetAtTime' on 'AudioParam': timeConstant must be strictly positive.");
+      // 即时值面保留（audioparam 既有断言面）+ automation 事件表（第三片）。
+      this.value = n;
+      (param._zwEvents = param._zwEvents || []).push({ type: 'target', value: n, time: t, tc: tc });
       return this;
     };
     param.setValueCurveAtTime = function (curve, startTime, duration) {

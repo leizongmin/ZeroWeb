@@ -132,9 +132,13 @@ WA_FILES=(
   # ---- 第二十批（D3 第三片——splitter/merger 通道路由图推进）：gain.html
   #（11 note 增益衰减渲染对比——通道 0/1 = gain 缩放、2/3 = 源直通，逐通道 SNR）。
   "webaudio/the-audio-api/the-gainnode-interface/gain.html"
-  # 仍不导入：audioparam-method-chaining / audioparam-nominal-range（Param 调度
-  # 自动化面）；ctor-audiobuffer（multiple contexts 渲染对比）；ctor-iirfilter
-  #（IIR 滤波 DSP）；periodicWave.html（谱断言随归一化精化复评）。
+  # ---- 第二十一批（D3 第三片续——AudioParam automation timeline）：增益包络
+  # 调度（setValueAtTime/linearRamp/exponentialRamp/setTargetAtTime 事件表 +
+  # startRendering 逐采样求值）。
+  "webaudio/the-audio-api/the-audioparam-interface/audioparam-method-chaining.html"
+  # 仍不导入：audioparam-nominal-range（调度范围面）；ctor-audiobuffer（multiple
+  # contexts 渲染对比）；ctor-iirfilter（IIR 滤波 DSP）；periodicWave.html（谱
+  # 断言随归一化精化复评）。
 )
 
 # audit.js 框架（runner inline_extras 内联——用例以绝对路径引用）。
