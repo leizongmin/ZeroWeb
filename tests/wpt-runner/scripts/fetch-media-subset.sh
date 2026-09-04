@@ -72,6 +72,14 @@ fetch_raw "common/media.js"
 # the-audio-element 反射面（M3 扩批 III：Audio 构造器 spec 语义——preload=auto +
 # 无 new TypeError；兄弟目录，路径前缀同级）。
 fetch_raw "html/semantics/embedded-content/the-audio-element/audio_constructor.html"
+# M3 扩批 XXXVI：the-audio-element 目录清点——audio-loading-eager 导入（loading=eager
+# 立即加载面，与 XXXV video-loading-eager 同构）。余件逐件定性：loading-lazy-* 与
+# load/autoplay/poster(preload)-deferred 系维持排除（lazy 断言「视口外不加载」与
+# eager-by-default 实现互斥——lazy-loading 视口交叉观测深结构项）；audio_001/002 +
+# audio_content-ref 为 reftest 渠道（audio 元素内容不呈现面，testharness-media 不
+# 适用）；audio-*-inactive-document-crash（iframe contentDocument cloneNode 深结构）
+# / audio-with-replaced-after-pseudo-crash（::after replaced content 渲染域）不导入。
+fetch_raw "html/semantics/embedded-content/the-audio-element/audio-loading-eager.html"
 # the-video-element 反射面（M3 扩批 IV：属性不凭空出现——UA 面不加 tabindex）。
 fetch_raw "html/semantics/embedded-content/the-video-element/video-tabindex.html"
 # M3 扩批 XXXV：loading=eager 立即加载面（loadeddata 到达——headless settle 无视口
@@ -443,6 +451,9 @@ MEDIA_FILES=(
   # 到达断言面；trickle(d2) pipe 参数 runner 无服务端 pipes，源字节直读即时 settle
   # = eager 语义即本实现形态）。
   "media/A4.webm"
+  # M3 扩批 XXXVI：audio-loading-eager 媒体源（同 XXXV 面——audio eager 立即加载
+  # loadeddata 到达）。
+  "media/sine440.mp3"
 )
 for relative in "${MEDIA_FILES[@]}"; do
   fetch_raw "${relative}"

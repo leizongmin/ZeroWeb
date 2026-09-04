@@ -1415,6 +1415,9 @@ pub const MEDIA_TEST_FILES: &[&str] = &[
     // M3 扩批 XXXV：loading=eager 立即加载面（loadeddata 到达——headless settle
     // 无视口 gate；loading IDL 反射面 `video.loading = 'eager'` setter 不抛即用）。
     "html/semantics/embedded-content/the-video-element/video-loading-eager.html",
+    // M3 扩批 XXXVI：the-audio-element 目录清点——audio-loading-eager 导入（同
+    // XXXV 面，audio 形态；lazy/deferred 系与 eager-by-default 互斥维持排除）。
+    "html/semantics/embedded-content/the-audio-element/audio-loading-eager.html",
     "html/semantics/embedded-content/media-elements/interfaces/HTMLElement/HTMLTrackElement/default.html",
     "html/semantics/embedded-content/media-elements/interfaces/HTMLElement/HTMLTrackElement/kind.html",
     "html/semantics/embedded-content/media-elements/interfaces/HTMLElement/HTMLTrackElement/label.html",

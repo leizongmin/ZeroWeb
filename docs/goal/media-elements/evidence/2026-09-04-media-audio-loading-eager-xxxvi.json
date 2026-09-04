@@ -1,0 +1,27 @@
+{
+ "batch": "media-elements M3 扩批 XXXVI",
+ "date": "2026-09-04",
+ "topic": "the-audio-element 目录清点——audio-loading-eager 导入（loading=eager 立即加载面，audio 形态）+ 余件逐件定性",
+ "imported": [
+  "html/semantics/embedded-content/the-audio-element/audio-loading-eager.html"
+ ],
+ "asset": "media/sine440.mp3（80KB，上游 pinned rev 原件）",
+ "triage": {
+  "audio_constructor": "已导入（扩批 III）——本轮核对无新面",
+  "audio-loading-eager": "导入——headless settle 无视口 gate，加载即数据可用（loading='eager' 语义即本实现形态；audio.loading IDL 反射面 R115 _REFLECTED_STRING_FLAT 已含 loading）；与 XXXV video-loading-eager 同构",
+  "audio-loading-lazy-*（8 件：autoplay-when-visible / disconnected / in-scroller / in-viewport / not-rendered / source-deferred / to-eager / window-onload）+ audio-loading-autoplay-deferred / -load-deferred / -load-preload-auto-deferred / -load-preload-metadata-deferred": "维持排除——lazy 系断言「视口外不加载（readyState 恒 HAVE_NOTHING）/ 视口交叉后加载」与 eager-by-default 实现互斥；lazy-loading 视口交叉观测深结构项（同 XXXV video-loading-lazy-* 定性）",
+  "audio_001.htm / audio_002.htm + audio_content-ref.htm": "reftest 渠道（MS 面「audio 元素内容不呈现」——<link rel=match>；testharness-media 通道不适用，reftest-upstream 套件按 manifest/skip-list 全局治理）",
+  "audio-appendChild-to-inactive-document-crash / audio-play-in-inactive-document-crash": "iframe contentDocument.cloneNode() inactive document 导入深结构（video-import-to-inactive-document-crash 同域定性）",
+  "audio-with-replaced-after-pseudo-crash": "::after replaced content 渲染域（waitForAtLeastOneFrame 渲染节拍依赖）——不导入"
+ },
+ "totals": {
+  "pass": 601,
+  "precondition_failed": 24,
+  "pass_rate": "601/625 = 96.16%（+1 净涨零回归）"
+ },
+ "gates": {
+  "make_test": "see master.md 本批记录",
+  "clippy": "workspace -D warnings clean"
+ },
+ "wpt_rev": "315976933870b34d6ea30e3f6643403edae678ba"
+}

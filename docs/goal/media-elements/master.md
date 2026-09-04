@@ -2,7 +2,18 @@
 
 **入口文档**: [../media-elements.md](../media-elements.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-04（**M3 扩批 XXXV 落地**——the-video-element 目录清点：
+**最后更新**: 2026-09-04（**M3 扩批 XXXVI 落地**——the-audio-element 目录清点：
+audio-loading-eager 导入（601P/0F/24PF = 96.16%，+1 净涨零回归）——loading=eager
+立即加载面 audio 形态（与 XXXV video-loading-eager 同构；audio.loading IDL 反射面
+R115 _REFLECTED_STRING_FLAT 已含 loading；media/sine440.mp3 资产入档）。
+**余件逐件定性**：audio_constructor 已导入（扩批 III）；audio-loading-lazy-* 8 件
+与 autoplay/load/preload-deferred 系 4 件维持排除（lazy 断言「视口外不加载」与
+eager-by-default 实现互斥——同 XXXV 定性）；audio_001/002 + audio_content-ref 为
+reftest 渠道（MS 面「audio 元素内容不呈现」，testharness-media 通道不适用）；
+audio-*-inactive-document-crash 2 件（iframe contentDocument.cloneNode 深结构）/
+audio-with-replaced-after-pseudo-crash（::after replaced content 渲染域）不导入
+——**the-audio-element 目录清点收束**。evidence：
+`evidence/2026-09-04-media-audio-loading-eager-xxxvi.json`。此前 2026-09-04：**M3 扩批 XXXV 落地**——the-video-element 目录清点：
 video-loading-eager 导入（600P/0F/24PF = 96.15%，+1 净涨零回归）——loading=eager
 立即加载面（loadeddata 到达；headless settle 无视口 gate，eager 语义即本实现形态；
 video.loading IDL setter 反射 + media/A4.webm 资产入档）。**余件逐件定性**：
@@ -733,7 +744,7 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
 
 | # | 缺口 | 状态 | 失败聚类 |
 |---|------|------|----------|
-| M1g | WPT media-elements 用例覆盖 | ✅ 168 用例已导入（136 + 扩批 XVI~XXX：播放推进族 6 件 + track-change-event + track-active-cues + played-loop + audio_loop_seek_to_eos + loop-from-ended.tentative + seeking/ 三件 + volume_nonfinite + media_fragment_seek + autoplay-with-broken-track + currentTime-move-within-document + track-mode-triggers-loading + track-remove-quickly + track-remove-by-setting-innerHTML + ready-states/autoplay + WebVTT 解析面 14 件 + mode/cuechange 播放推进面 3 件 + XXXI 三件 + XXXII 七件 + XXXIII 一件），**96.14%**（598/622） | — |
+| M1g | WPT media-elements 用例覆盖 | ✅ 169 用例已导入（136 + 扩批 XVI~XXX：播放推进族 6 件 + track-change-event + track-active-cues + played-loop + audio_loop_seek_to_eos + loop-from-ended.tentative + seeking/ 三件 + volume_nonfinite + media_fragment_seek + autoplay-with-broken-track + currentTime-move-within-document + track-mode-triggers-loading + track-remove-quickly + track-remove-by-setting-innerHTML + ready-states/autoplay + WebVTT 解析面 14 件 + mode/cuechange 播放推进面 3 件 + XXXI 三件 + XXXII 七件 + XXXIII 一件 + XXXIV play-in-detached-document + XXXV video-loading-eager + XXXVI audio-loading-eager），**96.16%**（601/625） | — |
 | M2g | load 算法 + 状态机（事件序列派发） | ✅ M2 落地（13T→**0T**） | F4 闭合 |
 | M3g | 事件序列 headless 近似驱动 | ✅（同 M2g；source-child 触发已落地） | F4 闭合 |
 | M4g-a | 媒体元数据 IDL 反射（初值面） | ✅ 切片 3 落地 | F2 闭合（-9 Fail） |
@@ -772,7 +783,7 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
    （~~video-loading-* preload 语义族~~ ✅ 扩批 XXXV 清点——video-loading-eager
    导入，lazy/preload-deferred 系与 eager-by-default 实现互斥维持排除，
    **the-video-element 目录清点收束**）。**headless 可导入面已在 95.9% 重饱和
-   （M3 扩批 XXXV 后第十七次修正：96.15%）**——余下增量依赖兄弟目标解锁（真播放钟 →
+   （M3 扩批 XXXVI 后第十八次修正：96.16%）**——余下增量依赖兄弟目标解锁（真播放钟 →
    time-marches-on 余面）+ 深结构项（~~TextTrackList change 事件广播反向链~~ ✅
    扩批 XXI 兑现、cue 标记树解析——归渲染域远期）。
    ~~ready-states/autoplay.html~~ ✅ 扩批 XXIX 兑现（autoplaying flag 交互 +
@@ -780,6 +791,9 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
    维持排除（autoplay-with-slow-text-tracks——trickle pipe + readyState 与
    track 加载耦合面；autoplay-hidden.optional——hidden 节能语义 optional）；
    audio/video_volume_check 维持排除（越界断言 e.code==1 为旧 spec 语义）。
+   ~~the-audio-element 余 16 件~~ ✅ 扩批 XXXVI 清点——audio-loading-eager 导入
+   （同 XXXV 面 audio 形态），lazy/deferred 系与 eager-by-default 互斥维持排除、
+   audio_001/002 reftest 渠道、crash/渲染域不导入，**目录清点收束**。
    video_size_preserved_after_ended 维持排除（2026-09-04 实证：静态 <source>
    形态 loadedmetadata 与 promise_test EventWatcher 时序 headless 双通道
    settle 下不稳定）——但其调试过程产出三项基础设施资产（静态 <source>
@@ -851,6 +865,11 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
   **539/563 = 95.7%**（+3 净涨零回归；Fail 0 / Timeout 0 / PF 24）
   → 扩批 XXIII（2026-09-03，media load invoke 重置面——track-active-cues 导入）
   **540/564 = 95.7%**（+1 净涨零回归；Fail 0 / Timeout 0 / PF 24）
+  → 扩批 XXIV~XXXV（2026-09-03 ~ 2026-09-04，loop/seekable/fragment/headless 时钟/
+  detached 方法面/ready-states/WebVTT/track 清点/video 清点）**543→600P**（详见
+  头部记录与 evidence 序列）
+  → 扩批 XXXVI（2026-09-04，the-audio-element 目录清点——audio-loading-eager 导入）
+  **601/625 = 96.16%**（+1 净涨零回归；Fail 0 / Timeout 0 / PF 24）
 - 入口：`make testharness-media`（FILTER 透传，`--json` 捕获 evidence）
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过
 - evidence：`evidence/2026-08-31-media-baseline.md`（+ 同名 .json 机读版）、
@@ -865,4 +884,8 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
   `evidence/2026-09-03-media-deferred-seek-r3937.md`（+同名 .json）、
   `evidence/2026-09-03-media-change-event-r39xx.md`（+同名 .json）、
   `evidence/2026-09-03-media-b-group-revisit-r39xx.md`（+同名 .json）、
-  `evidence/2026-09-03-media-load-invoke-reset-r39xx.md`（+同名 .json）
+  `evidence/2026-09-03-media-load-invoke-reset-r39xx.md`（+同名 .json）、
+  `evidence/2026-09-04-media-598p-snapshot.json`、
+  `evidence/2026-09-04-media-play-in-detached-xxxiv.json`、
+  `evidence/2026-09-04-media-video-loading-eager-xxxv.json`、
+  `evidence/2026-09-04-media-audio-loading-eager-xxxvi.json`
