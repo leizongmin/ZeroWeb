@@ -124,6 +124,38 @@ pub(crate) fn box_content_max_width(
                 // shrink。仅 display:Inline：inline-block/flex/grid 有自身盒模型，outer_w 真实有效
                 //（height-computed-001 等），不走此路。default-off 待全量 A/B 验证 net≥0。
                 inline_sum += box_content_max_width(child, doc, styles).max(0.0);
+            } else if std::env::var("ZW_IB_DESTRETCH").as_deref() == Ok("1")
+                && child.node_id.and_then(|cid| styles.get(&cid)).is_some_and(|s| {
+                    matches!(
+                        s.display,
+                        DisplayValue::InlineBlock
+                            | DisplayValue::InlineFlex
+                            | DisplayValue::InlineGrid
+                            | DisplayValue::InlineTable
+                    )
+                })
+                && !child.node_id.and_then(|cid| doc.get(cid)).is_some_and(|n| {
+                    matches!(
+                        &n.kind,
+                        zero_dom::NodeKind::Element(e)
+                            if matches!(
+                                e.local_name(),
+                                "img" | "video" | "audio" | "canvas" | "iframe" | "embed"
+                                    | "object" | "svg"
+                            )
+                    )
+                })
+            {
+                // R4032（CSS Sizing §5.1 max-content）：inline-block 族子元素在 auto 容器
+                // 中被 taffy 同步拉伸（容器拉伸 → 子填满容器），outer_w 是伪影而非真实
+                // max-content——按 DOM 递归测量（与 R1479 对 Inline 子同语义，扩展到
+                // inline-block 族）。R1298 的「outer_w 真实有效」假设仅在容器不被拉伸时
+                // 成立；shrink-to-fit 语境（本函数的所有调用方）恰恰是拉伸发生的地方
+                //（padding-right-applies-to-012：inline-block 嵌套被推到容器右缘实证）。
+                // inline-block 族有真盒模型 → 递归返回其 border-box max-content，直接
+                // 可比 outer_w。
+                inline_sum +=
+                    (box_content_max_width(child, doc, styles) + child.margin_left + child.margin_right).max(0.0);
             } else {
                 inline_sum += outer_w.max(0.0);
             }
