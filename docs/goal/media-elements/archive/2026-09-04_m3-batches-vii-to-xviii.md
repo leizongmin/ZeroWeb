@@ -615,3 +615,21 @@ track-active-cues 解除排除）**：
   _tParse 引用时序勘误——跳过循环移至 _tParse 定义后）。
 - 6 件 12 子测全绿（628P/0F/24PF = 96.32%，+12 净涨零回归）；make test 66 套件
   全绿、clippy/fmt 干净。evidence：evidence/2026-09-04-webvtt-cue-text-parser-xlii.json。
+
+## 扩批 XLIII — pause-on-removal related 判定精化（2026-09-04）
+
+- 背景：XLI 轮试导回退件 pause-move-to-other-document 的可回访断言面闭环。
+- **根因定位**（探针实证）：跨 iframe 移动（`iframe.contentDocument.body.appendChild(v)`）
+  走 part03 R112 通用树分支（sel-only 子；handle 子另有 R369 串行合并分支）——该分支
+  不清 `_zwRemovedSels` 移除标记：removeChild（隐式 adopt）时置位的 'video' 标记残留
+  → removal-pause 两段 defer 的 tick1 `_zwIsRemovedNode` 判「仍 removed」→ playing 置
+  false + pause 事件 → 「paused after stable state」假真（上游期望 false）。
+- **修复**：通用树分支（`ensureTree(); r=_tree.appendChild(c)` 后）对 sel-only 子补
+  `_zwUnmarkRemoved(c.__zwSelector)`——元素获新父（含跨文档 move）即脱离 removed 态
+  （spec「pause on removal」限定「removed from a document」，move 到 related 文档不暂停）。
+  handle 子路径（part04 appendChild 4149 unmark）与 removeChild 双分支的 pause 语义
+  零变化。
+- pause-move-to-other-document 解除排除导入（629P/0F/24PF = 96.32%，+1 净涨零回归）；
+  media 全量 629P 零回归（iframe body appendChild 为 MutationObserver/R369 既有件
+  共享面——无回归）；make test 66 套件全绿、clippy/fmt 干净。evidence：
+  evidence/2026-09-04-media-pause-move-related-xliii.json。

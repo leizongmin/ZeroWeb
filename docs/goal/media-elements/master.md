@@ -2,7 +2,18 @@
 
 **入口文档**: [../media-elements.md](../media-elements.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-04（**M3 扩批 XLII 落地**——WebVTT cue text parser 切片：
+**最后更新**: 2026-09-04（**M3 扩批 XLIII 落地**——pause-on-removal related 判定精化：
+**pause-move-to-other-document 解除排除导入**（629P/0F/24PF = 96.32%，+1 净涨零回归；
+XLI 试导回退件首个闭环）——**根因定位**：跨 iframe 移动（`iframe.contentDocument.body
+.appendChild(v)`）走 part03 R112 通用树分支（sel-only 子，非 handle 子的 R369 串行合并
+分支），该分支此前**不清 `_zwRemovedSels` 移除标记**——removeChild 时置位的标记残留使
+removal-pause 两段 defer 的 tick1 `_zwIsRemovedNode` 误判「仍 removed」→ 播放被错误
+暂停（paused after stable state 假真）。修复：通用树分支对 sel-only 子补 `_zwUnmarkRemoved`
+（元素获新父即脱离 removed 态——spec「pause only if the element is removed from a
+document」的 related 判定；探针实证标记清空 + parentNode 接上 BODY）。handle 子路径
+（part04 4149 unmark）零变化。evidence：
+`evidence/2026-09-04-media-pause-move-related-xliii.json`。
+此前 2026-09-04：**M3 扩批 XLII 落地**——WebVTT cue text parser 切片：
 **getCueAsHTML 从「单 Text 节点」升级为 markup 树解析**（`_zwCueTextToFragment`，
 spec webvtt-cue-text-parsing-rules）：b/i/u/ruby/rt → 同名 HTML 元素（class 列表
 空格连接 → className）；c/v → span（仅 v 的 annotation → title）；无效起始标签
@@ -21,10 +32,8 @@ evidence：`evidence/2026-09-04-webvtt-cue-text-parser-xlii.json`。
 余件逐件比对 wpt.fyi edge run）：`playing-the-media-resource/playbackRate` 解除排除导入
 （616P/0F/24PF = 96.25%，+7 净涨零回归——文件早已 fetch 未导入的第 35 件漂移件；setter
 ratechange 派发面 M2 既有零改动 7 子测全绿）。**试导回退三件（定性升级）**：
-pause-move-to-other-document（上游 1/1 绿；本地「paused after stable state got true」
-——shim 融合视图 iframe contentDocument.body.appendChild 先触发 removal-pause 两段
-defer，spec related 文档判定含 iframe 文档——归「pause-on-removal related-document
-判定精化」切片，可回访断言面）；track-remove-insert-ready-state（上游 1/1 绿；本地
+pause-move-to-other-document（上游 1/1 绿；~~本地「paused after stable state got
+true」~~ ✅ XLIII 闭环——iframe body appendChild sel-only 子移除标记清除后解除排除导入）；track-remove-insert-ready-state（上游 1/1 绿；本地
 canplaythrough 时 track.readyState got 0——video 加载序列与 track settle 双通道时序
 未收敛，同 video_size_preserved_after_ended 族）；track-mode（上游 1/1 绿；本地
 Timeout——mode 切换 no-event 断言依赖 cuechange 计数 done 链）。
@@ -268,7 +277,7 @@ currentSrc 的 source-child 插入触发（mutation 面）。
 （**M3 扩批 event_* 族 + 第二批 + III~X（2026-09-01）/ XI~XV（2026-09-02）/
   XVI~XVIII（2026-09-03）过程记录**——每批 shim 面/runner 面明细与排除注记——
   已归档至 [archive/2026-09-04_m3-batches-vii-to-xviii.md](archive/2026-09-04_m3-batches-vii-to-xviii.md)，
-  证据 JSON 序列见验证基线；累计口径 603P/0F/24PF = 96.17%。第 XIX~XLII 批
+  证据 JSON 序列见验证基线；累计口径 603P/0F/24PF = 96.17%。第 XIX~XLIII 批
   明细见头链（最新态）。）
 
 **里程碑归档（2026-09-01）**：M1~M3 与六轮扩批的过程记录、排除用例决策清单已归档至
@@ -351,7 +360,7 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
    剩余（~~play-in-detached-document~~ ✅ 扩批 XXXIV 兑现——detached 文档媒体
    方法面落地后解除排除；fragmented-mp4-end——MSE 面，归远期）；
    no-autoplay-audio-history-back（iframe+history+postMessage 导航深结构，
-   pause-move-to-other-document 同域排除）；~~the-video-element 反射余面~~
+   ~~pause-move-to-other-document 同域排除~~ ✅ XLIII 闭环——related 判定精化后解除排除导入）；~~the-video-element 反射余面~~
    （~~video-loading-* preload 语义族~~ ✅ 扩批 XXXV 清点——video-loading-eager
    导入，lazy/preload-deferred 系与 eager-by-default 实现互斥维持排除，
    **the-video-element 目录清点收束**）。**headless 可导入面已在 95.9% 重饱和
@@ -461,11 +470,14 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
   → 扩批 XLII（2026-09-04，WebVTT cue text parser 树解析——markup 结构族 6 件解除
   排除 + cue.text 原文化 + header 恢复）**628/652 = 96.32%**（+12 净涨零回归；
   Fail 0 / Timeout 0 / PF 24）
+  → 扩批 XLIII（2026-09-04，pause-on-removal related 判定精化——iframe body
+  appendChild sel-only 子移除标记清除，pause-move-to-other-document 解除排除）
+  **629/653 = 96.32%**（+1 净涨零回归；Fail 0 / Timeout 0 / PF 24）
 - 复核（2026-09-04 治理整固后终审）：fresh 跑 603P/0F/24PF（198 文件）与
   本档记录逐位一致；验证基线 evidence 链 26 文件全在盘；make test 18877/0。
   （扩批 XL 后：fresh 跑 609P/0F/24PF（201 文件）；扩批 XLI 后：fresh 跑
-  616P/0F/24PF（202 文件）；扩批 XLII 后：fresh 跑 628P/0F/24PF（208 文件）——
-  2026-09-04 本轮实测。）
+  616P/0F/24PF（202 文件）；扩批 XLII 后：fresh 跑 628P/0F/24PF（208 文件）；
+  扩批 XLIII 后：fresh 跑 629P/0F/24PF（209 文件）——2026-09-04 本轮实测。）
 - 入口：`make testharness-media`（FILTER 透传，`--json` 捕获 evidence）
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过
 - evidence：`evidence/2026-08-31-media-baseline.md`（+ 同名 .json 机读版）、
@@ -490,7 +502,8 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
   `evidence/2026-09-04-media-audio-loop-base-xxxix.json`、
   `evidence/2026-09-04-media-loading-xl.json`、
   `evidence/2026-09-04-media-upstream-audit-xli.json`、
-  `evidence/2026-09-04-webvtt-cue-text-parser-xlii.json`
+  `evidence/2026-09-04-webvtt-cue-text-parser-xlii.json`、
+  `evidence/2026-09-04-media-pause-move-related-xliii.json`
 
 ## 归档
 

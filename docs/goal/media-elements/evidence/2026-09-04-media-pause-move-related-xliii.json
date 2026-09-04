@@ -1,0 +1,12 @@
+[
+ [
+  "html/semantics/embedded-content/media-elements/playing-the-media-resource/pause-move-to-other-document.html",
+  [
+   {
+    "name": "paused state when moving to other document",
+    "status": "Pass",
+    "message": null
+   }
+  ]
+ ]
+]

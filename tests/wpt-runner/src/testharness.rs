@@ -1667,8 +1667,10 @@ pub const MEDIA_TEST_FILES: &[&str] = &[
     // 文档判定含 iframe 文档，修复须 pause-on-removal 的 related-document 判定精化，
     // 归移除暂停精化切片——上游 1/1 绿为可回访断言面）。
     "html/semantics/embedded-content/media-elements/playing-the-media-resource/playbackRate.html",
+    // M3 扩批 XLIII（2026-09-04）：pause-move-to-other-document 解除排除——iframe body
+    // appendChild 的 sel-only 子移除标记清除（related 判定精化）落地后绿。
+    "html/semantics/embedded-content/media-elements/playing-the-media-resource/pause-move-to-other-document.html",
     // M3 扩批 IX：移动面（同文档移动仍 related → 不暂停）。
-    // pause-move-to-other-document 维持排除（XLI 试导回退，见上注记）。
     "html/semantics/embedded-content/media-elements/playing-the-media-resource/pause-move-within-document.html",
     // M3 扩批 XI：resource selection 算法 JS 可观察面（loading-the-media-resource 逐文件
     // 白名单——networkState 同步段 NO_SOURCE/稳定态 EMPTY、invoke 面（play/pause/load/

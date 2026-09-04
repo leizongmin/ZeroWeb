@@ -8688,6 +8688,18 @@
           } catch (_e112d) { /* 回落通用路径 */ }
         }
         ensureTree(); var r = _tree.appendChild(c); if (c && c.parentNode === _tree) c.parentNode = body;
+        // M3 扩批 XLIII（2026-09-04）：**sel-only 子入 iframe 子文档 body 的移除标记清除**
+        //（spec「pause on removal」的 related 判定——元素获新父（含跨文档 move）即脱离
+        // 「removed」态；此前标记残留使 removal-pause 两段 defer 的 tick1 `_zwIsRemovedNode`
+        // 误判 → pause-move-to-other-document「paused after stable state」假真）。
+        // handle 子路径的同等语义由 part04 appendChild 4149 unmark 承载；此处补 sel-only 面
+        //（主文档静态元素移入 iframe 文档的形态——R369 handle 子路径零变化）。
+        // https://html.spec.whatwg.org/multipage/media.html#media-elements-pause-on-removal
+        try {
+          if (c && c.__zwSelector && !c.__zwHandle && typeof _zwUnmarkRemoved === 'function') {
+            _zwUnmarkRemoved(c.__zwSelector);
+          }
+        } catch (_eXliiiUnmark) {}
         // R370（js-dom M4）：detached/iframe 子文档 body 的 childList **独立派发**——
         // observe() 对本形态 body（无 sel/handle）落 `__r189:BODY:<seq>` 键（R189 分支），
         // 但本 appendChild 两条路径（串行合并 / 通用树）此前均不投递 → observe 后
