@@ -11835,6 +11835,10 @@
           // M3 AV1 面（2026-09-02，D-RFC-2）：dav1d 解码切片落地 → video/webm
           // av1 转入支持面（`open_webm` codec 自路由 V_AV1——与播放/settle 探针
           // 同一入口；feature `decode-av1` 门控的构建面由宿主侧启用）。
+          // M3 切片 1（2026-09-05，D-RFC-3 获批）：H.264 解码切片落地 → video/mp4
+          // 转入支持面（`open_media` 容器嗅探 Mp4H264 路由——与播放/settle 探针
+          // 同一入口；feature `decode-h264` 门控的构建面由宿主侧启用）。mp4 容器
+          // 无 codecs 参数 → 'maybe'（容器面），h264/aac → 'probably'。
           var _cptTable = {
             'audio/mpeg': { audio: ['mp3'], video: [] },
             'audio/ogg': { audio: ['vorbis', 'opus'], video: [] },
@@ -11843,7 +11847,11 @@
             // M3 扩批（2026-09-02，zero-media A_OPUS demux 落地联动）：video/webm opus
             // 转入支持面（WebmOpusAudioTrack——opus-decoder 直解；WPT 上游 media/*.webm
             // 实测全为 VP9+Opus，common/media.js getVideoURI 判定 'vp9, opus' 需本行真值）。
-            'video/webm': { audio: ['vorbis', 'opus'], video: ['vp9', 'av1'] }
+            'video/webm': { audio: ['vorbis', 'opus'], video: ['vp9', 'av1'] },
+            // M3 切片 1（2026-09-05，D-RFC-3 获批联动）：mp4 容器 + h264/aac 编解码面
+            //（解码真值以 decode-h264 feature 构建面为据——能力表按启用的解码面扩展）。
+            'video/mp4': { audio: ['aac', 'mp4a.40.2'], video: ['h264', 'avc1', 'avc3', 'avc1.42e01e'] },
+            'audio/mp4': { audio: ['aac', 'mp4a.40.2'], video: [] }
           };
           return function (type) {
             var _t = String(type == null ? '' : type);

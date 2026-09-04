@@ -15,12 +15,20 @@ audio-cpal = ["dep:cpal"]
 # AV1 解码（media-playback M3 / D-RFC-2 获批选 A）——链接系统 libdav1d
 #（Linux 需 libdav1d-dev；headless/CI 默认关闭）。
 decode-av1 = ["dep:dav1d"]
+# H.264 解码（media-playback M3 / D-RFC-3 获批 3a 有条件批准 + 3b 源码编译）——
+# openh264（Cisco AVC Patent Trust License；构建期源码编译，无 nasm 时自动退纯 C
+# 路径）。mp4 容器 demux 走 symphonia isomp4（纯 Rust，非本 feature——见 symphonia
+# 依赖注记）。
+decode-h264 = ["dep:openh264"]
 
 [dependencies]
 cpal = { workspace = true, optional = true }
 dav1d = { workspace = true, optional = true }
+# isomp4+aac feature 扩展（media-playback M3 / D-RFC-3c AAC 随期）：纯 Rust，无
+# 工具链新增；mp4 demux（H.264 轨道枚举/包提取）与 AAC 解码（AudioDecoder 扩面）。
 symphonia = { workspace = true }
 opus-decoder = { workspace = true }
+openh264 = { workspace = true, optional = true }
 tracing = { workspace = true }
 matroska-demuxer = { workspace = true }
 rusty_vp9 = { workspace = true }

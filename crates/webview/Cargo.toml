@@ -29,6 +29,9 @@ reqwest = { workspace = true, features = ["blocking"] }
 default = ["v8"]
 v8 = ["zero-engine/v8", "zero-page-runtime/v8", "zero-script-sandbox/v8"]
 quickjs = ["zero-engine/quickjs", "zero-page-runtime/quickjs", "zero-script-sandbox/quickjs"]
+# H.264 解码（media-playback M3 / D-RFC-3 获批）：转发 zero-media decode-h264
+#（openh264 源码编译；mp4 容器路由面）。
+decode-h264 = ["zero-media/decode-h264"]
 # AV1 解码（media-playback M3 / D-RFC-2）：转发 zero-media decode-av1（dav1d）——
 # settle 探针 `probe_video_media_meta`（open_webm codec 自路由）与播放面同 codec 面。
 decode-av1 = ["zero-media/decode-av1"]

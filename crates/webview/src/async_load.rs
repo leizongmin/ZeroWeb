@@ -113,16 +113,16 @@ pub struct ResourceElementEvent {
     pub media_duration_ms: Option<u64>,
 }
 
-/// media-playback M2a：video 资源的容器时长/首帧探针（webm 头部 + 首帧解码）。
-/// 非 webm（或无候选 codec）返 `None`（语义层回落 headless 近似、渲染侧保持占位）。
-/// M3 codec 自路由（D-RFC-2）：`open_webm` 覆盖 V_VP9（rusty_vp9）与 V_AV1
-/// （dav1d，feature `decode-av1`）——与播放面 `video_registry.play` 同一入口，
-/// 消除「play 可路由而 settle 探针 VP9-only」的分叉（AV1 源 settle 后 duration
-/// 真值 + 首帧注入缺失的缺陷面）。
+/// media-playback M2a：video 资源的容器时长/首帧探针（容器头 + 首帧解码）。
+/// 非 webm/mp4（或无候选 codec）返 `None`（语义层回落 headless 近似、渲染侧保持
+/// 占位）。M3 codec 自路由（D-RFC-2/D-RFC-3）：webm 覆盖 V_VP9（rusty_vp9）与
+/// V_AV1（dav1d，feature `decode-av1`）；mp4 覆盖 H.264（openh264，feature
+/// `decode-h264`）——与播放面 `video_registry.play` 同一入口（`open_media`
+/// 容器嗅探），消除「play 可路由而 settle 探针单格式」的分叉。
 /// 首帧 RGBA 供生产侧帧注入（`insert_with_key` 与 painter `image_resource_key`
 /// 同键——canvas/img 同款两段式上屏）。
 fn probe_video_media_meta(bytes: &[u8]) -> Option<(u64, u32, u32, Vec<u8>)> {
-    let mut decoder = zero_media::VideoDecoder::open_webm(bytes).ok()?;
+    let mut decoder = zero_media::VideoTrackDecoder::open_media(bytes).ok()?;
     let duration_ms = decoder.duration_ms()?;
     // 容器头无固有尺寸——取首帧（2s@24fps fixture 解码 ~10ms 级，可接受；
     // 真实流面 M2b 背压优化时改为读 TrackEntry 像素维）。
@@ -2211,10 +2211,48 @@ mod tests {
         assert_eq!((data.width, data.height), (320, 240));
     }
 
+    // M3 切片 1（D-RFC-3 获批）：H.264 mp4 源 settle → 探针经 open_media 容器
+    // 嗅探（与播放面同入口）——duration/尺寸真值 + 首帧注入，与 VP9/AV1 面同契约。
+    // 注：webview 的 decode-h264 经 zero-media feature 转发——CI 矩阵主线（默认
+    // feature）不含本测试。
+    #[cfg(feature = "decode-h264")]
+    #[test]
+    fn video_settle_h264_first_frame_and_truth_m3() {
+        let mp4 = media_fixture_bytes("sample-mp4-h264.mp4");
+        let html = r#"<html><body><video src="sample-mp4-h264.mp4"></video></body></html>"#;
+        let mut load = AsyncPageLoad::from_html("https://example.com/media/", html.to_string());
+        let mut wv = WebView::new(WebViewConfig::default());
+        let mut host = MockFetchHost::new().with_bytes(mp4);
+        while load.is_active() {
+            let _ = load.tick(&mut wv, &mut host, 500.0);
+        }
+        let events = load.take_resource_element_events();
+        assert_eq!(events.len(), 1, "H.264 video settle 应产出恰好一个事件");
+        let event = &events[0];
+        assert_eq!(event.tag, "video");
+        assert_eq!(event.outcome, ResourceElementOutcome::Available);
+        assert_eq!(event.media_duration_ms, Some(2000), "mp4 容器时长真值");
+        assert_eq!(
+            (event.natural_width, event.natural_height),
+            (320, 240),
+            "H.264 首帧固有尺寸真值"
+        );
+        let frame_key = ImageKey::new(image_resource_key(
+            "https://example.com/media/sample-mp4-h264.mp4",
+            None,
+        ));
+        let data = wv.image_cache().get(&frame_key).expect("H.264 首帧应已注入 ImageCache");
+        assert_eq!((data.width, data.height), (320, 240));
+    }
+
+    // 默认 feature 面的负例（decode-h264 关闭 → 占位渲染契约）。开启态走上方
+    // H.264 settle e2e 正例。
+    #[cfg(not(feature = "decode-h264"))]
     #[test]
     fn video_settle_non_webm_stays_headless_and_placeholder() {
-        // 负例：mp4（非 webm-VP9，选型后续面）→ 探针失败 → 无真值（None/0）+
-        // 无帧注入（渲染保持占位，painter gate 不发图元）。
+        // 负例（默认 feature 面）：mp4/H.264 → decode-h264 关闭 → open_media
+        // NoVideoTrack → 探针失败 → 无真值（None/0）+ 无帧注入（渲染保持占位，
+        // painter gate 不发图元）。feature 开启态的正例见下方 H.264 settle e2e。
         let mp4 = media_fixture_bytes("sample-mp4-h264.mp4");
         let html = r#"<html><body><video src="clip.mp4"></video></body></html>"#;
         let mut load = AsyncPageLoad::from_html("https://example.com/media/", html.to_string());

@@ -10,7 +10,7 @@
 //! 下不积压）。静音播放（首期无音频面）；seek/playbackRate 变速归 M2b。
 
 use crate::clock::VideoClock;
-use crate::decode::{DecodedVideoFrame, VideoDecoder};
+use crate::decode::{DecodedVideoFrame, VideoTrackDecoder};
 
 /// 播放器状态机（spec readyState 推进的真值源；事件派发归语义层）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -25,7 +25,7 @@ pub enum PlayerState {
 
 /// 帧率驱动播放器 — 包装解码器 + 播放时钟。
 pub struct VideoPlayer {
-    decoder: VideoDecoder,
+    decoder: VideoTrackDecoder,
     state: PlayerState,
     /// 当前播放位置（媒体时间轴毫秒；play 起点为 0 或暂停时的保持值）。
     position_ms: f64,
@@ -39,7 +39,7 @@ pub struct VideoPlayer {
 
 impl VideoPlayer {
     /// 从解码器构建播放器（初始 Ready，位置 0）。
-    pub fn new(decoder: VideoDecoder) -> Self {
+    pub fn new(decoder: VideoTrackDecoder) -> Self {
         Self {
             decoder,
             state: PlayerState::Ready,
@@ -71,7 +71,7 @@ impl VideoPlayer {
     }
 
     /// Ended 后重头播放的解码器复位（替换底层解码器，位置清零）。
-    pub fn reset(&mut self, decoder: VideoDecoder) {
+    pub fn reset(&mut self, decoder: VideoTrackDecoder) {
         self.decoder = decoder;
         self.state = PlayerState::Ready;
         self.position_ms = 0.0;
@@ -212,7 +212,9 @@ mod tests {
 
     fn fixture_player() -> VideoPlayer {
         let data = fs::read(fixture_path("sample-webm-vp9.webm")).unwrap();
-        VideoPlayer::new(VideoDecoder::open_webm_vp9(&data).unwrap())
+        VideoPlayer::new(crate::decode::VideoTrackDecoder::Webm(Box::new(
+            crate::decode::VideoDecoder::open_webm_vp9(&data).unwrap(),
+        )))
     }
 
     #[test]
@@ -359,7 +361,9 @@ mod tests {
         }
         // reset 换新解码器 → Ready、位置 0、可再播。
         let data = fs::read(fixture_path("sample-webm-vp9.webm")).unwrap();
-        p.reset(VideoDecoder::open_webm_vp9(&data).unwrap());
+        p.reset(crate::decode::VideoTrackDecoder::Webm(Box::new(
+            crate::decode::VideoDecoder::open_webm_vp9(&data).unwrap(),
+        )));
         assert_eq!(p.state(), PlayerState::Ready);
         assert_eq!(p.current_time(), 0.0);
         p.play(now);

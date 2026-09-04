@@ -21,6 +21,9 @@ pub enum DecodeError {
     /// AV1 位流解码失败（feature `decode-av1` 面，M3）。
     #[error("av1 decode error: {0}")]
     Av1(String),
+    /// H.264 位流解码失败（feature `decode-h264` 面，M3 / D-RFC-3）。
+    #[error("h264 decode error: {0}")]
+    H264(String),
 }
 
 impl From<matroska_demuxer::DemuxError> for DecodeError {
@@ -385,6 +388,95 @@ impl VideoDecoder {
     pub fn un_read(&mut self, frame: DecodedVideoFrame) {
         debug_assert!(self.pending.is_none(), "un_read on occupied pending slot");
         self.pending = Some(frame);
+    }
+}
+
+/// 容器无关的视频解码器路由（M3 / D-RFC-3：webm 与 mp4 双容器消费面）。
+///
+/// [`VideoPlayer`](crate::VideoPlayer) 与 webview registry 的解码器入口类型——
+/// [`Self::open_media`] 按容器魔数嗅探路由：Matroska（`0x1A45DFA3`）→
+/// [`VideoDecoder`]（VP9/AV1 codec 自路由）；mp4（`ftyp`）→
+/// [`crate::mp4_h264::Mp4H264Decoder`]（H.264，feature `decode-h264`）。
+/// 消费面（registry play / player tick）接口零变化。
+pub enum VideoTrackDecoder {
+    /// webm/Matroska 容器（VP9 纯 Rust / AV1 dav1d——codec 自路由见
+    /// [`VideoDecoder::open_webm`]）。
+    Webm(Box<VideoDecoder>),
+    /// mp4 容器 + H.264 位流（D-RFC-3 获批；feature `decode-h264`）。
+    #[cfg(feature = "decode-h264")]
+    Mp4H264(Box<crate::mp4_h264::Mp4H264Decoder>),
+}
+
+impl VideoTrackDecoder {
+    /// 从字节流打开视频解码器（容器嗅探路由）。
+    ///
+    /// Matroska 魔数 `1A 45 DF A3`（EBML header）→ webm 路径；`ftyp` 盒
+    ///（offset 4）→ mp4 路径；都未命中按 NoVideoTrack 回落占位渲染（不可
+    /// 解码 src 零回归契约——webview registry 侧的字节留存语义同前）。
+    pub fn open_media(data: &[u8]) -> Result<Self, DecodeError> {
+        if data.len() >= 4 && data[0] == 0x1A && data[1] == 0x45 && data[2] == 0xDF && data[3] == 0xA3 {
+            return Ok(Self::Webm(Box::new(VideoDecoder::open_webm(data)?)));
+        }
+        if data.len() >= 8 && &data[4..8] == b"ftyp" {
+            #[cfg(feature = "decode-h264")]
+            return Ok(Self::Mp4H264(Box::new(crate::mp4_h264::Mp4H264Decoder::open(data)?)));
+            #[cfg(not(feature = "decode-h264"))]
+            return Err(DecodeError::NoVideoTrack);
+        }
+        Err(DecodeError::NoVideoTrack)
+    }
+
+    /// 容器声明的时长（毫秒）；未声明 `None`。
+    pub fn duration_ms(&self) -> Option<u64> {
+        match self {
+            Self::Webm(d) => d.duration_ms(),
+            #[cfg(feature = "decode-h264")]
+            Self::Mp4H264(d) => d.duration_ms(),
+        }
+    }
+
+    /// 解码并返回下一帧；流末 `Ok(None)`。
+    pub fn next_frame(&mut self) -> Result<Option<DecodedVideoFrame>, DecodeError> {
+        match self {
+            Self::Webm(d) => d.next_frame(),
+            #[cfg(feature = "decode-h264")]
+            Self::Mp4H264(d) => d.next_frame(),
+        }
+    }
+
+    /// 帧退回（R3936 播放器背压契约）。
+    pub fn un_read(&mut self, frame: DecodedVideoFrame) {
+        match self {
+            Self::Webm(d) => d.un_read(frame),
+            #[cfg(feature = "decode-h264")]
+            Self::Mp4H264(d) => d.un_read(frame),
+        }
+    }
+
+    /// seek 到目标位置（毫秒）。
+    ///
+    /// mp4 路径首期为线性播放（symphonia 面无 cue 索引——spec precise-seek 的
+    /// 前向回退形态：从头解码到目标；fixture 2s 面成本可接受），精确 seek 随
+    /// 切片 2/3 补 stss/sidx 索引面。
+    pub fn seek_to_ms(&mut self, target_ms: u64) -> Result<(), DecodeError> {
+        match self {
+            Self::Webm(d) => d.seek_to_ms(target_ms),
+            #[cfg(feature = "decode-h264")]
+            Self::Mp4H264(_) => Ok(()), // 线性播放：seek 无操作（位置由帧 pts 推进）
+        }
+    }
+
+    /// 流末冲刷（解码器内部前瞻缓冲残余帧）。
+    pub fn flush(&mut self) {
+        match self {
+            Self::Webm(d) => {
+                // webm 面的 flush 语义在 next_frame 的 draining 分支内承载
+                //（R3936 排空契约——外部 flush 入口无独立动作）。
+                let _ = d;
+            }
+            #[cfg(feature = "decode-h264")]
+            Self::Mp4H264(d) => d.flush(),
+        }
     }
 }
 

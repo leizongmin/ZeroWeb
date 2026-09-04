@@ -3611,8 +3611,15 @@ fn test_media_can_play_type_capability_table_m4gd() {
         "opus → probably（M2c opus 面：opus-decoder 纯 Rust 落地，ogg 容器）"
     );
     assert_eq!(get("bogus"), "", "bogus codec → ''");
-    assert_eq!(get("h264"), "", "H.264（D-RFC-3 未立项）→ ''");
-    assert_eq!(get("mp4"), "", "video/mp4 容器不在面 → ''");
+    // M3 切片 1（2026-09-05，D-RFC-3 获批联动）：mp4/H.264 解码面落地 → 转入支持面
+    //（`open_media` 容器嗅探 Mp4H264 路由；feature `decode-h264` 门控的构建面由
+    // 宿主侧启用——能力表与播放/settle 探针同一解码真值）。
+    assert_eq!(
+        get("h264"),
+        "probably",
+        "H.264 → probably（M3 切片 1：openh264 解码切片落地，open_media Mp4H264 路由）"
+    );
+    assert_eq!(get("mp4"), "maybe", "video/mp4 容器 → maybe（容器面）");
     assert_eq!(get("unknown"), "", "未知容器 → ''");
     assert_eq!(get("octet"), "", "application/octet-stream → ''");
     // 语义边界：MIME 大小写不敏感、悬空分号 = 无 codecs → maybe、audio/video 一致。

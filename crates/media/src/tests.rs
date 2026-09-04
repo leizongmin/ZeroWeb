@@ -3,6 +3,8 @@
 //! 参照基准：ffmpeg 7.1.5 对 `sample-webm-vp9.webm` 首帧的 yuv420p rawvideo 输出
 //! （2026-09-01 探针实测逐字节一致）；此处固化为 RGBA 哈希 + 帧元数据断言。
 
+#[cfg(feature = "decode-h264")]
+use super::decode::VideoTrackDecoder;
 use super::decode::{VideoDecoder, fixture_path, rgba_mean};
 use std::fs;
 
@@ -497,4 +499,70 @@ fn webm_sequential_decode_drains_hidden_tail_frames_r3936() {
     // 解码器真空后再调用仍稳定返回 None（eof 幂等面）。
     assert!(decoder.next_frame().unwrap().is_none());
     assert!(decoder.next_frame().unwrap().is_none());
+}
+
+#[cfg(feature = "decode-h264")]
+#[test]
+fn mp4_h264_decode_full_stream() {
+    // M3 H.264 面（D-RFC-3 获批 3a 有条件批准 + 3b 源码编译）：mp4/H.264 轨经
+    // openh264 全流解码——48 帧（2s @ 24fps）、PTS 单调、尺寸面（testsrc2
+    // 320x240）、首帧 RGB 均值与 ffmpeg 参照（123.3）同窗 ±15（RFC §3.2 锚点：
+    // openh264 luma 122.14 探针实测，RGBA 面同窗）。
+    // https://www.itu.int/rec/T-REC-H.264
+    let data = fs::read(fixture_path("sample-mp4-h264.mp4")).unwrap();
+    let mut dec = VideoTrackDecoder::open_media(&data).unwrap();
+    assert!(matches!(dec, VideoTrackDecoder::Mp4H264(_)), "mp4 嗅探路由");
+    assert_eq!(dec.duration_ms(), Some(2000), "mp4 容器时长真值");
+
+    let mut count = 0u32;
+    let mut prev_pts: i64 = -1;
+    let mut first_mean = 0.0;
+    let mut last_pts = 0u64;
+    while let Some(frame) = dec.next_frame().unwrap() {
+        assert_eq!(frame.width, 320, "宽度面");
+        assert_eq!(frame.height, 240, "高度面");
+        assert!(
+            (frame.pts_ms as i64) >= prev_pts,
+            "PTS 单调（pts={} prev={})",
+            frame.pts_ms,
+            prev_pts
+        );
+        prev_pts = frame.pts_ms as i64;
+        last_pts = frame.pts_ms;
+        if count == 0 {
+            first_mean = rgba_mean(&frame.rgba);
+        }
+        count += 1;
+    }
+    assert_eq!(count, 48, "全流帧数（与 mp4 采样数一致）");
+    // 时长窗：24fps × 2s → 末帧 pts ≤ 2000ms（48 帧覆盖 0~1958ms）。
+    assert!(last_pts <= 2000, "末帧 pts 在 2s 流长内（got {last_pts}）");
+    assert!(
+        (first_mean - 123.3).abs() <= 15.0,
+        "H.264 首帧 RGB 均值对齐 ffmpeg 参照窗 ±15（got {first_mean}）"
+    );
+}
+
+#[cfg(feature = "decode-h264")]
+#[test]
+fn open_media_routes_webm_and_rejects_unknown() {
+    // 容器嗅探路由面：webm 魔数 → Webm 分支（VP9 可解）；mp4 ftyp → Mp4H264；
+    // 未知字节流 NoVideoTrack（占位渲染零回归契约——registry 侧字节留存同面）。
+    let webm = fs::read(fixture_path("sample-webm-vp9.webm")).unwrap();
+    let mut dec = VideoTrackDecoder::open_media(&webm).unwrap();
+    assert!(matches!(dec, VideoTrackDecoder::Webm(_)), "webm 嗅探路由");
+    assert!(dec.next_frame().unwrap().is_some(), "webm VP9 帧可解");
+
+    let mp4 = fs::read(fixture_path("sample-mp4-h264.mp4")).unwrap();
+    let dec = VideoTrackDecoder::open_media(&mp4).unwrap();
+    assert!(matches!(dec, VideoTrackDecoder::Mp4H264(_)), "mp4 嗅探路由");
+
+    let garbage = b"not a container at all".to_vec();
+    assert!(
+        matches!(
+            VideoTrackDecoder::open_media(&garbage),
+            Err(crate::DecodeError::NoVideoTrack)
+        ),
+        "未知容器 → NoVideoTrack"
+    );
 }

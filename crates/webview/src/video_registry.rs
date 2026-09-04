@@ -12,7 +12,7 @@ use std::sync::atomic;
 use zero_engine::image_resource_key;
 use zero_media::{
     AudioDecodeError, AudioDecoder, AudioFormat, AudioSink, DecodedAudio, NullSink, OpusAudioTrack, VideoClock,
-    VideoDecoder, VideoPlayer, WebmAudioTrack, WebmOpusAudioTrack, open_ogg_opus, open_webm_audio_track,
+    VideoPlayer, VideoTrackDecoder, WebmAudioTrack, WebmOpusAudioTrack, open_ogg_opus, open_webm_audio_track,
     open_webm_opus_audio_track,
 };
 
@@ -509,7 +509,10 @@ impl VideoPlayerRegistry {
             let Some(bytes) = self.sources.get(&key).cloned() else {
                 return false;
             };
-            let Ok(decoder) = VideoDecoder::open_webm(&bytes) else {
+            // M3 切片 1（D-RFC-3 获批）：容器嗅探路由 open_media——webm（VP9/AV1）
+            // 与 mp4（H.264，decode-h264 feature）双容器；feature 关闭时 mp4 源
+            // NoVideoTrack 回落 false（字节留存，占位渲染零回归契约不变）。
+            let Ok(decoder) = VideoTrackDecoder::open_media(&bytes) else {
                 return false;
             };
             self.sources.remove(&key);
@@ -545,7 +548,7 @@ impl VideoPlayerRegistry {
                 // 留存（伴生轨 seek 重建共用）——两处任一在即可重建。
                 let bytes = self.sources.get(&key).or_else(|| self.av_sources.get(&key)).cloned();
                 if let Some(bytes) = bytes
-                    && let Ok(decoder) = VideoDecoder::open_webm(&bytes)
+                    && let Ok(decoder) = VideoTrackDecoder::open_media(&bytes)
                 {
                     player.reset(decoder);
                     // 伴生轨同面回卷（audio clock 主时钟——current_time 优先读 av
@@ -692,7 +695,9 @@ impl VideoPlayerRegistry {
         let Some(bytes) = bytes else {
             return (0, 0);
         };
-        let Ok(mut decoder) = zero_media::VideoDecoder::open_webm(&bytes) else {
+        // M3 切片 1（D-RFC-3）：open_media 容器嗅探——mp4/H.264 源尺寸真值同面
+        //（与 play/settle 探针同入口）。
+        let Ok(mut decoder) = zero_media::VideoTrackDecoder::open_media(&bytes) else {
             return (0, 0);
         };
         match decoder.next_frame() {

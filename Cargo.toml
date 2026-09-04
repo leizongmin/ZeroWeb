@@ -154,7 +154,11 @@ dav1d = "0.11"
 # 音频解码（media-playback M2c / media-audio M1：symphonia 纯 Rust——mp3 + ogg/vorbis
 # 面；symphonia 0.6 无 opus 解码器（C 侧 libopus 才有，违反路线 C 零 C 依赖——oga
 # fixture 的 opus 面由 opus-decoder 纯 Rust 补齐，见 master.md M2c 注记）
-symphonia = { version = "0.6", default-features = false, features = ["mp3", "ogg", "vorbis", "pcm"] }
+symphonia = { version = "0.6", default-features = false, features = ["mp3", "ogg", "vorbis", "pcm", "isomp4", "aac"] }
+# H.264 解码（media-playback M3 / D-RFC-3 获批：Cisco OpenH264 安全 Rust 绑定，
+# 构建期源码编译 openh264-sys2 source feature 默认；Apache-2.0 绑定 + BSD-2-Clause C 源。
+# feature `decode-h264` 门控——默认关，CI 主线零 C 工具链新增）
+openh264 = { version = "0.9", default-features = false, features = ["source"] }
 # Opus 解码（M2c opus 面：opus-decoder 纯 Rust RFC 6716/8251，零 unsafe 零 FFI，
 # MIT OR Apache-2.0——容器 demux 仍走 symphonia ogg reader，位流喂本 decoder）
 opus-decoder = "0.1.1"

@@ -34,6 +34,8 @@ mod av_decode;
 mod clock;
 mod decode;
 mod mixer;
+#[cfg(feature = "decode-h264")]
+mod mp4_h264;
 mod opus_decode;
 mod player;
 mod webaudio;
@@ -49,6 +51,8 @@ pub use av_decode::*;
 pub use clock::*;
 pub use decode::*;
 pub use mixer::*;
+#[cfg(feature = "decode-h264")]
+pub use mp4_h264::*;
 pub use opus_decode::*;
 pub use player::*;
 pub use webaudio::*;
