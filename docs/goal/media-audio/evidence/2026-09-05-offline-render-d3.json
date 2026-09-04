@@ -4733,5 +4733,15 @@
         "message": null
       }
     ]
+  ],
+  [
+    "webaudio/the-audio-api/the-gainnode-interface/gain.html",
+    [
+      {
+        "name": "GainNode should scale gains properly across notes",
+        "status": "Pass",
+        "message": null
+      }
+    ]
   ]
 ]

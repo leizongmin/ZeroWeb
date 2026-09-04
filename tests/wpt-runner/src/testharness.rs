@@ -1862,6 +1862,9 @@ pub const WEBAUDIO_TEST_FILES: &[&str] = &[
     // periodic wave spec 归一化 + 线性 gain 链解析；offline 渲染不削幅——spec
     // AudioBuffer 可超 ±1）后解除排除导入。
     "webaudio/the-audio-api/the-oscillatornode-interface/osc-basic-waveform.html",
+    // ---- 第二十批（D3 第三片——splitter/merger 通道路由图推进）：gain.html
+    //（11 note 增益衰减渲染对比——通道 0/1 = gain 缩放、2/3 = 源直通，逐通道 SNR）。
+    "webaudio/the-audio-api/the-gainnode-interface/gain.html",
     // ---- 第二十批（同日，D3 第二片——AudioBufferSourceNode 数据播放 + 链式
     // gain 累计 + 直连 destination 双态 + offset/duration/loop 窗口）：
     // 不导入：gain.html（需 splitter/merger 通道路由图语义——merger 通道选择映射

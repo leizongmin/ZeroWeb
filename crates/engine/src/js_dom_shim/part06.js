@@ -7495,6 +7495,22 @@
     }
     // spec：connect 返回目标节点（链式——osc.connect(gain).connect(destination)）。
     this._zwConnected = target || null;
+    // media-audio D3 第三片：完整边表（通道路由图——splitter/merger 的 out/in 索引
+    // 映射语义面；startRendering 图推进按边表逐边传播通道数据。线性链面
+    // _zwConnected 保留——既有单连接测试/桥面零回归）。
+    (this._zwEdges = this._zwEdges || []).push({
+      target: target || null,
+      out: _outIdx,
+      input: _inIdx,
+    });
+    // media-audio D3 第三片：入边面携带源节点引用（图推进反向聚合需知上游）。
+    if (target) {
+      (target._zwInEdges = target._zwInEdges || []).push({
+        src: this,
+        out: _outIdx,
+        input: _inIdx,
+      });
+    }
     return target;
   };
   _zwWANode.prototype.disconnect = function (target) {
@@ -7761,107 +7777,186 @@
     var rate = self._zwSampleRate;
     // 振荡器合成（四型波形——与 zero-media OscillatorState 同表；相位连续）。
     var _oscSample = function (oscType, freq, phase) {
-      var v = 0.0;
       if (oscType === 'square') {
-        v = Math.sin(phase) >= 0.0 ? 1.0 : -1.0;
-      } else if (oscType === 'sawtooth') {
-        v = 2.0 * (phase / (2.0 * Math.PI)) - 1.0;
-      } else if (oscType === 'triangle') {
+        return Math.sin(phase) >= 0.0 ? 1.0 : -1.0;
+      }
+      if (oscType === 'sawtooth') {
+        return 2.0 * (phase / (2.0 * Math.PI)) - 1.0;
+      }
+      if (oscType === 'triangle') {
         var t = phase / Math.PI;
-        v = (t <= 1.0) ? 2.0 * t - 1.0 : 3.0 - 2.0 * t;
-      } else {
-        v = Math.sin(phase);
+        return (t <= 1.0) ? 2.0 * t - 1.0 : 3.0 - 2.0 * t;
       }
-      return v;
+      return Math.sin(phase);
     };
+    // media-audio D3 第三片：通道路由图推进——从 source（oscillator/buffersource/
+    // constantsource）出发按入边（_zwInEdges，携带源节点 + out/in 通道映射）深度
+    // 求值，逐节点产出多通道数据（Float64Array[]），destination 处按 ctx 通道数
+    // 合成。节点语义：gain=Σ入边×gain.value；splitter=N 出 mono 上混（每出=上游
+    // 均值）；merger=入边 out 通道 → 输出通道 input；源节点=mono 单通道。
     var nodes = self._zwOfflineNodes || [];
-    var mixed = new Float64Array(len);
-    for (var ni = 0; ni < nodes.length; ni++) {
-      var node = nodes[ni];
-      // startSec=0 是合法值（start() 缺省 when=0）——只跳过「从未 start」
-      //（null/undefined），不以 falsy 判定（0 会被误吞——osc-basic-waveform
-      // 全部用例 start() 无参即 0 时刻）。
-      if (node._zwKind !== 'oscillator') continue;
-      if (node._zwStartedAtSec == null) continue;
-      // 图增益链：沿 connect 链累计 gain 节点值（链外/未连 destination 的源
-      // ——spec：不与 destination 连通的支路不发声；最小面按「连到 destination
-      // 或无连接（隐式直连，ctor-only 单振荡器形态）」双态近似）。
-      var chainGain = 1.0;
-      var target = node._zwConnected;
-      var reachedDest = false;
-      var hops = 0;
-      while (target && hops < 8) {
-        if (target._zwKind === 'gain') {
-          chainGain *= (target.gain && typeof target.gain.value === 'number') ? target.gain.value : 1.0;
-        } else if (target._zwKind === 'destination') {
-          reachedDest = true;
-          break;
-        }
-        target = target._zwConnected;
-        hops++;
-      }
-      // 未连通任何节点的振荡器：spec 图语义「孤立源不发声」——但单振荡器
-      // 无 connect 的最小用例（osc-basic 前置形态）按隐式直连近似。有连接但
-      // 未达 destination（悬空支路）→ 不发声。
-      if (node._zwConnected && !reachedDest) continue;
-      var oscType = node.type || 'sine';
-      var freq = (node.frequency && typeof node.frequency.value === 'number') ? node.frequency.value : 440;
-      var oscGain = (node.gain && typeof node.gain.value === 'number') ? node.gain.value : 1.0;
-      var startSec = node._zwStartedAtSec;
-      var stopSec = node._zwStoppedAtSec;
-      var totalGain = oscGain * chainGain;
-      if (totalGain === 0) continue;
-      var startFrame = Math.floor(startSec * rate);
-      var stopFrame = (stopSec != null) ? Math.floor(stopSec * rate) : len;
-      // custom periodic wave：spec OscillatorNode periodicWave 合成 ——
-      // x(t) = Σ_{n=1}^{N-1} (a[n]·cos(2πnt) + b[n]·sin(2πnt))（real/imag 表；
-      // disableNormalization=false 时按 spec 归一化系数缩放）。
-      var wave = node._zwCustomWave;
-      if (oscType === 'custom' && wave && wave._zwReal) {
-        var real = wave._zwReal, imag = wave._zwImag;
-        var n1 = Math.max(real.length, imag.length);
-        // spec 归一化（§PeriodicWave）：
-        // denominator = max(0.6324555320336759·sqrt(Σ_{n=1}^{N-1}(real[n]²+imag[n]²)),
-        //                   0.6324555320336759)；normalization = 1/denominator。
-        var sigma = 0;
-        for (var nn = 1; nn < n1; nn++) {
-          var ar = (nn < real.length) ? real[nn] : 0;
-          var bi = (nn < imag.length) ? imag[nn] : 0;
-          sigma += ar * ar + bi * bi;
-        }
-        var norm = 1.0;
-        if (!wave._zwDisableNormalization) {
-          var denom = Math.max(0.6324555320336759 * Math.sqrt(sigma), 0.6324555320336759);
-          norm = 1.0 / denom;
-        }
-        for (var s2 = Math.max(0, startFrame); s2 < Math.min(len, stopFrame); s2++) {
-          var t2 = s2 / rate;
-          var acc = 0.0;
-          for (var nn2 = 1; nn2 < n1; nn2++) {
-            var ar2 = (nn2 < real.length) ? real[nn2] : 0;
-            var bi2 = (nn2 < imag.length) ? imag[nn2] : 0;
-            var om = 2.0 * Math.PI * freq * nn2 * t2;
-            acc += ar2 * Math.cos(om) + bi2 * Math.sin(om);
+    var memo = {};
+    var chOf = function (node) {
+      if (node._zwKind === 'channelmerger') return node._zwInputs || 1;
+      if (node._zwKind === 'channelsplitter') return node._zwOutputs || 1;
+      return 1;
+    };
+    var evalNode = function (node) {
+      var key = node._zwRenderKey = node._zwRenderKey || ('r' + (++_zwWASeq) + ':' + node._zwKind);
+      if (memo[key]) return memo[key];
+      memo[key] = new Array(chOf(node)); // 环守卫占位（Web Audio 禁环——不达）
+      var chans = null;
+      if (node._zwKind === 'oscillator' && node._zwStartedAtSec != null) {
+        var mono = new Float64Array(len);
+        var oscType = node.type || 'sine';
+        var freq = (node.frequency && typeof node.frequency.value === 'number') ? node.frequency.value : 440;
+        var oscGain = (node.gain && typeof node.gain.value === 'number') ? node.gain.value : 1.0;
+        var startFrame = Math.floor(node._zwStartedAtSec * rate);
+        var stopFrame = (node._zwStoppedAtSec != null) ? Math.floor(node._zwStoppedAtSec * rate) : len;
+        if (oscGain !== 0) {
+          var wave = node._zwCustomWave;
+          if (oscType === 'custom' && wave && wave._zwReal) {
+            var real = wave._zwReal, imag = wave._zwImag;
+            var n1 = Math.max(real.length, imag.length);
+            var sigma = 0;
+            for (var nn = 1; nn < n1; nn++) {
+              var ar = (nn < real.length) ? real[nn] : 0;
+              var bi = (nn < imag.length) ? imag[nn] : 0;
+              sigma += ar * ar + bi * bi;
+            }
+            var norm = 1.0;
+            if (!wave._zwDisableNormalization) {
+              var denom = Math.max(0.6324555320336759 * Math.sqrt(sigma), 0.6324555320336759);
+              norm = 1.0 / denom;
+            }
+            for (var s2 = Math.max(0, startFrame); s2 < Math.min(len, stopFrame); s2++) {
+              var t2 = s2 / rate;
+              var acc = 0.0;
+              for (var nn2 = 1; nn2 < n1; nn2++) {
+                var ar2 = (nn2 < real.length) ? real[nn2] : 0;
+                var bi2 = (nn2 < imag.length) ? imag[nn2] : 0;
+                var om = 2.0 * Math.PI * freq * nn2 * t2;
+                acc += ar2 * Math.cos(om) + bi2 * Math.sin(om);
+              }
+              mono[s2] += acc * oscGain * norm;
+            }
+          } else {
+            var phase = 0.0;
+            var inc = 2.0 * Math.PI * freq / rate;
+            for (var s = Math.max(0, startFrame); s < Math.min(len, stopFrame); s++) {
+              mono[s] += _oscSample(oscType, freq, phase) * oscGain;
+              phase += inc;
+            }
           }
-          mixed[s2] += acc * totalGain * norm;
         }
-        continue;
+        chans = [mono];
+      } else if (node._zwKind === 'buffersource' && node._zwStartedAtSec != null && node.buffer) {
+        var monoB = new Float64Array(len);
+        var startB = Math.max(0, Math.floor(node._zwStartedAtSec * rate));
+        var stopB = (node._zwStoppedAtSec != null) ? Math.floor(node._zwStoppedAtSec * rate) : len;
+        var durB = (node._zwDurationSec != null) ? Math.floor(node._zwDurationSec * rate) : len;
+        var endB = Math.min(len, stopB, startB + durB);
+        var srcLen = node.buffer.length;
+        var srcRate = node.buffer.sampleRate;
+        var offsetF = Math.floor((node._zwOffsetSec || 0) * srcRate);
+        var loopOn = !!node.loop;
+        var loopStartF = Math.floor((node.loopStart || 0) * srcRate);
+        var loopEndF = (node.loopEnd > 0) ? Math.floor(node.loopEnd * srcRate) : srcLen;
+        var nChans = node.buffer.numberOfChannels;
+        var srcChans = [];
+        for (var bc = 0; bc < nChans; bc++) srcChans.push(node.buffer.getChannelData(bc));
+        for (var s3 = startB; s3 < endB; s3++) {
+          var srcIdx = offsetF + (s3 - startB);
+          if (loopOn && loopEndF > loopStartF) {
+            var span = loopEndF - loopStartF;
+            var rel = ((srcIdx - loopStartF) % span + span) % span;
+            srcIdx = loopStartF + rel;
+          }
+          if (srcIdx >= srcLen) break;
+          var accB = 0.0;
+          for (var bc2 = 0; bc2 < nChans; bc2++) accB += srcChans[bc2][srcIdx];
+          monoB[s3] += accB / nChans;
+        }
+        chans = [monoB];
+      } else if (node._zwKind === 'constantsource' && node._zwStartedAtSec != null) {
+        var monoC = new Float64Array(len);
+        var off = (node.offset && typeof node.offset.value === 'number') ? node.offset.value : 1.0;
+        var cStart = Math.floor(node._zwStartedAtSec * rate);
+        var cStop = (node._zwStoppedAtSec != null) ? Math.floor(node._zwStoppedAtSec * rate) : len;
+        for (var s5 = Math.max(0, cStart); s5 < Math.min(len, cStop); s5++) monoC[s5] += off;
+        chans = [monoC];
+      } else {
+        // 中间节点（gain/splitter/merger/未知）：从入边（_zwInEdges——携带源节点
+        // + out/in 通道映射；_zwEdges 是出边不含上游）聚合。
+        chans = new Array(chOf(node));
+        for (var ci0 = 0; ci0 < chans.length; ci0++) chans[ci0] = new Float64Array(len);
+        var ins = node._zwInEdges || [];
+        for (var ei = 0; ei < ins.length; ei++) {
+          var edge = ins[ei];
+          if (!edge.src) continue;
+          var up = evalNode(edge.src);
+          if (!up) continue;
+          if (node._zwKind === 'gain') {
+            var g = (node.gain && typeof node.gain.value === 'number') ? node.gain.value : 1.0;
+            for (var uc = 0; uc < up.length; uc++) {
+              if (!up[uc]) continue;
+              for (var s6 = 0; s6 < len; s6++) chans[0][s6] += up[uc][s6] * g;
+            }
+          } else if (node._zwKind === 'channelsplitter') {
+            // mono 上混：每输出通道 = 上游各通道均值（spec mono→N up-mix 面）。
+            for (var oc = 0; oc < chans.length; oc++) {
+              for (var uc2 = 0; uc2 < up.length; uc2++) {
+                if (!up[uc2]) continue;
+                for (var s7 = 0; s7 < len; s7++) chans[oc][s7] += up[uc2][s7] / up.length;
+              }
+            }
+          } else if (node._zwKind === 'channelmerger') {
+            // 入边 out 通道 → 输出通道 input（通道选择映射——gain.html 的
+            // gainSplitter.connect(merger, 0, 0)/(1, 1) 断言面）。
+            var j = edge.input;
+            if (j >= 0 && j < chans.length && up.length > 0) {
+              var useCh = Math.min(edge.out || 0, up.length - 1);
+              if (up[useCh]) {
+                for (var s8 = 0; s8 < len; s8++) chans[j][s8] += up[useCh][s8];
+              }
+            }
+          } else {
+            // 未知中间节点：直通求和（mono 面）。
+            for (var uc4 = 0; uc4 < up.length; uc4++) {
+              if (!up[uc4]) continue;
+              for (var s9 = 0; s9 < len; s9++) chans[0][s9] += up[uc4][s9];
+            }
+          }
+        }
       }
-      var phase = 0.0;
-      var inc = 2.0 * Math.PI * freq / rate;
-      for (var s = Math.max(0, startFrame); s < Math.min(len, stopFrame); s++) {
-        // 相位随采样推进（首样相位 0——与 spec 波形函数 sin(2πft) 对齐）。
-        mixed[s] += _oscSample(oscType, freq, phase) * totalGain;
-        phase += inc;
+      memo[key] = chans;
+      return chans;
+    };
+    // destination 通道合成：所有直连 destination 的边按 out 通道落位（out+uc 超
+    // ctx 通道数时 mod 回绕——discrete 语义近似）。
+    var mixedChans = new Array(ch);
+    for (var dc = 0; dc < ch; dc++) mixedChans[dc] = new Float64Array(len);
+    for (var di = 0; di < nodes.length; di++) {
+      var dn = nodes[di];
+      var dEdges = dn._zwEdges || [];
+      for (var de = 0; de < dEdges.length; de++) {
+        if (!dEdges[de].target || dEdges[de].target._zwKind !== 'destination') continue;
+        var upD = evalNode(dn);
+        if (!upD) continue;
+        var outCh = dEdges[de].out || 0;
+        for (var ucD = 0; ucD < upD.length; ucD++) {
+          if (!upD[ucD]) continue;
+          var dstCh = outCh + ucD;
+          if (dstCh >= ch) dstCh = dstCh % ch;
+          for (var sD = 0; sD < len; sD++) mixedChans[dstCh][sD] += upD[ucD][sD];
+        }
       }
     }
-    // destination 增益（offline destination 无独立 gain param——恒 1.0）。
-    // 注：offline 渲染**不削幅**（spec：AudioBuffer 采样可超 ±1——实时链的
-    // destination 软削幅不适用；WPT osc-basic-waveform 的 custom wave 幅值 √2 断言面）。
     var buffer = new globalThis.AudioBuffer({ numberOfChannels: ch, length: len, sampleRate: rate });
     for (var ci = 0; ci < ch; ci++) {
       var chan = buffer.getChannelData(ci);
-      for (var sj = 0; sj < len; sj++) chan[sj] = mixed[sj];
+      var srcC = mixedChans[ci];
+      for (var sj = 0; sj < len; sj++) chan[sj] = srcC[sj];
     }
     self._zwState = 'closed';
     self._zwRendering = false;
@@ -9315,6 +9410,11 @@
     var node = _zwWANode('channelsplitter', ctx._zwCtxId, 0);
     node._zwInputs = 1;
     node._zwOutputs = outs;
+    // media-audio D3 第三片：offline 图推进需枚举全部节点（入边索引按节点对象构建
+    // ——未登记节点的边不可见）。
+    if (ctx._zwLength != null) {
+      (ctx._zwOfflineNodes = ctx._zwOfflineNodes || []).push(node);
+    }
     node._zwChannelCount = outs;
     node._zwChannelCountMode = 'explicit';
     node._zwChannelInterpretation = 'discrete';
@@ -9338,6 +9438,10 @@
     var node = _zwWANode('channelmerger', ctx._zwCtxId, 0);
     node._zwInputs = ins;
     node._zwOutputs = 1;
+    // media-audio D3 第三片：同 splitter——offline 图推进枚举面。
+    if (ctx._zwLength != null) {
+      (ctx._zwOfflineNodes = ctx._zwOfflineNodes || []).push(node);
+    }
     node._zwChannelCount = 1;
     node._zwChannelCountMode = 'explicit';
     node._zwChannelInterpretation = 'speakers';

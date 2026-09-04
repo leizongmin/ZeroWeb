@@ -1,12 +1,17 @@
-**最后更新**: 2026-09-05（**D3 第二增量——AudioBufferSourceNode 数据播放离线渲染**：
-startRendering 图推进扩 ABSN（buffer 数据直通 + start(when, offset, duration) 实参
-印记 + loop/loopStart/loopEnd 回卷 + 链式 gain 累计 + 直连 destination 双态）；
-覆盖版 start 复刻 _argsCheck 校验（offset/duration 非有限 TypeError、负 RangeError
-——audiobuffersource-basic start(0,-1) 断言面回归守卫）。**gain.html 试导回退维持
-排除**——其断言核心为 merger 通道选择映射（splitter/merger 通道路由图语义），
-线性链近似不可达，归第三片通道图面。webaudio 维持 **40 用例 907P/0F = 100%**；
-ABSN 数据播放/gain 链/loop 窗口渲染面已落 shim 备第三片。evidence：
-`evidence/2026-09-05-offline-render-d3.json`（刷新）。）
+**最后更新**: 2026-09-05（**D3 第三增量完成——splitter/merger 通道路由图推进 +
+gain.html 导入（41 用例 908P/0F = 100%）**：startRendering 从线性链重写为**通用
+通道图求值**——完整边表（connect 记录 _zwEdges 出边 + _zwInEdges 入边含源节点
+引用与 out/in 通道映射）+ 记忆化 DFS（环守卫占位）+ 逐节点多通道 Float64Array
+产出；节点语义：gain=Σ入边×gain.value / splitter=N 出 mono 上混（每出=上游均值，
+spec mono→N up-mix）/ merger=入边 out 通道→输出通道 input（通道选择映射）/
+源节点（oscillator 四型+custom periodic wave、ABSN buffer 直通 loop/offset/duration、
+constantsource 恒值）=mono 单通道；destination 按 out 通道落位（mod 回绕）。
+**gain.html 解除排除导入全绿**（11 note 增益衰减渲染对比——通道 0/1 = gain 缩放、
+2/3 = 源直通，逐通道 array+SNR 断言）；constantsource 补 offline 登记与 start/stop
+印记。仍排除：audioparam-method-chaining、-nominal-range（Param 调度自动化）/
+ctor-audiobuffer（multiple contexts 渲染对比）/ ctor-iirfilter（IIR DSP）/
+periodicWave.html、audiobuffer-copy-channel（谱断言/后段不可分割）。evidence：
+`evidence/2026-09-05-offline-render-d3.json`（刷新 41 用例 908 subtest））
 此前 2026-09-05：**D3 获批落地——GB-20260904 待决策征询跟进**：
 OfflineAudioContext.startRendering 扩界**获批（窄授权）**——仅 offline 渲染路径
 + shim↔宿主桥扩展；RFC §0 实时设备输出量化面维持排除。征询凭据 msg
