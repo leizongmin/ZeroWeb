@@ -1,11 +1,9 @@
-**最后更新**: 2026-09-05（**D3 第七增量完成——ctor-audiobuffer 导入（45 用例
-1362P/0F = 100%）**：AudioBuffer ctor 全族（invalid ctor TypeError / required
-options / values 界 / numberOfChannels·getChannelData 界）+ **multiple contexts
-渲染对比全绿**（双 OfflineAudioContext 共享 buffer，各自 startRendering 输出对拍
-——图推进框架天然支持多上下文独立求值，原「末 task 依赖 startRendering」排除
-注记随第三增量通道图框架落地解除，首跑即绿零 shim 改动）。剩余排除仅 2 件：
-ctor-iirfilter（IIR 滤波 DSP——Functional task 渲染对比）、periodicWave.html
-（pinned rev 404 已迁址——注记失效）。evidence 刷新 45 用例 1362 subtest。）
+**最后更新**: 2026-09-05（**D3 第八增量完成——ctor-iirfilter 导入（46 用例
+1368P/0F = 100%）**：IIRFilterNode ctor 校验全族 + Functional 渲染对比（ctor vs
+工厂同系数双通道对拍——图推进 pass-through 等价面，两条同构链路输出精确相等，
+无 IIR DSP 数值需求）。原排除注记解除。**webaudio 排除面收束至 1 件**：
+periodicWave.html（pinned rev 该路径 404——用例已迁址，注记失效；迁址后路径随
+上游 pinned rev 复评）。evidence 刷新 46 用例 1368 subtest。）
 此前 2026-09-05：**D3 获批落地——GB-20260904 待决策征询跟进**：
 OfflineAudioContext.startRendering 扩界**获批（窄授权）**——仅 offline 渲染路径
 + shim↔宿主桥扩展；RFC §0 实时设备输出量化面维持排除。征询凭据 msg
@@ -267,7 +265,8 @@ DONE 阻塞**；Mixer/重采样接线随设备切片可选推进）。
 
 - 测试基线：`make test` 全绿 18866（2026-09-04 组合树实测）；clippy 零警告
   （default 与 `--features audio-cpal` 双配置）
-- WPT webaudio：**45 用例 1362P/0F = 100%**（2026-09-05 二十四批累计——第二十四批
+- WPT webaudio：**46 用例 1368P/0F = 100%**（2026-09-05 二十五批累计——第二十五批
+  ctor-iirfilter（ctor 校验 + Functional pass-through 等价对拍）6 subtest + 第二十四批
   ctor-audiobuffer（ctor 全族 + multiple contexts 渲染对比）62 subtest + 第二十三批
   audiobuffer-copy-channel（copy 语义精化）62 subtest + 第二十二批
   nominal-range（nominal range 界表）~327 subtest + 第二十一批

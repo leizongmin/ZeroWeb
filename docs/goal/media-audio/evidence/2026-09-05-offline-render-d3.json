@@ -7033,5 +7033,40 @@
         "message": null
       }
     ]
+  ],
+  [
+    "webaudio/the-audio-api/the-iirfilternode-interface/ctor-iirfilter.html",
+    [
+      {
+        "name": "Initialize OfflineAudioContext",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Invalid IIRFilterNode constructor should throw",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Default IIRFilterNode constructor with feedforward/feedback",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Test AudioNodeOptions on IIRFilterNode",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "IIRFilterNode constructor should throw with missing required options",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Functional test of IIRFilterNode constructor vs. legacy method",
+        "status": "Pass",
+        "message": null
+      }
+    ]
   ]
 ]

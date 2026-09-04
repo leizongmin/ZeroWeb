@@ -149,8 +149,11 @@ WA_FILES=(
   # multiple contexts 渲染对比（双 OfflineAudioContext 共享 buffer，各 startRendering
   # 输出对拍）。原「末 task 依赖 startRendering」注记随图推进框架落地解除。
   "webaudio/the-audio-api/the-audiobuffer-interface/ctor-audiobuffer.html"
-  # 仍不导入：ctor-iirfilter（IIR 滤波 DSP）；periodicWave.html（pinned rev 该路径
-  # 404——用例已迁址，排除注记失效）。
+  # ---- 第二十五批（D3 第七增量续）：ctor-iirfilter——ctor 校验全族 + Functional
+  # 渲染对比（ctor vs 工厂同系数双通道对拍——图推进 pass-through 等价面，两条
+  # 链路同构即可精确相等，无 IIR DSP 需求）。原排除注记解除。
+  "webaudio/the-audio-api/the-iirfilternode-interface/ctor-iirfilter.html"
+  # 仍不导入：periodicWave.html（pinned rev 该路径 404——用例已迁址，注记失效）。
 )
 
 # audit.js 框架（runner inline_extras 内联——用例以绝对路径引用）。
