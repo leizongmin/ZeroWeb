@@ -175,13 +175,18 @@
         _stKids = _childNodeList(sel, handle);
       }
       var _stTrackTracks = [];
+      // M3 扩批 LIII：与 _stTrackTracks 平行的 element key 序列（addtrack 补派的
+      // _zwIsTrackObserved 观察登记判定用）。
+      var _stTrackKeys = [];
       for (var _sti = 0; _sti < _stKids.length; _sti++) {
         var _stKid = _stKids[_sti];
         if (!_stKid || _stKid.nodeType !== 1) continue;
         var _stTag = '';
         try { _stTag = String(_stKid.tagName || '').toLowerCase(); } catch (_eStT) {}
         if (_stTag !== 'track') continue;
-        _stTrackTracks.push(_zwTextTrackForElement(_stKid.__zwSelector || null, _stKid.__zwHandle || null, _elKey(_stKid.__zwSelector || null, _stKid.__zwHandle || null)));
+        var _stKey = _elKey(_stKid.__zwSelector || null, _stKid.__zwHandle || null);
+        _stTrackKeys.push(_stKey);
+        _stTrackTracks.push(_zwTextTrackForElement(_stKid.__zwSelector || null, _stKid.__zwHandle || null, _stKey));
       }
       // addTextTrack 产物 = 旧 tracks 中非 track 子产物（按添加序保尾）。识别：实例
       // 不在 _elementTextTrack 任意值的身份集合不可靠——改在 entry 上记分离表：
@@ -198,9 +203,27 @@
           // entry.tracks——appendChild 同步钩子已先行记账，首读时 tracks 段非增量）。
           // list 首读（holder 空）→ 全量异步派发（spec：list changes queued task，
           // 观察者注册后均可见——track-add-track 断言面）。
+          // M3 扩批 LIII（2026-09-05）：addtrack **每 TextTrack 一次**幂等（spec「fire
+          // addtrack at insertion」——重复读 textTracks / 迟到的首读不再对早先已入列的
+          // track 补发事件；track-mode-not-changed-by-new-track 断言面：迟注册的
+          // onaddtrack 只收 track3 的 addtrack，不收 parse 期入列的 track1/track2）。
           var _stAdded = [];
           for (var _stn = 0; _stn < _stAll.length; _stn++) {
-            if (_stHolder.arr.indexOf(_stAll[_stn]) < 0) _stAdded.push(_stAll[_stn]);
+            if (_stHolder.arr.indexOf(_stAll[_stn]) < 0) {
+              // M3 扩批 LIII：addtrack 只对 **appendChild 钩子观察到的** track 子派发
+              //（_zwMarkTrackObserved 登记——脚本 turn 内 appendChild/addTextTrack 的插入）；
+              // parse 期入列、钩子未见过的 track 子不补派（spec「addtrack at insertion」：
+              // parse 期入列的事件在迟注册 handler 之前已派发完毕——track-mode-not-changed-
+              // by-new-track 断言面：迟注册 onaddtrack 只收 track3）。仍入 holder + 标记。
+              if (typeof globalThis._zwIsTrackObserved === 'function'
+                  && !globalThis._zwIsTrackObserved(_stTrackKeys[_stn])) {
+                _stAll[_stn]._zwAddtrackFired = true;
+                continue;
+              }
+              if (_stAll[_stn]._zwAddtrackFired) continue;
+              _stAll[_stn]._zwAddtrackFired = true;
+              _stAdded.push(_stAll[_stn]);
+            }
           }
           // M3 扩批 XXXI：removetrack 派发——以 holder 现内容为基线，消失的 track
           // 逐个派 removetrack（TrackEvent.track = 被移除 TextTrack；spec
@@ -226,6 +249,33 @@
         }
       }
     } catch (_eStSync) {}
+  };
+  // M3 扩批 LIII（2026-09-05）：track 子 addtrack **观察登记**——appendChild 钩子实际观察到的
+  // track 子 key 集合（_zwMarkTrackObserved，part04 appendChild 调用）。addtrack 的补派以此为准：
+  // 钩子见过的 track（脚本期插入）在 textTracks 首读时照常排队派发（track-add-track 断言面）；
+  // 钩子没见过的（parse 期静态 <track>）不补派——真实浏览器里其 addtrack 在文档解析任务期
+  // 已派发完毕，迟注册的 handler 收不到（spec text-tracks-in-media-elements「addtrack at
+  // insertion」；track-mode-not-changed-by-new-track 断言面）。addTextTrack 产物不走此表
+  //（manual 段在 sync 里 _stTrackKeys 无对应项 → 恒派发，既有语义）。
+  var _zwObservedTrackKeys = {};
+  globalThis._zwMarkTrackObserved = function (key) {
+    try { _zwObservedTrackKeys[key] = true; } catch (_eMto) {}
+  };
+  globalThis._zwIsTrackObserved = function (key) {
+    try { return _zwObservedTrackKeys[key] === true; } catch (_eIto) { return false; }
+  };
+  // M3 扩批 LIII：**append 时刻建 list**——appendChild 钩子在集合同步前调用：list 一经创建，
+  // sync 的 added-dispatch 即在 append turn 内排队 addtrack（spec「addtrack at insertion」的
+  // queued task——checkpoint 派发时同 turn 后注册的 handler 仍可见，track-add-track 断言面）。
+  // 此前 list 惰性建于 textTracks 首读 → append 期插入的 track 在读时「补派」，事件时序失真
+  //（track-mode-not-changed-by-new-track：迟注册 handler 收到 append 期 track 的事件）。
+  globalThis._zwEnsureTextTrackList = function (sel, handle, mediaKey) {
+    try {
+      var _etlEntry = _textTracksCache[mediaKey] || (_textTracksCache[mediaKey] = { tracks: [], list: null, manual: [] });
+      if (!_etlEntry.list && typeof globalThis._zwMakeTextTrackList === 'function') {
+        _etlEntry.list = globalThis._zwMakeTextTrackList([]);
+      }
+    } catch (_eEtl) {}
   };
   // M2：media 专有事件派发便捷封装（non-bubbling/non-cancelable；sel/handle 双身份）。
   // 声明于 part01 顶层（shim IIFE 闭包）——set trap / play()/pause() / 动态加载模拟共用；

@@ -218,8 +218,9 @@ TOP_FILES=(
   "track/track-element/track-cues-missed-no-immediate-events.html"
   # M3 扩批 XXXII（2026-09-04）：readyState/cue-mutable/mode 稳态面批量试导
   #（readyState ERROR/LOADED 断言、VTTCue 属性可变面、src='' 空 URL error 面）。
-  # track-mode-not-changed-by-new-track 维持排除——textTracks 增量同步的 track
-  # 身份对拍（getElementById(x.track.track) same-object 面，身份表切片）；
+  # track-mode-not-changed-by-new-track 维持排除（LIII 试导回退 2026-09-05——旧注记
+  #「身份对拍」过时；实际缺口是 addtrack queued task 跨 execute 派发时点不稳定，
+  # runner 事件循环统一（deep-structure）域）。
   # track-remove-insert-ready-state 维持排除——remove→re-attach 后的播放推进链
   #（期望 timeupdate 计数 3 got 0，removal 面与推进泵耦合切片）。
   "track/track-element/track-cues-cuechange-dynamically-created-track-element.html"

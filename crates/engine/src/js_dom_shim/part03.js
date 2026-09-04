@@ -11939,6 +11939,9 @@
               var _attHolder = _ttEntry.list._zwHolder;
               _attHolder.arr.push(_track);
               globalThis._zwSyncListHolder(_attHolder);
+              // M3 扩批 LIII：addtrack 每 track 一次幂等（与 _zwSyncTextTracksFromChildren
+              // 的 `_zwAddtrackFired` 门同面——addTextTrack 产物重复进增量同步不再重派）。
+              try { _track._zwAddtrackFired = true; } catch (_eAtlF) {}
               if (typeof globalThis._zwFireTracksAdded === 'function') {
                 globalThis._zwFireTracksAdded(_ttEntry.list, [_track]);
               }

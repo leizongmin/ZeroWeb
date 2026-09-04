@@ -1,0 +1,4312 @@
+[
+  [
+    "html/semantics/embedded-content/media-elements/event_canplay.html",
+    [
+      {
+        "name": "audio events - canplay",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video events - canplay",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "setting src attribute on autoplay audio should trigger canplay event",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "setting src attribute on autoplay video should trigger canplay event",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/event_canplay_noautoplay.html",
+    [
+      {
+        "name": "audio events - canplay",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video events - canplay",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "setting src attribute on non-autoplay audio should trigger canplay event",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "setting src attribute on non-autoplay video should trigger canplay event",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/event_canplaythrough.html",
+    [
+      {
+        "name": "audio events - canplaythrough",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video events - canplaythrough",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "setting src attribute on autoplay audio should trigger canplaythrough event",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "setting src attribute on autoplay video should trigger canplaythrough event",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/event_canplaythrough_noautoplay.html",
+    [
+      {
+        "name": "audio events - canplaythrough",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video events - canplaythrough",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "setting src attribute on non-autoplay audio should trigger canplaythrough event",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "setting src attribute on non-autoplay video should trigger canplaythrough event",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/event_loadeddata.html",
+    [
+      {
+        "name": "audio events - loadeddata",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video events - loadeddata",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "setting src attribute on autoplay audio should trigger loadeddata event",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "setting src attribute on autoplay video should trigger loadeddata event",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/event_loadeddata_noautoplay.html",
+    [
+      {
+        "name": "audio events - loadeddata",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video events - loadeddata",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "setting src attribute on non-autoplay audio should trigger loadeddata event",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "setting src attribute on non-autoplay video should trigger loadeddata event",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/event_loadedmetadata.html",
+    [
+      {
+        "name": "audio events - loadedmetadata",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video events - loadedmetadata",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "setting src attribute on autoplay audio should trigger loadedmetadata event",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "setting src attribute on autoplay video should trigger loadedmetadata event",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/event_loadedmetadata_noautoplay.html",
+    [
+      {
+        "name": "audio events - loadedmetadata",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video events, loadedmetadata",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "setting src attribute on non-autoplay audio should trigger loadedmetadata event",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "setting src attribute on non-autoplay video should trigger loadedmetadata event",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/event_loadstart.html",
+    [
+      {
+        "name": "audio events - loadstart",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video events - loadstart",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "setting src attribute on autoplay audio should trigger loadstart event",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "setting src attribute on autoplay video should trigger loadstart event",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/event_loadstart_noautoplay.html",
+    [
+      {
+        "name": "audio events - loadstart",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video events - loadstart",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "setting src attribute on non-autoplay audio should trigger loadstart event",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "setting src attribute on non-autoplay video should trigger loadstart event",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/event_order_canplay_canplaythrough.html",
+    [
+      {
+        "name": "audio events - canplay, then canplaythrough",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video events - canplay, then canplaythrough",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "setting src attribute on autoplay audio should trigger canplay then canplaythrough event",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "setting src attribute on autoplay video should trigger canplay then canplaythrough event",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/event_order_canplay_playing.html",
+    [
+      {
+        "name": "audio events - canplay, then playing",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video events - canplay, then playing",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "setting src attribute on autoplay audio should trigger canplay then playing event",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "setting src attribute on autoplay video should trigger canplay then playing event",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/event_order_durationchange_resize_loadedmetadata.html",
+    [
+      {
+        "name": "audio events - durationchange, then loadedmetadata",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video events - durationchange, resize then loadeddata",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "setting src attribute on autoplay audio should trigger durationchange then loadedmetadata event",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "setting src attribute on autoplay video should trigger durationchange, resize then loadedmetadata event",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/event_order_loadedmetadata_loadeddata.html",
+    [
+      {
+        "name": "audio events - loadedmetadata, then loadeddata",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video events - loadedmetadata, then loadeddata",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "setting src attribute on autoplay audio should trigger loadedmetadata then loadeddata event",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "setting src attribute on autoplay video should trigger loadedmetadata then loadeddata event",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/event_order_loadstart_progress.html",
+    [
+      {
+        "name": "audio events - loadstart, then progress",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video events - loadstart, then progress",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "setting src attribute on autoplay audio should trigger loadstart then progress event",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "setting src attribute on autoplay video should trigger loadstart then progress event",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/event_pause.html",
+    [
+      {
+        "name": "audio events - pause",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video events - pause",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "calling pause() on autoplay audio should trigger pause event",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "calling pause() on autoplay video should trigger pause event",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/event_pause_noautoplay.html",
+    [
+      {
+        "name": "calling play() then pause() on non-autoplay audio should trigger pause event",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "audio events - pause",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "calling play() then pause() on non-autoplay video should trigger pause event",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video events - pause",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/event_play.html",
+    [
+      {
+        "name": "audio events - play",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video events - play",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "setting src attribute on autoplay audio should trigger play event",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "setting src attribute on autoplay video should trigger play event",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/event_play_noautoplay.html",
+    [
+      {
+        "name": "calling play() on audio should trigger play event",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "audio events - play",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "calling play() on video should trigger play event",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video events - play",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/event_playing.html",
+    [
+      {
+        "name": "audio events - playing",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video events - playing",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "setting src attribute on autoplay audio should trigger playing event",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "setting src attribute on autoplay video should trigger playing event",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/event_playing_noautoplay.html",
+    [
+      {
+        "name": "audio events - playing",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video events - playing",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "calling play() on audio should trigger playing event",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "calling play() on video should trigger playing event",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/event_progress.html",
+    [
+      {
+        "name": "audio events - progress",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video events - progress",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "setting src attribute on autoplay audio should trigger progress event",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "setting src attribute on autoplay video should trigger progress event",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/event_progress_noautoplay.html",
+    [
+      {
+        "name": "audio events - progress",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video events - progress",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "setting src attribute on non-autoplay audio should trigger progress event",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "setting src attribute on non-autoplay video should trigger progress event",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/event_volumechange.html",
+    [
+      {
+        "name": "setting audio.volume/muted to the same value does not fire volumechange",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "setting audio.volume/muted repeatedly fires volumechange repeatedly",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "setting video.volume/muted to the same value does not fire volumechange",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "setting video.volume/muted repeatedly fires volumechange repeatedly",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "setting audio.volume fires volumechange",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "setting audio.muted fires volumechange",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "setting video.muted fires volumechange",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "setting video.volume fires volumechange",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "setting audio.volume/muted before load will not fire volumechange",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "adding/removing audio muted content attribute will not fire volumechange",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "adding/removing audio muted content attribute on a connected element will not fire volumechange",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "setting audio.muted to false when false by default will not fire volumechange",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "setting audio.muted to true when true by default will not fire volumechange",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "setting video.volume/muted before load will not fire volumechange",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "adding/removing video muted content attribute will not fire volumechange",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "setting video.muted to false when false by default will not fire volumechange",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "adding/removing video muted content attribute on a connected element will not fire volumechange",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "setting video.muted to true when true by default will not fire volumechange",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/volume_nonfinite.html",
+    [
+      {
+        "name": "Setting audio.volume to NaN should throw a TypeError",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Setting audio.volume to Infinity should throw a TypeError",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Setting audio.volume to -Infinity should throw a TypeError",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Setting video.volume to NaN should throw a TypeError",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Setting video.volume to Infinity should throw a TypeError",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Setting video.volume to -Infinity should throw a TypeError",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/controlsList.tentative.html",
+    [
+      {
+        "name": "Test controlsList allowed values for <audio>",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Test controlsList allowed values for <video>",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/event_timeupdate.html",
+    [
+      {
+        "name": "setting src attribute on a sufficiently long autoplay audio should trigger timeupdate event",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "setting src attribute on a sufficiently long autoplay video should trigger timeupdate event",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/event_timeupdate_noautoplay.html",
+    [
+      {
+        "name": "audio events - timeupdate",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video events - timeupdate",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "calling play() on a sufficiently long audio should trigger timeupdate event",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "calling play() on a sufficiently long video should trigger timeupdate event",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/error-codes/error.html",
+    [
+      {
+        "name": "audio.error initial value",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video.error initial value",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "audio.error after successful load",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "audio.error after setting src to the empty string",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video.error after successful load",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video.error after setting src to the empty string",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/historical.html",
+    [
+      {
+        "name": "audio.bufferingRate should not be supported",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video.bufferingRate should not be supported",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "audio.start should not be supported",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video.start should not be supported",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "audio.end should not be supported",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video.end should not be supported",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "audio.loopStart should not be supported",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video.loopStart should not be supported",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "audio.loopEnd should not be supported",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video.loopEnd should not be supported",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "audio.loopCount should not be supported",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video.loopCount should not be supported",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "audio.currentLoop should not be supported",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video.currentLoop should not be supported",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "audio.addCuePoint should not be supported",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video.addCuePoint should not be supported",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "audio.removeCuePoint should not be supported",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video.removeCuePoint should not be supported",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "audio.playCount should not be supported",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video.playCount should not be supported",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "audio.addCueRange should not be supported",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video.addCueRange should not be supported",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "audio.removeCueRanges should not be supported",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video.removeCueRanges should not be supported",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "source.pixelratio should not be supported",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "audio.bufferedBytes should not be supported",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video.bufferedBytes should not be supported",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "audio.totalBytes should not be supported",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video.totalBytes should not be supported",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "audio.bufferingThrottled should not be supported",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video.bufferingThrottled should not be supported",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "audio.autobuffer should not be supported",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video.autobuffer should not be supported",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "audio.startTime should not be supported",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video.startTime should not be supported",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "audio.startOffsetTime should not be supported",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video.startOffsetTime should not be supported",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "audio.initialTime should not be supported",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video.initialTime should not be supported",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video.audio should not be supported",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "audio.startDate should not be supported",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video.startDate should not be supported",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "audio.mozSrcObject should not be supported",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video.mozSrcObject should not be supported",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "audio.mozPreservesPitch should not be supported",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video.mozPreservesPitch should not be supported",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "audio.webkitPreservesPitch should not be supported",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video.webkitPreservesPitch should not be supported",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "TextTrackCue constructor should not be supported",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "audio.mediaGroup should not be supported",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video.mediaGroup should not be supported",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "audio.controller should not be supported",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video.controller should not be supported",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "MediaController constructor should not be supported",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/interfaces/HTMLElement/HTMLMediaElement/addTextTrack.html",
+    [
+      {
+        "name": "HTMLMediaElement.addTextTrack bogus first arg",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "HTMLMediaElement.addTextTrack uppercase first arg",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "HTMLMediaElement.addTextTrack subtitles first arg",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "HTMLMediaElement.addTextTrack captions first arg",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "HTMLMediaElement.addTextTrack descriptions first arg",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "HTMLMediaElement.addTextTrack chapters first arg",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "HTMLMediaElement.addTextTrack metadata first arg",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "HTMLMediaElement.addTextTrack undefined second and third arg",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "HTMLMediaElement.addTextTrack null second and third arg",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "HTMLMediaElement.addTextTrack foo and bar second and third arg",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "HTMLMediaElement.addTextTrack foo second arg, third arg omitted",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/interfaces/HTMLElement/HTMLMediaElement/crossOrigin.html",
+    [
+      {
+        "name": "HTMLMediaElement.crossOrigin",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "HTMLMediaElement.crossOrigin, content attribute missing",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "HTMLMediaElement.crossOrigin, content attribute invalid value",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "HTMLMediaElement.crossOrigin, content attribute empty string",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "HTMLMediaElement.crossOrigin, content attribute uppercase ANONYMOUS",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "HTMLMediaElement.crossOrigin, content attribute use-credentials",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "HTMLMediaElement.crossOrigin, setting to empty string",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "HTMLMediaElement.crossOrigin, setting to null",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "HTMLMediaElement.crossOrigin, setting to invalid value",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "HTMLMediaElement.crossOrigin, setting to uppercase ANONYMOUS",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "HTMLMediaElement.crossOrigin, setting to use-credentials",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/interfaces/HTMLElement/HTMLMediaElement/textTracks.html",
+    [
+      {
+        "name": "HTMLMediaElement.textTracks",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/interfaces/TextTrack/activeCues.html",
+    [
+      {
+        "name": "TextTrack.activeCues, empty list",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "TextTrack.activeCues, after addCue()",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "TextTrack.activeCues, different modes",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "TextTrack.activeCues, video loading",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "TextTrack.activeCues, adding cue during playback",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "TextTrack.activeCues, video playing",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/interfaces/TextTrack/addCue.html",
+    [
+      {
+        "name": "TextTrack.addCue(), adding a cue to two different tracks",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "TextTrack.addCue(), adding a cue to a track twice",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "TextTrack.addCue(), adding a removed cue to a different track",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "TextTrack.addCue(), adding an associated but removed cue to the same track",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "TextTrack.addCue(), adding a cue associated with a track element to other track",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/interfaces/TextTrack/constants.html",
+    [
+      {
+        "name": "TextTrack constants",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/interfaces/TextTrack/cues.html",
+    [
+      {
+        "name": "TextTrack.cues, empty list",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "TextTrack.cues, after addCue()",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "TextTrack.cues, different modes",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "TextTrack.cues, changing order",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "TextTrack.cues, default attribute",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/interfaces/TextTrack/kind.html",
+    [
+      {
+        "name": "TextTrack.kind, addTextTrack",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "TextTrack.kind, track element",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "TextTrack.kind, \\u0000",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/interfaces/TextTrack/label.html",
+    [
+      {
+        "name": "TextTrack.label",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "TextTrack.label, \\u0000",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/interfaces/TextTrack/language.html",
+    [
+      {
+        "name": "TextTrack.language",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "TextTrack.language, \\u0000",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/interfaces/TextTrack/mode.html",
+    [
+      {
+        "name": "TextTrack.mode, wrong value",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "TextTrack.mode, correct value",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/interfaces/TextTrack/oncuechange.html",
+    [
+      {
+        "name": "TextTrack.oncuechange",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "TextTrack.addEventListener/removeEventListener",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/interfaces/TextTrack/removeCue.html",
+    [
+      {
+        "name": "TextTrack.removeCue(), two elementless tracks",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "TextTrack.removeCue(), cue from track element",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/interfaces/TextTrackCue/constructor.html",
+    [
+      {
+        "name": "TextTrackCue and VTTCue are separate interfaces",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "TextTrackCue constructor should not be supported",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/interfaces/TextTrackCue/endTime.html",
+    [
+      {
+        "name": "TextTrackCue.endTime, script-created cue",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "TextTrackCue.endTime, parsed cue",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/interfaces/TextTrackCue/id.html",
+    [
+      {
+        "name": "TextTrackCue.id, script-created cue",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "TextTrackCue.id, parsed cue",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/interfaces/TextTrackCue/onenter.html",
+    [
+      {
+        "name": "TextTrackCue.onenter",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "TextTrackCue.addEventListener/removeEventListener",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/interfaces/TextTrackCue/onexit.html",
+    [
+      {
+        "name": "TextTrackCue.onexit",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "TextTrackCue.addEventListener/removeEventListener",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/interfaces/TextTrackCue/pauseOnExit.html",
+    [
+      {
+        "name": "TextTrackCue.pauseOnExit, script-created cue",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "TextTrackCue.pauseOnExit, parsed cue",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/interfaces/TextTrackCue/startTime.html",
+    [
+      {
+        "name": "TextTrackCue.startTime, script-created cue",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "TextTrackCue.startTime, parsed cue",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/interfaces/TextTrackCue/track.html",
+    [
+      {
+        "name": "TextTrackCue.track, script-created cue",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "TextTrackCue.track, parsed cue",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/interfaces/TextTrackCueList/getCueById.html",
+    [
+      {
+        "name": "TextTrackCueList.getCueById, no id",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "TextTrackCueList.getCueById, id foo",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "TextTrackCueList.getCueById, no 1",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "TextTrackCueList.getCueById, id a\\u0000b",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/interfaces/TextTrackCueList/getter.html",
+    [
+      {
+        "name": "TextTrackCueList getter",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "TextTrackCueList getter, no indexed set/create",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "TextTrackCueList getter, no indexed set/create (strict)",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/interfaces/TextTrackCueList/length.html",
+    [
+      {
+        "name": "TextTrackCueList.length",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/interfaces/TextTrackList/getTrackById.html",
+    [
+      {
+        "name": "TextTrackList.getTrackById",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/interfaces/TextTrackList/getter.html",
+    [
+      {
+        "name": "TextTrackList getter",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "TextTrackList getter, no indexed set/create",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "TextTrackList getter, no indexed set/create (strict)",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/interfaces/TextTrackList/length.html",
+    [
+      {
+        "name": "TextTrackList.length",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/interfaces/TextTrackList/onaddtrack.html",
+    [
+      {
+        "name": "TextTrackList.onaddtrack",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "TextTrackList.addEventListener/removeEventListener",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/interfaces/TextTrackList/onremovetrack.html",
+    [
+      {
+        "name": "TextTrackList.onremovetrack",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "TextTrackList.addEventListener/removeEventListener",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/interfaces/TrackEvent/constructor.html",
+    [
+      {
+        "name": "TrackEvent constructor, one arg",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "TrackEvent constructor, two args",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/interfaces/TrackEvent/createEvent.html",
+    [
+      {
+        "name": "TrackEvent created with createEvent",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/the-audio-element/audio_constructor.html",
+    [
+      {
+        "name": "No arguments",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Empty string argument",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Non-empty string argument",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Null argument",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Undefined argument",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Extra argument",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Audio constructor",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Prototype of object created with named constructor",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Calling Audio should throw",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Calling HTMLAudioElement should throw",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Constructing HTMLAudioElement should throw",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/the-video-element/video-tabindex.html",
+    [
+      {
+        "name": "Attributes shouldn't magically appear",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/the-video-element/video_crash_empty_src.html",
+    [
+      {
+        "name": "src=\"about:blank\" does not crash.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "src=\"\" does not crash.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/the-video-element/video-loading-eager.html",
+    [
+      {
+        "name": "Videos with loading='eager' load immediately regardless of viewport position",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/the-audio-element/audio-loading-eager.html",
+    [
+      {
+        "name": "Audio with loading='eager' loads immediately regardless of viewport position",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/interfaces/HTMLElement/HTMLTrackElement/default.html",
+    [
+      {
+        "name": "HTMLTrackElement.default missing value",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "HTMLTrackElement.default empty string content attribute",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "HTMLTrackElement.default empty string IDL attribute",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "HTMLTrackElement.default foo in content attribute",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "HTMLTrackElement.default foo in IDL attribute",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "HTMLTrackElement.default true in IDL attribute",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "HTMLTrackElement.default false in IDL attribute",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/interfaces/HTMLElement/HTMLTrackElement/kind.html",
+    [
+      {
+        "name": "HTMLTrackElement.kind missing value",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "HTMLTrackElement.kind invalid value in content attribute",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "HTMLTrackElement.kind content attribute uppercase",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "HTMLTrackElement.kind content attribute with uppercase turkish I (with dot)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "HTMLTrackElement.kind content attribute with lowercase turkish i (dotless)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "HTMLTrackElement.kind content attribute \"subtitles\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "HTMLTrackElement.kind content attribute \"captions\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "HTMLTrackElement.kind content attribute \"descriptions\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "HTMLTrackElement.kind content attribute \"chapters\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "HTMLTrackElement.kind content attribute \"metadata\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "HTMLTrackElement.kind content attribute \"captions\\u0000\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "HTMLTrackElement.kind setting IDL attribute to \"subtitles\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "HTMLTrackElement.kind setting IDL attribute to \"captions\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "HTMLTrackElement.kind setting IDL attribute to \"descriptions\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "HTMLTrackElement.kind setting IDL attribute to \"chapters\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "HTMLTrackElement.kind setting IDL attribute to \"metadata\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "HTMLTrackElement.kind setting IDL attribute to \"CAPTIONS\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "HTMLTrackElement.kind setting IDL attribute with uppercase turkish I (with dot)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "HTMLTrackElement.kind setting IDL attribute with lowercase turkish I (dotless)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "HTMLTrackElement.kind setting IDL attribute with \\u0000",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/interfaces/HTMLElement/HTMLTrackElement/label.html",
+    [
+      {
+        "name": "HTMLTrackElement.label missing value",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "HTMLTrackElement.label empty string content attribute",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "HTMLTrackElement.label empty string IDL attribute",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "HTMLTrackElement.label lowercase content attribute",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "HTMLTrackElement.label uppercase content attribute",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "HTMLTrackElement.label\\u0000 in content attribute",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "HTMLTrackElement.label lowercase IDL attribute",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "HTMLTrackElement.label uppercase IDL attribute",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "HTMLTrackElement.label whitespace in content attribute",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "HTMLTrackElement.label whitespace in IDL attribute",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "HTMLTrackElement.label \\u0000 in IDL attribute",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/interfaces/HTMLElement/HTMLTrackElement/readyState.html",
+    [
+      {
+        "name": "HTMLTrackElement.readyState default value",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "HTMLTrackElement.readyState values",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/interfaces/HTMLElement/HTMLTrackElement/src.html",
+    [
+      {
+        "name": "HTMLTrackElement.src missing value",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "HTMLTrackElement.src empty string in content attribute",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "HTMLTrackElement.src assigning empty string to IDL attribute",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "HTMLTrackElement.src unresolvable value in content attribute",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "HTMLTrackElement.src assigning unresolvable value to IDL attribute",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "HTMLTrackElement.src resolvable value in content attribute",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "HTMLTrackElement.src assigning resolvable value to IDL attribute",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "HTMLTrackElement.src \\u0000 in content attribute",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "HTMLTrackElement.src assigning \\u0000 to IDL attribute",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "HTMLTrackElement.src foo\\u0000bar in content attribute",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "HTMLTrackElement.src assigning foo\\u0000bar to IDL attribute",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/interfaces/HTMLElement/HTMLTrackElement/srclang.html",
+    [
+      {
+        "name": "HTMLTrackElement.srclang missing value",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "HTMLTrackElement.srclang empty string content attribute",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "HTMLTrackElement.srclang empty string IDL attribute",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "HTMLTrackElement.srclang lowercase content attribute",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "HTMLTrackElement.srclang uppercase content attribute",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "HTMLTrackElement.srclang \\u0000 content attribute",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "HTMLTrackElement.srclang lowercase IDL attribute",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "HTMLTrackElement.srclang uppercase IDL attribute",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "HTMLTrackElement.srclang whitespace in content attribute",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "HTMLTrackElement.srclang whitespace in IDL attribute",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "HTMLTrackElement.srclang \\u0000 in IDL attribute",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/interfaces/HTMLElement/HTMLTrackElement/track.html",
+    [
+      {
+        "name": "HTMLTrackElement.track",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/location-of-the-media-resource/currentSrc.html",
+    [
+      {
+        "name": "audio.currentSrc initial value",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video.currentSrc initial value",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "audio.currentSrc after setting src attribute \"\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "audio.currentSrc after adding source element with src attribute \"\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "audio.currentSrc after setting src attribute \".\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "audio.currentSrc after adding source element with src attribute \".\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "audio.currentSrc after setting src attribute \" \"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "audio.currentSrc after adding source element with src attribute \" \"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "audio.currentSrc after setting src attribute \"data:,\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "audio.currentSrc after adding source element with src attribute \"data:,\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video.currentSrc after setting src attribute \"\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video.currentSrc after adding source element with src attribute \"\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video.currentSrc after setting src attribute \".\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video.currentSrc after adding source element with src attribute \".\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video.currentSrc after setting src attribute \" \"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video.currentSrc after adding source element with src attribute \" \"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video.currentSrc after setting src attribute \"data:,\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video.currentSrc after adding source element with src attribute \"data:,\"",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/mime-types/canPlayType.html",
+    [
+      {
+        "name": "utility code",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "application/octet-stream not supported",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "fictional formats and codecs not supported",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "audio/mp4 (optional)",
+        "status": "PreconditionFailed",
+        "message": "audio/mp4"
+      },
+      {
+        "name": "audio/mp4; codecs=\"mp4a.40.2\" (optional)",
+        "status": "PreconditionFailed",
+        "message": "audio/mp4"
+      },
+      {
+        "name": "audio/mp4; codecs=\"iamf.001.001.Opus\" (optional)",
+        "status": "PreconditionFailed",
+        "message": "audio/mp4"
+      },
+      {
+        "name": "audio/mp4 with bogus codec",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "audio/mp4 with and without codecs",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "audio/ogg (optional)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "audio/ogg; codecs=\"opus\" (optional)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "audio/ogg; codecs=\"vorbis\" (optional)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "audio/ogg with bogus codec",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "audio/ogg with and without codecs",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "audio/wav (optional)",
+        "status": "PreconditionFailed",
+        "message": "audio/wav"
+      },
+      {
+        "name": "audio/wav; codecs=\"1\" (optional)",
+        "status": "PreconditionFailed",
+        "message": "audio/wav"
+      },
+      {
+        "name": "audio/wav with bogus codec",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "audio/wav with and without codecs",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "audio/webm (optional)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "audio/webm; codecs=\"opus\" (optional)",
+        "status": "PreconditionFailed",
+        "message": "audio/webm"
+      },
+      {
+        "name": "audio/webm; codecs=\"vorbis\" (optional)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "audio/webm with bogus codec",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "audio/webm with and without codecs",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video/3gpp (optional)",
+        "status": "PreconditionFailed",
+        "message": "video/3gpp"
+      },
+      {
+        "name": "video/3gpp; codecs=\"samr\" (optional)",
+        "status": "PreconditionFailed",
+        "message": "video/3gpp"
+      },
+      {
+        "name": "video/3gpp; codecs=\"mp4v.20.8\" (optional)",
+        "status": "PreconditionFailed",
+        "message": "video/3gpp"
+      },
+      {
+        "name": "video/3gpp codecs subset",
+        "status": "PreconditionFailed",
+        "message": "video/3gpp"
+      },
+      {
+        "name": "video/3gpp codecs order",
+        "status": "PreconditionFailed",
+        "message": "video/3gpp"
+      },
+      {
+        "name": "video/3gpp with bogus codec",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video/3gpp with and without codecs",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video/mp4 (optional)",
+        "status": "PreconditionFailed",
+        "message": "video/mp4"
+      },
+      {
+        "name": "video/mp4; codecs=\"mp4a.40.2\" (optional)",
+        "status": "PreconditionFailed",
+        "message": "video/mp4"
+      },
+      {
+        "name": "video/mp4; codecs=\"avc1.42E01E\" (optional)",
+        "status": "PreconditionFailed",
+        "message": "video/mp4"
+      },
+      {
+        "name": "video/mp4; codecs=\"avc1.4D401E\" (optional)",
+        "status": "PreconditionFailed",
+        "message": "video/mp4"
+      },
+      {
+        "name": "video/mp4; codecs=\"avc1.58A01E\" (optional)",
+        "status": "PreconditionFailed",
+        "message": "video/mp4"
+      },
+      {
+        "name": "video/mp4; codecs=\"avc1.64001E\" (optional)",
+        "status": "PreconditionFailed",
+        "message": "video/mp4"
+      },
+      {
+        "name": "video/mp4; codecs=\"mp4v.20.8\" (optional)",
+        "status": "PreconditionFailed",
+        "message": "video/mp4"
+      },
+      {
+        "name": "video/mp4; codecs=\"mp4v.20.240\" (optional)",
+        "status": "PreconditionFailed",
+        "message": "video/mp4"
+      },
+      {
+        "name": "video/mp4 codecs subset",
+        "status": "PreconditionFailed",
+        "message": "video/mp4"
+      },
+      {
+        "name": "video/mp4 codecs order",
+        "status": "PreconditionFailed",
+        "message": "video/mp4"
+      },
+      {
+        "name": "video/mp4 with bogus codec",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video/mp4 with and without codecs",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video/ogg (optional)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video/ogg; codecs=\"opus\" (optional)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video/ogg; codecs=\"vorbis\" (optional)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video/ogg; codecs=\"theora\" (optional)",
+        "status": "PreconditionFailed",
+        "message": "video/ogg"
+      },
+      {
+        "name": "video/ogg codecs subset",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video/ogg codecs order",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video/ogg with bogus codec",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video/ogg with and without codecs",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video/webm (optional)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video/webm; codecs=\"opus\" (optional)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video/webm; codecs=\"vorbis\" (optional)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video/webm; codecs=\"vp8\" (optional)",
+        "status": "PreconditionFailed",
+        "message": "video/webm"
+      },
+      {
+        "name": "video/webm; codecs=\"vp8.0\" (optional)",
+        "status": "PreconditionFailed",
+        "message": "video/webm"
+      },
+      {
+        "name": "video/webm; codecs=\"vp9\" (optional)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video/webm; codecs=\"vp9.0\" (optional)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video/webm codecs subset",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video/webm codecs order",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video/webm with bogus codec",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video/webm with and without codecs",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/networkState_during_loadstart.html",
+    [
+      {
+        "name": "audioElement.networkState should be NETWORK_LOADING during loadstart event",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "videoElement.networkState should be NETWORK_LOADING during loadstart event",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/networkState_during_progress.html",
+    [
+      {
+        "name": "audio events - networkState during progress",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video events - networkState during progress",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "audioElement.networkState should be NETWORK_LOADING during progress event",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "videoElement.networkState should be NETWORK_LOADING during progress event",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/networkState_initial.html",
+    [
+      {
+        "name": "audio.networkState - default state",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video.networkState - default state",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/offsets-into-the-media-resource/currentTime.html",
+    [
+      {
+        "name": "currentTime initial value",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "setting currentTime when readyState is HAVE_NOTHING",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "setting currentTime when readyState is greater than HAVE_NOTHING",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/offsets-into-the-media-resource/duration.html",
+    [
+      {
+        "name": "duration initial value",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/paused_false_during_play.html",
+    [
+      {
+        "name": "audio events - paused property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video events - paused property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "audio.paused should be false during play event",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video.paused should be false during play event",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/paused_true_during_pause.html",
+    [
+      {
+        "name": "audio.paused should be true during pause event",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "audio events - paused property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video.paused should be true during pause event",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video events - paused property",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/playing-the-media-resource/playbackRate.html",
+    [
+      {
+        "name": "playbackRate initial value",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "playbackRate set to small positive value",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "playbackRate set to large positive value",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "playbackRate set to small negative value",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "playbackRate set to large negative value",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "playbackRate set to 0",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "playbackRate set to -1",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/track/track-element/track-api-texttracks.html",
+    [
+      {
+        "name": "Check the track elements",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Check getTrackById method",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Count track list",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/track/track-element/track-add-remove-cue.html",
+    [
+      {
+        "name": "TextTrack's addCue and removeCue",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/track/track-element/track-webvtt-cue-identifiers.html",
+    [
+      {
+        "name": "Check cues from resources/cue-id.vtt",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Check cues from resources/cue-id-error.vtt",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/track/track-element/track-webvtt-blank-lines.html",
+    [
+      {
+        "name": "Check cues from resources/cues.vtt",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Check cues from resources/cues-no-separation.vtt",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/track/track-element/track-webvtt-settings.html",
+    [
+      {
+        "name": "Check cues from resources/settings.vtt",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Check cues from resources/settings-bad-separation.vtt",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/track/track-element/track-webvtt-entities.html",
+    [
+      {
+        "name": "Check cues from resources/entities.vtt",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Check cues from resources/entities-wrong.vtt",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/track/track-element/track-webvtt-timings-hour.html",
+    [
+      {
+        "name": "Cue timings and various syntax errors in timings, with hours",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/track/track-element/track-webvtt-magic-header.html",
+    [
+      {
+        "name": "Magic file header \"WEBVTT\" leads to the file properly recognized as a WebVTT file",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/track/track-element/track-webvtt-header-checks.html",
+    [
+      {
+        "name": "Check handling of header lengths and name",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/track/track-element/track-cue-negative-timestamp.html",
+    [
+      {
+        "name": "Negative timestamps",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/track/track-element/track-element-src-change.html",
+    [
+      {
+        "name": "HTMLTrackElement 'src' attribute mutations",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/track/track-element/track-default-attribute.html",
+    [
+      {
+        "name": "A track with the \"default\" attribute loads automatically",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/track/track-element/track-load-from-src-readyState.html",
+    [
+      {
+        "name": "Load event on HTMLTrackElement and LOADED readyState on TextTrack when src is set from JavaScript",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/track/track-element/track-cues-enter-seeking.html",
+    [
+      {
+        "name": "TextTrack's cue onenter handler called when seeked onto",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/track/track-element/track-change-event.html",
+    [
+      {
+        "name": "A 'change' event is fired when a TextTrack's mode changes",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/track/track-element/track-disabled.html",
+    [
+      {
+        "name": "Disabling a track",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/track/track-element/no-cuechange-before-play.html",
+    [
+      {
+        "name": "Ensure that the 'cuechange' event is not fired before video playback has begun.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/track/track-element/track-remove-active-cue.html",
+    [
+      {
+        "name": "Removing an active cue",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/track/track-element/track-active-cues.html",
+    [
+      {
+        "name": "Ensure that no text track cues are active after the video is unloaded",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/track/track-element/track-cues-seeking.html",
+    [
+      {
+        "name": "TextTrack's activeCues are indexed and updated during video playback",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/track/track-element/track-cues-enter-exit.html",
+    [
+      {
+        "name": "TextTrack's cues are indexed and updated in order during video playback",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/track/track-element/track-cues-pause-on-exit.html",
+    [
+      {
+        "name": "Video is paused after cues having pause-on-exit flag are processed",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/track/track-element/track-cues-missed.html",
+    [
+      {
+        "name": "Events are triggered for missed (skipped) cues during normal playback",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/track/track-element/track-cues-sorted-before-dispatch.html",
+    [
+      {
+        "name": "All events are triggered in chronological order",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/track/track-element/track-addtrack-kind.html",
+    [
+      {
+        "name": "addTextTrack() only accepts known \"kind\" values",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/track/track-element/track-texttracks.html",
+    [
+      {
+        "name": "TextTracks in a TextTrackList are kept in the correct order",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/track/track-element/track-node-add-remove.html",
+    [
+      {
+        "name": "Add and remove track node",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/track/track-element/track-id.html",
+    [
+      {
+        "name": "TextTrack \"id\" attribute",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/track/track-element/track-element-dom-change.html",
+    [
+      {
+        "name": "Simple DOM mutations with track element",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/track/track-element/vtt-cue-float-precision.html",
+    [
+      {
+        "name": "Float precision of VTTCue attributes line, position and size, stored as floats",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/track/track-element/track-data-url.html",
+    [
+      {
+        "name": "track element data: URL No CORS",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "track element data: URL anonymous",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "track element data: URL use-credentials",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/track/track-element/track-add-track.html",
+    [
+      {
+        "name": "'addtrack' event is fired when a TextTrack is created",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/track/track-element/track-cue-order.html",
+    [
+      {
+        "name": "Text track cue order, decreasing start times.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Text track cue order, equal start times varying end times.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Text track cue order, equal start and end times.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Text track cue order, after re-insertion.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Text track cue order, equal start and end times with startTime mutations.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Text track cue order, equal start and end times with endTime mutations.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/track/track-element/src-clear-cues.html",
+    [
+      {
+        "name": "track element changing \"track URL\" and clearing cues, set mode, add cue, set src",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "track element changing \"track URL\" and clearing cues, set mode, set src, add cue, change src",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "track element changing \"track URL\" and clearing cues, set mode, add cue, change mode to disabled, set src",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/playing-the-media-resource/pause-remove-from-document.html",
+    [
+      {
+        "name": "paused state when removing from a document",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/playing-the-media-resource/pause-remove-from-document-different-load.html",
+    [
+      {
+        "name": "paused state when removing from a document",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/playing-the-media-resource/pause-remove-from-document-networkState.html",
+    [
+      {
+        "name": "paused state when removing from a document when networkState is NETWORK_EMPTY",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/played-loop.html",
+    [
+      {
+        "name": "played TimeRanges should be preserved and not reset when video loops",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/audio_loop_seek_to_eos.html",
+    [
+      {
+        "name": "seeking to the end of looping audio",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/playing-the-media-resource/loop-from-ended.tentative.html",
+    [
+      {
+        "name": "play() with loop set to true after playback ended",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/playing-the-media-resource/play-in-detached-document.html",
+    [
+      {
+        "name": "play() in detached document",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/seeking/seek-to-currentTime.html",
+    [
+      {
+        "name": "seek to currentTime",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/seeking/seek-to-max-value.htm",
+    [
+      {
+        "name": "seek to Number.MAX_VALUE",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/seeking/seek-to-negative-time.htm",
+    [
+      {
+        "name": "seek to negative time",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/volume_nonfinite.html",
+    [
+      {
+        "name": "Setting audio.volume to NaN should throw a TypeError",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Setting audio.volume to Infinity should throw a TypeError",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Setting audio.volume to -Infinity should throw a TypeError",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Setting video.volume to NaN should throw a TypeError",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Setting video.volume to Infinity should throw a TypeError",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Setting video.volume to -Infinity should throw a TypeError",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/media_fragment_seek.html",
+    [
+      {
+        "name": "Video should seek to time specified in media fragment syntax",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/autoplay-with-broken-track.html",
+    [
+      {
+        "name": "<video autoplay> with <track src=\"invalid://url\" default=\"\"> child",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "<video autoplay> with <track src=\"404\" default=\"\"> child",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "<video autoplay> with <track src=\"\" default=\"\"> child",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/offsets-into-the-media-resource/currentTime-move-within-document.html",
+    [
+      {
+        "name": "playback should not reset when moving within a document",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/track/track-element/track-mode-triggers-loading.html",
+    [
+      {
+        "name": "A \"metadata\" track does not load automatically, but it does load when the mode is changed",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/track/track-element/track-selection-metadata.html",
+    [
+      {
+        "name": "Multiple 'metadata' tracks with 'default'",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/track/track-element/track-remove-track.html",
+    [
+      {
+        "name": "Tests that the 'removetrack' event is fired when an out-of-band TextTrack is removed.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/track/track-element/track-cues-missed-no-immediate-events.html",
+    [
+      {
+        "name": "Adding a missed cue during playback should not fire events",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/track/track-element/track-cues-cuechange-dynamically-created-track-element.html",
+    [
+      {
+        "name": "'cuechange' event on dynamically created track element",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/track/track-element/track-disabled-addcue.html",
+    [
+      {
+        "name": "Adding cues to a disabled text track",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/track/track-element/track-insert-after-load.html",
+    [
+      {
+        "name": "Inserting a track element immediately after video load",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/track/track-element/track-load-error-readyState.html",
+    [
+      {
+        "name": "Error event on HTMLTrackElement and ERROR readyState on TextTrack",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/track/track-element/track-load-from-element-readyState.html",
+    [
+      {
+        "name": "Load event on HTMLTrackElement and LOADED readyState on TextTrack when src is set on the element",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/track/track-element/track-cue-mutable.html",
+    [
+      {
+        "name": "Modifying attributes of a VTTCue",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/track/track-element/src-empty-string.html",
+    [
+      {
+        "name": "Setting HTMLTrackElement.src to the empty string fires 'error' and sets readyState to ERROR",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/track/track-element/track-text-track-cue-list.html",
+    [
+      {
+        "name": "TextTrackCueList functionality: length, operator[], and getCueById()",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/track/track-element/track-cue-empty.html",
+    [
+      {
+        "name": "Invoke getCueAsHTML() on an empty cue",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/audio_loop_base.html",
+    [
+      {
+        "name": "Audio Test: audio_loop_base",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/track/track-element/track-mode-disabled.html",
+    [
+      {
+        "name": "Cues are properly removed from the active cue list when their track changes mode to disabled",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/track/track-element/track-cues-cuechange.html",
+    [
+      {
+        "name": "TextTrack's cues are indexed and updated in order during video playback",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/track/track-element/track-cues-add-new-track.html",
+    [
+      {
+        "name": "Adding a new track with a cue during playback should fire events",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/track/track-element/track-webvtt-voice.html",
+    [
+      {
+        "name": "Check cues from resources/voice.vtt",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Check cues from resources/voice-bad.vtt",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/track/track-element/track-webvtt-class-markup.html",
+    [
+      {
+        "name": "Check cues from resources/class.vtt",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Check cues from resources/class-bad.vtt",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/track/track-element/track-webvtt-markup.html",
+    [
+      {
+        "name": "Check cues from resources/markup.vtt",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Check cues from resources/markup-bad.vtt",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/track/track-element/track-webvtt-cue-recovery.html",
+    [
+      {
+        "name": "Check cues from resources/cue-recovery-header.vtt",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Check cues from resources/cue-recovery-note.vtt",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Check cues from resources/cue-recovery-cuetext.vtt",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/track/track-element/track-webvtt-unsupported-markup.html",
+    [
+      {
+        "name": "Check cues from resources/unsupported-markup.vtt",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/track/track-element/track-webvtt-timestamp.html",
+    [
+      {
+        "name": "Check cues from resources/timestamp.vtt",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Check cues from resources/timestamp-bad.vtt",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/track/track-element/track-webvtt-bom.html",
+    [
+      {
+        "name": "Parser properly ignores a UTF-8 BOM character at the beginning of a file and all other cues are properly parsed",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/track/track-element/track-webvtt-utf8.html",
+    [
+      {
+        "name": "UTF-8 encoded characters are recognized properly and different encodings (iconv) are not recognized as a WebVTT file",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/track/track-element/track-webvtt-header-comment.html",
+    [
+      {
+        "name": "Optional comment area under the \"WEBVTT\" file header is properly ignored and also, default settings and styling are currently ignored (treated as faulty cues)",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/track/track-element/track-webvtt-interspersed-non-cue.html",
+    [
+      {
+        "name": "Check cues from resources/interspersed-non-cue.vtt",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/track/track-element/track-webvtt-no-timings.html",
+    [
+      {
+        "name": "Cue without timings are ignored",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/track/track-element/track-webvtt-cue-no-id.html",
+    [
+      {
+        "name": "Check cues from resources/cue-no-id.vtt",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Check cues from resources/cue-no-id-error.vtt",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/track/track-element/track-webvtt-degenerate-cues.html",
+    [
+      {
+        "name": "Check cues from resources/degenerate-cues.vtt",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/track/track-element/track-webvtt-empty-cue.html",
+    [
+      {
+        "name": "Check cues from resources/empty-cue.vtt",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/track/track-element/track-webvtt-newlines.html",
+    [
+      {
+        "name": "A cue with no newline at eof is parsed properly",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/track/track-element/track-webvtt-timings-no-hours.html",
+    [
+      {
+        "name": "Cue timings and various syntax errors in timings, without hours",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/track/track-element/track-webvtt-timings-whitespace.html",
+    [
+      {
+        "name": "Check cues from resources/timings-whitespace.vtt",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/track/track-element/track-cue-negative-duration.html",
+    [
+      {
+        "name": "Enter, Exit events for a cue with negative duration",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/track/track-element/track-large-timestamp.html",
+    [
+      {
+        "name": "Very large timestamp is parsed correctly",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/track/track-element/track-remove-quickly.html",
+    [
+      {
+        "name": "Removing a track element before it has been processed doesn't crash",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/track/track-element/track-remove-by-setting-innerHTML.html",
+    [
+      {
+        "name": "Removing a track by setting video.innerHTML doesn't crash",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/ready-states/autoplay.html",
+    [
+      {
+        "name": "audio.autoplay",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "audio.autoplay and load()",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "audio.autoplay and play()",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "audio.autoplay and pause()",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "audio.autoplay and internal pause steps",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video.autoplay",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video.autoplay and load()",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video.autoplay and play()",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video.autoplay and pause()",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video.autoplay and internal pause steps",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/playing-the-media-resource/playbackRate.html",
+    [
+      {
+        "name": "playbackRate initial value",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "playbackRate set to small positive value",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "playbackRate set to large positive value",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "playbackRate set to small negative value",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "playbackRate set to large negative value",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "playbackRate set to 0",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "playbackRate set to -1",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/playing-the-media-resource/pause-move-to-other-document.html",
+    [
+      {
+        "name": "paused state when moving to other document",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/playing-the-media-resource/pause-move-within-document.html",
+    [
+      {
+        "name": "paused state when moving within a document",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/loading-the-media-resource/autoplay-overrides-preload.html",
+    [
+      {
+        "name": "autoplay (set first) overrides preload \"none\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "autoplay (set last) overrides preload \"none\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "autoplay (set first) overrides preload \"metadata\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "autoplay (set last) overrides preload \"metadata\"",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/loading-the-media-resource/load-removes-queued-error-event.html",
+    [
+      {
+        "name": "video error event with load()",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video error event with src resource",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "source error event",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/loading-the-media-resource/resource-selection-candidate-insert-before.html",
+    [
+      {
+        "name": "inserting another source before the candidate",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/loading-the-media-resource/resource-selection-invoke-audio-constructor-no-src.html",
+    [
+      {
+        "name": "NOT invoking resource selection with new Audio() sans src",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/loading-the-media-resource/resource-selection-invoke-audio-constructor.html",
+    [
+      {
+        "name": "invoking resource selection with new Audio(src)",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/loading-the-media-resource/resource-selection-invoke-in-sync-event.html",
+    [
+      {
+        "name": "await a stable state and sync event handlers",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/loading-the-media-resource/resource-selection-invoke-insert-fragment-into-document.html",
+    [
+      {
+        "name": "NOT invoking resource selection by inserting document fragment into a document",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/loading-the-media-resource/resource-selection-invoke-insert-into-document.html",
+    [
+      {
+        "name": "NOT invoking resource selection by inserting into a document",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/loading-the-media-resource/resource-selection-invoke-insert-parent-into-document.html",
+    [
+      {
+        "name": "NOT invoking resource selection by inserting parent into a document",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/loading-the-media-resource/resource-selection-invoke-insert-source-in-div.html",
+    [
+      {
+        "name": "NOT invoking resource selection by inserting <source> in <div> in <video>",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/loading-the-media-resource/resource-selection-invoke-insert-source-in-namespace.html",
+    [
+      {
+        "name": "NOT invoking resource selection by inserting <source> in the wrong namespace",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/loading-the-media-resource/resource-selection-invoke-insert-source-not-in-document.html",
+    [
+      {
+        "name": "invoking resource selection by inserting <source> in video not in a document",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/loading-the-media-resource/resource-selection-invoke-insert-source.html",
+    [
+      {
+        "name": "invoking resource selection by inserting <source>",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/loading-the-media-resource/resource-selection-invoke-load.html",
+    [
+      {
+        "name": "invoking resource selection with load()",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/loading-the-media-resource/resource-selection-invoke-pause.html",
+    [
+      {
+        "name": "invoking resource selection with pause()",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/loading-the-media-resource/resource-selection-invoke-play.html",
+    [
+      {
+        "name": "invoking resource selection with play()",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/loading-the-media-resource/resource-selection-invoke-remove-from-document.html",
+    [
+      {
+        "name": "NOT invoking resource selection by removing from document with NETWORK_EMPTY",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/loading-the-media-resource/resource-selection-invoke-remove-src.html",
+    [
+      {
+        "name": "NOT invoking media load or resource selection when removing the src attribute",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/loading-the-media-resource/resource-selection-invoke-set-src-in-namespace.html",
+    [
+      {
+        "name": "NOT invoking load by setting src in the wrong namespace",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/loading-the-media-resource/resource-selection-invoke-set-src-networkState.html",
+    [
+      {
+        "name": "invoking load by setting src when networkState is not NETWORK_EMPTY",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/loading-the-media-resource/resource-selection-invoke-set-src-not-in-document.html",
+    [
+      {
+        "name": "invoking load by setting src on video not in a document",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/loading-the-media-resource/resource-selection-invoke-set-src.html",
+    [
+      {
+        "name": "invoking load by setting src",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/loading-the-media-resource/resource-selection-remove-source.html",
+    [
+      {
+        "name": "Changes to networkState when inserting and removing a <source>",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/loading-the-media-resource/resource-selection-remove-src.html",
+    [
+      {
+        "name": "invoking resource selection by setting src; await stable state",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/loading-the-media-resource/resource-selection-resumes-onload.html",
+    [
+      {
+        "name": "resource selection should not delay the load event indefinitely",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/loading-the-media-resource/resource-selection-candidate-remove-no-listener.html",
+    [
+      {
+        "name": "removing the candidate source, no listener",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/loading-the-media-resource/load-events-networkState.html",
+    [
+      {
+        "name": "NETWORK_IDLE",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "NETWORK_DISPATCH_EMPTIED_BEFORE_TIMEUPDATE",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "NETWORK_LOADING",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "NETWORK_NO_SOURCE",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/loading-the-media-resource/resource-selection-invoke-pause-networkState.html",
+    [
+      {
+        "name": "NOT invoking resource selection with pause() when networkState is not NETWORK_EMPTY",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/preload_reflects_none_autoplay.html",
+    [
+      {
+        "name": "audio.preload - reflection test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video.preload - reflection test",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/readyState_during_canplay.html",
+    [
+      {
+        "name": "audio events - readyState property during canplay",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video events - readyState property during canplay",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "audio.readyState should be >= HAVE_FUTURE_DATA during canplay event",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video.readyState should be >= HAVE_FUTURE_DATA during canplay event",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/readyState_during_canplaythrough.html",
+    [
+      {
+        "name": "audio events - readyState property during canplaythrough",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video events - readyState property during canplaythrough",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "audio.readyState should be HAVE_ENOUGH_DATA during canplaythrough event",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video.readyState should be HAVE_ENOUGH_DATA during canplaythrough event",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/readyState_during_loadeddata.html",
+    [
+      {
+        "name": "audio events - readyState property during loadeddata",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video events - readyState property during loadeddata",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "audio.readyState should be >= HAVE_CURRENT_DATA during loadeddata event",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video.readyState should be >= HAVE_CURRENT_DATA during loadeddata event",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/readyState_during_loadedmetadata.html",
+    [
+      {
+        "name": "audio events - readyState property during loadedmetadata",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video events - readyState property during loadedmetadata",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "audio.readyState should be >= HAVE_METADATA during loadedmetadata event",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video.readyState should be >= HAVE_METADATA during loadedmetadata event",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/readyState_during_playing.html",
+    [
+      {
+        "name": "audio events - readyState property during playing",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video events - readyState property during playing",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "audio.readyState should be >= HAVE_FUTURE_DATA during playing event",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video.readyState should be >= HAVE_FUTURE_DATA during playing event",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/readyState_initial.html",
+    [
+      {
+        "name": "audio.readyState - default state",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video.readyState - default state",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/semantics/embedded-content/media-elements/src_reflects_attribute_not_source_elements.html",
+    [
+      {
+        "name": "audio.src - reflection test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "video.src - reflection test",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ]
+]

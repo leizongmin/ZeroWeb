@@ -1583,8 +1583,15 @@ pub const MEDIA_TEST_FILES: &[&str] = &[
     //（XLVIII 形态复刻——33 件 Timeout/cues 翻倍，事件 defer 未救回 cue 填充重复）；②延迟置位
     //（同型回归）；③枚举兜底（QSA 直查——枚举非根因）。canplaythrough 时 track settle 的
     //「同步可达」需求与既有 40+ track 件的事件时序在当前 runner 沙箱事件循环下不相容——归
-    // runner 事件循环统一（deep-structure）。track-mode-not-changed-by-new-track 维持排除
-    //——身份对拍切片。
+    // runner 事件循环统一（deep-structure）。
+    // track-mode-not-changed-by-new-track 维持排除（LIII 试导回退，2026-09-05）：旧注记
+    //「身份对拍」与用例实际断言面不符（mode 稳态 + addtrack 身份链——event.track 须为
+    // addTextTrack 产物 track3）。探针实证：迟注册的 onaddtrack 收到的首个事件是 append 期
+    // track2 的 addtrack（晚到的跨 execute 派发），而非 track3 的——addtrack 的 queued task
+    // 在 runner 沙箱内跨 execute 的派发时点不稳定（microtask checkpoint 不保证在所属 execute
+    // 末即时排空；改 setTimeout 承载后仍受 host 泵 tick 合并影响），属 runner 事件循环统一
+    //（deep-structure）域。LIII 三项 spec 对齐改动保留（addtrack 每实例一次幂等 / observed
+    // 登记——parse 期 track 子不再由迟到首读补派 / append 时刻建 list）——629P 保绿。
     "html/semantics/embedded-content/media-elements/track/track-element/track-cues-cuechange-dynamically-created-track-element.html",
     "html/semantics/embedded-content/media-elements/track/track-element/track-disabled-addcue.html",
     "html/semantics/embedded-content/media-elements/track/track-element/track-insert-after-load.html",

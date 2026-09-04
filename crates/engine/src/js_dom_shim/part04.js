@@ -4393,6 +4393,21 @@
                   && typeof _realTag === 'function'
                   && (_realTag(sel, handle) === 'AUDIO' || _realTag(sel, handle) === 'VIDEO')
                   && typeof globalThis._zwSyncTextTracksFromChildren === 'function') {
+                // M3 扩批 LIII：addtrack at insertion——append 时刻先建 list 再集合同步：
+                // sync 的 added-dispatch 在本 turn 排队 addtrack（checkpoint 派发，同 turn
+                // 后注册的 handler 可见；后续 turn 的 handler 不收——track-add-track /
+                // track-mode-not-changed-by-new-track 双断言面）。观察登记限定「JS append
+                // 的」track 子；parse 期 track 子不经此钩子 → 永不补派。
+                try {
+                  if (String(child.tagName || '').toLowerCase() === 'track') {
+                    if (typeof globalThis._zwMarkTrackObserved === 'function') {
+                      globalThis._zwMarkTrackObserved(_elKey(child.__zwSelector || null, child.__zwHandle || null));
+                    }
+                    if (typeof globalThis._zwEnsureTextTrackList === 'function') {
+                      globalThis._zwEnsureTextTrackList(sel, handle, _elKey(sel, handle));
+                    }
+                  }
+                } catch (_eMto) {}
                 try { globalThis._zwSyncTextTracksFromChildren(sel, handle, _elKey(sel, handle)); } catch (_eTtAp) {}
                 // M3 扩批 XII：track 子入 media 父即触发检索（spec「further handling of
                 // the track element」——parent media element 的 relevant mutation（track

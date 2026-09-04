@@ -2,7 +2,22 @@
 
 **入口文档**: [../media-elements.md](../media-elements.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-05（**M3 扩批 LII 落地**——track settle 同步化三方案负结果终版（全部回退，
+**最后更新**: 2026-09-05（**M3 扩批 LIII 落地**——排除注记复核 + addtrack 时序三处 spec 对齐 +
+track-mode-not-changed-by-new-track 试导负结果（回退维持排除，629P/0F/24PF 保绿）：
+① **过时注记勘误**：该件排除注记「getElementById(x.track.track) 身份对拍」与用例实际断言面不符
+——实为 mode 稳态 + addtrack 身份链（event.track 须为 addTextTrack 产物 track3）；资源
+metadata.vtt/webvtt-file.vtt 已在清单，触发链全通（探针实证 C→M→K→T0 全到达），具备试导条件。
+② **试导失败根因（逐层探针）**：迟注册的 onaddtrack 收到的首个事件是 track1 的 addtrack（list
+惰性建于 textTracks 首读，首读全量补派历史事件）；三项 spec 对齐修复落地——addtrack 每实例一次
+幂等门（_zwAddtrackFired，sync + addTextTrack 双路径）/ observed 观察登记（_zwMarkTrackObserved，
+parse 期 track 子不再由迟到首读补派）/ append 时刻建 list（_zwEnsureTextTrackList，append turn
+内排队）。③ **派发时点不稳定实证**：dq:/disp: 日志分离实证 queued task 的跨 execute 派发不受
+排队序保证（microtask 滞留至之后某 checkpoint；改 setTimeout 承载仍受 host 泵 tick 合并影响）——
+t2 的迟到派发抢占 handler 首事件，track3 断言失败。**归 runner 事件循环统一（deep-structure）**，
+与 track-remove-insert-ready-state 同域。三项 spec 对齐改动保留（629 绿零回归）；该件维持排除
+（注记勘误 + 负结果归档）。evidence：`evidence/2026-09-05-media-addtrack-timing-liii.md`（+同名
+.json）。clippy/fmt 干净。
+此前 2026-09-05：**M3 扩批 LII 落地**——track settle 同步化三方案负结果终版（全部回退，
 part06 保持 XLIX 提交态 629 绿）：track-remove-insert-ready-state 的「canplaythrough 时 track settle
 同步可达」需求与既有 40+ track 件的事件时序在当前 runner 沙箱事件循环下不相容——①首调度同步 body
 （XLVIII 形态复刻：33 件 Timeout/cues 翻倍——XLIX 事件 defer 未救回 cue 填充重复，body 双执行）；②
@@ -591,6 +606,10 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
   维持零回归（Fail 0 / Timeout 0 / PF 24）
   → 扩批 LII（2026-09-05，track settle 同步化三方案负结果终版——全部回退；runner 事件循环
   统一归 deep-structure）**629/653 = 96.32%** 维持零回归（Fail 0 / Timeout 0 / PF 24）
+  → 扩批 LIII（2026-09-05，排除注记复核 + addtrack 时序三处 spec 对齐（幂等门/observed 登记/
+  append 时刻建 list/setTimeout 承载）——track-mode-not-changed-by-new-track 试导回退维持排除，
+  归 runner 事件循环统一）**629/653 = 96.32%** 维持零回归（Fail 0 / Timeout 0 / PF 24；
+  fresh 跑 209 文件逐位一致）
 - 复核（2026-09-04 治理整固后终审）：fresh 跑 603P/0F/24PF（198 文件）与
   本档记录逐位一致；验证基线 evidence 链 26 文件全在盘；make test 18877/0。
   （扩批 XL 后：fresh 跑 609P/0F/24PF（201 文件）；扩批 XLI 后：fresh 跑
@@ -621,7 +640,8 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
   `evidence/2026-09-04-media-loading-xl.json`、
   `evidence/2026-09-04-media-upstream-audit-xli.json`、
   `evidence/2026-09-04-webvtt-cue-text-parser-xlii.json`、
-  `evidence/2026-09-04-media-pause-move-related-xliii.json`
+  `evidence/2026-09-04-media-pause-move-related-xliii.json`、
+  `evidence/2026-09-05-media-addtrack-timing-liii.md`（+同名 .json）
 
 ## 归档
 

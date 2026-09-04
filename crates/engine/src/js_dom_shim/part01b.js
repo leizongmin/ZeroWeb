@@ -779,9 +779,15 @@
   // text-tracks-in-media-elements；track-add-track 断言面：注册 handler 后 addTextTrack
   // 的同步增量仍异步收到）。event.track = 新增 TextTrack（TrackEvent init dict）。
   globalThis._zwFireTracksAdded = function (list, added) {
+    // M3 扩批 LIII：改 setTimeout(0) 承载 queued task（原 queueMicrotask）——runner 沙箱的
+    // microtask checkpoint 跨 execute 不保证即时排空（上一 execute 队列的微任务可能滞留到
+    // 之后某 execute 的 checkpoint 才派发，事件序失真）；host 定时器经 __zw_fire_due_timers
+    // 逐 tick 排空，顺序稳定。「addtrack at insertion」语义不变：append turn 排队、最早下
+    // 一 tick 派发——同 turn 后注册的 handler 仍可见（track-add-track 断言面），后续 turn
+    // 注册的不收（track-mode-not-changed-by-new-track 断言面）。
     var _deferFire = function (fn) {
-      if (typeof queueMicrotask === 'function') queueMicrotask(fn);
-      else if (typeof setTimeout === 'function') setTimeout(fn, 0);
+      if (typeof setTimeout === 'function') setTimeout(fn, 0);
+      else if (typeof queueMicrotask === 'function') queueMicrotask(fn);
       else fn();
     };
     for (var i = 0; i < added.length; i++) {
@@ -810,9 +816,11 @@
   // TrackEvent('removetrack', {track}) queued task；track-remove-track 断言面：
   // event.target === list / event.track 身份 / instanceof TrackEvent）。
   globalThis._zwFireTracksRemoved = function (list, removed) {
+    // M3 扩批 LIII：与 _zwFireTracksAdded 同面——setTimeout 承载 queued task（跨 execute
+    // 派发顺序稳定；removetrack 断言面零回归）。
     var _deferFireR = function (fn) {
-      if (typeof queueMicrotask === 'function') queueMicrotask(fn);
-      else if (typeof setTimeout === 'function') setTimeout(fn, 0);
+      if (typeof setTimeout === 'function') setTimeout(fn, 0);
+      else if (typeof queueMicrotask === 'function') queueMicrotask(fn);
       else fn();
     };
     for (var i = 0; i < removed.length; i++) {
