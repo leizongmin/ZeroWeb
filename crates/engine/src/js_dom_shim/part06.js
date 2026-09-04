@@ -9320,7 +9320,18 @@
         var _scTT = _elementTextTrack[key];
         if (_scTT && typeof _scTT._zwClearCues === 'function') _scTT._zwClearCues();
       } catch (_eTsCc) {}
-      try { if (_resourceStates && _resourceStates[key]) delete _resourceStates[key]; } catch (_eTsRs) {}
+      // M3 扩批 XLIV：src 变更重调度**保留 readyState 可读值**（spec track 重加载是
+      // queued task——新加载落定前同步读保持旧值 ERROR/LOADED；track-remove-insert-
+      // ready-state 断言面：video.src 重设后同步读 track.readyState 仍 ERROR）。
+      // hold 值在 _mediaState[key]，新 settle 落定后清除（下方 _zwSettleResourceKey 前）。
+      try {
+        var _xlOldState = _resourceStates ? _resourceStates[key] : null;
+        if (_xlOldState) {
+          var _msXl = _mediaState[key] || (_mediaState[key] = {});
+          _msXl._zwTrackReadyStateHold = _xlOldState.outcome === 'error' ? 3 : 2;
+          delete _resourceStates[key];
+        }
+      } catch (_eTsRs) {}
     }
     // M3 扩批 XV：src 变更重调度——重置幂等标记后按新 URL 重跑（track-element-src-change
     // 断言面：settings.vtt → entities.vtt → settings.vtt 三段加载各派 onload）。
@@ -9332,6 +9343,11 @@
       else setTimeout(fn, 0);
     };
     _deferCont(function () {
+      // M3 扩批 XLIV：新加载判定开始——readyState hold 撤除（此后 resourceState 重新接管）。
+      try {
+        var _msXl2 = _mediaState[key];
+        if (_msXl2) delete _msXl2._zwTrackReadyStateHold;
+      } catch (_eXl2) {}
       try {
         var _raw = handle ? __zw_get_attr_handle(handle, 'src') : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'src') : __zw_get_attr(sel, 'src'));
         var _abs = String(_raw == null ? '' : _raw).replace(/^[\x00-\x20]+/, '').replace(/[\x00-\x20]+$/, '');

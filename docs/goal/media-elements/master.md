@@ -2,7 +2,17 @@
 
 **入口文档**: [../media-elements.md](../media-elements.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-04（**M3 扩批 XLIII 落地**——pause-on-removal related 判定精化：
+**最后更新**: 2026-09-04（**M3 扩批 XLIV 落地**——track 重加载 readyState hold 面
+（spec「track 重加载是 queued task——新加载落定前同步读保持旧值」）：_zwTrackScheduleLoad
+srcChange 重调度时快照旧 outcome 为 `_zwTrackReadyStateHold`（3/2），part04 readyState
+getter 在 resourceState 缺失时回读 hold，新加载判定开始（deferCont 续段入口）撤除——
+track-remove-insert-ready-state 的「src 重设后同步读 RS=3」语义面就绪。**该件本身维持
+排除（定性再升级）**：canplaythrough 时 trackRS=3 已收敛（XLII/XLIII 顺带，探针实证）
++ hold 面落地后，余缺口是「主文档静态 video removeChild→重插」链在 runner 沙箱 mutation
+应用层报「set_attr: no match for video」——**移除-重插静态元素的 host 通道缺口**（非
+语义面，与 video_size_preserved_after_ended 同族），随 runner/shim 事件通道统一后复评。
+629P/0F/24PF = 96.32% 维持零回归。
+此前 2026-09-04：**M3 扩批 XLIII 落地**——pause-on-removal related 判定精化：
 **pause-move-to-other-document 解除排除导入**（629P/0F/24PF = 96.32%，+1 净涨零回归；
 XLI 试导回退件首个闭环）——**根因定位**：跨 iframe 移动（`iframe.contentDocument.body
 .appendChild(v)`）走 part03 R112 通用树分支（sel-only 子，非 handle 子的 R369 串行合并
@@ -35,7 +45,8 @@ ratechange 派发面 M2 既有零改动 7 子测全绿）。**试导回退三件
 pause-move-to-other-document（上游 1/1 绿；~~本地「paused after stable state got
 true」~~ ✅ XLIII 闭环——iframe body appendChild sel-only 子移除标记清除后解除排除导入）；track-remove-insert-ready-state（上游 1/1 绿；本地
 canplaythrough 时 track.readyState got 0——video 加载序列与 track settle 双通道时序
-未收敛，同 video_size_preserved_after_ended 族）；track-mode（上游 1/1 绿；本地
+未收敛，同 video_size_preserved_after_ended 族；✅ XLIV 再升级——canplaythrough 面
+收敛 + readyState hold 落地，余 runner 沙箱静态元素移除-重插 host 通道缺口）；track-mode（上游 1/1 绿；本地
 Timeout——mode 切换 no-event 断言依赖 cuechange 计数 done 链）。
 **markup 结构族定性升级**：voice/class-markup/cue-recovery/markup/timestamp/unsupported-
 markup 6 件上游 edge 全绿（2/2、2/2、3/3、2/2、2/2 等）——排除归域从「渲染域远期」
@@ -473,6 +484,9 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
   → 扩批 XLIII（2026-09-04，pause-on-removal related 判定精化——iframe body
   appendChild sel-only 子移除标记清除，pause-move-to-other-document 解除排除）
   **629/653 = 96.32%**（+1 净涨零回归；Fail 0 / Timeout 0 / PF 24）
+  → 扩批 XLIV（2026-09-04，track 重加载 readyState hold——spec queued-task 同步读
+  语义；track-remove-insert-ready-state 定性再升级后维持排除）**629/653 = 96.32%**
+  维持零回归（Fail 0 / Timeout 0 / PF 24）
 - 复核（2026-09-04 治理整固后终审）：fresh 跑 603P/0F/24PF（198 文件）与
   本档记录逐位一致；验证基线 evidence 链 26 文件全在盘；make test 18877/0。
   （扩批 XL 后：fresh 跑 609P/0F/24PF（201 文件）；扩批 XLI 后：fresh 跑

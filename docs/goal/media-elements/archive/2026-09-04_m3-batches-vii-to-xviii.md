@@ -633,3 +633,20 @@ track-active-cues 解除排除）**：
   media 全量 629P 零回归（iframe body appendChild 为 MutationObserver/R369 既有件
   共享面——无回归）；make test 66 套件全绿、clippy/fmt 干净。evidence：
   evidence/2026-09-04-media-pause-move-related-xliii.json。
+
+## 扩批 XLIV — track 重加载 readyState hold（2026-09-04）
+
+- 背景：XLI 回退件 track-remove-insert-ready-state 复评。
+- **可回访面收敛确证**（探针）：canplaythrough 时 track.readyState=3（ERROR）已由
+  XLII/XLIII 改动顺带收敛——「双通道 settle 时序未收敛」的旧定性部分失效。
+- **readyState hold 落地**（spec「track 重加载是 queued task——新加载落定前同步读
+  保持旧值」）：_zwTrackScheduleLoad srcChange 重调度时快照旧 outcome 为
+  `_zwTrackReadyStateHold`（ERROR=3/LOADED=2）+ 删 resourceState（幂等门重 settle
+  需要）；part04 readyState getter 在 resourceState 缺失时回读 hold；deferCont 续段
+  入口（新加载判定开始）撤除。
+- **定性再升级 + 维持排除**：余缺口是「主文档静态 video removeChild→重插」链在
+  runner 沙箱 mutation 应用层报「set_attr: no match for video」——移除-重插静态元素
+  的 host 通道缺口（非语义面，与 video_size_preserved_after_ended 同族），随
+  runner/shim 事件通道统一后复评。
+- 629P/0F/24PF = 96.32% 维持零回归（played-loop 单轮全量偶发经复跑排除）；clippy/fmt
+  干净。

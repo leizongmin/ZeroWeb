@@ -279,7 +279,15 @@
           // 旧 `src 有值 → LOADING(1)` 同步分支断 track-add-track 断言面：`track.src=...`
           // setter 同步后立即读 readyState 期望 NONE（track 加载算法在 queued task 上，
           // LOADING 态对脚本不可观察即被 LOADED/ERROR 替代——headless settle 前恒 NONE）。
-          if (!resourceState) return 0;
+          // M3 扩批 XLIV：src 变更重调度的 readyState hold（spec track 重加载 queued
+          // task——新加载落定前同步读保持旧值；track-remove-insert-ready-state 断言面）。
+          if (!resourceState) {
+            try {
+              var _xlHold = _mediaState[key] && _mediaState[key]._zwTrackReadyStateHold;
+              if (_xlHold) return _xlHold;
+            } catch (_eXlHold) {}
+            return 0;
+          }
           return resourceState.outcome === 'error' ? 3 : 2;
         }
         // media-elements M1 切片 3（F1/F6）：HTMLTrackElement IDL 反射面。kind 为 enumerated
