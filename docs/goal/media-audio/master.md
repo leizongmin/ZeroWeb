@@ -115,9 +115,10 @@ volume/muted 真控制。**双重启动门控均已解除**：① M0 音频环�
   [archive/2026-09-04_wpt-webaudio-batches.md](archive/2026-09-04_wpt-webaudio-batches.md)，
   累计口径见验证基线。）
 
-- **余项**：createGain 的 per-node 桥推（当前 per-osc gain 由 WebAudioContext 承接，
-  gain 节点 → 桥映射挂真出声/设备切片）；WPT 余面（osc-basic-waveform/
-  sub-sample-start/detune-* 依赖渲染量化面——startRendering，随渲染面评估）。
+- **余项（2026-09-05 更新）**：createGain 的 per-node 桥推（挂真出声/设备切片）；
+  WPT 余面已清零（osc-basic-waveform 等渲染量化面用例已随 D3 九增量导入全绿；
+  剩余 sub-sample-start/detune-* 为 param 调度插值细粒度面——随 automation
+  timeline 精化复评）。
 
 **M0 已收口（2026-09-01）**：
 - 环境实测：内核层 HDA 声卡在；**ALSA dev 头缺失（libasound2-dev 未装）→ cpal 默认
@@ -211,7 +212,9 @@ seek 双轨对齐（media-playback 流切片 D+E 兑现，联合 e2e
 e2e 常驻（M2c 后续切片 A/B：settle → 桥 play → 泵推进 + mp3/oga 负例三面）；
 AudioContext 最小面 RFC 完成 **且已获批实施**（D1，2026-09-01）——切片 1+2
 落地（zero-media webaudio 模块 + shim 门面 + 宿主桥 + 泵接线 + e2e）+ WPT
-webaudio 子集六批导入（2 + 62 + 259 + 1 + 7 subtest，合计 12 用例 331P/0F）。
+webaudio 子集二十六批导入（**47 用例 1399P/0F = 100%，排除面清零**——含 D3
+offline 渲染九增量：osc-basic-waveform/gain/nominal-range/method-chaining/
+copy-channel/ctor-audiobuffer/ctor-iirfilter/periodicWave 等）。
 
 **DC-5（测试与质量不可退让）✅**：make test 18705 全绿（2026-09-02 组合树实测）、
 clippy 零警告、每切片带单测 + e2e 资产化（webaudio 7 单测 + NullSink 链 e2e +
@@ -262,9 +265,9 @@ DONE 阻塞**；Mixer/重采样接线随设备切片可选推进）。
 | 里程碑 | 状态 |
 |--------|------|
 | M0 — 环境验证 + 验证策略（门控） | ✅ 完成（2026-09-01，含 D2 后 cpal 编译实测补录） |
-| M1 — 首个声音输出 | 🔄 切片 1-3 + 解码链 e2e + 播放管线宿主接线落地（2026-09-01）；**D2 获批项闭环（2026-09-01）**——cpal 编译 + 39 测全绿 + CpalSink 真设备流冒烟通过（Ok 分支：构造/start/write/pause/resume 全链，[evidence](evidence/2026-09-01-cpalsink-device-smoke.md)）；余 Mixer 接线（挂真出声切片，可选） |
-| M2 — A/V 同步 + 控制 | 🔄 主体落地（2026-09-01，media-playback 流切片 D+E：audio clock 主时钟 + 组合时钟 + seek 对齐）；余 CpalSink 真出声冒烟（可选） |
-| M3 — `<audio>` 全路径 + Web Audio 评估 | 🔄 `<audio>` 纯音频播放全路径 e2e 已常驻（M2c 后续切片 A/B：settle → 桥 play → 泵推进）；Web Audio 最小面 **D1 已批准**（2026-09-01，D-WA-2 选先 NullSink）——切片 1+2 待实施 |
+| M1 — 首个声音输出 | ✅ 切片 1-3 + 解码链 e2e + 播放管线宿主接线落地（2026-09-01）；D2 获批项闭环——cpal 编译 + CpalSink 真设备流冒烟全链通过（[evidence](evidence/2026-09-01-cpalsink-device-smoke.md)）；余 Mixer N→1 接线挂真出声切片（可选，决策注记成文） |
+| M2 — A/V 同步 + 控制 | ✅ 主体落地（2026-09-01，media-playback 流切片 D+E：audio clock 主时钟 + 组合时钟 + seek 对齐 + A/V pair ended 回归守卫）；余 CpalSink 真出声冒烟（可选，headless 结构性边界） |
+| M3 — `<audio>` 全路径 + Web Audio 评估 | ✅ `<audio>` 纯音频播放全路径 e2e 常驻（M2c 切片 A/B）+ Web Audio 最小面全链落地（D1 批复 + D3 九增量：oscillator/ABSN/gain/通道图/automation timeline/nominal range/copy-channel/ctor 族/periodicWave）+ WPT webaudio **47 用例 1399P/0F = 100% 排除面清零**（2026-09-05）|
 
 ## 验证基线
 
