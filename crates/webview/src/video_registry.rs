@@ -75,6 +75,11 @@ struct AudioEntry {
     /// 流末到达标志（loop=false 停止时置位，play/seek/restart 清除）——桥 isEnded
     /// 的音频面（march ended/loop 分叉的驱动源；此前仅 video player Ended 态可见）。
     reached_end: bool,
+    /// loop 回卷待观测标志（media-elements M3 扩批 XXXIX）：loop=true 的流末回卷
+    /// 此前为静默 restart——语义层 march 的 ended/loop 分叉以 isEnded 为驱动源，
+    /// 恒 false 使 seeking/seeked 派发不可达（audio_loop_base Timeout 根因）。
+    /// 回卷时置位，语义层 loop 分叉消费（seek(0)+play(0)）后清除。
+    wrap_pending: bool,
 }
 
 impl AudioEntry {
@@ -96,6 +101,7 @@ impl AudioEntry {
             muted: false,
             loop_on: false,
             reached_end: false,
+            wrap_pending: false,
         }
     }
 
@@ -148,6 +154,11 @@ impl AudioEntry {
                         Some(bytes) => {
                             self.restart(bytes);
                             self.reached_end = false;
+                            // M3 扩批 XXXIX：回卷对语义层可观测——march ended/loop
+                            // 分叉（isEnded 驱动）据此派 seeking/seeked 并
+                            // seek(0)+play(0) 复位本标志（spec「ended playback」
+                            // 步 6.4 loop 分支的事件面）。
+                            self.wrap_pending = true;
                         }
                         None => {
                             self.playing = false;
@@ -404,6 +415,9 @@ impl VideoPlayerRegistry {
                 entry.playing = true;
                 entry.last_tick_ms = Some(now_ms);
                 entry.reached_end = false;
+                // 语义层 loop 分叉的复位面（march Ended→seeking 分叉以
+                // seek(0)+play(0) 消费 wrap_pending——M3 扩批 XXXIX）。
+                entry.wrap_pending = false;
                 true
             }
             None => false,
@@ -702,7 +716,10 @@ impl VideoPlayerRegistry {
         self.players
             .get(&key)
             .is_some_and(|p| p.state() == zero_media::PlayerState::Ended)
-            || self.audio_entries.get(&key).is_some_and(|e| e.reached_end)
+            || self
+                .audio_entries
+                .get(&key)
+                .is_some_and(|e| e.reached_end || e.wrap_pending)
     }
 
     /// 快速检查：是否存在播放中的 player（渲染泵门禁——无播放时零开销跳过 tick）。
@@ -1039,6 +1056,37 @@ mod tests {
             reg.audio_is_playing(MP3)
         );
         assert!(reg.audio_is_playing(MP3), "loop 回卷后播放态保持");
+    }
+
+    #[test]
+    fn registry_audio_loop_wrap_observable_via_is_ended_m3xxxix() {
+        // M3 扩批 XXXIX：loop 回卷对语义层可观测（audio_loop_base 解除排除的正题）。
+        // 静默 restart 时代 isEnded 恒 false——march ended/loop 分叉（isEnded 驱动）
+        // 的 seeking/seeked 派发不可达 → 用例 Timeout。回卷置 wrap_pending，
+        // isEnded 读取，audio_play（语义层分叉的 seek(0)+play(0) 复位面）清除。
+        let mut reg = VideoPlayerRegistry::new();
+        reg.register_source(MP3, fixture_bytes_named("sample-mp3.mp3"));
+        reg.register_audio_source(MP3, fixture_bytes_named("sample-mp3.mp3"));
+        reg.set_loop(MP3, true);
+        assert!(reg.audio_play(MP3, 0));
+        // 推进至流末回卷。
+        let mut now = 0u64;
+        loop {
+            now += 250;
+            reg.audio_advance_all(now);
+            if now > 30_000 {
+                panic!("runaway loop——loop 音频未回卷");
+            }
+            // 回卷后 isEnded 须可观测（wrap_pending）。
+            if reg.is_ended(MP3) {
+                break;
+            }
+        }
+        assert!(reg.is_ended(MP3), "回卷后 isEnded 置位（wrap_pending）");
+        assert!(reg.audio_is_playing(MP3), "回卷后播放态保持");
+        // 语义层分叉复位面：audio_play 清除 wrap_pending → isEnded 恢复 false。
+        assert!(reg.audio_play(MP3, now));
+        assert!(!reg.is_ended(MP3), "play 消费 wrap_pending 后 isEnded 复位");
     }
 }
 

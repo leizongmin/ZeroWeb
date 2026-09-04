@@ -84,6 +84,12 @@ fetch_raw "html/semantics/embedded-content/the-audio-element/audio-loading-eager
 # DocumentFragment + 单空 Text 节点 + constructor.name 断言；配套 shim Text.prototype
 # constructor 自引修复（WebIDL §4.6.1），XXX 排除注记「shim 工厂面差异」消除）。
 fetch_raw "html/semantics/embedded-content/media-elements/track/track-element/track-cue-empty.html"
+# M3 扩批 XXXIX：audio_loop_base 试导（loop=true → seeking 事件二次派发——扩批
+# XXIV registry set_loop 回卷 + XXXIX wrap_pending 可观测面落地后解除排除）。
+# 不导入 video_loop_base：fixture 2x2-green.webm 为 VP8+Opus（解码面外——canPlayType
+# 判定串 'vp9, opus' → .webm，上游 .webm 变体实为 vp8；bridge play 失败回落 headless
+# 无流末界，结构互斥），随 VP8/解码面扩展复评。
+fetch_raw "html/semantics/embedded-content/media-elements/audio_loop_base.html"
 # the-video-element 反射面（M3 扩批 IV：属性不凭空出现——UA 面不加 tabindex）。
 fetch_raw "html/semantics/embedded-content/the-video-element/video-tabindex.html"
 # M3 扩批 XXXV：loading=eager 立即加载面（loadeddata 到达——headless settle 无视口
@@ -159,9 +165,10 @@ TOP_FILES=(
   # registry set_loop（音频 entry 流末回卷重建解码器 + 伴生轨同面）+ shim loop IDL
   # setter/getter（_mediaState 镜像 + 桥推送 + play 起播同步）+ march Ended 面
   # loop 分叉（seek(0)+play + seeking/seeked 派发）。fixture 增 media/sound_0.mp3。
-  # 不导入：audio_loop_base / video_loop_base（looped 标志依赖真实时间流逝的二次
-  # seeking 回调时序——fixture 0.078s/0.096s 短于泵采样粒度，1 拍内多次回卷不可
-  # 观测；且 2x2-green.webm 为 VP8——解码面域外）；played-loop 已导入（见下）。
+  # audio_loop_base 勘误（M3 扩批 XXXIX 解除排除导入）：静默回卷对语义层不可观测
+  # 的根因经 registry wrap_pending 可观测面修复（march Ended/loop 分叉 isEnded 驱动
+  # 恢复可达）——「looped 标志依赖二次 seeking 回调时序」注记失效。video_loop_base
+  # 维持不导入（2x2-green.webm 为 VP8——解码面域外，见上）。played-loop 已导入。
   "played-loop.html"
   "audio_loop_seek_to_eos.html"
   # M3 扩批 XXV（2026-09-03）：loop-from-ended.tentative——ended 后设 loop 再 play
@@ -458,6 +465,9 @@ MEDIA_FILES=(
   # M3 扩批 XXXVI：audio-loading-eager 媒体源（同 XXXV 面——audio eager 立即加载
   # loadeddata 到达）。
   "media/sine440.mp3"
+  # M3 扩批 XXXIX：audio_loop_base 媒体源（getAudioURI 判定 audio/ogg → .oga；
+  # 0.05s 短流——loop 回卷 seeking 二次派发面）。
+  "media/sound_0.oga"
 )
 for relative in "${MEDIA_FILES[@]}"; do
   fetch_raw "${relative}"

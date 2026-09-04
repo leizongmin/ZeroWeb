@@ -1,0 +1,26 @@
+{
+ "batch": "media-elements M3 扩批 XXXIX",
+ "date": "2026-09-04",
+ "topic": "audio_loop_base 解除排除导入——registry loop 回卷可观测面（wrap_pending）+ video_loop_base 结构互斥排除注记",
+ "context": "XXIV 排除注记「audio_loop_base：looped 标志依赖真实时间流逝的二次 seeking 回调时序——fixture 短于泵采样粒度，1 拍内多次回卷不可观测」。本轮试导 Timeout 后以 dormant 探针（临时 eprintln 注册插桩 + 页面态断言变体，验证后移除）实证归因，推翻旧注记。",
+ "root_cause": "loop=true 的音频 entry 流末回卷为静默 restart（游标归零 + 播放态保持，无任何可观测信号）——语义层 march 的 ended/loop 分叉以 __zwVideoBridge.isEnded 为唯一驱动源，回卷后 isEnded 恒 false → seeking/seeked 派发不可达 → 用例的 looped（二次 seeking）断言链永不成。与泵采样粒度无关。",
+ "fix": "registry AudioEntry 增 wrap_pending 标志：advance_to 流末 loop 分支 restart 后置位；is_ended 音频面读取（reached_end || wrap_pending）；语义层分叉的 seek(0)+play(0) 复位面（audio_play 清除）——回卷事件面经既有 march 分叉承载，零新增桥面",
+ "imported": [
+  "html/semantics/embedded-content/media-elements/audio_loop_base.html"
+ ],
+ "case_assertions": "loop=true + play → seeking 事件二次派发（回卷）→ done + pause",
+ "not_imported": {
+  "video_loop_base": "fixture 2x2-green.webm 为 VP8+Opus（解码面外——canPlayType 判定串 'vp9, opus' → .webm 变体，上游该变体实为 vp8；bridge play 失败回落 headless 无流末界，结构互斥）——随 VP8/解码面扩展复评"
+ },
+ "unit_test": "registry_audio_loop_wrap_observable_via_is_ended_m3xxxix（回卷置位/isEnded 读取/play 消费复位三面）",
+ "totals": {
+  "pass": 603,
+  "precondition_failed": 24,
+  "pass_rate": "603/627 = 96.17%（+1 净涨零回归；audio_loop_base 3 连跑稳定）"
+ },
+ "gates": {
+  "make_test": "18872 passed 0 failed（+1 单测）",
+  "clippy": "workspace -D warnings clean"
+ },
+ "wpt_rev": "315976933870b34d6ea30e3f6643403edae678ba"
+}

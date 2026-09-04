@@ -1595,6 +1595,9 @@ pub const MEDIA_TEST_FILES: &[&str] = &[
     // M3 扩批 XXXVIII：track-cue-empty 解除排除（getCueAsHTML 空 cue——fragment 单
     // 空 Text 节点 + constructor.name 断言；Text.prototype.constructor 自引修复后绿）。
     "html/semantics/embedded-content/media-elements/track/track-element/track-cue-empty.html",
+    // M3 扩批 XXXIX：loop_base 双件试导（loop=true → seeking 二次派发——扩批 XXIV/XXV
+    // loop 真面落地后解除排除）。
+    "html/semantics/embedded-content/media-elements/audio_loop_base.html",
     // M3 扩批 XXXIII：TextTrackCueList 功能面。track-cue-mutable-fragment 维持排除
     //（cue 标记树 isEqualNode）；track-selection-task-order 维持排除（宏任务序）。
     // M3 扩批 XXXII：readyState/cue-mutable/mode 稳态面批量试导。

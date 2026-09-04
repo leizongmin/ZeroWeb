@@ -2,7 +2,18 @@
 
 **入口文档**: [../media-elements.md](../media-elements.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-04（**M3 扩批 XXXVIII 落地**——track-cue-empty 解除排除导入
+**最后更新**: 2026-09-04（**M3 扩批 XXXIX 落地**——audio_loop_base 解除排除导入
+（603P/0F/24PF = 96.17%，+1 净涨零回归；3 连跑稳定）：**registry loop 回卷可观测面**
+——dormant 探针实证推翻 XXIV 排除注记：Timeout 根因非「fixture 短于泵采样粒度」，
+而是 loop=true 的音频 entry 流末回卷为静默 restart，语义层 march ended/loop 分叉的
+唯一驱动源 isEnded 恒 false → seeking/seeked 派发不可达。修复：AudioEntry 增
+wrap_pending（回卷置位 / is_ended 读取 / audio_play 消费复位——零新增桥面）。
+video_loop_base 维持排除（结构互斥：fixture 2x2-green.webm 实为 VP8+Opus，解码面
+外——canPlayType 判定串 'vp9, opus' → .webm 变体与可解码 codec 不符，bridge play
+失败回落 headless 无流末界）。单测
+`registry_audio_loop_wrap_observable_via_is_ended_m3xxxix`（三面）；make test
+18872/0。evidence：`evidence/2026-09-04-media-audio-loop-base-xxxix.json`。
+此前 2026-09-04：**M3 扩批 XXXVIII 落地**——track-cue-empty 解除排除导入
 （602P/0F/24PF = 96.17%，+1 净涨零回归）：**Text.prototype.constructor 自引修复**
 （WebIDL §4.6.1 interface prototype object——探针实证 XXX 排除注记「constructor.name
 原生 class 断言 shim 工厂面差异」的真缺口为 Text.prototype 缺 constructor 自引，
@@ -84,7 +95,7 @@ track-mode-not-changed-by-new-track（textTracks 身份对拍切片）+
 track-remove-insert-ready-state（re-attach 播放推进链切片）+
 track-selection-task-order（selection 宏任务序切片）。**全目录清点收束（2026-09-04
 勘察）**：主目录 24 件缺失全定性（manual×8 / permissions-policy https×6 /
-loop_base×2 / 已注记排除×5——error-sequence MSE-util / no-autoplay iframe /
+~~loop_base~~×2（✅ XXXIX audio_loop_base 解除排除导入；video_loop_base 结构互斥注记）/ 已注记排除×5——error-sequence MSE-util / no-autoplay iframe /
 preserves-pitch / src_object_blob / volume_check 旧语义）；resize-during-playback
 （双分辨率 mid-stream resize fixture + resize 二次派发——排除注记）；the-video-
 element 余 26 件 / the-audio-element 余 16 件（✅ 扩批 XXXVI/XXXVII 清点收束——
@@ -762,7 +773,7 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
 
 | # | 缺口 | 状态 | 失败聚类 |
 |---|------|------|----------|
-| M1g | WPT media-elements 用例覆盖 | ✅ 170 用例已导入（136 + 扩批 XVI~XXX：播放推进族 6 件 + track-change-event + track-active-cues + played-loop + audio_loop_seek_to_eos + loop-from-ended.tentative + seeking/ 三件 + volume_nonfinite + media_fragment_seek + autoplay-with-broken-track + currentTime-move-within-document + track-mode-triggers-loading + track-remove-quickly + track-remove-by-setting-innerHTML + ready-states/autoplay + WebVTT 解析面 14 件 + mode/cuechange 播放推进面 3 件 + XXXI 三件 + XXXII 七件 + XXXIII 一件 + XXXIV play-in-detached-document + XXXV video-loading-eager + XXXVI audio-loading-eager + XXXVIII track-cue-empty），**96.17%**（602/626） | — |
+| M1g | WPT media-elements 用例覆盖 | ✅ 171 用例已导入（136 + 扩批 XVI~XXX：播放推进族 6 件 + track-change-event + track-active-cues + played-loop + audio_loop_seek_to_eos + loop-from-ended.tentative + seeking/ 三件 + volume_nonfinite + media_fragment_seek + autoplay-with-broken-track + currentTime-move-within-document + track-mode-triggers-loading + track-remove-quickly + track-remove-by-setting-innerHTML + ready-states/autoplay + WebVTT 解析面 14 件 + mode/cuechange 播放推进面 3 件 + XXXI 三件 + XXXII 七件 + XXXIII 一件 + XXXIV play-in-detached-document + XXXV video-loading-eager + XXXVI audio-loading-eager + XXXVIII track-cue-empty + XXXIX audio_loop_base），**96.17%**（603/627） | — |
 | M2g | load 算法 + 状态机（事件序列派发） | ✅ M2 落地（13T→**0T**） | F4 闭合 |
 | M3g | 事件序列 headless 近似驱动 | ✅（同 M2g；source-child 触发已落地） | F4 闭合 |
 | M4g-a | 媒体元数据 IDL 反射（初值面） | ✅ 切片 3 落地 | F2 闭合（-9 Fail） |
@@ -801,7 +812,7 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
    （~~video-loading-* preload 语义族~~ ✅ 扩批 XXXV 清点——video-loading-eager
    导入，lazy/preload-deferred 系与 eager-by-default 实现互斥维持排除，
    **the-video-element 目录清点收束**）。**headless 可导入面已在 95.9% 重饱和
-   （M3 扩批 XXXVIII 后第十九次修正：96.17%）**——余下增量依赖兄弟目标解锁（真播放钟 →
+   （M3 扩批 XXXIX 后第二十次修正：96.17%）**——余下增量依赖兄弟目标解锁（真播放钟 →
    time-marches-on 余面）+ 深结构项（~~TextTrackList change 事件广播反向链~~ ✅
    扩批 XXI 兑现、cue 标记树解析——归渲染域远期）。
    ~~ready-states/autoplay.html~~ ✅ 扩批 XXIX 兑现（autoplaying flag 交互 +
@@ -895,6 +906,9 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
   无新增导入）**601/625 维持零回归**
   → 扩批 XXXVIII（2026-09-04，Text.prototype.constructor 自引——track-cue-empty
   解除排除）**602/626 = 96.17%**（+1 净涨零回归；Fail 0 / Timeout 0 / PF 24）
+  → 扩批 XXXIX（2026-09-04，registry wrap_pending 可观测面——audio_loop_base
+  解除排除；video_loop_base 结构互斥注记）**603/627 = 96.17%**（+1 净涨零回归；
+  Fail 0 / Timeout 0 / PF 24）
 - 入口：`make testharness-media`（FILTER 透传，`--json` 捕获 evidence）
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过
 - evidence：`evidence/2026-08-31-media-baseline.md`（+ 同名 .json 机读版）、
@@ -915,4 +929,5 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
   `evidence/2026-09-04-media-video-loading-eager-xxxv.json`、
   `evidence/2026-09-04-media-audio-loading-eager-xxxvi.json`、
   `evidence/2026-09-04-media-video-intrinsic-sizes-xxxvii.json`、
-  `evidence/2026-09-04-media-track-cue-empty-xxxviii.json`
+  `evidence/2026-09-04-media-track-cue-empty-xxxviii.json`、
+  `evidence/2026-09-04-media-audio-loop-base-xxxix.json`
