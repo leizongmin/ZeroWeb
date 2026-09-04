@@ -193,6 +193,7 @@ mod r3929_abspos_shrink_to_fit_tests;
 mod r3992_run_in_merge_tests;
 mod r4023_inline_block_block_child_sync_tests;
 mod r4029_cell_intrinsic_destretch_tests;
+mod r4033_empty_ib_frame_shrink_tests;
 mod r717_flex_ratio_img_tests;
 mod table_layout_tests;
 mod tests_1;

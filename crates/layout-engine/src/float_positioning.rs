@@ -433,7 +433,12 @@ pub(crate) fn shrink_inline_blocks_to_content(
             };
             let frame = box_node.padding_left + box_node.padding_right + box_node.border_left + box_node.border_right;
             let content_max_w = (intrinsic_border_box - frame).max(0.0);
-            if content_max_w > 0.0 {
+            // R4033（CSS2 §10.3.9 shrink-to-fit）：空内容 inline-block（content_max_w=0）
+            // 的 shrink 目标 = frame（padding+border）而非跳过——旧 `> 0.0` guard 使
+            // 「只有边框/padding 的 inline-block」保持 taffy 拉伸宽，边框画在拉伸盒右缘
+            //（padding-right-applies-to-012：blue/orange 竖条渲染在容器右缘 722/782，
+            // 应 8/68）。仅 frame==0 且内容==0 的纯空盒维持原状（避免空 span 塌缩面）。
+            if content_max_w > 0.0 || frame > 0.0 {
                 let shrink_border_box = content_max_w + frame;
                 if shrink_border_box + 0.5 < box_node.width {
                     box_node.width = shrink_border_box;
