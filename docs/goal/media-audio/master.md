@@ -2,11 +2,11 @@
 
 **入口文档**: [../media-audio.md](../media-audio.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-04（**GB-20260904 巡检——D3 征询凭据补登**：D3 此前标注
-「飞书已同步征询」但无 msg id 在档；本轮 cronjob 待决策卡点专项补发合并征询（与
-media-playback D3/D4 同批）msg `om_x100b669923cd64a4c3e335615ed3d9f`，D3 状态行已
-补征询凭据。无代码变更。）
-**（注：下方「最后更新」2026-09-04 第十八批收口块为前轮记录，保留作历史）**
+**最后更新**: 2026-09-05（**D3 获批落地——GB-20260904 待决策征询跟进**：
+OfflineAudioContext.startRendering 扩界**获批（窄授权）**——仅 offline 渲染路径
++ shim↔宿主桥扩展；RFC §0 实时设备输出量化面维持排除。征询凭据 msg
+`om_x100b669923cd64a4c3e335615ed3d9f`。无代码变更。）
+**（注：下方「最后更新」2026-09-04 巡检/第十八批收口块为前轮记录，保留作历史）**
 **最后更新**: 2026-09-04（**WPT webaudio 第十八批收口——驱动用例解除排除导入
 （39 用例 874P/0F = 100%）**：① `decodeAudioData` 入口语义面（spec BaseAudioContext
 ——detached 上下文（`_zwFrameEntry._zwSwDestroyed` 印记）→ InvalidStateError reject
@@ -220,7 +220,7 @@ DONE 阻塞**；Mixer/重采样接线随设备切片可选推进）。
 |---|------|------|
 | D1 | AudioContext（Web Audio）最小面可行性 RFC → 是否实施 | ✅ 获批（2026-09-01，GB-20260901 批复）——D-WA-1 批准切片 1+2；D-WA-2 选**先 NullSink**（设备面挂 media-audio M1 CpalSink 真出声切片）。RFC：[../../specs/web-audio-audiocontext-minimal-face-spec-rfc.md](../../specs/web-audio-audiocontext-minimal-face-spec-rfc.md) |
 | D2 | 安装 `libasound2-dev`（系统级 apt 变更）以解锁 cpal 编译验证 | ✅ 获批（2026-09-01）——装包后补 cpal 编译实测 |
-| D3 | **OfflineAudioContext.startRendering 渲染量化面（RFC §0 扩界申请）**——接口语义族已 18 批 874P/0F 吃尽（2026-09-04），余下上游用例（osc-basic-waveform / gain.html / periodicWave / ctor-iirfilter 渲染对比 / audioparam-method-chaining / convolver DSP 卷积等 ~15 件）全部卡在 startRendering 渲染断言。**实施基础已在**：zero-media `WebAudioContext` 振荡器四型合成 + 图推进（切片 1 落地，NullSink 可观测）；缺的是 offline 渲染路径（长度采样离线合成 → AudioBuffer 产物 → promise resolve）+ shim↔宿主桥扩展。为何需用户：主 RFC §0 显式排除「渲染量化面（不做清单）」——扩界属 Mission 级范围变更（run-rules rule 11），agent 不可代判；不批准亦请明示「维持排除」以便归档 | ⬜ 待批复（2026-09-04 提出本决策表；同日 GB-20260904 巡检合并征询 msg `om_x100b669923cd64a4c3e335615ed3d9f`——此前标注「飞书已同步征询」无 msg id 在档，本条为在档征询凭据） |
+| D3 | **OfflineAudioContext.startRendering 渲染量化面（RFC §0 扩界申请）**——接口语义族已 18 批 874P/0F 吃尽（2026-09-04），余下上游用例（osc-basic-waveform / gain.html / periodicWave / ctor-iirfilter 渲染对比 / audioparam-method-chaining / convolver DSP 卷积等 ~15 件）全部卡在 startRendering 渲染断言。**实施基础已在**：zero-media `WebAudioContext` 振荡器四型合成 + 图推进（切片 1 落地，NullSink 可观测）；缺的是 offline 渲染路径（长度采样离线合成 → AudioBuffer 产物 → promise resolve）+ shim↔宿主桥扩展。为何需用户：主 RFC §0 显式排除「渲染量化面（不做清单）」——扩界属 Mission 级范围变更（run-rules rule 11），agent 不可代判；不批准亦请明示「维持排除」以便归档 | ✅ **获批（2026-09-05，窄授权）**——批准 **仅 offline 路径**（长度采样离线合成 → AudioBuffer → promise resolve + shim↔宿主桥扩展）；RFC §0 的**实时设备输出量化面维持排除**（本批复未解除）。解锁余下 ~15 件 startRendering 卡点用例的导入评估。征询凭据：msg `om_x100b669923cd64a4c3e335615ed3d9f`（GB-20260904 巡检合并征询）；批复来源：session 对话（GB-20260904 待决策征询跟进） |
 
 ## 下一步计划
 

@@ -2,8 +2,9 @@
 
 **版本**：v1.0
 **日期**：2026-09-02
-**状态**：Proposed（media-playback M3 门控项——**实施与否待用户批准**；D-RFC-3 决议
-「单独立项」的本立项文档。批准前不动源码，零碰撞面——RFC 起草即本轮交付）
+**状态**：Approved（2026-09-05 用户批复 D-RFC-3a=有条件批准实施【分发前须法务复核】、
+3b=构建期源码编译、3c=AAC 随期——见 §5 决议记录。原 Proposed 态注记：media-playback
+M3 门控项，D-RFC-3 决议「单独立项」的本立项文档）
 **关联**：[media-playback goal](../goal/media-playback.md)（M3 多格式收尾）·
 [video-decode-playback-spec-rfc.md](video-decode-playback-spec-rfc.md)（路线 C 主 RFC，
 D-RFC-1/2 已批：VP9 纯 Rust + AV1 dav1d 已落地）·
@@ -161,7 +162,17 @@ JS（既有，零改动）                Rust（crates/media 增量）
 
 ### 决议记录
 
-（待用户批复后填写）
+**✅ 2026-09-05 用户批复（GB-20260904 待决策征询跟进，session 对话）**：
+
+| # | 决议 | 注记 |
+|---|---|---|
+| D-RFC-3a | ✅ **有条件批准实施** | 接受 Cisco 授权链（源码编译态确定性弱，注记在案）+ Via AAC 池风险面；**前置条件：任何二进制分发/发布前须完成法务复核**。实施与分发解耦，代码工作可回退 |
+| D-RFC-3b | ✅ **① 构建期源码编译**（openh264-sys2 `source` 默认） | 与路线 C 轻依赖原则一致；确定性差距以 NOTICE/版本锁定缓解 |
+| D-RFC-3c | ✅ **AAC 随本期** | symphonia feature 扩展成本 ≈0，分离无收益 |
+
+- RFC 状态：Proposed → **Approved**（批准前不动源码的冻结解除，解锁切片 1 起实施）。
+- 征询凭据：msg `om_x100b664d8a6f44b0dee3398474de92b`（2026-09-02）+ msg
+  `om_x100b669923cd64a4c3e335615ed3d9f`（GB-20260904 巡检合并跟进）。
 
 ---
 
