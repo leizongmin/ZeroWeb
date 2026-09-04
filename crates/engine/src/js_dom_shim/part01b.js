@@ -299,18 +299,148 @@
       configurable: true,
     });
   })();
-  // M3 扩批 XV：getCueAsHTML 最小面（webvtt cue DOM API——entities 断言族以
-  // `cue.getCueAsHTML().textContent` 消费）。headless 无 cue 文本标记解析（WebVTT
-  // cue text 的 <Tag> 结构归渲染域远期）——DocumentFragment + 单 text node。实体解码
-  // 在本面发生（spec：DOM 面按 character references 产出——cue.text 保持 parser 原文，
-  // track-element-src-change 断言 '&amp;' 字面）。fragment 经 document 工厂产出。
-  VTTCue.prototype.getCueAsHTML = function () {
-    var frag = globalThis.document.createDocumentFragment();
-    var raw = String(this.text == null ? '' : this.text)
+  // M3 扩批 XV：getCueAsHTML（webvtt cue DOM API）。实体解码在本面发生（spec：DOM
+  // 面按 character references 产出——cue.text 保持 parser 原文，track-element-src-change
+  // 断言 '&amp;' 字面）。fragment 经 document 工厂产出。
+  // M3 扩批 XLII（2026-09-04）：cue text markup 树解析升级（spec webvtt-cue-text-
+  // parsing-rules——markup 结构族断言面）：b/i/u/ruby/rt → 同名 HTML 元素；c/v →
+  // span（class 列表空格连接 → className；仅 v 的 annotation → title）；timestamp/
+  // 未知标签（<h1>/<a href> 等）→ 忽略标签保留内容；裸 rt（无 ruby 祖先）→ 忽略
+  // 标签保留内容（spec rt-without-ruby 丢弃语义——markup-bad cues[3] 断言面）。
+  // 语法：'<' + name + ('.'class)* + (ws annotation)? + '>'；'<' 后空白或 name 非法
+  //（'< v Speaker>' '<v&…>' '<v-Speaker>' '<00:00:05.000>'）→ 无效起始标签整体丢弃
+  //（文本不保留）；闭合 '</name>' 栈内匹配 → 收拢其上全部，无匹配 → 忽略；cue 末
+  // 未闭合 → auto-close（markup-bad cues[0] '</ b>' 无效后 b 保持开启）。class 字符集
+  // 非空白即可（WPT class-bad 期望 className 'red&large' 保留 &——以 Chromium 可观察
+  // 行为为准）。
+  // https://www.w3.org/TR/webvtt1/#webvtt-cue-text-parsing-rules
+  var _zwCueDecodeEntities = function (raw) {
+    return String(raw)
       .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
-      .replace(/&lrm;/g, '\u200e').replace(/&rlm;/g, '\u200f').replace(/&nbsp;/g, '\u00a0');
-    frag.appendChild(globalThis.document.createTextNode(raw));
+      .replace(/&lrm;/g, '‎').replace(/&rlm;/g, '‏').replace(/&nbsp;/g, ' ');
+  };
+  globalThis._zwCueTextToFragment = function (text) {
+    var doc = globalThis.document;
+    var frag = doc.createDocumentFragment();
+    var stack = []; // { el, name }
+    var raw = String(text == null ? '' : text);
+    var i = 0, n = raw.length;
+    var top = function () { return stack.length ? stack[stack.length - 1] : null; };
+    var appendText = function (seg) {
+      if (!seg) return;
+      (top() ? top().el : frag).appendChild(doc.createTextNode(_zwCueDecodeEntities(seg)));
+    };
+    var isNameChar = function (ch) { return /[a-zA-Z\-]/.test(ch); };
+    var isClassChar = function (ch) { return ch !== '>' && ch !== '.' && !/\s/.test(ch); }; // '>' 终止 tag；'.' 分隔下一段 class
+    if (n === 0) {
+      // 空 cue：单空 Text 节点（track-cue-empty 断言面——childNodes.length===1 + data ''）。
+      frag.appendChild(doc.createTextNode(''));
+      return frag;
+    }
+    while (i < n) {
+      var lt = raw.indexOf('<', i);
+      if (lt < 0) { appendText(raw.slice(i)); break; }
+      appendText(raw.slice(i, lt));
+      // 闭合标签 '</name>'——无效形态（'</ b>' name 前空白）吞到 '>' 整体忽略；
+      // 有效但无匹配名 → 忽略闭合（内容保留）。
+      if (raw.charAt(lt + 1) === '/') {
+        var j = lt + 2, name = '';
+        while (j < n && isNameChar(raw.charAt(j))) { name += raw.charAt(j); j++; }
+        var jSk = j;
+        while (jSk < n && /\s/.test(raw.charAt(jSk))) jSk++;
+        var valid = name !== '' && jSk < n && raw.charAt(jSk) === '>';
+        if (valid) {
+          for (var k = stack.length - 1; k >= 0; k--) {
+            if (stack[k].name === name) { stack.length = k; break; } // 收拢其上全部
+          }
+          i = jSk + 1;
+        } else {
+          var gtX = raw.indexOf('>', lt + 2);
+          i = gtX < 0 ? n : gtX + 1;
+        }
+        continue;
+      }
+      // '<' 后空白（'< character...'）→ annotation 态（spec：空 tag 的 annotation——
+      // 无 DOM 产物），吞到下一个**原始 '>'**（实体形态不终止——entities-wrong
+      //「ends only at the next &gt;」断言面：textContent 只剩 '<' 前文本）；无 '>' →
+      // 吞到末尾。
+      if (lt + 1 >= n || /\s/.test(raw.charAt(lt + 1))) {
+        var aEnd = raw.indexOf('>', lt + 1);
+        i = aEnd < 0 ? n : aEnd + 1;
+        continue;
+      }
+      var p = lt + 1, name = '';
+      while (p < n && isNameChar(raw.charAt(p))) { name += raw.charAt(p); p++; }
+      if (name === '') {
+        // '<00:00:05.000>' timestamp 类（name 位非字母）→ 吞到 '>'（paint-on 锚点
+        // 无 DOM 产物——timestamp textContent 断言面）。
+        var gtT = raw.indexOf('>', lt + 1);
+        i = gtT < 0 ? n : gtT + 1;
+        continue;
+      }
+      var isSupported = /^(b|i|u|ruby|rt|c|v|timestamp)$/.test(name);
+      var hasRubyAncestor = function () {
+        for (var q = stack.length - 1; q >= 0; q--) if (stack[q].name === 'ruby') return true;
+        return false;
+      };
+      if (!isSupported) {
+        // 未知标签（<h1>/<a href>/<ul>/<img>/<video> 等）：跳到 '>'，忽略标签本身，
+        // 内容照常输出（unsupported-markup textContent 断言面）。未闭合 → 跳到末尾。
+        var gt4 = raw.indexOf('>', p);
+        i = gt4 < 0 ? n : gt4 + 1;
+        continue;
+      }
+      // class 列表（'.' 前缀连续段；字符集 = 非空白）。
+      var classes = [];
+      var parseOk = true;
+      var annotation = '';
+      var el = null;
+      while (parseOk && p < n && raw.charAt(p) === '.') {
+        p++;
+        var cls = '';
+        while (p < n && isClassChar(raw.charAt(p))) { cls += raw.charAt(p); p++; }
+        if (cls === '') parseOk = false;
+        else classes.push(cls);
+      }
+      // annotation：class 后空白 → 剥空白后到 '>' 的段为 annotation（v → title）。
+      if (parseOk && p < n && /\s/.test(raw.charAt(p))) {
+        var q2 = p;
+        while (q2 < n && /\s/.test(raw.charAt(q2))) q2++;
+        var gt2 = raw.indexOf('>', q2);
+        if (gt2 < 0) parseOk = false;
+        else { annotation = raw.slice(q2, gt2).replace(/\s+$/, ''); p = gt2; }
+      } else if (parseOk) {
+        if (raw.charAt(p) !== '>') parseOk = false; // name/class 后必须紧跟 '>'（无 annotation）
+      }
+      if (!parseOk || p >= n) {
+        // 无效起始标签（'<v&Doe Hunter>' 等——name/class/annotation 语法错）→ 整体
+        // 吞到 '>'（文本不保留——voice-bad/class-bad 断言面）。
+        var gtB = raw.indexOf('>', lt + 1);
+        i = gtB < 0 ? n : gtB + 1;
+        continue;
+      }
+      if (name === 'c' || name === 'v') {
+        el = doc.createElement('span');
+        if (classes.length) el.className = classes.join(' ');
+        if (name === 'v' && annotation) el.title = annotation;
+      } else if (name === 'rt') {
+        // rt 无 class/annotation 面（spec webvtt rt span）
+        if (!hasRubyAncestor()) { i = p + 1; continue; } // 裸 rt → 忽略标签保留内容
+        el = doc.createElement('rt');
+      } else if (name === 'timestamp') {
+        i = p + 1; continue; // paint-on 时间锚点——DOM 无产物（textContent 对拍面）
+      } else {
+        el = doc.createElement(name); // b/i/u/ruby
+        if (classes.length) el.className = classes.join(' '); // i.larger → class="larger"（markup.vtt cues[1] 断言面）
+      }
+      (top() ? top().el : frag).appendChild(el);
+      stack.push({ el: el, name: name });
+      i = p + 1;
+    }
     return frag;
+  };
+  VTTCue.prototype.getCueAsHTML = function () {
+    return globalThis._zwCueTextToFragment(this.text);
   };
   // 工厂：TextTrack（kind/label/language/mode/cues/activeCues + addCue/removeCue——M3 扩批
   // XII）。cues/activeCues：mode==='disabled' → null，否则 same-object TextTrackCueList

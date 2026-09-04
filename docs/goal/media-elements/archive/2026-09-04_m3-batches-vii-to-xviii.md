@@ -585,3 +585,33 @@ track-active-cues 解除排除）**：
   i/u/b/ruby/rt/v/c span 树构建 + 恢复规则 + getCueAsHTML DOM 面对拍；中等
   深结构，上游全绿证明可回访）。
 - evidence：evidence/2026-09-04-media-upstream-audit-xli.json。
+
+## 扩批 XLII — WebVTT cue text parser 树解析（2026-09-04）
+
+- 背景：XLI 轮将 markup 结构族 6 件（voice/class-markup/markup/cue-recovery/
+  unsupported-markup/timestamp）归域升级为「WebVTT cue text parser 切片」（上游
+  edge 全绿可回访）。本轮实施。
+- **getCueAsHTML 升级为 markup 树解析**（`_zwCueTextToFragment`，part01b，spec
+  webvtt-cue-text-parsing-rules）：
+  - b/i/u/ruby/rt → 同名 HTML 元素；c/v → span；classes 空格连接 → className
+    （所有支持标签均可带 class——i.larger → <i class="larger">）；仅 v 的
+    annotation → title。
+  - class 字符集 = 非空白非 '>' 非 '.'（'>' 终止 tag；'.' 分隔下一段 class——
+    探针实证初版两处缺陷：'>' 被吞进 class、'.' 未分段致 'red.uppercase' 连写）。
+  - 无效起始标签（'< v Speaker>' '<v&…>' '<v-Speaker>'）→ 整体吞到 '>'（文本不
+    保留）；'</ b>' 无效闭合 → 吞到 '>'；'<'+空白 → annotation 态吞到**原始 '>'**
+    （实体形态 '&gt;' 不终止——entities-wrong「textContent 只剩 '<' 前文本」）；
+    '<00:00:05.000>' 数字 name → timestamp 锚点吞到 '>' 无产物。
+  - 未知标签（h1/a/ul/li/img/video 等）→ 忽略标签保留内容；裸 rt（无 ruby 祖先）
+    → 忽略标签保留内容；闭合标签栈内匹配 → 收拢其上全部，无匹配 → 忽略；cue 末
+    未闭合 → auto-close。
+  - 空 cue → 单空 Text 节点（扩批 XXXVIII track-cue-empty 断言面保持——初版回归
+    即刻修复）。
+- **cue.text 保留 parser 输入原文**：_zwParseVtt 移除 _stripMarkup 剥离层（XXX 批
+  近似）——unsupported-markup 断言 text 含 '<h1>' 原文；markup/annotation 吞并
+  全部移至 getCueAsHTML DOM 面（cue.text 与 DOM 面分离为 spec 语义）。
+- **header 恢复**：cue-recovery-header（WEBVTT 行后无空行直接 cue 块）——元数据区
+  的 timings 行终止 header（spec 恢复语义；此前整段跳过致首 cue 丢失；修复时
+  _tParse 引用时序勘误——跳过循环移至 _tParse 定义后）。
+- 6 件 12 子测全绿（628P/0F/24PF = 96.32%，+12 净涨零回归）；make test 66 套件
+  全绿、clippy/fmt 干净。evidence：evidence/2026-09-04-webvtt-cue-text-parser-xlii.json。

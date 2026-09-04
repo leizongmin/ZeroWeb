@@ -250,6 +250,16 @@ TOP_FILES=(
   # cue 标记树解析深结构项（归渲染域远期，与既有注记一致）；
   # track-cue-empty 维持排除——fragment.childNodes[0].constructor.name === 'Text'
   # 原生 class 语义断言（shim 工厂 constructor.name='Node'，非行为缺陷）。
+  # M3 扩批 XLII（2026-09-04）：markup 结构族 6 件解除排除——getCueAsHTML 升级为
+  # cue text markup 树解析（_zwCueTextToFragment：b/i/u/ruby/rt 同名元素 + c/v →
+  # span（class → className / v annotation → title）+ 无效起始标签吞到 '>' + 未知
+  # 标签忽略保留内容 + 裸 rt 丢弃 + timestamp 锚点无产物 + 空 cue 单空 Text 节点）。
+  "track/track-element/track-webvtt-voice.html"
+  "track/track-element/track-webvtt-class-markup.html"
+  "track/track-element/track-webvtt-markup.html"
+  "track/track-element/track-webvtt-cue-recovery.html"
+  "track/track-element/track-webvtt-unsupported-markup.html"
+  "track/track-element/track-webvtt-timestamp.html"
   "track/track-element/track-webvtt-bom.html"
   "track/track-element/track-webvtt-utf8.html"
   "track/track-element/track-webvtt-header-comment.html"

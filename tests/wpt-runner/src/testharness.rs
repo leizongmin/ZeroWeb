@@ -1612,13 +1612,22 @@ pub const MEDIA_TEST_FILES: &[&str] = &[
     "html/semantics/embedded-content/media-elements/track/track-element/track-mode-disabled.html",
     "html/semantics/embedded-content/media-elements/track/track-element/track-cues-cuechange.html",
     "html/semantics/embedded-content/media-elements/track/track-element/track-cues-add-new-track.html",
+    // M3 扩批 XLII（2026-09-04）：markup 结构族解除排除——getCueAsHTML 升级为 cue
+    // text markup 树解析（_zwCueTextToFragment：b/i/u/ruby/rt 同名元素 + c/v → span
+    //（class → className / v annotation → title）+ 无效起始标签丢弃 + 未知标签忽略
+    // 保留内容 + 裸 rt 丢弃 + timestamp 锚点无产物——spec webvtt-cue-text-parsing-
+    // rules）。voice/class-markup/markup 为 isEqualNode 节点树对拍；cue-recovery 为
+    // cues_match 对拍；unsupported-markup/timestamp 为 textContent 对拍。
+    "html/semantics/embedded-content/media-elements/track/track-element/track-webvtt-voice.html",
+    "html/semantics/embedded-content/media-elements/track/track-element/track-webvtt-class-markup.html",
+    "html/semantics/embedded-content/media-elements/track/track-element/track-webvtt-markup.html",
+    "html/semantics/embedded-content/media-elements/track/track-element/track-webvtt-cue-recovery.html",
+    "html/semantics/embedded-content/media-elements/track/track-element/track-webvtt-unsupported-markup.html",
+    "html/semantics/embedded-content/media-elements/track/track-element/track-webvtt-timestamp.html",
     // M3 扩批 XXX（2026-09-04）：WebVTT 解析面批量导入（track-helpers.js 断言辅助
     // + 27 件 vtt 资源）——BOM/UTF8 编码面/header 注释/空 cue/timings 变体/
-    // 退化形态/interspersed-non-cue/newlines。markup 结构族（voice/class/markup/
-    // unsupported-markup/timestamp/cue-recovery-header）维持排除——assert_cue_
-    // fragment isEqualNode 对拍 getCueAsHTML 的 span 节点树（<v>/<c> →
-    // className/title）——cue 标记树解析深结构项（归渲染域远期）；
-    // positioning/layout 渲染件维持 C 组排除；track-cue-empty 维持排除
+    // 退化形态/interspersed-non-cue/newlines。positioning/layout 渲染件维持 C 组
+    // 排除；track-cue-empty 维持排除
     //（constructor.name === 'Text' 原生 class 断言——shim 工厂面差异）。
     "html/semantics/embedded-content/media-elements/track/track-element/track-webvtt-bom.html",
     "html/semantics/embedded-content/media-elements/track/track-element/track-webvtt-utf8.html",

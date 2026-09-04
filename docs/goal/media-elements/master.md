@@ -2,7 +2,22 @@
 
 **入口文档**: [../media-elements.md](../media-elements.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-04（**M3 扩批 XLI 落地**——上游核查第二轮（track-element/playing
+**最后更新**: 2026-09-04（**M3 扩批 XLII 落地**——WebVTT cue text parser 切片：
+**getCueAsHTML 从「单 Text 节点」升级为 markup 树解析**（`_zwCueTextToFragment`，
+spec webvtt-cue-text-parsing-rules）：b/i/u/ruby/rt → 同名 HTML 元素（class 列表
+空格连接 → className）；c/v → span（仅 v 的 annotation → title）；无效起始标签
+（'< v Speaker>'/'<v&…>'/'<v-Speaker>'）与无效闭合（'</ b>'）吞到 '>' 整体忽略；
+未知标签（<h1>/<a href>/<ul>/<img>/<video>）忽略标签保留内容；'<'+空白 → annotation
+态吞到原始 '>'（实体不终止——entities-wrong 跨行吞并面）；裸 rt（无 ruby 祖先）
+丢弃；timestamp 锚点无产物；空 cue 单空 Text 节点（扩批 XXXVIII 断言面保持）。
+**cue.text 保留 parser 输入原文**（_zwParseVtt 移除 _stripMarkup 剥离层——
+unsupported-markup 断言 text 含 '<h1>' 原文；markup 处理移至 DOM 面）+ header 恢复
+（cue-recovery-header：元数据区 timings 行终止 header——此前首 cue 丢失）。
+**markup 结构族 6 件解除排除导入**（628P/0F/24PF = 96.32%，+12 净涨零回归：voice 2 +
+class-markup 2 + markup 2 + cue-recovery 3 + unsupported-markup 1 + timestamp 2，
+共 12 子测全绿）。单测随契约测试（make test 66 套件全绿含 wpt-runner 全套）。
+evidence：`evidence/2026-09-04-webvtt-cue-text-parser-xlii.json`。
+此前 2026-09-04：**M3 扩批 XLI 落地**——上游核查第二轮（track-element/playing
 余件逐件比对 wpt.fyi edge run）：`playing-the-media-resource/playbackRate` 解除排除导入
 （616P/0F/24PF = 96.25%，+7 净涨零回归——文件早已 fetch 未导入的第 35 件漂移件；setter
 ratechange 派发面 M2 既有零改动 7 子测全绿）。**试导回退三件（定性升级）**：
@@ -253,7 +268,7 @@ currentSrc 的 source-child 插入触发（mutation 面）。
 （**M3 扩批 event_* 族 + 第二批 + III~X（2026-09-01）/ XI~XV（2026-09-02）/
   XVI~XVIII（2026-09-03）过程记录**——每批 shim 面/runner 面明细与排除注记——
   已归档至 [archive/2026-09-04_m3-batches-vii-to-xviii.md](archive/2026-09-04_m3-batches-vii-to-xviii.md)，
-  证据 JSON 序列见验证基线；累计口径 603P/0F/24PF = 96.17%。第 XIX~XXXIX 批
+  证据 JSON 序列见验证基线；累计口径 603P/0F/24PF = 96.17%。第 XIX~XLII 批
   明细见头链（最新态）。）
 
 **里程碑归档（2026-09-01）**：M1~M3 与六轮扩批的过程记录、排除用例决策清单已归档至
@@ -443,10 +458,14 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
   → 扩批 XLI（2026-09-04，上游核查第二轮——playbackRate 漂移件导入 + 三件试导回退
   定性 + markup 族归域修正）**616/640 = 96.25%**（+7 净涨零回归；Fail 0 / Timeout 0 /
   PF 24）
+  → 扩批 XLII（2026-09-04，WebVTT cue text parser 树解析——markup 结构族 6 件解除
+  排除 + cue.text 原文化 + header 恢复）**628/652 = 96.32%**（+12 净涨零回归；
+  Fail 0 / Timeout 0 / PF 24）
 - 复核（2026-09-04 治理整固后终审）：fresh 跑 603P/0F/24PF（198 文件）与
   本档记录逐位一致；验证基线 evidence 链 26 文件全在盘；make test 18877/0。
   （扩批 XL 后：fresh 跑 609P/0F/24PF（201 文件）；扩批 XLI 后：fresh 跑
-  616P/0F/24PF（202 文件）——2026-09-04 本轮实测。）
+  616P/0F/24PF（202 文件）；扩批 XLII 后：fresh 跑 628P/0F/24PF（208 文件）——
+  2026-09-04 本轮实测。）
 - 入口：`make testharness-media`（FILTER 透传，`--json` 捕获 evidence）
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过
 - evidence：`evidence/2026-08-31-media-baseline.md`（+ 同名 .json 机读版）、
@@ -470,7 +489,8 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
   `evidence/2026-09-04-media-track-cue-empty-xxxviii.json`、
   `evidence/2026-09-04-media-audio-loop-base-xxxix.json`、
   `evidence/2026-09-04-media-loading-xl.json`、
-  `evidence/2026-09-04-media-upstream-audit-xli.json`
+  `evidence/2026-09-04-media-upstream-audit-xli.json`、
+  `evidence/2026-09-04-webvtt-cue-text-parser-xlii.json`
 
 ## 归档
 

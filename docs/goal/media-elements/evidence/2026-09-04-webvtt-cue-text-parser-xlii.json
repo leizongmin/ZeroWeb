@@ -1,0 +1,92 @@
+[
+ [
+  "html/semantics/embedded-content/media-elements/track/track-element/track-webvtt-voice.html",
+  [
+   {
+    "name": "Check cues from resources/voice.vtt",
+    "status": "Pass",
+    "message": null
+   },
+   {
+    "name": "Check cues from resources/voice-bad.vtt",
+    "status": "Pass",
+    "message": null
+   }
+  ]
+ ],
+ [
+  "html/semantics/embedded-content/media-elements/track/track-element/track-webvtt-class-markup.html",
+  [
+   {
+    "name": "Check cues from resources/class.vtt",
+    "status": "Pass",
+    "message": null
+   },
+   {
+    "name": "Check cues from resources/class-bad.vtt",
+    "status": "Pass",
+    "message": null
+   }
+  ]
+ ],
+ [
+  "html/semantics/embedded-content/media-elements/track/track-element/track-webvtt-markup.html",
+  [
+   {
+    "name": "Check cues from resources/markup.vtt",
+    "status": "Pass",
+    "message": null
+   },
+   {
+    "name": "Check cues from resources/markup-bad.vtt",
+    "status": "Pass",
+    "message": null
+   }
+  ]
+ ],
+ [
+  "html/semantics/embedded-content/media-elements/track/track-element/track-webvtt-cue-recovery.html",
+  [
+   {
+    "name": "Check cues from resources/cue-recovery-header.vtt",
+    "status": "Pass",
+    "message": null
+   },
+   {
+    "name": "Check cues from resources/cue-recovery-note.vtt",
+    "status": "Pass",
+    "message": null
+   },
+   {
+    "name": "Check cues from resources/cue-recovery-cuetext.vtt",
+    "status": "Pass",
+    "message": null
+   }
+  ]
+ ],
+ [
+  "html/semantics/embedded-content/media-elements/track/track-element/track-webvtt-unsupported-markup.html",
+  [
+   {
+    "name": "Check cues from resources/unsupported-markup.vtt",
+    "status": "Pass",
+    "message": null
+   }
+  ]
+ ],
+ [
+  "html/semantics/embedded-content/media-elements/track/track-element/track-webvtt-timestamp.html",
+  [
+   {
+    "name": "Check cues from resources/timestamp.vtt",
+    "status": "Pass",
+    "message": null
+   },
+   {
+    "name": "Check cues from resources/timestamp-bad.vtt",
+    "status": "Pass",
+    "message": null
+   }
+  ]
+ ]
+]

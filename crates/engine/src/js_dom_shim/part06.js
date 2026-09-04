@@ -7130,6 +7130,13 @@
         if (!m) return NaN;
         return (m[1] ? Number(m[1]) * 3600 : 0) + Number(m[2]) * 60 + Number(m[3]) + Number(m[4]) / 1000;
       };
+      // M3 扩批 XLII：header 恢复（cue-recovery-header 断言面）——元数据区内的
+      // timings 行终止 header（spec 恢复：header 后无空行而直接 cue 块 → header
+      // 立即结束，timings 行是首 cue 起点；此前整段跳过致首 cue 丢失）。
+      while (i < lines.length && lines[i] !== ''
+          && !(lines[i].indexOf('-->') >= 0
+               && !isNaN(_tParse(String(lines[i]).split('-->')[0])))) i++;
+      while (i < lines.length && lines[i] === '') i++;
       while (i < lines.length) {
         var line = String(lines[i]);
         if (line === '') { i++; continue; }
@@ -7183,8 +7190,6 @@
       if (i >= lines.length || lines[i].indexOf('WEBVTT') !== 0) return null;
       i++;
       // header 尾（空行或 header 注释/元数据行直到空行）——跳到首个空行后。
-      while (i < lines.length && lines[i] !== '') i++;
-      while (i < lines.length && lines[i] === '') i++;
       var cues = [];
       var _tParse = function (s) {
         s = String(s).trim();
@@ -7205,18 +7210,6 @@
       // 含实体本体一起吞）/ 其余原始 '&'，三者最近者。实体解码后 '&lt;' 产生的 '<'
       // 不是 tag 起点（entities.vtt 正例保持全文）；tag 前文本保留、tag 段全弃
       //（headless 不建 cue DOM 树）。裸 '>' 无 '<' → 纯文本。
-      var _stripMarkup = function (s) {
-        // 返回**原文**（实体不解码——cue.text 保持 parser 输入，spec；解码在
-        // getCueAsHTML DOM 面）。终点判定（上游 Chromium 实测断言面）：原始 '>' →
-        // tag 终点，后续文本保留；无原始 '>'（含 '&gt;' 实体形态——实体不终止 tag）
-        // → '<' 起剩余全吞。
-        var raw = String(s);
-        var lt = raw.indexOf('<');
-        if (lt < 0) return raw;
-        var rawGt = raw.indexOf('>', lt + 1);
-        if (rawGt < 0) return raw.slice(0, lt);
-        return raw.slice(0, lt) + raw.slice(rawGt + 1);
-      };
       var _applySettings = function (cue, s) {
         // cue settings：空格/制表分隔的 `name:value` 段（值可含 %）。已识别项写入
         // VTTCue 反射面；未识别项忽略（spec 容错）。
@@ -7299,9 +7292,11 @@
           textLines.push(String(lines[i]));
           i++;
         }
-        // tag/annotation 截断与实体解码按 **cue 全文本**（跨行——entities-wrong 的
-        // '<' tag 从首行延续到 '&' 结束，跨行吞并）。
-        var cue = new globalThis.VTTCue(st, et, _stripMarkup(textLines.join('\n')));
+        // M3 扩批 XLII：cue.text 保留 **parser 输入原文**（spec「text track cue text」
+        // ——unsupported-markup 断言 text 含 '<h1>' 原文）；markup 标签/annotation
+        // 吞并在 getCueAsHTML DOM 面处理（_zwCueTextToFragment——entities-wrong 的
+        // '<' 跨行 annotation 吞并同面）。
+        var cue = new globalThis.VTTCue(st, et, textLines.join('\n'));
         if (cueId) cue.id = _entities(cueId);
         if (settings) _applySettings(cue, settings);
         cues.push(cue);
