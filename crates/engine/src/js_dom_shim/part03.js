@@ -685,6 +685,17 @@
   };
   try {
     globalThis.Text.prototype = Object.create(globalThis.CharacterData.prototype);
+    // media-elements M3 扩批 XXXVIII：interface prototype object 的 constructor 自引
+    //（WebIDL §4.6.1——prototype 的 constructor 属性值为接口构造器；track-cue-empty
+    // 断言 `textNode.constructor.name === Text.name`。R179 文本节点原型链 Text.prototype
+    // 后，旧链上首个 constructor 为 Node.prototype.constructor → 名 'Node'）。
+    if (!Object.prototype.hasOwnProperty.call(globalThis.Text.prototype, 'constructor')) {
+      try {
+        Object.defineProperty(globalThis.Text.prototype, 'constructor', {
+          value: globalThis.Text, writable: true, enumerable: false, configurable: true,
+        });
+      } catch (_eCtorT) {}
+    }
     // js-dom M4 R108：`new Text()` 实例的 dispatchEvent（WPT Event-dispatch-click
     // "look at parents"——`input.appendChild(new Text(...)).dispatchEvent(new MouseEvent
     // ('click', {bubbles:true}))` 冒泡触发父链 pre-click activation）。构造器实例是

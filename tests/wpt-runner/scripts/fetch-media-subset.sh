@@ -80,6 +80,10 @@ fetch_raw "html/semantics/embedded-content/the-audio-element/audio_constructor.h
 # 适用）；audio-*-inactive-document-crash（iframe contentDocument cloneNode 深结构）
 # / audio-with-replaced-after-pseudo-crash（::after replaced content 渲染域）不导入。
 fetch_raw "html/semantics/embedded-content/the-audio-element/audio-loading-eager.html"
+# M3 扩批 XXXVIII：track-cue-empty 解除排除导入（getCueAsHTML 空 cue 面——
+# DocumentFragment + 单空 Text 节点 + constructor.name 断言；配套 shim Text.prototype
+# constructor 自引修复（WebIDL §4.6.1），XXX 排除注记「shim 工厂面差异」消除）。
+fetch_raw "html/semantics/embedded-content/media-elements/track/track-element/track-cue-empty.html"
 # the-video-element 反射面（M3 扩批 IV：属性不凭空出现——UA 面不加 tabindex）。
 fetch_raw "html/semantics/embedded-content/the-video-element/video-tabindex.html"
 # M3 扩批 XXXV：loading=eager 立即加载面（loadeddata 到达——headless settle 无视口

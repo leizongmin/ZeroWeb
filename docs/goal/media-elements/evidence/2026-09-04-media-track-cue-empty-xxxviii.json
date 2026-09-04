@@ -1,0 +1,21 @@
+{
+ "batch": "media-elements M3 扩批 XXXVIII",
+ "date": "2026-09-04",
+ "topic": "track-cue-empty 解除排除导入——Text.prototype.constructor 自引（WebIDL §4.6.1 interface prototype object）",
+ "context": "扩批 XXX 排除注记「track-cue-empty：constructor.name 原生 class 断言——shim 工厂面差异」。本轮探针实证（engine V8 桥沙箱）定位真缺口：globalThis.Text.name === 'Text' 已对，但 shim 文本节点（R179 原型链 Text.prototype）的 constructor 沿原型链解析到 Node.prototype.constructor → 名 'Node'。根因 = Text.prototype 缺 interface prototype object 的 constructor 自引属性。",
+ "fix": "shim part03：Text.prototype 构建处补 constructor 自引 defineProperty（value=Text、enumerable false——WebIDL §4.6.1「interface prototype object 的 constructor 属性」；hasOwnProperty 门防重复定义）",
+ "imported": [
+  "html/semantics/embedded-content/media-elements/track/track-element/track-cue-empty.html"
+ ],
+ "case_assertions": "getCueAsHTML() 于空 cue → DocumentFragment instanceof 断言 + childNodes.length 1 + childNodes[0].constructor.name === Text.name + length 0 + data ''",
+ "totals": {
+  "pass": 602,
+  "precondition_failed": 24,
+  "pass_rate": "602/626 = 96.17%（+1 净涨零回归）"
+ },
+ "gates": {
+  "make_test": "see master.md 本批记录",
+  "clippy": "workspace -D warnings clean"
+ },
+ "wpt_rev": "315976933870b34d6ea30e3f6643403edae678ba"
+}

@@ -2,7 +2,14 @@
 
 **入口文档**: [../media-elements.md](../media-elements.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-04（**M3 扩批 XXXVII 落地**——the-video-element 清点补遗：
+**最后更新**: 2026-09-04（**M3 扩批 XXXVIII 落地**——track-cue-empty 解除排除导入
+（602P/0F/24PF = 96.17%，+1 净涨零回归）：**Text.prototype.constructor 自引修复**
+（WebIDL §4.6.1 interface prototype object——探针实证 XXX 排除注记「constructor.name
+原生 class 断言 shim 工厂面差异」的真缺口为 Text.prototype 缺 constructor 自引，
+文本节点 R179 原型链后 constructor 解析到 Node.prototype.constructor → 名 'Node'；
+shim part03 Text.prototype 构建处补 defineProperty(value=Text, enumerable false)）。
+getCueAsHTML 空 cue 面（DocumentFragment instanceof + 单空 Text 节点 + 
+constructor.name === Text.name + length/data）。此前 2026-09-04：**M3 扩批 XXXVII 落地**——the-video-element 清点补遗：
 intrinsic_sizes.htm 定性（XXXV 未显式定性尾件）+ video 固有尺寸 getComputedStyle
 面落地（spec 对齐修复，无整文件可导入面）——shim 生产回调路径
 compute_document_styles_with_inline_overrides 增 video 分支（canvas R34xx 同形）：
@@ -72,7 +79,7 @@ track-text-track-cue-list 导入（length/[]/getCueById 零改动）。**598P/0F
 （导入/排除均有归域注记）。维持排除（实证注记）：
 markup 结构族 6 件 + track-cue-mutable-fragment（assert_cue_fragment isEqualNode
 对拍 getCueAsHTML 的 span 节点树——cue 标记树解析深结构项归渲染域远期）+
-track-cue-empty（constructor.name 原生 class 断言——shim 工厂面差异）+
+~~track-cue-empty~~（✅ 扩批 XXXVIII 解除排除——Text.prototype.constructor 自引修复）+
 track-mode-not-changed-by-new-track（textTracks 身份对拍切片）+
 track-remove-insert-ready-state（re-attach 播放推进链切片）+
 track-selection-task-order（selection 宏任务序切片）。**全目录清点收束（2026-09-04
@@ -80,8 +87,8 @@ track-selection-task-order（selection 宏任务序切片）。**全目录清点
 loop_base×2 / 已注记排除×5——error-sequence MSE-util / no-autoplay iframe /
 preserves-pitch / src_object_blob / volume_check 旧语义）；resize-during-playback
 （双分辨率 mid-stream resize fixture + resize 二次派发——排除注记）；the-video-
-element 余 26 件 / the-audio-element 余 16 件（loading-lazy 族 / poster 族 /
-crash 族——加载与崩溃域）；user-interface muted 面 2 件（UI 域）；
+element 余 26 件 / the-audio-element 余 16 件（✅ 扩批 XXXVI/XXXVII 清点收束——
+lazy/deferred 系互斥排除、reftest 渠道面、intrinsic_sizes 补遗、crash 族不导入）；user-interface muted 面 2 件（UI 域）；
 crashtests GC 面 1 件；ready-states 余 2 件已注记。**缺口面穷尽定性——余下
 增量依赖深结构或新批复解锁**。证据快照：
 [evidence/2026-09-04-media-598p-snapshot.json](evidence/2026-09-04-media-598p-snapshot.json)
@@ -755,7 +762,7 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
 
 | # | 缺口 | 状态 | 失败聚类 |
 |---|------|------|----------|
-| M1g | WPT media-elements 用例覆盖 | ✅ 169 用例已导入（136 + 扩批 XVI~XXX：播放推进族 6 件 + track-change-event + track-active-cues + played-loop + audio_loop_seek_to_eos + loop-from-ended.tentative + seeking/ 三件 + volume_nonfinite + media_fragment_seek + autoplay-with-broken-track + currentTime-move-within-document + track-mode-triggers-loading + track-remove-quickly + track-remove-by-setting-innerHTML + ready-states/autoplay + WebVTT 解析面 14 件 + mode/cuechange 播放推进面 3 件 + XXXI 三件 + XXXII 七件 + XXXIII 一件 + XXXIV play-in-detached-document + XXXV video-loading-eager + XXXVI audio-loading-eager），**96.16%**（601/625） | — |
+| M1g | WPT media-elements 用例覆盖 | ✅ 170 用例已导入（136 + 扩批 XVI~XXX：播放推进族 6 件 + track-change-event + track-active-cues + played-loop + audio_loop_seek_to_eos + loop-from-ended.tentative + seeking/ 三件 + volume_nonfinite + media_fragment_seek + autoplay-with-broken-track + currentTime-move-within-document + track-mode-triggers-loading + track-remove-quickly + track-remove-by-setting-innerHTML + ready-states/autoplay + WebVTT 解析面 14 件 + mode/cuechange 播放推进面 3 件 + XXXI 三件 + XXXII 七件 + XXXIII 一件 + XXXIV play-in-detached-document + XXXV video-loading-eager + XXXVI audio-loading-eager + XXXVIII track-cue-empty），**96.17%**（602/626） | — |
 | M2g | load 算法 + 状态机（事件序列派发） | ✅ M2 落地（13T→**0T**） | F4 闭合 |
 | M3g | 事件序列 headless 近似驱动 | ✅（同 M2g；source-child 触发已落地） | F4 闭合 |
 | M4g-a | 媒体元数据 IDL 反射（初值面） | ✅ 切片 3 落地 | F2 闭合（-9 Fail） |
@@ -794,7 +801,7 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
    （~~video-loading-* preload 语义族~~ ✅ 扩批 XXXV 清点——video-loading-eager
    导入，lazy/preload-deferred 系与 eager-by-default 实现互斥维持排除，
    **the-video-element 目录清点收束**）。**headless 可导入面已在 95.9% 重饱和
-   （M3 扩批 XXXVI 后第十八次修正：96.16%）**——余下增量依赖兄弟目标解锁（真播放钟 →
+   （M3 扩批 XXXVIII 后第十九次修正：96.17%）**——余下增量依赖兄弟目标解锁（真播放钟 →
    time-marches-on 余面）+ 深结构项（~~TextTrackList change 事件广播反向链~~ ✅
    扩批 XXI 兑现、cue 标记树解析——归渲染域远期）。
    ~~ready-states/autoplay.html~~ ✅ 扩批 XXIX 兑现（autoplaying flag 交互 +
@@ -884,6 +891,10 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
   头部记录与 evidence 序列）
   → 扩批 XXXVI（2026-09-04，the-audio-element 目录清点——audio-loading-eager 导入）
   **601/625 = 96.16%**（+1 净涨零回归；Fail 0 / Timeout 0 / PF 24）
+  → 扩批 XXXVII（2026-09-04，video 固有尺寸 getComputedStyle 面——spec 对齐修复，
+  无新增导入）**601/625 维持零回归**
+  → 扩批 XXXVIII（2026-09-04，Text.prototype.constructor 自引——track-cue-empty
+  解除排除）**602/626 = 96.17%**（+1 净涨零回归；Fail 0 / Timeout 0 / PF 24）
 - 入口：`make testharness-media`（FILTER 透传，`--json` 捕获 evidence）
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过
 - evidence：`evidence/2026-08-31-media-baseline.md`（+ 同名 .json 机读版）、
@@ -903,4 +914,5 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
   `evidence/2026-09-04-media-play-in-detached-xxxiv.json`、
   `evidence/2026-09-04-media-video-loading-eager-xxxv.json`、
   `evidence/2026-09-04-media-audio-loading-eager-xxxvi.json`、
-  `evidence/2026-09-04-media-video-intrinsic-sizes-xxxvii.json`
+  `evidence/2026-09-04-media-video-intrinsic-sizes-xxxvii.json`、
+  `evidence/2026-09-04-media-track-cue-empty-xxxviii.json`
