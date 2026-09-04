@@ -115,6 +115,11 @@ WA_FILES=(
   "webaudio/the-audio-api/the-convolvernode-interface/convolver-setBuffer-null.html"
   "webaudio/the-audio-api/the-convolvernode-interface/convolver-setBuffer-already-has-value.html"
   "webaudio/the-audio-api/the-analysernode-interface/realtimeanalyser-basic.html"
+  # ---- 第十七批（2026-09-04）：MediaStreamAudioDestinationNode 语义面——ctor 全
+  # task 零渲染（TypeError 三态 + 1入0出 + channelCount 2 缺省/mode explicit/
+  # interpretation speakers + options channelCount=7 非固定面）。配套 shim：
+  # _zwWABuildMediaStreamDestination builder + 构造器/工厂（stream 反射最小面）。
+  "webaudio/the-audio-api/the-mediastreamaudiodestinationnode-interface/ctor-mediastreamaudiodestination.html"
   # 不导入：audioparam-method-chaining / audioparam-nominal-range（startRendering
   # 渲染断言——RFC §0 不做清单）；ctor-audiobuffer（末 task multiple contexts 依赖
   # startRendering——audit runner 整文件跑）；periodicWave.html（startRendering）；

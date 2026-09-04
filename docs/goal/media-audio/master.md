@@ -2,7 +2,21 @@
 
 **入口文档**: [../media-audio.md](../media-audio.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-04（**WPT webaudio 第十六批——convolver/analyser 零渲染候选
+**最后更新**: 2026-09-04（**WPT webaudio 第十七批——MediaStreamAudioDestinationNode
+语义面（38 用例 867P/0F = 100%）**：ctor-mediastreamaudiodestination 导入（全 task
+零渲染）——shim part06 落 `_zwWABuildMediaStreamDestination` builder + 构造器
+（ctx 校验 TypeError / options 非 object TypeError）+ createMediaStreamDestination
+工厂（Audio/Offline 双 context）+ prototype 链——1 入 0 出 + channelCount 2 缺省、
+mode 'explicit'、interpretation 'speakers'；options.channelCount **非固定**（=7 合法
+——与 splitter/merger 固定通道面分流；[1,32] 外 NotSupportedError）+ mode 非
+explicit InvalidStateError + interpretation 枚举 TypeError + stream 反射最小面
+（readonly 占位——真 MediaStream 域排除）。**目录清点扩展**：the-mediastream-
+audiosourcenode（getUserMedia 域 3 件）/ the-mediaelementaudiosourcenode（复评——
+cors https+CGI、srcObject 互连、crash 系、setSinkId 真设备——全排除维持）/
+scriptprocessor（废弃）/ audioworklet / processing-model / permission-policy——
+webaudio the-audio-api **全接口目录含 MediaStream 邻域清点收束**。evidence：
+`evidence/2026-09-04-webaudio-mediastreamdestination-batch17.json`。此前 2026-09-04：
+**WPT webaudio 第十六批——convolver/analyser 零渲染候选
 （36 用例 863P/0F）**：ctor-convolver（5 W3CTH task 全绿）/ convolver-setBuffer-null
 / convolver-setBuffer-already-has-value / realtimeanalyser-basic 四件导入——
 **ConvolverNode 语义面落地**（shim part06：`_zwWABuildConvolver` builder +
@@ -464,8 +478,9 @@ DONE 阻塞**；Mixer/重采样接线随设备切片可选推进）。
 
 1. ~~**Web Audio 最小面实施（D1 已批准）**~~ 🔄 切片 1+2 ✅ 2026-09-02 落地
    （zero-media webaudio 模块 + shim AudioContext 门面 + __zwWA* 宿主桥 + 泵接线 +
-   e2e——见当前状态）；WPT webaudio 子集导入 ✅ 十六批（36 用例 863P/0F = 100%，
-   2026-09-04 收口——含 audit.js 框架接入 + ctor 全族 + AudioParam 异常面 +
+   e2e——见当前状态）；WPT webaudio 子集导入 ✅ 十七批（38 用例 867P/0F = 100%，
+   2026-09-04 收口——含 MediaStreamAudioDestinationNode ctor 面，
+   the-audio-api 全接口目录含 MediaStream 邻域清点收束——含 audit.js 框架接入 + ctor 全族 + AudioParam 异常面 +
    AudioBuffer/OfflineAudioContext 构造面 + AudioScheduledSourceNode 调度异常 +
    getOutputTimestamp + AudioContextOptions + detached/not-fully-active 面 +
    ConvolverNode 语义面 + batch14 constructor-allowed-to-start 勘误移除）；余：
@@ -500,7 +515,7 @@ DONE 阻塞**；Mixer/重采样接线随设备切片可选推进）。
 
 - 测试基线：`make test` 全绿 18866（2026-09-04 组合树实测）；clippy 零警告
   （default 与 `--features audio-cpal` 双配置）
-- WPT webaudio：**36 用例 863P/0F = 100%**（2026-09-04 十六批累计——connect 返回值 +
+- WPT webaudio：**38 用例 867P/0F = 100%**（2026-09-04 十七批累计——connect 返回值 +
   destination + ctor-oscillator 62 + ctor-gain/stereopanner/delay/biquadfilter/
   analyser + createPeriodicWave 异常面 + audioparam-exceptional-values 66 +
   audiobuffer 面 + 第七批 ctor-channelmerger/channelsplitter/constantsource +
@@ -513,7 +528,9 @@ DONE 阻塞**；Mixer/重采样接线随设备切片可选推进）。
   第十四批 audiocontextoptions/suspend-after-construct + 第十五批
   promise-methods-after-discard（constructor-allowed-to-start 第十五批勘误
   移除）+ **第十六批 ctor-convolver/convolver-setBuffer-null/
-  convolver-setBuffer-already-has-value/realtimeanalyser-basic**；
+  convolver-setBuffer-already-has-value/realtimeanalyser-basic** +
+  **第十七批 ctor-mediastreamaudiodestination**（MediaStreamAudioDestinationNode
+  语义面——the-audio-api 全接口目录含 MediaStream 邻域清点收束）；
   the-audiocontext-interface + the-audio-api 各接口目录清点收束）；
   evidence：`evidence/2026-09-02-webaudio-wpt-subset.json`（首批）、
   `evidence/2026-09-02-webaudio-ctor-oscillator.json`（第二批）、

@@ -1,0 +1,22 @@
+{
+ "batch": "WPT webaudio 第十七批",
+ "date": "2026-09-04",
+ "topic": "MediaStreamAudioDestinationNode 语义面——ctor 全 task 零渲染导入（the-mediastreamaudiodestinationnode-interface 目录清点）",
+ "shim": "part06 _zwWABuildMediaStreamDestination builder + MediaStreamAudioDestinationNode 构造器（ctx 校验 TypeError / options 非 object TypeError）+ createMediaStreamDestination 工厂（Audio/Offline 双 context）+ prototype 链 _zwWANode。语义面：1 入 0 出 + channelCount 2 缺省 + mode 'explicit' + interpretation 'speakers'；options.channelCount 非固定（=7 合法，[1,32] 外 NotSupportedError——与 splitter/merger 固定通道面分流）；mode 非 explicit InvalidStateError；interpretation 枚举 TypeError；stream 反射最小面（readonly getter 占位对象——真 MediaStream 域排除）",
+ "imported": [
+  "webaudio/the-audio-api/the-mediastreamaudiodestinationnode-interface/ctor-mediastreamaudiodestination.html"
+ ],
+ "dir_triage": {
+  "ctor-mediastreamaudiodestination": "导入（零渲染构造面）",
+  "closed-audiocontext-construction": "startRendering 渲染断言（RFC §0 不做清单）",
+  "the-mediastreamaudiosourcenode-interface（3 件）": "getUserMedia/MediaStream 域（routing 依赖真流、different-rate https、ctor 依赖 stream 产物）——域排除维持",
+  "the-mediaelementaudiosourcenode-interface（复评）": "cors-check/no-cors 需 HTTPS + redirect.py CGI；volumeChange 依赖 srcObject MediaStream 互连；crash 系/ScriptProcessor（废弃）/setSinkId（真设备域）——全排除维持",
+  "scriptprocessornode / audioworklet / processing-model / media-playback-while-not-visible-permission-policy": "废弃接口 / worklet 域 / startRendering 渲染 / permissions-policy——域排除维持"
+ },
+ "totals": {
+  "pass": 867,
+  "fail": 0,
+  "pass_rate": "867/867 = 100%（+4 净涨零回归——863→867）"
+ },
+ "wpt_rev": "315976933870b34d6ea30e3f6643403edae678ba"
+}

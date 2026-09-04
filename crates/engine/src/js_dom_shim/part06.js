@@ -9144,6 +9144,70 @@
   }
   ChannelSplitterNode.prototype = _zwWANode.prototype;
   ChannelMergerNode.prototype = _zwWANode.prototype;
+  // M3 第十七批（media-audio，2026-09-04）：MediaStreamAudioDestinationNode 语义面
+  //（ctor-mediastreamaudiodestination 断言面——1 入 0 出 + channelCount 2 缺省、
+  // mode 'explicit'、interpretation 'speakers'；options.channelCount 可写非固定——
+  // 与 splitter/merger 的固定通道面不同）。stream 反射最小面（headless 无真
+  // MediaStream——getter 返占位对象，渲染域归 MediaStream 域排除注记）。
+  function _zwWABuildMediaStreamDestination(ctx, options) {
+    var node = _zwWANode('mediastreamdestination', ctx._zwCtxId, 0);
+    node._zwInputs = 1;
+    node._zwOutputs = 0;
+    node._zwChannelCount = 2;
+    node._zwChannelCountMode = 'explicit';
+    node._zwChannelInterpretation = 'speakers';
+    // AudioNodeOptions channelCount 应用（非固定——ctor options channelCount=7 合法）。
+    if (options && typeof options === 'object') {
+      if (options.channelCount != null) {
+        var _mdCc = Number(options.channelCount);
+        if (isNaN(_mdCc) || _mdCc < 1 || _mdCc > 32) {
+          throw new (globalThis.DOMException || Error)(
+            "Failed to construct 'MediaStreamAudioDestinationNode': channelCount " + options.channelCount + " not supported.", 'NotSupportedError');
+        }
+        node._zwChannelCount = _mdCc;
+      }
+      if (options.channelCountMode != null) {
+        var _mdCm = String(options.channelCountMode);
+        if (_mdCm !== 'explicit') {
+          throw new (globalThis.DOMException || Error)(
+            "Failed to construct 'MediaStreamAudioDestinationNode': channelCountMode is fixed ('explicit').", 'InvalidStateError');
+        }
+      }
+      if (options.channelInterpretation != null) {
+        var _mdCi = String(options.channelInterpretation);
+        if (_mdCi !== 'speakers' && _mdCi !== 'discrete') {
+          throw new TypeError("Failed to construct 'MediaStreamAudioDestinationNode': Failed to read the 'channelInterpretation' property from 'AudioNodeOptions': The provided value '" + _mdCi + "' is not a valid enum value.");
+        }
+        node._zwChannelInterpretation = _mdCi;
+      }
+    }
+    // stream 反射（spec dom-mediastreamaudiodestinationnode-stream——readonly）。
+    Object.defineProperty(node, 'stream', {
+      get: function () {
+        if (!node._zwStream) node._zwStream = { _zwIsMediaStream: true };
+        return node._zwStream;
+      },
+      configurable: true,
+    });
+    return node;
+  }
+  function MediaStreamAudioDestinationNode(ctx, options) {
+    if (!(ctx && typeof ctx === 'object' && (ctx._zwCtxId != null || typeof ctx.createGain === 'function'))) {
+      throw new TypeError("Failed to construct 'MediaStreamAudioDestinationNode': parameter 1 is not of type 'BaseAudioContext'.");
+    }
+    if (options != null && typeof options !== 'object') {
+      throw new TypeError("Failed to construct 'MediaStreamAudioDestinationNode': The provided value is not of type 'object'.");
+    }
+    return _zwWABuildMediaStreamDestination(ctx, options);
+  }
+  MediaStreamAudioDestinationNode.prototype = _zwWANode.prototype;
+  globalThis.MediaStreamAudioDestinationNode = globalThis.MediaStreamAudioDestinationNode || MediaStreamAudioDestinationNode;
+  AudioContext.prototype.createMediaStreamDestination = function () {
+    return _zwWABuildMediaStreamDestination(this, undefined);
+  };
+  if (typeof globalThis.OfflineAudioContext !== 'undefined') {
+    OfflineAudioContext.prototype.createMediaStreamDestination = AudioContext.prototype.createMediaStreamDestination;
+  }
   globalThis.ChannelSplitterNode = globalThis.ChannelSplitterNode || ChannelSplitterNode;
   globalThis.ChannelMergerNode = globalThis.ChannelMergerNode || ChannelMergerNode;
   AudioContext.prototype.createChannelSplitter = function (numberOfOutputs) {

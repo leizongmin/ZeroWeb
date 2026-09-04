@@ -1802,6 +1802,9 @@ pub const WEBAUDIO_TEST_FILES: &[&str] = &[
     "webaudio/the-audio-api/the-convolvernode-interface/convolver-setBuffer-null.html",
     "webaudio/the-audio-api/the-convolvernode-interface/convolver-setBuffer-already-has-value.html",
     "webaudio/the-audio-api/the-analysernode-interface/realtimeanalyser-basic.html",
+    // M3 第十七批：MediaStreamAudioDestinationNode ctor 语义面（1入0出 + explicit/
+    // speakers 缺省 + options channelCount 非固定——shim _zwWABuildMediaStreamDestination）。
+    "webaudio/the-audio-api/the-mediastreamaudiodestinationnode-interface/ctor-mediastreamaudiodestination.html",
     // 不导入：constructor-allowed-to-start（test_driver.bless 用户手势 + 断言
     // 「构造后立即 'suspended' → onstatechange 异步转 'running'」——shim headless
     // 恒 'running' 近似与该异步状态机断言结构性互斥，bless stub 化后仍必 Fail；
