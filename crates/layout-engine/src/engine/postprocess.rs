@@ -1605,6 +1605,36 @@ fn fix_column_flex_nonstretch_replaced_main_inner(
 ///
 /// `cb_content_height` 为父级（包含块）的**明确**内容高度；为 `None` 表示父级高度
 /// 由内容决定（CSS §10.5：此时百分比 height/max-height 视为 auto，不解析）。
+/// R4038：空 grid 的显式 `grid-template-rows` 定值轨道总高（Px 简单列表才认）。
+///
+/// 仅当元素为 grid/inline-grid 且无子元素时由调用方启用。列表含 `repeat()`/`minmax()`/
+/// `fr`/百分比/关键字轨道时返回 None（保守不抬）。非 grid 元素返回 None。
+pub(super) fn empty_grid_definite_rows_height(style: &ComputedStyle) -> Option<f32> {
+    if !matches!(
+        style.display,
+        zero_css_parser::values::DisplayValue::Grid | zero_css_parser::values::DisplayValue::InlineGrid
+    ) {
+        return None;
+    }
+    let rows = style.grid_template_rows.as_deref()?;
+    if rows.is_empty() {
+        return None;
+    }
+    let mut total = 0.0_f32;
+    for token in rows.split_whitespace() {
+        let lower = token.to_ascii_lowercase();
+        if lower.ends_with("px")
+            && !lower.contains('(')
+            && let Ok(v) = token[..token.len() - 2].parse::<f32>()
+        {
+            total += v;
+        } else {
+            return None;
+        }
+    }
+    (total > 0.0).then_some(total)
+}
+
 pub(super) fn clamp_percentage_max_height(
     box_node: &mut LayoutBox,
     cb_content_height: Option<f32>,
@@ -1698,11 +1728,17 @@ pub(super) fn clamp_percentage_max_height(
         };
         let content_top = box_node.padding_top + box_node.border_top;
         let pb = box_node.padding_top + box_node.padding_bottom + box_node.border_top + box_node.border_bottom;
+        // R4038（css-grid §7.2.3 显式轨道）：空 grid（无 item）的显式 `grid-template-rows`
+        // 定值轨道照常占位——内容高 = Σ 定值轨道（block-size-with-min-or-max-content-4/5：
+        // `grid-template-rows:100px` + min/max-height:max-content 应取 100，旧实现空容器
+        // content_h=0 不钳不抬）。仅认全 Px 简单列表（含 repeat()/minmax()/fr 等返回
+        // None → 不抬，避免过估）。
         let content_h = box_node
             .children
             .iter()
             .map(|c| (c.y + c.height - content_top).max(0.0))
-            .fold(0.0_f32, f32::max);
+            .fold(0.0_f32, f32::max)
+            .max(empty_grid_definite_rows_height(style).unwrap_or(0.0));
         if content_h > 0.0 {
             if content_kw(&style.max_height) && box_node.height > content_h + pb + 0.5 {
                 box_node.height = content_h + pb;

@@ -636,6 +636,58 @@ fn test_table_percentage_height_resolves_as_minimum() {
     );
 }
 
+/// R4038：空 grid（无 item）+ 显式 `grid-template-rows` 定值轨道——min/max-height
+/// content 关键字钳制的内容高应取 Σ 轨道（css-grid §7.2.3 显式轨道照常占位）。
+/// block-size-with-min-or-max-content-4/5：`grid-template-rows:100px` + height:0 +
+/// min-height:max-content → 100。
+#[test]
+fn r4038_empty_grid_definite_rows_contribute_to_content_height() {
+    let (mut doc, _body) = make_doc_with_body();
+    let grid = doc.create_element("div");
+
+    let mut styles = HashMap::new();
+    let mut g_s = ComputedStyle::default();
+    g_s.display = DisplayValue::Grid;
+    g_s.grid_template_rows = Some("100px".to_string());
+    g_s.min_height = LengthValue::MaxContent;
+    g_s.height = LengthValue::Px(0.0);
+    styles.insert(grid, g_s);
+
+    let mut grid_box = LayoutBox {
+        node_id: Some(grid),
+        content_height: 0.0,
+        height: 0.0,
+        ..Default::default()
+    };
+
+    super::super::clamp_percentage_max_height(&mut grid_box, None, &styles);
+
+    assert!(
+        (grid_box.height - 100.0).abs() < 0.5,
+        "空 grid 显式 100px 轨道应经 min-height:max-content 抬升到 100，got {}",
+        grid_box.height
+    );
+}
+
+/// R4038：非 Px 轨道（fr/关键字）返回 None → 不抬（保守不过估）。
+#[test]
+fn r4038_empty_grid_fr_tracks_do_not_lift() {
+    let rows_style = |rows: &str| {
+        let mut style = zero_style_system::ComputedStyle::default();
+        style.display = zero_css_parser::values::DisplayValue::Grid;
+        style.grid_template_rows = Some(rows.to_string());
+        style
+    };
+    assert_eq!(
+        super::super::empty_grid_definite_rows_height(&rows_style("1fr 100px")),
+        None
+    );
+    assert_eq!(
+        super::super::empty_grid_definite_rows_height(&rows_style("100px 100px")),
+        Some(200.0)
+    );
+}
+
 /// R2057：abspos + max-height:max-content/fit-content 关键字 cap。
 ///
 /// convert_max_length_to_dimension 把这些关键字转 taffy auto（无 max 约束），taffy 0.12
