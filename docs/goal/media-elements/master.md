@@ -2,7 +2,18 @@
 
 **入口文档**: [../media-elements.md](../media-elements.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-04（**M3 扩批 XLV 落地**——静态元素移除-重插 host 通道归因修复
+**最后更新**: 2026-09-04（**M3 扩批 XLVI 落地**——**set_attr 同批 detach lenient 跳过**
+（js_dom_bridge apply_dom_mutations）：「removeChild 后 video.src= 重设」排 SetAttr wire
+时目标已 detach → find 失配硬错中止整批（XLIV 轮「set_attr: no match for video」根因）。
+修复：SetAttr/RemoveAttr 失配先查 R361 detached_stash——命中则 lenient 跳过（spec
+detached 元素 setAttribute 有效但 host 档无此节点，JS 侧 attr instance/expando 已记账；
+SetText R3076 同款语义），未命中 stash 维持原 Err（真 stale selector 不掩盖）。
+**二分定性**：全链路 a-d（settle→removeChild→src 重设→重插）修复后跑通（RS 全程 3）；
+「重插后 host tick（60ms later 段）死循环」仍存——非 V8 执行期（无 ScriptError）而是
+host 侧 runner loop/渲染管线在重插代际的自旋，归深结构切片（host tick 与重插竞态），
+不阻塞本批。track-remove-insert-ready-state 维持排除。629P/0F/24PF = 96.32% 维持
+零回归；runner 契约 204 ok、clippy/fmt 干净。
+此前 2026-09-04：**M3 扩批 XLV 落地**——静态元素移除-重插 host 通道归因修复
 （三处，纯 DOM 重插探针全绿：parent=BODY/boxKids=1/bodyContains=true）：
 ① R334 sel 子 appendChild 分支的 **removed 标记清除**（removeChild→appendChild 重插后
 标记残留使 parentNode 恒 null——_zwIsRemoved 短路）；
@@ -300,7 +311,7 @@ currentSrc 的 source-child 插入触发（mutation 面）。
 （**M3 扩批 event_* 族 + 第二批 + III~X（2026-09-01）/ XI~XV（2026-09-02）/
   XVI~XVIII（2026-09-03）过程记录**——每批 shim 面/runner 面明细与排除注记——
   已归档至 [archive/2026-09-04_m3-batches-vii-to-xviii.md](archive/2026-09-04_m3-batches-vii-to-xviii.md)，
-  证据 JSON 序列见验证基线；累计口径 603P/0F/24PF = 96.17%。第 XIX~XLV 批
+  证据 JSON 序列见验证基线；累计口径 603P/0F/24PF = 96.17%。第 XIX~XLVI 批
   明细见头链（最新态）。）
 
 **里程碑归档（2026-09-01）**：M1~M3 与六轮扩批的过程记录、排除用例决策清单已归档至
@@ -503,6 +514,9 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
   parentNode 槽消费；track-remove-insert-ready-state 定性再升级维持排除——暴露 media
   load 移除竞态死循环归独立切片）**629/653 = 96.32%** 维持零回归（Fail 0 / Timeout 0 /
   PF 24）
+  → 扩批 XLVI（2026-09-04，set_attr 同批 detach lenient 跳过——R361 stash 扩展消除
+  apply 硬错；全链路 a-d 跑通，重插后 host tick 死循环归深结构切片）**629/653 = 96.32%**
+  维持零回归（Fail 0 / Timeout 0 / PF 24）
 - 复核（2026-09-04 治理整固后终审）：fresh 跑 603P/0F/24PF（198 文件）与
   本档记录逐位一致；验证基线 evidence 链 26 文件全在盘；make test 18877/0。
   （扩批 XL 后：fresh 跑 609P/0F/24PF（201 文件）；扩批 XLI 后：fresh 跑

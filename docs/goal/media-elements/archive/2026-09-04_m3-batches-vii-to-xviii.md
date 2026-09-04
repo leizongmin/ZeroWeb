@@ -670,3 +670,20 @@ track-active-cues 解除排除）**：
 - 诊断注记：二分期间一次「body.removeChild 卡死」误判系**并行负载下的看门狗偶发**+
   顶层/track-element 两个同名探针文件的路径混淆——复核后排除。全量 629P/0F/24PF
   零回归；clippy/fmt 干净。
+
+## 扩批 XLVI — set_attr 同批 detach lenient 跳过（2026-09-04）
+
+- 背景：XLV 轮归因出的「set_attr: no match for video」host 通道缺口定位与修复。
+- **根因链**（二分确证）：「removeChild 后 video.src= 重设」排 SetAttr wire 时目标已
+  detach → host apply 阶段 find_by_selector 失配 → 硬错中止整批（XLIV 轮报错根因；
+  同批 remove→setAttr→insert 序列的 R361 detached-stash 覆盖了 insert 类 child 失配
+  但未覆盖 SetAttr/RemoveAttr 失配）。
+- **修复**（js_dom_bridge apply_dom_mutations）：SetAttr/RemoveAttr 失配先查
+  detached_stash——命中 lenient 跳过（spec detached 元素 setAttribute 有效但 host 档
+  无此节点；JS 侧 attr instance/expando 已记账；SetText R3076 同款语义）；未命中
+  stash 维持原 Err（真 stale selector 不掩盖真 bug）。
+- **二分定性**：全链路 a-d（settle→removeChild→src 重设→重插）修复后跑通（track
+  readyState 全程 3）。「重插后 host tick（60ms later 段）死循环」仍存——非 V8 执行期
+  （无 ScriptError）而是 host 侧 runner loop/渲染管线在重插 mutation 代际的自旋，归
+  深结构切片（host tick 与重插竞态），不阻塞本批。
+- 629P/0F/24PF = 96.32% 维持零回归；runner 契约 204 ok、clippy/fmt 干净。

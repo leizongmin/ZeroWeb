@@ -765,9 +765,19 @@ pub fn apply_dom_mutations_full(
                 // 焦点状态由宿主（renderer）消费，不写 DOM。
             }
             DomMutation::SetAttr { selector, name, value } => {
-                let Some(node) = find_by_selector(doc, &selector) else {
+                // M3 扩批 XLVI（2026-09-04）：同批 detach→setAttr 失配走 stash lenient
+                // 跳过（R361 同源——「removeChild 后 video.src= 重设」排 SetAttr wire 时
+                // 目标已 detach；spec detached 元素 setAttribute 有效但 host 档无此节点，
+                // JS 侧 attr instance/expando 已记账，这里跳过应用保整批继续）。未命中
+                // stash 维持原 Err（真 stale selector 不掩盖）。
+                // https://github.com/whatwg/dom/issues/1017
+                if find_by_selector(doc, &selector).is_none() {
+                    if detached_stash.contains_key(selector.as_str()) {
+                        continue;
+                    }
                     return Err(format!("set_attr: no match for {selector}"));
-                };
+                }
+                let node = find_by_selector(doc, &selector).expect("checked above");
                 doc.set_attribute(node, &name, &value);
                 // id 改名 → 追链重写剩余 mutation 的 `#旧id` selector（属性名 effective 已小写）。
                 if name.eq_ignore_ascii_case("id") {
@@ -775,9 +785,14 @@ pub fn apply_dom_mutations_full(
                 }
             }
             DomMutation::RemoveAttr { selector, name } => {
-                let Some(node) = find_by_selector(doc, &selector) else {
+                // M3 扩批 XLVI：同 SetAttr——同批 detach 后的 remove_attr lenient 跳过。
+                if find_by_selector(doc, &selector).is_none() {
+                    if detached_stash.contains_key(selector.as_str()) {
+                        continue;
+                    }
                     return Err(format!("remove_attr: no match for {selector}"));
-                };
+                }
+                let node = find_by_selector(doc, &selector).expect("checked above");
                 doc.remove_attribute(node, &name);
             }
             DomMutation::SetText { selector, text } => {
