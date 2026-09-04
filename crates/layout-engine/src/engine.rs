@@ -1366,11 +1366,29 @@ impl LayoutEngine {
                     ))
         });
         let float = computed.map_or(FloatValue::None, |s| {
-            // CSS Logical §float-clear：`inline-start`/`inline-end` 按元素 direction（继承自
-            // containing block）解析为物理 left/right（LTR: start=left,end=right；RTL 反之）。
-            // float_positioning 仅识别 Left/Right，未解析的 InlineStart/InlineEnd 会被当 None
-            // 忽略。driving: WPT css-logical logical-values-float-clear-*。
-            resolve_float_physical(&s.float, matches!(s.direction, DirectionValue::Rtl))
+            // R4019（CSS2 §9.7 + CSS Tables §2）：float 不适用于 **table-internal boxes**
+            //（row/cell/column/group——table 结构化盒，float/clear 声明被结构忽略；
+            // clear-applies-to-004/005/006/014 族：display:table-row + float:left 被误当
+            // float 盒参与 §9.5 定位 → 行错位）。外层 table/inline-table/caption 盒
+            // float 仍适用（不在此列）。
+            if matches!(
+                s.display,
+                DisplayValue::TableRowGroup
+                    | DisplayValue::TableHeaderGroup
+                    | DisplayValue::TableFooterGroup
+                    | DisplayValue::TableRow
+                    | DisplayValue::TableCell
+                    | DisplayValue::TableColumn
+                    | DisplayValue::TableColumnGroup
+            ) {
+                FloatValue::None
+            } else {
+                // CSS Logical §float-clear：`inline-start`/`inline-end` 按元素 direction（继承自
+                // containing block）解析为物理 left/right（LTR: start=left,end=right；RTL 反之）。
+                // float_positioning 仅识别 Left/Right，未解析的 InlineStart/InlineEnd 会被当 None
+                // 忽略。driving: WPT css-logical logical-values-float-clear-*。
+                resolve_float_physical(&s.float, matches!(s.direction, DirectionValue::Rtl))
+            }
         });
         let clear = computed.map_or(ClearValue::None, |s| {
             // CSS 2.1 §9.10：`clear` 仅适用于 block-level 元素。internal table 元素（row/cell/column/

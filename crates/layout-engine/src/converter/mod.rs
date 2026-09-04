@@ -77,20 +77,44 @@ pub fn computed_style_to_taffy(
     // CSS Position §6（css-position-1）：inset 属性（top/right/bottom/left）仅对
     // 非 static 定位元素生效。static 元素的 inset 必须忽略（R689）。
     let is_static = matches!(style.position, PositionValue::Static);
+    // R4019（CSS2 §9.7 + Tables §2：table-internal boxes 忽略 float/clear）：
+    // display:table-row/cell/... 等 table 内部盒的 float/clear 声明不适用
+    //（clear-applies-to-004/005/006/014 族：table-row + float:left + clear:both 仍按
+    // table-row 参与表结构，错位当 float 盒处理）。LayoutBox.float 字段由 extract 层
+    // 从 ComputedStyle 独立读取（不经过此映射），故 ZW 的 float_positioning 链还需
+    // extract 侧同 gate（floats.rs::float 值语义统一）——此处先断 taffy native 面。
+    let is_table_internal_box = matches!(
+        style.display,
+        DisplayValue::TableRow
+            | DisplayValue::TableColumn
+            | DisplayValue::TableColumnGroup
+            | DisplayValue::TableRowGroup
+            | DisplayValue::TableHeaderGroup
+            | DisplayValue::TableFooterGroup
+            | DisplayValue::TableCell
+    );
 
     taffy::Style {
         display: convert_display(&style.display),
         // M3 step(b) 试：native float 激活，但保留 ZW adjust_float_positions（覆盖 native 定位）
-        float: match style.float {
-            FloatValue::Left | FloatValue::InlineStart => taffy::style::Float::Left,
-            FloatValue::Right | FloatValue::InlineEnd => taffy::style::Float::Right,
-            _ => taffy::style::Float::None,
+        float: if is_table_internal_box {
+            taffy::style::Float::None
+        } else {
+            match style.float {
+                FloatValue::Left | FloatValue::InlineStart => taffy::style::Float::Left,
+                FloatValue::Right | FloatValue::InlineEnd => taffy::style::Float::Right,
+                _ => taffy::style::Float::None,
+            }
         },
-        clear: match style.clear {
-            ClearValue::Left | ClearValue::InlineStart => taffy::style::Clear::Left,
-            ClearValue::Right | ClearValue::InlineEnd => taffy::style::Clear::Right,
-            ClearValue::Both => taffy::style::Clear::Both,
-            _ => taffy::style::Clear::None,
+        clear: if is_table_internal_box {
+            taffy::style::Clear::None
+        } else {
+            match style.clear {
+                ClearValue::Left | ClearValue::InlineStart => taffy::style::Clear::Left,
+                ClearValue::Right | ClearValue::InlineEnd => taffy::style::Clear::Right,
+                ClearValue::Both => taffy::style::Clear::Both,
+                _ => taffy::style::Clear::None,
+            }
         },
         box_sizing: convert_box_sizing(&style.box_sizing),
         // R3931（CSS2 §10.3.7）：direction 接线——taffy 0.12 的 abspos 定位臂（over-constrained
