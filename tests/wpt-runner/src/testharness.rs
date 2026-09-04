@@ -1579,12 +1579,12 @@ pub const MEDIA_TEST_FILES: &[&str] = &[
     "html/semantics/embedded-content/media-elements/track/track-element/track-selection-metadata.html",
     "html/semantics/embedded-content/media-elements/track/track-element/track-remove-track.html",
     "html/semantics/embedded-content/media-elements/track/track-element/track-cues-missed-no-immediate-events.html",
-    // track-remove-insert-ready-state 维持排除（XLV 归因升级）：重插 DOM 面（R334 sel 子
-    // 移除标记清除 + 旧父 wire 前读 + parentNode getter 消费 _zwSelPendingParent 槽——
-    // 三处修复落地，纯 DOM 重插探针全绿）+ readyState hold（XLIV）后，用例全链路暴露
-    // **静态 video（src 已加载）removeChild 与 media load 管线的死循环**（90s 看门狗
-    // 截断，非 XLV 引入——XLIII/XLV 修复使 removeChild 走得更深而暴露）。归 media load
-    // 移除竞态独立切片。track-mode-not-changed-by-new-track 维持排除——身份对拍切片。
+    // track-remove-insert-ready-state 维持排除（XLVII 试导回退）：XLIV hold + XLV 三修复 +
+    // XLVI stash lenient + 四处 track 调度前置（part03 load()/part04 setAttribute/part05 IDL
+    // src/part06 加载序列）落地后，探针实证「query 先于 video.src=」形态全程 RS=3，但用例形态
+    //（handler 内首 query）RS 仍 0——src setter 内调度的 settle 未落（dbg 确证调度被调用），
+    // 根因待续查（_zwTrackScheduleLoad 在该时点的早退点）。track-mode-not-changed-by-new-track
+    // 维持排除——身份对拍切片。
     "html/semantics/embedded-content/media-elements/track/track-element/track-cues-cuechange-dynamically-created-track-element.html",
     "html/semantics/embedded-content/media-elements/track/track-element/track-disabled-addcue.html",
     "html/semantics/embedded-content/media-elements/track/track-element/track-insert-after-load.html",

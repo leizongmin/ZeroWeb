@@ -6886,6 +6886,18 @@
       }
     }
     ms.readyState = 4;
+    // M3 扩批 XLVII（2026-09-04）：media 加载序列内触发 track 子加载（spec「further
+    // handling of the track element」——track 检索随 media 元素资源选择启动，与 media
+    // data 并行；此前仅在 track 元素 proxy 首次包装时补触发，脚本先 query track 才有
+    // settle——canplaythrough handler 内首次 query 的形态读 RS 恒 NONE；
+    // track-remove-insert-ready-state 首断言面）。canplaythrough 派发**前**调度：microtask
+    // settle 先于 handler 同步断言（track 文件小、headless settle 即时）。
+    // https://html.spec.whatwg.org/multipage/media.html#the-track-element
+    try {
+      if (typeof globalThis._zwScheduleChildTrackLoads === 'function') {
+        globalThis._zwScheduleChildTrackLoads(sel, handle);
+      }
+    } catch (_eXlviiTrk) {}
     _zwMediaFire(sel, handle, key, 'canplaythrough');
     ms.networkState = 1; // NETWORK_IDLE——加载完成无错误（spec networkState 稳态）
     // M3 扩批 XI：suspend——「once the entire media resource has been fetched」

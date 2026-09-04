@@ -11797,6 +11797,16 @@
                   var _ldAbs = _ldRaw;
                   try { if (typeof _zwResolveFetchUrl === 'function') _ldAbs = _zwResolveFetchUrl(_ldRaw.replace(/^[\x00-\x20]+/, '').replace(/[\x00-\x20]+$/, '')); } catch (_eLdR2) {}
                   _zwMediaScheduleLoad(sel, handle, _ldTag, _ldAbs, _ldRaw === '', (_ldMs && _ldMs.lastSourceChild) || null);
+                  // M3 扩批 XLVII：src setter（load() 同面）即触发 track 子检索（spec
+                  // 资源选择算法的 track 子处理随 media load 启动——track load task
+                  // 先注册先 settle，canplaythrough 时 track 已 ERROR；此前仅 proxy
+                  // 首次包装时补调度，脚本从不 query track 的形态 canplaythrough 内
+                  // 首 query 读 RS 恒 NONE——track-remove-insert-ready-state 断言面）。
+                  try {
+                    if (typeof globalThis._zwScheduleChildTrackLoads === 'function') {
+                      globalThis._zwScheduleChildTrackLoads(sel, handle);
+                    }
+                  } catch (_eXlviiTrk) {}
                 } else if (typeof _zwMediaResourceSelect === 'function') {
                   // 无 src 属性：仅资源选择同步段（NO_SOURCE → 稳定态 EMPTY），无加载模拟；
                   // 但 load() 前的 source 子候选仍在 → 重试该候选（spec：load 重跑资源选择——

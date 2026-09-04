@@ -2,7 +2,18 @@
 
 **入口文档**: [../media-elements.md](../media-elements.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-04（**M3 扩批 XLVI 落地**——**set_attr 同批 detach lenient 跳过**
+**最后更新**: 2026-09-04（**M3 扩批 XLVII 落地**——track 调度前置四处 + 「不退出」现象重定性：
+① **track 子调度前置**（spec track 子处理随 media load 启动）四处落地——part05 IDL video.src=
+setter、part04 setAttribute('src') video 钩子（去 resourceState 门耦合）、part03 load() 路径、
+part06 _zwMediaLoadSequence（canplaythrough 派发前）统一补 _zwScheduleChildTrackLoads；
+② **「重插后死循环」重定性**：逐帧打点（take_probe t0~t6 + 主循环 f 系列）实证用例同步完成、
+probe 全帧走完（f9 terminal：complete=true pending=0），90s 假超时 = **进程退出 disposal 偶发
+挂死**（并行高负载下 V8/pipeline drop 竞态，60s 复跑正常退出）——非死循环自旋，非媒体域缺陷；
+③ track-remove-insert-ready-state 试导回退维持排除（探针实证「query 先于 video.src=」形态
+全程 RS=3；用例形态 handler 内首 query RS=0——src setter 内调度的 settle 未落，dbg 确证
+_zwScheduleChildTrackLoads 被调用，_zwTrackScheduleLoad 该时点早退点待续查——dbg 锚点已存档）。
+629P/0F/24PF = 96.32% 维持零回归；runner 契约 204 ok、clippy/fmt 干净。
+此前 2026-09-04：**M3 扩批 XLVI 落地**——**set_attr 同批 detach lenient 跳过**
 （js_dom_bridge apply_dom_mutations）：「removeChild 后 video.src= 重设」排 SetAttr wire
 时目标已 detach → find 失配硬错中止整批（XLIV 轮「set_attr: no match for video」根因）。
 修复：SetAttr/RemoveAttr 失配先查 R361 detached_stash——命中则 lenient 跳过（spec
@@ -311,7 +322,7 @@ currentSrc 的 source-child 插入触发（mutation 面）。
 （**M3 扩批 event_* 族 + 第二批 + III~X（2026-09-01）/ XI~XV（2026-09-02）/
   XVI~XVIII（2026-09-03）过程记录**——每批 shim 面/runner 面明细与排除注记——
   已归档至 [archive/2026-09-04_m3-batches-vii-to-xviii.md](archive/2026-09-04_m3-batches-vii-to-xviii.md)，
-  证据 JSON 序列见验证基线；累计口径 603P/0F/24PF = 96.17%。第 XIX~XLVI 批
+  证据 JSON 序列见验证基线；累计口径 603P/0F/24PF = 96.17%。第 XIX~XLVII 批
   明细见头链（最新态）。）
 
 **里程碑归档（2026-09-01）**：M1~M3 与六轮扩批的过程记录、排除用例决策清单已归档至
@@ -516,6 +527,9 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
   PF 24）
   → 扩批 XLVI（2026-09-04，set_attr 同批 detach lenient 跳过——R361 stash 扩展消除
   apply 硬错；全链路 a-d 跑通，重插后 host tick 死循环归深结构切片）**629/653 = 96.32%**
+  维持零回归（Fail 0 / Timeout 0 / PF 24）
+  → 扩批 XLVII（2026-09-04，track 调度前置四处 + 「不退出」重定性为 disposal 偶发挂死；
+  track-remove-insert-ready-state 试导回退——settle 未落根因待续查）**629/653 = 96.32%**
   维持零回归（Fail 0 / Timeout 0 / PF 24）
 - 复核（2026-09-04 治理整固后终审）：fresh 跑 603P/0F/24PF（198 文件）与
   本档记录逐位一致；验证基线 evidence 链 26 文件全在盘；make test 18877/0。

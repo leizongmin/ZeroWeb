@@ -305,6 +305,15 @@
             // 仅**精确空串**走「空 src 资源选择失败」路径；' ' 等空白串按 URL spec 剥离后
             // 解析为 base，是正常资源（WPT currentSrc ' ' case 期望 currentSrc = 页面 URL）。
             _zwMediaScheduleLoad(sel, handle, _mTag.toLowerCase(), _mAbs, _mSrc === '');
+            // M3 扩批 XLVII：video.src=（IDL setter）即触发 track 子检索（spec track 子
+            // 处理随 media load 启动、track load task 先注册先 settle——canplaythrough 时
+            // track 已 settle；此前仅 proxy 首次包装时补调度。track-remove-insert-
+            // ready-state 首断言面）。
+            try {
+              if (typeof globalThis._zwScheduleChildTrackLoads === 'function') {
+                globalThis._zwScheduleChildTrackLoads(sel, handle);
+              }
+            } catch (_eXlviiTsl) {}
             _mAbs = undefined;
           }
         } else if (p === 'src' && _realTag(sel, handle) === 'TRACK') {

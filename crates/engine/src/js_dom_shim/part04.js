@@ -2311,15 +2311,25 @@
             // 走 setAttributeNS 分支（不挂钩）。
             // https://html.spec.whatwg.org/multipage/media.html#concept-media-load-algorithm
             if (n === 'src' && typeof _realTag === 'function'
-                && (_realTag(sel, handle) === 'AUDIO' || _realTag(sel, handle) === 'VIDEO')
-                && typeof _zwMediaScheduleLoad === 'function'
-                && !_resourceStates[_elKey(sel, handle)]) {
+                && (_realTag(sel, handle) === 'AUDIO' || _realTag(sel, handle) === 'VIDEO')) {
+              if (typeof _zwMediaScheduleLoad === 'function' && !_resourceStates[_elKey(sel, handle)]) {
+                try {
+                  var _saTag = _realTag(sel, handle).toLowerCase();
+                  var _saAbs = String(v);
+                  try { if (typeof _zwResolveFetchUrl === 'function') _saAbs = _zwResolveFetchUrl(_saAbs); } catch (_eSaR) {}
+                  _zwMediaScheduleLoad(sel, handle, _saTag, _saAbs, v === '');
+                } catch (_eSaM) {}
+              }
+              // M3 扩批 XLVII：video.src= 即触发 track 子检索（无论 resourceState 门）——
+              // spec track 子处理随 media load 启动、track load task 先注册先 settle，
+              // canplaythrough 时 track 已 settle；此前仅 proxy 首次包装时补调度，脚本
+              // 从不 query track 的形态 canplaythrough 内首 query 读 RS 恒 NONE
+              //（track-remove-insert-ready-state 首断言面）。
               try {
-                var _saTag = _realTag(sel, handle).toLowerCase();
-                var _saAbs = String(v);
-                try { if (typeof _zwResolveFetchUrl === 'function') _saAbs = _zwResolveFetchUrl(_saAbs); } catch (_eSaR) {}
-                _zwMediaScheduleLoad(sel, handle, _saTag, _saAbs, v === '');
-              } catch (_eSaM) {}
+                if (typeof globalThis._zwScheduleChildTrackLoads === 'function') {
+                  globalThis._zwScheduleChildTrackLoads(sel, handle);
+                }
+              } catch (_eXlviiTrk2) {}
             }
             // media-elements M3 扩批 XII：setAttribute('src') 入 track → headless 字幕
             // 加载模拟（data:text/vtt 解析 + load 事件）。M3 扩批 XIII：标记 srcChange

@@ -687,3 +687,20 @@ track-active-cues 解除排除）**：
   （无 ScriptError）而是 host 侧 runner loop/渲染管线在重插 mutation 代际的自旋，归
   深结构切片（host tick 与重插竞态），不阻塞本批。
 - 629P/0F/24PF = 96.32% 维持零回归；runner 契约 204 ok、clippy/fmt 干净。
+
+## 扩批 XLVII — track 调度前置 + 「不退出」重定性（2026-09-04）
+
+- **track 子调度前置四处**（spec track 子处理随 media load 启动——track load task 先注册
+  先 settle）：part05 IDL `video.src=` setter、part04 setAttribute('src') video 钩子
+  （解除 resourceState 门耦合）、part03 `load()` 路径、part06 `_zwMediaLoadSequence`
+  （canplaythrough 派发前）统一补 `_zwScheduleChildTrackLoads`。
+- **「重插后死循环」重定性**：逐帧打点（take_probe t0~t6 + 主循环 f 系列 fs::write 日志）
+  实证——用例同步完成、probe 全帧走完（f9：complete=true/pending=0/phase=4/results=1），
+  90s「执行超时」假象 = **进程退出 disposal 偶发挂死**（并行高负载下 V8/pipeline drop
+  竞态；60s 复跑正常退出）——非死循环自旋，非媒体域缺陷，归 runner 环境现象。
+- **track-remove-insert-ready-state 试导回退维持排除**：探针实证「query 先于 video.src=」
+  形态全程 RS=3（settle microtask→媒体任务序正确）；用例形态（handler 内首 query）RS=0
+  ——src setter 内调度的 settle 未落（dbg 确证 `_zwScheduleChildTrackLoads` 被调用、
+  `_zwTrackScheduleLoad` wrapper 进入；早退点待续查，dbg 锚点：wrapper 记录 sel/handle/
+  sched 标志）。
+- 629P/0F/24PF = 96.32% 维持零回归；runner 契约 204 ok、clippy/fmt 干净。
