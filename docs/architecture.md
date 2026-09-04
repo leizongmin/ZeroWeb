@@ -98,7 +98,7 @@
 9. `webview` 把这条链路包装成嵌入式 API，供 `apps/browser` 或第三方应用调用。
 10. `zero-browser` 固定由 `apps/renderer` 独立进程承担步骤 2–7，经 `protocol` IPC 与浏览器主进程交互，并配合 image-decoder 与 compositor 子进程；`page-runtime` 让 browser IPC 宿主与嵌入式 `ZeroWebView` 的进程内宿主共享同一套页面加载契约。
 
-这条链路已经能在测试、demo 和浏览器应用里跑起来，并且有大量单元 / 集成测试与 WPT 用例兜底；但离「真实网页 + 完整 JavaScript + 完整浏览器 UI」的成熟度仍有距离。js-dom 专项目标（P1b V8 原生 DOM 绑定）已于 2026-08-31 收官归档（双引擎 native_dom default-on）；当前主线是媒体线（media-playback / media-audio / media-elements 三 goal 并行）与渲染兼容性持续收口（上游 WPT reftest corpus 85.2%）。
+这条链路已经能在测试、demo 和浏览器应用里跑起来，并且有大量单元 / 集成测试与 WPT 用例兜底；但离「真实网页 + 完整 JavaScript + 完整浏览器 UI」的成熟度仍有距离。js-dom 专项目标（P1b V8 原生 DOM 绑定）已于 2026-08-31 收官归档（双引擎 native_dom default-on）；当前主线是媒体线（media-playback / media-audio / media-elements 三 goal 并行，H.264 解码与 renderer 播放泵已落地）与渲染兼容性持续收口（上游 WPT reftest corpus 85.7%）。
 
 ## 现在做到哪了
 
@@ -106,7 +106,7 @@
 
 - **核心内核已有实质实现**: dom、css-parser、style-system、layout-engine、engine、render-foundation、host-runtime、net、security、storage、protocol、canvas、media、wasm-sandbox、script-sandbox、page-runtime、product-version、psl、webview 都有可运行代码和对应测试。
 - **产品层骨架已成，持续打磨**: `apps/browser`（桌面入口 + headless / remote debugging）、`browser-shell`（标签页 / 书签 / 历史 / 下载 / 设置 / 上下文菜单等数据模型）、`apps/renderer`（多进程渲染进程入口）、`apps/image-decoder`（D1 图像解码进程）、`apps/compositor`（C2 合成器进程）、`apps/webdriver`（WebDriver 服务）已打通，`apps/android-browser`（M0 bootstrap）已落地，但产品形态、稳定性和真实站点兼容性仍在推进。
-- **当前主线**: 媒体线三 goal 并行——[media-playback](goal/media-playback/master.md)（webm/VP9/AV1 解码 + fixture-mounted 播放面，D3 H.264 立项 RFC 待批复）、[media-audio](goal/media-audio/master.md)（WPT webaudio 十三批导入 headless 可导入面饱和收口 787P/0F）、[media-elements](goal/media-elements/master.md)（HTMLMediaElement 语义面 WPT 570P/0F = 96.0%）；js-dom 专项目标（P1b V8 原生 DOM 绑定）2026-08-31 收官归档——M1–M5 全达成（R383/R384 双引擎 `native_dom` default-on land、kill-switch 删除），归档见 [goal/archive/js-dom/](goal/archive/js-dom/master.md)；渲染兼容性（WPT/CSSWG reftest 对齐 Chromium Oracle）持续主动实施——上游 WPT reftest corpus **14316/16816 = 85.2%**（R4006），inline SVG paint 默认放开（R3991，user 点名）后 svg transform/origin/stylesheet 级联、run-in 并入、SVG intrinsic / flex §9.9 / table section / rtl abspos 等系列持续收口（R3936–R4006）；残余缺口为 vertical writing modes、multicol 碎片化、R109 inline-as-block 等结构性问题（Phase A IFC / R1043 / R2174 等深方向仍需用户点名授权）。完整 Web API 与真实网站交互兼容性是后续阶段。详见 [路线图](../ROADMAP.md)。
+- **当前主线**: 媒体线三 goal 并行——[media-playback](goal/media-playback/master.md)（webm/VP9/AV1/H.264 解码 + fixture-mounted 播放面 + renderer 播放泵事件循环节拍，D-RFC-3 已获批）、[media-audio](goal/media-audio/master.md)（WPT webaudio 十八批导入 headless 可导入面饱和收口 874P/0F）、[media-elements](goal/media-elements/master.md)（HTMLMediaElement 语义面 WPT 629P/0F = 96.3%）；js-dom 专项目标（P1b V8 原生 DOM 绑定）2026-08-31 收官归档——M1–M5 全达成（R383/R384 双引擎 `native_dom` default-on land、kill-switch 删除），归档见 [goal/archive/js-dom/](goal/archive/js-dom/master.md)；渲染兼容性（WPT/CSSWG reftest 对齐 Chromium Oracle）持续主动实施——上游 WPT reftest corpus **14405/16815 = 85.7%**（R4034b），inline SVG paint 默认放开（R3991，user 点名）后 svg transform/origin/stylesheet 级联、run-in 并入、SVG intrinsic / flex §9.9 / table section / rtl abspos / contain:size / nbsp strut 等系列持续收口（R3936–R4034）；残余缺口为 vertical writing modes、multicol 碎片化、R109 inline-as-block 等结构性问题（Phase A IFC / R1043 / R2174 等深方向仍需用户点名授权）。完整 Web API 与真实网站交互兼容性是后续阶段。详见 [路线图](../ROADMAP.md)。
 
 所以今天的 ZeroWeb 是一个内核已成形、产品层在打磨的浏览器工作区，但还不是一个做完的浏览器产品。
 

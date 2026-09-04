@@ -365,7 +365,7 @@ Limit。**前轮 R3303**：TextMetrics 全 10 字段。**前轮 R3302**：`:focu
 |----|------|
 | 仓库代码 | ✅ Cargo workspace 31 个 member（21 库 + 7 应用 + 2 测试工具 + 1 开发工具，含 runtime-config、android-browser 与 media；全部有实质实现） |
 | 编译状态 | ✅ `cargo build --workspace` 通过 |
-| 测试状态 | ✅ `cargo test --workspace` ~17,000+（2026-09-04 静态统计 17,516 个 `#[test]`，不含宏生成/doctest；rendering-compat R4006 轮实测 make test 18,773 Pass / 0 Fail，运行时计数含参数化与集成 subtest；预存失败 `default_actions_work_without_javascript` 为并行流既存，多轮记录，clean HEAD 同败） |
+| 测试状态 | ✅ `cargo test --workspace` ~17,000+（2026-09-05 静态统计 17,554 个 `#[test]`，不含宏生成/doctest；media-playback 泵时钟轮实测 make test 18,874 Pass / 0 Fail，运行时计数含参数化与集成 subtest；预存失败 `default_actions_work_without_javascript` 为并行流既存，多轮记录，clean HEAD 同败） |
 | Clippy | ✅ 零警告（全 workspace） |
 | 基准测试 | ✅ 16/16 crate 有 criterion 基准（78+ 个基准） |
 | CI | ✅ GitHub Actions（ubuntu/macos/windows）|
@@ -394,7 +394,7 @@ Limit。**前轮 R3303**：TextMetrics 全 10 字段。**前轮 R3302**：`:focu
 | page-runtime | 123 | ✅ | WPT / TabWorker / zero-renderer 三条页面路径共享的页面加载与运行时契约（`PageLoadHost` / `AsyncFetchHost` / `BlockingFetchHost`），让 in-process（webview）与 IPC（renderer）两种宿主复用同一套分阶段页面加载逻辑（runtime 统一） |
 | product-version | 2 | — | 产品版本号（从构建日期推导，随 `zero-product-version` 分发） |
 | psl | 25 | — | **公共后缀列表（PSL）解析与注册域名（eTLD+1）提取**：三类规则解析（普通/通配/例外，与上游 `public_suffix_list.dat` 语法一致）、`registrable_domain()`（IP/单标签/公共后缀原样返回）、全局共享实例 `shared()`、`from_rules()` 可注入完整数据；接入 site-isolation（R3380，`Site::from_origin` 经 PSL 计算真 eTLD+1） |
-| media | 50（默认 feature）/ 51（audio-cpal） | — | **媒体解码管线（media-playback / media-audio goal 产物，2026-09-01）**：webm/Matroska demux、VP9 纯 Rust 解码（`rusty_vp9`）、AV1（`decode-av1` feature）、YUV→RGBA、音频解码（symphonia mp3/ogg-vorbis、opus-decoder、webm 音轨重封装）、`VideoPlayer` 播放驱动（`VideoClock` trait）、`AudioSink` 输出面（NullSink 可观测 / CpalSink 真设备）、混音总线、Web Audio 振荡器合成最小面 |
+| media | 52（默认 feature）/ 53（audio-cpal） | — | **媒体解码管线（media-playback / media-audio goal 产物，2026-09-01）**：webm/Matroska + mp4/ISO-BMFF demux、VP9 纯 Rust 解码（`rusty_vp9`）、AV1（`decode-av1`）、H.264（`decode-h264`，openh264，D-RFC-3 获批切片 1）、YUV→RGBA、音频解码（symphonia mp3/ogg-vorbis、opus-decoder、webm 音轨重封装）、`open_media` 容器/编码嗅探自路由、`VideoPlayer` 播放驱动（`VideoClock` trait）、`AudioSink` 输出面（NullSink 可观测 / CpalSink 真设备）、混音总线、Web Audio 振荡器合成最小面 |
 
 ### 跨 crate 集成测试
 

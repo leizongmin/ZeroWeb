@@ -13,6 +13,7 @@
 - **帧发布** — `CompositorPublishThread` 异步发布线程保序发送页面帧（含图片像素去重：browser 端 ImageCache 已存则不重传），`FrameTransaction` 在输入消息边界内合并渲染与发布
 - **表单交互** — 焦点管理（focus/blur/change-on-blur）、IME 合成（preedit/commit）、Tab 焦点导航、radio/checkbox/label 激活、表单提交（Enter / click）、`javascript:` 链接与 hash 路由
 - **事件路由** — hit-test（元素 / 链接 / 图片）、键盘 / 鼠标 / 滚动事件派发、CSS 过渡与动画事件（transitionstart/run/end、animationstart/end/iteration）、observer tick
+- **媒体播放泵** — `is_any_playing` 门控的 tick 节拍挂主事件循环（media-playback D4）：有活跃播放时驱动 `VideoPlayer` 时钟推进与媒体事件派发，空闲时零开销
 - **字体管线** — 系统字体加载、@font-face live 加载（`ZW_LIVE_FONTFACE` 可禁用）、`FontFace.load()`、文本度量注入、行度量 map（`ZW_PERFONT_LINEHEIGHT`）
 - **平台集成** — macOS App 支持（dispatch / AppKit）、Windows GUI 子系统、Linux 沙箱（Landlock/seccomp）
 

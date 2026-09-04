@@ -1,6 +1,6 @@
 [package]
 name = "zero-media"
-description = "ZeroWeb 媒体解码管线 — webm/Matroska demux、VP9 解码、YUV→RGBA 帧转换"
+description = "ZeroWeb 媒体解码管线 — webm/Matroska/mp4 demux、VP9/AV1/H.264 解码、音频解码、播放驱动"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
