@@ -2,7 +2,16 @@
 
 **入口文档**: [../media-elements.md](../media-elements.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-05（**M3 扩批 LI 落地**——runner 静态提交链 timer 集中排空（部分闭环）：
+**最后更新**: 2026-09-05（**M3 扩批 LII 落地**——track settle 同步化三方案负结果终版（全部回退，
+part06 保持 XLIX 提交态 629 绿）：track-remove-insert-ready-state 的「canplaythrough 时 track settle
+同步可达」需求与既有 40+ track 件的事件时序在当前 runner 沙箱事件循环下不相容——①首调度同步 body
+（XLVIII 形态复刻：33 件 Timeout/cues 翻倍——XLIX 事件 defer 未救回 cue 填充重复，body 双执行）；②
+延迟置位（同型回归：cues 8 vs 4）；③枚举兜底 QSA 直查（枚举非根因——hits=0 但 scheduled 已被更早
+调用点置位，body 丢失后幂等门拦截所有重试才是机制）。**根因终版**：runner 微任务通道的预算/检查点
+丢弃使「调度成功而 body 永缺」且同步置位永久拦截重试——修复需 runner 事件循环统一（deep-structure）。
+该件维持排除（注记终版）；XLVII 调度前置/XLIX 通道拆分/syncBody/LI drain 修复全部保留（629 绿）。
+runner 契约 204 ok、clippy/fmt 干净。
+此前 2026-09-05：**M3 扩批 LI 落地**——runner 静态提交链 timer 集中排空（部分闭环）：
 ① **精确归因升级**（L 轮「媒体任务后停摆」收窄）：形态对照实验三组——「动态 src=」（run_page_scripts
 窗口）canplaythrough 到达 ✓ /「静态 src + 动态重设」✓ /「**纯静态 src 无动态交互**」✗——缺口 =
 **runner 静态提交链 execute 的 20ms 单次 drain 窗口**未及排空 setTimeout 链（线程 send 与 pending
@@ -360,7 +369,7 @@ currentSrc 的 source-child 插入触发（mutation 面）。
 （**M3 扩批 event_* 族 + 第二批 + III~X（2026-09-01）/ XI~XV（2026-09-02）/
   XVI~XVIII（2026-09-03）过程记录**——每批 shim 面/runner 面明细与排除注记——
   已归档至 [archive/2026-09-04_m3-batches-vii-to-xviii.md](archive/2026-09-04_m3-batches-vii-to-xviii.md)，
-  证据 JSON 序列见验证基线；累计口径 603P/0F/24PF = 96.17%。第 XIX~LI 批
+  证据 JSON 序列见验证基线；累计口径 603P/0F/24PF = 96.17%。第 XIX~LII 批
   明细见头链（最新态）。）
 
 **里程碑归档（2026-09-01）**：M1~M3 与六轮扩批的过程记录、排除用例决策清单已归档至
@@ -580,6 +589,8 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
   → 扩批 LI（2026-09-05，静态提交链 timer 集中排空——drain_pending_timers_until_idle 修复
   纯静态形态 canplaythrough 不达；带 <track> 子的组合时序切片待续）**629/653 = 96.32%**
   维持零回归（Fail 0 / Timeout 0 / PF 24）
+  → 扩批 LII（2026-09-05，track settle 同步化三方案负结果终版——全部回退；runner 事件循环
+  统一归 deep-structure）**629/653 = 96.32%** 维持零回归（Fail 0 / Timeout 0 / PF 24）
 - 复核（2026-09-04 治理整固后终审）：fresh 跑 603P/0F/24PF（198 文件）与
   本档记录逐位一致；验证基线 evidence 链 26 文件全在盘；make test 18877/0。
   （扩批 XL 后：fresh 跑 609P/0F/24PF（201 文件）；扩批 XLI 后：fresh 跑

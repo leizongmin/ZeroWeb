@@ -1579,12 +1579,12 @@ pub const MEDIA_TEST_FILES: &[&str] = &[
     "html/semantics/embedded-content/media-elements/track/track-element/track-selection-metadata.html",
     "html/semantics/embedded-content/media-elements/track/track-element/track-remove-track.html",
     "html/semantics/embedded-content/media-elements/track/track-element/track-cues-missed-no-immediate-events.html",
-    // track-remove-insert-ready-state 维持排除（LI 部分闭环）：runner 静态提交链 timer 集中
-    // 排空（drain_pending_timers_until_idle）修复「静态 src 无动态交互」形态的 canplaythrough
-    // 不达（纯静态探针实证 cpt 到达）——但**带 <track> 子**的同形态页面 drain 后 phase=2 卡住
-    //（all_loaded/tests 完成面与 track settle 的组合时序，深一层），该件首断言（handler 内
-    // track.readyState==ERROR）仍不可达。组合时序切片待续。track-mode-not-changed-by-new-track
-    // 维持排除——身份对拍切片。
+    // track-remove-insert-ready-state 维持排除（LII 三方案负结果终版）：①首调度同步 body
+    //（XLVIII 形态复刻——33 件 Timeout/cues 翻倍，事件 defer 未救回 cue 填充重复）；②延迟置位
+    //（同型回归）；③枚举兜底（QSA 直查——枚举非根因）。canplaythrough 时 track settle 的
+    //「同步可达」需求与既有 40+ track 件的事件时序在当前 runner 沙箱事件循环下不相容——归
+    // runner 事件循环统一（deep-structure）。track-mode-not-changed-by-new-track 维持排除
+    //——身份对拍切片。
     "html/semantics/embedded-content/media-elements/track/track-element/track-cues-cuechange-dynamically-created-track-element.html",
     "html/semantics/embedded-content/media-elements/track/track-element/track-disabled-addcue.html",
     "html/semantics/embedded-content/media-elements/track/track-element/track-insert-after-load.html",

@@ -773,3 +773,18 @@ track-active-cues 解除排除）**：
 - **带 <track> 子形态**：drain 后 phase=2 卡住（all_loaded/tests 完成面与 track settle 的组合
   时序，深一层）——track-remove-insert-ready-state 维持排除（组合时序切片待续）。
 - 629P/0F/24PF = 96.32% 维持零回归；runner 契约 204 ok、clippy/fmt 干净。
+
+## 扩批 LII — track settle 同步化三方案负结果终版（2026-09-05）
+
+- 目标：track-remove-insert-ready-state 的「canplaythrough 时 track settle 同步可达」。
+- **三方案实验与回退**：
+  1. **首调度同步 body**（事件 defer 已由 XLIX 拆分承载）——目标件首断言通过（RS=3），但
+     33 件 Timeout/cues 翻倍（8 vs 4）：body 在多调度点重复执行，cue 填充翻倍；事件 defer
+     未救回 cue 填充的重复。
+  2. **延迟置位**（trackScheduled 移至 body 执行时）——同型回归（cues 翻倍），body 双执行。
+  3. **枚举兜底**（QSA 直查）——枚举非根因：hits=0 但 scheduled 已被更早调用点置位，
+     body 丢失后幂等门拦截所有重试。
+- **根因终版**：runner 微任务通道的预算/检查点丢弃（_deferBudget 256 + checkpoint 上限）使
+  「调度成功而 body 永缺」，同步置位永久拦截重试——**runner 事件循环统一**归 deep-structure。
+- 全部回退（part06 保持 XLIX 提交态）；629P/0F/24PF = 96.32% 维持零回归；runner 契约 204
+  ok、clippy/fmt 干净。XLVII 调度前置四处/XLIX 通道拆分/syncBody/LI drain 修复全部保留。
