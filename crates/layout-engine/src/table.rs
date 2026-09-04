@@ -1687,6 +1687,10 @@ fn apply_table_size_constraints(
             final_width = final_width.min(max_content);
         }
     }
+    // R4020 负结果：available 上限钳不可用 taffy 分配宽近似——r1382 匿名表（taffy
+    // 给 48 = 单列宽）、r1609（float 推下前 taffy 给 100）证明 taffy 对表分配非
+    // available 语义，钳制净负（+7 翻绿但 3 案真回归 + 3 单测红）已回退。
+    // inline-table-width-001a 族待真正的 CB 可用宽信号（独立切片）。
 
     // 应用 min-height / max-height（始终 border-box，与 min-height-table 测试一致）
     // CSS Tables §table-wrapper-box：min/max-height 应用到 table wrapper box（border-box 语义）。
