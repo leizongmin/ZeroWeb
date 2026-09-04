@@ -1670,3 +1670,52 @@ fn test_matches_blank_pseudo_class_r3300() {
     );
     assert!(!matches_selector(&doc, div, &sel), "非表单元素 div 不应匹配 :blank");
 }
+
+/// R4021（inline-table-width-001a 归因）：父子同 tag 嵌套 div 的选择器匹配——
+/// `body > div { width: 10em }` 只命中外 div；`body > div > div { display:
+/// inline-table }` 只命中内 div。runner 管线实测两 div 的 display/width 交叉串扰
+///（外=InlineTable+160、内=InlineTable+160），此处以纯 style-system 锚定正确语义。
+#[test]
+fn r4021_nested_same_tag_child_selector_no_cross_match() {
+    let html = r#"<html><head><style>
+body > div { width: 10em; }
+body > div > div { display: inline-table; background: green; }
+</style></head><body>
+<div>x <div>long text content here</div> z</div>
+</body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let sheet = zero_css_parser::Parser::parse_stylesheet(
+        "body > div { width: 10em; } body > div > div { display: inline-table; background: green; }",
+    );
+    let mut sys = crate::StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[sheet]);
+
+    let divs = doc.get_elements_by_tag_name("div");
+    assert_eq!(divs.len(), 2, "should parse two nested divs");
+    let outer = divs[0];
+    let inner = divs[1];
+
+    let so = styles.get(&outer).expect("outer style");
+    let si = styles.get(&inner).expect("inner style");
+    assert!(
+        matches!(so.width, zero_css_parser::values::LengthValue::Px(v) if (v - 160.0).abs() < 0.5),
+        "outer div should get width:10em=160, got {:?}",
+        so.width
+    );
+    assert!(
+        matches!(so.display, zero_css_parser::values::DisplayValue::Block),
+        "outer div should stay Block, got {:?}",
+        so.display
+    );
+    assert!(
+        matches!(si.display, zero_css_parser::values::DisplayValue::InlineTable),
+        "inner div should be InlineTable, got {:?}",
+        si.display
+    );
+    assert!(
+        matches!(si.width, zero_css_parser::values::LengthValue::Auto),
+        "inner div width should stay Auto, got {:?}",
+        si.width
+    );
+}
