@@ -8676,6 +8676,15 @@
   function _zwWABuildBufferSource(ctx, options) {
     var node = _zwWANode('buffersource', ctx._zwCtxId, 0);
     node._zwInputs = 0;
+    // media-audio D3 第二片：offline 渲染面——buffersource 节点登记 + start/stop/
+    // offset/duration 印记（startRendering 按印记合成 buffer 数据；loop 支持）。
+    if (ctx._zwLength != null) {
+      (ctx._zwOfflineNodes = ctx._zwOfflineNodes || []).push(node);
+      node._zwStartedAtSec = null;
+      node._zwOffsetSec = 0;
+      node._zwDurationSec = null;
+      node._zwStoppedAtSec = null;
+    }
     var _buffer = null;
     var _loop = false;
     Object.defineProperty(node, 'buffer', {
@@ -8720,6 +8729,37 @@
       if (options.playbackRate != null) node.playbackRate.value = Number(options.playbackRate);
       if (options.detune != null) node.detune.value = Number(options.detune);
     }
+    // media-audio D3 第二片：离线渲染读取 start(when, offset, duration) 实参
+    //（spec AudioBufferSourceNode.start 签名——覆盖 _zwWAInstallSchedSource 的
+    // 门控版，校验先行后印记）。
+    var _schedStart = node.start;
+    var _schedStop = node.stop;
+    node.start = function (when, offset, duration) {
+      // 原版 _argsCheck 语义复刻（offset/duration 非有限 → TypeError、负 →
+      // RangeError——audiobuffersource-basic start(0,-1)/start(0,0,-1) 断言面；
+      // 覆盖版直调 _schedStart(when) 会丢掉可变参校验）。
+      for (var i = 1; i < arguments.length; i++) {
+        var v = arguments[i];
+        if (typeof v !== 'number' || isNaN(Number(v)) || Number(v) === Infinity || Number(v) === -Infinity) {
+          throw new TypeError("Failed to execute 'start' on 'AudioScheduledSourceNode': parameter " + (i + 1) + " is non-finite.");
+        }
+        if (Number(v) < 0) {
+          throw new RangeError("Failed to execute 'start' on 'AudioScheduledSourceNode': parameter " + (i + 1) + " (" + v + ") must be non-negative.");
+        }
+      }
+      _schedStart.call(node, when);
+      if (ctx._zwLength != null) {
+        node._zwStartedAtSec = Math.max(0, Number(when) || 0);
+        node._zwOffsetSec = (offset === undefined) ? 0 : Math.max(0, Number(offset) || 0);
+        node._zwDurationSec = (duration === undefined) ? null : Math.max(0, Number(duration) || 0);
+      }
+    };
+    node.stop = function (when) {
+      _schedStop.call(node, when);
+      if (ctx._zwLength != null) {
+        node._zwStoppedAtSec = Math.max(0, Number(when) || 0);
+      }
+    };
     return node;
   }
   function AudioBufferSourceNode(ctx, options) { return _zwWANodeCtor('AudioBufferSourceNode', ctx, options); }

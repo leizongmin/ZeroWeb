@@ -129,10 +129,12 @@ WA_FILES=(
   # startRendering 最小面落地（shim 侧 JS 波形合成：四型振荡器 + custom periodic
   # wave spec 归一化 + 线性 gain 链解析）后解除排除导入。
   "webaudio/the-audio-api/the-oscillatornode-interface/osc-basic-waveform.html"
-  # gain.html 仍不导入（AudioBufferSourceNode 数据播放 + splitter/merger 通道路由
-  # ——第二片图调度面）；audioparam-method-chaining / audioparam-nominal-range
-  #（Param 调度自动化面）；ctor-audiobuffer（multiple contexts 渲染对比）；
-  # ctor-iirfilter（IIR 滤波 DSP）；periodicWave.html（谱断言随归一化精化复评）。
+  # gain.html 仍不导入（splitter/merger 通道路由图语义——其断言核心为 merger 通道
+  # 选择映射，线性链近似不可达——第三片通道图面复评；ABSN 数据播放/gain 链/loop
+  # 窗口渲染面已落 shim）。仍不导入：audioparam-method-chaining /
+  # audioparam-nominal-range（Param 调度自动化面）；ctor-audiobuffer（multiple
+  # contexts 渲染对比）；ctor-iirfilter（IIR 滤波 DSP）；periodicWave.html
+  #（谱断言随归一化精化复评）。
 )
 
 # audit.js 框架（runner inline_extras 内联——用例以绝对路径引用）。

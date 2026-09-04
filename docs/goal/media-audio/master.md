@@ -1,17 +1,12 @@
-# 媒体音频 — 运行时控制面板（master.md）
-
-**入口文档**: [../media-audio.md](../media-audio.md)
-**创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-05（**D3 实施落地——startRendering 最小面（窄授权内）**：
-shim 侧 JS 波形合成离线渲染（四型振荡器相位连续 + custom periodic wave spec 归一化
-公式 + 线性 gain 链解析 + 无削幅——spec AudioBuffer 可超 ±1）+ 节点工厂 offline
-登记（started/stopped 时刻印记）。**osc-basic-waveform 解除排除导入（33 subtest
-全绿——sine ±100/±2/1 Hz + custom 100/1 Hz 对 spec 数学期望 SNR≥110dB）**，
-webaudio 累计 **40 用例 907P/0F = 100%**。仍排除：gain.html（AudioBufferSourceNode
-数据播放 + splitter/merger 路由——第二片图调度面）/ audioparam-method-chaining、
--nominal-range（Param 调度自动化）/ ctor-audiobuffer、periodicWave、ctor-iirfilter
-（渲染对比/谱断言/IIR DSP 随第二片复评）。evidence：
-`evidence/2026-09-05-offline-render-d3.json`。）
+**最后更新**: 2026-09-05（**D3 第二增量——AudioBufferSourceNode 数据播放离线渲染**：
+startRendering 图推进扩 ABSN（buffer 数据直通 + start(when, offset, duration) 实参
+印记 + loop/loopStart/loopEnd 回卷 + 链式 gain 累计 + 直连 destination 双态）；
+覆盖版 start 复刻 _argsCheck 校验（offset/duration 非有限 TypeError、负 RangeError
+——audiobuffersource-basic start(0,-1) 断言面回归守卫）。**gain.html 试导回退维持
+排除**——其断言核心为 merger 通道选择映射（splitter/merger 通道路由图语义），
+线性链近似不可达，归第三片通道图面。webaudio 维持 **40 用例 907P/0F = 100%**；
+ABSN 数据播放/gain 链/loop 窗口渲染面已落 shim 备第三片。evidence：
+`evidence/2026-09-05-offline-render-d3.json`（刷新）。）
 此前 2026-09-05：**D3 获批落地——GB-20260904 待决策征询跟进**：
 OfflineAudioContext.startRendering 扩界**获批（窄授权）**——仅 offline 渲染路径
 + shim↔宿主桥扩展；RFC §0 实时设备输出量化面维持排除。征询凭据 msg

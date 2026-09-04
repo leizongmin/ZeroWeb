@@ -1859,8 +1859,14 @@ pub const WEBAUDIO_TEST_FILES: &[&str] = &[
     // exit 1——第十五批勘误移除）。
     // ---- 第十九批（2026-09-05，media-audio D3 获批窄授权——offline 渲染路径）：
     // startRendering 最小面落地（shim 侧 JS 波形合成——四型振荡器 + custom
-    // periodic wave spec 归一化 + 线性 gain 链解析 + 软削幅）后解除排除导入。
+    // periodic wave spec 归一化 + 线性 gain 链解析；offline 渲染不削幅——spec
+    // AudioBuffer 可超 ±1）后解除排除导入。
     "webaudio/the-audio-api/the-oscillatornode-interface/osc-basic-waveform.html",
+    // ---- 第二十批（同日，D3 第二片——AudioBufferSourceNode 数据播放 + 链式
+    // gain 累计 + 直连 destination 双态 + offset/duration/loop 窗口）：
+    // 不导入：gain.html（需 splitter/merger 通道路由图语义——merger 通道选择映射
+    // 是其断言核心，线性链近似不可达——第三片通道图面复评；ABSN 数据播放/gain
+    // 链/loop 窗口渲染面已落 shim）。
     // 不导入：ctor-audiobuffer.html（末 task「multiple contexts」渲染对比——
     // 多 OfflineAudioContext 交叉渲染面随第二片复评）；audiobuffer-copy-channel
     //（startRendering 后段同文件不可分割——数据面已落 shim，同片复评）；
