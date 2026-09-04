@@ -665,7 +665,15 @@ fn compute_column_widths(
         //（否则每列都撑到全宽，列总和溢出表宽）。无论 table 本身 width 是否 auto，
         // auto 单元格都不应用 cell_box.width 作为下限。
         let w = if css_width_auto || cell_box.width < 2.0 {
-            intrinsic
+            // R4027/R4028（CSS2 §17.6.2）：collapse 模式列宽是「边框中心间距」语义——
+            // auto cell 贡献 = border-box − ½(bl+br)。与 de-stretch 同一 kill-switch
+            // （paint 端边框定位未跟进前，半宽列宽单独启用会错位边框带——
+            // bc-visibility-001 1.10% 实证；RFC 件④落地后一起放开）。
+            if is_collapsed_border && std::env::var("ZW_CELL_INTRINSIC_DESTRETCH").as_deref() != Ok("0") {
+                (intrinsic - (cell_box.border_left + cell_box.border_right) / 2.0).max(0.0)
+            } else {
+                intrinsic
+            }
         } else {
             // 显式 width 单元格。border-collapse 模式下 td 的 width 是 content-box，
             // 而列宽是 border 中心间距语义 → 列宽 = content + 水平 borders 的一半
@@ -680,7 +688,14 @@ fn compute_column_widths(
             };
             // R364b：显式 width 不小于单元格 min-content（CSS 表格：列宽下限 = 内容
             // min-content；width:2px 但内容 "1" 需 9.6px → 列宽 9.6，内容不溢出列）。
-            base.max(intrinsic)
+            // R4028：floor 用旧 95% 启发式 intrinsic（for_explicit_floor）——DOM 度量
+            // 计入溢出内容 max-content 会把指定宽列撑破（c5501 族 103→147 实证）。
+            let floor_intrinsic = if std::env::var("ZW_CELL_INTRINSIC_DESTRETCH").as_deref() != Ok("0") {
+                compute_cell_intrinsic_width_impl(cell_box, styles, doc, inline_fonts, true)
+            } else {
+                intrinsic
+            };
+            base.max(floor_intrinsic)
         };
         // R583：cell min-width/max-width 约束其对列的宽度贡献（CSS Tables §17.5.3：
         // 单元格 min-width 贡献列 min-content 下限；§10 max-width 上限，min 优先于 max）。

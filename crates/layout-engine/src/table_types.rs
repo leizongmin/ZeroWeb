@@ -303,6 +303,19 @@ pub(crate) fn compute_cell_intrinsic_width(
     doc: &zero_dom::Document,
     inline_fonts: crate::inline_finalization::InlineFontContext<'_>,
 ) -> f32 {
+    compute_cell_intrinsic_width_impl(cell_box, styles, doc, inline_fonts, false)
+}
+
+/// `for_explicit_floor=true`：作为显式 width cell 的 min-content 下限（R364b）调用。
+/// 该语境维持旧 95% 启发式——R4028 DOM 度量会计入溢出内容（Ahem 长行 max-content
+/// > 显式列宽），把「指定宽」列撑破（c5501 族：td.test width:10em 列 103 → 147）。
+pub(crate) fn compute_cell_intrinsic_width_impl(
+    cell_box: &LayoutBox,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    doc: &zero_dom::Document,
+    inline_fonts: crate::inline_finalization::InlineFontContext<'_>,
+    for_explicit_floor: bool,
+) -> f32 {
     let padding = cell_box.padding_left + cell_box.padding_right;
     let is_zero_width = cell_box.width < 2.0;
 
@@ -331,9 +344,44 @@ pub(crate) fn compute_cell_intrinsic_width(
             .unwrap_or(false);
 
         if child_has_explicit_width {
-            // 有显式 width 的子元素：使用其 outer width
+            // 有显式 width 的子元素：使用其 outer width（taffy 忠实保留显式宽）
             content_width = content_width.max(child.width + child.margin_left + child.margin_right);
             has_explicit_child = true;
+        } else if std::env::var("ZW_CELL_INTRINSIC_DESTRETCH").as_deref() != Ok("0")
+            && !for_explicit_floor
+            && child
+                .node_id
+                .and_then(|id| styles.get(&id))
+                .map(|s| {
+                    !matches!(
+                        s.display,
+                        DisplayValue::Inline
+                            | DisplayValue::InlineBlock
+                            | DisplayValue::InlineFlex
+                            | DisplayValue::InlineGrid
+                            | DisplayValue::InlineTable
+                    )
+                })
+                .unwrap_or(true)
+        {
+            // R4028（CSS Tables §17.5.2 intrinsic width）：auto 宽**块级**子元素的列宽
+            // 贡献 = 其 DOM 级 max-content（box_content_max_width 递归），而非 post-taffy
+            // 拉伸宽。inline 级子不适用（R1153：span 实际宽由 IFC 决定，递归过测）。
+            // DOM 度量 0（纯背景空 div）也是真实 max-content，不回落拉伸启发式——
+            // 例外：**abspos 子**（R4029）——CSS 固有宽不计 abspos（box_content_max_width
+            // 跳过），但 ZW 的 abspos 定位以 cell 为包含块，cell 塌缩会错位 abspos 内容
+            //（content-visibility-095：td 内 abspos 文本 4.50% 实证）——回落旧 laid-out 宽。
+            let child_is_abspos = child.is_absolute || child.is_fixed;
+            let measured = crate::intrinsic_sizing::box_content_max_width(child, doc, styles)
+                + child.margin_left
+                + child.margin_right;
+            if measured > 0.0 {
+                content_width = content_width.max(measured);
+                has_explicit_child = true;
+            } else if child_is_abspos && child.width > 0.0 {
+                content_width = content_width.max(child.width + child.margin_left + child.margin_right);
+                has_explicit_child = true;
+            }
         } else if child.width > 0.0 && (!is_zero_width && child.width < cell_box.width * 0.95) {
             // 非 0 宽度单元格：子元素宽度远小于 cell 宽度时使用
             content_width = content_width.max(child.width + child.margin_left + child.margin_right);
