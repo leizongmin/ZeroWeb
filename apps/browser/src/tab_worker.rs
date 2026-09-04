@@ -258,6 +258,9 @@ fn tab_worker_main(
         }
     };
 
+    // M3 扩批 XXXIX+（泵时钟注入）：共享原子钟——创建须早于 js_worker 的
+    // set_video_players 注入（宿主桥注册读取），泵循环每拍更新。
+    let pump_clock = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
     let mut builder = WebViewBuilder::new().width(viewport.0).height(viewport.1);
     if let Some(ref js_worker) = _js_worker {
         builder = builder.external_script(js_worker.executor());
@@ -266,7 +269,10 @@ fn tab_worker_main(
     // media-playback M2a 切片 5b：注入播放器注册表（WebView 初始化后发送 Arc 共享——
     // js_worker 注册 __zwVideoBridge 宿主桥；settle 侧 async_load 写入同 registry）。
     if let Some(js_worker) = _js_worker.as_ref() {
-        js_worker.set_video_players(wv.video_players());
+        // M3 扩批 XXXIX+（泵时钟注入，扩批 XXV 生产路径收口）：泵时钟共享锚——
+        // js_worker 的宿主桥注册读它（shim 桥 play 的 nowMs=0 翻译为泵时钟现值），
+        // 泵循环每拍 store 最新 elapsed——桥 play 锚与泵 tick 同源（原点错位修复）。
+        js_worker.set_video_players(wv.video_players(), Some(std::sync::Arc::clone(&pump_clock)));
         // media-audio M3 切片 2：Web Audio 宿主桥注入（__zwWA*——AudioContext
         // 最小面 NullSink 可观测；音频泵 advance 与视频泵同节拍）。
         js_worker.set_webaudio(wv.webaudio());
@@ -873,6 +879,7 @@ fn tab_worker_main(
                 .unwrap_or(false);
             if any_playing {
                 let now_ms = pump_epoch.elapsed().as_millis() as u64;
+                pump_clock.store(now_ms, std::sync::atomic::Ordering::Relaxed);
                 let changed = wv
                     .video_players()
                     .lock()

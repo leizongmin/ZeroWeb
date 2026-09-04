@@ -2,8 +2,15 @@
 
 **入口文档**: [../media-playback.md](../media-playback.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-04（**M3 fixture-mounted runner 播放面切片 12 落地（扩批
-XXIX）**——HAVE_NOTHING 期 play() 挂起语义（spec dom-media-play 步 6）：play()
+**最后更新**: 2026-09-04（**泵时钟生产路径注入（扩批 XXV 收口的 tab_worker 面）**：
+tab_js_worker `SetVideoPlayers` 此前以 clock=None 注册宿主桥——shim 桥 play 恒传
+nowMs=0，而 tab_worker 泵 tick 用 `pump_epoch.elapsed()`（原点错位：worker 启动后
+首次桥 play 的首拍 delta=泵全程 → 位置瞬跳流末——runner 侧扩批 XXV 同款缺陷在
+生产路径的残留）。修复：pump_clock（Arc<AtomicU64>）提前至 WebView 构建前创建 +
+`SetVideoPlayers` 命令携带 + js_worker 注册传入 + 泵循环每拍 store——桥 play 锚与
+泵 tick 同源。renderer 路径维持 None（D4 泵架构未决，「登记但不推进」现状不变，
+非回归）。make test 18874/0、clippy/fmt 干净。此前同日：**M3 fixture-mounted
+runner 播放面切片 12 落地（扩批 XXIX）**——HAVE_NOTHING 期 play() 挂起语义（spec dom-media-play 步 6）：play()
 readyState==0 且有候选（按身份分派判据——handle-only 无 src 无 settle 序列
 可达保持既有 queued task resolve 契约）→ 记 `_zwPlayPendingEvents` 挂起不派
 事件；`_zwMediaLoadSequence` readyState 1 处补派 play、3 处（canplay 后）派

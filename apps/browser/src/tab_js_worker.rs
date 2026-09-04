@@ -70,8 +70,11 @@ enum JsWorkerCommand {
     },
     /// media-playback M2a 切片 5b：注入播放器注册表（tab_worker 在 WebView 初始化后
     /// 发送 `wv.video_players()` Arc）——worker 据此注册 `__zw_video_*` 宿主桥回调。
+    /// M3 扩批 XXXIX+（泵时钟注入，扩批 XXV 生产路径收口）：泵时钟共享锚——桥 play
+    /// 的 nowMs=0 翻译为泵时钟现值（原点错位修复：首拍 delta=泵全程 → 位置瞬跳流末）。
     SetVideoPlayers {
         registry: std::sync::Arc<std::sync::Mutex<zero_webview::video_registry::VideoPlayerRegistry>>,
+        clock_ms: Option<std::sync::Arc<std::sync::atomic::AtomicU64>>,
     },
     SetWebAudio {
         registry: std::sync::Arc<std::sync::Mutex<zero_webview::webaudio_registry::WebAudioRegistry>>,
@@ -255,8 +258,11 @@ impl TabJsWorkerHandle {
     pub fn set_video_players(
         &self,
         registry: std::sync::Arc<std::sync::Mutex<zero_webview::video_registry::VideoPlayerRegistry>>,
+        clock_ms: Option<std::sync::Arc<std::sync::atomic::AtomicU64>>,
     ) {
-        let _ = self.cmd_tx.send(JsWorkerCommand::SetVideoPlayers { registry });
+        let _ = self
+            .cmd_tx
+            .send(JsWorkerCommand::SetVideoPlayers { registry, clock_ms });
     }
 
     /// media-audio M3 切片 2：注入 Web Audio 注册表（WebView 初始化后发送；
@@ -498,10 +504,11 @@ fn js_worker_main(
                 // P1b S3 incr-a：注入 fetch handler（tab_worker 在 WebView 初始化后发送）。
                 fetch_bridge.set_handler(handler);
             }
-            JsWorkerCommand::SetVideoPlayers { registry } => {
+            JsWorkerCommand::SetVideoPlayers { registry, clock_ms } => {
                 // M2a 切片 5b：注册宿主桥回调族 + 注入 __zwVideoBridge JS 门面
-                //（shim play/pause/currentTime feature-detect 消费）。
-                zero_webview::video_registry::register_video_bridge_callbacks(&mut *sandbox, registry, None, None);
+                //（shim play/pause/currentTime feature-detect 消费）。M3 扩批
+                // XXXIX+：泵时钟注入（扩批 XXV 同款——桥 play 锚与泵 tick 同源）。
+                zero_webview::video_registry::register_video_bridge_callbacks(&mut *sandbox, registry, None, clock_ms);
             }
             JsWorkerCommand::SetWebAudio { registry } => {
                 // media-audio M3 切片 2：注册 Web Audio 宿主桥（__zwWA* 回调族——
