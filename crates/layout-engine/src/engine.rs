@@ -841,6 +841,14 @@ impl LayoutEngine {
             }
         }
 
+        // 11.7b R4017（CSS2 §10.3.7 static position）：block-level abspos top/bottom 均
+        // auto 的垂直静态位——taffy static_position 对「前驱 in-flow 兄弟高度后续增长」
+        // 用过期值（absolute-replaced-width-037 族：两行 p 兄弟按单行算，abspos 静态位
+        // 偏上 18px）。本 pass 按兄弟 margin-box 底重算（幂等，等价场景零变化）。
+        if !abspos::subtree_has_float(&root_box) {
+            fix_abspos_static_position_y(&mut root_box, styles);
+        }
+
         // 11.8 后处理（R1371）：abspos flex 容器（top+bottom 拉出 definite height）内替换
         // flex item 的 cross-stretch + transferred-size。taffy 在 content layout 后才解析
         // abspos 容器高度，item 布局时容器 cross 仍 indefinite → 不 stretch。env

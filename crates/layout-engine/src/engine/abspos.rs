@@ -679,6 +679,80 @@ pub(super) fn resolve_abspos_against_nested_cb(
     );
 }
 
+/// R4017（CSS2 §10.3.7 static position）：block-level abspos 元素 top/bottom 均 auto
+/// 时的垂直静态位置重算。
+///
+/// taffy 对「前驱 in-flow 兄弟高度在布局期随后续 pass 增长」的 abspos 静态位用**过期值**
+/// （absolute-replaced-width-037 族探针实证：两行 `<p>` h=37.2 的兄弟，abspos 静态位
+/// 却按单行 18.6 算——static_position 在 sibling 尺寸增长前定格）。spec：静态位置 =
+/// 假设 position:static 时盒的位置，即前 in-flow 兄弟的 **margin-edge bottom**
+///（含 margin 折叠 max(prev_mb, my_mt)）。
+///
+/// 修：每容器内对（top/bottom CSS 均 auto 的 absolute 直接子），取其**前一个 in-flow
+/// block-level 兄弟**的 `y + height + max(mb, mt)` 重算 y（兄弟坐标即本容器 content 坐标，
+/// abspos 子 taffy 输出同基）。等价时与 taffy 值一致（幂等），仅修正过期场景。
+/// gate 保守：无前 in-flow block 兄弟（首子/行内语境）不碰（行盒内静态位是另一域）；
+/// fixed 不在此域（CB=视口，adjust_fixed_to_viewport 处理）。
+pub(super) fn fix_abspos_static_position_y(box_node: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) {
+    use zero_css_parser::values::LengthValue;
+
+    // 先收集（static-position, 目标 y），再统一写回——避免借用冲突。
+    let mut fixes: Vec<(usize, f32)> = Vec::new();
+    for (idx, child) in box_node.children.iter().enumerate() {
+        if !child.is_absolute {
+            continue;
+        }
+        let Some(style) = child.node_id.and_then(|id| styles.get(&id)) else {
+            continue;
+        };
+        if !matches!(style.top, LengthValue::Auto) || !matches!(style.bottom, LengthValue::Auto) {
+            continue;
+        }
+        // R4017 gate：abspos 自带 margin-top 非零时不介入——taffy absolute 布局对 static
+        // 另加 margin.top，其非零 mt 折叠语义有自己的处理链（multicol-spanner-007 翻红
+        // 实证：mt:60 的 abspos 被本公式重算后 diff 变差）；本轮修复面（037 族）mt 均 0。
+        if resolve_abspos_real_length(&style.margin_top, &style.font_size, 0.0, 0.0).unwrap_or(0.0) > 0.5 {
+            continue;
+        }
+        // 前一个 in-flow block-level 兄弟。
+        let Some(prev) = box_node.children[..idx]
+            .iter()
+            .rev()
+            .find(|c| c.is_block_level && !c.is_absolute && !c.is_fixed)
+        else {
+            continue;
+        };
+        // margin 折叠：max(prev mb, my mt)（Px/长度解析，% margin 对 abspos 静态位记 0）。
+        let my_mt = resolve_abspos_real_length(&style.margin_top, &style.font_size, 0.0, 0.0).unwrap_or(0.0);
+        let prev_mb = prev
+            .node_id
+            .and_then(|id| styles.get(&id))
+            .and_then(|s| resolve_abspos_real_length(&s.margin_bottom, &s.font_size, 0.0, 0.0))
+            .unwrap_or(0.0);
+        let collapsed = prev_mb.max(my_mt);
+        fixes.push((idx, prev.y + prev.height + collapsed));
+    }
+    for (idx, y) in fixes {
+        box_node.children[idx].y = y;
+    }
+    for child in &mut box_node.children {
+        // R4017 gate（A/B 实证）：容器子树含 float 时不介入——float 语境的 abspos 静态位
+        // 由 float 避让参与（position-absolute-dynamic-static-position-floats-001/004、
+        // multicol-spanner-007 翻红实证），简单「前 block 兄弟 margin-box 底」公式不适用。
+        if !subtree_has_float(child) {
+            fix_abspos_static_position_y(child, styles);
+        }
+    }
+}
+
+/// 子树是否含 float 盒（R3929 同款谓词语义——float 参与 static position/可用宽计算）。
+pub(super) fn subtree_has_float(b: &LayoutBox) -> bool {
+    if b.float != zero_css_parser::values::FloatValue::None {
+        return true;
+    }
+    b.children.iter().any(subtree_has_float)
+}
+
 fn resolve_abspos_against_nested_cb_inner(
     box_node: &mut LayoutBox,
     current_box_origin_x: f32,

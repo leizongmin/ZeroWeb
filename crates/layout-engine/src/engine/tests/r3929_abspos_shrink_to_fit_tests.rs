@@ -241,3 +241,47 @@ fn r4016_abspos_svg_attr_height_survives_inline_remeasure() {
         "R4016: abspos attr height=50 的 svg 盒高应保持 50，实际 h={h} w={w}"
     );
 }
+
+/// R4017（CSS2 §10.3.7 static position）：block-level abspos top/bottom 均 auto 的
+/// 垂直静态位 = 前 in-flow 兄弟 margin-box 底。taffy static_position 对「前驱兄弟
+/// 高度后续增长」（两行 p）用单行过期值——absolute-replaced-width-037 族 y 偏上 18px。
+#[test]
+fn r4017_abspos_static_position_uses_final_sibling_height() {
+    use crate::engine::tests::find_absolute_position_by_node_id;
+    let html = r#"<html><body style="margin:0">
+<p style="margin:16px 0;">Test passes if the blue and orange rectangles have the same width and are horizontally centered in an hollow black square.</p>
+<div style="position: absolute; width: 100px; height: 50px;"></div>
+<div style="width: 100px; height: 100px;"></div>
+</body></html>"#;
+    let (doc, result) = layout(html);
+    let divs = doc.get_elements_by_tag_name("div");
+    let tid = *divs.first().expect("abspos div");
+    let (_x, y) = find_absolute_position_by_node_id(&result.root, tid).expect("abspos box");
+    // p 两行 ≈ 37.2 + p.mb 16（mt 0）→ 静态位 ≈ 53.2（taffy 旧值 ≈ 35 单行）。
+    assert!(
+        y > 45.0,
+        "R4017: abspos 静态位应随前驱兄弟最终高度（两行 p ≈ 53），实际 y={y}"
+    );
+}
+
+/// R4017 gate 对照：abspos 自带非零 margin-top 时不介入（taffy absolute 布局对 static
+/// 另加 margin.top，非零 mt 折叠语义归既有链）——multicol-spanner-007 防回归锚。
+#[test]
+fn r4017_abspos_with_margin_top_not_touched() {
+    use crate::engine::tests::find_absolute_position_by_node_id;
+    let html = r#"<html><body style="margin:0">
+<p style="margin:16px 0;">prefix line one</p>
+<div style="position: absolute; margin-top: 60px; width: 100px; height: 20px;"></div>
+</body></html>"#;
+    let (doc, result) = layout(html);
+    let divs = doc.get_elements_by_tag_name("div");
+    let tid = *divs.first().expect("abspos div");
+    let (_x, y) = find_absolute_position_by_node_id(&result.root, tid).expect("abspos box");
+    // taffy 既有值（static + mt 链）保持不动——锚定 R4017 公式值未应用：
+    // 公式介入会给出 p margin-box 底 + max(p.mb, mt) = 34.6 + 60 = 94.6；
+    // taffy 既有链（static + margin.top 叠加语义）实测 ≈111（taffy 内部值，不锚定具体数）。
+    assert!(
+        (y - 94.6).abs() > 1.0,
+        "R4017: mt 非零的 abspos 应保持 taffy 既有静态位（gate 跳过，公式值 94.6 不应出现），实际 y={y}"
+    );
+}
