@@ -6895,7 +6895,7 @@
     // https://html.spec.whatwg.org/multipage/media.html#the-track-element
     try {
       if (typeof globalThis._zwScheduleChildTrackLoads === 'function') {
-        globalThis._zwScheduleChildTrackLoads(sel, handle);
+        globalThis._zwScheduleChildTrackLoads(sel, handle, { syncBody: true });
       }
     } catch (_eXlviiTrk) {}
     _zwMediaFire(sel, handle, key, 'canplaythrough');
@@ -7318,7 +7318,7 @@
   };
   // M3 扩批 XII：media 元素的所有 track 子 → 触发检索（_zwTrackScheduleLoad 幂等）。
   // spec：track 检索随 media 元素加载循环启动（connected 时——cues 可用性 gate 开面）。
-  globalThis._zwScheduleChildTrackLoads = function (sel, handle) {
+  globalThis._zwScheduleChildTrackLoads = function (sel, handle, opts) {
     try {
       var _sckKids = (handle && _handleChildren[handle]) ? _handleChildren[handle]
         : (typeof _childNodeList === 'function' ? _childNodeList(sel, handle) : []);
@@ -7341,7 +7341,7 @@
         } catch (_eSclD) {}
         if (!_sclDefault) continue;
         if (typeof globalThis._zwTrackScheduleLoad === 'function') {
-          globalThis._zwTrackScheduleLoad(k.__zwSelector || null, k.__zwHandle || null);
+          globalThis._zwTrackScheduleLoad(k.__zwSelector || null, k.__zwHandle || null, opts);
         }
       }
     } catch (_eScl) {}
@@ -9437,11 +9437,12 @@
         _zwSettleResourceKey(key, sel, handle, 'track', _abs, 'loaded', 0, 0);
       } catch (_eTs) {}
     };
-    // M3 扩批 XLVIII 负结果：首调度同步 settle 尝试回退——同步派 onload/onerror 早于
-    // runner 静态提交链的 handler 挂载窗口，21 件既有 track 用例 Timeout/cues.html 派发序
-    // 破坏（-21 净跌）。settle 写入与事件派发的通道拆分（state 同步/事件 defer）列为
-    // 独立切片。首调度恢复 deferCont microtask。
-    _deferCont(_xlTrackLoadBody);
+    // M3 扩批 XLIX：**同步 body 通道**（opts.syncBody——XLVII part06 media 序列补丁的
+    // canplaythrough 前调度点专用：同步段内跑 settle 主体、state 即时可达；load/error
+    // 事件已通道拆分 defer 一拍，无 handler 窗口风险）。首调度默认仍 deferCont microtask
+    //（页面脚本 turn 内调度——turn 末检查点排空，早于 media 任务 canplaythrough）。
+    if (opts && opts.syncBody) _xlTrackLoadBody();
+    else _deferCont(_xlTrackLoadBody);
   };
   var _zwTrackFetchSeq = 0;
   function _zwSettleResourceKey(key, sel, handle, tag, url, outcome, width, height, errorCode, durationMs) {
@@ -9474,7 +9475,20 @@
       // 时 on* IDL handler 兜底——createElement 的 handle-only 元素 onload/onerror 注册于
       // expando 表，纯 _dispatchWithBubble 不读 expando → handler 永不触发；
       // track-active-cues 的 video.onerror 断言面）。
-      if (tag === 'track' || tag === 'audio' || tag === 'video' || tag === 'source') {
+      if (tag === 'track') {
+        // M3 扩批 XLIX（2026-09-05）：track 通道拆分——**state 写入已同步**（上方
+        // _resourceStates[key] 赋值即生效，readyState getter 即时可达），load/error 事件
+        // 派发 defer 一拍（microtask 稳定态——spec「queue a task to fire」面；同步派发
+        // 早于 runner 静态提交链的 handler 挂载窗口曾致 21 件 Timeout——XLVIII 负结果）。
+        // microtask 晚于当前同步段、早于 media 任务 canplaythrough；同批多 track 保序
+        //（microtask FIFO）。既有 onload 断言（step_func_done/onload 计数）时序兼容。
+        // https://html.spec.whatwg.org/multipage/media.html#further-handling-of-the-track-element
+        var _xlFire = function () {
+          _zwMediaFire(sel, handle, key, eventType);
+        };
+        if (typeof queueMicrotask === 'function') queueMicrotask(_xlFire);
+        else _xlFire();
+      } else if (tag === 'audio' || tag === 'video' || tag === 'source') {
         _zwMediaFire(sel, handle, key, eventType);
       } else {
         _dispatchWithBubble(key, sel, null, _makeEvent(eventType, { bubbles: false, cancelable: false }));

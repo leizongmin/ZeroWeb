@@ -2,7 +2,17 @@
 
 **入口文档**: [../media-elements.md](../media-elements.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-05（**M3 扩批 XLVIII 落地**——track settle 时序负结果归档 + 诊断通道：
+**最后更新**: 2026-09-05（**M3 扩批 XLIX 落地**——track settle 通道拆分落地（架构修复）+ 用例
+形态触发链仍断（负结果并存）：① **通道拆分**（XLVIII 定版方向）实施——_zwSettleResourceKey 的
+track 面 state 写入同步（RS 即时可达）+ load/error 事件派发 defer 一拍（microtask FIFO 保序，
+与 handler 挂载窗口解耦——XLVIII 同步派发 21 件 Timeout 的根因消除）；② **syncBody 同步通道**：
+_zwScheduleChildTrackLoads 增 opts 透传 + media 序列 canplaythrough 前调度点传 syncBody
+（settle 主体同步段执行）——「提前 query」形态探针实证 canplaythrough 时 outcome=error/RS=3 ✓；
+③ **用例形态（handler 内首 query）outcome 仍 null**——settle 主体在该时点未执行，触发链断裂点
+（ScheduleChildTrackLoads 枚举 vs 静态子物化时序）待查；dbg 追加实验引入新 Timeout 形态，沼泽
+收益递减，负结果归档；④ track-remove-insert-ready-state 维持排除（注记更新）。629P/0F/24PF =
+96.32% 维持零回归；runner 契约 204 ok、clippy/fmt 干净。
+此前 2026-09-05：**M3 扩批 XLVIII 落地**——track settle 时序负结果归档 + 诊断通道：
 ① **dump 数据落袋**（_zwTrackSchedDump 诊断钩子保留）：绿形态 dump 实证 trackScheduled 在
 canplaythrough 前已置位、resourceState 尚未写入（microtask defer 晚于 handler 同步读）——
 「早退点」假说排除，真缺口 = **首调度 microtask defer 的同步读不可达**；
@@ -331,7 +341,7 @@ currentSrc 的 source-child 插入触发（mutation 面）。
 （**M3 扩批 event_* 族 + 第二批 + III~X（2026-09-01）/ XI~XV（2026-09-02）/
   XVI~XVIII（2026-09-03）过程记录**——每批 shim 面/runner 面明细与排除注记——
   已归档至 [archive/2026-09-04_m3-batches-vii-to-xviii.md](archive/2026-09-04_m3-batches-vii-to-xviii.md)，
-  证据 JSON 序列见验证基线；累计口径 603P/0F/24PF = 96.17%。第 XIX~XLVIII 批
+  证据 JSON 序列见验证基线；累计口径 603P/0F/24PF = 96.17%。第 XIX~XLIX 批
   明细见头链（最新态）。）
 
 **里程碑归档（2026-09-01）**：M1~M3 与六轮扩批的过程记录、排除用例决策清单已归档至
@@ -543,6 +553,8 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
   → 扩批 XLVIII（2026-09-05，track settle 时序负结果归档 + _zwTrackSchedDump 诊断通道；
   同步 settle 尝试回退——通道拆分列独立切片）**629/653 = 96.32%** 维持零回归（Fail 0 /
   Timeout 0 / PF 24）
+  → 扩批 XLIX（2026-09-05，track settle 通道拆分落地 + syncBody 通道；用例形态触发链
+  断裂点待查——负结果并存）**629/653 = 96.32%** 维持零回归（Fail 0 / Timeout 0 / PF 24）
 - 复核（2026-09-04 治理整固后终审）：fresh 跑 603P/0F/24PF（198 文件）与
   本档记录逐位一致；验证基线 evidence 链 26 文件全在盘；make test 18877/0。
   （扩批 XL 后：fresh 跑 609P/0F/24PF（201 文件）；扩批 XLI 后：fresh 跑

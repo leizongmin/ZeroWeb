@@ -722,3 +722,19 @@ track-active-cues 解除排除）**：
   面评估后再动。
 - track-remove-insert-ready-state 维持排除（注记更新）。629P/0F/24PF = 96.32% 维持零
   回归；runner 契约 204 ok、clippy/fmt 干净。
+
+## 扩批 XLIX — track settle 通道拆分（2026-09-05）
+
+- **通道拆分落地**（XLVIII 定版方向）：_zwSettleResourceKey 的 track 面——state 写入同步
+  （_resourceStates[key] 赋值即生效，readyState getter 即时可达）、load/error 事件派发
+  defer 一拍（queueMicrotask 稳定态；spec「queue a task to fire」面；microtask FIFO 保序；
+  与 handler 挂载窗口解耦——XLVIII 同步派发 21 件 Timeout 根因消除）。audio/video/source/
+  img 通道零变化。
+- **syncBody 同步通道**：_zwScheduleChildTrackLoads 增 opts 透传（_zwTrackScheduleLoad
+  第三参）；media 序列 canplaythrough 前调度点传 {syncBody:true}（settle 主体同步段执行，
+  事件仍 defer）。探针实证「提前 query」形态 canplaythrough 时 outcome=error/RS=3。
+- **用例形态负结果并存**：handler 内首 query 的形态 outcome 仍 null——settle 主体在该时点
+  未执行；触发链断裂点（ScheduleChildTrackLoads 枚举 vs 静态子物化时序）待查；dbg 追加
+  实验（handler 内强制 srcChange 重调度）引入新 Timeout 形态，沼泽收益递减。
+- track-remove-insert-ready-state 维持排除（注记更新）。629P/0F/24PF = 96.32% 维持零
+  回归；runner 契约 204 ok、clippy/fmt 干净。
