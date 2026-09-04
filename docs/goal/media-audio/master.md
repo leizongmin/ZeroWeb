@@ -270,9 +270,10 @@ DONE 阻塞**；Mixer/重采样接线随设备切片可选推进）。
 
 - 测试基线：`make test` 全绿 18866（2026-09-04 组合树实测）；clippy 零警告
   （default 与 `--features audio-cpal` 双配置）
-- WPT webaudio：**40 用例 907P/0F = 100%**（2026-09-05 十九批累计——第八批~第十八批
-  39 用例 874P + **第十九批 osc-basic-waveform（D3 offline 渲染最小面）33 subtest**；
-  原 39 用例 874P 面——connect 返回值 +
+- WPT webaudio：**42 用例 911P/0F = 100%**（2026-09-05 二十一批累计——第十九批
+  osc-basic-waveform（D3 offline 渲染最小面）33 subtest + 第二十批 gain.html（通道
+  图推进）7 subtest + 第二十一批 audioparam-method-chaining（automation timeline）
+  3 subtest；第八批~第十八批 39 用例 874P 面——connect 返回值 +
   destination + ctor-oscillator 62 + ctor-gain/stereopanner/delay/biquadfilter/
   analyser + createPeriodicWave 异常面 + audioparam-exceptional-values 66 +
   audiobuffer 面 + 第七批 ctor-channelmerger/channelsplitter/constantsource +
