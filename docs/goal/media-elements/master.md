@@ -606,6 +606,9 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
   维持零回归（Fail 0 / Timeout 0 / PF 24）
   → 扩批 LII（2026-09-05，track settle 同步化三方案负结果终版——全部回退；runner 事件循环
   统一归 deep-structure）**629/653 = 96.32%** 维持零回归（Fail 0 / Timeout 0 / PF 24）
+  → 切片 1 补记账（2026-09-05，H.264 切片 1 canPlayType 扩表联动——video/mp4 +
+  audio/mp4 转入支持面）：**636/646 = 97.2%**（+7 净涨：7 项 mp4-face PF → Pass；
+  PF 24→17——Fail 0 / Timeout 0）
   → 扩批 LIII（2026-09-05，排除注记复核 + addtrack 时序三处 spec 对齐（幂等门/observed 登记/
   append 时刻建 list/setTimeout 承载）——track-mode-not-changed-by-new-track 试导回退维持排除，
   归 runner 事件循环统一）**629/653 = 96.32%** 维持零回归（Fail 0 / Timeout 0 / PF 24；
