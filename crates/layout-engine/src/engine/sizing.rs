@@ -246,6 +246,14 @@ impl LayoutEngine {
             if !b.is_absolute || (b.is_replaced && !replaced_collapsed) {
                 continue;
             }
+            // R4034b（CSS Containment 1 §3）：contain:size（含 strict）→ 元素按「无内容」
+            // sized——converter 已把 auto 尺寸解析为 0（或 CIS 替代），shrink-to-fit 补测
+            // 不得把内容贡献拉回（contain-animation-001：contain:strict abspos div 的
+            // nbsp 内容被补测拉宽 → 红底露出 4%）。R4018 svg % attr 臂不受影响（其已
+            // continue 在前——attr 是存在的声明，非内容测量）。
+            if s.contain.has_size() {
+                continue;
+            }
             // 内含 float 后代时跳过：float 子的 max-width/约束宽度参与 shrink-to-fit
             // preferred width（width-019/020），max-content 测量不含此语义。
             if Self::subtree_has_float(b) {

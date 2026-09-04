@@ -172,7 +172,10 @@ pub fn computed_style_to_taffy(
                     | DisplayValue::ListItem
                     | DisplayValue::Flex
                     | DisplayValue::Grid
-            );
+            ) // R4034b：abspos 的 auto 宽是 content-based（§10.3.7 shrink-to-fit），非
+            // fill-CB——containment 下须折叠到 CIS-or-0（contain-animation-001：
+            // contain:strict abspos div 宽 128 应 100 = 纯边框）。
+                && !matches!(style.position, PositionValue::Absolute | PositionValue::Fixed);
             taffy::geometry::Size {
                 width: match &style.width {
                     LengthValue::Auto if block_fills_width => taffy::style::Dimension::auto(),

@@ -1367,6 +1367,33 @@ pub(crate) fn measure_text_content(
         return Size::ZERO;
     }
 
+    // R4034b（CSS Containment 1 §3）：contain:size → 元素按「无内容」sized——本回调是
+    // 内容测量，containment 下内容（含 R4034 后被正确识别的 nbsp 文本）不贡献尺寸，
+    // 返回 CIS 替代值（无 CIS = 0）。此前 nbsp 被 trim() 误判无内容而「巧合正确」
+    //（contain-animation-001：contain:strict abspos div 测出 nbsp 行高 116 → 216 高
+    // 红底露出）。CIS 替代与 R4008 converter/测量面同语义（css-sizing-4
+    // §intrinsic-size-override）。
+    // 豁免表单控件（button/input/select/textarea）——其尺寸是 UA widget chrome + 既有
+    // 内容回退行为，containment 语义由 widget 自身处理（contain-size-select-elem-002/004：
+    // contained select 塌 0 vs 空 select 默认高，双页失配实证）。
+    if let Some(s) = styles.get(&dom_id)
+        && s.contain.has_size()
+        && !doc.get(dom_id).is_some_and(|n| match &n.kind {
+            NodeKind::Element(e) => matches!(e.local_name(), "button" | "input" | "select" | "textarea"),
+            _ => false,
+        })
+    {
+        let cis = |v: &Option<zero_css_parser::values::LengthValue>| -> f32 {
+            v.as_ref()
+                .and_then(|l| crate::intrinsic_sizing::resolve_intrinsic_real_length(l, s))
+                .unwrap_or(0.0)
+        };
+        return Size {
+            width: cis(&s.contain_intrinsic_width),
+            height: cis(&s.contain_intrinsic_height),
+        };
+    }
+
     // 检查是否为文本节点（匿名 flex/grid item）
     // 在 flex/grid 容器中，文本节点被包装为匿名 taffy 节点参与布局。
     if let Some(node) = doc.get(dom_id)
@@ -2033,6 +2060,22 @@ pub(crate) fn remeasure_inline_only_containers(
         && box_node
             .node_id
             .is_some_and(|id| crate::tree::run_in_following_block_sibling(doc, styles, id).is_some());
+    // R4034b：size containment（strict/content-visibility:hidden 同语义面）——内容不参与 sizing。
+    // 表单控件豁免（同 measure gate：UA widget chrome 尺寸不受 containment 抑制）。
+    let style_has_size_containment = box_node
+        .node_id
+        .and_then(|id| {
+            styles.get(&id).map(|s| {
+                s.contain.has_size()
+                    && !doc.get(id).is_some_and(|n| match &n.kind {
+                        NodeKind::Element(e) => {
+                            matches!(e.local_name(), "button" | "input" | "select" | "textarea")
+                        }
+                        _ => false,
+                    })
+            })
+        })
+        .unwrap_or(false);
     let needs_dom_text_remeasure = !is_merged_run_in
         && has_dom_text
         && box_node.content_height < 1.0
@@ -2097,6 +2140,11 @@ pub(crate) fn remeasure_inline_only_containers(
         && !(box_node.is_replaced && (box_node.is_absolute || box_node.is_fixed))
         // R3992：并入态 run-in 不走 inline-only remeasure（内容归后继块 IFC，0 高 leaf）。
         && !is_merged_run_in
+        // R4034b（CSS Containment 1 §3）：contain:size → 高度按「无内容」sized
+        //（converter 已写 CIS-or-0）——本 IFC 重测不得把内容行高回填
+        //（contain-animation-001：taffy 0 高触发 needs_dom_text_remeasure → nbsp
+        // 行高 116 回填 → 216 高红底露出）。
+        && !style_has_size_containment
         && (has_inline_children || needs_dom_text_remeasure)
         && let Some(dom_id) = box_node.node_id
         && let Some(style) = styles.get(&dom_id)
