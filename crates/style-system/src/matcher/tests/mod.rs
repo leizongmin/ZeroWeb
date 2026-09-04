@@ -6,4 +6,5 @@ mod coverage_round3;
 mod coverage_round4;
 mod nth_container;
 mod pseudo;
+mod source_order_at_rules;
 mod uncovered_paths;

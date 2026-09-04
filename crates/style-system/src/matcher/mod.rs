@@ -2073,62 +2073,133 @@ fn collect_from_rules(
     layer_counter: &mut usize,
     pseudo: Option<&str>,
 ) {
+    // R4024（CSS2 §6.4.1 源码顺序 + CSS Cascading 5 §6.4）：单趟源码序遍历。旧实现
+    // 先收集全部顶层 Style 规则、再单独遍历 At 规则——@media 块内规则的级联位置被
+    // 推到所有顶层规则之后，违反源码顺序（at-media-001：`@media all { .t2 { red } }`
+    // 在前、`.t2 { green }` 在后，后者应胜出，旧实现前者胜出）。合并走查：候选流
+    //（tagged + universal，各按 (规则,选择器) 有序）与规则流按规则下标归并，At 规则
+    // 在其源码位置原位递归，声明收集顺序 = 真实源码顺序。
     // 索引候选：元素 tag 的精确桶 + 通用桶（无 type selector 的选择器）。
-    // 同规则多选择器匹配时只收集一次（原语义 break）：候选按 (规则, 选择器)
-    // 有序，`last_matched_rule` 跳过已匹配规则的其余选择器。
+    // 同规则多选择器匹配时只收集一次（原语义 break）。
     match index {
         Some(idx) => {
             let elem_tag = element_tag_name(doc, element).unwrap_or_default();
             let tagged = idx.tagged.get(&elem_tag).map(Vec::as_slice).unwrap_or(&[]);
             let universal = idx.universal.as_slice();
             let mut last_matched_rule = usize::MAX;
-            for (ri, si) in tagged.iter().chain(universal.iter()) {
-                if *ri == last_matched_rule {
-                    continue;
-                }
-                let zero_css_parser::ast::Rule::Style(style_rule) = &rules[*ri] else {
-                    continue; // 索引只含 Style 规则
-                };
-                let selector = &style_rule.selectors[*si];
-                if collect_style_rule_decls(doc, element, style_rule, selector, results, current_layer, pseudo) {
-                    last_matched_rule = *ri;
-                }
-            }
-        }
-        None => {
-            // 无索引（@media 内层规则）：全量遍历（旧行为）
-            for rule in rules {
-                if let zero_css_parser::ast::Rule::Style(style_rule) = rule {
-                    for selector in &style_rule.selectors {
-                        if collect_style_rule_decls(doc, element, style_rule, selector, results, current_layer, pseudo)
-                        {
-                            break; // 一个选择器匹配就够了
-                        }
+            let mut ti = 0usize; // tagged 流游标
+            let mut ui = 0usize; // universal 流游标
+            for (ri, rule) in rules.iter().enumerate() {
+                // 该规则的候选选择器：两桶按 si 归并（tagged/universal 同规则互斥——
+                // 每个选择器只进一个桶，故逐条取 si 较小者即得完整 si 升序）
+                loop {
+                    let t_take = ti < tagged.len() && tagged[ti].0 == ri;
+                    let u_take = ui < universal.len() && universal[ui].0 == ri;
+                    if !t_take && !u_take {
+                        break;
+                    }
+                    let take_tagged = match (t_take, u_take) {
+                        (true, true) => tagged[ti].1 < universal[ui].1,
+                        (true, false) => true,
+                        (false, true) => false,
+                        (false, false) => unreachable!(),
+                    };
+                    let (ri_c, si) = if take_tagged {
+                        let c = tagged[ti];
+                        ti += 1;
+                        c
+                    } else {
+                        let c = universal[ui];
+                        ui += 1;
+                        c
+                    };
+                    let zero_css_parser::ast::Rule::Style(style_rule) = &rules[ri_c] else {
+                        continue;
+                    };
+                    if ri_c != last_matched_rule
+                        && collect_style_rule_decls(
+                            doc,
+                            element,
+                            style_rule,
+                            &style_rule.selectors[si],
+                            results,
+                            current_layer,
+                            pseudo,
+                        )
+                    {
+                        last_matched_rule = ri_c;
                     }
                 }
-            }
-        }
-    }
-    // At 规则（@media 等）：不进索引，原样遍历（数量远少于 Style 规则）
-    for rule in rules {
-        match rule {
-            zero_css_parser::ast::Rule::Style(_) => {}
-            zero_css_parser::ast::Rule::At(at_rule) => {
-                if let zero_css_parser::ast::AtRuleBody::Block(inner_rules) = &at_rule.body {
-                    if at_rule.name.eq_ignore_ascii_case("media") {
-                        // @media 规则：需要评估媒体条件
-                        // 逗号分隔的查询表示 OR 关系——任一匹配即通过
-                        if let Some(ctx) = media_ctx
-                            && let Some(queries) = zero_css_parser::media_query::parse_media_query(&at_rule.prelude)
-                            && queries
-                                .iter()
-                                .any(|q| zero_css_parser::media_query::evaluate_media_query(q, ctx))
-                        {
+                // 该规则候选耗尽后仍可能处于 last_matched_rule（由上面收集）——At 分支无关。
+                match rule {
+                    zero_css_parser::ast::Rule::Style(_) => {}
+                    zero_css_parser::ast::Rule::At(at_rule) => {
+                        if let zero_css_parser::ast::AtRuleBody::Block(inner_rules) = &at_rule.body {
+                            if at_rule.name.eq_ignore_ascii_case("media") {
+                                // @media 规则：需要评估媒体条件
+                                // 逗号分隔的查询表示 OR 关系——任一匹配即通过
+                                if let Some(ctx) = media_ctx
+                                    && let Some(queries) =
+                                        zero_css_parser::media_query::parse_media_query(&at_rule.prelude)
+                                    && queries
+                                        .iter()
+                                        .any(|q| zero_css_parser::media_query::evaluate_media_query(q, ctx))
+                                {
+                                    collect_from_rules(
+                                        doc,
+                                        element,
+                                        inner_rules,
+                                        None, // @media 内层规则未进索引，全量匹配
+                                        results,
+                                        media_ctx,
+                                        container_ctx,
+                                        current_layer,
+                                        layer_counter,
+                                        pseudo,
+                                    );
+                                }
+                                // 没有 media_ctx 时，@media 规则不应用（安全默认值）
+                            } else {
+                                // 非 @media 的通用 AtRule（@charset/@foo/@unknown 等）：未知 at-rule
+                                // 的 body **不得**作为样式应用（CSS：未知 at-rule 整体忽略，body 不
+                                // 参与 cascade）。@supports/@container/@layer 等已知条件 at-rule 各有
+                                // 专属 Rule 变体与处理分支（见下方 match），不进此通用 At 分支。
+                                // 旧实现对未知 at-rule body 无条件递归→body 内规则泄漏应用
+                                //（driving: at-rule-013 `@foo { #block { background: red; } }`）。
+                            }
+                        }
+                    }
+                    zero_css_parser::ast::Rule::Keyframes(_) => {
+                        // @keyframes 规则不参与样式匹配，跳过
+                    }
+                    zero_css_parser::ast::Rule::Layer(layer_rule) => {
+                        // @layer 规则：分配层索引并递归
+                        let layer_idx = *layer_counter;
+                        *layer_counter += 1;
+                        collect_from_rules(
+                            doc,
+                            element,
+                            &layer_rule.rules,
+                            None, // @layer 内层规则未进索引，全量匹配
+                            results,
+                            media_ctx,
+                            container_ctx,
+                            Some(layer_idx),
+                            layer_counter,
+                            pseudo,
+                        );
+                    }
+                    zero_css_parser::ast::Rule::Import(_) => {
+                        // @import 规则不参与样式匹配，跳过（实际导入由引擎处理）
+                    }
+                    zero_css_parser::ast::Rule::Supports(supports_rule) => {
+                        // @supports 规则：评估条件，条件为真时递归进入
+                        if evaluate_supports_condition(&supports_rule.condition) {
                             collect_from_rules(
                                 doc,
                                 element,
-                                inner_rules,
-                                None, // @media 内层规则未进索引，全量匹配
+                                &supports_rule.rules,
+                                None, // @supports 内层规则未进索引，全量匹配
                                 results,
                                 media_ctx,
                                 container_ctx,
@@ -2137,95 +2208,165 @@ fn collect_from_rules(
                                 pseudo,
                             );
                         }
-                        // 没有 media_ctx 时，@media 规则不应用（安全默认值）
-                    } else {
-                        // 非 @media 的通用 AtRule（@charset/@foo/@unknown 等）：未知 at-rule
-                        // 的 body **不得**作为样式应用（CSS：未知 at-rule 整体忽略，body 不
-                        // 参与 cascade）。@supports/@container/@layer 等已知条件 at-rule 各有
-                        // 专属 Rule 变体与处理分支（见下方 match），不进此通用 At 分支。
-                        // 旧实现对未知 at-rule body 无条件递归→body 内规则泄漏应用
-                        //（driving: at-rule-013 `@foo { #block { background: red; } }`）。
+                    }
+                    zero_css_parser::ast::Rule::Container(container_rule) => {
+                        // @container 规则：基于 ContainerContext 评估容器条件
+                        if evaluate_container_condition(container_rule, container_ctx) {
+                            collect_from_rules(
+                                doc,
+                                element,
+                                &container_rule.rules,
+                                None, // @container 内层规则未进索引，全量匹配
+                                results,
+                                media_ctx,
+                                container_ctx,
+                                current_layer,
+                                layer_counter,
+                                pseudo,
+                            );
+                        }
+                    }
+                    zero_css_parser::ast::Rule::FontFace(_) => {
+                        // @font-face 规则不参与样式匹配（自定义字体加载由 reftest/webview
+                        // 调用方在渲染前从 CSS 提取并注入 FontLoader），跳过。
+                    }
+                    zero_css_parser::ast::Rule::FontFeatureValues(_) => {
+                        // 文档级 font feature alias 由 StyleSystem 预扫描解析，不参与选择器匹配。
+                    }
+                    zero_css_parser::ast::Rule::Page(_) => {
+                        // @page 规则不参与元素级样式匹配（页尺寸为文档级，由 render pipeline
+                        // 从 CSS 提取并注入 print 分页），跳过。
+                    }
+                    zero_css_parser::ast::Rule::Property(_) => {
+                        // @property 规则不参与元素级选择器匹配（注册的自定义属性初值由
+                        // `compute_styles` 预扫描注入 `registered_properties`，在 var() 解析时
+                        // 作兜底默认值），跳过。
+                    }
+                    zero_css_parser::ast::Rule::CounterStyle(_) => {
+                        // @counter-style 规则不参与元素级选择器匹配（计数系统由 list-style
+                        // 消费层从 CSS 提取并注入），跳过。
                     }
                 }
             }
-            zero_css_parser::ast::Rule::Keyframes(_) => {
-                // @keyframes 规则不参与样式匹配，跳过
+        }
+        None => {
+            // 无索引（@media 内层规则）：全量遍历（旧行为，源码序天然成立）
+            for rule in rules {
+                if let zero_css_parser::ast::Rule::Style(style_rule) = rule {
+                    for selector in &style_rule.selectors {
+                        if collect_style_rule_decls(doc, element, style_rule, selector, results, current_layer, pseudo)
+                        {
+                            break; // 一个选择器匹配就够了
+                        }
+                    }
+                } else {
+                    self_at_rule_dispatch(
+                        doc,
+                        element,
+                        rule,
+                        results,
+                        media_ctx,
+                        container_ctx,
+                        current_layer,
+                        layer_counter,
+                        pseudo,
+                    );
+                }
             }
-            zero_css_parser::ast::Rule::Layer(layer_rule) => {
-                // @layer 规则：分配层索引并递归
-                let layer_idx = *layer_counter;
-                *layer_counter += 1;
+        }
+    }
+}
+
+/// 无索引路径的 At 规则分派（@media 内层 / @layer / @supports / @container 递归复用）。
+/// 仅处理非 Style 规则；Style 规则由调用方全量遍历处理（源码序）。
+#[allow(clippy::too_many_arguments)]
+fn self_at_rule_dispatch(
+    doc: &Document,
+    element: NodeId,
+    rule: &zero_css_parser::ast::Rule,
+    results: &mut Vec<MatchingDecl>,
+    media_ctx: Option<&zero_css_parser::media_query::MediaContext>,
+    container_ctx: Option<&ContainerContext>,
+    current_layer: Option<usize>,
+    layer_counter: &mut usize,
+    pseudo: Option<&str>,
+) {
+    match rule {
+        zero_css_parser::ast::Rule::Style(_) => {}
+        zero_css_parser::ast::Rule::At(at_rule) => {
+            if let zero_css_parser::ast::AtRuleBody::Block(inner_rules) = &at_rule.body {
+                if at_rule.name.eq_ignore_ascii_case("media") {
+                    if let Some(ctx) = media_ctx
+                        && let Some(queries) = zero_css_parser::media_query::parse_media_query(&at_rule.prelude)
+                        && queries
+                            .iter()
+                            .any(|q| zero_css_parser::media_query::evaluate_media_query(q, ctx))
+                    {
+                        collect_from_rules(
+                            doc,
+                            element,
+                            inner_rules,
+                            None,
+                            results,
+                            media_ctx,
+                            container_ctx,
+                            current_layer,
+                            layer_counter,
+                            pseudo,
+                        );
+                    }
+                }
+            }
+        }
+        zero_css_parser::ast::Rule::Layer(layer_rule) => {
+            let layer_idx = *layer_counter;
+            *layer_counter += 1;
+            collect_from_rules(
+                doc,
+                element,
+                &layer_rule.rules,
+                None,
+                results,
+                media_ctx,
+                container_ctx,
+                Some(layer_idx),
+                layer_counter,
+                pseudo,
+            );
+        }
+        zero_css_parser::ast::Rule::Supports(supports_rule) => {
+            if evaluate_supports_condition(&supports_rule.condition) {
                 collect_from_rules(
                     doc,
                     element,
-                    &layer_rule.rules,
-                    None, // @layer 内层规则未进索引，全量匹配
+                    &supports_rule.rules,
+                    None,
                     results,
                     media_ctx,
                     container_ctx,
-                    Some(layer_idx),
+                    current_layer,
                     layer_counter,
                     pseudo,
                 );
             }
-            zero_css_parser::ast::Rule::Import(_) => {
-                // @import 规则不参与样式匹配，跳过（实际导入由引擎处理）
-            }
-            zero_css_parser::ast::Rule::Supports(supports_rule) => {
-                // @supports 规则：评估条件，条件为真时递归进入
-                if evaluate_supports_condition(&supports_rule.condition) {
-                    collect_from_rules(
-                        doc,
-                        element,
-                        &supports_rule.rules,
-                        None, // @supports 内层规则未进索引，全量匹配
-                        results,
-                        media_ctx,
-                        container_ctx,
-                        current_layer,
-                        layer_counter,
-                        pseudo,
-                    );
-                }
-            }
-            zero_css_parser::ast::Rule::Container(container_rule) => {
-                // @container 规则：基于 ContainerContext 评估容器条件
-                if evaluate_container_condition(container_rule, container_ctx) {
-                    collect_from_rules(
-                        doc,
-                        element,
-                        &container_rule.rules,
-                        None, // @container 内层规则未进索引，全量匹配
-                        results,
-                        media_ctx,
-                        container_ctx,
-                        current_layer,
-                        layer_counter,
-                        pseudo,
-                    );
-                }
-            }
-            zero_css_parser::ast::Rule::FontFace(_) => {
-                // @font-face 规则不参与样式匹配（自定义字体加载由 reftest/webview
-                // 调用方在渲染前从 CSS 提取并注入 FontLoader），跳过。
-            }
-            zero_css_parser::ast::Rule::FontFeatureValues(_) => {
-                // 文档级 font feature alias 由 StyleSystem 预扫描解析，不参与选择器匹配。
-            }
-            zero_css_parser::ast::Rule::Page(_) => {
-                // @page 规则不参与元素级样式匹配（页尺寸为文档级，由 render pipeline
-                // 从 CSS 提取并注入 print 分页），跳过。
-            }
-            zero_css_parser::ast::Rule::Property(_) => {
-                // @property 规则不参与元素级选择器匹配（注册的自定义属性初值由
-                // `compute_styles` 预扫描注入 `registered_properties`，在 var() 解析时
-                // 作兜底默认值），跳过。
-            }
-            zero_css_parser::ast::Rule::CounterStyle(_) => {
-                // @counter-style 规则不参与元素级选择器匹配（计数系统由 list-style
-                // 消费层从 CSS 提取并注入），跳过。
-            }
         }
+        zero_css_parser::ast::Rule::Container(container_rule)
+            if evaluate_container_condition(container_rule, container_ctx) =>
+        {
+            collect_from_rules(
+                doc,
+                element,
+                &container_rule.rules,
+                None,
+                results,
+                media_ctx,
+                container_ctx,
+                current_layer,
+                layer_counter,
+                pseudo,
+            );
+        }
+        _ => {}
     }
 }
 
