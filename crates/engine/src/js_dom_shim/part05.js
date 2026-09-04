@@ -3055,6 +3055,30 @@
         } catch (_eWAProto) {}
         return IframeAudioContext;
       })(),
+      // M3 第十八批（media-audio，2026-09-04）：iframe realm 的 OfflineAudioContext
+      // **绑定构造器**（AudioContext 同款——spec OfflineAudioContext 构造「not fully
+      // active → InvalidStateError」；offlineaudiocontext-detached-execution-context
+      // 断言 `new frame.contentWindow.OfflineAudioContext(1,1,8000)` 后 frame.remove()
+      // 再 decodeAudioData() 须 reject InvalidStateError）。产物印记 `_zwFrameEntry`
+      // 同款（part06 decodeAudioData 的 destroyed reject 面读取）。
+      OfflineAudioContext: (function () {
+        function IframeOfflineAudioContext(a, b, c) {
+          var entryWAO = frameKey ? _iframeDocCache[frameKey] : null;
+          if (!entryWAO || entryWAO._zwSwDestroyed) {
+            throw new (globalThis.DOMException || Error)(
+              "Failed to construct 'OfflineAudioContext': The associated Document is not fully active.",
+              'InvalidStateError');
+          }
+          var ctxWAO = new globalThis.OfflineAudioContext(a, b, c);
+          try { ctxWAO._zwFrameEntry = entryWAO; } catch (_eWAOEntry) {}
+          return ctxWAO;
+        }
+        try {
+          IframeOfflineAudioContext.prototype = globalThis.OfflineAudioContext.prototype;
+          Object.defineProperty(IframeOfflineAudioContext, 'prototype', { writable: false, configurable: false });
+        } catch (_eWAOProto) {}
+        return IframeOfflineAudioContext;
+      })(),
       // R302（js-dom M4）：iframe realm 的 MutationObserver 构造器（WPT
       // MutationObserver-cross-realm-callback-report-exception 的
       // `new frames[0].MutationObserver(...)`——旧 win 无此名 "not a

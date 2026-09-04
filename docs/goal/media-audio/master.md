@@ -2,7 +2,19 @@
 
 **入口文档**: [../media-audio.md](../media-audio.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-04（**WPT webaudio 第十七批——MediaStreamAudioDestinationNode
+**最后更新**: 2026-09-04（**WPT webaudio 第十八批（shim 面落地，驱动用例维持
+排除）**：① `decodeAudioData` 入口语义面（spec BaseAudioContext——detached 上下文
+（`_zwFrameEntry._zwSwDestroyed` 印记）→ InvalidStateError reject 优先；缺参/非
+ArrayBuffer → TypeError；headless 无宿主音频解码器 → EncodingError 诚实 stub）+
+Audio/Offline 双 prototype 共享；② part05 IframeOfflineAudioContext **绑定构造器**
+（AudioContext 同款——iframe realm 构造 + detached 抛 InvalidStateError + 印记）。
+单测 `test_webaudio_decode_audio_data_face_m3xviii`（两面）。**驱动用例
+offlineaudiocontext-detached-execution-context 维持排除（根因实证）**：用例经
+`document.createElementNS(...,'iframe')` 建 iframe——主文档 createElementNS 走
+`_zwMEl` plain-object 路径（R18/R174，js-dom M4 域），无 host handle → part04
+contentWindow get-trap 不命中 → `contentWindow` undefined（engine 桥探针实证：
+createElement 形态 'object' / createElementNS 形态 'undefined'）——依赖 js-dom
+createElementNS host 物化面修复后复评。此前同日：**WPT webaudio 第十七批——MediaStreamAudioDestinationNode
 语义面（38 用例 867P/0F = 100%）**：ctor-mediastreamaudiodestination 导入（全 task
 零渲染）——shim part06 落 `_zwWABuildMediaStreamDestination` builder + 构造器
 （ctx 校验 TypeError / options 非 object TypeError）+ createMediaStreamDestination

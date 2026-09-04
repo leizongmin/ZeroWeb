@@ -5244,3 +5244,66 @@ fn test_media_detached_document_play_face_m3xxxiv() {
         "detached video：pause → paused 翻回 + pause 事件（扩批 XXXIV）"
     );
 }
+
+#[test]
+fn test_webaudio_decode_audio_data_face_m3xviii() {
+    // M3 第十八批：decodeAudioData 入口语义面（spec BaseAudioContext——
+    // destroyed（iframe detached 印记）→ InvalidStateError reject 优先；
+    // 非 ArrayBuffer → TypeError；headless 无解码器 → EncodingError 诚实 stub）
+    // + MediaStreamAudioDestinationNode ctor 面（第十七批——1入0出 + explicit/
+    // speakers 缺省 + options channelCount 非固定 =7 合法）。
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+
+    // 断言组 1：AudioContext.decodeAudioData —— 缺参 TypeError / ArrayBuffer →
+    // EncodingError（headless 无解码器）；OfflineAudioContext.prototype 同名共享。
+    sandbox
+        .execute(
+            "var ctx = new AudioContext();\
+             var octx = new OfflineAudioContext(1, 1, 8000);\
+             globalThis.__r18a = [];\
+             function probeDAD(promise, key) {\
+               promise.then(function () { globalThis.__r18a.push(key + ':resolved'); },\
+                            function (e) { globalThis.__r18a.push(key + ':' + e.name); });\
+             }\
+             probeDAD(ctx.decodeAudioData(), 'noargs');\
+             probeDAD(ctx.decodeAudioData(new ArrayBuffer(4)), 'ab');\
+             probeDAD(octx.decodeAudioData(new ArrayBuffer(4)), 'oab');\
+             void 0;",
+        )
+        .unwrap();
+    // reject 回调经 microtask checkpoint 派发——execute 末 checkpoint 已排空
+    //（batch15 detached 面同款两段 execute 读结果）。
+    sandbox.execute("void 0").unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r18a.join('|')").unwrap().value,
+        "noargs:TypeError|ab:EncodingError|oab:EncodingError",
+        "decodeAudioData 缺参 TypeError + ArrayBuffer EncodingError（Audio/Offline 双 prototype，第十八批）"
+    );
+
+    // 断言组 2：MediaStreamAudioDestinationNode ctor 面——TypeError 三态（无参/
+    // 非法 ctx/非法 options）+ 缺省反射（1入0出/channelCount 2/explicit/speakers）
+    // + options channelCount=7 非固定可过 + stream 同对象。
+    sandbox
+        .execute(
+            "var octx2 = new OfflineAudioContext(1, 1, 48000);\
+             var errs2 = [];\
+             try { new MediaStreamAudioDestinationNode(); } catch (e) { errs2.push('noctx:' + e.name); }\
+             try { new MediaStreamAudioDestinationNode(1); } catch (e) { errs2.push('badctx:' + e.name); }\
+             try { new MediaStreamAudioDestinationNode(octx2, 42); } catch (e) { errs2.push('badopt:' + e.name); }\
+             var md = new MediaStreamAudioDestinationNode(octx2);\
+             var md7 = new MediaStreamAudioDestinationNode(octx2, {channelCount: 7});\
+             globalThis.__r18b = [errs2.join(','), String(md.numberOfInputs), String(md.numberOfOutputs), String(md.channelCount), md.channelCountMode, md.channelInterpretation, String(md7.channelCount), String(md.stream === md.stream), String(md instanceof MediaStreamAudioDestinationNode)].join('|');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r18b").unwrap().value,
+        "noctx:TypeError,badctx:TypeError,badopt:TypeError|1|0|2|explicit|speakers|7|true|true",
+        "MediaStreamAudioDestinationNode ctor 三态 + 缺省面 + options channelCount 非固定 + stream 同对象（第十七批）"
+    );
+}

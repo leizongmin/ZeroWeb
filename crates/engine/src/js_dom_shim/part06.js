@@ -7580,6 +7580,25 @@
     if (!isFinite(pt) || pt < 0) pt = 0;
     return { contextTime: ct, performanceTime: pt };
   };
+  // decodeAudioData（spec BaseAudioContext 入口语义面——M3 第十八批，2026-09-04）：
+  // ① 上下文 detached（_zwFrameEntry._zwSwDestroyed——batch15 同款印记）→ reject
+  // InvalidStateError（offlineaudiocontext-detached-execution-context 断言面）；
+  // ② 缺参/非 ArrayBuffer → TypeError；③ headless 无宿主音频解码器 → 有 bytes 即
+  // reject EncodingError（诚实 stub——真解码面随渲染/解码切片复评，RFC §0 注记）。
+  // https://webaudio.github.io/web-audio-api/#dom-baseaudiocontext-decodeaudiodata
+  function _zwWADecodeAudioData(buffer) {
+    var self = this;
+    if (_zwWADetachedReject(self)) {
+      return Promise.reject(new (globalThis.DOMException || Error)('Cannot decodeAudioData a context whose Document is not fully active.', 'InvalidStateError'));
+    }
+    if (!(buffer && typeof buffer === 'object' &&
+          (buffer instanceof (globalThis.ArrayBuffer || Object) ||
+           Object.prototype.toString.call(buffer) === '[object ArrayBuffer]'))) {
+      return Promise.reject(new TypeError("Failed to execute 'decodeAudioData' on 'BaseAudioContext': parameter 1 is not of type 'ArrayBuffer'."));
+    }
+    return Promise.reject(new (globalThis.DOMException || Error)('The buffer passed to decodeAudioData() could not be decoded.', 'EncodingError'));
+  }
+  AudioContext.prototype.decodeAudioData = _zwWADecodeAudioData;
   // OfflineAudioContext：构造 + 节点工厂兼容面（numberOfWorkers/length/sampleRate
   // 反射；**无离线渲染**——startRendering 返 rejected promise，RFC §0 简化记录）。
   // WPT audionode-connect-return-value 等构造面用例依赖。
@@ -7823,6 +7842,9 @@
     OfflineAudioContext.prototype.createBiquadFilter = AudioContext.prototype.createBiquadFilter;
     OfflineAudioContext.prototype.createAnalyser = AudioContext.prototype.createAnalyser;
     OfflineAudioContext.prototype.createPeriodicWave = AudioContext.prototype.createPeriodicWave;
+    // M3 第十八批：decodeAudioData 共享补接（spec BaseAudioContext 方法；
+    // detached-execution-context 用 iframe realm OfflineAudioContext 调用）。
+    OfflineAudioContext.prototype.decodeAudioData = AudioContext.prototype.decodeAudioData;
   }
   // AudioParam 接口（spec webaudio §AudioParam——`instanceof AudioParam` 断言面；
   // 最小值面 value + 调度方法 no-op 存储。param 调度真值化归后续切片）。
