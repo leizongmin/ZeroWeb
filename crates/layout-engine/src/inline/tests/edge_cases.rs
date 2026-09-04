@@ -2358,3 +2358,79 @@ fn test_r1022_ruby_excludes_rt_rp_from_inline_flow() {
         "rb 文本 + 尾文本应保留在 inline 流（实测 {all_text:?}）"
     );
 }
+
+/// R4034：仅含 nbsp（U+00A0）文本 run 的行盒保留 line-height 高度（CSS 2.1 §10.8.1——
+/// nbsp 是 preserved 内容，行盒高 = 行的 line-height）。旧实现 R57 尾处理用 `f.text.trim()`
+/// 判定「全可折叠空白」——Rust trim 按 White_Space 剔除 nbsp，把 nbsp 行盒误塌 0 高
+///（line-height-applies-to-004/014 行高 192 塌 0，corpus +10 修复面）。
+#[test]
+fn test_r4034_nbsp_only_line_keeps_line_height() {
+    let mut ctx = InlineFormattingContext::new(800.0);
+    let items = vec![InlineItem::Text(TextRun {
+        text: "\u{00A0}".to_string(),
+        node_id: NodeId::default(),
+        font_size: 16.0,
+        line_height: 192.0,
+        vertical_align: VerticalAlignValue::Baseline,
+        letter_spacing: 0.0,
+        word_spacing: 0.0,
+        margin_left: 0.0,
+        margin_right: 0.0,
+        padding_left: 0.0,
+        padding_right: 0.0,
+        padding_top: 0.0,
+        padding_bottom: 0.0,
+        border_top: 0.0,
+        border_bottom: 0.0,
+        is_ahem_font: false,
+        font_id: None,
+        is_rtl: false,
+        bidi_override: None,
+        is_plaintext_bidi: false,
+        ws_override: None,
+    })];
+    ctx.break_items_into_lines(items);
+
+    assert_eq!(ctx.lines.len(), 1, "nbsp 行应产生一个行盒");
+    assert!(
+        (ctx.lines[0].height - 192.0).abs() < 0.01,
+        "nbsp-only 行盒高度应 = line-height 192（preserved 内容 strut），实际 {}",
+        ctx.lines[0].height
+    );
+}
+
+/// R4034 对照锚：纯可折叠空白 run 的行盒仍塌 0 高（R57 行为不变——canvas-grid 等
+/// 既有绿面不回退）。
+#[test]
+fn test_r4034_collapsible_ws_only_line_still_collapses() {
+    let mut ctx = InlineFormattingContext::new(800.0);
+    let items = vec![InlineItem::Text(TextRun {
+        text: " ".to_string(),
+        node_id: NodeId::default(),
+        font_size: 16.0,
+        line_height: 192.0,
+        vertical_align: VerticalAlignValue::Baseline,
+        letter_spacing: 0.0,
+        word_spacing: 0.0,
+        margin_left: 0.0,
+        margin_right: 0.0,
+        padding_left: 0.0,
+        padding_right: 0.0,
+        padding_top: 0.0,
+        padding_bottom: 0.0,
+        border_top: 0.0,
+        border_bottom: 0.0,
+        is_ahem_font: false,
+        font_id: None,
+        is_rtl: false,
+        bidi_override: None,
+        is_plaintext_bidi: false,
+        ws_override: None,
+    })];
+    ctx.break_items_into_lines(items);
+
+    // 可折叠空白独占行：行盒塌 0 高（既有 R57 行为）
+    for line in &ctx.lines {
+        assert!(line.height <= 0.01, "纯可折叠空白行盒应塌 0 高，实际 {}", line.height);
+    }
+}

@@ -725,9 +725,13 @@ impl InlineFormattingContext {
             // 偏移的根因：2d.gradient.colorInterpolationMethod 等 ~15 用例）。
             // 空白 run 判定：trim 后为空 + 文本 run（font_size>0）+ 无水平 margin。
             // 同行有 canvas/文字等显著内容时保留高度（下方逐 run 累积不受影响）。
+            // R4034：空白判定须用可折叠白空间集合（is_collapsible_ws 排除 U+00A0）——
+            // Rust `trim()` 按 White_Space 属性剔除 nbsp，把仅含 `&nbsp;` 的行盒误判为
+            // 「全可折叠空白」塌 0 高（nbsp 是 preserved 内容，行盒高 = line-height；
+            // line-height-applies-to-004/014 的 2in 行 192 塌 0 实证）。
             let all_collapsible_ws = !line.runs.is_empty()
                 && line.runs.iter().all(|f| {
-                    (f.text.is_empty() || f.text.trim().is_empty())
+                    (f.text.is_empty() || f.text.chars().all(crate::inline::is_collapsible_ws))
                         && f.font_size > 0.0
                         && f.margin_left == 0.0
                         && f.margin_right == 0.0
