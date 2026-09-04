@@ -298,7 +298,15 @@ DONE 阻塞**；Mixer/重采样接线随设备切片可选推进）。
 - 复核（2026-09-04 治理整固后终审）：fresh 跑 874P/0F（39 文件）与本档记录
   一致；验证基线 evidence 链 16 文件全在盘。
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过
-- perf-gate（2026-09-03 本轮 shim 代码量积累后定向核查）：两轮全量 GATE FAIL 失败
+- perf-gate（2026-09-04 全量复核：webaudio 第 14~18 批 shim 积累后）——GATE FAIL
+  32/113 指标超预算，失败集横跨 12 crate（style-system/script-sandbox/webview/
+  browser-shell/protocol/net 等，无一在本次变更触达路径）。三层判据（2026-09-03
+  learning 同法）：① 失败集与 09-03 run A/B 轮换特征同族；② 隔离复测三样本全部
+  回预算内（cascade/500 76.2→37.8µs、sandbox_creation 1.53→0.93ms、
+  tab_creation_100 7.78→5.76µs，余量 1.1~2×）；③ 代码窗口核对——本会话变更
+  （shim 执行期注入/registry loop 标志/tab_worker 泵钟/computed_style video 分支）
+  均不触达失败指标敏感路径 → 判 ZRG 负载噪声（同族签名），不动基线不 relax。
+  此前（2026-09-03 本轮 shim 代码量积累后定向核查）：两轮全量 GATE FAIL 失败
   指标集完全轮换（零交集）+ 全部失败指标隔离复测 1.5~3.3× 余量回预算内 + 本轮
   变更不触达失败 crate 敏感路径（shim 仅 V8 执行期注入）→ 判 ZRG 负载噪声签名
   （ZRG-2026-08-22/23/24-01 同族），不动基线不 relax——判据沉淀
