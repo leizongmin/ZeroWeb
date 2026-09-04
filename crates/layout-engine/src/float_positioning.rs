@@ -438,6 +438,56 @@ pub(crate) fn shrink_inline_blocks_to_content(
                 if shrink_border_box + 0.5 < box_node.width {
                     box_node.width = shrink_border_box;
                     box_node.content_width = content_max_w;
+                    // 父 gate：仅 inline-block 族（§10.3.9-11 真 shrink-to-fit 容器）同步子宽。
+                    // R372 bg-inline 的收缩是 ZW 绘制近似（CSS 层子仍是 inline 语义），其「块级子」
+                    // 是 ZW 映射伪影，同步反而破坏 list-item/margin 链（008 等 5 案回归实证）。
+                    let parent_is_ib = box_node.node_id.and_then(|id| styles.get(&id)).is_some_and(|s| {
+                        matches!(
+                            s.display,
+                            DisplayValue::InlineBlock | DisplayValue::InlineFlex | DisplayValue::InlineGrid
+                        )
+                    });
+                    if parent_is_ib {
+                        // R4023（CSS2 §10.3.3 + §10.3.9）：inline-block shrink-to-fit 收缩自身后，
+                        // 其 in-flow 块级子的包含块宽随之变小——子 CSS width:auto 应 = 新内容宽
+                        //（taffy 第一趟按收缩前可用宽拉伸子到 784，之后无重排，子保持拉伸值；
+                        // 子带背景时溢出收缩后的父盒可见：inline-block-zorder-005 黄条 791）。
+                        // 仅同步「CSS width:auto 且当前宽 > 新内容宽」的块级子（收缩方向；显式宽、
+                        // inline-level 子、定位子不动），并同步 content_width 供后续 pass 使用。
+                        for child in &mut box_node.children {
+                            if child.is_absolute || child.is_fixed {
+                                continue;
+                            }
+                            let child_is_block = child.node_id.and_then(|id| styles.get(&id)).is_some_and(|s| {
+                                !matches!(
+                                    s.display,
+                                    DisplayValue::Inline
+                                        | DisplayValue::InlineBlock
+                                        | DisplayValue::InlineFlex
+                                        | DisplayValue::InlineGrid
+                                        | DisplayValue::InlineTable
+                                )
+                            });
+                            if !child_is_block {
+                                continue;
+                            }
+                            let child_auto_width = child
+                                .node_id
+                                .and_then(|id| styles.get(&id))
+                                .is_some_and(|s| matches!(s.width, LengthValue::Auto));
+                            if !child_auto_width {
+                                continue;
+                            }
+                            let child_frame =
+                                child.padding_left + child.padding_right + child.border_left + child.border_right;
+                            let target_border_box =
+                                content_max_w + child.margin_left + child.margin_right + child_frame;
+                            if child.width > target_border_box + 0.5 {
+                                child.width = target_border_box;
+                                child.content_width = (target_border_box - child_frame).max(0.0);
+                            }
+                        }
+                    }
                 }
             }
             // R1842 grow：inline-grid + width:auto 须确保容器宽 >= grid intrinsic（含 definite
