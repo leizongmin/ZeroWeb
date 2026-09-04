@@ -1,0 +1,156 @@
+{
+ "batch": "WPT webaudio 第十六批",
+ "date": "2026-09-04",
+ "topic": "convolver/analyser 零渲染候选——ConvolverNode 构造/属性/缓冲区校验面落地",
+ "imported": [
+  "webaudio/the-audio-api/the-convolvernode-interface/ctor-convolver.html",
+  "webaudio/the-audio-api/the-convolvernode-interface/convolver-setBuffer-null.html",
+  "webaudio/the-audio-api/the-convolvernode-interface/convolver-setBuffer-already-has-value.html",
+  "webaudio/the-audio-api/the-analysernode-interface/realtimeanalyser-basic.html"
+ ],
+ "shim_changes": [
+  "part06 _zwWABuildConvolver：ConvolverNode builder + `new ConvolverNode(ctx, options)` 构造器（_zwWANodeCtor 分发）+ createConvolver 工厂（工厂/构造器两向终结于 builder 防互调）",
+  "ConvolverNode 面：normalize 缺省 true（ctor options disableNormalization 反射 !disableNormalization）+ buffer 缺省 null + channelCount [1,2] 界（_zwWACtorChannel12 ctor dict 级 + _zwWAInstallChannel12Setter 双面）+ mode 'clamped-max' 缺省（'max' NotSupportedError/'foobar' TypeError）",
+  "buffer setter：sampleRate ≠ ctx.sampleRate → NotSupportedError + 重复赋值/null 清空不抛（setBuffer 族）+ 同对象反射",
+  "OfflineAudioContext 共享补接 createConvolver（后置共享块——前置块在 prototype 赋值前执行拿到 undefined，单测实证后修正）",
+  "AnalyserNode 零新增缺口：realtimeanalyser-basic 断言面（1入1出/-100/-30/0.8 缺省/可写）已由 ctor-analyser 覆盖"
+ ],
+ "totals": {
+  "pass": 863,
+  "total": 863,
+  "fail": 0,
+  "pass_rate": "863/863 = 100%"
+ },
+ "by_file": {
+  "webaudio/the-audio-api/the-audionode-interface/audionode-connect-return-value.html": {
+   "Pass": 1
+  },
+  "webaudio/the-audio-api/the-destinationnode-interface/destination.html": {
+   "Pass": 1
+  },
+  "webaudio/the-audio-api/the-oscillatornode-interface/ctor-oscillator.html": {
+   "Pass": 62
+  },
+  "webaudio/the-audio-api/the-gainnode-interface/ctor-gain.html": {
+   "Pass": 4
+  },
+  "webaudio/the-audio-api/the-stereopanner-interface/ctor-stereopanner.html": {
+   "Pass": 51
+  },
+  "webaudio/the-audio-api/the-delaynode-interface/ctor-delay.html": {
+   "Pass": 53
+  },
+  "webaudio/the-audio-api/the-biquadfilternode-interface/ctor-biquadfilter.html": {
+   "Pass": 5
+  },
+  "webaudio/the-audio-api/the-analysernode-interface/ctor-analyser.html": {
+   "Pass": 78
+  },
+  "webaudio/the-audio-api/the-periodicwave-interface/createPeriodicWaveInfiniteValuesThrows.html": {
+   "Pass": 2
+  },
+  "webaudio/the-audio-api/the-audioparam-interface/audioparam-exceptional-values.html": {
+   "Pass": 66
+  },
+  "webaudio/the-audio-api/the-audiobuffer-interface/audiobuffer.html": {
+   "Pass": 1
+  },
+  "webaudio/the-audio-api/the-gainnode-interface/gain-basic.html": {
+   "Pass": 7
+  },
+  "webaudio/the-audio-api/the-channelmergernode-interface/ctor-channelmerger.html": {
+   "Pass": 5
+  },
+  "webaudio/the-audio-api/the-channelsplitternode-interface/ctor-channelsplitter.html": {
+   "Pass": 5
+  },
+  "webaudio/the-audio-api/the-constantsourcenode-interface/ctor-constantsource.html": {
+   "Pass": 24
+  },
+  "webaudio/the-audio-api/the-audiobuffer-interface/audiobuffer-getChannelData.html": {
+   "Pass": 13
+  },
+  "webaudio/the-audio-api/the-audionode-interface/audionode.html": {
+   "Pass": 1
+  },
+  "webaudio/the-audio-api/the-audionode-interface/different-contexts.html": {
+   "Pass": 5
+  },
+  "webaudio/the-audio-api/the-waveshapernode-interface/ctor-waveshaper.html": {
+   "Pass": 54
+  },
+  "webaudio/the-audio-api/the-dynamicscompressornode-interface/ctor-dynamicscompressor.html": {
+   "Pass": 4
+  },
+  "webaudio/the-audio-api/the-dynamicscompressornode-interface/dynamicscompressor-basic.html": {
+   "Pass": 13
+  },
+  "webaudio/the-audio-api/the-pannernode-interface/ctor-panner.html": {
+   "Pass": 125
+  },
+  "webaudio/the-audio-api/the-iirfilternode-interface/iirfilter-basic.html": {
+   "Pass": 43
+  },
+  "webaudio/the-audio-api/the-biquadfilternode-interface/biquadfilternode-basic.html": {
+   "Pass": 29
+  },
+  "webaudio/the-audio-api/the-offlineaudiocontext-interface/ctor-offlineaudiocontext.html": {
+   "Pass": 44
+  },
+  "webaudio/the-audio-api/the-constantsourcenode-interface/constant-source-basic.html": {
+   "Pass": 4
+  },
+  "webaudio/the-audio-api/the-stereopanner-interface/stereopannernode-basic.html": {
+   "Pass": 15
+  },
+  "webaudio/the-audio-api/the-audiobuffersourcenode-interface/audiobuffersource-basic.html": {
+   "Pass": 18
+  },
+  "webaudio/the-audio-api/the-audiobuffersourcenode-interface/ctor-audiobuffersource.html": {
+   "Pass": 44
+  },
+  "webaudio/the-audio-api/the-audiocontext-interface/audiocontext-getoutputtimestamp.html": {
+   "Pass": 10
+  },
+  "webaudio/the-audio-api/the-audiocontext-interface/audiocontextoptions.html": {
+   "Pass": 41
+  },
+  "webaudio/the-audio-api/the-audiocontext-interface/suspend-after-construct.html": {
+   "Pass": 5
+  },
+  "webaudio/the-audio-api/the-audiocontext-interface/promise-methods-after-discard.html": {
+   "Pass": 3
+  },
+  "webaudio/the-audio-api/the-convolvernode-interface/ctor-convolver.html": {
+   "Pass": 6
+  },
+  "webaudio/the-audio-api/the-convolvernode-interface/convolver-setBuffer-null.html": {
+   "Pass": 8
+  },
+  "webaudio/the-audio-api/the-convolvernode-interface/convolver-setBuffer-already-has-value.html": {
+   "Pass": 12
+  },
+  "webaudio/the-audio-api/the-analysernode-interface/realtimeanalyser-basic.html": {
+   "Pass": 1
+  }
+ },
+ "unit_test": "test_webaudio_convolver_face_m3xxxi（engine js_dom_bridge_tests part09，两断言组）",
+ "excluded_after_review": {
+  "the-convolvernode-interface 余件": "convolution-mono-mono/convolver-channels/response-*/realtime-conv/upmixing/transferred-buffer-output/active-processing 全部 startRendering 渲染断言（DSP 卷积归 RFC §0）+ convolver-rendersizehint.https（非标准 rendersizehint）+ convolver-cascade（渲染对比）",
+  "the-analysernode-interface 余件": "test-analyser-*/realtimeanalyser-fft-*（getFloatFrequencyData/getByteFrequencyData 渲染量化面——FFT 分析归 RFC §0）+ test-analyser-resume-after-suspended（startRendering）+ rendersizehint（非标准）",
+  "the-periodicwave-interface": "periodicWave.html（startRendering，前批已记）",
+  "the-destinationnode-interface": "上游仅 destination.html（已导入）",
+  "the-mediaelementaudiosourcenode-interface": "MediaElementAudioSourceNode 全族——HTMLMediaElement ↔ WebAudio 互连域（mediaElementAudioSource 非最小面；cors-check/setSinkId 需 HTTPS+真设备）",
+  "the-mediastreamaudiosourcenode/-destinationnode-interface": "getUserMedia 域（RFC §0 不做清单）",
+  "the-scriptprocessornode-interface": "ScriptProcessorNode 已废弃 API（spec 已由 AudioWorklet 取代——RFC §0 worklet 不做）",
+  "the-audioworklet-interface": "AudioWorklet 面（RFC §0 不做清单，前批已记）",
+  "processing-model / media-playback-while-not-visible-permission-policy": "spec 处理模型渲染推进断言 / Permission Policy 域"
+ },
+ "gates": {
+  "make_test": "18866 passed 0 failed",
+  "clippy": "workspace -D warnings clean",
+  "webaudio_exit": 0,
+  "testharness_media": "598P/0F/24PF 零回归"
+ },
+ "wpt_rev": "315976933870b34d6ea30e3f6643403edae678ba"
+}

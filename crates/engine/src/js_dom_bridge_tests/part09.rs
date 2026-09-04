@@ -5098,3 +5098,65 @@ fn test_webaudio_detached_iframe_context_m3xxx() {
         "detached iframe 面构造 InvalidStateError + suspend/resume/close 全 reject InvalidStateError（第十五批）"
     );
 }
+
+/// M3 扩批 XVI（media-audio 第十六批）：ConvolverNode 构造/属性/缓冲区校验面
+///（spec §ConvolverNode——normalize true/buffer null 缺省 + [1,2] 界 ctor 双态 +
+/// mode 'max' NotSupportedError + buffer sampleRate 不匹配 NotSupportedError +
+/// 重复赋值/null 清空不抛；WPT ctor-convolver / convolver-setBuffer-null /
+/// convolver-setBuffer-already-has-value / realtimeanalyser-basic 断言面）。
+#[test]
+fn test_webaudio_convolver_face_m3xxxi() {
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+
+    // 断言组 1：缺省面 + ctor options——normalize true/buffer null/channelCount 2/
+    // mode 'clamped-max'；{channelCount:3}/{channelCount:0} → NotSupportedError、
+    // mode 'max' → NotSupportedError、'foobar' → TypeError、interpretation
+    // 'discrete' 反射。
+    sandbox
+        .execute(
+            "var ctx = new OfflineAudioContext(1, 1, 48000);\
+             var cv = new ConvolverNode(ctx);\
+             var errs = [];\
+             try { new ConvolverNode(ctx, {channelCount: 3}); } catch (e) { errs.push('cc3:' + e.name); }\
+             try { new ConvolverNode(ctx, {channelCount: 0}); } catch (e) { errs.push('cc0:' + e.name); }\
+             try { new ConvolverNode(ctx, {channelCountMode: 'max'}); } catch (e) { errs.push('max:' + e.name); }\
+             try { new ConvolverNode(ctx, {channelCountMode: 'foobar'}); } catch (e) { errs.push('fb:' + e.name); }\
+             var ci = new ConvolverNode(ctx, {channelInterpretation: 'discrete'});\
+             var noCtx = '';\
+             try { new ConvolverNode(); } catch (e) { noCtx = e.name; }\
+             globalThis.__r16a = [String(cv.normalize), String(cv.buffer), String(cv.channelCount), cv.channelCountMode, ci.channelInterpretation, noCtx, errs.join(',')].join('|');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r16a").unwrap().value,
+        "true|null|2|clamped-max|discrete|TypeError|cc3:NotSupportedError,cc0:NotSupportedError,max:NotSupportedError,fb:TypeError",
+        "ConvolverNode 缺省面 + ctor [1,2] 界/mode 校验四面 + 无 ctx TypeError（第十六批）"
+    );
+
+    // 断言组 2：buffer 校验面——sampleRate 不匹配 NotSupportedError（匹配不抛）+
+    // 重复赋值/null 清空往返不抛（setBuffer 族）+ buffer 同对象反射。
+    sandbox
+        .execute(
+            "var bufOk = ctx.createBuffer(1, 1, ctx.sampleRate);\
+             var bufBad = ctx.createBuffer(1, 1, ctx.sampleRate / 2);\
+             var cv2 = ctx.createConvolver();\
+             var errs2 = [];\
+             try { cv2.buffer = bufBad; } catch (e) { errs2.push('bad:' + e.name); }\
+             cv2.buffer = null; cv2.buffer = bufOk; cv2.buffer = bufOk; cv2.buffer = null; cv2.buffer = null; cv2.buffer = bufOk;\
+             var same = cv2.buffer === bufOk;\
+             var dn = new ConvolverNode(ctx, {buffer: bufOk, disableNormalization: true});\
+             globalThis.__r16b = [errs2.join(','), String(same), String(dn.normalize), String(dn.buffer === bufOk)].join('|');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r16b").unwrap().value,
+        "bad:NotSupportedError|true|false|true",
+        "ConvolverNode buffer sampleRate 校验 + 重复赋值/null 清空往返 + disableNormalization（第十六批）"
+    );
+}

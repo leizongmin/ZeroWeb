@@ -1775,6 +1775,17 @@ pub const WEBAUDIO_TEST_FILES: &[&str] = &[
     // + part06 suspend/resume/close detached reject 面 + part01 removeChild 挂钩的
     // destroyed 印记与 SW client 解挂解耦）。
     "webaudio/the-audio-api/the-audiocontext-interface/promise-methods-after-discard.html",
+    // ---- 第十六批（2026-09-04）：convolver/analyser 零渲染候选——ctor-convolver
+    //（5 W3CTH task：invalid ctor TypeError / 缺省属性 / AudioNodeOptions [1,2] 界
+    // + mode 校验 / nullable buffer / sampleRate 不匹配 NotSupportedError +
+    // disableNormalization 面）/ convolver-setBuffer-null + -already-has-value
+    //（buffer setter 重复赋值 + null 清空 audit 面）/ realtimeanalyser-basic
+    //（1入1出 + 缺省 -100/-30/0.8 + 可写面）。配套 shim：ConvolverNode builder
+    // + createConvolver 工厂（normalize/buffer sampleRate 校验 + channel12 界）。
+    "webaudio/the-audio-api/the-convolvernode-interface/ctor-convolver.html",
+    "webaudio/the-audio-api/the-convolvernode-interface/convolver-setBuffer-null.html",
+    "webaudio/the-audio-api/the-convolvernode-interface/convolver-setBuffer-already-has-value.html",
+    "webaudio/the-audio-api/the-analysernode-interface/realtimeanalyser-basic.html",
     // 不导入：constructor-allowed-to-start（test_driver.bless 用户手势 + 断言
     // 「构造后立即 'suspended' → onstatechange 异步转 'running'」——shim headless
     // 恒 'running' 近似与该异步状态机断言结构性互斥，bless stub 化后仍必 Fail；

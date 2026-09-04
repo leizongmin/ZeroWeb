@@ -105,6 +105,16 @@ WA_FILES=(
   # shim part05 IframeAudioContext 绑定构造器 + part06 detached reject 面 +
   # part01 _zwRemoveIframeWindowClient destroyed 印记解耦 SW client）。
   "webaudio/the-audio-api/the-audiocontext-interface/promise-methods-after-discard.html"
+  # ---- 第十六批（2026-09-04）：convolver/analyser 零渲染候选——ctor-convolver
+  #（构造/属性/ AudioNodeOptions/buffer 校验全 W3CTH 面）/ convolver-setBuffer-null
+  # / convolver-setBuffer-already-has-value（buffer setter 重复赋值 + null 清空
+  # audit 面）/ realtimeanalyser-basic（Analyser 1入1出 + min/maxDecibels/
+  # smoothingTimeConstant 缺省与可写面）。配套 shim：ConvolverNode builder +
+  # createConvolver 工厂（normalize/buffer/[1,2] 界 + sampleRate 校验）。
+  "webaudio/the-audio-api/the-convolvernode-interface/ctor-convolver.html"
+  "webaudio/the-audio-api/the-convolvernode-interface/convolver-setBuffer-null.html"
+  "webaudio/the-audio-api/the-convolvernode-interface/convolver-setBuffer-already-has-value.html"
+  "webaudio/the-audio-api/the-analysernode-interface/realtimeanalyser-basic.html"
   # 不导入：audioparam-method-chaining / audioparam-nominal-range（startRendering
   # 渲染断言——RFC §0 不做清单）；ctor-audiobuffer（末 task multiple contexts 依赖
   # startRendering——audit runner 整文件跑）；periodicWave.html（startRendering）；

@@ -2,7 +2,24 @@
 
 **入口文档**: [../media-audio.md](../media-audio.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-04（**WPT webaudio 第十五批——batch14 回归勘误 + detached 面
+**最后更新**: 2026-09-04（**WPT webaudio 第十六批——convolver/analyser 零渲染候选
+（36 用例 863P/0F）**：ctor-convolver（5 W3CTH task 全绿）/ convolver-setBuffer-null
+/ convolver-setBuffer-already-has-value / realtimeanalyser-basic 四件导入——
+**ConvolverNode 语义面落地**（shim part06：`_zwWABuildConvolver` builder +
+`new ConvolverNode(ctx, options)` 构造器 + createConvolver 工厂——normalize 缺省
+true（ctor options `disableNormalization` 反射）/ buffer 缺省 null + **sampleRate
+不匹配 NotSupportedError** + 重复赋值/null 清空往返不抛 + channelCount [1,2] 界
+（ctor dict 级 `_zwWACtorChannel12` + setter `_zwWAInstallChannel12Setter` 双面）+
+mode 'clamped-max' 缺省（'max' NotSupportedError / 'foobar' TypeError）；Offline
+共享补接 createConvolver——前置共享块在 prototype 赋值前执行拿 undefined，单测实证
+后改挂后置块）；realtimeanalyser-basic 零新增缺口（Analyser 缺省面 ctor-analyser
+已覆盖）。上游目录清点扩展：convolver/analyser 余件全 startRendering 渲染断言
+（DSP 卷积/FFT 量化归 RFC §0）+ MediaElementAudioSource 全族（media 互连域）+
+MediaStream 族（getUserMedia 域）+ ScriptProcessor（已废弃）+ worklet/processing-
+model/permission-policy——**the-audio-api 各接口目录清点收束**）。evidence：
+`evidence/2026-09-04-webaudio-convolver-batch16.json`；单测
+`test_webaudio_convolver_face_m3xxxi`；make test 18866/0；testharness-media
+598P/0F/24PF 零回归。此前 2026-09-04：**WPT webaudio 第十五批——batch14 回归勘误 + detached 面
 导入（32 用例 836P/0F）**：① constructor-allowed-to-start 勘误移除——第十四批误入
 清单（test_driver.bless 在 R142 unsupported 白名单外 → runner 判 Unsupported →
 make testharness-webaudio exit 1；且其断言「构造后 suspended → onstatechange 异步
@@ -295,6 +312,19 @@ volume/muted 真控制。**双重启动门控均已解除**：① M0 音频环�
   - 单测 `test_webaudio_detached_iframe_context_m3xxx`（detached 构造/三方法
     reject 四态）；make test 18865/0；testharness-media 598P/0F/24PF 零回归。
   - evidence：`evidence/2026-09-04-webaudio-detached-face-batch15.json`。
+- **WPT webaudio 第十六批（2026-09-04，convolver/analyser 零渲染候选——the-audio-api
+  各接口目录清点收束）**：
+  - **shim 落地 ConvolverNode 语义面**：`_zwWABuildConvolver` builder + 构造器 +
+    createConvolver 工厂——normalize true/buffer null 缺省 + ctor options
+    `disableNormalization` 反射 + buffer sampleRate 不匹配 NotSupportedError +
+    重复赋值/null 清空往返 + channelCount [1,2] 界 ctor/setter 双面 + mode
+    'clamped-max' 缺省校验；Offline 共享补接（前置块 undefined 教训——改挂后置
+    共享块）。
+  - **导入 4 用例**：ctor-convolver（5 task）/ convolver-setBuffer-null /
+    convolver-setBuffer-already-has-value / realtimeanalyser-basic（零新增缺口）。
+    **36 用例 863P/0F = 100%**（+27 净涨零回归——836→863）。
+  - 单测 `test_webaudio_convolver_face_m3xxxi`（两断言组）；make test 18866/0。
+  - evidence：`evidence/2026-09-04-webaudio-convolver-batch16.json`。
 - **WPT webaudio 第五批导入（同日，AudioBuffer 构造/接口面）**：
   - **shim part06 扩展**：`AudioBuffer` 构造器（独立构造不依赖 ctx）——
     length/sampleRate required 缺失 → TypeError（WebIDL dict required）；
@@ -434,17 +464,17 @@ DONE 阻塞**；Mixer/重采样接线随设备切片可选推进）。
 
 1. ~~**Web Audio 最小面实施（D1 已批准）**~~ 🔄 切片 1+2 ✅ 2026-09-02 落地
    （zero-media webaudio 模块 + shim AudioContext 门面 + __zwWA* 宿主桥 + 泵接线 +
-   e2e——见当前状态）；WPT webaudio 子集导入 ✅ 十五批（32 用例 836P/0F = 100%，
+   e2e——见当前状态）；WPT webaudio 子集导入 ✅ 十六批（36 用例 863P/0F = 100%，
    2026-09-04 收口——含 audit.js 框架接入 + ctor 全族 + AudioParam 异常面 +
    AudioBuffer/OfflineAudioContext 构造面 + AudioScheduledSourceNode 调度异常 +
    getOutputTimestamp + AudioContextOptions + detached/not-fully-active 面 +
-   batch14 constructor-allowed-to-start 勘误移除）；余：设备面挂 M1 CpalSink
-   真出声切片（D-WA-2）。
-   **接口语义族 headless 可导入面已吃尽（第十五批 the-audiocontext-interface
-   目录清点收束）**——余下用例全部依赖 startRendering 渲染量化面 /
-   AudioBufferSourceNode 播放推进面 / copyToChannel 数据面 / worklet / 用户手势 /
-   onstatechange 时序 / 真设备 sinkid / 跨源 iframe helper / bfcache 导航，随渲染
-   切片或设备切片复评。
+   ConvolverNode 语义面 + batch14 constructor-allowed-to-start 勘误移除）；余：
+   设备面挂 M1 CpalSink 真出声切片（D-WA-2）。
+   **接口语义族 headless 可导入面已吃尽（第十六批 the-audio-api 各接口目录
+   清点收束）**——余下用例全部依赖 startRendering 渲染量化面 / DSP 合成（卷积/
+   FFT）/ AudioBufferSourceNode 播放推进面 / copyToChannel 数据面 / worklet /
+   用户手势 / onstatechange 时序 / 真设备 sinkid / 跨源 iframe helper / bfcache
+   导航 / getUserMedia 域 / MediaElement 互连域，随渲染切片或设备切片复评。
 2. **M1 收口评估（余项收窄）**：Mixer 多源混音接线**决策注记（2026-09-01）**——
    现播放管线 per-entry NullSink 直连已覆盖多源并发语义面（per-source 增益/独立
    解码流/并发泵）；Mixer（M1 切片 3 组件，7 单测常驻）的价值在**单设备输出流的
@@ -468,9 +498,9 @@ DONE 阻塞**；Mixer/重采样接线随设备切片可选推进）。
 
 ## 验证基线
 
-- 测试基线：`make test` 全绿 18865（2026-09-04 组合树实测）；clippy 零警告
+- 测试基线：`make test` 全绿 18866（2026-09-04 组合树实测）；clippy 零警告
   （default 与 `--features audio-cpal` 双配置）
-- WPT webaudio：**32 用例 836P/0F = 100%**（2026-09-04 十五批累计——connect 返回值 +
+- WPT webaudio：**36 用例 863P/0F = 100%**（2026-09-04 十六批累计——connect 返回值 +
   destination + ctor-oscillator 62 + ctor-gain/stereopanner/delay/biquadfilter/
   analyser + createPeriodicWave 异常面 + audioparam-exceptional-values 66 +
   audiobuffer 面 + 第七批 ctor-channelmerger/channelsplitter/constantsource +
@@ -480,9 +510,11 @@ DONE 阻塞**；Mixer/重采样接线随设备切片可选推进）。
   ctor-offlineaudiocontext + 第十一批 constant-source-basic/
   stereopannernode-basic/audiobuffersource-basic + 第十二批
   ctor-audiobuffersource + 第十三批 audiocontext-getoutputtimestamp +
-  第十四批 audiocontextoptions/suspend-after-construct + **第十五批
-  promise-methods-after-discard**（constructor-allowed-to-start 第十五批勘误
-  移除）；the-audiocontext-interface 目录清点收束）；
+  第十四批 audiocontextoptions/suspend-after-construct + 第十五批
+  promise-methods-after-discard（constructor-allowed-to-start 第十五批勘误
+  移除）+ **第十六批 ctor-convolver/convolver-setBuffer-null/
+  convolver-setBuffer-already-has-value/realtimeanalyser-basic**；
+  the-audiocontext-interface + the-audio-api 各接口目录清点收束）；
   evidence：`evidence/2026-09-02-webaudio-wpt-subset.json`（首批）、
   `evidence/2026-09-02-webaudio-ctor-oscillator.json`（第二批）、
   `evidence/2026-09-02-webaudio-ctor-family.json`（第四批）、
@@ -495,7 +527,8 @@ DONE 阻塞**；Mixer/重采样接线随设备切片可选推进）。
   `evidence/2026-09-03-webaudio-source-semantics-batch11.json`（第十一批）、
   `evidence/2026-09-03-webaudio-ctor-buffersource-batch12.json`（第十二批）、
   `evidence/2026-09-03-webaudio-getoutputtimestamp-batch13.json`（第十三批）、
-  `evidence/2026-09-04-webaudio-detached-face-batch15.json`（第十五批）
+  `evidence/2026-09-04-webaudio-detached-face-batch15.json`（第十五批）、
+  `evidence/2026-09-04-webaudio-convolver-batch16.json`（第十六批）
 - NullSink 可观测锚点：440Hz 正弦 @48kHz 过零率 ≈880（2×频率；修正 M0 evidence
   的 ≈440 笔误——evidence 只追加不修改，以代码与本档为事实源）；暂停拒写计
   underrun；非整帧写入拒收

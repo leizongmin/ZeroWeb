@@ -7962,6 +7962,7 @@
     else if (nodeName === 'ConstantSourceNode') node = _zwWABuildConstantSource(ctx, options);
     else if (nodeName === 'AudioBufferSourceNode') node = _zwWABuildBufferSource(ctx, options);
     else if (nodeName === 'WaveShaperNode') node = _zwWABuildWaveShaper(ctx, options);
+    else if (nodeName === 'ConvolverNode') node = _zwWABuildConvolver(ctx, options);
     else if (nodeName === 'IIRFilterNode') node = _zwWABuildIIRFilter(ctx, options.feedforward, options.feedback);
     else if (nodeName === 'DynamicsCompressorNode') node = _zwWABuildDynamicsCompressor(ctx, options);
     else if (nodeName === 'PannerNode') node = _zwWABuildPanner(ctx, options);
@@ -8616,6 +8617,55 @@
   WaveShaperNode.prototype = _zwWANode.prototype;
   globalThis.WaveShaperNode = globalThis.WaveShaperNode || WaveShaperNode;
   AudioContext.prototype.createWaveShaper = function () { return _zwWABuildWaveShaper(this); };
+  // ConvolverNode（spec §ConvolverNode——卷积器语义面；DSP 卷积合成归 RFC §0
+  // 不做清单，此处仅构造/属性/缓冲区赋值校验面）。normalize 缺省 true、buffer
+  // 缺省 null；channelCount [1,2] 界 + mode 'clamped-max' 缺省（'max' →
+  // NotSupportedError——ctor-convolver 断言面）。buffer setter：AudioBuffer
+  // sampleRate ≠ ctx.sampleRate → NotSupportedError（ctor-convolver「illegal
+  // sample rate buffer」+ setBuffer 族——重复赋值/null 清空不抛）。
+  // https://webaudio.github.io/web-audio-api/#ConvolverNode
+  function _zwWABuildConvolver(ctx, options) {
+    var node = _zwWANode('convolver', ctx._zwCtxId, 0);
+    node._zwChannelCountMode = 'clamped-max';
+    _zwWAInstallChannel12Setter(node);
+    var _norm = true;
+    var _buf = null;
+    Object.defineProperty(node, 'normalize', {
+      get: function () { return _norm; },
+      set: function (v) { _norm = Boolean(v); },
+      configurable: true,
+    });
+    var _checkBuffer = function (b) {
+      if (b != null) {
+        if (typeof b !== 'object' || typeof b.sampleRate !== 'number' || typeof b.length !== 'number') {
+          throw new TypeError("Failed to set the 'buffer' property on 'ConvolverNode': The provided value is not of type 'AudioBuffer'.");
+        }
+        if (b.sampleRate !== ctx._zwSampleRate) {
+          throw new (globalThis.DOMException || Error)(
+            "Failed to set the 'buffer' property on 'ConvolverNode': buffer sample rate " + b.sampleRate + " does not match the context sample rate " + ctx._zwSampleRate + '.', 'NotSupportedError');
+        }
+      }
+      _buf = b || null;
+    };
+    Object.defineProperty(node, 'buffer', {
+      get: function () { return _buf; },
+      set: function (v) { _checkBuffer(v); },
+      configurable: true,
+    });
+    if (options && typeof options === 'object') {
+      // ctor dict 级 [1,2] 界 + mode 校验（{channelCount:0/3/99} →
+      // NotSupportedError、mode 'max' → NotSupportedError、'foobar' → TypeError
+      // ——ctor-convolver AudioNodeOptions 断言面）。
+      _zwWACtorChannel12('ConvolverNode', options);
+      if (options.buffer !== undefined) _checkBuffer(options.buffer);
+      if (options.disableNormalization !== undefined) _norm = !options.disableNormalization;
+    }
+    return node;
+  }
+  function ConvolverNode(ctx, options) { return _zwWANodeCtor('ConvolverNode', ctx, options); }
+  ConvolverNode.prototype = _zwWANode.prototype;
+  globalThis.ConvolverNode = globalThis.ConvolverNode || ConvolverNode;
+  AudioContext.prototype.createConvolver = function () { return _zwWABuildConvolver(this); };
   // DynamicsCompressorNode（spec §——threshold -24 / knee 30 / ratio 12 /
   // attack 0.003 / release 0.25 五 AudioParam + reduction **number** 缺省 0
   //（非 AudioParam——dynamicscompressor-basic typeof 断言面）；channelCount [1,2]
@@ -8983,6 +9033,7 @@
     OfflineAudioContext.prototype.createDynamicsCompressor = AudioContext.prototype.createDynamicsCompressor;
     OfflineAudioContext.prototype.createPanner = AudioContext.prototype.createPanner;
     OfflineAudioContext.prototype.createIIRFilter = AudioContext.prototype.createIIRFilter;
+    OfflineAudioContext.prototype.createConvolver = AudioContext.prototype.createConvolver;
   }
   if (typeof globalThis.OfflineAudioContext !== 'undefined') {
     OfflineAudioContext.prototype.createConstantSource = AudioContext.prototype.createConstantSource;
