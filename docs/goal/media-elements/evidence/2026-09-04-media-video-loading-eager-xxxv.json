@@ -1,0 +1,29 @@
+{
+ "batch": "media-elements M3 扩批 XXXV",
+ "date": "2026-09-04",
+ "topic": "the-video-element 目录清点——video-loading-eager 导入（loading=eager 立即加载面）+ 余件定性",
+ "imported": [
+  "html/semantics/embedded-content/the-video-element/video-loading-eager.html"
+ ],
+ "asset": "media/A4.webm（97KB，上游 pinned rev 原件）",
+ "triage": {
+  "video-tabindex / video_crash_empty_src": "已导入（扩批 IV/VIII）——本轮核对无新面",
+  "video-loading-eager": "导入——headless settle 无视口 gate，加载即数据可用（loading='eager' 语义即本实现形态）；video.loading IDL setter 反射不抛",
+  "video-loading-lazy-* / -load-deferred / -autoplay-deferred / -poster-deferred": "维持排除——lazy 系断言「视口外不加载」（readyState 恒 HAVE_NOTHING）与 eager-by-default 实现互斥；lazy-loading 视口交叉观测深结构项",
+  "video-loading-load-preload-auto-deferred / -metadata-deferred": "同上（preload=auto/metadata defer 语义，随 lazy-loading 支撑面）",
+  "video_initially_paused / video_poster_* / video-transparent-controls / video_size_preserved_after_ended": "reftest/渲染呈现面（poster/controls 视觉）或已排除（XXXIII 注记）",
+  "video_timeupdate_on_seek": "WPT CGI 慢资源端点（timeout_on_seek.py）——runner 无服务端管道",
+  "video-import-to-inactive-document-crash / resize-during-playback / video-loading-lazy-in-scroller": "inactive document 导入深结构 / resize 事件渲染面 / 视口滚动观测面",
+  "rendersizehint-smoke-tests.https.html（the-audio-api）": "非标准 rendersizehint，前批已记"
+ },
+ "totals": {
+  "pass": 600,
+  "precondition_failed": 24,
+  "pass_rate": "600/624 = 96.15%（+1 净涨零回归）"
+ },
+ "gates": {
+  "make_test": "18867 passed 0 failed",
+  "clippy": "workspace -D warnings clean"
+ },
+ "wpt_rev": "315976933870b34d6ea30e3f6643403edae678ba"
+}

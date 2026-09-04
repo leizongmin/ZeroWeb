@@ -74,6 +74,10 @@ fetch_raw "common/media.js"
 fetch_raw "html/semantics/embedded-content/the-audio-element/audio_constructor.html"
 # the-video-element 反射面（M3 扩批 IV：属性不凭空出现——UA 面不加 tabindex）。
 fetch_raw "html/semantics/embedded-content/the-video-element/video-tabindex.html"
+# M3 扩批 XXXV：loading=eager 立即加载面（loadeddata 到达——headless settle 无视口
+# gate，加载即数据可用；lazy 系 defer 断言用例与 eager-by-default 实现互斥，维持
+# 不导入）。
+fetch_raw "html/semantics/embedded-content/the-video-element/video-loading-eager.html"
 # M3 扩批 VIII：空 src 容错面（about:blank/"" src → error 事件不 crash——
 # M3 扩批 II 的空 src 错误码语义 + 动态 .src= 模拟覆盖面）。
 fetch_raw "html/semantics/embedded-content/the-video-element/video_crash_empty_src.html"
@@ -435,6 +439,10 @@ MEDIA_FILES=(
   # vorbis → symphonia 面；sound_0.mp3 为对照/复用源）。
   "media/sound_0.mp3"
   "media/sound_5.oga"
+  # M3 扩批 XXXV：video-loading-eager 媒体源（loading=eager 立即加载 loadeddata
+  # 到达断言面；trickle(d2) pipe 参数 runner 无服务端 pipes，源字节直读即时 settle
+  # = eager 语义即本实现形态）。
+  "media/A4.webm"
 )
 for relative in "${MEDIA_FILES[@]}"; do
   fetch_raw "${relative}"

@@ -2,7 +2,17 @@
 
 **入口文档**: [../media-elements.md](../media-elements.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-04（**M3 扩批 XXXIV 落地**——play-in-detached-document 解除
+**最后更新**: 2026-09-04（**M3 扩批 XXXV 落地**——the-video-element 目录清点：
+video-loading-eager 导入（600P/0F/24PF = 96.15%，+1 净涨零回归）——loading=eager
+立即加载面（loadeddata 到达；headless settle 无视口 gate，eager 语义即本实现形态；
+video.loading IDL setter 反射 + media/A4.webm 资产入档）。**余件逐件定性**：
+video-tabindex/video_crash_empty_src 已导入（扩批 IV/VIII）；video-loading-lazy-*
+与 load/autoplay/poster-deferred 系维持排除（lazy 断言「视口外不加载」与
+eager-by-default 实现互斥——lazy-loading 视口交叉观测深结构项）；preload
+deferred 系同域；video_initially_paused/poster/transparent-controls 渲染呈现或
+reftest 面；video_timeupdate_on_seek WPT CGI 慢资源端点；resize-during-playback
+渲染事件面——**the-video-element 目录清点收束**。evidence：
+`evidence/2026-09-04-media-video-loading-eager-xxxv.json`。此前 2026-09-04：**M3 扩批 XXXIV 落地**——play-in-detached-document 解除
 排除导入（599P/0F/24PF = 96.15%，+1 净涨零回归）：**detached 文档媒体方法面**——
 根因勘误：此前排除注记「需 detached 文档播放时钟推进」定性不准（扩批 XXVII
 headless 时钟 + 周期 timeupdate 已就绪）；真缺口是主文档 media 方法装在 part03
@@ -758,10 +768,11 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
    剩余（~~play-in-detached-document~~ ✅ 扩批 XXXIV 兑现——detached 文档媒体
    方法面落地后解除排除；fragmented-mp4-end——MSE 面，归远期）；
    no-autoplay-audio-history-back（iframe+history+postMessage 导航深结构，
-   pause-move-to-other-document 同域排除）；the-video-element 反射余面
-   （video-loading-*
-   preload 语义族——视 lazy-loading 支撑面）。**headless 可导入面已在 95.9% 重饱和
-   （M3 扩批 XXXIV 后第十六次修正：96.15%）**——余下增量依赖兄弟目标解锁（真播放钟 →
+   pause-move-to-other-document 同域排除）；~~the-video-element 反射余面~~
+   （~~video-loading-* preload 语义族~~ ✅ 扩批 XXXV 清点——video-loading-eager
+   导入，lazy/preload-deferred 系与 eager-by-default 实现互斥维持排除，
+   **the-video-element 目录清点收束**）。**headless 可导入面已在 95.9% 重饱和
+   （M3 扩批 XXXV 后第十七次修正：96.15%）**——余下增量依赖兄弟目标解锁（真播放钟 →
    time-marches-on 余面）+ 深结构项（~~TextTrackList change 事件广播反向链~~ ✅
    扩批 XXI 兑现、cue 标记树解析——归渲染域远期）。
    ~~ready-states/autoplay.html~~ ✅ 扩批 XXIX 兑现（autoplaying flag 交互 +
