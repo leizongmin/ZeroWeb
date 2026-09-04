@@ -281,11 +281,13 @@ impl LayoutEngine {
                     }
                 }
                 if height_fix {
-                    // R4015b：replaced-collapse 的 height 侧用 default object size 高
-                    //（css-sizing-3：无固有高 → 150），文本叶 line-height 近似不适用
-                    //（004：svg 无固有尺寸 → 300×150）。
+                    // R4015b/R4016：replaced-collapse 的 height 侧——svg 有 attr/CSS 固有高
+                    // 时优先用之（009/023/030：height="50" attr = 固有高 50，default 150 错），
+                    // 无固有高回落 default object size 高 150（004：无任何尺寸来源 → 300×150）；
+                    // 文本叶 line-height 近似不适用（svg 无行盒语义）。
                     let h = if replaced_collapsed {
-                        crate::svg_default_size::SVG_DEFAULT_H
+                        crate::svg_default_size::svg_attr_intrinsic_height(b.node_id, doc, s)
+                            .unwrap_or(crate::svg_default_size::SVG_DEFAULT_H)
                     } else {
                         let (fs, lh) = crate::inline::resolve_font_metrics(Some(s));
                         lh.max(fs).max(1.0)

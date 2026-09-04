@@ -126,6 +126,36 @@ fn parse_attr_abs(v: &str) -> Option<f32> {
     t.parse::<f32>().ok().filter(|n| n.is_finite())
 }
 
+/// R4016：svg 的 attr/CSS 绝对固有高（height attr px 值 → CSS Px → None）。
+///
+/// R3929 replaced-collapse h 臂的固有高来源——`<svg height="50">`（仅 attr 高）的
+/// abspos 盒塌 0 时，高应回填固有 50 而非 default 150（009/023/030：used h=50）。
+/// 与 [`svg_default_used_size`] 的「attr/CSS abs 走既有路径」语义一致：本 helper 只
+/// 读取不参与 gate，% 高（50%）不在此解析（CB 链归深域，返回 None 落 default 150）。
+pub(crate) fn svg_attr_intrinsic_height(
+    node_id: Option<zero_dom::NodeId>,
+    doc: &zero_dom::Document,
+    style: &ComputedStyle,
+) -> Option<f32> {
+    let id = node_id?;
+    let node = doc.get(id)?;
+    let zero_dom::NodeKind::Element(elem) = &node.kind else {
+        return None;
+    };
+    if elem.local_name() != "svg" {
+        return None;
+    }
+    if let Some(h) = elem.get_attribute("height").as_deref().and_then(parse_attr_abs) {
+        return Some(h.max(0.0));
+    }
+    if let LengthValue::Px(v) = style.height {
+        if v.is_finite() && v >= 0.0 {
+            return Some(v as f32);
+        }
+    }
+    None
+}
+
 /// svg 是否有比例来源（viewBox 或 CSS aspect-ratio）。
 fn svg_has_ratio_source(elem: &ElementData, style: &ComputedStyle) -> bool {
     if style.aspect_ratio.is_some() {

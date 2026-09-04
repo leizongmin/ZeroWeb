@@ -197,3 +197,47 @@ fn r3935_outer_html_preserves_svg_presentation_attrs() {
     );
     assert!(s.contains(r#"fill="green""#), "fill attr 须保留: {s}");
 }
+
+/// R4016（CSS2 §10.3.8 + css-sizing-3 default object size）：abspos 无尺寸 svg 的
+/// taffy definite 尺寸（(b) 臂 300×150）不得被 inline-only remeasure 清 0——
+/// absolute-replaced-width-004 h 面（R4015b 遗留）。svg 子树（rect 等 SVG 元素）
+/// 不产行盒几何 → remeasure total_height=0 旧把盒从 150 减回 0，蓝色方块整体消失。
+#[test]
+fn r4016_abspos_svg_default_size_survives_inline_remeasure() {
+    let html = r#"<html><body style="margin:0">
+<div style="position: relative; width: 200px; height: 200px;">
+<div style="height: 110px; width: 288px;">
+<svg version="1.1" xmlns="http://www.w3.org/2000/svg" style="position: absolute;">
+<rect x="0" y="0" width="200" height="100" fill="blue" />
+</svg>
+</div>
+</div>
+</body></html>"#;
+    let (doc, result) = layout(html);
+    let sid = doc.get_elements_by_tag_name("svg").into_iter().next().expect("svg");
+    let (w, h) = find_box(&result.root, sid).expect("svg box");
+    assert!(
+        (w - 300.0).abs() < 1.0 && (h - 150.0).abs() < 1.0,
+        "R4016: abspos 无尺寸 svg 应保持 default object size 300×150，实际 {w}×{h}"
+    );
+}
+
+/// R4016 对照：attr 固有高（height=50）的 abspos svg 盒高保持 50——009/023/030
+/// （2.08% 簇）h 面（taffy attr 臂已设高，同被旧 remeasure 清 0）。
+#[test]
+fn r4016_abspos_svg_attr_height_survives_inline_remeasure() {
+    let html = r#"<html><body style="margin:0">
+<div style="position: relative; width: 200px; height: 200px;">
+<svg version="1.1" xmlns="http://www.w3.org/2000/svg" height="50" style="position: absolute;">
+<rect x="0" y="0" width="200" height="100" fill="blue" />
+</svg>
+</div>
+</body></html>"#;
+    let (doc, result) = layout(html);
+    let sid = doc.get_elements_by_tag_name("svg").into_iter().next().expect("svg");
+    let (w, h) = find_box(&result.root, sid).expect("svg box");
+    assert!(
+        (h - 50.0).abs() < 1.0,
+        "R4016: abspos attr height=50 的 svg 盒高应保持 50，实际 h={h} w={w}"
+    );
+}

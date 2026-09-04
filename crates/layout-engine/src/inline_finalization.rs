@@ -2052,6 +2052,7 @@ pub(crate) fn remeasure_inline_only_containers(
     //（img/canvas/inline-block）片段仍排除（无 ib_sizes 会误测）。
     if box_node.fragment_node_ids.is_some()
         && !has_floats
+        && !(box_node.is_replaced && (box_node.is_absolute || box_node.is_fixed))
         && box_node.inline_layout.is_none()
         && let Some(dom_id) = box_node.node_id
         && let Some(style) = styles.get(&dom_id)
@@ -2085,6 +2086,15 @@ pub(crate) fn remeasure_inline_only_containers(
         }
     } else if !has_floats
         && !box_node.is_r109_split
+        // R4016（CSS2 §10.3.8 + css-sizing-3 default object size）：**abspos 替换元素**
+        // 容器不走 inline-only remeasure——其尺寸由固有/attr/CSS/abspos sizing 决定
+        //（taffy/R4000 default object size），SVG 子元素不产行盒几何 → IFC total_height=0
+        // 曾把 abspos svg 盒从 150 清回 0（absolute-replaced-width-004/009/011/023/025/
+        // 030/032 + height-006/013/020 簇蓝色方块消失）。gate 须限定 abspos+replaced：
+        // 全 abspos 会破坏 unset-val-002（abspos 容器内 display:unset span 依赖 remeasure）；
+        // 全 replaced 会破坏 svgbox-fill-box / sharing-in-svg（in-flow inline svg 的行盒
+        // 语境仍依赖 remeasure）。
+        && !(box_node.is_replaced && (box_node.is_absolute || box_node.is_fixed))
         // R3992：并入态 run-in 不走 inline-only remeasure（内容归后继块 IFC，0 高 leaf）。
         && !is_merged_run_in
         && (has_inline_children || needs_dom_text_remeasure)
