@@ -757,3 +757,19 @@ track-active-cues 解除排除）**：
   架构保留（629 绿零回归）。
 - 诊断计数器清理（_zwTrackSchedDump 诊断钩子保留）。629P/0F/24PF = 96.32% 维持零回归；
   runner 契约 204 ok、clippy/fmt 干净。
+
+## 扩批 LI — runner 静态提交链 timer 集中排空（2026-09-05）
+
+- **精确归因升级**（L 轮「媒体任务后停摆」收窄为形态特异）：三组形态对照——
+  ① 动态 src=（run_page_scripts 窗口）canplaythrough 到达 ✓；
+  ② 静态 src + 动态重设 ✓；
+  ③ **纯静态 src 无动态交互** ✗——缺口 = runner 静态提交链 execute 的 20ms 单次 drain 窗口
+  未及排空 setTimeout 链（host 线程 send 与 pending_timer_callbacks 计数竞态），媒体任务
+  （canplaythrough 等）滞留队列。
+- **修复落地**：webview `pub fn drain_pending_timers_until_idle(timeout_ms)`（pub 包装排空
+  pending_timer_callbacks 队列，含注册→send 间隙竞态收尾；生产 tab_worker 自有事件循环 tick，
+  不依赖此入口零影响）+ runner 静态提交块后调用（500ms 上限）。纯静态形态探针实证
+  canplaythrough 到达 ✓。
+- **带 <track> 子形态**：drain 后 phase=2 卡住（all_loaded/tests 完成面与 track settle 的组合
+  时序，深一层）——track-remove-insert-ready-state 维持排除（组合时序切片待续）。
+- 629P/0F/24PF = 96.32% 维持零回归；runner 契约 204 ok、clippy/fmt 干净。

@@ -2,7 +2,18 @@
 
 **入口文档**: [../media-elements.md](../media-elements.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-05（**M3 扩批 L 落地**——track 触发链「断裂点」根因定位（负结果收口）：
+**最后更新**: 2026-09-05（**M3 扩批 LI 落地**——runner 静态提交链 timer 集中排空（部分闭环）：
+① **精确归因升级**（L 轮「媒体任务后停摆」收窄）：形态对照实验三组——「动态 src=」（run_page_scripts
+窗口）canplaythrough 到达 ✓ /「静态 src + 动态重设」✓ /「**纯静态 src 无动态交互**」✗——缺口 =
+**runner 静态提交链 execute 的 20ms 单次 drain 窗口**未及排空 setTimeout 链（线程 send 与 pending
+计数竞态），媒体任务滞留队列；
+② **修复落地**：webview 增 `pub fn drain_pending_timers_until_idle(timeout_ms)`（pub 包装排空
+pending_timer_callbacks 队列；生产 tab_worker 自有事件循环 tick 零影响）+ runner 静态提交块后调用
+（500ms 上限）——纯静态形态探针实证 canplaythrough 到达 ✓；
+③ **带 <track> 子形态的 drain 后 phase=2 卡住**（all_loaded/tests 完成面与 track settle 的组合时序，
+深一层）——track-remove-insert-ready-state 维持排除（组合时序切片待续）。629P/0F/24PF = 96.32%
+维持零回归；runner 契约 204 ok、clippy/fmt 干净。
+此前 2026-09-05：**M3 扩批 L 落地**——track 触发链「断裂点」根因定位（负结果收口）：
 **runner 沙箱事件循环的「媒体任务后 drain」缺口**——dbg 链（bodyRun=0 + 探针自身
 setTimeout/Promise.then 在 canplaythrough 媒体任务后均不触发）实证该页面形态下媒体任务之后
 的页面异步（microtask/宏任务一律）全部停摆——**runner 域深结构**（事件循环 drain 面缺口），
@@ -349,7 +360,7 @@ currentSrc 的 source-child 插入触发（mutation 面）。
 （**M3 扩批 event_* 族 + 第二批 + III~X（2026-09-01）/ XI~XV（2026-09-02）/
   XVI~XVIII（2026-09-03）过程记录**——每批 shim 面/runner 面明细与排除注记——
   已归档至 [archive/2026-09-04_m3-batches-vii-to-xviii.md](archive/2026-09-04_m3-batches-vii-to-xviii.md)，
-  证据 JSON 序列见验证基线；累计口径 603P/0F/24PF = 96.17%。第 XIX~L 批
+  证据 JSON 序列见验证基线；累计口径 603P/0F/24PF = 96.17%。第 XIX~LI 批
   明细见头链（最新态）。）
 
 **里程碑归档（2026-09-01）**：M1~M3 与六轮扩批的过程记录、排除用例决策清单已归档至
@@ -565,6 +576,9 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
   断裂点待查——负结果并存）**629/653 = 96.32%** 维持零回归（Fail 0 / Timeout 0 / PF 24）
   → 扩批 L（2026-09-05，触发链「断裂点」根因定位——runner 沙箱事件循环「媒体任务后 drain」
   缺口（runner 域深结构）；track-remove-insert-ready-state 维持排除）**629/653 = 96.32%**
+  维持零回归（Fail 0 / Timeout 0 / PF 24）
+  → 扩批 LI（2026-09-05，静态提交链 timer 集中排空——drain_pending_timers_until_idle 修复
+  纯静态形态 canplaythrough 不达；带 <track> 子的组合时序切片待续）**629/653 = 96.32%**
   维持零回归（Fail 0 / Timeout 0 / PF 24）
 - 复核（2026-09-04 治理整固后终审）：fresh 跑 603P/0F/24PF（198 文件）与
   本档记录逐位一致；验证基线 evidence 链 26 文件全在盘；make test 18877/0。

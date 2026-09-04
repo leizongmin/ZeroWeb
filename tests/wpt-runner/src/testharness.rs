@@ -1579,12 +1579,12 @@ pub const MEDIA_TEST_FILES: &[&str] = &[
     "html/semantics/embedded-content/media-elements/track/track-element/track-selection-metadata.html",
     "html/semantics/embedded-content/media-elements/track/track-element/track-remove-track.html",
     "html/semantics/embedded-content/media-elements/track/track-element/track-cues-missed-no-immediate-events.html",
-    // track-remove-insert-ready-state 维持排除（L 轮根因定位）：用例形态（canplaythrough
-    // handler 内首 query）在 media 任务之后排的页面异步（microtask/宏任务一律）全部停摆
-    // ——runner 沙箱事件循环的「媒体任务后 drain」缺口（**runner 域深结构**，非媒体语义面；
-    // bodyRun=0/探针自身 setTimeout/Promise 均不触发的 dbg 实证链存档）。track 通道拆分
-    // （XLIX）与调度前置（XLVII）架构保留。track-mode-not-changed-by-new-track 维持
-    // 排除——身份对拍切片。
+    // track-remove-insert-ready-state 维持排除（LI 部分闭环）：runner 静态提交链 timer 集中
+    // 排空（drain_pending_timers_until_idle）修复「静态 src 无动态交互」形态的 canplaythrough
+    // 不达（纯静态探针实证 cpt 到达）——但**带 <track> 子**的同形态页面 drain 后 phase=2 卡住
+    //（all_loaded/tests 完成面与 track settle 的组合时序，深一层），该件首断言（handler 内
+    // track.readyState==ERROR）仍不可达。组合时序切片待续。track-mode-not-changed-by-new-track
+    // 维持排除——身份对拍切片。
     "html/semantics/embedded-content/media-elements/track/track-element/track-cues-cuechange-dynamically-created-track-element.html",
     "html/semantics/embedded-content/media-elements/track/track-element/track-disabled-addcue.html",
     "html/semantics/embedded-content/media-elements/track/track-element/track-insert-after-load.html",
@@ -3708,6 +3708,11 @@ fn run_testharness_html_inner(
             }
         }
         let _ = register_dynamic_media_sources(&mut webview, wpt_root, &mut media_byte_cache);
+        // M3 扩批 LI（2026-09-05）：静态提交链的 setTimeout 链集中排空——单次 execute 的
+        // 20ms drain 窗口可能未及排空整链（线程 send 与 pending 计数竞态），媒体任务
+        // （canplaythrough 等）滞留队列使「静态 src 无动态交互」形态的 handler 永不触发
+        //（L 轮 runner 域归因的修复面）。
+        webview.drain_pending_timers_until_idle(500);
     }
     if let Err(error) = script_result {
         // 无 testharness 引用的 crash/no-harness 用例只有在脚本执行完成且未崩溃时才可

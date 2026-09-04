@@ -2076,6 +2076,44 @@ impl WebView {
         Ok(())
     }
 
+    /// M3 扩批 LI（2026-09-05）：排空挂起的 host 定时器回调直至队列空/超时。
+    ///
+    /// runner 静态提交链（execute_script 触发的 media settle → 加载序列 setTimeout 链）的
+    /// 单次 20ms drain 窗口可能未及排空整链（线程 send 与 pending 计数竞态），后续媒体任务
+    /// （canplaythrough 等）滞留队列——测试宿主在静态提交后调用本方法集中排空。
+    /// 生产 tab_worker 路径有自己的事件循环 tick，不依赖此入口（零影响）。
+    pub fn drain_pending_timers_until_idle(&mut self, timeout_ms: u64) {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_millis(timeout_ms);
+        loop {
+            let queued = self.pending_timer_callbacks.load(Ordering::Acquire);
+            if queued == 0 {
+                // 队列计数为 0 仍短等一拍，收尾竞态窗口内迟到的注册（注册→send 间隙）。
+                match self.async_callback_rx.try_recv() {
+                    Ok((id, result)) => {
+                        if let Some(sandbox) = self.js_sandbox.as_mut() {
+                            sandbox.resolve_async_callback(&id, &result);
+                        }
+                        continue;
+                    }
+                    _ => {}
+                }
+                return;
+            }
+            if std::time::Instant::now() >= deadline {
+                return;
+            }
+            match self.async_callback_rx.recv_timeout(std::time::Duration::from_millis(5)) {
+                Ok((id, result)) => {
+                    if let Some(sandbox) = self.js_sandbox.as_mut() {
+                        sandbox.resolve_async_callback(&id, &result);
+                    }
+                }
+                Err(mpsc::RecvTimeoutError::Timeout) => {}
+                Err(mpsc::RecvTimeoutError::Disconnected) => return,
+            }
+        }
+    }
+
     fn drain_async_callbacks(&mut self) {
         let Some(sandbox) = self.js_sandbox.as_mut() else {
             return;
