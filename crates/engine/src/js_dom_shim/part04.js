@@ -558,7 +558,23 @@
             }
           } catch (_e139i) {}
         };
-        if ((prop === 'contentDocument' || prop === 'contentWindow') && _realTag(sel, handle) === 'IFRAME') {
+        // media-audio M3 第十八批补（2026-09-04）：createElementNS(HTMLNS,'iframe')
+        // 形态的 iframe——host tag store 对 ns handle 为空（CreateElementNS 不入
+        // _realTag 读的 tag 表，探针实证 __zw_get_tag_handle 返 ''）→ 恒 gate miss
+        // → contentWindow undefined（offlineaudiocontext-detached-execution-context
+        // 的构造路径）。回落 JS 侧 _nsHandles 元数据的 localName（HTML ns → ASCII
+        // 大小写不敏感，spec「HTML document + HTML ns 的元素是 HTML 元素」）。
+        // 与 part01 removeClientForNode 的 frame 移除 gate 同语义（两处 inline——
+        // part03 的 _realTag 为 closure 内层函数，跨 part 复用未达，探针实证）。
+        var _zwIframeTag = _realTag(sel, handle);
+        if (_zwIframeTag !== 'IFRAME' && handle && typeof _nsHandles !== 'undefined' && _nsHandles[handle]
+            && _nsHandles[handle].namespace === 'http://www.w3.org/1999/xhtml') {
+          var _zwNsLocal = String(_nsHandles[handle].qualifiedName || '');
+          var _zwNsColon = _zwNsLocal.indexOf(':');
+          if (_zwNsColon >= 0) _zwNsLocal = _zwNsLocal.slice(_zwNsColon + 1);
+          if (_zwNsLocal.toUpperCase() === 'IFRAME') _zwIframeTag = 'IFRAME';
+        }
+        if ((prop === 'contentDocument' || prop === 'contentWindow') && _zwIframeTag === 'IFRAME') {
           var _r115Entry = _iframeDocCache[key];
           if (!_r115Entry) {
             var _r115Src = '';

@@ -790,7 +790,18 @@
       if (nodeKey && seen[nodeKey]) return;
       if (nodeKey) seen[nodeKey] = true;
       try {
-        if ((nodeSel || nodeHandle) && _realTag(nodeSel, nodeHandle) === 'IFRAME') {
+        var _zwNodeTag = _realTag(nodeSel, nodeHandle);
+        // media-audio M3 第十八批续：createElementNS(HTMLNS,'iframe') 形态——host
+        // tag store 空（同 part04 contentWindow gate 注记），ns localName 回落，
+        // 使 frame 移除链同样置 destroyed 印记（decodeAudioData detached 面）。
+        if (_zwNodeTag !== 'IFRAME' && nodeHandle && typeof _nsHandles !== 'undefined' && _nsHandles[nodeHandle]
+            && _nsHandles[nodeHandle].namespace === 'http://www.w3.org/1999/xhtml') {
+          var _zwNsLocal1 = String(_nsHandles[nodeHandle].qualifiedName || '');
+          var _zwNsColon1 = _zwNsLocal1.indexOf(':');
+          if (_zwNsColon1 >= 0) _zwNsLocal1 = _zwNsLocal1.slice(_zwNsColon1 + 1);
+          if (_zwNsLocal1.toUpperCase() === 'IFRAME') _zwNodeTag = 'IFRAME';
+        }
+        if ((nodeSel || nodeHandle) && _zwNodeTag === 'IFRAME') {
           _zwRemoveIframeWindowClient(nodeKey);
           // R373（js-dom M4/DC-3）：frame detach 取消该 realm 的 AbortSignal.timeout
           // 定时器（spec `abortsignal-timeout` 定时器归属当前全局——iframe 移除后其

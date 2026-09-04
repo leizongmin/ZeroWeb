@@ -2,19 +2,22 @@
 
 **入口文档**: [../media-audio.md](../media-audio.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-04（**WPT webaudio 第十八批（shim 面落地，驱动用例维持
-排除）**：① `decodeAudioData` 入口语义面（spec BaseAudioContext——detached 上下文
-（`_zwFrameEntry._zwSwDestroyed` 印记）→ InvalidStateError reject 优先；缺参/非
-ArrayBuffer → TypeError；headless 无宿主音频解码器 → EncodingError 诚实 stub）+
-Audio/Offline 双 prototype 共享；② part05 IframeOfflineAudioContext **绑定构造器**
-（AudioContext 同款——iframe realm 构造 + detached 抛 InvalidStateError + 印记）。
-单测 `test_webaudio_decode_audio_data_face_m3xviii`（两面）。**驱动用例
-offlineaudiocontext-detached-execution-context 维持排除（根因实证）**：用例经
-`document.createElementNS(...,'iframe')` 建 iframe——主文档 createElementNS 走
-`_zwMEl` plain-object 路径（R18/R174，js-dom M4 域），无 host handle → part04
-contentWindow get-trap 不命中 → `contentWindow` undefined（engine 桥探针实证：
-createElement 形态 'object' / createElementNS 形态 'undefined'）——依赖 js-dom
-createElementNS host 物化面修复后复评。此前同日：**WPT webaudio 第十七批——MediaStreamAudioDestinationNode
+**最后更新**: 2026-09-04（**WPT webaudio 第十八批收口——驱动用例解除排除导入
+（39 用例 874P/0F = 100%）**：① `decodeAudioData` 入口语义面（spec BaseAudioContext
+——detached 上下文（`_zwFrameEntry._zwSwDestroyed` 印记）→ InvalidStateError reject
+优先；缺参/非 ArrayBuffer → TypeError；headless 无宿主音频解码器 → EncodingError
+诚实 stub）+ Audio/Offline 双 prototype 共享；② part05 IframeOfflineAudioContext
+**绑定构造器**（AudioContext 同款）；③ **createElementNS(HTMLNS,'iframe') 双 gate
+修复（根因勘误）**——前段注记「_zwMEl plain-object 路径无 host handle」不准：ns
+产物有 host handle（`__nN`），真缺口是 host tag store 对 ns handle 为空（探针实证
+`__zw_get_tag_handle('__n0')` 返 ''）→ part04 contentWindow get-trap 与 part01
+frame 移除链两个 `==='IFRAME'` gate 恒 miss（前者 contentWindow undefined、后者
+destroyed 印记不置位使 decodeAudioData 走 EncodingError 分支）。修复：两 gate 各
+inline `_nsHandles` HTML-ns localName 回落（ASCII 大写比对；helper 提取跨 part
+复用探针实证不可达后改双点 inline，注记互指）——零 host 变更、零 _zwMEl 路径变更。
+单测 `test_webaudio_decode_audio_data_face_m3xviii`（两面）+ 沙箱探针全链实证
+（destroyed=true → dad:InvalidStateError）。evidence：
+`evidence/2026-09-04-webaudio-detached-offline-batch18.json`。此前同日：**WPT webaudio 第十七批——MediaStreamAudioDestinationNode
 语义面（38 用例 867P/0F = 100%）**：ctor-mediastreamaudiodestination 导入（全 task
 零渲染）——shim part06 落 `_zwWABuildMediaStreamDestination` builder + 构造器
 （ctx 校验 TypeError / options 非 object TypeError）+ createMediaStreamDestination
@@ -490,9 +493,9 @@ DONE 阻塞**；Mixer/重采样接线随设备切片可选推进）。
 
 1. ~~**Web Audio 最小面实施（D1 已批准）**~~ 🔄 切片 1+2 ✅ 2026-09-02 落地
    （zero-media webaudio 模块 + shim AudioContext 门面 + __zwWA* 宿主桥 + 泵接线 +
-   e2e——见当前状态）；WPT webaudio 子集导入 ✅ 十七批（38 用例 867P/0F = 100%，
-   2026-09-04 收口——含 MediaStreamAudioDestinationNode ctor 面，
-   the-audio-api 全接口目录含 MediaStream 邻域清点收束——含 audit.js 框架接入 + ctor 全族 + AudioParam 异常面 +
+   e2e——见当前状态）；WPT webaudio 子集导入 ✅ 十八批（39 用例 874P/0F = 100%，
+   2026-09-04 收口——含 MediaStreamAudioDestinationNode ctor 面 +
+   OfflineAudioContext detached execution context 面，the-audio-api 全接口目录含 MediaStream 邻域清点收束——含 audit.js 框架接入 + ctor 全族 + AudioParam 异常面 +
    AudioBuffer/OfflineAudioContext 构造面 + AudioScheduledSourceNode 调度异常 +
    getOutputTimestamp + AudioContextOptions + detached/not-fully-active 面 +
    ConvolverNode 语义面 + batch14 constructor-allowed-to-start 勘误移除）；余：
@@ -527,7 +530,7 @@ DONE 阻塞**；Mixer/重采样接线随设备切片可选推进）。
 
 - 测试基线：`make test` 全绿 18866（2026-09-04 组合树实测）；clippy 零警告
   （default 与 `--features audio-cpal` 双配置）
-- WPT webaudio：**38 用例 867P/0F = 100%**（2026-09-04 十七批累计——connect 返回值 +
+- WPT webaudio：**39 用例 874P/0F = 100%**（2026-09-04 十八批累计——connect 返回值 +
   destination + ctor-oscillator 62 + ctor-gain/stereopanner/delay/biquadfilter/
   analyser + createPeriodicWave 异常面 + audioparam-exceptional-values 66 +
   audiobuffer 面 + 第七批 ctor-channelmerger/channelsplitter/constantsource +
@@ -542,7 +545,10 @@ DONE 阻塞**；Mixer/重采样接线随设备切片可选推进）。
   移除）+ **第十六批 ctor-convolver/convolver-setBuffer-null/
   convolver-setBuffer-already-has-value/realtimeanalyser-basic** +
   **第十七批 ctor-mediastreamaudiodestination**（MediaStreamAudioDestinationNode
-  语义面——the-audio-api 全接口目录含 MediaStream 邻域清点收束）；
+  语义面）+ **第十八批 offlineaudiocontext-detached-execution-context**
+  （decodeAudioData 入口语义 + IframeOfflineAudioContext 绑定 +
+  createElementNS iframe 双 gate 修复）——the-audio-api 全接口目录含
+  MediaStream 邻域清点收束；
   the-audiocontext-interface + the-audio-api 各接口目录清点收束）；
   evidence：`evidence/2026-09-02-webaudio-wpt-subset.json`（首批）、
   `evidence/2026-09-02-webaudio-ctor-oscillator.json`（第二批）、

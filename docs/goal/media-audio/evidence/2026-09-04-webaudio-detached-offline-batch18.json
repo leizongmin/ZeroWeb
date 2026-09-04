@@ -1,0 +1,21 @@
+{
+ "batch": "WPT webaudio 第十八批（续）",
+ "date": "2026-09-04",
+ "topic": "offlineaudiocontext-detached-execution-context 解除排除导入——createElementNS(HTMLNS,'iframe') contentWindow/frame-removal 双 gate 修复",
+ "context": "本批前段（decodeAudioData 入口语义面 + IframeOfflineAudioContext 绑定构造器）已以单测资产化落地，驱动用例因 createElementNS iframe contentWindow undefined 维持排除。本轮探针（engine 桥沙箱）逐环定位后解除。",
+ "root_cause_chain": [
+  "① part04 contentWindow/contentDocument get-trap gate：_realTag(sel,handle)==='IFRAME'——createElementNS 产物的 host tag store 为空（CreateElementNS 不入 __zw_get_tag_handle 读的表，探针实证 __zw_get_tag_handle('__n0') 返 ''）→ 恒 gate miss → contentWindow undefined",
+  "② part01 _zwRemoveIframeWindowClientForNode 的 frame 识别 gate 同语义——ns-iframe 移除后 destroyed 印记不置位 → decodeAudioData 走 EncodingError 分支（探针实证 destroyed=undefined → dad:EncodingError）"
+ ],
+ "fix": "两 gate 各 inline _nsHandles 元数据回落（HTML ns → qualifiedName 的 localName ASCII 大写比对 IFRAME——spec「HTML document + HTML ns 的元素是 HTML 元素」；与 part03 的 _realTag 为 closure 内层函数，跨 part 复用未达——helper 提取实证不可见后改双点 inline，注记互指）。零 host 变更、零 _zwMEl 路径变更——ns 元素其余行为不动",
+ "imported": [
+  "webaudio/the-audio-api/the-offlineaudiocontext-interface/offlineaudiocontext-detached-execution-context.html"
+ ],
+ "case_assertions": "createElementNS iframe realm OfflineAudioContext(1,1,8000) → frame.remove() → decodeAudioData(new ArrayBuffer(1)) reject InvalidStateError（audit 1 task）",
+ "totals": {
+  "pass": 874,
+  "fail": 0,
+  "pass_rate": "874/874 = 100%（867→874，+7 净涨零回归——含 audit 框架 task 行口径）"
+ },
+ "wpt_rev": "315976933870b34d6ea30e3f6643403edae678ba"
+}

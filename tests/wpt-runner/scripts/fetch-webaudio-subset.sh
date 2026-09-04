@@ -120,6 +120,11 @@ WA_FILES=(
   # interpretation speakers + options channelCount=7 非固定面）。配套 shim：
   # _zwWABuildMediaStreamDestination builder + 构造器/工厂（stream 反射最小面）。
   "webaudio/the-audio-api/the-mediastreamaudiodestinationnode-interface/ctor-mediastreamaudiodestination.html"
+  # ---- 第十八批续（2026-09-04）：OfflineAudioContext detached execution context——
+  # createElementNS(HTMLNS,'iframe') 形态 contentWindow gate 修复（part04 _nsHandles
+  # localName 回落）后解除排除；decodeAudioData destroyed reject 面（part06）+
+  # IframeOfflineAudioContext 绑定构造器（part05）。
+  "webaudio/the-audio-api/the-offlineaudiocontext-interface/offlineaudiocontext-detached-execution-context.html"
   # 不导入：audioparam-method-chaining / audioparam-nominal-range（startRendering
   # 渲染断言——RFC §0 不做清单）；ctor-audiobuffer（末 task multiple contexts 依赖
   # startRendering——audit runner 整文件跑）；periodicWave.html（startRendering）；
