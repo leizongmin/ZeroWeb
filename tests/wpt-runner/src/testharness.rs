@@ -1768,16 +1768,24 @@ pub const WEBAUDIO_TEST_FILES: &[&str] = &[
     // ---- 第十四批（2026-09-04）：the-audiocontext-interface 余件试导（门面 NullSink
     // 面可覆盖的 options/构造/suspend 形态；跑筛后定性保留或排除）。
     "webaudio/the-audio-api/the-audiocontext-interface/audiocontextoptions.html",
-    "webaudio/the-audio-api/the-audiocontext-interface/constructor-allowed-to-start.html",
     "webaudio/the-audio-api/the-audiocontext-interface/suspend-after-construct.html",
+    // ---- 第十五批（2026-09-04）：promise-methods-after-discard（iframe realm
+    // 构造 + frame.remove() 后 suspend/resume/close reject InvalidStateError——
+    // shim：part05 IframeAudioContext 绑定构造器（not fully active → InvalidStateError）
+    // + part06 suspend/resume/close detached reject 面 + part01 removeChild 挂钩的
+    // destroyed 印记与 SW client 解挂解耦）。
+    "webaudio/the-audio-api/the-audiocontext-interface/promise-methods-after-discard.html",
+    // 不导入：constructor-allowed-to-start（test_driver.bless 用户手势 + 断言
+    // 「构造后立即 'suspended' → onstatechange 异步转 'running'」——shim headless
+    // 恒 'running' 近似与该异步状态机断言结构性互斥，bless stub 化后仍必 Fail；
+    // R142 unsupported 白名单不含 bless，误入清单使 make testharness-webaudio
+    // exit 1——第十五批勘误移除）。
     // 不导入：ctor-audiobuffer.html（末 task「multiple contexts」依赖
     // startRendering——audit runner 整文件跑，前段构造面无法单独导入）；
     // audiobuffer-copy-channel（startRendering 后段同文件不可分割——数据面已落
     // shim，随渲染切片复评）；periodicWave.html（startRendering）。
     // 不导入：audioparam-method-chaining / audioparam-nominal-range（依赖
-    // startRendering 渲染断言——RFC §0 不做清单）；audiocontextoptions（设备
-    // baseLatency 档——前批已记）。
-    // audiocontextoptions 不导入：latencyHint double 档断言 Chromium 设备专用
+    // startRendering 渲染断言——RFC §0 不做清单）。
     // baseLatency 档位值（playbackLatency×10 → 0.8 恒等断言——Linux Chromium 实测
     // 档），headless 无设备延迟模型不可复现；构造/enum/double/sampleRange 语义面
     // 已落 shim（AudioContextOptions + close/suspend/resume + baseLatency），随设备

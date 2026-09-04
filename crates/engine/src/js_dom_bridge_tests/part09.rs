@@ -5042,3 +5042,59 @@ fn test_webaudio_processing_ctor_family2_m3xxvi() {
         "getOutputTimestamp AudioTimestamp 形状 + 有限非负（第十三批）"
     );
 }
+
+/// M3 扩批 XV（media-audio 第十五批）：AudioContext detached 面——iframe realm
+/// 绑定构造器（part05 IframeAudioContext：not fully active → InvalidStateError）、
+/// suspend/resume/close 的 destroyed reject 面（part06 `_zwWADetachedReject`）、
+/// part01 `_zwRemoveIframeWindowClient` 的 destroyed 印记与 SW client 解挂解耦
+/// （plain iframe 无 `_zwSwClientId` 同样置位）。断言面对应 WPT
+/// promise-methods-after-discard（3 subtest）。
+#[test]
+fn test_webaudio_detached_iframe_context_m3xxx() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<crate::js_dom_bridge::DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> =
+        Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    sandbox
+        .execute(
+            "var fr = document.createElement('iframe');\
+             document.body.appendChild(fr);\
+             var fwin = fr.contentWindow;\
+             var fctx = new fwin.AudioContext();\
+             fr.remove();\
+             globalThis.__names = [];\
+             function probeWAXV(promise, key) {\
+               promise.then(function () { globalThis.__names.push(key + ':fulfilled'); },\
+                            function (e) { globalThis.__names.push(key + ':' + e.name); });\
+             }\
+             probeWAXV(fctx.suspend(), 'suspend');\
+             probeWAXV(fctx.resume(), 'resume');\
+             probeWAXV(fctx.close(), 'close');\
+             globalThis.__ctorErr = '';\
+             try { new fwin.AudioContext(); } catch (e) { globalThis.__ctorErr = e.name; }\
+             void 0;",
+        )
+        .unwrap();
+    // reject 回调经 microtask checkpoint 派发——execute 末 checkpoint 已排空
+    //（part09 同款：play().then 面两段 execute 读结果）。
+    sandbox.execute("void 0").unwrap();
+    let detached = sandbox
+        .execute("globalThis.__ctorErr + '|' + globalThis.__names.join(',')")
+        .unwrap()
+        .value;
+    assert_eq!(
+        detached, "InvalidStateError|suspend:InvalidStateError,resume:InvalidStateError,close:InvalidStateError",
+        "detached iframe 面构造 InvalidStateError + suspend/resume/close 全 reject InvalidStateError（第十五批）"
+    );
+}

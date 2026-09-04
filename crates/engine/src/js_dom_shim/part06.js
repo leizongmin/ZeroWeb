@@ -7542,9 +7542,33 @@
     get: function () { return this._zwBaseLatency == null ? 0.005 : this._zwBaseLatency; },
     configurable: true,
   });
-  AudioContext.prototype.close = function () { return this._zwClose ? this._zwClose() : Promise.resolve(); };
-  AudioContext.prototype.suspend = function () { return this._zwSuspend ? this._zwSuspend() : Promise.resolve(); };
-  AudioContext.prototype.resume = function () { return this._zwResume ? this._zwResume() : Promise.resolve(); };
+  // detached 面共享件（media-audio M3 扩批 XV）：spec suspend/resume/close 入口
+  // 「not fully active → reject InvalidStateError」——iframe realm 构造的上下文
+  // 印记 `_zwFrameEntry`（part05 IframeAudioContext），帧移除后 entry.
+  // _zwSwDestroyed 置位（part01 removeChild 挂钩）→ 三方法全 reject。
+  // https://webaudio.github.io/web-audio-api/#dom-audiocontext-suspend
+  function _zwWADetachedReject(self) {
+    var entry = self && self._zwFrameEntry;
+    return !!(entry && entry._zwSwDestroyed);
+  }
+  AudioContext.prototype.close = function () {
+    if (_zwWADetachedReject(this)) {
+      return Promise.reject(new (globalThis.DOMException || Error)('Cannot close a context whose Document is not fully active.', 'InvalidStateError'));
+    }
+    return this._zwClose ? this._zwClose() : Promise.resolve();
+  };
+  AudioContext.prototype.suspend = function () {
+    if (_zwWADetachedReject(this)) {
+      return Promise.reject(new (globalThis.DOMException || Error)('Cannot suspend a context whose Document is not fully active.', 'InvalidStateError'));
+    }
+    return this._zwSuspend ? this._zwSuspend() : Promise.resolve();
+  };
+  AudioContext.prototype.resume = function () {
+    if (_zwWADetachedReject(this)) {
+      return Promise.reject(new (globalThis.DOMException || Error)('Cannot resume a context whose Document is not fully active.', 'InvalidStateError'));
+    }
+    return this._zwResume ? this._zwResume() : Promise.resolve();
+  };
   // getOutputTimestamp（spec §AudioContext.getOutputTimestamp——返回
   // AudioTimestamp {contextTime, performanceTime}，两值有限且 ≥ 0；headless
   // 无音频钟——contextTime 近似 currentTime 同源、performanceTime 同

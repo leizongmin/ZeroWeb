@@ -3025,6 +3025,36 @@
         return IframeAbortSignal;
       })(),
       AbortController: globalThis.AbortController,
+      // M3 扩批 XV（media-audio）：iframe realm 的 AudioContext **绑定构造器**——
+      // spec AudioContext 构造「context's relevant global object 的 associated
+      // Document 不是 fully active → 抛 InvalidStateError」
+      //（https://webaudio.github.io/web-audio-api/#dom-audiocontext-audiocontext）。
+      // WPT promise-methods-after-discard：`new frame.contentWindow.AudioContext()`
+      // 后 `frame.remove()`，再 suspend/resume/close 须 reject InvalidStateError。
+      // 旧 win 无此名（"not a constructor" TypeError → setup 失败全文件 F）。
+      // 帧活性判定：_iframeDocCache[frameKey]._zwSwDestroyed（part01
+      // _zwRemoveIframeWindowClient 在 removeChild 挂钩处置位——R373 同款拆除链）。
+      // 构造成功产物印记 `_zwFrameEntry`（part06 suspend/resume/close 的 detached
+      // reject 面）。R370 教训：构造期闭包读 `win`/`frameKey`（字面量求值完成后已
+      // 赋值，页面脚本期调用）。
+      AudioContext: (function () {
+        function IframeAudioContext(options) {
+          var entryWAC = frameKey ? _iframeDocCache[frameKey] : null;
+          if (!entryWAC || entryWAC._zwSwDestroyed) {
+            throw new (globalThis.DOMException || Error)(
+              "Failed to construct 'AudioContext': The associated Document is not fully active.",
+              'InvalidStateError');
+          }
+          var ctxWAC = new globalThis.AudioContext(options);
+          try { ctxWAC._zwFrameEntry = entryWAC; } catch (_eWAEntry) {}
+          return ctxWAC;
+        }
+        try {
+          IframeAudioContext.prototype = globalThis.AudioContext.prototype;
+          Object.defineProperty(IframeAudioContext, 'prototype', { writable: false, configurable: false });
+        } catch (_eWAProto) {}
+        return IframeAudioContext;
+      })(),
       // R302（js-dom M4）：iframe realm 的 MutationObserver 构造器（WPT
       // MutationObserver-cross-realm-callback-report-exception 的
       // `new frames[0].MutationObserver(...)`——旧 win 无此名 "not a

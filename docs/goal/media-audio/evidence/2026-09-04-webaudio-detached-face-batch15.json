@@ -1,0 +1,145 @@
+{
+ "batch": "WPT webaudio 第十五批",
+ "date": "2026-09-04",
+ "topic": "constructor-allowed-to-start 勘误移除（batch14 Unsupported 回归修复）+ promise-methods-after-discard 导入——AudioContext detached/not-fully-active 面",
+ "imported": [
+  "webaudio/the-audio-api/the-audiocontext-interface/promise-methods-after-discard.html"
+ ],
+ "removed": [
+  "webaudio/the-audio-api/the-audiocontext-interface/constructor-allowed-to-start.html（batch14 误入清单——test_driver.bless R142 白名单外 → Unsupported → make testharness-webaudio exit 1；且断言构造后 suspended→异步 running 与 shim headless 恒 running 结构性互斥，bless stub 化后仍必 Fail）"
+ ],
+ "shim_changes": [
+  "part05 IframeAudioContext：iframe realm 绑定构造器（R295/R373 同款）——frame 移除后（entry._zwSwDestroyed）构造抛 InvalidStateError；构造成功产物印记 _zwFrameEntry",
+  "part06 _zwWADetachedReject：AudioContext.prototype.suspend/resume/close 在 frame destroyed 后 reject InvalidStateError（spec not fully active 三方法入口语义）",
+  "part01 _zwRemoveIframeWindowClient：destroyed 印记与 SW client 解挂解耦（plain iframe 无 _zwSwClientId/无 SW host 桥同样置位——此前 host-fn 缺失时提前 return 使印记永不置位）"
+ ],
+ "shim_changes_scope_note": "iframe contentWindow 新增 AudioContext 名——非 webaudio 的既有 iframe 用例族不受影响（只增名不改既有键）；_zwRemoveIframeWindowClient 印记置位在 testharness-media 598P/0F/24PF 零回归实证",
+ "totals": {
+  "pass": 836,
+  "total": 836,
+  "fail": 0,
+  "pass_rate": "836/836 = 100%"
+ },
+ "by_file": {
+  "webaudio/the-audio-api/the-audionode-interface/audionode-connect-return-value.html": {
+   "Pass": 1
+  },
+  "webaudio/the-audio-api/the-destinationnode-interface/destination.html": {
+   "Pass": 1
+  },
+  "webaudio/the-audio-api/the-oscillatornode-interface/ctor-oscillator.html": {
+   "Pass": 62
+  },
+  "webaudio/the-audio-api/the-gainnode-interface/ctor-gain.html": {
+   "Pass": 4
+  },
+  "webaudio/the-audio-api/the-stereopanner-interface/ctor-stereopanner.html": {
+   "Pass": 51
+  },
+  "webaudio/the-audio-api/the-delaynode-interface/ctor-delay.html": {
+   "Pass": 53
+  },
+  "webaudio/the-audio-api/the-biquadfilternode-interface/ctor-biquadfilter.html": {
+   "Pass": 5
+  },
+  "webaudio/the-audio-api/the-analysernode-interface/ctor-analyser.html": {
+   "Pass": 78
+  },
+  "webaudio/the-audio-api/the-periodicwave-interface/createPeriodicWaveInfiniteValuesThrows.html": {
+   "Pass": 2
+  },
+  "webaudio/the-audio-api/the-audioparam-interface/audioparam-exceptional-values.html": {
+   "Pass": 66
+  },
+  "webaudio/the-audio-api/the-audiobuffer-interface/audiobuffer.html": {
+   "Pass": 1
+  },
+  "webaudio/the-audio-api/the-gainnode-interface/gain-basic.html": {
+   "Pass": 7
+  },
+  "webaudio/the-audio-api/the-channelmergernode-interface/ctor-channelmerger.html": {
+   "Pass": 5
+  },
+  "webaudio/the-audio-api/the-channelsplitternode-interface/ctor-channelsplitter.html": {
+   "Pass": 5
+  },
+  "webaudio/the-audio-api/the-constantsourcenode-interface/ctor-constantsource.html": {
+   "Pass": 24
+  },
+  "webaudio/the-audio-api/the-audiobuffer-interface/audiobuffer-getChannelData.html": {
+   "Pass": 13
+  },
+  "webaudio/the-audio-api/the-audionode-interface/audionode.html": {
+   "Pass": 1
+  },
+  "webaudio/the-audio-api/the-audionode-interface/different-contexts.html": {
+   "Pass": 5
+  },
+  "webaudio/the-audio-api/the-waveshapernode-interface/ctor-waveshaper.html": {
+   "Pass": 54
+  },
+  "webaudio/the-audio-api/the-dynamicscompressornode-interface/ctor-dynamicscompressor.html": {
+   "Pass": 4
+  },
+  "webaudio/the-audio-api/the-dynamicscompressornode-interface/dynamicscompressor-basic.html": {
+   "Pass": 13
+  },
+  "webaudio/the-audio-api/the-pannernode-interface/ctor-panner.html": {
+   "Pass": 125
+  },
+  "webaudio/the-audio-api/the-iirfilternode-interface/iirfilter-basic.html": {
+   "Pass": 43
+  },
+  "webaudio/the-audio-api/the-biquadfilternode-interface/biquadfilternode-basic.html": {
+   "Pass": 29
+  },
+  "webaudio/the-audio-api/the-offlineaudiocontext-interface/ctor-offlineaudiocontext.html": {
+   "Pass": 44
+  },
+  "webaudio/the-audio-api/the-constantsourcenode-interface/constant-source-basic.html": {
+   "Pass": 4
+  },
+  "webaudio/the-audio-api/the-stereopanner-interface/stereopannernode-basic.html": {
+   "Pass": 15
+  },
+  "webaudio/the-audio-api/the-audiobuffersourcenode-interface/audiobuffersource-basic.html": {
+   "Pass": 18
+  },
+  "webaudio/the-audio-api/the-audiobuffersourcenode-interface/ctor-audiobuffersource.html": {
+   "Pass": 44
+  },
+  "webaudio/the-audio-api/the-audiocontext-interface/audiocontext-getoutputtimestamp.html": {
+   "Pass": 10
+  },
+  "webaudio/the-audio-api/the-audiocontext-interface/audiocontextoptions.html": {
+   "Pass": 41
+  },
+  "webaudio/the-audio-api/the-audiocontext-interface/suspend-after-construct.html": {
+   "Pass": 5
+  },
+  "webaudio/the-audio-api/the-audiocontext-interface/promise-methods-after-discard.html": {
+   "Pass": 3
+  }
+ },
+ "unit_test": "test_webaudio_detached_iframe_context_m3xxx（engine js_dom_bridge_tests part09）",
+ "excluded_after_review": {
+  "audiocontext-suspend-resume": "task 1/2/4 是 OfflineAudioContext suspend/resume reject 语义面（可落 shim），但 task 3 硬依赖 startRendering 渲染完成置 closed——整文件不可分割，维持排除（随渲染切片复评）",
+  "audiocontext-detached-execution-context": "decodeAudioData 断言面——解码复用归 RFC §0 不做清单",
+  "audiocontext-not-fully-active": "iframe 跨源 helper（get-host-info.sub.js + remote-origin postMessage）+ not-fully-active helper 子框架——runner 无跨源 origin 域",
+  "audiocontext-playbackstats": "Chromium 专有 playbackStats API（非标准）",
+  "audiocontext-rendersizehint": "rendersizehint-testing.js helper 未 vendored + Chromium 专有 renderSizeHint 选项（非标准）",
+  "audiocontext-getoutputtimestamp-cross-realm": "双 realm getOutputTimestamp 性能钟单调对比——依赖真音频时钟递进（headless 无音频钟）+ iframe realm AudioContext 差一面",
+  "suspend-with-navigation": "bfcache 导航深结构（back-forward-cache helper + window.open noopener）",
+  "processing-after-resume.https": "AudioWorklet 面（RFC §0 不做清单）",
+  "audiocontext-suspend-resume-close": "startRendering 渲染面（同 suspend-resume task 3）",
+  "context-time-monotonic-on-setsinkid.https": "setSinkId 真设备域",
+  "audiocontext-sinkid-*": "setSinkId 真设备域",
+  "audiocontext-state-change-after-close": "window.js 姿态（promise_test window 链）——runner 形态外"
+ },
+ "gates": {
+  "make_test": "18865 passed 0 failed",
+  "clippy": "workspace -D warnings clean",
+  "webaudio_exit": 0
+ },
+ "wpt_rev": "315976933870b34d6ea30e3f6643403edae678ba"
+}

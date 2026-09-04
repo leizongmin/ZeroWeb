@@ -94,10 +94,17 @@ WA_FILES=(
   #（onstatechange 事件计数）、audiocontext-not-fully-active（iframe 跨源 helper
   # ——超出 webaudio runner 能力）；其余 audiocontext-* 依赖真设备 sinkid/渲染。
   "webaudio/the-audio-api/the-audiocontext-interface/audiocontext-getoutputtimestamp.html"
-  # ---- 第十四批（2026-09-04）：the-audiocontext-interface 余件试导。
+  # ---- 第十四批（2026-09-04）：the-audiocontext-interface 余件试导。不导入
+  # constructor-allowed-to-start（test_driver.bless + 「构造后 suspended → 异步
+  # running」断言——shim headless 恒 running 结构性互斥，误入清单曾使 runner
+  # Unsupported exit 1，第十五批勘误移除）。
   "webaudio/the-audio-api/the-audiocontext-interface/audiocontextoptions.html"
-  "webaudio/the-audio-api/the-audiocontext-interface/constructor-allowed-to-start.html"
   "webaudio/the-audio-api/the-audiocontext-interface/suspend-after-construct.html"
+  # ---- 第十五批（2026-09-04）：promise-methods-after-discard（iframe realm
+  # AudioContext + detached 后 suspend/resume/close reject InvalidStateError——
+  # shim part05 IframeAudioContext 绑定构造器 + part06 detached reject 面 +
+  # part01 _zwRemoveIframeWindowClient destroyed 印记解耦 SW client）。
+  "webaudio/the-audio-api/the-audiocontext-interface/promise-methods-after-discard.html"
   # 不导入：audioparam-method-chaining / audioparam-nominal-range（startRendering
   # 渲染断言——RFC §0 不做清单）；ctor-audiobuffer（末 task multiple contexts 依赖
   # startRendering——audit runner 整文件跑）；periodicWave.html（startRendering）；

@@ -766,11 +766,17 @@
     } catch (_e) {}
   }
   function _zwRemoveIframeWindowClient(key) {
-    if (!key || typeof __zw_sw_remove_window_client !== 'function') return;
+    if (!key) return;
     var entry = _iframeDocCache[key];
-    if (!entry || !entry._zwSwClientId) return;
-    try { __zw_sw_remove_window_client(String(entry._zwSwClientId)); } catch (_e) {}
-    entry._zwSwClientId = null;
+    if (!entry) return;
+    // M3 扩批 XV（media-audio）：destroyed 印记与 SW client 解挂解耦——非 SW 观察
+    // 的 plain iframe（无 _zwSwClientId/无 SW host 桥）同样要置位（frame 移除 →
+    // browsing context 丢弃 → spec「not fully active」，AudioContext 构造/三方法
+    // 异常面依赖）。host 解挂仅在 SW 桥在位时进行。
+    if (typeof __zw_sw_remove_window_client === 'function' && entry._zwSwClientId) {
+      try { __zw_sw_remove_window_client(String(entry._zwSwClientId)); } catch (_e) {}
+      entry._zwSwClientId = null;
+    }
     entry._zwSwDestroyed = true;
   }
   function _zwRemoveIframeWindowClientForNode(node) {
