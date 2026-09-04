@@ -930,11 +930,13 @@ pub(super) fn fix_abspos_height_content_keyword(box_node: &mut LayoutBox, styles
         {
             let content_top = child.padding_top + child.border_top;
             let pb = child.padding_top + child.padding_bottom + child.border_top + child.border_bottom;
-            let content_h = child
-                .children
-                .iter()
-                .map(|c| (c.y + c.height - content_top).max(0.0))
-                .fold(0.0_f32, f32::max);
+            // R4037（css-position-3 §3 abspos auto-size）：内容底改**子树递归**——中间层
+            // 百分比高子（height:100%）在 taffy 首趟因父高塌 0 而自身塌 0，其内容
+            // （固定高孙）溢出在外但直接子 bottom = 0，旧实现测得 content_h=0 不抬升
+            //（abspos-auto-sizing-fit-content-percentage ×17 @2.08% 同值簇：fit-content
+            // 语义下百分比子按 indefinite 解析，fit-content 应取到固定高孙的 100px）。
+            // fit-content/max-content 本就按全部内容度量——溢出的固定高后代照样贡献。
+            let content_h = subtree_content_bottom(child, content_top);
             let target = content_h + pb;
             if target > 0.0 && child.height < target - 0.5 {
                 child.height = target;
@@ -943,6 +945,20 @@ pub(super) fn fix_abspos_height_content_keyword(box_node: &mut LayoutBox, styles
         }
         fix_abspos_height_content_keyword(child, styles);
     }
+}
+
+/// R4037：子树内容底（相对 `content_top` 的 max(y+height)，仅 in-flow 可见盒）——
+/// 供 [`fix_abspos_height_content_keyword`] 度量 fit-content 内容高。跳过
+/// abspos/fixed 后代（脱流，不贡献固有高）。
+fn subtree_content_bottom(box_node: &LayoutBox, content_top: f32) -> f32 {
+    let mut bottom = (box_node.y + box_node.height - content_top).max(0.0);
+    for c in &box_node.children {
+        if c.is_absolute || c.is_fixed {
+            continue;
+        }
+        bottom = bottom.max(subtree_content_bottom(c, content_top));
+    }
+    bottom
 }
 
 pub(super) fn recenter_abspos_margin_auto_vertically(
