@@ -74,6 +74,10 @@ enum JsWorkerCommand {
     /// 后发送）。
     SetVideoPlayers {
         registry: std::sync::Arc<std::sync::Mutex<zero_webview::video_registry::VideoPlayerRegistry>>,
+        /// M3 切片 2（D4 获点名）：宿主泵时钟（renderer 主循环节拍 store）——桥 play
+        /// 的 nowMs=0 翻译为泵时钟现值（registry play 锚与泵 tick 同源；tab_worker
+        /// 泵时钟注入同款，扩批 XXV 的原点错位缺陷在 renderer 路径的消除）。
+        pump_clock: Option<std::sync::Arc<std::sync::atomic::AtomicU64>>,
     },
     SetWebAudio {
         registry: std::sync::Arc<std::sync::Mutex<zero_webview::webaudio_registry::WebAudioRegistry>>,
@@ -367,8 +371,11 @@ impl RendererJsWorker {
     pub fn set_video_players(
         &self,
         registry: std::sync::Arc<std::sync::Mutex<zero_webview::video_registry::VideoPlayerRegistry>>,
+        pump_clock: Option<std::sync::Arc<std::sync::atomic::AtomicU64>>,
     ) {
-        let _ = self.cmd_tx.send(JsWorkerCommand::SetVideoPlayers { registry });
+        let _ = self
+            .cmd_tx
+            .send(JsWorkerCommand::SetVideoPlayers { registry, pump_clock });
     }
 
     /// media-audio M3：注入 Web Audio 注册表（镜像 browser tab_js_worker 同名方法；
@@ -639,10 +646,17 @@ fn js_worker_main(
                 // P1b S3：注入 fetch handler（renderer 在 WebView 初始化后发送）。
                 fetch_bridge.set_handler(handler);
             }
-            JsWorkerCommand::SetVideoPlayers { registry } => {
+            JsWorkerCommand::SetVideoPlayers { registry, pump_clock } => {
                 // M2c 后续：注册宿主桥回调族 + 注入 __zwVideoBridge JS 门面（镜像
                 // browser tab_js_worker 同名分支——多进程路径媒体播放真值面）。
-                zero_webview::video_registry::register_video_bridge_callbacks(&mut *sandbox, registry, None, None);
+                // M3 切片 2（D4）：pump_clock 注入——桥 play 锚与 renderer 主循环
+                // 泵 tick 同源（扩批 XXV 原点错位缺陷的 renderer 路径消除）。
+                zero_webview::video_registry::register_video_bridge_callbacks(
+                    &mut *sandbox,
+                    registry,
+                    None,
+                    pump_clock,
+                );
             }
             JsWorkerCommand::SetWebAudio { registry } => {
                 // media-audio M3：注册 Web Audio 宿主桥（`__zwWA*` 回调族——多进程

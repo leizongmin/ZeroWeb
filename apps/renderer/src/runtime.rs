@@ -18,6 +18,7 @@ use crate::service_worker_host;
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 #[cfg(test)]
 use std::sync::mpsc;
 use std::sync::mpsc::{Receiver, RecvTimeoutError, TryRecvError};
@@ -194,6 +195,10 @@ pub(crate) struct RendererRuntime {
     executed_external_scripts: HashSet<String>,
     /// 进行中的非阻塞 IPC fetch（request_id → Receiver 完成端）。
     inflight_fetches: InflightIpcFetches,
+    /// media-playback D4（获点名 2026-09-05）：renderer 播放泵时钟原点（与桥 play
+    /// nowMs=0 同源——tab_worker pump_epoch 同契约）+ 泵毫秒钟（js_worker 桥注册）。
+    pump_epoch: std::time::Instant,
+    pump_clock: std::sync::Arc<AtomicU64>,
     /// in-process 测试无 browser 进程时，避免阻塞 IPC / 子资源永久 pending。
     stub_network: bool,
     /// P1a Slice 2b：observer host-tick 重入守卫——`publish_webview` 末尾触发 tick，tick 回调
@@ -298,7 +303,12 @@ impl RendererRuntime {
         // M2c 后续（镜像 browser tab_worker）：播放器注册表注入 js_worker——
         // `__zwVideoBridge` 宿主桥（多进程路径媒体播放真值面；async_load settle 写入
         // 与桥读取同一 Arc 实例）。
-        js_worker.set_video_players(webview.video_players());
+        // media-playback D4：泵时钟先于桥注册创建（原点 = 构造时刻）——桥 play 的
+        // nowMs=0 翻译为泵时钟现值，registry play 锚与主循环泵 tick 同源（tab_worker
+        // 泵时钟注入同款）。
+        let pump_clock: Arc<AtomicU64> = Arc::new(AtomicU64::new(0));
+        let pump_epoch = std::time::Instant::now();
+        js_worker.set_video_players(webview.video_players(), Some(Arc::clone(&pump_clock)));
         // media-audio M3（镜像 browser tab_worker）：Web Audio 注册表注入 js_worker——
         // `__zwWA*` 宿主桥（多进程路径 AudioContext 最小面 NullSink 可观测；
         // 音频泵 advance 在 renderer 主循环节拍，与 tab 路径 1ms 泵同构）。
@@ -327,6 +337,8 @@ impl RendererRuntime {
             compositor_publish,
             cached_html: String::new(),
             cached_css: String::new(),
+            pump_epoch,
+            pump_clock,
             js_worker,
             javascript_enabled: true,
             interaction: PageInteractionState::new(),
@@ -2453,6 +2465,52 @@ impl RendererRuntime {
 
             // R3254-M7'：drain 页面 JS focus()/blur() 变更（任意脚本执行均可产生，故每轮检查）。
             self.sync_focus_from_js();
+
+            // media-playback D4（获点名 2026-09-05，事件循环节拍——否决独立泵线程）：
+            // 播放帧/音频泵挂在 renderer 主循环节拍上（16ms recv 超时即节拍；镜像
+            // tab_worker 1ms 泵的 is_any_playing 门控——无播放时零开销）。帧更新则
+            // render + publish 上屏（renderer 路径「登记但不推进」现状的消除——
+            // 2026-09-02 深结构缺口块的修复面）。
+            {
+                let any_playing = self
+                    .webview
+                    .as_ref()
+                    .map(|wv| {
+                        wv.video_players()
+                            .lock()
+                            .map(|reg| reg.is_any_playing())
+                            .unwrap_or(false)
+                    })
+                    .unwrap_or(false);
+                if any_playing {
+                    let now_ms = self.pump_epoch.elapsed().as_millis() as u64;
+                    self.pump_clock.store(now_ms, Ordering::Relaxed);
+                    let changed = self
+                        .webview
+                        .as_mut()
+                        .map(|wv| {
+                            let changed = {
+                                // 音频实时节奏解码（NullSink 写入；增益联动）——
+                                // 不改变帧内容，不触发重渲染。
+                                let players = wv.video_players();
+                                let mut reg = players.lock().expect("video registry");
+                                let frames = reg.tick_all(now_ms, wv.image_cache());
+                                reg.audio_advance_all(now_ms);
+                                frames
+                            };
+                            // Web Audio 图推进（同一节拍；无活跃源时 advance 内部
+                            // 快速门零开销——tab_worker 同面）。
+                            if let Ok(mut wa) = wv.webaudio().lock() {
+                                wa.advance(now_ms);
+                            }
+                            changed
+                        })
+                        .unwrap_or(false);
+                    if changed && self.webview.as_ref().is_some_and(|wv| wv.last_render().is_some()) {
+                        self.try_republish_cached()?;
+                    }
+                }
+            }
 
             match self.recv_next_or_timeout(LOAD_TICK_INTERVAL) {
                 Ok(Some(msg)) => {
