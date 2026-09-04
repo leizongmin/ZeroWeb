@@ -1,0 +1,27 @@
+{
+ "batch": "media-elements M3 扩批 XXXIV",
+ "date": "2026-09-04",
+ "topic": "play-in-detached-document 解除排除导入——detached 文档（createHTMLDocument 产物树）媒体方法面",
+ "imported": [
+  "html/semantics/embedded-content/media-elements/playing-the-media-resource/play-in-detached-document.html"
+ ],
+ "root_cause": "主文档 media 元素方法装在 part03 get trap（R2835，_realTag AUDIO/VIDEO 门）——_zwMEl（detached doc 元素，plain object 无 trap）产物 `v.play` 恒 undefined → 用例 setup 即 TypeError。此前排除注记「需 detached 文档播放时钟推进」定性不准：扩批 XXVII headless 时钟 + 周期 timeupdate 已就绪，真正缺口是 detached 元素的方法面。",
+ "shim_changes": [
+  "part03 _zwMEl：AUDIO/VIDEO 分支——play/pause/load/canPlayType 方法 + paused/currentTime/duration/src IDL defineProperty；状态入 _mediaState（synthetic key '#dmN' 序号，_zwEl 直指节点 + _zwDetached 印记）",
+  "detached settle 近似：src setter 触发 media load 算法的 headless 形态（重置 + setTimeout(0) 补跑 readyState 1→4 加载事件序 loadstart/progress/durationchange/loadedmetadata/loadeddata/canplay/canplaythrough；autoplay 属性续派 play/playing）",
+  "part06 march 周期 timeupdate：detached 条目（_zwDetached + _zwEl）经 _zwEl.dispatchEvent 直接派发（sel/handle 通路对 detached 形态不可用）；headless 时钟推进复用主路径（非 bridgeOn 分支）"
+ ],
+ "totals": {
+  "pass": 599,
+  "precondition_failed": 24,
+  "pass_rate": "599/623 = 96.15%（+1 净涨零回归）"
+ },
+ "unit_test": "test_media_detached_document_play_face_m3xxxiv（engine js_dom_bridge_tests part09——paused 初值/play Promise/play+playing 事件序/currentTime setter timeupdate 同步派发/pause 面）",
+ "gates": {
+  "make_test": "18867 passed 0 failed",
+  "clippy": "workspace -D warnings clean",
+  "testharness_media": "599P/0F/24PF"
+ },
+ "maintained_exclusions": "playing-the-media-resource 余面（fragmented-mp4-end MSE 远期；no-autoplay-audio-history-back / pause-move-to-other-document 导航深结构）不变",
+ "wpt_rev": "315976933870b34d6ea30e3f6643403edae678ba"
+}

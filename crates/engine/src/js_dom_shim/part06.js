@@ -9588,9 +9588,21 @@
           // 断言面——此前周期 timeupdate 缺位，播放推进期页面无 timeupdate 可收）。
           if (ms._zwLastTuMs == null || nowMs - ms._zwLastTuMs >= 250) {
             ms._zwLastTuMs = nowMs;
-            _zwMediaFire(ms._zwSel || (key.charAt(0) === '@' ? null : key),
-              ms._zwHandle || (key.charAt(0) === '@' ? key.slice(1) : null),
-              key, 'timeupdate');
+            // M3 扩批 XXXIV：detached 文档媒体（'#dmN' 键，_zwEl 直指节点）——
+            // _zwMediaFire 的 sel/handle 通路对 detached 形态不可用，经 _zwEl
+            // 直接派发（play-in-detached-document 的 timeupdate 断言面）。
+            if (ms._zwEl && ms._zwDetached && typeof ms._zwEl.dispatchEvent === 'function') {
+              try {
+                var _dmTuEv = (typeof _makeEvent === 'function')
+                  ? _makeEvent('timeupdate', { bubbles: false, cancelable: false })
+                  : { type: 'timeupdate' };
+                ms._zwEl.dispatchEvent(_dmTuEv);
+              } catch (_dmTu) {}
+            } else {
+              _zwMediaFire(ms._zwSel || (key.charAt(0) === '@' ? null : key),
+                ms._zwHandle || (key.charAt(0) === '@' ? key.slice(1) : null),
+                key, 'timeupdate');
+            }
           }
         }
         // seek 面检测：**时钟回退** 或 seeking 标志在位（spec time-marches-on seek 步：

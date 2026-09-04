@@ -2,7 +2,18 @@
 
 **入口文档**: [../media-elements.md](../media-elements.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-04（**M3 扩批 XXX 落地**——WebVTT 解析面批量导入：
+**最后更新**: 2026-09-04（**M3 扩批 XXXIV 落地**——play-in-detached-document 解除
+排除导入（599P/0F/24PF = 96.15%，+1 净涨零回归）：**detached 文档媒体方法面**——
+根因勘误：此前排除注记「需 detached 文档播放时钟推进」定性不准（扩批 XXVII
+headless 时钟 + 周期 timeupdate 已就绪）；真缺口是主文档 media 方法装在 part03
+get trap（R2835）而 _zwMEl（createHTMLDocument 产物，plain object 无 trap）
+`v.play` 恒 undefined。修复：_zwMEl AUDIO/VIDEO 分支补 play/pause/load/
+canPlayType + paused/currentTime/duration/src IDL（状态入 _mediaState synthetic
+key '#dmN'，_zwEl 直指节点）+ detached settle 近似（src setter 触发 readyState
+1→4 加载事件序 + autoplay 续派）+ march 周期 timeupdate 的 detached 分支
+（_zwEl.dispatchEvent 直接派发）。单测
+`test_media_detached_document_play_face_m3xxxiv`；make test 18867/0。evidence：
+`evidence/2026-09-04-media-play-in-detached-xxxiv.json`。此前 2026-09-04：**M3 扩批 XXX 落地**——WebVTT 解析面批量导入：
 track-helpers.js 断言辅助（assert_cues_equal/check_cues_from_track/
 as_textcontent 对拍）+ 27 件 vtt 资源 + 14 用例（BOM/UTF8 编码面（iconv 拒收）/
 header 注释/空 cue/timings 变体（no-hours/whitespace/large-timestamp/
@@ -744,14 +755,13 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
    audio/video_volume_check 不导入：越界断言 e.code==1 为旧 spec 语义——现行
    spec 越界 clamp 不抛，导入即恒假失败）。
    playing-the-media-resource
-   剩余（play-in-detached-document——需 detached 文档播放时钟推进，依赖兄弟目标
-   media-playback 播放钟接语义层；fragmented-mp4-end——MSE 面，归远期）；
+   剩余（~~play-in-detached-document~~ ✅ 扩批 XXXIV 兑现——detached 文档媒体
+   方法面落地后解除排除；fragmented-mp4-end——MSE 面，归远期）；
    no-autoplay-audio-history-back（iframe+history+postMessage 导航深结构，
    pause-move-to-other-document 同域排除）；the-video-element 反射余面
    （video-loading-*
    preload 语义族——视 lazy-loading 支撑面）。**headless 可导入面已在 95.9% 重饱和
-   （M3 扩批 XXXII 后第十五次修正：96.14%；track-mode-triggers-loading 的 metadata
-   加载时序由扩批 XV mode 触发面直接覆盖——D 组排除注记失效）**——余下增量依赖兄弟目标解锁（真播放钟 →
+   （M3 扩批 XXXIV 后第十六次修正：96.15%）**——余下增量依赖兄弟目标解锁（真播放钟 →
    time-marches-on 余面）+ 深结构项（~~TextTrackList change 事件广播反向链~~ ✅
    扩批 XXI 兑现、cue 标记树解析——归渲染域远期）。
    ~~ready-states/autoplay.html~~ ✅ 扩批 XXIX 兑现（autoplaying flag 交互 +

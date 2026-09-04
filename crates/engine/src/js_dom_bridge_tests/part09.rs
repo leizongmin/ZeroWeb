@@ -5160,3 +5160,87 @@ fn test_webaudio_convolver_face_m3xxxi() {
         "ConvolverNode buffer sampleRate 校验 + 重复赋值/null 清空往返 + disableNormalization（第十六批）"
     );
 }
+
+/// M3 扩批 XXXIV（media-elements）：detached 文档媒体方法面——createHTMLDocument
+/// 产物树的 AUDIO/VIDEO 元素补 play/pause/load/canPlayType + paused/currentTime/
+/// duration/src IDL（_zwMEl plain object 无 get trap——主文档 trap 对 detached 形态
+/// 不生效，`v.play` 恒 undefined）。断言面：play() → playing + 事件序 + timeupdate
+/// 到达 + currentTime 推进（headless 时钟）；pause → paused + pause 事件。
+#[test]
+fn test_media_detached_document_play_face_m3xxxiv() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://wpt.test/t.html".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    sandbox
+        .execute(
+            "globalThis.__doc = document.implementation.createHTMLDocument('');\
+             globalThis.__v = __doc.createElement('video');\
+             __doc.body.appendChild(__v);\
+             __v.src = 'https://wpt.test/media/movie_5.webm';\
+             globalThis.__tu = 0;\
+             globalThis.__evseq = [];\
+             ['play', 'playing', 'pause'].forEach(function (t) {\
+               __v.addEventListener(t, function () { globalThis.__evseq.push(t); });\
+             });\
+             __v.addEventListener('timeupdate', function () { globalThis.__tu++; });\
+             globalThis.__paused0 = __v.paused;\
+             var pr = __v.play();\
+             globalThis.__isPromise = pr instanceof Promise;\
+             globalThis.__paused1 = __v.paused;\
+             void 0;",
+        )
+        .unwrap();
+    sandbox.execute("void 0").unwrap();
+    let out = sandbox
+        .execute(
+            "[globalThis.__paused0, globalThis.__isPromise, globalThis.__paused1,\
+             globalThis.__evseq.join(',')].join('|')"
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        out, "true|true|false|play,playing",
+        "detached video：paused 初值 true → play 后 false + Promise 返回 + play/playing 事件序（扩批 XXXIV）"
+    );
+    // timeupdate/currentTime 面：单测无 runner 泵 march 驱动——经 currentTime
+    // setter 同步派发断言（runner 环境 march 周期派发由 play-in-detached-document
+    // WPT 用例实证）。
+    sandbox.execute("__v.currentTime = 1.5; void 0;").unwrap();
+    let out1 = sandbox
+        .execute("[String(globalThis.__tu > 0), String(__v.currentTime > 0)].join('|')")
+        .unwrap()
+        .value;
+    assert_eq!(
+        out1, "true|true",
+        "detached video：currentTime setter → timeupdate 同步派发 + 读数保持（扩批 XXXIV）"
+    );
+    // pause 面：paused 翻回 + pause 事件。
+    sandbox
+        .execute(
+            "globalThis.__evseq.length = 0;\
+             __v.pause();\
+             globalThis.__paused2 = __v.paused;\
+             void 0;"
+        )
+        .unwrap();
+    sandbox.execute("void 0").unwrap();
+    let out2 = sandbox
+        .execute("[globalThis.__paused2, globalThis.__evseq.join(',')].join('|')")
+        .unwrap()
+        .value;
+    assert_eq!(
+        out2, "true|pause",
+        "detached video：pause → paused 翻回 + pause 事件（扩批 XXXIV）"
+    );
+}

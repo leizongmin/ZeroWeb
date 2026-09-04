@@ -152,6 +152,10 @@ TOP_FILES=(
   # 回卷 seeked（crbug 364442 断言面）。duration getter settle 竞态兜底（扩批 XXIV）
   # 解除其 seek 目标真值前置。
   "playing-the-media-resource/loop-from-ended.tentative.html"
+  # M3 扩批 XXXIV（2026-09-04）：play-in-detached-document——detached 文档（
+  # createHTMLDocument）video play() 推进面（headless 时钟 + 周期 timeupdate；
+  # 此前「依赖真播放钟」排除注记随扩批 XXVII 基建失效）。
+  "playing-the-media-resource/play-in-detached-document.html"
   # M3 扩批 XXVI（2026-09-04）：seeking/ 三件——seekable TimeRanges 面（seek to
   # currentTime/max/negative：clamp 边界 + seeking/timeupdate/seeked 事件序）。
   # volume_nonfinite——volume IDL setter 非有限 TypeError（headless 纯 IDL 面）。

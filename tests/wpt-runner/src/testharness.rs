@@ -1543,6 +1543,10 @@ pub const MEDIA_TEST_FILES: &[&str] = &[
     // 兜底（settle durationMs 即刻生效）+ registry Ended→play 解码器重建 + 泵时钟
     // 注入（play 锚与 tick 同源）解除。
     "html/semantics/embedded-content/media-elements/playing-the-media-resource/loop-from-ended.tentative.html",
+    // M3 扩批 XXXIV（2026-09-04）：play-in-detached-document——detached 文档
+    // video play() 推进面（headless 时钟推进 + 周期 timeupdate 已由扩批 XXVII
+    // 落地——此前「依赖真播放钟」排除注记失效）。
+    "html/semantics/embedded-content/media-elements/playing-the-media-resource/play-in-detached-document.html",
     // M3 扩批 XXVI（2026-09-04）：seeking/ 三件——seekable TimeRanges（headless
     // [0,duration] 近似 getter 落地后的断言面：clamp 边界 + seeking/timeupdate/
     // seeked 事件序）+ volume_nonfinite（volume IDL setter 非有限 TypeError）。

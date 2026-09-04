@@ -2675,6 +2675,9 @@
   function _elKey(sel, handle) {
     return handle ? ('@' + handle) : sel;
   }
+  // M3 扩批 XXXIV（media-elements）：detached 文档媒体元素 synthetic key 序号
+  //（_zwMEl AUDIO/VIDEO 分支——'#dmN' 键入 _mediaState）。
+  var _zwDetachedMediaSeq = 0;
 
   // ── js-dom M4 R79：Node.contains / compareDocumentPosition 的 JS 侧统一实现 ──────────
   // 根因：旧 contains/compareDocumentPosition 走 host `__zw_contains`/`__zw_element_children`
@@ -7095,6 +7098,106 @@
     // 自身——cloneNode/树建/fragment 解析产物统一入口；桥消费在 d3b）。工厂在
     // 桥定义之前执行的作用域顺序无碍（函数声明提升，调用时桥已初始化）。
     _zwBridgeSet(node, node);
+    // M3 扩批 XXXIV（media-elements）：detached 文档（createHTMLDocument 产物树）
+    // 的 AUDIO/VIDEO 媒体方法面——主文档 media 元素方法装在 part03 get trap
+    //（R2835，_realTag 门），_zwMEl 是 plain object 无 trap，`v.play` 恒 undefined
+    //（WPT play-in-detached-document 断言面「detached doc video play() 推进 +
+    // timeupdate」）。最小面：play/pause/load/canPlayType + paused/currentTime/
+    // src IDL，状态入 _mediaState（synthetic key '#dmN'，`_zwEl` 直指本节点——
+    // _zwMediaFire/march 的 detached 分支经此派发；headless 时钟推进/周期
+    // timeupdate 复用主路径 march）。
+    // https://html.spec.whatwg.org/multipage/media.html#htmlmediaelement
+    var _mTag = String(snap && snap.tag || '').toUpperCase();
+    if (_mTag === 'AUDIO' || _mTag === 'VIDEO') {
+      var _dmKey = '#dm' + (++_zwDetachedMediaSeq);
+      var _dmMs = _mediaState[_dmKey] || (_mediaState[_dmKey] = {});
+      _dmMs.playing = false;
+      _dmMs.currentTime = 0;
+      _dmMs.playbackRate = 1;
+      _dmMs.volume = 1;
+      _dmMs.readyState = 0;
+      _dmMs._zwEl = node;
+      _dmMs._zwDetached = true;
+      var _dmDispatch = function (type) {
+        try {
+          var _dmEv = (typeof _makeEvent === 'function')
+            ? _makeEvent(type, { bubbles: false, cancelable: false })
+            : { type: type };
+          node.dispatchEvent(_dmEv);
+        } catch (_dmDe) {}
+      };
+      var _dmSettle = function () {
+        // spec resource selection invoke 的 headless 近似（detached 形态——无宿主
+        // fetch/settle 通路，直接置「元数据+数据可用」并派加载事件序；主文档路径
+        // 的 async settle 依赖 sel/handle 宿主往返，detached 不适用）。
+        if (_dmMs._zwSettled) return;
+        _dmMs._zwSettled = true;
+        _dmMs.networkState = 2;
+        _dmDispatch('loadstart');
+        _dmDispatch('progress');
+        _dmMs.readyState = 1;
+        _dmMs.duration = 600;
+        _dmDispatch('durationchange');
+        _dmDispatch('loadedmetadata');
+        _dmMs.readyState = 2;
+        _dmDispatch('loadeddata');
+        _dmMs.readyState = 3;
+        _dmDispatch('canplay');
+        _dmMs.readyState = 4;
+        _dmDispatch('canplaythrough');
+        if (node.hasAttribute('autoplay')) _dmPlay();
+      };
+      var _dmPlay = function () {
+        _dmSettle();
+        if (_dmMs.playing) return Promise.resolve(undefined);
+        _dmMs.playing = true;
+        _dmMs.ended = false;
+        _dmDispatch('play');
+        _dmDispatch('playing');
+        // headless 近似：setTimeout(0) 后仍 playing → resolve（主路径同款）。
+        return new Promise(function (resolve) {
+          setTimeout(function () { if (_dmMs.playing) resolve(undefined); }, 0);
+        });
+      };
+      node.play = function () { return _dmPlay(); };
+      node.pause = function () {
+        if (_dmMs.playing) {
+          _dmMs.playing = false;
+          _dmDispatch('pause');
+        }
+      };
+      node.load = function () { _dmMs._zwSettled = false; _dmSettle(); };
+      node.canPlayType = function (_type) { return ''; };
+      Object.defineProperty(node, 'paused', {
+        get: function () { return !_dmMs.playing; },
+        configurable: true,
+      });
+      Object.defineProperty(node, 'currentTime', {
+        get: function () { return _dmMs.currentTime || 0; },
+        set: function (v) {
+          var n = Number(v);
+          if (isFinite(n)) { _dmMs.currentTime = n < 0 ? 0 : n; _dmDispatch('seeking'); _dmDispatch('seeked'); _dmDispatch('timeupdate'); }
+        },
+        configurable: true,
+      });
+      Object.defineProperty(node, 'duration', {
+        get: function () { return _dmMs._zwSettled ? _dmMs.duration : NaN; },
+        configurable: true,
+      });
+      Object.defineProperty(node, 'src', {
+        get: function () { return node.getAttribute('src') || ''; },
+        set: function (v) {
+          if (v == null) node.removeAttribute('src');
+          else node.setAttribute('src', String(v));
+          // spec：src setter 触发 media load 算法（resource selection）——detached
+          // 近似为 settle 重置 + 异步补跑（用例 play() 先行、listener 后挂有序）。
+          _dmMs._zwSettled = false;
+          setTimeout(function () { _dmSettle(); }, 0);
+        },
+        configurable: true,
+      });
+      _dmMs._zwPlayFn = _dmPlay;
+    }
     return node;
   }
   // R3018：id/class 属性 ↔ IDL 字段（node.id/node.className）同步，setAttribute/removeAttribute 后保持一致。
