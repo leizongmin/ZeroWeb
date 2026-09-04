@@ -407,6 +407,8 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
   → 扩批 XXXIX（2026-09-04，registry wrap_pending 可观测面——audio_loop_base
   解除排除；video_loop_base 结构互斥注记）**603/627 = 96.17%**（+1 净涨零回归；
   Fail 0 / Timeout 0 / PF 24）
+- 复核（2026-09-04 治理整固后终审）：fresh 跑 603P/0F/24PF（198 文件）与
+  本档记录逐位一致；验证基线 evidence 链 26 文件全在盘；make test 18877/0。
 - 入口：`make testharness-media`（FILTER 透传，`--json` 捕获 evidence）
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过
 - evidence：`evidence/2026-08-31-media-baseline.md`（+ 同名 .json 机读版）、

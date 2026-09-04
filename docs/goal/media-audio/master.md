@@ -295,6 +295,8 @@ DONE 阻塞**；Mixer/重采样接线随设备切片可选推进）。
 - NullSink 可观测锚点：440Hz 正弦 @48kHz 过零率 ≈880（2×频率；修正 M0 evidence
   的 ≈440 笔误——evidence 只追加不修改，以代码与本档为事实源）；暂停拒写计
   underrun；非整帧写入拒收
+- 复核（2026-09-04 治理整固后终审）：fresh 跑 874P/0F（39 文件）与本档记录
+  一致；验证基线 evidence 链 16 文件全在盘。
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过
 - perf-gate（2026-09-03 本轮 shim 代码量积累后定向核查）：两轮全量 GATE FAIL 失败
   指标集完全轮换（零交集）+ 全部失败指标隔离复测 1.5~3.3× 余量回预算内 + 本轮
