@@ -153,6 +153,35 @@ pub fn compute_document_styles_with_inline_overrides(
             }
         }
     }
+    // media-elements M3 扩批 XXXVII：video 固有尺寸面（HTML §4.8.11 video 尺寸属性 +
+    // css-images-3 §5.1 default object size 300×150——Chromium getComputedStyle(video)
+    // 形态：双 auto → 300×150；width 属性单给 → height 落 default 150；height 单给 →
+    // width 落 default 300；显式 CSS 尺寸不覆盖）。与 canvas 分支同形——静态属性面；
+    // 解码后真值（loadedmetadata 后的 320×240 等）不走此路径（computed-style 路径无
+    // img_intrinsic 解码尺寸源）。
+    for video_id in doc.get_elements_by_tag_name("video") {
+        if let Some(style) = styles.get_mut(&video_id) {
+            let w_attr = matches!(style.width, LengthValue::Auto)
+                .then(|| parse_nonnegative_int_attr(doc.get_attribute(video_id, "width")))
+                .flatten();
+            let h_attr = matches!(style.height, LengthValue::Auto)
+                .then(|| parse_nonnegative_int_attr(doc.get_attribute(video_id, "height")))
+                .flatten();
+            if let Some(w) = w_attr {
+                style.width = LengthValue::Px(w.into());
+            }
+            if let Some(h) = h_attr {
+                style.height = LengthValue::Px(h.into());
+            }
+            // default object size：仅补仍为 auto 的维（任一属性缺席 → 该维落 300/150）。
+            if matches!(style.width, LengthValue::Auto) {
+                style.width = LengthValue::Px(300.0);
+            }
+            if matches!(style.height, LengthValue::Auto) {
+                style.height = LengthValue::Px(150.0);
+            }
+        }
+    }
     (doc, styles)
 }
 

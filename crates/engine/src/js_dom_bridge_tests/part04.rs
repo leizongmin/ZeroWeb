@@ -1915,3 +1915,34 @@ fn test_history_reset_on_navigation_r3059() {
     sandbox.execute("history.back();").unwrap();
     assert_eq!(sandbox.execute("location.href").unwrap().value, "https://example.com/newpage", "back() 后仍新页（无旧 SPA entry 可回）");
 }
+
+#[test]
+fn test_get_computed_style_video_intrinsic_sizes_m3xxxvii() {
+    // media-elements M3 扩批 XXXVII：video 固有尺寸 getComputedStyle 面
+    //（the-video-element/intrinsic_sizes.htm 静态子测 1~3 断言形态——HTML §4.8.11
+    // video 尺寸属性 + css-images-3 §5.1 default object size 300×150）。
+    let html = "<html><body>\
+        <video id=\"v1\"></video>\
+        <video id=\"v2\" width=\"400\"></video>\
+        <video id=\"v3\" height=\"100\"></video>\
+        <video id=\"v4\" width=\"640\" height=\"360\"></video>\
+        <video id=\"v5\" style=\"width: 50%\"></video>\
+        </body></html>";
+    // 走生产回调同款 override 路径（canvas/video 固有尺寸覆盖在 inline-override 变体内）。
+    let (doc, styles) = compute_document_styles_with_inline_overrides(html, &[]);
+    let lookup = |selector: &str, prop: &str| lookup_computed_property(&doc, &styles, selector, prop);
+    // 双 auto → default object size 300×150。
+    assert_eq!(lookup("#v1", "width"), "300px");
+    assert_eq!(lookup("#v1", "height"), "150px");
+    // width 属性单给 → width 400，height 仍落 default 150。
+    assert_eq!(lookup("#v2", "width"), "400px");
+    assert_eq!(lookup("#v2", "height"), "150px");
+    // height 属性单给 → height 100，width 仍落 default 300。
+    assert_eq!(lookup("#v3", "width"), "300px");
+    assert_eq!(lookup("#v3", "height"), "100px");
+    // 双属性 → 属性值。
+    assert_eq!(lookup("#v4", "width"), "640px");
+    assert_eq!(lookup("#v4", "height"), "360px");
+    // 显式 CSS 尺寸不覆盖（% 保留计算值——serialize 既有 documented 限制）。
+    assert_eq!(lookup("#v5", "width"), "50%");
+}

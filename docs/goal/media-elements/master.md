@@ -2,7 +2,18 @@
 
 **入口文档**: [../media-elements.md](../media-elements.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-04（**M3 扩批 XXXVI 落地**——the-audio-element 目录清点：
+**最后更新**: 2026-09-04（**M3 扩批 XXXVII 落地**——the-video-element 清点补遗：
+intrinsic_sizes.htm 定性（XXXV 未显式定性尾件）+ video 固有尺寸 getComputedStyle
+面落地（spec 对齐修复，无整文件可导入面）——shim 生产回调路径
+compute_document_styles_with_inline_overrides 增 video 分支（canvas R34xx 同形）：
+width/height 属性 auto 侧覆盖 + 仍 auto 维落 default object size 300×150
+（css-images-3 §5.1 + HTML §4.8.11）+ 显式 CSS 尺寸不覆盖。子测 4/5（src 移除
+rAF 回流回落 + poster 解码固有尺寸）依赖解码真值进 computed-style（跨面扩展）
++ rAF 回流面——维持排除注记。单测
+`test_get_computed_style_video_intrinsic_sizes_m3xxxvii`（9 断言面）。
+601P/0F/24PF = 96.16% 维持零回归；make test 18868/0。evidence：
+`evidence/2026-09-04-media-video-intrinsic-sizes-xxxvii.json`。此前 2026-09-04：
+**M3 扩批 XXXVI 落地**——the-audio-element 目录清点：
 audio-loading-eager 导入（601P/0F/24PF = 96.16%，+1 净涨零回归）——loading=eager
 立即加载面 audio 形态（与 XXXV video-loading-eager 同构；audio.loading IDL 反射面
 R115 _REFLECTED_STRING_FLAT 已含 loading；media/sine440.mp3 资产入档）。
@@ -791,6 +802,9 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
    维持排除（autoplay-with-slow-text-tracks——trickle pipe + readyState 与
    track 加载耦合面；autoplay-hidden.optional——hidden 节能语义 optional）；
    audio/video_volume_check 维持排除（越界断言 e.code==1 为旧 spec 语义）。
+   ~~the-video-element intrinsic_sizes.htm~~ ✅ 扩批 XXXVII 清点补遗——静态属性面
+   落地（video getComputedStyle 固有尺寸 + default object size 300×150），动态
+   子测（解码真值 computed-style + rAF 回流）维持排除注记，单测资产化。
    ~~the-audio-element 余 16 件~~ ✅ 扩批 XXXVI 清点——audio-loading-eager 导入
    （同 XXXV 面 audio 形态），lazy/deferred 系与 eager-by-default 互斥维持排除、
    audio_001/002 reftest 渠道、crash/渲染域不导入，**目录清点收束**。
@@ -888,4 +902,5 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
   `evidence/2026-09-04-media-598p-snapshot.json`、
   `evidence/2026-09-04-media-play-in-detached-xxxiv.json`、
   `evidence/2026-09-04-media-video-loading-eager-xxxv.json`、
-  `evidence/2026-09-04-media-audio-loading-eager-xxxvi.json`
+  `evidence/2026-09-04-media-audio-loading-eager-xxxvi.json`、
+  `evidence/2026-09-04-media-video-intrinsic-sizes-xxxvii.json`

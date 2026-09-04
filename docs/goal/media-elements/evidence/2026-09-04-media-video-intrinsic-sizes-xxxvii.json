@@ -1,0 +1,25 @@
+{
+ "batch": "media-elements M3 扩批 XXXVII",
+ "date": "2026-09-04",
+ "topic": "the-video-element 清点补遗——intrinsic_sizes.htm 定性 + video 固有尺寸 getComputedStyle 面落地（spec 对齐修复，无整文件可导入面）",
+ "context": "XXXV the-video-element 目录清点未显式定性 intrinsic_sizes.htm（38 文件清单尾件）。本轮补遗：逐子测核对后定性为「静态属性面可落地 + 动态子测不可导入」。",
+ "case_anatomy": {
+  "subtests_1_3_static": "双 auto → default object size 300×150 / width 属性单给 → height 落 150 / height 单给 → width 落 300（getComputedStyle 断言）",
+  "subtest_4_dynamic": "src=movie_5(320x240) loadedmetadata 后 getComputedStyle 断言 320×240 → removeAttribute('src')+load() → rAF 后回落 300×150——依赖解码真值进 computed-style + rAF 回流面，headless 不可复现",
+  "subtest_5_poster": "poster.png 解码固有尺寸 102px 面——同域不可导入"
+ },
+ "fix": "shim 生产回调路径（js_dom_bridge/computed_style.rs compute_document_styles_with_inline_overrides）增 video 分支——canvas R34xx 同形：width/height 属性（non-negative integer 解析）→ auto 侧覆盖；仍 auto 的维落 default object size 300×150（css-images-3 §5.1 + HTML §4.8.11）；显式 CSS 尺寸不覆盖",
+ "limitation_note": "解码后真值（loadedmetadata 后 320×240）不经此路径——computed-style 路径无 img_intrinsic 解码尺寸源；subtest 4/5 解除依赖该项（shim↔host 跨面扩展，随媒体真值↔CSSOM 集成复评）",
+ "import_decision": "不导入整文件——5 subtest 中 2 件动态面必 Fail，违反「已知失败不导入」纪律；纯 spec 对齐修复（扩批 V playbackRate TypeError 同款先例：无整文件可导入面，单测资产化）",
+ "unit_test": "test_get_computed_style_video_intrinsic_sizes_m3xxxvii（9 断言面：双 auto/width 单给/height 单给/双属性/CSS 不覆盖）",
+ "totals": {
+  "pass": 601,
+  "precondition_failed": 24,
+  "pass_rate": "601/625 = 96.16% 维持（零回归——本批为 spec 对齐面，无新增导入）"
+ },
+ "gates": {
+  "make_test": "18868 passed 0 failed（+1 单测）",
+  "clippy": "workspace -D warnings clean"
+ },
+ "wpt_rev": "315976933870b34d6ea30e3f6643403edae678ba"
+}
