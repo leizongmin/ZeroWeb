@@ -9307,6 +9307,17 @@
   // 非 WEBVTT 头（`_zwParseVtt` 返 null）→ error settle（track onerror + readyState
   // ERROR——track-webvtt-magic-header no-webvtt 断言面）。无 `__zw_fetch` 宿主
   //（浏览器异步路径）回落既有 headless 面（load 恒派、cues 空——零回归）。
+  // M3 扩批 XLVIII：track 调度诊断通道（XLVII dbg 锚点续查——trackScheduled/hold/
+  // resourceStates 摘要；生产页面不可达 _zw 前缀，测试探针专用）。
+  globalThis._zwTrackSchedDump = function (sel, handle) {
+    var key = _elKey(sel, handle);
+    var ms = _mediaState[key] || {};
+    var rs = _resourceStates[key] || null;
+    return JSON.stringify({
+      key: key, scheduled: !!ms.trackScheduled, hold: ms._zwTrackReadyStateHold || null,
+      outcome: rs ? rs.outcome : null, url: rs ? String(rs.url || '').slice(-40) : null
+    });
+  };
   globalThis._zwTrackScheduleLoad = function (sel, handle, opts) {
     var key = _elKey(sel, handle);
     if (typeof setTimeout !== 'function') return;
@@ -9354,7 +9365,7 @@
       if (typeof queueMicrotask === 'function') queueMicrotask(fn);
       else setTimeout(fn, 0);
     };
-    _deferCont(function () {
+    var _xlTrackLoadBody = function () {
       // M3 扩批 XLIV：新加载判定开始——readyState hold 撤除（此后 resourceState 重新接管）。
       try {
         var _msXl2 = _mediaState[key];
@@ -9425,7 +9436,12 @@
         // M3 扩批 XIII：settle 幂等已按需重置——重调度路径重新提交资源状态。
         _zwSettleResourceKey(key, sel, handle, 'track', _abs, 'loaded', 0, 0);
       } catch (_eTs) {}
-    });
+    };
+    // M3 扩批 XLVIII 负结果：首调度同步 settle 尝试回退——同步派 onload/onerror 早于
+    // runner 静态提交链的 handler 挂载窗口，21 件既有 track 用例 Timeout/cues.html 派发序
+    // 破坏（-21 净跌）。settle 写入与事件派发的通道拆分（state 同步/事件 defer）列为
+    // 独立切片。首调度恢复 deferCont microtask。
+    _deferCont(_xlTrackLoadBody);
   };
   var _zwTrackFetchSeq = 0;
   function _zwSettleResourceKey(key, sel, handle, tag, url, outcome, width, height, errorCode, durationMs) {

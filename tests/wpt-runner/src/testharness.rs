@@ -1579,12 +1579,11 @@ pub const MEDIA_TEST_FILES: &[&str] = &[
     "html/semantics/embedded-content/media-elements/track/track-element/track-selection-metadata.html",
     "html/semantics/embedded-content/media-elements/track/track-element/track-remove-track.html",
     "html/semantics/embedded-content/media-elements/track/track-element/track-cues-missed-no-immediate-events.html",
-    // track-remove-insert-ready-state 维持排除（XLVII 试导回退）：XLIV hold + XLV 三修复 +
-    // XLVI stash lenient + 四处 track 调度前置（part03 load()/part04 setAttribute/part05 IDL
-    // src/part06 加载序列）落地后，探针实证「query 先于 video.src=」形态全程 RS=3，但用例形态
-    //（handler 内首 query）RS 仍 0——src setter 内调度的 settle 未落（dbg 确证调度被调用），
-    // 根因待续查（_zwTrackScheduleLoad 在该时点的早退点）。track-mode-not-changed-by-new-track
-    // 维持排除——身份对拍切片。
+    // track-remove-insert-ready-state 维持排除（XLVIII 负结果归档）：canplaythrough 时
+    // track settle 未落（microtask defer 晚于 handler 同步读）——首调度同步 settle 尝试
+    // 引入 21 件 Timeout/派发序破坏（事件派发同步早于 handler 挂载窗口）已回退；修复需
+    // settle 写入与事件派发的通道拆分（state 同步/事件 defer），列独立切片。
+    // track-mode-not-changed-by-new-track 维持排除——身份对拍切片。
     "html/semantics/embedded-content/media-elements/track/track-element/track-cues-cuechange-dynamically-created-track-element.html",
     "html/semantics/embedded-content/media-elements/track/track-element/track-disabled-addcue.html",
     "html/semantics/embedded-content/media-elements/track/track-element/track-insert-after-load.html",

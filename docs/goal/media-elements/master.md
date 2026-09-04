@@ -2,7 +2,16 @@
 
 **入口文档**: [../media-elements.md](../media-elements.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-04（**M3 扩批 XLVII 落地**——track 调度前置四处 + 「不退出」现象重定性：
+**最后更新**: 2026-09-05（**M3 扩批 XLVIII 落地**——track settle 时序负结果归档 + 诊断通道：
+① **dump 数据落袋**（_zwTrackSchedDump 诊断钩子保留）：绿形态 dump 实证 trackScheduled 在
+canplaythrough 前已置位、resourceState 尚未写入（microtask defer 晚于 handler 同步读）——
+「早退点」假说排除，真缺口 = **首调度 microtask defer 的同步读不可达**；
+② **首调度同步 settle 尝试回退**（负结果）：同步派 onload/onerror 早于 runner 静态提交链的
+handler 挂载窗口——21 件既有 track 用例 Timeout/cues.html 派发序破坏（-21 净跌），立即回退
+恢复 deferCont；③ **修复方向定版**：settle 写入与事件派发的通道拆分（state 同步/事件 defer）
+列独立切片；④ track-remove-insert-ready-state 维持排除（注记更新）。629P/0F/24PF =
+96.32% 维持零回归；runner 契约 204 ok、clippy/fmt 干净。
+此前 2026-09-04：**M3 扩批 XLVII 落地**——track 调度前置四处 + 「不退出」现象重定性：
 ① **track 子调度前置**（spec track 子处理随 media load 启动）四处落地——part05 IDL video.src=
 setter、part04 setAttribute('src') video 钩子（去 resourceState 门耦合）、part03 load() 路径、
 part06 _zwMediaLoadSequence（canplaythrough 派发前）统一补 _zwScheduleChildTrackLoads；
@@ -322,7 +331,7 @@ currentSrc 的 source-child 插入触发（mutation 面）。
 （**M3 扩批 event_* 族 + 第二批 + III~X（2026-09-01）/ XI~XV（2026-09-02）/
   XVI~XVIII（2026-09-03）过程记录**——每批 shim 面/runner 面明细与排除注记——
   已归档至 [archive/2026-09-04_m3-batches-vii-to-xviii.md](archive/2026-09-04_m3-batches-vii-to-xviii.md)，
-  证据 JSON 序列见验证基线；累计口径 603P/0F/24PF = 96.17%。第 XIX~XLVII 批
+  证据 JSON 序列见验证基线；累计口径 603P/0F/24PF = 96.17%。第 XIX~XLVIII 批
   明细见头链（最新态）。）
 
 **里程碑归档（2026-09-01）**：M1~M3 与六轮扩批的过程记录、排除用例决策清单已归档至
@@ -531,6 +540,9 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
   → 扩批 XLVII（2026-09-04，track 调度前置四处 + 「不退出」重定性为 disposal 偶发挂死；
   track-remove-insert-ready-state 试导回退——settle 未落根因待续查）**629/653 = 96.32%**
   维持零回归（Fail 0 / Timeout 0 / PF 24）
+  → 扩批 XLVIII（2026-09-05，track settle 时序负结果归档 + _zwTrackSchedDump 诊断通道；
+  同步 settle 尝试回退——通道拆分列独立切片）**629/653 = 96.32%** 维持零回归（Fail 0 /
+  Timeout 0 / PF 24）
 - 复核（2026-09-04 治理整固后终审）：fresh 跑 603P/0F/24PF（198 文件）与
   本档记录逐位一致；验证基线 evidence 链 26 文件全在盘；make test 18877/0。
   （扩批 XL 后：fresh 跑 609P/0F/24PF（201 文件）；扩批 XLI 后：fresh 跑

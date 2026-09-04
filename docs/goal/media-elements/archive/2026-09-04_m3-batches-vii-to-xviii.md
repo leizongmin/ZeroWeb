@@ -704,3 +704,21 @@ track-active-cues 解除排除）**：
   `_zwTrackScheduleLoad` wrapper 进入；早退点待续查，dbg 锚点：wrapper 记录 sel/handle/
   sched 标志）。
 - 629P/0F/24PF = 96.32% 维持零回归；runner 契约 204 ok、clippy/fmt 干净。
+
+## 扩批 XLVIII — track settle 时序负结果归档（2026-09-05）
+
+- **dump 数据落袋**：`_zwTrackSchedDump` 诊断钩子（part06，_mediaState/_resourceStates
+  摘要；生产页面不可达 _zw 前缀）落地保留。绿形态 dump 实证：canplaythrough 前的同步段
+  `scheduled=true, outcome=null`——trackScheduled 已置位、resourceState 未写入。
+- **「早退点」假说排除**：_zwTrackScheduleLoad 并未早退——调度+置位正常，缺口是
+  **首调度 microtask defer 的同步读不可达**（deferCont 排队的 settle 在 canplaythrough
+  handler 同步段之后才跑）。
+- **首调度同步 settle 尝试回退**（负结果）：_xlTrackLoadBody 提函数 + 首调度（!srcChange）
+  同步执行——track-remove-insert-ready-state 首断言通过（RS=3），但同步派 onload/onerror
+  早于 runner 静态提交链的 handler 挂载窗口 → 21 件既有 track 用例 Timeout + cues.html
+  派发序破坏（608P/-21 净跌）→ 立即回退恢复 deferCont。
+- **修复方向定版**：settle 写入与事件派发的通道拆分（state 同步写/事件 defer 一拍）列
+  独立切片——需拆 _zwSettleResourceKey 的 state 写入段与 eventType 派发段，做时序回归
+  面评估后再动。
+- track-remove-insert-ready-state 维持排除（注记更新）。629P/0F/24PF = 96.32% 维持零
+  回归；runner 契约 204 ok、clippy/fmt 干净。
