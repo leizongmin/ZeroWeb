@@ -1,14 +1,16 @@
-**最后更新**: 2026-09-05（**D3 第四增量——AudioParam automation timeline +
-method-chaining 导入（42 用例 911P/0F = 100%）**：AudioParam 调度方法（setValueAtTime/
-linearRamp/exponentialRamp/setTargetAtTime）记录 automation 事件表（校验先于记录——
-负时间 RangeError/exponential 零目标 RangeError 面保持）；startRendering gain 分支
-增 timeline 逐采样求值（事件排序 + 分段插值：set 落位/linear 线性/exponential 几何/
-setTarget 指数趋近 + 未来 ramp 段内插值）；流末写回 param.value（automation 当前值
-反映面）。**audioparam-method-chaining 解除排除导入全绿**（3 subtest：链式返回同一
-param + 无效操作不应用后续效果 + 包络调度渲染对拍）。仍排除：audioparam-nominal-
-range（调度范围面）/ ctor-audiobuffer（multiple contexts 渲染对比）/ ctor-iirfilter
-（IIR DSP）/ periodicWave.html、audiobuffer-copy-channel（谱断言/后段不可分割）。
-evidence 刷新 42 用例 911 subtest。）
+**最后更新**: 2026-09-05（**D3 第五增量完成——AudioParam nominal range 界表 +
+nominal-range.html 导入（43 用例 1238P/0F = 100%）**：`_zwApplyParamLimits` 界值
+助手（min/max 只读访问器反射 + value setter clamp 包装）+ 全节点界表（oscillator
+frequency ±rate/2 与 detune ±1200·log2(maxFloat) / delay [0,maxDelayTime] / pan
+[-1,1] / compressor 五 param 界表 / biquad frequency·detune·gain.maxValue=
+fround(40·log10(maxFloat))·Q / panner 六 param ±maxFloat；factory min/max 改只读
+访问器——赋值穿透缺陷修复）+ `_zwRegisterNodeParam` 原型参数发现（WeakMap +
+prototype 可枚举访问器——Object.keys(node.__proto__) 遍历面）+ AudioListener 九
+param（prototype 访问器面）+ createScriptProcessor（online/offline）与
+createMediaElementSource（online）最小工厂——nominal-range 全任务覆盖。**全部
+导入后 43 用例 1238P/0F = 100%**。仍排除：ctor-iirfilter（IIR DSP）/ ctor-
+audiobuffer（multiple contexts 渲染对比）/ periodicWave.html（谱断言）/
+audiobuffer-copy-channel（后段不可分割）。evidence 刷新 43 用例 1238 subtest。）
 此前 2026-09-05：**D3 获批落地——GB-20260904 待决策征询跟进**：
 OfflineAudioContext.startRendering 扩界**获批（窄授权）**——仅 offline 渲染路径
 + shim↔宿主桥扩展；RFC §0 实时设备输出量化面维持排除。征询凭据 msg
@@ -270,7 +272,11 @@ DONE 阻塞**；Mixer/重采样接线随设备切片可选推进）。
 
 - 测试基线：`make test` 全绿 18866（2026-09-04 组合树实测）；clippy 零警告
   （default 与 `--features audio-cpal` 双配置）
-- WPT webaudio：**42 用例 911P/0F = 100%**（2026-09-05 二十一批累计——第十九批
+- WPT webaudio：**43 用例 1238P/0F = 100%**（2026-09-05 二十二批累计——第二十二批
+  nominal-range（nominal range 界表）~327 subtest + 第二十一批
+  method-chaining 3 + 第二十批 gain.html 7 + 第十九批
+  osc-basic-waveform 33 + 第八批~第十八批 39 用例 874P；原第二十批前口径——
+  42 用例 911P 面——
   osc-basic-waveform（D3 offline 渲染最小面）33 subtest + 第二十批 gain.html（通道
   图推进）7 subtest + 第二十一批 audioparam-method-chaining（automation timeline）
   3 subtest；第八批~第十八批 39 用例 874P 面——connect 返回值 +

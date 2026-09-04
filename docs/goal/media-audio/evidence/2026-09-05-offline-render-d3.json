@@ -4763,5 +4763,1645 @@
         "message": null
       }
     ]
+  ],
+  [
+    "webaudio/the-audio-api/the-audioparam-interface/audioparam-nominal-range.html",
+    [
+      {
+        "name": "# AUDIT TASK RUNNER STARTED.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "> [initialize] ",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  Create offline context for tests did not throw an exception.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  Create online context for tests did not throw an exception.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "< [initialize] All assertions passed. (total 2 assertions)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Executing \"initialize\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "> [Offline createGain] ",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.gain.minValue is equal to -3.4028234663852886e+38.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.gain.maxValue is equal to 3.4028234663852886e+38.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.gain.minValue = 42 is not equal to 42.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.gain.minValue is read-only is equal to true.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.gain.maxValue = 42 is not equal to 42.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.gain.maxValue is read-only is equal to true.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  Nominal ranges for AudioParam(s) of _zwWANode are correct",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "< [Offline createGain] All assertions passed. (total 7 assertions)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Executing \"Offline createGain\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "> [Offline createDelay] ",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.delayTime.minValue is equal to 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.delayTime.maxValue is equal to 1.5.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.delayTime.minValue = 42 is not equal to 42.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.delayTime.minValue is read-only is equal to true.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.delayTime.maxValue = 42 is not equal to 42.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.delayTime.maxValue is read-only is equal to true.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  Set _zwWANode.delayTime.value = -1 is equal to 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  Set _zwWANode.delayTime.value = 4 is equal to 1.5.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.delayTime was clipped to lie within the nominal range is equal to true.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  Nominal ranges for AudioParam(s) of _zwWANode are correct",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "< [Offline createDelay] All assertions passed. (total 10 assertions)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Executing \"Offline createDelay\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "> [Offline createBufferSource] ",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.playbackRate.minValue is equal to -3.4028234663852886e+38.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.playbackRate.maxValue is equal to 3.4028234663852886e+38.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.playbackRate.minValue = 42 is not equal to 42.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.playbackRate.minValue is read-only is equal to true.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.playbackRate.maxValue = 42 is not equal to 42.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.playbackRate.maxValue is read-only is equal to true.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.detune.minValue is equal to -3.4028234663852886e+38.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.detune.maxValue is equal to 3.4028234663852886e+38.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.detune.minValue = 42 is not equal to 42.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.detune.minValue is read-only is equal to true.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.detune.maxValue = 42 is not equal to 42.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.detune.maxValue is read-only is equal to true.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  Nominal ranges for AudioParam(s) of _zwWANode are correct",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "< [Offline createBufferSource] All assertions passed. (total 13 assertions)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Executing \"Offline createBufferSource\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "> [Offline createStereoPanner] ",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.pan.minValue is equal to -1.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.pan.maxValue is equal to 1.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.pan.minValue = 42 is not equal to 42.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.pan.minValue is read-only is equal to true.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.pan.maxValue = 42 is not equal to 42.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.pan.maxValue is read-only is equal to true.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  Set _zwWANode.pan.value = -3 is equal to -1.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  Set _zwWANode.pan.value = 3 is equal to 1.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.pan was clipped to lie within the nominal range is equal to true.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  Nominal ranges for AudioParam(s) of _zwWANode are correct",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "< [Offline createStereoPanner] All assertions passed. (total 10 assertions)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Executing \"Offline createStereoPanner\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "> [Offline createDynamicsCompressor] ",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.threshold.minValue is equal to -100.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.threshold.maxValue is equal to 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.threshold.minValue = 42 is not equal to 42.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.threshold.minValue is read-only is equal to true.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.threshold.maxValue = 42 is not equal to 42.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.threshold.maxValue is read-only is equal to true.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  Set _zwWANode.threshold.value = -201 is equal to -100.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  Set _zwWANode.threshold.value = 1 is equal to 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.threshold was clipped to lie within the nominal range is equal to true.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.knee.minValue is equal to 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.knee.maxValue is equal to 40.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.knee.minValue = 42 is not equal to 42.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.knee.minValue is read-only is equal to true.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.knee.maxValue = 42 is not equal to 42.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.knee.maxValue is read-only is equal to true.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  Set _zwWANode.knee.value = -1 is equal to 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  Set _zwWANode.knee.value = 81 is equal to 40.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.knee was clipped to lie within the nominal range is equal to true.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.ratio.minValue is equal to 1.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.ratio.maxValue is equal to 20.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.ratio.minValue = 42 is not equal to 42.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.ratio.minValue is read-only is equal to true.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.ratio.maxValue = 42 is not equal to 42.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.ratio.maxValue is read-only is equal to true.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  Set _zwWANode.ratio.value = 1 is equal to 1.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  Set _zwWANode.ratio.value = 41 is equal to 20.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.ratio was clipped to lie within the nominal range is equal to true.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.attack.minValue is equal to 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.attack.maxValue is equal to 1.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.attack.minValue = 42 is not equal to 42.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.attack.minValue is read-only is equal to true.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.attack.maxValue = 42 is not equal to 42.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.attack.maxValue is read-only is equal to true.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  Set _zwWANode.attack.value = -1 is equal to 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  Set _zwWANode.attack.value = 3 is equal to 1.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.attack was clipped to lie within the nominal range is equal to true.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.release.minValue is equal to 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.release.maxValue is equal to 1.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.release.minValue = 42 is not equal to 42.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.release.minValue is read-only is equal to true.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.release.maxValue = 42 is not equal to 42.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.release.maxValue is read-only is equal to true.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  Set _zwWANode.release.value = -1 is equal to 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  Set _zwWANode.release.value = 3 is equal to 1.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.release was clipped to lie within the nominal range is equal to true.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  Nominal ranges for AudioParam(s) of _zwWANode are correct",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "< [Offline createDynamicsCompressor] All assertions passed. (total 46 assertions)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Executing \"Offline createDynamicsCompressor\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "> [Offline createBiquadFilter] ",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.gain.minValue is equal to -3.4028234663852886e+38.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.gain.maxValue is equal to 1541.273681640625.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.gain.minValue = 42 is not equal to 42.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.gain.minValue is read-only is equal to true.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.gain.maxValue = 42 is not equal to 42.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.gain.maxValue is read-only is equal to true.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  Set _zwWANode.gain.value = 3083.54736328125 is equal to 1541.273681640625.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.gain was clipped to lie within the nominal range is equal to true.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.detune.minValue is equal to -153600.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.detune.maxValue is equal to 153600.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.detune.minValue = 42 is not equal to 42.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.detune.minValue is read-only is equal to true.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.detune.maxValue = 42 is not equal to 42.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.detune.maxValue is read-only is equal to true.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  Set _zwWANode.detune.value = -307201 is equal to -153600.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  Set _zwWANode.detune.value = 307201 is equal to 153600.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.detune was clipped to lie within the nominal range is equal to true.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.Q.minValue is equal to -3.4028234663852886e+38.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.Q.maxValue is equal to 3.4028234663852886e+38.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.Q.minValue = 42 is not equal to 42.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.Q.minValue is read-only is equal to true.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.Q.maxValue = 42 is not equal to 42.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.Q.maxValue is read-only is equal to true.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.frequency.minValue is equal to 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.frequency.maxValue is equal to 24000.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.frequency.minValue = 42 is not equal to 42.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.frequency.minValue is read-only is equal to true.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.frequency.maxValue = 42 is not equal to 42.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.frequency.maxValue is read-only is equal to true.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  Set _zwWANode.frequency.value = -1 is equal to 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  Set _zwWANode.frequency.value = 48001 is equal to 24000.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.frequency was clipped to lie within the nominal range is equal to true.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  Nominal ranges for AudioParam(s) of _zwWANode are correct",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "< [Offline createBiquadFilter] All assertions passed. (total 33 assertions)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Executing \"Offline createBiquadFilter\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "> [Offline createOscillator] ",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.detune.minValue is equal to -153600.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.detune.maxValue is equal to 153600.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.detune.minValue = 42 is not equal to 42.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.detune.minValue is read-only is equal to true.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.detune.maxValue = 42 is not equal to 42.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.detune.maxValue is read-only is equal to true.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  Set _zwWANode.detune.value = -307201 is equal to -153600.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  Set _zwWANode.detune.value = 307201 is equal to 153600.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.detune was clipped to lie within the nominal range is equal to true.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.frequency.minValue is equal to -24000.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.frequency.maxValue is equal to 24000.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.frequency.minValue = 42 is not equal to 42.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.frequency.minValue is read-only is equal to true.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.frequency.maxValue = 42 is not equal to 42.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.frequency.maxValue is read-only is equal to true.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  Set _zwWANode.frequency.value = -48001 is equal to -24000.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  Set _zwWANode.frequency.value = 48001 is equal to 24000.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.frequency was clipped to lie within the nominal range is equal to true.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  Nominal ranges for AudioParam(s) of _zwWANode are correct",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "< [Offline createOscillator] All assertions passed. (total 19 assertions)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Executing \"Offline createOscillator\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "> [Offline createPanner] ",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.positionX.minValue is equal to -3.4028234663852886e+38.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.positionX.maxValue is equal to 3.4028234663852886e+38.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.positionX.minValue = 42 is not equal to 42.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.positionX.minValue is read-only is equal to true.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.positionX.maxValue = 42 is not equal to 42.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.positionX.maxValue is read-only is equal to true.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.positionY.minValue is equal to -3.4028234663852886e+38.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.positionY.maxValue is equal to 3.4028234663852886e+38.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.positionY.minValue = 42 is not equal to 42.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.positionY.minValue is read-only is equal to true.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.positionY.maxValue = 42 is not equal to 42.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.positionY.maxValue is read-only is equal to true.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.positionZ.minValue is equal to -3.4028234663852886e+38.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.positionZ.maxValue is equal to 3.4028234663852886e+38.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.positionZ.minValue = 42 is not equal to 42.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.positionZ.minValue is read-only is equal to true.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.positionZ.maxValue = 42 is not equal to 42.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.positionZ.maxValue is read-only is equal to true.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.orientationX.minValue is equal to -3.4028234663852886e+38.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.orientationX.maxValue is equal to 3.4028234663852886e+38.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.orientationX.minValue = 42 is not equal to 42.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.orientationX.minValue is read-only is equal to true.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.orientationX.maxValue = 42 is not equal to 42.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.orientationX.maxValue is read-only is equal to true.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.orientationY.minValue is equal to -3.4028234663852886e+38.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.orientationY.maxValue is equal to 3.4028234663852886e+38.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.orientationY.minValue = 42 is not equal to 42.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.orientationY.minValue is read-only is equal to true.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.orientationY.maxValue = 42 is not equal to 42.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.orientationY.maxValue is read-only is equal to true.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.orientationZ.minValue is equal to -3.4028234663852886e+38.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.orientationZ.maxValue is equal to 3.4028234663852886e+38.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.orientationZ.minValue = 42 is not equal to 42.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.orientationZ.minValue is read-only is equal to true.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.orientationZ.maxValue = 42 is not equal to 42.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.orientationZ.maxValue is read-only is equal to true.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  Nominal ranges for AudioParam(s) of _zwWANode are correct",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "< [Offline createPanner] All assertions passed. (total 37 assertions)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Executing \"Offline createPanner\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "> [Offline createConstantSource] ",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.offset.minValue is equal to -3.4028234663852886e+38.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.offset.maxValue is equal to 3.4028234663852886e+38.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.offset.minValue = 42 is not equal to 42.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.offset.minValue is read-only is equal to true.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.offset.maxValue = 42 is not equal to 42.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode.offset.maxValue is read-only is equal to true.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  Nominal ranges for AudioParam(s) of _zwWANode are correct",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "< [Offline createConstantSource] All assertions passed. (total 7 assertions)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Executing \"Offline createConstantSource\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "> [Offline createBuffer] ",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  AudioBuffer has no AudioParams as expected",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "< [Offline createBuffer] All assertions passed. (total 1 assertions)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Executing \"Offline createBuffer\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "> [Offline createIIRFilter] ",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode has no AudioParams as expected",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "< [Offline createIIRFilter] All assertions passed. (total 1 assertions)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Executing \"Offline createIIRFilter\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "> [Offline createWaveShaper] ",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode has no AudioParams as expected",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "< [Offline createWaveShaper] All assertions passed. (total 1 assertions)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Executing \"Offline createWaveShaper\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "> [Offline createConvolver] ",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode has no AudioParams as expected",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "< [Offline createConvolver] All assertions passed. (total 1 assertions)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Executing \"Offline createConvolver\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "> [Offline createAnalyser] ",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode has no AudioParams as expected",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "< [Offline createAnalyser] All assertions passed. (total 1 assertions)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Executing \"Offline createAnalyser\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "> [Offline createScriptProcessor] ",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode has no AudioParams as expected",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "< [Offline createScriptProcessor] All assertions passed. (total 1 assertions)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Executing \"Offline createScriptProcessor\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "> [Offline createPeriodicWave] ",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  PeriodicWave has no AudioParams as expected",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "< [Offline createPeriodicWave] All assertions passed. (total 1 assertions)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Executing \"Offline createPeriodicWave\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "> [Offline createChannelSplitter] ",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode has no AudioParams as expected",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "< [Offline createChannelSplitter] All assertions passed. (total 1 assertions)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Executing \"Offline createChannelSplitter\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "> [Offline createChannelMerger] ",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode has no AudioParams as expected",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "< [Offline createChannelMerger] All assertions passed. (total 1 assertions)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Executing \"Offline createChannelMerger\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "> [Online createMediaElementSource] ",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode has no AudioParams as expected",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "< [Online createMediaElementSource] All assertions passed. (total 1 assertions)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Executing \"Online createMediaElementSource\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "> [Online createMediaStreamDestination] ",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  _zwWANode has no AudioParams as expected",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "< [Online createMediaStreamDestination] All assertions passed. (total 1 assertions)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Executing \"Online createMediaStreamDestination\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "> [AudioListener] ",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  Object.positionX.minValue is equal to -3.4028234663852886e+38.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  Object.positionX.maxValue is equal to 3.4028234663852886e+38.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  Object.positionX.minValue = 42 is not equal to 42.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  Object.positionX.minValue is read-only is equal to true.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  Object.positionX.maxValue = 42 is not equal to 42.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  Object.positionX.maxValue is read-only is equal to true.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  Object.positionY.minValue is equal to -3.4028234663852886e+38.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  Object.positionY.maxValue is equal to 3.4028234663852886e+38.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  Object.positionY.minValue = 42 is not equal to 42.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  Object.positionY.minValue is read-only is equal to true.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  Object.positionY.maxValue = 42 is not equal to 42.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  Object.positionY.maxValue is read-only is equal to true.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  Object.positionZ.minValue is equal to -3.4028234663852886e+38.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  Object.positionZ.maxValue is equal to 3.4028234663852886e+38.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  Object.positionZ.minValue = 42 is not equal to 42.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  Object.positionZ.minValue is read-only is equal to true.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  Object.positionZ.maxValue = 42 is not equal to 42.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  Object.positionZ.maxValue is read-only is equal to true.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  Object.forwardX.minValue is equal to -3.4028234663852886e+38.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  Object.forwardX.maxValue is equal to 3.4028234663852886e+38.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  Object.forwardX.minValue = 42 is not equal to 42.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  Object.forwardX.minValue is read-only is equal to true.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  Object.forwardX.maxValue = 42 is not equal to 42.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  Object.forwardX.maxValue is read-only is equal to true.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  Object.forwardY.minValue is equal to -3.4028234663852886e+38.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  Object.forwardY.maxValue is equal to 3.4028234663852886e+38.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  Object.forwardY.minValue = 42 is not equal to 42.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  Object.forwardY.minValue is read-only is equal to true.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  Object.forwardY.maxValue = 42 is not equal to 42.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  Object.forwardY.maxValue is read-only is equal to true.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  Object.forwardZ.minValue is equal to -3.4028234663852886e+38.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  Object.forwardZ.maxValue is equal to 3.4028234663852886e+38.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  Object.forwardZ.minValue = 42 is not equal to 42.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  Object.forwardZ.minValue is read-only is equal to true.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  Object.forwardZ.maxValue = 42 is not equal to 42.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  Object.forwardZ.maxValue is read-only is equal to true.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  Object.upX.minValue is equal to -3.4028234663852886e+38.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  Object.upX.maxValue is equal to 3.4028234663852886e+38.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  Object.upX.minValue = 42 is not equal to 42.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  Object.upX.minValue is read-only is equal to true.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  Object.upX.maxValue = 42 is not equal to 42.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  Object.upX.maxValue is read-only is equal to true.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  Object.upY.minValue is equal to -3.4028234663852886e+38.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  Object.upY.maxValue is equal to 3.4028234663852886e+38.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  Object.upY.minValue = 42 is not equal to 42.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  Object.upY.minValue is read-only is equal to true.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  Object.upY.maxValue = 42 is not equal to 42.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  Object.upY.maxValue is read-only is equal to true.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  Object.upZ.minValue is equal to -3.4028234663852886e+38.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  Object.upZ.maxValue is equal to 3.4028234663852886e+38.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  Object.upZ.minValue = 42 is not equal to 42.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  Object.upZ.minValue is read-only is equal to true.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  Object.upZ.maxValue = 42 is not equal to 42.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  Object.upZ.maxValue is read-only is equal to true.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  Nominal ranges for AudioParam(s) of Object are correct",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "< [AudioListener] All assertions passed. (total 55 assertions)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Executing \"AudioListener\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "> [verifyTests] ",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  Number of nodes not tested : 0",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "< [verifyTests] All assertions passed. (total 1 assertions)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Executing \"verifyTests\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "> [automation] ",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  Test automations (check console logs) did not throw an exception.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "< [automation] All assertions passed. (total 1 assertions)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Executing \"automation\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "# AUDIT TASK RUNNER FINISHED: 24 tasks ran successfully.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Audit report",
+        "status": "Pass",
+        "message": null
+      }
+    ]
   ]
 ]

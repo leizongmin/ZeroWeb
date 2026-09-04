@@ -7380,6 +7380,31 @@
   //（无 autoplay 政策域——suspended 归用户手势策略，不模拟）。
   // https://webaudio.github.io/web-audio-api/#AudioContext
   var _zwWASeq = 0;
+  // media-audio D3 第五增量：node→AudioParam 注册表 + prototype 访问器安装器——
+  // Object.keys(node.__proto__) 参数发现面（audioparam-nominal-range 遍历原型可
+  // 枚举键找 AudioParam）。同名 param 全局只装一次（不同节点经 WeakMap this 解析）。
+  var _zwNodeParams = new WeakMap();
+  globalThis._zwRegisterNodeParam = function (node, name, param) {
+    var rec = _zwNodeParams.get(node);
+    if (!rec) { rec = {}; _zwNodeParams.set(node, rec); }
+    rec[name] = param;
+    var proto = Object.getPrototypeOf(node);
+    var desc = Object.getOwnPropertyDescriptor(proto, name);
+    if (!desc || !desc.enumerable) {
+      Object.defineProperty(proto, name, {
+        get: function () {
+          var r = _zwNodeParams.get(this);
+          return r ? r[name] : undefined;
+        },
+        set: function (v) {
+          var r = _zwNodeParams.get(this);
+          if (r && r[name] && r[name].value !== undefined) r[name].value = v;
+        },
+        enumerable: true,
+        configurable: true,
+      });
+    }
+  };
   function _zwWANode(kind, ctxId, handle) {
     var node = Object.create(_zwWANode.prototype);
     node._zwKind = kind;
@@ -7731,6 +7756,49 @@
     // ctor-offlineaudiocontext destination 断言面；只读面不走过道 setter）。
     self._zwDestination._zwChannelCount = ch;
     self._zwDestination._zwChannelCountMode = 'explicit';
+    // media-audio D3 第五增量：AudioListener 面九 AudioParam（position/forward/up
+    // 各 XYZ——nominal-range AudioListener 断言面；懒建）。参数访问器挂 **原型**
+    // （Object.keys(listener.__proto__) 参数发现面——nominal-range testLimits 遍历
+    // 原型可枚举键），实例数据经 WeakMap 解析。
+    Object.defineProperty(self, 'listener', {
+      get: function () {
+        if (self._zwListener) return self._zwListener;
+        if (!globalThis._zwListenerProto) {
+          var lproto = {};
+          var ldefs = [['positionX', 0], ['positionY', 0], ['positionZ', 0],
+                       ['forwardX', 0], ['forwardY', 0], ['forwardZ', -1],
+                       ['upX', 0], ['upY', 1], ['upZ', 0]];
+          for (var li = 0; li < ldefs.length; li++) {
+            (function (name) {
+              Object.defineProperty(lproto, name, {
+                get: function () {
+                  var lp = globalThis._zwListenerParams.get(this);
+                  return lp ? lp[name] : undefined;
+                },
+                enumerable: true,
+                configurable: true,
+              });
+            })(ldefs[li][0]);
+          }
+          globalThis._zwListenerProto = lproto;
+          globalThis._zwListenerParams = new WeakMap();
+        }
+        var listenerObj = Object.create(globalThis._zwListenerProto);
+        var lpStore = {};
+        var ldefs2 = [['positionX', 0], ['positionY', 0], ['positionZ', 0],
+                      ['forwardX', 0], ['forwardY', 0], ['forwardZ', -1],
+                      ['upX', 0], ['upY', 1], ['upZ', 0]];
+        for (var lj = 0; lj < ldefs2.length; lj++) {
+          var lp = globalThis._zwMakeAudioParam(ldefs2[lj][1], self._zwCtxId);
+          globalThis._zwApplyParamLimits(lp, -3.4028234663852886e38, 3.4028234663852886e38);
+          lpStore[ldefs2[lj][0]] = lp;
+        }
+        globalThis._zwListenerParams.set(listenerObj, lpStore);
+        self._zwListener = listenerObj;
+        return listenerObj;
+      },
+      configurable: true,
+    });
   }
   globalThis.OfflineAudioContext = globalThis.OfflineAudioContext || OfflineAudioContext;
   Object.defineProperty(OfflineAudioContext.prototype, 'state', {
@@ -8082,6 +8150,11 @@
     // frequency/detune AudioParam（_zwMakeAudioParam 工厂——instanceof AudioParam
     // 面 + 非 finite value TypeError + 调度方法链式；value 变更同步宿主桥 freq）。
     var _freqParam = globalThis._zwMakeAudioParam(_freq, self._zwCtxId);
+    globalThis._zwRegisterNodeParam(node, 'frequency', _freqParam);
+    // media-audio D3 第五增量：oscillator frequency nominal range [-sampleRate/2, +sampleRate/2]
+    //（audioparam-nominal-range 断言面）。
+    var _oscRate = (self._zwSampleRate != null) ? self._zwSampleRate : (globalThis.WEBAUDIO_SAMPLE_RATE || 48000);
+    globalThis._zwApplyParamLimits(_freqParam, -_oscRate / 2, _oscRate / 2);
     Object.defineProperty(_freqParam, 'value', {
       get: function () { return _freq; },
       set: function (v) {
@@ -8089,6 +8162,10 @@
         if (isNaN(n) || n === Infinity || n === -Infinity) {
           throw new TypeError("Failed to set the 'value' property on 'AudioParam': The provided value is non-finite.");
         }
+        // media-audio D3 第五增量：nominal range clamp（[-rate/2, rate/2]——
+        // nominal-range value 越界截断断言面）。
+        var _halfRate = ((self._zwSampleRate != null) ? self._zwSampleRate : 48000) / 2;
+        n = Math.min(_halfRate, Math.max(-_halfRate, n));
         _freq = n;
         if (self._zwBridge && typeof globalThis.__zw_wa_set_freq === 'function') {
           try { globalThis.__zw_wa_set_freq(String(node._zwHandle), String(n)); } catch (_eWaf) {}
@@ -8102,6 +8179,12 @@
     });
     // detune AudioParam 占位（值恒 0——cent 偏移归后续切片）。
     var _detuneParam = globalThis._zwMakeAudioParam(0, self._zwCtxId);
+    globalThis._zwRegisterNodeParam(node, 'detune', _detuneParam);
+    // detune nominal range ±(1200·log2(maxFloat))（spec——fround 对齐）。
+    globalThis._zwApplyParamLimits(
+      _detuneParam,
+      -Math.fround(1200 * Math.log2(3.4028234663852886e38)),
+      Math.fround(1200 * Math.log2(3.4028234663852886e38)));
     Object.defineProperty(node, 'detune', {
       get: function () { return _detuneParam; },
       configurable: true,
@@ -8138,6 +8221,7 @@
     }
     var _gainVal = 1.0;
     var _gainParam = globalThis._zwMakeAudioParam(1.0, this._zwCtxId);
+    globalThis._zwRegisterNodeParam(node, 'gain', _gainParam);
     Object.defineProperty(_gainParam, 'value', {
       get: function () { return _gainVal; },
       set: function (v) { _gainVal = Number(v); if (isNaN(_gainVal)) _gainVal = 1.0; },
@@ -8206,6 +8290,34 @@
   }
   globalThis.AudioParam = globalThis.AudioParam || AudioParam;
   // AudioParam 工厂（createOscillator/createGain 的 frequency/detune/gain 面共用）。
+  // media-audio D3 第五增量：AudioParam nominal range 界值面（spec 每节点每 param
+  // 的 minValue/maxValue 表——audioparam-nominal-range 断言面）。应用后：min/max
+  // 属性反射 + value setter clamp 到界 + 界只读。
+  globalThis._zwApplyParamLimits = function (param, minValue, maxValue) {
+    var lo = Number(minValue), hi = Number(maxValue);
+    if (isNaN(lo) || isNaN(hi)) return param;
+    Object.defineProperty(param, 'minValue', {
+      get: function () { return lo; },
+      set: function () {},
+      configurable: true,
+    });
+    Object.defineProperty(param, 'maxValue', {
+      get: function () { return hi; },
+      set: function () {},
+      configurable: true,
+    });
+    // 既有 value accessor（闭包 _gainVal 等）包 clamp——保留原 getter，替换 setter。
+    var desc = Object.getOwnPropertyDescriptor(param, 'value');
+    if (desc && desc.set) {
+      var origSet = desc.set;
+      Object.defineProperty(param, 'value', {
+        get: desc.get,
+        set: function (v) { origSet.call(this, Math.min(hi, Math.max(lo, Number(v)))); },
+        configurable: true,
+      });
+    }
+    return param;
+  };
   globalThis._zwMakeAudioParam = function (initialValue, ctxId) {
     var param = Object.create(globalThis.AudioParam.prototype);
     param._zwKind = 'audioparam';
@@ -8315,8 +8427,20 @@
     param.defaultValue = Number(initialValue) || 0;
     // spec：min/max 为 float（32 位）界——Math.fround 舍入（constant-source-basic
     // 「offset.minValue should match spec」断言 -3.4028234663852886e+38 面）。
-    param.minValue = Math.fround(-3.4028235e38);
-    param.maxValue = Math.fround(3.4028235e38);
+    // media-audio D3 第五增量：min/max 只读访问器（nominal-range 赋值不改值断言面
+    // ——可写 data 属性会被赋值穿透）。
+    var _fmin = Math.fround(-3.4028235e38);
+    var _fmax = Math.fround(3.4028235e38);
+    Object.defineProperty(param, 'minValue', {
+      get: function () { return _fmin; },
+      set: function () {},
+      configurable: true,
+    });
+    Object.defineProperty(param, 'maxValue', {
+      get: function () { return _fmax; },
+      set: function () {},
+      configurable: true,
+    });
     return param;
   };
   // Node 构造器面（spec webaudio §OscillatorNode/GainNode——`new OscillatorNode(ctx,
@@ -8457,6 +8581,9 @@
     _zwWAInstallChannel12Setter(node);
     var _panVal = 0;
     var _panParam = globalThis._zwMakeAudioParam(0, ctx._zwCtxId);
+    // media-audio D3 第五增量：pan nominal range [-1, 1]。
+    globalThis._zwApplyParamLimits(_panParam, -1, 1);
+    globalThis._zwRegisterNodeParam(node, 'pan', _panParam);
     Object.defineProperty(_panParam, 'value', {
       get: function () { return _panVal; },
       set: function (v) {
@@ -8464,7 +8591,9 @@
         if (isNaN(n) || n === Infinity || n === -Infinity) {
           throw new TypeError("Failed to set the 'value' property on 'AudioParam': The provided value is non-finite.");
         }
-        _panVal = n;
+        // media-audio D3 第五增量：nominal range clamp（[-1,1]——nominal-range
+        // value 越界截断断言面）。
+        _panVal = Math.min(1, Math.max(-1, n));
       },
       configurable: true,
     });
@@ -8492,7 +8621,9 @@
       throw new RangeError("Failed to construct 'DelayNode': maxDelayTime must be non-negative.");
     }
     var _delayParam = globalThis._zwMakeAudioParam(0, ctx._zwCtxId);
-    _delayParam.maxValue = _maxDelay;
+    // media-audio D3 第五增量：delayTime nominal range [0, maxDelayTime]。
+    globalThis._zwApplyParamLimits(_delayParam, 0, _maxDelay);
+    globalThis._zwRegisterNodeParam(node, 'delayTime', _delayParam);
     Object.defineProperty(_delayParam, 'value', {
       get: function () { return _delayVal; },
       set: function (v) {
@@ -8537,6 +8668,19 @@
     var _detune = globalThis._zwMakeAudioParam(0, ctx._zwCtxId);
     var _freq = globalThis._zwMakeAudioParam(350, ctx._zwCtxId);
     var _gain = globalThis._zwMakeAudioParam(0, ctx._zwCtxId);
+    // media-audio D3 第五增量：biquad nominal ranges（frequency [0, rate/2]、
+    // detune ±1200·log2(maxFloat)、gain.maxValue = fround(40·log10(maxFloat))、
+    // Q/gain.minValue ±maxFloat——audioparam-nominal-range 断言面）。
+    var _biRate = (ctx._zwSampleRate != null) ? ctx._zwSampleRate : (globalThis.WEBAUDIO_SAMPLE_RATE || 48000);
+    var _maxFloat = 3.4028234663852886e38;
+    globalThis._zwApplyParamLimits(_q, -_maxFloat, _maxFloat);
+    globalThis._zwApplyParamLimits(_detune, -Math.fround(1200 * Math.log2(_maxFloat)), Math.fround(1200 * Math.log2(_maxFloat)));
+    globalThis._zwApplyParamLimits(_freq, 0, _biRate / 2);
+    globalThis._zwApplyParamLimits(_gain, -_maxFloat, Math.fround(40 * Math.fround(Math.log10(_maxFloat))));
+    globalThis._zwRegisterNodeParam(node, 'Q', _q);
+    globalThis._zwRegisterNodeParam(node, 'detune', _detune);
+    globalThis._zwRegisterNodeParam(node, 'frequency', _freq);
+    globalThis._zwRegisterNodeParam(node, 'gain', _gain);
     Object.defineProperty(node, 'Q', { get: function () { return _q; }, configurable: true });
     Object.defineProperty(node, 'detune', { get: function () { return _detune; }, configurable: true });
     Object.defineProperty(node, 'frequency', { get: function () { return _freq; }, configurable: true });
@@ -8824,6 +8968,7 @@
     var node = _zwWANode('constantsource', ctx._zwCtxId, 0);
     node._zwInputs = 0;
     var _offset = globalThis._zwMakeAudioParam(1, ctx._zwCtxId);
+    globalThis._zwRegisterNodeParam(node, 'offset', _offset);
     Object.defineProperty(node, 'offset', {
       get: function () { return _offset; },
       configurable: true,
@@ -8872,6 +9017,8 @@
     });
     var _playbackRate = globalThis._zwMakeAudioParam(1, ctx._zwCtxId);
     var _detune = globalThis._zwMakeAudioParam(0, ctx._zwCtxId);
+    globalThis._zwRegisterNodeParam(node, 'playbackRate', _playbackRate);
+    globalThis._zwRegisterNodeParam(node, 'detune', _detune);
     Object.defineProperty(node, 'playbackRate', { get: function () { return _playbackRate; }, configurable: true });
     Object.defineProperty(node, 'detune', { get: function () { return _detune; }, configurable: true });
     // loopStart/loopEnd 反射面（spec AudioBufferSourceNode——ctor-audiobuffersource
@@ -8934,8 +9081,31 @@
   AudioBufferSourceNode.prototype = _zwWANode.prototype;
   globalThis.AudioBufferSourceNode = globalThis.AudioBufferSourceNode || AudioBufferSourceNode;
   AudioContext.prototype.createBufferSource = function () { return _zwWABuildBufferSource(this); };
+  // media-audio D3 第五增量：MediaElementSource 最小面（nominal-range Online 任务
+  // 遍历面——无 AudioParam，媒体互连归后续切片）。
+  AudioContext.prototype.createMediaElementSource = function (mediaElement) {
+    var node = _zwWANode('mediaelementsource', this._zwCtxId, 0);
+    node._zwInputs = 0;
+    node._zwOutputs = 1;
+    node._zwMediaElement = mediaElement;
+    return node;
+  };
+  AudioContext.prototype.createScriptProcessor = function () {
+    var node = _zwWANode('scriptprocessor', this._zwCtxId, 0);
+    node._zwInputs = 0;
+    node._zwOutputs = 0;
+    return node;
+  };
   if (typeof globalThis.OfflineAudioContext !== 'undefined') {
     OfflineAudioContext.prototype.createBufferSource = AudioContext.prototype.createBufferSource;
+    // media-audio D3 第五增量：nominal-range 测试覆盖全部 create* 工厂——
+    // 无 AudioParam 节点的最小面（scriptProcessor 0 入 0 出占位 + offline 面）。
+    OfflineAudioContext.prototype.createScriptProcessor = function () {
+      var node = _zwWANode('scriptprocessor', this._zwCtxId, 0);
+      node._zwInputs = 0;
+      node._zwOutputs = 0;
+      return node;
+    };
   }
   // ---- M3 扩批 XXVI（2026-09-03）：处理类节点 ctor 族第二批——WaveShaper/
   // DynamicsCompressor/Panner/IIRFilter（WPT ctor-waveshaper / ctor-dynamicscompressor
@@ -9101,12 +9271,17 @@
     var node = _zwWANode('dynamicscompressor', ctx._zwCtxId, 0);
     node._zwChannelCountMode = 'clamped-max';
     _zwWAInstallChannel12Setter(node);
-    var defs = [['threshold', -24], ['knee', 30], ['ratio', 12], ['attack', Math.fround(0.003)], ['release', 0.25]];
+    // media-audio D3 第五增量：nominal range 界表（threshold[-100,0] knee[0,40]
+    // ratio[1,20] attack[0,1] release[0,1]——audioparam-nominal-range 断言面）。
+    var defs = [['threshold', -24, -100, 0], ['knee', 30, 0, 40], ['ratio', 12, 1, 20],
+                ['attack', Math.fround(0.003), 0, 1], ['release', 0.25, 0, 1]];
     for (var _di = 0; _di < defs.length; _di++) {
-      (function (name, val) {
+      (function (name, val, lo, hi) {
         var p = globalThis._zwMakeAudioParam(val, ctx._zwCtxId);
+        globalThis._zwApplyParamLimits(p, lo, hi);
+        globalThis._zwRegisterNodeParam(node, name, p);
         Object.defineProperty(node, name, { get: function () { return p; }, configurable: true });
-      })(defs[_di][0], defs[_di][1]);
+      })(defs[_di][0], defs[_di][1], defs[_di][2], defs[_di][3]);
     }
     node._zwReduction = 0;
     Object.defineProperty(node, 'reduction', {
@@ -9168,6 +9343,10 @@
     for (var _pi = 0; _pi < pdefs.length; _pi++) {
       (function (name, val) {
         var p = globalThis._zwMakeAudioParam(val, ctx._zwCtxId);
+        // media-audio D3 第五增量：panner 六 param nominal range ±maxFloat
+        //（工厂缺省即此——显式应用以对齐 mostPositiveFloat 精确值断言面）。
+        globalThis._zwApplyParamLimits(p, -3.4028234663852886e38, 3.4028234663852886e38);
+        globalThis._zwRegisterNodeParam(node, name, p);
         Object.defineProperty(node, name, { get: function () { return p; }, configurable: true });
       })(pdefs[_pi][0], pdefs[_pi][1]);
     }

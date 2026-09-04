@@ -136,9 +136,12 @@ WA_FILES=(
   # 调度（setValueAtTime/linearRamp/exponentialRamp/setTargetAtTime 事件表 +
   # startRendering 逐采样求值）。
   "webaudio/the-audio-api/the-audioparam-interface/audioparam-method-chaining.html"
-  # 仍不导入：audioparam-nominal-range（调度范围面）；ctor-audiobuffer（multiple
-  # contexts 渲染对比）；ctor-iirfilter（IIR 滤波 DSP）；periodicWave.html（谱
-  # 断言随归一化精化复评）。
+  # ---- 第二十二批（D3 第五增量——AudioParam nominal range 界表）：每节点每 param
+  # 的 spec min/max（_zwApplyParamLimits 反射 + value clamp + 只读）+ 原型参数发现
+  #（_zwRegisterNodeParam + WeakMap 原型访问器）。
+  "webaudio/the-audio-api/the-audioparam-interface/audioparam-nominal-range.html"
+  # 仍不导入：ctor-audiobuffer（multiple contexts 渲染对比）；ctor-iirfilter
+  #（IIR 滤波 DSP）；periodicWave.html（谱断言随归一化精化复评）。
 )
 
 # audit.js 框架（runner inline_extras 内联——用例以绝对路径引用）。
