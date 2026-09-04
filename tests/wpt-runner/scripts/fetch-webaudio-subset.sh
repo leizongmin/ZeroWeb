@@ -144,9 +144,13 @@ WA_FILES=(
   # Channel 数据面（shim 第七批已落；原「startRendering 后段不可分割」注记失效——
   # 该文件无 startRendering 引用，纯 AudioBuffer 数据面）。
   "webaudio/the-audio-api/the-audiobuffer-interface/audiobuffer-copy-channel.html"
-  # 仍不导入：ctor-audiobuffer（multiple contexts 渲染对比）；ctor-iirfilter
-  #（IIR 滤波 DSP）；periodicWave.html（pinned rev 该路径 404——用例已迁址，
-  # 排除注记失效）。
+  # ---- 第二十四批（D3 第六增量续）：ctor-audiobuffer——AudioBuffer ctor 全族
+  #（invalid ctor/required options/values/numberOfChannels/getChannelData 界）+
+  # multiple contexts 渲染对比（双 OfflineAudioContext 共享 buffer，各 startRendering
+  # 输出对拍）。原「末 task 依赖 startRendering」注记随图推进框架落地解除。
+  "webaudio/the-audio-api/the-audiobuffer-interface/ctor-audiobuffer.html"
+  # 仍不导入：ctor-iirfilter（IIR 滤波 DSP）；periodicWave.html（pinned rev 该路径
+  # 404——用例已迁址，排除注记失效）。
 )
 
 # audit.js 框架（runner inline_extras 内联——用例以绝对路径引用）。

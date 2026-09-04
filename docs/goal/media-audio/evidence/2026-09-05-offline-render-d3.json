@@ -6718,5 +6718,320 @@
         "message": null
       }
     ]
+  ],
+  [
+    "webaudio/the-audio-api/the-audiobuffer-interface/ctor-audiobuffer.html",
+    [
+      {
+        "name": "# AUDIT TASK RUNNER STARTED.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "> [initialize] ",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  context = new OfflineAudioContext(...) did not throw an exception.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "< [initialize] All assertions passed. (total 1 assertions)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Executing \"initialize\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "> [invalid constructor] ",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  new AudioBuffer() threw TypeError: \"Failed to construct 'AudioBuffer': The provided value is not of type 'AudioBufferOptions'.\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  new AudioBuffer(1) threw TypeError: \"Failed to construct 'AudioBuffer': The provided value is not of type 'AudioBufferOptions'.\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  new AudioBuffer(Date, 42) threw TypeError: \"Failed to construct 'AudioBuffer': The provided value is not of type 'AudioBufferOptions'.\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "< [invalid constructor] All assertions passed. (total 3 assertions)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Executing \"invalid constructor\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "> [required options] ",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  buffer = new AudioBuffer({}) threw TypeError: \"Failed to construct 'AudioBuffer': Failed to read the 'length' property from 'AudioBufferOptions': Required member is undefined.\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  buffer = new AudioBuffer({length: 1}) threw TypeError: \"Failed to construct 'AudioBuffer': Failed to read the 'sampleRate' property from 'AudioBufferOptions': Required member is undefined.\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  buffer = new AudioBuffer({sampleRate: 48000}) threw TypeError: \"Failed to construct 'AudioBuffer': Failed to read the 'length' property from 'AudioBufferOptions': Required member is undefined.\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  buffer = new AudioBuffer({numberOfChannels: 1} threw TypeError: \"Failed to construct 'AudioBuffer': Failed to read the 'length' property from 'AudioBufferOptions': Required member is undefined.\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  buffer0 = new AudioBuffer({length: 21, sampleRate: 48000} did not throw an exception.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  buffer0.numberOfChannels is equal to 1.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  buffer0.length is equal to 21.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  buffer0.sampleRate is equal to 48000.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  buffer1 = new AudioBuffer({numberOfChannels: 3, length: 1, sampleRate: 48000}) did not throw an exception.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  buffer1.numberOfChannels is equal to 3.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  buffer1.length is equal to 1.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  buffer1.sampleRate is equal to 48000.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "< [required options] All assertions passed. (total 12 assertions)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Executing \"required options\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "> [invalid option values] ",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  new AudioBuffer({\"numberOfChannels\":0,\"length\":1,\"sampleRate\":16000}) threw NotSupportedError: \"Failed to construct 'AudioBuffer': numberOfChannels 0 is not in range [1, 32].\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  new AudioBuffer({\"numberOfChannels\":99,\"length\":0,\"sampleRate\":16000}) threw NotSupportedError: \"Failed to construct 'AudioBuffer': numberOfChannels 99 is not in range [1, 32].\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  new AudioBuffer({\"numberOfChannels\":1,\"length\":0,\"sampleRate\":16000}) threw NotSupportedError: \"Failed to construct 'AudioBuffer': length 0 is not in range [1, 4294967295].\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  new AudioBuffer({\"numberOfChannels\":1,\"length\":1,\"sampleRate\":100}) threw NotSupportedError: \"Failed to construct 'AudioBuffer': sampleRate 100 is not in range [8000, 96000].\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "< [invalid option values] All assertions passed. (total 4 assertions)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Executing \"invalid option values\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "> [default constructor] ",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  buffer = new AudioBuffer({\"numberOfChannels\":5,\"length\":17,\"sampleRate\":16000}) did not throw an exception.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  buffer.numberOfChannels is equal to 5.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  buffer.length is equal to 17.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  buffer.sampleRate is equal to 16000.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "< [default constructor] All assertions passed. (total 4 assertions)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Executing \"default constructor\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "> [valid constructor] ",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  new AudioBuffer({\"numberOfChannels\":3,\"length\":42,\"sampleRate\":54321}) did not throw an exception.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  buffer.numberOfChannels is equal to 3.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  buffer.length is equal to 42.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  buffer.sampleRate is equal to 54321.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  buffer.getChannelData(0) did not throw an exception.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  buffer.getChannelData(0) length is equal to 42.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  buffer.getChannelData(1) did not throw an exception.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  buffer.getChannelData(1) length is equal to 42.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  buffer.getChannelData(2) did not throw an exception.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  buffer.getChannelData(2) length is equal to 42.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  buffer.getChannelData(3) threw IndexSizeError: \"Failed to execute 'getChannelData' on 'AudioBuffer': channel index 3 is not a valid index.\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "< [valid constructor] All assertions passed. (total 11 assertions)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Executing \"valid constructor\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "> [multiple contexts] ",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  c1 result is identical to the array [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16...].",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  c2 result is identical to the array [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16...].",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  AudioBuffer shared between two different contexts correctly",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "< [multiple contexts] All assertions passed. (total 3 assertions)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Executing \"multiple contexts\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "# AUDIT TASK RUNNER FINISHED: 7 tasks ran successfully.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Audit report",
+        "status": "Pass",
+        "message": null
+      }
+    ]
   ]
 ]
