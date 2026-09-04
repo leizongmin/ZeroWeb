@@ -1579,13 +1579,12 @@ pub const MEDIA_TEST_FILES: &[&str] = &[
     "html/semantics/embedded-content/media-elements/track/track-element/track-selection-metadata.html",
     "html/semantics/embedded-content/media-elements/track/track-element/track-remove-track.html",
     "html/semantics/embedded-content/media-elements/track/track-element/track-cues-missed-no-immediate-events.html",
-    // track-remove-insert-ready-state 维持排除（XLIX 通道拆分后仍缺口）：state 同步写/
-    // 事件 defer 拆分落地 + syncBody 通道（media 序列 canplaythrough 前调度点同步 settle），
-    // 探针实证「提前 query」形态 canplaythrough 时 outcome=error/RS=3——但用例形态
-    //（handler 内首 query）outcome 仍 null（settle 主体在该时点未执行，触发链断裂点待查；
-    // dbg 追加实验引入新的 Timeout 形态，沼泽收益递减）。通道拆分架构保留（事件 defer
-    // 与 handler 挂载窗口解耦——无回归）。
-    // track-mode-not-changed-by-new-track 维持排除——身份对拍切片。
+    // track-remove-insert-ready-state 维持排除（L 轮根因定位）：用例形态（canplaythrough
+    // handler 内首 query）在 media 任务之后排的页面异步（microtask/宏任务一律）全部停摆
+    // ——runner 沙箱事件循环的「媒体任务后 drain」缺口（**runner 域深结构**，非媒体语义面；
+    // bodyRun=0/探针自身 setTimeout/Promise 均不触发的 dbg 实证链存档）。track 通道拆分
+    // （XLIX）与调度前置（XLVII）架构保留。track-mode-not-changed-by-new-track 维持
+    // 排除——身份对拍切片。
     "html/semantics/embedded-content/media-elements/track/track-element/track-cues-cuechange-dynamically-created-track-element.html",
     "html/semantics/embedded-content/media-elements/track/track-element/track-disabled-addcue.html",
     "html/semantics/embedded-content/media-elements/track/track-element/track-insert-after-load.html",

@@ -738,3 +738,22 @@ track-active-cues 解除排除）**：
   实验（handler 内强制 srcChange 重调度）引入新 Timeout 形态，沼泽收益递减。
 - track-remove-insert-ready-state 维持排除（注记更新）。629P/0F/24PF = 96.32% 维持零
   回归；runner 契约 204 ok、clippy/fmt 干净。
+
+## 扩批 L — track 触发链断裂点根因定位（2026-09-05）
+
+- dbg 链（逐步计数器：__zwTrackSchedCount/Hit/Last → __zwTrackBodyRun/Key/Err →
+  __zwDeferCalled/Via/TimerFired）收敛出决定性证据：
+  1. ScheduleChildTrackLoads 枚举命中（calls=3 hits=3 last=track）——XLIX「枚举未命中」
+     假说排除；
+  2. _xlTrackLoadBody **bodyRun=0**——settle 主体从未执行（queueMicrotask 与 setTimeout(0)
+     双通道均不派发）；
+  3. 探针自身在 canplaythrough 媒体任务后排的 setTimeout(30) 与 Promise.resolve().then
+     同样不触发——**该页面形态下媒体任务之后的页面异步（microtask/宏任务一律）全部停摆**。
+- **根因定性**：runner 沙箱事件循环的「媒体任务后 drain」缺口——runner 域深结构（事件
+  循环面），非媒体语义面、非 track 调度问题。此前 XLVII/XLIX 的「settle 未落/触发链断裂」
+  定性全部收敛至此。
+- track-remove-insert-ready-state 维持排除（runner 域归因）；可回访断言面随 runner/shim
+  事件通道统一（deep-structure）复评。XLVII 调度前置四处 + XLIX 通道拆分 + syncBody
+  架构保留（629 绿零回归）。
+- 诊断计数器清理（_zwTrackSchedDump 诊断钩子保留）。629P/0F/24PF = 96.32% 维持零回归；
+  runner 契约 204 ok、clippy/fmt 干净。

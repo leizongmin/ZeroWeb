@@ -2,7 +2,15 @@
 
 **入口文档**: [../media-elements.md](../media-elements.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-05（**M3 扩批 XLIX 落地**——track settle 通道拆分落地（架构修复）+ 用例
+**最后更新**: 2026-09-05（**M3 扩批 L 落地**——track 触发链「断裂点」根因定位（负结果收口）：
+**runner 沙箱事件循环的「媒体任务后 drain」缺口**——dbg 链（bodyRun=0 + 探针自身
+setTimeout/Promise.then 在 canplaythrough 媒体任务后均不触发）实证该页面形态下媒体任务之后
+的页面异步（microtask/宏任务一律）全部停摆——**runner 域深结构**（事件循环 drain 面缺口），
+非媒体语义面、非 track 调度问题。XLVII 调度前置四处 + XLIX 通道拆分 + syncBody 架构保留
+（629 绿零回归）；track-remove-insert-ready-state 维持排除（注记更新为 runner 域归因），
+其可回访断言面随 runner/shim 事件通道统一（deep-structure）复评。629P/0F/24PF = 96.32%
+维持零回归；runner 契约 204 ok、clippy/fmt 干净；诊断计数器已清（_zwTrackSchedDump 保留）。
+此前 2026-09-05：**M3 扩批 XLIX 落地**——track settle 通道拆分落地（架构修复）+ 用例
 形态触发链仍断（负结果并存）：① **通道拆分**（XLVIII 定版方向）实施——_zwSettleResourceKey 的
 track 面 state 写入同步（RS 即时可达）+ load/error 事件派发 defer 一拍（microtask FIFO 保序，
 与 handler 挂载窗口解耦——XLVIII 同步派发 21 件 Timeout 的根因消除）；② **syncBody 同步通道**：
@@ -341,7 +349,7 @@ currentSrc 的 source-child 插入触发（mutation 面）。
 （**M3 扩批 event_* 族 + 第二批 + III~X（2026-09-01）/ XI~XV（2026-09-02）/
   XVI~XVIII（2026-09-03）过程记录**——每批 shim 面/runner 面明细与排除注记——
   已归档至 [archive/2026-09-04_m3-batches-vii-to-xviii.md](archive/2026-09-04_m3-batches-vii-to-xviii.md)，
-  证据 JSON 序列见验证基线；累计口径 603P/0F/24PF = 96.17%。第 XIX~XLIX 批
+  证据 JSON 序列见验证基线；累计口径 603P/0F/24PF = 96.17%。第 XIX~L 批
   明细见头链（最新态）。）
 
 **里程碑归档（2026-09-01）**：M1~M3 与六轮扩批的过程记录、排除用例决策清单已归档至
@@ -555,6 +563,9 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
   Timeout 0 / PF 24）
   → 扩批 XLIX（2026-09-05，track settle 通道拆分落地 + syncBody 通道；用例形态触发链
   断裂点待查——负结果并存）**629/653 = 96.32%** 维持零回归（Fail 0 / Timeout 0 / PF 24）
+  → 扩批 L（2026-09-05，触发链「断裂点」根因定位——runner 沙箱事件循环「媒体任务后 drain」
+  缺口（runner 域深结构）；track-remove-insert-ready-state 维持排除）**629/653 = 96.32%**
+  维持零回归（Fail 0 / Timeout 0 / PF 24）
 - 复核（2026-09-04 治理整固后终审）：fresh 跑 603P/0F/24PF（198 文件）与
   本档记录逐位一致；验证基线 evidence 链 26 文件全在盘；make test 18877/0。
   （扩批 XL 后：fresh 跑 609P/0F/24PF（201 文件）；扩批 XLI 后：fresh 跑
