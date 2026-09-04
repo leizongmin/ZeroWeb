@@ -190,10 +190,10 @@ impl LayoutEngine {
     ) -> bool {
         use zero_css_parser::values::LengthValue;
         let mut changed = false;
-        let mut stack: Vec<(&LayoutBox, f32)> = vec![(root, f32::INFINITY)];
-        while let Some((b, cb_width)) = stack.pop() {
-            // CB 更新在 push 时——positioned 盒（含 contain CB）的子代 CB = 本盒宽。
-            let child_cb = if b.is_abspos_cb
+        let mut stack: Vec<(&LayoutBox, f32, f32)> = vec![(root, f32::INFINITY, f32::INFINITY)];
+        while let Some((b, cb_width, cb_height)) = stack.pop() {
+            // CB 更新在 push 时——positioned 盒（含 contain CB）的子代 CB = 本盒宽/高。
+            let child_is_cb = b.is_abspos_cb
                 || b.node_id.and_then(|id| styles.get(&id)).is_some_and(|s| {
                     matches!(
                         s.position,
@@ -201,16 +201,43 @@ impl LayoutEngine {
                             | zero_css_parser::values::PositionValue::Absolute
                             | zero_css_parser::values::PositionValue::Fixed
                     )
-                }) {
-                b.width
+                });
+            let child_cb = if child_is_cb { b.width } else { cb_width };
+            // CB 高按 **padding-box** 语义传递（% 固有高相对 CB padding-box；
+            // b.height 是 border-box，剥自身 border）——消费方 R4018 臂直用。
+            let child_cb_h = if child_is_cb {
+                (b.height - b.border_top - b.border_bottom).max(0.0)
             } else {
-                cb_width
+                cb_height
             };
             for child in &b.children {
-                stack.push((child, child_cb));
+                stack.push((child, child_cb, child_cb_h));
             }
             let Some(id) = b.node_id else { continue };
             let Some(s) = styles.get(&id) else { continue };
+            // R4018（CSS2 §10.6.6 + SVG2 sizing）：abspos svg 的 % attr 固有高——
+            // `height="50%"` 是**存在的百分比声明**（非缺失），used 高 = % × abspos CB 高
+            //（absolute-replaced-height-027/034：50% × 192 = 96，旧落 default 150）。
+            // taffy 的 svg gate 对 % attr 无信号面（负 dh 已被比信号占用），taffy 布局后
+            // 修正：仅在 CSS height auto 时覆写，% × cb_height 定值写入。
+            if b.is_replaced
+                && b.is_absolute
+                && matches!(s.height, LengthValue::Auto)
+                && cb_height.is_finite()
+                && cb_height > 0.5
+                && let Some(pct) = crate::svg_default_size::svg_attr_percentage_height(id, doc)
+                && let Some(&taffy_id) = dom_to_taffy.get(&id)
+                && let Ok(mut style) = taffy_tree.style(taffy_id).cloned()
+            {
+                let h = (pct / 100.0 * cb_height).max(0.0);
+                if (b.height - h).abs() > 0.5 {
+                    style.size.height = taffy::style::Dimension::length(h);
+                    let _ = taffy_tree.set_style(taffy_id, style);
+                    let _ = taffy_tree.mark_dirty(taffy_id);
+                    changed = true;
+                }
+                continue;
+            }
             // R4015/R4015b：replaced 排除例外——taffy 任一维塌 0 的 abspos replaced
             //（无 attr 固有尺寸，如 height-only svg / 无尺寸 svg 的 height 面）缺固有维
             // 解析，仍需 shrink-to-fit 补测（§10.3.8 + css-sizing-3 default object size）。

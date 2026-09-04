@@ -99,6 +99,29 @@ pub(crate) fn svg_default_used_size(elem: &ElementData, style: &ComputedStyle) -
     Some((Some(SVG_DEFAULT_W), SVG_DEFAULT_H))
 }
 
+/// R4018：svg 的 **百分比 attr 固有高**（`height="50%"` → Some(50.0)；无 % 高 → None）。
+///
+/// 与 [`svg_attr_intrinsic_height`] 互补：该函数只解析 abs（px）值，% 落 None；
+/// 本函数只解析 % 值。css-sizing/SVG2：百分比 attr 是存在的声明（非缺失），used =
+/// % × 包含块高（abspos 语境 = 最近 positioned 祖先 padding-box）。仅 attr 来源
+///（CSS height 的 % 归 converter/taffy CB 解析既有路径，不在此处理）。
+pub(crate) fn svg_attr_percentage_height(node_id: zero_dom::NodeId, doc: &zero_dom::Document) -> Option<f32> {
+    let node = doc.get(node_id)?;
+    let zero_dom::NodeKind::Element(elem) = &node.kind else {
+        return None;
+    };
+    if elem.local_name() != "svg" {
+        return None;
+    }
+    let h = elem.get_attribute("height")?;
+    let t = h.trim();
+    if !t.ends_with('%') {
+        return None;
+    }
+    let pct: f32 = t.trim_end_matches('%').parse().ok()?;
+    pct.is_finite().then_some(pct)
+}
+
 /// svg 的有效比例值（CSS aspect-ratio 优先，回退 viewBox w/h）。
 pub(crate) fn svg_ratio_value(elem: &ElementData, style: &ComputedStyle) -> Option<f32> {
     if let Some(r) = style.aspect_ratio.filter(|r| r.is_finite() && *r > 0.0) {

@@ -221,7 +221,12 @@ pub fn computed_style_to_taffy(
             // 错误生效（block-in-inline-vertical-margins-on-span-ignored：span mt/bt:50
             // 错误推开块子间距；split inline 的匿名块盒经 computed_style_to_taffy 继承同 bug）。
             // 水平 margin 保留（inline 水平 margin 有效，作用于 IFC 内 inline 片段）。
-            let inline_vmargin_zero = matches!(style.display, DisplayValue::Inline);
+            // R4018（CSS2 §10.3）：position:absolute/fixed 元素 **blockify**（§9.7 computed
+            // display 面已是 block 语义），其垂直 margin 参与定位方程（§10.6.4）——
+            // absolute-replaced-height-027/034：abspos svg（UA display:inline）mt:0.5in
+            // 被 R1058 清零 → §10.6.4 方程 top+mt 定位丢失 48px。
+            let inline_vmargin_zero = matches!(style.display, DisplayValue::Inline)
+                && !matches!(style.position, PositionValue::Absolute | PositionValue::Fixed);
             let zero = taffy::style::LengthPercentageAuto::length(0.0_f32);
             taffy::geometry::Rect {
                 left: convert_length_to_lpa(&style.margin_left, is_float, vw, vh),

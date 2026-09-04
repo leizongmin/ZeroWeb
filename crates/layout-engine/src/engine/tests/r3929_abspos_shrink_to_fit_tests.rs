@@ -285,3 +285,48 @@ fn r4017_abspos_with_margin_top_not_touched() {
         "R4017: mt 非零的 abspos 应保持 taffy 既有静态位（gate 跳过，公式值 94.6 不应出现），实际 y={y}"
     );
 }
+
+/// R4018（CSS2 §10.6.6 + SVG2 sizing）：abspos svg 的 % attr 固有高——
+/// `height="50%"` 是存在的百分比声明，used 高 = % × CB padding-box
+///（absolute-replaced-height-027/034：50% × 192 = 96，旧落 default 150）。
+#[test]
+fn r4018_abspos_svg_pct_attr_height_resolves_against_cb() {
+    let html = r#"<html><body style="margin:0">
+<div style="position: relative; width: 200px; height: 192px; border-top: 3px solid black;">
+<svg version="1.1" xmlns="http://www.w3.org/2000/svg" height="50%" style="position: absolute; top: 0; left: 0;">
+<rect x="0" y="0" width="200" height="100" fill="blue" />
+</svg>
+</div>
+</body></html>"#;
+    let (doc, result) = layout(html);
+    let sid = doc.get_elements_by_tag_name("svg").into_iter().next().expect("svg");
+    let (_w, h) = find_box(&result.root, sid).expect("svg box");
+    // 50% × CB padding-box（192 = 195 border-box − 3 border-top）= 96。
+    assert!(
+        (h - 96.0).abs() < 1.0,
+        "R4018: abspos svg height=50% 应按 CB padding-box 解析为 96，实际 {h}"
+    );
+}
+
+/// R4018（CSS2 §10.3 + §10.6.4）：abspos 元素（含 UA display:inline 的 replaced 类）
+/// 垂直 margin **参与定位方程**——converter 的 R1058 inline 垂直 margin 清零须排除
+/// abspos/fixed（blockify 语义）。
+#[test]
+fn r4018_abspos_inline_element_margin_top_participates() {
+    use crate::engine::tests::find_absolute_position_by_node_id;
+    let html = r#"<html><body style="margin:0">
+<div style="position: relative; width: 200px; height: 192px;">
+<svg version="1.1" xmlns="http://www.w3.org/2000/svg" style="position: absolute; top: 48px; left: 0; margin-top: 48px;">
+<rect x="0" y="0" width="200" height="100" fill="blue" />
+</svg>
+</div>
+</body></html>"#;
+    let (doc, result) = layout(html);
+    let sid = doc.get_elements_by_tag_name("svg").into_iter().next().expect("svg");
+    let (_x, y) = find_absolute_position_by_node_id(&result.root, sid).expect("svg box");
+    // §10.6.4：盒顶 = top(48) + margin-top(48) = 96（CB=div1 padding-box，body margin 0）。
+    assert!(
+        (y - 96.0).abs() < 1.0,
+        "R4018: abspos 元素垂直 margin 应参与定位（top+mt=96），实际 y={y}"
+    );
+}
