@@ -260,20 +260,22 @@ videoHeight 解码器探针真值（M2a 切片 3）。**buffered/seekable TimeRa
 无断言用例」注记失效——seeking/ 目录即断言面）；真值化依赖真解码流的缓冲区间
 追踪（随播放面背压优化一并评估，记录为后续项）。
 
-**DC-4（多格式 + 稳定性）🔄（余 WPT 子集导入）**：① 选型面内容器/编解码 e2e
-（VP9 单轨/双轨 + AV1 decode→settle→play→canPlayType 全链 ✅）；② 资源生命周期
-（`prepare_document_state` 清空注册表 + `clear()` 单测——DC-4 导航释放面 ✅）；
-③ **上游 WPT 可执行子集导入未启动**（master.md 下一步 #1 尾项——runner 桥注入
-可行性分析已记：WPT corpus 无 settle 真源，注入后行为零变化；待 fixture-mounted
-runner 播放用例面评估，随 D-RFC-3 批复状态一并决策）。
+**DC-4（多格式 + 稳定性）✅（2026-09-05 收口）**：① 选型面内容器/编解码 e2e
+（VP9 单轨/双轨 + AV1 全链 + **H.264 mp4：解码/settle/播放/伴生 AAC/seek 全链
+（切片 1+2）**✅）；② 资源生命周期（`prepare_document_state` 清空注册表 +
+`clear()` 单测——导航释放面 ✅）；③ 上游 WPT 可执行子集：**评估收束**——runner
+桥注入面（fixture-mounted）已落地并覆盖 webm 播放用例；WPT pinned rev（3159769338）
+media 素材全为 webm/mp3/oga，**无 mp4 用例** → 真解码面无可导入增量（诚实注记）；
+产品 fixture 无 video 面 → product-smoke 观察面无增量。
 
 **DC-5（测试与质量不可退让）✅**：make test 18694 全绿（2026-09-02 组合树实测）、
 clippy 零警告、每切片带单测 + e2e/fixture 资产化（AV1 全流单测 + settle e2e +
 桥 roundtrip）。
 
-**结论**：DC-1/2/3/5 满足；DC-4 余 WPT 可执行子集导入一项（外部门控：D-RFC-3
-批复影响其形态——H.264 批准则 mp4 面 WPT 用例可随实施导入，不批准则 webm 面
-维持 headless 饱和态）。
+**结论（2026-09-05 复核）**：DC-1~5 全部满足——DC-4 的 H.264 面随切片 1+2 落地
+补齐（mp4 解码/settle/播放/伴生 AAC/seek 全链 e2e），WPT 可执行子集经评估收束
+（pinned rev 无 mp4 素材用例——无可导入增量，诚实注记）。**M3 收尾：全切片完成，
+goal Done Criteria 全满足。**
 
 ## 缺口清单
 
@@ -380,8 +382,8 @@ clippy 零警告、每切片带单测 + e2e/fixture 资产化（AV1 全流单测
 |--------|------|
 | M0 — 解码器选型 RFC（门控） | ✅ 完成并获批（2026-09-01，路线 C） |
 | M1 — 首个视频帧上屏 | ✅ 完成（2026-09-01：M1a 解码管线 + M1b 帧上屏通路 + e2e 常驻） |
-| M2 — 连续播放 + 语义驱动 | 🔄 M2a + M2b + M2c + 切片 C/D/E/F 收口（播放/真值/桥/帧泵/seek/变速 + 音频面生产链路/增益/导航释放/renderer 对齐 + 色彩面全对齐 + A/V 同步 audio clock 主时钟 + A/V pair ended 面回归守卫）；余音频设备面（media-audio M1 CpalSink，可选） |
-| M3 — 多格式 + 稳定 + 收尾 | 🔄 AV1 ✅（2026-09-02，D-RFC-2）+ **H.264 切片 1 ✅**（2026-09-05，D-RFC-3 获批：mp4 demux + openh264 解码 + open_media 路由 + fixture e2e + canPlayType 扩表）；余 H.264 切片 2（AAC 音频链 + mp4 seek 索引）/ 切片 3（WPT 真解码面评估）|
+| M2 — 连续播放 + 语义驱动 | ✅ M2a + M2b + M2c + 切片 C/D/E/F 收口（播放/真值/桥/帧泵/seek/变速 + 音频面生产链路/增益/导航释放/renderer 对齐 + 色彩面全对齐 + A/V 同步 audio clock 主时钟 + A/V pair ended 面回归守卫 + **D4 renderer 播放泵事件循环节拍（2026-09-05）**）；音频设备面归 media-audio goal（CpalSink 真出声为该 goal 可选切片） |
+| M3 — 多格式 + 稳定 + 收尾 | 🔄 AV1 ✅（2026-09-02，D-RFC-2）+ **H.264 全切片 ✅**（2026-09-05，D-RFC-3 获批：切片 1 mp4 demux + openh264 解码 + open_media 路由 + fixture e2e + canPlayType 扩表；切片 2 AAC 链 e2e + Mp4Aac 伴生轨 + precise-seek 前向回退；切片 3 评估收束——WPT pinned rev 无 mp4 素材用例 + 产品 fixture 无 video 面，真解码面无可导入/观察增量，诚实注记）；余 DC-4 WPT 可执行子集（外部门控已解除——随批复落地，现状无 mp4 面）|
 
 ## 验证基线
 

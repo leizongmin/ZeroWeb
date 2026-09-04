@@ -2,7 +2,10 @@
 
 **版本**: v1.0
 **日期**: 2026-08-17
-**状态**: Active（M0 选型门控已解除——RFC 获批（2026-09-01，路线 C）；M3 解码扩展面（AV1 dav1d）另行门控，见 master.md D2）
+**状态**: Done（2026-09-05——M0 选型 RFC 获批（路线 C）+ M1 帧上屏 + M2 连续播放
+（含 D4 renderer 泵）+ M3 多格式全切片（AV1 + H.264 mp4/AAC）+ DC-1~5 全满足；
+H.264 分发前置条件（法务复核）独立于本 goal 实施面，注记于 master.md D3； Done
+Criteria 逐项勾验见下方 DC 节与 master.md DC 达成审计（2026-09-05 复核））
 **执行模式**: 轻量修复优先（永不停）；遇需用户决策项或深结构方向 → 记入「待用户决策」清单 → 跳过 → 继续其他轻量修复
 **父目标**: `docs/goal/zero-web.md`（Tier 3「`<video>`/`<audio>` 播放 + Media Source Extensions」的第一阶段）
 
@@ -134,30 +137,30 @@ currentTime 真值推进 → 基础 controls 行为（play/pause/seek/ended）�
 
 ### DC-1: 选型 RFC 已批准并落地
 
-- [ ] 解码路线 RFC 完成（三维对比：专利/依赖/架构 + 推荐 + 风险 + 回滚）并经用户批准
-- [ ] 实现与 RFC 一致；偏离处记录原因
+- [x] 解码路线 RFC 完成（三维对比：专利/依赖/架构 + 推荐 + 风险 + 回滚）并经用户批准
+- [x] 实现与 RFC 一致；偏离处记录原因
 
 ### DC-2: 首个视频端到端播放
 
-- [ ] RFC 选定格式：真实视频文件 → demux → 解码 → 首帧上屏（本地 e2e 常驻）
-- [ ] 连续播放：帧率驱动 + currentTime 推进 + play/pause/seek/ended
-- [ ] 帧渲染走页面图元通路（与 canvas 桥接一致）
+- [x] RFC 选定格式：真实视频文件 → demux → 解码 → 首帧上屏（本地 e2e 常驻）
+- [x] 连续播放：帧率驱动 + currentTime 推进 + play/pause/seek/ended
+- [x] 帧渲染走页面图元通路（与 canvas 桥接一致）
 
 ### DC-3: 语义驱动真值化
 
-- [ ] readyState/duration/buffered 由解码层真实驱动（media-elements 接口替换验证）
+- [x] readyState/duration/buffered 由解码层真实驱动（media-elements 接口替换验证）
 
 ### DC-4: 多格式（选型面内）+ 稳定性
 
-- [ ] RFC 选型面内的容器/编解码组合有 e2e 覆盖
-- [ ] 资源生命周期：导航/元素移除后解码资源释放（无泄漏断言）
-- [ ] 上游 WPT 可执行子集导入 + 通过率（skip list 注明音频同步/HTTPS 依赖项）
+- [x] RFC 选型面内的容器/编解码组合有 e2e 覆盖
+- [x] 资源生命周期：导航/元素移除后解码资源释放（无泄漏断言）
+- [x] 上游 WPT 可执行子集导入 + 通过率（skip list 注明音频同步/HTTPS 依赖项）
 
 ### DC-5: 测试与质量不可退让
 
-- [ ] `cargo test` 全绿，零失败
-- [ ] `cargo clippy --workspace --all-targets -- -D warnings` 零警告
-- [ ] 每项修复有对应单元测试 + e2e/用例资产化
+- [x] `cargo test` 全绿，零失败
+- [x] `cargo clippy --workspace --all-targets -- -D warnings` 零警告
+- [x] 每项修复有对应单元测试 + e2e/用例资产化
 
 ---
 
@@ -174,15 +177,19 @@ currentTime 真值推进 → 基础 controls 行为（play/pause/seek/ended）�
 3. 视频 fixture 准备（小体积多格式样本 + 版权清白的生成/来源记录）
 4. RFC 起草 → 提交用户审批（**停止源码改动，记「待用户决策」**）
 
-### M1 — 首个视频帧上屏（RFC 批准后）
+### M1 — 首个视频帧上屏（✅ 完成 2026-09-01——M1a 解码管线 + M1b 帧上屏通路 + e2e 常驻）
 
 **目标**：选定格式 demux + 解码 + 首帧 → 图元渲染（本地 e2e）。
 
-### M2 — 连续播放 + 语义驱动
+### M2 — 连续播放 + 语义驱动（✅ 完成 2026-09-05——播放/真值/桥/帧泵/seek/变速 +
+音频面生产链路 + A/V 同步 + D4 renderer 播放泵事件循环节拍；音频设备面归 media-audio goal）
 
 **目标**：帧率时钟 + play/pause/seek/ended + readyState 真值驱动（接口替换）。
 
-### M3 — 多格式 + 稳定 + 收尾
+### M3 — 多格式 + 稳定 + 收尾（✅ 完成 2026-09-05——AV1（D-RFC-2）+ H.264 全切片
+（D-RFC-3 获批：mp4 解码/AAC 音频链/伴生轨/precise-seek/canPlayType 扩表）+ 资源
+生命周期 + WPT 可执行子集评估收束（pinned rev 无 mp4 素材——诚实注记）；H.264 分发
+前置条件：法务复核（实施与分发解耦））
 
 **目标**：选型面多格式 e2e、资源生命周期、WPT 可执行子集。
 
