@@ -48,6 +48,9 @@ pub struct Mp4H264Decoder {
     ps_injected: bool,
     /// 容器声明的视频轨时长（毫秒）——TrackEntry duration × timebase。
     duration_ms: Option<u64>,
+    /// 源字节留存（seek 重建 reader/decoder 所需——webm 面源字节由 registry 留存，
+    /// mp4 面 reader 不可重置，自持一份）。
+    source_bytes: std::sync::Arc<Vec<u8>>,
 }
 
 impl Mp4H264Decoder {
@@ -102,6 +105,7 @@ impl Mp4H264Decoder {
             eof: false,
             ps_injected: false,
             duration_ms,
+            source_bytes: std::sync::Arc::new(data.to_vec()),
         })
     }
 
@@ -166,6 +170,32 @@ impl Mp4H264Decoder {
                     return Ok(None);
                 }
                 Err(e) => return Err(DecodeError::Container(e.to_string())),
+            }
+        }
+    }
+
+    /// seek 到目标位置（毫秒，媒体时间轴）——spec「seek」precise-seek 前向回退
+    /// 形态（与 [`crate::decode::VideoDecoder::seek_to_ms`] 的 ② 回退路径同构）：
+    /// mp4 无 cue 索引面（stss/sync sample 索引随切片 3 评估）——从流首重建解码器
+    /// 前向解码至 ≥ target 的首帧，写入 pending（下一次 next_frame 先弹出）。
+    /// 语义契约：完成后的「下一次 [`Self::next_frame`]」返回 pts ≥ target 的首帧。
+    /// https://html.spec.whatwg.org/multipage/media.html#seek
+    pub fn seek_to_ms(&mut self, target_ms: u64) -> Result<(), DecodeError> {
+        // 重建：reader 重 probe + 解码器重造（参考链作废）——open() 的轨枚举面
+        // 不可复用（reader 已消费），但 mp4 box 结构支持随机访问（re-probe廉价）。
+        let fresh = Self::open(&self.source_bytes)?;
+        *self = fresh;
+        self.pending = None;
+        loop {
+            match self.next_frame() {
+                Ok(Some(frame)) => {
+                    if frame.pts_ms >= target_ms {
+                        self.pending = Some(frame);
+                        return Ok(());
+                    }
+                }
+                Ok(None) => return Ok(()),
+                Err(e) => return Err(e),
             }
         }
     }

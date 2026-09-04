@@ -2323,4 +2323,29 @@ mod tests {
         );
         assert!(reg.audio_advance_all(500), "opus 泵推进应写 sink");
     }
+
+    // 默认构建无 decode-h264（open_media 对 ftyp 回 NoVideoTrack → play 占位回落
+    // ——零回归契约）；本 e2e 仅在 feature 开启态编译运行。
+    #[cfg(feature = "decode-h264")]
+    #[test]
+    fn media_settle_mp4_h264_play_companion_aac_advances() {
+        // H.264 切片 2（D-RFC-3c AAC 随期）：mp4（H.264+AAC）settle → play 真值
+        // 路由（切片 1 open_media）→ 伴生 AAC 轨登记（WebmAudioTrackKind::Mp4Aac
+        // ——symphonia probe）→ 泵推进写 sink（audio_advance_all 写入面）。
+        let mp4 = media_fixture_bytes("sample-mp4-h264.mp4");
+        let html = r#"<html><body><video src="sample-mp4-h264.mp4"></video></body></html>"#;
+        let mut load = AsyncPageLoad::from_html("https://example.com/media/", html.to_string());
+        let mut wv = WebView::new(WebViewConfig::default());
+        let mut host = MockFetchHost::new().with_bytes(mp4);
+        while load.is_active() {
+            let _ = load.tick(&mut wv, &mut host, 500.0);
+        }
+        let video_url = "https://example.com/media/sample-mp4-h264.mp4";
+        let registry = wv.video_players();
+        let mut reg = registry.lock().unwrap_or_else(|e| e.into_inner());
+        assert!(reg.play(video_url, 0), "mp4/H.264 settle 后 play 真值成功");
+        assert!(reg.is_playing(video_url));
+        // 伴生 AAC 轨推进（NullSink 写入面——av_audio_entries 登记后的泵行为）。
+        assert!(reg.audio_advance_all(200), "mp4 伴生 AAC 轨泵推进应写 sink");
+    }
 }

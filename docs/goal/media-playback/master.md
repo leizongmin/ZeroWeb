@@ -1,3 +1,15 @@
+**最后更新**: 2026-09-05（**H.264 切片 2 落地——AAC 音频链 + mp4 伴生轨 + precise-seek**：
+① **AAC 解码链 e2e**：mp4 容器 AAC LC 轨 → symphonia aac 解码 f32 → NullSink 过零率
+≈880 契约锚点（mp3/vorbis 链同款断言面；aac+isomp4 feature 切片 1 已入 workspace）；
+② **registry 伴生 AAC 轨**：`WebmAudioTrackKind::Mp4Aac(Box<AudioDecoder>)` 第三形态
+——play 懒建（webm 双形态失败后试 mp4 probe）+ seek 重建同面；mp4 settle→play→伴生
+泵推进 e2e（feature-gated `media_settle_mp4_h264_play_companion_aac_advances`）；
+③ **mp4 precise-seek**：`Mp4H264Decoder::seek_to_ms` 前向回退形态（源字节自持 +
+reader/decoder 重建 + 前向解码至 ≥ target 写 pending——webm ② 回退同构；
+seek(1000)→首帧 pts ∈ [1000,1042] + 后续 24 帧推到流末，单测常驻）；
+stss/sync-sample 索引加速随切片 3 评估。media 49/52 双配置 + webview 691/692 双配置
+全绿、clippy/fmt 干净。）
+**（注：下方「最后更新」切片 1/D3/D4 块为前轮记录，保留作历史）**
 **最后更新**: 2026-09-05（**D3 切片 1 + D4 双落地**——获批当日实施：
 ① **H.264 切片 1（zero-media）**：新增 `mp4_h264` 模块——symphonia `isomp4` demux
 （H264 轨枚举/timescale/avcC extradata/轨时长）+ `openh264` 位流解码（avcC→SPS/PPS

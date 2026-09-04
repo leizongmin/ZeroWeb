@@ -566,3 +566,71 @@ fn open_media_routes_webm_and_rejects_unknown() {
         "未知容器 → NoVideoTrack"
     );
 }
+
+#[test]
+fn audio_mp4_aac_decode_to_nullsink_chain() {
+    // H.264 切片 2（D-RFC-3c AAC 随期）：mp4 容器 AAC LC 轨 → symphonia aac
+    // 解码 f32 → NullSink（过零率 ≈880 = 2×440Hz 契约锚点——mp3/vorbis 链同款）。
+    // 容器面 isomp4（切片 1 已入 workspace feature）；编码面 aac feature。
+    use crate::audio::NullSink;
+    use crate::audio::{AudioFormat, AudioSink};
+    use crate::audio_decode::AudioDecoder;
+
+    let data = fs::read(fixture_path("sample-mp4-h264.mp4")).unwrap();
+    let mut dec = AudioDecoder::open(&data).unwrap();
+    let (rate, channels) = (dec.sample_rate(), dec.channels());
+    assert_eq!(channels, 1, "fixture 为单声道");
+
+    let mut sink = NullSink::new();
+    sink.start(AudioFormat {
+        sample_rate: rate,
+        channels,
+    })
+    .unwrap();
+    let mut batches = 0u32;
+    let mut wrote_any = false;
+    while let Some(batch) = dec.next_batch().unwrap() {
+        assert_eq!(batch.sample_rate, rate);
+        assert_eq!(batch.channels, channels);
+        sink.write(&batch.samples).unwrap();
+        wrote_any = true;
+        batches += 1;
+        assert!(batches <= 200, "runaway batch count");
+    }
+    assert!(wrote_any, "解码应产出采样");
+
+    // 时长面：2s @ rate（AAC 编码延迟/priming 容差 ±5%）。
+    let frames = sink.frames_written();
+    let expect = u64::from(rate) * 2;
+    assert!(
+        (frames as i64 - expect as i64).abs() < (expect as i64 / 20),
+        "写入帧数应 ≈ 2s 采样数：got {frames}, expect ≈{expect}"
+    );
+    // 频域代理锚点：440Hz sine 过零率 ≈ 880。
+    let zcr = sink.zero_crossings_per_second().expect("写入后应有过零率");
+    assert!((zcr - 880.0).abs() < 90.0, "440Hz sine 过零率应 ≈880，got {zcr}");
+}
+
+#[cfg(feature = "decode-h264")]
+#[test]
+fn mp4_h264_seek_forward_precise() {
+    // 切片 2 seek 面：precise-seek 前向回退形态（流首重建 + 前向解码至 ≥ target
+    // ——webm ② 回退同构）。fixture 24fps：seek(1000) → 下一帧 pts ∈ [1000, 1042]。
+    let data = fs::read(fixture_path("sample-mp4-h264.mp4")).unwrap();
+    let mut dec = VideoTrackDecoder::open_media(&data).unwrap();
+    dec.seek_to_ms(1000).unwrap();
+    let frame = dec.next_frame().unwrap().expect("seek 后应有帧");
+    assert!(
+        frame.pts_ms >= 1000 && frame.pts_ms <= 1042,
+        "seek(1000) 后首帧 pts 应 ∈ [1000,1042]（24fps 帧距 ~41.7ms），got {}",
+        frame.pts_ms
+    );
+    // seek 后可继续推进到流末（解码链重建后完整可解）。
+    let mut count = 1u32;
+    while dec.next_frame().unwrap().is_some() {
+        count += 1;
+        assert!(count <= 48, "seek 后帧数不得超过全流 48");
+    }
+    // 24fps：pts ≥1000ms 的帧 = 1000→1958ms ≈ (1958-1000)/41.7 + 1 = 24 帧。
+    assert_eq!(count, 24, "seek(1000) 后应剩余 24 帧（24fps × ~958ms 窗口）");
+}

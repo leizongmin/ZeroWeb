@@ -455,14 +455,13 @@ impl VideoTrackDecoder {
 
     /// seek 到目标位置（毫秒）。
     ///
-    /// mp4 路径首期为线性播放（symphonia 面无 cue 索引——spec precise-seek 的
-    /// 前向回退形态：从头解码到目标；fixture 2s 面成本可接受），精确 seek 随
-    /// 切片 2/3 补 stss/sidx 索引面。
+    /// mp4 路径 = spec precise-seek 前向回退形态（无 cue 索引——流首重建 +
+    /// 前向解码至 ≥ target；stss/sync-sample 索引加速随切片 3 评估）。
     pub fn seek_to_ms(&mut self, target_ms: u64) -> Result<(), DecodeError> {
         match self {
             Self::Webm(d) => d.seek_to_ms(target_ms),
             #[cfg(feature = "decode-h264")]
-            Self::Mp4H264(_) => Ok(()), // 线性播放：seek 无操作（位置由帧 pts 推进）
+            Self::Mp4H264(d) => d.seek_to_ms(target_ms),
         }
     }
 

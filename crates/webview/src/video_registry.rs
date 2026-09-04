@@ -221,6 +221,9 @@ struct WebmAudioEntry {
 enum WebmAudioTrackKind {
     Vorbis(Box<WebmAudioTrack>),
     Opus(Box<WebmOpusAudioTrack>),
+    /// H.264 切片 2（D-RFC-3c AAC 随期）：mp4 容器 AAC 轨（symphonia
+    /// aac+isomp4——AudioDecoder probe 自动路由，同 next_batch 输出契约）。
+    Mp4Aac(Box<AudioDecoder>),
 }
 
 impl WebmAudioTrackKind {
@@ -228,18 +231,21 @@ impl WebmAudioTrackKind {
         match self {
             Self::Vorbis(t) => t.sample_rate(),
             Self::Opus(t) => t.sample_rate(),
+            Self::Mp4Aac(t) => t.sample_rate(),
         }
     }
     fn channels(&self) -> u16 {
         match self {
             Self::Vorbis(t) => t.channels(),
             Self::Opus(t) => t.channels(),
+            Self::Mp4Aac(t) => t.channels(),
         }
     }
     fn next_batch(&mut self) -> Result<Option<DecodedAudio>, AudioDecodeError> {
         match self {
             Self::Vorbis(t) => t.next_batch(),
             Self::Opus(t) => t.next_batch(),
+            Self::Mp4Aac(t) => t.next_batch(),
         }
     }
 }
@@ -520,11 +526,18 @@ impl VideoPlayerRegistry {
             // 音频轨伴生（A/V pair）：A_VORBIS（OGG 重封装 + symphonia）优先、
             // A_OPUS（opus-decoder 直解，WPT 源主形态）次之；纯视频 webm 双失败静默
             //（视频面照常）。
+            // H.264 切片 2：webm 双形态失败后试 mp4/AAC（symphonia probe——非
+            // mp4 容器或无音频轨静默跳过，纯视频面照常）。
             let audio_track = match open_webm_audio_track(&bytes) {
                 Ok(track) => Some(WebmAudioTrackKind::Vorbis(Box::new(track))),
                 Err(_) => open_webm_opus_audio_track(&bytes)
                     .ok()
-                    .map(|t| WebmAudioTrackKind::Opus(Box::new(t))),
+                    .map(|t| WebmAudioTrackKind::Opus(Box::new(t)))
+                    .or_else(|| {
+                        AudioDecoder::open(&bytes)
+                            .ok()
+                            .map(|t| WebmAudioTrackKind::Mp4Aac(Box::new(t)))
+                    }),
             };
             if let Some(track) = audio_track {
                 let mut entry = WebmAudioEntry::new(track);
@@ -636,6 +649,10 @@ impl VideoPlayerRegistry {
             } else if let Ok(track) = open_webm_opus_audio_track(bytes) {
                 let (rate, ch) = (track.sample_rate(), track.channels());
                 Some((WebmAudioTrackKind::Opus(Box::new(track)), rate, ch))
+            } else if let Ok(track) = AudioDecoder::open(bytes) {
+                // H.264 切片 2：mp4/AAC 伴生轨同面重建。
+                let (rate, ch) = (track.sample_rate(), track.channels());
+                Some((WebmAudioTrackKind::Mp4Aac(Box::new(track)), rate, ch))
             } else {
                 None
             }
