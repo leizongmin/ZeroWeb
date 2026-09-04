@@ -211,11 +211,11 @@ impl LayoutEngine {
             }
             let Some(id) = b.node_id else { continue };
             let Some(s) = styles.get(&id) else { continue };
-            // R4015：replaced 排除例外——taffy 宽已塌 0 的 abspos replaced（无 attr 固有
-            // 尺寸，如 height-only svg）无固有宽可解析，仍需 shrink-to-fit 补测
-            //（§10.3.8：无固有宽/比 → default object size 300；003 族）。有固有尺寸的
-            // replaced（taffy 已解析非 0 宽）维持排除（R1683/R3935 警告）。
-            let replaced_collapsed = b.is_replaced && b.width <= 0.5;
+            // R4015/R4015b：replaced 排除例外——taffy 任一维塌 0 的 abspos replaced
+            //（无 attr 固有尺寸，如 height-only svg / 无尺寸 svg 的 height 面）缺固有维
+            // 解析，仍需 shrink-to-fit 补测（§10.3.8 + css-sizing-3 default object size）。
+            // 双维均已解析的 replaced 维持排除（R1683/R3935 警告）。
+            let replaced_collapsed = b.is_replaced && (b.width <= 0.5 || b.height <= 0.5);
             if !b.is_absolute || (b.is_replaced && !replaced_collapsed) {
                 continue;
             }
@@ -254,7 +254,8 @@ impl LayoutEngine {
                 continue;
             };
             if let Ok(mut style) = taffy_tree.style(taffy_id).cloned() {
-                if width_fix {
+                let width_collapsed = b.width <= 0.5;
+                if width_fix && (width_collapsed || !b.is_replaced) {
                     let used = left_def.unwrap_or(0.0) + right_def.unwrap_or(0.0);
                     let available = (cb_width - used).max(0.0);
                     // R4015：塌 0 的 replaced 叶（height-only svg 等）——子树递归测 0（svg
@@ -280,8 +281,16 @@ impl LayoutEngine {
                     }
                 }
                 if height_fix {
-                    let (fs, lh) = crate::inline::resolve_font_metrics(Some(s));
-                    style.size.height = taffy::style::Dimension::length(lh.max(fs).max(1.0));
+                    // R4015b：replaced-collapse 的 height 侧用 default object size 高
+                    //（css-sizing-3：无固有高 → 150），文本叶 line-height 近似不适用
+                    //（004：svg 无固有尺寸 → 300×150）。
+                    let h = if replaced_collapsed {
+                        crate::svg_default_size::SVG_DEFAULT_H
+                    } else {
+                        let (fs, lh) = crate::inline::resolve_font_metrics(Some(s));
+                        lh.max(fs).max(1.0)
+                    };
+                    style.size.height = taffy::style::Dimension::length(h);
                 }
                 let _ = taffy_tree.set_style(taffy_id, style);
                 let _ = taffy_tree.mark_dirty(taffy_id);
