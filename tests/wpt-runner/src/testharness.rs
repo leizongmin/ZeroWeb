@@ -1871,6 +1871,9 @@ pub const WEBAUDIO_TEST_FILES: &[&str] = &[
     // ---- 第二十二批（D3 第五增量——AudioParam nominal range 界表）：每节点每
     // param spec min/max 反射 + value clamp + 只读 + 原型参数发现。
     "webaudio/the-audio-api/the-audioparam-interface/audioparam-nominal-range.html",
+    // ---- 第二十三批（D3 第五增量续）：audiobuffer-copy-channel——copyFrom/
+    // copyToChannel 数据面（无 startRendering 引用；原「后段不可分割」注记失效）。
+    "webaudio/the-audio-api/the-audiobuffer-interface/audiobuffer-copy-channel.html",
     // ---- 第二十批（同日，D3 第二片——AudioBufferSourceNode 数据播放 + 链式
     // gain 累计 + 直连 destination 双态 + offset/duration/loop 窗口）：
     // 不导入：gain.html（需 splitter/merger 通道路由图语义——merger 通道选择映射

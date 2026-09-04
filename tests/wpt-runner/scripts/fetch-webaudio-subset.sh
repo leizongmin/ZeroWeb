@@ -140,8 +140,13 @@ WA_FILES=(
   # 的 spec min/max（_zwApplyParamLimits 反射 + value clamp + 只读）+ 原型参数发现
   #（_zwRegisterNodeParam + WeakMap 原型访问器）。
   "webaudio/the-audio-api/the-audioparam-interface/audioparam-nominal-range.html"
+  # ---- 第二十三批（D3 第五增量续）：audiobuffer-copy-channel——copyFrom/copyTo
+  # Channel 数据面（shim 第七批已落；原「startRendering 后段不可分割」注记失效——
+  # 该文件无 startRendering 引用，纯 AudioBuffer 数据面）。
+  "webaudio/the-audio-api/the-audiobuffer-interface/audiobuffer-copy-channel.html"
   # 仍不导入：ctor-audiobuffer（multiple contexts 渲染对比）；ctor-iirfilter
-  #（IIR 滤波 DSP）；periodicWave.html（谱断言随归一化精化复评）。
+  #（IIR 滤波 DSP）；periodicWave.html（pinned rev 该路径 404——用例已迁址，
+  # 排除注记失效）。
 )
 
 # audit.js 框架（runner inline_extras 内联——用例以绝对路径引用）。

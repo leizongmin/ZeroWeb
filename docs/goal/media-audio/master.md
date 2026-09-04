@@ -1,16 +1,12 @@
-**最后更新**: 2026-09-05（**D3 第五增量完成——AudioParam nominal range 界表 +
-nominal-range.html 导入（43 用例 1238P/0F = 100%）**：`_zwApplyParamLimits` 界值
-助手（min/max 只读访问器反射 + value setter clamp 包装）+ 全节点界表（oscillator
-frequency ±rate/2 与 detune ±1200·log2(maxFloat) / delay [0,maxDelayTime] / pan
-[-1,1] / compressor 五 param 界表 / biquad frequency·detune·gain.maxValue=
-fround(40·log10(maxFloat))·Q / panner 六 param ±maxFloat；factory min/max 改只读
-访问器——赋值穿透缺陷修复）+ `_zwRegisterNodeParam` 原型参数发现（WeakMap +
-prototype 可枚举访问器——Object.keys(node.__proto__) 遍历面）+ AudioListener 九
-param（prototype 访问器面）+ createScriptProcessor（online/offline）与
-createMediaElementSource（online）最小工厂——nominal-range 全任务覆盖。**全部
-导入后 43 用例 1238P/0F = 100%**。仍排除：ctor-iirfilter（IIR DSP）/ ctor-
-audiobuffer（multiple contexts 渲染对比）/ periodicWave.html（谱断言）/
-audiobuffer-copy-channel（后段不可分割）。evidence 刷新 43 用例 1238 subtest。）
+**最后更新**: 2026-09-05（**D3 第六增量——copy-channel 语义精化 +
+audiobuffer-copy-channel 导入（44 用例 1300P/0F = 100%）**：copyFrom/copyToChannel
+按现行 spec 面修正——SharedArrayBuffer-backed view → TypeError（copy-channel
+8/9 号断言）；负 bufferOffset 不抛（5/4 号断言——静默截断语义）；越界起点静默
+无拷贝。**audiobuffer-copy-channel 解除排除导入全绿（62 subtest）**——原
+「startRendering 后段不可分割」注记失效（该文件无 startRendering 引用，纯
+AudioBuffer 数据面）；periodicWave.html 排除注记勘误（pinned rev 该路径 404，
+用例已迁址）。剩余排除：ctor-iirfilter（IIR DSP）/ ctor-audiobuffer（multiple
+contexts 渲染对比）。evidence 刷新 44 用例 1300 subtest。）
 此前 2026-09-05：**D3 获批落地——GB-20260904 待决策征询跟进**：
 OfflineAudioContext.startRendering 扩界**获批（窄授权）**——仅 offline 渲染路径
 + shim↔宿主桥扩展；RFC §0 实时设备输出量化面维持排除。征询凭据 msg
@@ -272,7 +268,8 @@ DONE 阻塞**；Mixer/重采样接线随设备切片可选推进）。
 
 - 测试基线：`make test` 全绿 18866（2026-09-04 组合树实测）；clippy 零警告
   （default 与 `--features audio-cpal` 双配置）
-- WPT webaudio：**43 用例 1238P/0F = 100%**（2026-09-05 二十二批累计——第二十二批
+- WPT webaudio：**44 用例 1300P/0F = 100%**（2026-09-05 二十三批累计——第二十三批
+  audiobuffer-copy-channel（copy 语义精化）62 subtest + 第二十二批
   nominal-range（nominal range 界表）~327 subtest + 第二十一批
   method-chaining 3 + 第二十批 gain.html 7 + 第十九批
   osc-basic-waveform 33 + 第八批~第十八批 39 用例 874P；原第二十批前口径——

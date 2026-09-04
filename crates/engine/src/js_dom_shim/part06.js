@@ -8880,7 +8880,11 @@
   // AudioBuffer copyTo/copyFromChannel（spec §AudioBuffer——数据面拷贝；start 越界
   // → IndexSizeError、buffer 非类型 → TypeError）。源/目标以 Float32Array 读写。
   function AudioBuffer$copyFromChannel(destination, channelNumber, bufferOffset) {
-    if (!destination || typeof destination.length !== 'number') {
+    // media-audio D3 第五增量续：SharedArrayBuffer-backed view → TypeError（spec
+    // copyFrom-exceptions 断言面）；bufferOffset 负值**不抛**（当前 spec 面——
+    // 越界拷贝静默截断，copy-channel 5 号断言）。
+    if (!destination || typeof destination.length !== 'number' ||
+        (typeof SharedArrayBuffer !== 'undefined' && destination.buffer instanceof SharedArrayBuffer)) {
       throw new TypeError("Failed to execute 'copyFromChannel' on 'AudioBuffer': parameter 1 is not of type 'Float32Array'.");
     }
     var ch = Number(channelNumber);
@@ -8889,16 +8893,20 @@
         "Failed to execute 'copyFromChannel' on 'AudioBuffer': channel index " + channelNumber + " is not a valid index.", 'IndexSizeError');
     }
     var off = (bufferOffset === undefined || bufferOffset === null) ? 0 : Number(bufferOffset);
-    if (isNaN(off) || off < 0 || off > this.length) {
-      throw new (globalThis.DOMException || Error)(
-        "Failed to execute 'copyFromChannel' on 'AudioBuffer': bufferOffset " + bufferOffset + " is out of range.", 'IndexSizeError');
+    if (isNaN(off)) {
+      throw new TypeError("Failed to execute 'copyFromChannel' on 'AudioBuffer': bufferOffset is non-finite.");
     }
+    if (off < 0) off = 0;
+    if (off >= this.length) return; // 越界起点 → 静默无拷贝（spec 面）
     var src = this.getChannelData(ch);
     var n = Math.min(destination.length, src.length - off);
     for (var i = 0; i < n; i++) destination[i] = src[off + i];
   }
   function AudioBuffer$copyToChannel(source, channelNumber, bufferOffset) {
-    if (!source || typeof source.length !== 'number') {
+    // media-audio D3 第五增量续：SharedArrayBuffer view → TypeError；负 offset
+    // 不抛（同 copyFromChannel——copy-channel 4/7/8 号断言面）。
+    if (!source || typeof source.length !== 'number' ||
+        (typeof SharedArrayBuffer !== 'undefined' && source.buffer instanceof SharedArrayBuffer)) {
       throw new TypeError("Failed to execute 'copyToChannel' on 'AudioBuffer': parameter 1 is not of type 'Float32Array'.");
     }
     var ch = Number(channelNumber);
@@ -8907,10 +8915,11 @@
         "Failed to execute 'copyToChannel' on 'AudioBuffer': channel index " + channelNumber + " is not a valid index.", 'IndexSizeError');
     }
     var off = (bufferOffset === undefined || bufferOffset === null) ? 0 : Number(bufferOffset);
-    if (isNaN(off) || off < 0 || off > this.length) {
-      throw new (globalThis.DOMException || Error)(
-        "Failed to execute 'copyToChannel' on 'AudioBuffer': bufferOffset " + bufferOffset + " is out of range.", 'IndexSizeError');
+    if (isNaN(off)) {
+      throw new TypeError("Failed to execute 'copyToChannel' on 'AudioBuffer': bufferOffset is non-finite.");
     }
+    if (off < 0) off = 0;
+    if (off >= this.length) return; // 越界起点 → 静默无拷贝（spec 面）
     var dst = this.getChannelData(ch);
     var n = Math.min(source.length, dst.length - off);
     for (var j = 0; j < n; j++) dst[off + j] = source[j];
