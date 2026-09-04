@@ -488,6 +488,7 @@ DONE 阻塞**；Mixer/重采样接线随设备切片可选推进）。
 |---|------|------|
 | D1 | AudioContext（Web Audio）最小面可行性 RFC → 是否实施 | ✅ 获批（2026-09-01，GB-20260901 批复）——D-WA-1 批准切片 1+2；D-WA-2 选**先 NullSink**（设备面挂 media-audio M1 CpalSink 真出声切片）。RFC：[../../specs/web-audio-audiocontext-minimal-face-spec-rfc.md](../../specs/web-audio-audiocontext-minimal-face-spec-rfc.md) |
 | D2 | 安装 `libasound2-dev`（系统级 apt 变更）以解锁 cpal 编译验证 | ✅ 获批（2026-09-01）——装包后补 cpal 编译实测 |
+| D3 | **OfflineAudioContext.startRendering 渲染量化面（RFC §0 扩界申请）**——接口语义族已 18 批 874P/0F 吃尽（2026-09-04），余下上游用例（osc-basic-waveform / gain.html / periodicWave / ctor-iirfilter 渲染对比 / audioparam-method-chaining / convolver DSP 卷积等 ~15 件）全部卡在 startRendering 渲染断言。**实施基础已在**：zero-media `WebAudioContext` 振荡器四型合成 + 图推进（切片 1 落地，NullSink 可观测）；缺的是 offline 渲染路径（长度采样离线合成 → AudioBuffer 产物 → promise resolve）+ shim↔宿主桥扩展。为何需用户：主 RFC §0 显式排除「渲染量化面（不做清单）」——扩界属 Mission 级范围变更（run-rules rule 11），agent 不可代判；不批准亦请明示「维持排除」以便归档 | ⬜ 待批复（2026-09-04 提出本决策表；飞书已同步征询） |
 
 ## 下一步计划
 

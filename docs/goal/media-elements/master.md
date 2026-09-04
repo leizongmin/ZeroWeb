@@ -100,7 +100,9 @@ preserves-pitch / src_object_blob / volume_check 旧语义）；resize-during-pl
 （双分辨率 mid-stream resize fixture + resize 二次派发——排除注记）；the-video-
 element 余 26 件 / the-audio-element 余 16 件（✅ 扩批 XXXVI/XXXVII 清点收束——
 lazy/deferred 系互斥排除、reftest 渠道面、intrinsic_sizes 补遗、crash 族不导入）；user-interface muted 面 2 件（UI 域）；
-crashtests GC 面 1 件；ready-states 余 2 件已注记。**缺口面穷尽定性——余下
+crashtests GC 面 1 件（no-blocking-loads-gc-crash——2026-09-04 定性：无 test() 的
+crash 回归 smoke + /common/gc.js garbageCollect 驱动，runner 对零测试文件结构性
+不适用；真断言「GC 期不 crash」归宿主健壮性面非 WPT 语义面）；ready-states 余 2 件已注记。**缺口面穷尽定性——余下
 增量依赖深结构或新批复解锁**。证据快照：
 [evidence/2026-09-04-media-598p-snapshot.json](evidence/2026-09-04-media-598p-snapshot.json)
 （598/622 = 96.14%，PF 全为 canPlayType optional 中性面）。此前同日：**M3 扩批 XXIX 落地**——ready-states/autoplay 导入
