@@ -2,6 +2,10 @@
 
 **入口文档**: [../media-playback.md](../media-playback.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
+**最后更新**: 2026-09-04（**GB-20260904 巡检——D3/D4 征询跟进**：cronjob 待决策
+卡点专项合并征询（与 media-audio D3 同批）msg `om_x100b669923cd64a4c3e335615ed3d9f`
+——D3 待批复跟进提醒 + D4 待点名随批告知，两行状态已补征询凭据。无代码变更。）
+**（注：下方「最后更新」2026-09-04 泵时钟块为前轮记录，保留作历史）**
 **最后更新**: 2026-09-04（**泵时钟生产路径注入（扩批 XXV 收口的 tab_worker 面）**：
 tab_js_worker `SetVideoPlayers` 此前以 clock=None 注册宿主桥——shim 桥 play 恒传
 nowMs=0，而 tab_worker 泵 tick 用 `pump_epoch.elapsed()`（原点错位：worker 启动后
@@ -283,7 +287,8 @@ clippy 零警告、每切片带单测 + e2e/fixture 资产化（AV1 全流单测
   **3c** AAC 是否随期（推荐随期——symphonia feature 扩展成本 ≈0）。
   为何需用户：专利/授权属 Mission 级决策（run-rules rule 11 + 主 RFC D-RFC-3
   「单独立项」决议），agent 不可代判 | ⏳ 待批复（2026-09-02 起草，飞书已征询
-  msg `om_x100b664d8a6f44b0dee3398474de92b`；批准前不动源码；不批准亦请明示
+  msg `om_x100b664d8a6f44b0dee3398474de92b` + GB-20260904 巡检合并跟进 msg
+  `om_x100b669923cd64a4c3e335615ed3d9f`；批准前不动源码；不批准亦请明示
   「维持不实施」以便归档） |
 | D4 | **renderer 路径播放泵架构决策**（2026-09-02 深结构缺口发现，2026-09-02 巡检
   补入决策表）：browser tab_worker 主循环有 1ms 帧泵/音频泵（`is_any_playing` 门
@@ -294,7 +299,8 @@ clippy 零警告、每切片带单测 + e2e/fixture 资产化（AV1 全流单测
   事件驱动无固定节拍）
   为何需用户：多进程线程模型属架构决策域（run-rules rule 11 深结构），待点名后
   实施 | ⬜ 待点名（此前仅记于「深结构缺口发现」块，决策表不可见——2026-09-02
-  巡检补登；不影响 tab_worker 路径现有功能） |
+  巡检补登；GB-20260904 巡检合并征询 msg `om_x100b669923cd64a4c3e335615ed3d9f`
+  已随 D3 一并提醒；不影响 tab_worker 路径现有功能） |
 
 ## 下一步计划
 
