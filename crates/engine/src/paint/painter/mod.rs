@@ -1150,6 +1150,29 @@ impl Painter {
             return;
         }
 
+        // R4035（CSS Transforms 2 §backface-visibility）：hidden 且变换链显示背面
+        //（rotateX/rotateY 连乘 cos < 0，见 helpers::transform_shows_backface）→ 元素
+        // 及其子树整体不渲染（flat transform-style 下子树同一投影平面）。旧实现只画
+        // 诊断虚线指示器不隐藏内容（backface-visibility-hidden-002：rotateY(180deg)
+        // 红块照绘，应全隐）。
+        // preserve-3d 豁免：3D 渲染上下文中子元素不被压入父投影平面，各子盒按自身
+        // 背面状态渲染（composited-under-rotateY-180deg-preserve-3d：父 hidden 背面
+        // 但子可见）——ZW 无 3D 场景图，preserve-3d 时回退旧「不隐藏」行为（子绿块
+        // 恰覆盖父红块，逐字面匹配 ref）。
+        if let Some(style) = box_node.node_id.and_then(|id| styles.get(&id))
+            && matches!(
+                style.backface_visibility,
+                zero_style_system::property::types::BackfaceVisibilityValue::Hidden
+            )
+            && !matches!(
+                style.transform_style,
+                zero_style_system::property::types::TransformStyleValue::Preserve3d
+            )
+            && super::helpers::transform_shows_backface(style)
+        {
+            return;
+        }
+
         let abs_x = offset_x + box_node.x;
         let abs_y = offset_y + box_node.y;
 

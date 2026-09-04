@@ -75,6 +75,34 @@ pub fn is_singular_transform(style: &ComputedStyle) -> bool {
     })
 }
 
+/// R4035：元素是否背对观察者（CSS Transforms 2 §backface-visibility）。
+///
+/// ZW 无 3D 场景图（transform-style:flat 逐盒 2D 投影，R3833），背面朝向由变换链中
+/// 3D 旋转函数的 z 翻转近似：每个 rotateX(θ)/rotateY(θ) 在其 2D 投影中贡献符号
+/// cos(θ)（|θ|>90° 时平面镜像 = 背面）；连乘 < 0 → 背面。纯 2D 变换（rotate/scale/
+/// skew/matrix）不翻转 z（scaleX(-1) 镜像仍是正面，chromium 同）。rotate3d 在 ZW
+/// 为恒等近似（R3833 前），不贡献翻转。
+///
+/// driving：css-transforms/backface-visibility-hidden-002（rotateY(180deg) + hidden
+/// → 元素不可见，旧实现照绘红块）。|θ|=90° 时投影奇异（det≈0）由
+/// [`is_singular_transform`] 兜底链处理，此处 cos=0 不判背面。
+pub fn transform_shows_backface(style: &ComputedStyle) -> bool {
+    let funcs = match &style.transform {
+        TransformValue::None => return false,
+        TransformValue::List(f) => f,
+    };
+    let mut net = 1.0_f32;
+    for f in funcs {
+        let cos = match f {
+            TransformFunction::RotateX(deg) => (*deg as f32).to_radians().cos(),
+            TransformFunction::RotateY(deg) => (*deg as f32).to_radians().cos(),
+            _ => continue,
+        };
+        net *= cos;
+    }
+    net < 0.0
+}
+
 /// 将 `style.transform` 函数列表合成为 2D 仿射变换图元（含 transform-origin）。
 ///
 /// 仅 translate 的列表返回 `None`（由 offset 路径处理）。
@@ -2428,5 +2456,44 @@ mod tests {
             resolve_document_url("https://example.com", "javascript:void(0)"),
             "javascript:void(0)"
         );
+    }
+
+    // ── R4035：transform_shows_backface（CSS Transforms 2 §backface-visibility）──
+
+    #[test]
+    fn test_r4035_backface_rotey180_shows_backface() {
+        let mut style = ComputedStyle::default();
+        style.transform = TransformValue::List(vec![TransformFunction::RotateY(180.0)]);
+        assert!(transform_shows_backface(&style), "rotateY(180deg) 背面朝向观察者");
+    }
+
+    #[test]
+    fn test_r4035_frontface_and_2d_no_backface() {
+        // rotateY(0)/rotateY(360) 正面
+        let mut front = ComputedStyle::default();
+        front.transform = TransformValue::List(vec![TransformFunction::RotateY(360.0)]);
+        assert!(!transform_shows_backface(&front), "rotateY(360deg) 正面");
+        // 纯 2D 镜像（scaleX(-1)）不翻 z —— chromium 同
+        let mut mirror = ComputedStyle::default();
+        mirror.transform = TransformValue::List(vec![TransformFunction::Scale(-1.0, None)]);
+        assert!(!transform_shows_backface(&mirror), "scaleX(-1) 是正面（2D 镜像非背面）");
+        // 无 transform
+        assert!(!transform_shows_backface(&ComputedStyle::default()));
+    }
+
+    #[test]
+    fn test_r4035_double_flip_composes() {
+        // rotateY(90) rotateY(90) = rotateY(180) → 背面（角度按轴累加语义）
+        let mut style = ComputedStyle::default();
+        style.transform =
+            TransformValue::List(vec![TransformFunction::RotateY(90.0), TransformFunction::RotateY(90.0)]);
+        assert!(
+            !transform_shows_backface(&style),
+            "cos(90)*cos(90)=0，不判背面（90° 投影奇异由 is_singular_transform 兜底）"
+        );
+        // rotateX(180) 单独 → 背面
+        let mut rx = ComputedStyle::default();
+        rx.transform = TransformValue::List(vec![TransformFunction::RotateX(180.0)]);
+        assert!(transform_shows_backface(&rx), "rotateX(180deg) 背面朝向观察者");
     }
 }
