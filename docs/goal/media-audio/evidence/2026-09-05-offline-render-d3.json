@@ -293,7 +293,7 @@
         "message": null
       },
       {
-        "name": "  new OscillatorNode(c, {\"type\":\"sine\",\"periodicWave\":{\"_zwReal\":[1,1],\"_zwImag\":[0],\"_zwDisableNormalization\":false}}) did not throw an exception.",
+        "name": "  new OscillatorNode(c, {\"type\":\"sine\",\"periodicWave\":{\"_zwReal\":[1,1],\"_zwImag\":[0,0],\"_zwDisableNormalization\":false}}) did not throw an exception.",
         "status": "Pass",
         "message": null
       },
@@ -303,7 +303,7 @@
         "message": null
       },
       {
-        "name": "  new OscillatorNode(c, {\"type\":\"custom\",\"periodicWave\":{\"_zwReal\":[1,1],\"_zwImag\":[0],\"_zwDisableNormalization\":false}}) did not throw an exception.",
+        "name": "  new OscillatorNode(c, {\"type\":\"custom\",\"periodicWave\":{\"_zwReal\":[1,1],\"_zwImag\":[0,0],\"_zwDisableNormalization\":false}}) did not throw an exception.",
         "status": "Pass",
         "message": null
       },
@@ -7064,6 +7064,166 @@
       },
       {
         "name": "Functional test of IIRFilterNode constructor vs. legacy method",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "webaudio/the-audio-api/the-periodicwave-interface/periodicWave.html",
+    [
+      {
+        "name": "# AUDIT TASK RUNNER STARTED.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "> [create with factory method] ",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  context.createPeriodicWave(new Float32Array(8192), new Float32Array(8192)) did not throw an exception.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "< [create with factory method] All assertions passed. (total 1 assertions)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Executing \"create with factory method\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "> [different length with factory method] ",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  context.createPeriodicWave(new Float32Array(512), new Float32Array(4)) threw IndexSizeError: \"Failed to execute 'createPeriodicWave' on 'AudioContext': real and imag arrays must have the same length.\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "< [different length with factory method] All assertions passed. (total 1 assertions)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Executing \"different length with factory method\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "> [too small with factory method] ",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  context.createPeriodicWave(new Float32Array(1), new Float32Array(1)) threw IndexSizeError: \"Failed to execute 'createPeriodicWave' on 'AudioContext': length of real array must be >= 2.\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "< [too small with factory method] All assertions passed. (total 1 assertions)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Executing \"too small with factory method\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "> [create with constructor] ",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  new PeriodicWave(context, { real : new Float32Array(8192), imag : new Float32Array(8192) }) did not throw an exception.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "< [create with constructor] All assertions passed. (total 1 assertions)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Executing \"create with constructor\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "> [different length with constructor] ",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  new PeriodicWave(context, { real : new Float32Array(8192), imag : new Float32Array(4) }) threw IndexSizeError: \"Failed to construct 'PeriodicWave': real and imag arrays must have the same length.\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "< [different length with constructor] All assertions passed. (total 1 assertions)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Executing \"different length with constructor\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "> [too small with constructor] ",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  new PeriodicWave(context, { real : new Float32Array(1), imag : new Float32Array(1) }) threw IndexSizeError: \"Failed to construct 'PeriodicWave': length of real array must be >= 2.\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "< [too small with constructor] All assertions passed. (total 1 assertions)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Executing \"too small with constructor\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "> [output test] ",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "  rendering PeriodicWave is identical to the array Object.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "< [output test] All assertions passed. (total 1 assertions)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Executing \"output test\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "# AUDIT TASK RUNNER FINISHED: 7 tasks ran successfully.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Audit report",
         "status": "Pass",
         "message": null
       }

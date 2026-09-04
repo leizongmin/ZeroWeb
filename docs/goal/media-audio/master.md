@@ -1,9 +1,14 @@
-**最后更新**: 2026-09-05（**D3 第八增量完成——ctor-iirfilter 导入（46 用例
-1368P/0F = 100%）**：IIRFilterNode ctor 校验全族 + Functional 渲染对比（ctor vs
-工厂同系数双通道对拍——图推进 pass-through 等价面，两条同构链路输出精确相等，
-无 IIR DSP 数值需求）。原排除注记解除。**webaudio 排除面收束至 1 件**：
-periodicWave.html（pinned rev 该路径 404——用例已迁址，注记失效；迁址后路径随
-上游 pinned rev 复评）。evidence 刷新 46 用例 1368 subtest。）
+**最后更新**: 2026-09-05（**D3 第九增量完成——periodicWave.html 导入（47 用例
+1399P/0F = 100%），webaudio 排除面清零**：迁址路径 the-periodicwave-interface/
+恢复获取（原 404 注记解除）。配套 shim 三处：① Blink maxAbsSum 归一化公式
+（1/max(Σ(|real[n]|+|imag[n]|), 0.5)——periodicWave 输出对拍面：real=[0,2,…,3]
+→ maxAbsSum 5 → 峰值恰 1.0，替换此前不正确的 0.6324·sqrt(Σ) 公式）；②
+createPeriodicWave/PeriodicWave ctor 同正义约束（real/imag 同长 + 最小长度 2 →
+IndexSizeError；ctor 缺省成员以另一方长度补零——ctor-oscillator 无 imag 断言面
+兼容）；③ OscillatorNode.setPeriodicWave（custom 波形存储 + type='custom'）。
+**至此 pinned rev webaudio/the-audio-api 全部可执行用例均已导入或定性（47 用例
+1399 subtest 全绿；剩余为 worklet/媒体互连/手势域不在离线渲染面）**。evidence
+刷新 47 用例 1399 subtest。）
 此前 2026-09-05：**D3 获批落地——GB-20260904 待决策征询跟进**：
 OfflineAudioContext.startRendering 扩界**获批（窄授权）**——仅 offline 渲染路径
 + shim↔宿主桥扩展；RFC §0 实时设备输出量化面维持排除。征询凭据 msg
@@ -265,7 +270,8 @@ DONE 阻塞**；Mixer/重采样接线随设备切片可选推进）。
 
 - 测试基线：`make test` 全绿 18866（2026-09-04 组合树实测）；clippy 零警告
   （default 与 `--features audio-cpal` 双配置）
-- WPT webaudio：**46 用例 1368P/0F = 100%**（2026-09-05 二十五批累计——第二十五批
+- WPT webaudio：**47 用例 1399P/0F = 100%**（2026-09-05 二十六批累计——第二十六批
+  periodicWave（迁址路径 + Blink 归一化 + setPeriodicWave）31 subtest + 第二十五批
   ctor-iirfilter（ctor 校验 + Functional pass-through 等价对拍）6 subtest + 第二十四批
   ctor-audiobuffer（ctor 全族 + multiple contexts 渲染对比）62 subtest + 第二十三批
   audiobuffer-copy-channel（copy 语义精化）62 subtest + 第二十二批

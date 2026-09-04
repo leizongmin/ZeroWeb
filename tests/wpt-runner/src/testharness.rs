@@ -1880,6 +1880,9 @@ pub const WEBAUDIO_TEST_FILES: &[&str] = &[
     // ---- 第二十五批（D3 第七增量续）：ctor-iirfilter——ctor 校验 + Functional
     // 渲染对比（ctor vs 工厂同系数双通道对拍——pass-through 等价面精确相等）。
     "webaudio/the-audio-api/the-iirfilternode-interface/ctor-iirfilter.html",
+    // ---- 第二十六批（D3 第九增量）：periodicWave.html（迁址路径）——Blink
+    // maxAbsSum 归一化 + createPeriodicWave 最小长度 2 + setPeriodicWave。
+    "webaudio/the-audio-api/the-periodicwave-interface/periodicWave.html",
     // ---- 第二十批（同日，D3 第二片——AudioBufferSourceNode 数据播放 + 链式
     // gain 累计 + 直连 destination 双态 + offset/duration/loop 窗口）：
     // 不导入：gain.html（需 splitter/merger 通道路由图语义——merger 通道选择映射

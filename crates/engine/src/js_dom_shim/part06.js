@@ -7886,16 +7886,19 @@
           if (oscType === 'custom' && wave && wave._zwReal) {
             var real = wave._zwReal, imag = wave._zwImag;
             var n1 = Math.max(real.length, imag.length);
-            var sigma = 0;
+            // spec/Blink 归一化：maxAbsSum = Σ_{n≥1}(|real[n]|+|imag[n]|)；
+            // normalizationScale = 1 / max(maxAbsSum, 0.5)（Blink periodic_wave_
+            // data NormalizeBuffer 公式——periodicWave.html 输出测试对拍面：
+            // real=[0,2,…,3] → maxAbsSum 5 → 峰值恰 1.0）。
+            var maxAbsSum = 0;
             for (var nn = 1; nn < n1; nn++) {
               var ar = (nn < real.length) ? real[nn] : 0;
               var bi = (nn < imag.length) ? imag[nn] : 0;
-              sigma += ar * ar + bi * bi;
+              maxAbsSum += Math.abs(ar) + Math.abs(bi);
             }
             var norm = 1.0;
             if (!wave._zwDisableNormalization) {
-              var denom = Math.max(0.6324555320336759 * Math.sqrt(sigma), 0.6324555320336759);
-              norm = 1.0 / denom;
+              norm = 1.0 / Math.max(maxAbsSum, 0.5);
             }
             for (var s2 = Math.max(0, startFrame); s2 < Math.min(len, stopFrame); s2++) {
               var t2 = s2 / rate;
@@ -8189,6 +8192,16 @@
       get: function () { return _detuneParam; },
       configurable: true,
     });
+    // media-audio D3 第九增量：setPeriodicWave（custom 波形存储——offline 渲染按
+    // _zwCustomWave 合成；非法 wave 非 finite 项 → TypeError 由 createPeriodicWave
+    // 构造面承载）。
+    node.setPeriodicWave = function (wave) {
+      if (!wave || typeof wave !== 'object' || !wave._zwReal) {
+        throw new TypeError("Failed to execute 'setPeriodicWave' on 'OscillatorNode': parameter 1 is not of type 'PeriodicWave'.");
+      }
+      node._zwCustomWave = wave;
+      _type = 'custom';
+    };
     node.start = function (when) {
       if (_started) return;
       _started = true;
@@ -8256,6 +8269,12 @@
     if (r.length !== im.length) {
       throw new (globalThis.DOMException || Error)(
         "Failed to execute 'createPeriodicWave' on 'AudioContext': real and imag arrays must have the same length.", 'IndexSizeError');
+    }
+    // media-audio D3 第九增量：最小长度 2（n=0 DC + 至少一个谐波——periodicWave
+    // 「too small with factory method」Float32Array(1) → IndexSizeError 断言面）。
+    if (r.length < 2) {
+      throw new (globalThis.DOMException || Error)(
+        "Failed to execute 'createPeriodicWave' on 'AudioContext': length of real array must be >= 2.", 'IndexSizeError');
     }
     var ctxId = this._zwCtxId;
     return new globalThis.PeriodicWave(this, { real: Array.prototype.slice.call(r), imag: Array.prototype.slice.call(im) });
@@ -8851,8 +8870,24 @@
       throw new TypeError("Failed to construct 'PeriodicWave': Please use the 'new' operator.");
     }
     var o = (options && typeof options === 'object') ? options : {};
-    this._zwReal = o.real || [1, 0];
-    this._zwImag = o.imag || [0];
+    // media-audio D3 第九增量：缺省成员面——real/imag 任一缺省时以另一方长度
+    // 补零（ctor-oscillator `new PeriodicWave(context, {real: [1,1]})` 无 imag 断言
+    // 面通过；ctor 与工厂同正义约束）。
+    var r = (o.real != null) ? o.real : new Array((o.imag != null) ? o.imag.length : 0).fill(0);
+    var im = (o.imag != null) ? o.imag : new Array((o.real != null) ? o.real.length : 0).fill(0);
+    // ctor 与工厂同正义约束（real/imag 同长 → IndexSizeError；最小长度 2 →
+    // IndexSizeError——periodicWave different-length/too-small with constructor
+    // 断言面）。
+    if (r.length !== im.length) {
+      throw new (globalThis.DOMException || Error)(
+        "Failed to construct 'PeriodicWave': real and imag arrays must have the same length.", 'IndexSizeError');
+    }
+    if (r.length < 2) {
+      throw new (globalThis.DOMException || Error)(
+        "Failed to construct 'PeriodicWave': length of real array must be >= 2.", 'IndexSizeError');
+    }
+    this._zwReal = r;
+    this._zwImag = im;
     this._zwDisableNormalization = !!o.disableNormalization;
   }
   Object.defineProperty(PeriodicWave.prototype, 'disableNormalization', {

@@ -153,7 +153,12 @@ WA_FILES=(
   # 渲染对比（ctor vs 工厂同系数双通道对拍——图推进 pass-through 等价面，两条
   # 链路同构即可精确相等，无 IIR DSP 需求）。原排除注记解除。
   "webaudio/the-audio-api/the-iirfilternode-interface/ctor-iirfilter.html"
-  # 仍不导入：periodicWave.html（pinned rev 该路径 404——用例已迁址，注记失效）。
+  # ---- 第二十六批（D3 第九增量）：periodicWave.html（迁址路径 the-periodicwave-
+  # interface/——Blink maxAbsSum 归一化公式修正 + createPeriodicWave 最小长度 2 +
+  # OscillatorNode.setPeriodicWave）。原 404 排除注记解除。
+  "webaudio/the-audio-api/the-periodicwave-interface/periodicWave.html"
+  # 排除收束：至此 pinned rev webaudio/the-audio-api 全部可执行用例均已导入或
+  # 定性（剩余为 worklet/媒体互连/手势域）。
 )
 
 # audit.js 框架（runner inline_extras 内联——用例以绝对路径引用）。
