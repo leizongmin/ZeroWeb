@@ -1048,6 +1048,15 @@ fn shift_siblings_after_ifc_grow_inner(
     let parent_backfill_active = shift_active
         && auto_parent_height
         && !ar_transferred_block_size
+        // R4057（CSS Containment 1 §3）：contain:size 容器的 taffy 高度已是 **definite**
+        //（converter 折 CIS-or-0，css-sizing-4 §intrinsic-size-override）——非「内容决定型
+        // auto 高」，内容底边回填不得扩展（contain-size-block-001：div.contain 32 纯边框被
+        // 回填撑到 132；同簇 002/003/004 + inline-block ×4 + multicol ×3）。与上方
+        // R3754 ar_transferred 同型豁免：definite used size 胜内容回填。
+        && !box_node
+            .node_id
+            .and_then(|id| styles.get(&id))
+            .is_some_and(|s| s.contain.has_size())
         && parent_backfill.value(|| std::env::var("ZW_IFC_PARENT_HEIGHT_BACKFILL").as_deref() != Ok("0"));
     let mut max_in_flow_bottom: f32 = 0.0;
     let mut has_negative_margin = false;

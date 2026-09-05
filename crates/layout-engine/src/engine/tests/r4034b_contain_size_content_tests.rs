@@ -69,3 +69,24 @@ fn r4034b_contain_size_uses_cis_as_content_measurement() {
         div.height
     );
 }
+
+/// R4057（css-contain-1 §containment-size）：contain:size **块容器** + block 子——容器
+/// taffy 高度已是 definite（converter 折 CIS-or-0），R1743 父高度回填（postprocess
+/// shift_siblings_after_ifc_grow_inner 的 max in-flow 子底边）不得扩展。旧实现缺
+/// containment gate，回填把 32 纯边框容器撑到 132（block 子 100 泄漏）。
+/// driving: css-contain/contain-size-block-001 + contain-size-borders。
+#[test]
+fn r4057_contain_size_block_container_blocks_parent_backfill() {
+    let (doc, root) = layout(
+        r#"<html><body>
+<div style="contain: size; border: 1em solid green; background: red;"><div style="height: 100px; width: 100px;">inner</div></div>
+</body></html>"#,
+    );
+    let div = find_div(&root, &doc);
+    // contain:size → 内容高 0 → border-box 高 = 32（1em 边框 ×2）。
+    assert!(
+        (div.height - 32.0).abs() < 1.0,
+        "contain:size 块容器的 block 子不应贡献高度（应 32 纯边框），got {}",
+        div.height
+    );
+}
