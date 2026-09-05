@@ -3571,6 +3571,9 @@ fn test_media_can_play_type_capability_table_m4gd() {
            octet: v.canPlayType('application/octet-stream'),\
            caseIns: v.canPlayType('VIDEO/WEBM'),\
            noSemis: v.canPlayType('video/webm;'),\
+           webmAudioOpus: a.canPlayType('audio/webm; codecs=\"opus\"'),\
+           avc1Main: v.canPlayType('video/mp4; codecs=\"avc1.4D401E\"'),\
+           avc1High: v.canPlayType('video/mp4; codecs=\"avc1.64001E\"'),\
            agree: a.canPlayType('video/webm') === v.canPlayType('video/webm')\
          };",
     ).unwrap();
@@ -3603,6 +3606,25 @@ fn test_media_can_play_type_capability_table_m4gd() {
          getVideoURI 判定串，WPT media/*.webm 实测 VP9+Opus）"
     );
     assert_eq!(get("webmOpus"), "probably", "webm 容器 opus → probably");
+    // 2026-09-05 PF 收窄两件（mime-types/canPlayType.html 17→15 PF）：audio/webm
+    // 容器 opus 转入支持面（A_OPUS WebmOpusAudioTrack——此前仅 video/webm 表项有
+    // opus，audio/webm 表项缺）+ avc1.4d401e（Main profile）转入（openh264 decoder
+    // Baseline/Main 解码面）。
+    assert_eq!(
+        get("webmAudioOpus"),
+        "probably",
+        "audio/webm opus → probably（A_OPUS 解码面，audio/webm 表项补 opus）"
+    );
+    assert_eq!(
+        get("avc1Main"),
+        "probably",
+        "avc1.4D401E (Main @L3.0) → probably（openh264 decoder Main 解码面）"
+    );
+    assert_eq!(
+        get("avc1High"),
+        "",
+        "avc1.64001E (High profile, 8x8 transform) 不在 openh264 解码面 → ''（不虚报）"
+    );
     // 不在解码面 → ''（不虚报）。
     assert_eq!(get("vp8"), "", "vp8 不在解码面 → ''");
     assert_eq!(

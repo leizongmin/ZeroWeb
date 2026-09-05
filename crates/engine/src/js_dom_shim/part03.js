@@ -11842,7 +11842,7 @@
           var _cptTable = {
             'audio/mpeg': { audio: ['mp3'], video: [] },
             'audio/ogg': { audio: ['vorbis', 'opus'], video: [] },
-            'audio/webm': { audio: ['vorbis'], video: [] },
+            'audio/webm': { audio: ['vorbis', 'opus'], video: [] },
             'video/ogg': { audio: ['vorbis', 'opus'], video: [] },
             // M3 扩批（2026-09-02，zero-media A_OPUS demux 落地联动）：video/webm opus
             // 转入支持面（WebmOpusAudioTrack——opus-decoder 直解；WPT 上游 media/*.webm
@@ -11850,7 +11850,11 @@
             'video/webm': { audio: ['vorbis', 'opus'], video: ['vp9', 'av1'] },
             // M3 切片 1（2026-09-05，D-RFC-3 获批联动）：mp4 容器 + h264/aac 编解码面
             //（解码真值以 decode-h264 feature 构建面为据——能力表按启用的解码面扩展）。
-            'video/mp4': { audio: ['aac', 'mp4a.40.2'], video: ['h264', 'avc1', 'avc3', 'avc1.42e01e'] },
+            // avc1.4d401e（Main profile @ Level 3.0）2026-09-05 补：openh264 decoder
+            // 支持 Baseline/Main 解码（Cisco OpenH264 官方面）；High（64001E）的
+            // 8x8 transform 档不在支持面 → 维持 ''。canPlayType PF 收窄 2 项
+            //（audio/webm opus + avc1.4d401e——mime-types/canPlayType.html）。
+            'video/mp4': { audio: ['aac', 'mp4a.40.2'], video: ['h264', 'avc1', 'avc3', 'avc1.42e01e', 'avc1.4d401e'] },
             'audio/mp4': { audio: ['aac', 'mp4a.40.2'], video: [] }
           };
           return function (type) {
