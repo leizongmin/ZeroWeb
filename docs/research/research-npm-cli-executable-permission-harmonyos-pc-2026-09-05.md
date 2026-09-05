@@ -5,6 +5,8 @@
 
 > ⚠️ **勘误说明**：初版报告根据不完整信息，将问题优先归因于 npm 安装后执行位丢失，并推荐在 `postinstall` 中补 `chmod`。用户随后提供真机证据：最终 ELF 已有执行位。结合 HarmonyOS 官方安全白皮书、官方开发者 FAQ、OpenHarmony HNP/签名工具源码以及鸿蒙 PC 移植案例，实际主因应是 XPM 代码强制签名校验。`chmod` 只能解决 DAC mode bit，不能解决未签名 ELF 被内核拒绝执行。
 
+> ⚠️ **二次勘误说明（真机验证）**：`@zeroseed/cli-openharmony-arm64@0.0.2-harmonyos-test.1` 经官方 Java `binary-sign-tool` 自签后不再报 `Permission denied`，但直接执行以 139（`SIGSEGV`）退出，第三方 `loader` 仍可运行。签名前后 ELF 对比确认，官方工具把可写 `PT_LOAD` 的文件偏移从 `0x7577c8` 改成 `0x756e48`，却保留虚拟地址 `0xb677c8`，破坏了 4 KiB 页下的加载映射同余关系。社区 `codex-harmonyos` 使用的 append-only `ohos-bst-light` 签名器不会修改 program headers；同一 ZeroSeed 原始 ELF 经该工具签名后也可通过官方 `display-sign` 验签。因此，“任意 ELF 优先使用官方 Java 工具”并不成立，必须按 ELF 来源选择签名器并执行签名后结构校验。
+
 ## 来源分级
 
 | 分级 | 本文使用方式 |
@@ -308,7 +310,46 @@ ZeroSeed 当前对 OpenHarmony 平台包复用 `aarch64-unknown-linux-musl` arti
 
 可借鉴：纯文本签名工具便于离线安装；签所有 helper；每次升级从干净原件重签；签名后验证；用临时文件 + rename 处理 HMFS 密封。
 
-不可直接照搬：它没有 npm publish、provenance、tarball 内哈希复核，也没有正式证书/HNP 流程；签名发生在用户设备，而不是发布机；默认修改模型 provider；其 Python 实现来自第三方项目而非官方 SDK。ZeroSeed 若采用它，应先做许可证、安全、算法兼容和多系统版本验证。正式发布优先选择官方 `binary-sign-tool`。
+不可直接照搬：它没有 npm publish、provenance、tarball 内哈希复核，也没有正式证书/HNP 流程；签名发生在用户设备，而不是发布机；默认修改模型 provider；其 Python 实现来自第三方项目而非官方 SDK。ZeroSeed 若采用它，应固定已审计的上游版本、校验源码摘要、增加签名后 program-header 门禁，并在发布机签名后通过 npm 分发。
+
+### 6.1 为什么 `codex-harmonyos` 能运行，而当前 ZeroSeed 测试包会崩溃
+
+此前文档所指的 [QinpanWan/codex-harmonyos](https://github.com/QinpanWan/codex-harmonyos) 并不是 OHOS 原生编译版。它下载 OpenAI 官方 `aarch64-unknown-linux-musl` tarball，再调用 vendored `tools/self-sign.py`。该脚本来自 `ohos-bst-light`，其关键行为是 append-only：
+
+1. 找到原 ELF 所有 section 和 section-header table 的末尾；
+2. 在文件尾部按 4096 字节对齐追加 `.codesign`；
+3. 把更新后的 `.shstrtab` 和 section-header table 放到更后面；
+4. 只修改 ELF header 中的 section-table 位置和数量，不重新布局任何 `PT_LOAD`、TLS 或 RELRO segment；
+5. 写入 fs-verity descriptor、Merkle root 和 `FLAG_SELF_SIGN`。
+
+对同一个 ZeroSeed 0.0.2 未签名 ELF 的本机复测结果：
+
+| 项目 | 未签名原件 | 官方 Java 工具 | `ohos-bst-light`/Codex 脚本 |
+|---|---:|---:|---:|
+| 可写 `PT_LOAD.p_offset` | `0x7577c8` | `0x756e48` | `0x7577c8` |
+| `PT_LOAD.p_vaddr` | `0xb677c8` | `0xb677c8` | `0xb677c8` |
+| program headers 是否保持 | 基准 | 否 | 是 |
+| 官方 `display-sign` | 未签名 | 通过 | 通过 |
+| 鸿蒙 PC 直接执行 | `Permission denied` | `SIGSEGV`（139） | 待真机验证 |
+
+目标鸿蒙 PC 页大小为 4096。官方工具产物中 `0x756e48 % 4096 = 0xe48`，而 `0xb677c8 % 4096 = 0x7c8`，二者不同；这可以直接解释系统原生加载后在启动阶段崩溃。`ohos-bst-light` 产物保持原 program headers，因此没有引入这一结构缺陷。官方工具签名时同时输出 `.tdata`、`.tbss`、`.got`、`.data` 和多个 segment changed 警告，但仍返回 `sign success`，说明仅检查退出码和 `display-sign success` 不足以作为发布门禁。
+
+社区也在 2026-07-27 记录了官方 `binary-sign-tool` 会导致 Bun 预编译 ELF 无法正常工作，建议改用 `ohos-bst-light` 的轻量签名实现。这与 ZeroSeed 的真机症状和结构对比一致。[鸿蒙 PC ELF 签名实测](https://hu60.net/q.php/bbs.topic.107186.html) [ohos-bst-light](https://github.com/hqzing/ohos-bst-light)
+
+### 6.2 另一个同名方向：真正的 OHOS 原生 Codex npm 包
+
+2026 年 7 月发布的 `@ohos-ports/codex@0.140.0-beta.0` 是另一条路线，不应与 `QinpanWan/codex-harmonyos` 混淆。它的 npm 包只是 JavaScript wrapper，依赖 GitCode 上的定制 `@openai/codex` tarball；后者包含从源码使用 OHOS SDK clang 编译的 `vendor/aarch64-unknown-linux-ohos/bin/codex`。[npm 发布物](https://www.npmjs.com/package/@ohos-ports/codex) [OpenHarmony PC Developer](https://gitcode.com/OpenHarmonyPCDeveloper/JavaScript_Package_For_HarmonyOS)
+
+该原生产物的直接证据包括：
+
+- 动态解释器是 `/lib/ld-musl-aarch64.so.1`；
+- 依赖 `libtime_service_ndk.so` 和 `libc.so`，并随包携带 OpenSSL 1.1 动态库；
+- program headers 有四个布局合规的 `PT_LOAD`，而不是复用上游 Linux 静态二进制；
+- `.codesign` 可被官方 `display-sign` 验证；
+- 项目归档的真机报告记录 `node bin/codex.js --version`、`--help` 和 native spawn 均通过；
+- 为适配 OHOS，项目修改了 `nix`、TLS、V8、network proxy 等依赖和条件编译，不是只做签名。
+
+这条路线进一步说明：长期正确方案仍是 `aarch64-unknown-linux-ohos` 源码构建后使用官方签名工具；短期复用 Linux-musl 产物时，`codex-harmonyos` 成功的关键不是系统设置，而是它使用不会重排 `PT_LOAD` 的轻量 append-only 签名器。
 
 ## 7. 证据矩阵
 
@@ -324,6 +365,9 @@ ZeroSeed 当前对 OpenHarmony 平台包复用 `aarch64-unknown-linux-musl` arti
 | 同一 self-signed ELF 可跨所有鸿蒙 PC | 官方 FAQ 未限制来源 | 社区口径有过变化 | 尚需 ZeroSeed 双机验证 | 中 |
 | Linux 可在发布阶段签 ELF | 二进制签名工具文档列出 Linux host 工具 | hapsigner 官方源码提供 Java JAR | 一致 | 高 |
 | codex-harmonyos 不发布二次 npm 包 | 仓库仅含安装器/签名脚本 | 安装器直接请求 npm registry 上游 tarball | 一致 | 高 |
+| Codex 脚本签名器不会重排 `PT_LOAD` | `tools/self-sign.py` 源码 | ZeroSeed 签名前后 `readelf -lW` 实测 | 一致 | 高 |
+| 官方 Java 工具会破坏当前 ZeroSeed ELF 布局 | 签名日志的 section/segment changed 警告 | 真机退出 139 与 program-header 对比 | 一致 | 高 |
+| OHOS 原生 Codex 是源码移植而非 Linux 包改名 | GitCode 迁移补丁与测试报告 | 发布 ELF 的解释器、依赖和 target 目录 | 一致 | 高 |
 
 ## 8. 最终判断
 
@@ -347,6 +391,9 @@ ZeroSeed 当前对 OpenHarmony 平台包复用 `aarch64-unknown-linux-musl` arti
 | [OHcode](https://github.com/HanversionOvO/OHcode) | 工程实践 | Node/bash/rg/Electron 的 HNP 分发 |
 | [Harmonybrew](https://harmonybrew.atomgit.com/) | 工程实践 | 鸿蒙 PC 原生包管理与安全开关 |
 | [codex-harmonyos](https://github.com/QinpanWan/codex-harmonyos) | 工程实践 | npm tarball 下载后自签并运行 |
+| [ohos-bst-light](https://github.com/hqzing/ohos-bst-light) | 第三方源码 | append-only 自签算法与多语言实现 |
+| [@ohos-ports/codex](https://www.npmjs.com/package/@ohos-ports/codex) | 一手发布物 | npm wrapper 与 GitCode 定制依赖 |
+| [JavaScript_Package_For_HarmonyOS](https://gitcode.com/OpenHarmonyPCDeveloper/JavaScript_Package_For_HarmonyOS) | 工程实践与一手发布物 | Codex OHOS 源码移植补丁、真机报告和 tarball |
 | [deepseek-harness-harmonyos](https://github.com/shd101wyy/deepseek-harness-harmonyos) | 工程实践 | JS CLI 与 native addon 适配 |
 | [鸿蒙 PC ELF 签名实测](https://hu60.net/q.php/bbs.topic.107186.html) | 社区实测 | self-sign 命令与限制 |
 | [aria2-harmonyos](https://github.com/HanversionOvO/aria2-harmonyos) | 社区实测 | 独立 ELF 自签运行 |

@@ -169,8 +169,9 @@
 - 2026-08-07 [WPT reftest @font-face loader 缓存：键必须等于构造函数输入（+Arc 共享解析结果）](performance/2026-08/2026-08-07-wpt-reftest-font-face-cache.md) — tests/wpt-runner/src/reftest.rs（FRESH_LOADER_CACHE）, crates/render-foundation/src/font/loader.rs（FontLoader::duplicate, fonts: HashMap<u32, Arc<fontdue::Font>>）
 - 2026-08-07 [CJK 字形栅格化重尾优化：FreeType face 缓存 + 采样哈希](performance/2026-08/2026-08-07-cjk-raster-face-cache.md)
 
-## Platform — 平台与环境相关经验（14）
+## Platform — 平台与环境相关经验（15）
 
+- 2026-09-05 [HarmonyOS ELF 签名工具可能重写可加载段](platform/2026-09/2026-09-05-harmonyos-elf-signer-segment-rewrite.md) — release, npm-cli, harmonyos
 - 2026-08-18 [git worktree 共享 CARGO_TARGET_DIR 导致构建指纹污染](platform/2026-08/2026-08-18-worktree-shared-target-dir-fingerprint-collision.md) — 工具链 / cargo / git worktree / 性能 A/B 验证
 - 2026-08-16 [Windows 同排标签栏与 Snap Layout](platform/2026-08/2026-08-16-windows-native-titlebar-tabs.md) — apps/browser, Win32 non-client hit test
 - 2026-08-15 [test-guard --compile-first 直接执行测试二进制的 cwd 语义](platform/2026-08/2026-08-15-test-guard-compile-first-cwd.md) — scripts/test-guard.rs, Makefile（make test）, apps/browser, render-foundation 测试
