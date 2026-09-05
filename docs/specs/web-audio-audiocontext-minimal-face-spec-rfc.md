@@ -4,8 +4,8 @@
 **日期**：2026-09-01
 **状态**：Proposed（media-audio M3 门控项——**实施与否待用户批准**（goal 文档 DC-4：
 RFC 完成即满足，不批准不影响该 goal DONE））
-**关联**：[media-audio goal](../goal/media-audio.md)（M3 门控项）·
-[media-playback goal](../goal/media-playback/master.md)（解码/播放面已落地）·
+**关联**：[media-audio goal](../goal/archive/media-audio.md)（M3 门控项；goal 已完成，2026-09-05 归档）·
+[media-playback goal](../goal/archive/media-playback/master.md)（解码/播放面已落地）·
 [video-decode-playback-spec-rfc.md](video-decode-playback-spec-rfc.md)（路线 C 先例）
 
 ---

@@ -5,7 +5,7 @@
 **状态**：Approved（2026-09-05 用户批复 D-RFC-3a=有条件批准实施【分发前须法务复核】、
 3b=构建期源码编译、3c=AAC 随期——见 §5 决议记录。原 Proposed 态注记：media-playback
 M3 门控项，D-RFC-3 决议「单独立项」的本立项文档）
-**关联**：[media-playback goal](../goal/media-playback.md)（M3 多格式收尾）·
+**关联**：[media-playback goal](../goal/archive/media-playback.md)（M3 多格式收尾；goal 已完成，2026-09-05 归档）·
 [video-decode-playback-spec-rfc.md](video-decode-playback-spec-rfc.md)（路线 C 主 RFC，
 D-RFC-1/2 已批：VP9 纯 Rust + AV1 dav1d 已落地）·
 [web-audio-audiocontext-minimal-face-spec-rfc.md](web-audio-audiocontext-minimal-face-spec-rfc.md)
@@ -215,7 +215,8 @@ JS（既有，零改动）                Rust（crates/media 增量）
 ### 6.6 代码变更边界（批准后实施期）
 - **允许修改**：`crates/media/**`、`crates/webview/src/video_registry.rs`（mp4
   settle 登记/路由）、`Cargo.toml`（workspace 依赖 + feature）、
-  `tests/fixtures/media/**`（如需补 fixture）、`docs/goal/media-playback/**`。
+  `tests/fixtures/media/**`（如需补 fixture）、`docs/goal/media-playback/**`
+  （注：goal 已完成归档，现位于 `docs/goal/archive/media-playback/**`）。
 - **禁止修改**：`crates/engine/src/js_dom_shim/**`（语义面零改动——95.3% 面
   不返工是本立项的架构前提）、渲染域 crate。
 

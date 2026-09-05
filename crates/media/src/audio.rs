@@ -7,7 +7,7 @@
 //! - `CpalSink`（真实设备）：feature-gated `audio-cpal`，M1 后续切片接入
 //!   （编译面已由 D2 探针验证：libasound2-dev + cpal 0.16 ALSA host）。
 //!
-//! [evidence/2026-09-01-m0-environment-probe.md]: ../../docs/goal/media-audio/evidence/2026-09-01-m0-environment-probe.md
+//! [evidence/2026-09-01-m0-environment-probe.md]: ../../docs/goal/archive/media-audio/evidence/2026-09-01-m0-environment-probe.md
 
 /// PCM 流格式（sink 端点契约；与解码面 symphonia 输出的采样率/声道对齐）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

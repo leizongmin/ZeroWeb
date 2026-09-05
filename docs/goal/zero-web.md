@@ -56,7 +56,7 @@
 - **不基于 Servo / MPL 技术线构建** — servo、stylo、webrender、rust-cssparser、lightningcss、mozjs 不进入主线依赖
 - **首期不做移动端发布** — Android 和鸿蒙 PC 是后续适配，不是首发阻塞
 - **首期不做完整 DevTools** — 控制台日志和基础审查先行，完整 DevTools 面板后续
-- **首期不做媒体播放** — `<video>`/`<audio>` 播放能力后续，首期只处理布局占位
+- **首期不做媒体播放** — `<video>`/`<audio>` 播放能力后续，首期只处理布局占位（历史裁决已由 2026-08-17 媒体三 goal 拆分决策解除，三 goal 已于 2026-09-05 完成，见下方 Tier 3 注记）
 - **不追求首期双 JS 引擎等价** — V8 是唯一稳定页面引擎，QuickJS 仅用于扩展沙箱
 - **首期不做浏览器扩展系统** — WebExtension API 支持后续
 - **首期不做 WebRTC** — 实时通信后续
@@ -82,7 +82,7 @@ Web 标准覆盖面极广，"最新标准"不可能在一个里程碑中完成�
 **Tier 3 — 完整体验（持续扩展）**：
 - Canvas 2D 完整 API（Path2D、OffscreenCanvas、ImageBitmap）
 - WebGL/WebGPU
-- `<video>`/`<audio>` 播放 + Media Source Extensions
+- `<video>`/`<audio>` 播放 + Media Source Extensions（第一阶段已完成：媒体三专项目标 media-playback / media-audio / media-elements 2026-09-05 收口，DC 全满足——入口文档与运行时面板已归档至 `docs/goal/archive/media-playback/`、`docs/goal/archive/media-audio/`、`docs/goal/archive/media-elements/`；MSE 为后续扩展）
 - WebRTC
 - WebAssembly Component Model
 - WebExtension API

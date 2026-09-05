@@ -1331,7 +1331,7 @@ fn case_variants(source: &str) -> Vec<String> {
     out
 }
 
-/// Media elements goal（docs/goal/media-elements.md，M1 / DC-1）导入的上游
+/// Media elements goal（docs/goal/archive/media-elements.md，M1 / DC-1）导入的上游
 /// `html/semantics/embedded-content/media-elements` testharness 用例面。
 ///
 /// 由 `tests/wpt-runner/scripts/fetch-media-subset.sh` 维护（wpt-data gitignored，

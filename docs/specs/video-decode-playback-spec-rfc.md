@@ -3,9 +3,9 @@
 **版本**：v1.1
 **日期**：2026-09-01（v1.0 草案；同日获批，见 §5 决议记录）
 **状态**：Approved（2026-09-01 用户批复 D-RFC-1=批准路线 C，D-RFC-2=M3 再含，D-RFC-3=单独立项）
-**关联**：[media-playback goal](../goal/media-playback.md)（M0 门控项）·
-[media-elements goal](../goal/media-elements.md)（语义层消费方）·
-[media-audio goal](../goal/media-audio/master.md)（AudioSink 输出面，与选型解耦）
+**关联**：[media-playback goal](../goal/archive/media-playback.md)（M0 门控项；goal 已完成，2026-09-05 归档）·
+[media-elements goal](../goal/archive/media-elements.md)（语义层消费方）·
+[media-audio goal](../goal/archive/media-audio/master.md)（AudioSink 输出面，与选型解耦）
 
 ---
 
