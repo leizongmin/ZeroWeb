@@ -234,6 +234,42 @@ fn audio_non_audio_bytes_rejected() {
 }
 
 #[test]
+fn audio_wav_pcm_decode_to_nullsink_chain() {
+    // M3 扩批 LVII（media-elements canPlayType audio/wav 扩表真值）：wav/RIFF
+    // PCM fixture → symphonia `wav` feature（symphonia-format-riff）解码 f32 →
+    // NullSink 过零率锚点（440Hz sine ≈ 880 = 2×频率，同 mp3/vorbis 链契约）。
+    // canPlayType 表项 'audio/wav'/'audio/wav; codecs=1' 的解码面佐证——扩表与
+    // 解码真值同步（opus/av1/h264 同款模式）。
+    use crate::audio::{AudioFormat, AudioSink, NullSink};
+    use crate::audio_decode::AudioDecoder;
+
+    let data = fs::read(fixture_path("sample-wav-pcm.wav")).unwrap();
+    let mut dec = AudioDecoder::open(&data).expect("RIFF/wav probe 应成功（wav feature）");
+    let (rate, channels) = (dec.sample_rate(), dec.channels());
+
+    let mut sink = NullSink::new();
+    sink.start(AudioFormat {
+        sample_rate: rate,
+        channels,
+    })
+    .unwrap();
+    let mut wrote_any = false;
+    while let Some(batch) = dec.next_batch().unwrap() {
+        sink.write(&batch.samples).unwrap();
+        wrote_any = true;
+    }
+    assert!(wrote_any, "wav 解码应产出采样");
+    let frames = sink.frames_written();
+    let expect = u64::from(rate) * 2;
+    assert!(
+        (frames as i64 - expect as i64).abs() < (expect as i64 / 20),
+        "wav 写入帧数应 ≈ 2s：got {frames}, expect ≈{expect}"
+    );
+    let zcr = sink.zero_crossings_per_second().expect("写入后应有过零率");
+    assert!((zcr - 880.0).abs() < 90.0, "440Hz sine 过零率应 ≈880，got {zcr}");
+}
+
+#[test]
 fn webm_av_vorbis_track_decode_chain() {
     // M2 切片 D：webm 双轨（VP9 + Vorbis）的音频面全链——`open_webm_audio_track`
     // demux A_VORBIS 轨 + CodecPrivate 三段头 → OGG 页重封装 → symphonia 解码

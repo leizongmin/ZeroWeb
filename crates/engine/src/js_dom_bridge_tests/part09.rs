@@ -3574,6 +3574,8 @@ fn test_media_can_play_type_capability_table_m4gd() {
            webmAudioOpus: a.canPlayType('audio/webm; codecs=\"opus\"'),\
            avc1Main: v.canPlayType('video/mp4; codecs=\"avc1.4D401E\"'),\
            avc1High: v.canPlayType('video/mp4; codecs=\"avc1.64001E\"'),\
+           wav: a.canPlayType('audio/wav'),\
+           wavPcm: a.canPlayType('audio/wav; codecs=\"1\"'),\
            agree: a.canPlayType('video/webm') === v.canPlayType('video/webm')\
          };",
     ).unwrap();
@@ -3625,6 +3627,10 @@ fn test_media_can_play_type_capability_table_m4gd() {
         "",
         "avc1.64001E (High profile, 8x8 transform) 不在 openh264 解码面 → ''（不虚报）"
     );
+    // M3 扩批 LVII（2026-09-05）：audio/wav 转入支持面（symphonia `wav` feature——
+    // RIFF 容器 + PCM codec id '1'；AudioDecoder::open probe 同入口真值）。
+    assert_eq!(get("wav"), "maybe", "audio/wav 容器 → maybe（RIFF 解码面）");
+    assert_eq!(get("wavPcm"), "probably", "audio/wav; codecs=1（PCM）→ probably");
     // 不在解码面 → ''（不虚报）。
     assert_eq!(get("vp8"), "", "vp8 不在解码面 → ''");
     assert_eq!(

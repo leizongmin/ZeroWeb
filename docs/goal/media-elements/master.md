@@ -2,6 +2,22 @@
 
 **入口文档**: [../media-elements.md](../media-elements.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
+**最后更新**: 2026-09-05（**M3 扩批 LVII 落地**——canPlayType audio/wav 转入支持面
+（640P/0F/13PF = **98.01%**，+2 净涨零回归，PF 15→13）：symphonia feature 补 `wav`
+（RIFF 容器 + PCM codec，symphonia-format-riff 纯 Rust + extended(f80) 依赖入
+Cargo.lock——共享面变更已核对渲染流无冲突）；能力表补 `'audio/wav': {audio:['1']}`
+——`AudioDecoder::open` probe 同入口自动覆盖，settle/播放/探针全链真值（opus/av1/
+h264 扩表同款模式，不虚报）。e2e 佐证资产 `sample-wav-pcm.wav`（ffmpeg 生成、
+README 记录命令；172KB 超 100KB 约束已注记——PCM 无压缩最小形态，2s 时长一致性
+优先）+ 单测 `audio_wav_pcm_decode_to_nullsink_chain`（过零率锚点 ≈880）+
+m4gd 扩 2 断言面（wav maybe / wavPcm probably）。WPT mime-types/canPlayType.html
+PF 15→13——余 13 PF 全为无解码面编解码（3gpp/mp4v/theora/vp8/iamf/avc1 extended
++High 档），**wav 收窄后 headless 可导入面再饱和，无进一步收窄面**。组合态注记：
+pause-remove-from-document-different-load 全量下偶发 Timeout（隔离 5/5 绿、基线
+3/3 绿——宿主 setTimeout 线程高负载调度 flake，同 SW/webaudio e2e 族非媒体语义
+缺陷）；fresh 跑 640P/0F/0T 逐位一致。evidence：
+`evidence/2026-09-05-media-wav-canplaytype-lvii.json`。）
+**（注：下方「最后更新」LVI 块为前轮记录，保留作历史）**
 **最后更新**: 2026-09-05（**M3 扩批 LVI 落地**——preservesPitch IDL 语义面 +
 Audio/Video 原型链 spec 对齐（638P/0F/15PF = 97.7% 零回归——纯增量面无新增导入）：
 ① **preservesPitch 四处落地**（spec dom-media-preservespitch——纯 IDL 属性无内容属性
@@ -646,6 +662,9 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
   Main 档转入）**638/653 = 97.7%**（+2 净涨零回归；Fail 0 / Timeout 0 / **PF 15**）
   → 扩批 LVI（2026-09-05，preservesPitch IDL 语义面 + Audio/Video 原型链 spec 对齐——
   纯增量面无新增导入）**638/653 = 97.7%** 维持零回归（Fail 0 / Timeout 0 / PF 15）
+  → 扩批 LVII（2026-09-05，canPlayType audio/wav 转入支持面——symphonia `wav` feature
+  + 能力表补 PCM codec id '1'）**640/653 = 98.01%**（+2 净涨零回归；Fail 0 / Timeout 0 /
+  **PF 13**）
   → 巡检复验（2026-09-05，渲染流 d2fd8e173 组合态新基线——纯验证轮零代码变更）：
   fresh 跑 **638 Pass / 15 PreconditionFailed 逐位一致**（97.7% 维持；PF 全为选型面外
   编解码，LIV 后无收窄面）。同轮 make test 全量 18921 全绿——SW import-order 测试
@@ -682,7 +701,8 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
   `evidence/2026-09-04-webvtt-cue-text-parser-xlii.json`、
   `evidence/2026-09-04-media-pause-move-related-xliii.json`、
   `evidence/2026-09-05-media-addtrack-timing-liii.md`（+同名 .json）、
-  `evidence/2026-09-05-media-preserves-pitch-lvi.json`
+  `evidence/2026-09-05-media-preserves-pitch-lvi.json`、
+  `evidence/2026-09-05-media-wav-canplaytype-lvii.json`
 
 ## 归档
 

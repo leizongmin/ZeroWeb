@@ -115,6 +115,7 @@ impl WebAudioRegistry {
         }
     }
 
+    /// 当前 epoch 毫秒（泵时钟真值；e2e 推进起点对齐用）。
     pub fn now_ms(&self) -> u64 {
         self.epoch.elapsed().as_millis() as u64
     }

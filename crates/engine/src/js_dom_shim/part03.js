@@ -11850,6 +11850,12 @@
             'audio/mpeg': { audio: ['mp3'], video: [] },
             'audio/ogg': { audio: ['vorbis', 'opus'], video: [] },
             'audio/webm': { audio: ['vorbis', 'opus'], video: [] },
+            // M3 扩批 LVII（2026-09-05）：audio/wav 转入支持面——symphonia `wav`
+            // feature（RIFF 容器 + PCM codec；symphonia-format-riff 纯 Rust）入
+            // workspace feature 面，AudioDecoder::open probe 自动覆盖（settle/播放/
+            // 探针同入口）。WPT canPlayType 的 wav codecs 参数即 PCM 编码 id '1'。
+            // https://html.spec.whatwg.org/multipage/media.html#dom-navigator-canplaytype
+            'audio/wav': { audio: ['1'], video: [] },
             'video/ogg': { audio: ['vorbis', 'opus'], video: [] },
             // M3 扩批（2026-09-02，zero-media A_OPUS demux 落地联动）：video/webm opus
             // 转入支持面（WebmOpusAudioTrack——opus-decoder 直解；WPT 上游 media/*.webm

@@ -13,6 +13,7 @@
 | `sample-mp3.mp3` | mp3 | 无 | MP3 (libmp3lame 64k) | 44.1kHz 单声道 | 2s | 16KB |
 | `sample-ogg-opus.oga` | ogg | 无 | Opus (48k) | 48kHz 单声道 | 2s | 14KB |
 | `sample-ogg-vorbis.oga` | ogg | 无 | Vorbis (q4) | 44.1kHz 单声道 | 2s | 7KB |
+| `sample-wav-pcm.wav` | wav (RIFF) | 无 | PCM s16le | 44.1kHz 单声道 | 2s | 172KB |
 
 ## 生成命令
 
@@ -46,6 +47,12 @@ ffmpeg -f lavfi -i "sine=frequency=440:duration=2" \
 # Opus（oga，音频）
 ffmpeg -f lavfi -i "sine=frequency=440:duration=2" \
        -c:a libopus -b:a 48k -y sample-ogg-opus.oga
+
+# WAV PCM（音频，media-elements M3 扩批 LVII——symphonia `wav` feature 解码面；
+# canPlayType audio/wav 扩表真值的 e2e 佐证资产。172KB 超 100KB 约束：PCM 无
+# 压缩，2s@44.1kHz s16le 单声道最小形态即 172KB，保持 2s 时长一致性优先）
+ffmpeg -f lavfi -i "sine=frequency=440:duration=2" \
+       -c:a pcm_s16le -ar 44100 -ac 1 -y sample-wav-pcm.wav
 ```
 
 ## 用途
