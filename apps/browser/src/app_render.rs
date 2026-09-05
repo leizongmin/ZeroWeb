@@ -1074,6 +1074,7 @@ impl BrowserApp {
             blur_radius: blur,
             spread_radius: 0.0,
             inset: false,
+            clip: None,
         });
     }
 

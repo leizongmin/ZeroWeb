@@ -837,6 +837,7 @@ fn shadow_renders_blur_around_rect() {
         blur_radius: 4.0,
         spread_radius: 0.0,
         inset: false,
+        clip: None,
     });
 
     let font_loader = FontLoader::new();
@@ -882,6 +883,7 @@ fn inset_shadow_renders_inside_box() {
         blur_radius: 4.0,
         spread_radius: 0.0,
         inset: true,
+        clip: None,
     });
     let font_loader = FontLoader::new();
     let mut glyph_cache = GlyphCache::new(64);

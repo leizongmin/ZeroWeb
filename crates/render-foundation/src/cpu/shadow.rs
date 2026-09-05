@@ -36,6 +36,26 @@ pub fn render_shadow(fb: &mut FrameBuffer, shadow: &ShadowPrimitive, scale: f32)
     let area_right = (sx + sw + blur_extent).ceil().min(fb.width as f32) as u32;
     let area_bottom = (sy + sh + blur_extent).ceil().min(fb.height as f32) as u32;
 
+    // R4059：裁剪窗口（paint 侧 overflow / contain:paint 裁剪写入）——blur 溢出 rect
+    // 的部分须在窗口边界硬停（css-contain-1 §paint containment：后代绘制裁到 padding
+    // 盒；overflow:hidden 同语义）。模糊在窗口外不渲染，合成阶段同样跳过窗口外像素。
+    let clip_window = shadow
+        .clip
+        .map(|c| {
+            (
+                (c.left() * scale).floor().max(0.0),
+                (c.top() * scale).floor().max(0.0),
+                (c.right() * scale).ceil(),
+                (c.bottom() * scale).ceil(),
+            )
+        })
+        .unwrap_or((0.0, 0.0, fb.width as f32, fb.height as f32));
+    let (cl, ct, cr, cb) = clip_window;
+    let area_left = (area_left as f32).max(cl).floor() as u32;
+    let area_top = (area_top as f32).max(ct).floor() as u32;
+    let area_right = (area_right as f32).min(cr).ceil().min(fb.width as f32) as u32;
+    let area_bottom = (area_bottom as f32).min(cb).ceil().min(fb.height as f32) as u32;
+
     if area_left >= area_right || area_top >= area_bottom {
         return;
     }
@@ -133,11 +153,26 @@ fn render_inset_shadow(fb: &mut FrameBuffer, shadow: &ShadowPrimitive, scale: f3
     let hw = ow - 2.0 * spread;
     let hh = oh - 2.0 * spread;
 
-    // area = OUTER（内阴影限制在盒内）裁切到帧缓冲
+    // area = OUTER（内阴影限制在盒内）裁切到帧缓冲；R4059 裁剪窗口再收窄
     let area_left = ox.floor().max(0.0) as u32;
     let area_top = oy.floor().max(0.0) as u32;
     let area_right = (ox + ow).ceil().min(fb.width as f32) as u32;
     let area_bottom = (oy + oh).ceil().min(fb.height as f32) as u32;
+    let (cl, ct, cr, cb) = shadow
+        .clip
+        .map(|c| {
+            (
+                (c.left() * scale).floor().max(0.0),
+                (c.top() * scale).floor().max(0.0),
+                (c.right() * scale).ceil(),
+                (c.bottom() * scale).ceil(),
+            )
+        })
+        .unwrap_or((0.0, 0.0, fb.width as f32, fb.height as f32));
+    let area_left = (area_left as f32).max(cl).floor() as u32;
+    let area_top = (area_top as f32).max(ct).floor() as u32;
+    let area_right = (area_right as f32).min(cr).ceil().min(fb.width as f32) as u32;
+    let area_bottom = (area_bottom as f32).min(cb).ceil().min(fb.height as f32) as u32;
     if area_left >= area_right || area_top >= area_bottom {
         return;
     }

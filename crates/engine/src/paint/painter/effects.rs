@@ -75,6 +75,7 @@ impl super::Painter {
                 blur_radius: shadow.blur_radius,
                 spread_radius: shadow.spread_radius,
                 inset: shadow.inset,
+                clip: None,
             });
         }
     }
@@ -676,6 +677,7 @@ impl super::Painter {
                 blur_radius: *blur,
                 spread_radius: 0.0,
                 inset: false,
+                clip: None,
             });
         }
     }

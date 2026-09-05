@@ -219,6 +219,8 @@ pub fn apply_paint_snapshot(snap: &mut TabSnapshot, params: PaintSnapshotParams)
             blur_radius: shadow.blur_radius,
             spread_radius: shadow.spread_radius,
             inset: false,
+            // R4059：IPC 面暂无 shadow 裁剪窗口（renderer 进程内 paint 已裁），恒 None。
+            clip: None,
         });
     }
     for image in params.images {

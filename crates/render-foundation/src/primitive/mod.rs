@@ -268,6 +268,12 @@ pub struct ShadowPrimitive {
     /// R2476：是否内阴影（inset）。outset（false）= 阴影在盒外向外模糊；inset（true）=
     /// 阴影在盒内（box 减 offset+spread 收缩的洞），向内模糊，裁切到盒。
     pub inset: bool,
+    /// R4059：裁剪窗口（device 坐标，`None` = 不裁剪）。模糊（blur_extent = 3σ 外扩）
+    /// 会越过 `rect` 渲染，仅靠 rect ∩ clip 的矩形收缩挡不住 blur 溢出——溢出部分的
+    /// 可见区域须由 renderer 按本窗口硬裁（cpu 逐像素掩蔽 / gpu scissor 收窄）。
+    /// paint 侧 overflow / contain:paint 裁剪（clip_all_primitives_to_rect）写入，
+    /// 语义同 `ImagePrimitive.clip`（R294 crop 先例）。
+    pub clip: Option<Rect>,
 }
 
 /// 图片图元

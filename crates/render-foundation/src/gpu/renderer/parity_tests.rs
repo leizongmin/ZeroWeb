@@ -110,6 +110,7 @@ fn build_basic_scene() -> (RenderPrimitives, ImageCache) {
         blur_radius: 0.0,
         spread_radius: 0.0,
         inset: false,
+        clip: None,
     });
     // 6. 1×1 红图放大到 12×12
     let mut image_cache = ImageCache::new(16, 1 << 20);
@@ -561,6 +562,7 @@ fn parity_blur_shadow_matches_cpu() {
         blur_radius: 3.0,
         spread_radius: 0.0,
         inset: false,
+        clip: None,
     });
     p.draw_order = vec![DrawOp::Shadow(0)];
     let cpu_fb = render_cpu(32, 32, &p, None);
@@ -728,6 +730,7 @@ fn parity_inset_shadow_matches_cpu() {
         blur_radius: 3.0,
         spread_radius: 0.0,
         inset: true,
+        clip: None,
     });
     p.draw_order = vec![DrawOp::Shadow(0)];
     let cpu_fb = render_cpu(32, 32, &p, None);
@@ -769,6 +772,7 @@ fn parity_multiple_outset_shadows_matches_cpu() {
         blur_radius: 4.0,
         spread_radius: 0.0,
         inset: false,
+        clip: None,
     });
     p.shadows.push(ShadowPrimitive {
         rect: Rect::new(18.0, 4.0, 10.0, 10.0),
@@ -778,6 +782,7 @@ fn parity_multiple_outset_shadows_matches_cpu() {
         blur_radius: 4.0,
         spread_radius: 0.0,
         inset: false,
+        clip: None,
     });
     // 二分：只画第一个阴影
     let mut only_first = p.clone();
@@ -831,6 +836,7 @@ fn inset_shadow_no_leak_outside_box() {
         blur_radius: 4.0,
         spread_radius: 0.0,
         inset: true,
+        clip: None,
     });
     p.draw_order = vec![DrawOp::Shadow(0)];
     let _cpu_fb = render_cpu(32, 32, &p, None);
@@ -859,6 +865,7 @@ fn inset_shadow_zero_blur_is_hard_edge() {
         blur_radius: 0.0,
         spread_radius: 0.0,
         inset: true,
+        clip: None,
     });
     p.draw_order = vec![DrawOp::Shadow(0)];
     let cpu_fb = render_cpu(32, 32, &p, None);

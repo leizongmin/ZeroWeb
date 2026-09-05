@@ -746,22 +746,25 @@ pub fn clip_all_primitives_to_rect(primitives: &mut RenderPrimitives, from: &Pri
             r.size.height = bottom - top;
         }
     }
-    // 裁剪阴影（简化：矩形范围）
+    // 裁剪阴影。R4059：blur（3σ 外扩）会越过 `rect` 渲染，仅 shrink rect 挡不住 blur
+    // 溢出——把可见窗口写 `shadow.clip`（语义同 img.clip crop，R294），renderer 端按
+    // 窗口硬裁 blur 输出（cpu 逐像素 / gpu scissor）。rect 自身保持不变：rect 是阴影
+    // 形状的参考框（spread/blur 从它外扩），shrink 会把剩余 blur 一并错位收缩。
     for shadow in primitives.shadows.iter_mut().skip(from.shadows) {
-        let r = &mut shadow.rect;
-        let left = r.left().max(clip_rect.left());
-        let top = r.top().max(clip_rect.top());
-        let right = r.right().min(clip_rect.right());
-        let bottom = r.bottom().min(clip_rect.bottom());
-        if right <= left || bottom <= top {
+        // 参考框与裁剪区完全不相交 → 零尺寸 rect（renderer 见空面积早退）；否则保持
+        // rect 原样，窗口以 clip_rect 为准（blur 可以在 rect 与 clip_rect 之间的缝隙区
+        // 可见——如 offset 阴影）。
+        let r = shadow.rect;
+        let visible = r.right() > clip_rect.left()
+            && r.left() < clip_rect.right()
+            && r.bottom() > clip_rect.top()
+            && r.top() < clip_rect.bottom();
+        if !visible {
+            let r = &mut shadow.rect;
             r.size.width = 0.0;
             r.size.height = 0.0;
-        } else {
-            r.origin.x = left;
-            r.origin.y = top;
-            r.size.width = right - left;
-            r.size.height = bottom - top;
         }
+        shadow.clip = Some(*clip_rect);
     }
     // 裁剪图片：**crop 语义（非 rescale）**。
     // 关键：保持 img.rect 不变（source 始终映射到完整 rect，保持原始分辨率），

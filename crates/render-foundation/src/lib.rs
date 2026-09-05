@@ -426,6 +426,7 @@ mod tests {
             blur_radius: 5.0,
             spread_radius: 3.0,
             inset: false,
+            clip: None,
         });
         // 远处的 image
         p.add_image(ImagePrimitive {
@@ -715,6 +716,7 @@ mod tests {
             blur_radius: 0.0,
             spread_radius: 0.0,
             inset: false,
+            clip: None,
         });
 
         let bb = p.bounding_box().expect("shadow 应产生包围盒");

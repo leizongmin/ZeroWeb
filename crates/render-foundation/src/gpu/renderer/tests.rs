@@ -1026,6 +1026,7 @@ fn test_gpu_full_scene_shadow_opaque() {
         blur_radius: 0.0,
         spread_radius: 0.0,
         inset: false,
+        clip: None,
     });
     let font_loader = FontLoader::new();
     let mut glyph_cache = GlyphCache::new(64);
@@ -1069,6 +1070,7 @@ fn test_gpu_full_scene_shadow_semitransparent() {
         blur_radius: 0.0,
         spread_radius: 0.0,
         inset: false,
+        clip: None,
     });
     let font_loader = FontLoader::new();
     let mut glyph_cache = GlyphCache::new(64);

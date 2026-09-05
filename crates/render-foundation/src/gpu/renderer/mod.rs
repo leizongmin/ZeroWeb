@@ -1706,6 +1706,17 @@ impl GpuRenderer {
             let t = sr.top() * scale - spread + oy;
             let r = sr.right() * scale + spread + ox;
             let b = sr.bottom() * scale + spread + oy;
+            // R4059：硬边阴影是纯 quad（无 blur 溢出问题），窗口直接钳 quad。
+            let (l, t, r, b) = if let Some(c) = shadow.clip {
+                (
+                    l.max(c.left() * scale),
+                    t.max(c.top() * scale),
+                    r.min(c.right() * scale),
+                    b.min(c.bottom() * scale),
+                )
+            } else {
+                (l, t, r, b)
+            };
             let c = Color::rgba(shadow.color.r, shadow.color.g, shadow.color.b, shadow.color.a);
             push_fill_quad(&mut verts, l, t, r, b, c);
             batches.push(verts);
@@ -3309,6 +3320,17 @@ impl GpuRenderer {
             let bb = (sr.bottom() * scale + spread + oy + blur_extent)
                 .ceil()
                 .min(height as f32) as u32;
+            // R4059：裁剪窗口（paint 侧 clip_all 写入，同 img.clip）——blur 溢出部分在
+            // 窗口边界硬停（蒙版区 + 复合 scissor 一并收窄），语义对齐 CPU render_shadow。
+            let (bl, bt, br, bb) = if let Some(c) = shadow.clip {
+                let cl = (c.left() * scale).floor().max(0.0) as u32;
+                let ct = (c.top() * scale).floor().max(0.0) as u32;
+                let cr = (c.right() * scale).ceil().min(width as f32) as u32;
+                let cb = (c.bottom() * scale).ceil().min(height as f32) as u32;
+                (bl.max(cl), bt.max(ct), br.min(cr), bb.min(cb))
+            } else {
+                (bl, bt, br, bb)
+            };
             if bl >= br || bt >= bb {
                 continue;
             }
@@ -3514,6 +3536,16 @@ impl GpuRenderer {
             let bt = oy.floor().max(0.0) as u32;
             let br = (ox + ow).ceil().min(width as f32) as u32;
             let bb = (oy + oh).ceil().min(height as f32) as u32;
+            // R4059：裁剪窗口收窄（同 outset 路径；inset 已限盒内，窗口仅进一步收缩）。
+            let (bl, bt, br, bb) = if let Some(c) = shadow.clip {
+                let cl = (c.left() * scale).floor().max(0.0) as u32;
+                let ct = (c.top() * scale).floor().max(0.0) as u32;
+                let cr = (c.right() * scale).ceil().min(width as f32) as u32;
+                let cb = (c.bottom() * scale).ceil().min(height as f32) as u32;
+                (bl.max(cl), bt.max(ct), br.min(cr), bb.min(cb))
+            } else {
+                (bl, bt, br, bb)
+            };
             if bl >= br || bt >= bb {
                 continue;
             }

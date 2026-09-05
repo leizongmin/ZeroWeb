@@ -214,6 +214,9 @@ pub fn to_render_primitives(params: &PaintSnapshotParams) -> RenderPrimitives {
             blur_radius: shadow.blur_radius,
             spread_radius: shadow.spread_radius,
             inset: false,
+            // R4059：渲染进程 IPC 面暂无 shadow 裁剪窗口（paint 侧 clip_all 只在
+            // renderer 进程内生效），恒 None。
+            clip: None,
         });
     }
     for image in &params.images {

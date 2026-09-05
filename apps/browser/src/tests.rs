@@ -2607,6 +2607,7 @@ fn transform_webview_primitives_applies_scale_and_offset_to_all_types() {
         blur_radius: 4.0,
         spread_radius: 5.0,
         inset: false,
+        clip: None,
     });
     p.strokes.push(StrokePrimitive {
         x1: 1.0,
