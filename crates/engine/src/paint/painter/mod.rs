@@ -22,9 +22,9 @@ use zero_style_system::property::types::DisplayValue;
 use zero_style_system::{
     AccentColorComputedValue, AppearanceComputedValue, BackgroundAttachmentComputedValue, BackgroundClipComputedValue,
     BorderCollapseValue, BorderImageSourceComputedValue, CaretColorComputedValue, ClipPathComputedValue, ComputedStyle,
-    ContainComputedValue, HyphensComputedValue, ImageRenderingValue, IsolationValue, MixBlendModeComputedValue,
-    OverscrollBehaviorValue, PointerEventsValue, ResizeValue, ScrollbarGutterComputedValue, TouchActionValue,
-    UserSelectValue,
+    ContainComputedValue, ContentVisibilityValue, HyphensComputedValue, ImageRenderingValue, IsolationValue,
+    MixBlendModeComputedValue, OverscrollBehaviorValue, PointerEventsValue, ResizeValue, ScrollbarGutterComputedValue,
+    TouchActionValue, UserSelectValue,
 };
 
 use super::color::resolve_color_current;
@@ -1226,15 +1226,29 @@ impl Painter {
             let hidden = matches!(style.visibility, VisibilityValue::Hidden | VisibilityValue::Collapse);
             // R2251 content-visibility:hidden → 直属文本跳过绘制（元素自身盒装饰仍绘）。
             // kill-switch `ZW_CONTENT_VISIBILITY`，default-on。
+            // R4058：UA display:inline 的 **替换元素**（svg 根等）是 atomic inline——
+            // content-visibility:hidden 对其生效（css-contain-2 §5：size containment 适用于
+            // atomic inline；cv-022 hidden svg 不绘制，display Inline 排除臂仅指非替换 inline）。
+            let self_replaced = doc.is_some_and(|d| {
+                d.get(node_id).is_some_and(|n| {
+                    matches!(
+                        &n.kind,
+                        NodeKind::Element(e)
+                            if matches!(
+                                e.local_name(),
+                                "img" | "canvas" | "video" | "embed" | "object" | "applet" | "iframe" | "svg"
+                            )
+                    )
+                })
+            });
             let content_hidden = std::env::var("ZW_CONTENT_VISIBILITY").as_deref() != Ok("0")
-                && style.content_visibility_hidden_effective();
+                && (style.content_visibility_hidden_effective()
+                    || (self_replaced && matches!(style.content_visibility, ContentVisibilityValue::Hidden)));
 
             // empty-cells:hide — 空表格单元格不绘制背景和边框
             let skip_empty_cell = matches!(style.empty_cells, zero_style_system::EmptyCellsComputedValue::Hide)
                 && box_node.children.is_empty()
                 && matches!(style.border_collapse, zero_style_system::BorderCollapseValue::Separate);
-
-            // CSS 2.1 §17.5.3/17.5.4：行组（tbody/thead/tfoot）和行（tr）
             // 的 border/padding/margin 无视觉效果，但 background 仍然应用。
             // Layout 层 zero_box_model() 已归零 border/padding/margin（阻止边框绘制），
             // paint 层需跳过 box-shadow 和 outline 等依赖盒模型的装饰效果。
@@ -1399,20 +1413,27 @@ impl Painter {
                     // R1686：<summary> disclosure 标记（▶闭合/▼开启），≡ list marker 同位。
                     self.paint_summary_marker(box_node, abs_x, abs_y, style, doc);
 
-                    // 4b. <img> 元素绘制（含 object-fit）
-                    self.paint_img_element(box_node, abs_x, abs_y, style, doc);
+                    // R4058（css-contain-2 §content-visibility）：hidden 元素的**替换内容**
+                    //（img 位图 / canvas 位图 / svg 栅格 / video 帧）不绘制——元素自身盒
+                    //（背景/边框）照常（cv-021/022/canvas：hidden img/svg/canvas 露出图内容，
+                    // ref 为纯 background+border 盒）。R2251 只挡了直属文本（paint_text），
+                    // 替换内容漏挡。
+                    if !content_hidden {
+                        // 4b. <img> 元素绘制（含 object-fit）
+                        self.paint_img_element(box_node, abs_x, abs_y, style, doc);
 
-                    // 4b0. <canvas> 元素绘制（R3268 canvas 显示链路——canvas 像素 →
-                    // ImagePrimitive → 渲染侧 ImageCache）
-                    self.paint_canvas_element(box_node, abs_x, abs_y, doc);
+                        // 4b0. <canvas> 元素绘制（R3268 canvas 显示链路——canvas 像素 →
+                        // ImagePrimitive → 渲染侧 ImageCache）
+                        self.paint_canvas_element(box_node, abs_x, abs_y, doc);
 
-                    // 4b0c. inline <svg> 元素绘制（R3933——DOM 子树序列化 → 栅格化 →
-                    // ImagePrimitive，canvas 同款两段式通路）
-                    self.paint_svg_element(box_node, abs_x, abs_y, doc, styles);
+                        // 4b0c. inline <svg> 元素绘制（R3933——DOM 子树序列化 → 栅格化 →
+                        // ImagePrimitive，canvas 同款两段式通路）
+                        self.paint_svg_element(box_node, abs_x, abs_y, doc, styles);
 
-                    // 4b0b. <video> 当前帧绘制（media-playback M1b——解码像素 →
-                    // ImagePrimitive → 渲染侧 ImageCache，canvas/img 同款通路）
-                    self.paint_video_element(box_node, abs_x, abs_y, style, doc);
+                        // 4b0b. <video> 当前帧绘制（media-playback M1b——解码像素 →
+                        // ImagePrimitive → 渲染侧 ImageCache，canvas/img 同款通路）
+                        self.paint_video_element(box_node, abs_x, abs_y, style, doc);
+                    }
 
                     // 4b2. <input> value 文本绘制（submit/reset/button 标签 + text/password
                     // 预填值；R1660 form-control slice-2）。input 是 void 无文本子节点，value
