@@ -4151,3 +4151,31 @@ div { width: 100px; height: 100px; content: linear-gradient(purple, yellow); }
         );
     }
 }
+
+#[cfg(test)]
+mod r4047_abspos_margin_tests {
+    use super::*;
+
+    /// R4047（CSS2 §10.3.7/§10.6.4 abspos 定位方程）：视口-CB（顶层）absolute 的 margin
+    /// 须计入定位——`top:0; left:0; margin:50px` 的盒缘 = (50,50)。taffy 0.7 对顶层
+    /// absolute item 的 location 不含 margin（nested-CB 含），旧渲染丢 margin。
+    /// driving: containing-block-008/010（div1 margin:50px + top:0 应落 y=50）。
+    #[test]
+    fn r4047_viewport_cb_abspos_margin_applied() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let html = r#"<html><body style="margin:0"><div style="position:absolute; top:0; left:0; margin:50px; width:96px; height:96px; background:red"></div></body></html>"#;
+        let result = pipeline.render_html(html, "");
+        let bg = result
+            .display_list
+            .primitives
+            .fills
+            .iter()
+            .find(|f| f.rect.right() - f.rect.left() > 50.0 && f.rect.bottom() - f.rect.top() > 50.0)
+            .expect("红块 fill 图元应存在");
+        assert!(
+            (bg.rect.left() - 50.0).abs() < 0.5 && (bg.rect.top() - 50.0).abs() < 0.5,
+            "R4047: 视口-CB abspos margin 应计入定位（盒缘 50,50），实际 {:?}",
+            (bg.rect.left(), bg.rect.top())
+        );
+    }
+}

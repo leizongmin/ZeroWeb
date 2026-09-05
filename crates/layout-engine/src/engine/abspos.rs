@@ -292,13 +292,23 @@ pub(super) fn adjust_absolute_pct_to_viewport(
             // 作 containing block，导致 top:118px 解析为静态父相对坐标。此处把目标
             // 视口坐标（= used length）转回父 content 相对坐标，与百分比路径同机制（不调整
             // auto 宽高，避免历史上 auto 宽高扩张导致的回归）。
+            // R4047：margin 计入定位方程（CSS2 §10.3.7：left + margin-left 定盒缘）——
+            // taffy 0.7 对视口-CB（顶层）absolute item 的 location 不含 margin（nested-CB
+            // 含），containing-block-008 div1 margin:50px + top:0 应落 y=50 实测 y=0。
+            // margin auto/百分比不计（auto margin 另有 R2062 居中；% margin 相对 CB 宽）。
             if let Some(px) = resolve_abspos_real_length(&style.left, &style.font_size, viewport_width, viewport_height)
             {
-                child.x = px - parent_content_origin_x;
+                let ml =
+                    resolve_abspos_real_length(&style.margin_left, &style.font_size, viewport_width, viewport_height)
+                        .unwrap_or(0.0);
+                child.x = px + ml - parent_content_origin_x;
             }
             if let Some(px) = resolve_abspos_real_length(&style.top, &style.font_size, viewport_width, viewport_height)
             {
-                child.y = px - parent_content_origin_y;
+                let mt =
+                    resolve_abspos_real_length(&style.margin_top, &style.font_size, viewport_width, viewport_height)
+                        .unwrap_or(0.0);
+                child.y = px + mt - parent_content_origin_y;
             }
             // right/bottom 为长度且 left/top 为 auto 时：CSS 2.1 §10.1 无 positioned
             // ancestor 的 absolute 元素 CB=视口。left:auto + right:Px → 右边对齐视口
@@ -311,14 +321,22 @@ pub(super) fn adjust_absolute_pct_to_viewport(
                 && let Some(right) =
                     resolve_abspos_real_length(&style.right, &style.font_size, viewport_width, viewport_height)
             {
-                let target_viewport_x = viewport_width - right - child.width;
+                // R4047：margin-right 计入方程（盒右缘 = 视口右 - right - margin-right）
+                let mr =
+                    resolve_abspos_real_length(&style.margin_right, &style.font_size, viewport_width, viewport_height)
+                        .unwrap_or(0.0);
+                let target_viewport_x = viewport_width - right - mr - child.width;
                 child.x = target_viewport_x - parent_content_origin_x;
             }
             if matches!(style.top, LengthValue::Auto)
                 && let Some(bottom) =
                     resolve_abspos_real_length(&style.bottom, &style.font_size, viewport_width, viewport_height)
             {
-                let target_viewport_y = viewport_height - bottom - child.height;
+                // R4047：margin-bottom 计入方程（盒下缘 = 视口下 - bottom - margin-bottom）
+                let mb =
+                    resolve_abspos_real_length(&style.margin_bottom, &style.font_size, viewport_width, viewport_height)
+                        .unwrap_or(0.0);
+                let target_viewport_y = viewport_height - bottom - mb - child.height;
                 child.y = target_viewport_y - parent_content_origin_y;
             }
             // §10.3.7：width:auto + 全长度 left+right 填满后，max-width 钳制，再把
@@ -599,24 +617,46 @@ pub(super) fn resolve_abspos_against_root_cb(
                 let target_y = cb_origin_y + *p as f32 / 100.0 * cb_height;
                 child.y = target_y - current_box_origin_y - box_node.border_top - box_node.padding_top;
             }
-            // left/top real length：目标视口绝对坐标 = cb_origin + used length
+            // left/top real length：目标视口绝对坐标 = cb_origin + used length + 对应 margin
+            //（CSS2 §10.3.7/§10.6.4 定位方程：left + margin-left（top + margin-top）定盒缘；
+            // taffy 0.7 对根级 absolute item 的 location 不含 margin（nested-CB 含），导致
+            // root-CB abspos 的 margin 丢失——containing-block-008 div1 margin:50px + top:0
+            // 应落 y=50 实测 y=0）。margin auto/百分比不计（auto margin 另有 R2062 居中）。
+            let margin_left_px =
+                resolve_abspos_real_length(&style.margin_left, &style.font_size, cb_width, cb_height).unwrap_or(0.0);
+            let margin_top_px =
+                resolve_abspos_real_length(&style.margin_top, &style.font_size, cb_width, cb_height).unwrap_or(0.0);
             if let Some(px) = resolve_abspos_real_length(&style.left, &style.font_size, cb_width, cb_height) {
-                child.x = cb_origin_x + px - current_box_origin_x - box_node.border_left - box_node.padding_left;
+                child.x = cb_origin_x + px + margin_left_px
+                    - current_box_origin_x
+                    - box_node.border_left
+                    - box_node.padding_left;
             }
             if let Some(px) = resolve_abspos_real_length(&style.top, &style.font_size, cb_width, cb_height) {
-                child.y = cb_origin_y + px - current_box_origin_y - box_node.border_top - box_node.padding_top;
+                child.y = cb_origin_y + px + margin_top_px
+                    - current_box_origin_y
+                    - box_node.border_top
+                    - box_node.padding_top;
             }
-            // right/bottom real length 且 left/top 为 auto：右/下边对齐 CB 右/下缘（§10.3.18 rule 2）
+            // right/bottom real length 且 left/top 为 auto：右/下边对齐 CB 右/下缘（§10.3.18
+            // rule 2），margin-right/margin-bottom 同须计入方程（盒右缘 = CB 右 - right -
+            // margin-right）
             if matches!(style.left, LengthValue::Auto)
                 && let Some(right) = resolve_abspos_real_length(&style.right, &style.font_size, cb_width, cb_height)
             {
-                let target_x = cb_origin_x + cb_width - right - child.width;
+                let margin_right_px =
+                    resolve_abspos_real_length(&style.margin_right, &style.font_size, cb_width, cb_height)
+                        .unwrap_or(0.0);
+                let target_x = cb_origin_x + cb_width - right - margin_right_px - child.width;
                 child.x = target_x - current_box_origin_x - box_node.border_left - box_node.padding_left;
             }
             if matches!(style.top, LengthValue::Auto)
                 && let Some(bottom) = resolve_abspos_real_length(&style.bottom, &style.font_size, cb_width, cb_height)
             {
-                let target_y = cb_origin_y + cb_height - bottom - child.height;
+                let margin_bottom_px =
+                    resolve_abspos_real_length(&style.margin_bottom, &style.font_size, cb_width, cb_height)
+                        .unwrap_or(0.0);
+                let target_y = cb_origin_y + cb_height - bottom - margin_bottom_px - child.height;
                 child.y = target_y - current_box_origin_y - box_node.border_top - box_node.padding_top;
             }
         }
