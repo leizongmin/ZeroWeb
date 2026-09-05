@@ -518,6 +518,11 @@ pub enum ContentValue {
     /// `url(...)` 图片引用（generated content image，如 `content: url(icon.png)`）。
     /// R1988：伪元素 content:url() 渲染为替换图片。
     Url(String),
+    /// 渐变函数（`linear-gradient(...)` / `radial-gradient(...)` / `conic-gradient(...)` 及
+    /// repeating 变体）——R4045（CSS Content 3 §content-property：content 值接受 \<image\>，
+    /// 渐变是 image 的子类型）。元素 content:\<gradient\> → element-becomes-replaced-with-
+    /// gradient，按 content 盒绘制渐变。
+    Gradient(crate::values::parse_transform::GradientValue),
     /// 多 item 混合内容序列（如 `content: "Chapter " counter(c) ": "`）。
     /// CSS Content §content-property：content 值可是多个 component value 串联，
     /// 字符串与 counter() 交替（counter() 真实用法）。仅 string + counter() item；
@@ -635,6 +640,14 @@ pub fn parse_content(input: &str) -> Option<ContentValue> {
     if let Some(inner) = extract_single_function_inner(input, "url(") {
         let url = super::parse_extended_visual::parse_css_url_payload(inner)?;
         return Some(ContentValue::Url(url));
+    }
+    // 渐变函数（R4045，CSS Content 3：content 接受 \<image\>，渐变为 image 子类型）。
+    // 函数名大小写不敏感（LINEAR-GRADIENT ≡ linear-gradient）；函数体内的大小写/空白由
+    // parse_gradient 自行处理。非渐变函数 parse_gradient 返 None 自然回落。
+    if input.contains('(')
+        && let Some(g) = super::parse_transform::parse_gradient(input)
+    {
+        return Some(ContentValue::Gradient(g));
     }
     None
 }

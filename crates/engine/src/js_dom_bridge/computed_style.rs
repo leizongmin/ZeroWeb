@@ -490,7 +490,7 @@ pub fn serialize_computed_property(style: &ComputedStyle, prop: &str) -> String 
         // ── clip-path（R2721）── CSS Masking basic-shape 函数（none / inset / circle / ellipse / polygon）。
         "clip-path" => clip_path_to_css(&style.clip_path, font_size_px),
         // ── content（R2722）── CSS Generated Content（::before/::after 生成内容，多 component value）。
-        "content" => content_to_css(&style.content),
+        "content" => content_to_css(&style.content, element_color, font_size_px),
         // ── background-position（R2724）── CSS Backgrounds <bg-position># 多层（逗号分隔）。
         "background-position" => background_position_to_css(&style.background_position),
         // ── background-size / background-repeat（R2725）── CSS Backgrounds 多层（逗号分隔）。
@@ -2918,8 +2918,9 @@ fn text_shadow_to_css(shadows: &[TextShadowComputedValue], element_color: &Color
 ///
 /// `Normal`/`None`→关键字；`String`→CSS 双引号串（[`css_string_to_css`]）；`Attr`→`attr(name)`；
 /// `Counter`/`Counters`→计数器函数；`Url`→`url(...)`；`List`→多 component value 空格连接。
-fn content_to_css(c: &ContentComputedValue) -> String {
+fn content_to_css(c: &ContentComputedValue, element_color: &ColorValue, font_size_px: f64) -> String {
     use ContentComputedValue as C;
+    use zero_css_parser::values::GradientValue;
     match c {
         C::Normal => "normal".to_string(),
         C::None => "none".to_string(),
@@ -2928,6 +2929,11 @@ fn content_to_css(c: &ContentComputedValue) -> String {
         C::Counter { name, style } => counter_fn_to_css(name, style.as_deref()),
         C::Counters { name, separator, style } => counters_fn_to_css(name, separator, style.as_deref()),
         C::Url(u) => format!("url({u})"),
+        // R4045：渐变 content 序列化——复用 background-image 既有 linear/radial/conic 序列化
+        //（CSS Images 口径，对齐 Chromium）。
+        C::Gradient(GradientValue::Linear(g)) => linear_gradient_to_css(g, element_color, font_size_px),
+        C::Gradient(GradientValue::Radial(g)) => radial_gradient_to_css(g, element_color, font_size_px),
+        C::Gradient(GradientValue::Conic(g)) => conic_gradient_to_css(g, element_color, font_size_px),
         C::List(items) => items.iter().map(content_list_item_to_css).collect::<Vec<_>>().join(" "),
     }
 }

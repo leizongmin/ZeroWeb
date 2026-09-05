@@ -1247,6 +1247,9 @@ pub enum ContentComputedValue {
     },
     /// `url(...)` 图片引用（generated content image，R1988）。
     Url(String),
+    /// 渐变函数（R4045，CSS Content 3：content 接受 \<image\>）。元素 content:\<gradient\>
+    /// → element-becomes-replaced-with-gradient，paint 按内容盒绘制渐变。
+    Gradient(values::GradientValue),
     /// 多 item 混合内容序列（`"Chapter " counter(c) ": "`）。复用 css-parser
     /// 的 ContentListItem（Str/Counter）；paint 期逐 item 解析拼文本。
     List(Vec<values::ContentListItem>),

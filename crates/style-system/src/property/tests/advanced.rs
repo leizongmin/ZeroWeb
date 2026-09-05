@@ -1942,3 +1942,24 @@ fn test_isolation_default() {
     let style = ComputedStyle::default();
     assert_eq!(style.isolation, IsolationValue::Auto);
 }
+
+#[test]
+/// R4045（CSS Content 3 §content-property：content 接受 \<image\>）：content:\<gradient\>
+/// 解析存储为 Gradient 计算值。driving: element-replacement-gradient。
+fn test_apply_content_gradient() {
+    let mut style = ComputedStyle::default();
+    assert!(apply_property_value(
+        &mut style,
+        "content",
+        "linear-gradient(purple, yellow)"
+    ));
+    assert!(matches!(style.content, ContentComputedValue::Gradient(_)));
+    // 渐变函数名大小写不敏感
+    let mut style2 = ComputedStyle::default();
+    assert!(apply_property_value(
+        &mut style2,
+        "content",
+        "RADIAL-GRADIENT(circle, red, blue)"
+    ));
+    assert!(matches!(style2.content, ContentComputedValue::Gradient(_)));
+}

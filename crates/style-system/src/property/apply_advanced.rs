@@ -787,6 +787,7 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
                         ContentComputedValue::Counters { name, separator, style }
                     }
                     ContentValue::Url(u) => ContentComputedValue::Url(u),
+                    ContentValue::Gradient(g) => ContentComputedValue::Gradient(g),
                     ContentValue::List(items) => ContentComputedValue::List(items),
                 };
                 return true;

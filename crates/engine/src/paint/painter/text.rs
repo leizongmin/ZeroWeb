@@ -91,6 +91,22 @@ impl super::Painter {
     /// 在元素的内容区域起始位置绘制对应的文本。
     /// 支持计数器值的十进制、小写字母、大写字母、小写罗马、大写罗马格式化。
     pub(crate) fn paint_content(&mut self, box_node: &LayoutBox, abs_x: f32, abs_y: f32, style: &ComputedStyle) {
+        // R4045（CSS Content 3 §content-property：content 接受 \<image\>）：渐变 content →
+        // element-becomes-replaced-with-gradient——按内容盒绘制渐变（R2439 element-replacement
+        // 的非 url 分支；div 100×100 content:linear-gradient 实证页）。draw_list 语义与
+        // background-image 渐变一致（gradient_to_primitive 复用）。
+        if let zero_style_system::property::types::ContentComputedValue::Gradient(g) = &style.content {
+            let content_x = abs_x + box_node.border_left + box_node.padding_left;
+            let content_y = abs_y + box_node.border_top + box_node.padding_top;
+            let rect = Rect::new(content_x, content_y, box_node.content_width, box_node.content_height);
+            let font_size = zero_style_system::computed::resolve_length(&style.font_size, 16.0, None, None);
+            if let Some(prim) =
+                crate::paint::helpers::gradient_to_primitive_with_font_size(g, &rect, &style.color, font_size as f32)
+            {
+                self.primitives.add_gradient(prim);
+            }
+            return;
+        }
         // R2573：content 文本解析抽出为 resolve_generated_content_text（paint_content 与
         // paint_list_marker 的 ::marker content 覆盖共用）。Normal/None/Attr/Url 无文本 → None。
         let text = match self.resolve_generated_content_text(&style.content, style) {

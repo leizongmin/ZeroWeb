@@ -4130,3 +4130,24 @@ mod r4044_content_url_dim_attr_tests {
         );
     }
 }
+
+#[cfg(test)]
+mod r4045_content_gradient_tests {
+    use super::*;
+
+    /// R4045（CSS Content 3 §content-property：content 接受 \<image\>）：元素
+    /// content:linear-gradient → paint 发 GradientPrimitive（element-becomes-replaced-with-
+    /// gradient）。driving: element-replacement-gradient（ref 页 = 同尺寸背景渐变）。
+    #[test]
+    fn r4045_gradient_content_emits_gradient_primitive() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let html = r#"<html><head><style>
+div { width: 100px; height: 100px; content: linear-gradient(purple, yellow); }
+</style></head><body><div></div></body></html>"#;
+        let result = pipeline.render_html(html, "");
+        assert!(
+            !result.display_list.primitives.gradients.is_empty(),
+            "R4045: content:linear-gradient 应产出 GradientPrimitive"
+        );
+    }
+}

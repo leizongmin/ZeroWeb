@@ -1055,6 +1055,48 @@ fn test_parse_content_edge_cases() {
 }
 
 #[test]
+/// R4045（CSS Content 3 §content-property：content 接受 \<image\>）：渐变函数解析为
+/// ContentValue::Gradient——linear/radial/conic 及大小写不敏感；非渐变函数不受影响。
+fn test_parse_content_gradient() {
+    use crate::values::{ContentValue, parse_content};
+    // linear-gradient（driving：element-replacement-gradient `linear-gradient(purple, yellow)`）
+    assert!(matches!(
+        parse_content("linear-gradient(purple, yellow)"),
+        Some(ContentValue::Gradient(_))
+    ));
+    // 函数名大小写不敏感
+    assert!(matches!(
+        parse_content("LINEAR-GRADIENT(red, blue)"),
+        Some(ContentValue::Gradient(_))
+    ));
+    // repeating-linear-gradient
+    assert!(matches!(
+        parse_content("repeating-linear-gradient(red, blue 20px)"),
+        Some(ContentValue::Gradient(_))
+    ));
+    // radial-gradient / conic-gradient
+    assert!(matches!(
+        parse_content("radial-gradient(circle, red, blue)"),
+        Some(ContentValue::Gradient(_))
+    ));
+    assert!(matches!(
+        parse_content("conic-gradient(from 0deg, red, blue)"),
+        Some(ContentValue::Gradient(_))
+    ));
+    // 畸形渐变 → None（parse_gradient 拒绝）
+    assert_eq!(parse_content("linear-gradient()"), None);
+    // 非渐变函数不误捕（url/attr/counter 走各自分支）
+    assert_eq!(
+        parse_content("url(x.png)"),
+        Some(ContentValue::Url("x.png".to_string()))
+    );
+    assert_eq!(
+        parse_content("attr(data-x)"),
+        Some(ContentValue::Attr("data-x".to_string()))
+    );
+}
+
+#[test]
 /// 测试 parse_quotes 所有关键字（none、auto）、引号对解析、
 /// 多层引号对、混合引号类型、空输入和未闭合引号。
 /// 此前 parse_quotes 无任何测试。
