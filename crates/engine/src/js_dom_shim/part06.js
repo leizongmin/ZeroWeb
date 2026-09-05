@@ -7862,6 +7862,49 @@
     // 求值，逐节点产出多通道数据（Float64Array[]），destination 处按 ctx 通道数
     // 合成。节点语义：gain=Σ入边×gain.value；splitter=N 出 mono 上混（每出=上游
     // 均值）；merger=入边 out 通道 → 输出通道 input；源节点=mono 单通道。
+    // media-audio D3 第十增量：automation timeline 通用逐采样求值（gain 分支内联
+    // 求值提炼为 param 通用 helper——oscillator detune/frequency 耦合复用同表；
+    // spec AudioParam automation algorithm 逐型公式）。
+    // https://webaudio.github.io/web-audio-api/#AudioParam-automation-algorithms
+    var _zwParamValueAt = function (param, tSec) {
+      var events = param && param._zwEvents;
+      if (!events || !events.length) {
+        return (param && typeof param.value === 'number') ? param.value : 0;
+      }
+      var evs = events.slice().sort(function (a, b) { return a.time - b.time; });
+      var v = (param && typeof param.value === 'number') ? param.value : 0;
+      var prevV = v, prevT = 0;
+      var lastTarget = null;
+      for (var i = 0; i < evs.length; i++) {
+        var ev = evs[i];
+        if (ev.time <= tSec) {
+          v = ev.value;
+          prevV = ev.value;
+          prevT = ev.time;
+          if (ev.type === 'target') lastTarget = ev;
+        } else {
+          if (ev.type === 'linear') {
+            var dt = ev.time - prevT;
+            v = (dt > 0) ? prevV + (ev.value - prevV) * ((tSec - prevT) / dt) : prevV;
+          } else if (ev.type === 'exponential') {
+            if (prevV > 0 && ev.value > 0 && ev.time > prevT) {
+              v = prevV * Math.pow(ev.value / prevV, (tSec - prevT) / (ev.time - prevT));
+            }
+          }
+          break;
+        }
+      }
+      if (lastTarget && tSec >= lastTarget.time) {
+        var anchorV = v;
+        for (var j = 0; j < evs.length; j++) {
+          var e2 = evs[j];
+          if (e2.time > lastTarget.time) break;
+          if (e2.type !== 'target') anchorV = e2.value;
+        }
+        v = lastTarget.value + (anchorV - lastTarget.value) * Math.exp(-(tSec - lastTarget.time) / lastTarget.tc);
+      }
+      return v;
+    };
     var nodes = self._zwOfflineNodes || [];
     var memo = {};
     var chOf = function (node) {
@@ -7877,7 +7920,7 @@
       if (node._zwKind === 'oscillator' && node._zwStartedAtSec != null) {
         var mono = new Float64Array(len);
         var oscType = node.type || 'sine';
-        var freq = (node.frequency && typeof node.frequency.value === 'number') ? node.frequency.value : 440;
+        var baseFreq = (node.frequency && typeof node.frequency.value === 'number') ? node.frequency.value : 440;
         var oscGain = (node.gain && typeof node.gain.value === 'number') ? node.gain.value : 1.0;
         var startFrame = Math.floor(node._zwStartedAtSec * rate);
         var stopFrame = (node._zwStoppedAtSec != null) ? Math.floor(node._zwStoppedAtSec * rate) : len;
@@ -7902,21 +7945,34 @@
             }
             for (var s2 = Math.max(0, startFrame); s2 < Math.min(len, stopFrame); s2++) {
               var t2 = s2 / rate;
+              var freq = baseFreq * Math.pow(2, _zwParamValueAt(node.detune, t2) / 1200);
               var acc = 0.0;
-              for (var nn2 = 1; nn2 < n1; nn2++) {
-                var ar2 = (nn2 < real.length) ? real[nn2] : 0;
-                var bi2 = (nn2 < imag.length) ? imag[nn2] : 0;
-                var om = 2.0 * Math.PI * freq * nn2 * t2;
-                acc += ar2 * Math.cos(om) + bi2 * Math.sin(om);
+              if (Math.abs(freq) < rate / 2) {
+                for (var nn2 = 1; nn2 < n1; nn2++) {
+                  var ar2 = (nn2 < real.length) ? real[nn2] : 0;
+                  var bi2 = (nn2 < imag.length) ? imag[nn2] : 0;
+                  var om = 2.0 * Math.PI * freq * nn2 * t2;
+                  acc += ar2 * Math.cos(om) + bi2 * Math.sin(om);
+                }
+                mono[s2] += acc * oscGain * norm;
               }
-              mono[s2] += acc * oscGain * norm;
             }
           } else {
             var phase = 0.0;
-            var inc = 2.0 * Math.PI * freq / rate;
             for (var s = Math.max(0, startFrame); s < Math.min(len, stopFrame); s++) {
-              mono[s] += _oscSample(oscType, freq, phase) * oscGain;
-              phase += inc;
+              // media-audio D3 第十增量：computed frequency = frequency ·
+              // 2^(detune/1200)（spec OscillatorNode computedFreq 公式——detune
+              // 值与 automation 事件表共同参与逐采样求值；detune 恒 0 时
+              // 2^0=1 与旧 const-inc 路径逐位一致）。
+              // https://webaudio.github.io/web-audio-api/#dom-oscillatornode-detune
+              var freq = baseFreq * Math.pow(2, _zwParamValueAt(node.detune, s / rate) / 1200);
+              if (Math.abs(freq) < rate / 2) {
+                mono[s] += _oscSample(oscType, freq, phase) * oscGain;
+                phase += 2.0 * Math.PI * freq / rate;
+              }
+              // ≥ Nyquist（|computedFreq| ≥ rate/2）：sine at Nyquist 恒零、超界
+              // 折返混叠——spec/Blink 均输出精确 0.0（detune-overflow /
+              // detune-limiting assert_constant_value 精确断言面），跳过写入。
             }
           }
         }
@@ -7968,63 +8024,21 @@
           var up = evalNode(edge.src);
           if (!up) continue;
           if (node._zwKind === 'gain') {
-            var events = node.gain && node.gain._zwEvents;
-            if (events && events.length) {
-              // media-audio D3 第三片：automation timeline 求值（spec
-              // AudioParam——setValue/linearRamp/exponentialRamp/setTarget 逐型
-              // 公式；事件按时间排序后逐采样取值）。
-              var evs = events.slice().sort(function (a, b) { return a.time - b.time; });
+            // media-audio D3 第三/十增量：gain automation timeline 求值收敛到
+            // _zwParamValueAt 通用 helper（setValue/linearRamp/exponentialRamp/
+            // setTarget 逐型公式——gain 与 oscillator detune 同表复用）。
+            var hasEvents = !!(node.gain && node.gain._zwEvents && node.gain._zwEvents.length);
+            var g = (node.gain && typeof node.gain.value === 'number') ? node.gain.value : 1.0;
+            var doGain = function (sI, v) {
+              for (var uc = 0; uc < up.length; uc++) {
+                if (up[uc]) chans[0][sI] += up[uc][sI] * v;
+              }
+            };
+            if (hasEvents) {
               for (var s10 = 0; s10 < len; s10++) {
                 var tSec = s10 / rate;
-                // 逐段求值：找到 tSec 所处的事件段（prev = 上一事件，next = 下一
-                // 事件——ramp 型事件在 [prev.time, ev.time] 区间内插值）。
-                var v = (node.gain && typeof node.gain.value === 'number') ? node.gain.value : 1.0;
-                var prevV = v, prevT = 0;
-                var applied = false;
-                for (var ee = 0; ee < evs.length; ee++) {
-                  var ev = evs[ee];
-                  if (ev.time <= tSec) {
-                    // 已到时的事件：set/linear/exponential 直接落位（ramp 终点）。
-                    v = ev.value;
-                    prevV = ev.value;
-                    prevT = ev.time;
-                    applied = true;
-                  } else {
-                    // 未来事件：ramp 型在本区间内插值。
-                    if (ev.type === 'linear') {
-                      var dt = ev.time - prevT;
-                      v = (dt > 0) ? prevV + (ev.value - prevV) * ((tSec - prevT) / dt) : prevV;
-                    } else if (ev.type === 'exponential') {
-                      if (prevV > 0 && ev.value > 0 && ev.time > prevT) {
-                        v = prevV * Math.pow(ev.value / prevV, (tSec - prevT) / (ev.time - prevT));
-                      }
-                    }
-                    applied = true;
-                    break;
-                  }
-                }
-                // setTarget 指数趋近（最后一段 target 事件后持续趋近）。
-                var lastTarget = null;
-                for (var ee2 = 0; ee2 < evs.length; ee2++) {
-                  if (evs[ee2].type === 'target' && evs[ee2].time <= tSec) lastTarget = evs[ee2];
-                }
-                if (lastTarget && tSec >= lastTarget.time) {
-                  var anchorV = (function () {
-                    var vv = (node.gain && typeof node.gain.value === 'number') ? node.gain.value : 1.0;
-                    for (var ee3 = 0; ee3 < evs.length; ee3++) {
-                      var e3 = evs[ee3];
-                      if (e3.time > lastTarget.time) break;
-                      if (e3.type !== 'target') vv = e3.value;
-                    }
-                    return vv;
-                  })();
-                  v = lastTarget.value + (anchorV - lastTarget.value) * Math.exp(-(tSec - lastTarget.time) / lastTarget.tc);
-                }
-                if (globalThis.__zwAP && s10 < 3) globalThis.__zwAP.push('s=' + s10 + ',v=' + v.toFixed(5));
-                void applied;
-                for (var uc = 0; uc < up.length; uc++) {
-                  if (up[uc]) chans[0][s10] += up[uc][s10] * v;
-                }
+                var v = _zwParamValueAt(node.gain, tSec);
+                doGain(s10, v);
                 // spec：.value 反映 automation 当前值（流末采样后写回——WPT
                 // method-chaining 断言 amp2.gain.value === 0.5 面）。
                 if (s10 === len - 1 && node.gain) {
@@ -8032,11 +8046,7 @@
                 }
               }
             } else {
-              var g = (node.gain && typeof node.gain.value === 'number') ? node.gain.value : 1.0;
-              for (var uc = 0; uc < up.length; uc++) {
-                if (!up[uc]) continue;
-                for (var s6 = 0; s6 < len; s6++) chans[0][s6] += up[uc][s6] * g;
-              }
+              for (var s6 = 0; s6 < len; s6++) doGain(s6, g);
             }
           } else if (node._zwKind === 'channelsplitter') {
             // mono 上混：每输出通道 = 上游各通道均值（spec mono→N up-mix 面）。

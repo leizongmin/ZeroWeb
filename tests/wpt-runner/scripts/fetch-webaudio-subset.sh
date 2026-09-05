@@ -157,11 +157,15 @@ WA_FILES=(
   # interface/——Blink maxAbsSum 归一化公式修正 + createPeriodicWave 最小长度 2 +
   # OscillatorNode.setPeriodicWave）。原 404 排除注记解除。
   "webaudio/the-audio-api/the-periodicwave-interface/periodicWave.html"
-  # detune-limiting / detune-overflow（oscillator dir）维持排除——需 detune
-  # automation 与振荡器频率耦合（linearRamp 期间计算频率越 Nyquist → 静默），
-  # automation timeline 当前仅承载 gain 分支，detune→freq 耦合归 automation
-  # 精化切片。排除收束：至此 pinned rev webaudio/the-audio-api 全部可执行用例
-  # 均已导入或定性（剩余为 worklet/媒体互连/手势域 + detune 耦合两件）。
+  # ---- 第二十七批（D3 第十增量）：detune 耦合两件——振荡器 computed frequency
+  #（frequency · 2^(detune/1200)）+ ≥Nyquist 精确静默 + detune automation（linearRamp
+  # 逐采样耦合频率）。原「automation 精化切片」排除注记解除——静态耦合两 task + ramp
+  # 耦合一 task 均在 D3 已批 offline 渲染路径内。
+  "webaudio/the-audio-api/the-oscillatornode-interface/detune-limiting.html"
+  "webaudio/the-audio-api/the-oscillatornode-interface/detune-overflow.html"
+  # 排除收束（更新）：pinned rev webaudio/the-audio-api 全部可执行用例均已导入或
+  # 定性（剩余为 worklet/媒体互连/手势域）。
+
 )
 
 # audit.js 框架（runner inline_extras 内联——用例以绝对路径引用）。

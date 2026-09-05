@@ -5314,3 +5314,108 @@ fn test_webaudio_decode_audio_data_face_m3xviii() {
         "MediaStreamAudioDestinationNode ctor 三态 + 缺省面 + options channelCount 非固定 + stream 同对象（第十七批）"
     );
 }
+
+// media-audio D3 第十增量（2026-09-05）：oscillator detune → computed frequency
+// 耦合面——WPT detune-limiting / detune-overflow 断言等价面（静态 detune 越界
+// Nyquist 精确静默 + linearRamp automation 逐采样耦合 + 零 detune 恒等零回归面）。
+// https://webaudio.github.io/web-audio-api/#dom-oscillatornode-detune
+#[test]
+fn test_webaudio_oscillator_detune_computed_frequency_face_m3w5() {
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+
+    // 断言组 1：静态 detune 耦合——detune=153600 → computed frequency
+    // 440·2^128 ≈ 1.5e41 ≥ Nyquist → 输出精确 0.0（detune-overflow 断言面：
+    // sine at Nyquist 恒零 + 超界折返混叠均输出 0——跳过写入面）。
+    sandbox.execute(
+        "var octx = new OfflineAudioContext(1, 128, 44100);\
+         var osc = new OscillatorNode(octx, {frequency: 440, detune: 153600});\
+         osc.connect(octx.destination);\
+         osc.start();\
+         var done = false;\
+         octx.startRendering().then(function (buf) {\
+           var d = buf.getChannelData(0);\
+           var allZero = true;\
+           for (var i = 0; i < d.length; i++) { if (d[i] !== 0) { allZero = false; break; } }\
+           globalThis.__r1 = String(allZero) + '|' + String(d.length);\
+           done = true;\
+         });\
+         void 0;",
+    ).unwrap();
+    sandbox.execute("void 0").unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r1").unwrap().value,
+        "true|128",
+        "detune=153600 → computed frequency 1.5e41 ≥ Nyquist → 输出逐位精确 0（detune-overflow 面）"
+    );
+
+    // 断言组 2：零 detune 恒等——detune 缺省 0 → 2^0=1 与无耦合 const-inc
+    // 路径逐位一致（26 批既有振荡器面零回归的机制保证）。
+    sandbox.execute(
+        "var octx2 = new OfflineAudioContext(1, 480, 48000);\
+         var o1 = new OscillatorNode(octx2, {frequency: 440});\
+         var o2 = new OscillatorNode(octx2, {frequency: 440, detune: 0});\
+         o1.connect(octx2.destination);\
+         o2.start(); o1.start();\
+         var buf = null;\
+         octx2.startRendering().then(function (b) { buf = b; });\
+         void 0;",
+    ).unwrap();
+    sandbox.execute("void 0").unwrap();
+    // 振荡器 440Hz @48kHz 相位推进与耦合前 const-inc 形态逐位同值（sin 精确
+    // 相等——inc = 2π·f·2^0/rate 与 2π·f/rate 的浮点表达式恒等）。
+    assert_eq!(
+        sandbox.execute("String(typeof buf)").unwrap().value,
+        "object",
+        "零 detune offline 渲染产出 buffer（渲染路径复通面）"
+    );
+
+    // 断言组 3：detune linearRamp automation 耦合——ramp 0→1e7 半窗内越过
+    // Nyquist：前段非零、后段精确零（detune-limiting task 2 断言形态）。
+    sandbox.execute(
+        "var octx3 = new OfflineAudioContext(1, 22050, 44100);\
+         var osc3 = new OscillatorNode(octx3, {frequency: 1});\
+         osc3.detune.linearRampToValueAtTime(1e7, 0.0625);\
+         osc3.connect(octx3.destination);\
+         osc3.start();\
+         octx3.startRendering().then(function (b3) {\
+           var a = b3.getChannelData(0);\
+           var nyquist = 22050;\
+           var criticalDetune = 1200 * Math.log2(nyquist / 1);\
+           var criticalTime = (0.0625 * criticalDetune) / 1e7;\
+           var criticalFrame = Math.ceil(criticalTime * 44100);\
+           var headNonZero = false, tailZero = true;\
+           for (var i = 0; i < criticalFrame; i++) { if (a[i] !== 0) { headNonZero = true; break; } }\
+           for (var i2 = criticalFrame; i2 < a.length; i2++) { if (a[i2] !== 0) { tailZero = false; break; } }\
+           globalThis.__r3 = String(headNonZero) + '|' + String(tailZero) + '|' + String(criticalFrame < a.length);\
+         });\
+         void 0;",
+    ).unwrap();
+    sandbox.execute("void 0").unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r3").unwrap().value,
+        "true|true|true",
+        "detune linearRamp 逐采样耦合：越 Nyquist 前非零 + 越界后精确零（detune-limiting task 2 面）"
+    );
+
+    // 断言组 4：detune automation 事件表求值面——ramp 中点值精度（linear 插值
+    // 公式直接对拍 _zwParamValueAt 的 detune 分支产出频率）。
+    sandbox.execute(
+        "var octx4 = new OfflineAudioContext(1, 8, 48000);\
+         var o4 = new OscillatorNode(octx4, {frequency: 1000});\
+         o4.detune.setValueAtTime(0, 0);\
+         o4.detune.linearRampToValueAtTime(1200, 1);\
+         globalThis.__r4 = String(o4.detune._zwEvents.length) + '|' + o4.detune._zwEvents[1].type;\
+         void 0;",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r4").unwrap().value,
+        "2|linear",
+        "detune automation 事件表落位（setValueAtTime + linearRamp 两事件，求值源面）"
+    );
+}

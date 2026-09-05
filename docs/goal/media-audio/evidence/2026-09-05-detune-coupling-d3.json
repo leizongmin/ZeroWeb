@@ -1,0 +1,5879 @@
+[
+ [
+  "webaudio/the-audio-api/the-audionode-interface/audionode-connect-return-value.html",
+  [
+   {
+    "name": "connect should return the node connected to.",
+    "status": "Pass"
+   }
+  ]
+ ],
+ [
+  "webaudio/the-audio-api/the-destinationnode-interface/destination.html",
+  [
+   {
+    "name": "",
+    "status": "Pass"
+   }
+  ]
+ ],
+ [
+  "webaudio/the-audio-api/the-oscillatornode-interface/ctor-oscillator.html",
+  [
+   {
+    "name": "# AUDIT TASK RUNNER STARTED.",
+    "status": "Pass"
+   },
+   {
+    "name": "> [initialize] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  context = new OfflineAudioContext(...) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "< [initialize] All assertions passed. (total 1 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"initialize\"",
+    "status": "Pass"
+   },
+   {
+    "name": "> [invalid constructor] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  new OscillatorNode() threw TypeError: \"Failed to construct 'OscillatorNode': parameter 1 is not of type 'BaseAudioContext'.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  new OscillatorNode(1) threw TypeError: \"Failed to construct 'OscillatorNode': parameter 1 is not of type 'BaseAudioContext'.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  new OscillatorNode(context, 42) threw TypeError: \"Failed to construct 'OscillatorNode': The provided value is not of type 'object'.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "< [invalid constructor] All assertions passed. (total 3 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"invalid constructor\"",
+    "status": "Pass"
+   },
+   {
+    "name": "> [default constructor] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  node0 = new OscillatorNode(context) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node0 instanceof OscillatorNode is equal to true.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node0.numberOfInputs is equal to 0.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node0.numberOfOutputs is equal to 1.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node0.channelCount is equal to 2.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node0.channelCountMode is equal to max.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node0.channelInterpretation is equal to speakers.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node0.type is equal to sine.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node0.frequency.value is equal to 440.",
+    "status": "Pass"
+   },
+   {
+    "name": "< [default constructor] All assertions passed. (total 9 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"default constructor\"",
+    "status": "Pass"
+   },
+   {
+    "name": "> [test AudioNodeOptions] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  new OscillatorNode(c, {channelCount: 17}) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node.channelCount is equal to 17.",
+    "status": "Pass"
+   },
+   {
+    "name": "  new OscillatorNode(c, {channelCount: 0}) threw NotSupportedError: \"channelCount 0 not supported.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  new OscillatorNode(c, {channelCount: 99}) threw NotSupportedError: \"channelCount 99 not supported.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  new OscillatorNode(c, {channelCountMode: \"max\"} did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node.channelCountMode is equal to max.",
+    "status": "Pass"
+   },
+   {
+    "name": "  new OscillatorNode(c, {channelCountMode: \"max\"}) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node.channelCountMode after valid setter is equal to max.",
+    "status": "Pass"
+   },
+   {
+    "name": "  new OscillatorNode(c, {channelCountMode: \"clamped-max\"}) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node.channelCountMode after valid setter is equal to clamped-max.",
+    "status": "Pass"
+   },
+   {
+    "name": "  new OscillatorNode(c, {channelCountMode: \"explicit\"}) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node.channelCountMode after valid setter is equal to explicit.",
+    "status": "Pass"
+   },
+   {
+    "name": "  new OscillatorNode(c, {channelCountMode: \"foobar\"} threw TypeError: \"Failed to construct 'OscillatorNode': Failed to read the 'channelCountMode' property from 'AudioNodeOptions': The provided value 'foobar' is not a valid enum value.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  node.channelCountMode after invalid setter is equal to explicit.",
+    "status": "Pass"
+   },
+   {
+    "name": "  new OscillatorNode(c, {channelInterpretation: \"speakers\"}) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node.channelInterpretation is equal to speakers.",
+    "status": "Pass"
+   },
+   {
+    "name": "  new OscillatorNode(c, {channelInterpretation: \"discrete\"}) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node.channelInterpretation is equal to discrete.",
+    "status": "Pass"
+   },
+   {
+    "name": "  new OscillatorNode(c, {channelInterpretation: \"foobar\"}) threw TypeError: \"Failed to construct 'OscillatorNode': Failed to read the 'channelInterpretation' property from 'AudioNodeOptions': The provided value 'foobar' is not a valid enum value.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  node.channelInterpretation after invalid setter is equal to discrete.",
+    "status": "Pass"
+   },
+   {
+    "name": "< [test AudioNodeOptions] All assertions passed. (total 20 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"test AudioNodeOptions\"",
+    "status": "Pass"
+   },
+   {
+    "name": "> [constructor options] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  node1 = new OscillatorNode(c, {\"type\":\"sawtooth\",\"detune\":7,\"frequency\":918}) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node1.type is equal to sawtooth.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node1.detune.value is equal to 7.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node1.frequency.value is equal to 918.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node1.channelCount is equal to 2.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node1.channelCountMode is equal to max.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node1.channelInterpretation is equal to speakers.",
+    "status": "Pass"
+   },
+   {
+    "name": "  new OscillatorNode(c, {\"type\":\"sine\",\"periodicWave\":{\"_zwReal\":[1,1],\"_zwImag\":[0,0],\"_zwDisableNormalization\":false}}) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  new OscillatorNode(c, {\"type\":\"custom\"}) threw InvalidStateError: \"Failed to construct 'OscillatorNode': type 'custom' requires a periodicWave.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  new OscillatorNode(c, {\"type\":\"custom\",\"periodicWave\":{\"_zwReal\":[1,1],\"_zwImag\":[0,0],\"_zwDisableNormalization\":false}}) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  new OscillatorNode(c, {periodicWave: null} threw TypeError: \"Cannot read properties of null (reading '_zwReal')\".",
+    "status": "Pass"
+   },
+   {
+    "name": "< [constructor options] All assertions passed. (total 11 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"constructor options\"",
+    "status": "Pass"
+   },
+   {
+    "name": "# AUDIT TASK RUNNER FINISHED: 5 tasks ran successfully.",
+    "status": "Pass"
+   },
+   {
+    "name": "Audit report",
+    "status": "Pass"
+   }
+  ]
+ ],
+ [
+  "webaudio/the-audio-api/the-gainnode-interface/ctor-gain.html",
+  [
+   {
+    "name": "GainNode: invalid constructor",
+    "status": "Pass"
+   },
+   {
+    "name": "GainNode: default constructor and default attributes",
+    "status": "Pass"
+   },
+   {
+    "name": "GainNode: AudioNodeOptions are applied",
+    "status": "Pass"
+   },
+   {
+    "name": "GainNode: constructor with options",
+    "status": "Pass"
+   }
+  ]
+ ],
+ [
+  "webaudio/the-audio-api/the-stereopanner-interface/ctor-stereopanner.html",
+  [
+   {
+    "name": "# AUDIT TASK RUNNER STARTED.",
+    "status": "Pass"
+   },
+   {
+    "name": "> [initialize] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  context = new OfflineAudioContext(...) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "< [initialize] All assertions passed. (total 1 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"initialize\"",
+    "status": "Pass"
+   },
+   {
+    "name": "> [invalid constructor] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  new StereoPannerNode() threw TypeError: \"Failed to construct 'StereoPannerNode': parameter 1 is not of type 'BaseAudioContext'.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  new StereoPannerNode(1) threw TypeError: \"Failed to construct 'StereoPannerNode': parameter 1 is not of type 'BaseAudioContext'.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  new StereoPannerNode(context, 42) threw TypeError: \"Failed to construct 'StereoPannerNode': The provided value is not of type 'object'.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "< [invalid constructor] All assertions passed. (total 3 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"invalid constructor\"",
+    "status": "Pass"
+   },
+   {
+    "name": "> [default constructor] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  node0 = new StereoPannerNode(context) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node0 instanceof StereoPannerNode is equal to true.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node0.numberOfInputs is equal to 1.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node0.numberOfOutputs is equal to 1.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node0.channelCount is equal to 2.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node0.channelCountMode is equal to clamped-max.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node0.channelInterpretation is equal to speakers.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node0.pan.value is equal to 0.",
+    "status": "Pass"
+   },
+   {
+    "name": "< [default constructor] All assertions passed. (total 8 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"default constructor\"",
+    "status": "Pass"
+   },
+   {
+    "name": "> [test AudioNodeOptions] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  new StereoPannerNode(c, {\"channelCount\":1}) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node.channelCount is equal to 1.",
+    "status": "Pass"
+   },
+   {
+    "name": "  new StereoPannerNode(c, {\"channelCount\":2}) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node.channelCount is equal to 2.",
+    "status": "Pass"
+   },
+   {
+    "name": "  new StereoPannerNode(c, {\"channelCount\":0}) threw NotSupportedError: \"channelCount 0 not supported for StereoPannerNode.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  new StereoPannerNode(c, {\"channelCount\":3}) threw NotSupportedError: \"channelCount 3 not supported for StereoPannerNode.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  new StereoPannerNode(c, {\"channelCount\":99}) threw NotSupportedError: \"channelCount 99 not supported for StereoPannerNode.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  new StereoPannerNode(c, {\"channelCountMode\":\"clamped-max\"}) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node.channelCountMode is equal to clamped-max.",
+    "status": "Pass"
+   },
+   {
+    "name": "  new StereoPannerNode(c, {\"channelCountMode\":\"explicit\"}) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node.channelCountMode is equal to explicit.",
+    "status": "Pass"
+   },
+   {
+    "name": "  new StereoPannerNode(c, {\"channelCountMode\":\"max\"}) threw NotSupportedError: \"Failed to construct 'StereoPannerNode': channelCountMode 'max' not supported for StereoPannerNode.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  new StereoPannerNode(c, {\"channelCountMode\":\"foobar\"}) threw TypeError: \"Failed to construct 'StereoPannerNode': Failed to read the 'channelCountMode' property from 'AudioNodeOptions': The provided value 'foobar' is not a valid enum value.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  new StereoPannerNode(c, {\"channelInterpretation\":\"speakers\"}) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node.channelInterpretation is equal to speakers.",
+    "status": "Pass"
+   },
+   {
+    "name": "  new StereoPannerNode(c, {\"channelInterpretation\":\"discrete\"}) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node.channelInterpretation is equal to discrete.",
+    "status": "Pass"
+   },
+   {
+    "name": "  new StereoPannerNode(c, {\"channelInterpretation\":\"foobar\"}) threw TypeError: \"Failed to construct 'StereoPannerNode': Failed to read the 'channelInterpretation' property from 'AudioNodeOptions': The provided value 'foobar' is not a valid enum value.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "< [test AudioNodeOptions] All assertions passed. (total 18 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"test AudioNodeOptions\"",
+    "status": "Pass"
+   },
+   {
+    "name": "> [constructor with options] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  node1 = new StereoPannerNode(, {\"pan\":0.75}) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node1 instanceof StereoPannerNode is equal to true.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node1.pan.value is equal to 0.75.",
+    "status": "Pass"
+   },
+   {
+    "name": "< [constructor with options] All assertions passed. (total 3 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"constructor with options\"",
+    "status": "Pass"
+   },
+   {
+    "name": "# AUDIT TASK RUNNER FINISHED: 5 tasks ran successfully.",
+    "status": "Pass"
+   },
+   {
+    "name": "Audit report",
+    "status": "Pass"
+   }
+  ]
+ ],
+ [
+  "webaudio/the-audio-api/the-delaynode-interface/ctor-delay.html",
+  [
+   {
+    "name": "# AUDIT TASK RUNNER STARTED.",
+    "status": "Pass"
+   },
+   {
+    "name": "> [initialize] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  context = new OfflineAudioContext(...) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "< [initialize] All assertions passed. (total 1 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"initialize\"",
+    "status": "Pass"
+   },
+   {
+    "name": "> [invalid constructor] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  new DelayNode() threw TypeError: \"Failed to construct 'DelayNode': parameter 1 is not of type 'BaseAudioContext'.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  new DelayNode(1) threw TypeError: \"Failed to construct 'DelayNode': parameter 1 is not of type 'BaseAudioContext'.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  new DelayNode(context, 42) threw TypeError: \"Failed to construct 'DelayNode': The provided value is not of type 'object'.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "< [invalid constructor] All assertions passed. (total 3 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"invalid constructor\"",
+    "status": "Pass"
+   },
+   {
+    "name": "> [default constructor] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  node0 = new DelayNode(context) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node0 instanceof DelayNode is equal to true.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node0.numberOfInputs is equal to 1.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node0.numberOfOutputs is equal to 1.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node0.channelCount is equal to 2.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node0.channelCountMode is equal to max.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node0.channelInterpretation is equal to speakers.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node0.delayTime.value is equal to 0.",
+    "status": "Pass"
+   },
+   {
+    "name": "< [default constructor] All assertions passed. (total 8 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"default constructor\"",
+    "status": "Pass"
+   },
+   {
+    "name": "> [test AudioNodeOptions] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  new DelayNode(c, {channelCount: 17}) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node.channelCount is equal to 17.",
+    "status": "Pass"
+   },
+   {
+    "name": "  new DelayNode(c, {channelCount: 0}) threw NotSupportedError: \"channelCount 0 not supported.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  new DelayNode(c, {channelCount: 99}) threw NotSupportedError: \"channelCount 99 not supported.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  new DelayNode(c, {channelCountMode: \"max\"} did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node.channelCountMode is equal to max.",
+    "status": "Pass"
+   },
+   {
+    "name": "  new DelayNode(c, {channelCountMode: \"max\"}) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node.channelCountMode after valid setter is equal to max.",
+    "status": "Pass"
+   },
+   {
+    "name": "  new DelayNode(c, {channelCountMode: \"clamped-max\"}) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node.channelCountMode after valid setter is equal to clamped-max.",
+    "status": "Pass"
+   },
+   {
+    "name": "  new DelayNode(c, {channelCountMode: \"explicit\"}) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node.channelCountMode after valid setter is equal to explicit.",
+    "status": "Pass"
+   },
+   {
+    "name": "  new DelayNode(c, {channelCountMode: \"foobar\"} threw TypeError: \"Failed to construct 'DelayNode': Failed to read the 'channelCountMode' property from 'AudioNodeOptions': The provided value 'foobar' is not a valid enum value.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  node.channelCountMode after invalid setter is equal to explicit.",
+    "status": "Pass"
+   },
+   {
+    "name": "  new DelayNode(c, {channelInterpretation: \"speakers\"}) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node.channelInterpretation is equal to speakers.",
+    "status": "Pass"
+   },
+   {
+    "name": "  new DelayNode(c, {channelInterpretation: \"discrete\"}) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node.channelInterpretation is equal to discrete.",
+    "status": "Pass"
+   },
+   {
+    "name": "  new DelayNode(c, {channelInterpretation: \"foobar\"}) threw TypeError: \"Failed to construct 'DelayNode': Failed to read the 'channelInterpretation' property from 'AudioNodeOptions': The provided value 'foobar' is not a valid enum value.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  node.channelInterpretation after invalid setter is equal to discrete.",
+    "status": "Pass"
+   },
+   {
+    "name": "< [test AudioNodeOptions] All assertions passed. (total 20 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"test AudioNodeOptions\"",
+    "status": "Pass"
+   },
+   {
+    "name": "> [constructor options] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  node1 = new DelayNode(c, {\"delayTime\":0.5,\"maxDelayTime\":1.5}) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node1.delayTime.value is equal to 0.5.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node1.delayTime.maxValue is equal to 1.5.",
+    "status": "Pass"
+   },
+   {
+    "name": "< [constructor options] All assertions passed. (total 3 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"constructor options\"",
+    "status": "Pass"
+   },
+   {
+    "name": "# AUDIT TASK RUNNER FINISHED: 5 tasks ran successfully.",
+    "status": "Pass"
+   },
+   {
+    "name": "Audit report",
+    "status": "Pass"
+   }
+  ]
+ ],
+ [
+  "webaudio/the-audio-api/the-biquadfilternode-interface/ctor-biquadfilter.html",
+  [
+   {
+    "name": "initialize OfflineAudioContext",
+    "status": "Pass"
+   },
+   {
+    "name": "invalid constructor",
+    "status": "Pass"
+   },
+   {
+    "name": "default constructor",
+    "status": "Pass"
+   },
+   {
+    "name": "test AudioNodeOptions",
+    "status": "Pass"
+   },
+   {
+    "name": "construct with options",
+    "status": "Pass"
+   }
+  ]
+ ],
+ [
+  "webaudio/the-audio-api/the-analysernode-interface/ctor-analyser.html",
+  [
+   {
+    "name": "# AUDIT TASK RUNNER STARTED.",
+    "status": "Pass"
+   },
+   {
+    "name": "> [initialize] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  context = new OfflineAudioContext(...) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "< [initialize] All assertions passed. (total 1 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"initialize\"",
+    "status": "Pass"
+   },
+   {
+    "name": "> [invalid constructor] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  new AnalyserNode() threw TypeError: \"Failed to construct 'AnalyserNode': parameter 1 is not of type 'BaseAudioContext'.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  new AnalyserNode(1) threw TypeError: \"Failed to construct 'AnalyserNode': parameter 1 is not of type 'BaseAudioContext'.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  new AnalyserNode(context, 42) threw TypeError: \"Failed to construct 'AnalyserNode': The provided value is not of type 'object'.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "< [invalid constructor] All assertions passed. (total 3 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"invalid constructor\"",
+    "status": "Pass"
+   },
+   {
+    "name": "> [default constructor] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  node0 = new AnalyserNode(context) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node0 instanceof AnalyserNode is equal to true.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node0.numberOfInputs is equal to 1.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node0.numberOfOutputs is equal to 1.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node0.channelCount is equal to 2.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node0.channelCountMode is equal to max.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node0.channelInterpretation is equal to speakers.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node0.fftSize is equal to 2048.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node0.frequencyBinCount is equal to 1024.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node0.minDecibels is equal to -100.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node0.maxDecibels is equal to -30.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node0.smoothingTimeConstant is equal to 0.8.",
+    "status": "Pass"
+   },
+   {
+    "name": "< [default constructor] All assertions passed. (total 12 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"default constructor\"",
+    "status": "Pass"
+   },
+   {
+    "name": "> [test AudioNodeOptions] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  new AnalyserNode(c, {channelCount: 17}) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node.channelCount is equal to 17.",
+    "status": "Pass"
+   },
+   {
+    "name": "  new AnalyserNode(c, {channelCount: 0}) threw NotSupportedError: \"channelCount 0 not supported.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  new AnalyserNode(c, {channelCount: 99}) threw NotSupportedError: \"channelCount 99 not supported.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  new AnalyserNode(c, {channelCountMode: \"max\"} did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node.channelCountMode is equal to max.",
+    "status": "Pass"
+   },
+   {
+    "name": "  new AnalyserNode(c, {channelCountMode: \"max\"}) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node.channelCountMode after valid setter is equal to max.",
+    "status": "Pass"
+   },
+   {
+    "name": "  new AnalyserNode(c, {channelCountMode: \"clamped-max\"}) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node.channelCountMode after valid setter is equal to clamped-max.",
+    "status": "Pass"
+   },
+   {
+    "name": "  new AnalyserNode(c, {channelCountMode: \"explicit\"}) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node.channelCountMode after valid setter is equal to explicit.",
+    "status": "Pass"
+   },
+   {
+    "name": "  new AnalyserNode(c, {channelCountMode: \"foobar\"} threw TypeError: \"Failed to construct 'AnalyserNode': Failed to read the 'channelCountMode' property from 'AudioNodeOptions': The provided value 'foobar' is not a valid enum value.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  node.channelCountMode after invalid setter is equal to explicit.",
+    "status": "Pass"
+   },
+   {
+    "name": "  new AnalyserNode(c, {channelInterpretation: \"speakers\"}) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node.channelInterpretation is equal to speakers.",
+    "status": "Pass"
+   },
+   {
+    "name": "  new AnalyserNode(c, {channelInterpretation: \"discrete\"}) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node.channelInterpretation is equal to discrete.",
+    "status": "Pass"
+   },
+   {
+    "name": "  new AnalyserNode(c, {channelInterpretation: \"foobar\"}) threw TypeError: \"Failed to construct 'AnalyserNode': Failed to read the 'channelInterpretation' property from 'AudioNodeOptions': The provided value 'foobar' is not a valid enum value.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  node.channelInterpretation after invalid setter is equal to discrete.",
+    "status": "Pass"
+   },
+   {
+    "name": "< [test AudioNodeOptions] All assertions passed. (total 20 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"test AudioNodeOptions\"",
+    "status": "Pass"
+   },
+   {
+    "name": "> [constructor with options] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  node1 = new AnalyserNode(c, {\"fftSize\":32,\"maxDecibels\":1,\"minDecibels\":-13,\"smoothingTimeConstant\":0.125}) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node1 instanceof AnalyserNode is equal to true.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node1.fftSize is equal to 32.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node1.maxDecibels is equal to 1.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node1.minDecibels is equal to -13.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node1.smoothingTimeConstant is equal to 0.125.",
+    "status": "Pass"
+   },
+   {
+    "name": "< [constructor with options] All assertions passed. (total 6 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"constructor with options\"",
+    "status": "Pass"
+   },
+   {
+    "name": "> [construct invalid options] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  node = new AnalyserNode(c, { fftSize: 33 }) threw IndexSizeError: \"fftSize 33 is not a power of two in [32, 32768].\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  node = new AnalyserNode(c, { maxDecibels: -500 }) threw IndexSizeError: \"minDecibels must be less than maxDecibels.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  node = new AnalyserNode(c, { minDecibels: -10 }) threw IndexSizeError: \"minDecibels must be less than maxDecibels.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  node = new AnalyserNode(c, { smoothingTimeConstant: 2 }) threw IndexSizeError: \"smoothingTimeConstant 2 is out of range [0, 1].\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  node = new AnalyserNode(c, { frequencyBinCount: 33 }) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node.frequencyBinCount is equal to 1024.",
+    "status": "Pass"
+   },
+   {
+    "name": "< [construct invalid options] All assertions passed. (total 6 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"construct invalid options\"",
+    "status": "Pass"
+   },
+   {
+    "name": "> [setting min/max] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  node = new AnalyserNode(c, {\"minDecibels\":-10,\"maxDecibels\":20}) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node = new AnalyserNode(c, {\"maxDecibels\":20,\"minDecibels\":-10}) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node = new AnalyserNode(c, {\"minDecibels\":-200,\"maxDecibels\":-150}) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node = new AnalyserNode(c, {\"maxDecibels\":-150,\"minDecibels\":-200}) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node = new AnalyserNode(c, {\"maxDecibels\":-150,\"minDecibels\":-10}) threw IndexSizeError: \"minDecibels must be less than maxDecibels.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  node = new AnalyserNode(c, {\"minDecibels\":-10,\"maxDecibels\":-150}) threw IndexSizeError: \"minDecibels must be less than maxDecibels.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "< [setting min/max] All assertions passed. (total 6 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"setting min/max\"",
+    "status": "Pass"
+   },
+   {
+    "name": "# AUDIT TASK RUNNER FINISHED: 7 tasks ran successfully.",
+    "status": "Pass"
+   },
+   {
+    "name": "Audit report",
+    "status": "Pass"
+   }
+  ]
+ ],
+ [
+  "webaudio/the-audio-api/the-periodicwave-interface/createPeriodicWaveInfiniteValuesThrows.html",
+  [
+   {
+    "name": "createPeriodicWave with Infinity real values should throw",
+    "status": "Pass"
+   },
+   {
+    "name": "createPeriodicWave with Infinity imag values should throw",
+    "status": "Pass"
+   }
+  ]
+ ],
+ [
+  "webaudio/the-audio-api/the-audioparam-interface/audioparam-exceptional-values.html",
+  [
+   {
+    "name": "# AUDIT TASK RUNNER STARTED.",
+    "status": "Pass"
+   },
+   {
+    "name": "> [initialize] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  Creating context for testing did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "< [initialize] All assertions passed. (total 1 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"initialize\"",
+    "status": "Pass"
+   },
+   {
+    "name": "> [test value] Test non-finite arguments for AudioParam value",
+    "status": "Pass"
+   },
+   {
+    "name": "  gain.gain.setValueAtTime(Infinity,1) threw TypeError: \"Failed to execute 'setValueAtTime' on 'AudioParam': The provided value is non-finite.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  gain.gain.linearRampToValueAtTime(Infinity,1) threw TypeError: \"Failed to execute 'linearRampToValueAtTime' on 'AudioParam': The provided value is non-finite.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  gain.gain.exponentialRampToValueAtTime(Infinity,1) threw TypeError: \"Failed to execute 'exponentialRampToValueAtTime' on 'AudioParam': The provided value is non-finite.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  gain.gain.setTargetAtTime(Infinity,1,1) threw TypeError: \"Failed to execute 'setTargetAtTime' on 'AudioParam': The provided value is non-finite.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  gain.gain.setValueAtTime(-Infinity,1) threw TypeError: \"Failed to execute 'setValueAtTime' on 'AudioParam': The provided value is non-finite.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  gain.gain.linearRampToValueAtTime(-Infinity,1) threw TypeError: \"Failed to execute 'linearRampToValueAtTime' on 'AudioParam': The provided value is non-finite.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  gain.gain.exponentialRampToValueAtTime(-Infinity,1) threw TypeError: \"Failed to execute 'exponentialRampToValueAtTime' on 'AudioParam': The provided value is non-finite.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  gain.gain.setTargetAtTime(-Infinity,1,1) threw TypeError: \"Failed to execute 'setTargetAtTime' on 'AudioParam': The provided value is non-finite.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  gain.gain.setValueAtTime(NaN,1) threw TypeError: \"Failed to execute 'setValueAtTime' on 'AudioParam': The provided value is non-finite.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  gain.gain.linearRampToValueAtTime(NaN,1) threw TypeError: \"Failed to execute 'linearRampToValueAtTime' on 'AudioParam': The provided value is non-finite.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  gain.gain.exponentialRampToValueAtTime(NaN,1) threw TypeError: \"Failed to execute 'exponentialRampToValueAtTime' on 'AudioParam': The provided value is non-finite.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  gain.gain.setTargetAtTime(NaN,1,1) threw TypeError: \"Failed to execute 'setTargetAtTime' on 'AudioParam': The provided value is non-finite.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "< [test value] All assertions passed. (total 12 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"test value\"",
+    "status": "Pass"
+   },
+   {
+    "name": "> [test time] Test non-finite arguments for AudioParam time",
+    "status": "Pass"
+   },
+   {
+    "name": "  gain.gain.setValueAtTime(1,Infinity) threw TypeError: \"Failed to execute 'setValueAtTime' on 'AudioParam': The provided value is non-finite.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  gain.gain.linearRampToValueAtTime(1,Infinity) threw TypeError: \"Failed to execute 'linearRampToValueAtTime' on 'AudioParam': The provided value is non-finite.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  gain.gain.exponentialRampToValueAtTime(1,Infinity) threw TypeError: \"Failed to execute 'exponentialRampToValueAtTime' on 'AudioParam': The provided value is non-finite.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  gain.gain.setTargetAtTime(1,Infinity,1) threw TypeError: \"Failed to execute 'setTargetAtTime' on 'AudioParam': The provided value is non-finite.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  gain.gain.setTargetAtTime(1,1,Infinity) threw TypeError: \"Failed to execute 'setTargetAtTime' on 'AudioParam': The provided value is non-finite.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  gain.gain.setValueAtTime(1,-Infinity) threw TypeError: \"Failed to execute 'setValueAtTime' on 'AudioParam': The provided value is non-finite.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  gain.gain.linearRampToValueAtTime(1,-Infinity) threw TypeError: \"Failed to execute 'linearRampToValueAtTime' on 'AudioParam': The provided value is non-finite.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  gain.gain.exponentialRampToValueAtTime(1,-Infinity) threw TypeError: \"Failed to execute 'exponentialRampToValueAtTime' on 'AudioParam': The provided value is non-finite.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  gain.gain.setTargetAtTime(1,-Infinity,1) threw TypeError: \"Failed to execute 'setTargetAtTime' on 'AudioParam': The provided value is non-finite.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  gain.gain.setTargetAtTime(1,1,-Infinity) threw TypeError: \"Failed to execute 'setTargetAtTime' on 'AudioParam': The provided value is non-finite.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  gain.gain.setValueAtTime(1,NaN) threw TypeError: \"Failed to execute 'setValueAtTime' on 'AudioParam': The provided value is non-finite.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  gain.gain.linearRampToValueAtTime(1,NaN) threw TypeError: \"Failed to execute 'linearRampToValueAtTime' on 'AudioParam': The provided value is non-finite.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  gain.gain.exponentialRampToValueAtTime(1,NaN) threw TypeError: \"Failed to execute 'exponentialRampToValueAtTime' on 'AudioParam': The provided value is non-finite.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  gain.gain.setTargetAtTime(1,NaN,1) threw TypeError: \"Failed to execute 'setTargetAtTime' on 'AudioParam': The provided value is non-finite.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  gain.gain.setTargetAtTime(1,1,NaN) threw TypeError: \"Failed to execute 'setTargetAtTime' on 'AudioParam': The provided value is non-finite.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "< [test time] All assertions passed. (total 15 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"test time\"",
+    "status": "Pass"
+   },
+   {
+    "name": "> [test setValueCurve] Test non-finite arguments for setValueCurveAtTime",
+    "status": "Pass"
+   },
+   {
+    "name": "  gain.gain.setValueCurveAtTime([0,0,0],Infinity,1) threw TypeError: \"Failed to execute 'setValueCurveAtTime' on 'AudioParam': The provided value is non-finite.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  gain.gain.setValueCurveAtTime([0,0,0],-Infinity,1) threw TypeError: \"Failed to execute 'setValueCurveAtTime' on 'AudioParam': The provided value is non-finite.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  gain.gain.setValueCurveAtTime([0,0,0],NaN,1) threw TypeError: \"Failed to execute 'setValueCurveAtTime' on 'AudioParam': The provided value is non-finite.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  gain.gain.setValueCurveAtTime([1,2,Infinity,3],1,1) threw TypeError: \"Failed to execute 'setValueCurveAtTime' on 'AudioParam': The provided value is non-finite.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  gain.gain.setValueCurveAtTime([1,NaN,2,3],1,1) threw TypeError: \"Failed to execute 'setValueCurveAtTime' on 'AudioParam': The provided value is non-finite.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "< [test setValueCurve] All assertions passed. (total 5 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"test setValueCurve\"",
+    "status": "Pass"
+   },
+   {
+    "name": "> [special cases 1] Test exceptions for finite values",
+    "status": "Pass"
+   },
+   {
+    "name": "  gain.gain.setValueAtTime(1,-1) threw RangeError: \"Failed to execute 'setValueAtTime' on 'AudioParam': time must be non-negative.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  gain.gain.linearRampToValueAtTime(1,-1) threw RangeError: \"Failed to execute 'linearRampToValueAtTime' on 'AudioParam': time must be non-negative.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  gain.gain.exponentialRampToValueAtTime(1,-1) threw RangeError: \"Failed to execute 'exponentialRampToValueAtTime' on 'AudioParam': time must be non-negative.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  gain.gain.setTargetAtTime(1,-1,1) threw RangeError: \"Failed to execute 'setTargetAtTime' on 'AudioParam': time must be non-negative.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  gain.gain.setTargetAtTime(1,1,-1) threw RangeError: \"Failed to execute 'setTargetAtTime' on 'AudioParam': timeConstant must be strictly positive.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  gain.gain.setValueCurveAtTime([0,0,0],-1,1) threw RangeError: \"Failed to execute 'setValueCurveAtTime' on 'AudioParam': time must be non-negative.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  gain.gain.setValueCurveAtTime([0,0,0],1,-1) threw RangeError: \"Failed to execute 'setValueCurveAtTime' on 'AudioParam': duration must be strictly positive.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  gain.gain.setValueCurveAtTime(curve, 1, 0) threw RangeError: \"Failed to execute 'setValueCurveAtTime' on 'AudioParam': duration must be strictly positive.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  gain.gain.setValueCurveAtTime(curve, 1, -1) threw RangeError: \"Failed to execute 'setValueCurveAtTime' on 'AudioParam': duration must be strictly positive.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "< [special cases 1] All assertions passed. (total 9 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"special cases 1\"",
+    "status": "Pass"
+   },
+   {
+    "name": "> [special cases 2] Test special cases for expeonentialRamp",
+    "status": "Pass"
+   },
+   {
+    "name": "  gain.gain.exponentialRampToValueAtTime(0,1) threw RangeError: \"Failed to execute 'exponentialRampToValueAtTime' on 'AudioParam': value must be non-zero and same sign.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  gain.gain.exponentialRampToValueAtTime(-1e-100,1) threw RangeError: \"Failed to execute 'exponentialRampToValueAtTime' on 'AudioParam': value must be non-zero and same sign.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  gain.gain.exponentialRampToValueAtTime(1e-100,1) threw RangeError: \"Failed to execute 'exponentialRampToValueAtTime' on 'AudioParam': value must be non-zero and same sign.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "< [special cases 2] All assertions passed. (total 3 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"special cases 2\"",
+    "status": "Pass"
+   },
+   {
+    "name": "# AUDIT TASK RUNNER FINISHED: 6 tasks ran successfully.",
+    "status": "Pass"
+   },
+   {
+    "name": "Audit report",
+    "status": "Pass"
+   }
+  ]
+ ],
+ [
+  "webaudio/the-audio-api/the-audiobuffer-interface/audiobuffer.html",
+  [
+   {
+    "name": "AudioBuffer: creation and property validation",
+    "status": "Pass"
+   }
+  ]
+ ],
+ [
+  "webaudio/the-audio-api/the-gainnode-interface/gain-basic.html",
+  [
+   {
+    "name": "# AUDIT TASK RUNNER STARTED.",
+    "status": "Pass"
+   },
+   {
+    "name": "> [test] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  gainNode.gain instanceof AudioParam is true.",
+    "status": "Pass"
+   },
+   {
+    "name": "< [test] All assertions passed. (total 1 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"test\"",
+    "status": "Pass"
+   },
+   {
+    "name": "# AUDIT TASK RUNNER FINISHED: 1 tasks ran successfully.",
+    "status": "Pass"
+   },
+   {
+    "name": "Audit report",
+    "status": "Pass"
+   }
+  ]
+ ],
+ [
+  "webaudio/the-audio-api/the-channelmergernode-interface/ctor-channelmerger.html",
+  [
+   {
+    "name": "Initialize AudioContext for ChannelMergerNode tests",
+    "status": "Pass"
+   },
+   {
+    "name": "Invalid constructor behavior for ChannelMergerNode",
+    "status": "Pass"
+   },
+   {
+    "name": "Default constructor behavior for ChannelMergerNode",
+    "status": "Pass"
+   },
+   {
+    "name": "AudioNodeOptions behavior for ChannelMergerNode",
+    "status": "Pass"
+   },
+   {
+    "name": "Constructor options validation for ChannelMergerNode",
+    "status": "Pass"
+   }
+  ]
+ ],
+ [
+  "webaudio/the-audio-api/the-channelsplitternode-interface/ctor-channelsplitter.html",
+  [
+   {
+    "name": "initialize",
+    "status": "Pass"
+   },
+   {
+    "name": "invalid constructor",
+    "status": "Pass"
+   },
+   {
+    "name": "default constructor",
+    "status": "Pass"
+   },
+   {
+    "name": "AudioNodeOptions immutability",
+    "status": "Pass"
+   },
+   {
+    "name": "constructor options",
+    "status": "Pass"
+   }
+  ]
+ ],
+ [
+  "webaudio/the-audio-api/the-constantsourcenode-interface/ctor-constantsource.html",
+  [
+   {
+    "name": "# AUDIT TASK RUNNER STARTED.",
+    "status": "Pass"
+   },
+   {
+    "name": "> [initialize] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  context = new OfflineAudioContext(...) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "< [initialize] All assertions passed. (total 1 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"initialize\"",
+    "status": "Pass"
+   },
+   {
+    "name": "> [invalid constructor] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  new ConstantSourceNode() threw TypeError: \"Failed to construct 'ConstantSourceNode': parameter 1 is not of type 'BaseAudioContext'.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  new ConstantSourceNode(1) threw TypeError: \"Failed to construct 'ConstantSourceNode': parameter 1 is not of type 'BaseAudioContext'.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  new ConstantSourceNode(context, 42) threw TypeError: \"Failed to construct 'ConstantSourceNode': The provided value is not of type 'object'.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "< [invalid constructor] All assertions passed. (total 3 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"invalid constructor\"",
+    "status": "Pass"
+   },
+   {
+    "name": "> [default constructor] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  node0 = new ConstantSourceNode(context) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node0 instanceof ConstantSourceNode is equal to true.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node0.numberOfInputs is equal to 0.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node0.numberOfOutputs is equal to 1.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node0.channelCount is equal to 2.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node0.channelCountMode is equal to max.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node0.channelInterpretation is equal to speakers.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node0.offset.value is equal to 1.",
+    "status": "Pass"
+   },
+   {
+    "name": "< [default constructor] All assertions passed. (total 8 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"default constructor\"",
+    "status": "Pass"
+   },
+   {
+    "name": "# AUDIT TASK RUNNER FINISHED: 3 tasks ran successfully.",
+    "status": "Pass"
+   },
+   {
+    "name": "Audit report",
+    "status": "Pass"
+   }
+  ]
+ ],
+ [
+  "webaudio/the-audio-api/the-audiobuffer-interface/audiobuffer-getChannelData.html",
+  [
+   {
+    "name": "# AUDIT TASK RUNNER STARTED.",
+    "status": "Pass"
+   },
+   {
+    "name": "> [buffer-eq] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  buffer.getChannelData(0) === buffer.getChannelData(0) is equal to true.",
+    "status": "Pass"
+   },
+   {
+    "name": "  buffer.getChannelData(1) === buffer.getChannelData(1) is equal to true.",
+    "status": "Pass"
+   },
+   {
+    "name": "< [buffer-eq] All assertions passed. (total 2 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"buffer-eq\"",
+    "status": "Pass"
+   },
+   {
+    "name": "> [buffer-not-eq] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  buffer1.getChannelData(0) === buffer2.getChannelData(0) is equal to false.",
+    "status": "Pass"
+   },
+   {
+    "name": "  buffer1.getChannelData(1) === buffer2.getChannelData(1) is equal to false.",
+    "status": "Pass"
+   },
+   {
+    "name": "< [buffer-not-eq] All assertions passed. (total 2 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"buffer-not-eq\"",
+    "status": "Pass"
+   },
+   {
+    "name": "# AUDIT TASK RUNNER FINISHED: 2 tasks ran successfully.",
+    "status": "Pass"
+   },
+   {
+    "name": "Audit report",
+    "status": "Pass"
+   }
+  ]
+ ],
+ [
+  "webaudio/the-audio-api/the-audionode-interface/audionode.html",
+  [
+   {
+    "name": "Basic tests for AudioNode API.",
+    "status": "Pass"
+   }
+  ]
+ ],
+ [
+  "webaudio/the-audio-api/the-audionode-interface/different-contexts.html",
+  [
+   {
+    "name": "setup: Contexts for testing",
+    "status": "Pass"
+   },
+   {
+    "name": "Test 1: Connect nodes between contexts",
+    "status": "Pass"
+   },
+   {
+    "name": "Test 2: Connect AudioParam between contexts",
+    "status": "Pass"
+   },
+   {
+    "name": "Test 3: Disconnect nodes between contexts",
+    "status": "Pass"
+   },
+   {
+    "name": "Test 4: Disconnect AudioParam between contexts",
+    "status": "Pass"
+   }
+  ]
+ ],
+ [
+  "webaudio/the-audio-api/the-waveshapernode-interface/ctor-waveshaper.html",
+  [
+   {
+    "name": "# AUDIT TASK RUNNER STARTED.",
+    "status": "Pass"
+   },
+   {
+    "name": "> [initialize] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  context = new OfflineAudioContext(...) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "< [initialize] All assertions passed. (total 1 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"initialize\"",
+    "status": "Pass"
+   },
+   {
+    "name": "> [incorrect construction] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  new WaveShaperNode() threw TypeError: \"Failed to construct 'WaveShaperNode': parameter 1 is not of type 'BaseAudioContext'.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  new WaveShaperNode(1) threw TypeError: \"Failed to construct 'WaveShaperNode': parameter 1 is not of type 'BaseAudioContext'.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  new WaveShaperNode(context, 42) threw TypeError: \"Failed to construct 'WaveShaperNode': The provided value is not of type 'object'.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "< [incorrect construction] All assertions passed. (total 3 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"incorrect construction\"",
+    "status": "Pass"
+   },
+   {
+    "name": "> [valid default construction] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  node0 = new WaveShaperNode(context) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node0 instanceof WaveShaperNode is equal to true.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node0.numberOfInputs is equal to 1.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node0.numberOfOutputs is equal to 1.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node0.channelCount is equal to 2.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node0.channelCountMode is equal to max.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node0.channelInterpretation is equal to speakers.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node0.curve is equal to null.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node0.oversample is equal to none.",
+    "status": "Pass"
+   },
+   {
+    "name": "< [valid default construction] All assertions passed. (total 9 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"valid default construction\"",
+    "status": "Pass"
+   },
+   {
+    "name": "> [test AudioNodeOptions] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  new WaveShaperNode(c, {channelCount: 17}) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node.channelCount is equal to 17.",
+    "status": "Pass"
+   },
+   {
+    "name": "  new WaveShaperNode(c, {channelCount: 0}) threw NotSupportedError: \"channelCount 0 not supported.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  new WaveShaperNode(c, {channelCount: 99}) threw NotSupportedError: \"channelCount 99 not supported.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  new WaveShaperNode(c, {channelCountMode: \"max\"} did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node.channelCountMode is equal to max.",
+    "status": "Pass"
+   },
+   {
+    "name": "  new WaveShaperNode(c, {channelCountMode: \"max\"}) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node.channelCountMode after valid setter is equal to max.",
+    "status": "Pass"
+   },
+   {
+    "name": "  new WaveShaperNode(c, {channelCountMode: \"clamped-max\"}) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node.channelCountMode after valid setter is equal to clamped-max.",
+    "status": "Pass"
+   },
+   {
+    "name": "  new WaveShaperNode(c, {channelCountMode: \"explicit\"}) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node.channelCountMode after valid setter is equal to explicit.",
+    "status": "Pass"
+   },
+   {
+    "name": "  new WaveShaperNode(c, {channelCountMode: \"foobar\"} threw TypeError: \"Failed to construct 'WaveShaperNode': Failed to read the 'channelCountMode' property from 'AudioNodeOptions': The provided value 'foobar' is not a valid enum value.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  node.channelCountMode after invalid setter is equal to explicit.",
+    "status": "Pass"
+   },
+   {
+    "name": "  new WaveShaperNode(c, {channelInterpretation: \"speakers\"}) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node.channelInterpretation is equal to speakers.",
+    "status": "Pass"
+   },
+   {
+    "name": "  new WaveShaperNode(c, {channelInterpretation: \"discrete\"}) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node.channelInterpretation is equal to discrete.",
+    "status": "Pass"
+   },
+   {
+    "name": "  new WaveShaperNode(c, {channelInterpretation: \"foobar\"}) threw TypeError: \"Failed to construct 'WaveShaperNode': Failed to read the 'channelInterpretation' property from 'AudioNodeOptions': The provided value 'foobar' is not a valid enum value.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  node.channelInterpretation after invalid setter is equal to discrete.",
+    "status": "Pass"
+   },
+   {
+    "name": "< [test AudioNodeOptions] All assertions passed. (total 20 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"test AudioNodeOptions\"",
+    "status": "Pass"
+   },
+   {
+    "name": "> [valid non-default] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  node1 = new WaveShaperNode(, {\"curve\":{\"0\":1,\"1\":2,\"2\":3},\"oversample\":\"4x\"}) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node1.curve is identical to the array [1,2,3].",
+    "status": "Pass"
+   },
+   {
+    "name": "  node1.oversample is equal to 4x.",
+    "status": "Pass"
+   },
+   {
+    "name": "< [valid non-default] All assertions passed. (total 3 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"valid non-default\"",
+    "status": "Pass"
+   },
+   {
+    "name": "# AUDIT TASK RUNNER FINISHED: 5 tasks ran successfully.",
+    "status": "Pass"
+   },
+   {
+    "name": "Audit report",
+    "status": "Pass"
+   }
+  ]
+ ],
+ [
+  "webaudio/the-audio-api/the-dynamicscompressornode-interface/ctor-dynamicscompressor.html",
+  [
+   {
+    "name": "DynamicsCompressorNode: invalid arguments throw TypeError",
+    "status": "Pass"
+   },
+   {
+    "name": "DynamicsCompressorNode: default constructor and attributes",
+    "status": "Pass"
+   },
+   {
+    "name": "DynamicsCompressorNode: constructor with various AudioNodeOptions",
+    "status": "Pass"
+   },
+   {
+    "name": "DynamicsCompressorNode: constructor with parameter options",
+    "status": "Pass"
+   }
+  ]
+ ],
+ [
+  "webaudio/the-audio-api/the-dynamicscompressornode-interface/dynamicscompressor-basic.html",
+  [
+   {
+    "name": "# AUDIT TASK RUNNER STARTED.",
+    "status": "Pass"
+   },
+   {
+    "name": "> [test] Basic tests for DynamicsCompressorNode API",
+    "status": "Pass"
+   },
+   {
+    "name": "  compressor.threshold.value is equal to -24.",
+    "status": "Pass"
+   },
+   {
+    "name": "  compressor.knee.value is equal to 30.",
+    "status": "Pass"
+   },
+   {
+    "name": "  compressor.ratio.value is equal to 12.",
+    "status": "Pass"
+   },
+   {
+    "name": "  compressor.attack.value is equal to 0.003000000026077032.",
+    "status": "Pass"
+   },
+   {
+    "name": "  compressor.release.value is equal to 0.25.",
+    "status": "Pass"
+   },
+   {
+    "name": "  typeof compressor.reduction is equal to number.",
+    "status": "Pass"
+   },
+   {
+    "name": "  compressor.reduction is equal to 0.",
+    "status": "Pass"
+   },
+   {
+    "name": "< [test] All assertions passed. (total 7 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"test\"",
+    "status": "Pass"
+   },
+   {
+    "name": "# AUDIT TASK RUNNER FINISHED: 1 tasks ran successfully.",
+    "status": "Pass"
+   },
+   {
+    "name": "Audit report",
+    "status": "Pass"
+   }
+  ]
+ ],
+ [
+  "webaudio/the-audio-api/the-pannernode-interface/ctor-panner.html",
+  [
+   {
+    "name": "# AUDIT TASK RUNNER STARTED.",
+    "status": "Pass"
+   },
+   {
+    "name": "> [initialize] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  context = new OfflineAudioContext(...) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "< [initialize] All assertions passed. (total 1 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"initialize\"",
+    "status": "Pass"
+   },
+   {
+    "name": "> [invalid constructor] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  new PannerNode() threw TypeError: \"Failed to construct 'PannerNode': parameter 1 is not of type 'BaseAudioContext'.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  new PannerNode(1) threw TypeError: \"Failed to construct 'PannerNode': parameter 1 is not of type 'BaseAudioContext'.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  new PannerNode(context, 42) threw TypeError: \"Failed to construct 'PannerNode': The provided value is not of type 'object'.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "< [invalid constructor] All assertions passed. (total 3 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"invalid constructor\"",
+    "status": "Pass"
+   },
+   {
+    "name": "> [default constructor] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  node0 = new PannerNode(context) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node0 instanceof PannerNode is equal to true.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node0.numberOfInputs is equal to 1.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node0.numberOfOutputs is equal to 1.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node0.channelCount is equal to 2.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node0.channelCountMode is equal to clamped-max.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node0.channelInterpretation is equal to speakers.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node0.panningModel is equal to equalpower.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node0.positionX.value is equal to 0.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node0.positionY.value is equal to 0.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node0.positionZ.value is equal to 0.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node0.orientationX.value is equal to 1.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node0.orientationY.value is equal to 0.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node0.orientationZ.value is equal to 0.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node0.distanceModel is equal to inverse.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node0.refDistance is equal to 1.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node0.maxDistance is equal to 10000.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node0.rolloffFactor is equal to 1.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node0.coneInnerAngle is equal to 360.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node0.coneOuterAngle is equal to 360.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node0.coneOuterGain is equal to 0.",
+    "status": "Pass"
+   },
+   {
+    "name": "  context.listener.positionX.value is equal to 0.",
+    "status": "Pass"
+   },
+   {
+    "name": "  context.listener.positionY.value is equal to 0.",
+    "status": "Pass"
+   },
+   {
+    "name": "  context.listener.positionZ.value is equal to 0.",
+    "status": "Pass"
+   },
+   {
+    "name": "  context.listener.forwardX.value is equal to 0.",
+    "status": "Pass"
+   },
+   {
+    "name": "  context.listener.forwardY.value is equal to 0.",
+    "status": "Pass"
+   },
+   {
+    "name": "  context.listener.forwardZ.value is equal to -1.",
+    "status": "Pass"
+   },
+   {
+    "name": "  context.listener.upX.value is equal to 0.",
+    "status": "Pass"
+   },
+   {
+    "name": "  context.listener.upY.value is equal to 1.",
+    "status": "Pass"
+   },
+   {
+    "name": "  context.listener.upZ.value is equal to 0.",
+    "status": "Pass"
+   },
+   {
+    "name": "< [default constructor] All assertions passed. (total 30 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"default constructor\"",
+    "status": "Pass"
+   },
+   {
+    "name": "> [test AudioNodeOptions] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  node1 = new PannerNode(c, {\"channelCount\":1}) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node1.channelCount is equal to 1.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node2 = new PannerNode(c, {\"channelCount\":2}) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node2.channelCount is equal to 2.",
+    "status": "Pass"
+   },
+   {
+    "name": "  new PannerNode(c, {\"channelCount\":0}) threw NotSupportedError: \"Failed to construct 'PannerNode': channelCount 0 not supported (must be 1 or 2).\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  node.channelCount = 0 threw NotSupportedError: \"channelCount 0 not supported (must be 1 or 2).\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  node.channelCount after setting to 0 is equal to 2.",
+    "status": "Pass"
+   },
+   {
+    "name": "  new PannerNode(c, {\"channelCount\":3}) threw NotSupportedError: \"Failed to construct 'PannerNode': channelCount 3 not supported (must be 1 or 2).\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  node.channelCount = 3 threw NotSupportedError: \"channelCount 3 not supported (must be 1 or 2).\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  node.channelCount after setting to 3 is equal to 2.",
+    "status": "Pass"
+   },
+   {
+    "name": "  new PannerNode(c, {\"channelCount\":99}) threw NotSupportedError: \"Failed to construct 'PannerNode': channelCount 99 not supported (must be 1 or 2).\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  node.channelCount = 99 threw NotSupportedError: \"channelCount 99 not supported (must be 1 or 2).\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  node.channelCount after setting to 99 is equal to 2.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node3 = new PannerNode(c, {\"channelCountMode\":\"clamped-max\"}) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node3.channelCountMode is equal to clamped-max.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node4 = new PannerNode(c, {\"channelCountMode\":\"explicit\"}) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node4.channelCountMode is equal to explicit.",
+    "status": "Pass"
+   },
+   {
+    "name": "  new PannerNode(c, {\"channelCountMode\":\"max\"}) threw NotSupportedError: \"Failed to construct 'PannerNode': channelCountMode 'max' not supported.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  node.channelCountMode = max threw NotSupportedError: \"Failed to set the 'channelCountMode' property on 'PannerNode': 'max' not supported.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  node.channelCountMode after setting to max is equal to clamped-max.",
+    "status": "Pass"
+   },
+   {
+    "name": "  new PannerNode(c, \" + JSON.stringify(options) + \") threw TypeError: \"Failed to construct 'PannerNode': Failed to read the 'channelCountMode' property from 'AudioNodeOptions': The provided value 'foobar' is not a valid enum value.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  node.channelCountMode = foobar did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node.channelCountMode after setting to foobar is equal to clamped-max.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node5 = new PannerNode(c, {\"channelInterpretation\":\"speakers\"}) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node5.channelInterpretation is equal to speakers.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node6 = new PannerNode(c, {\"channelInterpretation\":\"discrete\"}) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node6.channelInterpretation is equal to discrete.",
+    "status": "Pass"
+   },
+   {
+    "name": "  new PannerNode(c, {\"channelInterpretation\":\"foobar\"}) threw TypeError: \"Failed to construct 'PannerNode': Failed to read the 'channelInterpretation' property from 'AudioNodeOptions': The provided value 'foobar' is not a valid enum value.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  new PannerNode(c, {\"maxDistance\":-1}) threw RangeError: \"Failed to construct 'PannerNode': maxDistance must be positive.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  node.maxDistance = -1 threw RangeError: \"Failed to set the 'maxDistance' property on 'PannerNode': The value must be positive.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  node.maxDistance after setting to -1 is equal to 10000.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node7 = new PannerNode(c, {\"maxDistance\":100}) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node7.maxDistance is equal to 100.",
+    "status": "Pass"
+   },
+   {
+    "name": "  new PannerNode(c, {\"rolloffFactor\":-1}) threw RangeError: \"Failed to construct 'PannerNode': rolloffFactor must be non-negative.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  node.rolloffFactor = -1 threw RangeError: \"Failed to set the 'rolloffFactor' property on 'PannerNode': The value must be non-negative.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  node.rolloffFactor after setting to -1 is equal to 1.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node8 = new PannerNode(c, {\"rolloffFactor\":0}) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node8.rolloffFactor is equal to 0.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node8 = new PannerNode(c, {\"rolloffFactor\":0.5}) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node8.rolloffFactor is equal to 0.5.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node8 = new PannerNode(c, {\"rolloffFactor\":100}) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node8.rolloffFactor is equal to 100.",
+    "status": "Pass"
+   },
+   {
+    "name": "  new PannerNode(c, {\"coneOuterGain\":-1}) threw InvalidStateError: \"Failed to construct 'PannerNode': coneOuterGain must be in [0, 1].\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  node.coneOuterGain = -1 threw InvalidStateError: \"Failed to set the 'coneOuterGain' property on 'PannerNode': The value must be in [0, 1].\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  node.coneOuterGain after setting to -1 is equal to 0.",
+    "status": "Pass"
+   },
+   {
+    "name": "  new PannerNode(c, {\"coneOuterGain\":1.1}) threw InvalidStateError: \"Failed to construct 'PannerNode': coneOuterGain must be in [0, 1].\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  node.coneOuterGain = 1.1 threw InvalidStateError: \"Failed to set the 'coneOuterGain' property on 'PannerNode': The value must be in [0, 1].\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  node.coneOuterGain after setting to 1.1 is equal to 0.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node9 = new PannerNode(c, {\"coneOuterGain\":0}) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node9.coneOuterGain is equal to 0.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node9 = new PannerNode(c, {\"coneOuterGain\":0.5}) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node9.coneOuterGain is equal to 0.5.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node9 = new PannerNode(c, {\"coneOuterGain\":1}) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node9.coneOuterGain is equal to 1.",
+    "status": "Pass"
+   },
+   {
+    "name": "< [test AudioNodeOptions] All assertions passed. (total 54 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"test AudioNodeOptions\"",
+    "status": "Pass"
+   },
+   {
+    "name": "> [constructor with options] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  node = new PannerNode(c, {\"panningModel\":\"HRTF\",\"positionX\":1.4142135623730951,\"positionY\":2.8284271247461903,\"positionZ\":4.242640687119286,\"orientationX\":-1.4142135623730951,\"orientationY\":-2.8284271247461903,\"orientationZ\":-4.242640687119286,\"distanceModel\":\"linear\",\"refDistance\":3.141592653589793,\"maxDistance\":6.283185307179586,\"rolloffFactor\":9.42477796076938,\"coneInnerAngle\":12.566370614359172,\"coneOuterAngle\":15.707963267948966,\"coneOuterGain\":0.3141592653589793}) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node instanceof PannerNode is equal to true.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node.panningModel is equal to HRTF.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node.positionX.value is equal to 1.4142135381698608.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node.positionY.value is equal to 2.8284270763397217.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node.positionZ.value is equal to 4.242640495300293.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node.orientationX.value is equal to -1.4142135381698608.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node.orientationY.value is equal to -2.8284270763397217.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node.orientationZ.value is equal to -4.242640495300293.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node.distanceModel is equal to linear.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node.refDistance is equal to 3.141592653589793.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node.maxDistance is equal to 6.283185307179586.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node.rolloffFactor is equal to 9.42477796076938.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node.coneInnerAngle is equal to 12.566370614359172.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node.coneOuterAngle is equal to 15.707963267948966.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node.coneOuterGain is equal to 0.3141592653589793.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node.channelCount is equal to 2.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node.channelCountMode is equal to clamped-max.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node.channelInterpretation is equal to speakers.",
+    "status": "Pass"
+   },
+   {
+    "name": "< [constructor with options] All assertions passed. (total 19 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"constructor with options\"",
+    "status": "Pass"
+   },
+   {
+    "name": "# AUDIT TASK RUNNER FINISHED: 5 tasks ran successfully.",
+    "status": "Pass"
+   },
+   {
+    "name": "Audit report",
+    "status": "Pass"
+   }
+  ]
+ ],
+ [
+  "webaudio/the-audio-api/the-iirfilternode-interface/iirfilter-basic.html",
+  [
+   {
+    "name": "# AUDIT TASK RUNNER STARTED.",
+    "status": "Pass"
+   },
+   {
+    "name": "> [initialize] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  Initialize context for testing did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "< [initialize] All assertions passed. (total 1 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"initialize\"",
+    "status": "Pass"
+   },
+   {
+    "name": "> [existence] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  context.createIIRFilter does exist.",
+    "status": "Pass"
+   },
+   {
+    "name": "< [existence] All assertions passed. (total 1 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"existence\"",
+    "status": "Pass"
+   },
+   {
+    "name": "> [parameters] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  numberOfInputs is equal to 1.",
+    "status": "Pass"
+   },
+   {
+    "name": "  numberOfOutputs is equal to 1.",
+    "status": "Pass"
+   },
+   {
+    "name": "  channelCountMode is equal to max.",
+    "status": "Pass"
+   },
+   {
+    "name": "  channelInterpretation is equal to speakers.",
+    "status": "Pass"
+   },
+   {
+    "name": "< [parameters] All assertions passed. (total 4 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"parameters\"",
+    "status": "Pass"
+   },
+   {
+    "name": "> [exceptions-createIIRFilter] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  createIIRFilter() threw TypeError: \"Failed to execute 'createIIRFilter' on 'BaseAudioContext': 2 arguments required.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  createIIRFilter(new Float32Array(1)) threw TypeError: \"Failed to execute 'createIIRFilter' on 'BaseAudioContext': 2 arguments required.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  createIIRFilter(null, null) threw TypeError: \"Failed to construct 'IIRFilterNode': Failed to read the 'feedforward' property: The provided value is not of type 'sequence<float>'.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  createIIRFilter([], []) threw NotSupportedError: \"Failed to construct 'IIRFilterNode': feedforward/feedback coefficients must have length in [1, 20].\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  createIIRFilter([1], []) threw NotSupportedError: \"Failed to construct 'IIRFilterNode': feedforward/feedback coefficients must have length in [1, 20].\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  createIIRFilter([], [1]) threw NotSupportedError: \"Failed to construct 'IIRFilterNode': feedforward/feedback coefficients must have length in [1, 20].\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  createIIRFilter(new Float32Array(20), new Float32Array(20)) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  createIIRFilter(new Float32Array(21), [1]) threw NotSupportedError: \"Failed to construct 'IIRFilterNode': feedforward/feedback coefficients must have length in [1, 20].\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  createIIRFilter([1], new Float32Array(21)) threw NotSupportedError: \"Failed to construct 'IIRFilterNode': feedforward/feedback coefficients must have length in [1, 20].\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  createIIRFilter([1], new Float32Array(2)) threw InvalidStateError: \"Failed to construct 'IIRFilterNode': first feedback coefficient must be non-zero.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  createIIRFilter(new Float32Array(10), [1]) threw InvalidStateError: \"Failed to construct 'IIRFilterNode': feedforward coefficients cannot all be zero.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  createIIRFilter([1], [1, NaN, Infinity]) threw TypeError: \"Failed to construct 'IIRFilterNode': feedback coefficient 1 is non-finite.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  createIIRFilter([1, NaN, Infinity], [1]) threw TypeError: \"Failed to construct 'IIRFilterNode': feedforward coefficient 1 is non-finite.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  createIIRFilter([1, 'abc', []], [1]) threw TypeError: \"Failed to construct 'IIRFilterNode': feedforward coefficient 1 is non-finite.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "< [exceptions-createIIRFilter] All assertions passed. (total 14 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"exceptions-createIIRFilter\"",
+    "status": "Pass"
+   },
+   {
+    "name": "> [exceptions-getFrequencyData] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  getFrequencyResponse(null, new Float32Array(1), new Float32Array(1)) threw TypeError: \"Failed to execute 'getFrequencyResponse' on 'IIRFilterNode': parameter 1 is not of type 'Float32Array'.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  getFrequencyResponse(new Float32Array(1), null, new Float32Array(1)) threw TypeError: \"Failed to execute 'getFrequencyResponse' on 'IIRFilterNode': parameter 2 is not of type 'Float32Array'.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  getFrequencyResponse(new Float32Array(1), new Float32Array(1), null) threw TypeError: \"Failed to execute 'getFrequencyResponse' on 'IIRFilterNode': parameter 3 is not of type 'Float32Array'.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  getFrequencyResponse(new Float32Array(10), new Float32Array(1), new Float32Array(20)) threw InvalidAccessError: \"Failed to execute 'getFrequencyResponse' on 'IIRFilterNode': response arrays must have the same length as frequencyHz.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  getFrequencyResponse(new Float32Array(10), new Float32Array(20), new Float32Array(1)) threw InvalidAccessError: \"Failed to execute 'getFrequencyResponse' on 'IIRFilterNode': response arrays must have the same length as frequencyHz.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "< [exceptions-getFrequencyData] All assertions passed. (total 5 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"exceptions-getFrequencyData\"",
+    "status": "Pass"
+   },
+   {
+    "name": "# AUDIT TASK RUNNER FINISHED: 5 tasks ran successfully.",
+    "status": "Pass"
+   },
+   {
+    "name": "Audit report",
+    "status": "Pass"
+   }
+  ]
+ ],
+ [
+  "webaudio/the-audio-api/the-biquadfilternode-interface/biquadfilternode-basic.html",
+  [
+   {
+    "name": "# AUDIT TASK RUNNER STARTED.",
+    "status": "Pass"
+   },
+   {
+    "name": "> [test] Basic tests for BiquadFilterNode",
+    "status": "Pass"
+   },
+   {
+    "name": "  Number of inputs is equal to 1.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Number of outputs is equal to 1.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Default filter type is equal to lowpass.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Default frequency value is equal to 350.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Default Q value is equal to 1.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Default gain value is equal to 0.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Setting filter.type to lowpass did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Filter type is is equal to lowpass.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Setting filter.type to highpass did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Filter type is is equal to highpass.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Setting filter.type to bandpass did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Filter type is is equal to bandpass.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Setting filter.type to lowshelf did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Filter type is is equal to lowshelf.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Setting filter.type to highshelf did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Filter type is is equal to highshelf.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Setting filter.type to peaking did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Filter type is is equal to peaking.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Setting filter.type to notch did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Filter type is is equal to notch.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Setting filter.type to allpass did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Filter type is is equal to allpass.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Setting filter.type to (invalid) 99 is not equal to 99.",
+    "status": "Pass"
+   },
+   {
+    "name": "< [test] All assertions passed. (total 23 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"test\"",
+    "status": "Pass"
+   },
+   {
+    "name": "# AUDIT TASK RUNNER FINISHED: 1 tasks ran successfully.",
+    "status": "Pass"
+   },
+   {
+    "name": "Audit report",
+    "status": "Pass"
+   }
+  ]
+ ],
+ [
+  "webaudio/the-audio-api/the-offlineaudiocontext-interface/ctor-offlineaudiocontext.html",
+  [
+   {
+    "name": "# AUDIT TASK RUNNER STARTED.",
+    "status": "Pass"
+   },
+   {
+    "name": "> [basic] Old-style constructor",
+    "status": "Pass"
+   },
+   {
+    "name": "  new OfflineAudioContext(3) threw TypeError: \"Failed to construct 'OfflineAudioContext': The provided value is not of type 'OfflineAudioContextOptions'.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  new OfflineAudioContext(3, 42) threw TypeError: \"Failed to construct 'OfflineAudioContext': Invalid argument count (use 1 dict argument or 3 positional arguments).\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  context = new OfflineAudioContext(3, 42, 12345) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  context.length is equal to 42.",
+    "status": "Pass"
+   },
+   {
+    "name": "  context.sampleRate is equal to 12345.",
+    "status": "Pass"
+   },
+   {
+    "name": "  context.destination.channelCount is equal to 3.",
+    "status": "Pass"
+   },
+   {
+    "name": "  context.destination.channelCountMode is equal to explicit.",
+    "status": "Pass"
+   },
+   {
+    "name": "  context.destination.channelInterpretation is equal to speakers.",
+    "status": "Pass"
+   },
+   {
+    "name": "< [basic] All assertions passed. (total 8 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"basic\"",
+    "status": "Pass"
+   },
+   {
+    "name": "> [options-1] Required options",
+    "status": "Pass"
+   },
+   {
+    "name": "  new OfflineAudioContext() threw TypeError: \"Failed to construct 'OfflineAudioContext': Invalid argument count (use 1 dict argument or 3 positional arguments).\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  new OfflineAudioContext({}) threw TypeError: \"Failed to construct 'OfflineAudioContext': Failed to read the 'length' property from 'OfflineAudioContextOptions': Required member is undefined.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  new OfflineAudioContext({\"length\":42}) threw TypeError: \"Failed to construct 'OfflineAudioContext': Failed to read the 'sampleRate' property from 'OfflineAudioContextOptions': Required member is undefined.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  new OfflineAudioContext({\"sampleRate\":12345}) threw TypeError: \"Failed to construct 'OfflineAudioContext': Failed to read the 'length' property from 'OfflineAudioContextOptions': Required member is undefined.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  c2 = new OfflineAudioContext({\"length\":42,\"sampleRate\":12345}) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  c2.destination.channelCount is equal to 1.",
+    "status": "Pass"
+   },
+   {
+    "name": "  c2.length is equal to 42.",
+    "status": "Pass"
+   },
+   {
+    "name": "  c2.sampleRate is equal to 12345.",
+    "status": "Pass"
+   },
+   {
+    "name": "  c2.destination.channelCountMode is equal to explicit.",
+    "status": "Pass"
+   },
+   {
+    "name": "  c2.destination.channelInterpretation is equal to speakers.",
+    "status": "Pass"
+   },
+   {
+    "name": "< [options-1] All assertions passed. (total 10 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"options-1\"",
+    "status": "Pass"
+   },
+   {
+    "name": "> [options-2] Invalid options",
+    "status": "Pass"
+   },
+   {
+    "name": "  new OfflineAudioContext({\"length\":42,\"sampleRate\":8000,\"numberOfChannels\":33}) threw NotSupportedError: \"Failed to construct 'OfflineAudioContext': numberOfChannels 33 is not in range [1, 32].\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  new OfflineAudioContext({\"length\":0,\"sampleRate\":8000}) threw NotSupportedError: \"Failed to construct 'OfflineAudioContext': length must be positive.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  new OfflineAudioContext({\"length\":1,\"sampleRate\":1}) threw NotSupportedError: \"Failed to construct 'OfflineAudioContext': sampleRate 1 is not in range [8000, 96000].\".",
+    "status": "Pass"
+   },
+   {
+    "name": "< [options-2] All assertions passed. (total 3 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"options-2\"",
+    "status": "Pass"
+   },
+   {
+    "name": "> [options-3] Valid options",
+    "status": "Pass"
+   },
+   {
+    "name": "  c = new OfflineAudioContext{\"length\":1,\"sampleRate\":8000}) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  c.length is equal to 1.",
+    "status": "Pass"
+   },
+   {
+    "name": "  c.sampleRate is equal to 8000.",
+    "status": "Pass"
+   },
+   {
+    "name": "  c.destination.channelCount is equal to 1.",
+    "status": "Pass"
+   },
+   {
+    "name": "  c.destination.channelCountMode is equal to explicit.",
+    "status": "Pass"
+   },
+   {
+    "name": "  c.destination.channelCountMode is equal to speakers.",
+    "status": "Pass"
+   },
+   {
+    "name": "  c = new OfflineAudioContext{\"length\":1,\"sampleRate\":8000,\"numberOfChannels\":7}) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  c.destination.channelCount is equal to 7.",
+    "status": "Pass"
+   },
+   {
+    "name": "< [options-3] All assertions passed. (total 8 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"options-3\"",
+    "status": "Pass"
+   },
+   {
+    "name": "# AUDIT TASK RUNNER FINISHED: 4 tasks ran successfully.",
+    "status": "Pass"
+   },
+   {
+    "name": "Audit report",
+    "status": "Pass"
+   }
+  ]
+ ],
+ [
+  "webaudio/the-audio-api/the-constantsourcenode-interface/constant-source-basic.html",
+  [
+   {
+    "name": "ConstantSourceNode constructor creates a valid node with correct defaults",
+    "status": "Pass"
+   },
+   {
+    "name": "ConstantSourceNode start()/stop() should throw correct exceptions per spec",
+    "status": "Pass"
+   },
+   {
+    "name": "context.createConstantSource() creates a ConstantSourceNode with correct defaults",
+    "status": "Pass"
+   },
+   {
+    "name": "context.createConstantSource() node start()/stop() should throw correct exceptions per spec",
+    "status": "Pass"
+   }
+  ]
+ ],
+ [
+  "webaudio/the-audio-api/the-stereopanner-interface/stereopannernode-basic.html",
+  [
+   {
+    "name": "# AUDIT TASK RUNNER STARTED.",
+    "status": "Pass"
+   },
+   {
+    "name": "> [test] Attributes and basic functionality of StereoPannerNode",
+    "status": "Pass"
+   },
+   {
+    "name": "  panner.numberOfInputs is equal to 1.",
+    "status": "Pass"
+   },
+   {
+    "name": "  panner.numberOfOutputs is equal to 1.",
+    "status": "Pass"
+   },
+   {
+    "name": "  panner.pan.defaultValue is equal to 0.",
+    "status": "Pass"
+   },
+   {
+    "name": "  panner.pan.value = 1.0 did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  panner.pan.value is equal to 1.",
+    "status": "Pass"
+   },
+   {
+    "name": "  panner.channelCount = 1 did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  panner.channelCount = 3 threw NotSupportedError: \"channelCount 3 not supported (must be 1 or 2).\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  panner.channelCountMode = \"explicit\" did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  panner.channelCountMode = \"max\" threw NotSupportedError: \"Failed to set the 'channelCountMode' property: 'max' not supported for this node.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "< [test] All assertions passed. (total 9 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"test\"",
+    "status": "Pass"
+   },
+   {
+    "name": "# AUDIT TASK RUNNER FINISHED: 1 tasks ran successfully.",
+    "status": "Pass"
+   },
+   {
+    "name": "Audit report",
+    "status": "Pass"
+   }
+  ]
+ ],
+ [
+  "webaudio/the-audio-api/the-audiobuffersourcenode-interface/audiobuffersource-basic.html",
+  [
+   {
+    "name": "# AUDIT TASK RUNNER STARTED.",
+    "status": "Pass"
+   },
+   {
+    "name": "> [start/stop exceptions] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  start(NaN) threw TypeError: \"Failed to execute 'start' on 'AudioScheduledSourceNode': The provided value is non-finite.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  start(Infinity) threw TypeError: \"Failed to execute 'start' on 'AudioScheduledSourceNode': The provided value is non-finite.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  start(-Infinity) threw TypeError: \"Failed to execute 'start' on 'AudioScheduledSourceNode': The provided value is non-finite.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  Calling stop() before start() threw InvalidStateError: \"Cannot call 'stop' before 'start'.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  start(-1) threw RangeError: \"Failed to execute 'start' on 'AudioScheduledSourceNode': when must be non-negative.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  start(0,-1) threw RangeError: \"Failed to execute 'start' on 'AudioScheduledSourceNode': parameter 2 (-1) must be non-negative.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  start(0,0,-1) threw RangeError: \"Failed to execute 'start' on 'AudioScheduledSourceNode': parameter 3 (-1) must be non-negative.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  Calling start() twice threw InvalidStateError: \"Cannot call 'start' twice on an AudioScheduledSourceNode.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  stop(-1) threw RangeError: \"Failed to execute 'stop' on 'AudioScheduledSourceNode': when must be non-negative.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  stop(NaN) threw TypeError: \"Failed to execute 'stop' on 'AudioScheduledSourceNode': The provided value is non-finite.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  stop(Infinity) threw TypeError: \"Failed to execute 'stop' on 'AudioScheduledSourceNode': The provided value is non-finite.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  stop(-Infinity) threw TypeError: \"Failed to execute 'stop' on 'AudioScheduledSourceNode': The provided value is non-finite.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "< [start/stop exceptions] All assertions passed. (total 12 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"start/stop exceptions\"",
+    "status": "Pass"
+   },
+   {
+    "name": "# AUDIT TASK RUNNER FINISHED: 1 tasks ran successfully.",
+    "status": "Pass"
+   },
+   {
+    "name": "Audit report",
+    "status": "Pass"
+   }
+  ]
+ ],
+ [
+  "webaudio/the-audio-api/the-audiobuffersourcenode-interface/ctor-audiobuffersource.html",
+  [
+   {
+    "name": "# AUDIT TASK RUNNER STARTED.",
+    "status": "Pass"
+   },
+   {
+    "name": "> [initialize] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  context = new OfflineAudioContext(...) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "< [initialize] All assertions passed. (total 1 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"initialize\"",
+    "status": "Pass"
+   },
+   {
+    "name": "> [invalid constructor] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  new AudioBufferSourceNode() threw TypeError: \"Failed to construct 'AudioBufferSourceNode': parameter 1 is not of type 'BaseAudioContext'.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  new AudioBufferSourceNode(1) threw TypeError: \"Failed to construct 'AudioBufferSourceNode': parameter 1 is not of type 'BaseAudioContext'.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  new AudioBufferSourceNode(context, 42) threw TypeError: \"Failed to construct 'AudioBufferSourceNode': The provided value is not of type 'object'.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "< [invalid constructor] All assertions passed. (total 3 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"invalid constructor\"",
+    "status": "Pass"
+   },
+   {
+    "name": "> [default constructor] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  node0 = new AudioBufferSourceNode(context) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node0 instanceof AudioBufferSourceNode is equal to true.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node0.numberOfInputs is equal to 0.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node0.numberOfOutputs is equal to 1.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node0.channelCount is equal to 2.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node0.channelCountMode is equal to max.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node0.channelInterpretation is equal to speakers.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node0.buffer is equal to null.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node0.detune.value is equal to 0.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node0.loop is equal to false.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node0.loopEnd is equal to 0.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node0.loopStart is equal to 0.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node0.playbackRate.value is equal to 1.",
+    "status": "Pass"
+   },
+   {
+    "name": "< [default constructor] All assertions passed. (total 13 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"default constructor\"",
+    "status": "Pass"
+   },
+   {
+    "name": "> [nullable buffer] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  node1 = new AudioBufferSourceNode(c, {\"buffer\":null} did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node1.buffer is equal to null.",
+    "status": "Pass"
+   },
+   {
+    "name": "< [nullable buffer] All assertions passed. (total 2 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"nullable buffer\"",
+    "status": "Pass"
+   },
+   {
+    "name": "> [constructor options] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  node = new AudioBufferSourceNode(c, {\"buffer\":{},\"detune\":0.5,\"loop\":true,\"loopEnd\":0.010416666666666666,\"loopStart\":0.00010416666666666667,\"playbackRate\":0.75}) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node2.buffer === buffer is equal to true.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node2.detune.value is equal to 0.5.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node2.loop is equal to true.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node2.loopEnd is equal to 0.010416666666666666.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node2.loopStart is equal to 0.00010416666666666667.",
+    "status": "Pass"
+   },
+   {
+    "name": "  node2.playbackRate.value is equal to 0.75.",
+    "status": "Pass"
+   },
+   {
+    "name": "< [constructor options] All assertions passed. (total 7 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"constructor options\"",
+    "status": "Pass"
+   },
+   {
+    "name": "# AUDIT TASK RUNNER FINISHED: 5 tasks ran successfully.",
+    "status": "Pass"
+   },
+   {
+    "name": "Audit report",
+    "status": "Pass"
+   }
+  ]
+ ],
+ [
+  "webaudio/the-audio-api/the-audiocontext-interface/audiocontext-getoutputtimestamp.html",
+  [
+   {
+    "name": "# AUDIT TASK RUNNER STARTED.",
+    "status": "Pass"
+   },
+   {
+    "name": "> [getoutputtimestamp-initial-values] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  timestamp.contextTime does exist.",
+    "status": "Pass"
+   },
+   {
+    "name": "  timestamp.performanceTime does exist.",
+    "status": "Pass"
+   },
+   {
+    "name": "  timestamp.contextTime is greater than or equal to 0.",
+    "status": "Pass"
+   },
+   {
+    "name": "  timestamp.performanceTime is greater than or equal to 0.",
+    "status": "Pass"
+   },
+   {
+    "name": "< [getoutputtimestamp-initial-values] All assertions passed. (total 4 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"getoutputtimestamp-initial-values\"",
+    "status": "Pass"
+   },
+   {
+    "name": "# AUDIT TASK RUNNER FINISHED: 1 tasks ran successfully.",
+    "status": "Pass"
+   },
+   {
+    "name": "Audit report",
+    "status": "Pass"
+   }
+  ]
+ ],
+ [
+  "webaudio/the-audio-api/the-audiocontext-interface/audiocontextoptions.html",
+  [
+   {
+    "name": "# AUDIT TASK RUNNER STARTED.",
+    "status": "Pass"
+   },
+   {
+    "name": "> [test-audiocontextoptions-latencyHint-basic] Test creating contexts with basic latencyHint types.",
+    "status": "Pass"
+   },
+   {
+    "name": "  context = new AudioContext() did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  context.sampleRate (48000 Hz) is greater than 0.",
+    "status": "Pass"
+   },
+   {
+    "name": "  default baseLatency is greater than or equal to 0.",
+    "status": "Pass"
+   },
+   {
+    "name": "  context = new AudioContext({'latencyHint': 'interactive'}) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  interactive baseLatency is equal to 0.005.",
+    "status": "Pass"
+   },
+   {
+    "name": "  context = new AudioContext({'latencyHint': 'balanced'}) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  balanced baseLatency is greater than or equal to 0.005.",
+    "status": "Pass"
+   },
+   {
+    "name": "  context = new AudioContext({'latencyHint': 'playback'}) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  playback baseLatency is greater than or equal to 0.015.",
+    "status": "Pass"
+   },
+   {
+    "name": "< [test-audiocontextoptions-latencyHint-basic] All assertions passed. (total 9 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"test-audiocontextoptions-latencyHint-basic\"",
+    "status": "Pass"
+   },
+   {
+    "name": "> [test-audiocontextoptions-latencyHint-double] Test creating contexts with explicit latencyHint values.",
+    "status": "Pass"
+   },
+   {
+    "name": "  context = new AudioContext({'latencyHint': interactiveLatency/2}) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  double-constructor baseLatency small is less than or equal to 0.005.",
+    "status": "Pass"
+   },
+   {
+    "name": "  context = new AudioContext({'latencyHint': validLatency}) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  double-constructor baseLatency inrange 1 is greater than or equal to 0.005.",
+    "status": "Pass"
+   },
+   {
+    "name": "  double-constructor baseLatency inrange 2 is less than or equal to 0.04.",
+    "status": "Pass"
+   },
+   {
+    "name": "  creating two high latency contexts did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  high latency context baseLatency is equal to 0.4.",
+    "status": "Pass"
+   },
+   {
+    "name": "  high latency context baseLatency is greater than or equal to 0.005.",
+    "status": "Pass"
+   },
+   {
+    "name": "  context = new AudioContext({'latencyHint': 'foo'}) threw TypeError: \"Failed to construct 'AudioContext': Failed to read the 'latencyHint' property from 'AudioContextOptions': The provided value 'foo' is not a valid enum value.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  context = new AudioContext('latencyHint') threw TypeError: \"Failed to construct 'AudioContext': The provided value is not of type 'AudioContextOptions'.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "< [test-audiocontextoptions-latencyHint-double] All assertions passed. (total 10 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"test-audiocontextoptions-latencyHint-double\"",
+    "status": "Pass"
+   },
+   {
+    "name": "> [test-audiocontextoptions-sampleRate] Test creating contexts with non-default sampleRate values.",
+    "status": "Pass"
+   },
+   {
+    "name": "  context = new AudioContext({sampleRate: -1}) threw NotSupportedError: \"Failed to construct 'AudioContext': sampleRate -1 is not in range [3000, 768000].\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  context = new AudioContext({sampleRate: 0}) threw NotSupportedError: \"Failed to construct 'AudioContext': sampleRate 0 is not in range [3000, 768000].\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  context = new AudioContext({sampleRate: 2999}) threw NotSupportedError: \"Failed to construct 'AudioContext': sampleRate 2999 is not in range [3000, 768000].\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  context = new AudioContext({sampleRate: 768001}) threw NotSupportedError: \"Failed to construct 'AudioContext': sampleRate 768001 is not in range [3000, 768000].\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  context = new AudioContext({sampleRate: 3000}) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  sampleRate inrange is equal to 3000.",
+    "status": "Pass"
+   },
+   {
+    "name": "  context = new AudioContext({sampleRate: 768000}) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  sampleRate inrange is equal to 768000.",
+    "status": "Pass"
+   },
+   {
+    "name": "  context = new AudioContext({sampleRate: 24000}) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  sampleRate inrange is equal to 24000.",
+    "status": "Pass"
+   },
+   {
+    "name": "< [test-audiocontextoptions-sampleRate] All assertions passed. (total 10 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"test-audiocontextoptions-sampleRate\"",
+    "status": "Pass"
+   },
+   {
+    "name": "# AUDIT TASK RUNNER FINISHED: 3 tasks ran successfully.",
+    "status": "Pass"
+   },
+   {
+    "name": "Audit report",
+    "status": "Pass"
+   }
+  ]
+ ],
+ [
+  "webaudio/the-audio-api/the-audiocontext-interface/suspend-after-construct.html",
+  [
+   {
+    "name": "Iteration 1",
+    "status": "Pass"
+   },
+   {
+    "name": "Iteration 2",
+    "status": "Pass"
+   },
+   {
+    "name": "Iteration 3",
+    "status": "Pass"
+   },
+   {
+    "name": "State change counting",
+    "status": "Pass"
+   },
+   {
+    "name": "Stop waiting",
+    "status": "Pass"
+   }
+  ]
+ ],
+ [
+  "webaudio/the-audio-api/the-audiocontext-interface/promise-methods-after-discard.html",
+  [
+   {
+    "name": "suspend()",
+    "status": "Pass"
+   },
+   {
+    "name": "resume()",
+    "status": "Pass"
+   },
+   {
+    "name": "close()",
+    "status": "Pass"
+   }
+  ]
+ ],
+ [
+  "webaudio/the-audio-api/the-convolvernode-interface/ctor-convolver.html",
+  [
+   {
+    "name": "ConvolverNode: invalid constructor throws TypeError",
+    "status": "Pass"
+   },
+   {
+    "name": "ConvolverNode: default constructor and attributes",
+    "status": "Pass"
+   },
+   {
+    "name": "ConvolverNode constructor: AudioNodeOptions are correctly handled",
+    "status": "Pass"
+   },
+   {
+    "name": "ConvolverNode: nullable buffer",
+    "status": "Pass"
+   },
+   {
+    "name": "ConvolverNode: illegal sample rate buffer throws NotSupportedError",
+    "status": "Pass"
+   },
+   {
+    "name": "ConvolverNode: construct with buffer and normalization options",
+    "status": "Pass"
+   }
+  ]
+ ],
+ [
+  "webaudio/the-audio-api/the-convolvernode-interface/convolver-setBuffer-null.html",
+  [
+   {
+    "name": "# AUDIT TASK RUNNER STARTED.",
+    "status": "Pass"
+   },
+   {
+    "name": "> [test] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  Setting ConvolverNode impulse response buffer to null did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  conv.buffer === null is true.",
+    "status": "Pass"
+   },
+   {
+    "name": "< [test] All assertions passed. (total 2 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"test\"",
+    "status": "Pass"
+   },
+   {
+    "name": "# AUDIT TASK RUNNER FINISHED: 1 tasks ran successfully.",
+    "status": "Pass"
+   },
+   {
+    "name": "Audit report",
+    "status": "Pass"
+   }
+  ]
+ ],
+ [
+  "webaudio/the-audio-api/the-convolvernode-interface/convolver-setBuffer-already-has-value.html",
+  [
+   {
+    "name": "# AUDIT TASK RUNNER STARTED.",
+    "status": "Pass"
+   },
+   {
+    "name": "> [test] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  Set buffer to null before set non-null did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Set buffer first normally did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Set buffer a second time did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Set buffer to null did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Set buffer to null again, to make sure did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Set buffer to non-null to verify it is set did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "< [test] All assertions passed. (total 6 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"test\"",
+    "status": "Pass"
+   },
+   {
+    "name": "# AUDIT TASK RUNNER FINISHED: 1 tasks ran successfully.",
+    "status": "Pass"
+   },
+   {
+    "name": "Audit report",
+    "status": "Pass"
+   }
+  ]
+ ],
+ [
+  "webaudio/the-audio-api/the-analysernode-interface/realtimeanalyser-basic.html",
+  [
+   {
+    "name": "Basic AnalyserNode test",
+    "status": "Pass"
+   }
+  ]
+ ],
+ [
+  "webaudio/the-audio-api/the-mediastreamaudiodestinationnode-interface/ctor-mediastreamaudiodestination.html",
+  [
+   {
+    "name": "AudioContext can be created without throwing",
+    "status": "Pass"
+   },
+   {
+    "name": "MediaStreamAudioDestinationNode: invalid constructor cases",
+    "status": "Pass"
+   },
+   {
+    "name": "MediaStreamAudioDestinationNode: default constructor behavior",
+    "status": "Pass"
+   },
+   {
+    "name": "MediaStreamAudioDestinationNode applies channelCount from options",
+    "status": "Pass"
+   }
+  ]
+ ],
+ [
+  "webaudio/the-audio-api/the-offlineaudiocontext-interface/offlineaudiocontext-detached-execution-context.html",
+  [
+   {
+    "name": "# AUDIT TASK RUNNER STARTED.",
+    "status": "Pass"
+   },
+   {
+    "name": "> [decoding-on-detached-iframe] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  decodeAudioData() upon a detached iframe rejected correctly with InvalidStateError.",
+    "status": "Pass"
+   },
+   {
+    "name": "< [decoding-on-detached-iframe] All assertions passed. (total 1 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"decoding-on-detached-iframe\"",
+    "status": "Pass"
+   },
+   {
+    "name": "# AUDIT TASK RUNNER FINISHED: 1 tasks ran successfully.",
+    "status": "Pass"
+   },
+   {
+    "name": "Audit report",
+    "status": "Pass"
+   }
+  ]
+ ],
+ [
+  "webaudio/the-audio-api/the-oscillatornode-interface/osc-basic-waveform.html",
+  [
+   {
+    "name": "# AUDIT TASK RUNNER STARTED.",
+    "status": "Pass"
+   },
+   {
+    "name": "> [Test 0] Sine wave: 100 Hz",
+    "status": "Pass"
+   },
+   {
+    "name": "  Sine: 100 Hz equals [0,0.014247103594243526,0.028491314500570297,0.04272974282503128,0.056959498673677444,0.07117769122123718,0.08538143336772919,0.09956784546375275,0.11373404413461685,0.1278771609067917,0.14199431240558624,0.1560826450586319,0.17013929784297943,0.18416140973567963,0.19814614951610565,0.2120906561613083...] with an element-wise tolerance of {\"absoluteThreshold\":0.00002,\"relativeThreshold\":0}.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Sine: 100 Hz: SNR (db) is greater than or equal to 110.",
+    "status": "Pass"
+   },
+   {
+    "name": "< [Test 0] All assertions passed. (total 2 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"Test 0\"",
+    "status": "Pass"
+   },
+   {
+    "name": "> [Test 1] Sine wave: -100 Hz",
+    "status": "Pass"
+   },
+   {
+    "name": "  Sine: -100 Hz equals [0,-0.014247103594243526,-0.028491314500570297,-0.04272974282503128,-0.056959498673677444,-0.07117769122123718,-0.08538143336772919,-0.09956784546375275,-0.11373404413461685,-0.1278771609067917,-0.14199431240558624,-0.1560826450586319,-0.17013929784297943,-0.18416140973567963,-0.19814614951610565,-0.2120906561613083...] with an element-wise tolerance of {\"absoluteThreshold\":0.00002,\"relativeThreshold\":0}.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Sine: -100 Hz: SNR (db) is greater than or equal to 110.",
+    "status": "Pass"
+   },
+   {
+    "name": "< [Test 1] All assertions passed. (total 2 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"Test 1\"",
+    "status": "Pass"
+   },
+   {
+    "name": "> [Test 2] Sine wave: 2 Hz",
+    "status": "Pass"
+   },
+   {
+    "name": "  Sine: 2 Hz equals [0,0.0002849517040885985,0.000569903408177197,0.0008548550540581346,0.0011398065835237503,0.001424758112989366,0.0017097094096243382,0.0019946605898439884,0.0022796117700636387,0.0025645627174526453,0.0028495131991803646,0.003134463680908084,0.0034194139298051596,0.003704363713040948,0.003989313263446093,0.004274262581020594...] with an element-wise tolerance of {\"absoluteThreshold\":2e-7,\"relativeThreshold\":0}.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Sine: 2 Hz: SNR (db) is greater than or equal to 118.",
+    "status": "Pass"
+   },
+   {
+    "name": "< [Test 2] All assertions passed. (total 2 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"Test 2\"",
+    "status": "Pass"
+   },
+   {
+    "name": "> [Test 3] Sine wave: 1 Hz",
+    "status": "Pass"
+   },
+   {
+    "name": "  Sine: 1 Hz equals [0,0.00014247585204429924,0.0002849517040885985,0.00042742755613289773,0.000569903408177197,0.0007123792311176658,0.0008548550540581346,0.0009973308769986033,0.0011398065835237503,0.001282282406464219,0.001424758112989366,0.001567233819514513,0.0017097094096243382,0.0018521851161494851,0.0019946605898439884,0.0021371361799538136...] with an element-wise tolerance of {\"absoluteThreshold\":2e-7,\"relativeThreshold\":0}.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Sine: 1 Hz: SNR (db) is greater than or equal to 110.",
+    "status": "Pass"
+   },
+   {
+    "name": "< [Test 3] All assertions passed. (total 2 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"Test 3\"",
+    "status": "Pass"
+   },
+   {
+    "name": "> [Test 4] Custom wave: 100 Hz",
+    "status": "Pass"
+   },
+   {
+    "name": "  Custom: 100 Hz equals [1,1.0141456127166748,1.0280853509902954,1.0418163537979126,1.0553359985351562,1.0686413049697876,1.081729769706726,1.094598650932312,1.1072453260421753,1.1196671724319458,1.1318618059158325,1.1438266038894653,1.1555593013763428,1.1670573949813843,1.1783186197280884,1.189340591430664...] with an element-wise tolerance of {\"absoluteThreshold\":0.000055,\"relativeThreshold\":0}.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Custom: 100 Hz: SNR (db) is greater than or equal to 110.",
+    "status": "Pass"
+   },
+   {
+    "name": "< [Test 4] All assertions passed. (total 2 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"Test 4\"",
+    "status": "Pass"
+   },
+   {
+    "name": "> [Test 5] Custom wave: 1 Hz",
+    "status": "Pass"
+   },
+   {
+    "name": "  Custom: 1 Hz equals [1,1.0001424551010132,1.0002849102020264,1.0004273653030396,1.0005697011947632,1.0007121562957764,1.0008544921875,1.0009968280792236,1.0011391639709473,1.001281499862671,1.001423716545105,1.0015660524368286,1.0017082691192627,1.0018504858016968,1.0019927024841309,1.0021347999572754...] with an element-wise tolerance of {\"absoluteThreshold\":5e-7,\"relativeThreshold\":0}.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Custom: 1 Hz: SNR (db) is greater than or equal to 130.",
+    "status": "Pass"
+   },
+   {
+    "name": "< [Test 5] All assertions passed. (total 2 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"Test 5\"",
+    "status": "Pass"
+   },
+   {
+    "name": "# AUDIT TASK RUNNER FINISHED: 6 tasks ran successfully.",
+    "status": "Pass"
+   },
+   {
+    "name": "Audit report",
+    "status": "Pass"
+   }
+  ]
+ ],
+ [
+  "webaudio/the-audio-api/the-gainnode-interface/gain.html",
+  [
+   {
+    "name": "GainNode should scale gains properly across notes",
+    "status": "Pass"
+   }
+  ]
+ ],
+ [
+  "webaudio/the-audio-api/the-audioparam-interface/audioparam-method-chaining.html",
+  [
+   {
+    "name": "AudioParam: Each method returns the same object to allow chaining",
+    "status": "Pass"
+   },
+   {
+    "name": "AudioParam: Chaining with invalid operations does not apply later effects",
+    "status": "Pass"
+   },
+   {
+    "name": "AudioParam: Chaining of envelope methods schedules values as expected",
+    "status": "Pass"
+   }
+  ]
+ ],
+ [
+  "webaudio/the-audio-api/the-audioparam-interface/audioparam-nominal-range.html",
+  [
+   {
+    "name": "# AUDIT TASK RUNNER STARTED.",
+    "status": "Pass"
+   },
+   {
+    "name": "> [initialize] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  Create offline context for tests did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Create online context for tests did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "< [initialize] All assertions passed. (total 2 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"initialize\"",
+    "status": "Pass"
+   },
+   {
+    "name": "> [Offline createGain] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.gain.minValue is equal to -3.4028234663852886e+38.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.gain.maxValue is equal to 3.4028234663852886e+38.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.gain.minValue = 42 is not equal to 42.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.gain.minValue is read-only is equal to true.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.gain.maxValue = 42 is not equal to 42.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.gain.maxValue is read-only is equal to true.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Nominal ranges for AudioParam(s) of _zwWANode are correct",
+    "status": "Pass"
+   },
+   {
+    "name": "< [Offline createGain] All assertions passed. (total 7 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"Offline createGain\"",
+    "status": "Pass"
+   },
+   {
+    "name": "> [Offline createDelay] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.delayTime.minValue is equal to 0.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.delayTime.maxValue is equal to 1.5.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.delayTime.minValue = 42 is not equal to 42.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.delayTime.minValue is read-only is equal to true.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.delayTime.maxValue = 42 is not equal to 42.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.delayTime.maxValue is read-only is equal to true.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Set _zwWANode.delayTime.value = -1 is equal to 0.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Set _zwWANode.delayTime.value = 4 is equal to 1.5.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.delayTime was clipped to lie within the nominal range is equal to true.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Nominal ranges for AudioParam(s) of _zwWANode are correct",
+    "status": "Pass"
+   },
+   {
+    "name": "< [Offline createDelay] All assertions passed. (total 10 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"Offline createDelay\"",
+    "status": "Pass"
+   },
+   {
+    "name": "> [Offline createBufferSource] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.playbackRate.minValue is equal to -3.4028234663852886e+38.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.playbackRate.maxValue is equal to 3.4028234663852886e+38.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.playbackRate.minValue = 42 is not equal to 42.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.playbackRate.minValue is read-only is equal to true.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.playbackRate.maxValue = 42 is not equal to 42.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.playbackRate.maxValue is read-only is equal to true.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.detune.minValue is equal to -3.4028234663852886e+38.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.detune.maxValue is equal to 3.4028234663852886e+38.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.detune.minValue = 42 is not equal to 42.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.detune.minValue is read-only is equal to true.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.detune.maxValue = 42 is not equal to 42.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.detune.maxValue is read-only is equal to true.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Nominal ranges for AudioParam(s) of _zwWANode are correct",
+    "status": "Pass"
+   },
+   {
+    "name": "< [Offline createBufferSource] All assertions passed. (total 13 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"Offline createBufferSource\"",
+    "status": "Pass"
+   },
+   {
+    "name": "> [Offline createStereoPanner] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.pan.minValue is equal to -1.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.pan.maxValue is equal to 1.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.pan.minValue = 42 is not equal to 42.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.pan.minValue is read-only is equal to true.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.pan.maxValue = 42 is not equal to 42.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.pan.maxValue is read-only is equal to true.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Set _zwWANode.pan.value = -3 is equal to -1.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Set _zwWANode.pan.value = 3 is equal to 1.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.pan was clipped to lie within the nominal range is equal to true.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Nominal ranges for AudioParam(s) of _zwWANode are correct",
+    "status": "Pass"
+   },
+   {
+    "name": "< [Offline createStereoPanner] All assertions passed. (total 10 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"Offline createStereoPanner\"",
+    "status": "Pass"
+   },
+   {
+    "name": "> [Offline createDynamicsCompressor] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.threshold.minValue is equal to -100.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.threshold.maxValue is equal to 0.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.threshold.minValue = 42 is not equal to 42.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.threshold.minValue is read-only is equal to true.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.threshold.maxValue = 42 is not equal to 42.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.threshold.maxValue is read-only is equal to true.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Set _zwWANode.threshold.value = -201 is equal to -100.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Set _zwWANode.threshold.value = 1 is equal to 0.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.threshold was clipped to lie within the nominal range is equal to true.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.knee.minValue is equal to 0.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.knee.maxValue is equal to 40.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.knee.minValue = 42 is not equal to 42.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.knee.minValue is read-only is equal to true.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.knee.maxValue = 42 is not equal to 42.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.knee.maxValue is read-only is equal to true.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Set _zwWANode.knee.value = -1 is equal to 0.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Set _zwWANode.knee.value = 81 is equal to 40.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.knee was clipped to lie within the nominal range is equal to true.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.ratio.minValue is equal to 1.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.ratio.maxValue is equal to 20.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.ratio.minValue = 42 is not equal to 42.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.ratio.minValue is read-only is equal to true.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.ratio.maxValue = 42 is not equal to 42.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.ratio.maxValue is read-only is equal to true.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Set _zwWANode.ratio.value = 1 is equal to 1.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Set _zwWANode.ratio.value = 41 is equal to 20.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.ratio was clipped to lie within the nominal range is equal to true.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.attack.minValue is equal to 0.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.attack.maxValue is equal to 1.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.attack.minValue = 42 is not equal to 42.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.attack.minValue is read-only is equal to true.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.attack.maxValue = 42 is not equal to 42.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.attack.maxValue is read-only is equal to true.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Set _zwWANode.attack.value = -1 is equal to 0.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Set _zwWANode.attack.value = 3 is equal to 1.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.attack was clipped to lie within the nominal range is equal to true.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.release.minValue is equal to 0.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.release.maxValue is equal to 1.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.release.minValue = 42 is not equal to 42.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.release.minValue is read-only is equal to true.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.release.maxValue = 42 is not equal to 42.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.release.maxValue is read-only is equal to true.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Set _zwWANode.release.value = -1 is equal to 0.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Set _zwWANode.release.value = 3 is equal to 1.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.release was clipped to lie within the nominal range is equal to true.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Nominal ranges for AudioParam(s) of _zwWANode are correct",
+    "status": "Pass"
+   },
+   {
+    "name": "< [Offline createDynamicsCompressor] All assertions passed. (total 46 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"Offline createDynamicsCompressor\"",
+    "status": "Pass"
+   },
+   {
+    "name": "> [Offline createBiquadFilter] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.gain.minValue is equal to -3.4028234663852886e+38.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.gain.maxValue is equal to 1541.273681640625.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.gain.minValue = 42 is not equal to 42.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.gain.minValue is read-only is equal to true.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.gain.maxValue = 42 is not equal to 42.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.gain.maxValue is read-only is equal to true.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Set _zwWANode.gain.value = 3083.54736328125 is equal to 1541.273681640625.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.gain was clipped to lie within the nominal range is equal to true.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.detune.minValue is equal to -153600.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.detune.maxValue is equal to 153600.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.detune.minValue = 42 is not equal to 42.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.detune.minValue is read-only is equal to true.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.detune.maxValue = 42 is not equal to 42.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.detune.maxValue is read-only is equal to true.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Set _zwWANode.detune.value = -307201 is equal to -153600.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Set _zwWANode.detune.value = 307201 is equal to 153600.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.detune was clipped to lie within the nominal range is equal to true.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.Q.minValue is equal to -3.4028234663852886e+38.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.Q.maxValue is equal to 3.4028234663852886e+38.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.Q.minValue = 42 is not equal to 42.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.Q.minValue is read-only is equal to true.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.Q.maxValue = 42 is not equal to 42.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.Q.maxValue is read-only is equal to true.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.frequency.minValue is equal to 0.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.frequency.maxValue is equal to 24000.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.frequency.minValue = 42 is not equal to 42.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.frequency.minValue is read-only is equal to true.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.frequency.maxValue = 42 is not equal to 42.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.frequency.maxValue is read-only is equal to true.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Set _zwWANode.frequency.value = -1 is equal to 0.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Set _zwWANode.frequency.value = 48001 is equal to 24000.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.frequency was clipped to lie within the nominal range is equal to true.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Nominal ranges for AudioParam(s) of _zwWANode are correct",
+    "status": "Pass"
+   },
+   {
+    "name": "< [Offline createBiquadFilter] All assertions passed. (total 33 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"Offline createBiquadFilter\"",
+    "status": "Pass"
+   },
+   {
+    "name": "> [Offline createOscillator] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.detune.minValue is equal to -153600.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.detune.maxValue is equal to 153600.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.detune.minValue = 42 is not equal to 42.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.detune.minValue is read-only is equal to true.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.detune.maxValue = 42 is not equal to 42.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.detune.maxValue is read-only is equal to true.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Set _zwWANode.detune.value = -307201 is equal to -153600.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Set _zwWANode.detune.value = 307201 is equal to 153600.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.detune was clipped to lie within the nominal range is equal to true.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.frequency.minValue is equal to -24000.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.frequency.maxValue is equal to 24000.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.frequency.minValue = 42 is not equal to 42.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.frequency.minValue is read-only is equal to true.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.frequency.maxValue = 42 is not equal to 42.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.frequency.maxValue is read-only is equal to true.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Set _zwWANode.frequency.value = -48001 is equal to -24000.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Set _zwWANode.frequency.value = 48001 is equal to 24000.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.frequency was clipped to lie within the nominal range is equal to true.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Nominal ranges for AudioParam(s) of _zwWANode are correct",
+    "status": "Pass"
+   },
+   {
+    "name": "< [Offline createOscillator] All assertions passed. (total 19 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"Offline createOscillator\"",
+    "status": "Pass"
+   },
+   {
+    "name": "> [Offline createPanner] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.positionX.minValue is equal to -3.4028234663852886e+38.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.positionX.maxValue is equal to 3.4028234663852886e+38.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.positionX.minValue = 42 is not equal to 42.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.positionX.minValue is read-only is equal to true.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.positionX.maxValue = 42 is not equal to 42.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.positionX.maxValue is read-only is equal to true.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.positionY.minValue is equal to -3.4028234663852886e+38.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.positionY.maxValue is equal to 3.4028234663852886e+38.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.positionY.minValue = 42 is not equal to 42.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.positionY.minValue is read-only is equal to true.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.positionY.maxValue = 42 is not equal to 42.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.positionY.maxValue is read-only is equal to true.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.positionZ.minValue is equal to -3.4028234663852886e+38.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.positionZ.maxValue is equal to 3.4028234663852886e+38.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.positionZ.minValue = 42 is not equal to 42.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.positionZ.minValue is read-only is equal to true.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.positionZ.maxValue = 42 is not equal to 42.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.positionZ.maxValue is read-only is equal to true.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.orientationX.minValue is equal to -3.4028234663852886e+38.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.orientationX.maxValue is equal to 3.4028234663852886e+38.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.orientationX.minValue = 42 is not equal to 42.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.orientationX.minValue is read-only is equal to true.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.orientationX.maxValue = 42 is not equal to 42.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.orientationX.maxValue is read-only is equal to true.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.orientationY.minValue is equal to -3.4028234663852886e+38.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.orientationY.maxValue is equal to 3.4028234663852886e+38.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.orientationY.minValue = 42 is not equal to 42.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.orientationY.minValue is read-only is equal to true.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.orientationY.maxValue = 42 is not equal to 42.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.orientationY.maxValue is read-only is equal to true.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.orientationZ.minValue is equal to -3.4028234663852886e+38.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.orientationZ.maxValue is equal to 3.4028234663852886e+38.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.orientationZ.minValue = 42 is not equal to 42.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.orientationZ.minValue is read-only is equal to true.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.orientationZ.maxValue = 42 is not equal to 42.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.orientationZ.maxValue is read-only is equal to true.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Nominal ranges for AudioParam(s) of _zwWANode are correct",
+    "status": "Pass"
+   },
+   {
+    "name": "< [Offline createPanner] All assertions passed. (total 37 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"Offline createPanner\"",
+    "status": "Pass"
+   },
+   {
+    "name": "> [Offline createConstantSource] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.offset.minValue is equal to -3.4028234663852886e+38.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.offset.maxValue is equal to 3.4028234663852886e+38.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.offset.minValue = 42 is not equal to 42.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.offset.minValue is read-only is equal to true.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.offset.maxValue = 42 is not equal to 42.",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode.offset.maxValue is read-only is equal to true.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Nominal ranges for AudioParam(s) of _zwWANode are correct",
+    "status": "Pass"
+   },
+   {
+    "name": "< [Offline createConstantSource] All assertions passed. (total 7 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"Offline createConstantSource\"",
+    "status": "Pass"
+   },
+   {
+    "name": "> [Offline createBuffer] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  AudioBuffer has no AudioParams as expected",
+    "status": "Pass"
+   },
+   {
+    "name": "< [Offline createBuffer] All assertions passed. (total 1 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"Offline createBuffer\"",
+    "status": "Pass"
+   },
+   {
+    "name": "> [Offline createIIRFilter] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode has no AudioParams as expected",
+    "status": "Pass"
+   },
+   {
+    "name": "< [Offline createIIRFilter] All assertions passed. (total 1 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"Offline createIIRFilter\"",
+    "status": "Pass"
+   },
+   {
+    "name": "> [Offline createWaveShaper] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode has no AudioParams as expected",
+    "status": "Pass"
+   },
+   {
+    "name": "< [Offline createWaveShaper] All assertions passed. (total 1 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"Offline createWaveShaper\"",
+    "status": "Pass"
+   },
+   {
+    "name": "> [Offline createConvolver] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode has no AudioParams as expected",
+    "status": "Pass"
+   },
+   {
+    "name": "< [Offline createConvolver] All assertions passed. (total 1 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"Offline createConvolver\"",
+    "status": "Pass"
+   },
+   {
+    "name": "> [Offline createAnalyser] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode has no AudioParams as expected",
+    "status": "Pass"
+   },
+   {
+    "name": "< [Offline createAnalyser] All assertions passed. (total 1 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"Offline createAnalyser\"",
+    "status": "Pass"
+   },
+   {
+    "name": "> [Offline createScriptProcessor] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode has no AudioParams as expected",
+    "status": "Pass"
+   },
+   {
+    "name": "< [Offline createScriptProcessor] All assertions passed. (total 1 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"Offline createScriptProcessor\"",
+    "status": "Pass"
+   },
+   {
+    "name": "> [Offline createPeriodicWave] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  PeriodicWave has no AudioParams as expected",
+    "status": "Pass"
+   },
+   {
+    "name": "< [Offline createPeriodicWave] All assertions passed. (total 1 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"Offline createPeriodicWave\"",
+    "status": "Pass"
+   },
+   {
+    "name": "> [Offline createChannelSplitter] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode has no AudioParams as expected",
+    "status": "Pass"
+   },
+   {
+    "name": "< [Offline createChannelSplitter] All assertions passed. (total 1 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"Offline createChannelSplitter\"",
+    "status": "Pass"
+   },
+   {
+    "name": "> [Offline createChannelMerger] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode has no AudioParams as expected",
+    "status": "Pass"
+   },
+   {
+    "name": "< [Offline createChannelMerger] All assertions passed. (total 1 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"Offline createChannelMerger\"",
+    "status": "Pass"
+   },
+   {
+    "name": "> [Online createMediaElementSource] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode has no AudioParams as expected",
+    "status": "Pass"
+   },
+   {
+    "name": "< [Online createMediaElementSource] All assertions passed. (total 1 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"Online createMediaElementSource\"",
+    "status": "Pass"
+   },
+   {
+    "name": "> [Online createMediaStreamDestination] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  _zwWANode has no AudioParams as expected",
+    "status": "Pass"
+   },
+   {
+    "name": "< [Online createMediaStreamDestination] All assertions passed. (total 1 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"Online createMediaStreamDestination\"",
+    "status": "Pass"
+   },
+   {
+    "name": "> [AudioListener] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  Object.positionX.minValue is equal to -3.4028234663852886e+38.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Object.positionX.maxValue is equal to 3.4028234663852886e+38.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Object.positionX.minValue = 42 is not equal to 42.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Object.positionX.minValue is read-only is equal to true.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Object.positionX.maxValue = 42 is not equal to 42.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Object.positionX.maxValue is read-only is equal to true.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Object.positionY.minValue is equal to -3.4028234663852886e+38.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Object.positionY.maxValue is equal to 3.4028234663852886e+38.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Object.positionY.minValue = 42 is not equal to 42.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Object.positionY.minValue is read-only is equal to true.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Object.positionY.maxValue = 42 is not equal to 42.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Object.positionY.maxValue is read-only is equal to true.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Object.positionZ.minValue is equal to -3.4028234663852886e+38.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Object.positionZ.maxValue is equal to 3.4028234663852886e+38.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Object.positionZ.minValue = 42 is not equal to 42.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Object.positionZ.minValue is read-only is equal to true.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Object.positionZ.maxValue = 42 is not equal to 42.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Object.positionZ.maxValue is read-only is equal to true.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Object.forwardX.minValue is equal to -3.4028234663852886e+38.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Object.forwardX.maxValue is equal to 3.4028234663852886e+38.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Object.forwardX.minValue = 42 is not equal to 42.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Object.forwardX.minValue is read-only is equal to true.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Object.forwardX.maxValue = 42 is not equal to 42.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Object.forwardX.maxValue is read-only is equal to true.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Object.forwardY.minValue is equal to -3.4028234663852886e+38.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Object.forwardY.maxValue is equal to 3.4028234663852886e+38.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Object.forwardY.minValue = 42 is not equal to 42.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Object.forwardY.minValue is read-only is equal to true.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Object.forwardY.maxValue = 42 is not equal to 42.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Object.forwardY.maxValue is read-only is equal to true.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Object.forwardZ.minValue is equal to -3.4028234663852886e+38.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Object.forwardZ.maxValue is equal to 3.4028234663852886e+38.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Object.forwardZ.minValue = 42 is not equal to 42.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Object.forwardZ.minValue is read-only is equal to true.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Object.forwardZ.maxValue = 42 is not equal to 42.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Object.forwardZ.maxValue is read-only is equal to true.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Object.upX.minValue is equal to -3.4028234663852886e+38.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Object.upX.maxValue is equal to 3.4028234663852886e+38.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Object.upX.minValue = 42 is not equal to 42.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Object.upX.minValue is read-only is equal to true.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Object.upX.maxValue = 42 is not equal to 42.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Object.upX.maxValue is read-only is equal to true.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Object.upY.minValue is equal to -3.4028234663852886e+38.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Object.upY.maxValue is equal to 3.4028234663852886e+38.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Object.upY.minValue = 42 is not equal to 42.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Object.upY.minValue is read-only is equal to true.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Object.upY.maxValue = 42 is not equal to 42.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Object.upY.maxValue is read-only is equal to true.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Object.upZ.minValue is equal to -3.4028234663852886e+38.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Object.upZ.maxValue is equal to 3.4028234663852886e+38.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Object.upZ.minValue = 42 is not equal to 42.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Object.upZ.minValue is read-only is equal to true.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Object.upZ.maxValue = 42 is not equal to 42.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Object.upZ.maxValue is read-only is equal to true.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Nominal ranges for AudioParam(s) of Object are correct",
+    "status": "Pass"
+   },
+   {
+    "name": "< [AudioListener] All assertions passed. (total 55 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"AudioListener\"",
+    "status": "Pass"
+   },
+   {
+    "name": "> [verifyTests] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  Number of nodes not tested : 0",
+    "status": "Pass"
+   },
+   {
+    "name": "< [verifyTests] All assertions passed. (total 1 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"verifyTests\"",
+    "status": "Pass"
+   },
+   {
+    "name": "> [automation] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  Test automations (check console logs) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "< [automation] All assertions passed. (total 1 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"automation\"",
+    "status": "Pass"
+   },
+   {
+    "name": "# AUDIT TASK RUNNER FINISHED: 24 tasks ran successfully.",
+    "status": "Pass"
+   },
+   {
+    "name": "Audit report",
+    "status": "Pass"
+   }
+  ]
+ ],
+ [
+  "webaudio/the-audio-api/the-audiobuffer-interface/audiobuffer-copy-channel.html",
+  [
+   {
+    "name": "# AUDIT TASK RUNNER STARTED.",
+    "status": "Pass"
+   },
+   {
+    "name": "> [initialize] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  Initialized values contains only the constant -1.",
+    "status": "Pass"
+   },
+   {
+    "name": "< [initialize] All assertions passed. (total 1 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"initialize\"",
+    "status": "Pass"
+   },
+   {
+    "name": "> [copyFrom-exceptions] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  AudioBuffer.prototype.copyFromChannel does exist.",
+    "status": "Pass"
+   },
+   {
+    "name": "  0: buffer = context.createBuffer(3, 16, context.sampleRate) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  1: buffer.copyFromChannel(null, 0) threw TypeError: \"Failed to execute 'copyFromChannel' on 'AudioBuffer': parameter 1 is not of type 'Float32Array'.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  2: buffer.copyFromChannel(context, 0) threw TypeError: \"Failed to execute 'copyFromChannel' on 'AudioBuffer': parameter 1 is not of type 'Float32Array'.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  3: buffer.copyFromChannel(x, -1) threw IndexSizeError: \"Failed to execute 'copyFromChannel' on 'AudioBuffer': channel index -1 is not a valid index.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  4: buffer.copyFromChannel(x, 3) threw IndexSizeError: \"Failed to execute 'copyFromChannel' on 'AudioBuffer': channel index 3 is not a valid index.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  5: buffer.copyFromChannel(x, 0, -1) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  6: buffer.copyFromChannel(x, 0, 16) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  7: buffer.copyFromChannel(x, 3) threw IndexSizeError: \"Failed to execute 'copyFromChannel' on 'AudioBuffer': channel index 3 is not a valid index.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  8: buffer.copyFromChannel(SharedArrayBuffer view, 0) threw TypeError: \"Failed to execute 'copyFromChannel' on 'AudioBuffer': parameter 1 is not of type 'Float32Array'.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  9: buffer.copyFromChannel(SharedArrayBuffer view, 0, 0) threw TypeError: \"Failed to execute 'copyFromChannel' on 'AudioBuffer': parameter 1 is not of type 'Float32Array'.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "< [copyFrom-exceptions] All assertions passed. (total 11 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"copyFrom-exceptions\"",
+    "status": "Pass"
+   },
+   {
+    "name": "> [copyTo-exceptions] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  AudioBuffer.prototype.copyToChannel does exist.",
+    "status": "Pass"
+   },
+   {
+    "name": "  0: buffer.copyToChannel(null, 0) threw TypeError: \"Failed to execute 'copyToChannel' on 'AudioBuffer': parameter 1 is not of type 'Float32Array'.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  1: buffer.copyToChannel(context, 0) threw TypeError: \"Failed to execute 'copyToChannel' on 'AudioBuffer': parameter 1 is not of type 'Float32Array'.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  2: buffer.copyToChannel(x, -1) threw IndexSizeError: \"Failed to execute 'copyToChannel' on 'AudioBuffer': channel index -1 is not a valid index.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  3: buffer.copyToChannel(x, 3) threw IndexSizeError: \"Failed to execute 'copyToChannel' on 'AudioBuffer': channel index 3 is not a valid index.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  4: buffer.copyToChannel(x, 0, -1) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  5: buffer.copyToChannel(x, 0, 16) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  6: buffer.copyToChannel(x, 3) threw IndexSizeError: \"Failed to execute 'copyToChannel' on 'AudioBuffer': channel index 3 is not a valid index.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  7: buffer.copyToChannel(SharedArrayBuffer view, 0) threw TypeError: \"Failed to execute 'copyToChannel' on 'AudioBuffer': parameter 1 is not of type 'Float32Array'.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  8: buffer.copyToChannel(SharedArrayBuffer view, 0, 0) threw TypeError: \"Failed to execute 'copyToChannel' on 'AudioBuffer': parameter 1 is not of type 'Float32Array'.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "< [copyTo-exceptions] All assertions passed. (total 10 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"copyTo-exceptions\"",
+    "status": "Pass"
+   },
+   {
+    "name": "> [copyFrom-validate] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  buffer.copyFromChannel(dst8, 0) is identical to the array [1,2,3,4,5,6,7,8].",
+    "status": "Pass"
+   },
+   {
+    "name": "  buffer.copyFromChannel(dst8, 1) is identical to the array [2,3,4,5,6,7,8,9].",
+    "status": "Pass"
+   },
+   {
+    "name": "  buffer.copyFromChannel(dst8, 2) is identical to the array [3,4,5,6,7,8,9,10].",
+    "status": "Pass"
+   },
+   {
+    "name": "  buffer.copyFromChannel(dst8, 0, 1) is identical to the array [2,3,4,5,6,7,8,9].",
+    "status": "Pass"
+   },
+   {
+    "name": "  buffer.copyFromChannel(dst8, 1, 1) is identical to the array [3,4,5,6,7,8,9,10].",
+    "status": "Pass"
+   },
+   {
+    "name": "  buffer.copyFromChannel(dst8, 2, 1) is identical to the array [4,5,6,7,8,9,10,11].",
+    "status": "Pass"
+   },
+   {
+    "name": "  buffer.copyFromChannel(dst8, 0, 11) is identical to the array [12,13,14,15,16,-1,-1,-1].",
+    "status": "Pass"
+   },
+   {
+    "name": "  buffer.copyFromChannel(dst8, 1, 11) is identical to the array [13,14,15,16,17,-1,-1,-1].",
+    "status": "Pass"
+   },
+   {
+    "name": "  buffer.copyFromChannel(dst8, 2, 11) is identical to the array [14,15,16,17,18,-1,-1,-1].",
+    "status": "Pass"
+   },
+   {
+    "name": "  buffer.copyFromChannel(dst26, 0) is identical to the array [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16...].",
+    "status": "Pass"
+   },
+   {
+    "name": "  buffer.copyFromChannel(dst26, 1) is identical to the array [2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17...].",
+    "status": "Pass"
+   },
+   {
+    "name": "  buffer.copyFromChannel(dst26, 2) is identical to the array [3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18...].",
+    "status": "Pass"
+   },
+   {
+    "name": "< [copyFrom-validate] All assertions passed. (total 12 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"copyFrom-validate\"",
+    "status": "Pass"
+   },
+   {
+    "name": "> [copyTo-validate] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  buffer = createConstantBuffer(context, 16, [-1,-1,-1]) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  buffer.copyToChannel(src, 0) is identical to the array [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16...].",
+    "status": "Pass"
+   },
+   {
+    "name": "  buffer.copyToChannel(src, 1) is identical to the array [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16...].",
+    "status": "Pass"
+   },
+   {
+    "name": "  buffer.copyToChannel(src, 2) is identical to the array [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16...].",
+    "status": "Pass"
+   },
+   {
+    "name": "  buffer.copyToChannel(src10, 0) is identical to the array [1,2,3,4,5,6,7,8,9,10,-1,-1,-1,-1,-1,-1...].",
+    "status": "Pass"
+   },
+   {
+    "name": "  buffer.copyToChannel(src10, 1) is identical to the array [1,2,3,4,5,6,7,8,9,10,-1,-1,-1,-1,-1,-1...].",
+    "status": "Pass"
+   },
+   {
+    "name": "  buffer.copyToChannel(src10, 2) is identical to the array [1,2,3,4,5,6,7,8,9,10,-1,-1,-1,-1,-1,-1...].",
+    "status": "Pass"
+   },
+   {
+    "name": "  buffer.copyToChannel(src10, 0, 5) is identical to the array [-1,-1,-1,-1,-1,1,2,3,4,5,6,7,8,9,10,-1...].",
+    "status": "Pass"
+   },
+   {
+    "name": "  buffer.copyToChannel(src10, 1, 5) is identical to the array [-1,-1,-1,-1,-1,1,2,3,4,5,6,7,8,9,10,-1...].",
+    "status": "Pass"
+   },
+   {
+    "name": "  buffer.copyToChannel(src10, 2, 5) is identical to the array [-1,-1,-1,-1,-1,1,2,3,4,5,6,7,8,9,10,-1...].",
+    "status": "Pass"
+   },
+   {
+    "name": "< [copyTo-validate] All assertions passed. (total 10 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"copyTo-validate\"",
+    "status": "Pass"
+   },
+   {
+    "name": "# AUDIT TASK RUNNER FINISHED: 5 tasks ran successfully.",
+    "status": "Pass"
+   },
+   {
+    "name": "Audit report",
+    "status": "Pass"
+   }
+  ]
+ ],
+ [
+  "webaudio/the-audio-api/the-audiobuffer-interface/ctor-audiobuffer.html",
+  [
+   {
+    "name": "# AUDIT TASK RUNNER STARTED.",
+    "status": "Pass"
+   },
+   {
+    "name": "> [initialize] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  context = new OfflineAudioContext(...) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "< [initialize] All assertions passed. (total 1 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"initialize\"",
+    "status": "Pass"
+   },
+   {
+    "name": "> [invalid constructor] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  new AudioBuffer() threw TypeError: \"Failed to construct 'AudioBuffer': The provided value is not of type 'AudioBufferOptions'.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  new AudioBuffer(1) threw TypeError: \"Failed to construct 'AudioBuffer': The provided value is not of type 'AudioBufferOptions'.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  new AudioBuffer(Date, 42) threw TypeError: \"Failed to construct 'AudioBuffer': The provided value is not of type 'AudioBufferOptions'.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "< [invalid constructor] All assertions passed. (total 3 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"invalid constructor\"",
+    "status": "Pass"
+   },
+   {
+    "name": "> [required options] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  buffer = new AudioBuffer({}) threw TypeError: \"Failed to construct 'AudioBuffer': Failed to read the 'length' property from 'AudioBufferOptions': Required member is undefined.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  buffer = new AudioBuffer({length: 1}) threw TypeError: \"Failed to construct 'AudioBuffer': Failed to read the 'sampleRate' property from 'AudioBufferOptions': Required member is undefined.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  buffer = new AudioBuffer({sampleRate: 48000}) threw TypeError: \"Failed to construct 'AudioBuffer': Failed to read the 'length' property from 'AudioBufferOptions': Required member is undefined.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  buffer = new AudioBuffer({numberOfChannels: 1} threw TypeError: \"Failed to construct 'AudioBuffer': Failed to read the 'length' property from 'AudioBufferOptions': Required member is undefined.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  buffer0 = new AudioBuffer({length: 21, sampleRate: 48000} did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  buffer0.numberOfChannels is equal to 1.",
+    "status": "Pass"
+   },
+   {
+    "name": "  buffer0.length is equal to 21.",
+    "status": "Pass"
+   },
+   {
+    "name": "  buffer0.sampleRate is equal to 48000.",
+    "status": "Pass"
+   },
+   {
+    "name": "  buffer1 = new AudioBuffer({numberOfChannels: 3, length: 1, sampleRate: 48000}) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  buffer1.numberOfChannels is equal to 3.",
+    "status": "Pass"
+   },
+   {
+    "name": "  buffer1.length is equal to 1.",
+    "status": "Pass"
+   },
+   {
+    "name": "  buffer1.sampleRate is equal to 48000.",
+    "status": "Pass"
+   },
+   {
+    "name": "< [required options] All assertions passed. (total 12 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"required options\"",
+    "status": "Pass"
+   },
+   {
+    "name": "> [invalid option values] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  new AudioBuffer({\"numberOfChannels\":0,\"length\":1,\"sampleRate\":16000}) threw NotSupportedError: \"Failed to construct 'AudioBuffer': numberOfChannels 0 is not in range [1, 32].\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  new AudioBuffer({\"numberOfChannels\":99,\"length\":0,\"sampleRate\":16000}) threw NotSupportedError: \"Failed to construct 'AudioBuffer': numberOfChannels 99 is not in range [1, 32].\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  new AudioBuffer({\"numberOfChannels\":1,\"length\":0,\"sampleRate\":16000}) threw NotSupportedError: \"Failed to construct 'AudioBuffer': length 0 is not in range [1, 4294967295].\".",
+    "status": "Pass"
+   },
+   {
+    "name": "  new AudioBuffer({\"numberOfChannels\":1,\"length\":1,\"sampleRate\":100}) threw NotSupportedError: \"Failed to construct 'AudioBuffer': sampleRate 100 is not in range [8000, 96000].\".",
+    "status": "Pass"
+   },
+   {
+    "name": "< [invalid option values] All assertions passed. (total 4 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"invalid option values\"",
+    "status": "Pass"
+   },
+   {
+    "name": "> [default constructor] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  buffer = new AudioBuffer({\"numberOfChannels\":5,\"length\":17,\"sampleRate\":16000}) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  buffer.numberOfChannels is equal to 5.",
+    "status": "Pass"
+   },
+   {
+    "name": "  buffer.length is equal to 17.",
+    "status": "Pass"
+   },
+   {
+    "name": "  buffer.sampleRate is equal to 16000.",
+    "status": "Pass"
+   },
+   {
+    "name": "< [default constructor] All assertions passed. (total 4 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"default constructor\"",
+    "status": "Pass"
+   },
+   {
+    "name": "> [valid constructor] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  new AudioBuffer({\"numberOfChannels\":3,\"length\":42,\"sampleRate\":54321}) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  buffer.numberOfChannels is equal to 3.",
+    "status": "Pass"
+   },
+   {
+    "name": "  buffer.length is equal to 42.",
+    "status": "Pass"
+   },
+   {
+    "name": "  buffer.sampleRate is equal to 54321.",
+    "status": "Pass"
+   },
+   {
+    "name": "  buffer.getChannelData(0) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  buffer.getChannelData(0) length is equal to 42.",
+    "status": "Pass"
+   },
+   {
+    "name": "  buffer.getChannelData(1) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  buffer.getChannelData(1) length is equal to 42.",
+    "status": "Pass"
+   },
+   {
+    "name": "  buffer.getChannelData(2) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "  buffer.getChannelData(2) length is equal to 42.",
+    "status": "Pass"
+   },
+   {
+    "name": "  buffer.getChannelData(3) threw IndexSizeError: \"Failed to execute 'getChannelData' on 'AudioBuffer': channel index 3 is not a valid index.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "< [valid constructor] All assertions passed. (total 11 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"valid constructor\"",
+    "status": "Pass"
+   },
+   {
+    "name": "> [multiple contexts] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  c1 result is identical to the array [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16...].",
+    "status": "Pass"
+   },
+   {
+    "name": "  c2 result is identical to the array [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16...].",
+    "status": "Pass"
+   },
+   {
+    "name": "  AudioBuffer shared between two different contexts correctly",
+    "status": "Pass"
+   },
+   {
+    "name": "< [multiple contexts] All assertions passed. (total 3 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"multiple contexts\"",
+    "status": "Pass"
+   },
+   {
+    "name": "# AUDIT TASK RUNNER FINISHED: 7 tasks ran successfully.",
+    "status": "Pass"
+   },
+   {
+    "name": "Audit report",
+    "status": "Pass"
+   }
+  ]
+ ],
+ [
+  "webaudio/the-audio-api/the-iirfilternode-interface/ctor-iirfilter.html",
+  [
+   {
+    "name": "Initialize OfflineAudioContext",
+    "status": "Pass"
+   },
+   {
+    "name": "Invalid IIRFilterNode constructor should throw",
+    "status": "Pass"
+   },
+   {
+    "name": "Default IIRFilterNode constructor with feedforward/feedback",
+    "status": "Pass"
+   },
+   {
+    "name": "Test AudioNodeOptions on IIRFilterNode",
+    "status": "Pass"
+   },
+   {
+    "name": "IIRFilterNode constructor should throw with missing required options",
+    "status": "Pass"
+   },
+   {
+    "name": "Functional test of IIRFilterNode constructor vs. legacy method",
+    "status": "Pass"
+   }
+  ]
+ ],
+ [
+  "webaudio/the-audio-api/the-periodicwave-interface/periodicWave.html",
+  [
+   {
+    "name": "# AUDIT TASK RUNNER STARTED.",
+    "status": "Pass"
+   },
+   {
+    "name": "> [create with factory method] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  context.createPeriodicWave(new Float32Array(8192), new Float32Array(8192)) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "< [create with factory method] All assertions passed. (total 1 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"create with factory method\"",
+    "status": "Pass"
+   },
+   {
+    "name": "> [different length with factory method] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  context.createPeriodicWave(new Float32Array(512), new Float32Array(4)) threw IndexSizeError: \"Failed to execute 'createPeriodicWave' on 'AudioContext': real and imag arrays must have the same length.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "< [different length with factory method] All assertions passed. (total 1 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"different length with factory method\"",
+    "status": "Pass"
+   },
+   {
+    "name": "> [too small with factory method] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  context.createPeriodicWave(new Float32Array(1), new Float32Array(1)) threw IndexSizeError: \"Failed to execute 'createPeriodicWave' on 'AudioContext': length of real array must be >= 2.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "< [too small with factory method] All assertions passed. (total 1 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"too small with factory method\"",
+    "status": "Pass"
+   },
+   {
+    "name": "> [create with constructor] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  new PeriodicWave(context, { real : new Float32Array(8192), imag : new Float32Array(8192) }) did not throw an exception.",
+    "status": "Pass"
+   },
+   {
+    "name": "< [create with constructor] All assertions passed. (total 1 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"create with constructor\"",
+    "status": "Pass"
+   },
+   {
+    "name": "> [different length with constructor] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  new PeriodicWave(context, { real : new Float32Array(8192), imag : new Float32Array(4) }) threw IndexSizeError: \"Failed to construct 'PeriodicWave': real and imag arrays must have the same length.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "< [different length with constructor] All assertions passed. (total 1 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"different length with constructor\"",
+    "status": "Pass"
+   },
+   {
+    "name": "> [too small with constructor] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  new PeriodicWave(context, { real : new Float32Array(1), imag : new Float32Array(1) }) threw IndexSizeError: \"Failed to construct 'PeriodicWave': length of real array must be >= 2.\".",
+    "status": "Pass"
+   },
+   {
+    "name": "< [too small with constructor] All assertions passed. (total 1 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"too small with constructor\"",
+    "status": "Pass"
+   },
+   {
+    "name": "> [output test] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  rendering PeriodicWave is identical to the array Object.",
+    "status": "Pass"
+   },
+   {
+    "name": "< [output test] All assertions passed. (total 1 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"output test\"",
+    "status": "Pass"
+   },
+   {
+    "name": "# AUDIT TASK RUNNER FINISHED: 7 tasks ran successfully.",
+    "status": "Pass"
+   },
+   {
+    "name": "Audit report",
+    "status": "Pass"
+   }
+  ]
+ ],
+ [
+  "webaudio/the-audio-api/the-oscillatornode-interface/detune-limiting.html",
+  [
+   {
+    "name": "Oscillator with large detune produces 0 output at Nyquist or above",
+    "status": "Pass"
+   },
+   {
+    "name": "Oscillator with detune automation becomes silent above Nyquist",
+    "status": "Pass"
+   }
+  ]
+ ],
+ [
+  "webaudio/the-audio-api/the-oscillatornode-interface/detune-overflow.html",
+  [
+   {
+    "name": "# AUDIT TASK RUNNER STARTED.",
+    "status": "Pass"
+   },
+   {
+    "name": "> [detune overflow] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  Osc freq and detune outside nominal range contains only the constant 0.",
+    "status": "Pass"
+   },
+   {
+    "name": "< [detune overflow] All assertions passed. (total 1 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"detune overflow\"",
+    "status": "Pass"
+   },
+   {
+    "name": "# AUDIT TASK RUNNER FINISHED: 1 tasks ran successfully.",
+    "status": "Pass"
+   },
+   {
+    "name": "Audit report",
+    "status": "Pass"
+   }
+  ]
+ ]
+]
