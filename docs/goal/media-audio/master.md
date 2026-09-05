@@ -1,3 +1,14 @@
+**最后更新**: 2026-09-05（**第十三增量——组合态 flake 修复 + 环境复验（零 WPT
+面变化，50 用例 1418P/0F = 100% 维持）**：① `webaudio_bridge_nullsink_observable_chain`
+全量并发 flake 根因修复——`__osc.start(0)` 桥把 started_at_ms 锚在 registry epoch 的
+`elapsed()`（沙箱 setup 耗时 T，高负载下 90ms+），e2e 推进循环却从 tick=0 硬起步，
+tick<T 全被 `active_at` 门跳过 → 写入 (1000−T)×48 帧跌破 45k 容差线（实测 43632）；
+修复 = 推进起点改 `reg.now_ms()`（`now_ms` 提为 pub）对齐 epoch——测试侧锚定，零生产
+面改动。② CpalSink 环境自适应冒烟本机重跑 Ok 分支（构造 + start/write/pause/resume
+全通）——DC-2 设备真输出抽验在当前环境持续成立。③ wpt-data 缓存清点——
+oscillatornode-interface/periodicWave.html 为 404 残桩（上游该文件在
+the-periodicwave-interface/，第二十六批已导入正确路径；gitignored 不入库）。）
+**（注：下方「最后更新」第十二增量块为前轮记录，保留作历史）**
 **最后更新**: 2026-09-05（**D3 第十二增量——sub-sample-start 导入（50 用例
 1418P/0F = 100%）**：振荡器亚帧起点 ceil 语义（spec start——亚采样起点 t 的首
 输出帧 = ceil(t·rate)；整数起点恒等零回归）——`startFrame` floor→ceil 一处改动
@@ -5,7 +16,6 @@
 求值复用）全绿。此前第十增量注记「剩余 sub-sample-start 随 automation 精化复评」
 兑现。单测 `test_webaudio_oscillator_subsample_start_face_m3w7` 常驻。evidence
 刷新 50 用例 1418 subtest。）
-**（注：下方「最后更新」第十一增量块为前轮记录，保留作历史）**
 **最后更新**: 2026-09-05（**D3 第十一增量——OfflineAudioContext.oncomplete 落地 +
 audioparam ramp 对拍四件试导负结果（上游坏 helper，维持排除）**：① **oncomplete
 派发**（spec OfflineAudioCompletionEvent——event.renderedBuffer 承载渲染产物，
@@ -185,6 +195,9 @@ NullSink 双实现策略成文 + e2e 资产化（过零率锚点常驻）。
 **DC-2（音频管线端到端）🔄（余设备真输出常驻）**：解码 → 重采样 → 混音 →
 设备输出——解码（symphonia mp3/vorbis + opus-decoder）✅、混音（Mixer 组件 +
 per-entry 增益联动 ✅）、重采样（symphonia 输出面覆盖；独立重采样器未实施——
+**2026-09-05 复验**：CpalSink 环境自适应冒烟本机重跑 Ok 分支（构造成功 +
+start/write/pause/resume 全通）——设备真输出抽验在当前环境持续成立，不构成
+DONE 阻塞）；
 fixture 采样率与 sink 匹配场景零需求，记录注记）、**设备输出 e2e 留桌面环境**
 （CpalSink 冒烟已过但非常驻——headless CI 无声卡的结构性边界，goal 契约允许
 「真输出只在本地有声卡环境抽验」）。headless 总线断言常驻 ✅（NullSink 帧数 +
