@@ -176,8 +176,10 @@ impl Mp4H264Decoder {
 
     /// seek 到目标位置（毫秒，媒体时间轴）——spec「seek」precise-seek 前向回退
     /// 形态（与 [`crate::decode::VideoDecoder::seek_to_ms`] 的 ② 回退路径同构）：
-    /// mp4 无 cue 索引面（stss/sync sample 索引随切片 3 评估）——从流首重建解码器
-    /// 前向解码至 ≥ target 的首帧，写入 pending（下一次 next_frame 先弹出）。
+    /// mp4 无 cue 索引面（stss/sync-sample 索引加速评估收束 2026-09-05：当前
+    /// fixture 为 2s 短流，前向回退 O(流长) 无可观察痛点；引入长 mp4 资产时随
+    /// 性能切片复评——不预做推测性优化）——从流首重建解码器前向解码至 ≥ target
+    /// 的首帧，写入 pending（下一次 next_frame 先弹出）。
     /// 语义契约：完成后的「下一次 [`Self::next_frame`]」返回 pts ≥ target 的首帧。
     /// https://html.spec.whatwg.org/multipage/media.html#seek
     pub fn seek_to_ms(&mut self, target_ms: u64) -> Result<(), DecodeError> {
