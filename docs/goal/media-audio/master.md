@@ -318,6 +318,8 @@ DONE 阻塞**；Mixer/重采样接线随设备切片可选推进）。
   underrun；非整帧写入拒收
 - 复核（2026-09-04 治理整固后终审）：fresh 跑 874P/0F（39 文件）与本档记录
   一致；验证基线 evidence 链 16 文件全在盘。
+  （巡检复验 2026-09-05：渲染流 d2fd8e173 组合态新基线 fresh 跑 **50 用例
+  1418P/0F 逐位一致**——100% 维持，纯验证轮零代码变更。）
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过
 - perf-gate（2026-09-04 全量复核：webaudio 第 14~18 批 shim 积累后）——GATE FAIL
   32/113 指标超预算，失败集横跨 12 crate（style-system/script-sandbox/webview/

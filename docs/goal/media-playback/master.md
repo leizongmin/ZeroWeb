@@ -276,6 +276,10 @@ goal Done Criteria 全满足。**
   含桥契约测试；webview 667 含桥 e2e + registry 4 + settle e2e 2；browser 411 under
   xvfb）；clippy 零警告；testharness-media 372P/0F/41PF 基线维持（桥 feature-detect
   回落面零回归实证）
+- 巡检复验（2026-09-05，渲染流 d2fd8e173 组合态新基线——纯验证轮零代码变更）：
+  make test 全量 **18921 全绿零失败**（组合态 SW import-order 测试 flake——
+  e55038a2a 无轮询漏改——已补片修复，commit 763cfd996）；webview/engine/media
+  套件全绿零回归。DC-1~5 审计结论（Done）不受影响。
 - 解码正确性锚点：fixture `sample-webm-vp9.webm` 首帧与 ffmpeg 7.1.5 rawvideo 参照
   逐字节一致（YUV 面）；全流 48 帧（2s @ 24fps）PTS 单调（0→1958ms）
 - 上屏 e2e 锚点：帧区 RGB 均值 108-138（testsrc2 ≈123.3，M2 切片 C 后与 ffmpeg

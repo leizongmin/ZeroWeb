@@ -627,6 +627,10 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
   （+7 净涨：7 项 mp4-face PF → Pass；PF 24→17）
   → 扩批 LIV（2026-09-05，canPlayType 能力表 PF 收窄——audio/webm 补 opus + avc1.4d401e
   Main 档转入）**638/653 = 97.7%**（+2 净涨零回归；Fail 0 / Timeout 0 / **PF 15**）
+  → 巡检复验（2026-09-05，渲染流 d2fd8e173 组合态新基线——纯验证轮零代码变更）：
+  fresh 跑 **638 Pass / 15 PreconditionFailed 逐位一致**（97.7% 维持；PF 全为选型面外
+  编解码，LIV 后无收窄面）。同轮 make test 全量 18921 全绿——SW import-order 测试
+  组合态 flake（无轮询漏改）已补片修复（commit 763cfd996，webview 域）。
 - 复核（2026-09-04 治理整固后终审）：fresh 跑 603P/0F/24PF（198 文件）与
   本档记录逐位一致；验证基线 evidence 链 26 文件全在盘；make test 18877/0。
   （扩批 XL 后：fresh 跑 609P/0F/24PF（201 文件）；扩批 XLI 后：fresh 跑
