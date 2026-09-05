@@ -7,7 +7,8 @@ use zero_css_parser::values::{ColorValue, DisplayValue, FloatValue, LengthValue}
 use zero_dom::{Document, NodeId, NodeKind};
 use zero_layout_engine::inline_finalization::{
     build_text_parent_override_map, resolve_tab_size_length_px, resolve_text_align, resolve_text_align_last,
-    resolve_text_indent, resolve_word_break_mode, subtree_has_text_decoration,
+    resolve_text_indent, resolve_word_break_mode, subtree_font_differs_from, subtree_has_block_elem,
+    subtree_has_text_decoration,
 };
 use zero_layout_engine::{FloatExclusion, InlineFormattingContext, LayoutBox, NodeIdMap};
 use zero_render_foundation::color::Color;
@@ -2463,15 +2464,24 @@ pub(super) fn has_direct_paintable_text(
                 .iter()
                 .any(|d| d.is_some_and(|dd| !is_inline_display(dd)))
         };
-        // inline-level 子元素须为叶文本容器（无元素子节点），排除 block-in-inline（R109 碎片化）。
-        let inline_children_have_elem = child_ids.iter().any(|c| {
-            styles.get(c).is_some_and(|s| is_inline_display(&s.display))
-                && doc
-                    .child_nodes(*c)
-                    .iter()
-                    .any(|gc| doc.get(*gc).is_some_and(|n| matches!(&n.kind, NodeKind::Element(_))))
+        // R207 曾要求 inline-level 子元素为**叶文本容器**（无元素子节点）——过宽守卫把
+        // 「inline 子含纯 inline 后代」（嵌套 <q> 独子、<div><span>a <span>b</span> c</span></div>）
+        // 也排除，容器无 stored IFC → paint 逐盒渲染 taffy 堆叠盒 → 文本三行堆叠
+        //（quotes-005/013/015/019 根因）。R4043 收窄为仅排除三类深路径域：①inline 子后代树
+        // 含**块级元素**（R109 block-in-inline 碎片化）；②inline 子树含 `<br>`（扁平化收集
+        // 吞嵌套 br，line-break-* control 段 + outline-004 载体）；③inline 子树含与子自身
+        // 字体度量不同的后代（outline-022 `#target{font-size:80px}`——扁平化字体错误）。
+        // 须与 layout 侧 compute_final_inline_layouts 的守卫同步（两端一致才走 use_stored）。
+        let inline_child_has_deep_path = child_ids.iter().any(|c| {
+            styles.get(c).is_some_and(|s| {
+                is_inline_display(&s.display)
+                    && (subtree_has_block_elem(doc, styles, *c)
+                        || InlineFormattingContext::inline_elem_has_nested_br(doc, *c)
+                        || InlineFormattingContext::subtree_has_ruby_elements(doc, *c)
+                        || subtree_font_differs_from(doc, styles, *c, s))
+            })
         });
-        has_inline_elem && !has_block_elem && !inline_children_have_elem
+        has_inline_elem && !has_block_elem && !inline_child_has_deep_path
     } else {
         false
     }

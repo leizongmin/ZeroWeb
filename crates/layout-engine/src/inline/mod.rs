@@ -1132,6 +1132,63 @@ impl InlineFormattingContext {
         }
         false
     }
+
+    /// R4043：元素自身及其子树中是否含 ruby 语义元素（ruby/rbc/rtc/rb/rt/rp）。
+    ///
+    /// ruby 布局（RT 注音定位、R1022 rt/rp 特化收集）不走普通 inline 扁平化语义；
+    /// PHASEA_STORE_EXT 守卫收窄后 ruby 子树若被 stored IFC 扁平化会破坏注音结构
+    ///（ruby-whitespace-001 ref 页 0.4→1.1% 实证），维持旧排除走旧路径。
+    /// **含自身**：调用点传 inline 子元素，`<rb><span>…</span></rb>` 的 rb 自身即 ruby
+    /// 元素而其后代无——只查后代漏检该形态。
+    pub fn subtree_has_ruby_elements(doc: &Document, node_id: NodeId) -> bool {
+        const RUBY_ELEMS: [&str; 6] = ["ruby", "rbc", "rtc", "rb", "rt", "rp"];
+        let Some(node) = doc.get(node_id) else {
+            return false;
+        };
+        if let NodeKind::Element(e) = &node.kind
+            && RUBY_ELEMS.iter().any(|tag| e.local_name() == *tag)
+        {
+            return true;
+        }
+        let mut stack = doc.child_nodes(node_id);
+        while let Some(cid) = stack.pop() {
+            let Some(node) = doc.get(cid) else {
+                continue;
+            };
+            if let NodeKind::Element(e) = &node.kind {
+                if RUBY_ELEMS.iter().any(|tag| e.local_name() == *tag) {
+                    return true;
+                }
+                stack.extend(doc.child_nodes(cid));
+            }
+        }
+        false
+    }
+
+    /// R4043：inline 元素的 inline-level 后代树中是否含 `<br>`（强制换行）。
+    ///
+    /// collect_inline_items 的默认扁平化路径（`text_content`）只取文本，嵌套 inline 内的
+    /// `<br>` 会被吞掉（换行丢失）。PHASEA_STORE_EXT 守卫收窄（R4043：inline 子含纯 inline
+    /// 后代的容器也走 stored IFC）后该路径被更多页面触达（outline-004 `<div><span>xx<br>xx</span>`
+    /// 回归实证），故含 `<br>` 的 inline 子须改走递归收集（递归内 `<br>` 直接子正常发
+    /// `InlineItem::Br`），与 `inline_elem_has_nested_inline_block` 同门。
+    pub fn inline_elem_has_nested_br(doc: &Document, inline_id: NodeId) -> bool {
+        let mut stack = doc.child_nodes(inline_id);
+        while let Some(cid) = stack.pop() {
+            let Some(node) = doc.get(cid) else {
+                continue;
+            };
+            match &node.kind {
+                NodeKind::Element(e) if e.local_name() == "br" => return true,
+                NodeKind::Element(_) => {
+                    // 沿元素后代下探（block-level 后代由 R109 split 处理，此处仅诊断）
+                    stack.extend(doc.child_nodes(cid));
+                }
+                _ => {}
+            }
+        }
+        false
+    }
 }
 
 // 行内条目收集方法（collect_inline_items）— 拆分到独立文件控制 mod.rs 体积

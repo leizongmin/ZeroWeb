@@ -262,3 +262,5 @@ css/css-display/run-in/run-in-contains-table-inside-inline-002.xht css/css-displ
 css/css-display/run-in/run-in-inline-block-between-001.xht css/css-display/run-in/run-in-text-ref.xht == 2026-09-03 R3992 run-in 并入实现翻转
 css/css-display/run-in/run-in-inline-block-between-002.xht css/css-display/run-in/run-in-text-ref.xht == 2026-09-03 R3992 run-in 并入实现翻转
 css/CSS2/normal-flow/inline-table-width-001a.xht css/CSS2/normal-flow/inline-table-width-001-ref.xht == 2026-09-04 R4022 XHTML style #PCDATA 实体解码——xml char-ref decode 生效锚
+css/css-content/quotes-015.html css/css-content/reference/quotes-015-ref.html == 2026-09-05 R4043 嵌套 q 独子 stored IFC 收窄守卫——三行堆叠修复
+css/css-ui/outline-004.html css/reference/ref-filled-green-100px-square.xht == 2026-09-05 R4043 嵌套 br 深路径排除锚——换行保留

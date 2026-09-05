@@ -196,6 +196,9 @@ mod r4029_cell_intrinsic_destretch_tests;
 mod r4033_empty_ib_frame_shrink_tests;
 mod r4034b_contain_size_content_tests;
 mod r4037_abspos_fitcontent_subtree_tests;
+mod r4043_nested_inline_store_tests;
+#[allow(dead_code)]
+mod r4043_nested_q_stack_probe;
 mod r717_flex_ratio_img_tests;
 mod table_layout_tests;
 mod tests_1;

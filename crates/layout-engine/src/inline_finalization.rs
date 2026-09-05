@@ -704,6 +704,76 @@ fn sync_inline_block_positions_from_ifc(
     matched_any
 }
 
+/// R4043：节点（不含自身）的后代树中是否存在**块级元素**（display 非 inline 家族）。
+/// 用于 PHASEA_STORE_EXT 守卫收窄——仅 inline 子树含块级后代（R109 block-in-inline
+/// 碎片化域）时排除 stored IFC；纯 inline 嵌套树照常存储。
+/// styles 缺失的元素按块级对待（保守排除，避免未计算样式的元素误入存储路径）。
+/// pub 导出：paint 侧 `has_direct_paintable_text` 须用同一谓词保持两端一致。
+pub fn subtree_has_block_elem(doc: &Document, styles: &HashMap<NodeId, ComputedStyle>, node: NodeId) -> bool {
+    for child_id in doc.child_nodes(node) {
+        let Some(n) = doc.get(child_id) else {
+            continue;
+        };
+        if matches!(&n.kind, NodeKind::Element(_)) {
+            let is_inline = styles.get(&child_id).is_some_and(|s| {
+                matches!(
+                    s.display,
+                    DisplayValue::Inline
+                        | DisplayValue::InlineBlock
+                        | DisplayValue::InlineFlex
+                        | DisplayValue::InlineGrid
+                        | DisplayValue::InlineTable
+                )
+            });
+            if !is_inline {
+                return true;
+            }
+            if subtree_has_block_elem(doc, styles, child_id) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// R4043：inline 子树内是否存在与基准元素（inline 子自身）**字体度量不同**的后代元素。
+///
+/// stored IFC 的嵌套 inline 扁平化把子树全部文本归到 inline 子自身的 TextRun（用其字体度量）；
+/// 后代若声明了不同 font-size / font-family / font-weight / font-style（如 outline-022 的
+/// `#target { font-size: 80px; font-family: Ahem }`），旧 per-box paint 路径按各盒自身样式渲染
+/// 正确，stored 路径则会用外层 inline 子的字体渲染整段文本 → 字形尺寸/字体错误。
+/// 此类子树维持旧排除（不收窄）。styles 缺失的后代按「不同」对待（保守排除）。
+/// pub 导出：paint 侧 `has_direct_paintable_text` 须用同一谓词保持两端一致。
+pub fn subtree_font_differs_from(
+    doc: &Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    node: NodeId,
+    base: &ComputedStyle,
+) -> bool {
+    for child_id in doc.child_nodes(node) {
+        let Some(n) = doc.get(child_id) else {
+            continue;
+        };
+        let NodeKind::Element(_) = &n.kind else {
+            continue;
+        };
+        let Some(s) = styles.get(&child_id) else {
+            return true;
+        };
+        if s.font_size != base.font_size
+            || s.font_family != base.font_family
+            || s.font_weight != base.font_weight
+            || s.font_style != base.font_style
+        {
+            return true;
+        }
+        if subtree_font_differs_from(doc, styles, child_id, base) {
+            return true;
+        }
+    }
+    false
+}
+
 /// 为含有直接文本子节点的容器计算最终行内布局并存储 IFC 片段结果。
 /// paint 系统消费这些结果渲染文字，不再重跑 IFC。
 ///
@@ -870,16 +940,29 @@ pub(crate) fn compute_final_inline_layouts(
         let has_block_elem = child_displays
             .iter()
             .any(|d| d.is_some_and(|dd| !is_inline_display(dd)));
-        // 进一步要求 inline-level 子元素为**叶文本容器**（无元素子节点）：排除 block-in-inline
-        //（inline 子元素含 block 后代，如 inline-box-002 的 div2>div3，R109 碎片化存储路径无法处理）。
-        let inline_children_have_elem = child_ids.iter().any(|c| {
-            styles.get(c).is_some_and(|s| is_inline_display(&s.display))
-                && doc
-                    .child_nodes(*c)
-                    .iter()
-                    .any(|gc| doc.get(*gc).is_some_and(|n| matches!(&n.kind, NodeKind::Element(_))))
+        // R207 曾要求 inline-level 子元素为**叶文本容器**（无元素子节点）——该过宽守卫把
+        // 「inline 子含纯 inline 后代」（<p><q>a <q>b</q> c</q></p>、<div><span>a <span>b</span>
+        // c</span></div> 等）也排除在 stored IFC 之外：容器无直接文本 → 不存储 → paint 逐盒
+        // 渲染 taffy 堆叠盒 → 文本三行堆叠（quotes-005/013/015/019 嵌套 <q> 独子族根因）。
+        // R4043 收窄为只排除真正的深路径域：①inline 子的**后代树中存在块级元素**
+        //（R109 block-in-inline 碎片化，如 inline-box-002 的 div2>div3）；②inline 子树含
+        // `<br>`——扁平化收集会吞掉嵌套 `<br>`（强制换行丢失，line-break-* control 段 +
+        // outline-004 载体），此类子树维持旧排除走旧 paint 路径（其自身 IFC 正确处理 br）。
+        // 纯 inline 嵌套文本树（collect_inline_items 已支持任意深度扁平化，R3895 包装链
+        // painted 补标配套）照常存储。③inline 子树含与子自身**字体度量不同**的后代
+        //（outline-022 `#target{font-size:80px}` 实证——扁平化用外层 inline 子字体渲染整段
+        // 文本，字形尺寸错误），维持旧排除。须与 paint 侧 has_direct_paintable_text（text.rs
+        // 同名守卫）同步收窄，两端一致才走 use_stored。
+        let inline_child_has_deep_path = child_ids.iter().any(|c| {
+            styles.get(c).is_some_and(|s| {
+                is_inline_display(&s.display)
+                    && (subtree_has_block_elem(doc, styles, *c)
+                        || InlineFormattingContext::inline_elem_has_nested_br(doc, *c)
+                        || InlineFormattingContext::subtree_has_ruby_elements(doc, *c)
+                        || subtree_font_differs_from(doc, styles, *c, s))
+            })
         });
-        has_text_children = has_inline_elem && !has_block_elem && !inline_children_have_elem;
+        has_text_children = has_inline_elem && !has_block_elem && !inline_child_has_deep_path;
     }
     if !has_text_children {
         return;
