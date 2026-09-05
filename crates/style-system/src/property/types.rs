@@ -637,6 +637,8 @@ pub enum ContainComputedValue {
     Style,
     /// paint。
     Paint,
+    /// inline-size（CSS Containment 3：仅内联轴 size containment）。
+    InlineSize,
     /// 多个值的位掩码组合。
     Custom(u8),
 }
@@ -651,6 +653,8 @@ impl ContainComputedValue {
     pub const FLAG_STYLE: u8 = 0x04;
     /// paint 标志位。
     pub const FLAG_PAINT: u8 = 0x08;
+    /// inline-size 标志位（CSS Containment 3）。
+    pub const FLAG_INLINE_SIZE: u8 = 0x10;
 
     /// 是否启用 size containment（`Size` / `Strict` / `Custom` 含 FLAG_SIZE）。
     /// `contain: size` 使元素尺寸独立于内容——auto 尺寸解析为 0（content 不贡献 size，
@@ -661,6 +665,16 @@ impl ContainComputedValue {
         match self {
             ContainComputedValue::Size | ContainComputedValue::Strict => true,
             ContainComputedValue::Custom(flags) => (flags & Self::FLAG_SIZE) != 0,
+            _ => false,
+        }
+    }
+
+    /// 是否启用 inline-size containment（`InlineSize` / `Custom` 含 FLAG_INLINE_SIZE，
+    /// CSS Containment 3：仅内联轴抑制 content-based 尺寸）。
+    pub fn has_inline_size(&self) -> bool {
+        match self {
+            ContainComputedValue::InlineSize => true,
+            ContainComputedValue::Custom(flags) => (flags & Self::FLAG_INLINE_SIZE) != 0,
             _ => false,
         }
     }

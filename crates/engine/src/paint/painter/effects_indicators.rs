@@ -895,6 +895,7 @@ impl super::Painter {
             ContainComputedValue::Layout => (Color::rgba(200, 120, 40, 200), "L"),
             ContainComputedValue::Style => (Color::rgba(160, 40, 160, 200), "St"),
             ContainComputedValue::Paint => (Color::rgba(40, 180, 180, 200), "P"),
+            ContainComputedValue::InlineSize => (Color::rgba(80, 180, 80, 200), "IS"),
             ContainComputedValue::Custom(_) => (Color::rgba(120, 120, 120, 200), "M"),
         };
         let w = box_node.width;

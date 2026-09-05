@@ -886,6 +886,8 @@ pub enum ContainValue {
     Style,
     /// paint。
     Paint,
+    /// inline-size（CSS Containment 3：仅内联轴 size containment）。
+    InlineSize,
     /// 多个值的位掩码组合。
     Custom(u8),
 }
@@ -900,6 +902,8 @@ impl ContainValue {
     pub const FLAG_STYLE: u8 = 0x04;
     /// paint 标志位。
     pub const FLAG_PAINT: u8 = 0x08;
+    /// inline-size 标志位（CSS Containment 3）。
+    pub const FLAG_INLINE_SIZE: u8 = 0x10;
 }
 
 /// 解析 CSS contain 属性值。
@@ -921,6 +925,7 @@ pub fn parse_contain(value: &str) -> Option<ContainValue> {
         "layout" => Some(ContainValue::Layout),
         "style" => Some(ContainValue::Style),
         "paint" => Some(ContainValue::Paint),
+        "inline-size" => Some(ContainValue::InlineSize),
         _ => {
             // 解析空格分隔的关键字列表
             let parts: Vec<&str> = value.split_whitespace().collect();
@@ -935,6 +940,7 @@ pub fn parse_contain(value: &str) -> Option<ContainValue> {
                     "layout" => flags |= ContainValue::FLAG_LAYOUT,
                     "style" => flags |= ContainValue::FLAG_STYLE,
                     "paint" => flags |= ContainValue::FLAG_PAINT,
+                    "inline-size" => flags |= ContainValue::FLAG_INLINE_SIZE,
                     _ => return None,
                 }
             }

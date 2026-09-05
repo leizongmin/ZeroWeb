@@ -122,7 +122,15 @@ fn layout_direct_fieldsets(form: &mut LayoutBox, doc: &Document, styles: &HashMa
         let Some(legend_index) = legend_index else { continue };
         if let Some(legend_id) = fieldset.children[legend_index].node_id {
             let legend = &mut fieldset.children[legend_index];
-            let content_width = crate::intrinsic_sizing::text_content_max_width(legend_id, doc, styles);
+            // R4062（css-contain-3 §containment-inline-size）：contain:inline-size 的 legend
+            // 内容不贡献 inline 尺寸——shrink-to-fit 内容宽 = 0（contain-inline-size-legend：
+            // legend 内容 500px + border 0 50px → 宽 100，非 604）。
+            let inline_size_contained = styles.get(&legend_id).is_some_and(|s| s.contain.has_inline_size());
+            let content_width = if inline_size_contained {
+                0.0
+            } else {
+                crate::intrinsic_sizing::text_content_max_width(legend_id, doc, styles)
+            };
             legend.content_width = content_width;
             legend.width =
                 legend.border_left + legend.padding_left + content_width + legend.padding_right + legend.border_right;

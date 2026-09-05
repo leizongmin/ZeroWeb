@@ -2019,6 +2019,7 @@ fn contain_to_css(c: &ContainComputedValue) -> String {
         C::Layout => "layout".to_string(),
         C::Style => "style".to_string(),
         C::Paint => "paint".to_string(),
+        C::InlineSize => "inline-size".to_string(),
         C::Custom(flags) => {
             let mut parts: Vec<&str> = Vec::new();
             if (flags & C::FLAG_SIZE) != 0 {
@@ -2032,6 +2033,9 @@ fn contain_to_css(c: &ContainComputedValue) -> String {
             }
             if (flags & C::FLAG_STYLE) != 0 {
                 parts.push("style");
+            }
+            if (flags & C::FLAG_INLINE_SIZE) != 0 {
+                parts.push("inline-size");
             }
             if parts.is_empty() {
                 "none".to_string()

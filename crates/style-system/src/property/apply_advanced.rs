@@ -1384,6 +1384,7 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
                     ContainValue::Layout => ContainComputedValue::Layout,
                     ContainValue::Style => ContainComputedValue::Style,
                     ContainValue::Paint => ContainComputedValue::Paint,
+                    ContainValue::InlineSize => ContainComputedValue::InlineSize,
                     ContainValue::Custom(flags) => ContainComputedValue::Custom(flags),
                 };
                 return true;
