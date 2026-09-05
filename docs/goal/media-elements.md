@@ -2,9 +2,12 @@
 
 **版本**: v1.0
 **日期**: 2026-08-17
-**状态**: Active（headless 可导入面饱和收口——2026-09-05 LIV 后 638/653 = 97.7%
-（0F/15PF，PF 余面全为选型面外编解码）；余件归 runner 事件循环统一
-（deep-structure，待用户点名）与兄弟目标真值化解锁。详见 master.md。）
+**状态**: Done（2026-09-05——DC-1~4 全部满足（达成审计 2026-09-01 初审 + 治理注记
+2026-09-04 终审；终态 **640P/0F/13PF = 98.01%**，209 用例导入、Fail/Timeout 双清零、
+clippy 零警告、每修复带单测）。余 13 PF 全为选型面外编解码（无成熟纯 Rust 解码面，
+维持诚实 ''——VP8 唯一候选 oxideav-vp8 自述 scaffold 未成熟，引入属新选型决策）；
+runner 事件循环统一归 deep-structure 待用户点名，非本 goal 语义面交付物。详见
+master.md DC 达成审计与验证基线。）
 **执行模式**: 轻量修复优先（永不停）；遇需用户决策项或深结构方向 → 记入「待用户决策」清单 → 跳过 → 继续其他轻量修复
 **父目标**: `docs/goal/zero-web.md`（Tier 3「`<video>`/`<audio>` 播放」方向的第一块；非目标注记「首期只处理布局占位」的历史裁决已随 Tier 1 收口由用户 2026-08-17 拆分决策解除）
 
@@ -138,27 +141,27 @@ form-validation——不允许手写 inline 用例替代或充数）。依赖真
 
 ### DC-1: WPT media-elements 用例导入与通过率基线
 
-- [ ] 从上游 WPT 仓库导入 `html/semantics/embedded-content/media-elements` 范围内真实用例
+- [x] 从上游 WPT 仓库导入 `html/semantics/embedded-content/media-elements` 范围内真实用例
       （依赖真解码输出的入 skip list 并注明归兄弟目标）
-- [ ] 建立分类通过率报告（文本 + JSON），记录基线
-- [ ] 每项修复的 driving WPT 用例经 `make import-wpt` 常驻断言集并记入 `imported-tests.txt`
-- [ ] 通过率报告持久化到 `docs/goal/media-elements/evidence/`，历史可追溯
+- [x] 建立分类通过率报告（文本 + JSON），记录基线
+- [x] 每项修复的 driving WPT 用例经 `make import-wpt` 常驻断言集并记入 `imported-tests.txt`
+- [x] 通过率报告持久化到 `docs/goal/media-elements/evidence/`，历史可追溯
 
 ### DC-2: 状态机与事件序列
 
-- [ ] load 算法 + readyState/networkState 推进 + 事件派发顺序与 spec 一致（WPT 为准；
+- [x] load 算法 + readyState/networkState 推进 + 事件派发顺序与 spec 一致（WPT 为准；
       headless 近似驱动逐项记录）
 
 ### DC-3: API 语义
 
-- [ ] canPlayType 三值语义（能力表显式可查）、play/pause 语义与异常、元数据
+- [x] canPlayType 三值语义（能力表显式可查）、play/pause 语义与异常、元数据
       getter/setter、`<track>` 反射 + textTracks 最小面
 
 ### DC-4: 测试与质量不可退让
 
-- [ ] `cargo test` 全绿，零失败
-- [ ] `cargo clippy --workspace --all-targets -- -D warnings` 零警告
-- [ ] 每项修复有对应单元测试 + driving WPT 用例资产化
+- [x] `cargo test` 全绿，零失败
+- [x] `cargo clippy --workspace --all-targets -- -D warnings` 零警告
+- [x] 每项修复有对应单元测试 + driving WPT 用例资产化
 
 ---
 

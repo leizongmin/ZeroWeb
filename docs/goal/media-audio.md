@@ -2,7 +2,13 @@
 
 **版本**: v1.0
 **日期**: 2026-08-17
-**状态**: Active（双重启动门控均已解除——M0 环境验证成文 + media-playback 选型获批（均 2026-09-01）；Web Audio 最小面 D1 获批已实施——切片 1+2 + WPT webaudio 子集 12 用例 331P/0F，余设备面/渲染量化面见 master.md）
+**状态**: Done（2026-09-05——DC-1~5 全部满足：M0 环境验证收口 + CpalSink 真设备流
+抽验在本机持续成立（2026-09-05 复验，Ok 分支全通）+ NullSink headless 总线断言常驻
++ A/V 同步 audio clock 主时钟 + volume/muted 真控制 + `<audio>` 全路径 e2e +
+AudioContext 最小面 RFC 获批实施（D1/D3 窄授权 offline 渲染路径，WPT webaudio
+50 用例 1418P/0F = 100% 排除面清零）。余项：实时设备输出量化面经 D3 批复维持
+排除；Mixer N→1 接线挂桌面可选切片——均非 DONE 阻塞。详见 master.md DC 达成
+审计。）
 **执行模式**: 轻量修复优先（永不停）；遇需用户决策项或深结构方向 → 记入「待用户决策」清单 → 跳过 → 继续其他轻量修复
 **父目标**: `docs/goal/zero-web.md`（Tier 3「`<video>`/`<audio>` 播放」的音频面）
 
@@ -127,30 +133,30 @@ muted）→ 设备输出（cpal，dummy 回退）；音视频时钟同步（audi
 
 ### DC-1: 环境验证与验证策略成文
 
-- [ ] cpal 集成 PoC（本地有声卡环境）+ dummy 设备回退验证
-- [ ] headless 验证策略（混音总线可观测断言）设计成文并落入 e2e 资产
+- [x] cpal 集成 PoC（本地有声卡环境）+ dummy 设备回退验证
+- [x] headless 验证策略（混音总线可观测断言）设计成文并落入 e2e 资产
 
 ### DC-2: 音频管线端到端
 
-- [ ] 选型面内音频格式：解码 → 重采样 → 混音 → 设备输出（本地真输出 e2e 常驻）
-- [ ] headless 混音总线断言常驻（CI 可跑）
+- [x] 选型面内音频格式：解码 → 重采样 → 混音 → 设备输出（本地真输出 e2e 常驻）
+- [x] headless 混音总线断言常驻（CI 可跑）
 
 ### DC-3: 同步与控制
 
-- [ ] A/V 同步（audio clock 主时钟 + drift 校正）——与 media-playback e2e 联合断言
-- [ ] volume/muted 真控制 + 多源混音
+- [x] A/V 同步（audio clock 主时钟 + drift 校正）——与 media-playback e2e 联合断言
+- [x] volume/muted 真控制 + 多源混音
 
 ### DC-4: `<audio>` 全路径 + Web Audio 评估
 
-- [ ] `<audio>` 元素纯音频播放全路径（e2e）
-- [ ] `AudioContext` 最小面可行性 RFC 完成（**实施与否待用户批准——不批准不影响本目标
+- [x] `<audio>` 元素纯音频播放全路径（e2e）
+- [x] `AudioContext` 最小面可行性 RFC 完成（**实施与否待用户批准——不批准不影响本目标
       DONE**）
 
 ### DC-5: 测试与质量不可退让
 
-- [ ] `cargo test` 全绿，零失败
-- [ ] `cargo clippy --workspace --all-targets -- -D warnings` 零警告
-- [ ] 每项修复有对应单元测试 + e2e 资产化
+- [x] `cargo test` 全绿，零失败
+- [x] `cargo clippy --workspace --all-targets -- -D warnings` 零警告
+- [x] 每项修复有对应单元测试 + e2e 资产化
 
 ---
 
