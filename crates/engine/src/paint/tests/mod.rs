@@ -19,6 +19,7 @@ mod r3818_canvas_bg_anchor_tests;
 mod r3997_ifc_ar_transfer;
 mod r4058_cv_hidden_replaced_tests;
 mod r4059_shadow_clip_tests;
+mod r4068_bfc_empty_child_margin_tests;
 mod ui_indicators;
 mod visual;
 mod visual_inline;

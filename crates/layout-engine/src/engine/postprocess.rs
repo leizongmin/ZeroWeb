@@ -1129,11 +1129,13 @@ fn shift_siblings_after_ifc_grow_inner(
         // padding 4.69→2.61，floats-clear 214 + normal-flow 750 共 977 案 0 回归 + welcome 字节
         // 一致 + 1220 单测）。env `ZW_CLEARANCE_NO_FLOAT_CONTAINMENT=0` 关闭（kill-switch）。
         //
-        // R3754（CSS §8.3.1 + CSS Contain §3.1）：父为 BFC 时空块的 collapse-through 边距
-        // **不逃出父盒**（父与子边距不折叠）——空块自身 mt/mb 互相折叠但留在父内，父 auto 高
-        // 须计入 child.y + child.margin_bottom（mt 已含在 child.y 偏移中）。此时空块不可排除：
-        // 排除会让 `div{overflow:hidden} > div{margin:30px 0}`（空）父高 30（Chromium 60），
-        // contain-content-002 的 19.6% 离散 fail 即此根因。非 BFC 父维持 R1771 排除。
+        // R4068 修订（CSS §8.3.1 + CSS Contain §3.1；chromium 151 oracle 2026-09-06 实证）：
+        // 父为 BFC 时空块的 collapse-through 边距**不逃出父盒导致高度增长**——空子自身 mt/mb
+        // 互折，mt 顶开自身位置（已含在 child.y），mb 与父底边折叠（父后无 in-flow 内容时）
+        // **不计父高**：`div{overflow:hidden} > div{margin:30px 0}`（空）父高 = 30（oracle
+        // parentH=30、childY=30；R3754 记录的「Chromium 60」为误测，content-002 链
+        // 150/90/30/0 同证）。空块仍不可排除（排除会让 mt 也丢失 → 父高 0）。
+        // contain-content-002 的 lime=30/blue=90/orange=150 即此语义。非 BFC 父维持 R1771 排除。
         // 负 margin（BFC 内合法内含）由下方 has_negative_margin 守卫与既有 R1746 逃生兜底。
         let r3754_empty_in_bfc =
             parent_is_bfc && crate::margin_collapse::is_empty_block(child) && child.margin_bottom.is_finite();
@@ -1144,12 +1146,8 @@ fn shift_siblings_after_ifc_grow_inner(
             if child.margin_top < 0.0 || child.margin_bottom < 0.0 {
                 has_negative_margin = true;
             }
-            // R3754：BFC 父内空块贡献 mt+mb（mt 在 child.y，mb 补加）。
-            let bottom = if r3754_empty_in_bfc {
-                child.y + child.height + child.margin_bottom.max(0.0)
-            } else {
-                child.y + child.height
-            };
+            // R4068：BFC 父内空块贡献 child.y（含 mt），mb 与父底边折叠不计高。
+            let bottom = child.y + child.height;
             if bottom > max_in_flow_bottom {
                 max_in_flow_bottom = bottom;
             }
