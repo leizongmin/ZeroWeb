@@ -963,9 +963,17 @@ impl LayoutEngine {
                     && cb_definite.is_none()
                     && matches!(s.height, LengthValue::Percentage(_))
                     && std::env::var("ZW_GRID_REPLACED_PCT_INDEFINITE").as_deref() != Ok("0");
-                if !is_abs && (!parent_is_flex_grid || grid_replaced_pct_indefinite) {
+                // R4065（CSS §10.5）：abspos 元素的**own 百分比高**解析归 CB 链（不在此 pass），
+                // 但其 own **definite** 高（如 `height:400px` 的 abspos 容器）仍须传给子元素作
+                // 百分比包含块——旧 `!is_abs` gate 把整条 match 挡住，abspos 容器的定高不传播，
+                // 子元素 % 高 compute-to-auto（box-sizing-border-box-003：abspos 400 容器内
+                // height:100% 子塌 79，应 400）。此处 abspos 仅跳过自身百分比解析臂，
+                // definite 臂照常传播。
+                if (is_abs && resolve_sizing_definite_real_length(&s.height, s).is_some())
+                    || (!is_abs && (!parent_is_flex_grid || grid_replaced_pct_indefinite))
+                {
                     match &s.height {
-                        LengthValue::Percentage(p) => match cb_definite {
+                        LengthValue::Percentage(p) if !is_abs => match cb_definite {
                             Some(cbh) => {
                                 // 明确 CB → 解析为百分比（明确），供子元素继续链。
                                 my_definite = Some(*p as f32 / 100.0 * cbh);
@@ -1049,7 +1057,14 @@ impl LayoutEngine {
                         },
                         other => {
                             // 明确高度：按 box-sizing 折算内容高度供子元素百分比解析。
-                            my_definite = resolve_sizing_definite_real_length(other, s).map(|v| {
+                            // R4065：abspos 入口（own definite 高传播给子 % 解析）**只设
+                            // my_definite 不改写 taffy**——abspos 自身 % / calc 高归 CB 链
+                            //（taffy abspos 定位方程），下方 non-Px 折算重写（在 parent 语境
+                            // resolve）会污染它（semi-replaced-stretch-* 的 calc(100%-6px)
+                            // 被误改写 → h=0）。
+                            let resolved = resolve_sizing_definite_real_length(other, s);
+                            my_definite = resolved;
+                            if !is_abs && let Some(v) = resolved {
                                 let pb = b.padding_top + b.padding_bottom + b.border_top + b.border_bottom;
                                 if !matches!(other, LengthValue::Px(_))
                                     && (b.height - v).abs() > 0.5
@@ -1062,12 +1077,12 @@ impl LayoutEngine {
                                     let _ = taffy_tree.mark_dirty(tid);
                                     changed = true;
                                 }
-                                if matches!(s.box_sizing, BoxSizingValue::BorderBox) {
+                                my_definite = Some(if matches!(s.box_sizing, BoxSizingValue::BorderBox) {
                                     (v - pb).max(0.0)
                                 } else {
                                     v
-                                }
-                            });
+                                });
+                            }
                         }
                     }
                 }
