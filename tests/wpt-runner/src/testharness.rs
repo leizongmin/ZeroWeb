@@ -1888,6 +1888,13 @@ pub const WEBAUDIO_TEST_FILES: &[&str] = &[
     // linearRamp 逐采样耦合频率（_zwParamValueAt 通用 automation 求值复用）。
     "webaudio/the-audio-api/the-oscillatornode-interface/detune-limiting.html",
     "webaudio/the-audio-api/the-oscillatornode-interface/detune-overflow.html",
+    // 不导入：audioparam 四型 ramp 对拍（setValueAtTime/linearRamp/exponentialRamp/
+    // setTargetAtTime，第二十八批试导 2026-09-05）——上游坏 helper：audioparam-testing.js
+    // verifyDiscontinuities 引用 createAudioGraphAndTest 形参 numberOfTests（非模块
+    // 作用域）→ oncomplete 回调内必抛 ReferenceError → 上游 Chromium 亦红（master
+    // 2026-09-05 同字节未修）。shim 侧 OfflineAudioContext.oncomplete 已作为基础设施
+    // 资产落地（spec OfflineAudioCompletionEvent——event.renderedBuffer 承载渲染产物，
+    // 语义正确保留）；四件待上游修复 helper 后复评。
     // ---- 第二十批（同日，D3 第二片——AudioBufferSourceNode 数据播放 + 链式
     // gain 累计 + 直连 destination 双态 + offset/duration/loop 窗口）：
     // 不导入：gain.html（需 splitter/merger 通道路由图语义——merger 通道选择映射

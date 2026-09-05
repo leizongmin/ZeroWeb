@@ -5419,3 +5419,37 @@ fn test_webaudio_oscillator_detune_computed_frequency_face_m3w5() {
         "detune automation 事件表落位（setValueAtTime + linearRamp 两事件，求值源面）"
     );
 }
+
+// media-audio D3 第十一增量（2026-09-05）：OfflineAudioContext.oncomplete 派发面
+// （spec OfflineAudioCompletionEvent——event.renderedBuffer 承载渲染产物）。引入
+// 面为 audioparam ramp 对拍四件（后因上游坏 helper 维持排除），oncomplete 语义面
+// 本身正确，保留为 offline 渲染资产。
+// https://webaudio.github.io/web-audio-api/#OfflineAudioCompletionEvent
+#[test]
+fn test_webaudio_offline_oncomplete_face_m3w6() {
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    sandbox.execute(
+        "var octx = new OfflineAudioContext(1, 128, 48000);\
+         var osc = new OscillatorNode(octx, {frequency: 440});\
+         osc.connect(octx.destination);\
+         osc.start();\
+         var calls = [];\
+         octx.oncomplete = function (ev) {\
+           calls.push('ev:' + (ev.renderedBuffer ? ev.renderedBuffer.length : 'null') + ':' + ev.type);\
+         };\
+         octx.startRendering().then(function (b) { calls.push('then:' + b.length); });\
+         void 0;",
+    ).unwrap();
+    sandbox.execute("void 0").unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.calls.join('|')").unwrap().value,
+        "ev:128:complete|then:128",
+        "oncomplete 同步派发（renderedBuffer.length + type）+ promise resolve 双通道"
+    );
+}

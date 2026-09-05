@@ -8106,6 +8106,16 @@
     }
     self._zwState = 'closed';
     self._zwRendering = false;
+    // media-audio D3 第十一增量：OfflineAudioContext oncomplete（spec OfflineAudioCompletionEvent
+    // ——event.renderedBuffer 承载渲染产物；audioparam-testing.js createAudioGraphAndTest
+    // 框架的断言入口面）。渲染同步完成后派发（与 promise resolve 同 turn）。
+    // https://webaudio.github.io/web-audio-api/#OfflineAudioCompletionEvent
+    if (typeof self.oncomplete === 'function') {
+      try {
+        var _ocEvent = { renderedBuffer: buffer, type: 'complete' };
+        self.oncomplete(_ocEvent);
+      } catch (_eOc) {}
+    }
     // spec：渲染为异步任务——resolve 经 microtask（当前 turn 后；WPT 断言在
     // .then 内读 buffer，同步 compute + microtask resolve 时序等价）。
     return Promise.resolve(buffer);

@@ -1,3 +1,17 @@
+**最后更新**: 2026-09-05（**D3 第十一增量——OfflineAudioContext.oncomplete 落地 +
+audioparam ramp 对拍四件试导负结果（上游坏 helper，维持排除）**：① **oncomplete
+派发**（spec OfflineAudioCompletionEvent——event.renderedBuffer 承载渲染产物，
+渲染同步完成后派发 + promise resolve 双通道；单测
+`test_webaudio_offline_oncomplete_face_m3w6` 常驻）——语义资产保留；② 四件
+ramp 对拍（setValueAtTime/linearRamp/exponentialRamp/setTargetAtTime）试导
+Timeout，页面级 hook 逐层定位：oncomplete 回调内
+`verifyDiscontinuities`（audioparam-testing.js 模块级函数）引用
+`createAudioGraphAndTest` 形参 `numberOfTests`（非模块作用域）→
+ReferenceError 被 shim oncomplete 派发的 try/catch 吞掉 → task.done 永不达 →
+pending 卡死。**上游 Chromium 亦红**（master 2026-09-05 同字节未修——wpt.fyi
+helper 与 pinned rev 一致），按 XL 批「坏用例不导入」惯例维持排除，待上游修复
+helper 后复评；oncomplete 资产不受影响。WPT 面 49 用例 1408P/0F = 100% 不变。）
+**（注：下方「最后更新」第十增量块为前轮记录，保留作历史）**
 **最后更新**: 2026-09-05（**D3 第十增量完成——detune 耦合两件导入（49 用例
 1408P/0F = 100%）**：detune-limiting（2 task）+ detune-overflow（1 task）解除
 排除——**原排除注记归域偏保守**：两件断言核心是「振荡器 computed frequency =

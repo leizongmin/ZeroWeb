@@ -163,8 +163,13 @@ WA_FILES=(
   # 耦合一 task 均在 D3 已批 offline 渲染路径内。
   "webaudio/the-audio-api/the-oscillatornode-interface/detune-limiting.html"
   "webaudio/the-audio-api/the-oscillatornode-interface/detune-overflow.html"
+  # audioparam 四型 ramp 对拍（setValueAtTime/linearRamp/exponentialRamp/
+  # setTargetAtTime）维持排除——上游坏 helper：audioparam-testing.js
+  # verifyDiscontinuities 引用 createAudioGraphAndTest 形参 numberOfTests（非模块
+  # 作用域）→ oncomplete 回调必抛 ReferenceError，上游 Chromium 亦红（master 同字节）。
+  # shim OfflineAudioContext.oncomplete 已作为资产落地，待上游修复后复评。
   # 排除收束（更新）：pinned rev webaudio/the-audio-api 全部可执行用例均已导入或
-  # 定性（剩余为 worklet/媒体互连/手势域）。
+  # 定性（剩余为 worklet/媒体互连/手势域 + 上游坏 helper 四件）。
 
 )
 
