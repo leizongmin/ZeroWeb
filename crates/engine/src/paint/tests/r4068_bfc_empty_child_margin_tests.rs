@@ -60,3 +60,33 @@ fn r4068_nonempty_child_still_counts_mb() {
         "R4068 对照: 有边框空子不折叠，父高应 30+2+30=62，got {parent_h}"
     );
 }
+
+/// R4069：contain:content 父（R3755 taffy overflow:Hidden 注入 → is_flow_root →
+/// adjust_float_positions BFC 重算 gate）下同样语义：空子 collapse-through 后父高
+/// 只含 mt=30。修正前该 gate 的 content_bottom fold 对空子加 mb → 父 60（chromium 30），
+/// contain-content-002 链 lime/blue/orange 每层多 30。
+#[test]
+fn r4069_contain_parent_empty_child_height_30() {
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    let css = "body{margin:0} div{contain:content;margin:30px 0} div.c{contain:none}";
+    let html = "<html><body><div><div class=\"c\"></div></div></body></html>";
+    let (parent_h, child_y) = depth_metrics(&pipeline.render_html(html, css));
+    assert!(
+        (parent_h - 30.0).abs() < 0.5,
+        "R4069: contain:content 父内空子 collapse-through 后父高应只含 mt=30，got {parent_h}"
+    );
+    assert!((child_y - 30.0).abs() < 0.5, "空子 y=mt=30，got {child_y}");
+}
+
+/// R4069 对照：有内容子保持 mb 计入（oracle：p mt30 h20 mb30 → 父 80）。
+#[test]
+fn r4069_contain_parent_content_child_keeps_mb() {
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    let css = "body{margin:0} div{contain:content;margin:30px 0} p{margin:30px 0;height:20px}";
+    let html = "<html><body><div><p>x</p></div></body></html>";
+    let (parent_h, _child_y) = depth_metrics(&pipeline.render_html(html, css));
+    assert!(
+        (parent_h - 80.0).abs() < 0.5,
+        "R4069 对照: 有内容子不折叠，父高应 30+20+30=80，got {parent_h}"
+    );
+}

@@ -1913,11 +1913,21 @@ pub(crate) fn adjust_float_positions_with_context(
         // ② replaced 元素（canvas/img/video/iframe/embed/object/svg/applet 等）：auto
         //    height 由固有尺寸或 CSS 决定，无子元素时 content_bottom fold 初始 0.0 会把
         //    固有高度压成 0（R3268 canvas 显示链路全平台 FAIL）。
+        // R4069（CSS §8.3.1 + chromium 151 oracle 2026-09-06）：空块子 collapse-through
+        // 后 mb 与父底边折叠，不计父高（同 R4068 R1743 fold 修正语义；oracle：BFC 父 +
+        // 空子 m30 → 父高 30 非 60）。有内容子/float 子保持 mb 计入（oracle：p mt30 h20
+        // mb30 → 父 80 = 30+20+30）。
         let content_bottom = box_node
             .children
             .iter()
             .filter(|child| !child.is_absolute && !child.is_fixed)
-            .map(|child| child.y + child.height + child.margin_bottom)
+            .map(|child| {
+                if crate::margin_collapse::is_empty_block(child) {
+                    child.y + child.height
+                } else {
+                    child.y + child.height + child.margin_bottom
+                }
+            })
             .fold(0.0f32, f32::max);
         let content_height = (content_bottom - content_y_offset).max(0.0);
         box_node.content_height = content_height;
