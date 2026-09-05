@@ -831,3 +831,37 @@ fn font_size_mapping_matches_html5_scale() {
     assert_eq!(html_font_size_to_em("-1"), Some(0.82)); // 3-1=2
     assert_eq!(html_font_size_to_em("9"), None); // 超范围
 }
+
+/// R4054（SVG2 §7.2 + css-contain-1 §3）：`<svg width/height>` 纯数字属性映射为
+/// CSS width/height px presentational hints——svg 尺寸属性是 CSS 声明（非固有尺寸），
+/// contain:size 只抑制 content-based（auto）尺寸（contain-size-replaced-002：旧实现
+/// attr 只进 layout 层 attr sizing，converter 的 contain 臂读 computed Auto → 折 0）。
+#[test]
+fn svg_width_height_attrs_map_to_px_hints() {
+    let doc = parse_html(r#"<svg width="100" viewBox="0 0 50 50"><rect width="50" height="50"/></svg>"#);
+    let svg = doc.get_elements_by_tag_name("svg")[0];
+    let hints = collect_presentational_hints(&doc, svg);
+    assert!(
+        hints.iter().any(|(p, v)| p == "width" && v == "100px"),
+        "svg width hint: {hints:?}"
+    );
+    // 本测 svg 无 height 属性 → 不产生 height hint
+    assert!(
+        !hints.iter().any(|(p, _)| p == "height"),
+        "svg 无 height 属性不应有 height hint: {hints:?}"
+    );
+}
+
+/// R4054：% 值不透传——abspos svg 的 % attr 高由 R4018 svg_attr_percentage_height
+/// 按 CB padding-box 解析（r4018 单测锚 50% × 192 = 96）；hint 写 height:% 会把
+/// computed 从 Auto 改为 % 使该臂失活（落 default 150）。
+#[test]
+fn svg_percentage_size_attrs_not_mapped() {
+    let doc = parse_html(r#"<svg width="50%" height="50%"><rect width="10" height="10"/></svg>"#);
+    let svg = doc.get_elements_by_tag_name("svg")[0];
+    let hints = collect_presentational_hints(&doc, svg);
+    assert!(
+        !hints.iter().any(|(p, _)| p == "width" || p == "height"),
+        "svg % attr 不应产生 hint: {hints:?}"
+    );
+}

@@ -642,7 +642,7 @@ fn convert_max_length_to_dimension(value: &LengthValue, vw: f32, vh: f32) -> taf
 /// 将 LengthValue 转换为 taffy 的 LengthPercentage。
 ///
 /// 用于 padding、border、gap 等不接受 auto 的属性。
-fn convert_length_to_lp(value: &LengthValue, vw: f32, vh: f32) -> taffy::style::LengthPercentage {
+pub(crate) fn convert_length_to_lp(value: &LengthValue, vw: f32, vh: f32) -> taffy::style::LengthPercentage {
     if let Some(px) = resolve_viewport_px(value, vw, vh) {
         return length(px);
     }

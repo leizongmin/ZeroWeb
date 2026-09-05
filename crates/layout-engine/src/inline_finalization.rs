@@ -2212,15 +2212,18 @@ pub(crate) fn remeasure_inline_only_containers(
         }
     } else if !has_floats
         && !box_node.is_r109_split
-        // R4016（CSS2 §10.3.8 + css-sizing-3 default object size）：**abspos 替换元素**
+        // R4016（CSS2 §10.3.8 + css-sizing-3 default object size）：**替换元素**
         // 容器不走 inline-only remeasure——其尺寸由固有/attr/CSS/abspos sizing 决定
-        //（taffy/R4000 default object size），SVG 子元素不产行盒几何 → IFC total_height=0
-        // 曾把 abspos svg 盒从 150 清回 0（absolute-replaced-width-004/009/011/023/025/
-        // 030/032 + height-006/013/020 簇蓝色方块消失）。gate 须限定 abspos+replaced：
-        // 全 abspos 会破坏 unset-val-002（abspos 容器内 display:unset span 依赖 remeasure）；
-        // 全 replaced 会破坏 svgbox-fill-box / sharing-in-svg（in-flow inline svg 的行盒
-        // 语境仍依赖 remeasure）。
-        && !(box_node.is_replaced && (box_node.is_absolute || box_node.is_fixed))
+        //（taffy/R4000 default object size），SVG 子元素（rect/path/use 等）不产行盒
+        // 几何 → IFC total_height=0 的「允许减小高度」分支把盒清回 0。R4016 首版 gate
+        // 限定 abspos+replaced（absolute-replaced-width/height 簇）；R4054 扩到全部
+        // replaced（含 in-flow）：attr 定尺寸的 in-flow svg（width/height 属性、CSS
+        // auto）同样被清 0（contain-size-replaced-002 `<svg width=100>` 全空白；
+        // svgbox-fill-box/sharing-in-svg 此前「翻红」实为 R4054 presentational hint
+        // 揭示真几何后的 transform-box 真缺陷域（R3800 归档），非 remeasure 依赖——
+        // hint 落地后基线「通过」本身即双页同塌 0 的假绿）。img/canvas/video 等
+        // 无子盒替换元素本就无 inline 子/无 DOM 文本，remeasure 对其 no-op，不受影响。
+        && !box_node.is_replaced
         // R3992：并入态 run-in 不走 inline-only remeasure（内容归后继块 IFC，0 高 leaf）。
         && !is_merged_run_in
         // R4034b（CSS Containment 1 §3）：contain:size → 高度按「无内容」sized

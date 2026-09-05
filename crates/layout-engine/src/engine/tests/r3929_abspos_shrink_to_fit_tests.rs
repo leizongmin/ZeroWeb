@@ -330,3 +330,47 @@ fn r4018_abspos_inline_element_margin_top_participates() {
         "R4018: abspos 元素垂直 margin 应参与定位（top+mt=96），实际 y={y}"
     );
 }
+
+/// R4054（CSS2 §10.8.1 + SVG2 §7.2）：替换 inline 元素（svg，UA display:inline）的
+/// 垂直 padding 参与 taffy 布局——converter 的 R1442 inline 垂直 padding 清零 gate
+/// 语义是「**非替换** inline 元素不影响 line box 高度」，替换元素的 margin-box 参与
+/// 高度合成（contain-size-replaced-002：`padding: 50px 0` + contain:size + width=100
+/// → 应 100 高，旧清 0 后 svg 消失）。锚定方式：带 padding 变体比无 padding 变体
+/// 高 100（content 部分两变体同源）。
+#[test]
+fn r4054_inline_svg_vertical_padding_participates() {
+    let (doc, result) = layout(
+        r#"<html><body style="margin:0">
+<svg width="100" style="padding: 50px 0;"><rect width="50" height="50" fill="red"/></svg>
+</body></html>"#,
+    );
+    let sid = doc.get_elements_by_tag_name("svg").into_iter().next().expect("svg");
+    let (_w, h_pad) = find_box(&result.root, sid).expect("svg box");
+
+    let (doc2, result2) = layout(
+        r#"<html><body style="margin:0">
+<svg width="100"><rect width="50" height="50" fill="red"/></svg>
+</body></html>"#,
+    );
+    let sid2 = doc2.get_elements_by_tag_name("svg").into_iter().next().expect("svg");
+    let (_w2, h_bare) = find_box(&result2.root, sid2).expect("svg box");
+
+    assert!(
+        (h_pad - h_bare - 100.0).abs() < 1.0,
+        "R4054: 替换 inline svg 垂直 padding 应全额参与（Δ=100），实际 pad={h_pad} bare={h_bare}"
+    );
+}
+
+/// R4054 对照：非替换 inline（span）的垂直 padding 不参与（R1442 gate 主语义不回退——
+/// `<span padding:16px>` 不得撑高段落 32px）。
+#[test]
+fn r4054_inline_span_vertical_padding_still_zero() {
+    let html = r#"<html><body style="margin:0">
+<p style="margin:0">a<span style="padding: 16px 0;">b</span>c</p>
+</body></html>"#;
+    let (doc, result) = layout(html);
+    let pid = doc.get_elements_by_tag_name("p").into_iter().next().expect("p");
+    let (_w, h) = find_box(&result.root, pid).expect("p box");
+    // 单行 line-height ≈ 18.6，垂直 padding 不计入。
+    assert!(h < 30.0, "R4054: 非替换 inline 垂直 padding 不应撑高（<30），实际 {h}");
+}

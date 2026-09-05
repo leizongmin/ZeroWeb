@@ -544,6 +544,19 @@ fn is_flex_grid_item(doc: &Document, styles: &HashMap<NodeId, ComputedStyle>, do
         })
 }
 
+/// 标签级 replaced 判定（CSS2 §10.3.2 语义域）。与 engine.rs 构盒时的 is_replaced 同表：
+/// img/video/iframe/embed/object/svg/canvas/applet。用于 converter 之外的独立 replaced
+/// 语境判定（R4054 inline 垂直 padding 恢复）。
+fn is_replaced_element_tag(doc: &Document, dom_id: NodeId) -> bool {
+    doc.get(dom_id).is_some_and(|n| match &n.kind {
+        NodeKind::Element(elem) => matches!(
+            elem.local_name(),
+            "img" | "video" | "iframe" | "embed" | "object" | "svg" | "canvas" | "applet"
+        ),
+        _ => false,
+    })
+}
+
 /// 查找指定节点子树中的第一个元素节点。
 fn find_first_element(doc: &Document, node: NodeId) -> NodeId {
     let node_data = match doc.get(node) {
@@ -1684,6 +1697,19 @@ fn build_subtree(
         && is_flex_grid_item(doc, styles, dom_id)
     {
         taffy_style.size.height = taffy::style::Dimension::auto();
+    }
+
+    // R4054（CSS2 §10.8.1）：converter 的 inline 垂直 padding 归零 gate 语义是「**非替换**
+    // inline 元素的垂直 padding 不影响 line box 高度」——替换 inline 元素（svg 等 UA 表未
+    // 映射 InlineBlock 的 replaced 标签）的 margin-box 参与行盒高度计算，垂直 padding 有效
+    //（contain-size-replaced-002：`svg { padding: 50px 0; contain: size }` 50px 上下 padding
+    // 被清零 → svg 高塌 0 全消失）。converter 无 DOM 语境判 replaced，此处按 engine 层同一
+    // 标签表恢复（tree.rs 是唯一有 doc 的 computed_style_to_taffy 主调用点；匿名块两处
+    // 调用点按定义非替换，无需处理）。
+    if matches!(computed.display, DisplayValue::Inline) && is_replaced_element_tag(doc, dom_id) {
+        taffy_style.padding.top = crate::converter::convert_length_to_lp(&computed.padding_top, viewport_w, viewport_h);
+        taffy_style.padding.bottom =
+            crate::converter::convert_length_to_lp(&computed.padding_bottom, viewport_w, viewport_h);
     }
 
     // margin-trim（css-box-4 §margin-trim）：父块容器声明 margin-trim 的 block / block-start /

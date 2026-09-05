@@ -1670,6 +1670,24 @@ fn collect_presentational_hints(doc: &Document, element: NodeId) -> Vec<(String,
     }
 
     match tag.as_str() {
+        // R4054（SVG2 §7.2 width/height presentation attributes + css-contain-1 §3）：
+        // `<svg width/height>` 属性映射为 CSS width/height presentational hints——svg
+        // 尺寸属性是 CSS 声明（非固有尺寸），contain:size 只抑制 content-based（auto）
+        // 尺寸，不定值声明不折叠（contain-size-replaced-002：width="100" + contain:size
+        // → used 100 宽；旧实现 attr 只进 layout 层 attr sizing，converter 的 contain
+        // 臂读 computed width=Auto → CIS-or-0 折叠为 0 → svg 整体消失）。
+        // 仅纯数字（px）值——% 值不透传：abspos svg 的 % attr 高由 R4018
+        // svg_attr_percentage_height 按 CB padding-box 解析（r4018 单测锚 96），
+        // hint 写 height:% 会把 computed 从 Auto 改为 % 使该臂失活（落 default 150）。
+        "svg" => {
+            for attr in ["width", "height"] {
+                if let Some(v) = elem_attr(elem, attr)
+                    .filter(|v| v.trim().chars().all(|c| c.is_ascii_digit() || c == '.') && v.trim() != "")
+                {
+                    hints.push((attr.to_string(), format!("{v}px")));
+                }
+            }
+        }
         "img" => {
             if let Some(bg) = elem_attr(elem, "bgcolor") {
                 hints.push(("background-color".to_string(), normalize_html_color(&bg)));
