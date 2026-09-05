@@ -92,3 +92,48 @@ fn test_no_contain_size_img_uses_intrinsic() {
         img.height
     );
 }
+
+/// R4055（css-contain-1 §containment-size + HTML §attributes-for-embedded-content-and-images）：
+/// contain:size 只抑制 content-based 尺寸；attr 双值经 `aspect-ratio: auto w/h` 提供
+/// transferred 比例（非 content 尺度）——CSS 宽 definite + CSS 高 auto 时高 = 宽 × attr 比。
+/// driving: css-contain/contain-size-replaced-007（60×60 attr + width:100px + height:auto
+/// + contain:size 应 100×100，非 100×0）。布局层窄臂不经 computed aspect_ratio（R4055-N 教训）。
+#[test]
+fn test_contain_size_img_attr_ratio_transferred() {
+    let html = r#"<html><body style="margin:0">
+<img src="x.png" width="60" height="60" style="width: 100px; height: auto; contain: size">
+</body></html>"#;
+    let (doc, root) = layout_with_img_intrinsic(html, (60.0, 60.0));
+    let img = find_img(&root, &doc).expect("img");
+    assert!(
+        approx(img.width, 100.0),
+        "contain:size + attr ratio: width = CSS 100px; got {}",
+        img.width
+    );
+    assert!(
+        approx(img.height, 100.0),
+        "contain:size + attr ratio: height = 100 × (60/60) = 100 (transferred, non-content); got {}",
+        img.height
+    );
+}
+
+/// R2429 守卫不破坏：contain:size + 无 attr（仅 decoded 固有）仍按 padding-only 100×100
+///——attr 比窄臂仅消费 HTML width/height 属性，decoded 固有尺寸不参与（013 语义不变）。
+#[test]
+fn test_contain_size_no_attr_still_padding_only() {
+    let html = r#"<html><body style="margin:0">
+<img src="x.png" style="width: 100px; height: auto; contain: size; padding: 50px">
+</body></html>"#;
+    let (doc, root) = layout_with_img_intrinsic(html, (60.0, 60.0));
+    let img = find_img(&root, &doc).expect("img");
+    assert!(
+        approx(img.width, 200.0),
+        "no attr: CSS width 100 definite + padding 50×2 = 200 box wide; got {}",
+        img.width
+    );
+    assert!(
+        approx(img.height, 100.0),
+        "no attr: contain:size 抑制 content-based 高（decoded 固有不传比）→ content 高 0 + padding 50×2 = 100; got {}",
+        img.height
+    );
+}

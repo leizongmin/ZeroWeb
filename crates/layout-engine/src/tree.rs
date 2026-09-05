@@ -750,6 +750,35 @@ fn apply_replaced_element_sizing(
         }
     }
 
+    // R4055（css-contain-1 §containment-size + HTML §attributes-for-embedded-content-and-images）：
+    // contain:size 只抑制 **content-based**（auto）尺寸；attr 双值齐备时 HTML dimension
+    // attributes 经 `aspect-ratio: auto w/h` 提供 **transferred（spec suggested）比例**，
+    // 非 content 尺度，不折叠（007：img 60×60 + `width:100px; height:auto; contain:size`
+    // 应 100×100，h 折 0 错）。布局层窄臂：仅在 contain:size + CSS 宽 definite Px + CSS 高
+    // auto 三门齐备时，把 definite 宽 × attr 比写为 definite 高——**不经 computed
+    // aspect_ratio**（R4055-N 教训：hint 注入会全链激活 R3997/R4006/tree.rs 比消费方）。
+    // 其余 contain:size 路径维持 R2429 早返回（013 无 attr，不受影响）。
+    // kill-switch `ZW_CONTAIN_ATTR_RATIO=0`。
+    if computed.contain.has_size()
+        && std::env::var("ZW_CONTAIN_ATTR_RATIO").as_deref() != Ok("0")
+        && tag == "img"
+        && matches!(computed.width, LengthValue::Px(w) if w.is_finite() && w > 0.0)
+        && matches!(computed.height, LengthValue::Auto)
+        && let (Some(aw), Some(ah)) = (
+            elem.get_attribute("width")
+                .and_then(|v| v.parse::<f32>().ok().filter(|n| n.is_finite() && *n > 0.0)),
+            elem.get_attribute("height")
+                .and_then(|v| v.parse::<f32>().ok().filter(|n| n.is_finite() && *n > 0.0)),
+        )
+        && let LengthValue::Px(css_w) = computed.width
+    {
+        let transferred_h = css_w as f32 * (aw / ah);
+        if transferred_h.is_finite() && transferred_h > 0.0 {
+            taffy_style.size.width = taffy::style::Dimension::length(css_w as f32);
+            taffy_style.size.height = taffy::style::Dimension::length(transferred_h.max(0.5));
+            return;
+        }
+    }
     // R2429：`contain: size`（CSS Containment 1）——元素按「无内容」sized，替换元素固有尺寸
     // 须忽略（intrinsic size → 0）。converter（mod.rs:123 `contain.has_size()`）已把 auto 尺寸
     // 解析为 0（含 contain-intrinsic-size 覆盖），此处若再用固有尺寸覆盖会把 0 拉回 intrinsic，
