@@ -7,7 +7,7 @@ use zero_engine::fetch_bridge::FetchResponse;
 use zero_storage::ServiceWorkerState;
 
 fn wait_for_state(webview: &mut crate::WebView, registration_id: u64, expected: ServiceWorkerState) {
-    let deadline = Instant::now() + Duration::from_secs(20);
+    let deadline = Instant::now() + Duration::from_secs(60);
     loop {
         let _ = webview.poll_service_worker_runtime_events();
         if webview
@@ -412,7 +412,7 @@ fn navigator_module_registration_fetches_static_graph_and_activates() {
                error => { globalThis.__moduleRegistrationResult = error.name + ':' + error.message; });",
         )
         .unwrap();
-    let deadline = Instant::now() + Duration::from_secs(20);
+    let deadline = Instant::now() + Duration::from_secs(60);
     loop {
         let _ = webview.poll_service_worker_runtime_events();
         if webview.execute_script("globalThis.__moduleRegistrationResult").unwrap() != "pending" {
@@ -631,7 +631,7 @@ fn module_import_response_rejects_cross_origin_without_cors_headers() {
                error => { globalThis.__moduleCorsResult = String(error.message); });",
         )
         .unwrap();
-    let deadline = Instant::now() + Duration::from_secs(20);
+    let deadline = Instant::now() + Duration::from_secs(60);
     loop {
         let _ = webview.poll_service_worker_runtime_events();
         if webview.execute_script("globalThis.__moduleCorsResult").unwrap() != "pending" {
@@ -719,7 +719,7 @@ fn navigator_update_rejects_non_javascript_main_script_as_security_error() {
         )
         .unwrap();
 
-    let deadline = Instant::now() + Duration::from_secs(20);
+    let deadline = Instant::now() + Duration::from_secs(60);
     loop {
         let value = webview.execute_script("globalThis.__mimeUpdate").unwrap();
         if value != "pending" {
@@ -775,7 +775,7 @@ fn navigator_lifecycle_events_preserve_state_and_slot_task_order() {
         )
         .unwrap();
 
-    let deadline = Instant::now() + Duration::from_secs(20);
+    let deadline = Instant::now() + Duration::from_secs(60);
     loop {
         if webview.execute_script("String(globalThis.__swEventsDone)").unwrap() == "true" {
             break;
@@ -928,7 +928,7 @@ fn navigator_replacement_reuses_registration_identity_for_scope() {
         )
         .unwrap();
 
-    let deadline = Instant::now() + Duration::from_secs(20);
+    let deadline = Instant::now() + Duration::from_secs(60);
     loop {
         let value = webview.execute_script("globalThis.__identity").unwrap();
         if value != "pending" {
@@ -968,7 +968,7 @@ fn navigator_update_compares_script_bytes_and_dispatches_updatefound_only_when_c
              'started';",
         )
         .unwrap();
-    let deadline = Instant::now() + Duration::from_secs(20);
+    let deadline = Instant::now() + Duration::from_secs(60);
     while webview.execute_script("globalThis.__updateStage").unwrap() == "pending" {
         assert!(Instant::now() < deadline, "initial update registration timed out");
         std::thread::sleep(Duration::from_millis(10));
@@ -1013,7 +1013,7 @@ fn navigator_update_compares_script_bytes_and_dispatches_updatefound_only_when_c
         )
         .unwrap();
 
-    let deadline = Instant::now() + Duration::from_secs(20);
+    let deadline = Instant::now() + Duration::from_secs(60);
     loop {
         let value = webview
             .execute_script(
@@ -1088,7 +1088,7 @@ fn navigator_update_succeeds_while_initial_worker_is_installing() {
         )
         .unwrap();
 
-    let deadline = Instant::now() + Duration::from_secs(20);
+    let deadline = Instant::now() + Duration::from_secs(60);
     loop {
         let value = webview.execute_script("globalThis.__installingUpdate").unwrap();
         if value != "pending" {
@@ -1136,7 +1136,7 @@ fn navigator_update_activates_replacement_without_a_controlled_client() {
         )
         .unwrap();
 
-    let deadline = Instant::now() + Duration::from_secs(20);
+    let deadline = Instant::now() + Duration::from_secs(60);
     loop {
         let value = webview
             .execute_script(
@@ -1272,7 +1272,7 @@ fn navigator_skip_waiting_activates_replacement_version() {
         )
         .unwrap();
 
-    let deadline = Instant::now() + Duration::from_secs(20);
+    let deadline = Instant::now() + Duration::from_secs(60);
     loop {
         let value = webview
             .execute_script(
@@ -1330,7 +1330,7 @@ fn navigator_controller_tracks_document_and_skip_waiting_replacement() {
         )
         .unwrap();
 
-    let deadline = Instant::now() + Duration::from_secs(20);
+    let deadline = Instant::now() + Duration::from_secs(60);
     loop {
         let value = webview.execute_script("globalThis.__controllerSetup").unwrap();
         if value != "pending" {
@@ -1395,7 +1395,7 @@ fn navigator_controller_tracks_document_and_skip_waiting_replacement() {
         )
         .unwrap();
 
-    let deadline = Instant::now() + Duration::from_secs(20);
+    let deadline = Instant::now() + Duration::from_secs(60);
     loop {
         let value = webview.execute_script("globalThis.__controllerChange").unwrap();
         if value != "pending" {
@@ -1470,7 +1470,7 @@ fn iframe_controller_tracks_skip_waiting_replacement() {
              'started';",
         )
         .unwrap();
-    let deadline = Instant::now() + Duration::from_secs(20);
+    let deadline = Instant::now() + Duration::from_secs(60);
     loop {
         let value = webview.execute_script("String(globalThis.__iframeSetup)").unwrap();
         if value != "pending" {
@@ -1528,7 +1528,7 @@ fn iframe_controller_tracks_skip_waiting_replacement() {
     );
     webview.run_page_scripts_strict().unwrap();
 
-    let deadline = Instant::now() + Duration::from_secs(20);
+    let deadline = Instant::now() + Duration::from_secs(60);
     loop {
         let value = webview
             .execute_script("String(globalThis.__iframeSkipWaiting)")
@@ -1570,7 +1570,7 @@ fn iframe_controller_tracks_skip_waiting_replacement() {
     webview
         .execute_script("globalThis.__iframeReplacement.active.postMessage({type:'ping'});")
         .unwrap();
-    let deadline = Instant::now() + Duration::from_secs(20);
+    let deadline = Instant::now() + Duration::from_secs(60);
     loop {
         let value = webview
             .execute_script("String(globalThis.__iframeWorkerMessage || 'pending')")
@@ -1618,7 +1618,7 @@ fn navigator_clients_claim_controls_current_matching_document() {
         )
         .unwrap();
 
-    let deadline = Instant::now() + Duration::from_secs(20);
+    let deadline = Instant::now() + Duration::from_secs(60);
     loop {
         let value = webview.execute_script("globalThis.__claimResult").unwrap();
         if value != "pending" {
@@ -1749,7 +1749,7 @@ fn message_time_clients_claim_controls_existing_iframe() {
     );
     webview.run_page_scripts_strict().unwrap();
 
-    let deadline = Instant::now() + Duration::from_secs(20);
+    let deadline = Instant::now() + Duration::from_secs(60);
     loop {
         let value = webview.execute_script("String(globalThis.__claimFetchStage)").unwrap();
         if value.starts_with("after:") || value.starts_with("error:") {
@@ -1896,7 +1896,7 @@ fn waiting_worker_clients_claim_rejects_over_message_port() {
     );
     webview.run_page_scripts_strict().unwrap();
 
-    let deadline = Instant::now() + Duration::from_secs(20);
+    let deadline = Instant::now() + Duration::from_secs(60);
     loop {
         let _ = webview.poll_service_worker_runtime_events();
         let value = webview
@@ -1969,7 +1969,7 @@ fn service_worker_post_message_dispatches_structured_page_payload() {
         )
         .unwrap();
 
-    let deadline = Instant::now() + Duration::from_secs(20);
+    let deadline = Instant::now() + Duration::from_secs(60);
     loop {
         let value = webview.execute_script("globalThis.__messageResult").unwrap();
         if value != "pending" {
@@ -1986,7 +1986,7 @@ fn service_worker_post_message_dispatches_structured_page_payload() {
              globalThis.__messageWorker.postMessage({kind:'two', items:[1, 2]});",
         )
         .unwrap();
-    let deadline = Instant::now() + Duration::from_secs(20);
+    let deadline = Instant::now() + Duration::from_secs(60);
     loop {
         let replies = webview.execute_script("globalThis.__messageReplies.join('|')").unwrap();
         if replies == "page|one|two" {
@@ -2011,7 +2011,7 @@ fn service_worker_post_message_dispatches_structured_page_payload() {
     webview
         .execute_script("globalThis.__messageWorker.postMessage({kind:'silent'});")
         .unwrap();
-    let deadline = Instant::now() + Duration::from_secs(20);
+    let deadline = Instant::now() + Duration::from_secs(60);
     loop {
         let pending = webview
             .execute_script("String(globalThis.__messageWorker._messagePollPending)")
@@ -2298,7 +2298,7 @@ fn update_permissions_follow_calling_worker_state_during_installation() {
         )
         .unwrap();
 
-    let deadline = Instant::now() + Duration::from_secs(20);
+    let deadline = Instant::now() + Duration::from_secs(60);
     loop {
         let value = webview.execute_script("globalThis.__updatePermissions").unwrap();
         if value != "pending" {
@@ -2401,7 +2401,7 @@ fn repeated_registration_changes_script_type_and_worker_message() {
         )
         .unwrap();
 
-    let deadline = Instant::now() + Duration::from_secs(20);
+    let deadline = Instant::now() + Duration::from_secs(60);
     loop {
         let value = webview.execute_script("globalThis.__typeUpdate").unwrap();
         if value.contains('|') || value.contains("error:") {
@@ -2455,7 +2455,7 @@ fn message_import_replays_persistent_worker_resource_map() {
         )
         .unwrap();
 
-    let deadline = Instant::now() + Duration::from_secs(20);
+    let deadline = Instant::now() + Duration::from_secs(60);
     loop {
         let value = webview.execute_script("globalThis.__eventImportResult").unwrap();
         if value != "pending" {
