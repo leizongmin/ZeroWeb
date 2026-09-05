@@ -34,3 +34,9 @@ modules: engine,dom,canvas,css-parser,render-foundation,host-runtime,browser-she
 - 判噪声后**重跑定论**（policy §8「失败重跑一次再定论」）或直接记录归因，禁止为通过门禁 relax/re-capture（config_hash 与 justification 会暴露）。
 - 定向测量（`ZERO_WEB_BENCH_CRATES=...`）不能替代全量，但隔离单 bench 复测（`cargo bench -- "<filter>"`）是判噪声最快的手段——秒级出结果且天然独占机器。
 - 改进方向（未实施）：perf-gate 的 suspect 判定若改为「测量期间周期采样 loadavg 峰值」而非仅结束时刻，可覆盖中途结束的污染时序。
+
+## 补充（2026-09-06，ZRG-20260905T220123Z）：隔离复测的对照必须是「同日同环境的基线 SHA」，不能跨天比
+
+隔离复测判据 2 有一个隐蔽陷阱：把污染窗口里的隔离值与**上一天的干净参照**直接比较，会得出「真实回归」的误判。本轮 `incremental_layout` 污染窗口隔离复测 2.614ms vs 前日参照 2.10ms = +24.5%，据此发了候选回归告警；随后用 `git worktree add` 在基线 SHA 建临时 worktree、同日交错 A/B（两侧各 3–5 轮，criterion 标准 warmup）推翻——基线 SHA 当日同法复测同样超预算（2.33–2.42ms vs 预算 2.399ms），成对差值 −0.9%~+5.5% 符号翻转，超限来自基线（录于 08-22）与当日环境的漂移而非代码。
+
+修正后的判据 2 表述：**隔离复测的对照不是历史记录，而是同日建立的基线 SHA worktree**；判据 3（代码窗口核对）同理。跨天比较只用于趋势观察，不能作为回归定论。附带操作要点：worktree 里跑含 v8 的 bench 需把 `~/.cache/zero-web/rusty_v8/<v>/librusty_v8_*.a.gz` 复制为 worktree `.cargo/rusty_v8/archive` **文件**（主仓该路径是符号链接，build.rs 对目录会报 IsADirectory）；A/B 完成后 `git worktree remove --force` 清理。
