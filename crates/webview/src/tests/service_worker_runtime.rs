@@ -563,6 +563,20 @@ fn navigator_register_executes_imported_classic_scripts_in_order() {
              'started';",
         )
         .unwrap();
+    // 组合态高负载下 SW 激活 promise 链推进可慢于单次轮询——同 e55038a2a 的
+    // deadline 轮询形态（本测试此前无轮询，属该修复的漏改补片）。
+    let deadline = Instant::now() + Duration::from_secs(60);
+    loop {
+        let stage = webview.execute_script("globalThis.__importStage").unwrap();
+        if stage == "activated" || stage.starts_with("error:") {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "import order registration timed out: {stage}"
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
     assert_eq!(webview.execute_script("globalThis.__importStage").unwrap(), "activated");
     assert_eq!(
         requests.lock().unwrap().as_slice(),
