@@ -137,3 +137,39 @@ fn test_contain_size_no_attr_still_padding_only() {
         img.height
     );
 }
+
+/// R4060（css-contain-1 §containment-size）：contain:size **button** + block 子——
+/// button 的 BFC auto-height「含浮动/流内后代」重算（float_positioning）不得覆盖
+/// converter 的 CIS-or-0 definite 高（旧实现重算把 34 撑到 117）。chromium 对
+/// contained button 按规范折叠内容（UA button 无 min-height 强制），与 select 的
+/// 「控件默认高」豁免语义不同——R4034b 表单豁免收窄为 input/select/textarea。
+/// driving: css-contain/contain-size-button-002。
+#[test]
+fn r4060_contain_size_button_collapses_to_chrome() {
+    let html = r#"<html><body style="margin:0">
+<button style="contain: size; margin: 0; border: 1em solid green"><div style="height: 100px; width: 100px;">inner</div></button>
+</body></html>"#;
+    let (doc, root) = layout_with_img_intrinsic(html, (60.0, 60.0));
+    let btn = find_button(&root, &doc).expect("button");
+    // 内容高 0 → border-box 高 = 32（1em 边框 ×2）+ UA padding 2 ≈ 34。
+    assert!(
+        (btn.height - 34.0).abs() < 1.0,
+        "contain:size button 应塌到 chrome-only ≈34（内容 100 不泄漏），got {}",
+        btn.height
+    );
+}
+
+fn find_button<'a>(r: &'a LayoutBox, d: &zero_dom::Document) -> Option<&'a LayoutBox> {
+    if r.node_id.is_some_and(|nid| {
+        d.get(nid)
+            .is_some_and(|n| matches!(&n.kind, zero_dom::NodeKind::Element(e) if e.local_name() == "button"))
+    }) {
+        return Some(r);
+    }
+    for c in &r.children {
+        if let Some(b) = find_button(c, d) {
+            return Some(b);
+        }
+    }
+    None
+}

@@ -1456,13 +1456,17 @@ pub(crate) fn measure_text_content(
     //（contain-animation-001：contain:strict abspos div 测出 nbsp 行高 116 → 216 高
     // 红底露出）。CIS 替代与 R4008 converter/测量面同语义（css-sizing-4
     // §intrinsic-size-override）。
-    // 豁免表单控件（button/input/select/textarea）——其尺寸是 UA widget chrome + 既有
+    // 豁免表单控件（input/select/textarea）——其尺寸是 UA widget chrome + 既有
     // 内容回退行为，containment 语义由 widget 自身处理（contain-size-select-elem-002/004：
     // contained select 塌 0 vs 空 select 默认高，双页失配实证）。
+    // R4060：**button 不豁免**——chromium 对 contained button 按规范折叠内容
+    //（contain-size-button-002：contained button 应 border-only 34 高，旧实现 117 =
+    // 内容 100 泄漏；button 的 UA 样式无 min-height 强制，containment 折叠其内容后
+    // 自然余 chrome padding/border，与 select 的「控件默认高」语义不同）。
     if let Some(s) = styles.get(&dom_id)
         && s.contain.has_size()
         && !doc.get(dom_id).is_some_and(|n| match &n.kind {
-            NodeKind::Element(e) => matches!(e.local_name(), "button" | "input" | "select" | "textarea"),
+            NodeKind::Element(e) => matches!(e.local_name(), "input" | "select" | "textarea"),
             _ => false,
         })
     {
@@ -2145,6 +2149,7 @@ pub(crate) fn remeasure_inline_only_containers(
             .is_some_and(|id| crate::tree::run_in_following_block_sibling(doc, styles, id).is_some());
     // R4034b：size containment（strict/content-visibility:hidden 同语义面）——内容不参与 sizing。
     // 表单控件豁免（同 measure gate：UA widget chrome 尺寸不受 containment 抑制）。
+    // R4060：button 不豁免（同 measure gate 修，contain-size-button-002）。
     let style_has_size_containment = box_node
         .node_id
         .and_then(|id| {
@@ -2152,7 +2157,7 @@ pub(crate) fn remeasure_inline_only_containers(
                 s.contain.has_size()
                     && !doc.get(id).is_some_and(|n| match &n.kind {
                         NodeKind::Element(e) => {
-                            matches!(e.local_name(), "button" | "input" | "select" | "textarea")
+                            matches!(e.local_name(), "input" | "select" | "textarea")
                         }
                         _ => false,
                     })

@@ -1612,6 +1612,9 @@ impl LayoutEngine {
             None
         };
         // R1277 ④：记录 height:auto 供 float 后处理收缩守卫（显式高度容器不被收缩）。
+        // R4060：contain:size（含 strict）标志——converter 已写 CIS-or-0 definite 高，
+        // 后处理 auto-height 重算 pass 据此跳过（见 types has_size_containment）。
+        let has_size_containment = computed.is_some_and(|c| c.contain.has_size());
         let declared_height_auto =
             computed.is_some_and(|c| matches!(c.height, zero_css_parser::values::LengthValue::Auto));
         // R1730 Slice 5 续：记录 margin-left/right:auto（仅水平书写模式）供多-float BFC 协调
@@ -1702,6 +1705,7 @@ impl LayoutEngine {
             declared_width_auto,
             declared_width_px,
             declared_height_auto,
+            has_size_containment,
             margin_left_auto,
             margin_right_auto,
             children: children_boxes,

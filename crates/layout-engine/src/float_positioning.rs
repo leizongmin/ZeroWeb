@@ -864,6 +864,10 @@ pub(crate) fn adjust_float_positions_with_context(
         // 块级子元素的 float 收缩到子元素最大 border-box 宽度（仅当窄于当前宽度）。
         // 纯文本内容（无块级子元素）的 float 保持 taffy 宽度——其 shrink-to-fit 需
         // IFC 测量，留作后续。仅当内容确实更窄时才收缩，对内容更宽或显式宽度的 float 为 no-op。
+        // R4060（css-contain-1 §containment-size）：contain:size float 的内容不参与
+        // sizing——shrink-to-fit 内容宽 = 0，浮动按钮收缩到 chrome（padding+border），
+        // 非子底边宽（contain-size-button-002 floatLBasic：144 应 44）。
+        let content_suppressed = child.has_size_containment;
         if child.declared_width_auto {
             // 内容宽度候选：块级子元素取最大 border-box 宽度，**inline-level replaced
             // 子元素**（img/video 等原子 inline 盒，已有确定 used 宽度）也纳入——R180 教训
@@ -898,7 +902,24 @@ pub(crate) fn adjust_float_positions_with_context(
             // 空内容 float 收缩到 padding+border（最小盒），仍比全宽更接近 shrink-to-fit 语义。
             // 纯文本 float（无 block 级/replaced 子元素）保持 taffy 宽度——其 shrink-to-fit
             // 需 IFC 测量，留后续。
-            if !content_child_widths.is_empty() || floated_children_width > 0.0 {
+            if content_suppressed {
+                // contain:size：内容宽 0 → chrome-only 盒。
+                let preferred_border_box =
+                    child.padding_left + child.padding_right + child.border_left + child.border_right;
+                let available_border_box = (container_width - child.margin_left - child.margin_right).max(0.0);
+                let used_border_box = preferred_border_box.min(available_border_box).max(0.0);
+                if used_border_box < child.width {
+                    let delta_w = child.width - used_border_box;
+                    child.width = used_border_box;
+                    child.content_width = (used_border_box
+                        - child.padding_left
+                        - child.padding_right
+                        - child.border_left
+                        - child.border_right)
+                        .max(0.0);
+                    let _ = delta_w;
+                }
+            } else if !content_child_widths.is_empty() || floated_children_width > 0.0 {
                 let preferred_border_box =
                     content_max_w + child.padding_left + child.padding_right + child.border_left + child.border_right;
                 let available_border_box = (container_width - child.margin_left - child.margin_right).max(0.0);
@@ -1878,6 +1899,11 @@ pub(crate) fn adjust_float_positions_with_context(
         // taffy align-stretch 定高的 item（如 inline-block item）被本重算按「无子 →
         // content_bottom=0」清零（flexbox_flex-1-* 24 案 10.41% 簇）。排除。
         && !box_node.is_flex_grid_item
+        // R4060（css-contain-1 §containment-size）：contain:size 容器的 taffy 高已是
+        // definite（converter 折 CIS-or-0），本「BFC auto-height 含浮动后代」重算
+        // 不适用——重算把 definite-0 撑回子底边（contain-size-button-002：contained
+        // button 34 被撑到 117）。同 R4057 R1743 豁免：definite used size 胜内容回填。
+        && !box_node.has_size_containment
         && (box_node.is_flow_root || matches!(box_node.float, FloatValue::Left | FloatValue::Right))
     {
         // 本重算的语义是「BFC 的 auto height 包含其浮动后代」，仅适用于参与文档流的

@@ -215,6 +215,12 @@ pub struct LayoutBox {
     /// trailing 折叠链留父内（contained），容器高度已由 containment 计算确定，不应被
     /// 「float 不计高度」路径覆盖。
     pub had_clearance: bool,
+    /// R4060：自身 `contain: size`（含 strict）标志——converter 已把 content-based auto
+    /// 高折 CIS-or-0 **definite** 值（css-contain-1 §containment-size + css-sizing-4
+    /// §intrinsic-size-override）。后处理各「auto-height 容器按子底边重算/回填」pass
+    ///（float_positioning BFC 重算、R1743 backfill 等）据此跳过：definite used size 胜
+    /// 内容底边回填（contain-size-block-001/button-002：contained 容器被撑回内容高）。
+    pub has_size_containment: bool,
     /// R1321/R1322 §8.3.1 containment-applies 标志：本容器是否进入 containment 分支
     ///（auto-height 非 BFC + empty cleared block），**无论是否扩张高度**。区别于
     /// `had_clearance`（仅扩张时置 true，供 exclude_floats 跳过）；`clearance_active`
@@ -539,6 +545,7 @@ impl Default for LayoutBox {
             nested_spanner_col_bg: Vec::new(),
             is_layout_container: false,
             had_clearance: false,
+            has_size_containment: false,
             clearance_active: false,
             is_anon_table_root: false,
             column_gap: 0.0,

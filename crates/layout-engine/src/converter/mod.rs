@@ -160,9 +160,60 @@ pub fn computed_style_to_taffy(
             //（contain-size-block-001「block 应如无内容 sized，但宽度仍 fill CB」+ contain-intrinsic-size
             // block 案 CIS-height 应用、CIS-width 不覆盖 block fill-CB 宽）。非 block-level（inline-block/
             // replaced/table 等收缩适配）auto-width 仍取 CIS 或 0。
-            let cis_dim = |cis: &Option<LengthValue>| match cis {
+            // R4060（css-sizing-4 §4 + css-contain-1 §containment-size）：box-sizing:border-box
+            // 元素（UA button 等）的 CIS-or-0 是 **content-box** 尺寸——taffy 的 BorderBox
+            // 语义下 Dimension::length(0) 表示**总尺寸** 0，把 chrome（padding+border）一并
+            // 折没（contain-size-button-002 iFlexBasic：inline-flex contained button 应
+            // chrome-only 44×34，旧渲 0×0）。CIS-or-0 臂在 BorderBox 下改写为 frame 值。
+            // % padding/border 不可静态解析 → 保持旧行为（0）。
+            let border_box = matches!(style.box_sizing, BoxSizingValue::BorderBox);
+            let px_len = |v: &LengthValue| -> Option<f32> {
+                match v {
+                    LengthValue::Px(p) if p.is_finite() => Some(*p as f32),
+                    LengthValue::Em(e) => Some((*e * 16.0) as f32),
+                    LengthValue::Rem(r) => Some((*r * 16.0) as f32),
+                    _ => None,
+                }
+            };
+            let bw = |w: &LengthValue, s: &zero_style_system::property::types::BorderStyleValue| -> f32 {
+                if matches!(
+                    s,
+                    zero_style_system::property::types::BorderStyleValue::None
+                        | zero_style_system::property::types::BorderStyleValue::Hidden
+                ) {
+                    0.0
+                } else {
+                    px_len(w).unwrap_or(f32::NAN)
+                }
+            };
+            let frame_x = px_len(&style.padding_left)
+                .and_then(|pl| px_len(&style.padding_right).map(|pr| pl + pr))
+                .and_then(|p| {
+                    let bl = bw(&style.border_left_width, &style.border_left_style);
+                    let br = bw(&style.border_right_width, &style.border_right_style);
+                    if bl.is_finite() && br.is_finite() {
+                        Some(p + bl + br)
+                    } else {
+                        None
+                    }
+                });
+            let frame_y = px_len(&style.padding_top)
+                .and_then(|pt| px_len(&style.padding_bottom).map(|pb| pt + pb))
+                .and_then(|p| {
+                    let bt = bw(&style.border_top_width, &style.border_top_style);
+                    let bb = bw(&style.border_bottom_width, &style.border_bottom_style);
+                    if bt.is_finite() && bb.is_finite() {
+                        Some(p + bt + bb)
+                    } else {
+                        None
+                    }
+                });
+            let cis_dim_boxed = |cis: &Option<LengthValue>, frame: Option<f32>| match cis {
                 Some(l) => convert_length_to_dimension(l, vw, vh),
-                None => taffy::style::Dimension::length(0.0),
+                None => match (border_box, frame) {
+                    (true, Some(f)) => taffy::style::Dimension::length(f),
+                    _ => taffy::style::Dimension::length(0.0),
+                },
             };
             let block_fills_width = matches!(
                 style.display,
@@ -186,13 +237,13 @@ pub fn computed_style_to_taffy(
                     LengthValue::Auto
                     | LengthValue::MinContent
                     | LengthValue::MaxContent
-                    | LengthValue::FitContent(_) => cis_dim(&style.contain_intrinsic_width),
+                    | LengthValue::FitContent(_) => cis_dim_boxed(&style.contain_intrinsic_width, frame_x),
                     _ => convert_length_to_dimension(&style.width, vw, vh),
                 },
                 height: match &style.height {
-                    LengthValue::Auto => cis_dim(&style.contain_intrinsic_height),
+                    LengthValue::Auto => cis_dim_boxed(&style.contain_intrinsic_height, frame_y),
                     LengthValue::MinContent | LengthValue::MaxContent | LengthValue::FitContent(_) => {
-                        cis_dim(&style.contain_intrinsic_height)
+                        cis_dim_boxed(&style.contain_intrinsic_height, frame_y)
                     }
                     _ => convert_length_to_dimension(&style.height, vw, vh),
                 },
