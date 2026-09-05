@@ -1300,18 +1300,6 @@ fn is_valid_selector_parse(input: &str, selectors: &[zero_css_parser::ast::Selec
     true
 }
 
-/// 剥离值末尾的 `!important` / `! important`（CSS 语法 §8.2，`!` 与 `important` 间允许空白）。
-/// 用于 @supports 声明支持性求值（`!important` 不影响是否支持）。
-fn strip_important(value: &str) -> &str {
-    let lower = value.to_ascii_lowercase();
-    if let Some(bang) = lower.rfind('!') {
-        if lower[bang + 1..].trim_start() == "important" {
-            return value[..bang].trim_end();
-        }
-    }
-    value
-}
-
 fn supports_rect_values(value: &str, is_valid: fn(&str) -> bool) -> bool {
     let mut count = 0;
     for part in value.split_whitespace() {
@@ -1614,9 +1602,25 @@ fn is_property_supported(property: &str, value: &str) -> bool {
     use zero_css_parser::values::*;
 
     let lower = property.to_ascii_lowercase();
-    // @supports 声明可带 `!important`（CSS Conditional §7），求值支持性时忽略之。
-    // driving: WPT css-supports-004 `(color: green !important)`。
-    let trimmed = strip_important(value).trim();
+    // R4042（css-conditional-3 §7 + css-variables-1 §2）：自定义属性（`--*`）——ZW 已支持
+    // css-variables（R2386+ 全套 var() 机制），任意非空值均支持（at-supports-044 test1：
+    // `(--foo: whatever)` 须 true；旧实现落 extended 表未命中 → false）。条件级
+    // `!important` 按 css-conditional-3「important flag 忽略」剥除（at-supports-044
+    // test2：`(--foo: whatever !important)` 亦 true——pixel 实证 ZW 剥除语义与 chromium 一致）。
+    let (lower, trimmed) = {
+        let lower_full = value.to_ascii_lowercase();
+        if let Some(bang) = lower_full.rfind('!') {
+            if lower_full[bang + 1..].trim_start() == "important" {
+                let stripped = value[..bang].trim_end();
+                (property.to_ascii_lowercase(), stripped.trim().to_string())
+            } else {
+                (lower, value.trim().to_string())
+            }
+        } else {
+            (lower, value.trim().to_string())
+        }
+    };
+    let trimmed = trimmed.as_str();
     // CSS 全局关键字（inherit/initial/unset/revert/revert-layer）对所有属性合法——任意属性
     // 都可取全局关键字值，故 `(padding: inherit)` 须判支持（不能因 padding 的长度解析器不
     // 识别 inherit 而判 false）。driving: WPT at-supports-012 `(padding:inherit)` in conjunction。
@@ -1626,6 +1630,9 @@ fn is_property_supported(property: &str, value: &str) -> bool {
         "inherit" | "initial" | "unset" | "revert" | "revert-layer"
     ) {
         return true;
+    }
+    if lower.starts_with("--") {
+        return !trimmed.is_empty();
     }
 
     match lower.as_str() {

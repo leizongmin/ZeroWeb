@@ -461,3 +461,36 @@ fn test_attribute_no_match() {
     };
     assert!(!matches_selector(&doc, el, &sel));
 }
+
+// ── R4042：@supports 自定义属性 + 条件级 !important（css-conditional-3 §7 + css-variables-1）──
+
+/// `(--foo: whatever)` → true（自定义属性任意非空值均支持）。
+#[test]
+fn r4042_supports_custom_property_true() {
+    use zero_css_parser::ast::SupportsCondition;
+    assert!(evaluate_supports_condition(&SupportsCondition::Property(
+        "--foo".to_string(),
+        "whatever".to_string()
+    )));
+}
+
+/// `(--foo: whatever !important)` → important flag 剥除后仍 true（at-supports-044 test2
+/// chromium 实证：条件级 important 忽略）。
+#[test]
+fn r4042_supports_custom_property_with_important_true() {
+    use zero_css_parser::ast::SupportsCondition;
+    assert!(evaluate_supports_condition(&SupportsCondition::Property(
+        "--foo".to_string(),
+        "whatever !important".to_string()
+    )));
+}
+
+/// 普通属性条件带 !important → 剥除后按值求值（`(color: green !important)` → true）。
+#[test]
+fn r4042_supports_normal_property_with_important_strips() {
+    use zero_css_parser::ast::SupportsCondition;
+    assert!(evaluate_supports_condition(&SupportsCondition::Property(
+        "color".to_string(),
+        "green !important".to_string()
+    )));
+}
