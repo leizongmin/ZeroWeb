@@ -163,6 +163,8 @@ WA_FILES=(
   # 耦合一 task 均在 D3 已批 offline 渲染路径内。
   "webaudio/the-audio-api/the-oscillatornode-interface/detune-limiting.html"
   "webaudio/the-audio-api/the-oscillatornode-interface/detune-overflow.html"
+  # ---- 第二十九批（D3 第十二增量）：sub-sample-start——亚帧起点 ceil 语义。
+  "webaudio/the-audio-api/the-oscillatornode-interface/sub-sample-start.html"
   # audioparam 四型 ramp 对拍（setValueAtTime/linearRamp/exponentialRamp/
   # setTargetAtTime）维持排除——上游坏 helper：audioparam-testing.js
   # verifyDiscontinuities 引用 createAudioGraphAndTest 形参 numberOfTests（非模块

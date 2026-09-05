@@ -5875,5 +5875,50 @@
     "status": "Pass"
    }
   ]
+ ],
+ [
+  "webaudio/the-audio-api/the-oscillatornode-interface/sub-sample-start.html",
+  [
+   {
+    "name": "# AUDIT TASK RUNNER STARTED.",
+    "status": "Pass"
+   },
+   {
+    "name": "> [a-rate oscillator honors sub-sample start offset] ",
+    "status": "Pass"
+   },
+   {
+    "name": "  reference[0:5] contains only the constant 0.",
+    "status": "Pass"
+   },
+   {
+    "name": "  a-rate[0:5] contains only the constant 0.",
+    "status": "Pass"
+   },
+   {
+    "name": "  Max |a-rate - reference| after start is less than or equal to 0.000001.",
+    "status": "Pass"
+   },
+   {
+    "name": "  a-rate[6:] equals [0,0.1905747503042221,0.37416407465934753,0.5440385341644287,0.6939714550971985,0.8184671401977539,0.9129621982574463,0.9739929437637329,0.9993223547935486,0.9880220293998718,0.9405060410499573,0.8585162162780762,0.7450577616691589,0.6042895317077637,0.44137126207351685,0.26227471232414246...] with an element-wise tolerance of {\"absoluteThreshold\":0.000001,\"relativeThreshold\":0}.",
+    "status": "Pass"
+   },
+   {
+    "name": "< [a-rate oscillator honors sub-sample start offset] All assertions passed. (total 4 assertions)",
+    "status": "Pass"
+   },
+   {
+    "name": "Executing \"a-rate oscillator honors sub-sample start offset\"",
+    "status": "Pass"
+   },
+   {
+    "name": "# AUDIT TASK RUNNER FINISHED: 1 tasks ran successfully.",
+    "status": "Pass"
+   },
+   {
+    "name": "Audit report",
+    "status": "Pass"
+   }
+  ]
  ]
 ]

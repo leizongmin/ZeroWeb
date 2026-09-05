@@ -7922,7 +7922,10 @@
         var oscType = node.type || 'sine';
         var baseFreq = (node.frequency && typeof node.frequency.value === 'number') ? node.frequency.value : 440;
         var oscGain = (node.gain && typeof node.gain.value === 'number') ? node.gain.value : 1.0;
-        var startFrame = Math.floor(node._zwStartedAtSec * rate);
+        // media-audio D3 第十二增量：亚帧起点 ceil 语义（spec OscillatorNode start——
+        // 亚采样起点 t 的首输出帧 = ceil(t·rate)；整数起点 ceil 恒等零回归）。
+        // sub-sample-start「前首帧静默」断言面。
+        var startFrame = Math.ceil(node._zwStartedAtSec * rate);
         var stopFrame = (node._zwStoppedAtSec != null) ? Math.floor(node._zwStoppedAtSec * rate) : len;
         if (oscGain !== 0) {
           var wave = node._zwCustomWave;

@@ -1888,6 +1888,9 @@ pub const WEBAUDIO_TEST_FILES: &[&str] = &[
     // linearRamp 逐采样耦合频率（_zwParamValueAt 通用 automation 求值复用）。
     "webaudio/the-audio-api/the-oscillatornode-interface/detune-limiting.html",
     "webaudio/the-audio-api/the-oscillatornode-interface/detune-overflow.html",
+    // ---- 第二十九批（D3 第十二增量）：sub-sample-start——亚帧起点 ceil 语义
+    //（首输出帧 = ceil(t·rate)）+ 同值 ramp a-rate 路径与常频参考逐样本对拍。
+    "webaudio/the-audio-api/the-oscillatornode-interface/sub-sample-start.html",
     // 不导入：audioparam 四型 ramp 对拍（setValueAtTime/linearRamp/exponentialRamp/
     // setTargetAtTime，第二十八批试导 2026-09-05）——上游坏 helper：audioparam-testing.js
     // verifyDiscontinuities 引用 createAudioGraphAndTest 形参 numberOfTests（非模块

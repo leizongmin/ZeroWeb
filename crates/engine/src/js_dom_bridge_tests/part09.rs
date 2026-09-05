@@ -5453,3 +5453,46 @@ fn test_webaudio_offline_oncomplete_face_m3w6() {
         "oncomplete 同步派发（renderedBuffer.length + type）+ promise resolve 双通道"
     );
 }
+
+// media-audio D3 第十二增量（2026-09-05）：振荡器亚帧起点 ceil 语义——首输出帧
+// = ceil(startSec·rate)（spec start 亚采样起点；整数起点恒等零回归）。
+// WPT sub-sample-start「前首帧静默」断言面。
+// https://webaudio.github.io/web-audio-api/#dom-oscillatornode-start-when
+#[test]
+fn test_webaudio_oscillator_subsample_start_face_m3w7() {
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    sandbox.execute(
+        "var octx = new OfflineAudioContext(1, 32, 32768);\
+         var o1 = new OscillatorNode(octx, {frequency: 1000});\
+         o1.connect(octx.destination);\
+         o1.start(5.5 / 32768);\
+         var o2 = new OscillatorNode(octx, {frequency: 1000});\
+         o2.connect(octx.destination);\
+         o2.start(5 / 32768);\
+         var out = null;\
+         octx.startRendering().then(function (b) { out = b.getChannelData(0); });\
+         void 0;",
+    ).unwrap();
+    sandbox.execute("void 0").unwrap();
+    // 帧语义：亚帧起点 5.5/32768 → 首输出帧 ceil(5.5)=6（帧 5 静默）；
+    // 整数起点 5/32768 → 首输出帧 5。
+    sandbox.execute(
+        "globalThis.__r = [\
+           String(out[5] === 0),\
+           String(out[6] !== 0),\
+           String(o1._zwStartedAtSec * 32768)\
+         ].join('|');\
+         void 0;",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r").unwrap().value,
+        "true|true|5.5",
+        "亚帧起点 ceil 语义：帧 5 静默 + 帧 6 起振（sub-sample-start 面）"
+    );
+}

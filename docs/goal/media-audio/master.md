@@ -1,3 +1,11 @@
+**最后更新**: 2026-09-05（**D3 第十二增量——sub-sample-start 导入（50 用例
+1418P/0F = 100%）**：振荡器亚帧起点 ceil 语义（spec start——亚采样起点 t 的首
+输出帧 = ceil(t·rate)；整数起点恒等零回归）——`startFrame` floor→ceil 一处改动
+落地，同值 ramp a-rate 路径与常频参考逐样本对拍面（`_zwParamValueAt` automation
+求值复用）全绿。此前第十增量注记「剩余 sub-sample-start 随 automation 精化复评」
+兑现。单测 `test_webaudio_oscillator_subsample_start_face_m3w7` 常驻。evidence
+刷新 50 用例 1418 subtest。）
+**（注：下方「最后更新」第十一增量块为前轮记录，保留作历史）**
 **最后更新**: 2026-09-05（**D3 第十一增量——OfflineAudioContext.oncomplete 落地 +
 audioparam ramp 对拍四件试导负结果（上游坏 helper，维持排除）**：① **oncomplete
 派发**（spec OfflineAudioCompletionEvent——event.renderedBuffer 承载渲染产物，
@@ -146,10 +154,10 @@ volume/muted 真控制。**双重启动门控均已解除**：① M0 音频环�
   [archive/2026-09-04_wpt-webaudio-batches.md](archive/2026-09-04_wpt-webaudio-batches.md)，
   累计口径见验证基线。）
 
-- **余项（2026-09-05 D3 第十增量后更新）**：createGain 的 per-node 桥推（挂真出声/
-  设备切片）；WPT 余面已清零（detune-limiting/detune-overflow 已随第十增量导入
-  全绿——computed frequency 耦合 + ≥Nyquist 静默；剩余 sub-sample-start 为
-  param 调度插值细粒度面——随 automation 精化复评）。
+- **余项（2026-09-05 D3 第十二增量后更新）**：createGain 的 per-node 桥推（挂真出声/
+  设备切片）；**WPT 余面已彻底清零**——sub-sample-start 已随第十二增量导入全绿，
+  余下仅上游坏 helper 四件（audioparam ramp 对拍，第十一增量注记）与 worklet/
+  媒体互连/手势域。
 
 **M0 已收口（2026-09-01）**：
 - 环境实测：内核层 HDA 声卡在；**ALSA dev 头缺失（libasound2-dev 未装）→ cpal 默认
@@ -243,9 +251,10 @@ seek 双轨对齐（media-playback 流切片 D+E 兑现，联合 e2e
 e2e 常驻（M2c 后续切片 A/B：settle → 桥 play → 泵推进 + mp3/oga 负例三面）；
 AudioContext 最小面 RFC 完成 **且已获批实施**（D1，2026-09-01）——切片 1+2
 落地（zero-media webaudio 模块 + shim 门面 + 宿主桥 + 泵接线 + e2e）+ WPT
-webaudio 子集二十七批导入（**49 用例 1408P/0F = 100%，排除面清零**——含 D3
-offline 渲染十增量：osc-basic-waveform/gain/nominal-range/method-chaining/
-copy-channel/ctor-audiobuffer/ctor-iirfilter/periodicWave/detune 耦合两件等）。
+webaudio 子集二十九批导入（**50 用例 1418P/0F = 100%，排除面清零**——含 D3
+offline 渲染十二增量：osc-basic-waveform/gain/nominal-range/method-chaining/
+copy-channel/ctor-audiobuffer/ctor-iirfilter/periodicWave/detune 耦合两件/
+oncomplete/sub-sample-start 等）。
 
 **DC-5（测试与质量不可退让）✅**：make test 18705 全绿（2026-09-02 组合树实测）、
 clippy 零警告、每切片带单测 + e2e 资产化（webaudio 7 单测 + NullSink 链 e2e +
@@ -304,7 +313,8 @@ DONE 阻塞**；Mixer/重采样接线随设备切片可选推进）。
 
 - 测试基线：`make test` 全绿 18866（2026-09-04 组合树实测）；clippy 零警告
   （default 与 `--features audio-cpal` 双配置）
-- WPT webaudio：**49 用例 1408P/0F = 100%**（2026-09-05 二十七批累计——第二十七批
+- WPT webaudio：**50 用例 1418P/0F = 100%**（2026-09-05 二十九批累计——第二十九批
+  sub-sample-start（亚帧 ceil + a-rate 对拍）10 计数行 + 第二十七批
   detune-limiting（静态 Nyquist 静默 + linearRamp 耦合）2 subtest + 第二十七批
   detune-overflow（computed frequency 1.5e41 精确静默）7 计数行 + 第二十六批
   periodicWave（迁址路径 + Blink 归一化 + setPeriodicWave）31 subtest + 第二十五批
@@ -337,8 +347,8 @@ DONE 阻塞**；Mixer/重采样接线随设备切片可选推进）。
   createElementNS iframe 双 gate 修复）——the-audio-api 全接口目录含
   MediaStream 邻域清点收束；
   the-audiocontext-interface + the-audio-api 各接口目录清点收束）；
-  evidence：`evidence/2026-09-05-detune-coupling-d3.json`（第二十七批，49 用例
-  1408 subtest 全量）、`evidence/2026-09-05-offline-render-d3.json`（第十九批）、
+  evidence：`evidence/2026-09-05-detune-coupling-d3.json`（第二十九批，50 用例
+  1418 subtest 全量）、`evidence/2026-09-05-offline-render-d3.json`（第十九批）、
   `evidence/2026-09-02-webaudio-wpt-subset.json`（首批）、
   `evidence/2026-09-02-webaudio-ctor-oscillator.json`（第二批）、
   `evidence/2026-09-02-webaudio-ctor-family.json`（第四批）、
