@@ -492,7 +492,11 @@ impl RenderPipeline {
     /// 使元素盒自身 sizing 为图尺寸——build_subtree 已抑制其子节点，paint_img_element 渲染图片。
     /// 绕 R109 IFC（IFC 不测 inline replaced img，见 R2438 child-injection 证伪）。
     /// kill-switch `ZW_CONTENT_REPLACE=0`。
-    pub(crate) fn apply_content_url_replaced_sizing(&self, styles: &mut HashMap<NodeId, ComputedStyle>) {
+    pub(crate) fn apply_content_url_replaced_sizing(
+        &self,
+        doc: &zero_dom::Document,
+        styles: &mut HashMap<NodeId, ComputedStyle>,
+    ) {
         if std::env::var("ZW_CONTENT_REPLACE").as_deref() == Ok("0") {
             return;
         }
@@ -501,9 +505,22 @@ impl RenderPipeline {
         // 先收集（nid, w, h），避免迭代 styles 时 mutate 借用冲突。
         // content==Url 已 gate：正常 `<img src=x>`（content Normal）不受影响；仅 content:url
         // 元素（含 content:url 的 `<img>`，on-replaced-element）触发——content:url 覆盖 src。
+        // R4044（css-content-3 #2831 on-replaced-element）：元素带 HTML width/height 维度属性时
+        // 跳过——维度属性是 presentational hint（css-sizing used size 非 auto），content:url()
+        // 只替换 *content* 不改元素自身定尺寸语义；无脑写 Auto 侧会把 `<video width=100
+        // height=100>` 压成固有 100×50（element-replacement-on-replaced-element ref 页实证，
+        // 页面对 diff 1.04%）。普通元素（span/before 注入 img 等，无维度属性）照旧按图固有尺寸。
         let mut targets: Vec<(NodeId, f32, f32)> = Vec::new();
         for (&nid, st) in styles.iter() {
             if let ContentComputedValue::Url(u) = &st.content {
+                if doc.get(nid).is_some_and(|n| match &n.kind {
+                    zero_dom::NodeKind::Element(e) => {
+                        e.get_attribute("width").is_some() || e.get_attribute("height").is_some()
+                    }
+                    _ => false,
+                }) {
+                    continue;
+                }
                 let key = crate::paint::image_resource_key(u, self.document_url.as_deref());
                 if let Some(&(w, h)) = self.image_sizes.get(&key)
                     && w > 0.0
@@ -1092,7 +1109,7 @@ impl RenderPipeline {
         // 3.6 R2439：`content:url()` 普通元素 element-becomes-replaced——元素盒自身按
         // image 固有尺寸 sizing（width/height Auto 时设为图尺寸），build_subtree 已抑制其
         // 子节点，paint_img_element 渲染图片。绕 R109 IFC（见 R2438 child-injection 证伪）。
-        self.apply_content_url_replaced_sizing(&mut styles);
+        self.apply_content_url_replaced_sizing(&doc, &mut styles);
 
         // 4. 计算布局
         let layout_start = Instant::now();
@@ -4038,5 +4055,78 @@ impl RenderPipeline {
     pub(crate) fn sync_stylesheets_for_test(&mut self, _html: &str, css: &str) {
         let doc = self.cached_doc.as_ref().expect("cached doc").borrow();
         self.cached_stylesheets = collect_stylesheets(&doc, css);
+    }
+}
+
+#[cfg(test)]
+mod r4044_content_url_dim_attr_tests {
+    use super::*;
+
+    /// R4044（css-content-3 #2831 on-replaced-element）：带 HTML width/height 维度属性的
+    /// replaced 元素，`content:url()` 只替换内容不改定尺寸——R2439 sizing pass 须跳过，
+    /// 维度属性（presentational hint）定盒 100×100 而非图固有 100×50。
+    /// driving: element-replacement-on-replaced-element（ref 页 video 100×50 → 100×100）。
+    #[test]
+    fn r4044_dim_attr_replaced_skips_content_url_sizing() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let key = crate::paint::image_resource_key("/images/yellow.png", None);
+        // yellow.png 真实固有 100×50——旧实现写入 Auto 侧把 attr 100×100 压成 100×50。
+        pipeline.set_image_sizes(std::iter::once((key, (100.0f32, 50.0f32))).collect());
+        let html = r#"<html><body style="margin:0">
+<video poster="/images/blue.png" style="object-fit: cover; content: url(/images/yellow.png)" width=100 height=100></video>
+</body></html>"#;
+        let result = pipeline.render_html(html, "");
+        fn walk_video(b: &zero_layout_engine::types::LayoutBox, doc: &zero_dom::Document) -> Option<(f32, f32)> {
+            if let Some(id) = b.node_id
+                && let Some(n) = doc.get(id)
+                && let zero_dom::NodeKind::Element(e) = &n.kind
+                && e.local_name() == "video"
+            {
+                return Some((b.width, b.height));
+            }
+            for c in &b.children {
+                if let Some(found) = walk_video(c, doc) {
+                    return Some(found);
+                }
+            }
+            None
+        }
+        let (w, h) = walk_video(&result.layout.root, &zero_dom::parse_html(html)).expect("video box");
+        assert!(
+            (w - 100.0).abs() < 0.5 && (h - 100.0).abs() < 0.5,
+            "R4044: 维度属性定的 100×100 不得被 content:url 固有 100×50 覆盖，实际 {w}×{h}"
+        );
+    }
+
+    /// 对照锚：无维度属性的普通元素 content:url() 仍按图固有尺寸 sizing（R2439 既有面）。
+    #[test]
+    fn r4044_plain_element_content_url_keeps_intrinsic_sizing() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let key = crate::paint::image_resource_key("/images/yellow.png", None);
+        pipeline.set_image_sizes(std::iter::once((key, (100.0f32, 50.0f32))).collect());
+        let html = r#"<html><body style="margin:0">
+<span style="display: inline-block; content: url(/images/yellow.png)"></span>
+</body></html>"#;
+        let result = pipeline.render_html(html, "");
+        fn walk_span(b: &zero_layout_engine::types::LayoutBox, doc: &zero_dom::Document) -> Option<(f32, f32)> {
+            if let Some(id) = b.node_id
+                && let Some(n) = doc.get(id)
+                && let zero_dom::NodeKind::Element(e) = &n.kind
+                && e.local_name() == "span"
+            {
+                return Some((b.width, b.height));
+            }
+            for c in &b.children {
+                if let Some(found) = walk_span(c, doc) {
+                    return Some(found);
+                }
+            }
+            None
+        }
+        let (w, h) = walk_span(&result.layout.root, &zero_dom::parse_html(html)).expect("span box");
+        assert!(
+            (w - 100.0).abs() < 0.5 && (h - 50.0).abs() < 0.5,
+            "R4043 既有面：无维度属性 content:url 元素按图固有尺寸（100×50），实际 {w}×{h}"
+        );
     }
 }

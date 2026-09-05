@@ -264,3 +264,4 @@ css/css-display/run-in/run-in-inline-block-between-002.xht css/css-display/run-i
 css/CSS2/normal-flow/inline-table-width-001a.xht css/CSS2/normal-flow/inline-table-width-001-ref.xht == 2026-09-04 R4022 XHTML style #PCDATA 实体解码——xml char-ref decode 生效锚
 css/css-content/quotes-015.html css/css-content/reference/quotes-015-ref.html == 2026-09-05 R4043 嵌套 q 独子 stored IFC 收窄守卫——三行堆叠修复
 css/css-ui/outline-004.html css/reference/ref-filled-green-100px-square.xht == 2026-09-05 R4043 嵌套 br 深路径排除锚——换行保留
+css/css-content/element-replacement-on-replaced-element.tentative.html css/css-content/element-replacement-on-replaced-element-ref.html == 2026-09-05 R4044 content:url 维度属性 presentational hint gate——replaced 元素盒尺寸不被图固有覆盖
