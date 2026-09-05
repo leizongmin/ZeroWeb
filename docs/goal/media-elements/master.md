@@ -2,6 +2,24 @@
 
 **入口文档**: [../media-elements.md](../media-elements.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
+**最后更新**: 2026-09-05（**M3 扩批 LVI 落地**——preservesPitch IDL 语义面 +
+Audio/Video 原型链 spec 对齐（638P/0F/15PF = 97.7% 零回归——纯增量面无新增导入）：
+① **preservesPitch 四处落地**（spec dom-media-preservespitch——纯 IDL 属性无内容属性
+反射）：part01b HTMLMediaElement.prototype accessor（getter 缺省 true + setter 走镜像；
+**non-enumerable**——enumerable 会经链重接漏进元素枚举面引发 cue/march 回归，实测
+pause-remove-from-document-different-load Timeout + track-cues-add-new-track Fail 后改
+non-enumerable 归零）+ part04 get trap 分支（_mediaState dirty 镜像）+ part05 set trap
+分支 + has-trap 白名单补列；② **原型链修正**：HTMLAudioElement/HTMLVideoElement 的
+.prototype 由「函数声明自动普通对象（悬空）」显式重接为
+Object.create(HTMLMediaElement.prototype)（spec WebIDL 继承 Audio : Media : HTMLElement
+/ Video : Media : HTMLElement——此前 part03 `!prototype` 判恒 false 从未生效）。
+单测 `test_media_preserves_pitch_idl_face_m3lvi`（10 断言面：原型 in 命中/缺省 true/
+setter 往返/实例独立/前缀面正交/链身份）。上游 preserves-pitch.html 文件级维持排除
+（音高检测子测依赖 createMediaElementSource + FFT——媒体互连域；IDL 语义面以单测
+资产化）。**video_size_preserved_after_ended 复评负结果**（试导仍 Timeout——
+EventWatcher wait_for("loadedmetadata") pending=1 卡死，XLIV~XLVI host 通道修复未触达
+根因，维持排除注记更新）。evidence：`evidence/2026-09-05-media-preserves-pitch-lvi.json`。）
+**（注：下方「最后更新」LIV 块为前轮记录，保留作历史）**
 **最后更新**: 2026-09-05（**M3 扩批 LIV 落地**——canPlayType 能力表 PF 收窄
 两件（636→638P/0F/15PF = 97.7%，+2 净涨零回归）：① `audio/webm` 表项补 opus
 （A_OPUS WebmOpusAudioTrack 解码面真值——此前仅 video/webm 表项有 opus，audio/
@@ -11,7 +29,6 @@ Baseline/Main 解码面——High profile 8x8 transform 不在支持面，avc1.6
 `test_media_can_play_type_capability_table_m4gd` 扩 3 断言面（webmAudioOpus/
 avc1Main/avc1High）。余 15 PF 全为选型面外编解码（wav/3gpp/vp8/mp4v/theora/
 iamf/avc1 high/extended 档），无进一步收窄面。）
-**（注：下方「最后更新」LIII 块为前轮记录，保留作历史）**
 **最后更新**: 2026-09-05（**M3 扩批 LIII 落地**——排除注记复核 + addtrack 时序三处 spec 对齐 +
 track-mode-not-changed-by-new-track 试导负结果（回退维持排除，629P/0F/24PF 保绿）：
 ① **过时注记勘误**：该件排除注记「getElementById(x.track.track) 身份对拍」与用例实际断言面不符
@@ -627,6 +644,8 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
   （+7 净涨：7 项 mp4-face PF → Pass；PF 24→17）
   → 扩批 LIV（2026-09-05，canPlayType 能力表 PF 收窄——audio/webm 补 opus + avc1.4d401e
   Main 档转入）**638/653 = 97.7%**（+2 净涨零回归；Fail 0 / Timeout 0 / **PF 15**）
+  → 扩批 LVI（2026-09-05，preservesPitch IDL 语义面 + Audio/Video 原型链 spec 对齐——
+  纯增量面无新增导入）**638/653 = 97.7%** 维持零回归（Fail 0 / Timeout 0 / PF 15）
   → 巡检复验（2026-09-05，渲染流 d2fd8e173 组合态新基线——纯验证轮零代码变更）：
   fresh 跑 **638 Pass / 15 PreconditionFailed 逐位一致**（97.7% 维持；PF 全为选型面外
   编解码，LIV 后无收窄面）。同轮 make test 全量 18921 全绿——SW import-order 测试
@@ -662,7 +681,8 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
   `evidence/2026-09-04-media-upstream-audit-xli.json`、
   `evidence/2026-09-04-webvtt-cue-text-parser-xlii.json`、
   `evidence/2026-09-04-media-pause-move-related-xliii.json`、
-  `evidence/2026-09-05-media-addtrack-timing-liii.md`（+同名 .json）
+  `evidence/2026-09-05-media-addtrack-timing-liii.md`（+同名 .json）、
+  `evidence/2026-09-05-media-preserves-pitch-lvi.json`
 
 ## 归档
 

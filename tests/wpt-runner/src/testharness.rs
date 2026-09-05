@@ -1660,12 +1660,12 @@ pub const MEDIA_TEST_FILES: &[&str] = &[
     // M3 扩批 XXIX（2026-09-04）：ready-states/autoplay——autoplaying flag 交互
     // + 事件严格序（audio+video 各 5 子测）。
     "html/semantics/embedded-content/media-elements/ready-states/autoplay.html",
-    // 不导入 video_size_preserved_after_ended（2026-09-04 实证）：静态 <source>
-    // 形态的 loadedmetadata 与 promise_test EventWatcher 时序在 headless 双通道
-    // settle（runner 静态 commit + shim microtask）下不稳定——md 派发早于
-    // wait_for 挂载或延迟到超时（两形态均实测）。依赖 settle 时序收敛，随
-    // runner/shim 事件通道统一后复评。不导入 video_timeupdate_on_seek（WPT CGI
-    // src）/ video_initially_paused（reftest 型）/ video-loading-* poster 族。
+    // 不导入 video_size_preserved_after_ended（2026-09-04 实证；2026-09-05 复评试导
+    // 仍 Timeout——EventWatcher wait_for("loadedmetadata") 未达，pending=1 卡死；
+    // XLIV~XLVI host 通道修复未触达该件根因——静态 <source> 形态的 loadedmetadata
+    // 与 promise_test EventWatcher 时序在 headless 双通道 settle 下不稳定——维持
+    // 排除，随 runner/shim 事件通道统一后复评）。不导入 video_timeupdate_on_seek
+    //（WPT CGI src）/ video_initially_paused（reftest 型）/ video-loading-* poster 族。
 
     // M3 扩批 XLI（2026-09-04，上游核查试导）：playbackRate（上游 edge 7/7 绿——
     // setter ratechange 派发面，M2 既有）。pause-move-to-other-document 试导失败回退

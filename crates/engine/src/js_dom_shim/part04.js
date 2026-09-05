@@ -188,6 +188,12 @@
           // 尚未写）——`!= null` 守卫防 undefined 漏出（1 - volume = NaN → setter TypeError）。
           if (prop === 'volume') return (_ms && _ms.volume != null) ? _ms.volume : 1;
           if (prop === 'seeking') return _ms ? !!_ms.seeking : false; // HAVE_NOTHING 无 seek（spec：无可 seek 媒体恒 false）
+          // preservesPitch（spec dom-media-preservespitch）：getter = 音高保持算法
+          // 是否生效——headless 无音频变速重采样，镜面即状态位；缺省 true（spec
+          // 「By default, such a pitch-preserving algorithm must be in effect」）。
+          // 无内容属性（非 reflected boolean）——setter 走 dirty 镜像。
+          // https://html.spec.whatwg.org/multipage/media.html#dom-media-preservespitch
+          if (prop === 'preservesPitch') return (_ms && _ms.preservesPitch !== undefined) ? !!_ms.preservesPitch : true;
           // src IDL getter：URL 属性——反射 + base 解析为绝对 URL（同 a.href / track.src 语义）。
           if (prop === 'src') {
             var _mvHas = (handle ? __zw_has_attr_handle(handle, 'src') : (typeof __zw_has_attr_lw === 'function' ? __zw_has_attr_lw(sel, 'src') : __zw_has_attr(sel, 'src'))) === '1';

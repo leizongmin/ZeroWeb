@@ -3651,6 +3651,66 @@ fn test_media_can_play_type_capability_table_m4gd() {
 }
 
 #[test]
+fn test_media_preserves_pitch_idl_face_m3lvi() {
+    // media-elements M3 扩批 LVI（spec dom-media-preservespitch）：preservesPitch
+    // 纯 IDL 属性（无内容属性反射）——① `in HTMLAudioElement.prototype` 命中
+    //（原型 accessor 面，WPT preserves-pitch 首断言）；② 缺省 true（spec「By default,
+    // such a pitch-preserving algorithm must be in effect」）；③ setter 切换 false/true
+    // 往返；④ audio 与 video 实例共享接口面、实例间状态独立；⑤ historical.html 的
+    // 前缀排除面正交（webkitPreservesPitch/mozPreservesPitch 仍不在原型）。
+    // 上游 preserves-pitch.html 的音高检测子测（createMediaElementSource + FFT）依赖
+    // 媒体互连域，不在本修复面（文件级导入维持排除）。
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://wpt.test/t.html".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox.execute(
+        "var a = document.createElement('audio');\
+         var v = document.createElement('video');\
+         var _ppProtoChain = (HTMLAudioElement.prototype && HTMLMediaElement.prototype)\
+           ? (Object.getPrototypeOf(HTMLAudioElement.prototype) === HTMLMediaElement.prototype) : null;\
+         globalThis.__pp = {\
+           protoChain: _ppProtoChain,\
+           inProto: 'preservesPitch' in HTMLAudioElement.prototype,\
+           inMediaProto: 'preservesPitch' in HTMLMediaElement.prototype,\
+           inInstance: 'preservesPitch' in a,\
+           defaultAudio: a.preservesPitch,\
+           defaultVideo: v.preservesPitch,\
+           setFalse: (a.preservesPitch = false, a.preservesPitch),\
+           roundtrip: (a.preservesPitch = true, a.preservesPitch),\
+           videoIndependent: v.preservesPitch,\
+           webkitPrefix: 'webkitPreservesPitch' in HTMLAudioElement.prototype,\
+           mozPrefix: 'mozPreservesPitch' in HTMLAudioElement.prototype\
+         };",
+    ).unwrap();
+
+    let mut get = |k: &str| sandbox.execute(&format!("String(globalThis.__pp.{k})")).unwrap().value;
+    assert_eq!(get("protoChain"), "true", "HTMLAudioElement.prototype → HTMLMediaElement.prototype 链");
+
+    let mut get = |k: &str| sandbox.execute(&format!("String(globalThis.__pp.{k})")).unwrap().value;
+    assert_eq!(get("inProto"), "true", "preservesPitch 在 HTMLAudioElement.prototype（WPT 首断言）");
+    assert_eq!(get("inMediaProto"), "true", "preservesPitch 在 HTMLMediaElement.prototype（定义处）");
+    assert_eq!(get("inInstance"), "true", "实例经原型链 `in` 命中");
+    assert_eq!(get("defaultAudio"), "true", "缺省 true（spec 默认音高保持生效）");
+    assert_eq!(get("defaultVideo"), "true", "video 缺省 true");
+    assert_eq!(get("setFalse"), "false", "setter 切换 false");
+    assert_eq!(get("roundtrip"), "true", "setter 切回 true 往返");
+    assert_eq!(get("videoIndependent"), "true", "video 实例状态独立于 audio 写入");
+    assert_eq!(get("webkitPrefix"), "false", "webkitPreservesPitch 前缀面不在原型（historical 断言正交不破坏）");
+    assert_eq!(get("mozPrefix"), "false", "mozPreservesPitch 前缀面不在原型");
+}
+
+#[test]
 fn test_media_pause_on_removal_m3b7() {
     // media-elements M3 扩批 VII（spec「media elements pause on removal」）：
     // 播放中 media 元素移除文档 → 同步 paused 保持 false → stable state（异步）

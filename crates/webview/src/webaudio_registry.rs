@@ -115,7 +115,7 @@ impl WebAudioRegistry {
         }
     }
 
-    fn now_ms(&self) -> u64 {
+    pub fn now_ms(&self) -> u64 {
         self.epoch.elapsed().as_millis() as u64
     }
 

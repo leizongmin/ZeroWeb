@@ -1624,12 +1624,18 @@ mod audio_tests {
         );
         // 泵推进 ~1 秒（1ms 泵节拍 × 1000 tick——tab_worker 同款节拍；
         // advance 每 tick 写 48 帧 = 48000Hz/1000）→ NullSink 可观测断言。
+        // 起点对齐 registry epoch 当前值（LVI flake 修复）：`__osc.start(0)` 桥把
+        // started_at_ms 锚在 `epoch.elapsed()`（setup 耗时 T，高负载下可达 90ms+）——
+        // 旧循环从 tick=0 硬起点推进，tick<T 全被 active_at 门跳过，写入
+        // (1000−T)×48 帧跌破 45k 容差线（全量并发下实测 43632）。改从
+        // reg.now_ms() 起推进 1000 tick——start 后完整 1 秒面，与泵语义一致。
         {
             let mut reg = registry.lock().unwrap_or_else(|e| e.into_inner());
-            for tick in 0..1000u64 {
+            let start_tick = reg.now_ms();
+            for tick in start_tick..start_tick + 1000u64 {
                 reg.advance(tick);
             }
-            // 1000 tick × 48 帧 = 48000；宿主调度取整差 ~3% 容差（首 tick gate）。
+            // 1000 tick × 48 帧 = 48000；NullSink 容差内恒满写（active 门不再吃 tick）。
             assert!(
                 reg.frames_written() >= 45_000,
                 "1 秒推进应写入 ≈48000 帧（got {}）",

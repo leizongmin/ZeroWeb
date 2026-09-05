@@ -860,10 +860,17 @@
       globalThis[_zn].prototype = (_zn === 'HTMLElement')
         ? globalThis.HTMLElement.prototype
         : Object.create(globalThis.HTMLElement.prototype);
-    } else if (_zn === 'HTMLAudioElement' && !globalThis[_zn].prototype) {
-      // media-elements M3 扩批 III：HTMLAudioElement 已由 part01b 定义（Illegal constructor），
-      // 此处补 prototype 链（→ HTMLElement.prototype，同占位 ctor 形态——instanceof 面依赖）。
-      globalThis[_zn].prototype = Object.create(globalThis.HTMLElement.prototype);
+    } else if (_zn === 'HTMLAudioElement' || _zn === 'HTMLVideoElement') {
+      // media-elements M3 扩批 III/LVI：HTMLAudioElement/HTMLVideoElement 已由 part01b 定义
+      //（Illegal constructor——**函数声明自动自带 .prototype 普通对象**，`!prototype` 判
+      // 恒 false，上方 if 分支不会跑）。显式重接 prototype 链。spec WebIDL 继承：
+      // Audio : Media : HTMLElement、Video : Media : HTMLElement——链到
+      // **HTMLMediaElement.prototype**（`'preservesPitch' in HTMLAudioElement.prototype`
+      // 等接口成员原型命中面依赖，preserves-pitch 断言面）。
+      // https://html.spec.whatwg.org/multipage/media.html#htmlaudioelement
+      if (globalThis.HTMLMediaElement && globalThis.HTMLMediaElement.prototype) {
+        globalThis[_zn].prototype = Object.create(globalThis.HTMLMediaElement.prototype);
+      }
     }
   }
   // R290（js-dom M4）：接口原型的 **constructor 自反属性**（spec WebIDL「interface

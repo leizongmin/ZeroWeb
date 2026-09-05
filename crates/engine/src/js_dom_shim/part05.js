@@ -1,5 +1,5 @@
           }
-        } else if (p === 'currentTime' || p === 'playbackRate' || p === 'defaultPlaybackRate' || p === 'volume') {
+        } else if (p === 'currentTime' || p === 'playbackRate' || p === 'defaultPlaybackRate' || p === 'volume' || p === 'preservesPitch') {
           // media-elements M1 切片 3：HTMLMediaElement 播放状态 setter——per-element
           // `_mediaState` 镜像（get trap 同源读回）。仅 AUDIO/VIDEO。volume clamp [0,1]
           //（spec「volume must be clamped」）；非有限数值 → TypeError（spec `dom-media-volume`
@@ -64,6 +64,11 @@
                   "Failed to set the 'defaultPlaybackRate' property on 'HTMLMediaElement': The provided value is non-finite.");
               }
               _mst.defaultPlaybackRate = _mv;
+            } else if (p === 'preservesPitch') {
+              // spec dom-media-preservespitch：setter 切换音高保持算法开/关。纯 IDL
+              // 属性（无内容属性、无 dirty 以外状态）——headless 镜像写入即可，无事件。
+              // https://html.spec.whatwg.org/multipage/media.html#dom-media-preservespitch
+              _mst.preservesPitch = !!value;
             } else if (p === 'currentTime') {
               // M3 扩批 XXVI：seek clamp（spec seek 步 5「if position < 0 → 0；if
               // position > seekable.end → seekable.end」——seekable [0,duration]
@@ -640,6 +645,7 @@
             || prop === 'crossOrigin' || prop === 'defaultMuted' || prop === 'muted'
             || prop === 'currentTime' || prop === 'duration' || prop === 'playbackRate'
             || prop === 'defaultPlaybackRate' || prop === 'volume' || prop === 'seeking'
+            || prop === 'preservesPitch'
             || prop === 'paused' || prop === 'ended' || prop === 'preload'
             || prop === 'loop' || prop === 'played' || prop === 'seekable' || prop === 'buffered'
             || prop === 'kind' || prop === 'label' || prop === 'srclang'

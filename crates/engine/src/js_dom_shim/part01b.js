@@ -13,6 +13,29 @@
   HTMLMediaElement.HAVE_CURRENT_DATA = 2; HTMLMediaElement.HAVE_FUTURE_DATA = 3;
   HTMLMediaElement.HAVE_ENOUGH_DATA = 4;
   globalThis.HTMLMediaElement = globalThis.HTMLMediaElement || HTMLMediaElement;
+  // media-elements M3 扩批 LVI：HTMLMediaElement.prototype.preservesPitch accessor
+  //（spec dom-media-preservespitch——纯 IDL 属性，无内容属性；getter 缺省 true）。WPT
+  // preserves-pitch 首断言 `"preservesPitch" in HTMLAudioElement.prototype`（原型链
+  // 命中面——HTMLAudioElement.prototype → HTMLMediaElement.prototype）。get 走
+  // _mediaState dirty 镜像（part04 get trap 分支同源；accessor 的 this 是元素 proxy），
+  // set 经 proxy set trap 走 part05 IDL setter（此处不重复实现）。
+  // https://html.spec.whatwg.org/multipage/media.html#dom-media-preservespitch
+  try {
+    Object.defineProperty(HTMLMediaElement.prototype, 'preservesPitch', {
+      get: function () {
+        try {
+          var _ppKey = typeof _elKey === 'function'
+            ? _elKey(this.__zwSelector, this.__zwHandle)
+            : (this.__zwHandle ? '@' + this.__zwHandle : String(this.__zwSelector));
+          var _ppMs = (typeof _mediaState !== 'undefined') ? _mediaState[_ppKey] : null;
+          return (_ppMs && _ppMs.preservesPitch !== undefined) ? !!_ppMs.preservesPitch : true;
+        } catch (_ePP) { return true; }
+      },
+      set: function (v) { this.preservesPitch = v; },
+      configurable: true,
+      enumerable: false, // 非枚举——for...in/枚举面保持原状（链重接后可枚举成员会漏进元素枚举，cue/march 内部枚举回归源）
+    });
+  } catch (_ePPDef) {}
   function HTMLTrackElement() { throw new TypeError('Illegal constructor'); }
   HTMLTrackElement.NONE = 0; HTMLTrackElement.LOADING = 1;
   HTMLTrackElement.LOADED = 2; HTMLTrackElement.ERROR = 3;
