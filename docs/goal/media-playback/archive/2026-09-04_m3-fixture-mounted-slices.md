@@ -294,3 +294,126 @@ engine 2539 / media 27 / webview 668 全绿；testharness-media 372P/0F/41PF 维
    导入，headless 时钟推进面（切片 10）现成）；fixture 增 movie_300.webm（VP9
    300s）。media-elements 557P/0F/24PF（+1 净涨零回归）。**余**：
    playing-the-media-resource 余面（play-in-detached-document /
+
+
+---
+
+## D3/D4 批复与切片头链归档（2026-09-05 治理切片——控制面保留最新两块，本块倒序原文）
+
+**最后更新**: 2026-09-05（**D3/D4 双批复落地——GB-20260904 待决策征询跟进**：
+D3=H.264/AAC 立项**有条件批准实施**（分发前须法务复核；3b 源码编译、3c AAC 随期，
+RFC 已转 Approved）；D4=renderer 播放泵获点名**事件循环节拍**（否决独立泵线程）。
+此前以 clock=None 注册宿主桥——shim 桥 play 恒传
+nowMs=0，而 tab_worker 泵 tick 用 `pump_epoch.elapsed()`（原点错位：worker 启动后
+首次桥 play 的首拍 delta=泵全程 → 位置瞬跳流末——runner 侧扩批 XXV 同款缺陷在
+生产路径的残留）。修复：pump_clock（Arc<AtomicU64>）提前至 WebView 构建前创建 +
+`SetVideoPlayers` 命令携带 + js_worker 注册传入 + 泵循环每拍 store——桥 play 锚与
+泵 tick 同源。renderer 路径维持 None（D4 泵架构未决，「登记但不推进」现状不变，
+非回归）。make test 18874/0、clippy/fmt 干净。此前同日：**M3 fixture-mounted
+runner 播放面切片 12 落地（扩批 XXIX）**——HAVE_NOTHING 期 play() 挂起语义（spec dom-media-play 步 6）：play()
+readyState==0 且有候选（按身份分派判据——handle-only 无 src 无 settle 序列
+可达保持既有 queued task resolve 契约）→ 记 `_zwPlayPendingEvents` 挂起不派
+事件；`_zwMediaLoadSequence` readyState 1 处补派 play、3 处（canplay 后）派
+playing + promise settle——事件严格序 play→canplay→playing→canplaythrough。
+既有「play 先行」同步态断言零回归（engine 契约测试同步序更新：settle 走
+microtask 事件同步可观察——旧 queued task 宏任务面空 log 断言不再成立）。
+media-elements 570P/0F/24PF（+10 净涨零回归——ready-states/autoplay 导入，
+audio+video 各 5 子测：autoplaying flag 与 play()/pause()/load() 交互 +
+事件严格序）。
+此前同日：**M3 fixture-mounted runner 播放面切片 11 落地（扩批
+XXVIII）**——currentTime-move-within-document 导入（同文档移动不重置播放：
+seek(10) 后 appendChild 移动 paused=false + currentTime 保持——headless 时钟
+推进面现成，零改动导入）+ track-mode-triggers-loading 导入（metadata track
+mode 触发加载——扩批 XV 既有面零改动）+ track-remove-quickly /
+-by-setting-innerHTML 导入（track 移除不 crash smoke 面）+ **track 空 src 语义
+两处补全**（src=''空串 error settle code 4——spec「fail with attribute 之空
+URL」；removeAttribute('src') 触发 track 重调度——与 setAttribute 对称）；
+fixture 增 movie_300.webm（VP9 300s）。media-elements 560P/0F/24PF（+4 净涨
+零回归）。track-element-src-change-error / -src-aborted-load 维持排除：
+「加载中移除 src」in-flight 中断时序 headless 不可复现（settle 同步 microtask
+无 in-flight 窗口，实证 settings.vtt onload 恒先于 removeAttribute）/
+WPT trickle pipe 机制不可复现。此前同日：
+**切片 10（扩批 XXVII）**——media fragment #t= 起点解析（settle 加载序列内 currentTime 初始化：
+hash 内 & 分隔 k=v 对取 t=、percent-decode、npt: 前缀可选、start,end 取 start、
+HH:MM:SS.ms/MM:SS.ms/SS；settle url 携带 hash 面已被 registry_key strip 兼容）+
+**headless 播放时钟推进**（march 内非 bridgeOn 播放按 performance.now 墙钟差 ×
+playbackRate 推进 ms.currentTime，clock 基点记 play 时——此前 headless 播放无
+推进面，autoplay 驱动的播放 currentTime 恒 0）+ **周期 timeupdate**（march 内
+nowMs > lastMs 时 250ms 节流派发——spec time updates 播放推进面，此前页面在
+播放期无 timeupdate 可收）。media-elements 556P/0F/24PF（+4 净涨零回归——
+media_fragment_seek + autoplay-with-broken-track 导入）。
+此前同日：**M3 fixture-mounted runner 播放面切片 9 落地（扩批
+XXVI）**——seekable/buffered TimeRanges headless 近似 getter 落地
+（`__zwMediaSeekableRanges` 共享面：readyState>=1 后 [0,duration] 单区间；
+duration 解析序 桥真值 → _mediaState → settle durationMs → headless 600；
+HAVE_NOTHING 空集合 + IndexSizeError；has-trap 白名单补列）+ **currentTime
+setter seek 语义补全**：clamp 到 seekable 范围（spec seek 步 5——镜像写 clamp
+后值；duration 未知只 clamp 下限 0）+ seeking/timeupdate/seeked 同一排队任务
+序派发（seeking 异步——后挂 onseeking 可达；seeking 翻 false 先于 timeupdate
+——Chromium 可观察语义；事件序 [seeking, timeupdate, seeked]）。
+media-elements 552P/0F/24PF（+9 净涨零回归——seeking/ 三件 + volume_nonfinite
+导入；buffered/seekable「上游无断言用例」的旧注记失效——seeking/ 目录即断言
+面，DC-3 buffered/seekable 注记项收口）。
+此前 2026-09-03：**M3 fixture-mounted runner 播放面切片 8 落地（扩批
+XXV）**——loop-from-ended.tentative 导入 + 四处播放面缺陷收口：
+① **registry Ended→play 解码器重建**——`play` 的 player Ended 态经 sources/
+av_sources 留存字节 `reset()` 重建 + 伴生轨游标/静默线归零（此前直接置 Playing
+下一拍即再 Ended——解码器单向流耗尽，重头播放从未真正工作）；
+② **seek 游标 clamp**——av entry seek 后游标 clamp 到 player clamp 后位置
+（语义层以 headless 600 算的 seek 目标可超真实流长，audio clock 主时钟游标超界
+把视频位置拉出流末）；
+③ **泵时钟注入**——`install_playback_bridge_with_clock`：桥 play 的 nowMs=0
+（shim 无钟）翻译为宿主泵时钟现值，播放锚与 tick 同源（原点错位使首拍
+delta=泵全程、位置瞬间跳到流末）；
+④ **shim ended 态 play 语义**——play() 命中 `_zwEndedDispatched` 标记时派
+seeking/seeked 回最早位置（spec「ended playback」步 6.4 在 play 入口生效；
+loop setter 翻 ended 后 ms.ended 不可靠，以 march 非 loop 分支标记为判定面）+
+loop=true IDL setter 翻回 ended=false（looping 媒体不能是 ended）。
+media-elements 543P/0F/24PF（+1 净涨零回归——loop-from-ended 导入）。
+此前同日：**切片 7（扩批 XXIV）**——loop 属性真面 + played TimeRanges：registry `set_loop`（音频 entry
+流末回卷——`restart()` 解码器重建 + 游标归零 + 播放态保持；伴生轨同面；
+`reached_end` 标志补音频面 isEnded 驱动源——此前音频流末对桥不可见）+
+`registry_key` 规范化（strip query/fragment——WPT cache-buster query 与 runner/
+shim 两侧 URL 编码差异同键命中；bridge play 的 audio_guess 同面——`.oga?...`
+此前恒 miss 使音频条目永不登记）+ shim loop IDL setter/getter + march Ended 面
+loop 分叉（seek(0)+play + seeking/seeked 派发非 ended）+ played TimeRanges
+（march 采样 `_zwPlayedRanges` → getter TimeRanges 形状；loop 尾段计入）+
+duration getter settle 竞态兜底。**setLoop 桥回调参数索引修复**
+（args.get(2)→get(1)——门面传 2 参，此前 on 恒 false 使 loop 真面从未生效）。
+media-elements 542P/0F/24PF（+2 净涨零回归——played-loop /
+audio_loop_seek_to_eos 导入）。此前同日：**M3 fixture-mounted runner 播放面切片 6 落地**——
+media load invoke 重置面收口：`_zwMediaScheduleLoad` invoke 入口重置
+`_resourceStates[key]` + invoke 步 6 位置重置（currentTime=0 / HAVE_NOTHING / 
+`_zwMediaTimeKnown` 失效）+ invoke 重置 track 子产物 cue（addTextTrack 产物
+排除）+ settle 的 media/track 元素 load/error 派发改 `_zwMediaFire`
+（handle-only 元素 on\* expando handler 兜底）；track-active-cues 导入——
+**B 组排除件全清**；media-elements 540P/0F/24PF。此前同日：**切片 5**——
+play() 桥 src 读身份分派（handle 身份走 registry 现值——createElement 媒体元素
+形态的桥失联修复）+ march 遍历面统一（addTextTrack 产物 cue 调度）+ disabled
+gate + cuechange 派发；media-elements 539P/0F/24PF。此前同日：**切片 4**——
+HAVE_NOTHING 期 seek 挂起语义：currentTime setter readyState 0 时挂
+`_zwSeekDeferred`，`_zwMediaLoadSequence` readyState 0→1 翻转时补跑 seek 算法
+（spec「default playback start position」）；track-cues-seeking 导入；media-elements
+535P/0F/24PF。此前同日：**M3 fixture-mounted runner 播放面切片 3 落地**——
+解码器 EOF 排空缺陷修复：`VideoDecoder::next_frame` draining 中间态（demux 尽后
+排空 hidden/alt-ref 帧滞后队列才报流末）+ `VideoPlayer::present_pending` 未来帧
+`un_read` 队首退回——此前 position < duration 即提前 Ended（fixture-mounted
+WPT 流的最小暴露面：test.webm 30fps + 15 个 alt-ref hidden 帧）；media-elements
+534P/0F/24PF（+3 净涨——track-cues-enter-exit / pause-on-exit 解除排除）。
+此前同日：**M3 fixture-mounted runner 播放面切片 2 落地**——
+track-cues-* 播放推进族解锁：runner 播放桥前置 + 逐 tick 动态源登记 + shim play()
+latest-wins 读/退避重试/pending seek 补推 + registry 字节留存/is_ended 桥面 +
+march 区间捕获/事件时间序/ended 面；media-elements 531P/0F/24PF（+2 净涨）。
+此前 2026-09-02：**M3 fixture-mounted runner 播放面切片 1 落地**——webview
+`install_playback_bridge` + wpt-runner 播放泵/源登记 + shim `_zwMediaTimeMarchesOn`
+cue 调度钩子；webm A_OPUS 解码切片（WebmOpusAudioTrack + registry codec 泛化 +
+canPlayType webm-opus 扩表）；media-elements 529P/0F 零回归。此前同日：**M3 AV1
+解码切片落地 + H.264 立项 RFC 起草**——
+AV1：dav1d 绑定 feature `decode-av1` + VideoCodec 自路由 + fixture 48 帧全解
+（ffmpeg 参照 ±15 窗）；H.264：[h264-increment-project-spec-rfc.md](../../specs/h264-increment-project-spec-rfc.md)
+Proposed 态——D-RFC-3a 专利授权链 / 3b OpenH264 分发形态 / 3c AAC 随期 三决策
+点**待用户批复**（D-RFC-3「单独立项」决议的立项评估文档，批准前不动源码）。
+此前 2026-09-01：D2 获批（选 A：libdav1d-dev 1.5.1 在位，pkg-config 发现，
+apt 清单已记入 development/linux-macos.md））
+
+---

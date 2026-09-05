@@ -19,60 +19,10 @@ ReferenceError 被 shim oncomplete 派发的 try/catch 吞掉 → task.done 永�
 pending 卡死。**上游 Chromium 亦红**（master 2026-09-05 同字节未修——wpt.fyi
 helper 与 pinned rev 一致），按 XL 批「坏用例不导入」惯例维持排除，待上游修复
 helper 后复评；oncomplete 资产不受影响。WPT 面 49 用例 1408P/0F = 100% 不变。）
-**（注：下方「最后更新」第十增量块为前轮记录，保留作历史）**
-**最后更新**: 2026-09-05（**D3 第十增量完成——detune 耦合两件导入（49 用例
-1408P/0F = 100%）**：detune-limiting（2 task）+ detune-overflow（1 task）解除
-排除——**原排除注记归域偏保守**：两件断言核心是「振荡器 computed frequency =
-frequency · 2^(detune/1200)」+「≥Nyquist 精确静默」，静态 detune 两 task 不需
-automation，仅 limiting task 2 需 linearRamp 耦合；全部落在 D3 已批 offline
-渲染路径内。配套 shim 三处：① `_zwParamValueAt` 通用 automation timeline 逐采样
-求值 helper（从 gain 分支内联求值提炼——setValue/linearRamp/exponentialRamp/
-setTarget 逐型公式，gain 与 oscillator 同表复用；顺带清除前轮调试遗留 `__zwAP`
-探针）；② 振荡器合成 computed frequency 耦合（标准四型相位累积分支 + periodicWave
-custom 分支——detune 逐采样参与频率；≥Nyquist 跳过写入使输出逐位精确 0.0，
-`assert_constant_value` 精确断言面）；③ gain automation 分支收敛到 helper（行为
-等价重写零回归）。**至此 pinned rev webaudio/the-audio-api 全部可执行用例均已导入
-（剩余为 worklet/媒体互连/手势域）**。单测
-`test_webaudio_oscillator_detune_computed_frequency_face_m3w5`（四断言组：静态
-Nyquist 静默/零 detune 恒等/ramp 越界静默/事件表落位）。evidence：
-`evidence/2026-09-05-detune-coupling-d3.json`（49 用例 1408 subtest）。）
-**（注：下方「最后更新」第九增量块为前轮记录，保留作历史）**
-**最后更新**: 2026-09-05（**D3 第九增量完成——periodicWave.html 导入（47 用例
-1399P/0F = 100%），webaudio 排除面清零**：迁址路径 the-periodicwave-interface/
-恢复获取（原 404 注记解除）。配套 shim 三处：① Blink maxAbsSum 归一化公式
-（1/max(Σ(|real[n]|+|imag[n]|), 0.5)——periodicWave 输出对拍面：real=[0,2,…,3]
-→ maxAbsSum 5 → 峰值恰 1.0，替换此前不正确的 0.6324·sqrt(Σ) 公式）；②
-createPeriodicWave/PeriodicWave ctor 同正义约束（real/imag 同长 + 最小长度 2 →
-IndexSizeError；ctor 缺省成员以另一方长度补零——ctor-oscillator 无 imag 断言面
-兼容）；③ OscillatorNode.setPeriodicWave（custom 波形存储 + type='custom'）。
-**至此 pinned rev webaudio/the-audio-api 全部可执行用例均已导入或定性（47 用例
-1399 subtest 全绿；剩余为 worklet/媒体互连/手势域不在离线渲染面）**。evidence
-刷新 47 用例 1399 subtest。）
-此前 2026-09-05：**D3 获批落地——GB-20260904 待决策征询跟进**：
-OfflineAudioContext.startRendering 扩界**获批（窄授权）**——仅 offline 渲染路径
-+ shim↔宿主桥扩展；RFC §0 实时设备输出量化面维持排除。征询凭据 msg
-`om_x100b669923cd64a4c3e335615ed3d9f`。无代码变更。）
-**（注：下方「最后更新」2026-09-04 巡检/第十八批收口块为前轮记录，保留作历史）**
-**最后更新**: 2026-09-04（**WPT webaudio 第十八批收口——驱动用例解除排除导入
-（39 用例 874P/0F = 100%）**：① `decodeAudioData` 入口语义面（spec BaseAudioContext
-——detached 上下文（`_zwFrameEntry._zwSwDestroyed` 印记）→ InvalidStateError reject
-优先；缺参/非 ArrayBuffer → TypeError；headless 无宿主音频解码器 → EncodingError
-诚实 stub）+ Audio/Offline 双 prototype 共享；② part05 IframeOfflineAudioContext
-**绑定构造器**（AudioContext 同款）；③ **createElementNS(HTMLNS,'iframe') 双 gate
-修复（根因勘误）**——前段注记「_zwMEl plain-object 路径无 host handle」不准：ns
-产物有 host handle（`__nN`），真缺口是 host tag store 对 ns handle 为空（探针实证
-`__zw_get_tag_handle('__n0')` 返 ''）→ part04 contentWindow get-trap 与 part01
-frame 移除链两个 `==='IFRAME'` gate 恒 miss（前者 contentWindow undefined、后者
-destroyed 印记不置位使 decodeAudioData 走 EncodingError 分支）。修复：两 gate 各
-inline `_nsHandles` HTML-ns localName 回落（ASCII 大写比对；helper 提取跨 part
-复用探针实证不可达后改双点 inline，注记互指）——零 host 变更、零 _zwMEl 路径变更。
-单测 `test_webaudio_decode_audio_data_face_m3xviii`（两面）+ 沙箱探针全链实证
-（destroyed=true → dad:InvalidStateError）。evidence：
-`evidence/2026-09-04-webaudio-detached-offline-batch18.json`。
+**（注：D3 第十增量及更早批次头链已归档至
+[archive/2026-09-04_wpt-webaudio-batches.md](archive/2026-09-04_wpt-webaudio-batches.md)
+（2026-09-05 治理切片）；本控制面保留最新两块与累计口径 50 用例 1418P/0F = 100%。）**
 
-（**第 1~17 批过程记录**——每批 shim 面明细/单测/排除注记——已归档至
-  [archive/2026-09-04_wpt-webaudio-batches.md](archive/2026-09-04_wpt-webaudio-batches.md)，
-  证据 JSON 序列见验证基线；累计口径 39 用例 874P/0F = 100%。）
 ## 当前状态
 
 **专项定位**：媒体方向三拆之三（门控最深）。音频输出（解码→混音→设备）+ A/V 同步 +
