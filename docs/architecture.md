@@ -52,7 +52,7 @@
 | `crates/layout-engine` | 布局整合层（基于 taffy，Block / Flex / Grid / Position），把样式转换成布局树和几何输出，含 inline formatting（text-align / indent / float 排除 / tab-size / word-break 等） |
 | `crates/engine` | 渲染主管线，负责串起解析、样式、布局、paint、dirty tracking、compositing；包含 DOM Bridge（V8 polyfill）、资源预加载、CSS 动画 / 过渡运行时 |
 | `crates/canvas` | Canvas 2D 绘制能力（路径、变换、drawImage、shadow、Path2D、合成等） |
-| `crates/media` | 媒体解码管线（media-playback / media-audio goal 的进程内 crate）：webm/Matroska demux、VP9 解码（纯 Rust `rusty_vp9`）、AV1（`decode-av1` feature，系统 libdav1d）、YUV→RGBA 帧转换、音频解码（mp3 / ogg-vorbis / opus）、播放驱动（`VideoPlayer` + `VideoClock` trait）、音频输出面（`NullSink` 可观测 / `audio-cpal` 真设备）、混音总线与 Web Audio 振荡器合成最小面 |
+| `crates/media` | 媒体解码管线（media-playback / media-audio goal 的进程内 crate）：webm/Matroska + mp4 demux、VP9 解码（纯 Rust `rusty_vp9`）、AV1（`decode-av1` feature，系统 libdav1d）、H.264（`decode-h264` feature，OpenH264 + AAC 随期）、YUV→RGBA 帧转换、音频解码（mp3 / ogg-vorbis / opus / AAC）、`open_media` 容器嗅探自路由、播放驱动（`VideoPlayer` + `VideoClock` trait）、音频输出面（`NullSink` 可观测 / `audio-cpal` 真设备）、混音总线与 Web Audio 振荡器合成最小面 |
 
 ### 基础设施层
 
@@ -98,7 +98,7 @@
 9. `webview` 把这条链路包装成嵌入式 API，供 `apps/browser` 或第三方应用调用。
 10. `zero-browser` 固定由 `apps/renderer` 独立进程承担步骤 2–7，经 `protocol` IPC 与浏览器主进程交互，并配合 image-decoder 与 compositor 子进程；`page-runtime` 让 browser IPC 宿主与嵌入式 `ZeroWebView` 的进程内宿主共享同一套页面加载契约。
 
-这条链路已经能在测试、demo 和浏览器应用里跑起来，并且有大量单元 / 集成测试与 WPT 用例兜底；但离「真实网页 + 完整 JavaScript + 完整浏览器 UI」的成熟度仍有距离。js-dom 专项目标（P1b V8 原生 DOM 绑定）已于 2026-08-31 收官归档（双引擎 native_dom default-on）；当前主线是媒体线（media-playback / media-audio / media-elements 三 goal 并行，H.264 解码与 renderer 播放泵已落地）与渲染兼容性持续收口（上游 WPT reftest corpus 85.7%）。
+这条链路已经能在测试、demo 和浏览器应用里跑起来，并且有大量单元 / 集成测试与 WPT 用例兜底；但离「真实网页 + 完整 JavaScript + 完整浏览器 UI」的成熟度仍有距离。js-dom 专项目标（P1b V8 原生 DOM 绑定）已于 2026-08-31 收官归档（双引擎 native_dom default-on）；媒体线三 goal（media-playback / media-audio / media-elements）已于 2026-09-05 完成收口并整树归档（H.264 解码与 renderer 播放泵均已落地）；当前主线是渲染兼容性持续收口（上游 WPT reftest corpus 86.0%）。
 
 ## 现在做到哪了
 
@@ -106,7 +106,7 @@
 
 - **核心内核已有实质实现**: dom、css-parser、style-system、layout-engine、engine、render-foundation、host-runtime、net、security、storage、protocol、canvas、media、wasm-sandbox、script-sandbox、page-runtime、product-version、psl、webview 都有可运行代码和对应测试。
 - **产品层骨架已成，持续打磨**: `apps/browser`（桌面入口 + headless / remote debugging）、`browser-shell`（标签页 / 书签 / 历史 / 下载 / 设置 / 上下文菜单等数据模型）、`apps/renderer`（多进程渲染进程入口）、`apps/image-decoder`（D1 图像解码进程）、`apps/compositor`（C2 合成器进程）、`apps/webdriver`（WebDriver 服务）已打通，`apps/android-browser`（M0 bootstrap）已落地，但产品形态、稳定性和真实站点兼容性仍在推进。
-- **当前主线**: 媒体线三 goal 已完成（2026-09-05 收口归档）——[media-playback](goal/archive/media-playback/master.md)（webm/VP9/AV1/H.264 解码 + fixture-mounted 播放面 + renderer 播放泵事件循环节拍，DC-1~5 ✅）、[media-audio](goal/archive/media-audio/master.md)（cpal 音频输出 + A/V 同步 + AudioContext 最小面 webaudio 50 用例 1418P/0F，DC-1~5 ✅）、[media-elements](goal/archive/media-elements/master.md)（HTMLMediaElement 语义面 WPT 640P/0F/13PF = 98.01%，DC-1~4 ✅）；js-dom 专项目标（P1b V8 原生 DOM 绑定）2026-08-31 收官归档——M1–M5 全达成（R383/R384 双引擎 `native_dom` default-on land、kill-switch 删除），归档见 [goal/archive/js-dom/](goal/archive/js-dom/master.md)；渲染兼容性（WPT/CSSWG reftest 对齐 Chromium Oracle）持续主动实施——上游 WPT reftest corpus **14405/16815 = 85.7%**（R4034b），inline SVG paint 默认放开（R3991，user 点名）后 svg transform/origin/stylesheet 级联、run-in 并入、SVG intrinsic / flex §9.9 / table section / rtl abspos / contain:size / nbsp strut 等系列持续收口（R3936–R4034）；残余缺口为 vertical writing modes、multicol 碎片化、R109 inline-as-block 等结构性问题（Phase A IFC / R1043 / R2174 等深方向仍需用户点名授权）。完整 Web API 与真实网站交互兼容性是后续阶段。详见 [路线图](../ROADMAP.md)。
+- **当前主线**: 媒体线三 goal 已完成（2026-09-05 收口归档）——[media-playback](goal/archive/media-playback/master.md)（webm/VP9/AV1/H.264 解码 + fixture-mounted 播放面 + renderer 播放泵事件循环节拍，DC-1~5 ✅）、[media-audio](goal/archive/media-audio/master.md)（cpal 音频输出 + A/V 同步 + AudioContext 最小面 webaudio 50 用例 1418P/0F，DC-1~5 ✅）、[media-elements](goal/archive/media-elements/master.md)（HTMLMediaElement 语义面 WPT 640P/0F/13PF = 98.01%，DC-1~4 ✅）；js-dom 专项目标（P1b V8 原生 DOM 绑定）2026-08-31 收官归档——M1–M5 全达成（R383/R384 双引擎 `native_dom` default-on land、kill-switch 删除），归档见 [goal/archive/js-dom/](goal/archive/js-dom/master.md)；渲染兼容性（WPT/CSSWG reftest 对齐 Chromium Oracle）持续主动实施——上游 WPT reftest corpus **14466/16814 = 86.0%**（R4064 轮口径），inline SVG paint 默认放开（R3991，user 点名）后 svg transform/origin/stylesheet 级联、run-in 并入、SVG intrinsic / flex §9.9 / table section / rtl abspos / contain:size + contain:inline-size / nbsp strut / backface-visibility / overflow:clip 单轴等系列持续收口（R3936–R4064）；残余缺口为 vertical writing modes、multicol 碎片化、R109 inline-as-block 等结构性问题（Phase A IFC / R1043 / R2174 等深方向仍需用户点名授权）。完整 Web API 与真实网站交互兼容性是后续阶段。详见 [路线图](../ROADMAP.md)。
 
 所以今天的 ZeroWeb 是一个内核已成形、产品层在打磨的浏览器工作区，但还不是一个做完的浏览器产品。
 

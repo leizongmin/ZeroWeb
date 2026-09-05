@@ -367,7 +367,7 @@ Limit。**前轮 R3303**：TextMetrics 全 10 字段。**前轮 R3302**：`:focu
 |----|------|
 | 仓库代码 | ✅ Cargo workspace 31 个 member（21 库 + 7 应用 + 2 测试工具 + 1 开发工具，含 runtime-config、android-browser 与 media；全部有实质实现） |
 | 编译状态 | ✅ `cargo build --workspace` 通过 |
-| 测试状态 | ✅ `cargo test --workspace` ~17,000+（2026-09-05 静态统计 17,554 个 `#[test]`，不含宏生成/doctest；media-playback 泵时钟轮实测 make test 18,874 Pass / 0 Fail，运行时计数含参数化与集成 subtest；预存失败 `default_actions_work_without_javascript` 为并行流既存，多轮记录，clean HEAD 同败） |
+| 测试状态 | ✅ `cargo test --workspace` ~17,000+（2026-09-06 静态统计 17,595 个 `#[test]`，不含宏生成/doctest；rendering-compat R4051-P 轮实测 make test 18,912 Pass / 0 Fail，运行时计数含参数化与集成 subtest；预存失败 `default_actions_work_without_javascript` 为并行流既存，多轮记录，clean HEAD 同败） |
 | Clippy | ✅ 零警告（全 workspace） |
 | 基准测试 | ✅ 16/16 crate 有 criterion 基准（78+ 个基准） |
 | CI | ✅ GitHub Actions（ubuntu/macos/windows）|
@@ -396,7 +396,7 @@ Limit。**前轮 R3303**：TextMetrics 全 10 字段。**前轮 R3302**：`:focu
 | page-runtime | 123 | ✅ | WPT / TabWorker / zero-renderer 三条页面路径共享的页面加载与运行时契约（`PageLoadHost` / `AsyncFetchHost` / `BlockingFetchHost`），让 in-process（webview）与 IPC（renderer）两种宿主复用同一套分阶段页面加载逻辑（runtime 统一） |
 | product-version | 2 | — | 产品版本号（从构建日期推导，随 `zero-product-version` 分发） |
 | psl | 25 | — | **公共后缀列表（PSL）解析与注册域名（eTLD+1）提取**：三类规则解析（普通/通配/例外，与上游 `public_suffix_list.dat` 语法一致）、`registrable_domain()`（IP/单标签/公共后缀原样返回）、全局共享实例 `shared()`、`from_rules()` 可注入完整数据；接入 site-isolation（R3380，`Site::from_origin` 经 PSL 计算真 eTLD+1） |
-| media | 52（默认 feature）/ 53（audio-cpal） | — | **媒体解码管线（media-playback / media-audio goal 产物，2026-09-01）**：webm/Matroska + mp4/ISO-BMFF demux、VP9 纯 Rust 解码（`rusty_vp9`）、AV1（`decode-av1`）、H.264（`decode-h264`，openh264，D-RFC-3 获批切片 1）、YUV→RGBA、音频解码（symphonia mp3/ogg-vorbis、opus-decoder、webm 音轨重封装）、`open_media` 容器/编码嗅探自路由、`VideoPlayer` 播放驱动（`VideoClock` trait）、`AudioSink` 输出面（NullSink 可观测 / CpalSink 真设备）、混音总线、Web Audio 振荡器合成最小面 |
+| media | 55（默认 feature）/ 56（audio-cpal） | — | **媒体解码管线（media-playback / media-audio goal 产物，2026-09-01）**：webm/Matroska + mp4/ISO-BMFF demux、VP9 纯 Rust 解码（`rusty_vp9`）、AV1（`decode-av1`）、H.264（`decode-h264`，openh264，D-RFC-3 获批切片 1+2——切片 2 含 AAC 音频链/伴生轨/precise-seek）、YUV→RGBA、音频解码（symphonia mp3/ogg-vorbis、opus-decoder、webm 音轨重封装）、`open_media` 容器/编码嗅探自路由、`VideoPlayer` 播放驱动（`VideoClock` trait）、`AudioSink` 输出面（NullSink 可观测 / CpalSink 真设备）、混音总线、Web Audio 振荡器合成最小面 |
 
 ### 跨 crate 集成测试
 
@@ -1068,7 +1068,7 @@ P1a 低风险、可快速见效（主要改 `dom_bridge.rs` + `script-sandbox` +
 
 切片 1-3 均低风险可独立 land；验证基线 = tab_js_worker 既有测试（fetch 端到端 663-810 / 定时器 811-852 / MutationObserver 五连测 906-1065，`wait_for_global` 轮询模式）+ 每切片 `make test` 零回归。P1b（V8 原生绑定）仍需独立 RFC。**P1a 主线实质完成 → 当前活跃推进面 = security/storage/net deep-review（自主域）+ P1b（S6/S7 等用户拍板 default-on）+ P3 GPU/Display（需物理环境）**。
 
-> **2026-09-04 状态勘误**：上行「P1b 待 default-on 拍板」已过时——P1b 全部完成（R383/R384 双引擎 default-on land + kill-switch 删除，js-dom goal 2026-08-31 收官归档，见上方「当前状态」P1b 条）；security/storage/net deep-review 自主域亦经 R3388–R3398 逐文件审后收敛（见「最近完成的改进」）。当前父目标活跃面 = 媒体线（media-playback / media-audio / media-elements 三 goal 并行推进）与零星自主域复扫。
+> **2026-09-04 状态勘误**：上行「P1b 待 default-on 拍板」已过时——P1b 全部完成（R383/R384 双引擎 default-on land + kill-switch 删除，js-dom goal 2026-08-31 收官归档，见上方「当前状态」P1b 条）；security/storage/net deep-review 自主域亦经 R3388–R3398 逐文件审后收敛（见「最近完成的改进」）。媒体线三 goal 已于 2026-09-05 完成收口并整树归档（media-elements 640P/0F = 98.01%、media-audio webaudio 1418P/0F = 100%、media-playback DC-1~5 ✅，见 `docs/goal/archive/`）；当前父目标活跃面 = 渲染兼容性收口（rendering-compat 流，R4064 轮 corpus 86.0%）与零星自主域复扫。
 
 ---
 

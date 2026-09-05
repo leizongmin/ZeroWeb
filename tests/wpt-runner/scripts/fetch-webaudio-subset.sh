@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Fetch the pinned subset of upstream WPT webaudio the-audio-api interface tests
 # used by the media-audio goal M3 Web Audio minimal face
-# (docs/goal/media-audio/master.md, D1 批复切片 2).
+# (docs/goal/archive/media-audio/master.md, D1 批复切片 2; goal 完成归档 2026-09-05).
 #
 # Strategy: constructor/interface-semantic cases only — the shim's AudioContext
 # face (shim part06) covers construction + node interface + connect semantics.
