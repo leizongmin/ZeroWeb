@@ -2052,7 +2052,20 @@ pub(crate) fn remeasure_text_with_float_exclusions(
                 .node_id
                 .and_then(|id| styles.get(&id))
                 .is_some_and(|s| matches!(s.height, LengthValue::Auto));
-            let should_expand = if fix_active { is_auto_height } else { true };
+            // R4074（css-sizing-4 §4.2 transferred size）：aspect-ratio 双 auto 的 plain
+            // block 高度由 transfer pass（width/ratio 与内容取大 + min/max 钳制）决定，
+            // IFC 行盒高（内容仅一行 10px 时远小于传递值）不得覆盖——双向收敛会把
+            // block-aspect-ratio-026 的 100×100 收缩回内容高 30（+padding）。
+            let has_ar_transfer = box_node.node_id.and_then(|id| styles.get(&id)).is_some_and(|s| {
+                s.aspect_ratio.is_some_and(|r| r > 0.0)
+                    && matches!(s.width, LengthValue::Auto)
+                    && matches!(s.height, LengthValue::Auto)
+            });
+            let should_expand = if fix_active {
+                is_auto_height && !has_ar_transfer
+            } else {
+                true
+            };
             // R3785：双向收敛——compute_final 的 float-unaware IFC 先行设高（无 exclusion
             // 平坦行位），exclusion-aware px-cap extent 可大于**或小于**它（auto-015：
             // unaware 5 行 160 vs aware 4 行 128）；auto 高 float 容器直接置值。
@@ -2343,9 +2356,19 @@ pub(crate) fn remeasure_inline_only_containers(
                     | DisplayValue::InlineTable
             );
             if !has_block_children && !is_layout_container {
-                let diff = content_height - box_node.content_height;
-                box_node.content_height = content_height;
-                box_node.height += diff;
+                // R4074（css-sizing-4 §4.2）：aspect-ratio 双 auto 的 plain block 高度
+                // 已由 transfer pass（width/ratio 传递 + min/max 钳制）决定，纯 inline
+                // 容器的收缩臂不得覆盖（block-aspect-ratio-026：100×120 被收到 30）。
+                let has_ar_transfer = box_node.node_id.and_then(|id| styles.get(&id)).is_some_and(|s| {
+                    s.aspect_ratio.is_some_and(|r| r > 0.0)
+                        && matches!(s.width, LengthValue::Auto)
+                        && matches!(s.height, LengthValue::Auto)
+                });
+                if !has_ar_transfer {
+                    let diff = content_height - box_node.content_height;
+                    box_node.content_height = content_height;
+                    box_node.height += diff;
+                }
             }
         }
         if *REUSE_INLINE_BLOCK_POSITIONS && has_inline_blocks && balance_geometry.is_none() {
