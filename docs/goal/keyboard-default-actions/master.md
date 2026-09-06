@@ -2,7 +2,7 @@
 
 **入口文档**: [../keyboard-default-actions.md](../keyboard-default-actions.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-07（M1 切片 1 完成——键盘基线 1P/4F + runner ENTER 分发接通）
+**最后更新**: 2026-09-07（M1 切片 2 完成——Actions 键盘链 + keydown 事件序，基线 6P/12F 全案可执行）
 
 ---
 
@@ -53,12 +53,12 @@
 
 | 里程碑 | 状态 |
 |--------|------|
-| M1 — WPT 基线建立 + 分发层骨架 | 🔶 切片 1 ✅（基线 1P/4F + ENTER 分发）；切片 2/3 待启动 |
+| M1 — WPT 基线建立 + 分发层骨架 | ✅ 切片 1/2 完成（2026-09-07）——基线 6P/12F 全案可执行 + keydown/keyup 派发层；切片 3 分发表扩展按残余聚类推进 |
 | M2 — 表单键与激活 | ⬜ |
 | M3 — select 导航 + radio/checkbox + 事件序 | ⬜ |
 
 ## 验证基线
 
 - 测试基线：立项时点全绿（13,192+）；clippy 零警告
-- WPT 键盘默认动作面：**1P/4F** @ WPT_REV 315976933870（6 用例，evidence/2026-09-07-m1-keyboard-baseline.md）
+- WPT 键盘默认动作面：M1 切片 2 后 **6P/12F（9 用例全可执行）** @ WPT_REV 315976933870（evidence 同日追加段）
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过

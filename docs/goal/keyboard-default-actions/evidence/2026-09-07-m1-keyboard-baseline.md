@@ -43,3 +43,31 @@ TOTAL 1P / 4F
    populateForm 依赖）——属 js-dom 域，跨 goal 碰撞管理（master.md 记录）。
 3. **隐式提交规则**（K3）：uE007→Submit 已通 runner 层；text control 无 submit button
    的单控件提交规则、disabled submit button 阻断语义——待 js-dom 视图修复后可复评。
+
+---
+
+# M1 切片 2 — Actions 键盘链 + 事件序（2026-09-07，同日追加）
+
+**修复**（commit aad135b52 + 后续扩展，testharness.rs + part05.js）：
+1. Actions stub 键盘链：addKeyboard/keyDown/keyUp 记步骤 → send() 按序入队
+   keydown/keyup（旧版 reject「unsupported」）。
+2. keydown/keyup 命令：cancelable KeyboardEvent 派发（script_dispatch_dom_event，
+   'ok'/'prevented' 判定）→ keydown 未取消接 InsertText 默认动作 + keypress 派发；
+   preventDefault 抑制编辑事件与 value 变更。
+3. KeyboardEvent.composed 缺省 true（UI Events spec）：shim ctor prop 链 + R109
+   native 包装器（native 模板恒设 false，以 init dict 为事实源回填）。
+4. send_keys WebDriver 键扩展：滚动/导航键（arrows/pages/home/end，uE00E-uE015）→
+   keydown+keyup 事件对（keyboard-page-scrolling 共享基建）；修饰键（Shift/
+   Control/Alt/Meta，uE008/9/A/D）同款成对派发。
+
+**基线演进**：1P/4F → **6P/12F**（9 用例全部可执行，Timeout/Unhandled rejection 清零）。
+
+| 用例 | P | F | 状态 |
+|---|---|---|---|
+| keydown-input-events | 2 | 0 | ✅ 事件序 + cancel 语义全过 |
+| keyboardevent-composed | 3 | 0 | ✅ composed 缺省修复 |
+| keyboardevent-legacy | 1 | 0 | ✅ |
+| modifier-keys | 0 | 4 | runner 无持久修饰键状态（down/up 成对派发 vs getModifierState 断言）——M2 修复队列 |
+| keypress-not-fired-for-modifier-shortcuts | 0 | 1 | 同上（修饰快捷键 keypress 抑制语义） |
+| implicit-submission | 0 | 3 | js-dom 共享面：insertAdjacentHTML 后兄弟视图断链（populateForm null form） |
+| css-scroll-snap/input 三案 | 0 | 4 | 断言依赖真滚动管线（runner 侧无——keyboard-page-scrolling M2 滚动分发到 webview 层后复评） |

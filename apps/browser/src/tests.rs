@@ -3750,24 +3750,46 @@ fn scroll_delta_for_key_maps_keyboard_scroll_keys_r3254_kp1() {
         "Space 滚动量须为视口高 0.85（got {space_down}, want {}）",
         ch * 0.85
     );
-    let space_up = app.scroll_delta_for_key_for_test(" ", true).expect("Shift+Space 须映射滚动");
+    let space_up = app
+        .scroll_delta_for_key_for_test(" ", true)
+        .expect("Shift+Space 须映射滚动");
     assert!(
         (space_up + ch * 0.85).abs() < 1.0,
         "Shift+Space 须向上滚动（got {space_up}）"
     );
 
-    let pd = app.scroll_delta_for_key_for_test("PageDown", false).expect("PageDown 须映射滚动");
+    let pd = app
+        .scroll_delta_for_key_for_test("PageDown", false)
+        .expect("PageDown 须映射滚动");
     assert!((pd - ch * 0.85).abs() < 1.0, "PageDown 须 ±0.85 视口");
-    let pu = app.scroll_delta_for_key_for_test("PageUp", false).expect("PageUp 须映射滚动");
+    let pu = app
+        .scroll_delta_for_key_for_test("PageUp", false)
+        .expect("PageUp 须映射滚动");
     assert!((pu + ch * 0.85).abs() < 1.0, "PageUp 须向上 0.85 视口");
 
-    let ad = app.scroll_delta_for_key_for_test("ArrowDown", false).expect("ArrowDown 须映射滚动");
+    let ad = app
+        .scroll_delta_for_key_for_test("ArrowDown", false)
+        .expect("ArrowDown 须映射滚动");
     assert!((ad - 40.0 * scale).abs() < 0.5, "ArrowDown 须 40px×scale");
-    let au = app.scroll_delta_for_key_for_test("ArrowUp", false).expect("ArrowUp 须映射滚动");
+    let au = app
+        .scroll_delta_for_key_for_test("ArrowUp", false)
+        .expect("ArrowUp 须映射滚动");
     assert!((au + 40.0 * scale).abs() < 0.5, "ArrowUp 须向上 40px×scale");
 
-    assert_eq!(app.scroll_delta_for_key_for_test("Home", false), None, "Home 走立即 to_top 路径");
-    assert_eq!(app.scroll_delta_for_key_for_test("End", false), None, "End 走立即 to_bottom 路径");
+    assert_eq!(
+        app.scroll_delta_for_key_for_test("Home", false),
+        None,
+        "Home 走立即 to_top 路径"
+    );
+    assert_eq!(
+        app.scroll_delta_for_key_for_test("End", false),
+        None,
+        "End 走立即 to_bottom 路径"
+    );
     assert_eq!(app.scroll_delta_for_key_for_test("a", false), None, "非滚动键无 delta");
-    assert_eq!(app.scroll_delta_for_key_for_test("Enter", false), None, "Enter 无滚动 delta");
+    assert_eq!(
+        app.scroll_delta_for_key_for_test("Enter", false),
+        None,
+        "Enter 无滚动 delta"
+    );
 }

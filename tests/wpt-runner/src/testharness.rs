@@ -143,8 +143,14 @@ pub const SELECTION_TEST_SUBDIRS: &[&str] = &["selection", "editing", "editing/o
 /// Keyboard goal（keyboard-default-actions M1 / DC-1）pinned upstream subset
 /// directories. Cases are fetched by `fetch-keyboard-subset.sh` into
 /// `wpt-data/`（gitignored）——uievents/keyboard 事件面 + forms 隐式提交/激活面。
-pub const KEYBOARD_TEST_SUBDIRS: &[&str] =
-    &["uievents/keyboard", "html/semantics/forms/form-submission-0"];
+pub const KEYBOARD_TEST_SUBDIRS: &[&str] = &[
+    "uievents/keyboard",
+    "html/semantics/forms/form-submission-0",
+    // keyboard-page-scrolling goal 共享面（M1 切片 2 扩展）：snap 容器键盘滚动交互
+    //（keyboard.html / paged.html / scroll-padding-paged.html——Actions 键盘链落地后
+    // 解除 defer）。
+    "css/css-scroll-snap/input",
+];
 
 /// IndexedDB goal pinned upstream `.any.js` subset.
 ///
@@ -1387,10 +1393,7 @@ pub fn run_selection_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String
 /// 与 [`run_selection_cases`] 同构：扫描 [`KEYBOARD_TEST_SUBDIRS`] 下全部主线程
 /// .html 用例；仅依赖 `testharness.js` + runner 内建 testdriver 适配
 ///（click/send_keys/Actions，R142）。用例由 `fetch-keyboard-subset.sh` 按需拉取。
-pub fn run_keyboard_cases(
-    wpt_root: &Path,
-    filter: Option<&str>,
-) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+pub fn run_keyboard_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
     let harness_source = match std::fs::read_to_string(wpt_root.join("resources/testharness.js")) {
         Ok(source) => source,
         Err(error) => {
@@ -4670,8 +4673,7 @@ fn apply_testdriver_command(webview: &mut WebView, command: &TestdriverCommand) 
                 return None;
             }
             if key.chars().count() == 1 {
-                if let Some(error) =
-                    dispatch_action(webview, target, HtmlUserAction::InsertText { text: key.clone() })
+                if let Some(error) = dispatch_action(webview, target, HtmlUserAction::InsertText { text: key.clone() })
                 {
                     return Some(error);
                 }
@@ -4696,6 +4698,45 @@ fn apply_testdriver_command(webview: &mut WebView, command: &TestdriverCommand) 
         "send_keys" => {
             let text = command.text.as_deref().unwrap_or_default();
             for character in text.chars() {
+                // R3254-KP2（keyboard-page-scrolling goal M1 切片 1 解除 defer）：
+                // WebDriver 滚动/导航键（arrows/pages/home/end）→ keydown+keyup 事件
+                // 对（key 名按 WebDriver 规范映射）。runner 侧无真滚动管线（滚动默认
+                // 动作在 browser shell 层）——事件派发是页面可观察面（snap 用例的事件
+                // listener + waitForAnimationEnd 驱动）。旧版落 PUA 拒绝分支使
+                // css-scroll-snap/input 三案全簇 Unhandled rejection。
+                let scroll_key = match character {
+                    '\u{E012}' => Some("ArrowLeft"),
+                    '\u{E013}' => Some("ArrowUp"),
+                    '\u{E014}' => Some("ArrowRight"),
+                    '\u{E015}' => Some("ArrowDown"),
+                    '\u{E00E}' => Some("PageUp"),
+                    '\u{E00F}' => Some("PageDown"),
+                    '\u{E010}' => Some("End"),
+                    '\u{E011}' => Some("Home"),
+                    // R3254-K2 后续：修饰键 → keydown+keyup 事件对（modifier-keys.html
+                    // send_keys 依赖；runner 无持久修饰状态——down/up 成对派发与
+                    // getModifierState 断言兼容性 defer 记录）。
+                    '\u{E008}' => Some("Shift"),
+                    '\u{E009}' => Some("Control"),
+                    '\u{E00A}' => Some("Alt"),
+                    '\u{E03D}' => Some("Meta"),
+                    _ => None,
+                };
+                if let Some(key_name) = scroll_key {
+                    for event_type in ["keydown", "keyup"] {
+                        let script = zero_engine::script_dispatch_dom_event(
+                            &selector,
+                            event_type,
+                            Some(&zero_engine::DomEventDetail {
+                                key: Some(key_name.to_string()),
+                                code: Some(key_name.to_string()),
+                                ..Default::default()
+                            }),
+                        );
+                        let _ = webview.execute_script(&script);
+                    }
+                    continue;
+                }
                 let action = match character {
                     '\u{E003}' => HtmlUserAction::DeleteBackward,
                     '\u{E004}' => HtmlUserAction::MoveFocus { forward: true },
