@@ -77,7 +77,7 @@ Web 标准覆盖面极广，"最新标准"不可能在一个里程碑中完成�
 - CSS：`@layer` + Container Queries + `:has()` + Subgrid + `scroll-snap` + View Transitions
 - JS/Web API：IndexedDB + Service Worker（基础）+ IntersectionObserver + Clipboard API + Fullscreen API + Drag & Drop + Web Components（Custom Elements + Shadow DOM）（Service Worker 专项已完成：专项目标 2026-09-06 收口，DC 全满足——真实生命周期 + fetch 拦截 + Cache 集成，WPT 三 runner 652 subtest 全绿；入口文档与运行时面板已归档至 `docs/goal/archive/service-workers/`）
 - HTML：`<template>` + `<slot>` + `<dialog>` + `<details>/<summary>` + `<picture>`
-- 存储：IndexedDB + Cache API + OPFS
+- 存储：IndexedDB + Cache API + OPFS（IndexedDB 与 Cache API 已完成归档；**OPFS 已拆专项目标** `docs/goal/storage-opfs.md`，2026-09-07 立项）
 
 **Tier 3 — 完整体验（持续扩展）**：
 - Canvas 2D 完整 API（Path2D、OffscreenCanvas、ImageBitmap）
@@ -169,6 +169,7 @@ Web 标准覆盖面极广，"最新标准"不可能在一个里程碑中完成�
 - **当前主要缺口**（详见 master.md「下一步优先级」）：① DOM/JS Bridge 为 polyfill 字符串桥接模式——Observer（Mutation/Intersection/Resize）为 stub 不触发回调、fetch() 为 stub 返回空 Response、事件循环为简化版非 spec-compliant（**P1a 修复中 = 当前活跃主线**）；② 渲染兼容性 chromium-Oracle 真一致 ~47.5%（属 rendering-compat 独立目标，深结构等用户点名）
 - **渲染兼容性赛道**：已拆分为独立目标 `docs/goal/rendering-compat.md`（WPT reftest 驱动）
 - **Canvas 2D 赛道**：独立目标已完成（2026-08-16，DC-1~4 全部满足：WPT 919 文件导入、testharness 全绿、oracle-pass 100%/不一致 0、Mission 中期 80% 达成）——入口文档与运行时面板已归档至 `docs/goal/archive/canvas-2d.md` + `docs/goal/archive/canvas-2d/`
+- **2026-09-07 批量拆分（用户决策）**：为推进 M12/M14 剩余面并扩大并行流，新立 6 个子 goal——`storage-opfs`（Tier 2 存储收口）、`page-wasm`（M12 页面 WASM）、`event-loop-spec`（P1a 遗留：checkpoint/MO host 触发/IO-RO WPT）、`web-components`（M12 WC）、`android-browser`（M14 Android 治理）、`webdriver`（W3C 协议补齐 + 自动化验证基建）。各 goal 均声明与 rendering-compat 的 run-rules §9 碰撞边界，启动脚本见 `scripts/rally-<name>.sh`
 
 ---
 
@@ -493,8 +494,9 @@ zero-web/
 **目标**：扩展 Web 标准支持，提升兼容性至 Tier 2 水平。
 
 **交付物**：
-- [ ] WASM 支持（Wasmtime 集成，页面 WASM 与 JS 互操作）
-- [ ] 更多 DOM API（MutationObserver、IntersectionObserver、ResizeObserver、Clipboard API、Fullscreen API、Drag & Drop）
+- [ ] WASM 支持（Wasmtime 集成，页面 WASM 与 JS 互操作）——**已拆专项目标** `docs/goal/page-wasm.md`（2026-09-07 立项：底座已闭环，深化导出面/类型/链接语义 + WPT jsapi 基线）
+- [ ] 更多 DOM API（MutationObserver、IntersectionObserver、ResizeObserver、Clipboard API、Fullscreen API、Drag & Drop）——MO host 触发 + IO/RO WPT 基线 + checkpoint spec 化**已拆专项目标** `docs/goal/event-loop-spec.md`（2026-09-07 立项）；Clipboard/Fullscreen/DnD 未立项
+- [ ] Web Components（Custom Elements + Shadow DOM）——**已拆专项目标** `docs/goal/web-components.md`（2026-09-07 立项；一期 dom/engine 侧，Shadow DOM 渲染级等用户点名专项）
 - [ ] `script-sandbox` crate 支持 QuickJS feature gate
 - [x] Service Worker 基础（注册、fetch 事件拦截、缓存管理）——专项目标 2026-09-06 收口（真实 worker 执行环境 + 生命周期真事件 + fetch 拦截 + Cache API 集成；归档于 `docs/goal/archive/service-workers/`）
 - [x] Cache API——专项目标 2026-09-06 收口归档（页面 `caches`/`Cache` 全 API 接 zero-storage 真实实现 + per-origin 持久化；WPT `cache-storage` window 面 39 case / 449 subtest 全绿；归档于 `docs/goal/archive/storage-cache-api/`）
@@ -539,7 +541,7 @@ zero-web/
 
 **交付物**：
 - [ ] 可访问性基础（ARIA 属性传递、键盘导航、焦点管理、高对比度模式）
-- [ ] Android 平台适配（APK 打包、触摸输入、虚拟键盘、移动端 UI）
+- [ ] Android 平台适配（APK 打包、触摸输入、虚拟键盘、移动端 UI）——**已拆专项目标** `docs/goal/android-browser.md`（2026-09-07 立项：现状功能中期 M2 级、治理缺位，先建 CI 门禁与冒烟验收）
 - [ ] 鸿蒙 PC 架构预留和初步适配（平台胶水层、输入法适配）
 - [ ] 发布打包（macOS .app/.dmg、Linux .AppImage/.deb、Windows .exe 安装包）
 - [ ] 自动更新机制基础
