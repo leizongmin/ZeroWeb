@@ -2,7 +2,7 @@
 
 **入口文档**: [../keyboard-default-actions.md](../keyboard-default-actions.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-07（M1 切片 2 完成——Actions 键盘链 + keydown 事件序，基线 6P/12F 全案可执行）
+**最后更新**: 2026-09-07（M2 切片 1 完成——空格激活 button（K4），webview Activate 递归复用）
 
 ---
 
@@ -37,7 +37,7 @@
 | K1 | WPT 用例覆盖为零 | ✅ 首批 6 用例 2026-09-07（uievents/keyboard 5 + implicit-submission；基线 1P/4F，evidence/2026-09-07-m1-keyboard-baseline.md）|
 | K2 | 默认动作分发层缺失 | 🔶 部分接通：runner send_keys uE007→Submit + webview CE-first Enter 分发（2026-09-07）；keydown/keyup 事件派发断言面待 Actions 键盘链（addKeyboard not a function）|
 | K3 | implicit submission（Enter 提交规则）缺失 | ⬜ M2 |
-| K4 | 激活键语义（空格/Enter → click 合成 + 两键差异）缺失 | ⬜ M2 |
+| K4 | 激活键语义（空格/Enter → click 合成 + 两键差异）缺失 | 🔶 M2 切片 1（2026-09-07，f6eaed4d5）：空格→button-ish 目标递归 Activate（click 合成全管线复用）；Enter→Submit 臂上轮已接（uE007 路由 + 表单提交）。残余：keydown/keyup 两键时序差异（Space=keyup 触发、Enter=keydown 触发——runner 单发通道下语义合并，Actions 键盘链可细分，defer 记录）|
 | K5 | select 键盘导航（展开/移动/type-ahead）缺失 | ⬜ M3 |
 
 ## 下一步计划
@@ -54,7 +54,7 @@
 | 里程碑 | 状态 |
 |--------|------|
 | M1 — WPT 基线建立 + 分发层骨架 | ✅ 切片 1/2 完成（2026-09-07）——基线 6P/12F 全案可执行 + keydown/keyup 派发层；切片 3 分发表扩展按残余聚类推进 |
-| M2 — 表单键与激活 | ⬜ |
+| M2 — 表单键与激活 | 🔶 切片 1 ✅（K4 空格激活，2026-09-07）；K3 implicit submission 规则细化待 js-dom 视图断链修复后复评 |
 | M3 — select 导航 + radio/checkbox + 事件序 | ⬜ |
 
 ## 验证基线
