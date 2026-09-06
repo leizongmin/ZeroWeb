@@ -273,3 +273,4 @@ css/css-backgrounds/background-margin-root.html css/css-backgrounds/background-m
 css/css-overflow/scrollbar-gutter-with-background-gradient.html css/css-overflow/scrollbar-gutter-with-background-gradient-ref.html == 2026-09-06 R4083 scrollbar-gutter shrinks root padding-box positioning/painting area
 css/css-sizing/stretch/stretch-quirk-001.html css/css-sizing/stretch/stretch-quirk-001-ref.html == 2026-09-06 R4086 stretch/fill-available keyword sizing (quirks body-fills-html chain)
 css/css-sizing/stretch/stretch-quirk-002.html css/css-sizing/stretch/stretch-quirk-002-ref.html == 2026-09-06 R4086 stretch keyword sizing quirks variant 002
+css/CSS2/normal-flow/inline-replaced-width-009.xht css/CSS2/positioning/absolute-replaced-width-003c-ref.xht == 2026-09-06 R4091 svg no-intrinsic-width default-300 clamp (bbox rule, CSS2 §10.3.2)

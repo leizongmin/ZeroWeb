@@ -80,15 +80,26 @@ pub(crate) fn svg_default_used_size(
         return Some((Some(aw), aw / ratio));
     }
     // 既有 abs 路径（attr/CSS 任一 abs）优先——不动。
-    // R4090 例外（宽无来源 + 高 abs）：used = (min(bbox_w, 300), attr_h)——-009 形态
-    //（attr h=300、rect 600×300 → chromium 300×300）。abspos 不适用（R4016 校准纯
-    // default + R3935 inset 方程保护）。R4088 同形试修曾翻红 -003——彼时无 bbox 钳制
-    //（width=300 vs bbox 200）；bbox 钳制后 -003 走不到此臂（其 CSS h=100、attr h 缺失），
-    // 矛盾消解。
-    // R4088 遗留教训：attr_h abs + 宽无来源的例外臂（-009 形态 → (min(bbox_w,300), attr_h)）
-    // 在 abspos 族（absolute-replaced-width-003/010/024/031/038/052/066，svg attr h=50 +
-    // CSS position:absolute）翻红 2.08-2.15%——abspos 校正点在部分调用面（IFC 直收集）的
-    // position 解析时序下不可靠。该臂独立挂账；本切片只保留 (b) 臂 bbox 钳制。
+    // R4091 例外臂（重试）：宽无来源 + 高有 abs 来源（attr_h 或 CSS Px h）→
+    // used = (min(bbox_w, 300), 显式高)。显式高优先级 = **CSS Px > attr abs**
+    //（级联序：-003 CSS h=100 → 100 而非 attr 50；-009 CSS h 缺 → attr 300）。
+    // abspos 门 = 显式 position 检查（R4016 校准纯 default + R3935 inset 方程保护）。
+    let is_abspos = !matches!(style.position, zero_css_parser::values::PositionValue::Static);
+    // margin auto 门（CSS2 §10.3.2：inline replaced 的 auto margin used = 0）——definite
+    // 双尺寸 + auto margin 会触发 ZW IFC 对 atomic inline 的中心化 x 偏移（-003 首版 44px
+    // 实测）；auto margin 形态交旧路径（rect 泄漏宽恰好 = content bbox，-003 基线绿）。
+    let no_auto_margin =
+        !matches!(style.margin_left, LengthValue::Auto) && !matches!(style.margin_right, LengthValue::Auto);
+    if !is_abspos && no_auto_margin && attr_w.is_none() && matches!(style.width, LengthValue::Auto) {
+        let explicit_h = match &style.height {
+            LengthValue::Px(v) if v.is_finite() && *v >= 0.0 => Some(*v as f32),
+            _ => parse_abs(&attr_h),
+        };
+        if let Some(ah) = explicit_h {
+            let (bw, _) = content_bbox.unwrap_or((SVG_DEFAULT_W, SVG_DEFAULT_H));
+            return Some((Some(bw.min(SVG_DEFAULT_W)), ah));
+        }
+    }
     if parse_abs(&attr_w).is_some() || parse_abs(&attr_h).is_some() || css_abs(&style.width) || css_abs(&style.height) {
         return None;
     }
