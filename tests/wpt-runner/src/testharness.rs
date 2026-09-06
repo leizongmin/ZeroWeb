@@ -134,9 +134,11 @@ pub const DOM_TEST_SUBDIRS: &[&str] = &[
 ];
 
 /// Selection goal（editing/contenteditable M1 / DC-1）pinned upstream subset
-/// directory. Cases are fetched by `fetch-selection-subset.sh` into
-/// `wpt-data/selection/`（gitignored）。
-pub const SELECTION_TEST_SUBDIRS: &[&str] = &["selection"];
+/// directories. Cases are fetched by `fetch-selection-subset.sh`（selection/，
+/// M1 切片 1）与 `fetch-editing-subset.sh`（editing/，M1 切片 3——beforeinput/
+/// input 事件面 + editing/other 删除/插入行为基线，M2 前置）into
+/// `wpt-data/`（gitignored）。
+pub const SELECTION_TEST_SUBDIRS: &[&str] = &["selection", "editing", "editing/other"];
 
 /// IndexedDB goal pinned upstream `.any.js` subset.
 ///

@@ -71,8 +71,17 @@ HELPERS=(
   "selection/common.js"
 )
 
-for rel in "${CASES[@]}" "${HELPERS[@]}"; do
+# M1 切片 3（2026-09-07）：editing/ 首批——event.html（beforeinput/input 事件面）
+# + other/ 删除/插入行为两案（execCommand delete 编辑宿主语义）。run/ 全命令面
+#（43 用例）归 M3；其余 other/（97 案）按 M2 失败聚类逐批追加。
+EDITING_CASES=(
+  "editing/event.html"
+  "editing/other/delete-editing-host.html"
+  "editing/other/body-should-not-deleted-even-if-empty.html"
+)
+
+for rel in "${CASES[@]}" "${HELPERS[@]}" "${EDITING_CASES[@]}"; do
   fetch_raw "$rel"
 done
 
-echo "selection subset ready: ${#CASES[@]} cases + ${#HELPERS[@]} helpers @ ${WPT_REV:0:12}"
+echo "selection+editing subset ready: ${#CASES[@]}+${#EDITING_CASES[@]} cases + ${#HELPERS[@]} helpers @ ${WPT_REV:0:12}"

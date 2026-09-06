@@ -62,3 +62,25 @@ pass-rate: 1.7%
    IndexSizeError**（collapseToStartEnd/extend-exception/getRangeAt/removeRange，~85F）。
 5. **collapse() 语义**（collapse.htm）——collapse 到点后 toString 须空。
 6. **selectionchange 事件派发**（onselectionchange-*，6F）——文本控件/document 面。
+
+---
+
+# M1 切片 3 — editing/ 首批导入（2026-09-07，同日追加）
+
+**新增**：`editing/event.html`（beforeinput/input 事件面，180 subtests）+
+`editing/other/delete-editing-host.html`、`editing/other/body-should-not-deleted-even-if-empty.html`
+（execCommand delete 编辑宿主语义——M2/M3 前置基线）。
+
+**首批基线**：
+
+| 用例 | P | F | 聚类 |
+|---|---|---|---|
+| editing/event.html | 104 | 76 | 76F 全是「number of input events fired expected 1 but got 0」——execCommand format 类命令不派发 input 事件（E4/E5 缺口，M2/M3 领域） |
+| editing/other/delete-editing-host.html | 2 | 0 | ✅ 全过（execCommand delete no-op 语义 + isConnected 断言） |
+| editing/other/body-should-not-deleted-even-if-empty.html | 0 | 2 | execCommand delete 实应用缺失（M2 领域） |
+
+**组合面**（selection 20 用例 + editing 3 用例）：23 用例 1930P/854F。
+
+**排除项**（有据）：`editing/run/`（43 用例 execCommand 全命令面——M3 里程碑领域）；
+`editing/other/` 其余 ~95 案（按 M2 失败聚类逐批追加）；`editing/manual/`（真交互）；
+`editing/include/editor-test-utils.js` 依赖面（后续切片补拉）。
