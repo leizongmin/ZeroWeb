@@ -140,6 +140,12 @@ pub const DOM_TEST_SUBDIRS: &[&str] = &[
 /// `wpt-data/`（gitignored）。
 pub const SELECTION_TEST_SUBDIRS: &[&str] = &["selection", "editing", "editing/other"];
 
+/// Keyboard goal（keyboard-default-actions M1 / DC-1）pinned upstream subset
+/// directories. Cases are fetched by `fetch-keyboard-subset.sh` into
+/// `wpt-data/`（gitignored）——uievents/keyboard 事件面 + forms 隐式提交/激活面。
+pub const KEYBOARD_TEST_SUBDIRS: &[&str] =
+    &["uievents/keyboard", "html/semantics/forms/form-submission-0"];
+
 /// IndexedDB goal pinned upstream `.any.js` subset.
 ///
 /// Each case is run in its window variant with the META-declared support script.
@@ -1372,6 +1378,90 @@ pub fn run_selection_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String
         }
     }
     cases
+}
+
+/// Run the upstream keyboard testharness cases under `wpt_root`
+/// （keyboard-default-actions goal M1 / DC-1——键盘默认动作基线：uievents/keyboard
+/// 事件面 + forms 隐式提交面）。
+///
+/// 与 [`run_selection_cases`] 同构：扫描 [`KEYBOARD_TEST_SUBDIRS`] 下全部主线程
+/// .html 用例；仅依赖 `testharness.js` + runner 内建 testdriver 适配
+///（click/send_keys/Actions，R142）。用例由 `fetch-keyboard-subset.sh` 按需拉取。
+pub fn run_keyboard_cases(
+    wpt_root: &Path,
+    filter: Option<&str>,
+) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    let harness_source = match std::fs::read_to_string(wpt_root.join("resources/testharness.js")) {
+        Ok(source) => source,
+        Err(error) => {
+            return vec![(
+                "resources/testharness.js".to_string(),
+                vec![HarnessSubtestResult {
+                    name: "load testharness.js".into(),
+                    status: HarnessStatus::Fail,
+                    message: Some(error.to_string()),
+                }],
+            )];
+        }
+    };
+
+    let mut cases = Vec::new();
+    for subdir in KEYBOARD_TEST_SUBDIRS {
+        collect_keyboard_dir_cases(wpt_root, subdir, filter, &harness_source, &mut cases);
+    }
+    cases
+}
+
+/// 递归收集一个键盘子目录下的主线程 .html 用例（resources/ 等辅助目录跳过）。
+fn collect_keyboard_dir_cases(
+    wpt_root: &Path,
+    subdir: &str,
+    filter: Option<&str>,
+    harness_source: &str,
+    cases: &mut Vec<(String, Vec<HarnessSubtestResult>)>,
+) {
+    let dir = wpt_root.join(subdir);
+    let Ok(entries) = std::fs::read_dir(&dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            continue;
+        }
+        if path.extension().is_none_or(|ext| ext != "html" && ext != "htm") {
+            continue;
+        }
+        let relative = format!("{}/{}", subdir, entry.file_name().to_string_lossy());
+        if filter.is_some_and(|filter| !relative.contains(filter)) {
+            continue;
+        }
+        let source = match std::fs::read_to_string(&path) {
+            Ok(source) => source,
+            Err(error) => {
+                cases.push((
+                    relative.clone(),
+                    vec![HarnessSubtestResult {
+                        name: "load WPT case".into(),
+                        status: HarnessStatus::Fail,
+                        message: Some(error.to_string()),
+                    }],
+                ));
+                continue;
+            }
+        };
+        let variants = case_variants(&source);
+        if variants.is_empty() {
+            let results = run_testharness_html(wpt_root, &relative, &source, harness_source, CASE_TIMEOUT);
+            cases.push((relative, results));
+            continue;
+        }
+        for variant in variants {
+            let case_name = format!("{relative}{variant}");
+            let results = run_testharness_html(wpt_root, &case_name, &source, harness_source, CASE_TIMEOUT);
+            cases.push((case_name, results));
+        }
+    }
 }
 
 /// 解析用例声明的 `<meta name="variant" content="?query">` 列表（js-dom R329）。
@@ -4556,6 +4646,13 @@ fn apply_testdriver_command(webview: &mut WebView, command: &TestdriverCommand) 
                 let action = match character {
                     '\u{E003}' => HtmlUserAction::DeleteBackward,
                     '\u{E004}' => HtmlUserAction::MoveFocus { forward: true },
+                    // R3254-K1（keyboard goal M1，2026-09-07）：WebDriver ENTER →
+                    // Submit 动作（implicit submission 规则——webview 层分发：CE 宿主
+                    // → __zw_ce_enter 换行（编辑宿主优先消费）；text control 在表单内
+                    // → submit 事件+导航意图；textarea 由用例用字面 '\n' 表达换行，
+                    // 不经 uE007）。旧版落入 PUA 拒绝分支——implicit-submission 全簇
+                    // Unhandled rejection。
+                    '\u{E007}' => HtmlUserAction::Submit,
                     character if ('\u{E000}'..='\u{F8FF}').contains(&character) => {
                         return Some(format!("unsupported WebDriver key U+{:04X}", character as u32));
                     }

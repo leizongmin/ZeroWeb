@@ -293,27 +293,27 @@ impl WebView {
                 ActionTargetState::Reset { form }
             }
             HtmlUserAction::Submit => {
+                // R3254-K1（keyboard goal M1）：Enter 默认动作分发序——**编辑宿主优先
+                // 消费**（CE 宿主 → __zw_ce_enter 换行，即使宿主在表单内也不提交）；
+                // 未消费才走表单隐式提交管线（enclosing form → submit 事件+导航意图）。
+                let ce_probe = self.execute_dom_script(executor, &script_contenteditable_probe(&selector))?;
+                if ce_probe.value.trim() == "1" {
+                    let result = self.execute_dom_script(executor, &script_contenteditable_enter(&selector))?;
+                    return Ok(WebViewUserActionResult {
+                        changed: result.changed,
+                        canceled: false,
+                        noop_reason: None,
+                        effects: Vec::new(),
+                        invalidation: if result.changed {
+                            InvalidationKind::Paint
+                        } else {
+                            InvalidationKind::None
+                        },
+                    });
+                }
                 let Some(form) = zero_engine::enclosing_form_selector(&html, &selector)
                     .and_then(|form| self.page_node_ref_for_selector(&form))
                 else {
-                    // R3254-M2 切片 3（editing goal）：CE 宿主内 Enter 路由的 Submit
-                    //（非表单目标）→ __zw_ce_enter（<br> 插入，编辑宿主消费 Enter 不
-                    // 提交——spec editing host 优先消费，分发顺序见 goal 边界）。
-                    let ce_probe = self.execute_dom_script(executor, &script_contenteditable_probe(&selector))?;
-                    if ce_probe.value.trim() == "1" {
-                        let result = self.execute_dom_script(executor, &script_contenteditable_enter(&selector))?;
-                        return Ok(WebViewUserActionResult {
-                            changed: result.changed,
-                            canceled: false,
-                            noop_reason: None,
-                            effects: Vec::new(),
-                            invalidation: if result.changed {
-                                InvalidationKind::Paint
-                            } else {
-                                InvalidationKind::None
-                            },
-                        });
-                    }
                     return Ok(WebViewUserActionResult::noop(ActionNoopReason::NotApplicable));
                 };
                 ActionTargetState::Submit {
