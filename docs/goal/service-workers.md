@@ -142,18 +142,18 @@ cache-storage 用例归本目标（兄弟目标只收 window 面）。
 
 - [x] register → scriptURL 下载 → SW 上下文执行 → install/activate 真事件全链路
 - [x] setTimeout 生命周期模拟已删除；页面 timer 仅逐 task 投影 manager transition log
-- [ ] scope 匹配/controller/oncontrollerchange/skipWaiting/claim 语义与 spec 一致（WPT 为准）
+- [x] scope 匹配/controller/oncontrollerchange/skipWaiting/claim 语义与 spec 一致（WPT 为准；core 65 case / 249 subtest 全绿且三跑稳定——controller-on-load 初始赋值非 change 的 flake 根因修复后，2026-09-06）
 
 ### DC-3: fetch 拦截
 
-- [ ] scope 内 fetch 经 SW fetch 事件；respondWith 响应 / passThrough 走网络
-- [ ] 与 Cache API 集成（caches.match 模式可端到端跑通）
+- [x] scope 内 fetch 经 SW fetch 事件；respondWith 响应 / passThrough 走网络（fetch/message runner 31 case / 85 subtest 全绿）
+- [x] 与 Cache API 集成（caches.match 模式可端到端跑通；CacheStorage runner 25 case / 318 subtest 全绿）
 
 ### DC-4: WPT 基线与通过率
 
-- [ ] `service-workers` 可执行面用例导入（skip list 注明 https/多客户端依赖项）
-- [ ] 建立分类通过率报告，持久化到 `docs/goal/service-workers/evidence/`
-- [ ] 每项修复的 driving WPT 用例经 `make import-wpt` 记入 `imported-tests.txt`
+- [x] `service-workers` 可执行面用例导入（skip list 注明 https/多客户端依赖项；disposition contract 294 source / 331 URL 可确定性重建）
+- [x] 建立分类通过率报告，持久化到 `docs/goal/service-workers/evidence/`（core 65/249、fetch/message 31/85、CacheStorage 25/318 deterministic baseline + 86 份 evidence）
+- [x] 每项修复的 driving WPT 用例经 `make import-wpt` 记入 `imported-tests.txt`（imported-testharness.txt 133 条 SW 条目）
 
 ### DC-5: 测试与质量不可退让
 
