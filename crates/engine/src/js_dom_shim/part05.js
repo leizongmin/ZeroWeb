@@ -2414,6 +2414,27 @@
     var iframeServiceWorkerNotifiedControllerId = null;
     var iframeServiceWorkerEventController = null;
     var iframeServiceWorkerControllers = {};
+    // https://w3c.github.io/ServiceWorker/#service-worker-container-controller-attribute —
+    // 创建时即受控的文档（controller-on-load），其 controller 自创建起就是该 worker：
+    // 之后的首次 refresh 通知只是「初始赋值」，不是 change，不派发 controllerchange
+    //（否则 skip-waiting 家族的 oncontrollerchange 会被 worker1 的初始通知抢答——
+    // WPT skip-waiting-using-registration 间歇红项根因）。创建期就查一次 wire 记录
+    // 基线 id；创建时无 controller 的文档（claim 场景）基线为 null，后续首次通知
+    // 仍视为 change。
+    var iframeServiceWorkerCreationControllerId = null;
+    if (typeof __zw_sw_controller === 'function') {
+      try {
+        var _zwCreationControllerWire = JSON.parse(__zw_sw_controller(
+          doc && doc._zwURL ? doc._zwURL : '',
+          doc && doc._zwSwClientId ? doc._zwSwClientId : ''
+        ));
+        if (_zwCreationControllerWire && _zwCreationControllerWire.ok && _zwCreationControllerWire.controller) {
+          iframeServiceWorkerCreationControllerId =
+            serviceWorkerControllerIdString(_zwCreationControllerWire.controller);
+          iframeServiceWorkerControllerId = iframeServiceWorkerCreationControllerId;
+        }
+      } catch (_eCreationController) {}
+    }
     function serviceWorkerControllerId(controller) {
       if (!controller) return null;
       if (controller.id != null) return controller.id;
@@ -2620,8 +2641,10 @@
           var nextId = serviceWorkerControllerIdString(controller);
           if (nextId == null) return;
           var eventController = controller;
-          var controllerChanged =
-            !iframeServiceWorkerControllerId || iframeServiceWorkerControllerId !== nextId;
+          // change 基线：优先已通知 id；否则用创建期基线（controller-on-load 文档
+          // 创建即受控——初始通知非 change，见 creation-controller 注记）。
+          var baselineId = iframeServiceWorkerControllerId || iframeServiceWorkerCreationControllerId;
+          var controllerChanged = !baselineId || baselineId !== nextId;
           if (iframeServiceWorkerControllerId &&
               iframeServiceWorkerControllerId !== nextId &&
               controller.state === 'activated') {
@@ -2636,10 +2659,16 @@
           var listeners = serviceWorker._et_listeners || {};
           var registered = (listeners.controllerchange || [])
             .concat(listeners['controllerchange|cap'] || []);
-          if (!hint && registered.length === 0 && typeof handler !== 'function') return;
-          if (!hint && !controllerChanged &&
-              iframeServiceWorkerNotifiedControllerId === nextId) return;
-          if (hint && iframeServiceWorkerNotifiedControllerId === nextId) return;
+          if (!hint) {
+            if (!controllerChanged) {
+              // 非 change（初始受控赋值或重复通知）：仅记账，不派发事件。
+              iframeServiceWorkerControllerId = nextId;
+              iframeServiceWorkerNotifiedControllerId = nextId;
+              return;
+            }
+            if (iframeServiceWorkerNotifiedControllerId === nextId) return;
+          } else if (iframeServiceWorkerNotifiedControllerId === nextId) return;
+          if (registered.length === 0 && typeof handler !== 'function') return;
           iframeServiceWorkerControllerId = nextId;
           iframeServiceWorkerNotifiedControllerId = nextId;
           iframeServiceWorkerEventController = wrapServiceWorkerController(eventController);
