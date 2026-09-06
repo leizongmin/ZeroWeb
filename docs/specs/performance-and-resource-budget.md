@@ -103,6 +103,17 @@ record-bench-baseline.sh（基线，手动）→ docs/perf/baselines/<platform_c
   - **验证（护栏④）**：同一份 GATE FAIL 报告对新基线本地复跑 `perf-gate.sh` → **GATE PASS，113/113，NEW=0**，无残留超预算项。
   - 批复至此全部执行完毕（7763 + 9V74 两平台基线均已按护栏①独立重建）。
 
+**2026-09-07 三滞后平台基线 re-capture 放行记录 + 执行记录（用户批复，GB-20260907 ②，「②先解阻+①立项跟进」组合）**：
+- **放行内容**：CI benchmarks **6973p / 7763 / 8573c** 三平台基线各自独立一次性 re-capture（`record-bench-baseline.sh --relax` 显式执行 + justification 记录本批复），消除 8/30-8/31 布局正确性大潮（R3836-R3862 等 30+ 修复，corpus 净 +100+）引入 layout-engine 热路径 +25-30% 成本后，三平台回归前捕获的滞后基线造成的「间歇红转常态红」（9/6 第二十四轮 7763 直落 block 1.043× + incremental 1.017× 双越线，run conclusion = failure）。
+- **证据链**：CI-GUARD 第二十轮本地交错 A/B 实证 head vs 8/30 回归前 +30%；三平台 trend 一致抬升（7763 3.66→5.07ms / 6973p 2.11→3.19ms / 8573c 均匀漂移族内同步抬升）；回归窗口 `ed3dfb4df`→`242871555`（8/30-8/31）R3836-R3862 + R3867-R3872 + R3901-R3903 定位闭合，taffy 0.12.1 未变排除依赖漂移——**真实代码回归（有记录的正确性换性能交换），非平台漂移、非窗口内新增**；基线滞后仅是暴露机制。同轮批复①渲染流「layout-engine 热路径性能回拉专项」立项跟进（目标锚定回归前水平）。
+- **护栏**：① 三平台不共用一组数，各自独立重建（7763 = run 34034764552 head `3715a76ca` `benchmark_20260906_130047.json`；6973p = run 33908906842 首轮 head `aa9a0eeb6` `benchmark_20260904_190135.json`；8573c = 同 run rerun head `aa9a0eeb6` `benchmark_20260904_194636.json`，均 suspect=false）② 沿用 GB-20260829 口径「重建后仍超预算者单列报告再议」③ 属归因性 re-baseline 非放宽阈值——绝对预算语义不动（`total_ms` hard tier 2000ms 绝对值、budget tier 公式均不变），仅基线参考值按各平台回归后实测更新 ④ 执行轮须对各自原 GATE FAIL 报告本地复跑 `perf-gate.sh` 验证 NEW=0 收敛。
+- **执行记录（2026-09-07，三平台全部完成）**：
+  - **7763**：113 指标全量重建。关键指标旧→新（ns）：`block_layout_1000_elements` 3602517→5070809（1.41×）、`incremental_layout` 3510603→4818062（1.37×）、`flex_layout_1000_elements` 3700746→4919359（1.33×）、`grid_layout_100_elements` 423115→536654（1.27×）。
+  - **6973p**：113 指标全量重建。关键指标旧→新（ns）：`block_layout_1000_elements` 2105475→3187938（1.51×）、`flex_layout_1000_elements` 2272584→3155720（1.39×）、`incremental_layout` 2690482→2866906（1.07×）。
+  - **8573c**：113 指标全量重建。关键指标旧→新（ns）：`block_layout_1000_elements` 2488670→3968309（1.59×）、`flex_layout_1000_elements` 2525608→4055749（1.61×）、`incremental_layout` 2443846→3823338（1.56×）。
+  - **验证（护栏④）**：三平台各自原 GATE FAIL 报告对新基线本地复跑 `perf-gate.sh` → **三平台均 GATE PASS，各 113/113，NEW=0**，无残留超预算项（「重建后仍超预算者单列报告再议」检查通过——本轮无残留）。CI 侧验证待下一轮 dispatch 落任一重建平台后补记。
+- **恢复计划（批复①专项）**：渲染流立项「layout-engine 热路径性能回拉专项」，目标锚定回归前水平（8/30 端点：本地 A/B 基准 ≈1.91ms/block），②落地后以三平台门禁为进度表——专项每步优化经新基线量化，auto-tighten 随实测回落持续收紧；优先从「pass 数量与每 pass 全树 walk」类结构性成本入手（如 R3858 abspos nested-CB re-resolve 的 styles 预扫描覆盖缺口），不回退任何正确性修复。
+
 **2026-08-22 基线重建记录（用户放行，GB-20260821）**：
 - **旧值**：2026-08-08 初始基线（112 指标，`linux-x86_64.json`；justification「初始基线（性能门禁体系上线，2026-08-08）」）。
 - **新值**：2026-08-22 重建基线（113 指标，新增 `mb/zero-render-foundation/full_scene/raster_1500_fills_1080p`；`record-bench-baseline.sh --relax` 显式执行，justification 记录放行依据）。绝对预算语义不变：`total_ms` hard tier = 2000ms 绝对值不动；`first_paint_wall_ms`/`peak_rss_mb` budget tier 公式（`p95×1.15+40` / `p95×1.2+128`）不动，仅基线参考值更新。
