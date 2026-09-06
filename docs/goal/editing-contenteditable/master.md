@@ -2,7 +2,7 @@
 
 **入口文档**: [../editing-contenteditable.md](../editing-contenteditable.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-07（M1 切片 1 完成——selection 基线 45P/2559F 1.7%）
+**最后更新**: 2026-09-07（M1 切片 2 完成——Selection 面修复 45P→1824P，1.7%→70.2%）
 
 ---
 
@@ -39,7 +39,7 @@
 | # | 缺口 | 状态 |
 |---|------|------|
 | E1 | WPT selection/editing 用例覆盖为零 | ✅ selection 首批 20 用例 2026-09-07（基线 1.7%）；editing 目录未导 |
-| E2 | Selection JS 可观察面未核实/缺失 | 🔶 已摸清：window.getSelection 单例有（R2804）；缺 document.getSelection/iframe 面/Selection.prototype instanceof/selectAllChildren/setBaseAndExtent/deleteFromDocument/setPosition/空选异常/selectionchange 派发 |
+| E2 | Selection JS 可观察面未核实/缺失 | 🔶 切片 2 修复 8 类（2026-09-07，45P→1824P）：document.getSelection 绑定 / instanceof 链 / 空选 InvalidStateError / getRangeAt 越界 IndexSizeError / removeRange TypeError+NotFoundError / collapseToStart 新 range 语义 / collapsed toString 空串 / selectAllChildren+setBaseAndExtent+setPosition+deleteFromDocument 新增；残余：selectionchange 派发 / iframe 面 / setBaseAndExtent 方向位 / containsNode 精确化 |
 | E3 | 编辑行为管线（键入/删除/换行 → DOM）缺失 | ⬜ M2 |
 | E4 | beforeinput/input 事件缺失 | ⬜ M2 |
 | E5 | execCommand format 桩（不真应用） | ⬜ M3 |
@@ -47,7 +47,7 @@
 ## 下一步计划
 
 1. ~~**M1 切片 1**：`selection` 用例导入 + 基线~~ ✅ 2026-09-07（45P/2559F 1.7%，evidence/2026-09-07-m1-slice1-selection-baseline.md）
-2. **M1 切片 2**：Selection 面缺口修复（按失败聚类：document.getSelection 绑定 → Selection.prototype instanceof → selectAllChildren/setBaseAndExtent/deleteFromDocument/setPosition → 空选异常 → collapse 语义 → selectionchange）
+2. ~~**M1 切片 2**：Selection 面缺口修复~~ ✅ 2026-09-07（45P→1824P，70.2%；commit 679059d2f + 单测 test_selection_surface_r3254_m1 九组断言）。残余聚类：① selectAllChildren 456F「createRange of undefined」= runner host 视图 pending-tree 变动伪失败（js-dom 共享面已知限制，非 Selection API 缺陷）；② deleteFromDocument 60F iframe 面（test-iframe.html 依赖）；③ selectionchange 派发（onselectionchange-* 6F）；④ setBaseAndExtent 方向位（anchor/focus 反向形态 86F）
 3. **M1 切片 3**：`editing` 用例导入 + 失败聚类
 
 **碰撞管理**：开工前先 `git log --since="14 days ago" -- crates/engine/src/js_dom_shim/`
@@ -57,13 +57,13 @@
 
 | 里程碑 | 状态 |
 |--------|------|
-| M1 — selection 基线 + Selection 面摸底 | 🔶 切片 1 ✅（基线 1.7%）；切片 2 修复进行中 |
+| M1 — selection 基线 + Selection 面摸底 | 🔶 切片 1 ✅（基线 1.7%）+ 切片 2 ✅（70.2%）；切片 3 editing 导入待启动 |
 | M2 — 编辑行为管线 | ⬜ |
 | M3 — execCommand 基础面 + 收尾 | ⬜ |
 
 ## 验证基线
 
 - 测试基线：2026-09-07 全绿；clippy 零警告
-- WPT selection 面：**45P/2559F（1.7%）** @ WPT_REV 315976933870（20 用例，evidence/2026-09-07-m1-slice1-selection-baseline.md）
+- WPT selection 面：切片 1 基线 45P/2559F（1.7%）→ 切片 2 **1824P/776F（70.2%）** @ WPT_REV 315976933870（20 用例，evidence/2026-09-07-m1-slice1-selection-baseline.md）
 - WPT editing 面：未导入
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过
