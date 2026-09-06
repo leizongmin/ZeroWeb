@@ -1405,6 +1405,41 @@
   // R152（js-dom M4）：Document 侧 [Unscopable] 表（与 Element 侧 R134 表同源语义）。
   var DocumentUnscopables = { prepend: true, append: true, replaceChildren: true };
 
+  // R3254-M2（editing goal M2 切片 1）：execCommand 编辑类命令 → beforeinput/input
+  // inputType 映射（https://w3c.github.io/input-events/#interface-InputEvent-Types，
+  // 「inputTypes for exCommands」对照表：format 族 formatXxx、insert 族 insertXxx、
+  // delete → deleteContentBackward、forwardDelete → deleteContentForward、
+  // undo/redo → historyUndo/historyRedo）。非编辑类命令（copy/cut/paste/styleWithCSS/
+  // useCSS/selectAll）不在此表——copy/cut/paste 走 ClipboardEvent，后三者在
+  // editing host 语义外（WPT event.html target=null 分支，零事件）。
+  var _zwExecCmdInputType = {
+    bold: 'formatBold', italic: 'formatItalic', underline: 'formatUnderline',
+    strikethrough: 'formatStrikeThrough', subscript: 'formatSubscript',
+    superscript: 'formatSuperscript', backcolor: 'formatBackColor',
+    fontname: 'formatFontName', fontsize: 'formatFontSize',
+    forecolor: 'formatFontColor', hilitecolor: 'formatBackColor',
+    formatblock: 'formatBlock', indent: 'formatIndent', outdent: 'formatOutdent',
+    justifycenter: 'formatJustifyCenter', justifyfull: 'formatJustifyFull',
+    justifyleft: 'formatJustifyLeft', justifyright: 'formatJustifyRight',
+    inserthtml: 'insertHTML', inserttext: 'insertText',
+    insertlinebreak: 'insertLineBreak', insertparagraph: 'insertParagraph',
+    inserthorizontalrule: 'insertHorizontalRule', insertimage: 'insertImage' /* proxy */,
+    insertorderedlist: 'insertOrderedList', insertunorderedlist: 'insertUnorderedList',
+    removeformat: 'removeFormat', unlink: 'unlink',
+    createlink: 'createLink' /* 规范无 inputType——Chromium 用 createLink 近似 */,
+    delete: 'deleteContentBackward', forwarddelete: 'deleteContentForward',
+    /* undo/redo（historyUndo/historyRedo）与 styleWithCSS/useCSS/selectAll 不派
+     * editing-host input——WPT editing/event.html 该五命令 target=null 期望 0 事件
+     * （状态/历史/选区命令不经编辑宿主事件序）。 */
+  };
+  // spec：insertText/insertHTML/insertImage 的 data = 插入内容；format 族 data = null。
+  function _zwExecCmdEventData(cmd, value) {
+    if (cmd === 'inserttext' || cmd === 'inserthtml' || cmd === 'insertimage' || cmd === 'createlink') {
+      return value == null ? null : String(value);
+    }
+    return null;
+  }
+
   globalThis.document = {
     // js-dom M3 R100：shim document 标记——generate_dom_api_polyfill（execute_script_with_dom
     // 每次前置的最小虚拟 DOM stub）据此跳过覆写（幂等安装，保 execute 路径上的真 document 桥）。
@@ -2182,6 +2217,13 @@
     // R2936 copy/cut/paste 派发 ClipboardEvent 到 document.activeElement（焦点元素或 body，bubbles+cancelable），
     // 使 copy/cut/paste listener + oncopy/oncut/onpaste handler（R2932/R2933 on* 路由）触发；不真写剪贴板
     //（modern 路径走 navigator.clipboard）。format 命令不真应用。返 true（spec copy/cut 返 true=成功）。
+    // R3254-M2（editing goal 切片 1，2026-09-07）：**编辑事件面**——选区落在 editing host
+    //（沿 startContainer 祖先链首个 contenteditable=true 元素）内时，编辑类命令派发
+    // beforeinput（cancelable，取消 → 不派 input 不变更）+ input（bubbles、cancelable=false，
+    // target = editing host；InputEvent inputType 按命令映射）。无 editing host → no-op
+    //（零事件零 DOM 变更）。真实格式化/删除应用归 M3——本切片只接事件序
+    //（https://w3c.github.io/input-events/#event-order；WPT editing/event.html 主断言族：
+    // 「number of input events fired expected 1/0」+ 事件属性八断言）。
     execCommand: function (commandId /*, showUI, value*/) {
       var cmd = String(commandId == null ? '' : commandId).toLowerCase();
       if (cmd === 'copy' || cmd === 'cut' || cmd === 'paste') {
@@ -2192,8 +2234,17 @@
             target.dispatchEvent(ev);
           }
         } catch (_e) {}
-      } else if (cmd === 'inserthtml' || cmd === 'inserttext') {
-        // R57（FV M1）：execCommand InsertHTML/InsertText——向 activeElement
+      } else if ((cmd === 'inserthtml' || cmd === 'inserttext')
+                 && (function () {
+                   // R57（FV M1）前置判定：activeElement 为 text control 才走控件路径；
+                   // 否则落 editing-host 事件分支（R3254-M2——contenteditable 宿主内的
+                   // insertText/insertHTML 同样派 beforeinput/input）。
+                   try {
+                     var t57 = globalThis.document.activeElement;
+                     return !!(t57 && (t57.tagName === 'INPUT' || t57.tagName === 'TEXTAREA'));
+                   } catch (_e57p) { return false; }
+                 })()) {
+        // execCommand InsertHTML/InsertText——向 activeElement
         //（text control）插入文本 + maxlength 截断（UTF-16 单元、代理对安全——
         // input-maxlength-emoji 的 ZWJ 序列 11 单元截 10 → 回退代理对 → 9）。
         var ins = String(arguments[2] == null ? '' : arguments[2]);
@@ -2212,6 +2263,83 @@
             tgt.value = combined;
           }
         } catch (_e) {}
+      } else if (typeof _zwExecCmdInputType[cmd] !== 'undefined') {
+        // R3254-M2：编辑类命令（format 族/insert 族/delete 族/undo-redo）——editing host
+        // 事件序。选区无 range 或起点不在任何 editing host 内 → no-op（WPT 断言 0 事件
+        // + 内容不变）。inputType 映射见 _zwExecCmdInputType。
+        try {
+          var sel2 = (typeof _getSelection === 'function') ? _getSelection() : null;
+          var rng2 = sel2 && sel2.rangeCount > 0 ? sel2._ranges[0] : null;
+          var node2 = rng2 ? rng2.startContainer : null;
+          var host2 = null;
+          var guard2 = 0;
+          while (node2 && guard2++ < 256) {
+            // R3187 语义：contenteditable **存在即判**——空串≡true（`<div contenteditable>`
+            // 等价 contenteditable="true"）；get_attr 对空值返 ''，不能只比对 'true'。
+            if (node2.nodeType === 1 && node2.getAttribute
+                && node2.getAttribute('contenteditable') !== null
+                && String(node2.getAttribute('contenteditable')).toLowerCase() !== 'false') {
+              host2 = node2;
+              break;
+            }
+            node2 = node2.parentNode;
+          }
+          // spec（execCommand 编辑命令前提）：**整个选区**在单一 editing host 内才应用
+          //（WPT 'Partially-selected editable content'/'Selection spans two editing
+          // hosts' target=null → 0 事件断言）。end 侧越出 host → no-op。
+          var inHost2 = !!(host2 && rng2 && rng2.endContainer &&
+            (rng2.endContainer === host2 ||
+             (typeof _zwIsAncestorOrSelf === 'function' && _zwIsAncestorOrSelf(host2, rng2.endContainer))));
+          if (host2 && inHost2 && typeof host2.dispatchEvent === 'function') {
+            var before2 = new InputEvent('beforeinput', {
+              bubbles: true, cancelable: true,
+              data: _zwExecCmdEventData(cmd, arguments[2]),
+              inputType: _zwExecCmdInputType[cmd], isComposing: false
+            });
+            // R312 UA 通道印记：execCommand 是 UA 合成编辑操作——beforeinput/input
+            // 皆 trusted（WPT editing/event.html 断言 isTrusted=true）。印记一次性，
+            // 页面脚本再 dispatch 同一对象翻 false（redispatch 语义，与
+            // __zw_dispatch_event 同款）。
+            try {
+              Object.defineProperty(before2, 'isTrusted', { value: true, writable: true, configurable: true, enumerable: true });
+              before2._zwUaDispatch = true;
+            } catch (_eTb) {}
+            var notCanceled = host2.dispatchEvent(before2) !== false;
+            try { before2._zwUaDispatch = false; } catch (_eTb2) {}
+            if (notCanceled) {
+              // spec（WPT 'Changing selection from handler'）：beforeinput handler
+              // 可改选区——input 事件 target 按 **input 派发时刻** 的选区 editing host
+              // 现解析（handler 移选到第二 host → input target = 第二 host）。
+              var inputHost2 = host2;
+              try {
+                var sel3 = (typeof _getSelection === 'function') ? _getSelection() : null;
+                var rng3 = sel3 && sel3.rangeCount > 0 ? sel3._ranges[0] : null;
+                var n3 = rng3 ? rng3.startContainer : null;
+                var g3 = 0;
+                while (n3 && g3++ < 256) {
+                  if (n3.nodeType === 1 && n3.getAttribute
+                      && n3.getAttribute('contenteditable') !== null
+                      && String(n3.getAttribute('contenteditable')).toLowerCase() !== 'false') {
+                    inputHost2 = n3;
+                    break;
+                  }
+                  n3 = n3.parentNode;
+                }
+              } catch (_eRh) {}
+              var input2 = new InputEvent('input', {
+                bubbles: true, cancelable: false,
+                data: _zwExecCmdEventData(cmd, arguments[2]),
+                inputType: _zwExecCmdInputType[cmd], isComposing: false
+              });
+              try {
+                Object.defineProperty(input2, 'isTrusted', { value: true, writable: true, configurable: true, enumerable: true });
+                input2._zwUaDispatch = true;
+              } catch (_eTi) {}
+              inputHost2.dispatchEvent(input2);
+              try { input2._zwUaDispatch = false; } catch (_eTi2) {}
+            }
+          }
+        } catch (_eEdEv) {}
       }
       return true;
     },

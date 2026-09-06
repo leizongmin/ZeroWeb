@@ -1393,6 +1393,156 @@ fn test_selection_surface_r3254_m1() {
 }
 
 #[test]
+fn test_execcommand_editing_host_events_r3254_m2() {
+    // R3254-M2（editing goal M2 切片 1，2026-09-07）：execCommand 编辑类命令的
+    // editing host 事件序——① 选区在 contenteditable 宿主内 → beforeinput（cancelable，
+    // trusted）+ input（bubbles、不可取消、trusted、inputType 映射）冒泡至宿主祖先；
+    // ② 空串 contenteditable 属性（`<div contenteditable>`）≡ true（R3187 关键字）；
+    // ③ 选区越出宿主（partially-selected）→ 0 事件；④ 无 editing host → 0 事件；
+    // ⑤ insertText 落 text control（R57 旧路径）不派 editing-host 事件；⑥ undo/redo/
+    // styleWithCSS 不在映射表（WPT event.html target=null → 0 事件）。
+    // 驱动用例：WPT editing/event.html（179P/1F @ 2026-09-07）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=test><div contenteditable>foo<b>bar</b>baz</div>\
+         <div contenteditable id=second>qux</div><p id=plain>nohost</p></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // ①+②：选区在 <b> 文本内（宿主 = 空串 contenteditable div）→ 事件序 + 属性。
+    sandbox
+        .execute(
+            r##"
+globalThis.__ev = [];
+var outer = document.querySelector("#test");
+var ce = outer.querySelector("div[contenteditable]");
+outer.addEventListener("beforeinput", function (e) {
+  __ev.push("before:" + e.inputType + ":" + e.isTrusted + ":" + e.cancelable);
+});
+outer.addEventListener("input", function (e) {
+  __ev.push("in:" + e.inputType + ":" + e.isTrusted + ":" + e.cancelable + ":" + e.bubbles);
+});
+var b = ce.querySelector("b");
+var r = document.createRange();
+r.setStart(b.firstChild, 0);
+r.setEnd(b, 1);
+getSelection().removeAllRanges();
+getSelection().addRange(r);
+document.execCommand("bold", false, "");
+"##,
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ev)").unwrap().value,
+        "before:formatBold:true:true,in:formatBold:true:false:true",
+        "execCommand('bold') 在 editing host 内须派 beforeinput(cancelable,trusted)+input(bubbles,不可取消,trusted)"
+    );
+    // ③：选区越出宿主（start 在 <b contenteditable-free> host 内、end 在 host 外的 p）→ 0 事件。
+    sandbox
+        .execute(
+            r##"
+globalThis.__ev2 = [];
+var outer2 = document.querySelector("#test");
+var ce2 = outer2.querySelector("div[contenteditable]");
+var plain2 = document.getElementById("plain");
+outer2.addEventListener("input", function (e) { __ev2.push("in:" + e.inputType); });
+var b2 = ce2.querySelector("b");
+var r2 = document.createRange();
+r2.setStart(b2.firstChild, 0);
+r2.setEnd(plain2, 0);
+getSelection().removeAllRanges();
+getSelection().addRange(r2);
+document.execCommand("bold", false, "");
+"##,
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ev2)").unwrap().value,
+        "",
+        "选区 end 越出 editing host（partially-selected）须 0 事件（WPT 断言族）"
+    );
+    // ④：无 editing host（纯 <p> 选区）→ 0 事件。
+    sandbox
+        .execute(
+            r##"
+globalThis.__ev3 = [];
+var outer3 = document.querySelector("#test");
+outer3.addEventListener("input", function (e) { __ev3.push("in:" + e.inputType); });
+var plain3 = document.getElementById("plain");
+var r3 = document.createRange();
+r3.setStart(plain3, 0);
+r3.setEnd(plain3, 0);
+getSelection().removeAllRanges();
+getSelection().addRange(r3);
+document.execCommand("italic", false, "");
+"##,
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ev3)").unwrap().value,
+        "",
+        "选区无 editing host 须 0 事件（WPT 'No editable content' 断言）"
+    );
+    // ⑤：undo/redo 不派 editing-host 事件（映射表外）。
+    sandbox
+        .execute(
+            r##"
+globalThis.__ev4 = [];
+var outer4 = document.querySelector("#test");
+outer4.addEventListener("input", function (e) { __ev4.push("in:" + e.inputType); });
+var ce4 = outer4.querySelector("div[contenteditable]");
+var r4 = document.createRange();
+r4.selectNodeContents(ce4);
+getSelection().removeAllRanges();
+getSelection().addRange(r4);
+document.execCommand("undo", false, "");
+document.execCommand("styleWithCSS", false, "true");
+"##,
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ev4)").unwrap().value,
+        "",
+        "undo/styleWithCSS 不在 inputType 映射表，须 0 事件（WPT target=null 断言族）"
+    );
+    // ⑥：beforeinput preventDefault 阻断 input（cancelable 语义）。
+    sandbox
+        .execute(
+            r##"
+globalThis.__ev5 = [];
+var outer5 = document.querySelector("#test");
+var ce5 = outer5.querySelector("div[contenteditable]");
+outer5.addEventListener("beforeinput", function (e) { e.preventDefault(); });
+outer5.addEventListener("input", function (e) { __ev5.push("SHOULD_NOT_FIRE"); });
+var b5 = ce5.querySelector("b");
+var r5 = document.createRange();
+r5.setStart(b5.firstChild, 0);
+r5.setEnd(b5, 1);
+getSelection().removeAllRanges();
+getSelection().addRange(r5);
+document.execCommand("italic", false, "");
+"##,
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ev5)").unwrap().value,
+        "",
+        "beforeinput preventDefault 须阻断 input（cancelable 阻断语义）"
+    );
+}
+
+#[test]
 fn test_element_reflected_props_r2805() {
     // R2805：element reflected 属性簇（tabIndex/title/lang/dir）。get 反射同名 attribute（tabIndex 数值，
     // 无→-1；title/lang/dir 无→''），set 写 attribute。照 id/className reflected 模式（get+set trap）。
