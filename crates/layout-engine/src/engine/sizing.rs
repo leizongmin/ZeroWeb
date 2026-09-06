@@ -1290,6 +1290,17 @@ impl LayoutEngine {
     ///     使后代与祖先背景隔离（paint 层已消费此标记做 paint-order/scope）。
     /// 抽出为独立纯函数便于单测（creates_stacking_context 在 extract_layout 内联组装）。
     pub(crate) fn style_creates_stacking_context(is_positioned: bool, s: &ComputedStyle) -> bool {
+        // R4070（css-contain-1 §3.1 containment ignored for non-atomic inlines）：
+        // paint/layout containment 对非原子 inline（含 IB split 部分）整体忽略——
+        // 不建 SC、不裁剪（裁剪侧 paint_containment_clips 已排除）。display:none/contents
+        // 无 principal box 同不适用。driving: contain-paint/layout-ignored-cases-ib-split-001
+        //（span{contain:paint} 内 5 个 abspos 应归顶层 SC 按 tree order + z 排，span 误建
+        // SC 后 z 分层错乱 8.17%）。
+        let contain_sc = (s.contain.has_paint() || s.contain.has_layout())
+            && !matches!(
+                s.display,
+                DisplayValue::Inline | DisplayValue::Contents | DisplayValue::None
+            );
         (is_positioned && matches!(s.z_index, ZIndexValue::Integer(_)))
             || s.opacity < 1.0
             || matches!(s.isolation, IsolationValue::Isolate)
@@ -1298,8 +1309,7 @@ impl LayoutEngine {
             || !s.backdrop_filter.is_empty()
             || !matches!(s.mix_blend_mode, MixBlendModeComputedValue::Normal)
             || !matches!(s.clip_path, ClipPathComputedValue::None)
-            || s.contain.has_paint()
-            || s.contain.has_layout()
+            || contain_sc
             || !matches!(s.transform, zero_css_parser::values::TransformValue::None)
     }
 }

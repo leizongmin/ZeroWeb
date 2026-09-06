@@ -56,23 +56,28 @@ fn test_r2309_property_triggers_create_stacking_context() {
     };
     assert!(LayoutEngine::style_creates_stacking_context(false, &s));
 
-    // contain: paint → SC（CSS Containment §4）
+    // contain: paint → SC（CSS Containment §4）。R4070 起 default 的 display=Inline
+    // 触发 §3.1 非原子 inline 忽略，故显式设 Block 保持本断言验证「块级 contain → SC」。
     let mut s = ComputedStyle::default();
+    s.display = zero_style_system::DisplayValue::Block;
     s.contain = ContainComputedValue::Paint;
     assert!(LayoutEngine::style_creates_stacking_context(false, &s));
 
     // contain: layout → SC
     let mut s = ComputedStyle::default();
+    s.display = zero_style_system::DisplayValue::Block;
     s.contain = ContainComputedValue::Layout;
     assert!(LayoutEngine::style_creates_stacking_context(false, &s));
 
     // contain: strict（含 paint+layout）→ SC
     let mut s = ComputedStyle::default();
+    s.display = zero_style_system::DisplayValue::Block;
     s.contain = ContainComputedValue::Strict;
     assert!(LayoutEngine::style_creates_stacking_context(false, &s));
 
     // contain: content（含 paint+layout）→ SC
     let mut s = ComputedStyle::default();
+    s.display = zero_style_system::DisplayValue::Block;
     s.contain = ContainComputedValue::Content;
     assert!(LayoutEngine::style_creates_stacking_context(false, &s));
 
@@ -111,4 +116,37 @@ fn test_r2309_default_values_do_not_create_stacking_context() {
     let mut s = ComputedStyle::default();
     s.contain = ContainComputedValue::None;
     assert!(!LayoutEngine::style_creates_stacking_context(false, &s));
+}
+
+/// R4070：containment 对非原子 inline 被忽略（css-contain-1 §3.1）——
+/// display:inline/contents/none 的元素即使 contain 含 paint/layout 也不建 SC
+///（driving: contain-paint/layout-ignored-cases-ib-split-001：span{contain:paint} 误建
+/// SC 后其 5 个 abspos 子的 z 分层错乱 8.17%）。
+#[test]
+fn test_r4070_containment_ignored_for_non_atomic_inline() {
+    use zero_style_system::DisplayValue;
+
+    // 非原子 inline + contain:paint → 不建 SC
+    let mut s = ComputedStyle::default();
+    s.display = DisplayValue::Inline;
+    s.contain = ContainComputedValue::Paint;
+    assert!(!LayoutEngine::style_creates_stacking_context(false, &s));
+
+    // 非原子 inline + contain:layout → 不建 SC
+    let mut s = ComputedStyle::default();
+    s.display = DisplayValue::Inline;
+    s.contain = ContainComputedValue::Layout;
+    assert!(!LayoutEngine::style_creates_stacking_context(false, &s));
+
+    // display:contents + contain:paint → 不建 SC
+    let mut s = ComputedStyle::default();
+    s.display = DisplayValue::Contents;
+    s.contain = ContainComputedValue::Paint;
+    assert!(!LayoutEngine::style_creates_stacking_context(false, &s));
+
+    // 对照：块级 + contain:paint → 仍建 SC（既有 R2309 语义不变）
+    let mut s = ComputedStyle::default();
+    s.display = DisplayValue::Block;
+    s.contain = ContainComputedValue::Paint;
+    assert!(LayoutEngine::style_creates_stacking_context(false, &s));
 }
