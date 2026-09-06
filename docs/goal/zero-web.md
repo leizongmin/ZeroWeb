@@ -497,7 +497,7 @@ zero-web/
 - [ ] 更多 DOM API（MutationObserver、IntersectionObserver、ResizeObserver、Clipboard API、Fullscreen API、Drag & Drop）
 - [ ] `script-sandbox` crate 支持 QuickJS feature gate
 - [x] Service Worker 基础（注册、fetch 事件拦截、缓存管理）——专项目标 2026-09-06 收口（真实 worker 执行环境 + 生命周期真事件 + fetch 拦截 + Cache API 集成；归档于 `docs/goal/archive/service-workers/`）
-- [ ] Cache API
+- [x] Cache API——专项目标 2026-09-06 DC 收口（页面 `caches`/`Cache` 全 API 接 zero-storage 真实实现 + per-origin 持久化；WPT `cache-storage` window 面 39 case / 449 subtest 全绿；入口 `docs/goal/storage-cache-api.md`）
 - [ ] 持续 WPT 通过率追踪和提升
 
 **验收标准**：
