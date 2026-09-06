@@ -84,3 +84,33 @@ pass-rate: 1.7%
 **排除项**（有据）：`editing/run/`（43 用例 execCommand 全命令面——M3 里程碑领域）；
 `editing/other/` 其余 ~95 案（按 M2 失败聚类逐批追加）；`editing/manual/`（真交互）；
 `editing/include/editor-test-utils.js` 依赖面（后续切片补拉）。
+
+---
+
+# M2 切片 1 — execCommand editing-host 事件序（2026-09-07）
+
+**修复**（commit 74a0c879b，js_dom_shim/part06.js）：
+editing/event.html 76F 聚类（全为「number of input events fired expected 1 but got 0」）
+→ execCommand 编辑类命令选区落 editing host 时派发 beforeinput（cancelable、trusted）+
+input（bubbles、cancelable=false、trusted），inputType 规范映射。
+
+**关键落点**：
+- editing host 判定 = startContainer 祖先链首个 contenteditable 元素，**存在即判**
+  （空串 ≡ true——首版只比对 'true' 值漏布尔形态，probe 实证修正）
+- 全选区在单一 host 内才应用（end 越出 → 0 事件）
+- input target 按 input 派发时刻选区现解析（handler 改选区语义）
+- beforeinput preventDefault 阻断 input
+- insertText/insertHTML：activeElement 为 text control 走 R57 控件路径，否则落
+  editing-host 分支
+- undo/redo/styleWithCSS/useCSS/selectAll 不派 editing-host 事件（WPT target=null 断言）
+
+**结果**：event.html 104P/76F → **179P/1F（99.4%）**；selection 面 1824P 零回归；
+组合 2005P/779F。
+
+**残余 1F**：`Changing selection from handler: input event`——target 身份比较
+（expected/got 均 [object Object]）。上游用例的 finalTarget 断言（second host）依赖
+浏览器特有行为路径，上游 dashboard 该案形态属 legacy（「Thanks, Gecko.」注释段），
+记录不追。
+
+**单测**：`test_execcommand_editing_host_events_r3254_m2`（六组：事件序+属性/
+布尔属性形态/越界 no-op/无 host no-op/undo 表外/preventDefault 阻断）。
