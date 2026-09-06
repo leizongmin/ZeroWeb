@@ -256,6 +256,11 @@ service-workers/cache-storage/window/cache-put.https.html 24197a11e8c5bd29a5cb7b
 service-workers/cache-storage/window/cache-add.https.html 24197a11e8c5bd29a5cb7bdf18135a82be8a8546 2026-08-23 CACHE-M2-window-wrapper-expansion
 service-workers/cache-storage/window/cache-abort.https.html 24197a11e8c5bd29a5cb7bdf18135a82be8a8546 2026-08-22 CACHE-M2-cache-abort
 service-workers/cache-storage/worker/cache-abort.https.html 24197a11e8c5bd29a5cb7bdf18135a82be8a8546 2026-08-22 CACHE-M2-cache-abort
+service-workers/cache-storage/common.https.window.js 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-09-06 CACHE-M2-worker-sharing-window
+service-workers/cache-storage/cache-api-nested-worker.https.html 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-09-06 CACHE-M2-nested-worker
+service-workers/cache-storage/sandboxed-iframes.https.html 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-09-06 CACHE-M2-sandboxed-iframe-top-level
+service-workers/cache-storage/window/sandboxed-iframes.https.html 24197a11e8c5bd29a5cb7bdf18135a82be8a8546 2026-09-06 CACHE-M2-sandboxed-iframe-window
+service-workers/cache-storage/zeroweb-filtered-response-types.https.any.js 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-09-06 CACHE-M2-zeroweb-filtered-response-regression
 service-workers/service-worker/request-end-to-end.https.html 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-08-22 SW-M2-fetch-baseline
 service-workers/service-worker/fetch-event-add-async.https.html 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-08-22 SW-M2-fetch-add-async
 service-workers/service-worker/fetch-event-async-respond-with.https.html 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-08-22 SW-M2-fetch-baseline

@@ -2,7 +2,7 @@
 
 **入口文档**: [../storage-cache-api.md](../storage-cache-api.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-02（CacheStorage response clone crashtest promotion）
+**最后更新**: 2026-09-06（DC 收口审计：testharness 账本补齐 5 条 + 449/449 复验 + 全工作区门禁）
 
 ---
 
@@ -106,7 +106,9 @@ navigation request 标志经 `Cache.put()` / `Cache.keys()` 的保真；`credent
 interception、`Cache.put()`、`Cache.match()` / `Cache.matchAll()` / `CacheStorage.match()`
 和 `Cache.keys()` 往返保真，支撑 service-workers 目标的 12-case / 157-subtest
 SW CacheStorage wrapper baseline。
-更大范围 WPT 导入仍待后续切片。
+更大范围 WPT 导入仍待后续切片。（2026-09-06 复核：pinned revision 下 window 可执行面
+39 case 已全部导入并全绿，SW 环境面归已归档 service-workers 目标，`cross-partition`
+记 gated——window 面扩面空间已用尽，见「下一步计划」§3。）
 CacheStorage window asset manifest 已补充逐 asset `source_revision`，恢复脚本会按每行
 revision 下载缺失资产，避免 33-case baseline 中后续 wrapper/support 资产依赖某个本地
 WPT checkout 状态。
@@ -144,7 +146,7 @@ fetch baseline，不改变本目标的 window/SW CacheStorage 分母。
 - ✅ 持久化首片：page/WebView `StorageManager` owner 已支持 per-origin CacheStorage 落盘；
   SW registration-local CacheStorage 已随 active registration snapshot/restore 验证
 - ✅ WPT `cache-storage` window runner 基线已导入：39 case / 449 subtest，449 Pass / 0 Fail
-- 🚧 add/addAll 的页面 fetch 链路、Cache API 返回对象 brand、缺参 TypeError、
+- ✅ add/addAll 的页面 fetch 链路、Cache API 返回对象 brand、缺参 TypeError、
   `CacheStorage.keys()` 创建顺序、Vary 匹配、delete-dooming、DOMString name wire 与
   Storage Buckets cache namespace
   已完成；`Cache.put` 非 GET/非 HTTP(S)/206/`Vary: *` 可缓存性拒绝、used body 拒绝、
@@ -152,7 +154,8 @@ fetch baseline，不改变本目标的 window/SW CacheStorage 分母。
   读回保真、`Response.error()` 可缓存读回、`Response.redirect()`/Blob/FormData response
   路径、`Cache.matchAll()`、`Cache.match()`、`CacheStorage.match()`、`Cache.add()` 与
   `Cache.addAll()` 扩面已完成；页面 `fetch()` 的 `basic`/`cors`/`opaque`/`opaqueredirect`
-  filtered response 生成矩阵已实现并经 CacheStorage round-trip 固定
+  filtered response 生成矩阵已实现并经 CacheStorage round-trip 固定（2026-09-06
+  复核：上游 window 可执行面 39 case 全绿，C4 收口）
 
 ## 缺口清单
 
@@ -161,13 +164,14 @@ fetch baseline，不改变本目标的 window/SW CacheStorage 分母。
 | C1 | WPT cache-storage 用例覆盖为零 | ✅ M1 window 首批基线已接入 |
 | C2 | 页面 `caches` 全局缺失（零接线） | ✅ M1 初始桥接完成；全 API 语义继续归 C4 |
 | C3 | 无持久化 | ✅ M3 完成：page/WebView owner per-origin 落盘、跨 WebView 重建读回、磁盘错误 reject；SW registration-local CacheStorage snapshot/restore 与 normal profile 持久化 dirtying 已验证 |
-| C4 | Request/Response 集成（add/addAll/可缓存性） | 🚧 M2 页面 `add/addAll` GET + `Response.ok` 路径、返回对象 brand、缺参 TypeError、Vary 匹配、delete-dooming、DOMString name wire、`Cache.put` 非 GET/非 HTTP(S)/206/`Vary: *` 拒绝、used body 拒绝、empty body 不消费、cached `Response.type`/`Response.url` 读回保真、`Response.error()` 可缓存读回、opaque response 忽略 Vary 与内部 206/`Vary: *` 可缓存、`Response.redirect()`/Blob/FormData response 路径、ArrayBuffer/ArrayBufferView response body 与 multipart `Response.formData()` 文本字段读回、`addAll` 失败不部分落库、undefined entry 拒绝与 Vary-aware duplicate 判定、`basic`/`cors`/`opaque`/`opaqueredirect` filtered response 生成矩阵完成；继续扩大上游 WPT 覆盖验证剩余语义 |
+| C4 | Request/Response 集成（add/addAll/可缓存性） | ✅ M2 页面 `add/addAll` GET + `Response.ok` 路径、返回对象 brand、缺参 TypeError、Vary 匹配、delete-dooming、DOMString name wire、`Cache.put` 非 GET/非 HTTP(S)/206/`Vary: *` 拒绝、used body 拒绝、empty body 不消费、cached `Response.type`/`Response.url` 读回保真、`Response.error()` 可缓存读回、opaque response 忽略 Vary 与内部 206/`Vary: *` 可缓存、`Response.redirect()`/Blob/FormData response 路径、ArrayBuffer/ArrayBufferView response body 与 multipart `Response.formData()` 文本字段读回、`addAll` 失败不部分落库、undefined entry 拒绝与 Vary-aware duplicate 判定、`basic`/`cors`/`opaque`/`opaqueredirect` filtered response 生成矩阵完成；上游 window 可执行面 39 case 全绿（2026-09-06 复核收口） |
 | C5 | Cache.matchAll/Cache.keys 页面桥接 | ✅ M2；`ignoreSearch`/`ignoreMethod`/`ignoreVary` 已接线 |
 
 ## 下一步计划
 
 1. **M2 切片 18**：本轮已复核剩余 window 面 CacheStorage WPT；`cross-partition.https.tentative.html` 仍需 dispatcher/popup/SharedWorker/partitioned-storage 支撑，继续留在 gated，不纳入当前 Cache API 语义 baseline；`cache-keys-attributes-for-service-worker.https.html` 已归 service-workers 目标收口
 2. **service-workers 后续**：继续扩展 SW cache-storage / fetch-cache WPT 验收；fetch runner 已覆盖 uncontrolled-page scope bypass、message-time `clients.claim()` iframe control、claim longest-match boundary 与 ReadableStream pull-source chunk serialization，持久化能力已由 registration-local snapshot/restore 覆盖
+3. **DC 收口（2026-09-06 审计后）**：上游分母核对完成——pinned revision `04067ce9c7c2165e71ad7d0dde10a4c5cb394a83` 下 `cache-storage` 目录 17 个 source 中，window 可执行面 39 case 全部纳入 runner 并补齐 `imported-testharness.txt` 账本（46→51 条，revision 与 asset manifest 精确一致）；`serviceworker/` 子目录已由已归档 service-workers 目标收口（25 case / 318 subtest 全绿），`cross-partition.https.tentative.html` 记 gated。DC-1~DC-4 证据链已闭合，见下方验证基线 2026-09-06 条目。
 
 **碰撞管理**：开工前先 `git log --since="14 days ago" -- crates/engine/src/js_dom_shim/`
 核对 js-dom 流活跃面。
@@ -176,9 +180,9 @@ fetch baseline，不改变本目标的 window/SW CacheStorage 分母。
 
 | 里程碑 | 状态 |
 |--------|------|
-| M1 — WPT cache-storage 基线 + caches 骨架 | ✅ 页面骨架 + 32-case window runner WPT 基线已接入 |
-| M2 — Cache 全 API + 查询语义 | 🚧 `Cache.matchAll()` / `Cache.keys()`、`Cache.match()`、`CacheStorage.match()`、`ignoreSearch`/`ignoreMethod`/`ignoreVary`、页面 `add/addAll` GET fetch→store、iframe `contentWindow.caches` + `Cache.add()` iframe fetch context、返回对象 brand、缺参 TypeError、`CacheStorage.keys()` 创建顺序、delete-dooming、DOMString name wire、Storage Buckets cache namespace、`Cache.put` 核心可缓存性拒绝/body 消费语义、cached `Response.type`/`Response.url` 读回保真、`Response.error()` 可缓存读回、opaque response 忽略 Vary 与内部 metadata 可缓存、`Response.redirect()`/Blob/FormData response 路径、ArrayBuffer/ArrayBufferView response body 与 multipart `Response.formData()` 文本字段读回、`addAll` 原子失败、undefined entry 拒绝、Vary-aware duplicate 判定、cached `Response.body` reader + `Response.clone()` 不崩溃路径、`basic`/`cors`/`opaque`/`opaqueredirect` filtered response 生成、Window/Dedicated Worker/nested Dedicated Worker owner 共享路径、`cache-abort` window/worker abort 语义、sandboxed iframe top-level/window CacheStorage 安全边界、credentialed request URL cache key top-level/SW wrapper、SW runtime `Cache.delete()` 与 `CacheStorage.delete/has/keys` 已接入；更大 WPT 覆盖待完成 |
-| M3 — 持久化 + 剩余语义收尾 | 🚧 page/WebView owner per-origin 持久化与 SW registration-local CacheStorage 持久化已完成；继续用扩面 WPT 收敛剩余语义 |
+| M1 — WPT cache-storage 基线 + caches 骨架 | ✅ 页面骨架 + 39-case / 449-subtest window runner WPT 基线已接入（449 Pass / 0 Fail，double-run deterministic） |
+| M2 — Cache 全 API + 查询语义 | ✅ `Cache.matchAll()` / `Cache.keys()`、`Cache.match()`、`CacheStorage.match()`、`ignoreSearch`/`ignoreMethod`/`ignoreVary`、页面 `add/addAll` GET fetch→store、iframe `contentWindow.caches` + `Cache.add()` iframe fetch context、返回对象 brand、缺参 TypeError、`CacheStorage.keys()` 创建顺序、delete-dooming、DOMString name wire、Storage Buckets cache namespace、`Cache.put` 核心可缓存性拒绝/body 消费语义、cached `Response.type`/`Response.url` 读回保真、`Response.error()` 可缓存读回、opaque response 忽略 Vary 与内部 metadata 可缓存、`Response.redirect()`/Blob/FormData response 路径、ArrayBuffer/ArrayBufferView response body 与 multipart `Response.formData()` 文本字段读回、`addAll` 原子失败、undefined entry 拒绝、Vary-aware duplicate 判定、cached `Response.body` reader + `Response.clone()` 不崩溃路径、`basic`/`cors`/`opaque`/`opaqueredirect` filtered response 生成、Window/Dedicated Worker/nested Dedicated Worker owner 共享路径、`cache-abort` window/worker abort 语义、sandboxed iframe top-level/window CacheStorage 安全边界、credentialed request URL cache key top-level/SW wrapper、SW runtime `Cache.delete()` 与 `CacheStorage.delete/has/keys` 已接入；上游 window 可执行面 39 case 全绿，剩余窗口面无可执行用例（2026-09-06 复核） |
+| M3 — 持久化 + 剩余语义收尾 | ✅ page/WebView owner per-origin 持久化与 SW registration-local CacheStorage 持久化已完成；剩余语义已由 39-case 全绿 window 基线覆盖（2026-09-06 收口） |
 
 ## 验证基线
 
@@ -618,4 +622,36 @@ fetch baseline，不改变本目标的 window/SW CacheStorage 分母。
   - `WPT_SOURCE=$HOME/github/others/wpt ./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 420 -- make testharness-service-workers-fetch FILTER=claim-using-registration.https.html`：2 Pass
   - `WPT_SOURCE=$HOME/github/others/wpt ./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 600 -- make baseline-wpt-service-workers-fetch OUTPUT=docs/goal/archive/service-workers/evidence/2026-08-23-m2-fetch-baseline.json SUMMARY=docs/goal/archive/service-workers/evidence/2026-08-23-m2-fetch-baseline.md`：13 cases / 30 subtests / 30 Pass，double-run deterministic
   - 证据：[Service Worker Fetch WPT Baseline](../service-workers/evidence/2026-08-23-m2-fetch-baseline.md)
+- 2026-09-06 DC 收口审计（账本闭包 + 门禁复验）：
+  - 上游分母核对：pinned revision `04067ce9c7c2165e71ad7d0dde10a4c5cb394a83` 下
+    `service-workers/cache-storage/` 目录共 17 个 source——window/Dedicated Worker
+    可执行面 39 case 已全部在 runner manifest；`serviceworker/` 子目录 5 case 归
+    已归档 service-workers 目标（CacheStorage lane 25 case / 318 subtest 全绿）；
+    `cache-keys-attributes-for-service-worker.https.html` 同归 SW 目标；
+    `cross-partition.https.tentative.html` 记 gated（需 dispatcher/popup/
+    SharedWorker/partitioned-storage）。skip list 归属成立，无不充数、无误排除。
+  - `imported-testharness.txt` 账本补齐 5 条缺失条目（`common.https.window.js`、
+    `cache-api-nested-worker.https.html`、top-level/window `sandboxed-iframes.https.html`、
+    `zeroweb-filtered-response-types.https.any.js`——前三者/前三者/`24197a11`/`04067ce9`
+    revision 与 asset manifest 精确一致）：cache-storage 条目 46→51，39/39 window
+    case 全部入账；SW disposition 审计 `python3
+    tests/wpt-runner/scripts/audit-service-worker-disposition.py`：PASS
+    （294 sources / 331 URLs，core=78 defer=22 fetch=3 gated=149 skip=42）。
+  - `make baseline-wpt-cache-storage`（恢复 68 assets 后）复验：39 cases / 449
+    subtests / 449 Pass / 0 Fail，double-run deterministic——证据
+    [2026-09-06 CacheStorage Window Baseline](evidence/2026-09-06-cache-storage-window-baseline.md)
+  - 单元测试复验：`cargo test -p zero-storage cache --no-default-features`：81 passed；
+    `cargo test -p zero-engine cache_api_page_shim`：10 passed；
+    `cargo test -p zero-page-runtime cache_storage`：20 passed；
+    `cargo test -p zero-webview cache_storage`：9 passed
+  - `make test`（干净全工作区，test-guard 包裹）：首轮
+    `navigator_skip_waiting_activates_replacement_version` 1F（组合态负载
+    timeout——隔离复跑 0.16s 绿、同树二跑全绿，定性 flake 非语义回归，
+    与 2026-09-05 e55038a2a deadline 60s 放宽后残余负载敏感性一致）；
+    二跑 18954 Pass / 0 Fail / exit 0（v8 主矩阵 + adapter-only GPU +
+    QuickJS 矩阵 + QuickJS clippy 并行编译全过）
+  - `cargo fmt --all -- --check`：passed；`git diff --check`：passed
+  - `cargo clippy --workspace --all-targets -- -D warnings`：exit 0 零警告；
+    `cargo clippy --no-default-features --features quickjs --workspace
+    --all-targets -- -D warnings`：exit 0 零警告
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过

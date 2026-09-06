@@ -1,8 +1,9 @@
 # Cache API 真实化 — WPT 驱动的 CacheStorage 页面可用性目标
 
-**版本**: v1.0
+**版本**: v1.1（v1.0→v1.1：2026-09-06 DC-1~4 证据链收口——账本补齐、449/449 复验、
+全工作区门禁；待归档）
 **日期**: 2026-08-17
-**状态**: Active
+**状态**: Active（Done Criteria DC-1~DC-4 已全部满足，2026-09-06 收口）
 **执行模式**: 轻量修复优先（永不停）；遇需用户决策项或深结构方向 → 记入「待用户决策」清单 → 跳过 → 继续其他轻量修复
 **父目标**: `docs/goal/zero-web.md`（Tier 2「存储：IndexedDB + Cache API + OPFS」+ M12「Cache API」列项）
 
@@ -133,14 +134,23 @@ form-validation——不允许手写 inline 用例替代或充数）。通过率
 - [x] 从上游 WPT 仓库 `cache-storage` 目录导入范围内真实用例（window 环境可执行面；
       SW 环境子目录入 skip list 并注明归 service-workers 目标）
 - [x] 建立分类通过率报告（文本 + JSON），记录基线
-- [ ] 每项修复的 driving WPT 用例经 `make import-wpt` 常驻断言集并记入 `imported-tests.txt`
+- [x] 每项修复的 driving WPT 用例经常驻断言集并记入账本（testharness 账本
+      `imported-testharness.txt` 51 条 cache-storage 条目覆盖全部 39 case，revision
+      与 asset manifest 精确一致；reftest 类资产不适用本目标——验证全走 testharness
+      runner + 常驻 manifest，2026-09-06 审计收口）
 - [x] 通过率报告持久化到 `docs/goal/storage-cache-api/evidence/`，历史可追溯
 
 ### DC-2: 页面走真实引擎
 
-- [ ] `caches`/`Cache` 全 API 经 host 命令进 zero-storage 实现
-- [ ] CacheQueryOptions/Vary/URL 归一化语义与 spec 一致（WPT 为准）
-- [ ] add/addAll 经真实 fetch 管线
+- [x] `caches`/`Cache` 全 API 经 host 命令进 zero-storage 实现（`part07.js` →
+      `__zw_cache_storage` wire → `cache_storage_bridge.rs` → `cache_storage_host.rs`
+      op 全枚举 Open/Has/Delete/Keys/Match/MatchAll/CacheKeys/Put → `zero-storage`
+      `cache_api`）
+- [x] CacheQueryOptions/Vary/URL 归一化语义与 spec 一致（WPT 为准：39 case / 449
+      subtest 全绿，ignoreSearch/ignoreMethod/ignoreVary、Vary 匹配、fragment 剥离
+      均有上游断言覆盖）
+- [x] add/addAll 经真实 fetch 管线（页面 shim 复用 `fetch()` filtered response 生成 +
+      `Cache.put()`，`addAll` 先全量校验再串行写入）
 
 ### DC-3: 持久化
 
@@ -150,9 +160,14 @@ form-validation——不允许手写 inline 用例替代或充数）。通过率
 
 ### DC-4: 测试与质量不可退让
 
-- [ ] `cargo test` 全绿，零失败
-- [ ] `cargo clippy --workspace --all-targets -- -D warnings` 零警告
-- [ ] 每项修复有对应单元测试 + driving WPT 用例资产化
+- [x] `cargo test` 全绿，零失败（2026-09-06 干净全工作区 `make test` 二跑 18954
+      Pass / 0 Fail / exit 0；首轮 1F 为 SW 激活轮询组合态负载 flake，隔离复跑与
+      同树二跑全绿，非本目标语义回归）
+- [x] `cargo clippy --workspace --all-targets -- -D warnings` 零警告（同日 v8 默认
+      与 quickjs 两个 feature 组合均 exit 0）
+- [x] 每项修复有对应单元测试 + driving WPT 用例资产化（storage 81 + engine 10 +
+      page-runtime 20 + webview 9 定向复验全绿；driving 用例经 window runner
+      常驻 manifest + testharness 账本入账，见 DC-1）
 
 ---
 
