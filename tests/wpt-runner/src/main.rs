@@ -38,6 +38,7 @@ Commands:
   testharness-constraints  Run imported html/semantics/forms/constraints testharness cases (Form Validation goal M1)
   testharness-canvas  Run imported html/canvas testharness cases (Canvas 2D goal M1)
   testharness-dom  Run imported dom/ testharness cases (js-dom goal M4 / DC-3)
+  testharness-selection  Run imported selection/ testharness cases (editing goal M1 / DC-1)
   testharness-media  Run imported media-elements testharness cases (media-elements goal M1 / DC-1)
   testharness-webaudio  Run imported Web Audio testharness cases (media-audio goal M3)
   testharness-indexeddb  Run imported IndexedDB testharness cases (storage-indexeddb goal M1)
@@ -231,6 +232,7 @@ fn main() {
         "testharness-canvas" => cmd_testharness_canvas(&options, filter.as_deref()),
         "testharness-canvas-worker" => cmd_testharness_canvas_worker(&options, filter.as_deref()),
         "testharness-dom" => cmd_testharness_dom(&options, filter.as_deref()),
+        "testharness-selection" => cmd_testharness_selection(&options, filter.as_deref()),
         "testharness-media" => cmd_testharness_media(&options, filter.as_deref()),
         "testharness-webaudio" => cmd_testharness_webaudio(&options, filter.as_deref()),
         "testharness-indexeddb" => cmd_testharness_indexeddb(&options, filter.as_deref()),
@@ -593,6 +595,49 @@ fn cmd_testharness_dom(options: &CliOptions, filter: Option<&str>) {
         .map(std::path::PathBuf::from)
         .unwrap_or_else(|| std::path::PathBuf::from("tests/wpt-runner/wpt-data"));
     let cases = testharness::run_dom_cases(&wpt_root, filter);
+    let failed = cases.iter().any(|(_, results)| {
+        results
+            .iter()
+            .any(|result| result.status != testharness::HarnessStatus::Pass)
+    });
+
+    match options.format {
+        OutputFormat::Json => {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&cases).unwrap_or_else(|_| "[]".into())
+            );
+        }
+        OutputFormat::Text | OutputFormat::Tap => {
+            for (case, results) in &cases {
+                for result in results {
+                    println!("{:?} {case} :: {}", result.status, result.name);
+                    if let Some(message) = &result.message {
+                        println!("  {message}");
+                    }
+                }
+            }
+        }
+    }
+    if failed || cases.is_empty() {
+        std::process::exit(1);
+    }
+}
+
+/// `testharness-selection` 子命令 — 跑导入的上游 `selection/` testharness 用例
+/// （editing/contenteditable goal M1 / DC-1——Selection API 可观察面基线）。
+///
+/// 用例由 `fetch-selection-subset.sh` 按需拉到 `wpt-data/selection/`（gitignored）。
+/// 退出码：有用例非 Pass 或用例集为空 → 1（与 testharness-dom 一致）。基线首跑
+/// 即便大量 Fail 也只用于记录通过率（agent 经 `--format json` 捕获后写 evidence/），
+/// 不作为 land 门禁。filter 按路径子串透传：make testharness-selection FILTER=getSelection。
+fn cmd_testharness_selection(options: &CliOptions, filter: Option<&str>) {
+    let wpt_root = options
+        .wpt_data
+        .as_deref()
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::path::PathBuf::from("tests/wpt-runner/wpt-data"));
+    let cases = testharness::run_selection_cases(&wpt_root, filter);
     let failed = cases.iter().any(|(_, results)| {
         results
             .iter()

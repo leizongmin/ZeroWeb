@@ -133,6 +133,11 @@ pub const DOM_TEST_SUBDIRS: &[&str] = &[
     "dom",
 ];
 
+/// Selection goal（editing/contenteditable M1 / DC-1）pinned upstream subset
+/// directory. Cases are fetched by `fetch-selection-subset.sh` into
+/// `wpt-data/selection/`（gitignored）。
+pub const SELECTION_TEST_SUBDIRS: &[&str] = &["selection"];
+
 /// IndexedDB goal pinned upstream `.any.js` subset.
 ///
 /// Each case is run in its window variant with the META-declared support script.
@@ -1291,6 +1296,75 @@ pub fn run_dom_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<
             }
             // R329：variant 用例逐 query 跑（基础 URL 的行为由上游 harness 不注册 =
             // 0 subtest 空转，跳过防超时伪败；case 名带 query 区分，与上游 dashboard 对齐）。
+            for variant in variants {
+                let case_name = format!("{relative}{variant}");
+                let results = run_testharness_html(wpt_root, &case_name, &source, &harness_source, CASE_TIMEOUT);
+                cases.push((case_name, results));
+            }
+        }
+    }
+    cases
+}
+
+/// Run the upstream `selection/` testharness cases under `wpt_root`
+/// （editing/contenteditable goal M1 / DC-1——Selection API 可观察面基线）。
+///
+/// 与 [`run_dom_cases`] 同构：扫描 [`SELECTION_TEST_SUBDIRS`] 下全部主线程
+/// .html 用例；仅依赖 `testharness.js`。filter 按路径子串过滤。用例由
+/// `fetch-selection-subset.sh` 按需拉取（wpt-data gitignored）。
+pub fn run_selection_cases(
+    wpt_root: &Path,
+    filter: Option<&str>,
+) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    let harness_source = match std::fs::read_to_string(wpt_root.join("resources/testharness.js")) {
+        Ok(source) => source,
+        Err(error) => {
+            return vec![(
+                "resources/testharness.js".to_string(),
+                vec![HarnessSubtestResult {
+                    name: "load testharness.js".into(),
+                    status: HarnessStatus::Fail,
+                    message: Some(error.to_string()),
+                }],
+            )];
+        }
+    };
+
+    let mut cases = Vec::new();
+    for subdir in SELECTION_TEST_SUBDIRS {
+        let dir = wpt_root.join(subdir);
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().is_none_or(|ext| ext != "html" && ext != "htm") {
+                continue;
+            }
+            let relative = format!("{}/{}", subdir, entry.file_name().to_string_lossy());
+            if filter.is_some_and(|filter| !relative.contains(filter)) {
+                continue;
+            }
+            let source = match std::fs::read_to_string(&path) {
+                Ok(source) => source,
+                Err(error) => {
+                    cases.push((
+                        relative.clone(),
+                        vec![HarnessSubtestResult {
+                            name: "load WPT case".into(),
+                            status: HarnessStatus::Fail,
+                            message: Some(error.to_string()),
+                        }],
+                    ));
+                    continue;
+                }
+            };
+            let variants = case_variants(&source);
+            if variants.is_empty() {
+                let results = run_testharness_html(wpt_root, &relative, &source, &harness_source, CASE_TIMEOUT);
+                cases.push((relative, results));
+                continue;
+            }
             for variant in variants {
                 let case_name = format!("{relative}{variant}");
                 let results = run_testharness_html(wpt_root, &case_name, &source, &harness_source, CASE_TIMEOUT);

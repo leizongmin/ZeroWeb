@@ -2,7 +2,7 @@
 
 **入口文档**: [../editing-contenteditable.md](../editing-contenteditable.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-08-17（立项——M1 待启动）
+**最后更新**: 2026-09-07（M1 切片 1 完成——selection 基线 45P/2559F 1.7%）
 
 ---
 
@@ -38,16 +38,16 @@
 
 | # | 缺口 | 状态 |
 |---|------|------|
-| E1 | WPT selection/editing 用例覆盖为零 | ⬜ M1 |
-| E2 | Selection JS 可观察面未核实/缺失 | ⬜ M1 |
+| E1 | WPT selection/editing 用例覆盖为零 | ✅ selection 首批 20 用例 2026-09-07（基线 1.7%）；editing 目录未导 |
+| E2 | Selection JS 可观察面未核实/缺失 | 🔶 已摸清：window.getSelection 单例有（R2804）；缺 document.getSelection/iframe 面/Selection.prototype instanceof/selectAllChildren/setBaseAndExtent/deleteFromDocument/setPosition/空选异常/selectionchange 派发 |
 | E3 | 编辑行为管线（键入/删除/换行 → DOM）缺失 | ⬜ M2 |
 | E4 | beforeinput/input 事件缺失 | ⬜ M2 |
 | E5 | execCommand format 桩（不真应用） | ⬜ M3 |
 
 ## 下一步计划
 
-1. **M1 切片 1**：`selection` 用例导入 + 基线（Selection 是编辑前置——先立可观察面）
-2. **M1 切片 2**：getSelection 全 API 摸底/接线（zero-dom 选区模型）
+1. ~~**M1 切片 1**：`selection` 用例导入 + 基线~~ ✅ 2026-09-07（45P/2559F 1.7%，evidence/2026-09-07-m1-slice1-selection-baseline.md）
+2. **M1 切片 2**：Selection 面缺口修复（按失败聚类：document.getSelection 绑定 → Selection.prototype instanceof → selectAllChildren/setBaseAndExtent/deleteFromDocument/setPosition → 空选异常 → collapse 语义 → selectionchange）
 3. **M1 切片 3**：`editing` 用例导入 + 失败聚类
 
 **碰撞管理**：开工前先 `git log --since="14 days ago" -- crates/engine/src/js_dom_shim/`
@@ -57,12 +57,13 @@
 
 | 里程碑 | 状态 |
 |--------|------|
-| M1 — selection 基线 + Selection 面摸底 | ⬜ 待启动 |
+| M1 — selection 基线 + Selection 面摸底 | 🔶 切片 1 ✅（基线 1.7%）；切片 2 修复进行中 |
 | M2 — 编辑行为管线 | ⬜ |
 | M3 — execCommand 基础面 + 收尾 | ⬜ |
 
 ## 验证基线
 
-- 测试基线：立项时点全绿；clippy 零警告
-- WPT selection/editing 面：无基线（未导入）
+- 测试基线：2026-09-07 全绿；clippy 零警告
+- WPT selection 面：**45P/2559F（1.7%）** @ WPT_REV 315976933870（20 用例，evidence/2026-09-07-m1-slice1-selection-baseline.md）
+- WPT editing 面：未导入
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过
