@@ -588,18 +588,18 @@ test-wpt-service-workers-waiting-wave-assets: fetch-wpt-service-workers-waiting-
 .PHONY: fetch-wpt-service-workers-extendable-message-event-wave audit-wpt-service-workers-extendable-message-event-wave test-wpt-service-workers-extendable-message-event-wave-assets
 fetch-wpt-service-workers-extendable-message-event-wave:
 	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-09-02-m3-extendable-message-event-assets.tsv" \
-		WPT_EXPECTED_ASSET_COUNT=4 WPT_CORPUS_LABEL="Service Worker extendable message event wave" \
+		WPT_EXPECTED_ASSET_COUNT=6 WPT_CORPUS_LABEL="Service Worker extendable message event wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh
 
 audit-wpt-service-workers-extendable-message-event-wave:
 	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-09-02-m3-extendable-message-event-assets.tsv" \
-		WPT_EXPECTED_ASSET_COUNT=4 WPT_CORPUS_LABEL="Service Worker extendable message event wave" \
+		WPT_EXPECTED_ASSET_COUNT=6 WPT_CORPUS_LABEL="Service Worker extendable message event wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh --verify-only
 
 test-wpt-service-workers-extendable-message-event-wave-assets: fetch-wpt-service-workers-extendable-message-event-wave
 	WPT_SERVICE_WORKER_SOURCE="$(CURDIR)/tests/wpt-runner/wpt-data/.service-workers-tier-a-root" \
 		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-09-02-m3-extendable-message-event-assets.tsv" \
-		WPT_EXPECTED_ASSET_COUNT=4 WPT_CORPUS_LABEL="Service Worker extendable message event wave" \
+		WPT_EXPECTED_ASSET_COUNT=6 WPT_CORPUS_LABEL="Service Worker extendable message event wave" \
 		WPT_TAMPER_ASSET="service-workers/service-worker/ServiceWorkerGlobalScope/resources/extendable-message-event-ping-worker.js" \
 		$(WPT_BASH) tests/wpt-runner/scripts/test-service-workers-tier-a-assets.sh
 

@@ -1129,7 +1129,13 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
         if (typeof source.start === 'function') {
           try { source.start(controller); } catch (error) { errorStream(error); }
         }
+        // https://streams.spec.whatwg.org/#rs-get-reader — getReader() 加锁：
+        // 已 locked 时抛 TypeError；Cache.put 消费 body 后再次 getReader() 必须
+        // reject（WPT cache-put "getReader() after Cache.put"）。
+        let locked = false;
         this.getReader = function() {
+          if (locked) throw new TypeError('Cannot get a Reader: ReadableStream is locked');
+          locked = true;
           return {
             read: function() {
               return new Promise(function(resolve, reject) {
@@ -1144,9 +1150,10 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
                 flushPull();
               });
             },
-            releaseLock: function() {}
+            releaseLock: function() { locked = false; }
           };
         };
+        Object.defineProperty(this, 'locked', {get: function() { return locked; }});
       }
     };
   }
@@ -1291,6 +1298,11 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
         this._body = normalizeBody(body);
       }
       this._bodyError = '';
+      // https://fetch.spec.whatwg.org/#response-class — 无 body（undefined/null）
+      // 标记：Cache.put 的 disturb 步（https://w3c.github.io/ServiceWorker/#cache-put）
+      // 对 null-body response 不置 bodyUsed（WPT cache-put "Cache.put with
+      // Response without a body"）。
+      this._bodyNull = body === undefined || body === null;
       this.bodyUsed = false;
       this.ok = status >= 200 && status <= 299;
       this.type = 'default';
@@ -1709,6 +1721,17 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
         return Promise.reject(error);
       }
       return Promise.resolve(request).then(cacheStorageHost).then(function() {
+        // https://w3c.github.io/ServiceWorker/#cache-put — 入库成功后 body 置为
+        // disturbed：getReader() 抛 TypeError（WPT cache-put "getReader() after
+        // Cache.put"；engine 侧 part07.js 同款 disturb 语义）。
+        try {
+          if (!response._bodyNull && response.body && typeof response.body.getReader === 'function') {
+            response.body.getReader();
+          }
+          if (response && !response._bodyNull && typeof response.bodyUsed !== 'undefined') {
+            response.bodyUsed = true;
+          }
+        } catch (_disturbError) {}
         return undefined;
       });
     }
@@ -8957,6 +8980,115 @@ mod tests {
                     response_type: "default".into(),
                     headers: Vec::new(),
                     body: "error".into(),
+                }),
+                failed: false,
+                message: String::new(),
+            }
+        );
+    }
+
+    // WPT service-workers/cache-storage/cache-put.https.any.js
+    // "getReader() after Cache.put" + "Cache.put with Response without a body"：
+    // put 成功后 body 置 disturbed（getReader() 抛 TypeError），null-body response
+    // 不置 bodyUsed。回归锚：`body` getter（fetch body stream 暴露）加入后 put 不
+    // disturb，getReader 二次调用不再抛错。
+    #[test]
+    fn cache_put_disturbs_response_body_but_not_null_body() {
+        let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
+        runtime
+            .evaluate(
+                "addEventListener('fetch', event => {
+                   event.respondWith((async () => {
+                     const cache = await caches.open('runtime');
+                     const bodyResponse = new Response('Hello world!');
+                     await cache.put(event.request, bodyResponse);
+                     let getReaderThrew = false;
+                     try { bodyResponse.body.getReader(); } catch (error) {
+                       getReaderThrew = error instanceof TypeError;
+                     }
+                     const nullResponse = new Response();
+                     await cache.put(event.request + '?null', nullResponse);
+                     return new Response(String(getReaderThrew) + ':' +
+                       String(nullResponse.bodyUsed) + ':' +
+                       String(bodyResponse.bodyUsed));
+                   })());
+                 });",
+                "https://example.test/sw.js",
+            )
+            .unwrap();
+        let _ = runtime.recv_timeout(Duration::from_secs(5)).unwrap();
+
+        runtime
+            .dispatch_fetch(
+                47,
+                ServiceWorkerFetchRequest {
+                    url: "https://example.test/app/disturb".into(),
+                    method: "GET".into(),
+                    headers: Vec::new(),
+                    body: None,
+                    credentials: None,
+                    client_id: Some("client-1".into()),
+                    resulting_client_id: None,
+                    referrer: None,
+                    is_reload_navigation: false,
+                    is_history_navigation: false,
+                },
+            )
+            .unwrap();
+
+        let ServiceWorkerEvent::CacheStorageRequested { request_id, request: _ } =
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap()
+        else {
+            panic!("missing CacheStorage.open request");
+        };
+        runtime
+            .complete_cache_storage(
+                request_id,
+                Ok(ServiceWorkerCacheStorageResult::Open {
+                    cache_name: "runtime".into(),
+                    cache_name_units: "00720075006e00740069006d0065".into(),
+                    cache_id: 8,
+                }),
+            )
+            .unwrap();
+
+        let ServiceWorkerEvent::CacheStorageRequested { request_id, request } =
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap()
+        else {
+            panic!("missing CacheStorage.put request");
+        };
+        let ServiceWorkerCacheStorageRequest::Put { .. } = request else {
+            panic!("unexpected CacheStorage request");
+        };
+        runtime
+            .complete_cache_storage(request_id, Ok(ServiceWorkerCacheStorageResult::Done))
+            .unwrap();
+
+        let ServiceWorkerEvent::CacheStorageRequested { request_id, request: _ } =
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap()
+        else {
+            panic!("missing second CacheStorage.put request");
+        };
+        let ServiceWorkerCacheStorageRequest::Put { response, .. } = request else {
+            panic!("unexpected CacheStorage request");
+        };
+        assert_eq!(response.response_type, "default");
+        assert_eq!(response.body, "");
+        runtime
+            .complete_cache_storage(request_id, Ok(ServiceWorkerCacheStorageResult::Done))
+            .unwrap();
+
+        assert_eq!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::FetchSettled {
+                event_id: 47,
+                request_url: "https://example.test/app/disturb".into(),
+                response: Some(ServiceWorkerFetchResponse {
+                    status: 200,
+                    status_text: String::new(),
+                    response_type: "default".into(),
+                    headers: Vec::new(),
+                    body: "true:false:true".into(),
                 }),
                 failed: false,
                 message: String::new(),
