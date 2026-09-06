@@ -4,9 +4,9 @@ use std::sync::{Arc, Mutex};
 use zero_engine::script_dispatch_native_event;
 use zero_engine::{
     DomEventDetail, DomMutation, register_dom_callbacks, script_call_set_location_hash, script_contenteditable_delete,
-    script_contenteditable_insert, script_contenteditable_probe, script_dispatch_dom_event, script_reset_form_controls,
-    script_set_control_checked, script_set_open, script_set_option_selected, script_set_text_control_state,
-    script_text_control_snapshot,
+    script_contenteditable_enter, script_contenteditable_insert, script_contenteditable_probe,
+    script_dispatch_dom_event, script_reset_form_controls, script_set_control_checked, script_set_open,
+    script_set_option_selected, script_set_text_control_state, script_text_control_snapshot,
 };
 use zero_page_runtime::{
     ActionNoopReason, ActionTargetState, EventDispatchResult, FormNavigationIntent, HtmlActionRequest, HtmlUserAction,
@@ -192,6 +192,9 @@ impl WebView {
                 let ce_probe = self.execute_dom_script(executor, &script_contenteditable_probe(&selector))?;
                 if ce_probe.value.trim() == "1" {
                     let script = match &request.action {
+                        // R3254-M2 切片 3：CE 宿主内 "\n"（textarea/worker Enter 路由复用
+                        // InsertText 通道）→ __zw_ce_enter（<br> 插入）而非字面插入。
+                        HtmlUserAction::InsertText { text } if text == "\n" => script_contenteditable_enter(&selector),
                         HtmlUserAction::InsertText { text } => script_contenteditable_insert(&selector, text),
                         _ => script_contenteditable_delete(&selector),
                     };
@@ -293,6 +296,24 @@ impl WebView {
                 let Some(form) = zero_engine::enclosing_form_selector(&html, &selector)
                     .and_then(|form| self.page_node_ref_for_selector(&form))
                 else {
+                    // R3254-M2 切片 3（editing goal）：CE 宿主内 Enter 路由的 Submit
+                    //（非表单目标）→ __zw_ce_enter（<br> 插入，编辑宿主消费 Enter 不
+                    // 提交——spec editing host 优先消费，分发顺序见 goal 边界）。
+                    let ce_probe = self.execute_dom_script(executor, &script_contenteditable_probe(&selector))?;
+                    if ce_probe.value.trim() == "1" {
+                        let result = self.execute_dom_script(executor, &script_contenteditable_enter(&selector))?;
+                        return Ok(WebViewUserActionResult {
+                            changed: result.changed,
+                            canceled: false,
+                            noop_reason: None,
+                            effects: Vec::new(),
+                            invalidation: if result.changed {
+                                InvalidationKind::Paint
+                            } else {
+                                InvalidationKind::None
+                            },
+                        });
+                    }
                     return Ok(WebViewUserActionResult::noop(ActionNoopReason::NotApplicable));
                 };
                 ActionTargetState::Submit {

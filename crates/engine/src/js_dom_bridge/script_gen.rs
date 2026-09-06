@@ -730,3 +730,13 @@ pub fn script_contenteditable_probe(selector: &str) -> String {
 return (e && typeof __zw_is_ce_host === 'function' && __zw_is_ce_host(e)) ? '1' : '';}})()"
     )
 }
+
+/// 构造「contenteditable 宿主 Enter 换行」的宿主脚本（R3254-M2 切片 3，editing goal）。
+///
+/// shim `__zw_ce_enter(sel)`：caret 处插 `<br>`（insertLineBreak 语义——insertParagraph
+/// 块级拆分 defer 记录），经 innerHTML setter → SetInnerHtml mutation 流转宿主，
+/// 派发 beforeinput/input 事件序。仅宿主直子文本节点内 caret 应用。
+pub fn script_contenteditable_enter(selector: &str) -> String {
+    let esc_sel = escape_js_string(selector);
+    format!("__zw_ce_enter('{esc_sel}')")
+}

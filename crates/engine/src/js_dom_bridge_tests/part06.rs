@@ -1909,6 +1909,94 @@ fn test_element_reflected_props2_r2806() {
 }
 
 #[test]
+fn test_contenteditable_enter_r3254_m2() {
+    // R3254-M2 切片 3（editing goal，2026-09-07）：CE 宿主 Enter 换行——
+    // __zw_ce_enter：caret 处插 `<br>`（insertLineBreak 语义；insertParagraph 块级
+    // 拆分 defer 记录），经 innerHTML setter → SetInnerHtml mutation 流转宿主。
+    // ① caret 在宿主直子文本节点内 → SetInnerHtml mutation 含 `<br>`；
+    // ② beforeinput(insertLineBreak, cancelable) → input 事件序；
+    // ③ caret 移到 `<br>` 后（宿主元素边界）；④ 非 CE / 非直子文本 caret no-op。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=ce contenteditable>abcd</div><p id=p>plain</p></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // ①+②+③：caret 在 'abcd' offset 2 → innerHTML 变更 'ab<br>cd' + 事件序 + caret 元素边界。
+    sandbox
+        .execute(
+            r##"
+globalThis.__ev = [];
+var ce = document.getElementById("ce");
+ce.addEventListener("beforeinput", function (e) { __ev.push("before:" + e.inputType + ":" + e.cancelable); });
+ce.addEventListener("input", function (e) { __ev.push("in:" + e.inputType); });
+var tn = ce.firstChild;
+var r = document.createRange();
+r.setStart(tn, 2);
+r.collapse(true);
+getSelection().removeAllRanges();
+getSelection().addRange(r);
+__zw_ce_enter("#ce");
+globalThis.__caret = getSelection()._ranges[0].startContainer === ce
+  ? "el:" + getSelection()._ranges[0].startOffset : "?";
+"##,
+        )
+        .unwrap();
+    {
+        let m = mutations.lock().unwrap();
+        let has_br = m.iter().any(|mm| {
+            matches!(mm, DomMutation::SetInnerHtml { selector, html }
+                if selector.contains("ce") && html.contains("ab<br>cd"))
+        });
+        assert!(
+            has_br,
+            "CE Enter 须经 SetInnerHtml mutation 插 <br>（'ab<br>cd'），实际: {:?}",
+            m.iter().rev().take(6).collect::<Vec<_>>()
+        );
+    }
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ev)").unwrap().value,
+        "before:insertLineBreak:true,in:insertLineBreak",
+        "CE Enter 须派 beforeinput(insertLineBreak, cancelable) + input 事件序"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__caret)").unwrap().value,
+        "el:1",
+        "CE Enter 后 caret 须移到 <br> 后（宿主 offset 1 元素边界）"
+    );
+    // ④：caret 在非直子文本（<p> 内）→ no-op。
+    sandbox
+        .execute(r##"
+globalThis.__ev2 = [];
+var p = document.getElementById("p");
+var tn2 = p.firstChild;
+var r2 = document.createRange();
+r2.setStart(tn2, 1);
+r2.collapse(true);
+getSelection().removeAllRanges();
+getSelection().addRange(r2);
+__zw_ce_enter("#p");
+"##)
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ev2)").unwrap().value,
+        "",
+        "非 CE 目标 __zw_ce_enter 须 no-op（零事件）"
+    );
+}
+
+#[test]
 fn test_element_aria_r2807() {
     // R2807：element.role + aria-* 反射簇（ARIA a11y 高频）。通用 _ariaAttrName 映射 ariaXxx↔aria-xxx
     //（ariaLabelledBy→aria-labelledby 单 hyphen，非 _camelToKebab 的双 hyphen）。_reflectedAttrs 缓存同步往返。
