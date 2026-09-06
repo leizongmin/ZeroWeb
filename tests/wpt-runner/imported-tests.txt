@@ -268,3 +268,4 @@ css/css-content/element-replacement-on-replaced-element.tentative.html css/css-c
 css/css-content/element-replacement-gradient.html css/css-content/element-replacement-gradient-ref.html == 2026-09-05 R4045 content:gradient element-replacement——渐变内容按内容盒绘制
 css/CSS2/box-display/containing-block-008.xht css/CSS2/box-display/containing-block-008-ref.xht == 2026-09-05 R4047 视口-CB abspos margin 计入定位方程——margin 丢失修复
 css/css-sizing/aspect-ratio/block-aspect-ratio-025.html css/reference/ref-filled-green-100px-square-only.html == 2026-09-06 
+css/css-sizing/aspect-ratio/replaced-element-022.html css/reference/ref-filled-green-100px-square-only.html == 2026-09-06 

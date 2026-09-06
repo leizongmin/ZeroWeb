@@ -552,7 +552,14 @@ impl Painter {
     /// shim 的 getContext 已把 ctx id 写入元素属性 data-zw-canvas-ctx；painter 从
     /// CanvasRegistry 取该 ctx 的像素快照，生成 image_key=ctx_id 的图片图元，并把
     /// 像素收集到 `canvas_images`——调用方（渲染线程/reftest）在渲染前注入 ImageCache。
-    pub(crate) fn paint_canvas_element(&mut self, box_node: &LayoutBox, abs_x: f32, abs_y: f32, doc: &Document) {
+    pub(crate) fn paint_canvas_element(
+        &mut self,
+        box_node: &LayoutBox,
+        abs_x: f32,
+        abs_y: f32,
+        styles: &HashMap<NodeId, ComputedStyle>,
+        doc: &Document,
+    ) {
         let Some(node_id) = box_node.node_id else {
             return;
         };
@@ -595,11 +602,35 @@ impl Painter {
         // 布局语义（oracle A/B 的 ±2 平移容忍残余整数差）。
         let content_x = (abs_x + box_node.border_left + box_node.padding_left).round();
         let content_y = (abs_y + box_node.border_top + box_node.padding_top).round();
+        // R4079（CSS Images 3 §5.5 object-fit / §5.6 object-position）：canvas 位图
+        // 按 replaced 元素语义适配元素盒——位图固有尺寸 = context 快照 (cw, ch)，
+        // 不再把位图无条件拉伸到容器（replaced-element-022：canvas 100×300 盒 +
+        // 位图 200×200 + object-fit:contain 应内容 100×100 于左上，旧拉伸满盒）。
+        // img 路径同款（text.rs :510）：clip 回容器，绘制矩形由 fit 结果决定。
+        let (draw_x, draw_y, draw_w, draw_h) = if let Some(style) = box_node.node_id.and_then(|id| styles.get(&id)) {
+            text_image::compute_object_fit_rect(
+                &style.object_fit,
+                &style.object_position,
+                container_w,
+                container_h,
+                cw as f32,
+                ch as f32,
+                content_x,
+                content_y,
+            )
+        } else {
+            (content_x, content_y, container_w, container_h)
+        };
         self.primitives
             .add_image(zero_render_foundation::primitive::ImagePrimitive {
-                rect: zero_render_foundation::geometry::Rect::new(content_x, content_y, container_w, container_h),
+                rect: zero_render_foundation::geometry::Rect::new(draw_x, draw_y, draw_w, draw_h),
                 image_key: zero_render_foundation::image_cache::ImageKey::new(ctx_id),
-                clip: None,
+                clip: Some(zero_render_foundation::geometry::Rect::new(
+                    content_x,
+                    content_y,
+                    container_w,
+                    container_h,
+                )),
                 source: None,
             });
         self.canvas_images.push((ctx_id, cw, ch, rgba));
@@ -1439,7 +1470,7 @@ impl Painter {
 
                         // 4b0. <canvas> 元素绘制（R3268 canvas 显示链路——canvas 像素 →
                         // ImagePrimitive → 渲染侧 ImageCache）
-                        self.paint_canvas_element(box_node, abs_x, abs_y, doc);
+                        self.paint_canvas_element(box_node, abs_x, abs_y, styles, doc);
 
                         // 4b0c. inline <svg> 元素绘制（R3933——DOM 子树序列化 → 栅格化 →
                         // ImagePrimitive，canvas 同款两段式通路）
