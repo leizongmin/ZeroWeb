@@ -31,7 +31,7 @@ lifetime accounting while keeping response serialization independent from
   1 case / 6 subtests / 6 Pass
 - `make testharness-service-workers-core FILTER=service-worker/extendable-event-async-waituntil.https.html TIME_LIMIT=300`:
   1 case / 14 subtests / 14 Pass
-- `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 1200 -- python3 tests/wpt-runner/scripts/run-service-workers-core-baseline.py --runner ./target/release/zero-wpt-runner --wpt-data tests/wpt-runner/wpt-data/.service-workers-tier-a-root --output docs/goal/service-workers/evidence/2026-09-03-m3-extendable-event-async-waituntil-baseline.json --summary docs/goal/service-workers/evidence/2026-09-03-m3-extendable-event-async-waituntil-baseline.md`:
+- `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 1200 -- python3 tests/wpt-runner/scripts/run-service-workers-core-baseline.py --runner ./target/release/zero-wpt-runner --wpt-data tests/wpt-runner/wpt-data/.service-workers-tier-a-root --output docs/goal/archive/service-workers/evidence/2026-09-03-m3-extendable-event-async-waituntil-baseline.json --summary docs/goal/archive/service-workers/evidence/2026-09-03-m3-extendable-event-async-waituntil-baseline.md`:
   64 cases / 248 subtests / 248 Pass, deterministic
 - `python3 tests/wpt-runner/scripts/audit-service-worker-disposition.py`:
   PASS, `core=77 defer=23 fetch=3 gated=149 skip=42`

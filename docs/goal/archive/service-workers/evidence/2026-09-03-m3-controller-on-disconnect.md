@@ -20,7 +20,7 @@ after the iframe is removed from the document.
 
 - `make testharness-service-workers-core FILTER=service-worker/controller-on-disconnect.https.html TIME_LIMIT=300`:
   1 case / 1 subtest / 1 Pass
-- `make baseline-wpt-service-workers-core OUTPUT=docs/goal/service-workers/evidence/2026-09-03-m3-controller-on-disconnect-baseline.json SUMMARY=docs/goal/service-workers/evidence/2026-09-03-m3-controller-on-disconnect-baseline.md TIME_LIMIT=1200`:
+- `make baseline-wpt-service-workers-core OUTPUT=docs/goal/archive/service-workers/evidence/2026-09-03-m3-controller-on-disconnect-baseline.json SUMMARY=docs/goal/archive/service-workers/evidence/2026-09-03-m3-controller-on-disconnect-baseline.md TIME_LIMIT=1200`:
   60 cases / 217 subtests / 217 Pass, deterministic
 
 ## Asset Contract

@@ -27,7 +27,7 @@ updates do not mask lifecycle `statechange` events.
   2 Pass
 - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 180 -- ./target/release/zero-wpt-runner testharness-service-workers --wpt-data tests/wpt-runner/wpt-data/.service-workers-tier-a-root skip-waiting-using-registration.https.html --json`:
   12 consecutive runs, 2 Pass each
-- `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 1200 -- make baseline-wpt-service-workers-core OUTPUT=docs/goal/service-workers/evidence/2026-09-02-m3-registration-attribute-baseline.json SUMMARY=docs/goal/service-workers/evidence/2026-09-02-m3-registration-attribute-baseline.md TIME_LIMIT=1200`:
+- `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 1200 -- make baseline-wpt-service-workers-core OUTPUT=docs/goal/archive/service-workers/evidence/2026-09-02-m3-registration-attribute-baseline.json SUMMARY=docs/goal/archive/service-workers/evidence/2026-09-02-m3-registration-attribute-baseline.md TIME_LIMIT=1200`:
   52 cases / 200 subtests / 200 Pass, double-run deterministic
 
 ## Asset Contract

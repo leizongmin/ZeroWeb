@@ -43,7 +43,7 @@
 
 | 类型 | 来源 |
 |------|------|
-| Mission / Done Criteria | `docs/goal/service-workers.md` |
+| Mission / Done Criteria | `docs/goal/archive/service-workers.md` |
 | 当前实现事实 | storage/webview/engine/browser/renderer/script-sandbox 源码 |
 | 规范行为 | Service Workers CRD + HTML Worker 模型 |
 | 验收输入 | 上游 WPT `service-workers` |
@@ -376,7 +376,7 @@ M1-3 首次改变 `navigator.serviceWorker` 行为，必须同提交带 driving 
 - `apps/browser/**`
 - `apps/renderer/**`
 - `tests/wpt-runner/**`
-- `docs/goal/service-workers/**`
+- `docs/goal/archive/service-workers/**`
 
 **禁止修改**：
 

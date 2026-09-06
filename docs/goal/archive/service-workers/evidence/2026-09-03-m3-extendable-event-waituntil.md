@@ -19,7 +19,7 @@ activate waitUntil rejection continuing to activated state.
   2 assets / regression PASS
 - `make testharness-service-workers-core FILTER=service-worker/extendable-event-waituntil.https.html TIME_LIMIT=300`:
   1 case / 6 subtests / 6 Pass
-- `make baseline-wpt-service-workers-core OUTPUT=docs/goal/service-workers/evidence/2026-09-03-m3-extendable-event-waituntil-baseline.json SUMMARY=docs/goal/service-workers/evidence/2026-09-03-m3-extendable-event-waituntil-baseline.md TIME_LIMIT=1200`:
+- `make baseline-wpt-service-workers-core OUTPUT=docs/goal/archive/service-workers/evidence/2026-09-03-m3-extendable-event-waituntil-baseline.json SUMMARY=docs/goal/archive/service-workers/evidence/2026-09-03-m3-extendable-event-waituntil-baseline.md TIME_LIMIT=1200`:
   63 cases / 234 subtests / 234 Pass, deterministic
 
 ## Asset Contract

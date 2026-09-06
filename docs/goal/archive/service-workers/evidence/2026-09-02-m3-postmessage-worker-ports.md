@@ -30,7 +30,7 @@ client message queue.
 
 ## Asset Contract
 
-- `docs/goal/service-workers/evidence/2026-08-22-m2-fetch-request-end-to-end-assets.tsv` now includes the case and three worker scripts for this WPT.
+- `docs/goal/archive/service-workers/evidence/2026-08-22-m2-fetch-request-end-to-end-assets.tsv` now includes the case and three worker scripts for this WPT.
 
 ## Conclusion
 

@@ -23,7 +23,7 @@
 - 2026-09-02 follow-up：`.any.js` worker wrapper 扩展到 plain `.any.js` 后重跑
   `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 600 -- cargo run --release --bin zero-wpt-runner -- testharness-service-workers --wpt-data tests/wpt-runner/wpt-data/.service-workers-tier-a-root no-dynamic-import.any.js`：
   1 case / 4 subtests / 4 Pass
-- `make baseline-wpt-service-workers-core OUTPUT=docs/goal/service-workers/evidence/2026-08-19-m1-wpt-core-baseline.json`：
+- `make baseline-wpt-service-workers-core OUTPUT=docs/goal/archive/service-workers/evidence/2026-08-19-m1-wpt-core-baseline.json`：
   45 cases / 176 subtests / 176 Pass，double-run deterministic
 
 ## 结论

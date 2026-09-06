@@ -447,14 +447,14 @@ fetch baseline，不改变本目标的 window/SW CacheStorage 分母。
     先产生进展、后续 error 时，页面 `response.text()` body 消费 reject。该行为同
     `Cache.add()` / worker `fetch()` 共享 Response body 桥接路径，避免将 errored stream
     错误快照为成功文本 body。
-  - `make baseline-wpt-service-workers-fetch OUTPUT=docs/goal/service-workers/evidence/2026-08-31-m3-extendable-message-event-constructor-baseline.json SUMMARY=docs/goal/service-workers/evidence/2026-08-31-m3-extendable-message-event-constructor-baseline.md`：26 cases / 70 subtests / 70 Pass，double-run deterministic
+  - `make baseline-wpt-service-workers-fetch OUTPUT=docs/goal/archive/service-workers/evidence/2026-08-31-m3-extendable-message-event-constructor-baseline.json SUMMARY=docs/goal/archive/service-workers/evidence/2026-08-31-m3-extendable-message-event-constructor-baseline.md`：26 cases / 70 subtests / 70 Pass，double-run deterministic
   - 证据：[Service Worker Fetch WPT Baseline](../service-workers/evidence/2026-08-31-m3-extendable-message-event-constructor-baseline.md)
 - 2026-09-02 Service Worker secure-context surface：
   - `ServiceWorkerGlobalScope/isSecureContext.https.html` 纳入 Service Worker core runner，
     补齐 `WorkerGlobalScope.prototype.isSecureContext === true`。该切片不改变本目标的
     CacheStorage window/SW 分母，但解除后续 worker-harness Cache/SW 交叉用例的一个基础
     global surface 缺口。
-  - `make baseline-wpt-service-workers-core OUTPUT=docs/goal/service-workers/evidence/2026-08-19-m1-wpt-core-baseline.json`：
+  - `make baseline-wpt-service-workers-core OUTPUT=docs/goal/archive/service-workers/evidence/2026-08-19-m1-wpt-core-baseline.json`：
     40 cases / 166 subtests / 166 Pass，double-run deterministic
   - 证据：[M3 Service Worker WorkerGlobalScope.isSecureContext](../service-workers/evidence/2026-09-02-m3-worker-secure-context.md)
 - 2026-09-02 Service Worker install event type：
@@ -462,14 +462,14 @@ fetch baseline，不改变本目标的 window/SW CacheStorage 分母。
     `bubbles === false` 基础属性并复用已有 worker-testharness 结果通道。该切片不改变
     CacheStorage window/SW 分母，但继续收敛 Cache/SW worker-harness 依赖的基础 lifecycle
     event surface。
-  - `make baseline-wpt-service-workers-core OUTPUT=docs/goal/service-workers/evidence/2026-08-19-m1-wpt-core-baseline.json`：
+  - `make baseline-wpt-service-workers-core OUTPUT=docs/goal/archive/service-workers/evidence/2026-08-19-m1-wpt-core-baseline.json`：
     41 cases / 167 subtests / 167 Pass，double-run deterministic
   - 证据：[M3 Service Worker InstallEvent Type](../service-workers/evidence/2026-09-02-m3-install-event-type.md)
 - 2026-09-02 Service Worker global close absence：
   - `ServiceWorkerGlobalScope/close.https.html` 纳入 Service Worker core runner，确认 SW
     global 不暴露 `close()`。该切片不改变 CacheStorage window/SW 分母，但继续收敛
     worker-harness 依赖的 Service Worker global 接口面。
-  - `make baseline-wpt-service-workers-core OUTPUT=docs/goal/service-workers/evidence/2026-08-19-m1-wpt-core-baseline.json`：
+  - `make baseline-wpt-service-workers-core OUTPUT=docs/goal/archive/service-workers/evidence/2026-08-19-m1-wpt-core-baseline.json`：
     42 cases / 169 subtests / 169 Pass，double-run deterministic
   - 证据：[M3 Service Worker Global Close Absence](../service-workers/evidence/2026-09-02-m3-worker-close.md)
 - 2026-09-02 Service Worker interface requirements：
@@ -477,21 +477,21 @@ fetch baseline，不改变本目标的 window/SW CacheStorage 分母。
     constructor 现在拒绝缺失/非法 `FetchEventInit.request`，并继续确认 SW global 不暴露
     `XMLHttpRequest` / `URL.createObjectURL`。该切片不改变 CacheStorage window/SW 分母，
     但收敛 CacheStorage serviceworker wrapper 依赖的 worker-harness 基础接口。
-  - `make baseline-wpt-service-workers-core OUTPUT=docs/goal/service-workers/evidence/2026-08-19-m1-wpt-core-baseline.json`：
+  - `make baseline-wpt-service-workers-core OUTPUT=docs/goal/archive/service-workers/evidence/2026-08-19-m1-wpt-core-baseline.json`：
     43 cases / 173 subtests / 173 Pass，double-run deterministic
   - 证据：[M3 Service Worker Interface Requirements](../service-workers/evidence/2026-09-02-m3-worker-interface.md)
 - 2026-09-02 FetchEvent historical interface：
   - `historical.https.any.js` 纳入 Service Worker core runner，确认
     `FetchEvent.prototype.targetClientId` 不暴露。该切片不改变 CacheStorage window/SW
     分母，只收敛 CacheStorage serviceworker wrapper 依赖的 FetchEvent 接口面。
-  - `make baseline-wpt-service-workers-core OUTPUT=docs/goal/service-workers/evidence/2026-08-19-m1-wpt-core-baseline.json`：
+  - `make baseline-wpt-service-workers-core OUTPUT=docs/goal/archive/service-workers/evidence/2026-08-19-m1-wpt-core-baseline.json`：
     44 cases / 175 subtests / 175 Pass，double-run deterministic
   - 证据：[M3 FetchEvent Historical Interface](../service-workers/evidence/2026-09-02-m3-fetch-event-historical.md)
 - 2026-09-02 Classic Service Worker dynamic import rejection：
   - `no-dynamic-import.any.js` 纳入 Service Worker core runner，确认 classic Service Worker
     global 中动态 `import(url)` 返回 rejected promise。该切片不改变 CacheStorage window/SW
     分母，只收敛 CacheStorage serviceworker wrapper 依赖的 worker script 负面能力面。
-  - `make baseline-wpt-service-workers-core OUTPUT=docs/goal/service-workers/evidence/2026-08-19-m1-wpt-core-baseline.json`：
+  - `make baseline-wpt-service-workers-core OUTPUT=docs/goal/archive/service-workers/evidence/2026-08-19-m1-wpt-core-baseline.json`：
     45 cases / 176 subtests / 176 Pass，double-run deterministic
   - 证据：[M3 Classic Service Worker Dynamic Import Rejection](../service-workers/evidence/2026-09-02-m3-no-dynamic-import.md)
 - 2026-09-02 Module Service Worker dynamic import rejection：
@@ -499,7 +499,7 @@ fetch baseline，不改变本目标的 window/SW CacheStorage 分母。
     `serviceworker-module` wrapper 以 module 类型注册 worker，且 module worker 动态
     `import(url)` 返回 rejected `TypeError` promise。该切片不改变 CacheStorage window/SW
     分母，只补齐 CacheStorage serviceworker wrapper 依赖的 module worker 负面能力面。
-  - `make baseline-wpt-service-workers-core OUTPUT=docs/goal/service-workers/evidence/2026-08-19-m1-wpt-core-baseline.json`：
+  - `make baseline-wpt-service-workers-core OUTPUT=docs/goal/archive/service-workers/evidence/2026-08-19-m1-wpt-core-baseline.json`：
     46 cases / 183 subtests / 183 Pass，double-run deterministic
   - 证据：[M3 Module Service Worker Dynamic Import Rejection](../service-workers/evidence/2026-09-02-m3-module-no-dynamic-import.md)
 - 2026-09-02 Service Worker global self identity：
@@ -507,7 +507,7 @@ fetch baseline，不改变本目标的 window/SW CacheStorage 分母。
     global 中只读 `self.serviceWorker`、install/activate 事件期 registration slot，以及
     启动期 self-message。该切片不改变 CacheStorage window/SW 分母，只补齐 CacheStorage
     serviceworker wrapper 依赖的 worker global 身份面。
-  - `make baseline-wpt-service-workers-core OUTPUT=docs/goal/service-workers/evidence/2026-08-19-m1-wpt-core-baseline.json TIME_LIMIT=900`：
+  - `make baseline-wpt-service-workers-core OUTPUT=docs/goal/archive/service-workers/evidence/2026-08-19-m1-wpt-core-baseline.json TIME_LIMIT=900`：
     47 cases / 188 subtests / 188 Pass，double-run deterministic
   - 证据：[M3 Service Worker Global Self Identity](../service-workers/evidence/2026-09-02-m3-global-serviceworker.md)
 - 2026-09-02 Service Worker immutable prototype chain：
@@ -515,7 +515,7 @@ fetch baseline，不改变本目标的 window/SW CacheStorage 分母。
     worker global prototype chain 的 `Object.setPrototypeOf()` / `Reflect.setPrototypeOf()`
     不可变语义。该切片不改变 CacheStorage window/SW 分母，只补齐 CacheStorage
     serviceworker wrapper 依赖的 worker global 对象模型面。
-  - `make baseline-wpt-service-workers-core OUTPUT=docs/goal/service-workers/evidence/2026-08-19-m1-wpt-core-baseline.json TIME_LIMIT=900`：
+  - `make baseline-wpt-service-workers-core OUTPUT=docs/goal/archive/service-workers/evidence/2026-08-19-m1-wpt-core-baseline.json TIME_LIMIT=900`：
     48 cases / 189 subtests / 189 Pass，double-run deterministic
   - 证据：[M3 Service Worker Immutable Prototype](../service-workers/evidence/2026-09-02-m3-immutable-prototype.md)
 - 2026-08-22 M3 CacheStorage 持久化首片：
@@ -550,7 +550,7 @@ fetch baseline，不改变本目标的 window/SW CacheStorage 分母。
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- make testharness-service-workers-cache-storage FILTER=cache-match.https.html`：26 entries Pass
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- cargo test -p zero-script-sandbox service_worker::tests::worker_global_fetch_ -- --nocapture`：3 passed
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 360 -- cargo test -p zero-page-runtime service_worker -- --nocapture`：49 passed
-  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 420 -- make baseline-wpt-service-workers-cache-storage OUTPUT=docs/goal/service-workers/evidence/2026-08-23-m2-cache-storage-serviceworker-baseline.json SUMMARY=docs/goal/service-workers/evidence/2026-08-23-m2-cache-storage-serviceworker-baseline.md`：7 cases / 94 subtests / 94 Pass，double-run deterministic
+  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 420 -- make baseline-wpt-service-workers-cache-storage OUTPUT=docs/goal/archive/service-workers/evidence/2026-08-23-m2-cache-storage-serviceworker-baseline.json SUMMARY=docs/goal/archive/service-workers/evidence/2026-08-23-m2-cache-storage-serviceworker-baseline.md`：7 cases / 94 subtests / 94 Pass，double-run deterministic
   - 证据：[Service Worker CacheStorage WPT Baseline](../service-workers/evidence/2026-08-23-m2-cache-storage-serviceworker-baseline.md)
 - 2026-08-23 Service Worker CacheStorage serviceworker `cache-put` WPT 扩面：
   - 新增 WPT：`service-workers/cache-storage/serviceworker/cache-put.https.html`
@@ -559,63 +559,63 @@ fetch baseline，不改变本目标的 window/SW CacheStorage 分母。
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 600 -- cargo test -p zero-script-sandbox service_worker -- --nocapture`：50 passed
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- cargo test -p zero-wpt-runner service_worker_cache_storage -- --nocapture`：2 passed
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 120 -- make audit-wpt-service-workers-cache-storage-wave`：25 assets verified
-  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 420 -- make baseline-wpt-service-workers-cache-storage OUTPUT=docs/goal/service-workers/evidence/2026-08-23-m2-cache-storage-serviceworker-baseline.json SUMMARY=docs/goal/service-workers/evidence/2026-08-23-m2-cache-storage-serviceworker-baseline.md`：8 cases / 121 subtests / 121 Pass，double-run deterministic
+  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 420 -- make baseline-wpt-service-workers-cache-storage OUTPUT=docs/goal/archive/service-workers/evidence/2026-08-23-m2-cache-storage-serviceworker-baseline.json SUMMARY=docs/goal/archive/service-workers/evidence/2026-08-23-m2-cache-storage-serviceworker-baseline.md`：8 cases / 121 subtests / 121 Pass，double-run deterministic
   - 证据：[Service Worker CacheStorage WPT Baseline](../service-workers/evidence/2026-08-23-m2-cache-storage-serviceworker-baseline.md)
 - 2026-08-23 Service Worker CacheStorage serviceworker `cache-add` WPT 扩面：
   - 新增 WPT：`service-workers/cache-storage/serviceworker/cache-add.https.html`
   - `WPT_SOURCE=$HOME/github/others/wpt ./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 120 -- make fetch-wpt-service-workers-cache-storage-wave`：27 assets restored
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- make testharness-service-workers-cache-storage FILTER=cache-add.https.html`：23 entries Pass
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 600 -- cargo test -p zero-script-sandbox service_worker -- --nocapture`：52 passed
-  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 420 -- make baseline-wpt-service-workers-cache-storage OUTPUT=docs/goal/service-workers/evidence/2026-08-23-m2-cache-storage-serviceworker-baseline.json SUMMARY=docs/goal/service-workers/evidence/2026-08-23-m2-cache-storage-serviceworker-baseline.md`：9 cases / 144 subtests / 144 Pass，double-run deterministic
+  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 420 -- make baseline-wpt-service-workers-cache-storage OUTPUT=docs/goal/archive/service-workers/evidence/2026-08-23-m2-cache-storage-serviceworker-baseline.json SUMMARY=docs/goal/archive/service-workers/evidence/2026-08-23-m2-cache-storage-serviceworker-baseline.md`：9 cases / 144 subtests / 144 Pass，double-run deterministic
   - 证据：[Service Worker CacheStorage WPT Baseline](../service-workers/evidence/2026-08-23-m2-cache-storage-serviceworker-baseline.md)
 - 2026-08-23 Service Worker CacheStorage serviceworker `cache-abort` WPT 扩面：
   - 新增 WPT：`service-workers/cache-storage/serviceworker/cache-abort.https.html`
   - 新增 support：`common/utils.js`、`service-workers/cache-storage/script-tests/cache-abort.js`
   - `WPT_SOURCE=$HOME/github/others/wpt ./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 120 -- make fetch-wpt-service-workers-cache-storage-wave`：30 assets restored
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- make testharness-service-workers-cache-storage FILTER=cache-abort.https.html`：10 entries Pass
-  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 420 -- make baseline-wpt-service-workers-cache-storage OUTPUT=docs/goal/service-workers/evidence/2026-08-23-m2-cache-storage-serviceworker-baseline.json SUMMARY=docs/goal/service-workers/evidence/2026-08-23-m2-cache-storage-serviceworker-baseline.md`：10 cases / 154 subtests / 154 Pass，double-run deterministic
+  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 420 -- make baseline-wpt-service-workers-cache-storage OUTPUT=docs/goal/archive/service-workers/evidence/2026-08-23-m2-cache-storage-serviceworker-baseline.json SUMMARY=docs/goal/archive/service-workers/evidence/2026-08-23-m2-cache-storage-serviceworker-baseline.md`：10 cases / 154 subtests / 154 Pass，double-run deterministic
   - 证据：[Service Worker CacheStorage WPT Baseline](../service-workers/evidence/2026-08-23-m2-cache-storage-serviceworker-baseline.md)
 - 2026-08-23 Service Worker CacheStorage serviceworker request navigation attributes WPT 扩面：
   - 新增 WPT：`service-workers/cache-storage/serviceworker/cache-keys-attributes-for-service-worker.https.html`
   - 新增 support：`service-workers/cache-storage/resources/cache-keys-attributes-for-service-worker.js`
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- make testharness-service-workers-cache-storage FILTER=cache-keys-attributes-for-service-worker.https.html`：2 entries Pass
-  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 420 -- make baseline-wpt-service-workers-cache-storage OUTPUT=docs/goal/service-workers/evidence/2026-08-23-m2-cache-storage-serviceworker-baseline.json SUMMARY=docs/goal/service-workers/evidence/2026-08-23-m2-cache-storage-serviceworker-baseline.md`：11 cases / 156 subtests / 156 Pass，double-run deterministic
+  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 420 -- make baseline-wpt-service-workers-cache-storage OUTPUT=docs/goal/archive/service-workers/evidence/2026-08-23-m2-cache-storage-serviceworker-baseline.json SUMMARY=docs/goal/archive/service-workers/evidence/2026-08-23-m2-cache-storage-serviceworker-baseline.md`：11 cases / 156 subtests / 156 Pass，double-run deterministic
   - 证据：[Service Worker CacheStorage WPT Baseline](../service-workers/evidence/2026-08-23-m2-cache-storage-serviceworker-baseline.md)
 - 2026-08-23 Service Worker CacheStorage serviceworker credentials WPT 扩面：
   - 新增 WPT：`service-workers/cache-storage/serviceworker/credentials.https.html`
   - 新增 support：`service-workers/cache-storage/resources/credentials-worker.js`、`credentials-iframe.html`
   - `make testharness-service-workers-cache-storage FILTER=credentials.https.html`：1 entry Pass
-  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- python3 tests/wpt-runner/scripts/run-service-workers-cache-storage-baseline.py --runner ./target/release/zero-wpt-runner --wpt-data tests/wpt-runner/wpt-data/.service-workers-tier-a-root --output docs/goal/service-workers/evidence/2026-08-23-m2-cache-storage-serviceworker-baseline.json --summary docs/goal/service-workers/evidence/2026-08-23-m2-cache-storage-serviceworker-baseline.md`：12 cases / 157 subtests / 157 Pass，double-run deterministic
+  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- python3 tests/wpt-runner/scripts/run-service-workers-cache-storage-baseline.py --runner ./target/release/zero-wpt-runner --wpt-data tests/wpt-runner/wpt-data/.service-workers-tier-a-root --output docs/goal/archive/service-workers/evidence/2026-08-23-m2-cache-storage-serviceworker-baseline.json --summary docs/goal/archive/service-workers/evidence/2026-08-23-m2-cache-storage-serviceworker-baseline.md`：12 cases / 157 subtests / 157 Pass，double-run deterministic
   - 证据：[Service Worker CacheStorage WPT Baseline](../service-workers/evidence/2026-08-23-m2-cache-storage-serviceworker-baseline.md)
 - 2026-08-23 Service Worker fetch `fetch-event-within-sw` WPT 扩面：
   - 新增 WPT：`service-workers/service-worker/fetch-event-within-sw.https.html`
   - 新增 support：`service-workers/service-worker/resources/fetch-event-within-sw-worker.js`、`resources/sample.txt`
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- make testharness-service-workers-fetch FILTER=fetch-event-within-sw.https.html`：2 entries Pass
-  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 420 -- make baseline-wpt-service-workers-fetch OUTPUT=docs/goal/service-workers/evidence/2026-08-23-m2-fetch-within-sw-baseline.json SUMMARY=docs/goal/service-workers/evidence/2026-08-23-m2-fetch-within-sw-baseline.md`：7 cases / 12 subtests / 12 Pass，double-run deterministic
+  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 420 -- make baseline-wpt-service-workers-fetch OUTPUT=docs/goal/archive/service-workers/evidence/2026-08-23-m2-fetch-within-sw-baseline.json SUMMARY=docs/goal/archive/service-workers/evidence/2026-08-23-m2-fetch-within-sw-baseline.md`：7 cases / 12 subtests / 12 Pass，double-run deterministic
   - 证据：[Service Worker Fetch WPT Baseline](../service-workers/evidence/2026-08-23-m2-fetch-within-sw-baseline.md)
 - 2026-08-23 Service Worker fetch custom-response 共享 Response/FormData 支撑：
   - 新增 WPT：`service-workers/service-worker/fetch-event-respond-with-custom-response.https.html`
   - 新增 support：`service-workers/service-worker/resources/fetch-event-respond-with-custom-response-worker.js`
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- cargo test -p zero-engine test_response_body_used_redirect_and_blob_formdata_cache_put_support -- --nocapture`：1 passed
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- cargo test -p zero-script-sandbox fetch_event_respond_with_serializes_buffer_source_and_form_data_response -- --nocapture`：1 passed
-  - `WPT_SOURCE=$HOME/github/others/wpt ./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 420 -- make baseline-wpt-service-workers-fetch OUTPUT=docs/goal/service-workers/evidence/2026-08-23-m2-fetch-custom-response-baseline.json SUMMARY=docs/goal/service-workers/evidence/2026-08-23-m2-fetch-custom-response-baseline.md`：8 cases / 23 subtests / 23 Pass，double-run deterministic
+  - `WPT_SOURCE=$HOME/github/others/wpt ./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 420 -- make baseline-wpt-service-workers-fetch OUTPUT=docs/goal/archive/service-workers/evidence/2026-08-23-m2-fetch-custom-response-baseline.json SUMMARY=docs/goal/archive/service-workers/evidence/2026-08-23-m2-fetch-custom-response-baseline.md`：8 cases / 23 subtests / 23 Pass，double-run deterministic
   - 证据：[Service Worker Fetch WPT Baseline](../service-workers/evidence/2026-08-23-m2-fetch-custom-response-baseline.md)
 - 2026-08-23 Service Worker fetch claim-fetch 扩面：
   - 新增 WPT：`service-workers/service-worker/claim-fetch.https.html`
   - 新增 support：`service-workers/service-worker/resources/claim-worker.js`、`blank.html`
   - `WPT_SOURCE=$HOME/github/others/wpt make testharness-service-workers-fetch FILTER=claim-fetch.https.html`：1 Pass
-  - `WPT_SOURCE=$HOME/github/others/wpt make baseline-wpt-service-workers-fetch OUTPUT=docs/goal/service-workers/evidence/2026-08-23-m2-fetch-baseline.json SUMMARY=docs/goal/service-workers/evidence/2026-08-23-m2-fetch-baseline.md`：11 cases / 26 subtests / 26 Pass，double-run deterministic
+  - `WPT_SOURCE=$HOME/github/others/wpt make baseline-wpt-service-workers-fetch OUTPUT=docs/goal/archive/service-workers/evidence/2026-08-23-m2-fetch-baseline.json SUMMARY=docs/goal/archive/service-workers/evidence/2026-08-23-m2-fetch-baseline.md`：11 cases / 26 subtests / 26 Pass，double-run deterministic
   - 证据：[Service Worker Fetch WPT Baseline](../service-workers/evidence/2026-08-23-m2-fetch-baseline.md)
 - 2026-08-23 Service Worker fetch claim registration-boundary 扩面：
   - 新增 WPT：`service-workers/service-worker/claim-not-using-registration.https.html`
   - 新增 support：`service-workers/service-worker/resources/empty.js`、`empty-worker.js`
   - `WPT_SOURCE=$HOME/github/others/wpt make testharness-service-workers-fetch FILTER=claim-not-using-registration.https.html`：2 Pass
-  - `WPT_SOURCE=$HOME/github/others/wpt make baseline-wpt-service-workers-fetch OUTPUT=docs/goal/service-workers/evidence/2026-08-23-m2-fetch-baseline.json SUMMARY=docs/goal/service-workers/evidence/2026-08-23-m2-fetch-baseline.md`：12 cases / 28 subtests / 28 Pass，double-run deterministic
+  - `WPT_SOURCE=$HOME/github/others/wpt make baseline-wpt-service-workers-fetch OUTPUT=docs/goal/archive/service-workers/evidence/2026-08-23-m2-fetch-baseline.json SUMMARY=docs/goal/archive/service-workers/evidence/2026-08-23-m2-fetch-baseline.md`：12 cases / 28 subtests / 28 Pass，double-run deterministic
   - 证据：[Service Worker Fetch WPT Baseline](../service-workers/evidence/2026-08-23-m2-fetch-baseline.md)
 - 2026-08-23 Service Worker fetch claim active-state 扩面：
   - 新增 WPT：`service-workers/service-worker/claim-using-registration.https.html`
   - 复用 support：`service-workers/service-worker/resources/claim-worker.js`、`empty.js`、`blank.html`
   - `WPT_SOURCE=$HOME/github/others/wpt ./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 420 -- make testharness-service-workers-fetch FILTER=claim-using-registration.https.html`：2 Pass
-  - `WPT_SOURCE=$HOME/github/others/wpt ./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 600 -- make baseline-wpt-service-workers-fetch OUTPUT=docs/goal/service-workers/evidence/2026-08-23-m2-fetch-baseline.json SUMMARY=docs/goal/service-workers/evidence/2026-08-23-m2-fetch-baseline.md`：13 cases / 30 subtests / 30 Pass，double-run deterministic
+  - `WPT_SOURCE=$HOME/github/others/wpt ./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 600 -- make baseline-wpt-service-workers-fetch OUTPUT=docs/goal/archive/service-workers/evidence/2026-08-23-m2-fetch-baseline.json SUMMARY=docs/goal/archive/service-workers/evidence/2026-08-23-m2-fetch-baseline.md`：13 cases / 30 subtests / 30 Pass，double-run deterministic
   - 证据：[Service Worker Fetch WPT Baseline](../service-workers/evidence/2026-08-23-m2-fetch-baseline.md)
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过

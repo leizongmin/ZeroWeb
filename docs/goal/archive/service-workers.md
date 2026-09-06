@@ -1,10 +1,10 @@
 # Service Worker 真实化 — 生命周期与 fetch 拦截的页面可用性目标
 
-**版本**: v1.0
+**版本**: v1.1（v1.0→v1.1：归档落档——2026-09-06 DC-1~5 全满足后按 docs/goal/README.md §5 模式 A 整树归档至 `docs/goal/archive/service-workers/`）
 **日期**: 2026-08-17
-**状态**: Active（Done Criteria DC-1~DC-5 已全部满足，2026-09-06 收口；后续仅按需扩面）
+**状态**: Done（2026-09-06 收口；DC-1~5 全部满足——方案 C RFC 获批落地、真实生命周期 + fetch 拦截 + Cache 集成、WPT 三 runner 121 case / 652 subtest 全绿、disposition 审计确定性重建、干净全工作区 make test 18951P/0F + clippy 零警告；执行历史见 [service-workers/master.md](service-workers/master.md) 与 [service-workers/archive/INDEX.md](service-workers/archive/INDEX.md)）
 **执行模式**: 轻量修复优先（永不停）；遇需用户决策项或深结构方向 → 记入「待用户决策」清单 → 跳过 → 继续其他轻量修复
-**父目标**: `docs/goal/zero-web.md`（Tier 2「Service Worker（基础）」+ M12「Service Worker 基础（注册、fetch 事件拦截、缓存管理）」列项）
+**父目标**: `docs/goal/zero-web.md`（Tier 2「Service Worker（基础）」+ M12「Service Worker 基础（注册、fetch 事件拦截、缓存管理）」列项——均已于 2026-09-06 标注完成）
 
 > **说明**
 > 本文档是 ZeroWeb「Service Worker 真实化」专项目标执行契约。目标是把 `navigator.serviceWorker`

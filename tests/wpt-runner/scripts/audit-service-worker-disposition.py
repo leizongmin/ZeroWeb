@@ -13,7 +13,7 @@ from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parents[2]
-EVIDENCE_DIR = REPO_ROOT / "docs/goal/service-workers/evidence"
+EVIDENCE_DIR = REPO_ROOT / "docs/goal/archive/service-workers/evidence"
 INVENTORY = EVIDENCE_DIR / "2026-08-19-m0-wpt-case-inventory.tsv"
 CANDIDATE_REVIEW = (
     EVIDENCE_DIR / "2026-08-19-m0-m1-candidate-resource-closure.tsv"

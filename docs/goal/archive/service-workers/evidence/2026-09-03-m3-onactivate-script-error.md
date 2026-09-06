@@ -25,7 +25,7 @@ event without failing activation.
   1 passed
 - `make testharness-service-workers-core FILTER=service-worker/onactivate-script-error.https.html TIME_LIMIT=300`:
   1 case / 5 subtests / 5 Pass
-- `make baseline-wpt-service-workers-core OUTPUT=docs/goal/service-workers/evidence/2026-09-03-m3-onactivate-script-error-baseline.json SUMMARY=docs/goal/service-workers/evidence/2026-09-03-m3-onactivate-script-error-baseline.md TIME_LIMIT=1200`:
+- `make baseline-wpt-service-workers-core OUTPUT=docs/goal/archive/service-workers/evidence/2026-09-03-m3-onactivate-script-error-baseline.json SUMMARY=docs/goal/archive/service-workers/evidence/2026-09-03-m3-onactivate-script-error-baseline.md TIME_LIMIT=1200`:
   62 cases / 228 subtests / 228 Pass, deterministic
 
 ## Asset Contract

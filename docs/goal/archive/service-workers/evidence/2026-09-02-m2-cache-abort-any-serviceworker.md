@@ -40,5 +40,5 @@ The fixed runner path is covered by
   - 1 passed
 - `cargo test -p zero-wpt-runner service_worker_fixture_fetcher_wraps_cache_abort_any_js_with_dynamic_fetch_fixture`
   - 1 passed
-- `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 900 -- python3 tests/wpt-runner/scripts/run-service-workers-cache-storage-baseline.py --runner target/debug/zero-wpt-runner --wpt-data tests/wpt-runner/wpt-data/.service-workers-tier-a-root --output docs/goal/service-workers/evidence/2026-08-23-m2-cache-storage-serviceworker-baseline.json --summary docs/goal/service-workers/evidence/2026-08-23-m2-cache-storage-serviceworker-baseline.md`
+- `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 900 -- python3 tests/wpt-runner/scripts/run-service-workers-cache-storage-baseline.py --runner target/debug/zero-wpt-runner --wpt-data tests/wpt-runner/wpt-data/.service-workers-tier-a-root --output docs/goal/archive/service-workers/evidence/2026-08-23-m2-cache-storage-serviceworker-baseline.json --summary docs/goal/archive/service-workers/evidence/2026-08-23-m2-cache-storage-serviceworker-baseline.md`
   - 25 cases / 318 subtests / 318 Pass / deterministic true

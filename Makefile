@@ -325,804 +325,804 @@ test-wpt-service-workers-tier-a-assets: fetch-wpt-service-workers-tier-a
 		$(WPT_BASH) tests/wpt-runner/scripts/test-service-workers-tier-a-assets.sh
 
 fetch-wpt-service-workers-next-wave:
-	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-08-19-m1-next-wave-assets.tsv" \
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-08-19-m1-next-wave-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=9 WPT_CORPUS_LABEL="Service Worker next-wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh
 
 audit-wpt-service-workers-next-wave:
-	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-08-19-m1-next-wave-assets.tsv" \
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-08-19-m1-next-wave-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=9 WPT_CORPUS_LABEL="Service Worker next-wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh --verify-only
 
 test-wpt-service-workers-next-wave-assets: fetch-wpt-service-workers-next-wave
 	WPT_SERVICE_WORKER_SOURCE="$(CURDIR)/tests/wpt-runner/wpt-data/.service-workers-tier-a-root" \
-		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-08-19-m1-next-wave-assets.tsv" \
+		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-08-19-m1-next-wave-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=9 WPT_CORPUS_LABEL="Service Worker next-wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/test-service-workers-tier-a-assets.sh
 
 fetch-wpt-service-workers-message-lifecycle-wave:
-	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-08-31-m3-message-lifecycle-assets.tsv" \
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-08-31-m3-message-lifecycle-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=7 WPT_CORPUS_LABEL="Service Worker message lifecycle wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh
 
 audit-wpt-service-workers-message-lifecycle-wave:
-	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-08-31-m3-message-lifecycle-assets.tsv" \
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-08-31-m3-message-lifecycle-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=7 WPT_CORPUS_LABEL="Service Worker message lifecycle wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh --verify-only
 
 test-wpt-service-workers-message-lifecycle-wave-assets: fetch-wpt-service-workers-message-lifecycle-wave
 	WPT_SERVICE_WORKER_SOURCE="$(CURDIR)/tests/wpt-runner/wpt-data/.service-workers-tier-a-root" \
-		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-08-31-m3-message-lifecycle-assets.tsv" \
+		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-08-31-m3-message-lifecycle-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=7 WPT_CORPUS_LABEL="Service Worker message lifecycle wave" \
 		WPT_TAMPER_ASSET="service-workers/service-worker/resources/events-worker.js" \
 		$(WPT_BASH) tests/wpt-runner/scripts/test-service-workers-tier-a-assets.sh
 
 .PHONY: fetch-wpt-service-workers-message-event-ports-wave audit-wpt-service-workers-message-event-ports-wave test-wpt-service-workers-message-event-ports-wave-assets
 fetch-wpt-service-workers-message-event-ports-wave:
-	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-09-02-m3-message-event-ports-assets.tsv" \
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-09-02-m3-message-event-ports-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=2 WPT_CORPUS_LABEL="Service Worker message event ports wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh
 
 audit-wpt-service-workers-message-event-ports-wave:
-	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-09-02-m3-message-event-ports-assets.tsv" \
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-09-02-m3-message-event-ports-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=2 WPT_CORPUS_LABEL="Service Worker message event ports wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh --verify-only
 
 test-wpt-service-workers-message-event-ports-wave-assets: fetch-wpt-service-workers-message-event-ports-wave
 	WPT_SERVICE_WORKER_SOURCE="$(CURDIR)/tests/wpt-runner/wpt-data/.service-workers-tier-a-root" \
-		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-09-02-m3-message-event-ports-assets.tsv" \
+		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-09-02-m3-message-event-ports-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=2 WPT_CORPUS_LABEL="Service Worker message event ports wave" \
 		WPT_TAMPER_ASSET="service-workers/service-worker/ServiceWorkerGlobalScope/message-event-ports-worker.js" \
 		$(WPT_BASH) tests/wpt-runner/scripts/test-service-workers-tier-a-assets.sh
 
 .PHONY: fetch-wpt-service-workers-messageerror-event-wave audit-wpt-service-workers-messageerror-event-wave test-wpt-service-workers-messageerror-event-wave-assets
 fetch-wpt-service-workers-messageerror-event-wave:
-	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-09-03-m3-messageerror-event-assets.tsv" \
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-09-03-m3-messageerror-event-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=2 WPT_CORPUS_LABEL="Service Worker messageerror event wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh
 
 audit-wpt-service-workers-messageerror-event-wave:
-	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-09-03-m3-messageerror-event-assets.tsv" \
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-09-03-m3-messageerror-event-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=2 WPT_CORPUS_LABEL="Service Worker messageerror event wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh --verify-only
 
 test-wpt-service-workers-messageerror-event-wave-assets: fetch-wpt-service-workers-messageerror-event-wave
 	WPT_SERVICE_WORKER_SOURCE="$(CURDIR)/tests/wpt-runner/wpt-data/.service-workers-tier-a-root" \
-		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-09-03-m3-messageerror-event-assets.tsv" \
+		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-09-03-m3-messageerror-event-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=2 WPT_CORPUS_LABEL="Service Worker messageerror event wave" \
 		WPT_TAMPER_ASSET="service-workers/service-worker/ServiceWorkerGlobalScope/error-message-event-worker.js" \
 		$(WPT_BASH) tests/wpt-runner/scripts/test-service-workers-tier-a-assets.sh
 
 .PHONY: fetch-wpt-service-workers-controller-on-load-wave audit-wpt-service-workers-controller-on-load-wave test-wpt-service-workers-controller-on-load-wave-assets fetch-wpt-service-workers-controller-on-disconnect-wave audit-wpt-service-workers-controller-on-disconnect-wave test-wpt-service-workers-controller-on-disconnect-wave-assets fetch-wpt-service-workers-controller-on-reload-wave audit-wpt-service-workers-controller-on-reload-wave test-wpt-service-workers-controller-on-reload-wave-assets fetch-wpt-service-workers-extendable-event-async-waituntil-wave audit-wpt-service-workers-extendable-event-async-waituntil-wave test-wpt-service-workers-extendable-event-async-waituntil-wave-assets fetch-wpt-service-workers-extendable-event-waituntil-wave audit-wpt-service-workers-extendable-event-waituntil-wave test-wpt-service-workers-extendable-event-waituntil-wave-assets fetch-wpt-service-workers-onactivate-script-error-wave audit-wpt-service-workers-onactivate-script-error-wave test-wpt-service-workers-onactivate-script-error-wave-assets fetch-wpt-service-workers-oninstall-script-error-wave audit-wpt-service-workers-oninstall-script-error-wave test-wpt-service-workers-oninstall-script-error-wave-assets
 fetch-wpt-service-workers-controller-on-load-wave:
-	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-09-03-m3-controller-on-load-assets.tsv" \
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-09-03-m3-controller-on-load-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=1 WPT_CORPUS_LABEL="Service Worker controller on load wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh
 
 audit-wpt-service-workers-controller-on-load-wave:
-	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-09-03-m3-controller-on-load-assets.tsv" \
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-09-03-m3-controller-on-load-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=1 WPT_CORPUS_LABEL="Service Worker controller on load wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh --verify-only
 
 test-wpt-service-workers-controller-on-load-wave-assets: fetch-wpt-service-workers-controller-on-load-wave
 	WPT_SERVICE_WORKER_SOURCE="$(CURDIR)/tests/wpt-runner/wpt-data/.service-workers-tier-a-root" \
-		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-09-03-m3-controller-on-load-assets.tsv" \
+		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-09-03-m3-controller-on-load-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=1 WPT_CORPUS_LABEL="Service Worker controller on load wave" \
 		WPT_TAMPER_ASSET="service-workers/service-worker/controller-on-load.https.html" \
 		$(WPT_BASH) tests/wpt-runner/scripts/test-service-workers-tier-a-assets.sh
 
 fetch-wpt-service-workers-controller-on-disconnect-wave:
-	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-09-03-m3-controller-on-disconnect-assets.tsv" \
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-09-03-m3-controller-on-disconnect-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=1 WPT_CORPUS_LABEL="Service Worker controller on disconnect wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh
 
 audit-wpt-service-workers-controller-on-disconnect-wave:
-	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-09-03-m3-controller-on-disconnect-assets.tsv" \
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-09-03-m3-controller-on-disconnect-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=1 WPT_CORPUS_LABEL="Service Worker controller on disconnect wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh --verify-only
 
 test-wpt-service-workers-controller-on-disconnect-wave-assets: fetch-wpt-service-workers-controller-on-disconnect-wave
 	WPT_SERVICE_WORKER_SOURCE="$(CURDIR)/tests/wpt-runner/wpt-data/.service-workers-tier-a-root" \
-		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-09-03-m3-controller-on-disconnect-assets.tsv" \
+		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-09-03-m3-controller-on-disconnect-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=1 WPT_CORPUS_LABEL="Service Worker controller on disconnect wave" \
 		WPT_TAMPER_ASSET="service-workers/service-worker/controller-on-disconnect.https.html" \
 		$(WPT_BASH) tests/wpt-runner/scripts/test-service-workers-tier-a-assets.sh
 
 fetch-wpt-service-workers-controller-on-reload-wave:
-	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-09-03-m3-controller-on-reload-assets.tsv" \
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-09-03-m3-controller-on-reload-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=1 WPT_CORPUS_LABEL="Service Worker controller on reload wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh
 
 audit-wpt-service-workers-controller-on-reload-wave:
-	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-09-03-m3-controller-on-reload-assets.tsv" \
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-09-03-m3-controller-on-reload-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=1 WPT_CORPUS_LABEL="Service Worker controller on reload wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh --verify-only
 
 test-wpt-service-workers-controller-on-reload-wave-assets: fetch-wpt-service-workers-controller-on-reload-wave
 	WPT_SERVICE_WORKER_SOURCE="$(CURDIR)/tests/wpt-runner/wpt-data/.service-workers-tier-a-root" \
-		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-09-03-m3-controller-on-reload-assets.tsv" \
+		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-09-03-m3-controller-on-reload-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=1 WPT_CORPUS_LABEL="Service Worker controller on reload wave" \
 		WPT_TAMPER_ASSET="service-workers/service-worker/controller-on-reload.https.html" \
 		$(WPT_BASH) tests/wpt-runner/scripts/test-service-workers-tier-a-assets.sh
 
 fetch-wpt-service-workers-extendable-event-async-waituntil-wave:
-	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-09-03-m3-extendable-event-async-waituntil-assets.tsv" \
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-09-03-m3-extendable-event-async-waituntil-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=2 WPT_CORPUS_LABEL="Service Worker extendable event async waitUntil wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh
 
 audit-wpt-service-workers-extendable-event-async-waituntil-wave:
-	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-09-03-m3-extendable-event-async-waituntil-assets.tsv" \
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-09-03-m3-extendable-event-async-waituntil-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=2 WPT_CORPUS_LABEL="Service Worker extendable event async waitUntil wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh --verify-only
 
 test-wpt-service-workers-extendable-event-async-waituntil-wave-assets: fetch-wpt-service-workers-extendable-event-async-waituntil-wave
 	WPT_SERVICE_WORKER_SOURCE="$(CURDIR)/tests/wpt-runner/wpt-data/.service-workers-tier-a-root" \
-		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-09-03-m3-extendable-event-async-waituntil-assets.tsv" \
+		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-09-03-m3-extendable-event-async-waituntil-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=2 WPT_CORPUS_LABEL="Service Worker extendable event async waitUntil wave" \
 		WPT_TAMPER_ASSET="service-workers/service-worker/extendable-event-async-waituntil.https.html" \
 		$(WPT_BASH) tests/wpt-runner/scripts/test-service-workers-tier-a-assets.sh
 
 fetch-wpt-service-workers-extendable-event-waituntil-wave:
-	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-09-03-m3-extendable-event-waituntil-assets.tsv" \
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-09-03-m3-extendable-event-waituntil-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=2 WPT_CORPUS_LABEL="Service Worker extendable event waitUntil wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh
 
 audit-wpt-service-workers-extendable-event-waituntil-wave:
-	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-09-03-m3-extendable-event-waituntil-assets.tsv" \
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-09-03-m3-extendable-event-waituntil-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=2 WPT_CORPUS_LABEL="Service Worker extendable event waitUntil wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh --verify-only
 
 test-wpt-service-workers-extendable-event-waituntil-wave-assets: fetch-wpt-service-workers-extendable-event-waituntil-wave
 	WPT_SERVICE_WORKER_SOURCE="$(CURDIR)/tests/wpt-runner/wpt-data/.service-workers-tier-a-root" \
-		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-09-03-m3-extendable-event-waituntil-assets.tsv" \
+		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-09-03-m3-extendable-event-waituntil-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=2 WPT_CORPUS_LABEL="Service Worker extendable event waitUntil wave" \
 		WPT_TAMPER_ASSET="service-workers/service-worker/extendable-event-waituntil.https.html" \
 		$(WPT_BASH) tests/wpt-runner/scripts/test-service-workers-tier-a-assets.sh
 
 fetch-wpt-service-workers-onactivate-script-error-wave:
-	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-09-03-m3-onactivate-script-error-assets.tsv" \
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-09-03-m3-onactivate-script-error-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=6 WPT_CORPUS_LABEL="Service Worker onactivate script error wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh
 
 audit-wpt-service-workers-onactivate-script-error-wave:
-	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-09-03-m3-onactivate-script-error-assets.tsv" \
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-09-03-m3-onactivate-script-error-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=6 WPT_CORPUS_LABEL="Service Worker onactivate script error wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh --verify-only
 
 test-wpt-service-workers-onactivate-script-error-wave-assets: fetch-wpt-service-workers-onactivate-script-error-wave
 	WPT_SERVICE_WORKER_SOURCE="$(CURDIR)/tests/wpt-runner/wpt-data/.service-workers-tier-a-root" \
-		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-09-03-m3-onactivate-script-error-assets.tsv" \
+		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-09-03-m3-onactivate-script-error-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=6 WPT_CORPUS_LABEL="Service Worker onactivate script error wave" \
 		WPT_TAMPER_ASSET="service-workers/service-worker/onactivate-script-error.https.html" \
 		$(WPT_BASH) tests/wpt-runner/scripts/test-service-workers-tier-a-assets.sh
 
 fetch-wpt-service-workers-oninstall-script-error-wave:
-	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-09-03-m3-oninstall-script-error-assets.tsv" \
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-09-03-m3-oninstall-script-error-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=7 WPT_CORPUS_LABEL="Service Worker oninstall script error wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh
 
 audit-wpt-service-workers-oninstall-script-error-wave:
-	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-09-03-m3-oninstall-script-error-assets.tsv" \
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-09-03-m3-oninstall-script-error-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=7 WPT_CORPUS_LABEL="Service Worker oninstall script error wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh --verify-only
 
 test-wpt-service-workers-oninstall-script-error-wave-assets: fetch-wpt-service-workers-oninstall-script-error-wave
 	WPT_SERVICE_WORKER_SOURCE="$(CURDIR)/tests/wpt-runner/wpt-data/.service-workers-tier-a-root" \
-		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-09-03-m3-oninstall-script-error-assets.tsv" \
+		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-09-03-m3-oninstall-script-error-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=7 WPT_CORPUS_LABEL="Service Worker oninstall script error wave" \
 		WPT_TAMPER_ASSET="service-workers/service-worker/oninstall-script-error.https.html" \
 		$(WPT_BASH) tests/wpt-runner/scripts/test-service-workers-tier-a-assets.sh
 
 .PHONY: fetch-wpt-service-workers-getregistration-wave audit-wpt-service-workers-getregistration-wave test-wpt-service-workers-getregistration-wave-assets
 fetch-wpt-service-workers-getregistration-wave:
-	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-09-03-m3-getregistration-assets.tsv" \
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-09-03-m3-getregistration-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=1 WPT_CORPUS_LABEL="Service Worker getRegistration wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh
 
 audit-wpt-service-workers-getregistration-wave:
-	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-09-03-m3-getregistration-assets.tsv" \
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-09-03-m3-getregistration-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=1 WPT_CORPUS_LABEL="Service Worker getRegistration wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh --verify-only
 
 test-wpt-service-workers-getregistration-wave-assets: fetch-wpt-service-workers-getregistration-wave
 	WPT_SERVICE_WORKER_SOURCE="$(CURDIR)/tests/wpt-runner/wpt-data/.service-workers-tier-a-root" \
-		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-09-03-m3-getregistration-assets.tsv" \
+		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-09-03-m3-getregistration-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=1 WPT_CORPUS_LABEL="Service Worker getRegistration wave" \
 		WPT_TAMPER_ASSET="service-workers/service-worker/getregistration.https.html" \
 		$(WPT_BASH) tests/wpt-runner/scripts/test-service-workers-tier-a-assets.sh
 
 .PHONY: fetch-wpt-service-workers-registration-iframe-wave audit-wpt-service-workers-registration-iframe-wave test-wpt-service-workers-registration-iframe-wave-assets
 fetch-wpt-service-workers-registration-iframe-wave:
-	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-09-03-m3-registration-iframe-assets.tsv" \
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-09-03-m3-registration-iframe-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=1 WPT_CORPUS_LABEL="Service Worker registration iframe wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh
 
 audit-wpt-service-workers-registration-iframe-wave:
-	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-09-03-m3-registration-iframe-assets.tsv" \
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-09-03-m3-registration-iframe-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=1 WPT_CORPUS_LABEL="Service Worker registration iframe wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh --verify-only
 
 test-wpt-service-workers-registration-iframe-wave-assets: fetch-wpt-service-workers-registration-iframe-wave
 	WPT_SERVICE_WORKER_SOURCE="$(CURDIR)/tests/wpt-runner/wpt-data/.service-workers-tier-a-root" \
-		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-09-03-m3-registration-iframe-assets.tsv" \
+		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-09-03-m3-registration-iframe-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=1 WPT_CORPUS_LABEL="Service Worker registration iframe wave" \
 		WPT_TAMPER_ASSET="service-workers/service-worker/registration-iframe.https.html" \
 		$(WPT_BASH) tests/wpt-runner/scripts/test-service-workers-tier-a-assets.sh
 
 .PHONY: fetch-wpt-service-workers-installing-wave audit-wpt-service-workers-installing-wave test-wpt-service-workers-installing-wave-assets
 fetch-wpt-service-workers-installing-wave:
-	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-09-03-m3-installing-assets.tsv" \
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-09-03-m3-installing-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=1 WPT_CORPUS_LABEL="Service Worker installing wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh
 
 audit-wpt-service-workers-installing-wave:
-	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-09-03-m3-installing-assets.tsv" \
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-09-03-m3-installing-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=1 WPT_CORPUS_LABEL="Service Worker installing wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh --verify-only
 
 test-wpt-service-workers-installing-wave-assets: fetch-wpt-service-workers-installing-wave
 	WPT_SERVICE_WORKER_SOURCE="$(CURDIR)/tests/wpt-runner/wpt-data/.service-workers-tier-a-root" \
-		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-09-03-m3-installing-assets.tsv" \
+		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-09-03-m3-installing-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=1 WPT_CORPUS_LABEL="Service Worker installing wave" \
 		WPT_TAMPER_ASSET="service-workers/service-worker/installing.https.html" \
 		$(WPT_BASH) tests/wpt-runner/scripts/test-service-workers-tier-a-assets.sh
 
 .PHONY: fetch-wpt-service-workers-waiting-wave audit-wpt-service-workers-waiting-wave test-wpt-service-workers-waiting-wave-assets
 fetch-wpt-service-workers-waiting-wave:
-	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-09-03-m3-waiting-assets.tsv" \
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-09-03-m3-waiting-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=1 WPT_CORPUS_LABEL="Service Worker waiting wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh
 
 audit-wpt-service-workers-waiting-wave:
-	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-09-03-m3-waiting-assets.tsv" \
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-09-03-m3-waiting-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=1 WPT_CORPUS_LABEL="Service Worker waiting wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh --verify-only
 
 test-wpt-service-workers-waiting-wave-assets: fetch-wpt-service-workers-waiting-wave
 	WPT_SERVICE_WORKER_SOURCE="$(CURDIR)/tests/wpt-runner/wpt-data/.service-workers-tier-a-root" \
-		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-09-03-m3-waiting-assets.tsv" \
+		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-09-03-m3-waiting-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=1 WPT_CORPUS_LABEL="Service Worker waiting wave" \
 		WPT_TAMPER_ASSET="service-workers/service-worker/waiting.https.html" \
 		$(WPT_BASH) tests/wpt-runner/scripts/test-service-workers-tier-a-assets.sh
 
 .PHONY: fetch-wpt-service-workers-extendable-message-event-wave audit-wpt-service-workers-extendable-message-event-wave test-wpt-service-workers-extendable-message-event-wave-assets
 fetch-wpt-service-workers-extendable-message-event-wave:
-	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-09-02-m3-extendable-message-event-assets.tsv" \
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-09-02-m3-extendable-message-event-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=6 WPT_CORPUS_LABEL="Service Worker extendable message event wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh
 
 audit-wpt-service-workers-extendable-message-event-wave:
-	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-09-02-m3-extendable-message-event-assets.tsv" \
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-09-02-m3-extendable-message-event-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=6 WPT_CORPUS_LABEL="Service Worker extendable message event wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh --verify-only
 
 test-wpt-service-workers-extendable-message-event-wave-assets: fetch-wpt-service-workers-extendable-message-event-wave
 	WPT_SERVICE_WORKER_SOURCE="$(CURDIR)/tests/wpt-runner/wpt-data/.service-workers-tier-a-root" \
-		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-09-02-m3-extendable-message-event-assets.tsv" \
+		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-09-02-m3-extendable-message-event-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=6 WPT_CORPUS_LABEL="Service Worker extendable message event wave" \
 		WPT_TAMPER_ASSET="service-workers/service-worker/ServiceWorkerGlobalScope/resources/extendable-message-event-ping-worker.js" \
 		$(WPT_BASH) tests/wpt-runner/scripts/test-service-workers-tier-a-assets.sh
 
 .PHONY: fetch-wpt-service-workers-registration-attribute-wave audit-wpt-service-workers-registration-attribute-wave test-wpt-service-workers-registration-attribute-wave-assets
 fetch-wpt-service-workers-registration-attribute-wave:
-	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-09-02-m3-registration-attribute-assets.tsv" \
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-09-02-m3-registration-attribute-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=7 WPT_CORPUS_LABEL="Service Worker registration attribute wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh
 
 audit-wpt-service-workers-registration-attribute-wave:
-	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-09-02-m3-registration-attribute-assets.tsv" \
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-09-02-m3-registration-attribute-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=7 WPT_CORPUS_LABEL="Service Worker registration attribute wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh --verify-only
 
 test-wpt-service-workers-registration-attribute-wave-assets: fetch-wpt-service-workers-registration-attribute-wave
 	WPT_SERVICE_WORKER_SOURCE="$(CURDIR)/tests/wpt-runner/wpt-data/.service-workers-tier-a-root" \
-		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-09-02-m3-registration-attribute-assets.tsv" \
+		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-09-02-m3-registration-attribute-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=7 WPT_CORPUS_LABEL="Service Worker registration attribute wave" \
 		WPT_TAMPER_ASSET="service-workers/service-worker/ServiceWorkerGlobalScope/resources/registration-attribute-worker.js" \
 		$(WPT_BASH) tests/wpt-runner/scripts/test-service-workers-tier-a-assets.sh
 
 .PHONY: fetch-wpt-service-workers-global-serviceworker-wave audit-wpt-service-workers-global-serviceworker-wave test-wpt-service-workers-global-serviceworker-wave-assets
 fetch-wpt-service-workers-global-serviceworker-wave:
-	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-09-02-m3-global-serviceworker-assets.tsv" \
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-09-02-m3-global-serviceworker-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=3 WPT_CORPUS_LABEL="Service Worker global serviceworker wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh
 
 audit-wpt-service-workers-global-serviceworker-wave:
-	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-09-02-m3-global-serviceworker-assets.tsv" \
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-09-02-m3-global-serviceworker-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=3 WPT_CORPUS_LABEL="Service Worker global serviceworker wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh --verify-only
 
 test-wpt-service-workers-global-serviceworker-wave-assets: fetch-wpt-service-workers-global-serviceworker-wave
 	WPT_SERVICE_WORKER_SOURCE="$(CURDIR)/tests/wpt-runner/wpt-data/.service-workers-tier-a-root" \
-		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-09-02-m3-global-serviceworker-assets.tsv" \
+		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-09-02-m3-global-serviceworker-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=3 WPT_CORPUS_LABEL="Service Worker global serviceworker wave" \
 		WPT_TAMPER_ASSET="service-workers/service-worker/global-serviceworker.https.any.js" \
 		$(WPT_BASH) tests/wpt-runner/scripts/test-service-workers-tier-a-assets.sh
 
 .PHONY: fetch-wpt-service-workers-immutable-prototype-wave audit-wpt-service-workers-immutable-prototype-wave test-wpt-service-workers-immutable-prototype-wave-assets
 fetch-wpt-service-workers-immutable-prototype-wave:
-	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-09-02-m3-immutable-prototype-assets.tsv" \
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-09-02-m3-immutable-prototype-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=4 WPT_CORPUS_LABEL="Service Worker immutable prototype wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh
 
 audit-wpt-service-workers-immutable-prototype-wave:
-	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-09-02-m3-immutable-prototype-assets.tsv" \
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-09-02-m3-immutable-prototype-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=4 WPT_CORPUS_LABEL="Service Worker immutable prototype wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh --verify-only
 
 test-wpt-service-workers-immutable-prototype-wave-assets: fetch-wpt-service-workers-immutable-prototype-wave
 	WPT_SERVICE_WORKER_SOURCE="$(CURDIR)/tests/wpt-runner/wpt-data/.service-workers-tier-a-root" \
-		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-09-02-m3-immutable-prototype-assets.tsv" \
+		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-09-02-m3-immutable-prototype-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=4 WPT_CORPUS_LABEL="Service Worker immutable prototype wave" \
 		WPT_TAMPER_ASSET="service-workers/service-worker/resources/immutable-prototype-serviceworker.js" \
 		$(WPT_BASH) tests/wpt-runner/scripts/test-service-workers-tier-a-assets.sh
 
 .PHONY: fetch-wpt-service-workers-worker-global-unregister-wave audit-wpt-service-workers-worker-global-unregister-wave test-wpt-service-workers-worker-global-unregister-wave-assets
 fetch-wpt-service-workers-worker-global-unregister-wave:
-	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-09-02-m3-worker-global-unregister-assets.tsv" \
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-09-02-m3-worker-global-unregister-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=6 WPT_CORPUS_LABEL="Service Worker worker-global unregister wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh
 
 audit-wpt-service-workers-worker-global-unregister-wave:
-	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-09-02-m3-worker-global-unregister-assets.tsv" \
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-09-02-m3-worker-global-unregister-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=6 WPT_CORPUS_LABEL="Service Worker worker-global unregister wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh --verify-only
 
 test-wpt-service-workers-worker-global-unregister-wave-assets: fetch-wpt-service-workers-worker-global-unregister-wave
 	WPT_SERVICE_WORKER_SOURCE="$(CURDIR)/tests/wpt-runner/wpt-data/.service-workers-tier-a-root" \
-		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-09-02-m3-worker-global-unregister-assets.tsv" \
+		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-09-02-m3-worker-global-unregister-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=6 WPT_CORPUS_LABEL="Service Worker worker-global unregister wave" \
 		WPT_TAMPER_ASSET="service-workers/service-worker/ServiceWorkerGlobalScope/resources/unregister-worker.js" \
 		$(WPT_BASH) tests/wpt-runner/scripts/test-service-workers-tier-a-assets.sh
 
 fetch-wpt-service-workers-static-wave:
-	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-08-19-worker-global-static-assets.tsv" \
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-08-19-worker-global-static-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=4 WPT_CORPUS_LABEL="Service Worker static wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh
 
 audit-wpt-service-workers-static-wave:
-	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-08-19-worker-global-static-assets.tsv" \
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-08-19-worker-global-static-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=4 WPT_CORPUS_LABEL="Service Worker static wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh --verify-only
 
 test-wpt-service-workers-static-wave-assets: fetch-wpt-service-workers-static-wave
 	WPT_SERVICE_WORKER_SOURCE="$(CURDIR)/tests/wpt-runner/wpt-data/.service-workers-tier-a-root" \
-		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-08-19-worker-global-static-assets.tsv" \
+		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-08-19-worker-global-static-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=4 WPT_CORPUS_LABEL="Service Worker static wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/test-service-workers-tier-a-assets.sh
 
 .PHONY: fetch-wpt-service-workers-worker-secure-context-wave audit-wpt-service-workers-worker-secure-context-wave test-wpt-service-workers-worker-secure-context-wave-assets
 fetch-wpt-service-workers-worker-secure-context-wave:
-	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-09-02-m3-worker-secure-context-assets.tsv" \
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-09-02-m3-worker-secure-context-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=5 WPT_CORPUS_LABEL="Service Worker secure-context wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh
 
 audit-wpt-service-workers-worker-secure-context-wave:
-	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-09-02-m3-worker-secure-context-assets.tsv" \
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-09-02-m3-worker-secure-context-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=5 WPT_CORPUS_LABEL="Service Worker secure-context wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh --verify-only
 
 test-wpt-service-workers-worker-secure-context-wave-assets: fetch-wpt-service-workers-worker-secure-context-wave
 	WPT_SERVICE_WORKER_SOURCE="$(CURDIR)/tests/wpt-runner/wpt-data/.service-workers-tier-a-root" \
-		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-09-02-m3-worker-secure-context-assets.tsv" \
+		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-09-02-m3-worker-secure-context-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=5 WPT_CORPUS_LABEL="Service Worker secure-context wave" \
 		WPT_TAMPER_ASSET="service-workers/service-worker/ServiceWorkerGlobalScope/isSecureContext.serviceworker.js" \
 		$(WPT_BASH) tests/wpt-runner/scripts/test-service-workers-tier-a-assets.sh
 
 .PHONY: fetch-wpt-service-workers-install-event-type-wave audit-wpt-service-workers-install-event-type-wave test-wpt-service-workers-install-event-type-wave-assets
 fetch-wpt-service-workers-install-event-type-wave:
-	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-09-02-m3-install-event-type-assets.tsv" \
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-09-02-m3-install-event-type-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=7 WPT_CORPUS_LABEL="Service Worker install-event-type wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh
 
 audit-wpt-service-workers-install-event-type-wave:
-	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-09-02-m3-install-event-type-assets.tsv" \
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-09-02-m3-install-event-type-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=7 WPT_CORPUS_LABEL="Service Worker install-event-type wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh --verify-only
 
 test-wpt-service-workers-install-event-type-wave-assets: fetch-wpt-service-workers-install-event-type-wave
 	WPT_SERVICE_WORKER_SOURCE="$(CURDIR)/tests/wpt-runner/wpt-data/.service-workers-tier-a-root" \
-		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-09-02-m3-install-event-type-assets.tsv" \
+		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-09-02-m3-install-event-type-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=7 WPT_CORPUS_LABEL="Service Worker install-event-type wave" \
 		WPT_TAMPER_ASSET="service-workers/service-worker/resources/install-event-type-worker.js" \
 		$(WPT_BASH) tests/wpt-runner/scripts/test-service-workers-tier-a-assets.sh
 
 .PHONY: fetch-wpt-service-workers-worker-close-wave audit-wpt-service-workers-worker-close-wave test-wpt-service-workers-worker-close-wave-assets
 fetch-wpt-service-workers-worker-close-wave:
-	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-09-02-m3-worker-close-assets.tsv" \
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-09-02-m3-worker-close-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=6 WPT_CORPUS_LABEL="Service Worker close wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh
 
 audit-wpt-service-workers-worker-close-wave:
-	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-09-02-m3-worker-close-assets.tsv" \
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-09-02-m3-worker-close-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=6 WPT_CORPUS_LABEL="Service Worker close wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh --verify-only
 
 test-wpt-service-workers-worker-close-wave-assets: fetch-wpt-service-workers-worker-close-wave
 	WPT_SERVICE_WORKER_SOURCE="$(CURDIR)/tests/wpt-runner/wpt-data/.service-workers-tier-a-root" \
-		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-09-02-m3-worker-close-assets.tsv" \
+		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-09-02-m3-worker-close-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=6 WPT_CORPUS_LABEL="Service Worker close wave" \
 		WPT_TAMPER_ASSET="service-workers/service-worker/ServiceWorkerGlobalScope/resources/close-worker.js" \
 		$(WPT_BASH) tests/wpt-runner/scripts/test-service-workers-tier-a-assets.sh
 
 .PHONY: fetch-wpt-service-workers-worker-interface-wave audit-wpt-service-workers-worker-interface-wave test-wpt-service-workers-worker-interface-wave-assets
 fetch-wpt-service-workers-worker-interface-wave:
-	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-09-02-m3-worker-interface-assets.tsv" \
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-09-02-m3-worker-interface-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=5 WPT_CORPUS_LABEL="Service Worker interface wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh
 
 audit-wpt-service-workers-worker-interface-wave:
-	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-09-02-m3-worker-interface-assets.tsv" \
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-09-02-m3-worker-interface-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=5 WPT_CORPUS_LABEL="Service Worker interface wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh --verify-only
 
 test-wpt-service-workers-worker-interface-wave-assets: fetch-wpt-service-workers-worker-interface-wave
 	WPT_SERVICE_WORKER_SOURCE="$(CURDIR)/tests/wpt-runner/wpt-data/.service-workers-tier-a-root" \
-		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-09-02-m3-worker-interface-assets.tsv" \
+		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-09-02-m3-worker-interface-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=5 WPT_CORPUS_LABEL="Service Worker interface wave" \
 		WPT_TAMPER_ASSET="service-workers/service-worker/resources/interface-requirements-worker.sub.js" \
 		$(WPT_BASH) tests/wpt-runner/scripts/test-service-workers-tier-a-assets.sh
 
 .PHONY: fetch-wpt-service-workers-fetch-event-historical-wave audit-wpt-service-workers-fetch-event-historical-wave test-wpt-service-workers-fetch-event-historical-wave-assets
 fetch-wpt-service-workers-fetch-event-historical-wave:
-	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-09-02-m3-fetch-event-historical-assets.tsv" \
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-09-02-m3-fetch-event-historical-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=3 WPT_CORPUS_LABEL="Service Worker FetchEvent historical wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh
 
 audit-wpt-service-workers-fetch-event-historical-wave:
-	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-09-02-m3-fetch-event-historical-assets.tsv" \
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-09-02-m3-fetch-event-historical-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=3 WPT_CORPUS_LABEL="Service Worker FetchEvent historical wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh --verify-only
 
 test-wpt-service-workers-fetch-event-historical-wave-assets: fetch-wpt-service-workers-fetch-event-historical-wave
 	WPT_SERVICE_WORKER_SOURCE="$(CURDIR)/tests/wpt-runner/wpt-data/.service-workers-tier-a-root" \
-		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-09-02-m3-fetch-event-historical-assets.tsv" \
+		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-09-02-m3-fetch-event-historical-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=3 WPT_CORPUS_LABEL="Service Worker FetchEvent historical wave" \
 		WPT_TAMPER_ASSET="service-workers/service-worker/historical.https.any.js" \
 		$(WPT_BASH) tests/wpt-runner/scripts/test-service-workers-tier-a-assets.sh
 
 .PHONY: fetch-wpt-service-workers-no-dynamic-import-wave audit-wpt-service-workers-no-dynamic-import-wave test-wpt-service-workers-no-dynamic-import-wave-assets
 fetch-wpt-service-workers-no-dynamic-import-wave:
-	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-09-02-m3-no-dynamic-import-assets.tsv" \
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-09-02-m3-no-dynamic-import-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=4 WPT_CORPUS_LABEL="Service Worker no dynamic import wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh
 
 audit-wpt-service-workers-no-dynamic-import-wave:
-	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-09-02-m3-no-dynamic-import-assets.tsv" \
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-09-02-m3-no-dynamic-import-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=4 WPT_CORPUS_LABEL="Service Worker no dynamic import wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh --verify-only
 
 test-wpt-service-workers-no-dynamic-import-wave-assets: fetch-wpt-service-workers-no-dynamic-import-wave
 	WPT_SERVICE_WORKER_SOURCE="$(CURDIR)/tests/wpt-runner/wpt-data/.service-workers-tier-a-root" \
-		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-09-02-m3-no-dynamic-import-assets.tsv" \
+		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-09-02-m3-no-dynamic-import-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=4 WPT_CORPUS_LABEL="Service Worker no dynamic import wave" \
 		WPT_TAMPER_ASSET="service-workers/service-worker/resources/no-dynamic-import.js" \
 		$(WPT_BASH) tests/wpt-runner/scripts/test-service-workers-tier-a-assets.sh
 
 .PHONY: fetch-wpt-service-workers-module-no-dynamic-import-wave audit-wpt-service-workers-module-no-dynamic-import-wave test-wpt-service-workers-module-no-dynamic-import-wave-assets
 fetch-wpt-service-workers-module-no-dynamic-import-wave:
-	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-09-02-m3-module-no-dynamic-import-assets.tsv" \
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-09-02-m3-module-no-dynamic-import-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=6 WPT_CORPUS_LABEL="Service Worker module no dynamic import wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh
 
 audit-wpt-service-workers-module-no-dynamic-import-wave:
-	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-09-02-m3-module-no-dynamic-import-assets.tsv" \
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-09-02-m3-module-no-dynamic-import-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=6 WPT_CORPUS_LABEL="Service Worker module no dynamic import wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh --verify-only
 
 test-wpt-service-workers-module-no-dynamic-import-wave-assets: fetch-wpt-service-workers-module-no-dynamic-import-wave
 	WPT_SERVICE_WORKER_SOURCE="$(CURDIR)/tests/wpt-runner/wpt-data/.service-workers-tier-a-root" \
-		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-09-02-m3-module-no-dynamic-import-assets.tsv" \
+		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-09-02-m3-module-no-dynamic-import-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=6 WPT_CORPUS_LABEL="Service Worker module no dynamic import wave" \
 		WPT_TAMPER_ASSET="service-workers/service-worker/resources/basic-module-2.js" \
 		$(WPT_BASH) tests/wpt-runner/scripts/test-service-workers-tier-a-assets.sh
 
 fetch-wpt-service-workers-update-wave:
-	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-08-20-m3-update-assets.tsv" \
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-08-20-m3-update-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=5 WPT_CORPUS_LABEL="Service Worker update wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh
 
 audit-wpt-service-workers-update-wave:
-	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-08-20-m3-update-assets.tsv" \
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-08-20-m3-update-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=5 WPT_CORPUS_LABEL="Service Worker update wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh --verify-only
 
 test-wpt-service-workers-update-wave-assets: fetch-wpt-service-workers-update-wave
 	WPT_SERVICE_WORKER_SOURCE="$(CURDIR)/tests/wpt-runner/wpt-data/.service-workers-tier-a-root" \
-		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-08-20-m3-update-assets.tsv" \
+		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-08-20-m3-update-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=5 WPT_CORPUS_LABEL="Service Worker update wave" \
 		WPT_TAMPER_ASSET="service-workers/service-worker/resources/empty.js" \
 		$(WPT_BASH) tests/wpt-runner/scripts/test-service-workers-tier-a-assets.sh
 
 fetch-wpt-service-workers-import-response-wave:
-	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-08-20-m3-import-response-assets.tsv" \
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-08-20-m3-import-response-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=5 WPT_CORPUS_LABEL="Service Worker import response wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh
 
 audit-wpt-service-workers-import-response-wave:
-	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-08-20-m3-import-response-assets.tsv" \
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-08-20-m3-import-response-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=5 WPT_CORPUS_LABEL="Service Worker import response wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh --verify-only
 
 test-wpt-service-workers-import-response-wave-assets: fetch-wpt-service-workers-import-response-wave
 	WPT_SERVICE_WORKER_SOURCE="$(CURDIR)/tests/wpt-runner/wpt-data/.service-workers-tier-a-root" \
-		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-08-20-m3-import-response-assets.tsv" \
+		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-08-20-m3-import-response-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=5 WPT_CORPUS_LABEL="Service Worker import response wave" \
 		WPT_TAMPER_ASSET="service-workers/service-worker/resources/mime-type-worker.py" \
 		$(WPT_BASH) tests/wpt-runner/scripts/test-service-workers-tier-a-assets.sh
 
 fetch-wpt-service-workers-import-dynamic-wave:
-	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-08-20-m3-import-dynamic-assets.tsv" \
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-08-20-m3-import-dynamic-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=11 WPT_CORPUS_LABEL="Service Worker import dynamic wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh
 
 audit-wpt-service-workers-import-dynamic-wave:
-	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-08-20-m3-import-dynamic-assets.tsv" \
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-08-20-m3-import-dynamic-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=11 WPT_CORPUS_LABEL="Service Worker import dynamic wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh --verify-only
 
 test-wpt-service-workers-import-dynamic-wave-assets: fetch-wpt-service-workers-import-dynamic-wave
 	WPT_SERVICE_WORKER_SOURCE="$(CURDIR)/tests/wpt-runner/wpt-data/.service-workers-tier-a-root" \
-		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-08-20-m3-import-dynamic-assets.tsv" \
+		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-08-20-m3-import-dynamic-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=11 WPT_CORPUS_LABEL="Service Worker import dynamic wave" \
 		WPT_TAMPER_ASSET="service-workers/service-worker/resources/update-worker.py" \
 		$(WPT_BASH) tests/wpt-runner/scripts/test-service-workers-tier-a-assets.sh
 
 fetch-wpt-service-workers-import-event-wave:
-	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-08-20-m3-import-event-assets.tsv" \
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-08-20-m3-import-event-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=3 WPT_CORPUS_LABEL="Service Worker import event wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh
 
 audit-wpt-service-workers-import-event-wave:
-	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-08-20-m3-import-event-assets.tsv" \
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-08-20-m3-import-event-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=3 WPT_CORPUS_LABEL="Service Worker import event wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh --verify-only
 
 test-wpt-service-workers-import-event-wave-assets: fetch-wpt-service-workers-import-event-wave
 	WPT_SERVICE_WORKER_SOURCE="$(CURDIR)/tests/wpt-runner/wpt-data/.service-workers-tier-a-root" \
-		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-08-20-m3-import-event-assets.tsv" \
+		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-08-20-m3-import-event-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=3 WPT_CORPUS_LABEL="Service Worker import event wave" \
 		WPT_TAMPER_ASSET="service-workers/service-worker/resources/import-scripts-echo.py" \
 		$(WPT_BASH) tests/wpt-runner/scripts/test-service-workers-tier-a-assets.sh
 
 fetch-wpt-service-workers-module-wave:
-	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-08-20-m3-module-assets.tsv" \
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-08-20-m3-module-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=5 WPT_CORPUS_LABEL="Service Worker module wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh
 
 audit-wpt-service-workers-module-wave:
-	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-08-20-m3-module-assets.tsv" \
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-08-20-m3-module-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=5 WPT_CORPUS_LABEL="Service Worker module wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh --verify-only
 
 test-wpt-service-workers-module-wave-assets: fetch-wpt-service-workers-module-wave
 	WPT_SERVICE_WORKER_SOURCE="$(CURDIR)/tests/wpt-runner/wpt-data/.service-workers-tier-a-root" \
-		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-08-20-m3-module-assets.tsv" \
+		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-08-20-m3-module-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=5 WPT_CORPUS_LABEL="Service Worker module wave" \
 		WPT_TAMPER_ASSET="service-workers/service-worker/resources/scope1/redirect.py" \
 		$(WPT_BASH) tests/wpt-runner/scripts/test-service-workers-tier-a-assets.sh
 
 fetch-wpt-service-workers-module-bytecheck-wave:
-	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-08-20-m3-module-bytecheck-assets.tsv" \
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-08-20-m3-module-bytecheck-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=4 WPT_CORPUS_LABEL="Service Worker module bytecheck wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh
 
 audit-wpt-service-workers-module-bytecheck-wave:
-	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-08-20-m3-module-bytecheck-assets.tsv" \
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-08-20-m3-module-bytecheck-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=4 WPT_CORPUS_LABEL="Service Worker module bytecheck wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh --verify-only
 
 test-wpt-service-workers-module-bytecheck-wave-assets: fetch-wpt-service-workers-module-bytecheck-wave
 	WPT_SERVICE_WORKER_SOURCE="$(CURDIR)/tests/wpt-runner/wpt-data/.service-workers-tier-a-root" \
-		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-08-20-m3-module-bytecheck-assets.tsv" \
+		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-08-20-m3-module-bytecheck-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=4 WPT_CORPUS_LABEL="Service Worker module bytecheck wave" \
 		WPT_TAMPER_ASSET="service-workers/service-worker/resources/bytecheck-worker.py" \
 		$(WPT_BASH) tests/wpt-runner/scripts/test-service-workers-tier-a-assets.sh
 
 fetch-wpt-service-workers-module-cors-wave:
-	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-08-20-m3-module-cors-assets.tsv" \
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-08-20-m3-module-cors-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=1 WPT_CORPUS_LABEL="Service Worker module CORS wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh
 
 audit-wpt-service-workers-module-cors-wave:
-	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-08-20-m3-module-cors-assets.tsv" \
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-08-20-m3-module-cors-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=1 WPT_CORPUS_LABEL="Service Worker module CORS wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh --verify-only
 
 test-wpt-service-workers-module-cors-wave-assets: fetch-wpt-service-workers-module-cors-wave
 	WPT_SERVICE_WORKER_SOURCE="$(CURDIR)/tests/wpt-runner/wpt-data/.service-workers-tier-a-root" \
-		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-08-20-m3-module-cors-assets.tsv" \
+		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-08-20-m3-module-cors-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=1 WPT_CORPUS_LABEL="Service Worker module CORS wave" \
 		WPT_TAMPER_ASSET="service-workers/service-worker/update-bytecheck-cors-import.https.html" \
 		$(WPT_BASH) tests/wpt-runner/scripts/test-service-workers-tier-a-assets.sh
 
 fetch-wpt-service-workers-module-registration-wave:
-	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-08-20-m3-module-registration-assets.tsv" \
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-08-20-m3-module-registration-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=6 WPT_CORPUS_LABEL="Service Worker module registration wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh
 
 audit-wpt-service-workers-module-registration-wave:
-	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-08-20-m3-module-registration-assets.tsv" \
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-08-20-m3-module-registration-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=6 WPT_CORPUS_LABEL="Service Worker module registration wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh --verify-only
 
 test-wpt-service-workers-module-registration-wave-assets: fetch-wpt-service-workers-module-registration-wave
 	WPT_SERVICE_WORKER_SOURCE="$(CURDIR)/tests/wpt-runner/wpt-data/.service-workers-tier-a-root" \
-		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-08-20-m3-module-registration-assets.tsv" \
+		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-08-20-m3-module-registration-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=6 WPT_CORPUS_LABEL="Service Worker module registration wave" \
 		WPT_TAMPER_ASSET="service-workers/service-worker/resources/malformed-worker.py" \
 		$(WPT_BASH) tests/wpt-runner/scripts/test-service-workers-tier-a-assets.sh
 
 fetch-wpt-service-workers-module-type-update-wave:
-	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-08-20-m3-module-type-update-assets.tsv" \
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-08-20-m3-module-type-update-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=8 WPT_CORPUS_LABEL="Service Worker module type update wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh
 
 audit-wpt-service-workers-module-type-update-wave:
-	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-08-20-m3-module-type-update-assets.tsv" \
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-08-20-m3-module-type-update-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=8 WPT_CORPUS_LABEL="Service Worker module type update wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh --verify-only
 
 test-wpt-service-workers-module-type-update-wave-assets: fetch-wpt-service-workers-module-type-update-wave
 	WPT_SERVICE_WORKER_SOURCE="$(CURDIR)/tests/wpt-runner/wpt-data/.service-workers-tier-a-root" \
-		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-08-20-m3-module-type-update-assets.tsv" \
+		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-08-20-m3-module-type-update-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=8 WPT_CORPUS_LABEL="Service Worker module type update wave" \
 		WPT_TAMPER_ASSET="service-workers/service-worker/resources/update-registration-with-type.py" \
 		$(WPT_BASH) tests/wpt-runner/scripts/test-service-workers-tier-a-assets.sh
 
 fetch-wpt-service-workers-module-request-metadata-wave:
-	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-08-20-m3-module-request-metadata-assets.tsv" \
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-08-20-m3-module-request-metadata-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=6 WPT_CORPUS_LABEL="Service Worker module request metadata wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh
 
 audit-wpt-service-workers-module-request-metadata-wave:
-	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-08-20-m3-module-request-metadata-assets.tsv" \
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-08-20-m3-module-request-metadata-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=6 WPT_CORPUS_LABEL="Service Worker module request metadata wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh --verify-only
 
 test-wpt-service-workers-module-request-metadata-wave-assets: fetch-wpt-service-workers-module-request-metadata-wave
 	WPT_SERVICE_WORKER_SOURCE="$(CURDIR)/tests/wpt-runner/wpt-data/.service-workers-tier-a-root" \
-		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-08-20-m3-module-request-metadata-assets.tsv" \
+		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-08-20-m3-module-request-metadata-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=6 WPT_CORPUS_LABEL="Service Worker module request metadata wave" \
 		WPT_TAMPER_ASSET="service-workers/service-worker/resources/test-request-mode-worker.py" \
 		$(WPT_BASH) tests/wpt-runner/scripts/test-service-workers-tier-a-assets.sh
 
 fetch-wpt-service-workers-update-via-cache-matrix-wave:
-	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-08-20-m3-update-via-cache-matrix-assets.tsv" \
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-08-20-m3-update-via-cache-matrix-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=9 WPT_CORPUS_LABEL="Service Worker updateViaCache matrix wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh
 
 audit-wpt-service-workers-update-via-cache-matrix-wave:
-	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-08-20-m3-update-via-cache-matrix-assets.tsv" \
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-08-20-m3-update-via-cache-matrix-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=9 WPT_CORPUS_LABEL="Service Worker updateViaCache matrix wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh --verify-only
 
 test-wpt-service-workers-update-via-cache-matrix-wave-assets: fetch-wpt-service-workers-update-via-cache-matrix-wave
 	WPT_SERVICE_WORKER_SOURCE="$(CURDIR)/tests/wpt-runner/wpt-data/.service-workers-tier-a-root" \
-		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-08-20-m3-update-via-cache-matrix-assets.tsv" \
+		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-08-20-m3-update-via-cache-matrix-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=9 WPT_CORPUS_LABEL="Service Worker updateViaCache matrix wave" \
 		WPT_TAMPER_ASSET="service-workers/service-worker/resources/update-max-aged-worker.py" \
 		$(WPT_BASH) tests/wpt-runner/scripts/test-service-workers-tier-a-assets.sh
 
 fetch-wpt-service-workers-dynamic-import-update-wave:
-	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-08-21-m3-dynamic-import-update-assets.tsv" \
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-08-21-m3-dynamic-import-update-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=17 WPT_CORPUS_LABEL="Service Worker dynamic import update wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh
 
 audit-wpt-service-workers-dynamic-import-update-wave:
-	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-08-21-m3-dynamic-import-update-assets.tsv" \
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-08-21-m3-dynamic-import-update-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=17 WPT_CORPUS_LABEL="Service Worker dynamic import update wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh --verify-only
 
 test-wpt-service-workers-dynamic-import-update-wave-assets: fetch-wpt-service-workers-dynamic-import-update-wave
 	WPT_SERVICE_WORKER_SOURCE="$(CURDIR)/tests/wpt-runner/wpt-data/.service-workers-tier-a-root" \
-		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-08-21-m3-dynamic-import-update-assets.tsv" \
+		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-08-21-m3-dynamic-import-update-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=17 WPT_CORPUS_LABEL="Service Worker dynamic import update wave" \
 		WPT_TAMPER_ASSET="service-workers/service-worker/resources/update-worker-from-file.py" \
 		$(WPT_BASH) tests/wpt-runner/scripts/test-service-workers-tier-a-assets.sh
 
 fetch-wpt-service-workers-update-failure-wave:
-	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-08-21-m3-update-failure-assets.tsv" \
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-08-21-m3-update-failure-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=12 WPT_CORPUS_LABEL="Service Worker update failure wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh
 
 audit-wpt-service-workers-update-failure-wave:
-	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-08-21-m3-update-failure-assets.tsv" \
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-08-21-m3-update-failure-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=12 WPT_CORPUS_LABEL="Service Worker update failure wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh --verify-only
 
 test-wpt-service-workers-update-failure-wave-assets: fetch-wpt-service-workers-update-failure-wave
 	WPT_SERVICE_WORKER_SOURCE="$(CURDIR)/tests/wpt-runner/wpt-data/.service-workers-tier-a-root" \
-		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-08-21-m3-update-failure-assets.tsv" \
+		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-08-21-m3-update-failure-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=12 WPT_CORPUS_LABEL="Service Worker update failure wave" \
 		WPT_TAMPER_ASSET="service-workers/service-worker/resources/update-worker.py" \
 		$(WPT_BASH) tests/wpt-runner/scripts/test-service-workers-tier-a-assets.sh
 
 fetch-wpt-service-workers-multiple-update-wave:
-	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-08-21-m3-multiple-update-assets.tsv" \
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-08-21-m3-multiple-update-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=5 WPT_CORPUS_LABEL="Service Worker multiple update wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh
 
 audit-wpt-service-workers-multiple-update-wave:
-	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-08-21-m3-multiple-update-assets.tsv" \
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-08-21-m3-multiple-update-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=5 WPT_CORPUS_LABEL="Service Worker multiple update wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh --verify-only
 
 test-wpt-service-workers-multiple-update-wave-assets: fetch-wpt-service-workers-multiple-update-wave
 	WPT_SERVICE_WORKER_SOURCE="$(CURDIR)/tests/wpt-runner/wpt-data/.service-workers-tier-a-root" \
-		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-08-21-m3-multiple-update-assets.tsv" \
+		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-08-21-m3-multiple-update-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=5 WPT_CORPUS_LABEL="Service Worker multiple update wave" \
 		WPT_TAMPER_ASSET="service-workers/service-worker/resources/update-nocookie-worker.py" \
 		$(WPT_BASH) tests/wpt-runner/scripts/test-service-workers-tier-a-assets.sh
 
 .PHONY: fetch-wpt-service-workers-update-not-allowed-wave audit-wpt-service-workers-update-not-allowed-wave test-wpt-service-workers-update-not-allowed-wave-assets
 fetch-wpt-service-workers-update-not-allowed-wave:
-	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-08-21-m3-update-not-allowed-assets.tsv" \
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-08-21-m3-update-not-allowed-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=6 WPT_CORPUS_LABEL="Service Worker update not allowed wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh
 
 audit-wpt-service-workers-update-not-allowed-wave:
-	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-08-21-m3-update-not-allowed-assets.tsv" \
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-08-21-m3-update-not-allowed-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=6 WPT_CORPUS_LABEL="Service Worker update not allowed wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh --verify-only
 
 test-wpt-service-workers-update-not-allowed-wave-assets: fetch-wpt-service-workers-update-not-allowed-wave
 	WPT_SERVICE_WORKER_SOURCE="$(CURDIR)/tests/wpt-runner/wpt-data/.service-workers-tier-a-root" \
-		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-08-21-m3-update-not-allowed-assets.tsv" \
+		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-08-21-m3-update-not-allowed-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=6 WPT_CORPUS_LABEL="Service Worker update not allowed wave" \
 		WPT_TAMPER_ASSET="service-workers/service-worker/resources/update-during-installation-worker.py" \
 		$(WPT_BASH) tests/wpt-runner/scripts/test-service-workers-tier-a-assets.sh
 
 .PHONY: fetch-wpt-service-workers-skip-waiting-no-client-wave audit-wpt-service-workers-skip-waiting-no-client-wave test-wpt-service-workers-skip-waiting-no-client-wave-assets
 fetch-wpt-service-workers-skip-waiting-no-client-wave:
-	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-08-21-m3-skip-waiting-no-client-assets.tsv" \
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-08-21-m3-skip-waiting-no-client-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=9 WPT_CORPUS_LABEL="Service Worker skipWaiting no-client wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh
 
 audit-wpt-service-workers-skip-waiting-no-client-wave:
-	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-08-21-m3-skip-waiting-no-client-assets.tsv" \
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-08-21-m3-skip-waiting-no-client-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=9 WPT_CORPUS_LABEL="Service Worker skipWaiting no-client wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh --verify-only
 
 test-wpt-service-workers-skip-waiting-no-client-wave-assets: fetch-wpt-service-workers-skip-waiting-no-client-wave
 	WPT_SERVICE_WORKER_SOURCE="$(CURDIR)/tests/wpt-runner/wpt-data/.service-workers-tier-a-root" \
-		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-08-21-m3-skip-waiting-no-client-assets.tsv" \
+		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-08-21-m3-skip-waiting-no-client-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=9 WPT_CORPUS_LABEL="Service Worker skipWaiting no-client wave" \
 		WPT_TAMPER_ASSET="service-workers/service-worker/resources/skip-waiting-worker.js" \
 		$(WPT_BASH) tests/wpt-runner/scripts/test-service-workers-tier-a-assets.sh
 
 .PHONY: fetch-wpt-service-workers-clients-matchall-evaluation-wave audit-wpt-service-workers-clients-matchall-evaluation-wave test-wpt-service-workers-clients-matchall-evaluation-wave-assets
 fetch-wpt-service-workers-clients-matchall-evaluation-wave:
-	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-08-21-m3-clients-matchall-evaluation-assets.tsv" \
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-08-21-m3-clients-matchall-evaluation-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=5 WPT_CORPUS_LABEL="Service Worker clients.matchAll evaluation wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh
 
 audit-wpt-service-workers-clients-matchall-evaluation-wave:
-	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-08-21-m3-clients-matchall-evaluation-assets.tsv" \
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-08-21-m3-clients-matchall-evaluation-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=5 WPT_CORPUS_LABEL="Service Worker clients.matchAll evaluation wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh --verify-only
 
 test-wpt-service-workers-clients-matchall-evaluation-wave-assets: fetch-wpt-service-workers-clients-matchall-evaluation-wave
 	WPT_SERVICE_WORKER_SOURCE="$(CURDIR)/tests/wpt-runner/wpt-data/.service-workers-tier-a-root" \
-		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-08-21-m3-clients-matchall-evaluation-assets.tsv" \
+		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-08-21-m3-clients-matchall-evaluation-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=5 WPT_CORPUS_LABEL="Service Worker clients.matchAll evaluation wave" \
 		WPT_TAMPER_ASSET="service-workers/service-worker/resources/clients-matchall-on-evaluation-worker.js" \
 		$(WPT_BASH) tests/wpt-runner/scripts/test-service-workers-tier-a-assets.sh
 
 .PHONY: fetch-wpt-service-workers-fetch-wave audit-wpt-service-workers-fetch-wave test-wpt-service-workers-fetch-wave-assets testharness-service-workers-fetch baseline-wpt-service-workers-fetch
 fetch-wpt-service-workers-fetch-wave:
-	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-08-22-m2-fetch-request-end-to-end-assets.tsv" \
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-08-22-m2-fetch-request-end-to-end-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=80 WPT_CORPUS_LABEL="Service Worker fetch wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh
 
 audit-wpt-service-workers-fetch-wave:
-	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-08-22-m2-fetch-request-end-to-end-assets.tsv" \
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-08-22-m2-fetch-request-end-to-end-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=80 WPT_CORPUS_LABEL="Service Worker fetch wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh --verify-only
 
 test-wpt-service-workers-fetch-wave-assets: fetch-wpt-service-workers-fetch-wave
 	WPT_SERVICE_WORKER_SOURCE="$(CURDIR)/tests/wpt-runner/wpt-data/.service-workers-tier-a-root" \
-		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-08-22-m2-fetch-request-end-to-end-assets.tsv" \
+		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-08-22-m2-fetch-request-end-to-end-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=80 WPT_CORPUS_LABEL="Service Worker fetch wave" \
 		WPT_TAMPER_ASSET="service-workers/service-worker/resources/fetch-event-async-respond-with-worker.js" \
 		$(WPT_BASH) tests/wpt-runner/scripts/test-service-workers-tier-a-assets.sh
@@ -1139,18 +1139,18 @@ testharness-service-workers-fetch: target-disk-guard fetch-wpt-service-workers-f
 
 .PHONY: fetch-wpt-service-workers-cache-storage-wave audit-wpt-service-workers-cache-storage-wave test-wpt-service-workers-cache-storage-wave-assets testharness-service-workers-cache-storage baseline-wpt-service-workers-cache-storage
 fetch-wpt-service-workers-cache-storage-wave:
-	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-08-23-m2-cache-storage-serviceworker-assets.tsv" \
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-08-23-m2-cache-storage-serviceworker-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=52 WPT_CORPUS_LABEL="Service Worker CacheStorage wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh
 
 audit-wpt-service-workers-cache-storage-wave:
-	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-08-23-m2-cache-storage-serviceworker-assets.tsv" \
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-08-23-m2-cache-storage-serviceworker-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=52 WPT_CORPUS_LABEL="Service Worker CacheStorage wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh --verify-only
 
 test-wpt-service-workers-cache-storage-wave-assets: fetch-wpt-service-workers-cache-storage-wave
 	WPT_SERVICE_WORKER_SOURCE="$(CURDIR)/tests/wpt-runner/wpt-data/.service-workers-tier-a-root" \
-		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-08-23-m2-cache-storage-serviceworker-assets.tsv" \
+		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/archive/service-workers/evidence/2026-08-23-m2-cache-storage-serviceworker-assets.tsv" \
 		WPT_EXPECTED_ASSET_COUNT=52 WPT_CORPUS_LABEL="Service Worker CacheStorage wave" \
 		WPT_TAMPER_ASSET="service-workers/cache-storage/script-tests/cache-storage.js" \
 		$(WPT_BASH) tests/wpt-runner/scripts/test-service-workers-tier-a-assets.sh

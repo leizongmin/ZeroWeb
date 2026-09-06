@@ -75,7 +75,7 @@ Web 标准覆盖面极广，"最新标准"不可能在一个里程碑中完成�
 
 **Tier 2 — 显著提升兼容性（应尽快覆盖）**：
 - CSS：`@layer` + Container Queries + `:has()` + Subgrid + `scroll-snap` + View Transitions
-- JS/Web API：IndexedDB + Service Worker（基础）+ IntersectionObserver + Clipboard API + Fullscreen API + Drag & Drop + Web Components（Custom Elements + Shadow DOM）
+- JS/Web API：IndexedDB + Service Worker（基础）+ IntersectionObserver + Clipboard API + Fullscreen API + Drag & Drop + Web Components（Custom Elements + Shadow DOM）（Service Worker 专项已完成：专项目标 2026-09-06 收口，DC 全满足——真实生命周期 + fetch 拦截 + Cache 集成，WPT 三 runner 652 subtest 全绿；入口文档与运行时面板已归档至 `docs/goal/archive/service-workers/`）
 - HTML：`<template>` + `<slot>` + `<dialog>` + `<details>/<summary>` + `<picture>`
 - 存储：IndexedDB + Cache API + OPFS
 
@@ -496,7 +496,7 @@ zero-web/
 - [ ] WASM 支持（Wasmtime 集成，页面 WASM 与 JS 互操作）
 - [ ] 更多 DOM API（MutationObserver、IntersectionObserver、ResizeObserver、Clipboard API、Fullscreen API、Drag & Drop）
 - [ ] `script-sandbox` crate 支持 QuickJS feature gate
-- [ ] Service Worker 基础（注册、fetch 事件拦截、缓存管理）
+- [x] Service Worker 基础（注册、fetch 事件拦截、缓存管理）——专项目标 2026-09-06 收口（真实 worker 执行环境 + 生命周期真事件 + fetch 拦截 + Cache API 集成；归档于 `docs/goal/archive/service-workers/`）
 - [ ] Cache API
 - [ ] 持续 WPT 通过率追踪和提升
 

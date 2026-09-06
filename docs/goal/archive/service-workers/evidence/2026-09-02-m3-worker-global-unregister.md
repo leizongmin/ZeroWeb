@@ -32,7 +32,7 @@
   3 passed
 - `make testharness-service-workers-core FILTER=ServiceWorkerGlobalScope/unregister TIME_LIMIT=420`：
   1 case / 4 subtests / 4 Pass
-- `make baseline-wpt-service-workers-core OUTPUT=docs/goal/service-workers/evidence/2026-08-19-m1-wpt-core-baseline.json TIME_LIMIT=900`：
+- `make baseline-wpt-service-workers-core OUTPUT=docs/goal/archive/service-workers/evidence/2026-08-19-m1-wpt-core-baseline.json TIME_LIMIT=900`：
   49 cases / 193 subtests / 193 Pass / deterministic true
 - `BINDGEN_EXTRA_CLANG_ARGS=-I/usr/lib/gcc/x86_64-linux-gnu/13/include cargo clippy --workspace --all-targets -- -D warnings`：
   pass

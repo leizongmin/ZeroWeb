@@ -100,7 +100,7 @@ JSON，private profile 继续只保留内存态。
 算法的 in-process adapter。详见 [M0 执行环境 RFC](m0-execution-environment-rfc.md)。
 
 **与兄弟 goal 的边界**：
-- [storage-indexeddb](../archive/storage-indexeddb.md)（已归档）/ storage-cache-api —
+- [storage-indexeddb](../../archive/storage-indexeddb.md)（已归档）/ storage-cache-api —
   IDB 与 Cache API 自身语义归其管；本目标只消费
   `indexedDB`/`caches` 接口做 SW 模式集成验收
 - js-dom — fetch 拦截的生产页面 `FetchRequest` 插入点**等其 fetch 改造（L2/S6）land 后再开**；
@@ -1005,7 +1005,7 @@ make test 常驻覆盖观察；若再现，按 master.md 记录的架构方向�
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- cargo test -p zero-engine test_response_body_used_redirect_and_blob_formdata_cache_put_support -- --nocapture`：1 passed
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 180 -- make test-wpt-service-workers-fetch-wave-assets`：25 assets / regression PASS
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- cargo test -p zero-wpt-runner service_worker_fetch -- --nocapture`：2 passed
-  - `WPT_SOURCE=$HOME/github/others/wpt ./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 420 -- make baseline-wpt-service-workers-fetch OUTPUT=docs/goal/service-workers/evidence/2026-08-23-m2-fetch-custom-response-baseline.json SUMMARY=docs/goal/service-workers/evidence/2026-08-23-m2-fetch-custom-response-baseline.md`：8 cases / 23 subtests / 23 Pass，double-run deterministic
+  - `WPT_SOURCE=$HOME/github/others/wpt ./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 420 -- make baseline-wpt-service-workers-fetch OUTPUT=docs/goal/archive/service-workers/evidence/2026-08-23-m2-fetch-custom-response-baseline.json SUMMARY=docs/goal/archive/service-workers/evidence/2026-08-23-m2-fetch-custom-response-baseline.md`：8 cases / 23 subtests / 23 Pass，double-run deterministic
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 180 -- cargo fmt --all -- --check`：passed
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 1200 -- cargo clippy --workspace --all-targets -- -D warnings`：passed
   - `CARGO_BUILD_JOBS=1 ./target/test-guard --per-proc-mem 4 --total-mem 20 --time-limit 1800 -- make test`：passed
@@ -1017,33 +1017,33 @@ make test 常驻覆盖观察；若再现，按 master.md 记录的架构方向�
   - `WPT_SOURCE=$HOME/github/others/wpt ./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 420 -- make testharness-service-workers-fetch FILTER=fetch-event-respond-with-stops-propagation.https.html`：1 Pass
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 180 -- make test-wpt-service-workers-fetch-wave-assets`：27 assets / regression PASS
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- cargo test -p zero-wpt-runner service_worker_fetch -- --nocapture`：2 passed
-  - `WPT_SOURCE=$HOME/github/others/wpt ./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 420 -- make baseline-wpt-service-workers-fetch OUTPUT=docs/goal/service-workers/evidence/2026-08-23-m2-fetch-stops-propagation-baseline.json SUMMARY=docs/goal/service-workers/evidence/2026-08-23-m2-fetch-stops-propagation-baseline.md`：9 cases / 24 subtests / 24 Pass，double-run deterministic
+  - `WPT_SOURCE=$HOME/github/others/wpt ./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 420 -- make baseline-wpt-service-workers-fetch OUTPUT=docs/goal/archive/service-workers/evidence/2026-08-23-m2-fetch-stops-propagation-baseline.json SUMMARY=docs/goal/archive/service-workers/evidence/2026-08-23-m2-fetch-stops-propagation-baseline.md`：9 cases / 24 subtests / 24 Pass，double-run deterministic
 - M2-25 fetch uncontrolled-page baseline：
   - 新增 WPT：`service-workers/service-worker/uncontrolled-page.https.html`
   - 新增 support：`service-workers/service-worker/resources/fail-on-fetch-worker.js`、`worker-testharness.js`、`simple.txt`
   - `make testharness-service-workers-fetch FILTER=uncontrolled-page.https.html`：1 Pass
-  - `make baseline-wpt-service-workers-fetch OUTPUT=docs/goal/service-workers/evidence/2026-08-23-m2-fetch-baseline.json SUMMARY=docs/goal/service-workers/evidence/2026-08-23-m2-fetch-baseline.md`：10 cases / 25 subtests / 25 Pass，double-run deterministic
+  - `make baseline-wpt-service-workers-fetch OUTPUT=docs/goal/archive/service-workers/evidence/2026-08-23-m2-fetch-baseline.json SUMMARY=docs/goal/archive/service-workers/evidence/2026-08-23-m2-fetch-baseline.md`：10 cases / 25 subtests / 25 Pass，double-run deterministic
 - M2-26 fetch claim-fetch baseline：
   - 新增 WPT：`service-workers/service-worker/claim-fetch.https.html`
   - 新增 support：`service-workers/service-worker/resources/claim-worker.js`、`blank.html`
   - `WPT_SOURCE=$HOME/github/others/wpt make testharness-service-workers-fetch FILTER=claim-fetch.https.html`：1 Pass
-  - `WPT_SOURCE=$HOME/github/others/wpt make baseline-wpt-service-workers-fetch OUTPUT=docs/goal/service-workers/evidence/2026-08-23-m2-fetch-baseline.json SUMMARY=docs/goal/service-workers/evidence/2026-08-23-m2-fetch-baseline.md`：11 cases / 26 subtests / 26 Pass，double-run deterministic
+  - `WPT_SOURCE=$HOME/github/others/wpt make baseline-wpt-service-workers-fetch OUTPUT=docs/goal/archive/service-workers/evidence/2026-08-23-m2-fetch-baseline.json SUMMARY=docs/goal/archive/service-workers/evidence/2026-08-23-m2-fetch-baseline.md`：11 cases / 26 subtests / 26 Pass，double-run deterministic
 - M2-27 fetch claim registration-boundary baseline：
   - 新增 WPT：`service-workers/service-worker/claim-not-using-registration.https.html`
   - 新增 support：`service-workers/service-worker/resources/empty.js`、`empty-worker.js`
   - `WPT_SOURCE=$HOME/github/others/wpt make testharness-service-workers-fetch FILTER=claim-not-using-registration.https.html`：2 Pass
-  - `WPT_SOURCE=$HOME/github/others/wpt make baseline-wpt-service-workers-fetch OUTPUT=docs/goal/service-workers/evidence/2026-08-23-m2-fetch-baseline.json SUMMARY=docs/goal/service-workers/evidence/2026-08-23-m2-fetch-baseline.md`：12 cases / 28 subtests / 28 Pass，double-run deterministic
+  - `WPT_SOURCE=$HOME/github/others/wpt make baseline-wpt-service-workers-fetch OUTPUT=docs/goal/archive/service-workers/evidence/2026-08-23-m2-fetch-baseline.json SUMMARY=docs/goal/archive/service-workers/evidence/2026-08-23-m2-fetch-baseline.md`：12 cases / 28 subtests / 28 Pass，double-run deterministic
 - M2-28 fetch claim active-state baseline：
   - 新增 WPT：`service-workers/service-worker/claim-using-registration.https.html`
   - 复用 support：`service-workers/service-worker/resources/claim-worker.js`、`empty.js`、`blank.html`
   - `WPT_SOURCE=$HOME/github/others/wpt ./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 420 -- make testharness-service-workers-fetch FILTER=claim-using-registration.https.html`：2 Pass
-  - `WPT_SOURCE=$HOME/github/others/wpt ./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 600 -- make baseline-wpt-service-workers-fetch OUTPUT=docs/goal/service-workers/evidence/2026-08-23-m2-fetch-baseline.json SUMMARY=docs/goal/service-workers/evidence/2026-08-23-m2-fetch-baseline.md`：13 cases / 30 subtests / 30 Pass，double-run deterministic
+  - `WPT_SOURCE=$HOME/github/others/wpt ./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 600 -- make baseline-wpt-service-workers-fetch OUTPUT=docs/goal/archive/service-workers/evidence/2026-08-23-m2-fetch-baseline.json SUMMARY=docs/goal/archive/service-workers/evidence/2026-08-23-m2-fetch-baseline.md`：13 cases / 30 subtests / 30 Pass，double-run deterministic
 - M2-29 fetch unregister-controller baseline：
   - 新增 WPT：`service-workers/service-worker/unregister-controller.https.html`
   - 新增 support：`service-workers/service-worker/resources/unregister-controller-page.html`、`simple-intercept-worker.js`
   - 复用 support：`service-workers/service-worker/resources/simple.txt`
   - `WPT_SOURCE=$HOME/github/others/wpt ./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 420 -- make testharness-service-workers-fetch FILTER=unregister-controller.https.html`：3 Pass
-  - `WPT_SOURCE=$HOME/github/others/wpt ./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 600 -- make baseline-wpt-service-workers-fetch OUTPUT=docs/goal/service-workers/evidence/2026-08-23-m2-fetch-baseline.json SUMMARY=docs/goal/service-workers/evidence/2026-08-23-m2-fetch-baseline.md`：14 cases / 33 subtests / 33 Pass，double-run deterministic
+  - `WPT_SOURCE=$HOME/github/others/wpt ./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 600 -- make baseline-wpt-service-workers-fetch OUTPUT=docs/goal/archive/service-workers/evidence/2026-08-23-m2-fetch-baseline.json SUMMARY=docs/goal/archive/service-workers/evidence/2026-08-23-m2-fetch-baseline.md`：14 cases / 33 subtests / 33 Pass，double-run deterministic
 - M2-30 fetch throw-after-respondWith iframe baseline：
   - 新增 WPT：`service-workers/service-worker/fetch-event-throws-after-respond-with.https.html`
   - 新增 support：`service-workers/service-worker/resources/respond-then-throw-worker.js`
@@ -1055,7 +1055,7 @@ make test 常驻覆盖观察；若再现，按 master.md 记录的架构方向�
   [SW fetch throw after respondWith guard](evidence/2026-08-22-m2-fetch-throw-after-respond-with.md)
 - storage-cache-api shared Cache response type readback：CacheStorage 专属 `__zwcr:` wire、
   page `Response.type` / `clone().type` 保真与 host type validation 见
-  [M2 Cache Response Type Readback](../storage-cache-api/evidence/2026-08-22-m2-cache-response-type-readback.md)
+  [M2 Cache Response Type Readback](../../storage-cache-api/evidence/2026-08-22-m2-cache-response-type-readback.md)
 - storage-cache-api CacheStorage window WPT 扩面：37 case / 439 subtest 全绿，并校正
   `Response.error()` 可作为 CacheStorage 条目保存/读回、FetchEvent 响应结算仍拒绝 status 0
   的共享边界，以及 `Cache.match()` 对 `Response.url`、fetched MIME、cross-host fixture 和
@@ -1065,38 +1065,38 @@ make test 常驻覆盖观察；若再现，按 master.md 记录的架构方向�
   Worker/nested Dedicated Worker 共享 CacheStorage owner、filtered response 类型矩阵、
   sandboxed iframe CacheStorage 安全边界与 top-level credentialed request URL cache key
   的页面侧语义，见
-  [M2 CacheStorage Window WPT Expansion](../storage-cache-api/evidence/2026-08-22-m2-cache-window-expansion.md)
-  、[M2 Cache.add WPT Expansion](../storage-cache-api/evidence/2026-08-22-m2-cache-add-wpt-expansion.md)
-  、[M2 CacheStorage Worker Sharing WPT Expansion](../storage-cache-api/evidence/2026-08-22-m2-cache-worker-sharing-wpt-expansion.md)
-  和 [M2 CacheStorage Nested Worker WPT Expansion](../storage-cache-api/evidence/2026-08-22-m2-cache-nested-worker-wpt-expansion.md)
+  [M2 CacheStorage Window WPT Expansion](../../storage-cache-api/evidence/2026-08-22-m2-cache-window-expansion.md)
+  、[M2 Cache.add WPT Expansion](../../storage-cache-api/evidence/2026-08-22-m2-cache-add-wpt-expansion.md)
+  、[M2 CacheStorage Worker Sharing WPT Expansion](../../storage-cache-api/evidence/2026-08-22-m2-cache-worker-sharing-wpt-expansion.md)
+  和 [M2 CacheStorage Nested Worker WPT Expansion](../../storage-cache-api/evidence/2026-08-22-m2-cache-nested-worker-wpt-expansion.md)
 - M2-37 fetch invalid-header baseline：
   [Service Worker Fetch WPT Baseline](evidence/2026-08-31-m2-fetch-invalid-header-baseline.md)
 - M2-37 fetch invalid-header 定向验证：
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- env BINDGEN_EXTRA_CLANG_ARGS=-I/usr/lib/gcc/x86_64-linux-gnu/13/include cargo test -p zero-protocol service_worker_fetch_response_rejects_invalid_header_fields`：1 passed
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- env BINDGEN_EXTRA_CLANG_ARGS=-I/usr/lib/gcc/x86_64-linux-gnu/13/include cargo test -p zero-script-sandbox fetch_event_rejects_invalid_response_header_value --no-default-features --features quickjs`：1 passed
-  - `WPT_ASSET_MANIFEST=$PWD/docs/goal/service-workers/evidence/2026-08-22-m2-fetch-request-end-to-end-assets.tsv WPT_EXPECTED_ASSET_COUNT=61 WPT_CORPUS_LABEL="Service Worker fetch wave" ./tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh --verify-only`：61 assets matched pinned manifest
+  - `WPT_ASSET_MANIFEST=$PWD/docs/goal/archive/service-workers/evidence/2026-08-22-m2-fetch-request-end-to-end-assets.tsv WPT_EXPECTED_ASSET_COUNT=61 WPT_CORPUS_LABEL="Service Worker fetch wave" ./tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh --verify-only`：61 assets matched pinned manifest
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- env BINDGEN_EXTRA_CLANG_ARGS=-I/usr/lib/gcc/x86_64-linux-gnu/13/include cargo test -p zero-wpt-runner service_worker_fetch_manifest_has_request_end_to_end_case`：1 passed
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- env BINDGEN_EXTRA_CLANG_ARGS=-I/usr/lib/gcc/x86_64-linux-gnu/13/include cargo test -p zero-wpt-runner service_worker_fetch_runner_reports_every_case_when_harness_is_missing`：1 passed
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- env BINDGEN_EXTRA_CLANG_ARGS=-I/usr/lib/gcc/x86_64-linux-gnu/13/include cargo run -p zero-wpt-runner -- testharness-service-workers-fetch invalid-header --wpt-data tests/wpt-runner/wpt-data/.service-workers-tier-a-root --json`：1 Pass
-  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 420 -- make baseline-wpt-service-workers-fetch OUTPUT=docs/goal/service-workers/evidence/2026-08-31-m2-fetch-invalid-header-baseline.json SUMMARY=docs/goal/service-workers/evidence/2026-08-31-m2-fetch-invalid-header-baseline.md`：23 cases / 56 subtests / 56 Pass，double-run deterministic
+  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 420 -- make baseline-wpt-service-workers-fetch OUTPUT=docs/goal/archive/service-workers/evidence/2026-08-31-m2-fetch-invalid-header-baseline.json SUMMARY=docs/goal/archive/service-workers/evidence/2026-08-31-m2-fetch-invalid-header-baseline.md`：23 cases / 56 subtests / 56 Pass，double-run deterministic
 - M2-38 fetch invalid-blobtype baseline：
   [Service Worker Fetch WPT Baseline](evidence/2026-08-31-m2-fetch-invalid-blobtype-baseline.md)
-  - `WPT_ASSET_MANIFEST=$PWD/docs/goal/service-workers/evidence/2026-08-22-m2-fetch-request-end-to-end-assets.tsv WPT_EXPECTED_ASSET_COUNT=64 WPT_CORPUS_LABEL="Service Worker fetch wave" ./tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh --verify-only`：64 assets matched pinned manifest
+  - `WPT_ASSET_MANIFEST=$PWD/docs/goal/archive/service-workers/evidence/2026-08-22-m2-fetch-request-end-to-end-assets.tsv WPT_EXPECTED_ASSET_COUNT=64 WPT_CORPUS_LABEL="Service Worker fetch wave" ./tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh --verify-only`：64 assets matched pinned manifest
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- env BINDGEN_EXTRA_CLANG_ARGS=-I/usr/lib/gcc/x86_64-linux-gnu/13/include cargo test -p zero-wpt-runner service_worker_fetch_manifest_has_request_end_to_end_case`：1 passed
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- env BINDGEN_EXTRA_CLANG_ARGS=-I/usr/lib/gcc/x86_64-linux-gnu/13/include cargo test -p zero-wpt-runner service_worker_fetch_runner_reports_every_case_when_harness_is_missing`：1 passed
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- env BINDGEN_EXTRA_CLANG_ARGS=-I/usr/lib/gcc/x86_64-linux-gnu/13/include cargo run -p zero-wpt-runner -- testharness-service-workers-fetch invalid-blobtype --wpt-data tests/wpt-runner/wpt-data/.service-workers-tier-a-root --json`：1 Pass
-  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 420 -- make baseline-wpt-service-workers-fetch OUTPUT=docs/goal/service-workers/evidence/2026-08-31-m2-fetch-invalid-blobtype-baseline.json SUMMARY=docs/goal/service-workers/evidence/2026-08-31-m2-fetch-invalid-blobtype-baseline.md`：24 cases / 57 subtests / 57 Pass，double-run deterministic
+  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 420 -- make baseline-wpt-service-workers-fetch OUTPUT=docs/goal/archive/service-workers/evidence/2026-08-31-m2-fetch-invalid-blobtype-baseline.json SUMMARY=docs/goal/archive/service-workers/evidence/2026-08-31-m2-fetch-invalid-blobtype-baseline.md`：24 cases / 57 subtests / 57 Pass，double-run deterministic
 - M3-38 ExtendableMessageEvent constructor baseline：
   [Service Worker Fetch WPT Baseline](evidence/2026-08-31-m3-extendable-message-event-constructor-baseline.md)
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- env BINDGEN_EXTRA_CLANG_ARGS=-I/usr/lib/gcc/x86_64-linux-gnu/13/include cargo test -p zero-script-sandbox extendable_message_event --no-default-features --features quickjs -- --nocapture`：2 passed
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- env BINDGEN_EXTRA_CLANG_ARGS=-I/usr/lib/gcc/x86_64-linux-gnu/13/include cargo run -p zero-wpt-runner -- testharness-service-workers-fetch extendable-message-event-constructor --wpt-data tests/wpt-runner/wpt-data/.service-workers-tier-a-root --json`：10 Pass
-  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 420 -- make baseline-wpt-service-workers-fetch OUTPUT=docs/goal/service-workers/evidence/2026-08-31-m3-extendable-message-event-constructor-baseline.json SUMMARY=docs/goal/service-workers/evidence/2026-08-31-m3-extendable-message-event-constructor-baseline.md`：25 cases / 67 subtests / 67 Pass，double-run deterministic
+  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 420 -- make baseline-wpt-service-workers-fetch OUTPUT=docs/goal/archive/service-workers/evidence/2026-08-31-m3-extendable-message-event-constructor-baseline.json SUMMARY=docs/goal/archive/service-workers/evidence/2026-08-31-m3-extendable-message-event-constructor-baseline.md`：25 cases / 67 subtests / 67 Pass，double-run deterministic
 - M2-39 fetch stream body error baseline：
   [Service Worker Fetch WPT Baseline](evidence/2026-08-31-m3-extendable-message-event-constructor-baseline.md)
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- cargo test -p zero-script-sandbox fetch_event_readable_stream_body_error_is_serialized -- --nocapture`：1 passed
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- ./target/release/zero-wpt-runner testharness-service-workers-fetch --wpt-data tests/wpt-runner/wpt-data/.service-workers-tier-a-root fetch-error.https.html --json`：3 Pass
   - `make audit-wpt-service-workers-fetch-wave`：68 assets matched pinned manifest
-  - `make baseline-wpt-service-workers-fetch OUTPUT=docs/goal/service-workers/evidence/2026-08-31-m3-extendable-message-event-constructor-baseline.json SUMMARY=docs/goal/service-workers/evidence/2026-08-31-m3-extendable-message-event-constructor-baseline.md`：26 cases / 70 subtests / 70 Pass，double-run deterministic
+  - `make baseline-wpt-service-workers-fetch OUTPUT=docs/goal/archive/service-workers/evidence/2026-08-31-m3-extendable-message-event-constructor-baseline.json SUMMARY=docs/goal/archive/service-workers/evidence/2026-08-31-m3-extendable-message-event-constructor-baseline.md`：26 cases / 70 subtests / 70 Pass，double-run deterministic
 - M2-41 fetch readable-stream chunk baseline：
   [ReadableStream chunk WPT evidence](evidence/2026-09-02-m2-fetch-readable-stream-chunk.md)
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- cargo run -p zero-wpt-runner -- testharness-service-workers-fetch --wpt-data tests/wpt-runner/wpt-data/.service-workers-tier-a-root fetch-event-respond-with-readable-stream-chunk.https.html --json`：1 Pass
@@ -1112,52 +1112,52 @@ make test 常驻覆盖观察；若再现，按 master.md 记录的架构方向�
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 180 -- cargo run -p zero-wpt-runner -- testharness-service-workers registration-attribute --wpt-data /tmp/zw-wpt-cache-storage --json`：2 Pass
   - `make audit-wpt-service-workers-registration-attribute-wave`：7 assets matched pinned manifest
   - `make testharness-service-workers-core FILTER=ServiceWorkerGlobalScope/registration-attribute TIME_LIMIT=300`：2 Pass
-  - `make baseline-wpt-service-workers-core OUTPUT=docs/goal/service-workers/evidence/2026-09-02-m3-registration-attribute-baseline.json SUMMARY=docs/goal/service-workers/evidence/2026-09-02-m3-registration-attribute-baseline.md TIME_LIMIT=1200`：52 cases / 200 subtests / 200 Pass，double-run deterministic
+  - `make baseline-wpt-service-workers-core OUTPUT=docs/goal/archive/service-workers/evidence/2026-09-02-m3-registration-attribute-baseline.json SUMMARY=docs/goal/archive/service-workers/evidence/2026-09-02-m3-registration-attribute-baseline.md TIME_LIMIT=1200`：52 cases / 200 subtests / 200 Pass，double-run deterministic
 - M3-58 getRegistration baseline：
   [getRegistration evidence](evidence/2026-09-03-m3-getregistration.md)
   - `./target/test-guard --compile-first --per-proc-mem 4 --total-mem 8 --time-limit 300 -- cargo test -p zero-webview get_registration_rejects_cross_origin_document_url -- --nocapture`：1 passed
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- cargo run -p zero-wpt-runner -- testharness-service-workers --wpt-data tests/wpt-runner/wpt-data/.service-workers-tier-a-root getregistration --json`：6 Pass
-  - `make baseline-wpt-service-workers-core OUTPUT=docs/goal/service-workers/evidence/2026-09-03-m3-getregistration-baseline.json SUMMARY=docs/goal/service-workers/evidence/2026-09-03-m3-getregistration-baseline.md TIME_LIMIT=1200`：56 cases / 209 subtests / 209 Pass，double-run deterministic
+  - `make baseline-wpt-service-workers-core OUTPUT=docs/goal/archive/service-workers/evidence/2026-09-03-m3-getregistration-baseline.json SUMMARY=docs/goal/archive/service-workers/evidence/2026-09-03-m3-getregistration-baseline.md TIME_LIMIT=1200`：56 cases / 209 subtests / 209 Pass，double-run deterministic
 - M3-59 registration iframe baseline：
   [registration iframe evidence](evidence/2026-09-03-m3-registration-iframe.md)
   - `./target/test-guard --compile-first --per-proc-mem 4 --total-mem 8 --time-limit 300 -- cargo test -p zero-webview iframe_register_resolves_with_installing_worker -- --nocapture`：1 passed
   - `make testharness-service-workers-core FILTER=registration-iframe TIME_LIMIT=300`：3 Pass
-  - `make baseline-wpt-service-workers-core OUTPUT=docs/goal/service-workers/evidence/2026-09-03-m3-registration-iframe-baseline.json SUMMARY=docs/goal/service-workers/evidence/2026-09-03-m3-registration-iframe-baseline.md TIME_LIMIT=1200`：57 cases / 212 subtests / 212 Pass，double-run deterministic
+  - `make baseline-wpt-service-workers-core OUTPUT=docs/goal/archive/service-workers/evidence/2026-09-03-m3-registration-iframe-baseline.json SUMMARY=docs/goal/archive/service-workers/evidence/2026-09-03-m3-registration-iframe-baseline.md TIME_LIMIT=1200`：57 cases / 212 subtests / 212 Pass，double-run deterministic
 - M3-60 installing baseline：
   [installing evidence](evidence/2026-09-03-m3-installing.md)
   - `make testharness-service-workers-core FILTER=installing TIME_LIMIT=300`：2 Pass
-  - `make baseline-wpt-service-workers-core OUTPUT=docs/goal/service-workers/evidence/2026-09-03-m3-installing-baseline.json SUMMARY=docs/goal/service-workers/evidence/2026-09-03-m3-installing-baseline.md TIME_LIMIT=1200`：58 cases / 214 subtests / 214 Pass，double-run deterministic
+  - `make baseline-wpt-service-workers-core OUTPUT=docs/goal/archive/service-workers/evidence/2026-09-03-m3-installing-baseline.json SUMMARY=docs/goal/archive/service-workers/evidence/2026-09-03-m3-installing-baseline.md TIME_LIMIT=1200`：58 cases / 214 subtests / 214 Pass，double-run deterministic
 - M3-61 waiting baseline：
   [waiting evidence](evidence/2026-09-03-m3-waiting.md)
   - `make testharness-service-workers-core FILTER=service-worker/waiting.https.html TIME_LIMIT=300`：2 Pass
-  - `make baseline-wpt-service-workers-core OUTPUT=docs/goal/service-workers/evidence/2026-09-03-m3-waiting-baseline.json SUMMARY=docs/goal/service-workers/evidence/2026-09-03-m3-waiting-baseline.md TIME_LIMIT=1200`：59 cases / 216 subtests / 216 Pass，double-run deterministic
+  - `make baseline-wpt-service-workers-core OUTPUT=docs/goal/archive/service-workers/evidence/2026-09-03-m3-waiting-baseline.json SUMMARY=docs/goal/archive/service-workers/evidence/2026-09-03-m3-waiting-baseline.md TIME_LIMIT=1200`：59 cases / 216 subtests / 216 Pass，double-run deterministic
 - M3-62 controller-on-disconnect baseline：
   [controller-on-disconnect evidence](evidence/2026-09-03-m3-controller-on-disconnect.md)
   - `make testharness-service-workers-core FILTER=service-worker/controller-on-disconnect.https.html TIME_LIMIT=300`：1 Pass
-  - `make baseline-wpt-service-workers-core OUTPUT=docs/goal/service-workers/evidence/2026-09-03-m3-controller-on-disconnect-baseline.json SUMMARY=docs/goal/service-workers/evidence/2026-09-03-m3-controller-on-disconnect-baseline.md TIME_LIMIT=1200`：60 cases / 217 subtests / 217 Pass，deterministic
+  - `make baseline-wpt-service-workers-core OUTPUT=docs/goal/archive/service-workers/evidence/2026-09-03-m3-controller-on-disconnect-baseline.json SUMMARY=docs/goal/archive/service-workers/evidence/2026-09-03-m3-controller-on-disconnect-baseline.md TIME_LIMIT=1200`：60 cases / 217 subtests / 217 Pass，deterministic
 - M3-63 oninstall script error baseline：
   [oninstall-script-error evidence](evidence/2026-09-03-m3-oninstall-script-error.md)
   - `make testharness-service-workers-core FILTER=service-worker/oninstall-script-error.https.html TIME_LIMIT=300`：6 Pass
-  - `make baseline-wpt-service-workers-core OUTPUT=docs/goal/service-workers/evidence/2026-09-03-m3-oninstall-script-error-baseline.json SUMMARY=docs/goal/service-workers/evidence/2026-09-03-m3-oninstall-script-error-baseline.md TIME_LIMIT=1200`：61 cases / 223 subtests / 223 Pass，deterministic
+  - `make baseline-wpt-service-workers-core OUTPUT=docs/goal/archive/service-workers/evidence/2026-09-03-m3-oninstall-script-error-baseline.json SUMMARY=docs/goal/archive/service-workers/evidence/2026-09-03-m3-oninstall-script-error-baseline.md TIME_LIMIT=1200`：61 cases / 223 subtests / 223 Pass，deterministic
 - M3-64 onactivate script error baseline：
   [onactivate-script-error evidence](evidence/2026-09-03-m3-onactivate-script-error.md)
   - `make testharness-service-workers-core FILTER=service-worker/onactivate-script-error.https.html TIME_LIMIT=300`：5 Pass
-  - `make baseline-wpt-service-workers-core OUTPUT=docs/goal/service-workers/evidence/2026-09-03-m3-onactivate-script-error-baseline.json SUMMARY=docs/goal/service-workers/evidence/2026-09-03-m3-onactivate-script-error-baseline.md TIME_LIMIT=1200`：62 cases / 228 subtests / 228 Pass，deterministic
+  - `make baseline-wpt-service-workers-core OUTPUT=docs/goal/archive/service-workers/evidence/2026-09-03-m3-onactivate-script-error-baseline.json SUMMARY=docs/goal/archive/service-workers/evidence/2026-09-03-m3-onactivate-script-error-baseline.md TIME_LIMIT=1200`：62 cases / 228 subtests / 228 Pass，deterministic
 - M3-65 ExtendableEvent waitUntil baseline：
   [ExtendableEvent waitUntil evidence](evidence/2026-09-03-m3-extendable-event-waituntil.md)
   - `make testharness-service-workers-core FILTER=service-worker/extendable-event-waituntil.https.html TIME_LIMIT=300`：6 Pass
-  - `make baseline-wpt-service-workers-core OUTPUT=docs/goal/service-workers/evidence/2026-09-03-m3-extendable-event-waituntil-baseline.json SUMMARY=docs/goal/service-workers/evidence/2026-09-03-m3-extendable-event-waituntil-baseline.md TIME_LIMIT=1200`：63 cases / 234 subtests / 234 Pass，deterministic
+  - `make baseline-wpt-service-workers-core OUTPUT=docs/goal/archive/service-workers/evidence/2026-09-03-m3-extendable-event-waituntil-baseline.json SUMMARY=docs/goal/archive/service-workers/evidence/2026-09-03-m3-extendable-event-waituntil-baseline.md TIME_LIMIT=1200`：63 cases / 234 subtests / 234 Pass，deterministic
 - M3-66 ExtendableEvent async waitUntil baseline：
   [ExtendableEvent async waitUntil evidence](evidence/2026-09-03-m3-extendable-event-async-waituntil.md)
   - `make test-wpt-service-workers-extendable-event-async-waituntil-wave-assets`：2 assets / regression PASS
   - `make testharness-service-workers-core FILTER=service-worker/extendable-event-waituntil.https.html TIME_LIMIT=300`：6 Pass
   - `make testharness-service-workers-core FILTER=service-worker/extendable-event-async-waituntil.https.html TIME_LIMIT=300`：14 Pass
-  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 1200 -- python3 tests/wpt-runner/scripts/run-service-workers-core-baseline.py --runner ./target/release/zero-wpt-runner --wpt-data tests/wpt-runner/wpt-data/.service-workers-tier-a-root --output docs/goal/service-workers/evidence/2026-09-03-m3-extendable-event-async-waituntil-baseline.json --summary docs/goal/service-workers/evidence/2026-09-03-m3-extendable-event-async-waituntil-baseline.md`：64 cases / 248 subtests / 248 Pass，deterministic
+  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 1200 -- python3 tests/wpt-runner/scripts/run-service-workers-core-baseline.py --runner ./target/release/zero-wpt-runner --wpt-data tests/wpt-runner/wpt-data/.service-workers-tier-a-root --output docs/goal/archive/service-workers/evidence/2026-09-03-m3-extendable-event-async-waituntil-baseline.json --summary docs/goal/archive/service-workers/evidence/2026-09-03-m3-extendable-event-async-waituntil-baseline.md`：64 cases / 248 subtests / 248 Pass，deterministic
 - M3-67 controller-on-reload baseline：
   [controller-on-reload evidence](evidence/2026-09-03-m3-controller-on-reload.md)
   - `BINDGEN_EXTRA_CLANG_ARGS='-isystem /usr/lib/gcc/x86_64-linux-gnu/13/include' ./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 240 -- cargo test -p zero-webview iframe_reload_observes_active_service_worker_controller -- --nocapture`：1 passed
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 240 -- cargo run -p zero-wpt-runner -- testharness-service-workers --wpt-data tests/wpt-runner/wpt-data/.service-workers-tier-a-root controller-on-reload.https.html --json`：1 Pass
-  - `make baseline-wpt-service-workers-core OUTPUT=docs/goal/service-workers/evidence/2026-09-03-m3-controller-on-reload-baseline.json SUMMARY=docs/goal/service-workers/evidence/2026-09-03-m3-controller-on-reload-baseline.md TIME_LIMIT=1200`：65 cases / 249 subtests / 249 Pass，deterministic
+  - `make baseline-wpt-service-workers-core OUTPUT=docs/goal/archive/service-workers/evidence/2026-09-03-m3-controller-on-reload-baseline.json SUMMARY=docs/goal/archive/service-workers/evidence/2026-09-03-m3-controller-on-reload-baseline.md TIME_LIMIT=1200`：65 cases / 249 subtests / 249 Pass，deterministic
 - M3-55 worker error event baseline：
   [Worker ErrorEvent evidence](evidence/2026-09-03-m3-worker-error-event.md)
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- cargo test -p zero-script-sandbox service_worker::tests::page_message_error_listener_observes_thrown_error_event -- --nocapture`：1 passed

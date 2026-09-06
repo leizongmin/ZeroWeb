@@ -27,7 +27,7 @@ Service Worker `ReadableStream` response body.
 - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- cargo test -p zero-wpt-runner service_worker_fetch_manifest_has_request_end_to_end_case -- --nocapture`: 1 passed
 - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 120 -- make audit-wpt-service-workers-fetch-wave`: 80 assets matched pinned manifest
 - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 420 -- make testharness-service-workers-fetch FILTER=fetch-event-respond-with-response-body-with-invalid-chunk.https.html`: 1 case / 1 subtest / 1 Pass
-- `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 900 -- make baseline-wpt-service-workers-fetch OUTPUT=docs/goal/service-workers/evidence/2026-09-02-m2-fetch-invalid-stream-chunk-baseline.json SUMMARY=docs/goal/service-workers/evidence/2026-09-02-m2-fetch-invalid-stream-chunk-baseline.md TIME_LIMIT=900`: 30 cases / 75 subtests / 75 Pass, double-run deterministic
+- `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 900 -- make baseline-wpt-service-workers-fetch OUTPUT=docs/goal/archive/service-workers/evidence/2026-09-02-m2-fetch-invalid-stream-chunk-baseline.json SUMMARY=docs/goal/archive/service-workers/evidence/2026-09-02-m2-fetch-invalid-stream-chunk-baseline.md TIME_LIMIT=900`: 30 cases / 75 subtests / 75 Pass, double-run deterministic
 - `BINDGEN_EXTRA_CLANG_ARGS='-isystem /usr/lib/gcc/x86_64-linux-gnu/13/include' ./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 1200 -- cargo clippy --workspace --all-targets -- -D warnings`: passed
 
 ## Follow-Up

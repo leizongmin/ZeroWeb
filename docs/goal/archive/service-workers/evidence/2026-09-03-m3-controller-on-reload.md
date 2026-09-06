@@ -31,7 +31,7 @@ the parent registration wrapper is not reused across realms.
   1 test / 1 passed
 - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 240 -- cargo run -p zero-wpt-runner -- testharness-service-workers --wpt-data tests/wpt-runner/wpt-data/.service-workers-tier-a-root controller-on-reload.https.html --json`:
   1 case / 1 subtest / 1 Pass
-- `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 1200 -- python3 tests/wpt-runner/scripts/run-service-workers-core-baseline.py --runner ./target/release/zero-wpt-runner --wpt-data tests/wpt-runner/wpt-data/.service-workers-tier-a-root --output docs/goal/service-workers/evidence/2026-09-03-m3-controller-on-reload-baseline.json --summary docs/goal/service-workers/evidence/2026-09-03-m3-controller-on-reload-baseline.md`:
+- `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 1200 -- python3 tests/wpt-runner/scripts/run-service-workers-core-baseline.py --runner ./target/release/zero-wpt-runner --wpt-data tests/wpt-runner/wpt-data/.service-workers-tier-a-root --output docs/goal/archive/service-workers/evidence/2026-09-03-m3-controller-on-reload-baseline.json --summary docs/goal/archive/service-workers/evidence/2026-09-03-m3-controller-on-reload-baseline.md`:
   65 cases / 249 subtests / 249 Pass, deterministic
 - `python3 tests/wpt-runner/scripts/audit-service-worker-disposition.py`:
   PASS, `core=78 defer=22 fetch=3 gated=149 skip=42`

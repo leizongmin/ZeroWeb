@@ -29,7 +29,7 @@ filename and throw-site position when the engine does not provide a stack.
   9 assets matched pinned manifest
 - `make testharness-service-workers-core FILTER=service-worker-error-event TIME_LIMIT=300`:
   1 Pass
-- `make baseline-wpt-service-workers-core OUTPUT=docs/goal/service-workers/evidence/2026-09-03-m3-worker-error-event-baseline.json SUMMARY=docs/goal/service-workers/evidence/2026-09-03-m3-worker-error-event-baseline.md TIME_LIMIT=1200`:
+- `make baseline-wpt-service-workers-core OUTPUT=docs/goal/archive/service-workers/evidence/2026-09-03-m3-worker-error-event-baseline.json SUMMARY=docs/goal/archive/service-workers/evidence/2026-09-03-m3-worker-error-event-baseline.md TIME_LIMIT=1200`:
   53 cases / 201 subtests / 201 Pass, double-run deterministic
 
 ## Asset Contract

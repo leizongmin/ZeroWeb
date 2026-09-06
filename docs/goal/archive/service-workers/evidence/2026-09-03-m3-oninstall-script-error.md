@@ -27,7 +27,7 @@ promises still make install fail.
   7 assets / regression PASS
 - `make testharness-service-workers-core FILTER=service-worker/oninstall-script-error.https.html TIME_LIMIT=300`:
   1 case / 6 subtests / 6 Pass
-- `make baseline-wpt-service-workers-core OUTPUT=docs/goal/service-workers/evidence/2026-09-03-m3-oninstall-script-error-baseline.json SUMMARY=docs/goal/service-workers/evidence/2026-09-03-m3-oninstall-script-error-baseline.md TIME_LIMIT=1200`:
+- `make baseline-wpt-service-workers-core OUTPUT=docs/goal/archive/service-workers/evidence/2026-09-03-m3-oninstall-script-error-baseline.json SUMMARY=docs/goal/archive/service-workers/evidence/2026-09-03-m3-oninstall-script-error-baseline.md TIME_LIMIT=1200`:
   61 cases / 223 subtests / 223 Pass, deterministic
 
 ## Asset Contract

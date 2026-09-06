@@ -26,7 +26,7 @@
 - `make test-wpt-service-workers-immutable-prototype-wave-assets`：PASS
 - `make testharness-service-workers-core FILTER=immutable-prototype TIME_LIMIT=300`：
   1 case / 1 subtest / 1 Pass
-- `make baseline-wpt-service-workers-core OUTPUT=docs/goal/service-workers/evidence/2026-08-19-m1-wpt-core-baseline.json TIME_LIMIT=900`：
+- `make baseline-wpt-service-workers-core OUTPUT=docs/goal/archive/service-workers/evidence/2026-08-19-m1-wpt-core-baseline.json TIME_LIMIT=900`：
   48 cases / 189 subtests / 189 Pass，double-run deterministic
 
 ## 结论

@@ -58,4 +58,4 @@ worker context so worker writes use the same host bridge as window reads.
 - Implement full `basic` / `cors` / `opaque` / `opaqueredirect` filtered
   response creation paths.
 - Continue Service Worker fetch/cache-specific WPT expansion separately under
-  `docs/goal/service-workers.md`.
+  `docs/goal/archive/service-workers.md`.

@@ -38,7 +38,7 @@ the page/WebView host path to use it.
 
 - Service Worker registration-local CacheStorage persistence was completed by
   the follow-up slice recorded in
-  `docs/goal/service-workers/evidence/2026-08-22-m3-registration-cache-storage-persistence.md`.
+  `docs/goal/archive/service-workers/evidence/2026-08-22-m3-registration-cache-storage-persistence.md`.
 - Full `basic` / `cors` / `opaque` / `opaqueredirect` filtered response
   creation coverage remains open.
 - Dynamic-server and cross-origin CacheStorage WPT expansion remains open.

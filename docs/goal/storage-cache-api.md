@@ -55,7 +55,7 @@ form-validation——不允许手写 inline 用例替代或充数）。通过率
 
 **注意**：上游 `cache-storage` 部分用例在 Service Worker 环境下跑（`sw` 子目录）——本目标
 只收 **window 环境可执行**的用例；SW 环境依赖的子目录记入 skip list 并注明归兄弟目标
-`service-workers.md` 处理，不充数也不误排除。
+`docs/goal/archive/service-workers.md`（2026-09-06 归档）处理，不充数也不误排除。
 
 覆盖范围：
 
@@ -86,7 +86,7 @@ form-validation——不允许手写 inline 用例替代或充数）。通过率
 
 ### 不在范围内（明确排除）
 
-- **Service Worker 环境的 cache 用例**（`cache-storage/sw` 类）— 兄弟目标 `service-workers.md`
+- **Service Worker 环境的 cache 用例**（`cache-storage/sw` 类）— 兄弟目标 `service-workers.md`（2026-09-06 已归档至 `docs/goal/archive/service-workers.md`）
 - **IndexedDB** — 兄弟目标已完成，见 [归档入口](archive/storage-indexeddb.md)
 - **HTTP disk cache（net crate 的 disk_cache.rs）** — 这是浏览器内部 HTTP 缓存，与页面
   Cache API 是两个东西；不碰

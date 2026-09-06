@@ -18,7 +18,7 @@
 - `make testharness-service-workers-core FILTER=historical --always-make`：2 Pass
 - `make audit-wpt-service-workers-fetch-event-historical-wave`：3 assets verified
 - `make test-wpt-service-workers-fetch-event-historical-wave-assets`：PASS
-- `make baseline-wpt-service-workers-core OUTPUT=docs/goal/service-workers/evidence/2026-08-19-m1-wpt-core-baseline.json`：
+- `make baseline-wpt-service-workers-core OUTPUT=docs/goal/archive/service-workers/evidence/2026-08-19-m1-wpt-core-baseline.json`：
   44 cases / 175 subtests / 175 Pass，double-run deterministic
 
 ## 结论
