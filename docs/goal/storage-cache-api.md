@@ -191,6 +191,10 @@ form-validation——不允许手写 inline 用例替代或充数）。通过率
 
 **目标**：落盘与跨会话 e2e、Response 可缓存性判定、剩余用例修复。
 
+> **里程碑状态（2026-09-06）**：M1/M2/M3 全部完成——M1 基线 39 case / 449 subtest
+> 全绿、M2 全 API + 查询语义经上游用例覆盖、M3 持久化与剩余语义收口。过程与证据见
+> `master.md` 与 `evidence/`。
+
 ---
 
 ## Final Output Protocol
