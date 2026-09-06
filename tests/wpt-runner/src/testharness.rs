@@ -5039,8 +5039,8 @@ async_test(function(test) {
             .iter()
             .copied()
             .collect::<std::collections::BTreeSet<_>>();
-        assert_eq!(SERVICE_WORKER_FETCH_CASES.len(), 30);
-        assert_eq!(unique.len(), 30);
+        assert_eq!(SERVICE_WORKER_FETCH_CASES.len(), 31);
+        assert_eq!(unique.len(), 31);
         assert!(SERVICE_WORKER_FETCH_CASES.contains(
             &"service-workers/service-worker/ServiceWorkerGlobalScope/fetch-on-the-right-interface.https.any.js"
         ));
