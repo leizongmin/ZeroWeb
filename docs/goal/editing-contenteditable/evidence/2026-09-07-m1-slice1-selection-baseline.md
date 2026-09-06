@@ -137,3 +137,21 @@ SetInnerHtml、italic（'foo'→<i>foo</i>）四组。
 0P/2F = delete 命令实应用——M3 后续切片）。**editing/run/bold.html**（上游 3000+
 数据点驱动面）勘察：依赖上游自带 330KB reference implementation.js + variant 分段
 机制——导入为本切片后续工作（defer 有据）。
+
+---
+
+# M3 切片 2 — execCommand delete/forwardDelete 实应用（2026-09-07，同日追加）
+
+**实现**（part06.js `_zwExecCmdApplyDelete`）：delete（Backspace 语义）/forwardDelete
+对选区删除——collapsed caret 前一/后一 UTF-16 单元（代理对安全）splice；非 collapsed
+同文本节点区间删除。SetChildText mutation 流转宿主 + caret 回落删除点。事件序照派。
+
+**模型限制**（记录）：跨容器选区删除 defer（flat 模型）；body-should-not-deleted
+两案维持 0P/2F——失败根因是环境 artifact（runner 注入的 testharness script 留在
+outerHTML 使 assert_in_array 白名单不可达），非 delete 实现缺陷（probe 实证 splice
+与 mutation 均正确）。
+
+**单测**：扩展 test_execcommand_format_apply_r3254_m3——delete 尾删（'foobaz'→
+'fooba' + caret offset 5）、forwardDelete 首删（'fooba'→'ooba'）两组；组合六组全过。
+engine 2624 全绿；WPT selection+editing 组合 2005P/780F（case 级与基线逐一相同，
+零回归）。

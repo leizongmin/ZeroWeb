@@ -1559,9 +1559,11 @@ fn test_execcommand_format_apply_r3254_m3() {
     sandbox.execute(generate_js_dom_shim()).unwrap();
     let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
     let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
-        "<html><body><div id=ce-flat contenteditable>foobaz</div>\
-<div id=ce contenteditable>foo<b>bar</b>baz</div>\
-<div id=ce-flat2 contenteditable>foobaz</div></body></html>".to_string(),
+        "<html><body><div id=ce-flat contenteditable>foobaz</div>"
+            .to_string()
+            + "<div id=ce contenteditable>foo<b>bar</b>baz</div>"
+            + "<div id=ce-flat2 contenteditable>foobaz</div>"
+            + "<div id=ce-flat3 contenteditable>foobaz</div></body></html>",
     ));
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
     let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
@@ -1677,6 +1679,60 @@ document.execCommand("italic", false, "");
             found.as_deref(),
             Some("<i>foo</i>baz"),
             "execCommand('italic') 须在 flat 宿主包裹 <i>（选中 'foo' → <i>foo</i>baz），实际: {found:?}"
+        );
+    }
+    // ④：delete（Backspace 语义）——collapsed caret 在文本末删前单元 → SetChildText
+    // （'foobaz'→'fooba'）+ caret 回落。④⑤ 用独立 virgin 宿主——innerHTML splice
+    // 产物的 pending 树 nodeValue setter 不走 SetChildText（js-dom 共享面限制，记录）。
+    sandbox
+        .execute(
+            r##"
+var ce4 = document.getElementById("ce-flat3");
+var t4 = ce4.lastChild;
+var r4 = document.createRange();
+r4.setStart(t4, t4.length);
+r4.collapse(true);
+getSelection().removeAllRanges();
+getSelection().addRange(r4);
+document.execCommand("delete", false, "");
+globalThis.__caret4 = getSelection()._ranges[0].startOffset;
+"##,
+        )
+        .unwrap();
+    {
+        let m = mutations.lock().unwrap();
+        let found = m.iter().rev().find(|mm| matches!(mm, DomMutation::SetChildText { parent_selector, text, .. } if parent_selector.contains("ce-flat3"))).cloned();
+        assert!(
+            matches!(&found, Some(DomMutation::SetChildText { text, .. }) if text == "fooba"),
+            "execCommand('delete') 须删 caret 前单元（'foobaz'→'fooba'），实际: {found:?}"
+        );
+    }
+    assert_eq!(
+        sandbox.execute("String(globalThis.__caret4)").unwrap().value,
+        "5",
+        "delete 后 caret 须回落删除点（'fooba' 尾 offset 5）"
+    );
+    // ⑤：forwardDelete——collapsed caret 在起点删后单元（'fooba'→'ooba'）。
+    sandbox
+        .execute(
+            r##"
+var ce5 = document.getElementById("ce-flat3");
+var t5 = ce5.lastChild;
+var r5 = document.createRange();
+r5.setStart(t5, 0);
+r5.collapse(true);
+getSelection().removeAllRanges();
+getSelection().addRange(r5);
+document.execCommand("forwarddelete", false, "");
+"##,
+        )
+        .unwrap();
+    {
+        let m = mutations.lock().unwrap();
+        let found = m.iter().rev().find(|mm| matches!(mm, DomMutation::SetChildText { parent_selector, text, .. } if parent_selector.contains("ce-flat3") && text == "ooba")).cloned();
+        assert!(
+            matches!(&found, Some(DomMutation::SetChildText { text, .. }) if text == "ooba"),
+            "execCommand('forwarddelete') 须删 caret 后单元（'fooba'→'ooba'），实际: {found:?}"
         );
     }
 }
