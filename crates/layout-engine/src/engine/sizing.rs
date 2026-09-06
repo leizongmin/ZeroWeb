@@ -1215,6 +1215,7 @@ impl LayoutEngine {
 
         fn walk(
             b: &LayoutBox,
+            parent_box: Option<&LayoutBox>,
             parent_content_width: f32,
             taffy_tree: &mut TaffyTree<NodeId>,
             dom_to_taffy: &HashMap<NodeId, taffy::NodeId>,
@@ -1235,12 +1236,32 @@ impl LayoutEngine {
                 parent_content_width
             };
 
+            // R4073（css-position-3 §abspos-auto-size）：父为 abspos 且 width 为
+            // auto/intrinsic（content-based shrink-to-fit）时，本元素的百分比 margin/padding
+            // 在度量中相对零解析（indefinite CB）——本 pass 的预解析同样跳过
+            //（abspos-auto-sizing-fit-content-percentage-003/004：padding-left:50% 被解析成
+            // 50px 参与 shrink，abs 150 应 100）。
+            let parent_abs_intrinsic = parent_box
+                .and_then(|p| p.node_id)
+                .and_then(|pid| styles.get(&pid))
+                .is_some_and(|ps| {
+                    matches!(ps.position, PositionValue::Absolute | PositionValue::Fixed)
+                        && matches!(
+                            ps.width,
+                            LengthValue::Auto
+                                | LengthValue::FitContent(_)
+                                | LengthValue::MaxContent
+                                | LengthValue::MinContent
+                        )
+                });
+
             if let Some(s) = style {
                 let has_pct = matches!(s.padding_top, LengthValue::Percentage(_))
                     || matches!(s.padding_right, LengthValue::Percentage(_))
                     || matches!(s.padding_bottom, LengthValue::Percentage(_))
                     || matches!(s.padding_left, LengthValue::Percentage(_));
                 if has_pct
+                    && !parent_abs_intrinsic
                     && let Some(id) = b.node_id
                     && let Some(&tid) = dom_to_taffy.get(&id)
                     && let Ok(mut st) = taffy_tree.style(tid).cloned()
@@ -1272,12 +1293,12 @@ impl LayoutEngine {
             }
 
             for child in &b.children {
-                changed |= walk(child, my_content_width, taffy_tree, dom_to_taffy, styles);
+                changed |= walk(child, Some(b), my_content_width, taffy_tree, dom_to_taffy, styles);
             }
             changed
         }
 
-        walk(root, viewport_width, taffy_tree, dom_to_taffy, styles)
+        walk(root, None, viewport_width, taffy_tree, dom_to_taffy, styles)
     }
 
     /// CSS 堆叠上下文（stacking context）触发器（CSS 2.1 §9.9 + CSS3）：

@@ -1715,6 +1715,67 @@ fn build_subtree(
     // 转换为 taffy 样式（传入父级区域映射）
     let mut taffy_style = computed_style_to_taffy(&computed, parent_grid_areas, viewport_w, viewport_h);
 
+    // R4073（css-position-3 §abspos-auto-size）：abspos 元素按 content-based 尺寸
+    //（width/height 为 fit-content/max-content/min-content 或 auto shrink-to-fit）度量时，
+    // 其子树的百分比 margin/padding 在度量过程中相对**零**解析（indefinite containing block
+    // 下百分比不可解析；mozilla bug 1936450 assert "abspos elements with fit-content sizing
+    // disallows percent-size resolution in its children"）。taffy 对 abspos 容器的 auto 宽
+    // 用 CB 宽解析子百分比 margin → -50% 变 -50px 参与收缩（abspos-auto-sizing-fit-content-
+    // percentage-001..004：abs w=50 应 100，child 绿块盖不满红容器；003/004 为 padding-left:
+    // 50% 变体）。此处对**父为 abspos 且 width 为 auto/intrinsic** 的节点把百分比
+    // margin/padding 归零（Px/Calc 无百分比不涉；更深 abspos 祖先链由递归各自覆盖）。
+    {
+        let has_pct_box_side = matches!(computed.margin_left, LengthValue::Percentage(_))
+            || matches!(computed.margin_right, LengthValue::Percentage(_))
+            || matches!(computed.margin_top, LengthValue::Percentage(_))
+            || matches!(computed.margin_bottom, LengthValue::Percentage(_))
+            || matches!(computed.padding_left, LengthValue::Percentage(_))
+            || matches!(computed.padding_right, LengthValue::Percentage(_))
+            || matches!(computed.padding_top, LengthValue::Percentage(_))
+            || matches!(computed.padding_bottom, LengthValue::Percentage(_));
+        if has_pct_box_side
+            && doc.parent_node(dom_id).is_some_and(|pid| {
+                styles.get(&pid).is_some_and(|ps| {
+                    matches!(ps.position, PositionValue::Absolute | PositionValue::Fixed)
+                        && matches!(
+                            ps.width,
+                            LengthValue::Auto
+                                | LengthValue::FitContent(_)
+                                | LengthValue::MaxContent
+                                | LengthValue::MinContent
+                        )
+                })
+            })
+        {
+            let zero = taffy::style::LengthPercentageAuto::length(0.0_f32);
+            let zero_lp = taffy::style::LengthPercentage::length(0.0_f32);
+            if matches!(computed.margin_left, LengthValue::Percentage(_)) {
+                taffy_style.margin.left = zero;
+            }
+            if matches!(computed.margin_right, LengthValue::Percentage(_)) {
+                taffy_style.margin.right = zero;
+            }
+            if matches!(computed.margin_top, LengthValue::Percentage(_)) {
+                taffy_style.margin.top = zero;
+            }
+            if matches!(computed.margin_bottom, LengthValue::Percentage(_)) {
+                taffy_style.margin.bottom = zero;
+            }
+            if matches!(computed.padding_left, LengthValue::Percentage(_)) {
+                taffy_style.padding.left = zero_lp;
+            }
+            if matches!(computed.padding_right, LengthValue::Percentage(_)) {
+                taffy_style.padding.right = zero_lp;
+            }
+            if matches!(computed.padding_top, LengthValue::Percentage(_)) {
+                taffy_style.padding.top = zero_lp;
+            }
+            if matches!(computed.padding_bottom, LengthValue::Percentage(_)) {
+                taffy_style.padding.bottom = zero_lp;
+            }
+        }
+    }
+
     // R4008（css-sizing-4 §intrinsic-size-override × Flexbox §9.4 stretch 交互）：converter
     // 的 contain:size 路径把 auto height 写成 CIS definite（R2256 used-size 近似，块流正确），
     // 但 flex item 的 cross stretch 是**非 content-based** used size——definite 高压制
