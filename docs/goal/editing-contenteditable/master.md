@@ -2,7 +2,7 @@
 
 **入口文档**: [../editing-contenteditable.md](../editing-contenteditable.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-07（M2 切片 3 完成——CE Enter 换行落 DOM，M2 编辑管线核心面收口）
+**最后更新**: 2026-09-07（M3 切片 1 完成——execCommand bold/italic/underline/strikethrough 实应用）
 
 ---
 
@@ -42,7 +42,7 @@
 | E2 | Selection JS 可观察面未核实/缺失 | 🔶 切片 2 修复 8 类（2026-09-07，45P→1824P）：document.getSelection 绑定 / instanceof 链 / 空选 InvalidStateError / getRangeAt 越界 IndexSizeError / removeRange TypeError+NotFoundError / collapseToStart 新 range 语义 / collapsed toString 空串 / selectAllChildren+setBaseAndExtent+setPosition+deleteFromDocument 新增；残余：selectionchange 派发 / iframe 面 / setBaseAndExtent 方向位 / containsNode 精确化 |
 | E3 | 编辑行为管线（键入/删除/换行 → DOM）缺失 | ✅ M2 切片 2/3（2026-09-07，bf181ee60+47dd9a685）：键入/Backspace（SetChildText splice + caret 移动）+ Enter 换行（SetInnerHtml <br> splice + caret 元素边界）+ 事件序全接通；限制记录：insertParagraph 块级拆分 defer、跨节点回退/嵌套结构偏移映射 defer |
 | E4 | beforeinput/input 事件缺失 | 🔶 M2 切片 1（2026-09-07，commit 74a0c879b）：execCommand 编辑类命令 editing-host 事件序（beforeinput cancelable+trusted → input bubbles+trusted，inputType 映射，全选区在 host 内前提，preventDefault 阻断）——event.html 104P/76F→179P/1F；残余：键入/删除管线（宿主侧 keydown → contenteditable DOM 变更）未接 |
-| E5 | execCommand format 桩（不真应用） | ⬜ M3 |
+| E5 | execCommand format 桩（不真应用） | 🔶 M3 切片 1（2026-09-07）：bold/italic/underline/strikethrough inline 包裹实应用（SetInnerHtml splice + 标签/实体感知扫描）；限制：toggle/queryCommandState、CSS 化命令（color 族）、嵌套结构偏移映射 defer |
 
 ## 下一步计划
 
@@ -62,7 +62,7 @@
 |--------|------|
 | M1 — selection 基线 + Selection 面摸底 | ✅ 切片 1/2/3 全部完成（2026-09-07）——基线 + Selection 面 + editing 导入 |
 | M2 — 编辑行为管线 | ✅ 切片 1/2/3 全部完成（2026-09-07）——事件序 + 键入/删除/换行落 DOM；defer 项：insertParagraph 块级拆分、跨节点删除 |
-| M3 — execCommand 基础面 + 收尾 | ⬜ |
+| M3 — execCommand 基础面 + 收尾 | 🔶 切片 1 ✅（四 format 命令实应用，2026-09-07）；剩余：toggle/queryCommandState、delete/forwardDelete 实应用、run/ 用例导入（330KB reference impl 依赖——defer 有据）|
 
 ## 验证基线
 

@@ -1439,6 +1439,69 @@
     }
     return null;
   }
+  // R3254-M3 切片 1：format 命令 → inline 包裹标签（Chromium 语义——bold→<b> 而非
+  // <span style=font-weight>；其余 format 族 hilitecolor/backcolor 等 CSS 化 defer）。
+  var _zwExecCmdFormatTag = { bold: 'b', italic: 'i', underline: 'u', strikethrough: 's' };
+  // format 实应用：选区两端点映射到宿主 innerHTML 串偏移（与 __zw_ce_enter 同款
+  // 实体感知扫描——`&...;` 实体按单渲染字符计），splice 包裹 `<tag>...</tag>`，
+  // 经 innerHTML setter → SetInnerHtml mutation 流转宿主。**flat 模型**：两端点均
+  // 在宿主直子文本节点内才应用（嵌套结构偏移映射 defer 记录）；跨文本子区间按
+  // 全直子文本偏移拼接处理。
+  function _zwExecCmdApplyFormat(host, range, tag) {
+    var sc = range.startContainer, so = range.startOffset | 0;
+    var ec = range.endContainer, eo = range.endOffset | 0;
+    var kids = host.childNodes || [];
+    // 端点 → 「宿主直子文本累积偏移」
+    function endpointTextOffset(node, offset) {
+      var acc = 0;
+      for (var i = 0; i < kids.length; i++) {
+        var k = kids[i];
+        if (k === node) return acc + offset;
+        if (k.nodeType === 3 || k.__zwIsText) acc += String(k.nodeValue || '').length;
+      }
+      return -1; // 端点不在宿主直子（嵌套结构）→ defer
+    }
+    var startT = endpointTextOffset(sc, so);
+    var endT = endpointTextOffset(ec, eo);
+    if (startT < 0 || endT < 0 || startT >= endT) return;
+    // 累积文本偏移 → innerHTML 串偏移（标签感知 + 实体感知扫描——纯文本字符计数，
+    // 标签构造 <[^>]*> 整段跳过；`&...;` 实体按单渲染字符计）。
+    function textToHtmlOffset(html, want) {
+      var seen = 0;
+      var j = 0;
+      while (j < html.length) {
+        var ch = html.charAt(j);
+        if (ch === '<') {
+          // 标签整段跳过（不计文本）；跳完后落点即「want 已满」的正确插入位。
+          var gt = html.indexOf('>', j);
+          if (gt <= j) return -1;
+          j = gt + 1;
+          if (seen === want) return j;
+          continue;
+        }
+        if (seen === want) return j;
+        if (ch === '&') {
+          var semi = html.indexOf(';', j);
+          if (semi > j && semi - j <= 10) { j = semi; seen++; j++; continue; }
+        }
+        seen++;
+        j++;
+      }
+      return seen === want ? html.length : -1;
+    }
+    var html = String(host.innerHTML || '');
+    var hStart = textToHtmlOffset(html, startT);
+    var hEnd = textToHtmlOffset(html, endT);
+    if (hStart < 0 || hEnd < 0) return;
+    host.innerHTML = html.slice(0, hStart) + '<' + tag + '>' + html.slice(hStart, hEnd) + '</' + tag + '>' + html.slice(hEnd);
+    // caret → 包裹区末尾（宿主 childNodes：…text, tag, …——tag 后位置的元素边界）。
+    try {
+      var nr = document.createRange();
+      nr.setStart(host, (kids.indexOf(ec) >= 0 ? kids.indexOf(ec) : kids.length - 1) + 1);
+      nr.collapse(true);
+      if (typeof _getSelection === 'function') { _getSelection()._ranges = [nr]; }
+    } catch (_eFmtCaret) {}
+  }
 
   globalThis.document = {
     // js-dom M3 R100：shim document 标记——generate_dom_api_polyfill（execute_script_with_dom
@@ -2307,6 +2370,16 @@
             var notCanceled = host2.dispatchEvent(before2) !== false;
             try { before2._zwUaDispatch = false; } catch (_eTb2) {}
             if (notCanceled) {
+              // R3254-M3 切片 1（editing goal，2026-09-07）：**格式命令实应用**——
+              // bold/italic/underline/strikethrough 对选中文本做 inline 标签包裹
+              //（<b>/<i>/<u>/<s>，innerHTML splice——与 __zw_ce_enter 同款实体感知
+              // 偏移扫描；flat 模型：两端点均在宿主**直子**文本节点内才应用，嵌套
+              // 结构 defer 记录）。toggle 语义（已包裹则解除）defer——queryCommandState
+              // 面后续切片。非 format 命令不触发 DOM 变更（事件照派）。
+              var fmtTag2 = _zwExecCmdFormatTag[cmd];
+              if (fmtTag2 && rng2 && !rng2.collapsed) {
+                try { _zwExecCmdApplyFormat(host2, rng2, fmtTag2); } catch (_eFmt) {}
+              }
               // spec（WPT 'Changing selection from handler'）：beforeinput handler
               // 可改选区——input 事件 target 按 **input 派发时刻** 的选区 editing host
               // 现解析（handler 移选到第二 host → input target = 第二 host）。

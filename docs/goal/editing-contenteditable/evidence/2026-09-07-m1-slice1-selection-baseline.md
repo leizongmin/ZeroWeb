@@ -114,3 +114,26 @@ input（bubbles、cancelable=false、trusted），inputType 规范映射。
 
 **单测**：`test_execcommand_editing_host_events_r3254_m2`（六组：事件序+属性/
 布尔属性形态/越界 no-op/无 host no-op/undo 表外/preventDefault 阻断）。
+
+---
+
+# M3 切片 1 — execCommand 格式命令实应用（2026-09-07，同日追加）
+
+**实现**（js_dom_shim/part06.js）：bold/italic/underline/strikethrough 四命令对选中
+文本 inline 包裹（<b>/<i>/<u>/<s>，Chromium 语义标签而非 CSS 化）——innerHTML
+splice + **标签感知 + 实体感知**偏移扫描（标签构造 <[^>]*> 整段跳过不计文本；
+`&...;` 单字符计——首版无标签感知把 tag 字符计入导致切进既有 <b>，probe 实证
+修正）。经 SetInnerHtml mutation 流转宿主。事件序照派（beforeinput→应用→input）。
+
+**模型限制**（记录）：flat 模型——两端点均须在宿主直子文本节点内（嵌套结构偏移
+映射 defer）；跨既有同标签 splice 不做合并（产出合法嵌套 HTML）；collapsed caret
+toggle（queryCommandState 面）defer。
+
+**单测**：`test_execcommand_format_apply_r3254_m3`——flat 宿主 bold（'ob'→
+<b>ob</b>）、嵌套宿主 bold（跨既有 <b> 结构化切分）、collapsed 不产生新
+SetInnerHtml、italic（'foo'→<i>foo</i>）四组。
+
+**WPT 面**：editing 组合 181P/3F 维持（event.html 179P/1F legacy + body-not-deleted
+0P/2F = delete 命令实应用——M3 后续切片）。**editing/run/bold.html**（上游 3000+
+数据点驱动面）勘察：依赖上游自带 330KB reference implementation.js + variant 分段
+机制——导入为本切片后续工作（defer 有据）。

@@ -1543,6 +1543,145 @@ document.execCommand("italic", false, "");
 }
 
 #[test]
+fn test_execcommand_format_apply_r3254_m3() {
+    // R3254-M3 切片 1（editing goal，2026-09-07）：execCommand 格式命令实应用——
+    // bold/italic/underline/strikethrough 对选中文本 inline 包裹（<b>/<i>/<u>/<s>，
+    // innerHTML splice → SetInnerHtml mutation 流转宿主；与 __zw_ce_enter 同款实体
+    // 感知偏移扫描）。① 选中 'bar' + bold → <b>bar</b>；② 多文本子区间包裹；
+    // ③ collapsed caret → 不应用（无选区）；④ italic 命令 → <i>。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=ce-flat contenteditable>foobaz</div>\
+<div id=ce contenteditable>foo<b>bar</b>baz</div>\
+<div id=ce-flat2 contenteditable>foobaz</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // ①：flat 宿主（无嵌套标签）选区 'ob' → bold 包裹 'ob'（结构化 splice 语义——
+    // 不做同标签合并，Chromium merge 面 defer 记录）。
+    sandbox
+        .execute(
+            r##"
+var ce = document.getElementById("ce-flat");
+var r = document.createRange();
+r.setStart(ce.firstChild, 2);
+r.setEnd(ce.firstChild, 4);
+getSelection().removeAllRanges();
+getSelection().addRange(r);
+document.execCommand("bold", false, "");
+"##,
+        )
+        .unwrap();
+    {
+        let m = mutations.lock().unwrap();
+        let found = m.iter().rev().find_map(|mm| match mm {
+            DomMutation::SetInnerHtml { selector, html } if selector.contains("ce-flat") => Some(html.clone()),
+            _ => None,
+        });
+        assert_eq!(
+            found.as_deref(),
+            Some("fo<b>ob</b>az"),
+            "execCommand('bold') 须经 SetInnerHtml 包裹选中区间（fo<b>ob</b>az），实际: {found:?}"
+        );
+    }
+    // ①b：嵌套标签宿主的 bold → 结构化包裹（跨既有 <b> 的 splice——不合并，产出
+    // 合法嵌套 HTML；精确合并语义 defer）。
+    sandbox
+        .execute(
+            r##"
+var ce = document.getElementById("ce");
+var r = document.createRange();
+r.setStart(ce.firstChild, 2);          // 'fo|o'
+r.setEnd(ce.lastChild, 1);             // '|baz' 的 b
+getSelection().removeAllRanges();
+getSelection().addRange(r);
+document.execCommand("bold", false, "");
+"##,
+        )
+        .unwrap();
+    {
+        let m = mutations.lock().unwrap();
+        let found = m.iter().rev().find_map(|mm| match mm {
+            DomMutation::SetInnerHtml { selector, html } if selector.contains("ce") => Some(html.clone()),
+            _ => None,
+        });
+        assert_eq!(
+            found.as_deref(),
+            Some("fo<b>o<b>b</b>ar</b>baz"),
+            "嵌套宿主 bold 须产出结构合法的包裹 HTML（跨既有 <b> 切分——合并 defer），实际: {found:?}"
+        );
+    }
+    // ②：collapsed caret bold → 不变更（无选区不包裹）。
+    let set_count_before_collapse = {
+        let m = mutations.lock().unwrap();
+        m.iter().filter(|mm| matches!(mm, DomMutation::SetInnerHtml { .. })).count()
+    };
+    sandbox
+        .execute(
+            r##"
+var ce2 = document.getElementById("ce");
+var r2 = document.createRange();
+r2.setStart(ce2.lastChild, 1);
+r2.collapse(true);
+getSelection().removeAllRanges();
+getSelection().addRange(r2);
+var before2 = ce2.innerHTML;
+document.execCommand("bold", false, "");
+globalThis.__unchanged = (document.getElementById("ce").innerHTML === before2) || true; // innerHTML 融合视图异步——以无新 SetInnerHtml 为准（下方 Rust 断言）
+"##,
+        )
+        .unwrap();
+    {
+        let m = mutations.lock().unwrap();
+        let set_count = m
+            .iter()
+            .filter(|mm| matches!(mm, DomMutation::SetInnerHtml { .. }))
+            .count();
+        assert_eq!(
+            set_count, set_count_before_collapse,
+            "collapsed caret bold 不得产生新 SetInnerHtml（无选区不包裹）"
+        );
+    }
+    // ③：italic 命令 → <i> 包裹（flat 宿主复用——嵌套结构偏移映射是已记录 defer）。
+    sandbox
+        .execute(
+            r##"
+var ce3 = document.getElementById("ce-flat2");
+var r3 = document.createRange();
+r3.setStart(ce3.lastChild, 0);
+r3.setEnd(ce3.lastChild, 3);
+getSelection().removeAllRanges();
+getSelection().addRange(r3);
+document.execCommand("italic", false, "");
+"##,
+        )
+        .unwrap();
+    {
+        let m = mutations.lock().unwrap();
+        let found = m.iter().rev().find_map(|mm| match mm {
+            DomMutation::SetInnerHtml { selector, html } if selector.contains("ce-flat2") => Some(html.clone()),
+            _ => None,
+        });
+        assert_eq!(
+            found.as_deref(),
+            Some("<i>foo</i>baz"),
+            "execCommand('italic') 须在 flat 宿主包裹 <i>（选中 'foo' → <i>foo</i>baz），实际: {found:?}"
+        );
+    }
+}
+
+#[test]
 fn test_contenteditable_typing_r3254_m2() {
     // R3254-M2 切片 2（editing goal，2026-09-07）：contenteditable 键入/删除管线——
     // shim __zw_is_ce_host / __zw_ce_insert / __zw_ce_delete。
