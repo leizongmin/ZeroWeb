@@ -782,6 +782,19 @@ second（replacement）worker 只处理 awaitInstallEvent（messageSequence=1）
 - **处理**：修复需架构级改动（worker 请求的 host 响应不应依赖页面轮询链驱动），
   超出 CI 守护自主修复范围；不强行修复，等待 SW 专项轮次评估。
 
+**flake 收口（2026-09-06）**：core runner 的
+`skip-waiting-using-registration.https.html` 间歇红项（~1/3："Controller state
+should be activating expected activating but got activated"）已根因修复（82fcb379f）。
+探针实证：创建即受控的 iframe 文档，worker1 的初始 controller 通知被 wire 路径
+误判为 change 派发 controllerchange（setTimeout 任务），与测试体
+`oncontrollerchange` 赋值竞态——落在赋值后即抢答 saw_controllerchanged 必红。
+spec：controller 自创建即定的赋值不是 change。修复：realm 创建期记录
+`creationControllerId` 基线，dispatch 决策以 `notifiedId || creationId` 判 change，
+初始受控赋值仅记账不派发；claim 场景（创建时无 controller）行为不变。单案 18 连跑
+全绿，core 连续三跑 249/249；reftest 100% 无回归。webview 集成测试
+`update_permissions_follow_calling_worker_state_during_installation` 本地超时
+（上条）仍为待架构级处理项。
+
 ## 待用户决策
 
 | # | 事项 | 状态 |
