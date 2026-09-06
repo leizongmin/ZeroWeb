@@ -946,6 +946,11 @@ impl LayoutEngine {
         // 仅根传视口高度作包含块；后代经 my_definite_content_height 链传播。
         clamp_percentage_max_height(&mut root_box, Some(self.viewport_height), styles);
 
+        // R4075（css-sizing-4 §4.2）：aspect-ratio transferred min-width 不覆盖显式
+        // max-width——taffy min>max 约束表给出 200 压过 max-width:100
+        //（block-aspect-ratio-022）。收回到 max。
+        clamp_transferred_min_width_to_max(&mut root_box, styles);
+
         // 12.x R3768：跨块盒 line-clamp（css-overflow-4）。clamp 容器含 block 子时累计
         // 各子 IFC 行数定位 clamp 点、超预算子内截断、后续 in-flow 子盒跳过（几何清零 +
         // line_clamp_hidden，paint 据此跳过整子树）。须在各子 IFC 终化（compute_final_inline_

@@ -39,3 +39,40 @@ fn r4074_ar_height_not_reclaimed_by_ifc() {
         "R4074: aspect-ratio 传递高不被 IFC 收缩（应为 100），got {h}"
     );
 }
+
+/// R4075（css-sizing-4 §4.2 + §5.2）：transferred min-width（min-height×ratio）不得
+/// 覆盖显式 max-width——taffy 通用 min>max 约束表给 200 压过 max-width:100。
+/// 断言（022）：外层 100 宽，width:auto 的 in-flow 绿子同步跟随 100。
+#[test]
+fn r4075_transferred_min_width_yields_to_explicit_max() {
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    let html = "<html><head><style></style></head><body>\
+<div style=\"min-height: 200px; max-width: 100px; aspect-ratio: 1/1;\">\
+<div style=\"width: 300px; height: 10px;\"></div>\
+<div style=\"height: 100px; background: green;\"></div></div></body></html>";
+    let result = pipeline.render_html(html, "");
+    let mut outer_w = 0.0;
+    let mut green_w = 0.0;
+    fn walk(b: &zero_layout_engine::types::LayoutBox, outer: &mut f32, green: &mut f32) {
+        if *outer == 0.0 && (b.width - 100.0).abs() < 0.5 && (b.height - 200.0).abs() < 0.5 {
+            *outer = b.width;
+            for c in &b.children {
+                if (c.height - 100.0).abs() < 0.5 {
+                    *green = c.width;
+                }
+            }
+        }
+        for c in &b.children {
+            walk(c, outer, green);
+        }
+    }
+    walk(&result.layout.root, &mut outer_w, &mut green_w);
+    assert!(
+        (outer_w - 100.0).abs() < 0.5,
+        "R4075: transferred min-width 不覆盖显式 max-width，外层应 100，got {outer_w}"
+    );
+    assert!(
+        (green_w - 100.0).abs() < 0.5,
+        "R4075: width:auto 绿子应跟随容器新宽 100，got {green_w}"
+    );
+}

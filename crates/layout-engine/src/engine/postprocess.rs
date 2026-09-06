@@ -1864,6 +1864,57 @@ pub(super) fn clamp_percentage_max_height(
     }
 }
 
+/// R4075（css-sizing-4 §4.2 transferred size + §5.2 clamp 顺序）：aspect-ratio 双 auto
+/// 块的 **transferred min-width 不得覆盖显式 max-width**——taffy 的通用 min>max 约束表
+/// 会把 min-height×ratio 推导的 transferred min-width（200）当最终宽压过显式
+/// max-width（100），css-sizing-4 明确 transferred size 只是 min-width:auto 的推导值，
+/// 与显式 max 矛盾时**显式 max 胜**（block-aspect-ratio-022：min-height:200 +
+/// max-width:100 + ratio 1/1 应 100 宽，taffy 给 200）。
+/// 本 pass 对 ratio>0 + width/min_width Auto + max_width 可解析 Px 的非替换块，把
+/// 超 max 的宽收回到 max（同步 content_width；高度不变——高度已由高度链决定，
+/// ratio 不再反推，与 R3912 显式侧语义一致）。
+pub(super) fn clamp_transferred_min_width_to_max(box_node: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) {
+    use zero_css_parser::values::LengthValue;
+    if let Some(id) = box_node.node_id
+        && let Some(s) = styles.get(&id)
+        && s.aspect_ratio.is_some_and(|r| r > 0.0)
+        && matches!(s.width, LengthValue::Auto)
+        && matches!(s.min_width, LengthValue::Auto)
+        && matches!(s.writing_mode, zero_style_system::WritingModeValue::HorizontalTb)
+        && !box_node.is_replaced
+        && let Some(max_w) = resolve_postprocess_real_length(&s.max_width, s)
+    {
+        let frame = box_node.padding_left + box_node.padding_right + box_node.border_left + box_node.border_right;
+        if box_node.width > max_w + 0.5 {
+            let new_w = (max_w).max(frame);
+            box_node.width = new_w;
+            box_node.content_width = (new_w - frame).max(0.0);
+            // R4075：width:auto 的 in-flow 块子跟随容器新宽（taffy 按旧 200 拉伸了子，
+            // 容器收回 max 后子须同步；022 绿子 w=200 应 100）。
+            let content_w = box_node.content_width;
+            for child in &mut box_node.children {
+                let child_auto = child
+                    .node_id
+                    .and_then(|cid| styles.get(&cid))
+                    .is_some_and(|cs| matches!(cs.width, LengthValue::Auto));
+                if child_auto
+                    && !child.is_absolute
+                    && !child.is_fixed
+                    && matches!(child.float, FloatValue::None)
+                    && (child.width - content_w).abs() > 0.5
+                {
+                    child.width = content_w;
+                    let cframe = child.padding_left + child.padding_right + child.border_left + child.border_right;
+                    child.content_width = (content_w - cframe).max(0.0);
+                }
+            }
+        }
+    }
+    for child in &mut box_node.children {
+        clamp_transferred_min_width_to_max(child, styles);
+    }
+}
+
 /// 从 calc 表达式中提取百分比和 px 偏移量。
 ///
 /// 对于 `calc(100% - 6px)`，返回 `Some((100.0, -6.0))`。
