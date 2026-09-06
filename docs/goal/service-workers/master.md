@@ -780,6 +780,12 @@ second（replacement）worker 只处理 awaitInstallEvent（messageSequence=1）
    serviceworker 首片与持久化之后，继续挑选当前可执行的 Service Worker fetch/cache 上游用例，
    扩展 pass-rate evidence；`fetch-event-respond-with-readable-stream.https.html` 的剩余
    资产闭包与页面 cancel/abort 反传应作为 streaming/cancel 专项处理
+   （2026-09-06 探测：case + worker fixture 已按 04067ce pin 取回本地，未注册进
+   fetch runner——10 subtest 中前 6 个 stream 构建/delayed/fetch-stream 全 Pass，
+   后 4 个 cancel/abort 可观察性红项需跨 runtime cancel 反传：page
+   `response.body.getReader().cancel()` / AbortController → IPC typed cancel
+   signal → manager → SW runtime stream `cancel()` 回调，工程量约一个完整切片，
+   未注册避免红 baseline）
 2. **M3 clients follow-up**：popup/auxiliary 真实 browsing context 创建后接入 browser owner
 
 ## 里程碑状态
