@@ -2,7 +2,7 @@
 
 **入口文档**: [../keyboard-default-actions.md](../keyboard-default-actions.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-08-17（立项——M1 待启动）
+**最后更新**: 2026-09-07（M1 切片 1 完成——键盘基线 1P/4F + runner ENTER 分发接通）
 
 ---
 
@@ -34,17 +34,17 @@
 
 | # | 缺口 | 状态 |
 |---|------|------|
-| K1 | WPT 用例覆盖为零 | ⬜ M1 |
-| K2 | 默认动作分发层缺失 | ⬜ M1 |
+| K1 | WPT 用例覆盖为零 | ✅ 首批 6 用例 2026-09-07（uievents/keyboard 5 + implicit-submission；基线 1P/4F，evidence/2026-09-07-m1-keyboard-baseline.md）|
+| K2 | 默认动作分发层缺失 | 🔶 部分接通：runner send_keys uE007→Submit + webview CE-first Enter 分发（2026-09-07）；keydown/keyup 事件派发断言面待 Actions 键盘链（addKeyboard not a function）|
 | K3 | implicit submission（Enter 提交规则）缺失 | ⬜ M2 |
 | K4 | 激活键语义（空格/Enter → click 合成 + 两键差异）缺失 | ⬜ M2 |
 | K5 | select 键盘导航（展开/移动/type-ahead）缺失 | ⬜ M3 |
 
 ## 下一步计划
 
-1. **M1 切片 1**：WPT 键盘交互用例导入 + 基线（零源码改动）
-2. **M1 切片 2**：失败聚类 → 修复队列
-3. **M1 切片 3**：默认动作分发层骨架
+1. ~~**M1 切片 1**：WPT 键盘交互用例导入 + 基线~~ ✅ 2026-09-07（1P/4F + ENTER 映射修复，evidence/2026-09-07-m1-keyboard-baseline.md）
+2. **M1 切片 2**：失败聚类修复——testdriver Actions 键盘链（addKeyboard/addKey…/send → keydown/keyup 派发，keydown-input-events 驱动）
+3. **M1 切片 3**：默认动作分发层骨架（keydown 派发进 runner send_keys 路径——现仅 action 语义无事件序）
 
 **碰撞管理**：开工前先 `git log --since="14 days ago" -- crates/engine/src/js_dom_shim/`
 核对 js-dom 流活跃面。
@@ -53,12 +53,12 @@
 
 | 里程碑 | 状态 |
 |--------|------|
-| M1 — WPT 基线建立 + 分发层骨架 | ⬜ 待启动 |
+| M1 — WPT 基线建立 + 分发层骨架 | 🔶 切片 1 ✅（基线 1P/4F + ENTER 分发）；切片 2/3 待启动 |
 | M2 — 表单键与激活 | ⬜ |
 | M3 — select 导航 + radio/checkbox + 事件序 | ⬜ |
 
 ## 验证基线
 
 - 测试基线：立项时点全绿（13,192+）；clippy 零警告
-- WPT 键盘默认动作面：无基线（未导入）
+- WPT 键盘默认动作面：**1P/4F** @ WPT_REV 315976933870（6 用例，evidence/2026-09-07-m1-keyboard-baseline.md）
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过
