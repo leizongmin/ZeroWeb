@@ -658,66 +658,80 @@ fn apply_replaced_element_sizing(
         (dh + crate::svg_default_size::SVG_DEFAULT_H).abs() < 0.5
     }
     // R4000（css-sizing-3 §intrinsic-sizes + csswg #1801581）：inline `<svg>` 的
-    // default object size 三件套 used size——width auto + viewBox/CSS-ar-only → 0×0；
-    // width auto 无来源 → 300×150；width % → height 150 且不与比复合（% 宽交 taffy
-    // 对 CB 解析）。attr/CSS abs 值仍走下方既有路径（R3935 警告：默认尺寸不走 attr
-    // 双 Some definite 路径，挡 abspos inset 方程）。kill-switch `ZW_SVG_DEFAULT_SIZE=0`。
+    // default object size 三件套 used size——width auto + viewBox/CSS-ar-only → 隐式 100%；
+    // width auto 无来源 → R4090 统一规则（w=min(bbox_w,300)，h=显式||min(bbox_h,150)）；
+    // width % → height 150 且不与比复合（% 宽交 taffy 对 CB 解析）。attr/CSS abs 值仍走
+    // 下方既有路径（R3935 警告：默认尺寸不走 attr 双 Some definite 路径，挡 abspos inset
+    // 方程）。kill-switch `ZW_SVG_DEFAULT_SIZE=0`。
     if tag == "svg"
         && let Some(elem) = doc.get(dom_id).and_then(|n| match &n.kind {
             NodeKind::Element(e) => Some(e),
             _ => None,
         })
-        && let Some((dw, dh)) = crate::svg_default_size::svg_default_used_size(elem, computed)
     {
-        taffy_style.size.width = match dw {
-            Some(w) => taffy::style::Dimension::length(w),
-            // width %（含 ratio-only 隐式 100%）：taffy 对 CB 解析（definite 块宽
-            // → fill；max-content 语境 → 0）；高度由比随解析宽推。
-            // R4007：taffy percent 量纲 = 分数 [0.0, 1.0]（converter:541 同款 /100），
-            // 旧 percent(100.0) = 10000%（svg 790×398、display:block 塌 78400 宽实证）。
-            None => taffy::style::Dimension::percent(1.0),
-        };
-        // R4007（css-sizing-3 §5.2.1 stretch-fit min/max constraint + 比回传）：
-        // % 宽 + 比信号（dh<0）+ definite 块 CB + Px min-height 时，taffy 不会做
-        // 「min-height 钳高 → 比回传扩宽」链（width % 解析 50 → 高 25 → 钳 100 后宽
-        // 停在 50），chromium 按 stretch-fit 算法回传（001：50→25→100→200→max-width
-        // 钳 100；002：50→50→100→100）。此处显式回传：w = min(mh×ratio, max_width)，
-        // 宽高以 definite 写入（仅在可完整解析时替换 % + auto 输入）。
-        if dh < 0.0
-            && let Some(ratio) = crate::svg_default_size::svg_ratio_value(elem, computed)
-            && let LengthValue::Px(mh) = computed.min_height
-            && mh.is_finite()
-            && mh > 0.0
-            && doc
-                .parent_node(dom_id)
-                .and_then(|p| styles.get(&p))
-                .is_some_and(|ps| matches!(ps.width, LengthValue::Px(cw) if cw.is_finite() && cw > 0.0))
-        {
-            let transferred_w = (mh * f64::from(ratio)) as f32;
-            let max_w = match &computed.max_width {
-                LengthValue::Px(mw) if mw.is_finite() && *mw > 0.0 => *mw as f32,
-                _ => f32::INFINITY,
+        // R4090：content bbox = 直接子形状元素几何并集（attr 泄漏为 SVG 用户单位；
+        // 子级含 g/text/path 等不可计算形状 → None，svg_default_used_size 内退 default）。
+        let shape_children: Vec<(&str, &zero_dom::ElementData)> = doc
+            .child_nodes(dom_id)
+            .iter()
+            .filter_map(|child| doc.get(*child))
+            .filter_map(|n| match &n.kind {
+                NodeKind::Element(e) => Some((e.local_name(), e)),
+                _ => None,
+            })
+            .collect();
+        let bbox = crate::svg_default_size::svg_content_bbox(&shape_children);
+        if let Some((dw, dh)) = crate::svg_default_size::svg_default_used_size(elem, computed, bbox) {
+            taffy_style.size.width = match dw {
+                Some(w) => taffy::style::Dimension::length(w),
+                // width %（含 ratio-only 隐式 100%）：taffy 对 CB 解析（definite 块宽
+                // → fill；max-content 语境 → 0）；高度由比随解析宽推。
+                // R4007：taffy percent 量纲 = 分数 [0.0, 1.0]（converter:541 同款 /100），
+                // 旧 percent(100.0) = 10000%（svg 790×398、display:block 塌 78400 宽实证）。
+                None => taffy::style::Dimension::percent(1.0),
             };
-            let w = transferred_w.min(max_w);
-            if w > 0.0 {
-                taffy_style.size.width = taffy::style::Dimension::length(w);
-                taffy_style.size.height = taffy::style::Dimension::length(mh as f32);
+            // R4007（css-sizing-3 §5.2.1 stretch-fit min/max constraint + 比回传）：
+            // % 宽 + 比信号（dh<0）+ definite 块 CB + Px min-height 时，taffy 不会做
+            // 「min-height 钳高 → 比回传扩宽」链（width % 解析 50 → 高 25 → 钳 100 后宽
+            // 停在 50），chromium 按 stretch-fit 算法回传（001：50→25→100→200→max-width
+            // 钳 100；002：50→50→100→100）。此处显式回传：w = min(mh×ratio, max_width)，
+            // 宽高以 definite 写入（仅在可完整解析时替换 % + auto 输入）。
+            if dh < 0.0
+                && let Some(ratio) = crate::svg_default_size::svg_ratio_value(elem, computed)
+                && let LengthValue::Px(mh) = computed.min_height
+                && mh.is_finite()
+                && mh > 0.0
+                && doc
+                    .parent_node(dom_id)
+                    .and_then(|p| styles.get(&p))
+                    .is_some_and(|ps| matches!(ps.width, LengthValue::Px(cw) if cw.is_finite() && cw > 0.0))
+            {
+                let transferred_w = (mh * f64::from(ratio)) as f32;
+                let max_w = match &computed.max_width {
+                    LengthValue::Px(mw) if mw.is_finite() && *mw > 0.0 => *mw as f32,
+                    _ => f32::INFINITY,
+                };
+                let w = transferred_w.min(max_w);
+                if w > 0.0 {
+                    taffy_style.size.width = taffy::style::Dimension::length(w);
+                    taffy_style.size.height = taffy::style::Dimension::length(mh as f32);
+                    taffy_style.aspect_ratio = None;
+                }
+            }
+            // 负 dh = 比信号（width % + viewBox/ar）：保留 aspect_ratio 让 taffy 由解析宽
+            // 推高；正 dh = definite 高（default / 无比）。
+            taffy_style.size.height = if dh < 0.0 {
+                taffy::style::Dimension::auto()
+            } else {
+                taffy::style::Dimension::length(dh)
+            };
+            // default（无来源）路径不与 viewBox 比复合（chromium 006：300×150 非 300×300）。
+            // % + 比路径保留比；% 无比（dh=-150 哨兵）路径清比防 150×ratio 膨胀。
+            if dw == Some(SVG_DEFAULT_W_SENTINEL) || (dw.is_none() && dh < 0.0 && svg_ratio_cleared(dh)) {
                 taffy_style.aspect_ratio = None;
             }
+            return;
         }
-        // 负 dh = 比信号（width % + viewBox/ar）：保留 aspect_ratio 让 taffy 由解析宽
-        // 推高；正 dh = definite 高（default / 无比）。
-        taffy_style.size.height = if dh < 0.0 {
-            taffy::style::Dimension::auto()
-        } else {
-            taffy::style::Dimension::length(dh)
-        };
-        // default（无来源）路径不与 viewBox 比复合（chromium 006：300×150 非 300×300）。
-        // % + 比路径保留比；% 无比（dh=-150 哨兵）路径清比防 150×ratio 膨胀。
-        if dw == Some(SVG_DEFAULT_W_SENTINEL) || (dw.is_none() && dh < 0.0 && svg_ratio_cleared(dh)) {
-            taffy_style.aspect_ratio = None;
-        }
-        return;
     }
     if tag != "img" && tag != "canvas" && tag != "video" && tag != "embed" && tag != "object" && tag != "applet" {
         return;

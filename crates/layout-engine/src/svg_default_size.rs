@@ -53,9 +53,16 @@ pub(crate) fn svg_max_content_contribution(elem: &ElementData, style: &ComputedS
 
 /// inline `<svg>` 的 used size 补全（width auto 或 width % 时的 height/全尺寸语义）。
 ///
+/// `content_bbox` = R4090 content bbox（`svg_content_bbox` 对子形状的并集；None = 不可
+/// 计算，调用方传 None 即可）。
+///
 /// 返回 `Some((w, h))` = 应写入 taffy 的 definite 尺寸；`None` = 走既有路径。
 /// width % 时不返回宽度（taffy 对 CB 已定时自行解析 %），仅由调用方钳 height。
-pub(crate) fn svg_default_used_size(elem: &ElementData, style: &ComputedStyle) -> Option<(Option<f32>, f32)> {
+pub(crate) fn svg_default_used_size(
+    elem: &ElementData,
+    style: &ComputedStyle,
+    content_bbox: Option<(f32, f32)>,
+) -> Option<(Option<f32>, f32)> {
     if std::env::var("ZW_SVG_DEFAULT_SIZE").as_deref() == Ok("0") {
         return None;
     }
@@ -73,6 +80,15 @@ pub(crate) fn svg_default_used_size(elem: &ElementData, style: &ComputedStyle) -
         return Some((Some(aw), aw / ratio));
     }
     // 既有 abs 路径（attr/CSS 任一 abs）优先——不动。
+    // R4090 例外（宽无来源 + 高 abs）：used = (min(bbox_w, 300), attr_h)——-009 形态
+    //（attr h=300、rect 600×300 → chromium 300×300）。abspos 不适用（R4016 校准纯
+    // default + R3935 inset 方程保护）。R4088 同形试修曾翻红 -003——彼时无 bbox 钳制
+    //（width=300 vs bbox 200）；bbox 钳制后 -003 走不到此臂（其 CSS h=100、attr h 缺失），
+    // 矛盾消解。
+    // R4088 遗留教训：attr_h abs + 宽无来源的例外臂（-009 形态 → (min(bbox_w,300), attr_h)）
+    // 在 abspos 族（absolute-replaced-width-003/010/024/031/038/052/066，svg attr h=50 +
+    // CSS position:absolute）翻红 2.08-2.15%——abspos 校正点在部分调用面（IFC 直收集）的
+    // position 解析时序下不可靠。该臂独立挂账；本切片只保留 (b) 臂 bbox 钳制。
     if parse_abs(&attr_w).is_some() || parse_abs(&attr_h).is_some() || css_abs(&style.width) || css_abs(&style.height) {
         return None;
     }
@@ -95,8 +111,40 @@ pub(crate) fn svg_default_used_size(elem: &ElementData, style: &ComputedStyle) -
         let ratio = svg_ratio_value(elem, style);
         return Some((None, -ratio.unwrap_or(SVG_DEFAULT_H)));
     }
-    // (b) 完全无来源 → default 300×150。
-    Some((Some(SVG_DEFAULT_W), SVG_DEFAULT_H))
+    // (b) R4090 统一规则（R4089-N chromium 5/5 数据点归约）：natural = content bbox，
+    // used = **per-axis min(natural, default object size)**，显式高覆盖 h 轴：
+    //   w = min(bbox_w, 300)；h = 显式高（CSS Px/attr abs）? 显式 : min(bbox_h, 150)。
+    // bbox 不可计算（空 svg / 复杂子树）→ 旧 default 300×150（= clamp 空集退化）。
+    // css-images-3 §5.1.1：default object size 对 natural 的钳制即此 per-axis min。
+    // **abspos 不参与 bbox 钳制**（R4016 chromium 校准：abspos 无尺寸 svg = 纯 default
+    // 300×150——§10.3.8 shrink-to-fit 面无 bbox 语义；校准单测 r4016_abspos_svg_default_size）。
+    let is_abspos = !matches!(style.position, zero_css_parser::values::PositionValue::Static);
+    let (bw, bh) = if is_abspos {
+        (SVG_DEFAULT_W, SVG_DEFAULT_H)
+    } else {
+        content_bbox.unwrap_or((SVG_DEFAULT_W, SVG_DEFAULT_H))
+    };
+    let w = bw.min(SVG_DEFAULT_W);
+    // 显式高：attr abs（parse_abs 已证 None——上方 abs 早退拦了双 Some……此处 attr_h abs
+    // 存在但 attr_w 缺失的情形走不到（line:abs 早退 return None），故此臂只接 CSS Px 高
+    // ——但 css_abs 早退同样拦了。保守再取一次 attr abs（与 -009 形态一致：attr h=300、
+    // attr w 缺失不触发早退……attr h abs 在早退条件里成立会 return None）。
+    // 实际可达形态：attr h 缺失或 % + CSS height auto/%。attr % 高 → default/比臂未覆盖，
+    // 显式高 = None。
+    let explicit_h = parse_abs(&attr_h).or_else(|| css_abs_value(&style.height));
+    let h = match explicit_h {
+        Some(v) => v,
+        None => bh.min(SVG_DEFAULT_H),
+    };
+    Some((Some(w), h))
+}
+
+/// R4088 遗留 helper（css_abs 提取）：Px 有限非负 → f32。
+fn css_abs_value(v: &LengthValue) -> Option<f32> {
+    match v {
+        LengthValue::Px(x) if x.is_finite() && *x >= 0.0 => Some(*x as f32),
+        _ => None,
+    }
 }
 
 /// R4018：svg 的 **百分比 attr 固有高**（`height="50%"` → Some(50.0)；无 % 高 → None）。
@@ -195,6 +243,89 @@ fn svg_has_ratio_source(elem: &ElementData, style: &ComputedStyle) -> bool {
         })
 }
 
+/// R4090（SVG2 intrinsic sizing 专项，R4089-N 归约规则）：svg **content bbox** 计算。
+///
+/// 接收直接子元素 `(tag, ElementData)` 列表（调用方从 Document 遍历），求几何并集
+///（SVG 用户单位）：
+/// - rect：x/y（默认 0）+ width/height
+/// - circle：cx/cy（默认 0）± r
+/// - ellipse：cx/cy ± rx/ry
+/// - line：x1/y1/x2/y2
+///
+/// 嵌套 `<g>`/text/path 等不可计算形状 → None 回退既有路径；形状缺关键 attr → None
+/// ——宁缺勿错。返回 `(width, height)`（bbox 尺寸，非坐标）。
+pub(crate) fn svg_content_bbox(children: &[(&str, &ElementData)]) -> Option<(f32, f32)> {
+    let mut min_x = f32::MAX;
+    let mut min_y = f32::MAX;
+    let mut max_x = f32::MIN;
+    let mut max_y = f32::MIN;
+    let num = |e: &ElementData, name: &str, dflt: f32| -> Option<f32> {
+        match e.get_attribute(name) {
+            Some(v) => v.trim().parse::<f32>().ok().filter(|n| n.is_finite()),
+            None => Some(dflt),
+        }
+    };
+    let mut any_shape = false;
+    for (tag, e) in children {
+        match *tag {
+            "rect" => {
+                let x = num(e, "x", 0.0)?;
+                let y = num(e, "y", 0.0)?;
+                let w = e.get_attribute("width").and_then(|v| v.trim().parse::<f32>().ok())?;
+                let h = e.get_attribute("height").and_then(|v| v.trim().parse::<f32>().ok())?;
+                if !w.is_finite() || !h.is_finite() {
+                    return None;
+                }
+                min_x = min_x.min(x);
+                min_y = min_y.min(y);
+                max_x = max_x.max(x + w);
+                max_y = max_y.max(y + h);
+                any_shape = true;
+            }
+            "circle" => {
+                let cx = num(e, "cx", 0.0)?;
+                let cy = num(e, "cy", 0.0)?;
+                let r = e.get_attribute("r").and_then(|v| v.trim().parse::<f32>().ok())?;
+                if !r.is_finite() {
+                    return None;
+                }
+                min_x = min_x.min(cx - r);
+                min_y = min_y.min(cy - r);
+                max_x = max_x.max(cx + r);
+                max_y = max_y.max(cy + r);
+                any_shape = true;
+            }
+            "ellipse" => {
+                let cx = num(e, "cx", 0.0)?;
+                let cy = num(e, "cy", 0.0)?;
+                let rx = e.get_attribute("rx").and_then(|v| v.trim().parse::<f32>().ok())?;
+                let ry = e.get_attribute("ry").and_then(|v| v.trim().parse::<f32>().ok())?;
+                if !rx.is_finite() || !ry.is_finite() {
+                    return None;
+                }
+                min_x = min_x.min(cx - rx);
+                min_y = min_y.min(cy - ry);
+                max_x = max_x.max(cx + rx);
+                max_y = max_y.max(cy + ry);
+                any_shape = true;
+            }
+            "line" => {
+                let x1 = num(e, "x1", 0.0)?;
+                let y1 = num(e, "y1", 0.0)?;
+                let x2 = num(e, "x2", 0.0)?;
+                let y2 = num(e, "y2", 0.0)?;
+                min_x = min_x.min(x1.min(x2));
+                min_y = min_y.min(y1.min(y2));
+                max_x = max_x.max(x1.max(x2));
+                max_y = max_y.max(y1.max(y2));
+                any_shape = true;
+            }
+            _ => return None,
+        }
+    }
+    (any_shape && max_x > min_x && max_y > min_y).then_some((max_x - min_x, max_y - min_y))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -220,7 +351,7 @@ mod tests {
     fn viewbox_only_contributes_zero() {
         let (elem, style) = setup(r#"<html><body><svg viewBox="0 0 1 1"></svg></body></html>"#, "");
         assert_eq!(svg_max_content_contribution(&elem, &style), Some(0.0));
-        let (dw, dh) = svg_default_used_size(&elem, &style).expect("used");
+        let (dw, dh) = svg_default_used_size(&elem, &style, None).expect("used");
         assert_eq!(dw, None, "ratio-only = 隐式 100% 宽，交容器解析");
         assert!(dh < 0.0, "负值承载比信号：{dh}");
     }
@@ -230,7 +361,7 @@ mod tests {
     fn no_dims_get_default_object_size() {
         let (elem, style) = setup(r#"<html><body><svg></svg></body></html>"#, "");
         assert_eq!(svg_max_content_contribution(&elem, &style), Some(300.0));
-        assert_eq!(svg_default_used_size(&elem, &style), Some((Some(300.0), 150.0)));
+        assert_eq!(svg_default_used_size(&elem, &style, None), Some((Some(300.0), 150.0)));
     }
 
     /// (c) width %（attr/CSS）→ 贡献 300；used 高 = 比信号（负值承载）或 default。
@@ -241,7 +372,7 @@ mod tests {
             "",
         );
         assert_eq!(svg_max_content_contribution(&elem, &style), Some(300.0));
-        let (dw, dh) = svg_default_used_size(&elem, &style).expect("used");
+        let (dw, dh) = svg_default_used_size(&elem, &style, None).expect("used");
         assert_eq!(dw, None, "% 宽交 taffy/容器解析");
         assert!(dh < 0.0, "% 宽 + viewBox → 负值比信号：{dh}");
     }
@@ -251,7 +382,7 @@ mod tests {
     fn abs_dims_take_existing_path() {
         let (elem, style) = setup(r#"<html><body><svg width="100" height="50"></svg></body></html>"#, "");
         assert_eq!(svg_max_content_contribution(&elem, &style), None);
-        assert_eq!(svg_default_used_size(&elem, &style), None);
+        assert_eq!(svg_default_used_size(&elem, &style, None), None);
 
         let (elem2, style2) = setup(
             r#"<html><body><svg style="width: 100px"></svg></body></html>"#,
@@ -265,7 +396,7 @@ mod tests {
     fn zero_px_attr_is_present_abs() {
         let (elem, style) = setup(r#"<html><body><svg width="0px" height="0px"></svg></body></html>"#, "");
         assert_eq!(svg_max_content_contribution(&elem, &style), None);
-        assert_eq!(svg_default_used_size(&elem, &style), None);
+        assert_eq!(svg_default_used_size(&elem, &style, None), None);
     }
 
     /// R4000b（csswg #6286）：attr width abs + height=0（退化比）→ viewBox 比推导 used。
@@ -275,7 +406,7 @@ mod tests {
             r#"<html><body><svg viewBox="0 0 1 1" width="100" height="0"></svg></body></html>"#,
             "",
         );
-        let (dw, dh) = svg_default_used_size(&elem, &style).expect("used");
+        let (dw, dh) = svg_default_used_size(&elem, &style, None).expect("used");
         assert_eq!(dw, Some(100.0));
         assert!((dh - 100.0).abs() < 0.5, "viewBox 1:1 → h = 100/1：{dh}");
     }

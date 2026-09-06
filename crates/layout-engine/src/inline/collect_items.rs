@@ -385,8 +385,19 @@ impl InlineFormattingContext {
                                 && elem_data.local_name() == "svg"
                                 && (w <= 0.0 || h <= 0.0)
                                 && let Some(style) = style
-                                && let Some((dw, dh)) =
-                                    crate::svg_default_size::svg_default_used_size(elem_data, style)
+                                && let Some((dw, dh)) = {
+                                    let shape_children: Vec<(&str, &zero_dom::ElementData)> = doc
+                                        .child_nodes(child_id)
+                                        .iter()
+                                        .filter_map(|child| doc.get(*child))
+                                        .filter_map(|n| match &n.kind {
+                                            zero_dom::NodeKind::Element(e) => Some((e.local_name(), e)),
+                                            _ => None,
+                                        })
+                                        .collect();
+                                    let bbox = crate::svg_default_size::svg_content_bbox(&shape_children);
+                                    crate::svg_default_size::svg_default_used_size(elem_data, style, bbox)
+                                }
                             {
                                 if w <= 0.0 {
                                     // width %：按容器宽解析（taffy % 语义；IFC 直收集路径
