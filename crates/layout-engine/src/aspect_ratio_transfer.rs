@@ -14,7 +14,7 @@
 //! kill-switch `ZW_AR_TRANSFER=0`。
 
 use crate::LayoutBox;
-use zero_css_parser::values::{DisplayValue, LengthValue};
+use zero_css_parser::values::{DisplayValue, FloatValue, LengthValue};
 use zero_dom::NodeId;
 use zero_style_system::ComputedStyle;
 use zero_style_system::WritingModeValue;
@@ -29,6 +29,32 @@ pub(crate) fn transfer_aspect_ratio_height(root: &mut LayoutBox, styles: &HashMa
 }
 
 fn walk(b: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) {
+    // R4076（css-sizing-4 §4.2 "specified but indefinite"）：float 盒 height:100% 在
+    // indefinite CB 下不可解析——高由 min-height 地板撑起（b.height>0），但 shrink-to-fit
+    // 宽塌 0；transferred min-width = main×ratio 需要传递到宽（block-aspect-ratio-025：
+    // `float:left; aspect-ratio:1/1; height:100%; min-height:100px` 应 100×100，ZW 0×100）。
+    // 仅 float（width 真 indefinite）：height 百分比在 definite-CB 块上已解析，不得反推宽。
+    if let Some(id) = b.node_id
+        && let Some(style) = styles.get(&id)
+        && matches!(b.writing_mode, WritingModeValue::HorizontalTb)
+        && let Some(ratio) = style.aspect_ratio.filter(|&r| r > 0.0)
+        && matches!(style.display, DisplayValue::Block | DisplayValue::FlowRoot)
+        && !b.is_replaced
+        && !b.is_flex_grid_item
+        && !b.is_absolute
+        && !b.is_fixed
+        && matches!(style.width, LengthValue::Auto)
+        && matches!(style.height, LengthValue::Percentage(_))
+        && !matches!(style.float, FloatValue::None)
+    {
+        let main = b.height - b.padding_top - b.padding_bottom - b.border_top - b.border_bottom;
+        let transferred_w = main * ratio;
+        if main > 0.5 && transferred_w > b.width + 0.5 {
+            let frame = b.padding_left + b.padding_right + b.border_left + b.border_right;
+            b.width = transferred_w + frame;
+            b.content_width = transferred_w;
+        }
+    }
     if let Some(id) = b.node_id
         && let Some(style) = styles.get(&id)
         && matches!(b.writing_mode, WritingModeValue::HorizontalTb)
