@@ -211,6 +211,33 @@ impl WebView {
                         },
                     });
                 }
+                // R3254-K4（keyboard-default-actions goal M2，2026-09-07）：空格对
+                // button 类控件 = 激活（click 合成）而非文本插入。InsertText 通道落到
+                // button-ish 目标（BUTTON / input type=button|submit|reset）时递归为
+                // Activate 请求（复用既有激活管线全流程——状态构建/click 派发/disabled
+                // 守卫/effects）。Enter 已由 Submit 臂覆盖（enclosing form / submit
+                // button→click→submit 语义）；此处闭合空格。
+                if let HtmlUserAction::InsertText { text } = &request.action
+                    && text == " "
+                {
+                    let tag = zero_engine::query_tag_from_html(&html, &selector);
+                    let input_type = zero_engine::query_attr_from_html(&html, &selector, "type");
+                    let buttonish = tag.eq_ignore_ascii_case("BUTTON")
+                        || (tag.eq_ignore_ascii_case("INPUT")
+                            && matches!(input_type.to_ascii_lowercase().as_str(), "button" | "submit" | "reset"));
+                    if buttonish {
+                        return self.dispatch_user_action_impl(
+                            executor,
+                            javascript_enabled,
+                            false,
+                            HtmlActionRequest {
+                                target: request.target,
+                                action: HtmlUserAction::Activate,
+                                shift: request.shift,
+                            },
+                        );
+                    }
+                }
                 let snapshot = self.execute_dom_script(executor, &script_text_control_snapshot(&selector))?;
                 let Some((value, selection_start, selection_end)) =
                     serde_json::from_str::<(String, usize, usize)>(&snapshot.value).ok()

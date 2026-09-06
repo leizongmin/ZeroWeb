@@ -328,3 +328,77 @@ fn minlength_validation_only_applies_to_user_edits() {
         ",false,true"
     );
 }
+
+/// R3254-K4（keyboard-default-actions goal M2，2026-09-07）：空格对 button 类控件的
+/// 激活语义——InsertText{" "} 通道落到 button-ish 目标（BUTTON / input type=
+/// button|submit|reset）时递归为 Activate（click 合成，与指针点击同管线）；非
+/// button-ish 目标文本插入行为不变。Enter 已由 Submit 臂覆盖（表单目标）。
+#[test]
+fn space_on_button_activates_click_r3254_k4() {
+    let html = r#"<!DOCTYPE html><html><body>
+        <button id="btn">Go</button>
+        <input id="ib" type="button" value="IB">
+        <p id="log">idle</p>
+        <script>
+          var log = document.querySelector('#log');
+          var count = 0;
+          function hit(who) { count++; log.textContent = who + ':' + count; }
+          document.querySelector('#btn').addEventListener('click', function () { hit('btn'); });
+          document.querySelector('#ib').addEventListener('click', function () { hit('ib'); });
+        </script>
+    </body></html>"#;
+    let mut webview = WebView::new(WebViewConfig::default());
+    webview.prepare_document_state("https://zero.test/space-button");
+    webview.load_html(html, None);
+    let btn = webview.page_node_ref_for_selector("#btn").expect("btn ref");
+    let ib = webview.page_node_ref_for_selector("#ib").expect("ib ref");
+
+    // 空格 InsertText → BUTTON 激活（click 合成）。
+    let result = webview
+        .dispatch_user_action(request(btn, HtmlUserAction::InsertText { text: " ".into() }))
+        .expect("space on button");
+    assert!(!result.canceled);
+    assert!(
+        result.changed,
+        "space activation should dispatch click (listener mutates #log)"
+    );
+    assert_eq!(
+        webview
+            .execute_script("String(document.querySelector('#log').textContent)")
+            .expect("log"),
+        "btn:1",
+        "space on <button> 应合成本地 click（listener 计数）"
+    );
+
+    // input type=button 同款。
+    let result2 = webview
+        .dispatch_user_action(request(ib, HtmlUserAction::InsertText { text: " ".into() }))
+        .expect("space on input button");
+    assert!(result2.changed, "space on input[type=button] should activate");
+    assert_eq!(
+        webview
+            .execute_script("String(document.querySelector('#log').textContent)")
+            .expect("log2"),
+        "ib:2",
+        "space on input[type=button] 应合成本地 click"
+    );
+
+    // 非 button-ish（文本控件）的空格仍是文本插入（回归守卫）。
+    let result3 = webview
+        .dispatch_user_action(request(btn, HtmlUserAction::InsertText { text: "ab".into() }))
+        .expect("non-space text on button");
+    // 非空格文本在 button 上不触发激活（NotApplicable noop 或无变化均可）。
+    assert!(
+        !result3.changed || result3.noop_reason.is_some(),
+        "非空格文本不应激活 button（got changed={} noop={:?}）",
+        result3.changed,
+        result3.noop_reason
+    );
+    assert_eq!(
+        webview
+            .execute_script("String(document.querySelector('#log').textContent)")
+            .expect("log3"),
+        "ib:2",
+        "非空格文本不得改变 click 计数"
+    );
+}
