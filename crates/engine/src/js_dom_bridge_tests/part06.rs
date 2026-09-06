@@ -1543,6 +1543,151 @@ document.execCommand("italic", false, "");
 }
 
 #[test]
+fn test_contenteditable_typing_r3254_m2() {
+    // R3254-M2 切片 2（editing goal，2026-09-07）：contenteditable 键入/删除管线——
+    // shim __zw_is_ce_host / __zw_ce_insert / __zw_ce_delete。
+    // ① 键入：caret 处插入文本节点 + caret 随之移动 + beforeinput/input 事件序；
+    // ② 布尔属性形态（`<div contenteditable>`）识别；③ 非 CE 元素 no-op；
+    // ④ Backspace 删 caret 前一单元（代理对安全）+ caret 回落；⑤ 空选 caret 落宿主开头。
+    // 驱动路径：宿主 keydown 默认动作 → webview InsertText/DeleteBackward CE 分支
+    //（script_contenteditable_probe/insert/delete）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=ce contenteditable>ab</div><p id=p>plain</p></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // ①+②：CE 宿主键入——空选 caret 落宿主开头，插 'X' 后文本 'Xab'，caret 在 1。
+    sandbox
+        .execute(
+            r##"
+globalThis.__ev = [];
+var ce = document.getElementById("ce");
+ce.addEventListener("beforeinput", function (e) { __ev.push("before:" + e.inputType + ":" + e.data + ":" + e.cancelable); });
+ce.addEventListener("input", function (e) { __ev.push("in:" + e.inputType + ":" + e.data); });
+globalThis.__probe = __zw_is_ce_host(ce);
+__zw_ce_insert("#ce", "X");
+globalThis.__text = ce.textContent;
+globalThis.__caret = getSelection().rangeCount > 0
+  ? getSelection()._ranges[0].startOffset + "@" + (getSelection()._ranges[0].startContainer === ce.firstChild ? "t" : "?")
+  : "none";
+"##,
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__probe)").unwrap().value,
+        "true",
+        "__zw_is_ce_host 须识别布尔形态 contenteditable 属性"
+    );
+    // DOM 变更经 nodeValue splice → SetChildText mutation 流转宿主（shim 视图
+    // textContent 是 host 快照，mutation 异步回写——断言以 mutation 为事实源）。
+    {
+        let m = mutations.lock().unwrap();
+        let has_set = m.iter().any(|mm| {
+            matches!(mm, DomMutation::SetChildText { parent_selector, child_index: 0, text }
+                if parent_selector.contains("ce") && text == "Xab")
+        });
+        assert!(
+            has_set,
+            "CE 键入须经 SetChildText mutation 落宿主（#ce child 0 → 'Xab'），实际: {:?}",
+            m.iter().rev().take(6).collect::<Vec<_>>()
+        );
+    }
+    assert_eq!(
+        sandbox.execute("String(globalThis.__caret)").unwrap().value,
+        "1@t",
+        "CE 键入后 caret 须移到插入文本尾（offset 1，text 节点）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ev)").unwrap().value,
+        "before:insertText:X:true,in:insertText:X",
+        "CE 键入须派 beforeinput(cancelable,data)+input(data) 事件序"
+    );
+    // ③：非 CE 元素 no-op。
+    sandbox
+        .execute(r##"
+globalThis.__t3 = document.getElementById("p").textContent;
+__zw_ce_insert("#p", "Y");
+globalThis.__t3b = document.getElementById("p").textContent;
+"##)
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__t3 === globalThis.__t3b)").unwrap().value,
+        "true",
+        "非 CE 元素 __zw_ce_insert 须 no-op"
+    );
+    // ④：caret 在文本中间（offset 2，'Xab' 中 a 后）Backspace 删 'a' → 'Xb'，caret 回落 1。
+    sandbox
+        .execute(r##"
+var ce2 = document.getElementById("ce");
+var tn = ce2.firstChild;
+var r2 = document.createRange();
+r2.setStart(tn, 2);
+r2.collapse(true);
+getSelection().removeAllRanges();
+getSelection().addRange(r2);
+globalThis.__ev4 = [];
+ce2.addEventListener("input", function (e) { __ev4.push("in:" + e.inputType); });
+__zw_ce_delete("#ce");
+globalThis.__text4 = ce2.textContent;
+globalThis.__caret4 = getSelection()._ranges[0].startOffset;
+"##)
+        .unwrap();
+    {
+        let m = mutations.lock().unwrap();
+        let has_del = m.iter().any(|mm| {
+            matches!(mm, DomMutation::SetChildText { parent_selector, child_index: 0, text }
+                if parent_selector.contains("ce") && text == "Xb")
+        });
+        assert!(
+            has_del,
+            "CE Backspace 须经 SetChildText mutation 删 caret 前单元（→ 'Xb'），实际: {:?}",
+            m.iter().rev().take(6).collect::<Vec<_>>()
+        );
+    }
+    assert_eq!(
+        sandbox.execute("String(globalThis.__caret4)").unwrap().value,
+        "1",
+        "CE Backspace 后 caret 须回落到删除点"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ev4)").unwrap().value,
+        "in:deleteContentBackward",
+        "CE Backspace 须派 input(deleteContentBackward)"
+    );
+    // ⑤：caret 在文本节点起点 Backspace no-op（跨节点回退不做，记录限制）。
+    sandbox
+        .execute(r##"
+var ce3 = document.getElementById("ce");
+var r3 = document.createRange();
+r3.setStart(ce3.firstChild, 0);
+r3.collapse(true);
+getSelection().removeAllRanges();
+getSelection().addRange(r3);
+globalThis.__text5 = ce3.textContent;
+__zw_ce_delete("#ce");
+globalThis.__text5b = ce3.textContent;
+"##)
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__text5 === globalThis.__text5b)").unwrap().value,
+        "true",
+        "caret 在文本节点起点 Backspace 须 no-op（起点无前单元）"
+    );
+}
+
+#[test]
 fn test_element_reflected_props_r2805() {
     // R2805：element reflected 属性簇（tabIndex/title/lang/dir）。get 反射同名 attribute（tabIndex 数值，
     // 无→-1；title/lang/dir 无→''），set 写 attribute。照 id/className reflected 模式（get+set trap）。

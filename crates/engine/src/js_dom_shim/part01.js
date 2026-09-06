@@ -2982,6 +2982,124 @@
     el.dispatchEvent(input);
   };
 
+  // R3254-M2 切片 2（editing goal，2026-09-07）：contenteditable 宿主键入/删除管线——
+  // 宿主 keydown 默认动作（可打印字符/Backspace）在焦点元素为 contenteditable 宿主时
+  // 走此二钩子。caret = Selection 单例首个 range（headless 无渲染 caret，程序化选区
+  // 即真实来源）；DOM 变更经既有 mutation-emitting range 面（deleteContents/insertNode，
+  // R2929/R2930）→ DomMutation 回传宿主 rerender。事件序同 text control：
+  // beforeinput（cancelable）→ 变更 → input（cancelable=false）。
+  // https://w3c.github.io/input-events/#input-event-order-during-user-initiated-editing
+  // 元素是否 contenteditable 宿主（自身或祖先 contenteditable=true——R3187 枚举态
+  // 「存在即 true、空串≡true、false 显式关闭」；inherit 沿祖先链解析）。
+  globalThis.__zw_is_ce_host = function(el) {
+    var cur = el;
+    var guard = 0;
+    while (cur && cur.nodeType === 1 && guard++ < 256) {
+      if (typeof cur.getAttribute === 'function' && cur.getAttribute('contenteditable') !== null) {
+        return String(cur.getAttribute('contenteditable')).toLowerCase() !== 'false';
+      }
+      cur = cur.parentNode;
+    }
+    return false;
+  };
+  // CE caret range：selection 有 range 用之；无 → 宿主内容起点（selectNodeContents +
+  // collapse 到 start——键入落在宿主开头）。
+  globalThis.__zw_ce_caret_range = function(el) {
+    var s = (typeof _getSelection === 'function') ? _getSelection() : null;
+    if (s && s.rangeCount > 0) return s._ranges[0];
+    var r = document.createRange();
+    r.selectNodeContents(el);
+    r.collapse(true);
+    return r;
+  };
+  // CE 键入：beforeinput(insertText) → 变更 → input。变更路径按 caret 形态：
+  // ① caret 在文本节点内 → nodeValue splice（SetTextChild 类 mutation 流转宿主）；
+  // ② caret 在元素边界 → 首个/对应子为文本节点同①；宿主无文本子 → createTextNode
+  // + appendChild（两 mutation 均流转宿主）。caret 移到插入文本尾。
+  globalThis.__zw_ce_insert = function(sel, text) {
+    var el = document.querySelector(sel);
+    if (!el || !globalThis.__zw_is_ce_host(el)) return;
+    var ins = String(text == null ? '' : text);
+    if (ins === '') return;
+    var range = globalThis.__zw_ce_caret_range(el);
+    var before = new InputEvent('beforeinput', {
+      bubbles: true, cancelable: true, data: ins, inputType: 'insertText', isComposing: false
+    });
+    if (el.dispatchEvent(before) === false) return;
+    var sc = range.startContainer, so = range.startOffset | 0;
+    var node = null, caretOff = 0;
+    if (sc && (sc.nodeType === 3 || sc.__zwIsText)) {
+      // 文本节点 splice（UTF-16 单元；选区非空先删区间）。
+      var v = String(sc.nodeValue || '');
+      var eo = range.collapsed ? so : (range.endOffset | 0);
+      sc.nodeValue = v.slice(0, so) + ins + v.slice(eo);
+      node = sc;
+      caretOff = so + ins.length;
+    } else if (sc && sc.nodeType === 1) {
+      var kids = sc.childNodes || [];
+      var target = null, idx = so;
+      // offset 处子（或前一个子）为文本 → 该节点 splice；否则建新文本节点插位。
+      if (kids[idx] && (kids[idx].nodeType === 3 || kids[idx].__zwIsText)) target = kids[idx];
+      else if (idx > 0 && kids[idx - 1] && (kids[idx - 1].nodeType === 3 || kids[idx - 1].__zwIsText)) { target = kids[idx - 1]; idx = idx; }
+      if (target) {
+        var v2 = String(target.nodeValue || '');
+        var at = (kids[idx] === target) ? 0 : v2.length; // offset 子即文本 → 插其头；前一个子 → 插其尾
+        target.nodeValue = v2.slice(0, at) + ins + v2.slice(at);
+        node = target;
+        caretOff = at + ins.length;
+      } else {
+        node = document.createTextNode(ins);
+        sc.appendChild(node);
+        caretOff = ins.length;
+      }
+    } else {
+      return; // 非 text/element caret 容器（document 级等）——best-effort 不做
+    }
+    // caret → 插入文本尾（新 collapsed range 取代——selection 单例直换）。
+    var nr = document.createRange();
+    nr.setStart(node, caretOff);
+    nr.collapse(true);
+    if (typeof _getSelection === 'function') { _getSelection()._ranges = [nr]; }
+    var input = new InputEvent('input', {
+      bubbles: true, cancelable: false, data: ins, inputType: 'insertText', isComposing: false
+    });
+    el.dispatchEvent(input);
+  };
+  // CE Backspace：beforeinput(deleteContentBackward) → 变更 → input。变更路径：
+  // ① 选区非空且同文本节点 → 区间 splice；② collapsed 在文本节点内 → caret 前退
+  // 一个 UTF-16 单元（代理对安全）splice；③ caret 在元素边界/文本节点起点 →
+  // no-op（跨节点回退 best-effort 不做，记录限制）。caret 回落删除点。
+  globalThis.__zw_ce_delete = function(sel) {
+    var el = document.querySelector(sel);
+    if (!el || !globalThis.__zw_is_ce_host(el)) return;
+    var range = globalThis.__zw_ce_caret_range(el);
+    var sc = range.startContainer, so = range.startOffset | 0;
+    if (!(sc && (sc.nodeType === 3 || sc.__zwIsText))) return; // 元素边界 caret 不回退
+    var v = String(sc.nodeValue || '');
+    var start = so, end = range.collapsed ? so : (range.endOffset | 0);
+    if (start === end) {
+      if (start === 0) return; // 文本节点起点无前单元
+      start--;
+      var last = v.charCodeAt(start);
+      if (last >= 0xDC00 && last <= 0xDFFF && start > 0) {
+        var prev = v.charCodeAt(start - 1);
+        if (prev >= 0xD800 && prev <= 0xDBFF) start--;
+      }
+    }
+    if (start === end) return; // 空区间（起点无字符）
+    var before = new InputEvent('beforeinput', {
+      bubbles: true, cancelable: true, data: null, inputType: 'deleteContentBackward', isComposing: false
+    });
+    if (el.dispatchEvent(before) === false) return;
+    sc.nodeValue = v.slice(0, start) + v.slice(end);
+    var nr = document.createRange();
+    nr.setStart(sc, start);
+    nr.collapse(true);
+    if (typeof _getSelection === 'function') { _getSelection()._ranges = [nr]; }
+    el.dispatchEvent(new InputEvent('input', {
+      bubbles: true, cancelable: false, data: null, inputType: 'deleteContentBackward', isComposing: false
+    }));
+  };
   // 宿主拆分默认动作 transaction 时，延迟 listener 排入的 microtask，直到 commit/rollback 完成。
   // https://html.spec.whatwg.org/multipage/webappapis.html#perform-a-microtask-checkpoint
   var _zwNativeQueueMicrotask = globalThis.queueMicrotask;

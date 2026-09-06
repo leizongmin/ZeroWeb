@@ -696,3 +696,37 @@ pub fn script_add_fontface(family: &str, status: &str) -> String {
         escape_js_string(status)
     )
 }
+
+/// 构造「contenteditable 宿主键入」的宿主脚本（R3254-M2 切片 2，editing goal）。
+///
+/// 宿主在 keydown 可打印字符且焦点元素为 contenteditable 宿主时执行：shim
+/// `__zw_ce_insert(sel, text)` 按 Selection caret 做 deleteContents+insertNode DOM
+/// 变更（经 mutation-emitting range 面回传宿主 rerender）并派发 beforeinput/input。
+/// 非 contenteditable 宿主 → shim 侧 no-op。
+pub fn script_contenteditable_insert(selector: &str, text: &str) -> String {
+    let esc_sel = escape_js_string(selector);
+    let esc_text = escape_js_string(text);
+    format!("__zw_ce_insert('{esc_sel}', '{esc_text}')")
+}
+
+/// 构造「contenteditable 宿主 Backspace」的宿主脚本（R3254-M2 切片 2）。
+///
+/// shim `__zw_ce_delete(sel)`：选区非空删选区；collapsed 在文本节点内回退一个
+/// UTF-16 单元（代理对安全）删除并派发 beforeinput/input。
+pub fn script_contenteditable_delete(selector: &str) -> String {
+    let esc_sel = escape_js_string(selector);
+    format!("__zw_ce_delete('{esc_sel}')")
+}
+
+/// 构造「探测元素是否 contenteditable 宿主」的宿主脚本（R3254-M2 切片 2）。
+///
+/// 返 '1'（是宿主——自身或祖先 contenteditable=true）或 ''（否）。InsertText/
+/// DeleteBackward 动作解析时先探测：text control 走既有 TextActionState 管线，
+/// contenteditable 宿主走 `script_contenteditable_insert/delete`。
+pub fn script_contenteditable_probe(selector: &str) -> String {
+    let esc_sel = escape_js_string(selector);
+    format!(
+        "(function(){{var e=document.querySelector('{esc_sel}');\
+return (e && typeof __zw_is_ce_host === 'function' && __zw_is_ce_host(e)) ? '1' : '';}})()"
+    )
+}

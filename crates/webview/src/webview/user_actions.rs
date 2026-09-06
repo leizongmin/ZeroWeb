@@ -3,9 +3,10 @@ use std::sync::{Arc, Mutex};
 #[cfg(feature = "v8")]
 use zero_engine::script_dispatch_native_event;
 use zero_engine::{
-    DomEventDetail, DomMutation, register_dom_callbacks, script_call_set_location_hash, script_dispatch_dom_event,
-    script_reset_form_controls, script_set_control_checked, script_set_open, script_set_option_selected,
-    script_set_text_control_state, script_text_control_snapshot,
+    DomEventDetail, DomMutation, register_dom_callbacks, script_call_set_location_hash, script_contenteditable_delete,
+    script_contenteditable_insert, script_contenteditable_probe, script_dispatch_dom_event, script_reset_form_controls,
+    script_set_control_checked, script_set_open, script_set_option_selected, script_set_text_control_state,
+    script_text_control_snapshot,
 };
 use zero_page_runtime::{
     ActionNoopReason, ActionTargetState, EventDispatchResult, FormNavigationIntent, HtmlActionRequest, HtmlUserAction,
@@ -183,6 +184,30 @@ impl WebView {
         }
         let state = match &request.action {
             HtmlUserAction::InsertText { .. } | HtmlUserAction::DeleteBackward => {
+                // R3254-M2 切片 2（editing goal）：焦点元素为 contenteditable 宿主时走
+                // CE 键入/删除管线（shim __zw_ce_insert/delete——Selection caret 处
+                // deleteContents/insertNode 真实 DOM 变更 + beforeinput/input 事件序），
+                // 不落 TextActionState（那是 input/textarea value 模型）。text control
+                // 仍走既有快照+plan 管线（零变化）。
+                let ce_probe = self.execute_dom_script(executor, &script_contenteditable_probe(&selector))?;
+                if ce_probe.value.trim() == "1" {
+                    let script = match &request.action {
+                        HtmlUserAction::InsertText { text } => script_contenteditable_insert(&selector, text),
+                        _ => script_contenteditable_delete(&selector),
+                    };
+                    let result = self.execute_dom_script(executor, &script)?;
+                    return Ok(WebViewUserActionResult {
+                        changed: result.changed,
+                        canceled: false,
+                        noop_reason: None,
+                        effects: Vec::new(),
+                        invalidation: if result.changed {
+                            InvalidationKind::Paint
+                        } else {
+                            InvalidationKind::None
+                        },
+                    });
+                }
                 let snapshot = self.execute_dom_script(executor, &script_text_control_snapshot(&selector))?;
                 let Some((value, selection_start, selection_end)) =
                     serde_json::from_str::<(String, usize, usize)>(&snapshot.value).ok()
