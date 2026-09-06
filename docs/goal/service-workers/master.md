@@ -803,11 +803,18 @@ spec：controller 自创建即定的赋值不是 change。修复：realm 创建�
 
 ## 下一步计划
 
-1. **M2 fetch/cache WPT 扩面**：在首个 fetch/interception baseline、SW CacheStorage
-   serviceworker 首片与持久化之后，继续挑选当前可执行的 Service Worker fetch/cache 上游用例，
-   扩展 pass-rate evidence；streaming/cancel 专项已于 M2-44 落地（M2-44 见实测基线），
-   剩余 broader fetch/cache 上游用例继续按 disposition contract 逐案评估
-2. **M3 clients follow-up**：popup/auxiliary 真实 browsing context 创建后接入 browser owner
+1. **收口 DONE 门禁**：① 一轮干净的全工作区 `make test`（本轮全量跑受
+   zero-net `stale_etag_revalidation_is_coalesced` 负载时序 flake 干扰——
+   单测隔离通过、net crate 双流均未触碰，非 SW 缺陷）；② 建
+   `docs/goal/service-workers/archive/` 并把已完成里程碑的详细过程证据
+   （M0/M1/M2/M3 各专项 evidence 清单）归档；③ 校准报告：当前三 runner
+   对上游可执行面（disposition core=65）的覆盖与剩余 defer/gated 面
+   的逐案理由复核，作为 DC-4 通过率的最终持久化证据
+2. **M2 fetch/cache WPT 扩面（DONE 后按需）**：剩余 broader fetch/cache 上游
+   用例按 disposition contract 逐案评估（大量 defer/gated 面依赖多客户端/
+   https 服务环境）
+3. **M3 clients follow-up**：popup/auxiliary 真实 browsing context 创建后接入
+   browser owner
 
 ## 里程碑状态
 
