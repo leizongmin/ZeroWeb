@@ -683,6 +683,21 @@ impl BrowserApp {
         self.compositor_status_override = Some(status);
     }
 
+    /// R3254-KP1（keyboard-page-scrolling goal M1）测试 helper：设置 Shift 修饰键状态
+    /// 并读取滚动键 delta 映射（分发表语义断言——键位 → 滚动量，不经渲染）。
+    #[cfg(test)]
+    pub fn scroll_delta_for_key_for_test(&mut self, key: &str, shift: bool) -> Option<f32> {
+        self.shift_pressed = shift;
+        self.scroll_delta_for_key(key)
+    }
+
+    /// R3254-KP1 测试 helper：页面渲染缩放（scroll_delta_for_key 方向键步进的
+    /// 40px×scale 断言用）。
+    #[cfg(test)]
+    pub fn page_render_scale_for_test(&self) -> f32 {
+        self.page_render_scale()
+    }
+
     /// R3254 测试 helper：last_render 的 glyph 数量（诊断合成帧内容）。
     #[cfg(test)]
     pub fn last_render_glyphs_for_test(&self, tab_id: TabId) -> Option<usize> {

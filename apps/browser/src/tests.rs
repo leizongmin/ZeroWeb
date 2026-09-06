@@ -3728,3 +3728,46 @@ fn text_wrap_points_match_shaping_baseline() {
         "换行点应与 rustybuzz 基准一致（布局 estimate 偏宽导致换行过早）"
     );
 }
+
+#[test]
+fn scroll_delta_for_key_maps_keyboard_scroll_keys_r3254_kp1() {
+    // R3254-KP1（keyboard-page-scrolling goal M1 切片 2，2026-09-07）：键盘滚动分发层
+    // 键位→滚动量映射单测。滚动键的浏览器默认动作挂 keydown 回执（R3254-M9，
+    // PendingTabAction::ScrollViewport），页面 preventDefault 可阻止——本测试断言
+    // 分发表本身（键位 → delta 方向/幅度语义），不涉渲染。
+    // ① Space/Shift+Space = 视口高比例（±0.85）；② PageDown/PageUp = ±0.85 视口；
+    // ③ ArrowDown/ArrowUp = ±40 CSS px × page_render_scale；④ Home/End/非滚动键 →
+    // None（Home/End 走 to_top/to_bottom 立即路径，非回执 delta）。
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    app.physical_size = (800, 600);
+
+    let (_, _, _, ch) = app.page_content_rect();
+    let scale = app.page_render_scale_for_test();
+
+    let space_down = app.scroll_delta_for_key_for_test(" ", false).expect("Space 须映射滚动");
+    assert!(
+        (space_down - ch * 0.85).abs() < 1.0,
+        "Space 滚动量须为视口高 0.85（got {space_down}, want {}）",
+        ch * 0.85
+    );
+    let space_up = app.scroll_delta_for_key_for_test(" ", true).expect("Shift+Space 须映射滚动");
+    assert!(
+        (space_up + ch * 0.85).abs() < 1.0,
+        "Shift+Space 须向上滚动（got {space_up}）"
+    );
+
+    let pd = app.scroll_delta_for_key_for_test("PageDown", false).expect("PageDown 须映射滚动");
+    assert!((pd - ch * 0.85).abs() < 1.0, "PageDown 须 ±0.85 视口");
+    let pu = app.scroll_delta_for_key_for_test("PageUp", false).expect("PageUp 须映射滚动");
+    assert!((pu + ch * 0.85).abs() < 1.0, "PageUp 须向上 0.85 视口");
+
+    let ad = app.scroll_delta_for_key_for_test("ArrowDown", false).expect("ArrowDown 须映射滚动");
+    assert!((ad - 40.0 * scale).abs() < 0.5, "ArrowDown 须 40px×scale");
+    let au = app.scroll_delta_for_key_for_test("ArrowUp", false).expect("ArrowUp 须映射滚动");
+    assert!((au + 40.0 * scale).abs() < 0.5, "ArrowUp 须向上 40px×scale");
+
+    assert_eq!(app.scroll_delta_for_key_for_test("Home", false), None, "Home 走立即 to_top 路径");
+    assert_eq!(app.scroll_delta_for_key_for_test("End", false), None, "End 走立即 to_bottom 路径");
+    assert_eq!(app.scroll_delta_for_key_for_test("a", false), None, "非滚动键无 delta");
+    assert_eq!(app.scroll_delta_for_key_for_test("Enter", false), None, "Enter 无滚动 delta");
+}

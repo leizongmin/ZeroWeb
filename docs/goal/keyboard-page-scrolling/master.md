@@ -2,7 +2,7 @@
 
 **入口文档**: [../keyboard-page-scrolling.md](../keyboard-page-scrolling.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-08-17（立项——M1 待启动）
+**最后更新**: 2026-09-07（M1 切片 2 完成——分发层键位→滚动量映射单测落地，上游 snap 键盘案 defer 有据）
 
 ---
 
@@ -37,16 +37,16 @@
 
 | # | 缺口 | 状态 |
 |---|------|------|
-| P1 | 用例覆盖为零（上游键盘滚动用例稀缺——本地 reftest 补足策略） | ⬜ M1 |
-| P2 | 键盘滚动分发层（键位→滚动量）缺失 | ⬜ M1 |
+| P1 | 用例覆盖为零（上游键盘滚动用例稀缺——本地 reftest 补足策略） | 🔶 上游 snap/input 三案勘察 defer（依赖 testdriver Actions 键盘链——keyboard-default-actions M1 切片 2 共享基建）；本地单测 1 案落地（evidence/2026-09-07-m1-keyboard-scroll-baseline.md）|
+| P2 | 键盘滚动分发层（键位→滚动量）缺失 | ✅ 底座 R3254-M9 既有（keydown 回执驱动）+ 本地单测断言固化（Space/PageUp/PageDown/方向键/修饰变体/None 键位）|
 | P3 | 滚动目标判定 + 嵌套传播缺失 | ⬜ M2 |
 | P4 | scrollIntoView 选项面 / scroll 事件联动未核实 | ⬜ M3 |
 
 ## 下一步计划
 
-1. **M1 切片 1**：上游可执行用例导入 + 本地 reftest 骨架（滚动量断言——标明本地）
-2. **M1 切片 2**：键盘滚动分发层骨架（根滚动先行）
-3. **M1 切片 3**：失败聚类 → 修复队列
+1. **M1 切片 1**：上游可执行用例导入——defer（snap/input 三案依赖 Actions 键盘链，待 keyboard-default-actions M1 切片 2 基建）→ 本地单测先行
+2. ~~**M1 切片 2**：键盘滚动分发层骨架~~ ✅ 2026-09-07（底座 R3254-M9 既有 + scroll_delta_for_key 映射单测固化——Space/PageUp/PageDown/Arrow/None 键位语义断言）
+3. **M1 切片 3**：失败聚类 → 修复队列（滚动目标判定 P3 = M2 主项）
 
 **碰撞管理**：开工前先 `git log --since="14 days ago" -- crates/engine/` 核对 js-dom 流
 element scroll 段活跃面。
@@ -55,12 +55,12 @@ element scroll 段活跃面。
 
 | 里程碑 | 状态 |
 |--------|------|
-| M1 — 基线建立 + 分发层骨架 | ⬜ 待启动 |
+| M1 — 基线建立 + 分发层骨架 | 🔶 切片 1 defer（有据）+ 切片 2 ✅（映射单测固化）；切片 3 待启动 |
 | M2 — 全键位 + 滚动目标判定 | ⬜ |
 | M3 — scrollIntoView + 事件 + snap 交互收尾 | ⬜ |
 
 ## 验证基线
 
 - 测试基线：立项时点全绿；clippy 零警告
-- 键盘滚用例面：无基线（未导入/未建）
+- 键盘滚用例面：本地单测 1 案（分发层映射）+ 上游 snap/input 三案 defer 记录（evidence/2026-09-07-m1-keyboard-scroll-baseline.md）
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过
