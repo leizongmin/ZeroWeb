@@ -442,6 +442,7 @@ fn r1428_canvas_bg_image_anchor_shifts_gradient_position() {
         50.0,
         50.0,
         None,
+        false,
     );
     let g1 = &p1.primitives().gradients;
     assert!(g1.len() >= 1, "R1428: anchor 测试应生成 gradient primitive");
@@ -467,6 +468,7 @@ fn r1428_canvas_bg_image_anchor_shifts_gradient_position() {
         0.0,
         0.0,
         None,
+        false,
     );
     let g0 = &p0.primitives().gradients;
     assert!(g0.len() >= 1);
@@ -527,6 +529,7 @@ fn r2063_bg_attachment_fixed_positions_against_viewport() {
         0.0,
         0.0,
         None,
+        false,
     );
     let g = &painter.primitives().gradients;
     assert!(g.len() >= 1, "R2063: fixed bg 应生成 gradient primitive");
@@ -553,6 +556,7 @@ fn r2063_bg_attachment_fixed_positions_against_viewport() {
         0.0,
         0.0,
         None,
+        false,
     );
     let g2 = &painter2.primitives().gradients;
     assert!(g2.len() >= 1);
@@ -602,6 +606,7 @@ fn test_background_clip_border_area_ring() {
         0.0,
         0.0,
         ring,
+        false,
     );
 
     let images = &painter.primitives().images;
@@ -664,6 +669,7 @@ fn test_background_clip_border_area_no_border_emits_nothing() {
         0.0,
         0.0,
         Some(Vec::new()),
+        false,
     );
     assert!(
         painter.primitives().images.is_empty(),

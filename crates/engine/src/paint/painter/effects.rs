@@ -186,6 +186,7 @@ impl super::Painter {
             0.0,
             0.0,
             border_area_ring,
+            false,
         );
     }
 
@@ -256,6 +257,7 @@ impl super::Painter {
             0.0,
             0.0,
             None,
+            false,
         );
     }
 
@@ -270,6 +272,7 @@ impl super::Painter {
     ///
     /// 元素背景由 `paint_background_image` 计算 origin/clip 后调用本函数；画布背景传播
     ///（CSS §14.2）直接以视口 (0,0,vw,vh) 同时作 origin+clip 调用本函数。
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn paint_bg_image_in_origin(
         &mut self,
         origin_x: f32,
@@ -284,6 +287,7 @@ impl super::Painter {
         anchor_x: f32,
         anchor_y: f32,
         border_area_ring: Option<Vec<Rect>>,
+        canvas_propagation: bool,
     ) {
         use zero_render_foundation::image_cache::ImageKey;
         use zero_render_foundation::primitive::ImagePrimitive;
@@ -461,10 +465,96 @@ impl super::Painter {
                 BackgroundImageComputedValue::Gradient(gradient) => {
                     let rect = Rect::new(positioned_x, positioned_y, sized_w, sized_h);
                     let font_size = zero_style_system::computed::resolve_length(&style.font_size, 16.0, None, None);
-                    if let Some(prim) =
-                        gradient_to_primitive_with_font_size(gradient, &rect, &style.color, font_size as f32)
-                    {
-                        self.primitives.add_gradient(prim);
+                    // R4083：按 background-repeat 平铺渐变（CSS Backgrounds §3.4）——每 tile
+                    // 独立构建 GradientPrimitive（kind 坐标按该 tile rect 定义），与 Url 分支
+                    // tile 循环同构。canvas 传播（positioning area = 根 padding box，painting
+                    // area = 画布）必须平铺（渐变 tile 铺满画布——chromium oracle 实测）。
+                    // 例外：background-clip:text 的 ZW 实现为 content-box 单 prim 近似（无
+                    // glyph-mask 能力），平铺会放大近似副作用（clip-text-background-table-cell
+                    // 的 tr 行 painting area 为全宽 quirk）→ 非 canvas 时保持单 prim。
+                    let text_clip = matches!(style.background_clip, BackgroundClipComputedValue::Text);
+                    let single_prim = text_clip && !canvas_propagation;
+                    if single_prim {
+                        if let Some(prim) =
+                            gradient_to_primitive_with_font_size(gradient, &rect, &style.color, font_size as f32)
+                        {
+                            self.primitives.add_gradient(prim);
+                        }
+                    } else {
+                        let paint_area = Rect::new(clip_x, clip_y, clip_w, clip_h);
+                        let tiles = resolve_repeat_params(
+                            repeat,
+                            origin_x,
+                            origin_y,
+                            origin_w,
+                            origin_h,
+                            clip_x,
+                            clip_y,
+                            clip_w,
+                            clip_h,
+                            positioned_x,
+                            positioned_y,
+                            sized_w,
+                            sized_h,
+                            img_ratio,
+                            matches!(
+                                size,
+                                BackgroundSizeComputedValue::TwoValue(BgSizeComponentComputed::Auto, _)
+                            ),
+                            matches!(
+                                size,
+                                BackgroundSizeComputedValue::TwoValue(_, BgSizeComponentComputed::Auto)
+                            ),
+                        );
+                        let ((x0, x1), (y0, y1), step_w, step_h) = tiles;
+                        // space：步距含间隙（eff），tile 本身不缩放——绘制尺寸用 sized（CSS §3.4
+                        // space 只调间距不拉伸 tile；round/repeat 的 step 即 tile 尺寸）。
+                        let (draw_w, draw_h) = if matches!(repeat, BackgroundRepeatComputedValue::Space) {
+                            (sized_w, sized_h)
+                        } else {
+                            (step_w, step_h)
+                        };
+                        // positioned 处的主 tile 优先发射（保持「首个 prim = positioned 主 tile」
+                        // 的既有不变式——R1428/R3818 校准面按 g[0] 断言主 tile 位置）。
+                        if rect.origin.x >= x0
+                            && rect.origin.x < x1
+                            && rect.origin.y >= y0
+                            && rect.origin.y < y1
+                            && let Some(prim) =
+                                gradient_to_primitive_with_font_size(gradient, &rect, &style.color, font_size as f32)
+                        {
+                            self.primitives.add_gradient(prim);
+                        }
+                        let mut y = y0;
+                        while y < y1 {
+                            let mut x = x0;
+                            while x < x1 {
+                                let tile_rect = Rect::new(x, y, draw_w, draw_h);
+                                let is_main = tile_rect == rect;
+                                if !is_main {
+                                    let clipped = tile_rect.intersection(&paint_area);
+                                    if let Some(rc) = clipped
+                                        && rc.size.width > 0.0
+                                        && rc.size.height > 0.0
+                                        && let Some(mut prim) = gradient_to_primitive_with_font_size(
+                                            gradient,
+                                            &tile_rect,
+                                            &style.color,
+                                            font_size as f32,
+                                        )
+                                    {
+                                        if is_main {
+                                            prim.clip = None;
+                                        } else {
+                                            prim.clip = Some(rc);
+                                        }
+                                        self.primitives.add_gradient(prim);
+                                    }
+                                }
+                                x += step_w;
+                            }
+                            y += step_h;
+                        }
                     }
                 }
             }
@@ -1613,14 +1703,17 @@ fn resolve_repeat_params(
         BackgroundRepeatComputedValue::RepeatY => (x_range(false), y_range(true), sized_w, sized_h),
         BackgroundRepeatComputedValue::NoRepeat => (x_range(false), y_range(false), sized_w, sized_h),
         BackgroundRepeatComputedValue::Space => {
-            // space 模式：均匀分布，至少两个 tile 才有意义
-            let tiles_x = if origin_w >= sized_w && sized_w > 0.0 {
-                (origin_w / sized_w).floor() as usize
+            // R4083：space 均匀分布在 **painting area**（clip box，CSS §3.4——space 只影响
+            // tile 间距、不缩放 tile；分布区域 = 背景绘制区）。旧实现用 origin box：border
+            // 非零且 origin（padding-box）≠ clip（border-box）时 tile 数/间距按小盒计算，
+            // 网格漏铺 border 区（gradient-repeat-spaced-with-borders）。
+            let tiles_x = if clip_w >= sized_w && sized_w > 0.0 {
+                (clip_w / sized_w).floor() as usize
             } else {
                 1
             };
-            let tiles_y = if origin_h >= sized_h && sized_h > 0.0 {
-                (origin_h / sized_h).floor() as usize
+            let tiles_y = if clip_h >= sized_h && sized_h > 0.0 {
+                (clip_h / sized_h).floor() as usize
             } else {
                 1
             };
@@ -1635,12 +1728,12 @@ fn resolve_repeat_params(
             }
 
             let space_x = if tiles_x > 1 {
-                (origin_w - sized_w * tiles_x as f32) / (tiles_x - 1) as f32
+                (clip_w - sized_w * tiles_x as f32) / (tiles_x - 1) as f32
             } else {
                 0.0
             };
             let space_y = if tiles_y > 1 {
-                (origin_h - sized_h * tiles_y as f32) / (tiles_y - 1) as f32
+                (clip_h - sized_h * tiles_y as f32) / (tiles_y - 1) as f32
             } else {
                 0.0
             };
@@ -1648,12 +1741,7 @@ fn resolve_repeat_params(
             let eff_w = sized_w + space_x;
             let eff_h = sized_h + space_y;
 
-            (
-                (origin_x, origin_x + origin_w),
-                (origin_y, origin_y + origin_h),
-                eff_w,
-                eff_h,
-            )
+            ((clip_x, clip_x + clip_w), (clip_y, clip_y + clip_h), eff_w, eff_h)
         }
         BackgroundRepeatComputedValue::Round => {
             // round 模式：缩放 tile 使整数个刚好覆盖容器
@@ -1688,12 +1776,21 @@ fn resolve_repeat_params(
             } else {
                 (tile_w, tile_h)
             };
-            (
-                (origin_x, origin_x + origin_w),
-                (origin_y, origin_y + origin_h),
-                tile_w,
-                tile_h,
-            )
+            // R4083：round 网格相位锚定 background-position（CSS §3.4——round 只调 tile 尺寸，
+            // tile 网格仍按 background-position 定相位；旧实现锚定 origin，bg-position≠0 时
+            // 相位偏移 position 值，round-4 5px 偏移致边缘色错位）。positioned 回退覆盖 origin
+            // 的整数周期（repeat x_range 的 R3923 同式）。
+            let round_x_range = {
+                let n = (((positioned_x - origin_x) / tile_w).ceil()).max(0.0);
+                let start = positioned_x - n * tile_w;
+                (start, origin_x + origin_w)
+            };
+            let round_y_range = {
+                let n = (((positioned_y - origin_y) / tile_h).ceil()).max(0.0);
+                let start = positioned_y - n * tile_h;
+                (start, origin_y + origin_h)
+            };
+            (round_x_range, round_y_range, tile_w, tile_h)
         }
         // R3926（CSS Backgrounds §3.4 two-keyword）：逐轴独立套用 repeat 语义——
         // x 轴按第一关键字、y 轴按第二关键字（round/space 适配用 origin 该维，

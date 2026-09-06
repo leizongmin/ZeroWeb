@@ -399,11 +399,16 @@ fn test_gradient_with_position_and_size() {
     styles.insert(nid, style);
     painter.paint(&layout, &styles, None);
 
+    // R4083：渐变遵守 background-repeat（默认 repeat）——bg-size 50% 的 tile（100×50，
+    // 尺寸解析沿用既有 Percent+伪固有比语义）在 200×100 painting area 平铺 2×2 枚 tile：
+    // 主 tile 锚定 positioned (0,0) 优先发射，其余 tile 裁剪到 painting area。
     let gradients = &painter.primitives().gradients;
-    assert_eq!(gradients.len(), 1);
+    assert_eq!(gradients.len(), 4);
     assert_eq!(gradients[0].rect.size.width, 100.0);
     assert_eq!(gradients[0].rect.origin.x, 0.0);
     assert_eq!(gradients[0].rect.origin.y, 0.0);
+    assert_eq!(gradients[3].rect.origin.x, 100.0);
+    assert_eq!(gradients[3].rect.origin.y, 50.0);
 }
 
 // ── border-image 渲染测试 ──────────────────────────────────────────

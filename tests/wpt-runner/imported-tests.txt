@@ -269,3 +269,5 @@ css/css-content/element-replacement-gradient.html css/css-content/element-replac
 css/CSS2/box-display/containing-block-008.xht css/CSS2/box-display/containing-block-008-ref.xht == 2026-09-05 R4047 视口-CB abspos margin 计入定位方程——margin 丢失修复
 css/css-sizing/aspect-ratio/block-aspect-ratio-025.html css/reference/ref-filled-green-100px-square-only.html == 2026-09-06 
 css/css-sizing/aspect-ratio/replaced-element-022.html css/reference/ref-filled-green-100px-square-only.html == 2026-09-06 
+css/css-backgrounds/background-margin-root.html css/css-backgrounds/background-margin-root-ref.html == 2026-09-06 R4083 canvas bg positioning area = root padding box + gradient repeat tiling
+css/css-overflow/scrollbar-gutter-with-background-gradient.html css/css-overflow/scrollbar-gutter-with-background-gradient-ref.html == 2026-09-06 R4083 scrollbar-gutter shrinks root padding-box positioning/painting area

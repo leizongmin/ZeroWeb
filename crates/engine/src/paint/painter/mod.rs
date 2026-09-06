@@ -24,7 +24,7 @@ use zero_style_system::{
     BorderCollapseValue, BorderImageSourceComputedValue, CaretColorComputedValue, ClipPathComputedValue, ComputedStyle,
     ContainComputedValue, ContentVisibilityValue, HyphensComputedValue, ImageRenderingValue, IsolationValue,
     MixBlendModeComputedValue, OverscrollBehaviorValue, PointerEventsValue, ResizeValue, ScrollbarGutterComputedValue,
-    TouchActionValue, UserSelectValue,
+    ScrollbarWidthComputedValue, TouchActionValue, UserSelectValue,
 };
 
 use super::color::resolve_color_current;
@@ -853,32 +853,73 @@ impl Painter {
             // 007 test(2,2)==ref(2,2)、008 test(19,19)→(2,2)==ref(19,2)→(2,2)、
             // 002 html 无 border → padding-box==border-box，R1428 语义不变。
             // R1428：anchor 随根 margin 偏移定位（修 background-root-002 绿条 y=96 非 y=0）。
-            let anchor_x = layout.x + layout.border_left;
+            let mut anchor_x = layout.x + layout.border_left;
             let anchor_y = layout.y + layout.border_top;
             if let Some(ps) = prop_style
                 && (ps.background_color != ColorValue::Transparent || has_paintable_bg_image(&ps.background_image))
             {
+                // R4083：画布背景图像 positioning area = 根元素 **padding-box**（含尺寸——
+                // CSS Backgrounds §3.6 / css-backgrounds-3 special backgrounds：background-size /
+                // background-position 相对根 padding box 解析，而非画布）。chromium oracle 实测
+                // （background-margin-root：html 300px 高 + margin 50px → 渐变 tile 700×300，
+                // 锚定 (50,50)，repeat 平铺整个画布，diff 0.00%；旧实现 origin=画布 800×600 →
+                // 单幅拉伸错相位）。
+                // scrollbar-gutter:stable 在根元素内侧预留滚动条槽（css-overflow-4 §5.2），padding
+                // box 相应收缩：stable 右侧缩 gutter_w，stable both-edges 两侧各缩
+                //（scrollbar-gutter-with-background-gradient oracle：渐变跨 x=[15,785] = 770px；
+                // 原点偏移由下方 anchor 参数承载——positioned = origin + offset + anchor）。
+                // painting area = 画布（传播语义，背景铺满画布）；gutter 激活时减去 gutter 条带
+                //（条带是滚动容器 UI 领土，根传播背景不绘制——oracle 实测条带为白）。
+                let mut origin_w = layout.width - layout.border_left - layout.border_right;
+                let origin_h = layout.height - layout.border_top - layout.border_bottom;
+                // gutter 激活时 painting area = 画布减去 gutter 条带（条带是滚动容器 UI 领土，
+                // 根传播背景不绘制——oracle 实测条带为白）。背景色 fill 同样按此裁剪。
+                let mut paint_x = 0.0;
+                let mut paint_w = canvas_width;
+                if let Some(hs) = html_style {
+                    let gutter_w = match hs.scrollbar_width {
+                        ScrollbarWidthComputedValue::None => 0.0,
+                        ScrollbarWidthComputedValue::Auto => 15.0,
+                        ScrollbarWidthComputedValue::Thin => 6.0,
+                    };
+                    if gutter_w > 0.0 {
+                        match hs.scrollbar_gutter {
+                            ScrollbarGutterComputedValue::Stable => {
+                                anchor_x += gutter_w;
+                                origin_w -= gutter_w;
+                                paint_x = 0.0;
+                                paint_w -= gutter_w;
+                            }
+                            ScrollbarGutterComputedValue::StableBothEdges => {
+                                anchor_x += gutter_w;
+                                origin_w -= gutter_w * 2.0;
+                                paint_x = gutter_w;
+                                paint_w -= gutter_w * 2.0;
+                            }
+                            ScrollbarGutterComputedValue::Auto => {}
+                        }
+                    }
+                }
                 if ps.background_color != ColorValue::Transparent {
                     self.primitives.add_fill(
-                        Rect::new(0.0, 0.0, canvas_width, canvas_height),
+                        Rect::new(paint_x, 0.0, paint_w.max(0.0), canvas_height),
                         resolve_color_current(&ps.background_color, &ps.color),
                     );
                 }
-                // 画布背景图像：painting area = 画布 (0,0,vw,vh)；positioning area = 根元素
-                // padding-box（R3818，见上方锚定注释）。
                 self.paint_bg_image_in_origin(
                     0.0,
                     0.0,
-                    canvas_width,
-                    canvas_height,
+                    origin_w.max(0.0),
+                    origin_h.max(0.0),
+                    paint_x,
                     0.0,
-                    0.0,
-                    canvas_width,
+                    paint_w.max(0.0),
                     canvas_height,
                     ps,
                     anchor_x,
                     anchor_y,
                     None,
+                    true,
                 );
             }
         }
@@ -2363,7 +2404,7 @@ impl Painter {
                 )
             {
                 self.paint_bg_image_in_origin(
-                    rect_x, content_y, *w, h, rect_x, content_y, *w, h, style, 0.0, 0.0, None,
+                    rect_x, content_y, *w, h, rect_x, content_y, *w, h, style, 0.0, 0.0, None, false,
                 );
             }
         }
