@@ -2,7 +2,7 @@
 
 待升级但存在 **API 破坏性变更** 的依赖项清单，需通过专项逐个处理。
 
-> 最后检查日期：2026-09-05（新增媒体解码依赖核对：symphonia 0.6（features 扩 isomp4+aac）/ opus-decoder 0.1.1 / dav1d 0.11 / rusty_vp9 0.1 / matroska-demuxer 0.8 / cpal 0.16 / openh264 0.9（D-RFC-3 获批新增，feature `decode-h264` 门控），均为新增引入非升级项，不入积压；winit/html5ever/reqwest/wasmi/wgpu 五项版本与本表记载一致，无漂移）
+> 最后检查日期：2026-09-07（本轮复核无 workspace 依赖变动；此前 2026-09-05 新增媒体解码依赖核对：symphonia 0.6（features 扩 isomp4+aac）/ opus-decoder 0.1.1 / dav1d 0.11 / rusty_vp9 0.1 / matroska-demuxer 0.8 / cpal 0.16 / openh264 0.9（D-RFC-3 获批新增，feature `decode-h264` 门控），均为新增引入非升级项，不入积压；winit/html5ever/reqwest/wasmi/wgpu 五项版本与本表记载一致，无漂移）
 
 ## 概要
 

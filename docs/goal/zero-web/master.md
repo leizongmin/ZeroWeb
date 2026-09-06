@@ -374,7 +374,7 @@ Limit。**前轮 R3303**：TextMetrics 全 10 字段。**前轮 R3302**：`:focu
 |----|------|
 | 仓库代码 | ✅ Cargo workspace 31 个 member（21 库 + 7 应用 + 2 测试工具 + 1 开发工具，含 runtime-config、android-browser 与 media；全部有实质实现） |
 | 编译状态 | ✅ `cargo build --workspace` 通过 |
-| 测试状态 | ✅ `cargo test --workspace` ~17,000+（2026-09-06 静态统计 17,595 个 `#[test]`，不含宏生成/doctest；rendering-compat R4051-P 轮实测 make test 18,912 Pass / 0 Fail，运行时计数含参数化与集成 subtest；预存失败 `default_actions_work_without_javascript` 为并行流既存，多轮记录，clean HEAD 同败） |
+| 测试状态 | ✅ `cargo test --workspace` ~17,000+（2026-09-07 静态统计 17,617 个 `#[test]`，不含宏生成/doctest；service-workers 收口轮实测 make test 18,951 Pass / 0 Fail + storage-cache-api 收口轮 18,954 Pass / 0 Fail，运行时计数含参数化与集成 subtest；预存失败 `default_actions_work_without_javascript` 为并行流既存，多轮记录，clean HEAD 同败） |
 | Clippy | ✅ 零警告（全 workspace） |
 | 基准测试 | ✅ 16/16 crate 有 criterion 基准（78+ 个基准） |
 | CI | ✅ GitHub Actions（ubuntu/macos/windows）|
@@ -1075,7 +1075,7 @@ P1a 低风险、可快速见效（主要改 `dom_bridge.rs` + `script-sandbox` +
 
 切片 1-3 均低风险可独立 land；验证基线 = tab_js_worker 既有测试（fetch 端到端 663-810 / 定时器 811-852 / MutationObserver 五连测 906-1065，`wait_for_global` 轮询模式）+ 每切片 `make test` 零回归。P1b（V8 原生绑定）仍需独立 RFC。**P1a 主线实质完成 → 当前活跃推进面 = security/storage/net deep-review（自主域）+ P1b（S6/S7 等用户拍板 default-on）+ P3 GPU/Display（需物理环境）**。
 
-> **2026-09-04 状态勘误**：上行「P1b 待 default-on 拍板」已过时——P1b 全部完成（R383/R384 双引擎 default-on land + kill-switch 删除，js-dom goal 2026-08-31 收官归档，见上方「当前状态」P1b 条）；security/storage/net deep-review 自主域亦经 R3388–R3398 逐文件审后收敛（见「最近完成的改进」）。媒体线三 goal 已于 2026-09-05 完成收口并整树归档（media-elements 640P/0F = 98.01%、media-audio webaudio 1418P/0F = 100%、media-playback DC-1~5 ✅，见 `docs/goal/archive/`）；当前父目标活跃面 = 渲染兼容性收口（rendering-compat 流，R4064 轮 corpus 86.0%）与零星自主域复扫。
+> **2026-09-04 状态勘误**：上行「P1b 待 default-on 拍板」已过时——P1b 全部完成（R383/R384 双引擎 default-on land + kill-switch 删除，js-dom goal 2026-08-31 收官归档，见上方「当前状态」P1b 条）；security/storage/net deep-review 自主域亦经 R3388–R3398 逐文件审后收敛（见「最近完成的改进」）。媒体线三 goal（2026-09-05）与存储/Service Worker 两 goal（2026-09-06）均已收口整树归档（见 `docs/goal/archive/`）；当前父目标活跃面 = 渲染兼容性收口（rendering-compat 流，R4095 轮 corpus 14496/16814 = 86.2%）+ keyboard/editing 三 goal 编辑与键盘管线 + M12/M14 拆分的 6 个子 goal（storage-opfs / page-wasm / android-browser / webdriver / web-components / event-loop-spec，2026-09-07 用户决策新立）与零星自主域复扫。
 
 ---
 
