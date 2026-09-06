@@ -1363,12 +1363,16 @@
     var responseType = _takeHeaderValue(headers, 'x-zero-response-type') || 'default';
     var bodyError = _takeHeaderValue(headers, 'x-zero-body-error');
     _takeHeaderValue(headers, 'x-zero-resource-type');
+    // SW fetch body cancel 反传锚：受控页面经 Service Worker respondWith 的响应由
+    // webview 附加内部事件 id 头（消费后即从 headers 移除，JS 不可见）。
+    var swFetchId = _takeHeaderValue(headers, 'x-zero-sw-fetch-id');
     // R3021：二进制 response body 经 `__zw_bytes:` csv-decimal wire → Uint8Array（response.blob()/arrayBuffer() 保真）；
     // 文本 body 原样字符串。
     var bodyArg = body.indexOf('__zw_bytes:') === 0 ? _zwDecodeBytesPrefix(body) : body;
     // R2968：经 new Response 构造（fetch 结果 instanceof Response）。字段 shape 与旧 plain object 一致
     //（headers 经 new Response 封装为 Headers 实例，R2977；body getter 同 R2967）。
     var response = new Response(bodyArg, { status: status, statusText: statusText, headers: headers });
+    if (swFetchId) response.__zwSwFetchId = swFetchId;
     // https://fetch.spec.whatwg.org/#concept-response-url
     response.url = finalUrl;
     response.type = responseType;
@@ -1652,12 +1656,42 @@
         globalThis.__zw_fetch_counter = (globalThis.__zw_fetch_counter | 0) + 1;
         var id = '__zwfid:' + globalThis.__zw_fetch_counter;
         var settled = false;
+        // SW fetch body cancel 反传（一次）：response 带 __zwSwFetchId 时，
+        // body cancel / settle 后 signal abort 都触发同一 host 桥（幂等）。
+        var swFetchBridgeFired = false;
+        var fireSwFetchBodyCancel = function(response) {
+          if (swFetchBridgeFired || !response || !response.__zwSwFetchId) return;
+          if (typeof __zw_sw_fetch_body_cancel !== 'function') return;
+          swFetchBridgeFired = true;
+          try { __zw_sw_fetch_body_cancel(String(response.__zwSwFetchId), ''); } catch (_eSwCancel) {}
+        };
         var finishFetch = function(raw) {
           var response = _makeResponseFromWire(raw);
           if (typeof globalThis.__zwServiceWorkerFetchSettled === 'function') {
             try { globalThis.__zwServiceWorkerFetchSettled(); } catch (_eSwFetchSettled) {}
           }
-          return _zwFetchApplyFilteredResponse(response, url, mode, redirect);
+          response = _zwFetchApplyFilteredResponse(response, url, mode, redirect);
+          if (response && response.__zwSwFetchId) {
+            // https://fetch.spec.whatwg.org/#dom-body-cancel — 页面 cancel 流时
+            // 浏览器取消响应体获取（SW 场景反传到 worker stream cancel 回调）。
+            var swBody = response.body;
+            if (swBody && typeof swBody.cancel === 'function' && !swBody.__zwSwCancelWired) {
+              try {
+                swBody.__zwSwCancelWired = true;
+                var origCancel = swBody.cancel;
+                swBody.cancel = function(reason) {
+                  fireSwFetchBodyCancel(response);
+                  return origCancel.call(swBody, reason);
+                };
+              } catch (_eSwWire) {}
+            }
+            if (signal) {
+              signal.addEventListener('abort', function() {
+                fireSwFetchBodyCancel(response);
+              });
+            }
+          }
+          return response;
         };
         var settleFetch = function(raw) {
           if (settled) return;

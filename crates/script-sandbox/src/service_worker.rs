@@ -70,6 +70,10 @@ enum ServiceWorkerCommand {
         request: ServiceWorkerFetchRequest,
         clients_claim_allowed: bool,
     },
+    CancelFetchBody {
+        event_id: u64,
+        reason: String,
+    },
     Shutdown,
 }
 
@@ -1133,6 +1137,17 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
         // 已 locked 时抛 TypeError；Cache.put 消费 body 后再次 getReader() 必须
         // reject（WPT cache-put "getReader() after Cache.put"）。
         let locked = false;
+        // https://streams.spec.whatwg.org/#rs-cancel — cancel 算法：locked 拒绝；
+        // 否则 close + underlying source cancel 回调（页面 body cancel 反传可观察面，
+        // WPT fetch-event-respond-with-readable-stream cancel/abort）。
+        this.cancel = function(reason) {
+          if (locked) return Promise.reject(new TypeError('Cannot cancel: ReadableStream is locked'));
+          closeStream();
+          if (typeof source.cancel === 'function') {
+            try { source.cancel(reason); } catch (_error) {}
+          }
+          return Promise.resolve(undefined);
+        };
         this.getReader = function() {
           if (locked) throw new TypeError('Cannot get a Reader: ReadableStream is locked');
           locked = true;
@@ -1160,20 +1175,28 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
   function isReadableStreamLike(body) {
     return body && typeof body.getReader === 'function';
   }
-  function collectReadableStreamBody(stream) {
+  function collectReadableStreamBody(stream, abandonMs) {
     const reader = stream.getReader();
     const chunks = [];
     let total = 0;
+    function accumulatedText() {
+      const out = new Uint8Array(total);
+      let offset = 0;
+      for (const chunk of chunks) {
+        out.set(chunk, offset);
+        offset += chunk.length;
+      }
+      return utf8Decode(out);
+    }
+    function releaseReader() {
+      if (reader && typeof reader.releaseLock === 'function') {
+        try { reader.releaseLock(); } catch (_error) {}
+      }
+    }
     function pump() {
       return reader.read().then(function(result) {
         if (result.done) {
-          const out = new Uint8Array(total);
-          let offset = 0;
-          for (const chunk of chunks) {
-            out.set(chunk, offset);
-            offset += chunk.length;
-          }
-          return utf8Decode(out);
+          return accumulatedText();
         }
         // https://fetch.spec.whatwg.org/#concept-bodyinit-extract
         // Response body streams must yield Uint8Array chunks; other chunk
@@ -1190,18 +1213,33 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
         return pump();
       });
     }
-    function releaseReader() {
-      if (reader && typeof reader.releaseLock === 'function') {
-        try { reader.releaseLock(); } catch (_error) {}
-      }
-    }
-    return pump().then(function(body) {
+    const drained = pump().then(function(body) {
       releaseReader();
       return body;
     }, function(error) {
       releaseReader();
       return {__zwBodyError: String(error && error.message || error)};
     });
+    // headless 无限开放流的有界排空：abandonMs 非空时挂 watchdog——连续 N 次 task
+    // 泵仍无 done → 交付已累积字节（空流场景响应可下发；页面随后的 cancel 反传仍
+    // 触发 worker cancel 回调）。不用 setTimeout：本 runtime timerTasks 为 FIFO
+    // 无延迟序，定时器会插队提前触发（破坏 fetch-error 的 error-before-abandon 序）。
+    if (abandonMs !== undefined && abandonMs !== null) {
+      return Promise.race([
+        drained,
+        new Promise(function(resolve) {
+          globalThis.__zwDrainWatchdogs.push({
+            pumps: 0,
+            limit: 64,
+            fire: function() {
+              releaseReader();
+              resolve(accumulatedText());
+            }
+          });
+        })
+      ]);
+    }
+    return drained;
   }
   function normalizeRequestURL(input) {
     const source = String(input);
@@ -1407,7 +1445,7 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
         };
       };
       if (response._bodyStream) {
-        return collectReadableStreamBody(response._bodyStream).then(finish);
+        return collectReadableStreamBody(response._bodyStream, options.abandonStreamMs).then(finish);
       }
       return finish(response._body);
     }
@@ -2338,8 +2376,20 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
       }
     }
   };
+  globalThis.__zwDrainWatchdogs = [];
   globalThis.__zwRunOneTask = function() {
     if (closeExtendableEventDispatchCheckpoints()) return false;
+    if (globalThis.__zwDrainWatchdogs.length > 0) {
+      for (let w = globalThis.__zwDrainWatchdogs.length - 1; w >= 0; w--) {
+        const watchdog = globalThis.__zwDrainWatchdogs[w];
+        watchdog.pumps += 1;
+        if (watchdog.pumps >= watchdog.limit) {
+          globalThis.__zwDrainWatchdogs.splice(w, 1);
+          watchdog.fire();
+          return true;
+        }
+      }
+    }
     const task = timerTasks.shift();
     if (!task) return false;
     task.callback.apply(globalThis, task.args);
@@ -2957,6 +3007,29 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
   globalThis.__zwSetClientsClaimAllowed = function(allowed) {
     clientsClaimAllowed = allowed === true;
   };
+  // https://w3c.github.io/ServiceWorker/#fetch-event-respondwith — respondWith 提交的
+  // stream body 登记表（event_id → ReadableStream）。页面侧 body cancel/abort 经 host
+  // CancelFetchBody 命令反传 → __zwCancelFetchBody 调用 stream.cancel（underlying
+  // source cancel 回调可观察；WPT fetch-event-respond-with-readable-stream cancel/abort）。
+  // headless 近似：body 已被序列化整体下发，cancel 信号在 settle 后到达时仍触发
+  // underlying source cancel——只保证「页面取消在 worker 侧可观察」，不回滚已传字节。
+  const fetchBodyStreams = new Map();
+  globalThis.__zwRegisterFetchBodyStream = function(eventId, stream) {
+    if (stream && typeof stream.cancel === 'function') {
+      fetchBodyStreams.set(String(eventId), stream);
+      if (fetchBodyStreams.size > 32) {
+        const oldest = fetchBodyStreams.keys().next();
+        if (!oldest.done) fetchBodyStreams.delete(oldest.value);
+      }
+    }
+  };
+  globalThis.__zwCancelFetchBody = function(eventId, reason) {
+    const stream = fetchBodyStreams.get(String(eventId));
+    if (!stream) return false;
+    fetchBodyStreams.delete(String(eventId));
+    try { stream.cancel(reason); } catch (_cancelError) {}
+    return true;
+  };
   globalThis.__zwDispatchFetch = function(eventId, requestInfo) {
     let respondWithCalled = false;
     let respondWithAllowed = true;
@@ -3011,7 +3084,10 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
           }
           let serializedPromise;
           try {
-            serializedPromise = Promise.resolve(Response._serialize(response));
+            // respondWith 的 stream body 排空带 250ms abandon 上限：无限开放流
+            //（WPT observe-cancel 空流）也可下发响应；后续页面 cancel 经
+            // __zwCancelFetchBody 反传。cache-put 路径不带 abandon（body 须完整）。
+            serializedPromise = Promise.resolve(Response._serialize(response, {abandonStreamMs: 250}));
           } catch (error) {
             result.failed = true;
             result.responded = false;
@@ -3022,6 +3098,11 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
           return serializedPromise.then(function(serialized) {
             result.responded = true;
             result.response = serialized;
+            // https://w3c.github.io/ServiceWorker/#fetch-event-respondwith —
+            // stream body 响应登记，供页面 cancel/abort 反传（见 __zwCancelFetchBody）。
+            if (typeof globalThis.__zwRegisterFetchBodyStream === 'function') {
+              globalThis.__zwRegisterFetchBodyStream(eventId, response._bodyStream);
+            }
           }, function(error) {
             result.failed = true;
             result.responded = false;
@@ -3061,7 +3142,20 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
         return;
       }
     }
-    Promise.all([waitUntilState.settled, responseProcessing]).then(function(values) {
+    // https://w3c.github.io/ServiceWorker/#fetch-event-respondwith — respondWith 的
+    // response promise 一旦 fulfill 即把响应用于回应 fetch；`waitUntil()` 只延长事件
+    // 生命周期（worker keep-alive），不再推迟 FetchSettled 下发（否则 observe-cancel
+    // 场景 waitUntil 等待后续 query fetch 会与页面响应互相死锁）。未调 respondWith
+    // 时维持原路径（等待全生命周期后按 preventDefault 判失败）。
+    const lifetimeState = respondWithCalled
+      ? Promise.resolve({ firstRejectionSet: false, firstRejection: null })
+      : waitUntilState.settled.then(function() {
+          return {
+            firstRejectionSet: !!waitUntilState.firstRejectionSet,
+            firstRejection: waitUntilState.firstRejection || null
+          };
+        });
+    Promise.all([lifetimeState, responseProcessing]).then(function(values) {
           if (result.settled) return;
           if (result.failed) {
             event._settleHandled(false, new TypeError(result.message || 'FetchEvent respondWith failed'));
@@ -4283,6 +4377,17 @@ impl ServiceWorkerRuntime {
                                 }
                             }
                         }
+                        ServiceWorkerCommand::CancelFetchBody { event_id, reason } => {
+                            // https://w3c.github.io/ServiceWorker/#fetch-event-respondwith —
+                            // 页面侧 body cancel/abort 反传：对 respondWith 提交的 stream body
+                            // 调用其 cancel 算法（underlying source cancel 回调可观察）。
+                            let reason_json = serde_json::to_string(&reason).unwrap_or_else(|_| "\"\"".to_string());
+                            let dispatch = format!(
+                                "globalThis.__zwCancelFetchBody({}, {}); 'cancelled';",
+                                event_id, reason_json
+                            );
+                            let _ = sandbox.execute(&dispatch);
+                        }
                         ServiceWorkerCommand::Shutdown => break,
                     }
                 }
@@ -4595,6 +4700,23 @@ impl ServiceWorkerRuntime {
                 request,
                 clients_claim_allowed,
             })
+            .map_err(|_| ScriptError::RuntimeError("Service Worker runtime disconnected".into()))
+    }
+
+    /// Forward one page-side fetch body cancel/abort to the runtime.
+    ///
+    /// The runtime invokes `cancel()` on the `ReadableStream` the worker handed to
+    /// `respondWith()` for `event_id`, making the underlying source's cancel
+    /// callback observable (headless approximation: the body bytes were already
+    /// serialized to the page; only the worker-side cancel callback is guaranteed).
+    pub fn cancel_fetch_body(&mut self, event_id: u64, reason: String) -> Result<(), ScriptError> {
+        if self.core.is_terminated() {
+            return Err(ScriptError::InvalidInput(
+                "Cannot cancel fetch body on terminated Service Worker runtime".into(),
+            ));
+        }
+        self.core
+            .send(ServiceWorkerCommand::CancelFetchBody { event_id, reason })
             .map_err(|_| ScriptError::RuntimeError("Service Worker runtime disconnected".into()))
     }
 
@@ -8992,6 +9114,93 @@ mod tests {
     // put 成功后 body 置 disturbed（getReader() 抛 TypeError），null-body response
     // 不置 bodyUsed。回归锚：`body` getter（fetch body stream 暴露）加入后 put 不
     // disturb，getReader 二次调用不再抛错。
+    // WPT service-workers/service-worker/fetch-event-respond-with-readable-stream
+    // cancel/abort 可观察性：respondWith(stream) settle 后，CancelFetchBody 命令
+    // 触发 worker 侧 underlying source cancel 回调（headless 近似：body 已序列化
+    // 下发，cancel 只保证 worker 侧可观察）。
+    #[test]
+    fn cancel_fetch_body_invokes_stream_source_cancel() {
+        let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
+        runtime
+            .evaluate(
+                "const label = {state: 'pending'};
+                 addEventListener('fetch', event => {
+                   if (String(event.request.url).indexOf('probe') >= 0) return;
+                   const stream = new ReadableStream({
+                     start(controller) {
+                       const encoder = new TextEncoder();
+                       controller.enqueue(encoder.encode('PASS'));
+                       controller.close();
+                     },
+                     cancel() { label.state = 'cancelled'; }
+                   });
+                   event.respondWith(new Response(stream));
+                 });
+                 addEventListener('fetch', event => {
+                   if (String(event.request.url).indexOf('probe') >= 0) {
+                     event.respondWith(new Response(label.state));
+                   }
+                 });",
+                "https://example.test/sw.js",
+            )
+            .unwrap();
+        runtime
+            .dispatch_fetch(
+                48,
+                ServiceWorkerFetchRequest {
+                    url: "https://example.test/app/stream".into(),
+                    method: "GET".into(),
+                    headers: Vec::new(),
+                    body: None,
+                    credentials: None,
+                    client_id: Some("client-1".into()),
+                    resulting_client_id: None,
+                    referrer: None,
+                    is_reload_navigation: false,
+                    is_history_navigation: false,
+                },
+            )
+            .unwrap();
+        let _ = runtime.recv_timeout(Duration::from_secs(5)).unwrap();
+        let settled_event = runtime.recv_timeout(Duration::from_secs(5)).unwrap();
+        let ServiceWorkerEvent::FetchSettled {
+            response: Some(response),
+            ..
+        } = settled_event
+        else {
+            panic!("expected settled fetch response, got {settled_event:?}");
+        };
+        assert_eq!(response.body, "PASS");
+
+        runtime.cancel_fetch_body(48, "page-cancel".into()).unwrap();
+
+        runtime
+            .dispatch_fetch(
+                49,
+                ServiceWorkerFetchRequest {
+                    url: "https://example.test/app/probe".into(),
+                    method: "GET".into(),
+                    headers: Vec::new(),
+                    body: None,
+                    credentials: None,
+                    client_id: Some("client-1".into()),
+                    resulting_client_id: None,
+                    referrer: None,
+                    is_reload_navigation: false,
+                    is_history_navigation: false,
+                },
+            )
+            .unwrap();
+        let ServiceWorkerEvent::FetchSettled {
+            response: Some(response),
+            ..
+        } = runtime.recv_timeout(Duration::from_secs(5)).unwrap()
+        else {
+            panic!("expected probe fetch response");
+        };
+        assert_eq!(response.body, "cancelled");
+    }
+
     #[test]
     fn cache_put_disturbs_response_body_but_not_null_body() {
         let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
@@ -9036,9 +9245,8 @@ mod tests {
             )
             .unwrap();
 
-        let ServiceWorkerEvent::CacheStorageRequested { request_id, request: _ } =
-            runtime.recv_timeout(Duration::from_secs(5)).unwrap()
-        else {
+        let first_event = runtime.recv_timeout(Duration::from_secs(5)).unwrap();
+        let ServiceWorkerEvent::CacheStorageRequested { request_id, request: _ } = first_event else {
             panic!("missing CacheStorage.open request");
         };
         runtime
@@ -9052,21 +9260,21 @@ mod tests {
             )
             .unwrap();
 
-        let ServiceWorkerEvent::CacheStorageRequested { request_id, request } =
-            runtime.recv_timeout(Duration::from_secs(5)).unwrap()
-        else {
+        let second_event = runtime.recv_timeout(Duration::from_secs(5)).unwrap();
+        let ServiceWorkerEvent::CacheStorageRequested { request_id, request } = second_event else {
             panic!("missing CacheStorage.put request");
         };
-        let ServiceWorkerCacheStorageRequest::Put { .. } = request else {
+        let ServiceWorkerCacheStorageRequest::Put { response, .. } = request else {
             panic!("unexpected CacheStorage request");
         };
+        assert_eq!(response.response_type, "default");
+        assert_eq!(response.body, "Hello world!");
         runtime
             .complete_cache_storage(request_id, Ok(ServiceWorkerCacheStorageResult::Done))
             .unwrap();
 
-        let ServiceWorkerEvent::CacheStorageRequested { request_id, request: _ } =
-            runtime.recv_timeout(Duration::from_secs(5)).unwrap()
-        else {
+        let third_event = runtime.recv_timeout(Duration::from_secs(5)).unwrap();
+        let ServiceWorkerEvent::CacheStorageRequested { request_id, request } = third_event else {
             panic!("missing second CacheStorage.put request");
         };
         let ServiceWorkerCacheStorageRequest::Put { response, .. } = request else {

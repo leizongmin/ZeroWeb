@@ -46,6 +46,8 @@ pub use user_actions::WebViewUserActionResult;
 static NEXT_WEBVIEW_ID: AtomicU64 = AtomicU64::new(1);
 static NEXT_IN_PROCESS_FETCH_EVENT_ID: AtomicU64 = AtomicU64::new(1);
 const MAX_SERVICE_WORKER_SCRIPT_BYTES: usize = 16 * 1024 * 1024;
+/// 可反传 body cancel 的在册 in-process fetch 事件上限（FIFO 淘汰）。
+const SERVICE_WORKER_FETCH_EVENT_REGISTRY_CAP: usize = 256;
 
 enum ServiceWorkerEvaluationResult {
     Evaluated,
@@ -432,6 +434,9 @@ pub struct WebView {
     /// Manager events observed by one in-process Service Worker waiter but
     /// still owned by another caller.
     service_worker_event_backlog: std::sync::Arc<std::sync::Mutex<Vec<ServiceWorkerManagerEvent>>>,
+    /// In-process Service Worker fetch events still eligible for page-side body
+    /// cancel/abort back-propagation（event_id → registration_id；有界 FIFO）。
+    service_worker_fetch_event_registry: std::sync::Arc<std::sync::Mutex<std::collections::VecDeque<(u64, u64)>>>,
     /// DOM shim（generate_js_dom_shim）是否已注入沙箱（M2：幂等保护——
     /// 重复执行会重置 _nodeMap 丢失监听器，故只注入一次）。
     js_shim_initialized: bool,
@@ -574,6 +579,8 @@ impl WebView {
         let async_navigation_fetches_in_flight = std::sync::Arc::new(AtomicUsize::new(0));
         let async_navigation_results = std::sync::Arc::new(std::sync::Mutex::new(HashMap::new()));
         let service_worker_event_backlog = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let service_worker_fetch_event_registry =
+            std::sync::Arc::new(std::sync::Mutex::new(std::collections::VecDeque::new()));
         // 懒创建：js_sandbox 延后到首次实际执行脚本时初始化（见 ensure_sandbox）。
         // 无脚本页面（多数 WebView 页面）不创建 V8 isolate，显著降低常驻内存
         // （RSS ~0.2G/实例）；首次执行脚本时才有初始化成本，行为等价。
@@ -601,6 +608,7 @@ impl WebView {
             async_navigation_fetches_in_flight,
             async_navigation_results,
             service_worker_event_backlog,
+            service_worker_fetch_event_registry,
             js_shim_initialized: false,
             #[cfg(feature = "v8")]
             native_state_gen: None,
@@ -2450,7 +2458,38 @@ impl WebView {
             let async_navigation_fetches_in_flight = self.async_navigation_fetches_in_flight.clone();
             let async_navigation_results = self.async_navigation_results.clone();
             let service_worker_event_backlog = self.service_worker_event_backlog.clone();
+            let service_worker_fetch_event_registry = self.service_worker_fetch_event_registry.clone();
             let timeout_secs = self.http_client.timeout_secs;
+            // 页面侧 fetch body cancel/abort 反传（in-process SW 路径）：shim 在
+            // response.body.cancel() / signal abort 时携 X-Zero-Sw-Fetch-Id 调本回调 →
+            // 查 event→registration 在册表 → manager → runtime 调 worker stream cancel。
+            let sw_cancel_manager = self.sw_manager.clone();
+            let sw_cancel_registry = self.service_worker_fetch_event_registry.clone();
+            sandbox.register_callback(
+                "__zw_sw_fetch_body_cancel",
+                Box::new(move |args: &[String]| -> String {
+                    let event_id = args.first().and_then(|value| value.parse::<u64>().ok());
+                    let reason = args.get(1).cloned().unwrap_or_default();
+                    let Some(event_id) = event_id else {
+                        return "0".to_string();
+                    };
+                    let registration_id = sw_cancel_registry.lock().ok().and_then(|registry| {
+                        registry
+                            .iter()
+                            .rev()
+                            .find(|(registered_event, _)| *registered_event == event_id)
+                            .map(|(_, registration)| *registration)
+                    });
+                    let Some(registration_id) = registration_id else {
+                        return "0".to_string();
+                    };
+                    if let Ok(mut manager) = sw_cancel_manager.lock() {
+                        manager.cancel_fetch_body(registration_id, event_id, &reason);
+                        return "1".to_string();
+                    }
+                    "0".to_string()
+                }),
+            );
             sandbox.register_callback(
                 "__zw_fetch",
                 Box::new(move |args: &[String]| -> String {
@@ -2526,6 +2565,7 @@ impl WebView {
                             let async_navigation_fetches_in_flight = async_navigation_fetches_in_flight.clone();
                             let async_navigation_results = async_navigation_results.clone();
                             let service_worker_event_backlog = service_worker_event_backlog.clone();
+                            let service_worker_fetch_event_registry = service_worker_fetch_event_registry.clone();
                             let fallback_fetch_handler = fetch_handler.clone();
                             let fallback_req = req.clone();
                             async_navigation_fetches_in_flight.fetch_add(1, Ordering::Release);
@@ -2534,20 +2574,32 @@ impl WebView {
                                 let result = match Self::dispatch_in_process_service_worker_fetch(
                                     &sw_manager,
                                     &service_worker_event_backlog,
+                                    &service_worker_fetch_event_registry,
                                     &sw_fetchers,
                                     &page_url,
                                     sw_request,
                                     timeout_secs,
                                 ) {
-                                    Ok(Some(response)) => zero_engine::fetch_bridge::serialize_response(
-                                        &zero_engine::fetch_bridge::FetchResponse {
-                                            status: response.status,
-                                            status_text: response.status_text,
-                                            headers: response.headers,
-                                            body: response.body,
-                                            body_bytes: None,
-                                        },
-                                    ),
+                                    Ok(Some((response, sw_event_id))) => {
+                                        zero_engine::fetch_bridge::serialize_response(
+                                            &zero_engine::fetch_bridge::FetchResponse {
+                                                status: response.status,
+                                                status_text: response.status_text,
+                                                headers: {
+                                                    let mut headers = response.headers;
+                                                    // 页面 body cancel/abort 反传锚：sw fetch 事件 id
+                                                    //（shim 消费后隐藏，不出现在 response.headers）。
+                                                    headers.push((
+                                                        "X-Zero-Sw-Fetch-Id".to_string(),
+                                                        sw_event_id.to_string(),
+                                                    ));
+                                                    headers
+                                                },
+                                                body: response.body,
+                                                body_bytes: None,
+                                            },
+                                        )
+                                    }
                                     Ok(None) => match fallback_fetch_handler(&fallback_req) {
                                         Ok(resp) => zero_engine::fetch_bridge::serialize_response(&resp),
                                         Err(msg) => format!("__zw_fetch_error:{msg}"),
@@ -2568,17 +2620,22 @@ impl WebView {
                         match Self::dispatch_in_process_service_worker_fetch(
                             &sw_manager,
                             &service_worker_event_backlog,
+                            &service_worker_fetch_event_registry,
                             &sw_fetchers,
                             &page_url,
                             sw_request,
                             timeout_secs,
                         ) {
-                            Ok(Some(response)) => {
+                            Ok(Some((response, sw_event_id))) => {
+                                let mut headers = response.headers;
+                                // 页面 body cancel/abort 反传锚：sw fetch 事件 id
+                                //（shim 消费后隐藏，不出现在 response.headers）。
+                                headers.push(("X-Zero-Sw-Fetch-Id".to_string(), sw_event_id.to_string()));
                                 return zero_engine::fetch_bridge::serialize_response(
                                     &zero_engine::fetch_bridge::FetchResponse {
                                         status: response.status,
                                         status_text: response.status_text,
-                                        headers: response.headers,
+                                        headers,
                                         body: response.body,
                                         body_bytes: None,
                                     },
@@ -4073,11 +4130,12 @@ impl WebView {
     fn dispatch_in_process_service_worker_fetch(
         manager: &std::sync::Arc<std::sync::Mutex<ServiceWorkerManager>>,
         event_backlog: &std::sync::Arc<std::sync::Mutex<Vec<ServiceWorkerManagerEvent>>>,
+        fetch_event_registry: &std::sync::Arc<std::sync::Mutex<std::collections::VecDeque<(u64, u64)>>>,
         fetchers: &ServiceWorkerFetchers,
         page_url: &str,
         request: ServiceWorkerFetchRequest,
         timeout_secs: u64,
-    ) -> Result<Option<ServiceWorkerFetchResponse>, String> {
+    ) -> Result<Option<(ServiceWorkerFetchResponse, u64)>, String> {
         let authority =
             url::Url::parse(page_url).map_err(|_| "Service Worker fetch document URL is invalid".to_string())?;
         if !matches!(authority.scheme(), "http" | "https") {
@@ -4104,6 +4162,13 @@ impl WebView {
                 registration_id,
                 event_id,
             } => {
+                // 登记 event → registration（页面 body cancel/abort 反传查表；有界 FIFO）。
+                if let Ok(mut registry) = fetch_event_registry.lock() {
+                    registry.push_back((event_id, registration_id));
+                    while registry.len() > SERVICE_WORKER_FETCH_EVENT_REGISTRY_CAP {
+                        registry.pop_front();
+                    }
+                }
                 let deadline = std::time::Instant::now() + std::time::Duration::from_secs(timeout_secs.max(1));
                 loop {
                     if let Some(event) =
@@ -4115,7 +4180,8 @@ impl WebView {
                             fetchers,
                             timeout_secs,
                             event,
-                        );
+                        )
+                        .map(|response| response.map(|resolved| (resolved, event_id)));
                     }
                     let events = {
                         let mut manager = manager
@@ -4136,7 +4202,8 @@ impl WebView {
                                     fetchers,
                                     timeout_secs,
                                     event,
-                                );
+                                )
+                                .map(|response| response.map(|resolved| (resolved, event_id)));
                             }
                             ServiceWorkerManagerEvent::FetchSettled { .. } => {
                                 if let Ok(mut backlog) = event_backlog.lock() {

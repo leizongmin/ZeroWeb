@@ -909,6 +909,7 @@ pub const SERVICE_WORKER_FETCH_CASES: &[&str] = &[
     "service-workers/service-worker/fetch-event-network-error.https.html",
     "service-workers/service-worker/fetch-event-respond-with-argument.https.html",
     "service-workers/service-worker/fetch-event-respond-with-readable-stream-chunk.https.html",
+    "service-workers/service-worker/fetch-event-respond-with-readable-stream.https.html",
     "service-workers/service-worker/fetch-event-respond-with-response-body-with-invalid-chunk.https.html",
     "service-workers/service-worker/fetch-error.https.html",
     "service-workers/service-worker/iso-latin1-header.https.html",

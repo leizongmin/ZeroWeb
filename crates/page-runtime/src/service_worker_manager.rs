@@ -709,6 +709,19 @@ pub trait ServiceWorkerRuntimeHost: Send {
         request: ServiceWorkerFetchRequest,
         clients_claim_allowed: bool,
     ) -> Result<(), ServiceWorkerManagerError>;
+    /// Forward one page-side fetch body cancel/abort to the runtime.
+    ///
+    /// Default no-op: hosts whose transport cannot reach the runtime after
+    /// settlement (browser IPC page fetches) silently ignore the signal —
+    /// in-process hosts override to make worker-side cancel observable.
+    fn cancel_fetch_body(
+        &mut self,
+        _registration_id: u64,
+        _event_id: u64,
+        _reason: &str,
+    ) -> Result<(), ServiceWorkerManagerError> {
+        Ok(())
+    }
     /// Complete one blocking `importScripts()` request.
     fn complete_import_scripts(
         &mut self,
@@ -910,6 +923,21 @@ impl ServiceWorkerRuntimeHost for LocalServiceWorkerHost {
             .ok_or(ServiceWorkerManagerError::UnknownRegistration(registration_id))?;
         runtime
             .dispatch_fetch_with_claim_allowed(event_id, request, clients_claim_allowed)
+            .map_err(|error| ServiceWorkerManagerError::Runtime(error.to_string()))
+    }
+
+    fn cancel_fetch_body(
+        &mut self,
+        registration_id: u64,
+        event_id: u64,
+        reason: &str,
+    ) -> Result<(), ServiceWorkerManagerError> {
+        let runtime = self
+            .runtimes
+            .get_mut(&registration_id)
+            .ok_or(ServiceWorkerManagerError::UnknownRegistration(registration_id))?;
+        runtime
+            .cancel_fetch_body(event_id, reason.to_string())
             .map_err(|error| ServiceWorkerManagerError::Runtime(error.to_string()))
     }
 
@@ -2647,6 +2675,21 @@ impl ServiceWorkerManager {
             registration_id,
             event_id,
         })
+    }
+
+    /// Forward one page-side fetch body cancel/abort for a dispatched fetch event.
+    ///
+    /// The worker-side stream `cancel()` callback becomes observable even though
+    /// the response body was already serialized to the page (headless approximation;
+    /// unknown registrations are ignored so late cancels after unregister stay quiet).
+    pub fn cancel_fetch_body(&mut self, registration_id: u64, event_id: u64, reason: &str) {
+        let Some(key) = self.registration_keys.get(&registration_id) else {
+            return;
+        };
+        if !self.slots.contains_key(key) {
+            return;
+        }
+        let _ = self.host.cancel_fetch_body(registration_id, event_id, reason);
     }
 
     /// Return worker messages for one browser-owned client after its cursor.
