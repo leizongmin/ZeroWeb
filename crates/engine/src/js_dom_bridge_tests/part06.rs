@@ -1135,6 +1135,264 @@ fn test_selection_range_r2804() {
 }
 
 #[test]
+fn test_selection_surface_r3254_m1() {
+    // R3254-M1（editing goal 切片 2，2026-09-07）：Selection 可观察面补齐——
+    // ① document.getSelection 与 window 同一单例；② instanceof Selection 原型链；
+    // ③ 空选 collapseToStart/collapseToEnd/extend 抛 InvalidStateError；
+    // ④ getRangeAt 越界抛 IndexSizeError；⑤ removeRange(null) TypeError /
+    // 非 selection 内 range NotFoundError；⑥ collapsed range toString === ''；
+    // ⑦ selectAllChildren（detached no-op + DocumentType InvalidNodeTypeError）；
+    // ⑧ setBaseAndExtent 端点语义；⑨ setPosition = collapse 别名。
+    // 驱动用例：WPT selection/getSelection.html / collapseToStartEnd.html /
+    // extend-exception.html / getRangeAt.html / removeRange.html / collapse.htm /
+    // selectAllChildren.html（imported selection subset 基线，evidence 2026-09-07）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=r><p id=p1>hello</p><p id=p2>world</p></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // ① document.getSelection === window.getSelection（同一 Selection 单例，spec）。
+    sandbox
+        .execute("globalThis.__dws = (document.getSelection() === window.getSelection());")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__dws)").unwrap().value,
+        "true",
+        "document.getSelection() 须与 window.getSelection() 同一单例"
+    );
+    // ② instanceof Selection（Object.create(Selection.prototype) 接线）。
+    sandbox
+        .execute("globalThis.__iof = (window.getSelection() instanceof Selection);")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__iof)").unwrap().value,
+        "true",
+        "getSelection() instanceof Selection 须为 true（spec getSelection.html 首测）"
+    );
+    // ③ 空选异常语义。
+    sandbox
+        .execute(
+            "window.getSelection().removeAllRanges();\
+             globalThis.__e1 = '';\
+             try { window.getSelection().collapseToStart(); } catch (e) { globalThis.__e1 = e.name || String(e); }\
+             globalThis.__e2 = '';\
+             try { window.getSelection().collapseToEnd(); } catch (e) { globalThis.__e2 = e.name || String(e); }\
+             globalThis.__e3 = '';\
+             try { window.getSelection().extend(document.body); } catch (e) { globalThis.__e3 = e.name || String(e); }\
+             globalThis.__e4 = '';\
+             try { window.getSelection().deleteFromDocument(); } catch (e) { globalThis.__e4 = e.name || String(e); }",
+        )
+        .unwrap();
+    for (k, what) in [
+        ("__e1", "collapseToStart"),
+        ("__e2", "collapseToEnd"),
+        ("__e3", "extend"),
+        ("__e4", "deleteFromDocument"),
+    ] {
+        assert_eq!(
+            sandbox.execute(&format!("String(globalThis.{k})")).unwrap().value,
+            "InvalidStateError",
+            "空 selection 调 {what}() 须抛 InvalidStateError（WPT collapseToStartEnd/extend-exception）"
+        );
+    }
+    // ④ getRangeAt 越界抛 IndexSizeError；getRangeAt(0) 空 selection 也越界。
+    sandbox
+        .execute(
+            "globalThis.__e5 = '';\
+             try { window.getSelection().getRangeAt(0); } catch (e) { globalThis.__e5 = e.name || String(e); }\
+             var rg = document.createRange(); rg.selectNodeContents(document.getElementById('p1'));\
+             window.getSelection().addRange(rg);\
+             globalThis.__e6 = '';\
+             try { window.getSelection().getRangeAt(1); } catch (e) { globalThis.__e6 = e.name || String(e); }\
+             globalThis.__g0 = (window.getSelection().getRangeAt(0) === rg);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__e5)").unwrap().value,
+        "IndexSizeError",
+        "空 selection getRangeAt(0) 须抛 IndexSizeError（WPT getRangeAt.html）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__e6)").unwrap().value,
+        "IndexSizeError",
+        "getRangeAt(1) 越界（rangeCount=1）须抛 IndexSizeError"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__g0)").unwrap().value,
+        "true",
+        "getRangeAt(0) 须返 addRange 的同一 range 引用"
+    );
+    // ⑤ removeRange 参数校验。
+    sandbox
+        .execute(
+            "globalThis.__e7 = '';\
+             try { window.getSelection().removeRange(null); } catch (e) { globalThis.__e7 = (e instanceof TypeError) ? 'TypeError' : String(e); }\
+             var other = document.createRange(); other.selectNodeContents(document.getElementById('p2'));\
+             globalThis.__e8 = '';\
+             try { window.getSelection().removeRange(other); } catch (e) { globalThis.__e8 = e.name || String(e); }\
+             window.getSelection().removeRange(rg);\
+             globalThis.__rc = window.getSelection().rangeCount;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__e7)").unwrap().value,
+        "TypeError",
+        "removeRange(null) 须抛 TypeError（WPT removeRange.html）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__e8)").unwrap().value,
+        "NotFoundError",
+        "removeRange(不在 selection 中的 range) 须抛 NotFoundError（WPT removeRange.html）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__rc)").unwrap().value,
+        "0",
+        "removeRange(成员 range) 须移除（rangeCount 回 0）"
+    );
+    // ⑥ collapsed range toString === ''（collapse.htm 主断言）。
+    sandbox
+        .execute(
+            "var p1 = document.getElementById('p1');\
+             var r2 = document.createRange(); r2.selectNode(p1);\
+             window.getSelection().removeAllRanges(); window.getSelection().addRange(r2);\
+             globalThis.__t1 = window.getSelection().toString();\
+             window.getSelection().collapse(p1, 0);\
+             globalThis.__t2 = window.getSelection().toString();\
+             globalThis.__an2 = window.getSelection().anchorNode === p1;\
+             globalThis.__ic2 = window.getSelection().isCollapsed;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__t2)").unwrap().value,
+        "",
+        "selection.collapse(p1,0) 后 toString 须为空（WPT collapse.htm——旧版落 CAC 子树文本 fallback）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__an2)").unwrap().value,
+        "true",
+        "collapse 后 anchorNode 须为 p1"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ic2)").unwrap().value,
+        "true",
+        "collapse 后 isCollapsed 须为 true"
+    );
+    assert!(
+        sandbox.execute("String(globalThis.__t1)").unwrap().value.contains("hello"),
+        "selectNode(p1) 未 collapse 时 toString 须含子树文本 'hello'"
+    );
+    // ⑥b collapseToStart 不得改写原 addedRange 边界（新 range 语义，WPT
+    // collapseToStartEnd.html「must not change」断言族）。
+    sandbox
+        .execute(
+            "var rr = document.createRange();\
+             rr.setStart(document.getElementById('p1').firstChild, 1);\
+             rr.setEnd(document.getElementById('p2').firstChild, 3);\
+             window.getSelection().removeAllRanges(); window.getSelection().addRange(rr);\
+             window.getSelection().collapseToStart();\
+             globalThis.__oc = rr.collapsed;\
+             globalThis.__oe = rr.endContainer === document.getElementById('p2').firstChild && rr.endOffset === 3;\
+             globalThis.__nt = window.getSelection().toString();",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__oc)").unwrap().value,
+        "false",
+        "collapseToStart 不得原地 collapse 原 addedRange（WPT must-not-change 断言）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__oe)").unwrap().value,
+        "true",
+        "collapseToStart 后原 range end 边界须保持不变"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__nt)").unwrap().value,
+        "",
+        "collapseToStart 后 selection toString 须为空（新 collapsed range）"
+    );
+    // ⑦ selectAllChildren：detached no-op + DocumentType InvalidNodeTypeError + 文档内选中。
+    sandbox
+        .execute(
+            "var det = document.createElement('div');\
+             det.appendChild(document.createTextNode('x'));\
+             window.getSelection().removeAllRanges();\
+             window.getSelection().selectAllChildren(det);\
+             globalThis.__d1 = window.getSelection().rangeCount;\
+             window.getSelection().selectAllChildren(document.getElementById('r'));\
+             globalThis.__d2 = window.getSelection().rangeCount;\
+             globalThis.__d3 = window.getSelection().toString();\
+             globalThis.__e9 = '';\
+             try { window.getSelection().selectAllChildren(document.doctype); } catch (e) { globalThis.__e9 = e.name || String(e); }",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__d1)").unwrap().value,
+        "0",
+        "selectAllChildren(detached) 须 no-op（rangeCount 保持 0，WPT must-do-nothing 断言族）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__d2)").unwrap().value,
+        "1",
+        "selectAllChildren(文档内元素) 须设 range（rangeCount=1）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__d3)").unwrap().value,
+        "helloworld",
+        "selectAllChildren(#r) toString 须为两段子树文本"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__e9)").unwrap().value,
+        "InvalidNodeTypeError",
+        "selectAllChildren(DocumentType) 须抛 InvalidNodeTypeError"
+    );
+    // ⑧ setBaseAndExtent 端点 + ⑨ setPosition 别名。
+    sandbox
+        .execute(
+            "var t1 = document.getElementById('p1').firstChild;\
+             var t2 = document.getElementById('p2').firstChild;\
+             window.getSelection().setBaseAndExtent(t1, 1, t2, 3);\
+             globalThis.__s1 = window.getSelection().toString();\
+             globalThis.__s2 = window.getSelection().type;\
+             window.getSelection().setPosition(t1, 2);\
+             globalThis.__s3 = window.getSelection().isCollapsed;\
+             globalThis.__s4 = window.getSelection().anchorNode === t1;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__s1)").unwrap().value,
+        "elloworld".chars().take(4).collect::<String>() + &"world".chars().take(3).collect::<String>(),
+        "setBaseAndExtent(t1,1,t2,3) toString 须为 'ello'+'wor'"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__s2)").unwrap().value,
+        "Range",
+        "setBaseAndExtent 非collapsed 后 type 须为 'Range'"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__s3)").unwrap().value,
+        "true",
+        "setPosition（=collapse 别名）后 isCollapsed 须为 true"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__s4)").unwrap().value,
+        "true",
+        "setPosition(t1,2) anchorNode 须为 t1"
+    );
+}
+
+#[test]
 fn test_element_reflected_props_r2805() {
     // R2805：element reflected 属性簇（tabIndex/title/lang/dir）。get 反射同名 attribute（tabIndex 数值，
     // 无→-1；title/lang/dir 无→''），set 写 attribute。照 id/className reflected 模式（get+set trap）。

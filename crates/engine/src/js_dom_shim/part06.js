@@ -2271,6 +2271,12 @@
       try { Object.setPrototypeOf(_r179cr, globalThis.Range.prototype); } catch (_e179c) {}
       return _r179cr;
     },
+    // R3254-M1（editing goal 切片 2）：document.getSelection()——spec 与
+    // window.getSelection() 同一 Selection 单例（`document.getSelection() ===
+    // window.getSelection()`，WPT getSelection.html 四断言）。_getSelection 定义于
+    // 本 IIFE 后段（运行期已可用）。
+    // https://w3c.github.io/selection-api/#dom-document-getselection
+    getSelection: function () { return _getSelection(); },
     // `document.createDocumentFragment()`：DocumentFragment（nodeType 11，轻量容器）。
     // 建 fragment（append 子节点经既有 append_child_handle）+ 标记 handle 到 _fragmentHandles
     //（供 nodeType=11 与 append 时 flatten 检测）。
@@ -6265,6 +6271,11 @@
       },
       detach: function () { /* no-op（spec 已废弃 Range.detach，保留供老库调用） */ },
       toString: function () {
+        // R3254-M1（editing goal 切片 2）：collapsed（同容器同 offset）→ 空串（spec
+        // range-stringification「boundary points 相同 → 空串」；WPT collapse.htm 断言
+        // selection.collapse 后 toString()===''。旧版 collapsed 元素边界 range 落到
+        // 尾部 commonAncestor 子树文本 fallback，返回整子树文本）。
+        if (this.startContainer === this.endContainer && (this.startOffset | 0) === (this.endOffset | 0)) return '';
         // 精确：selectNode/selectNodeContents → 整节点子树文本。
         if (this._mode) { var out = []; _descendantText(this._mode.node, out); return out.join(''); }
         // 精确：同文本节点 setStart/setEnd → slice 偏移。
@@ -6514,36 +6525,163 @@
   }
 
   // Selection 单例工厂。addRange 简化为单 range（多 range 仅 Firefox，主流单 range）。
+  // R3254-M1（editing goal 切片 2，2026-09-07）：按上游 WPT selection/ 基线失败聚类补齐
+  // 可观察面——① Selection.prototype instanceof 链（getSelection.html
+  // `window.getSelection() instanceof Selection`）；② document.getSelection（spec 与
+  // window 同一 Selection 单例）；③ selectAllChildren/setBaseAndExtent/
+  // deleteFromDocument/setPosition（=collapse 别名，WPT onselectionchange 族用）方法；
+  // ④ 空 selection 的 collapseToStart/End/extend/getRangeAt(越界) 异常语义
+  //（collapseToStartEnd.html/extend-exception.html/getRangeAt.html）。
+  // https://w3c.github.io/selection-api/#dom-selection
+  function _zwSelEmpty() { throw new (globalThis.DOMException || Error)('There are no ranges in the selection.', 'InvalidStateError'); }
   function _getSelection() {
     if (_selection) return _selection;
-    _selection = {
-      _ranges: [],
-      get rangeCount() { return this._ranges.length; },
-      get isCollapsed() { return this._ranges.length === 0 || this._ranges.every(function (r) { return r.collapsed; }); },
-      get anchorNode() { return this._ranges[0] ? this._ranges[0].startContainer : null; },
-      get anchorOffset() { return this._ranges[0] ? this._ranges[0].startOffset : 0; },
-      get focusNode() { return this._ranges[0] ? this._ranges[0].endContainer : null; },
-      get focusOffset() { return this._ranges[0] ? this._ranges[0].endOffset : 0; },
-      get type() { return this._ranges.length === 0 ? 'None' : (this.isCollapsed ? 'Caret' : 'Range'); },
-      toString: function () { return this._ranges.map(function (r) { return r.toString(); }).join(''); },
-      getRangeAt: function (i) { return this._ranges[i | 0] || null; },
-      removeAllRanges: function () { this._ranges = []; },
-      empty: function () { this._ranges = []; },
-      removeRange: function (range) { this._ranges = this._ranges.filter(function (r) { return r !== range; }); },
-      addRange: function (range) { this._ranges = [range]; /* 多 range（FF）简化为单 */ },
-      collapse: function (node, off) {
-        if (!node) { this._ranges = []; return; }
-        var r = _makeRange(); r.setStart(node, off | 0); r.collapse(true);
-        this._ranges = [r];
-      },
-      collapseToStart: function () { if (this._ranges[0]) { this._ranges[0].collapse(true); } },
-      collapseToEnd: function () { if (this._ranges[0]) { this._ranges[0].collapse(false); } },
-      extend: function (node, off) { if (this._ranges[0]) { this._ranges[0].setEnd(node, off | 0); } },
-      containsNode: function () { return false; } // best-effort（无真选择几何）
+    _selection = Object.create(globalThis.Selection.prototype);
+    _selection._ranges = [];
+    Object.defineProperties(_selection, {
+      rangeCount: { get: function () { return this._ranges.length; } },
+      isCollapsed: { get: function () { return this._ranges.length === 0 || this._ranges.every(function (r) { return r.collapsed; }); } },
+      anchorNode: { get: function () { return this._ranges[0] ? this._ranges[0].startContainer : null; } },
+      anchorOffset: { get: function () { return this._ranges[0] ? this._ranges[0].startOffset : 0; } },
+      focusNode: { get: function () { return this._ranges[0] ? this._ranges[0].endContainer : null; } },
+      focusOffset: { get: function () { return this._ranges[0] ? this._ranges[0].endOffset : 0; } },
+      type: { get: function () { return this._ranges.length === 0 ? 'None' : (this.isCollapsed ? 'Caret' : 'Range'); } },
+    });
+    _selection.toString = function () { return this._ranges.map(function (r) { return r.toString(); }).join(''); };
+    // spec getRangeAt(index)：越界抛 IndexSizeError（上游 getRangeAt.html 断言族）；
+    // 旧版越界返 null（WPT 期望 throw）。
+    _selection.getRangeAt = function (i) {
+      var idx = i | 0;
+      if (idx < 0 || idx >= this._ranges.length) {
+        throw new (globalThis.DOMException || Error)('getRangeAt: index out of range', 'IndexSizeError');
+      }
+      return this._ranges[idx];
+    };
+    _selection.removeAllRanges = function () { this._ranges = []; };
+    _selection.empty = function () { this._ranges = []; };
+    // spec removeRange(range)：① 非 Range 参数 → TypeError（WPT removeRange.html
+    // `selection.removeRange(null)` 断言）；② range 不在 selection 中（含等价但不同
+    // 引用）→ NotFoundError（「Removing a different range should throw」断言族——
+    // 旧版静默 filter no-op）。
+    _selection.removeRange = function (range) {
+      if (!range || typeof range.setStart !== 'function') {
+        throw new (globalThis.TypeError || TypeError)('removeRange: argument is not a Range');
+      }
+      var idx = -1;
+      for (var i = 0; i < this._ranges.length; i++) if (this._ranges[i] === range) { idx = i; break; }
+      if (idx < 0) {
+        throw new (globalThis.DOMException || Error)('removeRange: range not in selection', 'NotFoundError');
+      }
+      this._ranges.splice(idx, 1);
+    };
+    _selection.addRange = function (range) { this._ranges = [range]; /* 多 range（FF）简化为单 */ };
+    _selection.collapse = function (node, off) {
+      if (!node) { this._ranges = []; return; }
+      var r = _makeRange(); r.setStart(node, off | 0); r.collapse(true);
+      this._ranges = [r];
+    };
+    // setPosition = collapse 别名（https://w3c.github.io/selection-api/#dom-selection-setposition，
+    // WPT onselectionchange-on-document.html 用 setPosition 设 caret）。
+    _selection.setPosition = _selection.collapse;
+    // spec：空 selection 调 collapseToStart/collapseToEnd 抛 InvalidStateError（WPT
+    // collapseToStartEnd.html 首批断言——旧版静默 no-op）。非空 → **新 collapsed range**
+    //（WPT 断言原 addedRange 的四边界不被原地改写——collapseToStart 语义是「selection
+    // 变为起点处的 collapsed range」，非 mutate 原 range）。
+    _selection.collapseToStart = function () {
+      if (this._ranges.length === 0) _zwSelEmpty();
+      var src = this._ranges[0];
+      var r = _makeRange();
+      r.setStart(src.startContainer, src.startOffset);
+      r.collapse(true);
+      this._ranges = [r];
+    };
+    _selection.collapseToEnd = function () {
+      if (this._ranges.length === 0) _zwSelEmpty();
+      var src2 = this._ranges[0];
+      var r2 = _makeRange();
+      r2.setStart(src2.endContainer, src2.endOffset);
+      r2.collapse(true);
+      this._ranges = [r2];
+    };
+    // spec extend(node, offset)：空 selection 抛 InvalidStateError（WPT
+    // extend-exception.html——旧版静默 no-op）；focus 侧设 (node, offset)，
+    // anchor 保持（经 collapse start 后 setEnd 实现——shim range 无方向位）。
+    _selection.extend = function (node, off) {
+      if (this._ranges.length === 0) _zwSelEmpty();
+      var r = this._ranges[0];
+      var sc = r.startContainer, so = r.startOffset;
+      var n = _makeRange();
+      n.setStart(sc, so);
+      n.setEnd(node, off | 0);
+      this._ranges = [n];
+    };
+    // spec selectAllChildren(node)：DocumentType 抛 InvalidNodeTypeError；node 不在
+    // 文档中 → no-op（保留原 selection）；否则选 (node, 0)–(node, childNodes.length)。
+    //（WPT selectAllChildren.html 主断言族——anchor/focus 落 node 两端；detached
+    // 节点「must do nothing」断言占该用例大半。）in-doc 判定沿 parentNode 链上行
+    //（与 document.contains 同语义——_zwNodeContains(document, node)）。
+    _selection.selectAllChildren = function (node) {
+      if (!node || node.nodeType === 10) {
+        throw new (globalThis.DOMException || Error)(
+          'selectAllChildren: InvalidNodeTypeError', 'InvalidNodeTypeError');
+      }
+      var inDoc = false;
+      if (typeof _zwNodeContains === 'function') {
+        inDoc = _zwNodeContains(globalThis.document, node) || node.nodeType === 9;
+      } else {
+        var cur7 = node;
+        var guard7 = 0;
+        while (cur7 && guard7++ < 4096) {
+          if (cur7 === globalThis.document || cur7.nodeType === 9) { inDoc = true; break; }
+          cur7 = cur7.parentNode;
+        }
+      }
+      if (!inDoc) return; // spec「不改变 selection」分支（detached 节点）
+      var r = _makeRange();
+      r.setStart(node, 0);
+      r.setEnd(node, node.childNodes ? node.childNodes.length : 0);
+      this._ranges = [r];
+    };
+    // spec setBaseAndExtent(anchorNode, anchorOffset, focusNode, focusOffset)：
+    // anchor→start、focus→end（WPT setBaseAndExtent.html/isCollapsed.html 依赖面——
+    // shim range 无方向位，anchor==start 语义与 forwards 选择一致）。
+    _selection.setBaseAndExtent = function (anchorNode, anchorOffset, focusNode, focusOffset) {
+      var r = _makeRange();
+      r.setStart(anchorNode, anchorOffset | 0);
+      r.setEnd(focusNode, focusOffset | 0);
+      this._ranges = [r];
+    };
+    // spec deleteFromDocument()：删 selection 覆盖内容（空 selection 抛 InvalidStateError）。
+    // 经 range deleteContents（R2929 既有 mutation-emitting 面——文本/元素区间精确，
+    // 跨容器 best-effort 与 range 一致）。
+    _selection.deleteFromDocument = function () {
+      if (this._ranges.length === 0) _zwSelEmpty();
+      this._ranges[0].deleteContents();
+    };
+    // spec containsNode(node, allowPartial)：无真选择几何——沿用既有 best-effort，
+    // 精确化：node 在当前 range commonAncestor 子树内视为包含（toString 路径同源）。
+    _selection.containsNode = function (node, allowPartial) {
+      if (this._ranges.length === 0 || !node) return false;
+      try {
+        var r = this._ranges[0];
+        var cmp = r.comparePoint ? null : null;
+        // best-effort：用 isPointInRange（部分包含按 allowPartial——完全包含近似为
+        // 两端点均 in-range；shim 无逐节点比较面，保持 permissive false 默认）。
+        if (typeof r.isPointInRange === 'function' && node.nodeType !== 9) {
+          return allowPartial
+            ? r.isPointInRange(node, 0) || r.isPointInRange(node, node.childNodes ? node.childNodes.length : (node.length || 0))
+            : r.isPointInRange(node, 0) && r.isPointInRange(node, node.childNodes ? node.childNodes.length : (node.length || 0));
+        }
+      } catch (_eSelCn) {}
+      return false;
     };
     return _selection;
   }
   globalThis.getSelection = _getSelection;
+  // R3254-M1：Selection 接口构造器——实例经 Object.create(Selection.prototype) 接原型链
+  //（`window.getSelection() instanceof Selection` spec 断言，WPT getSelection.html 首测）。
+  // `new Selection()` 本身 spec 非法（无 [[Construct]]）——保持不可构造（V8 普通函数
+  // 可 new，但 shim 无 native class 通道；容忍构造，实例无意义面）。
   globalThis.Selection = function Selection() {};
   // js-dom M4 R42：`new Range()` 返真实 Range 实例（spec Range 有构造器，同 document.createRange()）。
   // 旧空函数 stub → `new Range().setStart` 抛 TypeError（WPT Range-attribute-nodes 等用 new Range()）。

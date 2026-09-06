@@ -1312,10 +1312,7 @@ pub fn run_dom_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<
 /// 与 [`run_dom_cases`] 同构：扫描 [`SELECTION_TEST_SUBDIRS`] 下全部主线程
 /// .html 用例；仅依赖 `testharness.js`。filter 按路径子串过滤。用例由
 /// `fetch-selection-subset.sh` 按需拉取（wpt-data gitignored）。
-pub fn run_selection_cases(
-    wpt_root: &Path,
-    filter: Option<&str>,
-) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+pub fn run_selection_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
     let harness_source = match std::fs::read_to_string(wpt_root.join("resources/testharness.js")) {
         Ok(source) => source,
         Err(error) => {
