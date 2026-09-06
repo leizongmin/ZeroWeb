@@ -791,6 +791,7 @@ fn test_iframe_service_worker_message_poll_refreshes_controller() {
 
 #[test]
 fn test_iframe_service_worker_container_constructor_brand() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::{Arc, Mutex};
     use zero_script_sandbox::{Sandbox, V8Sandbox};
 
@@ -814,14 +815,24 @@ fn test_iframe_service_worker_container_constructor_brand() {
         "__zw_sw_observe_window_client",
         Box::new(|_args| r#"{"ok":true}"#.to_string()),
     );
+    // controllerchange 是「change」事件：创建时即受控的文档初始赋值不派发（spec
+    // controller-on-load；skip-waiting flake 根因修复）。本测试改为真实 change 场景——
+    // 创建期 wire 返 null（uncontrolled at creation），refresh 返新 controller → 事件。
+    let controller_query_count: Arc<AtomicUsize> = Arc::new(AtomicUsize::new(0));
+    let query_count_for_callback = controller_query_count.clone();
     sandbox.register_callback(
         "__zw_sw_controller",
-        Box::new(|args| {
+        Box::new(move |args| {
             if args.first().map(String::as_str)
                 == Some("https://wpt.test/service-workers/service-worker/resources/blank.html")
                 && args.get(1).map(String::as_str) == Some("iframe:iframe")
             {
-                r#"{"ok":true,"controller":{"id":"r2","scriptURL":"https://wpt.test/service-workers/service-worker/resources/skip-waiting-worker.js","state":"activated"}}"#.to_string()
+                let call = query_count_for_callback.fetch_add(1, Ordering::SeqCst);
+                if call == 0 {
+                    r#"{"ok":true,"controller":null}"#.to_string()
+                } else {
+                    r#"{"ok":true,"controller":{"id":"r2","scriptURL":"https://wpt.test/service-workers/service-worker/resources/skip-waiting-worker.js","state":"activated"}}"#.to_string()
+                }
             } else {
                 r#"{"ok":true,"controller":null}"#.to_string()
             }
