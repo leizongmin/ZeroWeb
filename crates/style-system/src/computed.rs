@@ -185,6 +185,8 @@ fn resolve_length_with_font_metrics(
         ),
         // min-content/max-content 需要内容信息，此处返回 0.0
         LengthValue::MinContent | LengthValue::MaxContent => 0.0,
+        // stretch 需要包含块可用空间信息（sizing pass 布局层解析），此处返回 0.0
+        LengthValue::Stretch => 0.0,
     }
 }
 
@@ -684,6 +686,9 @@ fn resolve_length_field(
         // converter 把 width/height 的 MaxContent 映射为塌缩（length(0)），
         // 保持与旧「解析为 Px(0)」行为中性，避免 taffy 把 width:auto 容器拉伸填充。
         LengthValue::MinContent | LengthValue::MaxContent => {}
+        // R4086（css-sizing-4 §7）：stretch 需包含块可用空间信息——原样保留信号到
+        // 布局引擎 sizing pass 的 Stretch 臂（确定 CB / quirks body-fills-html 链解析）。
+        LengthValue::Stretch => {}
         // 包含百分比的 calc 表达式保留，由布局引擎处理
         LengthValue::Calc(expr) if calc_contains_percentage(expr) => {}
         // R3925（css-sizing-3 §fit-content(length-percentage)）：fit-content() 的百分比参数

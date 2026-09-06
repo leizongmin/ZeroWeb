@@ -16,6 +16,8 @@ fn resolve_sizing_definite_real_length(value: &LengthValue, style: &ComputedStyl
         | LengthValue::MinContent
         | LengthValue::MaxContent
         | LengthValue::FitContent(_) => None,
+        // stretch 非固定长度——可用空间解析在 sizing walk 的 Stretch 臂（依赖 CB/quirks 链）
+        LengthValue::Stretch => None,
         LengthValue::Px(v) if *v == f64::INFINITY => None,
         other => {
             let font_size_px = zero_style_system::computed::resolve_length(&style.font_size, 16.0, None, None);
@@ -973,6 +975,72 @@ impl LayoutEngine {
                     || (!is_abs && (!parent_is_flex_grid || grid_replaced_pct_indefinite))
                 {
                     match &s.height {
+                        // R4086（css-sizing-4 §7）：`stretch` / `-webkit-fill-available` 高度。
+                        // css-sizing-4：stretch 解析为包含块「可用空间」——本切片按
+                        // Percentage(100) 同链解析（块轴单列流中可用空间 ≈ CB 高；减去兄弟
+                        // 占用的完整 §7 方程为后续切片）。解析链与百分比完全一致：
+                        // 确定 CB → CB 高；quirks body-fills-html（不明确 CB + quirks）→
+                        // 最近 definite 祖先 / ICB（驱动 stretch-quirk-001：body 子元素
+                        // stretch = 视口高，ref=100vh）；standards 不明确 CB → auto 回退。
+                        LengthValue::Stretch if !is_abs => match cb_definite {
+                            Some(cbh) => {
+                                let pb = b.padding_top + b.padding_bottom + b.border_top + b.border_bottom;
+                                let resolved = cbh.max(0.0);
+                                if let Some(id) = b.node_id
+                                    && let Some(&tid) = dom_to_taffy.get(&id)
+                                    && let Ok(mut st) = taffy_tree.style(tid).cloned()
+                                {
+                                    st.size.height = taffy::style::Dimension::length(resolved);
+                                    let _ = taffy_tree.set_style(tid, st);
+                                    let _ = taffy_tree.mark_dirty(tid);
+                                    changed = true;
+                                }
+                                my_definite = Some(if matches!(s.box_sizing, BoxSizingValue::BorderBox) {
+                                    (resolved - pb).max(0.0)
+                                } else {
+                                    resolved
+                                });
+                            }
+                            None => {
+                                let quirk_blocked_by_flex_grid =
+                                    inside_flex_grid && std::env::var("ZW_QUIRKS_PCT_FLEX_GATE").as_deref() != Ok("0");
+                                // stretch 对替换元素同样生效（css-sizing-4 §7 无替换元素例外；
+                                // 驱动案 stretch-quirk-001 的 canvas/iframe 均 stretch）——
+                                // 与百分比高度臂的 is_replaced skip 不同。
+                                if quirks_mode && !inside_table_cell && !quirk_blocked_by_flex_grid {
+                                    let pb = b.padding_top + b.padding_bottom + b.border_top + b.border_bottom;
+                                    let base = quirks_nearest_definite.unwrap_or(viewport_height);
+                                    let resolved = base.max(0.0);
+                                    if let Some(id) = b.node_id
+                                        && let Some(&tid) = dom_to_taffy.get(&id)
+                                        && let Ok(mut st) = taffy_tree.style(tid).cloned()
+                                    {
+                                        st.size.height = taffy::style::Dimension::length(resolved);
+                                        let _ = taffy_tree.set_style(tid, st);
+                                        let _ = taffy_tree.mark_dirty(tid);
+                                        changed = true;
+                                    }
+                                    my_definite = Some(if matches!(s.box_sizing, BoxSizingValue::BorderBox) {
+                                        (resolved - pb).max(0.0)
+                                    } else {
+                                        resolved
+                                    });
+                                } else {
+                                    // standards 不明确 CB：stretch 回退 auto（css-sizing-4 §7
+                                    // 「indefinite available space → behaves as auto」）。
+                                    if let Some(id) = b.node_id
+                                        && let Some(&tid) = dom_to_taffy.get(&id)
+                                        && let Ok(mut st) = taffy_tree.style(tid).cloned()
+                                    {
+                                        st.size.height = taffy::style::Dimension::auto();
+                                        let _ = taffy_tree.set_style(tid, st);
+                                        let _ = taffy_tree.mark_dirty(tid);
+                                        changed = true;
+                                    }
+                                    my_definite = None;
+                                }
+                            }
+                        },
                         LengthValue::Percentage(p) if !is_abs => match cb_definite {
                             Some(cbh) => {
                                 // 明确 CB → 解析为百分比（明确），供子元素继续链。

@@ -1607,8 +1607,15 @@ impl LayoutEngine {
         };
         // CSS §10.3.5：width:auto 的浮动元素应 shrink-to-fit。记录 width:auto 标记
         //（仅水平书写模式）供 float 后处理收缩宽度。
+        // R4086：width:stretch 同样标记——converter 已把 Stretch 映射 auto（fill CB），
+        // BFC/float-avoidance 收缩（css-sizing-4 §7.2：stretch 须回避 float）依赖本标记。
         let declared_width_auto = matches!(parent_writing_mode, WritingModeValue::HorizontalTb)
-            && computed.is_some_and(|c| matches!(c.width, zero_css_parser::values::LengthValue::Auto));
+            && computed.is_some_and(|c| {
+                matches!(
+                    c.width,
+                    zero_css_parser::values::LengthValue::Auto | zero_css_parser::values::LengthValue::Stretch
+                )
+            });
         let declared_width_px = if matches!(parent_writing_mode, WritingModeValue::HorizontalTb) {
             computed.and_then(|c| {
                 resolve_definite_width_border_box(c, padding_left + padding_right + border_left + border_right)

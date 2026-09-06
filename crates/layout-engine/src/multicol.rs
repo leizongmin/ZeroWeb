@@ -156,6 +156,8 @@ fn length_to_px(value: &LengthValue, container_width: f32, font_size_px: f32) ->
         LengthValue::Ric(v) => *v as f32 * 16.0,
         LengthValue::FitContent(inner) => length_to_px(inner, container_width, font_size_px),
         LengthValue::MinContent | LengthValue::MaxContent => 0.0,
+        // stretch 需要包含块可用空间（multicol 列环境无该语义），按 0 中性处理
+        LengthValue::Stretch => 0.0,
     }
 }
 

@@ -1220,7 +1220,11 @@ fn sizing_length_is_valid(raw: &str, value: &LengthValue) -> bool {
         | LengthValue::Lh(v)
         | LengthValue::Percentage(v) => v.is_finite() && *v >= 0.0,
         LengthValue::FitContent(inner) => sizing_length_is_valid("", inner),
-        LengthValue::Auto | LengthValue::MinContent | LengthValue::MaxContent | LengthValue::Calc(_) => true,
+        LengthValue::Auto
+        | LengthValue::MinContent
+        | LengthValue::MaxContent
+        | LengthValue::Calc(_)
+        | LengthValue::Stretch => true,
     }
 }
 
@@ -1434,5 +1438,20 @@ pub(crate) fn parse_color_scheme_dark(value: &str, prefers_dark: bool) -> bool {
         (true, true) => prefers_dark, // 两种均可用 → 用户偏好决定
         (false, true) => true,        // 仅 dark
         _ => false,                   // 仅 light / normal / 缺省 → light（保守默认）
+    }
+}
+
+#[cfg(test)]
+mod r4086_stretch_tests {
+    use super::*;
+
+    #[test]
+    fn r4086_height_stretch_parses() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_property_value(&mut style, "height", "stretch"));
+        assert_eq!(style.height, LengthValue::Stretch);
+        let mut style2 = ComputedStyle::default();
+        assert!(apply_property_value(&mut style2, "height", "-webkit-fill-available"));
+        assert_eq!(style2.height, LengthValue::Stretch);
     }
 }

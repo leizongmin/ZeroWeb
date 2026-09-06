@@ -109,3 +109,46 @@ fn r4083_canvas_propagation_gutter_shrinks_positioning_area() {
         main.rect.size.width
     );
 }
+
+/// R4086（css-sizing-4 §7 + quirks spec body-fills-html）：quirks 模式下 body 自动高度视为
+/// definite，子元素 `height:stretch` / `-webkit-fill-available` 解析为视口高（= ref 100vh）。
+/// 驱动 stretch-quirk-001（chromium oracle diff 0.00%）。
+#[test]
+fn r4086_stretch_resolves_against_quirks_body_height() {
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    // 无 doctype → quirks 模式；body 高自动 → body-fills-html-which-fills-viewport（600）。
+    let html = "<html><body style=\"margin:0\"><div style=\"height:stretch; width:40px\">x</div>\
+                <div style=\"height:-webkit-fill-available; width:40px\"></div></body></html>";
+    let result = pipeline.render_html(html, "");
+    let root = &result.layout.root;
+    let body = &root.children[root.children.len() - 1];
+    let stretched: Vec<_> = body
+        .children
+        .iter()
+        .filter(|c| (c.height - 600.0).abs() < 0.5)
+        .collect();
+    assert!(
+        stretched.len() >= 2,
+        "R4086: quirks 下 stretch/-webkit-fill-available 子元素高度应解析为视口高 600，got {:?}",
+        body.children.iter().map(|c| c.height).collect::<Vec<_>>()
+    );
+}
+
+/// R4086（css-sizing-4 §7）：确定 CB 下 `height:stretch` 解析为 CB 高（百分比式同链）。
+#[test]
+fn r4086_stretch_resolves_against_definite_cb() {
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    // standards 模式（有 doctype）+ 定高父容器：stretch 子 = 父内容高 300。
+    let html = "<!DOCTYPE html><html><body style=\"margin:0\">\
+                <div style=\"height:300px\"><div style=\"height:stretch; width:40px\">x</div></div>\
+                </body></html>";
+    let result = pipeline.render_html(html, "");
+    let root = &result.layout.root;
+    let outer = &root.children[root.children.len() - 1];
+    let inner = &outer.children[outer.children.len() - 1];
+    assert!(
+        (inner.height - 300.0).abs() < 0.5,
+        "R4086: 确定 CB 下 stretch 高应为 300，got {}",
+        inner.height
+    );
+}

@@ -238,6 +238,8 @@ pub fn computed_style_to_taffy(
                     | LengthValue::MinContent
                     | LengthValue::MaxContent
                     | LengthValue::FitContent(_) => cis_dim_boxed(&style.contain_intrinsic_width, frame_x),
+                    // R4086：width:stretch → auto（contain:size 下 CIS 替代同 auto 族）。
+                    LengthValue::Stretch => taffy::style::Dimension::auto(),
                     _ => convert_length_to_dimension(&style.width, vw, vh),
                 },
                 height: match &style.height {
@@ -250,7 +252,13 @@ pub fn computed_style_to_taffy(
             }
         } else {
             taffy::geometry::Size {
-                width: convert_length_to_dimension(&style.width, vw, vh),
+                // R4086：width:stretch → auto（fill CB 宽；BFC/float-avoidance 收缩
+                // 由既有 float machinery 处理——flow-root width:auto 同语义）。
+                width: if matches!(style.width, LengthValue::Stretch) {
+                    taffy::style::Dimension::auto()
+                } else {
+                    convert_length_to_dimension(&style.width, vw, vh)
+                },
                 // R1018：flex/inline-flex 容器的 height:MaxContent/MinContent（含 bare fit-content
                 // 经 parser 映射）映射 Auto（content-based），非 length(0）。flex 容器 height:auto
                 // = 内容最高 item（fit-content-item-002/003/004 驱动）。width 的 MaxContent→0 是

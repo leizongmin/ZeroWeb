@@ -271,3 +271,5 @@ css/css-sizing/aspect-ratio/block-aspect-ratio-025.html css/reference/ref-filled
 css/css-sizing/aspect-ratio/replaced-element-022.html css/reference/ref-filled-green-100px-square-only.html == 2026-09-06 
 css/css-backgrounds/background-margin-root.html css/css-backgrounds/background-margin-root-ref.html == 2026-09-06 R4083 canvas bg positioning area = root padding box + gradient repeat tiling
 css/css-overflow/scrollbar-gutter-with-background-gradient.html css/css-overflow/scrollbar-gutter-with-background-gradient-ref.html == 2026-09-06 R4083 scrollbar-gutter shrinks root padding-box positioning/painting area
+css/css-sizing/stretch/stretch-quirk-001.html css/css-sizing/stretch/stretch-quirk-001-ref.html == 2026-09-06 R4086 stretch/fill-available keyword sizing (quirks body-fills-html chain)
+css/css-sizing/stretch/stretch-quirk-002.html css/css-sizing/stretch/stretch-quirk-002-ref.html == 2026-09-06 R4086 stretch keyword sizing quirks variant 002

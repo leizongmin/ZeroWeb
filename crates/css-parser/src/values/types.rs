@@ -49,6 +49,10 @@ pub enum LengthValue {
     MinContent,
     /// max-content 关键字 — 最大内容宽度。
     MaxContent,
+    /// stretch 关键字（css-sizing-4 §7：`stretch` / `-webkit-fill-available`）— 尺寸解析为
+    /// 包含块的「可用空间」（块轴上 ≈ 包含块高度减去兄弟占用；布局层按确定 CB/quirks
+    /// body-fills-html 链解析，参见 sizing pass 的 Stretch 臂）。
+    Stretch,
     /// 数学表达式（calc/min/max/clamp），在样式解析阶段无法直接求值，
     /// 需要在 [`resolve_computed_style`](crate::resolve_computed_style) 阶段用完整上下文求值。
     Calc(Box<CalcExpr>),
@@ -1648,6 +1652,8 @@ fn resolve_length_to_px(lv: &LengthValue, ctx: &CalcContext) -> Option<f64> {
         LengthValue::FitContent(inner) => resolve_length_to_px(inner, ctx),
         // min-content/max-content 需要内容信息才能计算，此处返回 None
         LengthValue::MinContent | LengthValue::MaxContent => None,
+        // stretch 需要包含块可用空间信息才能计算（sizing pass 布局层解析），此处 None
+        LengthValue::Stretch => None,
     }
 }
 
@@ -1705,6 +1711,14 @@ pub fn parse_length(value: &str) -> Option<LengthValue> {
     }
     if value.eq_ignore_ascii_case("max-content") {
         return Some(LengthValue::MaxContent);
+    }
+
+    // R4086（css-sizing-4 §7 sizing values）：`stretch` 关键字 + legacy 别名
+    // `-webkit-fill-available`（测试常用双声明降级链：`height:-webkit-fill-available;
+    // height:stretch`，两者语义按同值处理）。布局层在 sizing pass 解析（确定 CB 百分比式；
+    // quirks body-fills-html 链），解析层仅识别关键字。
+    if value.eq_ignore_ascii_case("stretch") || value.eq_ignore_ascii_case("-webkit-fill-available") {
+        return Some(LengthValue::Stretch);
     }
 
     // R1018：bare `fit-content` 关键字（无参数，CSS css-sizing-3 legacy form）。
