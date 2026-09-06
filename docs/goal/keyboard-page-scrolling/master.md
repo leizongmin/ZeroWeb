@@ -2,7 +2,7 @@
 
 **入口文档**: [../keyboard-page-scrolling.md](../keyboard-page-scrolling.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-07（M1 切片 2 完成——分发层键位→滚动量映射单测落地，上游 snap 键盘案 defer 有据）
+**最后更新**: 2026-09-07（M2 切片 1 完成——Ctrl+Home/End 修饰变体回执链；焦点→容器链跨域 defer 记录）
 
 ---
 
@@ -39,14 +39,15 @@
 |---|------|------|
 | P1 | 用例覆盖为零（上游键盘滚动用例稀缺——本地 reftest 补足策略） | 🔶 上游 snap/input 三案勘察 defer（依赖 testdriver Actions 键盘链——keyboard-default-actions M1 切片 2 共享基建）；本地单测 1 案落地（evidence/2026-09-07-m1-keyboard-scroll-baseline.md）|
 | P2 | 键盘滚动分发层（键位→滚动量）缺失 | ✅ 底座 R3254-M9 既有（keydown 回执驱动）+ 本地单测断言固化（Space/PageUp/PageDown/方向键/修饰变体/None 键位）|
-| P3 | 滚动目标判定 + 嵌套传播缺失 | ⬜ M2 |
+| P3 | 滚动目标判定 + 嵌套传播缺失 | 🔶 M2 切片 1（2026-09-07，fad120776）：Ctrl+Home/End 修饰变体回执链接通；焦点→容器→根链依赖 renderer S3 layout 几何（跨域 defer——R3298 S2 注记协调点），非本流可闭环 |
 | P4 | scrollIntoView 选项面 / scroll 事件联动未核实 | ⬜ M3 |
 
 ## 下一步计划
 
 1. ~~**M1 切片 1**：上游可执行用例导入~~ ✅ 2026-09-07（defer 解除——Actions 键盘链 + send_keys 滚动键事件对落地，css-scroll-snap/input 三案导入 keyboard 套件；全部可执行、断言 F 聚类记录）
 2. ~~**M1 切片 2**：键盘滚动分发层骨架~~ ✅ 2026-09-07（底座 R3254-M9 既有 + scroll_delta_for_key 映射单测固化——Space/PageUp/PageDown/Arrow/None 键位语义断言）
-3. **M1 切片 3**：失败聚类 → 修复队列（滚动目标判定 P3 = M2 主项）
+3. ~~**M1 切片 3**：失败聚类 → 修复队列~~ → 并入 M2。
+4. ~~**M2 切片 1**：Ctrl+Home/End 修饰变体~~ ✅ 2026-09-07（commit fad120776；dispatch_ctrl_scroll_key 回执链 + e2e；browser 413 全绿）。M2 剩余：焦点→容器链（S3 跨域 defer，master.md 记录）——M2 全键位中本流可闭环部分已完成
 
 **碰撞管理**：开工前先 `git log --since="14 days ago" -- crates/engine/` 核对 js-dom 流
 element scroll 段活跃面。
@@ -56,7 +57,7 @@ element scroll 段活跃面。
 | 里程碑 | 状态 |
 |--------|------|
 | M1 — 基线建立 + 分发层骨架 | ✅ 切片 1/2 完成（2026-09-07）——上游三案导入（6F=真滚动管线缺口）+ 分发映射单测；M2 滚动目标判定为主项 |
-| M2 — 全键位 + 滚动目标判定 | ⬜ |
+| M2 — 全键位 + 滚动目标判定 | 🔶 切片 1 ✅（Ctrl 变体，2026-09-07）；焦点→容器链 S3 跨域 defer（待渲染流域协调，master.md 记录）|
 | M3 — scrollIntoView + 事件 + snap 交互收尾 | ⬜ |
 
 ## 验证基线
