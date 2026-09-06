@@ -3793,3 +3793,52 @@ fn scroll_delta_for_key_maps_keyboard_scroll_keys_r3254_kp1() {
         "Enter 无滚动 delta"
     );
 }
+
+/// R3254-KP3（keyboard-page-scrolling goal M2 切片 1，2026-09-07）：Ctrl+Home/End
+/// 修饰变体——keydown 经回执通道派发到页面（可 preventDefault），未取消则滚到
+/// 文档顶/底。与纯 Home/End（无修饰快捷键立即滚动）的差异：走
+/// `dispatch_ctrl_scroll_key` → PendingTabAction::ScrollViewport 回执链。
+#[test]
+fn ctrl_home_end_scroll_to_top_and_bottom_via_receipt() {
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    app.physical_size = (1280, 900);
+    app.scale_factor = 1.0;
+    let tab_id = app.shell.active_tab_id().unwrap();
+    app.ensure_webview(tab_id);
+
+    let tall_html = r#"<!DOCTYPE html><html><head><style>
+          head, style, title { display: none; }
+          .spacer { height: 4000px; background: #eef; }
+        </style></head><body><div class="spacer">Tall</div></body></html>"#;
+    app.load_webview_html(tab_id, tall_html, None);
+    app.sync_webview_viewport_and_poll(tab_id);
+
+    // 先滚到中间（同 home_end 测试前置——PageDown 回执链）
+    app.handle_key("PageDown", true, None);
+    let mid = wait_for_scroll_change(&mut app, tab_id, 0.0);
+    assert!(mid > 0.0, "should have scrolled down first");
+
+    // Ctrl+Home 回到顶部（ctrl 修饰分支：回执链生效）
+    app.handle_key(BrowserApp::test_modifier_key_name(), true, None);
+    app.handle_key("Home", true, None);
+    let top = wait_for_scroll_change(&mut app, tab_id, mid);
+    assert_eq!(top, 0.0, "Ctrl+Home should scroll to top via receipt");
+
+    // Ctrl+End 到底部
+    app.handle_key("End", true, None);
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    let mut bottom = top;
+    while std::time::Instant::now() < deadline {
+        app.poll_tab_fetch();
+        bottom = app.scroll_offset_for_tab(tab_id);
+        if bottom > mid {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    assert!(
+        bottom > mid,
+        "Ctrl+End should scroll to bottom (bottom={bottom}, mid={mid})"
+    );
+    app.handle_key(BrowserApp::test_modifier_key_name(), false, None);
+}

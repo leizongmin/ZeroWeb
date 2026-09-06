@@ -410,6 +410,28 @@ impl BrowserApp {
         }
     }
 
+    /// R3254-KP3（keyboard-page-scrolling goal M2 切片 1，2026-09-07）：Ctrl+Home/End
+    /// 修饰变体——keydown 派发到页面（可 preventDefault），未取消则回执
+    /// `PendingTabAction::ScrollViewport` 滚到文档顶/底。delta 在派发时按当前滚动状态
+    /// 计算（Home = 负当前值归零；End = max - 当前）。焦点在文本控件时由
+    /// `take_pending_actions` 的 focused_text_input 守卫过滤（与 Space/PageDown 同款）。
+    fn dispatch_ctrl_scroll_key(&mut self, key: &str, to_bottom: bool) {
+        let Some(tab_id) = self.shell.active_tab_id() else {
+            return;
+        };
+        let delta = if to_bottom {
+            let layout = self.page_scroll_layout(tab_id);
+            let current = self.tab_scroll_state(tab_id);
+            layout.max_scroll_y - current.y
+        } else {
+            let current = self.tab_scroll_state(tab_id);
+            -current.y
+        };
+        let action = crate::tab_manager::PendingTabAction::ScrollViewport { delta };
+        self.tabs
+            .dispatch_key_event(tab_id, "keydown", key, key, self.shift_pressed, Some(action));
+    }
+
     /// 循环切换活跃标签（`reverse=true` 向前，否则向后）。
     fn cycle_active_tab(&mut self, reverse: bool) {        let active_id = match self.shell.active_tab_id() {
             Some(id) => id,

@@ -24,3 +24,26 @@ delta 一律作用于根视口（缺口 P3，M2）；Ctrl+Home/End 修饰变体�
 
 **执行入口**：`cargo test -p zero-browser scroll_delta_for_key_maps`（仓库
 make test 全量含之）。
+
+---
+
+# M2 切片 1 — Ctrl+Home/End 修饰变体（2026-09-07，同日追加）
+
+**修复**（apps/browser）：Ctrl+Home/End 修饰变体接通 keydown 回执链——
+`dispatch_ctrl_scroll_key`（app_input.rs）：keydown 派发到页面（可 preventDefault），
+未取消则 `PendingTabAction::ScrollViewport` 滚到文档顶/底（delta 派发时按当前滚动
+状态计算）。此前 Ctrl+Home/End 落入无修饰快捷键块立即滚动（无页面 keydown、无
+阻断机会）；ctrl 分支 match 此前只处理 Tab/PageUp/PageDown。
+
+**差异语义**：纯 Home/End = 无修饰快捷键立即滚动（无 keydown 派发——历史行为，
+Chromium 同款）；Ctrl+变体 = 回执链（页面可消费）。
+
+**e2e**：`ctrl_home_end_scroll_to_top_and_bottom_via_receipt`（tall page →
+PageDown 到中间 → Ctrl+Home 回顶（回执链）→ Ctrl+End 到底）。browser 413 全绿。
+
+**M2 剩余与跨域记录**：
+- 焦点→可滚动容器→根判定链：依赖 renderer S3 layout 几何暴露（渲染流域协调点，
+  R3298 S2 注记已记录）——跨域 defer，非本流可闭环。
+- Ctrl+Left/Right（word jump）：文本编辑域（editing goal 范围）defer。
+- snap 三案断言复评：需 runner 侧真实布局滚动管线（scroll-snap 布局在渲染器已有，
+  runner testharness 无真渲染 viewport——跨域协调，记录于 master.md 待决策项）。

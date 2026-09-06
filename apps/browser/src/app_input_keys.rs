@@ -584,6 +584,16 @@ impl BrowserApp {
                 k if key_matches(k, "PageUp") => {
                     self.cycle_active_tab(true);
                 }
+                // R3254-KP3（keyboard-page-scrolling goal M2 切片 1，2026-09-07）：
+                // Ctrl+Home/End 修饰变体 = 文档顶/底滚动（Chromium 语义——keydown 派发到
+                // 页面可 preventDefault，未取消则回执滚动）。与纯 Home/End（无修饰快捷键
+                // 路径，立即滚动）的差异：Ctrl 变体经 keydown 回执通道——页面可消费/阻断。
+                k if key_matches(k, "Home") => {
+                    self.dispatch_ctrl_scroll_key(key, false);
+                }
+                k if key_matches(k, "End") => {
+                    self.dispatch_ctrl_scroll_key(key, true);
+                }
                 _ => {}
             }
             return;
