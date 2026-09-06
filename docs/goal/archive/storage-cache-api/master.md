@@ -1,8 +1,12 @@
 # Cache API 真实化 — 运行时控制面板（master.md）
 
-**入口文档**: [../storage-cache-api.md](../storage-cache-api.md)
+> **▶ 已归档（2026-09-06，模式 A 整树归档）**：本控制面随 goal 完成整体迁入
+> `docs/goal/archive/storage-cache-api/`，只读保留，不再更新。终态：DC-1~DC-4 全满足，
+> window 面 39 case / 449 subtest 全绿。
+
+**入口文档**: [storage-cache-api.md](../storage-cache-api.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-06（DC 收口审计：testharness 账本补齐 5 条 + 449/449 复验 + 全工作区门禁）
+**最后更新**: 2026-09-06（DC 收口审计：testharness 账本补齐 5 条 + 449/449 复验 + 全工作区门禁；同日模式 A 归档）
 
 ---
 
@@ -130,7 +134,7 @@ iframe client 后的 fetch interception；`claim-not-using-registration.https.ht
 fetch baseline，不改变本目标的 window/SW CacheStorage 分母。
 
 **与兄弟 goal 的边界**：
-- [storage-indexeddb](../archive/storage-indexeddb.md)（已归档）— IDB 归其管
+- [storage-indexeddb](../storage-indexeddb.md)（已归档）— IDB 归其管
 - service-workers — SW 环境的 cache 用例（cache-storage/sw 类）归其验收；本目标只收
   window 环境可执行面
 - js-dom（DOM API 反射面）— 仅 host 回调注册段可能共享，run-rules §9 碰头管理

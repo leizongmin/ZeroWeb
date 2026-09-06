@@ -625,7 +625,7 @@ pub const INDEXEDDB_CASES: &[(&str, &[&str])] = &[
 /// CacheStorage goal pinned upstream window subset.
 ///
 /// Most cases have `// META: global=window,worker`; this runner only executes
-/// the window variant for `docs/goal/storage-cache-api.md`. Service Worker
+/// the window variant for `docs/goal/archive/storage-cache-api.md`. Service Worker
 /// variants remain under the Service Worker goal.
 pub const CACHE_STORAGE_WINDOW_CASES: &[(&str, &[&str])] = &[
     (

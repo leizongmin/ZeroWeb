@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 用 rally run 持续推进 storage-cache-api goal（docs/goal/storage-cache-api.md）。
+# 用 rally run 持续推进 storage-cache-api goal（已归档至 docs/goal/archive/storage-cache-api.md）。
 #
 # 用途：长期无人值守推进 Cache API / 存储目标（与 service-workers 的 sw 环境用例
 # 面有边界划分——cache-storage/sw 类归 SW 流），agent-command 用 claude-glm
@@ -13,7 +13,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-exec rally run docs/goal/storage-cache-api.md \
+exec rally run docs/goal/archive/storage-cache-api.md \
     -w "$PROJECT_ROOT" \
     --agent-command claude-glm \
     "$@"

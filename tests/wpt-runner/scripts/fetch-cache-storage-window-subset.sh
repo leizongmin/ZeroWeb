@@ -6,7 +6,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 WPT_REV="04067ce9c7c2165e71ad7d0dde10a4c5cb394a83"
-ASSET_MANIFEST="${WPT_ASSET_MANIFEST:-${REPO_ROOT}/docs/goal/storage-cache-api/evidence/2026-08-22-cache-storage-window-assets.tsv}"
+ASSET_MANIFEST="${WPT_ASSET_MANIFEST:-${REPO_ROOT}/docs/goal/archive/storage-cache-api/evidence/2026-08-22-cache-storage-window-assets.tsv}"
 DATA_ROOT="${WPT_CACHE_STORAGE_DATA:-${REPO_ROOT}/tests/wpt-runner/wpt-data/.cache-storage-window-root}"
 if [[ -n "${WPT_REMOTE_BASE:-}" ]]; then
   REMOTE_BASE="${WPT_REMOTE_BASE}"

@@ -1,9 +1,16 @@
 # Cache API 真实化 — WPT 驱动的 CacheStorage 页面可用性目标
 
-**版本**: v1.1（v1.0→v1.1：2026-09-06 DC-1~4 证据链收口——账本补齐、449/449 复验、
-全工作区门禁；待归档）
+> **▶ 已归档（2026-09-06，docs/goal/README.md §5 模式 A 整树归档）**：本目标已完成
+> （DC-1~DC-4 全部满足，完成日 2026-09-06）。WPT `cache-storage` window 面 39 case /
+> 449 subtest 全绿；页面 `caches`/`Cache` 全 API 接 zero-storage 真实实现 + per-origin
+> 持久化。本文件与 `storage-cache-api/`（master/evidence）整体迁入 `docs/goal/archive/`，
+> 仅作历史记录，不再更新。
+
+**版本**: v1.2（v1.0→v1.1：2026-09-06 DC-1~4 证据链收口——账本补齐、449/449 复验、
+全工作区门禁；v1.1→v1.2：2026-09-06 模式 A 整树归档）
 **日期**: 2026-08-17
-**状态**: Active（Done Criteria DC-1~DC-4 已全部满足，2026-09-06 收口）
+**状态**: ✅ Completed（2026-09-06 收口——DC-1~4 全满足后按 docs/goal/README.md §5
+模式 A 整树归档至 `docs/goal/archive/storage-cache-api/`）
 **执行模式**: 轻量修复优先（永不停）；遇需用户决策项或深结构方向 → 记入「待用户决策」清单 → 跳过 → 继续其他轻量修复
 **父目标**: `docs/goal/zero-web.md`（Tier 2「存储：IndexedDB + Cache API + OPFS」+ M12「Cache API」列项）
 
@@ -16,7 +23,7 @@
 > 进展、evidence、active milestone 更新写入 `master.md`。
 >
 > **▶ 拆分动机（2026-08-17 用户决策）**：与
-> [已归档 IndexedDB 目标](archive/storage-indexeddb.md) 同批拆出（存储方向三拆之二）。
+> [已归档 IndexedDB 目标](../archive/storage-indexeddb.md) 同批拆出（存储方向三拆之二）。
 > 理由：① **页面侧完全空白**（indexedDB 至少有 in-memory 近似，`caches` 连全局对象都没有），
 > 是存储三件套里缺口最彻底的；② Rust 底座已有（cache_api.rs 976 行：Cache/CacheStorage/
 > match/matchAll/add/addAll/put/delete/keys 全 API 面）；③ 上游 WPT `cache-storage` 目录
@@ -88,7 +95,7 @@ form-validation——不允许手写 inline 用例替代或充数）。通过率
 ### 不在范围内（明确排除）
 
 - **Service Worker 环境的 cache 用例**（`cache-storage/sw` 类）— 兄弟目标 `service-workers.md`（2026-09-06 已归档至 `docs/goal/archive/service-workers.md`）
-- **IndexedDB** — 兄弟目标已完成，见 [归档入口](archive/storage-indexeddb.md)
+- **IndexedDB** — 兄弟目标已完成，见 [归档入口](../archive/storage-indexeddb.md)
 - **HTTP disk cache（net crate 的 disk_cache.rs）** — 这是浏览器内部 HTTP 缓存，与页面
   Cache API 是两个东西；不碰
 - **Storage quota UI / `navigator.storage.estimate` 精确数值** — shell 域，仅 stub 反射可保留
@@ -138,7 +145,7 @@ form-validation——不允许手写 inline 用例替代或充数）。通过率
       `imported-testharness.txt` 51 条 cache-storage 条目覆盖全部 39 case，revision
       与 asset manifest 精确一致；reftest 类资产不适用本目标——验证全走 testharness
       runner + 常驻 manifest，2026-09-06 审计收口）
-- [x] 通过率报告持久化到 `docs/goal/storage-cache-api/evidence/`，历史可追溯
+- [x] 通过率报告持久化到 `docs/goal/archive/storage-cache-api/evidence/`，历史可追溯
 
 ### DC-2: 页面走真实引擎
 
@@ -246,9 +253,9 @@ form-validation——不允许手写 inline 用例替代或充数）。通过率
 
 - **入口文档**（本文件）：定义 Mission、Done Criteria、执行协议和文档治理规则。**修改条件**：
   仅在目标本身发生实质性变化时修改。**禁止行为**：每轮执行不重写本文件。
-- **运行时控制平面** `docs/goal/storage-cache-api/master.md`：当前真实状态的唯一控制面板。
+- **运行时控制平面** `docs/goal/archive/storage-cache-api/master.md`：当前真实状态的唯一控制面板。
   治理规则：持续演进、不允许无限增长（过时内容压缩或归档）、各章节必须自洽。
-- **归档区域** `docs/goal/storage-cache-api/archive/`：存储已完成里程碑的详细过程与历史证据，
+- **归档区域** `docs/goal/archive/storage-cache-api/archive/`：存储已完成里程碑的详细过程与历史证据，
   只追加不修改。
-- **证据区域** `docs/goal/storage-cache-api/evidence/`：存储通过率报告、失败分析等验证证据，
+- **证据区域** `docs/goal/archive/storage-cache-api/evidence/`：存储通过率报告、失败分析等验证证据，
   持续追加。
