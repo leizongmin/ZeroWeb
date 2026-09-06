@@ -9697,6 +9697,12 @@
   // repeat/isComposing/charCode/keyCode/which。改用工厂（旧独立实现只设 key/code + extends Event，缺父链 +
   // 全属性）。WPT Event-subclasses-constructors KeyboardEvent 用例（默认 + 设定值）。
   var KeyboardEventCtor = _defineEventSubclass('KeyboardEvent', 'UIEvent', [
+    // R3254-K2（keyboard goal M1 切片 2）：KeyboardEvent.composed 缺省 **true**
+    //（UI Events spec keyboard-event-interface——keydown/keyup 穿越 shadow 边界；
+    // WPT keyboardevent-composed.html `event.composed === true` 断言。显式
+    // composed:false 在 init dict 中仍保留——prop 链 o.composed != null 判定不覆盖
+    // 显式 false）。
+    ['composed', 'composed', true],
     ['ctrlKey', 'ctrlKey', false], ['shiftKey', 'shiftKey', false],
     ['altKey', 'altKey', false], ['metaKey', 'metaKey', false],
     ['key', 'key', ''], ['code', 'code', ''],
@@ -9719,6 +9725,14 @@
           // native init_string 对 dict 缺省字段经 ToString 得**字符串 "undefined"**（非
           // undefined 值）设到实例——两形态都补缺省。
           if (inst[d] === undefined || inst[d] === 'undefined') inst[d] = defs[d];
+        }
+        // R3254-K2：KeyboardEvent.composed 缺省 true（UI Events spec——与 shim ctor
+        // prop 链同款；WPT keyboardevent-composed.html 断言 composed===true）。
+        // native 模板**恒设 composed=false**（非 undefined——不能用 undefined 探测），
+        // 以 init dict 为事实源：dict 无 composed 键（或值 null）→ true；显式 false → false。
+        var oC = (options == null || typeof options !== 'object') ? {} : options;
+        if (oC.composed == null) {
+          try { inst.composed = true; } catch (_eKc) {}
         }
         return r !== undefined ? r : inst;
       };

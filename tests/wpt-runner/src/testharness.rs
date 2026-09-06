@@ -4640,6 +4640,59 @@ fn apply_testdriver_command(webview: &mut WebView, command: &TestdriverCommand) 
             let _ = webview.execute_script(&focus_script);
             dispatch_action(webview, target, HtmlUserAction::Activate)
         }
+        // R3254-K2（keyboard goal M1 切片 2，2026-09-07）：Actions 键盘链命令——
+        // keydown/keyup cancelable KeyboardEvent 派发（script_dispatch_dom_event 通道，
+        // __zw_dispatch_event 返 'ok'/'prevented'）。keydown 未取消 → 追加字符默认动作
+        //（InsertText → beforeinput/input/value，UI Events 事件序 keydown→beforeinput→
+        // input；WPT keydown-input-events.html 主断言族）。keyup 仅派事件（无默认动作）。
+        "keydown" | "keyup" => {
+            let key = command.text.as_deref().unwrap_or_default().to_string();
+            let event_type = command.operation.clone();
+            let script = zero_engine::script_dispatch_dom_event(
+                &selector,
+                &event_type,
+                Some(&zero_engine::DomEventDetail {
+                    key: Some(key.clone()),
+                    code: Some(key.clone()),
+                    ..Default::default()
+                }),
+            );
+            let result = webview
+                .execute_script(&script)
+                .map(|v| v.trim().to_string())
+                .unwrap_or_default();
+            if event_type == "keyup" {
+                return None;
+            }
+            if result == "prevented" {
+                // 页面 keydown listener preventDefault → 字符默认动作被抑制
+                //（UI Events cancelable 语义；value 不变、editing 事件不派发）。
+                return None;
+            }
+            if key.chars().count() == 1 {
+                if let Some(error) =
+                    dispatch_action(webview, target, HtmlUserAction::InsertText { text: key.clone() })
+                {
+                    return Some(error);
+                }
+                // UI Events：未取消的字符键 keydown 之后派 keypress（composed，同
+                // KeyboardEvent 面；WPT keyboardevent-composed.html keypress 子测）。
+                // keypress 无 runner 侧默认动作（字符插入已由 InsertText 完成）。
+                let keypress_script = zero_engine::script_dispatch_dom_event(
+                    &selector,
+                    "keypress",
+                    Some(&zero_engine::DomEventDetail {
+                        key: Some(key.clone()),
+                        code: Some(key.clone()),
+                        ..Default::default()
+                    }),
+                );
+                let _ = webview.execute_script(&keypress_script);
+                None
+            } else {
+                None
+            }
+        }
         "send_keys" => {
             let text = command.text.as_deref().unwrap_or_default();
             for character in text.chars() {
@@ -4798,26 +4851,41 @@ const TESTDRIVER_STUB: &str = r#"<script>
   // pointerMove/pointerDown/pointerUp 合成一次指针点击。headless 无真指针，语义映射：
   // 链上记录 origin 元素（pointerMove 的 options.origin / 链首隐式），send() 时对
   // origin 元素入队与 click 同形的 'click' 命令（宿主走既有 Activate 派发管线派发
-  // click 事件）。pointerDown/pointerUp 间无移动语义（单一 target），key 系列不支持
-  // （抛错——本 runner 未覆盖）。链式 API：每个方法返 this。
-  function Actions() { this._origin = null; this._keys = false; }
+  // click 事件）。链式 API：每个方法返 this。
+  // R3254-K2（keyboard goal M1 切片 2，2026-09-07）：**键盘动作链**——addKeyboard(id)
+  // 注册键盘源；keyDown(key)/keyUp(key) 记步骤；send() 时按序入队 'keydown'/'keyup'
+  // 命令（对 origin || activeElement）。keydown 宿主派 cancelable KeyboardEvent（经
+  // script_dispatch_dom_event 通道）；被页面 preventDefault 时 runner 跳过字符默认动作
+  //（uievents/keyboard/keydown-input-events.html 的 cancel 语义）；未取消 → keydown
+  // 命令处理器追加 InsertText 默认动作（beforeinput→input→value，事件序断言）。
+  // pointer 与 key 混合链按记录序执行（指针→click、键盘→keydown/keyup）。
+  function Actions() { this._origin = null; this._steps = []; }
   Actions.prototype.pointerMove = function(x, y, options) {
     if (options && options.origin) this._origin = options.origin;
     return this;
   };
   Actions.prototype.pointerDown = function() { return this; };
   Actions.prototype.pointerUp = function() { return this; };
-  Actions.prototype.keyDown = function() { this._keys = true; return this; };
-  Actions.prototype.keyUp = function() { return this; };
+  Actions.prototype.addKeyboard = function() { return this; };
+  Actions.prototype.keyDown = function(key) { this._steps.push({ type: 'keydown', key: key }); return this; };
+  Actions.prototype.keyUp = function(key) { this._steps.push({ type: 'keyup', key: key }); return this; };
   Actions.prototype.send = function() {
     var element = this._origin || document.activeElement;
-    if (this._keys) {
-      return Promise.reject(new Error('testdriver Actions key sequence unsupported'));
-    }
     if (!element) {
       return Promise.reject(new Error('testdriver Actions has no pointer origin'));
     }
-    return enqueue('click', element, null);
+    if (!this._steps.length) {
+      return enqueue('click', element, null);
+    }
+    // 键盘步骤按序链式执行——每步独立入队（事件序对 eventLog 断言敏感）。
+    var steps = this._steps.slice();
+    var promise = Promise.resolve();
+    for (var i = 0; i < steps.length; i++) {
+      promise = promise.then(function(step) {
+        return enqueue(step.type, element, step.key);
+      }.bind(null, steps[i]));
+    }
+    return promise;
   };
   globalThis.test_driver.Actions = Actions;
 })();
