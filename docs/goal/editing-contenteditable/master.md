@@ -2,7 +2,7 @@
 
 **入口文档**: [../editing-contenteditable.md](../editing-contenteditable.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-07（M2 切片 1 完成——execCommand editing-host 事件序，event.html 104P/76F → 179P/1F）
+**最后更新**: 2026-09-07（M2 切片 2 完成——contenteditable 键入/删除落 DOM，E3/E4 事件+DOM 面接通）
 
 ---
 
@@ -40,7 +40,7 @@
 |---|------|------|
 | E1 | WPT selection/editing 用例覆盖为零 | ✅ selection 首批 20 用例 2026-09-07（基线 1.7%）；editing 目录未导 |
 | E2 | Selection JS 可观察面未核实/缺失 | 🔶 切片 2 修复 8 类（2026-09-07，45P→1824P）：document.getSelection 绑定 / instanceof 链 / 空选 InvalidStateError / getRangeAt 越界 IndexSizeError / removeRange TypeError+NotFoundError / collapseToStart 新 range 语义 / collapsed toString 空串 / selectAllChildren+setBaseAndExtent+setPosition+deleteFromDocument 新增；残余：selectionchange 派发 / iframe 面 / setBaseAndExtent 方向位 / containsNode 精确化 |
-| E3 | 编辑行为管线（键入/删除/换行 → DOM）缺失 | ⬜ M2 |
+| E3 | 编辑行为管线（键入/删除/换行 → DOM）缺失 | 🔶 M2 切片 2（2026-09-07，commit bf181ee60）：CE 宿主键入/Backspace 落 DOM（nodeValue splice → SetChildText mutation + caret 移动 + 事件序；webview InsertText/DeleteBackward CE 分支）；限制：跨节点回退/换行（Enter→insertParagraph）未做 |
 | E4 | beforeinput/input 事件缺失 | 🔶 M2 切片 1（2026-09-07，commit 74a0c879b）：execCommand 编辑类命令 editing-host 事件序（beforeinput cancelable+trusted → input bubbles+trusted，inputType 映射，全选区在 host 内前提，preventDefault 阻断）——event.html 104P/76F→179P/1F；残余：键入/删除管线（宿主侧 keydown → contenteditable DOM 变更）未接 |
 | E5 | execCommand format 桩（不真应用） | ⬜ M3 |
 
@@ -50,7 +50,7 @@
 2. ~~**M1 切片 2**：Selection 面缺口修复~~ ✅ 2026-09-07（45P→1824P，70.2%；commit 679059d2f + 单测 test_selection_surface_r3254_m1 九组断言）。残余聚类：① selectAllChildren 456F「createRange of undefined」= runner host 视图 pending-tree 变动伪失败（js-dom 共享面已知限制，非 Selection API 缺陷）；② deleteFromDocument 60F iframe 面（test-iframe.html 依赖）；③ selectionchange 派发（onselectionchange-* 6F）；④ setBaseAndExtent 方向位（anchor/focus 反向形态 86F）
 3. ~~**M1 切片 3**：`editing` 用例导入 + 失败聚类~~ ✅ 2026-09-07（editing/event.html 104P/76F——76F 全为 execCommand 不派发 input 事件 = E4/E5 缺口，M2/M3 领域；other/delete-editing-host 2P/0F；组合面 1930P/854F，evidence 同日追加段）
 4. ~~**M2 切片 1**：execCommand editing-host 事件序~~ ✅ 2026-09-07（commit 74a0c879b；event.html 104P/76F → 179P/1F 99.4%，selection 面零回归；单测 test_execcommand_editing_host_events_r3254_m2 六组断言；残余 1F = Changing-selection target 身份比较，上游用例 legacy 形态记录不追）
-5. **M2 切片 2**：contenteditable 键入/删除落 DOM（宿主侧 keydown → 编辑管线；当前 apply_keydown_default 只认 text control——contenteditable 宿主内键入无响应）；editing/other 逐批追加（body-should-not-deleted 0P/2F 即 execCommand delete 实应用缺口）
+5. ~~**M2 切片 2**：contenteditable 键入/删除落 DOM~~ ✅ 2026-09-07（commit bf181ee60；shim __zw_ce_insert/delete + webview CE 分支 + 单测五组；engine 2623/webview 691+18 全绿）。残余：Enter 换行（insertParagraph）、跨节点选区删除、editing/other 逐批追加（body-should-not-deleted 0P/2F = execCommand delete 实应用 = M3 领域）
 
 **碰撞管理**：开工前先 `git log --since="14 days ago" -- crates/engine/src/js_dom_shim/`
 核对 js-dom 流活跃面。
@@ -60,7 +60,7 @@
 | 里程碑 | 状态 |
 |--------|------|
 | M1 — selection 基线 + Selection 面摸底 | ✅ 切片 1/2/3 全部完成（2026-09-07）——基线 + Selection 面 + editing 导入 |
-| M2 — 编辑行为管线 | 🔶 切片 1 ✅（execCommand 事件序，2026-09-07）；切片 2 键入/删除落 DOM 待启动 |
+| M2 — 编辑行为管线 | 🔶 切片 1 ✅（execCommand 事件序）+ 切片 2 ✅（键入/删除落 DOM，2026-09-07）；残余 Enter 换行/跨节点删除 |
 | M3 — execCommand 基础面 + 收尾 | ⬜ |
 
 ## 验证基线
