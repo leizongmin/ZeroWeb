@@ -2,7 +2,7 @@
 
 **入口文档**: [../service-workers.md](../service-workers.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-06（M2-44 streaming/cancel 专项——readable-stream 全案纳入 fetch baseline 85/85；settle 语义对齐 spec；fetch runner 30→31 case）
+**最后更新**: 2026-09-06（DONE 门禁收口——干净全工作区 make test 18951 Pass/0 Fail、archive 建立、DC-4 校准报告落盘；DC-1~DC-4 全勾，DC-5 见下方门禁记录）
 
 ---
 
@@ -795,6 +795,18 @@ spec：controller 自创建即定的赋值不是 change。修复：realm 创建�
 `update_permissions_follow_calling_worker_state_during_installation` 本地超时
 （上条）仍为待架构级处理项。
 
+**2026-09-06 DONE 门禁复核**：`update_permissions_follow_calling_worker_state_
+during_installation` 在 2026-09-06 干净全工作区 `make test` 中 v8 + quickjs
+两相均 Pass（18951/0 总账）。隔离采样：release 单案 60/60 全绿（0.09s 完成，
+非超时贴线），全 lib 套件并行 5×691 全绿、单线程 3×691 全绿；负载压测
+（双大二进制并行 + 定向 60 连跑）亦 0 复现。历史 ~80% 超时与 2026-08-22
+诊断的「轮询链过早停止 → UpdateRequested 滞留」死锁链在当前代码态未能复现
+——期间 e55038a2a（deadline 20s→60s）、bf4b25787（unregister poll leak）、
+M2-44 等多项轮询链改动已落，原死锁路径的触发窗口已被实质压缩。该案从
+「预存失败待架构级处理」降级为「低频组合态时序敏感项」，继续由全工作区
+make test 常驻覆盖观察；若再现，按 master.md 记录的架构方向修复
+（worker 发起的 host 请求由 host 主动驱动，不依赖页面轮询链）。
+
 ## 待用户决策
 
 | # | 事项 | 状态 |
@@ -803,13 +815,17 @@ spec：controller 自创建即定的赋值不是 change。修复：realm 创建�
 
 ## 下一步计划
 
-1. **收口 DONE 门禁**：① 一轮干净的全工作区 `make test`（本轮全量跑受
-   zero-net `stale_etag_revalidation_is_coalesced` 负载时序 flake 干扰——
-   单测隔离通过、net crate 双流均未触碰，非 SW 缺陷）；② 建
-   `docs/goal/service-workers/archive/` 并把已完成里程碑的详细过程证据
-   （M0/M1/M2/M3 各专项 evidence 清单）归档；③ 校准报告：当前三 runner
-   对上游可执行面（disposition core=65）的覆盖与剩余 defer/gated 面
-   的逐案理由复核，作为 DC-4 通过率的最终持久化证据
+1. **收口 DONE 门禁（✅ 2026-09-06 三件全部完成）**：
+   ① **干净全工作区 `make test`**——exit 0，66 个 test-binary 运行合计
+   18951 Pass / 0 Fail（含 QuickJS 矩阵 + QuickJS clippy -D warnings +
+   adapter-only GPU 分支；此前一轮的 zero-net `stale_etag_revalidation_is_coalesced`
+   负载时序 flake 未再现，且该案此前 100 次定向压测 + 双二进制满载组合态
+   均全绿，归因维持「环境时序、非 SW 缺陷」）；
+   ② **archive 建立**——`archive/INDEX.md` 落盘（M0/M1/M2/M3 决策快照 +
+   质量收口条目；evidence 原地保留，索引指针可达，链接校验通过）；
+   ③ **DC-4 校准报告**——`evidence/2026-09-06-dc4-pass-rate-calibration.md`
+   （disposition 294 source / 331 URL 审计 PASS；core lane 78 + fetch lane 3
+   源 100% 常驻 runner 覆盖，三 runner 121 case / 652 subtest / 652 Pass）。
 2. **M2 fetch/cache WPT 扩面（DONE 后按需）**：剩余 broader fetch/cache 上游
    用例按 disposition contract 逐案评估（大量 defer/gated 面依赖多客户端/
    https 服务环境）

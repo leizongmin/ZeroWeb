@@ -2,7 +2,7 @@
 
 **版本**: v1.0
 **日期**: 2026-08-17
-**状态**: Active（方案 C RFC 已批准；M1 已完成；M2 fetch/cache 与 M3 控制语义持续推进中）
+**状态**: Active（Done Criteria DC-1~DC-5 已全部满足，2026-09-06 收口；后续仅按需扩面）
 **执行模式**: 轻量修复优先（永不停）；遇需用户决策项或深结构方向 → 记入「待用户决策」清单 → 跳过 → 继续其他轻量修复
 **父目标**: `docs/goal/zero-web.md`（Tier 2「Service Worker（基础）」+ M12「Service Worker 基础（注册、fetch 事件拦截、缓存管理）」列项）
 
@@ -157,9 +157,14 @@ cache-storage 用例归本目标（兄弟目标只收 window 面）。
 
 ### DC-5: 测试与质量不可退让
 
-- [ ] `cargo test` 全绿，零失败
-- [ ] `cargo clippy --workspace --all-targets -- -D warnings` 零警告
-- [ ] 每项修复有对应单元测试 + WPT 用例资产化
+- [x] `cargo test` 全绿，零失败（2026-09-06 干净全工作区 `make test`：66 个
+  test-binary 运行合计 18951 Pass / 0 Fail / exit 0，含 QuickJS 矩阵与
+  adapter-only GPU 分支）
+- [x] `cargo clippy --workspace --all-targets -- -D warnings` 零警告（同日
+  复核；QuickJS clippy 亦随 make test 通过）
+- [x] 每项修复有对应单元测试 + WPT 用例资产化（imported-testharness.txt
+  133 条 SW 条目；disposition 审计双向闭包——core lane 78 + fetch lane 3 源
+  100% 常驻 runner，48 个 core 与 runner 导入账本及 case asset 精确对应）
 
 ---
 
