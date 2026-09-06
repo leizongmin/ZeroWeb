@@ -348,6 +348,28 @@ pub enum TextOverflowValue {
     String(String),
 }
 
+/// CSS transform-box 值（CSS Transforms 1 §transform-box）。
+///
+/// 定 transform/transform-origin 百分比与关键字的参考框：
+/// - ContentBox：CSS 盒 content box（SVG 元素上 = fill-box，CSS Transforms 1：SVG layout boxes 无 padding）。
+/// - BorderBox：CSS 盒 border box（SVG 元素上 = stroke-box 别名）。
+/// - FillBox：SVG object bounding box（几何并集，不含 stroke）。
+/// - StrokeBox：SVG stroke bounding box（bbox 外扩 stroke 一半宽）。
+/// - ViewBox：最近 svg 祖先的 viewport/viewBox 坐标系原点。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum TransformBoxValue {
+    /// content-box。
+    ContentBox,
+    /// border-box。
+    BorderBox,
+    /// fill-box。
+    FillBox,
+    /// stroke-box。
+    StrokeBox,
+    /// view-box。
+    ViewBox,
+}
+
 /// CSS word-break 值。
 #[derive(Debug, Clone, PartialEq)]
 pub enum WordBreakValue {
@@ -1423,6 +1445,8 @@ pub enum PropertyValue {
     WhiteSpace(WhiteSpaceValue),
     /// text-overflow 值。
     TextOverflow(TextOverflowValue),
+    /// transform-box 值（CSS Transforms 1 §transform-box，非继承）。
+    TransformBox(TransformBoxValue),
     /// flex-basis 值。
     FlexBasis(FlexBasisValue),
     /// z-index 值。

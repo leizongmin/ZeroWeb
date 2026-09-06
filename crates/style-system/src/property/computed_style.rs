@@ -306,6 +306,8 @@ pub struct ComputedStyle {
     pub transform_origin_x: LengthValue,
     /// transform-origin Y 分量。
     pub transform_origin_y: LengthValue,
+    /// transform-box 值（CSS Transforms 1，非继承；默认 view-box）。
+    pub transform_box: TransformBoxValue,
     /// perspective 属性。
     pub perspective: LengthValue,
     /// perspective-origin X 分量。

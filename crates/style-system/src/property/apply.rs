@@ -769,6 +769,12 @@ pub fn apply_property_value_with_quirks(
                 return true;
             }
         }
+        "transform-box" => {
+            if let Some(v) = parse_transform_box(value) {
+                style.transform_box = v;
+                return true;
+            }
+        }
         "writing-mode" => {
             if let Some(v) = parse_writing_mode(value) {
                 style.writing_mode = v;

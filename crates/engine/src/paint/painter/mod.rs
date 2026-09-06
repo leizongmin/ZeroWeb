@@ -2549,6 +2549,14 @@ impl Painter {
 /// attributes）：收集 svg 子树内所有 CSS transform（≠None）的元素。
 /// CSS 级联序 author 声明 > presentation attr；style-system 已把非法值丢弃为
 /// None（`scale(invalid)` 不入 List），故此处 List 形态 = 合法覆盖值。
+///
+/// R4098（CSS Transforms 1 §transform-box）：每个 target 按其 `transform-box`
+/// 计算参考框 (x, y, w, h)（SVG 用户单位）并把百分比 translate/origin 换算为数值：
+/// - ViewBox → 最近 svg 祖先的 viewBox（无 viewBox → viewport 尺寸 attr，miss 降级）。
+/// - FillBox / ContentBox → 元素自身 object bounding box（SVG content box 无 padding
+///   与 fill-box 同框）。
+/// - StrokeBox / BorderBox → bbox 外扩 stroke（暂近似 fill-box：ZW 无 stroke bbox
+///   API；stroke 案残差归后续切片）。
 pub(crate) fn collect_css_transforms(
     doc: &Document,
     subtree_root: NodeId,
@@ -2556,31 +2564,160 @@ pub(crate) fn collect_css_transforms(
     out: &mut Vec<(NodeId, String)>,
 ) {
     if let Some(st) = styles.get(&subtree_root)
-        && let Some(svg) = transform_value_to_svg(&st.transform)
+        && st.transform != zero_css_parser::values::TransformValue::None
     {
-        out.push((subtree_root, svg));
+        // 参考框 + origin 换算（CSS Transforms 1 §transform-box / §transform-origin）。
+        let ref_box = match st.transform_box {
+            zero_style_system::TransformBoxValue::ViewBox => svg_viewbox_of(doc, subtree_root),
+            // FillBox/ContentBox：SVG 元素无 padding，content-box = fill-box。
+            // StrokeBox/BorderBox：暂近似 fill-box（ZW 无 stroke bbox API）。
+            _ => svg_element_bbox(doc, subtree_root),
+        };
+        // transform-origin：百分比按参考框换算，px 按用户单位直读。
+        let font_size_px = zero_style_system::computed::resolve_length(&st.font_size, 16.0, None, None) as f32;
+        let resolve_origin = |v: &zero_css_parser::values::LengthValue, base: f32| -> f32 {
+            match v {
+                zero_css_parser::values::LengthValue::Percentage(p) => {
+                    ref_box.map_or(0.0, |_| (*p / 100.0 * base as f64) as f32)
+                }
+                other => {
+                    // view-box 模式下 origin 相对参考框原点：chromium 语义 = 参考框原点 +
+                    // origin（viewBox min-x/min-y 偏移）。其余模式偏移为零（origin 相对框自身）。
+                    zero_style_system::computed::resolve_length(other, font_size_px as f64, None, None) as f32
+                }
+            }
+        };
+        let mut ox = resolve_origin(&st.transform_origin_x, ref_box.map_or(0.0, |r| r.2));
+        let mut oy = resolve_origin(&st.transform_origin_y, ref_box.map_or(0.0, |r| r.3));
+        // view-box：origin/参考点相对 viewBox 原点（min-x/min-y），translate 包裹偏移须含之。
+        if st.transform_box == zero_style_system::TransformBoxValue::ViewBox
+            && let Some((min_x, min_y, _, _)) = ref_box
+        {
+            ox += min_x;
+            oy += min_y;
+        }
+        if let Some(svg) = transform_value_to_svg(&st.transform, ref_box, (ox, oy)) {
+            out.push((subtree_root, svg));
+        }
     }
     for child in doc.child_nodes(subtree_root) {
         collect_css_transforms(doc, child, styles, out);
     }
 }
 
+/// R4098：向上找最近 `<svg>` 祖先，返回其参考 viewport —— viewBox 4 值
+/// (min_x, min_y, w, h)；无 viewBox 时用根 attr width/height（origin 原点 0,0）。
+fn svg_viewbox_of(doc: &Document, node_id: NodeId) -> Option<(f32, f32, f32, f32)> {
+    let mut cur = doc.parent_node(node_id);
+    while let Some(id) = cur {
+        if let Some(node) = doc.get(id)
+            && let NodeKind::Element(elem) = &node.kind
+            && elem.local_name() == "svg"
+        {
+            if let Some(vb) = elem.get_attribute("viewBox").or_else(|| elem.get_attribute("viewbox")) {
+                let nums: Vec<f32> = vb
+                    .split([',', ' '])
+                    .filter(|t| !t.is_empty())
+                    .filter_map(|t| t.trim().parse::<f32>().ok())
+                    .collect();
+                if nums.len() == 4 {
+                    return Some((nums[0], nums[1], nums[2], nums[3]));
+                }
+                return None;
+            }
+            // 无 viewBox：参考 = viewport 尺寸（attr width/height；百分比/缺失 → None 保守降级）。
+            let w = elem.get_attribute("width").and_then(|v| v.trim().parse::<f32>().ok())?;
+            let h = elem
+                .get_attribute("height")
+                .and_then(|v| v.trim().parse::<f32>().ok())?;
+            return Some((0.0, 0.0, w, h));
+        }
+        cur = doc.parent_node(id);
+    }
+    None
+}
+
+/// R4098：单 SVG 元素的 object bounding box（attr 几何，用户单位）。仅覆盖可精确
+/// 计算的形状（rect/circle/ellipse/line/image）；容器（g/text/poly…）或缺失 attr →
+/// None（宁缺勿错，调用方降级）。
+fn svg_element_bbox(doc: &Document, node_id: NodeId) -> Option<(f32, f32, f32, f32)> {
+    let node = doc.get(node_id)?;
+    let NodeKind::Element(elem) = &node.kind else {
+        return None;
+    };
+    let num = |name: &str, dflt: f32| -> Option<f32> {
+        match elem.get_attribute(name) {
+            Some(v) => v.trim().parse::<f32>().ok().filter(|n| n.is_finite()),
+            None => Some(dflt),
+        }
+    };
+    match elem.local_name() {
+        "rect" => {
+            let x = num("x", 0.0)?;
+            let y = num("y", 0.0)?;
+            let w = num("width", f32::NAN)?;
+            let h = num("height", f32::NAN)?;
+            Some((x, y, w, h))
+        }
+        "circle" => {
+            let cx = num("cx", 0.0)?;
+            let cy = num("cy", 0.0)?;
+            let r = num("r", f32::NAN)?;
+            Some((cx - r, cy - r, r * 2.0, r * 2.0))
+        }
+        "ellipse" => {
+            let cx = num("cx", 0.0)?;
+            let cy = num("cy", 0.0)?;
+            let rx = num("rx", f32::NAN)?;
+            let ry = num("ry", f32::NAN)?;
+            Some((cx - rx, cy - ry, rx * 2.0, ry * 2.0))
+        }
+        "line" => {
+            let x1 = num("x1", 0.0)?;
+            let y1 = num("y1", 0.0)?;
+            let x2 = num("x2", 0.0)?;
+            let y2 = num("y2", 0.0)?;
+            Some((x1.min(x2), y1.min(y2), (x2 - x1).abs(), (y2 - y1).abs()))
+        }
+        "image" => {
+            let x = num("x", 0.0)?;
+            let y = num("y", 0.0)?;
+            let w = num("width", f32::NAN)?;
+            let h = num("height", f32::NAN)?;
+            Some((x, y, w, h))
+        }
+        _ => None,
+    }
+}
+
 /// 把 computed TransformValue 翻译为 SVG transform attr 语法（2D 子集；
 /// 3D 函数 ZW 无 3D 渲染语义——按恒等投影跳过该函数，全 3D 串返回 None 不动 attr）。
-pub(crate) fn transform_value_to_svg(tv: &zero_css_parser::values::TransformValue) -> Option<String> {
+///
+/// R4098（CSS Transforms 1 §transform-box）：`ref_box` = transform-box 参考框
+/// (x, y, w, h)（SVG 用户单位）。百分比 translate 分量按参考框宽/高换算为数值；
+/// `origin` = transform-origin 换算后的用户单位偏移 (ox, oy)——非 (0,0) 时以
+/// translate(ox oy) … translate(-ox -oy) 包裹原函数序列（CSS transform-origin 语义）。
+pub(crate) fn transform_value_to_svg(
+    tv: &zero_css_parser::values::TransformValue,
+    ref_box: Option<(f32, f32, f32, f32)>,
+    origin: (f32, f32),
+) -> Option<String> {
     use zero_css_parser::values::TransformFunction as Tf;
     let TransformValue::List(funcs) = tv else {
         return None;
     };
+    let ref_w = ref_box.map_or(0.0, |r| r.2);
+    let ref_h = ref_box.map_or(0.0, |r| r.3);
+    let pct = |v: f32, is_pct: bool, base: f32| -> f32 { if is_pct { v / 100.0 * base } else { v } };
     let mut parts: Vec<String> = Vec::new();
     for f in funcs {
         let part = match f {
             Tf::Translate(tx, ty) => format!("translate({tx} {ty})"),
             Tf::TranslateMixed(tx, txp, ty, typ) => {
-                // 百分比语义相对元素 bbox——SVG attr 无此语义，按 0 处理（保守降级，
-                // 避免误把百分比当用户单位）；两侧皆 0 则整函数无效。
-                let x = if *txp { 0.0 } else { *tx };
-                let y = if *typ { 0.0 } else { *ty };
+                // R4098：百分比按 transform-box 参考框换算（无参考框 → 保守降级 0，
+                // 避免误把百分比当用户单位）。
+                let x = pct(*tx as f32, *txp, ref_w);
+                let y = pct(*ty as f32, *typ, ref_h);
                 if x == 0.0 && y == 0.0 {
                     continue;
                 }
@@ -2589,16 +2726,18 @@ pub(crate) fn transform_value_to_svg(tv: &zero_css_parser::values::TransformValu
             Tf::TranslateX(tx) => format!("translate({tx} 0)"),
             Tf::TranslateY(ty) => format!("translate(0 {ty})"),
             Tf::TranslateXMixed(tx, txp) => {
-                if *txp {
+                let x = pct(*tx as f32, *txp, ref_w);
+                if x == 0.0 {
                     continue;
                 }
-                format!("translate({tx} 0)")
+                format!("translate({x} 0)")
             }
             Tf::TranslateYMixed(ty, typ) => {
-                if *typ {
+                let y = pct(*ty as f32, *typ, ref_h);
+                if y == 0.0 {
                     continue;
                 }
-                format!("translate(0 {ty})")
+                format!("translate(0 {y})")
             }
             Tf::Rotate(a) => format!("rotate({a})"),
             Tf::Scale(sx, Some(sy)) => format!("scale({sx} {sy})"),
@@ -2624,7 +2763,29 @@ pub(crate) fn transform_value_to_svg(tv: &zero_css_parser::values::TransformValu
         };
         parts.push(part);
     }
-    if parts.is_empty() { None } else { Some(parts.join(" ")) }
+    if parts.is_empty() {
+        return None;
+    }
+    // R4098：transform-origin 包裹（CSS：transform 函数序列在 origin 平移坐标系内应用）。
+    // translate 函数不受 origin 影响，但统一包裹数学等价且实现最简。
+    let (ox, oy) = origin;
+    if ox == 0.0 && oy == 0.0 {
+        return Some(parts.join(" "));
+    }
+    let fmt = |v: f32| -> String {
+        // 去掉多余的小数尾（-0.0 亦归 0）
+        let v = if v == 0.0 { 0.0 } else { v };
+        let s = format!("{v}");
+        s.trim_end_matches('0').trim_end_matches('.').to_string()
+    };
+    Some(format!(
+        "translate({} {}) {} translate({} {})",
+        fmt(ox),
+        fmt(oy),
+        parts.join(" "),
+        fmt(-ox),
+        fmt(-oy)
+    ))
 }
 
 /// 把 CSS transform 合成进序列化 SVG 文本：按元素 attr 文本逐一定位改写。

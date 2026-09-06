@@ -744,6 +744,18 @@ pub fn parse_line_break(value: &str) -> Option<LineBreakValue> {
     }
 }
 
+/// 解析 CSS transform-box 值（CSS Transforms 1 §transform-box）。
+pub fn parse_transform_box(value: &str) -> Option<TransformBoxValue> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "content-box" => Some(TransformBoxValue::ContentBox),
+        "border-box" => Some(TransformBoxValue::BorderBox),
+        "fill-box" => Some(TransformBoxValue::FillBox),
+        "stroke-box" => Some(TransformBoxValue::StrokeBox),
+        "view-box" => Some(TransformBoxValue::ViewBox),
+        _ => None,
+    }
+}
+
 /// 解析 CSS writing-mode 值。
 pub fn parse_writing_mode(value: &str) -> Option<WritingModeValue> {
     match value.trim().to_ascii_lowercase().as_str() {

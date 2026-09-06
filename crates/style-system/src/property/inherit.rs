@@ -884,6 +884,11 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
             style.text_overflow = default_style.text_overflow;
             true
         }
+        "transform-box" => {
+            // transform-box 非继承（CSS Transforms 1）：inherit 关键字之外的通用重置面。
+            style.transform_box = default_style.transform_box;
+            true
+        }
         "table-layout" => {
             style.table_layout = default_style.table_layout;
             true
