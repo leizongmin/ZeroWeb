@@ -2,7 +2,7 @@
 
 **入口文档**: [../editing-contenteditable.md](../editing-contenteditable.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-07（M3 切片 6——insertHTML 最小实现；M3 剩余仅 run/ 全量导入 defer）
+**最后更新**: 2026-09-07（E2 残余切片——selectAllChildren 外文档判定 + Selection.prototype.deleteFromDocument；selection 套件 2704P/199F→**2825P/79F**）
 
 ---
 
@@ -39,7 +39,7 @@
 | # | 缺口 | 状态 |
 |---|------|------|
 | E1 | WPT selection/editing 用例覆盖为零 | ✅ selection 首批 20 用例 2026-09-07（基线 1.7%）；editing 目录未导 |
-| E2 | Selection JS 可观察面未核实/缺失 | ✅ 切片 2 + 残余切片 2/3（2026-09-07，45P→**2704P**）：切片 2 八类（document.getSelection/instanceof/异常语义/selectAllChildren/setBaseAndExtent/setPosition/deleteFromDocument）；残余切片 2——Selection anchor/focus **独立边界点**（setBaseAndExtent 反向形态 anchor/focus 各自等于请求值 + detached/foreign-doc 清空 + 省参 TypeError，86F→0F）+ Text/Comment.prototype.ownerDocument（innerHTML 解析产物 'reading createRange' TypeError，isCollapsed/removeRange/type/collapseToStartEnd 48F→0F）；残余切片 3——selectionchange 排程派发（document 级 4 subtest 全过 + text control 独立派发 2F→2P）。残余：selectAllChildren 118F（runner host 视图 pending-tree 深层形态）/ deleteFromDocument 60F / getSelection 12F（均 iframe 面，js-dom 共享域）/ onselectionchange 第 4 subtest 跨用例 timer 时序 flake |
+| E2 | Selection JS 可观察面未核实/缺失 | ✅ 切片 2 + 残余切片 2/3（2026-09-07，45P→**2704P**）：切片 2 八类（document.getSelection/instanceof/异常语义/selectAllChildren/setBaseAndExtent/setPosition/deleteFromDocument）；残余切片 2——Selection anchor/focus **独立边界点**（setBaseAndExtent 反向形态 anchor/focus 各自等于请求值 + detached/foreign-doc 清空 + 省参 TypeError，86F→0F）+ Text/Comment.prototype.ownerDocument（innerHTML 解析产物 'reading createRange' TypeError，isCollapsed/removeRange/type/collapseToStartEnd 48F→0F）；残余切片 3——selectionchange 排程派发（document 级 4 subtest 全过 + text control 独立派发 2F→2P）。残余切片 4（2026-09-07）：**selectAllChildren 118F→0F**（`nodeType === 9` in-doc 短路移除——foreignDoc/xmlDoc 的 parentNode=null 沿链上行自然 false，旧捷径误判外文档节点改写 selection；本文档经 _zwSameNode 命中）+ **Selection.prototype.deleteFromDocument** 挂载（WebIDL 原型成员，.length 断言）。残余：deleteFromDocument 60F + getSelection 12F（iframe contentWindow 面——test-iframe.html 的外部 src 脚本不执行 + with(window) 全局穿透主 realm，realm 隔离为后续切片，根因已归档 fetch script helper 已补）/ onselectionchange 第 4 subtest 跨用例 timer 时序 flake |
 | E3 | 编辑行为管线（键入/删除/换行 → DOM）缺失 | ✅ M2 切片 2/3 + M3 切片 5（2026-09-07，bf181ee60+47dd9a685+切片 5）：键入/Backspace（SetChildText splice + caret 移动）+ Enter 换行（SetInnerHtml <br> splice + caret 元素边界）+ **insertParagraph 块级拆分**（SetOuterHtml 同型兄弟块重写）+ 事件序全接通；限制记录：跨节点回退/嵌套结构偏移映射 defer |
 | E4 | beforeinput/input 事件缺失 | 🔶 M2 切片 1（2026-09-07，commit 74a0c879b）：execCommand 编辑类命令 editing-host 事件序（beforeinput cancelable+trusted → input bubbles+trusted，inputType 映射，全选区在 host 内前提，preventDefault 阻断）——event.html 104P/76F→179P/1F；残余：键入/删除管线（宿主侧 keydown → contenteditable DOM 变更）未接 |
 | E5 | execCommand format 桩（不真应用） | 🔶 M3 切片 1/2（2026-09-07）：① bold/italic/underline/strikethrough inline 包裹（SetInnerHtml splice + 标签/实体感知扫描）；② delete/forwardDelete 选区删除（SetChildText splice + 代理对安全 + caret 回落）；③ queryCommandSupported/Enabled 真实反射（切片 3，`_zwQueryCommandState`——copy/cut/paste 恒 true；编辑类按选区 editing host 前提；未接命令 false，替换无条件 true 桩）。限制：toggle/queryCommandState、CSS 化命令（color 族）、queryCommandValue 值面、跨容器删除、嵌套结构偏移映射 defer |
@@ -73,7 +73,7 @@
 ## 验证基线
 
 - 测试基线：2026-09-07 全绿；clippy 零警告
-- WPT selection 面：切片 1 基线 45P/2559F（1.7%）→ 切片 2 1824P/776F（70.2%）→ **M1 残余切片 2/3 后 2704P/199F（93.1%）** @ WPT_REV 315976933870（23 用例，evidence/2026-09-07-m1-slice1-selection-baseline.md）
+- WPT selection 面：切片 1 基线 45P/2559F（1.7%）→ 切片 2 1824P/776F（70.2%）→ M1 残余切片 2/3 后 2704P/199F（93.1%）→ **E2 残余切片 4 后 2825P/79F（97.3%）** @ WPT_REV 315976933870（23 用例，evidence/2026-09-07-m1-slice1-selection-baseline.md）
 - WPT editing 面：**2902P/201F** 组合（event.html 179P/1F + delete-editing-host 2P/0F + body-not-deleted 0P/2F + selection 面 2704P/199F + onselectionchange 两案 6P/1F）
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过
 
@@ -82,14 +82,16 @@
 | DC | 条目 | 状态 |
 |---|---|---|
 | DC-1 | selection/editing 用例导入 + 基线 | ✅ selection 20 用例（1.7% 基线）+ editing 首批 3 用例；三份 evidence |
-| DC-2 | Selection API 可观察面 | ✅ 1.7%→**93.1%**（切片 2 八类 + 残余切片 2/3：anchor/focus 独立边界点（反向 selection）、Text/Comment ownerDocument、selectionchange 排程派发；单测九组 + 三组 + 两组）；残余 iframe 面（js-dom 共享域）+ selectAllChildren/deleteFromDocument 深层形态 defer 有据 |
+| DC-2 | Selection API 可观察面 | ✅ 1.7%→**97.3%**（切片 2 八类 + 残余切片 2/3/4：anchor/focus 独立边界点、Text/Comment ownerDocument、selectionchange 排程派发、selectAllChildren 外文档判定、Selection.prototype 成员面）；残余 iframe contentWindow 面（deleteFromDocument 60F + getSelection 12F——realm 隔离后续切片，根因归档）|
 | DC-3 | 编辑行为落地（键入/删除/换行 → DOM） | ✅ M2 三切片（execCommand 事件序 + CE 键入/Backspace/Enter 落 DOM + 事件序）；beforeinput cancelable/input 按 spec |
 | DC-4 | execCommand 基础面 | ✅ queryCommandSupported/Enabled 真实反射（M3 切片 3 + 五组单测）+ queryCommandState/toggle（切片 4 + 五组单测——format 命令 wrap/unwrap 全语义）+ bold/italic/underline/strikethrough + delete/forwardDelete 实应用（M3 切片 1/2，六组单测）；CSS 化命令、跨部分包裹 unwrap、run/ 导入（330KB reference impl）defer 有据 |
 | DC-5 | cargo test 全绿 / clippy / 资产化 | ✅ engine 2637 + webview 692 全绿（本轮）/ 零警告 / 每切片带单测（M3 切片 3~6 共 +4 单测资产）|
 
-**收尾结论**：Selection 面（含方向位/ownerDocument/selectionchange）、编辑管线、
-execCommand 基础命令集、queryCommand* 真实反射均落地并有断言资产；残余项
-（selectAllChildren 118F/deleteFromDocument 60F/getSelection 12F 均为 iframe
-contentWindow 面——js-dom 共享域；toggle/CSS 化命令/queryCommandValue；run/ 全量
-导入）为跨域/深化面——defer 均有据记录（上游 reference impl 依赖 + headless 限制 +
-js-dom 共享域边界），不阻塞流域收口判定。
+**收尾结论**：Selection 面（含方向位/ownerDocument/selectionchange/外文档判定/原型
+成员面）、编辑管线、execCommand 基础命令集、queryCommand* 真实反射均落地并有断言资产；
+selection 通过率 **97.3%**（2825P/79F）。残余项均为 iframe contentWindow 面
+（deleteFromDocument 60F + getSelection 12F——runner iframe 的外部 src 脚本不执行 +
+with(window) 全局穿透主 realm，需 iframe realm 隔离切片；test-iframe.html helper 已补
+fetch）与深化面（toggle/CSS 化命令/queryCommandValue、run/ 全量导入 330KB reference
+impl、execCommand delete 空段落根元素 outerHTML 同步视图——R380 融合序列化扩展）——
+defer 均有据记录，不阻塞流域收口判定。
