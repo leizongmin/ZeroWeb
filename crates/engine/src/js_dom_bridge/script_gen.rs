@@ -740,3 +740,12 @@ pub fn script_contenteditable_enter(selector: &str) -> String {
     let esc_sel = escape_js_string(selector);
     format!("__zw_ce_enter('{esc_sel}')")
 }
+
+/// 构造「Esc 默认动作——dialog cancel/close」的宿主脚本（R3254-K3，keyboard
+/// default-actions goal M2 切片 2）。
+///
+/// shim `__zw_esc_dialog_cancel()`：模态 dialog 优先派 cancelable 'cancel'，未被
+/// preventDefault → close（reason=cancel）+ 'close' 事件。无 open dialog → no-op。
+pub fn script_esc_dialog_cancel() -> String {
+    "__zw_esc_dialog_cancel && __zw_esc_dialog_cancel()".to_string()
+}

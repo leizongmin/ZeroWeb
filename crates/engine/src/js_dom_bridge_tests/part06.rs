@@ -1738,6 +1738,106 @@ document.execCommand("forwarddelete", false, "");
 }
 
 #[test]
+fn test_esc_dialog_cancel_r3254_k3() {
+    // R3254-K3（keyboard-default-actions goal M2 切片 2，2026-09-07）：Esc 默认动作
+    // ——dialog cancel/close。① showModal 后 __zw_esc_dialog_cancel 派 cancelable
+    // 'cancel'（preventDefault 可阻断关闭）；② 未取消 → open 移除 + 'close' 事件 +
+    // returnValue 不变（reason=cancel）；③ 无 open dialog → false no-op。
+    // 驱动路径：宿主 keydown Esc 默认动作（runtime/tab_worker apply_keydown_default
+    // Esc 臂 → script_esc_dialog_cancel）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><dialog id=d><p>hi</p></dialog></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // ①：cancel preventDefault → dialog 保持 open。
+    sandbox
+        .execute(
+            r##"
+var d = document.getElementById("d");
+d.showModal();
+globalThis.__ev = [];
+d.addEventListener("cancel", function (e) { __ev.push("cancel:" + e.cancelable); if (!globalThis.__allowCancel) e.preventDefault(); });
+d.addEventListener("close", function () { __ev.push("close"); });
+globalThis.__r1 = __zw_esc_dialog_cancel();
+globalThis.__open1 = d.hasAttribute("open");
+"##,
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__r1)").unwrap().value,
+        "true",
+        "有 open dialog 时 __zw_esc_dialog_cancel 须返 true"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ev)").unwrap().value,
+        "cancel:true",
+        "Esc 须派 cancelable cancel 事件"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__open1)").unwrap().value,
+        "true",
+        "cancel 被 preventDefault → dialog 须保持 open"
+    );
+    // ②：未取消 → close（open 移除 + close 事件 + returnValue 不变）。
+    sandbox
+        .execute(
+            r##"
+globalThis.__ev2 = [];
+globalThis.__allowCancel = true;
+var d2 = document.getElementById("d");
+d2.addEventListener("close", function () { __ev2.push("close"); });
+d2.returnValue = "pre-set";
+globalThis.__r2 = __zw_esc_dialog_cancel();
+globalThis.__open2 = d2.hasAttribute("open");
+globalThis.__rv2 = d2.returnValue;
+"##,
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__r2)").unwrap().value,
+        "true",
+        "cancel 未被阻断 → 关闭流程执行（返 true）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ev2)").unwrap().value,
+        "close",
+        "关闭后须派 close 事件"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__open2)").unwrap().value,
+        "false",
+        "close 后 open 属性须移除"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__rv2)").unwrap().value,
+        "pre-set",
+        "reason=cancel 关闭不得改 returnValue"
+    );
+    // ③：无 open dialog → false no-op。
+    sandbox
+        .execute("globalThis.__r3 = __zw_esc_dialog_cancel();")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__r3)").unwrap().value,
+        "false",
+        "无 open dialog 须 no-op 返 false"
+    );
+}
+
+#[test]
 fn test_contenteditable_typing_r3254_m2() {
     // R3254-M2 切片 2（editing goal，2026-09-07）：contenteditable 键入/删除管线——
     // shim __zw_is_ce_host / __zw_ce_insert / __zw_ce_delete。

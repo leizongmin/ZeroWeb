@@ -2932,6 +2932,33 @@
         if (prop === 'close' && _realTag(sel, handle) === 'DIALOG') {
           return function (returnValue) { return _zwDialogClose(key, sel, handle, returnValue); };
         }
+        if (prop === 'show' && _realTag(sel, handle) === 'DIALOG') {
+          return function () { _zwDialogShow(key, sel, handle); };
+        }
+        if (prop === 'showModal' && _realTag(sel, handle) === 'DIALOG') {
+          return function () { _zwDialogShowModal(key, sel, handle); };
+        }
+        if (prop === 'close' && _realTag(sel, handle) === 'DIALOG') {
+          return function (returnValue) { return _zwDialogClose(key, sel, handle, returnValue); };
+        }
+        if (prop === 'show' && _realTag(sel, handle) === 'DIALOG') {
+          return function () { _zwDialogShow(key, sel, handle); };
+        }
+        if (prop === 'showModal' && _realTag(sel, handle) === 'DIALOG') {
+          return function () { _zwDialogShowModal(key, sel, handle); };
+        }
+        if (prop === 'close' && _realTag(sel, handle) === 'DIALOG') {
+          return function (returnValue) { return _zwDialogClose(key, sel, handle, returnValue); };
+        }
+        if (prop === 'show' && _realTag(sel, handle) === 'DIALOG') {
+          return function () { _zwDialogShow(key, sel, handle); };
+        }
+        if (prop === 'showModal' && _realTag(sel, handle) === 'DIALOG') {
+          return function () { _zwDialogShowModal(key, sel, handle); };
+        }
+        if (prop === 'close' && _realTag(sel, handle) === 'DIALOG') {
+          return function (returnValue) { return _zwDialogClose(key, sel, handle, returnValue); };
+        }
         // R3290：HTMLDialogElement.open / HTMLDetailsElement.open ——boolean 反射 open 内容属性。
         // spec `<details>` 与 `<dialog>` 均有 open IDL 布尔属性（presence-based）。此前仅作原始内容属性（getAttribute），
         // `el.open` 返 undefined → dialog/details feature-detect + `if (dlg.open)` 控制流断。暴露于全部元素（与 disabled 等

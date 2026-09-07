@@ -874,6 +874,13 @@ impl RendererRuntime {
             } else {
                 self.submit_form_on_enter_at(target)?;
             }
+        } else if key == "Escape" {
+            // R3254-K3（keyboard-default-actions goal M2 切片 2）：Esc 默认动作——
+            // open dialog 的 cancel/close（cancelable，preventDefault 阻断关闭）。
+            let script = zero_engine::script_esc_dialog_cancel();
+            if let Err(e) = self.js_worker.execute_script_direct(&script) {
+                tracing::debug!("esc dialog cancel: {e}");
+            }
         }
         Ok(())
     }

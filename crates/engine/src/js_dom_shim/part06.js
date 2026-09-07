@@ -1541,6 +1541,37 @@
     if (typeof _getSelection === 'function') { _getSelection()._ranges = [nr]; }
   }
 
+  // R3254-K3（keyboard-default-actions goal M2 切片 2，2026-09-07）：Esc 默认动作——
+  // dialog cancel/close（spec「dialog cancelation」）。宿主在 keydown Esc 默认动作阶段
+  // 调 `__zw_esc_dialog_cancel()`：模态 dialog 优先（_zwDialogModal 印记），其次文档序
+  // 首个 open dialog；派 cancelable 'cancel'（未被 preventDefault → _zwDialogClose——
+  // reason=cancel 不设 returnValue + 'close' 事件）；无 open dialog → no-op（返 false）。
+  // top-level 注册（shim 装载即生效——get-trap 注册依赖 prop 访问序，不可靠）。
+  // https://html.spec.whatwg.org/multipage/interactive-elements.html#dialog-cancelation
+  globalThis.__zw_esc_dialog_cancel = function () {
+    // open 属性经 __zw_set_attr 异步入队（host 快照滞后）——querySelectorAll('dialog[open]')
+    // 不可达同 turn 的 showModal；改查全部 dialog + _zwDialogHasOpen（latest-wins 感知）。
+    var dialogs = document.querySelectorAll('dialog');
+    if (!dialogs || !dialogs.length) return false;
+    var pick = null;
+    var pickKey = null, pickSel = null, pickHandle = null;
+    for (var i = 0; i < dialogs.length; i++) {
+      var d = dialogs[i];
+      var ds = d.__zwSelector || null;
+      var dh = d.__zwHandle || null;
+      var dk = _elKey(ds, dh);
+      if (!_zwDialogHasOpen(ds, dh)) continue;
+      if (dk && _zwDialogModal[dk]) { pick = d; pickKey = dk; pickSel = ds; pickHandle = dh; break; }
+      if (!pick) { pick = d; pickKey = dk; pickSel = ds; pickHandle = dh; }
+    }
+    if (!pick) return false;
+    // _dispatchWithBubble 返 false = preventDefault（同 dispatchEvent===false 惯例）——
+    // false 才跳过 close；true/undefined（未取消）→ close。
+    var notPrevented = _dispatchWithBubble(pickKey, pickSel, pickHandle, _makeEvent('cancel', { bubbles: false, cancelable: true }));
+    if (notPrevented !== false) _zwDialogClose(pickKey, pickSel, pickHandle, undefined);
+    return true;
+  };
+
   globalThis.document = {
     // js-dom M3 R100：shim document 标记——generate_dom_api_polyfill（execute_script_with_dom
     // 每次前置的最小虚拟 DOM stub）据此跳过覆写（幂等安装，保 execute 路径上的真 document 桥）。

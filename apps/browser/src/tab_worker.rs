@@ -509,6 +509,16 @@ fn tab_worker_main(
                                 input_changed |= action.changed;
                                 navigation = action_navigation(&action);
                             }
+                        } else if key.as_deref() == Some("Escape") {
+                            // R3254-K3（keyboard-default-actions goal M2 切片 2）：Esc
+                            // 默认动作——open dialog 的 cancel/close（cancelable，
+                            // preventDefault 阻断关闭）。fire-and-forget（dialog open
+                            // 属性经 mutation 回传，rerender 由 changed 驱动不了——
+                            // dialog open 变更不在此 counted，best-effort）。
+                            if javascript_enabled {
+                                let script = zero_engine::script_esc_dialog_cancel();
+                                let _ = wv.execute_script(&script);
+                            }
                         }
                     }
                     if result.default_allowed && event_type == "click" {
