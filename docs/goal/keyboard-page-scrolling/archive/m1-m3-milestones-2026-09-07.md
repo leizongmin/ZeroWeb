@@ -53,3 +53,15 @@
 - **跨域协调项汇总**：① 焦点→容器链（renderer S3 layout 几何，R3298 协调点）；
   ② snap 断言真渲染 viewport（渲染流域）；③ runner 真帧循环 scrollend 语义
   （runner 基建域）
+
+---
+
+## 收口注记（2026-09-07 追加）
+
+- M1/M2/M3 本流可闭环面全部落地（分发映射 + Ctrl 变体回执链 + runner 侧滚动默认动作
+  `__zw_scroll_key_default` + 帧驱动 rAF opt-in + scrollIntoView 选项面断言 + snap 键盘
+  交互 keyboard.html 8/8 可完成）。
+- 残余（焦点→容器链、snap 位置精确断言、scrollIntoView 元素级滚动）均为 renderer S3
+  布局几何同一跨域协调点（R3298 注记）——不阻塞本 goal 收口判定。
+- keyboard 套件共享面终态：18P/7F/2T（兄弟 goal keyboard-default-actions 的
+  implicit-submission 残余切片已在本轮收口归档）。

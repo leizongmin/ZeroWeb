@@ -85,3 +85,26 @@
 - 分发表现有臂：Tab / printable（IME 合成跳过 R3254-L5）/ Backspace / Enter
   （textarea 换行 vs Submit）/ Escape（dialog）/ SELECT+radio 方向键 / 修饰键
   事件对
+
+---
+
+## 残余切片归档（2026-09-07 追加，M3 后续收口轮）
+
+### K3 残余切片 A+B+C — 隐式提交规则闭合（commit 7545432d6 / 532aece09 / 76aa3426d）
+
+- 切片 A（shim 同步视图）：insertAdjacentHTML sel 路径三件补偿（插入父站定址 +
+  _zwChildBaseCache 基底置空 + 解析顶层子挂 _zwSelPendingParent 槽 + parentNode 重指）；
+  兄弟 getter sel→pending 身份归一（_zwPendingParsedForSel 签名匹配）；FORM named access
+- 切片 B（engine/webview/page-runtime）：default_submit_button_selector（tree order 直读
+  节点属性）+ enclosing_form_selector 升级 unique_selector_for_node + PlannedEvent.submitter
+  全链（SubmitEvent.submitter R2984 通道）+ default button 三规则 + disabled 探针
+- 切片 C：apply 消退补偿清除（__zw_apply_generation_bump 定点清除 sel-less 解析补偿节点
+  ——融合视图基底+overlay 双计根因）
+- 结果：implicit-submission.optional.html **3F→3/3 全 Pass**；keyboard 套件 15P→18P
+- evidence：`evidence/2026-09-07-k3-slice-ab-implicit-submission.md`
+
+### 收口状态
+
+- K1-K4 全闭合；唯一 defer = select 展开键语义（headless 无展开态 UI，goal 明示 JS 面
+  验收；上游 customizable keyboard-behavior 亦 .optional）
+- 套件终态：18P/7F/2T（7F/2T 均为 snap 布局/scrollIntoView rect 跨域既有项）
