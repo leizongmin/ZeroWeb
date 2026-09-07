@@ -1849,10 +1849,45 @@ pub(super) fn clamp_percentage_max_height(
         _ => None,
     });
 
+    // R4112（CSS2.1 §9.2.1.1 anonymous block boxes）：匿名块盒在**百分比解析时被忽略**——
+    // 匿名片段盒的子元素百分比高相对「最近非匿名祖先盒」的确定高解析（cb_content_height
+    // 即父传入的该值），而非匿名片段自身（auto → taffy 侧 % 不解析，交由行内机制膨胀；
+    // anonymous-boxes-001a：img height:50% 应 100px（div 200×50%），旧解析 784×784 全视口）。
+    // 仅当本盒是 R109 匿名片段（fragment_node_ids 非 None）时穿透传递。
+    let cb_for_children = if box_node.fragment_node_ids.is_some() {
+        cb_content_height
+    } else {
+        my_definite_content_height
+    };
+    // R4112 续：匿名片段子的**主 height %** 同样穿透解析——taffy 相对匿名盒（indefinite）
+    // 的解析结果作废，按最近非匿名祖先确定高重写（border-box 语义）。
+    if box_node.fragment_node_ids.is_some()
+        && let Some(cb_h) = cb_content_height
+    {
+        for child in box_node.children.iter_mut() {
+            let Some(cid) = child.node_id else { continue };
+            let Some(cs) = styles.get(&cid) else { continue };
+            if let LengthValue::Percentage(p) = &cs.height {
+                let pb = child.padding_top + child.padding_bottom + child.border_top + child.border_bottom;
+                let box_h = (*p as f32 / 100.0 * cb_h).max(0.0);
+                let content = if matches!(cs.box_sizing, BoxSizingValue::BorderBox) {
+                    (box_h - pb).max(0.0)
+                } else {
+                    box_h
+                };
+                child.content_height = content;
+                child.height = if matches!(cs.box_sizing, BoxSizingValue::BorderBox) {
+                    box_h
+                } else {
+                    content + pb
+                };
+            }
+        }
+    }
     for i in 0..box_node.children.len() {
         let shiftable_child = is_shiftable_in_flow_block(&box_node.children[i]);
         let old_extent = box_node.children[i].y + box_node.children[i].height + box_node.children[i].margin_bottom;
-        clamp_percentage_max_height(&mut box_node.children[i], my_definite_content_height, styles);
+        clamp_percentage_max_height(&mut box_node.children[i], cb_for_children, styles);
         let new_extent = box_node.children[i].y + box_node.children[i].height + box_node.children[i].margin_bottom;
         let delta = new_extent - old_extent;
         if shiftable_child && delta.abs() > 0.5 {

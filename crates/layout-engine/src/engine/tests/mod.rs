@@ -200,6 +200,7 @@ mod r4043_nested_inline_store_tests;
 #[allow(dead_code)]
 mod r4043_nested_q_stack_probe;
 mod r4108_mixed_replaced_inline_last_tests;
+mod r4112_anon_fragment_percent_cb_tests;
 mod r717_flex_ratio_img_tests;
 mod table_layout_tests;
 mod tests_1;
