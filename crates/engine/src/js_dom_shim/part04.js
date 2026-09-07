@@ -7372,6 +7372,33 @@
                   }
                 }
               }
+              // R3254-E2 切片 11（editing goal，2026-09-07）：**window named access
+              // 注册**——解析子树内 id 元素同步暴露为 globalThis[id]（spec Window
+              // named properties：文档树内 id 元素可作裸标识符访问——WPT anchor-
+              // removal 的 `parentParagraph.remove()` 裸 id 形态；此前动态 innerHTML
+              // 后 id 无全局注册 → ReferenceError）。守卫：仅 globalThis[id] ===
+              // undefined 时注册（不遮蔽内建属性；真浏览器的 WindowProperties 原
+              // 型层语义以 undefined 门近似）。递归 walk 子树（id 可在任意深度）。
+              if (typeof globalThis !== 'undefined') {
+                var _r3kReg = function (node) {
+                  while (node) {
+                    try {
+                      if (node.nodeType === 1) {
+                        var nid = node.id || (node.getAttribute && node.getAttribute('id')) || '';
+                        if (nid && globalThis[nid] === undefined) {
+                          globalThis[nid] = node;
+                        }
+                        var kids = node.childNodes || [];
+                        for (var ki = 0; ki < kids.length; ki++) _r3kReg(kids[ki]);
+                      }
+                    } catch (_eReg) {}
+                    node = null;
+                  }
+                };
+                for (var _r304b = 0; _r304b < _ihAdded.length; _r304b++) {
+                  if (_ihAdded[_r304b]) _r3kReg(_ihAdded[_r304b]);
+                }
+              }
             } catch (_e304s) {}
             // M3 扩批 X：innerHTML 整体替换后 textTracks 集合同步（track-remove-by-setting-
             // innerHTML 断言面）。置于本地子视图/父槽更新之后——helper 读 `_childNodeList`
