@@ -70,6 +70,23 @@ send_keys/timer 相关测试）零回归。
   innerHTML pending 未 apply 时读 fusion childNodes 越界）；全量套件跑下通过
   （三连跑稳定）。基线（stash 验证）同型 flake 亦存在——既有问题，非本轮引入，
   待 innerHTML fusion 视图与 selection 端点校验协调切片。
+
+### 同日追加：flake 精确归因（最小上下文复现）
+
+复现形态：subtest 1 + subtest 2（各做一次 `container.innerHTML = ...` + setPosition）
+前置后再跑 subtest 3 原样——第 4 次 `setPosition(container, 2)`（spin 后）抛
+IndexSizeError，**抛点实测 `container.childNodes.length === 0`**。
+
+机制定位：同 sel 连续多次 innerHTML 赋值（s2 一次 + s3 一次）后，spin await 边界处
+`#container` 的融合 childNodes 视图塌缩为 0（R304 挂槽的解析 wrapper 从 overlay 桶
+消失 + `_zwChildBaseCache['#container']` 被 setter 置空 `[]` 后未再失效）——第二次
+innerHTML 的 queue-side invalidate 与 `_zwFragmentAdded` 预注册的桶条目存在时序耦合。
+单案最小形态（单 subtest、单次 innerHTML）700+ 连跑不复现；全量套件（fresh WebView
+per case、无 stacked innerHTML）三连跑稳定通过。
+
+定性与切分：js-dom 共享面（fusion 视图 R51c/R304/R380 族）的既有深缺陷，非本轮
+selectionchange 变更引入；修复需专门切片（stacked same-sel innerHTML 的桶生命周期
+重整），记入 js-dom/编辑协调点，不阻塞本轮资产化与 goal 收口判定。
 - textcontrols `selectionchange.html` 断言依赖事件在**单 spin** 内到达；stub 队列
   FIFO 下已稳定（25 连跑）。
 
