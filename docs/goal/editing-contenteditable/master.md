@@ -85,7 +85,7 @@
 | DC-2 | Selection API 可观察面 | ✅ 1.7%→**93.1%**（切片 2 八类 + 残余切片 2/3：anchor/focus 独立边界点（反向 selection）、Text/Comment ownerDocument、selectionchange 排程派发；单测九组 + 三组 + 两组）；残余 iframe 面（js-dom 共享域）+ selectAllChildren/deleteFromDocument 深层形态 defer 有据 |
 | DC-3 | 编辑行为落地（键入/删除/换行 → DOM） | ✅ M2 三切片（execCommand 事件序 + CE 键入/Backspace/Enter 落 DOM + 事件序）；beforeinput cancelable/input 按 spec |
 | DC-4 | execCommand 基础面 | ✅ queryCommandSupported/Enabled 真实反射（M3 切片 3 + 五组单测）+ queryCommandState/toggle（切片 4 + 五组单测——format 命令 wrap/unwrap 全语义）+ bold/italic/underline/strikethrough + delete/forwardDelete 实应用（M3 切片 1/2，六组单测）；CSS 化命令、跨部分包裹 unwrap、run/ 导入（330KB reference impl）defer 有据 |
-| DC-5 | cargo test 全绿 / clippy / 资产化 | ✅ engine 2630 + webview 692 全绿（本轮）/ 零警告 / 每切片带单测 |
+| DC-5 | cargo test 全绿 / clippy / 资产化 | ✅ engine 2637 + webview 692 全绿（本轮）/ 零警告 / 每切片带单测（M3 切片 3~6 共 +4 单测资产）|
 
 **收尾结论**：Selection 面（含方向位/ownerDocument/selectionchange）、编辑管线、
 execCommand 基础命令集、queryCommand* 真实反射均落地并有断言资产；残余项
