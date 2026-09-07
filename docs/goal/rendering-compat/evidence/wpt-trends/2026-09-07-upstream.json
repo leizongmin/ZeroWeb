@@ -3,9 +3,9 @@
   "mode": "upstream",
   "wpt_data_ref": "v1.10",
   "total": 16814,
-  "passed": 14519,
+  "passed": 14525,
   "rate_pct": 86.4,
-  "extra": "failed=2295;skipped=0",
-  "git_sha": "8798f6f36",
-  "note": "R4106-F svg_element_bbox extends: path lineto-family d-attr bbox (M/m/L/l/H/h/V/v/Z exact endpoint union; curves -> None per caution) + g/a container child union; +4 green zero regression (svgbox-fill-box, svgbox-content-box, stroke-box-mutation-003/004); transform-box svgbox family cleared; corpus 14515->14519"
+  "extra": "failed=2289;skipped=0",
+  "git_sha": "40d7f00ba",
+  "note": "R4107-F html content-box/fill-box reference box wired into transform-origin resolution (compute_transform_matrix_with_ref_box; union bbox stays border-box); +6 green zero regression (cssbox-* x4 + animation/transform-box x2 via WAAPI end-state); transform-box domain fully closed; corpus 14519->14526"
 }
