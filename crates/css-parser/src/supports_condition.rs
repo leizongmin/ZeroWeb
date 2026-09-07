@@ -249,6 +249,23 @@ fn parse_primary(input: &str) -> Option<SupportsCondition> {
         return Some(SupportsCondition::GeneralEnclosed(inner.to_string()));
     }
 
+    // R4120（css-conditional-3 §supports_in_parens → general_enclosed）：裸未知函数
+    // `an-extension(of some kind)` = general_enclosed（求值 false，但作为 or/and 操作数
+    // 合法参与布尔组合）——旧实现无括号包裹即 None → 整条条件解析失败 → @supports 块
+    // 整体被弃（css-supports-036：`an-extension(...) or (color: green)` 应 = Or[false,
+    // true] = true 套用，旧全弃致 html 停红色 100% diff）。须：函数名 ident + `(` 紧邻 +
+    // 全串平衡括号；内部任意值（含空格）。
+    if let Some(open) = input.find('(')
+        && open > 0
+        && input[..open]
+            .chars()
+            .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+        && input[open..].ends_with(')')
+        && input[open..].bytes().filter(|&b| b == b'(').count() == input[open..].bytes().filter(|&b| b == b')').count()
+    {
+        return Some(SupportsCondition::GeneralEnclosed(input.to_string()));
+    }
+
     // 裸形式（无括号）→ feature 须在括号内，非法
     None
 }
