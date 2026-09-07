@@ -706,6 +706,35 @@ fn r4105_svg_transform_origin_offset_by_reference_box_origin() {
     );
 }
 
+/// R4110（CSS Transforms 1 §transform-attribute-specificity 收尾）：注入 transform attr
+/// 时剥离该元素 style attr 内的 transform / transform-box / transform-origin 声明——
+/// usvg 0.47 采纳 style transform-box 并使注入的 transform attr 失效（value-changed：
+/// style 突变形态 green_bounds 未平移；剥离后正确）。非 transform 声明保留；style 空
+/// 则整体移除；无 style attr 不动。
+#[test]
+fn r4110_strip_style_transform_declarations_on_rewrite() {
+    let cases: Vec<(&str, &str)> = vec![
+        (
+            r#"<rect style="transform: translateX(-50%); transform-box: fill-box" transform="translate(-100 0)"/>"#,
+            r#"<rect transform="translate(-100 0)"/>"#,
+        ),
+        // 非 transform 声明保留。
+        (
+            r#"<rect style="stroke-width: 20px" transform="rotate(90)"/>"#,
+            r#"<rect style="stroke-width: 20px" transform="rotate(90)"/>"#,
+        ),
+        // transform + 其他声明混排：只剥 transform 族。
+        (
+            r#"<rect style="fill: green; transform-box: fill-box" transform="scale(2)"/>"#,
+            r#"<rect style="fill: green" transform="scale(2)"/>"#,
+        ),
+    ];
+    for (input, expect) in cases {
+        let got = crate::paint::painter::strip_style_transform_declarations_for_test(input);
+        assert_eq!(got, expect, "input: {input}");
+    }
+}
+
 /// R4109（CSS Transforms 1 §transform-origin）：SVG 元素（无关联 CSS 布局盒）的
 /// transform-origin **初始 used value = 0 0**（参考框左上角）。未声明 origin +
 /// transform-box: fill-box + rotate(90deg)：旋转中心 = fill-box 左上；显式声明

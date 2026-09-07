@@ -2733,6 +2733,12 @@ fn svg_viewbox_of(doc: &Document, node_id: NodeId) -> Option<(f32, f32, f32, f32
 /// R4098：单 SVG 元素的 object bounding box（attr 几何，用户单位）。仅覆盖可精确
 /// 计算的形状（rect/circle/ellipse/line/image）；容器（g/text/poly…）或缺失 attr →
 /// None（宁缺勿错，调用方降级）。
+/// R4110：`strip_style_transform_declarations` 的测试观测口。
+#[cfg(test)]
+pub(crate) fn strip_style_transform_declarations_for_test(tag: &str) -> String {
+    strip_style_transform_declarations(tag)
+}
+
 /// R4106：单 SVG 元素的 object bounding box（`svg_element_bbox` 的测试观测口）。
 #[cfg(test)]
 pub(crate) fn svg_element_bbox_for_test(doc: &Document, node_id: NodeId) -> Option<(f32, f32, f32, f32)> {
@@ -3186,7 +3192,50 @@ fn rewrite_or_insert_transform_in_tag(head_to_tag_end: &str, svg_value: &str, fu
     } else {
         format!("{inner} transform=\"{svg_value}\"")
     };
+    // R4110：剥离该元素 style attr 内的 transform / transform-box 声明——usvg 0.47 会采纳
+    // style transform-box（fill-box）并使注入的 transform attr 失效（探针：保留 style 时
+    // green_bounds=(100..299) 未平移；剥离后 (0..199) 正确）。CSS transform 已全部合成进
+    // transform attr，style 残留只会产生双轨语义（value-changed / fill-box-mutation-002 /
+    // view-box-mutation-002 的 style 突变形态根因）。
+    let new_tag = strip_style_transform_declarations(&new_tag);
     format!("{}{}{}", &full[..lt], new_tag, &full[tag_end..])
+}
+
+/// R4110：从单个开标签文本中剥离 style 属性内的 transform / transform-box 声明。
+/// 保留其余声明（fill/stroke 等 presentation style 不动）；style attr 变空则整体移除。
+fn strip_style_transform_declarations(tag: &str) -> String {
+    let Some(spos) = tag.find("style=\"") else {
+        return tag.to_string();
+    };
+    let vstart = spos + "style=\"".len();
+    let Some(vend_rel) = tag[vstart..].find('"') else {
+        return tag.to_string();
+    };
+    let vend = vstart + vend_rel;
+    let style_val = &tag[vstart..vend];
+    let kept: Vec<&str> = style_val
+        .split(';')
+        .map(|d| d.trim())
+        .filter(|d| !d.is_empty())
+        .filter(|d| {
+            let lower = d.to_ascii_lowercase();
+            !(lower.starts_with("transform:")
+                || lower.starts_with("transform-box:")
+                || lower.starts_with("transform-origin:"))
+        })
+        .collect();
+    if kept.is_empty() {
+        // style 全空：移除整个属性（含前导空白）。
+        let mut start = spos;
+        while start > 0 && tag.as_bytes()[start - 1] == b' ' {
+            start -= 1;
+        }
+        let after = &tag[vend + 1..];
+        return format!("{}{}", &tag[..start], after);
+    }
+    // 前缀取 spos（`style=` 之前）——取 vstart 会把已有的 `style="` 再拼一次
+    //（stroke-box-mutation-001 实证 `style="style="stroke-width: 20px"` 畸变）。
+    format!("{}style=\"{}\"{}", &tag[..spos], kept.join("; "), &tag[vend + 1..])
 }
 
 impl Default for Painter {
