@@ -1210,8 +1210,11 @@ fn test_constraint_validation_r2825() {
 fn test_exec_command_and_select_r2826() {
     // R2826：legacy 编辑/剪贴板命令表面——document.execCommand / queryCommand* / element.select()。
     // 旧 copy 按钮 `el.select(); document.execCommand('copy')` + clipboard.js feature-detect
-    // `queryCommandSupported('copy')` + contentEditable 编辑器 format 命令。headless 无真剪贴板/格式化
-    // → permissive stub（execCommand→true / queryCommandSupported/Enabled→true / queryCommandValue→'' / select→undefined）。
+    // `queryCommandSupported('copy')` + contentEditable 编辑器 format 命令。
+    // R3254-M3 切片 3：queryCommandSupported/Enabled 已真实反射（_zwQueryCommandState——
+    // copy/cut/paste 恒 true；编辑类按选区 editing host 前提；未接命令 false），
+    // 本用例 copy 断言继续成立；execCommand 恒返 true / queryCommandValue→'' /
+    // select→undefined 不变。精确反射断言见 part06 test_query_command_reflect_r3254_m3_slice3。
     use std::sync::{Arc, Mutex};
     use zero_script_sandbox::{Sandbox, V8Sandbox};
     let config = zero_script_sandbox::SandboxConfig {

@@ -2,7 +2,7 @@
 
 **入口文档**: [../editing-contenteditable.md](../editing-contenteditable.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-07（M3 切片 2 完成——execCommand delete/forwardDelete 实应用）
+**最后更新**: 2026-09-07（M3 切片 3 完成——queryCommandSupported/Enabled 真实反射，DC-4 桩缺口闭合）
 
 ---
 
@@ -42,7 +42,7 @@
 | E2 | Selection JS 可观察面未核实/缺失 | 🔶 切片 2 修复 8 类（2026-09-07，45P→1824P）：document.getSelection 绑定 / instanceof 链 / 空选 InvalidStateError / getRangeAt 越界 IndexSizeError / removeRange TypeError+NotFoundError / collapseToStart 新 range 语义 / collapsed toString 空串 / selectAllChildren+setBaseAndExtent+setPosition+deleteFromDocument 新增；残余：selectionchange 派发 / iframe 面 / setBaseAndExtent 方向位 / containsNode 精确化 |
 | E3 | 编辑行为管线（键入/删除/换行 → DOM）缺失 | ✅ M2 切片 2/3（2026-09-07，bf181ee60+47dd9a685）：键入/Backspace（SetChildText splice + caret 移动）+ Enter 换行（SetInnerHtml <br> splice + caret 元素边界）+ 事件序全接通；限制记录：insertParagraph 块级拆分 defer、跨节点回退/嵌套结构偏移映射 defer |
 | E4 | beforeinput/input 事件缺失 | 🔶 M2 切片 1（2026-09-07，commit 74a0c879b）：execCommand 编辑类命令 editing-host 事件序（beforeinput cancelable+trusted → input bubbles+trusted，inputType 映射，全选区在 host 内前提，preventDefault 阻断）——event.html 104P/76F→179P/1F；残余：键入/删除管线（宿主侧 keydown → contenteditable DOM 变更）未接 |
-| E5 | execCommand format 桩（不真应用） | 🔶 M3 切片 1/2（2026-09-07）：① bold/italic/underline/strikethrough inline 包裹（SetInnerHtml splice + 标签/实体感知扫描）；② delete/forwardDelete 选区删除（SetChildText splice + 代理对安全 + caret 回落）。限制：toggle/queryCommandState、CSS 化命令（color 族）、跨容器删除、嵌套结构偏移映射 defer |
+| E5 | execCommand format 桩（不真应用） | 🔶 M3 切片 1/2（2026-09-07）：① bold/italic/underline/strikethrough inline 包裹（SetInnerHtml splice + 标签/实体感知扫描）；② delete/forwardDelete 选区删除（SetChildText splice + 代理对安全 + caret 回落）；③ queryCommandSupported/Enabled 真实反射（切片 3，`_zwQueryCommandState`——copy/cut/paste 恒 true；编辑类按选区 editing host 前提；未接命令 false，替换无条件 true 桩）。限制：toggle/queryCommandState、CSS 化命令（color 族）、queryCommandValue 值面、跨容器删除、嵌套结构偏移映射 defer |
 
 ## 下一步计划
 
@@ -52,6 +52,7 @@
 4. ~~**M2 切片 1**：execCommand editing-host 事件序~~ ✅ 2026-09-07（commit 74a0c879b；event.html 104P/76F → 179P/1F 99.4%，selection 面零回归；单测 test_execcommand_editing_host_events_r3254_m2 六组断言；残余 1F = Changing-selection target 身份比较，上游用例 legacy 形态记录不追）
 5. ~~**M2 切片 2**：contenteditable 键入/删除落 DOM~~ ✅ 2026-09-07（commit bf181ee60；shim __zw_ce_insert/delete + webview CE 分支 + 单测五组；engine 2623/webview 691+18 全绿）。
 6. ~~**M2 切片 3**：CE Enter 换行落 DOM~~ ✅ 2026-09-07（commit 47dd9a685；__zw_ce_enter <br> splice → SetInnerHtml mutation；InsertText{"\n"} 与无表单 Submit 双路由接通；单测四组）。残余：insertParagraph 块级拆分、跨节点选区删除（defer 记录）、editing/other 逐批追加（body-should-not-deleted 0P/2F = execCommand delete 实应用 = M3 领域）
+7. ~~**M3 切片 3**：queryCommandSupported/Enabled 真实反射（DC-4 首条硬缺口）~~ ✅ 2026-09-07（`_zwQueryCommandState`——copy/cut/paste 恒 supported+enabled（ClipboardEvent 路径）；编辑类（_zwExecCmdInputType 表）supported，enabled 与 execCommand 编辑分支同前提（选区在单一 editing host 内）；未接命令（undo/styleWithCSS/justify*/未知）false；大小写不敏感；queryCommandValue 保持 ''。单测 test_query_command_reflect_r3254_m3_slice3 五组断言；engine 2630 全绿 + webview 692 全绿 + selection/editing 套件 2005P/779F 零回归）。残余 defer：queryCommandState/toggle、queryCommandValue 值面
 
 **碰撞管理**：开工前先 `git log --since="14 days ago" -- crates/engine/src/js_dom_shim/`
 核对 js-dom 流活跃面。
@@ -62,7 +63,7 @@
 |--------|------|
 | M1 — selection 基线 + Selection 面摸底 | ✅ 切片 1/2/3 全部完成（2026-09-07）——基线 + Selection 面 + editing 导入 |
 | M2 — 编辑行为管线 | ✅ 切片 1/2/3 全部完成（2026-09-07）——事件序 + 键入/删除/换行落 DOM；defer 项：insertParagraph 块级拆分、跨节点删除 |
-| M3 — execCommand 基础面 + 收尾 | 🔶 切片 1/2 ✅（format 四命令 + delete 两命令实应用，2026-09-07）；剩余：toggle/queryCommandState、insertParagraph/insertHTML、run/ 用例导入（330KB reference impl 依赖——defer 有据）|
+| M3 — execCommand 基础面 + 收尾 | 🔶 切片 1/2/3 ✅（format 四命令 + delete 两命令实应用 + queryCommandSupported/Enabled 真实反射，2026-09-07）；剩余：toggle/queryCommandState、insertParagraph/insertHTML、run/ 用例导入（330KB reference impl 依赖——defer 有据）|
 
 ## 验证基线
 
@@ -78,9 +79,10 @@
 | DC-1 | selection/editing 用例导入 + 基线 | ✅ selection 20 用例（1.7% 基线）+ editing 首批 3 用例；三份 evidence |
 | DC-2 | Selection API 可观察面 | ✅ 1.7%→70.2%（document.getSelection/instanceof/异常语义/selectAllChildren/setBaseAndExtent/setPosition/deleteFromDocument 等 8 类修复 + 单测九组）；残余 setBaseAndExtent 方向位/iframe 面 defer 有据 |
 | DC-3 | 编辑行为落地（键入/删除/换行 → DOM） | ✅ M2 三切片（execCommand 事件序 + CE 键入/Backspace/Enter 落 DOM + 事件序）；beforeinput cancelable/input 按 spec |
-| DC-4 | execCommand 基础面 | 🔶 bold/italic/underline/strikethrough + delete/forwardDelete 实应用（M3 切片 1/2，六组单测）；toggle/queryCommandState、CSS 化命令、run/ 导入（330KB reference impl）defer 有据 |
-| DC-5 | cargo test 全绿 / clippy / 资产化 | ✅ 18,966 全绿（本轮）/ 零警告 / 每切片带单测 |
+| DC-4 | execCommand 基础面 | ✅ queryCommandSupported/Enabled 真实反射（M3 切片 3，`_zwQueryCommandState`——supported/enabled 按接通命令面与选区 editing host 前提判定 + 五组单测）+ bold/italic/underline/strikethrough + delete/forwardDelete 实应用（M3 切片 1/2，六组单测）；toggle/queryCommandState、CSS 化命令、run/ 导入（330KB reference impl）defer 有据 |
+| DC-5 | cargo test 全绿 / clippy / 资产化 | ✅ engine 2630 + webview 692 全绿（本轮）/ 零警告 / 每切片带单测 |
 
-**收尾结论**：Selection 面、编辑管线、execCommand 基础命令集均落地并有断言资产；
-残余项（Selection 方向位/iframe、toggle/CSS 化命令、run/ 全量导入）为深化面——
-defer 均有据记录（上游 reference impl 依赖 + headless 限制），不阻塞流域收口判定。
+**收尾结论**：Selection 面、编辑管线、execCommand 基础命令集、queryCommand* 真实反射
+均落地并有断言资产；残余项（Selection 方向位/iframe、toggle/CSS 化命令/queryCommandValue、
+run/ 全量导入）为深化面——defer 均有据记录（上游 reference impl 依赖 + headless 限制），
+不阻塞流域收口判定。

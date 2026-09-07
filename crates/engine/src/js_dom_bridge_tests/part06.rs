@@ -1738,6 +1738,193 @@ document.execCommand("forwarddelete", false, "");
 }
 
 #[test]
+fn test_query_command_reflect_r3254_m3_slice3() {
+    // R3254-M3 切片 3（editing goal DC-4，2026-09-07）：queryCommandSupported/
+    // queryCommandEnabled 真实反射——按实际接通命令面判定（替换无条件 true 桩）。
+    // ① copy/cut/paste 恒 supported+enabled（ClipboardEvent 路径真实接通，R2936）；
+    // ② 编辑类（bold/insertText/delete）supported，但 enabled 需选区在单一 editing
+    //    host 内（与 execCommand 编辑分支同前提）；③ 无 editing host → 编辑类
+    //    enabled=false；④ 未接命令（undo/styleWithCSS/justifyCenter/nonsense）
+    //    supported=false + enabled=false；⑤ queryCommandValue 保持 ''。
+    // 驱动用例：WPT editing/event.html（同一命令面）+ spec "queryCommandEnabled"。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=ce contenteditable>foo</div><p id=plain>bar</p></body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // ①：copy/cut/paste 恒 supported+enabled。
+    sandbox
+        .execute(
+            r##"
+globalThis.__r = document.queryCommandSupported("copy") + "/" + document.queryCommandEnabled("copy")
+  + " " + document.queryCommandSupported("cut") + "/" + document.queryCommandEnabled("cut")
+  + " " + document.queryCommandSupported("paste") + "/" + document.queryCommandEnabled("paste");
+"##,
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__r)").unwrap().value,
+        "true/true true/true true/true",
+        "copy/cut/paste 须 supported+enabled（ClipboardEvent 路径真实接通）"
+    );
+    // ②③：编辑类 supported；enabled 随选区 editing host 前提翻转。
+    sandbox
+        .execute(
+            r##"
+var ce = document.getElementById("ce");
+var t = ce.firstChild;
+var r = document.createRange();
+r.setStart(t, 0);
+r.setEnd(t, 3);
+getSelection().removeAllRanges();
+getSelection().addRange(r);
+globalThis.__inHost = {
+  bold: document.queryCommandEnabled("bold"),
+  insertText: document.queryCommandEnabled("insertText"),
+  del: document.queryCommandEnabled("delete")
+};
+globalThis.__sup = document.queryCommandSupported("bold");
+globalThis.__supIt = document.queryCommandSupported("insertText");
+globalThis.__supDel = document.queryCommandSupported("delete");
+// ③：选区移出宿主（<p> 纯文本）→ enabled 翻 false，supported 不变。
+var p = document.getElementById("plain");
+var r2 = document.createRange();
+r2.setStart(p.firstChild, 0);
+r2.setEnd(p.firstChild, 3);
+getSelection().removeAllRanges();
+getSelection().addRange(r2);
+globalThis.__outHost = {
+  bold: document.queryCommandEnabled("bold"),
+  del: document.queryCommandEnabled("delete")
+};
+globalThis.__supOut = document.queryCommandSupported("bold");
+// 无选区（removeAllRanges）→ enabled=false。
+getSelection().removeAllRanges();
+globalThis.__noSel = document.queryCommandEnabled("bold");
+"##,
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__sup)").unwrap().value,
+        "true",
+        "bold 须 supported（format 命令 M3 切片 1 实应用接通）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__supIt)").unwrap().value,
+        "true",
+        "insertText 须 supported（insert 族 inputType 映射接通）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__supDel)").unwrap().value,
+        "true",
+        "delete 须 supported（delete 族 M3 切片 2 实应用接通）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__inHost.bold)").unwrap().value,
+        "true",
+        "选区在 editing host 内 → bold enabled=true"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__inHost.insertText)").unwrap().value,
+        "true",
+        "选区在 editing host 内 → insertText enabled=true"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__inHost.del)").unwrap().value,
+        "true",
+        "选区在 editing host 内 → delete enabled=true"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__outHost.bold)").unwrap().value,
+        "false",
+        "选区越出 editing host → bold enabled=false（execCommand 同前提）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__outHost.del)").unwrap().value,
+        "false",
+        "选区越出 editing host → delete enabled=false"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__supOut)").unwrap().value,
+        "true",
+        "supported 不随选区变化（bold 命令面已接通）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__noSel)").unwrap().value,
+        "false",
+        "无选区 → bold enabled=false"
+    );
+    // ④：未接命令 → supported=false + enabled=false（大小写不敏感——execCommand
+    // 小写化入表，queryCommand 同款 toLowerCase；BOLD 大写命中接通面）。
+    sandbox
+        .execute(
+            r##"
+globalThis.__unsup = {
+  undo: document.queryCommandSupported("undo"),
+  style: document.queryCommandSupported("styleWithCSS"),
+  bogus: document.queryCommandSupported("totallybogus"),
+  boldUpper: document.queryCommandSupported("BOLD")
+};
+globalThis.__unen = {
+  undo: document.queryCommandEnabled("undo"),
+  style: document.queryCommandEnabled("styleWithCSS"),
+  bogus: document.queryCommandEnabled("totallybogus")
+};
+"##,
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__unsup.undo)").unwrap().value,
+        "false",
+        "undo 未接通 → supported=false"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__unsup.style)").unwrap().value,
+        "false",
+        "styleWithCSS 未接通 → supported=false"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__unsup.boldUpper)").unwrap().value,
+        "true",
+        "BOLD（大小写不敏感 toLowerCase）命中接通面 → supported=true"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__unsup.bogus)").unwrap().value,
+        "false",
+        "未知命令 → supported=false"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__unen.undo)").unwrap().value,
+        "false",
+        "undo → enabled=false"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__unen.bogus)").unwrap().value,
+        "false",
+        "未知命令 → enabled=false"
+    );
+    // ⑤：queryCommandValue 保持 ''（值面未接，documented）。
+    assert_eq!(
+        sandbox.execute("String(document.queryCommandValue('fontSize'))").unwrap().value,
+        "",
+        "queryCommandValue 保持 ''（值面未接）"
+    );
+}
+
+#[test]
 fn test_esc_dialog_cancel_r3254_k3() {
     // R3254-K3（keyboard-default-actions goal M2 切片 2，2026-09-07）：Esc 默认动作
     // ——dialog cancel/close。① showModal 后 __zw_esc_dialog_cancel 派 cancelable

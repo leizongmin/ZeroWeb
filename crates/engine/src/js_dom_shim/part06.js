@@ -1432,6 +1432,47 @@
      * editing-host input——WPT editing/event.html 该五命令 target=null 期望 0 事件
      * （状态/历史/选区命令不经编辑宿主事件序）。 */
   };
+  // R3254-M3 切片 3（editing goal DC-4，2026-09-07）：queryCommandSupported/Enabled
+  // 真实反射——按本实现**实际接通的命令面**判定（不再无条件 true）。
+  // - supported：copy/cut/paste（ClipboardEvent 路径，R2936）∪ 编辑类（_zwExecCmdInputType
+  //   表——format/insert/delete 族，事件序 M2 切片 1 接通）。其余命令（styleWithCSS/
+  //   useCSS/selectAll/undo/redo/justify*/indent/outdent 等）未接 → false。
+  // - enabled：spec（"queryCommandEnabled"）按命令状态判定——copy/cut 需选区非空
+  //   （Chromium 语义）；编辑类需选区在单一 editing host 内且整个选区在 host 内
+  //   （与 execCommand 编辑分支的前提一致——M2 切片 1 同款祖先链扫描）。
+  //   queryCommandValue 保持 ''（fontSize/formatBlock 值面未接，documented）。
+  function _zwExecCmdFindEditingHost(range) {
+    if (!range) return null;
+    var node = range.startContainer;
+    var guard = 0;
+    while (node && guard++ < 256) {
+      if (node.nodeType === 1 && node.getAttribute
+          && node.getAttribute('contenteditable') !== null
+          && String(node.getAttribute('contenteditable')).toLowerCase() !== 'false') {
+        return node;
+      }
+      node = node.parentNode;
+    }
+    return null;
+  }
+  function _zwQueryCommandState(cmd) {
+    var c = String(cmd == null ? '' : cmd).toLowerCase();
+    // copy/cut/paste：ClipboardEvent 路径真实接通 → supported。
+    if (c === 'copy' || c === 'cut' || c === 'paste') return { supported: true, enabled: true };
+    // 编辑类命令：inputType 表命中 = supported；enabled 与 execCommand 编辑分支同前提。
+    if (typeof _zwExecCmdInputType[c] === 'undefined') return { supported: false, enabled: false };
+    var enabled = false;
+    try {
+      var sel = (typeof _getSelection === 'function') ? _getSelection() : null;
+      var rng = sel && sel.rangeCount > 0 ? sel._ranges[0] : null;
+      var host = _zwExecCmdFindEditingHost(rng);
+      enabled = !!(host && rng && rng.endContainer &&
+        (rng.endContainer === host ||
+         (typeof _zwIsAncestorOrSelf === 'function' && _zwIsAncestorOrSelf(host, rng.endContainer))));
+    } catch (_eQc) {}
+    return { supported: true, enabled: enabled };
+  }
+
   // spec：insertText/insertHTML/insertImage 的 data = 插入内容；format 族 data = null。
   function _zwExecCmdEventData(cmd, value) {
     if (cmd === 'inserttext' || cmd === 'inserthtml' || cmd === 'insertimage' || cmd === 'createlink') {
@@ -2563,8 +2604,10 @@
       }
       return true;
     },
-    queryCommandSupported: function (_commandId) { return true; },
-    queryCommandEnabled: function (_commandId) { return true; },
+    // R3254-M3 切片 3：真实反射——supported/enabled 按实际接通命令面判定
+    //（_zwQueryCommandState；defer 面——styleWithCSS/undo/justify* 等——返 false）。
+    queryCommandSupported: function (commandId) { return _zwQueryCommandState(commandId).supported; },
+    queryCommandEnabled: function (commandId) { return _zwQueryCommandState(commandId).enabled; },
     queryCommandValue: function (_commandId) { return ''; },
     // `document.designMode`（R3261，HTML §3.2.5）——文档级编辑模式（'on' 使整文档可编辑）。
     // getter 返存储值（默认 'off'）；setter 'on'→'on'，'off'/'inherit'/其它→'off'（spec case-insensitive）。
