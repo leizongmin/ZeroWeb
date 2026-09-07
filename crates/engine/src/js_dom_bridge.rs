@@ -1998,10 +1998,13 @@ pub fn query_ns_from_html_doc(doc: &Document, selector: &str) -> String {
 /// P1a form submit：解析元素的 form owner。显式 `form="id"` 优先，否则取最近祖先 form。
 /// 供 Enter-in-input / submit-button 的 submit 派发。
 /// https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#association-of-controls-and-forms
+/// R3254-K3 切片 B 勘误：返 `unique_selector_for_node`（此前 `stable_selector_for_node` 对
+/// 无 id form 恒落 tag 回落 `"form"`——多 form 文档中 querySelector 恒命中首个，隐式提交
+/// 命中错误表单；WPT implicit-submission 多 subtest 累积多 form 实证）。
 pub fn enclosing_form_selector(html: &str, elem_sel: &str) -> Option<String> {
     let doc = parse_html(html);
     let node = find_by_selector(&doc, elem_sel)?;
-    stable_selector_for_node(&doc, form_owner_node(&doc, node)?)
+    unique_selector_for_node(&doc, form_owner_node(&doc, node)?)
 }
 
 /// P1a form submit：判定元素是否为 submit button（点击会提交 enclosing form）。
@@ -2020,8 +2023,50 @@ pub fn is_submit_button(html: &str, elem_sel: &str) -> bool {
     false
 }
 
+/// R3254-K3 切片 B（keyboard goal，2026-09-07）：隐式提交的**默认提交按钮**解析（spec
+/// https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#implicit-submission
+/// ——「default button = tree order 首个 submit button」）。返回表单内首个 submit button 的
+/// 唯一 selector；无 submit button → None。`is_submit_button` 的表单域版本：`<input
+/// type=submit|image>` / `<button>`（type 非 button/reset）。disabled 判定由调用方做
+///（spec：default button 存在但 disabled → 隐式提交无动作；不存在 → 直接提交）。
+pub fn default_submit_button_selector(html: &str, form_sel: &str) -> Option<String> {
+    let doc = parse_html(html);
+    let form = find_by_selector(&doc, form_sel)?;
+    let mut stack = vec![form];
+    while let Some(node) = stack.pop() {
+        let mut children: Vec<NodeId> = doc.get(node).map(|n| n.children.clone()).unwrap_or_default();
+        children.reverse(); // pop 末位 → 先入后出保持 tree order
+        for child in children {
+            let is_element = matches!(doc.get(child).map(|n| &n.kind), Some(zero_dom::NodeKind::Element(_)));
+            if !is_element {
+                continue;
+            }
+            // R3254-K3 切片 B 勘误：逐节点判定直读 DOM 属性（`element_local_name` +
+            // `get_attribute`），不经字符串 selector 重解析——无 id 控件的
+            // `stable_selector_for_node` 恒落 tag 回落（"input"），querySelector 恒命中
+            // **首个**同 tag 节点，submit button 判定错位。
+            let tag = element_local_name(&doc, child);
+            let ty = doc
+                .get_attribute(child, "type")
+                .unwrap_or_default()
+                .to_ascii_lowercase();
+            let is_submit = if tag.eq_ignore_ascii_case("input") {
+                ty == "submit" || ty == "image"
+            } else if tag.eq_ignore_ascii_case("button") {
+                ty != "button" && ty != "reset"
+            } else {
+                false
+            };
+            if is_submit {
+                return unique_selector_for_node(&doc, child);
+            }
+            stack.push(child);
+        }
+    }
+    None
+}
+
 /// P1a form reset：判定元素是否为 reset 按钮（`<input type=reset>` / `<button type=reset>`）。
-/// 供 renderer click 路由调 `apply_reset_on_click`（R3050，闭合 R3048 限制⑤——reset 按钮点击自动 form.reset()）。
 pub fn is_reset_button(html: &str, elem_sel: &str) -> bool {
     let tag = query_tag_from_html(html, elem_sel);
     let ty = query_attr_from_html(html, elem_sel, "type").to_ascii_lowercase();

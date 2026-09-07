@@ -2,7 +2,7 @@
 
 **入口文档**: [../keyboard-default-actions.md](../keyboard-default-actions.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-07（K4 切片 2 空格 keyup 激活时序 + K5 切片 3 select type-ahead——两残余 defer 解除，commit 581258c66；runner 207 / engine 2643 全绿）
+**最后更新**: 2026-09-07（K3 残余切片 A+B——insertAdjacentHTML 同步子视图 + 隐式提交 default button 规则 + submitter 全链；implicit-submission 3F→1F，keyboard 套件 15P→16P）
 
 ---
 
@@ -36,7 +36,7 @@
 |---|------|------|
 | K1 | WPT 用例覆盖为零 | ✅ 首批 6 用例 2026-09-07（uievents/keyboard 5 + implicit-submission；基线 1P/4F，evidence/2026-09-07-m1-keyboard-baseline.md）|
 | K2 | 默认动作分发层缺失 | ✅ M1 切片 2/3 + 残余切片 4（2026-09-07）：keydown/keyup 事件派发层（Actions 键盘链）+ 修饰键位透传（DomEventDetail shift/ctrl/alt/meta 四位 → script_gen detail JSON → __zw_dispatch_event KeyboardEvent init dict → event.*Key 可读——modifier-keys 4F 全灭）+ send_keys 普通字符 keydown→InsertText→keypress→keyup 事件序 + Ctrl/Meta keypress 抑制 + 串内修饰键持久化（keypress-not-fired 3 Timeout 全灭，commit ece2282ec）。分发表现有臂：Tab/printable/Backspace/Enter/Esc/SELECT+radio 方向键/修饰键事件对 |
-| K3 | implicit submission（Enter 提交规则）缺失 | 🔶 部分：uE007→Submit 路由 + 表单管线已接（M1）；Esc dialog cancel/close 已接（M2 切片 2，bcd59d7ed）；隐式提交规则细化待 js-dom 视图断链修复后复评。**残余聚类根因（2026-09-07 切片 3 探针定位）**：implicit-submission.optional.html 3F 全为 `populateForm` 前置（insertAdjacentHTML('afterbegin') 后 iframe.nextSibling=null——js-dom 融合视图 pending/host 双计 + body childNodes stale 空），非隐式提交实现缺陷（跨域 js-dom 共享面，协调点记录）|
+| K3 | implicit submission（Enter 提交规则）缺失 | 🔶 M2 切片 2（Esc，bcd59d7ed）+ **残余切片 A+B（2026-09-07，本流落地）**：uE007→Submit 路由 + **隐式提交规则细化闭合**——① shim `insertAdjacentHTML` 同步子视图（R293/R304 先例：基底置空 + `_zwSelPendingParent` 挂槽 + parentNode 重指）；② sel→pending 身份归一（签名匹配 `_zwPendingParsedForSel` + apply-pending 父子序定位兄弟 sel proxy）；③ FORM named access（`form.text`/`form.submitButton`，spec dom-form-nameditem）；④ engine `default_submit_button_selector`（tree order 首个 submit button）+ `enclosing_form_selector` 升级 `unique_selector_for_node`（多 form 文档 tag 回落歧义修复）；⑤ PlannedEvent.submitter 全链（SubmitEvent.submitter 透传，R2984 通道接通）；⑥ disabled default button 隐式提交无动作（spec implicit-submission）。**implicit-submission.optional.html 3F→1F**（2/3 Pass：submitter 断言 + disabled 阻断均绿；套件 15P→16P）。**残余 1F 精确根因**（subtest 2「no submit button」）：同一页面第二个 populateForm 后 body children = IFRAME;FORM;IFRAME;FORM;INPUT;INPUT;INPUT——**applied-view 结构重放与 live html 串行化-再解析对连续 form 插入的保真度分歧**（serial 的 form 结构在 html5ever 重解析时 form element pointer 吞 form 标签→inputs 逸出 body 层），query 层（结构重放）与 live 层（串再解析）视图分歧使 subtest 2 的 submit 派发 sel 与页面 listener 键错位。属 js-dom/engine 序列化保真域（协调点记录，下一切片评估）|
 | K4 | 激活键语义（空格/Enter → click 合成 + 两键差异）缺失 | ✅ M2 切片 1（f6eaed4d5）+ **切片 2（581258c66）**：空格→button-ish 递归 Activate + **时序闭合**——`script_buttonish_probe` 目标分类（BUTTON / input type=button|submit|reset），runner send_keys 空格对 buttonish 目标 keydown 只派事件、**keyup 后**才激活（UI Events/Chromium：Enter=keydown、Space=keyup）；单测 send_keys_space_activates_button_on_keyup_r3254_k4 三组 + test_buttonish_probe 七 target 分类（engine part06）。Enter→Submit 臂（uE007 路由）既有 |
 | K5 | select 键盘导航（展开/移动/type-ahead）缺失 | 🔶 M3 切片 1/2（051e594df+627d3ff20）+ **切片 3（581258c66）**：方向键/Home/End 选项移动 + radio 方向键组内移动 + **type-ahead 多字符缓冲**（`__zw_select_type_ahead`——500ms idle 缓冲、前缀匹配跳 disabled、不可匹配缓冲即弃、select.value 赋值 + input/change 事件序；单测 send_keys_select_type_ahead_multi_char_r3254_k5 确定性序列四断言）。**残余仅展开键语义**（headless 无展开态 UI——goal 明示 JS 面验收，defer 有据；上游 customizable keyboard-behavior 亦为 .optional）|
 
@@ -48,6 +48,10 @@
 4. ~~**M1 残余切片 4**：send_keys 普通字符键事件序~~ ✅ 2026-09-07（commit ece2282ec；上一轮 CONTINUE 悬案归因：**既非负载 flake 亦非 js_dom_shim 改动回归**——runner send_keys 普通字符只走裸 InsertText 无键事件，用例 3 个 promise_test 等 keyup 永不 resolve → 全 pending Timeout；「转 Pass」系切片 3 的 evidence 误记）。修复：keydown（cancelable）→未取消→ InsertText → keypress（Ctrl/Meta 抑制）→ keyup 全序 + send_keys 串内修饰键持久化（跨 send 清零；非字符键行为不变）；单测 send_keys_dispatches_key_event_sequence_and_suppresses_modifier_keypress 三组断言；keyboard 套件 10P/4F→**13P/4F**）。**残余 4F 均跨域在案**：implicit-submission 3F（js-dom 融合视图）+ paged 1F（真滚动管线）
 5. ~~**K4 切片 2**：空格 keyup 激活时序~~ ✅ 2026-09-07（commit 581258c66；K4 残余 defer 解除——`script_buttonish_probe` 分类 + runner send_keys 空格 buttonish 路径延迟到 keyup 激活；单测三组 + engine probe 七 target 分类）
 6. ~~**K5 切片 3**：select type-ahead~~ ✅ 2026-09-07（commit 581258c66；K5 残余中 type-ahead 解除——shim `__zw_select_type_ahead` 500ms 缓冲 + 前缀匹配 + 不可匹配即弃；本地 runner 单测标明本地——无上游强制用例，键盘映射 UA-dependent 与 customizable keyboard-behavior .optional 同因）。配套：fetch-keyboard-subset.sh 补 snap 三案 + helpers（可复现拉取）
+7. **K3 残余切片 A+B**：insertAdjacentHTML 同步子视图 + 隐式提交 default button 规则 → ✅ 2026-09-07（本流 0 defer 面落地——上轮记录的「跨域 js-dom 共享面」实为本流域可闭环：js_dom_shim 近 14 天无其他流活跃编辑）。
+   **切片 A（shim 同步视图）**：`insertAdjacentHTML` sel 路径三件补偿（part04）——①插入父站定址（beforebegin/afterend=父，afterbegin/beforeend=自身）；②`_zwChildBaseCache` 基底置空（R304 同款）；③解析顶层子挂 `_zwSelPendingParent` 槽 + parentNode 重指（R136 同款）。兄弟 getter `sel→pending` 身份归一（part03 `_zwPendingParsedForSel` 签名匹配 + apply-pending 父子序定位，返回与查询入口同族的 sel proxy）+ FORM named access（`form.text`/`form.submitButton`）。
+   **切片 B（engine/webview/page-runtime）**：`default_submit_button_selector`（tree order DFS 直读节点属性——勘误：不经字符串 selector 重解析，无 id 控件 tag 回落恒命中首个）；`enclosing_form_selector` 升级 `unique_selector_for_node`（多 form 文档 tag 回落歧义）；`PlannedEvent.submitter` 字段 + `plan_submit`/`dispatch_planned_event` 全链透传（SubmitEvent.submitter，R2984 通道）；webview Submit 分支 default button 三规则（enabled→submitter=按钮；disabled→提交无动作返成功零 effects；无按钮→submitter=None）+ `script_control_disabled_probe`。
+   **验证**：implicit-submission.optional.html **3F→2P/1F**（subtest 1 submitter 断言绿 + subtest 3 disabled 阻断绿）；keyboard 套件 **15P→16P**；单测 +2（`test_default_submit_button_selector_r3254_k3`、`implicit_submission_default_button_rules_r3254_k3`、`implicit_submission_inserted_form_r3254_k3`、`test_insert_adjacent_html_fusion_view_r3254_k3` 四组）；engine 2646 / page-runtime 130 / webview 694 全绿；clippy 零警告。
 
 **碰撞管理**：开工前先 `git log --since="14 days ago" -- crates/engine/src/js_dom_shim/`
 核对 js-dom 流活跃面。
@@ -72,18 +76,20 @@
 |---|---|---|
 | DC-1 | 上游键盘用例导入 | ✅ 9 用例（uievents/keyboard 5 + implicit-submission + snap 三案），全可执行 |
 | DC-1 | 通过率报告 + evidence | ✅ 1P/4F → 6P/12F → 10P/4F → 13P/4F → **15P/10F/2T**（M2 切片 2 后，Timeout 仅余跨域 2 案）；多轮 evidence 追加（含切片 4 勘误段）|
-| DC-2 | Enter 提交 + implicit submission + validation 联动 | 🔶 uE007→Submit 路由 + 表单管线已接；规则细化（单/多控件、formnovalidate）待 js-dom 视图断链修复后复评（跨域）|
+| DC-2 | Enter 提交 + implicit submission + validation 联动 | ✅ uE007→Submit 路由 + **隐式提交规则闭合**（K3 切片 A+B：default button 三规则 + submitter 全链 + disabled 阻断——WPT implicit-submission 2/3 Pass）；formnovalidate 联动既有 form-validation 管线 |
 | DC-2 | 空格/Enter 激活（两键差异）+ preventDefault | ✅ 空格→button-ish 递归 Activate + **两键时序差异闭合**（Enter=keydown、Space=keyup，K4 切片 2，三组单测）；Enter→Submit 臂；keydown preventDefault 抑制（keydown-input-events 2P/0F + send_keys 通道同款）|
 | DC-2 | Esc dialog cancel/close + select 展开态收起 | ✅ dialog cancel/close 三组断言；select 展开态——headless 无展开态 UI（goal 明示 JS 面验收），defer 记录 |
 | DC-3 | select 导航（方向键/Home/End） | ✅ 跳 disabled/clamp/value 编程选中 + input+change 事件序；**type-ahead 多字符缓冲**（K5 切片 3——本地单测标明本地，无上游强制用例有据）|
 | DC-3 | radio 方向键组内移动 | ✅ checked 迁移 + 跳 disabled + clamp；空格切换 checkbox=K4 Activate 管线（checkbox 臂既有）|
 | DC-4 | 事件序（keydown→keypress→keyup/click + cancelable） | ✅ keydown-input-events 2P/0F（keydown→beforeinput→input 序 + preventDefault 抑制）；keypress 派发（composed 面 3P/0F）；修饰键位透传（M1 切片 3，modifier-keys 4F 全灭 + 五组单测）；**send_keys 普通字符 keydown→InsertText→keypress（Ctrl/Meta 抑制）→keyup 全序 + 串内修饰持久化**（残余切片 4，keypress-not-fired 3P + 三组单测）；跨 send 修饰状态清零语义有单测 |
-| DC-5 | cargo test 全绿 / clippy / 资产化 | ✅ runner 207 + engine 2643 全绿（2026-09-07 K4 切片 2 / K5 切片 3 轮）；上轮全量 make test 18,984 全绿 / 零警告 / 每切片带单测|
+| DC-5 | cargo test 全绿 / clippy / 资产化 | ✅ runner 207 + engine 2646 + page-runtime 130 + webview 694 全绿（2026-09-07 K3 切片 A+B 轮）；clippy 零警告 / 每切片带单测（本轮 +4 组）|
 
 **收尾结论**：分发层骨架（K2 切片 2/3/4——send_keys 通道事件序补全）、激活键含两键
 时序差异（K4 切片 1/2——Space=keyup、Enter=keydown 全语义）、Esc（K3 Esc 面）、
-select/radio 导航 + type-ahead（K5 切片 1/2/3）全部落地并有断言资产。**唯一 defer =
-select 展开键语义**（headless 无展开态 UI——goal 明示 JS 面验收）与**隐式提交规则细化**
-（js-dom 融合视图跨域，K3 行）；残余套件 Fail/Timeout 均有精确跨域根因（implicit-
-submission 3F = js-dom 融合视图双计，paged/scroll-padding 2T = scrollIntoView 无
+select/radio 导航 + type-ahead（K5 切片 1/2/3）全部落地并有断言资产。**隐式提交规则
+细化已闭合**（K3 残余切片 A+B——default button 三规则 + submitter 全链 + insertAdjacentHTML
+同步子视图；上轮「跨域 js-dom 共享面」归因实为本流域可闭环面）。**唯一 defer = select
+展开键语义**（headless 无展开态 UI——goal 明示 JS 面验收）；残余套件 Fail/Timeout 均有
+精确根因（implicit-submission 1F = applied-view 重放与 live 串再解析对连续 form 插入的
+保真度分歧——序列化保真域，K3 行记录；paged/scroll-padding 2T = scrollIntoView 无
 rect/renderer S3 几何，协调点记录）。不阻塞流域收口判定。

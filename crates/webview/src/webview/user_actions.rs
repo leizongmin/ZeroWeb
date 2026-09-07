@@ -338,15 +338,47 @@ impl WebView {
                         },
                     });
                 }
-                let Some(form) = zero_engine::enclosing_form_selector(&html, &selector)
-                    .and_then(|form| self.page_node_ref_for_selector(&form))
-                else {
+                let Some(form_sel) = zero_engine::enclosing_form_selector(&html, &selector) else {
                     return Ok(WebViewUserActionResult::noop(ActionNoopReason::NotApplicable));
                 };
-                ActionTargetState::Submit {
-                    form,
-                    submitter: zero_engine::is_submit_button(&html, &selector).then_some(request.target),
+                let Some(form) = self.page_node_ref_for_selector(&form_sel) else {
+                    return Ok(WebViewUserActionResult::noop(ActionNoopReason::NotApplicable));
+                };
+                // R3254-K3 切片 B（keyboard goal，2026-09-07）：submitter 判定——**点击
+                // submit 按钮**（selector 自身是按钮）→ submitter = 按钮；**Enter 隐式提交**
+                // → spec「default button = 表单 tree order 首个 submit button」：
+                //   ① default button 存在但 disabled → 提交无动作（WPT implicit-submission
+                //     "disabled submit button"——unreached_func 守卫）；
+                //   ② 存在且 enabled → submitter = default button；
+                //   ③ 不存在 → 直接提交，submitter = None。
+                //   https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#implicit-submission
+                let submitter_sel = if zero_engine::is_submit_button(&html, &selector) {
+                    Some(selector.clone())
+                } else {
+                    zero_engine::default_submit_button_selector(&html, &form_sel)
+                };
+                if let Some(button_sel) = &submitter_sel {
+                    // spec dom-form-submit：default button disabled（祖先 fieldset disabled
+                    // 的整体面未实现——记录）→ 隐式提交无动作。disabled 探针经脚本（live
+                    // 反射含 host apply 前的最新状态）。
+                    let probe = zero_engine::script_control_disabled_probe(button_sel);
+                    let disabled = self.execute_dom_script(executor, &probe)?.value.trim() == "1";
+                    if disabled && !zero_engine::is_submit_button(&html, &selector) {
+                        // spec：disabled default button → 隐式提交无动作。返**成功 + 零
+                        // effects**（非 noop——runner send_keys 对 noop(NotApplicable) 视为
+                        // 错误抛出；WPT implicit-submission "disabled submit button" 的
+                        // unreached_func 守卫期望 send_keys 正常 resolve）。
+                        return Ok(WebViewUserActionResult {
+                            changed: false,
+                            canceled: false,
+                            noop_reason: None,
+                            effects: Vec::new(),
+                            invalidation: InvalidationKind::None,
+                        });
+                    }
                 }
+                let submitter = submitter_sel.and_then(|sel| self.page_node_ref_for_selector(&sel));
+                ActionTargetState::Submit { form, submitter }
             }
         };
         let plan = match plan_html_action(&request, self.navigation_epoch, self.document_generation, &state) {
@@ -438,11 +470,21 @@ impl WebView {
         let Some(selector) = self.selector_for_page_node_handle(event.target.node().get()) else {
             return Ok((false, false));
         };
-        let detail = event.input_type.as_ref().map(|input_type| DomEventDetail {
-            data: event.data.clone(),
-            input_type: Some(input_type.clone()),
-            ..Default::default()
-        });
+        // R3254-K3 切片 B：submitter 解析进 detail（SubmitEvent.submitter——R2984 通道）。
+        let submitter_sel = event
+            .submitter
+            .as_ref()
+            .and_then(|submitter| self.selector_for_page_node_handle(submitter.node().get()));
+        let detail = if event.input_type.is_some() || submitter_sel.is_some() {
+            Some(DomEventDetail {
+                data: event.data.clone(),
+                input_type: event.input_type.clone(),
+                submitter: submitter_sel,
+                ..Default::default()
+            })
+        } else {
+            None
+        };
         let script = script_dispatch_dom_event(&selector, &event.event_type, detail.as_ref());
         let result = self.execute_dom_script(executor, &script)?;
         #[cfg(feature = "v8")]

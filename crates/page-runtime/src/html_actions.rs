@@ -200,6 +200,11 @@ pub struct PlannedEvent {
     pub event_type: String,
     /// 事件是否可取消。
     pub cancelable: bool,
+    /// R3254-K3 切片 B（keyboard goal，2026-09-07）：`SubmitEvent.submitter` 的触发按钮
+    ///（spec https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#dom-form-requestsubmit
+    /// ——submit 事件携带 submitter；隐式提交 = 表单 default button，无则为 None）。
+    /// 宿主 dispatch 时包回元素 proxy（`__zw_dispatch_event` detail.submitter 通道）。
+    pub submitter: Option<PageNodeRef>,
     /// InputEvent inputType。
     pub input_type: Option<String>,
     /// InputEvent data。
@@ -212,6 +217,7 @@ impl PlannedEvent {
             target,
             event_type: event_type.to_string(),
             cancelable,
+            submitter: None,
             input_type: None,
             data: None,
         }
@@ -222,6 +228,7 @@ impl PlannedEvent {
             target,
             event_type: event_type.to_string(),
             cancelable,
+            submitter: None,
             input_type: Some(input_type.to_string()),
             data,
         }
@@ -684,11 +691,15 @@ fn plan_reset(target: PageNodeRef, form: PageNodeRef) -> HtmlActionPlan {
 }
 
 fn plan_submit(target: PageNodeRef, form: PageNodeRef, submitter: Option<PageNodeRef>) -> HtmlActionPlan {
+    // R3254-K3 切片 B：submit 事件携带 submitter（WPT implicit-submission 断言
+    // `event.submitter`；R2984 SubmitEvent 通道既有，此前 submit 派发漏传）。
+    let mut submit_event = PlannedEvent::simple(form, "submit", true);
+    submit_event.submitter = submitter;
     HtmlActionPlan {
         pre_events: vec![],
         target,
         prepare: vec![],
-        cancelable_event: Some(PlannedEvent::simple(form, "submit", true)),
+        cancelable_event: Some(submit_event),
         rollback: vec![],
         commit: vec![],
         followup_events: vec![],

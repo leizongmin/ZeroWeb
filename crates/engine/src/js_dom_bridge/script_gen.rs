@@ -761,6 +761,18 @@ return '';}})()"
     )
 }
 
+/// 构造「表单控件 disabled 状态探针」脚本（R3254-K3 切片 B，keyboard default-actions
+/// goal——隐式提交的 default button disabled 判定）。命中元素反射 `disabled` IDL 属性
+///（INPUT/BUTTON/SELECT/TEXTAREA 等表单控件；经 shim proxy 的 IDL 反射，含 live 状态）→
+/// '1'/''。元素不存在 → ''（调用方按 enabled 处理——submit 路径已先解析 form/button）。
+pub fn script_control_disabled_probe(selector: &str) -> String {
+    let esc_sel = escape_js_string(selector);
+    format!(
+        "(function(){{var e=document.querySelector('{esc_sel}');\
+return (e && e.disabled) ? '1' : '';}})()"
+    )
+}
+
 /// 构造「select type-ahead 键入跳转」的宿主脚本（R3254-K5 切片 3，keyboard
 /// default-actions goal M3）。
 ///

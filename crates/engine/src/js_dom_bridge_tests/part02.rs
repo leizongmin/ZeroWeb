@@ -2358,3 +2358,27 @@ fn test_parent_node_nested_e2e() {
         .unwrap();
     assert_eq!(sandbox.execute("globalThis.__hp").unwrap().value, "true");
 }
+
+#[test]
+fn test_default_submit_button_selector_r3254_k3() {
+    // R3254-K3 切片 B（keyboard goal，2026-09-07）：隐式提交 default button 解析——
+    // tree order 首个 submit button；`<button>` 无 type 默认 submit；disabled 不影响
+    // 存在性判定（禁用由 webview 探针处理）。无 submit button → None。
+    use crate::js_dom_bridge::{default_submit_button_selector, enclosing_form_selector};
+    let html = r#"<html><body>
+<form id="f1"><input id="t" name="q"><input id="s" type="submit" disabled></form>
+<form id="f2"><input id="t2"><button id="b2">go</button></form>
+<form id="f3"><input id="t3"></form>
+</body></html>"#;
+    // f1：submit input 存在（disabled 仍算 default button）。
+    let f1 = enclosing_form_selector(html, "#t").unwrap();
+    let got1 = default_submit_button_selector(html, &f1).expect("f1 default button");
+    assert!(got1.contains("#s"), "f1 default button 应为 #s（got {got1}）");
+    // f2：`<button>`（无 type）= submit。
+    let f2 = enclosing_form_selector(html, "#t2").unwrap();
+    let got2 = default_submit_button_selector(html, &f2).expect("f2 default button");
+    assert!(got2.contains("#b2"), "f2 default button 应为 #b2（got {got2}）");
+    // f3：无 submit button。
+    let f3 = enclosing_form_selector(html, "#t3").unwrap();
+    assert_eq!(default_submit_button_selector(html, &f3), None, "f3 无 default button");
+}

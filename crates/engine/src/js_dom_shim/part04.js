@@ -1348,6 +1348,30 @@
             }
           }
           if (!sel || typeof __zw_sibling_nodes !== 'function') return null;
+          // R3254-K3（keyboard goal，2026-09-07）：insertAdjacentHTML 同步视图的 sel→pending
+          // 身份归一——sel-based 查询（QSA/getElementsByName 命中 host apply-pending 视图）返
+          // sel proxy，其文档位置只存在于 apply-pending 视图；live 视图（`__zw_sibling_nodes`）
+          // 该节点不存在 → stale pair（pair.n=null）。补偿：sel 签名匹配 pending 解析节点
+          //（`_zwPendingParsedForSel`——「此节点的 live 视图 stale」判定门），命中 → 在
+          // **apply-pending 父子序**（`__zw_parent` + `__zw_element_children`，均 apply-pending
+          // 视图）中按 sel 定位自身索引取兄弟 sel 包回 sel proxy——identity 与查询入口同族
+          //（sel proxy），后续 form.text/focus/send_keys 全走 sel 通道。pending 集空 → 零成本
+          // 跳过（热路径不受影响）。
+          var _r3kNode = (typeof _zwPendingParsedForSel === 'function') ? _zwPendingParsedForSel(sel) : undefined;
+          if (_r3kNode && typeof __zw_element_children === 'function') {
+            try {
+              var _r3kParentSel = (typeof __zw_parent === 'function') ? __zw_parent(sel) : null;
+              if (_r3kParentSel) {
+                var _r3kApplSels = String(__zw_element_children(_r3kParentSel) || '').split('|').filter(Boolean);
+                var _r3kIdx = _r3kApplSels.indexOf(sel);
+                if (_r3kIdx >= 0) {
+                  var _r3kSibIdx = prop === 'previousSibling' ? _r3kIdx - 1 : _r3kIdx + 1;
+                  return (_r3kSibIdx >= 0 && _r3kSibIdx < _r3kApplSels.length)
+                    ? _wrapSelector(_r3kApplSels[_r3kSibIdx]) : null;
+                }
+              }
+            } catch (_e3k) {}
+          }
           // js-dom M4 R55：兄弟对缓存（与 _zwChildBaseCache 同款生命周期——dom_html Arc 回合内
           // 不可变；重注册经 globalThis._zwSiblingBaseInvalidateAll 全量失效）。同 turn 内
           // nextSibling/previousSibling 交替读（Range testFn 边界点遍历）不再每次双 host 往返
@@ -6037,15 +6061,65 @@
         // 仅 sel-based（已挂载）元素经 host `__zw_insert_adjacent_html`；handle-only（createElement
         // detached）无 sel → 无操作（beforeend/afterbegin 因脱离文档树无意义，beforebegin/afterend 需
         // parent——spec 对 detached 元素本就抛错，此处静默无操作更安全）。
+        // R3254-K3 残余切片（keyboard goal，2026-09-07）：**同步子视图**（host mutation 异步
+        // apply——同 R293 insertAdjacentText / R304 innerHTML sel 路径语义）。此前只发 mutation
+        // + notify，apply 前的 JS 视图（childNodes/nextSibling/getElementsByName 的 overlay）
+        // 读 stale 快照——WPT implicit-submission.optional.html populateForm 前置
+        // `getElementsByName(frameName)[0].nextSibling` 断链（3F 簇根因）。三件补偿：
+        // ① 插入父站定址（beforebegin/afterend = 目标父，afterbegin/beforeend = 目标自身——与
+        //    host `insert_adjacent_html` 的 context element 语义同源）；
+        // ② 基底置空（`_zwChildBaseCache.set(parentSel, [])`，R304 同款——空基底 + pending
+        //    overlay = 同 turn 读立即可见；host apply 后 `__zw_apply_generation_bump` 全量失效换代）；
+        // ③ 解析顶层子挂父槽 + parentNode 重指宿主容器 proxy（`_zwSelPendingParent` 槽供
+        //    `_zwOverlayPendingChildNodes` 并入 + sibling/contains 上行链——R136 hostHandle
+        //    重指同源；nextSibling 按 position 取插入位后继，host apply 前定位稳定）。
         if (prop === 'insertAdjacentHTML') {
           return function(position, text) {
             if (sel && typeof __zw_insert_adjacent_html === 'function') {
               try {
-                // R3031：addedNodes 经 [`_zwFragmentAdded`] 回填解析片段的顶层节点（target=元素 sel 为
-                // pragmatic 近似——beforebegin/afterend 实际影响父节点 childList，父 selector 此处不可得）。
-                var _iahAdded = _zwFragmentAdded(text);
+                // R3031：addedNodes 经 [`_zwFragmentAdded`] 回填解析片段的顶层节点。
+                var _iahAdded = _zwFragmentAdded(text, handle);
+                var _iahPos = String(position == null ? '' : position).trim().toLowerCase();
+                // R3254-K3：插入前快照 ref（旧首子/旧 nextSibling——host 视图此刻未变，读数稳定）。
+                var _iahRef = null, _iahParentSel = sel || null, _iahParentHandle = handle || null;
+                var _iahSelf = _makeProxy(sel, handle);
+                if (_iahPos === 'beforebegin' || _iahPos === 'afterend') {
+                  try {
+                    var _iahP = _iahSelf.parentNode;
+                    if (_iahP) {
+                      _iahParentSel = _iahP.__zwSelector || null;
+                      _iahParentHandle = _iahP.__zwHandle || null;
+                    }
+                  } catch (_eiahp) {}
+                  _iahRef = _iahPos === 'beforebegin' ? _iahSelf : (_iahSelf.nextSibling || null);
+                } else if (_iahPos === 'afterbegin') {
+                  try { _iahRef = _iahSelf.firstChild || null; } catch (_eiahf) {}
+                }
                 __zw_insert_adjacent_html(sel, String(position), String(text));
-                _mo_notify(sel, handle, { type: 'childList', addedNodes: _iahAdded, removedNodes: [] });
+                // R3254-K3：同步子视图补偿（见分支头注释）。无可解析父（root 越界）→ 跳过槽补偿，
+                // mutation 已发（与旧行为一致——host 侧报错静默）。
+                if (_iahParentSel || _iahParentHandle) {
+                  try {
+                    if (!_iahParentHandle && typeof _zwChildBaseCache !== 'undefined') {
+                      _zwChildBaseCache.set(_iahParentSel, []);
+                    }
+                    if (_iahAdded && _iahAdded.length) {
+                      var _iahHostProxy = _iahParentSel ? _wrapSelector(_iahParentSel) : null;
+                      for (var _iahi = 0; _iahi < _iahAdded.length; _iahi++) {
+                        var _iahN = _iahAdded[_iahi];
+                        if (!_iahN) continue;
+                        _iahN._zwSelPendingParent = { parentSel: _iahParentSel || null, parentHandle: _iahParentHandle || null, nextSibling: _iahRef };
+                        if (_iahHostProxy) {
+                          try { _iahN.parentNode = _iahHostProxy; } catch (_eiahpp) {}
+                        }
+                      }
+                    }
+                    if (globalThis._zwSiblingBaseInvalidateAll) globalThis._zwSiblingBaseInvalidateAll();
+                  } catch (_eiahv) {}
+                  _mo_notify(_iahParentSel, _iahParentHandle, { type: 'childList', addedNodes: _iahAdded, removedNodes: [], nextSibling: _iahRef });
+                } else {
+                  _mo_notify(sel, handle, { type: 'childList', addedNodes: _iahAdded, removedNodes: [] });
+                }
               } catch (_e) {}
             }
             return undefined;
@@ -6663,6 +6737,27 @@
         // `form.length`（HTMLFormElement）= 控件数；非 form 透传（不拦截）。
         if (prop === 'length' && _realTag(sel, handle) === 'FORM') {
           return _formControls(sel).length;
+        }
+        // R3254-K3（keyboard goal，2026-09-07）：FORM **named access**（spec
+        // https://html.spec.whatwg.org/multipage/forms.html#dom-form-nameditem——HTMLFormElement
+        // 支持 via name/id 直取 listed 控件；`form.text` / `form.submitButton` 是 WPT 表单键
+        // 面惯用形态）。仅 FORM gate 且 prop 非保留名（length/elements/action 等已在前置
+        // 分支返回，落到这里的是无匹配成员的任意键）；控件名/id 首匹配，未命中 → undefined
+        //（回落 trap 后续通用路径）。驱动用例：WPT implicit-submission.optional.html。
+        if (_realTag(sel, handle) === 'FORM' && typeof prop === 'string'
+            && prop !== '' && prop !== 'item' && prop !== 'namedItem'
+            && Object.prototype.hasOwnProperty.call(globalThis, 'HTMLFormElement')) {
+          var _fna = _formControls(sel);
+          for (var _fnai = 0; _fnai < _fna.length; _fnai++) {
+            var _fnac = _fna[_fnai];
+            if (!_fnac) continue;
+            try {
+              if (_fnac.id === prop
+                  || (_fnac.getAttribute && _fnac.getAttribute('name') === prop)) {
+                return _fnac;
+              }
+            } catch (_efna) {}
+          }
         }
         // R57（FV M3）：form 提交共享路径（requestSubmit + submit 按钮 click 默认动作共用）——
         // spec §4.10.5.4 的 submit 算法：novalidate 属性 / submitter 的 formnovalidate 跳过

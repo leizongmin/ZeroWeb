@@ -5186,6 +5186,65 @@
     }
     return _tagFromSel(sel);
   }
+  // R3254-K3（keyboard goal，2026-09-07）：sel → pending 解析节点归一。insertAdjacentHTML/
+  // innerHTML 补偿链把解析片段顶层节点（_zwMEl，apply 前无 handle/sel、挂 `_zwSelPendingParent`
+  // 槽）并入融合 childNodes，而查询入口（QSA/getElementsByName）对同批插入命中 host
+  // apply-pending 视图返 sel proxy——同一逻辑节点两个 JS 对象。本 helper 以签名
+  //（tag + id + name + class）把 sel proxy 映射到 pending 解析节点；命中且唯一时消费方可
+  // 按融合 identity 定位（兄弟导航/父子关系与 childNodes 同源）。匹配仅在有 pending 解析
+  // 节点时进行（常态零开销）；签名歧义（多节点同签名）→ 不归一（保守返 undefined，旧行为）。
+  // 返值：匹配节点 / undefined（不归一）。
+  function _zwPendingParsedForSel(sel, _unusedProp) {
+    if (typeof _zwPendingByParent === 'undefined' || !_zwPendingByParent || typeof __zw_get_tag !== 'function') {
+      return undefined;
+    }
+    var cand = null;
+    var candCount = 0;
+    try {
+      _zwPendingByParent.forEach(function (bucket) {
+        if (!bucket || !bucket.added || !bucket.added.length) return;
+        for (var i = 0; i < bucket.added.length; i++) {
+          var nd = bucket.added[i];
+          if (!nd || nd.nodeType !== 1 || nd.__zwHandle || nd.__zwSelector) continue;
+          if (!nd._zwSelPendingParent) continue;
+          if (candCount > 1) return;
+          var tag = '';
+          try { tag = String(nd.tagName || '').toUpperCase(); } catch (_et) {}
+          var attrs = { id: '', name: '', class: '' };
+          try {
+            attrs.id = String(nd.id || '');
+            attrs.name = String(nd.getAttribute('name') || '');
+            attrs.class = String(nd.getAttribute('class') || nd.className || '');
+          } catch (_ea) {}
+          nd.__zwSig3k = tag + '|' + attrs.id + '|' + attrs.name + '|' + attrs.class;
+          cand = nd; // 记最后一个，计数在签名比较时统一
+          candCount++;
+        }
+      });
+    } catch (_ew) { return undefined; }
+    if (candCount === 0) return undefined;
+    // sel 签名（host apply-pending 视图）与候选比对；多候选时选唯一签名命中。
+    var selTag = '', selId = '', selName = '', selCls = '';
+    try {
+      selTag = String(__zw_get_tag(sel) || '').toUpperCase();
+      selId = String((typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'id') : '') || '');
+      selName = String((typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'name') : '') || '');
+      selCls = String((typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'class') : '') || '');
+    } catch (_es) { return undefined; }
+    var selSig = selTag + '|' + selId + '|' + selName + '|' + selCls;
+    var hit = null, hits = 0;
+    try {
+      _zwPendingByParent.forEach(function (bucket) {
+        if (!bucket || !bucket.added) return;
+        for (var j = 0; j < bucket.added.length; j++) {
+          var nd2 = bucket.added[j];
+          if (nd2 && nd2.__zwSig3k === selSig) { hit = nd2; hits++; }
+        }
+      });
+    } catch (_ec) { return undefined; }
+    if (hits === 1 && hit && selTag) return hit;
+    return undefined;
+  }
   // js-dom M3 R100：`__zw_handle_for_selector` 是 selector→handle 方向；这里需要
   // 反向（handle→selector）。host 不另设回调——在 JS 侧维护正置缓存（R100 map 的
   // 镜像：`__zw_handle_for_selector` 命中处同步登记）。空句柄返 null。

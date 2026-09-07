@@ -4553,3 +4553,95 @@ fn test_buttonish_probe_r3254_k4_slice2() {
         assert_eq!(got, expect, "#{id} buttonish 判定");
     }
 }
+
+#[test]
+fn test_insert_adjacent_html_fusion_view_r3254_k3() {
+    // R3254-K3 残余切片（keyboard goal，2026-09-07）：insertAdjacentHTML('afterbegin')
+    // 后的**同步子视图**——WPT implicit-submission.optional.html populateForm 前置
+    // `document.getElementsByName(frameName)[0].nextSibling` 断链根因探针。插入后
+    // （host mutation apply 前）JS 侧 childNodes 视图必须立即可见（同 R293
+    // insertAdjacentText 同步子视图语义）。驱动用例：WPT
+    // html/semantics/forms/form-submission-0/implicit-submission.optional.html。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // populateForm 同形调用：body.insertAdjacentHTML('afterbegin', iframe+form)。
+    sandbox
+        .execute(
+            r##"
+document.body.insertAdjacentHTML('afterbegin',
+  '<iframe name="form-test-target-0"></iframe><form action="about:blank" target="form-test-target-0"><input name=text value=abc><input name=submitButton type=submit></form>');
+globalThis.__probe = [];
+// ① getElementsByName 同步可见（host apply 前插入物立即可查）。
+var els = document.getElementsByName('form-test-target-0');
+__probe.push(els.length);
+// ② nextSibling 视图连续（iframe 元素后紧跟 form 元素）。
+var sib = els.length ? els[0].nextSibling : null;
+__probe.push(sib ? sib.tagName : 'null');
+// ③ body childNodes 计数一致（无 pending/host 双计）。
+__probe.push(document.body.childNodes.length);
+// ④ host 侧 apply-pending 查询视图（__zw_query_all 基于 apply 后 HTML）同 turn 命中。
+try { __probe.push((__zw_query_all('[name="form-test-target-0"]') || '').split('|').length); } catch (e4) { __probe.push('e4'); }
+// ⑤ FORM named access——WPT 驱动流程 form.text / form.submitButton（sel proxy 路径）。
+var form = sib;
+__probe.push(form.tagName === 'FORM');
+__probe.push(!!form.text);
+__probe.push(form.text.name);
+__probe.push(!!form.submitButton);
+// ⑥ 兄弟 identity 同族（sel proxy——send_keys 可寻址）。
+__probe.push(!!sib.__zwSelector);
+"##,
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__probe)").unwrap().value,
+        "1,FORM,2,1,true,true,text,true,true",
+        "insertAdjacentHTML 后同步视图 + FORM named access（WPT populateForm 驱动链）",
+    );
+
+    // ── Round 2（模拟 WPT 用例多 promise_test 序列）：host apply（换代 dom_html + 重注册）
+    // 后再插第二组 iframe+form，验证第二轮 form1 的 named access / listener / dispatch。
+    *dom_html.lock().unwrap() = "<html><body><iframe name=\"form-test-target-0\"></iframe>\
+<form action=\"about:blank\" target=\"form-test-target-0\"><input name=text value=abc></form>\
+</body></html>"
+        .to_string();
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    sandbox
+        .execute(
+            r##"
+document.body.insertAdjacentHTML('afterbegin',
+  '<iframe name="form-test-target-1"></iframe><form action="about:blank" target="form-test-target-1"><input name=text value=abc><input name=submitButton type=submit></form>');
+globalThis.__probe2 = [];
+var els2 = document.getElementsByName('form-test-target-1');
+var form2 = els2.length ? els2[0].nextSibling : null;
+__probe2.push(form2 ? form2.tagName : 'null');
+__probe2.push(!!(form2 && form2.text));
+// listener 注册 + 宿主派发（R2984 通道）同 identity 命中。
+var __ev2 = null;
+if (form2) {
+  form2.addEventListener('submit', function (e) { __ev2 = e; });
+  var f2sel = form2.__zwSelector;
+  try { __zw_dispatch_event(f2sel, 'submit', { key: null, code: null, submitter: null, data: null, inputType: null, isComposing: false, shiftKey: false, ctrlKey: false, altKey: false, metaKey: false }); } catch (e9) { __probe2.push('e9'); }
+}
+__probe2.push(__ev2 ? 'fired' : 'missed');
+"##,
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__probe2)").unwrap().value,
+        "FORM,true,fired",
+        "第二轮插入：form1 解析 + named access + submit listener 同 identity 命中",
+    );
+}
