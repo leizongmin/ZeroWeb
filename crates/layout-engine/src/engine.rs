@@ -403,6 +403,8 @@ impl LayoutEngine {
         // R695 复用副本：build_layout_tree_with_r109 按值取走 img_intrinsic_sizes，
         // 此处保留一份供 apply_indefinite_percent_height_to_auto 为替换元素补设固有尺寸。
         let mut intrinsic_for_r695 = img_intrinsic_sizes.clone();
+        // R4113 副本：img_intrinsic_sizes 按值传入 tree build，此处已有 intrinsic_for_r695
+        // 副本供 clamp_percentage_max_height 的匿名片段替换子 auto 宽重写（§10.3.2 固有比）。
         // 1. 构建 taffy 树（含 R109 接线产物，仅 R109_WIRE=1 时非空）
         let (mut taffy_tree, root_id, taffy_to_dom, r109) = build_layout_tree_with_r109(
             doc,
@@ -944,7 +946,7 @@ impl LayoutEngine {
         // 旧 cb=None 使根（如 <html>）的 height:100% 不解析 → html/body/p 百分比高度
         // 链断裂（min-height-percentage-003）。CSS §10：根元素百分比高度相对 ICB。
         // 仅根传视口高度作包含块；后代经 my_definite_content_height 链传播。
-        clamp_percentage_max_height(&mut root_box, Some(self.viewport_height), styles);
+        clamp_percentage_max_height(&mut root_box, Some(self.viewport_height), styles, &intrinsic_for_r695);
 
         // R4075（css-sizing-4 §4.2）：aspect-ratio transferred min-width 不覆盖显式
         // max-width——taffy min>max 约束表给出 200 压过 max-width:100

@@ -1650,6 +1650,7 @@ pub(super) fn clamp_percentage_max_height(
     box_node: &mut LayoutBox,
     cb_content_height: Option<f32>,
     styles: &HashMap<NodeId, ComputedStyle>,
+    img_sizes: &HashMap<NodeId, (f32, f32)>,
 ) {
     use zero_css_parser::values::{BoxSizingValue, LengthValue};
 
@@ -1881,13 +1882,29 @@ pub(super) fn clamp_percentage_max_height(
                 } else {
                     content + pb
                 };
+                // R4113（CSS2.1 §10.3.2）：替换子元素 width:auto + 固有比 + used 高确定 →
+                // width = height × ratio（taffy 把块级 auto 宽拉伸到匿名片段宽——替换元素
+                // 无此 fill 语义，匿名片段是 taffy Block 的近似产物；anonymous-boxes-001a：
+                // img 100 高应 100 宽，旧拉伸 784）。比信号取解码固有尺寸（w/h）；无解码
+                // 信号或零维不动避免除零误写。
+                if matches!(cs.width, LengthValue::Auto)
+                    && child.is_replaced
+                    && let Some(&(iw, ih)) = img_sizes.get(&cid)
+                    && iw > 0.0
+                    && ih > 0.0
+                {
+                    let frame_w = child.padding_left + child.padding_right + child.border_left + child.border_right;
+                    let w = (child.height * (iw / ih)).max(frame_w).max(1.0);
+                    child.width = w;
+                    child.content_width = (w - frame_w).max(0.0);
+                }
             }
         }
     }
     for i in 0..box_node.children.len() {
         let shiftable_child = is_shiftable_in_flow_block(&box_node.children[i]);
         let old_extent = box_node.children[i].y + box_node.children[i].height + box_node.children[i].margin_bottom;
-        clamp_percentage_max_height(&mut box_node.children[i], cb_for_children, styles);
+        clamp_percentage_max_height(&mut box_node.children[i], cb_for_children, styles, img_sizes);
         let new_extent = box_node.children[i].y + box_node.children[i].height + box_node.children[i].margin_bottom;
         let delta = new_extent - old_extent;
         if shiftable_child && delta.abs() > 0.5 {

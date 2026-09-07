@@ -626,7 +626,7 @@ fn test_table_percentage_height_resolves_as_minimum() {
     };
     div_box.children.push(table_box);
 
-    super::super::clamp_percentage_max_height(&mut div_box, None, &styles);
+    super::super::clamp_percentage_max_height(&mut div_box, None, &styles, &HashMap::new());
 
     let t = &div_box.children[0];
     assert!(
@@ -660,7 +660,7 @@ fn r4038_empty_grid_definite_rows_contribute_to_content_height() {
         ..Default::default()
     };
 
-    super::super::clamp_percentage_max_height(&mut grid_box, None, &styles);
+    super::super::clamp_percentage_max_height(&mut grid_box, None, &styles, &HashMap::new());
 
     assert!(
         (grid_box.height - 100.0).abs() < 0.5,
@@ -724,7 +724,7 @@ fn test_abspos_max_height_keyword_caps_stretched_height() {
     };
     abs_box.children.push(child_box);
 
-    super::super::clamp_percentage_max_height(&mut abs_box, None, &styles);
+    super::super::clamp_percentage_max_height(&mut abs_box, None, &styles, &HashMap::new());
 
     assert!(
         abs_box.height <= 101.0,
