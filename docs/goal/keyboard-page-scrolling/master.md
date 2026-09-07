@@ -79,7 +79,7 @@ element scroll 段活跃面。
 | DC-3 | scrollIntoView 选项面 | ✅ R3060 block start/end/center 公式断言（smooth→instant 简化记录）；scrollIntoViewIfNeeded R3075；元素级滚动依赖布局 rect（runner 无——跨域）|
 | DC-3 | 键盘滚动后 scroll 事件 + scrollX/Y 一致 | ✅ 窗口滚动七断言（事件 cancelable=false + 轴独立 + round-trip）；runner 侧 scroll 事件经 R3047 setter 同步派发已验证 |
 | DC-4 | snap 容器键盘交互 | 🔶 keyboard.html 8/8 可完成且 2 断言 Pass——snap 位置精确断言（expected 400 got 40 等）= snap 布局吸附逻辑归渲染流域（跨域协调项）；scrollIntoView 元素级滚动同根因 |
-| DC-5 | cargo test 全绿 / clippy 零警告 / 资产化 | ✅ engine 2642 + runner 205 全绿（2026-09-07 M2 切片 2 轮）/ 零警告 / 本地资产标明 |
+| DC-5 | cargo test 全绿 / clippy 零警告 / 资产化 | ✅ 全量 make test 18,984 全绿（2026-09-07 M2 切片 2 复核轮，v8+quickjs 双 phase）/ 零警告 / 本地资产标明（engine 2642 含 test_scroll_key_default_r3254_kp5）|
 
 **收尾结论**：本流可闭环面全部落地（含 runner 侧滚动默认动作与帧驱动 rAF——snap 三
 案从整簇 Timeout 到 keyboard.html 8/8 完成、断言差异精确可读）；剩余（焦点→容器链、

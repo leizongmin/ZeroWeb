@@ -76,7 +76,7 @@
 | DC-3 | select 导航（方向键/Home/End） | ✅ 跳 disabled/clamp/value 编程选中 + input+change 事件序 |
 | DC-3 | radio 方向键组内移动 | ✅ checked 迁移 + 跳 disabled + clamp；空格切换 checkbox=K4 Activate 管线（checkbox 臂既有）|
 | DC-4 | 事件序（keydown→keypress→keyup/click + cancelable） | ✅ keydown-input-events 2P/0F（keydown→beforeinput→input 序 + preventDefault 抑制）；keypress 派发（composed 面 3P/0F）；修饰键位透传（M1 切片 3，modifier-keys 4F 全灭 + 五组单测）；**send_keys 普通字符 keydown→InsertText→keypress（Ctrl/Meta 抑制）→keyup 全序 + 串内修饰持久化**（残余切片 4，keypress-not-fired 3P + 三组单测）；跨 send 修饰状态清零语义有单测 |
-| DC-5 | cargo test 全绿 / clippy / 资产化 | ✅ 全量 make test 18,980 全绿（2026-09-07 切片 4 轮，v8+quickjs 双 phase）/ 零警告 / 每切片带单测（M1 残余切片 4 +1）|
+| DC-5 | cargo test 全绿 / clippy / 资产化 | ✅ 全量 make test 18,984 全绿（2026-09-07 M2 切片 2 复核轮，v8+quickjs 双 phase；组合态 SW 轮 1 次 flake 隔离复跑 0.06s 过确证）/ 零警告 / 每切片带单测|
 
 **收尾结论**：分发层骨架（K2 切片 2/3/4——send_keys 通道事件序补全）、激活键（K4）、
 Esc（K3 Esc 面）、select/radio 导航（K5）全部落地并有断言资产；隐式提交规则细化与
