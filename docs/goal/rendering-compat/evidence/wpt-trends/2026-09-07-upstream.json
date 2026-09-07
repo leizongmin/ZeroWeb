@@ -3,9 +3,9 @@
   "mode": "upstream",
   "wpt_data_ref": "v1.10",
   "total": 16814,
-  "passed": 14510,
+  "passed": 14516,
   "rate_pct": 86.3,
-  "extra": "failed=2304;skipped=0",
-  "git_sha": "61a029e57",
-  "note": "R4104-F svg subtree CSS transform exempt from html transform path (double-consumption fix; gate = in_svg_subtree at apply_transform call); +15/-3 net +13, svg transform style domain 13 cases flipped green (inline/document/external-styles + svgbox-initial/view-box); corpus 14497->14510"
+  "extra": "failed=2298;skipped=0",
+  "git_sha": "ddacffb43",
+  "note": "R4105-F svg transform-origin offset by reference-box origin (fill/stroke/content/border box = bbox top-left; view-box = viewBox min; R4099 min-arm 'regression' invalidated - it was measured pre-R4104 double-consumption noise); +5 green zero regression (svgbox-stroke-box-001/002, svgbox-border-box, stroke-box-mutation-001/002); corpus 14510->14515"
 }
