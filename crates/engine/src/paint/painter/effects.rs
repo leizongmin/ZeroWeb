@@ -1581,9 +1581,10 @@ fn resolve_position_component(pos: &BackgroundPositionComputedValue, container_s
     match pos {
         BackgroundPositionComputedValue::Left | BackgroundPositionComputedValue::Top => 0.0,
         BackgroundPositionComputedValue::Center => (container_size - image_size) / 2.0,
-        BackgroundPositionComputedValue::Right | BackgroundPositionComputedValue::Bottom => {
-            (container_size - image_size).max(0.0)
-        }
+        // R4118（css-backgrounds-3 §3.6）：right/bottom 关键字 ≡ 100% ——偏移 = (容器-图)
+        // **可为负**（图大于容器时露出图右下部分），不得钳 0（table-backgrounds-bs-table-001
+        // imagebr 表：图 340×272 > 定位区，bottom right 应露图右下相位，旧钳 0 锚左上）。
+        BackgroundPositionComputedValue::Right | BackgroundPositionComputedValue::Bottom => container_size - image_size,
         BackgroundPositionComputedValue::Length(px) => *px,
         BackgroundPositionComputedValue::Percent(pct) => (container_size - image_size) * pct / 100.0,
         BackgroundPositionComputedValue::Calc(expr) => {
@@ -1894,6 +1895,26 @@ fn compute_gradient_mask_alpha(gradient: &GradientPrimitive) -> f64 {
 
 #[cfg(test)]
 mod tests {
+
+    /// R4118（css-backgrounds-3 §3.6）：right/bottom 关键字 ≡ 100%——图大于容器时
+    /// 偏移为**负**（露出图右下部分），不得钳 0（table-backgrounds-bs-table-001
+    /// imagebr 表：340×272 图在 320×134 定位区，bottom right 应 (-20,-138)）。
+    #[test]
+    fn r4118_right_bottom_keywords_negative_offset() {
+        use super::resolve_background_position;
+        use zero_style_system::BackgroundPositionComputedValue as P;
+        // 图 340×272 > 容器 320×134：right/bottom → (-20, -138)（负，不钳 0）
+        let (x, y) = resolve_background_position(&P::Right, 320.0, 134.0, 340.0, 272.0);
+        assert!((x + 20.0).abs() < 0.01, "right offset should be -20, got {x}");
+        let (x, y) = resolve_background_position(&P::Bottom, 320.0, 134.0, 340.0, 272.0);
+        assert!((y + 138.0).abs() < 0.01, "bottom offset should be -138, got {y}");
+        // 图小于容器：offset 为正（右下对齐）
+        let (x, y) = resolve_background_position(&P::Right, 320.0, 134.0, 100.0, 50.0);
+        assert!((x - 220.0).abs() < 0.01, "right offset should be 220, got {x}");
+        let (x, y) = resolve_background_position(&P::Bottom, 320.0, 134.0, 100.0, 50.0);
+        assert!((y - 84.0).abs() < 0.01, "bottom offset should be 84, got {y}");
+    }
+
     use super::*;
     use zero_render_foundation::color::Color;
     use zero_render_foundation::geometry::Rect;
