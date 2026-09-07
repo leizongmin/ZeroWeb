@@ -6,6 +6,6 @@
   "passed": 14542,
   "rate_pct": 86.5,
   "extra": "failed=2272;skipped=0",
-  "git_sha": "89d6ec4f7",
-  "note": "R4109-F svg transform-origin initial used value 0 0 (CSS Transforms 1; declared-flag in style-system, Percentage(50) heuristic invalidated by explicit 50% 50% case) + R4108 gate element-children-only fix (anon h=0 boxes broke all-replaced check - mutation-001 now actually fixed); +8 green zero green-loss (fill-box-001 four-quadrant closure, stroke-box-003/004/005 vector-effect convergence); corpus 14534->14542"
+  "git_sha": "62fa9e9d0",
+  "note": "R4110-F strip style transform/transform-box/transform-origin declarations when injecting transform attr (usvg 0.47 honors style transform-box and negates injected attr - probed); value-changed 8.33->0.00 green; corpus 14542 flat (+1/-1 box-shadow flake swap); residual mutation-002 pair = usvg image-href/text-font resource domain (R3989 lineage)"
 }
