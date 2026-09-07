@@ -3540,12 +3540,27 @@ fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fet
                     }
                     let status = wpt_pipe_status(query).unwrap_or(200);
                     wpt_add_fetch_metadata(&mut headers, req, status);
+                    // R3254-E2 切片 6（editing goal，2026-09-07）：**iframe 文档的相对
+                    // src 脚本内联**——shim iframe 装载（R115 runInlineScripts）只执行
+                    // inline `<script>`，外部 src 脚本被跳过（无同步 fetch 通道），iframe
+                    // 内 `var`/函数面缺失（selection/test-iframe.html 依赖 common.js 的
+                    // setupRangeTests——deleteFromDocument/getSelection iframe 簇根因）。
+                    // 主文档面 runner 已有 inline_local_scripts 预处理；此处对 fetch 通道
+                    // 返回的 .html 同样内联相对 src（绝对/`/resources/` 保留原标签）。
+                    let body = if clean.ends_with(".html") {
+                        let html = String::from_utf8_lossy(&bytes).into_owned();
+                        let inlined = inline_local_scripts(&html, &root, clean);
+                        let inlined_bytes = inlined.clone().into_bytes();
+                        (inlined_bytes, inlined)
+                    } else {
+                        (bytes.clone(), String::from_utf8_lossy(&bytes).into_owned())
+                    };
                     Ok(zero_engine::fetch_bridge::FetchResponse {
                         status,
                         status_text: wpt_status_text(status).to_string(),
                         headers,
-                        body: String::from_utf8_lossy(&bytes).into_owned(),
-                        body_bytes: Some(bytes),
+                        body: body.1,
+                        body_bytes: Some(body.0),
                     })
                 }
                 Err(e) => {

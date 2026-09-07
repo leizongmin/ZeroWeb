@@ -2930,14 +2930,32 @@
         for (var i = 0; i < functionNames.length; i++) {
           exposeFunctions += "\ntry { if (typeof " + functionNames[i] + " === 'function') window[" + JSON.stringify(functionNames[i]) + "] = " + functionNames[i] + "; } catch (_) {}";
         }
+        // R3254-E2 切片 6（editing goal，2026-09-07）：**顶层 var 导出**——`var` 声明
+        // 局限于本 Function 包装的作用域（函数只暴露命名函数，var 面丢失），跨脚本
+        // 引用断链（test-iframe.html 的内联 script 读 common.js 声明的 testDiv →
+        // undefined → 'setting display' TypeError，deleteFromDocument/getSelection
+        // iframe 簇根因之二）。正则提取顶层 `var NAME…`（跨行逗号列表）并生成导出
+        // 尾声：同一 Function 作用域内 eval('window.NAME = NAME') 逐名落 window。
+        var varExport = '';
+        var varRe = /\bvar\s+([^;]+);/g;
+        var varMatch;
+        while ((varMatch = varRe.exec(code))) {
+          var parts = String(varMatch[1]).split(',');
+          for (var vi = 0; vi < parts.length; vi++) {
+            var nameM = /^\s*([A-Za-z_$][0-9A-Za-z_$]*)/.exec(parts[vi]);
+            if (!nameM) continue;
+            var vn = nameM[1];
+            if (functionNames.indexOf(vn) >= 0) continue;
+            varExport += "\ntry { window[" + JSON.stringify(vn) + "] = " + vn + "; } catch (_) {}";
+          }
+        }
         try {
           new Function(
             'window', 'self', 'document', 'navigator', 'XMLHttpRequest',
             'fetch', 'Headers', 'Request', 'Response', 'URL', 'parent',
-            'with(window){' + code + exposeFunctions + '\n}'
+            'with(window){' + code + exposeFunctions + varExport + '\n}'
           ).call(
-            win, win, win, doc, win.navigator, win.XMLHttpRequest,
-            win.fetch, win.Headers, win.Request, win.Response, win.URL, win.parent
+            win, win, win, doc, win.navigator, win.fetch, win.Headers, win.Request, win.Response, win.URL, win.parent
           );
         } catch (_eIframeScript) {}
       }
