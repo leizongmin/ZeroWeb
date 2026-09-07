@@ -496,6 +496,25 @@ impl FontLoader {
                 advance: size,
             });
         }
+        // R4115（default-on；`ZW_AHEM_REAL_OUTLINE=0` kill）：按真实字形轮廓光栅化。
+        // 旧「全部完美方块」（2026-06 4748552c9）对含降部字形（p/q/y/g/j 等，真实轮廓
+        // = 降部小方块）错误——chromium（Skia）按真实轮廓渲染（units-003 ref PNG +
+        // fontdue 轮廓探针双实证：Ahem 'p' = 0.2em 降部方块，旧渲全 em 方块）。真实
+        // 轮廓全盒字形（大写/数字等）与合成方块像素同形（Ahem 轮廓全轴对齐矩形无 AA
+        // 差异）。A/B（全量 16814）：corpus 14542→14547（+5），diff 质量 −94pp（46 案
+        // 改善 sum −104 / 9 案定价 sum +10，text-overflow-ellipsis ×2 0→3.3/1.7 为
+        // 最大定价项已记账）。
+        if std::env::var("ZW_AHEM_REAL_OUTLINE").as_deref() != Ok("0") {
+            let (metrics, bitmap) = font.rasterize(code_point, size);
+            return Ok(GlyphBitmap {
+                data: bitmap,
+                width: metrics.width as u16,
+                height: metrics.height as u16,
+                x_offset: metrics.xmin as i16,
+                y_offset: metrics.ymin as i16,
+                advance: metrics.advance_width,
+            });
+        }
 
         // 检查字体是否实际包含该字符；若不含则回退到 fontdue 渲染
         if !font.has_glyph(code_point) {
@@ -1935,11 +1954,12 @@ mod tests {
         assert!(!loader.is_ahem(999), "nonexistent font should not be Ahem");
     }
 
-    /// 测试 Ahem 字体光栅化生成完美填充方块
+    /// 测试 Ahem 大写字形按真实轮廓渲染为 em 级方块（R4115）。
     ///
-    /// Ahem 的每个字符应渲染为 font_size × font_size 的不透明方块。
+    /// Ahem 的 'X'（大写，真实轮廓 = 全 em 轴对齐方块）应渲染为 ≈font_size 见方
+    /// 的不透明位图（±1 光栅化取整）；advance = font_size。
     #[test]
-    fn test_ahem_rasterize_perfect_square() {
+    fn test_ahem_uppercase_is_full_box() {
         let (loader, ahem_id) = match load_ahem() {
             Some(v) => v,
             None => {
@@ -1950,21 +1970,23 @@ mod tests {
 
         for &size in &[10.0f32, 16.0, 20.0, 32.0, 50.0] {
             let bitmap = loader.rasterize_glyph(ahem_id, 'X', size).unwrap();
-            let expected_w = size.ceil() as u16;
-            let expected_h = size.ceil() as u16;
+            let expected = size.ceil() as u16;
             assert_eq!(
-                bitmap.width, expected_w,
-                "Ahem 'X' at size={size}: width should be {expected_w}, got {}",
+                bitmap.width, expected,
+                "Ahem 'X' at size={size}: width should be {expected}, got {}",
                 bitmap.width
             );
-            assert_eq!(
-                bitmap.height, expected_h,
-                "Ahem 'X' at size={size}: height should be {expected_h}, got {}",
+            assert!(
+                (bitmap.height as f32 - size).abs() <= 1.0,
+                "Ahem 'X' at size={size}: height should be ≈{expected} (±1 rasterization), got {}",
                 bitmap.height
             );
-            // 全部像素应完全不透明
-            let all_opaque = bitmap.data.iter().all(|&a| a == 255);
-            assert!(all_opaque, "Ahem 'X' at size={size}: all pixels should be fully opaque");
+            // 平均不透明度应接近全覆盖（全盒轮廓；小尺寸光栅化边缘有 AA）
+            let mean_alpha = bitmap.data.iter().map(|&a| a as u32).sum::<u32>() as f32 / bitmap.data.len() as f32;
+            assert!(
+                mean_alpha >= 240.0,
+                "Ahem 'X' at size={size}: should be ≈fully covered (mean alpha {mean_alpha})"
+            );
             // advance 应等于 font_size
             assert!(
                 (bitmap.advance - size).abs() < 0.01,
@@ -1974,11 +1996,50 @@ mod tests {
         }
     }
 
-    /// 测试 Ahem 字体多个不同字符都渲染为方块
+    /// 测试 Ahem 降部字形按真实轮廓渲染（R4115，chromium 对齐）。
     ///
-    /// Ahem 字体中所有可打印字符的渲染结果应相同（完美方块）。
+    /// Ahem 'p' 真实轮廓 = 基线下降部小方块（0.2em 高，fontdue 探针实证
+    /// ymin=-0.2em height=0.2em），chromium（Skia）按真实轮廓渲染（units-003 ref）。
+    /// 旧合成「全 em 方块」对降部字形错误。
     #[test]
-    fn test_ahem_all_chars_are_squares() {
+    fn test_ahem_descender_glyph_real_outline() {
+        let (loader, ahem_id) = match load_ahem() {
+            Some(v) => v,
+            None => {
+                eprintln!("skipping: Ahem.ttf not found");
+                return;
+            }
+        };
+
+        let size = 50.0f32;
+        let bitmap = loader.rasterize_glyph(ahem_id, 'p', size).unwrap();
+        // 降部方块高 ≈ 0.2em = 10px（±1 光栅化）
+        assert!(
+            (bitmap.height as f32 - size * 0.2).abs() <= 1.5,
+            "Ahem 'p' descender box height should be ≈0.2em={}, got {}",
+            size * 0.2,
+            bitmap.height
+        );
+        // y_offset = 降部（负，基线下方）
+        assert!(
+            bitmap.y_offset < 0,
+            "Ahem 'p' descender box should sit below baseline (y_offset<0), got {}",
+            bitmap.y_offset
+        );
+        // advance 不变 = font_size
+        assert!(
+            (bitmap.advance - size).abs() < 0.01,
+            "Ahem advance should be {size}, got {}",
+            bitmap.advance
+        );
+    }
+
+    /// 测试 Ahem 非降部字符渲染为全 em 方块（x 高度/大写/数字/符号，R4115 后仍全盒）。
+    ///
+    /// Ahem 真实轮廓中 'z'/'0'/'!' 等为全 em 轴对齐方块（'p' 等降部除外，见
+    /// [`test_ahem_descender_glyph_real_outline`]）。
+    #[test]
+    fn test_ahem_non_descender_chars_are_squares() {
         let (loader, ahem_id) = match load_ahem() {
             Some(v) => v,
             None => {
@@ -1988,7 +2049,7 @@ mod tests {
         };
 
         let size = 20.0f32;
-        for ch in ['A', 'z', '0', '!', 'X', 'p', 'M'] {
+        for ch in ['A', 'z', '0', '!', 'X', 'M'] {
             let bitmap = loader.rasterize_glyph(ahem_id, ch, size).unwrap();
             assert_eq!(bitmap.width, size.ceil() as u16, "Ahem '{ch}' width mismatch");
             assert_eq!(bitmap.height, size.ceil() as u16, "Ahem '{ch}' height mismatch");
