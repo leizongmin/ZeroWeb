@@ -3793,6 +3793,13 @@ fn run_testharness_html_inner(
     let _zw_hb2 = std::fs::write("/tmp/zw-hb.txt", format!("pre-scripts {}\n", case_name));
     let script_result = webview.run_page_scripts_strict();
     let _zw_hb3 = std::fs::write("/tmp/zw-hb2.txt", format!("post-scripts {}\n", case_name));
+    // R3254-E2 切片（editing goal，2026-09-07）：DOMContentLoaded/load 派发 + harness_loaded
+    // 标记改 runner 侧执行（此前是 prepare 尾部 append 的 `<script>`——被解析器归入 body，
+    // 成为页面可见 DOM，污染 documentElement.outerHTML 精确断言）。时序不变：全部页面脚本
+    // 之后同步执行。
+    let _ = webview.execute_script(
+        "(function () {var mk = globalThis.__zwMakeTrustedEvent;document.dispatchEvent(mk ? mk('DOMContentLoaded') : new Event('DOMContentLoaded'));globalThis.dispatchEvent(mk ? mk('load') : new Event('load'));})();if (typeof globalThis.__zw_mark_harness_loaded === 'function') {globalThis.__zw_mark_harness_loaded();}",
+    );
     // M3 扩批（2026-09-02，fixture-mounted 播放切片）：播放宿主桥 + 媒体源登记。
     // 页面 <video>/<audio> src（经 extract_media_resources 提取、相对 case 目录解析）
     // 从 wpt-data 读字节登记进 VideoPlayerRegistry——shim play() 经 __zwVideoBridge
@@ -4271,18 +4278,11 @@ add_completion_callback(function() {
     // 同目录文件（相对 src 如 "attributes.js" / "./attributes.js" / "../constants.js"）。
     // 仅内联相对路径（非 /resources/、非 http(s):）；文件缺失则移除该 script 标签（不注入空）。
     html = inline_local_scripts(&html, wpt_root, case_path);
-    html.push_str(
-        "<script>\
-         (function () {\
-           var mk = globalThis.__zwMakeTrustedEvent;\
-           document.dispatchEvent(mk ? mk('DOMContentLoaded') : new Event('DOMContentLoaded'));\
-           globalThis.dispatchEvent(mk ? mk('load') : new Event('load'));\
-         })();\
-         if (typeof globalThis.__zw_mark_harness_loaded === 'function') {\
-           globalThis.__zw_mark_harness_loaded();\
-         }\
-         </script>",
-    );
+    // R3254-E2 切片（editing goal，2026-09-07）：**dispatcher 不再注入 DOM**——此前
+    // 尾部 append 的 `<script>`（DOMContentLoaded/load 派发 + harness_loaded 标记）被解析器
+    // 归入 body，成为页面可见 DOM 子（WPT body-should-not-deleted 的
+    // documentElement.outerHTML 精确断言被注入 script 污染）。改为 runner 侧在
+    // run_page_scripts_strict 之后 execute_script 执行（时序不变：全部页面脚本之后）。
     html
 }
 

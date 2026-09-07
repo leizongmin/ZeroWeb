@@ -916,6 +916,48 @@
         // handle 经 outerHTML 比对亦受益。
         if (prop === 'outerHTML') {
           if (sel && typeof __zw_get_outer_html === 'function') {
+            // R3254-E2 切片（editing goal，2026-09-07）：**R380 同款融合门**——pending 桶
+            // 非空（apply 前 stale 补偿语义）时从融合 childNodes 视图序列化 outerHTML
+            //（子树经 `_childNodeList` overlay + 递归 `_r380n.outerHTML`）。此前恒 host
+            // 直读：同 execute 内结构 mutation（head.remove/body.firstChild.remove 等）
+            // 后读 documentElement.outerHTML 恒 stale（WPT body-should-not-deleted 两案
+            // 的 got = 未变更 harness 页面根因）。
+            try {
+              var _r3oBucket = (typeof _zwPendingByParent === 'object' && _zwPendingByParent)
+                ? _zwPendingByParent.get(sel) : null;
+              if (_r3oBucket && (_r3oBucket.added.length || _r3oBucket.removed.length)
+                  && (!globalThis._zwApplyGeneration || _r3oBucket.stamp === globalThis._zwApplyGeneration())) {
+                var _r3oTag = (typeof __zw_get_tag === 'function') ? String(__zw_get_tag(sel) || '').toUpperCase() : '';
+                if (_r3oTag) {
+                  var _r3oOut = '<' + _r3oTag.toLowerCase();
+                  // 属性层：host latest-wins 读（同 turn setAttribute 经 _zw_attr 系回调已入队）。
+                  if (typeof __zw_attr_names === 'function') {
+                    var _r3oNames = String(__zw_attr_names(sel) || '').split('|').filter(Boolean);
+                    for (var _r3oni = 0; _r3oni < _r3oNames.length; _r3oni++) {
+                      var _r3oN = _r3oNames[_r3oni];
+                      var _r3oV = (typeof __zw_get_attr_lw === 'function') ? __zw_get_attr_lw(sel, _r3oN) : '';
+                      _r3oOut += ' ' + _r3oN + '="' + String(_r3oV == null ? '' : _r3oV)
+                        .replace(/&/g, '&amp;').replace(/"/g, '&quot;')
+                        .replace(/</g, '&lt;').replace(/>/g, '&gt;') + '"';
+                    }
+                  }
+                  _r3oOut += '>';
+                  var _r3oKids = _childNodeList(sel, null);
+                  for (var _r3oi = 0; _r3oi < _r3oKids.length; _r3oi++) {
+                    var _r3on = _r3oKids[_r3oi];
+                    if (!_r3on) continue;
+                    if (_r3on.nodeType === 3) _r3oOut += _zwMEscapeText(_r3on.nodeValue != null ? _r3on.nodeValue : (_r3on.data != null ? _r3on.data : ''));
+                    else if (_r3on.nodeType === 8) _r3oOut += '<!--' + (_r3on.nodeValue != null ? _r3on.nodeValue : _r3on.data) + '-->';
+                    else if (_r3on.nodeType === 1) {
+                      if (typeof _zwIsRemovedNode === 'function' && _zwIsRemovedNode(_r3on)) continue;
+                      _r3oOut += _r3on.outerHTML || '';
+                    }
+                  }
+                  _r3oOut += '</' + _r3oTag.toLowerCase() + '>';
+                  return _r3oOut;
+                }
+              }
+            } catch (_e3oFused) { /* 融合序列化失败回落 host 快照 */ }
             try { return __zw_get_outer_html(sel); } catch (_e) { return ''; }
           }
           if (handle) {
