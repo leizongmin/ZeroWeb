@@ -2,7 +2,7 @@
 
 **入口文档**: [../editing-contenteditable.md](../editing-contenteditable.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-07（E2 切片 8——R279 混合形态门 + innerHTML setter parentNode 重指 + 子树脏判定融合门；HTMLDetails 26/30；selection 套件 2929P/18F）
+**最后更新**: 2026-09-07（E2 切片 9——deleteContents 同容器元素分支 + R279 cac 边界 hoist；HTMLDetails 29/30；selection 套件 2926P/7F）
 
 ---
 
@@ -63,6 +63,7 @@
 15. **E2 切片 6 收口**：iframe realm Selection/Range 面 → ✅ 2026-09-07（错误显面 + 逐层探针定位四缺口：① 工厂元素无 `.style`——test-iframe.html 顶层 display TypeError 经 R206 per-part catch 落 unexpectedException（此前 runInlineScripts 静默吞 + R115/R206 双通道误判延误定位）；② iframe win 无 getSelection/Selection——per-iframe Selection 实例（spec 每 Window 一个）；③ iframe doc/detached-doc（R204）createRange 缺 Range.prototype 链——rangeFromEndpoints 的 foreign-doc 域 instanceof false；④ detached doc defaultView 应 null 非 undefined。另勘误 deleteFromDocument 空 selection = no-op（selection-api「If this is empty, return」——既有单测同步修正）。**deleteFromDocument.html 60/60 + getSelection.html 18/18 全 Pass**；selection 套件 **2898P/5F/1T**；keyboard 18P 零回归）
 16. **E2 切片 7**：顶层 class 声明全局发布 → ✅ 2026-09-07（script_run_classic_page 行首声明扫描补 `class NAME`——strict eval 独立变量环境下类声明跨 `<script>` 不可见；editor-test-utils.js 的 class EditorTestUtils 使 deleteFromDocument-HTMLDetails 的 test() 全不注册 → 整案 Timeout 0-registered。validity 门 = 名后 `{` 或 `extends`。HTMLDetails 1T→30 注册全跑 17P/13F（13F = 跨元素 deleteContents best-effort——E5 defer 面首次可观测）；selection 套件 2915P/18F/0T；单测 +1（class 双脚本可见性）；engine 2648 / keyboard 18P 零回归）
 17. **E2 切片 8**：跨元素 deleteContents（HTMLDetails 17P→26P）→ ✅ 2026-09-07（三件：① innerHTML setter sel 容器解析顶层子 parentNode 重指 `_wrapSelector(sel)`（K3 切片 A 同款——原 parentNode 为 _zwMBuildBodyTree 内部 body 快照，marker walk 的 parentElement 提升走到伪 body → 端点错域）；② `_zwPendingSubtreeDirty(sel)` 子树脏判定（后代桶键路径前缀扫描）接入 innerHTML/outerHTML 融合门——子树深层 mutation 触发融合序列化；③ R279 门放宽 admit sc=CharData + ec=Element 混合形态（sc CharData 尾段 deleteData；R268 保持双 CharData 原门——放宽版曾与 R279 单测冲突，revert 记录）。**HTMLDetails 26/30**；残余 4F = contained-endpoint 边缘形态（ec 尾边界整节点包含 + 文本端提升 so 语义——探针迭代两轮 misfire 后保守回退，精确记录））
+18. **E2 切片 9**：deleteContents 同容器元素分支 + R279 cac 边界 → ✅ 2026-09-07（① deleteContents 补 sc===ec 元素分支（children [start,end) 逆序移除 + 塌缩——marker-walk 提升端点形态 div@1→div@2 此前全分支 miss no-op，trace 实证入分支正确）；② R279 cac 边界路径子索引 hoist（sPathIdx/ePathIdx）+ ③ ec===cac 子删下界 sPathIdx+1 + ④ ec===cac 跳过中段。R268 上一轮放宽门 + 路径索引重写与 R279 单测冲突已整体 revert——混合形态改由 R279 门放宽承接。**HTMLDetails 29/30**；唯一 1F = ec 尾边界整节点包含形态（探针定位到融合读回门链路，精确记录下轮）；selection 套件 2926P/7F；engine 2649 全绿）
 
 **碰撞管理**：开工前先 `git log --since="14 days ago" -- crates/engine/src/js_dom_shim/`
 核对 js-dom 流活跃面。
