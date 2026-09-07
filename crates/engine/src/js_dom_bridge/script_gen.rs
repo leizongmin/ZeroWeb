@@ -18,6 +18,14 @@ pub struct DomEventDetail {
     pub input_type: Option<String>,
     /// `InputEvent.isComposing`。
     pub is_composing: bool,
+    /// `KeyboardEvent.shiftKey`。
+    pub shift_key: bool,
+    /// `KeyboardEvent.ctrlKey`。
+    pub ctrl_key: bool,
+    /// `KeyboardEvent.altKey`。
+    pub alt_key: bool,
+    /// `KeyboardEvent.metaKey`。
+    pub meta_key: bool,
     /// `SubmitEvent.submitter`——触发 submit 的按钮唯一选择器（R2984）。click submit button → 该按钮；
     /// Enter 隐式提交 → None（spec：表单默认提交按钮或 null）。
     pub submitter: Option<String>,
@@ -63,8 +71,12 @@ pub fn script_dispatch_dom_event(selector: &str, event_type: &str, detail: Optio
                 .map(|value| format!("'{}'", escape_js_string(value)))
                 .unwrap_or_else(|| "null".to_string());
             let is_composing = d.is_composing;
+            let shift_key = d.shift_key;
+            let ctrl_key = d.ctrl_key;
+            let alt_key = d.alt_key;
+            let meta_key = d.meta_key;
             format!(
-                "{{key:{key},code:{code},submitter:{submitter},data:{data},inputType:{input_type},isComposing:{is_composing}}}"
+                "{{key:{key},code:{code},submitter:{submitter},data:{data},inputType:{input_type},isComposing:{is_composing},shiftKey:{shift_key},ctrlKey:{ctrl_key},altKey:{alt_key},metaKey:{meta_key}}}"
             )
         }
     };

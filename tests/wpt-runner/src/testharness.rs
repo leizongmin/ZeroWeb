@@ -4705,24 +4705,26 @@ fn apply_testdriver_command(webview: &mut WebView, command: &TestdriverCommand) 
                 // listener + waitForAnimationEnd 驱动）。旧版落 PUA 拒绝分支使
                 // css-scroll-snap/input 三案全簇 Unhandled rejection。
                 let scroll_key = match character {
-                    '\u{E012}' => Some("ArrowLeft"),
-                    '\u{E013}' => Some("ArrowUp"),
-                    '\u{E014}' => Some("ArrowRight"),
-                    '\u{E015}' => Some("ArrowDown"),
-                    '\u{E00E}' => Some("PageUp"),
-                    '\u{E00F}' => Some("PageDown"),
-                    '\u{E010}' => Some("End"),
-                    '\u{E011}' => Some("Home"),
-                    // R3254-K2 后续：修饰键 → keydown+keyup 事件对（modifier-keys.html
-                    // send_keys 依赖；runner 无持久修饰状态——down/up 成对派发与
-                    // getModifierState 断言兼容性 defer 记录）。
-                    '\u{E008}' => Some("Shift"),
-                    '\u{E009}' => Some("Control"),
-                    '\u{E00A}' => Some("Alt"),
-                    '\u{E03D}' => Some("Meta"),
+                    '\u{E012}' => Some(("ArrowLeft", false, false, false, false)),
+                    '\u{E013}' => Some(("ArrowUp", false, false, false, false)),
+                    '\u{E014}' => Some(("ArrowRight", false, false, false, false)),
+                    '\u{E015}' => Some(("ArrowDown", false, false, false, false)),
+                    '\u{E00E}' => Some(("PageUp", false, false, false, false)),
+                    '\u{E00F}' => Some(("PageDown", false, false, false, false)),
+                    '\u{E010}' => Some(("End", false, false, false, false)),
+                    '\u{E011}' => Some(("Home", false, false, false, false)),
+                    // R3254-K2 切片 3（keyboard goal M1）：修饰键 → keydown+keyup 事件对
+                    // 且对应 modifier 位为 true（modifier-keys.html 断言
+                    // event.shiftKey === (key === 'Shift') 等——位来自 DomEventDetail
+                    // 修饰键字段经 __zw_dispatch_event init dict 透传）。runner 仍无
+                    // 跨字符持久修饰状态（后续普通字符不继承修饰位——defer 记录）。
+                    '\u{E008}' => Some(("Shift", true, false, false, false)),
+                    '\u{E009}' => Some(("Control", false, true, false, false)),
+                    '\u{E00A}' => Some(("Alt", false, false, true, false)),
+                    '\u{E03D}' => Some(("Meta", false, false, false, true)),
                     _ => None,
                 };
-                if let Some(key_name) = scroll_key {
+                if let Some((key_name, shift_k, ctrl_k, alt_k, meta_k)) = scroll_key {
                     for event_type in ["keydown", "keyup"] {
                         let script = zero_engine::script_dispatch_dom_event(
                             &selector,
@@ -4730,6 +4732,10 @@ fn apply_testdriver_command(webview: &mut WebView, command: &TestdriverCommand) 
                             Some(&zero_engine::DomEventDetail {
                                 key: Some(key_name.to_string()),
                                 code: Some(key_name.to_string()),
+                                shift_key: shift_k,
+                                ctrl_key: ctrl_k,
+                                alt_key: alt_k,
+                                meta_key: meta_k,
                                 ..Default::default()
                             }),
                         );

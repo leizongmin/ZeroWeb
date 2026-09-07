@@ -3825,3 +3825,133 @@ globalThis.__y4 = scrollY - before;
         "无 rect 元素 scrollIntoView 须 no-op"
     );
 }
+
+#[test]
+fn test_modifier_key_dispatch_r3254_k2_slice3() {
+    // R3254-K2 切片 3（keyboard goal M1，2026-09-07）：修饰键位经 __zw_dispatch_event
+    // init dict 透传——shiftKey/ctrlKey/altKey/metaKey（DomEventDetail 新字段 →
+    // script_gen detail JSON → KeyboardEvent constructor）。驱动路径：runner
+    // send_keys 修饰键（uE008/uE009/uE00A/uE03D）keydown/keyup 事件对。
+    // 驱动用例：WPT uievents/keyboard/modifier-keys.html（4 subtest
+    // event.shiftKey === (key === 'Shift') 等断言族，全过 @ 2026-09-07）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=target tabindex=0>Target</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // ①：Shift keydown → event.shiftKey=true、其余 false（modifier-keys.html 主断言形）。
+    sandbox
+        .execute(
+            r##"
+globalThis.__got = null;
+var t = document.getElementById("target");
+t.addEventListener("keydown", function (e) {
+  __got = e.key + "/" + e.shiftKey + "/" + e.ctrlKey + "/" + e.altKey + "/" + e.metaKey;
+});
+__zw_dispatch_event("#target", "keydown", { key: "Shift", code: "Shift", shiftKey: true, ctrlKey: false, altKey: false, metaKey: false });
+"##,
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__got)").unwrap().value,
+        "Shift/true/false/false/false",
+        "Shift keydown（init dict shiftKey:true）须 event.shiftKey=true 其余 false"
+    );
+    // ②：Control → ctrlKey 位（新 listener 写 __got2）。
+    sandbox
+        .execute(
+            r##"
+globalThis.__got2 = null;
+document.getElementById("target").addEventListener("keydown", function (e) {
+  __got2 = e.key + "/" + e.shiftKey + "/" + e.ctrlKey + "/" + e.altKey + "/" + e.metaKey;
+});
+__zw_dispatch_event("#target", "keydown", { key: "Control", code: "Control", ctrlKey: true });
+"##,
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__got2)").unwrap().value,
+        "Control/false/true/false/false",
+        "Control keydown 须 ctrlKey=true"
+    );
+    // ③：Alt + Meta 位独立（各注册新 listener）。
+    sandbox
+        .execute(
+            r##"
+globalThis.__got3 = null;
+document.getElementById("target").addEventListener("keydown", function (e) {
+  __got3 = e.key + "/" + e.shiftKey + "/" + e.ctrlKey + "/" + e.altKey + "/" + e.metaKey;
+});
+__zw_dispatch_event("#target", "keydown", { key: "Alt", code: "Alt", altKey: true });
+"##,
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__got3)").unwrap().value,
+        "Alt/false/false/true/false",
+        "Alt keydown 须 altKey=true"
+    );
+    sandbox
+        .execute(
+            r##"
+globalThis.__got4 = null;
+document.getElementById("target").addEventListener("keydown", function (e) {
+  __got4 = e.key + "/" + e.shiftKey + "/" + e.ctrlKey + "/" + e.altKey + "/" + e.metaKey;
+});
+__zw_dispatch_event("#target", "keydown", { key: "Meta", code: "Meta", metaKey: true });
+"##,
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__got4)").unwrap().value,
+        "Meta/false/false/false/true",
+        "Meta keydown 须 metaKey=true"
+    );
+    // ④：detail 缺省修饰键字段 → 全 false（向后兼容——既有 scroll/导航键路径零变化）。
+    sandbox
+        .execute(
+            r##"
+globalThis.__got5 = null;
+document.getElementById("target").addEventListener("keydown", function (e) {
+  __got5 = e.key + "/" + e.shiftKey + "/" + e.ctrlKey + "/" + e.altKey + "/" + e.metaKey;
+});
+__zw_dispatch_event("#target", "keydown", { key: "ArrowDown", code: "ArrowDown" });
+"##,
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__got5)").unwrap().value,
+        "ArrowDown/false/false/false/false",
+        "无修饰键 detail → 全 modifier 位 false（既有路径兼容）"
+    );
+    // ⑤：getModifierState 联动（part05 modifier 位查询接口；单 listener 单 dispatch，
+    // 避免多 listener 叠加断言互相污染——每臂独立元素更简：复用 #target，只派一次）。
+    sandbox
+        .execute(
+            r##"
+globalThis.__got6 = null;
+document.getElementById("target").addEventListener("keydown", function (e) {
+  __got6 = e.getModifierState("Shift") + "/" + e.getModifierState("Control");
+});
+__zw_dispatch_event("#target", "keydown", { key: "S", code: "KeyS", shiftKey: true });
+"##,
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__got6)").unwrap().value,
+        "true/false",
+        "getModifierState 按 init dict modifier 位求值"
+    );
+}

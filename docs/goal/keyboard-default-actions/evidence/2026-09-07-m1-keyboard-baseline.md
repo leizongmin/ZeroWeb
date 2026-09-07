@@ -71,3 +71,32 @@ TOTAL 1P / 4F
 | keypress-not-fired-for-modifier-shortcuts | 0 | 1 | 同上（修饰快捷键 keypress 抑制语义） |
 | implicit-submission | 0 | 3 | js-dom 共享面：insertAdjacentHTML 后兄弟视图断链（populateForm null form） |
 | css-scroll-snap/input 三案 | 0 | 4 | 断言依赖真滚动管线（runner 侧无——keyboard-page-scrolling M2 滚动分发到 webview 层后复评） |
+
+## M1 切片 3（2026-09-07）— 修饰键位透传（K2 分发表扩展）
+
+**改动面**：DomEventDetail（script_gen.rs）新增 shift_key/ctrl_key/alt_key/meta_key 四位
+→ script_gen detail JSON 透传 → `__zw_dispatch_event` KeyboardEvent 分支 init dict
+（shiftKey/ctrlKey/altKey/metaKey）→ KeyboardEvent constructor（part05 modifier 位全接）。
+runner send_keys 修饰键映射改四元组（key 名 + 对应位 true）。
+
+**修复聚类**：
+
+1. modifier-keys.html 4F 全灭——event.shiftKey === (key === 'Shift') 断言族全过
+   （位经 init dict → getModifierState/shiftKey 等 IDL 位可读）。
+2. keypress-not-fired-for-modifier-shortcuts 随位透传转 Pass（10P/4F 中已计入）。
+
+**残余 4F 精确根因（探针定位，2026-09-07）**：
+
+- implicit-submission.optional.html 3F：`populateForm` 前置失败——
+  insertAdjacentHTML('afterbegin', iframe+form) 后 `iframe.nextSibling = null`、
+  `body.childNodes.length = 0`（stale）而 `querySelectorAll('form') = 2`（双计）。
+  js-dom 融合视图 pending/host 双计 + childNodes 视图断链——跨域 js-dom 共享面
+  （editing goal E2 残余聚类同根因），非隐式提交实现缺陷。协调点：js-dom 流
+  R3031 _zwFragmentAdded 融合视图。
+- paged.html 1F：断言依赖真滚动管线（runner 侧无）——keyboard-page-scrolling
+  共享面（P1/M1 记录延续）。
+
+**验证**：keyboard 套件 6P/12F → **10P/4F**；selection 套件 2005P/779F 零回归；
+engine 2631 全绿；clippy -D warnings 零警告；单测
+test_modifier_key_dispatch_r3254_k2_slice3（五组：Shift/Control/Alt/Meta 位独立 +
+缺省兼容 + getModifierState 联动）。

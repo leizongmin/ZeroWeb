@@ -10763,11 +10763,19 @@
         cancelable: false
       });
     } else if (detail && (detail.key || detail.code)) {
+      // R3254-K2 切片 3（keyboard goal M1）：修饰键位透传——shiftKey/ctrlKey/altKey/
+      // metaKey 进 init dict（KeyboardEvent constructor，part05 modifier 位全接）。
+      // runner send_keys 修饰键（uE008/uE009/uE00A/uE03D）keydown 断言位（WPT
+      // modifier-keys.html：event.shiftKey === (key === 'Shift') 等）。
       ev = new KeyboardEvent(type, {
         bubbles: true,
         cancelable: true,
         key: detail.key || '',
-        code: detail.code || detail.key || ''
+        code: detail.code || detail.key || '',
+        shiftKey: !!detail.shiftKey,
+        ctrlKey: !!detail.ctrlKey,
+        altKey: !!detail.altKey,
+        metaKey: !!detail.metaKey
       });
     } else {
       ev = _makeEvent(type, { bubbles: true, cancelable: true });
