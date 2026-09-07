@@ -4142,6 +4142,115 @@ globalThis.__sync2 = __c1 + "/" + __c2;
 }
 
 #[test]
+fn test_selectionchange_textcontrol_full_semantics_r3254_e2_slice12() {
+    // E2 切片 12（editing goal，2026-09-08）：selectionchange 全语义面——
+    // ① 变更检测：selectionStart 同值 setter 不排程（spec「set the selection
+    //    range」末步——extent/direction 实际变更才 queue）；
+    // ② select()/setRangeText() 排程（spec select = set range 0..∞、setRangeText
+    //    末步 set-the-selection-range）；同值 select() 二连不重复派发；
+    // ③ bubbles：text control 派发的 selectionchange ev.bubbles === true（spec
+    //    「Firing selectionchange event」element target bubbles；document target
+    //    不冒泡）；
+    // ④ 多 target 同任务：input 与 textarea 各派一次（条目按 node 去重）。
+    // 驱动用例：WPT selection/textcontrols/selectionchange.html、
+    // selectionchange-bubble.html、onselectionchange-content-attribute.html。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><input id=input><textarea id=ta></textarea></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            r##"
+globalThis.__n = 0; globalThis.__bub = '';
+var input = document.getElementById("input");
+var ta = document.getElementById("ta");
+input.value = "XXXXXXXXXXXXXXXXXXX";
+ta.value = "YYYYYYYY";
+input.addEventListener("selectionchange", function (ev) { __n++; __bub = String(ev.bubbles); });
+// ① 同值 selectionStart setter：{0,0} → 0 —— 不排程（变更检测）。
+input.selectionStart = 0;
+// ② select()：{0,0} → {0,19} 变更 —— 排程 1 次；后续同值 select() 二连不重复。
+input.select();
+input.select();
+// ③ setRangeText select 模式：选区变到替换段 —— 排程（与 select 同任务合并）。
+input.setRangeText("foo", 2, 6, "select");
+// ④ textarea 独立变更 —— 第二条目。
+ta.setSelectionRange(1, 3);
+globalThis.__sync = __n + "/" + __bub;
+"##,
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__sync)").unwrap().value,
+        "0/",
+        "同值 setter 不排程 + 排程任务同步不可见"
+    );
+    // microtask 间隙 flush（裸沙箱无 host timer → setTimeout 落 microtask fallback）。
+    sandbox.execute("globalThis.__after = __n + '/' + __bub;").unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__after)").unwrap().value,
+        "1/true",
+        "同任务多变更加粗为一次派发（input: select+setRangeText 合并；textarea 独立条目各派一次——input/ta 合计 2 次？否：__n 只挂 input）→ input 恰 1 次 + bubbles=true"
+    );
+    // ⑤ textarea 独立派发确认。
+    sandbox
+        .execute(
+            r##"
+globalThis.__nta = 0;
+ta.addEventListener("selectionchange", function () { __nta++; });
+ta.setSelectionRange(2, 4);
+ta.setSelectionRange(2, 4); // 同值二连：不重复排程（去重条目）
+"##,
+        )
+        .unwrap();
+    sandbox.execute("globalThis.__afterTa = __nta;").unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__afterTa)").unwrap().value,
+        "1",
+        "textarea 独立派发一次；同值 setter 二连不重复（条目按 node 去重）"
+    );
+    // ⑥ setRangeText preserve 选区不变形态：选区已 {0,0} 时 value='' + 单参
+    // setRangeText —— 选区不变 → 不排程（spec setRangeText 末步变更检测）。
+    sandbox
+        .execute(
+            r##"
+input.setSelectionRange(0, 0); // 先归零（此刻变更排程一次，flush 后作基线）
+"##,
+        )
+        .unwrap();
+    sandbox.execute("globalThis.__flush0 = 1;").unwrap();
+    sandbox
+        .execute(
+            r##"
+globalThis.__n2 = 0;
+input.addEventListener("selectionchange", function () { __n2++; });
+input.value = "";
+input.setRangeText("foo"); // preserve：{0,0} → {0,0} 不变
+"##,
+        )
+        .unwrap();
+    sandbox.execute("globalThis.__after2 = __n2;").unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__after2)").unwrap().value,
+        "0",
+        "setRangeText preserve 选区不变 → 不排程（spec 变更检测）"
+    );
+}
+
+#[test]
 fn test_execcommand_toggle_state_r3254_m3_slice4() {
     // R3254-M3 切片 4（editing goal，2026-09-07）：format 命令 toggle 语义 +
     // queryCommandState 真实反射。① bold 包裹后 queryCommandState('bold')=true、

@@ -3666,9 +3666,22 @@
           return function() {
             if (_isTextControl(sel, handle)) {
               var so = _selObj(key);
+              // E2 切片 12（editing goal，2026-09-08）：spec select() = 「Set the
+              // selection range with 0 and infinity」→ 同值时（已全选）不排程
+              // selectionchange（WPT textcontrols/selectionchange.html
+              // 'Calling select() twice' 断言 1 event 非 2）。
+              var fullLen = _controlValue(sel, handle, key).length;
+              var changedSel = (so.start !== 0) || (so.end !== fullLen) || (so.direction !== 'forward');
               so.start = 0;
-              so.end = _controlValue(sel, handle, key).length;
+              so.end = fullLen;
               so.direction = 'forward';
+              if (changedSel) {
+                try {
+                  if (typeof globalThis._zwScheduleSelectionChange === 'function') {
+                    globalThis._zwScheduleSelectionChange(_makeProxy(sel, handle), true);
+                  }
+                } catch (_eSelChSel) {}
+              }
             }
             return undefined;
           };
@@ -7907,6 +7920,11 @@
           //（{end:-5}→ end 升到 start，不降）；start/end 均 clamp [0, len]；direction 仅接受 forward/backward/none。
           if (_isTextControl(sel, handle)) {
             var so = _selObj(key);
+            // E2 切片 12（editing goal，2026-09-08）：变更检测——spec selectionStart/End
+            // setter 经「set the selection range」算法，仅 extent/direction 实际变更
+            // 才排程 selectionchange（WPT textcontrols/selectionchange.html
+            // 'Setting initial zero selectionStart value' 断言）。
+            var preStart = so.start, preEnd = so.end, preDir = so.direction;
             if (p === 'selectionStart') {
               var nsLen = _controlValue(sel, handle, key).length;
               var ns2 = _clampSelOffset(value, nsLen);
@@ -7919,6 +7937,13 @@
               so.end = ne2;
             } else {
               so.direction = (value === 'backward' || value === 'none') ? value : 'forward';
+            }
+            if (so.start !== preStart || so.end !== preEnd || so.direction !== preDir) {
+              try {
+                if (typeof globalThis._zwScheduleSelectionChange === 'function') {
+                  globalThis._zwScheduleSelectionChange(_makeProxy(sel, handle), true);
+                }
+              } catch (_eSelChSS) {}
             }
           } else if (_realTag(sel, handle) === 'INPUT') {
             _throwDom('InvalidStateError', 'input type does not support text selection');

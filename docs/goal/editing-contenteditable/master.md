@@ -2,7 +2,7 @@
 
 **入口文档**: [../editing-contenteditable.md](../editing-contenteditable.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-07（E2 切片 11——innerHTML 解析子树 window named access 注册；anchor-removal 失败层级下移；selection 套件 2928P/5F 全部精确归因）
+**最后更新**: 2026-09-08（E2 切片 12——selection/textcontrols selectionchange 全语义面 + runner timer stub 单 turn 存活缺陷修复；selection 套件 2928P→**2993P**）
 
 ---
 
@@ -38,7 +38,7 @@
 
 | # | 缺口 | 状态 |
 |---|------|------|
-| E1 | WPT selection/editing 用例覆盖为零 | ✅ selection 首批 20 用例 2026-09-07（基线 1.7%）；editing 目录未导 |
+| E1 | WPT selection/editing 用例覆盖为零 | ✅ selection 首批 20 用例 2026-09-07（基线 1.7%）+ **textcontrols 3 案 2026-09-08（E2 切片 12）**；editing 目录首批已导（event + other 2 案），run/ 全命令面 defer 有据 |
 | E2 | Selection JS 可观察面未核实/缺失 | ✅ 切片 2 + 残余切片 2/3（2026-09-07，45P→**2704P**）：切片 2 八类（document.getSelection/instanceof/异常语义/selectAllChildren/setBaseAndExtent/setPosition/deleteFromDocument）；残余切片 2——Selection anchor/focus **独立边界点**（setBaseAndExtent 反向形态 anchor/focus 各自等于请求值 + detached/foreign-doc 清空 + 省参 TypeError，86F→0F）+ Text/Comment.prototype.ownerDocument（innerHTML 解析产物 'reading createRange' TypeError，isCollapsed/removeRange/type/collapseToStartEnd 48F→0F）；残余切片 3——selectionchange 排程派发（document 级 4 subtest 全过 + text control 独立派发 2F→2P）。残余切片 4（2026-09-07）：**selectAllChildren 118F→0F**（`nodeType === 9` in-doc 短路移除——foreignDoc/xmlDoc 的 parentNode=null 沿链上行自然 false，旧捷径误判外文档节点改写 selection；本文档经 _zwSameNode 命中）+ **Selection.prototype.deleteFromDocument** 挂载（WebIDL 原型成员，.length 断言）。切片 5（2026-09-07）：body-should-not-deleted 2F→2P（① outerHTML getter 加 R380 融合门——pending 桶当代时从融合 childNodes 序列化，此前同 execute 内结构 mutation 后读恒 stale；② harness dispatcher 不再尾部 append `<script>`——被解析器归入 body 成为页面可见 DOM 污染 documentElement.outerHTML 精确断言，改 runner 侧 run_page_scripts_strict 后 execute_script 执行，时序不变）。切片 6 收口：deleteFromDocument 60F→**0F** + getSelection 12F→**0F**（iframe realm 面：style 面板 + per-iframe Selection + createRange 原型链 + defaultView null + 空 selection no-op 勘误）。切片 7：deleteFromDocument-HTMLDetails 1T→30 注册全跑（17P/13F——跨元素 deleteContents best-effort = E5 defer 面首次可观测）。残余：anchor-removal 2F + Document-open 1F / event.html Changing-selection 1F（legacy 形态记录不追）/ onselectionchange 第 4 subtest 跨用例 timer 时序 flake |
 | E3 | 编辑行为管线（键入/删除/换行 → DOM）缺失 | ✅ M2 切片 2/3 + M3 切片 5（2026-09-07，bf181ee60+47dd9a685+切片 5）：键入/Backspace（SetChildText splice + caret 移动）+ Enter 换行（SetInnerHtml <br> splice + caret 元素边界）+ **insertParagraph 块级拆分**（SetOuterHtml 同型兄弟块重写）+ 事件序全接通；限制记录：跨节点回退/嵌套结构偏移映射 defer |
 | E4 | beforeinput/input 事件缺失 | 🔶 M2 切片 1（2026-09-07，commit 74a0c879b）：execCommand 编辑类命令 editing-host 事件序（beforeinput cancelable+trusted → input bubbles+trusted，inputType 映射，全选区在 host 内前提，preventDefault 阻断）——event.html 104P/76F→179P/1F；残余：键入/删除管线（宿主侧 keydown → contenteditable DOM 变更）未接 |
@@ -66,6 +66,7 @@
 18. **E2 切片 9**：deleteContents 同容器元素分支 + R279 cac 边界 → ✅ 2026-09-07（① deleteContents 补 sc===ec 元素分支（children [start,end) 逆序移除 + 塌缩——marker-walk 提升端点形态 div@1→div@2 此前全分支 miss no-op，trace 实证入分支正确）；② R279 cac 边界路径子索引 hoist（sPathIdx/ePathIdx）+ ③ ec===cac 子删下界 sPathIdx+1 + ④ ec===cac 跳过中段。R268 上一轮放宽门 + 路径索引重写与 R279 单测冲突已整体 revert——混合形态改由 R279 门放宽承接。**HTMLDetails 29/30**；唯一 1F = ec 尾边界整节点包含形态（探针定位到融合读回门链路，精确记录下轮）；selection 套件 2926P/7F；engine 2649 全绿）
 19. **E2 切片 10**：同容器元素删除容器记账直达 → ✅ 2026-09-07（唯一 1F 根因 = 移除通道：c.remove() 委托 parentNode.removeChild → sel 代理通道对解析 wrapper 无 sel 可寻址 → host mutation 缺失且本地桶不记账 → 融合读回 stale。改**容器记账直达**：本地 relink（removeChild + childNodes splice 兜底 + parentNode null）+ _mo_notify childList 单一汇流点。**deleteFromDocument-HTMLDetails 30/30 全 Pass**；selection 套件 2928P/5F；engine 2650 全绿）
 20. **E2 切片 11**：window named access 注册 → ✅ 2026-09-07（innerHTML setter sel 路径解析子树内 id 元素同步暴露 globalThis[id]（spec Window named properties；守卫 = 仅 undefined 时注册不遮蔽内建）——此前动态 innerHTML 后 id 无全局注册 → anchor-removal 的 bare-id ReferenceError。**失败层级下移**：ReferenceError 清除后暴露 test_driver Actions 指针拖选依赖布局命中测试（runner 无布局 rect）→ 归 renderer S3 几何协调域（与 page-scrolling 残余同域），记录不追。engine 2650 全绿）
+21. **E2 切片 12**：selection/textcontrols selectionchange 全语义面 → ✅ 2026-09-08（三案导入——selectionchange.html 60 subtest + selectionchange-bubble 4P + onselectionchange-content-attribute 2P 全 Pass。shim 四点：part06 pending 条目 `{node, bubble}`（同任务多 target 各持 bubbles flag）+ 去重按 `entry.node`（spec has-scheduled）；part03 setSelectionRange 同值早退 + setRangeText 末步变更检测；part04 select() 已全选不排程 + selectionStart/End/Direction setter 前后值比对。text control 全部 `bubbles=true`（spec「Firing selectionchange event」）。**runner 基建重大修复**：timer stub 单 turn 存活缺陷——sandbox 每次 execute 重挂 register_callback 原生回调覆盖 `__zw_setTimeout` JS 赋值 → timer 静默回落 host 真线程（派发顺序随机，textcontrols 断言族 ~30%+ flake 根因 + 既有 onselectionchange-on-document timer flake 同根因）；stub 换独立名 `__zw_test_setTimeout`（永不 rebind）+ shim `_zwHostSetTimeout()` 优先探测，生产路径零回归。**selection 套件 2928P→2993P**（净 +65，textcontrols 66 subtest 全 Pass），textcontrols 25 连跑 0 失败；keyboard 18P 零回归；单测 `test_selectionchange_textcontrol_full_semantics_r3254_e2_slice12` 六组；make test 19,005 全绿。残余记录：onselectionchange-on-document 第 3 subtest FILTER 单案跑下 IndexSizeError unhandled rejection（innerHTML pending 时 fusion childNodes 越界；全量跑稳定通过，基线同型 flake 亦在——既有问题非本轮引入））
 
 **碰撞管理**：开工前先 `git log --since="14 days ago" -- crates/engine/src/js_dom_shim/`
 核对 js-dom 流活跃面。
@@ -80,8 +81,8 @@
 
 ## 验证基线
 
-- 测试基线：2026-09-07 全绿；clippy 零警告
-- WPT selection 面：切片 1 基线 45P/2559F（1.7%）→ 切片 2 1824P/776F（70.2%）→ M1 残余切片 2/3 后 2704P/199F（93.1%）→ **切片 7 后 2915P/18F/0T（24 用例全注册）** @ WPT_REV 315976933870（evidence/2026-09-07-m1-slice1-selection-baseline.md）
+- 测试基线：2026-09-08 全绿（make test 19,005）；clippy 零警告
+- WPT selection 面：切片 1 基线 45P/2559F（1.7%）→ 切片 2 1824P/776F（70.2%）→ M1 残余切片 2/3 后 2704P/199F（93.1%）→ 切片 7 后 2915P/18F/0T（24 用例全注册）→ **E2 切片 12 后 2993P/6F（textcontrols 3 案 66 subtest 全 Pass，25 连跑稳定）** @ WPT_REV 315976933870（evidence/2026-09-07-m1-slice1-selection-baseline.md + evidence/2026-09-08-e2-slice12-textcontrols-selectionchange.md）
 - WPT editing 面：**2911P/78F** 组合（event.html 179P/1F + delete-editing-host 2P/0F + **body-not-deleted 2P/0F** + selection 面 2827P/77F + onselectionchange 两案 6P/1F）
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过
 
@@ -89,17 +90,17 @@
 
 | DC | 条目 | 状态 |
 |---|---|---|
-| DC-1 | selection/editing 用例导入 + 基线 | ✅ selection 20 用例（1.7% 基线）+ editing 首批 3 用例；三份 evidence |
+| DC-1 | selection/editing 用例导入 + 基线 | ✅ selection 20 用例（1.7% 基线）+ **textcontrols 3 案（E2 切片 12）** + editing 首批 3 用例；evidence 四份 |
 | DC-2 | Selection API 可观察面 | ✅ 1.7%→**97.3%**（切片 2 八类 + 残余切片 2/3/4：anchor/focus 独立边界点、Text/Comment ownerDocument、selectionchange 排程派发、selectAllChildren 外文档判定、Selection.prototype 成员面）；残余 iframe contentWindow 面（deleteFromDocument 60F + getSelection 12F——realm 隔离后续切片，根因归档）|
 | DC-3 | 编辑行为落地（键入/删除/换行 → DOM） | ✅ M2 三切片（execCommand 事件序 + CE 键入/Backspace/Enter 落 DOM + 事件序）；beforeinput cancelable/input 按 spec |
 | DC-4 | execCommand 基础面 | ✅ queryCommandSupported/Enabled 真实反射（M3 切片 3 + 五组单测）+ queryCommandState/toggle（切片 4 + 五组单测——format 命令 wrap/unwrap 全语义）+ bold/italic/underline/strikethrough + delete/forwardDelete 实应用（M3 切片 1/2，六组单测）；CSS 化命令、跨部分包裹 unwrap、run/ 导入（330KB reference impl）defer 有据 |
-| DC-5 | cargo test 全绿 / clippy / 资产化 | ✅ engine 2637 + webview 692 全绿（本轮）/ 零警告 / 每切片带单测（M3 切片 3~6 共 +4 单测资产）|
+| DC-5 | cargo test 全绿 / clippy / 资产化 | ✅ make test 19,005 全绿（2026-09-08 E2 切片 12 轮）/ 零警告 / 每切片带单测（本轮 +1：selectionchange 全语义六组）|
 
 **收尾结论**：Selection 面（含方向位/ownerDocument/selectionchange/外文档判定/原型
-成员面）、编辑管线、execCommand 基础命令集、queryCommand* 真实反射均落地并有断言资产；
-selection 通过率 **97.3%**（2825P/79F）。残余项均为 iframe contentWindow 面
-（deleteFromDocument 60F + getSelection 12F——runner iframe 的外部 src 脚本不执行 +
-with(window) 全局穿透主 realm，需 iframe realm 隔离切片；test-iframe.html helper 已补
-fetch）与深化面（toggle/CSS 化命令/queryCommandValue、run/ 全量导入 330KB reference
-impl、execCommand delete 空段落根元素 outerHTML 同步视图——R380 融合序列化扩展）——
-defer 均有据记录，不阻塞流域收口判定。
+成员面/**textcontrols selectionchange 全语义——setter/select/setRangeText 变更检测
+排程 + bubbles + 去重**）、编辑管线、execCommand 基础命令集、queryCommand* 真实反射
+均落地并有断言资产；selection 通过率 2993P/6F（**99.8%**）。runner timer stub 单 turn
+存活缺陷（本轮发现并修复——独立回调名 `__zw_test_setTimeout`，timer 派发从 host 线程
+随机序归正为 stub 队列 FIFO 确定序）。残余项：anchor-removal 2F（S3 布局命中）/
+script-and-style 1F（渲染投影）/Document-open 1F（legacy）/event 1F（legacy）均跨域
+精确归因在案；run/ 全量导入（330KB reference impl）defer 有据——不阻塞流域收口判定。

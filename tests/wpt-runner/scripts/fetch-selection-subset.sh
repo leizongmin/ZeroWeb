@@ -83,8 +83,18 @@ EDITING_CASES=(
   "editing/other/body-should-not-deleted-even-if-empty.html"
 )
 
-for rel in "${CASES[@]}" "${HELPERS[@]}" "${EDITING_CASES[@]}"; do
+# E2 切片 12（2026-09-08）：selection/textcontrols/ 首批——selectionchange 全语义面
+#（selectionStart/End setter、select()、setRangeText() 的变更检测排程 + bubbles）+
+# onselectionchange 内容属性 + 冒泡语义。focus.html（pointer 拖选 + focus 取消扩展）
+# 依赖布局命中测试，runner 无布局 rect——不导（同 anchor-removal Actions 拖选归因）。
+TEXTCONTROLS_CASES=(
+  "selection/textcontrols/selectionchange.html"
+  "selection/textcontrols/selectionchange-bubble.html"
+  "selection/textcontrols/onselectionchange-content-attribute.html"
+)
+
+for rel in "${CASES[@]}" "${HELPERS[@]}" "${EDITING_CASES[@]}" "${TEXTCONTROLS_CASES[@]}"; do
   fetch_raw "$rel"
 done
 
-echo "selection+editing subset ready: ${#CASES[@]}+${#EDITING_CASES[@]} cases + ${#HELPERS[@]} helpers @ ${WPT_REV:0:12}"
+echo "selection+editing subset ready: ${#CASES[@]}+${#EDITING_CASES[@]}+${#TEXTCONTROLS_CASES[@]} cases + ${#HELPERS[@]} helpers @ ${WPT_REV:0:12}"

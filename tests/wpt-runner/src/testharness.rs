@@ -135,10 +135,11 @@ pub const DOM_TEST_SUBDIRS: &[&str] = &[
 
 /// Selection goal（editing/contenteditable M1 / DC-1）pinned upstream subset
 /// directories. Cases are fetched by `fetch-selection-subset.sh`（selection/，
-/// M1 切片 1）与 `fetch-editing-subset.sh`（editing/，M1 切片 3——beforeinput/
+/// M1 切片 1；selection/textcontrols/，E2 切片 12——selectionchange 全语义面）
+/// 与 `fetch-editing-subset.sh`（editing/，M1 切片 3——beforeinput/
 /// input 事件面 + editing/other 删除/插入行为基线，M2 前置）into
 /// `wpt-data/`（gitignored）。
-pub const SELECTION_TEST_SUBDIRS: &[&str] = &["selection", "editing", "editing/other"];
+pub const SELECTION_TEST_SUBDIRS: &[&str] = &["selection", "selection/textcontrols", "editing", "editing/other"];
 
 /// Keyboard goal（keyboard-default-actions M1 / DC-1）pinned upstream subset
 /// directories. Cases are fetched by `fetch-keyboard-subset.sh` into
@@ -4247,7 +4248,14 @@ add_completion_callback(function() {
     // 依赖回调最终触发；记录式避免 microtask 立即触发破坏 testharness 时序——
     // 既有 no-op stub 使回调永不触发）。
     let timer_stub = "\
-      globalThis.__zw_setTimeout = function(id, delay) {\n\
+      // R3254-E2 切片 12（editing goal，2026-09-08）：stub 挂 `__zw_test_setTimeout`
+      // 专用名——sandbox 每次 execute 都把 register_callback 原生回调重新 global.set，
+      // 覆盖 `__zw_setTimeout` 的 JS 赋值（stub 只存活一个 turn，之后定时器静默回落
+      // host 真线程，drain_next_async_callback 每 execute 只 resolve 一个、到达序随机
+      // → timer 派发顺序随机，WPT textcontrols/selectionchange 断言族 flake 根因）。
+      // 专用名不在 host 注册表 → 永不被 rebind，全部 timer 走本 stub 的确定性队列
+      //（push 序 = FIFO，due 分割保序；shim setTimeout 优先探测本名）。
+      globalThis.__zw_test_setTimeout = function(id, delay) {\n\
         globalThis.__zw_timers = globalThis.__zw_timers || [];\n\
         globalThis.__zw_timers.push({ id: id, at: Date.now() + (delay | 0) });\n\
       };\n\

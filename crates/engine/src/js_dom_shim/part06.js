@@ -7343,26 +7343,32 @@
   function _zwSelEmpty() { throw new (globalThis.DOMException || Error)('There are no ranges in the selection.', 'InvalidStateError'); }
   // R3254-M1 残余切片 3（editing goal，2026-09-07）：selectionchange 排程器——
   // spec https://w3c.github.io/selection-api/#selectionchange-event：selection
-  // 变更后**排队 task** 派发 selectionchange（不可取消、不冒泡）；同一 task 内的
-  // 多次变更只派一次（WPT onselectionchange-on-document 'fires once' 断言）。
+  // 变更后**排队 task** 派发 selectionchange；同一 task 内的多次变更只派一次
+  //（WPT onselectionchange-on-document 'fires once' 断言）。
   // setTimeout(0) 记录式 timer 提供任务边界；去重旗标 _zwSelectionChangeScheduled
   // 防多 mutation 重复排程。target 为传入节点（document 或 text control 自身）。
+  // E2 切片 12（2026-09-08）：bubble 参数——spec「Firing selectionchange event」：
+  // target 为 element（text control）时 bubbles=true；document 时 bubbles=false
+  //（WPT textcontrols/selectionchange-bubble 断言 ev.bubbles === true）。
   // https://w3c.github.io/selection-api/#selectionchange-event
-  var _zwSelectionChangePending = null; // Array：本任务待派发 target（去重按身份）
-  globalThis._zwScheduleSelectionChange = function (target) {
+  var _zwSelectionChangePending = null; // Array：本任务待派发条目 { node, bubble }
+  globalThis._zwScheduleSelectionChange = function (target, bubble) {
     if (!_zwSelectionChangePending) _zwSelectionChangePending = [];
     for (var i = 0; i < _zwSelectionChangePending.length; i++) {
-      if (_zwSelectionChangePending[i] === target) return;
+      if (_zwSelectionChangePending[i].node === target) return; // spec has-scheduled 去重
     }
-    _zwSelectionChangePending.push(target);
+    // E2 切片 12：待派发条目 = { node, bubble }——同任务多 target 各持自己的
+    // bubbles flag（text control true / document false），fire 时按条目取。
+    _zwSelectionChangePending.push({ node: target, bubble: bubble === true });
     if (_zwSelectionChangePending.length > 1) return; // timer 已排
     var fire = function () {
       var targets = _zwSelectionChangePending || [];
       _zwSelectionChangePending = null;
       for (var f = 0; f < targets.length; f++) {
         try {
-          if (targets[f] && typeof targets[f].dispatchEvent === 'function') {
-            targets[f].dispatchEvent(new Event('selectionchange'));
+          var entry = targets[f];
+          if (entry && entry.node && typeof entry.node.dispatchEvent === 'function') {
+            entry.node.dispatchEvent(new Event('selectionchange', { bubbles: entry.bubble }));
           }
         } catch (_eSelCh) {}
       }

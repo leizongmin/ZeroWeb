@@ -11421,15 +11421,22 @@
               if (ne < ns) ns = ne;
               var d = (dir === 'backward' || dir === 'none') ? dir : 'forward';
               var so = _selObj(key);
+              // E2 切片 12（editing goal，2026-09-08）：同值早退——spec「To set the
+              // selection range」末步：仅当 extent 或 direction 实际变更才排程
+              // selectionchange（WPT textcontrols/selectionchange.html
+              // 'Setting initial zero selection range'/'same ... twice' 断言族）。
+              var changed = (so.start !== ns) || (so.end !== ne) || (so.direction !== d);
               so.start = ns; so.end = ne; so.direction = d;
               // R3254-M1 残余切片 3：text control 选区变更排 selectionchange——
-              // target = 控件自身（spec selectionchange on input/textarea 独立派发，
-              // WPT onselectionchange-on-distinct-text-controls 两断言）。
-              try {
-                if (typeof globalThis._zwScheduleSelectionChange === 'function') {
-                  globalThis._zwScheduleSelectionChange(_makeProxy(sel, handle));
-                }
-              } catch (_eSelChSC) {}
+              // target = 控件自身，bubbles=true（spec「Firing selectionchange event」：
+              // target 为 element 时 bubbles；WPT selectionchange-bubble 断言）。
+              if (changed) {
+                try {
+                  if (typeof globalThis._zwScheduleSelectionChange === 'function') {
+                    globalThis._zwScheduleSelectionChange(_makeProxy(sel, handle), true);
+                  }
+                } catch (_eSelChSC) {}
+              }
               return undefined;
             };
           }
@@ -11478,6 +11485,17 @@
               // preserve：选区在编辑区之前不动；之后按 delta 平移；跨编辑区则折叠到 cs（近似，保 selection 合法）。
               so.start = (oldStart <= cs) ? oldStart : (oldStart >= ce ? oldStart + delta : cs);
               so.end = (oldEnd <= cs) ? oldEnd : (oldEnd >= ce ? oldEnd + delta : cs);
+            }
+            // E2 切片 12（editing goal，2026-09-08）：spec 末步「Set the selection range
+            // with selection start and selection end」→ 选区实际变更时排程
+            // selectionchange（bubbles=true，控件 target；WPT textcontrols/
+            // selectionchange.html 'Calling setRangeText() after select()' 断言族）。
+            if (so.start !== oldStart || so.end !== oldEnd) {
+              try {
+                if (typeof globalThis._zwScheduleSelectionChange === 'function') {
+                  globalThis._zwScheduleSelectionChange(_makeProxy(sel, handle), true);
+                }
+              } catch (_eSelChSRT) {}
             }
               return undefined;
             };

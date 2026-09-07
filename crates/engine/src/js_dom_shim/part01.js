@@ -2005,6 +2005,19 @@
   // 等无 host 路径）时 fallback `_defer`（microtask 同步触发）——保持旧行为，零回归。
   function _timerIdKey(handle) { return '__zwtid:' + handle; }
   function _intervalIdKey(handle) { return '__zwint:' + handle; }
+  // E2 切片 12（editing goal，2026-09-08）：host timer 回调解析优先 `__zw_test_setTimeout`
+  // （runner testharness stub 专用名）。此前 stub 直接覆盖 `__zw_setTimeout`——但 sandbox
+  // 每次 execute 都把 register_callback 注册的原生回调重新 global.set（v8_runtime
+  // execute 内 for callbacks 循环），JS 层赋值只存活一个脚本 turn，下一 turn 起定时器
+  // 静默回落 host 真线程路径（drain_next_async_callback 每 execute 只 resolve 一个、
+  // 到达序随机）→ timer 派发顺序随机（WPT textcontrols/selectionchange 断言 flake
+  // 根因，最小复现见本轮 evidence）。`__zw_test_setTimeout` 不在 host 注册表 → 永不
+  // 被 rebind；生产路径（无 stub）回落 `__zw_setTimeout` 原语义，零回归。
+  function _zwHostSetTimeout() {
+    if (typeof globalThis.__zw_test_setTimeout === 'function') return globalThis.__zw_test_setTimeout;
+    if (typeof globalThis.__zw_setTimeout === 'function') return globalThis.__zw_setTimeout;
+    return null;
+  }
   globalThis.setTimeout = function(fn, delay) {
     var handle = _timerId++;
     if (typeof fn !== 'function') return handle;
@@ -2017,8 +2030,9 @@
         fn();
       } catch (_e) {}
     };
-    if (typeof __zw_setTimeout === 'function') {
-      try { __zw_setTimeout(id, delay | 0); return handle; }
+    var hostSt = _zwHostSetTimeout();
+    if (hostSt) {
+      try { hostSt(id, delay | 0); return handle; }
       catch (_e) { delete globalThis.__zw_pending[id]; }
     }
     // fallback：无 host → microtask 同步触发（旧行为）。
@@ -2031,7 +2045,8 @@
     if (typeof fn !== 'function') return handle;
     var id = _intervalIdKey(handle);
     var ms = delay | 0;
-    if (typeof __zw_setTimeout === 'function') {
+    var hostSt = _zwHostSetTimeout();
+    if (hostSt) {
       // host 路径：回调内 re-arm 实现重复触发（host 仅实现单次定时器）。
       var arm = function() {
         globalThis.__zw_pending[id] = function() {
@@ -2043,7 +2058,7 @@
           } catch (_e) {}
           arm();
         };
-        try { __zw_setTimeout(id, ms); }
+        try { hostSt(id, ms); }
         catch (_e) { delete globalThis.__zw_pending[id]; }
       };
       arm();
