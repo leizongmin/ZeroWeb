@@ -2,7 +2,7 @@
 
 **入口文档**: [../keyboard-page-scrolling.md](../keyboard-page-scrolling.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-07（M3 完成——scrollIntoView 选项面摸底 + scroll 事件语义断言资产落地）
+**最后更新**: 2026-09-07（P1 收口——snap/input 三案经 keyboard 套件可执行 + Timeout 根因定位（runner 无真帧循环 scrollend 语义），与 keyboard-default-actions M1 切片 3 同轮）
 
 ---
 
@@ -37,7 +37,7 @@
 
 | # | 缺口 | 状态 |
 |---|------|------|
-| P1 | 用例覆盖为零（上游键盘滚动用例稀缺——本地 reftest 补足策略） | 🔶 上游 snap/input 三案勘察 defer（依赖 testdriver Actions 键盘链——keyboard-default-actions M1 切片 2 共享基建）；本地单测 1 案落地（evidence/2026-09-07-m1-keyboard-scroll-baseline.md）|
+| P1 | 用例覆盖为零（上游键盘滚动用例稀缺——本地 reftest 补足策略） | ✅ defer 解除（2026-09-07，keyboard-default-actions M1 切片 2/3 同轮）——snap/input 三案（keyboard.html/paged.html/scroll-padding-paged.html）已导入 keyboard 套件并可执行：paged 1P/1F/1Timeout + keyboard 1 Timeout + scroll-padding 1 Timeout；**Timeout 根因定位**：waitForScrollEndFallback 依赖 scroll 事件 + rAF 帧循环静默窗（runner 无真帧循环——`__ZW_RAF_FRAME_DRIVEN` OFF 路径 rAF 同步 stub，scroll 未发生时 promise 永挂 → testharness completion 不触发）；paged 1F = snap 容器 Space 键滚动目标判定（P3 跨域项同一根因）。本地单测 1 案 + 窗口滚动七断言 + scrollIntoView 五断言落地（evidence/2026-09-07-m1-keyboard-scroll-baseline.md）|
 | P2 | 键盘滚动分发层（键位→滚动量）缺失 | ✅ 底座 R3254-M9 既有（keydown 回执驱动）+ 本地单测断言固化（Space/PageUp/PageDown/方向键/修饰变体/None 键位）|
 | P3 | 滚动目标判定 + 嵌套传播缺失 | 🔶 M2 切片 1（2026-09-07，fad120776）：Ctrl+Home/End 修饰变体回执链接通；焦点→容器→根链依赖 renderer S3 layout 几何（跨域 defer——R3298 S2 注记协调点），非本流可闭环 |
 | P4 | scrollIntoView 选项面 / scroll 事件联动未核实 | ✅ M3（2026-09-07）：R3060 选项面摸底完成（block start/end/center 公式 + smooth 简化已记录）；scroll 事件语义断言资产两件（窗口七断言 + scrollIntoView 五断言，标明本地）|
