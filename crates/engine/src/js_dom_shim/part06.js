@@ -4489,14 +4489,30 @@
           var _r3kA = this.startOffset | 0, _r3kB = this.endOffset | 0;
           if (_r3kA > _r3kB) { var _r3kT = _r3kA; _r3kA = _r3kB; _r3kB = _r3kT; }
           var _r3kKids = _r213sc.childNodes || [];
+          // R3254-E2 切片 10：移除通道**容器记账直达**——此前经 c.remove()（wrapper
+          // 委托 parentNode.removeChild → sel 代理通道对解析 wrapper 无 sel 可寻址 →
+          // host mutation 缺失且本地桶不记账 → 融合读回 stale）。改直达：本地 relink
+          //（childNodes splice/parentNode null——兼容 plain wrapper 与 proxy 两形态）+
+          // _mo_notify childList（removedNodes=[c]）——单一汇流点完成桶记账
+          //（_zwHCLiveInvalidate）+ MO 投递。
+          var _r3kCSel = (_r213sc && _r213sc.__zwSelector) || null;
+          var _r3kCHdl = (_r213sc && _r213sc.__zwHandle) || null;
           for (var _r3ki = Math.min(_r3kB, _r3kKids.length) - 1; _r3ki >= _r3kA; _r3ki--) {
             var _r3kc = _r3kKids[_r3ki];
             if (!_r3kc) continue;
             try {
-              if (typeof _r3kc.remove === 'function') _r3kc.remove();
-              if (_r3kc.parentNode != null && typeof _r213sc.removeChild === 'function') {
-                _r213sc.removeChild(_r3kc);
+              if (typeof _r213sc.removeChild === 'function') {
+                try { _r213sc.removeChild(_r3kc); } catch (_eR3kRm) {}
               }
+              // 本地 relink 兜底（plain wrapper 的 childNodes 数组直接 splice——
+              // removeChild 抛错/未 relink 时保证融合视图立即生效）。
+              try {
+                var _r3kArr = _r213sc.childNodes || [];
+                var _r3kIdx = _r3kArr.indexOf(_r3kc);
+                if (_r3kIdx >= 0) _r3kArr.splice(_r3kIdx, 1);
+                _r3kc.parentNode = null;
+              } catch (_eR3kLr) {}
+              _mo_notify(_r3kCSel, _r3kCHdl, { type: 'childList', addedNodes: [], removedNodes: [_r3kc] });
             } catch (_eR3kSame) {}
           }
           try { this.collapse(true); } catch (_eR3kCol) {}
