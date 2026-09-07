@@ -773,3 +773,17 @@ pub fn script_select_key_action(selector: &str, key: &str) -> String {
     let esc_key = escape_js_string(key);
     format!("__zw_select_key_action('{esc_sel}', '{esc_key}')")
 }
+
+/// 构造「滚动键默认动作」的宿主脚本（R3254-KP5，keyboard-page-scrolling goal M2 切片 2）。
+///
+/// shim `__zw_scroll_key_default(sel, key)`：keydown 滚动键未被取消时的滚动默认动作——
+/// 幅度映射与 browser `app_input.scroll_delta_for_key`（R3254-M9）同源：Space/PageDown
+/// = +0.85×视口高、PageUp = −0.85×视口高、ArrowDown/Up = ±40、Home/End = 顶/底。
+/// 目标元素经 R3047 `scrollTop`/`scrollLeft` setter 落 `_scrollOffsets` 并同步派 'scroll'
+/// 事件（headless 无真滚动管线，JS 可观察面 = scrollTop 值 + scroll 事件）。目标非
+/// Element（null/undefined）时回落 window.scrollTo。
+pub fn script_scroll_key_default(selector: &str, key: &str) -> String {
+    let esc_sel = escape_js_string(selector);
+    let esc_key = escape_js_string(key);
+    format!("__zw_scroll_key_default && __zw_scroll_key_default('{esc_sel}', '{esc_key}')")
+}

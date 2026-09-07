@@ -4422,3 +4422,89 @@ document.execCommand("insertHTML", false, "Z");
         );
     }
 }
+
+#[test]
+fn test_scroll_key_default_r3254_kp5() {
+    // R3254-KP5（keyboard-page-scrolling goal M2 切片 2，2026-09-07）：滚动键默认动作
+    // shim `__zw_scroll_key_default`——幅度映射与 browser app_input R3254-M9 同源
+    // （ArrowDown/Up=±40、ArrowRight/Left=±40 水平、Space/PageDown=+0.85×视口高、
+    // PageUp=−0.85、Home/End=顶/底）；经 R3047 scrollTop/scrollLeft setter 落
+    // _scrollOffsets 并同步派 'scroll' 事件（snap 三案 scrollend promise 链的驱动面）。
+    // 驱动用例：WPT css-scroll-snap/input 三案（keyboard.html 8/8 可完成、断言差异 =
+    // snap 布局跨域缺口）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=scroller style='overflow:scroll' tabindex=0></div></body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // ①：ArrowDown = +40、ArrowUp 回 −40；scroll 事件随 setter 同步派发。
+    sandbox
+        .execute(
+            r##"
+var s = document.getElementById("scroller");
+globalThis.__scrollCount = 0;
+s.addEventListener("scroll", function () { __scrollCount++; });
+__zw_scroll_key_default("#scroller", "ArrowDown");
+globalThis.__r1 = s.scrollTop + "/" + __scrollCount;
+__zw_scroll_key_default("#scroller", "ArrowUp");
+globalThis.__r1 += "/" + s.scrollTop + "/" + __scrollCount;
+"##,
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__r1)").unwrap().value,
+        "40/1/0/2",
+        "ArrowDown +40 → scrollTop=40 scroll×1；ArrowUp −40 → 0 scroll×2"
+    );
+    // ②：水平轴 ArrowRight/Left 独立（scrollLeft）。
+    sandbox
+        .execute(
+            r##"
+__zw_scroll_key_default("#scroller", "ArrowRight");
+globalThis.__r2 = s.scrollLeft + "/" + __scrollCount;
+__zw_scroll_key_default("#scroller", "ArrowLeft");
+globalThis.__r2 += "/" + s.scrollLeft;
+"##,
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__r2)").unwrap().value,
+        "40/3/0",
+        "ArrowRight scrollLeft=40；ArrowLeft 回 0"
+    );
+    // ③：PageDown/Space 页面幅（0.85×innerHeight=800→680）+ PageUp 反向 + Home/End 顶/底。
+    sandbox
+        .execute(
+            r##"
+__zw_scroll_key_default("#scroller", "PageDown");
+globalThis.__r3 = s.scrollTop;
+__zw_scroll_key_default("#scroller", "Home");
+globalThis.__r3 += "/" + s.scrollTop;
+__zw_scroll_key_default("#scroller", "End");
+globalThis.__r3 += "/" + s.scrollTop;
+__zw_scroll_key_default("#scroller", " ");
+globalThis.__r3 += "/" + s.scrollTop;
+"##,
+        )
+        .unwrap();
+    // End → scrollTop=1e6 → setter clamp? setter 仅 clamp NaN/负，1e6 原样存。
+    // Space 从 1e6 起 +680 → 1000680。
+    assert_eq!(
+        sandbox.execute("String(globalThis.__r3)").unwrap().value,
+        "680/0/1000000/1000680",
+        "PageDown=680、Home=0、End=1e6、Space=+680"
+    );
+}

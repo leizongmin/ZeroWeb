@@ -3321,16 +3321,24 @@
   // 把 DOM setup 延迟到「布局/绘制后」。harness 在脚本+load 派发后才截图，故 rAF
   // 同步立即执行回调即可让 setup mutation 被记录并应用到二次渲染（镜像 setTimeout 的 microtask 语义，
   // 但同步以保证回调在 sandbox 生命周期内必然执行）。
+  // R3254-KP3（keyboard-page-scrolling goal M2 切片 2，2026-09-07）：同步 stub 的回调
+  // 时间戳从恒 0 改为真实 `performance.now()`——css-scroll-snap/input 的
+  // waitForAnimationEnd rAF 循环（tick(frames,time) 依 `time - start_time > TIMEOUT` /
+  // frames 不变窗判收敛）在恒 0 时间戳下永不收敛 → 套件 3 案全 Timeout（testharness
+  // completion 不触发）。真实时间戳 + frames 递增使该循环在预算内（64 帧）自然收敛，
+  // 断言进入可执行面（Timeout → 真断言结果）。DOMHighResTimeStamp 单调性满足。
   globalThis.requestAnimationFrame = function(fn) {
     var id = _timerId++;
     if (globalThis.__ZW_RAF_FRAME_DRIVEN) {
       // 帧驱动（R2713a）：延后到 host render 后的 __zw_raf_tick 派发（spec rAF 语义）。
       if (typeof fn === 'function') _rafPending[id] = fn;
     } else if (typeof fn === 'function' && _rafBudget > 0) {
-      // 同步 stub（reftest 兼容，默认路径）：预算内立即 fn(0)，让 double-rAF setup mutation
-      // 进入最终 HTML 被 harness 单渲染捕获。
+      // 同步 stub（reftest 兼容，默认路径）：预算内立即执行，让 double-rAF setup mutation
+      // 进入最终 HTML 被 harness 单渲染捕获。时间戳取真实时钟（spec DOMHighResTimeStamp——
+      // 恒 0 曾使依赖时间推进的动画收敛循环永不退出）。
       _rafBudget--;
-      try { fn(0); } catch (_e) {}
+      var _r3254ts = (typeof __zw_performance_now === 'function') ? __zw_performance_now() : 0;
+      try { fn(_r3254ts); } catch (_e) {}
     }
     return id;
   };

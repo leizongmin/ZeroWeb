@@ -1861,6 +1861,51 @@
     return true;
   };
 
+  // R3254-KP5（keyboard-page-scrolling goal M2 切片 2，2026-09-07）：滚动键默认动作——
+  // runner send_keys 滚动键（arrows/pages/home/end/space）keydown 未被页面取消时执行。
+  // 幅度映射与 browser `app_input.scroll_delta_for_key`（R3254-M9）同源：Space/PageDown
+  // = +0.85×视口高、PageUp = −0.85×视口高、ArrowDown/Up = ±40、Home/End = 顶/底（Chromium
+  // UA 滚动量近似）。目标元素经 R3047 scrollTop setter 落 `_scrollOffsets` 并同步派
+  // 'scroll' 事件——headless 无真滚动管线，JS 可观察面（scrollTop 值 + scroll 事件序）
+  // 即 css-scroll-snap/input 三案的验收面（scrollend promise 链依赖 scroll 事件驱动）。
+  // 目标缺失/非 Element（text control 聚焦等）时回落 window.scrollTo（window 级滚动）。
+  // https://drafts.csswg.org/css-scroll-snap/ ：snap 吸附布局归渲染流域——此处仅线性
+  // 滚动（吸附断言失败根因已在 goal master.md 跨域协调点记录）。
+  globalThis.__zw_scroll_key_default = function (sel, key) {
+    var el = null;
+    try { el = document.querySelector(sel); } catch (_e) {}
+    var vh = (globalThis.innerHeight | 0) || 600;
+    var page2 = Math.round(vh * 0.85);
+    var axis = 'y';
+    var delta = 0;
+    if (key === 'ArrowDown') delta = 40;
+    else if (key === 'ArrowUp') delta = -40;
+    else if (key === 'ArrowRight') { axis = 'x'; delta = 40; }
+    else if (key === 'ArrowLeft') { axis = 'x'; delta = -40; }
+    else if (key === ' ' || key === 'Space' || key === 'PageDown') delta = page2;
+    else if (key === 'PageUp') delta = -page2;
+    else if (key !== 'Home' && key !== 'End') return false;
+    if (el && el.nodeType === 1 && typeof el.scrollTop === 'number') {
+      if (key === 'Home') { el.scrollTop = 0; el.scrollLeft = 0; return true; }
+      if (key === 'End') { el.scrollTop = 1e6; el.scrollLeft = 1e6; return true; }
+      if (delta) {
+        if (axis === 'x') el.scrollLeft = (el.scrollLeft || 0) + delta;
+        else el.scrollTop = (el.scrollTop || 0) + delta;
+        return true;
+      }
+      return false;
+    }
+    // window 级滚动（目标缺失 / 目标非可滚动元素）。
+    if (key === 'Home') { globalThis.scrollTo(0, 0); return true; }
+    if (key === 'End') { globalThis.scrollTo(1e6, 1e6); return true; }
+    if (delta) {
+      if (axis === 'x') globalThis.scrollTo((globalThis.scrollX | 0) + delta, globalThis.scrollY | 0);
+      else globalThis.scrollTo(globalThis.scrollX | 0, (globalThis.scrollY | 0) + delta);
+      return true;
+    }
+    return false;
+  };
+
   globalThis.document = {
     // js-dom M3 R100：shim document 标记——generate_dom_api_polyfill（execute_script_with_dom
     // 每次前置的最小虚拟 DOM stub）据此跳过覆写（幂等安装，保 execute 路径上的真 document 桥）。

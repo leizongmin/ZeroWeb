@@ -279,7 +279,7 @@ fetch-wpt-keyboard:
 	bash tests/wpt-runner/scripts/fetch-keyboard-subset.sh
 
 testharness-keyboard: target-disk-guard fetch-wpt-keyboard target/test-guard zero-wpt-runner-release
-	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),900) -- ./target/release/zero-wpt-runner testharness-keyboard $(if $(FILTER),$(FILTER),)
+	ZW_TESTHARNESS_RAF_FRAME_DRIVEN=1 ./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),900) -- ./target/release/zero-wpt-runner testharness-keyboard $(if $(FILTER),$(FILTER),)
 
 # IndexedDB goal M1：上游 IndexedDB factory/global/event 首批 testharness 基线。
 # `.any.js` 用例由 runner 包装为 window test；filter 按文件路径子串透传。

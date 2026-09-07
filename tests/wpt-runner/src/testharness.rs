@@ -3779,6 +3779,17 @@ fn run_testharness_html_inner(
     // 跳到流末——loop 回卷再 play 的推进失真根因）。
     let pump_clock = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
     let _ = webview.install_playback_bridge_with_clock(Some(std::sync::Arc::clone(&pump_clock)));
+    // R3254-KP4（keyboard-page-scrolling goal M2 切片 2，2026-09-07）：帧驱动 rAF
+    // opt-in——`ZW_TESTHARNESS_RAF_FRAME_DRIVEN=1` 时在页面脚本执行前置位 shim 的
+    // `__ZW_RAF_FRAME_DRIVEN`（R2713a kill-switch 同名语义），rAF 回调改在下方 probe
+    // 循环按帧派发（`__zw_raf_tick(墙钟 ms)`）。默认 OFF 维持同步 stub（既有全部
+    // testharness 套件零行为变化；仅 testharness-keyboard 入口开启——snap 三案的
+    // waitForDelayWithoutScrollEvent 200ms 静默窗依赖真实墙钟在帧间流逝，同步级联内
+    // 永不满足 → 整簇 Timeout）。
+    let raf_frame_driven = std::env::var("ZW_TESTHARNESS_RAF_FRAME_DRIVEN").as_deref() == Ok("1");
+    if raf_frame_driven {
+        let _ = webview.execute_script("globalThis.__ZW_RAF_FRAME_DRIVEN = true;");
+    }
     let _zw_hb2 = std::fs::write("/tmp/zw-hb.txt", format!("pre-scripts {}\n", case_name));
     let script_result = webview.run_page_scripts_strict();
     let _zw_hb3 = std::fs::write("/tmp/zw-hb2.txt", format!("post-scripts {}\n", case_name));
@@ -3993,6 +4004,13 @@ fn run_testharness_html_inner(
         }
 
         let _ = webview.poll_service_worker_runtime_events();
+        // R3254-KP4：帧驱动 rAF 派发（opt-in）——每轮 probe 一帧，时间戳取 case 启动
+        // 起的墙钟 ms（spec DOMHighResTimeStamp 单调；shim `__zw_raf_tick` 在 OFF 时
+        // 早返零开销）。rAF 内重注册进下一帧队列（shim 快照语义）。
+        if raf_frame_driven {
+            let raf_ms = playback_clock_origin.elapsed().as_secs_f64() * 1000.0;
+            let _ = webview.execute_script(&format!("__zw_raf_tick({raf_ms});"));
+        }
         // js-dom R342：动画时钟泵——页面脚本设置的 transition/animation 需要第二轮
         // re-style + 时钟 tick 才产生事件（run_page_scripts 只执行脚本不重渲染）。
         // 真实时间作时钟源：probe 循环的墙钟间隔自然推进 30ms/100ms 量级测试动画；
@@ -4736,22 +4754,27 @@ fn apply_testdriver_command(webview: &mut WebView, command: &TestdriverCommand) 
                     ctrl_sticky = ctrl_k;
                     alt_sticky = alt_k;
                     meta_sticky = meta_k;
-                    for event_type in ["keydown", "keyup"] {
-                        let script = zero_engine::script_dispatch_dom_event(
-                            &selector,
-                            event_type,
-                            Some(&zero_engine::DomEventDetail {
-                                key: Some(key_name.to_string()),
-                                code: Some(key_name.to_string()),
-                                shift_key: shift_k,
-                                ctrl_key: ctrl_k,
-                                alt_key: alt_k,
-                                meta_key: meta_k,
-                                ..Default::default()
-                            }),
-                        );
-                        let _ = webview.execute_script(&script);
+                    let scroll_detail = zero_engine::DomEventDetail {
+                        key: Some(key_name.to_string()),
+                        code: Some(key_name.to_string()),
+                        shift_key: shift_k,
+                        ctrl_key: ctrl_k,
+                        alt_key: alt_k,
+                        meta_key: meta_k,
+                        ..Default::default()
+                    };
+                    // R3254-K2 切片 3：keydown/keyup 事件对。
+                    // R3254-KP5（keyboard-page-scrolling goal M2 切片 2）：keydown 未被
+                    // 页面取消时追加滚动默认动作（`__zw_scroll_key_default`——幅度映射
+                    // 与 browser R3254-M9 同源，经 R3047 scrollTop setter 派 'scroll'
+                    // 事件）。旧版只派事件不滚动 → snap 三案的 scrollend promise 链
+                    // 永不解阻（整簇 Timeout）。
+                    let keydown_result = dispatch_key_event_script(webview, &selector, "keydown", &scroll_detail);
+                    if keydown_result != "prevented" {
+                        let scroll_script = zero_engine::script_scroll_key_default(&selector, key_name);
+                        let _ = webview.execute_script(&scroll_script);
                     }
+                    dispatch_key_event_script(webview, &selector, "keyup", &scroll_detail);
                     continue;
                 }
                 let action = match character {
@@ -4794,7 +4817,22 @@ fn apply_testdriver_command(webview: &mut WebView, command: &TestdriverCommand) 
                     //（keydown-input-events.html 的 cancel 语义同款；非字符键无 keypress）。
                     HtmlUserAction::InsertText { .. } => {
                         if dispatch_key_event_script(webview, &selector, "keydown", &key_detail) != "prevented" {
-                            if let Some(error) = dispatch_action(webview, target, action) {
+                            // R3254-KP5：空格对**非可编辑**目标（div/body 等无文本插入面）
+                            // = 页面滚动（UI Events 默认动作；snap 用例 KEY_CODE_MAP 'Space'
+                            // → ' ' 走此路径）。webview InsertText 对不可编辑目标返
+                            // noop(NotApplicable)——以此判定回落滚动默认动作；可编辑宿主
+                            // （text control/CE）与 buttonish（Activate 递归）行为不变。
+                            if character == ' ' {
+                                let scroll_fallback = matches!(
+                                    dispatch_action(webview, target, action),
+                                    Some(ref error)
+                                        if error.starts_with("action was not applicable")
+                                );
+                                if scroll_fallback {
+                                    let scroll_script = zero_engine::script_scroll_key_default(&selector, " ");
+                                    let _ = webview.execute_script(&scroll_script);
+                                }
+                            } else if let Some(error) = dispatch_action(webview, target, action) {
                                 return Some(error);
                             }
                             if !ctrl_sticky && !meta_sticky {
