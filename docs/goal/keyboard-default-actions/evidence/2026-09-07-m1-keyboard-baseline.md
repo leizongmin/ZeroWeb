@@ -133,3 +133,40 @@ onselectionchange 6/6 零回归；clippy -D warnings 零警告。
 **残余 4F**（根因均已在案）：implicit-submission 3F = js-dom 融合视图双计（跨域
 协调点）；paged.html 1F + snap 三案 Timeout = runner 无真滚动管线/帧循环
 （keyboard-page-scrolling 共享面 P1/P3 记录）。
+
+# K4 切片 2 + K5 切片 3 — 两键时序 + type-ahead（2026-09-07，同日追加）
+
+**commit 581258c66**。两项 K4/K5 defer 残余解除：
+
+**K4 切片 2——空格 keyup 激活时序**：UI Events/Chromium——Enter 在 keydown 触发
+click、Space 在 keyup 触发。`script_buttonish_probe`（script_gen）分类 BUTTON /
+input type=button|submit|reset；runner send_keys 空格对 buttonish 目标 keydown 只派
+keydown/keyup 事件、keyup 后才走 InsertText 通道（webview Activate 递归合成 click）；
+非 buttonish（可编辑/滚动回落）行为不变。
+
+**K5 切片 3——select type-ahead**：shim `__zw_select_type_ahead(sel, char)`——closed
+SELECT 可打印字符键入跳转：500ms idle 缓冲（shim setTimeout 真实定时器面）、前缀匹配
+（大小写不敏感、跳 disabled）、不可匹配缓冲即弃重试、select.value 赋值（R3000
+SelectOption 状态）+ input/change 事件序。runner send_keys 可打印字符对 SELECT 目标
+路由 type-ahead（消费后跳过 InsertText/keypress——SELECT 无文本插入面、字符不产生
+点击）；keydown 未取消才应用。**无上游强制用例**（键盘映射 UA-dependent——上游
+customizable-select 的 select-keyboard-behavior 亦为 .optional），本地 runner 单测
+标明本地（goal 关键约束允许）。
+
+**配套**：fetch-keyboard-subset.sh 补 snap 三案 + scroll_support.js/common.js
+helpers——KEYBOARD_TEST_SUBDIRS 第三目录的用例此前仅手工拉取，本地删除后不可复现；
+现 fetch 脚本覆盖全 9 用例 + 3 helpers（实测：删 keyboard.html 后重跑脚本逐字节还原）。
+
+**单测资产**：
+1. send_keys_space_activates_button_on_keyup_r3254_k4（runner，三组：button 时序序
+   列 kd→ku→click 无 keypress / input button / 可编辑空格插入不触发 click）
+2. test_buttonish_probe_r3254_k4_slice2（engine part06，七 target 分类：b/ib/is/ir
+   → '1'，txt/dv/sel → ''）
+3. send_keys_select_type_ahead_multi_char_r3254_k5（runner，单 subtest 确定性序列：
+   t→two、th 缓冲精确化→three、600ms 清缓冲后 f 不可匹配保持、o→one，含
+   input|change 事件序断言）
+
+**验证**：runner 207 全绿（+2）；engine 2643 全绿（+1）；keyboard 套件 15P 稳定
+（残余 2T 既有跨域记录不变）；selection 2704P 零回归（±1 为套件内已知 host-view
+伪失败噪声，与键盘改动无关——selection 用例不经 send_keys）；clippy -D warnings
+零警告。
