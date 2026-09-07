@@ -1191,7 +1191,7 @@ fn test_selection_surface_r3254_m1() {
              try { window.getSelection().collapseToEnd(); } catch (e) { globalThis.__e2 = e.name || String(e); }\
              globalThis.__e3 = '';\
              try { window.getSelection().extend(document.body); } catch (e) { globalThis.__e3 = e.name || String(e); }\
-             globalThis.__e4 = '';\
+             globalThis.__e4 = 'no-throw';\
              try { window.getSelection().deleteFromDocument(); } catch (e) { globalThis.__e4 = e.name || String(e); }",
         )
         .unwrap();
@@ -1199,7 +1199,6 @@ fn test_selection_surface_r3254_m1() {
         ("__e1", "collapseToStart"),
         ("__e2", "collapseToEnd"),
         ("__e3", "extend"),
-        ("__e4", "deleteFromDocument"),
     ] {
         assert_eq!(
             sandbox.execute(&format!("String(globalThis.{k})")).unwrap().value,
@@ -1207,6 +1206,11 @@ fn test_selection_surface_r3254_m1() {
             "空 selection 调 {what}() 须抛 InvalidStateError（WPT collapseToStartEnd/extend-exception）"
         );
     }
+    assert_eq!(
+        sandbox.execute("String(globalThis.__e4)").unwrap().value,
+        "no-throw",
+        "空 selection 调 deleteFromDocument() 为 no-op（selection-api #dom-selection-deletefromdocument）"
+    );
     // ④ getRangeAt 越界抛 IndexSizeError；getRangeAt(0) 空 selection 也越界。
     sandbox
         .execute(

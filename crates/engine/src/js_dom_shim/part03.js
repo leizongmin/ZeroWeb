@@ -9067,6 +9067,11 @@
     var doc = {
       nodeType: 9,
       nodeName: '#document',
+      // R3254-E2 切片 6（editing goal，2026-09-07）：detached doc 的 **defaultView =
+      // null**（spec https://html.spec.whatwg.org/multipage/window-object.html#dom-document-
+      // defaultview——无 browsing context 的 Document 返 null 而非 undefined；
+      // selection/getSelection.html "defaultView of created HTML document must be null"）。
+      defaultView: null,
       // R185（js-dom M4）：isSameNode（spec `dom-node-issamenode` 引用比较；WPT
       // Node-isSameNode "documents should be compared on reference"——createDocument
       // 产物的 detached doc）。
@@ -9709,6 +9714,9 @@
       // call stack**；WPT Range-compareBoundaryPoints 的 "Creating context/argument
       // range threw" 4041F 整簇根因——common.js rangeFromEndpoints 经
       // ownerDocument(node).createRange()）。初始边界 (doc, 0)（R183 主文档同款）。
+      // R3254-E2 切片 6（editing goal，2026-09-07）：detached doc（无 browsing
+      // context）的 getSelection 返 null（selection-api #dom-document-getselection）。
+      getSelection: function () { return null; },
       createRange: function () {
         var _r204r = _makeRange();
         try {
@@ -9717,6 +9725,15 @@
           _r204r._startOffsetBase = 0;
           _r204r._endOffsetBase = 0;
         } catch (_eR204a) {}
+        // R3254-E2 切片 6（editing goal，2026-09-07）：Range.prototype 链接（主文档
+        // createRange part06:2982 同款）——common.js rangeFromEndpoints 经
+        // ownerDocument(node).createRange() 建 foreign-doc 域，缺链 →
+        // `testRange instanceof Range` false（deleteFromDocument Range 12+ 簇）。
+        try {
+          if (globalThis.Range && globalThis.Range.prototype) {
+            Object.setPrototypeOf(_r204r, globalThis.Range.prototype);
+          }
+        } catch (_eR204p) {}
         return _r204r;
       },
       createElement: function (t) {

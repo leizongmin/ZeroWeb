@@ -1541,6 +1541,37 @@
       });
     } catch (_eDV) { doc.defaultView = null; }
     doc.createElement = function (tag) { return _zwIframeCreateElement(doc, tag); };
+    // R3254-E2 切片 6（editing goal，2026-09-07）：**document.getSelection**——spec
+    // 每个 Document 有 getSelection（https://w3c.github.io/selection-api/#dom-document-
+    // getselection）——iframe doc 经 late-bound defaultView（_r115WinRef）转 win 的
+    // per-iframe Selection；无 browsing context（win 未建）→ null。
+    doc.getSelection = function () {
+      try {
+        var w = (typeof _r115WinRef !== 'undefined') ? _r115WinRef : null;
+        return w ? w.getSelection() : null;
+      } catch (_e3kDgs) { return null; }
+    };
+    // R3254-E2 切片 6（editing goal，2026-09-07）：iframe doc 的 **own createRange**——
+    // common.js rangeFromEndpoints 经 ownerDocument(endpoints[0]).createRange() 建域；
+    // 此前 detached/foreign 端点（iframe createElement 产物 ownerDocument=iframe doc）走
+    // 到无 prototype 链接的工厂 → `testRange instanceof Range` false（deleteFromDocument
+    // Range 9+ 簇）。own 方法：_makeRange + Range.prototype 链接 + (doc,0) 初始边界
+    // （主文档 createRange part06:2970 同款）。
+    doc.createRange = function () {
+      var _r3kCr = _makeRange();
+      try {
+        _r3kCr.startContainer = doc;
+        _r3kCr.endContainer = doc;
+        _r3kCr._startOffsetBase = 0;
+        _r3kCr._endOffsetBase = 0;
+      } catch (_e3kCr) {}
+      try {
+        if (globalThis.Range && globalThis.Range.prototype) {
+          Object.setPrototypeOf(_r3kCr, globalThis.Range.prototype);
+        }
+      } catch (_e3kCrP) {}
+      return _r3kCr;
+    };
     doc.createElementNS = function (ns, qualifiedName) {
       var _nsStr = (ns == null) ? '' : String(ns);
       var _q = String(qualifiedName);
@@ -1670,6 +1701,87 @@
   // 文档 ASCII-lowercase localName + ASCII-uppercase tagName、namespaceURI HTMLNS（用例期望
   // createElement("foo") XML → "foo" / HTML → localName "foo" tagName "FOO"）。元素为轻量对象
   // 挂 Element.prototype 链（instanceof win.Element——win 构造器转发主 realm）。
+  // R3254-E2 切片 6（editing goal，2026-09-07）：iframe/detached-doc 工厂元素的
+  // **CSSStyleDeclaration 面板**——此前工厂元素无 `.style`（`el.style.display = x` 抛
+  // 'setting display' TypeError——selection/test-iframe.html 顶层语句经 R206 per-part
+  // catch 落 window.unexpectedException → deleteFromDocument/getSelection iframe 簇 60F+12F
+  // 的 setup 前置全灭）。expando 表承载声明，camelCase 直写/读 + setProperty/
+  // getPropertyValue/removeProperty + cssText；写通经 el.setAttribute('style', …) 持久化到
+  // 属性层（序列化/克隆可见）。
+  function _zwIframeStyleDecl(el) {
+    var decls = {};
+    var cssTextOf = function () {
+      var out = '';
+      for (var k in decls) {
+        if (Object.prototype.hasOwnProperty.call(decls, k) && decls[k] != null && decls[k] !== '') {
+          out += (out ? '; ' : '') + k + ': ' + decls[k];
+        }
+      }
+      return out;
+    };
+    var kebab = function (name) {
+      return String(name).replace(/[A-Z]/g, function (c) { return '-' + c.toLowerCase(); });
+    };
+    var decl = {
+      get cssText() { return cssTextOf(); },
+      set cssText(v) {
+        decls = {};
+        var parts = String(v == null ? '' : v).split(';');
+        for (var i = 0; i < parts.length; i++) {
+          var colon = parts[i].indexOf(':');
+          if (colon <= 0) continue;
+          var pn = parts[i].slice(0, colon).trim().toLowerCase();
+          var pv = parts[i].slice(colon + 1).trim();
+          if (pn && pv) decls[pn] = pv;
+        }
+        try { el.setAttribute('style', cssTextOf()); } catch (_eCt) {}
+      },
+      setProperty: function (name, value, _priority) {
+        var pn = kebab(name).toLowerCase();
+        if (value == null || value === '') delete decls[pn];
+        else decls[pn] = String(value);
+        try { el.setAttribute('style', cssTextOf()); } catch (_eSp) {}
+      },
+      getPropertyValue: function (name) {
+        var v = decls[kebab(name).toLowerCase()];
+        return v == null ? '' : v;
+      },
+      removeProperty: function (name) {
+        var pn = kebab(name).toLowerCase();
+        var old = decls[pn] || '';
+        delete decls[pn];
+        try { el.setAttribute('style', cssTextOf()); } catch (_eRp) {}
+        return old;
+      },
+      item: function (i) {
+        var keys = Object.keys(decls);
+        return i < keys.length ? keys[i] : '';
+      },
+      get length() { return Object.keys(decls).length; },
+    };
+    // camelCase 直读/直写代理（style.display / style.cssFloat 形态）——未声明的属性名
+    // 只对合法标识符形态挂 accessor；未知键保持 undefined（读）/ 落表（写）。
+    return new Proxy(decl, {
+      get: function (target, prop) {
+        if (prop in target) return target[prop];
+        if (typeof prop === 'string' && /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(prop)
+            && !Object.prototype.hasOwnProperty.call(target, prop)) {
+          var v = decls[kebab(prop).toLowerCase()];
+          return v == null ? '' : v;
+        }
+        return undefined;
+      },
+      set: function (target, prop, value) {
+        if (typeof prop === 'string' && /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(prop)
+            && !(prop in target)) {
+          target.setProperty(prop, value == null ? '' : String(value));
+          return true;
+        }
+        target[prop] = value;
+        return true;
+      },
+    });
+  }
   function _zwIframeCreateElement(doc, tag) {
     var t = String(tag); // WebIDL DOMString 转换（undefined → 'undefined'，null → 'null'）
     // R115：非法名抛 InvalidCharacterError（spec `dom-document-createelement` 步骤 2——Name
@@ -1701,6 +1813,9 @@
       // R181（js-dom M4）：创建域印章（与 detached doc createElement 同源——adoption
       // 子树传播点消费，spec concept-node-adopt）。
       _zwCreatorDoc: doc,
+      // R3254-E2 切片 6：CSSStyleDeclaration 面板（工厂元素此前无 `.style`——test-iframe
+      // 的 `testDiv.style.display` TypeError → unexpectedException → iframe 簇 setup 全灭）。
+      style: _zwIframeStyleDecl(el),
       childNodes: [],
       attributes: [],
       parentNode: null,
@@ -2957,7 +3072,10 @@
           ).call(
             win, win, win, doc, win.navigator, win.fetch, win.Headers, win.Request, win.Response, win.URL, win.parent
           );
-        } catch (_eIframeScript) {}
+        } catch (_eIframeScript) {
+          // R3254-E2 切片 6：错误显面（此前静默吞——iframe 簇根因定位不可达）。
+          try { win.__zwLastIframeScriptError = String(_eIframeScript && _eIframeScript.message || _eIframeScript); } catch (_e2) {}
+        }
       }
     }
     var initialHistoryEntries = [{ state: null, url: doc && doc._zwURL ? String(doc._zwURL) : 'about:blank' }];
@@ -3011,7 +3129,89 @@
         forward: function() {}
       },
       navigator: { serviceWorker: serviceWorker },
+      // R3254-E2 切片 6（editing goal，2026-09-07）：**per-iframe Selection 面**——
+      // iframe win 此前无 getSelection（deleteFromDocument.html 经
+      // `contentWindow.getSelection().addRange/removeAllRanges/deleteFromDocument`
+      // 驱动 iframe 域选区；getSelection.html 同消费）。spec 每个 Window 有自己的
+      // Selection（https://drafts.csswg.org/cssom-view/#dom-window）——轻量实例：Range
+      // 承载（addRange 存原引用保 identity）+ Selection.prototype 链（instanceof）；
+      // deleteFromDocument 经 _ranges[0].deleteContents（R2929 通道）。方法面按
+      // iframe 用例消费集（addRange/removeAllRanges/getRangeAt/rangeCount/
+      // anchorNode/focusNode/isCollapsed/type/collapse/deleteFromDocument/containsNode）。
+      getSelection: function () {
+        if (win.__zwSelection) return win.__zwSelection;
+        var ranges = [];
+        var sel = {
+          get rangeCount() { return ranges.length; },
+          get isCollapsed() { return ranges.length === 0 || ranges[0].collapsed; },
+          get type() { return ranges.length === 0 ? 'None' : (ranges[0].collapsed ? 'Caret' : 'Range'); },
+          get anchorNode() { return ranges.length ? ranges[0].startContainer : null; },
+          get anchorOffset() { return ranges.length ? ranges[0].startOffset : 0; },
+          get focusNode() { return ranges.length ? ranges[0].endContainer : null; },
+          get focusOffset() { return ranges.length ? ranges[0].endOffset : 0; },
+          addRange: function (r) { if (r) ranges.push(r); },
+          removeRange: function (r) { var i = ranges.indexOf(r); if (i >= 0) ranges.splice(i, 1); },
+          removeAllRanges: function () { ranges.length = 0; },
+          getRangeAt: function (i) {
+            if (i < 0 || i >= ranges.length) {
+              throw new (globalThis.DOMException || Error)('getRangeAt: IndexSizeError', 'IndexSizeError');
+            }
+            return ranges[i];
+          },
+          collapse: function (node, offset) {
+            if (ranges.length === 0) {
+              throw new (globalThis.DOMException || Error)('collapse: InvalidStateError', 'InvalidStateError');
+            }
+            var r = ranges[0];
+            r.setEnd(node, offset);
+            r.setStart(node, offset);
+          },
+          collapseToStart: function () {
+            if (ranges.length === 0) throw new (globalThis.DOMException || Error)('InvalidStateError');
+            var s = ranges[0].startContainer, o = ranges[0].startOffset;
+            ranges[0].setEnd(s, o);
+            ranges[0].setStart(s, o);
+          },
+          collapseToEnd: function () {
+            if (ranges.length === 0) throw new (globalThis.DOMException || Error)('InvalidStateError');
+            var e = ranges[0].endContainer, o = ranges[0].endOffset;
+            ranges[0].setEnd(e, o);
+            ranges[0].setStart(e, o);
+          },
+          deleteFromDocument: function () {
+            // spec selection-api #dom-selection-deletefromdocument：「If this is empty,
+            // return」——空 selection 为 no-op（非抛错；与 Range.deleteContents 的空 no-op
+            // 一致——WPT deleteFromDocument.html Range 0 "empty" 直接调用不断言抛错）。
+            if (ranges.length === 0) return;
+            ranges[0].deleteContents();
+          },
+          containsNode: function (node, allowPartial) {
+            if (ranges.length === 0 || !node) return false;
+            try {
+              var r = ranges[0];
+              if (typeof r.isPointInRange === 'function' && node.nodeType !== 9) {
+                var len = node.childNodes ? node.childNodes.length : (node.length || 0);
+                return allowPartial
+                  ? r.isPointInRange(node, 0) || r.isPointInRange(node, len)
+                  : r.isPointInRange(node, 0) && r.isPointInRange(node, len);
+              }
+            } catch (_eIframeCn) {}
+            return false;
+          },
+          toString: function () { return ranges.length ? String(ranges[0].toString() || '') : ''; },
+        };
+        try {
+          if (globalThis.Selection && globalThis.Selection.prototype) {
+            Object.setPrototypeOf(sel, globalThis.Selection.prototype);
+          }
+        } catch (_eIframeSelProto) {}
+        win.__zwSelection = sel;
+        return sel;
+      },
       Element: globalThis.Element,
+      // R3254-E2 切片 6：Selection 构造器转发（getSelection.html 的 iframe 内
+      // 「window must have Selection property」sanity 前置）。
+      Selection: globalThis.Selection,
       Node: globalThis.Node,
       HTMLElement: globalThis.HTMLElement,
       SVGElement: globalThis.SVGElement,

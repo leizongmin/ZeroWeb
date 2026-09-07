@@ -7469,14 +7469,17 @@
       this._ranges = [r];
       this._zwSync(anchorNode, aOff, focusNode, fOff);
     };
-    // spec deleteFromDocument()：删 selection 覆盖内容（空 selection 抛 InvalidStateError）。
-    // 经 range deleteContents（R2929 既有 mutation-emitting 面——文本/元素区间精确，
-    // 跨容器 best-effort 与 range 一致）。
+    // spec deleteFromDocument()：删 selection 覆盖内容。经 range deleteContents（R2929
+    // 既有 mutation-emitting 面——文本/元素区间精确，跨容器 best-effort 与 range 一致）。
+    // R3254-E2 切片 6（editing goal，2026-09-07）勘误：空 selection 为 **no-op**（
+    // https://w3c.github.io/selection-api/#dom-selection-deletefromdocument 「If this is
+    // empty, return」——此前误抛 InvalidStateError；WPT deleteFromDocument.html Range 0
+    // "empty" 直接调用不断言抛错）。
     // R3254-E2（editing goal，2026-09-07）：方法面同步挂 `Selection.prototype`——WPT
     // deleteFromDocument.html 断言 `Selection.prototype.deleteFromDocument.length === 0`
     //（spec WebIDL 接口成员在 prototype 上；单例实例方法面此前不覆盖原型访问）。
     _selection.deleteFromDocument = function () {
-      if (this._ranges.length === 0) _zwSelEmpty();
+      if (this._ranges.length === 0) return;
       this._ranges[0].deleteContents();
     };
     try {
