@@ -2,7 +2,7 @@
 
 **入口文档**: [../editing-contenteditable.md](../editing-contenteditable.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-07（E2 残余切片——selectAllChildren 外文档判定 + Selection.prototype.deleteFromDocument；selection 套件 2704P/199F→**2825P/79F**）
+**最后更新**: 2026-09-07（E2 残余切片 ×2——selectAllChildren 外文档判定 + Selection.prototype.deleteFromDocument + outerHTML 融合视图 + dispatcher 移出 DOM；selection+editing 组合 **2827P/77F**）
 
 ---
 
@@ -39,7 +39,7 @@
 | # | 缺口 | 状态 |
 |---|------|------|
 | E1 | WPT selection/editing 用例覆盖为零 | ✅ selection 首批 20 用例 2026-09-07（基线 1.7%）；editing 目录未导 |
-| E2 | Selection JS 可观察面未核实/缺失 | ✅ 切片 2 + 残余切片 2/3（2026-09-07，45P→**2704P**）：切片 2 八类（document.getSelection/instanceof/异常语义/selectAllChildren/setBaseAndExtent/setPosition/deleteFromDocument）；残余切片 2——Selection anchor/focus **独立边界点**（setBaseAndExtent 反向形态 anchor/focus 各自等于请求值 + detached/foreign-doc 清空 + 省参 TypeError，86F→0F）+ Text/Comment.prototype.ownerDocument（innerHTML 解析产物 'reading createRange' TypeError，isCollapsed/removeRange/type/collapseToStartEnd 48F→0F）；残余切片 3——selectionchange 排程派发（document 级 4 subtest 全过 + text control 独立派发 2F→2P）。残余切片 4（2026-09-07）：**selectAllChildren 118F→0F**（`nodeType === 9` in-doc 短路移除——foreignDoc/xmlDoc 的 parentNode=null 沿链上行自然 false，旧捷径误判外文档节点改写 selection；本文档经 _zwSameNode 命中）+ **Selection.prototype.deleteFromDocument** 挂载（WebIDL 原型成员，.length 断言）。残余：deleteFromDocument 60F + getSelection 12F（iframe contentWindow 面——test-iframe.html 的外部 src 脚本不执行 + with(window) 全局穿透主 realm，realm 隔离为后续切片，根因已归档 fetch script helper 已补）/ onselectionchange 第 4 subtest 跨用例 timer 时序 flake |
+| E2 | Selection JS 可观察面未核实/缺失 | ✅ 切片 2 + 残余切片 2/3（2026-09-07，45P→**2704P**）：切片 2 八类（document.getSelection/instanceof/异常语义/selectAllChildren/setBaseAndExtent/setPosition/deleteFromDocument）；残余切片 2——Selection anchor/focus **独立边界点**（setBaseAndExtent 反向形态 anchor/focus 各自等于请求值 + detached/foreign-doc 清空 + 省参 TypeError，86F→0F）+ Text/Comment.prototype.ownerDocument（innerHTML 解析产物 'reading createRange' TypeError，isCollapsed/removeRange/type/collapseToStartEnd 48F→0F）；残余切片 3——selectionchange 排程派发（document 级 4 subtest 全过 + text control 独立派发 2F→2P）。残余切片 4（2026-09-07）：**selectAllChildren 118F→0F**（`nodeType === 9` in-doc 短路移除——foreignDoc/xmlDoc 的 parentNode=null 沿链上行自然 false，旧捷径误判外文档节点改写 selection；本文档经 _zwSameNode 命中）+ **Selection.prototype.deleteFromDocument** 挂载（WebIDL 原型成员，.length 断言）。切片 5（2026-09-07）：body-should-not-deleted 2F→2P（① outerHTML getter 加 R380 融合门——pending 桶当代时从融合 childNodes 序列化，此前同 execute 内结构 mutation 后读恒 stale；② harness dispatcher 不再尾部 append `<script>`——被解析器归入 body 成为页面可见 DOM 污染 documentElement.outerHTML 精确断言，改 runner 侧 run_page_scripts_strict 后 execute_script 执行，时序不变）。残余：deleteFromDocument 60F + getSelection 12F（iframe contentWindow 面——test-iframe.html 的外部 src 脚本不执行 + with(window) 全局穿透主 realm，realm 隔离为后续切片，根因已归档 fetch script helper 已补）/ event.html Changing-selection 1F（legacy 形态记录不追）/ onselectionchange 第 4 subtest 跨用例 timer 时序 flake |
 | E3 | 编辑行为管线（键入/删除/换行 → DOM）缺失 | ✅ M2 切片 2/3 + M3 切片 5（2026-09-07，bf181ee60+47dd9a685+切片 5）：键入/Backspace（SetChildText splice + caret 移动）+ Enter 换行（SetInnerHtml <br> splice + caret 元素边界）+ **insertParagraph 块级拆分**（SetOuterHtml 同型兄弟块重写）+ 事件序全接通；限制记录：跨节点回退/嵌套结构偏移映射 defer |
 | E4 | beforeinput/input 事件缺失 | 🔶 M2 切片 1（2026-09-07，commit 74a0c879b）：execCommand 编辑类命令 editing-host 事件序（beforeinput cancelable+trusted → input bubbles+trusted，inputType 映射，全选区在 host 内前提，preventDefault 阻断）——event.html 104P/76F→179P/1F；残余：键入/删除管线（宿主侧 keydown → contenteditable DOM 变更）未接 |
 | E5 | execCommand format 桩（不真应用） | 🔶 M3 切片 1/2（2026-09-07）：① bold/italic/underline/strikethrough inline 包裹（SetInnerHtml splice + 标签/实体感知扫描）；② delete/forwardDelete 选区删除（SetChildText splice + 代理对安全 + caret 回落）；③ queryCommandSupported/Enabled 真实反射（切片 3，`_zwQueryCommandState`——copy/cut/paste 恒 true；编辑类按选区 editing host 前提；未接命令 false，替换无条件 true 桩）。限制：toggle/queryCommandState、CSS 化命令（color 族）、queryCommandValue 值面、跨容器删除、嵌套结构偏移映射 defer |
@@ -58,6 +58,7 @@
 10. ~~**M3 切片 4**：execCommand toggle 语义 + queryCommandState 真实反射~~ ✅ 2026-09-07（`_zwQueryFormatState`——选区起点祖先链 tagName 匹配（大小写不敏感）；`_zwExecCmdUnwrapFormat`——祖先链定位宿主直子 tag 元素整体替换为其 innerHTML（caret 落原位置）；execCommand format 臂按 state 走 wrap/unwrap toggle。单测 test_execcommand_toggle_state_r3254_m3_slice4 五组断言；M2 事件序测试同步适配（选区改非包裹文本——toggle 语义下 <b> 内选区会解除包裹）。**defer 记录**：跨部分包裹形态（选区只覆盖包裹的一段）unwrap 不处理；CSS 化命令 state 面仍 defer）。**残余聚类归因补记**：anchor-removal 2F = window named access（bare id 标识符）整体缺失——js-dom/native 绑定域（动态 innerHTML 后 id 无全局注册；探针归档）；script-and-style-elements 1F = Selection.toString 的 CSS 空白渲染语义（display:none 排除 + style/script 内容计入 + 块间换行）——渲染域投影，defer 有据
 11. ~~**M3 切片 5**：insertParagraph 块级拆分（M2 切片 3 defer 解除）~~ ✅ 2026-09-07（`__zw_ce_insert_paragraph(sel)`——caret 处宿主 outerHTML 重写拆两同型兄弟块（SetOuterHtml mutation 流转宿主重解析；同型开标签 + contenteditable 属性保留）；execCommand insertParagraph 臂同语义（`_zwExecCmdApplyParagraphSplit`）；collapsed caret tail 段 = caret 起整段。单测 test_insert_paragraph_split_r3254_m3_slice5 三组断言（beforeinput 事件序 + SetOuterHtml 拆分形态 + ce 通道）。残余：嵌套结构内拆分（flat 模型限制，维持 defer）
 12. ~~**M3 切片 6**：insertHTML 最小实现~~ ✅ 2026-09-07（`_zwExecCmdApplyInsertHtml`——选区在宿主直子文本节点内 → SetInnerHtml splice 中插 fragment 串（collapsed 纯文本/含标签原样插入/选区非空先删选中段三形态）；fragment 原样不消毒（上游语义——信任边界在页面脚本自身）；caret 落插入内容后。单测 test_insert_html_r3254_m3_slice6 三组断言。M3 剩余仅 run/ 全量导入（330KB reference impl 依赖——defer 有据）
+13. **E2 残余切片 5**：outerHTML 融合视图 + dispatcher 移出 DOM → ✅ 2026-09-07（① part04 outerHTML getter 加 R380 同款融合门（pending 桶当代 → 融合 childNodes 序列化 + 属性 latest-wins 包裹）；② runner prepare_harness_html 尾部 dispatcher `<script>` 移除，改 run_page_scripts_strict 后 execute_script（时序不变，全部页面脚本之后）。body-should-not-deleted 2F→2P；selection 2827P/77F；keyboard 18P 零回归；dom 抽样（ParentNode-innerHTML 437P）零回归）
 
 **碰撞管理**：开工前先 `git log --since="14 days ago" -- crates/engine/src/js_dom_shim/`
 核对 js-dom 流活跃面。
@@ -73,8 +74,8 @@
 ## 验证基线
 
 - 测试基线：2026-09-07 全绿；clippy 零警告
-- WPT selection 面：切片 1 基线 45P/2559F（1.7%）→ 切片 2 1824P/776F（70.2%）→ M1 残余切片 2/3 后 2704P/199F（93.1%）→ **E2 残余切片 4 后 2825P/79F（97.3%）** @ WPT_REV 315976933870（23 用例，evidence/2026-09-07-m1-slice1-selection-baseline.md）
-- WPT editing 面：**2902P/201F** 组合（event.html 179P/1F + delete-editing-host 2P/0F + body-not-deleted 0P/2F + selection 面 2704P/199F + onselectionchange 两案 6P/1F）
+- WPT selection 面：切片 1 基线 45P/2559F（1.7%）→ 切片 2 1824P/776F（70.2%）→ M1 残余切片 2/3 后 2704P/199F（93.1%）→ **E2 残余切片 4 后 2825P/79F（97.3%）→ 切片 5（outerHTML 融合视图 + dispatcher 移出 DOM）后 2827P/77F（97.4%）** @ WPT_REV 315976933870（23 用例，evidence/2026-09-07-m1-slice1-selection-baseline.md）
+- WPT editing 面：**2911P/78F** 组合（event.html 179P/1F + delete-editing-host 2P/0F + **body-not-deleted 2P/0F** + selection 面 2827P/77F + onselectionchange 两案 6P/1F）
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过
 
 ## Done Criteria 清点（2026-09-07 收尾状态）
