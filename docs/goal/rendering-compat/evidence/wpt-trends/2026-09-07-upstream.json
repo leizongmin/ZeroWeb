@@ -3,9 +3,9 @@
   "mode": "upstream",
   "wpt_data_ref": "v1.10",
   "total": 16814,
-  "passed": 14516,
-  "rate_pct": 86.3,
-  "extra": "failed=2298;skipped=0",
-  "git_sha": "ddacffb43",
-  "note": "R4105-F svg transform-origin offset by reference-box origin (fill/stroke/content/border box = bbox top-left; view-box = viewBox min; R4099 min-arm 'regression' invalidated - it was measured pre-R4104 double-consumption noise); +5 green zero regression (svgbox-stroke-box-001/002, svgbox-border-box, stroke-box-mutation-001/002); corpus 14510->14515"
+  "passed": 14519,
+  "rate_pct": 86.4,
+  "extra": "failed=2295;skipped=0",
+  "git_sha": "8798f6f36",
+  "note": "R4106-F svg_element_bbox extends: path lineto-family d-attr bbox (M/m/L/l/H/h/V/v/Z exact endpoint union; curves -> None per caution) + g/a container child union; +4 green zero regression (svgbox-fill-box, svgbox-content-box, stroke-box-mutation-003/004); transform-box svgbox family cleared; corpus 14515->14519"
 }
