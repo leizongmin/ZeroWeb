@@ -21,9 +21,14 @@ shadow-dom.html`（shadow DOM 面，js-dom 域）；`selectionchange.html`(textc
 
 ```
 selection 全套件：2993P / 6F（基线 2928P/5F，净 +65P——新增 66 subtest 全 Pass）
-三连跑稳定；textcontrols 三案 25 连跑 0 Fail/Timeout
+textcontrols 三案 25 连跑 0 Fail/Timeout
 keyboard 套件 18P/7F/2T 零回归
 ```
+
+**切片 13 勘误（2026-09-08）**：上文「三连跑稳定」**仅对 textcontrols 三案成立**；
+当时记录隐含的「onselectionchange-on-document 全量跑稳定通过」与复验不符——全量
+套件 3 连跑确定性 6F（fail 集恒定含该案 IndexSizeError）。详见下方残余记录段与
+切片 13 修正。
 
 ## 实现语义（shim）
 
@@ -65,11 +70,14 @@ send_keys/timer 相关测试）零回归。
 ## 残余记录
 
 - `onselectionchange-on-document.html` 第 3 subtest（'task to fire selectionchange
-  event gets queued each time'）在 FILTER 单案跑下稳定报 `IndexSizeError: The given
-  offset is out of bounds` unhandled rejection（`setPosition(container, 2)` 于
-  innerHTML pending 未 apply 时读 fusion childNodes 越界）；全量套件跑下通过
-  （三连跑稳定）。基线（stash 验证）同型 flake 亦存在——既有问题，非本轮引入，
-  待 innerHTML fusion 视图与 selection 端点校验协调切片。
+  event gets queued each time'）稳定报 `IndexSizeError: The given offset is out of
+  bounds` unhandled rejection（`setPosition(container, 2)` 于 innerHTML pending 未
+  apply 时读 fusion childNodes 越界）。基线（stash 验证）同型 flake 亦存在——既有
+  问题，非本轮引入，待 innerHTML fusion 视图与 selection 端点校验协调切片。
+  **切片 13 勘误（2026-09-08）**：本段初版记录「FILTER 单案跑下稳定失败、全量套件
+  跑下通过（三连跑稳定）」**与实测不符**——复验（后续轮次）全量套件 3 连跑均确定性
+  失败（fail 集恒定 6F 含该案）；「FILTER 独有 / 全量通过」的定性系当时验证不充分
+  所致的错误结论，已在下节勘误说明与 master.md #21 同步修正。
 
 ### 同日追加：flake 精确归因（最小上下文复现）
 
@@ -77,16 +85,50 @@ send_keys/timer 相关测试）零回归。
 前置后再跑 subtest 3 原样——第 4 次 `setPosition(container, 2)`（spin 后）抛
 IndexSizeError，**抛点实测 `container.childNodes.length === 0`**。
 
-机制定位：同 sel 连续多次 innerHTML 赋值（s2 一次 + s3 一次）后，spin await 边界处
-`#container` 的融合 childNodes 视图塌缩为 0（R304 挂槽的解析 wrapper 从 overlay 桶
-消失 + `_zwChildBaseCache['#container']` 被 setter 置空 `[]` 后未再失效）——第二次
-innerHTML 的 queue-side invalidate 与 `_zwFragmentAdded` 预注册的桶条目存在时序耦合。
-单案最小形态（单 subtest、单次 innerHTML）700+ 连跑不复现；全量套件（fresh WebView
-per case、无 stacked innerHTML）三连跑稳定通过。
+机制定位（初版）：同 sel 连续多次 innerHTML 赋值（s2 一次 + s3 一次）后，spin await
+边界处 `#container` 的融合 childNodes 视图塌缩为 0（R304 挂槽的解析 wrapper 从
+overlay 桶消失 + `_zwChildBaseCache['#container']` 被 setter 置空 `[]` 后未再失效）
+——第二次 innerHTML 的 queue-side invalidate 与 `_zwFragmentAdded` 预注册的桶条目
+存在时序耦合。单案最小形态（单 subtest、单次 innerHTML）700+ 连跑不复现；初版记录
+称「全量套件三连跑稳定通过」（**该句已勘误**——见上）。
 
 定性与切分：js-dom 共享面（fusion 视图 R51c/R304/R380 族）的既有深缺陷，非本轮
 selectionchange 变更引入；修复需专门切片（stacked same-sel innerHTML 的桶生命周期
-重整），记入 js-dom/编辑协调点，不阻塞本轮资产化与 goal 收口判定。
+重整），记入 js-dom/编辑协调点。
+
+### 切片 13（同日后续轮次）：修复落地 + 归因修正
+
+**归因修正**：初版机制定位的「base 缓存 `[]` 未失效」路径经 shim 侧逐点插桩
+（baseSet/cacheHit/overlay 进出 + 桶 added/removed 计数）复验**不成立**——塌缩点
+（C subtest spin 后首读）实测 base cache **len=2（正确 rebuild）**，桶 added=4
+removed=4；塌缩发生在 overlay 合并层：**removed 补偿残留**。精确链路：
+
+1. innerHTML setter（sel 路径）入队 SetInnerHtml + 桶记账 added（解析 wrapper）/
+   removed（旧子 proxy——经 `_proxyCache` 按 sel 稳定 identity）。
+2. apply+bump（pa2b）只清 parse 补偿 **added**（K3 切片 C），**removed[] 条目
+   残留**。
+3. 换代后新基底 rebuild：host 快照真实子经 `_wrapSelector` → `_makeProxy` 命中
+   `_proxyCache` **复用同一 proxy 对象** → overlay 的 removed 剔除按 identity
+   命中 → 快照真实子整批剔空（trace 实证 bucket a=4 r=4 时 fresh base 2→0）。
+4. `setPosition(container, 2)` 读 `_nodeLength` = childNodes.length = 0 → offset
+   2 越界抛 IndexSizeError。初版归因的「base 置空未失效」「桶条目消失」两说均
+   系插桩不足下的误判，此处以 trace 实证修正。
+
+**修复**（js-dom 共享面 pa2b 语义扩展，与本 goal 协调落地）：`__zw_apply_generation_bump`
+补 **removed 补偿同批作废**——桶 removed[] + 全局 `_zwPendingRemoved` 在 apply
+代际边界清空。语义依据：removed 条目是「快照已含节点、host apply 未落」窗口的
+视图修正补偿，apply 后快照已真删除，其另一半消费面（live 集合/query stale 剔除）
+同理只服务 apply 前窗口；与 K3 切片 C 的 parse 补偿 added 清理同族。handle-only
+removed 条目本为死数据（R51c 压实语义），一并清除。
+
+**验证**：
+
+```
+onselectionchange-on-document.html：4 subtest 全 Pass（修复前 3 连跑确定性失败）
+selection 全套件：2993P/6F → 2994P/5F（净 +1；5F 全为既有跨域归因），3 连跑 fail 集恒定
+单测 r3254_e2_slice13_apply_generation_invalidates_removed_compensation：
+  无修复复现失败（removed 残留 → fresh base 塌缩 0）、有修复通过——根因锚定
+```
 - textcontrols `selectionchange.html` 断言依赖事件在**单 spin** 内到达；stub 队列
   FIFO 下已稳定（25 连跑）。
 

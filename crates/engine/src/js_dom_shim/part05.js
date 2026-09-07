@@ -8520,6 +8520,27 @@
         delete _r3kStale[_r3ks]._zwSelPendingParent;
       }
     }
+    // R3254-E2 切片 13（editing goal，2026-09-08）：**removed 补偿同批作废**——
+    // 桶/全局表的 removed[] 条目是「快照已含节点、host apply 未落」窗口的视图修正
+    // 补偿（_zwOverlayPendingChildNodes 剔除 / live 集合剔除）。apply 后快照已真删除，
+    // 保留的 removed 条目对**换代后新基底**是纯毒源：基底 rebuild 经 `_proxyCache`
+    // 复用同 sel 的旧 proxy 对象（identity 稳定语义），overlay 的 removed 剔除按
+    // identity 命中 → 把快照真实子整批剔空（stacked same-sel innerHTML 融合视图
+    // 塌缩为 0——WPT onselectionchange-on-document 第 3 subtest 的 setPosition
+    // IndexSizeError 根因，trace 实证 bucket a=4 r=4 时 fresh base len=2 被剔除至 0）。
+    // removed 条目的另一半语义（live 集合/query stale 命中剔除）同理只服务 apply 前
+    // 窗口。与 K3 切片 C 的 parse 补偿 added 清理同族：apply 代际边界统一作废。
+    // handle-only removed 条目本就是死数据（R51c 压实语义），一并清除。
+    if (_zwPendingRemoved.length) {
+      _zwPendingRemoved.length = 0;
+      _zwPendingRemovedSet = null;
+    }
+    _zwPendingByParent.forEach(function (_r3kB2) {
+      if (_r3kB2.removed.length) {
+        _r3kB2.removed.length = 0;
+        if (_r3kB2.removedSet) _r3kB2.removedSet.clear();
+      }
+    });
     try { if (typeof globalThis.__zwPa2ClearRemovedTables === 'function') globalThis.__zwPa2ClearRemovedTables(); } catch (_ePa2agb) {}
     try { if (typeof globalThis._zwChildBaseInvalidateAll === 'function') globalThis._zwChildBaseInvalidateAll(); } catch (_ePa2ci) {}
     try { if (typeof globalThis._zwSiblingBaseInvalidateAll === 'function') globalThis._zwSiblingBaseInvalidateAll(); } catch (_ePa2si) {}
