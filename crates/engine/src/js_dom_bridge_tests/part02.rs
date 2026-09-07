@@ -2382,3 +2382,31 @@ fn test_default_submit_button_selector_r3254_k3() {
     let f3 = enclosing_form_selector(html, "#t3").unwrap();
     assert_eq!(default_submit_button_selector(html, &f3), None, "f3 无 default button");
 }
+
+#[test]
+fn test_serialization_form_roundtrip_r3254_k3_probe() {
+    // R3254-K3 切片 C 探针：连续两次 insertAdjacentHTML(form) 后 serialize→re-parse 的
+    // 保真度——form element pointer 语义下 form 结构是否丢失（WPT implicit-submission
+    // subtest 2 的 live 层分歧根因）。
+    use crate::js_dom_bridge::{apply_mutations_to_html, parse_html, find_by_selector};
+    let html = "<html><body><div id=log></div></body></html>";
+    let frag = "<iframe name=\"f0\"></iframe><form action=\"about:blank\"><input name=text value=abc><input name=submitButton type=submit></form>";
+    let m1 = crate::js_dom_bridge::DomMutation::InsertAdjacentHtml {
+        selector: "body".into(),
+        position: "afterbegin".into(),
+        html: frag.into(),
+    };
+    let once = apply_mutations_to_html(html, std::slice::from_ref(&m1)).unwrap();
+    let twice = apply_mutations_to_html(&once, std::slice::from_ref(&m1)).unwrap();
+    // 再解析两次 apply 后的串：两个 form 应都存在且各含 2 个 input。
+    let doc = parse_html(&twice);
+    let forms = doc.query_selector_all(doc.root(), "form");
+    println!("[PROBE] forms after 2x apply = {}", forms.len());
+    let doc2 = parse_html(&once);
+    let forms1 = doc2.query_selector_all(doc2.root(), "form");
+    println!("[PROBE] forms after 1x apply = {}", forms1.len());
+    println!("[PROBE] once = {}", once);
+    println!("[PROBE] twice = {}", twice);
+    assert_eq!(forms1.len(), 1);
+    assert_eq!(forms.len(), 2, "serialize→re-parse 往返后 form 结构应保真");
+}

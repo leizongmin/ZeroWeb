@@ -8273,6 +8273,35 @@
   globalThis._zwApplyGeneration = function () { return _zwApplyGenCounter; };
   globalThis.__zw_apply_generation_bump = function () {
     _zwApplyGenCounter++;
+    // R3254-K3 切片 C（keyboard goal，2026-09-07）：**parse 补偿节点随 apply 消退**——
+    // insertAdjacentHTML/innerHTML 的同步视图补偿把解析顶层节点（无 handle/sel、挂
+    // `_zwSelPendingParent` 槽）并入 pending 桶；host apply 后这些节点已进 host 快照，
+    // 桶内残留使融合视图 = 基底（host 已含）+ overlay（补偿副本）**双计**（WPT
+    // implicit-submission 多 subtest 实证：body children 出现 IFRAME/FORM/INPUT 空选择器
+    // 副本）。handle 节点的 identity 记账语义不涉 sel-less 解析节点（无 re-parent 消费方）
+    // → apply 时定点清除：全局表 + 按 id 索引 + 各父桶同步剔除。
+    var _r3kStale = [];
+    for (var _r3kpa = _zwPendingAdded.length - 1; _r3kpa >= 0; _r3kpa--) {
+      var _r3knd = _zwPendingAdded[_r3kpa];
+      if (_r3knd && !_r3knd.__zwHandle && !_r3knd.__zwSelector && _r3knd._zwSelPendingParent) {
+        _r3kStale.push(_r3knd);
+        _zwPendingAdded.splice(_r3kpa, 1);
+      }
+    }
+    if (_r3kStale.length) {
+      for (var _r3ks = 0; _r3ks < _r3kStale.length; _r3ks++) {
+        _zwPendingAddedSet && _zwPendingAddedSet.delete(_r3kStale[_r3ks]);
+        _zwPAIdRemove(_r3kStale[_r3ks]);
+        var _r3kSlot = _r3kStale[_r3ks]._zwSelPendingParent;
+        var _r3kB = _zwPendingByParent.get(_r3kSlot && _r3kSlot.parentSel ? _r3kSlot.parentSel : '_h:' + String(_r3kSlot && _r3kSlot.parentHandle == null ? '' : _r3kSlot && _r3kSlot.parentHandle));
+        if (_r3kB) {
+          var _r3ki = _r3kB.added.indexOf(_r3kStale[_r3ks]);
+          if (_r3ki >= 0) _r3kB.added.splice(_r3ki, 1);
+          _r3kB.addedSet && _r3kB.addedSet.delete(_r3kStale[_r3ks]);
+        }
+        delete _r3kStale[_r3ks]._zwSelPendingParent;
+      }
+    }
     try { if (typeof globalThis.__zwPa2ClearRemovedTables === 'function') globalThis.__zwPa2ClearRemovedTables(); } catch (_ePa2agb) {}
     try { if (typeof globalThis._zwChildBaseInvalidateAll === 'function') globalThis._zwChildBaseInvalidateAll(); } catch (_ePa2ci) {}
     try { if (typeof globalThis._zwSiblingBaseInvalidateAll === 'function') globalThis._zwSiblingBaseInvalidateAll(); } catch (_ePa2si) {}
