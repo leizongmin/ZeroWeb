@@ -1948,14 +1948,26 @@ impl Painter {
         if let Some(node_id) = box_node.node_id
             && let Some(style) = styles.get(&node_id)
         {
-            let rect = Rect::new(abs_x, abs_y, box_node.width, box_node.height);
-            super::helpers::apply_transform(style, &rect, &mut self.primitives);
-            // R3901：纯 translate 列表走图元级平移（CSS Transforms §transform-rendering：
-            // transform 作用于元素及其整个子树）。counts_before = paint_node 起点快照，
-            // 差集即自子树全部图元。不用 TransformPrimitive（raster 全场景像素后处理会
-            // 清白与元素框相交的祖先/兄弟内容，transform-descendant-001 回归实证）。
-            if let Some((tx, ty)) = super::helpers::translate_offset(style) {
-                super::helpers::translate_primitives_since(&mut self.primitives, &counts_before, tx, ty);
+            // R4104（CSS Transforms 1 §transform-box svg 豁免）：inline `<svg>` 子树内的
+            // 元素跳过 html transform 通路——R3938 位图路径（collect_css_transforms →
+            // apply_css_transforms_to_source）已在序列化源内按 SVG 语义（transform-box
+            // 参考框、viewBox 用户单位坐标系）消费同一 CSS transform 声明；此处再生成
+            // TransformPrimitive / 图元级平移即双重消费（svgbox-initial：path 的
+            // rotate(90deg) 位图内已生效，外层 TransformPrimitive ty=-100 再把整张位图
+            // 后处理平移 → 黑块 y 偏 -100）。svg 子树 transform 语义由位图路径全权处理
+            //（与 R3937 style-attr 覆盖语义一致）。doc=None（bench 等无文档路径）不豁免，
+            // 保持既有行为。
+            let in_svg = doc.is_some_and(|d| in_svg_subtree(d, node_id));
+            if !in_svg {
+                let rect = Rect::new(abs_x, abs_y, box_node.width, box_node.height);
+                super::helpers::apply_transform(style, &rect, &mut self.primitives);
+                // R3901：纯 translate 列表走图元级平移（CSS Transforms §transform-rendering：
+                // transform 作用于元素及其整个子树）。counts_before = paint_node 起点快照，
+                // 差集即自子树全部图元。不用 TransformPrimitive（raster 全场景像素后处理会
+                // 清白与元素框相交的祖先/兄弟内容，transform-descendant-001 回归实证）。
+                if let Some((tx, ty)) = super::helpers::translate_offset(style) {
+                    super::helpers::translate_primitives_since(&mut self.primitives, &counts_before, tx, ty);
+                }
             }
         }
 
@@ -2543,6 +2555,23 @@ impl Painter {
     pub(crate) fn get_image_size(&self, url_hash: u64) -> Option<(f32, f32)> {
         self.image_sizes.get(&url_hash).copied()
     }
+}
+
+/// R4104（CSS Transforms 1 §transform-box svg 豁免）：元素是否处于 inline `<svg>`
+/// 子树内（沿 parent 链向上找最近 svg 元素祖先；`<svg>` 自身不算——svg 根元素的
+/// CSS transform 作用于盒本身，仍走 html 通路）。
+pub(crate) fn in_svg_subtree(doc: &Document, node_id: NodeId) -> bool {
+    let mut cur = doc.parent_node(node_id);
+    while let Some(id) = cur {
+        let is_svg = doc
+            .get(id)
+            .is_some_and(|n| matches!(&n.kind, NodeKind::Element(e) if e.local_name() == "svg"));
+        if is_svg {
+            return true;
+        }
+        cur = doc.parent_node(id);
+    }
+    false
 }
 
 /// R3938（CSS Transforms 1 §transform-attribute-specificity + SVG2 presentation

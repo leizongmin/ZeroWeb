@@ -598,3 +598,73 @@ fn r3986_anchor_replaced_inline_width_ws_independent() {
     );
     assert!(ws.0 >= 200.0, "CSS width:200 应应用（svg 盒宽 ≥200）：{ws:?}");
 }
+
+/// R4104（CSS Transforms 1 §transform-box svg 豁免）：inline `<svg>` 子树内元素的
+/// CSS transform 不得再走 html TransformPrimitive / 图元级平移通路——R3938 位图路径
+/// 已把同一声明合成进序列化源（SVG 语义），双路消费 = 位图二次变换（svgbox-initial：
+/// path rotate(90deg) 位图内已生效，外层 TransformPrimitive ty=-100 再平移 → 黑块
+/// y 偏 -100）。锚：子树内带 CSS transform 元素的 paint 不产生 TransformPrimitive、
+/// 不平移图元；html 侧同形态不受影响。
+#[test]
+fn r4104_svg_subtree_css_transform_exempt_from_html_transform_path() {
+    let html = r##"<html><head><style>
+        svg { display: block; width: 400px; height: 300px; }
+        #target { transform: rotate(90deg); }
+    </style></head><body style="margin:0">
+    <svg><path id="target" d="M 200 100 v 100 h 100 v -100" fill="green"/></svg>
+    </body></html>"##;
+    let doc = zero_dom::parse_html(html);
+    let sheet = zero_css_parser::Parser::parse_stylesheet(
+        "svg { display: block; width: 400px; height: 300px; } #target { transform: rotate(90deg); }",
+    );
+    let mut sys = zero_style_system::StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[sheet]);
+    let svg_id = doc.get_elements_by_tag_name("svg").into_iter().next().expect("svg");
+    let mut engine = zero_layout_engine::LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    fn find(id: zero_dom::NodeId, b: &LayoutBox) -> Option<&LayoutBox> {
+        if b.node_id == Some(id) {
+            return Some(b);
+        }
+        b.children.iter().find_map(|c| find(id, c))
+    }
+    let svg_box = find(svg_id, &result.root).expect("svg box");
+
+    // svg 子树整体 paint（path 的 CSS transform 由 R3938 位图路径消费）：无 TransformPrimitive。
+    let mut painter = Painter::new();
+    painter.paint_svg_element(svg_box, 8.0, 8.0, &doc, &styles);
+    assert!(
+        painter.primitives().transforms.is_empty(),
+        "svg 位图路径不应产 TransformPrimitive（R3938 语义）"
+    );
+
+    // 全页 paint：svg 子树内元素的 CSS transform 不得再生成 TransformPrimitive（双重消费）。
+    let mut painter_full = Painter::new();
+    painter_full.paint(&result.root, &styles, Some(&doc));
+    assert!(
+        painter_full.primitives().transforms.is_empty(),
+        "全页 paint 时 svg 子树 CSS transform 须豁免 html transform 通路（R4104 gate）"
+    );
+
+    // html 侧对照：同样式的 div 仍走 html transform 通路（gate 只豁免 svg 子树）。
+    let html_div = r##"<html><head><style>
+        div { width: 100px; height: 100px; background: green; transform: rotate(90deg); }
+    </style></head><body style="margin:0"><div></div></body></html>"##;
+    let doc2 = zero_dom::parse_html(html_div);
+    let sheet2 = zero_css_parser::Parser::parse_stylesheet(
+        "div { width: 100px; height: 100px; background: green; transform: rotate(90deg); }",
+    );
+    let mut sys2 = zero_style_system::StyleSystem::new();
+    sys2.set_viewport(800.0, 600.0);
+    let styles2 = sys2.compute_styles(&doc2, &[sheet2]);
+    let mut engine2 = zero_layout_engine::LayoutEngine::new(800.0, 600.0);
+    let result2 = engine2.compute(&doc2, &styles2);
+    let mut painter2 = Painter::new();
+    painter2.paint(&result2.root, &styles2, Some(&doc2));
+    assert_eq!(
+        painter2.primitives().transforms.len(),
+        1,
+        "html 侧 transform 不受 svg 豁免 gate 影响"
+    );
+}
