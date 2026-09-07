@@ -2,7 +2,7 @@
 
 **入口文档**: [../editing-contenteditable.md](../editing-contenteditable.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-07（E2 切片 10——同容器元素删除改容器记账直达；**deleteFromDocument-HTMLDetails 30/30 全 Pass**；selection 套件 2928P/5F）
+**最后更新**: 2026-09-07（E2 切片 11——innerHTML 解析子树 window named access 注册；anchor-removal 失败层级下移；selection 套件 2928P/5F 全部精确归因）
 
 ---
 
@@ -65,6 +65,7 @@
 17. **E2 切片 8**：跨元素 deleteContents（HTMLDetails 17P→26P）→ ✅ 2026-09-07（三件：① innerHTML setter sel 容器解析顶层子 parentNode 重指 `_wrapSelector(sel)`（K3 切片 A 同款——原 parentNode 为 _zwMBuildBodyTree 内部 body 快照，marker walk 的 parentElement 提升走到伪 body → 端点错域）；② `_zwPendingSubtreeDirty(sel)` 子树脏判定（后代桶键路径前缀扫描）接入 innerHTML/outerHTML 融合门——子树深层 mutation 触发融合序列化；③ R279 门放宽 admit sc=CharData + ec=Element 混合形态（sc CharData 尾段 deleteData；R268 保持双 CharData 原门——放宽版曾与 R279 单测冲突，revert 记录）。**HTMLDetails 26/30**；残余 4F = contained-endpoint 边缘形态（ec 尾边界整节点包含 + 文本端提升 so 语义——探针迭代两轮 misfire 后保守回退，精确记录））
 18. **E2 切片 9**：deleteContents 同容器元素分支 + R279 cac 边界 → ✅ 2026-09-07（① deleteContents 补 sc===ec 元素分支（children [start,end) 逆序移除 + 塌缩——marker-walk 提升端点形态 div@1→div@2 此前全分支 miss no-op，trace 实证入分支正确）；② R279 cac 边界路径子索引 hoist（sPathIdx/ePathIdx）+ ③ ec===cac 子删下界 sPathIdx+1 + ④ ec===cac 跳过中段。R268 上一轮放宽门 + 路径索引重写与 R279 单测冲突已整体 revert——混合形态改由 R279 门放宽承接。**HTMLDetails 29/30**；唯一 1F = ec 尾边界整节点包含形态（探针定位到融合读回门链路，精确记录下轮）；selection 套件 2926P/7F；engine 2649 全绿）
 19. **E2 切片 10**：同容器元素删除容器记账直达 → ✅ 2026-09-07（唯一 1F 根因 = 移除通道：c.remove() 委托 parentNode.removeChild → sel 代理通道对解析 wrapper 无 sel 可寻址 → host mutation 缺失且本地桶不记账 → 融合读回 stale。改**容器记账直达**：本地 relink（removeChild + childNodes splice 兜底 + parentNode null）+ _mo_notify childList 单一汇流点。**deleteFromDocument-HTMLDetails 30/30 全 Pass**；selection 套件 2928P/5F；engine 2650 全绿）
+20. **E2 切片 11**：window named access 注册 → ✅ 2026-09-07（innerHTML setter sel 路径解析子树内 id 元素同步暴露 globalThis[id]（spec Window named properties；守卫 = 仅 undefined 时注册不遮蔽内建）——此前动态 innerHTML 后 id 无全局注册 → anchor-removal 的 bare-id ReferenceError。**失败层级下移**：ReferenceError 清除后暴露 test_driver Actions 指针拖选依赖布局命中测试（runner 无布局 rect）→ 归 renderer S3 几何协调域（与 page-scrolling 残余同域），记录不追。engine 2650 全绿）
 
 **碰撞管理**：开工前先 `git log --since="14 days ago" -- crates/engine/src/js_dom_shim/`
 核对 js-dom 流活跃面。
