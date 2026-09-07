@@ -705,3 +705,67 @@ fn r4105_svg_transform_origin_offset_by_reference_box_origin() {
         "origin 20,0 + stroke-box 原点 (90,90) 应合成旋转中心 (110,90)，got: {svg_attr}"
     );
 }
+
+/// R4106（CSS Transforms 1 §transform-box 参考框覆盖扩展）：svg_element_bbox 补
+/// path 直线族 d 属性 bbox + g/a 容器子形状并集。锚：① path
+/// "M 200 100 v 100 h 100 v -100" → bbox (200,100,100,100)，fill-box origin 0,0
+/// + rotate 90 → 旋转中心 (200,100) 注入；② 曲线命令 path 返回 None（宁缺勿错）；
+///  - ③ g 容器 = 子 rect 并集。
+#[test]
+fn r4106_svg_element_bbox_path_and_container() {
+    let html = r##"<html><head><style>
+        svg { display: block; width: 400px; height: 300px; }
+        #target {
+            fill: green; stroke: black; stroke-width: 50px;
+            transform-box: fill-box; transform-origin: 0px 0px;
+            transform: rotate(90deg);
+        }
+    </style></head><body style="margin:0">
+    <svg width="400" height="300"><path id="target" d="M 200 100 v 100 h 100 v -100"/></svg>
+    </body></html>"##;
+    let doc = zero_dom::parse_html(html);
+    let sheet = zero_css_parser::Parser::parse_stylesheet(
+        "svg { display: block; width: 400px; height: 300px; } #target { fill: green; stroke: black; stroke-width: 50px; transform-box: fill-box; transform-origin: 0px 0px; transform: rotate(90deg); }",
+    );
+    let mut sys = zero_style_system::StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[sheet]);
+    let svg_id = doc.get_elements_by_tag_name("svg").into_iter().next().expect("svg");
+    let mut css_transforms: Vec<(zero_dom::NodeId, String)> = Vec::new();
+    crate::paint::painter::collect_css_transforms(&doc, svg_id, &styles, &mut css_transforms);
+    assert_eq!(css_transforms.len(), 1, "path 的 CSS transform 应被收集");
+    let (_, svg_attr) = &css_transforms[0];
+    // path bbox (200,100,100,100)，origin 0,0 → 旋转中心 = bbox 原点 (200,100)。
+    assert!(
+        svg_attr.contains("translate(200 100)"),
+        "path fill-box bbox 原点 (200,100) 应作旋转中心，got: {svg_attr}"
+    );
+
+    // 曲线命令 path → bbox None → 无 ref_box → origin 偏移不注入（transform 本身仍直译）。
+    let doc2 = zero_dom::parse_html(
+        r#"<html><head><style>svg { display: block; width: 400px; height: 300px; } #t { transform-box: fill-box; transform-origin: 0px 0px; transform: rotate(90deg); }</style></head><body style="margin:0"><svg width="400" height="300"><path id="t" d="M 0 0 C 50 0 100 50 100 100"/></svg></body></html>"#,
+    );
+    let sheet2 = zero_css_parser::Parser::parse_stylesheet(
+        "svg { display: block; width: 400px; height: 300px; } #t { transform-box: fill-box; transform-origin: 0px 0px; transform: rotate(90deg); }",
+    );
+    let mut sys2 = zero_style_system::StyleSystem::new();
+    sys2.set_viewport(800.0, 600.0);
+    let styles2 = sys2.compute_styles(&doc2, &[sheet2]);
+    let svg2 = doc2.get_elements_by_tag_name("svg").into_iter().next().expect("svg");
+    let mut css2: Vec<(zero_dom::NodeId, String)> = Vec::new();
+    crate::paint::painter::collect_css_transforms(&doc2, svg2, &styles2, &mut css2);
+    assert_eq!(css2.len(), 1, "曲线 path 的 transform 仍被收集");
+    assert!(
+        !css2[0].1.contains("translate("),
+        "曲线 path 无参考框（宁缺勿错）→ 不注入 origin 偏移，got: {}",
+        css2[0].1
+    );
+
+    // g 容器 = 子形状并集（fill-box-002 形态）。
+    let doc3 = zero_dom::parse_html(
+        r#"<html><body><svg width="400" height="300"><g id="c"><rect x="50" y="50" width="100" height="100"/></g></svg></body></html>"#,
+    );
+    let g_id = doc3.get_elements_by_tag_name("g").into_iter().next().expect("g");
+    let bbox = crate::paint::painter::svg_element_bbox_for_test(&doc3, g_id);
+    assert_eq!(bbox, Some((50.0, 50.0, 100.0, 100.0)), "g 容器 bbox = 子 rect 并集");
+}

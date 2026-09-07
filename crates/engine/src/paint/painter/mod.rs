@@ -2701,6 +2701,12 @@ fn svg_viewbox_of(doc: &Document, node_id: NodeId) -> Option<(f32, f32, f32, f32
 /// R4098：单 SVG 元素的 object bounding box（attr 几何，用户单位）。仅覆盖可精确
 /// 计算的形状（rect/circle/ellipse/line/image）；容器（g/text/poly…）或缺失 attr →
 /// None（宁缺勿错，调用方降级）。
+/// R4106：单 SVG 元素的 object bounding box（`svg_element_bbox` 的测试观测口）。
+#[cfg(test)]
+pub(crate) fn svg_element_bbox_for_test(doc: &Document, node_id: NodeId) -> Option<(f32, f32, f32, f32)> {
+    svg_element_bbox(doc, node_id)
+}
+
 fn svg_element_bbox(doc: &Document, node_id: NodeId) -> Option<(f32, f32, f32, f32)> {
     let node = doc.get(node_id)?;
     let NodeKind::Element(elem) = &node.kind else {
@@ -2747,8 +2753,220 @@ fn svg_element_bbox(doc: &Document, node_id: NodeId) -> Option<(f32, f32, f32, f
             let h = num("height", f32::NAN)?;
             Some((x, y, w, h))
         }
+        // R4106：path 的 d 属性 bbox——直线族命令（M/m/L/l/H/h/V/v/Z）按端点精确并集；
+        // 含曲线命令（C/S/Q/T/A）时返回 None（对象 bbox 需曲线极值，近似控制点会高估、
+        // 破坏 transform-box 语义——宁缺勿错，调用方降级）。driving: svgbox-fill-box
+        //（d="M 200 100 v 100 h 100 v -100"）。
+        "path" => {
+            let d = elem.get_attribute("d")?;
+            svg_path_bbox(&d)
+        }
+        // R4106：容器（g/a）= 子形状 bbox 递归并集——fill-box-002 的 <g id="container">
+        // 场景。无可计算子形状 → None（宁缺勿错）。
+        "g" | "a" => {
+            let mut acc: Option<(f32, f32, f32, f32)> = None;
+            for child in doc.child_nodes(node_id) {
+                if let Some(cb) = svg_element_bbox(doc, child) {
+                    acc = Some(match acc {
+                        None => cb,
+                        Some((ax, ay, _, _)) => {
+                            let nx = ax.min(cb.0);
+                            let ny = ay.min(cb.1);
+                            (nx, ny, ax.max(cb.0 + cb.2) - nx, ay.max(cb.1 + cb.3) - ny)
+                        }
+                    });
+                }
+            }
+            acc
+        }
         _ => None,
     }
+}
+
+/// R4106：path `d` 属性的直线族 bbox（SVG2 §path-data）。M/m/L/l/H/h/V/v 按端点
+/// 并集；Z 闭合不影响 bbox；未知命令或数值解析失败 → None（宁缺勿错）。
+fn svg_path_bbox(d: &str) -> Option<(f32, f32, f32, f32)> {
+    // 手写词法：命令字母逐个分派，其后连续数值为其参数（按命令参数量切片）。
+    let bytes: Vec<char> = d.chars().collect();
+    let mut i = 0usize;
+    let mut cur_cmd: Option<char> = None;
+    let mut pending: Vec<f32> = Vec::new();
+    let (mut cx, mut cy) = (0.0_f32, 0.0_f32); // 当前点（M 后为绝对；相对命令累加）
+    let (mut sx, mut sy) = (0.0_f32, 0.0_f32); // 子路径起点
+    let mut min_x = f32::MAX;
+    let mut min_y = f32::MAX;
+    let mut max_x = f32::MIN;
+    let mut max_y = f32::MIN;
+    let mut any = false;
+
+    let next_num = |bytes: &[char], i: &mut usize| -> Option<f32> {
+        while *i < bytes.len() && (bytes[*i] == ',' || bytes[*i].is_whitespace()) {
+            *i += 1;
+        }
+        let start = *i;
+        if *i < bytes.len() && (bytes[*i] == '-' || bytes[*i] == '+') {
+            *i += 1;
+        }
+        let mut seen_digit = false;
+        let mut seen_dot = false;
+        let mut seen_exp = false;
+        while *i < bytes.len() {
+            let c = bytes[*i];
+            if c.is_ascii_digit() {
+                seen_digit = true;
+                *i += 1;
+            } else if c == '.' && !seen_dot && !seen_exp {
+                seen_dot = true;
+                *i += 1;
+            } else if (c == 'e' || c == 'E') && seen_digit && !seen_exp {
+                seen_exp = true;
+                *i += 1;
+                if *i < bytes.len() && (bytes[*i] == '-' || bytes[*i] == '+') {
+                    *i += 1;
+                }
+            } else {
+                break;
+            }
+        }
+        if !seen_digit {
+            return None;
+        }
+        let s: String = bytes[start..*i].iter().collect();
+        s.trim().parse::<f32>().ok().filter(|n| n.is_finite())
+    };
+
+    while i < bytes.len() {
+        let c = bytes[i];
+        if c.is_whitespace() || c == ',' {
+            i += 1;
+            continue;
+        }
+        if c.is_ascii_alphabetic() {
+            // 把上一命令的 pending 冲掉（同命令重复参数形态 L 1 2 3 4）。
+            if let Some(cmd) = cur_cmd {
+                let argn = path_cmd_arg_count(cmd)?;
+                if !pending.is_empty() {
+                    if !pending.len().is_multiple_of(argn) {
+                        return None;
+                    }
+                    for chunk in pending.chunks(argn) {
+                        apply_path_cmd(
+                            chunk, cmd, &mut cx, &mut cy, &mut sx, &mut sy, &mut min_x, &mut min_y, &mut max_x,
+                            &mut max_y, &mut any,
+                        )?;
+                    }
+                    pending.clear();
+                }
+            }
+            cur_cmd = Some(c);
+            pending.clear();
+            i += 1;
+            continue;
+        }
+        // 数值：归入当前命令 pending。
+        let n = next_num(&bytes, &mut i)?;
+        pending.push(n);
+        // 即时冲刷：够一组参数就应用（支持「同命令隐式重复」）。
+        if let Some(cmd) = cur_cmd {
+            let argn = path_cmd_arg_count(cmd)?;
+            if pending.len() == argn {
+                apply_path_cmd(
+                    &pending, cmd, &mut cx, &mut cy, &mut sx, &mut sy, &mut min_x, &mut min_y, &mut max_x, &mut max_y,
+                    &mut any,
+                )?;
+                pending.clear();
+            }
+        }
+    }
+    // 尾部冲刷（不完整参数组 → None）。
+    if !pending.is_empty() {
+        let cmd = cur_cmd?;
+        let argn = path_cmd_arg_count(cmd)?;
+        if pending.len() != argn {
+            return None;
+        }
+        apply_path_cmd(
+            &pending, cmd, &mut cx, &mut cy, &mut sx, &mut sy, &mut min_x, &mut min_y, &mut max_x, &mut max_y, &mut any,
+        )?;
+    }
+    if !any {
+        return None;
+    }
+    Some((min_x, min_y, max_x - min_x, max_y - min_y))
+}
+
+/// R4106：path 命令参数量（直线族 + 曲线族——曲线命令出现即 None）。
+fn path_cmd_arg_count(cmd: char) -> Option<usize> {
+    match cmd {
+        'M' | 'm' => Some(2),
+        'L' | 'l' => Some(2),
+        'H' | 'h' => Some(1),
+        'V' | 'v' => Some(1),
+        'Z' | 'z' => Some(0),
+        // 曲线族：对象 bbox 需极值计算，保守不支持（宁缺勿错）。
+        'C' | 'c' | 'S' | 's' | 'Q' | 'q' | 'T' | 't' | 'A' | 'a' => None,
+        _ => None,
+    }
+}
+
+/// R4106：应用单组 path 命令参数到 bbox 累计器。
+#[allow(clippy::too_many_arguments)]
+fn apply_path_cmd(
+    args: &[f32],
+    cmd: char,
+    cx: &mut f32,
+    cy: &mut f32,
+    sx: &mut f32,
+    sy: &mut f32,
+    min_x: &mut f32,
+    min_y: &mut f32,
+    max_x: &mut f32,
+    max_y: &mut f32,
+    any: &mut bool,
+) -> Option<()> {
+    let mut point = |x: f32, y: f32| {
+        *min_x = min_x.min(x);
+        *min_y = min_y.min(y);
+        *max_x = max_x.max(x);
+        *max_y = max_y.max(y);
+        *any = true;
+    };
+    match cmd {
+        'M' | 'm' => {
+            let (dx, dy) = (args[0], args[1]);
+            let (nx, ny) = if cmd == 'm' { (*cx + dx, *cy + dy) } else { (dx, dy) };
+            // moveto 只落笔不描边——SVG 对象 bbox 是否含 moveto 孤立点：spec bbox 含
+            // 所有路径点，chromium 实测含 moveto 点；此处按含处理。
+            point(nx, ny);
+            *cx = nx;
+            *cy = ny;
+            *sx = nx;
+            *sy = ny;
+        }
+        'L' | 'l' => {
+            let (dx, dy) = (args[0], args[1]);
+            let (nx, ny) = if cmd == 'l' { (*cx + dx, *cy + dy) } else { (dx, dy) };
+            point(nx, ny);
+            *cx = nx;
+            *cy = ny;
+        }
+        'H' | 'h' => {
+            let nx = if cmd == 'h' { *cx + args[0] } else { args[0] };
+            point(nx, *cy);
+            *cx = nx;
+        }
+        'V' | 'v' => {
+            let ny = if cmd == 'v' { *cy + args[0] } else { args[0] };
+            point(*cx, ny);
+            *cy = ny;
+        }
+        'Z' | 'z' => {
+            *cx = *sx;
+            *cy = *sy;
+        }
+        _ => return None,
+    }
+    Some(())
 }
 
 /// 把 computed TransformValue 翻译为 SVG transform attr 语法（2D 子集；
