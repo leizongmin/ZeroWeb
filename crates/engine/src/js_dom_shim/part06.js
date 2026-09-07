@@ -1483,6 +1483,64 @@
   // R3254-M3 切片 1：format 命令 → inline 包裹标签（Chromium 语义——bold→<b> 而非
   // <span style=font-weight>；其余 format 族 hilitecolor/backcolor 等 CSS 化 defer）。
   var _zwExecCmdFormatTag = { bold: 'b', italic: 'i', underline: 'u', strikethrough: 's' };
+  // R3254-M3 切片 4（editing goal，2026-09-07）：**toggle 语义 + queryCommandState**——
+  // spec（Chromium execCommand 语义）：① format 命令对已包裹选区 = 解除包裹（innerHTML
+  // splice 剥 <tag>…</tag>）；② queryCommandState(cmd) = 选区起点所在 inline 包裹链
+  // （祖先链 + 宿主直子标签扫描）是否含对应标签。flat 模型：选区起点在宿主直子文本
+  // 节点内 → 扫描其前置兄弟的未闭合 <tag>；起点在元素内 → 沿祖先链找 tagName 匹配。
+  // https://w3c.github.io/selection-api/#querycommandstate（legacy MDN 语义——每命令
+  // bool 态）。
+  function _zwQueryFormatState(cmd) {
+    var tag = _zwExecCmdFormatTag[String(cmd == null ? '' : cmd).toLowerCase()];
+    if (!tag) return false;
+    try {
+      var sel = (typeof _getSelection === 'function') ? _getSelection() : null;
+      var rng = sel && sel.rangeCount > 0 ? sel._ranges[0] : null;
+      if (!rng) return false;
+      var node = rng.startContainer;
+      var guard = 0;
+      while (node && guard++ < 256) {
+        // 元素节点：tagName 匹配（大小写不敏感——HTML 解析产出大写 tagName）。
+        if (node.nodeType === 1) {
+          var tn = String(node.tagName || '').toLowerCase();
+          if (tn === tag) return true;
+          // 宿主直子文本的包裹判定由祖先链命中（<b> 在链上）。继续上行。
+        }
+        node = node.parentNode;
+      }
+    } catch (_eQs) {}
+    return false;
+  }
+  // toggle 解除包裹（切片 4）：选区起点祖先链中找到宿主直子的 <tag> 元素，把其
+  // **整体**（outerHTML 形态 '<tag …>inner</tag>'）在宿主 innerHTML 中替换为 inner
+  //（unwrap 选区内完整包裹对；跨部分包裹形态 defer 记录）。caret 落原 tag 位置
+  // 文本边界。
+  function _zwExecCmdUnwrapFormat(host, range, tag) {
+    var node = range.startContainer;
+    var el = null;
+    var guard = 0;
+    while (node && guard++ < 256) {
+      if (node.nodeType === 1 && node.parentNode === host
+          && String(node.tagName || '').toLowerCase() === tag) { el = node; break; }
+      node = node.parentNode;
+    }
+    if (!el) return false;
+    var inner = String(el.innerHTML || '');
+    var elHtml = String(el.outerHTML || '');
+    var html = String(host.innerHTML || '');
+    var at = html.indexOf(elHtml);
+    if (at < 0) return false;
+    host.innerHTML = html.slice(0, at) + inner + html.slice(at + elHtml.length);
+    try {
+      var kids = host.childNodes || [];
+      var nr2 = document.createRange();
+      var idx = kids.indexOf(el);
+      nr2.setStart(host, idx >= 0 ? idx + 1 : kids.length);
+      nr2.collapse(true);
+      if (typeof _getSelection === 'function') { _getSelection()._ranges = [nr2]; }
+    } catch (_eUnwCaret) {}
+    return true;
+  }
   // format 实应用：选区两端点映射到宿主 innerHTML 串偏移（与 __zw_ce_enter 同款
   // 实体感知扫描——`&...;` 实体按单渲染字符计），splice 包裹 `<tag>...</tag>`，
   // 经 innerHTML setter → SetInnerHtml mutation 流转宿主。**flat 模型**：两端点均
@@ -1535,10 +1593,22 @@
     var hEnd = textToHtmlOffset(html, endT);
     if (hStart < 0 || hEnd < 0) return;
     host.innerHTML = html.slice(0, hStart) + '<' + tag + '>' + html.slice(hStart, hEnd) + '</' + tag + '>' + html.slice(hEnd);
-    // caret → 包裹区末尾（宿主 childNodes：…text, tag, …——tag 后位置的元素边界）。
+    // caret → 包裹元素内文本尾（真实浏览器语义：toggle 链路 queryCommandState 依赖
+    // 选区起点在 <tag> 内——切片 4；slice 树同步可见（innerHTML setter 即建 pending
+    // 节点），末 tag 的 lastChild 文本 end）。fallback：宿主末子后元素边界。
     try {
       var nr = document.createRange();
-      nr.setStart(host, (kids.indexOf(ec) >= 0 ? kids.indexOf(ec) : kids.length - 1) + 1);
+      var done2 = false;
+      var kids2 = host.childNodes || [];
+      for (var wi = kids2.length - 1; wi >= 0; wi--) {
+        var wk = kids2[wi];
+        if (wk && wk.nodeType === 1 && String(wk.tagName || '').toLowerCase() === tag && wk.lastChild) {
+          nr.setStart(wk.lastChild, String(wk.lastChild.nodeValue || '').length);
+          done2 = true;
+          break;
+        }
+      }
+      if (!done2) nr.setStart(host, kids2.length);
       nr.collapse(true);
       if (typeof _getSelection === 'function') { _getSelection()._ranges = [nr]; }
     } catch (_eFmtCaret) {}
@@ -2552,15 +2622,22 @@
             var notCanceled = host2.dispatchEvent(before2) !== false;
             try { before2._zwUaDispatch = false; } catch (_eTb2) {}
             if (notCanceled) {
-              // R3254-M3 切片 1（editing goal，2026-09-07）：**格式命令实应用**——
-              // bold/italic/underline/strikethrough 对选中文本做 inline 标签包裹
-              //（<b>/<i>/<u>/<s>，innerHTML splice——与 __zw_ce_enter 同款实体感知
-              // 偏移扫描；flat 模型：两端点均在宿主**直子**文本节点内才应用，嵌套
-              // 结构 defer 记录）。toggle 语义（已包裹则解除）defer——queryCommandState
-              // 面后续切片。非 format 命令不触发 DOM 变更（事件照派）。
+              // R3254-M3 切片 1/4（editing goal，2026-09-07）：**格式命令实应用 +
+              // toggle 语义**——bold/italic/underline/strikethrough 对选中文本做
+              // inline 标签包裹（<b>/<i>/<u>/<s>，innerHTML splice——与 __zw_ce_enter
+              // 同款实体感知偏移扫描；flat 模型：两端点均在宿主**直子**文本节点内才
+              // 应用，嵌套结构 defer 记录）；选区起点已在 <tag> 包裹内 → 解除包裹
+              //（toggle，切片 4）。非 format 命令不触发 DOM 变更（事件照派）。
               var fmtTag2 = _zwExecCmdFormatTag[cmd];
               if (fmtTag2 && rng2 && !rng2.collapsed) {
-                try { _zwExecCmdApplyFormat(host2, rng2, fmtTag2); } catch (_eFmt) {}
+                // 切片 4 toggle 语义：起点已在 <tag> 包裹内 → 解除；否则包裹。
+                try {
+                  if (_zwQueryFormatState(cmd)) {
+                    _zwExecCmdUnwrapFormat(host2, rng2, fmtTag2);
+                  } else {
+                    _zwExecCmdApplyFormat(host2, rng2, fmtTag2);
+                  }
+                } catch (_eFmt) {}
               }
               // R3254-M3 切片 2：delete/forwardDelete 实应用——选区删除（flat 模型：
               // 两端点在宿主直子文本节点内 → SetChildText splice；collapsed →
@@ -2608,6 +2685,9 @@
     //（_zwQueryCommandState；defer 面——styleWithCSS/undo/justify* 等——返 false）。
     queryCommandSupported: function (commandId) { return _zwQueryCommandState(commandId).supported; },
     queryCommandEnabled: function (commandId) { return _zwQueryCommandState(commandId).enabled; },
+    // R3254-M3 切片 4：queryCommandState 真实反射——format 命令按选区起点包裹态
+    //（祖先链 tagName 匹配）；其余命令 false（状态面未接，documented）。
+    queryCommandState: function (commandId) { return _zwQueryFormatState(commandId); },
     queryCommandValue: function (_commandId) { return ''; },
     // `document.designMode`（R3261，HTML §3.2.5）——文档级编辑模式（'on' 使整文档可编辑）。
     // getter 返存储值（默认 'off'）；setter 'on'→'on'，'off'/'inherit'/其它→'off'（spec case-insensitive）。

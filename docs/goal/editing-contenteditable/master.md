@@ -2,7 +2,7 @@
 
 **入口文档**: [../editing-contenteditable.md](../editing-contenteditable.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-07（M1 残余三切片——Selection 方向位 + Text/Comment ownerDocument + selectionchange 派发，selection 套件 2005P/779F → 2704P/199F）
+**最后更新**: 2026-09-07（M3 切片 4——execCommand toggle 语义 + queryCommandState 真实反射）
 
 ---
 
@@ -55,6 +55,7 @@
 7. ~~**M3 切片 3**：queryCommandSupported/Enabled 真实反射（DC-4 首条硬缺口）~~ ✅ 2026-09-07（`_zwQueryCommandState`——copy/cut/paste 恒 supported+enabled（ClipboardEvent 路径）；编辑类（_zwExecCmdInputType 表）supported，enabled 与 execCommand 编辑分支同前提（选区在单一 editing host 内）；未接命令（undo/styleWithCSS/justify*/未知）false；大小写不敏感；queryCommandValue 保持 ''。单测 test_query_command_reflect_r3254_m3_slice3 五组断言；engine 2630 全绿 + webview 692 全绿 + selection/editing 套件 2005P/779F 零回归）。残余 defer：queryCommandState/toggle、queryCommandValue 值面
 8. ~~**M1 残余切片 2**：Selection 方向位 + Text/Comment ownerDocument~~ ✅ 2026-09-07（Selection 单例 `_anchorNode/_anchorOffset/_focusNode/_focusOffset` 独立边界点 + `_zwSync` helper——setBaseAndExtent/extend 写反向端点，getter 直读保存值，range 层恒正向化；detached/foreign-doc 清空 + WebIDL 省参 TypeError；Text/Comment.prototype ownerDocument getter。selection 套件 779F→262F，单测 test_selection_direction_r3254_m1_slice2 三组断言）
 9. ~~**M1 残余切片 3**：selectionchange 排程派发~~ ✅ 2026-09-07（`_zwScheduleSelectionChange`——setTimeout(0) 记录式 timer 任务边界 + pending target 数组按身份去重（document 与 text control 并存）；Selection mutator `_zwSync` 钩子 + part03 setSelectionRange 钩子（target=控件自身）。onselectionchange-on-document 4 subtest（Timeout+0P→4P）、onselectionchange-on-distinct-text-controls 2F→2P；单测 test_selectionchange_dispatch_r3254_m1_slice3 两组断言）。**selection 套件终态 2704P/199F**（基线 2005P/779F，净 +699P）
+10. ~~**M3 切片 4**：execCommand toggle 语义 + queryCommandState 真实反射~~ ✅ 2026-09-07（`_zwQueryFormatState`——选区起点祖先链 tagName 匹配（大小写不敏感）；`_zwExecCmdUnwrapFormat`——祖先链定位宿主直子 tag 元素整体替换为其 innerHTML（caret 落原位置）；execCommand format 臂按 state 走 wrap/unwrap toggle。单测 test_execcommand_toggle_state_r3254_m3_slice4 五组断言；M2 事件序测试同步适配（选区改非包裹文本——toggle 语义下 <b> 内选区会解除包裹）。**defer 记录**：跨部分包裹形态（选区只覆盖包裹的一段）unwrap 不处理；CSS 化命令 state 面仍 defer）。**残余聚类归因补记**：anchor-removal 2F = window named access（bare id 标识符）整体缺失——js-dom/native 绑定域（动态 innerHTML 后 id 无全局注册；探针归档）；script-and-style-elements 1F = Selection.toString 的 CSS 空白渲染语义（display:none 排除 + style/script 内容计入 + 块间换行）——渲染域投影，defer 有据
 
 **碰撞管理**：开工前先 `git log --since="14 days ago" -- crates/engine/src/js_dom_shim/`
 核对 js-dom 流活跃面。
@@ -65,7 +66,7 @@
 |--------|------|
 | M1 — selection 基线 + Selection 面摸底 | ✅ 切片 1/2/3 全部完成（2026-09-07）——基线 + Selection 面 + editing 导入 |
 | M2 — 编辑行为管线 | ✅ 切片 1/2/3 全部完成（2026-09-07）——事件序 + 键入/删除/换行落 DOM；defer 项：insertParagraph 块级拆分、跨节点删除 |
-| M3 — execCommand 基础面 + 收尾 | 🔶 切片 1/2/3 ✅（format 四命令 + delete 两命令实应用 + queryCommandSupported/Enabled 真实反射，2026-09-07）；剩余：toggle/queryCommandState、insertParagraph/insertHTML、run/ 用例导入（330KB reference impl 依赖——defer 有据）|
+| M3 — execCommand 基础面 + 收尾 | 🔶 切片 1/2/3/4 ✅（format 四命令 + delete 两命令实应用 + queryCommandSupported/Enabled 真实反射 + toggle/queryCommandState，2026-09-07）；剩余：insertParagraph/insertHTML、run/ 用例导入（330KB reference impl 依赖——defer 有据）|
 
 ## 验证基线
 
@@ -81,7 +82,7 @@
 | DC-1 | selection/editing 用例导入 + 基线 | ✅ selection 20 用例（1.7% 基线）+ editing 首批 3 用例；三份 evidence |
 | DC-2 | Selection API 可观察面 | ✅ 1.7%→**93.1%**（切片 2 八类 + 残余切片 2/3：anchor/focus 独立边界点（反向 selection）、Text/Comment ownerDocument、selectionchange 排程派发；单测九组 + 三组 + 两组）；残余 iframe 面（js-dom 共享域）+ selectAllChildren/deleteFromDocument 深层形态 defer 有据 |
 | DC-3 | 编辑行为落地（键入/删除/换行 → DOM） | ✅ M2 三切片（execCommand 事件序 + CE 键入/Backspace/Enter 落 DOM + 事件序）；beforeinput cancelable/input 按 spec |
-| DC-4 | execCommand 基础面 | ✅ queryCommandSupported/Enabled 真实反射（M3 切片 3，`_zwQueryCommandState`——supported/enabled 按接通命令面与选区 editing host 前提判定 + 五组单测）+ bold/italic/underline/strikethrough + delete/forwardDelete 实应用（M3 切片 1/2，六组单测）；toggle/queryCommandState、CSS 化命令、run/ 导入（330KB reference impl）defer 有据 |
+| DC-4 | execCommand 基础面 | ✅ queryCommandSupported/Enabled 真实反射（M3 切片 3 + 五组单测）+ queryCommandState/toggle（切片 4 + 五组单测——format 命令 wrap/unwrap 全语义）+ bold/italic/underline/strikethrough + delete/forwardDelete 实应用（M3 切片 1/2，六组单测）；CSS 化命令、跨部分包裹 unwrap、run/ 导入（330KB reference impl）defer 有据 |
 | DC-5 | cargo test 全绿 / clippy / 资产化 | ✅ engine 2630 + webview 692 全绿（本轮）/ 零警告 / 每切片带单测 |
 
 **收尾结论**：Selection 面（含方向位/ownerDocument/selectionchange）、编辑管线、

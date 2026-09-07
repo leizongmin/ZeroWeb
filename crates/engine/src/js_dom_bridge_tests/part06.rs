@@ -1433,10 +1433,12 @@ outer.addEventListener("beforeinput", function (e) {
 outer.addEventListener("input", function (e) {
   __ev.push("in:" + e.inputType + ":" + e.isTrusted + ":" + e.cancelable + ":" + e.bubbles);
 });
-var b = ce.querySelector("b");
+// R3254-M3 切片 4 注：选区用非包裹文本 'foo'（切片 4 起 bold 对已包裹选区是
+    // toggle 解除——用 <b> 内选区会剥 <b> 使后续步骤的 <b> 前提失效）。
+var foo = ce.firstChild;
 var r = document.createRange();
-r.setStart(b.firstChild, 0);
-r.setEnd(b, 1);
+r.setStart(foo, 0);
+r.setEnd(foo, 3);
 getSelection().removeAllRanges();
 getSelection().addRange(r);
 document.execCommand("bold", false, "");
@@ -1457,9 +1459,11 @@ var outer2 = document.querySelector("#test");
 var ce2 = outer2.querySelector("div[contenteditable]");
 var plain2 = document.getElementById("plain");
 outer2.addEventListener("input", function (e) { __ev2.push("in:" + e.inputType); });
-var b2 = ce2.querySelector("b");
+// R3254-M3 切片 4 注：start 用 'baz' 文本（切片 1 后 'foo' 已被包裹，
+    // 包裹内选区会触发 toggle——事件序断言需非 toggle 形态）。
+var baz2 = ce2.lastChild;
 var r2 = document.createRange();
-r2.setStart(b2.firstChild, 0);
+r2.setStart(baz2, 0);
 r2.setEnd(plain2, 0);
 getSelection().removeAllRanges();
 getSelection().addRange(r2);
@@ -1525,10 +1529,12 @@ var outer5 = document.querySelector("#test");
 var ce5 = outer5.querySelector("div[contenteditable]");
 outer5.addEventListener("beforeinput", function (e) { e.preventDefault(); });
 outer5.addEventListener("input", function (e) { __ev5.push("SHOULD_NOT_FIRE"); });
-var b5 = ce5.querySelector("b");
+// R3254-M3 切片 4 注：italic 为非 toggle 形态选区（baz 文本；<b> 内选区此时会
+// 触发 unwrap 语义——preventDefault 断言只关心事件序）。
+var baz5 = ce5.lastChild;
 var r5 = document.createRange();
-r5.setStart(b5.firstChild, 0);
-r5.setEnd(b5, 1);
+r5.setStart(baz5, 0);
+r5.setEnd(baz5, 3);
 getSelection().removeAllRanges();
 getSelection().addRange(r5);
 document.execCommand("italic", false, "");
@@ -4128,5 +4134,116 @@ globalThis.__sync2 = __c1 + "/" + __c2;
         sandbox.execute("String(globalThis.__after2)").unwrap().value,
         "1/1",
         "两控件 selectionchange 独立各派一次（pending target 数组按身份去重）"
+    );
+}
+
+#[test]
+fn test_execcommand_toggle_state_r3254_m3_slice4() {
+    // R3254-M3 切片 4（editing goal，2026-09-07）：format 命令 toggle 语义 +
+    // queryCommandState 真实反射。① bold 包裹后 queryCommandState('bold')=true、
+    // toggle 解除（<b>bar</b> → bar）；② 未包裹 → false、execCommand 包裹；
+    // ③ 嵌套结构起点（<b> 文本内）queryCommandState 祖先链命中 true；
+    // ④ 非 format 命令 state 恒 false；⑤ 大小写不敏感（BOLD）。
+    // spec：legacy queryCommandState 每命令 bool 态（MDN / Chromium 语义）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=ce-flat contenteditable>foobaz</div>\
+         <div id=ce-pre contenteditable>pre<b>ob</b>post</div>\
+         <div id=ce-nest contenteditable>foo<b>bar</b>baz</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // ①：flat 宿主 execCommand 包裹（SetInnerHtml mutation 流转——断言 mutations）；
+    // ①b：预包裹宿主（初始 dom_html）toggle 解除（同步视图，无跨 turn 异步）。
+    sandbox
+        .execute(
+            r##"
+var ce = document.getElementById("ce-flat");
+var t = ce.firstChild;
+var r1 = document.createRange();
+r1.setStart(t, 2);
+r1.setEnd(t, 4);
+getSelection().removeAllRanges();
+getSelection().addRange(r1);
+document.execCommand("bold", false, "");
+globalThis.__stateAfterWrap = document.queryCommandState("bold");
+
+var pre = document.getElementById("ce-pre");
+var bt = pre.querySelector("b").firstChild;
+var r2 = document.createRange();
+r2.setStart(bt, 0);
+r2.setEnd(bt, 2);
+getSelection().removeAllRanges();
+getSelection().addRange(r2);
+globalThis.__statePre = document.queryCommandState("bold");
+document.execCommand("bold", false, "");
+globalThis.__stateAfterToggle = document.queryCommandState("bold");
+globalThis.__html2 = pre.innerHTML;
+"##,
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__stateAfterWrap)").unwrap().value,
+        "true",
+        "execCommand 包裹后 queryCommandState('bold')=true"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__statePre)").unwrap().value,
+        "true",
+        "预包裹宿主内选区 → state true（初始树）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__html2)").unwrap().value,
+        "preobpost",
+        "toggle 解除——预包裹宿主 bold 剥 <b>（preobpost，SetInnerHtml mutation）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__stateAfterToggle)").unwrap().value,
+        "false",
+        "解除后 queryCommandState('bold')=false"
+    );
+    // ③：嵌套结构——选区起点在 <b> 文本内 → 祖先链命中。
+    sandbox
+        .execute(
+            r##"
+var nest = document.getElementById("ce-nest");
+var bt = nest.querySelector("b").firstChild;
+var r3 = document.createRange();
+r3.setStart(bt, 0);
+r3.setEnd(bt, 3);
+getSelection().removeAllRanges();
+getSelection().addRange(r3);
+globalThis.__stateNest = document.queryCommandState("bold");
+"##,
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__stateNest)").unwrap().value,
+        "true",
+        "选区起点在 <b> 文本内 → state true（祖先链）"
+    );
+    // ④⑤：非 format 命令 false + 大小写不敏感（当前选区仍为 ③ 的嵌套 <b> 文本）。
+    sandbox
+        .execute(
+            r##"
+globalThis.__other = document.queryCommandState("insertText") + "/" + document.queryCommandState("BOLD");
+"##,
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__other)").unwrap().value,
+        "false/true",
+        "insertText state=false；BOLD（大小写不敏感）沿 ③ 嵌套选区祖先链=true"
     );
 }
