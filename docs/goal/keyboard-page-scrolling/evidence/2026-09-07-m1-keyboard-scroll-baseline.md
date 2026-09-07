@@ -47,3 +47,30 @@ PageDown 到中间 → Ctrl+Home 回顶（回执链）→ Ctrl+End 到底）。b
 - Ctrl+Left/Right（word jump）：文本编辑域（editing goal 范围）defer。
 - snap 三案断言复评：需 runner 侧真实布局滚动管线（scroll-snap 布局在渲染器已有，
   runner testharness 无真渲染 viewport——跨域协调，记录于 master.md 待决策项）。
+
+---
+
+# M3 — scrollIntoView 摸底 + scroll 事件语义断言（2026-09-07，同日追加）
+
+**摸底结论**（R3060/R3075/R3047/R3051 既有面核查）：
+- scrollIntoView：R3060 已实现——有 rect bridge 时把文档 scrollTop 设为元素 gBCR.y；
+  block start/end/center 位移公式齐备（end=top+h-vh、center=top+h/2-vh/2）；
+  smooth→instant 简化已记录；scrollIntoViewIfNeeded（R3075）委托同面。无 rect
+  （bridge 未注册/元素无布局）→ no-op。
+- scroll 事件语义：R3047/R3051 程序化滚动（scrollTo/scrollBy/dict 形式）更新
+  _winScroll + 派 scroll 事件（cancelable=false）——probe 实证 scrollTo(0,300) →
+  scrollY=300 + 事件 cancelable=false ✓；scrollBy 增量 ✓；dict 形式 ✓；scrollX
+  独立轴 ✓；元素 scrollTo/scrollTop round-trip ✓（_scrollOffsets per-key）。
+- 生产链路：键盘/滚轮滚动经 apply_page_scroll_delta → dispatch_user_scroll →
+  __zw_user_scroll 注入（R3293 S0）——文档级 scrollY/scroll 事件已闭合。
+
+**断言资产**（标明本地）：
+1. `test_window_scroll_observable_r3254_kp4`——窗口滚动七断言（scrollY 更新/事件
+   cancelable=false/scrollBy 增量/dict 形式/scrollX 独立轴/元素 round-trip）。
+2. `test_scroll_into_view_observable_r3254_kp4`——scrollIntoView 五断言（mock rect
+   bridge：block start/end/center 位移公式、scroll 事件触发、无 rect no-op）。
+
+**限制记录**：真视口滚动（布局几何）defer——headless shim 层为 JS-observable
+round-trip 语义；元素级滚动目标判定（焦点→容器→根）S3 跨域（M2 记录延续）。
+
+engine 2629 全绿；fmt/clippy 零警告。

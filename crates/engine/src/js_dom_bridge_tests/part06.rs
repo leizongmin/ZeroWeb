@@ -3477,3 +3477,164 @@ fn test_history_back_forward_cross_hash_scroll_r3065() {
         "history.go(-1) 到 #sec entry -> 滚到 #sec（scrollY=500）"
     );
 }
+
+#[test]
+fn test_window_scroll_observable_r3254_kp4() {
+    // R3254-KP4（keyboard-page-scrolling goal M3，2026-09-07）：窗口/元素滚动 JS 可观察
+    // 面语义——① scrollTo(x,y) → scrollY 更新 + scroll 事件（cancelable=false）；
+    // ② scrollBy 增量；③ scrollTo({top}) dict 形式；④ scrollX 独立轴；⑤ 元素
+    // scrollTo/scrollTop round-trip（_scrollOffsets per-key）。程序化滚动
+    // round-trip 自洽（真视口滚动 defer——headless 无布局几何）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=t class=tall>x</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            r##"
+globalThis.__scrollEvents = 0;
+globalThis.__lastCancelable = null;
+addEventListener('scroll', function (e) { __scrollEvents++; __lastCancelable = e.cancelable; });
+scrollTo(0, 300);
+globalThis.__y1 = scrollY;
+globalThis.__ev1 = __scrollEvents;
+globalThis.__c1 = __lastCancelable;
+scrollBy(0, 50);
+globalThis.__y2 = scrollY;
+scrollTo({ top: 100 });
+globalThis.__y3 = scrollY;
+globalThis.__x3 = scrollX;
+var d = document.createElement('div');
+d.scrollTo(0, 40);
+globalThis.__elTop = d.scrollTop;
+"##,
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__y1)").unwrap().value,
+        "300",
+        "scrollTo(0,300) 后 scrollY 须为 300"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ev1)").unwrap().value,
+        "1",
+        "程序化滚动须派 scroll 事件"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__c1)").unwrap().value,
+        "false",
+        "scroll 事件须不可取消（spec）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__y2)").unwrap().value,
+        "350",
+        "scrollBy(0,50) 增量后 scrollY 须为 350"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__y3)").unwrap().value,
+        "100",
+        "scrollTo({{top:100}}) dict 形式须生效"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__x3)").unwrap().value,
+        "0",
+        "scrollX 独立轴（未被 dict.top 影响）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__elTop)").unwrap().value,
+        "40",
+        "元素 scrollTo/scrollTop round-trip 须自洽"
+    );
+}
+
+#[test]
+fn test_scroll_into_view_observable_r3254_kp4() {
+    // R3254-KP4b（keyboard-page-scrolling goal M3）：scrollIntoView 程序化 round-trip
+    // ——R3060 face：有 rect bridge 时把文档 scrollTop 设为元素 gBCR.y（block start
+    // 语义；end/center 按 vh 计算；smooth→instant 简化已记录）；无 rect → no-op。
+    // ① rect 可用路径：mock __zw_getBoundingClientRect → scrollTo 触发 + scroll 事件；
+    // ② block:end/center 位移公式；③ 无 rect no-op。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=target>aim</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            r##"
+globalThis.__ev = 0;
+addEventListener('scroll', function () { __ev++; });
+// mock rect bridge（runner 无布局 snapshot——rect 由测试注入）
+globalThis.__zw_getBoundingClientRect = function (sel) {
+  if (String(sel).indexOf('target') >= 0) return '0,500,100,50'; // x,y,w,h
+  return '';
+};
+globalThis.innerHeight = 400;
+var t = document.getElementById('target');
+t.scrollIntoView();
+globalThis.__y1 = scrollY;
+// block:end → top + h - vh = 500 + 50 - 400 = 150
+t.scrollIntoView({ block: 'end' });
+globalThis.__y2 = scrollY;
+// block:center → top + h/2 - vh/2 = 500 + 25 - 200 = 325
+t.scrollIntoView({ block: 'center' });
+globalThis.__y3 = scrollY;
+// 无 rect 元素 → no-op（scrollY 不变）
+var ghost = document.createElement('div');
+var before = scrollY;
+ghost.scrollIntoView();
+globalThis.__y4 = scrollY - before;
+"##,
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ev > 0)").unwrap().value,
+        "true",
+        "scrollIntoView 须经 scrollTo 触发 scroll 事件"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__y1)").unwrap().value,
+        "500",
+        "block:start（缺省）→ scrollY = 元素 top（500）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__y2)").unwrap().value,
+        "150",
+        "block:end → top + h - vh（500+50-400=150）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__y3)").unwrap().value,
+        "325",
+        "block:center → top + h/2 - vh/2（500+25-200=325）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__y4)").unwrap().value,
+        "0",
+        "无 rect 元素 scrollIntoView 须 no-op"
+    );
+}
