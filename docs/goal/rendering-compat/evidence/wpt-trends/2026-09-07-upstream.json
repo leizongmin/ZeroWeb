@@ -3,9 +3,9 @@
   "mode": "upstream",
   "wpt_data_ref": "v1.10",
   "total": 16814,
-  "passed": 14525,
+  "passed": 14534,
   "rate_pct": 86.4,
-  "extra": "failed=2289;skipped=0",
-  "git_sha": "40d7f00ba",
-  "note": "R4107-F html content-box/fill-box reference box wired into transform-origin resolution (compute_transform_matrix_with_ref_box; union bbox stays border-box); +6 green zero regression (cssbox-* x4 + animation/transform-box x2 via WAAPI end-state); transform-box domain fully closed; corpus 14519->14526"
+  "extra": "failed=2280;skipped=0",
+  "git_sha": "75a3874e1",
+  "note": "R4108-F mixed block+trailing inline replaced containers skip inline-only remeasure (IFC re-measure clobbered taffy anon-block stack y=35->0; gate = all-inline-children-replaced + last-in-flow + no pct-size attrs, 3-round narrowing实录); +9 green zero green-loss (view-box family x6->0.00, fill-box-002, replaced-element-007/016, svg-intrinsic-007, backdrop-svg-blur, fieldset-002, transform-root-bg x3); R3800 lineage closed; corpus 14526->14534"
 }
