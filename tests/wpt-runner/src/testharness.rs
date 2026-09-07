@@ -4816,12 +4816,44 @@ fn apply_testdriver_command(webview: &mut WebView, command: &TestdriverCommand) 
                     // 可打印字符：keydown 未取消 → InsertText 默认动作 + keypress
                     //（keydown-input-events.html 的 cancel 语义同款；非字符键无 keypress）。
                     HtmlUserAction::InsertText { .. } => {
+                        // R3254-K4 切片 2（2026-09-07）：空格激活**时序**——UI Events/
+                        // Chromium：Enter 在 keydown 触发 click、Space 在 **keyup** 触发
+                        // （keydown 只派事件不激活）。buttonish 目标（BUTTON / input
+                        // type=button|submit|reset）的空格延迟到 keyup 后再走 InsertText
+                        // 通道（webview 递归 Activate 合成 click）；非 buttonish 行为不变。
+                        let space_buttonish = character == ' '
+                            && webview
+                                .execute_script(&zero_engine::script_buttonish_probe(&selector))
+                                .map(|v| v.trim() == "1")
+                                .unwrap_or(false);
+                        if space_buttonish {
+                            dispatch_key_event_script(webview, &selector, "keydown", &key_detail);
+                            dispatch_key_event_script(webview, &selector, "keyup", &key_detail);
+                            if let Some(error) = dispatch_action(webview, target, action) {
+                                return Some(error);
+                            }
+                            continue;
+                        }
                         if dispatch_key_event_script(webview, &selector, "keydown", &key_detail) != "prevented" {
+                            // R3254-K5 切片 3（2026-09-07）：SELECT 焦点上的可打印字符 =
+                            // type-ahead 键入跳转（多字符缓冲 500ms 窗，Chromium closed-
+                            // select 语义近似）。消费后跳过 InsertText/keypress（SELECT 无
+                            // 文本插入面、字符不产生点击）；keydown 未取消才应用。
+                            if !character.is_control() && character != ' ' {
+                                let ta_script = zero_engine::script_select_type_ahead(&selector, character);
+                                let consumed = webview
+                                    .execute_script(&ta_script)
+                                    .map(|v| v.trim() == "1")
+                                    .unwrap_or(false);
+                                if consumed {
+                                    continue;
+                                }
+                            }
                             // R3254-KP5：空格对**非可编辑**目标（div/body 等无文本插入面）
                             // = 页面滚动（UI Events 默认动作；snap 用例 KEY_CODE_MAP 'Space'
                             // → ' ' 走此路径）。webview InsertText 对不可编辑目标返
                             // noop(NotApplicable)——以此判定回落滚动默认动作；可编辑宿主
-                            // （text control/CE）与 buttonish（Activate 递归）行为不变。
+                            // （text control/CE）行为不变。
                             if character == ' ' {
                                 let scroll_fallback = matches!(
                                     dispatch_action(webview, target, action),
@@ -5069,6 +5101,7 @@ globalThis.promise_test = function(fn, name) {
 };
 globalThis.assert_equals = function(a,b,m) { if (a !== b) throw new Error(m || (String(a)+' != '+String(b))); };
 globalThis.assert_true = function(v,m) { if (v !== true) throw new Error(m || 'expected true, got ' + String(v)); };
+globalThis.assert_false = function(v,m) { if (v !== false) throw new Error(m || 'expected false, got ' + String(v)); };
 "#;
 
     #[test]
@@ -5185,6 +5218,113 @@ promise_test(async function() {
         assert!(
             results.iter().all(|r| r.status == HarnessStatus::Pass),
             "all three sequence subtests pass: {results:?}"
+        );
+    }
+
+    #[test]
+    fn send_keys_space_activates_button_on_keyup_r3254_k4() {
+        // R3254-K4 切片 2（keyboard goal，2026-09-07）：空格激活时序——buttonish 目标
+        // （BUTTON / input type=button|submit|reset）在 keyup 触发 click（UI Events/
+        // Chromium：Enter=keydown、Space=keyup）；keydown 只派 keydown/keyup 事件不
+        // 激活。非 buttonish 空格（input 文本插入）行为不变。driver：runner send_keys。
+        let html = r##"
+<script src="/resources/testharness.js"></script>
+<script src="/resources/testdriver.js"></script>
+<button id="btn">Go</button>
+<input id="ib" type="button" value="IB">
+<input id="txt">
+<p id="log">idle</p>
+<script>
+var count = 0;
+var seq = [];
+document.getElementById('btn').addEventListener('click', function () { count++; seq.push('btn-click'); });
+document.getElementById('ib').addEventListener('click', function () { seq.push('ib-click'); });
+document.addEventListener('keydown', function (e) { if (e.target.id) seq.push('kd:' + e.target.id); });
+document.addEventListener('keyup', function (e) { if (e.target.id) seq.push('ku:' + e.target.id); });
+
+promise_test(async function() {
+  seq.length = 0;
+  await test_driver.send_keys(document.getElementById('btn'), ' ');
+  assert_equals(seq.join('|'), 'kd:btn|ku:btn|btn-click', 'Space on button: click after keyup, no keypress');
+});
+promise_test(async function() {
+  await test_driver.send_keys(document.getElementById('ib'), ' ');
+  assert_equals(seq.indexOf('ib-click'), seq.length - 1, 'input button click last');
+});
+promise_test(async function() {
+  var txtClicked = false;
+  document.getElementById('txt').addEventListener('click', function () { txtClicked = true; });
+  await test_driver.send_keys(document.getElementById('txt'), ' ');
+  assert_equals(document.getElementById('txt').value, ' ', 'editable space inserts at keydown');
+  await new Promise(function (r) { setTimeout(r, 20); });
+  assert_false(txtClicked, 'no click on editable space target');
+});
+</script>
+"##;
+        let results = run_testharness_html(
+            Path::new("/nonexistent-wpt-root-for-tests"),
+            "local-space-button-keyup.html",
+            html,
+            MINI_HARNESS,
+            Duration::from_secs(3),
+        );
+        assert!(
+            results.iter().all(|r| r.status == HarnessStatus::Pass),
+            "space-on-button keyup timing subtests pass: {results:?}"
+        );
+    }
+
+    #[test]
+    fn send_keys_select_type_ahead_multi_char_r3254_k5() {
+        // R3254-K5 切片 3（keyboard goal，2026-09-07）：select type-ahead——closed select
+        // 上 send_keys 可打印字符跳到首个 text 前缀匹配的 option（大小写不敏感）；多字符
+        // 缓冲逐字符精确化（'o'→one、'on'→one、'tw'→two）；无匹配保持当前选中；value/
+        // selectedIndex 变化派 input+change。无上游强制用例（键盘映射 UA-dependent，
+        // customizable keyboard-behavior 为 .optional 同因）——本地 runner 单测标明本地。
+        let html = r##"
+<script src="/resources/testharness.js"></script>
+<script src="/resources/testdriver.js"></script>
+<select id="sel">
+  <option value="1">one</option>
+  <option value="2">two</option>
+  <option value="3">three</option>
+  <option value="4" disabled>four</option>
+</select>
+<script>
+var sel = document.getElementById('sel');
+var events = [];
+sel.addEventListener('input', function () { events.push('input:' + sel.value); });
+sel.addEventListener('change', function () { events.push('change:' + sel.value); });
+
+promise_test(async function() {
+  // 单 subtest 内确定性序列：'t' → two；紧接 'h' 缓冲累计 'th' → three（多字符精确化）。
+  await test_driver.send_keys(sel, 't');
+  assert_equals(sel.value, '2', 't jumps to two');
+  assert_equals(sel.selectedIndex, 1, 'selectedIndex tracks');
+  await test_driver.send_keys(sel, 'h');
+  assert_equals(sel.value, '3', 'buffer th refines to three');
+  assert_equals(events.join('|'), 'input:2|change:2|input:3|change:3', 'input then change per jump');
+  // 600ms 静默清缓冲（shim setTimeout 真实定时器面），随后 'f' 单字符——four disabled，
+  // enabled 集合内无 f 前缀 → 保持 three。
+  await new Promise(function (r) { setTimeout(r, 600); });
+  await test_driver.send_keys(sel, 'f');
+  assert_equals(sel.value, '3', 'f after flush: no enabled f-prefix, stays');
+  // 'o' → 缓冲单字符 'o' → one（one 是首个 o 前缀）。
+  await test_driver.send_keys(sel, 'o');
+  assert_equals(sel.value, '1', 'o jumps to one');
+});
+</script>
+"##;
+        let results = run_testharness_html(
+            Path::new("/nonexistent-wpt-root-for-tests"),
+            "local-select-typeahead.html",
+            html,
+            MINI_HARNESS,
+            Duration::from_secs(3),
+        );
+        assert!(
+            results.iter().all(|r| r.status == HarnessStatus::Pass),
+            "select type-ahead subtests pass: {results:?}"
         );
     }
 

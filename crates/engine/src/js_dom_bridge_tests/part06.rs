@@ -4508,3 +4508,48 @@ globalThis.__r3 += "/" + s.scrollTop;
         "PageDown=680、Home=0、End=1e6、Space=+680"
     );
 }
+
+#[test]
+fn test_buttonish_probe_r3254_k4_slice2() {
+    // R3254-K4 切片 2（keyboard goal，2026-09-07）：`script_buttonish_probe`——空格激活
+    // 时序的目标分类面。BUTTON / input type=button|submit|reset → '1'；其它（text input、
+    // div、select）→ ''。runner send_keys 据此延迟空格激活到 keyup（UI Events/Chromium：
+    // Enter=keydown 触发、Space=keyup 触发）。驱动用例：WPT 无直接上游（本地 runner 单测
+    // send_keys_space_activates_button_on_keyup_r3254_k4 三组断言）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><button id=b></button><input id=ib type=button><input id=is type=submit>\
+<input id=ir type=reset><input id=txt type=text><div id=dv></div><select id=sel></select></body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // 直接对每个 selector 跑生成的 probe 串（与 runner 调用同形）——probe 返回值经
+    // globalThis 落点捕获（execute 返回值通道因 sandbox 实现差异不稳定，统一落点）。
+    for (id, expect) in [
+        ("b", "1"),
+        ("ib", "1"),
+        ("is", "1"),
+        ("ir", "1"),
+        ("txt", ""),
+        ("dv", ""),
+        ("sel", ""),
+    ] {
+        let script = crate::js_dom_bridge::script_buttonish_probe(&format!("#{id}"));
+        let wrapped = format!("globalThis.__zw_probe_result = (function(){{ return {script}; }})();");
+        sandbox.execute(&wrapped).unwrap();
+        let got = sandbox.execute("String(globalThis.__zw_probe_result === undefined ? '' : globalThis.__zw_probe_result)").unwrap().value;
+        assert_eq!(got, expect, "#{id} buttonish 判定");
+    }
+}

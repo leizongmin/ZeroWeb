@@ -1861,6 +1861,80 @@
     return true;
   };
 
+  // R3254-K5 切片 3（keyboard-default-actions goal M3，2026-09-07）：select type-ahead
+  // 键入跳转——焦点 SELECT（closed）上的可打印字符默认动作（Chromium closed-select
+  // 语义近似）。多字符缓冲（500ms idle 清空——Chromium type-ahead 窗近似；shim setTimeout
+  // 走 R2713 定时器面）：缓冲累计后取首个 text 以缓冲为前缀（大小写不敏感）的 enabled
+  // option，经 select.value 赋值（R3000 SelectOption 状态）+ input/change 事件序。同前缀
+  // 多 option 时缓冲逐字符精确化；无可跳 option 缓冲保持（等下一字符）。目标非 SELECT /
+  // 无 option 返 ''（runner 落回 InsertText 路径）；消费返 '1'。
+  // 无上游强制用例（键盘映射 UA-dependent——customizable-select 的 keyboard-behavior 为
+  // .optional 同因）；本地 runner 单测标明本地（goal 关键约束允许）。
+  var _selectTypeAhead = { buffer: '', timer: null };
+  globalThis.__zw_select_type_ahead = function (sel, ch) {
+    var el = null;
+    try { el = document.querySelector(sel); } catch (_e) {}
+    if (!el || String(el.tagName).toUpperCase() !== 'SELECT') return '';
+    var opts = el.options;
+    if (!opts || !opts.length) return '';
+    _selectTypeAhead.buffer += String(ch == null ? '' : ch);
+    if (_selectTypeAhead.timer != null) { try { clearTimeout(_selectTypeAhead.timer); } catch (_e2) {} }
+    try { _selectTypeAhead.timer = setTimeout(function () { _selectTypeAhead.buffer = ''; _selectTypeAhead.timer = null; }, 500); } catch (_e3) {}
+    var buf = _selectTypeAhead.buffer.toLowerCase();
+    for (var i = 0; i < opts.length; i++) {
+      if (opts[i].disabled) continue;
+      var text = String(opts[i].text || '').toLowerCase();
+      if (buf && text.indexOf(buf) === 0) {
+        if (opts[i].selected) return '1';
+        var v2 = opts[i].value;
+        if (v2 == null || v2 === '') v2 = String(opts[i].text || '');
+        el.value = v2;
+        el.dispatchEvent(new Event('input', { bubbles: true, cancelable: false }));
+        el.dispatchEvent(new Event('change', { bubbles: true, cancelable: false }));
+        return '1';
+      }
+    }
+    // 无前缀命中：缓冲重置为仅新字符再试一轮（Chromium：不可匹配的缓冲即弃——
+    // 长缓冲失败后新字符应独立生效）；单字符仍无命中 → 保持当前选中。
+    for (var k = 0; k < 2; k++) {
+      if (k === 1) {
+        _selectTypeAhead.buffer = String(ch == null ? '' : ch);
+        buf = _selectTypeAhead.buffer.toLowerCase();
+        if (!buf) break;
+      }
+      for (var i2 = 0; i2 < opts.length; i2++) {
+        if (opts[i2].disabled) continue;
+        var text2 = String(opts[i2].text || '').toLowerCase();
+        if (buf && text2.indexOf(buf) === 0 && !(k === 0 && opts[i2].selected)) {
+          var v4 = opts[i2].value;
+          if (v4 == null || v4 === '') v4 = String(opts[i2].text || '');
+          el.value = v4;
+          el.dispatchEvent(new Event('input', { bubbles: true, cancelable: false }));
+          el.dispatchEvent(new Event('change', { bubbles: true, cancelable: false }));
+          return '1';
+        }
+      }
+    }
+    // 无前缀命中：单字符重复跳转（Chromium 同字符循环语义近似——首个以该字符开头的
+    // 且非当前选中的 option）。
+    if (_selectTypeAhead.buffer.length === 1) {
+      var cur = el.selectedIndex;
+      for (var j = cur + 1; j < opts.length; j++) {
+        if (opts[j].disabled) continue;
+        var t2 = String(opts[j].text || '').toLowerCase();
+        if (t2.indexOf(buf) === 0) {
+          var v3 = opts[j].value;
+          if (v3 == null || v3 === '') v3 = String(opts[j].text || '');
+          el.value = v3;
+          el.dispatchEvent(new Event('input', { bubbles: true, cancelable: false }));
+          el.dispatchEvent(new Event('change', { bubbles: true, cancelable: false }));
+          return '1';
+        }
+      }
+    }
+    return '1';
+  };
+
   // R3254-KP5（keyboard-page-scrolling goal M2 切片 2，2026-09-07）：滚动键默认动作——
   // runner send_keys 滚动键（arrows/pages/home/end/space）keydown 未被页面取消时执行。
   // 幅度映射与 browser `app_input.scroll_delta_for_key`（R3254-M9）同源：Space/PageDown

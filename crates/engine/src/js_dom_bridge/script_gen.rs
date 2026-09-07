@@ -743,6 +743,38 @@ return (e && typeof __zw_is_ce_host === 'function' && __zw_is_ce_host(e)) ? '1' 
     )
 }
 
+/// 构造「探测元素是否 button 类控件」的宿主脚本（R3254-K4 切片 2，keyboard
+/// default-actions goal）。
+///
+/// 返 '1'（BUTTON 或 input type=button|submit|reset——空格激活目标）或 ''（否）。
+/// runner send_keys 空格时序：button-ish 目标在 **keyup** 触发激活（UI Events/Chromium
+/// 语义——Enter 在 keydown、Space 在 keyup），keydown 只派事件不激活。
+pub fn script_buttonish_probe(selector: &str) -> String {
+    let esc_sel = escape_js_string(selector);
+    format!(
+        "(function(){{var e=document.querySelector('{esc_sel}');\
+if (!e) return '';\
+var t = String(e.tagName).toUpperCase();\
+if (t === 'BUTTON') return '1';\
+if (t === 'INPUT' && ['button','submit','reset'].indexOf(String(e.getAttribute('type') || '').toLowerCase()) >= 0) return '1';\
+return '';}})()"
+    )
+}
+
+/// 构造「select type-ahead 键入跳转」的宿主脚本（R3254-K5 切片 3，keyboard
+/// default-actions goal M3）。
+///
+/// shim `__zw_select_type_ahead(sel, char)`：焦点 SELECT（closed——headless 无展开态）
+/// 上的可打印字符默认动作。多字符缓冲（500ms idle 清空——Chromium type-ahead 窗近似）：
+/// 缓冲累计后取首个 text 以缓冲为前缀（大小写不敏感）的 enabled option 选中；value/
+/// selectedIndex 变化派 input（bubbles）+ change（bubbles）事件——JS 可观察验收面。
+/// 目标非 SELECT 或无可跳 option → 返 ''（runner 落回既有 InsertText 路径）。
+pub fn script_select_type_ahead(selector: &str, character: char) -> String {
+    let esc_sel = escape_js_string(selector);
+    let esc_char = escape_js_string(&character.to_string());
+    format!("__zw_select_type_ahead && __zw_select_type_ahead('{esc_sel}', '{esc_char}')")
+}
+
 /// 构造「contenteditable 宿主 Enter 换行」的宿主脚本（R3254-M2 切片 3，editing goal）。
 ///
 /// shim `__zw_ce_enter(sel)`：caret 处插 `<br>`（insertLineBreak 语义——insertParagraph

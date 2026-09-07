@@ -39,11 +39,19 @@ CASES=(
   "uievents/keyboard/keypress-not-fired-for-modifier-shortcuts.html"
   "uievents/keyboard/modifier-keys.html"
   "html/semantics/forms/form-submission-0/implicit-submission.optional.html"
+  # M1 切片 2 扩展（keyboard-page-scrolling 共享面，2026-09-07）：css-scroll-snap/input
+  # 三案——滚动键键盘交互（KEYBOARD_TEST_SUBDIRS 第三目录的用例源）。
+  "css/css-scroll-snap/input/keyboard.html"
+  "css/css-scroll-snap/input/paged.html"
+  "css/css-scroll-snap/input/scroll-padding-paged.html"
 )
 
-# 用例依赖的 helper（targetted-form.js——implicit-submission 断言用）。
+# 用例依赖的 helper（targetted-form.js——implicit-submission 断言用；snap 三案的
+# scroll_support.js 与 ../support/common.js）。
 HELPERS=(
   "html/semantics/forms/form-submission-0/resources/targetted-form.js"
+  "dom/events/scrolling/scroll_support.js"
+  "css/css-scroll-snap/support/common.js"
 )
 
 for rel in "${CASES[@]}" "${HELPERS[@]}"; do
