@@ -888,8 +888,13 @@
           // 代际表述）。时间戳在 `_zwHCLiveInvalidate` 记账时盖（每批 mutation 刷新）。
           var _r380Bucket = (typeof _zwPendingByParent === 'object' && _zwPendingByParent)
             ? _zwPendingByParent.get(sel) : null;
-          if (_r380Bucket && (_r380Bucket.added.length || _r380Bucket.removed.length)
-              && (!globalThis._zwApplyGeneration || _r380Bucket.stamp === globalThis._zwApplyGeneration())) {
+          // R3254-E2 切片 8（editing goal，2026-09-07）：门扩展——子树深层 mutation
+          // （deleteContents 的 removeChild/deleteData 落孙代容器桶）经
+          // `_zwPendingSubtreeDirty` 前缀扫描纳入（此前只看目标自身桶 → 跨元素删除后
+          // innerHTML 读回 stale）。
+          if ((_r380Bucket && (_r380Bucket.added.length || _r380Bucket.removed.length)
+              && (!globalThis._zwApplyGeneration || _r380Bucket.stamp === globalThis._zwApplyGeneration()))
+              || (typeof _zwPendingSubtreeDirty === 'function' && _zwPendingSubtreeDirty(sel))) {
             try {
               var _r380Kids = _childNodeList(sel, null);
               var _r380Out = '';
@@ -925,8 +930,10 @@
             try {
               var _r3oBucket = (typeof _zwPendingByParent === 'object' && _zwPendingByParent)
                 ? _zwPendingByParent.get(sel) : null;
-              if (_r3oBucket && (_r3oBucket.added.length || _r3oBucket.removed.length)
-                  && (!globalThis._zwApplyGeneration || _r3oBucket.stamp === globalThis._zwApplyGeneration())) {
+              // R3254-E2 切片 8：子树脏门同 innerHTML（`_zwPendingSubtreeDirty`）。
+              if ((_r3oBucket && (_r3oBucket.added.length || _r3oBucket.removed.length)
+                  && (!globalThis._zwApplyGeneration || _r3oBucket.stamp === globalThis._zwApplyGeneration()))
+                  || (typeof _zwPendingSubtreeDirty === 'function' && _zwPendingSubtreeDirty(sel))) {
                 var _r3oTag = (typeof __zw_get_tag === 'function') ? String(__zw_get_tag(sel) || '').toUpperCase() : '';
                 if (_r3oTag) {
                   var _r3oOut = '<' + _r3oTag.toLowerCase();
@@ -7350,8 +7357,19 @@
             // null = 尾部追加（innerHTML 整体替换语义）。
             try {
               if (_ihAdded && _ihAdded.length) {
+                // R3254-E2 切片 8（editing goal，2026-09-07）：sel 容器的解析顶层子
+                // **parentNode 同步重指**（K3 切片 A insertAdjacentHTML 同款）——_zwMEl
+                // wrapper 的 parentNode 原为 _zwMBuildBodyTree 内部 body 快照（R136 重指
+                // 只在 hostHandle 路径生效），parentElement/parent walking（editor-test-
+                // utils 的 marker walk、框架 DOM 遍历）把子提升到伪 body → 端点错域。
+                var _r304HostProxy = (sel && typeof _wrapSelector === 'function') ? _wrapSelector(sel) : null;
                 for (var _r304a = 0; _r304a < _ihAdded.length; _r304a++) {
-                  if (_ihAdded[_r304a]) _ihAdded[_r304a]._zwSelPendingParent = { parentSel: sel || null, parentHandle: handle || null, nextSibling: null };
+                  if (_ihAdded[_r304a]) {
+                    _ihAdded[_r304a]._zwSelPendingParent = { parentSel: sel || null, parentHandle: handle || null, nextSibling: null };
+                    if (_r304HostProxy) {
+                      try { _ihAdded[_r304a].parentNode = _r304HostProxy; } catch (_e304pp) {}
+                    }
+                  }
                 }
               }
             } catch (_e304s) {}

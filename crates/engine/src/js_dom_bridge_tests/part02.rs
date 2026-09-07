@@ -2442,3 +2442,85 @@ fn test_class_decl_global_export_r3254_k3() {
         "顶层 class 声明须跨脚本全局可见（script_run_classic_page class 导出）",
     );
 }
+
+#[test]
+fn test_delete_contents_cross_element_r3254_k3_probe() {
+    // R3254-E2 切片 8 探针：跨元素 deleteContents 后 div.innerHTML 读回（HTMLDetails
+    // 13F 根因定位——host 读 stale vs 本地视图）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=container>abc<details><summary>def</summary>ghi</details>jkl</div></body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    // 形态 A：初始 doc 子直接建域（bridge 视图全链 ✓）。
+    sandbox
+        .execute(
+            r##"
+var div = document.getElementById('container');
+var abc = div.firstChild;          // text 'abc'
+var jkl = div.lastChild;           // text 'jkl'
+var r = document.createRange();
+r.setStart(abc, 3);
+r.setEnd(jkl, 0);
+globalThis.__st = [];
+getSelection().removeAllRanges();
+getSelection().addRange(r);
+getSelection().deleteFromDocument();
+__st.push('A:html=' + div.innerHTML);
+"##,
+        )
+        .unwrap();
+    // 形态 C：端点即 cac 边界形态（div@1 → details@2）——deleteFromDocument-HTMLDetails
+    // 首案的 R268 路径索引覆盖。
+    sandbox
+        .execute(
+            r##"
+var div3 = document.createElement('div');
+div3.id = 'container3';
+document.body.appendChild(div3);
+div3.innerHTML = 'abc<details><summary>def</summary>ghi</details>jkl';
+var r3 = document.createRange();
+r3.setStart(div3, 1);
+r3.setEnd(div3.firstChild.nextSibling, 2);
+getSelection().removeAllRanges();
+getSelection().addRange(r3);
+getSelection().deleteFromDocument();
+__st.push('C:html=' + div3.innerHTML);
+"##,
+        )
+        .unwrap();
+    // 形态 B：innerHTML setter 先行（WPT setupEditingHost 同款）→ 解析子建域 → delete。
+    sandbox
+        .execute(
+            r##"
+var div2 = document.createElement('div');
+div2.id = 'container2';
+document.body.appendChild(div2);
+div2.innerHTML = 'abc<details><summary>def</summary>ghi</details>jkl';
+var abc2 = div2.firstChild;
+var jkl2 = div2.lastChild;
+var r2 = document.createRange();
+r2.setStart(abc2, 3);
+r2.setEnd(jkl2, 0);
+getSelection().removeAllRanges();
+getSelection().addRange(r2);
+getSelection().deleteFromDocument();
+__st.push('B:html=' + div2.innerHTML);
+"##,
+        )
+        .unwrap();
+    let st = sandbox.execute("String(globalThis.__st)").unwrap().value;
+    println!("[PROBE-DEL] {st}");
+}

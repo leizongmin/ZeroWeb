@@ -4715,11 +4715,15 @@
           var sc = self.startContainer, ec = self.endContainer;
           if (!sc || !ec || sc === ec) return;
           var sn = sc.nodeType | 0;
-          if (sn !== 1 && sn !== 11) return;
+          // R3254-E2 切片 8（editing goal，2026-09-07）：门放宽—— admit sc=CharData +
+          // ec=Element 混合形态（deleteFromDocument-HTMLDetails "def{…</summary><summary>
+          // ghi}…" 跨 summary 端点——R268 双 CharData 门拒、R279 旧 sc-element 门亦拒 →
+          // 空转/误删）。sc=CharData 时 ① 尾段走 deleteData。
           var isCd = function (n) {
             var t = n ? (n.nodeType | 0) : 0;
             return t === 3 || t === 4 || t === 7 || t === 8;
           };
+          if (sn !== 1 && sn !== 11 && !isCd(sc)) return;
           var en = ec.nodeType | 0;
           var ecIsEl = (en === 1 || en === 11);
           if (!ecIsEl && !isCd(ec)) return;
@@ -4748,6 +4752,7 @@
             _r279handled = true;
             return;
           }
+          var skLen = function (n) { return (n && n.childNodes) ? n.childNodes.length : 0; };
           var rmNode = function (n, parent) {
             try {
               if (typeof n.remove === 'function') n.remove();
@@ -4762,6 +4767,12 @@
           // 保留，尾部**止于 ec 的路径子**：ec 是端点本体不动、ec 后的兄弟不在
           // 区间。ec 非 sc 后代（隔层）时 ecIdx=-1 → 尾部止于爬升段处理，此处
           // 只删 [so, end) 中 sc 的全部子——与 R268 sc 侧爬升对称由下方统一）。
+          if (isCd(sc)) {
+            // R3254-E2 切片 8：sc CharData 尾段 deleteData（spec delete-contents sc
+            // partially-contained CharData——(so, len)）。
+            var sl279c = String(sc.data != null ? sc.data : '').length;
+            if (so < sl279c) { try { sc.deleteData(so, sl279c - so); } catch (_e279cd) {} }
+          } else {
           var sk279 = sc.childNodes || [];
           var ecIdxIn279 = -1;
           for (var k279f = 0; k279f < sk279.length; k279f++) {
@@ -4776,6 +4787,7 @@
           }
           var tailEnd279 = (ecIdxIn279 >= 0) ? ecIdxIn279 : sk279.length;
           for (var i279 = tailEnd279 - 1; i279 >= so; i279--) rmNode(sk279[i279], sc);
+          }
           // ② sc 侧爬升：到 cac 前逐级移除路径子右侧兄弟（cac 级跳过——mid 段处理）。
           var lvl279 = sc, lvlPar279 = sc.parentNode, hp279 = 0;
           while (lvlPar279 && lvl279 !== cac && hp279++ < 128) {
@@ -4879,6 +4891,7 @@
           }
           if (!cac) return;
           var so = self.startOffset | 0, eo = self.endOffset | 0;
+          var skLen = function (n) { return (n && n.childNodes) ? n.childNodes.length : 0; };
           var rmNode = function (n, parent) {
             try {
               if (typeof n.remove === 'function') n.remove();

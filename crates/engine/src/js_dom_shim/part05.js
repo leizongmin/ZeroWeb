@@ -8570,6 +8570,35 @@
     if (!b) { b = { added: [], removed: [], addedSet: new Set(), removedSet: new Set() }; _zwPendingByParent.set(key, b); }
     return b;
   }
+  // R3254-E2 切片 8（editing goal，2026-09-07）：**子树 pending 脏判定**——R380 融合
+  // 序列化门以「读目标自身桶非空」为前提；子树深层 mutation（deleteContents 的
+  // removeChild/deleteData 落孙代容器桶）不触目标桶 → 门关 → innerHTML/outerHTML 读
+  // 回 stale host 快照（deleteFromDocument-HTMLDetails 13F：跨元素删除后 div.innerHTML
+  // 原样）。sel 为路径选择器（'html:nth-child(1) > body:nth-child(2) > …'，' > ' 分隔），
+  // 后代桶键共享前缀 → 前缀扫描判定（桶数量级 = 活跃容器数，可接受）。代际门同 R380：
+  // 桶 stamp 须等于当前 apply 代际（apply 后的 identity 记账桶不算 stale 补偿）。
+  function _zwPendingSubtreeDirty(sel) {
+    if (typeof _zwPendingByParent !== 'object' || !_zwPendingByParent || !sel) return false;
+    var own = _zwPendingByParent.get(sel);
+    if (own && (own.added.length || own.removed.length)
+        && (!globalThis._zwApplyGeneration || own.stamp === globalThis._zwApplyGeneration())) {
+      return true;
+    }
+    var prefix = sel + ' > ';
+    try {
+      var keys = _zwPendingByParent.keys();
+      for (var k = keys.next(); !k.done; k = keys.next()) {
+        var key = k.value;
+        if (typeof key !== 'string' || key.indexOf(prefix) !== 0) continue;
+        var b = _zwPendingByParent.get(key);
+        if (b && (b.added.length || b.removed.length)
+            && (!globalThis._zwApplyGeneration || b.stamp === globalThis._zwApplyGeneration())) {
+          return true;
+        }
+      }
+    } catch (_e3kPsd) {}
+    return false;
+  }
   function _zwPASet() {
     if (!_zwPendingAddedSet) {
       _zwPendingAddedSet = new Set();

@@ -2,7 +2,7 @@
 
 **入口文档**: [../editing-contenteditable.md](../editing-contenteditable.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-07（E2 切片 7——顶层 class 声明全局发布；HTMLDetails 1T→30 注册全跑 17P/13F；selection+editing 组合 **2915P/18F/0T**）
+**最后更新**: 2026-09-07（E2 切片 8——R279 混合形态门 + innerHTML setter parentNode 重指 + 子树脏判定融合门；HTMLDetails 26/30；selection 套件 2929P/18F）
 
 ---
 
@@ -62,6 +62,7 @@
 14. **E2 残余切片 6**：iframe realm 面地基 → 🔶 2026-09-07（两件前置落地：① fetch 通道 .html 响应内联相对 src 脚本；② runInlineScripts 顶层 var 导出尾声。selection 套件零回归（2827P/77F）。**未闭合**：bare iframe doc 内 common.js 自动 setupRangeTests 中途异常（错误被 runInlineScripts 吞）——下一切片需错误显面（win.__zwLastIframeScriptError）+ runner 路径探针（srcdoc 通道与 src fetch 通道行为有差异，探针实证 contentWindow var 均 undefined）+ R115 bare doc 的 body/子树完备性核查）
 15. **E2 切片 6 收口**：iframe realm Selection/Range 面 → ✅ 2026-09-07（错误显面 + 逐层探针定位四缺口：① 工厂元素无 `.style`——test-iframe.html 顶层 display TypeError 经 R206 per-part catch 落 unexpectedException（此前 runInlineScripts 静默吞 + R115/R206 双通道误判延误定位）；② iframe win 无 getSelection/Selection——per-iframe Selection 实例（spec 每 Window 一个）；③ iframe doc/detached-doc（R204）createRange 缺 Range.prototype 链——rangeFromEndpoints 的 foreign-doc 域 instanceof false；④ detached doc defaultView 应 null 非 undefined。另勘误 deleteFromDocument 空 selection = no-op（selection-api「If this is empty, return」——既有单测同步修正）。**deleteFromDocument.html 60/60 + getSelection.html 18/18 全 Pass**；selection 套件 **2898P/5F/1T**；keyboard 18P 零回归）
 16. **E2 切片 7**：顶层 class 声明全局发布 → ✅ 2026-09-07（script_run_classic_page 行首声明扫描补 `class NAME`——strict eval 独立变量环境下类声明跨 `<script>` 不可见；editor-test-utils.js 的 class EditorTestUtils 使 deleteFromDocument-HTMLDetails 的 test() 全不注册 → 整案 Timeout 0-registered。validity 门 = 名后 `{` 或 `extends`。HTMLDetails 1T→30 注册全跑 17P/13F（13F = 跨元素 deleteContents best-effort——E5 defer 面首次可观测）；selection 套件 2915P/18F/0T；单测 +1（class 双脚本可见性）；engine 2648 / keyboard 18P 零回归）
+17. **E2 切片 8**：跨元素 deleteContents（HTMLDetails 17P→26P）→ ✅ 2026-09-07（三件：① innerHTML setter sel 容器解析顶层子 parentNode 重指 `_wrapSelector(sel)`（K3 切片 A 同款——原 parentNode 为 _zwMBuildBodyTree 内部 body 快照，marker walk 的 parentElement 提升走到伪 body → 端点错域）；② `_zwPendingSubtreeDirty(sel)` 子树脏判定（后代桶键路径前缀扫描）接入 innerHTML/outerHTML 融合门——子树深层 mutation 触发融合序列化；③ R279 门放宽 admit sc=CharData + ec=Element 混合形态（sc CharData 尾段 deleteData；R268 保持双 CharData 原门——放宽版曾与 R279 单测冲突，revert 记录）。**HTMLDetails 26/30**；残余 4F = contained-endpoint 边缘形态（ec 尾边界整节点包含 + 文本端提升 so 语义——探针迭代两轮 misfire 后保守回退，精确记录））
 
 **碰撞管理**：开工前先 `git log --since="14 days ago" -- crates/engine/src/js_dom_shim/`
 核对 js-dom 流活跃面。
