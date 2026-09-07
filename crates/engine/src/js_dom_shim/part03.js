@@ -685,6 +685,20 @@
   };
   try {
     globalThis.Text.prototype = Object.create(globalThis.CharacterData.prototype);
+    // R3254-M1 残余（editing goal，2026-09-07）：ownerDocument 挂 **prototype**（spec
+    // Node.ownerDocument 是接口属性）——innerHTML/createElement 产物经 _zwMText 只
+    // setPrototypeOf 不落实例 own（构造器 `new Text()` 的实例 defineProperty 仅覆盖
+    // 构造器路径），WPT selection common.js `ownerDocument(node).createRange()` 对
+    // 解析文本子返 undefined（'reading createRange' TypeError）→ isCollapsed/
+    // removeRange/type 12F×3 簇。getter 返主文档：主文档产物精确；无 adopt 印记的
+    // 回落语义与元素 get-trap（part04 ownerDocument 分支）一致。
+    if (!Object.prototype.hasOwnProperty.call(globalThis.Text.prototype, 'ownerDocument')) {
+      try {
+        Object.defineProperty(globalThis.Text.prototype, 'ownerDocument', {
+          get: function () { return globalThis.document; }, configurable: true, enumerable: true,
+        });
+      } catch (_eOwnT) {}
+    }
     // media-elements M3 扩批 XXXVIII：interface prototype object 的 constructor 自引
     //（WebIDL §4.6.1——prototype 的 constructor 属性值为接口构造器；track-cue-empty
     // 断言 `textNode.constructor.name === Text.name`。R179 文本节点原型链 Text.prototype
@@ -726,7 +740,18 @@
     try { Object.defineProperty(n, 'ownerDocument', { get: function () { return globalThis.document; }, configurable: true }); } catch (_eR121d) {}
     return n;
   };
-  try { globalThis.Comment.prototype = Object.create(globalThis.CharacterData.prototype); } catch (_eC) {}
+  try {
+    globalThis.Comment.prototype = Object.create(globalThis.CharacterData.prototype);
+    // R3254-M1 残余：ownerDocument 挂 prototype（同 Text——WPT common.js 对解析
+    // 注释子调 ownerDocument().createRange()）。
+    if (!Object.prototype.hasOwnProperty.call(globalThis.Comment.prototype, 'ownerDocument')) {
+      try {
+        Object.defineProperty(globalThis.Comment.prototype, 'ownerDocument', {
+          get: function () { return globalThis.document; }, configurable: true, enumerable: true,
+        });
+      } catch (_eOwnC) {}
+    }
+  } catch (_eC) {}
   globalThis.ProcessingInstruction = globalThis.ProcessingInstruction || function ProcessingInstruction() {};
   try { globalThis.ProcessingInstruction.prototype = Object.create(globalThis.CharacterData.prototype); } catch (_ePI) {}
   globalThis.CDATASection = globalThis.CDATASection || function CDATASection() {};
@@ -11321,6 +11346,14 @@
               var d = (dir === 'backward' || dir === 'none') ? dir : 'forward';
               var so = _selObj(key);
               so.start = ns; so.end = ne; so.direction = d;
+              // R3254-M1 残余切片 3：text control 选区变更排 selectionchange——
+              // target = 控件自身（spec selectionchange on input/textarea 独立派发，
+              // WPT onselectionchange-on-distinct-text-controls 两断言）。
+              try {
+                if (typeof globalThis._zwScheduleSelectionChange === 'function') {
+                  globalThis._zwScheduleSelectionChange(_makeProxy(sel, handle));
+                }
+              } catch (_eSelChSC) {}
               return undefined;
             };
           }

@@ -3955,3 +3955,178 @@ __zw_dispatch_event("#target", "keydown", { key: "S", code: "KeyS", shiftKey: tr
         "getModifierState 按 init dict modifier 位求值"
     );
 }
+
+#[test]
+fn test_selection_direction_r3254_m1_slice2() {
+    // R3254-M1 残余切片 2（editing goal，2026-09-07）：① Selection anchor/focus
+    // 独立边界点——setBaseAndExtent 反向形态（anchor 在 focus 后）anchor/focus
+    // getter 各自等于请求值（WPT setBaseAndExtent.html Reverse 断言族）；②
+    // addRange/collapse forward 语义零变化；③ Text/Comment.prototype.ownerDocument
+    // （innerHTML 解析产物经 _zwMText 无实例 own——common.js
+    // ownerDocument(node).createRange() 'reading createRange' TypeError 12F×3 簇）。
+    // 驱动用例：WPT selection/setBaseAndExtent.html / isCollapsed.html /
+    // removeRange.html / type.html。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=host><p id=p1>hello</p><p id=p2>world</p></div></body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // ①：setBaseAndExtent 反向（同节点 anchor=3 > focus=1）→ anchor=3 focus=1。
+    sandbox
+        .execute(
+            r##"
+var t = document.getElementById("p1").firstChild;
+var sel = getSelection();
+sel.removeAllRanges();
+sel.setBaseAndExtent(t, 3, t, 1);
+globalThis.__r = sel.anchorOffset + "/" + sel.focusOffset;
+// ②：正向恢复 → anchor=1 focus=3。
+sel.setBaseAndExtent(t, 1, t, 3);
+globalThis.__r += " " + sel.anchorOffset + "/" + sel.focusOffset;
+// ③：跨节点反向（p2 文本在 p1 文本后）→ anchorNode=p2 侧、focusNode=p1 侧。
+var t2 = document.getElementById("p2").firstChild;
+sel.setBaseAndExtent(t2, 2, t, 1);
+globalThis.__r += " " + (sel.anchorNode === t2) + "/" + (sel.focusNode === t);
+// ④：rangeCount 恒 1、getRangeAt 正向（start=(t,1) end=(t2,2)）。
+var rg = sel.getRangeAt(0);
+globalThis.__r += " " + (rg.startContainer === t) + "/" + (rg.endContainer === t2);
+"##,
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__r)").unwrap().value,
+        "3/1 1/3 true/true true/true",
+        "反向 setBaseAndExtent anchor=3/focus=1 → 正向 1/3 → 跨节点反向 + range 正向化"
+    );
+    // ⑤：addRange forward 语义零变化（anchor=start focus=end）。
+    sandbox
+        .execute(
+            r##"
+var sel5 = getSelection();
+sel5.removeAllRanges();
+var r5 = document.createRange();
+r5.setStart(t, 0);
+r5.setEnd(t, 5);
+sel5.addRange(r5);
+globalThis.__r5 = (sel5.anchorNode === t && sel5.anchorOffset === 0 && sel5.focusOffset === 5);
+// ⑥：collapse → caret 两侧一致。
+sel5.collapse(t, 2);
+globalThis.__r5 += "/" + (sel5.anchorOffset === 2 && sel5.focusOffset === 2 && sel5.isCollapsed);
+"##,
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__r5)").unwrap().value,
+        "true/true",
+        "addRange/collapse forward 语义零变化"
+    );
+    // ⑦：innerHTML 解析产物文本子 ownerDocument（Text.prototype getter）。
+    sandbox
+        .execute(
+            r##"
+var d = document.createElement("div");
+d.innerHTML = "<p>x</p><!--c-->";
+document.body.appendChild(d);
+var tn = d.firstChild.firstChild;
+var cn = d.lastChild;
+globalThis.__r7 = (tn.ownerDocument === document) + "/" + (cn.ownerDocument === document);
+// ⑧：common.js 消费形态——ownerDocument(node).createRange() 可用。
+globalThis.__r7 += "/" + (tn.ownerDocument.createRange !== undefined);
+"##,
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__r7)").unwrap().value,
+        "true/true/true",
+        "解析文本/注释子 ownerDocument → document（Text/Comment.prototype getter）"
+    );
+}
+
+#[test]
+fn test_selectionchange_dispatch_r3254_m1_slice3() {
+    // R3254-M1 残余切片 3（editing goal，2026-09-07）：selectionchange 排程派发——
+    // ① document 级：Selection mutator（setPosition）后排程 task 派发（同步不可见，
+    // timer 边界后可见；多次变更合并一次）；② text control 级：setSelectionRange
+    // 排程到控件自身（多控件独立派发——pending target 数组按身份去重）。
+    // 驱动用例：WPT selection/onselectionchange-on-document.html（4 subtest）/
+    // onselectionchange-on-distinct-text-controls.html（2 subtest）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=container><br><br></div>\
+         <input id=input1 value=hello><input id=input2 value=world></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // ①：document 级——同步 count=0，timer 触发后 count=1（多次 setPosition 合并）。
+    sandbox
+        .execute(
+            r##"
+globalThis.__count = 0;
+document.addEventListener("selectionchange", function () { __count++; });
+var container = document.getElementById("container");
+getSelection().setPosition(container, 1);
+getSelection().setPosition(container, 2);
+globalThis.__sync = __count;
+"##,
+        )
+        .unwrap();
+    // 无 host timer 的裸沙箱：setTimeout 落 microtask fallback——execute 间隙 flush。
+    sandbox.execute("globalThis.__after = __count;").unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__sync + '/' + globalThis.__after)").unwrap().value,
+        "0/1",
+        "document 级 selectionchange：同步 0 → timer 后 1（多次变更合并一次）"
+    );
+    // ②：text control 级——两控件独立派发（各一次，互不吞并）。
+    sandbox
+        .execute(
+            r##"
+globalThis.__c1 = 0; globalThis.__c2 = 0;
+var i1 = document.getElementById("input1");
+var i2 = document.getElementById("input2");
+i1.addEventListener("selectionchange", function () { __c1++; });
+i2.addEventListener("selectionchange", function () { __c2++; });
+i1.setSelectionRange(1, 2);
+i1.setSelectionRange(2, 3);
+i2.setSelectionRange(1, 3);
+globalThis.__sync2 = __c1 + "/" + __c2;
+"##,
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__sync2)").unwrap().value,
+        "0/0",
+        "text control setSelectionRange 同步不派发（queued task 语义）"
+    );
+    // microtask 间隙 flush（无 host timer 路径）。
+    sandbox.execute("globalThis.__after2 = __c1 + '/' + __c2;").unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__after2)").unwrap().value,
+        "1/1",
+        "两控件 selectionchange 独立各派一次（pending target 数组按身份去重）"
+    );
+}

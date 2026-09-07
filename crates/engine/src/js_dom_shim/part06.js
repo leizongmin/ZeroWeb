@@ -6925,17 +6925,74 @@
   //（collapseToStartEnd.html/extend-exception.html/getRangeAt.html）。
   // https://w3c.github.io/selection-api/#dom-selection
   function _zwSelEmpty() { throw new (globalThis.DOMException || Error)('There are no ranges in the selection.', 'InvalidStateError'); }
+  // R3254-M1 残余切片 3（editing goal，2026-09-07）：selectionchange 排程器——
+  // spec https://w3c.github.io/selection-api/#selectionchange-event：selection
+  // 变更后**排队 task** 派发 selectionchange（不可取消、不冒泡）；同一 task 内的
+  // 多次变更只派一次（WPT onselectionchange-on-document 'fires once' 断言）。
+  // setTimeout(0) 记录式 timer 提供任务边界；去重旗标 _zwSelectionChangeScheduled
+  // 防多 mutation 重复排程。target 为传入节点（document 或 text control 自身）。
+  // https://w3c.github.io/selection-api/#selectionchange-event
+  var _zwSelectionChangePending = null; // Array：本任务待派发 target（去重按身份）
+  globalThis._zwScheduleSelectionChange = function (target) {
+    if (!_zwSelectionChangePending) _zwSelectionChangePending = [];
+    for (var i = 0; i < _zwSelectionChangePending.length; i++) {
+      if (_zwSelectionChangePending[i] === target) return;
+    }
+    _zwSelectionChangePending.push(target);
+    if (_zwSelectionChangePending.length > 1) return; // timer 已排
+    var fire = function () {
+      var targets = _zwSelectionChangePending || [];
+      _zwSelectionChangePending = null;
+      for (var f = 0; f < targets.length; f++) {
+        try {
+          if (targets[f] && typeof targets[f].dispatchEvent === 'function') {
+            targets[f].dispatchEvent(new Event('selectionchange'));
+          }
+        } catch (_eSelCh) {}
+      }
+    };
+    if (typeof globalThis.setTimeout === 'function') {
+      globalThis.setTimeout(fire, 0);
+    } else if (typeof queueMicrotask === 'function') {
+      queueMicrotask(fire);
+    } else if (typeof Promise === 'function') {
+      Promise.resolve().then(fire);
+    } else {
+      fire();
+    }
+  };
   function _getSelection() {
     if (_selection) return _selection;
     _selection = Object.create(globalThis.Selection.prototype);
     _selection._ranges = [];
+    // R3254-M1 残余切片 2（editing goal，2026-09-07）：**anchor/focus 独立边界点**——
+    // spec Selection 的 anchor/focus 是独立于 Range start/end 的概念（focus 可在
+    // anchor 前 = backward direction；https://w3c.github.io/selection-api/
+    // #dfn-anchor-node）。shim range 恒正向化（R203 钳制——start 在 end 后被拉回），
+    // 反向 selection 的 anchor 端点经 range 读必丢。故在 Selection 层**保存原始
+    // anchor/focus**（_anchorNode/_anchorOffset/_focusNode/_focusOffset），getter
+    // 直接读保存值；_ranges[0] 仍正向 range（getRangeAt/toString/deleteContents 消费）。
+    // setBaseAndExtent/extend 写双端点；其余 mutator（collapse/addRange/...）置
+    // anchor=start、focus=end 同步既有 forward 语义，零行为变化。
+    _selection._anchorNode = null; _selection._anchorOffset = 0;
+    _selection._focusNode = null; _selection._focusOffset = 0;
+    // 统一同步 helper：正向 range + 双端点记录 + selectionchange 排程
+    //（spec「queue a task to fire selectionchange」——同一 task 内多次变更合并为
+    // 一次派发；_zwSelectionChangeScheduled 去重旗标。timer 路径经 setTimeout(0)
+    // 记录式队列（runner probe 泵 / host 定时器均消费），无 host 时 fallback
+    // microtask。派发 target = document，bubbles=false。）
+    _selection._zwSync = function (aNode, aOff, fNode, fOff) {
+      this._anchorNode = aNode; this._anchorOffset = aOff;
+      this._focusNode = fNode; this._focusOffset = fOff;
+      _zwScheduleSelectionChange(globalThis.document);
+    };
     Object.defineProperties(_selection, {
       rangeCount: { get: function () { return this._ranges.length; } },
       isCollapsed: { get: function () { return this._ranges.length === 0 || this._ranges.every(function (r) { return r.collapsed; }); } },
-      anchorNode: { get: function () { return this._ranges[0] ? this._ranges[0].startContainer : null; } },
-      anchorOffset: { get: function () { return this._ranges[0] ? this._ranges[0].startOffset : 0; } },
-      focusNode: { get: function () { return this._ranges[0] ? this._ranges[0].endContainer : null; } },
-      focusOffset: { get: function () { return this._ranges[0] ? this._ranges[0].endOffset : 0; } },
+      anchorNode: { get: function () { return this._ranges[0] ? this._anchorNode : null; } },
+      anchorOffset: { get: function () { return this._ranges[0] ? this._anchorOffset : 0; } },
+      focusNode: { get: function () { return this._ranges[0] ? this._focusNode : null; } },
+      focusOffset: { get: function () { return this._ranges[0] ? this._focusOffset : 0; } },
       type: { get: function () { return this._ranges.length === 0 ? 'None' : (this.isCollapsed ? 'Caret' : 'Range'); } },
     });
     _selection.toString = function () { return this._ranges.map(function (r) { return r.toString(); }).join(''); };
@@ -6948,8 +7005,8 @@
       }
       return this._ranges[idx];
     };
-    _selection.removeAllRanges = function () { this._ranges = []; };
-    _selection.empty = function () { this._ranges = []; };
+    _selection.removeAllRanges = function () { this._ranges = []; this._zwSync(null, 0, null, 0); };
+    _selection.empty = function () { this._ranges = []; this._zwSync(null, 0, null, 0); };
     // spec removeRange(range)：① 非 Range 参数 → TypeError（WPT removeRange.html
     // `selection.removeRange(null)` 断言）；② range 不在 selection 中（含等价但不同
     // 引用）→ NotFoundError（「Removing a different range should throw」断言族——
@@ -6965,11 +7022,15 @@
       }
       this._ranges.splice(idx, 1);
     };
-    _selection.addRange = function (range) { this._ranges = [range]; /* 多 range（FF）简化为单 */ };
+    _selection.addRange = function (range) {
+      this._ranges = [range]; /* 多 range（FF）简化为单 */
+      // addRange 语义 anchor=start、focus=end（forward）。
+      this._zwSync(range.startContainer, range.startOffset, range.endContainer, range.endOffset);
+    };
     _selection.collapse = function (node, off) {
-      if (!node) { this._ranges = []; return; }
+      if (!node) { this._ranges = []; this._zwSync(null, 0, null, 0); return; }
       var r = _makeRange(); r.setStart(node, off | 0); r.collapse(true);
-      this._ranges = [r];
+      this._ranges = [r]; this._zwSync(node, off | 0, node, off | 0);
     };
     // setPosition = collapse 别名（https://w3c.github.io/selection-api/#dom-selection-setposition，
     // WPT onselectionchange-on-document.html 用 setPosition 设 caret）。
@@ -6985,6 +7046,7 @@
       r.setStart(src.startContainer, src.startOffset);
       r.collapse(true);
       this._ranges = [r];
+      this._zwSync(src.startContainer, src.startOffset, src.startContainer, src.startOffset);
     };
     _selection.collapseToEnd = function () {
       if (this._ranges.length === 0) _zwSelEmpty();
@@ -6993,18 +7055,24 @@
       r2.setStart(src2.endContainer, src2.endOffset);
       r2.collapse(true);
       this._ranges = [r2];
+      this._zwSync(src2.endContainer, src2.endOffset, src2.endContainer, src2.endOffset);
     };
     // spec extend(node, offset)：空 selection 抛 InvalidStateError（WPT
     // extend-exception.html——旧版静默 no-op）；focus 侧设 (node, offset)，
-    // anchor 保持（经 collapse start 后 setEnd 实现——shim range 无方向位）。
+    // anchor 保持。方向按 (anchor, focus) 文档序判定（backward 时 range 正向化
+    // 存储，anchor/focus getter 翻转读）。
     _selection.extend = function (node, off) {
       if (this._ranges.length === 0) _zwSelEmpty();
-      var r = this._ranges[0];
-      var sc = r.startContainer, so = r.startOffset;
+      var o2 = off | 0;
       var n = _makeRange();
-      n.setStart(sc, so);
-      n.setEnd(node, off | 0);
+      // 正向化 range：anchor/focus 按文档序排（start<=end）。
+      if (_zwRangeBpAfter(this._anchorNode, this._anchorOffset, node, o2)) {
+        n.setStart(node, o2); n.setEnd(this._anchorNode, this._anchorOffset);
+      } else {
+        n.setStart(this._anchorNode, this._anchorOffset); n.setEnd(node, o2);
+      }
       this._ranges = [n];
+      this._zwSync(this._anchorNode, this._anchorOffset, node, o2);
     };
     // spec selectAllChildren(node)：DocumentType 抛 InvalidNodeTypeError；node 不在
     // 文档中 → no-op（保留原 selection）；否则选 (node, 0)–(node, childNodes.length)。
@@ -7032,15 +7100,49 @@
       r.setStart(node, 0);
       r.setEnd(node, node.childNodes ? node.childNodes.length : 0);
       this._ranges = [r];
+      this._zwSync(node, 0, node, node.childNodes ? node.childNodes.length : 0);
     };
     // spec setBaseAndExtent(anchorNode, anchorOffset, focusNode, focusOffset)：
-    // anchor→start、focus→end（WPT setBaseAndExtent.html/isCollapsed.html 依赖面——
-    // shim range 无方向位，anchor==start 语义与 forwards 选择一致）。
+    // direction 由 anchor/focus 位置序决定——focus 在 anchor 前（文档序）= backward
+    //（WPT setBaseAndExtent.html Reverse 断言族：anchorNode/focusNode 各自等于
+    // 请求值，与 start/end 无关）。shim range 恒正向化（R203 钳制），方向记录于
+    // _direction，anchor/focus getter 按其读端点。
     _selection.setBaseAndExtent = function (anchorNode, anchorOffset, focusNode, focusOffset) {
+      // spec setBaseAndExtent 步骤 1：anchor/focus 任一为 detached（不在本文档
+      // 节点树）→ 移除全部 range（WPT setBaseAndExtent.html detachedPara 域
+      // 「rangeCount must equal 0」断言族——in-doc 判定同 selectAllChildren）。
+      // WebIDL `(Node node, unsigned long offset, ...)` 非空接口参数：null/undefined
+      // 抛 TypeError（WPT 'with null nodes'/'too few params' 断言族——省略参数按
+      // undefined 转 TypeError，arguments.length 区分省略与传值）。
+      if (arguments.length < 4 || !anchorNode || !focusNode
+          || typeof anchorNode.nodeType !== 'number' || typeof focusNode.nodeType !== 'number') {
+        throw new (globalThis.TypeError || TypeError)("Failed to execute 'setBaseAndExtent' on 'Selection': parameter is not of type 'Node'.");
+      }
+      var _inDocA = false, _inDocF = false;
+      try {
+        // Document 节点：仅本文档自身算 in-doc（foreignDoc/xmlDoc 是独立 node tree，
+        // WPT Range 40/43 「rangeCount must equal 0」断言族）。
+        if (typeof _zwNodeContains === 'function') {
+          _inDocA = _zwNodeContains(globalThis.document, anchorNode) || anchorNode === globalThis.document;
+          _inDocF = _zwNodeContains(globalThis.document, focusNode) || focusNode === globalThis.document;
+        } else {
+          var _g = 0, _c = anchorNode;
+          while (_c && _g++ < 4096) { if (_c === globalThis.document) { _inDocA = true; break; } _c = _c.parentNode; }
+          _g = 0; _c = focusNode;
+          while (_c && _g++ < 4096) { if (_c === globalThis.document) { _inDocF = true; break; } _c = _c.parentNode; }
+        }
+      } catch (_eSbD) {}
+      if (!_inDocA || !_inDocF) { this._ranges = []; this._zwSync(null, 0, null, 0); return; }
+      var aOff = anchorOffset | 0, fOff = focusOffset | 0;
       var r = _makeRange();
-      r.setStart(anchorNode, anchorOffset | 0);
-      r.setEnd(focusNode, focusOffset | 0);
+      // 正向化 range（anchor 在 focus 后时交换建域——R203 钳制语义下的等价正向域）。
+      if (_zwRangeBpAfter(anchorNode, aOff, focusNode, fOff)) {
+        r.setStart(focusNode, fOff); r.setEnd(anchorNode, aOff);
+      } else {
+        r.setStart(anchorNode, aOff); r.setEnd(focusNode, fOff);
+      }
       this._ranges = [r];
+      this._zwSync(anchorNode, aOff, focusNode, fOff);
     };
     // spec deleteFromDocument()：删 selection 覆盖内容（空 selection 抛 InvalidStateError）。
     // 经 range deleteContents（R2929 既有 mutation-emitting 面——文本/元素区间精确，
