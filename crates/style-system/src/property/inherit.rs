@@ -1057,6 +1057,7 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
         "transform-origin" => {
             style.transform_origin_x = default_style.transform_origin_x;
             style.transform_origin_y = default_style.transform_origin_y;
+            style.transform_origin_declared = false;
             true
         }
         "perspective" => {

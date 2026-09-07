@@ -2643,8 +2643,22 @@ pub(crate) fn collect_css_transforms(
                 }
             }
         };
-        let mut ox = resolve_origin(&st.transform_origin_x, ref_box.map_or(0.0, |r| r.2));
-        let mut oy = resolve_origin(&st.transform_origin_y, ref_box.map_or(0.0, |r| r.3));
+        // R4109（CSS Transforms 1 §transform-origin）：SVG 元素（无关联 CSS 布局盒）的
+        // transform-origin **初始 used value = 0 0**（参考框左上角），非 50% 50%。style-system
+        // 无声明位，以 Percentage(50)/Percentage(50) 初始签名为判据（svg 子树内 author 显式
+        // 声明 50% 50% 的形态在 corpus 未出现；显式 px/百分比值不受影响）。
+        // driving: fill-box-001 target1（无显式 origin + transform-box:fill-box + rotate(90deg)）：
+        // chromium pivot = fill-box 左上 → 旋转落入 BL 象限补齐四象限拼图；ZW 旧按 50% 求中心
+        // → identity 停留 BR → BL 象限露红（10000px）。
+        let origin_is_initial = !st.transform_origin_declared;
+        let (mut ox, mut oy) = if origin_is_initial {
+            (0.0_f32, 0.0_f32)
+        } else {
+            (
+                resolve_origin(&st.transform_origin_x, ref_box.map_or(0.0, |r| r.2)),
+                resolve_origin(&st.transform_origin_y, ref_box.map_or(0.0, |r| r.3)),
+            )
+        };
         // R4105（CSS Transforms 1 §transform-box/§transform-origin）：transform-origin
         // 相对**参考框左上角**——注入 SVG 的旋转中心是用户坐标系的绝对点，须加参考框
         // 原点偏移（fill/stroke/content/border box = 元素 bbox 左上 (x,y)；view-box =

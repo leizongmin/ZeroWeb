@@ -448,6 +448,8 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
             if let Some((x, y)) = parse_origin_xy(value) {
                 style.transform_origin_x = x;
                 style.transform_origin_y = y;
+                // R4109：声明显式 origin（含 50% 50%）——svg 侧初始 used value 0 0 仅限未声明。
+                style.transform_origin_declared = true;
                 return true;
             }
         }

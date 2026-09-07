@@ -2157,13 +2157,31 @@ pub(crate) fn remeasure_inline_only_containers(
     let has_block_level_child = in_flow_children.iter().any(|c| c.is_block_level);
     // R4108 收窄②：inline replaced 子须为**末个 in-flow 子**——尾随块级子的混排容器
     //（content-visibility-025：div+svg+div）的 svg 几何依赖旧 IFC 同步，保持原路径。
-    let last_in_flow_is_inline_replaced = in_flow_children.last().map(|c| !c.is_block_level).unwrap_or(false);
+    // R4109：末位判定同样只看**有元素 node_id** 的子——尾随匿名文本盒（trailing whitespace
+    // 的 (anon) h=0，node_id=None）不作末位（content-visibility-025 的 div+svg+div 页面里
+    // 末 div 直排文本被 IFC 吸为匿名项 → LayoutBox 末位是 svg 之后的 anon，误判 gate 触发）。
+    let last_in_flow_is_inline_replaced = in_flow_children
+        .iter()
+        .rev()
+        .find(|c| {
+            c.node_id
+                .is_some_and(|id| doc.get(id).is_some_and(|n| matches!(n.kind, NodeKind::Element(_))))
+        })
+        .map(|c| !c.is_block_level)
+        .unwrap_or(false);
     let mixed_all_replaced_inline = has_block_level_child
         && last_in_flow_is_inline_replaced
         && in_flow_children.iter().any(|c| !c.is_block_level)
         && in_flow_children
             .iter()
             .filter(|c| !c.is_block_level)
+            // 仅约束**有元素 node_id** 的 inline 子——匿名/文本盒（trailing whitespace/script
+            // 的 (anon) h=0）不参与「全部 replaced」判定（R4109 探针：body>p+svg+ws-anon 时
+            // anon 无元素 id → all() 恒 false → gate 永不触发）。
+            .filter(|c| {
+                c.node_id
+                    .is_some_and(|id| doc.get(id).is_some_and(|n| matches!(n.kind, NodeKind::Element(_))))
+            })
             .all(|c| {
                 c.node_id
                     .is_some_and(|id| crate::tree::is_replaced_element_tag(doc, id))

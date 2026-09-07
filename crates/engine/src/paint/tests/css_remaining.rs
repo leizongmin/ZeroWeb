@@ -706,6 +706,59 @@ fn r4105_svg_transform_origin_offset_by_reference_box_origin() {
     );
 }
 
+/// R4109（CSS Transforms 1 §transform-origin）：SVG 元素（无关联 CSS 布局盒）的
+/// transform-origin **初始 used value = 0 0**（参考框左上角）。未声明 origin +
+/// transform-box: fill-box + rotate(90deg)：旋转中心 = fill-box 左上；显式声明
+/// 50% 50% 的元素仍按参考框中心解析（declared 位区分两态）。
+#[test]
+fn r4109_svg_initial_transform_origin_is_zero_zero() {
+    // 未声明 origin：pivot = fill-box 左上 (100,100)。
+    let html = r##"<html><head><style>
+        svg { display: block; width: 400px; height: 300px; }
+        #t { fill: green; transform-box: fill-box; transform: rotate(90deg); }
+    </style></head><body style="margin:0">
+    <svg width="400" height="300"><rect id="t" x="100" y="100" width="100" height="100" fill="green"/></svg>
+    </body></html>"##;
+    let doc = zero_dom::parse_html(html);
+    let sheet = zero_css_parser::Parser::parse_stylesheet(
+        "svg { display: block; width: 400px; height: 300px; } #t { fill: green; transform-box: fill-box; transform: rotate(90deg); }",
+    );
+    let mut sys = zero_style_system::StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[sheet]);
+    let svg_id = doc.get_elements_by_tag_name("svg").into_iter().next().expect("svg");
+    let mut out: Vec<(zero_dom::NodeId, String)> = Vec::new();
+    crate::paint::painter::collect_css_transforms(&doc, svg_id, &styles, &mut out);
+    assert_eq!(out.len(), 1);
+    let (_, attr) = &out[0];
+    assert!(
+        attr.contains("translate(100 100)"),
+        "未声明 origin 的 svg 旋转中心应为 fill-box 左上 (100,100)，got: {attr}"
+    );
+
+    // 显式声明 50% 50%：pivot = fill-box 中心 (150,150)——declared 位使显式值不被初始 0 0 覆盖。
+    let html2 = html.replace(
+        "#t { fill: green; transform-box:",
+        "#t { fill: green; transform-origin: 50% 50%; transform-box:",
+    );
+    let sheet2 = zero_css_parser::Parser::parse_stylesheet(
+        "svg { display: block; width: 400px; height: 300px; } #t { fill: green; transform-origin: 50% 50%; transform-box: fill-box; transform: rotate(90deg); }",
+    );
+    let doc2 = zero_dom::parse_html(&html2);
+    let mut sys2 = zero_style_system::StyleSystem::new();
+    sys2.set_viewport(800.0, 600.0);
+    let styles2 = sys2.compute_styles(&doc2, &[sheet2]);
+    let svg2 = doc2.get_elements_by_tag_name("svg").into_iter().next().expect("svg");
+    let mut out2: Vec<(zero_dom::NodeId, String)> = Vec::new();
+    crate::paint::painter::collect_css_transforms(&doc2, svg2, &styles2, &mut out2);
+    assert_eq!(out2.len(), 1);
+    let (_, attr2) = &out2[0];
+    assert!(
+        attr2.contains("translate(150 150)"),
+        "显式 50% 50% 的 svg 旋转中心应为 fill-box 中心 (150,150)，got: {attr2}"
+    );
+}
+
 /// R4106（CSS Transforms 1 §transform-box 参考框覆盖扩展）：svg_element_bbox 补
 /// path 直线族 d 属性 bbox + g/a 容器子形状并集。锚：① path
 /// "M 200 100 v 100 h 100 v -100" → bbox (200,100,100,100)，fill-box origin 0,0
