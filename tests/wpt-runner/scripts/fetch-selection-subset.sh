@@ -66,9 +66,12 @@ CASES=(
   "selection/onselectionchange-on-distinct-text-controls.html"
 )
 
-# 共享 helper（用例依赖的 .js，一并拉取）。
+# 共享 helper（用例依赖的 .js/.html，一并拉取）。
+# R3254-E2（editing goal，2026-09-07）：test-iframe.html——deleteFromDocument.html 的
+# iframe 面依赖（contentWindow.setupRangeTests/testRange 跨 iframe 取用例骨架）。
 HELPERS=(
   "selection/common.js"
+  "selection/test-iframe.html"
 )
 
 # M1 切片 3（2026-09-07）：editing/ 首批——event.html（beforeinput/input 事件面）

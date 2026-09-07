@@ -7399,6 +7399,11 @@
     //（WPT selectAllChildren.html 主断言族——anchor/focus 落 node 两端；detached
     // 节点「must do nothing」断言占该用例大半。）in-doc 判定沿 parentNode 链上行
     //（与 document.contains 同语义——_zwNodeContains(document, node)）。
+    // R3254-E2（editing goal，2026-09-07）：**外文档 Document 不再 `nodeType === 9`
+    // 短路放行**——foreignDoc（createHTMLDocument）/xmlDoc（createDocument）的
+    // parentNode=null，沿链上行自然 false（spec「do nothing」语义），旧 `nodeType === 9`
+    // 捷径使外文档节点被误判 in-doc → selection 被改（118F 簇根因：59 ranges ×
+    // {foreignDoc, xmlDoc} 两文档节点）。本文档自身经 _zwSameNode 同一性命中，无需捷径。
     _selection.selectAllChildren = function (node) {
       if (!node || node.nodeType === 10) {
         throw new (globalThis.DOMException || Error)(
@@ -7406,16 +7411,16 @@
       }
       var inDoc = false;
       if (typeof _zwNodeContains === 'function') {
-        inDoc = _zwNodeContains(globalThis.document, node) || node.nodeType === 9;
+        inDoc = _zwNodeContains(globalThis.document, node);
       } else {
         var cur7 = node;
         var guard7 = 0;
         while (cur7 && guard7++ < 4096) {
-          if (cur7 === globalThis.document || cur7.nodeType === 9) { inDoc = true; break; }
+          if (cur7 === globalThis.document) { inDoc = true; break; }
           cur7 = cur7.parentNode;
         }
       }
-      if (!inDoc) return; // spec「不改变 selection」分支（detached 节点）
+      if (!inDoc) return; // spec「不改变 selection」分支（detached / 外文档节点）
       var r = _makeRange();
       r.setStart(node, 0);
       r.setEnd(node, node.childNodes ? node.childNodes.length : 0);
@@ -7467,10 +7472,18 @@
     // spec deleteFromDocument()：删 selection 覆盖内容（空 selection 抛 InvalidStateError）。
     // 经 range deleteContents（R2929 既有 mutation-emitting 面——文本/元素区间精确，
     // 跨容器 best-effort 与 range 一致）。
+    // R3254-E2（editing goal，2026-09-07）：方法面同步挂 `Selection.prototype`——WPT
+    // deleteFromDocument.html 断言 `Selection.prototype.deleteFromDocument.length === 0`
+    //（spec WebIDL 接口成员在 prototype 上；单例实例方法面此前不覆盖原型访问）。
     _selection.deleteFromDocument = function () {
       if (this._ranges.length === 0) _zwSelEmpty();
       this._ranges[0].deleteContents();
     };
+    try {
+      if (globalThis.Selection && globalThis.Selection.prototype) {
+        globalThis.Selection.prototype.deleteFromDocument = _selection.deleteFromDocument;
+      }
+    } catch (_eSelProto) {}
     // spec containsNode(node, allowPartial)：无真选择几何——沿用既有 best-effort，
     // 精确化：node 在当前 range commonAncestor 子树内视为包含（toString 路径同源）。
     _selection.containsNode = function (node, allowPartial) {
