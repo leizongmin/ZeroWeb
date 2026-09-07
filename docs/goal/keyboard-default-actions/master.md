@@ -62,3 +62,22 @@
 - 测试基线：立项时点全绿（13,192+）；clippy 零警告
 - WPT 键盘默认动作面：M1 切片 2 后 **6P/12F（9 用例全可执行）** @ WPT_REV 315976933870（evidence 同日追加段）
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过
+
+## Done Criteria 清点（2026-09-07 收尾状态）
+
+| DC | 条目 | 状态 |
+|---|---|---|
+| DC-1 | 上游键盘用例导入 | ✅ 9 用例（uievents/keyboard 5 + implicit-submission + snap 三案），全可执行 |
+| DC-1 | 通过率报告 + evidence | ✅ 1P/4F → 6P/12F（Timeout 清零）；三轮 evidence 追加 |
+| DC-2 | Enter 提交 + implicit submission + validation 联动 | 🔶 uE007→Submit 路由 + 表单管线已接；规则细化（单/多控件、formnovalidate）待 js-dom 视图断链修复后复评（跨域）|
+| DC-2 | 空格/Enter 激活（两键差异）+ preventDefault | ✅ 空格→button-ish 递归 Activate（click 合成全管线）；Enter→Submit 臂；keydown preventDefault 抑制（keydown-input-events 2P/0F）|
+| DC-2 | Esc dialog cancel/close + select 展开态收起 | ✅ dialog cancel/close 三组断言；select 展开态——headless 无展开态 UI（goal 明示 JS 面验收），defer 记录 |
+| DC-3 | select 导航（方向键/Home/End） | ✅ 跳 disabled/clamp/value 编程选中 + input+change 事件序 |
+| DC-3 | radio 方向键组内移动 | ✅ checked 迁移 + 跳 disabled + clamp；空格切换 checkbox=K4 Activate 管线（checkbox 臂既有）|
+| DC-4 | 事件序（keydown→keypress→keyup/click + cancelable） | ✅ keydown-input-events 2P/0F（keydown→beforeinput→input 序 + preventDefault 抑制）；keypress 派发（composed 面 3P/0F）；修饰键持久状态 F 记录 |
+| DC-5 | cargo test 全绿 / clippy / 资产化 | ✅ 18,966 全绿（本轮）/ 零警告 / 每切片带单测 |
+
+**收尾结论**：分发层骨架（K2）、激活键（K4）、Esc（K3 Esc 面）、select/radio 导航
+（K5）全部落地并有断言资产；隐式提交规则细化与修饰键持久状态为跨域/后续项——
+type-ahead 与展开键语义受 headless 限制 defer（goal Support Envelope 明示 JS 面
+验收）。不阻塞流域收口判定；跨域项已记录对应协调点。

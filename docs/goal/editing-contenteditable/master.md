@@ -70,3 +70,17 @@
 - WPT selection 面：切片 1 基线 45P/2559F（1.7%）→ 切片 2 **1824P/776F（70.2%）** @ WPT_REV 315976933870（20 用例，evidence/2026-09-07-m1-slice1-selection-baseline.md）
 - WPT editing 面：M2 切片 1 后 **2005P/779F** 组合（event.html 179P/1F + delete-editing-host 2P/0F + body-not-deleted 0P/2F + selection 面 1824P/776F 零回归）
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过
+
+## Done Criteria 清点（2026-09-07 收尾状态）
+
+| DC | 条目 | 状态 |
+|---|---|---|
+| DC-1 | selection/editing 用例导入 + 基线 | ✅ selection 20 用例（1.7% 基线）+ editing 首批 3 用例；三份 evidence |
+| DC-2 | Selection API 可观察面 | ✅ 1.7%→70.2%（document.getSelection/instanceof/异常语义/selectAllChildren/setBaseAndExtent/setPosition/deleteFromDocument 等 8 类修复 + 单测九组）；残余 setBaseAndExtent 方向位/iframe 面 defer 有据 |
+| DC-3 | 编辑行为落地（键入/删除/换行 → DOM） | ✅ M2 三切片（execCommand 事件序 + CE 键入/Backspace/Enter 落 DOM + 事件序）；beforeinput cancelable/input 按 spec |
+| DC-4 | execCommand 基础面 | 🔶 bold/italic/underline/strikethrough + delete/forwardDelete 实应用（M3 切片 1/2，六组单测）；toggle/queryCommandState、CSS 化命令、run/ 导入（330KB reference impl）defer 有据 |
+| DC-5 | cargo test 全绿 / clippy / 资产化 | ✅ 18,966 全绿（本轮）/ 零警告 / 每切片带单测 |
+
+**收尾结论**：Selection 面、编辑管线、execCommand 基础命令集均落地并有断言资产；
+残余项（Selection 方向位/iframe、toggle/CSS 化命令、run/ 全量导入）为深化面——
+defer 均有据记录（上游 reference impl 依赖 + headless 限制），不阻塞流域收口判定。

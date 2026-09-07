@@ -65,3 +65,20 @@ element scroll 段活跃面。
 - 测试基线：立项时点全绿；clippy 零警告
 - 键盘滚用例面：本地单测 1 案（分发层映射）+ 上游 snap/input 三案 defer 记录（evidence/2026-09-07-m1-keyboard-scroll-baseline.md）
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过
+
+## Done Criteria 清点（2026-09-07 收尾状态）
+
+| DC | 条目 | 状态 |
+|---|---|---|
+| DC-1 | 上游可执行用例导入 | ✅ snap/input 三案（keyboard 套件，全可执行；断言 F=真滚动管线缺口记录）|
+| DC-1 | 本地 reftest/单测补足（标明本地） | ✅ 分发映射单测 + 窗口滚动七断言 + scrollIntoView 五断言 |
+| DC-1 | 分类通过率报告 + evidence 持久化 | ✅ evidence/2026-09-07-m1-keyboard-scroll-baseline.md（含三轮追加）|
+| DC-2 | 滚动键全键位（含修饰变体） | ✅ Space/±Shift/PageUp/PageDown/Arrows/Home/End/Ctrl+Home/End（回执链 preventDefault 阻断）|
+| DC-2 | 焦点→容器→根判定 + 嵌套传播 | 🔶 跨域 defer——renderer S3 layout 几何（R3298 协调点），文档级/根级已闭合 |
+| DC-3 | scrollIntoView 选项面 | ✅ R3060 block start/end/center 公式断言（smooth→instant 简化记录）；scrollIntoViewIfNeeded R3075 |
+| DC-3 | 键盘滚动后 scroll 事件 + scrollX/Y 一致 | ✅ 窗口滚动七断言（事件 cancelable=false + 轴独立 + round-trip）|
+| DC-4 | snap 容器键盘交互 | 🔶 断言需 runner 真渲染 viewport（跨域协调项；snap 布局在渲染器已有）|
+| DC-5 | cargo test 全绿 / clippy 零警告 / 资产化 | ✅ 18,966 全绿（本轮）/ 零警告 / 本地资产标明 |
+
+**收尾结论**：本流可闭环面全部落地；剩余两项（焦点→容器链、snap 断言）均为跨域
+协调项（渲染流域），已记录于对应协调点注记——不阻塞本 goal 的流域收口判定。
