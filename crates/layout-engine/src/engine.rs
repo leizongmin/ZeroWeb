@@ -672,7 +672,14 @@ impl LayoutEngine {
         LayoutEngine::extract_baselines_recursive(&taffy_tree, root_id, &taffy_to_dom, &mut root_box, 0);
 
         // 4. 后处理：将 fixed 元素的坐标调整为视口相对
-        adjust_fixed_to_viewport(&mut root_box, 0.0, 0.0);
+        // R4122：kill-switch `ZW_CONTAIN_FIXED_CB=0` 回退 containment-CB 门控（csswg #10544）。
+        let contain_fixed_cb = std::env::var("ZW_CONTAIN_FIXED_CB").as_deref() != Ok("0");
+        let root_under_containment = contain_fixed_cb
+            && root_box
+                .node_id
+                .and_then(|id| styles.get(&id))
+                .is_some_and(is_fixed_cb_containment);
+        adjust_fixed_to_viewport(&mut root_box, 0.0, 0.0, styles, root_under_containment);
 
         // 5. 后处理：调整 float 元素位置
         // 5a. 先标记孤立 table-internal 元素为匿名 table 根（建立 BFC），供 adjust_float_positions 识别
@@ -792,12 +799,21 @@ impl LayoutEngine {
             self.viewport_height,
             styles,
             false,
+            root_under_containment,
         );
 
         // 11.6 后处理：position:fixed 全-inset stretch 尺寸（CSS §10.3.18 / §10.6.4）。
         // fixed 元素 CB=视口；taffy 按 positioned 祖先 stretch 致尺寸不足。仅修 fixed
         // （位置已由 4. adjust_fixed_to_viewport 修正），不动 absolute 避旧回归。
-        stretch_fixed_to_viewport_size(&mut root_box, self.viewport_width, self.viewport_height, styles);
+        // R4122：containment-CB 门控下按该 CB padding-box 解析（csswg #10544）。
+        stretch_fixed_to_viewport_size(
+            &mut root_box,
+            self.viewport_width,
+            self.viewport_height,
+            styles,
+            root_under_containment,
+            None,
+        );
         // 11.6a R1139：root 元素**自身** abspos/fixed + 全 inset + auto 尺寸 → stretch to
         // viewport。stretch_fixed_to_viewport_size 只递归 children 不触 root 自身；root abspos
         // CB=视口（同 fixed 语义）stretch 安全。position-{absolute,fixed}-root-element-{flex,grid}
@@ -1132,7 +1148,13 @@ impl LayoutEngine {
             &cached.r109,
             false,
         );
-        adjust_fixed_to_viewport(&mut root_box, 0.0, 0.0);
+        // R4122：增量路径同 containment-CB 门控（与全量路径 step 4 一致）。
+        let root_under_containment = std::env::var("ZW_CONTAIN_FIXED_CB").as_deref() != Ok("0")
+            && root_box
+                .node_id
+                .and_then(|id| styles.get(&id))
+                .is_some_and(is_fixed_cb_containment);
+        adjust_fixed_to_viewport(&mut root_box, 0.0, 0.0, styles, root_under_containment);
         // margin 折叠由 taffy 0.7 内置处理
         crate::table::adjust_table_layout_with_fonts(&mut root_box, doc, styles, inline_fonts);
         crate::multicol::adjust_multicol_layout(&mut root_box, styles);

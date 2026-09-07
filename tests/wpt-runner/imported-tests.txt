@@ -275,3 +275,4 @@ css/css-sizing/stretch/stretch-quirk-001.html css/css-sizing/stretch/stretch-qui
 css/css-sizing/stretch/stretch-quirk-002.html css/css-sizing/stretch/stretch-quirk-002-ref.html == 2026-09-06 R4086 stretch keyword sizing quirks variant 002
 css/CSS2/normal-flow/inline-replaced-width-009.xht css/CSS2/positioning/absolute-replaced-width-003c-ref.xht == 2026-09-06 R4091 svg no-intrinsic-width default-300 clamp (bbox rule, CSS2 §10.3.2)
 css/CSS2/visuren/anonymous-boxes-001a.xht css/CSS2/visuren/anonymous-boxes-001a-ref.xht == 2026-09-07 R4112 匿名片段 %高最近非匿名祖先解析
+css/css-conditional/container-queries/no-layout-containment-fixedpos.html css/reference/ref-filled-green-100px-square-only.html == 2026-09-08 R4122 fixed containment CB（csswg #10544）contain:layout 捕获 fixed 后代为其 CB

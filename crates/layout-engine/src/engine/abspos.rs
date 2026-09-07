@@ -86,13 +86,49 @@ fn resolve_abspos_vcenter_inset(
     }
 }
 
+/// R4122（csswg #10544 + css-position-3）：本元素是否为 fixed 后代的 containment
+/// 包含块——layout/paint containment（含 strict/content）使元素成为 absolute/fixed
+/// 后代的包含块（R3902 同款谓词的 containment 臂）。**不含** container-type 隐含的
+/// containment：csswg #10544 决议（driving: css-conditional/container-queries
+/// no-layout-containment-fixedpos，测试标题「fixed elements should propagate from a
+/// container-type subtree」）——container-type 查询容器**不**捕获 position:fixed 后代，
+/// fixed 继续向上传播到下一个真实 containment 祖先。table 内部盒 / inline 排除臂与
+/// R3902 is_abspos_cb 同表。
+pub(super) fn is_fixed_cb_containment(s: &ComputedStyle) -> bool {
+    (s.contain.has_layout() || s.contain.has_paint())
+        && !matches!(
+            s.display,
+            zero_css_parser::values::DisplayValue::TableRow
+                | zero_css_parser::values::DisplayValue::TableColumn
+                | zero_css_parser::values::DisplayValue::TableColumnGroup
+                | zero_css_parser::values::DisplayValue::TableRowGroup
+                | zero_css_parser::values::DisplayValue::TableHeaderGroup
+                | zero_css_parser::values::DisplayValue::TableFooterGroup
+                | zero_css_parser::values::DisplayValue::Inline
+                | zero_css_parser::values::DisplayValue::Contents
+                | zero_css_parser::values::DisplayValue::None
+        )
+}
+
 /// 递归调整 fixed 定位元素的坐标为视口相对。
 ///
 /// taffy 将 `position: fixed` 当作 `absolute` 处理，坐标是相对于包含块的。
 /// 此函数在布局完成后遍历布局树，将 fixed 元素的坐标加上祖先累积偏移，
 /// 使其变为相对于视口的绝对坐标。
-pub(super) fn adjust_fixed_to_viewport(box_node: &mut LayoutBox, parent_offset_x: f32, parent_offset_y: f32) {
-    if box_node.is_fixed {
+///
+/// R4122：`under_containment_cb` 沿树向下传递「祖先链上存在 containment 包含块」——
+/// 其 CB 为该 containment 祖先而非视口（csswg #10544），本 pass 的「扣除祖先偏移 →
+/// 视口相对」改写不得触达（box.x/y 保留树相对坐标，由 paint 链正常累加得 CB 内位置），
+/// 且偏移累积不再归零（fixed 在页面空间内的子树照常从其位置累加）。
+pub(super) fn adjust_fixed_to_viewport(
+    box_node: &mut LayoutBox,
+    parent_offset_x: f32,
+    parent_offset_y: f32,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    under_containment_cb: bool,
+) {
+    let gated = under_containment_cb && box_node.is_fixed;
+    if box_node.is_fixed && !gated {
         // R324：fixed 元素须视口相对。taffy 0.7 把 fixed 当 absolute 处理（containing
         // block = 最近 positioned 祖先），故 box.x/y 编码的是相对该祖先的 left/top。
         // 视口相对 = 同一 left/top 数值但相对视口 → 需从累积祖先偏移中【扣除】
@@ -112,19 +148,24 @@ pub(super) fn adjust_fixed_to_viewport(box_node: &mut LayoutBox, parent_offset_x
         }
     }
 
-    let offset_x = if box_node.is_fixed {
+    let offset_x = if box_node.is_fixed && !gated {
         0.0
     } else {
         parent_offset_x + box_node.x
     };
-    let offset_y = if box_node.is_fixed {
+    let offset_y = if box_node.is_fixed && !gated {
         0.0
     } else {
         parent_offset_y + box_node.y
     };
 
     for child in &mut box_node.children {
-        adjust_fixed_to_viewport(child, offset_x, offset_y);
+        let child_under = under_containment_cb
+            || child
+                .node_id
+                .and_then(|id| styles.get(&id))
+                .is_some_and(is_fixed_cb_containment);
+        adjust_fixed_to_viewport(child, offset_x, offset_y, styles, child_under);
     }
 }
 
@@ -189,6 +230,7 @@ pub(super) fn adjust_absolute_to_initial_containing_block(
 ///
 /// 坐标系：LayoutBox.x/y 相对父内容盒原点。paint 链逐层累加得到视口绝对坐标。
 /// `current_content_origin_x/y` 是当前盒内容盒原点的视口绝对坐标。
+#[allow(clippy::too_many_arguments)]
 pub(super) fn adjust_absolute_pct_to_viewport(
     box_node: &mut LayoutBox,
     current_content_origin_x: f32,
@@ -197,17 +239,27 @@ pub(super) fn adjust_absolute_pct_to_viewport(
     viewport_height: f32,
     styles: &HashMap<NodeId, ComputedStyle>,
     has_positioned_ancestor: bool,
+    under_containment_cb: bool,
 ) {
     use zero_css_parser::values::LengthValue;
     let child_has_positioned_ancestor = has_positioned_ancestor || box_node.is_abspos_cb;
+    // R4122：本节点自身为 containment 包含块 → 其下 fixed 后代的 CB 是它而非视口。
+    let child_under_containment = under_containment_cb
+        || box_node
+            .node_id
+            .and_then(|id| styles.get(&id))
+            .is_some_and(is_fixed_cb_containment);
 
     for child in &mut box_node.children {
         // R1308：fixed 元素 CB 恒为视口（CSS §10.1），其 inset/百分比应恒对视口解析
         //（同 absolute-no-positioned-ancestor 路径）。旧 gate 仅 is_absolute，致
         // `position:fixed + bottom:0` 不解析 bottom（盒落视口顶外 abs_y=-height 而非视口底）。
         // kill-switch ZW_FIXED_INSET=0 回退（仅 absolute）。
+        // R4122：fixed 的祖先链上有 containment 包含块时（csswg #10544），CB 是该祖先
+        // 而非视口 → 本视口重解析臂不触（几何由 stretch pass 的 containment 臂按 CB 解析）。
         let is_abs_viewport_cb = child.is_absolute && !child_has_positioned_ancestor;
-        let is_fixed_cb = child.is_fixed && std::env::var("ZW_FIXED_INSET").as_deref() != Ok("0");
+        let is_fixed_cb =
+            child.is_fixed && std::env::var("ZW_FIXED_INSET").as_deref() != Ok("0") && !child_under_containment;
         if (is_abs_viewport_cb || is_fixed_cb)
             && let Some(style) = child.node_id.and_then(|node_id| styles.get(&node_id))
         {
@@ -391,6 +443,11 @@ pub(super) fn adjust_absolute_pct_to_viewport(
             viewport_height,
             styles,
             child_has_positioned_ancestor || child.is_absolute,
+            child_under_containment
+                || child
+                    .node_id
+                    .and_then(|id| styles.get(&id))
+                    .is_some_and(is_fixed_cb_containment),
         );
     }
 }
@@ -409,43 +466,76 @@ pub(super) fn adjust_absolute_pct_to_viewport(
 /// R1139：root 元素自身 abspos/fixed 的全-inset stretch 在本函数之外（见
 /// [`stretch_root_abspos_to_viewport`]），因本函数只递归 `box_node.children`，
 /// root 自身（无父）不被触。
+///
+/// R4122：`under_containment_cb` 沿树向下传递「祖先链上存在 containment 包含块」
+///（csswg #10544：layout/paint containment 祖先捕获 fixed 后代为其 CB；container-type
+/// 不捕获）。gated fixed 的 auto + 全长度 inset stretch / 百分比尺寸改按该 containment
+/// 祖先的 **padding-box**（进入子树时捕获为 `cb_w`/`cb_h`）解析，非视口。
 pub(super) fn stretch_fixed_to_viewport_size(
     box_node: &mut LayoutBox,
     viewport_width: f32,
     viewport_height: f32,
     styles: &HashMap<NodeId, ComputedStyle>,
+    under_containment_cb: bool,
+    cb: Option<(f32, f32)>,
 ) {
     use zero_css_parser::values::LengthValue;
+    // R4122：本节点自身为 containment 包含块 → 其 padding-box 成为子树内 fixed 的最近 CB
+    //（嵌套 containment 取最近：子帧捕获覆盖传入值）。
+    let self_cb: Option<(f32, f32)> = if under_containment_cb {
+        cb
+    } else {
+        box_node
+            .node_id
+            .and_then(|id| styles.get(&id))
+            .filter(|s| is_fixed_cb_containment(s))
+            .map(|_| {
+                (
+                    (box_node.width - box_node.border_left - box_node.border_right).max(0.0),
+                    (box_node.height - box_node.border_top - box_node.border_bottom).max(0.0),
+                )
+            })
+    };
+    let child_under = under_containment_cb || self_cb.is_some();
     for child in &mut box_node.children {
+        let gated = child_under && child.is_fixed;
         if child.is_fixed
             && let Some(style) = child.node_id.and_then(|nid| styles.get(&nid))
         {
+            // R4122：containment-CB 下按该 CB 尺寸解析；视口语义仅保留给真视口-CB fixed。
+            // child 的 CB = 父链最近 containment 祖先的 padding-box（self_cb 所在帧捕获）。
+            let (cb_w, cb_h) = if gated {
+                self_cb.unwrap_or((viewport_width, viewport_height))
+            } else {
+                (viewport_width, viewport_height)
+            };
             // height: auto + 全长度 top+bottom → stretch
             if matches!(style.height, LengthValue::Auto)
                 && let (Some(top), Some(bottom)) = (
-                    resolve_abspos_real_length(&style.top, &style.font_size, viewport_width, viewport_height),
-                    resolve_abspos_real_length(&style.bottom, &style.font_size, viewport_width, viewport_height),
+                    resolve_abspos_real_length(&style.top, &style.font_size, cb_w, cb_h),
+                    resolve_abspos_real_length(&style.bottom, &style.font_size, cb_w, cb_h),
                 )
             {
-                child.height = (viewport_height - top - bottom).max(0.0);
+                child.height = (cb_h - top - bottom).max(0.0);
             }
             // width: auto + 全长度 left+right → stretch
             if matches!(style.width, LengthValue::Auto)
                 && let (Some(left), Some(right)) = (
-                    resolve_abspos_real_length(&style.left, &style.font_size, viewport_width, viewport_height),
-                    resolve_abspos_real_length(&style.right, &style.font_size, viewport_width, viewport_height),
+                    resolve_abspos_real_length(&style.left, &style.font_size, cb_w, cb_h),
+                    resolve_abspos_real_length(&style.right, &style.font_size, cb_w, cb_h),
                 )
             {
-                child.width = (viewport_width - left - right).max(0.0);
+                child.width = (cb_w - left - right).max(0.0);
             }
             // 百分比尺寸：fixed 的 CB 恒为视口（CSS §10.1），百分比相对视口解析。
             // taffy 按 positioned 祖先解析（如 body CB），此处按视口重算。R1227：box-sizing
             // 感知（content-box 须加 border），见 resolve_abspos_pct。
+            // R4122：containment-CB 下按 CB 尺寸解析。
             if let LengthValue::Percentage(p) = &style.height {
                 let is_bb = matches!(style.box_sizing, zero_css_parser::values::BoxSizingValue::BorderBox);
                 let (h, ch) = resolve_abspos_pct(
                     *p as f32,
-                    viewport_height,
+                    cb_h,
                     child.border_top,
                     child.border_bottom,
                     child.padding_top,
@@ -459,7 +549,7 @@ pub(super) fn stretch_fixed_to_viewport_size(
                 let is_bb = matches!(style.box_sizing, zero_css_parser::values::BoxSizingValue::BorderBox);
                 let (w, cw) = resolve_abspos_pct(
                     *p as f32,
-                    viewport_width,
+                    cb_w,
                     child.border_left,
                     child.border_right,
                     child.padding_left,
@@ -470,7 +560,8 @@ pub(super) fn stretch_fixed_to_viewport_size(
                 child.content_width = cw;
             }
         }
-        stretch_fixed_to_viewport_size(child, viewport_width, viewport_height, styles);
+        // R4122：向下传递最近 containment CB 尺寸（本帧捕获则用本帧值；否则透传传入值）。
+        stretch_fixed_to_viewport_size(child, viewport_width, viewport_height, styles, child_under, self_cb);
     }
 }
 
@@ -1390,11 +1481,89 @@ mod r2062_tests {
             ..Default::default()
         };
 
-        stretch_fixed_to_viewport_size(&mut parent_box, 800.0, 600.0, &styles);
+        stretch_fixed_to_viewport_size(&mut parent_box, 800.0, 600.0, &styles, false, None);
 
         let div = &parent_box.children[0];
         assert_eq!(div.width, 740.0, "800 - 20px - 40px");
         assert_eq!(div.height, 570.0, "600 - 10px - 20px");
+    }
+
+    /// R4122（csswg #10544）：containment 祖先（contain:layout）捕获 fixed 后代为其 CB——
+    /// auto + inset:0 的 fixed 子按 CB padding-box（100×100）stretch，且
+    /// adjust_fixed_to_viewport 不扣祖先偏移（x/y 保持树相对 → paint 累加得 CB 位置）。
+    /// driving: css-conditional/container-queries no-layout-containment-fixedpos
+    ///（97.92%→0.00%）。对照锚：无 containment 时（under=false）视口 stretch 语义不变。
+    #[test]
+    fn r4122_fixed_stretches_against_containment_cb() {
+        use zero_css_parser::values::{DisplayValue, LengthValue};
+        use zero_style_system::property::types::PositionValue;
+
+        let mut doc = zero_dom::Document::new();
+        let parent = doc.create_element("div");
+        let div = doc.create_element("div");
+
+        let mut styles = HashMap::new();
+        // containment CB 祖先（contain:layout）
+        let mut cb_style = ComputedStyle::default();
+        cb_style.contain = zero_style_system::property::types::ContainComputedValue::Layout;
+        cb_style.display = DisplayValue::Block;
+        styles.insert(parent, cb_style);
+        // fixed 子：inset:0 + auto 尺寸
+        let mut style = ComputedStyle::default();
+        style.position = PositionValue::Fixed;
+        style.width = LengthValue::Auto;
+        style.height = LengthValue::Auto;
+        style.left = LengthValue::Px(0.0);
+        style.right = LengthValue::Px(0.0);
+        style.top = LengthValue::Px(0.0);
+        style.bottom = LengthValue::Px(0.0);
+        styles.insert(div, style);
+
+        let fixed_box = LayoutBox {
+            node_id: Some(div),
+            is_fixed: true,
+            width: 100.0,
+            height: 0.0,
+            fixed_x_insets_all_auto: false,
+            fixed_y_insets_all_auto: false,
+            ..Default::default()
+        };
+        // containment CB：100×100 @ 树相对 (8,51)
+        let cb_box = LayoutBox {
+            node_id: Some(parent),
+            x: 8.0,
+            y: 51.0,
+            width: 100.0,
+            height: 100.0,
+            children: vec![fixed_box],
+            ..Default::default()
+        };
+        let mut root_box = LayoutBox {
+            children: vec![cb_box],
+            ..Default::default()
+        };
+
+        // adjust：under=true 链（root→cb_box 捕获）→ fixed 子不扣偏移、偏移累积不归零。
+        adjust_fixed_to_viewport(&mut root_box, 0.0, 0.0, &styles, false);
+        let cb = &root_box.children[0];
+        let fixed = &cb.children[0];
+        assert!((fixed.x - 0.0).abs() < 0.001, "gated fixed x 保留树相对值");
+        assert!((fixed.y - 0.0).abs() < 0.001, "gated fixed y 保留树相对值");
+
+        // stretch：按 CB padding-box 100×100 解析（非视口 800×600）。
+        stretch_fixed_to_viewport_size(&mut root_box, 800.0, 600.0, &styles, false, None);
+        let cb = &root_box.children[0];
+        let fixed = &cb.children[0];
+        assert!(
+            (fixed.width - 100.0).abs() < 0.001,
+            "width = CB 宽 100，实际 {}",
+            fixed.width
+        );
+        assert!(
+            (fixed.height - 100.0).abs() < 0.001,
+            "height = CB 高 100，实际 {}",
+            fixed.height
+        );
     }
 
     /// R2085：Percentage top/bottom inset 被接受并参与居中（相对 effective_cb_height 解析）。

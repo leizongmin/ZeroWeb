@@ -109,7 +109,7 @@ fn test_adjust_fixed_to_viewport_nested() {
         ..Default::default()
     };
 
-    adjust_fixed_to_viewport(&mut root, 0.0, 0.0);
+    adjust_fixed_to_viewport(&mut root, 0.0, 0.0, &HashMap::new(), false);
 
     // R324：fixed 子元素须视口相对——扣除父级累积偏移：x = 10 - 50 = -40, y = 20 - 60 = -40
     // （field 为父相对值；painter 累积后绝对坐标 = 50+(-40)=10 / 60+(-40)=20 = CSS left/top 视口相对）
@@ -153,7 +153,7 @@ fn test_adjust_fixed_to_viewport_all_auto_insets_keeps_static_position() {
         ..Default::default()
     };
 
-    adjust_fixed_to_viewport(&mut root, 0.0, 0.0);
+    adjust_fixed_to_viewport(&mut root, 0.0, 0.0, &HashMap::new(), false);
 
     // 全 auto inset：不扣除祖先偏移，x/y 保持静态值 10.0 / 20.0（painter 累积得绝对坐标）。
     let child = &root.children[0];
@@ -194,7 +194,7 @@ fn test_adjust_fixed_to_viewport_partial_auto_keeps_auto_dim_static() {
         ..Default::default()
     };
 
-    adjust_fixed_to_viewport(&mut root, 30.0, 40.0);
+    adjust_fixed_to_viewport(&mut root, 30.0, 40.0, &HashMap::new(), false);
 
     let child = &root.children[0];
     // x 维（explicit left）：扣 parent_offset_x → 10 − 30 = −20（painter 累积父 30 得视口 10）。
@@ -248,7 +248,7 @@ fn test_adjust_fixed_to_viewport_at_root() {
         ..Default::default()
     };
 
-    adjust_fixed_to_viewport(&mut root, 100.0, 200.0);
+    adjust_fixed_to_viewport(&mut root, 100.0, 200.0, &HashMap::new(), false);
 
     // R324：fixed 根节点扣除传入偏移（视口相对）：x = 10 - 100 = -90, y = 20 - 200 = -180
     assert!(
@@ -300,7 +300,7 @@ fn test_adjust_fixed_to_viewport_non_fixed_unchanged() {
         ..Default::default()
     };
 
-    adjust_fixed_to_viewport(&mut root, 100.0, 200.0);
+    adjust_fixed_to_viewport(&mut root, 100.0, 200.0, &HashMap::new(), false);
 
     // 非 fixed 元素坐标不变
     assert!((root.x - 10.0).abs() < 0.001, "非 fixed 元素 x 应不变，实际 {}", root.x);
@@ -410,7 +410,7 @@ fn test_adjust_fixed_to_viewport_deeply_nested() {
         ..Default::default()
     };
 
-    adjust_fixed_to_viewport(&mut root, 0.0, 0.0);
+    adjust_fixed_to_viewport(&mut root, 0.0, 0.0, &HashMap::new(), false);
 
     // R324：fixed leaf 扣除累积祖先偏移（视口相对）：x = 5 - (100+30) = -125, y = 5 - (200+40) = -235
     // （painter 累积后绝对坐标 = 130+(-125)=5 / 240+(-235)=5 = CSS left/top 视口相对）
@@ -530,7 +530,7 @@ fn test_adjust_fixed_to_viewport_fixed_resets_offset() {
         ..Default::default()
     };
 
-    adjust_fixed_to_viewport(&mut root, 0.0, 0.0);
+    adjust_fixed_to_viewport(&mut root, 0.0, 0.0, &HashMap::new(), false);
 
     // R324：fixed parent 扣除累积祖先偏移（视口相对）：x = 10 - 100 = -90, y = 20 - 200 = -180
     let fp = &root.children[0];

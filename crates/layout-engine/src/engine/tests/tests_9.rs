@@ -66,7 +66,7 @@ fn test_adjust_fixed_zero_parent_offset() {
         float: zero_css_parser::values::FloatValue::None,
         ..Default::default()
     };
-    adjust_fixed_to_viewport(&mut root, 0.0, 0.0);
+    adjust_fixed_to_viewport(&mut root, 0.0, 0.0, &HashMap::new(), false);
     assert!((root.x - 0.0).abs() < 0.001, "零偏移 + 零坐标 = 0");
     assert!((root.y - 0.0).abs() < 0.001);
 }
@@ -140,7 +140,7 @@ fn test_adjust_fixed_negative_parent_offset() {
         float: zero_css_parser::values::FloatValue::None,
         ..Default::default()
     };
-    adjust_fixed_to_viewport(&mut root, 0.0, 0.0);
+    adjust_fixed_to_viewport(&mut root, 0.0, 0.0, &HashMap::new(), false);
 
     // R324：fixed child 扣除负父级偏移（视口相对）：x = 10 - (-100) = 110, y = 10 - (-200) = 210
     // （painter 累积后绝对 = -100+110=10 / -200+210=10 = CSS left/top 视口相对）
@@ -259,7 +259,7 @@ fn test_adjust_fixed_sibling_fixed_elements() {
         float: zero_css_parser::values::FloatValue::None,
         ..Default::default()
     };
-    adjust_fixed_to_viewport(&mut root, 0.0, 0.0);
+    adjust_fixed_to_viewport(&mut root, 0.0, 0.0, &HashMap::new(), false);
 
     // R324：fixed1 扣除父级偏移（视口相对）：x = 5 - 50 = -45, y = 5 - 50 = -45
     let c1 = &root.children[0];
@@ -377,7 +377,7 @@ fn test_adjust_fixed_with_absolute_child() {
         float: zero_css_parser::values::FloatValue::None,
         ..Default::default()
     };
-    adjust_fixed_to_viewport(&mut root, 0.0, 0.0);
+    adjust_fixed_to_viewport(&mut root, 0.0, 0.0, &HashMap::new(), false);
 
     // R324：fixed parent 扣除累积祖先偏移（视口相对）：x = 10 - 100 = -90, y = 20 - 200 = -180
     let fp = &root.children[0];
@@ -429,7 +429,7 @@ fn test_adjust_fixed_empty_children_no_panic() {
         ..Default::default()
     };
     // 不应 panic
-    adjust_fixed_to_viewport(&mut root, 100.0, 200.0);
+    adjust_fixed_to_viewport(&mut root, 100.0, 200.0, &HashMap::new(), false);
     assert!((root.x - 0.0).abs() < 0.001);
 }
 
@@ -887,7 +887,7 @@ fn test_adjust_absolute_length_top_to_viewport() {
     styles.insert(key_id, style);
 
     // current_content_origin_y = 8（body margin），模拟视口偏移
-    adjust_absolute_pct_to_viewport(&mut root, 0.0, 8.0, 800.0, 600.0, &styles, false);
+    adjust_absolute_pct_to_viewport(&mut root, 0.0, 8.0, 800.0, 600.0, &styles, false, false);
 
     let abs = &root.children[0].children[0];
     // 视口相对：top:118px → child.y = 118 - 8(origin) = 110
@@ -940,7 +940,7 @@ fn test_adjust_absolute_relative_length_top_to_viewport() {
     let mut styles: HashMap<NodeId, ComputedStyle> = HashMap::new();
     styles.insert(key_id, style);
 
-    adjust_absolute_pct_to_viewport(&mut root, 5.0, 7.0, 800.0, 600.0, &styles, false);
+    adjust_absolute_pct_to_viewport(&mut root, 5.0, 7.0, 800.0, 600.0, &styles, false, false);
 
     let abs = &root.children[0].children[0];
     assert!(
@@ -995,7 +995,7 @@ fn test_adjust_absolute_auto_size_stretches_with_relative_insets() {
     let mut styles: HashMap<NodeId, ComputedStyle> = HashMap::new();
     styles.insert(key_id, style);
 
-    adjust_absolute_pct_to_viewport(&mut root, 0.0, 0.0, 800.0, 600.0, &styles, false);
+    adjust_absolute_pct_to_viewport(&mut root, 0.0, 0.0, 800.0, 600.0, &styles, false, false);
 
     let abs = &root.children[0].children[0];
     assert_eq!(abs.width, 740.0, "800 - 20px - 40px");
@@ -1135,7 +1135,7 @@ fn test_adjust_absolute_pct_box_sizing_border() {
     let mut styles: HashMap<NodeId, ComputedStyle> = HashMap::new();
     styles.insert(key_id, style);
 
-    adjust_absolute_pct_to_viewport(&mut root, 0.0, 0.0, 800.0, 600.0, &styles, false);
+    adjust_absolute_pct_to_viewport(&mut root, 0.0, 0.0, 800.0, 600.0, &styles, false, false);
 
     let abs = &root.children[0].children[0];
     // content-box：content = 50%×800 = 400，border-box = 400 + 10+10 = 420
@@ -1170,7 +1170,7 @@ fn test_adjust_absolute_pct_box_sizing_border() {
     // 重置初值
     root.children[0].children[0].width = 0.0;
     root.children[0].children[0].height = 0.0;
-    adjust_absolute_pct_to_viewport(&mut root, 0.0, 0.0, 800.0, 600.0, &styles, false);
+    adjust_absolute_pct_to_viewport(&mut root, 0.0, 0.0, 800.0, 600.0, &styles, false, false);
     let abs = &root.children[0].children[0];
     assert!(
         (abs.width - 400.0).abs() < 0.001,
@@ -1226,7 +1226,7 @@ fn test_adjust_absolute_maxwidth_clamp_center() {
     let mut styles: HashMap<NodeId, ComputedStyle> = HashMap::new();
     styles.insert(key_id, style);
 
-    adjust_absolute_pct_to_viewport(&mut root, 0.0, 0.0, 800.0, 600.0, &styles, false);
+    adjust_absolute_pct_to_viewport(&mut root, 0.0, 0.0, 800.0, 600.0, &styles, false, false);
 
     let abs = &root.children[0].children[0];
     // max-width 钳制到 100
@@ -1285,7 +1285,7 @@ fn test_adjust_absolute_maxwidth_clamp_center_with_relative_lengths() {
     let mut styles: HashMap<NodeId, ComputedStyle> = HashMap::new();
     styles.insert(key_id, style);
 
-    adjust_absolute_pct_to_viewport(&mut root, 0.0, 0.0, 800.0, 600.0, &styles, false);
+    adjust_absolute_pct_to_viewport(&mut root, 0.0, 0.0, 800.0, 600.0, &styles, false, false);
 
     let abs = &root.children[0].children[0];
     assert!(
@@ -1340,7 +1340,7 @@ fn test_adjust_absolute_maxwidth_clamp_margin_left_auto() {
     let mut styles: HashMap<NodeId, ComputedStyle> = HashMap::new();
     styles.insert(key_id, style);
 
-    adjust_absolute_pct_to_viewport(&mut root, 0.0, 0.0, 800.0, 600.0, &styles, false);
+    adjust_absolute_pct_to_viewport(&mut root, 0.0, 0.0, 800.0, 600.0, &styles, false, false);
 
     let abs = &root.children[0].children[0];
     assert!((abs.width - 100.0).abs() < 0.001, "width 钳到 100");

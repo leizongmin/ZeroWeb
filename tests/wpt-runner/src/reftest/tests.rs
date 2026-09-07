@@ -1834,3 +1834,77 @@ fn m1b_video_undecodable_src_stays_placeholder() {
         "non-webm src must not paint (placeholder stays white)"
     );
 }
+
+/// R4121-N 后续：no-layout-containment-fixedpos 深挖探针——styles map 与布局树对该
+/// fixed div 的 position 认定对照（`cargo test --ignored` 手动跑，println 取证）。
+/// 测试页：contain:layout 红盒 > container-type:inline-size > position:fixed inset:0 绿块。
+/// csswg #10544：fixed 应被 containment CB 捕获 → 绿块 100×100 于红盒内；ZW 全页绿 =
+/// 按视口解析。本探针直接断言/打印三处信号：styles map 的 computed position、
+/// LayoutBox.is_fixed、终态几何。
+#[test]
+#[ignore]
+fn debug_no_layout_containment_fixedpos_styles_probe() {
+    let case_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("wpt-data/css/css-conditional/container-queries/no-layout-containment-fixedpos.html");
+    let html = std::fs::read_to_string(&case_path).expect("read test html");
+    let linked_css = load_linked_stylesheets(&html, case_path.parent());
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    pipeline.set_skip_indicators(true);
+    let font_loader = create_font_loader();
+    pipeline.set_font_resolver(font_loader.build_font_resolver());
+    let rendered = pipeline.render_html(&html, &linked_css);
+
+    let styles = pipeline.cached_styles_snapshot();
+    // R4121-N 探针：pipeline 的 cached_doc 不可达（pub(crate)），按同序重 parse 出平行
+    // doc——compute_styles 确定性 → NodeId 一一对应，styles map 可直接按平行 NodeId 查。
+    // 布局树侧直接用盒自带 node_id + is_fixed。两例试图对齐同一 DOM 节点。
+    let doc2 = zero_dom::parse_html(&html);
+    // 遍历布局树，对每个有 node_id 的盒打印几何 + is_fixed + 平行 doc/styles 的 position。
+    fn walk(
+        node: &zero_layout_engine::LayoutBox,
+        depth: usize,
+        styles: &std::collections::HashMap<zero_dom::NodeId, zero_style_system::ComputedStyle>,
+        doc: &zero_dom::Document,
+        out: &mut Vec<String>,
+    ) {
+        if let Some(nid) = node.node_id {
+            let pos = styles
+                .get(&nid)
+                .map(|s| format!("{:?}", s.position))
+                .unwrap_or_else(|| "<missing>".to_string());
+            let tag = doc.get(nid).map(|n| match &n.kind {
+                zero_dom::NodeKind::Element(e) => e.local_name().to_string(),
+                zero_dom::NodeKind::Text(t) => format!("#text({:?})", t.content.chars().take(12).collect::<String>()),
+                _ => "?".to_string(),
+            });
+            out.push(format!(
+                "{}node {nid:?} {tag:?} geom=({:.1},{:.1},{:.1}x{:.1}) is_fixed={} is_abs={} is_abspos_cb={} style.pos={pos}",
+                "  ".repeat(depth),
+                node.x,
+                node.y,
+                node.width,
+                node.height,
+                node.is_fixed,
+                node.is_absolute,
+                node.is_abspos_cb,
+            ));
+        }
+        for c in &node.children {
+            walk(c, depth + 1, styles, doc, out);
+        }
+    }
+    let mut out = Vec::new();
+    walk(&rendered.layout.root, 0, &styles, &doc2, &mut out);
+    for line in &out {
+        println!("{line}");
+    }
+    // 取证门：布局树须恰有一个 is_fixed=true 的盒（inset:0 绿块）且 styles=Fixed。
+    let fixed_boxes: Vec<&String> = out.iter().filter(|l| l.contains("is_fixed=true")).collect();
+    println!("fixed_boxes={}", fixed_boxes.len());
+    assert_eq!(fixed_boxes.len(), 1, "布局树应恰有一个 fixed 盒（绿块）");
+    assert!(
+        fixed_boxes[0].contains("style.pos=Fixed"),
+        "styles map 对该盒的 position 应为 Fixed，实况：{}",
+        fixed_boxes[0]
+    );
+}
