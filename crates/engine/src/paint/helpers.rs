@@ -107,6 +107,17 @@ pub fn transform_shows_backface(style: &ComputedStyle) -> bool {
 ///
 /// 仅 translate 的列表返回 `None`（由 offset 路径处理）。
 pub fn compute_transform_matrix(style: &ComputedStyle, rect: &Rect) -> Option<TransformPrimitive> {
+    compute_transform_matrix_with_ref_box(style, rect, None)
+}
+
+/// R4107（CSS Transforms 1 §transform-box）：参考框感知版本——`ref_rect` 为 Some
+/// 时 transform-origin 基点与百分比 translate 尺寸取参考框（html content-box/fill-box
+/// = 内容盒），联合 bbox（R3915）仍以 border-box `rect` 为基（绘制区域覆盖不变）。
+pub fn compute_transform_matrix_with_ref_box(
+    style: &ComputedStyle,
+    rect: &Rect,
+    ref_rect: Option<&Rect>,
+) -> Option<TransformPrimitive> {
     let funcs = match &style.transform {
         TransformValue::None => return None,
         TransformValue::List(f) => f,
@@ -123,12 +134,14 @@ pub fn compute_transform_matrix(style: &ComputedStyle, rect: &Rect) -> Option<Tr
         return None;
     }
 
-    // 计算 transform-origin（相对于视口绝对坐标）
+    // 计算 transform-origin（相对于视口绝对坐标）。
+    // R4107：声明 transform-box: content-box/fill-box 时基点/尺寸取参考框（内容盒）。
+    let origin_base = ref_rect.unwrap_or(rect);
     let font_size_px = zero_style_system::computed::resolve_length(&style.font_size, 16.0, None, None);
-    let origin_x =
-        rect.origin.x + resolve_transform_origin_length(&style.transform_origin_x, rect.size.width, font_size_px);
-    let origin_y =
-        rect.origin.y + resolve_transform_origin_length(&style.transform_origin_y, rect.size.height, font_size_px);
+    let origin_x = origin_base.origin.x
+        + resolve_transform_origin_length(&style.transform_origin_x, origin_base.size.width, font_size_px);
+    let origin_y = origin_base.origin.y
+        + resolve_transform_origin_length(&style.transform_origin_y, origin_base.size.height, font_size_px);
 
     // 构建累积变换矩阵（3x3 仿射，存储为 [a, b, c, d, tx, ty]）
     // | a  c  tx |
@@ -399,6 +412,21 @@ fn resolve_transform_origin_length(value: &LengthValue, box_size: f32, font_size
 /// 如果样式包含非平移变换，将 TransformPrimitive 添加到图元列表。
 pub fn apply_transform(style: &ComputedStyle, rect: &Rect, primitives: &mut RenderPrimitives) {
     if let Some(tp) = compute_transform_matrix(style, rect) {
+        primitives.add_transform(tp);
+    }
+}
+
+/// R4107（CSS Transforms 1 §transform-box）：带参考框的 apply_transform——
+/// `ref_rect` = transform-box 参考框（html 元素 content-box/fill-box = 内容盒），
+/// transform-origin 与百分比 translate 相对参考框解析（None = 无声明，退回
+/// border-box rect，R4098 前 / 默认 view-box(svg) 语义不变）。
+pub fn apply_transform_with_ref_box(
+    style: &ComputedStyle,
+    rect: &Rect,
+    ref_rect: Option<&Rect>,
+    primitives: &mut RenderPrimitives,
+) {
+    if let Some(tp) = compute_transform_matrix_with_ref_box(style, rect, ref_rect) {
         primitives.add_transform(tp);
     }
 }

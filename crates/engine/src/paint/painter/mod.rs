@@ -1960,7 +1960,25 @@ impl Painter {
             let in_svg = doc.is_some_and(|d| in_svg_subtree(d, node_id));
             if !in_svg {
                 let rect = Rect::new(abs_x, abs_y, box_node.width, box_node.height);
-                super::helpers::apply_transform(style, &rect, &mut self.primitives);
+                // R4107（CSS Transforms 1 §transform-box）：html 元素声明
+                // content-box/fill-box（fill-box 在 CSS 布局盒上 = content-box 别名，
+                // cssbox-fill-box 案注释实证）时参考框 = 内容盒——transform-origin 与
+                // 百分比 translate 相对内容盒解析；联合 bbox 仍以 border-box rect 为基。
+                let ref_box = match style.transform_box {
+                    zero_style_system::TransformBoxValue::ContentBox
+                    | zero_style_system::TransformBoxValue::FillBox => {
+                        let ox = box_node.border_left + box_node.padding_left;
+                        let oy = box_node.border_top + box_node.padding_top;
+                        Some(Rect::new(
+                            abs_x + ox,
+                            abs_y + oy,
+                            box_node.content_width,
+                            box_node.content_height,
+                        ))
+                    }
+                    _ => None,
+                };
+                super::helpers::apply_transform_with_ref_box(style, &rect, ref_box.as_ref(), &mut self.primitives);
                 // R3901：纯 translate 列表走图元级平移（CSS Transforms §transform-rendering：
                 // transform 作用于元素及其整个子树）。counts_before = paint_node 起点快照，
                 // 差集即自子树全部图元。不用 TransformPrimitive（raster 全场景像素后处理会

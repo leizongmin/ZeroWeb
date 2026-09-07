@@ -769,3 +769,66 @@ fn r4106_svg_element_bbox_path_and_container() {
     let bbox = crate::paint::painter::svg_element_bbox_for_test(&doc3, g_id);
     assert_eq!(bbox, Some((50.0, 50.0, 100.0, 100.0)), "g 容器 bbox = 子 rect 并集");
 }
+
+/// R4107（CSS Transforms 1 §transform-box html 侧参考框）：html 元素声明
+/// transform-box: content-box（fill-box 同义）时 transform-origin 相对**内容盒**
+/// 解析。cssbox-content-box-001 形态：div 150×200 content + border-left 50px，
+/// origin -50px 0 + rotate 90deg——旋转中心应落在 border-box 左上角
+///（content origin (50,0) + (-50,0) = (0,0)），旧实现按 border-box 解析得 (-50,0)
+/// → 图形错位。
+#[test]
+fn r4107_html_content_box_reference_for_transform_origin() {
+    let html = r##"<html><head><style>
+        #target {
+            width: 150px; height: 200px;
+            margin-left: 300px; margin-top: 100px;
+            background-color: green; border-left: solid 50px black;
+            transform: rotate(90deg); transform-origin: -50px 0;
+            transform-box: content-box;
+        }
+    </style></head><body style="margin:0"><div id="target"></div></body></html>"##;
+    let doc = zero_dom::parse_html(html);
+    let sheet = zero_css_parser::Parser::parse_stylesheet(
+        "#target { width: 150px; height: 200px; margin-left: 300px; margin-top: 100px; background-color: green; border-left: solid 50px black; transform: rotate(90deg); transform-origin: -50px 0; transform-box: content-box; }",
+    );
+    let mut sys = zero_style_system::StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[sheet]);
+    let mut engine = zero_layout_engine::LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    let mut painter = Painter::new();
+    painter.paint(&result.root, &styles, Some(&doc));
+    assert_eq!(painter.primitives().transforms.len(), 1, "应产 1 个 transform 图元");
+    let tp = &painter.primitives().transforms[0];
+    // border-box origin (300,100)（margin 300/100 + body 0）；旋转中心 = content origin
+    // (350,100) + (-50,0) = (300,100) = border-box 左上角。
+    assert_eq!(
+        (tp.origin_x, tp.origin_y),
+        (300.0, 100.0),
+        "content-box 参考框：旋转中心应为 border-box 左上角 (300,100)"
+    );
+
+    // 无 transform-box 声明（默认 border-box）→ origin 相对 border-box（R4098 前语义不变）。
+    let html2 = r##"<html><head><style>
+        #t2 { width: 100px; height: 100px; border-left: solid 50px black;
+              transform: rotate(90deg); transform-origin: 0px 0px; }
+    </style></head><body style="margin:0"><div id="t2"></div></body></html>"##;
+    let doc2 = zero_dom::parse_html(html2);
+    let sheet2 = zero_css_parser::Parser::parse_stylesheet(
+        "#t2 { width: 100px; height: 100px; border-left: solid 50px black; transform: rotate(90deg); transform-origin: 0px 0px; }",
+    );
+    let mut sys2 = zero_style_system::StyleSystem::new();
+    sys2.set_viewport(800.0, 600.0);
+    let styles2 = sys2.compute_styles(&doc2, &[sheet2]);
+    let mut engine2 = zero_layout_engine::LayoutEngine::new(800.0, 600.0);
+    let result2 = engine2.compute(&doc2, &styles2);
+    let mut painter2 = Painter::new();
+    painter2.paint(&result2.root, &styles2, Some(&doc2));
+    let tp2 = &painter2.primitives().transforms[0];
+    // 默认 border-box：origin 0,0 = 盒左上角 (0,0)（body margin 0）。
+    assert_eq!(
+        (tp2.origin_x, tp2.origin_y),
+        (0.0, 0.0),
+        "默认 transform-box 语义不变：origin 相对 border-box"
+    );
+}
