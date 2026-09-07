@@ -182,6 +182,14 @@ jobs:
             $clangArgs = "-isystem`"$msvcInc`" -isystem`"$sdkUcrt`" -isystem`"$sdkUm`" -isystem`"$sdkShared`""
             "BINDGEN_EXTRA_CLANG_ARGS=$clangArgs" >> $env:GITHUB_ENV
             Write-Host "BINDGEN_EXTRA_CLANG_ARGS=$clangArgs"
+            # windows-aarch64：cc-rs 探测不到 cl.exe 时回退 clang 编译 C 依赖（ring 等），
+            # 而 clang 不会自动发现 MSVC/UCRT 头（'assert.h' file not found）。CPATH 是
+            # clang GNU 驱动原生 include 搜索路径（Windows 下 `;` 分隔，逐项取字面量，
+            # 不加引号）；cl.exe 不读取 CPATH，不影响 windows-x86_64 编译路径。
+            if ('${{ matrix.target }}' -match 'aarch64') {
+              "CPATH=$msvcInc;$sdkUcrt;$sdkUm;$sdkShared" >> $env:GITHUB_ENV
+              Write-Host "CPATH=$msvcInc;$sdkUcrt;$sdkUm;$sdkShared"
+            }
           } else {
             Write-Host "WARNING: could not locate MSVC/SDK include paths"
           }
