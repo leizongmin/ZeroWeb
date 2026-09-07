@@ -2140,6 +2140,58 @@ pub(crate) fn remeasure_inline_only_containers(
         .children
         .iter()
         .any(|c| !c.is_block_level && !c.is_absolute && !c.is_fixed);
+    // R4108（CSS2 §9.2.1.1 块容器的匿名块序列 + §10.3.2 replaced inline）：容器**同时**有
+    // 块级 in-flow 子与 inline 级子、且其 inline 级子**全部为 replaced 类标签**（svg/canvas/
+    // img 等——converter 映射 taffy Block 按匿名块序列堆叠，几何已正确）时跳过本 remeasure：
+    // IFC 重测以容器内容原点为行盒起点（无视块级子已占据的流高度），重跑后
+    // sync_inline_child_boxes_from_ifc 把 inline 子 y 从 taffy 正确堆叠位（body>p+svg 的
+    // y=35）覆写回 0 → inline svg 与块级 p 重叠（view-box 五案 2.92% 像素 y 偏 36px 根因）。
+    // **限 replaced 标签**：含非 replaced inline 子（span 等 R109 split-inline 域）的混排
+    // 容器照常 remeasure——首版无此限定时 block-in-inline-insert 九案 diff 翻倍回归
+    //（其 inline 子几何依赖 IFC 同步）。
+    let in_flow_children: Vec<&LayoutBox> = box_node
+        .children
+        .iter()
+        .filter(|c| !c.is_absolute && !c.is_fixed)
+        .collect();
+    let has_block_level_child = in_flow_children.iter().any(|c| c.is_block_level);
+    // R4108 收窄②：inline replaced 子须为**末个 in-flow 子**——尾随块级子的混排容器
+    //（content-visibility-025：div+svg+div）的 svg 几何依赖旧 IFC 同步，保持原路径。
+    let last_in_flow_is_inline_replaced = in_flow_children.last().map(|c| !c.is_block_level).unwrap_or(false);
+    let mixed_all_replaced_inline = has_block_level_child
+        && last_in_flow_is_inline_replaced
+        && in_flow_children.iter().any(|c| !c.is_block_level)
+        && in_flow_children
+            .iter()
+            .filter(|c| !c.is_block_level)
+            .all(|c| {
+                c.node_id
+                    .is_some_and(|id| crate::tree::is_replaced_element_tag(doc, id))
+            })
+        // R4108 收窄：inline replaced 子声明百分比尺寸（如 height="100%"）时块化堆叠会把
+        // % 高相对块级 CB 解析（replaced-element-008：svg height=100% + aspect-ratio 从
+        // 100×100 爆成 782×548），与 atomic inline 的行盒内解析分叉——此类保留旧 IFC 路径。
+        && !in_flow_children
+            .iter()
+            .filter(|c| !c.is_block_level)
+            .any(|c| {
+                c.node_id
+                    .and_then(|id| doc.get(id))
+                    .map(|n| match &n.kind {
+                        NodeKind::Element(e) => e
+                            .get_attribute("width")
+                            .map(|v| v.trim().ends_with('%'))
+                            .or(Some(false))
+                            .unwrap_or(false)
+                            || e
+                                .get_attribute("height")
+                                .map(|v| v.trim().ends_with('%'))
+                                .or(Some(false))
+                                .unwrap_or(false),
+                        _ => false,
+                    })
+                    .unwrap_or(false)
+            });
     // R105：仅含直接 DOM 文本（无 inline 元素子，文本不生成独立 LayoutBox 子）且 taffy 未测量
     // （content_height≈0）的块也需要 remeasure——否则其 font_size 不会被 store_font_sizes_from_ifc
     // 存储，paint IFC 默认 16，导致大字号（100px）reftest（如 inline-formatting-context-008）渲染成 16px。
@@ -2229,6 +2281,7 @@ pub(crate) fn remeasure_inline_only_containers(
             box_node.height += delta;
         }
     } else if !has_floats
+        && !mixed_all_replaced_inline
         && !box_node.is_r109_split
         // R4016（CSS2 §10.3.8 + css-sizing-3 default object size）：**替换元素**
         // 容器不走 inline-only remeasure——其尺寸由固有/attr/CSS/abspos sizing 决定

@@ -547,7 +547,7 @@ fn is_flex_grid_item(doc: &Document, styles: &HashMap<NodeId, ComputedStyle>, do
 /// 标签级 replaced 判定（CSS2 §10.3.2 语义域）。与 engine.rs 构盒时的 is_replaced 同表：
 /// img/video/iframe/embed/object/svg/canvas/applet。用于 converter 之外的独立 replaced
 /// 语境判定（R4054 inline 垂直 padding 恢复）。
-fn is_replaced_element_tag(doc: &Document, dom_id: NodeId) -> bool {
+pub(crate) fn is_replaced_element_tag(doc: &Document, dom_id: NodeId) -> bool {
     doc.get(dom_id).is_some_and(|n| match &n.kind {
         NodeKind::Element(elem) => matches!(
             elem.local_name(),
