@@ -1704,6 +1704,60 @@
     } catch (_eIpCaret2) {}
   }
 
+  // R3254-M3 切片 6：insertHTML（execCommand 臂）——选区在宿主直子文本节点内 →
+  // 宿主 innerHTML 在选区对应串偏移处 splice 插入 fragment 串（选区非空先删选中
+  // 段——与 insertParagraph 同款实体感知偏移扫描）。caret 落插入内容后（文本边界
+  // best-effort——插入含标签时落宿主 childNodes 扫描位）。
+  function _zwExecCmdApplyInsertHtml(host, range, fragHtml) {
+    var frag = (fragHtml == null) ? '' : String(fragHtml);
+    if (frag === '') return;
+    var sc = range.startContainer, so = range.startOffset | 0;
+    var ec = range.endContainer, eo = range.collapsed ? so : (range.endOffset | 0);
+    if (!(sc && (sc.nodeType === 3 || sc.__zwIsText) && sc.parentNode === host)) return;
+    var kids = host.childNodes || [];
+    var textOffset = 0;
+    for (var i = 0; i < kids.length; i++) {
+      var k = kids[i];
+      if (k === sc) break;
+      if (k.nodeType === 3 || k.__zwIsText) textOffset += String(k.nodeValue || '').length;
+    }
+    var html = String(host.innerHTML || '');
+    function textToHtmlOffset(htmlStr, want, from, fromSeen) {
+      var seen = fromSeen;
+      for (var j = from; j < htmlStr.length; j++) {
+        if (seen === want) return j;
+        if (htmlStr.charAt(j) === '&') {
+          var semi = htmlStr.indexOf(';', j);
+          if (semi > j && semi - j <= 10) { j = semi; seen++; continue; }
+        }
+        seen++;
+      }
+      return seen === want ? htmlStr.length : -1;
+    }
+    var wantStart = textOffset + so;
+    var hStart = textToHtmlOffset(html, wantStart, 0, 0);
+    if (hStart < 0) return;
+    var hEnd = hStart;
+    if (eo > so) {
+      hEnd = textToHtmlOffset(html, wantStart + (eo - so), hStart, wantStart);
+      if (hEnd < 0) hEnd = hStart;
+    }
+    host.innerHTML = html.slice(0, hStart) + frag + html.slice(hEnd);
+    // caret：插入段若为纯文本 → 落 frag 内文本偏移；含标签 → 落宿主直子扫描位
+    //（frag 后元素边界，best-effort——fragment 解析产物树形态 host 侧才知）。
+    try {
+      var nr = document.createRange();
+      if (!/[<]/.test(frag)) {
+        nr.setStart(sc, so + frag.length);
+      } else {
+        var kids2 = host.childNodes || [];
+        nr.setStart(host, Math.min(kids2.length, kids.indexOf(ec) >= 0 ? kids.indexOf(ec) + 1 : kids2.length));
+      }
+      nr.collapse(true);
+      if (typeof _getSelection === 'function') { _getSelection()._ranges = [nr]; }
+    } catch (_eIhCaret) {}
+  }
+
   // R3254-K3（keyboard-default-actions goal M2 切片 2，2026-09-07）：Esc 默认动作——
   // dialog cancel/close（spec「dialog cancelation」）。宿主在 keydown Esc 默认动作阶段
   // 调 `__zw_esc_dialog_cancel()`：模态 dialog 优先（_zwDialogModal 印记），其次文档序
@@ -2703,6 +2757,14 @@
               // 形态（嵌套/跨容器）→ no-op（defer 记录不变）。
               if (cmd === 'insertparagraph' && rng2 && host2) {
                 try { _zwExecCmdApplyParagraphSplit(host2, rng2); } catch (_eIp) {}
+              }
+              // R3254-M3 切片 6：insertHTML——选区处 fragment 插入（flat 模型：
+              // 选区在宿主直子文本节点内 → SetInnerHtml splice 中插 fragment 串；
+              // 选区非空先删选中段）。data=arguments[2]（_zwExecCmdEventData 既有
+              // 映射）。fragment 原样插入（上游 execCommand「不消毒」语义——信任
+              // boundary 在页面脚本自身）。caret 落插入内容之后（宿主直子扫描）。
+              if (cmd === 'inserthtml' && rng2 && host2) {
+                try { _zwExecCmdApplyInsertHtml(host2, rng2, arguments[2]); } catch (_eIh) {}
               }
               // spec（WPT 'Changing selection from handler'）：beforeinput handler
               // 可改选区——input 事件 target 按 **input 派发时刻** 的选区 editing host

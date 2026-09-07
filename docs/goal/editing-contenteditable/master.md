@@ -2,7 +2,7 @@
 
 **入口文档**: [../editing-contenteditable.md](../editing-contenteditable.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-07（M3 切片 5——insertParagraph 块级拆分，M2 切片 3 defer 解除）
+**最后更新**: 2026-09-07（M3 切片 6——insertHTML 最小实现；M3 剩余仅 run/ 全量导入 defer）
 
 ---
 
@@ -57,6 +57,7 @@
 9. ~~**M1 残余切片 3**：selectionchange 排程派发~~ ✅ 2026-09-07（`_zwScheduleSelectionChange`——setTimeout(0) 记录式 timer 任务边界 + pending target 数组按身份去重（document 与 text control 并存）；Selection mutator `_zwSync` 钩子 + part03 setSelectionRange 钩子（target=控件自身）。onselectionchange-on-document 4 subtest（Timeout+0P→4P）、onselectionchange-on-distinct-text-controls 2F→2P；单测 test_selectionchange_dispatch_r3254_m1_slice3 两组断言）。**selection 套件终态 2704P/199F**（基线 2005P/779F，净 +699P）
 10. ~~**M3 切片 4**：execCommand toggle 语义 + queryCommandState 真实反射~~ ✅ 2026-09-07（`_zwQueryFormatState`——选区起点祖先链 tagName 匹配（大小写不敏感）；`_zwExecCmdUnwrapFormat`——祖先链定位宿主直子 tag 元素整体替换为其 innerHTML（caret 落原位置）；execCommand format 臂按 state 走 wrap/unwrap toggle。单测 test_execcommand_toggle_state_r3254_m3_slice4 五组断言；M2 事件序测试同步适配（选区改非包裹文本——toggle 语义下 <b> 内选区会解除包裹）。**defer 记录**：跨部分包裹形态（选区只覆盖包裹的一段）unwrap 不处理；CSS 化命令 state 面仍 defer）。**残余聚类归因补记**：anchor-removal 2F = window named access（bare id 标识符）整体缺失——js-dom/native 绑定域（动态 innerHTML 后 id 无全局注册；探针归档）；script-and-style-elements 1F = Selection.toString 的 CSS 空白渲染语义（display:none 排除 + style/script 内容计入 + 块间换行）——渲染域投影，defer 有据
 11. ~~**M3 切片 5**：insertParagraph 块级拆分（M2 切片 3 defer 解除）~~ ✅ 2026-09-07（`__zw_ce_insert_paragraph(sel)`——caret 处宿主 outerHTML 重写拆两同型兄弟块（SetOuterHtml mutation 流转宿主重解析；同型开标签 + contenteditable 属性保留）；execCommand insertParagraph 臂同语义（`_zwExecCmdApplyParagraphSplit`）；collapsed caret tail 段 = caret 起整段。单测 test_insert_paragraph_split_r3254_m3_slice5 三组断言（beforeinput 事件序 + SetOuterHtml 拆分形态 + ce 通道）。残余：嵌套结构内拆分（flat 模型限制，维持 defer）
+12. ~~**M3 切片 6**：insertHTML 最小实现~~ ✅ 2026-09-07（`_zwExecCmdApplyInsertHtml`——选区在宿主直子文本节点内 → SetInnerHtml splice 中插 fragment 串（collapsed 纯文本/含标签原样插入/选区非空先删选中段三形态）；fragment 原样不消毒（上游语义——信任边界在页面脚本自身）；caret 落插入内容后。单测 test_insert_html_r3254_m3_slice6 三组断言。M3 剩余仅 run/ 全量导入（330KB reference impl 依赖——defer 有据）
 
 **碰撞管理**：开工前先 `git log --since="14 days ago" -- crates/engine/src/js_dom_shim/`
 核对 js-dom 流活跃面。
@@ -67,7 +68,7 @@
 |--------|------|
 | M1 — selection 基线 + Selection 面摸底 | ✅ 切片 1/2/3 全部完成（2026-09-07）——基线 + Selection 面 + editing 导入 |
 | M2 — 编辑行为管线 | ✅ 切片 1/2/3 全部完成（2026-09-07）——事件序 + 键入/删除/换行落 DOM；defer 项：跨节点删除 |
-| M3 — execCommand 基础面 + 收尾 | 🔶 切片 1/2/3/4/5 ✅（format 四命令 + delete 两命令实应用 + queryCommandSupported/Enabled + toggle/queryCommandState + insertParagraph 块级拆分，2026-09-07）；剩余：insertHTML、run/ 用例导入（330KB reference impl 依赖——defer 有据）|
+| M3 — execCommand 基础面 + 收尾 | 🔶 切片 1/2/3/4/5/6 ✅（format 四命令 + delete 两命令实应用 + queryCommandSupported/Enabled + toggle/queryCommandState + insertParagraph 块级拆分 + insertHTML，2026-09-07）；剩余：run/ 用例导入（330KB reference impl 依赖——defer 有据）|
 
 ## 验证基线
 

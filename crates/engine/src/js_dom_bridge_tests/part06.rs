@@ -4329,3 +4329,96 @@ globalThis.__zw_ce_insert_paragraph("#ce2");
         );
     }
 }
+
+#[test]
+fn test_insert_html_r3254_m3_slice6() {
+    // R3254-M3 切片 6（editing goal，2026-09-07）：execCommand('insertHTML')——
+    // 选区在宿主直子文本节点内 → SetInnerHtml splice 中插 fragment 串。① collapsed
+    // caret 纯文本 frag（'XY' 插 'head|tail' 中点 → headXYtail）；② 含标签 frag
+    // （<b>x</b> 原样插入——上游「不消毒」语义）；③ 选区非空先删选中段。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=ce1 contenteditable>headtail</div>\\
+         <div id=ce2 contenteditable>headtail</div>\\
+         <div id=ce3 contenteditable>abcdef</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // ①：collapsed caret + 纯文本 frag。
+    sandbox
+        .execute(
+            r##"
+var t1 = document.getElementById("ce1").firstChild;
+var r1 = document.createRange();
+r1.setStart(t1, 4);
+r1.collapse(true);
+getSelection().removeAllRanges();
+getSelection().addRange(r1);
+document.execCommand("insertHTML", false, "XY");
+"##,
+        )
+        .unwrap();
+    {
+        let m = mutations.lock().unwrap();
+        let found = m.iter().rev().find(|mm| matches!(mm, DomMutation::SetInnerHtml { selector, html } if selector.contains("ce1"))).cloned();
+        assert!(
+            matches!(&found, Some(DomMutation::SetInnerHtml { html, .. }) if html == "headXYtail"),
+            "collapsed caret insertHTML('XY') 须 headXYtail，实际: {found:?}"
+        );
+    }
+    // ②：含标签 frag 原样插入。
+    sandbox
+        .execute(
+            r##"
+var t2 = document.getElementById("ce2").firstChild;
+var r2 = document.createRange();
+r2.setStart(t2, 4);
+r2.collapse(true);
+getSelection().removeAllRanges();
+getSelection().addRange(r2);
+document.execCommand("insertHTML", false, "<b>x</b>");
+"##,
+        )
+        .unwrap();
+    {
+        let m = mutations.lock().unwrap();
+        let found = m.iter().rev().find(|mm| matches!(mm, DomMutation::SetInnerHtml { selector, html } if selector.contains("ce2"))).cloned();
+        assert!(
+            matches!(&found, Some(DomMutation::SetInnerHtml { html, .. }) if html == "head<b>x</b>tail"),
+            "insertHTML('<b>x</b>') 须原样 splice（head<b>x</b>tail），实际: {found:?}"
+        );
+    }
+    // ③：选区非空先删选中段（删 'abc' 插 'Z' → Zdef）。
+    sandbox
+        .execute(
+            r##"
+var t3 = document.getElementById("ce3").firstChild;
+var r3 = document.createRange();
+r3.setStart(t3, 0);
+r3.setEnd(t3, 3);
+getSelection().removeAllRanges();
+getSelection().addRange(r3);
+document.execCommand("insertHTML", false, "Z");
+"##,
+        )
+        .unwrap();
+    {
+        let m = mutations.lock().unwrap();
+        let found = m.iter().rev().find(|mm| matches!(mm, DomMutation::SetInnerHtml { selector, html } if selector.contains("ce3"))).cloned();
+        assert!(
+            matches!(&found, Some(DomMutation::SetInnerHtml { html, .. }) if html == "Zdef"),
+            "选区非空 insertHTML 须先删选中段（Zdef），实际: {found:?}"
+        );
+    }
+}
