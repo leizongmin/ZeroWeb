@@ -1572,6 +1572,43 @@
     return true;
   };
 
+  // R3254-K5（keyboard-default-actions goal M3 切片 1，2026-09-07）：select 键盘导航。
+  // 焦点 SELECT 上 ArrowDown/ArrowUp/Home/End（未被 preventDefault）→ 移动选中项
+  //（跳过 disabled、clamp 不回绕）；选中变化 → 派 input（bubbles、不可取消）+ change
+  //（bubbles）。返回值：true=已消费（是 SELECT 且键被处理），false=非 SELECT/键不适用。
+  // headless 无真下拉展开态——selectedIndex/value/事件序为 JS 可观察验收面
+  //（goal Support Envelope 明示）。
+  // https://html.spec.whatwg.org/multipage/interactive-elements.html#the-select-element
+  globalThis.__zw_select_key_action = function (sel, key) {
+    var el = document.querySelector(sel);
+    if (!el || String(el.tagName).toUpperCase() !== 'SELECT') return false;
+    var opts = el.options;
+    if (!opts || !opts.length) return true;
+    var cur = el.selectedIndex;
+    var next = cur;
+    if (key === 'ArrowDown') {
+      for (var i = cur + 1; i < opts.length; i++) if (!opts[i].disabled) { next = i; break; }
+    } else if (key === 'ArrowUp') {
+      for (var j = cur - 1; j >= 0; j--) if (!opts[j].disabled) { next = j; break; }
+    } else if (key === 'Home') {
+      // Home = 首个 enabled 选项（从 0 起扫——非「当前位向上第一个」）。
+      for (var h = 0; h < opts.length; h++) if (!opts[h].disabled) { next = h; break; }
+    } else if (key === 'End') {
+      // End = 末个 enabled 选项（从尾起扫）。
+      for (var e = opts.length - 1; e >= 0; e--) if (!opts[e].disabled) { next = e; break; }
+    } else return false;
+    if (next === cur) return true; // 无可移动项（全 disabled 或边界）
+    // select.value 赋值 = 编程选中正道（SelectOption 状态——R3000：selectedIndex/
+    // option.selected 均反映）；直接逐 option.selected 赋值不经该状态。
+    // option 无 value 内容属性 → IDL value 缺省为 text（spec option.value 步骤 13）。
+    var v2 = opts[next].value;
+    if (v2 == null || v2 === '') v2 = String(opts[next].text || '');
+    el.value = v2;
+    el.dispatchEvent(new Event('input', { bubbles: true, cancelable: false }));
+    el.dispatchEvent(new Event('change', { bubbles: true, cancelable: false }));
+    return true;
+  };
+
   globalThis.document = {
     // js-dom M3 R100：shim document 标记——generate_dom_api_polyfill（execute_script_with_dom
     // 每次前置的最小虚拟 DOM stub）据此跳过覆写（幂等安装，保 execute 路径上的真 document 桥）。

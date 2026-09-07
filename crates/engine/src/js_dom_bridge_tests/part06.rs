@@ -1838,6 +1838,124 @@ globalThis.__rv2 = d2.returnValue;
 }
 
 #[test]
+fn test_select_key_navigation_r3254_k5() {
+    // R3254-K5（keyboard-default-actions goal M3 切片 1，2026-09-07）：SELECT 键盘导航
+    // ——ArrowDown/ArrowUp/Home/End 移动选中项（跳过 disabled、clamp 不回绕），选中
+    // 变化派 input + change（bubbles）。① ArrowDown 前进 + 事件序；② 跳过 disabled；
+    // ③ 边界 clamp；④ 非 SELECT 目标 no-op。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><select id=s><option>a</option><option disabled>b</option>\
+<option selected>c</option><option>d</option></select>\
+<input id=notsel></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // ①：ArrowDown 从 index 2（selected c）→ 跳过 disabled b? b 在 c 前——ArrowDown → d（index 3）+ 事件序。
+    sandbox
+        .execute(
+            r##"
+var s = document.getElementById("s");
+globalThis.__ev = [];
+s.addEventListener("input", function () { __ev.push("input"); });
+s.addEventListener("change", function () { __ev.push("change"); });
+globalThis.__r1 = __zw_select_key_action("#s", "ArrowDown");
+globalThis.__idx1 = s.selectedIndex;
+globalThis.__val1 = s.value;
+"##,
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__r1)").unwrap().value,
+        "true",
+        "SELECT 上 ArrowDown 须被消费"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__idx1)").unwrap().value,
+        "3",
+        "ArrowDown 须移到 index 3（d）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__val1)").unwrap().value,
+        "d",
+        "ArrowDown 后 value 须为 'd'"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ev)").unwrap().value,
+        "input,change",
+        "选中变化须派 input+change 事件序"
+    );
+    // ②：ArrowDown 再按（已到末尾）→ clamp 保持 index 3、无事件。
+    sandbox
+        .execute(
+            r##"
+globalThis.__ev2 = [];
+var s2 = document.getElementById("s");
+s2.addEventListener("input", function () { __ev2.push("input"); });
+globalThis.__r2 = __zw_select_key_action("#s", "ArrowDown");
+globalThis.__idx2 = s2.selectedIndex;
+"##,
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__r2)").unwrap().value,
+        "true",
+        "边界 ArrowDown 仍被消费（无移动）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__idx2)").unwrap().value,
+        "3",
+        "末尾 ArrowDown 须 clamp 保持 index 3"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ev2)").unwrap().value,
+        "",
+        "无选中变化不得派事件"
+    );
+    // ③：Home/End 跳转 + ArrowUp 跳过 disabled（从 0 ArrowUp 无处可去 → clamp；End→3、Home→0）。
+    sandbox
+        .execute(
+            r##"
+var s3 = document.getElementById("s");
+globalThis.__o = [];
+__zw_select_key_action("#s", "Home");
+__o.push("home:" + s3.selectedIndex);
+__zw_select_key_action("#s", "End");
+__o.push("end:" + s3.selectedIndex);
+__zw_select_key_action("#s", "ArrowUp");
+__o.push("up:" + s3.selectedIndex);
+"##,
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__o)").unwrap().value,
+        "home:0,end:3,up:2",
+        "Home→0 / End→3 / ArrowUp 从 3 跳过 disabled(2? b=1 disabled) → 2(c)"
+    );
+    // ④：非 SELECT 目标 no-op。
+    sandbox
+        .execute("globalThis.__r4 = __zw_select_key_action('#notsel', 'ArrowDown');")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__r4)").unwrap().value,
+        "false",
+        "非 SELECT 目标须 no-op 返 false"
+    );
+}
+
+
+#[test]
 fn test_contenteditable_typing_r3254_m2() {
     // R3254-M2 切片 2（editing goal，2026-09-07）：contenteditable 键入/删除管线——
     // shim __zw_is_ce_host / __zw_ce_insert / __zw_ce_delete。

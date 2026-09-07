@@ -749,3 +749,15 @@ pub fn script_contenteditable_enter(selector: &str) -> String {
 pub fn script_esc_dialog_cancel() -> String {
     "__zw_esc_dialog_cancel && __zw_esc_dialog_cancel()".to_string()
 }
+
+/// 构造「select 键盘导航」的宿主脚本（R3254-K5，keyboard-default-actions goal M3）。
+///
+/// shim `__zw_select_key_action(sel, key)`：焦点在 SELECT 上时 ArrowDown/ArrowUp/
+/// Home/End 移动选中项（跳过 disabled、不回绕——Chromium closed select 语义近似），
+/// 选中变化派 input（bubbles、不可取消）+ change（bubbles）事件——headless 无真
+/// 下拉 UI，selectedIndex/value/事件序为 JS 可观察验收面。
+pub fn script_select_key_action(selector: &str, key: &str) -> String {
+    let esc_sel = escape_js_string(selector);
+    let esc_key = escape_js_string(key);
+    format!("__zw_select_key_action('{esc_sel}', '{esc_key}')")
+}

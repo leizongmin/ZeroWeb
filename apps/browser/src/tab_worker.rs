@@ -519,6 +519,19 @@ fn tab_worker_main(
                                 let script = zero_engine::script_esc_dialog_cancel();
                                 let _ = wv.execute_script(&script);
                             }
+                        } else if matches!(
+                            key.as_deref(),
+                            Some("ArrowDown") | Some("ArrowUp") | Some("Home") | Some("End")
+                        ) && javascript_enabled
+                            && zero_engine::query_tag_from_html(&html, &selector).eq_ignore_ascii_case("SELECT")
+                        {
+                            // R3254-K5（keyboard-default-actions goal M3 切片 1）：SELECT
+                            // 焦点上的方向键/Home/End = 选项移动（input+change 事件 JS
+                            // 可观察面）。选项 selected 变更经 mutation 通道回传
+                            //（fire-and-forget——change/input 事件序已由 shim 钩子派发）。
+                            let script =
+                                zero_engine::script_select_key_action(&selector, key.as_deref().unwrap_or_default());
+                            let _ = wv.execute_script(&script);
                         }
                     }
                     if result.default_allowed && event_type == "click" {

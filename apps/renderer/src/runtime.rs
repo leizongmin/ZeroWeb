@@ -881,6 +881,16 @@ impl RendererRuntime {
             if let Err(e) = self.js_worker.execute_script_direct(&script) {
                 tracing::debug!("esc dialog cancel: {e}");
             }
+        } else if matches!(key, "ArrowDown" | "ArrowUp" | "Home" | "End")
+            && zero_engine::query_tag_from_html(&self.cached_html, target).eq_ignore_ascii_case("SELECT")
+        {
+            // R3254-K5（keyboard-default-actions goal M3 切片 1）：SELECT 焦点上的
+            // 方向键/Home/End = 选项移动（input+change 事件 JS 可观察面）。arrow 键
+            // 常规走滚动默认动作——SELECT 焦点时优先消费为选项导航。
+            let script = zero_engine::script_select_key_action(target, key);
+            if let Err(e) = self.js_worker.execute_script_direct(&script) {
+                tracing::debug!("select key action: {e}");
+            }
         }
         Ok(())
     }
