@@ -1908,3 +1908,216 @@ fn debug_no_layout_containment_fixedpos_styles_probe() {
         fixed_boxes[0]
     );
 }
+
+/// R4123 勘察：table-backgrounds-bs-colgroup-001 像素级 diff 探针（`cargo test --ignored`
+/// 手动跑）。测试页三张表（color/imagetl/imagebr）× colgroup.t 背景，分表 vs ref 分表
+/// 对齐对比，打印各表 bbox 与逐像素差异条带（`cargo test --ignored` 手动跑取证）。
+#[test]
+#[ignore]
+fn debug_table_backgrounds_bs_colgroup_probe() {
+    let case_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("wpt-data/css/CSS2/tables/table-backgrounds-bs-colgroup-001.xht");
+    let ref_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("wpt-data/css/CSS2/tables/table-backgrounds-bs-colgroup-001-ref.xht");
+    let html = std::fs::read_to_string(&case_path).expect("read test html");
+    let ref_html = std::fs::read_to_string(&ref_path).expect("read ref html");
+    let cfg = ReftestConfig::default();
+    let fb = render_to_framebuffer_with_base(&html, "", &cfg, case_path.parent());
+    let ref_fb = render_to_framebuffer_with_base(&ref_html, "", &cfg, ref_path.parent());
+    // 逐行差异统计：找出差异集中的行带（每张表 ~90px 高）。
+    let mut row_diff = vec![0u32; fb.height as usize];
+    for y in 0..fb.height as usize {
+        for x in 0..fb.width as usize {
+            let i = (y * fb.width as usize + x) * 4;
+            let j = (y * ref_fb.width as usize + x) * 4;
+            let d = (fb.data[i] as i32 - ref_fb.data[j] as i32).abs()
+                + (fb.data[i + 1] as i32 - ref_fb.data[j + 1] as i32).abs()
+                + (fb.data[i + 2] as i32 - ref_fb.data[j + 2] as i32).abs();
+            if d > 30 {
+                row_diff[y] += 1;
+            }
+        }
+    }
+    // 合并连续差异行带并打印。
+    let mut bands: Vec<(usize, usize, u32)> = Vec::new();
+    for (y, cnt) in row_diff.iter().enumerate() {
+        if *cnt > 0 {
+            match bands.last_mut() {
+                Some(b) if b.1 + 1 == y => {
+                    b.1 = y;
+                    b.2 += *cnt;
+                }
+                _ => bands.push((y, y, *cnt)),
+            }
+        }
+    }
+    for (y0, y1, total) in &bands {
+        println!("diff band y={y0}..={y1} pixels={total}");
+    }
+    println!("total bands: {}", bands.len());
+    assert!(bands.is_empty(), "bs-colgroup-001 应零差异，实际 {} 带", bands.len());
+}
+
+/// R4123 勘察二：bs-colgroup-001 test 页单页 dump——三张表各自整体 bbox + colgroup.t
+/// 背景色（aqua）色带的实际像素范围（`cargo test --ignored` 手动跑取证）。
+#[test]
+#[ignore]
+fn debug_table_backgrounds_bs_colgroup_single_dump() {
+    let case_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("wpt-data/css/CSS2/tables/table-backgrounds-bs-colgroup-001.xht");
+    let html = std::fs::read_to_string(&case_path).expect("read test html");
+    let cfg = ReftestConfig::default();
+    let fb = render_to_framebuffer_with_base(&html, "", &cfg, case_path.parent());
+    // aqua ≈ (0,255,255)。逐行找 aqua 像素的 x 范围与 y 带。
+    let is_aqua = |px: &[u8]| px[0] < 40 && px[1] > 200 && px[2] > 200;
+    let mut y0 = usize::MAX;
+    let mut y1 = 0usize;
+    let mut x_min = usize::MAX;
+    let mut x_max = 0usize;
+    let mut count = 0usize;
+    for y in 0..fb.height as usize {
+        for x in 0..fb.width as usize {
+            let i = (y * fb.width as usize + x) * 4;
+            if is_aqua(&fb.data[i..i + 4]) {
+                y0 = y0.min(y);
+                y1 = y1.max(y);
+                x_min = x_min.min(x);
+                x_max = x_max.max(x);
+                count += 1;
+            }
+        }
+    }
+    println!("aqua 总数={count} x=[{x_min},{x_max}] y=[{y0},{y1}] （测试页 3 表共 3 个 colgroup.t 列带）");
+    // ref 页对照
+    let ref_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("wpt-data/css/CSS2/tables/table-backgrounds-bs-colgroup-001-ref.xht");
+    let ref_html = std::fs::read_to_string(&ref_path).expect("read ref html");
+    let ref_fb = render_to_framebuffer_with_base(&ref_html, "", &cfg, ref_path.parent());
+    let mut count = 0usize;
+    let mut ry0 = usize::MAX;
+    let mut ry1 = 0usize;
+    let mut rx_min = usize::MAX;
+    let mut rx_max = 0usize;
+    for y in 0..ref_fb.height as usize {
+        for x in 0..ref_fb.width as usize {
+            let i = (y * ref_fb.width as usize + x) * 4;
+            if is_aqua(&ref_fb.data[i..i + 4]) {
+                ry0 = ry0.min(y);
+                ry1 = ry1.max(y);
+                rx_min = rx_min.min(x);
+                rx_max = rx_max.max(x);
+                count += 1;
+            }
+        }
+    }
+    println!("ref aqua 总数={count} x=[{rx_min},{rx_max}] y=[{ry0},{ry1}]（ref 3 个 div.color 各 181 宽）");
+}
+
+/// R4123 勘察三：bs-colgroup-001 color 表区域精确定位——只看第一张表（y 15..167），
+/// 打印 test vs ref 的 aqua 色带 x 区间逐列统计，并对比 91 处 vstripe 列。
+#[test]
+#[ignore]
+fn debug_table_backgrounds_bs_colgroup_band() {
+    let case_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("wpt-data/css/CSS2/tables/table-backgrounds-bs-colgroup-001.xht");
+    let ref_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("wpt-data/css/CSS2/tables/table-backgrounds-bs-colgroup-001-ref.xht");
+    let html = std::fs::read_to_string(&case_path).expect("read test html");
+    let ref_html = std::fs::read_to_string(&ref_path).expect("read ref html");
+    let cfg = ReftestConfig::default();
+    let fb = render_to_framebuffer_with_base(&html, "", &cfg, case_path.parent());
+    let ref_fb = render_to_framebuffer_with_base(&ref_html, "", &cfg, ref_path.parent());
+    // 第一张表（color）：test y≈15..160，ref y≈25..142。取 y=30 一行逐像素对比。
+    let y = 30usize;
+    let mut runs_test: Vec<(usize, [u8; 3])> = Vec::new();
+    let mut runs_ref: Vec<(usize, [u8; 3])> = Vec::new();
+    for x in 0..400usize {
+        let i = (y * fb.width as usize + x) * 4;
+        let c = [fb.data[i], fb.data[i + 1], fb.data[i + 2]];
+        if runs_test.last().map(|(_, pc)| *pc != c).unwrap_or(true) {
+            runs_test.push((x, c));
+        }
+        let j = (y * ref_fb.width as usize + x) * 4;
+        let c = [ref_fb.data[j], ref_fb.data[j + 1], ref_fb.data[j + 2]];
+        if runs_ref.last().map(|(_, pc)| *pc != c).unwrap_or(true) {
+            runs_ref.push((x, c));
+        }
+    }
+    println!("test y={y} 颜色游程:");
+    for (x, c) in &runs_test {
+        println!("  x={x} {:?}", c);
+    }
+    println!("ref y={y} 颜色游程:");
+    for (x, c) in &runs_ref {
+        println!("  x={x} {:?}", c);
+    }
+}
+
+/// R4123 勘察四：bs-rowgroup-001 行间缝探测——tbody.t 背景在行 border-spacing（3px 纵向）
+/// 处是否露白（chromium ref 模拟为横条带）。逐行统计 tbody aqua 区域内的颜色。
+#[test]
+#[ignore]
+fn debug_table_backgrounds_bs_rowgroup_probe() {
+    let case_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("wpt-data/css/CSS2/tables/table-backgrounds-bs-rowgroup-001.xht");
+    let ref_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("wpt-data/css/CSS2/tables/table-backgrounds-bs-rowgroup-001-ref.xht");
+    let html = std::fs::read_to_string(&case_path).expect("read test html");
+    let ref_html = std::fs::read_to_string(&ref_path).expect("read ref html");
+    let cfg = ReftestConfig::default();
+    let fb = render_to_framebuffer_with_base(&html, "", &cfg, case_path.parent());
+    let ref_fb = render_to_framebuffer_with_base(&ref_html, "", &cfg, ref_path.parent());
+    // 找 tbody.t 背景色（假设 aqua 系；先 dump test/ref 表区 y=30..140 的每行 x=60..200
+    // 主导色）。
+    for (label, f) in [("test", &fb), ("ref", &ref_fb)] {
+        let mut line = format!("{label} 行主导色: ");
+        for y in (28..50).step_by(2) {
+            let i = (y * f.width as usize + 120) * 4;
+            line.push_str(&format!("y{y}=({},{},{}) ", fb.data[i], fb.data[i + 1], fb.data[i + 2]));
+        }
+        println!("{line}");
+    }
+}
+
+/// R4123 勘察五：bs-rowgroup-001 diff 带定位（`cargo test --ignored`）。
+#[test]
+#[ignore]
+fn debug_table_backgrounds_bs_rowgroup_bands() {
+    let case_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("wpt-data/css/CSS2/tables/table-backgrounds-bs-rowgroup-001.xht");
+    let ref_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("wpt-data/css/CSS2/tables/table-backgrounds-bs-rowgroup-001-ref.xht");
+    let html = std::fs::read_to_string(&case_path).expect("read test html");
+    let ref_html = std::fs::read_to_string(&ref_path).expect("read ref html");
+    let cfg = ReftestConfig::default();
+    let fb = render_to_framebuffer_with_base(&html, "", &cfg, case_path.parent());
+    let ref_fb = render_to_framebuffer_with_base(&ref_html, "", &cfg, ref_path.parent());
+    let mut row_diff = vec![0u32; fb.height as usize];
+    for y in 0..fb.height as usize {
+        for x in 0..fb.width as usize {
+            let i = (y * fb.width as usize + x) * 4;
+            let j = (y * ref_fb.width as usize + x) * 4;
+            let d = (fb.data[i] as i32 - ref_fb.data[j] as i32).abs()
+                + (fb.data[i + 1] as i32 - ref_fb.data[j + 1] as i32).abs()
+                + (fb.data[i + 2] as i32 - ref_fb.data[j + 2] as i32).abs();
+            if d > 30 {
+                row_diff[y] += 1;
+            }
+        }
+    }
+    let mut bands: Vec<(usize, usize, u32)> = Vec::new();
+    for (y, cnt) in row_diff.iter().enumerate() {
+        if *cnt > 0 {
+            match bands.last_mut() {
+                Some(b) if b.1 + 1 == y => {
+                    b.1 = y;
+                    b.2 += *cnt;
+                }
+                _ => bands.push((y, y, *cnt)),
+            }
+        }
+    }
+    for (y0, y1, total) in &bands {
+        println!("diff band y={y0}..={y1} pixels={total}");
+    }
+}
