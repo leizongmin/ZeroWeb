@@ -84,7 +84,9 @@
 | DC-4 | execCommand 基础面 | ✅ queryCommandSupported/Enabled 真实反射（M3 切片 3，`_zwQueryCommandState`——supported/enabled 按接通命令面与选区 editing host 前提判定 + 五组单测）+ bold/italic/underline/strikethrough + delete/forwardDelete 实应用（M3 切片 1/2，六组单测）；toggle/queryCommandState、CSS 化命令、run/ 导入（330KB reference impl）defer 有据 |
 | DC-5 | cargo test 全绿 / clippy / 资产化 | ✅ engine 2630 + webview 692 全绿（本轮）/ 零警告 / 每切片带单测 |
 
-**收尾结论**：Selection 面、编辑管线、execCommand 基础命令集、queryCommand* 真实反射
-均落地并有断言资产；残余项（Selection 方向位/iframe、toggle/CSS 化命令/queryCommandValue、
-run/ 全量导入）为深化面——defer 均有据记录（上游 reference impl 依赖 + headless 限制），
-不阻塞流域收口判定。
+**收尾结论**：Selection 面（含方向位/ownerDocument/selectionchange）、编辑管线、
+execCommand 基础命令集、queryCommand* 真实反射均落地并有断言资产；残余项
+（selectAllChildren 118F/deleteFromDocument 60F/getSelection 12F 均为 iframe
+contentWindow 面——js-dom 共享域；toggle/CSS 化命令/queryCommandValue；run/ 全量
+导入）为跨域/深化面——defer 均有据记录（上游 reference impl 依赖 + headless 限制 +
+js-dom 共享域边界），不阻塞流域收口判定。
