@@ -548,6 +548,25 @@ pub fn script_run_classic_page(code: &str, script_index: usize) -> String {
             // `var NAME...`（真顶层声明——WPT 测试库无缩进顶层 + IIFE/块内部缩进声明
             // 不误匹配；const/let 多声明符形态 `const a = 1, b = 2` 只发布首名，后续名
             // 困在局部（罕见，接受））。
+            // R3254-E2 切片 7（editing goal，2026-09-07）：顶层 `class NAME` 同款全局
+            // 发布——strict eval 的类声明同样困在独立变量环境（WPT editing/include/
+            // editor-test-utils.js 顶层 `class EditorTestUtils` 跨 `<script>` 不可见 →
+            // deleteFromDocument-HTMLDetails 的 test() 全部不注册）。导出形态 = 类绑定
+            // 本身（非实例）。
+            if let Some(rest) = line.strip_prefix("class ") {
+                let name: String = rest
+                    .chars()
+                    .take_while(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == '$')
+                    .collect();
+                let after = rest.get(name.len()..).unwrap_or_default();
+                let after_trim = after.trim_start();
+                let valid =
+                    name.len() < rest.len() && (after_trim.starts_with('{') || after_trim.starts_with("extends"));
+                if !name.is_empty() && valid {
+                    return Some(format!("try{{globalThis.{name}={name};}}catch(_zw_ex){{}}"));
+                }
+                return None;
+            }
             if let Some(rest) = line.strip_prefix("function ") {
                 let name: String = rest
                     .chars()

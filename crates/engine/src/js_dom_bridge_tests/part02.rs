@@ -2410,3 +2410,35 @@ fn test_serialization_form_roundtrip_r3254_k3_probe() {
     assert_eq!(forms1.len(), 1);
     assert_eq!(forms.len(), 2, "serialize→re-parse 往返后 form 结构应保真");
 }
+
+#[test]
+fn test_class_decl_global_export_r3254_k3() {
+    // R3254-E2 切片 7（editing goal，2026-09-07）：顶层 `class NAME` 的全局发布——
+    // strict eval 独立变量环境下类声明困在 eval 作用域，跨 `<script>` 不可见
+    // （editor-test-utils.js 的 EditorTestUtils → deleteFromDocument-HTMLDetails
+    // test() 全不注册）。script_run_classic_page 的行首 class 导出应使第二脚本可见。
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    let wrapped = crate::js_dom_bridge::script_run_classic_page(
+        "class ZooKeeper { greet() { return 'hi'; } }",
+        0,
+    );
+    sandbox
+        .execute(&wrapped)
+        .unwrap();
+    sandbox
+        .execute(&crate::js_dom_bridge::script_run_classic_page(
+            "globalThis.__r = (typeof ZooKeeper) + '/' + (new ZooKeeper().greet());",
+            1,
+        ))
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__r)").unwrap().value,
+        "function/hi",
+        "顶层 class 声明须跨脚本全局可见（script_run_classic_page class 导出）",
+    );
+}
