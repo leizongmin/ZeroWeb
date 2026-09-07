@@ -1954,6 +1954,98 @@ __o.push("up:" + s3.selectedIndex);
     );
 }
 
+#[test]
+fn test_radio_arrow_navigation_r3254_k5() {
+    // R3254-K5 扩展（M3 切片 2，2026-09-07）：radio 方向键组内移动——同 name 组
+    // 文档序，ArrowDown/Right=下一 enabled、ArrowUp/Left=上一 enabled（不回绕），
+    // checked 属性迁移（SetAttr/RemoveAttr）+ input/change 事件。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><input type=radio name=g id=r1 value=1>\
+<input type=radio name=g id=r2 value=2 disabled>\
+<input type=radio name=g id=r3 value=3 checked>\
+<input type=radio name=g id=r4 value=4></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // ①：从 r3（checked）ArrowDown → 跳过无（r4 enabled）→ r4 checked。
+    sandbox
+        .execute(
+            r##"
+globalThis.__ev = [];
+var r3 = document.getElementById("r3");
+r3.addEventListener("input", function () { __ev.push("input"); });
+r3.addEventListener("change", function () { __ev.push("change"); });
+globalThis.__r1 = __zw_select_key_action("#r3", "ArrowDown");
+globalThis.__c1 = document.getElementById("r4").checked;
+"##,
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__r1)").unwrap().value,
+        "true",
+        "radio 上 ArrowDown 须被消费"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__c1)").unwrap().value,
+        "true",
+        "ArrowDown 后 r4 须 checked"
+    );
+    // ②：从 r4 ArrowDown → 无下一 enabled → clamp（r4 保持）。
+    sandbox
+        .execute(
+            r##"
+var r4 = document.getElementById("r4");
+globalThis.__r2 = __zw_select_key_action("#r4", "ArrowDown");
+globalThis.__c2 = r4.checked;
+"##,
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__r2)").unwrap().value,
+        "true",
+        "边界 ArrowDown 仍消费"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__c2)").unwrap().value,
+        "true",
+        "边界 clamp：r4 保持 checked"
+    );
+    // ③：从 r4 ArrowUp → 跳过 disabled r2? r3 在 r2 后——向上首个 enabled 是 r3 → checked 迁移回 r3。
+    sandbox
+        .execute(
+            r##"
+var r4b = document.getElementById("r4");
+globalThis.__r3 = __zw_select_key_action("#r4", "ArrowUp");
+globalThis.__c3a = document.getElementById("r3").checked;
+globalThis.__c3b = r4b.checked;
+"##,
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__r3)").unwrap().value,
+        "true",
+        "ArrowUp 被消费"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__c3a + '/' + String(globalThis.__c3b))").unwrap().value,
+        "true/false",
+        "ArrowUp 须迁移 checked：r3=true、r4=false"
+    );
+}
+
+
 
 #[test]
 fn test_contenteditable_typing_r3254_m2() {

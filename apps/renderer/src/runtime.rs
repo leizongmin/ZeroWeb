@@ -858,6 +858,12 @@ impl RendererRuntime {
         Ok(navigated)
     }
 
+    /// R3254-K5（M3 切片 2）：目标是否 radio（radio 方向键组内导航判据）。
+    fn is_radio_target_html(html: &str, target: &str) -> bool {
+        zero_engine::query_tag_from_html(html, target).eq_ignore_ascii_case("INPUT")
+            && zero_engine::query_attr_from_html(html, target, "type").eq_ignore_ascii_case("radio")
+    }
+
     /// 执行未取消 keydown 的用户代理默认动作；两条键盘 IPC 入口共用。
     // https://w3c.github.io/uievents/#event-type-keydown
     fn apply_keydown_default(&mut self, target: &str, key: &str, shift: bool) -> Result<(), String> {
@@ -882,11 +888,13 @@ impl RendererRuntime {
                 tracing::debug!("esc dialog cancel: {e}");
             }
         } else if matches!(key, "ArrowDown" | "ArrowUp" | "Home" | "End")
-            && zero_engine::query_tag_from_html(&self.cached_html, target).eq_ignore_ascii_case("SELECT")
+            && (zero_engine::query_tag_from_html(&self.cached_html, target).eq_ignore_ascii_case("SELECT")
+                || Self::is_radio_target_html(&self.cached_html, target))
         {
-            // R3254-K5（keyboard-default-actions goal M3 切片 1）：SELECT 焦点上的
-            // 方向键/Home/End = 选项移动（input+change 事件 JS 可观察面）。arrow 键
-            // 常规走滚动默认动作——SELECT 焦点时优先消费为选项导航。
+            // R3254-K5（keyboard-default-actions goal M3 切片 1/2）：SELECT 焦点上
+            // 方向键/Home/End = 选项移动；radio 焦点上方向键 = 组内移动。均为
+            // input+change 事件 JS 可观察面。arrow 键常规走滚动默认动作——可导航
+            // 控件焦点时优先消费。
             let script = zero_engine::script_select_key_action(target, key);
             if let Err(e) = self.js_worker.execute_script_direct(&script) {
                 tracing::debug!("select key action: {e}");

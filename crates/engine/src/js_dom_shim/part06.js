@@ -1581,7 +1581,42 @@
   // https://html.spec.whatwg.org/multipage/interactive-elements.html#the-select-element
   globalThis.__zw_select_key_action = function (sel, key) {
     var el = document.querySelector(sel);
-    if (!el || String(el.tagName).toUpperCase() !== 'SELECT') return false;
+    if (!el) return false;
+    // R3254-K5 扩展（M3 切片 2）：radio 方向键组内移动——同 name 组（文档序），
+    // ArrowDown/Right=下一 enabled、ArrowUp/Left=上一 enabled（Chromium 不回绕——
+    // clamp）；选中 = checked 属性迁移（SetAttr/RemoveAttr latest-wins）+ input +
+    // change 事件。选中新值时旧 checked 移除。
+    if (String(el.tagName).toUpperCase() === 'INPUT'
+        && String(el.getAttribute('type') || '').toLowerCase() === 'radio') {
+      var name2 = el.getAttribute('name');
+      if (!name2) return true;
+      var all = document.querySelectorAll('input[type="radio"][name="' + String(name2).replace(/"/g, '\\"') + '"]');
+      var cur2 = -1;
+      var list = [];
+      for (var r2 = 0; r2 < all.length; r2++) {
+        list.push(all[r2]);
+        if (all[r2] === el) cur2 = r2;
+      }
+      if (cur2 < 0) return true;
+      var dir2 = (key === 'ArrowDown' || key === 'ArrowRight') ? 1
+        : (key === 'ArrowUp' || key === 'ArrowLeft') ? -1 : 0;
+      if (!dir2) return false;
+      var nxt2 = -1;
+      if (dir2 > 0) {
+        for (var f2 = cur2 + 1; f2 < list.length; f2++) if (!list[f2].disabled) { nxt2 = f2; break; }
+      } else {
+        for (var b2 = cur2 - 1; b2 >= 0; b2--) if (!list[b2].disabled) { nxt2 = b2; break; }
+      }
+      if (nxt2 < 0 || nxt2 === cur2) return true;
+      for (var w2 = 0; w2 < list.length; w2++) {
+        if (w2 === nxt2) list[w2].checked = true;
+        else if (list[w2].checked) list[w2].checked = false;
+      }
+      el.dispatchEvent(new Event('input', { bubbles: true, cancelable: false }));
+      el.dispatchEvent(new Event('change', { bubbles: true, cancelable: false }));
+      return true;
+    }
+    if (String(el.tagName).toUpperCase() !== 'SELECT') return false;
     var opts = el.options;
     if (!opts || !opts.length) return true;
     var cur = el.selectedIndex;

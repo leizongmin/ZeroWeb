@@ -523,7 +523,10 @@ fn tab_worker_main(
                             key.as_deref(),
                             Some("ArrowDown") | Some("ArrowUp") | Some("Home") | Some("End")
                         ) && javascript_enabled
-                            && zero_engine::query_tag_from_html(&html, &selector).eq_ignore_ascii_case("SELECT")
+                            && (zero_engine::query_tag_from_html(&html, &selector).eq_ignore_ascii_case("SELECT")
+                                || (zero_engine::query_tag_from_html(&html, &selector).eq_ignore_ascii_case("INPUT")
+                                    && zero_engine::query_attr_from_html(&html, &selector, "type")
+                                        .eq_ignore_ascii_case("radio")))
                         {
                             // R3254-K5（keyboard-default-actions goal M3 切片 1）：SELECT
                             // 焦点上的方向键/Home/End = 选项移动（input+change 事件 JS
