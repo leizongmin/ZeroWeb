@@ -2,7 +2,7 @@
 
 **入口文档**: [../keyboard-default-actions.md](../keyboard-default-actions.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-07（M2 切片 2 完成——Esc dialog cancel/close（K3 Esc 面）双宿主路径接通）
+**最后更新**: 2026-09-07（M3 切片 1 完成——select 方向键导航（K5）JS 可观察面接通）
 
 ---
 
@@ -38,7 +38,7 @@
 | K2 | 默认动作分发层缺失 | 🔶 部分接通：runner send_keys uE007→Submit + webview CE-first Enter 分发（2026-09-07）；keydown/keyup 事件派发断言面待 Actions 键盘链（addKeyboard not a function）|
 | K3 | implicit submission（Enter 提交规则）缺失 | 🔶 部分：uE007→Submit 路由 + 表单管线已接（M1）；Esc dialog cancel/close 已接（M2 切片 2，bcd59d7ed）；隐式提交规则细化（单/多控件、formnovalidate）待 js-dom 视图断链修复后复评 |
 | K4 | 激活键语义（空格/Enter → click 合成 + 两键差异）缺失 | 🔶 M2 切片 1（2026-09-07，f6eaed4d5）：空格→button-ish 目标递归 Activate（click 合成全管线复用）；Enter→Submit 臂上轮已接（uE007 路由 + 表单提交）。残余：keydown/keyup 两键时序差异（Space=keyup 触发、Enter=keydown 触发——runner 单发通道下语义合并，Actions 键盘链可细分，defer 记录）|
-| K5 | select 键盘导航（展开/移动/type-ahead）缺失 | ⬜ M3 |
+| K5 | select 键盘导航（展开/移动/type-ahead）缺失 | 🔶 M3 切片 1（2026-09-07，051e594df）：ArrowDown/Up/Home/End 选项移动（跳 disabled/clamp/value 编程选中 + input/change 事件）JS 可观察面接通；残余：type-ahead 多字符缓冲、展开键语义（headless 无展开态——goal 明示 JS 面验收）|
 
 ## 下一步计划
 
@@ -55,7 +55,7 @@
 |--------|------|
 | M1 — WPT 基线建立 + 分发层骨架 | ✅ 切片 1/2 完成（2026-09-07）——基线 6P/12F 全案可执行 + keydown/keyup 派发层；切片 3 分发表扩展按残余聚类推进 |
 | M2 — 表单键与激活 | 🔶 切片 1 ✅（K4 空格激活）+ 切片 2 ✅（K3 Esc dialog cancel/close）；隐式提交规则细化跨域待复评 |
-| M3 — select 导航 + radio/checkbox + 事件序 | ⬜ |
+| M3 — select 导航 + radio/checkbox + 事件序 | 🔶 切片 1 ✅（K5 select 方向键，2026-09-07）；radio 方向键组内移动 + type-ahead 待切片 |
 
 ## 验证基线
 
