@@ -4697,6 +4697,14 @@ fn apply_testdriver_command(webview: &mut WebView, command: &TestdriverCommand) 
         }
         "send_keys" => {
             let text = command.text.as_deref().unwrap_or_default();
+            // R3254-K2 残余切片 4（keyboard goal，2026-09-07）：send_keys 串内修饰键
+            // 持久化——修饰字符设置状态位，后续普通字符的事件对继承（WPT
+            // keypress-not-fired-for-modifier-shortcuts.html 的 `uE009 + 'v'` 复合序）。
+            // 串结束即清零（WebDriver 每次 send 独立按键序列）。
+            let mut shift_sticky = false;
+            let mut ctrl_sticky = false;
+            let mut alt_sticky = false;
+            let mut meta_sticky = false;
             for character in text.chars() {
                 // R3254-KP2（keyboard-page-scrolling goal M1 切片 1 解除 defer）：
                 // WebDriver 滚动/导航键（arrows/pages/home/end）→ keydown+keyup 事件
@@ -4716,8 +4724,7 @@ fn apply_testdriver_command(webview: &mut WebView, command: &TestdriverCommand) 
                     // R3254-K2 切片 3（keyboard goal M1）：修饰键 → keydown+keyup 事件对
                     // 且对应 modifier 位为 true（modifier-keys.html 断言
                     // event.shiftKey === (key === 'Shift') 等——位来自 DomEventDetail
-                    // 修饰键字段经 __zw_dispatch_event init dict 透传）。runner 仍无
-                    // 跨字符持久修饰状态（后续普通字符不继承修饰位——defer 记录）。
+                    // 修饰键字段经 __zw_dispatch_event init dict 透传）。
                     '\u{E008}' => Some(("Shift", true, false, false, false)),
                     '\u{E009}' => Some(("Control", false, true, false, false)),
                     '\u{E00A}' => Some(("Alt", false, false, true, false)),
@@ -4725,6 +4732,10 @@ fn apply_testdriver_command(webview: &mut WebView, command: &TestdriverCommand) 
                     _ => None,
                 };
                 if let Some((key_name, shift_k, ctrl_k, alt_k, meta_k)) = scroll_key {
+                    shift_sticky = shift_k;
+                    ctrl_sticky = ctrl_k;
+                    alt_sticky = alt_k;
+                    meta_sticky = meta_k;
                     for event_type in ["keydown", "keyup"] {
                         let script = zero_engine::script_dispatch_dom_event(
                             &selector,
@@ -4760,14 +4771,67 @@ fn apply_testdriver_command(webview: &mut WebView, command: &TestdriverCommand) 
                         text: character.to_string(),
                     },
                 };
-                if let Some(error) = dispatch_action(webview, target, action) {
-                    return Some(error);
+                // R3254-K2 残余切片 4（keyboard goal，2026-09-07）：普通/编辑键补全
+                // keydown→默认动作→keypress→keyup 事件序（UI Events §keydown/§keyup 默认
+                // 动作序；旧版裸 InsertText 无任何键事件，keypress-not-fired-for-
+                // modifier-shortcuts 的 keyup listener 永不触发 → 3 subtest 全 pending
+                // Timeout）。Ctrl/Meta 按住时 keypress 抑制（UI Events：修饰快捷键不产
+                // 生字符点击——keypress-not-fired 主断言）。
+                // https://w3c.github.io/uievents/#keys-modifiers
+                // https://w3c.github.io/uievents/#event-type-keypress
+                let key = character.to_string();
+                let key_detail = zero_engine::DomEventDetail {
+                    key: Some(key.clone()),
+                    code: Some(key.clone()),
+                    shift_key: shift_sticky,
+                    ctrl_key: ctrl_sticky,
+                    alt_key: alt_sticky,
+                    meta_key: meta_sticky,
+                    ..Default::default()
+                };
+                match action {
+                    // 可打印字符：keydown 未取消 → InsertText 默认动作 + keypress
+                    //（keydown-input-events.html 的 cancel 语义同款；非字符键无 keypress）。
+                    HtmlUserAction::InsertText { .. } => {
+                        if dispatch_key_event_script(webview, &selector, "keydown", &key_detail) != "prevented" {
+                            if let Some(error) = dispatch_action(webview, target, action) {
+                                return Some(error);
+                            }
+                            if !ctrl_sticky && !meta_sticky {
+                                dispatch_key_event_script(webview, &selector, "keypress", &key_detail);
+                            }
+                        }
+                    }
+                    // 非字符编辑/导航键（Backspace/Tab/ENTER）：keydown → 默认动作（取消
+                    // 只抑制字符插入类序，此处动作照旧执行——与旧版行为一致）→ keyup。
+                    _ => {
+                        dispatch_key_event_script(webview, &selector, "keydown", &key_detail);
+                        if let Some(error) = dispatch_action(webview, target, action) {
+                            return Some(error);
+                        }
+                    }
                 }
+                dispatch_key_event_script(webview, &selector, "keyup", &key_detail);
             }
             None
         }
         operation => Some(format!("unsupported testdriver command: {operation}")),
     }
+}
+
+/// 派发单个键事件（R3254-K2 残余切片 4 的 send_keys 事件序辅助）——返回
+/// `__zw_dispatch_event` 结果串（'ok'/'prevented'）。
+fn dispatch_key_event_script(
+    webview: &mut WebView,
+    selector: &str,
+    event_type: &str,
+    detail: &zero_engine::DomEventDetail,
+) -> String {
+    let script = zero_engine::script_dispatch_dom_event(selector, event_type, Some(detail));
+    webview
+        .execute_script(&script)
+        .map(|v| v.trim().to_string())
+        .unwrap_or_default()
 }
 
 fn dispatch_action(
@@ -4966,6 +5030,7 @@ globalThis.promise_test = function(fn, name) {
   }).then(function(){ __pending--; __completeSoon(); });
 };
 globalThis.assert_equals = function(a,b,m) { if (a !== b) throw new Error(m || (String(a)+' != '+String(b))); };
+globalThis.assert_true = function(v,m) { if (v !== true) throw new Error(m || 'expected true, got ' + String(v)); };
 "#;
 
     #[test]
@@ -5009,6 +5074,79 @@ promise_test(async function() {
                     message: None,
                 }
             ]
+        );
+    }
+
+    #[test]
+    fn send_keys_dispatches_key_event_sequence_and_suppresses_modifier_keypress() {
+        // R3254-K2 残余切片 4（keyboard goal，2026-09-07）：send_keys 普通字符补全
+        // keydown→InsertText→keypress→keyup 事件序（旧版裸 InsertText 无键事件，
+        // keypress-not-fired-for-modifier-shortcuts 的 keyup listener 永不 resolve →
+        // 3 subtest 全 pending Timeout）。①：普通字符四事件齐发且 value 更新；
+        // ②：修饰键（uE009 Control）+ 'v' 复合序——'v' 事件对 ctrlKey=true 且
+        // keypress 抑制（UI Events 修饰快捷键语义）；③：串结束修饰位清零（后续
+        // send 独立）。驱动用例：WPT uievents/keyboard/keypress-not-fired-for-
+        // modifier-shortcuts.html。
+        let html = r##"
+<script src="/resources/testharness.js"></script>
+<script src="/resources/testdriver.js"></script>
+<input id="target">
+<script>
+var CONTROL = '';
+// listener 挂 document（bubbles 面）——InsertText mutation 后 input 元素被宿主
+// 重渲染替换，原元素上的 listener 会失联；每 subtest 独立注册独立 log（runner
+// promise_test 并发排队，共享数组会被前序 send 的事件污染）。
+function fresh() { return document.getElementById('target'); }
+
+function record(log) {
+  document.addEventListener('keydown', function (e) { log.push('keydown:' + e.key + ':' + e.ctrlKey); });
+  document.addEventListener('keypress', function (e) { log.push('keypress:' + e.key); });
+  document.addEventListener('keyup', function (e) { log.push('keyup:' + e.key + ':' + e.ctrlKey); });
+}
+
+promise_test(async function() {
+  var log1 = [];
+  record(log1);
+  await test_driver.send_keys(fresh(), 'a');
+  assert_equals(log1.join('|'), 'keydown:a:false|keypress:a|keyup:a:false', 'plain char full sequence');
+  assert_equals(fresh().value, 'a', 'value inserted');
+});
+promise_test(async function() {
+  var log2 = [];
+  record(log2);
+  await test_driver.send_keys(fresh(), CONTROL + 'v');
+  // 并发 subtest 同帧排队且 listener 共享 document——log 前置段可能混入其它 send
+  // 的事件；用 indexOf 定位本 subtest 的 Control 段再断言相对序。
+  var seq = log2.join('|');
+  var i = seq.indexOf('keydown:Control:true');
+  assert_true(i !== -1, 'Ctrl events present: ' + seq);
+  assert_true(seq.indexOf('keypress:v') === -1, 'Ctrl+v keypress suppressed: ' + seq);
+  assert_true(seq.indexOf('keydown:v:true') > i, 'v keydown inherits ctrlKey: ' + seq);
+  assert_true(seq.indexOf('keyup:v:true') > i, 'v keyup inherits ctrlKey: ' + seq);
+});
+promise_test(async function() {
+  var log3 = [];
+  record(log3);
+  await test_driver.send_keys(fresh(), 'b');
+  // lastIndexOf 定位本 subtest 的 'b' 段（并发 subtest 污染前置段）；断言 b 事件
+  // ctrlKey=false = 跨 send 修饰位清零语义。
+  var seq3 = log3.join('|');
+  var j = seq3.lastIndexOf('keydown:b:false');
+  assert_true(j !== -1, 'b keydown present: ' + seq3);
+  assert_equals(seq3.slice(j), 'keydown:b:false|keypress:b|keyup:b:false', 'b sequence clean & ctrl cleared');
+});
+</script>
+"##;
+        let results = run_testharness_html(
+            Path::new("/nonexistent-wpt-root-for-tests"),
+            "local-send-keys-sequence.html",
+            html,
+            MINI_HARNESS,
+            Duration::from_secs(2),
+        );
+        assert!(
+            results.iter().all(|r| r.status == HarnessStatus::Pass),
+            "all three sequence subtests pass: {results:?}"
         );
     }
 
