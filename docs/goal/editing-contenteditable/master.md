@@ -2,7 +2,7 @@
 
 **入口文档**: [../editing-contenteditable.md](../editing-contenteditable.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-07（M3 切片 4——execCommand toggle 语义 + queryCommandState 真实反射）
+**最后更新**: 2026-09-07（M3 切片 5——insertParagraph 块级拆分，M2 切片 3 defer 解除）
 
 ---
 
@@ -40,7 +40,7 @@
 |---|------|------|
 | E1 | WPT selection/editing 用例覆盖为零 | ✅ selection 首批 20 用例 2026-09-07（基线 1.7%）；editing 目录未导 |
 | E2 | Selection JS 可观察面未核实/缺失 | ✅ 切片 2 + 残余切片 2/3（2026-09-07，45P→**2704P**）：切片 2 八类（document.getSelection/instanceof/异常语义/selectAllChildren/setBaseAndExtent/setPosition/deleteFromDocument）；残余切片 2——Selection anchor/focus **独立边界点**（setBaseAndExtent 反向形态 anchor/focus 各自等于请求值 + detached/foreign-doc 清空 + 省参 TypeError，86F→0F）+ Text/Comment.prototype.ownerDocument（innerHTML 解析产物 'reading createRange' TypeError，isCollapsed/removeRange/type/collapseToStartEnd 48F→0F）；残余切片 3——selectionchange 排程派发（document 级 4 subtest 全过 + text control 独立派发 2F→2P）。残余：selectAllChildren 118F（runner host 视图 pending-tree 深层形态）/ deleteFromDocument 60F / getSelection 12F（均 iframe 面，js-dom 共享域）/ onselectionchange 第 4 subtest 跨用例 timer 时序 flake |
-| E3 | 编辑行为管线（键入/删除/换行 → DOM）缺失 | ✅ M2 切片 2/3（2026-09-07，bf181ee60+47dd9a685）：键入/Backspace（SetChildText splice + caret 移动）+ Enter 换行（SetInnerHtml <br> splice + caret 元素边界）+ 事件序全接通；限制记录：insertParagraph 块级拆分 defer、跨节点回退/嵌套结构偏移映射 defer |
+| E3 | 编辑行为管线（键入/删除/换行 → DOM）缺失 | ✅ M2 切片 2/3 + M3 切片 5（2026-09-07，bf181ee60+47dd9a685+切片 5）：键入/Backspace（SetChildText splice + caret 移动）+ Enter 换行（SetInnerHtml <br> splice + caret 元素边界）+ **insertParagraph 块级拆分**（SetOuterHtml 同型兄弟块重写）+ 事件序全接通；限制记录：跨节点回退/嵌套结构偏移映射 defer |
 | E4 | beforeinput/input 事件缺失 | 🔶 M2 切片 1（2026-09-07，commit 74a0c879b）：execCommand 编辑类命令 editing-host 事件序（beforeinput cancelable+trusted → input bubbles+trusted，inputType 映射，全选区在 host 内前提，preventDefault 阻断）——event.html 104P/76F→179P/1F；残余：键入/删除管线（宿主侧 keydown → contenteditable DOM 变更）未接 |
 | E5 | execCommand format 桩（不真应用） | 🔶 M3 切片 1/2（2026-09-07）：① bold/italic/underline/strikethrough inline 包裹（SetInnerHtml splice + 标签/实体感知扫描）；② delete/forwardDelete 选区删除（SetChildText splice + 代理对安全 + caret 回落）；③ queryCommandSupported/Enabled 真实反射（切片 3，`_zwQueryCommandState`——copy/cut/paste 恒 true；编辑类按选区 editing host 前提；未接命令 false，替换无条件 true 桩）。限制：toggle/queryCommandState、CSS 化命令（color 族）、queryCommandValue 值面、跨容器删除、嵌套结构偏移映射 defer |
 
@@ -56,6 +56,7 @@
 8. ~~**M1 残余切片 2**：Selection 方向位 + Text/Comment ownerDocument~~ ✅ 2026-09-07（Selection 单例 `_anchorNode/_anchorOffset/_focusNode/_focusOffset` 独立边界点 + `_zwSync` helper——setBaseAndExtent/extend 写反向端点，getter 直读保存值，range 层恒正向化；detached/foreign-doc 清空 + WebIDL 省参 TypeError；Text/Comment.prototype ownerDocument getter。selection 套件 779F→262F，单测 test_selection_direction_r3254_m1_slice2 三组断言）
 9. ~~**M1 残余切片 3**：selectionchange 排程派发~~ ✅ 2026-09-07（`_zwScheduleSelectionChange`——setTimeout(0) 记录式 timer 任务边界 + pending target 数组按身份去重（document 与 text control 并存）；Selection mutator `_zwSync` 钩子 + part03 setSelectionRange 钩子（target=控件自身）。onselectionchange-on-document 4 subtest（Timeout+0P→4P）、onselectionchange-on-distinct-text-controls 2F→2P；单测 test_selectionchange_dispatch_r3254_m1_slice3 两组断言）。**selection 套件终态 2704P/199F**（基线 2005P/779F，净 +699P）
 10. ~~**M3 切片 4**：execCommand toggle 语义 + queryCommandState 真实反射~~ ✅ 2026-09-07（`_zwQueryFormatState`——选区起点祖先链 tagName 匹配（大小写不敏感）；`_zwExecCmdUnwrapFormat`——祖先链定位宿主直子 tag 元素整体替换为其 innerHTML（caret 落原位置）；execCommand format 臂按 state 走 wrap/unwrap toggle。单测 test_execcommand_toggle_state_r3254_m3_slice4 五组断言；M2 事件序测试同步适配（选区改非包裹文本——toggle 语义下 <b> 内选区会解除包裹）。**defer 记录**：跨部分包裹形态（选区只覆盖包裹的一段）unwrap 不处理；CSS 化命令 state 面仍 defer）。**残余聚类归因补记**：anchor-removal 2F = window named access（bare id 标识符）整体缺失——js-dom/native 绑定域（动态 innerHTML 后 id 无全局注册；探针归档）；script-and-style-elements 1F = Selection.toString 的 CSS 空白渲染语义（display:none 排除 + style/script 内容计入 + 块间换行）——渲染域投影，defer 有据
+11. ~~**M3 切片 5**：insertParagraph 块级拆分（M2 切片 3 defer 解除）~~ ✅ 2026-09-07（`__zw_ce_insert_paragraph(sel)`——caret 处宿主 outerHTML 重写拆两同型兄弟块（SetOuterHtml mutation 流转宿主重解析；同型开标签 + contenteditable 属性保留）；execCommand insertParagraph 臂同语义（`_zwExecCmdApplyParagraphSplit`）；collapsed caret tail 段 = caret 起整段。单测 test_insert_paragraph_split_r3254_m3_slice5 三组断言（beforeinput 事件序 + SetOuterHtml 拆分形态 + ce 通道）。残余：嵌套结构内拆分（flat 模型限制，维持 defer）
 
 **碰撞管理**：开工前先 `git log --since="14 days ago" -- crates/engine/src/js_dom_shim/`
 核对 js-dom 流活跃面。
@@ -65,8 +66,8 @@
 | 里程碑 | 状态 |
 |--------|------|
 | M1 — selection 基线 + Selection 面摸底 | ✅ 切片 1/2/3 全部完成（2026-09-07）——基线 + Selection 面 + editing 导入 |
-| M2 — 编辑行为管线 | ✅ 切片 1/2/3 全部完成（2026-09-07）——事件序 + 键入/删除/换行落 DOM；defer 项：insertParagraph 块级拆分、跨节点删除 |
-| M3 — execCommand 基础面 + 收尾 | 🔶 切片 1/2/3/4 ✅（format 四命令 + delete 两命令实应用 + queryCommandSupported/Enabled 真实反射 + toggle/queryCommandState，2026-09-07）；剩余：insertParagraph/insertHTML、run/ 用例导入（330KB reference impl 依赖——defer 有据）|
+| M2 — 编辑行为管线 | ✅ 切片 1/2/3 全部完成（2026-09-07）——事件序 + 键入/删除/换行落 DOM；defer 项：跨节点删除 |
+| M3 — execCommand 基础面 + 收尾 | 🔶 切片 1/2/3/4/5 ✅（format 四命令 + delete 两命令实应用 + queryCommandSupported/Enabled + toggle/queryCommandState + insertParagraph 块级拆分，2026-09-07）；剩余：insertHTML、run/ 用例导入（330KB reference impl 依赖——defer 有据）|
 
 ## 验证基线
 

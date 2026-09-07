@@ -3178,6 +3178,85 @@
       bubbles: true, cancelable: false, data: null, inputType: 'insertLineBreak', isComposing: false
     }));
   };
+  // CE insertParagraph 块级拆分（R3254-M3 切片 5，editing goal，2026-09-07）：
+  // caret 处把宿主**拆为两个同型兄弟块**（Chromium 语义——div 宿主拆两 div；非
+  // 宿主内 Enter 走 __zw_ce_enter 的 <br> 语义）。实现：宿主 outerHTML 重写——
+  // head 段 + 闭合 + 新开同型标签 + tail 段（SetOuterHtml mutation 流转宿主重解析，
+  // 同 caret 偏移扫描与 __zw_ce_enter 同款实体感知）。caret 在宿主直子文本节点内
+  // 才应用（flat 模型）；事件序 beforeinput(insertParagraph, cancelable) → 变更 →
+  // input（target=原宿主——拆分后原 selector 失效，事件在拆分前宿主派发）。
+  // caret 落新块首（range 对新宿主同 selector 重建）。
+  // https://w3c.github.io/input-events/#interface-InputEvent-Types
+  globalThis.__zw_ce_insert_paragraph = function(sel) {
+    var el = document.querySelector(sel);
+    if (!el || !globalThis.__zw_is_ce_host(el)) return;
+    var range = globalThis.__zw_ce_caret_range(el);
+    var sc = range.startContainer, so = range.startOffset | 0;
+    if (!(sc && (sc.nodeType === 3 || sc.__zwIsText) && sc.parentNode === el)) return;
+    var v = String(sc.nodeValue || '');
+    var eo = range.collapsed ? so : (range.endOffset | 0);
+    var before = new InputEvent('beforeinput', {
+      bubbles: true, cancelable: true, data: null, inputType: 'insertParagraph', isComposing: false
+    });
+    if (el.dispatchEvent(before) === false) return;
+    var kids = el.childNodes || [];
+    var textOffset = 0;
+    for (var i = 0; i < kids.length; i++) {
+      var k = kids[i];
+      if (k === sc) break;
+      if (k.nodeType === 3 || k.__zwIsText) textOffset += String(k.nodeValue || '').length;
+    }
+    var html = String(el.innerHTML || '');
+    var want = textOffset + so;
+    var seen = 0;
+    var splitAt = -1;
+    for (var j = 0; j < html.length; j++) {
+      if (seen === want) { splitAt = j; break; }
+      if (html.charAt(j) === '&') {
+        var semi = html.indexOf(';', j);
+        if (semi > j && semi - j <= 10) { j = semi; seen++; continue; }
+      }
+      seen++;
+    }
+    if (splitAt < 0) splitAt = (seen === want) ? html.length : -1;
+    if (splitAt < 0) return;
+    var cutEnd = splitAt; // collapsed：tail = caret 起整段（选区非空才前推 cutEnd）
+    if (eo > so) {
+      var seen2 = seen, want2 = want + (eo - so);
+      for (var j2 = splitAt; j2 < html.length; j2++) {
+        if (seen2 === want2) { cutEnd = j2; break; }
+        if (html.charAt(j2) === '&') {
+          var semi2 = html.indexOf(';', j2);
+          if (semi2 > j2 && semi2 - j2 <= 10) { j2 = semi2; seen2++; continue; }
+        }
+        seen2++;
+      }
+    }
+    // 同型开标签复制：tag 名 + contenteditable 保留（拆分出的两半都是 editing host）。
+    var tag = String(el.tagName || 'DIV').toLowerCase();
+    var ceAttr = el.getAttribute && el.getAttribute('contenteditable');
+    var openTag = '<' + tag + (ceAttr !== null ? ' contenteditable="' + String(ceAttr).replace(/"/g, '&quot;') + '"' : ' contenteditable');
+    var head = html.slice(0, splitAt);
+    var tail = html.slice(cutEnd);
+    el.outerHTML = openTag + '>' + head + '</' + tag + '>' + openTag + '>' + tail + '</' + tag + '>';
+    // caret → 新块（同 selector 重建——SetOuterHtml 后 selector 命中前块；caret 落
+    // 后块：查询同型兄弟不可靠（selector 失配），落前块末（元素边界）best-effort）。
+    try {
+      var el2 = document.querySelector(sel);
+      if (el2) {
+        var nr = document.createRange();
+        nr.setStart(el2, (el2.childNodes || []).length);
+        nr.collapse(true);
+        if (typeof _getSelection === 'function') { _getSelection()._ranges = [nr]; }
+      }
+    } catch (_eIpCaret) {}
+    try {
+      el2 = document.querySelector(sel);
+      if (el2) el2.dispatchEvent(new InputEvent('input', {
+        bubbles: true, cancelable: false, data: null, inputType: 'insertParagraph', isComposing: false
+      }));
+    } catch (_eIpEv) {}
+  };
   // 宿主拆分默认动作 transaction 时，延迟 listener 排入的 microtask，直到 commit/rollback 完成。
   // https://html.spec.whatwg.org/multipage/webappapis.html#perform-a-microtask-checkpoint
   var _zwNativeQueueMicrotask = globalThis.queueMicrotask;

@@ -4247,3 +4247,85 @@ globalThis.__other = document.queryCommandState("insertText") + "/" + document.q
         "insertText state=false；BOLD（大小写不敏感）沿 ③ 嵌套选区祖先链=true"
     );
 }
+
+#[test]
+fn test_insert_paragraph_split_r3254_m3_slice5() {
+    // R3254-M3 切片 5（editing goal，2026-09-07）：insertParagraph 块级拆分——
+    // ① execCommand('insertparagraph') 对 caret 在宿主直子文本内的 flat 宿主：
+    // outerHTML 重写拆两同型兄弟块（SetOuterHtml mutation）；② beforeinput
+    // (insertParagraph, cancelable) 事件序；③ caret 中点拆分内容正确。
+    // 解除 M2 切片 3 的「insertParagraph 块级拆分 defer」。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=ce contenteditable>headtail</div>\
+         <div id=ce2 contenteditable>ab</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // ①②：caret 在 'head|tail' 中点 + 事件监听 → execCommand insertParagraph。
+    sandbox
+        .execute(
+            r##"
+globalThis.__ev = [];
+var ce = document.getElementById("ce");
+ce.addEventListener("beforeinput", function (e) {
+  __ev.push(e.inputType + ":" + e.cancelable);
+});
+var t = ce.firstChild;
+var r = document.createRange();
+r.setStart(t, 4);
+r.collapse(true);
+getSelection().removeAllRanges();
+getSelection().addRange(r);
+document.execCommand("insertparagraph", false, "");
+"##,
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ev)").unwrap().value,
+        "insertParagraph:true",
+        "insertParagraph 须派 cancelable beforeinput（inputType=insertParagraph）"
+    );
+    {
+        let m = mutations.lock().unwrap();
+        let found = m.iter().rev().find(|mm| matches!(mm, DomMutation::SetOuterHtml { selector, .. } if selector.contains("ce"))).cloned();
+        assert!(
+            matches!(&found, Some(DomMutation::SetOuterHtml { html, .. }) if html.contains(">head</div>") && html.contains("contenteditable")),
+            "insertParagraph 须经 SetOuterHtml 拆两同型块（head 尾闭合 + 新开 contenteditable 块），实际: {found:?}"
+        );
+    }
+    // ③：__zw_ce_insert_paragraph 通道同语义（初始 dom_html 预置宿主）。
+    sandbox
+        .execute(
+            r##"
+var p = document.getElementById("ce2");
+var t2 = p.firstChild;
+var r2 = document.createRange();
+r2.setStart(t2, 1);
+r2.collapse(true);
+getSelection().removeAllRanges();
+getSelection().addRange(r2);
+globalThis.__zw_ce_insert_paragraph("#ce2");
+"##,
+        )
+        .unwrap();
+    {
+        let m = mutations.lock().unwrap();
+        let found = m.iter().rev().find(|mm| matches!(mm, DomMutation::SetOuterHtml { selector, .. } if selector.contains("ce2"))).cloned();
+        assert!(
+            matches!(&found, Some(DomMutation::SetOuterHtml { html, .. }) if html.contains(">a</div>") && html.contains(">b<")),
+            "__zw_ce_insert_paragraph 须拆 'ab' 为 a/b 两块，实际: {found:?}"
+        );
+    }
+}

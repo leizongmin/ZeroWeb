@@ -1652,6 +1652,58 @@
     if (typeof _getSelection === 'function') { _getSelection()._ranges = [nr]; }
   }
 
+  // R3254-M3 切片 5：insertParagraph 块级拆分（execCommand 臂）——宿主 outerHTML
+  // 重写拆两同型兄弟块（与 __zw_ce_insert_paragraph 同语义；此处直接消费 host2
+  // 元素与当前选区）。caret 在宿主直子文本节点内才应用；caret 落前块末。
+  function _zwExecCmdApplyParagraphSplit(host, range) {
+    var sc = range.startContainer, so = range.startOffset | 0;
+    var ec = range.endContainer, eo = range.collapsed ? so : (range.endOffset | 0);
+    if (!(sc && (sc.nodeType === 3 || sc.__zwIsText) && sc.parentNode === host)) return;
+    var kids = host.childNodes || [];
+    var textOffset = 0;
+    for (var i = 0; i < kids.length; i++) {
+      var k = kids[i];
+      if (k === sc) break;
+      if (k.nodeType === 3 || k.__zwIsText) textOffset += String(k.nodeValue || '').length;
+    }
+    var html = String(host.innerHTML || '');
+    var want = textOffset + so;
+    var seen = 0;
+    var splitAt = -1;
+    for (var j = 0; j < html.length; j++) {
+      if (seen === want) { splitAt = j; break; }
+      if (html.charAt(j) === '&') {
+        var semi = html.indexOf(';', j);
+        if (semi > j && semi - j <= 10) { j = semi; seen++; continue; }
+      }
+      seen++;
+    }
+    if (splitAt < 0) splitAt = (seen === want) ? html.length : -1;
+    if (splitAt < 0) return;
+    var cutEnd = splitAt; // collapsed：tail = caret 起整段
+    if (eo > so) {
+      var seen2 = seen, want2 = want + (eo - so);
+      for (var j2 = splitAt; j2 < html.length; j2++) {
+        if (seen2 === want2) { cutEnd = j2; break; }
+        if (html.charAt(j2) === '&') {
+          var semi2 = html.indexOf(';', j2);
+          if (semi2 > j2 && semi2 - j2 <= 10) { j2 = semi2; seen2++; continue; }
+        }
+        seen2++;
+      }
+    }
+    var tag = String(host.tagName || 'DIV').toLowerCase();
+    var ceAttr = host.getAttribute && host.getAttribute('contenteditable');
+    var openTag = '<' + tag + (ceAttr !== null ? ' contenteditable="' + String(ceAttr).replace(/"/g, '&quot;') + '"' : ' contenteditable');
+    host.outerHTML = openTag + '>' + html.slice(0, splitAt) + '</' + tag + '>' + openTag + '>' + html.slice(cutEnd) + '</' + tag + '>';
+    try {
+      var nr = document.createRange();
+      nr.setStart(host, kids.length);
+      nr.collapse(true);
+      if (typeof _getSelection === 'function') { _getSelection()._ranges = [nr]; }
+    } catch (_eIpCaret2) {}
+  }
+
   // R3254-K3（keyboard-default-actions goal M2 切片 2，2026-09-07）：Esc 默认动作——
   // dialog cancel/close（spec「dialog cancelation」）。宿主在 keydown Esc 默认动作阶段
   // 调 `__zw_esc_dialog_cancel()`：模态 dialog 优先（_zwDialogModal 印记），其次文档序
@@ -2644,6 +2696,13 @@
               // back/forward 一个 UTF-16 单元，代理对安全）。caret 回落删除点。
               if ((cmd === 'delete' || cmd === 'forwarddelete') && rng2) {
                 try { _zwExecCmdApplyDelete(rng2, cmd === 'forwarddelete'); } catch (_eDel) {}
+              }
+              // R3254-M3 切片 5：insertParagraph 块级拆分——选区已由事件序路径处理
+              //（beforeinput 已派），此处对 flat 宿主（caret 在直子文本内）走
+              // __zw_ce_insert_paragraph 同款拆分（host2/选区现值）。host2 非拆分
+              // 形态（嵌套/跨容器）→ no-op（defer 记录不变）。
+              if (cmd === 'insertparagraph' && rng2 && host2) {
+                try { _zwExecCmdApplyParagraphSplit(host2, rng2); } catch (_eIp) {}
               }
               // spec（WPT 'Changing selection from handler'）：beforeinput handler
               // 可改选区——input 事件 target 按 **input 派发时刻** 的选区 editing host
