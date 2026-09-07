@@ -78,7 +78,7 @@ element scroll 段活跃面。
 | DC-3 | scrollIntoView 选项面 | ✅ R3060 block start/end/center 公式断言（smooth→instant 简化记录）；scrollIntoViewIfNeeded R3075 |
 | DC-3 | 键盘滚动后 scroll 事件 + scrollX/Y 一致 | ✅ 窗口滚动七断言（事件 cancelable=false + 轴独立 + round-trip）|
 | DC-4 | snap 容器键盘交互 | 🔶 断言需 runner 真渲染 viewport（跨域协调项；snap 布局在渲染器已有）|
-| DC-5 | cargo test 全绿 / clippy 零警告 / 资产化 | ✅ 18,966 全绿（本轮）/ 零警告 / 本地资产标明 |
+| DC-5 | cargo test 全绿 / clippy 零警告 / 资产化 | ✅ 全量 make test 18,976 全绿（2026-09-07 复核轮）/ 零警告 / 本地资产标明 |
 
 **收尾结论**：本流可闭环面全部落地；剩余两项（焦点→容器链、snap 断言）均为跨域
 协调项（渲染流域），已记录于对应协调点注记——不阻塞本 goal 的流域收口判定。

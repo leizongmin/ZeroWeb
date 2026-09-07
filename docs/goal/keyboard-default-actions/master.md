@@ -75,7 +75,7 @@
 | DC-3 | select 导航（方向键/Home/End） | ✅ 跳 disabled/clamp/value 编程选中 + input+change 事件序 |
 | DC-3 | radio 方向键组内移动 | ✅ checked 迁移 + 跳 disabled + clamp；空格切换 checkbox=K4 Activate 管线（checkbox 臂既有）|
 | DC-4 | 事件序（keydown→keypress→keyup/click + cancelable） | ✅ keydown-input-events 2P/0F（keydown→beforeinput→input 序 + preventDefault 抑制）；keypress 派发（composed 面 3P/0F）；修饰键位透传（M1 切片 3，modifier-keys 4F 全灭 + 五组单测）；跨字符持久修饰状态 defer 记录 |
-| DC-5 | cargo test 全绿 / clippy / 资产化 | ✅ engine 2631 全绿（本轮）/ 零警告 / 每切片带单测 |
+| DC-5 | cargo test 全绿 / clippy / 资产化 | ✅ 全量 make test 18,976 全绿（2026-09-07 复核轮）/ 零警告 / 每切片带单测 |
 
 **收尾结论**：分发层骨架（K2 切片 2/3）、激活键（K4）、Esc（K3 Esc 面）、select/radio
 导航（K5）全部落地并有断言资产；隐式提交规则细化与 type-ahead/展开键为跨域/headless
