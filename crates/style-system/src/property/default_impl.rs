@@ -197,6 +197,8 @@ impl Default for ComputedStyle {
             // CSS Transforms 1 §transform-box：初始值 view-box（SVG 元素参考最近 viewport；
             // CSS 盒上 view-box 别名 border-box——由消费侧解释，存储保原值）。
             transform_box: TransformBoxValue::ViewBox,
+            // SVG2 §11.4：stroke-width 初始值 1（用户单位）。
+            stroke_width: LengthValue::Px(1.0),
             perspective: LengthValue::Px(0.0),
             perspective_origin_x: LengthValue::Percentage(50.0),
             perspective_origin_y: LengthValue::Percentage(50.0),

@@ -775,6 +775,12 @@ pub fn apply_property_value_with_quirks(
                 return true;
             }
         }
+        "stroke-width" => {
+            if let Some(v) = parse_stroke_width(value) {
+                style.stroke_width = v;
+                return true;
+            }
+        }
         "writing-mode" => {
             if let Some(v) = parse_writing_mode(value) {
                 style.writing_mode = v;

@@ -889,6 +889,11 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
             style.transform_box = default_style.transform_box;
             true
         }
+        "stroke-width" => {
+            // stroke-width 非继承（SVG2 presentation）。
+            style.stroke_width = default_style.stroke_width.clone();
+            true
+        }
         "table-layout" => {
             style.table_layout = default_style.table_layout;
             true

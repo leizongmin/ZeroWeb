@@ -744,6 +744,35 @@ pub fn parse_line_break(value: &str) -> Option<LineBreakValue> {
     }
 }
 
+/// 解析 CSS stroke-width 值（SVG2 §11.4）：`<length-percentage> | <number>`。
+/// number（无单位）= 用户单位 → 存 Px；负值非法返回 None。
+pub fn parse_stroke_width(value: &str) -> Option<LengthValue> {
+    let v = value.trim();
+    // SVG2：`<number>`（无单位 = 用户单位）合法且优先（`stroke-width: 20` 常见形态）。
+    if let Ok(n) = v.parse::<f64>() {
+        return (n.is_finite() && n >= 0.0).then_some(LengthValue::Px(n));
+    }
+    match zero_css_parser::values::parse_length(v) {
+        // 负长度非法（SVG2 §11.4：Negative values are invalid）。
+        Some(
+            l @ (LengthValue::Px(_)
+            | LengthValue::Percentage(_)
+            | LengthValue::Em(_)
+            | LengthValue::Ex(_)
+            | LengthValue::Rem(_)
+            | LengthValue::Calc(_)),
+        ) => {
+            let nonneg = match &l {
+                LengthValue::Px(n) => *n >= 0.0,
+                LengthValue::Percentage(p) => *p >= 0.0,
+                _ => true,
+            };
+            nonneg.then_some(l)
+        }
+        _ => None,
+    }
+}
+
 /// 解析 CSS transform-box 值（CSS Transforms 1 §transform-box）。
 pub fn parse_transform_box(value: &str) -> Option<TransformBoxValue> {
     match value.trim().to_ascii_lowercase().as_str() {

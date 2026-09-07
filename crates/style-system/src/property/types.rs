@@ -1447,6 +1447,8 @@ pub enum PropertyValue {
     TextOverflow(TextOverflowValue),
     /// transform-box 值（CSS Transforms 1 §transform-box，非继承）。
     TransformBox(TransformBoxValue),
+    /// stroke-width 值（SVG2 §11.4 presentation，非继承；number = 用户单位存 Px）。
+    StrokeWidth(LengthValue),
     /// flex-basis 值。
     FlexBasis(FlexBasisValue),
     /// z-index 值。

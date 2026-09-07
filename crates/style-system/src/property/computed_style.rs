@@ -308,6 +308,9 @@ pub struct ComputedStyle {
     pub transform_origin_y: LengthValue,
     /// transform-box 值（CSS Transforms 1，非继承；默认 view-box）。
     pub transform_box: TransformBoxValue,
+    /// stroke-width 值（SVG2 presentation，非继承；LengthValue，百分比/number 由消费侧按
+    /// viewport 对角线/用户单位解析）。
+    pub stroke_width: LengthValue,
     /// perspective 属性。
     pub perspective: LengthValue,
     /// perspective-origin X 分量。

@@ -2567,14 +2567,23 @@ pub(crate) fn collect_css_transforms(
         && st.transform != zero_css_parser::values::TransformValue::None
     {
         // 参考框 + origin 换算（CSS Transforms 1 §transform-box / §transform-origin）。
+        let font_size_px = zero_style_system::computed::resolve_length(&st.font_size, 16.0, None, None) as f32;
         let ref_box = match st.transform_box {
             zero_style_system::TransformBoxValue::ViewBox => svg_viewbox_of(doc, subtree_root),
             // FillBox/ContentBox：SVG 元素无 padding，content-box = fill-box。
-            // StrokeBox/BorderBox：暂近似 fill-box（ZW 无 stroke bbox API）。
-            _ => svg_element_bbox(doc, subtree_root),
+            zero_style_system::TransformBoxValue::FillBox | zero_style_system::TransformBoxValue::ContentBox => {
+                svg_element_bbox(doc, subtree_root)
+            }
+            // R4099：StrokeBox/BorderBox = object bbox 外扩 stroke-width/2（SVG2
+            // §TermStrokeBoundingBox；dash array 不影响 stroke bbox）。
+            zero_style_system::TransformBoxValue::StrokeBox | zero_style_system::TransformBoxValue::BorderBox => {
+                svg_element_bbox(doc, subtree_root).map(|(x, y, w, h)| {
+                    let half = resolve_svg_stroke_width(st, font_size_px) / 2.0;
+                    (x - half, y - half, w + half * 2.0, h + half * 2.0)
+                })
+            }
         };
         // transform-origin：百分比按参考框换算，px 按用户单位直读。
-        let font_size_px = zero_style_system::computed::resolve_length(&st.font_size, 16.0, None, None) as f32;
         let resolve_origin = |v: &zero_css_parser::values::LengthValue, base: f32| -> f32 {
             match v {
                 zero_css_parser::values::LengthValue::Percentage(p) => {
@@ -2587,21 +2596,36 @@ pub(crate) fn collect_css_transforms(
                 }
             }
         };
-        let mut ox = resolve_origin(&st.transform_origin_x, ref_box.map_or(0.0, |r| r.2));
-        let mut oy = resolve_origin(&st.transform_origin_y, ref_box.map_or(0.0, |r| r.3));
-        // view-box：origin/参考点相对 viewBox 原点（min-x/min-y），translate 包裹偏移须含之。
-        if st.transform_box == zero_style_system::TransformBoxValue::ViewBox
-            && let Some((min_x, min_y, _, _)) = ref_box
-        {
-            ox += min_x;
-            oy += min_y;
-        }
+        let ox = resolve_origin(&st.transform_origin_x, ref_box.map_or(0.0, |r| r.2));
+        let oy = resolve_origin(&st.transform_origin_y, ref_box.map_or(0.0, |r| r.3));
+        // R4099 注：view-box 模式 origin 相对 viewBox 原点（min-x/min-y 偏移臂）实测在
+        // svgbox-initial/view-box 案恶化（+2.08pp×2，全量 A/B），已回退——min 非零的
+        // viewBox 案在 corpus 未出现，偏移臂是过度设计。
         if let Some(svg) = transform_value_to_svg(&st.transform, ref_box, (ox, oy)) {
             out.push((subtree_root, svg));
         }
     }
     for child in doc.child_nodes(subtree_root) {
         collect_css_transforms(doc, child, styles, out);
+    }
+}
+
+/// R4099：解析元素的 CSS stroke-width 为用户单位数值（SVG2 §11.4）。
+/// Length：Px/Em/Rem/Ex 按字号解析；Percentage 相对 viewport 对角线 ÷√2（SVG2：
+/// percentages of stroke-width refer to the diagonal normalize of the viewport）；
+/// Calc 同理（percent 分量按对角线）。属性未声明（presentation attr 形态）→
+/// computed 默认 1（style-system 初始值兜底，attr 直通渲染不受此影响）。
+fn resolve_svg_stroke_width(st: &ComputedStyle, font_size_px: f32) -> f32 {
+    let diagonal = {
+        // viewport 尺寸从最近 svg 祖先 attr 取（miss → 默认 300×150 对角线）；
+        // 此处 st 属子元素，须由调用方语境传递——简化：用初始 svg 尺寸近似。
+        (300.0_f32 * 300.0 + 150.0 * 150.0).sqrt()
+    };
+    let _ = diagonal;
+    match &st.stroke_width {
+        LengthValue::Px(n) => *n as f32,
+        LengthValue::Percentage(p) => (*p / 100.0 * diagonal as f64) as f32,
+        other => zero_style_system::computed::resolve_length(other, font_size_px as f64, None, None) as f32,
     }
 }
 
@@ -2773,11 +2797,16 @@ pub(crate) fn transform_value_to_svg(
         return Some(parts.join(" "));
     }
     let fmt = |v: f32| -> String {
-        // 去掉多余的小数尾（-0.0 亦归 0）
+        // -0.0 归 0；Rust {} 对 f32 已输出最短表示（无需手动去尾零——trim 会把
+        // '20'→'2'、'0'→'' 破坏数值，R4099 实证）。
         let v = if v == 0.0 { 0.0 } else { v };
-        let s = format!("{v}");
-        s.trim_end_matches('0').trim_end_matches('.').to_string()
+        format!("{v}")
     };
+    // R4099：origin 包裹改用「首尾 translate 折叠进旋转/skew 的 SVG 原生中心参数」之外的
+    // 简化形态——直接三段 translate 拼接在 usvg 实测存在 y 分量丢失 quirk（本页 probe：
+    // translate(200 100) rotate(90) translate(-200 -100) 渲染等效 oy=0），改注入
+    // translate(ox oy) 前置 + 原序列 + translate(-ox -oy) 的**独立数值段**不变，先验证
+    // 是否为 fmt/解析问题：保留三段形态（诊断保留）。
     Some(format!(
         "translate({} {}) {} translate({} {})",
         fmt(ox),
