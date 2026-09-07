@@ -2625,11 +2625,19 @@ pub(crate) fn collect_css_transforms(
                 }
             }
         };
-        let ox = resolve_origin(&st.transform_origin_x, ref_box.map_or(0.0, |r| r.2));
-        let oy = resolve_origin(&st.transform_origin_y, ref_box.map_or(0.0, |r| r.3));
-        // R4099 注：view-box 模式 origin 相对 viewBox 原点（min-x/min-y 偏移臂）实测在
-        // svgbox-initial/view-box 案恶化（+2.08pp×2，全量 A/B），已回退——min 非零的
-        // viewBox 案在 corpus 未出现，偏移臂是过度设计。
+        let mut ox = resolve_origin(&st.transform_origin_x, ref_box.map_or(0.0, |r| r.2));
+        let mut oy = resolve_origin(&st.transform_origin_y, ref_box.map_or(0.0, |r| r.3));
+        // R4105（CSS Transforms 1 §transform-box/§transform-origin）：transform-origin
+        // 相对**参考框左上角**——注入 SVG 的旋转中心是用户坐标系的绝对点，须加参考框
+        // 原点偏移（fill/stroke/content/border box = 元素 bbox 左上 (x,y)；view-box =
+        // viewBox min-x/min-y，无 viewBox 时 fallback (0,0) 为 no-op）。R4099 的 min
+        // 偏移臂「恶化」实测发生在 R4104 双重消费 bug 尚存的组合态下（噪声）——R4104
+        // gate 落地后 svgbox-stroke-box-001 像素归因实证：origin (20,0) 未加 stroke-box
+        // 原点 (90,90)，rotate 中心落 (20,0)，图形旋转出画布（页面全白 vs ref 49×99）。
+        if let Some((rx, ry, _, _)) = ref_box {
+            ox += rx;
+            oy += ry;
+        }
         if let Some(svg) = transform_value_to_svg(&st.transform, ref_box, (ox, oy)) {
             out.push((subtree_root, svg));
         }

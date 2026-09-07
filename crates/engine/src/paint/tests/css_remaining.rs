@@ -668,3 +668,40 @@ fn r4104_svg_subtree_css_transform_exempt_from_html_transform_path() {
         "html 侧 transform 不受 svg 豁免 gate 影响"
     );
 }
+
+/// R4105（CSS Transforms 1 §transform-box/§transform-origin）：transform-origin 相对
+/// **参考框左上角**——注入 SVG attr 的旋转中心须加参考框原点偏移。svgbox-stroke-box-001
+/// 形态（rect 100,100,100,50 + stroke 20 → stroke-box (90,90,140,70) + origin 20,0 +
+/// rotate 90deg）：旋转中心应为用户坐标 (110,90)，注入 translate(110 90) rotate(90)
+/// translate(-110 -90)；旧实现漏加框偏移（旋转中心落 (20,0)）→ 图形旋转出画布全白。
+#[test]
+fn r4105_svg_transform_origin_offset_by_reference_box_origin() {
+    let html = r##"<html><head><style>
+        svg { display: block; width: 400px; height: 300px; }
+        #target {
+            fill: green; stroke: black; stroke-width: 20px;
+            transform-box: stroke-box; transform-origin: 20px 0px;
+            transform: rotate(90deg);
+        }
+    </style></head><body style="margin:0">
+    <svg width="400" height="300"><rect id="target" width="100" height="50" x="100" y="100"/></svg>
+    </body></html>"##;
+    let doc = zero_dom::parse_html(html);
+    let sheet = zero_css_parser::Parser::parse_stylesheet(
+        "svg { display: block; width: 400px; height: 300px; } #target { fill: green; stroke: black; stroke-width: 20px; transform-box: stroke-box; transform-origin: 20px 0px; transform: rotate(90deg); }",
+    );
+    let mut sys = zero_style_system::StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[sheet]);
+    let mut css_transforms: Vec<(zero_dom::NodeId, String)> = Vec::new();
+    let svg_id = doc.get_elements_by_tag_name("svg").into_iter().next().expect("svg");
+    crate::paint::painter::collect_css_transforms(&doc, svg_id, &styles, &mut css_transforms);
+    assert_eq!(css_transforms.len(), 1, "rect 的 CSS transform 应被收集");
+    let (_, svg_attr) = &css_transforms[0];
+    assert!(
+        svg_attr.contains("translate(110 90)")
+            && svg_attr.contains("rotate(90)")
+            && svg_attr.contains("translate(-110 -90)"),
+        "origin 20,0 + stroke-box 原点 (90,90) 应合成旋转中心 (110,90)，got: {svg_attr}"
+    );
+}
