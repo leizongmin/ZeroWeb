@@ -74,3 +74,49 @@ PageDown 到中间 → Ctrl+Home 回顶（回执链）→ Ctrl+End 到底）。b
 round-trip 语义；元素级滚动目标判定（焦点→容器→根）S3 跨域（M2 记录延续）。
 
 engine 2629 全绿；fmt/clippy 零警告。
+
+---
+
+# M2 切片 2 — runner 侧滚动默认动作 + 帧驱动 rAF（2026-09-07，同日追加）
+
+**commit 3fa1a5f17**（engine shim part01/part06 + script_gen + wpt-runner + Makefile）。
+M1 残余 3 案级 Timeout 的双根因解阻：
+
+**根因 1——rAF 同步 stub 恒 0 时间戳**：`waitForDelayWithoutScrollEvent`（200ms 静默
+窗）与 `waitForAnimationEnd`（15 帧不变窗）都靠 rAF 回调时间戳推进；OFF 路径同步
+stub `fn(0)` 使时间差恒 0 → 级联预算耗尽后 promise 永挂。
+**修复（R3254-KP4）**：① 同步 stub 改派真实时钟 `__zw_performance_now()`（shim
+part01，spec DOMHighResTimeStamp——与时间推进相关的收敛循环在级联内即可收敛）；
+② `ZW_TESTHARNESS_RAF_FRAME_DRIVEN=1` opt-in（R2713a kill-switch 同名语义）——shim
+rAF 注册 + probe 循环按帧派发 `__zw_raf_tick(墙钟 ms)`，墙钟在帧间真实流逝。默认
+OFF，仅 testharness-keyboard 入口开启（其余套件零行为变化）。
+
+**根因 2——滚动键只派事件不滚动**：send_keys 滚动键（R3254-KP2）只派 keydown/keyup
+事件对，无滚动默认动作 → snap 三案的 scrollend promise 链等 scroll 事件永不触发。
+**修复（R3254-KP5）**：① shim `__zw_scroll_key_default(sel,key)`——幅度映射与 browser
+`app_input.scroll_delta_for_key`（R3254-M9）同源（Arrow=±40、Page/Space=±0.85×视口高、
+Home/End=顶/底、ArrowRight/Left 水平轴独立），经 R3047 scrollTop/scrollLeft setter
+落 `_scrollOffsets` 并同步派 scroll 事件；② runner send_keys 滚动键 keydown 未被页面
+取消时执行；③ Space 字符路径（uE000 外的 ' '）对非可编辑目标回落滚动——以 webview
+InsertText 返回 noop(NotApplicable) 判定可编辑性（text control/CE 宿主/buttonish
+行为不变）。
+
+**结果演进**（snap 三案）：
+
+| 用例 | M1 后 | M2 切片 2 后 |
+|---|---|---|
+| keyboard.html | 1 Timeout（8 pending） | **8/8 完成**：2P/6F（断言差异 = snap 布局吸附跨域缺口，期望值 vs 线性滚动差精确可读）|
+| paged.html | 1P/1F/1 Timeout | 1P/1F/1 Timeout（首案完成；余案 scrollIntoView 无 rect no-op 挂起）|
+| scroll-padding-paged.html | 1 Timeout | 1 Timeout（同 scrollIntoView 根因）|
+
+**残余根因（跨域在案）**：paged/scroll-padding 的 scrollIntoView 依赖 `__zw_getBoundingClientRect`
+布局 rect——runner 无渲染布局 → 零 rect 早返 no-op → 第二段 scrollEndPromise 永挂。
+与 P3 焦点→容器链同一 renderer S3 几何协调点（R3298 注记）。
+
+**断言资产**：`test_scroll_key_default_r3254_kp5`（engine part06，三组：ArrowDown/Up
+±40 + scroll 事件计数、水平轴 ArrowRight/Left 独立、PageDown/Space 页幅 + Home/End）。
+
+**验证**：keyboard 套件 15P/10F/2T（对比切片 4 后 13P/4F/3T——keyboard.html 8 subtest
+从 1 案级 Timeout 变为 8 条独立断言结果）；runner 205 全绿；engine 2642 全绿；
+selection 套件 2705P 零回归（Timeout 清零，净 +1P——rAF 真实时间戳副产修复）；
+clippy -D warnings 零警告。

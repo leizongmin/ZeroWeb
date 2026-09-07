@@ -61,7 +61,7 @@
 ## 验证基线
 
 - 测试基线：立项时点全绿（13,192+）；clippy 零警告
-- WPT 键盘默认动作面：M1 切片 2 后 **6P/12F（9 用例全可执行）** @ WPT_REV 315976933870（evidence 同日追加段）→ M1 切片 3 后 10P/4F → M1 残余切片 4 后 **13P/4F**（keypress-not-fired 3 Timeout 全灭；残余 implicit-submission 3F + paged 1F 均跨域根因，K3/P1 行记录）
+- WPT 键盘默认动作面：M1 切片 2 后 **6P/12F（9 用例全可执行）** @ WPT_REV 315976933870（evidence 同日追加段）→ M1 切片 3 后 10P/4F → M1 残余切片 4 后 13P/4F → **M2 切片 2（page-scrolling 流，3fa1a5f17）后 15P/10F/2T**——keyboard.html 8/8 可完成（2P/6F，snap 断言差异=snap 布局跨域缺口）；残余 implicit-submission 3F（js-dom 融合视图）+ paged/scroll-padding 2T（scrollIntoView 无 rect，renderer S3 跨域），K3/P1 行记录
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过
 
 ## Done Criteria 清点（2026-09-07 收尾状态）
@@ -69,7 +69,7 @@
 | DC | 条目 | 状态 |
 |---|---|---|
 | DC-1 | 上游键盘用例导入 | ✅ 9 用例（uievents/keyboard 5 + implicit-submission + snap 三案），全可执行 |
-| DC-1 | 通过率报告 + evidence | ✅ 1P/4F → 6P/12F → 10P/4F → **13P/4F**；四轮 evidence 追加（含切片 4 勘误段）|
+| DC-1 | 通过率报告 + evidence | ✅ 1P/4F → 6P/12F → 10P/4F → 13P/4F → **15P/10F/2T**（M2 切片 2 后，Timeout 仅余跨域 2 案）；多轮 evidence 追加（含切片 4 勘误段）|
 | DC-2 | Enter 提交 + implicit submission + validation 联动 | 🔶 uE007→Submit 路由 + 表单管线已接；规则细化（单/多控件、formnovalidate）待 js-dom 视图断链修复后复评（跨域）|
 | DC-2 | 空格/Enter 激活（两键差异）+ preventDefault | ✅ 空格→button-ish 递归 Activate（click 合成全管线）；Enter→Submit 臂；keydown preventDefault 抑制（keydown-input-events 2P/0F + send_keys 通道同款）|
 | DC-2 | Esc dialog cancel/close + select 展开态收起 | ✅ dialog cancel/close 三组断言；select 展开态——headless 无展开态 UI（goal 明示 JS 面验收），defer 记录 |
