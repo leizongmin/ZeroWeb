@@ -856,8 +856,9 @@ fn test_text_overflow_ellipsis_adds_dots() {
     let html = "<html><body><p>ABCDEFGHIJKLMNOPQRSTUVWXYZ</p></body></html>";
     let css = "p { color: black; font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; width: 80px; }";
     let result = pipeline.render_html(html, css);
-    let has_ellipsis = result.primitives().glyphs.iter().any(|g| g.glyph_id == '.' as u32);
-    assert!(has_ellipsis, "text-overflow: ellipsis 应生成 '.' glyph");
+    // R4116：省略号 = 单个 U+2026 字形（css-overflow-3，chromium 同）。
+    let has_ellipsis = result.primitives().glyphs.iter().any(|g| g.glyph_id == '…' as u32);
+    assert!(has_ellipsis, "text-overflow: ellipsis 应生成 '…' (U+2026) glyph");
 }
 
 #[test]
@@ -873,7 +874,7 @@ fn test_text_overflow_clip_no_dots() {
         .glyphs
         .iter()
         .filter(|g| g.glyph_id != 0)
-        .any(|g| g.glyph_id == '.' as u32);
+        .any(|g| g.glyph_id == '…' as u32);
     assert!(!has_ellipsis);
 }
 
@@ -888,7 +889,7 @@ fn test_text_overflow_ellipsis_no_overflow() {
         .primitives()
         .glyphs
         .iter()
-        .filter(|g| g.glyph_id == '.' as u32)
+        .filter(|g| g.glyph_id == '…' as u32)
         .count();
     assert_eq!(dot_count, 0);
 }

@@ -2093,9 +2093,14 @@ impl super::Painter {
                     }
 
                     if has_overflow {
+                        // R4116（css-overflow-3 §text-overflow）：省略号 = **单个 U+2026
+                        // 字形**（chromium 同——Ahem '…' 为全盒方块占 1 个 advance；旧实现
+                        // 画 3 个 '.'，合成全盒时代恰似 3 个字符位，R4115 真实轮廓下
+                        // '.'/'…' 均为全盒方块，3 点 = 3 个方块 300px 覆盖 vs chromium
+                        // 单 '…' 100px——text-overflow-ellipsis-001/rtl 揭示）。
                         let ellipsis_char_width =
-                            crate::measure_char_for_font(default_font_id.0, '.', font_size, container_is_ahem);
-                        let total_ellipsis_width = ellipsis_char_width * 3.0 + letter_spacing * 2.0;
+                            crate::measure_char_for_font(default_font_id.0, '…', font_size, container_is_ahem);
+                        let total_ellipsis_width = ellipsis_char_width;
                         let ellipsis_end_x = content_right;
                         let ellipsis_start_x = ellipsis_end_x - total_ellipsis_width;
 
@@ -2121,7 +2126,7 @@ impl super::Painter {
                         let first_glyph = fragment_glyphs.iter().find(|g| g.font_size > 0.0);
                         let base_y = first_glyph.map(|g| g.y).unwrap_or(content_y + font_size + ty);
 
-                        for (i, ch) in ['.', '.', '.'].iter().enumerate() {
+                        for (i, ch) in ['…'].iter().enumerate() {
                             self.primitives.add_glyph(GlyphPrimitive {
                                 x: ellipsis_start_x + ellipsis_char_width * i as f32 + letter_spacing * i as f32,
                                 y: base_y,
