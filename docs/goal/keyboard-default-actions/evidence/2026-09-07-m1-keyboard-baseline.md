@@ -83,7 +83,9 @@ runner send_keys 修饰键映射改四元组（key 名 + 对应位 true）。
 
 1. modifier-keys.html 4F 全灭——event.shiftKey === (key === 'Shift') 断言族全过
    （位经 init dict → getModifierState/shiftKey 等 IDL 位可读）。
-2. keypress-not-fired-for-modifier-shortcuts 随位透传转 Pass（10P/4F 中已计入）。
+2. ~~keypress-not-fired-for-modifier-shortcuts 随位透传转 Pass~~ **勘误（残余切片 4）**：
+   此记录有误——该用例实际仍 Timeout（keyup listener 因 send_keys 无键事件永不
+   resolve），真实转 Pass 在 M1 残余切片 4（send_keys 事件序补全）落地。
 
 **残余 4F 精确根因（探针定位，2026-09-07）**：
 
@@ -100,3 +102,34 @@ runner send_keys 修饰键映射改四元组（key 名 + 对应位 true）。
 engine 2631 全绿；clippy -D warnings 零警告；单测
 test_modifier_key_dispatch_r3254_k2_slice3（五组：Shift/Control/Alt/Meta 位独立 +
 缺省兼容 + getModifierState 联动）。
+
+## M1 残余切片 4（2026-09-07）— send_keys 普通字符键事件序（K2 收尾）
+
+**勘误**：切片 3 段上方「keypress-not-fired-for-modifier-shortcuts 随位透传转 Pass
+（10P/4F 中已计入）」为**误记**——该用例从未 Pass（本轮基线表即 0P/1F，切片 3 后
+实测 3/3 稳定 Timeout，非负载 flake、非 js_dom_shim 改动回归：事件从未派发）。
+10P/4F 的实际构成不含该用例的 Pass。
+
+**根因**：runner `send_keys` 普通字符只走裸 `InsertText`（无 keydown/keypress/keyup
+事件派发），用例 3 个 promise_test 均等 `keyup` listener resolve——永不触发 →
+全 pending Timeout。
+
+**修复**（commit ece2282ec，testharness.rs）：
+1. send_keys 普通字符补全 **keydown（cancelable）→ 未取消则 InsertText 默认动作 →
+   keypress → keyup** 事件序（UI Events §keydown/§keyup 默认动作序；与 Actions
+   keydown 路径同款 cancel 语义）。
+2. **Ctrl/Meta 按住时 keypress 抑制**（UI Events：修饰快捷键不产生字符点击——
+   keypress-not-fired 主断言面）。
+3. send_keys 串内修饰键持久化：修饰字符设置状态位，后续普通字符的事件对继承
+   （`uE009+'v'` 复合序的 v 事件对 ctrlKey=true）；跨 send 清零。非字符键
+   （Backspace/Tab/ENTER）行为不变。
+
+**验证**：keyboard 套件 10P/4F → **13P/4F**（keypress-not-fired 3 Timeout 全灭）；
+runner 205 单测全绿（新增
+send_keys_dispatches_key_event_sequence_and_suppresses_modifier_keypress 三组断言 +
+MINI_HARNESS 补 assert_true）；testharness-html 14/14、selection
+onselectionchange 6/6 零回归；clippy -D warnings 零警告。
+
+**残余 4F**（根因均已在案）：implicit-submission 3F = js-dom 融合视图双计（跨域
+协调点）；paged.html 1F + snap 三案 Timeout = runner 无真滚动管线/帧循环
+（keyboard-page-scrolling 共享面 P1/P3 记录）。
