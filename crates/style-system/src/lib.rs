@@ -1618,7 +1618,7 @@ impl StyleSystem {
         let parent_font_metrics = parent_style.and_then(|parent| {
             computed::adjusted_font_relative_metrics(parent, self.font_relative_metrics_for(&parent.font_family))
         });
-        let mut resolved = computed::resolve_computed_style_with_font_metrics(
+        let mut resolved = computed::resolve_computed_style_with_container(
             &style,
             &self.custom_properties,
             self.viewport_width,
@@ -1632,6 +1632,8 @@ impl StyleSystem {
                 root_ch_width: self.root_ch_width,
                 root_ic_width: self.root_ic_width,
             },
+            // R4125：cq 单位按容器链顶（最近查询容器）content 尺寸解析。
+            self.container_chain.last().map(|c| (c.width, c.height)),
         );
 
         // 7. Quirks mode 调整（复用步骤 1.7 已提取的 tag_name）

@@ -1199,6 +1199,12 @@ fn gap_length_is_valid(raw: &str, value: &LengthValue) -> bool {
         | LengthValue::Ic(v)
         | LengthValue::Ric(v)
         | LengthValue::Lh(v)
+        | LengthValue::Cqw(v)
+        | LengthValue::Cqh(v)
+        | LengthValue::Cqi(v)
+        | LengthValue::Cqb(v)
+        | LengthValue::Cqmin(v)
+        | LengthValue::Cqmax(v)
         | LengthValue::Percentage(v) => v.is_finite() && *v >= 0.0,
         LengthValue::Calc(_) => true,
         _ => false,
@@ -1230,6 +1236,12 @@ fn sizing_length_is_valid(raw: &str, value: &LengthValue) -> bool {
         | LengthValue::Ic(v)
         | LengthValue::Ric(v)
         | LengthValue::Lh(v)
+        | LengthValue::Cqw(v)
+        | LengthValue::Cqh(v)
+        | LengthValue::Cqi(v)
+        | LengthValue::Cqb(v)
+        | LengthValue::Cqmin(v)
+        | LengthValue::Cqmax(v)
         | LengthValue::Percentage(v) => v.is_finite() && *v >= 0.0,
         LengthValue::FitContent(inner) => sizing_length_is_valid("", inner),
         LengthValue::Auto
@@ -1264,6 +1276,12 @@ pub(crate) fn padding_length_is_valid(raw: &str, value: &LengthValue) -> bool {
         | LengthValue::Ic(v)
         | LengthValue::Ric(v)
         | LengthValue::Lh(v)
+        | LengthValue::Cqw(v)
+        | LengthValue::Cqh(v)
+        | LengthValue::Cqi(v)
+        | LengthValue::Cqb(v)
+        | LengthValue::Cqmin(v)
+        | LengthValue::Cqmax(v)
         | LengthValue::Percentage(v) => v.is_finite() && *v >= 0.0,
         LengthValue::Calc(_) => true,
         _ => false,

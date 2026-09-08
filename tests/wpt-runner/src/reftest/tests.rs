@@ -2170,3 +2170,118 @@ fn debug_display_in_container_probe() {
         println!("zero diff — 全绿");
     }
 }
+
+/// R4125 勘察：container-units-gradient 像素 diff（`cargo test --ignored`）。
+/// 5 盒渐变（cqw/cqh/cqi/cqb/cqmin/cqmax stop 位置）@ 400×300 容器。
+#[test]
+#[ignore]
+fn debug_container_units_gradient_probe() {
+    let case_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("wpt-data/css/css-conditional/container-queries/container-units-gradient.html");
+    let ref_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("wpt-data/css/css-conditional/container-queries/container-units-gradient-ref.html");
+    let html = std::fs::read_to_string(&case_path).expect("read test html");
+    let ref_html = std::fs::read_to_string(&ref_path).expect("read ref html");
+    let cfg = ReftestConfig::default();
+    let fb = render_to_framebuffer_with_base(&html, "", &cfg, case_path.parent());
+    let ref_fb = render_to_framebuffer_with_base(&ref_html, "", &cfg, ref_path.parent());
+    let mut row_diff = vec![0u32; fb.height as usize];
+    for y in 0..fb.height as usize {
+        for x in 0..fb.width as usize {
+            let i = (y * fb.width as usize + x) * 4;
+            let j = (y * ref_fb.width as usize + x) * 4;
+            let d = (fb.data[i] as i32 - ref_fb.data[j] as i32).abs()
+                + (fb.data[i + 1] as i32 - ref_fb.data[j + 1] as i32).abs()
+                + (fb.data[i + 2] as i32 - ref_fb.data[j + 2] as i32).abs();
+            if d > 30 {
+                row_diff[y] += 1;
+            }
+        }
+    }
+    let mut bands: Vec<(usize, usize, u32)> = Vec::new();
+    for (y, cnt) in row_diff.iter().enumerate() {
+        if *cnt > 0 {
+            match bands.last_mut() {
+                Some(b) if b.1 + 1 == y => {
+                    b.1 = y;
+                    b.2 += *cnt;
+                }
+                _ => bands.push((y, y, *cnt)),
+            }
+        }
+    }
+    for (y0, y1, total) in &bands {
+        println!("diff band y={y0}..={y1} pixels={total}");
+    }
+    if bands.is_empty() {
+        println!("zero diff — 全绿");
+    }
+}
+
+/// R4125 勘察二：cq 停止点解析链验证——单盒渐变 inline style 渲染像素 dump
+/// （`cargo test --ignored`）。左半 green / 右半 blue = 5cqw(=20px)@400 容器正确相位。
+#[test]
+#[ignore]
+fn debug_container_units_single_box() {
+    let html = r#"<html><head><style>
+      body { margin: 0; }
+      .container { container-type: size; width: 400px; height: 300px; }
+      .box { width: 100px; height: 100px; background: linear-gradient(green 5cqw, blue 10cqh); }
+    </style></head><body>
+      <div class=container><div class=box></div></div>
+    </body></html>"#;
+    let cfg = ReftestConfig::default();
+    let fb = render_to_framebuffer_with_base(html, "", &cfg, None);
+    // 盒在容器 content 原点 (0,0)：dump y=50 一行 x=0..100 每 10px 的颜色。
+    let mut line = String::from("y=50 colors: ");
+    for x in (0..100).step_by(10) {
+        let i = (50 * fb.width as usize + x) * 4;
+        line.push_str(&format!(
+            "x{}=({},{},{}) ",
+            x,
+            fb.data[i],
+            fb.data[i + 1],
+            fb.data[i + 2]
+        ));
+    }
+    println!("{line}");
+    println!("期望：x<20 green(0,128,0)，x>=20 向 blue 过渡，x>=30 纯 blue(0,0,255)");
+}
+
+/// R4125 勘察三：cq 尺寸属性（width:10cqw）验证——若盒宽=40px@400 容器则 cq 尺寸生效。
+#[test]
+#[ignore]
+fn debug_container_units_width_prop() {
+    let html = r#"<html><head><style>
+      body { margin: 0; }
+      .container { container-type: size; width: 400px; height: 300px; background: red; }
+      .box { width: 10cqw; height: 50px; background: green; }
+      /* 对照：px 宽盒 */
+      .box2 { width: 40px; height: 50px; background: blue; }
+    </style></head><body>
+      <div class=container><div class=box></div><div class=box2></div></div>
+    </body></html>"#;
+    let cfg = ReftestConfig::default();
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    pipeline.set_skip_indicators(true);
+    let font_loader = create_font_loader();
+    pipeline.set_font_resolver(font_loader.build_font_resolver());
+    let rendered = pipeline.render_html(html, "");
+    let styles = pipeline.cached_styles_snapshot();
+    // styles map: dump 每个节点的 width
+    for (nid, s) in styles.iter() {
+        println!("node {:?} width={:?} height={:?}", nid, s.width, s.height);
+    }
+    let fb = render_to_framebuffer_with_base(html, "", &cfg, None);
+    let _ = fb;
+    // 从 primitives 统计绿色/蓝色填充的 bbox（同 pipeline 渲染结果）。
+    for fill in &rendered.primitives().fills {
+        let (r, g, b) = (fill.color.r, fill.color.g, fill.color.b);
+        if (g > 100 && r < 80 && b < 80) || (b > 100 && r < 80 && g < 80) {
+            println!(
+                "fill ({:3},{:3},{:3}) rect=({:.1},{:.1},{:.1}x{:.1})",
+                r, g, b, fill.rect.origin.x, fill.rect.origin.y, fill.rect.size.width, fill.rect.size.height
+            );
+        }
+    }
+}

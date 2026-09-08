@@ -62,6 +62,13 @@ pub fn parse_length(value: &str) -> Option<LengthValue> {
         "vw" => Some(LengthValue::Vw(num)),
         "vmin" => Some(LengthValue::Vmin(num)),
         "vmax" => Some(LengthValue::Vmax(num)),
+        // https://drafts.csswg.org/css-conditional-5/#container-lengths
+        "cqw" => Some(LengthValue::Cqw(num)),
+        "cqh" => Some(LengthValue::Cqh(num)),
+        "cqi" => Some(LengthValue::Cqi(num)),
+        "cqb" => Some(LengthValue::Cqb(num)),
+        "cqmin" => Some(LengthValue::Cqmin(num)),
+        "cqmax" => Some(LengthValue::Cqmax(num)),
         "ch" => Some(LengthValue::Ch(num)),
         "%" => Some(LengthValue::Percentage(num)),
         // CSS 绝对长度单位（按 CSS 规范 96 DPI 转换为 px）

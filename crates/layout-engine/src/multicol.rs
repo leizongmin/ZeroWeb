@@ -136,6 +136,15 @@ fn length_to_px(value: &LengthValue, container_width: f32, font_size_px: f32) ->
         // R3766：lh 单位（css-values-4）——multicol 上下文无 line-height，按 1.2em 近似
         //（与 resolve_length Lh 臂同近似）。
         LengthValue::Lh(v) => *v as f32 * font_size_px * 1.2,
+        // R4125：cq 单位（css-conditional-5 container lengths）——multicol 上下文无
+        // 查询容器信息，fail-closed 0（column-width: cq 极罕见；有容器上下文的解析在
+        // style-system computed 阶段已完成，残留至此视为无上下文）。
+        LengthValue::Cqw(v)
+        | LengthValue::Cqh(v)
+        | LengthValue::Cqi(v)
+        | LengthValue::Cqb(v)
+        | LengthValue::Cqmin(v)
+        | LengthValue::Cqmax(v) => *v as f32 * 0.0,
         LengthValue::Calc(expr) => {
             let ctx = zero_css_parser::values::CalcContext {
                 parent_length: Some(container_width as f64),

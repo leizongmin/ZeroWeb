@@ -285,6 +285,8 @@ fn test_eval_calc_with_context_relative_units() {
         viewport_width: Some(800.0),   // 800px
         ch_width: Some(8.0),
         line_height: None, // 8px (average character width)
+        container_width: None,
+        container_height: None,
     };
 
     // 测试百分比
@@ -554,6 +556,8 @@ fn test_complex_calc_expression_chain() {
         viewport_width: Some(800.0),
         ch_width: Some(8.0),
         line_height: None,
+        container_width: None,
+        container_height: None,
     };
 
     let result = crate::values::eval_calc_with_context(&expr.unwrap(), &ctx);

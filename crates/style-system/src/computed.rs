@@ -46,7 +46,7 @@ pub struct FontRelativeContext {
 }
 
 #[derive(Debug, Clone, Copy, Default)]
-struct RootRelativeMetrics {
+pub(crate) struct RootRelativeMetrics {
     x_height: Option<f64>,
     cap_height: Option<f64>,
     ch_width: Option<f64>,
@@ -97,13 +97,39 @@ pub fn resolve_length(
     viewport_width: Option<f64>,
     viewport_height: Option<f64>,
 ) -> f64 {
-    resolve_length_with_font_metrics(
+    resolve_length_with_container(
         length,
         font_size,
         viewport_width,
         viewport_height,
         None,
         RootRelativeMetrics::default(),
+        None,
+    )
+}
+
+/// R4125：带容器链上下文的长度解析（cq 单位）。
+///
+/// `container` = 最近 container-type ≠ normal 祖先的 content 尺寸（R4124 容器链顶）；
+/// `None` = 元素无查询容器祖先 → cq 按 css-conditional-5 fallback 语义回退视口
+///（container units 的 fallback：无查询容器时 small viewport size）。
+pub(crate) fn resolve_length_with_container(
+    length: &LengthValue,
+    font_size: f64,
+    viewport_width: Option<f64>,
+    viewport_height: Option<f64>,
+    font_metrics: Option<FontRelativeMetrics>,
+    root_metrics: RootRelativeMetrics,
+    container: Option<(Option<f64>, Option<f64>)>,
+) -> f64 {
+    resolve_length_inner(
+        length,
+        font_size,
+        viewport_width,
+        viewport_height,
+        font_metrics,
+        root_metrics,
+        container,
     )
 }
 
@@ -114,6 +140,26 @@ fn resolve_length_with_font_metrics(
     viewport_height: Option<f64>,
     font_metrics: Option<FontRelativeMetrics>,
     root_metrics: RootRelativeMetrics,
+) -> f64 {
+    resolve_length_inner(
+        length,
+        font_size,
+        viewport_width,
+        viewport_height,
+        font_metrics,
+        root_metrics,
+        None,
+    )
+}
+
+fn resolve_length_inner(
+    length: &LengthValue,
+    font_size: f64,
+    viewport_width: Option<f64>,
+    viewport_height: Option<f64>,
+    font_metrics: Option<FontRelativeMetrics>,
+    root_metrics: RootRelativeMetrics,
+    container: Option<(Option<f64>, Option<f64>)>,
 ) -> f64 {
     match length {
         LengthValue::Px(v) => *v,
@@ -151,6 +197,53 @@ fn resolve_length_with_font_metrics(
         // css-values-4 UA 惯例 1lh ≈ 1.2em 近似（line-clamp:auto 的 layout clamp 路径
         // 用元素真实 line-height 精确解析，不走此臂）。无字体上下文同近似。
         LengthValue::Lh(v) => v * font_size * 1.2,
+        // https://drafts.csswg.org/css-conditional-5/#container-lengths
+        // cq 单位：按最近 container-type ≠ normal 祖先的 content 尺寸求值（R4124
+        // 容器链顶）。cqi/cqb 水平书写 ≡ cqw/cqh（vertical writing-mode 轴交换与
+        // ZW writing-mode 单位处理同域挂账）。无查询容器祖先 → fallback 语义回退
+        // 视口（css-conditional-5：无查询容器时 = small viewport size）；容器链上
+        // 该轴 unknown（auto 未定）→ 0（fail-closed，不虚构尺寸）。
+        LengthValue::Cqw(v) | LengthValue::Cqi(v) => {
+            let w = match container {
+                Some((Some(w), _)) => w,
+                // 无查询容器 → fallback 视口；有容器但轴 unknown → fail-closed 0
+                Some((None, _)) => 0.0,
+                None => viewport_width.unwrap_or(f64::NAN),
+            };
+            v * w / 100.0
+        }
+        LengthValue::Cqh(v) | LengthValue::Cqb(v) => {
+            let h = match container {
+                Some((_, Some(h))) => h,
+                Some((_, None)) => 0.0,
+                None => viewport_height.unwrap_or(f64::NAN),
+            };
+            v * h / 100.0
+        }
+        LengthValue::Cqmin(v) => {
+            let (w, h) = match container {
+                Some((w, h)) => (w, h),
+                None => (viewport_width, viewport_height),
+            };
+            match (w, h) {
+                (Some(w), Some(h)) => v * w.min(h) / 100.0,
+                // 单轴 unknown：min 退化为已知轴（一轴缺失时 min = 已知轴），
+                // 双 unknown → NaN fail-closed。
+                (Some(w), None) | (None, Some(w)) => v * w / 100.0,
+                (None, None) => f64::NAN,
+            }
+        }
+        LengthValue::Cqmax(v) => {
+            let (w, h) = match container {
+                Some((w, h)) => (w, h),
+                None => (viewport_width, viewport_height),
+            };
+            match (w, h) {
+                (Some(w), Some(h)) => v * w.max(h) / 100.0,
+                (Some(w), None) | (None, Some(w)) => v * w / 100.0,
+                (None, None) => f64::NAN,
+            }
+        }
         // 百分比值不在此处解析，由布局引擎根据容器尺寸处理
         LengthValue::Percentage(v) => *v,
         // auto 不需要解析为 px
@@ -440,6 +533,31 @@ pub fn resolve_computed_style_with_font_metrics(
     parent_font_size: Option<f64>,
     font_context: FontRelativeContext,
 ) -> ComputedStyle {
+    resolve_computed_style_with_container(
+        style,
+        _custom_properties,
+        viewport_width,
+        viewport_height,
+        parent_font_size,
+        font_context,
+        None,
+    )
+}
+
+/// R4125：带查询容器上下文的计算样式解析（cq 单位，css-conditional-5 §container-lengths）。
+///
+/// `container` = 最近 container-type ≠ normal 祖先的 content 尺寸（R4124 容器链顶，
+/// 静态可推轴 Some）；`None` = 无查询容器祖先 → cq 按 fallback 语义回退视口。
+#[allow(clippy::too_many_arguments)]
+pub fn resolve_computed_style_with_container(
+    style: &ComputedStyle,
+    _custom_properties: &HashMap<String, String>,
+    viewport_width: Option<f64>,
+    viewport_height: Option<f64>,
+    parent_font_size: Option<f64>,
+    font_context: FontRelativeContext,
+    container: Option<(Option<f64>, Option<f64>)>,
+) -> ComputedStyle {
     // https://drafts.csswg.org/css-values-4/#font-relative-lengths
     // font-size 属性本身：em/百分比 都相对于父元素的 font-size。
     // 注意：font-size 的百分比语义特殊（= 父 font-size 的百分比，CSS §10.1），
@@ -593,6 +711,7 @@ pub fn resolve_computed_style_with_font_metrics(
             viewport_height,
             font_metrics,
             root_metrics,
+            container,
         );
     };
 
@@ -664,12 +783,78 @@ pub fn resolve_computed_style_with_font_metrics(
     // outline-offset 0 corpus 用量故不入列（code-guidelines 不做零价值）。
     resolve_field(&mut resolved.outline_width);
 
+    // R4125（css-conditional-5 §container-lengths）：gradient color-stop 位置与
+    // conic/radial 几何参数中的 cq 单位就地解析为 Px——gradient 是嵌套结构，
+    // 上方 resolve_length_field 列表不触及；paint 期 resolve_gradient_length 无容器
+    // 上下文（恒 None），不在此解析则 cq stop 全 NaN。容器尺寸 = 容器链顶
+    //（compute_element_style_internal 传入；无查询容器 → cq 回退视口，同 cq 通用臂）。
+    resolve_gradient_cq_lengths(
+        &mut resolved.background_image,
+        font_size_px,
+        viewport_width,
+        viewport_height,
+        container,
+    );
+
     resolved
+}
+
+/// R4125：遍历 background-image 各图层的 Gradient 值，把 color-stop 位置（含
+/// conic `from <angle> at <length>` 中心、radial 形状尺寸）中的 cq 单位解析为 Px。
+/// 仅触 Cq* 变体（em/px 等由 paint 期既有路径处理，避免双解析漂移）。
+fn resolve_gradient_cq_lengths(
+    background_image: &mut [crate::property::types::BackgroundImageComputedValue],
+    font_size: f64,
+    viewport_width: Option<f64>,
+    viewport_height: Option<f64>,
+    container: Option<(Option<f64>, Option<f64>)>,
+) {
+    use zero_css_parser::values::parse_transform::GradientValue;
+    let resolve_cq = |v: &LengthValue| -> LengthValue {
+        if matches!(
+            v,
+            LengthValue::Cqw(_)
+                | LengthValue::Cqh(_)
+                | LengthValue::Cqi(_)
+                | LengthValue::Cqb(_)
+                | LengthValue::Cqmin(_)
+                | LengthValue::Cqmax(_)
+        ) {
+            let px = resolve_length_with_container(
+                v,
+                font_size,
+                viewport_width,
+                viewport_height,
+                None,
+                RootRelativeMetrics::default(),
+                container,
+            );
+            LengthValue::Px(px)
+        } else {
+            v.clone()
+        }
+    };
+    for layer in background_image.iter_mut() {
+        if let crate::property::types::BackgroundImageComputedValue::Gradient(gradient) = layer {
+            let stops: &mut Vec<zero_css_parser::values::parse_transform::GradientColorStop> = match gradient {
+                GradientValue::Linear(g) => &mut g.stops,
+                GradientValue::Radial(g) => &mut g.stops,
+                GradientValue::Conic(g) => &mut g.stops,
+            };
+            for stop in stops.iter_mut() {
+                if let Some(pos) = &mut stop.position {
+                    *pos = resolve_cq(pos);
+                }
+            }
+        }
+    }
 }
 
 /// 将单个长度字段解析为绝对 px。
 ///
 /// 百分比值和 auto 保持不变，由布局引擎处理。
+/// R4125：`container` 为查询容器 content 尺寸（cq 单位解析），见
+/// [`resolve_computed_style_with_container`]。
 fn resolve_length_field(
     field: &mut LengthValue,
     font_size: f64,
@@ -677,6 +862,7 @@ fn resolve_length_field(
     viewport_height: Option<f64>,
     font_metrics: Option<FontRelativeMetrics>,
     root_metrics: RootRelativeMetrics,
+    container: Option<(Option<f64>, Option<f64>)>,
 ) {
     match field {
         LengthValue::Px(_) => { /* 已经是绝对值 */ }
@@ -705,26 +891,28 @@ fn resolve_length_field(
         LengthValue::FitContent(_) => {
             if let LengthValue::FitContent(inner) = field {
                 if !matches!(inner.as_ref(), LengthValue::Px(_) | LengthValue::Auto) {
-                    let px = resolve_length_with_font_metrics(
+                    let px = resolve_length_with_container(
                         inner,
                         font_size,
                         viewport_width,
                         viewport_height,
                         font_metrics,
                         root_metrics,
+                        container,
                     );
                     **inner = LengthValue::Px(px);
                 }
             }
         }
         _ => {
-            let px = resolve_length_with_font_metrics(
+            let px = resolve_length_with_container(
                 field,
                 font_size,
                 viewport_width,
                 viewport_height,
                 font_metrics,
                 root_metrics,
+                container,
             );
             *field = LengthValue::Px(px);
         }
@@ -1098,22 +1286,132 @@ mod tests {
     #[test]
     fn test_resolve_length_field_preserves_percentage() {
         let mut field = LengthValue::Percentage(50.0);
-        resolve_length_field(&mut field, 16.0, None, None, None, RootRelativeMetrics::default());
+        resolve_length_field(&mut field, 16.0, None, None, None, RootRelativeMetrics::default(), None);
         assert_eq!(field, LengthValue::Percentage(50.0));
     }
 
     #[test]
     fn test_resolve_length_field_preserves_auto() {
         let mut field = LengthValue::Auto;
-        resolve_length_field(&mut field, 16.0, None, None, None, RootRelativeMetrics::default());
+        resolve_length_field(&mut field, 16.0, None, None, None, RootRelativeMetrics::default(), None);
         assert_eq!(field, LengthValue::Auto);
     }
 
     #[test]
     fn test_resolve_length_field_converts_em() {
         let mut field = LengthValue::Em(2.0);
-        resolve_length_field(&mut field, 16.0, None, None, None, RootRelativeMetrics::default());
+        resolve_length_field(&mut field, 16.0, None, None, None, RootRelativeMetrics::default(), None);
         assert_eq!(field, LengthValue::Px(32.0));
+    }
+
+    /// R4125（css-conditional-5 §container-lengths）：cq 单位按查询容器 content
+    /// 尺寸解析；cqi/cqb 水平书写 ≡ cqw/cqh；无查询容器 → fallback 回退视口；
+    /// 容器链上轴 unknown → 0（fail-closed）。
+    #[test]
+    fn test_resolve_length_container_units() {
+        let container = Some((Some(400.0), Some(300.0)));
+        // 5cqw @ 400px 容器 = 20px
+        assert_eq!(
+            resolve_length_with_container(
+                &LengthValue::Cqw(5.0),
+                16.0,
+                None,
+                None,
+                None,
+                RootRelativeMetrics::default(),
+                container
+            ),
+            20.0
+        );
+        // 10cqh @ 300px 容器 = 30px
+        assert_eq!(
+            resolve_length_with_container(
+                &LengthValue::Cqh(10.0),
+                16.0,
+                None,
+                None,
+                None,
+                RootRelativeMetrics::default(),
+                container
+            ),
+            30.0
+        );
+        // cqi ≡ cqw、cqb ≡ cqh（水平书写）
+        assert_eq!(
+            resolve_length_with_container(
+                &LengthValue::Cqi(5.0),
+                16.0,
+                None,
+                None,
+                None,
+                RootRelativeMetrics::default(),
+                container
+            ),
+            20.0
+        );
+        assert_eq!(
+            resolve_length_with_container(
+                &LengthValue::Cqb(10.0),
+                16.0,
+                None,
+                None,
+                None,
+                RootRelativeMetrics::default(),
+                container
+            ),
+            30.0
+        );
+        // cqmin = min(400,300)=300 → 1cqmin=3px；cqmax = 400 → 1cqmax=4px
+        assert_eq!(
+            resolve_length_with_container(
+                &LengthValue::Cqmin(1.0),
+                16.0,
+                None,
+                None,
+                None,
+                RootRelativeMetrics::default(),
+                container
+            ),
+            3.0
+        );
+        assert_eq!(
+            resolve_length_with_container(
+                &LengthValue::Cqmax(1.0),
+                16.0,
+                None,
+                None,
+                None,
+                RootRelativeMetrics::default(),
+                container
+            ),
+            4.0
+        );
+        // 无查询容器 → fallback 回退视口（css-conditional-5）
+        assert_eq!(
+            resolve_length_with_container(
+                &LengthValue::Cqw(5.0),
+                16.0,
+                Some(800.0),
+                Some(600.0),
+                None,
+                RootRelativeMetrics::default(),
+                None
+            ),
+            40.0
+        );
+        // 容器链上该轴 unknown（None）→ fail-closed 0
+        assert_eq!(
+            resolve_length_with_container(
+                &LengthValue::Cqh(10.0),
+                16.0,
+                None,
+                None,
+                None,
+                RootRelativeMetrics::default(),
+                Some((Some(400.0), None))
+            ),
+            0.0
+        );
     }
 
     #[test]
@@ -1280,7 +1578,7 @@ mod tests {
     fn test_explicit_zero_px_not_auto() {
         // 确保 0px 不被误认为 auto
         let mut field = LengthValue::Px(0.0);
-        resolve_length_field(&mut field, 16.0, None, None, None, RootRelativeMetrics::default());
+        resolve_length_field(&mut field, 16.0, None, None, None, RootRelativeMetrics::default(), None);
         assert_eq!(field, LengthValue::Px(0.0));
         assert_ne!(field, LengthValue::Auto);
     }

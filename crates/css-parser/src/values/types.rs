@@ -29,6 +29,19 @@ pub enum LengthValue {
     Vmin(f64),
     /// vmax 单位。
     Vmax(f64),
+    // https://drafts.csswg.org/css-conditional-5/#container-lengths
+    /// cqw 单位（查询容器 content-box 宽的 1%）。
+    Cqw(f64),
+    /// cqh 单位（查询容器 content-box 高的 1%）。
+    Cqh(f64),
+    /// cqi 单位（查询容器 inline 轴 content 尺寸的 1%，水平书写 ≡ cqw）。
+    Cqi(f64),
+    /// cqb 单位（查询容器 block 轴 content 尺寸的 1%，水平书写 ≡ cqh）。
+    Cqb(f64),
+    /// cqmin 单位（查询容器 cqi/cqb 较小者的 1%）。
+    Cqmin(f64),
+    /// cqmax 单位（查询容器 cqi/cqb 较大者的 1%）。
+    Cqmax(f64),
     /// ch 单位。
     Ch(f64),
     /// rch 单位（根元素字体中 U+0030 "0" 字形的 advance）。
@@ -933,6 +946,13 @@ pub struct CalcContext {
     /// 元素 used line-height（px），用于 lh 单位（css-values-4：lh = 元素 used
     /// line-height）。无上下文的消费方保持 None → Lh 求值 None（保守 fail-closed）。
     pub line_height: Option<f64>,
+    // https://drafts.csswg.org/css-conditional-5/#container-lengths
+    /// 查询容器 content-box 宽（px），用于 cqw/cqi 单位（水平书写）。None = 无查询
+    /// 容器上下文 → cq 求值 None（消费方按 fallback 语义回退视口）。
+    pub container_width: Option<f64>,
+    /// 查询容器 content-box 高（px），用于 cqh/cqb 单位（水平书写）。None = 无查询
+    /// 容器上下文。
+    pub container_height: Option<f64>,
 }
 
 /// calc() 表达式解析器内部状态。
@@ -1647,6 +1667,20 @@ fn resolve_length_to_px(lv: &LengthValue, ctx: &CalcContext) -> Option<f64> {
         // line_height 时精确求值（消费方如 layout 的 line-clamp:auto clamp 路径）；
         // 无上下文保持 None（保守 fail-closed）。
         LengthValue::Lh(v) => ctx.line_height.map(|lh| v * lh),
+        // https://drafts.csswg.org/css-conditional-5/#container-lengths
+        // cq 单位：按查询容器 content 尺寸求值。cqi/cqb 水平书写 ≡ cqw/cqh
+        //（vertical writing-mode 轴交换暂未建模——与 ZW writing-mode 单位处理同域挂账）。
+        // 无容器上下文 → None（消费方按 css-conditional-5 fallback 语义回退视口）。
+        LengthValue::Cqw(v) | LengthValue::Cqi(v) => ctx.container_width.map(|w| v * w / 100.0),
+        LengthValue::Cqh(v) | LengthValue::Cqb(v) => ctx.container_height.map(|h| v * h / 100.0),
+        LengthValue::Cqmin(v) => match (ctx.container_width, ctx.container_height) {
+            (Some(w), Some(h)) => Some(v * w.min(h) / 100.0),
+            _ => None,
+        },
+        LengthValue::Cqmax(v) => match (ctx.container_width, ctx.container_height) {
+            (Some(w), Some(h)) => Some(v * w.max(h) / 100.0),
+            _ => None,
+        },
         LengthValue::Auto => None,
         LengthValue::Calc(expr) => eval_calc_with_context(expr, ctx),
         LengthValue::FitContent(inner) => resolve_length_to_px(inner, ctx),
@@ -1801,6 +1835,15 @@ pub fn parse_length(value: &str) -> Option<LengthValue> {
         // `max-height: 4lh` / `4.5lh`。解析消费方按元素自身 line-height 解析（layout
         // clamp 路径）；无上下文的 resolve_length 回退近似。
         "lh" => Some(LengthValue::Lh(num)),
+        // https://drafts.csswg.org/css-conditional-5/#container-lengths
+        // cq 容器查询单位（R4125）：1cqw/cqi = 查询容器 content 宽 1%，1cqh/cqb =
+        // content 高 1%（水平书写下 cqi/cqb ≡ cqw/cqh）；cqmin/cqmax 取两轴小/大。
+        // 消费方按最近 container-type ≠ normal 祖先 content 尺寸解析（style-system
+        // computed 阶段，R4124 容器链顶）；无查询容器 → fallback 回退视口。
+        "cqw" | "cqi" => Some(LengthValue::Cqw(num)),
+        "cqh" | "cqb" => Some(LengthValue::Cqh(num)),
+        "cqmin" => Some(LengthValue::Cqmin(num)),
+        "cqmax" => Some(LengthValue::Cqmax(num)),
         "%" => Some(LengthValue::Percentage(num)),
         // CSS 绝对长度单位 → 转换为 px（96 DPI）
         "in" => finite_px(num * 96.0),

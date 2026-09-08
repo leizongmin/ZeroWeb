@@ -1770,3 +1770,31 @@ fn test_container_query_no_context() {
 
 // ═══════════════════════════════════════════════════════════════════
 // Scroll Snap 端到端测试
+
+/// R4125：cq 单位端到端——容器（400×300 显式 Px）内子元素 width:10cqw 应解析
+/// Px(40)；height:10cqh → Px(30)。同时覆盖容器链尺寸推导（显式 Px + BorderBox 减框）。
+#[test]
+fn test_container_units_resolve_against_chain_top() {
+    use zero_css_parser::values::LengthValue;
+
+    let mut doc = Document::new();
+    let root = doc.root();
+    let html = doc.create_element("html");
+    let body = doc.create_element("body");
+    let container = doc.create_element("div");
+    let inner = doc.create_element("div");
+    doc.append_child(root, html).unwrap();
+    doc.append_child(html, body).unwrap();
+    doc.append_child(body, container).unwrap();
+    doc.append_child(container, inner).unwrap();
+    doc.set_attribute(container, "style", "container-type:size;width:400px;height:300px");
+    doc.set_attribute(inner, "style", "width:10cqw;height:10cqh");
+
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let stylesheets: Vec<Stylesheet> = Vec::new();
+    let styles = sys.compute_styles(&doc, &stylesheets);
+    let inner_style = styles.get(&inner).expect("inner has style");
+    assert_eq!(inner_style.width, LengthValue::Px(40.0), "10cqw @ 400px 容器");
+    assert_eq!(inner_style.height, LengthValue::Px(30.0), "10cqh @ 300px 容器");
+}
