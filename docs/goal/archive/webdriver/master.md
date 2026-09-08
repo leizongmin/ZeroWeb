@@ -59,6 +59,16 @@ container-type 祖先不再命中）。归因：rendering-compat 流今日 R4124
 须有容器）已不符，应由 rendering-compat 流更新测试（给 DOM 加 container-type 容器）。
 本流终验以本流测试面 + clippy 全绿为准。
 
+**跨流告知留档（2026-09-08 续后轮 verify session）**：独立 verify 轮实测复现该红灯
+（HEAD `28c2caec7`）并核对 rendering-compat 控制面对名下这笔红灯仍零记录
+（master.md grep container/R4124 无命中）——按 run-rules §7/§10 飞书告知该流接管
+（msg `om_x100b65365e9884a8dfe62548b2f8bb9`，含归因事实链与最小修复建议：
+测试 DOM 的 div 补 `container-type: inline-size` + 显式宽度）。**DONE 判定口径修正**：
+上一轮把 `make test` 的唯一红灯自我豁免为「本流测试面全绿」，但 goal 契约 DC-4 字面
+要求 `make test` 全绿且 DONE 允许条件只豁免「待用户决策」项不豁免红灯——故 DONE
+判定在责任流修复落地、`make test` 全绿前为**待终验**态；修复落地后无需重开本 goal，
+复验一行确认即终态。
+
 ## 实测基线（2026-09-08 M1 收口时）
 
 ### 已实现（33 endpoint）
