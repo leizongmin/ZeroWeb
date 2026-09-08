@@ -2,7 +2,12 @@
 
 **入口文档**: [../webdriver.md](../webdriver.md)
 **创建日期**: 2026-09-07（goal 拆分 bootstrap）
+**最后更新**: 2026-09-08（**GB-20260908 巡检——screenshot 待决策已飞书征询**（msg
+`om_x100b6535d918a8acc121a65238fec1b`，三方案建议；renderer back/forward 跨流
+rule 10 留档告知随同批发送）；两决策行补征询凭据。无代码变更。）
+**（注：下方「最后更新」2026-09-08 终验复核块与 M3 推进块为前轮记录，保留作历史）**
 **最后更新**: 2026-09-08（终验复核——DC 逐项判定，跨流红灯归因后收口态）
+**最后更新**: 2026-09-08（M3 推进——window 族落地 + screenshot 摸底结论 + 验证通道文档）
 
 ---
 
@@ -128,10 +133,10 @@ crates/protocol/ apps/renderer/` 核对 event-loop-spec 流活跃面（apps/rend
 
 | 项 | 状态 | 说明 |
 |----|------|------|
-| screenshot 链路 | ⬜ 待决策 | M3 摸底结论：技术可行（ViewPainted 图元 + render_full_scene + PNG），但 IPC→图元转换层在 apps/browser 域（paint_ipc.rs），复用需抽公共库或允许 webdriver 依赖 zero-browser lib——深结构改动须拍板。现状：按 DONE 允许条件记待决策不算未满足 DC |
+| screenshot 链路 | ⬜ 待决策（已征询） | M3 摸底结论：技术可行（ViewPainted 图元 + render_full_scene + PNG），但 IPC→图元转换层在 apps/browser 域（paint_ipc.rs），复用需抽公共库或允许 webdriver 依赖 zero-browser lib——深结构改动须拍板。现状：按 DONE 允许条件记待决策不算未满足 DC。**GB-20260908 巡检飞书征询 msg `om_x100b6535d918a8acc121a65238fec1b`（含三方案建议：①抽公共截图转换层 crate【推荐】/②webdriver 依赖 zero-browser lib/③维持不做）** |
 | alert 全族 / print | ⬜ 排除 | 依赖 host 对话框/打印能力 |
 | actions 完整语义 | ⬜ 排除 | 依赖输入管线深化；keyboard 够用子集先做 |
-| renderer back/forward 不 bump document_generation | ⬜ 待决策 | 本层 history_epoch 守卫已兜底（保守 stale）；若要 renderer 侧根治需碰 runtime.rs（event-loop-spec 活跃域），记待决策不阻塞 |
+| renderer back/forward 不 bump document_generation | ⬜ 待决策（跨流告知已发） | 本层 history_epoch 守卫已兜底（保守 stale）；若要 renderer 侧根治需碰 runtime.rs（event-loop-spec 活跃域），记待决策不阻塞。**GB-20260908 巡检按 rule 10 跨流留档告知（随 screenshot 征询同批 msg `om_x100b6535d918a8acc121a65238fec1b`）——event-loop-spec 流后续动 runtime.rs 时可顺手根治** |
 | shim innerWidth 固定 1280 不跟随 SetViewport | ⬜ 待决策 | engine shim 域（js_dom_shim/part01.js:3546）；几何验证用 element/rect 真值可绕过，不阻塞 |
 
 ## 验证基线
