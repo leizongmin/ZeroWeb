@@ -707,6 +707,12 @@ impl LayoutEngine {
         // kill-switch `ZW_AR_TRANSFER=0`（default-on）。
         crate::aspect_ratio_transfer::transfer_aspect_ratio_height(&mut root_box, styles);
 
+        // 5.2c 后处理（R4155b，css-sizing-4 §6.2 stretch）：直挂 abspos（CB=parent）的
+        // `width/height: stretch`——converter Stretch→auto，taffy 走 replaced attr 回退
+        //（positioned-replaced-2 canvas 0×0 应 100×100）。inset definite 侧扣除。
+        // kill-switch `ZW_ABSPOS_STRETCH=0`（default-on）。
+        stretch_abspos_direct_cb(&mut root_box, styles);
+
         // 5.2a 后处理（R1319 §8.3.1 containment 兄弟位移）：clearance containment 已把
         // cleared 元素的 trailing collapse-through 链含入其 content_height，但 taffy 此前已
         // 按「泄漏的 mb」定位后续兄弟（偏低）。位移后续兄弟 + 祖先缩高（delta 传播）。

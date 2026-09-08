@@ -876,6 +876,87 @@ pub(super) fn fix_abspos_static_position_y(box_node: &mut LayoutBox, styles: &Ha
     }
 }
 
+/// R4155b：直挂 abspos（parent 即 CB）的 `width/height: stretch` 收尾——taffy 直接
+/// 管理 CB=parent 的 abspos，converter Stretch→auto 后走进 replaced attr 回退
+///（positioned-replaced-2：canvas `width:stretch; height:stretch; top:50; left:50`
+/// 在 150×150 CB 内应 100×100，旧 0×0）。语义（css-sizing-4 §6.2）：stretch =
+/// 可用空间填充——inset 一侧 definite 时 = cb − definite inset；双侧 auto =
+/// 静态位置到对侧缘（由 nested-CB pass 的 margin 链臂处理，此处补直接子）。
+pub(super) fn stretch_abspos_direct_cb(box_node: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) {
+    if std::env::var("ZW_ABSPOS_STRETCH").as_deref() == Ok("0") {
+        return;
+    }
+    fn walk(box_node: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) -> bool {
+        use zero_css_parser::values::LengthValue;
+        let cb_w = (box_node.width - box_node.border_left - box_node.border_right).max(0.0);
+        let cb_h = (box_node.height - box_node.border_top - box_node.border_bottom).max(0.0);
+        let mut changed = false;
+        for child in &mut box_node.children {
+            if !(child.is_absolute || child.is_fixed) {
+                continue;
+            }
+            let Some(style) = child.node_id.and_then(|nid| styles.get(&nid)) else {
+                continue;
+            };
+            if matches!(style.width, LengthValue::Stretch)
+                && (resolve_abspos_real_length(&style.left, &style.font_size, cb_w, cb_h).is_some()
+                    || resolve_abspos_real_length(&style.right, &style.font_size, cb_w, cb_h).is_some())
+            {
+                // inset 至少一侧 definite——stretch = cb − left − right（auto inset = 0；
+                // inset:50px 双侧 definite 时 200−50−50=100）。双侧全 auto 的直挂 abspos
+                // taffy 静态位求解已正确，不介入（防塌 attr 回退）。
+                let left_px = resolve_abspos_real_length(&style.left, &style.font_size, cb_w, cb_h).unwrap_or(0.0);
+                let right_px = resolve_abspos_real_length(&style.right, &style.font_size, cb_w, cb_h).unwrap_or(0.0);
+                let new_w = (cb_w - left_px - right_px).max(0.0);
+                if (child.width - new_w).abs() > 0.5 {
+                    if std::env::var("R4155_TRACE").is_ok() {
+                        eprintln!("[r4155b] W child={:?} {}->{}", child.node_id, child.width, new_w);
+                    }
+                    child.width = new_w;
+                    child.content_width =
+                        (new_w - child.border_left - child.border_right - child.padding_left - child.padding_right)
+                            .max(0.0);
+                    changed = true;
+                }
+            }
+            if matches!(style.height, LengthValue::Stretch)
+                && (resolve_abspos_real_length(&style.top, &style.font_size, cb_w, cb_h).is_some()
+                    || resolve_abspos_real_length(&style.bottom, &style.font_size, cb_w, cb_h).is_some())
+            {
+                let top_px = resolve_abspos_real_length(&style.top, &style.font_size, cb_w, cb_h).unwrap_or(0.0);
+                let bottom_px = resolve_abspos_real_length(&style.bottom, &style.font_size, cb_w, cb_h).unwrap_or(0.0);
+                let new_h = (cb_h - top_px - bottom_px).max(0.0);
+                if (child.height - new_h).abs() > 0.5 {
+                    if std::env::var("R4155_TRACE").is_ok() {
+                        eprintln!("[r4155b] H child={:?} {}->{}", child.node_id, child.height, new_h);
+                    }
+                    // bottom definite（top auto）时盒底对齐 cb_bottom−bottom——h 变化后
+                    // y 须回移 delta（taffy 按旧 h 定位；abspos-2 h 0→100 应上移 100）。
+                    if matches!(style.top, LengthValue::Auto)
+                        && resolve_abspos_real_length(&style.bottom, &style.font_size, cb_w, cb_h).is_some()
+                    {
+                        child.y -= new_h - child.height;
+                    }
+                    child.height = new_h;
+                    child.content_height =
+                        (new_h - child.border_top - child.border_bottom - child.padding_top - child.padding_bottom)
+                            .max(0.0);
+                    changed = true;
+                }
+            }
+        }
+        changed
+    }
+    // 自顶向下：parent 先定型（taffy 输出已终态，此处只读尺寸），再处理其 abspos 子。
+    fn rec(box_node: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) {
+        walk(box_node, styles);
+        for child in &mut box_node.children {
+            rec(child, styles);
+        }
+    }
+    rec(box_node, styles);
+}
+
 /// 子树是否含 float 盒（R3929 同款谓词语义——float 参与 static position/可用宽计算）。
 pub(super) fn subtree_has_float(b: &LayoutBox) -> bool {
     if b.float != zero_css_parser::values::FloatValue::None {
@@ -892,6 +973,30 @@ fn resolve_abspos_against_nested_cb_inner(
     styles: &HashMap<NodeId, ComputedStyle>,
     enabled: bool,
 ) {
+    resolve_abspos_against_nested_cb_inner_m(
+        box_node,
+        current_box_origin_x,
+        current_box_origin_y,
+        (0.0, 0.0),
+        cb,
+        styles,
+        enabled,
+    )
+}
+
+/// R4155：带 margin 链的变体——current_box_origin 累积只含 border/padding/x（margin
+/// 在盒外），静态位置语义（css-sizing §static position）须含祖先 margin；margin 链仅
+/// Stretch 臂消费（其余 inset 算术保持既有口径防回归）。
+fn resolve_abspos_against_nested_cb_inner_m(
+    box_node: &mut LayoutBox,
+    current_box_origin_x: f32,
+    current_box_origin_y: f32,
+    margin_chain: (f32, f32),
+    cb: Option<(f32, f32, f32, f32)>,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    enabled: bool,
+) {
+    let (margin_chain_x, margin_chain_y) = margin_chain;
     use zero_css_parser::values::LengthValue;
     if !enabled {
         return;
@@ -1003,7 +1108,12 @@ fn resolve_abspos_against_nested_cb_inner(
                 && matches!(style.left, LengthValue::Auto)
                 && matches!(style.right, LengthValue::Auto)
             {
-                let child_abs_x = current_box_origin_x + box_node.border_left + box_node.padding_left + child.x;
+                let child_abs_x = current_box_origin_x
+                    + margin_chain_x
+                    + box_node.border_left
+                    + box_node.padding_left
+                    + child.margin_left
+                    + child.x;
                 let static_offset = child_abs_x - cb_origin_x;
                 let new_w = (cb_width - static_offset).max(0.0);
                 if (child.width - new_w).abs() > 0.5 {
@@ -1017,7 +1127,12 @@ fn resolve_abspos_against_nested_cb_inner(
                 && matches!(style.top, LengthValue::Auto)
                 && matches!(style.bottom, LengthValue::Auto)
             {
-                let child_abs_y = current_box_origin_y + box_node.border_top + box_node.padding_top + child.y;
+                let child_abs_y = current_box_origin_y
+                    + margin_chain_y
+                    + box_node.border_top
+                    + box_node.padding_top
+                    + child.margin_top
+                    + child.y;
                 let static_offset = child_abs_y - cb_origin_y;
                 let new_h = (cb_height - static_offset).max(0.0);
                 if (child.height - new_h).abs() > 0.5 {
@@ -1043,10 +1158,11 @@ fn resolve_abspos_against_nested_cb_inner(
         } else {
             cb
         };
-        resolve_abspos_against_nested_cb_inner(
+        resolve_abspos_against_nested_cb_inner_m(
             child,
             child_box_origin_x,
             child_box_origin_y,
+            (margin_chain_x + child.margin_left, margin_chain_y + child.margin_top),
             child_cb,
             styles,
             enabled,
