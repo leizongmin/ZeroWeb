@@ -2,7 +2,7 @@
 
 **版本**: v1.0
 **日期**: 2026-08-17
-**状态**: Active
+**状态**: ✅ Completed（2026-09-08——DC-1~5 全满足；implicit-submission 3/3 全 Pass、keyboard 套件 18P/7F/2T，残余 Fail/Timeout 全为跨域精确归因；完成判定与归档见 [keyboard-default-actions/master.md](keyboard-default-actions/master.md)）
 **执行模式**: 轻量修复优先（永不停）；遇需用户决策项或深结构方向 → 记入「待用户决策」清单 → 跳过 → 继续其他轻量修复
 **父目标**: `docs/goal/archive/html-compat.md`（HTML 行为兼容——M0-M4 已完成并于 2026-08-17 归档，本专项为其键盘默认动作面延伸）
 

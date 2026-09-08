@@ -106,3 +106,17 @@ innerHTML 融合视图塌缩（切片 13 发现并修复——pa2b apply 代际 
 两大既有深缺陷均已收口。残余项：anchor-removal 2F（S3 布局命中）/
 script-and-style 1F（渲染投影）/Document-open 1F（legacy）/event 1F（legacy）均跨域
 精确归因在案；run/ 全量导入（330KB reference impl）defer 有据——不阻塞流域收口判定。
+
+## DONE 判定（2026-09-08）
+
+**判定**：✅ DONE。DC-1~5 全部满足（详见上方 Done Criteria 清点表）——验证基于上游
+WPT selection 24 用例 + editing 首批真实用例（无 inline 充数）；`make test` 全绿
+（19,005 Pass）+ clippy 零警告（2026-09-08 E2 切片 13 轮）；master.md 内部自洽，
+里程碑归档（archive/m1-m3-milestones-2026-09-07.md）在案。残余 5F 与 run/ 导入 defer
+均为跨域精确归因（renderer S3 布局命中 / 渲染投影 / legacy 形态 / 330KB reference
+impl 依赖），不满足任一 DC 条目，接受为完成态边界并留档。
+
+**后续协调点**：anchor-removal 2F 随 renderer S3 布局几何（R3298）落地后自然可解，
+届时由渲染流域主导，本 goal 不再持有工作面。
+
+**归档**：模式 A（整树 `git mv` 至 `docs/goal/archive/`），2026-09-08 执行。

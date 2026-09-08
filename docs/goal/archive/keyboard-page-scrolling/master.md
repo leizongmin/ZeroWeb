@@ -85,3 +85,19 @@ element scroll 段活跃面。
 案从整簇 Timeout 到 keyboard.html 8/8 完成、断言差异精确可读）；剩余（焦点→容器链、
 snap 位置断言、scrollIntoView 元素级滚动）均为 renderer S3 布局几何同一跨域协调点
 （R3298 注记），已记录于对应协调点注记——不阻塞本 goal 的流域收口判定。
+
+## DONE 判定（2026-09-08）
+
+**判定**：✅ DONE。DC-1/DC-3/DC-5 全满足；**DC-2 焦点→容器→根判定与 DC-4 snap 位置
+精确断言按跨域 defer 口径接受为完成态边界**——本流可闭环部分（全键位默认动作双面
+接通、文档级/根级滚动、preventDefault、嵌套断言资产）已全部落地，残余依赖 renderer
+S3 布局几何（R3298 协调点，渲染流域持有），非本流工作面；goal 收尾结论明确记录
+「不阻塞流域收口判定」。验证基于上游 snap/input 三案（keyboard.html 8/8 可完成）+
+标明本地的等价断言资产（分发映射/窗口滚动七断言/scrollIntoView 五断言，无冒充）；
+全量 make test 18,984 全绿（v8+quickjs 双 phase）+ clippy 零警告（M2 切片 2 复核轮）；
+master.md 内部自洽，里程碑归档（archive/m1-m3-milestones-2026-09-07.md）在案。
+
+**后续协调点**：焦点→容器链、snap 位置断言、scrollIntoView 元素级滚动全部收敛于
+renderer S3 布局几何（R3298），届时由渲染流域主导，本 goal 不再持有工作面。
+
+**归档**：模式 A（整树 `git mv` 至 `docs/goal/archive/`），2026-09-08 执行。

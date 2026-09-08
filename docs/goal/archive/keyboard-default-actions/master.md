@@ -94,3 +94,19 @@ A+B+C——default button 三规则 + submitter 全链 + insertAdjacentHTML 同�
 （headless 无展开态 UI——goal 明示 JS 面验收）；残余套件 Fail/Timeout 均为 snap 布局/
 scrollIntoView rect 跨域既有项（keyboard.html snap 断言 6F + paged 1F = snap 布局域；
 paged/scroll-padding 2T = renderer S3 几何，协调点记录）。不阻塞流域收口判定。
+
+## DONE 判定（2026-09-08）
+
+**判定**：✅ DONE。DC-1~5 全部满足（详见上方 Done Criteria 清点表）——验证基于上游
+WPT 9 用例（uievents/keyboard 5 + implicit-submission + snap 三案，全可执行，无 inline
+充数）；runner 207 + engine 2647 + page-runtime 130 + webview 694 全绿 + clippy 零警告
+（K3 切片 A+B+C 轮）；master.md 内部自洽，里程碑归档
+（archive/m1-m3-milestones-2026-09-07.md）在案。唯一 defer = select 展开键语义
+（headless 无展开态 UI，goal 明示 JS 面验收）——goal 文本自身定义的边界，接受为完成态
+边界；残余 7F/2T 均为跨域精确归因（snap 布局域 / renderer S3 几何），不满足任一 DC
+条目，留档。
+
+**后续协调点**：paged/scroll-padding 2 Timeout 与 keyboard.html snap 断言随 renderer
+S3 布局几何（R3298）落地后可解，届时由渲染流域主导，本 goal 不再持有工作面。
+
+**归档**：模式 A（整树 `git mv` 至 `docs/goal/archive/`），2026-09-08 执行。

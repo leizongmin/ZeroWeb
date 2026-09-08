@@ -2,7 +2,7 @@
 
 **版本**: v1.0
 **日期**: 2026-08-17
-**状态**: Active
+**状态**: ✅ Completed（2026-09-08——DC-1~5 满足（DC-2 焦点→容器链与 DC-4 snap 精确断言按跨域 defer 口径收口，归 renderer S3 布局几何协调点 R3298，本流可闭环面全部落地）；完成判定与归档见 [keyboard-page-scrolling/master.md](keyboard-page-scrolling/master.md)）
 **执行模式**: 轻量修复优先（永不停）；遇需用户决策项或深结构方向 → 记入「待用户决策」清单 → 跳过 → 继续其他轻量修复
 **父目标**: `docs/goal/archive/html-compat.md`（HTML 行为兼容——M0-M4 已完成并于 2026-08-17 归档，本专项为其滚动交互面延伸）
 
