@@ -81,6 +81,14 @@ container-type 祖先不再命中）。归因：rendering-compat 流今日 R4124
 用户。后续轮次执行口径：pull → 查 `git log -- tests/integration/src/cross_crate_integration.rs`
 是否有修复提交 → 有则 `make test` 确认全绿 → 终验 DONE 判定输出 DONE。
 
+**红灯已闭环（2026-09-08 23:35 rendering-compat 流 R4149 接管落地）**：责任流修复
+提交为 `6b5c85506`（R4149 收窄守卫同批，integration 781/0 全绿复验）——
+`test_css_container_query_style_integration` 断言对齐 R4124 规范语义：测试 DOM 的
+div 补 `container-type:size` + 显式 `width:500px;height:400px` 正例、变宽 350px
+反例（与本档建议的 `container-type: inline-size` 修复方向一致，`size` 亦满足双轴
+已知语义）。**跟进触发点作废**（48h 未到即闭环），DONE 判定「待终验」态解除——
+`make test` 全绿后本 goal 终验完成。
+
 ## 实测基线（2026-09-08 M1 收口时）
 
 ### 已实现（33 endpoint）
