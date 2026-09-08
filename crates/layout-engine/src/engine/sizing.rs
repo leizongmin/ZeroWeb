@@ -148,6 +148,39 @@ impl LayoutEngine {
                 crate::intrinsic_sizing::flex_row_intrinsic_width(b, doc, styles)
             };
             let Some(intrinsic) = intrinsic else { continue };
+            // R4149 收窄守卫（kw_min 臂）：css-sizing-3 §5.2——子元素有显式 definite width
+            // 时，其 min-content 贡献 = 该显式宽（文本溢出不改变 specified size）。
+            // block_max_content_width 叶盒分支取 max(own_explicit, text_w)，未断开的
+            // 长词会把贡献测到显式宽之外（min-content-min-width-000 第 4 容器：child
+            // width:100px + 55 字长词 → 484，应 100）。kw 语境下把每个显式定宽 in-flow
+            // 块级子的 border-box 显式宽作为该子贡献上限（同 R3912 content_min_child 口径）。
+            let intrinsic = if kw_min {
+                let child_cap = b
+                    .children
+                    .iter()
+                    .filter(|c| !(c.is_absolute || c.is_fixed))
+                    .filter_map(|c| {
+                        let cs = c.node_id.and_then(|cid| styles.get(&cid))?;
+                        if !matches!(cs.display, DisplayValue::Block | DisplayValue::FlowRoot) {
+                            return None;
+                        }
+                        match resolve_sizing_definite_real_length(&cs.width, cs) {
+                            Some(w) => {
+                                let frame = c.padding_left + c.padding_right + c.border_left + c.border_right;
+                                Some(w + frame)
+                            }
+                            None => None,
+                        }
+                    })
+                    .fold(0.0_f32, f32::max);
+                if child_cap > 0.0 {
+                    intrinsic.min(child_cap)
+                } else {
+                    intrinsic
+                }
+            } else {
+                intrinsic
+            };
             // intrinsic 不可测 → 跳过。否则按上下文判定 apply 条件：
             // - MaxContent/MinContent（grow）：current 比 intrinsic 窄 → grow 到 intrinsic。
             // - Auto+float（R1015 shrink-to-fit）：current 比 intrinsic 宽 → shrink 到 intrinsic。
