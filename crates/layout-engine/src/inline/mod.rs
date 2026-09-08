@@ -608,6 +608,15 @@ impl InlineFormattingContext {
             .get(&run.node_id)
             .map(Vec::as_slice)
             .unwrap_or(&[]);
+        // R4133：word-separator（U+00A0 nbsp）在词内不产词界（R1085 nbsp 不折叠/不分割），
+        // 但 word-spacing 应作用于它（CSS Text 3 §8.1）——paint 侧 per-char advance 已对
+        // nbsp 计 word_spacing，layout 测量同步计入以保持断行/置位一致。U+0020 不在此计：
+        // normal 模式空格是词界（R1086 lead_gap 承载词间距），preserve 模式空格独立片段。
+        let nbsp_ws = text
+            .chars()
+            .filter(|c| zero_style_system::is_word_separator(*c) && *c != ' ')
+            .count() as f32
+            * run.word_spacing;
         match &self.advance_source {
             Some(source) if !font_ids.is_empty() && font_ids.first().copied() == run.font_id => {
                 let size_adjust = self
@@ -638,9 +647,9 @@ impl InlineFormattingContext {
                         "ZW_LAYOUT_SHAPED_ADVANCE_TRACE"
                     );
                 }
-                width
+                width + nbsp_ws
             }
-            _ => self.advance_string_width(text, run.font_id, run.font_size, run.is_ahem_font),
+            _ => self.advance_string_width(text, run.font_id, run.font_size, run.is_ahem_font) + nbsp_ws,
         }
     }
 

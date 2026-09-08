@@ -320,6 +320,15 @@ impl TextTransformValue {
     }
 }
 
+/// word-separator 字符判定（CSS Text 3 §8.1 word-spacing）。
+///
+/// word-spacing 应用于「word-separator characters」：space（U+0020）、no-break
+/// space（U+00A0）等。ZW 渲染管线可达的分隔符为 U+0020 与 U+00A0（其余
+/// U+1361/U+10100/U+10101/U+1039F/U+1091F 为埃塞俄比亚/罕见标点，布局不产词界）。
+pub fn is_word_separator(ch: char) -> bool {
+    ch == ' ' || ch == '\u{00A0}'
+}
+
 /// CSS white-space 值。
 #[derive(Debug, Clone, PartialEq)]
 pub enum WhiteSpaceValue {
@@ -1880,6 +1889,17 @@ pub use super::computed_style::ComputedStyle;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// R4133：word-separator 判定（CSS Text 3 §8.1）——U+0020 与 U+00A0 是
+    /// word-separator，word-spacing 应作用于二者；普通字符与 tab 不是。
+    /// driving: WPT css/CSS2/text word-spacing-characters-001（nbsp 对应用）。
+    #[test]
+    fn test_is_word_separator() {
+        assert!(is_word_separator(' '), "U+0020 是 word-separator");
+        assert!(is_word_separator('\u{00A0}'), "U+00A0 nbsp 是 word-separator");
+        assert!(!is_word_separator('\t'), "tab 不是 word-separator（ZW 渲为 tab stop）");
+        assert!(!is_word_separator('a'), "普通字母不是 word-separator");
+    }
 
     /// R2239/R2299：contain:size 标志判定——Size/Strict/Custom(FLAG_SIZE) 含 size containment；
     /// Content（layout+paint+style，**不含** size）/Layout/Style/Paint/None 不含。

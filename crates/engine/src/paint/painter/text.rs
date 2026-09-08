@@ -960,8 +960,23 @@ impl super::Painter {
                 let parent_letter_spacing: NodeIdMap<f32> =
                     build_text_parent_override_map(doc, &box_node.text_node_letter_spacing);
 
-                let parent_word_spacing: NodeIdMap<f32> =
-                    build_text_parent_override_map(doc, &box_node.text_node_word_spacing);
+                // R4133：word-spacing 声明在 inline 元素上时，layout IFC 的 element 分支
+                // 产出片段 node_id = 元素自身，text_node_word_spacing 按元素 id 键存。
+                // build_text_parent_override_map 只保留文本节点键（确定性过滤），会把元素
+                // 键整条丢弃 → paint Path B 重跑 IFC 在该元素上查不到 ws → 声明在 span 的
+                // word-spacing 丢失（word-spacing-characters-001 根因）。此处理法同上方
+                // is_ahem：文本节点 re-key 父元素，元素键原样保留。
+                let parent_word_spacing: NodeIdMap<f32> = box_node
+                    .text_node_word_spacing
+                    .iter()
+                    .filter_map(|(&tn, &ws)| {
+                        if is_text(tn) {
+                            doc.parent_node(tn).map(|pid| (pid, ws))
+                        } else {
+                            Some((tn, ws))
+                        }
+                    })
+                    .collect();
 
                 let parent_line_heights: NodeIdMap<f32> =
                     build_text_parent_override_map(doc, &box_node.text_node_line_heights);
@@ -1235,6 +1250,32 @@ impl super::Painter {
                                 let transformed = apply_text_transform(&fragment.text, &style.text_transform);
                                 let mut char_pos = frag_base_x;
                                 let frag_is_ahem = fragment.is_ahem;
+                                // R4133：per-fragment word-spacing——片段 owner（inline 元素）
+                                // 声明的 ws 在容器盒 paint 时 style=容器（ws=0）会丢；nbsp 等
+                                // word-separator 在词内不产词界（无 lead_gap），逐字符 advance
+                                // 须用 owner 的 ws（word-spacing-characters-001）。
+                                let frag_word_spacing: f32 = match style.word_spacing {
+                                    LengthValue::Px(s) => s as f32,
+                                    LengthValue::Percentage(p) => fragment.font_size * (p as f32 / 100.0),
+                                    ref lv => zero_style_system::computed::resolve_length(
+                                        lv,
+                                        fragment.font_size as f64,
+                                        None,
+                                        None,
+                                    ) as f32,
+                                };
+                                let frag_word_spacing = owner_style
+                                    .map(|s| match s.word_spacing {
+                                        LengthValue::Px(v) => v as f32,
+                                        LengthValue::Percentage(p) => fragment.font_size * (p as f32 / 100.0),
+                                        ref lv => zero_style_system::computed::resolve_length(
+                                            lv,
+                                            fragment.font_size as f64,
+                                            None,
+                                            None,
+                                        ) as f32,
+                                    })
+                                    .unwrap_or(frag_word_spacing);
 
                                 for ch in transformed.chars() {
                                     let glyph_x = char_pos;
@@ -1280,7 +1321,11 @@ impl super::Painter {
                                         fragment.font_size,
                                         frag_is_ahem,
                                     ) + letter_spacing
-                                        + if ch == ' ' { word_spacing } else { 0.0 };
+                                        + if zero_style_system::is_word_separator(ch) {
+                                            frag_word_spacing
+                                        } else {
+                                            0.0
+                                        };
                                     char_pos += advance;
 
                                     // R1021：text-emphasis 标记（CSS Text Decoration 3 §3）。
@@ -1328,7 +1373,11 @@ impl super::Painter {
                                             fragment.font_size,
                                             frag_is_ahem,
                                         ) + letter_spacing;
-                                        if ch == ' ' { w + word_spacing } else { w }
+                                        if zero_style_system::is_word_separator(ch) {
+                                            w + frag_word_spacing
+                                        } else {
+                                            w
+                                        }
                                     })
                                     .sum();
                                 // R1689：ruby per-segment annotation —— 每个 rt 居中于其前 base 段
@@ -1562,6 +1611,23 @@ impl super::Painter {
                             // R1689：ruby per-segment annotation（替代 R1022 逐字符 + R1688 整 base 居中）。
                             let ruby_segs: Option<Vec<(String, String)>> = ruby_annotation_segments(doc, owner_id);
 
+                            // R4133：per-fragment word-spacing——同 multicol 路径。片段 owner
+                            // 声明的 ws 在容器 paint style（ws=0）下丢失；nbsp 等 word-separator
+                            // 词内不产词界，逐字符 advance 须用 owner 的 ws
+                            //（word-spacing-characters-001）。
+                            let frag_word_spacing: f32 = owner_style_opt
+                                .map(|s| match s.word_spacing {
+                                    LengthValue::Px(v) => v as f32,
+                                    LengthValue::Percentage(p) => $frag_fs * (p as f32 / 100.0),
+                                    ref lv => zero_style_system::computed::resolve_length(
+                                        lv,
+                                        $frag_fs as f64,
+                                        None,
+                                        None,
+                                    ) as f32,
+                                })
+                                .unwrap_or(word_spacing);
+
                             let (frag_base_x, frag_base_y, char_advance_is_y) = if is_vertical {
                                 (content_x + $frag_x + tx, content_y + $frag_y + ty, true)
                             } else {
@@ -1584,7 +1650,7 @@ impl super::Painter {
                                 .chars()
                                 .map(|ch| {
                                     let w = self.measure_char_cached(frag_font_id.0, ch, $frag_fs, $is_ahem) + letter_spacing;
-                                    if ch == ' ' { w + word_spacing } else { w }
+                                    if zero_style_system::is_word_separator(ch) { w + frag_word_spacing } else { w }
                                 })
                                 .sum();
                             // R3868：::first-letter 首字母单元簇（前导 P* + 字母 + 后随 P*，除 Ps/Pd）
@@ -1944,7 +2010,11 @@ impl super::Painter {
                                     .advance_x
                                     .unwrap_or_else(|| self.measure_char_cached(frag_font_id.0, ch, $frag_fs, $is_ahem))
                                     + letter_spacing
-                                    + if ch == ' ' { word_spacing } else { 0.0 };
+                                    + if zero_style_system::is_word_separator(ch) {
+                                        frag_word_spacing
+                                    } else {
+                                        0.0
+                                    };
                                 char_pos += advance;
 
                                 // R1021：text-emphasis 标记（水平书写模式；垂直暂不支持）。

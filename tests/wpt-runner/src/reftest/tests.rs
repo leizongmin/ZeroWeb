@@ -2739,3 +2739,213 @@ fn debug_bidi_text_probe() {
         println!("{name}: diff={diff} bands={band_str:?}");
     }
 }
+
+/// R4133 勘察：css-overflow margin-block-end-scroll-area-001（32.83%）静态像素定性。
+/// 案语义：div#test{height:200px;overflow:hidden;font-size:100px} > div#red{height:200px;background:red}
+/// > filler + p{height:1px}；onload 把 #test.scrollTop=200（JS）→ chromium 中红块滚出视口 → 无红 PASS。
+/// ZW reftest 无 JS：scrollTop 不发生，红块应仍渲染于 y=0..200。
+/// 静态可判语义：①红块本身渲染正确（位置/尺寸）；②overflow:hidden 裁剪生效；
+/// ③scrollable region 含子 margin-bottom 缘（css-overflow-3 #scrollable）= 滚动距离语义，JS 域。
+#[test]
+#[ignore]
+fn debug_r4133_margin_block_end_scroll_area() {
+    let base = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("wpt-data/css/css-overflow");
+    let html = std::fs::read_to_string(base.join("margin-block-end-scroll-area-001.html")).expect("read test");
+    let cfg = ReftestConfig::default();
+    let fb = render_to_framebuffer_with_base(&html, "", &cfg, Some(&base));
+    // 网格采样：x=400（块中心）y=0..350 step 25 —— 红块 y=0..200 应为 red，y>=200 应白
+    for y in (0..350usize).step_by(25) {
+        let i = (y * fb.width as usize + 400) * 4;
+        println!("x=400 y={y}: ({},{},{})", fb.data[i], fb.data[i + 1], fb.data[i + 2]);
+    }
+    // 红像素行带统计（r>150, g<100, b<100）
+    let mut red_rows: Vec<(usize, u32)> = Vec::new();
+    for y in 0..fb.height as usize {
+        let mut cnt = 0u32;
+        for x in 0..fb.width as usize {
+            let i = (y * fb.width as usize + x) * 4;
+            if fb.data[i] > 150 && fb.data[i + 1] < 100 && fb.data[i + 2] < 100 {
+                cnt += 1;
+            }
+        }
+        if cnt > 0 {
+            red_rows.push((y, cnt));
+        }
+    }
+    if let (Some(first), Some(last)) = (red_rows.first(), red_rows.last()) {
+        println!(
+            "red band: y{}..{} ({} rows), first-row count={}, last-row count={}",
+            first.0,
+            last.0,
+            red_rows.len(),
+            first.1,
+            last.1
+        );
+    } else {
+        println!("red band: NONE");
+    }
+}
+
+
+
+
+
+
+
+/// R4133 勘察八：对照页对——无 transform 页 vs 有 transform 页 vs「预大写文本页」
+/// 三方对比，分离「transform 应用」与「transform 后字形 metrics」两个变量。
+#[test]
+#[ignore]
+fn debug_r4133_bicameral_3way() {
+    let cfg = ReftestConfig::default();
+    let with_tt = r#"<!DOCTYPE html><html><head><style>
+    .test span { text-transform: uppercase; }
+    .test { line-height: 2; color: blue; font-size: 16px; }
+    .test div { white-space: nowrap; text-align: center; width: 3em; display: inline-block; }
+    </style></head><body><div class="test"><div>Ÿ <span>ÿ</span></div></div></body></html>"#;
+    // 预转换：无 transform，span 里直接写 Ÿ
+    let prett = r#"<!DOCTYPE html><html><head><style>
+    .test { line-height: 2; color: blue; font-size: 16px; }
+    .test div { white-space: nowrap; text-align: center; width: 3em; display: inline-block; }
+    </style></head><body><div class="test"><div>Ÿ <span>Ÿ</span></div></div></body></html>"#;
+    let f1 = render_to_framebuffer_with_base(with_tt, "", &cfg, None);
+    let f2 = render_to_framebuffer_with_base(prett, "", &cfg, None);
+    // 双页 XOR
+    let mut diff = 0u32;
+    for y in 0..f1.height as usize {
+        for x in 0..f1.width as usize {
+            let i = (y * f1.width as usize + x) * 4;
+            let j = (y * f2.width as usize + x) * 4;
+            let d = (f1.data[i] as i32 - f2.data[j] as i32).abs()
+                + (f1.data[i + 1] as i32 - f2.data[j + 1] as i32).abs()
+                + (f1.data[i + 2] as i32 - f2.data[j + 2] as i32).abs();
+            if d > 30 {
+                diff += 1;
+            }
+        }
+    }
+    println!("with_tt vs prett(Ÿ hard-coded): diff={diff}");
+    // 各自 runs
+    for (label, f) in [("with_tt", &f1), ("prett  ", &f2)] {
+        let y = 55usize;
+        let mut xs: Vec<usize> = Vec::new();
+        let mut in_run = false;
+        for x in 0..f.width as usize {
+            let i = (y * f.width as usize + x) * 4;
+            let nw = f.data[i] < 250 || f.data[i + 1] < 250 || f.data[i + 2] < 250;
+            if nw && !in_run {
+                xs.push(x);
+                in_run = true;
+            } else if !nw {
+                in_run = false;
+            }
+        }
+        println!("{label} y55 runs: {:?}", &xs[..xs.len().min(8)]);
+    }
+}
+
+
+
+
+
+
+/// R4133 勘察十四：word-spacing nbsp 定性（inline 流测量）——块级 p 直接文本，
+/// 用像素扫描文本 glyph 的 x 范围测宽度。三组对照：space / nbsp / tab。
+#[test]
+#[ignore]
+fn debug_r4133_word_spacing_nbsp3() {
+    let cfg = ReftestConfig::default();
+    let mk = |txt: &str, ws: bool| {
+        format!(
+            r#"<!DOCTYPE html><html><head><style>
+            body {{ margin:0; }}
+            p {{ margin:0; font-family: monospace; font-size:16px; color: black; {} }}
+            </style></head><body>
+            <p>{}</p></body></html>"#,
+            if ws { "word-spacing: 4em;" } else { "" },
+            txt
+        )
+    };
+    let text_extent = |html: &str| -> f32 {
+        let fb = render_to_framebuffer_with_base(html, "", &cfg, None);
+        let mut max_x = 0usize;
+        for y in 0..fb.height as usize {
+            for x in 0..fb.width as usize {
+                let i = (y * fb.width as usize + x) * 4;
+                if fb.data[i] < 128 && fb.data[i + 1] < 128 && fb.data[i + 2] < 128 {
+                    if x > max_x {
+                        max_x = x;
+                    }
+                }
+            }
+        }
+        max_x as f32
+    };
+    for (label, txt) in [("nbsp", "A&#160;B"), ("space", "A B"), ("plain", "AB")] {
+        let w0 = text_extent(&mk(txt, false));
+        let w1 = text_extent(&mk(txt, true));
+        println!("{label}: no-ws={w0:.1}px ws={w1:.1}px delta={:.1}", w1 - w0);
+    }
+}
+
+
+
+
+
+
+
+
+/// R4133 勘察二十二：glyph 级 x 位（primitives）——「A B」B 字形 x，
+/// ws 声明在 p vs span 的对照，彻底分离 layout/paint 两侧。
+#[test]
+#[ignore]
+fn debug_r4133_ws_glyph_primitives() {
+    for (label, html) in [
+        (
+            "p-ws",
+            "<html><body><p style=\"font-size:16px; word-spacing:64px\">A B</p></body></html>",
+        ),
+        (
+            "span-ws",
+            "<html><body><p style=\"font-size:16px\"><span style=\"word-spacing:64px\">A B</span></p></body></html>",
+        ),
+        (
+            "p-ws-nbsp",
+            "<html><body><p style=\"font-size:16px; word-spacing:64px\">A&#160;B</p></body></html>",
+        ),
+        (
+            "span-ws-nbsp",
+            "<html><body><p style=\"font-size:16px\"><span style=\"word-spacing:64px\">A&#160;B</span></p></body></html>",
+        ),
+    ] {
+        let mut pipeline = zero_engine::RenderPipeline::new(800.0, 600.0);
+        pipeline.set_skip_indicators(true);
+        let font_loader = reftest_fonts::create_font_loader();
+        pipeline.set_font_resolver(font_loader.build_font_resolver());
+        let result = pipeline.render_html(html, "");
+        let glyphs: Vec<_> = result.primitives().glyphs.iter().filter(|g| g.glyph_id != 0).collect();
+        let xs: Vec<String> = glyphs
+            .iter()
+            .filter_map(|g| g.glyph_id.try_into().ok().map(|c: char| format!("{c}@{:.1}", g.x)))
+            .collect();
+        println!("{label}: {}", xs.join(" "));
+    }
+}
+
+/// R4133 勘察二十三：span+nbsp 的 fragment 文本字符 dump——glyph code_point 序列。
+#[test]
+#[ignore]
+fn debug_r4133_ws_span_nbsp_glyphs() {
+    let html =
+        "<html><body><p style=\"font-size:16px\"><span style=\"word-spacing:64px\">A&#160;B</span></p></body></html>";
+    let mut pipeline = zero_engine::RenderPipeline::new(800.0, 600.0);
+    pipeline.set_skip_indicators(true);
+    let font_loader = reftest_fonts::create_font_loader();
+    pipeline.set_font_resolver(font_loader.build_font_resolver());
+    let result = pipeline.render_html(html, "");
+    for g in result.primitives().glyphs.iter().filter(|g| g.glyph_id != 0) {
+        let ch = char::try_from(g.glyph_id).unwrap_or('?');
+        println!("glyph '{ch}' U+{:04X} @ x={:.2}", g.glyph_id, g.x);
+    }
+}
+
