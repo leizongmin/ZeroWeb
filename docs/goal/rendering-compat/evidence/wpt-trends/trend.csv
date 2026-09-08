@@ -34,3 +34,4 @@
 2026-09-08,upstream,v1.10,16814,14563,86.6,failed=2251;skipped=0,26be41952,R4124-F @container 按最近 container-type 祖先求值（容器链+显式Px静态推导+链空false）；corpus 14561->14563 净+2（display-in-container 100->0.83 + change-display 连带；零回归）
 2026-09-08,upstream,v1.10,16814,14563,86.6,failed=2251;skipped=0,f15f9e14f,R4125-F cq 容器查询单位解析（css-conditional-5 container lengths；6 单位 + CalcContext 容器轴 + gradient stop 就地解析）；corpus 14563 同值（域内 gradient x2 10.42->2.01、rule-cache 3.12->1.04、scrollbar-block 1.05->0.00 翻绿；box-shadow 抖动对摆回）
 2026-09-08,upstream,v1.10,16814,14564,86.6,failed=2250;skipped=0,cc7200d82,R4126-F @container 逗号多条件 OR + = 等式比较符 + 键缓存容器污染修复；corpus 14563->14564 净+1（multiple-conditions-001 2.40->0.00 翻绿，零回归）
+2026-09-08,upstream,v1.10,16814,14565,86.6,failed=2249;skipped=0,8e5b9675d,R4127-F 伪元素 @container 查询容器含 originating element 自身（自身入链+container_entry_for 重构）；corpus 14564->14565 净+1（box-shadow 抖动对摆正；pseudo-002b 探针 7300->6094px 改善未翻绿，残余 JS 动态改宽深域挂账）
