@@ -2,7 +2,7 @@
 
 **版本**: v1.0
 **日期**: 2026-09-07
-**状态**: ✅ Completed（2026-09-08，DC-1~4 全满足，已归档至 [archive/webdriver/](archive/webdriver/)）
+**状态**: ✅ Completed（2026-09-08 归档至 [archive/webdriver/](archive/webdriver/)；DC-4 终验收口中——`make test` 唯一遗留为跨流红灯 `test_css_container_query_style_integration`（R4124 行为变更致断言过时，归 rendering-compat 流名下，已飞书告知接管），其修复落地全绿后 DONE 判定终验，见 archive master.md 碰头信号记录）
 **执行模式**: 轻量修复优先（永不停）；遇需用户决策项或深结构方向 → 记入「待用户决策」清单 → 跳过 → 继续其他轻量修复
 **父目标**: `docs/goal/zero-web.md`（DC2 交互式网站可用性验证的自动化基建 + M11 端到端测试）
 
