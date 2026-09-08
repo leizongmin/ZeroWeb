@@ -321,6 +321,49 @@ fn http_request(port: u16, method: &str, path: &str, body: Option<&str>) -> (u16
 }
 
 #[test]
+fn webdriver_status_and_capabilities_readback() {
+    let (_driver, port) = spawn_driver();
+
+    // GET /status — 无需 session；wire format 必含 ready/message/quit 三字段。
+    let (status, body) = http_request(port, "GET", "/status", None);
+    assert_eq!(status, 200, "Status 应 200: {body}");
+    let value: serde_json::Value = serde_json::from_str(&body).expect("json");
+    assert_eq!(value["value"]["ready"], true);
+    assert!(value["value"]["message"].is_string(), "message 应为字符串: {body}");
+    assert!(
+        value["value"].get("quit").is_some(),
+        "quit 字段必须存在（可为 null）: {body}"
+    );
+
+    // GET /session/{id} — New Session 后 capabilities 回读与 New Session 一致。
+    let (status, body) = http_request(port, "POST", "/session", Some("{}"));
+    assert_eq!(status, 200, "New Session 应 200: {body}");
+    let value: serde_json::Value = serde_json::from_str(&body).expect("json");
+    let session_id = value["value"]["sessionId"].as_str().expect("sessionId").to_string();
+
+    let (status, body) = http_request(port, "GET", &format!("/session/{session_id}"), None);
+    assert_eq!(status, 200, "Get Session Capabilities 应 200: {body}");
+    let value: serde_json::Value = serde_json::from_str(&body).expect("json");
+    assert_eq!(value["value"]["sessionId"], session_id.as_str());
+    assert_eq!(value["value"]["capabilities"]["browserName"], "zero-browser");
+    assert_eq!(
+        value["value"]["capabilities"]["browserVersion"],
+        zero_product_version::VERSION
+    );
+
+    // 不存在的 session → 404 no such session，错误包络带 error/message/stacktrace。
+    let (status, body) = http_request(port, "GET", "/session/deadbeef", None);
+    assert_eq!(status, 404, "不存在的 session 应 404: {body}");
+    let value: serde_json::Value = serde_json::from_str(&body).expect("json");
+    assert_eq!(value["value"]["error"], "no such session");
+    assert!(value["value"]["message"].is_string(), "message 必带: {body}");
+    assert!(
+        value["value"].get("stacktrace").is_some(),
+        "stacktrace 必带（W3C）: {body}"
+    );
+}
+
+#[test]
 fn webdriver_session_lifecycle() {
     let (_driver, port) = spawn_driver();
 

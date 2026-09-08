@@ -106,7 +106,10 @@ fn json_response(stream: &mut TcpStream, value: serde_json::Value) {
 }
 
 fn error_response(stream: &mut TcpStream, status: u16, reason: &str, message: &str) {
-    let body = serde_json::json!({ "value": { "error": reason.to_lowercase(), "message": message } });
+    // https://w3c.github.io/webdriver/#errors — 错误响应必带 stacktrace（可为空串）。
+    let body = serde_json::json!({
+        "value": { "error": reason.to_lowercase(), "message": message, "stacktrace": "" }
+    });
     let body = serde_json::to_vec(&body).unwrap_or_default();
     write_response(stream, status, reason, &body);
 }
@@ -115,8 +118,11 @@ fn error_response(stream: &mut TcpStream, status: u16, reason: &str, message: &s
 const ELEMENT_KEY: &str = "element-6066-11e4-a52e-4f735466cecf";
 
 fn driver_error_response(stream: &mut TcpStream, error: DriverError) {
+    // https://w3c.github.io/webdriver/#processing-model — 错误码到 HTTP 状态映射：
+    // timeout → 408，invalid argument → 400，会话/元素类 → 404，其余 → 500。
     let status = match error.code {
         "invalid argument" => 400,
+        "timeout" => 408,
         "no such session" | "no such element" | "stale element reference" => 404,
         _ => 500,
     };
@@ -134,6 +140,20 @@ fn handle_request(driver: &mut Driver, req: &HttpRequest, stream: &mut TcpStream
     match (req.method.as_str(), segments.as_slice()) {
         ("OPTIONS", _) => {
             write_response(stream, 204, "No Content", b"");
+        }
+        // GET /status — Status。无需 session；ready = 服务可达（本实现 session 创建按需 spawn renderer）。
+        ("GET", ["status"]) => {
+            // https://w3c.github.io/webdriver/#status
+            json_response(
+                stream,
+                serde_json::json!({
+                    "value": {
+                        "ready": true,
+                        "message": "zero-webdriver is ready",
+                        "quit": null,
+                    }
+                }),
+            );
         }
         // POST /session — New Session
         ("POST", ["session"]) => match driver.create_session() {
@@ -252,6 +272,22 @@ fn handle_request(driver: &mut Driver, req: &HttpRequest, stream: &mut TcpStream
                 Err(error) => driver_error_response(stream, error),
             }
         }
+        // GET /session/{id} — Get Session Capabilities（capabilities 回读）。
+        ("GET", ["session", id]) => match driver.session_exists(id) {
+            true => json_response(
+                stream,
+                serde_json::json!({
+                    "value": {
+                        "sessionId": id,
+                        "capabilities": {
+                            "browserName": "zero-browser",
+                            "browserVersion": zero_product_version::VERSION,
+                        }
+                    }
+                }),
+            ),
+            false => error_response(stream, 404, "no such session", "session not found"),
+        },
         // DELETE /session/{id} — Delete Session
         ("DELETE", ["session", id]) => {
             if driver.delete_session(id) {

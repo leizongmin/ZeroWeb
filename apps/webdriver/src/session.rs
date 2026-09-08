@@ -103,6 +103,11 @@ impl Driver {
         self.sessions.remove(id).is_some()
     }
 
+    /// 查询 session 是否存活（Get Session Capabilities 用）。
+    pub fn session_exists(&self, id: &str) -> bool {
+        self.sessions.contains_key(id)
+    }
+
     pub fn navigate(&mut self, id: &str, url: &str) -> Result<(), DriverError> {
         self.session_mut(id)?.navigate(url)
     }
