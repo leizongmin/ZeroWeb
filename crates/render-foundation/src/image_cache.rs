@@ -850,7 +850,9 @@ fn promote_svg_root_background(source: &[u8]) -> (Vec<u8>, Option<[u8; 4]>) {
     // 值来源优先级（与 usvg parse 一致）：style 声明 > presentation attr。两者皆无 → 不动。
     let style_val = extract_svg_attr(tag, "style");
     let style_color = style_val.as_deref().and_then(svg_style_background_color);
-    let attr_color = extract_svg_attr(tag, "background-color").and_then(|v| parse_svg_color(&v));
+    let attr_color = extract_svg_attr(tag, "background-color")
+        .or_else(|| extract_svg_attr(tag, "background"))
+        .and_then(|v| parse_svg_color(&v));
     let color = style_color.or(attr_color);
     let Some(color) = color else {
         return (source.to_vec(), None);
@@ -864,6 +866,8 @@ fn promote_svg_root_background(source: &[u8]) -> (Vec<u8>, Option<[u8; 4]>) {
         } else {
             replace_svg_attr_value(tag, "style", &stripped_style)
         }
+    } else if extract_svg_attr(tag, "background").is_some() {
+        remove_svg_attr(tag, "background")
     } else {
         remove_svg_attr(tag, "background-color")
     };
@@ -875,25 +879,39 @@ fn promote_svg_root_background(source: &[u8]) -> (Vec<u8>, Option<[u8; 4]>) {
 }
 
 /// 从 style 声明值中提取 `background-color`（合法 CSS 颜色 → RGBA）。
+/// R4128：同时识别 `background` 简写（css-backgrounds-3 §3：颜色分量可出现在值内
+/// 任意位置，取首个可解析颜色 token；无颜色分量如 `background: url(x)` → None）。
+/// driving: css-ui/box-sizing-007 族（`<svg style="background: green">` as-img）。
 fn svg_style_background_color(style_val: &str) -> Option<[u8; 4]> {
     style_val
         .split(';')
         .filter_map(|decl| decl.split_once(':'))
         .find_map(|(prop, value)| {
-            prop.trim()
-                .eq_ignore_ascii_case("background-color")
-                .then_some(value.trim())
-                .and_then(parse_svg_color)
+            let prop = prop.trim();
+            if prop.eq_ignore_ascii_case("background-color") {
+                return parse_svg_color(value);
+            }
+            if prop.eq_ignore_ascii_case("background") {
+                // 简写：逐 token 试颜色解析（rgb()/rgba() 含空格分隔的内部值，先按
+                // 括号感知切分——简化：先整体试，再按空白 token 试）。
+                if let Some(c) = parse_svg_color(value) {
+                    return Some(c);
+                }
+                return value.split_whitespace().find_map(parse_svg_color);
+            }
+            None
         })
 }
 
-/// 删除 style 声明值中的 background-color 项（返回剩余声明，分号规范化）。
+/// 删除 style 声明值中的 background-color / background 项（返回剩余声明，分号规范化）。
 fn strip_background_decl(style_val: &str) -> String {
     style_val
         .split(';')
         .filter(|decl| {
-            decl.split_once(':')
-                .is_none_or(|(prop, _)| !prop.trim().eq_ignore_ascii_case("background-color"))
+            decl.split_once(':').is_none_or(|(prop, _)| {
+                let p = prop.trim();
+                !p.eq_ignore_ascii_case("background-color") && !p.eq_ignore_ascii_case("background")
+            })
         })
         .collect::<Vec<_>>()
         .join(";")
@@ -1708,7 +1726,7 @@ pub fn decode_svg_bytes(bytes: &[u8]) -> Result<ImageData, String> {
         }
         return Ok(data);
     }
-    let tree = match resvg::usvg::Tree::from_data(bytes, &resvg::usvg::Options::default()) {
+    let mut tree = match resvg::usvg::Tree::from_data(bytes, &resvg::usvg::Options::default()) {
         Ok(tree) => tree,
         Err(e) => {
             // R34xx：usvg 拒绝 0 尺寸 SVG（width="0"/height="0"）——手工提取根元素
@@ -1752,7 +1770,26 @@ pub fn decode_svg_bytes(bytes: &[u8]) -> Result<ImageData, String> {
             d
         });
     }
+    // R4128：根 background（含 background 简写）提升为 viewport 级填充——as-img 路径
+    // 与 rasterize_svg_at（R3933/R3996）同语义。usvg 不解析 CSS background（非 SVG
+    // 规范属性），根 style="background: green" 的 svg-as-img 原先渲成透明。
+    // driving: css-ui/box-sizing-007 族（20 个 `<svg style="background: green">` img）。
+    // 注意：`svg_source`（下方 R3761）必须存**原始字节**——重栅格化路径
+    // （rasterize_svg_at）自带 promote+fill，若这里存剥离后的源，二次 promote 拿不到
+    // 背景色 → replaced-element-004/006 类 viewBox letterbox 案回归（r4128 首跑实证）。
+    let (promoted_bytes, root_background) = promote_svg_root_background(bytes);
+    if root_background.is_some() {
+        // 根背景声明已剥离：按改写后的源重建树（旧树若含 viewBox rect 背景路径须丢弃）。
+        if let Ok(tree2) = resvg::usvg::Tree::from_data(&promoted_bytes, &resvg::usvg::Options::default()) {
+            tree = tree2;
+        }
+    }
     let mut pixmap = resvg::tiny_skia::Pixmap::new(w, h).ok_or_else(|| format!("SVG pixmap 分配失败 {w}x{h}"))?;
+    if let Some(color) = root_background {
+        pixmap.fill(resvg::tiny_skia::Color::from_rgba8(
+            color[0], color[1], color[2], color[3],
+        ));
+    }
     resvg::render(&tree, resvg::tiny_skia::Transform::default(), &mut pixmap.as_mut());
     let rgba = pixmap.take();
     let mut data = ImageData::from_rgba(rgba, w, h)?;

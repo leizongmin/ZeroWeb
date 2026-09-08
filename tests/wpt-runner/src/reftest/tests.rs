@@ -2487,3 +2487,48 @@ fn debug_pseudo_elements_002b_probe() {
         println!("zero diff — 全绿");
     }
 }
+
+/// R4128 勘察：css-ui/box-sizing-007 像素 diff 带（img border-box + padding 固有尺寸）。
+#[test]
+#[ignore]
+fn debug_box_sizing_007_probe() {
+    let case_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("wpt-data/css/css-ui/box-sizing-007.html");
+    let ref_path =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("wpt-data/css/css-ui/reference/box-sizing-007-ref.html");
+    let html = std::fs::read_to_string(&case_path).expect("read test html");
+    let ref_html = std::fs::read_to_string(&ref_path).expect("read ref html");
+    let cfg = ReftestConfig::default();
+    let fb = render_to_framebuffer_with_base(&html, "", &cfg, case_path.parent());
+    let ref_fb = render_to_framebuffer_with_base(&ref_html, "", &cfg, ref_path.parent());
+    let mut diff = 0u32;
+    let mut row_diff = vec![0u32; fb.height as usize];
+    for y in 0..fb.height as usize {
+        for x in 0..fb.width as usize {
+            let i = (y * fb.width as usize + x) * 4;
+            let j = (y * ref_fb.width as usize + x) * 4;
+            let d = (fb.data[i] as i32 - ref_fb.data[j] as i32).abs()
+                + (fb.data[i + 1] as i32 - ref_fb.data[j + 1] as i32).abs()
+                + (fb.data[i + 2] as i32 - ref_fb.data[j + 2] as i32).abs();
+            if d > 30 {
+                diff += 1;
+                row_diff[y] += 1;
+            }
+        }
+    }
+    println!("diff pixels={diff}");
+    let mut bands: Vec<(usize, usize, u32)> = Vec::new();
+    for (y, cnt) in row_diff.iter().enumerate() {
+        if *cnt > 0 {
+            match bands.last_mut() {
+                Some(b) if b.1 + 1 == y => {
+                    b.1 = y;
+                    b.2 += *cnt;
+                }
+                _ => bands.push((y, y, *cnt)),
+            }
+        }
+    }
+    for (y0, y1, total) in bands.iter().take(8) {
+        println!("  band y={y0}..={y1} px={total}");
+    }
+}
