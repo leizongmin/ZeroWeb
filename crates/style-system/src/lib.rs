@@ -603,6 +603,17 @@ impl StyleSystem {
             if has_pseudo_rules || is_q {
                 let saved_custom = self.custom_properties.clone();
                 let elem_style = computed.clone();
+                // R4127（css-conditional-5 §container-queries + css-pseudo-4）：伪元素
+                // 的查询容器 = originating element 的最近查询容器**含其自身**——伪元素
+                // 不是元素，向上找 container-type 祖先时 originating element 计入
+                //（driving: pseudo-elements-002b `#c5::first-letter` @container
+                // max-width:300 按 c5 自身 300px 求值，ref 全 green）。元素自身样式的
+                // @container 不含自身（R4124 语义，已按父链顶算完），此处为伪元素
+                // 求值临时把自身入链，完毕弹出。
+                let self_is_container = !matches!(elem_style.container_type, property::types::ContainerType::Normal);
+                if self_is_container {
+                    self.container_chain.push(container_entry_for(&elem_style));
+                }
                 let before = *self.compute_element_style_internal(
                     doc,
                     node,
@@ -716,6 +727,9 @@ impl StyleSystem {
                     a.content = property::types::ContentComputedValue::String(close.clone());
                     computed.after_pseudo = Some(Box::new(a));
                 }
+                if self_is_container {
+                    self.container_chain.pop();
+                }
             } // if has_pseudo_rules || is_q（S10）
             if delay_parent_insert {
                 delayed_style = Some(Box::new(computed));
@@ -766,45 +780,7 @@ impl StyleSystem {
                 if matches!(elem_style.container_type, property::types::ContainerType::Normal) {
                     return None;
                 }
-                // content 尺寸静态推导：显式 Px 声明（Px 即 content，BorderBox 减框）。
-                let resolve_axis = |v: &zero_css_parser::values::LengthValue| -> Option<f64> {
-                    match v {
-                        zero_css_parser::values::LengthValue::Px(p) if p.is_finite() => Some(*p),
-                        _ => None,
-                    }
-                };
-                let border_box = matches!(
-                    elem_style.box_sizing,
-                    zero_css_parser::values::BoxSizingValue::BorderBox
-                );
-                let frame_x = resolve_axis(&elem_style.padding_left)
-                    .and_then(|pl| resolve_axis(&elem_style.padding_right).map(|pr| pl + pr))
-                    .map(|p| {
-                        let bl = resolve_axis(&elem_style.border_left_width).unwrap_or(0.0);
-                        let br = resolve_axis(&elem_style.border_right_width).unwrap_or(0.0);
-                        p + bl + br
-                    })
-                    .unwrap_or(0.0);
-                let frame_y = resolve_axis(&elem_style.padding_top)
-                    .and_then(|pt| resolve_axis(&elem_style.padding_bottom).map(|pb| pt + pb))
-                    .map(|p| {
-                        let bt = resolve_axis(&elem_style.border_top_width).unwrap_or(0.0);
-                        let bb = resolve_axis(&elem_style.border_bottom_width).unwrap_or(0.0);
-                        p + bt + bb
-                    })
-                    .unwrap_or(0.0);
-                let w = resolve_axis(&elem_style.width).map(|w| if border_box { w - frame_x } else { w });
-                let h = resolve_axis(&elem_style.height).map(|h| if border_box { h - frame_y } else { h });
-                let h = if matches!(elem_style.container_type, property::types::ContainerType::InlineSize) {
-                    None
-                } else {
-                    h
-                };
-                Some(matcher::ContainerEntry {
-                    name: elem_style.container_name.clone(),
-                    width: w,
-                    height: h,
-                })
+                Some(container_entry_for(elem_style))
             })
             .flatten();
         if let Some(entry) = &pushed_container {
@@ -2349,6 +2325,47 @@ impl StyleKey {
 /// 键外依赖（元素属性/文档状态/继承链），缓存会错误命中。
 fn stylesheet_cache_safe(stylesheets: &[Stylesheet]) -> bool {
     stylesheets.iter().all(|s| rules_cache_safe(&s.rules))
+}
+
+/// R4124/R4127：从元素的 computed style 构造容器链条目（最近查询容器信息）。
+///
+/// content 尺寸静态推导：显式 Px 声明（Px 即 content，BorderBox 减可解析框），否则
+/// None（unknown 轴 → 条件 false，规范行为）；container-type: inline-size 的高度轴恒
+/// None。供 compute_styles_recursive 的子树入链与伪元素求值的自身入链共用。
+fn container_entry_for(style: &ComputedStyle) -> matcher::ContainerEntry {
+    let resolve_axis = |v: &zero_css_parser::values::LengthValue| -> Option<f64> {
+        match v {
+            zero_css_parser::values::LengthValue::Px(p) if p.is_finite() => Some(*p),
+            _ => None,
+        }
+    };
+    let border_box = matches!(style.box_sizing, zero_css_parser::values::BoxSizingValue::BorderBox);
+    let frame_x = resolve_axis(&style.padding_left)
+        .and_then(|pl| resolve_axis(&style.padding_right).map(|pr| pl + pr))
+        .map(|p| {
+            let bl = resolve_axis(&style.border_left_width).unwrap_or(0.0);
+            let br = resolve_axis(&style.border_right_width).unwrap_or(0.0);
+            p + bl + br
+        })
+        .unwrap_or(0.0);
+    let frame_y = resolve_axis(&style.padding_top)
+        .and_then(|pt| resolve_axis(&style.padding_bottom).map(|pb| pt + pb))
+        .map(|p| {
+            let bt = resolve_axis(&style.border_top_width).unwrap_or(0.0);
+            let bb = resolve_axis(&style.border_bottom_width).unwrap_or(0.0);
+            p + bt + bb
+        })
+        .unwrap_or(0.0);
+    let w = resolve_axis(&style.width).map(|w| if border_box { w - frame_x } else { w });
+    let mut h = resolve_axis(&style.height).map(|h| if border_box { h - frame_y } else { h });
+    if matches!(style.container_type, property::types::ContainerType::InlineSize) {
+        h = None;
+    }
+    matcher::ContainerEntry {
+        name: style.container_name.clone(),
+        width: w,
+        height: h,
+    }
 }
 
 fn rules_cache_safe(rules: &[zero_css_parser::ast::Rule]) -> bool {

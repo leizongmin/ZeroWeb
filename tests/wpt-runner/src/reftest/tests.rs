@@ -2438,3 +2438,52 @@ fn debug_r2_full_page_split() {
         let _ = rendered;
     }
 }
+
+/// R4127 勘察：pseudo-elements-002b 像素 diff（@container 内 ::first-letter/::first-line）。
+#[test]
+#[ignore]
+fn debug_pseudo_elements_002b_probe() {
+    let case_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("wpt-data/css/css-conditional/container-queries/pseudo-elements-002b.html");
+    let ref_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("wpt-data/css/css-conditional/container-queries/pseudo-elements-002b-ref.html");
+    let html = std::fs::read_to_string(&case_path).expect("read test html");
+    let ref_html = std::fs::read_to_string(&ref_path).expect("read ref html");
+    let cfg = ReftestConfig::default();
+    let fb = render_to_framebuffer_with_base(&html, "", &cfg, case_path.parent());
+    let ref_fb = render_to_framebuffer_with_base(&ref_html, "", &cfg, ref_path.parent());
+    let mut diff = 0u32;
+    let mut row_diff = vec![0u32; fb.height as usize];
+    for y in 0..fb.height as usize {
+        for x in 0..fb.width as usize {
+            let i = (y * fb.width as usize + x) * 4;
+            let j = (y * ref_fb.width as usize + x) * 4;
+            let d = (fb.data[i] as i32 - ref_fb.data[j] as i32).abs()
+                + (fb.data[i + 1] as i32 - ref_fb.data[j + 1] as i32).abs()
+                + (fb.data[i + 2] as i32 - ref_fb.data[j + 2] as i32).abs();
+            if d > 30 {
+                diff += 1;
+                row_diff[y] += 1;
+            }
+        }
+    }
+    let mut bands: Vec<(usize, usize, u32)> = Vec::new();
+    for (y, cnt) in row_diff.iter().enumerate() {
+        if *cnt > 0 {
+            match bands.last_mut() {
+                Some(b) if b.1 + 1 == y => {
+                    b.1 = y;
+                    b.2 += *cnt;
+                }
+                _ => bands.push((y, y, *cnt)),
+            }
+        }
+    }
+    println!("diff pixels={diff} bands={}", bands.len());
+    for (y0, y1, total) in bands.iter().take(6) {
+        println!("  band y={y0}..={y1} px={total}");
+    }
+    if diff == 0 {
+        println!("zero diff — 全绿");
+    }
+}
