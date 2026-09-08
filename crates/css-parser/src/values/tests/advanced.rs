@@ -1554,6 +1554,26 @@ fn test_parse_box_shadow_color_at_start() {
     assert_eq!(s.offset_y, LengthValue::Px(10.0));
 }
 
+/// R4137（CSS Backgrounds §7.1）：`none` 只能作为 box-shadow/text-shadow 的
+/// **完整值**出现——与 <shadow># 列表混排（`red 0px 0px, none`）整条非法，
+/// 解析返回 None（声明被忽略，前一条合法声明生效）。
+/// driving: WPT css-backgrounds box-shadow-invalid-001（none 混排 ×5 全非法）。
+#[test]
+fn test_r4137_shadow_none_in_list_rejected() {
+    // box-shadow：none 混排 → None；纯列表 → 正常解析
+    assert_eq!(parse_box_shadow_list("red 0px -100px, none, blue 1px 1px"), None);
+    assert_eq!(parse_box_shadow_list("none, red 0px -100px"), None);
+    let list = parse_box_shadow_list("red 0px -100px, blue 1px 1px").expect("纯列表合法");
+    assert_eq!(list.len(), 2);
+    // none 单独 → 空列表（合法）
+    assert_eq!(parse_box_shadow_list("none"), Some(Vec::new()));
+    // text-shadow 同语义
+    assert_eq!(parse_text_shadow_list("red 0px 0px, none"), None);
+    assert_eq!(parse_text_shadow_list("none"), Some(Vec::new()));
+    let tl = parse_text_shadow_list("red 1px 1px, blue 2px 2px").expect("纯列表合法");
+    assert_eq!(tl.len(), 2);
+}
+
 // ── empty-cells ──
 
 #[test]

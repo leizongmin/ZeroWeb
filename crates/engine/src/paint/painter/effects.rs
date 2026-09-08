@@ -28,18 +28,41 @@ use super::super::color::color_value_to_render;
 use super::super::helpers::{PrimitiveCounts, gradient_to_primitive_with_font_size, image_resource_key};
 use super::effects_indicators::clip_tile_to_origin;
 
+/// box-shadow 绘制相位（R4137，CSS Backgrounds 附录 E）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum ShadowPhase {
+    /// outset 阴影：背景之下（原有位置）。
+    BeforeBackground,
+    /// inset 阴影：背景之上、内容之下。
+    AfterBackground,
+}
+
 impl super::Painter {
     /// 绘制 box-shadow（盒阴影效果）。
-    pub(super) fn paint_box_shadow(&mut self, box_node: &LayoutBox, abs_x: f32, abs_y: f32, style: &ComputedStyle) {
+    ///
+    /// `phase` 选择阴影相位（R4137，CSS Backgrounds 附录 E 绘制顺序）：
+    /// outset 阴影在背景**之下**，inset 阴影在背景**之上**（内容之下）。
+    /// 旧实现全部阴影绘于背景前——不透明背景下 inset 阴影被背景覆盖不可见
+    ///（box-shadow-invalid-001：green inset 100,100 应满铺绿被红背景盖死）。
+    pub(super) fn paint_box_shadow(
+        &mut self,
+        box_node: &LayoutBox,
+        abs_x: f32,
+        abs_y: f32,
+        style: &ComputedStyle,
+        phase: ShadowPhase,
+    ) {
         // CSS Backgrounds §7.2：多阴影按列表顺序绘制（先列先绘=底层）。空 Vec = none。
-        // R2304：从单阴影改多阴影迭代。inset 仍未在 ShadowPrimitive 表达（paint 忽略，
-        // 与既有行为一致；inset 渲染是独立更深 lever）。
         for shadow in &style.box_shadow {
             if shadow.offset_x == 0.0
                 && shadow.offset_y == 0.0
                 && shadow.blur_radius == 0.0
                 && shadow.spread_radius == 0.0
             {
+                continue;
+            }
+            // 相位过滤：outset → BeforeBackground；inset → AfterBackground。
+            if shadow.inset != (phase == ShadowPhase::AfterBackground) {
                 continue;
             }
 

@@ -3345,3 +3345,46 @@ fn debug_r4136_calc_margin() {
     }
     println!("calc(10%+0px) @400px: green starts at x={first2:?} (expect 40)");
 }
+
+/// R4137 勘察：invalid-001 残差定性——green inset 阴影的绘制几何。
+#[test]
+#[ignore]
+fn debug_r4137_invalid_residual() {
+    let cfg = ReftestConfig::default();
+    let base = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("wpt-data/css/css-backgrounds");
+    let html = std::fs::read_to_string(base.join("box-shadow-invalid-001.html")).expect("read");
+    let ref_html = std::fs::read_to_string(base.join("reference/ref-filled-green-100px-square.xht")).expect("read");
+    let fb = render_to_framebuffer_with_base(&html, "", &cfg, Some(&base));
+    let ref_fb = render_to_framebuffer_with_base(&ref_html, "", &cfg, Some(&base));
+    let mut row_diff = vec![0u32; fb.height as usize];
+    for y in 0..fb.height as usize {
+        for x in 0..fb.width as usize {
+            let i = (y * fb.width as usize + x) * 4;
+            let j = (y * ref_fb.width as usize + x) * 4;
+            let d = (fb.data[i] as i32 - ref_fb.data[j] as i32).abs()
+                + (fb.data[i + 1] as i32 - ref_fb.data[j + 1] as i32).abs()
+                + (fb.data[i + 2] as i32 - ref_fb.data[j + 2] as i32).abs();
+            if d > 30 {
+                row_diff[y] += 1;
+            }
+        }
+    }
+    let mut bands: Vec<(usize, usize, u32)> = Vec::new();
+    for (y, cnt) in row_diff.iter().enumerate() {
+        if *cnt > 0 {
+            match bands.last_mut() {
+                Some(b) if b.1 + 1 == y => {
+                    b.1 = y;
+                    b.2 += *cnt;
+                }
+                _ => bands.push((y, y, *cnt)),
+            }
+        }
+    }
+    let s: Vec<String> = bands
+        .iter()
+        .take(6)
+        .map(|(a, b, t)| format!("y{a}..{b}({t})"))
+        .collect();
+    println!("invalid-001 diff bands: {}", s.join(" "));
+}

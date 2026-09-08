@@ -1686,6 +1686,7 @@ pub fn parse_text_shadow(value: &str) -> Option<TextShadowValue> {
 /// 解析 text-shadow 多阴影列表（CSS Text Decoration §3：`none | <shadow>#`）。
 /// `none` → 空 Vec；否则顶层逗号分割（paren-aware，`rgb()`/`rgba()` 内部逗号保持一体）
 /// 后逐个 parse_text_shadow，任一失败 → None。语义镜像 parse_box_shadow_list。
+/// R4137：`none` 与列表混排同样整条非法（同 box-shadow，见彼处注释）。
 pub fn parse_text_shadow_list(value: &str) -> Option<Vec<TextShadowValue>> {
     let v = value.trim();
     if v.eq_ignore_ascii_case("none") {
@@ -1697,6 +1698,9 @@ pub fn parse_text_shadow_list(value: &str) -> Option<Vec<TextShadowValue>> {
     }
     let mut shadows = Vec::with_capacity(parts.len());
     for p in &parts {
+        if p.eq_ignore_ascii_case("none") {
+            return None;
+        }
         shadows.push(parse_text_shadow(p)?);
     }
     Some(shadows)
@@ -1878,6 +1882,10 @@ fn split_top_level_commas(s: &str) -> Option<Vec<String>> {
 
 /// 解析 box-shadow 多阴影列表（CSS Backgrounds §7.2：<shadow>#）。
 /// `none` → 空 Vec；否则顶层逗号分割后逐个 parse_box_shadow（任一失败 → None）。
+/// R4137（CSS Backgrounds §7.1）：`none` 只能作为**完整值**出现，与 <shadow>#
+/// 列表混排（`red 0 0, none, ...`）整条非法——旧实现把 none 当普通 shadow 段
+/// 解析为零偏移阴影，非法列表被接受（box-shadow-invalid-001：前一条合法 inset
+/// 阴影被非法列表覆盖 → 红方裸露）。
 pub fn parse_box_shadow_list(value: &str) -> Option<Vec<BoxShadowValue>> {
     let v = value.trim();
     if v.eq_ignore_ascii_case("none") {
@@ -1889,6 +1897,9 @@ pub fn parse_box_shadow_list(value: &str) -> Option<Vec<BoxShadowValue>> {
     }
     let mut shadows = Vec::with_capacity(parts.len());
     for p in &parts {
+        if p.eq_ignore_ascii_case("none") {
+            return None;
+        }
         shadows.push(parse_box_shadow(p)?);
     }
     Some(shadows)

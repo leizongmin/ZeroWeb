@@ -27,6 +27,7 @@ use zero_style_system::{
     ScrollbarWidthComputedValue, TouchActionValue, UserSelectValue,
 };
 
+use self::effects::ShadowPhase;
 use super::color::resolve_color_current;
 use super::helpers::{PrimitiveCounts, apply_opacity_to_new_primitives, circle_to_polygon, ellipse_to_polygon};
 
@@ -1058,7 +1059,7 @@ impl Painter {
 
             if !hidden && !skip_empty_cell {
                 if !is_table_internal {
-                    self.paint_box_shadow(box_node, abs_x, abs_y, style);
+                    self.paint_box_shadow(box_node, abs_x, abs_y, style, ShadowPhase::BeforeBackground);
                 }
                 // R639：仅跨多行 inline 的 background 改由 paint_text 按行片段绘制，box-level 抑制
                 //（与 paint_node 同步；单行/空/定位 inline 保留 box-level）。
@@ -1091,6 +1092,10 @@ impl Painter {
                     && doc.is_some_and(|d| text::has_direct_paintable_text(d, node_id, Some(styles)));
                 if style.background_color != ColorValue::Transparent && !skip_inline_box_bg {
                     self.paint_background(box_node, abs_x, abs_y, style, styles);
+                }
+                // 0b. box-shadow inset 相位（R4137，CSS Backgrounds 附录 E：背景之上、内容之下）。
+                if !is_table_internal {
+                    self.paint_box_shadow(box_node, abs_x, abs_y, style, ShadowPhase::AfterBackground);
                 }
                 // R2063：attachment:fixed → 视口锚定平铺、裁剪到元素盒；否则元素盒锚定。
                 if matches!(style.background_attachment, BackgroundAttachmentComputedValue::Fixed) {
@@ -1379,7 +1384,7 @@ impl Painter {
 
                 // 0. box-shadow（位于背景之下，行组/行无盒模型故无阴影）
                 if !is_table_internal && !skip_split_inline_deco && !skip_contents_deco {
-                    self.paint_box_shadow(box_node, abs_x, abs_y, style);
+                    self.paint_box_shadow(box_node, abs_x, abs_y, style, ShadowPhase::BeforeBackground);
                 }
 
                 // 1. 背景色填充（行组/行仍可渲染背景）
@@ -1417,6 +1422,13 @@ impl Painter {
                     && !skip_contents_deco
                 {
                     self.paint_background(box_node, abs_x, abs_y, style, styles);
+                }
+
+                // 1a-2. box-shadow inset 相位（R4137，CSS Backgrounds 附录 E：inset 阴影
+                // 绘于背景之上、内容之下——旧实现与 outset 同绘于背景前，不透明背景下
+                // inset 恒不可见，box-shadow-invalid-001 的 green inset 被红背景盖死）。
+                if !is_table_internal && !skip_split_inline_deco && !skip_contents_deco {
+                    self.paint_box_shadow(box_node, abs_x, abs_y, style, ShadowPhase::AfterBackground);
                 }
 
                 // 1b. 背景图片（行组/行仍可渲染背景图片）
