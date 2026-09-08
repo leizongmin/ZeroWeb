@@ -993,6 +993,40 @@ fn resolve_abspos_against_nested_cb_inner(
                 let target_y = cb_origin_y + cb_height - bottom - child.height;
                 child.y = target_y - current_box_origin_y - box_node.border_top - box_node.padding_top;
             }
+            // R4155（css-sizing-4 §6.2 stretch）：abspos 的 `width/height: stretch`——
+            // 尺寸 = 从**静态位置**到 CB 对侧缘的可用空间（insets 全 auto 时静态位置
+            // 即盒位）。converter 把 Stretch 映射 auto（taffy 无 stretch 关键字），taffy
+            // 后此处补解：positioned-replaced-1/2 canvas `width:stretch; height:stretch`
+            // 在 150×150 CB 内静态位 (50,50) → 100×100（旧 0×0——replaced 的 auto-size
+            // stretch 臂被 `!is_replaced` 排除，converter 又塌 attr 50×25 为 0）。
+            if matches!(style.width, LengthValue::Stretch)
+                && matches!(style.left, LengthValue::Auto)
+                && matches!(style.right, LengthValue::Auto)
+            {
+                let child_abs_x = current_box_origin_x + box_node.border_left + box_node.padding_left + child.x;
+                let static_offset = child_abs_x - cb_origin_x;
+                let new_w = (cb_width - static_offset).max(0.0);
+                if (child.width - new_w).abs() > 0.5 {
+                    child.width = new_w;
+                    child.content_width =
+                        (new_w - child.border_left - child.border_right - child.padding_left - child.padding_right)
+                            .max(0.0);
+                }
+            }
+            if matches!(style.height, LengthValue::Stretch)
+                && matches!(style.top, LengthValue::Auto)
+                && matches!(style.bottom, LengthValue::Auto)
+            {
+                let child_abs_y = current_box_origin_y + box_node.border_top + box_node.padding_top + child.y;
+                let static_offset = child_abs_y - cb_origin_y;
+                let new_h = (cb_height - static_offset).max(0.0);
+                if (child.height - new_h).abs() > 0.5 {
+                    child.height = new_h;
+                    child.content_height =
+                        (new_h - child.border_top - child.border_bottom - child.padding_top - child.padding_bottom)
+                            .max(0.0);
+                }
+            }
         }
 
         // 递归：positioned 子成为其后代的最近 positioned 祖先（padding-box = border-box
