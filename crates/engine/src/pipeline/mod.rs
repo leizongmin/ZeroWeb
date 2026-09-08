@@ -4346,4 +4346,28 @@ object {{ display: block; width: 100px; aspect-ratio: auto 5/1; }}
             "R4160: 不得存在 100×20 盒（显式 5/1 未被固有比覆盖）"
         );
     }
+    /// R4161（css-sizing-4 §aspect-ratio）：`aspect-ratio: auto <ratio>` 的 auto 优先
+    /// inline `<svg>` 的自然比（viewBox）——R4160 replaced 路径的同语义扩展。
+    /// replaced-element-015：viewBox 1:1 + auto 5/1 + width:100px 应 100×100。
+    #[test]
+    fn r4161_inline_svg_auto_ratio_prefers_viewbox() {
+        let html = r#"<html><head><style>
+svg { display: block; width: 100px; aspect-ratio: auto 5/1; background: green; }
+</style></head><body>
+<svg viewBox="0 0 1 1"></svg>
+</body></html>"#;
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let result = pipeline.render_html(html, "");
+        fn find_box(l: &zero_layout_engine::LayoutBox, w: f32, h: f32) -> bool {
+            ((l.width - w).abs() < 0.5 && (l.height - h).abs() < 0.5) || l.children.iter().any(|c| find_box(c, w, h))
+        }
+        assert!(
+            find_box(&result.layout.root, 100.0, 100.0),
+            "R4161: inline svg 自然比 1:1 应胜显式 5/1（应存在 100×100 盒）"
+        );
+        assert!(
+            !find_box(&result.layout.root, 100.0, 20.0),
+            "R4161: 不得存在 100×20 盒（声明比未让位自然比）"
+        );
+    }
 }

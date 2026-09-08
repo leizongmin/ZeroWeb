@@ -669,6 +669,25 @@ fn apply_replaced_element_sizing(
             _ => None,
         })
     {
+        // R4161：`aspect-ratio: auto <ratio>` 的 auto 优先 inline `<svg>` 的自然比
+        //（viewBox，css-sizing-4 §aspect-ratio）——与 R4160 的 replaced 路径同语义。
+        // converter 已把显式 <ratio> 写 taffy aspect_ratio；此处 auto + viewBox 比时
+        // 覆盖为自然比（replaced-element-015：viewBox 1:1 + `auto 5/1` + width:100px
+        // 应 100×100，旧按显式 5/1 渲 100×20）。svg_default_used_size 的 css-abs
+        // 早退 None 使本臂在其前执行；viewBox 直取不经 svg_ratio_value（后者优先
+        // DECLARED style.aspect_ratio，auto 语义下声明比不得遮蔽自然比）。
+        if computed.aspect_ratio_auto
+            && let Some(vb) = elem.get_attribute("viewBox").or_else(|| elem.get_attribute("viewbox"))
+        {
+            let nums: Vec<&str> = vb.split([' ', ',']).filter(|t| !t.is_empty()).collect();
+            if nums.len() == 4
+                && let (Ok(vw), Ok(vh)) = (nums[2].parse::<f32>(), nums[3].parse::<f32>())
+                && vh > 0.0
+                && vw > 0.0
+            {
+                taffy_style.aspect_ratio = Some(vw / vh);
+            }
+        }
         // R4090：content bbox = 直接子形状元素几何并集（attr 泄漏为 SVG 用户单位；
         // 子级含 g/text/path 等不可计算形状 → None，svg_default_used_size 内退 default）。
         let shape_children: Vec<(&str, &zero_dom::ElementData)> = doc
