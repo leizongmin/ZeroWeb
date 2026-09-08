@@ -47,6 +47,34 @@ fn spawn_driver() -> (DriverProcess, u16) {
     panic!("zero-webdriver 未就绪");
 }
 
+/// 本地测试 HTTP 服务器：按 path 返回不同标题页（导航族 back/forward 验证用）。
+fn spawn_multi_page_server() -> (std::thread::JoinHandle<()>, u16) {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
+    let port = listener.local_addr().expect("addr").port();
+    let handle = std::thread::spawn(move || {
+        for stream in listener.incoming() {
+            let Ok(mut stream) = stream else { break };
+            let mut buf = [0u8; 4096];
+            let _ = stream.read(&mut buf);
+            let request = String::from_utf8_lossy(&buf).to_string();
+            let title = if request.starts_with("GET /second") {
+                "Second Page"
+            } else {
+                "First Page"
+            };
+            let body = format!("<html><head><title>{title}</title></head><body>hi</body></html>");
+            let resp = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            );
+            let _ = stream.write_all(resp.as_bytes());
+            let _ = stream.flush();
+        }
+    });
+    (handle, port)
+}
+
 /// 本地测试 HTTP 服务器：固定返回带标题 + 按钮（onclick 改标题）的 HTML 页。
 fn spawn_test_page_server_with_button() -> (std::thread::JoinHandle<()>, u16) {
     let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
@@ -409,4 +437,153 @@ fn webdriver_session_lifecycle() {
     assert_eq!(status, 404, "未知命令应 404");
 
     // DriverProcess Drop 自动 kill + wait
+}
+
+#[test]
+fn webdriver_navigation_family_url_back_forward_refresh() {
+    let (_driver, port) = spawn_driver();
+    let (_page_server, page_port) = spawn_multi_page_server();
+    let (status, body) = http_request(port, "POST", "/session", Some("{}"));
+    assert_eq!(status, 200);
+    let value: serde_json::Value = serde_json::from_str(&body).expect("json");
+    let session = format!("/session/{}", value["value"]["sessionId"].as_str().expect("id"));
+
+    // 初始 URL 是 about:blank。
+    let (status, body) = http_request(port, "GET", &format!("{session}/url"), None);
+    assert_eq!(status, 200, "Get Current URL 应 200: {body}");
+    let value: serde_json::Value = serde_json::from_str(&body).expect("json");
+    assert_eq!(value["value"], "about:blank", "初始 URL: {body}");
+
+    // 导航到第一页。
+    let first = format!("http://127.0.0.1:{page_port}/first");
+    let (status, body) = http_request(
+        port,
+        "POST",
+        &format!("{session}/url"),
+        Some(&serde_json::json!({ "url": first }).to_string()),
+    );
+    assert_eq!(status, 200, "Navigate first 应 200: {body}");
+
+    // 导航到第二页（history: first → second）。
+    let second = format!("http://127.0.0.1:{page_port}/second");
+    let (status, body) = http_request(
+        port,
+        "POST",
+        &format!("{session}/url"),
+        Some(&serde_json::json!({ "url": second }).to_string()),
+    );
+    assert_eq!(status, 200, "Navigate second 应 200: {body}");
+
+    // GET /url 跟随导航真值。
+    let (status, body) = http_request(port, "GET", &format!("{session}/url"), None);
+    assert_eq!(status, 200);
+    let value: serde_json::Value = serde_json::from_str(&body).expect("json");
+    assert_eq!(value["value"], second, "URL 应为第二页: {body}");
+
+    // Back → 标题回到 First Page（真实历史重载）。
+    let (status, body) = http_request(port, "POST", &format!("{session}/back"), None);
+    assert_eq!(status, 200, "Back 应 200: {body}");
+    let (status, body) = http_request(port, "GET", &format!("{session}/title"), None);
+    assert_eq!(value["value"], second); // URL 态在 back 前读的仍是 second
+    assert_eq!(status, 200, "Get Title after back 应 200: {body}");
+    let value: serde_json::Value = serde_json::from_str(&body).expect("json");
+    assert_eq!(value["value"], "First Page", "back 后标题应为第一页: {body}");
+
+    // Forward → 标题回到 Second Page。
+    let (status, body) = http_request(port, "POST", &format!("{session}/forward"), None);
+    assert_eq!(status, 200, "Forward 应 200: {body}");
+    let (status, body) = http_request(port, "GET", &format!("{session}/title"), None);
+    assert_eq!(status, 200);
+    let value: serde_json::Value = serde_json::from_str(&body).expect("json");
+    assert_eq!(value["value"], "Second Page", "forward 后标题应为第二页: {body}");
+
+    // Refresh → 同页重载，标题不变。
+    let (status, body) = http_request(port, "POST", &format!("{session}/refresh"), None);
+    assert_eq!(status, 200, "Refresh 应 200: {body}");
+    let (status, body) = http_request(port, "GET", &format!("{session}/title"), None);
+    assert_eq!(status, 200);
+    let value: serde_json::Value = serde_json::from_str(&body).expect("json");
+    assert_eq!(value["value"], "Second Page", "refresh 后标题不变: {body}");
+
+    // Refresh 后旧文档元素引用判 stale（跨历史条目守卫）。
+    let (status, body) = http_request(
+        port,
+        "POST",
+        &format!("{session}/element"),
+        Some(&serde_json::json!({ "using": "css selector", "value": "body" }).to_string()),
+    );
+    assert_eq!(status, 200, "Find Element 应 200: {body}");
+    let value: serde_json::Value = serde_json::from_str(&body).expect("json");
+    let reference = value["value"]["element-6066-11e4-a52e-4f735466cecf"]
+        .as_str()
+        .expect("reference")
+        .to_string();
+    let (status, _) = http_request(port, "POST", &format!("{session}/refresh"), None);
+    assert_eq!(status, 200);
+    let (status, body) = http_request(port, "POST", &format!("{session}/element/{reference}/click"), None);
+    assert_eq!(status, 404, "refresh 后旧引用应 404: {body}");
+    let value: serde_json::Value = serde_json::from_str(&body).expect("json");
+    assert_eq!(value["value"]["error"], "stale element reference");
+}
+
+#[test]
+fn webdriver_timeouts_roundtrip_and_validation() {
+    let (_driver, port) = spawn_driver();
+    let (status, body) = http_request(port, "POST", "/session", Some("{}"));
+    assert_eq!(status, 200);
+    let value: serde_json::Value = serde_json::from_str(&body).expect("json");
+    let session = format!("/session/{}", value["value"]["sessionId"].as_str().expect("id"));
+
+    // 默认值（fail-fast 偏离，见 endpoint-matrix 注记）。
+    let (status, body) = http_request(port, "GET", &format!("{session}/timeouts"), None);
+    assert_eq!(status, 200, "Get Timeouts 应 200: {body}");
+    let value: serde_json::Value = serde_json::from_str(&body).expect("json");
+    assert_eq!(value["value"]["script"], 10_000);
+    assert_eq!(value["value"]["pageLoad"], 15_000);
+    assert_eq!(value["value"]["implicit"], 0);
+
+    // 设置三个字段。
+    let (status, body) = http_request(
+        port,
+        "POST",
+        &format!("{session}/timeouts"),
+        Some(&serde_json::json!({ "script": 5000, "pageLoad": 30000, "implicit": 100 }).to_string()),
+    );
+    assert_eq!(status, 200, "Set Timeouts 应 200: {body}");
+    let (status, body) = http_request(port, "GET", &format!("{session}/timeouts"), None);
+    assert_eq!(status, 200);
+    let value: serde_json::Value = serde_json::from_str(&body).expect("json");
+    assert_eq!(value["value"]["script"], 5_000);
+    assert_eq!(value["value"]["pageLoad"], 30_000);
+    assert_eq!(value["value"]["implicit"], 100);
+
+    // 部分更新：只动 script。
+    let (status, _) = http_request(
+        port,
+        "POST",
+        &format!("{session}/timeouts"),
+        Some(&serde_json::json!({ "script": 1234 }).to_string()),
+    );
+    assert_eq!(status, 200);
+    let (status, body) = http_request(port, "GET", &format!("{session}/timeouts"), None);
+    assert_eq!(status, 200);
+    let value: serde_json::Value = serde_json::from_str(&body).expect("json");
+    assert_eq!(value["value"]["script"], 1_234, "只应更新 script: {body}");
+    assert_eq!(value["value"]["pageLoad"], 30_000, "pageLoad 应保持");
+    assert_eq!(value["value"]["implicit"], 100, "implicit 应保持");
+
+    // 非数值 → invalid argument 400。
+    let (status, body) = http_request(
+        port,
+        "POST",
+        &format!("{session}/timeouts"),
+        Some(&serde_json::json!({ "script": "soon" }).to_string()),
+    );
+    assert_eq!(status, 400, "非法超时应 400: {body}");
+    let value: serde_json::Value = serde_json::from_str(&body).expect("json");
+    assert_eq!(value["value"]["error"], "invalid argument");
+
+    // 不存在的 session → 404。
+    let (status, _) = http_request(port, "GET", "/session/deadbeef/timeouts", None);
+    assert_eq!(status, 404);
 }

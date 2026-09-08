@@ -19,20 +19,54 @@ const NAVIGATION_TIMEOUT: Duration = Duration::from_secs(15);
 const AUTOMATION_TIMEOUT: Duration = Duration::from_secs(10);
 const MAX_ELEMENT_REFERENCES: usize = 4096;
 
+/// 会话脚本/页面加载/隐式等待超时配置（W3C timeouts endpoint 的存储态）。
+///
+/// 默认值刻意偏离 W3C 规范默认（300s/300s/0s）：自动化驱动场景 fail-fast 更安全，
+/// 且既有集成测试依赖 15s 导航上限。见 evidence/endpoint-matrix.md 注记。
+#[derive(Debug, Clone, Copy)]
+pub struct SessionTimeouts {
+    pub script: Duration,
+    pub page_load: Duration,
+    pub implicit: Duration,
+}
+
+impl Default for SessionTimeouts {
+    fn default() -> Self {
+        Self {
+            script: AUTOMATION_TIMEOUT,
+            page_load: NAVIGATION_TIMEOUT,
+            implicit: Duration::ZERO,
+        }
+    }
+}
+
 pub struct Driver {
     sessions: HashMap<String, Session>,
     next_session_id: u64,
     renderer_bin: PathBuf,
 }
 
+/// 元素登记记录：renderer 侧文档作用域引用 + webdriver 本地导航纪元。
+///
+/// `history_epoch` 补 renderer back/forward 路径（`reload_history_entry`）不 bump
+/// `document_generation` 的缺口——跨历史条目的引用由本层直接判 stale，防止同
+/// node handle 在新文档被误复用（保守安全优先）。
+struct ElementRecord {
+    reference: AutomationElementRef,
+    history_epoch: u64,
+}
+
 struct Session {
     renderer: RendererHandle,
     http: HttpClient,
     title: String,
+    url: String,
     navigation_epoch: u64,
+    history_epoch: u64,
+    timeouts: SessionTimeouts,
     next_request_id: u64,
     next_element_id: u64,
-    elements: HashMap<String, AutomationElementRef>,
+    elements: HashMap<String, ElementRecord>,
     reverse_elements: HashMap<AutomationElementRef, String>,
 }
 
@@ -89,7 +123,10 @@ impl Driver {
                 renderer,
                 http: HttpClient::new(),
                 title: String::new(),
+                url: "about:blank".to_string(),
                 navigation_epoch: 0,
+                history_epoch: 1,
+                timeouts: SessionTimeouts::default(),
                 next_request_id: 1,
                 next_element_id: 1,
                 elements: HashMap::new(),
@@ -110,6 +147,66 @@ impl Driver {
 
     pub fn navigate(&mut self, id: &str, url: &str) -> Result<(), DriverError> {
         self.session_mut(id)?.navigate(url)
+    }
+
+    /// Get Current URL。以 renderer UrlChanged 维护的会话态为准。
+    pub fn url(&mut self, id: &str) -> Result<String, DriverError> {
+        Ok(self.session_mut(id)?.url.clone())
+    }
+
+    /// Back。跨历史条目 → 本地 history_epoch 递增（renderer back 路径不 bump
+    /// document_generation，元素引用守卫由本层负责）。
+    pub fn go_back(&mut self, id: &str) -> Result<(), DriverError> {
+        let session = self.session_mut(id)?;
+        session.renderer.go_back().map_err(protocol_error)?;
+        session.await_history_navigation()
+    }
+
+    /// Forward。语义同 go_back。
+    pub fn go_forward(&mut self, id: &str) -> Result<(), DriverError> {
+        let session = self.session_mut(id)?;
+        session.renderer.go_forward().map_err(protocol_error)?;
+        session.await_history_navigation()
+    }
+
+    /// Refresh。导航语义（epoch+1），走既有 navigate 等待路径。
+    pub fn refresh(&mut self, id: &str) -> Result<(), DriverError> {
+        let session = self.session_mut(id)?;
+        session.history_epoch = session.history_epoch.wrapping_add(1).max(1);
+        session
+            .renderer
+            .send(zero_protocol::IpcMessage {
+                id: 0,
+                kind: zero_protocol::message::IpcMessageKind::Reload,
+            })
+            .map_err(protocol_error)?;
+        session.await_load_complete()
+    }
+
+    /// GET /session/{id}/timeouts。
+    pub fn timeouts(&mut self, id: &str) -> Result<SessionTimeouts, DriverError> {
+        Ok(self.session_mut(id)?.timeouts)
+    }
+
+    /// POST /session/{id}/timeouts。W3C：每字段可选，只更新出现的字段。
+    pub fn set_timeouts(
+        &mut self,
+        id: &str,
+        script: Option<Duration>,
+        page_load: Option<Duration>,
+        implicit: Option<Duration>,
+    ) -> Result<(), DriverError> {
+        let session = self.session_mut(id)?;
+        if let Some(value) = script {
+            session.timeouts.script = value;
+        }
+        if let Some(value) = page_load {
+            session.timeouts.page_load = value;
+        }
+        if let Some(value) = implicit {
+            session.timeouts.implicit = value;
+        }
+        Ok(())
     }
 
     pub fn title(&mut self, id: &str) -> Result<String, DriverError> {
@@ -186,11 +283,34 @@ impl Driver {
 impl Session {
     fn navigate(&mut self, url: &str) -> Result<(), DriverError> {
         self.navigation_epoch = self.navigation_epoch.wrapping_add(1).max(1);
+        self.history_epoch = self.history_epoch.wrapping_add(1).max(1);
         self.title.clear();
+        let timeout = self.timeouts.page_load;
         self.renderer
             .navigate(url, None, self.navigation_epoch)
             .map_err(protocol_error)?;
-        let deadline = Instant::now() + NAVIGATION_TIMEOUT;
+        self.await_load_complete_with(timeout)?;
+        self.url = url.to_string();
+        Ok(())
+    }
+
+    /// 等待 back/forward 触发的重载完成。
+    ///
+    /// renderer 历史边界 no-op（栈起点/终点直接回 Ok，不发生加载）→ 立即返回成功，
+    /// 与 ChromeDriver 边界行为一致（见 master.md 决策记录）。
+    fn await_history_navigation(&mut self) -> Result<(), DriverError> {
+        self.history_epoch = self.history_epoch.wrapping_add(1).max(1);
+        self.title.clear();
+        self.await_load_complete_with(self.timeouts.page_load)
+    }
+
+    /// 以会话配置的 page load 超时等待 LoadComplete。
+    fn await_load_complete(&mut self) -> Result<(), DriverError> {
+        self.await_load_complete_with(self.timeouts.page_load)
+    }
+
+    fn await_load_complete_with(&mut self, timeout: Duration) -> Result<(), DriverError> {
+        let deadline = Instant::now() + timeout;
         loop {
             if Instant::now() >= deadline {
                 let stderr_tail = self.renderer.stderr_tail();
@@ -204,7 +324,13 @@ impl Session {
             }
             match self.renderer.try_recv().map_err(protocol_error)? {
                 Some(message) => {
-                    match handle_renderer_message(&self.http, &mut self.title, &mut self.renderer, message)? {
+                    match handle_renderer_message(
+                        &self.http,
+                        &mut self.title,
+                        &mut self.url,
+                        &mut self.renderer,
+                        message,
+                    )? {
                         RendererEvent::LoadComplete => return Ok(()),
                         RendererEvent::LoadFailed(message) => {
                             return Err(DriverError::new("unknown error", message));
@@ -227,14 +353,16 @@ impl Session {
         self.next_request_id = self.next_request_id.wrapping_add(1).max(1);
         let http = &self.http;
         let title = &mut self.title;
+        let url = &mut self.url;
+        let timeout = self.timeouts.script;
         let response = self
             .renderer
             .request_automation(
                 request_id,
                 AutomationRequest { operation },
-                AUTOMATION_TIMEOUT,
+                timeout,
                 |renderer, message| {
-                    handle_renderer_message(http, title, renderer, message)
+                    handle_renderer_message(http, title, url, renderer, message)
                         .map(|_| ())
                         .map_err(|error| ProtocolError::Process(error.message))
                 },
@@ -252,16 +380,30 @@ impl Session {
         }
         let id = format!("e{:016x}", self.next_element_id);
         self.next_element_id += 1;
-        self.elements.insert(id.clone(), element);
+        self.elements.insert(
+            id.clone(),
+            ElementRecord {
+                reference: element,
+                history_epoch: self.history_epoch,
+            },
+        );
         self.reverse_elements.insert(element, id.clone());
         Ok(id)
     }
 
     fn element(&self, opaque_id: &str) -> Result<AutomationElementRef, DriverError> {
-        self.elements
+        let record = self
+            .elements
             .get(opaque_id)
-            .copied()
-            .ok_or_else(|| DriverError::new("no such element", "unknown element reference"))
+            .ok_or_else(|| DriverError::new("no such element", "unknown element reference"))?;
+        if record.history_epoch != self.history_epoch {
+            // https://w3c.github.io/webdriver/#dfn-stale — 跨导航/历史条目的引用一律 stale。
+            return Err(DriverError::new(
+                "stale element reference",
+                "element belongs to an earlier navigation",
+            ));
+        }
+        Ok(record.reference)
     }
 }
 
@@ -274,6 +416,7 @@ enum RendererEvent {
 fn handle_renderer_message(
     http: &HttpClient,
     title: &mut String,
+    url: &mut String,
     renderer: &mut RendererHandle,
     message: IpcMessage,
 ) -> Result<RendererEvent, DriverError> {
@@ -285,6 +428,11 @@ fn handle_renderer_message(
         }
         IpcMessageKind::TitleChanged(value) => {
             *title = value;
+            Ok(RendererEvent::Other)
+        }
+        // 重定向 / hash 导航等场景 renderer 会主动发 UrlChanged——会话态 URL 跟随真值。
+        IpcMessageKind::UrlChanged(value) => {
+            *url = value;
             Ok(RendererEvent::Other)
         }
         IpcMessageKind::LoadComplete => Ok(RendererEvent::LoadComplete),

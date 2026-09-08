@@ -12,19 +12,19 @@
 | Endpoint | 方法 | 状态 | 测试 | 行为注记 |
 |---|---|---|---|---|
 | /session | POST | ✅ | `http_session.rs::webdriver_session_lifecycle` | capabilities 固定返回 browserName=browserVersion=zero-product-version；不接受 firstMatch/alwaysMatch（规范要求 capabilities 协商，M-偏差见下） |
-| /session/{id} | GET | ⬜ | — | capabilities 回读 |
+| /session/{id} | GET | ✅ | `webdriver_status_and_capabilities_readback` | capabilities 回读（browserName/browserVersion 固定值，与 New Session 一致）；未知 session → 404 |
 | /session/{id}/delete | DELETE | ✅ | 同上 | 规范路径 DELETE /session/{id}（本实现同形）；删除后所有命令 → 404 no such session |
-| /status | GET | ⬜ | — | ready/message/quit 三字段 |
+| /status | GET | ✅ | 同上 | ready/message/quit 三字段；ready 恒 true（session 按需 spawn renderer） |
 
 ## 导航（Navigation）
 
 | Endpoint | 方法 | 状态 | 测试 | 行为注记 |
 |---|---|---|---|---|
-| /session/{id}/url | POST | ✅ | `webdriver_session_lifecycle` | 等待 LoadComplete（15s 超时→timeout 错误）；LoadFailed → unknown error |
-| /session/{id}/url | GET | ⬜ | — | 当前 URL；renderer UrlChanged 已有，仅 webdriver 层缺 |
-| back | POST | ⬜ | — | RendererHandle::go_back 已有 |
-| forward | POST | ⬜ | — | RendererHandle::go_forward 已有 |
-| refresh | POST | ⬜ | — | renderer Reload IPC 已有 |
+| /session/{id}/url | POST | ✅ | `webdriver_session_lifecycle` | 等待 LoadComplete（超时→408 timeout）；LoadFailed → unknown error |
+| /session/{id}/url | GET | ✅ | `webdriver_navigation_family_url_back_forward_refresh` | 会话态 URL，初值 about:blank；跟随 renderer UrlChanged（重定向真值） |
+| back | POST | ✅ | 同上 | RendererHandle::go_back；历史边界 no-op → 返回成功（决策见 master.md）；等待 LoadComplete |
+| forward | POST | ✅ | 同上 | RendererHandle::go_forward；语义同 back |
+| refresh | POST | ✅ | 同上 | renderer Reload IPC；导航语义（epoch+1）等待 LoadComplete |
 
 ## 命令执行（Command Execution）
 
@@ -62,8 +62,8 @@
 
 | Endpoint | 方法 | 状态 | 测试 | 行为注记 |
 |---|---|---|---|---|
-| /session/{id}/timeouts | POST | ⬜ | — | script/pageLoad/implicit；当前硬编码 15s nav / 10s automation |
-| /session/{id}/timeouts | GET | ⬜ | — | |
+| /session/{id}/timeouts | POST | ✅ | `webdriver_timeouts_roundtrip_and_validation` | 字段可选只更新出现的字段；非数值 → 400 invalid argument；默认值偏离 W3C（10s/15s/0s fail-fast，见 session.rs SessionTimeouts 注记） |
+| /session/{id}/timeouts | GET | ✅ | 同上 | script/pageLoad/implicit 毫秒值 |
 
 ## 窗口（Contexts/Window）
 
@@ -107,12 +107,11 @@ W3C 响应包络：`{"value": <result>}`；错误 `{"value": {"error": <code>, "
 |---|---|---|
 | 成功包络 {"value": ...} | ✅ | 全部已实现 endpoint 遵循 |
 | 错误包络 error+message | ✅ | error_response() |
-| stacktrace 字段 | 🟡 | 缺失（规范要求必带，可空串）——M1 切片 2 顺手补 |
+| stacktrace 字段 | ✅ | M1 切片 2 补齐（恒空串；renderer 无 JS stack 捕获通道） |
 | 404 no such session / no such element / stale element reference | ✅ | driver_error_response |
 | 400 invalid argument | ✅ | |
-| 408 timeout | 🟡 | 现映射 500 unknown error——M1 切片 3 修正为 408 |
+| 408 timeout | ✅ | M1 切片 3 修正（原 500） |
 | 500 unknown error / unsupported operation | ✅ | |
-| 200 无 value 字段的 unknown command | 🟡 | 未知路由返 404 + `unknown command`（规范该场景应为 404 unknown command，✅ 一致）；但 DELETE 后 GET title 已验证 404 no such session ✅ |
 
 ## 测试执行
 

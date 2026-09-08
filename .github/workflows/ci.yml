@@ -325,6 +325,7 @@ jobs:
           cargo nextest run ${{ matrix.features }} \
             -p zero-browser \
             -p zero-renderer \
+            -p zero-webdriver \
             -p zero-webview-demo \
             --target ${{ matrix.target }}
 
@@ -402,6 +403,7 @@ jobs:
             -p zero-webview \
             -p zero-browser \
             -p zero-renderer \
+            -p zero-webdriver \
             -p zero-webview-demo \
             -p zero-integration-tests \
             -p zero-wpt-runner \

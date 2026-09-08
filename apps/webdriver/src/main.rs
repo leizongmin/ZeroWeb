@@ -188,6 +188,64 @@ fn handle_request(driver: &mut Driver, req: &HttpRequest, stream: &mut TcpStream
                 Err(error) => driver_error_response(stream, error),
             }
         }
+        // GET /session/{id}/url — Get Current URL
+        ("GET", ["session", id, "url"]) => match driver.url(id) {
+            Ok(url) => json_response(stream, serde_json::json!({ "value": url })),
+            Err(error) => driver_error_response(stream, error),
+        },
+        // POST /session/{id}/back — Back
+        ("POST", ["session", id, "back"]) => match driver.go_back(id) {
+            Ok(()) => json_response(stream, serde_json::json!({ "value": null })),
+            Err(error) => driver_error_response(stream, error),
+        },
+        // POST /session/{id}/forward — Forward
+        ("POST", ["session", id, "forward"]) => match driver.go_forward(id) {
+            Ok(()) => json_response(stream, serde_json::json!({ "value": null })),
+            Err(error) => driver_error_response(stream, error),
+        },
+        // POST /session/{id}/refresh — Refresh
+        ("POST", ["session", id, "refresh"]) => match driver.refresh(id) {
+            Ok(()) => json_response(stream, serde_json::json!({ "value": null })),
+            Err(error) => driver_error_response(stream, error),
+        },
+        // GET /session/{id}/timeouts — Get Timeouts
+        ("GET", ["session", id, "timeouts"]) => match driver.timeouts(id) {
+            Ok(timeouts) => json_response(
+                stream,
+                serde_json::json!({
+                    "value": {
+                        "script": timeouts.script.as_millis() as u64,
+                        "pageLoad": timeouts.page_load.as_millis() as u64,
+                        "implicit": timeouts.implicit.as_millis() as u64,
+                    }
+                }),
+            ),
+            Err(error) => driver_error_response(stream, error),
+        },
+        // POST /session/{id}/timeouts — Set Timeouts（字段可选，只更新出现的字段）
+        ("POST", ["session", id, "timeouts"]) => {
+            let body = serde_json::from_slice::<serde_json::Value>(&req.body).unwrap_or_default();
+            let parse_ms = |key: &str| -> Result<Option<std::time::Duration>, String> {
+                match body.get(key) {
+                    None | Some(serde_json::Value::Null) => Ok(None),
+                    Some(value) => {
+                        let ms = value.as_u64().ok_or(format!("{key} must be a non-negative integer"))?;
+                        Ok(Some(std::time::Duration::from_millis(ms)))
+                    }
+                }
+            };
+            let (script, page_load, implicit) = match (parse_ms("script"), parse_ms("pageLoad"), parse_ms("implicit")) {
+                (Ok(script), Ok(page_load), Ok(implicit)) => (script, page_load, implicit),
+                (Err(message), _, _) | (_, Err(message), _) | (_, _, Err(message)) => {
+                    error_response(stream, 400, "invalid argument", &message);
+                    return;
+                }
+            };
+            match driver.set_timeouts(id, script, page_load, implicit) {
+                Ok(()) => json_response(stream, serde_json::json!({ "value": null })),
+                Err(error) => driver_error_response(stream, error),
+            }
+        }
         // GET /session/{id}/title — Get Title
         ("GET", ["session", id, "title"]) => match driver.title(id) {
             Ok(title) => json_response(stream, serde_json::json!({ "value": title })),
