@@ -3557,41 +3557,6 @@ fn debug_r4139_inline_block_margin_top() {
     }
 }
 
-/// R4140 探针：首原子 margin-top 双计的层级定位——匿名块 y vs 行内 run.y。
-/// 对照组：div 块级子（taffy 直接布局）+ inline-block 在匿名块中（双计路径）。
-#[test]
-#[ignore]
-fn debug_r4140_layer_attribution() {
-    let cfg = ReftestConfig::default();
-    // A: body > 纯 inline-block（mt:32）——双计触发面
-    // B: body > text 前导 + inline-block（mt:32）——同触发
-    // C: body > div(block, mt:32) > inline-block（mt:0）——块级 margin 参照
-    // D: body > inline-block（mt:0）——基线
-    let cases: Vec<(&str, String)> = vec![
-        ("A-inline-block-mt32", r#"<body style="margin:8px"><div style="display:inline-block;vertical-align:top;margin-top:32px;width:20px;height:20px;background:red"></div></body>"#.into()),
-        ("B-text-then-ib-mt32", r#"<body style="margin:8px">x<div style="display:inline-block;vertical-align:top;margin-top:32px;width:20px;height:20px;background:red"></div></body>"#.into()),
-        ("D-inline-block-mt0", r#"<body style="margin:8px"><div style="display:inline-block;vertical-align:top;width:20px;height:20px;background:red"></div></body>"#.into()),
-        ("E-two-anon-blocks", r#"<body style="margin:8px"><div style="display:inline-block;vertical-align:top;width:20px;height:20px;background:blue"></div><div style="display:inline-block;vertical-align:top;margin-top:32px;width:20px;height:20px;background:red"></div></body>"#.into()),
-    ];
-    for (label, html) in cases {
-        let fb = render_to_framebuffer_with_base(&html, "", &cfg, None);
-        let mut top = None;
-        'outer: for y in 0..fb.height as usize {
-            for x in 0..fb.width as usize {
-                let i = (y * fb.width as usize + x) * 4;
-                if fb.data[i] == 255 && fb.data[i + 1] == 0 && fb.data[i + 2] == 0 {
-                    top = Some((x, y));
-                    break 'outer;
-                }
-                if fb.data[i] == 0 && fb.data[i + 1] == 0 && fb.data[i + 2] == 255 {
-                    // 蓝（对照）不作为 red 结果
-                }
-            }
-        }
-        println!("{label}: red top = {top:?} (chromium 期望 y=8+mt=40 / mt0 时 8)");
-    }
-}
-
 /// R4140 探针：直接布局 case A/B/E（body margin 8 + inline-block mt:32 组合），
 /// dump 布局树各盒——定位双计层级（taffy 折叠抬升 vs IFC run.y）。
 #[test]
@@ -3681,76 +3646,6 @@ fn r4140_inline_block_first_atom_margin_top() {
     assert_eq!(top, Some(32), "block 首子 margin 仍应与 body 折叠（max(8,32)=32）");
 }
 
-/// R4141 勘察：table-anonymous-objects-061（1.03%）——display:table-cell 序列的
-/// 匿名表格生成 vs ref 真表格 diff 带。
-#[test]
-#[ignore]
-fn debug_r4141_anon_table_061() {
-    let cfg = ReftestConfig::default();
-    let base = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("wpt-data/css/CSS2/tables");
-    let html = std::fs::read_to_string(base.join("table-anonymous-objects-061.xht")).expect("read");
-    let ref_html = std::fs::read_to_string(base.join("reference/no_red_3x3_monospace_table-ref.xht")).expect("read");
-    let fb = render_to_framebuffer_with_base(&html, "", &cfg, Some(&base));
-    let ref_fb = render_to_framebuffer_with_base(&ref_html, "", &cfg, Some(&base));
-    // 红墨（test 页 z1 红 + ref 页红=无）与绿墨（z2 绿应盖红）
-    let ink = |f: &zero_render_foundation::surface::FrameBuffer, x: usize, y: usize| -> (bool, bool, bool) {
-        let i = (y * f.width as usize + x) * 4;
-        // CSS green = #008000 (g=128)，ref 页绿色表格文字；red = #f00
-        let (r, g, b) = (f.data[i] as i32, f.data[i + 1] as i32, f.data[i + 2] as i32);
-        (
-            r > 150 && g < 120 && b < 120,
-            g > r + 40 && g > b + 40 && g > 80,
-            r < 60 && g < 60 && b < 60,
-        )
-    };
-    let (mut red_t, mut green_t, mut dark_t) = (0usize, 0usize, 0usize);
-    for y in 0..fb.height as usize {
-        for x in 0..fb.width as usize {
-            let (r, g, d) = ink(&fb, x, y);
-            red_t += r as usize;
-            green_t += g as usize;
-            dark_t += d as usize;
-        }
-    }
-    println!("TEST: red={red_t} green={green_t} dark={dark_t} (应 red=0 green>0：绿应完全盖红)");
-    let (mut red_r, mut green_r) = (0usize, 0usize);
-    for y in 0..ref_fb.height as usize {
-        for x in 0..ref_fb.width as usize {
-            let (r, g, _) = ink(&ref_fb, x, y);
-            red_r += r as usize;
-            green_r += g as usize;
-        }
-    }
-    println!("REF:  red={red_r} green={green_r}");
-    // 行带 diff（对齐 ref 逐行）
-    let mut bands: Vec<(usize, usize, u32)> = Vec::new();
-    for y in 0..fb.height as usize {
-        let mut cnt = 0u32;
-        for x in 0..fb.width as usize {
-            let i = (y * fb.width as usize + x) * 4;
-            let j = (y * ref_fb.width as usize + x) * 4;
-            let d = (fb.data[i] as i32 - ref_fb.data[j] as i32).abs()
-                + (fb.data[i + 1] as i32 - ref_fb.data[j + 1] as i32).abs()
-                + (fb.data[i + 2] as i32 - ref_fb.data[j + 2] as i32).abs();
-            if d > 30 {
-                cnt += 1;
-            }
-        }
-        if cnt > 0 {
-            match bands.last_mut() {
-                Some(b) if b.1 + 1 == y => {
-                    b.1 = y;
-                    b.2 += cnt;
-                }
-                _ => bands.push((y, y, cnt)),
-            }
-        }
-    }
-    for (y0, y1, t) in bands.iter().take(6) {
-        println!("diff band y{y0}..{y1} ({t}px)");
-    }
-}
-
 /// R4141 探针：case 061 布局树——bare display:table-cell span 序列是否生成匿名表。
 #[test]
 #[ignore]
@@ -3783,55 +3678,131 @@ fn debug_r4141_anon_table_061_tree() {
     dump(&result.root, 1);
 }
 
-/// R4141 探针：case 061 渲染页红/绿墨的行 y 范围（定位红绿错位量）。
+/// R4142 探针四：061 原案二分——剥离绿层/裁剪文案，定位触发因子。
 #[test]
 #[ignore]
-fn debug_r4141_anon_table_061_offset() {
+fn debug_r4142_bisect_061() {
     let cfg = ReftestConfig::default();
     let base = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("wpt-data/css/CSS2/tables");
     let html = std::fs::read_to_string(base.join("table-anonymous-objects-061.xht")).expect("read");
+
+    let count_red_bands = |doc_html: &str| -> Vec<(usize, usize)> {
+        let fb = render_to_framebuffer_with_base(doc_html, "", &cfg, Some(&base));
+        let mut rows: Vec<usize> = Vec::new();
+        for y in 0..fb.height as usize {
+            for x in 0..fb.width as usize {
+                let i = (y * fb.width as usize + x) * 4;
+                if fb.data[i] > 150 && fb.data[i + 1] < 120 && fb.data[i + 2] < 120 {
+                    rows.push(y);
+                    break;
+                }
+            }
+        }
+        let mut bands: Vec<(usize, usize)> = Vec::new();
+        for y in &rows {
+            match bands.last_mut() {
+                Some(b) if y - b.1 <= 2 => b.1 = *y,
+                _ => bands.push((*y, *y)),
+            }
+        }
+        bands
+    };
+
+    // V0：原案
+    let b0 = count_red_bands(&html);
+    // V1：剥离整个绿色绝对定位层（第二个 relative 子 div）
+    let v1 = {
+        let s = html.clone();
+        match s.find("<div style=\"position: absolute; z-index: 2;") {
+            Some(start) => {
+                format!("{}<div/></div></div></body></html>", &s[..start])
+            }
+            None => s.clone(),
+        }
+    };
+    let b1 = count_red_bands(&v1);
+    let fmt = |bands: &[(usize, usize)]| {
+        bands
+            .iter()
+            .map(|(a, b)| format!("{a}..{b}"))
+            .collect::<Vec<_>>()
+            .join(",")
+    };
+    println!("V0-orig: {} bands [{}]", b0.len(), fmt(&b0));
+    println!("V1-no-green: {} bands [{}]", b1.len(), fmt(&b1));
+}
+
+/// R4143 勘察：box-shadow-table-row-display（17.54%）diff 带定位。
+#[test]
+#[ignore]
+fn debug_r4143_row_display_shadow() {
+    let cfg = ReftestConfig::default();
+    let base = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("wpt-data/css/css-backgrounds");
+    let html = std::fs::read_to_string(base.join("box-shadow-table-row-display.html")).expect("read");
+    let ref_html = std::fs::read_to_string(base.join("box-shadow-table-row-display-ref.html")).expect("read");
     let fb = render_to_framebuffer_with_base(&html, "", &cfg, Some(&base));
-    let mut red_rows: Vec<usize> = Vec::new();
-    let mut green_rows: Vec<usize> = Vec::new();
+    let ref_fb = render_to_framebuffer_with_base(&ref_html, "", &cfg, Some(&base));
+    let mut bands: Vec<(usize, usize, u32)> = Vec::new();
     for y in 0..fb.height as usize {
+        let mut cnt = 0u32;
         for x in 0..fb.width as usize {
             let i = (y * fb.width as usize + x) * 4;
-            let (r, g, b) = (fb.data[i] as i32, fb.data[i + 1] as i32, fb.data[i + 2] as i32);
-            if r > 150 && g < 120 && b < 120 {
-                red_rows.push(y);
-                break;
+            let j = (y * ref_fb.width as usize + x) * 4;
+            let d = (fb.data[i] as i32 - ref_fb.data[j] as i32).abs()
+                + (fb.data[i + 1] as i32 - ref_fb.data[j + 1] as i32).abs()
+                + (fb.data[i + 2] as i32 - ref_fb.data[j + 2] as i32).abs();
+            if d > 30 {
+                cnt += 1;
             }
-            if g > r + 40 && g > b + 40 && g > 80 {
-                green_rows.push(y);
-                break;
+        }
+        if cnt > 0 {
+            match bands.last_mut() {
+                Some(b) if b.1 + 1 == y => {
+                    b.1 = y;
+                    b.2 += cnt;
+                }
+                _ => bands.push((y, y, cnt)),
             }
         }
     }
-    let r0 = red_rows.first().copied().unwrap_or(9999);
-    let r1 = red_rows.last().copied().unwrap_or(9999);
-    let g0 = green_rows.first().copied().unwrap_or(9999);
-    let g1 = green_rows.last().copied().unwrap_or(9999);
-    println!("red rows y{r0}..{r1}, green rows y{g0}..{g1}（chromium：绿完全盖红 → y 范围一致）");
-    // x 范围
-    let mut red_xs: Vec<usize> = Vec::new();
-    let mut green_xs: Vec<usize> = Vec::new();
-    for x in 0..fb.width as usize {
-        for y in 0..fb.height as usize {
-            let i = (y * fb.width as usize + x) * 4;
-            let (r, g, b) = (fb.data[i] as i32, fb.data[i + 1] as i32, fb.data[i + 2] as i32);
-            if r > 150 && g < 120 && b < 120 {
-                red_xs.push(x);
-                break;
+    for (y0, y1, t) in bands.iter().take(8) {
+        println!("diff band y{y0}..{y1} ({t}px)");
+    }
+    // 页面 ink 布局：灰行块位置
+    let gray_rows = |f: &zero_render_foundation::surface::FrameBuffer| -> Vec<(usize, usize)> {
+        #[allow(clippy::needless_range_loop)]
+        fn bands_of(rows: Vec<usize>) -> Vec<(usize, usize)> {
+            let mut bands: Vec<(usize, usize)> = Vec::new();
+            for y in &rows {
+                match bands.last_mut() {
+                    Some(b) if y - b.1 <= 2 => b.1 = *y,
+                    _ => bands.push((*y, *y)),
+                }
             }
-            if g > r + 40 && g > b + 40 && g > 80 {
-                green_xs.push(x);
-                break;
+            bands
+        }
+        let _ = bands_of;
+
+        let mut rows: Vec<usize> = Vec::new();
+        for y in 0..f.height as usize {
+            for x in 0..f.width as usize {
+                let i = (y * f.width as usize + x) * 4;
+                let (r, g, b) = (f.data[i], f.data[i + 1], f.data[i + 2]);
+                if (r as i32 - 153).abs() < 12 && (g as i32 - 153).abs() < 12 && (b as i32 - 153).abs() < 12 {
+                    rows.push(y);
+                    break;
+                }
             }
         }
-    }
-    println!(
-        "red x{:?}..green x{:?}",
-        red_xs.first().zip(red_xs.last()),
-        green_xs.first().zip(green_xs.last())
-    );
+        let mut bands: Vec<(usize, usize)> = Vec::new();
+        for y in &rows {
+            match bands.last_mut() {
+                Some(b) if y - b.1 <= 2 => b.1 = *y,
+                _ => bands.push((*y, *y)),
+            }
+        }
+        bands
+    };
+    println!("TEST gray rows {:?}", gray_rows(&fb));
+    println!("REF  gray rows {:?}", gray_rows(&ref_fb));
 }
