@@ -806,12 +806,20 @@ fn apply_replaced_element_sizing(
     // §aspect-ratio），显式 <ratio> 仅在无固有比时 fallback。converter 已把显式 ratio 写入
     // taffy_style.aspect_ratio；此处 auto + 有 decoded 固有尺寸时覆盖为固有比（如 img 固有 1:1
     // + `auto 10/1` 应按 1:1 而非 10/1）。无固有尺寸（img_intrinsic_sizes 缺失）则保留显式 ratio。
-    if std::env::var("ZW_ASPECT_AUTO").as_deref() != Ok("0")
-        && computed.aspect_ratio_auto
-        && let Some(&(iw, ih)) = img_intrinsic_sizes.get(&dom_id)
-        && ih > 0.0
-    {
-        taffy_style.aspect_ratio = Some(iw / ih);
+    // R4160：固有比来源扩展到 ratio-only（viewBox 比，img_intrinsic_ratios）——`auto` 的
+    // 「自然宽高比」含无确定固有维的 replaced 元素（replaced-element-020：object data=SVG
+    // viewBox 1:1 + `auto 5/1` + width:100px 应 100×100，旧按显式 5/1 渲 100×20）。ratios
+    // 优先于 sizes（更具体的自然比；sizes 分支 iw/ih 与 ratios 一致时不敏感）。
+    if std::env::var("ZW_ASPECT_AUTO").as_deref() != Ok("0") && computed.aspect_ratio_auto {
+        if let Some(&ratio) = img_intrinsic_ratios.get(&dom_id)
+            && ratio > 0.0
+        {
+            taffy_style.aspect_ratio = Some(ratio);
+        } else if let Some(&(iw, ih)) = img_intrinsic_sizes.get(&dom_id)
+            && ih > 0.0
+        {
+            taffy_style.aspect_ratio = Some(iw / ih);
+        }
     }
     let is_attr_only_replaced = tag == "embed" || tag == "object" || tag == "applet";
 

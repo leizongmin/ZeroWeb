@@ -279,3 +279,4 @@ css/css-conditional/container-queries/no-layout-containment-fixedpos.html css/re
 css/CSS2/margin-padding-clear/margin-border-padding-003.xht css/CSS2/margin-padding-clear/margin-border-padding-001-ref.xht == 2026-09-09 R4159 object data 固有尺寸桥接
 css/CSS2/normal-flow/replaced-intrinsic-005.xht css/CSS2/normal-flow/replaced-intrinsic-005-ref.xht == 2026-09-09 R4159 object data 固有尺寸桥接（no-ratio 一维 abs）
 css/CSS2/normal-flow/replaced-intrinsic-002.xht css/CSS2/normal-flow/replaced-intrinsic-002-ref.xht == 2026-09-09 R4159 反向锚：无固有维 SVG object 保持塌 0
+css/css-sizing/aspect-ratio/replaced-element-020.html css/reference/ref-filled-green-100px-square.xht == 2026-09-09 R4160 ratio-only SVG 自然比 × aspect-ratio auto 优先级

@@ -518,6 +518,15 @@ impl RenderPipeline {
                     }
                     continue;
                 }
+                // R4160：ratio-only SVG（viewBox 比、无确定固有维）桥 ratios map——
+                // tree.rs R2440 的 `aspect-ratio: auto <ratio>` 固有比优先 +
+                // ratio-only 分支消费（replaced-element-020：viewBox 1:1 + `auto 5/1`
+                // + width:100px 应 100×100）。仅比无确定维，sizes/no_ratio 不注入
+                //（防 default-size bogus pixmap 参与替换元素 sizing，R4159 教训）。
+                if let Some(&ratio) = self.image_ratios.get(&key) {
+                    ratios.insert(replaced_id, ratio);
+                    continue;
+                }
                 if let Some(&size) = self.image_sizes.get(&key) {
                     sizes.insert(replaced_id, size);
                 }
@@ -4304,6 +4313,37 @@ object { display: block; }
             w < 0.5 && h < 0.5,
             "R4159: 无固有维 SVG object 应保持塌 0（实际 {w}×{h}，max={:?}）",
             max_obj_box(&result.layout.root)
+        );
+    }
+    /// R4160（css-sizing-4 §aspect-ratio）：`aspect-ratio: auto <ratio>` 的 `auto` 优先
+    /// replaced 元素自然宽高比——ratio-only SVG（viewBox 比，无确定固有维）也算自然比。
+    /// replaced-element-020：object data=SVG viewBox 1:1 + `auto 5/1` + width:100px
+    /// 应 100×100（固有 1:1 胜显式 5/1），旧按显式 5/1 渲 100×20。
+    #[test]
+    fn r4160_object_ratio_only_svg_auto_ratio_prefers_intrinsic() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        // data URI SVG viewBox 1:1（ratio-only）：注入 ratios map（等价 harness 解码分类）。
+        let svg = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1 1'%3E%3C/svg%3E";
+        let key = crate::paint::image_resource_key(svg, None);
+        pipeline.set_image_ratios(std::iter::once((key, 1.0f32)).collect());
+        let html = format!(
+            r#"<html><head><style>
+object {{ display: block; width: 100px; aspect-ratio: auto 5/1; }}
+</style></head><body>
+<object type="image/svg+xml" data="{svg}"></object>
+</body></html>"#
+        );
+        let result = pipeline.render_html(&html, "");
+        fn find_box(l: &zero_layout_engine::LayoutBox, w: f32, h: f32) -> bool {
+            ((l.width - w).abs() < 0.5 && (l.height - h).abs() < 0.5) || l.children.iter().any(|c| find_box(c, w, h))
+        }
+        assert!(
+            find_box(&result.layout.root, 100.0, 100.0),
+            "R4160: ratio-only SVG 的自然比 1:1 应胜显式 5/1（应存在 100×100 盒）"
+        );
+        assert!(
+            !find_box(&result.layout.root, 100.0, 20.0),
+            "R4160: 不得存在 100×20 盒（显式 5/1 未被固有比覆盖）"
         );
     }
 }
