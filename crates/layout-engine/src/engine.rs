@@ -953,6 +953,14 @@ impl LayoutEngine {
         // 此步骤根据实际百分比计算值和 px 偏移量修正最终尺寸。
         apply_calc_size_adjustments(&mut root_box, styles);
 
+        // 12.5b 后处理（R4136，css-values-4 §calc）：calc(P% ± Npx) margin 的 px 部分补齐。
+        // convert 层对 margin 的 calc 只保留百分比部分（convert_length_to_lpa），px 偏移
+        // 静默丢失（calc-margins-block：margin-left:calc(10%+100px) 渲染为 10%，应 10%+100px）。
+        // 块流语义：margin-left px 部分推移子盒 x；margin-top px 部分推移子盒 y 及全部
+        // 后续 in-flow 兄弟（margin-bottom px 部分只影响后续兄弟间距，此处随 top 对称补齐
+        // 后续兄弟位移、bottom 不改自身）。
+        apply_calc_margin_adjustments(&mut root_box, styles);
+
         // 12.6 后处理：百分比 max-height 收紧。
         // taffy 0.7 对 height:auto 的块盒不会按百分比 max-height 收紧最终高度
         // （convert 层已传 Percent，但 block 布局未在内容高度计算后再次 clamp）。

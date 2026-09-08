@@ -3293,3 +3293,55 @@ fn debug_r4135_property_bisect() {
         println!("{label}: {}", s.join(" | "));
     }
 }
+
+/// R4136 勘察：calc() margin px 部分——普通块流（非 intrinsic）下
+/// margin-left: calc(10% + 100px) 的占位（应 = 10%×CB + 100px）。
+#[test]
+#[ignore]
+fn debug_r4136_calc_margin() {
+    let cfg = ReftestConfig::default();
+    // 容器 400px；内层带 margin-left: calc(10% + 100px) 的 50px 绿块。
+    // chromium：绿块 x = 40 + 100 = 140。
+    let html = r#"<!DOCTYPE html><html><head><style>
+        body { margin: 0; }
+        .wrap { width: 400px; height: 60px; background: red; position: relative; }
+        .inner { width: 50px; height: 50px; background: green; margin-left: calc(10% + 100px); }
+        </style></head><body>
+        <div class="wrap"><div class="inner"></div></div>
+        </body></html>"#;
+    let fb = render_to_framebuffer_with_base(html, "", &cfg, None);
+    // 找绿块最左 x
+    let mut first: Option<usize> = None;
+    for y in 0..fb.height as usize {
+        for x in 0..fb.width as usize {
+            let i = (y * fb.width as usize + x) * 4;
+            if fb.data[i + 1] > 100 && fb.data[i] < 100 && fb.data[i + 2] < 100 {
+                if first.is_none() || x < first.unwrap() {
+                    first = Some(x);
+                }
+            }
+        }
+    }
+    println!("calc(10%+100px) @400px wrap: green starts at x={first:?} (expect 140)");
+    // 对照 2：纯百分比 margin calc(10% + 0px)
+    let html2 = r#"<!DOCTYPE html><html><head><style>
+        body { margin: 0; }
+        .wrap { width: 400px; height: 60px; background: red; position: relative; }
+        .inner { width: 50px; height: 50px; background: green; margin-left: calc(10% + 0px); }
+        </style></head><body>
+        <div class="wrap"><div class="inner"></div></div>
+        </body></html>"#;
+    let fb2 = render_to_framebuffer_with_base(html2, "", &cfg, None);
+    let mut first2: Option<usize> = None;
+    for y in 0..fb2.height as usize {
+        for x in 0..fb2.width as usize {
+            let i = (y * fb2.width as usize + x) * 4;
+            if fb2.data[i + 1] > 100 && fb2.data[i] < 100 && fb2.data[i + 2] < 100 {
+                if first2.is_none() || x < first2.unwrap() {
+                    first2 = Some(x);
+                }
+            }
+        }
+    }
+    println!("calc(10%+0px) @400px: green starts at x={first2:?} (expect 40)");
+}

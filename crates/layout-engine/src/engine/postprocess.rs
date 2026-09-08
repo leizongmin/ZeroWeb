@@ -676,6 +676,68 @@ pub(super) fn apply_calc_size_adjustments(root: &mut LayoutBox, styles: &HashMap
     }
 }
 
+/// R4136（css-values-4 §calc + css-sizing-3 #intrinsic-sizes）：calc(P% ± Npx) margin
+/// 的 px 部分补齐。
+///
+/// convert 层对 margin 的 calc 只保留百分比部分（`convert_length_to_lpa`：P% ± Npx →
+/// Percent(P%)），px 偏移量静默丢失——`margin-left: calc(10% + 100px)` 渲染为纯 10%
+///（探针实证：400px 容器内绿块 x=40，应 140）。taffy LPA 无 calc 组合表示（本地版仅
+/// Opaque calc 指针，未接线），故与 [`apply_calc_size_adjustments`] 同法：布局后按
+/// 实际容器尺寸补 px 差。
+///
+/// 块流语义（仅块级子；inline 子的水平 margin 属 IFC advance 域，此处理免误伤）：
+/// - `margin-left` px 部分 → 子盒 x 平移（不推后续兄弟——块流中 margin-left 只影响自身位）；
+/// - `margin-top` px 部分 → 子盒 y 平移 + **全部后续 in-flow 兄弟同平移**
+///   （块流中 margin-top 计入兄弟间距）；`margin-bottom` px 部分只影响后续兄弟，
+///   不改自身——同 `margin-top` 臂合并处理（对后续兄弟加 top+bottom px 合差）。
+///
+/// taffy 已把百分比部分应用到同一字段，故 diff = px 部分本身（% 基准 = 父内容宽/高）。
+pub(super) fn apply_calc_margin_adjustments(root: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) {
+    for i in 0..root.children.len() {
+        let (px_left, px_top, px_bottom) = {
+            let child = &root.children[i];
+            let Some(node_id) = child.node_id else {
+                continue;
+            };
+            let Some(style) = styles.get(&node_id) else {
+                continue;
+            };
+            // 块级子才走块流 margin 语义；float/absolute/fixed 脱流不动。
+            if !child.is_block_level || child.is_absolute || child.is_fixed || !matches!(child.float, FloatValue::None)
+            {
+                continue;
+            }
+            let calc_px = |value: &LengthValue| -> Option<f64> {
+                match value {
+                    LengthValue::Calc(expr) => extract_calc_percentage_and_offset(expr).map(|(_, px)| px),
+                    _ => None,
+                }
+            };
+            let px_left = calc_px(&style.margin_left).unwrap_or(0.0);
+            let px_top = calc_px(&style.margin_top).unwrap_or(0.0);
+            let px_bottom = calc_px(&style.margin_bottom).unwrap_or(0.0);
+            (px_left, px_top, px_bottom)
+        };
+        if px_left == 0.0 && px_top == 0.0 && px_bottom == 0.0 {
+            continue;
+        }
+        let child = &mut root.children[i];
+        child.x += px_left as f32;
+        child.y += px_top as f32;
+        // 后续 in-flow 兄弟：margin-top px 差已含在自身 y 平移；兄弟位移 = top+bottom px
+        //（taffy 用 % 部分折叠了兄弟间距，px 差需补到所有后续兄弟）。
+        let sibling_shift = (px_top + px_bottom) as f32;
+        if sibling_shift != 0.0 {
+            for sibling in root.children.iter_mut().skip(i + 1) {
+                sibling.y += sibling_shift;
+            }
+        }
+    }
+    for child in &mut root.children {
+        apply_calc_margin_adjustments(child, styles);
+    }
+}
+
 /// R699（CSS §10.5.1）：非 BFC 块级元素 `height:auto` 且 `overflow` 计算为 `visible`
 /// 时，高度只计入 **in-flow** 子元素的 border-box，浮动子元素与绝对定位子元素被
 /// **显式忽略**。taffy 把 float 当 in-flow block 计入父 content height，致

@@ -44,7 +44,64 @@ pub(crate) fn resolve_intrinsic_real_length(value: &LengthValue, style: &Compute
 ///   塌缩；此处按元素 font 度量逐字符累加文本宽度（Ahem 等宽=font_size）。
 ///   仅 max-content（不换行）；min-content（最宽词）独立子问题暂不实现。
 ///
-/// 返回值含 box 自身的水平 padding+border（border-box 贡献）。
+/// 返回值含 box 自身的水平 padding+border（border-box 贡献）；子盒水平 margin 的
+/// intrinsic 贡献见下方 [`intrinsic_margin_contribution`]（% 分量记 0）。
+///
+/// 子盒水平 margin 的 intrinsic 贡献（css-sizing-3 #intrinsic-sizes + csswg #823066）。
+///
+/// 固有尺寸测量中**百分比 margin 解析为 0**：post-taffy 的 `child.margin_*` 对普通
+/// 长度照用（已定值），对 `Calc(P% ± Npx)` 只取 px 部分（% 在内容定尺寸语境无基准，
+/// 应记 0）。driving: WPT css-sizing calc-margins-block（min-content 容器内
+/// `margin-left: calc(10% + 100px)` 的子，容器 max-content 应 = 100px 而非 0/膨胀值）。
+fn intrinsic_margin_contribution(child: &LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) -> (f32, f32) {
+    /// calc 表达式的 px 偏移部分（同 engine/postprocess 的提取语义，P%±Npx 模式）。
+    /// intrinsic 语境 % → 0，仅 px 部分计入（css-sizing-3 #intrinsic-sizes）。
+    fn calc_px_offset(expr: &zero_css_parser::values::CalcExpr) -> f32 {
+        use zero_css_parser::values::{CalcExpr, CalcOp};
+        match expr {
+            CalcExpr::Length(_) => 0.0,
+            CalcExpr::BinaryOp(left, op, right) => {
+                let left_px = match left.as_ref() {
+                    CalcExpr::Length(LengthValue::Px(v)) => Some(*v as f32),
+                    _ => None,
+                };
+                let right_px = match right.as_ref() {
+                    CalcExpr::Length(LengthValue::Px(v)) => Some(*v as f32),
+                    _ => None,
+                };
+                let has_pct = |e: &CalcExpr| matches!(e, CalcExpr::Length(LengthValue::Percentage(_)));
+                match (op, left_px, right_px) {
+                    (CalcOp::Add, Some(px), None) if has_pct(right) => px,
+                    (CalcOp::Add, None, Some(px)) if has_pct(left) => px,
+                    (CalcOp::Subtract, Some(px), None) if has_pct(right) => -px,
+                    (CalcOp::Subtract, None, Some(px)) if has_pct(left) => px,
+                    _ => 0.0,
+                }
+            }
+            _ => 0.0,
+        }
+    }
+    let calc_px_margin = |value: &LengthValue| -> f32 {
+        match value {
+            LengthValue::Calc(expr) => calc_px_offset(expr).max(0.0),
+            _ => 0.0,
+        }
+    };
+    let Some(style) = child.node_id.and_then(|id| styles.get(&id)) else {
+        return (child.margin_left, child.margin_right);
+    };
+    let resolve = |post_taffy: f32, css: &LengthValue| -> f32 {
+        match css {
+            LengthValue::Calc(_) => calc_px_margin(css),
+            _ => post_taffy,
+        }
+    };
+    (
+        resolve(child.margin_left, &style.margin_left),
+        resolve(child.margin_right, &style.margin_right),
+    )
+}
+
 pub(crate) fn box_content_max_width(
     box_node: &LayoutBox,
     doc: &Document,
@@ -59,6 +116,8 @@ pub(crate) fn box_content_max_width(
             continue;
         }
         has_in_flow_child = true;
+        // R4136：固有测量中 Calc(P%±Npx) margin 只取 px 部分（% → 0）；普通 margin 照用。
+        let (ml, mr) = intrinsic_margin_contribution(child, styles);
         let is_inline_level = child
             .node_id
             .and_then(|id| styles.get(&id))
@@ -73,7 +132,7 @@ pub(crate) fn box_content_max_width(
                 )
             })
             .unwrap_or(false);
-        let outer_w = child.width + child.margin_left + child.margin_right;
+        let outer_w = child.width + ml + mr;
         // R1165：R109 §9.2.1.1 拆分 inline 父盒（is_r109_split，display:Inline 但已被拆成
         // 匿名块片段）的 max-content 须递归测其匿名块子（真实文本内容），而非用其
         // post-taffy 拉伸的 child.width。否则 table auto-layout 测含 split inline 的 cell
@@ -116,13 +175,9 @@ pub(crate) fn box_content_max_width(
                 // 维持 R1298 的 0 贡献不变。旧实现一概 0 → 含空 padded inline 的 bg-bearing
                 // inline 父测得 intrinsic 0 → R4033 guard 跳过 shrink → taffy 拉伸满宽
                 // （外层 span 蓝条画满 767px）。
-                inline_sum += (child.padding_left
-                    + child.padding_right
-                    + child.border_left
-                    + child.border_right
-                    + child.margin_left
-                    + child.margin_right)
-                    .max(0.0);
+                inline_sum +=
+                    (child.padding_left + child.padding_right + child.border_left + child.border_right + ml + mr)
+                        .max(0.0);
             } else if std::env::var("ZW_INLINE_INTRINSIC_CONTENT").as_deref() != Ok("0")
                 && child
                     .node_id
@@ -168,8 +223,7 @@ pub(crate) fn box_content_max_width(
                 //（padding-right-applies-to-012：inline-block 嵌套被推到容器右缘实证）。
                 // inline-block 族有真盒模型 → 递归返回其 border-box max-content，直接
                 // 可比 outer_w。
-                inline_sum +=
-                    (box_content_max_width(child, doc, styles) + child.margin_left + child.margin_right).max(0.0);
+                inline_sum += (box_content_max_width(child, doc, styles) + ml + mr).max(0.0);
             } else {
                 inline_sum += outer_w.max(0.0);
             }
@@ -326,6 +380,8 @@ pub(crate) fn block_max_content_width(
             continue;
         }
         has_in_flow_child = true;
+        // R4136：固有测量中 Calc(P%±Npx) margin 只取 px 部分（% → 0）；普通 margin 照用。
+        let (ml, mr) = intrinsic_margin_contribution(child, styles);
         let child_style = child.node_id.and_then(|id| styles.get(&id));
         let is_inline_level = child_style
             .map(|s| {
@@ -351,12 +407,12 @@ pub(crate) fn block_max_content_width(
                 && let Some(style) = child_style
                 && let Some(contribution) = crate::svg_default_size::svg_max_content_contribution(elem, style)
             {
-                inline_sum += (contribution + child.margin_left + child.margin_right).max(0.0);
+                inline_sum += (contribution + ml + mr).max(0.0);
                 continue;
             }
             // inline-level 子：用 outer_w（已布局宽度）求和。inline-flex/inline-grid 的
             // intrinsic 测量由 shrink_inline_blocks_to_content（R180/R1017）路径处理，此处不重复。
-            inline_sum += (child.width + child.margin_left + child.margin_right).max(0.0);
+            inline_sum += (child.width + ml + mr).max(0.0);
             continue;
         }
         let is_spanner = child_style.is_some_and(|s| matches!(s.column_span, ColumnSpanComputedValue::All));
@@ -371,7 +427,7 @@ pub(crate) fn block_max_content_width(
                 .as_ref()
                 .and_then(|v| resolve_intrinsic_real_length(v, cis_st))
         {
-            block_max = block_max.max(cis_w + child.margin_left + child.margin_right);
+            block_max = block_max.max(cis_w + ml + mr);
             continue;
         }
         // block-level 子：若是 flex/grid 容器，dispatch 到专用 intrinsic 函数（R1018 关键）。
@@ -394,7 +450,7 @@ pub(crate) fn block_max_content_width(
                 _ => box_content_max_width(child, doc, styles),
             })
             .unwrap_or_else(|| box_content_max_width(child, doc, styles));
-        let with_margins = child_intrinsic + child.margin_left + child.margin_right;
+        let with_margins = child_intrinsic + ml + mr;
         block_max = block_max.max(with_margins);
         if is_spanner {
             spanner_max = spanner_max.max(with_margins);
