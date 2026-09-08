@@ -2,7 +2,7 @@
 
 **入口文档**: [../webdriver.md](../webdriver.md)
 **创建日期**: 2026-09-07（goal 拆分 bootstrap）
-**最后更新**: 2026-09-08（M2 收口——execute/async 落地，元素/执行族全绿）
+**最后更新**: 2026-09-08（M3 推进——window 族落地 + screenshot 摸底结论 + 验证通道文档）
 
 ---
 
@@ -26,6 +26,11 @@ text/rect/enabled/selected/attribute/property/css value、clear。协议新增
 语义：同步/定时器路径 + 未调用超时 javascript error）。集成测试 9 个全绿。
 M2 元素交互族 + 执行族全部落地。
 
+**M3 已收口（2026-09-08）**：endpoint 26 → 33。window 族 7 endpoint（handle/handles/
+window GET、rect GET/POST、maximize、fullscreen）+ 验证通道文档
+（evidence/verification-channel.md）。screenshot 摸底结论：技术可行但转换层在 browser
+域，属深结构 → 记待用户决策。集成测试 10 个全绿。
+
 **与兄弟 goal 的边界**：
 - rendering-compat — 渲染流域 crate 域零重叠
 - event-loop-spec — **apps/renderer 属该流活跃域**；本流只碰 renderer 的 Automation
@@ -36,7 +41,7 @@ M2 元素交互族 + 执行族全部落地。
 
 ## 实测基线（2026-09-08 M1 收口时）
 
-### 已实现（26 endpoint）
+### 已实现（33 endpoint）
 
 - ✅ 会话：POST /session、DELETE /session/{id}、GET /session/{id}（capabilities 回读）、GET /status
 - ✅ 导航族：POST /url、GET /url、back、forward、refresh、GET /title
@@ -45,16 +50,20 @@ M2 元素交互族 + 执行族全部落地。
 - ✅ 元素交互：click、value（send keys）、clear
 - ✅ 元素状态族：text、rect、enabled、selected、attribute/{name}、property/{name}、css/{name}
 - ✅ 执行：POST /execute/sync、POST /execute/async、GET /source
+- ✅ 窗口：GET /window、GET /window/handle、GET /window/handles、GET+POST /window/rect、
+  maximize、fullscreen（单窗口架构；rect 走 SetViewport 既有链路）
 - ✅ 基建：零依赖 HTTP（loopback-only、默认 9515）、元素引用映射 4096 上限 +
   history_epoch 跨导航守卫、parse_webdriver_keys、错误码映射（400 invalid argument /
   404 no such session·element·stale / 408 timeout / 500 unknown）+ W3C 错误包络 stacktrace
-- ✅ 集成测试：tests/http_session.rs 9 个全链路用例（真实 TCP + 真实 renderer 子进程）+
+- ✅ 集成测试：tests/http_session.rs 10 个全链路用例（真实 TCP + 真实 renderer 子进程）+
   session.rs 3 + renderer automation 3 单元测试
 
-### 缺失（M3 面）
+### 缺失（M4 面——本 goal Done 判定不阻塞）
 
-- ⬜ 窗口/截图：window 全族、screenshot（能力待评估）
+- ⬜ screenshot（待用户决策，见下）
 - ⬜ 定位策略扩展（link text / tag name / xpath——css 之外）
+- ⬜ frame/parent 深化（依赖 renderer iframe 语义）
+- ⬜ minimize / window close / new window（多窗口语义）
 
 ## 缺口清单
 
@@ -64,15 +73,14 @@ M2 元素交互族 + 执行族全部落地。
 | P2 | W3C 兼容性清单基线 | ✅ M1（evidence/endpoint-matrix.md） |
 | P3 | 会话/导航族 endpoint | ✅ M1 |
 | P4 | 元素状态族 + 执行族 endpoint | ✅ M2（26 类全落地） |
-| P5 | 窗口/截图能力评估 + 兄弟流验证通道文档 | ⬜ M3 |
+| P5 | 窗口/截图能力评估 + 兄弟流验证通道文档 | ✅ M3（screenshot 结论记待决策；验证通道文档落地） |
 
 ## 下一步计划
 
-1. **M3 切片 1**：window handle(s) 最小实现（单窗口架构：GET /window/handles 返单元素
-   列表 + GET /window/handle；window/rect 经 SetViewport 既有链路评估）
-2. **M3 切片 2**：screenshot 能力摸底（renderer 帧导出链路 → PNG；不可行记待用户决策）
-3. **M3 收尾**：兄弟 goal 验证通道使用文档（keyboard-*/editing 如何经本服务驱动 E2E）+
-   全量 `make test` + clippy 终验 → DC 全满足判定
+1. **全量终验**：`make test`（workspace 全绿确认，含 quickjs feature 组）+
+   `cargo clippy --workspace --all-targets -- -D warnings`
+2. **DC-1~4 逐项复核** → 满足则按 Final Output Protocol 判定（screenshot 在待用户决策
+   清单，按 DONE 允许条件不算未满足）
 
 **碰撞管理**：碰 protocol/renderer 前 `git log --since="14 days ago" --
 crates/protocol/ apps/renderer/` 核对 event-loop-spec 流活跃面（apps/renderer/src/runtime.rs
@@ -85,7 +93,7 @@ crates/protocol/ apps/renderer/` 核对 event-loop-spec 流活跃面（apps/rend
 |--------|------|
 | M1 — 门禁就位 + 会话/导航族 | ✅ 2026-09-08 |
 | M2 — 元素交互族 + 执行族 | ✅ 2026-09-08 |
-| M3 — 窗口/截图评估 + 接线收尾 | ⬜ 下一 |
+| M3 — 窗口/截图评估 + 接线收尾 | ✅ 2026-09-08（screenshot 记待决策） |
 
 ## 关键决策记录
 
@@ -98,15 +106,18 @@ crates/protocol/ apps/renderer/` 核对 event-loop-spec 流活跃面（apps/rend
 | refresh 走 Reload IPC + epoch+1 | renderer Reload 内部已带 `navigation_epoch.wrapping_add(1)`（runtime.rs:2381），与 navigate 语义一致 |
 | timeout 错误映射 HTTP 408 | W3C §processing-model 错误码-状态映射表；此前 500 是 wire format 偏差 |
 | execute/async 走 webdriver 层 ticket 全局 + ExecuteScript 轮询（非协议新操作） | renderer runtime struct 在 event-loop-spec 活跃域不可加字段；探测间隙 renderer 主循环每拍 drain_pending_script_mutations 自然驱动 microtask/定时器；超时（timeouts.script）由会话持有方管理，语义更贴合 W3C session scope timeout |
+| window 族按单窗口架构最小实现 | 本服务 session = 单 renderer 子进程 = 单文档；句柄固定值 + rect 经既有 SetViewport；maximize/fullscreen 记状态（headless 无宿主窗口语义）；minimize/close/new window 不做（多窗口语义超出范围） |
+| screenshot 记待用户决策 | 技术路径存在：renderer Legacy 模式 ViewPainted 图元表 + headless.rs 已验证 render_full_scene+PNG 路线；但 IPC→RenderPrimitives 转换与 ImageCache 累积在 apps/browser/src/paint_ipc.rs（browser 域），复用需抽公共层或跨流依赖——属深结构改动，须用户拍板 |
 
 ## 待用户决策
 
 | 项 | 状态 | 说明 |
 |----|------|------|
-| screenshot 链路 | ⬜ 评估中 | M3 摸底 renderer 截图能力后定 |
+| screenshot 链路 | ⬜ 待决策 | M3 摸底结论：技术可行（ViewPainted 图元 + render_full_scene + PNG），但 IPC→图元转换层在 apps/browser 域（paint_ipc.rs），复用需抽公共库或允许 webdriver 依赖 zero-browser lib——深结构改动须拍板。现状：按 DONE 允许条件记待决策不算未满足 DC |
 | alert 全族 / print | ⬜ 排除 | 依赖 host 对话框/打印能力 |
 | actions 完整语义 | ⬜ 排除 | 依赖输入管线深化；keyboard 够用子集先做 |
 | renderer back/forward 不 bump document_generation | ⬜ 待决策 | 本层 history_epoch 守卫已兜底（保守 stale）；若要 renderer 侧根治需碰 runtime.rs（event-loop-spec 活跃域），记待决策不阻塞 |
+| shim innerWidth 固定 1280 不跟随 SetViewport | ⬜ 待决策 | engine shim 域（js_dom_shim/part01.js:3546）；几何验证用 element/rect 真值可绕过，不阻塞 |
 
 ## 验证基线
 

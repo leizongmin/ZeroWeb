@@ -46,7 +46,16 @@ pub struct Driver {
     renderer_bin: PathBuf,
 }
 
-/// 元素登记记录：renderer 侧文档作用域引用 + webdriver 本地导航纪元。
+/// 会话窗口句柄（单窗口架构固定值；W3C window handle 为不透明字符串）。
+const WINDOW_HANDLE: &str = "zero-1";
+
+/// 会话窗口状态（W3C WindowRect/maximize/fullscreen 面）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WindowState {
+    Normal,
+    Maximized,
+    Fullscreen,
+}
 ///
 /// `history_epoch` 补 renderer back/forward 路径（`reload_history_entry`）不 bump
 /// `document_generation` 的缺口——跨历史条目的引用由本层直接判 stale，防止同
@@ -64,6 +73,8 @@ struct Session {
     navigation_epoch: u64,
     history_epoch: u64,
     timeouts: SessionTimeouts,
+    viewport: (u32, u32),
+    window_state: WindowState,
     next_request_id: u64,
     next_element_id: u64,
     elements: HashMap<String, ElementRecord>,
@@ -127,6 +138,8 @@ impl Driver {
                 navigation_epoch: 0,
                 history_epoch: 1,
                 timeouts: SessionTimeouts::default(),
+                viewport: (800, 600),
+                window_state: WindowState::Normal,
                 next_request_id: 1,
                 next_element_id: 1,
                 elements: HashMap::new(),
@@ -206,6 +219,56 @@ impl Driver {
         if let Some(value) = implicit {
             session.timeouts.implicit = value;
         }
+        Ok(())
+    }
+
+    /// GET /window/handle（当前窗口句柄；单窗口架构）。
+    pub fn window_handle(&mut self, id: &str) -> Result<&'static str, DriverError> {
+        self.session_mut(id)?;
+        Ok(WINDOW_HANDLE)
+    }
+
+    /// GET /window/handles（单窗口 → 单元素列表）。
+    pub fn window_handles(&mut self, id: &str) -> Result<Vec<&'static str>, DriverError> {
+        self.session_mut(id)?;
+        Ok(vec![WINDOW_HANDLE])
+    }
+
+    /// GET /window/rect。x/y 恒 0（无宿主窗口坐标）；width/height 为会话视口。
+    pub fn window_rect(&mut self, id: &str) -> Result<(u32, u32, u32, u32), DriverError> {
+        let session = self.session_mut(id)?;
+        Ok((0, 0, session.viewport.0, session.viewport.1))
+    }
+
+    /// POST /window/rect：调整视口（经 SetViewport 既有链路）。x/y 忽略（无宿主窗口）。
+    pub fn set_window_rect(&mut self, id: &str, width: u32, height: u32) -> Result<(), DriverError> {
+        let session = self.session_mut(id)?;
+        session
+            .renderer
+            .send(IpcMessage {
+                id: 0,
+                kind: IpcMessageKind::SetViewport(SetViewportParams {
+                    width,
+                    height,
+                    device_scale_factor: 1.0,
+                }),
+            })
+            .map_err(protocol_error)?;
+        session.viewport = (width, height);
+        Ok(())
+    }
+
+    /// POST /window/maximize：单窗口 headless 场景记状态并回最大视口（无宿主窗口语义）。
+    pub fn maximize_window(&mut self, id: &str) -> Result<(), DriverError> {
+        let session = self.session_mut(id)?;
+        session.window_state = WindowState::Maximized;
+        Ok(())
+    }
+
+    /// POST /window/fullscreen：同 maximize 的状态记录路线。
+    pub fn fullscreen_window(&mut self, id: &str) -> Result<(), DriverError> {
+        let session = self.session_mut(id)?;
+        session.window_state = WindowState::Fullscreen;
         Ok(())
     }
 

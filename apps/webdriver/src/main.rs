@@ -408,6 +408,52 @@ fn handle_request(driver: &mut Driver, req: &HttpRequest, stream: &mut TcpStream
             Ok(()) => json_response(stream, serde_json::json!({ "value": null })),
             Err(error) => driver_error_response(stream, error),
         },
+        // GET /session/{id}/window — 当前窗口句柄（单窗口架构）。
+        ("GET", ["session", id, "window"]) => match driver.window_handle(id) {
+            Ok(handle) => json_response(stream, serde_json::json!({ "value": handle })),
+            Err(error) => driver_error_response(stream, error),
+        },
+        // GET /session/{id}/window/handle
+        ("GET", ["session", id, "window", "handle"]) => match driver.window_handle(id) {
+            Ok(handle) => json_response(stream, serde_json::json!({ "value": handle })),
+            Err(error) => driver_error_response(stream, error),
+        },
+        // GET /session/{id}/window/handles
+        ("GET", ["session", id, "window", "handles"]) => match driver.window_handles(id) {
+            Ok(handles) => json_response(stream, serde_json::json!({ "value": handles })),
+            Err(error) => driver_error_response(stream, error),
+        },
+        // GET /session/{id}/window/rect — Window Rect。
+        ("GET", ["session", id, "window", "rect"]) => match driver.window_rect(id) {
+            Ok((x, y, width, height)) => json_response(
+                stream,
+                serde_json::json!({ "value": { "x": x, "y": y, "width": width, "height": height } }),
+            ),
+            Err(error) => driver_error_response(stream, error),
+        },
+        // POST /session/{id}/window/rect — Set Window Rect（x/y 接受但忽略；宽高生效于视口）。
+        ("POST", ["session", id, "window", "rect"]) => {
+            let body = serde_json::from_slice::<serde_json::Value>(&req.body).unwrap_or_default();
+            let width = body.get("width").and_then(|v| v.as_u64()).unwrap_or(800) as u32;
+            let height = body.get("height").and_then(|v| v.as_u64()).unwrap_or(600) as u32;
+            match driver.set_window_rect(id, width, height) {
+                Ok(()) => json_response(
+                    stream,
+                    serde_json::json!({ "value": { "x": 0, "y": 0, "width": width, "height": height } }),
+                ),
+                Err(error) => driver_error_response(stream, error),
+            }
+        }
+        // POST /session/{id}/window/maximize
+        ("POST", ["session", id, "window", "maximize"]) => match driver.maximize_window(id) {
+            Ok(()) => json_response(stream, serde_json::json!({ "value": null })),
+            Err(error) => driver_error_response(stream, error),
+        },
+        // POST /session/{id}/window/fullscreen
+        ("POST", ["session", id, "window", "fullscreen"]) => match driver.fullscreen_window(id) {
+            Ok(()) => json_response(stream, serde_json::json!({ "value": null })),
+            Err(error) => driver_error_response(stream, error),
+        },
         // POST /session/{id}/execute/sync — Execute Script in the live page context。
         ("POST", ["session", id, "execute", "sync"]) => {
             let body = serde_json::from_slice::<serde_json::Value>(&req.body).unwrap_or_default();

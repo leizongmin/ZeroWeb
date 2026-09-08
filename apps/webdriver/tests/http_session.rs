@@ -421,6 +421,63 @@ fn webdriver_execute_async_script_completion_paths() {
 }
 
 #[test]
+fn webdriver_window_endpoints_single_window_architecture() {
+    let (_driver, port) = spawn_driver();
+    let (status, body) = http_request(port, "POST", "/session", Some("{}"));
+    assert_eq!(status, 200);
+    let value: serde_json::Value = serde_json::from_str(&body).expect("json");
+    let session_id = value["value"]["sessionId"].as_str().expect("id").to_string();
+
+    // window/handle 与 window/handles 一致（单窗口）。
+    let (status, body) = http_request(port, "GET", &format!("/session/{session_id}/window/handle"), None);
+    assert_eq!(status, 200, "window handle 应 200: {body}");
+    let value: serde_json::Value = serde_json::from_str(&body).expect("json");
+    let handle = value["value"].as_str().expect("handle").to_string();
+    assert!(!handle.is_empty());
+
+    let (status, body) = http_request(port, "GET", &format!("/session/{session_id}/window/handles"), None);
+    assert_eq!(status, 200);
+    let value: serde_json::Value = serde_json::from_str(&body).expect("json");
+    assert_eq!(value["value"], serde_json::json!([handle]), "单窗口单句柄: {body}");
+
+    // window/rect：初始 800x600（会话视口）。
+    let (status, body) = http_request(port, "GET", &format!("/session/{session_id}/window/rect"), None);
+    assert_eq!(status, 200);
+    let value: serde_json::Value = serde_json::from_str(&body).expect("json");
+    assert_eq!(value["value"]["width"], 800);
+    assert_eq!(value["value"]["height"], 600);
+
+    // set window/rect：宽度生效。
+    let (status, body) = http_request(
+        port,
+        "POST",
+        &format!("/session/{session_id}/window/rect"),
+        Some(&serde_json::json!({ "x": 0, "y": 0, "width": 1024, "height": 768 }).to_string()),
+    );
+    assert_eq!(status, 200, "set window rect 应 200: {body}");
+    let value: serde_json::Value = serde_json::from_str(&body).expect("json");
+    assert_eq!(value["value"]["width"], 1024);
+    assert_eq!(value["value"]["height"], 768);
+
+    // rect 回读反映 set（已知差距：shim innerWidth 固定 1280，不跟随视口——endpoint-matrix 注记）。
+    let (status, body) = http_request(port, "GET", &format!("/session/{session_id}/window/rect"), None);
+    assert_eq!(status, 200);
+    let value: serde_json::Value = serde_json::from_str(&body).expect("json");
+    assert_eq!(value["value"]["width"], 1024, "rect 回读应反映 set: {body}");
+    assert_eq!(value["value"]["height"], 768);
+
+    // maximize/fullscreen 接受（headless 单窗口状态记录）。
+    let (status, _) = http_request(port, "POST", &format!("/session/{session_id}/window/maximize"), None);
+    assert_eq!(status, 200);
+    let (status, _) = http_request(port, "POST", &format!("/session/{session_id}/window/fullscreen"), None);
+    assert_eq!(status, 200);
+
+    // 不存在的 session → 404。
+    let (status, _) = http_request(port, "GET", "/session/deadbeef/window/handles", None);
+    assert_eq!(status, 404);
+}
+
+#[test]
 fn webdriver_drives_live_form_controls() {
     let (_driver, port) = spawn_driver();
     let (_page_server, page_port) = spawn_test_page_server_with_button();

@@ -69,23 +69,24 @@
 
 | Endpoint | 方法 | 状态 | 测试 | 行为注记 |
 |---|---|---|---|---|
-| /session/{id}/window | GET/DELETE | ⬜ | — | 单窗口架构，GET 可返当前 handle；DELETE(close) 语义待定 |
-| /session/{id}/window/handles | GET | ⬜ | — | 单窗口 → 单元素 |
+| /session/{id}/window | GET | ✅ | `webdriver_window_endpoints_single_window_architecture` | 单窗口架构，固定句柄；DELETE(close) 未实现（多 tab 不在范围） |
+| /session/{id}/window/handles | GET | ✅ | 同上 | 单元素数组 |
 | /session/{id}/window/new | POST | ⬜ | — | 多 tab 不在范围 |
-| /session/{id}/window/handle | GET | ⬜ | — | |
-| /session/{id}/window/rect | GET/POST | ⬜ | — | SetViewport 已有（800x600 固定） |
-| /session/{id}/window/maximize | POST | ⬜ | — | |
-| /session/{id}/window/minimize | POST | ⬜ | — | |
-| /session/{id}/window/fullscreen | POST | ⬜ | — | |
+| /session/{id}/window/handle | GET | ✅ | 同上 | |
+| /session/{id}/window/rect | GET | ✅ | 同上 | x/y 恒 0（无宿主窗口坐标）；width/height 为会话视口 |
+| /session/{id}/window/rect | POST | ✅ | 同上 | 宽高经 SetViewport 生效于 webview；x/y 接受但忽略；已知差距：shim innerWidth 固定 1280 不跟随（engine 域） |
+| /session/{id}/window/maximize | POST | ✅ | 同上 | headless 单窗口状态记录（无宿主窗口语义） |
+| /session/{id}/window/minimize | POST | ⬜ | — | W3C 可选；headless 无最小化语义 |
+| /session/{id}/window/fullscreen | POST | ✅ | 同上 | 同 maximize |
 | /session/{id}/frame(s) | POST | ⬜ | — | iframe 深化依赖 renderer |
-| /session/{id}/frame/parent | POST | ⬜ | — | |
+| /session/{id}/frame/parent | POST | ⬜ | — | 同上 |
 
 ## 截图（Screen Capture）
 
 | Endpoint | 方法 | 状态 | 测试 | 行为注记 |
 |---|---|---|---|---|
-| /session/{id}/screenshot | GET | ⬜ | — | 待评估 renderer 截图能力（M3，待用户决策清单） |
-| /session/{id}/element/{ref}/screenshot | GET | ⬜ | — | 同上 |
+| /session/{id}/screenshot | GET | ⬜ 待决策 | — | 能力摸底结论（2026-09-08）：技术上可行——renderer Legacy 模式发 `ViewPainted(PaintSnapshotParams)` 图元表，headless.rs 已有 render_full_scene + PNG 编码的验证路径；但转换层（paint_ipc 的 IPC→RenderPrimitives + ImageCache 累积）在 apps/browser 域，需跨流复用或抽库，属深结构改动 → 记待用户决策（master.md） |
+| /session/{id}/element/{ref}/screenshot | GET | ⬜ | — | 依赖页面截图先行；元素裁剪可在其上加 clip 实现 |
 
 ## 用户提示（User Prompts）— 明确排除
 
