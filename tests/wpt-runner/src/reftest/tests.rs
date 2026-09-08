@@ -2532,3 +2532,39 @@ fn debug_box_sizing_007_probe() {
         println!("  band y={y0}..={y1} px={total}");
     }
 }
+
+/// R4129 勘察：intrinsic-percent-replaced-002（quirks + float + canvas %height +
+/// ratio 传宽）像素 diff 定位。
+#[test]
+#[ignore]
+fn debug_ipr_002_probe() {
+    let case_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("wpt-data/css/css-sizing/intrinsic-percent-replaced-002.html");
+    let ref_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("wpt-data/css/reference/ref-filled-green-100px-square-only.html");
+    let html = std::fs::read_to_string(&case_path).expect("read test html");
+    let ref_html = std::fs::read_to_string(&ref_path).expect("read ref html");
+    let cfg = ReftestConfig::default();
+    let fb = render_to_framebuffer_with_base(&html, "", &cfg, case_path.parent());
+    let ref_fb = render_to_framebuffer_with_base(&ref_html, "", &cfg, None);
+    // 绿方 bbox 对比
+    for (label, f) in [("test", &fb), ("ref", &ref_fb)] {
+        let (mut x0, mut y0, mut x1, mut y1) = (usize::MAX, usize::MAX, 0usize, 0usize);
+        for y in 0..f.height as usize {
+            for x in 0..f.width as usize {
+                let i = (y * f.width as usize + x) * 4;
+                if f.data[i + 1] > 100 && f.data[i] < 100 && f.data[i + 2] < 100 {
+                    x0 = x0.min(x);
+                    y0 = y0.min(y);
+                    x1 = x1.max(x);
+                    y1 = y1.max(y);
+                }
+            }
+        }
+        println!(
+            "{label} green bbox=({x0},{y0})..({x1},{y1}) size=({},{})",
+            x1.saturating_sub(x0) + 1,
+            y1.saturating_sub(y0) + 1
+        );
+    }
+}

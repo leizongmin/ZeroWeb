@@ -1053,13 +1053,27 @@ impl LayoutEngine {
                                 // ZW_QUIRKS_PCT_FLEX_GATE=0 回退旧行为）。
                                 let quirk_blocked_by_flex_grid =
                                     inside_flex_grid && std::env::var("ZW_QUIRKS_PCT_FLEX_GATE").as_deref() != Ok("0");
-                                if quirks_mode && !b.is_replaced && !inside_table_cell && !quirk_blocked_by_flex_grid {
+                                // R4129：替换元素 + quirks 同链解析的 gate（见下注）——
+                                // 替换元素仅在 quirks_nearest_definite 有值（最近 definite
+                                // 祖先存在）时入链；无则走 else 臂 attr 固有回退（不虚构
+                                // ICB 满高替换元素）。非替换块维持原 R2107 语义（None →
+                                // ICB 兜底）。
+                                let quirk_pct_resolvable = quirks_mode
+                                    && !inside_table_cell
+                                    && !quirk_blocked_by_flex_grid
+                                    && (!b.is_replaced || quirks_nearest_definite.is_some());
+                                if quirk_pct_resolvable {
                                     // R2016 quirks mode（CSS quirks §percentage-height）：不明确 CB
                                     //（auto 父）的百分比 height 解析——legacy「百分比高度生效」行为。
                                     // R2107：解析针对**最近 definite-height 祖先**（穿透 auto 祖先），
                                     // 而非恒 ICB（chromium quirks：float-percentage-resolution-quirks-mode
                                     // 实测解析对 first ancestor with defined height）。无 definite 祖先时
                                     // 回退 ICB（viewport_height）。非替换块专用（替换元素保留固有尺寸回退）。
+                                    // R4129：**替换元素 + quirks 同链解析**（css-sizing-3 §intrinsic-sizes
+                                    // quirks legacy：`<canvas height=10 style="height:100%">` 在 float
+                                    // 容器 height:100 内应高 100 且 ratio 传宽 100——intrinsic-percent-
+                                    // replaced-002..004 族）。旧 gate `!b.is_replaced` 把替换元素踢到
+                                    // else 臂的 attr 固有回退（10×10），ratio 宽传递被锁死。
                                     // box-sizing 折算内容高供子链解析。
                                     let pb = b.padding_top + b.padding_bottom + b.border_top + b.border_bottom;
                                     let base = quirks_nearest_definite.unwrap_or(viewport_height);
