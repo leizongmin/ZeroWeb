@@ -78,6 +78,7 @@ fn make_container_rule(feature: &str, value: &str, rules: Vec<zero_css_parser::a
             operator: None,
             value: value.to_string(),
         }),
+        extra_conditions: Vec::new(),
         rules,
     }
 }
@@ -100,6 +101,7 @@ fn make_container_rule_advanced(
             operator: operator.map(String::from),
             value: value.to_string(),
         }),
+        extra_conditions: Vec::new(),
         rules,
     }
 }

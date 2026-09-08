@@ -332,6 +332,7 @@ fn test_container_rule_collects_declarations() {
             range_min: None,
             range_max: None,
         }),
+        extra_conditions: Vec::new(),
         rules: vec![zero_css_parser::ast::Rule::Style(StyleRule {
             selectors: vec![make_tag_selector("p")],
             declarations: vec![Declaration {

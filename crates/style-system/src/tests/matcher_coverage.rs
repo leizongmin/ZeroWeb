@@ -101,6 +101,7 @@ fn test_container_condition_invalid_length() {
                 range_min: None,
                 range_max: None,
             }),
+            extra_conditions: Vec::new(),
             rules: vec![Rule::Style(StyleRule {
                 selectors: vec![make_tag_selector("div")],
                 declarations: vec![Declaration {

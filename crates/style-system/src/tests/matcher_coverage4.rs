@@ -403,6 +403,7 @@ fn test_collect_matching_decls_with_container_no_context() {
                 range_min: None,
                 range_max: None,
             }),
+            extra_conditions: Vec::new(),
             rules: vec![Rule::Style(StyleRule {
                 selectors: vec![make_tag_selector("div")],
                 declarations: vec![Declaration {
@@ -440,6 +441,7 @@ fn test_collect_matching_decls_with_container_with_context() {
                 range_min: None,
                 range_max: None,
             }),
+            extra_conditions: Vec::new(),
             rules: vec![Rule::Style(StyleRule {
                 selectors: vec![make_tag_selector("div")],
                 declarations: vec![Declaration {

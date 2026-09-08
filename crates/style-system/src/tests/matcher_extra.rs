@@ -103,6 +103,7 @@ fn test_container_condition_with_min_max_prefix() {
                 range_min: None,
                 range_max: None,
             }),
+            extra_conditions: Vec::new(),
             rules: vec![Rule::Style(StyleRule {
                 selectors: vec![make_tag_selector("div")],
                 declarations: vec![Declaration {
@@ -149,6 +150,7 @@ fn test_container_condition_range_syntax() {
                 range_min: Some("300px".to_string()),
                 range_max: Some("500px".to_string()),
             }),
+            extra_conditions: Vec::new(),
             rules: vec![Rule::Style(StyleRule {
                 selectors: vec![make_tag_selector("div")],
                 declarations: vec![Declaration {

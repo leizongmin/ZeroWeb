@@ -98,8 +98,11 @@ fn parse_size_condition(text: &str) -> Option<ContainerSizeCondition> {
         });
     }
 
-    // 尝试比较运算符格式：`width > 300px`、`width >= 300px`、`width < 300px`、`width <= 300px`
-    for op in [">=", "<=", ">", "<"] {
+    // 尝试比较运算符格式：`width > 300px`、`width >= 300px`、`width < 300px`、`width <= 300px`、
+    // `width = 300px`（css-conditional-5/ css-values-4 §media-queries：= 等式比较符合法，
+    // driving: multiple-conditions-001 `(width = 200px)`——旧实现不支持 → 段 parse 失败
+    // → 整条 @container 规则被丢弃）。
+    for op in [">=", "<=", ">", "<", "="] {
         if let Some(op_pos) = text.find(op) {
             let feature = text[..op_pos].trim().to_string();
             let value = text[op_pos + op.len()..].trim().to_string();

@@ -566,6 +566,7 @@ fn test_container_feature_name_processing() {
             operator: None,
             value: "400px".to_string(),
         }),
+        extra_conditions: Vec::new(),
         rules: vec![],
     };
     let ctx = ContainerContext::with_size(500.0, 600.0);
@@ -580,6 +581,7 @@ fn test_container_feature_name_processing() {
             operator: None,
             value: "700px".to_string(),
         }),
+        extra_conditions: Vec::new(),
         rules: vec![],
     };
     let ctx_short = ContainerContext::with_size(800.0, 500.0);
@@ -595,6 +597,7 @@ fn test_container_feature_name_processing() {
             operator: None,
             value: "500px".to_string(),
         }),
+        extra_conditions: Vec::new(),
         rules: vec![],
     };
     assert!(evaluate_container_condition(&rule_inline, Some(&ctx)));
@@ -609,6 +612,7 @@ fn test_container_feature_name_processing() {
             operator: None,
             value: "600px".to_string(),
         }),
+        extra_conditions: Vec::new(),
         rules: vec![],
     };
     assert!(evaluate_container_condition(&rule_block, Some(&ctx)));
@@ -623,6 +627,7 @@ fn test_container_feature_name_processing() {
             operator: None,
             value: "300px".to_string(),
         }),
+        extra_conditions: Vec::new(),
         rules: vec![],
     };
     assert!(!evaluate_container_condition(&rule_no, Some(&ctx)));
@@ -1173,6 +1178,7 @@ fn test_container_condition_range_syntax() {
             operator: None,
             value: "".to_string(),
         }),
+        extra_conditions: Vec::new(),
         rules: vec![],
     };
 
@@ -1201,6 +1207,7 @@ fn test_container_condition_comparison_operator() {
             operator: Some(">".to_string()),
             value: "300px".to_string(),
         }),
+        extra_conditions: Vec::new(),
         rules: vec![],
     };
 

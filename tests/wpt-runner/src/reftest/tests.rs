@@ -2285,3 +2285,156 @@ fn debug_container_units_width_prop() {
         }
     }
 }
+
+/// R4126 勘察：multiple-conditions-001 探针——逗号分隔多条件（OR）@container。
+/// 4 容器 50/100/175/200px：A(<75 或 >150→cyan)、B(75-150→pink 或 =200→pink)、
+/// C(>150→cyan)、D(75-150→pink 或 =200→pink)。
+#[test]
+#[ignore]
+fn debug_multiple_conditions_probe() {
+    let case_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("wpt-data/css/css-conditional/container-queries/multiple-conditions-001.html");
+    let ref_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("wpt-data/css/css-conditional/container-queries/multiple-conditions-001-ref.html");
+    let html = std::fs::read_to_string(&case_path).expect("read test html");
+    let ref_html = std::fs::read_to_string(&ref_path).expect("read ref html");
+    let cfg = ReftestConfig::default();
+    let fb = render_to_framebuffer_with_base(&html, "", &cfg, case_path.parent());
+    let ref_fb = render_to_framebuffer_with_base(&ref_html, "", &cfg, ref_path.parent());
+    let mut diff = 0u32;
+    let mut row_diff = vec![0u32; fb.height as usize];
+    for y in 0..fb.height as usize {
+        for x in 0..fb.width as usize {
+            let i = (y * fb.width as usize + x) * 4;
+            let j = (y * ref_fb.width as usize + x) * 4;
+            let d = (fb.data[i] as i32 - ref_fb.data[j] as i32).abs()
+                + (fb.data[i + 1] as i32 - ref_fb.data[j + 1] as i32).abs()
+                + (fb.data[i + 2] as i32 - ref_fb.data[j + 2] as i32).abs();
+            if d > 30 {
+                diff += 1;
+                row_diff[y] += 1;
+            }
+        }
+    }
+    println!("diff pixels={diff}");
+    let mut bands: Vec<(usize, usize, u32)> = Vec::new();
+    for (y, cnt) in row_diff.iter().enumerate() {
+        if *cnt > 0 {
+            match bands.last_mut() {
+                Some(b) if b.1 + 1 == y => {
+                    b.1 = y;
+                    b.2 += *cnt;
+                }
+                _ => bands.push((y, y, *cnt)),
+            }
+        }
+    }
+    for (y0, y1, total) in &bands {
+        // 打印该带 test 与 ref 的主色
+        let ymid = (y0 + y1) / 2;
+        let pick = |f: &FrameBuffer| {
+            let mut counts: std::collections::HashMap<[u8; 3], u32> = std::collections::HashMap::new();
+            for x in 0..f.width as usize {
+                let i = (ymid * f.width as usize + x) * 4;
+                *counts.entry([f.data[i], f.data[i + 1], f.data[i + 2]]).or_default() += 1;
+            }
+            counts.into_iter().max_by_key(|(_, c)| *c).map(|(c, _)| c)
+        };
+        println!(
+            "band y={y0}..={y1} px={total} test主色={:?} ref主色={:?}",
+            pick(&fb),
+            pick(&ref_fb)
+        );
+    }
+    if diff == 0 {
+        println!("zero diff — 全绿");
+    }
+    let _ = &ref_fb;
+    // dump ZW styles map：四个容器子 div 的 background_color + 容器链尺寸。
+    let case_dir = case_path.parent().unwrap();
+    let _ = case_dir;
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    pipeline.set_skip_indicators(true);
+    let font_loader = create_font_loader();
+    pipeline.set_font_resolver(font_loader.build_font_resolver());
+    let rendered = pipeline.render_html(&html, "");
+    let styles = pipeline.cached_styles_snapshot();
+    for (nid, s) in styles.iter() {
+        if s.display == zero_css_parser::values::DisplayValue::Block {
+            println!(
+                "node {:?} bg={:?} container_type={:?} w={:?}",
+                nid, s.background_color, s.container_type, s.width
+            );
+        }
+    }
+    let _ = rendered;
+}
+
+/// R4126 勘察二：单 B 卡（100px 容器）+ R2 规则（75-150 pink）——隔离 R2 未生效问题。
+#[test]
+#[ignore]
+fn debug_r2_single_b_card() {
+    let html = r#"<html><head><style>
+      .container { container-type: inline-size; }
+      .container > div { width: 100%; height: 20px; }
+      @container (75px <= width <= 150px) { div { background-color: pink; } }
+    </style></head><body>
+      <div class="container" style="width: 100px"><div>B</div></div>
+    </body></html>"#;
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    pipeline.set_skip_indicators(true);
+    let font_loader = create_font_loader();
+    pipeline.set_font_resolver(font_loader.build_font_resolver());
+    let rendered = pipeline.render_html(html, "");
+    let styles = pipeline.cached_styles_snapshot();
+    for (nid, s) in styles.iter() {
+        if s.width == zero_css_parser::values::LengthValue::Percentage(100.0) {
+            println!("div node {:?} bg={:?}", nid, s.background_color);
+        }
+    }
+    let _ = rendered;
+}
+
+/// R4126 勘察三：4 卡双规则页——R2 单独 vs R1+R2 对分。
+#[test]
+#[ignore]
+fn debug_r2_full_page_split() {
+    for (label, r1) in [
+        ("仅R2", ""),
+        (
+            "R1+R2",
+            "@container (width < 75px), (width > 150px) { div { background-color: cyan; } }\n",
+        ),
+    ] {
+        let html = format!(
+            r#"<html><head><style>
+      .container {{ container-type: inline-size; }}
+      .container > div {{ width: 100%; height: 20px; }}
+      {r1}@container (75px <= width <= 150px), (width = 200px) {{ div {{ background-color: pink; }} }}
+    </style></head><body>
+      <div class="container" style="width: 50px"><div>A</div></div>
+      <div class="container" style="width: 100px"><div>B</div></div>
+      <div class="container" style="width: 175px"><div>C</div></div>
+      <div class="container" style="width: 200px"><div>D</div></div>
+    </body></html>"#
+        );
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        pipeline.set_skip_indicators(true);
+        let font_loader = create_font_loader();
+        pipeline.set_font_resolver(font_loader.build_font_resolver());
+        let rendered = pipeline.render_html(&html, "");
+        let styles = pipeline.cached_styles_snapshot();
+        let mut bgs = Vec::new();
+        for (nid, s) in styles.iter() {
+            if s.width == zero_css_parser::values::LengthValue::Percentage(100.0) {
+                bgs.push(format!("{:?}->{:?}", nid, s.background_color));
+            }
+        }
+        bgs.sort();
+        println!(
+            "{label}: {:?}",
+            bgs.iter().map(|b| b.contains("255, 192, 203")).collect::<Vec<_>>()
+        );
+        let _ = rendered;
+    }
+}

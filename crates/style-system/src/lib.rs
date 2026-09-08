@@ -2391,6 +2391,13 @@ fn rules_cache_safe(rules: &[zero_css_parser::ast::Rule]) -> bool {
                     return false;
                 }
             }
+            // R4126：@container 规则 → 键缓存不安全。@container 内声明的 computed
+            // 值依赖「最近查询容器尺寸」（容器链顶，R4124/R4125），而 StyleKey 只含
+            // tag/class/id + 父键链——不同容器下同键元素（如各容器内的 div）会错误
+            // 复用首个元素的 computed（multiple-conditions-001 四卡全 cyan 实锤：
+            // B/C/D div 复用 A div 的 cyan，pink 规则的求值根本没发生）。
+            // @container 页面极少，整表禁缓存成本可忽略。
+            Rule::Container(_) => return false,
             _ => {}
         }
     }

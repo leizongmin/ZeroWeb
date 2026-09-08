@@ -193,6 +193,7 @@ fn test_evaluate_container_condition_no_context() {
             range_min: None,
             range_max: None,
         }),
+        extra_conditions: Vec::new(),
         rules: vec![],
     };
 
@@ -444,4 +445,65 @@ fn test_empty_pseudo() {
 
     assert!(matches_selector(&doc, empty_div, &sel));
     assert!(!matches_selector(&doc, non_empty_div, &sel));
+}
+
+/// R4126：多条件 OR + 等式 `=` ——`@container (width < 75px), (width > 150px)` 第二段
+/// 经 extra_conditions 求 OR；`(width = 200px)` 等式比较符（css-values-4）。
+#[test]
+fn r4126_multi_condition_or_and_equality() {
+    use zero_css_parser::Parser;
+    let css = "@container (width < 75px), (width > 150px) { div { color: red } } \
+               @container (75px <= width <= 150px), (width = 200px) { div { color: green } }";
+    let sheet = Parser::parse_stylesheet(css);
+    assert_eq!(
+        sheet.rules.len(),
+        2,
+        "两条 @container 规则都应解析（旧实现第二段逗号致整条丢弃）"
+    );
+    if let zero_css_parser::ast::Rule::Container(r1) = &sheet.rules[0] {
+        assert_eq!(r1.extra_conditions.len(), 1, "规则一 1 个额外条件段");
+    } else {
+        panic!("rule 0 not container");
+    }
+    if let zero_css_parser::ast::Rule::Container(r2) = &sheet.rules[1] {
+        assert_eq!(r2.extra_conditions.len(), 1, "规则二 1 个额外条件段");
+        // 等式段成功解析（operator = "="）
+        let eq = &r2.extra_conditions[0];
+        let size = match eq {
+            zero_css_parser::ast::ContainerCondition::Size(s) => s,
+            zero_css_parser::ast::ContainerCondition::InlineSize(s) => s,
+        };
+        assert_eq!(size.operator.as_deref(), Some("="), "等式运算符");
+    } else {
+        panic!("rule 1 not container");
+    }
+}
+
+/// R4126：evaluator 级——容器 100px 时规则一（<75,>150）应 false、规则二
+///（75-150 范围，=200）应 true（范围段命中）。
+#[test]
+fn r4126_evaluator_b_card_100px() {
+    use zero_css_parser::Parser;
+    let css = "@container (width < 75px), (width > 150px) { div { color: red } } \
+               @container (75px <= width <= 150px), (width = 200px) { div { color: green } }";
+    let sheet = Parser::parse_stylesheet(css);
+    let ctx = ContainerContext::with_size(100.0, 600.0);
+    let eval =
+        |rule: &zero_css_parser::ast::ContainerRule| super::super::evaluate_container_condition(rule, Some(&ctx));
+    if let zero_css_parser::ast::Rule::Container(r1) = &sheet.rules[0] {
+        assert!(!eval(r1), "规则一对 100px 应 false");
+    }
+    if let zero_css_parser::ast::Rule::Container(r2) = &sheet.rules[1] {
+        assert!(eval(r2), "规则二对 100px 应 true（75-150 范围段）");
+    }
+}
+
+/// R4126：含 @container 的样式表 → StyleKey 缓存不安全（键不含容器链顶）。
+#[test]
+fn r4126_container_stylesheet_not_cache_safe() {
+    let sheet = zero_css_parser::Parser::parse_stylesheet("@container (width > 100px) { div { color: red } }");
+    assert!(
+        !crate::stylesheet_cache_safe(&[sheet]),
+        "@container 样式表应禁用键缓存（跨容器污染）"
+    );
 }

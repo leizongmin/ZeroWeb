@@ -506,6 +506,9 @@ pub struct ContainerRule {
     pub name: Option<String>,
     /// 容器查询条件。
     pub condition: ContainerCondition,
+    /// 额外条件（css-conditional-5 §container-queries：逗号分隔的多条件 = OR，
+    /// 任一为真即应用。`@container (width < 75px), (width > 150px)` 的第二段起存此）。
+    pub extra_conditions: Vec<ContainerCondition>,
     /// 条件为真时应用的规则列表。
     pub rules: Vec<Rule>,
 }

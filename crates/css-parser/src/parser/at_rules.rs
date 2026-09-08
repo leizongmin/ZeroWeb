@@ -941,21 +941,40 @@ impl<'a> Parser<'a> {
         //       把 `size(` 产成 `Function("size")`（ident 紧跟 `(`），Function token 已含 `(`，
         //       须单独处理，否则 `size` 被跳过、条件丢失 `size(` 包装致 parse_container_condition
         //       解析为裸 width 条件（driving: `@container size(width > 300px)`）。
-        let condition = if matches!(self.peek(), Token::LParen) {
-            self.advance(); // (
-            let cond_text = self.collect_paren_content()?;
-            parse_container_condition(cond_text.trim())?
-        } else if let Token::Function(func) = self.peek().clone() {
-            if !func.eq_ignore_ascii_case("size") && !func.eq_ignore_ascii_case("inline-size") {
-                return None;
+        // R4126（css-conditional-5 §container-queries）：条件可逗号分隔多段 = OR
+        //（`@container (width < 75px), (width > 150px)`，任一为真即应用）。旧实现只收
+        // 第一段，逗号后遇非 `{` 整条规则丢弃（multiple-conditions-001 全败根因）。
+        // 首段入 `condition`，后续段入 `extra_conditions`（求值端 OR）。
+        let parse_one_condition = |parser: &mut Self| -> Option<ContainerCondition> {
+            parser.skip_whitespace();
+            if matches!(parser.peek(), Token::LParen) {
+                parser.advance(); // (
+                let cond_text = parser.collect_paren_content()?;
+                parse_container_condition(cond_text.trim())
+            } else if let Token::Function(func) = parser.peek().clone() {
+                if !func.eq_ignore_ascii_case("size") && !func.eq_ignore_ascii_case("inline-size") {
+                    return None;
+                }
+                let func = func.to_ascii_lowercase();
+                parser.advance(); // Function token（已含 `(`）
+                let inner = parser.collect_paren_content()?;
+                parse_container_condition(&format!("{func}({inner})"))
+            } else {
+                None
             }
-            let func = func.to_ascii_lowercase();
-            self.advance(); // Function token（已含 `(`）
-            let inner = self.collect_paren_content()?;
-            parse_container_condition(&format!("{func}({inner})"))?
-        } else {
-            return None;
         };
+        let condition = parse_one_condition(self)?;
+
+        let mut extra_conditions = Vec::new();
+        loop {
+            self.skip_whitespace();
+            if matches!(self.peek(), Token::Comma) {
+                self.advance();
+                extra_conditions.push(parse_one_condition(self)?);
+            } else {
+                break;
+            }
+        }
 
         self.skip_whitespace();
 
@@ -972,7 +991,12 @@ impl<'a> Parser<'a> {
             self.advance();
         }
 
-        Some(ContainerRule { name, condition, rules })
+        Some(ContainerRule {
+            name,
+            condition,
+            extra_conditions,
+            rules,
+        })
     }
 
     /// 收集已消耗 `(` 后的括号内容文本，直到匹配 `)`（嵌套 `()` 保留）。

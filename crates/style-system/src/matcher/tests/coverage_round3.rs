@@ -212,6 +212,7 @@ fn test_container_range_width() {
             range_min: Some("200px".to_string()),
             range_max: Some("500px".to_string()),
         }),
+        extra_conditions: Vec::new(),
         rules: vec![],
     };
     let ctx = ContainerContext::with_size(400.0, 600.0);
@@ -230,6 +231,7 @@ fn test_container_range_too_narrow() {
             range_min: Some("200px".to_string()),
             range_max: Some("500px".to_string()),
         }),
+        extra_conditions: Vec::new(),
         rules: vec![],
     };
     let ctx = ContainerContext::with_size(100.0, 600.0);
@@ -248,6 +250,7 @@ fn test_container_range_too_wide() {
             range_min: Some("200px".to_string()),
             range_max: Some("500px".to_string()),
         }),
+        extra_conditions: Vec::new(),
         rules: vec![],
     };
     let ctx = ContainerContext::with_size(800.0, 600.0);
@@ -266,6 +269,7 @@ fn test_container_range_invalid_min() {
             range_min: Some("invalid".to_string()),
             range_max: Some("500px".to_string()),
         }),
+        extra_conditions: Vec::new(),
         rules: vec![],
     };
     let ctx = ContainerContext::with_size(400.0, 600.0);
@@ -287,6 +291,7 @@ fn test_container_gt() {
             range_min: None,
             range_max: None,
         }),
+        extra_conditions: Vec::new(),
         rules: vec![],
     };
     let ctx = ContainerContext::with_size(400.0, 600.0);
@@ -304,6 +309,7 @@ fn test_container_gt_fail() {
             range_min: None,
             range_max: None,
         }),
+        extra_conditions: Vec::new(),
         rules: vec![],
     };
     let ctx = ContainerContext::with_size(200.0, 600.0);
@@ -321,6 +327,7 @@ fn test_container_lt() {
             range_min: None,
             range_max: None,
         }),
+        extra_conditions: Vec::new(),
         rules: vec![],
     };
     let ctx = ContainerContext::with_size(800.0, 600.0);
@@ -338,6 +345,7 @@ fn test_container_lte() {
             range_min: None,
             range_max: None,
         }),
+        extra_conditions: Vec::new(),
         rules: vec![],
     };
     let ctx = ContainerContext::with_size(400.0, 600.0);
@@ -355,6 +363,7 @@ fn test_container_gte() {
             range_min: None,
             range_max: None,
         }),
+        extra_conditions: Vec::new(),
         rules: vec![],
     };
     let ctx = ContainerContext::with_size(400.0, 600.0);
@@ -372,6 +381,7 @@ fn test_container_unknown_operator() {
             range_min: None,
             range_max: None,
         }),
+        extra_conditions: Vec::new(),
         rules: vec![],
     };
     let ctx = ContainerContext::with_size(400.0, 600.0);
@@ -393,6 +403,7 @@ fn test_container_min_width_colon() {
             range_min: None,
             range_max: None,
         }),
+        extra_conditions: Vec::new(),
         rules: vec![],
     };
     let ctx = ContainerContext::with_size(500.0, 600.0);
@@ -410,6 +421,7 @@ fn test_container_min_width_colon_fail() {
             range_min: None,
             range_max: None,
         }),
+        extra_conditions: Vec::new(),
         rules: vec![],
     };
     let ctx = ContainerContext::with_size(300.0, 600.0);
@@ -427,6 +439,7 @@ fn test_container_max_height_colon() {
             range_min: None,
             range_max: None,
         }),
+        extra_conditions: Vec::new(),
         rules: vec![],
     };
     let ctx = ContainerContext::with_size(800.0, 500.0);
@@ -444,6 +457,7 @@ fn test_container_exact_width_colon() {
             range_min: None,
             range_max: None,
         }),
+        extra_conditions: Vec::new(),
         rules: vec![],
     };
     let ctx = ContainerContext::with_size(800.0, 600.0);
@@ -461,6 +475,7 @@ fn test_container_exact_width_colon_fail() {
             range_min: None,
             range_max: None,
         }),
+        extra_conditions: Vec::new(),
         rules: vec![],
     };
     let ctx = ContainerContext::with_size(801.0, 600.0);
@@ -478,6 +493,7 @@ fn test_container_no_context() {
             range_min: None,
             range_max: None,
         }),
+        extra_conditions: Vec::new(),
         rules: vec![],
     };
     assert!(!evaluate_container_condition(&rule, None));
@@ -495,6 +511,7 @@ fn test_container_context_missing_axis() {
             range_min: None,
             range_max: None,
         }),
+        extra_conditions: Vec::new(),
         rules: vec![],
     };
     let ctx = ContainerContext {
@@ -793,6 +810,7 @@ fn test_collect_from_container_rule_matching() {
             range_min: None,
             range_max: None,
         }),
+        extra_conditions: Vec::new(),
         rules: vec![Rule::Style(StyleRule {
             selectors: vec![Selector {
                 complex: ComplexSelector {
@@ -846,6 +864,7 @@ fn test_collect_from_container_rule_not_matching() {
             range_min: None,
             range_max: None,
         }),
+        extra_conditions: Vec::new(),
         rules: vec![Rule::Style(StyleRule {
             selectors: vec![Selector {
                 complex: ComplexSelector {
@@ -901,6 +920,7 @@ fn test_collect_from_container_rule_no_context() {
             range_min: None,
             range_max: None,
         }),
+        extra_conditions: Vec::new(),
         rules: vec![Rule::Style(StyleRule {
             selectors: vec![Selector {
                 complex: ComplexSelector {

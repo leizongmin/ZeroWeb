@@ -882,6 +882,7 @@ fn test_container_condition_no_context() {
             range_min: None,
             range_max: None,
         }),
+        extra_conditions: Vec::new(),
         rules: vec![],
     };
     assert!(!evaluate_container_condition(&rule, None));
@@ -902,6 +903,7 @@ fn test_container_comparison_gte() {
             range_min: None,
             range_max: None,
         }),
+        extra_conditions: Vec::new(),
         rules: vec![],
     };
     let ctx = ContainerContext::with_size(400.0, 600.0);
@@ -923,6 +925,7 @@ fn test_container_comparison_lt() {
             range_min: None,
             range_max: None,
         }),
+        extra_conditions: Vec::new(),
         rules: vec![],
     };
     let ctx = ContainerContext::with_size(200.0, 600.0);
@@ -942,6 +945,7 @@ fn test_container_comparison_lte() {
             range_min: None,
             range_max: None,
         }),
+        extra_conditions: Vec::new(),
         rules: vec![],
     };
     let ctx = ContainerContext::with_size(800.0, 400.0);
@@ -963,6 +967,7 @@ fn test_container_inline_size_feature() {
             range_min: None,
             range_max: None,
         }),
+        extra_conditions: Vec::new(),
         rules: vec![],
     };
     let ctx = ContainerContext::with_size(500.0, 600.0);
@@ -980,6 +985,7 @@ fn test_container_block_size_feature() {
             range_min: None,
             range_max: None,
         }),
+        extra_conditions: Vec::new(),
         rules: vec![],
     };
     let ctx = ContainerContext::with_size(800.0, 500.0);
@@ -997,6 +1003,7 @@ fn test_container_unknown_feature() {
             range_min: None,
             range_max: None,
         }),
+        extra_conditions: Vec::new(),
         rules: vec![],
     };
     let ctx = ContainerContext::with_size(500.0, 600.0);
@@ -1014,6 +1021,7 @@ fn test_container_invalid_length_value() {
             range_min: None,
             range_max: None,
         }),
+        extra_conditions: Vec::new(),
         rules: vec![],
     };
     let ctx = ContainerContext::with_size(500.0, 600.0);
@@ -1128,6 +1136,7 @@ fn test_container_rule_matching() {
             range_min: None,
             range_max: None,
         }),
+        extra_conditions: Vec::new(),
         rules: vec![Rule::Style(StyleRule {
             selectors: vec![super::uncovered_paths::make_tag_selector("span")],
             declarations: vec![Declaration {

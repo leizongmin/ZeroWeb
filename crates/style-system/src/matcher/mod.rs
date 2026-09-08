@@ -1010,39 +1010,50 @@ fn evaluate_container_condition(
         return false;
     };
 
-    let condition = &container_rule.condition;
-    let size_cond = match condition {
-        zero_css_parser::ast::ContainerCondition::Size(s) | zero_css_parser::ast::ContainerCondition::InlineSize(s) => {
-            s
+    // R4126（css-conditional-5 §container-queries）：多条件逗号分隔 = OR——
+    // `condition` 与 `extra_conditions` 任一为真即应用（任一段无法解析按 false 计）。
+    let eval_one = |condition: &zero_css_parser::ast::ContainerCondition| -> bool {
+        let size_cond = match condition {
+            zero_css_parser::ast::ContainerCondition::Size(s)
+            | zero_css_parser::ast::ContainerCondition::InlineSize(s) => s,
+        };
+
+        let feature = size_cond.feature.to_ascii_lowercase();
+
+        // 范围语法：200px <= width <= 500px
+        if let (Some(min_str), Some(max_str)) = (&size_cond.range_min, &size_cond.range_max) {
+            let (Some(min_px), Some(max_px)) = (length_to_px(min_str), length_to_px(max_str)) else {
+                return false;
+            };
+            let Some(actual) = get_axis_size(ctx, &feature) else {
+                return false;
+            };
+            return actual >= min_px && actual <= max_px;
         }
+
+        // 比较运算符语法 / 冒号语法共用主臂（evaluate_size_condition）
+        evaluate_size_condition(size_cond, ctx, &feature)
     };
 
-    let feature = size_cond.feature.to_ascii_lowercase();
-
-    // 范围语法：200px <= width <= 500px
-    if let (Some(min_str), Some(max_str)) = (&size_cond.range_min, &size_cond.range_max) {
-        let min_px = match length_to_px(min_str) {
-            Some(v) => v,
-            None => return false,
-        };
-        let max_px = match length_to_px(max_str) {
-            Some(v) => v,
-            None => return false,
-        };
-        let actual = match get_axis_size(ctx, &feature) {
-            Some(v) => v,
-            None => return false,
-        };
-        return actual >= min_px && actual <= max_px;
+    if eval_one(&container_rule.condition) {
+        return true;
     }
+    container_rule.extra_conditions.iter().any(&eval_one)
+}
 
+/// 评估单个尺寸条件（比较运算符与冒号语法；范围语法已由调用方处理）。
+fn evaluate_size_condition(
+    size_cond: &zero_css_parser::ast::ContainerSizeCondition,
+    ctx: &ContainerContext,
+    feature: &str,
+) -> bool {
     // 比较运算符语法：width > 300px
     if let Some(ref op) = size_cond.operator {
         let cond_px = match length_to_px(&size_cond.value) {
             Some(v) => v,
             None => return false,
         };
-        let actual = match get_axis_size(ctx, &feature) {
+        let actual = match get_axis_size(ctx, feature) {
             Some(v) => v,
             None => return false,
         };
@@ -1051,6 +1062,9 @@ fn evaluate_container_condition(
             ">=" => actual >= cond_px,
             "<" => actual < cond_px,
             "<=" => actual <= cond_px,
+            // R4126：= 等式比较符（css-values-4 media 查询语法；driving:
+            // multiple-conditions-001 `(width = 200px)`）。
+            "=" => (actual - cond_px).abs() < f64::EPSILON,
             _ => false,
         };
     }
@@ -1062,7 +1076,7 @@ fn evaluate_container_condition(
     };
 
     // 根据特性名称评估条件
-    let result = match feature.as_str() {
+    let result = match feature {
         "min-width" | "min-inline-size" => ctx.container_width.map(|w| w >= cond_px),
         "max-width" | "max-inline-size" => ctx.container_width.map(|w| w <= cond_px),
         "width" | "inline-size" => ctx.container_width.map(|w| (w - cond_px).abs() < f64::EPSILON),

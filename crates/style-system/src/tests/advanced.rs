@@ -1557,6 +1557,7 @@ fn test_container_query_min_width_applies() {
                 range_min: None,
                 range_max: None,
             }),
+            extra_conditions: Vec::new(),
             rules: vec![Rule::Style(StyleRule {
                 selectors: vec![make_tag_selector("div")],
                 declarations: vec![Declaration {
@@ -1604,6 +1605,7 @@ fn test_container_query_min_width_not_applies() {
                 range_min: None,
                 range_max: None,
             }),
+            extra_conditions: Vec::new(),
             rules: vec![Rule::Style(StyleRule {
                 selectors: vec![make_tag_selector("div")],
                 declarations: vec![Declaration {
@@ -1649,6 +1651,7 @@ fn test_container_query_max_width() {
                 range_min: None,
                 range_max: None,
             }),
+            extra_conditions: Vec::new(),
             rules: vec![Rule::Style(StyleRule {
                 selectors: vec![make_tag_selector("div")],
                 declarations: vec![Declaration {
@@ -1680,6 +1683,7 @@ fn test_container_query_range_syntax() {
                 range_min: Some("200px".to_string()),
                 range_max: Some("500px".to_string()),
             }),
+            extra_conditions: Vec::new(),
             rules: vec![Rule::Style(StyleRule {
                 selectors: vec![make_tag_selector("div")],
                 declarations: vec![Declaration {
@@ -1751,6 +1755,7 @@ fn test_container_query_no_context() {
                 range_min: None,
                 range_max: None,
             }),
+            extra_conditions: Vec::new(),
             rules: vec![Rule::Style(StyleRule {
                 selectors: vec![make_tag_selector("div")],
                 declarations: vec![Declaration {
