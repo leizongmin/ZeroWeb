@@ -1828,3 +1828,61 @@ fn r3635_abspos_table_recenter_accepts_residual_real_insets() {
     assert_eq!(table_box.margin_top, 60.0);
     assert_eq!(table_box.margin_bottom, 60.0);
 }
+
+/// R4141（CSS2 §17.2.1.1）：merge_orphan_table_run 生成的匿名 table 包装盒须携带
+/// content_width（run 子 x..x+width 覆盖宽）。此前 content_width 留默认 0，
+/// position_cells 的 table_content_width = min(0, col_sum) = 0 → 行组内行盒宽全 0
+///（table-anonymous-objects-061：rowgroup 两行不可见）。
+#[test]
+fn test_merge_orphan_run_sets_content_width() {
+    use crate::engine::LayoutEngine;
+    use crate::types::LayoutBox;
+    use zero_style_system::StyleSystem;
+
+    // div 内 3 个裸 table-cell span + 1 个 table-row-group span（内含 2 行 × 3 cell）。
+    // 内联样式（StyleSystem 由此测试不经样式表——与 061 用例同构）。
+    let html = r#"<html><body><div>
+        <span style="display:table-cell">a</span>
+        <span style="display:table-cell">b</span>
+        <span style="display:table-cell">c</span>
+        <span style="display:table-row-group">
+            <span style="display:table-row"><span style="display:table-cell">r2c1</span><span style="display:table-cell">r2c2</span><span style="display:table-cell">r2c3</span></span>
+            <span style="display:table-row"><span style="display:table-cell">r3c1</span><span style="display:table-cell">r3c2</span><span style="display:table-cell">r3c3</span></span>
+        </span>
+    </div></body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+
+    // 找匿名 table 包装盒（无 node_id、is_anon_table_root）
+    fn find_anon(b: &LayoutBox) -> Option<&LayoutBox> {
+        if b.is_anon_table_root && b.node_id.is_none() {
+            return Some(b);
+        }
+        for c in &b.children {
+            if let Some(f) = find_anon(c) {
+                return Some(f);
+            }
+        }
+        None
+    }
+    let wrapper = find_anon(&result.root).expect("应存在匿名 table 包装盒");
+    assert!(
+        wrapper.content_width > 0.01,
+        "匿名 table 包装盒 content_width 应 > 0（run 子覆盖宽），got {}",
+        wrapper.content_width
+    );
+    // 行组内的行盒宽 = 表 content 宽（非 0）
+    for rg in &wrapper.children {
+        for row in &rg.children {
+            assert!(
+                row.width > 0.01,
+                "行组内行盒宽应 = table_content_width（非 0），got {}",
+                row.width
+            );
+        }
+    }
+}

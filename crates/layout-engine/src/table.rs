@@ -188,6 +188,15 @@ fn merge_orphan_table_run(
     wrapper.x = x;
     wrapper.y = y;
     wrapper.width = width;
+    // R4141（CSS2 §17.2.1.1）：匿名 table 包装盒的 content_width 须反映 run 子的
+    // footprint——此前仅设 width，content_width 留默认 0，position_cells 的
+    // table_content_width = min(content_width, col_sum) = 0 → 行盒宽全为 0（行组内行
+    // 不可见/裁剪）。取 run 子 x..x+width 的覆盖区间宽（包装盒无 padding/border）。
+    let min_x = run_children.iter().map(|c| c.x).fold(f32::MAX, f32::min);
+    let max_right = run_children.iter().map(|c| c.x + c.width).fold(f32::MIN, f32::max);
+    if max_right > min_x {
+        wrapper.content_width = max_right - min_x;
+    }
     wrapper.children = run_children;
     root.children.insert(run_start, wrapper);
     // 4. layout_table 包装盒（build_grid 正常路径：多 row-group → 多行堆叠）。

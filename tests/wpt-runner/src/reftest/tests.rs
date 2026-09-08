@@ -3680,3 +3680,158 @@ fn r4140_inline_block_first_atom_margin_top() {
     }
     assert_eq!(top, Some(32), "block 首子 margin 仍应与 body 折叠（max(8,32)=32）");
 }
+
+/// R4141 勘察：table-anonymous-objects-061（1.03%）——display:table-cell 序列的
+/// 匿名表格生成 vs ref 真表格 diff 带。
+#[test]
+#[ignore]
+fn debug_r4141_anon_table_061() {
+    let cfg = ReftestConfig::default();
+    let base = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("wpt-data/css/CSS2/tables");
+    let html = std::fs::read_to_string(base.join("table-anonymous-objects-061.xht")).expect("read");
+    let ref_html = std::fs::read_to_string(base.join("reference/no_red_3x3_monospace_table-ref.xht")).expect("read");
+    let fb = render_to_framebuffer_with_base(&html, "", &cfg, Some(&base));
+    let ref_fb = render_to_framebuffer_with_base(&ref_html, "", &cfg, Some(&base));
+    // 红墨（test 页 z1 红 + ref 页红=无）与绿墨（z2 绿应盖红）
+    let ink = |f: &zero_render_foundation::surface::FrameBuffer, x: usize, y: usize| -> (bool, bool, bool) {
+        let i = (y * f.width as usize + x) * 4;
+        // CSS green = #008000 (g=128)，ref 页绿色表格文字；red = #f00
+        let (r, g, b) = (f.data[i] as i32, f.data[i + 1] as i32, f.data[i + 2] as i32);
+        (
+            r > 150 && g < 120 && b < 120,
+            g > r + 40 && g > b + 40 && g > 80,
+            r < 60 && g < 60 && b < 60,
+        )
+    };
+    let (mut red_t, mut green_t, mut dark_t) = (0usize, 0usize, 0usize);
+    for y in 0..fb.height as usize {
+        for x in 0..fb.width as usize {
+            let (r, g, d) = ink(&fb, x, y);
+            red_t += r as usize;
+            green_t += g as usize;
+            dark_t += d as usize;
+        }
+    }
+    println!("TEST: red={red_t} green={green_t} dark={dark_t} (应 red=0 green>0：绿应完全盖红)");
+    let (mut red_r, mut green_r) = (0usize, 0usize);
+    for y in 0..ref_fb.height as usize {
+        for x in 0..ref_fb.width as usize {
+            let (r, g, _) = ink(&ref_fb, x, y);
+            red_r += r as usize;
+            green_r += g as usize;
+        }
+    }
+    println!("REF:  red={red_r} green={green_r}");
+    // 行带 diff（对齐 ref 逐行）
+    let mut bands: Vec<(usize, usize, u32)> = Vec::new();
+    for y in 0..fb.height as usize {
+        let mut cnt = 0u32;
+        for x in 0..fb.width as usize {
+            let i = (y * fb.width as usize + x) * 4;
+            let j = (y * ref_fb.width as usize + x) * 4;
+            let d = (fb.data[i] as i32 - ref_fb.data[j] as i32).abs()
+                + (fb.data[i + 1] as i32 - ref_fb.data[j + 1] as i32).abs()
+                + (fb.data[i + 2] as i32 - ref_fb.data[j + 2] as i32).abs();
+            if d > 30 {
+                cnt += 1;
+            }
+        }
+        if cnt > 0 {
+            match bands.last_mut() {
+                Some(b) if b.1 + 1 == y => {
+                    b.1 = y;
+                    b.2 += cnt;
+                }
+                _ => bands.push((y, y, cnt)),
+            }
+        }
+    }
+    for (y0, y1, t) in bands.iter().take(6) {
+        println!("diff band y{y0}..{y1} ({t}px)");
+    }
+}
+
+/// R4141 探针：case 061 布局树——bare display:table-cell span 序列是否生成匿名表。
+#[test]
+#[ignore]
+fn debug_r4141_anon_table_061_tree() {
+    use zero_css_parser::Parser as CssParser;
+    use zero_dom::parse_html;
+    use zero_layout_engine::LayoutEngine;
+    use zero_style_system::StyleSystem;
+    let html = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("wpt-data/css/CSS2/tables/table-anonymous-objects-061.xht"),
+    )
+    .expect("read");
+    let doc = parse_html(&html);
+    let stylesheet = CssParser::parse_stylesheet("");
+    let mut sys = StyleSystem::new();
+    let styles = sys.compute_styles(&doc, &[stylesheet]);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    fn dump(b: &zero_layout_engine::types::LayoutBox, depth: usize) {
+        let pad = "  ".repeat(depth);
+        println!(
+            "{pad}node={:?} x={} y={} w={} h={} mt={} cwidth={}",
+            b.node_id, b.x, b.y, b.width, b.height, b.margin_top, b.content_width
+        );
+        for c in &b.children {
+            dump(c, depth + 1);
+        }
+    }
+    dump(&result.root, 1);
+}
+
+/// R4141 探针：case 061 渲染页红/绿墨的行 y 范围（定位红绿错位量）。
+#[test]
+#[ignore]
+fn debug_r4141_anon_table_061_offset() {
+    let cfg = ReftestConfig::default();
+    let base = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("wpt-data/css/CSS2/tables");
+    let html = std::fs::read_to_string(base.join("table-anonymous-objects-061.xht")).expect("read");
+    let fb = render_to_framebuffer_with_base(&html, "", &cfg, Some(&base));
+    let mut red_rows: Vec<usize> = Vec::new();
+    let mut green_rows: Vec<usize> = Vec::new();
+    for y in 0..fb.height as usize {
+        for x in 0..fb.width as usize {
+            let i = (y * fb.width as usize + x) * 4;
+            let (r, g, b) = (fb.data[i] as i32, fb.data[i + 1] as i32, fb.data[i + 2] as i32);
+            if r > 150 && g < 120 && b < 120 {
+                red_rows.push(y);
+                break;
+            }
+            if g > r + 40 && g > b + 40 && g > 80 {
+                green_rows.push(y);
+                break;
+            }
+        }
+    }
+    let r0 = red_rows.first().copied().unwrap_or(9999);
+    let r1 = red_rows.last().copied().unwrap_or(9999);
+    let g0 = green_rows.first().copied().unwrap_or(9999);
+    let g1 = green_rows.last().copied().unwrap_or(9999);
+    println!("red rows y{r0}..{r1}, green rows y{g0}..{g1}（chromium：绿完全盖红 → y 范围一致）");
+    // x 范围
+    let mut red_xs: Vec<usize> = Vec::new();
+    let mut green_xs: Vec<usize> = Vec::new();
+    for x in 0..fb.width as usize {
+        for y in 0..fb.height as usize {
+            let i = (y * fb.width as usize + x) * 4;
+            let (r, g, b) = (fb.data[i] as i32, fb.data[i + 1] as i32, fb.data[i + 2] as i32);
+            if r > 150 && g < 120 && b < 120 {
+                red_xs.push(x);
+                break;
+            }
+            if g > r + 40 && g > b + 40 && g > 80 {
+                green_xs.push(x);
+                break;
+            }
+        }
+    }
+    println!(
+        "red x{:?}..green x{:?}",
+        red_xs.first().zip(red_xs.last()),
+        green_xs.first().zip(green_xs.last())
+    );
+}
