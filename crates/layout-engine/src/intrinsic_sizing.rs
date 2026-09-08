@@ -109,6 +109,20 @@ pub(crate) fn box_content_max_width(
                 });
             if empty_inline {
                 // R1298：空 display:Inline 贡献 0（见上方注释）。
+                // R4134（CSS2 §10.3.9 + inline 盒模型）：空 inline 但带 frame（padding/border，
+                // 如 word-spacing-characters-001 ref 页 `.spacer{padding-left:4em}` 空嵌套
+                // span）时其 max-content 贡献 = frame——空 inline 盒的内容宽为 0，但 padding
+                // 是盒几何的一部分（chromium 实测 spacer 撑开 4em）。纯空 span（frame=0）
+                // 维持 R1298 的 0 贡献不变。旧实现一概 0 → 含空 padded inline 的 bg-bearing
+                // inline 父测得 intrinsic 0 → R4033 guard 跳过 shrink → taffy 拉伸满宽
+                // （外层 span 蓝条画满 767px）。
+                inline_sum += (child.padding_left
+                    + child.padding_right
+                    + child.border_left
+                    + child.border_right
+                    + child.margin_left
+                    + child.margin_right)
+                    .max(0.0);
             } else if std::env::var("ZW_INLINE_INTRINSIC_CONTENT").as_deref() != Ok("0")
                 && child
                     .node_id

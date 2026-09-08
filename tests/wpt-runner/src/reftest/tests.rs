@@ -2786,12 +2786,6 @@ fn debug_r4133_margin_block_end_scroll_area() {
     }
 }
 
-
-
-
-
-
-
 /// R4133 勘察八：对照页对——无 transform 页 vs 有 transform 页 vs「预大写文本页」
 /// 三方对比，分离「transform 应用」与「transform 后字形 metrics」两个变量。
 #[test]
@@ -2844,11 +2838,6 @@ fn debug_r4133_bicameral_3way() {
     }
 }
 
-
-
-
-
-
 /// R4133 勘察十四：word-spacing nbsp 定性（inline 流测量）——块级 p 直接文本，
 /// 用像素扫描文本 glyph 的 x 范围测宽度。三组对照：space / nbsp / tab。
 #[test]
@@ -2887,13 +2876,6 @@ fn debug_r4133_word_spacing_nbsp3() {
         println!("{label}: no-ws={w0:.1}px ws={w1:.1}px delta={:.1}", w1 - w0);
     }
 }
-
-
-
-
-
-
-
 
 /// R4133 勘察二十二：glyph 级 x 位（primitives）——「A B」B 字形 x，
 /// ws 声明在 p vs span 的对照，彻底分离 layout/paint 两侧。
@@ -2949,3 +2931,145 @@ fn debug_r4133_ws_span_nbsp_glyphs() {
     }
 }
 
+/// R4134 勘察一：span-bg 全宽伪影最小复现——嵌套 inline span（含 padding-left）
+/// 的 bg 是否画满行宽。四组对照：单 span bg / 嵌套 span bg+padding / 纯文本 /
+/// 单 span bg+padding。
+#[test]
+#[ignore]
+fn debug_r4134_span_bg_fullwidth() {
+    let cfg = ReftestConfig::default();
+    let mk = |body: &str| {
+        format!(
+            r#"<!DOCTYPE html><html><head><style>
+            body {{ margin:0; }}
+            p {{ margin:1em; font-family: monospace; font-size:16px; }}
+            .blue {{ background: blue; color: blue; }}
+            .spacer {{ padding-left: 4em; }}
+            </style></head><body>{body}</body></html>"#
+        )
+    };
+    let cases = [
+        ("single-bg", r#"<p><span class="blue">A B</span></p>"#),
+        (
+            "nested-bg-pad",
+            r#"<p><span class="blue">A <span class="spacer"></span>B</span></p>"#,
+        ),
+        ("single-bg-pad", r#"<p><span class="blue spacer">A B</span></p>"#),
+        ("plain-text", r#"<p>A B</p>"#),
+    ];
+    for (label, body) in cases {
+        let html = mk(body);
+        let fb = render_to_framebuffer_with_base(&html, "", &cfg, None);
+        // 找蓝 bar 范围（蓝 >150 且红 <100）
+        let mut first: Option<usize> = None;
+        let mut last = 0usize;
+        let mut rows = 0u32;
+        for y in 0..fb.height as usize {
+            for x in 0..fb.width as usize {
+                let i = (y * fb.width as usize + x) * 4;
+                if fb.data[i + 2] > 150 && fb.data[i] < 100 {
+                    if first.is_none() {
+                        first = Some(x);
+                    }
+                    last = last.max(x);
+                    rows += 1;
+                }
+            }
+        }
+        println!("{label}: blue bar {first:?}..{last} px_count={rows}");
+    }
+}
+
+/// R4134 勘察二：布局树 dump——nested-bg-pad 案的外层 span 盒宽（taffy 拉伸
+/// vs 内容宽）。
+#[test]
+#[ignore]
+fn debug_r4134_span_bg_layout_dump() {
+    let cfg = ReftestConfig::default();
+    let mk = |body: &str| {
+        format!(
+            r#"<!DOCTYPE html><html><head><style>
+            body {{ margin:0; }}
+            p {{ margin:1em; font-family: monospace; font-size:16px; }}
+            .blue {{ background: blue; color: blue; }}
+            .spacer {{ padding-left: 4em; }}
+            </style></head><body>{body}</body></html>"#
+        )
+    };
+    for (label, body) in [
+        ("single-bg", r#"<p><span class="blue">A B</span></p>"#),
+        (
+            "nested-bg-pad",
+            r#"<p><span class="blue">A <span class="spacer"></span>B</span></p>"#,
+        ),
+    ] {
+        let html = mk(body);
+        let (_fb, root, _h) = render_to_framebuffer_with_layout_with_base(&html, "", &cfg, None);
+        fn walk(b: &zero_layout_engine::types::LayoutBox, depth: usize, out: &mut Vec<String>) {
+            let tag = b.node_id.map(|id| format!("{id:?}")).unwrap_or("-".into());
+            out.push(format!(
+                "d{depth} node={tag} x={:.1} y={:.1} w={:.1} h={:.1}",
+                b.x, b.y, b.width, b.height
+            ));
+            for c in &b.children {
+                walk(c, depth + 1, out);
+            }
+        }
+        let mut out = Vec::new();
+        walk(&root, 0, &mut out);
+        println!("{label}: {}", out.join(" | "));
+    }
+}
+
+/// R4134 勘察三：纯文本嵌套对照——嵌套 span 有内容（非空 inline）时的外层
+/// bg 宽。分离「空 inline 子贡献 0」与「文本丢失」两个变量。
+#[test]
+#[ignore]
+fn debug_r4134_nested_variants() {
+    let cfg = ReftestConfig::default();
+    let mk = |body: &str| {
+        format!(
+            r#"<!DOCTYPE html><html><head><style>
+            body {{ margin:0; }}
+            p {{ margin:1em; font-family: monospace; font-size:16px; }}
+            .blue {{ background: blue; color: blue; }}
+            .spacer {{ padding-left: 4em; }}
+            </style></head><body>{body}</body></html>"#
+        )
+    };
+    let bar = |html: &str| -> (Option<usize>, usize) {
+        let fb = render_to_framebuffer_with_base(html, "", &cfg, None);
+        let mut first = None;
+        let mut last = 0usize;
+        for y in 0..fb.height as usize {
+            for x in 0..fb.width as usize {
+                let i = (y * fb.width as usize + x) * 4;
+                if fb.data[i + 2] > 150 && fb.data[i] < 100 {
+                    if first.is_none() {
+                        first = Some(x);
+                    }
+                    last = last.max(x);
+                }
+            }
+        }
+        (first, last)
+    };
+    let cases = [
+        (
+            "nested-nonempty",
+            r#"<p><span class="blue">A <span class="spacer">x</span>B</span></p>"#,
+        ),
+        (
+            "nested-empty-nopad",
+            r#"<p><span class="blue">A <span>B</span></span></p>"#,
+        ),
+        (
+            "nested-empty-pad-text-after",
+            r#"<p><span class="blue"><span class="spacer"></span>TEXT</span></p>"#,
+        ),
+    ];
+    for (label, body) in cases {
+        let (f, l) = bar(&mk(body));
+        println!("{label}: bar {f:?}..{l} len={}", l - f.unwrap_or(0));
+    }
+}
