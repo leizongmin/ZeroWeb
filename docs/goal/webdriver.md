@@ -2,7 +2,12 @@
 
 **版本**: v1.0
 **日期**: 2026-09-07
-**状态**: ✅ Completed（2026-09-08 归档至 [archive/webdriver/](archive/webdriver/)；DC-4 终验收口——此前唯一遗留跨流红灯 `test_css_container_query_style_integration` 已由 rendering-compat 流 R4149 修复落地（commit `64160932e`，2026-09-08：测试断言对齐 R4124 规范语义 + 加 container-type:size 定宽容器正例/变宽反例，integration 套件 781/0 全绿），DC-4 判定条件满足）
+**状态**: ✅ Completed（2026-09-08 归档至 [archive/webdriver/](archive/webdriver/)；DC-4
+终验通过（2026-09-09）——此前唯一遗留跨流红灯 `test_css_container_query_style_integration`
+已由 rendering-compat 流 R4149 修复落地（commit `64160932e`，测试断言对齐 R4124 规范语义
++ 加 container-type:size 定宽容器正例/变宽反例）；组合态实测 `make test` 66 套件
+19037/0 全绿 + clippy `-D warnings` 零告警，DC-1~4 全满足，DONE 判定终态，见 archive
+master.md）
 **执行模式**: 轻量修复优先（永不停）；遇需用户决策项或深结构方向 → 记入「待用户决策」清单 → 跳过 → 继续其他轻量修复
 **父目标**: `docs/goal/zero-web.md`（DC2 交互式网站可用性验证的自动化基建 + M11 端到端测试）
 

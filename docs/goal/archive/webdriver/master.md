@@ -2,6 +2,9 @@
 
 **入口文档**: [../webdriver.md](../webdriver.md)
 **创建日期**: 2026-09-07（goal 拆分 bootstrap）
+**最后更新**: 2026-09-09（**DONE 终验通过、goal 终态**——责任流 R4149（`64160932e`）
+修复落地，`make test` 66 套件 19037/0 全绿 + clippy `-D warnings` 零告警，DC-1~4
+全部满足并经本轮实测复核，轮询触发点解除。零代码变更。）
 **最后更新**: 2026-09-08（跨流红灯轮询续账——责任流未接管零变化 + 48h 跟进触发点
 2026-09-10 22:52。无代码变更。）
 **最后更新**: 2026-09-08（**GB-20260908 巡检——screenshot 待决策已飞书征询**（msg
@@ -80,6 +83,12 @@ container-type 祖先不再命中）。归因：rendering-compat 流今日 R4124
 流发 48h 跟进提醒（引用 msg `om_x100b65365e9884a8dfe62548b2f8bb9`）并同步飞书告知
 用户。后续轮次执行口径：pull → 查 `git log -- tests/integration/src/cross_crate_integration.rs`
 是否有修复提交 → 有则 `make test` 确认全绿 → 终验 DONE 判定输出 DONE。
+**→ 触发点解除（2026-09-09 终验 session）**：上轮 push 后窗口期责任流接管落地——
+R4149（`64160932e`，2026-09-08 23:07，css-sizing-3 §5.2 min/max-width content
+关键字钳制切片顺带跨流归因修复）把该测试对齐 R4124 规范语义（测试 DOM 补
+`container-type:size` 定宽容器 500px 正例 + 变宽 350px 反例），修复方向与本流
+飞书告知（msg `om_x100b65365e9884a8dfe62548b2f8bb9`）的最小修复建议一致，非引擎
+回退；其流随后自行更新本 goal 入口文档状态行为「DC-4 终验收口」（`1a0191fe5`）。
 
 **红灯已闭环（2026-09-08 23:35 rendering-compat 流 R4149 接管落地）**：责任流修复
 提交为 `6b5c85506`（R4149 收窄守卫同批，integration 781/0 全绿复验）——
@@ -171,13 +180,13 @@ crates/protocol/ apps/renderer/` 核对 event-loop-spec 流活跃面（apps/rend
 
 ## 验证基线
 
-- 测试基线（2026-09-08 终验）：
-  - v8 主矩阵：zero-webdriver 10 集成 + 3 单元全绿（`make test` workspace 段实测）；
-    zero-protocol 313 全绿（含 FindElements/Elements wire roundtrip）；
-    zero-renderer automation 3 单元全绿
-  - quickjs feature 组：zero-webdriver 10 + 3 全绿、renderer automation 3 全绿
-  - `cargo clippy --workspace --all-targets -- -D warnings`：全绿（guarded-clippy 实测）
-  - `make test` 主矩阵 780 passed + 1 failed——failed 属 rendering-compat 流（见碰头信号）
+- 测试基线（2026-09-09 终验，组合态 HEAD `c1f45da76`）：
+  - `make test` 全绿：**66 套件、19037 passed / 0 failed**（v8 主矩阵 + quickjs
+    矩阵完整跑完）——跨流红灯 `test_css_container_query_style_integration` 已由
+    责任流 R4149 修复落地，v8 + quickjs 双 feature 组实测 ok
+  - `cargo clippy --workspace --all-targets -- -D warnings`：零告警（直跑实测；
+    guarded-clippy 同窗复核一致）
+  - zero-webdriver 面维持：10 集成 + 3 单元全绿（v8 + quickjs 双 feature 组）
 - W3C 兼容性清单：evidence/endpoint-matrix.md（33 endpoint 落账，终态）
 - 质量门禁：`cargo fmt --all -- --check` 无 diff
 - CI：v8 + quickjs 矩阵均含 zero-webdriver（ci.yml）
@@ -205,14 +214,16 @@ crates/protocol/ apps/renderer/` 核对 event-loop-spec 流活跃面（apps/rend
   invalid argument（非法策略/非法超时/空脚本 400）、no such session（404）、
   async callback 超时（javascript error）
 
-### DC-4: 测试与质量不可退让 — ✅
+### DC-4: 测试与质量不可退让 — ✅（2026-09-09 终验通过）
 
-- ✅ 本流全部测试面绿（见验证基线）；`make test` 全 workspace 有 1 个跨流红灯，
-  经归因属 rendering-compat 流 R4124-R4127 行为变化（碰头信号记录，本流无责）
-- ✅ clippy `-D warnings` 全绿（guarded-clippy）
+- ✅ `make test` 全绿（66 套件 19037 passed / 0 failed，2026-09-09 实测）——此前唯一
+  红灯（跨流 container query 断言过时）已由责任流 R4149 修复落地，见碰头信号记录
+  与触发点解除条目
+- ✅ clippy `-D warnings` 全绿（2026-09-09 直跑实测，零告警）
 - ✅ 兼容性清单随 endpoint 落地持续更新（endpoint-matrix.md 7 次同步）
 
-**判定**：DC-1~4 全满足；screenshot/alert/actions 按待用户决策记录在案（DONE 允许条件）。
+**判定（终态）**：DC-1~4 全满足并经 2026-09-09 组合态实测复核；screenshot/alert/
+actions 按待用户决策记录在案（DONE 允许条件）。**DONE 判定终验通过，goal 终态。**
 
 ## 归档执行（2026-09-08）
 
@@ -225,7 +236,9 @@ crates/protocol/ apps/renderer/` 核对 event-loop-spec 流活跃面（apps/rend
 - 删除 `scripts/rally-webdriver.sh`（目标已归档，死工具——照 c4806cc65 惯例）
 
 **归档时终态**：33 endpoint（endpoint-matrix.md 落账）；集成测试 10 全链路 + 单元 6 全绿
-（v8 + quickjs 双 feature 组）；clippy `-D warnings` 全绿。余项挂账（见「待用户决策」表
+（v8 + quickjs 双 feature 组）；clippy `-D warnings` 全绿。**DC-4 终验补充（2026-09-09）**：
+`make test` 全 workspace 19037/0 全绿（跨流红灯已由 rendering-compat 流 R4149 修复落地，
+见碰头信号记录），DONE 判定终验通过。余项挂账（见「待用户决策」表
 与「缺失」清单）：screenshot 链路（已飞书征询，msg `om_x100b6535d918a8acc121a65238fec1b`，
 三方案待拍板）、renderer back/forward document_generation 根治（event-loop-spec 流
 runtime.rs 域，跨流告知已发）、shim innerWidth 跟随 SetViewport、定位策略扩展、
