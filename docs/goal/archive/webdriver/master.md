@@ -183,3 +183,20 @@ crates/protocol/ apps/renderer/` 核对 event-loop-spec 流活跃面（apps/rend
 - ✅ 兼容性清单随 endpoint 落地持续更新（endpoint-matrix.md 7 次同步）
 
 **判定**：DC-1~4 全满足；screenshot/alert/actions 按待用户决策记录在案（DONE 允许条件）。
+
+## 归档执行（2026-09-08）
+
+照 keyboard/editing 三 goal 收口模式（commit `c4806cc65`）执行模式 A 整树归档：
+
+- 入口文档 `docs/goal/webdriver.md` 状态 Active → ✅ Completed
+- 整树 `git mv` 至 `docs/goal/archive/webdriver/`（master.md + evidence/）
+- `docs/goal/archive/README.md` 索引登记
+- README/ROADMAP/CHANGELOG 活跃表述同步（ROADMAP 六线 → 五线并行、CHANGELOG 收口条目）
+- 删除 `scripts/rally-webdriver.sh`（目标已归档，死工具——照 c4806cc65 惯例）
+
+**归档时终态**：33 endpoint（endpoint-matrix.md 落账）；集成测试 10 全链路 + 单元 6 全绿
+（v8 + quickjs 双 feature 组）；clippy `-D warnings` 全绿。余项挂账（见「待用户决策」表
+与「缺失」清单）：screenshot 链路（已飞书征询，msg `om_x100b6535d918a8acc121a65238fec1b`，
+三方案待拍板）、renderer back/forward document_generation 根治（event-loop-spec 流
+runtime.rs 域，跨流告知已发）、shim innerWidth 跟随 SetViewport、定位策略扩展、
+frame 深化、多窗口语义。若 screenshot 决策开放，从「待用户决策」表起新 goal 或续作。

@@ -128,7 +128,7 @@ macOS 下载产物要免除 Gatekeeper 手工放行，必须使用 Apple Develop
 | `apps/renderer` | 独立渲染进程入口，负责多进程 IPC 下的页面渲染与脚本执行 |
 | `apps/image-decoder` | 图像解码独立进程（PNG/JPEG/WebP，隔离编解码器漏洞），浏览器产品路径强制启用 |
 | `apps/compositor` | 合成器进程：protocol 消息族 + 真实光栅化（C2） |
-| `apps/webdriver` | WebDriver 服务（W3C 协议骨架，wdspec 第一步） |
+| `apps/webdriver` | WebDriver 服务（W3C 协议 33 endpoint，含 CI 全链路测试；goal 已完成） |
 | `apps/webview-demo` | 最小渲染管线演示程序（wgpu/CPU 渲染静态文本，演示 render-foundation 与 host-runtime 集成） |
 | `apps/android-browser` | Android 浏览器应用（M0 bootstrap：Kotlin/Jetpack Compose chrome + Rust JNI 桥接层 `zero-android-browser`，decoder/compositor 经 Android socket 复用共享 role 循环） |
 
