@@ -825,9 +825,16 @@ fn apply_replaced_element_sizing(
 
     // R1683：embed/object/applet 仅消费 HTML width/height 属性；无属性时保持原行为。
     // img/canvas 走 SVG data URI 回退填补缺失侧。
+    // R4159：无属性但有解码固有尺寸信号（img_intrinsic_sizes/no_ratio 任一已注入，
+    // pipeline build_img_intrinsic_all 的 object/embed/applet 臂）时不早退——下落 _ =>
+    // 分支按真实解码信号 sizing（HTML §4.8 replaced sizing：固有尺寸语义与 img 同）。
+    // 仍无解码信号时保持 R1683 早退（无 300×150 默认 ripple，零回归）。
     let (attr_w, attr_h) = if is_attr_only_replaced {
         match (attr_w, attr_h) {
             (Some(w), Some(h)) if w > 0.0 && h > 0.0 => (attr_w, attr_h),
+            _ if img_intrinsic_sizes.contains_key(&dom_id) || img_intrinsic_no_ratio.contains_key(&dom_id) => {
+                (None, None)
+            }
             _ => return,
         }
     } else {

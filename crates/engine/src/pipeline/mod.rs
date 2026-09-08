@@ -482,6 +482,47 @@ impl RenderPipeline {
                 }
             }
         }
+        // R4159：object/embed/applet 位图资源的固有尺寸桥接（HTML §4.8 embedded
+        // content）。R3995 已把三元素的资源接入解码（harness extract_replaced_resource_srcs
+        // / webview extract）与 paint（paint_img_element 发 ImagePrimitive），但本函数此前
+        // 只遍历 img/canvas/video——解码出的固有尺寸从不落到 NodeId，tree.rs 的
+        // apply_replaced_element_sizing（`img_intrinsic_sizes.get`）查不到 → 无 width/height
+        // 属性的 `<object data=png>` 布局塌 0×0（margin-border-padding-003 的 div3 应
+        // 48×16 内容盒实塌 0；replaced-intrinsic-005 同链）。仅当解码尺寸已在 image_sizes
+        // 且为**真实固有尺寸**时注入：ratio-only SVG（无确定固有维，usvg pixmap
+        // 是 default-size bogus）不注入——其替换元素固有语义归 R3995 余账
+        //（replaced-element-020 保持归档态）。no-ratio SVG 一维 abs 时按真实维注入
+        // no_ratio map（005 → 60×150）；双维全缺失（002 的隐式 100%×100%）不注入保持
+        // 基线塌 0。无解码保持占位行为（零回归）。
+        // https://html.spec.whatwg.org/multipage/iframe-embed-object.html#the-object-element
+        for replaced_id in doc.get_elements_by_tag_names(&["object", "embed", "applet"]) {
+            let attr = match doc.get(replaced_id) {
+                Some(n) => match &n.kind {
+                    NodeKind::Element(e) => match e.local_name() {
+                        "object" => "data",
+                        _ => "src",
+                    },
+                    _ => continue,
+                },
+                None => continue,
+            };
+            if let Some(src) = doc.get_attribute(replaced_id, attr).filter(|s| !s.trim().is_empty()) {
+                let key = crate::paint::image_resource_key(&src, self.document_url.as_deref());
+                // no-ratio SVG（一维 abs + 另一维缺失 + 无 viewBox，如 005 的 width=60px）：
+                // 真实固有维走 no_ratio map（tree.rs no-ratio 分支对缺失维回退 default
+                // object size 300/150——005 应 60×150）。双维全缺失（002 的隐式 100%×100%）
+                // 不注入——default 300×150 会把红 rect 放大可见，保持基线塌 0 行为。
+                if let Some(&dims) = self.image_no_ratio.get(&key) {
+                    if dims.0.is_some() || dims.1.is_some() {
+                        no_ratio.insert(replaced_id, dims);
+                    }
+                    continue;
+                }
+                if let Some(&size) = self.image_sizes.get(&key) {
+                    sizes.insert(replaced_id, size);
+                }
+            }
+        }
         (sizes, ratios, no_ratio)
     }
 
@@ -4188,6 +4229,81 @@ mod r4047_abspos_margin_tests {
             (bg.rect.left() - 50.0).abs() < 0.5 && (bg.rect.top() - 50.0).abs() < 0.5,
             "R4047: 视口-CB abspos margin 应计入定位（盒缘 50,50），实际 {:?}",
             (bg.rect.left(), bg.rect.top())
+        );
+    }
+}
+
+#[cfg(test)]
+mod r4159_object_intrinsic_tests {
+    use super::*;
+
+    /// R4159（HTML §4.8 embedded content）：`<object data=png>` 无 width/height 属性时，
+    /// 解码位图的固有尺寸须落到布局（build_img_intrinsic_all 的 object 臂）——旧实现
+    /// img_intrinsic_sizes 无 entry，tree.rs attr-only 早退 → 内容盒塌 0×0。
+    /// driving: css/CSS2/margin-padding-clear/margin-border-padding-003.xht
+    ///（object 固有 48×16 + border/padding 16 → div3 应 112×80）。
+    #[test]
+    fn r4159_object_data_intrinsic_sizes_layout() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        // 直接注入解码尺寸（等价 harness extract_replaced_resource_srcs 解码 48×16 PNG）。
+        let key = crate::paint::image_resource_key("support/red.png", None);
+        pipeline.set_image_sizes(std::iter::once((key, (48.0f32, 16.0f32))).collect());
+        let html = r#"<html><head><style>
+object { display: block; border: 16px solid black; padding: 16px; }
+</style></head><body>
+<object data="support/red.png" type="image/png"></object>
+</body></html>"#;
+        let result = pipeline.render_html(html, "");
+        // object 内容盒应 48×16（border-box 112×80 = frame 64 + 48×16）——非塌 0×0
+        let layout = result.layout;
+        fn find_box(l: &zero_layout_engine::LayoutBox, w: f32, h: f32) -> bool {
+            ((l.width - w).abs() < 0.5 && (l.height - h).abs() < 0.5) || l.children.iter().any(|c| find_box(c, w, h))
+        }
+        assert!(
+            find_box(&layout.root, 112.0, 80.0),
+            "R4159: object 解码固有 48×16 + border/padding 64 应 border-box 112×80（塌 0 为回归）"
+        );
+    }
+
+    /// R4159 反向锚：无 width/height 属性 + 无 viewBox + 双维全缺失的 SVG data
+    ///（replaced-intrinsic-002 语义：隐式 100%×100% 不可解析）不得注入 default-size
+    /// bogus pixmap——object 保持塌 0 基线（红 rect 不可见）。
+    #[test]
+    fn r4159_object_svg_no_intrinsic_stays_collapsed() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        // no-ratio SVG（无 w/h、无 viewBox）：extract_image_metrics 会把它放进
+        // image_sizes（pixmap 尺寸）+ image_no_ratio（(None,None)）。模拟该注入。
+        let key = crate::paint::image_resource_key("support/no-dims.svg", None);
+        pipeline.set_image_sizes(std::iter::once((key, (100.0f32, 100.0f32))).collect());
+        pipeline.set_image_no_ratio(std::iter::once((key, (None, None))).collect());
+        let html = r#"<html><head><style>
+object { display: block; }
+</style></head><body>
+<object data="support/no-dims.svg" type="image/svg+xml"></object>
+</body></html>"#;
+        let result = pipeline.render_html(html, "");
+        fn max_obj_box(l: &zero_layout_engine::LayoutBox) -> (f32, f32) {
+            let mut best = (l.width, l.height);
+            for c in &l.children {
+                let b = max_obj_box(c);
+                if b.0 * b.1 > best.0 * best.1 {
+                    best = b;
+                }
+            }
+            best
+        }
+        // 找 object 盒（唯一元素盒）：双维全缺失 → 不注入 → 塌 0×0
+        fn find_obj(l: &zero_layout_engine::LayoutBox) -> Option<(f32, f32)> {
+            if l.children.is_empty() {
+                return Some((l.width, l.height));
+            }
+            l.children.iter().find_map(find_obj)
+        }
+        let (w, h) = find_obj(&result.layout.root).expect("object 盒应存在");
+        assert!(
+            w < 0.5 && h < 0.5,
+            "R4159: 无固有维 SVG object 应保持塌 0（实际 {w}×{h}，max={:?}）",
+            max_obj_box(&result.layout.root)
         );
     }
 }
