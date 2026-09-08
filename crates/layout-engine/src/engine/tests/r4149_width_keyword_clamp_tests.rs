@@ -52,11 +52,11 @@ fn r4149_min_width_min_content_floors_to_content() {
     );
 }
 
-/// 无 AR 的普通块 `max-width:min-content; width:200px`：max 关键字 cap 臂按 R4149
-/// 收窄 gate 不触发（intrinsic 按 content-box 求和对普通块高估，cap 会塌盒），
-/// 维持 taffy Auto 行为（宽 200）。
+/// 无 AR 的普通块 `max-width:min-content; width:200px` 含 100px 定宽子：R4151 gate
+/// 放宽后 max 关键字 cap 臂触发——max-width:min-content 按 spec 语义钳到子 min-content
+/// 贡献 100（dynamic-012 同语义；R4151 wrapper 的 min-content 近似 = 显式定宽子宽）。
 #[test]
-fn r4149_max_width_keyword_cap_gated_to_ar_content_box() {
+fn r4151_max_width_min_content_caps_plain_block() {
     let (mut doc, body) = make_doc_with_body();
     let parent = doc.create_element("div");
     doc.append_child(body, parent).unwrap();
@@ -88,9 +88,55 @@ fn r4149_max_width_keyword_cap_gated_to_ar_content_box() {
     }
     let p = find(&result.root, parent).expect("parent box");
     assert!(
-        (p.width - 200.0).abs() < 1.0,
-        "non-AR block with max-width:min-content keeps taffy Auto behavior (200), got {}",
+        (p.width - 100.0).abs() < 1.0,
+        "plain block with max-width:min-content caps to child min-content contribution (100), got {}",
         p.width
+    );
+}
+
+/// `max-width:max-content` 的 AR 盒不塌：cap = max-content 自身（非 min-content）——
+/// border-box-and-max-content-002 的 .item（无子、AR 1/1 + height:500 + border-box
+/// padding）经 AR-aware 测量（own_ar transferred 500）cap no-op，宽保持 500。
+#[test]
+fn r4151_max_width_max_content_ar_box_not_collapsed() {
+    let (mut doc, body) = make_doc_with_body();
+    let parent = doc.create_element("div");
+    doc.append_child(body, parent).unwrap();
+    let item = doc.create_element("div");
+    doc.append_child(parent, item).unwrap();
+
+    let mut parent_style = ComputedStyle::default();
+    parent_style.display = zero_style_system::DisplayValue::Block;
+    parent_style.width = LengthValue::Px(600.0);
+
+    let mut item_style = ComputedStyle::default();
+    item_style.display = zero_style_system::DisplayValue::Block;
+    item_style.max_width = LengthValue::MaxContent;
+    item_style.height = LengthValue::Px(500.0);
+    item_style.aspect_ratio = Some(1.0);
+    item_style.padding_left = LengthValue::Px(20.0);
+    item_style.padding_right = LengthValue::Px(20.0);
+    item_style.box_sizing = zero_css_parser::values::BoxSizingValue::BorderBox;
+
+    let mut styles = HashMap::new();
+    styles.insert(parent, parent_style);
+    styles.insert(item, item_style);
+
+    let mut engine = crate::LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+
+    fn find(root: &crate::LayoutBox, id: NodeId) -> Option<&crate::LayoutBox> {
+        if root.node_id == Some(id) {
+            return Some(root);
+        }
+        root.children.iter().find_map(|c| find(c, id))
+    }
+    let it = find(&result.root, item).expect("item box");
+    assert!(
+        (it.height - 500.0).abs() < 1.0 && (it.width - 500.0).abs() < 1.0,
+        "AR box with max-width:max-content must keep transferred 500x500, got {}x{}",
+        it.width,
+        it.height
     );
 }
 

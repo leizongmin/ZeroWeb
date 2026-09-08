@@ -107,6 +107,83 @@ pub(crate) fn box_content_max_width(
     doc: &Document,
     styles: &HashMap<NodeId, ComputedStyle>,
 ) -> f32 {
+    kw_aware_max_width(box_node, doc, styles, box_content_max_width_inner)
+}
+
+/// R4151（css-sizing-3 §5.2）：content 关键字 max/min-width 参与固有贡献——子盒带
+/// `max-width:min-content/max-content` 时，其对父 max-content 的贡献 = min(自身
+/// max-content, 自身 min-content 关键字语义)（dynamic-012：中段 div `max-width:
+/// min-content; width:200px` 内 canvas 100 → 贡献 100 而非 200，float 链 shrink-to-fit
+/// 才能收对）；`min-width:min-content` 时贡献下限 = min-content。递归测量 min-content
+/// 用 max-content 近似（R1304 同口径）+ 显式定宽子收窄（R4149 守卫同源）。
+fn kw_aware_max_width(
+    box_node: &LayoutBox,
+    doc: &Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    measure: impl Fn(&LayoutBox, &Document, &HashMap<NodeId, ComputedStyle>) -> f32,
+) -> f32 {
+    let own = box_node
+        .node_id
+        .and_then(|id| styles.get(&id))
+        .map(|s| (s.min_width.clone(), s.max_width.clone()));
+    let Some((min_w, max_w)) = own else {
+        return measure(box_node, doc, styles);
+    };
+    let is_kw = |v: &LengthValue| matches!(v, LengthValue::MinContent | LengthValue::MaxContent);
+    if !is_kw(&min_w) && !is_kw(&max_w) {
+        return measure(box_node, doc, styles);
+    }
+    // 自身 content 尺寸（剥 frame 前的 inner 由 measure 返回 border-box；此处用同口径）。
+    let full = measure(box_node, doc, styles);
+    let frame = box_node.padding_left + box_node.padding_right + box_node.border_left + box_node.border_right;
+    // min-content 近似：子的最小贡献 = 显式 CSS 定宽（R4149 收窄守卫同法），无显式宽
+    // 时回退第一趟已解析盒宽（替换元素 canvas/img 的 attr/AR 传递尺寸在第一趟已解析
+    // ——dynamic-012 canvas h:100%→100 AR→w=100；非替换 auto 子的 child.width 为 taffy
+    // 拉伸伪影时可能偏大，只会让 cap 偏弱 no-op，安全方向）。
+    let content_min = box_node
+        .children
+        .iter()
+        .filter(|c| !(c.is_absolute || c.is_fixed))
+        .filter_map(|c| {
+            let cs = c.node_id.and_then(|cid| styles.get(&cid))?;
+            let f = c.padding_left + c.padding_right + c.border_left + c.border_right;
+            let w = resolve_kw_real_length(&cs.width, cs).unwrap_or(c.width);
+            Some(w + f)
+        })
+        .fold(0.0_f32, f32::max)
+        .max(frame);
+    // 仅 `max-width:min-content` 收缩贡献（cap = min-content 近似）；`max-width:
+    // max-content` 的 cap 就是 max-content 自身（= full），无需收缩——border-box-and-
+    // max-content-002 的 .item（无子、max-width:max-content）曾误 cap 到 frame 塌盒。
+    if matches!(max_w, LengthValue::MinContent) {
+        let capped = full.min(content_min);
+        return capped.max(min_resolved(&min_w, frame, full));
+    }
+    full
+}
+
+fn min_resolved(min_w: &LengthValue, frame: f32, full: f32) -> f32 {
+    if matches!(min_w, LengthValue::MinContent | LengthValue::MaxContent) {
+        full
+    } else {
+        frame
+    }
+}
+
+/// 定值长度解析（intrinsic 语境：仅 Px/Em/Rem/Ch 等 real length）。
+fn resolve_kw_real_length(value: &LengthValue, style: &zero_style_system::ComputedStyle) -> Option<f32> {
+    match value {
+        LengthValue::Auto | LengthValue::Percentage(_) | LengthValue::MinContent | LengthValue::MaxContent => None,
+        LengthValue::Px(v) if *v == f64::INFINITY => None,
+        other => {
+            let font_size_px = zero_style_system::computed::resolve_length(&style.font_size, 16.0, None, None);
+            let px = zero_style_system::computed::resolve_length(other, font_size_px, None, None);
+            px.is_finite().then_some(px.max(0.0) as f32)
+        }
+    }
+}
+
+fn box_content_max_width_inner(box_node: &LayoutBox, doc: &Document, styles: &HashMap<NodeId, ComputedStyle>) -> f32 {
     let mut inline_sum = 0.0f32;
     let mut block_max = 0.0f32;
     let mut has_in_flow_child = false;

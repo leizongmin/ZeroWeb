@@ -109,17 +109,13 @@ impl LayoutEngine {
             // max_width 关键字映射 auto，taffy 无从钳制——在此测 intrinsic 后经 taffy 重跑传播。
             // min 关键字臂对任意书写模式开放（width 是物理水平轴属性，vertical-rl 的 flex item
             // 同样受 min-width 钳制——flex-item-min-width-min-content）。
-            // max 关键字 cap 臂收窄到两类（无 AR 普通块的 content-box intrinsic 求和高估会塌盒，
-            // 维持 taffy Auto）：① aspect-ratio + content-box 盒（border-box-and-max-content-002
-            // 语义：box-sizing:border-box 的 .item 应按 border-box cap 500）；② flex item
-            //（flex-item-max-width-min-content-002：item 内 float 子的 block_max 测量精确 100，
-            // cap 后 float 换行成竖排 100×100）。
+            // max 关键字 cap 臂对全部非替换块开放（R4151）：cap 只在 measured intrinsic <
+            // 当前宽时收缩——intrinsic 高估只会让 cap 偏弱（no-op），不会塌盒，约束写入
+            // 语义下安全（首版担心的高估塌盒发生在 kw_min floor 臂，已由显式定宽子收窄
+            // 守卫处理）。dynamic-012（float 链中段 div max-width:min-content width:200
+            // 内 canvas 传宽 100 应 cap 到 100）。
             let kw_min = std::env::var("ZW_WIDTH_KEYWORD_CLAMP").as_deref() != Ok("0") && content_kw(&s.min_width);
-            let kw_max = std::env::var("ZW_WIDTH_KEYWORD_CLAMP").as_deref() != Ok("0")
-                && content_kw(&s.max_width)
-                && (s.aspect_ratio.is_some_and(|r| r > 0.0)
-                    && matches!(s.box_sizing, zero_css_parser::values::BoxSizingValue::ContentBox)
-                    || (b.is_flex_grid_item && matches!(s.display, DisplayValue::Block)));
+            let kw_max = std::env::var("ZW_WIDTH_KEYWORD_CLAMP").as_deref() != Ok("0") && content_kw(&s.max_width);
             let is_kw_clamp = (kw_min || kw_max) && !b.is_replaced;
             if !is_max_min && !is_auto_float && !is_fitcontent && !is_kw_clamp {
                 continue;
@@ -147,7 +143,15 @@ impl LayoutEngine {
             // 单子宽）——可测时给出部分正确值（change-intrinsic-width -14pp），不可测时走下方 Auto-fallback。
             // multicol intrinsic sizing 精度（columns × content）独立 gap。
             let intrinsic: Option<f32> = if is_block {
-                Some(crate::intrinsic_sizing::block_max_content_width(b, doc, styles))
+                // R4151：kw 盒用 box_content_max_width（AR-aware own_ar + R4151 关键字
+                // 包装）——block_max_content_width 无 own_ar，AR 叶盒（border-box-and-
+                // max-content-002 .item height:500 + ratio 1/1）会漏 transferred 测成
+                // frame（40），cap 误塌。
+                if is_kw_clamp {
+                    Some(crate::intrinsic_sizing::box_content_max_width(b, doc, styles))
+                } else {
+                    Some(crate::intrinsic_sizing::block_max_content_width(b, doc, styles))
+                }
             } else if matches!(s.display, DisplayValue::Grid | DisplayValue::InlineGrid) {
                 crate::intrinsic_sizing::grid_intrinsic_width(b, doc, styles)
             } else if matches!(
