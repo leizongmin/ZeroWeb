@@ -3388,3 +3388,52 @@ fn debug_r4137_invalid_residual() {
         .collect();
     println!("invalid-001 diff bands: {}", s.join(" "));
 }
+
+/// R4138 勘察：box-shadow calc 参数——test 页 vs ref 页（26px 43px 60px）像素对比。
+#[test]
+#[ignore]
+fn debug_r4138_shadow_calc() {
+    let cfg = ReftestConfig::default();
+    let base = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("wpt-data/css/css-backgrounds");
+    let html = std::fs::read_to_string(base.join("box-shadow-calc.html")).expect("read");
+    let ref_html = std::fs::read_to_string(base.join("box-shadow-calc-ref.html")).expect("read");
+    let fb = render_to_framebuffer_with_base(&html, "", &cfg, Some(&base));
+    let ref_fb = render_to_framebuffer_with_base(&ref_html, "", &cfg, Some(&base));
+    // 黑色像素 run 带（阴影位置）：test vs ref
+    for (label, f) in [("test", &fb), ("ref ", &ref_fb)] {
+        let mut xs: Vec<usize> = Vec::new();
+        let mut ys: Vec<usize> = Vec::new();
+        for y in 0..f.height as usize {
+            for x in 0..f.width as usize {
+                let i = (y * f.width as usize + x) * 4;
+                if f.data[i] < 50 && f.data[i + 1] < 50 && f.data[i + 2] < 50 {
+                    xs.push(x);
+                    ys.push(y);
+                }
+            }
+        }
+        if xs.is_empty() {
+            println!("{label}: no black pixels");
+        } else {
+            let (x0, x1) = (xs.iter().min().unwrap(), xs.iter().max().unwrap());
+            let (y0, y1) = (ys.iter().min().unwrap(), ys.iter().max().unwrap());
+            println!("{label}: black extent x{x0}..{x1} y{y0}..{y1}");
+        }
+    }
+}
+
+/// R4138 勘察五：calc 阴影解析 bisect——从简到繁。
+#[test]
+#[ignore]
+fn debug_r4138_parse_bisect() {
+    for (label, val) in [
+        ("plain", "10px 20px black"),
+        ("calc-ox", "calc(1em + 10px) 20px black"),
+        ("calc-oy", "10px calc(2em + 11px) black"),
+        ("calc-blur", "10px 20px calc(3em + 12px) black"),
+        ("full", "calc(1em + 10px) calc(2em + 11px) calc(3em + 12px) black"),
+    ] {
+        let r = zero_css_parser::values::parse_box_shadow(val);
+        println!("{label}: {}", if r.is_some() { "OK" } else { "None" });
+    }
+}

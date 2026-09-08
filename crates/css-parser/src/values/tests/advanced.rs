@@ -1574,6 +1574,26 @@ fn test_r4137_shadow_none_in_list_rejected() {
     assert_eq!(tl.len(), 2);
 }
 
+/// R4138（CSS Backgrounds §7.1）：box-shadow/text-shadow 长度槽接受 calc()/
+/// min()/max()/clamp() 数学函数（→ `LengthValue::Calc` 延迟求值）。blur/spread
+/// 的非负约束对 calc 取 px 分量符号（`calc(3em - 12px)` px 分量为负 → blur
+/// 非法）；偏移量允许负。
+/// driving: WPT css-backgrounds box-shadow-calc（calc(1em+10px) 等三槽）。
+#[test]
+fn test_r4138_shadow_calc_lengths() {
+    // 完整驱动案形态（offset×2 + blur 全 calc）
+    let s = parse_box_shadow("calc(1em + 10px) calc(2em + 11px) calc(3em + 12px) black").expect("calc 三槽应解析");
+    assert!(matches!(s.offset_x, LengthValue::Calc(_)));
+    assert!(matches!(s.offset_y, LengthValue::Calc(_)));
+    assert!(matches!(s.blur_radius, LengthValue::Calc(_)));
+    // spread 槽 calc 同样合法
+    assert!(parse_box_shadow("10px 20px 30px calc(3em + 12px) black").is_some());
+    // blur 的 calc px 分量为负 → 非法（blur/spread 非负约束）
+    assert_eq!(parse_box_shadow("10px 20px calc(3em - 12px) black"), None);
+    // text-shadow blur 槽同语义
+    assert!(parse_text_shadow("10px 20px calc(3em + 12px)").is_some());
+}
+
 // ── empty-cells ──
 
 #[test]

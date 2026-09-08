@@ -1573,6 +1573,46 @@ pub struct TextShadowValue {
     pub color: ColorValue,
 }
 
+/// R4138：calc 表达式的 px 分量提取（P%±Npx 模式；`calc(2em + 11px)` 的 11.0）。
+/// 非 P%/Npx 二元组合模式返回 None（保守接受）。
+fn calc_shadow_px_part(expr: &crate::values::CalcExpr) -> Option<f64> {
+    use crate::values::{CalcExpr, CalcOp, LengthValue};
+    match expr {
+        CalcExpr::BinaryOp(left, op, right) => {
+            let left_px = match left.as_ref() {
+                CalcExpr::Length(LengthValue::Px(v)) => Some(*v),
+                _ => None,
+            };
+            let right_px = match right.as_ref() {
+                CalcExpr::Length(LengthValue::Px(v)) => Some(*v),
+                _ => None,
+            };
+            match (op, left_px, right_px) {
+                (CalcOp::Add, _, Some(px)) | (CalcOp::Add, Some(px), _) => Some(px),
+                (CalcOp::Subtract, _, Some(px)) => Some(-px),
+                (CalcOp::Subtract, Some(px), _) => Some(px),
+                _ => None,
+            }
+        }
+        _ => None,
+    }
+}
+
+/// R4138：阴影长度解析——parse_length + calc()/min()/max()/clamp() 数学函数回退
+///（→ `LengthValue::Calc` 延迟求值，apply 期 resolve_effect_length 按字体解析）。
+/// driving: WPT css-backgrounds box-shadow-calc（calc(1em + 10px) 偏移/模糊）。
+fn parse_shadow_length(raw: &str) -> Option<LengthValue> {
+    if let Some(lv) = parse_length(raw) {
+        return Some(lv);
+    }
+    let t = raw.trim();
+    let is_math = ["calc(", "min(", "max(", "clamp("].iter().any(|p| t.starts_with(p));
+    if is_math {
+        return parse_math_function(t).map(|e| LengthValue::Calc(Box::new(e)));
+    }
+    None
+}
+
 fn shadow_length_is_valid(raw: &str, value: &LengthValue, allow_negative: bool) -> bool {
     if matches!(
         raw.trim().to_ascii_lowercase().as_str(),
@@ -1596,6 +1636,21 @@ fn shadow_length_is_valid(raw: &str, value: &LengthValue, allow_negative: bool) 
         | LengthValue::Rch(v)
         | LengthValue::Ic(v)
         | LengthValue::Ric(v) => v.is_finite(),
+        // R4138（CSS Backgrounds §7.1）：calc() 长度合法（<length> 语法产物）。
+        // 拒绝条件镜像普通长度：blur/spread（allow_negative=false）的 calc px 分量
+        // 为负时拒绝；偏移量允许负值。纯 % / 无法解析的复杂表达式保守接受
+        //（求值阶段 resolve_effect_length 按字体/容器解析）。
+        LengthValue::Calc(expr) => {
+            if allow_negative {
+                true
+            } else {
+                // blur/spread：P%±Npx 模式下 px 分量非负才合法（Npx 为负 → 整值可能为负）。
+                match calc_shadow_px_part(expr) {
+                    Some(px) => px >= 0.0,
+                    None => true,
+                }
+            }
+        }
         _ => false,
     };
     finite
@@ -1616,6 +1671,12 @@ fn shadow_length_is_valid(raw: &str, value: &LengthValue, allow_negative: bool) 
                 | LengthValue::Rch(v)
                 | LengthValue::Ic(v)
                 | LengthValue::Ric(v) => *v >= 0.0,
+                // R4138：calc 的非负约束与首个 gate 同语义——px 分量非负（或无法
+                // 提取时保守接受）。
+                LengthValue::Calc(expr) => match calc_shadow_px_part(expr) {
+                    Some(px) => px >= 0.0,
+                    None => true,
+                },
                 _ => false,
             })
 }
@@ -1658,16 +1719,16 @@ pub fn parse_text_shadow(value: &str) -> Option<TextShadowValue> {
     if !(2..=3).contains(&lengths.len()) {
         return None;
     }
-    let ox = parse_length(lengths[0])?;
+    let ox = parse_shadow_length(lengths[0])?;
     if !shadow_length_is_valid(lengths[0], &ox, true) {
         return None;
     }
-    let oy = parse_length(lengths[1])?;
+    let oy = parse_shadow_length(lengths[1])?;
     if !shadow_length_is_valid(lengths[1], &oy, true) {
         return None;
     }
     let blur = if lengths.len() == 3 {
-        let blur = parse_length(lengths[2])?;
+        let blur = parse_shadow_length(lengths[2])?;
         if !shadow_length_is_valid(lengths[2], &blur, false) {
             return None;
         }
@@ -1809,16 +1870,16 @@ pub fn parse_box_shadow(value: &str) -> Option<BoxShadowValue> {
     if !(2..=4).contains(&lengths.len()) {
         return None;
     }
-    let ox = parse_length(lengths[0])?;
+    let ox = parse_shadow_length(lengths[0])?;
     if !shadow_length_is_valid(lengths[0], &ox, true) {
         return None;
     }
-    let oy = parse_length(lengths[1])?;
+    let oy = parse_shadow_length(lengths[1])?;
     if !shadow_length_is_valid(lengths[1], &oy, true) {
         return None;
     }
     let blur = if lengths.len() >= 3 {
-        let blur = parse_length(lengths[2])?;
+        let blur = parse_shadow_length(lengths[2])?;
         if !shadow_length_is_valid(lengths[2], &blur, false) {
             return None;
         }
@@ -1827,7 +1888,7 @@ pub fn parse_box_shadow(value: &str) -> Option<BoxShadowValue> {
         LengthValue::Px(0.0)
     };
     let spread = if lengths.len() >= 4 {
-        let spread = parse_length(lengths[3])?;
+        let spread = parse_shadow_length(lengths[3])?;
         if !shadow_length_is_valid(lengths[3], &spread, true) {
             return None;
         }
