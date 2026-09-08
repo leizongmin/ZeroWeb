@@ -2,6 +2,8 @@
 
 **入口文档**: [../webdriver.md](../webdriver.md)
 **创建日期**: 2026-09-07（goal 拆分 bootstrap）
+**最后更新**: 2026-09-08（跨流红灯轮询续账——责任流未接管零变化 + 48h 跟进触发点
+2026-09-10 22:52。无代码变更。）
 **最后更新**: 2026-09-08（**GB-20260908 巡检——screenshot 待决策已飞书征询**（msg
 `om_x100b6535d918a8acc121a65238fec1b`，三方案建议；renderer back/forward 跨流
 rule 10 留档告知随同批发送）；两决策行补征询凭据。无代码变更。）
@@ -68,6 +70,16 @@ container-type 祖先不再命中）。归因：rendering-compat 流今日 R4124
 要求 `make test` 全绿且 DONE 允许条件只豁免「待用户决策」项不豁免红灯——故 DONE
 判定在责任流修复落地、`make test` 全绿前为**待终验**态；修复落地后无需重开本 goal，
 复验一行确认即终态。
+
+**跨流红灯轮询续账（2026-09-08 23:01 后续 session）**：pull 后零变化——本流 HEAD
+`1fbf80c9e` 不变；责任流最后代码提交仍为 12:34 R4133（`d94c3d7e0`），其控制面无
+接管记录，`tests/integration/src/cross_crate_integration.rs` 与 style-system 自红灯
+复现（22:31）起零字节变化——红灯为确定态，未重跑全量（代码面零变化，跑测无信息量）。
+距首轮飞书告知（22:52）约 10 分钟，不重复告知。**跟进触发点（照 CDP oracle 征询
+48h 跟进惯例）**：若 2026-09-10 22:52 前红灯仍未被责任流落地修复，向 rendering-compat
+流发 48h 跟进提醒（引用 msg `om_x100b65365e9884a8dfe62548b2f8bb9`）并同步飞书告知
+用户。后续轮次执行口径：pull → 查 `git log -- tests/integration/src/cross_crate_integration.rs`
+是否有修复提交 → 有则 `make test` 确认全绿 → 终验 DONE 判定输出 DONE。
 
 ## 实测基线（2026-09-08 M1 收口时）
 
