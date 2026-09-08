@@ -152,7 +152,8 @@ pub fn extract_img_srcs(html: &str) -> Vec<String> {
     let doc = zero_dom::parse_html(html);
     let mut srcs = Vec::new();
     for img_id in doc.get_elements_by_tag_name("img") {
-        if let Some(src) = doc.get_attribute(img_id, "src") {
+        // R4162：src → srcset → picture/source 有效图源（replaced-element-012）。
+        if let Some(src) = effective_img_src(&doc, img_id) {
             let src = src.trim();
             if !src.is_empty() {
                 srcs.push(src.to_string());
@@ -280,6 +281,38 @@ pub fn srcset_first_url(srcset: &str) -> Option<String> {
     let first = srcset.split(',').next()?.trim();
     let url = first.split_whitespace().next()?;
     (!url.is_empty()).then(|| url.to_string())
+}
+
+/// `<img>` 的有效图源 URL（HTML §4.8.5 picture/source 选择）：
+/// src → srcset 首 URL →（位于 `<picture>` 内且前两者皆缺）首个 `<source srcset>` 首 URL。
+/// R4162：replaced-element-012——picture 内 srcset-only img（source 提供资源）此前
+/// 三层全空 → 无解码尺寸 + paint 无图元（白块）。不评估 media/type 条件（match-all，
+/// 覆盖 WPT 常见形态；条件评估为后续深化）。
+pub fn effective_img_src(doc: &zero_dom::Document, img_id: zero_dom::NodeId) -> Option<String> {
+    let own = doc
+        .get_attribute(img_id, "src")
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .or_else(|| doc.get_attribute(img_id, "srcset").and_then(|s| srcset_first_url(&s)));
+    if own.is_some() {
+        return own;
+    }
+    let parent = doc.parent_node(img_id)?;
+    let is_picture = doc
+        .get(parent)
+        .is_some_and(|n| matches!(&n.kind, zero_dom::NodeKind::Element(e) if e.local_name() == "picture"));
+    if !is_picture {
+        return None;
+    }
+    doc.child_nodes(parent)
+        .iter()
+        .filter_map(|c| doc.get(*c))
+        .find_map(|n| match &n.kind {
+            zero_dom::NodeKind::Element(e) if e.local_name() == "source" => {
+                e.get_attribute("srcset").and_then(|s| srcset_first_url(&s))
+            }
+            _ => None,
+        })
 }
 
 /// 提取 HTML 中所有 `<img>` 的 src 与 lazy 属性。

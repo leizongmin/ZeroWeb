@@ -447,7 +447,8 @@ impl RenderPipeline {
         let mut ratios = HashMap::new();
         let mut no_ratio = HashMap::new();
         for img_id in doc.get_elements_by_tag_name("img") {
-            if let Some(src) = doc.get_attribute(img_id, "src") {
+            // R4162：src → srcset → picture/source 有效图源（replaced-element-012）。
+            if let Some(src) = crate::effective_img_src(doc, img_id) {
                 let key = crate::paint::image_resource_key(&src, self.document_url.as_deref());
                 if let Some(&size) = self.image_sizes.get(&key) {
                     sizes.insert(img_id, size);

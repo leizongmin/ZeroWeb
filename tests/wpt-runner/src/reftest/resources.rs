@@ -12,6 +12,8 @@ use super::*;
 use percent_encoding::percent_decode;
 
 /// 从 HTML 中提取所有 `<img src="...">` 的 URL。
+/// R4162：img 无 src/srcset 且位于 `<picture>` 内时，回退首个 `<source srcset>` 首 URL
+/// （HTML §4.8.5 picture 选择；不评估 media/type 条件，match-all）。
 fn extract_img_srcs(html: &str) -> Vec<String> {
     let mut srcs = Vec::new();
     let mut pos = 0;
@@ -23,19 +25,78 @@ fn extract_img_srcs(html: &str) -> Vec<String> {
         };
         let tag = &html[tag_start..tag_start + tag_end];
         // 在标签内查找 src 属性
+        let mut extracted: Option<String> = None;
         if let Some(src_start) = tag.find("src=\"").or_else(|| tag.find("src='")) {
             let quote = &tag[src_start + 4..src_start + 5];
             let value_start = src_start + 5;
             if let Some(value_end) = tag[value_start..].find(quote) {
                 let src_value = &tag[value_start..value_start + value_end];
                 if !src_value.is_empty() {
-                    srcs.push(src_value.to_string());
+                    extracted = Some(src_value.to_string());
                 }
             }
+        }
+        // R4162：picture/source 回退（src 缺失时）。注意 tag.find("src=") 也会命中
+        // srcset= 前缀，上面的提取已按 srcset 语义取值——此处仅在其为 None 时走回退。
+        if extracted.is_none()
+            && let Some(ss_start) = tag.find("srcset=\"").or_else(|| tag.find("srcset='"))
+        {
+            let quote = &tag[ss_start + 7..ss_start + 8];
+            let value_start = ss_start + 8;
+            if let Some(value_end) = tag[value_start..].find(quote) {
+                let v = &tag[value_start..value_start + value_end];
+                if !v.is_empty() {
+                    let first = v.split(',').next().unwrap_or("").trim();
+                    if let Some(url) = first.split_whitespace().next() {
+                        extracted = Some(url.to_string());
+                    }
+                }
+            }
+        }
+        if extracted.is_none()
+            && let Some(src_url) = find_picture_source_srcset(html, tag_start)
+        {
+            extracted = Some(src_url);
+        }
+        if let Some(v) = extracted {
+            srcs.push(v);
         }
         pos = tag_start + tag_end + 1;
     }
     srcs
+}
+
+/// 向上/向前扫描：img 无自身图源时，找其所在 `<picture>` 内首个 `<source srcset>` 的首 URL。
+/// `img_pos` 为 `<img` 标签在 html 中的起始偏移。
+fn find_picture_source_srcset(html: &str, img_pos: usize) -> Option<String> {
+    // 向前找最近的 <picture 开（且中间无 </picture> 闭合）
+    let before = &html[..img_pos];
+    let pic_open = before.rfind("<picture")?;
+    if before[pic_open..].contains("</picture>") {
+        return None;
+    }
+    // 在 <picture 与 <img 之间找首个 <source 的 srcset
+    let between = &html[pic_open..img_pos];
+    let src_idx = between.find("<source")?;
+    let src_seg = &between[src_idx..];
+    let seg_end = find_tag_end(src_seg)?;
+    let src_tag = &src_seg[..seg_end];
+    for attr in ["srcset=\"", "srcset='"] {
+        if let Some(a) = src_tag.find(attr) {
+            let quote = &src_tag[a + attr.len() - 1..];
+            let vs = a + attr.len();
+            if let Some(ve) = src_tag[vs..].find(quote) {
+                let v = &src_tag[vs..vs + ve];
+                if !v.is_empty() {
+                    // 首 URL（去 descriptors）
+                    let first = v.split(',').next()?.trim();
+                    let url = first.split_whitespace().next()?;
+                    return Some(url.to_string());
+                }
+            }
+        }
+    }
+    None
 }
 
 /// 从 HTML 中提取所有 `<video src="...">` 的 URL（media-playback M1b）。

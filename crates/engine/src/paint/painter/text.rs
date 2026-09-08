@@ -463,14 +463,11 @@ impl super::Painter {
         } else {
             match &node.kind {
                 NodeKind::Element(elem) if elem.local_name() == "img" => {
-                    let s = elem.get_attribute("src").unwrap_or_default();
-                    if s.is_empty() {
-                        elem.get_attribute("srcset")
-                            .and_then(|s| crate::srcset_first_url(&s))
-                            .unwrap_or_default()
-                    } else {
-                        s
-                    }
+                    let _ = elem;
+                    // R4162：src → srcset → picture/source 有效图源（replaced-element-012）。
+                    Some(doc)
+                        .and_then(|d| crate::effective_img_src(d, node_id))
+                        .unwrap_or_default()
                 }
                 // R3995（HTML §4.8 embedded content）：`<object data>` / `<embed src>` /
                 // `<applet src>` 与 img 同为图片资源替换元素——paint 发 ImagePrimitive
