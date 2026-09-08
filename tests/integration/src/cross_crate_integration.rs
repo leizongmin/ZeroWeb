@@ -122,8 +122,10 @@ fn test_shadow_dom_to_layout_integration() {
 
 /// CSS @container 查询与样式系统的集成测试。
 ///
-/// 解析包含 @container 规则的 CSS，设置容器上下文（视口尺寸），
+/// 解析包含 @container 规则的 CSS，设置容器上下文（container-type:size 定宽容器），
 /// 计算样式后验证容器查询条件满足时样式被正确应用。
+/// R4124 对齐：@container 按最近 container-type ≠ normal 祖先求值（css-conditional-5），
+/// 无最近容器 → 不应用——查询元素须有 container-type 祖先（旧恒视口语义已废弃）。
 #[test]
 fn test_css_container_query_style_integration() {
     // 使用 CSS 解析器解析含 @container 的样式表
@@ -139,7 +141,7 @@ fn test_css_container_query_style_integration() {
     let has_container = stylesheet.rules.iter().any(|r| matches!(r, Rule::Container(_)));
     assert!(has_container, "CSS 应包含 @container 规则");
 
-    // 构建 DOM：html > body > div > p
+    // 构建 DOM：html > body > div.container(container-type:size;width:500px) > p
     let mut doc = Document::new();
     let root = doc.root();
     let html = doc.create_element("html");
@@ -148,10 +150,11 @@ fn test_css_container_query_style_integration() {
     doc.append_child(html, body).unwrap();
     let div = doc.create_element("div");
     doc.append_child(body, div).unwrap();
+    doc.set_attribute(div, "style", "width:500px;height:400px;container-type:size");
     let p = doc.create_element("p");
     doc.append_child(div, p).unwrap();
 
-    // 设置视口尺寸为 500px（满足 min-width: 400px 条件）
+    // 容器 content 宽 500px >= 400px，条件满足
     let mut sys = StyleSystem::new();
     sys.set_viewport(500.0, 600.0);
     let styles = sys.compute_styles(&doc, &[stylesheet]);
@@ -164,16 +167,17 @@ fn test_css_container_query_style_integration() {
         "容器宽度 500px >= 400px，p 的 color 应为蓝色"
     );
 
-    // 额外验证：不满足条件时不应用
+    // 额外验证：容器 350px < 400px 时不应用
+    doc.set_attribute(div, "style", "width:350px;height:400px;container-type:size");
     let mut sys2 = StyleSystem::new();
-    sys2.set_viewport(300.0, 600.0);
+    sys2.set_viewport(500.0, 600.0);
     let stylesheet2 = CssParser::parse_stylesheet(css);
     let styles2 = sys2.compute_styles(&doc, &[stylesheet2]);
     let p_style2 = styles2.get(&p).expect("p 应有计算样式");
     assert_ne!(
         p_style2.color,
         ColorValue::Rgba(0, 0, 255, 255),
-        "容器宽度 300px < 400px，p 的 color 不应为蓝色"
+        "容器宽度 350px < 400px，p 的 color 不应为蓝色"
     );
 }
 

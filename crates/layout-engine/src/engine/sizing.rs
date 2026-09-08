@@ -9,6 +9,15 @@
 
 use super::*;
 
+/// R4149：content-based 尺寸关键字判定（css-sizing-3 §5.2）——min/max-width 的
+/// min-content/max-content/fit-content 均以 intrinsic 尺寸参与钳制。
+fn content_kw(v: &LengthValue) -> bool {
+    matches!(
+        v,
+        LengthValue::MinContent | LengthValue::MaxContent | LengthValue::FitContent(_)
+    )
+}
+
 fn resolve_sizing_definite_real_length(value: &LengthValue, style: &ComputedStyle) -> Option<f32> {
     match value {
         LengthValue::Auto
@@ -85,7 +94,23 @@ impl LayoutEngine {
             // target = min(解析 arg, intrinsic)（min-content 测量未实现，max-content 近似同 R1304）。
             let is_fitcontent = matches!(s.width, LengthValue::FitContent(_));
             let fitcontent_clamp = is_fitcontent.then_some(()).filter(|_| b.width > 1.0);
-            if !is_max_min && !is_auto_float && !is_fitcontent {
+            // R4149（css-sizing-3 §5.2 + csswg #3973）：min/max-width 的 content 关键字
+            //（min-content/max-content/fit-content）也是 content-based 尺寸——min-width:min-content
+            // 是宽度下限（dynamic-011：`min-width:min-content; width:0px` 内 canvas h:100% 传宽
+            // 100 应撑到 100），max-width:min-content 是上限（dynamic-012：`max-width:min-content;
+            // width:200px` 应 cap 到 100）。converter 把 min_width 关键字映射 length(0)、
+            // max_width 关键字映射 auto，taffy 无从钳制——在此测 intrinsic 后经 taffy 重跑传播。
+            // max 关键字 cap 臂收窄到 aspect-ratio + content-box 盒（border-box-and-max-content-002
+            // 语义：box-sizing:border-box 的 .item 应按 border-box cap 500）——无 AR 的普通块
+            //（flex-item-max-width-min-content-002 等）其 intrinsic 测量按 content-box 求和会高估，
+            // cap 反而塌盒，维持 taffy Auto 行为。
+            let kw_min = std::env::var("ZW_WIDTH_KEYWORD_CLAMP").as_deref() != Ok("0") && content_kw(&s.min_width);
+            let kw_max = std::env::var("ZW_WIDTH_KEYWORD_CLAMP").as_deref() != Ok("0")
+                && content_kw(&s.max_width)
+                && s.aspect_ratio.is_some_and(|r| r > 0.0)
+                && matches!(s.box_sizing, zero_css_parser::values::BoxSizingValue::ContentBox);
+            let is_kw_clamp = (kw_min || kw_max) && !b.is_replaced;
+            if !is_max_min && !is_auto_float && !is_fitcontent && !is_kw_clamp {
                 continue;
             }
             // R1018：block-level 仅在 width:MaxContent 或 auto-float 时触发（bare fit-content 经
@@ -102,6 +127,7 @@ impl LayoutEngine {
                 && !mincontent_block
                 && !is_auto_float
                 && !fitcontent_block
+                && !is_kw_clamp
             {
                 continue;
             }
@@ -148,6 +174,15 @@ impl LayoutEngine {
                 // target >1px 即重设（converter 定宽 arg 在内容窄于 arg 时不会收缩）。
                 let target = b.width.min(intrinsic);
                 (b.width - target).abs() > 1.0
+            } else if is_kw_clamp {
+                // R4149：min 关键字 floor（宽 < intrinsic 须撑到 intrinsic）；max 关键字 cap
+                //（宽 > intrinsic 须收到 intrinsic）。双关键字并存时 §5.2 min 优先于 max，
+                // floor 后 b.width ≥ intrinsic，cap 自然 no-op——按 min 语义取 grow 判定。
+                if kw_min {
+                    b.width < intrinsic - 1.0
+                } else {
+                    b.width > intrinsic + 1.0
+                }
             } else if is_auto_float {
                 b.width > intrinsic + 1.0
             } else {

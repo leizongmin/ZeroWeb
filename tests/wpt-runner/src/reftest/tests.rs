@@ -4088,3 +4088,96 @@ fn debug_r4148_ipr024_tree() {
     }
     dump(&result.root, 1);
 }
+
+/// R4149 勘察 1：dynamic-011 变体（min-width:min-content + width:0px + canvas h:100%）
+/// 布局树——min 关键字 floor 前后对照（`cargo test -- --nocapture --ignored`）。
+#[test]
+#[ignore]
+fn debug_r4149_kw_min_floor() {
+    use zero_css_parser::Parser as CssParser;
+    use zero_dom::parse_html;
+    use zero_layout_engine::LayoutEngine;
+    use zero_style_system::StyleSystem;
+    let cases = [
+        (
+            "no-kw",
+            r#"<body><div style="float: left; background: green; height: 100px"><div style="height: 100%"><canvas width="1" height="1" style="height: 100%"></canvas></div></div></body>"#,
+        ),
+        (
+            "minwidth-mc",
+            r#"<body><div style="float: left; background: green; height: 100px"><div style="min-width: min-content; width: 0px; height: 100%"><canvas width="1" height="1" style="height: 100%"></canvas></div></div></body>"#,
+        ),
+        (
+            "maxwidth-mc",
+            r#"<body><div style="float: left; background: green; height: 100px"><div style="max-width: min-content; width: 200px; height: 100%"><canvas width="1" height="1" style="height: 100%"></canvas></div></div></body>"#,
+        ),
+    ];
+    for (name, body) in cases {
+        let html = format!("<html>{body}</html>");
+        let doc = parse_html(&html);
+        let stylesheet = CssParser::parse_stylesheet("");
+        let mut sys = StyleSystem::new();
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+        let mut engine = LayoutEngine::new(800.0, 600.0);
+        let mut img_sizes = std::collections::HashMap::new();
+        for canvas_id in doc.get_elements_by_tag_name("canvas") {
+            let w = doc
+                .get_attribute(canvas_id, "width")
+                .and_then(|v| v.trim().parse::<f32>().ok())
+                .unwrap_or(300.0);
+            let h = doc
+                .get_attribute(canvas_id, "height")
+                .and_then(|v| v.trim().parse::<f32>().ok())
+                .unwrap_or(150.0);
+            img_sizes.insert(canvas_id, (w, h));
+        }
+        let result = engine.compute_with_img_sizes(&doc, &styles, img_sizes, std::collections::HashMap::new());
+        println!("== case {name}");
+        fn dump(b: &zero_layout_engine::types::LayoutBox, depth: usize) {
+            let pad = "  ".repeat(depth);
+            println!(
+                "{pad}node={:?} replaced={} w={} h={}",
+                b.node_id, b.is_replaced, b.width, b.height
+            );
+            for c in &b.children {
+                dump(c, depth + 1);
+            }
+        }
+        dump(&result.root, 1);
+    }
+}
+
+/// R4149 勘察 2：border-box-and-max-content-002（AR + content-box + max-width:max-content
+/// + border-box padding .item）布局树——max 关键字 cap 臂 gate 验证。
+#[test]
+#[ignore]
+fn debug_r4149_ar_maxcontent_cap() {
+    use zero_css_parser::Parser as CssParser;
+    use zero_dom::parse_html;
+    use zero_layout_engine::LayoutEngine;
+    use zero_style_system::StyleSystem;
+    let html = r#"<html><head><style>
+        .wrapper { border: 1px solid red; width: max-content; }
+        .item { max-width: max-content; height: 500px; aspect-ratio: 1; padding: 10px 20px; box-sizing: border-box; background-color: blue; }
+    </style></head><body>
+    <div class="wrapper"><div class="item"></div></div></body></html>"#;
+    let doc = parse_html(html);
+    let stylesheet = CssParser::parse_stylesheet(
+        ".wrapper { border: 1px solid red; width: max-content; } .item { max-width: max-content; height: 500px; aspect-ratio: 1; padding: 10px 20px; box-sizing: border-box; background-color: blue; }",
+    );
+    let mut sys = StyleSystem::new();
+    let styles = sys.compute_styles(&doc, &[stylesheet]);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    fn dump(b: &zero_layout_engine::types::LayoutBox, depth: usize) {
+        let pad = "  ".repeat(depth);
+        println!(
+            "{pad}node={:?} replaced={} w={} h={}",
+            b.node_id, b.is_replaced, b.width, b.height
+        );
+        for c in &b.children {
+            dump(c, depth + 1);
+        }
+    }
+    dump(&result.root, 1);
+}
