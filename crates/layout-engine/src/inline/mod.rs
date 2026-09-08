@@ -2275,6 +2275,14 @@ pub(crate) fn line_clamp_auto_constraint_px(style: &ComputedStyle) -> Option<f64
     let max_h = resolve_with_lh(&style.max_height);
     let min_h = resolve_with_lh(&style.min_height);
     let height = resolve_with_lh(&style.height);
+    // R4146（css-overflow-4 #line-clamp）：**min-height 单独不构成截断约束**——
+    // min-height 只设定盒体下限，不产生块尺寸上限；line-clamp:auto 的截断仅由
+    // max-height / height 触发（line-clamp-auto-012 assert：min-height:3lh 的 5 行
+    // 盒不得截断）。旧实现把 min_h 当独立约束源（c = max(min_h)）→ 单 min-height
+    // 盒错误截断。min-height 在 max-height/height 存在时仍参与下限合成。
+    if max_h.is_none() && height.is_none() {
+        return None;
+    }
     let constraint = match (max_h, min_h, height) {
         (None, None, None) => return None,
         (max_h, min_h, height) => {
@@ -2317,4 +2325,40 @@ pub(crate) fn container_used_line_height_px(style: &ComputedStyle, font_size: f6
         LineHeightValue::Normal => font_size * 1.164,
     };
     (px.is_finite() && px > 0.0).then_some(px)
+}
+
+#[cfg(test)]
+mod r4146_tests {
+    use super::*;
+
+    /// R4146（css-overflow-4）：line-clamp:auto 的 min-height 单独不构成截断约束。
+    /// line-clamp-auto-012：min-height:3lh 的 5 行盒不得截断（应为 None）。
+    #[test]
+    fn test_min_height_alone_does_not_constrain() {
+        use zero_css_parser::values::LengthValue;
+        let mut style = ComputedStyle::default();
+        style.line_clamp = zero_style_system::property::types::LineClampComputedValue::Auto;
+        style.min_height = LengthValue::Lh(3.0);
+        assert_eq!(
+            line_clamp_auto_max_lines(&style),
+            None,
+            "min-height 单独不得触发 line-clamp:auto 截断"
+        );
+    }
+
+    /// 对照：max-height 仍是截断约束（max-height:2lh → 2 行）。
+    #[test]
+    fn test_max_height_still_constrains() {
+        use zero_css_parser::values::LengthValue;
+        let mut style = ComputedStyle::default();
+        style.line_clamp = zero_style_system::property::types::LineClampComputedValue::Auto;
+        style.max_height = LengthValue::Lh(2.0);
+        style.font_size = LengthValue::Px(16.0);
+        style.line_height = zero_style_system::property::types::LineHeightValue::Number(2.0);
+        assert_eq!(
+            line_clamp_auto_max_lines(&style),
+            Some(2),
+            "max-height 仍应构成截断约束"
+        );
+    }
 }
