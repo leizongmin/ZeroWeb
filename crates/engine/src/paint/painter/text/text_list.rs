@@ -782,7 +782,17 @@ fn counter_style_raw_body(
         }
         CounterSystem::Extends(ref name) => registry
             .and_then(|rules| rules.get(name))
-            .and_then(|base| counter_style_raw_body(base, value, registry, style, depth + 1)),
+            .and_then(|base| counter_style_raw_body(base, value, registry, style, depth + 1))
+            // R4154（CSS Counter Styles 3 §6）：extends 目标为**预定义样式**（不在注册
+            // 表——dependent-builtin：`extends simp-chinese-informal` + range 1000 1004，
+            // in-range 项应出 cjk 表示，旧 registry miss → 全 fallback 十进制）→ 按内置
+            // 表示生成（与 format_counter_text 的 builtin fallback 同源）。
+            .or_else(|| {
+                zero_css_parser::values::parse_list_style_type(name).map(|lst| CounterRepresentation {
+                    symbol_count: 1,
+                    text: format_builtin_list_style(value, &lst),
+                })
+            }),
         // additive / most extends：应用 defer（R2394 A/B 量证 net-negative，见函数注释）→ None（fallback）。
         CounterSystem::Additive => None,
         _ => None,
@@ -1752,6 +1762,7 @@ mod tests {
     use super::KOREAN_HANJA_FORMAL;
     use super::SIMP_CHINESE_FORMAL;
     use super::counter_style_body;
+    use super::counter_style_body_with_registry;
     use super::counter_style_marker_text;
     use super::counter_suffix;
     use super::list_item_counter;
@@ -1765,6 +1776,35 @@ mod tests {
     use super::to_symbol_cycle;
     use zero_dom::parse_html;
     use zero_style_system::{ComputedStyle, DirectionValue, WritingModeValue};
+
+    /// R4154：extends 目标为预定义样式（注册表外）→ 按内置表示生成
+    ///（CSS Counter Styles 3 §6；driving dependent-builtin：`extends
+    /// simp-chinese-informal` + range 1000 1004 → 1000 = 一千）。
+    #[test]
+    fn extends_builtin_style_resolves_via_builtin_table() {
+        let css = "@counter-style a { system: extends simp-chinese-informal; range: 1000 1004; }";
+        let doc = parse_html("<html><body></body></html>");
+        let mut sys = zero_style_system::StyleSystem::new();
+        let styles = sys.compute_styles(&doc, &[]);
+        let _ = styles;
+        let sheet = zero_css_parser::Parser::parse_stylesheet(css);
+        let rule = sheet
+            .rules
+            .iter()
+            .find_map(|r| match r {
+                zero_css_parser::ast::Rule::CounterStyle(cs) => Some(cs),
+                _ => None,
+            })
+            .expect("counter-style rule");
+        let registry = super::build_counter_style_registry(&sheet.rules);
+        // range 1000 → 1000 = 一千（simp-chinese-informal），1004 = 一千零四。
+        let body = counter_style_body_with_registry(rule, 1000, Some(&registry), None);
+        assert_eq!(body.as_deref(), Some("一千"));
+        let body4 = counter_style_body_with_registry(rule, 1004, Some(&registry), None);
+        assert_eq!(body4.as_deref(), Some("一千零四"));
+        // 越界（range 外）→ None → 调用方 fallback。
+        assert!(counter_style_body_with_registry(rule, 999, Some(&registry), None).is_none());
+    }
 
     /// R2471：numeric system 计数器（CSS Counter Styles 3 §6.1）ground-truth 对齐 WPT ref。
     /// 验证值取自 css-counter-styles/{devanagari,bengali,...}/css3-counter-styles-NNN 真实期望。
