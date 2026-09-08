@@ -336,6 +336,32 @@ fn handle_request(driver: &mut Driver, req: &HttpRequest, stream: &mut TcpStream
                 Err(error) => driver_error_response(stream, error),
             }
         }
+        // POST /session/{id}/execute/async — Execute Async Script（callback 调用为完成条件）。
+        ("POST", ["session", id, "execute", "async"]) => {
+            let body = serde_json::from_slice::<serde_json::Value>(&req.body).unwrap_or_default();
+            let script = body
+                .get("script")
+                .and_then(|value| value.as_str())
+                .unwrap_or("")
+                .to_string();
+            let arguments = body
+                .get("args")
+                .and_then(|value| value.as_array())
+                .cloned()
+                .unwrap_or_default();
+            if script.is_empty() {
+                error_response(stream, 400, "invalid argument", "missing script");
+                return;
+            }
+            if script.len() > 512 * 1024 {
+                error_response(stream, 400, "invalid argument", "script exceeds 512 KiB");
+                return;
+            }
+            match driver.execute_script_async(id, script, arguments) {
+                Ok(value) => json_response(stream, serde_json::json!({ "value": value })),
+                Err(error) => driver_error_response(stream, error),
+            }
+        }
         // GET /session/{id}/element/{ref}/text — Get Element Text。
         ("GET", ["session", id, "element", reference, "text"]) => match driver.element_text(id, reference) {
             Ok(text) => json_response(stream, serde_json::json!({ "value": text })),

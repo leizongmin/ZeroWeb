@@ -386,6 +386,72 @@ impl Driver {
         Ok(automation_value_to_json(value))
     }
 
+    /// Execute Async Script（https://w3c.github.io/webdriver/#execute-async-script）。
+    ///
+    /// 实现路线：脚本包 `function(arguments, callback)` 装载进页面全局 ticket 变量，
+    /// callback 调用即写 ticket；随后经同步 ExecuteScript 轮询 ticket——探测间隙 renderer
+    /// 主循环自然驱动 microtask/定时器回调（drain_pending_script_mutations 每拍执行），
+    /// 完成条件与脚本超时都在本层（会话 timeouts.script 持有方），零协议/零 runtime.rs 改动。
+    pub fn execute_script_async(
+        &mut self,
+        id: &str,
+        script: String,
+        arguments: Vec<serde_json::Value>,
+    ) -> Result<serde_json::Value, DriverError> {
+        let arguments_json = serde_json::Value::Array(
+            arguments
+                .into_iter()
+                .map(automation_value_from_json)
+                .map(automation_value_to_json)
+                .collect(),
+        );
+        let session = self.session_mut(id)?;
+        let ticket = format!("__zw_async_{}", session.next_request_id);
+        // 1) 装载：定义全局 ticket（undefined）+ callback 写入器，立即执行脚本体。
+        let install = format!(
+            "(function(){{globalThis.{ticket}=undefined;\
+             var __zw_callback=function(v){{globalThis.{ticket}=(v===undefined)?null:v;}};\
+             (function(){{{script}\n}}).apply(null,{arguments_json}.concat([__zw_callback]));}})()"
+        );
+        session.request(AutomationOperation::ExecuteScript {
+            script: install,
+            arguments: Vec::new(),
+        })?;
+
+        // 2) 轮询：probe → 命中即读取 + 清理；未命中等待后继续（renderer 主循环推进页面任务）。
+        let timeout = session.timeouts.script;
+        let deadline = Instant::now() + timeout;
+        loop {
+            let result = session.request(AutomationOperation::ExecuteScript {
+                // String() 包一层：JSON.stringify(undefined) 返 JS undefined（非字符串），
+                // 未命中时脚本值会是 Null——统一为字符串 "undefined" 哨兵。
+                script: format!("return String(JSON.stringify(globalThis.{ticket}));"),
+                arguments: Vec::new(),
+            })?;
+            let AutomationResult::Value(AutomationValue::String(raw)) = result else {
+                return Err(DriverError::new("unknown error", "async probe failed"));
+            };
+            if raw != "undefined" {
+                let _ = session.request(AutomationOperation::ExecuteScript {
+                    script: format!("globalThis.{ticket}=undefined;"),
+                    arguments: Vec::new(),
+                });
+                let value = serde_json::from_str::<serde_json::Value>(&raw)
+                    .map(automation_value_from_json)
+                    .map(automation_value_to_json)
+                    .unwrap_or(serde_json::Value::Null);
+                return Ok(value);
+            }
+            if Instant::now() >= deadline {
+                return Err(DriverError::new(
+                    "javascript error",
+                    format!("async script callback not called within {timeout:?}"),
+                ));
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+    }
+
     fn session_mut(&mut self, id: &str) -> Result<&mut Session, DriverError> {
         self.sessions
             .get_mut(id)

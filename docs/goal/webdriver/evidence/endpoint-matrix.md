@@ -31,7 +31,7 @@
 | Endpoint | 方法 | 状态 | 测试 | 行为注记 |
 |---|---|---|---|---|
 | /session/{id}/execute/sync | POST | ✅ | `webdriver_drives_live_form_controls` | 脚本包 function wrapper + JSON.stringify 挣值；args 经 AutomationValue；DOM mutation 会同步回 live document |
-| /session/{id}/execute/async | POST | ⬜ | — | 需 async 脚本语义 + 完成回调 |
+| /session/{id}/execute/async | POST | ✅ | `webdriver_execute_async_script_completion_paths` | callback 调用为完成条件；同步/定时器回调路径 + 未调用超时 javascript error；实现为 webdriver 层 ticket 全局 + ExecuteScript 轮询（零协议改动，见 master.md 决策） |
 | /session/{id}/source | GET | ✅ | `webdriver_find_elements_and_page_source` | ExecuteScript documentElement.outerHTML（live DOM 序列化，含脚本 mutation 后状态） |
 
 ## 元素定位（Element Retrieval）

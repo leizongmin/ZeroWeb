@@ -336,6 +336,91 @@ fn webdriver_element_state_family_reads_live_document() {
 }
 
 #[test]
+fn webdriver_execute_async_script_completion_paths() {
+    let (_driver, port) = spawn_driver();
+    let (_page_server, page_port) = spawn_test_page_server_with_button();
+    let (status, body) = http_request(port, "POST", "/session", Some("{}"));
+    assert_eq!(status, 200);
+    let value: serde_json::Value = serde_json::from_str(&body).expect("json");
+    let session_id = value["value"]["sessionId"].as_str().expect("id").to_string();
+    let url = format!("http://127.0.0.1:{page_port}/");
+    let (status, _) = http_request(
+        port,
+        "POST",
+        &format!("/session/{session_id}/url"),
+        Some(&serde_json::json!({ "url": url }).to_string()),
+    );
+    assert_eq!(status, 200);
+
+    // 同步调用 callback：立即完成，返回值经 callback 传递。
+    let (status, body) = http_request(
+        port,
+        "POST",
+        &format!("/session/{session_id}/execute/async"),
+        Some(
+            &serde_json::json!({
+                "script": "var cb = arguments[arguments.length - 1]; cb('done');",
+                "args": []
+            })
+            .to_string(),
+        ),
+    );
+    assert_eq!(status, 200, "sync callback 应 200: {body}");
+    let value: serde_json::Value = serde_json::from_str(&body).expect("json");
+    assert_eq!(value["value"], "done", "callback 返回值: {body}");
+
+    // setTimeout 异步调用 callback：探测间隙 renderer 主循环驱动定时器。
+    let (status, body) = http_request(
+        port,
+        "POST",
+        &format!("/session/{session_id}/execute/async"),
+        Some(
+            &serde_json::json!({
+                "script": "var cb = arguments[arguments.length - 1]; setTimeout(function(){ cb(42); }, 50);",
+                "args": []
+            })
+            .to_string(),
+        ),
+    );
+    assert_eq!(status, 200, "setTimeout callback 应 200: {body}");
+    let value: serde_json::Value = serde_json::from_str(&body).expect("json");
+    assert_eq!(value["value"].as_f64(), Some(42.0), "异步 callback 返回值: {body}");
+
+    // 不调用 callback → script timeout（默认 10s，覆盖路径走短超时会话；此处直接跑 10s 轮询）。
+    let (status, _) = http_request(
+        port,
+        "POST",
+        &format!("/session/{session_id}/timeouts"),
+        Some(&serde_json::json!({ "script": 500 }).to_string()),
+    );
+    assert_eq!(status, 200);
+    let (status, body) = http_request(
+        port,
+        "POST",
+        &format!("/session/{session_id}/execute/async"),
+        Some(
+            &serde_json::json!({
+                "script": "var cb = arguments[arguments.length - 1]; // never called",
+                "args": []
+            })
+            .to_string(),
+        ),
+    );
+    assert_eq!(status, 500, "callback 未调用应 javascript error: {body}");
+    let value: serde_json::Value = serde_json::from_str(&body).expect("json");
+    assert_eq!(value["value"]["error"], "javascript error");
+
+    // 空脚本 → 400。
+    let (status, _) = http_request(
+        port,
+        "POST",
+        &format!("/session/{session_id}/execute/async"),
+        Some(&serde_json::json!({ "script": "" }).to_string()),
+    );
+    assert_eq!(status, 400);
+}
+
+#[test]
 fn webdriver_drives_live_form_controls() {
     let (_driver, port) = spawn_driver();
     let (_page_server, page_port) = spawn_test_page_server_with_button();
