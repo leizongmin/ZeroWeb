@@ -1058,9 +1058,11 @@ impl Painter {
             );
 
             if !hidden && !skip_empty_cell {
-                if !is_table_internal {
-                    self.paint_box_shadow(box_node, abs_x, abs_y, style, ShadowPhase::BeforeBackground);
-                }
+                // R4143：table-internal（row/rowgroup）也绘 box-shadow——CSS Backgrounds
+                // §7.1 box-shadow applies to all elements；行阴影是 WPT
+                // box-shadow-table-row-display 的直接语义（chromium 绘制）。旧门控
+                //（681d101e1 保守延续）只保留 outline/backdrop-filter 跳过。
+                self.paint_box_shadow(box_node, abs_x, abs_y, style, ShadowPhase::BeforeBackground);
                 // R639：仅跨多行 inline 的 background 改由 paint_text 按行片段绘制，box-level 抑制
                 //（与 paint_node 同步；单行/空/定位 inline 保留 box-level）。
                 // R3937：replaced 类元素（svg 等）豁免——其子元素会被 PHASEA 分支误计为
@@ -1094,9 +1096,8 @@ impl Painter {
                     self.paint_background(box_node, abs_x, abs_y, style, styles);
                 }
                 // 0b. box-shadow inset 相位（R4137，CSS Backgrounds 附录 E：背景之上、内容之下）。
-                if !is_table_internal {
-                    self.paint_box_shadow(box_node, abs_x, abs_y, style, ShadowPhase::AfterBackground);
-                }
+                // R4143：table-internal 同样两相位绘制（见上方 BeforeBackground 注）。
+                self.paint_box_shadow(box_node, abs_x, abs_y, style, ShadowPhase::AfterBackground);
                 // R2063：attachment:fixed → 视口锚定平铺、裁剪到元素盒；否则元素盒锚定。
                 if matches!(style.background_attachment, BackgroundAttachmentComputedValue::Fixed) {
                     self.paint_background_image_fixed(box_node, abs_x, abs_y, style);
@@ -1382,8 +1383,10 @@ impl Painter {
                     self.paint_drop_shadow(box_node, abs_x, abs_y, style);
                 }
 
-                // 0. box-shadow（位于背景之下，行组/行无盒模型故无阴影）
-                if !is_table_internal && !skip_split_inline_deco && !skip_contents_deco {
+                // 0. box-shadow（位于背景之下）。R4143：table-internal（row/rowgroup）
+                // 同样绘制——CSS Backgrounds §7.1 box-shadow applies to all elements，
+                // box-shadow-table-row-display 直接语义（chromium 绘制行阴影）。
+                if !skip_split_inline_deco && !skip_contents_deco {
                     self.paint_box_shadow(box_node, abs_x, abs_y, style, ShadowPhase::BeforeBackground);
                 }
 
@@ -1427,7 +1430,7 @@ impl Painter {
                 // 1a-2. box-shadow inset 相位（R4137，CSS Backgrounds 附录 E：inset 阴影
                 // 绘于背景之上、内容之下——旧实现与 outset 同绘于背景前，不透明背景下
                 // inset 恒不可见，box-shadow-invalid-001 的 green inset 被红背景盖死）。
-                if !is_table_internal && !skip_split_inline_deco && !skip_contents_deco {
+                if !skip_split_inline_deco && !skip_contents_deco {
                     self.paint_box_shadow(box_node, abs_x, abs_y, style, ShadowPhase::AfterBackground);
                 }
 

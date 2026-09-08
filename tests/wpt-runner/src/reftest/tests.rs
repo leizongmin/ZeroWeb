@@ -3806,3 +3806,45 @@ fn debug_r4143_row_display_shadow() {
     println!("TEST gray rows {:?}", gray_rows(&fb));
     println!("REF  gray rows {:?}", gray_rows(&ref_fb));
 }
+
+/// R4143 探针二：行阴影 gap 区采样——test 页表格间隙 (y=260..289) 应有黑色 blur。
+#[test]
+#[ignore]
+fn debug_r4143_gap_sample() {
+    let cfg = ReftestConfig::default();
+    let base = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("wpt-data/css/css-backgrounds");
+    let html = std::fs::read_to_string(base.join("box-shadow-table-row-display.html")).expect("read");
+    let ref_html = std::fs::read_to_string(base.join("box-shadow-table-row-display-ref.html")).expect("read");
+    let fb = render_to_framebuffer_with_base(&html, "", &cfg, Some(&base));
+    let ref_fb = render_to_framebuffer_with_base(&ref_html, "", &cfg, Some(&base));
+    // 采样 gap 中线 y=270、块外左侧 x=20（块 x 50..250）、以及页顶 y=20
+    for (label, x, y) in [
+        ("gap1-mid", 150usize, 270usize),
+        ("left-of-block", 20, 150),
+        ("above-block", 150, 20),
+    ] {
+        let i = (y * fb.width as usize + x) * 4;
+        let j = (y * ref_fb.width as usize + x) * 4;
+        println!(
+            "{label} ({x},{y}): TEST rgb({},{},{}) REF rgb({},{},{})",
+            fb.data[i],
+            fb.data[i + 1],
+            fb.data[i + 2],
+            ref_fb.data[j],
+            ref_fb.data[j + 1],
+            ref_fb.data[j + 2]
+        );
+    }
+    // 全页暗度剖面（每 10px 行平均亮度，看阴影晕染分布差异）
+    for y in (0..600usize).step_by(100) {
+        let avg = |f: &zero_render_foundation::surface::FrameBuffer| -> u32 {
+            let mut sum = 0u64;
+            for x in 0..f.width as usize {
+                let i = (y * f.width as usize + x) * 4;
+                sum += (f.data[i] as u64 + f.data[i + 1] as u64 + f.data[i + 2] as u64) / 3;
+            }
+            (sum / f.width as u64) as u32
+        };
+        println!("row y{y}: TEST avg={} REF avg={}", avg(&fb), avg(&ref_fb));
+    }
+}
