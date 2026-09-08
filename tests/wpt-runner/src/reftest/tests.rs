@@ -2568,3 +2568,70 @@ fn debug_ipr_002_probe() {
         );
     }
 }
+
+/// R4130 勘察：root-box-003——html display:none 但 background:green 应铺满画布
+/// （CSS2.1 §14.2 背景传播独立于 display）。
+#[test]
+#[ignore]
+fn debug_root_box_003_probe() {
+    let case_path =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("wpt-data/css/CSS2/box-display/root-box-003.xht");
+    let ref_path =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("wpt-data/css/CSS2/box-display/root-box-003-ref.xht");
+    let html = std::fs::read_to_string(&case_path).expect("read test html");
+    let ref_html = std::fs::read_to_string(&ref_path).expect("read ref html");
+    let cfg = ReftestConfig::default();
+    let fb = render_to_framebuffer_with_base(&html, "", &cfg, case_path.parent());
+    let ref_fb = render_to_framebuffer_with_base(&ref_html, "", &cfg, ref_path.parent());
+    let dump = |f: &FrameBuffer, label: &str| {
+        // 采样五个点的颜色
+        let pts = [(100, 100), (400, 300), (700, 500)];
+        let cols: Vec<String> = pts
+            .iter()
+            .map(|(x, y)| {
+                let i = (y * f.width as usize + x) * 4;
+                format!("({},{},{})", f.data[i], f.data[i + 1], f.data[i + 2])
+            })
+            .collect();
+        println!("{label}: {}", cols.join(" "));
+    };
+    dump(&fb, "test");
+    dump(&ref_fb, "ref ");
+}
+
+/// R4130 勘察二：intrinsic-percent-replaced-015——outer(aspect-ratio 2/1 width 200)
+/// > inner(min-content, height 100%) > div(height 100%) > img(height 100%)。
+/// ref 满绿 200×100。img 高 100% 需相对 height:100% 链逐级传递（aspect-ratio 宽
+/// 作百分比基准）。
+#[test]
+#[ignore]
+fn debug_ipr_015_probe() {
+    let case_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("wpt-data/css/css-sizing/intrinsic-percent-replaced-015.html");
+    let ref_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("wpt-data/css/reference/ref-filled-green-100px-square.xht");
+    let html = std::fs::read_to_string(&case_path).expect("read test html");
+    let ref_html = std::fs::read_to_string(&ref_path).expect("read ref html");
+    let cfg = ReftestConfig::default();
+    let fb = render_to_framebuffer_with_base(&html, "", &cfg, case_path.parent());
+    let ref_fb = render_to_framebuffer_with_base(&ref_html, "", &cfg, ref_path.parent());
+    for (label, f) in [("test", &fb), ("ref ", &ref_fb)] {
+        let (mut x0, mut y0, mut x1, mut y1) = (usize::MAX, usize::MAX, 0usize, 0usize);
+        for y in 0..f.height as usize {
+            for x in 0..f.width as usize {
+                let i = (y * f.width as usize + x) * 4;
+                if f.data[i + 1] > 100 && f.data[i] < 100 && f.data[i + 2] < 100 {
+                    x0 = x0.min(x);
+                    y0 = y0.min(y);
+                    x1 = x1.max(x);
+                    y1 = y1.max(y);
+                }
+            }
+        }
+        println!(
+            "{label} green bbox=({x0},{y0})..({x1},{y1}) size=({},{})",
+            x1.saturating_sub(x0) + 1,
+            y1.saturating_sub(y0) + 1
+        );
+    }
+}
