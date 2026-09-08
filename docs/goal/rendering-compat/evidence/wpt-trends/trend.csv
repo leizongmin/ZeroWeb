@@ -36,3 +36,4 @@
 2026-09-08,upstream,v1.10,16814,14564,86.6,failed=2250;skipped=0,cc7200d82,R4126-F @container 逗号多条件 OR + = 等式比较符 + 键缓存容器污染修复；corpus 14563->14564 净+1（multiple-conditions-001 2.40->0.00 翻绿，零回归）
 2026-09-08,upstream,v1.10,16814,14565,86.6,failed=2249;skipped=0,8e5b9675d,R4127-F 伪元素 @container 查询容器含 originating element 自身（自身入链+container_entry_for 重构）；corpus 14564->14565 净+1（box-shadow 抖动对摆正；pseudo-002b 探针 7300->6094px 改善未翻绿，残余 JS 动态改宽深域挂账）
 2026-09-08,upstream,v1.10,16814,14580,86.7,failed=2234;skipped=0,308c9e8a7,R4128-F svg-as-img 根 background 简写提升 viewport 填充（decode 路径接入 promote+svg_source 保原始字节）；corpus 14565->14580 净+15（css-ui box-sizing-010..024 16 案翻绿；007/008/009 改善未翻绿）
+2026-09-08,upstream,v1.10,16814,14584,86.7,failed=2230;skipped=0,56f0f853f,R4129-F quirks 替换元素百分比高同链解析（R2016/R2107 gate 扩替换元素、definite 祖先无则 attr 回退）；corpus 14580->14584 净+4（ipr-002/003/006/dynamic-001 翻绿；011/014/015/016 残余 vertical/ar 深域挂账）
