@@ -2687,3 +2687,55 @@ fn debug_t425_hsla_styles() {
         }
     }
 }
+
+/// R4132 勘察：bidi-text 族水位——002（inline 分割 + 边框）、007b（控制符+letter-spacing）
+/// 像素 diff 带。定性 bidi 算法保真度。
+#[test]
+#[ignore]
+fn debug_bidi_text_probe() {
+    let cfg = ReftestConfig::default();
+    for (name, test_rel, ref_rel) in [
+        ("bidi-002", "bidi-002.xht", "bidi-002-ref.xht"),
+        ("bidi-007b", "bidi-007b.xht", "bidi-007b-ref.xht"),
+        ("bidi-009a", "bidi-009a.xht", "bidi-005a-ref.xht"),
+    ] {
+        let base = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("wpt-data/css/CSS2/bidi-text");
+        let html = std::fs::read_to_string(base.join(test_rel)).expect("read test");
+        let ref_html = std::fs::read_to_string(base.join(ref_rel)).expect("read ref");
+        let fb = render_to_framebuffer_with_base(&html, "", &cfg, Some(&base));
+        let ref_fb = render_to_framebuffer_with_base(&ref_html, "", &cfg, Some(&base));
+        let mut diff = 0u32;
+        let mut row_diff = vec![0u32; fb.height as usize];
+        for y in 0..fb.height as usize {
+            for x in 0..fb.width as usize {
+                let i = (y * fb.width as usize + x) * 4;
+                let j = (y * ref_fb.width as usize + x) * 4;
+                let d = (fb.data[i] as i32 - ref_fb.data[j] as i32).abs()
+                    + (fb.data[i + 1] as i32 - ref_fb.data[j + 1] as i32).abs()
+                    + (fb.data[i + 2] as i32 - ref_fb.data[j + 2] as i32).abs();
+                if d > 30 {
+                    diff += 1;
+                    row_diff[y] += 1;
+                }
+            }
+        }
+        let mut bands: Vec<(usize, usize, u32)> = Vec::new();
+        for (y, cnt) in row_diff.iter().enumerate() {
+            if *cnt > 0 {
+                match bands.last_mut() {
+                    Some(b) if b.1 + 1 == y => {
+                        b.1 = y;
+                        b.2 += *cnt;
+                    }
+                    _ => bands.push((y, y, *cnt)),
+                }
+            }
+        }
+        let band_str: Vec<String> = bands
+            .iter()
+            .take(5)
+            .map(|(y0, y1, t)| format!("y{y0}..{y1}({t})"))
+            .collect();
+        println!("{name}: diff={diff} bands={band_str:?}");
+    }
+}
