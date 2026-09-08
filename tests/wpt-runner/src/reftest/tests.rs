@@ -3848,3 +3848,170 @@ fn debug_r4143_gap_sample() {
         println!("row y{y}: TEST avg={} REF avg={}", avg(&fb), avg(&ref_fb));
     }
 }
+
+/// R4144 勘察：box-shadow-table-border-collapse-001（6.67%）diff 带定位。
+#[test]
+#[ignore]
+fn debug_r4144_collapse_shadow() {
+    let cfg = ReftestConfig::default();
+    let base = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("wpt-data/css/css-backgrounds");
+    let html = std::fs::read_to_string(base.join("box-shadow-table-border-collapse-001.html")).expect("read");
+    let ref_html =
+        std::fs::read_to_string(base.join("reference/box-shadow-table-border-collapse-001-ref.html")).expect("read");
+    let fb = render_to_framebuffer_with_base(&html, "", &cfg, Some(&base));
+    let ref_fb = render_to_framebuffer_with_base(&ref_html, "", &cfg, Some(&base));
+    let mut bands: Vec<(usize, usize, u32)> = Vec::new();
+    for y in 0..fb.height as usize {
+        let mut cnt = 0u32;
+        for x in 0..fb.width as usize {
+            let i = (y * fb.width as usize + x) * 4;
+            let j = (y * ref_fb.width as usize + x) * 4;
+            let d = (fb.data[i] as i32 - ref_fb.data[j] as i32).abs()
+                + (fb.data[i + 1] as i32 - ref_fb.data[j + 1] as i32).abs()
+                + (fb.data[i + 2] as i32 - ref_fb.data[j + 2] as i32).abs();
+            if d > 30 {
+                cnt += 1;
+            }
+        }
+        if cnt > 0 {
+            match bands.last_mut() {
+                Some(b) if b.1 + 1 == y => {
+                    b.1 = y;
+                    b.2 += cnt;
+                }
+                _ => bands.push((y, y, cnt)),
+            }
+        }
+    }
+    for (y0, y1, t) in bands.iter().take(8) {
+        // 每带中线的 TEST/REF 墨色采样
+        let mid = (y0 + y1) / 2;
+        let sample = |f: &zero_render_foundation::surface::FrameBuffer| -> String {
+            for x in 0..f.width as usize {
+                let i = (mid * f.width as usize + x) * 4;
+                if f.data[i] < 240 || f.data[i + 1] < 240 || f.data[i + 2] < 240 {
+                    return format!("first-ink x{x} rgb({},{},{})", f.data[i], f.data[i + 1], f.data[i + 2]);
+                }
+            }
+            "all-white".into()
+        };
+        println!(
+            "diff band y{y0}..{y1} ({t}px) TEST[{}] REF[{}]",
+            sample(&fb),
+            sample(&ref_fb)
+        );
+    }
+    if bands.is_empty() {
+        println!("no diff bands");
+    }
+}
+
+/// R4144 探针二：collapse 缘像素剖面——左缘 x 方向颜色扫描。
+#[test]
+#[ignore]
+fn debug_r4144_edge_profile() {
+    let cfg = ReftestConfig::default();
+    let base = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("wpt-data/css/css-backgrounds");
+    let html = std::fs::read_to_string(base.join("box-shadow-table-border-collapse-001.html")).expect("read");
+    let ref_html =
+        std::fs::read_to_string(base.join("reference/box-shadow-table-border-collapse-001-ref.html")).expect("read");
+    let fb = render_to_framebuffer_with_base(&html, "", &cfg, Some(&base));
+    let ref_fb = render_to_framebuffer_with_base(&ref_html, "", &cfg, Some(&base));
+    for y in [30usize, 60, 100, 150] {
+        let mut profile = String::new();
+        for x in [4usize, 8, 12, 20, 30, 36, 40, 60, 100, 140, 180, 220] {
+            let i = (y * fb.width as usize + x) * 4;
+            profile.push_str(&format!(
+                "x{}:({},{},{}), ",
+                x,
+                fb.data[i],
+                fb.data[i + 1],
+                fb.data[i + 2]
+            ));
+        }
+        let first_ink = |f: &zero_render_foundation::surface::FrameBuffer| -> String {
+            for x in 0..f.width as usize {
+                let i = (y * f.width as usize + x) * 4;
+                if f.data[i] < 240 || f.data[i + 1] < 240 || f.data[i + 2] < 240 {
+                    return format!(
+                        "first-ink x{} rgb({},{},{})",
+                        x,
+                        f.data[i],
+                        f.data[i + 1],
+                        f.data[i + 2]
+                    );
+                }
+            }
+            "none".into()
+        };
+        println!("y{y} TEST {profile} | {}", first_ink(&fb));
+        println!("y{y} REF  | {}", first_ink(&ref_fb));
+    }
+}
+
+/// R4144 探针三：collapse 案布局树 dump。
+#[test]
+#[ignore]
+fn debug_r4144_collapse_tree() {
+    use zero_css_parser::Parser as CssParser;
+    use zero_dom::parse_html;
+    use zero_layout_engine::LayoutEngine;
+    use zero_style_system::StyleSystem;
+    let html = r#"<html><head><style>
+        table { border: red solid 29px; border-collapse: collapse; table-layout: fixed; width: 160px; }
+        tr { border-color: blue; border-style: solid; }
+        tr#top-row { border-width: 30px 30px 0px; }
+        tr#bottom-row { border-width: 0px 30px 30px; }
+        td { padding: 0; }
+    </style></head><body style="margin:8px">
+    <table><tr id="top-row"><td>1<td>2<tr id="bottom-row"><td>3<td>4</table></body></html>"#;
+    let doc = parse_html(html);
+    let stylesheet = CssParser::parse_stylesheet(
+        "table { border: red solid 29px; border-collapse: collapse; table-layout: fixed; width: 160px; } tr { border-color: blue; border-style: solid; } tr#top-row { border-width: 30px 30px 0px; } tr#bottom-row { border-width: 0px 30px 30px; } td { padding: 0; }",
+    );
+    let mut sys = StyleSystem::new();
+    let styles = sys.compute_styles(&doc, &[stylesheet]);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    fn dump(b: &zero_layout_engine::types::LayoutBox, depth: usize) {
+        let pad = "  ".repeat(depth);
+        println!(
+            "{pad}node={:?} x={} y={} w={} h={} bl={} br={} bt={} bb={}",
+            b.node_id, b.x, b.y, b.width, b.height, b.border_left, b.border_right, b.border_top, b.border_bottom
+        );
+        for c in &b.children {
+            dump(c, depth + 1);
+        }
+    }
+    dump(&result.root, 1);
+}
+
+/// R4144 探针四：collapse 案全页墨迹普查（行/列分布）。
+#[test]
+#[ignore]
+fn debug_r4144_ink_census() {
+    let cfg = ReftestConfig::default();
+    let base = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("wpt-data/css/css-backgrounds");
+    let html = std::fs::read_to_string(base.join("box-shadow-table-border-collapse-001.html")).expect("read");
+    let fb = render_to_framebuffer_with_base(&html, "", &cfg, Some(&base));
+    let mut rows: Vec<(usize, usize)> = Vec::new();
+    for y in 0..fb.height as usize {
+        let mut cnt = 0usize;
+        for x in 0..fb.width as usize {
+            let i = (y * fb.width as usize + x) * 4;
+            if fb.data[i] < 240 || fb.data[i + 1] < 240 || fb.data[i + 2] < 240 {
+                cnt += 1;
+            }
+        }
+        if cnt > 0 {
+            rows.push((y, cnt));
+        }
+    }
+    if rows.is_empty() {
+        println!("PAGE BLANK");
+        return;
+    }
+    let y0 = rows[0].0;
+    let y1 = rows[rows.len() - 1].0;
+    println!("ink rows y{y0}..{y1} ({} 行有墨), 首行墨数={}", rows.len(), rows[0].1);
+}
