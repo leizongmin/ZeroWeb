@@ -80,7 +80,49 @@ fn walk(b: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) {
             b.height = target + frame;
         }
     }
+    // R4152（css-sizing-4 §4.1 automatic content-based minimum）：flex/grid 容器
+    // definite inline size + AR + Auto block size——R3912 tree build 期按 transferred
+    // 写死 taffy size.height（040：w:100 + AR 2/1 → 50），内容高于传递值时（item
+    // h:100 in-flow）§4.1 内容最小尺寸不被 transferred 钳——chromium 容器高 = 内容
+    // 100。本臂对齐既有块级臂语义：target = max(transferred, content_height)。
+    if let Some(id) = b.node_id
+        && let Some(style) = styles.get(&id)
+        && matches!(b.writing_mode, WritingModeValue::HorizontalTb)
+        && let Some(ratio) = style.aspect_ratio.filter(|&r| r > 0.0)
+        && matches!(
+            style.display,
+            DisplayValue::Flex | DisplayValue::InlineFlex | DisplayValue::Grid | DisplayValue::InlineGrid
+        )
+        && !b.is_replaced
+        && !b.is_absolute
+        && !b.is_fixed
+        && resolve_definite(&style.width).is_some()
+        && matches!(style.height, LengthValue::Auto)
+    {
+        let main = resolve_definite(&style.width).unwrap_or(0.0);
+        let frame_v = b.padding_top + b.padding_bottom + b.border_top + b.border_bottom;
+        // content_height 以容器内容盒顶为原点；无子内容时 R3912 的 transferred 保持。
+        let transferred = main / ratio;
+        let content = b.children.iter().map(|c| c.y + c.height).fold(0.0_f32, f32::max);
+        let target = transferred.max(content);
+        if content > transferred + 0.5 && (b.height - (target + frame_v)).abs() > 0.5 {
+            b.content_height = target;
+            b.height = target + frame_v;
+        }
+    }
     for child in &mut b.children {
         walk(child, styles);
+    }
+}
+
+/// 定值 real length 解析（Px/Em/Rem/Ch；Auto/百分比/关键字 → None）。
+fn resolve_definite(value: &LengthValue) -> Option<f32> {
+    match value {
+        LengthValue::Auto | LengthValue::Percentage(_) | LengthValue::MinContent | LengthValue::MaxContent => None,
+        LengthValue::Px(v) if *v == f64::INFINITY => None,
+        other => {
+            let px = zero_style_system::computed::resolve_length(other, 16.0, None, None);
+            px.is_finite().then_some(px.max(0.0) as f32)
+        }
     }
 }

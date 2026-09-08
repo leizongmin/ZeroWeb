@@ -241,3 +241,43 @@ fn r4150_flex_item_auto_height_contains_floats() {
         it.height
     );
 }
+
+/// R4152（css-sizing-4 §4.1）：flex 容器 definite width + AR + Auto height——内容
+/// 高于 transferred 时容器高 = 内容（item h:100 → 容器 100，非 transferred 50）。
+#[test]
+fn r4152_flex_container_ar_height_yields_to_content() {
+    let (mut doc, body) = make_doc_with_body();
+    let container = doc.create_element("div");
+    doc.append_child(body, container).unwrap();
+    let item = doc.create_element("div");
+    doc.append_child(container, item).unwrap();
+
+    let mut container_style = ComputedStyle::default();
+    container_style.display = zero_style_system::DisplayValue::Flex;
+    container_style.width = LengthValue::Px(100.0);
+    container_style.aspect_ratio = Some(2.0);
+
+    let mut item_style = ComputedStyle::default();
+    item_style.display = zero_style_system::DisplayValue::Block;
+    item_style.height = LengthValue::Px(100.0);
+
+    let mut styles = HashMap::new();
+    styles.insert(container, container_style);
+    styles.insert(item, item_style);
+
+    let mut engine = crate::LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+
+    fn find(root: &crate::LayoutBox, id: NodeId) -> Option<&crate::LayoutBox> {
+        if root.node_id == Some(id) {
+            return Some(root);
+        }
+        root.children.iter().find_map(|c| find(c, id))
+    }
+    let c = find(&result.root, container).expect("container box");
+    assert!(
+        (c.height - 100.0).abs() < 1.0,
+        "flex container AR transferred height (50) must yield to content height (100), got {}",
+        c.height
+    );
+}
