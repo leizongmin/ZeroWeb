@@ -1022,6 +1022,18 @@ impl RenderPipeline {
             .map(crate::hit_test::node_id_to_u64)
     }
 
+    /// 从当前 live Document 查询 selector 匹配的全部 opaque NodeId handle（文档序）。
+    pub fn page_node_handles_for_selector(&self, selector: &str) -> Vec<u64> {
+        let Some(doc) = self.cached_doc.as_ref() else {
+            return Vec::new();
+        };
+        let doc = doc.borrow();
+        doc.query_selector_all(doc.root(), selector)
+            .into_iter()
+            .map(crate::hit_test::node_id_to_u64)
+            .collect()
+    }
+
     /// 将当前 live Document 的 opaque node handle 解析为唯一选择器。
     pub fn selector_for_page_node_handle(&self, handle: u64) -> Option<String> {
         let doc = self.cached_doc.as_ref()?.borrow();

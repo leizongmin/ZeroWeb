@@ -279,6 +279,13 @@ pub enum AutomationOperation {
         /// 定位值。
         value: String,
     },
+    /// 在当前 live document 中定位全部匹配元素（W3C Find Elements）。
+    FindElements {
+        /// 定位策略。
+        using: AutomationLocatorStrategy,
+        /// 定位值。
+        value: String,
+    },
     /// 激活一个已定位元素。
     ElementClick {
         /// 带文档作用域的元素引用。
@@ -358,6 +365,8 @@ pub enum AutomationResult {
     Empty,
     /// 元素引用；`None` 表示当前无焦点元素。
     Element(Option<AutomationElementRef>),
+    /// 元素引用列表（Find Elements；空 = 无匹配）。
+    Elements(Vec<AutomationElementRef>),
     /// JSON 兼容脚本返回值。
     Value(AutomationValue),
 }

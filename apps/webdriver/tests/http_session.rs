@@ -101,6 +101,72 @@ fn spawn_test_page_server_with_button() -> (std::thread::JoinHandle<()>, u16) {
 }
 
 #[test]
+fn webdriver_find_elements_and_page_source() {
+    let (_driver, port) = spawn_driver();
+    let (_page_server, page_port) = spawn_test_page_server_with_button();
+    let (status, body) = http_request(port, "POST", "/session", Some("{}"));
+    assert_eq!(status, 200);
+    let value: serde_json::Value = serde_json::from_str(&body).expect("json");
+    let session_id = value["value"]["sessionId"].as_str().expect("id").to_string();
+    let url = format!("http://127.0.0.1:{page_port}/");
+    let (status, _) = http_request(
+        port,
+        "POST",
+        &format!("/session/{session_id}/url"),
+        Some(&serde_json::json!({ "url": url }).to_string()),
+    );
+    assert_eq!(status, 200);
+
+    // Find Elements（复数）：两个 input 命中，返回数组。
+    let (status, body) = http_request(
+        port,
+        "POST",
+        &format!("/session/{session_id}/elements"),
+        Some(&serde_json::json!({ "using": "css selector", "value": "input" }).to_string()),
+    );
+    assert_eq!(status, 200, "Find Elements 应 200: {body}");
+    let value: serde_json::Value = serde_json::from_str(&body).expect("json");
+    let items = value["value"].as_array().expect("array");
+    assert_eq!(items.len(), 2, "两个 input 应命中: {body}");
+    let element_key = "element-6066-11e4-a52e-4f735466cecf";
+    for item in items {
+        assert!(item[element_key].is_string(), "每项应含 element key: {body}");
+    }
+
+    // 空匹配 → 空数组（W3C：非错误）。
+    let (status, body) = http_request(
+        port,
+        "POST",
+        &format!("/session/{session_id}/elements"),
+        Some(&serde_json::json!({ "using": "css selector", "value": "#missing" }).to_string()),
+    );
+    assert_eq!(status, 200, "空匹配应 200: {body}");
+    let value: serde_json::Value = serde_json::from_str(&body).expect("json");
+    assert_eq!(value["value"].as_array().map(Vec::len), Some(0));
+
+    // Get Page Source：包含页面内容标签。
+    let (status, body) = http_request(port, "GET", &format!("/session/{session_id}/source"), None);
+    assert_eq!(status, 200, "Get Page Source 应 200: {body}");
+    let value: serde_json::Value = serde_json::from_str(&body).expect("json");
+    let source = value["value"].as_str().expect("source string");
+    assert!(source.contains("<html"), "source 应含 html 元素: {source}");
+    assert!(source.contains("Click me"), "source 应含页面文本: {source}");
+
+    // 非法策略 → 400。
+    let (status, body) = http_request(
+        port,
+        "POST",
+        &format!("/session/{session_id}/elements"),
+        Some(&serde_json::json!({ "using": "xpath", "value": "//div" }).to_string()),
+    );
+    assert_eq!(status, 400, "非 css 策略应 400: {body}");
+
+    // 不存在的 session → 404。
+    let (status, _) = http_request(port, "GET", "/session/deadbeef/source", None);
+    assert_eq!(status, 404);
+}
+
+#[test]
 fn webdriver_drives_live_form_controls() {
     let (_driver, port) = spawn_driver();
     let (_page_server, page_port) = spawn_test_page_server_with_button();

@@ -199,6 +199,24 @@ fn test_roundtrip_all_message_kinds() {
                 result: Ok(AutomationResult::Empty),
             }),
         },
+        // Find Elements 复数族（M2 切片 1）：请求 + Elements 结果 wire roundtrip。
+        IpcMessage {
+            id: 29,
+            kind: IpcMessageKind::AutomationRequest(AutomationRequest {
+                operation: AutomationOperation::FindElements {
+                    using: AutomationLocatorStrategy::CssSelector,
+                    value: "input".into(),
+                },
+            }),
+        },
+        IpcMessage {
+            id: 30,
+            kind: IpcMessageKind::AutomationResponse(AutomationResponse {
+                navigation_epoch: 1,
+                document_generation: 2,
+                result: Ok(AutomationResult::Elements(Vec::new())),
+            }),
+        },
     ];
 
     for msg in &messages {
@@ -207,7 +225,7 @@ fn test_roundtrip_all_message_kinds() {
         assert_eq!(out.id, msg.id, "id mismatch");
     }
 
-    assert_eq!(messages.len(), 28, "should test all listed message kinds");
+    assert_eq!(messages.len(), 30, "should test all listed message kinds");
 }
 
 /// 测试 StorageType::Session 变体也能序列化。

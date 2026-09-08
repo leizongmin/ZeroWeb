@@ -1550,6 +1550,11 @@ impl WebView {
         self.pipeline.page_node_handle_for_selector(selector)
     }
 
+    /// 从当前 live Document 查询 selector 匹配的全部 opaque node handle（文档序）。
+    pub fn page_node_handles_for_selector(&self, selector: &str) -> Vec<u64> {
+        self.pipeline.page_node_handles_for_selector(selector)
+    }
+
     /// 将当前 live Document 的 opaque node handle 解析为唯一选择器。
     pub fn selector_for_page_node_handle(&self, handle: u64) -> Option<String> {
         self.pipeline.selector_for_page_node_handle(handle)

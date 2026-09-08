@@ -1,15 +1,22 @@
 //! ZeroWeb WebDriver 服务 — W3C WebDriver HTML 交互子集。
 //!
 //! 支持：
+//!   GET    /status                     Status
 //!   POST   /session                    New Session
+//!   GET    /session/{id}               Session capabilities 回读
+//!   DELETE /session/{id}               Delete Session
 //!   POST   /session/{id}/url           Navigate To
+//!   GET    /session/{id}/url           Get Current URL
+//!   POST   /session/{id}/back|forward|refresh
+//!   GET/POST /session/{id}/timeouts    Get/Set Timeouts
 //!   GET    /session/{id}/title         Get Title
+//!   GET    /session/{id}/source        Get Page Source
 //!   POST   /session/{id}/element       Find Element
+//!   POST   /session/{id}/elements      Find Elements（复数）
 //!   POST   /session/{id}/element/{ref}/click
 //!   POST   /session/{id}/element/{ref}/value
 //!   GET    /session/{id}/element/active
 //!   POST   /session/{id}/execute/sync
-//!   DELETE /session/{id}               Delete Session
 //!
 //! 每个 session 持有独立 `zero-renderer` 子进程；页面操作经 automation IPC
 //! 在 live document 上执行。HTTP 服务保持零依赖、单线程和 loopback-only。
@@ -267,6 +274,31 @@ fn handle_request(driver: &mut Driver, req: &HttpRequest, stream: &mut TcpStream
                 Err(error) => driver_error_response(stream, error),
             }
         }
+        // POST /session/{id}/elements — Find Elements（复数；空匹配返回空数组）。
+        ("POST", ["session", id, "elements"]) => {
+            let body = serde_json::from_slice::<serde_json::Value>(&req.body).unwrap_or_default();
+            let using = body.get("using").and_then(|value| value.as_str()).unwrap_or("");
+            let selector = body.get("value").and_then(|value| value.as_str()).unwrap_or("");
+            if using != "css selector" {
+                error_response(stream, 400, "invalid argument", "only css selector is supported");
+                return;
+            }
+            match driver.find_elements(id, selector.to_string()) {
+                Ok(references) => {
+                    let items: Vec<serde_json::Value> = references
+                        .into_iter()
+                        .map(|reference| serde_json::json!({ ELEMENT_KEY: reference }))
+                        .collect();
+                    json_response(stream, serde_json::json!({ "value": items }));
+                }
+                Err(error) => driver_error_response(stream, error),
+            }
+        }
+        // GET /session/{id}/source — Get Page Source。
+        ("GET", ["session", id, "source"]) => match driver.page_source(id) {
+            Ok(source) => json_response(stream, serde_json::json!({ "value": source })),
+            Err(error) => driver_error_response(stream, error),
+        },
         // GET /session/{id}/element/active — Get Active Element。
         ("GET", ["session", id, "element", "active"]) => match driver.active_element(id) {
             Ok(Some(reference)) => {

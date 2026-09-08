@@ -51,6 +51,25 @@ impl RendererRuntime {
                     .ok_or_else(|| automation_error(AutomationErrorCode::NoSuchElement, "element not found"))?;
                 Ok(AutomationResult::Element(Some(self.automation_element_ref(handle))))
             }
+            AutomationOperation::FindElements { using: _, value } => {
+                if value.is_empty() {
+                    return Err(automation_error(
+                        AutomationErrorCode::InvalidArgument,
+                        "element locator must not be empty",
+                    ));
+                }
+                // https://w3c.github.io/webdriver/#find-elements — 无匹配返回空列表而非错误。
+                let handles = self
+                    .webview
+                    .as_ref()
+                    .map(|webview| webview.page_node_handles_for_selector(&value))
+                    .unwrap_or_default();
+                let references = handles
+                    .into_iter()
+                    .map(|handle| self.automation_element_ref(handle))
+                    .collect();
+                Ok(AutomationResult::Elements(references))
+            }
             AutomationOperation::ElementClick { element } => {
                 let selector = self.selector_for_automation_element(element)?;
                 self.automation_click(&selector).map_err(internal_error)?;
@@ -383,6 +402,37 @@ mod tests {
             })
             .expect_err("stale click must fail");
         assert_eq!(error.code, AutomationErrorCode::StaleElementReference);
+    }
+
+    #[test]
+    fn find_elements_returns_all_matches_in_document_order() {
+        let mut runtime = runtime();
+        let result = runtime
+            .execute_automation_request(AutomationRequest {
+                operation: AutomationOperation::FindElements {
+                    using: zero_protocol::message::AutomationLocatorStrategy::CssSelector,
+                    value: "input".into(),
+                },
+            })
+            .expect("find elements");
+        let AutomationResult::Elements(references) = result else {
+            panic!("expected elements list");
+        };
+        assert_eq!(references.len(), 2, "两个 input 都应命中");
+
+        // 空匹配返回空列表（W3C：非错误）。
+        let result = runtime
+            .execute_automation_request(AutomationRequest {
+                operation: AutomationOperation::FindElements {
+                    using: zero_protocol::message::AutomationLocatorStrategy::CssSelector,
+                    value: "#missing".into(),
+                },
+            })
+            .expect("find elements no match");
+        let AutomationResult::Elements(references) = result else {
+            panic!("expected elements list");
+        };
+        assert!(references.is_empty(), "无匹配应返回空列表");
     }
 
     #[test]

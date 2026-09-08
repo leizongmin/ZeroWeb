@@ -257,6 +257,37 @@ impl Driver {
         element.map(|element| session.register_element(element)).transpose()
     }
 
+    /// Find Elements（复数）。空匹配返回空 Vec（W3C：非错误）。
+    pub fn find_elements(&mut self, id: &str, selector: String) -> Result<Vec<String>, DriverError> {
+        let session = self.session_mut(id)?;
+        let result = session.request(AutomationOperation::FindElements {
+            using: AutomationLocatorStrategy::CssSelector,
+            value: selector,
+        })?;
+        let AutomationResult::Elements(references) = result else {
+            return Err(DriverError::new("unknown error", "invalid find elements response"));
+        };
+        references
+            .into_iter()
+            .map(|element| session.register_element(element))
+            .collect()
+    }
+
+    /// Get Page Source。以 live document 序列化为准（ExecuteScript outerHTML）。
+    pub fn page_source(&mut self, id: &str) -> Result<String, DriverError> {
+        let result = self.session_mut(id)?.request(AutomationOperation::ExecuteScript {
+            script: "return document.documentElement.outerHTML;".into(),
+            arguments: Vec::new(),
+        })?;
+        let AutomationResult::Value(AutomationValue::String(source)) = result else {
+            return Err(DriverError::new(
+                "unknown error",
+                "document source unavailable (no live document)",
+            ));
+        };
+        Ok(source)
+    }
+
     pub fn execute_script(
         &mut self,
         id: &str,
