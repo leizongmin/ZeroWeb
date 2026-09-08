@@ -3,9 +3,9 @@
   "mode": "upstream",
   "wpt_data_ref": "v1.10",
   "total": 16814,
-  "passed": 14561,
+  "passed": 14563,
   "rate_pct": 86.6,
-  "extra": "failed=2253;skipped=0",
-  "git_sha": "e8da466c1",
-  "note": "R4122-F fixed containment CB（csswg #10544）三 pass 门控；corpus 14556->14561 净+5"
+  "extra": "failed=2251;skipped=0",
+  "git_sha": "26be41952",
+  "note": "R4124-F @container 按最近 container-type 祖先求值（容器链+显式Px静态推导+链空false）；corpus 14561->14563 净+2"
 }
