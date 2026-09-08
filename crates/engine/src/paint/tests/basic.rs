@@ -1232,3 +1232,20 @@ fn test_color_value_hsla_conversion() {
     assert_eq!(color.b, 0);
     assert_eq!(color.a, 255);
 }
+
+/// R4131：hsla(120,100%,70%,1) 应 = rgb(102,255,102)（t425-hsla-basic-a 第一块）。
+#[test]
+fn r4131_hsla_120_100_70() {
+    let c = super::super::color::hsla_to_rgba(120.0, 100.0, 70.0, 1.0);
+    assert_eq!((c.r, c.g, c.b), (102, 255, 102), "hsla 120/100%/70% 应为浅绿");
+}
+
+/// R4131：resolve_color_current 对 Hsla(120,100,70,1) 应输出浅绿（t425 实测 23,23,23）。
+#[test]
+fn r4131_resolve_hsla_current() {
+    let c = super::super::color::resolve_color_current(
+        &ColorValue::Hsla(120.0, 100.0, 70.0, 1.0),
+        &ColorValue::CurrentColor,
+    );
+    assert_eq!((c.r, c.g, c.b), (102, 255, 102));
+}
