@@ -4051,3 +4051,40 @@ fn debug_r4147_ipr015_tree() {
     }
     dump(&result.root, 1);
 }
+
+/// R4148 勘察：intrinsic-percent-replaced-024（flex 变体）布局树。
+#[test]
+#[ignore]
+fn debug_r4148_ipr024_tree() {
+    use zero_css_parser::Parser as CssParser;
+    use zero_dom::parse_html;
+    use zero_layout_engine::LayoutEngine;
+    use zero_style_system::StyleSystem;
+    let html = r#"<html><head><style>
+        .outer { display: flex; flex-direction: column; }
+        .inner { display: flex; width: 100%; height: 100px; }
+        .test { height: 100%; background: red; }
+        .test > img { height: 100%; }
+    </style></head><body>
+    <div class="outer"><div class="inner"><div class="test">
+    <img src="aspect-ratio/support/200x200-green.png"></div></div></div></body></html>"#;
+    let doc = parse_html(html);
+    let stylesheet = CssParser::parse_stylesheet(
+        ".outer { display: flex; flex-direction: column; } .inner { display: flex; width: 100%; height: 100px; } .test { height: 100%; background: red; } .test > img { height: 100%; }",
+    );
+    let mut sys = StyleSystem::new();
+    let styles = sys.compute_styles(&doc, &[stylesheet]);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    fn dump(b: &zero_layout_engine::types::LayoutBox, depth: usize) {
+        let pad = "  ".repeat(depth);
+        println!(
+            "{pad}node={:?} x={} y={} w={} h={} cwidth={} cheight={}",
+            b.node_id, b.x, b.y, b.width, b.height, b.content_width, b.content_height
+        );
+        for c in &b.children {
+            dump(c, depth + 1);
+        }
+    }
+    dump(&result.root, 1);
+}
