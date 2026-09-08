@@ -1170,6 +1170,33 @@ impl LayoutEngine {
                 }
             }
 
+            // R4147（css-sizing-4 §4.2）：`aspect-ratio` + 单侧 definite width + height:auto
+            // 的非替换块盒——transferred height 已定（R3912 在 tree build 期写入 taffy
+            // `Dimension::length(w/ratio)`），其对**子元素百分比高度是明确包含块**。
+            // 旧实现 height 声明 Auto → 上方 match 的 `other` 臂 resolve=None →
+            // my_definite=None → 子 % 高走 quirks 链解析到视口高（ipr-015/016/024/027：
+            // inner/img 600 高盖过 100 盒，红底外露）。min/max 钳制与 R3912 clamp_dim
+            // 同构；须置于 match 之后（other 臂会以 None 覆盖先前值）。
+            if let Some(s) = style
+                && !matches!(s.position, PositionValue::Absolute | PositionValue::Fixed)
+                && let Some(ratio) = s.aspect_ratio.filter(|r| *r > 0.0)
+                && matches!(s.height, LengthValue::Auto)
+                && let LengthValue::Px(w) = s.width
+                && w.is_finite()
+                && w > 0.0
+            {
+                let mut v = w / f64::from(ratio);
+                if let LengthValue::Px(mx) = s.max_height {
+                    if mx.is_finite() {
+                        v = v.min(mx);
+                    }
+                }
+                if let LengthValue::Px(mn) = s.min_height {
+                    v = v.max(mn);
+                }
+                my_definite = Some((v.max(0.0)) as f32);
+            }
+
             // 子元素是否为 flex/grid item（其 %height 走独立语义，本 pass 跳过）。
             // R2170：复用 self_is_flex_grid（本盒为 flex/grid → 子代为 flex/grid item）。
             let child_parent_flex_grid = self_is_flex_grid;

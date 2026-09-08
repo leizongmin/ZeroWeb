@@ -1829,3 +1829,44 @@ fn test_box_sizing_content_box_with_padding() {
         child_box.height
     );
 }
+
+/// R4147（css-sizing-4 §4.2）：aspect-ratio + definite width + height:auto 的块盒，
+/// 其 transferred height 对**子元素百分比高度是明确包含块**。ipr-015 结构：outer
+/// (w:200, ratio 2/1) > inner(h:100%)——inner 应解析 100（旧实现 quirks 链解析到视口高）。
+#[test]
+fn test_r4147_ar_transferred_height_is_pct_basis() {
+    let html = r#"<html><head><style>
+        body { margin: 8px; }
+        .outer { width: 200px; aspect-ratio: 2/1; }
+        .inner { width: min-content; height: 100%; background: red; }
+    </style></head><body><div class="outer"><div class="inner"></div></div></body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let stylesheet = zero_css_parser::Parser::parse_stylesheet(
+        ".outer { width: 200px; aspect-ratio: 2/1; } .inner { width: min-content; height: 100%; background: red; }",
+    );
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[stylesheet]);
+    let mut engine = crate::engine::LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    fn find_by_w(root: &LayoutBox, w: f32) -> Vec<&LayoutBox> {
+        let mut v = Vec::new();
+        if (root.width - w).abs() < 0.5 {
+            v.push(root);
+        }
+        for c in &root.children {
+            v.extend(find_by_w(c, w));
+        }
+        v
+    }
+    let outer = find_by_w(&result.root, 200.0)
+        .into_iter()
+        .find(|b| b.height > 50.0 && b.height < 150.0)
+        .expect("应存在 200×100 的 aspect-ratio 盒");
+    assert_eq!(outer.height, 100.0, "outer transferred height = 200/2 = 100");
+    let inner = outer.children.first().expect("outer 应有 inner 子盒");
+    assert_eq!(
+        inner.height, 100.0,
+        "inner height:100% 应对 transferred 100 解析（非视口/继承 CB 高）"
+    );
+}
