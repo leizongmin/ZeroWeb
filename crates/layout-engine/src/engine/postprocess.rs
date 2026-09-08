@@ -765,6 +765,13 @@ pub(super) fn exclude_floats_from_non_bfc_auto_height(
     if !is_auto_height || crate::margin_collapse::establishes_bfc(box_node) {
         return;
     }
+    // R4150（CSS Flexbox §4）：flex item 建立独立格式化上下文——包含浮动，auto 高度
+    // 计入 float 子（flex-item-max-width-min-content-002：item 含 2 float 100×50 竖排，
+    // h 应 100，旧按 §10.5.1 排除 float 收缩到 0）。is_layout_container 只标 flex/grid
+    // 容器，item 本身（display:block）落不到该旗标，此处按 is_flex_grid_item 补判。
+    if box_node.is_flex_grid_item {
+        return;
+    }
     // CSS §10.5.1：取 in-flow 子元素 border-box 底边最大值（相对父内容盒顶）。
     // child.y 为子元素 border-box 顶相对父内容盒顶（taffy 已含 margin 折叠后的偏移），
     // 不含子元素 margin-bottom（末子 margin-bottom 与父折叠/悬挂，不计入高度）。

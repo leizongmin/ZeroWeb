@@ -10,12 +10,13 @@
 use super::*;
 
 /// R4149：content-based 尺寸关键字判定（css-sizing-3 §5.2）——min/max-width 的
-/// min-content/max-content/fit-content 均以 intrinsic 尺寸参与钳制。
+/// min-content/max-content 以 intrinsic 尺寸参与钳制。**不含 FitContent(arg)**：
+/// `min/max-width: fit-content(L)` 是 min(max-content, max(min-content, L)) 的
+/// arg 上限公式（css-sizing-3 #valdef-width-fit-content-length-percentage），非纯
+/// content 关键字——按 intrinsic floor 会把 fit-content-length-percentage-007/008
+/// 测到 max-content（120 应 100）。width 的 bare fit-content 归 R3925 专用臂。
 fn content_kw(v: &LengthValue) -> bool {
-    matches!(
-        v,
-        LengthValue::MinContent | LengthValue::MaxContent | LengthValue::FitContent(_)
-    )
+    matches!(v, LengthValue::MinContent | LengthValue::MaxContent)
 }
 
 fn resolve_sizing_definite_real_length(value: &LengthValue, style: &ComputedStyle) -> Option<f32> {
@@ -71,7 +72,13 @@ impl LayoutEngine {
                 DisplayValue::Flex | DisplayValue::InlineFlex | DisplayValue::Grid | DisplayValue::InlineGrid
             );
             let is_block = matches!(s.display, DisplayValue::Block);
-            if !(is_flex_grid || is_block) || !matches!(b.writing_mode, WritingModeValue::HorizontalTb) {
+            // R4149：宽轴关键字（min/max-width content 关键字）是物理水平轴属性，vertical-rl
+            // 的盒同样受钳（flex-item-min-width-min-content：vertical-rl item min-width:
+            // min-content 应 floor 到子 100px 块宽）——kw 盒不限书写模式，其余保持 HorizontalTb。
+            let kw_any_mode = (content_kw(&s.min_width) || content_kw(&s.max_width)) && !b.is_replaced;
+            if !(is_flex_grid || is_block)
+                || (!matches!(b.writing_mode, WritingModeValue::HorizontalTb) && !kw_any_mode)
+            {
                 continue;
             }
             // R1015/R1019：扩展 gate——除 MaxContent/MinContent 外，width:Auto + float（shrink-to-fit
@@ -100,15 +107,19 @@ impl LayoutEngine {
             // 100 应撑到 100），max-width:min-content 是上限（dynamic-012：`max-width:min-content;
             // width:200px` 应 cap 到 100）。converter 把 min_width 关键字映射 length(0)、
             // max_width 关键字映射 auto，taffy 无从钳制——在此测 intrinsic 后经 taffy 重跑传播。
-            // max 关键字 cap 臂收窄到 aspect-ratio + content-box 盒（border-box-and-max-content-002
-            // 语义：box-sizing:border-box 的 .item 应按 border-box cap 500）——无 AR 的普通块
-            //（flex-item-max-width-min-content-002 等）其 intrinsic 测量按 content-box 求和会高估，
-            // cap 反而塌盒，维持 taffy Auto 行为。
+            // min 关键字臂对任意书写模式开放（width 是物理水平轴属性，vertical-rl 的 flex item
+            // 同样受 min-width 钳制——flex-item-min-width-min-content）。
+            // max 关键字 cap 臂收窄到两类（无 AR 普通块的 content-box intrinsic 求和高估会塌盒，
+            // 维持 taffy Auto）：① aspect-ratio + content-box 盒（border-box-and-max-content-002
+            // 语义：box-sizing:border-box 的 .item 应按 border-box cap 500）；② flex item
+            //（flex-item-max-width-min-content-002：item 内 float 子的 block_max 测量精确 100，
+            // cap 后 float 换行成竖排 100×100）。
             let kw_min = std::env::var("ZW_WIDTH_KEYWORD_CLAMP").as_deref() != Ok("0") && content_kw(&s.min_width);
             let kw_max = std::env::var("ZW_WIDTH_KEYWORD_CLAMP").as_deref() != Ok("0")
                 && content_kw(&s.max_width)
-                && s.aspect_ratio.is_some_and(|r| r > 0.0)
-                && matches!(s.box_sizing, zero_css_parser::values::BoxSizingValue::ContentBox);
+                && (s.aspect_ratio.is_some_and(|r| r > 0.0)
+                    && matches!(s.box_sizing, zero_css_parser::values::BoxSizingValue::ContentBox)
+                    || (b.is_flex_grid_item && matches!(s.display, DisplayValue::Block)));
             let is_kw_clamp = (kw_min || kw_max) && !b.is_replaced;
             if !is_max_min && !is_auto_float && !is_fitcontent && !is_kw_clamp {
                 continue;
@@ -233,7 +244,24 @@ impl LayoutEngine {
                 } else {
                     intrinsic
                 };
-                style.size.width = taffy::style::Dimension::length(width);
+                if is_kw_clamp {
+                    // R4149：关键字语义写入 **min/max 约束**而非定宽——min-width:min-content
+                    // → min_size.width=intrinsic（taffy 布局算法按约束自行求解，flex item 的
+                    // flex-basis:0 + min-width 场景 flex-item-min-width-min-content 才能正确
+                    // 钳主轴）；max-width 关键字 → max_size.width=intrinsic。写入前清 converter
+                    // 的 length(0) 伪影（min_width 关键字被映射 length(0)，会与新 min_size 冲突
+                    // 取 0——须同步抬到 intrinsic）。
+                    if kw_min {
+                        style.size.width = taffy::style::Dimension::auto();
+                        style.min_size.width = taffy::style::Dimension::length(intrinsic);
+                    }
+                    if kw_max {
+                        style.size.width = taffy::style::Dimension::auto();
+                        style.max_size.width = taffy::style::Dimension::length(intrinsic);
+                    }
+                } else {
+                    style.size.width = taffy::style::Dimension::length(width);
+                }
                 let _ = taffy_tree.set_style(taffy_id, style);
                 let _ = taffy_tree.mark_dirty(taffy_id);
                 changed = true;

@@ -93,3 +93,105 @@ fn r4149_max_width_keyword_cap_gated_to_ar_content_box() {
         p.width
     );
 }
+
+/// R4149 二轮（约束机制）：flex item 的 `min-width:min-content` + `flex-basis:0`——
+/// 关键字写入 taffy min_size 约束（非定宽），flex 主轴求解按 min 钳制撑到内容 100
+///（flex-item-min-width-min-content：vertical-rl item 亦同，width 是物理水平轴属性）。
+#[test]
+fn r4149_flex_item_min_width_keyword_clamps_main_axis() {
+    let (mut doc, body) = make_doc_with_body();
+    let container = doc.create_element("div");
+    doc.append_child(body, container).unwrap();
+    let item = doc.create_element("div");
+    doc.append_child(container, item).unwrap();
+    let child = doc.create_element("div");
+    doc.append_child(item, child).unwrap();
+
+    let mut container_style = ComputedStyle::default();
+    container_style.display = zero_style_system::DisplayValue::Flex;
+    container_style.width = LengthValue::Px(0.0);
+    container_style.height = LengthValue::Px(100.0);
+
+    let mut item_style = ComputedStyle::default();
+    item_style.display = zero_style_system::DisplayValue::Block;
+    item_style.min_width = LengthValue::MinContent;
+
+    let mut child_style = ComputedStyle::default();
+    child_style.display = zero_style_system::DisplayValue::Block;
+    child_style.width = LengthValue::Px(100.0);
+    child_style.height = LengthValue::Px(50.0);
+
+    let mut styles = HashMap::new();
+    styles.insert(container, container_style);
+    styles.insert(item, item_style);
+    styles.insert(child, child_style);
+
+    let mut engine = crate::LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+
+    fn find(root: &crate::LayoutBox, id: NodeId) -> Option<&crate::LayoutBox> {
+        if root.node_id == Some(id) {
+            return Some(root);
+        }
+        root.children.iter().find_map(|c| find(c, id))
+    }
+    let it = find(&result.root, item).expect("item box");
+    assert!(
+        (it.width - 100.0).abs() < 1.0,
+        "flex item min-width:min-content must clamp main axis to content 100 (flex-basis:0 + min floor), got {}",
+        it.width
+    );
+}
+
+/// R4150（CSS Flexbox §4）：flex item 建立独立格式化上下文——auto 高度包含 float 子。
+/// 容器 100 宽下两个 float 100×50 竖排（第二个放不下换行），item 高应 100
+///（旧按 §10.5.1 排除 float 收缩到 0）。
+#[test]
+fn r4150_flex_item_auto_height_contains_floats() {
+    let (mut doc, body) = make_doc_with_body();
+    let container = doc.create_element("div");
+    doc.append_child(body, container).unwrap();
+    let item = doc.create_element("div");
+    doc.append_child(container, item).unwrap();
+    let f1 = doc.create_element("div");
+    doc.append_child(item, f1).unwrap();
+    let f2 = doc.create_element("div");
+    doc.append_child(item, f2).unwrap();
+
+    let mut container_style = ComputedStyle::default();
+    container_style.display = zero_style_system::DisplayValue::Flex;
+    container_style.width = LengthValue::Px(100.0);
+    container_style.height = LengthValue::Px(100.0);
+    container_style.flex_direction = zero_css_parser::values::FlexDirectionValue::Column;
+
+    let mut item_style = ComputedStyle::default();
+    item_style.display = zero_style_system::DisplayValue::Block;
+
+    let mut float_style = ComputedStyle::default();
+    float_style.display = zero_style_system::DisplayValue::Block;
+    float_style.width = LengthValue::Px(100.0);
+    float_style.height = LengthValue::Px(50.0);
+    float_style.float = zero_css_parser::values::FloatValue::Left;
+
+    let mut styles = HashMap::new();
+    styles.insert(container, container_style);
+    styles.insert(item, item_style);
+    styles.insert(f1, float_style.clone());
+    styles.insert(f2, float_style);
+
+    let mut engine = crate::LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+
+    fn find(root: &crate::LayoutBox, id: NodeId) -> Option<&crate::LayoutBox> {
+        if root.node_id == Some(id) {
+            return Some(root);
+        }
+        root.children.iter().find_map(|c| find(c, id))
+    }
+    let it = find(&result.root, item).expect("item box");
+    assert!(
+        (it.height - 100.0).abs() < 1.0,
+        "flex item auto height must contain float children (100), got {}",
+        it.height
+    );
+}
