@@ -111,6 +111,7 @@ fn build_basic_scene() -> (RenderPrimitives, ImageCache) {
         spread_radius: 0.0,
         inset: false,
         clip: None,
+        clip_out: None,
     });
     // 6. 1×1 红图放大到 12×12
     let mut image_cache = ImageCache::new(16, 1 << 20);
@@ -563,6 +564,7 @@ fn parity_blur_shadow_matches_cpu() {
         spread_radius: 0.0,
         inset: false,
         clip: None,
+        clip_out: None,
     });
     p.draw_order = vec![DrawOp::Shadow(0)];
     let cpu_fb = render_cpu(32, 32, &p, None);
@@ -731,6 +733,7 @@ fn parity_inset_shadow_matches_cpu() {
         spread_radius: 0.0,
         inset: true,
         clip: None,
+        clip_out: None,
     });
     p.draw_order = vec![DrawOp::Shadow(0)];
     let cpu_fb = render_cpu(32, 32, &p, None);
@@ -773,6 +776,7 @@ fn parity_multiple_outset_shadows_matches_cpu() {
         spread_radius: 0.0,
         inset: false,
         clip: None,
+        clip_out: None,
     });
     p.shadows.push(ShadowPrimitive {
         rect: Rect::new(18.0, 4.0, 10.0, 10.0),
@@ -783,6 +787,7 @@ fn parity_multiple_outset_shadows_matches_cpu() {
         spread_radius: 0.0,
         inset: false,
         clip: None,
+        clip_out: None,
     });
     // 二分：只画第一个阴影
     let mut only_first = p.clone();
@@ -837,6 +842,7 @@ fn inset_shadow_no_leak_outside_box() {
         spread_radius: 0.0,
         inset: true,
         clip: None,
+        clip_out: None,
     });
     p.draw_order = vec![DrawOp::Shadow(0)];
     let _cpu_fb = render_cpu(32, 32, &p, None);
@@ -866,6 +872,7 @@ fn inset_shadow_zero_blur_is_hard_edge() {
         spread_radius: 0.0,
         inset: true,
         clip: None,
+        clip_out: None,
     });
     p.draw_order = vec![DrawOp::Shadow(0)];
     let cpu_fb = render_cpu(32, 32, &p, None);
@@ -984,5 +991,81 @@ fn parity_transform_matches_cpu() {
     assert!(
         over_ratio < 0.05,
         "变换 CPU/GPU 差异比例应 <5%，got {over_ratio:.3} (max_diff={max_diff})"
+    );
+}
+
+/// R4139：硬边 outset 阴影 + clip_out punch-out——CPU alpha 清零 vs GPU 环带 quad
+/// 应像素级一致：盒内（punch 掉）保持白，盒外带暗化。
+#[serial]
+#[test]
+fn parity_hard_edge_shadow_punch_out_matches_cpu() {
+    let mut p = RenderPrimitives::default();
+    p.shadows.push(ShadowPrimitive {
+        rect: Rect::new(8.0, 8.0, 16.0, 16.0),
+        color: Color::rgba(0, 0, 0, 255),
+        offset_x: 4.0,
+        offset_y: 4.0,
+        blur_radius: 0.0,
+        spread_radius: 0.0,
+        inset: false,
+        clip: None,
+        clip_out: Some(Rect::new(8.0, 8.0, 16.0, 16.0)),
+    });
+    p.draw_order = vec![DrawOp::Shadow(0)];
+    let cpu_fb = render_cpu(32, 32, &p, None);
+    let gpu_px = render_gpu(32, 32, &p, None);
+    // 盒内 (14,14)：punch-out → 白；盒外带 (26,26)：阴影 → 黑。
+    let inside = (14 * 32 + 14) * 4;
+    let band = (26 * 32 + 26) * 4;
+    for (label, idx) in [("inside", inside), ("band", band)] {
+        assert_eq!(
+            cpu_fb.data[idx], gpu_px[idx],
+            "{label} 像素 CPU/GPU 不一致：CPU={} GPU={}",
+            cpu_fb.data[idx], gpu_px[idx]
+        );
+    }
+    assert!(
+        cpu_fb.data[inside] > 250,
+        "punch-out 后盒内应纯白，CPU={}",
+        cpu_fb.data[inside]
+    );
+    assert!(cpu_fb.data[band] < 60, "盒外阴影带应暗化，CPU={}", cpu_fb.data[band]);
+}
+
+/// R4139：blur outset 阴影 + clip_out punch-out——GPU blur 后 REPLACE 挖空应与 CPU
+/// 模糊后清零一致（软边带保留、盒内清零）。模糊核差异为已知近似，宽容差。
+#[serial]
+#[test]
+fn parity_blur_shadow_punch_out_matches_cpu() {
+    let mut p = RenderPrimitives::default();
+    p.shadows.push(ShadowPrimitive {
+        rect: Rect::new(8.0, 8.0, 16.0, 16.0),
+        color: Color::rgba(0, 0, 0, 255),
+        offset_x: 4.0,
+        offset_y: 4.0,
+        blur_radius: 2.0,
+        spread_radius: 0.0,
+        inset: false,
+        clip: None,
+        clip_out: Some(Rect::new(8.0, 8.0, 16.0, 16.0)),
+    });
+    p.draw_order = vec![DrawOp::Shadow(0)];
+    let cpu_fb = render_cpu(32, 32, &p, None);
+    let gpu_px = render_gpu(32, 32, &p, None);
+    // 盒内 (14,14) 距盒缘 6px，blur σ=1 的 3σ 外 → 双路径都应清零为白。
+    let inside = (14 * 32 + 14) * 4;
+    assert!(
+        cpu_fb.data[inside] > 250 && gpu_px[inside] > 250,
+        "punch-out 后盒内应纯白：CPU={} GPU={}",
+        cpu_fb.data[inside],
+        gpu_px[inside]
+    );
+    // 盒外带 (27,27) 在阴影+offset 区域内 → 双路径都应有墨。
+    let band = (27 * 32 + 27) * 4;
+    assert!(
+        cpu_fb.data[band] < 200 && gpu_px[band] < 200,
+        "盒外阴影带应有墨：CPU={} GPU={}",
+        cpu_fb.data[band],
+        gpu_px[band]
     );
 }

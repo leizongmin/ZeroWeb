@@ -1926,7 +1926,7 @@ fn debug_table_backgrounds_bs_colgroup_probe() {
     let ref_fb = render_to_framebuffer_with_base(&ref_html, "", &cfg, ref_path.parent());
     // 逐行差异统计：找出差异集中的行带（每张表 ~90px 高）。
     let mut row_diff = vec![0u32; fb.height as usize];
-    for y in 0..fb.height as usize {
+    for (y, row) in row_diff.iter_mut().enumerate() {
         for x in 0..fb.width as usize {
             let i = (y * fb.width as usize + x) * 4;
             let j = (y * ref_fb.width as usize + x) * 4;
@@ -1934,7 +1934,7 @@ fn debug_table_backgrounds_bs_colgroup_probe() {
                 + (fb.data[i + 1] as i32 - ref_fb.data[j + 1] as i32).abs()
                 + (fb.data[i + 2] as i32 - ref_fb.data[j + 2] as i32).abs();
             if d > 30 {
-                row_diff[y] += 1;
+                *row += 1;
             }
         }
     }
@@ -2094,7 +2094,7 @@ fn debug_table_backgrounds_bs_rowgroup_bands() {
     let fb = render_to_framebuffer_with_base(&html, "", &cfg, case_path.parent());
     let ref_fb = render_to_framebuffer_with_base(&ref_html, "", &cfg, ref_path.parent());
     let mut row_diff = vec![0u32; fb.height as usize];
-    for y in 0..fb.height as usize {
+    for (y, row) in row_diff.iter_mut().enumerate() {
         for x in 0..fb.width as usize {
             let i = (y * fb.width as usize + x) * 4;
             let j = (y * ref_fb.width as usize + x) * 4;
@@ -2102,7 +2102,7 @@ fn debug_table_backgrounds_bs_rowgroup_bands() {
                 + (fb.data[i + 1] as i32 - ref_fb.data[j + 1] as i32).abs()
                 + (fb.data[i + 2] as i32 - ref_fb.data[j + 2] as i32).abs();
             if d > 30 {
-                row_diff[y] += 1;
+                *row += 1;
             }
         }
     }
@@ -2140,7 +2140,7 @@ fn debug_display_in_container_probe() {
     let fb = render_to_framebuffer_with_base(&html, "", &cfg, case_path.parent());
     let ref_fb = render_to_framebuffer_with_base(&ref_html, "", &cfg, ref_path.parent());
     let mut row_diff = vec![0u32; fb.height as usize];
-    for y in 0..fb.height as usize {
+    for (y, row) in row_diff.iter_mut().enumerate() {
         for x in 0..fb.width as usize {
             let i = (y * fb.width as usize + x) * 4;
             let j = (y * ref_fb.width as usize + x) * 4;
@@ -2148,7 +2148,7 @@ fn debug_display_in_container_probe() {
                 + (fb.data[i + 1] as i32 - ref_fb.data[j + 1] as i32).abs()
                 + (fb.data[i + 2] as i32 - ref_fb.data[j + 2] as i32).abs();
             if d > 30 {
-                row_diff[y] += 1;
+                *row += 1;
             }
         }
     }
@@ -2187,7 +2187,7 @@ fn debug_container_units_gradient_probe() {
     let fb = render_to_framebuffer_with_base(&html, "", &cfg, case_path.parent());
     let ref_fb = render_to_framebuffer_with_base(&ref_html, "", &cfg, ref_path.parent());
     let mut row_diff = vec![0u32; fb.height as usize];
-    for y in 0..fb.height as usize {
+    for (y, row) in row_diff.iter_mut().enumerate() {
         for x in 0..fb.width as usize {
             let i = (y * fb.width as usize + x) * 4;
             let j = (y * ref_fb.width as usize + x) * 4;
@@ -2195,7 +2195,7 @@ fn debug_container_units_gradient_probe() {
                 + (fb.data[i + 1] as i32 - ref_fb.data[j + 1] as i32).abs()
                 + (fb.data[i + 2] as i32 - ref_fb.data[j + 2] as i32).abs();
             if d > 30 {
-                row_diff[y] += 1;
+                *row += 1;
             }
         }
     }
@@ -2304,7 +2304,7 @@ fn debug_multiple_conditions_probe() {
     let ref_fb = render_to_framebuffer_with_base(&ref_html, "", &cfg, ref_path.parent());
     let mut diff = 0u32;
     let mut row_diff = vec![0u32; fb.height as usize];
-    for y in 0..fb.height as usize {
+    for (y, row) in row_diff.iter_mut().enumerate() {
         for x in 0..fb.width as usize {
             let i = (y * fb.width as usize + x) * 4;
             let j = (y * ref_fb.width as usize + x) * 4;
@@ -2313,7 +2313,7 @@ fn debug_multiple_conditions_probe() {
                 + (fb.data[i + 2] as i32 - ref_fb.data[j + 2] as i32).abs();
             if d > 30 {
                 diff += 1;
-                row_diff[y] += 1;
+                *row += 1;
             }
         }
     }
@@ -2455,7 +2455,7 @@ fn debug_pseudo_elements_002b_probe() {
     let ref_fb = render_to_framebuffer_with_base(&ref_html, "", &cfg, ref_path.parent());
     let mut diff = 0u32;
     let mut row_diff = vec![0u32; fb.height as usize];
-    for y in 0..fb.height as usize {
+    for (y, row) in row_diff.iter_mut().enumerate() {
         for x in 0..fb.width as usize {
             let i = (y * fb.width as usize + x) * 4;
             let j = (y * ref_fb.width as usize + x) * 4;
@@ -2464,7 +2464,7 @@ fn debug_pseudo_elements_002b_probe() {
                 + (fb.data[i + 2] as i32 - ref_fb.data[j + 2] as i32).abs();
             if d > 30 {
                 diff += 1;
-                row_diff[y] += 1;
+                *row += 1;
             }
         }
     }
@@ -2503,7 +2503,7 @@ fn debug_box_sizing_007_probe() {
     let ref_fb = render_to_framebuffer_with_base(&ref_html, "", &cfg, ref_path.parent());
     let mut diff = 0u32;
     let mut row_diff = vec![0u32; fb.height as usize];
-    for y in 0..fb.height as usize {
+    for (y, row) in row_diff.iter_mut().enumerate() {
         for x in 0..fb.width as usize {
             let i = (y * fb.width as usize + x) * 4;
             let j = (y * ref_fb.width as usize + x) * 4;
@@ -2512,7 +2512,7 @@ fn debug_box_sizing_007_probe() {
                 + (fb.data[i + 2] as i32 - ref_fb.data[j + 2] as i32).abs();
             if d > 30 {
                 diff += 1;
-                row_diff[y] += 1;
+                *row += 1;
             }
         }
     }
@@ -2600,10 +2600,10 @@ fn debug_root_box_003_probe() {
     dump(&ref_fb, "ref ");
 }
 
-/// R4130 勘察二：intrinsic-percent-replaced-015——outer(aspect-ratio 2/1 width 200)
-/// > inner(min-content, height 100%) > div(height 100%) > img(height 100%)。
-/// ref 满绿 200×100。img 高 100% 需相对 height:100% 链逐级传递（aspect-ratio 宽
-/// 作百分比基准）。
+/// R4130 勘察二：intrinsic-percent-replaced-015——outer(aspect-ratio 2/1 width 200)、
+/// inner(min-content, height 100%)、div(height 100%)、img(height 100%) 嵌套链。
+/// ref 满绿 200×100；img 高 100% 需相对 height:100% 链逐级传递
+///（aspect-ratio 宽作百分比基准）。
 #[test]
 #[ignore]
 fn debug_ipr_015_probe() {
@@ -2706,7 +2706,7 @@ fn debug_bidi_text_probe() {
         let ref_fb = render_to_framebuffer_with_base(&ref_html, "", &cfg, Some(&base));
         let mut diff = 0u32;
         let mut row_diff = vec![0u32; fb.height as usize];
-        for y in 0..fb.height as usize {
+        for (y, row) in row_diff.iter_mut().enumerate() {
             for x in 0..fb.width as usize {
                 let i = (y * fb.width as usize + x) * 4;
                 let j = (y * ref_fb.width as usize + x) * 4;
@@ -2715,7 +2715,7 @@ fn debug_bidi_text_probe() {
                     + (fb.data[i + 2] as i32 - ref_fb.data[j + 2] as i32).abs();
                 if d > 30 {
                     diff += 1;
-                    row_diff[y] += 1;
+                    *row += 1;
                 }
             }
         }
@@ -2741,9 +2741,9 @@ fn debug_bidi_text_probe() {
 }
 
 /// R4133 勘察：css-overflow margin-block-end-scroll-area-001（32.83%）静态像素定性。
-/// 案语义：div#test{height:200px;overflow:hidden;font-size:100px} > div#red{height:200px;background:red}
-/// > filler + p{height:1px}；onload 把 #test.scrollTop=200（JS）→ chromium 中红块滚出视口 → 无红 PASS。
-/// ZW reftest 无 JS：scrollTop 不发生，红块应仍渲染于 y=0..200。
+/// 案语义：div#test{height:200px;overflow:hidden;font-size:100px} 含 div#red{height:200px;background:red}
+/// 与 filler + p{height:1px}；onload 把 #test.scrollTop=200（JS）→ chromium 中红块滚出视口 → 无红 PASS。
+/// ZW reftest 无 JS：scrollTop 不发生，红块应仍渲染于 y=0..200。滚动语义属 JS 域。
 /// 静态可判语义：①红块本身渲染正确（位置/尺寸）；②overflow:hidden 裁剪生效；
 /// ③scrollable region 含子 margin-bottom 缘（css-overflow-3 #scrollable）= 滚动距离语义，JS 域。
 #[test]
@@ -2858,13 +2858,10 @@ fn debug_r4133_word_spacing_nbsp3() {
     let text_extent = |html: &str| -> f32 {
         let fb = render_to_framebuffer_with_base(html, "", &cfg, None);
         let mut max_x = 0usize;
-        for y in 0..fb.height as usize {
-            for x in 0..fb.width as usize {
-                let i = (y * fb.width as usize + x) * 4;
-                if fb.data[i] < 128 && fb.data[i + 1] < 128 && fb.data[i + 2] < 128 {
-                    if x > max_x {
-                        max_x = x;
-                    }
+        for row_px in fb.data.chunks(fb.width as usize * 4) {
+            for (x, px) in row_px.chunks(4).enumerate() {
+                if px[0] < 128 && px[1] < 128 && px[2] < 128 && x > max_x {
+                    max_x = x;
                 }
             }
         }
@@ -3086,7 +3083,7 @@ fn debug_r4135_border_image_round() {
     let fb = render_to_framebuffer_with_base(&html, "", &cfg, Some(&base));
     let ref_fb = render_to_framebuffer_with_base(&ref_html, "", &cfg, Some(&base));
     let mut row_diff = vec![0u32; fb.height as usize];
-    for y in 0..fb.height as usize {
+    for (y, row) in row_diff.iter_mut().enumerate() {
         for x in 0..fb.width as usize {
             let i = (y * fb.width as usize + x) * 4;
             let j = (y * ref_fb.width as usize + x) * 4;
@@ -3094,7 +3091,7 @@ fn debug_r4135_border_image_round() {
                 + (fb.data[i + 1] as i32 - ref_fb.data[j + 1] as i32).abs()
                 + (fb.data[i + 2] as i32 - ref_fb.data[j + 2] as i32).abs();
             if d > 30 {
-                row_diff[y] += 1;
+                *row += 1;
             }
         }
     }
@@ -3315,10 +3312,8 @@ fn debug_r4136_calc_margin() {
     for y in 0..fb.height as usize {
         for x in 0..fb.width as usize {
             let i = (y * fb.width as usize + x) * 4;
-            if fb.data[i + 1] > 100 && fb.data[i] < 100 && fb.data[i + 2] < 100 {
-                if first.is_none() || x < first.unwrap() {
-                    first = Some(x);
-                }
+            if fb.data[i + 1] > 100 && fb.data[i] < 100 && fb.data[i + 2] < 100 && first.is_none_or(|prev| x < prev) {
+                first = Some(x);
             }
         }
     }
@@ -3336,10 +3331,9 @@ fn debug_r4136_calc_margin() {
     for y in 0..fb2.height as usize {
         for x in 0..fb2.width as usize {
             let i = (y * fb2.width as usize + x) * 4;
-            if fb2.data[i + 1] > 100 && fb2.data[i] < 100 && fb2.data[i + 2] < 100 {
-                if first2.is_none() || x < first2.unwrap() {
-                    first2 = Some(x);
-                }
+            if fb2.data[i + 1] > 100 && fb2.data[i] < 100 && fb2.data[i + 2] < 100 && first2.is_none_or(|prev| x < prev)
+            {
+                first2 = Some(x);
             }
         }
     }
@@ -3357,7 +3351,7 @@ fn debug_r4137_invalid_residual() {
     let fb = render_to_framebuffer_with_base(&html, "", &cfg, Some(&base));
     let ref_fb = render_to_framebuffer_with_base(&ref_html, "", &cfg, Some(&base));
     let mut row_diff = vec![0u32; fb.height as usize];
-    for y in 0..fb.height as usize {
+    for (y, row) in row_diff.iter_mut().enumerate() {
         for x in 0..fb.width as usize {
             let i = (y * fb.width as usize + x) * 4;
             let j = (y * ref_fb.width as usize + x) * 4;
@@ -3365,7 +3359,7 @@ fn debug_r4137_invalid_residual() {
                 + (fb.data[i + 1] as i32 - ref_fb.data[j + 1] as i32).abs()
                 + (fb.data[i + 2] as i32 - ref_fb.data[j + 2] as i32).abs();
             if d > 30 {
-                row_diff[y] += 1;
+                *row += 1;
             }
         }
     }
@@ -3435,5 +3429,130 @@ fn debug_r4138_parse_bisect() {
     ] {
         let r = zero_css_parser::values::parse_box_shadow(val);
         println!("{label}: {}", if r.is_some() { "OK" } else { "None" });
+    }
+}
+
+/// R4139 勘察：outset 阴影方角——test vs ref 像素 diff 带（8 subtest 位置）。
+#[test]
+#[ignore]
+fn debug_r4139_outset_no_radius() {
+    let cfg = ReftestConfig::default();
+    let base = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("wpt-data/css/css-backgrounds");
+    let html = std::fs::read_to_string(base.join("box-shadow-outset-without-border-radius-001.html")).expect("read");
+    let ref_html = std::fs::read_to_string(base.join("reference/box-shadow-outset-without-border-radius-001-ref.html"))
+        .expect("read");
+    let fb = render_to_framebuffer_with_base(&html, "", &cfg, Some(&base));
+    let ref_fb = render_to_framebuffer_with_base(&ref_html, "", &cfg, Some(&base));
+    let mut row_diff = vec![0u32; fb.height as usize];
+    for (y, row) in row_diff.iter_mut().enumerate() {
+        for x in 0..fb.width as usize {
+            let i = (y * fb.width as usize + x) * 4;
+            let j = (y * ref_fb.width as usize + x) * 4;
+            let d = (fb.data[i] as i32 - ref_fb.data[j] as i32).abs()
+                + (fb.data[i + 1] as i32 - ref_fb.data[j + 1] as i32).abs()
+                + (fb.data[i + 2] as i32 - ref_fb.data[j + 2] as i32).abs();
+            if d > 30 {
+                *row += 1;
+            }
+        }
+    }
+    let mut bands: Vec<(usize, usize, u32)> = Vec::new();
+    for (y, cnt) in row_diff.iter().enumerate() {
+        if *cnt > 0 {
+            match bands.last_mut() {
+                Some(b) if b.1 + 1 == y => {
+                    b.1 = y;
+                    b.2 += *cnt;
+                }
+                _ => bands.push((y, y, *cnt)),
+            }
+        }
+    }
+    let s: Vec<String> = bands
+        .iter()
+        .take(8)
+        .map(|(a, b, t)| format!("y{a}..{b}({t})"))
+        .collect();
+    println!("outset-no-radius diff bands: {}", s.join(" "));
+    // 各带 x 范围（test 有墨 ref 无墨 = ZW 多画的；反之 = ZW 缺的）
+    let dark = |f: &zero_render_foundation::surface::FrameBuffer, x: usize, y: usize| -> bool {
+        let i = (y * f.width as usize + x) * 4;
+        f.data[i] < 60 && f.data[i + 1] < 60 && f.data[i + 2] < 60
+    };
+    for (y0, y1, _t) in bands.iter().take(8) {
+        let mid = (y0 + y1) / 2;
+        let mut extra: Vec<(usize, usize)> = Vec::new();
+        let mut missing: Vec<(usize, usize)> = Vec::new();
+        for x in 0..fb.width as usize {
+            let t_has = dark(&fb, x, mid);
+            let r_has = dark(&ref_fb, x, mid);
+            if t_has && !r_has {
+                if let Some(last) = extra.last_mut() {
+                    if x - last.1 <= 2 {
+                        last.1 = x;
+                    } else {
+                        extra.push((x, x));
+                    }
+                } else {
+                    extra.push((x, x));
+                }
+            } else if r_has && !t_has {
+                if let Some(last) = missing.last_mut() {
+                    if x - last.1 <= 2 {
+                        last.1 = x;
+                    } else {
+                        missing.push((x, x));
+                    }
+                } else {
+                    missing.push((x, x));
+                }
+            }
+        }
+        let e: Vec<String> = extra.iter().take(3).map(|(a, b)| format!("x{a}-{b}")).collect();
+        let m: Vec<String> = missing.iter().take(3).map(|(a, b)| format!("x{a}-{b}")).collect();
+        println!("  y{mid}: extra[{e:?}] missing[{m:?}]");
+    }
+}
+
+/// R4139 探针：inline-block + vertical-align:top + margin-top 的盒顶 y 定位
+///（chromium 期望 8+32=40；ZW 观测 ~65 → margin-top 双计假设验证）。
+#[test]
+#[ignore]
+fn debug_r4139_inline_block_margin_top() {
+    let cfg = ReftestConfig::default();
+    for mt in [0u32, 8, 16, 32, 42] {
+        let html = format!(
+            "<body style=\"margin:8px\"><div style=\"display:inline-block;vertical-align:top;margin-top:{mt}px;width:80px;height:80px;background:black\"></div></body>"
+        );
+        let fb = render_to_framebuffer_with_base(&html, "", &cfg, None);
+        let mut top = None;
+        'outer: for y in 0..fb.height as usize {
+            for x in 0..fb.width as usize {
+                let i = (y * fb.width as usize + x) * 4;
+                if fb.data[i] < 60 && fb.data[i + 1] < 60 && fb.data[i + 2] < 60 {
+                    top = Some(y);
+                    break 'outer;
+                }
+            }
+        }
+        println!("margin-top:{mt} → black top y = {:?}", top);
+    }
+    // 对照：block 布局（无 inline-block）
+    for mt in [0u32, 32] {
+        let html = format!(
+            "<body style=\"margin:8px\"><div style=\"display:block;margin-top:{mt}px;width:80px;height:80px;background:black\"></div></body>"
+        );
+        let fb = render_to_framebuffer_with_base(&html, "", &cfg, None);
+        let mut top = None;
+        'outer: for y in 0..fb.height as usize {
+            for x in 0..fb.width as usize {
+                let i = (y * fb.width as usize + x) * 4;
+                if fb.data[i] < 60 && fb.data[i + 1] < 60 && fb.data[i + 2] < 60 {
+                    top = Some(y);
+                    break 'outer;
+                }
+            }
+        }
+        println!("block margin-top:{mt} → black top y = {:?}", top);
     }
 }

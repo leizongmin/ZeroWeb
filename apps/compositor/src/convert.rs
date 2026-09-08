@@ -217,6 +217,8 @@ pub fn to_render_primitives(params: &PaintSnapshotParams) -> RenderPrimitives {
             // R4059：渲染进程 IPC 面暂无 shadow 裁剪窗口（paint 侧 clip_all 只在
             // renderer 进程内生效），恒 None。
             clip: None,
+            // R4139：punch-out 区域同上——IPC 面未传递，恒 None。
+            clip_out: None,
         });
     }
     for image in &params.images {

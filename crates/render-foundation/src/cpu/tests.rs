@@ -838,13 +838,17 @@ fn shadow_renders_blur_around_rect() {
         spread_radius: 0.0,
         inset: false,
         clip: None,
+        // R4139：携带元素 border-box (40,40)-(100,100) 作 punch-out——低层契约 None
+        // = 不裁（图元级直接消费方），验证 punch-out 必须显式写入。
+        clip_out: Some(Rect::new(40.0, 40.0, 60.0, 60.0)),
     });
 
     let font_loader = FontLoader::new();
     let mut glyph_cache = GlyphCache::new(64);
+    // R4139：帧扩到 140×140 容纳盒外阴影带（旧 100×100 帧盒外带不可见）。
     let fb = render_full_scene(
-        100,
-        100,
+        140,
+        140,
         1.0,
         &primitives,
         &font_loader,
@@ -856,13 +860,21 @@ fn shadow_renders_blur_around_rect() {
         &[],
     );
 
-    // 阴影偏移后中心区域应该有颜色变化
-    // 阴影矩形大约在 (45, 45) 到 (65, 65)
-    let shadow_pixel = fb.get_pixel(55, 55);
+    // R4139（CSS Backgrounds §7.1）：outer shadow「drawn outside the border edge
+    // only」——阴影带（偏移后矩形 (45,45)-(105,105) 减去元素盒 (40,40)-(100,100)）
+    // 才可见。探针点取盒外右侧带 (102,55)：应暗化；盒内 (55,55)：应保持白
+    //（punch-out，透明 bg 下阴影不再透出——旧实现盒内暗化的行为违反 spec）。
+    let band_pixel = fb.get_pixel(102, 55);
     assert!(
-        shadow_pixel[0] < 250,
-        "shadow area should be darkened, got {:?}",
-        shadow_pixel
+        band_pixel[0] < 250,
+        "shadow band outside the box should be darkened, got {:?}",
+        band_pixel
+    );
+    let inside_pixel = fb.get_pixel(55, 55);
+    assert_eq!(
+        inside_pixel,
+        [255, 255, 255, 255],
+        "area inside the border-box should NOT be darkened by outer shadow (punch-out)"
     );
 
     // 远离阴影的区域应该是白色
@@ -884,6 +896,7 @@ fn inset_shadow_renders_inside_box() {
         spread_radius: 0.0,
         inset: true,
         clip: None,
+        clip_out: None,
     });
     let font_loader = FontLoader::new();
     let mut glyph_cache = GlyphCache::new(64);

@@ -109,6 +109,35 @@ pub fn render_shadow(fb: &mut FrameBuffer, shadow: &ShadowPrimitive, scale: f32)
         }
     }
 
+    // R4139（CSS Backgrounds §7.1）：outer shadow「is drawn outside the border
+    // edge only: it is clipped inside the border-box of the element」——`clip_out`
+    // （paint 侧写入的元素 border-box）非 None 时，模糊后把该区域 alpha 清零。
+    // 旧实现无 punch-out：透明 bg/border 的元素下方阴影透出（outset-without-
+    // border-radius-001 的 L 形阴影带应为盒外部分，盒下透黑）。图元级 `rect` 仍是
+    // 阴影自身形状（低层契约不变），punch-out 只作用于显式携带的区域。
+    if let Some(clip_out) = shadow.clip_out {
+        let bx0 = clip_out.left() * scale;
+        let by0 = clip_out.top() * scale;
+        let bx1 = bx0 + clip_out.size.width * scale;
+        let by1 = by0 + clip_out.size.height * scale;
+        if bx1 > bx0 && by1 > by0 {
+            for y in area_top..area_bottom {
+                let fy = y as f32 + 0.5;
+                if fy < by0 || fy > by1 {
+                    continue;
+                }
+                for x in area_left..area_right {
+                    let fx = x as f32 + 0.5;
+                    if fx < bx0 || fx > bx1 {
+                        continue;
+                    }
+                    let idx = (y - area_top) as usize * area_w + (x - area_left) as usize;
+                    alpha_mask[idx] = 0.0;
+                }
+            }
+        }
+    }
+
     // 步骤 3：合成到帧缓冲
     for y in area_top..area_bottom {
         for x in area_left..area_right {

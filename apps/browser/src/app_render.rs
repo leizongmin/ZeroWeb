@@ -1075,6 +1075,7 @@ impl BrowserApp {
             spread_radius: 0.0,
             inset: false,
             clip: None,
+            clip_out: None,
         });
     }
 

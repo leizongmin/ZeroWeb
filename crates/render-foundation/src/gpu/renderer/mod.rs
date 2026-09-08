@@ -1718,7 +1718,39 @@ impl GpuRenderer {
                 (l, t, r, b)
             };
             let c = Color::rgba(shadow.color.r, shadow.color.g, shadow.color.b, shadow.color.a);
-            push_fill_quad(&mut verts, l, t, r, b, c);
+            // R4139：clip_out（元素 border-box）punch-out——硬边阴影 quad 变环带：
+            // quad 减内盒 = 上下左右 4 条带（内盒与 quad 相交时；否则保持全 quad）。
+            // 语义对齐 CPU render_shadow 的 clip_out 清零 + blur 路径 REPLACE 挖空。
+            let pushed = if let Some(co) = shadow.clip_out {
+                let pl = co.left() * scale;
+                let pt = co.top() * scale;
+                let pr = co.right() * scale;
+                let pb = co.bottom() * scale;
+                let (il, it, ir, ib) = (l.max(pl), t.max(pt), r.min(pr), b.min(pb));
+                if il < ir && it < ib {
+                    // 上带（quad 顶到内盒顶）、下带、左带、右带
+                    if t < it {
+                        push_fill_quad(&mut verts, l, t, r, it, c);
+                    }
+                    if ib < b {
+                        push_fill_quad(&mut verts, l, ib, r, b, c);
+                    }
+                    if l < il {
+                        push_fill_quad(&mut verts, l, it, il, ib, c);
+                    }
+                    if ir < r {
+                        push_fill_quad(&mut verts, ir, it, r, ib, c);
+                    }
+                    true
+                } else {
+                    false
+                }
+            } else {
+                false
+            };
+            if !pushed {
+                push_fill_quad(&mut verts, l, t, r, b, c);
+            }
             batches.push(verts);
         }
         batches
@@ -3335,6 +3367,14 @@ impl GpuRenderer {
                 continue;
             }
             let scissor = (bl, bt, br - bl, bb - bt);
+            // R4139：punch-out 区域（元素 border-box，与 blit 区域的交才是可见部分）。
+            let punch = shadow.clip_out.map(|co| {
+                let px0 = (co.left() * scale).floor().max(bl as f32) as u32;
+                let py0 = (co.top() * scale).floor().max(bt as f32) as u32;
+                let px1 = (co.right() * scale).ceil().min(br as f32) as u32;
+                let py1 = (co.bottom() * scale).ceil().min(bb as f32) as u32;
+                (px0, py0, px1, py1)
+            });
             // R3254-G2：每阴影独立重置蒙版（clear 透明 + 画该阴影矩形）——此前所有阴影
             // 画在同一离屏、ping-pong 从上一阴影残留继续且 pass copy 覆盖前序结果，
             // 多阴影时前 N-1 个只 blur 2 遍。
@@ -3398,6 +3438,49 @@ impl GpuRenderer {
                     );
                     std::mem::swap(&mut src_tex, &mut dst_tex);
                 }
+            }
+
+            // R4139：outer shadow「drawn outside the border edge only」——blur 后在
+            // 结果纹理上把元素 border-box 区域 alpha 清零（REPLACE 透明挖空，语义对齐
+            // CPU render_shadow 的 clip_out punch-out）。硬边 copy 与 3 遍 blur 的结果
+            // 恒在 shadow_tex_b，单一 punch pass 覆盖两路。
+            if let Some((px0, py0, px1, py1)) = punch.filter(|&(a, b, c, d)| a < c && b < d) {
+                let mut punch_encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("Shadow Punch-out Encoder"),
+                });
+                {
+                    let view = shadow_tex_b.create_view(&wgpu::TextureViewDescriptor::default());
+                    let mut pass = punch_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                        label: Some("Shadow Punch-out Pass"),
+                        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                            view: &view,
+                            depth_slice: None,
+                            resolve_target: None,
+                            ops: wgpu::Operations {
+                                load: wgpu::LoadOp::Load,
+                                store: wgpu::StoreOp::Store,
+                            },
+                        })],
+                        depth_stencil_attachment: None,
+                        timestamp_writes: None,
+                        occlusion_query_set: None,
+                        multiview_mask: None,
+                    });
+                    pass.set_scissor_rect(px0, py0, px1 - px0, py1 - py0);
+                    let mut hole = Vec::new();
+                    push_fill_quad(&mut hole, 0.0, 0.0, fw, fh, Color::TRANSPARENT);
+                    let vb = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                        label: Some("Shadow Punch-out VB"),
+                        contents: bytemuck::cast_slice(&hole),
+                        usage: wgpu::BufferUsages::VERTEX,
+                    });
+                    pass.set_pipeline(&self.fill_replace_pipeline);
+                    pass.set_bind_group(0, uniform_bg, &[]);
+                    pass.set_bind_group(1, &self.atlas_bind_group, &[]);
+                    pass.set_vertex_buffer(0, vb.slice(..));
+                    pass.draw(0..6, 0..1);
+                }
+                queue.submit(std::iter::once(punch_encoder.finish()));
             }
 
             // 逐阴影 blit 到主帧（R3254-G2：blit 用**独立 encoder 立即提交**——B 纹理

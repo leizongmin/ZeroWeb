@@ -274,6 +274,11 @@ pub struct ShadowPrimitive {
     /// paint 侧 overflow / contain:paint 裁剪（clip_all_primitives_to_rect）写入，
     /// 语义同 `ImagePrimitive.clip`（R294 crop 先例）。
     pub clip: Option<Rect>,
+    /// R4139（CSS Backgrounds §7.1）：**punch-out 区域**（元素 border-box，device 坐标）。
+    /// outer shadow「is drawn outside the border edge only: it is clipped inside the
+    /// border-box of the element」——renderer 模糊后把本区域 alpha 清零。paint 侧
+    /// box-shadow 写入元素盒；图元级直接消费方（parity 测试等）保持 None = 不裁。
+    pub clip_out: Option<Rect>,
 }
 
 /// 图片图元

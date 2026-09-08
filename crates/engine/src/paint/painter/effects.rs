@@ -90,6 +90,10 @@ impl super::Painter {
                 color_value_to_render(&shadow.color)
             };
 
+            // R4139：outer shadow 携带元素 border-box 作 punch-out 区域——阴影「drawn
+            // outside the border edge only」，盒内部分由 renderer 清零（透明 bg/border
+            // 下不再透出）。inset 阴影自身裁切到盒，无需 punch-out。
+            let clip_out = if shadow.inset { None } else { Some(rect) };
             self.primitives.add_shadow(ShadowPrimitive {
                 rect,
                 color,
@@ -99,6 +103,7 @@ impl super::Painter {
                 spread_radius: shadow.spread_radius,
                 inset: shadow.inset,
                 clip: None,
+                clip_out,
             });
         }
     }
@@ -791,6 +796,7 @@ impl super::Painter {
                 spread_radius: 0.0,
                 inset: false,
                 clip: None,
+                clip_out: None,
             });
         }
     }

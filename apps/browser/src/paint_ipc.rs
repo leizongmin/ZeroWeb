@@ -221,6 +221,8 @@ pub fn apply_paint_snapshot(snap: &mut TabSnapshot, params: PaintSnapshotParams)
             inset: false,
             // R4059：IPC 面暂无 shadow 裁剪窗口（renderer 进程内 paint 已裁），恒 None。
             clip: None,
+            // R4139：punch-out 区域同上——IPC 面未传递，恒 None。
+            clip_out: None,
         });
     }
     for image in params.images {
