@@ -2,7 +2,8 @@
 
 use zero_protocol::message::{
     AutomationElementRef, AutomationError, AutomationErrorCode, AutomationKey, AutomationOperation, AutomationRequest,
-    AutomationResponse, AutomationResult, AutomationValue, IpcMessageKind, KeyboardEventParams, KeyboardEventType,
+    AutomationResponse, AutomationResult, AutomationStateQuery, AutomationValue, IpcMessageKind, KeyboardEventParams,
+    KeyboardEventType,
 };
 
 use super::{PageScriptContext, RendererRuntime};
@@ -86,6 +87,45 @@ impl RendererRuntime {
                 }
                 Ok(AutomationResult::Empty)
             }
+            AutomationOperation::ElementState { element, query } => {
+                // https://w3c.github.io/webdriver/#element-state — 状态读经唯一选择器在
+                // 页面脚本上下文求值，与渲染管线同一 live document。
+                let selector = self.selector_for_automation_element(element)?;
+                let script = element_state_script(&selector, &query);
+                self.execute_state_script(script)
+            }
+            AutomationOperation::ElementClear { element } => {
+                // https://w3c.github.io/webdriver/#element-clear — 可编辑元素置空 value，
+                // 可勾选元素保持勾选语义不变（仅清文本类）。
+                let selector = self.selector_for_automation_element(element)?;
+                if self.interaction.focus_owner() != Some(selector.as_str()) {
+                    self.blur_focused().map_err(internal_error)?;
+                    self.focus_target(&selector).map_err(internal_error)?;
+                }
+                let script = format!(
+                    "(function(){{var el=document.querySelector({selector:?});\
+                     if(!el)return JSON.stringify({{ok:false}});\
+                     var tag=el.tagName.toLowerCase();\
+                     if(tag==='textarea'||(tag==='input'&&el.type!=='checkbox'&&el.type!=='radio'&&el.type!=='file')){{\
+                     el.value='';el.dispatchEvent(new Event('input',{{bubbles:true}}));}}\
+                     return JSON.stringify({{ok:true}});}})()"
+                );
+                let value = self.run_page_context_script(&script)?;
+                let parsed = automation_value_from_script(&value);
+                let AutomationValue::Object(entries) = parsed else {
+                    return Err(internal_error("unexpected clear result".into()));
+                };
+                let ok = entries
+                    .iter()
+                    .any(|(k, v)| k == "ok" && *v == AutomationValue::Bool(true));
+                if !ok {
+                    return Err(automation_error(
+                        AutomationErrorCode::InvalidArgument,
+                        "element is not clearable",
+                    ));
+                }
+                Ok(AutomationResult::Empty)
+            }
             AutomationOperation::GetActiveElement => {
                 let element = self
                     .interaction
@@ -111,22 +151,7 @@ impl RendererRuntime {
                     "(function(){{var __zw_value=(function(){{{script}\n}}).apply(null,{arguments});\
                      return JSON.stringify({{defined:typeof __zw_value!=='undefined',value:__zw_value}});}})()"
                 );
-                let current_url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
-                let (value, changed) = {
-                    let mut context = PageScriptContext {
-                        html: &mut self.cached_html,
-                        url: &current_url,
-                        js_worker: &self.js_worker,
-                        webview: self.webview.as_mut(),
-                    };
-                    super::page_scripts::execute_automation_script(&mut context, &source)
-                        .map_err(|message| automation_error(AutomationErrorCode::JavascriptError, message))?
-                };
-                self.sync_focus_from_js();
-                self.sync_cached_html_from_webview();
-                if changed {
-                    self.publish_webview(None, true).map_err(internal_error)?;
-                }
+                let value = self.run_page_context_script(&source)?;
                 Ok(AutomationResult::Value(automation_value_from_script(&value)))
             }
             AutomationOperation::Unsupported { name } => Err(automation_error(
@@ -142,6 +167,33 @@ impl RendererRuntime {
             document_generation: self.document_generation,
             node_handle,
         }
+    }
+
+    /// 在页面脚本上下文执行 `source`，返回脚本 stdout（JSON 包络字符串）并同步 DOM 变更。
+    fn run_page_context_script(&mut self, source: &str) -> Result<String, AutomationError> {
+        let current_url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
+        let (value, changed) = {
+            let mut context = PageScriptContext {
+                html: &mut self.cached_html,
+                url: &current_url,
+                js_worker: &self.js_worker,
+                webview: self.webview.as_mut(),
+            };
+            super::page_scripts::execute_automation_script(&mut context, source)
+                .map_err(|message| automation_error(AutomationErrorCode::JavascriptError, message))?
+        };
+        self.sync_focus_from_js();
+        self.sync_cached_html_from_webview();
+        if changed {
+            self.publish_webview(None, true).map_err(internal_error)?;
+        }
+        Ok(value)
+    }
+
+    /// 元素状态查询的公共尾：执行生成的脚本并解 JSON 包络。
+    fn execute_state_script(&mut self, script: String) -> Result<AutomationResult, AutomationError> {
+        let value = self.run_page_context_script(&script)?;
+        Ok(AutomationResult::Value(automation_value_from_script(&value)))
     }
 
     fn selector_for_automation_element(&self, element: AutomationElementRef) -> Result<String, AutomationError> {
@@ -223,6 +275,55 @@ impl RendererRuntime {
             event_type,
         })
     }
+}
+
+/// 生成元素状态查询脚本：按唯一选择器定位元素，按 query 项读取状态，返 JSON 包络。
+///
+/// 选择器以 JS 字符串字面量（`{:?}`）内插，脚本环境与渲染管线同一 live document。
+/// 找不到元素 → `{"ok":false}`（上游层把引用过期/缺失分开报）。
+fn element_state_script(selector: &str, query: &AutomationStateQuery) -> String {
+    let find = format!("var el=document.querySelector({selector:?});if(!el)return JSON.stringify({{ok:false}});");
+    let body = match query {
+        // W3C Get Element Text：渲染文本近似 = textContent（可见性过滤未实现，FIXME）。
+        AutomationStateQuery::Text => {
+            format!("{find}return JSON.stringify({{ok:true,value:el.textContent==null?null:String(el.textContent)}});")
+        }
+        // W3C Get Element Rect：shim `getBoundingClientRect` 真值（RectBridge 注册时）。
+        AutomationStateQuery::Rect => format!(
+            "{find}var r=el.getBoundingClientRect();\
+             return JSON.stringify({{ok:true,value:{{x:r.x,y:r.y,width:r.width,height:r.height}}}});"
+        ),
+        // W3C Is Element Enabled：非表单元素恒 true（无 disabled 语义）。
+        AutomationStateQuery::Enabled => format!(
+            "{find}var disabled=false;\
+             if(el.disabled===true)disabled=true;\
+             else if(typeof el.hasAttribute==='function'&&el.hasAttribute('disabled'))disabled=true;\
+             return JSON.stringify({{ok:true,value:!disabled}});"
+        ),
+        // W3C Is Element Selected：option 的 selected / checkbox·radio 的 checkedness。
+        AutomationStateQuery::Selected => format!(
+            "{find}var selected=false;\
+             if(el.tagName.toLowerCase()==='option')selected=!!el.selected;\
+             else if(el.type==='checkbox'||el.type==='radio')selected=!!el.checked;\
+             return JSON.stringify({{ok:true,value:selected}});"
+        ),
+        // W3C Get Element Attribute：内容属性值（不存在 → null）。
+        AutomationStateQuery::Attribute(name) => format!(
+            "{find}var v=el.getAttribute({name:?});\
+             return JSON.stringify({{ok:true,value:v===null?null:String(v)}});"
+        ),
+        // W3C Get Element Property：DOM 属性直读（undefined → null）。
+        AutomationStateQuery::Property(name) => format!(
+            "{find}var v=el[{name:?}];\
+             return JSON.stringify({{ok:true,value:v===undefined?null:v}});"
+        ),
+        // W3C Get Element CSS Value：计算样式（shim getComputedStyle → host 真值）。
+        AutomationStateQuery::CssValue(name) => format!(
+            "{find}var cs=getComputedStyle(el);var v=cs.getPropertyValue({name:?});\
+             return JSON.stringify({{ok:true,value:String(v)}});"
+        ),
+    };
+    format!("(function(){{{body}}})()")
 }
 
 fn automation_error(code: AutomationErrorCode, message: impl Into<String>) -> AutomationError {

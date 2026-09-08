@@ -298,6 +298,20 @@ pub enum AutomationOperation {
         /// 按顺序执行的键序列。
         keys: Vec<AutomationKey>,
     },
+    /// 查询已定位元素的状态（W3C 元素状态族：text/rect/enabled/selected/attribute/
+    /// property/css value）。状态查询在 renderer 侧按唯一选择器经页面脚本上下文求值，
+    /// 结果为 JSON 兼容 AutomationValue。
+    ElementState {
+        /// 带文档作用域的元素引用。
+        element: AutomationElementRef,
+        /// 要查询的状态项。
+        query: AutomationStateQuery,
+    },
+    /// 清空可编辑/可勾选元素的值（W3C Element Clear）。
+    ElementClear {
+        /// 带文档作用域的元素引用。
+        element: AutomationElementRef,
+    },
     /// 查询当前焦点元素。
     GetActiveElement,
     /// 在当前页面脚本上下文执行同步脚本。
@@ -319,6 +333,25 @@ pub enum AutomationOperation {
 pub enum AutomationLocatorStrategy {
     /// CSS selector。
     CssSelector,
+}
+
+/// 元素状态查询项（W3C 元素状态族 endpoint 到单操作的映射）。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum AutomationStateQuery {
+    /// GET …/text — 元素可见文本（渲染文本近似：textContent）。
+    Text,
+    /// GET …/rect — 布局矩形（x/y/width/height）。
+    Rect,
+    /// GET …/enabled — 是否可交互（表单控件 disabled 取反；非控件恒 true）。
+    Enabled,
+    /// GET …/selected — option/checkbox/radio 选中态。
+    Selected,
+    /// GET …/attribute/{name} — 内容属性。
+    Attribute(String),
+    /// GET …/property/{name} — DOM 属性。
+    Property(String),
+    /// GET …/css/{name} — 计算样式值。
+    CssValue(String),
 }
 
 /// 带 live document 作用域的自动化元素引用。

@@ -336,6 +336,52 @@ fn handle_request(driver: &mut Driver, req: &HttpRequest, stream: &mut TcpStream
                 Err(error) => driver_error_response(stream, error),
             }
         }
+        // GET /session/{id}/element/{ref}/text — Get Element Text。
+        ("GET", ["session", id, "element", reference, "text"]) => match driver.element_text(id, reference) {
+            Ok(text) => json_response(stream, serde_json::json!({ "value": text })),
+            Err(error) => driver_error_response(stream, error),
+        },
+        // GET /session/{id}/element/{ref}/rect — Get Element Rect。
+        ("GET", ["session", id, "element", reference, "rect"]) => match driver.element_rect(id, reference) {
+            Ok(rect) => json_response(stream, serde_json::json!({ "value": rect })),
+            Err(error) => driver_error_response(stream, error),
+        },
+        // GET /session/{id}/element/{ref}/enabled — Is Element Enabled。
+        ("GET", ["session", id, "element", reference, "enabled"]) => match driver.element_enabled(id, reference) {
+            Ok(enabled) => json_response(stream, serde_json::json!({ "value": enabled })),
+            Err(error) => driver_error_response(stream, error),
+        },
+        // GET /session/{id}/element/{ref}/selected — Is Element Selected。
+        ("GET", ["session", id, "element", reference, "selected"]) => match driver.element_selected(id, reference) {
+            Ok(selected) => json_response(stream, serde_json::json!({ "value": selected })),
+            Err(error) => driver_error_response(stream, error),
+        },
+        // GET /session/{id}/element/{ref}/attribute/{name} — Get Element Attribute。
+        ("GET", ["session", id, "element", reference, "attribute", name]) => {
+            match driver.element_attribute(id, reference, (*name).to_string()) {
+                Ok(value) => json_response(stream, serde_json::json!({ "value": value })),
+                Err(error) => driver_error_response(stream, error),
+            }
+        }
+        // GET /session/{id}/element/{ref}/property/{name} — Get Element Property。
+        ("GET", ["session", id, "element", reference, "property", name]) => {
+            match driver.element_property(id, reference, (*name).to_string()) {
+                Ok(value) => json_response(stream, serde_json::json!({ "value": value })),
+                Err(error) => driver_error_response(stream, error),
+            }
+        }
+        // GET /session/{id}/element/{ref}/css/{name} — Get Element CSS Value。
+        ("GET", ["session", id, "element", reference, "css", name]) => {
+            match driver.element_css_value(id, reference, (*name).to_string()) {
+                Ok(value) => json_response(stream, serde_json::json!({ "value": value })),
+                Err(error) => driver_error_response(stream, error),
+            }
+        }
+        // POST /session/{id}/element/{ref}/clear — Element Clear。
+        ("POST", ["session", id, "element", reference, "clear"]) => match driver.clear_element(id, reference) {
+            Ok(()) => json_response(stream, serde_json::json!({ "value": null })),
+            Err(error) => driver_error_response(stream, error),
+        },
         // POST /session/{id}/execute/sync — Execute Script in the live page context。
         ("POST", ["session", id, "execute", "sync"]) => {
             let body = serde_json::from_slice::<serde_json::Value>(&req.body).unwrap_or_default();

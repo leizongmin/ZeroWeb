@@ -8,10 +8,10 @@ use zero_net::{HttpClient, HttpMethod, HttpRequest};
 use zero_protocol::ProtocolError;
 use zero_protocol::message::{
     AutomationElementRef, AutomationError, AutomationErrorCode, AutomationKey, AutomationLocatorStrategy,
-    AutomationOperation, AutomationRequest, AutomationResult, AutomationValue, FetchParams, FramePublishMode,
-    IpcMessage, IpcMessageKind, ServiceWorkerClientMessages, ServiceWorkerError, ServiceWorkerErrorCode,
-    ServiceWorkerOperation, ServiceWorkerRequestParams, ServiceWorkerResponseParams, ServiceWorkerResult,
-    ServiceWorkerStateChanges, SetViewportParams,
+    AutomationOperation, AutomationRequest, AutomationResult, AutomationStateQuery, AutomationValue, FetchParams,
+    FramePublishMode, IpcMessage, IpcMessageKind, ServiceWorkerClientMessages, ServiceWorkerError,
+    ServiceWorkerErrorCode, ServiceWorkerOperation, ServiceWorkerRequestParams, ServiceWorkerResponseParams,
+    ServiceWorkerResult, ServiceWorkerStateChanges, SetViewportParams,
 };
 use zero_protocol::process::RendererHandle;
 
@@ -271,6 +271,88 @@ impl Driver {
             .into_iter()
             .map(|element| session.register_element(element))
             .collect()
+    }
+
+    /// 元素状态读族公共体：按引用 + query 求值，解 AutomationValue。
+    fn element_state(
+        &mut self,
+        id: &str,
+        opaque_id: &str,
+        query: AutomationStateQuery,
+    ) -> Result<serde_json::Value, DriverError> {
+        let session = self.session_mut(id)?;
+        let element = session.element(opaque_id)?;
+        let result = session.request(AutomationOperation::ElementState { element, query })?;
+        let AutomationResult::Value(value) = result else {
+            return Err(DriverError::new("unknown error", "invalid element state response"));
+        };
+        // renderer 对 stale 引用在 selector 解析时已报 stale element reference；
+        // 找不到元素（不该发生，引用带守卫）→ no such element。
+        match value {
+            AutomationValue::Object(entries) => {
+                let mut entries = entries.into_iter();
+                let ok = entries.any(|(k, v)| k == "ok" && v == AutomationValue::Bool(true));
+                if !ok {
+                    return Err(DriverError::new("no such element", "element not found"));
+                }
+                Ok(entries
+                    .find(|(k, _)| k == "value")
+                    .map(|(_, v)| automation_value_to_json(v))
+                    .unwrap_or(serde_json::Value::Null))
+            }
+            _ => Ok(automation_value_to_json(value)),
+        }
+    }
+
+    pub fn element_text(&mut self, id: &str, opaque_id: &str) -> Result<String, DriverError> {
+        let value = self.element_state(id, opaque_id, AutomationStateQuery::Text)?;
+        Ok(value.as_str().unwrap_or_default().to_string())
+    }
+
+    pub fn element_rect(&mut self, id: &str, opaque_id: &str) -> Result<serde_json::Value, DriverError> {
+        self.element_state(id, opaque_id, AutomationStateQuery::Rect)
+    }
+
+    pub fn element_enabled(&mut self, id: &str, opaque_id: &str) -> Result<bool, DriverError> {
+        let value = self.element_state(id, opaque_id, AutomationStateQuery::Enabled)?;
+        Ok(value.as_bool().unwrap_or(false))
+    }
+
+    pub fn element_selected(&mut self, id: &str, opaque_id: &str) -> Result<bool, DriverError> {
+        let value = self.element_state(id, opaque_id, AutomationStateQuery::Selected)?;
+        Ok(value.as_bool().unwrap_or(false))
+    }
+
+    pub fn element_attribute(
+        &mut self,
+        id: &str,
+        opaque_id: &str,
+        name: String,
+    ) -> Result<serde_json::Value, DriverError> {
+        self.element_state(id, opaque_id, AutomationStateQuery::Attribute(name))
+    }
+
+    pub fn element_property(
+        &mut self,
+        id: &str,
+        opaque_id: &str,
+        name: String,
+    ) -> Result<serde_json::Value, DriverError> {
+        self.element_state(id, opaque_id, AutomationStateQuery::Property(name))
+    }
+
+    pub fn element_css_value(&mut self, id: &str, opaque_id: &str, name: String) -> Result<String, DriverError> {
+        let value = self.element_state(id, opaque_id, AutomationStateQuery::CssValue(name))?;
+        Ok(value.as_str().unwrap_or_default().to_string())
+    }
+
+    /// Element Clear。可编辑元素置空 value。
+    pub fn clear_element(&mut self, id: &str, opaque_id: &str) -> Result<(), DriverError> {
+        let session = self.session_mut(id)?;
+        let element = session.element(opaque_id)?;
+        session
+            .request(AutomationOperation::ElementClear { element })
+            .map(|_| ())
     }
 
     /// Get Page Source。以 live document 序列化为准（ExecuteScript outerHTML）。

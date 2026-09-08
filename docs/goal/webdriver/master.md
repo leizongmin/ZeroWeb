@@ -2,7 +2,7 @@
 
 **入口文档**: [../webdriver.md](../webdriver.md)
 **创建日期**: 2026-09-07（goal 拆分 bootstrap）
-**最后更新**: 2026-09-08（M1 收口——门禁就位 + 会话/导航族 + timeouts 全绿）
+**最后更新**: 2026-09-08（M2 切片 1+2 收口——find_elements/source + 元素状态族全绿）
 
 ---
 
@@ -16,6 +16,12 @@ HTTP 全链路测试）。
 refresh/timeouts GET+POST）；CI 接线完成（v8 app tests + quickjs 矩阵均含
 `-p zero-webdriver`）；W3C 兼容性清单基线落地（evidence/endpoint-matrix.md）。
 
+**M2 切片 1+2 已收口（2026-09-08）**：endpoint 16 → 25。+GET /source、find_elements、
+text/rect/enabled/selected/attribute/property/css value、clear。协议新增
+`AutomationOperation::FindElements`/`ElementState`/`ElementClear` +
+`AutomationResult::Elements` + `AutomationStateQuery`（wire roundtrip 测试同步）。
+集成测试 8 个全绿。
+
 **与兄弟 goal 的边界**：
 - rendering-compat — 渲染流域 crate 域零重叠
 - event-loop-spec — **apps/renderer 属该流活跃域**；本流只碰 renderer 的 Automation
@@ -26,23 +32,24 @@ refresh/timeouts GET+POST）；CI 接线完成（v8 app tests + quickjs 矩阵�
 
 ## 实测基线（2026-09-08 M1 收口时）
 
-### 已实现（16 endpoint）
+### 已实现（25 endpoint）
 
 - ✅ 会话：POST /session、DELETE /session/{id}、GET /session/{id}（capabilities 回读）、GET /status
 - ✅ 导航族：POST /url、GET /url、back、forward、refresh、GET /title
 - ✅ 超时：GET/POST /timeouts（字段可选、部分更新、400 校验）
-- ✅ 元素：POST /element、GET /element/active、click、value（send keys）
-- ✅ 执行：POST /execute/sync
-- ✅ 基建：零依赖 HTTP（loopback-only、默认 9515）、元素引用映射 4096 上限、
-  parse_webdriver_keys、错误码映射（400 invalid argument / 404 no such session·element·
-  stale / 408 timeout / 500 unknown）+ W3C 错误包络 stacktrace 字段
-- ✅ 集成测试：tests/http_session.rs 6 个全链路用例（真实 TCP + 真实 renderer 子进程）+
-  session.rs 3 单元测试
+- ✅ 元素定位：POST /element、POST /elements（复数）、GET /element/active
+- ✅ 元素交互：click、value（send keys）、clear
+- ✅ 元素状态族：text、rect、enabled、selected、attribute/{name}、property/{name}、css/{name}
+- ✅ 执行：POST /execute/sync、GET /source
+- ✅ 基建：零依赖 HTTP（loopback-only、默认 9515）、元素引用映射 4096 上限 +
+  history_epoch 跨导航守卫、parse_webdriver_keys、错误码映射（400 invalid argument /
+  404 no such session·element·stale / 408 timeout / 500 unknown）+ W3C 错误包络 stacktrace
+- ✅ 集成测试：tests/http_session.rs 8 个全链路用例（真实 TCP + 真实 renderer 子进程）+
+  session.rs 3 + renderer automation 3 单元测试
 
-### 缺失（M2/M3 面）
+### 缺失（M2 剩余 + M3 面）
 
-- ⬜ 元素状态族：find_elements、text、rect、enabled、selected、attribute、property、css value、clear
-- ⬜ 执行族：execute/async、GET /source
+- ⬜ 执行族：execute/async
 - ⬜ 窗口/截图：window 全族、screenshot（能力待评估）
 - ⬜ 定位策略扩展（link text / tag name / xpath——css 之外）
 
@@ -53,29 +60,27 @@ refresh/timeouts GET+POST）；CI 接线完成（v8 app tests + quickjs 矩阵�
 | P1 | CI 接线（集成测试入 CI） | ✅ M1（ci.yml v8 app tests + quickjs 矩阵） |
 | P2 | W3C 兼容性清单基线 | ✅ M1（evidence/endpoint-matrix.md） |
 | P3 | 会话/导航族 endpoint | ✅ M1 |
-| P4 | 元素状态族 + 执行族 endpoint | ⬜ M2 |
+| P4 | 元素状态族 + 执行族 endpoint | 🟨 M2 大半收口（25/26 类；余 execute/async） |
 | P5 | 窗口/截图能力评估 + 兄弟流验证通道文档 | ⬜ M3 |
 
 ## 下一步计划
 
-1. **M2 切片 1**：GET /source + find_elements（复数；dom query_selector_all 已有，需协议
-   消息扩展 `FindElements` → renderer automation 处理端——先查 renderer 端 `automation.rs`
-   碰撞态，2026-09-08 实测 14 天零提交可安全碰）
-2. **M2 切片 2**：元素状态读族 text/rect/enabled/selected（rect 走 shim `__zw_getBoundingClientRect`
-   真值；全部可经 ExecuteScript 语义实现——优先零协议改动路线）
-3. **M2 切片 3**：attribute/property/css value/clear
-4. **M2 切片 4**：execute/async
+1. **M2 切片 3**：execute/async（renderer 侧 async 脚本语义 + 完成回调轮询）
+2. **M2 收口** → 转 M3：window handle(s) 评估（单窗口架构最小实现）+ screenshot
+   能力摸底（renderer 有 frame 导出链路，评估经既有绘制管线截帧的可行性）+
+   兄弟 goal 验证通道使用文档 → DC 全满足判定
 
 **碰撞管理**：碰 protocol/renderer 前 `git log --since="14 days ago" --
 crates/protocol/ apps/renderer/` 核对 event-loop-spec 流活跃面（apps/renderer/src/runtime.rs
-有 keyboard-default-actions 流活跃提交——**不碰 runtime.rs**；automation.rs 无活跃编辑）。
+有 keyboard-default-actions 流活跃提交——**不碰 runtime.rs**；automation.rs 2026-09-08
+实测 14 天零提交，已安全扩展 FindElements/ElementState/ElementClear 三操作）。
 
 ## 里程碑状态
 
 | 里程碑 | 状态 |
 |--------|------|
 | M1 — 门禁就位 + 会话/导航族 | ✅ 2026-09-08 |
-| M2 — 元素交互族 + 执行族 | ⬜ 下一 |
+| M2 — 元素交互族 + 执行族 | 🟨 元素族收口；余 execute/async |
 | M3 — 窗口/截图评估 + 接线收尾 | ⬜ |
 
 ## 关键决策记录

@@ -167,6 +167,175 @@ fn webdriver_find_elements_and_page_source() {
 }
 
 #[test]
+fn webdriver_element_state_family_reads_live_document() {
+    let (_driver, port) = spawn_driver();
+    let (_page_server, page_port) = spawn_test_page_server_with_button();
+    let (status, body) = http_request(port, "POST", "/session", Some("{}"));
+    assert_eq!(status, 200);
+    let value: serde_json::Value = serde_json::from_str(&body).expect("json");
+    let session_id = value["value"]["sessionId"].as_str().expect("id").to_string();
+    let url = format!("http://127.0.0.1:{page_port}/");
+    let (status, _) = http_request(
+        port,
+        "POST",
+        &format!("/session/{session_id}/url"),
+        Some(&serde_json::json!({ "url": url }).to_string()),
+    );
+    assert_eq!(status, 200);
+
+    let element_key = "element-6066-11e4-a52e-4f735466cecf";
+    let find = |port: u16, session: &str, selector: &str| -> String {
+        let (status, body) = http_request(
+            port,
+            "POST",
+            &format!("/session/{session}/element"),
+            Some(&serde_json::json!({ "using": "css selector", "value": selector }).to_string()),
+        );
+        assert_eq!(status, 200, "find {selector} 应 200: {body}");
+        let value: serde_json::Value = serde_json::from_str(&body).expect("json");
+        value["value"][element_key].as_str().expect("ref").to_string()
+    };
+
+    let btn_ref = find(port, &session_id, "#btn");
+    let check_ref = find(port, &session_id, "#check");
+    let name_ref = find(port, &session_id, "#name");
+
+    // text：按钮渲染文本。
+    let (status, body) = http_request(
+        port,
+        "GET",
+        &format!("/session/{session_id}/element/{btn_ref}/text"),
+        None,
+    );
+    assert_eq!(status, 200, "text 应 200: {body}");
+    let value: serde_json::Value = serde_json::from_str(&body).expect("json");
+    assert_eq!(value["value"], "Click me");
+
+    // rect：数值四字段。
+    let (status, body) = http_request(
+        port,
+        "GET",
+        &format!("/session/{session_id}/element/{btn_ref}/rect"),
+        None,
+    );
+    assert_eq!(status, 200, "rect 应 200: {body}");
+    let value: serde_json::Value = serde_json::from_str(&body).expect("json");
+    for field in ["x", "y", "width", "height"] {
+        assert!(value["value"][field].is_number(), "rect.{field} 应为数值: {body}");
+    }
+
+    // enabled：控件默认 true。
+    let (status, body) = http_request(
+        port,
+        "GET",
+        &format!("/session/{session_id}/element/{btn_ref}/enabled"),
+        None,
+    );
+    assert_eq!(status, 200);
+    let value: serde_json::Value = serde_json::from_str(&body).expect("json");
+    assert_eq!(value["value"], true);
+
+    // selected：checkbox 初始 false，click 后 true。
+    let (status, body) = http_request(
+        port,
+        "GET",
+        &format!("/session/{session_id}/element/{check_ref}/selected"),
+        None,
+    );
+    assert_eq!(status, 200);
+    let value: serde_json::Value = serde_json::from_str(&body).expect("json");
+    assert_eq!(value["value"], false, "checkbox 初始未选中");
+    let (status, _) = http_request(
+        port,
+        "POST",
+        &format!("/session/{session_id}/element/{check_ref}/click"),
+        None,
+    );
+    assert_eq!(status, 200);
+    let (status, body) = http_request(
+        port,
+        "GET",
+        &format!("/session/{session_id}/element/{check_ref}/selected"),
+        None,
+    );
+    assert_eq!(status, 200);
+    let value: serde_json::Value = serde_json::from_str(&body).expect("json");
+    assert_eq!(value["value"], true, "click 后应选中");
+
+    // attribute：button 的 id 内容属性。
+    let (status, body) = http_request(
+        port,
+        "GET",
+        &format!("/session/{session_id}/element/{btn_ref}/attribute/id"),
+        None,
+    );
+    assert_eq!(status, 200);
+    let value: serde_json::Value = serde_json::from_str(&body).expect("json");
+    assert_eq!(value["value"], "btn");
+    // 不存在的属性 → null。
+    let (status, body) = http_request(
+        port,
+        "GET",
+        &format!("/session/{session_id}/element/{btn_ref}/attribute/data-nothing"),
+        None,
+    );
+    assert_eq!(status, 200);
+    let value: serde_json::Value = serde_json::from_str(&body).expect("json");
+    assert!(value["value"].is_null(), "缺失属性应为 null: {body}");
+
+    // property：input 的 value DOM 属性（send keys 后反映 live 值）。
+    let (status, _) = http_request(
+        port,
+        "POST",
+        &format!("/session/{session_id}/element/{name_ref}/value"),
+        Some(&serde_json::json!({ "text": "Zoé" }).to_string()),
+    );
+    assert_eq!(status, 200);
+    let (status, body) = http_request(
+        port,
+        "GET",
+        &format!("/session/{session_id}/element/{name_ref}/property/value"),
+        None,
+    );
+    assert_eq!(status, 200);
+    let value: serde_json::Value = serde_json::from_str(&body).expect("json");
+    assert_eq!(value["value"], "Zoé", "property value 应反映 live 输入: {body}");
+
+    // css value：计算样式读回。
+    let (status, body) = http_request(
+        port,
+        "GET",
+        &format!("/session/{session_id}/element/{btn_ref}/css/display"),
+        None,
+    );
+    assert_eq!(status, 200, "css value 应 200: {body}");
+    let value: serde_json::Value = serde_json::from_str(&body).expect("json");
+    assert!(value["value"].is_string(), "css value 应为字符串: {body}");
+
+    // clear：input value 清空。
+    let (status, body) = http_request(
+        port,
+        "POST",
+        &format!("/session/{session_id}/element/{name_ref}/clear"),
+        None,
+    );
+    assert_eq!(status, 200, "clear 应 200: {body}");
+    let (status, body) = http_request(
+        port,
+        "GET",
+        &format!("/session/{session_id}/element/{name_ref}/property/value"),
+        None,
+    );
+    assert_eq!(status, 200);
+    let value: serde_json::Value = serde_json::from_str(&body).expect("json");
+    assert_eq!(value["value"], "", "clear 后 value 应为空: {body}");
+
+    // 未知引用 → 404 no such element。
+    let (status, _) = http_request(port, "GET", &format!("/session/{session_id}/element/nope/text"), None);
+    assert_eq!(status, 404);
+}
+
+#[test]
 fn webdriver_drives_live_form_controls() {
     let (_driver, port) = spawn_driver();
     let (_page_server, page_port) = spawn_test_page_server_with_button();

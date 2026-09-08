@@ -32,31 +32,31 @@
 |---|---|---|---|---|
 | /session/{id}/execute/sync | POST | ✅ | `webdriver_drives_live_form_controls` | 脚本包 function wrapper + JSON.stringify 挣值；args 经 AutomationValue；DOM mutation 会同步回 live document |
 | /session/{id}/execute/async | POST | ⬜ | — | 需 async 脚本语义 + 完成回调 |
-| /session/{id}/source | GET | ⬜ | — | cached_html 可直接回读（约等于解析后 DOM 序列化） |
+| /session/{id}/source | GET | ✅ | `webdriver_find_elements_and_page_source` | ExecuteScript documentElement.outerHTML（live DOM 序列化，含脚本 mutation 后状态） |
 
 ## 元素定位（Element Retrieval）
 
 | Endpoint | 方法 | 状态 | 测试 | 行为注记 |
 |---|---|---|---|---|
 | /session/{id}/element | POST | ✅ | `webdriver_rejects_missing_and_stale_element_references` | 仅 css selector；其他策略 → 400 invalid argument（规范还有 link text/partial link text/tag name/xpath） |
-| /session/{id}/elements | POST | ⬜ | — | 复数版；dom query_selector_all 已有 |
+| /session/{id}/elements | POST | ✅ | `webdriver_find_elements_and_page_source` | 复数版；空匹配返回空数组（W3C 非错误）；仅 css selector |
 | /session/{id}/element/active | GET | ✅ | `webdriver_drives_live_form_controls` | 无焦点 → value: null（规范如此） |
-| /session/{id}/element/{ref}/text | GET | ⬜ | — | |
-| /session/{id}/element/{ref}/rect | GET | ⬜ | — | shim `__zw_getBoundingClientRect` 真值可用 |
-| /session/{id}/element/{ref}/enabled | GET | ⬜ | — | |
-| /session/{id}/element/{ref}/selected | GET | ⬜ | — | |
-| /session/{id}/element/{ref}/attribute/{name} | GET | ⬜ | — | |
-| /session/{id}/element/{ref}/property/{name} | GET | ⬜ | — | |
-| /session/{id}/element/{ref}/css/{name} | GET | ⬜ | — | shim getComputedStyle 真值可用（part01.js:3391） |
-| /session/{id}/element/{ref}/clear | POST | ⬜ | — | |
+| /session/{id}/element/{ref}/text | GET | ✅ | `webdriver_element_state_family_reads_live_document` | textContent 近似（可见性过滤未实现，FIXME 记录） |
+| /session/{id}/element/{ref}/rect | GET | ✅ | 同上 | shim gBCR 真值（RectBridge 注册时）；x/y/width/height |
+| /session/{id}/element/{ref}/enabled | GET | ✅ | 同上 | disabled 属性/属性存在性取反；非控件恒 true |
+| /session/{id}/element/{ref}/selected | GET | ✅ | 同上 | option.selected / checkbox·radio.checked |
+| /session/{id}/element/{ref}/attribute/{name} | GET | ✅ | 同上 | 内容属性；缺失 → null |
+| /session/{id}/element/{ref}/property/{name} | GET | ✅ | 同上 | DOM 属性直读（live value 反映输入）；undefined → null |
+| /session/{id}/element/{ref}/css/{name} | GET | ✅ | 同上 | shim getComputedStyle → host 计算样式真值 |
+| /session/{id}/element/{ref}/clear | POST | ✅ | 同上 | 可编辑元素置空 value + input 事件；checkbox/radio/file 跳过 |
 
 ## 元素交互（Element Interaction）
 
 | Endpoint | 方法 | 状态 | 测试 | 行为注记 |
 |---|---|---|---|---|
 | /session/{id}/element/{ref}/click | POST | ✅ | `webdriver_drives_live_form_controls` | 含 label 语义、checkedness 联动（automation_click） |
-| /session/{id}/element/{ref}/clear | POST | ⬜ | — | （同上表 clear，归入交互族） |
-| /session/{id}/element/{ref}/value | POST | ✅ | 同上 | text 字段（兼容数组形式）；修饰键/特殊键 parse_webdriver_keys；发送前自动聚焦（规范 focus 语义） |
+| /session/{id}/element/{ref}/clear | POST | ✅ | `webdriver_element_state_family_reads_live_document` | （同元素状态族表 clear 行——可编辑元素置空 + input 事件） |
+| /session/{id}/element/{ref}/value | POST | ✅ | `webdriver_drives_live_form_controls` | text 字段（兼容数组形式）；修饰键/特殊键 parse_webdriver_keys；发送前自动聚焦（规范 focus 语义） |
 
 ## 脚本超时（Script Timeouts）
 
