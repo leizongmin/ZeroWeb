@@ -281,3 +281,44 @@ fn r4152_flex_container_ar_height_yields_to_content() {
         c.height
     );
 }
+
+/// R4152b（CSS2 §10.4）：max-height 上限参与——flex 容器内容 200 被 max-block-size
+/// 100 钳（flex-aspect-ratio-043：容器高 = min(max(transferred,content), max) = 100）。
+#[test]
+fn r4152b_flex_container_ar_content_clamped_by_max_height() {
+    let (mut doc, body) = make_doc_with_body();
+    let container = doc.create_element("div");
+    doc.append_child(body, container).unwrap();
+    let item = doc.create_element("div");
+    doc.append_child(container, item).unwrap();
+
+    let mut container_style = ComputedStyle::default();
+    container_style.display = zero_style_system::DisplayValue::Flex;
+    container_style.width = LengthValue::Px(100.0);
+    container_style.aspect_ratio = Some(2.0);
+    container_style.max_height = LengthValue::Px(100.0);
+
+    let mut item_style = ComputedStyle::default();
+    item_style.display = zero_style_system::DisplayValue::Block;
+    item_style.height = LengthValue::Px(200.0);
+
+    let mut styles = HashMap::new();
+    styles.insert(container, container_style);
+    styles.insert(item, item_style);
+
+    let mut engine = crate::LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+
+    fn find(root: &crate::LayoutBox, id: NodeId) -> Option<&crate::LayoutBox> {
+        if root.node_id == Some(id) {
+            return Some(root);
+        }
+        root.children.iter().find_map(|c| find(c, id))
+    }
+    let c = find(&result.root, container).expect("container box");
+    assert!(
+        (c.height - 100.0).abs() < 1.0,
+        "flex container AR content height (200) must clamp to max-height (100), got {}",
+        c.height
+    );
+}

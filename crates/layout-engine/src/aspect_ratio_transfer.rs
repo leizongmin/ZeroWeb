@@ -104,7 +104,11 @@ fn walk(b: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) {
         // content_height 以容器内容盒顶为原点；无子内容时 R3912 的 transferred 保持。
         let transferred = main / ratio;
         let content = b.children.iter().map(|c| c.y + c.height).fold(0.0_f32, f32::max);
-        let target = transferred.max(content);
+        // R4152b：max-height 上限参与——CSS2 §10.4 max 胜过内容/transferred
+        //（flex-aspect-ratio-043/044：max-block-size:100px 钳内容 200 → 容器 100）。
+        let target = transferred
+            .max(content)
+            .min(resolve_definite(&style.max_height).unwrap_or(f32::INFINITY));
         if content > transferred + 0.5 && (b.height - (target + frame_v)).abs() > 0.5 {
             b.content_height = target;
             b.height = target + frame_v;
