@@ -3073,3 +3073,223 @@ fn debug_r4134_nested_variants() {
         println!("{label}: bar {f:?}..{l} len={}", l - f.unwrap_or(0));
     }
 }
+
+/// R4135 勘察：border-image-repeat round-003 像素带定位——diff 集中在角还是边。
+#[test]
+#[ignore]
+fn debug_r4135_border_image_round() {
+    let cfg = ReftestConfig::default();
+    let base = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("wpt-data/css/css-backgrounds");
+    let html = std::fs::read_to_string(base.join("border-image-repeat-round-003.html")).expect("read test");
+    let ref_html =
+        std::fs::read_to_string(base.join("reference/border-image-repeat-round-003-ref.html")).expect("read ref");
+    let fb = render_to_framebuffer_with_base(&html, "", &cfg, Some(&base));
+    let ref_fb = render_to_framebuffer_with_base(&ref_html, "", &cfg, Some(&base));
+    let mut row_diff = vec![0u32; fb.height as usize];
+    for y in 0..fb.height as usize {
+        for x in 0..fb.width as usize {
+            let i = (y * fb.width as usize + x) * 4;
+            let j = (y * ref_fb.width as usize + x) * 4;
+            let d = (fb.data[i] as i32 - ref_fb.data[j] as i32).abs()
+                + (fb.data[i + 1] as i32 - ref_fb.data[j + 1] as i32).abs()
+                + (fb.data[i + 2] as i32 - ref_fb.data[j + 2] as i32).abs();
+            if d > 30 {
+                row_diff[y] += 1;
+            }
+        }
+    }
+    let mut bands: Vec<(usize, usize, u32)> = Vec::new();
+    for (y, cnt) in row_diff.iter().enumerate() {
+        if *cnt > 0 {
+            match bands.last_mut() {
+                Some(b) if b.1 + 1 == y => {
+                    b.1 = y;
+                    b.2 += *cnt;
+                }
+                _ => bands.push((y, y, *cnt)),
+            }
+        }
+    }
+    for (y0, y1, t) in bands.iter().take(10) {
+        println!("band y{y0}..{y1}: {t}px");
+    }
+    println!(
+        "total bands: {} total-rows-with-diff: {}",
+        bands.len(),
+        row_diff.iter().filter(|c| **c > 0).count()
+    );
+}
+
+/// R4135 勘察七：ref 页 inline-table 盒位置 dump——3 个 subtest 的 y/x/宽高。
+#[test]
+#[ignore]
+fn debug_r4135_ref_subtest_boxes() {
+    let cfg = ReftestConfig::default();
+    let base = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("wpt-data/css/css-backgrounds");
+    let ref_html =
+        std::fs::read_to_string(base.join("reference/border-image-repeat-round-003-ref.html")).expect("read");
+    let (_fb, root, _h) = render_to_framebuffer_with_layout_with_base(&ref_html, "", &cfg, Some(&base));
+    fn walk(b: &zero_layout_engine::types::LayoutBox, depth: usize, out: &mut Vec<String>) {
+        if depth <= 3 {
+            let tag = b.node_id.map(|id| format!("{id:?}")).unwrap_or("-".into());
+            out.push(format!(
+                "d{depth} {tag} x={:.0} y={:.0} w={:.0} h={:.0}",
+                b.x, b.y, b.width, b.height
+            ));
+        }
+        for c in &b.children {
+            walk(c, depth + 1, out);
+        }
+    }
+    let mut out = Vec::new();
+    walk(&root, 0, &mut out);
+    for l in out.iter().take(16) {
+        println!("{l}");
+    }
+}
+
+/// R4135 勘察十：不同高度区分 taffy 堆叠 vs IFC 换行——s1 h=100 s2 h=50。
+#[test]
+#[ignore]
+fn debug_r4135_stack_vs_wrap() {
+    let cfg = ReftestConfig::default();
+    let html = r#"<!DOCTYPE html><html><head><style>
+    body { margin: 8px; }
+    div#s1 { background-color: black; display: inline-table; margin-right: 1em;
+             table-layout: fixed; height: 100px; width: 224px; }
+    div#s2 { background-color: black; display: inline-table; table-layout: fixed;
+             height: 50px; width: 208px; }
+    .r { display: table-row; }
+    .c { display: table-cell; }
+    </style></head><body>
+    <div id="s1"><div class="r"><div class="c"></div></div></div>
+    <div id="s2"><div class="r"><div class="c"></div></div></div>
+    </body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let (_fb, root, _h) = render_to_framebuffer_with_layout_with_base(html, "", &cfg, None);
+    fn find2(root: &zero_layout_engine::types::LayoutBox, doc: &zero_dom::Document) -> Vec<(String, f32, f32, f32)> {
+        let mut out = Vec::new();
+        fn walk(
+            b: &zero_layout_engine::types::LayoutBox,
+            doc: &zero_dom::Document,
+            out: &mut Vec<(String, f32, f32, f32)>,
+        ) {
+            if let Some(nid) = b.node_id
+                && let Some(n) = doc.get(nid)
+                && let zero_dom::NodeKind::Element(e) = &n.kind
+                && let Some(id) = e.get_attribute("id")
+            {
+                out.push((id, b.x, b.y, b.width));
+            }
+            for c in &b.children {
+                walk(c, doc, out);
+            }
+        }
+        walk(root, doc, &mut out);
+        out
+    }
+    for (id, x, y, w) in find2(&root, &doc) {
+        println!("{id}: x={x:.0} y={y:.0} w={w:.0}");
+    }
+    println!("y=0 both = same-line; s2 y=100 = taffy-stack; s2 y~100+line = IFC-wrap");
+}
+
+/// R4135 勘察十二：属性级 bisect——从 full bisect 逐步退化到 simple，定位翻转属性。
+#[test]
+#[ignore]
+fn debug_r4135_property_bisect() {
+    let cfg = ReftestConfig::default();
+    // 变体 = 逐步去掉可疑属性
+    let variants: Vec<(&str, String)> = vec![
+        (
+            "A-full-bisect",
+            r#"<!DOCTYPE html><html><head><style>
+            body { margin: 8px; }
+            div#s1 { background-color: black; display: inline-table; margin-right: 1em;
+                     table-layout: fixed; height: 100px; width: 224px; }
+            div#s2 { background-color: black; display: inline-table; table-layout: fixed;
+                     height: 50px; width: 208px; }
+            .r { display: table-row; } .c { display: table-cell; }
+            </style></head><body>
+            <div id="s1"><div class="r"><div class="c"></div></div></div>
+            <div id="s2"><div class="r"><div class="c"></div></div></div>
+            </body></html>"#
+                .to_string(),
+        ),
+        (
+            "B-no-rows",
+            r#"<!DOCTYPE html><html><head><style>
+            body { margin: 8px; }
+            div#s1 { background-color: black; display: inline-table; margin-right: 1em;
+                     table-layout: fixed; height: 100px; width: 224px; }
+            div#s2 { background-color: black; display: inline-table; table-layout: fixed;
+                     height: 50px; width: 208px; }
+            </style></head><body>
+            <div id="s1"></div>
+            <div id="s2"></div>
+            </body></html>"#
+                .to_string(),
+        ),
+        (
+            "C-no-rows-no-fixed",
+            r#"<!DOCTYPE html><html><head><style>
+            body { margin: 8px; }
+            div#s1 { background-color: black; display: inline-table; margin-right: 1em;
+                     height: 100px; width: 224px; }
+            div#s2 { background-color: black; display: inline-table;
+                     height: 50px; width: 208px; }
+            </style></head><body>
+            <div id="s1"></div>
+            <div id="s2"></div>
+            </body></html>"#
+                .to_string(),
+        ),
+        (
+            "D-no-rows-no-idcss",
+            r#"<!DOCTYPE html><html><head><style>
+            body { margin: 8px; }
+            .s { background-color: black; display: inline-table; }
+            </style></head><body>
+            <div class="s" style="margin-right: 1em; height: 100px; width: 224px;"></div>
+            <div class="s" style="height: 50px; width: 208px;"></div>
+            </body></html>"#
+                .to_string(),
+        ),
+        (
+            "E-simple-h50",
+            r#"<!DOCTYPE html><html><head><style>
+            body { margin: 8px; }
+            .t { display: inline-table; height: 50px; width: 100px; background: blue; }
+            </style></head><body>
+            <div class="t"></div><div class="t"></div>
+            </body></html>"#
+                .to_string(),
+        ),
+    ];
+    for (label, html) in variants {
+        let doc = zero_dom::parse_html(&html);
+        let (_fb, root, _h) = render_to_framebuffer_with_layout_with_base(&html, "", &cfg, None);
+        let mut out: Vec<(String, f32, f32, f32)> = Vec::new();
+        fn walk(
+            b: &zero_layout_engine::types::LayoutBox,
+            doc: &zero_dom::Document,
+            out: &mut Vec<(String, f32, f32, f32)>,
+        ) {
+            if let Some(nid) = b.node_id
+                && let Some(n) = doc.get(nid)
+                && let zero_dom::NodeKind::Element(e) = &n.kind
+            {
+                let key = e.get_attribute("id").or_else(|| e.get_attribute("class"));
+                if let Some(k) = key {
+                    out.push((format!("{k}:{:.0},{:.0},{:.0}", b.x, b.y, b.width), 0.0, 0.0, 0.0));
+                }
+            }
+            for c in &b.children {
+                walk(c, doc, out);
+            }
+        }
+        walk(&root, &doc, &mut out);
+        let s: Vec<String> = out.iter().map(|(k, _, _, _)| k.clone()).collect();
+        println!("{label}: {}", s.join(" | "));
+    }
+}
