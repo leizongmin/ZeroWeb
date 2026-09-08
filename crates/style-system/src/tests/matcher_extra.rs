@@ -122,9 +122,19 @@ fn test_container_condition_with_min_max_prefix() {
 }
 
 #[test]
-/// @container 条件使用范围语法
+/// @container 条件使用范围语法（R4124：按最近容器 400px 求值，300-500 范围内 → 满足）。
 fn test_container_condition_range_syntax() {
-    let (doc, _html, _body, div, _p) = make_test_dom();
+    let mut doc = Document::new();
+    let root = doc.root();
+    let html = doc.create_element("html");
+    let body = doc.create_element("body");
+    let container = doc.create_element("div");
+    let inner = doc.create_element("div");
+    doc.append_child(root, html).unwrap();
+    doc.append_child(html, body).unwrap();
+    doc.append_child(body, container).unwrap();
+    doc.append_child(container, inner).unwrap();
+    doc.set_attribute(container, "style", "width:400px;height:300px;container-type:size");
     let mut sys = StyleSystem::new();
     sys.set_viewport(400.0, 300.0);
 
@@ -151,10 +161,10 @@ fn test_container_condition_range_syntax() {
     }];
 
     let styles = sys.compute_styles(&doc, &stylesheets);
-    let div_style = styles.get(&div).expect("div should have style");
+    let inner_style = styles.get(&inner).expect("inner div should have style");
 
-    // 400px 在 300px-500px 范围内，条件满足
-    assert_eq!(div_style.color, ColorValue::Rgba(0, 128, 0, 255)); // green
+    // 容器 400px 在 300px-500px 范围内，条件满足
+    assert_eq!(inner_style.color, ColorValue::Rgba(0, 128, 0, 255)); // green
 }
 
 #[test]

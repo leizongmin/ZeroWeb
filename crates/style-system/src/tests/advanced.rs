@@ -1522,12 +1522,27 @@ fn test_cascade_origin_order() {
 
 // ═══════════════════════════════════════════════════════════════════
 // 容器查询端到端测试
+// R4124：@container 按最近 container-type ≠ normal 祖先的 content 尺寸求值
+//（css-conditional-5）；无容器祖先 → 条件 unknown → 不应用。
 // ═══════════════════════════════════════════════════════════════════
 
 #[test]
-/// 容器宽度 500px，@container (min-width: 400px) → 条件满足，样式应用。
+/// 容器（500px 定宽 container-type:size）内 @container (min-width: 400px) → 条件满足。
+/// 无容器祖先时（R4124 规范语义）同条件不应用。
 fn test_container_query_min_width_applies() {
-    let (doc, _html, _body, div, _p) = make_test_dom();
+    // DOM: html > body > div.container(width:500px;container-type:size) > div（查询元素）
+    let mut doc = Document::new();
+    let root = doc.root();
+    let html = doc.create_element("html");
+    let body = doc.create_element("body");
+    let container = doc.create_element("div");
+    let inner = doc.create_element("div");
+    doc.append_child(root, html).unwrap();
+    doc.append_child(html, body).unwrap();
+    doc.append_child(body, container).unwrap();
+    doc.append_child(container, inner).unwrap();
+    doc.set_attribute(container, "style", "width:500px;height:400px;container-type:size");
+
     let mut sys = StyleSystem::new();
     sys.set_viewport(500.0, 600.0);
 
@@ -1554,9 +1569,21 @@ fn test_container_query_min_width_applies() {
     }];
 
     let styles = sys.compute_styles(&doc, &stylesheets);
-    let div_style = styles.get(&div).expect("div should have style");
-    // 容器宽度 500px >= 400px，条件满足，color 应为红色
-    assert_eq!(div_style.color, ColorValue::Rgba(255, 0, 0, 255));
+    let inner_style = styles.get(&inner).expect("inner div should have style");
+    // 容器 content 宽 500px >= 400px，条件满足，color 应为红色
+    assert_eq!(inner_style.color, ColorValue::Rgba(255, 0, 0, 255));
+
+    // R4124 规范对照：无容器祖先（container/body 直下 div）→ @container 不应用。
+    let mut sys2 = StyleSystem::new();
+    sys2.set_viewport(500.0, 600.0);
+    let (doc2, _h, _b, div2, _p) = make_test_dom();
+    let styles2 = sys2.compute_styles(&doc2, &stylesheets);
+    let div_style = styles2.get(&div2).expect("div should have style");
+    assert_eq!(
+        div_style.color,
+        ColorValue::Rgba(0, 0, 0, 255),
+        "无最近容器时 @container 规则不应应用（css-conditional-5）"
+    );
 }
 
 #[test]
@@ -1595,9 +1622,19 @@ fn test_container_query_min_width_not_applies() {
 }
 
 #[test]
-/// 容器宽度 500px，@container (max-width: 600px) → 500px <= 600px，条件满足。
+/// 容器（500px 定宽 container-type:size）内 @container (max-width: 600px) → 500 <= 600 满足。
 fn test_container_query_max_width() {
-    let (doc, _html, _body, div, _p) = make_test_dom();
+    let mut doc = Document::new();
+    let root = doc.root();
+    let html = doc.create_element("html");
+    let body = doc.create_element("body");
+    let container = doc.create_element("div");
+    let inner = doc.create_element("div");
+    doc.append_child(root, html).unwrap();
+    doc.append_child(html, body).unwrap();
+    doc.append_child(body, container).unwrap();
+    doc.append_child(container, inner).unwrap();
+    doc.set_attribute(container, "style", "width:500px;height:400px;container-type:size");
     let mut sys = StyleSystem::new();
     sys.set_viewport(500.0, 600.0);
 
@@ -1624,18 +1661,14 @@ fn test_container_query_max_width() {
     }];
 
     let styles = sys.compute_styles(&doc, &stylesheets);
-    let div_style = styles.get(&div).expect("div should have style");
+    let inner_style = styles.get(&inner).expect("inner div should have style");
     // 容器宽度 500px <= 600px，max-width 条件满足
-    assert_eq!(div_style.color, ColorValue::Rgba(0, 128, 0, 255));
+    assert_eq!(inner_style.color, ColorValue::Rgba(0, 128, 0, 255));
 }
 
 #[test]
-/// 范围语法：@container (200px <= width <= 500px)，容器宽度 350px → 在范围内，样式应用。
+/// 范围语法：@container (200px <= width <= 500px)，容器 350px → 在范围内；700px → 超界不应用。
 fn test_container_query_range_syntax() {
-    let (doc, _html, _body, div, _p) = make_test_dom();
-    let mut sys = StyleSystem::new();
-    sys.set_viewport(350.0, 600.0);
-
     // @container (200px <= width <= 500px) { div { color: blue; } }
     let stylesheets = vec![Stylesheet {
         rules: vec![Rule::Container(zero_css_parser::ast::ContainerRule {
@@ -1658,18 +1691,46 @@ fn test_container_query_range_syntax() {
         })],
     }];
 
-    let styles = sys.compute_styles(&doc, &stylesheets);
-    let div_style = styles.get(&div).expect("div should have style");
-    // 200 <= 350 <= 500，范围条件满足
-    assert_eq!(div_style.color, ColorValue::Rgba(0, 0, 255, 255));
+    let mk_dom = |w: &str| {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html = doc.create_element("html");
+        let body = doc.create_element("body");
+        let container = doc.create_element("div");
+        let inner = doc.create_element("div");
+        doc.append_child(root, html).unwrap();
+        doc.append_child(html, body).unwrap();
+        doc.append_child(body, container).unwrap();
+        doc.append_child(container, inner).unwrap();
+        doc.set_attribute(
+            container,
+            "style",
+            &format!("width:{w};height:400px;container-type:size"),
+        );
+        doc
+    };
 
-    // 额外验证：超出范围时不应用
+    // 容器 350px：200 <= 350 <= 500，范围条件满足
+    let doc1 = mk_dom("350px");
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(350.0, 600.0);
+    let styles = sys.compute_styles(&doc1, &stylesheets);
+    let inner = doc1
+        .query_selector(doc1.root(), "body > div > div")
+        .expect("inner div in dom");
+    let inner_style = styles.get(&inner).expect("inner div should have style");
+    assert_eq!(inner_style.color, ColorValue::Rgba(0, 0, 255, 255));
+
+    // 容器 700px：700 > 500，超出上界，不应用
+    let doc2 = mk_dom("700px");
     let mut sys2 = StyleSystem::new();
     sys2.set_viewport(600.0, 400.0);
-    let styles2 = sys2.compute_styles(&doc, &stylesheets);
-    let div_style2 = styles2.get(&div).expect("div should have style");
-    // 600 > 500，超出上界，不应用
-    assert_eq!(div_style2.color, ColorValue::Rgba(0, 0, 0, 255));
+    let styles2 = sys2.compute_styles(&doc2, &stylesheets);
+    let inner2 = doc2
+        .query_selector(doc2.root(), "body > div > div")
+        .expect("inner div in dom2");
+    let inner_style2 = styles2.get(&inner2).expect("inner div should have style");
+    assert_eq!(inner_style2.color, ColorValue::Rgba(0, 0, 0, 255));
 }
 
 #[test]

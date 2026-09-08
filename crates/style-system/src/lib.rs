@@ -292,6 +292,10 @@ pub struct StyleSystem {
     /// 渲染媒体类型（对应 `@media screen/print/all`）。默认 Screen；
     /// 设为 Print 时 `@media print` 规则生效、`@media screen` 规则失效（CSS §7）。
     media_type: MediaType,
+    /// R4124：容器查询容器链（自根向下的祖先容器栈，compute_styles_recursive
+    /// push/pop）。每项 = 最近 container-type ≠ normal 祖先的 name + content-box
+    /// 尺寸（静态可推时），@container 条件按链顶求值。
+    container_chain: Vec<matcher::ContainerEntry>,
 }
 
 impl StyleSystem {
@@ -310,6 +314,7 @@ impl StyleSystem {
             viewport_height: None,
             prefers_color_scheme: PrefersColorSchemeValue::Light,
             media_type: MediaType::Screen,
+            container_chain: Vec::new(),
         }
     }
 
@@ -748,6 +753,64 @@ impl StyleSystem {
             parent_custom.clone()
         };
 
+        // R4124（css-conditional-5 §container-queries）：本元素是 container-type ≠
+        // normal 时压入容器链，子树内 @container 按它求值，子树退出弹出（最近容器
+        // 语义）。尺寸静态推导：容器 content 尺寸取**本元素显式 Px 声明**（width/
+        // height: Px → content 或 border-box 减可解析框），否则 None（unknown 轴 →
+        // 条件 false，规范行为）；container-type: inline-size 的高度轴恒 None。
+        // 本元素自身样式已在上方用**父链顶**计算完（规范：元素自身的 @container 规则
+        // 查询祖先容器，不含自己），此处 push 不影响本元素。
+        let pushed_container = is_element
+            .then(|| {
+                let elem_style = delayed_style.as_deref().or_else(|| styles.get(&node))?;
+                if matches!(elem_style.container_type, property::types::ContainerType::Normal) {
+                    return None;
+                }
+                // content 尺寸静态推导：显式 Px 声明（Px 即 content，BorderBox 减框）。
+                let resolve_axis = |v: &zero_css_parser::values::LengthValue| -> Option<f64> {
+                    match v {
+                        zero_css_parser::values::LengthValue::Px(p) if p.is_finite() => Some(*p),
+                        _ => None,
+                    }
+                };
+                let border_box = matches!(
+                    elem_style.box_sizing,
+                    zero_css_parser::values::BoxSizingValue::BorderBox
+                );
+                let frame_x = resolve_axis(&elem_style.padding_left)
+                    .and_then(|pl| resolve_axis(&elem_style.padding_right).map(|pr| pl + pr))
+                    .map(|p| {
+                        let bl = resolve_axis(&elem_style.border_left_width).unwrap_or(0.0);
+                        let br = resolve_axis(&elem_style.border_right_width).unwrap_or(0.0);
+                        p + bl + br
+                    })
+                    .unwrap_or(0.0);
+                let frame_y = resolve_axis(&elem_style.padding_top)
+                    .and_then(|pt| resolve_axis(&elem_style.padding_bottom).map(|pb| pt + pb))
+                    .map(|p| {
+                        let bt = resolve_axis(&elem_style.border_top_width).unwrap_or(0.0);
+                        let bb = resolve_axis(&elem_style.border_bottom_width).unwrap_or(0.0);
+                        p + bt + bb
+                    })
+                    .unwrap_or(0.0);
+                let w = resolve_axis(&elem_style.width).map(|w| if border_box { w - frame_x } else { w });
+                let h = resolve_axis(&elem_style.height).map(|h| if border_box { h - frame_y } else { h });
+                let h = if matches!(elem_style.container_type, property::types::ContainerType::InlineSize) {
+                    None
+                } else {
+                    h
+                };
+                Some(matcher::ContainerEntry {
+                    name: elem_style.container_name.clone(),
+                    width: w,
+                    height: h,
+                })
+            })
+            .flatten();
+        if let Some(entry) = &pushed_container {
+            self.container_chain.push(entry.clone());
+        }
+
         for child in children {
             self.compute_styles_recursive(
                 doc,
@@ -764,6 +827,9 @@ impl StyleSystem {
                 delay_parent_insert,
                 cache_key.clone(),
             );
+        }
+        if pushed_container.is_some() {
+            self.container_chain.pop();
         }
         if let Some(computed) = delayed_style {
             styles.insert(node, *computed);
@@ -881,11 +947,16 @@ impl StyleSystem {
             _ => None,
         };
 
-        // 0.5 构建容器查询上下文（简化：使用视口尺寸作为默认容器尺寸）
-        let container_ctx = match (self.viewport_width, self.viewport_height) {
-            (Some(w), Some(h)) => Some(matcher::ContainerContext::with_size(w, h)),
-            _ => None,
-        };
+        // 0.5 构建容器查询上下文。
+        // R4124（css-conditional-5 §container-queries）：@container 条件按**最近
+        // container-type ≠ normal 祖先**的 content-box 尺寸求值（旧实现恒视口 → 定宽
+        // 容器页全错）。容器链由 compute_styles_recursive 自根向下维护（self.container_chain
+        // push/pop），此处取链顶构造 ctx；某轴静态不可推时保持 None（该轴条件 unknown
+        // → false）；链空（页无容器）时 @container 全不适用（无最近容器 → false）。
+        let container_ctx = self.container_chain.last().map(|c| matcher::ContainerContext {
+            container_width: c.width,
+            container_height: c.height,
+        });
 
         // 1. 收集匹配的声明（带媒体查询和容器查询评估）
         //    pseudo=Some(name) 时收集该伪元素的声明（::before/::after 路由）。

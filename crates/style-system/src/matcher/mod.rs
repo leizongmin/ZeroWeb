@@ -931,6 +931,21 @@ pub struct ContainerContext {
     pub container_height: Option<f64>,
 }
 
+/// R4124：容器链条目——一个 container-type ≠ normal 祖先的查询可用信息。
+///
+/// `width`/`height` 为该容器的 content-box 尺寸（px）：静态可推（祖先显式 Px 宽减
+/// 自身 border/padding）时 Some；auto/百分比等不可静态解析的轴为 None（该轴条件
+/// unknown → false，规范行为）。`name` 为 container-name（无则 None）。
+#[derive(Debug, Clone)]
+pub struct ContainerEntry {
+    /// container-name（`container: name size` / `container-name`）。
+    pub name: Option<String>,
+    /// 容器 content-box 宽（px）；不可静态解析为 None。
+    pub width: Option<f64>,
+    /// 容器 content-box 高（px）；不可静态解析为 None。
+    pub height: Option<f64>,
+}
+
 impl ContainerContext {
     /// 创建空的容器上下文。
     pub fn new() -> Self {
@@ -982,12 +997,16 @@ fn get_axis_size(ctx: &ContainerContext, feature: &str) -> Option<f64> {
 /// 支持冒号语法 `(min-width: 400px)`、比较运算符 `(width > 300px)`、
 /// 范围语法 `(200px <= width <= 500px)`。
 /// 没有容器上下文时，@container 规则不应用。
+///
+/// R4124：规则带 name（`@container card (min-width: 100px)`）时按容器链向上找
+/// 首个 name 匹配的容器（css-conditional-5 §container-queries：named container
+/// lookup）；`ctx` 已由调用方按 name 选好（None = 无匹配容器 → false）。
 fn evaluate_container_condition(
     container_rule: &zero_css_parser::ast::ContainerRule,
     container_ctx: Option<&ContainerContext>,
 ) -> bool {
     let Some(ctx) = container_ctx else {
-        // 无容器上下文，不应用 @container 规则
+        // 无容器上下文（无最近容器 / name 无匹配 / 无 viewport），不应用 @container 规则
         return false;
     };
 

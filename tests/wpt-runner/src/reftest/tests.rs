@@ -2121,3 +2121,52 @@ fn debug_table_backgrounds_bs_rowgroup_bands() {
         println!("diff band y={y0}..={y1} pixels={total}");
     }
 }
+
+/// R4124 勘察：display-in-container 像素 diff 带定位（`cargo test --ignored`）。
+/// 三张卡（150/200/150px）：@container (min-width:148px) 应对前两张生效（flex 行内排布），
+/// 第三张 not_a_container 不应激活任何 @container 规则（回退 block 布局）。
+/// ZW ContainerContext 恒视口（800px）→ 全部 @container 求值相同 → 无法区分。
+#[test]
+#[ignore]
+fn debug_display_in_container_probe() {
+    let case_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("wpt-data/css/css-conditional/container-queries/display-in-container.html");
+    let ref_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("wpt-data/css/css-conditional/container-queries/display-in-container-ref.html");
+    let html = std::fs::read_to_string(&case_path).expect("read test html");
+    let ref_html = std::fs::read_to_string(&ref_path).expect("read ref html");
+    let cfg = ReftestConfig::default();
+    let fb = render_to_framebuffer_with_base(&html, "", &cfg, case_path.parent());
+    let ref_fb = render_to_framebuffer_with_base(&ref_html, "", &cfg, ref_path.parent());
+    let mut row_diff = vec![0u32; fb.height as usize];
+    for y in 0..fb.height as usize {
+        for x in 0..fb.width as usize {
+            let i = (y * fb.width as usize + x) * 4;
+            let j = (y * ref_fb.width as usize + x) * 4;
+            let d = (fb.data[i] as i32 - ref_fb.data[j] as i32).abs()
+                + (fb.data[i + 1] as i32 - ref_fb.data[j + 1] as i32).abs()
+                + (fb.data[i + 2] as i32 - ref_fb.data[j + 2] as i32).abs();
+            if d > 30 {
+                row_diff[y] += 1;
+            }
+        }
+    }
+    let mut bands: Vec<(usize, usize, u32)> = Vec::new();
+    for (y, cnt) in row_diff.iter().enumerate() {
+        if *cnt > 0 {
+            match bands.last_mut() {
+                Some(b) if b.1 + 1 == y => {
+                    b.1 = y;
+                    b.2 += *cnt;
+                }
+                _ => bands.push((y, y, *cnt)),
+            }
+        }
+    }
+    for (y0, y1, total) in &bands {
+        println!("diff band y={y0}..={y1} pixels={total}");
+    }
+    if bands.is_empty() {
+        println!("zero diff — 全绿");
+    }
+}
