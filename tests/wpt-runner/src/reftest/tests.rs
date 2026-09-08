@@ -3556,3 +3556,127 @@ fn debug_r4139_inline_block_margin_top() {
         println!("block margin-top:{mt} → black top y = {:?}", top);
     }
 }
+
+/// R4140 探针：首原子 margin-top 双计的层级定位——匿名块 y vs 行内 run.y。
+/// 对照组：div 块级子（taffy 直接布局）+ inline-block 在匿名块中（双计路径）。
+#[test]
+#[ignore]
+fn debug_r4140_layer_attribution() {
+    let cfg = ReftestConfig::default();
+    // A: body > 纯 inline-block（mt:32）——双计触发面
+    // B: body > text 前导 + inline-block（mt:32）——同触发
+    // C: body > div(block, mt:32) > inline-block（mt:0）——块级 margin 参照
+    // D: body > inline-block（mt:0）——基线
+    let cases: Vec<(&str, String)> = vec![
+        ("A-inline-block-mt32", r#"<body style="margin:8px"><div style="display:inline-block;vertical-align:top;margin-top:32px;width:20px;height:20px;background:red"></div></body>"#.into()),
+        ("B-text-then-ib-mt32", r#"<body style="margin:8px">x<div style="display:inline-block;vertical-align:top;margin-top:32px;width:20px;height:20px;background:red"></div></body>"#.into()),
+        ("D-inline-block-mt0", r#"<body style="margin:8px"><div style="display:inline-block;vertical-align:top;width:20px;height:20px;background:red"></div></body>"#.into()),
+        ("E-two-anon-blocks", r#"<body style="margin:8px"><div style="display:inline-block;vertical-align:top;width:20px;height:20px;background:blue"></div><div style="display:inline-block;vertical-align:top;margin-top:32px;width:20px;height:20px;background:red"></div></body>"#.into()),
+    ];
+    for (label, html) in cases {
+        let fb = render_to_framebuffer_with_base(&html, "", &cfg, None);
+        let mut top = None;
+        'outer: for y in 0..fb.height as usize {
+            for x in 0..fb.width as usize {
+                let i = (y * fb.width as usize + x) * 4;
+                if fb.data[i] == 255 && fb.data[i + 1] == 0 && fb.data[i + 2] == 0 {
+                    top = Some((x, y));
+                    break 'outer;
+                }
+                if fb.data[i] == 0 && fb.data[i + 1] == 0 && fb.data[i + 2] == 255 {
+                    // 蓝（对照）不作为 red 结果
+                }
+            }
+        }
+        println!("{label}: red top = {top:?} (chromium 期望 y=8+mt=40 / mt0 时 8)");
+    }
+}
+
+/// R4140 探针：直接布局 case A/B/E（body margin 8 + inline-block mt:32 组合），
+/// dump 布局树各盒——定位双计层级（taffy 折叠抬升 vs IFC run.y）。
+#[test]
+#[ignore]
+fn debug_r4140_layout_dump() {
+    use zero_css_parser::Parser as CssParser;
+    use zero_dom::parse_html;
+    use zero_layout_engine::LayoutEngine;
+    use zero_style_system::StyleSystem;
+
+    fn dump(b: &zero_layout_engine::types::LayoutBox, depth: usize) {
+        let pad = "  ".repeat(depth);
+        println!(
+            "{pad}box node_id={:?} x={} y={} w={} h={} mt={} mb={} cheight={}",
+            b.node_id, b.x, b.y, b.width, b.height, b.margin_top, b.margin_bottom, b.content_height
+        );
+        for c in &b.children {
+            dump(c, depth + 1);
+        }
+    }
+
+    for (label, markup) in [
+        ("A", r#"<body><div class="atom"></div></body>"#),
+        ("B", r#"<body>x<div class="atom"></div></body>"#),
+        ("E", r#"<body><div class="plain"></div><div class="atom"></div></body>"#),
+    ] {
+        let html = format!(
+            r#"<html><head><style>
+        body {{ margin: 8px; }}
+        .atom {{ display: inline-block; vertical-align: top; margin-top: 32px; width: 20px; height: 20px; background: red; }}
+        .plain {{ display: inline-block; vertical-align: top; width: 20px; height: 20px; background: blue; }}
+    </style></head>{}</html>"#,
+            markup
+        );
+        println!("=== case {label} ===");
+        let doc = parse_html(&html);
+        let stylesheet = CssParser::parse_stylesheet(
+            "body { margin: 8px; } .atom { display: inline-block; vertical-align: top; margin-top: 32px; width: 20px; height: 20px; background: red; } .plain { display: inline-block; vertical-align: top; width: 20px; height: 20px; background: blue; }",
+        );
+        let mut sys = StyleSystem::new();
+        let styles = sys.compute_styles(&doc, &[stylesheet]);
+        let mut engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+        dump(&result.root, 1);
+    }
+}
+
+/// R4140 锚点：inline-block margin-top 语义谱（chromium：盒顶 = body margin + mt）。
+/// 双计 bug（本轮修复）时 mt:32 观测 64，正确值 40；mt 每档均校验。
+#[test]
+fn r4140_inline_block_first_atom_margin_top() {
+    let cfg = ReftestConfig::default();
+    for (mt, expect) in [(0u32, 8i64), (8, 16), (16, 24), (32, 40), (42, 50)] {
+        let html = format!(
+            "<body style=\"margin:8px\"><div style=\"display:inline-block;vertical-align:top;margin-top:{mt}px;width:80px;height:80px;background:black\"></div></body>"
+        );
+        let fb = render_to_framebuffer_with_base(&html, "", &cfg, None);
+        let mut top = None;
+        'outer: for y in 0..fb.height as usize {
+            for x in 0..fb.width as usize {
+                let i = (y * fb.width as usize + x) * 4;
+                if fb.data[i] < 60 && fb.data[i + 1] < 60 && fb.data[i + 2] < 60 {
+                    top = Some(y as i64);
+                    break 'outer;
+                }
+            }
+        }
+        assert_eq!(
+            top,
+            Some(expect),
+            "inline-block margin-top:{mt} 盒顶应 y={expect}（body margin 8 + mt，CSS §8.3.1 行内级不折叠）"
+        );
+    }
+    // 对照：block 首子 margin 与 body 折叠（max(8,32)=32）——折叠语义不因本修复改变
+    let html = "<body style=\"margin:8px\"><div style=\"display:block;margin-top:32px;width:80px;height:80px;background:black\"></div></body>";
+    let fb = render_to_framebuffer_with_base(html, "", &cfg, None);
+    let mut top = None;
+    'outer: for y in 0..fb.height as usize {
+        for x in 0..fb.width as usize {
+            let i = (y * fb.width as usize + x) * 4;
+            if fb.data[i] < 60 && fb.data[i + 1] < 60 && fb.data[i + 2] < 60 {
+                top = Some(y as i64);
+                break 'outer;
+            }
+        }
+    }
+    assert_eq!(top, Some(32), "block 首子 margin 仍应与 body 折叠（max(8,32)=32）");
+}
