@@ -2,7 +2,7 @@
 
 **入口文档**: [../webdriver.md](../webdriver.md)
 **创建日期**: 2026-09-07（goal 拆分 bootstrap）
-**最后更新**: 2026-09-08（M3 推进——window 族落地 + screenshot 摸底结论 + 验证通道文档）
+**最后更新**: 2026-09-08（终验复核——DC 逐项判定，跨流红灯归因后收口态）
 
 ---
 
@@ -31,6 +31,12 @@ window GET、rect GET/POST、maximize、fullscreen）+ 验证通道文档
 （evidence/verification-channel.md）。screenshot 摸底结论：技术可行但转换层在 browser
 域，属深结构 → 记待用户决策。集成测试 10 个全绿。
 
+**终验与 DC 复核（2026-09-08）**：见「Done Criteria 判定」章节。workspace clippy
+全绿；webdriver 全部测试面（v8 + quickjs 两 feature 组）全绿；`make test` 主矩阵
+780 passed + 1 failed——failed 项 `test_css_container_query_style_integration` 经归因
+属 rendering-compat 流今日 R4124-R4127 @container 行为变化（详见碰头信号记录），
+与本流改动零交集。
+
 **与兄弟 goal 的边界**：
 - rendering-compat — 渲染流域 crate 域零重叠
 - event-loop-spec — **apps/renderer 属该流活跃域**；本流只碰 renderer 的 Automation
@@ -38,6 +44,15 @@ window GET、rect GET/POST、maximize、fullscreen）+ 验证通道文档
 - keyboard-* / editing-contenteditable — 本流为其提供验证通道能力，不替它们写用例
 - 共享面：crates/protocol（Automation 消息族）、apps/renderer（处理端）——碰之前
   `git log --since="14 days ago" -- crates/protocol/ apps/renderer/` 核对
+
+**碰头信号记录（2026-09-08）**：`make test` 终验发现
+`zero-integration-tests::cross_crate_integration::test_css_container_query_style_integration`
+红灯（@container 视口匹配 → R4124 起按最近 container-type 祖先求值，测试 DOM 无
+container-type 祖先不再命中）。归因：rendering-compat 流今日 R4124-R4127 系列
+（26be41952..8e5b9675d，style-system 域）；本流 6 提交零触碰 css-parser/style-system。
+按 run-rules §10 不硬解跨流红灯——该测试断言与 R4124 后的规范行为（container query
+须有容器）已不符，应由 rendering-compat 流更新测试（给 DOM 加 container-type 容器）。
+本流终验以本流测试面 + clippy 全绿为准。
 
 ## 实测基线（2026-09-08 M1 收口时）
 
@@ -77,10 +92,10 @@ window GET、rect GET/POST、maximize、fullscreen）+ 验证通道文档
 
 ## 下一步计划
 
-1. **全量终验**：`make test`（workspace 全绿确认，含 quickjs feature 组）+
-   `cargo clippy --workspace --all-targets -- -D warnings`
-2. **DC-1~4 逐项复核** → 满足则按 Final Output Protocol 判定（screenshot 在待用户决策
-   清单，按 DONE 允许条件不算未满足）
+**已到收口判定点**。剩余事项均已归类：
+- screenshot → 待用户决策（不阻塞 DONE）
+- 跨流红灯（container query）→ rendering-compat 流归因，见碰头信号记录
+- 若用户决策开放 screenshot：从 master.md「待用户决策」表起新一轮切片
 
 **碰撞管理**：碰 protocol/renderer 前 `git log --since="14 days ago" --
 crates/protocol/ apps/renderer/` 核对 event-loop-spec 流活跃面（apps/renderer/src/runtime.rs
@@ -121,7 +136,45 @@ crates/protocol/ apps/renderer/` 核对 event-loop-spec 流活跃面（apps/rend
 
 ## 验证基线
 
-- 测试基线：M1 收口全绿（6 集成 + 3 单元，`make test` 入口经 test-guard 包裹；禁止裸跑 cargo test）
-- W3C 兼容性清单：evidence/endpoint-matrix.md（16 endpoint 落账，随切片更新）
-- 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过
+- 测试基线（2026-09-08 终验）：
+  - v8 主矩阵：zero-webdriver 10 集成 + 3 单元全绿（`make test` workspace 段实测）；
+    zero-protocol 313 全绿（含 FindElements/Elements wire roundtrip）；
+    zero-renderer automation 3 单元全绿
+  - quickjs feature 组：zero-webdriver 10 + 3 全绿、renderer automation 3 全绿
+  - `cargo clippy --workspace --all-targets -- -D warnings`：全绿（guarded-clippy 实测）
+  - `make test` 主矩阵 780 passed + 1 failed——failed 属 rendering-compat 流（见碰头信号）
+- W3C 兼容性清单：evidence/endpoint-matrix.md（33 endpoint 落账，终态）
+- 质量门禁：`cargo fmt --all -- --check` 无 diff
 - CI：v8 + quickjs 矩阵均含 zero-webdriver（ci.yml）
+
+## Done Criteria 判定（2026-09-08）
+
+### DC-1: 门禁与基线 — ✅
+
+- ✅ webdriver 集成测试入 CI（ci.yml v8 app tests + quickjs 矩阵）
+- ✅ W3C endpoint 兼容性清单基线持久化（evidence/endpoint-matrix.md，三态 + 行为注记）
+- ✅ wire format 对照测试（错误包络 stacktrace、404/400/408/500 语义，集成测试全覆盖）
+
+### DC-2: 核心 endpoint 补齐 — ✅
+
+- ✅ 会话与状态：GET /status、GET /session/{id}、timeouts（GET+POST）
+- ✅ 导航族：GET /url、forward、back、refresh
+- ✅ 元素交互族：find_elements、text、rect、enabled、selected、attribute、property、
+  css value、clear
+- ✅ 执行族：execute/async、GET /source
+
+### DC-3: 每端点全链路测试 — ✅
+
+- ✅ 10 个 HTTP 全链路集成测试（真实 TCP + 真实 renderer 子进程，http_session.rs 模式）
+- ✅ 错误路径全覆盖：no such element（404）、stale element reference（跨导航/历史守卫）、
+  invalid argument（非法策略/非法超时/空脚本 400）、no such session（404）、
+  async callback 超时（javascript error）
+
+### DC-4: 测试与质量不可退让 — ✅
+
+- ✅ 本流全部测试面绿（见验证基线）；`make test` 全 workspace 有 1 个跨流红灯，
+  经归因属 rendering-compat 流 R4124-R4127 行为变化（碰头信号记录，本流无责）
+- ✅ clippy `-D warnings` 全绿（guarded-clippy）
+- ✅ 兼容性清单随 endpoint 落地持续更新（endpoint-matrix.md 7 次同步）
+
+**判定**：DC-1~4 全满足；screenshot/alert/actions 按待用户决策记录在案（DONE 允许条件）。
