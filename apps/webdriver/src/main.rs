@@ -413,6 +413,11 @@ fn handle_request(driver: &mut Driver, req: &HttpRequest, stream: &mut TcpStream
             Ok(handle) => json_response(stream, serde_json::json!({ "value": handle })),
             Err(error) => driver_error_response(stream, error),
         },
+        // GET /session/{id}/screenshot — Take Screenshot（视口 PNG base64）。
+        ("GET", ["session", id, "screenshot"]) => match driver.screenshot(id) {
+            Ok(data) => json_response(stream, serde_json::json!({ "value": data })),
+            Err(error) => driver_error_response(stream, error),
+        },
         // GET /session/{id}/window/handle
         ("GET", ["session", id, "window", "handle"]) => match driver.window_handle(id) {
             Ok(handle) => json_response(stream, serde_json::json!({ "value": handle })),

@@ -13,7 +13,11 @@ use zero_protocol::message::{
     ServiceWorkerErrorCode, ServiceWorkerOperation, ServiceWorkerRequestParams, ServiceWorkerResponseParams,
     ServiceWorkerResult, ServiceWorkerStateChanges, SetViewportParams,
 };
+use zero_protocol::paint_snapshot::PaintSnapshotParams;
 use zero_protocol::process::RendererHandle;
+use zero_render_foundation::font::cache::GlyphCache;
+use zero_render_foundation::font::loader::FontLoader;
+use zero_render_foundation::image_cache::{ImageCache, ImageData};
 
 const NAVIGATION_TIMEOUT: Duration = Duration::from_secs(15);
 const AUTOMATION_TIMEOUT: Duration = Duration::from_secs(10);
@@ -79,6 +83,13 @@ struct Session {
     next_element_id: u64,
     elements: HashMap<String, ElementRecord>,
     reverse_elements: HashMap<AutomationElementRef, String>,
+    /// 最近一帧绘制快照（Legacy 模式 ViewPainted 维护）——screenshot 数据源。
+    last_paint: Option<PaintSnapshotParams>,
+    /// 跨帧累积的图片像素缓存：renderer `sent_keys` 去重后每张图只发一次 payload，
+    /// screenshot 光栅化时必须能取回历史图片像素（导航不重建 renderer，缓存跨
+    /// 导航保活；renderer 侧 key 随 `sent_image_keys.clear()` 重置——新页同 key
+    /// 会重发 payload，`insert_with_key` 覆盖即正确语义）。
+    image_cache: ImageCache,
 }
 
 #[derive(Debug)]
@@ -144,6 +155,8 @@ impl Driver {
                 next_element_id: 1,
                 elements: HashMap::new(),
                 reverse_elements: HashMap::new(),
+                last_paint: None,
+                image_cache: ImageCache::new(64, 64 << 20),
             },
         );
         Ok(id)
@@ -226,6 +239,12 @@ impl Driver {
     pub fn window_handle(&mut self, id: &str) -> Result<&'static str, DriverError> {
         self.session_mut(id)?;
         Ok(WINDOW_HANDLE)
+    }
+
+    /// GET /session/{id}/screenshot（W3C Take Screenshot，视口语义）。
+    pub fn screenshot(&mut self, id: &str) -> Result<String, DriverError> {
+        let session = self.session_mut(id)?;
+        session_screenshot(session)
     }
 
     /// GET /window/handles（单窗口 → 单元素列表）。
@@ -566,6 +585,15 @@ impl Session {
             }
             match self.renderer.try_recv().map_err(protocol_error)? {
                 Some(message) => {
+                    if let IpcMessageKind::ViewPainted(paint) = message.kind {
+                        record_paint_snapshot(
+                            &mut self.last_paint,
+                            &mut self.image_cache,
+                            self.navigation_epoch,
+                            &paint,
+                        );
+                        continue;
+                    }
                     match handle_renderer_message(
                         &self.http,
                         &mut self.title,
@@ -596,6 +624,9 @@ impl Session {
         let http = &self.http;
         let title = &mut self.title;
         let url = &mut self.url;
+        let epoch = self.navigation_epoch;
+        let last_paint = &mut self.last_paint;
+        let image_cache = &mut self.image_cache;
         let timeout = self.timeouts.script;
         let response = self
             .renderer
@@ -604,6 +635,10 @@ impl Session {
                 AutomationRequest { operation },
                 timeout,
                 |renderer, message| {
+                    if let IpcMessageKind::ViewPainted(paint) = &message.kind {
+                        record_paint_snapshot(last_paint, image_cache, epoch, paint);
+                        return Ok(());
+                    }
                     handle_renderer_message(http, title, url, renderer, message)
                         .map(|_| ())
                         .map_err(|error| ProtocolError::Process(error.message))
@@ -653,6 +688,91 @@ enum RendererEvent {
     LoadComplete,
     LoadFailed(String),
     Other,
+}
+
+/// 记录最新一帧绘制快照并累积图片像素。
+///
+/// - stale 帧（epoch 不匹配）直接丢弃——browser `process_backend` 同语义。
+/// - image payload 注入跨帧 `ImageCache`（S8 去重语义：renderer 每张图只发一次
+///   像素，后续帧只带 key；screenshot 光栅化按 key 回查本缓存）。
+fn record_paint_snapshot(
+    last_paint: &mut Option<PaintSnapshotParams>,
+    image_cache: &mut ImageCache,
+    session_epoch: u64,
+    paint: &PaintSnapshotParams,
+) {
+    if paint.navigation_epoch != session_epoch {
+        tracing::debug!(
+            "忽略 stale ViewPainted epoch {} != {}",
+            paint.navigation_epoch,
+            session_epoch
+        );
+        return;
+    }
+    for payload in &paint.image_payloads {
+        if let Ok(data) = ImageData::from_rgba(payload.rgba.clone(), payload.width, payload.height) {
+            image_cache.insert_with_key(
+                zero_render_foundation::image_cache::ImageKey::new(payload.image_key),
+                data,
+            );
+        }
+    }
+    *last_paint = Some((*paint).clone());
+}
+
+/// GET /session/{id}/screenshot 的会话侧实现。
+///
+/// 以最近一帧 ViewPainted 为源：公共转换层转 `RenderPrimitives` → CPU
+/// `render_full_scene` 光栅化（与 compositor rasterize/browser headless 同路）
+/// → PNG。W3C Take Screenshot 语义按视口截取（`screenWidth`/`screenHeight`
+/// = 会话视口；初始 about:blank 无帧时对齐规范 unable to capture screen）。
+fn session_screenshot(session: &mut Session) -> Result<String, DriverError> {
+    let Some(paint) = session.last_paint.as_ref() else {
+        return Err(DriverError::new(
+            "unable to capture screen",
+            "no painted frame available for screenshot",
+        ));
+    };
+    let primitives = zero_paint_convert::to_render_primitives(paint.clone());
+    let font_loader = FontLoader::new();
+    let mut glyph_cache = GlyphCache::new(1024);
+    let fb = zero_render_foundation::cpu::render_full_scene(
+        paint.viewport_width.max(1),
+        paint.viewport_height.max(1),
+        if paint.device_scale_factor.is_finite() && paint.device_scale_factor > 0.0 {
+            paint.device_scale_factor
+        } else {
+            1.0
+        },
+        &primitives,
+        &font_loader,
+        &mut glyph_cache,
+        Some(&mut session.image_cache),
+        &[],
+        &[],
+        &[],
+        &[],
+    );
+    framebuffer_to_png_base64(&fb)
+}
+
+/// 把 RGBA8 FrameBuffer 编码为 base64 PNG（browser headless R1601 同形态）。
+fn framebuffer_to_png_base64(fb: &zero_render_foundation::surface::FrameBuffer) -> Result<String, DriverError> {
+    use base64::Engine;
+    use png::{BitDepth, ColorType, Encoder};
+    let mut png_buf: Vec<u8> = Vec::new();
+    {
+        let mut encoder = Encoder::new(&mut png_buf, fb.width, fb.height);
+        encoder.set_color(ColorType::Rgba);
+        encoder.set_depth(BitDepth::Eight);
+        let mut writer = encoder
+            .write_header()
+            .map_err(|e| DriverError::new("unknown error", e.to_string()))?;
+        writer
+            .write_image_data(&fb.data)
+            .map_err(|e| DriverError::new("unknown error", e.to_string()))?;
+    }
+    Ok(base64::engine::general_purpose::STANDARD.encode(&png_buf))
 }
 
 fn handle_renderer_message(

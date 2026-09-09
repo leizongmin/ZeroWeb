@@ -964,3 +964,98 @@ fn webdriver_timeouts_roundtrip_and_validation() {
     let (status, _) = http_request(port, "GET", "/session/deadbeef/timeouts", None);
     assert_eq!(status, 404);
 }
+
+/// Screenshot 目标页：纯色块填充 + 带尺寸文本，断言光栅化非空白。
+fn spawn_screenshot_page_server() -> (std::thread::JoinHandle<()>, u16) {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
+    let port = listener.local_addr().expect("addr").port();
+    let handle = std::thread::spawn(move || {
+        for stream in listener.incoming() {
+            let Ok(mut stream) = stream else { break };
+            let mut buf = [0u8; 4096];
+            let _ = stream.read(&mut buf);
+            // 800×600 视口内 400×300 纯蓝块（screenshot 光栅化断言的确定性像素源）。
+            let body = "<html><head><title>Screenshot Page</title></head><body>\
+                        <div style=\"width:400px;height:300px;background:#0000ff\"></div>\
+                        </body></html>";
+            let resp = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            );
+            let _ = stream.write_all(resp.as_bytes());
+            let _ = stream.flush();
+        }
+    });
+    (handle, port)
+}
+
+/// PNG 解码（测试内联实现：无 png dev-dependency，png crate 主依赖未暴露 dev API）。
+fn decode_png_dimensions(bytes: &[u8]) -> Option<(u32, u32, Vec<u8>)> {
+    let decoder = png::Decoder::new(std::io::Cursor::new(bytes));
+    let mut reader = decoder.read_info().ok()?;
+    let width = reader.info().width;
+    let height = reader.info().height;
+    let mut out = vec![0u8; reader.output_buffer_size()];
+    let info = reader.next_frame(&mut out).ok()?;
+    out.truncate(info.buffer_size());
+    Some((width, height, out))
+}
+
+#[test]
+fn webdriver_screenshot_error_and_success_paths() {
+    let (_driver, port) = spawn_driver();
+    let (_page_server, page_port) = spawn_screenshot_page_server();
+    let (status, body) = http_request(port, "POST", "/session", Some("{}"));
+    assert_eq!(status, 200);
+    let value: serde_json::Value = serde_json::from_str(&body).expect("json");
+    let session = format!("/session/{}", value["value"]["sessionId"].as_str().expect("id"));
+
+    // 错误路径：about:blank 无已绘制帧 → unable to capture screen（W3C 语义等价）。
+    let (status, body) = http_request(port, "GET", &format!("{session}/screenshot"), None);
+    assert_eq!(status, 500, "no-frame screenshot 应 500: {body}");
+    let value: serde_json::Value = serde_json::from_str(&body).expect("json");
+    assert_eq!(value["value"]["error"], "unable to capture screen");
+
+    // 成功路径：导航产生 ViewPainted 帧后截图。
+    let url = format!("http://127.0.0.1:{page_port}/");
+    let (status, body) = http_request(
+        port,
+        "POST",
+        &format!("{session}/url"),
+        Some(&serde_json::json!({ "url": url }).to_string()),
+    );
+    assert_eq!(status, 200, "Navigate 应 200: {body}");
+
+    let (status, body) = http_request(port, "GET", &format!("{session}/screenshot"), None);
+    assert_eq!(status, 200, "screenshot 应 200: {body}");
+    let value: serde_json::Value = serde_json::from_str(&body).expect("json");
+    let encoded = value["value"].as_str().expect("base64 png string");
+    assert!(!encoded.is_empty(), "base64 payload 非空");
+
+    use base64::Engine;
+    let png_bytes = base64::engine::general_purpose::STANDARD
+        .decode(encoded)
+        .expect("valid base64");
+    // PNG 魔数（W3C：响应必为 image/png）。
+    assert_eq!(&png_bytes[..8], b"\x89PNG\r\n\x1a\n", "payload must be PNG");
+
+    // 会话视口 800×600（DSF 1.0）——解码尺寸必须匹配。
+    let (width, height, rgba) = decode_png_dimensions(&png_bytes).expect("PNG decodable");
+    assert_eq!((width, height), (800, 600), "viewport-sized screenshot");
+
+    // 光栅化正确性：400×300 蓝块应存在于首屏（采样块中心非白）。
+    let px = |x: u32, y: u32| -> [u8; 4] {
+        let off = ((y * width + x) * 4) as usize;
+        [rgba[off], rgba[off + 1], rgba[off + 2], rgba[off + 3]]
+    };
+    let center = px(200, 150);
+    assert!(
+        center[2] > 200 && center[0] < 60 && center[1] < 60,
+        "blue block center should be blue, got {center:?}"
+    );
+
+    // 不存在的 session → 404。
+    let (status, _) = http_request(port, "GET", "/session/deadbeef/screenshot", None);
+    assert_eq!(status, 404);
+}

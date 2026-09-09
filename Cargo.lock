@@ -7219,12 +7219,16 @@ dependencies = [
 name = "zero-webdriver"
 version = "0.1.0"
 dependencies = [
+ "base64",
+ "png 0.17.16",
  "serde_json",
  "tracing",
  "tracing-subscriber",
  "zero-net",
+ "zero-paint-convert",
  "zero-product-version",
  "zero-protocol",
+ "zero-render-foundation",
 ]
 
 [[package]]
