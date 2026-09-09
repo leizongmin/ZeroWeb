@@ -88,22 +88,18 @@
 | P3 | JS 接线（内存虚拟树 → host 命令 → Rust；async iterator + DOMException 面） | ✅ M2 切片 1（95% 通过率，kill-switch 保留内存回退） |
 | P4 | 持久化 e2e（per-origin 落盘 + 跨会话 + engine 接线后） | ⬜ M3（webview 层已就绪，缺 e2e 断言） |
 
-## 下一步计划（M3 剩余）
+## 下一步计划（DONE 判定复核）
 
-1. **M3 切片 2 estimate 真实化**：estimate() 已走 hostCall usage（真实字节数）——补断言
-   + quota 语义评估（静态 100MB 是否入 skip/近似清单注明）
-2. **M3 切片 3 sync access handle 评估定论**：worker 环境专用 + headless worker 无真线程 →
-   预期记入 skip（Support Envelope 允许「评估后决定做或记入 skip」）；记录评估理由
-3. **M3 切片 4 剩余语义**：blob 失效快照检测（低优先）；skip 清单正式化（postMessage 克隆
-   ×3、createSyncAccessHandle*、fetch response.body ×2——后两者属 fetch/stream 域，与上游
-   用例缺陷项一并注明归属）
-4. **DC 全满足判定**：make test 全绿 + clippy 零警告 + 通过率报告持久化 + master.md 自洽
-   + archive 建立
+M1-M3 全部落毕，DC-1~4 逐项判定见下方「Done Criteria 判定」。剩余：全量 make test /
+clippy 终验 + archive 建立。
 
 > M3 切片 1（2026-09-09 已落）：crates/webview/src/tests/opfs_owner.rs——
 > persistent_owner_opfs_file_survives_webview_rebuild（DC-3 跨会话 e2e）、
 > opfs_files_are_origin_scoped（per-origin 隔离）、in_memory_owner_opfs_does_not_persist
 > （kill-switch 回退不落盘）、persistent_owner_opfs_directory_tree_roundtrip（嵌套目录树）。
+> M3 切片 2（已落）：test_opfs_estimate_real_usage_m3——写入 5 字节 usage 差值精确 5。
+> M3 切片 3（已落）：SAH 评估定论=skip（evidence/2026-09-09-m3-skip-list-and-sah-verdict.md §1）。
+> M3 切片 4（已落）：skip 清单正式化（同上 §2/§3）。
 
 ## 里程碑状态
 
@@ -111,7 +107,7 @@
 |--------|------|
 | M1 — WPT 基线建立 + opfs 模块骨架 | ✅ 2026-09-09（13 用例导入 + 48P/85F 基线 + opfs 模块 19 单测） |
 | M2 — 读写流 + JS 接线 | ✅ 2026-09-09 切片 1（接线完成，95% 通过率；DC-2 语义面全满足） |
-| M3 — 持久化 + 收尾 | 🔶 切片 1 ✅ 2026-09-09（跨会话 e2e ×4：persistent 重建读回一致 / per-origin 隔离 / in-memory 不落盘 / 目录树往返）；剩：estimate 断言 + SAH 评估定论 + skip 清单正式化 |
+| M3 — 持久化 + 收尾 | ✅ 2026-09-09（切片 1 e2e ×4 + 切片 2 estimate 真实化断言 + 切片 3 SAH 评估定论=skip + 切片 4 skip 清单正式化——见 evidence/2026-09-09-m3-skip-list-and-sah-verdict.md） |
 
 ## 验证基线
 

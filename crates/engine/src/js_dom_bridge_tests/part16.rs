@@ -1085,3 +1085,114 @@ fn non_text_input_rejects_text_selection_operations() {
     );
     assert_eq!(sandbox.execute("globalThis.__value").unwrap().value, "42");
 }
+
+#[test]
+fn test_opfs_estimate_real_usage_m3() {
+    // storage-opfs M3：estimate() 真实化——usage 反映 OPFS 真实字节占用（写入前后差值
+    // 精确等于写入字节数；quota 为静态近似，spec 未定义具体值，只需为正数）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            "navigator.storage.getDirectory().then(function (root) {\
+               return (async function () {\
+                 const est0 = await navigator.storage.estimate();\
+                 globalThis.__usage0 = est0.usage;\
+                 const fh = await root.getFileHandle('est.txt', { create: true });\
+                 const w = await fh.createWritable();\
+                 await w.write('12345');\
+                 await w.close();\
+                 const est1 = await navigator.storage.estimate();\
+                 globalThis.__delta = est1.usage - est0.usage;\
+                 globalThis.__quotaOk = String(est0.quota > 0 && est1.quota > 0);\
+               })();\
+             }).then(function () { globalThis.__ok = 'ok'; },\
+               function (e) { globalThis.__ok = 'reject:' + String(e && e.message ? e.message : e); });",
+        )
+        .unwrap();
+    for _ in 0..10 {
+        sandbox.execute("globalThis.__n = 1;").unwrap();
+    }
+
+    assert_eq!(sandbox.execute("globalThis.__ok").unwrap().value, "ok", "estimate 链应完成");
+    assert_eq!(
+        sandbox.execute("globalThis.__delta").unwrap().value,
+        "5",
+        "写入 5 字节后 estimate.usage 差值应为 5（真实用量统计）"
+    );
+    assert_eq!(sandbox.execute("globalThis.__quotaOk").unwrap().value, "true", "quota 应为正数");
+}
+
+#[test]
+fn test_opfs_stream_after_close_and_unique_id_m3() {
+    // storage-opfs M3：close 后写拒绝 + getUniqueId 稳定性/跨路径相异性（WPT 语义面巩固）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            "navigator.storage.getDirectory().then(function (root) {\
+               return (async function () {\
+                 const fh = await root.getFileHandle('id.txt', { create: true });\
+                 const id1 = await fh.getUniqueId();\
+                 const fh2 = await root.getFileHandle('id.txt');\
+                 const id2 = await fh2.getUniqueId();\
+                 globalThis.__sameStable = String(id1 === id2);\
+                 const dir = await root.getDirectoryHandle('idd', { create: true });\
+                 const dirId = await dir.getUniqueId();\
+                 globalThis.__dirDiffers = String(dirId !== id1);\
+                 const w = await fh.createWritable();\
+                 await w.close();\
+                 try { await w.write('x'); globalThis.__afterClose = 'resolved'; }\
+                 catch (e) { globalThis.__afterClose = 'rejected:' + e.constructor.name; }\
+               })();\
+             }).then(function () { globalThis.__ok = 'ok'; },\
+               function (e) { globalThis.__ok = 'reject:' + String(e && e.message ? e.message : e); });",
+        )
+        .unwrap();
+    for _ in 0..10 {
+        sandbox.execute("globalThis.__n = 1;").unwrap();
+    }
+
+    assert_eq!(sandbox.execute("globalThis.__ok").unwrap().value, "ok", "getUniqueId 链应完成");
+    assert_eq!(
+        sandbox.execute("globalThis.__sameStable").unwrap().value,
+        "true",
+        "同路径句柄 getUniqueId 稳定（写后不变/重复获取同 ID）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__dirDiffers").unwrap().value,
+        "true",
+        "文件与目录 getUniqueId 相异"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__afterClose").unwrap().value,
+        "rejected:TypeError",
+        "close 后 write 拒绝 TypeError"
+    );
+}
