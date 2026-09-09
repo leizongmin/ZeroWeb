@@ -1,6 +1,7 @@
 # WebDriver 服务完善 — 运行时控制面板（master.md）
 
-**入口文档**: [../webdriver.md](../webdriver.md)
+**入口文档**: [../webdriver.md](../webdriver.md)（模式 A 整树归档后位于本 archive 目录内；
+2026-09-09 补移——上轮仅移控制面，入口文档滞留 goal 根目录）
 **创建日期**: 2026-09-07（goal 拆分 bootstrap）
 **最后更新**: 2026-09-09（**DONE 终验通过、goal 终态**——责任流 R4149（`64160932e`）
 修复落地，`make test` 66 套件 19037/0 全绿 + clippy `-D warnings` 零告警，DC-1~4
@@ -172,7 +173,7 @@ crates/protocol/ apps/renderer/` 核对 event-loop-spec 流活跃面（apps/rend
 
 | 项 | 状态 | 说明 |
 |----|------|------|
-| screenshot 链路 | ⬜ 待决策（已征询） | M3 摸底结论：技术可行（ViewPainted 图元 + render_full_scene + PNG），但 IPC→图元转换层在 apps/browser 域（paint_ipc.rs），复用需抽公共库或允许 webdriver 依赖 zero-browser lib——深结构改动须拍板。现状：按 DONE 允许条件记待决策不算未满足 DC。**GB-20260908 巡检飞书征询 msg `om_x100b6535d918a8acc121a65238fec1b`（含三方案建议：①抽公共截图转换层 crate【推荐】/②webdriver 依赖 zero-browser lib/③维持不做）** |
+| screenshot 链路 | ✅ 已拍板（2026-09-09，方案①） | M3 摸底结论：技术可行（ViewPainted 图元 + render_full_scene + PNG），但 IPC→图元转换层在 apps/browser 域（paint_ipc.rs），复用需抽公共库或允许 webdriver 依赖 zero-browser lib——深结构改动须拍板。**2026-09-09 用户拍板方案①（抽公共截图转换层 crate），新 goal [`webdriver-screenshot`](../../webdriver-screenshot.md) 接管，见文末「挂账项接管」条目**。原征询：GB-20260908 巡检飞书 msg `om_x100b6535d918a8acc121a65238fec1b`（三方案：①抽公共截图转换层 crate【推荐】/②webdriver 依赖 zero-browser lib/③维持不做） |
 | alert 全族 / print | ⬜ 排除 | 依赖 host 对话框/打印能力 |
 | actions 完整语义 | ⬜ 排除 | 依赖输入管线深化；keyboard 够用子集先做 |
 | renderer back/forward 不 bump document_generation | ⬜ 待决策（跨流告知已发） | 本层 history_epoch 守卫已兜底（保守 stale）；若要 renderer 侧根治需碰 runtime.rs（event-loop-spec 活跃域），记待决策不阻塞。**GB-20260908 巡检按 rule 10 跨流留档告知（随 screenshot 征询同批 msg `om_x100b6535d918a8acc121a65238fec1b`）——event-loop-spec 流后续动 runtime.rs 时可顺手根治** |
@@ -243,3 +244,8 @@ actions 按待用户决策记录在案（DONE 允许条件）。**DONE 判定终
 三方案待拍板）、renderer back/forward document_generation 根治（event-loop-spec 流
 runtime.rs 域，跨流告知已发）、shim innerWidth 跟随 SetViewport、定位策略扩展、
 frame 深化、多窗口语义。若 screenshot 决策开放，从「待用户决策」表起新 goal 或续作。
+
+**挂账项接管（2026-09-09）**：screenshot 拍板方案①（抽公共截图转换层 crate）——新立
+goal [`docs/goal/webdriver-screenshot.md`](../../webdriver-screenshot.md)，screenshot
+挂账项由该 goal 接管；其余挂账项（定位策略扩展、frame 深化、多窗口语义、renderer
+document_generation 根治、shim innerWidth）仍开放，未被接管。
