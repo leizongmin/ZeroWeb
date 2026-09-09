@@ -1,0 +1,732 @@
+[
+  [
+    "fs/root-name.https.any.js",
+    [
+      {
+        "name": "getDirectory returns a directory whose name is the empty string",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "fs/FileSystemBaseHandle-isSameEntry.https.any.js",
+    [
+      {
+        "name": "isSameEntry for identical directory handles returns true",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "isSameEntry for different directories returns false",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "isSameEntry for different handles for the same directory",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "isSameEntry for identical file handles returns true",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "isSameEntry for different files returns false",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "isSameEntry for different handles for the same file",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "isSameEntry comparing a file to a file in a different directory returns false",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "isSameEntry comparing a file to a directory returns false",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "isSameEntry comparing two files pointing to the same path returns true",
+        "status": "Fail",
+        "message": "assert_true: two file handles pointing at the same path should be considered the same entry expected true got false"
+      },
+      {
+        "name": "isSameEntry comparing two directories pointing to the same path returns true",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: foo 是文件\""
+      },
+      {
+        "name": "isSameEntry comparing a file to a directory of the same path returns false",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: foo 是文件\""
+      },
+      {
+        "name": "isSameEntry with a file handle that was just cloned via postMessage",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"DataCloneError: function could not be cloned.\""
+      },
+      {
+        "name": "isSameEntry with a directory handle that was just cloned via postMessage",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"DataCloneError: function could not be cloned.\""
+      },
+      {
+        "name": "isSameEntry with a root directory handle that was just cloned via postMessage",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"DataCloneError: function could not be cloned.\""
+      }
+    ]
+  ],
+  [
+    "fs/FileSystemBaseHandle-getUniqueId.https.any.js",
+    [
+      {
+        "name": "identical directory handles return the same ID",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: root_dir.getUniqueId is not a function\""
+      },
+      {
+        "name": "different directories return different IDs",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: root_dir.getUniqueId is not a function\""
+      },
+      {
+        "name": "different handles for the same directory return the same ID",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: subdir.getUniqueId is not a function\""
+      },
+      {
+        "name": "identical file handles return the same unique ID",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: handle.getUniqueId is not a function\""
+      },
+      {
+        "name": "different files return different IDs",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: handle1.getUniqueId is not a function\""
+      },
+      {
+        "name": "different handles for the same file return the same ID",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: handle1.getUniqueId is not a function\""
+      },
+      {
+        "name": "two files of the same name in different directories return different IDs",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: handle1.getUniqueId is not a function\""
+      },
+      {
+        "name": "a file and a directory return different IDs",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: handle1.getUniqueId is not a function\""
+      },
+      {
+        "name": "a file and a directory of the same path return different IDs",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: file_handle.getUniqueId is not a function\""
+      },
+      {
+        "name": "unique ID of a file handle does not change after writes",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: handle.getUniqueId is not a function\""
+      },
+      {
+        "name": "unique ID is in GUID version 4 format",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: root_dir.getUniqueId is not a function\""
+      }
+    ]
+  ],
+  [
+    "fs/FileSystemBaseHandle-remove.https.any.js",
+    [
+      {
+        "name": "remove() to remove a file",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: handle.remove is not a function\""
+      },
+      {
+        "name": "remove() on an already removed file should fail",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: handle.remove is not a function\""
+      },
+      {
+        "name": "remove() to remove an empty directory",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: dir.remove is not a function\""
+      },
+      {
+        "name": "remove() on an already removed directory should fail",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: dir.remove is not a function\""
+      },
+      {
+        "name": "remove() on a non-empty directory should fail",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: dir.remove is not a function\""
+      },
+      {
+        "name": "remove() on a directory recursively should delete all sub-items",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: dir.remove is not a function\""
+      },
+      {
+        "name": "remove() on a file should ignore the recursive option",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: handle.remove is not a function\""
+      },
+      {
+        "name": "remove() while the file has an open writable fails",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: handle.remove is not a function\""
+      },
+      {
+        "name": "can remove the root of a sandbox file system",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: handle.values(...) is not a function or its return value is not async iterable\""
+      }
+    ]
+  ],
+  [
+    "fs/FileSystemDirectoryHandle-getDirectoryHandle.https.any.js",
+    [
+      {
+        "name": "getDirectoryHandle(create=false) rejects for non-existing directories",
+        "status": "Fail",
+        "message": "promise_rejects_dom: function \"function() { throw e; }\" threw object \"TypeError: non-existing-dir 不存在\" that is not a DOMException NotFoundError: property \"code\" is equal to undefined, expected 8"
+      },
+      {
+        "name": "getDirectoryHandle(create=true) creates an empty directory",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: handle is not async iterable\""
+      },
+      {
+        "name": "getDirectoryHandle(create=false) returns existing directories",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: handle.values(...) is not a function or its return value is not async iterable\""
+      },
+      {
+        "name": "getDirectoryHandle(create=true) returns existing directories without erasing",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: handle.values(...) is not a function or its return value is not async iterable\""
+      },
+      {
+        "name": "getDirectoryHandle() when a file already exists with the same name",
+        "status": "Fail",
+        "message": "promise_rejects_dom: function \"function() { throw e; }\" threw object \"TypeError: file-name 是文件\" that is not a DOMException TypeMismatchError: property \"code\" is equal to undefined, expected 17"
+      },
+      {
+        "name": "getDirectoryHandle() with empty name",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "getDirectoryHandle() with \".\" name",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "getDirectoryHandle() with \"..\" name",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "getDirectoryHandle(create=false) with a path separator when the directory exists",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "getDirectoryHandle(create=true) with a path separator",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "fs/FileSystemDirectoryHandle-getFileHandle.https.any.js",
+    [
+      {
+        "name": "getFileHandle(create=false) rejects for non-existing files",
+        "status": "Fail",
+        "message": "promise_rejects_dom: function \"function() { throw e; }\" threw object \"TypeError: non-existing-file 不存在\" that is not a DOMException NotFoundError: property \"code\" is equal to undefined, expected 8"
+      },
+      {
+        "name": "getFileHandle(create=true) creates an empty file for non-existing files",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "getFileHandle(create=true) creates an empty file with all valid ASCII characters in the name",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "getFileHandle(create=true) creates an empty file with non-ASCII characters in the name",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "getFileHandle(create=false) returns existing files",
+        "status": "Fail",
+        "message": "assert_equals: expected 10 but got 0"
+      },
+      {
+        "name": "getFileHandle(create=true) returns existing files without erasing",
+        "status": "Fail",
+        "message": "assert_equals: expected 10 but got 0"
+      },
+      {
+        "name": "getFileHandle(create=false) when a directory already exists with the same name",
+        "status": "Fail",
+        "message": "promise_rejects_dom: function \"function() { throw e; }\" threw object \"TypeError: dir-name 是目录\" that is not a DOMException TypeMismatchError: property \"code\" is equal to undefined, expected 17"
+      },
+      {
+        "name": "getFileHandle(create=true) when a directory already exists with the same name",
+        "status": "Fail",
+        "message": "promise_rejects_dom: function \"function() { throw e; }\" threw object \"TypeError: dir-name 是目录\" that is not a DOMException TypeMismatchError: property \"code\" is equal to undefined, expected 17"
+      },
+      {
+        "name": "getFileHandle() with empty name",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "getFileHandle() with \".\" name",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "getFileHandle() with \"..\" name",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "getFileHandle(create=false) with a path separator when the file exists.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "getFileHandle(create=true) with a path separator",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "fs/FileSystemDirectoryHandle-iteration.https.any.js",
+    [
+      {
+        "name": "returning early from an iteration doesn't crash",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: root is not async iterable\""
+      },
+      {
+        "name": "@@asyncIterator: full iteration works",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: root is not async iterable\""
+      },
+      {
+        "name": "entries: full iteration works",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: root.entries(...) is not a function or its return value is not async iterable\""
+      },
+      {
+        "name": "values: full iteration works",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: root.values(...) is not a function or its return value is not async iterable\""
+      },
+      {
+        "name": "keys: full iteration works",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: root.keys(...) is not a function or its return value is not async iterable\""
+      },
+      {
+        "name": "iteration while iterator gets garbage collected",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: iterator.next is not a function\""
+      }
+    ]
+  ],
+  [
+    "fs/FileSystemDirectoryHandle-removeEntry.https.any.js",
+    [
+      {
+        "name": "removeEntry() to remove a file",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: handle.values(...) is not a function or its return value is not async iterable\""
+      },
+      {
+        "name": "removeEntry() on an already removed file should fail",
+        "status": "Fail",
+        "message": "promise_rejects_dom: function \"function() { throw e; }\" threw object \"TypeError: file-to-remove 不存在\" that is not a DOMException NotFoundError: property \"code\" is equal to undefined, expected 8"
+      },
+      {
+        "name": "removeEntry() to remove an empty directory",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: handle.values(...) is not a function or its return value is not async iterable\""
+      },
+      {
+        "name": "removeEntry() on a non-empty directory should fail",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: handle.values(...) is not a function or its return value is not async iterable\""
+      },
+      {
+        "name": "removeEntry() on a directory recursively should delete all sub-items",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: handle.values(...) is not a function or its return value is not async iterable\""
+      },
+      {
+        "name": "removeEntry() with empty name should fail",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "removeEntry() with \".\" name should fail",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "removeEntry() with \"..\" name should fail",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "removeEntry() with a path separator should fail.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "removeEntry() while the file has an open writable fails",
+        "status": "Fail",
+        "message": "assert_unreached: Should have rejected: undefined Reached unreachable code"
+      },
+      {
+        "name": "removeEntry() of a directory while a containing file has an open writable fails",
+        "status": "Fail",
+        "message": "promise_rejects_dom: function \"function() { throw e; }\" threw object \"InvalidModificationError: 目录非空（需 recursive）\" that is not a DOMException NoModificationAllowedError: property \"code\" is equal to 13, expected 7"
+      },
+      {
+        "name": "createWritable after removeEntry succeeds but doesnt recreate the file",
+        "status": "Fail",
+        "message": "assert_unreached: Should have rejected: undefined Reached unreachable code"
+      },
+      {
+        "name": "removeEntry() on a non-existent directory recursively should throw NotFoundError",
+        "status": "Fail",
+        "message": "promise_rejects_dom: function \"function() { throw e; }\" threw object \"TypeError: dir-to-remove 不存在\" that is not a DOMException NotFoundError: property \"code\" is equal to undefined, expected 8"
+      }
+    ]
+  ],
+  [
+    "fs/FileSystemDirectoryHandle-resolve.https.any.js",
+    [
+      {
+        "name": "Resolve returns empty array for same directory",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: root_dir.resolve is not a function\""
+      },
+      {
+        "name": "Resolve returns correct path",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: root_dir.resolve is not a function\""
+      },
+      {
+        "name": "Resolve returns correct path with non-ascii characters",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: root_dir.resolve is not a function\""
+      },
+      {
+        "name": "Resolve returns null when entry is not a child",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: subdir.resolve is not a function\""
+      },
+      {
+        "name": "Resolve returns null when sibling directory name is a prefix",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: subdir.resolve is not a function\""
+      }
+    ]
+  ],
+  [
+    "fs/FileSystemFileHandle-getFile.https.any.js",
+    [
+      {
+        "name": "getFile() provides a file that can be sliced",
+        "status": "Fail",
+        "message": "assert_equals: expected \"wesome content\" but got \"\""
+      },
+      {
+        "name": "getFile() returns last modified time",
+        "status": "Fail",
+        "message": "assert_less_than: expected a number but got a \"undefined\""
+      },
+      {
+        "name": "getFile() returns expected name",
+        "status": "Fail",
+        "message": "assert_equals: expected (string) \"fileAttributesTest.txt\" but got (undefined) undefined"
+      }
+    ]
+  ],
+  [
+    "fs/FileSystemWritableFileStream.https.any.js",
+    [
+      {
+        "name": "truncate() to shrink a file",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "truncate() to grow a file",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "createWritable() fails when parent directory is removed",
+        "status": "Fail",
+        "message": "assert_unreached: Should have rejected: undefined Reached unreachable code"
+      },
+      {
+        "name": "createWritable({keepExistingData: true}): atomic writable file stream initialized with source contents",
+        "status": "Fail",
+        "message": "assert_equals: expected \"barks\" but got \"bar\""
+      },
+      {
+        "name": "createWritable({keepExistingData: false}): atomic writable file stream initialized with empty file",
+        "status": "Fail",
+        "message": "assert_equals: expected \"very long string\" but got \"\""
+      },
+      {
+        "name": "createWritable() can be called on two handles representing the same file",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: parent.getDirectoryHandle is not a function\""
+      },
+      {
+        "name": "cursor position: truncate size > offset",
+        "status": "Fail",
+        "message": "assert_equals: expected \"abc45\" but got \"abc\\0\\0\""
+      },
+      {
+        "name": "cursor position: truncate size < offset",
+        "status": "Fail",
+        "message": "assert_equals: expected \"12345abc\" but got \"\\0\\0\\0\\0\\0abc\""
+      },
+      {
+        "name": "commands are queued, stream is unlocked after each operation",
+        "status": "Fail",
+        "message": "assert_false: expected false got undefined"
+      }
+    ]
+  ],
+  [
+    "fs/FileSystemWritableFileStream-write.https.any.js",
+    [
+      {
+        "name": "write() with an empty blob to an empty file",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "write() a blob to an empty file",
+        "status": "Fail",
+        "message": "assert_equals: expected \"1234567890\" but got \"\""
+      },
+      {
+        "name": "write() with WriteParams without position to an empty file",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "write() a string to an empty file with zero offset",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "write() a blob to an empty file with zero offset",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "write() called consecutively appends",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "write() WriteParams without position and string appends",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "write() WriteParams without position and blob appends",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "write() called with a string and a valid offset",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "write() called with a string and a valid offset after seek",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "write() called with a blob and a valid offset",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "write() called with an offset beyond the end of the file",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "write() with an empty string to an empty file",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "write() with a valid utf-8 string",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "write() with a string with unix line ending preserved",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "write() with a string with windows line ending preserved",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "write() with an empty array buffer to an empty file",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "write() with a valid typed array buffer",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "atomic writes: writable file streams make atomic changes on close",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "atomic writes: write() after close() fails",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "atomic writes: truncate() after close() fails",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "atomic writes: close() after close() fails",
+        "status": "Fail",
+        "message": "assert_unreached: Should have rejected: undefined Reached unreachable code"
+      },
+      {
+        "name": "atomic writes: only one close() operation may succeed",
+        "status": "Fail",
+        "message": "assert_equals: expected 1 but got 100"
+      },
+      {
+        "name": "getWriter() can be used",
+        "status": "Fail",
+        "message": "assert_false: expected false got undefined"
+      },
+      {
+        "name": "WriteParams: truncate missing size param",
+        "status": "Fail",
+        "message": "assert_unreached: Should have rejected: truncate without size Reached unreachable code"
+      },
+      {
+        "name": "WriteParams: write missing data param",
+        "status": "Fail",
+        "message": "assert_unreached: Should have rejected: write without data Reached unreachable code"
+      },
+      {
+        "name": "WriteParams: write null data param",
+        "status": "Fail",
+        "message": "assert_unreached: Should have rejected: write with null data Reached unreachable code"
+      },
+      {
+        "name": "WriteParams: seek missing position param",
+        "status": "Fail",
+        "message": "assert_unreached: Should have rejected: seek without position Reached unreachable code"
+      },
+      {
+        "name": "write() with an invalid blob to an empty file should reject",
+        "status": "Fail",
+        "message": "assert_unreached: Should have rejected: undefined Reached unreachable code"
+      },
+      {
+        "name": "an errored writable stream releases its lock",
+        "status": "Fail",
+        "message": "assert_unreached: Should have rejected: write with null data Reached unreachable code"
+      },
+      {
+        "name": "an errored writable stream should reject the next write call",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: stream.getWriter is not a function\""
+      }
+    ]
+  ],
+  [
+    "fs/FileSystemWritableFileStream-piped.https.any.js",
+    [
+      {
+        "name": "can be piped to with a string",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: pipeTo: destination is not a WritableStream\""
+      },
+      {
+        "name": "can be piped to with an ArrayBuffer",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: pipeTo: destination is not a WritableStream\""
+      },
+      {
+        "name": "can be piped to with a Blob",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: pipeTo: destination is not a WritableStream\""
+      },
+      {
+        "name": "can be piped to with a param object with write command",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: pipeTo: destination is not a WritableStream\""
+      },
+      {
+        "name": "can be piped to with a param object with multiple commands",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: pipeTo: destination is not a WritableStream\""
+      },
+      {
+        "name": "multiple operations can be queued",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: pipeTo: destination is not a WritableStream\""
+      },
+      {
+        "name": "plays well with fetch",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Cannot read properties of null (reading 'pipeTo')\""
+      },
+      {
+        "name": "abort() aborts write",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Cannot read properties of null (reading 'pipeTo')\""
+      }
+    ]
+  ]
+]

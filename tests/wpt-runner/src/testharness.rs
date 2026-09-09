@@ -787,6 +787,30 @@ pub const CACHE_STORAGE_WINDOW_CASES: &[(&str, &[&str])] = &[
     ),
 ];
 
+/// OPFS goal（storage-opfs M1 / DC-1）pinned upstream File System (`fs/`) window
+/// subset. Cases are fetched by `fetch-fs-subset.sh`（WPT
+/// 315976933870b34d6ea30e3f6643403edae678ba）into `wpt-data/`（gitignored）.
+///
+/// `.any.js` 用例以 window 变体执行；support 脚本由各用例 `// META: script=` 声明
+/// 自动解析（相对路径相对用例目录，`/`-前缀相对 wpt-data 根）——与 cache-storage
+/// 窗口子集的手工配对不同：fs 域 script-tests/resources 两层结构 META 数量不一，
+/// 自动解析避免清单漂移。skip 域（Support Envelope 排除项）见 fetch 脚本头注释。
+pub const FS_CASES: &[&str] = &[
+    "fs/root-name.https.any.js",
+    "fs/FileSystemBaseHandle-isSameEntry.https.any.js",
+    "fs/FileSystemBaseHandle-getUniqueId.https.any.js",
+    "fs/FileSystemBaseHandle-remove.https.any.js",
+    "fs/FileSystemDirectoryHandle-getDirectoryHandle.https.any.js",
+    "fs/FileSystemDirectoryHandle-getFileHandle.https.any.js",
+    "fs/FileSystemDirectoryHandle-iteration.https.any.js",
+    "fs/FileSystemDirectoryHandle-removeEntry.https.any.js",
+    "fs/FileSystemDirectoryHandle-resolve.https.any.js",
+    "fs/FileSystemFileHandle-getFile.https.any.js",
+    "fs/FileSystemWritableFileStream.https.any.js",
+    "fs/FileSystemWritableFileStream-write.https.any.js",
+    "fs/FileSystemWritableFileStream-piped.https.any.js",
+];
+
 const ZEROWEB_CACHE_FILTERED_RESPONSE_TYPES_SOURCE: &str = r#"
 // META: title=ZeroWeb CacheStorage filtered response type generation
 // META: global=window
@@ -2344,6 +2368,81 @@ fn cache_storage_builtin_case_source(path: &str) -> Option<&'static str> {
         }
         _ => None,
     }
+}
+
+/// Run the pinned upstream File System (OPFS) window subset.
+///
+/// Support scripts are discovered from each case's `// META: script=` headers
+/// (wpt_meta_scripts), so no hand-maintained case→support pairing is needed.
+pub fn run_fs_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    let harness_source = match std::fs::read_to_string(wpt_root.join("resources/testharness.js")) {
+        Ok(source) => source,
+        Err(error) => {
+            return FS_CASES
+                .iter()
+                .filter(|path| filter.is_none_or(|filter| path.contains(filter)))
+                .map(|path| {
+                    (
+                        (*path).to_string(),
+                        vec![HarnessSubtestResult {
+                            name: "load testharness.js".into(),
+                            status: HarnessStatus::Fail,
+                            message: Some(error.to_string()),
+                        }],
+                    )
+                })
+                .collect();
+        }
+    };
+
+    FS_CASES
+        .iter()
+        .filter(|path| filter.is_none_or(|filter| path.contains(filter)))
+        .map(|path| {
+            let case_source = match std::fs::read_to_string(wpt_root.join(path)) {
+                Ok(source) => source,
+                Err(error) => {
+                    return (
+                        (*path).to_string(),
+                        vec![HarnessSubtestResult {
+                            name: "load File System case".into(),
+                            status: HarnessStatus::Fail,
+                            message: Some(error.to_string()),
+                        }],
+                    );
+                }
+            };
+            let case_dir = Path::new(path).parent().unwrap_or_else(|| Path::new(""));
+            let mut support_sources = Vec::new();
+            for script in wpt_meta_scripts(path, &case_source) {
+                let support_path = if let Some(root_relative) = script.strip_prefix('/') {
+                    wpt_root.join(root_relative)
+                } else {
+                    wpt_root.join(case_dir).join(&script)
+                };
+                match std::fs::read_to_string(support_path) {
+                    Ok(source) => support_sources.push((script, source)),
+                    Err(error) => {
+                        return (
+                            (*path).to_string(),
+                            vec![HarnessSubtestResult {
+                                name: format!("load File System support {script}"),
+                                status: HarnessStatus::Fail,
+                                message: Some(error.to_string()),
+                            }],
+                        );
+                    }
+                }
+            }
+            let support_refs = support_sources
+                .iter()
+                .map(|(name, source)| (name.as_str(), source.as_str()))
+                .collect::<Vec<_>>();
+            let html = any_js_window_wrapper(path, &support_refs, &case_source);
+            let results = run_testharness_html(wpt_root, path, &html, &harness_source, CASE_TIMEOUT);
+            ((*path).to_string(), results)
+        })
+        .collect()
 }
 
 /// Run the fixed Service Worker M1 core testharness corpus.

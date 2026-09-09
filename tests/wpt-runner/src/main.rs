@@ -44,6 +44,7 @@ Commands:
   testharness-webaudio  Run imported Web Audio testharness cases (media-audio goal M3)
   testharness-indexeddb  Run imported IndexedDB testharness cases (storage-indexeddb goal M1)
   testharness-cache-storage  Run pinned CacheStorage window testharness cases
+  testharness-fs  Run pinned File System (OPFS) window testharness cases (storage-opfs goal M1)
   testharness-service-workers  Run pinned Service Worker M1 core testharness cases
   testharness-service-workers-fetch  Run pinned Service Worker M2 fetch testharness cases
   testharness-service-workers-cache-storage  Run pinned Service Worker CacheStorage testharness cases
@@ -239,6 +240,7 @@ fn main() {
         "testharness-webaudio" => cmd_testharness_webaudio(&options, filter.as_deref()),
         "testharness-indexeddb" => cmd_testharness_indexeddb(&options, filter.as_deref()),
         "testharness-cache-storage" => cmd_testharness_cache_storage(&options, filter.as_deref()),
+        "testharness-fs" => cmd_testharness_fs(&options, filter.as_deref()),
         "testharness-service-workers" => cmd_testharness_service_workers(&options, filter.as_deref()),
         "testharness-service-workers-fetch" => cmd_testharness_service_workers_fetch(&options, filter.as_deref()),
         "testharness-service-workers-cache-storage" => {
@@ -756,6 +758,42 @@ fn cmd_testharness_cache_storage(options: &CliOptions, filter: Option<&str>) {
         .map(std::path::PathBuf::from)
         .unwrap_or_else(|| std::path::PathBuf::from("tests/wpt-runner/wpt-data/.cache-storage-window-root"));
     let cases = testharness::run_cache_storage_cases(&wpt_root, filter);
+    let failed = cases.iter().any(|(_, results)| {
+        results
+            .iter()
+            .any(|result| result.status != testharness::HarnessStatus::Pass)
+    });
+
+    match options.format {
+        OutputFormat::Json => {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&cases).unwrap_or_else(|_| "[]".into())
+            );
+        }
+        OutputFormat::Text | OutputFormat::Tap => {
+            for (case, results) in &cases {
+                for result in results {
+                    println!("{:?} {case} :: {}", result.status, result.name);
+                    if let Some(message) = &result.message {
+                        println!("  {message}");
+                    }
+                }
+            }
+        }
+    }
+    if failed || cases.is_empty() {
+        std::process::exit(1);
+    }
+}
+
+fn cmd_testharness_fs(options: &CliOptions, filter: Option<&str>) {
+    let wpt_root = options
+        .wpt_data
+        .as_deref()
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::path::PathBuf::from("tests/wpt-runner/wpt-data"));
+    let cases = testharness::run_fs_cases(&wpt_root, filter);
     let failed = cases.iter().any(|(_, results)| {
         results
             .iter()

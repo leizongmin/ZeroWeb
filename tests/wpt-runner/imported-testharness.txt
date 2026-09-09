@@ -313,3 +313,16 @@ service-workers/service-worker/onactivate-script-error.https.html 04067ce9c7c216
 service-workers/service-worker/extendable-event-waituntil.https.html 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-09-03 SW-M3-extendable-event-waituntil
 service-workers/service-worker/extendable-event-async-waituntil.https.html 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-09-03 SW-M3-extendable-event-async-waituntil
 service-workers/service-worker/controller-on-reload.https.html 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-09-03 SW-M3-controller-on-reload
+fs/root-name.https.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-09-09 OPFS-M1-baseline
+fs/FileSystemBaseHandle-isSameEntry.https.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-09-09 OPFS-M1-baseline
+fs/FileSystemBaseHandle-getUniqueId.https.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-09-09 OPFS-M1-baseline
+fs/FileSystemBaseHandle-remove.https.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-09-09 OPFS-M1-baseline
+fs/FileSystemDirectoryHandle-getDirectoryHandle.https.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-09-09 OPFS-M1-baseline
+fs/FileSystemDirectoryHandle-getFileHandle.https.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-09-09 OPFS-M1-baseline
+fs/FileSystemDirectoryHandle-iteration.https.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-09-09 OPFS-M1-baseline
+fs/FileSystemDirectoryHandle-removeEntry.https.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-09-09 OPFS-M1-baseline
+fs/FileSystemDirectoryHandle-resolve.https.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-09-09 OPFS-M1-baseline
+fs/FileSystemFileHandle-getFile.https.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-09-09 OPFS-M1-baseline
+fs/FileSystemWritableFileStream.https.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-09-09 OPFS-M1-baseline
+fs/FileSystemWritableFileStream-write.https.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-09-09 OPFS-M1-baseline
+fs/FileSystemWritableFileStream-piped.https.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-09-09 OPFS-M1-baseline
