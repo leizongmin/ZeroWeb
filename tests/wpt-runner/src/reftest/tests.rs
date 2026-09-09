@@ -4551,3 +4551,85 @@ body { margin: 0; overflow: hidden }
     }
     dump(&result.root, 1);
 }
+
+/// R4188 勘察：`<p>` 段落页级偏移定量化（ref 页 p+div，找绿色方块起始行）。
+#[test]
+#[ignore]
+fn debug_r4188_p_offset() {
+    use zero_css_parser::Parser as CssParser;
+    use zero_dom::parse_html;
+    use zero_layout_engine::LayoutEngine;
+    use zero_style_system::StyleSystem;
+    // 模拟 definite-sizes-001-ref：默认 margin 的 body + p + 100 方块
+    let html = r#"<html><head><style>div { width: 100px; height: 100px; background: green; }</style></head>
+<body><p>Test passes if you see a green 100px x 100px square, and no red</p><div></div></body></html>"#;
+    let doc = parse_html(html);
+    let stylesheet = CssParser::parse_stylesheet("div { width: 100px; height: 100px; background: green; }");
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[stylesheet]);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    fn dump(b: &zero_layout_engine::types::LayoutBox, depth: usize) {
+        let pad = "  ".repeat(depth);
+        println!("{pad}node={:?} y={} h={} w={}", b.node_id, b.y, b.height, b.width);
+        for c in &b.children {
+            dump(c, depth + 1);
+        }
+    }
+    dump(&result.root, 1);
+    // chromium: body margin 8; p margin 16 collapsed with body? No — body has default margin 8,
+    // p is first child → p's top margin collapses THROUGH body? body is not BFC... html/body
+    // margin 8 + p margin 16: p top margin collapses with body's? body margin = 8 (UA), p
+    // margin-top 16 → collapsed = max(8,16)=16? Chromium: html margin 0, body margin 8; p
+    // margin-top 16 collapses with body margin-top 8 → 16 → p at y=16? Actually body{margin:8px}
+    // and p{margin:16px 0}: parent-child collapse → effective top = max(8,16) = 16 → p text at 16.
+    // p height = 1 line ≈ 18-19px → p bottom ≈ 35; p margin-bottom 16 → div top = 51.
+    // ZW: check where div lands.
+}
+
+/// R4188 勘察二：flexbox-definite-sizes-003 像素 diff 带（定位偏移量）。
+#[test]
+#[ignore]
+fn debug_r4188_ds003_pixels() {
+    let case_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("wpt-data/css/css-flexbox/flexbox-definite-sizes-003.html");
+    let ref_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("wpt-data/css/css-flexbox/flexbox-definite-sizes-001-ref.html");
+    let html = std::fs::read_to_string(&case_path).expect("read test html");
+    let ref_html = std::fs::read_to_string(&ref_path).expect("read ref html");
+    let cfg = crate::reftest::ReftestConfig::default();
+    let fb = crate::reftest::tests::render_to_framebuffer_with_base(&html, "", &cfg, case_path.parent());
+    let ref_fb = crate::reftest::tests::render_to_framebuffer_with_base(&ref_html, "", &cfg, ref_path.parent());
+    let mut row_diff = vec![0u32; fb.height as usize];
+    for (y, row) in row_diff.iter_mut().enumerate() {
+        for x in 0..fb.width as usize {
+            let i = (y * fb.width as usize + x) * 4;
+            let j = (y * ref_fb.width as usize + x) * 4;
+            let d = (fb.data[i] as i32 - ref_fb.data[j] as i32).abs()
+                + (fb.data[i + 1] as i32 - ref_fb.data[j + 1] as i32).abs()
+                + (fb.data[i + 2] as i32 - ref_fb.data[j + 2] as i32).abs();
+            if d > 30 {
+                *row += 1;
+            }
+        }
+    }
+    let mut bands: Vec<(usize, usize, u32)> = Vec::new();
+    for (y, cnt) in row_diff.iter().enumerate() {
+        if *cnt > 0 {
+            match bands.last_mut() {
+                Some(b) if b.1 + 1 == y => {
+                    b.1 = y;
+                    b.2 += *cnt;
+                }
+                _ => bands.push((y, y, *cnt)),
+            }
+        }
+    }
+    for (y0, y1, total) in &bands {
+        println!("diff band y={y0}..={y1} pixels={total}");
+    }
+    if bands.is_empty() {
+        println!("zero diff — 全绿");
+    }
+}
