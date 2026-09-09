@@ -246,6 +246,6 @@ runtime.rs 域，跨流告知已发）、shim innerWidth 跟随 SetViewport、�
 frame 深化、多窗口语义。若 screenshot 决策开放，从「待用户决策」表起新 goal 或续作。
 
 **挂账项接管（2026-09-09）**：screenshot 拍板方案①（抽公共截图转换层 crate）——新立
-goal [`docs/goal/webdriver-screenshot.md`](../../webdriver-screenshot.md)，screenshot
+goal [`docs/goal/archive/webdriver-screenshot.md`](../webdriver-screenshot.md)（已完成 2026-09-09），screenshot
 挂账项由该 goal 接管；其余挂账项（定位策略扩展、frame 深化、多窗口语义、renderer
 document_generation 根治、shim innerWidth）仍开放，未被接管。

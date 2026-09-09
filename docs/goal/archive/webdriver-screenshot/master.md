@@ -1,6 +1,9 @@
 # WebDriver Screenshot — 运行时控制面板（master.md）
 
-**入口文档**: [../webdriver-screenshot.md](../webdriver-screenshot.md)
+**状态**: ✅ 已完成（2026-09-09 DC-1~4 全满足，模式 A 整树归档；终态判定见下方
+「Done Criteria 逐项判定」节）
+
+**入口文档**: [webdriver-screenshot.md](../webdriver-screenshot.md)（已随本 goal 归档至本目录）
 **创建日期**: 2026-09-09（用户拍板方案①——抽公共截图转换层 crate，从已归档 webdriver
 goal 挂账项立项）
 **最后更新**: 2026-09-09（M3 收口：验证通道文档落地 + DC-1~4 逐项判定全满足——goal

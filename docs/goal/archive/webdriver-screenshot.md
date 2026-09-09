@@ -2,7 +2,7 @@
 
 **版本**: v1.0
 **日期**: 2026-09-09
-**状态**: Active
+**状态**: ✅ Completed（2026-09-09 归档至 [archive/webdriver-screenshot/](archive/webdriver-screenshot/)；M1+M2+M3 全完成，DC-1~4 逐项判定全满足——公共转换层 crate `zero-paint-convert` 落地且 compositor/browser 双端收敛（重复 `ipc_*_to_*` 函数族零残留）、GET /session/{id}/screenshot 全链路（ViewPainted 双路消费 + 跨帧 ImageCache + PNG base64 + W3C 错误路径）+ 全链路集成测试（PNG 魔数/800×600 尺寸/像素采样）、验证通道文档落账；门禁 `make test` 各阶段全绿（唯一 FAIL 为多轮在案 etag 负载敏感 flake，隔离复跑 781/0）+ 全 workspace clippy `-D warnings` 零告警 + fmt 无 diff，终态见 archive master.md）
 **执行模式**: 轻量修复优先（永不停）；遇需用户决策项或深结构方向 → 记入「待用户决策」清单 → 跳过 → 继续其他轻量修复
 **父目标**: `docs/goal/archive/webdriver.md`（screenshot「待用户决策」项，方案①拍板 2026-09-09）
 

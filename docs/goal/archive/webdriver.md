@@ -8,7 +8,7 @@
 + 加 container-type:size 定宽容器正例/变宽反例）；组合态实测 `make test` 66 套件
 19037/0 全绿 + clippy `-D warnings` 零告警，DC-1~4 全满足，DONE 判定终态，见 archive
 master.md。**挂账项接管（2026-09-09）**：screenshot 拍板方案①（抽公共截图转换层
-crate），新 goal [webdriver-screenshot](../webdriver-screenshot.md) 接管）
+crate），新 goal [webdriver-screenshot](./webdriver-screenshot.md)（已完成 2026-09-09 归档）接管）
 **执行模式**: 轻量修复优先（永不停）；遇需用户决策项或深结构方向 → 记入「待用户决策」清单 → 跳过 → 继续其他轻量修复
 **父目标**: `docs/goal/zero-web.md`（DC2 交互式网站可用性验证的自动化基建 + M11 端到端测试）
 
