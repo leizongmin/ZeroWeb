@@ -236,6 +236,19 @@ impl InlineFormattingContext {
                         }
                     }
                     NodeKind::Element(elem_data) => {
+                        // CSS2 §9.2.1 / CSS Display 3 §2.1：display:none 子树不生成任何盒——
+                        // 其文本不得泄入父 IFC（head-metadata 渲染链 content-067/085/131：
+                        // `head{display:block}` 匿名块内 <title>/<link> 等 display:none 元素
+                        // 的文本/空盒曾作为父 IFC 文本 run 参与行盒测量，产生幻影行把
+                        // body 整体推下 ~2 行）。必须先于 br/wbr 判定（display:none 的 br
+                        // 同样不产生强制换行，CSS2 §14.1 命名实例 br{display:none}）。
+                        if styles
+                            .get(&child_id)
+                            .is_some_and(|s| matches!(s.display, DisplayValue::None))
+                        {
+                            continue;
+                        }
+
                         // `<br>` 元素产生强制换行条目
                         if elem_data.local_name() == "br" {
                             items.push(InlineItem::Br);

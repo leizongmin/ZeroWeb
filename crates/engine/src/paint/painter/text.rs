@@ -1192,7 +1192,19 @@ impl super::Painter {
                                         owner_id,
                                     );
                                 }
-                                let owner_style = styles.and_then(|s| s.get(&owner_id));
+                                // generated-content 注入文本节点持有伪元素自身样式（同
+                                // render_fragment! 宏处；CSS Pseudo 4 §2）——文本节点片段
+                                // 优先取自身 styles 条目，普通文本节点落回父元素。
+                                let owner_style = if doc
+                                    .get(fragment.node_id)
+                                    .is_some_and(|n| matches!(n.kind, NodeKind::Text(_)))
+                                {
+                                    styles
+                                        .and_then(|s| s.get(&fragment.node_id))
+                                        .or_else(|| styles.and_then(|s| s.get(&owner_id)))
+                                } else {
+                                    styles.and_then(|s| s.get(&owner_id))
+                                };
                                 let owner_variations = crate::text_metrics::paint_font_variations(
                                     &owner_style.unwrap_or(style).font_variation_settings,
                                 );
@@ -1510,6 +1522,21 @@ impl super::Painter {
                             // R3871：荷兰语 ij/IJ 双字母组语境——沿 owner 祖先链找最近 lang 属性，
                             // nl 前缀（nl / nl-NL / nl-SR…）即启用（与 style-system effective_lang
                             // 同语义）。doc 在此已为 &Document（paint_text 的 if-let 解包）。
+                            // generated-content 注入文本节点（inject_pseudo_text_nodes）在 styles
+                            // 中持有**伪元素自身样式**（CSS Pseudo 4 §2：::before 内容按伪元素
+                            // 样式着色）——文本节点片段优先取自身 styles 条目（普通 DOM 文本节点
+                            // 无条目 → 落回父元素，行为不变）。content-067/085/131：`meta:before
+                            // { content: attr(X); color: green }` 注入文本按 meta 黑色渲染 → 应绿。
+                            let owner_style_opt = if doc
+                                .get($frag_nid)
+                                .is_some_and(|n| matches!(n.kind, NodeKind::Text(_)))
+                            {
+                                styles
+                                    .and_then(|s| s.get(&$frag_nid))
+                                    .or_else(|| styles.and_then(|s| s.get(&owner_id)))
+                            } else {
+                                styles.and_then(|s| s.get(&owner_id))
+                            };
                             let dutch_digraph = {
                                 let mut found = false;
                                 let mut cur = Some(owner_id);
@@ -1523,8 +1550,7 @@ impl super::Painter {
                                 }
                                 found
                             };
-                            let frag_color = styles
-                                .and_then(|s| s.get(&owner_id))
+                            let frag_color = owner_style_opt
                                 .filter(|s| {
                                     s.color != ColorValue::CurrentColor
                                         && !matches!(
@@ -1537,7 +1563,6 @@ impl super::Painter {
                                 .unwrap_or(color);
 
                             // R1021：text-emphasis 取自片段 owner 样式（<span> 上设）。
-                            let owner_style_opt = styles.and_then(|s| s.get(&owner_id));
                             let shaping_style = owner_style_opt.unwrap_or(style);
                             let variations =
                                 crate::text_metrics::paint_font_variations(&shaping_style.font_variation_settings);

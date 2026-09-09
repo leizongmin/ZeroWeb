@@ -1392,6 +1392,39 @@ fn test_layout_no_style_fallback() {
     }
 }
 
+/// R4169（CSS2 §9.2.1 / CSS Display 3 §2.1）：display:none 子树不生成任何盒——
+/// 其文本不得泄入父 IFC 参与行盒测量（content-067/085/131：`head{display:block}`
+/// 匿名块内 `<title>` 文本曾作为父 IFC 文本 run 产生幻影行，把容器撑高 ~2 行）。
+#[test]
+fn test_r4169_display_none_subtree_skipped_in_ifc() {
+    use zero_dom::parse_html;
+
+    let doc = parse_html("<p><title>hidden words</title>Visible</p>");
+
+    let html = doc.first_child(doc.root()).unwrap();
+    let body = doc.last_child(html).unwrap();
+    let p = doc.first_child(body).unwrap();
+    let title = doc
+        .child_nodes(p)
+        .into_iter()
+        .find(|&id| doc.node_type(id) == Some(1))
+        .expect("应有 <title> 元素");
+
+    let mut styles = HashMap::new();
+    styles.insert(p, ComputedStyle::default());
+    // title{display:none}（UA 语义；此处直接构造等效计算样式）
+    let mut title_style = ComputedStyle::default();
+    title_style.display = DisplayValue::None;
+    styles.insert(title, title_style);
+
+    let mut ctx = InlineFormattingContext::new(800.0);
+    ctx.layout(&doc, p, &styles);
+
+    let fragments = ctx.all_fragments();
+    assert_eq!(fragments.len(), 1, "仅 Visible 文本产片段，实际 {fragments:?}");
+    assert_eq!(fragments[0].text, "Visible", "hidden 文本不得泄入父 IFC");
+}
+
 /// 测试 line-height: Length(24px) 覆盖默认行高。
 #[test]
 fn test_layout_fixed_line_height() {

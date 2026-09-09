@@ -282,3 +282,6 @@ css/CSS2/normal-flow/replaced-intrinsic-002.xht css/CSS2/normal-flow/replaced-in
 css/css-sizing/aspect-ratio/replaced-element-020.html css/reference/ref-filled-green-100px-square.xht == 2026-09-09 R4160 ratio-only SVG 自然比 × aspect-ratio auto 优先级
 css/css-sizing/aspect-ratio/replaced-element-015.html css/reference/ref-filled-green-100px-square.xht == 2026-09-09 R4161 inline svg 自然比 × aspect-ratio auto 优先级
 css/css-sizing/aspect-ratio/replaced-element-037.html css/css-sizing/aspect-ratio/replaced-element-037-ref.html == 2026-09-09 R4165 属性自然尺寸 × border-box 垂直 frame 平移
+css/CSS2/generated-content/content-067.xht css/CSS2/generated-content/content-047-ref.html == 2026-09-09 R4169 head 内注入文本节点渲染链——display:none 子树不泄入父 IFC + 注入文本节点伪元素样式着色
+css/CSS2/generated-content/content-085.xht css/CSS2/generated-content/content-047-ref.html == 2026-09-09 R4169 head 内注入文本节点渲染链——display:none 子树不泄入父 IFC + 注入文本节点伪元素样式着色
+css/CSS2/generated-content/content-131.xht css/CSS2/generated-content/content-047-ref.html == 2026-09-09 R4169 head 内注入文本节点渲染链——display:none 子树不泄入父 IFC + 注入文本节点伪元素样式着色
