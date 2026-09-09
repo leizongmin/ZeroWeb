@@ -2758,219 +2758,545 @@
     })(),
     // R3314：storage（Storage API + OPFS Origin Private File System）——Done Criteria §3 Tier 2 列项
     //（zero-web.md 行 80「IndexedDB + Cache API + OPFS」，OPFS 此前全缺）。estimate（配额查询，analytics 高频）+
-    // getDirectory（OPFS root）。headless 无真 OS 文件系统 → **进程内虚拟 FS 树**（内存近似，参照 clipboard
-    // IIFE store 模式）：目录节点 {kind:'dir', children:{name→node}}，文件节点 {kind:'file', data:Uint8Array}。
-    // spec https://fs.spec.whatwg.org/ + https://web.dev/file-system-access/。**诚实范围**：① 仅 OPFS
-    //（navigator.storage.getDirectory），无 showOpenFilePicker/showSaveFilePicker（用户可见文件选择器，headless 无）；
-    // ② 内存后端（非持久，跨页/进程丢）；③ 无 createSyncAccessHandle（worker 同步句柄，headless worker 无真线程）；
-    // ④ 无 permission/move/transferable。
+    // getDirectory（OPFS root）。storage-opfs M2（2026-09-09）：页面面从**进程内虚拟 FS 树**切换到
+    // `__zw_opfs` 宿主命令 → zero-storage opfs 模块真实实现（per-origin 树 + 可选落盘；见
+    // zero-page-runtime opfs_host / zero-storage opfs.rs）。**kill-switch**：`__zw_opfs` 未注册
+    //（无 Rust 宿主 / 老宿主）→ 回落内存虚拟树（M1 前行为，零回归路径）。
+    // spec https://fs.spec.whatwg.org/。**诚实范围**：① 仅 OPFS（navigator.storage.getDirectory），
+    // 无 showOpenFilePicker/showSaveFilePicker（用户可见文件选择器，headless 无）；
+    // ② 无 createSyncAccessHandle（worker 同步句柄，headless worker 无真线程）；
+    // ③ 无 permission/move/transferable。
+    // R3314：storage（Storage API + OPFS Origin Private File System）——Done Criteria §3 Tier 2 列项
+    //（zero-web.md 行 80「IndexedDB + Cache API + OPFS」，OPFS 此前全缺）。estimate（配额查询，analytics 高频）+
+    // getDirectory（OPFS root）。storage-opfs M2（2026-09-09）：页面面从**进程内虚拟 FS 树**切换到
+    // `__zw_opfs` 宿主命令 → zero-storage opfs 模块真实实现（per-origin 树 + 可选落盘；见
+    // zero-page-runtime opfs_host / zero-storage opfs.rs）。**kill-switch**：`__zw_opfs` 未注册
+    //（无 Rust 宿主 / 老宿主）→ 回落内存虚拟树（同构面，零回归路径）。
+    // spec https://fs.spec.whatwg.org/。**诚实范围**：① 仅 OPFS（navigator.storage.getDirectory），
+    // 无 showOpenFilePicker/showSaveFilePicker（用户可见文件选择器，headless 无）；
+    // ② 无 createSyncAccessHandle（worker 同步句柄，headless worker 无真线程）；
+    // ③ 无 permission/move/transferable（postMessage 克隆句柄面）。
     storage: (function () {
-      // 根目录节点（OPFS 唯一根）。
-      var root = { kind: 'dir', children: {} };
-      // 构造 FileSystemDirectoryHandle（绑定某目录节点）。
-      // 构造 FileSystemDirectoryHandle（绑定某目录节点）。
-      // R3254-C9：节点级缓存——同一目录多次获取返回同一对象（isSameEntry 判 true）。
-      function dirHandle(node, name) {
-        if (node._dh) return node._dh;
-        var h = {
-          kind: 'directory',
-          name: name || '',
-          // getFileHandle(name, {create}) → 文件句柄（create=true 不存在则建空文件）。失败 reject。
-          getFileHandle: function (n, opts) {
-            return Promise.resolve().then(function () {
-              // R3254-C14：名称校验（spec FS：空串、'.'、'..'、含 '/' → TypeError）。
-              if (!_zwFsValidName(n)) return Promise.reject(new TypeError('无效的文件名'));
-              var child = node.children[n];
-              if (child && child.kind !== 'file') return Promise.reject(new TypeError(n + ' 是目录'));
-              if (!child && !(opts && opts.create)) return Promise.reject(new TypeError(n + ' 不存在'));
-              if (!child) { child = { kind: 'file', data: new Uint8Array(0) }; node.children[n] = child; }
-              return fileHandle(child, n);
-            });
-          },
-          // getDirectoryHandle(name, {create}) → 子目录句柄。
-          getDirectoryHandle: function (n, opts) {
-            return Promise.resolve().then(function () {
-              // R3254-C14：名称校验。
-              if (!_zwFsValidName(n)) return Promise.reject(new TypeError('无效的目录名'));
-              var child = node.children[n];
-              if (child && child.kind !== 'dir') return Promise.reject(new TypeError(n + ' 是文件'));
-              if (!child && !(opts && opts.create)) return Promise.reject(new TypeError(n + ' 不存在'));
-              if (!child) { child = { kind: 'dir', children: {} }; node.children[n] = child; }
-              return dirHandle(child, n);
-            });
-          },
-          // removeEntry(name, {recursive}) → 删文件或目录（spec FS：非空目录须 recursive，
-          // 否则 InvalidModificationError——此前静默递归删除）。
-          removeEntry: function (n, opts) {
-            return Promise.resolve().then(function () {
-              // R3254-C14：名称校验。
-              if (!_zwFsValidName(n)) return Promise.reject(new TypeError('无效的名称'));
-              var child = node.children[n];
-              if (!child) return Promise.reject(new TypeError(n + ' 不存在'));
-              if (child.kind === 'dir' && !(opts && opts.recursive) && Object.keys(child.children).length > 0) {
-                return Promise.reject(_zwDomException('目录非空（需 recursive）', 'InvalidModificationError'));
-              }
-              delete node.children[n];
-              return undefined;
-            });
-          },
-          // keys() → 子项名迭代器（spec async iterable）。返数组（近似 [Symbol.asyncIterator]）。
-          keys: function () { return Promise.resolve(Object.keys(node.children)); },
-          entries: function () {
-            return Promise.resolve(Object.keys(node.children).map(function (k) {
-              var c = node.children[k];
-              return [k, c.kind === 'dir' ? dirHandle(c, k) : fileHandle(c, k)];
-            }));
-          },
-          values: function () {
-            return this.entries().then(function (es) { return es.map(function (e) { return e[1]; }); });
-          },
-          isSameEntry: function (other) { return this === other; },
-        };
-        node._dh = h;
-        return h;
+      // 全局 FileSystemHandle 类（spec instanceof 断言面；WPT iteration/isSameEntry 断言
+      // `entry[1] instanceof FileSystemFileHandle` 等）。
+      if (typeof globalThis.FileSystemFileHandle !== 'function') {
+        globalThis.FileSystemFileHandle = function FileSystemFileHandle() {};
+        globalThis.FileSystemDirectoryHandle = function FileSystemDirectoryHandle() {};
       }
       // R3254-C14：OPFS 句柄名称校验（spec FS §7：空串、'.'、'..'、含 '/' → 无效）。
       function _zwFsValidName(n) {
         return typeof n === 'string' && n.length > 0 && n !== '.' && n !== '..' && n.indexOf('/') < 0;
       }
-      // 构造 FileSystemFileHandle（绑定某文件节点）。
-      // R3254-C9：节点级句柄缓存——同一文件多次 getFileHandle 返回**同一对象**，
-      // isSameEntry 按对象同一性判 true（此前每次新建对象 → 恒 false）。
-      function fileHandle(node, name) {
-        if (node._fh) return node._fh;
-        var h = {
-          kind: 'file',
-          name: name,
-          // getFile() → Blob（读当前内容快照）。
-          getFile: function () {
-            return Promise.resolve().then(function () {
-              return new Blob([node.data.slice()], { type: 'application/octet-stream' });
-            });
-          },
-          // createWritable({keepExistingData}) → FileSystemWritableFileStream（spec FS §8.5）。
-          // R3315：内部模型「缓冲 Uint8Array + 文件指针 pos」（替代 R3314 chunks 数组，支持 seek/truncate/position）。
-          // keepExistingData:false（默认）→ 空缓冲（整体替换，spec 默认）；true → 复制原文件内容为初始缓冲。
-          // write(data) 在 pos 写入（自动扩展缓冲，pos 前进）；write({position,data}) 先 seek(position) 再写；
-          // seek(offset) 移 pos（不足自动扩展填零）；truncate(size) 缓冲截断/扩展；close 缓冲落 node.data。
-          createWritable: function (opts) {
-            // 初始缓冲：keepExistingData 时复制原内容，否则空（整体替换）。
-            var buf = (opts && opts.keepExistingData) ? new Uint8Array(node.data) : new Uint8Array(0);
-            var pos = 0;
+      function toBytes(data) {
+        if (data == null) return new Uint8Array(0);
+        if (typeof data === 'string') return _zw_utf8_encode(data);
+        if (data instanceof Uint8Array) return new Uint8Array(data);
+        if (data instanceof Blob) return _zw_blobBytes(data).slice(); // 同步取（headless 近似）
+        if (data instanceof ArrayBuffer) return new Uint8Array(data);
+        if (data.byteLength != null && data.buffer != null) {
+          return new Uint8Array(data.buffer, data.byteOffset || 0, data.byteLength);
+        }
+        return new Uint8Array(0);
+      }
+      // spec async iterator 骨架：{next()} 快照数组 + [Symbol.asyncIterator] 自返。
+      function asyncIterator(pullItems) {
+        var items = null;
+        var index = 0;
+        function pull() {
+          if (items === null) items = pullItems();
+          if (index >= items.length) return Promise.resolve({ done: true, value: undefined });
+          return Promise.resolve({ done: false, value: items[index++] });
+        }
+        return { next: pull, [Symbol.asyncIterator]: function () { return this; } };
+      }
+      // 宿主命令可用 → 真实 Rust 后端（per-origin；宿主从 page_url 推导 origin，页面不可伪造）。
+      if (typeof globalThis.__zw_opfs === 'function') {
+        return (function () {
+          // 同步 wire 调用（`__zw_opfs_ok:` / `__zw_opfs_error:Name|code|message`），
+          // 照 IndexedDB `_zwIDBHostCall` 约定。错误映射：TypeError|0| → JS TypeError；
+          // 其余 → DOMException(name)（WPT assert_throws_dom 同时断言 name 与 legacy code）。
+          function hostCall(request) {
+            var wire = String(globalThis.__zw_opfs(JSON.stringify(request)));
+            var okPrefix = '__zw_opfs_ok:';
+            var errorPrefix = '__zw_opfs_error:';
+            if (wire.indexOf(okPrefix) === 0) {
+              return JSON.parse(wire.slice(okPrefix.length));
+            }
+            if (wire.indexOf(errorPrefix) === 0) {
+              var detail = wire.slice(errorPrefix.length);
+              var parts = detail.split('|');
+              var name = parts[0] || 'UnknownError';
+              var code = parseInt(parts[1], 10);
+              var message = parts.length >= 3 ? parts.slice(2).join('|') : detail;
+              if (name === 'TypeError') throw new TypeError(message);
+              var ex = new globalThis.DOMException(message, name);
+              // legacy code（WPT assert_throws_dom 断言 e.code === 期望值）。
+              try { if (!isNaN(code)) ex.code = code; } catch (_e) {}
+              throw ex;
+            }
+            throw new globalThis.DOMException('Invalid OPFS host response.', 'UnknownError');
+          }
+          // getUniqueId 按路径+kind 键控缓存（Rust 侧每次生成新 GUID；「同路径同 ID /
+          // 写后不变」由本缓存保证；file/dir 同路径异 ID → kind 入键，WPT 断言）。
+          var uniqueIds = {};
+          function uniqueId(path, kind) {
+            var key = kind + ':' + JSON.stringify(path);
+            if (!uniqueIds[key]) {
+              uniqueIds[key] = hostCall({ op: 'getUniqueId', path: path }).uniqueId;
+            }
+            return uniqueIds[key];
+          }
+          function handleCommon(proto, path, kind) {
+            var h = Object.create(proto);
+            h.kind = kind;
+            h.name = path.length > 0 ? path[path.length - 1] : '';
+            h.path = path;
+            h.isSameEntry = function (other) {
+              var self = this;
+              return Promise.resolve().then(function () {
+                // 路径同一性 = 同一条目（同路径同 kind 判 true，与获取次数无关）。
+                return !!other && typeof other.path !== 'undefined' && other.kind === self.kind &&
+                  JSON.stringify(other.path) === JSON.stringify(self.path);
+              });
+            };
+            h.remove = function (opts) {
+              var self = this;
+              return Promise.resolve().then(function () {
+                hostCall({ op: 'remove', path: self.path, recursive: !!(opts && opts.recursive) });
+                return undefined;
+              });
+            };
+            h.getUniqueId = function () {
+              var self = this;
+              return Promise.resolve().then(function () { return uniqueId(self.path, self.kind); });
+            };
+            return h;
+          }
+          function dirHandle(path) {
+            var h = handleCommon(globalThis.FileSystemDirectoryHandle.prototype, path, 'directory');
+            h.getFileHandle = function (n, opts) {
+              var self = this;
+              return Promise.resolve().then(function () {
+                var r = hostCall({ op: 'getFileHandle', parent: self.path, name: n, create: !!(opts && opts.create) });
+                return fileHandle(r.path);
+              });
+            };
+            h.getDirectoryHandle = function (n, opts) {
+              var self = this;
+              return Promise.resolve().then(function () {
+                var r = hostCall({ op: 'getDirectoryHandle', parent: self.path, name: n, create: !!(opts && opts.create) });
+                return dirHandle(r.path);
+              });
+            };
+            h.removeEntry = function (n, opts) {
+              var self = this;
+              return Promise.resolve().then(function () {
+                hostCall({ op: 'removeEntry', parent: self.path, name: n, recursive: !!(opts && opts.recursive) });
+                return undefined;
+              });
+            };
+            h.resolve = function (child) {
+              var self = this;
+              return Promise.resolve().then(function () {
+                if (!child || typeof child.path === 'undefined') return null;
+                var r = hostCall({ op: 'resolve', dir: self.path, child: child.path });
+                return r.path;
+              });
+            };
+            h.entries = function () {
+              var self = this;
+              return asyncIterator(function () {
+                return hostCall({ op: 'listEntries', dir: self.path }).entries.map(function (entry) {
+                  var child = dirOrFile(entry, self.path);
+                  return [entry.name, child];
+                });
+              });
+            };
+            h.keys = function () {
+              var self = this;
+              return asyncIterator(function () {
+                return hostCall({ op: 'listEntries', dir: self.path }).keys;
+              });
+            };
+            h.values = function () {
+              var self = this;
+              return asyncIterator(function () {
+                return hostCall({ op: 'listEntries', dir: self.path }).entries.map(function (entry) {
+                  return dirOrFile(entry, self.path);
+                });
+              });
+            };
+            // 句柄本身可 await-iterate（= entries()：直接迭代产出 [name, handle] 对；
+            // WPT `for await (let entry of root)` 断言 Array.isArray(entry)）。
+            h[Symbol.asyncIterator] = function () { return this.entries(); };
+            return h;
+          }
+          function fileHandle(path) {
+            var h = handleCommon(globalThis.FileSystemFileHandle.prototype, path, 'file');
+            // getFile() → Blob（name/size/lastModified 元数据 + 内容快照；WPT getFile 断言面）。
+            h.getFile = function () {
+              var self = this;
+              return Promise.resolve().then(function () {
+                var f = hostCall({ op: 'getFile', path: self.path });
+                var blob = new Blob([new Uint8Array(f.data)], { type: 'application/octet-stream' });
+                blob.name = f.name;
+                blob.lastModified = f.lastModified;
+                return blob;
+              });
+            };
+            h.createWritable = function (opts) {
+              var self = this;
+              return Promise.resolve().then(function () {
+                var keep = !!(opts && opts.keepExistingData);
+                var r = hostCall({ op: 'createWritable', path: self.path, keepExistingData: keep });
+                return writableFileStream(r.streamId);
+              });
+            };
+            return h;
+          }
+          function dirOrFile(entry, parentPath) {
+            var childPath = parentPath.concat([entry.name]);
+            return entry.kind === 'directory' ? dirHandle(childPath) : fileHandle(childPath);
+          }
+          // FileSystemWritableFileStream：真 WritableStream 子类面（getWriter/pipeTo/locked）
+          // + write/seek/truncate/close/abort 直通方法。sink.write 映射 hostCall streamWrite
+          //（write/seek/truncate 命令），sink.close 映射 streamClose（单次成功语义在 Rust 侧）。
+          function writableFileStream(streamId) {
             var closed = false;
-            var aborted = false;
-            function guard() { if (closed) return Promise.reject(new TypeError('stream 已关闭')); return null; }
-            // 把 string/Blob/TypedArray/BufferSource 归一为 Uint8Array。
-            // R3254-C3：字符串按 UTF-8 编码（此前 `charCodeAt & 0xff` latin-1 截断，中文乱码）。
-            // R3254-C4：TypedArray/DataView 只取**视图范围**（byteOffset+byteLength）——此前
-            // `new Uint8Array(data.buffer)` 复制整个底层 ArrayBuffer，subarray 视图越界写入。
-            function toBytes(data) {
-              if (data == null) return new Uint8Array(0);
-              if (typeof data === 'string') return _zw_utf8_encode(data);
-              if (data instanceof Uint8Array) return new Uint8Array(data);
-              if (data instanceof Blob) return _zw_blobBytes(data).slice(); // 同步取（headless 近似）
-              if (data instanceof ArrayBuffer) return new Uint8Array(data);
-              if (data.byteLength != null && data.buffer != null) {
-                return new Uint8Array(data.buffer, data.byteOffset || 0, data.byteLength);
-              }
-              return new Uint8Array(0);
+            function syntaxError(message) {
+              // WriteParams 缺参 → SyntaxError DOMException（WPT promise_rejects_dom 断言；
+              // SyntaxError 为新式异常 → legacy code 0）。
+              return new globalThis.DOMException(message, 'SyntaxError');
             }
-            // 在 pos 写入 bytes（自动扩展缓冲，不截断既有超出内容）。
-            function writeAt(curPos, bytes) {
-              var need = curPos + bytes.length;
-              if (need > buf.length) {
-                var grown = new Uint8Array(need);
-                grown.set(buf);
-                buf = grown;
-              }
-              for (var k = 0; k < bytes.length; k++) buf[curPos + k] = bytes[k];
+            // 命令对象判定：Blob 有 .type（MIME 字符串）——用「非 Blob 且有 string type」
+            // 界定 WriteParams 命令对象。
+            function isCommandObject(chunk) {
+              return chunk && typeof chunk === 'object' && typeof chunk.type === 'string' && !(chunk instanceof Blob);
             }
-            return Promise.resolve({
-              // write(data) 或 write({type:'write', position, data}) 或 write({type:'seek', position}) 或 write({type:'truncate', size})。
-              write: function (data) {
-                var g = guard(); if (g) return g;
-                // 对象形式：write({type:'seek'|'truncate'|'write', position/size/data})。
-                if (data && typeof data === 'object' && typeof data.type === 'string') {
-                  if (data.type === 'seek') {
-                    // R3254-C2：负 position → TypeError（spec FS §8.5）；此前负值静默丢数据
-                    //（负索引写 Uint8Array 是 no-op）。
-                    if (typeof data.position === 'number' && data.position < 0) {
-                      return Promise.reject(new TypeError('seek: position 不能为负'));
-                    }
-                    pos = (data.position | 0);
-                    return Promise.resolve();
+            // 参数错误路径：write 拒绝 → stream error（WritableStream 语义：errored 后
+            // 释放锁并解除 removeEntry 守卫）→ abort 宿主流槽（open-writer 计数归还）。
+            function rejectInvalid(error) {
+              if (!closed) {
+                closed = true;
+                try { hostCall({ op: 'streamAbort', streamId: streamId }); } catch (_e) {}
+              }
+              return Promise.reject(error);
+            }
+            function typeErrorAfterClose() {
+              // WPT write/truncate-after-close 断言 promise_rejects_js TypeError。
+              return new TypeError('stream 已关闭');
+            }
+            var sink = {
+              write: function (chunk) {
+                if (closed) return Promise.reject(typeErrorAfterClose());
+                // 对象命令形式 write({type:'seek'|'truncate'|'write', position/size/data})。
+                if (isCommandObject(chunk)) {
+                  if (chunk.type === 'seek') {
+                    if (chunk.position === undefined) return rejectInvalid(syntaxError('seek without position'));
+                    if (typeof chunk.position === 'number' && chunk.position < 0) return rejectInvalid(new TypeError('seek: position 不能为负'));
+                    return Promise.resolve(hostCall({ op: 'streamWrite', streamId: streamId, command: { type: 'seek', position: chunk.position } }));
                   }
-                  if (data.type === 'truncate') {
-                    var sz = data.size | 0;
-                    if (sz < 0) sz = 0;
-                    var tr = new Uint8Array(sz);
-                    tr.set(buf.subarray(0, Math.min(sz, buf.length)));
-                    buf = tr;
-                    if (pos > sz) pos = sz;
-                    return Promise.resolve();
+                  if (chunk.type === 'truncate') {
+                    if (chunk.size === undefined) return rejectInvalid(syntaxError('truncate without size'));
+                    return Promise.resolve(hostCall({ op: 'streamWrite', streamId: streamId, command: { type: 'truncate', size: chunk.size } }));
                   }
                   // type === 'write'
-                  // R3254-C2：显式 position 负 → TypeError（同 seek）。
-                  if (typeof data.position === 'number' && data.position < 0) {
-                    return Promise.reject(new TypeError('write: position 不能为负'));
-                  }
-                  var wpos = (typeof data.position === 'number') ? (data.position | 0) : pos;
-                  var wb = toBytes(data.data);
-                  writeAt(wpos, wb);
-                  pos = wpos + wb.length;
-                  return Promise.resolve();
+                  if (typeof chunk.position === 'number' && chunk.position < 0) return rejectInvalid(new TypeError('write: position 不能为负'));
+                  if (chunk.data === undefined) return rejectInvalid(syntaxError('write without data'));
+                  if (chunk.data === null) return rejectInvalid(new TypeError('write with null data'));
+                  return Promise.resolve(hostCall({ op: 'streamWrite', streamId: streamId, command: { type: 'write', position: chunk.position, data: Array.prototype.slice.call(toBytes(chunk.data)) } }));
                 }
-                // 简单形式：write(data) 在 pos 写。
-                var b = toBytes(data);
-                writeAt(pos, b);
-                pos += b.length;
-                return Promise.resolve();
-              },
-              seek: function (offset) {
-                var g = guard(); if (g) return g;
-                // R3254-C2：负 offset → TypeError。
-                if (typeof offset === 'number' && offset < 0) {
-                  return Promise.reject(new TypeError('seek: offset 不能为负'));
-                }
-                pos = (offset | 0);
-                return Promise.resolve();
-              },
-              truncate: function (size) {
-                var g = guard(); if (g) return g;
-                var tz = (size | 0); if (tz < 0) tz = 0;
-                var tn = new Uint8Array(tz);
-                tn.set(buf.subarray(0, Math.min(tz, buf.length)));
-                buf = tn;
-                if (pos > tz) pos = tz;
-                return Promise.resolve();
+                // 简单形式 write(data)；null/undefined → TypeError（WPT WriteParams null data 面）。
+                if (chunk == null) return rejectInvalid(new TypeError('write with null data'));
+                return Promise.resolve(hostCall({ op: 'streamWrite', streamId: streamId, command: { type: 'write', position: null, data: Array.prototype.slice.call(toBytes(chunk)) } }));
               },
               close: function () {
-                // R3254-C10：abort 后 close → InvalidStateError（spec：abort 放弃的缓冲不得提交）。
-                if (aborted) return Promise.reject(new TypeError('stream 已 abort'));
+                if (closed) return Promise.reject(typeErrorAfterClose());
                 closed = true;
-                node.data = buf;
-                return Promise.resolve();
+                return Promise.resolve(hostCall({ op: 'streamClose', streamId: streamId }));
               },
-              abort: function () { closed = true; aborted = true; return Promise.resolve(); },
-            });
-          },
-          isSameEntry: function (other) { return this === other; },
-        };
-        node._fh = h;
-        return h;
+              abort: function () {
+                closed = true;
+                return Promise.resolve(hostCall({ op: 'streamAbort', streamId: streamId }));
+              },
+            };
+            var stream = new WritableStream(sink);
+            // 直通方法（spec：FileSystemWritableFileStream 兼有 WritableStream 面 + 直 write/seek/
+            // truncate/close 面——不经 getWriter 锁，直接驱动同一 sink）。
+            stream.write = sink.write;
+            stream.seek = function (position) {
+              if (closed) return Promise.reject(typeErrorAfterClose());
+              if (typeof position === 'number' && position < 0) return Promise.reject(new TypeError('seek: position 不能为负'));
+              return sink.write({ type: 'seek', position: position });
+            };
+            stream.truncate = function (size) {
+              if (typeof size !== 'number') return rejectInvalid(syntaxError('truncate without size'));
+              if (closed) return Promise.reject(typeErrorAfterClose());
+              return sink.write({ type: 'truncate', size: size });
+            };
+            stream.close = sink.close;
+            return stream;
+          }
+          return {
+            estimate: function () {
+              return Promise.resolve().then(function () {
+                var usage = hostCall({ op: 'estimate' }).usage;
+                return { usage: usage, quota: 1024 * 1024 * 100 };
+              });
+            },
+            getDirectory: function () {
+              return Promise.resolve().then(function () {
+                hostCall({ op: 'getDirectory' });
+                return dirHandle([]);
+              });
+            },
+          };
+        })();
       }
-      return {
-        // estimate() → 配额查询（analytics/存储压力检测高频）。headless 静态近似（usage 按虚拟 FS 字节数估）。
-        estimate: function () {
-          var bytes = 0;
-          (function count(n) { if (n.kind === 'file') bytes += n.data.length; else for (var k in n.children) count(n.children[k]); })(root);
-          return Promise.resolve({ usage: bytes, quota: 1024 * 1024 * 100 });
-        },
-        // getDirectory() → OPFS root 句柄（spec 返 Promise<FileSystemDirectoryHandle>）。
-        getDirectory: function () { return Promise.resolve(dirHandle(root, '')); },
-      };
-    })(),
-    // sendBeacon（R2931）——页面卸载/后台分析 beacon（fire-and-forget POST，analytics/RUM 高频：GA 等
+      // ── kill-switch 回退：内存虚拟树（`__zw_opfs` 未注册时的 no-storage 路径；M1 前行为）──
+      // 结构与真实路径同形（路径句柄 + async iterator + DOMException），数据进程内、不持久化。
+      return (function () {
+        // 目录 = {}（键 → 子节点），文件 = 字节数组。kind 由值类型判（数组=文件 / 对象=目录）。
+        var memTree = {};
+        function memNode(path) {
+          var node = memTree;
+          for (var i = 0; i < path.length; i++) {
+            if (!node || typeof node !== 'object' || Array.isArray(node)) return null;
+            node = node[path[i]];
+          }
+          return node === undefined ? null : node;
+        }
+        function memWrite(path, bytes) {
+          var node = memTree;
+          for (var i = 0; i < path.length - 1; i++) {
+            if (!node[path[i]]) node[path[i]] = {};
+            node = node[path[i]];
+          }
+          node[path[path.length - 1]] = bytes;
+        }
+        function memDelete(path) {
+          var node = memTree;
+          for (var i = 0; i < path.length - 1; i++) {
+            if (!node[path[i]]) return;
+            node = node[path[i]];
+          }
+          delete node[path[path.length - 1]];
+        }
+        function memNames(path) {
+          var node = memNode(path);
+          if (node && !Array.isArray(node)) return Object.keys(node).sort();
+          return [];
+        }
+        function memKind(path) {
+          if (path.length === 0) return 'directory';
+          var node = memNode(path);
+          if (node === null) return null;
+          return Array.isArray(node) ? 'file' : 'directory';
+        }
+        function handleCommon(path, kind) {
+          var h = Object.create(kind === 'file' ? globalThis.FileSystemFileHandle.prototype : globalThis.FileSystemDirectoryHandle.prototype);
+          h.kind = kind;
+          h.name = path.length > 0 ? path[path.length - 1] : '';
+          h.path = path;
+          h.isSameEntry = function (other) {
+            var self = this;
+            return Promise.resolve().then(function () {
+              return !!other && typeof other.path !== 'undefined' && other.kind === self.kind &&
+                JSON.stringify(other.path) === JSON.stringify(self.path);
+            });
+          };
+          h.remove = function (opts) {
+            var self = this;
+            return Promise.resolve().then(function () {
+              if (self.path.length === 0) { memTree = {}; return undefined; }
+              if (memKind(self.path) === null) return Promise.reject(_zwDomException('不存在', 'NotFoundError'));
+              memDelete(self.path);
+              return undefined;
+            });
+          };
+          h.getUniqueId = function () {
+            var self = this;
+            return Promise.resolve().then(function () { return 'mem-' + self.kind + '-' + JSON.stringify(self.path); });
+          };
+          return h;
+        }
+        function dirHandle(path) {
+          var h = handleCommon(path, 'directory');
+          h.getFileHandle = function (n, opts) {
+            var self = this;
+            return Promise.resolve().then(function () {
+              if (!_zwFsValidName(n)) return Promise.reject(new TypeError('无效的文件名'));
+              var child = self.path.concat([n]);
+              var k = memKind(child);
+              if (k === 'directory') return Promise.reject(_zwDomException(n + ' 是目录', 'TypeMismatchError'));
+              if (k === null && !(opts && opts.create)) return Promise.reject(_zwDomException(n + ' 不存在', 'NotFoundError'));
+              if (k === null) memWrite(child, []);
+              return fileHandle(child);
+            });
+          };
+          h.getDirectoryHandle = function (n, opts) {
+            var self = this;
+            return Promise.resolve().then(function () {
+              if (!_zwFsValidName(n)) return Promise.reject(new TypeError('无效的目录名'));
+              var child = self.path.concat([n]);
+              var k = memKind(child);
+              if (k === 'file') return Promise.reject(_zwDomException(n + ' 是文件', 'TypeMismatchError'));
+              if (k === null && !(opts && opts.create)) return Promise.reject(_zwDomException(n + ' 不存在', 'NotFoundError'));
+              if (k === null) memWrite(child, {});
+              return dirHandle(child);
+            });
+          };
+          h.removeEntry = function (n, opts) {
+            var self = this;
+            return Promise.resolve().then(function () {
+              if (!_zwFsValidName(n)) return Promise.reject(new TypeError('无效的名称'));
+              var child = self.path.concat([n]);
+              if (memKind(child) === null) return Promise.reject(_zwDomException(n + ' 不存在', 'NotFoundError'));
+              var kids = memNames(child);
+              if (kids.length > 0 && !(opts && opts.recursive)) {
+                return Promise.reject(_zwDomException('目录非空（需 recursive）', 'InvalidModificationError'));
+              }
+              memDelete(child);
+              return undefined;
+            });
+          };
+          h.resolve = function (child) {
+            var self = this;
+            return Promise.resolve().then(function () {
+              if (!child || typeof child.path === 'undefined') return null;
+              var childPath = child.path;
+              if (childPath.length < self.path.length) return null;
+              for (var i = 0; i < self.path.length; i++) {
+                if (childPath[i] !== self.path[i]) return null;
+              }
+              return childPath.slice(self.path.length);
+            });
+          };
+          h.entries = function () {
+            var self = this;
+            return asyncIterator(function () {
+              return memNames(self.path).map(function (name) {
+                var k = memKind(self.path.concat([name]));
+                return [name, k === 'directory' ? dirHandle(self.path.concat([name])) : fileHandle(self.path.concat([name]))];
+              });
+            });
+          };
+          h.keys = function () {
+            var self = this;
+            return asyncIterator(function () { return memNames(self.path); });
+          };
+          h.values = function () {
+            var self = this;
+            return asyncIterator(function () {
+              return memNames(self.path).map(function (name) {
+                return memKind(self.path.concat([name])) === 'directory'
+                  ? dirHandle(self.path.concat([name]))
+                  : fileHandle(self.path.concat([name]));
+              });
+            });
+          };
+          h[Symbol.asyncIterator] = function () { return this.entries(); };
+          return h;
+        }
+        function fileHandle(path) {
+          var h = handleCommon(path, 'file');
+          h.getFile = function () {
+            var self = this;
+            return Promise.resolve().then(function () {
+              var data = memNode(self.path) || [];
+              var blob = new Blob([new Uint8Array(data)], { type: 'application/octet-stream' });
+              blob.name = self.name;
+              blob.lastModified = 0;
+              return blob;
+            });
+          };
+          h.createWritable = function (opts) {
+            var self = this;
+            return Promise.resolve().then(function () {
+              var buf = (opts && opts.keepExistingData) ? (memNode(self.path) || []).slice() : [];
+              var pos = 0;
+              var closed = false;
+              var aborted = false;
+              function writeAt(p, bytes, advance) {
+                var end = p + bytes.length;
+                while (buf.length < end) buf.push(0);
+                for (var k = 0; k < bytes.length; k++) buf[p + k] = bytes[k];
+                if (advance) pos = p + bytes.length;
+              }
+              return {
+                write: function (chunk) {
+                  return Promise.resolve().then(function () {
+                    if (closed) throw new TypeError('stream 已关闭');
+                    if (aborted) throw new TypeError('stream 已 abort');
+                    if (chunk && typeof chunk === 'object' && typeof chunk.type === 'string' && !(chunk instanceof Blob)) {
+                      if (chunk.type === 'seek') {
+                        if (typeof chunk.position === 'number' && chunk.position < 0) throw new TypeError('seek: position 不能为负');
+                        pos = chunk.position | 0;
+                        return;
+                      }
+                      if (chunk.type === 'truncate') {
+                        var sz = Math.max(0, chunk.size | 0);
+                        buf.length = sz;
+                        if (pos > sz) pos = sz;
+                        return;
+                      }
+                      if (chunk.data == null) throw new TypeError('write without data');
+                      if (typeof chunk.position === 'number' && chunk.position < 0) throw new TypeError('write: position 不能为负');
+                      var wb = toBytes(chunk.data);
+                      writeAt(chunk.position == null ? pos : (chunk.position | 0), wb, chunk.position == null);
+                      return;
+                    }
+                    if (chunk == null) throw new TypeError('write with null data');
+                    var b = toBytes(chunk);
+                    writeAt(pos, b, true);
+                  });
+                },
+                  seek: function (o) {
+                    return Promise.resolve().then(function () {
+                      if (closed) throw new TypeError('stream 已关闭');
+                      if (typeof o === 'number' && o < 0) throw new TypeError('seek: position 不能为负');
+                      pos = o | 0;
+                    });
+                  },
+                truncate: function (s) {
+                  return Promise.resolve().then(function () {
+                    if (closed) throw new TypeError('stream 已关闭');
+                    var sz = Math.max(0, s | 0);
+                    buf.length = sz;
+                    if (pos > sz) pos = sz;
+                  });
+                },
+                close: function () {
+                  return Promise.resolve().then(function () {
+                    if (closed) throw new TypeError('stream 已关闭');
+                    closed = true;
+                    memWrite(self.path, buf);
+                  });
+                },
+                abort: function () {
+                  return Promise.resolve().then(function () {
+                    closed = true;
+                    aborted = true;
+                  });
+                },
+              };
+            });
+          };
+          return h;
+        }
+        return {
+          estimate: function () {
+            var bytes = 0;
+            (function count(node) {
+              if (Array.isArray(node)) { bytes += node.length; return; }
+              if (node && typeof node === 'object') Object.keys(node).forEach(function (k) { count(node[k]); });
+            })(memTree);
+            return Promise.resolve({ usage: bytes, quota: 1024 * 1024 * 100 });
+          },
+          getDirectory: function () { return Promise.resolve(dirHandle([])); },
+        };
+      })();
+    })(),    // sendBeacon（R2931）——页面卸载/后台分析 beacon（fire-and-forget POST，analytics/RUM 高频：GA 等
     // unload 时上报）。headless 无真网络发送（避免无人值守测试依赖外部网络）→ accept-and-return-true
     //（spec：返 true = 成功入队 best-effort；data 类型不限，忽略）。url 缺省（null/undefined）→ false。
     sendBeacon: function(url, _data) {

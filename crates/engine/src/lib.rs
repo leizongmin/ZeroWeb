@@ -47,6 +47,7 @@ pub mod indexed_db_bridge;
 pub mod js_dom_bridge;
 #[cfg(feature = "script-runtime")]
 pub mod navigation_bridge;
+pub mod opfs_bridge;
 pub mod paint;
 pub mod pipeline;
 mod pipeline_budget;
@@ -76,6 +77,7 @@ pub use indexed_db_bridge::*;
 pub use js_dom_bridge::*;
 #[cfg(feature = "script-runtime")]
 pub use navigation_bridge::*;
+pub use opfs_bridge::*;
 pub use paint::*;
 pub use pipeline::*;
 pub use pipeline_budget::{BudgetAdvance, BudgetStep, BudgetedRenderSession};

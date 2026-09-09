@@ -28,8 +28,10 @@ pub use html_actions::{
 };
 pub mod cache_storage_host;
 pub mod indexed_db_host;
+pub mod opfs_host;
 pub use cache_storage_host::cache_storage_handler;
 pub use indexed_db_host::indexed_db_handler;
+pub use opfs_host::opfs_handler;
 pub mod service_worker_manager;
 pub use service_worker_manager::{
     LocalServiceWorkerHost, ServiceWorkerClientMessageDispatch, ServiceWorkerFetchDispatch,

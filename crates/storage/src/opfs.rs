@@ -339,8 +339,9 @@ impl OpfsFileSystem {
 
     /// `removeEntry(parent, name, {recursive})` — 删除子项。
     ///
-    /// 非空目录非 recursive → InvalidModificationError；目标（或子树）有打开流 →
-    /// NoModificationAllowedError；不存在 → NotFoundError。
+    /// 目标（或子树）有打开流 → NoModificationAllowedError（先于非空判定，spec/
+    /// WPT「while a containing file has an open writable」断言 NoModificationAllowed）；
+    /// 非空目录非 recursive → InvalidModificationError；不存在 → NotFoundError。
     pub fn remove_entry(&mut self, parent: &[String], name: &str, recursive: bool) -> Result<(), OpfsError> {
         if !is_valid_name(name) {
             return Err(OpfsError::type_error(format!("无效的名称 {name:?}")));
@@ -350,6 +351,7 @@ impl OpfsFileSystem {
         let node = self
             .resolve(&path)
             .ok_or_else(|| OpfsError::not_found(format!("{name} 不存在")))?;
+        self.ensure_no_open_writer(&path)?;
         if node.is_dir() {
             let non_empty = matches!(node, OpfsNode::Dir(children) if !children.is_empty());
             if non_empty && !recursive {
@@ -358,16 +360,18 @@ impl OpfsFileSystem {
                 )));
             }
         }
-        self.ensure_no_open_writer(&path)?;
         self.dir_mut(parent).remove(name);
         Ok(())
     }
 
     /// `FileSystemHandle.remove({recursive})` — 句柄自删（文件或目录）。
+    ///
+    /// 根删除（Chromium 沙箱根扩展，WPT remove 域断言）→ 清空整树。
     pub fn remove(&mut self, path: &[String], recursive: bool) -> Result<(), OpfsError> {
         if path.is_empty() {
-            // 根不可删（spec：沙箱根 remove 是 Chromium 扩展；本实现拒绝）。
-            return Err(OpfsError::invalid_modification("不能删除根目录"));
+            self.open_writers.clear();
+            self.root = OpfsNode::new_dir();
+            return Ok(());
         }
         let (parent, name) = path.split_at(path.len() - 1);
         self.remove_entry(parent, &name[0].clone(), recursive)
@@ -403,6 +407,11 @@ impl OpfsFileSystem {
         }
     }
 
+    /// 路径是否为（现有）目录节点（含空目录与根）。
+    pub fn is_directory(&self, path: &[String]) -> bool {
+        self.resolve(path).is_some_and(OpfsNode::is_dir)
+    }
+
     /// `getFile(path)` — 元数据 + 内容快照。
     pub fn get_file(&self, path: &[String]) -> Result<OpfsFileMetadata, OpfsError> {
         let node = self.resolve(path).ok_or_else(|| OpfsError::not_found("文件不存在"))?;
@@ -423,7 +432,9 @@ impl OpfsFileSystem {
             Some(OpfsNode::File(data)) if keep_existing_data => data.bytes.clone(),
             Some(OpfsNode::File(_)) => Vec::new(),
             Some(OpfsNode::Dir(_)) => return Err(OpfsError::type_mismatch("路径是目录")),
-            None => Vec::new(),
+            // 句柄指向的文件已被删除（removeEntry 后 createWritable 不重建，spec：
+            // 句柄绑定已失效）→ NotFoundError（WPT「createWritable after removeEntry」）。
+            None => return Err(OpfsError::not_found("文件不存在")),
         };
         *self.open_writers.entry(path.to_vec()).or_insert(0) += 1;
         let id = self.next_stream_id;

@@ -127,18 +127,20 @@ fn test_opfs_directory_and_remove_r3314() {
                return root.getDirectoryHandle('docs', { create: true }).then(function (dh) {\
                  return dh.getFileHandle('a.txt', { create: true });\
                }).then(function () {\
-                 /* root.keys 列举子项（应含 'docs'）*/\
-                 return root.keys();\
-               }).then(function (ks) {\
-                 globalThis.__rootKeys = String(ks.join(','));\
-                 /* removeEntry 删子目录（非空须 recursive——R3254-C14 spec 语义）*/\
-                 return root.removeEntry('docs', { recursive: true });\
-               }).then(function () {\
-                 return root.keys();\
-               }).then(function (ks2) {\
-                 globalThis.__afterRemove = String(ks2.join(','));\
-                 /* estimate 配额查询 */\
-                 return navigator.storage.estimate();\
+                 /* root.keys 列举子项（应含 'docs'）——M2 起 spec async iterator 语义，
+                   全收集后 join（原数组近似随 WPT 断言面退役）*/\
+                 return (async function () {\
+                   var names = [];\
+                   for await (var k of root.keys()) names.push(k);\
+                   globalThis.__rootKeys = String(names.sort().join(','));\
+                   /* removeEntry 删子目录（非空须 recursive——R3254-C14 spec 语义）*/\
+                   await root.removeEntry('docs', { recursive: true });\
+                   var after = [];\
+                   for await (var k2 of root.keys()) after.push(k2);\
+                   globalThis.__afterRemove = String(after.join(','));\
+                   /* estimate 配额查询 */\
+                   return navigator.storage.estimate();\
+                 })();\
                }).then(function (est) {\
                  globalThis.__hasQuota = String(est && typeof est.quota === 'number');\
                  globalThis.__ok = 'ok';\

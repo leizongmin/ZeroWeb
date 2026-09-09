@@ -2,7 +2,7 @@
 
 **入口文档**: [../storage-opfs.md](../storage-opfs.md)
 **创建日期**: 2026-09-07（goal 拆分 bootstrap）
-**最后更新**: 2026-09-09（M1 完成——WPT 基线建立 + opfs 模块骨架）
+**最后更新**: 2026-09-09（M2 切片 1 完成——JS 接线 + Rust 真实后端，通过率 36%→95%）
 
 ---
 
@@ -58,8 +58,26 @@
   （truncate 钳指针 / 显式 position 不前进指针 / 单 close 成功 / abort 弃缓冲）+
   is_valid_name + generate_unique_id（UUID v4）+ OpfsPersistence（per-origin 落盘，
   照 cache_api 模式：JSON + 临时文件 + rename + fsync + 中断恢复）+ 19 个单测
-- ⚠️ JS 接线未动（`part02.js` 仍是内存虚拟树）——**M2 核心**
-- ⚠️ estimate 未接 usage_bytes；getFile 元数据接线未动
+- ✅ **M2 切片 1 已落（2026-09-09）**：
+  - engine `opfs_bridge.rs`：`OpfsBridge` + `OpfsHandler` wire 契约（照 cache_storage_bridge），
+    注册 `__zw_opfs`（`__zw_opfs_ok:` / `__zw_opfs_error:Name|code|message`）
+  - page-runtime `opfs_host.rs`：JSON 请求 dispatch → per-origin OpfsFileSystem；
+    `opfs_handler(Option<root>)`——Some=落盘 / None=内存；磁盘错误降级内存不 panic；
+    6 个 host 单测（含持久化重开恢复）
+  - webview 接线：`IndexedDbOwner` 增 `opfs_root`（persistent owner → `<root>/OPFS`，
+    in-memory owner → None）；`WebView` 注册 `opfs_bridge`（ensure_sandbox 统一注册点）
+  - part02.js navigator.storage 段重写（**kill-switch**：`__zw_opfs` 未注册 → 内存虚拟树
+    回退路径，同构面）：句柄=路径+kind、async iterator 全家（keys/values/entries/句柄
+    直迭代=entries 对）、真 WritableStream 子类（getWriter/pipeTo/locked + write/seek/
+    truncate/close 直通）、SyntaxError 缺参面、全局 FileSystem*Handle 构造器、getFile
+    Blob 元数据（name/lastModified）
+
+## M2 后 WPT 成绩（2026-09-09）
+
+- **13 用例 / 133 subtests：126 Pass / 7 Fail（95%）**——基线 48/85（36%），
+  净 +78；证据 `evidence/2026-09-09-fs-m2-rust-backend.{md,json}`
+- 剩余 7 失败：postMessage 克隆 ×3（skip 域）、上游 pinned-rev 用例签名缺陷 ×1、
+  blob 失效快照 ×1（M3 深化）、fetch response.body 流 ×2（fetch 域非本 goal）
 
 ## 缺口清单
 
@@ -67,34 +85,38 @@
 |---|------|------|
 | P1 | WPT 用例覆盖 + 基线报告 | ✅ M1（13 用例 / 48P-85F 基线） |
 | P2 | zero-storage opfs 模块（目录树/句柄/读写流/持久化底座） | ✅ M1（骨架 + 流语义 + 持久化底座全落） |
-| P3 | JS 接线（内存虚拟树 → host 命令 → Rust；async iterator + DOMException 面） | ⬜ M2 |
-| P4 | 持久化 e2e（per-origin 落盘 + 跨会话 + engine 接线后） | ⬜ M3 |
+| P3 | JS 接线（内存虚拟树 → host 命令 → Rust；async iterator + DOMException 面） | ✅ M2 切片 1（95% 通过率，kill-switch 保留内存回退） |
+| P4 | 持久化 e2e（per-origin 落盘 + 跨会话 + engine 接线后） | ⬜ M3（webview 层已就绪，缺 e2e 断言） |
 
-## 下一步计划（M2）
+## 下一步计划（M2 收尾 + M3）
 
-1. **接线设计**：host 命令集（`__zw_opfs_*` 约定）+ origin 归属（page URL → StorageManager
-   per-origin OpfsFileSystem）+ kill-switch（env/flag 切内存版/真实版，A/B 零回归）
-2. **JS 面重构**（engine 共享面，动前再核对 git log）：句柄缓存路径化；keys/values/entries
-   改 async iterator（`Symbol.asyncIterator` + next()）；错误改 DOMException（Rust 返回
-   `name|code|message` 编码映射）；createWritable 换真 WritableStream 语义（pipeTo/getWriter/
-   队列）——可先走「Rust 实现 + JS 包装」渐进路线
-3. **M2 验收**：`make testharness-fs` 通过率显著抬升（聚类 1/2/3/4/5 清零为主要目标）；
-   `make test` 全绿 + clippy 零警告
-4. **M3**：持久化 e2e（engine 重建 → 读回一致）、estimate 真实化、sync access handle 评估定论
+1. **M3 切片 1 持久化 e2e**：bridge 级测试——persistent owner（`IndexedDbOwner::persistent`
+   到临时目录）写入 → 重建 WebView（同 root 新 owner）→ 读回一致；磁盘错误注入 →
+   Promise reject（照 cache_api persistence 模式）；page/WebView owner 面
+2. **M3 切片 2 estimate 真实化**：estimate() 已走 hostCall usage（真实字节数）——补断言
+   + quota 语义评估（静态 100MB 是否入 skip/近似清单注明）
+3. **M3 切片 3 sync access handle 评估定论**：worker 环境专用 + headless worker 无真线程 →
+   预期记入 skip（Support Envelope 允许「评估后决定做或记入 skip」）；记录评估理由
+4. **M3 切片 4 剩余语义**：blob 失效快照检测（低优先）、`remove` 域空目录递归语义复核；
+   skip 清单正式化（postMessage 克隆 ×3、createSyncAccessHandle*、fetch response.body
+   ×2——后两者属 fetch/stream 域，与上游用例缺陷项一并注明归属）
+5. **DC 全满足判定**：make test 全绿 + clippy 零警告 + 通过率报告持久化 + master.md 自洽
+   + archive 建立
 
 ## 里程碑状态
 
 | 里程碑 | 状态 |
 |--------|------|
 | M1 — WPT 基线建立 + opfs 模块骨架 | ✅ 2026-09-09（13 用例导入 + 48P/85F 基线 + opfs 模块 19 单测） |
-| M2 — 读写流 + JS 接线 | ⬜ 下一步（见上方计划 1-3） |
-| M3 — 持久化 + 收尾 | ⬜ |
+| M2 — 读写流 + JS 接线 | ✅ 2026-09-09 切片 1（接线完成，95% 通过率；DC-2 语义面全满足） |
+| M3 — 持久化 + 收尾 | ⬜ 下一步（e2e 断言 + estimate 断言 + SAH 评估定论 + skip 清单正式化） |
 
 ## 验证基线
 
-- WPT OPFS 面：`make testharness-fs`——13 用例 / 133 subtests，基线 48P/85F（2026-09-09，
-  内存 shim 版）；证据 `evidence/2026-09-09-fs-baseline-inmemory-shim.{md,json}`
+- WPT OPFS 面：`make testharness-fs`——13 用例 / 133 subtests；基线 48P/85F（36%，
+  内存 shim 版）→ M2 后 126P/7F（95%，Rust 后端）；证据 `evidence/2026-09-09-*`
 - 测试基线：`make test` / `make reftest` 入口（test-guard 包裹；禁止裸跑 cargo test）；
-  zero-storage opfs 单测 19 个全绿（2026-09-09）
-- 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过；
-  渲染相关变更（本目标预期无）才需 product-smoke / bench-gate
+  zero-storage opfs 单测 19 个 + page-runtime opfs host 单测 6 个 + engine bridge 测试
+  4 个全绿（2026-09-09）
+- 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过
+  （含 quickjs feature 门禁步）；渲染相关变更（本目标预期无）才需 product-smoke / bench-gate

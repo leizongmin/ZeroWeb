@@ -1,0 +1,732 @@
+[
+  [
+    "fs/root-name.https.any.js",
+    [
+      {
+        "name": "getDirectory returns a directory whose name is the empty string",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "fs/FileSystemBaseHandle-isSameEntry.https.any.js",
+    [
+      {
+        "name": "isSameEntry for identical directory handles returns true",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "isSameEntry for different directories returns false",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "isSameEntry for different handles for the same directory",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "isSameEntry for identical file handles returns true",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "isSameEntry for different files returns false",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "isSameEntry for different handles for the same file",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "isSameEntry comparing a file to a file in a different directory returns false",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "isSameEntry comparing a file to a directory returns false",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "isSameEntry comparing two files pointing to the same path returns true",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "isSameEntry comparing two directories pointing to the same path returns true",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "isSameEntry comparing a file to a directory of the same path returns false",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "isSameEntry with a file handle that was just cloned via postMessage",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"DataCloneError: function could not be cloned.\""
+      },
+      {
+        "name": "isSameEntry with a directory handle that was just cloned via postMessage",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"DataCloneError: function could not be cloned.\""
+      },
+      {
+        "name": "isSameEntry with a root directory handle that was just cloned via postMessage",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"DataCloneError: function could not be cloned.\""
+      }
+    ]
+  ],
+  [
+    "fs/FileSystemBaseHandle-getUniqueId.https.any.js",
+    [
+      {
+        "name": "identical directory handles return the same ID",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "different directories return different IDs",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "different handles for the same directory return the same ID",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "identical file handles return the same unique ID",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "different files return different IDs",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "different handles for the same file return the same ID",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "two files of the same name in different directories return different IDs",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "a file and a directory return different IDs",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "a file and a directory of the same path return different IDs",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "unique ID of a file handle does not change after writes",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "unique ID is in GUID version 4 format",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "fs/FileSystemBaseHandle-remove.https.any.js",
+    [
+      {
+        "name": "remove() to remove a file",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "remove() on an already removed file should fail",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "remove() to remove an empty directory",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "remove() on an already removed directory should fail",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "remove() on a non-empty directory should fail",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "remove() on a directory recursively should delete all sub-items",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "remove() on a file should ignore the recursive option",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "remove() while the file has an open writable fails",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "can remove the root of a sandbox file system",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "fs/FileSystemDirectoryHandle-getDirectoryHandle.https.any.js",
+    [
+      {
+        "name": "getDirectoryHandle(create=false) rejects for non-existing directories",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "getDirectoryHandle(create=true) creates an empty directory",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "getDirectoryHandle(create=false) returns existing directories",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "getDirectoryHandle(create=true) returns existing directories without erasing",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "getDirectoryHandle() when a file already exists with the same name",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "getDirectoryHandle() with empty name",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "getDirectoryHandle() with \".\" name",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "getDirectoryHandle() with \"..\" name",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "getDirectoryHandle(create=false) with a path separator when the directory exists",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "getDirectoryHandle(create=true) with a path separator",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "fs/FileSystemDirectoryHandle-getFileHandle.https.any.js",
+    [
+      {
+        "name": "getFileHandle(create=false) rejects for non-existing files",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "getFileHandle(create=true) creates an empty file for non-existing files",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "getFileHandle(create=true) creates an empty file with all valid ASCII characters in the name",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "getFileHandle(create=true) creates an empty file with non-ASCII characters in the name",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "getFileHandle(create=false) returns existing files",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "getFileHandle(create=true) returns existing files without erasing",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "getFileHandle(create=false) when a directory already exists with the same name",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "getFileHandle(create=true) when a directory already exists with the same name",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "getFileHandle() with empty name",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "getFileHandle() with \".\" name",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "getFileHandle() with \"..\" name",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "getFileHandle(create=false) with a path separator when the file exists.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "getFileHandle(create=true) with a path separator",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "fs/FileSystemDirectoryHandle-iteration.https.any.js",
+    [
+      {
+        "name": "returning early from an iteration doesn't crash",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "@@asyncIterator: full iteration works",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "entries: full iteration works",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "values: full iteration works",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "keys: full iteration works",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "iteration while iterator gets garbage collected",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "fs/FileSystemDirectoryHandle-removeEntry.https.any.js",
+    [
+      {
+        "name": "removeEntry() to remove a file",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "removeEntry() on an already removed file should fail",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "removeEntry() to remove an empty directory",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "removeEntry() on a non-empty directory should fail",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "removeEntry() on a directory recursively should delete all sub-items",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "removeEntry() with empty name should fail",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "removeEntry() with \".\" name should fail",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "removeEntry() with \"..\" name should fail",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "removeEntry() with a path separator should fail.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "removeEntry() while the file has an open writable fails",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "removeEntry() of a directory while a containing file has an open writable fails",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "createWritable after removeEntry succeeds but doesnt recreate the file",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "removeEntry() on a non-existent directory recursively should throw NotFoundError",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "fs/FileSystemDirectoryHandle-resolve.https.any.js",
+    [
+      {
+        "name": "Resolve returns empty array for same directory",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Resolve returns correct path",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Resolve returns correct path with non-ascii characters",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Resolve returns null when entry is not a child",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Resolve returns null when sibling directory name is a prefix",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "fs/FileSystemFileHandle-getFile.https.any.js",
+    [
+      {
+        "name": "getFile() provides a file that can be sliced",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "getFile() returns last modified time",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "getFile() returns expected name",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "fs/FileSystemWritableFileStream.https.any.js",
+    [
+      {
+        "name": "truncate() to shrink a file",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "truncate() to grow a file",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "createWritable() fails when parent directory is removed",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "createWritable({keepExistingData: true}): atomic writable file stream initialized with source contents",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "createWritable({keepExistingData: false}): atomic writable file stream initialized with empty file",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "createWritable() can be called on two handles representing the same file",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: parent.getDirectoryHandle is not a function\""
+      },
+      {
+        "name": "cursor position: truncate size > offset",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "cursor position: truncate size < offset",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "commands are queued, stream is unlocked after each operation",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "fs/FileSystemWritableFileStream-write.https.any.js",
+    [
+      {
+        "name": "write() with an empty blob to an empty file",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "write() a blob to an empty file",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "write() with WriteParams without position to an empty file",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "write() a string to an empty file with zero offset",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "write() a blob to an empty file with zero offset",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "write() called consecutively appends",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "write() WriteParams without position and string appends",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "write() WriteParams without position and blob appends",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "write() called with a string and a valid offset",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "write() called with a string and a valid offset after seek",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "write() called with a blob and a valid offset",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "write() called with an offset beyond the end of the file",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "write() with an empty string to an empty file",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "write() with a valid utf-8 string",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "write() with a string with unix line ending preserved",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "write() with a string with windows line ending preserved",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "write() with an empty array buffer to an empty file",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "write() with a valid typed array buffer",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "atomic writes: writable file streams make atomic changes on close",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "atomic writes: write() after close() fails",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "atomic writes: truncate() after close() fails",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "atomic writes: close() after close() fails",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "atomic writes: only one close() operation may succeed",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "getWriter() can be used",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "WriteParams: truncate missing size param",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "WriteParams: write missing data param",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "WriteParams: write null data param",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "WriteParams: seek missing position param",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "write() with an invalid blob to an empty file should reject",
+        "status": "Fail",
+        "message": "assert_unreached: Should have rejected: undefined Reached unreachable code"
+      },
+      {
+        "name": "an errored writable stream releases its lock",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "an errored writable stream should reject the next write call",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "fs/FileSystemWritableFileStream-piped.https.any.js",
+    [
+      {
+        "name": "can be piped to with a string",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "can be piped to with an ArrayBuffer",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "can be piped to with a Blob",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "can be piped to with a param object with write command",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "can be piped to with a param object with multiple commands",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "multiple operations can be queued",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "plays well with fetch",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Cannot read properties of null (reading 'pipeTo')\""
+      },
+      {
+        "name": "abort() aborts write",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Cannot read properties of null (reading 'pipeTo')\""
+      }
+    ]
+  ]
+]
