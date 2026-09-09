@@ -2758,9 +2758,12 @@ pub(super) fn apply_cross_block_line_clamp(
                 // remaining 全额放行 6 行 → 首行未下移、整盒超出约束）。仅 Auto 限值
                 //（Count(n) 无约束语义，mid-box clamp 即其义）；零 bmp 子盒减法为 no-op，
                 // 既有案（017/030/032/033/035 族）路径不变。
-                let effective_remaining = if auto_mode {
+                // R4181b：bmp_v 在 auto 分支外计算——min-height 内截判据同样需要。
+                let bmp_v = {
                     let c = &b.children[idx];
-                    let bmp_v = c.padding_top + c.border_top + c.padding_bottom + c.border_bottom;
+                    c.padding_top + c.border_top + c.padding_bottom + c.border_bottom
+                };
+                let effective_remaining = if auto_mode {
                     if bmp_v > 0.5 {
                         let avail_px = *remaining as f32 * lh - bmp_v;
                         let fit = (avail_px / lh).floor();
@@ -2781,10 +2784,30 @@ pub(super) fn apply_cross_block_line_clamp(
                     // 两者的正确宿主 = 最后完整消耗预算的兄（ellipsis host 已记录，
                     // loop 尾置 cap + clamped → paint 末行补 …）。
                     // Count(n) 限值不适用（经典 mid-box clamp 即其语义，032 的 .inner）。
+                    // R4181b（css-overflow-4 #line-clamp）：**min-height 托底的子盒同样
+                    // 不可内截**——cap 后盒高 = bmp + cap×lh，低于 min-height 解析值时盒
+                    // 无法收缩到截断高度（auto-042：min-height:3lh=96 > 0×32+0=0…实算
+                    // 2 行=64 < 96），clamp 点退到盒前（assert「constraints that increase
+                    // its height beyond that point → actual clamp point must be before it」）。
+                    // **门控**：仅内容驱动高的子盒（content_height > min-height，042 的
+                    // 4 行=128 > 96）适用——min-height 托底盒（content < min-height，044
+                    // 内层 1 行=32 < 96，嵌套 max-height 约束链的「最后可行 clamp 点」
+                    // 搜索域）不在此列，保持旧路径（auto-044 实测翻红 1.68→4.62 教训）。
+                    // lh 单位按子盒自身 used line-height 解析（min-height:3lh 常见形态）。
+                    let min_h_px = child_style.and_then(|s| match &s.min_height {
+                        LengthValue::Lh(n) => Some((*n as f32) * lh),
+                        LengthValue::Px(p) if *p != f64::INFINITY => Some(*p as f32),
+                        LengthValue::Calc(_) => None,
+                        _ => None,
+                    });
+                    let content_driven = b.children[idx].content_height > min_h_px.unwrap_or(0.0) + 0.5;
+                    let min_height_blocks_shrink = auto_mode
+                        && content_driven
+                        && min_h_px.is_some_and(|mh| mh > 0.5 && (bmp_v + effective_remaining as f32 * lh) < mh - 0.5);
                     let retreat = auto_mode
-                        && child_style.is_some_and(|s| {
+                        && (child_style.is_some_and(|s| {
                             matches!(s.display, DisplayValue::FlowRoot) || !matches!(s.height, LengthValue::Auto)
-                        });
+                        }) || min_height_blocks_shrink);
                     if retreat {
                         hide_subtree(&mut b.children[idx]);
                         exhausted = true;
