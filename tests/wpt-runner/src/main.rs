@@ -45,6 +45,8 @@ Commands:
   testharness-indexeddb  Run imported IndexedDB testharness cases (storage-indexeddb goal M1)
   testharness-cache-storage  Run pinned CacheStorage window testharness cases
   testharness-fs  Run pinned File System (OPFS) window testharness cases (storage-opfs goal M1)
+  testharness-web-components  Run imported custom-elements/shadow-dom/the-template-element
+                       testharness cases (web-components goal M1 / DC-1)
   testharness-service-workers  Run pinned Service Worker M1 core testharness cases
   testharness-service-workers-fetch  Run pinned Service Worker M2 fetch testharness cases
   testharness-service-workers-cache-storage  Run pinned Service Worker CacheStorage testharness cases
@@ -241,6 +243,7 @@ fn main() {
         "testharness-indexeddb" => cmd_testharness_indexeddb(&options, filter.as_deref()),
         "testharness-cache-storage" => cmd_testharness_cache_storage(&options, filter.as_deref()),
         "testharness-fs" => cmd_testharness_fs(&options, filter.as_deref()),
+        "testharness-web-components" => cmd_testharness_web_components(&options, filter.as_deref()),
         "testharness-service-workers" => cmd_testharness_service_workers(&options, filter.as_deref()),
         "testharness-service-workers-fetch" => cmd_testharness_service_workers_fetch(&options, filter.as_deref()),
         "testharness-service-workers-cache-storage" => {
@@ -794,6 +797,51 @@ fn cmd_testharness_fs(options: &CliOptions, filter: Option<&str>) {
         .map(std::path::PathBuf::from)
         .unwrap_or_else(|| std::path::PathBuf::from("tests/wpt-runner/wpt-data"));
     let cases = testharness::run_fs_cases(&wpt_root, filter);
+    let failed = cases.iter().any(|(_, results)| {
+        results
+            .iter()
+            .any(|result| result.status != testharness::HarnessStatus::Pass)
+    });
+
+    match options.format {
+        OutputFormat::Json => {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&cases).unwrap_or_else(|_| "[]".into())
+            );
+        }
+        OutputFormat::Text | OutputFormat::Tap => {
+            for (case, results) in &cases {
+                for result in results {
+                    println!("{:?} {case} :: {}", result.status, result.name);
+                    if let Some(message) = &result.message {
+                        println!("  {message}");
+                    }
+                }
+            }
+        }
+    }
+    if failed || cases.is_empty() {
+        std::process::exit(1);
+    }
+}
+
+/// `testharness-web-components` 子命令 — 跑导入的上游 Web Components testharness
+/// 用例（web-components goal M1 / DC-1——custom-elements / shadow-dom /
+/// the-template-element 三目录 window 可执行面基线）。
+///
+/// 用例由 `fetch-web-components-subset.sh` 按需拉到 `wpt-data/`（gitignored）。
+/// 退出码：有用例非 Pass 或用例集为空 → 1（与 testharness-dom 一致）。基线首跑
+/// 即便大量 Fail 也只用于记录通过率（agent 经 `--format json` 捕获后写 evidence/），
+/// 不作为 land 门禁。filter 按路径子串透传：make testharness-web-components
+/// FILTER=slotchange。
+fn cmd_testharness_web_components(options: &CliOptions, filter: Option<&str>) {
+    let wpt_root = options
+        .wpt_data
+        .as_deref()
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::path::PathBuf::from("tests/wpt-runner/wpt-data"));
+    let cases = testharness::run_web_components_cases(&wpt_root, filter);
     let failed = cases.iter().any(|(_, results)| {
         results
             .iter()

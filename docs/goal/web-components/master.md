@@ -2,7 +2,7 @@
 
 **入口文档**: [../web-components.md](../web-components.md)
 **创建日期**: 2026-09-07（goal 拆分 bootstrap）
-**最后更新**: 2026-09-07（立项——M1 待启动）
+**最后更新**: 2026-09-10（M1 切片 1 落地——三目录导入 + 基线 9%）
 
 ---
 
@@ -55,17 +55,30 @@ Shadow DOM 渲染级 composed tree 排除（等用户点名专项）。
 
 | # | 缺口 | 状态 |
 |---|------|------|
-| P1 | WPT 用例覆盖为零（fetch 脚本 + 三目录导入 + 基线） | ⬜ M1 |
-| P2 | CE 三缺口（upgrade no-op / whenDefined 假 resolve / adoptedCallback 无） | ⬜ M1 |
+| P1 | WPT 用例覆盖为零（fetch 脚本 + 三目录导入 + 基线） | ✅ 2026-09-10（265 案导入，基线 9%，见 evidence/2026-09-10-wc-baseline.md） |
+| P2 | CE 三缺口（upgrade no-op / whenDefined 假 resolve / adoptedCallback 无） | ⬜ M1 进行中 |
 | P3 | template DOM 层占位（parser + R145 规则收敛） | ⬜ M2 |
 | P4 | slot 全链路（IDL → 分配接线 → slotchange → assignedNodes） | ⬜ M3 |
 
+## 基线（2026-09-10 M1 切片 1）
+
+- 执行通道：`make testharness-web-components`（fetch 脚本 `fetch-web-components-subset.sh`，pin 同版）
+- 分母：265 案（custom-elements 175 / shadow-dom 62 / the-template-element 28），
+  4730 subtests——**Pass 437（9%）**（CE 9% / shadow-dom 13% / template 4%）
+- 基线失败聚类 10 类见 `evidence/2026-09-10-wc-baseline.md`。定向修复顺序按 ROI：
+  ① shadow 树 appendChild 断裂（~112）② CustomElementRegistry 接口对象（~88）
+  ③ reactions/ per-API 反应（59 案整簇）④ slot 全链路（M3 主线）⑤ template DOM 层（M2 主线）
+- skip 域：渲染级 composed tree / 几何命中 / 交互面（fetch 脚本头注释与 runner
+  `wc_case_skipped` 同一规则集），等用户点名 Shadow DOM 渲染级专项
+
 ## 下一步计划
 
-1. **M1 切片 1**：fetch 脚本（custom-elements/shadow-dom/the-template-element）+
-   用例导入 + 分类通过率基线（现有实现真水平标定；零源码改动）
-2. **M1 切片 2**：`customElements.upgrade` 真语义 + `whenDefined` Promise 真等待
-3. **M1 切片 3**：`adoptedCallback` 派发路径 + 失败聚类
+1. **M1 切片 2**：`customElements.upgrade` 真语义 + `whenDefined` Promise 真等待
+   （quickjs L2029/L2049 PoC 简化点）+ `CustomElementRegistry` 接口对象暴露
+2. **M1 切片 3**：`adoptedCallback` 派发路径（document.adoptNode / importNode 跨文档）
+   + shadow 树 appendChild 断裂修复（part05 `_handleChildren` 容器 appendChild 面）
+3. **M2 切片 1**：template DOM 层真实化（parser `get_template_contents` 真 inert
+   fragment + R145 规则收敛）
 
 **碰撞管理**：碰 engine/dom 前先 `git log --since="14 days ago" -- crates/engine/
 crates/dom/` 核对渲染流域活跃面；碰 part01.js 前与 event-loop-spec 流互相核对。
@@ -74,7 +87,7 @@ crates/dom/` 核对渲染流域活跃面；碰 part01.js 前与 event-loop-spec 
 
 | 里程碑 | 状态 |
 |--------|------|
-| M1 — WPT 基线建立 + Custom Elements 收口 | ⬜ 待启动 |
+| M1 — WPT 基线建立 + Custom Elements 收口 | ◐ 切片 1 ✅（2026-09-10）；切片 2-3 进行中 |
 | M2 — template 真实化 | ⬜ |
 | M3 — slot 全链路 + 收尾 | ⬜ |
 
@@ -89,6 +102,7 @@ crates/dom/` 核对渲染流域活跃面；碰 part01.js 前与 event-loop-spec 
 
 - 测试基线：立项时点全绿（`make test` / `make reftest` 入口，经 test-guard 包裹；
   禁止裸跑 cargo test）
-- WC 用例面：无基线（未导入/未建）
+- WC 用例面：**265 案 / 4730 subtests / 437 Pass（9%）**（2026-09-10 M1 切片 1 基线，
+  evidence/2026-09-10-wc-baseline.{md,json}；`make testharness-web-components` 重建）
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过；
   dom 结构变更轮跑 `make reftest` 作渲染面守卫

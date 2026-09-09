@@ -2445,6 +2445,154 @@ pub fn run_fs_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<H
         .collect()
 }
 
+/// Web Components goal（web-components M1 / DC-1）pinned upstream subset——三个目录的
+/// 递归 .html 用例清单。Cases are fetched by `fetch-web-components-subset.sh`（WPT
+/// 315976933870b34d6ea30e3f6643403edae678ba）into `wpt-data/`（gitignored）.
+///
+/// 清单在 runner 侧按目录递归扫描 + [`WC_SKIP_PATTERNS`] 排除重建（fetch 脚本头注释
+/// 同一份 skip 域），非逐案常量——custom-elements 175 案逐条列常量维护成本高于按名
+/// 排除，且两侧用同一规则集防漂移。skip 域（Support Envelope 排除项 + 非 window
+/// 可执行形态）：
+/// - `*-ref.html`/`*-notref.html`（reftest 参照页）
+/// - 渲染级 composed tree / 几何命中 / 交互面（slot-fallback-content-*、layout-*、
+///   directionality-*、restyle-*、shadow-style-*、invalidate-sibling-*、
+///   manual-slot-assignment-*、imperative-slot-layout-invalidation-*、
+///   user-agent-shadow*、nested-hover-*、accesskey*、touch-*、wheel-*、scroll-*、
+///   offset*、focus-within-*、caretPositionFromPoint、elementFromPoint、
+///   highlightsFromPoint、offsetX-offsetY、drag*、css-user-agent-style-sheet-*）
+/// - 非主线程/范围外形态：declarative/（declarative SD）、leaktests/、crashtests/
+///   （slice 1 不导入崩溃面）、focus*/（焦点导航交互面）、reference-target/、
+///   resources/（helper 资产非用例）
+pub const WC_TEST_SUBDIRS: &[&str] = &[
+    "custom-elements",
+    "shadow-dom",
+    "html/semantics/scripting-1/the-template-element",
+];
+
+/// [`WC_TEST_SUBDIRS`] 的用例名排除规则（fetch 脚本 skip 域的 runner 侧镜像）。
+/// 相对路径匹配；`ends_with`/`contains` 语义见各条注释。
+fn wc_case_skipped(relative: &str) -> bool {
+    let name = relative.rsplit('/').next().unwrap_or(relative);
+    let dir = relative.rsplit_once('/').map(|(d, _)| d).unwrap_or("");
+    // 非用例资产（helper .js 由 inline_local_scripts 消费，ref 页是 reftest 参照）。
+    if !name.ends_with(".html") || name.ends_with("-ref.html") || name.ends_with("-notref.html") {
+        return true;
+    }
+    // 范围外子目录（fetch 脚本不拉，双保险）。
+    for skipped_dir in [
+        "shadow-dom/declarative",
+        "shadow-dom/leaktests",
+        "shadow-dom/crashtests",
+        "shadow-dom/focus",
+        "shadow-dom/focus-navigation",
+        "shadow-dom/reference-target",
+        "shadow-dom/reference",
+        "shadow-dom/resources",
+        "custom-elements/resources",
+        "html/semantics/scripting-1/the-template-element/resources",
+    ] {
+        if dir.starts_with(skipped_dir) {
+            return true;
+        }
+    }
+    // 渲染级 composed tree / 几何命中 / 交互面（等用户点名 Shadow DOM 渲染级专项）。
+    const RENDER_PREFIXES: &[&str] = &[
+        "slot-fallback-content-",
+        "layout-",
+        "directionality-",
+        "restyle-",
+        "shadow-style-",
+        "invalidate-sibling-",
+        "manual-slot-assignment-",
+        "imperative-slot-layout-invalidation-",
+        "user-agent-shadow",
+        "nested-hover-",
+        "accesskey",
+        "touch-",
+        "wheel-",
+        "scroll-",
+        "offset",
+        "focus-within-",
+        "css-user-agent-style-sheet-",
+        "drag",
+    ];
+    if RENDER_PREFIXES.iter().any(|prefix| name.starts_with(prefix)) {
+        return true;
+    }
+    const RENDER_CONTAINS: &[&str] = &[
+        "caretPositionFromPoint",
+        "elementFromPoint",
+        "highlightsFromPoint",
+        "offsetX-offsetY",
+    ];
+    if RENDER_CONTAINS.iter().any(|needle| name.contains(needle)) {
+        return true;
+    }
+    false
+}
+
+/// Run the pinned upstream Web Components subset（web-components M1 / DC-1）。
+///
+/// 递归扫描 [`WC_TEST_SUBDIRS`] 全部主线程 .html 用例，经 [`wc_case_skipped`] 排除
+/// skip 域；仅依赖 `testharness.js` + 用例自带 helper（`resources/shadow-dom.js` /
+/// `resources/custom-elements-helpers.js` / `/html/resources/common.js` 由
+/// `inline_local_scripts` 内联）。filter 按路径子串过滤。
+pub fn run_web_components_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    let harness_source = match std::fs::read_to_string(wpt_root.join("resources/testharness.js")) {
+        Ok(source) => source,
+        Err(error) => {
+            return vec![(
+                "resources/testharness.js".to_string(),
+                vec![HarnessSubtestResult {
+                    name: "load testharness.js".into(),
+                    status: HarnessStatus::Fail,
+                    message: Some(error.to_string()),
+                }],
+            )];
+        }
+    };
+
+    let mut cases = Vec::new();
+    for subdir in WC_TEST_SUBDIRS {
+        collect_wc_cases(wpt_root, subdir, &harness_source, filter, &mut cases);
+    }
+    cases
+}
+
+/// 递归收集一个 WC 子目录下的 .html 用例（[`wc_case_skipped`] 排除）并执行。
+fn collect_wc_cases(
+    wpt_root: &Path,
+    subdir: &str,
+    harness_source: &str,
+    filter: Option<&str>,
+    cases: &mut Vec<(String, Vec<HarnessSubtestResult>)>,
+) {
+    let dir = wpt_root.join(subdir);
+    let Ok(entries) = std::fs::read_dir(&dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            let nested = format!("{subdir}/{}", entry.file_name().to_string_lossy());
+            collect_wc_cases(wpt_root, &nested, harness_source, filter, cases);
+            continue;
+        }
+        if path.extension().is_none_or(|ext| ext != "html") {
+            continue;
+        }
+        let relative = format!("{subdir}/{}", entry.file_name().to_string_lossy());
+        if wc_case_skipped(&relative) || filter.is_some_and(|filter| !relative.contains(filter)) {
+            continue;
+        }
+        let Ok(source) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        let results = run_testharness_html(wpt_root, &relative, &source, harness_source, CASE_TIMEOUT);
+        cases.push((relative, results));
+    }
+}
+
 /// Run the fixed Service Worker M1 core testharness corpus.
 pub fn run_service_worker_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
     run_service_worker_case_set(wpt_root, filter, SERVICE_WORKER_CORE_CASES)
