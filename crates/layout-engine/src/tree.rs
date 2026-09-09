@@ -2025,17 +2025,23 @@ fn build_subtree(
             // edge 侧会留下另一侧穿透 margin（driving: block-container-block-end/start-
             // self-collapsing-item-has-larger-block-start/end 四案）。bounded：height 指定
             // Px(0)（auto 自折叠需内容空判定，FIXME）；有 border/padding 不折叠。
-            let self_collapsing = matches!(computed.height, LengthValue::Px(v) if v == 0.0)
-                && matches!(
-                    computed.border_top_style,
-                    zero_style_system::property::types::BorderStyleValue::None
-                )
-                && matches!(
-                    computed.border_bottom_style,
-                    zero_style_system::property::types::BorderStyleValue::None
-                )
-                && matches!(computed.padding_top, LengthValue::Px(v) if v == 0.0)
+            // R4191（css-box-4 §margin-trim × CSS2 §8.3.1）：补 **height:auto 空元素**自折叠
+            // 臂——CSS2 §8.3.1：无 border/padding 且自身无内容（in-flow 流内容为零）的元素
+            // 其 mt/mb 自行折叠穿透。driving: block-container-block-end-self-collapsing-and-
+            // border（末子 `margin-top:222px; outline:…` 空元素，outline 非 border 不阻折叠
+            // → mb 应被 block-end trim 归零）。判定：height Auto + 无 border/padding +
+            // **无子节点**（有子则内容非空不折叠；文本子亦算内容——child_nodes 含文本）。
+            let no_box_edges = matches!(
+                computed.border_top_style,
+                zero_style_system::property::types::BorderStyleValue::None
+            ) && matches!(
+                computed.border_bottom_style,
+                zero_style_system::property::types::BorderStyleValue::None
+            ) && matches!(computed.padding_top, LengthValue::Px(v) if v == 0.0)
                 && matches!(computed.padding_bottom, LengthValue::Px(v) if v == 0.0);
+            let self_collapsing = no_box_edges
+                && (matches!(computed.height, LengthValue::Px(v) if v == 0.0)
+                    || (matches!(computed.height, LengthValue::Auto) && doc.child_nodes(dom_id).is_empty()));
             if idx == 0 && ps.margin_trim.block_start {
                 taffy_style.margin.top = zero;
                 if self_collapsing {

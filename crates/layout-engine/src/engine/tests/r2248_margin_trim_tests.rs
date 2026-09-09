@@ -193,3 +193,34 @@ fn test_margin_trim_block_multi_child_first_last_only() {
         c.margin_bottom
     );
 }
+
+/// R4191（css-box-4 §margin-trim × CSS2 §8.3.1）：height:auto 空元素自折叠臂——
+/// 末子为无 border/padding 的空 div（outline 不阻折叠）时，其 mt/mb 自折叠穿透，
+/// block-end trim 须两侧同归零。driving: block-container-block-end-self-collapsing-
+/// and-border（旧实现仅 height:Px(0) 臂命中，auto 空元素漏裁 → 容器被撑高）。
+#[test]
+fn test_margin_trim_block_end_auto_empty_self_collapsing() {
+    let html = r#"<html><body style="margin:0">
+<div id="outer" style="width:100px; height:100px; background:red; overflow:hidden">
+  <div id="ctr" style="margin-trim:block-end; border:solid green; background:red">
+    <div id="a" style="height:94px; background:green;"></div>
+    <div id="b" style="margin-top:222px; outline:solid green;"></div>
+  </div>
+</div>
+</body></html>"#;
+    let (doc, _eng, root) = compute(html);
+    let ctr = find_id(&root, &doc, "ctr").expect("ctr box");
+    // 末子空元素自折叠：mt/mb 222 均被 block-end trim 连同归零 → 容器不被 222px 撑高。
+    // 旧实现漏裁 → 容器高 ≥ 94+2+222（穿透 mb）。精确终值含折叠交互（96..100 带），
+    // 断言锚定「未撑高」即可区分新旧实现。
+    assert!(
+        ctr.height < 150.0,
+        "R4191: 自折叠末子穿透 margin 应被 trim 归零（容器不被 222px 撑高），实际 {}",
+        ctr.height
+    );
+    assert!(
+        approx(ctr.height, 100.0),
+        "R4191: 容器高应与 reftest 一致（~100，含折叠交互），实际 {}",
+        ctr.height
+    );
+}
