@@ -2410,6 +2410,16 @@ fn rules_cache_safe(rules: &[zero_css_parser::ast::Rule]) -> bool {
                     if decl.property.starts_with("--") || computed::contains_var_function(&decl.value) {
                         return false;
                     }
+                    // R4178：cq 长度单位（cqw/cqi/cqh/cqb/cqmin/cqmax）→ 键缓存不安全。
+                    // cq 单位的 computed 值依赖「最近查询容器尺寸」（容器链顶，R4124 静态
+                    // 推导），而 StyleKey 只含 tag/class/id + 父键链——同键元素在不同容器
+                    // 下会错误复用首个元素的解析值（container-units-rule-cache 实锤：两个
+                    // container-type:size 容器（100px/200px 高）内的 .half{height:50cqh}
+                    // 同键，第二容器复用 50 而非 100）。@container 规则同理（R4126 先例）。
+                    // cq 页面极少，整表禁缓存成本可忽略。
+                    if computed::declaration_has_container_unit(&decl.value) {
+                        return false;
+                    }
                 }
             }
             Rule::At(at) => {

@@ -300,6 +300,46 @@ pub(crate) fn contains_var_function(value: &str) -> bool {
     find_var_function(value, 0).is_some()
 }
 
+/// R4178：声明值是否含容器查询单位（cqw/cqi/cqh/cqb/cqmin/cqmax）。
+///
+/// cq 单位的 computed 值依赖容器链顶尺寸（R4124），StyleKey 缓存键不含容器链——
+/// 含 cq 声明的样式表禁用键缓存（同 @container 规则的 R4126 先例）。边界规则：
+/// cq 单位在 CSS 词法中恒为 `<number>` 后缀（`50cqh` / `50.5cqh` / `calc(100cqw)`）——
+/// 单位前须紧邻数字/小数点，且跳过数字段后达值首或非标识符字符（`x50cqh` 整体是
+/// ident，不命中；裸 `cqh` 无数字前缀，不命中）；单位后不得跟字母数字/连字符
+///（防 `cqh2` / `cqh-x` 更长 token 误命中）。
+pub(crate) fn declaration_has_container_unit(value: &str) -> bool {
+    const UNITS: [&str; 6] = ["cqw", "cqi", "cqh", "cqb", "cqmin", "cqmax"];
+    let lower = value.to_ascii_lowercase();
+    for unit in UNITS {
+        let mut from = 0usize;
+        while let Some(rel) = lower[from..].find(unit) {
+            let start = from + rel;
+            let end = start + unit.len();
+            let bytes = lower.as_bytes();
+            // 单位前须紧邻数字/小数点（`<number>` 部分）；裸 ident（`cqh`）不命中。
+            let has_number = start > 0 && (bytes[start - 1].is_ascii_digit() || bytes[start - 1] == b'.');
+            if has_number {
+                // 跳过数字段后须达值首或非标识符字符（排除 `x50cqh` 类整 ident）。
+                let mut num_start = start;
+                while num_start > 0 && (bytes[num_start - 1].is_ascii_digit() || bytes[num_start - 1] == b'.') {
+                    num_start -= 1;
+                }
+                let prev_ok = num_start == 0 || !bytes[num_start - 1].is_ascii_alphanumeric();
+                let next_ok = lower[end..]
+                    .chars()
+                    .next()
+                    .is_none_or(|c| !c.is_ascii_alphanumeric() && c != '-');
+                if prev_ok && next_ok {
+                    return true;
+                }
+            }
+            from = end;
+        }
+    }
+    false
+}
+
 /// 递归解析 var()。返回 None 表示该值 invalid at computed-value-time
 ///（环引用、或无回退的未定义引用）—— 上层 [`resolve_var`] 据此回退到原值。
 fn resolve_var_recursive(
@@ -960,6 +1000,28 @@ mod tests {
     use super::*;
     use crate::property::ComputedStyle;
     use zero_css_parser::values::{ColorValue, DisplayValue, LengthValue, PositionValue};
+
+    /// R4178：cq 单位探测——值形式（`50cqh`）、小数、calc 内嵌均命中；数字前缀合法
+    ///（单位语义本就紧跟数字）；更长标识符（字母前缀 / 单位后缀字母数字连字符）不误命中。
+    #[test]
+    fn r4178_declaration_has_container_unit_boundaries() {
+        // 命中：值形式 / 小数 / calc 内嵌 / 全部六单位
+        for v in [
+            "50cqh",
+            "50.5cqi",
+            "calc(100cqw - 10px)",
+            "min(10cqb, 20px)",
+            "5cqmin",
+            "5cqmax",
+            "10cqw",
+        ] {
+            assert!(declaration_has_container_unit(v), "{v} 应含 cq 单位");
+        }
+        // 不命中：无 cq / 更长标识符 / 字母前缀
+        for v in ["10px", "50%", "width", "cqh", "x50cqh", "50cqh2", "50cqh-x"] {
+            assert!(!declaration_has_container_unit(v), "{v} 不应误命中 cq 单位");
+        }
+    }
 
     #[test]
     fn test_resolve_px() {
