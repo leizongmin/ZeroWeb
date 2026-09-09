@@ -289,3 +289,4 @@ css/css-overflow/overflow-clip-x-visible-y-svg.html css/css-overflow/overflow-cl
 css/css-overflow/overflow-clip-y-visible-x-svg.html css/css-overflow/overflow-clip-y-visible-x-svg-ref.html == 2026-09-09 R4174 svg 根 UA overflow:hidden + 轴级 overflow 扩展画布栅格化（y clip / x visible）
 css/CSS2/floats/negative-block-margin-pushing-float-out-of-block-formatting-context.html css/CSS2/floats/negative-block-margin-pushing-float-out-of-block-formatting-context-ref.html == 2026-09-09 R4176 float 提升钳制基准改假设流位置（负 margin-top 合法偏移不被钳回）
 css/css-conditional/container-queries/container-units-rule-cache.html css/css-conditional/container-queries/container-units-rule-cache-ref.html == 2026-09-09 R4178 S11 样式键缓存对 cq 单位不安全——含 cq 声明的样式表禁缓存（R4126 @container 先例同构）
+css/css-conditional/container-queries/container-units-gradient.html css/css-conditional/container-queries/container-units-gradient-ref.html == 2026-09-09 R4179 渐变 conic at/radial 中心尺寸 cq 单位 compute 期解析（paint 期无容器链）

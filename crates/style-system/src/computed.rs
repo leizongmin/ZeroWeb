@@ -876,14 +876,39 @@ fn resolve_gradient_cq_lengths(
     };
     for layer in background_image.iter_mut() {
         if let crate::property::types::BackgroundImageComputedValue::Gradient(gradient) = layer {
-            let stops: &mut Vec<zero_css_parser::values::parse_transform::GradientColorStop> = match gradient {
-                GradientValue::Linear(g) => &mut g.stops,
-                GradientValue::Radial(g) => &mut g.stops,
-                GradientValue::Conic(g) => &mut g.stops,
-            };
-            for stop in stops.iter_mut() {
-                if let Some(pos) = &mut stop.position {
-                    *pos = resolve_cq(pos);
+            match gradient {
+                GradientValue::Linear(g) => {
+                    for stop in g.stops.iter_mut() {
+                        if let Some(pos) = &mut stop.position {
+                            *pos = resolve_cq(pos);
+                        }
+                    }
+                }
+                // R4179（container-units-gradient 对案）：conic `at <position>` 中心与
+                // radial 中心/尺寸的 cq 单位同须在此解析——paint 期
+                // resolve_position_with_font_size → resolve_gradient_length 无容器链
+                // （cq 按 fallback 语义回退视口），漏改则中心尺寸错位（conic at 10cqh
+                // 实证：应 30px，按视口 600 解析 60px → 角度采样整体偏移）。
+                GradientValue::Radial(g) => {
+                    g.position_x = resolve_cq(&g.position_x);
+                    g.position_y = resolve_cq(&g.position_y);
+                    if let zero_css_parser::values::RadialSize::Length(lv) = &mut g.size {
+                        *lv = resolve_cq(lv);
+                    }
+                    for stop in g.stops.iter_mut() {
+                        if let Some(pos) = &mut stop.position {
+                            *pos = resolve_cq(pos);
+                        }
+                    }
+                }
+                GradientValue::Conic(g) => {
+                    g.position_x = resolve_cq(&g.position_x);
+                    g.position_y = resolve_cq(&g.position_y);
+                    for stop in g.stops.iter_mut() {
+                        if let Some(pos) = &mut stop.position {
+                            *pos = resolve_cq(pos);
+                        }
+                    }
                 }
             }
         }
@@ -1000,6 +1025,57 @@ mod tests {
     use super::*;
     use crate::property::ComputedStyle;
     use zero_css_parser::values::{ColorValue, DisplayValue, LengthValue, PositionValue};
+
+    /// R4179（container-units-gradient 对案）：conic `at` 中心 / radial 中心尺寸的 cq
+    /// 单位须在 compute 期解析为 Px——paint 期 resolve_position_with_font_size 无容器
+    /// 链（cq 回退视口），漏改则中心/尺寸错位（conic at 10cqh 应 30px 非 60px）。
+    #[test]
+    fn r4179_gradient_conic_radial_cq_positions_resolved() {
+        use crate::property::types::BackgroundImageComputedValue;
+        use zero_css_parser::values::parse_transform::GradientValue;
+
+        let mut layers = vec![BackgroundImageComputedValue::Gradient(
+            zero_css_parser::values::parse_gradient("conic-gradient(from 180deg at 10cqh, green, blue)").unwrap(),
+        )];
+        resolve_gradient_cq_lengths(
+            &mut layers,
+            16.0,
+            Some(800.0),
+            Some(600.0),
+            Some((Some(400.0), Some(300.0))),
+        );
+        let BackgroundImageComputedValue::Gradient(GradientValue::Conic(g)) = &layers[0] else {
+            panic!("应为 conic 渐变");
+        };
+        assert!(
+            matches!(g.position_y, LengthValue::Px(p) if (p - 30.0).abs() < 0.01),
+            "conic at 10cqh @300px 容器应解析 30px，got {:?}",
+            g.position_y
+        );
+
+        let mut layers = vec![BackgroundImageComputedValue::Gradient(
+            zero_css_parser::values::parse_gradient("radial-gradient(green 5cqw, blue 10cqh)").unwrap(),
+        )];
+        resolve_gradient_cq_lengths(
+            &mut layers,
+            16.0,
+            Some(800.0),
+            Some(600.0),
+            Some((Some(400.0), Some(300.0))),
+        );
+        let BackgroundImageComputedValue::Gradient(GradientValue::Radial(g)) = &layers[0] else {
+            panic!("应为 radial 渐变");
+        };
+        for stop in &g.stops {
+            if let Some(pos) = &stop.position {
+                assert!(
+                    matches!(pos, LengthValue::Px(_)),
+                    "radial 色标 cq 位置应解析为 Px，got {:?}",
+                    pos
+                );
+            }
+        }
+    }
 
     /// R4178：cq 单位探测——值形式（`50cqh`）、小数、calc 内嵌均命中；数字前缀合法
     ///（单位语义本就紧跟数字）；更长标识符（字母前缀 / 单位后缀字母数字连字符）不误命中。
