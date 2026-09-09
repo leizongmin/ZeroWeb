@@ -1036,9 +1036,18 @@ impl LayoutEngine {
             styles: &HashMap<NodeId, ComputedStyle>,
             img_intrinsic_sizes: &HashMap<NodeId, (f32, f32)>,
             html_attr_intrinsic_ids: &HashSet<NodeId>,
+            // R4197：父 writing-mode（root = HorizontalTb 视口）——跳过键（见函数体首）。
+            parent_writing_mode: WritingModeValue,
         ) -> bool {
             // 垂直书写模式块轴为 X，高度语义不同——保守跳过整棵子树。
-            if !matches!(b.writing_mode, WritingModeValue::HorizontalTb) {
+            // R4197（css-sizing-3 §percentage-sizing，intrinsic-percent-replaced-029）：
+            // 跳过键收窄为**父 writing-mode**——vertical 自身元素在 horizontal 父下无轴
+            // 交换（converter/taffy 均按物理轴布局），物理 height 的 CB 高明确性链照常
+            // 成立，须参与 %→auto 化（vertical-rl canvas + block-size:100% canonical →
+            // height:100%，父 min-content 不定 → 应 auto 走 replaced attr 100；旧实现按
+            // 自身 wm 跳过 → taffy 按 CB 宽解析出 784 全页方）。父 vertical 时子树跳过
+            //（其子物理高是 inline 轴，%→auto 化语义不同）。
+            if parent_writing_mode.is_vertical_block_flow() {
                 return false;
             }
             let mut changed = false;
@@ -1329,6 +1338,9 @@ impl LayoutEngine {
                 )
             });
 
+            let own_wm = style
+                .map(|s| s.writing_mode.clone())
+                .unwrap_or(WritingModeValue::HorizontalTb);
             for child in &b.children {
                 changed |= walk(
                     child,
@@ -1345,6 +1357,7 @@ impl LayoutEngine {
                     styles,
                     img_intrinsic_sizes,
                     html_attr_intrinsic_ids,
+                    own_wm.clone(),
                 );
             }
             changed
@@ -1365,6 +1378,7 @@ impl LayoutEngine {
             styles,
             img_intrinsic_sizes,
             html_attr_intrinsic_ids,
+            WritingModeValue::HorizontalTb,
         )
     }
 
