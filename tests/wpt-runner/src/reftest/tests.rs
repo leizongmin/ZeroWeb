@@ -4512,3 +4512,42 @@ body { margin: 0; }
     }
     dump(&result.root, 1);
 }
+
+/// R4187 勘察：flexbox-definite-sizes-003（嵌套 flex 链 max-height:100% 传播）。
+#[test]
+#[ignore]
+fn debug_r4187_definite_sizes() {
+    use zero_css_parser::Parser as CssParser;
+    use zero_dom::parse_html;
+    use zero_layout_engine::LayoutEngine;
+    use zero_style_system::StyleSystem;
+    let html = r#"<html><head><style>
+body { margin: 0; overflow: hidden }
+.outerFlex { display: flex; width: 100px; max-height: 100px; }
+.innerFlex { display: flex; width: 100px; background: red; align-items: flex-end; }
+.block { width: 100px; max-height: 100%; background-color: green; }
+</style></head><body>
+<div class="outerFlex" style="max-height: 100px">
+  <div class="innerFlex">
+    <div class="block"><div style="height:9999px"></div></div>
+  </div>
+</div>
+</body></html>"#;
+    let doc = parse_html(html);
+    let stylesheet = CssParser::parse_stylesheet(
+        ".outerFlex { display: flex; width: 100px; max-height: 100px; } .innerFlex { display: flex; width: 100px; background: red; align-items: flex-end; } .block { width: 100px; max-height: 100%; background-color: green; }",
+    );
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[stylesheet]);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    fn dump(b: &zero_layout_engine::types::LayoutBox, depth: usize) {
+        let pad = "  ".repeat(depth);
+        println!("{pad}node={:?} y={} h={} w={}", b.node_id, b.y, b.height, b.width);
+        for c in &b.children {
+            dump(c, depth + 1);
+        }
+    }
+    dump(&result.root, 1);
+}
