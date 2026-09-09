@@ -4633,3 +4633,33 @@ fn debug_r4188_ds003_pixels() {
         println!("zero diff — 全绿");
     }
 }
+
+/// R4190 勘察：grid-aspect-ratio-037（stretch 对齐一轴 + 定长另一轴 → AR 应被忽略）。
+#[test]
+#[ignore]
+fn debug_r4190_grid_ar_stretch() {
+    use zero_css_parser::Parser as CssParser;
+    use zero_dom::parse_html;
+    use zero_layout_engine::LayoutEngine;
+    use zero_style_system::StyleSystem;
+    let html = r#"<html><head><style>body { margin: 8px; }</style></head><body>
+<div style="display: grid; grid-template: 100px / 100px;">
+  <div style="aspect-ratio: 1/2; height: 100%; justify-self: stretch; background: green;"></div>
+</div>
+</body></html>"#;
+    let doc = parse_html(html);
+    let stylesheet = CssParser::parse_stylesheet("body { margin: 8px; }");
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[stylesheet]);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    fn dump(b: &zero_layout_engine::types::LayoutBox, depth: usize) {
+        let pad = "  ".repeat(depth);
+        println!("{pad}node={:?} y={} h={} w={}", b.node_id, b.y, b.height, b.width);
+        for c in &b.children {
+            dump(c, depth + 1);
+        }
+    }
+    dump(&result.root, 1);
+}
