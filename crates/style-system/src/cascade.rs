@@ -351,6 +351,9 @@ pub fn cascade<'a>(declarations: Vec<CascadedDeclaration<'a>>, quirks: bool) -> 
     // by_property 键借用声明自身的 property（&'a str，不克隆）——热路径每属性省 1 次
     // String 分配；分组内声明也是借用（构造侧已省克隆，见 collect_declarations）。
     let mut by_property: HashMap<&'a str, Vec<CascadedDeclaration<'a>>> = HashMap::new();
+    // R4184：非 legacy 上下文被丢弃的 `-webkit-line-clamp` 声明中最高 CascadeOrder
+    //（供下方与标准 `line-clamp` 槽位的级联竞争判定）。
+    let mut dropped_prefixed_best: Option<CascadeOrder> = None;
     for decl in declarations {
         // `all` 简写（CSS Cascading 4 §3.1 / CSS All 1）：值必须是 CSS-wide 关键字
         // （initial/inherit/unset/revert/revert-layer）。展开为对所有已知 longhand 属性的
@@ -422,8 +425,19 @@ pub fn cascade<'a>(declarations: Vec<CascadedDeclaration<'a>>, quirks: bool) -> 
         // legacy 上下文保留原名（不 canonical 化，与标准 `line-clamp` 分槽入组，由下方
         // 合并步骤按 CascadeOrder 确定性决出唯一胜者）。CSS-wide 关键字值交由通用
         // 胜者选择逻辑处理（inherit 等对 prefixed 别名同样合法）。
+        // R4184（css-overflow-4 #line-clamp + css-overflow-3）：非 legacy 上下文丢弃
+        // prefixed 声明时须**记录其 CascadeOrder**——034 assert「whichever is greater in
+        // the cascade order wins … regardless of whether the properties needed for
+        // -webkit-line-clamp to do anything are present」：同元素双写（line-clamp +
+        // -webkit-line-clamp）且 prefixed 级联更晚时，prefixed 胜出但 legacy 语义不适用
+        // = **整条 no-op**（标准声明不回退应用）。旧行为只丢 prefixed → 标准照常 clamp
+        // （034 5.23% 根因）。
         if decl.property.eq_ignore_ascii_case("-webkit-line-clamp") {
             if !has_legacy_webkit_box {
+                let better = dropped_prefixed_best.as_ref().is_none_or(|b| decl.order > *b);
+                if better {
+                    dropped_prefixed_best = Some(decl.order.clone());
+                }
                 continue;
             }
             by_property.entry("-webkit-line-clamp").or_default().push(decl);
@@ -457,6 +471,35 @@ pub fn cascade<'a>(declarations: Vec<CascadedDeclaration<'a>>, quirks: bool) -> 
             continue;
         }
         by_property.entry(canonical).or_default().push(decl);
+    }
+
+    // R4184：非 legacy 上下文双写竞争（css-overflow-4 line-clamp-034）——prefixed 在级联中
+    // 更晚（order 更大）时 prefixed 胜出，但其 legacy 语义在不带 -webkit-box 的元素上不适用
+    // = 整条 no-op：标准 `line-clamp` 槽位一并移除（不回退应用，034 assert「regardless of
+    // whether the properties needed for -webkit-line-clamp to do anything are present」）。
+    // prefixed 更早（标准胜出）→ 标准照常应用（prefixed 声明已在分组时丢弃）。
+    if !has_legacy_webkit_box
+        && by_property.contains_key("line-clamp")
+        && let Some(prefixed_best) = dropped_prefixed_best.as_ref()
+    {
+        let mut dummy = ComputedStyle::default();
+        let mut std_best: Option<&CascadeOrder> = None;
+        for d in by_property["line-clamp"].iter() {
+            let valid = is_css_wide_keyword(d.value)
+                || (!is_invalid_negative_length("line-clamp", d.value)
+                    && !is_invalid_enum_value("line-clamp", d.value)
+                    && is_cascade_value_valid("line-clamp", d.value, quirks, &mut dummy));
+            if !valid {
+                continue;
+            }
+            if std_best.is_none_or(|b| d.order > *b) {
+                std_best = Some(&d.order);
+            }
+        }
+        // prefixed 更晚（order 更大）→ prefixed 胜 → 整条 no-op；否则标准胜 → 照常。
+        if std_best.is_none_or(|b| prefixed_best > b) {
+            by_property.remove("line-clamp");
+        }
     }
 
     // R3771：`line-clamp` 与 `-webkit-line-clamp` 双槽确定性合并（两者是同一 computed
@@ -1585,8 +1628,9 @@ mod tests {
             Some("true")
         );
         assert!(result.get("-webkit-line-clamp").is_none());
-        // R3773：box 声明但无 `-webkit-box-orient: vertical`（默认 horizontal）→ 同样
-        // 不适用（webkit-002），标准声明胜出。
+        // R4184：box 声明但无 `-webkit-box-orient: vertical`（默认 horizontal）→
+        // has_legacy_webkit_box = false → prefixed（级联更晚）胜出且 legacy 语义不适用 =
+        // 整条 no-op（webkit-002 的真实用例无标准声明，同样不 clamp——ref 5 行全显）。
         let decls = vec![
             ("line-clamp", "2", false),
             ("-webkit-line-clamp", "4", false),
@@ -1594,13 +1638,31 @@ mod tests {
         ];
         let cascaded = collect_declarations(&decls, Origin::Author, None, (0, 1, 0), 0);
         let result = cascade(cascaded, false);
-        assert_eq!(result.get("line-clamp").map(String::as_str), Some("2"));
+        assert!(
+            result.get("line-clamp").is_none(),
+            "prefixed 更晚胜出（box 无 orient 非 legacy 上下文）→ 整条 no-op"
+        );
         assert!(result.get("-webkit-line-clamp-origin").is_none());
-        // R3771：无 legacy box 上下文 → prefixed 声明整条丢弃（no-op），标准声明胜出。
+        // R4184：无 legacy box 上下文 + 双写——prefixed 级联更晚（同 specificity 后声明）
+        // → prefixed 胜出但 legacy 语义不适用 = **整条 no-op**（标准声明不回退，034 assert
+        // 「whichever is greater in the cascade order wins … regardless」）。
         let decls = vec![("line-clamp", "2", false), ("-webkit-line-clamp", "4", false)];
         let cascaded = collect_declarations(&decls, Origin::Author, None, (0, 1, 0), 0);
         let result = cascade(cascaded, false);
-        assert_eq!(result.get("line-clamp").map(String::as_str), Some("2"));
+        assert!(
+            result.get("line-clamp").is_none(),
+            "prefixed 更晚胜出且不适用 → 整条 no-op，标准不回退（034）"
+        );
+        assert!(result.get("-webkit-line-clamp-origin").is_none());
+        // R4184：prefixed 级联更早（标准后声明）→ 标准胜出，照常应用。
+        let decls = vec![("-webkit-line-clamp", "4", false), ("line-clamp", "2", false)];
+        let cascaded = collect_declarations(&decls, Origin::Author, None, (0, 1, 0), 0);
+        let result = cascade(cascaded, false);
+        assert_eq!(
+            result.get("line-clamp").map(String::as_str),
+            Some("2"),
+            "标准更晚胜出 → 照常应用"
+        );
         assert!(result.get("-webkit-line-clamp-origin").is_none());
     }
 

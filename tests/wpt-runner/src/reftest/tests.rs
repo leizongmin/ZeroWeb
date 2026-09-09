@@ -4280,3 +4280,57 @@ Line C</div>
     }
     dump(&result.root, 1);
 }
+
+/// R4183 勘察：line-clamp-034（line-clamp 与 -webkit-line-clamp 级联竞争）布局树。
+#[test]
+#[ignore]
+fn debug_r4183_lc034_tree() {
+    use zero_css_parser::Parser as CssParser;
+    use zero_dom::parse_html;
+    use zero_layout_engine::LayoutEngine;
+    use zero_style_system::StyleSystem;
+    let html = r#"<html><head><style>
+.clamp {
+  line-clamp: 4;
+  -webkit-line-clamp: 4;
+  font: 16px / 32px serif;
+  white-space: pre;
+  background-color: yellow;
+}
+</style></head><body style="margin:0">
+<div class="clamp">Line 1
+Line 2
+Line 3
+Line 4
+Line 5</div></body></html>"#;
+    let doc = parse_html(html);
+    let stylesheet = CssParser::parse_stylesheet(
+        ".clamp { line-clamp: 4; -webkit-line-clamp: 4; font: 16px / 32px serif; white-space: pre; background-color: yellow; }",
+    );
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(480.0, 480.0);
+    let styles = sys.compute_styles(&doc, &[stylesheet]);
+    for (id, st) in styles.iter() {
+        if let Some(zero_dom::NodeData {
+            kind: zero_dom::NodeKind::Element(e),
+            ..
+        }) = doc.get(*id)
+            && e.local_name() == "div"
+        {
+            println!("div node={:?} line_clamp={:?}", id, st.line_clamp);
+        }
+    }
+    let mut engine = LayoutEngine::new(480.0, 480.0);
+    let result = engine.compute(&doc, &styles);
+    fn dump(b: &zero_layout_engine::types::LayoutBox, depth: usize) {
+        let pad = "  ".repeat(depth);
+        println!(
+            "{pad}node={:?} y={} h={} cap={:?} clamped={} hidden={}",
+            b.node_id, b.y, b.height, b.line_clamp_cap, b.line_clamp_clamped, b.line_clamp_hidden
+        );
+        for c in &b.children {
+            dump(c, depth + 1);
+        }
+    }
+    dump(&result.root, 1);
+}
