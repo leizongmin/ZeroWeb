@@ -4699,3 +4699,67 @@ fn debug_r4192_mt_nested() {
     }
     dump(&result.root, 1);
 }
+
+/// R4193 勘察：contain-inline-size-regular-container（inline-size containment fit-content 宽）。
+#[test]
+#[ignore]
+fn debug_r4193_cis_regular() {
+    use zero_css_parser::Parser as CssParser;
+    use zero_dom::parse_html;
+    use zero_layout_engine::LayoutEngine;
+    use zero_style_system::StyleSystem;
+    let html = r#"<html><head><style>body { margin: 8px; }</style></head><body>
+<div style="contain:inline-size; width:fit-content; border:solid green; border-width:0 50px; background:red;">
+  <div style="width:100px; height:100px;"></div>
+</div>
+</body></html>"#;
+    let doc = parse_html(html);
+    let stylesheet = CssParser::parse_stylesheet("body { margin: 8px; }");
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[stylesheet]);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    fn dump(b: &zero_layout_engine::types::LayoutBox, depth: usize) {
+        let pad = "  ".repeat(depth);
+        println!(
+            "{pad}node={:?} y={} h={} w={} cw={}",
+            b.node_id, b.y, b.height, b.width, b.content_width
+        );
+        for c in &b.children {
+            dump(c, depth + 1);
+        }
+    }
+    dump(&result.root, 1);
+}
+
+/// R4193 勘察二：computed contain 值检查。
+#[test]
+#[ignore]
+fn debug_r4193_cis_computed() {
+    use zero_css_parser::Parser as CssParser;
+    use zero_dom::parse_html;
+    use zero_style_system::StyleSystem;
+    let html = r#"<html><body><div id="t" style="contain:inline-size; width:fit-content; border:solid green; border-width:0 50px;"></div></body></html>"#;
+    let doc = parse_html(html);
+    let stylesheet = CssParser::parse_stylesheet("");
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[stylesheet]);
+    for (id, st) in styles.iter() {
+        let is_t = doc.get(*id).is_some_and(|n| match &n.kind {
+            zero_dom::NodeKind::Element(e) => e.get_attribute("id").is_some_and(|v| v == "t"),
+            _ => false,
+        });
+        if is_t {
+            println!(
+                "DBG contain={:?} has_size={} has_inline={} width={:?} blw={:?}",
+                st.contain,
+                st.contain.has_size(),
+                st.contain.has_inline_size(),
+                st.width,
+                st.border_left_width
+            );
+        }
+    }
+}

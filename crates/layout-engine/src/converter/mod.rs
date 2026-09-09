@@ -152,7 +152,7 @@ pub fn computed_style_to_taffy(
                 bottom: convert_length_to_lpa(&style.bottom, false, vw, vh),
             }
         },
-        size: if style.contain.has_size() {
+        size: if style.contain.has_size() || style.contain.has_inline_size() {
             // R2239：contain:size — content-based auto 尺寸解析为 0（content 不贡献 size），显式尺寸保留。
             // R2256：contain-intrinsic-size 覆盖 content-based auto 维的 0（CSS Sizing 4）。
             // R2257：block-level auto-width 维持 fill-CB（stretch-fit）——size containment 只折叠
@@ -227,6 +227,12 @@ pub fn computed_style_to_taffy(
             // fill-CB——containment 下须折叠到 CIS-or-0（contain-animation-001：
             // contain:strict abspos div 宽 128 应 100 = 纯边框）。
                 && !matches!(style.position, PositionValue::Absolute | PositionValue::Fixed);
+            // R4193（css-contain-3 §containment-inline-size）：contain:inline-size（仅内联
+            // 轴）——width 臂与 contain:size 同语义（内联尺寸 content 抑制 → CIS-or-0），
+            // height 臂**不适用**（block 轴无 containment，照常内容求解）。fit-content +
+            // border 0 50px 应 = 纯边框宽（contain-inline-size-flex/grid/regular-container
+            // 三案 5.26% 同簇：内容 100px 不参与容器内联尺寸）。
+            let inline_only = !style.contain.has_size() && style.contain.has_inline_size();
             taffy::geometry::Size {
                 width: match &style.width {
                     LengthValue::Auto if block_fills_width => taffy::style::Dimension::auto(),
@@ -242,12 +248,17 @@ pub fn computed_style_to_taffy(
                     LengthValue::Stretch => taffy::style::Dimension::auto(),
                     _ => convert_length_to_dimension(&style.width, vw, vh),
                 },
-                height: match &style.height {
-                    LengthValue::Auto => cis_dim_boxed(&style.contain_intrinsic_height, frame_y),
-                    LengthValue::MinContent | LengthValue::MaxContent | LengthValue::FitContent(_) => {
-                        cis_dim_boxed(&style.contain_intrinsic_height, frame_y)
+                height: if inline_only {
+                    // R4193：inline-size containment 不抑制 block 轴——height 照常转换。
+                    convert_length_to_dimension(&style.height, vw, vh)
+                } else {
+                    match &style.height {
+                        LengthValue::Auto => cis_dim_boxed(&style.contain_intrinsic_height, frame_y),
+                        LengthValue::MinContent | LengthValue::MaxContent | LengthValue::FitContent(_) => {
+                            cis_dim_boxed(&style.contain_intrinsic_height, frame_y)
+                        }
+                        _ => convert_length_to_dimension(&style.height, vw, vh),
                     }
-                    _ => convert_length_to_dimension(&style.height, vw, vh),
                 },
             }
         } else {
