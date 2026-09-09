@@ -11,7 +11,7 @@
 ## 主要功能
 
 - **stdio 管道 + bincode IPC** — 与 image-decoder 同款的管道传输与 bincode 序列化（`zero-protocol`），零网络依赖
-- **图元帧接收** — 接收 `CompositorFrame`（PaintSnapshotParams 图元快照），按 navigation epoch + frame id 序列接受新帧、丢弃过期帧
+- **图元帧接收** — 接收 `CompositorFrame`（PaintSnapshotParams 图元快照），按 navigation epoch + frame id 序列接受新帧、丢弃过期帧；快照经 `zero-paint-convert` 公共转换层映射为渲染图元后光栅化
 - **BackingStore 双缓冲** — `BackingStoreManager` 双缓冲：写 back → swap → 保留 front，供显示消费方读取
 - **线程化光栅化** — `RenderingThread` 独立线程执行光栅化（可开关），字体与字形缓存由进程共享
 - **GPU 光栅化（C3）** — Linux 默认开启 headless wgpu 上下文在合成器进程内光栅化（对照 Ladybird GPU 隔离），`ZW_COMPOSITOR_GPU=0` 禁用；初始化失败 / GPU 不可用回退 CPU

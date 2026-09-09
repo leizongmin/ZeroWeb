@@ -1,10 +1,10 @@
 # ZeroWeb Storage (`zero-storage`)
 
-> 浏览器端存储后端 — 提供 localStorage、sessionStorage、IndexedDB、Cache API 与 Service Worker 注册表的 Rust 实现。
+> 浏览器端存储后端 — 提供 localStorage、sessionStorage、IndexedDB、Cache API、OPFS 与 Service Worker 注册表的 Rust 实现。
 
 ## 概述
 
-`ZeroWeb Storage` (`zero-storage`) 实现了 Web 标准中的客户端存储机制，包括 Web Storage（localStorage/sessionStorage）、IndexedDB（含事务、索引、游标与持久化）、Cache API 与 Service Worker 注册表。作为 ZeroWeb 渲染管线的存储层，它为上层引擎提供按源（origin）隔离的键值存储和结构化数据库能力，同时支持配额管理和多种键类型的索引查询。
+`ZeroWeb Storage` (`zero-storage`) 实现了 Web 标准中的客户端存储机制，包括 Web Storage（localStorage/sessionStorage）、IndexedDB（含事务、索引、游标与持久化）、Cache API、OPFS（Origin Private File System）与 Service Worker 注册表。作为 ZeroWeb 渲染管线的存储层，它为上层引擎提供按源（origin）隔离的键值存储和结构化数据库能力，同时支持配额管理和多种键类型的索引查询。
 
 ## 主要功能
 
@@ -12,13 +12,14 @@
 - **IndexedDB** — 结构化数据库，支持 Object Store 的创建/删除、记录的增删改查、自增主键、复合键排序、Index/Cursor/KeyRange、事务任务生命周期、跨 renderer 连接与数据库持久化
 - **存储管理器** — 按源（origin）隔离管理多个 localStorage/sessionStorage 实例，支持按源清除和批量清除
 - **Cache API** — 缓存 Request/Response 对，支持按方法（GET、POST 等）与 URL 匹配、缓存命中查询和删除
+- **OPFS** — `navigator.storage.getDirectory()` 的 Rust 底座（storage-opfs goal M1）：`OpfsFileSystem` 目录树（路径即句柄值语义、字典序迭代）、`FileSystemHandle` 族语义（`get_file_handle` / `get_directory_handle` / `remove_entry` / `remove` / `resolve`）、`createWritable` 写流全语义（write/seek/truncate、显式 position 不前进指针、truncate 指针钳位、单 close 成功、abort 弃缓冲）、`OpfsError`（name + legacy code 对齐 WPT `assert_throws_dom`）、`OpfsPersistence` per-origin 落盘（JSON + 临时文件 + rename + fsync + 中断恢复，照 cache_api 模式）
 - **Service Worker 注册表** — 管理 Service Worker 的注册与生命周期状态机（Registered → Installing → Installed → Activating → Activated → Redundant），支持 Fetch 拦截
 - **错误处理** — 统一的 `StorageError` 枚举，涵盖配额超限、无效键、仓库不存在、序列化失败等场景
 
 ## 使用示例
 
 ```rust
-use zero_storage::{StorageManager, StorageType, IdbDatabase, IdbKey};
+use zero_storage::{StorageManager, StorageType, IdbDatabase, IdbKey, OpfsFileSystem, OpfsWriteCommand};
 
 // Web Storage — 通过 StorageManager 按源管理
 let mut manager = StorageManager::new();
@@ -33,4 +34,16 @@ db.create_object_store("users", Some("id"), true).unwrap();
 let key = db.add("users", serde_json::json!({"name": "Alice", "age": 30}), None).unwrap();
 let record = db.get("users", &key).unwrap();
 assert_eq!(record.value["name"], "Alice");
+
+// OPFS — 目录树、写流与持久化
+let mut fs = OpfsFileSystem::default();
+let dir = fs.get_directory_handle(&[], "logs", true).unwrap();
+let file = fs.get_file_handle(&dir, "app.log", true).unwrap();
+
+let stream = fs.create_writable(&file, false).unwrap();
+fs.stream_write(stream, OpfsWriteCommand::Write { position: None, data: b"hello".to_vec() }).unwrap();
+fs.stream_close(stream).unwrap();
+
+let meta = fs.get_file(&file).unwrap();
+assert_eq!(meta.data, b"hello");
 ```

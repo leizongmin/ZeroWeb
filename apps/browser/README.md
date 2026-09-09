@@ -36,7 +36,7 @@ zero-browser
 ├── app_input*.rs        — 输入处理（按键、上下文菜单、平台输入适配）
 ├── app_render*.rs       — GPU chrome 渲染（标签栏、地址栏、导航按钮、菜单等）
 ├── compositor_client.rs — zero-compositor 子进程发现与连接（ZW_COMPOSITOR_BIN）
-├── paint_ipc.rs         — compositor 绘制帧导入与呈现
+├── paint_ipc.rs         — compositor 绘制帧导入与呈现（经 `zero-paint-convert` 转换为渲染图元）
 ├── process_backend.rs   — renderer/image-decoder 子进程管理
 ├── fetch_proxy.rs       — 页面网络请求代理（renderer IPC → 浏览器网络栈）
 ├── headless.rs          — headless 调试模式（renderer IPC 驱动）

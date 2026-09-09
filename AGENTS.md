@@ -176,7 +176,7 @@ crates/
 ├── runtime-config/   # zero-runtime-config — 运行时环境变量配置的唯一入口
 ├── psl/              # zero-psl — 公共后缀列表（PSL）解析与注册域名（eTLD+1）提取
 ├── security/         # zero-security — CORS、CSP、同源策略、沙箱
-├── storage/          # zero-storage — localStorage、IndexedDB、Cache API
+├── storage/          # zero-storage — localStorage、IndexedDB、Cache API、OPFS、Service Worker 注册表
 ├── protocol/         # zero-protocol — 多进程 IPC
 ├── script-sandbox/   # zero-script-sandbox — 扩展/用户脚本运行时（V8/QuickJS feature gate）
 ├── wasm-sandbox/     # zero-wasm-sandbox — WASM 运行时（Wasmtime/wasmi）

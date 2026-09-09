@@ -21,7 +21,7 @@
 
 ## 工作区分层
 
-整个工作区共 31 个 workspace member：21 个库 crate、7 个应用入口（`apps/`）、2 个测试工具（`tests/`）和 1 个开发工具（`tools/icon-gen`，不随发布产物分发）。下文按「应用与进程入口 / 产品层和 API 层 / 引擎层 / 基础设施层 / 测试基础设施」分组列出。
+整个工作区共 32 个 workspace member：22 个库 crate、7 个应用入口（`apps/`）、2 个测试工具（`tests/`）和 1 个开发工具（`tools/icon-gen`，不随发布产物分发）。下文按「应用与进程入口 / 产品层和 API 层 / 引擎层 / 基础设施层 / 测试基础设施」分组列出。
 
 ### 应用与进程入口
 
@@ -31,7 +31,7 @@
 | `apps/renderer` | 独立渲染进程入口（`zero-renderer`），负责多进程 IPC 下的页面渲染与脚本执行，通过 stdin/stdout 管道与浏览器主进程通信 |
 | `apps/image-decoder` | 图像解码进程（`zero-image-decoder`，D1）：renderer 对 PNG/JPEG/WebP 固定经此进程解码，以隔离不可信编解码器；SVG 仍由 WebView 的资源加载路径处理 |
 | `apps/compositor` | 合成器进程（`zero-compositor`，C2）：Browser 固定经此进程合成——scroll transform bake、sync_token + Viz present、GPU mailbox fence + mmap 零拷贝、dma-buf fd 导出、owned window present surface、Linux landlock/seccomp 沙箱、GPU device-lost 模拟 + CPU 回退；Vulkan 真纹理 dma-buf 导出仍为后续 |
-| `apps/webdriver` | WebDriver 服务（`zero-webdriver`）：W3C 协议 33 endpoint（session/导航/超时/元素族/execute sync+async/source/window 族；webdriver goal 已收口归档 2026-09-08，screenshot 等余项挂账） |
+| `apps/webdriver` | WebDriver 服务（`zero-webdriver`）：W3C 协议 34 endpoint（session/导航/超时/元素族/execute sync+async/source/window 族/screenshot；webdriver goal 已收口归档 2026-09-08，screenshot 续作 webdriver-screenshot goal 亦已收口归档 2026-09-09） |
 | `apps/webview-demo` | 最小演示程序，用于串起宿主窗口和渲染基础设施（wgpu/CPU 渲染静态文本） |
 | `apps/android-browser` | Android 浏览器应用（M0 bootstrap）：Kotlin/Jetpack Compose chrome + `zero-android-browser` JNI 桥接层（cdylib），decoder/compositor 经 Android socket transport 复用共享 Rust role 循环；renderer Android transport adapter 待 M1 |
 
@@ -53,6 +53,7 @@
 | `crates/engine` | 渲染主管线，负责串起解析、样式、布局、paint、dirty tracking、compositing；包含 DOM Bridge（V8 polyfill）、资源预加载、CSS 动画 / 过渡运行时 |
 | `crates/canvas` | Canvas 2D 绘制能力（路径、变换、drawImage、shadow、Path2D、合成等） |
 | `crates/media` | 媒体解码管线（media-playback / media-audio goal 的进程内 crate）：webm/Matroska + mp4 demux、VP9 解码（纯 Rust `rusty_vp9`）、AV1（`decode-av1` feature，系统 libdav1d）、H.264（`decode-h264` feature，OpenH264 + AAC 随期）、YUV→RGBA 帧转换、音频解码（mp3 / ogg-vorbis / opus / AAC）、`open_media` 容器嗅探自路由、播放驱动（`VideoPlayer` + `VideoClock` trait）、音频输出面（`NullSink` 可观测 / `audio-cpal` 真设备）、混音总线与 Web Audio 振荡器合成最小面 |
+| `crates/paint-convert` | IPC 图元快照（`PaintSnapshotParams`）→ 渲染图元（`RenderPrimitives`）公共转换层（webdriver-screenshot goal 产物，compositor/browser/webdriver 三端共享的唯一映射实现） |
 
 ### 基础设施层
 
@@ -62,7 +63,7 @@
 | `crates/host-runtime` | 平台窗口、事件循环、surface 生命周期、输入事件（鼠标 / 键盘 / 触摸 / IME） |
 | `crates/net` | HTTP/HTTPS（HTTP/1.1 + HTTP/2，经 ALPN 协商；**不支持 HTTP/3/QUIC**）、URL、导航历史、Cookie、WebSocket（tungstenite）、HTTP 响应缓存 |
 | `crates/security` | 同源策略、CORS、CSP（含 `script-src-attr` / `unsafe-eval` / `wasm-unsafe-eval` / `strict-dynamic` 等完整指令）、HSTS 预加载、混合内容阻止 / 升级、权限模型、站点隔离、COOP/COEP，统一收敛到 `SecurityContext` 门面 |
-| `crates/storage` | localStorage、sessionStorage、IndexedDB（KeyRange / Index / Cursor / Transaction）、Cache API、Service Worker 注册表 |
+| `crates/storage` | localStorage、sessionStorage、IndexedDB（KeyRange / Index / Cursor / Transaction）、Cache API、Service Worker 注册表、OPFS（`opfs` 模块：目录树/句柄/写流全语义 + per-origin 持久化底座，storage-opfs goal M1） |
 | `crates/protocol` | IPC 消息、bincode 序列化、`PipeTransport` 帧协议、`SharedMemoryChannel`、`RendererHandle` / `ProcessManager`（多渲染进程管理与崩溃检测） |
 | `crates/product-version` | 产品版本号（从构建日期推导，随 `zero-product-version` 分发） |
 | `crates/runtime-config` | 运行时环境变量配置的唯一入口：集中定义并解析渲染后端、多进程、沙箱、compositor 等开关（`ENVIRONMENT_VARIABLES` 权威清单 + 统一解析函数），业务 crate 不直接读环境变量 |
@@ -98,15 +99,15 @@
 9. `webview` 把这条链路包装成嵌入式 API，供 `apps/browser` 或第三方应用调用。
 10. `zero-browser` 固定由 `apps/renderer` 独立进程承担步骤 2–7，经 `protocol` IPC 与浏览器主进程交互，并配合 image-decoder 与 compositor 子进程；`page-runtime` 让 browser IPC 宿主与嵌入式 `ZeroWebView` 的进程内宿主共享同一套页面加载契约。
 
-这条链路已经能在测试、demo 和浏览器应用里跑起来，并且有大量单元 / 集成测试与 WPT 用例兜底；但离「真实网页 + 完整 JavaScript + 完整浏览器 UI」的成熟度仍有距离。js-dom 专项目标（P1b V8 原生 DOM 绑定）已于 2026-08-31 收官归档（双引擎 native_dom default-on）；媒体线三 goal（2026-09-05）与存储/Service Worker 两 goal（2026-09-06）均已收口整树归档；keyboard/editing 三 goal 与 webdriver goal 均已收口归档（2026-09-08）；当前主线是渲染兼容性持续收口（上游 WPT reftest corpus 87.0%）与 M12/M14 拆分出的 6 个子 goal（storage-opfs / page-wasm / android-browser / webdriver / web-components / event-loop-spec，其中 webdriver 已率先收口）。
+这条链路已经能在测试、demo 和浏览器应用里跑起来，并且有大量单元 / 集成测试与 WPT 用例兜底；但离「真实网页 + 完整 JavaScript + 完整浏览器 UI」的成熟度仍有距离。js-dom 专项目标（P1b V8 原生 DOM 绑定）已于 2026-08-31 收官归档（双引擎 native_dom default-on）；媒体线三 goal（2026-09-05）与存储/Service Worker 两 goal（2026-09-06）均已收口整树归档；keyboard/editing 三 goal、webdriver goal（2026-09-08）与 webdriver-screenshot goal（2026-09-09）均已收口归档；当前主线是渲染兼容性持续收口（上游 WPT reftest corpus 87.2%，R4193 轮口径）与 M12/M14 拆分出的 6 个子 goal（storage-opfs / page-wasm / android-browser / webdriver / web-components / event-loop-spec，其中 webdriver、webdriver-screenshot 已收口，storage-opfs M1 已落地）。
 
 ## 现在做到哪了
 
 粗略说，仓库现在分成三档：
 
-- **核心内核已有实质实现**: dom、css-parser、style-system、layout-engine、engine、render-foundation、host-runtime、net、security、storage、protocol、canvas、media、wasm-sandbox、script-sandbox、page-runtime、product-version、psl、webview 都有可运行代码和对应测试。
-- **产品层骨架已成，持续打磨**: `apps/browser`（桌面入口 + headless / remote debugging）、`browser-shell`（标签页 / 书签 / 历史 / 下载 / 设置 / 上下文菜单等数据模型）、`apps/renderer`（多进程渲染进程入口）、`apps/image-decoder`（D1 图像解码进程）、`apps/compositor`（C2 合成器进程）、`apps/webdriver`（WebDriver 服务）已打通，`apps/android-browser`（M0 bootstrap）已落地，但产品形态、稳定性和真实站点兼容性仍在推进。
-- **当前主线**: 媒体线三 goal 已完成（2026-09-05 收口归档）——[media-playback](goal/archive/media-playback/master.md)（webm/VP9/AV1/H.264 解码 + fixture-mounted 播放面 + renderer 播放泵事件循环节拍，DC-1~5 ✅）、[media-audio](goal/archive/media-audio/master.md)（cpal 音频输出 + A/V 同步 + AudioContext 最小面 webaudio 50 用例 1418P/0F，DC-1~5 ✅）、[media-elements](goal/archive/media-elements/master.md)（HTMLMediaElement 语义面 WPT 640P/0F/13PF = 98.01%，DC-1~4 ✅）；js-dom 专项目标（P1b V8 原生 DOM 绑定）2026-08-31 收官归档（R383/R384 双引擎 `native_dom` default-on land、kill-switch 删除），归档见 [goal/archive/js-dom/](goal/archive/js-dom/master.md)；storage-cache-api 与 service-workers 两 goal 2026-09-06 收口整树归档（Cache API 真实现 + per-origin 持久化 WPT 449 subtest 全绿；SW 真实生命周期 + fetch 拦截 + Cache 集成三 runner 652 subtest 全绿），见 [goal/archive/](goal/archive/README.md)；keyboard/editing 三 goal 2026-09-08 收口整树归档（selection 套件 45P→2994P = 99.8%、execCommand 真应用 + 真实反射、隐式提交 3/3、键盘激活/导航/滚动默认动作双面接通），webdriver goal 同日收口归档（9→33 endpoint，DC-1~4 ✅），见 [goal/archive/](goal/archive/README.md)；M12/M14 剩余面 2026-09-07 拆分为 6 个子 goal（[storage-opfs](goal/storage-opfs.md) / [page-wasm](goal/page-wasm.md) / [android-browser](goal/android-browser.md) / webdriver——已完成归档 [goal/archive/webdriver.md](goal/archive/webdriver.md) / [web-components](goal/web-components.md) / [event-loop-spec](goal/event-loop-spec.md)）；渲染兼容性（WPT/CSSWG reftest 对齐 Chromium Oracle）持续主动实施——上游 WPT reftest corpus **14626/16814 = 87.0%**（R4157 轮口径），transform-box 属性三 crate 贯通 + svg 参考框换算族（R4098–R4110）、contain:layout/paint 捕获 fixed 后代为其 CB（R4122，csswg #10544）、quirks 替换元素百分比高（R4129）、box-shadow punch-out/两相位绘制（R4137/R4139/R4143）、aspect-ratio transferred % 基准（R4147）、宽轴关键字固有贡献（R4150–R4152）、counter-style extends 回落内置表（R4154）、abspos stretch 关键字（R4155）等系列持续收口（R3936–R4157）；残余缺口为 vertical writing modes、multicol 碎片化、R109 inline-as-block 等结构性问题（Phase A IFC / R1043 / R2174 等深方向仍需用户点名授权）。完整 Web API 与真实网站交互兼容性是后续阶段。详见 [路线图](../ROADMAP.md)。
+- **核心内核已有实质实现**: dom、css-parser、style-system、layout-engine、engine、render-foundation、paint-convert、host-runtime、net、security、storage、protocol、canvas、media、wasm-sandbox、script-sandbox、page-runtime、product-version、psl、webview 都有可运行代码和对应测试。
+- **产品层骨架已成，持续打磨**: `apps/browser`（桌面入口 + headless / remote debugging）、`browser-shell`（标签页 / 书签 / 历史 / 下载 / 设置 / 上下文菜单等数据模型）、`apps/renderer`（多进程渲染进程入口）、`apps/image-decoder`（D1 图像解码进程）、`apps/compositor`（C2 合成器进程）、`apps/webdriver`（WebDriver 服务 34 endpoint，含 screenshot）已打通，`apps/android-browser`（M0 bootstrap）已落地，但产品形态、稳定性和真实站点兼容性仍在推进。
+- **当前主线**: 媒体线三 goal 已完成（2026-09-05 收口归档）——[media-playback](goal/archive/media-playback/master.md)（webm/VP9/AV1/H.264 解码 + fixture-mounted 播放面 + renderer 播放泵事件循环节拍，DC-1~5 ✅）、[media-audio](goal/archive/media-audio/master.md)（cpal 音频输出 + A/V 同步 + AudioContext 最小面 webaudio 50 用例 1418P/0F，DC-1~5 ✅）、[media-elements](goal/archive/media-elements/master.md)（HTMLMediaElement 语义面 WPT 640P/0F/13PF = 98.01%，DC-1~4 ✅）；js-dom 专项目标（P1b V8 原生 DOM 绑定）2026-08-31 收官归档（R383/R384 双引擎 `native_dom` default-on land、kill-switch 删除），归档见 [goal/archive/js-dom/](goal/archive/js-dom/master.md)；storage-cache-api 与 service-workers 两 goal 2026-09-06 收口整树归档（Cache API 真实现 + per-origin 持久化 WPT 449 subtest 全绿；SW 真实生命周期 + fetch 拦截 + Cache 集成三 runner 652 subtest 全绿），见 [goal/archive/](goal/archive/README.md)；keyboard/editing 三 goal 2026-09-08 收口整树归档（selection 套件 45P→2994P = 99.8%、execCommand 真应用 + 真实反射、隐式提交 3/3、键盘激活/导航/滚动默认动作双面接通），webdriver goal 同日收口归档（9→33 endpoint，DC-1~4 ✅），webdriver-screenshot goal 2026-09-09 收口归档（公共转换层 `zero-paint-convert` + GET /session/{id}/screenshot，33→34 endpoint，DC-1~4 ✅），见 [goal/archive/](goal/archive/README.md)；M12/M14 剩余面 2026-09-07 拆分为 6 个子 goal（[storage-opfs](goal/storage-opfs.md)——M1 已落地 / [page-wasm](goal/page-wasm.md) / [android-browser](goal/android-browser.md) / webdriver——已完成归档 [goal/archive/webdriver.md](goal/archive/webdriver.md) / [web-components](goal/web-components.md) / [event-loop-spec](goal/event-loop-spec.md)）；渲染兼容性（WPT/CSSWG reftest 对齐 Chromium Oracle）持续主动实施——上游 WPT reftest corpus **14664/16813 = 87.2%**（R4193 轮口径），宽轴关键字固有贡献（R4149–R4152）、object/embed/applet 解码固有尺寸桥接（R4159）、ratio-only SVG × aspect-ratio 优先级族（R4160–R4165）、head 内注入文本节点渲染链（R4169，净+13）、cq 单位样式键缓存禁用（R4178）、line-clamp:auto 家族（R4181–R4184）、单行 flex line cross 钳制（R4185）、margin-trim 自折叠臂（R4191）、contain:inline-size 内联尺寸抑制（R4193）等系列持续收口（R3936–R4193）；布局依赖值两遍样式解析深域已立案（R4189，等用户点名）；残余缺口为 vertical writing modes、multicol 碎片化、R109 inline-as-block 等结构性问题（Phase A IFC / R1043 / R2174 等深方向仍需用户点名授权）。完整 Web API 与真实网站交互兼容性是后续阶段。详见 [路线图](../ROADMAP.md)。
 
 所以今天的 ZeroWeb 是一个内核已成形、产品层在打磨的浏览器工作区，但还不是一个做完的浏览器产品。
 
