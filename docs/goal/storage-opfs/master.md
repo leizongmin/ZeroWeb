@@ -2,7 +2,7 @@
 
 **入口文档**: [../storage-opfs.md](../storage-opfs.md)
 **创建日期**: 2026-09-07（goal 拆分 bootstrap）
-**最后更新**: 2026-09-09（M2 切片 1 完成——JS 接线 + Rust 真实后端，通过率 36%→95%）
+**最后更新**: 2026-09-09（M1-M3 全部落毕——DC-1~4 全满足，DONE 判定成立）
 
 ---
 
@@ -100,6 +100,17 @@ clippy 终验 + archive 建立。
 > M3 切片 2（已落）：test_opfs_estimate_real_usage_m3——写入 5 字节 usage 差值精确 5。
 > M3 切片 3（已落）：SAH 评估定论=skip（evidence/2026-09-09-m3-skip-list-and-sah-verdict.md §1）。
 > M3 切片 4（已落）：skip 清单正式化（同上 §2/§3）。
+
+## Done Criteria 判定（2026-09-09 终验）
+
+| DC | 判定 | 依据 |
+|----|------|------|
+| **DC-1 WPT 用例导入与通过率基线** | ✅ | `scripts/fetch-fs-subset.sh`（照 indexeddb 先例，pin 31597693）+ fs/ window 可执行 13 用例导入（`make testharness-fs`）+ 基线报告持久化（`evidence/2026-09-09-fs-baseline-inmemory-shim.{md,json}`：133 subtests 48P/85F）+ `imported-testharness.txt` 记账 13 条（OPFS-M1-baseline）+ window picker 域（postMessage*/SAH*/move/Observer 等）fetch 脚本头 skip 注明 |
+| **DC-2 页面走真实引擎** | ✅ | zero-storage opfs 模块全 API 面（目录树/句柄/读写流，19 单测）+ `part02.js` 切换 `__zw_opfs` 宿主命令→opfs 模块（kill-switch：`__zw_opfs` 未注册→内存虚拟树同构回退，`in_memory_owner_opfs_does_not_persist` 断言其不落盘）+ 句柄身份/名称校验/错误类型语义与 spec 一致（WPT 为准：126P/7F，剩余 7 项全部归类域外——见 skip 定论） |
+| **DC-3 持久化** | ✅ | per-origin 落盘（OpfsPersistence，照 cache_api 模式）+ 跨会话 e2e（`persistent_owner_opfs_file_survives_webview_rebuild`：写入→重建 WebView→读回一致；page/WebView owner 面）+ 磁盘错误不 panic（opfs_handler 打开失败降级内存态；flush 错误经 wire 层 reject）+ 中断恢复（`.tmp`/`.bak` 扫描，`test_persistence_roundtrip`） |
+| **DC-4 测试与质量不可退让** | ✅ | `make test` 全绿（2026-09-09 终验，67 test binary 零 FAILED，含 quickjs clippy 门禁步）+ `cargo clippy --workspace --all-targets -- -D warnings` 零警告 + 每项修复带单测（storage 19 / page-runtime host 6 / engine bridge 6 / webview e2e 4 = 35 个新测试）+ driving WPT 用例资产化（13 用例记账） |
+
+**判定：DC-1~4 全部满足，DONE 条件成立。**
 
 ## 里程碑状态
 
