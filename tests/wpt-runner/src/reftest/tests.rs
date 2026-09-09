@@ -4222,3 +4222,61 @@ fn debug_r4180_flex_ct_tree() {
     }
     dump(&result.root, 1);
 }
+
+/// R4182 勘察：line-clamp-auto-043（max-height 盒 overflow 域 clamp 点）布局树
+///（`cargo test -- --nocapture --ignored`）。实证：clamp 点落 .max-height 盒的
+/// overflow 域（内容 3 行 > max-height 1lh=2 行，盒高定死不可收缩）时，clamp 由
+/// 后继匿名文本块的 own-IFC cap 路径承接（clamped=true 而 cap=None——该路径无
+/// ellipsis host 接线，ref 期望「Line B…」末行省略号）；ref 语义 = 约束盒整体消费
+/// 后 clamp 点落其后的行（「clamp point can't be in the overflow of a box」）。
+/// 修复需约束盒原子消费 + own-IFC cap 路径的 ellipsis 接线，与 auto-044 嵌套约束
+/// 链「最后可行 clamp 点」搜索同域（深域挂账，勿单点重试）。
+#[test]
+#[ignore]
+fn debug_r4182_auto043_tree() {
+    use zero_css_parser::Parser as CssParser;
+    use zero_dom::parse_html;
+    use zero_layout_engine::LayoutEngine;
+    use zero_style_system::StyleSystem;
+    let html = r#"<html><head><style>
+.clamp {
+  line-clamp: auto;
+  max-height: 2lh;
+  width: 500px;
+  font: 16px / 32px serif;
+  white-space: pre;
+  background-color: yellow;
+}
+.max-height {
+  max-height: 1lh;
+  text-align: right;
+}
+</style></head><body style="margin:0">
+<div class="clamp">
+  <div class="max-height">Line 1
+Line 2
+Line 3</div>
+  Line B
+Line C</div>
+</body></html>"#;
+    let doc = parse_html(html);
+    let stylesheet = CssParser::parse_stylesheet(
+        ".clamp { line-clamp: auto; max-height: 2lh; width: 500px; font: 16px / 32px serif; white-space: pre; background-color: yellow; } .max-height { max-height: 1lh; text-align: right; }",
+    );
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[stylesheet]);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    fn dump(b: &zero_layout_engine::types::LayoutBox, depth: usize) {
+        let pad = "  ".repeat(depth);
+        println!(
+            "{pad}node={:?} y={} h={} cap={:?} clamped={} hidden={}",
+            b.node_id, b.y, b.height, b.line_clamp_cap, b.line_clamp_clamped, b.line_clamp_hidden
+        );
+        for c in &b.children {
+            dump(c, depth + 1);
+        }
+    }
+    dump(&result.root, 1);
+}

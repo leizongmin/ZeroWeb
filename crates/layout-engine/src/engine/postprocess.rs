@@ -2824,10 +2824,18 @@ pub(super) fn apply_cross_block_line_clamp(
                     }
                     c.line_clamp_cap = Some(effective_remaining);
                     c.line_clamp_clamped = true;
-                    let delta = (lines - effective_remaining) as f32 * lh;
-                    if delta > 0.5 {
-                        c.height = (c.height - delta).max(0.0);
-                        c.content_height = (c.content_height - delta).max(0.0);
+                    // R4181c（css-overflow-4 #line-clamp）：**定高子盒 cap 内截不收缩盒高**
+                    //（line-clamp-013 assert「clamped block descendent heights are
+                    // respected」——.inner height:3lh definite，Line 5/6 隐藏但盒高保持，
+                    // 天蓝背景填满定高）。仅 Auto 高按行数差收缩（防占位/溢出）。
+                    // Auto 模式定高盒走上方 retreat，不会到达此处；本臂只影响 Count 限值。
+                    let height_definite = child_style.is_some_and(|s| !matches!(s.height, LengthValue::Auto));
+                    if !height_definite {
+                        let delta = (lines - effective_remaining) as f32 * lh;
+                        if delta > 0.5 {
+                            c.height = (c.height - delta).max(0.0);
+                            c.content_height = (c.content_height - delta).max(0.0);
+                        }
                     }
                     out.boundary_y = c.y + c.height;
                     exhausted = true;

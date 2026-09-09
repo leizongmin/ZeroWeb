@@ -128,3 +128,48 @@ Line 9</div>
         _cap
     );
 }
+
+/// R4181c（line-clamp-013）：Count 限值内截定高子盒不收缩盒高——.inner height:3lh
+/// definite（96+bmp 12=108），Line 5/6 被 cap 隐藏但盒高保持（assert「clamped block
+/// descendent heights are respected」）。旧实现按 remaining×lh 收缩到 64。
+#[test]
+fn r4181c_definite_height_inner_box_not_shrunk_by_count_clamp() {
+    let html = r#"<html><head><style>
+.clamp {
+  line-clamp: 4;
+  font: 16px / 32px serif;
+  white-space: pre;
+}
+.inner {
+  height: 3lh;
+  padding: 4px;
+  border: 2px solid purple;
+}
+</style></head><body style="margin:0">
+<div class="clamp">Line 1
+Line 2<div class="inner">Line 3
+Line 4
+Line 5
+Line 6</div></div>
+</body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let stylesheet = zero_css_parser::Parser::parse_stylesheet(
+        ".clamp { line-clamp: 4; font: 16px / 32px serif; white-space: pre; } .inner { height: 3lh; padding: 4px; border: 2px solid purple; }",
+    );
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[stylesheet]);
+    let inner = doc
+        .get_elements_by_tag_name("div")
+        .into_iter()
+        .nth(1)
+        .expect("inner div");
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    let (_y, h, cap) = find_box(&result.root, inner).expect("inner box");
+    assert_eq!(cap, Some(2), "R4181c: 盒内 cap 2 行（预算 4 − 前文 2）");
+    assert!(
+        (h - (96.0 + 12.0)).abs() < 0.5,
+        "R4181c: 定高盒应保持 3lh+bmp = 108，实际 {h}（旧实现收缩到 64）"
+    );
+}
