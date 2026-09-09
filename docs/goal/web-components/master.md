@@ -2,7 +2,7 @@
 
 **入口文档**: [../web-components.md](../web-components.md)
 **创建日期**: 2026-09-07（goal 拆分 bootstrap）
-**最后更新**: 2026-09-10（M1 切片 2b 落地——PCEN 产生式 + DOMException 化 + registry 接口，9%→54%）
+**最后更新**: 2026-09-10（M1 切片 2b 落地——PCEN 产生式 + DOMException 化 + registry 接口，9%→55%）
 
 ---
 
