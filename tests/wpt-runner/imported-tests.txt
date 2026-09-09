@@ -287,3 +287,4 @@ css/CSS2/generated-content/content-085.xht css/CSS2/generated-content/content-04
 css/CSS2/generated-content/content-131.xht css/CSS2/generated-content/content-047-ref.html == 2026-09-09 R4169 head 内注入文本节点渲染链——display:none 子树不泄入父 IFC + 注入文本节点伪元素样式着色
 css/css-overflow/overflow-clip-x-visible-y-svg.html css/css-overflow/overflow-clip-x-visible-y-svg-ref.html == 2026-09-09 R4174 svg 根 UA overflow:hidden + 轴级 overflow 扩展画布栅格化（x clip / y visible）
 css/css-overflow/overflow-clip-y-visible-x-svg.html css/css-overflow/overflow-clip-y-visible-x-svg-ref.html == 2026-09-09 R4174 svg 根 UA overflow:hidden + 轴级 overflow 扩展画布栅格化（y clip / x visible）
+css/CSS2/floats/negative-block-margin-pushing-float-out-of-block-formatting-context.html css/CSS2/floats/negative-block-margin-pushing-float-out-of-block-formatting-context-ref.html == 2026-09-09 R4176 float 提升钳制基准改假设流位置（负 margin-top 合法偏移不被钳回）

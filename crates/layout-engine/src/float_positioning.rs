@@ -1185,10 +1185,17 @@ pub(crate) fn adjust_float_positions_with_context(
                 // CSS 2.1 §9.5.1：float 元素不应高于正常流内容的位置。
                 // Phase 1 定位 float 时不知道 normal flow 的位置，
                 // 这里修正：将 float 的 Y 推到至少与当前流位置齐平。
-                // 注意：flow_bottom 是 content-relative，child.y 是 border-relative
-                let child_content_y = child.y - content_y_offset;
-                if child_content_y < flow_bottom {
-                    child.y = content_y_offset + flow_bottom;
+                // 注意：flow_bottom 是 content-relative，child.y 是 border-relative。
+                // R4176（§9.5.1 + chromium 实证 negative-block-margin-pushing-float-
+                // out-of-block-formatting-context）：钳制基准是 float 的**假设流位置**
+                //（Phase 1 的 line_y，即 margin 应用前的 border-box 目标位），非 margin
+                // 应用后的实际位——负 margin-top 是 float 相对流位的**合法偏移**
+                //（chromium：BFC 内唯一 float `mt:-100` 渲染于流位上移 100，不被钳回）。
+                // 旧实现拿 mt 应用后的 y 与 flow_bottom 比较，负 mt 恒触发钳制
+                //（y 被拉回 flow_bottom，负 margin 整体失效）。
+                let child_hypothetical_y = child.y - content_y_offset - child.margin_top;
+                if child_hypothetical_y < flow_bottom {
+                    child.y = content_y_offset + flow_bottom + child.margin_top;
                     // R1832：修复 float/clear Y-staircase。旧代码在此 `active_*_float_bottom
                     // += shift`，但 active_*_float_bottom 追踪「前序 float 底边」非本 float
                     // 原始位置——把 shift（本 float 被下推量）加到前序底边 = 双重计数：
@@ -1198,7 +1205,7 @@ pub(crate) fn adjust_float_positions_with_context(
                     // 真实底边已由下方 `.max(child_bottom)` 正确更新。kill-switch
                     // `ZW_FLOAT_YSTAIRCASE_FIX=0` 恢复旧行为。
                     if std::env::var("ZW_FLOAT_YSTAIRCASE_FIX").as_deref() == Ok("0") {
-                        let shift = flow_bottom - child_content_y;
+                        let shift = flow_bottom - child_hypothetical_y;
                         match child.float {
                             FloatValue::Left => active_left_float_bottom += shift,
                             FloatValue::Right => active_right_float_bottom += shift,
