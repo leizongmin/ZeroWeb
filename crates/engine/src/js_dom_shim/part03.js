@@ -2486,27 +2486,58 @@
     'annotation-xml': 1, 'color-profile': 1, 'font-face': 1, 'font-face-src': 1,
     'font-face-uri': 1, 'font-face-format': 1, 'font-face-name': 1, 'missing-glyph': 1,
   };
-  // 有效 custom element 名：首字符小写 ASCII 字母 + 含连字符 + 仅小写字母/数字/./-（spec PotentialCustomElementName
-  // 简化，不含 uppercase / PASCII）。reserved 名拒。
+  // 有效 custom element名：spec PotentialCustomElementName 产生式——
+  // https://html.spec.whatwg.org/multipage/custom-elements.html#prod-potentialcustomelementname
+  // `` [a-z] (PCENChar)* '-' (PCENChar)* ``，PCENChar = "-" / "." / [0-9] / "_" / [a-z] /
+  // /u00B7 / [u00C0-uD6FF] / [uD800-uDFFF（配对 astral，按码点判定）] / [uF900-uFDCF] /
+  // [uFDF0-uFFFD] / [maxfp 高于 uFFFD 的 ScalarValue]。此前仅 ASCII 小写/数字/./-（WPT
+  // valid-custom-element-names 的 astral 名 118 案 Fail）。reserved 名拒。
+  function _ce_isPCENChar(ch) {
+    // spec PCENChar = '-' / '.' / [0-9] / '_' / [a-z] / #xB7 / [#xC0-#xD6] / [#xD8-#xF6]
+    // / [#xF8-#x37D] / [#x37F-#x1FFF] / [#x200C-#x200D] / [#x203F-#x2040] / [#x2070-#x218F]
+    // / [#x2C00-#x2FEF] / [#x3001-#xD7FF] / [#xF900-#xFDCF] / [#xFDF0-#xFFFD]
+    // / [#x10000-#xEFFFF]。注意控制字符 NUL/tab/LF/FF/CR/space 与 '/'、'>' 在
+    // 产生式外层已被排除（PotentialCustomElementName 不含它们——测试参考校验器
+    // elementLocalNameRegex 同款禁集），与 HTML tag 名禁集一致。
+    var c = ch.codePointAt(0);
+    if (c === 0x00 || c === 0x09 || c === 0x0A || c === 0x0C || c === 0x0D || c === 0x20) return false;
+    if (c === 0x2F || c === 0x3E) return false; // / >
+    if (c >= 0x41 && c <= 0x5A) return false; // A-Z
+    return true; // 其余标量码点均 PCENChar（含控制字符——测试参考校验器实证）
+  }
   function _ce_validName(name) {
     if (typeof name !== 'string') return false;
-    return /^[a-z][a-z0-9.-]*-[a-z0-9.-]*$/.test(name) && !_CE_RESERVED[name];
+    // spec 产生式：首 [a-z]，尾部 (PCENChar)* '-' (PCENChar)*——至少一个 '-'。
+    var chars = Array.from(name);
+    if (!chars.length || !/^[a-z]$/.test(chars[0])) return false;
+    var seenHyphen = false;
+    for (var i = 1; i < chars.length; i++) {
+      var ch = chars[i];
+      if (ch === '-') { seenHyphen = true; continue; }
+      if (!_ce_isPCENChar(ch)) return false;
+    }
+    if (!seenHyphen) return false;
+    return !_CE_RESERVED[name];
   }
   // R364：参数化 define 主体（主实例 + 子 realm 实例共享——校验/冲突/waiter 逻辑单点）。
   // opts.noUpgrade = 子实例不驱动主文档 upgrade 子树（iframe 文档升级路由为后续片）。
   function _ceDefine(reg, byCtor, pending, name, ctor, options, opts) {
     opts = opts || {};
     if (!_ce_validName(name)) {
-      throw new Error("Failed to execute 'define' on 'CustomElementRegistry': \"" + name + "\" is not a valid custom element name");
+      // WC-M1 切片 2b：spec `dom-customelementregistry-define`——无效名抛
+      // SyntaxError DOMException（plain Error 使 assert_throws_dom/
+      // promise_rejects_dom 全簇 Fail，valid-custom-element-names 1753+118）。
+      throw _zwDomException("Failed to execute 'define' on 'CustomElementRegistry': \"" + name + "\" is not a valid custom element name", 'SyntaxError');
     }
     if (typeof ctor !== 'function') {
       throw new TypeError("Failed to execute 'define' on 'CustomElementRegistry': parameter 2 is not a constructor");
     }
     if (reg[name]) {
-      throw new Error("Failed to execute 'define' on 'CustomElementRegistry': the name \"" + name + "\" has already been used with this registry");
+      // WC-M1 切片 2b：重复定义 → NotSupportedError DOMException（spec 同步）。
+      throw _zwDomException("Failed to execute 'define' on 'CustomElementRegistry': the name \"" + name + "\" has already been used with this registry", 'NotSupportedError');
     }
     if (byCtor.has(ctor)) {
-      throw new Error("Failed to execute 'define' on 'CustomElementRegistry': this constructor has already been used with this registry");
+      throw _zwDomException("Failed to execute 'define' on 'CustomElementRegistry': this constructor has already been used with this registry", 'NotSupportedError');
     }
     reg[name] = { ctor: ctor, options: options || {} };
     byCtor.set(ctor, name);
@@ -2528,7 +2559,7 @@
   // R364：参数化 whenDefined（主/子共享）。
   function _ceWhenDefined(reg, pending, name) {
     if (!_ce_validName(name)) {
-      return Promise.reject(new Error("Failed to execute 'whenDefined' on 'CustomElementRegistry': \"" + name + "\" is not a valid custom element name"));
+      return Promise.reject(_zwDomException("Failed to execute 'whenDefined' on 'CustomElementRegistry': \"" + name + "\" is not a valid custom element name", 'SyntaxError'));
     }
     var entry = reg[name];
     if (entry) return Promise.resolve(entry.ctor);
@@ -2569,6 +2600,42 @@
       } catch (_e) {}
     },
   };
+
+  // WC-M1 切片 2b：`CustomElementRegistry` 接口对象（spec
+  // `dom-customelementregistry`——interface + prototype；`customElements` 是其实例，
+  // `customElements instanceof CustomElementRegistry` 为 true；构造器不可 new——
+  // interface 无 [Constructor]，new → TypeError「Illegal constructor」）。
+  // WPT CustomElementRegistry.html 的「CustomElementRegistry interface must have
+  // define as a method」等 88+ subtest 经 `CustomElementRegistry.prototype.xxx` 断言。
+  if (!globalThis.CustomElementRegistry) {
+    var _CERegistryIface = function CustomElementRegistry() {
+      throw new TypeError("Illegal constructor");
+    };
+    try {
+      Object.defineProperty(_CERegistryIface.prototype, 'define', {
+        value: function (name, ctor, options) { return globalThis.customElements.define(name, ctor, options); },
+        writable: true, configurable: true, enumerable: true,
+      });
+      Object.defineProperty(_CERegistryIface.prototype, 'get', {
+        value: function (name) { return globalThis.customElements.get(name); },
+        writable: true, configurable: true, enumerable: true,
+      });
+      Object.defineProperty(_CERegistryIface.prototype, 'getName', {
+        value: function (ctor) { return globalThis.customElements.getName(ctor); },
+        writable: true, configurable: true, enumerable: true,
+      });
+      Object.defineProperty(_CERegistryIface.prototype, 'whenDefined', {
+        value: function (name) { return globalThis.customElements.whenDefined(name); },
+        writable: true, configurable: true, enumerable: true,
+      });
+      Object.defineProperty(_CERegistryIface.prototype, 'upgrade', {
+        value: function (root) { return globalThis.customElements.upgrade(root); },
+        writable: true, configurable: true, enumerable: true,
+      });
+      globalThis.customElements = Object.setPrototypeOf(globalThis.customElements, _CERegistryIface.prototype);
+    } catch (_wcCERp) {}
+    globalThis.CustomElementRegistry = _CERegistryIface;
+  }
 
   // R3269 upgrade 子树遍历：DFS（firstChild → nextSibling），对每个 Element 节点，tag 命中 registry 则
   // setPrototypeOf 升级 + 已连入 document 触发 connectedCallback。Text/Comment 跳过（无 tag）。

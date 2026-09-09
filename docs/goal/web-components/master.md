@@ -2,7 +2,7 @@
 
 **入口文档**: [../web-components.md](../web-components.md)
 **创建日期**: 2026-09-07（goal 拆分 bootstrap）
-**最后更新**: 2026-09-10（M1 切片 2a 落地——shadow mutation 面 + content 视图，9%→15%）
+**最后更新**: 2026-09-10（M1 切片 2b 落地——PCEN 产生式 + DOMException 化 + registry 接口，9%→54%）
 
 ---
 
@@ -73,12 +73,13 @@ Shadow DOM 渲染级 composed tree 排除（等用户点名专项）。
 
 ## 下一步计划
 
-1. **M1 切片 2b**：`customElements.upgrade` 真语义（quickjs `ce_upgrade` no-op 替换）
-   + `CustomElementRegistry` 接口对象暴露（~88 subtest）+ `whenDefined` 同 promise
-   身份断言（每调用返回**同一** pending promise）
+1. **M1 切片 3**：`adoptedCallback` 派发路径（document.adoptNode / importNode 跨文档）
+   + reactions/ per-API CEReactions 反应链（59 案整簇，`reactions.js` 已入资产）
+   + `customElements.upgrade` 真语义（quickjs `ce_upgrade` no-op 替换；shim 侧
+   `_ceUpgradeSubtree` 已有——两路径对齐）
 2. **M1 切片 3**：`adoptedCallback` 派发路径（document.adoptNode / importNode 跨文档）
    + reactions/ per-API CEReactions 反应链（59 案整簇，`reactions.js` 已入资产）
-3. **M2 切片 1**：parser `get_template_contents` 真 inert fragment（根因修复——
+2. **M2 切片 1**：parser `get_template_contents` 真 inert fragment（根因修复——
    contents 内联使嵌套 template 装配出现 childNodes 回指环，sel-clone 深克隆
    无限递归 → complex 装配 90s 伪超时 5 案）+ R145 规则收敛
 
