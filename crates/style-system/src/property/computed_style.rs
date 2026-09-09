@@ -312,6 +312,14 @@ pub struct ComputedStyle {
     /// （collect_css_transforms）用 0 0。html 侧消费方（compute_transform_matrix）不受影响
     ///（html 元素有布局盒，初始 50% 50% 语义正确）。
     pub transform_origin_declared: bool,
+    // ── R4201（css-transforms-2 §individual-transforms）：独立变换属性 ──
+    /// `translate` 属性（`none | <length-percentage> [<length-percentage> <length>?]`）。
+    /// None = 未声明/none。合成顺序见 compute_transform_matrix_with_ref_box。
+    pub individual_translate: Option<zero_css_parser::values::TransformFunction>,
+    /// `rotate` 属性（`none | <angle> | [x|y|z|<number>{3}] && <angle>`）。
+    pub individual_rotate: Option<zero_css_parser::values::TransformFunction>,
+    /// `scale` 属性（`none | <number> [<number> <number>?]?`）。
+    pub individual_scale: Option<zero_css_parser::values::TransformFunction>,
     /// transform-box 值（CSS Transforms 1，非继承；默认 view-box）。
     pub transform_box: TransformBoxValue,
     /// stroke-width 值（SVG2 presentation，非继承；LengthValue，百分比/number 由消费侧按

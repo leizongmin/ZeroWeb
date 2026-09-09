@@ -455,6 +455,87 @@ pub fn parse_transform(value: &str) -> Option<TransformValue> {
     }
 }
 
+/// R4201（css-transforms-2 §individual-transforms）：`translate` 属性值解析——
+/// `none | <length-percentage> [<length-percentage> <length>?]`。单值 = X（Y=0）；
+/// Z 分量接受但 2D 投影忽略（同 translate3d 降级）。返回 Translate(tx, ty)（%
+/// 分量经 Mixed 变体不可表达双轴混合 → 统一用 Translate 承载 px 数值，百分比
+/// 分量按 0 处理由调用方…此处直接解出 px/百分比数值，混合 % 由
+/// `TranslateMixed` 承载——individual 的 % 相对元素 border-box，消费方（matrix
+/// 合成）已有 rect 上下文，故 % 值须保真 → 用 TranslateMixed/TranslateXMixed。
+pub fn parse_individual_translate(value: &str) -> Option<TransformFunction> {
+    let parts = split_transform_value_args(value.trim())?;
+    if parts.is_empty() || parts.len() > 3 {
+        return None;
+    }
+    let (tx, txp) = parse_len_or_pct(parts.first()?)?;
+    let (ty, typ) = match parts.get(1) {
+        Some(s) => parse_len_or_pct(s)?,
+        None => (0.0, false),
+    };
+    // 第三值 = Z（2D 投影忽略，仅校验合法性）。
+    if let Some(z) = parts.get(2) {
+        parse_len_or_pct(z)?;
+    }
+    Some(match (txp, typ) {
+        (true, _) | (_, true) => TransformFunction::TranslateMixed(tx, txp, ty, typ),
+        (false, false) => TransformFunction::Translate(tx, ty),
+    })
+}
+
+/// R4201：`rotate` 属性值解析——`none | <angle> | [x|y|z|<number>{3}] && <angle>`。
+/// 裸 angle = RotateZ；`x <angle>` = RotateX；`y <angle>` = RotateY；
+/// `<number>{3} <angle>` = Rotate3d。轴 + 角度以空白分隔（轴形式时 angle 必须存在）。
+pub fn parse_individual_rotate(value: &str) -> Option<TransformFunction> {
+    let value = value.trim();
+    let parts = split_transform_value_args(value)?;
+    match parts.len() {
+        1 => {
+            // 裸 <angle>（parse_angle 接受纯数字 = deg 数值）或单轴关键字（非法）。
+            let angle = parse_angle(parts[0])?;
+            Some(TransformFunction::RotateZ(angle))
+        }
+        2 => {
+            let axis = parts[0].trim().to_ascii_lowercase();
+            let angle = parse_angle(parts[1])?;
+            match axis.as_str() {
+                "x" => Some(TransformFunction::RotateX(angle)),
+                "y" => Some(TransformFunction::RotateY(angle)),
+                "z" => Some(TransformFunction::RotateZ(angle)),
+                _ => {
+                    let n: f64 = parts[0].parse().ok()?;
+                    Some(TransformFunction::Rotate3d(n, 0.0, 0.0, angle))
+                }
+            }
+        }
+        4 => {
+            let x: f64 = parts[0].parse().ok()?;
+            let y: f64 = parts[1].parse().ok()?;
+            let z: f64 = parts[2].parse().ok()?;
+            let angle = parse_angle(parts[3])?;
+            Some(TransformFunction::Rotate3d(x, y, z, angle))
+        }
+        _ => None,
+    }
+}
+
+/// R4201：`scale` 属性值解析——`none | <number> [<number> <number>?]?`。
+/// 单值 = 等比（sx=sy）；双值 = X Y；三值 Z 分量不改 2D 投影（同 scale3d 降级）。
+pub fn parse_individual_scale(value: &str) -> Option<TransformFunction> {
+    let parts = split_transform_value_args(value.trim())?;
+    if parts.is_empty() || parts.len() > 3 {
+        return None;
+    }
+    let sx: f64 = parts.first()?.parse().ok()?;
+    let sy = match parts.get(1) {
+        Some(s) => s.parse::<f64>().ok()?,
+        None => sx,
+    };
+    if let Some(z) = parts.get(2) {
+        z.parse::<f64>().ok()?;
+    }
+    Some(TransformFunction::Scale(sx, Some(sy)))
+}
+
 /// 解析单个变换函数。
 fn parse_transform_function(name: &str, args: &str) -> Option<TransformFunction> {
     // CSS 关键字大小写不敏感（CSS Syntax §3.1）：`translatex`/`Translate`/`MATRIX` 等同 canonical-case。

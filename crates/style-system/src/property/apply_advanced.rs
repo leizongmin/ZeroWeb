@@ -443,6 +443,43 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
                 return true;
             }
         }
+        // R4201（css-transforms-2 §individual-transforms）：独立变换属性。
+        // `translate: none | <length-percentage> [<length-percentage> <length>?]`——
+        // 单值 = X（Y=0）；双值 = X Y；三值含 Z（2D 投影忽略 Z，同 translate3d 降级）。
+        "translate" => {
+            if value.trim().eq_ignore_ascii_case("none") {
+                style.individual_translate = None;
+                return true;
+            }
+            if let Some(f) = values::parse_individual_translate(value) {
+                style.individual_translate = Some(f);
+                return true;
+            }
+        }
+        // `rotate: none | <angle> | [x|y|z|<number>{3}] && <angle>`——
+        // 裸 angle = RotateZ；轴形式映射 RotateX/RotateY/Rotate3d（2D 投影降级同 transform）。
+        "rotate" => {
+            if value.trim().eq_ignore_ascii_case("none") {
+                style.individual_rotate = None;
+                return true;
+            }
+            if let Some(f) = values::parse_individual_rotate(value) {
+                style.individual_rotate = Some(f);
+                return true;
+            }
+        }
+        // `scale: none | <number> [<number> <number>?]?`——单值 = 等比；双值 X Y；三值 Z 分量
+        // 不改 2D 投影（同 scale3d 降级）。
+        "scale" => {
+            if value.trim().eq_ignore_ascii_case("none") {
+                style.individual_scale = None;
+                return true;
+            }
+            if let Some(f) = values::parse_individual_scale(value) {
+                style.individual_scale = Some(f);
+                return true;
+            }
+        }
         "transform-origin" => {
             // https://drafts.csswg.org/css-transforms-1/#transform-origin-property
             if let Some((x, y)) = parse_origin_xy(value) {

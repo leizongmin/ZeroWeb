@@ -195,6 +195,10 @@ impl Default for ComputedStyle {
             transform_origin_x: LengthValue::Percentage(50.0),
             transform_origin_y: LengthValue::Percentage(50.0),
             transform_origin_declared: false,
+            // R4201：独立变换属性初始 none（css-transforms-2 §individual-transforms）。
+            individual_translate: None,
+            individual_rotate: None,
+            individual_scale: None,
             // CSS Transforms 1 §transform-box：初始值 view-box（SVG 元素参考最近 viewport；
             // CSS 盒上 view-box 别名 border-box——由消费侧解释，存储保原值）。
             transform_box: TransformBoxValue::ViewBox,

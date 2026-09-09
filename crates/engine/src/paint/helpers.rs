@@ -60,19 +60,22 @@ pub fn apply_transform_offset(style: &ComputedStyle, _abs_x: f32, _abs_y: f32) -
 /// `scaleY(0)`（轴缩放 0）。`rotate3d`/`matrix3d` 的奇异判定需完整 3D 矩阵（ZW 无 3D
 /// 矩阵合成，缺失维恒等）不在本 helper 范围。
 pub fn is_singular_transform(style: &ComputedStyle) -> bool {
-    let funcs = match &style.transform {
-        TransformValue::None => return false,
-        TransformValue::List(f) => f,
+    let own_singular = match &style.transform {
+        TransformValue::None => false,
+        TransformValue::List(f) => f.iter().any(|f| match f {
+            TransformFunction::Scale3d(_, _, sz) => *sz == 0.0,
+            TransformFunction::Scale(sx, sy) => *sx == 0.0 || sy.is_some_and(|sy| sy == 0.0),
+            TransformFunction::ScaleX(sx) => *sx == 0.0,
+            TransformFunction::ScaleY(sy) => *sy == 0.0,
+            _ => false,
+        }),
     };
-    funcs.iter().any(|f| match f {
-        TransformFunction::Scale3d(_, _, sz) => *sz == 0.0,
-        TransformFunction::Scale(sx, sy) => *sx == 0.0 || sy.is_some_and(|sy| sy == 0.0),
-        TransformFunction::ScaleX(sx) => *sx == 0.0,
-        TransformFunction::ScaleY(sy) => *sy == 0.0,
-        // R3832：scaleZ(0) → 3D 矩阵 z 分量 0 → 奇异（同 scale3d z=0）。
-        TransformFunction::ScaleZ(sz) => *sz == 0.0,
-        _ => false,
-    })
+    if own_singular {
+        return true;
+    }
+    // R4201：individual `scale: 0`（承载为 Scale(sx, sy)）同样构成奇异。
+    matches!(&style.individual_scale, Some(TransformFunction::Scale(sx, sy))
+        if *sx == 0.0 || sy.is_some_and(|sy| sy == 0.0))
 }
 
 /// R4035：元素是否背对观察者（CSS Transforms 2 §backface-visibility）。
@@ -118,12 +121,34 @@ pub fn compute_transform_matrix_with_ref_box(
     rect: &Rect,
     ref_rect: Option<&Rect>,
 ) -> Option<TransformPrimitive> {
-    let funcs = match &style.transform {
-        TransformValue::None => return None,
-        TransformValue::List(f) => f,
+    // R4201（css-transforms-2 §individual-transforms）：独立属性合成——
+    // used transform = translate · rotate · scale · transform（css-transforms-2
+    // §transform 拆解顺序）。individual 属性值承载为单函数 TransformFunction
+    //（% 分量相对元素 border-box，与 transform 函数同语义），前置到列表头部。
+    // `transform: none` 且有 individual 时仍须合成（原 None 早退在无 individual 时保持）。
+    let mut individual: Vec<TransformFunction> = Vec::with_capacity(3);
+    if let Some(f) = &style.individual_translate {
+        individual.push(f.clone());
+    }
+    if let Some(f) = &style.individual_rotate {
+        individual.push(f.clone());
+    }
+    if let Some(f) = &style.individual_scale {
+        individual.push(f.clone());
+    }
+    let own_funcs: Vec<TransformFunction> = match &style.transform {
+        TransformValue::None => Vec::new(),
+        TransformValue::List(f) => f.clone(),
     };
+    let has_individual = !individual.is_empty();
+    if own_funcs.is_empty() && !has_individual {
+        return None;
+    }
+    let funcs: Vec<TransformFunction> = individual.into_iter().chain(own_funcs).collect();
 
-    // 检查是否只有 translate 函数（由 offset 处理，不需要 TransformPrimitive）
+    // 检查是否只有 translate 函数（由 offset 处理，不需要 TransformPrimitive）。
+    // individual translate 亦为 Translate/TranslateMixed——TranslateMixed 归 matrix
+    // 路径（% 需 rect），与既有混合列表语义一致。
     let has_non_translate = funcs.iter().any(|f| {
         !matches!(
             f,
@@ -154,7 +179,7 @@ pub fn compute_transform_matrix_with_ref_box(
     let mut tx = 0.0_f32;
     let mut ty = 0.0_f32;
 
-    for func in funcs {
+    for func in &funcs {
         let (fa, fb, fc, fd, ftx, fty) = match func {
             TransformFunction::Translate(dx, dy) => (1.0, 0.0, 0.0, 1.0, *dx as f32, *dy as f32),
             // R2294：translate(%) 相对元素 border-box（rect.size）求值。has_non_translate 把
@@ -273,7 +298,7 @@ pub fn compute_transform_matrix_with_ref_box(
         d = 1.0;
         tx = 0.0;
         ty = 0.0;
-        for func in funcs {
+        for func in &funcs {
             let (fa, fb, fc, fd, ftx, fty) = match func {
                 TransformFunction::Translate(dx, dy) => (1.0, 0.0, 0.0, 1.0, *dx as f32, *dy as f32),
                 TransformFunction::TranslateMixed(tx, txp, ty, typ) => {
