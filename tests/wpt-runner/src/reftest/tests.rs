@@ -4663,3 +4663,39 @@ fn debug_r4190_grid_ar_stretch() {
     }
     dump(&result.root, 1);
 }
+
+/// R4192 勘察：margin-trim 嵌套残余（block-end-self-collapsing-block-start-margin 2.25%）。
+#[test]
+#[ignore]
+fn debug_r4192_mt_nested() {
+    use zero_css_parser::Parser as CssParser;
+    use zero_dom::parse_html;
+    use zero_layout_engine::LayoutEngine;
+    use zero_style_system::StyleSystem;
+    let html = r#"<html><head><style>body { margin: 8px; }</style></head><body>
+<div style="width:100px; height:100px; background:red;">
+  <div style="display:flow-root; background:red;">
+    <div style="position:absolute; width:100px; height:70px; background:green;"></div>
+    <div style="margin-top:70px; margin-trim:block-end;">
+      <div style="margin-top:222px;"></div>
+    </div>
+    <div style="height:30px; background:green;"></div>
+  </div>
+</div>
+</body></html>"#;
+    let doc = parse_html(html);
+    let stylesheet = CssParser::parse_stylesheet("body { margin: 8px; }");
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[stylesheet]);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    fn dump(b: &zero_layout_engine::types::LayoutBox, depth: usize) {
+        let pad = "  ".repeat(depth);
+        println!("{pad}node={:?} y={} h={} w={}", b.node_id, b.y, b.height, b.width);
+        for c in &b.children {
+            dump(c, depth + 1);
+        }
+    }
+    dump(&result.root, 1);
+}
