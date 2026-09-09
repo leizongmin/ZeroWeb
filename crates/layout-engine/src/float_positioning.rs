@@ -335,7 +335,24 @@ pub(crate) fn shrink_vertical_blocks_to_content(
                 })
                 .unwrap_or((0.0, f32::MAX));
             let new_width = content_extent.max(min_w).min(max_w).min(box_node.width);
-            if new_width + 0.5 < box_node.width {
+            // R4195：table 有专属 vertical 路径（table_vertical.rs step 8 自管
+            // table_block_extent + caption 逻辑 block 轴定位）——本收缩臂的宽度改写会被
+            // step 8 覆盖，但**右锚平移改写子 x** 与 step 8 的 caption/行盒定位打架
+            //（vrl caption-side:bottom 表 caption.x 0→20 回归实证），table 域整臂跳过。
+            let is_table_container = box_node.node_id.and_then(|id| styles.get(&id)).is_some_and(|s| {
+                matches!(
+                    s.display,
+                    DisplayValue::Table
+                        | DisplayValue::InlineTable
+                        | DisplayValue::TableRowGroup
+                        | DisplayValue::TableHeaderGroup
+                        | DisplayValue::TableFooterGroup
+                        | DisplayValue::TableRow
+                        | DisplayValue::TableCell
+                        | DisplayValue::TableCaption
+                )
+            });
+            if new_width + 0.5 < box_node.width && !is_table_container {
                 let frame =
                     box_node.border_left + box_node.border_right + box_node.padding_left + box_node.padding_right;
                 // R4194（css-writing-modes-3 §7.1）：vertical-rl 的第一列贴**右**缘——

@@ -13,6 +13,53 @@ fn resolve_form_font_size_px(style: &ComputedStyle) -> Option<f32> {
     px.is_finite().then_some(px.max(0.0) as f32)
 }
 
+/// R4195（css-contain-3 §containment-inline-size）：contain:inline-size 的 `<legend>`
+/// 内容不贡献 inline 尺寸——legend 宽 = 纯边框（contain-inline-size-legend：legend
+/// 内容 500px + border 0 50px → 宽 100，非 604）。
+///
+/// 与 [`shrink_mixed_control_form`] 内 R4062 臂同语义，但**无 form 前置**：R4062 臂
+/// 仅在 `<form>`（auto-height Block）触发的 `layout_direct_fieldsets` 中可达——WPT
+/// 测试页 fieldset 直挂 body（无 form、或有 `<p>` 兄弟）时臂永不执行（fieldset-only
+/// 分派 gate `_ => return`）。本 pass 独立递归全树，凡 fieldset 直接子 legend 带
+/// inline-size containment 即重写 legend 宽（taffy 对 legend 无原生 fieldset 语义，
+/// converter 把 legend 视普通 Block，其 width:auto fill fieldset content 宽 604）。
+pub(crate) fn shrink_inline_size_legends(
+    box_node: &mut LayoutBox,
+    doc: &Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+) {
+    for child in &mut box_node.children {
+        shrink_inline_size_legends(child, doc, styles);
+    }
+    let Some(fieldset_id) = box_node.node_id else { return };
+    let is_fieldset = doc
+        .get(fieldset_id)
+        .is_some_and(|node| matches!(&node.kind, NodeKind::Element(element) if element.local_name() == "fieldset"));
+    if !is_fieldset {
+        return;
+    }
+    let Some(legend) = box_node.children.iter_mut().find(|child| {
+        child
+            .node_id
+            .and_then(|id| doc.get(id))
+            .is_some_and(|node| matches!(&node.kind, NodeKind::Element(element) if element.local_name() == "legend"))
+    }) else {
+        return;
+    };
+    let Some(legend_id) = legend.node_id else { return };
+    if !styles.get(&legend_id).is_some_and(|s| s.contain.has_inline_size()) {
+        return;
+    }
+    // 内容宽归零 → legend 宽 = padding + border（chrome-only）。仅收窄不放宽
+    //（显式 width 的 legend 不受影响——converter 已写 definite 宽，此处仅处理
+    // fill 形态；保守起见按「当前宽 > frame」判定）。
+    let frame = legend.border_left + legend.padding_left + legend.padding_right + legend.border_right;
+    if legend.width > frame + 0.5 {
+        legend.content_width = 0.0;
+        legend.width = frame;
+    }
+}
+
 /// Taffy 把 inline-block 控件作为 block 子参与 form 初始测高；IFC 随后把这些控件
 /// 重排到同一行，但旧的过大 form 高度仍会推开后续内容。仅在普通 auto-height form
 /// 含 block 子和原生 inline 控件、且无复杂定位/float 时按最终子盒底边收紧。

@@ -954,6 +954,11 @@ impl LayoutEngine {
         }
         crate::form_layout::shrink_mixed_control_forms(&mut root_box, doc, styles);
 
+        // R4195（css-contain-3 §containment-inline-size）：fieldset 直挂（无 form 父）
+        // 页面的 legend inline-size 抑制——R4062 臂 form-gated 不可达（fieldset-only
+        // 分派 gate），独立递归 pass 补齐（legend 宽 = 纯边框）。
+        crate::form_layout::shrink_inline_size_legends(&mut root_box, doc, styles);
+
         // 12.5 后处理：修正 calc(P% ± Npx) 尺寸。
         // taffy 不支持 calc 表达式，convert 层将 calc(100% - 6px) 近似为 Percent(1.0)。
         // 此步骤根据实际百分比计算值和 px 偏移量修正最终尺寸。
