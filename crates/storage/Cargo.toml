@@ -11,6 +11,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 indexmap = { workspace = true }
 sha2 = { workspace = true }
+getrandom = { workspace = true }
 dirs = { workspace = true }
 zero-runtime-config = { workspace = true }
 url = { workspace = true }

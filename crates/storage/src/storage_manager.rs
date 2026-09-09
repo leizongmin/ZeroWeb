@@ -47,6 +47,16 @@ pub fn default_cache_storage_dir() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from(".zero-browser-storage").join("CacheStorage"))
 }
 
+/// 默认 OPFS 数据目录（`ZERO_STORAGE_DIR` 或平台 data directory）。
+pub fn default_opfs_dir() -> PathBuf {
+    if let Some(path) = zero_runtime_config::optional_path("ZERO_STORAGE_DIR") {
+        return path.join("OPFS");
+    }
+    dirs::data_dir()
+        .map(|path| path.join("ZeroBrowser").join("Storage").join("OPFS"))
+        .unwrap_or_else(|| PathBuf::from(".zero-browser-storage").join("OPFS"))
+}
+
 /// 默认 Service Worker 注册状态文件（`ZERO_STORAGE_DIR` 或平台 data directory）。
 pub fn default_service_worker_state_path() -> PathBuf {
     if let Some(path) = zero_runtime_config::optional_path("ZERO_STORAGE_DIR") {
