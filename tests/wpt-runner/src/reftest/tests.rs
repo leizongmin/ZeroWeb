@@ -4374,3 +4374,141 @@ fn debug_r4185_flex_single_line_clamp() {
     }
     dump(&result.root, 1);
 }
+
+/// R4186 勘察：flex-align-content-end（wrap 多行 align-content:flex-end 打包位置）。
+#[test]
+#[ignore]
+fn debug_r4186_align_content_end() {
+    use zero_css_parser::Parser as CssParser;
+    use zero_dom::parse_html;
+    use zero_layout_engine::LayoutEngine;
+    use zero_style_system::StyleSystem;
+    let html = r#"<html><head><style>
+body { margin: 0; }
+.container {
+  position: relative;
+  height: 14em;
+  width: 20em;
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-end;
+  background: red;
+  margin: 1em;
+  border: 1px solid black;
+  font-size: 16px;
+}
+span {
+  height: 2em;
+  display: inline-block;
+  flex: none;
+  background: green;
+  color: white;
+  margin: 1em;
+  width: 8em;
+}
+</style></head><body>
+<div class="container"><span>first</span><span>second</span><span>third</span><span>forth</span></div>
+</body></html>"#;
+    let doc = parse_html(html);
+    let stylesheet = CssParser::parse_stylesheet(
+        ".container { position: relative; height: 14em; width: 20em; display: flex; flex-wrap: wrap; align-content: flex-end; background: red; margin: 1em; border: 1px solid black; font-size: 16px; } span { height: 2em; display: inline-block; flex: none; background: green; color: white; margin: 1em; width: 8em; }",
+    );
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[stylesheet]);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    fn dump(b: &zero_layout_engine::types::LayoutBox, depth: usize) {
+        let pad = "  ".repeat(depth);
+        println!("{pad}node={:?} y={} h={} w={}", b.node_id, b.y, b.height, b.width);
+        for c in &b.children {
+            dump(c, depth + 1);
+        }
+    }
+    dump(&result.root, 1);
+}
+
+/// R4186 勘察二：flex-align-content-end 像素 diff 定位（`cargo test -- --nocapture --ignored`）。
+#[test]
+#[ignore]
+fn debug_r4186_align_content_end_pixels() {
+    let case_path =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("wpt-data/css/css-flexbox/flex-align-content-end.html");
+    let ref_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("wpt-data/css/css-flexbox/reference/flex-align-content-end-ref.html");
+    let html = std::fs::read_to_string(&case_path).expect("read test html");
+    let ref_html = std::fs::read_to_string(&ref_path).expect("read ref html");
+    let cfg = crate::reftest::ReftestConfig::default();
+    let fb = crate::reftest::tests::render_to_framebuffer_with_base(&html, "", &cfg, case_path.parent());
+    let ref_fb = crate::reftest::tests::render_to_framebuffer_with_base(&ref_html, "", &cfg, ref_path.parent());
+    let mut row_diff = vec![0u32; fb.height as usize];
+    for (y, row) in row_diff.iter_mut().enumerate() {
+        for x in 0..fb.width as usize {
+            let i = (y * fb.width as usize + x) * 4;
+            let j = (y * ref_fb.width as usize + x) * 4;
+            let d = (fb.data[i] as i32 - ref_fb.data[j] as i32).abs()
+                + (fb.data[i + 1] as i32 - ref_fb.data[j + 1] as i32).abs()
+                + (fb.data[i + 2] as i32 - ref_fb.data[j + 2] as i32).abs();
+            if d > 30 {
+                *row += 1;
+            }
+        }
+    }
+    let mut bands: Vec<(usize, usize, u32)> = Vec::new();
+    for (y, cnt) in row_diff.iter().enumerate() {
+        if *cnt > 0 {
+            match bands.last_mut() {
+                Some(b) if b.1 + 1 == y => {
+                    b.1 = y;
+                    b.2 += *cnt;
+                }
+                _ => bands.push((y, y, *cnt)),
+            }
+        }
+    }
+    for (y0, y1, total) in &bands {
+        println!("diff band y={y0}..={y1} pixels={total}");
+    }
+    if bands.is_empty() {
+        println!("zero diff — 全绿");
+    }
+}
+
+/// R4186 勘察三：flexbox-overflow-horiz-001（definite 容器 cross → line cross = 内高，
+/// stretch item = line − margin）。
+#[test]
+#[ignore]
+fn debug_r4186_overflow_horiz() {
+    use zero_css_parser::Parser as CssParser;
+    use zero_dom::parse_html;
+    use zero_layout_engine::LayoutEngine;
+    use zero_style_system::StyleSystem;
+    let html = r#"<html><head><style>
+body { margin: 0; }
+.flexContainer { background: purple; display: flex; width: 70px; height: 70px; float: left; margin-right: 5px; }
+.bigItem { background: blue; height: 200px; flex: 3; }
+.smallItem { background: teal; margin-bottom: 10px; flex: 1; }
+</style></head><body>
+  <div class="flexContainer">
+    <div class="bigItem"></div>
+    <div class="smallItem"></div>
+  </div>
+</body></html>"#;
+    let doc = parse_html(html);
+    let stylesheet = CssParser::parse_stylesheet(
+        ".flexContainer { display: flex; width: 70px; height: 70px; } .bigItem { height: 200px; flex: 3; } .smallItem { margin-bottom: 10px; flex: 1; }",
+    );
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[stylesheet]);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    fn dump(b: &zero_layout_engine::types::LayoutBox, depth: usize) {
+        let pad = "  ".repeat(depth);
+        println!("{pad}node={:?} y={} h={} w={}", b.node_id, b.y, b.height, b.width);
+        for c in &b.children {
+            dump(c, depth + 1);
+        }
+    }
+    dump(&result.root, 1);
+}
