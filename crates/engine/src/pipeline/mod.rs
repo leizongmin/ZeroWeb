@@ -4372,3 +4372,57 @@ svg { display: block; width: 100px; aspect-ratio: auto 5/1; background: green; }
         );
     }
 }
+
+#[cfg(test)]
+mod r4163_ratio_pair_tests {
+    use super::*;
+
+    /// R4163（css-sizing-4 §aspect-ratio × §box-sizing）：width 显式 + height auto 的
+    /// replaced 元素 ratio 配对维度——auto（自然比）恒按 content box；显式 ratio 按
+    /// box-sizing 指定盒。031 三变体（border 10/15/15 左侧）：
+    ///   1st border-box 50 + auto 1/1 + 固有 20×50 → content 40 × (50/20=2.5) = 100
+    ///   2nd content-box 10 + 1/10 → content 10 × 10 = 100
+    ///   3rd border-box 25 + 1/4 → border 25 × 4 = 100
+    #[test]
+    fn r4163_ratio_pairing_by_box_sizing() {
+        let cases: [(&str, &str, f32); 3] = [
+            (
+                "width:50px; aspect-ratio:auto 1/1; box-sizing:border-box; border-left:10px solid green",
+                "support/20x50-green.png",
+                100.0,
+            ),
+            (
+                "width:10px; aspect-ratio:1/10; box-sizing:content-box; border-left:15px solid green",
+                "support/20x50-green.png",
+                100.0,
+            ),
+            (
+                "width:25px; aspect-ratio:1/4; box-sizing:border-box; border-left:15px solid green",
+                "support/20x50-green.png",
+                100.0,
+            ),
+        ];
+        for (i, (style, src, want_h)) in cases.into_iter().enumerate() {
+            let html = format!(
+                r#"<html><body style="margin:0"><img src="{src}" style="display:block;{style}"></body></html>"#
+            );
+            let mut pipeline = RenderPipeline::new(800.0, 600.0);
+            let key = crate::paint::image_resource_key(src, None);
+            pipeline.set_image_sizes(std::iter::once((key, (20.0f32, 50.0f32))).collect());
+            let result = pipeline.render_html(&html, "");
+            let mut found = None;
+            let mut stack: Vec<&zero_layout_engine::LayoutBox> = vec![&result.layout.root];
+            while let Some(b) = stack.pop() {
+                if b.height > 1.0 && b.width > 1.0 && b.node_id.is_some() && b.children.is_empty() {
+                    found = Some((b.width, b.height));
+                }
+                stack.extend(b.children.iter());
+            }
+            let (w, h) = found.unwrap_or_else(|| panic!("case {i}: img 盒应存在"));
+            assert!(
+                (h - want_h).abs() < 1.0,
+                "case {i}: 高度应 {want_h}（css-sizing-4 ratio 配对维度），实际 {w}×{h}"
+            );
+        }
+    }
+}

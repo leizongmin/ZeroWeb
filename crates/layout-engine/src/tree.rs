@@ -125,6 +125,30 @@ fn resolve_tree_definite_real_length(value: &LengthValue, style: &ComputedStyle)
     }
 }
 
+/// R4163：computed 样式的水平 frame（左右 border + padding）——border-box 解析宽扣减
+/// content 宽用。CSS2 §8 box model；replaced ratio 配对维度修正（replaced-element-031）。
+fn frame_width(computed: &ComputedStyle) -> f32 {
+    use zero_style_system::property::types::BorderStyleValue;
+    fn px(v: &LengthValue) -> f32 {
+        match v {
+            LengthValue::Px(p) if p.is_finite() => *p as f32,
+            _ => 0.0,
+        }
+    }
+    // CSS §8.5.3：border-style none/hidden 时 border-width 计算为 0（converter 同规）。
+    let border_px = |w: &LengthValue, st: &BorderStyleValue| -> f32 {
+        if matches!(st, BorderStyleValue::None | BorderStyleValue::Hidden) {
+            0.0
+        } else {
+            px(w)
+        }
+    };
+    border_px(&computed.border_left_width, &computed.border_left_style)
+        + border_px(&computed.border_right_width, &computed.border_right_style)
+        + px(&computed.padding_left)
+        + px(&computed.padding_right)
+}
+
 /// R109 §9.2.1.1 生产端接线（匿名块生成 + fragment border）默认**启用**——经全量
 /// reftest（+2 零回归：inline-box-001 / block-in-inline-align-001）+ 全量 make test
 /// 验证。设 `R109_WIRE=0` 可关闭（回退到旧 inline→block 行为，仅用于对比/调试）。
@@ -1117,8 +1141,53 @@ fn apply_replaced_element_sizing(
                     // 最终（钳制后）main 推 cross（100/2=50）。仅 flex row + 有 aspect_ratio 时跳过。
                     taffy_style.size.width = taffy::style::Dimension::length(cw);
                     let skip_for_flex_row = is_flex_row_item && taffy_style.aspect_ratio.is_some();
-                    if !skip_for_flex_row {
-                        taffy_style.size.height = taffy::style::Dimension::length((cw / eff_ratio).max(0.5));
+                    // R4163 门：flex item（row 已 skip，column/父 flex 语境同退旧路径——
+                    // taffy AR 驱动 transferred-min/cross 推导，清 AR 会断
+                    // flex-minimum-height ×4 / img-column-005）；带 definite min/max 约束时
+                    // 约束表/taffy 需 AR 重推导（inline-replaced-height-011 min-width 钳宽
+                    // 后按比重推高），同样退旧路径。仅无约束非 flex 替换元素走新配对。
+                    let has_definite_constraint = [
+                        &computed.min_width,
+                        &computed.max_width,
+                        &computed.min_height,
+                        &computed.max_height,
+                    ]
+                    .iter()
+                    .any(|v| resolve_tree_definite_real_length(v, computed).is_some());
+                    let parent_is_flex = doc
+                        .parent_node(dom_id)
+                        .and_then(|p| styles.get(&p))
+                        .is_some_and(|ps| matches!(ps.display, DisplayValue::Flex | DisplayValue::InlineFlex));
+                    let frame_w = frame_width(computed);
+                    if !skip_for_flex_row
+                        && !(is_flex_row_item || is_flex_col_item || parent_is_flex)
+                        && !has_definite_constraint
+                        && frame_w > 0.5
+                    {
+                        // R4163（css-sizing-4 §aspect-ratio + §box-sizing 交互）：
+                        // ① `auto <ratio>`（自然比参与）时 ratio 恒按 **content box** 维度配对
+                        //（replaced-element-031 1st 注释「aspect-ratio works with content-box
+                        // dimensions always」）——cw 为 border-box 解析值时扣减左右
+                        // border+padding 得 content 宽（031 1st：50-10=40 → h=40/0.4=100，
+                        // 旧按 50 → 125）。
+                        // ② 显式 ratio 时按 box-sizing 指定盒配对（css-sizing-4 §4）：
+                        // content-box → content 宽（031 2nd：10/0.1=100）；border-box →
+                        // border 宽（031 3rd：25/0.25=100）。
+                        // ③ 两侧已 definite 后清除 taffy aspect_ratio——taffy 的 ratio 推导
+                        // 按 **border dims** 配对（031 2nd 实证：definite (10,100) 仍被
+                        // 25/0.1=250 覆写），与上述语义冲突；显式对写定后 AR 无消费。
+                        // 配对宽度：border-box 解析宽扣 frame 得 content 宽（仅 auto 语义；
+                        // content-box 的 cw 本就是 content 宽，border-box 显式 ratio 直接用
+                        // cw 作 border 配对）。
+                        let auto_content_pair = computed.aspect_ratio_auto
+                            && matches!(
+                                computed.box_sizing,
+                                zero_style_system::property::types::BoxSizingValue::BorderBox
+                            );
+                        let ratio_w = if auto_content_pair { (cw - frame_w).max(0.5) } else { cw };
+                        let derived_h = (ratio_w / eff_ratio).max(0.5);
+                        taffy_style.size.height = taffy::style::Dimension::length(derived_h);
+                        taffy_style.aspect_ratio = None;
                     }
                 } else if width_auto
                     && !height_auto
