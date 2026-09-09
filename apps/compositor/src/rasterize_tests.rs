@@ -8,7 +8,6 @@ mod tests {
     use zero_render_foundation::primitive::{FillPrimitive, RenderPrimitives};
     use zero_render_foundation::surface::FrameBuffer;
 
-    use crate::convert;
     use crate::rasterize;
 
     fn red_fill_snapshot(w: u32, h: u32, dirty: Vec<IpcRect>) -> PaintSnapshotParams {
@@ -47,7 +46,7 @@ mod tests {
     fn full_rasterization_uses_device_pixel_dimensions() {
         let mut paint = red_fill_snapshot(4, 3, Vec::new());
         paint.device_scale_factor = 2.0;
-        let primitives = convert::to_render_primitives(&paint);
+        let primitives = zero_paint_convert::to_render_primitives(paint.clone());
         let loader = FontLoader::new();
         let mut glyph_cache = GlyphCache::new(64);
         let mut image_cache = ImageCache::new(8, 1 << 20);
@@ -88,7 +87,7 @@ mod tests {
                 height: 10.0,
             }],
         );
-        let primitives = convert::to_render_primitives(&paint);
+        let primitives = zero_paint_convert::to_render_primitives(paint.clone());
 
         unsafe {
             std::env::set_var("ZW_RENDER_THREAD", "0");

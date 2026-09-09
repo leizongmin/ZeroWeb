@@ -1,0 +1,10 @@
+[package]
+name = "zero-paint-convert"
+description = "IPC 图元快照（PaintSnapshotParams）→ 渲染图元（RenderPrimitives）公共转换层"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+zero-protocol = { workspace = true }
+zero-render-foundation = { workspace = true }

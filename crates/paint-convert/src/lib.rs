@@ -1,7 +1,13 @@
-//! IPC 图元快照（PaintSnapshotParams）→ 渲染图元（RenderPrimitives）转换。
+//! IPC 图元快照（PaintSnapshotParams）→ 渲染图元（RenderPrimitives）公共转换层。
 //!
-//! 与 browser 的 paint_ipc::apply_paint_snapshot 保持同一映射（2026-08-07
-//! 对照实现）；compositor 在合成器进程内完成光栅化所需的转换。
+//! 多进程架构中 renderer 发布 `PaintSnapshotParams`（protocol 层图元快照），消费方
+//! （compositor 合成器进程、browser 主进程、webdriver 截图通道）各自把它转换成
+//! `render-foundation` 的 `RenderPrimitives` 用于光栅化。本 crate 收敛该映射的
+//! **唯一实现**（2026-09-09 前为 compositor `convert.rs` 与 browser `paint_ipc.rs`
+//! 双份维护，R4139/R4059 两笔渲染修复被迫同批改两处）。
+//!
+//! 映射语义以 compositor 在用版本为基准（主链路真值）；调用方在其上组合各自的
+//! 副作用（browser 写 `TabSnapshot` 缓存、compositor 进程内光栅化）。
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -14,10 +20,10 @@ use zero_render_foundation::font::OpenTypeVariation;
 use zero_render_foundation::geometry::Rect;
 use zero_render_foundation::image_cache::ImageKey;
 use zero_render_foundation::primitive::{
-    BlendMode, BlendModePrimitive, ClipPrimitive, DrawOp, FillPrimitive, FilterKind, FilterPrimitive, FontVariationId,
-    GlyphPrimitive, GlyphSource, GradientColorSpace, GradientInterpolation, GradientKind, GradientPrimitive,
-    GradientStop, HueMethod, ImagePrimitive, LineCap, LineStyle, PathFillPrimitive, PathStrokePrimitive,
-    RenderPrimitives, RoundedRectPrimitive, ShadowPrimitive, StrokePrimitive, TransformPrimitive,
+    BlendMode, BlendModePrimitive, ClipPrimitive, DrawOp, FillPrimitive, FilterKind, FilterPrimitive, FontId,
+    FontVariationId, GlyphPrimitive, GlyphSource, GradientColorSpace, GradientInterpolation, GradientKind,
+    GradientPrimitive, GradientStop, HueMethod, ImagePrimitive, LineCap, LineStyle, PathFillPrimitive,
+    PathStrokePrimitive, RenderPrimitives, RoundedRectPrimitive, ShadowPrimitive, StrokePrimitive, TransformPrimitive,
 };
 
 fn ipc_rect_to_rect(r: IpcRect) -> Rect {
@@ -28,14 +34,14 @@ fn ipc_color_to_color(c: IpcColor) -> Color {
     Color::rgba(c.r, c.g, c.b, c.a)
 }
 
-fn glyph_text_runs_from_ipc(runs: &[IpcGlyphTextRun]) -> HashMap<u64, Arc<str>> {
+fn glyph_text_runs_from_ipc(runs: Vec<IpcGlyphTextRun>) -> HashMap<u64, Arc<str>> {
     let mut text_runs = HashMap::new();
     let mut invalid_ids = HashSet::new();
     for run in runs {
         if run.run_id == 0 || invalid_ids.contains(&run.run_id) {
             continue;
         }
-        if text_runs.insert(run.run_id, run.text.clone().into()).is_some() {
+        if text_runs.insert(run.run_id, run.text.into()).is_some() {
             text_runs.remove(&run.run_id);
             invalid_ids.insert(run.run_id);
         }
@@ -43,7 +49,7 @@ fn glyph_text_runs_from_ipc(runs: &[IpcGlyphTextRun]) -> HashMap<u64, Arc<str>> 
     text_runs
 }
 
-fn glyph_source_from_ipc(source: &IpcGlyphSource, text_runs: &HashMap<u64, Arc<str>>) -> Option<GlyphSource> {
+fn glyph_source_from_ipc(source: IpcGlyphSource, text_runs: &HashMap<u64, Arc<str>>) -> Option<GlyphSource> {
     let text = text_runs.get(&source.run_id)?.clone();
     GlyphSource::new(text, source.start, source.end)
 }
@@ -168,17 +174,20 @@ fn ipc_draw_op_to_draw_op(op: IpcDrawOp) -> DrawOp {
     }
 }
 
-/// 将 IPC 图元快照转换为渲染图元（合成器进程内光栅化输入）。
-pub fn to_render_primitives(params: &PaintSnapshotParams) -> RenderPrimitives {
+/// 将 IPC 图元快照按值转换为渲染图元。
+///
+/// 消费 `params` 所有权（字段逐一 move，避免 clone）；compositor 光栅化前有
+/// scroll transform 变换、browser 写 `TabSnapshot` 时各自决定传入克隆或移动。
+pub fn to_render_primitives(params: PaintSnapshotParams) -> RenderPrimitives {
     let mut primitives = RenderPrimitives::new();
 
-    for fill in &params.fills {
+    for fill in params.fills {
         primitives.fills.push(FillPrimitive {
             rect: ipc_rect_to_rect(fill.rect),
             color: ipc_color_to_color(fill.color),
         });
     }
-    for rr in &params.rounded_rects {
+    for rr in params.rounded_rects {
         primitives.rounded_rects.push(RoundedRectPrimitive {
             rect: ipc_rect_to_rect(rr.rect),
             color: ipc_color_to_color(rr.color),
@@ -188,13 +197,13 @@ pub fn to_render_primitives(params: &PaintSnapshotParams) -> RenderPrimitives {
             bottom_left_radius: rr.bottom_left_radius,
         });
     }
-    for g in &params.gradients {
+    for g in params.gradients {
         primitives.gradients.push(GradientPrimitive {
             rect: ipc_rect_to_rect(g.rect),
-            kind: ipc_gradient_kind_to_kind(g.kind.clone()),
+            kind: ipc_gradient_kind_to_kind(g.kind),
             stops: g
                 .stops
-                .iter()
+                .into_iter()
                 .map(|s| GradientStop {
                     offset: s.offset,
                     color: ipc_color_to_color(s.color),
@@ -205,7 +214,7 @@ pub fn to_render_primitives(params: &PaintSnapshotParams) -> RenderPrimitives {
             clip: g.clip.map(ipc_rect_to_rect),
         });
     }
-    for shadow in &params.shadows {
+    for shadow in params.shadows {
         primitives.shadows.push(ShadowPrimitive {
             rect: ipc_rect_to_rect(shadow.rect),
             color: ipc_color_to_color(shadow.color),
@@ -221,7 +230,7 @@ pub fn to_render_primitives(params: &PaintSnapshotParams) -> RenderPrimitives {
             clip_out: None,
         });
     }
-    for image in &params.images {
+    for image in params.images {
         primitives.images.push(ImagePrimitive {
             rect: ipc_rect_to_rect(image.rect),
             image_key: ImageKey::new(image.image_key),
@@ -229,7 +238,7 @@ pub fn to_render_primitives(params: &PaintSnapshotParams) -> RenderPrimitives {
             source: None,
         });
     }
-    for stroke in &params.strokes {
+    for stroke in params.strokes {
         primitives.strokes.push(StrokePrimitive {
             x1: stroke.x1,
             y1: stroke.y1,
@@ -241,26 +250,26 @@ pub fn to_render_primitives(params: &PaintSnapshotParams) -> RenderPrimitives {
             cap: ipc_line_cap(stroke.cap),
         });
     }
-    for pf in &params.path_fills {
+    for pf in params.path_fills {
         primitives.path_fills.push(PathFillPrimitive {
-            vertices: pf.vertices.clone(),
+            vertices: pf.vertices,
             color: ipc_color_to_color(pf.color),
         });
     }
-    for ps in &params.path_strokes {
+    for ps in params.path_strokes {
         primitives.path_strokes.push(PathStrokePrimitive {
-            vertices: ps.vertices.clone(),
+            vertices: ps.vertices,
             color: ipc_color_to_color(ps.color),
             line_width: ps.line_width,
             closed: ps.closed,
         });
     }
-    for clip in &params.clips {
+    for clip in params.clips {
         primitives.clips.push(ClipPrimitive {
             rect: ipc_rect_to_rect(clip.rect),
         });
     }
-    for transform in &params.transforms {
+    for transform in params.transforms {
         primitives.transforms.push(TransformPrimitive {
             rect: ipc_rect_to_rect(transform.rect),
             origin_x: transform.origin_x,
@@ -273,13 +282,13 @@ pub fn to_render_primitives(params: &PaintSnapshotParams) -> RenderPrimitives {
             ty: transform.ty,
         });
     }
-    for filter in &params.filters {
+    for filter in params.filters {
         primitives.filters.push(FilterPrimitive {
             rect: ipc_rect_to_rect(filter.rect),
-            filters: filter.filters.iter().cloned().map(ipc_filter_kind_to_kind).collect(),
+            filters: filter.filters.into_iter().map(ipc_filter_kind_to_kind).collect(),
         });
     }
-    for blend in &params.blend_modes {
+    for blend in params.blend_modes {
         primitives.blend_modes.push(BlendModePrimitive {
             rect: ipc_rect_to_rect(blend.rect),
             mode: ipc_blend_mode_to_mode(blend.mode),
@@ -287,7 +296,7 @@ pub fn to_render_primitives(params: &PaintSnapshotParams) -> RenderPrimitives {
     }
     primitives.font_variations = params
         .font_variations
-        .iter()
+        .into_iter()
         .map(|variations| -> Arc<[OpenTypeVariation]> {
             if variations
                 .iter()
@@ -296,7 +305,7 @@ pub fn to_render_primitives(params: &PaintSnapshotParams) -> RenderPrimitives {
             {
                 Arc::from(
                     variations
-                        .iter()
+                        .into_iter()
                         .map(|variation| OpenTypeVariation::new(variation.tag, variation.value))
                         .collect::<Vec<_>>(),
                 )
@@ -305,8 +314,8 @@ pub fn to_render_primitives(params: &PaintSnapshotParams) -> RenderPrimitives {
             }
         })
         .collect();
-    let glyph_text_runs = glyph_text_runs_from_ipc(&params.glyph_text_runs);
-    for glyph in &params.glyphs {
+    let glyph_text_runs = glyph_text_runs_from_ipc(params.glyph_text_runs);
+    for glyph in params.glyphs {
         let font_variation_id = glyph
             .font_variation_id
             .filter(|id| usize::try_from(*id).is_ok_and(|index| index < primitives.font_variations.len()))
@@ -320,9 +329,8 @@ pub fn to_render_primitives(params: &PaintSnapshotParams) -> RenderPrimitives {
             font_glyph_index: glyph.font_glyph_index,
             source: glyph
                 .source
-                .as_ref()
                 .and_then(|source| glyph_source_from_ipc(source, &glyph_text_runs)),
-            font_id: zero_render_foundation::primitive::FontId(glyph.font_id),
+            font_id: FontId(glyph.font_id),
             font_variation_id,
             bitmap_width: None,
             bitmap_height: None,
@@ -330,7 +338,7 @@ pub fn to_render_primitives(params: &PaintSnapshotParams) -> RenderPrimitives {
             synthetic_italic: glyph.synthetic_italic,
         });
     }
-    primitives.draw_order = params.draw_order.iter().map(|op| ipc_draw_op_to_draw_op(*op)).collect();
+    primitives.draw_order = params.draw_order.into_iter().map(ipc_draw_op_to_draw_op).collect();
     primitives
 }
 
@@ -345,15 +353,23 @@ mod tests {
             start: 0,
             end: 3,
         };
-        let text_runs = glyph_text_runs_from_ipc(&[IpcGlyphTextRun {
+        let text_runs = glyph_text_runs_from_ipc(vec![IpcGlyphTextRun {
             run_id: 4,
             text: "A\u{301}".to_string(),
         }]);
-        let first = glyph_source_from_ipc(&source, &text_runs).expect("first source");
-        let second = glyph_source_from_ipc(&source, &text_runs).expect("second source");
+        let first = glyph_source_from_ipc(source, &text_runs).expect("first source");
+        let second = glyph_source_from_ipc(
+            IpcGlyphSource {
+                run_id: 4,
+                start: 0,
+                end: 3,
+            },
+            &text_runs,
+        )
+        .expect("second source");
         assert!(first.same_cluster(&second));
 
-        let conflicting_runs = glyph_text_runs_from_ipc(&[
+        let conflicting_runs = glyph_text_runs_from_ipc(vec![
             IpcGlyphTextRun {
                 run_id: 4,
                 text: "A\u{301}".to_string(),
@@ -363,7 +379,17 @@ mod tests {
                 text: "different".to_string(),
             },
         ]);
-        assert!(glyph_source_from_ipc(&source, &conflicting_runs).is_none());
+        assert!(
+            glyph_source_from_ipc(
+                IpcGlyphSource {
+                    run_id: 4,
+                    start: 0,
+                    end: 3
+                },
+                &conflicting_runs
+            )
+            .is_none()
+        );
     }
 
     #[test]
@@ -394,7 +420,7 @@ mod tests {
             ..Default::default()
         };
 
-        let primitives = to_render_primitives(&params);
+        let primitives = to_render_primitives(params);
         assert!(primitives.glyphs[0].synthetic_italic);
         assert_eq!(
             primitives.glyph_font_variations(&primitives.glyphs[0]),

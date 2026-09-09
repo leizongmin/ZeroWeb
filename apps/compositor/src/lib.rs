@@ -16,7 +16,6 @@ use zero_render_foundation::display_list::DisplayList;
 use zero_render_foundation::font::{FontLoader, GlyphCache};
 use zero_render_foundation::rendering_thread::{RenderingThread, render_threading_enabled};
 
-mod convert;
 mod gpu_raster;
 mod present;
 mod rasterize;
@@ -199,7 +198,7 @@ pub fn run_role<C: IpcChannel>(transport: &mut C) {
                 } else {
                     (*paint).clone()
                 };
-                let primitives = convert::to_render_primitives(&raster_paint);
+                let primitives = zero_paint_convert::to_render_primitives(raster_paint.clone());
                 let is_partial = !zero_protocol::compositor_scroll_transform_enabled()
                     && !DisplayList::new(primitives.clone(), dirty_rects.clone())
                         .is_full_viewport(paint.viewport_width.max(1) as f32, paint.viewport_height.max(1) as f32);
@@ -312,7 +311,7 @@ pub fn run_role<C: IpcChannel>(transport: &mut C) {
                                     surface.scroll_x / scale,
                                     surface.scroll_y / scale,
                                 );
-                                let primitives = convert::to_render_primitives(&viewport_paint);
+                                let primitives = zero_paint_convert::to_render_primitives(viewport_paint.clone());
                                 // 滚动后的可见区与旧 back buffer 没有可复用的坐标关系；全量重绘。
                                 rasterize::rasterize_into_back(
                                     &viewport_paint,
