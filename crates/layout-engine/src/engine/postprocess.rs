@@ -2751,7 +2751,27 @@ pub(super) fn apply_cross_block_line_clamp(
                     let c = &b.children[idx];
                     ((c.content_height / lh).round() as usize).max(if c.content_height > 0.5 { 1 } else { 0 })
                 };
-                if lines > *remaining {
+                // R4181（css-overflow-4 #line-clamp）：clamp 点落入带块向 bmp（padding+
+                // border）的子盒内部时，其 **block-start bmp 把首行推下、block-end bmp
+                // 在末行之下保留**——盒内可见行数须扣 bmp 后再算（auto-020：约束 6lh=192，
+                // 子盒上下 bmp 各 17 → (192-34)/32 = 4 行可见 + 末行省略号；旧实现按
+                // remaining 全额放行 6 行 → 首行未下移、整盒超出约束）。仅 Auto 限值
+                //（Count(n) 无约束语义，mid-box clamp 即其义）；零 bmp 子盒减法为 no-op，
+                // 既有案（017/030/032/033/035 族）路径不变。
+                let effective_remaining = if auto_mode {
+                    let c = &b.children[idx];
+                    let bmp_v = c.padding_top + c.border_top + c.padding_bottom + c.border_bottom;
+                    if bmp_v > 0.5 {
+                        let avail_px = *remaining as f32 * lh - bmp_v;
+                        let fit = (avail_px / lh).floor();
+                        if fit < 0.0 { 0 } else { fit as usize }
+                    } else {
+                        *remaining
+                    }
+                } else {
+                    *remaining
+                };
+                if lines > effective_remaining {
                     // R3781：**clamp 点不可落入异 IFC/定高盒内部 → 回退到盒前**
                     //（css-overflow-4 auto 语义，仅 Auto 限值）：
                     // - flow-root 子（auto-033）：其行属独立 IFC，「clamp point 不能
@@ -2771,19 +2791,19 @@ pub(super) fn apply_cross_block_line_clamp(
                         continue;
                     }
                     let c = &mut b.children[idx];
-                    // stored 路径：直接截行；非 stored：置 line_clamp_cap 供 paint 期
-                    // 截 glyph + ellipsis，并把盒高收缩到可见行数（防占位/溢出红字）。
+                    // R4181：cap 行数 = bmp 扣减后的 effective_remaining（盒内首行下移、
+                    // 末行下保留 bmp）；盒高收缩按**行数差**扣（保 bmp），非按 visible_h
+                    // 绝对值覆盖——后者假设盒无 bmp，会切掉 padding/border。
                     if has_lines > 0
                         && let Some(l) = &mut c.inline_layout
                     {
-                        l.truncate(*remaining);
+                        l.truncate(effective_remaining);
                     }
-                    c.line_clamp_cap = Some(*remaining);
+                    c.line_clamp_cap = Some(effective_remaining);
                     c.line_clamp_clamped = true;
-                    let visible_h = *remaining as f32 * lh;
-                    if (c.height - visible_h).abs() > 0.5 {
-                        let delta = c.height - visible_h;
-                        c.height = visible_h;
+                    let delta = (lines - effective_remaining) as f32 * lh;
+                    if delta > 0.5 {
+                        c.height = (c.height - delta).max(0.0);
                         c.content_height = (c.content_height - delta).max(0.0);
                     }
                     out.boundary_y = c.y + c.height;
