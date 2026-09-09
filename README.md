@@ -119,7 +119,7 @@ macOS 下载产物要免除 Gatekeeper 手工放行，必须使用 Apple Develop
 
 ## 仓库结构
 
-整个工作区共 31 个 workspace member：21 个库 crate、7 个应用入口（`apps/`）、2 个测试工具（`tests/`）和 1 个开发工具（`tools/icon-gen`，不随发布产物分发）。下文按「应用与进程入口 / 核心引擎 / 基础设施 / 产品层与测试」分组列出。
+整个工作区共 32 个 workspace member：22 个库 crate、7 个应用入口（`apps/`）、2 个测试工具（`tests/`）和 1 个开发工具（`tools/icon-gen`，不随发布产物分发）。下文按「应用与进程入口 / 核心引擎 / 基础设施 / 产品层与测试」分组列出。
 
 ### 应用与进程入口
 
@@ -150,6 +150,7 @@ macOS 下载产物要免除 Gatekeeper 手工放行，必须使用 Apple Develop
 | Path | 用途 |
 |------|------|
 | `crates/render-foundation` | GPU/CPU 渲染基础设施、字体、图片缓存 |
+| `crates/paint-convert` | IPC 图元快照（PaintSnapshotParams）→ 渲染图元（RenderPrimitives）公共转换层（compositor/browser/webdriver 三端共享） |
 | `crates/host-runtime` | 窗口、事件循环、平台宿主能力 |
 | `crates/net` | HTTP/HTTPS、导航、Cookie |
 | `crates/security` | 同源策略、CORS、CSP |

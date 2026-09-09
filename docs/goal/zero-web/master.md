@@ -377,7 +377,7 @@ Limit。**前轮 R3303**：TextMetrics 全 10 字段。**前轮 R3302**：`:focu
 
 | 项 | 状态 |
 |----|------|
-| 仓库代码 | ✅ Cargo workspace 31 个 member（21 库 + 7 应用 + 2 测试工具 + 1 开发工具，含 runtime-config、android-browser 与 media；全部有实质实现） |
+| 仓库代码 | ✅ Cargo workspace 32 个 member（22 库 + 7 应用 + 2 测试工具 + 1 开发工具，含 runtime-config、paint-convert、android-browser 与 media；全部有实质实现） |
 | 编译状态 | ✅ `cargo build --workspace` 通过 |
 | 测试状态 | ✅ `cargo test --workspace` ~17,000+（2026-09-09 静态统计 17,741 个 `#[test]`，不含宏生成/doctest；rendering-compat R4157-G 守成轮实测 make test 19,043 Pass / 0 Fail（webdriver 终验轮 19,037 Pass / 0 Fail），运行时计数含参数化与集成 subtest；预存失败 `default_actions_work_without_javascript` 为并行流既存，多轮记录，clean HEAD 同败） |
 | Clippy | ✅ 零警告（全 workspace） |
