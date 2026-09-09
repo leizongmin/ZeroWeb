@@ -661,3 +661,4 @@ fn r3918_atomic_inline_after_clamp_point_hidden() {
     }
 }
 mod r4181_clamp_descendant_bmp_tests;
+mod r4185_flex_line_clamp_tests;

@@ -4334,3 +4334,43 @@ Line 5</div></body></html>"#;
     }
     dump(&result.root, 1);
 }
+
+/// R4185 勘察：flexbox-single-line-clamp-1（单行 flex line cross 钳制到容器 max-height）。
+#[test]
+#[ignore]
+fn debug_r4185_flex_single_line_clamp() {
+    use zero_css_parser::Parser as CssParser;
+    use zero_dom::parse_html;
+    use zero_layout_engine::LayoutEngine;
+    use zero_style_system::StyleSystem;
+    let html = r#"<html><head><style>
+.container { display: flex; background: gray; max-height: 200px; }
+.panel { background: lightblue; width: 150px; border: 1px solid purple; box-sizing: border-box; }
+.tall-child { width: 50px; height: 400px; }
+</style></head><body style="margin:0">
+<div class="container">
+  <div class="panel">
+    <div class="tall-child"></div>
+  </div>
+</div></body></html>"#;
+    let doc = parse_html(html);
+    let stylesheet = CssParser::parse_stylesheet(
+        ".container { display: flex; background: gray; max-height: 200px; } .panel { background: lightblue; width: 150px; border: 1px solid purple; box-sizing: border-box; } .tall-child { width: 50px; height: 400px; }",
+    );
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[stylesheet]);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    fn dump(b: &zero_layout_engine::types::LayoutBox, depth: usize) {
+        let pad = "  ".repeat(depth);
+        println!(
+            "{pad}node={:?} y={} h={} cw={} ch={}",
+            b.node_id, b.y, b.height, b.content_width, b.content_height
+        );
+        for c in &b.children {
+            dump(c, depth + 1);
+        }
+    }
+    dump(&result.root, 1);
+}

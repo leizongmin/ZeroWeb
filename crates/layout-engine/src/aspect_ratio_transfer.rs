@@ -14,7 +14,9 @@
 //! kill-switch `ZW_AR_TRANSFER=0`。
 
 use crate::LayoutBox;
-use zero_css_parser::values::{DisplayValue, FloatValue, LengthValue};
+use zero_css_parser::values::{
+    AlignmentValue, DisplayValue, FlexDirectionValue, FlexWrapValue, FloatValue, LengthValue,
+};
 use zero_dom::NodeId;
 use zero_style_system::ComputedStyle;
 use zero_style_system::WritingModeValue;
@@ -128,5 +130,99 @@ fn resolve_definite(value: &LengthValue) -> Option<f32> {
             let px = zero_style_system::computed::resolve_length(other, 16.0, None, None);
             px.is_finite().then_some(px.max(0.0) as f32)
         }
+    }
+}
+
+/// R4185（css-flexbox-1 §algo-cross-line step 4）：单行 flex 容器的 line cross 钳制——
+/// 「If the flex container is single-line, then clamp the line's cross-size to be within
+/// the container's computed min and max cross sizes」。
+///
+/// taffy 0.12.1 对 row 方向单行 flex 不做该钳制：容器 max-height:200 被遵守（容器盒
+/// 200），但 stretch 对齐的 item（cross Auto）保持内容高 402 溢出容器（flexbox-single-line-
+/// clamp-1 ref：panel 应 200，tall-child 400 定高溢出）。本 pass 在布局后对最终
+/// LayoutBox 收缩 stretch 对齐 item 的 border-box 高到钳制 line cross（= 容器 content-box
+/// max-height 减 item 自身 margin）——定高 item（tall-child height:400）不动（spec：
+/// 钳制的是 line，非 item 的 definite cross）。
+///
+/// 范围限定：row/row-reverse（column 的 cross=inline 轴，taffy 已正确，-2/-3 现绿）；
+/// flex_wrap: Nowrap（wrap 按 line 各自钳制，未建线模型）；水平书写模式；
+/// max-height definite（Px/可解析长度）；仅收缩（item 高 ≤ 钳制值不动）。
+///
+/// kill-switch `ZW_FLEX_LINE_CLAMP=0`。
+pub(crate) fn clamp_single_line_flex_cross(root: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) {
+    if std::env::var("ZW_FLEX_LINE_CLAMP").as_deref() == Ok("0") {
+        return;
+    }
+    walk_flex_cross(root, styles);
+}
+
+fn walk_flex_cross(b: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) {
+    if let Some(id) = b.node_id
+        && let Some(style) = styles.get(&id)
+        && matches!(b.writing_mode, WritingModeValue::HorizontalTb)
+        && matches!(style.display, DisplayValue::Flex | DisplayValue::InlineFlex)
+        && matches!(
+            style.flex_direction,
+            FlexDirectionValue::Row | FlexDirectionValue::RowReverse
+        )
+        && matches!(style.flex_wrap, FlexWrapValue::Nowrap)
+        && matches!(
+            style.align_items,
+            AlignmentValue::Auto | AlignmentValue::Normal | AlignmentValue::Stretch
+        )
+    {
+        let max_cross = match &style.max_height {
+            LengthValue::Auto
+            | LengthValue::Percentage(_)
+            | LengthValue::MinContent
+            | LengthValue::MaxContent
+            | LengthValue::FitContent(_) => None,
+            LengthValue::Px(p) if *p == f64::INFINITY => None,
+            other => {
+                let fs = zero_style_system::computed::resolve_length(&style.font_size, 16.0, None, None);
+                let px = zero_style_system::computed::resolve_length(other, fs, None, None);
+                (px.is_finite() && px > 0.0).then_some(px as f32)
+            }
+        };
+        if let Some(max_cross) = max_cross {
+            if std::env::var("ZW_DBG4185").is_ok() {
+                eprintln!(
+                    "DBG4185 container={:?} max_cross={} children={}",
+                    b.node_id,
+                    max_cross,
+                    b.children.len()
+                );
+            }
+            for c in b.children.iter_mut() {
+                let in_flow = !c.is_absolute && !c.is_fixed && matches!(c.float, FloatValue::None);
+                if !in_flow || c.is_replaced {
+                    continue;
+                }
+                let self_stretch = c.node_id.and_then(|cid| styles.get(&cid)).is_some_and(|s| {
+                    matches!(
+                        s.align_self,
+                        AlignmentValue::Auto | AlignmentValue::Normal | AlignmentValue::Stretch
+                    )
+                }) || {
+                    // LayoutBox 无 align_self 快照时的保守回退：item 样式缺失按 stretch。
+                    c.node_id.and_then(|cid| styles.get(&cid)).is_none()
+                };
+                let definite_cross = c
+                    .node_id
+                    .and_then(|cid| styles.get(&cid))
+                    .is_some_and(|s| !matches!(s.height, LengthValue::Auto));
+                if self_stretch && !definite_cross && c.height > max_cross + 0.5 {
+                    let target = (max_cross - c.margin_top - c.margin_bottom).max(0.0);
+                    if target > 0.5 {
+                        let frame_v = c.padding_top + c.padding_bottom + c.border_top + c.border_bottom;
+                        c.height = target;
+                        c.content_height = (target - frame_v).max(0.0);
+                    }
+                }
+            }
+        }
+    }
+    for c in b.children.iter_mut() {
+        walk_flex_cross(c, styles);
     }
 }

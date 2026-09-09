@@ -1007,6 +1007,11 @@ impl LayoutEngine {
         // _block_flow（设容器 width + 子位置）之后。
         crate::vertical_block_flow::apply_vertical_child_inline_fill(&mut root_box, styles);
 
+        // R4185（css-flexbox-1 §algo-cross-line step 4）：单行 flex line cross 钳制到容器
+        // max cross——收尾运行（5.2b 处面板已被后续内容高 pass 重展，clamp 须在全部高度
+        // 变更 pass 之后；R4185 勘察实证 5.2b 时位被重置）。
+        crate::aspect_ratio_transfer::clamp_single_line_flex_cross(&mut root_box, styles);
+
         // 诊断（不改变布局）：对 shrink-to-fit 候选容器（inline-flex/inline-grid/float:flex/
         // float:grid 的 width:auto，或任意 flex/grid 的 width:max-content/min-content）打印
         // 测得的固有宽度 vs 当前宽度，供 flex-grid 两趟布局（见 intrinsic_sizing / 设计草图）
