@@ -4181,3 +4181,44 @@ fn debug_r4149_ar_maxcontent_cap() {
     }
     dump(&result.root, 1);
 }
+
+/// R4180 勘察：flex-basis-with-container-type（column flex 内 aspect-ratio:1 +
+/// container-type:size 盒 → 100cqh 子）布局树（`cargo test -- --nocapture --ignored`）。
+/// 实证：容器 computed width/height = Auto（尺寸来自布局期 aspect-ratio transfer）→
+/// R4124 容器链条目 h=None → 子 100cqh 按 fail-closed 解析 0（styles map 实测 Px(0)）；
+/// block 父同构 final h=100 系布局期 AR 传递后内容撑出的间接结果。修复需两遍样式
+/// （布局后按实际容器尺寸 re-resolve cq 长度）= R4125 已挂账「auto 容器尺寸静态推导
+/// 边界」深域，勿单点重试。
+#[test]
+#[ignore]
+fn debug_r4180_flex_ct_tree() {
+    use zero_css_parser::Parser as CssParser;
+    use zero_dom::parse_html;
+    use zero_layout_engine::LayoutEngine;
+    use zero_style_system::StyleSystem;
+    let html = r#"<html><head><style>body{margin:0}</style></head><body>
+    <div style="display: flex; flex-direction: column; width: 100px;">
+      <div style="aspect-ratio: 1; container-type: size;">
+        <div style="width:100%; height:100cqh; background: green;"></div>
+      </div>
+    </div></body></html>"#;
+    let doc = parse_html(html);
+    let stylesheet = CssParser::parse_stylesheet(
+        "body { margin: 0; } div { display: flex; flex-direction: column; width: 100px; } div > div { aspect-ratio: 1; container-type: size; } div > div > div { width: 100%; height: 100cqh; background: green; }",
+    );
+    let mut sys = StyleSystem::new();
+    let styles = sys.compute_styles(&doc, &[stylesheet]);
+    let mut engine = LayoutEngine::new(480.0, 480.0);
+    let result = engine.compute(&doc, &styles);
+    fn dump(b: &zero_layout_engine::types::LayoutBox, depth: usize) {
+        let pad = "  ".repeat(depth);
+        println!(
+            "{pad}node={:?} x={} y={} w={} h={} cwidth={} cheight={}",
+            b.node_id, b.x, b.y, b.width, b.height, b.content_width, b.content_height
+        );
+        for c in &b.children {
+            dump(c, depth + 1);
+        }
+    }
+    dump(&result.root, 1);
+}
