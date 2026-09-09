@@ -13,6 +13,7 @@ mod final_coverage;
 mod indexed_db_owner;
 mod integration;
 mod more_coverage;
+mod opfs_owner;
 mod service_worker_fetch;
 mod service_worker_iframe;
 mod service_worker_runtime;
