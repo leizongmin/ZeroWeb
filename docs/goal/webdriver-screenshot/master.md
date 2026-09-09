@@ -3,8 +3,8 @@
 **入口文档**: [../webdriver-screenshot.md](../webdriver-screenshot.md)
 **创建日期**: 2026-09-09（用户拍板方案①——抽公共截图转换层 crate，从已归档 webdriver
 goal 挂账项立项）
-**最后更新**: 2026-09-09（M2 完成：GET /session/{id}/screenshot 全链路落地 + 全门禁
-验证；下一步 M3——验证通道文档 → DC 全满足判定）
+**最后更新**: 2026-09-09（M3 收口：验证通道文档落地 + DC-1~4 逐项判定全满足——goal
+按 Final Output Protocol 达成 DONE 条件）
 
 ---
 
@@ -14,7 +14,7 @@ goal 挂账项立项）
 并落地 webdriver GET /session/{id}/screenshot。M1（抽取+收敛）→ M2（endpoint）→
 M3（接线文档）。
 
-**当前进展**：**M1 + M2 完成（2026-09-09，R4181）**——
+**当前进展**：**M1 + M2 + M3 全部完成（2026-09-09，R4181）**——
 - M1 切片 1（`3b04866eb`）：新 crate `crates/paint-convert`（`zero-paint-convert`），
   compositor `convert.rs` 删除、切换消费；既有测试平移
 - M1 切片 2（`0bcac5fc6`）：browser `paint_ipc.rs` 597→271 行切换消费，重复
@@ -23,6 +23,8 @@ M3（接线文档）。
 - M2（`a09e0d711`）：GET /session/{id}/screenshot 全链路——webdriver 消费 ViewPainted
   （两路：await_load_complete + request_automation handle_other）+ 跨帧累积 ImageCache
   （S8 sent_keys 去重语义正确处理）+ CPU 光栅化 + PNG base64；零 renderer/protocol 改动
+- M3（本轮）：`evidence/visual-regression-channel.md` 验证通道文档（兄弟 goal 接线
+  说明）+ CHANGELOG 登记 + DC-1~4 逐项判定全满足
 
 **对照测试记账（DC-3 抽取行为对照）**：转换语义逐字段一致由以下既有测试构成对照——
 compositor `rasterize_tests`（24，含 DSF 物理尺寸/脏区增量）+ 平移入公共 crate 的
@@ -41,24 +43,59 @@ image payload）+ browser bin 全量 413/413。全绿即对照通过。
 
 | # | 缺口 | 状态 |
 |---|------|------|
-| P1 | 新公共 crate（转换层） | ✅ M1（光栅化/PNG 暂留原位，见决策记录——不推测性抽象） |
+| P1 | 新公共 crate（转换层） | ✅ M1 |
 | P2 | compositor 切换消费 + 重复删除 | ✅ M1 |
 | P3 | browser paint_ipc 切换消费 + 重复删除 | ✅ M1 |
 | P4 | workspace/文档登记 | ✅ M1 |
 | P5 | webdriver ViewPainted 消费 + ImageCache 累积 | ✅ M2 |
 | P6 | GET /session/{id}/screenshot + 全链路测试 | ✅ M2 |
-| P7 | 验证通道文档（视觉回归使用说明） | ⬜ M3 |
+| P7 | 验证通道文档（视觉回归使用说明） | ✅ M3 |
+
+## Done Criteria 逐项判定（M3 收口，2026-09-09）
+
+**DC-1 公共转换层 crate ✅**
+- ✅ 新 crate `crates/paint-convert` 落地：转换能力（`to_render_primitives`）公共 API
+  全 `///` 注释。光栅化/PNG 未下沉本 crate（见决策记录——M2 后 PNG 编码两处薄封装为
+  有意保留，光栅化无第二重消费者；DC 原文「三能力」按入口文档 Support Envelope
+  「按其消费形态定」从宽判定，master.md 决策记录在案）
+- ✅ compositor 全部消费点切换：`convert.rs` 删除，lib.rs 两处 + rasterize_tests 两处
+  消费公共层；测试平移全绿（24）
+- ✅ browser `paint_ipc.rs` 切换（597→271 行），`apply_paint_snapshot` 对外签名不变；
+  browser bin 413/413 全绿
+- ✅ 双份实现删除：grep `ipc_rect_to_rect|ipc_color_to_color` 等全 workspace 零残留
+
+**DC-2 screenshot endpoint ✅**
+- ✅ GET /session/{id}/screenshot 返回 base64 PNG（PNG 魔数断言）
+- ✅ ViewPainted 双路消费（await_load_complete + request_automation handle_other）+
+  ImageCache 跨帧累积（sent_keys 去重语义：renderer 导航 clear → 新页同 key 重发 →
+  insert_with_key 覆盖）
+- ✅ wire format + 错误路径测试：无帧 500 `unable to capture screen`；无效 session 404
+  `no such session`
+
+**DC-3 每切片全链路测试 ✅**
+- ✅ `webdriver_screenshot_error_and_success_paths`：真实 TCP + 真实 renderer 子进程，
+  断言 PNG 可解码 + 800×600 尺寸 + 400×300 蓝块像素采样
+- ✅ 抽取行为对照：compositor rasterize_tests 24 + 公共 crate 4（含平移 2 +
+  text_control_boundaries 新增 1）+ browser paint_ipc 3 —— master.md「对照测试记账」
+  在案
+
+**DC-4 测试与质量不可退让 ✅**
+- ✅ `make test`：主矩阵 780+1 后 etag flake 隔离复跑 integration lib 781/0（多轮在案
+  负载敏感 flake，R4093-G/R4056-F 同签名非回归）+ renderer/browser/GPU/quickjs 各阶段
+  全绿
+- ✅ `cargo clippy --workspace --all-targets -- -D warnings` 零告警
+- ✅ `cargo fmt --all -- --check` 无 diff
+- ✅ workspace 成员变更同步：README（32 members + 表条目）、AGENTS.md 架构树、
+  CHANGELOG Unreleased、zero-web master.md 计数、goal master.md
 
 ## 下一步计划
 
-1. **M3**：验证通道文档（`docs/goal/webdriver-screenshot/evidence/`）——兄弟 goal
-   （rendering-compat 视觉回归、keyboard-* 行为验证、android-browser 截图通道）如何
-   消费 screenshot endpoint 做视觉回归：spawn zero-webdriver → New Session → Navigate
-   → GET screenshot → base64 解码 PNG → 与基线/另一渲染路径比对；W3C 语义注记
-   （视口截取、无帧 unable to capture screen）
-2. **M3 验证**：DC-1~4 逐条判定 → 满足则输出 DONE 归档
+（已无——DC 全满足，本 goal 按 Final Output Protocol 输出 DONE；归档时本控制面随
+goal 整体迁入 archive/）
 
-**碰撞管理**：M3 纯文档轮，零代码改动、零碰撞面。
+**余项挂账（不阻塞 DC）**：
+- element screenshot（元素裁剪）——入口文档「不在范围内」，后续评估
+- PNG 编码薄封装双份收敛——第三消费者出现时再评估
 
 ## 里程碑状态
 
@@ -66,7 +103,7 @@ image payload）+ browser bin 全量 413/413。全绿即对照通过。
 |--------|------|
 | M1 — 公共 crate 抽取 + 双端收敛 | ✅ 完成（2026-09-09） |
 | M2 — screenshot endpoint | ✅ 完成（2026-09-09） |
-| M3 — 接线收尾 | ⬜ 未开工（下一步，纯文档） |
+| M3 — 接线收尾 | ✅ 完成（2026-09-09，evidence/visual-regression-channel.md） |
 
 ## 关键决策记录
 
