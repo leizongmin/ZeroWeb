@@ -128,25 +128,35 @@ fn resolve_tree_definite_real_length(value: &LengthValue, style: &ComputedStyle)
 /// R4163：computed 样式的水平 frame（左右 border + padding）——border-box 解析宽扣减
 /// content 宽用。CSS2 §8 box model；replaced ratio 配对维度修正（replaced-element-031）。
 fn frame_width(computed: &ComputedStyle) -> f32 {
+    frame_size(computed).0
+}
+
+/// R4165：computed 样式的水平/垂直 frame（border + padding，border-style none/hidden
+/// 时 width 按 CSS §8.5.3 归零，converter 同规）。
+fn frame_size(computed: &ComputedStyle) -> (f32, f32) {
     use zero_style_system::property::types::BorderStyleValue;
-    fn px(v: &LengthValue) -> f32 {
+    fn pxv(v: &LengthValue) -> f32 {
         match v {
             LengthValue::Px(p) if p.is_finite() => *p as f32,
             _ => 0.0,
         }
     }
-    // CSS §8.5.3：border-style none/hidden 时 border-width 计算为 0（converter 同规）。
     let border_px = |w: &LengthValue, st: &BorderStyleValue| -> f32 {
         if matches!(st, BorderStyleValue::None | BorderStyleValue::Hidden) {
             0.0
         } else {
-            px(w)
+            pxv(w)
         }
     };
-    border_px(&computed.border_left_width, &computed.border_left_style)
+    let fw = border_px(&computed.border_left_width, &computed.border_left_style)
         + border_px(&computed.border_right_width, &computed.border_right_style)
-        + px(&computed.padding_left)
-        + px(&computed.padding_right)
+        + pxv(&computed.padding_left)
+        + pxv(&computed.padding_right);
+    let fh = border_px(&computed.border_top_width, &computed.border_top_style)
+        + border_px(&computed.border_bottom_width, &computed.border_bottom_style)
+        + pxv(&computed.padding_top)
+        + pxv(&computed.padding_bottom);
+    (fw, fh)
 }
 
 /// R109 §9.2.1.1 生产端接线（匿名块生成 + fragment border）默认**启用**——经全量
@@ -948,6 +958,25 @@ fn apply_replaced_element_sizing(
                     taffy_style.size.height = taffy::style::Dimension::length(used_h.max(0.5));
                     taffy_style.size.width = taffy::style::Dimension::length(w.max(0.5));
                 }
+            } else if css_h_auto
+                && matches!(
+                    computed.box_sizing,
+                    zero_style_system::property::types::BoxSizingValue::BorderBox
+                )
+            {
+                // R4165（css-sizing-4 §5.3.1 + HTML dimension attributes）：属性尺寸 =
+                // natural（content）尺寸，box-sizing:border-box 不改写自然尺寸——
+                // height auto 时 used content 高 = 属性自然高（attr 比从 width 推导），
+                // taffy border-box 高须补垂直 frame（replaced-element-037：attr 200×100 +
+                // border-box + padding-top 50 应 content 200×100 / 总高 150；旧按 border-box
+                // 100 → content 50 压扁）。仅垂直 frame 存在时需要平移（无 frame 时
+                // border-box == 自然维，写不写同值）。
+                let fh = frame_size(computed).1;
+                if fh > 0.5 {
+                    taffy_style.size.width = taffy::style::Dimension::length(w);
+                    taffy_style.size.height = taffy::style::Dimension::length(h + fh);
+                    taffy_style.aspect_ratio = None;
+                }
             }
             // 一侧 auto、一侧显式：不设 auto 侧尺寸，taffy 按 aspect_ratio 推导
         }
@@ -1159,10 +1188,12 @@ fn apply_replaced_element_sizing(
                         .and_then(|p| styles.get(&p))
                         .is_some_and(|ps| matches!(ps.display, DisplayValue::Flex | DisplayValue::InlineFlex));
                     let frame_w = frame_width(computed);
+                    // R4165：垂直 frame（037 padding-top）单独存在时同样需要新配对。
+                    let frame_h_v = frame_size(computed).1;
                     if !skip_for_flex_row
                         && !(is_flex_row_item || is_flex_col_item || parent_is_flex)
                         && !has_definite_constraint
-                        && frame_w > 0.5
+                        && (frame_w > 0.5 || frame_h_v > 0.5)
                     {
                         // R4163（css-sizing-4 §aspect-ratio + §box-sizing 交互）：
                         // ① `auto <ratio>`（自然比参与）时 ratio 恒按 **content box** 维度配对
@@ -1179,15 +1210,53 @@ fn apply_replaced_element_sizing(
                         // 配对宽度：border-box 解析宽扣 frame 得 content 宽（仅 auto 语义；
                         // content-box 的 cw 本就是 content 宽，border-box 显式 ratio 直接用
                         // cw 作 border 配对）。
+                        // R4165：width 来自 **presentational hint**（HTML width 属性，computed
+                        // 宽 == 属性解析值）时 ratio = 自然比 → 恒 content 配对 + taffy
+                        // border-box 高补垂直 frame——css-sizing-4 §5.3.1 属性尺寸是
+                        // natural（content）尺寸，box-sizing 不改写（037：attr 200×100 +
+                        // border-box + padding-top 50 应 content 200×100 / 总高 150，旧按
+                        // border 配对 content 压成 50）。attr 缺失或值不等（author CSS）走
+                        // 上述 R4163 语义。
+                        let attr_natural_pair = {
+                            let hint_w = elem
+                                .get_attribute("width")
+                                .and_then(|v| v.trim().strip_suffix("px").unwrap_or(v.trim()).parse::<f32>().ok())
+                                .is_some_and(|aw| aw.is_finite() && (aw - cw).abs() < 0.5);
+                            let hint_h = elem.get_attribute("height").is_some();
+                            hint_w && hint_h
+                        };
                         let auto_content_pair = computed.aspect_ratio_auto
                             && matches!(
                                 computed.box_sizing,
                                 zero_style_system::property::types::BoxSizingValue::BorderBox
                             );
-                        let ratio_w = if auto_content_pair { (cw - frame_w).max(0.5) } else { cw };
-                        let derived_h = (ratio_w / eff_ratio).max(0.5);
-                        taffy_style.size.height = taffy::style::Dimension::length(derived_h);
-                        taffy_style.aspect_ratio = None;
+                        let (_, frame_h_v) = frame_size(computed);
+                        if attr_natural_pair {
+                            let content_w = if matches!(
+                                computed.box_sizing,
+                                zero_style_system::property::types::BoxSizingValue::BorderBox
+                            ) {
+                                (cw - frame_w).max(0.5)
+                            } else {
+                                cw
+                            };
+                            let content_h = (content_w / eff_ratio).max(0.5);
+                            let derived_h = if matches!(
+                                computed.box_sizing,
+                                zero_style_system::property::types::BoxSizingValue::BorderBox
+                            ) {
+                                content_h + frame_h_v
+                            } else {
+                                content_h
+                            };
+                            taffy_style.size.height = taffy::style::Dimension::length(derived_h);
+                            taffy_style.aspect_ratio = None;
+                        } else {
+                            let ratio_w = if auto_content_pair { (cw - frame_w).max(0.5) } else { cw };
+                            let derived_h = (ratio_w / eff_ratio).max(0.5);
+                            taffy_style.size.height = taffy::style::Dimension::length(derived_h);
+                            taffy_style.aspect_ratio = None;
+                        }
                     }
                 } else if width_auto
                     && !height_auto

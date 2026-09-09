@@ -281,3 +281,4 @@ css/CSS2/normal-flow/replaced-intrinsic-005.xht css/CSS2/normal-flow/replaced-in
 css/CSS2/normal-flow/replaced-intrinsic-002.xht css/CSS2/normal-flow/replaced-intrinsic-002-ref.xht == 2026-09-09 R4159 反向锚：无固有维 SVG object 保持塌 0
 css/css-sizing/aspect-ratio/replaced-element-020.html css/reference/ref-filled-green-100px-square.xht == 2026-09-09 R4160 ratio-only SVG 自然比 × aspect-ratio auto 优先级
 css/css-sizing/aspect-ratio/replaced-element-015.html css/reference/ref-filled-green-100px-square.xht == 2026-09-09 R4161 inline svg 自然比 × aspect-ratio auto 优先级
+css/css-sizing/aspect-ratio/replaced-element-037.html css/css-sizing/aspect-ratio/replaced-element-037-ref.html == 2026-09-09 R4165 属性自然尺寸 × border-box 垂直 frame 平移

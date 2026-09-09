@@ -4426,3 +4426,38 @@ mod r4163_ratio_pair_tests {
         }
     }
 }
+
+#[cfg(test)]
+mod r4165_attr_natural_tests {
+    use super::*;
+
+    /// R4165（css-sizing-4 §5.3.1 + HTML dimension attributes）：属性尺寸 = natural
+    ///（content）尺寸，box-sizing:border-box 不改写自然尺寸。replaced-element-037：
+    /// attr 200×100 + border-box + padding-top 50 → content 200×100 / border-box 总高
+    /// 150（旧按 border-box 100 → content 50 压扁）。
+    #[test]
+    fn r4165_attr_natural_size_with_border_box_padding() {
+        let html = r#"<html><head><style>
+img { height: auto; box-sizing: border-box; padding-top: 50px; display: block; }
+</style></head><body style="margin:0">
+<img width="200" height="100" src="support/20x50-green.png" style="background:red">
+</body></html>"#;
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let key = crate::paint::image_resource_key("support/20x50-green.png", None);
+        pipeline.set_image_sizes(std::iter::once((key, (20.0f32, 50.0f32))).collect());
+        let result = pipeline.render_html(html, "");
+        let mut stack: Vec<&zero_layout_engine::LayoutBox> = vec![&result.layout.root];
+        let mut found = None;
+        while let Some(b) = stack.pop() {
+            if b.width > 1.0 && b.node_id.is_some() && b.children.is_empty() {
+                found = Some((b.width, b.height));
+            }
+            stack.extend(b.children.iter());
+        }
+        let (w, h) = found.expect("img 盒应存在");
+        assert!(
+            (w - 200.0).abs() < 1.0 && (h - 150.0).abs() < 1.0,
+            "R4165: 属性自然尺寸 200×100 + padding 50 应 border-box 200×150，实际 {w}×{h}"
+        );
+    }
+}
