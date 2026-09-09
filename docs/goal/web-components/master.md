@@ -2,7 +2,7 @@
 
 **入口文档**: [../web-components.md](../web-components.md)
 **创建日期**: 2026-09-07（goal 拆分 bootstrap）
-**最后更新**: 2026-09-10（M1 切片 1 落地——三目录导入 + 基线 9%）
+**最后更新**: 2026-09-10（M1 切片 2a 落地——shadow mutation 面 + content 视图，9%→15%）
 
 ---
 
@@ -73,12 +73,22 @@ Shadow DOM 渲染级 composed tree 排除（等用户点名专项）。
 
 ## 下一步计划
 
-1. **M1 切片 2**：`customElements.upgrade` 真语义 + `whenDefined` Promise 真等待
-   （quickjs L2029/L2049 PoC 简化点）+ `CustomElementRegistry` 接口对象暴露
+1. **M1 切片 2b**：`customElements.upgrade` 真语义（quickjs `ce_upgrade` no-op 替换）
+   + `CustomElementRegistry` 接口对象暴露（~88 subtest）+ `whenDefined` 同 promise
+   身份断言（每调用返回**同一** pending promise）
 2. **M1 切片 3**：`adoptedCallback` 派发路径（document.adoptNode / importNode 跨文档）
-   + shadow 树 appendChild 断裂修复（part05 `_handleChildren` 容器 appendChild 面）
-3. **M2 切片 1**：template DOM 层真实化（parser `get_template_contents` 真 inert
-   fragment + R145 规则收敛）
+   + reactions/ per-API CEReactions 反应链（59 案整簇，`reactions.js` 已入资产）
+3. **M2 切片 1**：parser `get_template_contents` 真 inert fragment（根因修复——
+   contents 内联使嵌套 template 装配出现 childNodes 回指环，sel-clone 深克隆
+   无限递归 → complex 装配 90s 伪超时 5 案）+ R145 规则收敛
+
+### 已知挂账（2026-09-10 切片 2a）
+
+- 嵌套 template 装配的 childNodes 回指环：`slots.html`/`slotchange.html`/
+  `slots-fallback.html`/`imperative-slot-api-slotchange.html`/
+  `event-composed-path-after-dom-mutation` 5 案从「快速 TypeError 失败」变为
+  「rwts/克隆递归 90s 超时失败」——通过数无回归（negatives=0），根因是 parser
+  contents 内联（M2 范围），克隆侧已加环守卫防栈溢出硬崩
 
 **碰撞管理**：碰 engine/dom 前先 `git log --since="14 days ago" -- crates/engine/
 crates/dom/` 核对渲染流域活跃面；碰 part01.js 前与 event-loop-spec 流互相核对。

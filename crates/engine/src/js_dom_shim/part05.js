@@ -1854,6 +1854,66 @@
           get lastChild() { return this.childNodes.length ? this.childNodes[this.childNodes.length - 1] : null; },
           hasChildNodes: function () { return this.childNodes.length > 0; },
         };
+        // WC-M1（web-components goal，2026-09-10）：mutation 面同 part03 R194b 修复
+        //（appendChild/insertBefore/removeChild——fragment 展平 + 摘旧父 + 反链）。
+        // shadow-dom createTestTree 对工厂宿主的 detached 克隆同样走 appendChild
+        //（slots 簇聚类 1）；查询面不设 own 桩（ShadowRoot.prototype R366 walk 可达）。
+        shadow.appendChild = function (c) {
+          if (c === null || c === undefined || typeof c.nodeType !== 'number') {
+            throw new globalThis.TypeError(
+              "Failed to execute 'appendChild' on 'Node': parameter 1 is not of type 'Node'.");
+          }
+          if (c.nodeType === 11) {
+            var _wc5Fk = c.childNodes || [];
+            var _wc5Fc = _wc5Fk.slice();
+            _wc5Fk.length = 0;
+            for (var _wc5Fi = 0; _wc5Fi < _wc5Fc.length; _wc5Fi++) shadow.appendChild(_wc5Fc[_wc5Fi]);
+            return c;
+          }
+          if (c.parentNode && c.parentNode.removeChild) { try { c.parentNode.removeChild(c); } catch (_wc5Rm) {} }
+          shadow.childNodes.push(c);
+          c.parentNode = shadow;
+          return c;
+        };
+        shadow.insertBefore = function (c, ref) {
+          if (c === null || c === undefined || typeof c.nodeType !== 'number') {
+            throw new globalThis.TypeError(
+              "Failed to execute 'insertBefore' on 'Node': parameter 2 is not of type 'Node'.");
+          }
+          if (ref == null) return shadow.appendChild(c);
+          var _wc5Idx = shadow.childNodes.indexOf(ref);
+          if (_wc5Idx < 0) {
+            throw new (globalThis.DOMException || Error)(
+              "Failed to execute 'insertBefore' on 'Node': The node before which the new node is to be inserted is not a child of this node.",
+              'NotFoundError');
+          }
+          if (c.nodeType === 11) {
+            var _wc5Fk2 = c.childNodes || [];
+            var _wc5Fc2 = _wc5Fk2.slice();
+            _wc5Fk2.length = 0;
+            for (var _wc5Fj = 0; _wc5Fj < _wc5Fc2.length; _wc5Fj++) shadow.insertBefore(_wc5Fc2[_wc5Fj], ref);
+            return c;
+          }
+          if (c.parentNode && c.parentNode.removeChild) { try { c.parentNode.removeChild(c); } catch (_wc5Rm2) {} }
+          shadow.childNodes.splice(_wc5Idx, 0, c);
+          c.parentNode = shadow;
+          return c;
+        };
+        shadow.removeChild = function (c) {
+          if (c === null || c === undefined || typeof c.nodeType !== 'number') {
+            throw new globalThis.TypeError(
+              "Failed to execute 'removeChild' on 'Node': parameter 1 is not of type 'Node'.");
+          }
+          var _wc5Idx2 = shadow.childNodes.indexOf(c);
+          if (_wc5Idx2 < 0) {
+            throw new (globalThis.DOMException || Error)(
+              "Failed to execute 'removeChild' on 'Node': The node to be removed is not a child of this node.",
+              'NotFoundError');
+          }
+          shadow.childNodes.splice(_wc5Idx2, 1);
+          c.parentNode = null;
+          return c;
+        };
         // R194（js-dom M4）：原型接 ShadowRoot.prototype（WPT attach-shadow-realm-
         // after-adoption 的 `shadow instanceof ShadowRoot`——工厂元素宿主的轻量 shadow
         // 旧为 plain object 恒 false）。

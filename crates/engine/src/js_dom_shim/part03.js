@@ -447,14 +447,77 @@
           get firstChild() { return this.childNodes.length ? this.childNodes[0] : null; },
           get lastChild() { return this.childNodes.length ? this.childNodes[this.childNodes.length - 1] : null; },
           hasChildNodes: function () { return this.childNodes.length > 0; },
-          querySelector: function () { return null; },
-          querySelectorAll: function () { return []; },
         };
         try {
           if (globalThis.ShadowRoot && globalThis.ShadowRoot.prototype) {
             Object.setPrototypeOf(shadow, globalThis.ShadowRoot.prototype);
           }
         } catch (_e194sp3) {}
+        // WC-M1（web-components goal，2026-09-10）：mutation 面——WPT shadow-dom
+        // createTestTree 惯例（`shadowRoot.appendChild(document.importNode(
+        // template.content, true))`）在 detached 克隆宿主（本轻量路径）上抛
+        //「appendChild is not a function」→ slots/slotchange/event-composed-path 16 案
+        // 整簇 TypeError（基线聚类 1）。fragment 语义：fragment 子展平、摘旧父、
+        // parentNode 反链；removeChild/insertBefore/remove/append 面同配。查询面
+        // **不设 own 桩**——旧 `() => null`/`() => []` 遮蔽 ShadowRoot.prototype 的
+        // R366 子树 walk（shadow 树内 #id/tag 查询恒 miss）；删桩后 prototype 方法
+        // 经原型链可达（探针 P 实证 s1 命中）。
+        shadow.appendChild = function (c) {
+          if (c === null || c === undefined || typeof c.nodeType !== 'number') {
+            throw new globalThis.TypeError(
+              "Failed to execute 'appendChild' on 'Node': parameter 1 is not of type 'Node'.");
+          }
+          if (c.nodeType === 11) {
+            var _wcFk = c.childNodes || [];
+            var _wcFc = _wcFk.slice();
+            _wcFk.length = 0;
+            for (var _wcFi = 0; _wcFi < _wcFc.length; _wcFi++) shadow.appendChild(_wcFc[_wcFi]);
+            return c;
+          }
+          if (c.parentNode && c.parentNode.removeChild) { try { c.parentNode.removeChild(c); } catch (_wcRm) {} }
+          shadow.childNodes.push(c);
+          c.parentNode = shadow;
+          return c;
+        };
+        shadow.insertBefore = function (c, ref) {
+          if (c === null || c === undefined || typeof c.nodeType !== 'number') {
+            throw new globalThis.TypeError(
+              "Failed to execute 'insertBefore' on 'Node': parameter 2 is not of type 'Node'.");
+          }
+          if (ref == null) return shadow.appendChild(c);
+          var _wcIdx = shadow.childNodes.indexOf(ref);
+          if (_wcIdx < 0) {
+            throw new (globalThis.DOMException || Error)(
+              "Failed to execute 'insertBefore' on 'Node': The node before which the new node is to be inserted is not a child of this node.",
+              'NotFoundError');
+          }
+          if (c.nodeType === 11) {
+            var _wcFk2 = c.childNodes || [];
+            var _wcFc2 = _wcFk2.slice();
+            _wcFk2.length = 0;
+            for (var _wcFj = 0; _wcFj < _wcFc2.length; _wcFj++) shadow.insertBefore(_wcFc2[_wcFj], ref);
+            return c;
+          }
+          if (c.parentNode && c.parentNode.removeChild) { try { c.parentNode.removeChild(c); } catch (_wcRm2) {} }
+          shadow.childNodes.splice(_wcIdx, 0, c);
+          c.parentNode = shadow;
+          return c;
+        };
+        shadow.removeChild = function (c) {
+          if (c === null || c === undefined || typeof c.nodeType !== 'number') {
+            throw new globalThis.TypeError(
+              "Failed to execute 'removeChild' on 'Node': parameter 1 is not of type 'Node'.");
+          }
+          var _wcIdx2 = shadow.childNodes.indexOf(c);
+          if (_wcIdx2 < 0) {
+            throw new (globalThis.DOMException || Error)(
+              "Failed to execute 'removeChild' on 'Node': The node to be removed is not a child of this node.",
+              'NotFoundError');
+          }
+          shadow.childNodes.splice(_wcIdx2, 1);
+          c.parentNode = null;
+          return c;
+        };
         try { el194.shadowRoot = shadow; } catch (_e194h3) {}
           return shadow;
         },
@@ -1711,6 +1774,35 @@
   // ⑩doctype 走本 doc 的 implementation.createDocumentType；⑪ fragment（handle 形态）
   // 建 fragment + 递归 clone 子；⑨ Document 建 detached doc + 复制 doctype/根元素；
   // ①元素不在此层（proxy get trap / Element.prototype 各自实现）。
+  // WC-M1：环守卫的 deep 克隆（fragment 分支专用——见 Node.prototype.cloneNode 内注释）。
+  function _wcCloneGuarded(node, seen) {
+    if (node && typeof node === 'object' && node.nodeType === 1) {
+      if (seen.has(node)) return null;
+      seen.set(node, true);
+    }
+    try {
+      var _wcOwn = Object.prototype.hasOwnProperty.call(node, 'cloneNode') ? node.cloneNode : null;
+      if (_wcOwn && typeof _wcOwn === 'function' && _wcOwn !== globalThis.Node.prototype.cloneNode) {
+        return _wcOwn.call(node, true);
+      }
+      var nt2 = 0;
+      try { nt2 = node.nodeType | 0; } catch (_wcNt) { return null; }
+      if (nt2 === 11) {
+        var _wcF = globalThis.document.createDocumentFragment();
+        if (node.childNodes && node.childNodes.length) {
+          for (var _wcI = 0; _wcI < node.childNodes.length; _wcI++) {
+            var _wcK = node.childNodes[_wcI];
+            if (!_wcK || typeof _wcK.cloneNode !== 'function') continue;
+            try { _wcF.appendChild(_wcCloneGuarded(_wcK, seen)); } catch (_wcE) {}
+          }
+        }
+        return _wcF;
+      }
+      return node.cloneNode(true);
+    } finally {
+      if (node && typeof node === 'object' && node.nodeType === 1) seen.delete(node);
+    }
+  }
   _zwDefProtoMethod(globalThis.Node.prototype, 'cloneNode', function (deep) {
     var n = this;
     if (!n || typeof n !== 'object') return n;
@@ -1781,13 +1873,20 @@
       return n;
     }
     // fragment：建新 fragment + 递归 clone 子（deep 语义；浅 clone 返空 fragment）。
+    // WC-M1（web-components goal，2026-09-10）：**环守卫**——sel-clone 装配下
+    // template contents 内联（parser 占位，M2 收口项）使嵌套 template 的 childNodes
+    // 可回指祖先（探针 AH/AG 实证：div#host2 ↔ template 互指），deep 克隆无限递归
+    // 栈溢出（WPT shadow-dom createTestTree 复杂形态 90s Execution timeout 伪失败）。
+    // 祖先集传参断环（skip 已访问节点）——对无环树零行为变化。
     if (nt === 11 && typeof globalThis.document.createDocumentFragment === 'function') {
       var _r128F = globalThis.document.createDocumentFragment();
       if (deep && n.childNodes && n.childNodes.length) {
+        var _wcSeen = new Map();
+        _wcSeen.set(n, true);
         for (var _r128i = 0; _r128i < n.childNodes.length; _r128i++) {
           var _r128c = n.childNodes[_r128i];
           if (!_r128c || typeof _r128c.cloneNode !== 'function') continue;
-          try { _r128F.appendChild(_r128c.cloneNode(true)); } catch (_e128c) {}
+          try { _r128F.appendChild(_wcCloneGuarded(_r128c, _wcSeen)); } catch (_e128c) {}
         }
       }
       return _r128F;
@@ -6027,6 +6126,125 @@
     // 使整条 update 链 reject）。与元素 proxy R3197 语义一致（attrs 数组本地维护）。
     node.hasAttributes = function () { return attrs.length > 0; };
     node.getAttributeNames = function () { var out = []; for (var i = 0; i < attrs.length; i++) out.push(attrs[i].name); return out; };
+    // WC-M1（web-components goal，2026-09-10）：plain TEMPLATE 的 `content` fragment 视图
+    //（spec the-template-element：contents 是独立 inert DocumentFragment）。R95/R145 的
+    // content 视图只覆盖 proxy 元素（part04 get trap）与 sel 模板；deepClone 产物
+    //（`host.cloneNode(true)` 后的 detached 树——WPT shadow-dom createTestTree 的固定
+    // 装配形态）是本工厂的 plain 对象，读 `template.content` 得 undefined →
+    // `importNode(undefined)` TypeError（slots 簇聚类 1 的第二根因）。惰性 fragment：
+    // 子 = childNodes 的 deep 克隆（克隆语义——fragment 子与模板子独立），nodeType 11。
+    if (tag === 'template') {
+      Object.defineProperty(node, 'content', {
+        configurable: true,
+        get: function () {
+          // 惰性**视图** fragment（不复制子——克隆语义在有环的 sel-clone 装配下
+          // 会无限递归栈溢出；R145 sel 视图同款只读快照语义）。plain 视图对象
+          //（非 handle 容器——handle 容器的 childNodes 是 registry getter，赋不进）：
+          // childNodes 别名模板子数组，importNode/cloneNode 走 Node.prototype 泛型
+          // fragment 分支（kids 逐个带环守卫克隆——复制发生在用例显式调用点）。
+          if (node._zwContentView) return node._zwContentView;
+          var frag = {
+            nodeType: 11,
+            nodeName: '#document-fragment',
+            get childNodes() { return node.childNodes; },
+            hasChildNodes: function () { return node.childNodes.length > 0; },
+            // mutation 面（WPT template-content：content.appendChild(el) 等装配断言）
+            // 直写模板 childNodes（contents 内联存储的当前形态——M2 parser 真实化后
+            // 收敛为独立 fragment 持有）。
+            appendChild: function (c) {
+              if (c === null || c === undefined || typeof c.nodeType !== 'number') {
+                throw new globalThis.TypeError(
+                  "Failed to execute 'appendChild' on 'Node': parameter 1 is not of type 'Node'.");
+              }
+              if (c.nodeType === 11) {
+                var _wcFk = c.childNodes || [];
+                var _wcFc = _wcFk.slice();
+                _wcFk.length = 0;
+                for (var _wcFi = 0; _wcFi < _wcFc.length; _wcFi++) frag.appendChild(_wcFc[_wcFi]);
+                return c;
+              }
+              if (c.parentNode && c.parentNode.removeChild) { try { c.parentNode.removeChild(c); } catch (_wcRm) {} }
+              node.childNodes.push(c);
+              c.parentNode = node;
+              return c;
+            },
+            insertBefore: function (c, ref) {
+              if (ref == null) return frag.appendChild(c);
+              var _wcIdx = node.childNodes.indexOf(ref);
+              if (_wcIdx < 0) return frag.appendChild(c);
+              if (c.parentNode && c.parentNode.removeChild) { try { c.parentNode.removeChild(c); } catch (_wcRm2) {} }
+              node.childNodes.splice(_wcIdx, 0, c);
+              c.parentNode = node;
+              return c;
+            },
+            removeChild: function (c) {
+              var _wcIdx2 = node.childNodes.indexOf(c);
+              if (_wcIdx2 < 0) {
+                throw new (globalThis.DOMException || Error)(
+                  "Failed to execute 'removeChild' on 'Node': The node to be removed is not a child of this node.",
+                  'NotFoundError');
+              }
+              node.childNodes.splice(_wcIdx2, 1);
+              c.parentNode = null;
+              return c;
+            },
+            // 查询面——子树 DFS（tag/id/class 简单选择器 + compound；镜像 R366 walk）。
+            // WPT template-content：content.querySelector('a') 等 per-element 断言。
+            querySelector: function (q) { var a = frag.querySelectorAll(q); return a.length ? a[0] : null; },
+            querySelectorAll: function (q) {
+              var out = [];
+              var sel = String(q == null ? '' : q).trim();
+              var mSimple = /^([a-zA-Z][a-zA-Z0-9-]*|\*|#([^\s.#:>\[+,]+)|\.([^\s.#:>\[+,]+))$/.exec(sel);
+              var comp = null;
+              if (!mSimple && typeof _zwParseCompoundSel === 'function') {
+                try { comp = _zwParseCompoundSel(sel); } catch (_wcPc) { comp = null; }
+                if (!comp) return out;
+              }
+              var want = comp && comp.tag ? String(comp.tag).toUpperCase() : '*';
+              (function walk(n) {
+                var kids = n.childNodes || [];
+                for (var i = 0; i < kids.length; i++) {
+                  var k = kids[i];
+                  if (!k || k.nodeType !== 1) continue;
+                  var hit = false;
+                  if (comp) {
+                    hit = want === '*' || String(k.nodeName || '').toUpperCase() === want;
+                    if (hit && comp.id) {
+                      var cid = '';
+                      try { cid = String(k.id != null ? k.id : (k.getAttribute ? k.getAttribute('id') : '')); } catch (_wcCi) {}
+                      if (cid !== comp.id) hit = false;
+                    }
+                    if (hit && comp.classes && comp.classes.length) {
+                      var cls = '';
+                      try { cls = String(k.getAttribute && (k.getAttribute('class') != null ? k.getAttribute('class') : (k.className != null ? k.className : ''))); } catch (_wcCc) {}
+                      var have = ' ' + cls.replace(/\s+/g, ' ').trim() + ' ';
+                      for (var ci = 0; ci < comp.classes.length; ci++) {
+                        if (have.indexOf(' ' + comp.classes[ci] + ' ') < 0) { hit = false; break; }
+                      }
+                    }
+                  } else if (mSimple[1] === '*') hit = true;
+                  else if (mSimple[2]) { try { hit = String(k.id || (k.getAttribute && k.getAttribute('id')) || '') === mSimple[2]; } catch (_wcCi2) {} }
+                  else if (mSimple[3]) {
+                    try {
+                      var cls2 = String((k.getAttribute && (k.getAttribute('class') != null ? k.getAttribute('class') : k.className)) || '');
+                      hit = cls2.split(/\s+/).indexOf(mSimple[3]) >= 0;
+                    } catch (_wcCc2) {}
+                  } else {
+                    hit = String(k.tagName || '').toLowerCase() === mSimple[1].toLowerCase();
+                  }
+                  if (hit) out.push(k);
+                  walk(k);
+                }
+              })(frag);
+              return out;
+            },
+          };
+          try { Object.setPrototypeOf(frag, globalThis.DocumentFragment.prototype); } catch (_wcVp) {}
+          node._zwContentView = frag;
+          return frag;
+        },
+      });
+    }
     // js-dom M3 R99：addEventListener/removeEventListener/dispatchEvent（lit EventPart 的
     // `@click` 绑定对解析节点调 addEventListener/removeEventListener——缺方法使 commit 抛
     // TypeError、整次 render 中止[e2e 实证 renderRoot 仅 marker、hasUpdated:false]）。listener
