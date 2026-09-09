@@ -298,12 +298,20 @@ pub(crate) fn shrink_vertical_blocks_to_content(
     let parent_horizontal = matches!(parent_writing_mode, WritingModeValue::HorizontalTb);
 
     if own_vertical && parent_horizontal && box_node.is_block_level && !box_node.is_absolute && !box_node.is_fixed {
-        let width_auto = box_node
-            .node_id
-            .and_then(|id| styles.get(&id))
-            .is_some_and(|s| matches!(s.width, LengthValue::Auto));
+        // R4194（css-sizing-3 §fit-content）：bare fit-content 经 parser 映射 MaxContent
+        //（R1018），converter 在 vertical + inline-size containment 下把 block 轴关键字
+        // 映射 Auto（R4194 vertical_inline 臂）——taffy Auto block-size fill CB（800），
+        // 须同 auto 一样收缩到内容块轴跨度（fit-content ≡ shrink-to-fit 语义）。
+        let width_auto = box_node.node_id.and_then(|id| styles.get(&id)).is_some_and(|s| {
+            matches!(
+                s.width,
+                LengthValue::Auto | LengthValue::MinContent | LengthValue::MaxContent | LengthValue::FitContent(_)
+            )
+        });
         if width_auto {
             // 内容块轴跨度 = 最右侧流内子元素 margin-box 右缘（相对父 border-box）。
+            // R4194 注：勿改回 max(子自身宽)——多列 block 子（block-flow-direction-vrl-005
+            // 等 S 形多列）的块轴跨度 = Σ 列宽，max 会过收缩（vrl-005/006 +7pp 回归实证）。
             let content_extent = box_node
                 .children
                 .iter()
@@ -330,8 +338,22 @@ pub(crate) fn shrink_vertical_blocks_to_content(
             if new_width + 0.5 < box_node.width {
                 let frame =
                     box_node.border_left + box_node.border_right + box_node.padding_left + box_node.padding_right;
+                // R4194（css-writing-modes-3 §7.1）：vertical-rl 的第一列贴**右**缘——
+                // taffy 按收缩前 fill-CB 宽把子放在 content 起点（x=frame 侧），收缩后
+                // 须把子重锚到新 content 右缘：右锚平移量 = (新宽 content 右缘) −
+                // (子当前右缘)，先取新宽再平移（新右缘基于 new_width）。
                 box_node.width = new_width;
                 box_node.content_width = (new_width - frame).max(0.0);
+                if box_node.writing_mode == WritingModeValue::VerticalRl {
+                    let new_right_edge = new_width - box_node.border_right;
+                    for child in box_node.children.iter_mut() {
+                        if child.is_absolute || child.is_fixed {
+                            continue;
+                        }
+                        let child_right = child.x + child.width + child.margin_right;
+                        child.x += new_right_edge - child_right;
+                    }
+                }
             }
         }
     }

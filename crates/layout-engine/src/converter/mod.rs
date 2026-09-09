@@ -232,25 +232,62 @@ pub fn computed_style_to_taffy(
             // height 臂**不适用**（block 轴无 containment，照常内容求解）。fit-content +
             // border 0 50px 应 = 纯边框宽（contain-inline-size-flex/grid/regular-container
             // 三案 5.26% 同簇：内容 100px 不参与容器内联尺寸）。
+            // R4194（css-writing-modes-3 §6：轴映射）：inline 轴是逻辑轴——vertical
+            // writing-mode 下内联轴 = **物理高度**，width/height 抑制角色互换
+            //（contain-inline-size-vertical-rl：vertical-rl + fit-content + border
+            // 50px 0 应高 = 纯边框 100；contain-inline-size-intrinsic 第二盒
+            // width:100 + CIS-inline:50 + vertical-rl 内联子 height:35 不参与）。
             let inline_only = !style.contain.has_size() && style.contain.has_inline_size();
+            // WritingModeValue 随 ComputedStyle（style-system re-export css-parser values）可用。
+            let vertical_inline = inline_only && style.writing_mode.is_vertical_block_flow();
             taffy::geometry::Size {
-                width: match &style.width {
-                    LengthValue::Auto if block_fills_width => taffy::style::Dimension::auto(),
-                    // R4009（css-sizing-4 §intrinsic-size-override）：intrinsic 关键字
-                    //（min/max/fit-content）与 auto 同为 content-based——contain:size 下
-                    // 内容尺寸被抑制，CIS 替代（020：replaced img inline-size:min-content
-                    // + CIS 100 → 100 应 0）。
-                    LengthValue::Auto
-                    | LengthValue::MinContent
-                    | LengthValue::MaxContent
-                    | LengthValue::FitContent(_) => cis_dim_boxed(&style.contain_intrinsic_width, frame_x),
-                    // R4086：width:stretch → auto（contain:size 下 CIS 替代同 auto 族）。
-                    LengthValue::Stretch => taffy::style::Dimension::auto(),
-                    _ => convert_length_to_dimension(&style.width, vw, vh),
+                width: if vertical_inline {
+                    // R4194：vertical 下内联轴 = 物理高度——width 是 block 轴，无 containment。
+                    // content 关键字（bare fit-content 经 parser 映射 MaxContent，R1018）
+                    // 映射 Auto：block 轴按内容求解（taffy 块轴 Auto = content size），
+                    // 不塌 0——intrinsic 测量趟（R1018 gate 仅 HorizontalTb）不会重测
+                    // vertical 盒，塌 0 无恢复路径。
+                    match &style.width {
+                        LengthValue::Auto
+                        | LengthValue::MinContent
+                        | LengthValue::MaxContent
+                        | LengthValue::FitContent(_) => taffy::style::Dimension::auto(),
+                        LengthValue::Stretch => taffy::style::Dimension::auto(),
+                        _ => convert_length_to_dimension(&style.width, vw, vh),
+                    }
+                } else {
+                    match &style.width {
+                        LengthValue::Auto if block_fills_width => taffy::style::Dimension::auto(),
+                        // R4009（css-sizing-4 §intrinsic-size-override）：intrinsic 关键字
+                        //（min/max/fit-content）与 auto 同为 content-based——contain:size 下
+                        // 内容尺寸被抑制，CIS 替代（020：replaced img inline-size:min-content
+                        // + CIS 100 → 100 应 0）。
+                        LengthValue::Auto
+                        | LengthValue::MinContent
+                        | LengthValue::MaxContent
+                        | LengthValue::FitContent(_) => cis_dim_boxed(&style.contain_intrinsic_width, frame_x),
+                        // R4086：width:stretch → auto（contain:size 下 CIS 替代同 auto 族）。
+                        LengthValue::Stretch => taffy::style::Dimension::auto(),
+                        _ => convert_length_to_dimension(&style.width, vw, vh),
+                    }
                 },
-                height: if inline_only {
-                    // R4193：inline-size containment 不抑制 block 轴——height 照常转换。
+                height: if inline_only && !vertical_inline {
+                    // R4193：水平书写 inline-size containment 不抑制 block 轴——height 照常转换。
                     convert_length_to_dimension(&style.height, vw, vh)
+                } else if vertical_inline {
+                    // R4194：vertical 下内联轴 = 物理高度——height 臂走 CIS-or-0 抑制
+                    //（content-based auto/intrinsic 关键字同 width 臂语义）。CIS 读
+                    // **inline-size 分量**（contain_intrinsic_width——style-system 把
+                    // contain-intrinsic-inline-size canonical 写 width 槽，垂直书写下
+                    // 内联 CIS 槽位不随轴交换，contain-inline-size-intrinsic 第二盒：
+                    // vertical-rl + height:fit-content + CIS-inline:50 应高 50）。
+                    match &style.height {
+                        LengthValue::Auto => cis_dim_boxed(&style.contain_intrinsic_width, frame_y),
+                        LengthValue::MinContent | LengthValue::MaxContent | LengthValue::FitContent(_) => {
+                            cis_dim_boxed(&style.contain_intrinsic_width, frame_y)
+                        }
+                        _ => convert_length_to_dimension(&style.height, vw, vh),
+                    }
                 } else {
                     match &style.height {
                         LengthValue::Auto => cis_dim_boxed(&style.contain_intrinsic_height, frame_y),
@@ -287,6 +324,11 @@ pub fn computed_style_to_taffy(
         },
         // R2239：contain:size 须同时覆盖 auto min-size → 0（否则 inline-block 的 auto
         // min-size = min-content 会阻止收缩到 0）。
+        // R4194（css-flexbox §4.5 + css-contain-3 §containment-inline-size）：flex item 的
+        // auto min-size（automatic minimum size）是 **content-based**——inline-size
+        // containment 下内联轴的 auto min 须钳 0，否则 flex-basis 被内容 min-content 地板
+        // 撑开（contain-inline-size-flexitem：item flex-basis:100 + 300px 子应 100，
+        // 旧 min-width:auto→auto 测内容 300 撑开）。block 轴无 containment，min_height 照常。
         min_size: if style.contain.has_size() {
             taffy::geometry::Size {
                 width: match &style.min_width {
@@ -296,6 +338,19 @@ pub fn computed_style_to_taffy(
                 height: match &style.min_height {
                     LengthValue::Auto => taffy::style::Dimension::length(0.0),
                     _ => convert_length_to_dimension(&style.min_height, vw, vh),
+                },
+            }
+        } else if style.contain.has_inline_size() {
+            taffy::geometry::Size {
+                // 内联轴：水平书写 = width（auto min → 0）；vertical 书写 = height。
+                // 显式 min 长度保留（containment 只抑制 content-based auto）。
+                width: match (&style.min_width, style.writing_mode.is_vertical_block_flow()) {
+                    (LengthValue::Auto, false) => taffy::style::Dimension::length(0.0),
+                    (v, _) => convert_length_to_dimension(v, vw, vh),
+                },
+                height: match (&style.min_height, style.writing_mode.is_vertical_block_flow()) {
+                    (LengthValue::Auto, true) => taffy::style::Dimension::length(0.0),
+                    (v, _) => convert_length_to_dimension(v, vw, vh),
                 },
             }
         } else {

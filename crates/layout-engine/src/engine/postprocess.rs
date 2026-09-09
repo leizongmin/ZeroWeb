@@ -1132,10 +1132,23 @@ fn shift_siblings_after_ifc_grow_inner(
         // auto 高」，内容底边回填不得扩展（contain-size-block-001：div.contain 32 纯边框被
         // 回填撑到 132；同簇 002/003/004 + inline-block ×4 + multicol ×3）。与上方
         // R3754 ar_transferred 同型豁免：definite used size 胜内容回填。
+        // R4194（css-contain-3 §containment-inline-size）：inline-size containment 在
+        // **内联轴**上同语义（converter 折 CIS-or-0 为 definite）——内联轴 = 水平模式下
+        // 的 width（不影响 height 回填）、**vertical 模式下的 height**（contain-inline-
+        // size-vertical-rl：taffy definite 高被本回填按子底边撑回 200，应保持纯边框 100）。
+        // vertical 判定用 computed writing-mode（converter 抑制臂同源）。
         && !box_node
             .node_id
             .and_then(|id| styles.get(&id))
-            .is_some_and(|s| s.contain.has_size())
+            .is_some_and(|s| {
+                s.contain.has_size()
+                    || (s.contain.has_inline_size()
+                        && matches!(
+                            s.writing_mode,
+                            zero_style_system::WritingModeValue::VerticalRl
+                                | zero_style_system::WritingModeValue::VerticalLr
+                        ))
+            })
         && parent_backfill.value(|| std::env::var("ZW_IFC_PARENT_HEIGHT_BACKFILL").as_deref() != Ok("0"));
     let mut max_in_flow_bottom: f32 = 0.0;
     let mut has_negative_margin = false;
