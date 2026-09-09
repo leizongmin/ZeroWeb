@@ -23,7 +23,8 @@ use zero_render_foundation::primitive::{
     BlendMode, BlendModePrimitive, ClipPrimitive, DrawOp, FillPrimitive, FilterKind, FilterPrimitive, FontId,
     FontVariationId, GlyphPrimitive, GlyphSource, GradientColorSpace, GradientInterpolation, GradientKind,
     GradientPrimitive, GradientStop, HueMethod, ImagePrimitive, LineCap, LineStyle, PathFillPrimitive,
-    PathStrokePrimitive, RenderPrimitives, RoundedRectPrimitive, ShadowPrimitive, StrokePrimitive, TransformPrimitive,
+    PathStrokePrimitive, RenderPrimitives, RoundedRectPrimitive, ShadowPrimitive, StrokePrimitive, TextControlBoundary,
+    TransformPrimitive,
 };
 
 fn ipc_rect_to_rect(r: IpcRect) -> Rect {
@@ -338,6 +339,19 @@ pub fn to_render_primitives(params: PaintSnapshotParams) -> RenderPrimitives {
             synthetic_italic: glyph.synthetic_italic,
         });
     }
+    // 文本控件 caret 边界：非绘制元数据（CPU/GPU 光栅化不消费），browser 写
+    // TabSnapshot 输入法交互时使用；compositor 转换结果恒为空 = 行为零变化。
+    primitives.text_control_boundaries = params
+        .text_control_boundaries
+        .into_iter()
+        .map(|boundary| TextControlBoundary {
+            node_handle: boundary.node_handle,
+            utf16_offset: boundary.utf16_offset,
+            x: boundary.x,
+            y: boundary.y,
+            height: boundary.height,
+        })
+        .collect();
     primitives.draw_order = params.draw_order.into_iter().map(ipc_draw_op_to_draw_op).collect();
     primitives
 }
@@ -426,5 +440,24 @@ mod tests {
             primitives.glyph_font_variations(&primitives.glyphs[0]),
             &[OpenTypeVariation::new(*b"wdth", 125.0)]
         );
+    }
+
+    #[test]
+    fn conversion_carries_text_control_boundaries() {
+        let params = PaintSnapshotParams {
+            text_control_boundaries: vec![zero_protocol::paint_snapshot::IpcTextControlBoundary {
+                node_handle: 7,
+                utf16_offset: 3,
+                x: 1.5,
+                y: 2.5,
+                height: 20.0,
+            }],
+            ..Default::default()
+        };
+
+        let primitives = to_render_primitives(params);
+        assert_eq!(primitives.text_control_boundaries.len(), 1);
+        assert_eq!(primitives.text_control_boundaries[0].node_handle, 7);
+        assert_eq!(primitives.text_control_boundaries[0].utf16_offset, 3);
     }
 }

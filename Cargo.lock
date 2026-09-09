@@ -6829,6 +6829,7 @@ dependencies = [
  "zero-host-runtime",
  "zero-net",
  "zero-page-runtime",
+ "zero-paint-convert",
  "zero-product-version",
  "zero-protocol",
  "zero-render-foundation",
