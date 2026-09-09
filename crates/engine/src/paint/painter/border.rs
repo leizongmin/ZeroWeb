@@ -1010,11 +1010,18 @@ impl super::Painter {
         // 须按元素自身 color 解析（color_value_to_render 无元素色上下文会回落黑色）。
         let color = resolve_color_current(&style.outline_color, &style.color);
 
-        // 计算外侧矩形坐标
-        let ox = abs_x - total_offset;
-        let oy = abs_y - total_offset;
-        let ow = w + 2.0 * total_offset;
-        let oh = h + 2.0 * total_offset;
+        // 计算外侧矩形坐标。
+        // R4196（css-ui-3 §outline-props，outline-013）：outline 形状外缘尺寸不得小于
+        // 2×outline-width（assert「Negative values on outline-offset should not cause the
+        // height and the width of outside of the shape drawn by the outline to become
+        // smaller than twice the computed value of the outline-width property」）——
+        // 负 offset 过深（total_offset −100）时 ow_raw = w + 2×total 为负，旧实现画负宽
+        // 矩形 = outline 消失。钳到下限后 ox/oy 按**盒中心**重锚（替代 abs−total 差分式，
+        // offset=0/负浅时与原式逐字节一致：ox = abs_x + w/2 − (w+2t)/2 = abs_x − t）。
+        let ow = (w + 2.0 * total_offset).max(2.0 * outline_width);
+        let oh = (h + 2.0 * total_offset).max(2.0 * outline_width);
+        let ox = abs_x + w / 2.0 - ow / 2.0;
+        let oy = abs_y + h / 2.0 - oh / 2.0;
 
         match style.outline_style {
             OutlineStyleValue::None => {}
