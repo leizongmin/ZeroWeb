@@ -90,6 +90,37 @@ fn test_textarea_defaults_to_bidirectional_resize() {
     assert_eq!(styles[&textarea].resize, ResizeValue::Both);
 }
 
+/// R4174（CSS Overflow 3 §3.1 + SVG2 §7.2）：`<svg>` 根 UA `overflow: hidden`（chromium
+/// UA 样式表同）。CSS 初始值 visible 使 svg 计算溢出恒为 Visible，paint 侧失去「作者
+/// 声明轴级 overflow」与「UA 默认」的区分信号（overflow-clip-x-visible-y-svg 轴级语义
+/// 无从落地）。作者声明可按轴覆盖（第二个断言：`overflow: visible` 覆盖回 Visible）。
+#[test]
+fn test_svg_root_defaults_to_overflow_hidden() {
+    let doc = zero_dom::parse_html("<svg><rect width=\"10\" height=\"10\"/></svg>");
+    let svg = doc.get_elements_by_tag_name("svg")[0];
+    let mut system = StyleSystem::new();
+    let styles = system.compute_styles(&doc, &[]);
+    assert_eq!(
+        styles[&svg].overflow_x,
+        OverflowValue::Hidden,
+        "svg UA overflow-x 应 hidden"
+    );
+    assert_eq!(
+        styles[&svg].overflow_y,
+        OverflowValue::Hidden,
+        "svg UA overflow-y 应 hidden"
+    );
+
+    let doc2 = zero_dom::parse_html("<svg style=\"overflow: visible\"><rect/></svg>");
+    let svg2 = doc2.get_elements_by_tag_name("svg")[0];
+    let styles2 = system.compute_styles(&doc2, &[]);
+    assert_eq!(
+        styles2[&svg2].overflow_x,
+        OverflowValue::Visible,
+        "作者 overflow:visible 应覆盖 UA hidden"
+    );
+}
+
 /// 隐藏元素（script/style/noframes/noscript 等）必须 display:none。
 /// `<noframes>` 内容在 frame-capable UA（含 chromium oracle，所有现代浏览器）中按
 /// HTML 渲染规范隐藏；`<noscript>` 在脚本启用时同理隐藏。R1657：legacy-html fixture

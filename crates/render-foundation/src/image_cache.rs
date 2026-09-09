@@ -785,6 +785,68 @@ fn resolve_origin_components(value: &str, origin: (f32, f32), extent: (f32, f32)
 /// R3933（inline `<svg>` paint）：按目标尺寸矢量栅格化 SVG 源字节——
 /// inline `<svg>` 元素无外部 URL，painter 序列化其 DOM 子树后直接调用本函数产像素
 /// （canvas/video 同款两段式：painter 产 rgba + ImagePrimitive，调用方注入 ImageCache）。
+///
+/// R4174（CSS Overflow 3 §3.1 轴级 overflow × SVG2 视口）：带溢出扩展画布的 SVG 栅格化。
+///
+/// `viewport_w/h` = svg 根视口（元素盒尺寸，注入为树尺寸）；`canvas_w/h` = 输出画布
+/// （可见轴按内容包围盒外扩、裁剪轴 = 视口尺寸）。树按 **1:1** 渲染（非 fit 缩放）——
+/// 溢出内容超出视口的部分落入扩展画布（可见轴），超出裁剪轴画布（= 视口宽）的部分
+/// 被画布边界自然裁掉。根背景填充按画布尺寸铺满（chromium：背景在视口 transform 之外）。
+/// 调用方（paint_svg_element）仅在「轴级 overflow 可见 + 内容确实越界」时走此路径，
+/// 默认 hidden 语义走 [`rasterize_svg_at`] 原路径，零行为变更。
+pub fn rasterize_svg_with_overflow(
+    source: &[u8],
+    viewport_w: u32,
+    viewport_h: u32,
+    canvas_w: u32,
+    canvas_h: u32,
+) -> Result<ImageData, String> {
+    if viewport_w == 0 || viewport_h == 0 || canvas_w == 0 || canvas_h == 0 {
+        return Err("SVG 目标尺寸为 0".to_string());
+    }
+    let (bytes, root_background) = promote_svg_root_background(source);
+    let bytes = preprocess_svg_style_transform(&bytes);
+    let bytes = preprocess_svg_transform_attr_syntax(&bytes);
+    let bytes = preprocess_svg_transform_origin(&bytes);
+    let bytes = inject_svg_target_dims(&bytes, viewport_w, viewport_h);
+    let tree = resvg::usvg::Tree::from_data(&bytes, &resvg::usvg::Options::default())
+        .map_err(|e| format!("SVG 解析失败: {e}"))?;
+    let size = tree.size();
+    let (iw, ih) = (size.width(), size.height());
+    if iw <= 0.0 || ih <= 0.0 {
+        return Err("SVG 固有尺寸为 0".to_string());
+    }
+    let mut pixmap = resvg::tiny_skia::Pixmap::new(canvas_w, canvas_h)
+        .ok_or_else(|| format!("SVG pixmap 分配失败 {canvas_w}x{canvas_h}"))?;
+    if let Some(color) = root_background {
+        pixmap.fill(resvg::tiny_skia::Color::from_rgba8(
+            color[0], color[1], color[2], color[3],
+        ));
+    }
+    // 1:1 渲染（视口 == 注入树尺寸），溢出内容按画布尺寸裁剪。
+    resvg::render(&tree, resvg::tiny_skia::Transform::identity(), &mut pixmap.as_mut());
+    ImageData::from_rgba(pixmap.take(), canvas_w, canvas_h)
+}
+
+/// R4174：SVG 内容包围盒右/下边（canvas 坐标，视口 = 注入 `viewport_w/h`）。
+///
+/// 供 paint 侧判定「轴级 overflow 可见时内容是否越界、越界到哪」。解析失败返 None
+///（调用方回落视口尺寸，即无溢出）。与 [`rasterize_svg_with_overflow`] 同预处理链，
+/// 保证 bbox 与实际渲染坐标系一致。
+pub fn svg_content_extents(source: &[u8], viewport_w: u32, viewport_h: u32) -> Option<(f32, f32)> {
+    let (bytes, _) = promote_svg_root_background(source);
+    let bytes = preprocess_svg_style_transform(&bytes);
+    let bytes = preprocess_svg_transform_attr_syntax(&bytes);
+    let bytes = preprocess_svg_transform_origin(&bytes);
+    let bytes = inject_svg_target_dims(&bytes, viewport_w, viewport_h);
+    let tree = resvg::usvg::Tree::from_data(&bytes, &resvg::usvg::Options::default()).ok()?;
+    let bbox = tree.root().abs_bounding_box();
+    Some((bbox.right(), bbox.bottom()))
+}
+
+/// R3933（inline `<svg>` paint）：按目标尺寸矢量栅格化 SVG 源字节——
+/// inline `<svg>` 元素无外部 URL，painter 序列化其 DOM 子树后直接调用本函数产像素
+/// （canvas/video 同款两段式：painter 产 rgba + ImagePrimitive，调用方注入 ImageCache）。
 pub fn rasterize_svg_at(source: &[u8], target_w: u32, target_h: u32) -> Result<ImageData, String> {
     if target_w == 0 || target_h == 0 {
         return Err("SVG 目标尺寸为 0".to_string());
@@ -2535,6 +2597,35 @@ mod tests {
         let src = b"<svg width=\"8px\" height=\"32px\" xmlns=\"x\"><rect/></svg>";
         let out = inject_svg_target_dims(src, 420, 344);
         assert_eq!(out.as_slice(), &src[..]);
+    }
+
+    /// R4174（CSS Overflow 3 §3.1 轴级 overflow × SVG2 视口）：扩展画布 1:1 栅格化——
+    /// 视口 100×100、内容 150×150 的 rect，画布 100×150 时 y 轴可见区有绿色、裁剪轴
+    /// 100 之外无像素（overflow-clip-x-visible-y-svg 语义：x clip / y visible）。
+    #[test]
+    fn r4174_overflow_canvas_y_visible_x_clipped() {
+        let src = b"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"100\" height=\"100\">\
+                    <rect width=\"150\" height=\"150\" fill=\"green\"/></svg>";
+        let img = rasterize_svg_with_overflow(src, 100, 100, 100, 150).expect("rasterize");
+        assert_eq!((img.width, img.height), (100, 150));
+        let px = |x: u32, y: u32| {
+            let o = ((y * img.width + x) * 4) as usize;
+            (img.pixels[o], img.pixels[o + 1], img.pixels[o + 2])
+        };
+        // 视口内（50,50）绿；可见轴溢出区（50,125）绿（usvg 无溢出裁剪路径下此处必白）。
+        let is_green = |p: (u8, u8, u8)| p.1 > 100 && p.0 < 100;
+        assert!(is_green(px(50, 50)), "视口内应绿");
+        assert!(is_green(px(50, 125)), "y 可见溢出区应绿");
+    }
+
+    /// R4174：内容包围盒右/下边（150×150 rect → (150,150)）。
+    #[test]
+    fn r4174_content_extents_reflect_overflow() {
+        let src = b"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"100\" height=\"100\">\
+                    <rect width=\"150\" height=\"150\" fill=\"green\"/></svg>";
+        let (right, bottom) = svg_content_extents(src, 100, 100).expect("bbox");
+        assert!((right - 150.0).abs() < 1.0, "right 应 150，got {right}");
+        assert!((bottom - 150.0).abs() < 1.0, "bottom 应 150，got {bottom}");
     }
 
     /// R3762：端到端——无尺寸 SVG 栅格化到目标尺寸后 viewport = 目标（50% 宽 rect

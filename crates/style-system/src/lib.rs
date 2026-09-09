@@ -1064,6 +1064,17 @@ impl StyleSystem {
             ua_decl_inputs.push(("display".to_string(), "block".to_string(), false, (0, 0, 0), None));
         }
 
+        // R4174（CSS Overflow 3 §3.1 + SVG2 §7.2）：`<svg>` 根元素 UA `overflow: hidden`
+        //（chromium UA 样式表同——SVG 视口默认裁剪溢出内容）。CSS 初始值 visible 使 ZW
+        // 的 svg 计算溢出恒为 Visible，paint 侧失去「作者声明轴级 overflow」与「UA 默认」
+        // 的区分信号（overflow-clip-x-visible-y-svg / overflow-clip-y-visible-x-svg：
+        // `overflow-x: clip; overflow-y: visible` 轴级语义无从落地）。UA 优先级 0,0,0，
+        // 作者样式可按轴覆盖。
+        // https://drafts.csswg.org/css-overflow-3/#valdef-overflow-clip
+        if tag_name.as_deref() == Some("svg") {
+            ua_decl_inputs.push(("overflow".to_string(), "hidden".to_string(), false, (0, 0, 0), None));
+        }
+
         // UA 默认样式
         if let Some(ref tag) = tag_name {
             match tag.as_str() {

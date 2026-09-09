@@ -700,15 +700,61 @@ impl Painter {
         let key_hash = crate::paint::simple_hash(&source);
         let target_w = container_w.round().max(1.0) as u32;
         let target_h = container_h.round().max(1.0) as u32;
-        let Ok(data) = zero_render_foundation::image_cache::rasterize_svg_at(source.as_bytes(), target_w, target_h)
-        else {
+        // R4174（CSS Overflow 3 §3.1）：svg 根 UA overflow:hidden（R4174 style-system 注入），
+        // 作者轴级声明（如 `overflow-x: clip; overflow-y: visible`）覆盖后，可见轴内容
+        // 溢出视口可见、裁剪轴按视口裁剪（overflow-clip-x-visible-y-svg / -y-visible-x-svg）。
+        // usvg 恒按视口裁剪 → 走扩展画布 1:1 栅格化：可见轴画布 = 内容包围盒边（内容真实
+        // 外溢），裁剪轴画布 = 视口尺寸（越界部分被画布裁掉）。仅「可见轴 + 内容确实越界」
+        // 时走此路径，默认 hidden 语义走原 fit 缩放路径（零行为变更）。
+        let style = styles.get(&node_id);
+        let axis_visible =
+            |v: &zero_css_parser::values::OverflowValue| matches!(v, zero_css_parser::values::OverflowValue::Visible);
+        // CSS Containment §4.1：contain:paint 的 used overflow = clip（无视 computed visible，
+        // 裁剪到 padding-box + overflow-clip-margin；paint-containment-svg 实证——UA hidden
+        // 注入后作者 `overflow: visible` 覆盖两轴为 Visible，若无此守卫 svg 内容外溢 150×150，
+        // 应 100×100/clip-margin 110）。scroll/auto 轴语义（滚动容器）svg 根不适用，保守同 clip。
+        let contained = style.is_some_and(|s| s.contain.has_paint());
+        let overflow_x_visible = !contained && style.is_some_and(|s| axis_visible(&s.overflow_x));
+        let overflow_y_visible = !contained && style.is_some_and(|s| axis_visible(&s.overflow_y));
+        let rasterize_result = if overflow_x_visible || overflow_y_visible {
+            // 内容包围盒（canvas 坐标，树尺寸 = 注入视口），可见轴画布外扩到内容边。
+            let content_edge =
+                zero_render_foundation::image_cache::svg_content_extents(source.as_bytes(), target_w, target_h)
+                    .unwrap_or((container_w, container_h));
+            let x_extent = if overflow_x_visible {
+                (content_edge.0.ceil().max(container_w) as u32).max(target_w)
+            } else {
+                target_w
+            };
+            let y_extent = if overflow_y_visible {
+                (content_edge.1.ceil().max(container_h) as u32).max(target_h)
+            } else {
+                target_h
+            };
+            zero_render_foundation::image_cache::rasterize_svg_with_overflow(
+                source.as_bytes(),
+                target_w,
+                target_h,
+                x_extent,
+                y_extent,
+            )
+        } else {
+            zero_render_foundation::image_cache::rasterize_svg_at(source.as_bytes(), target_w, target_h)
+        };
+        let Ok(data) = rasterize_result else {
             return; // 解析失败（畸形 SVG）→ 无图元，与 img 404 行为一致
         };
         let content_x = abs_x + box_node.border_left + box_node.padding_left;
         let content_y = abs_y + box_node.border_top + box_node.padding_top;
+        let (draw_w, draw_h) = if overflow_x_visible || overflow_y_visible {
+            // 扩展画布路径：绘制矩形 = 画布尺寸（可见轴外溢 / 裁剪轴 = 视口）。
+            (data.width as f32, data.height as f32)
+        } else {
+            (container_w, container_h)
+        };
         self.primitives
             .add_image(zero_render_foundation::primitive::ImagePrimitive {
-                rect: zero_render_foundation::geometry::Rect::new(content_x, content_y, container_w, container_h),
+                rect: zero_render_foundation::geometry::Rect::new(content_x, content_y, draw_w, draw_h),
                 image_key: zero_render_foundation::image_cache::ImageKey::new(key_hash),
                 clip: None,
                 source: None,
