@@ -763,7 +763,12 @@
                 _r366hit = String(_r366k.tagName || '').toLowerCase() === _r366m[1].toLowerCase();
               }
               if (_r366hit) _r366out.push(_r366k);
-              _r366walk(_r366k);
+              // WC-M3 切片 8 第四增量（web-components goal）：template 的 content 不在
+              // 查询树内（spec qSA 不下钻 template content——真实 DOM 的 contents 独立
+              // fragment）。旧版下钻 content 使嵌套 template 被 createTestTree walk()
+              // 装配多遍（qSA('template') 命中 stale 代拷贝——every-slots shadow 身份
+              // 分裂、`host.shadowRoot !== attachShadow 返回值` 的根因）。
+              if (String(_r366k.nodeName || '').toLowerCase() !== 'template') _r366walk(_r366k);
             }
           })(this);
           return _r366out;
@@ -3848,59 +3853,47 @@
   // 归属判定上行时跨容器跳 host（shadow-including 祖先链）。非 dispatch（currentTarget
   // 为空）不过滤——spec：过滤仅适用于「dispatch flag set 且 current target 非空」。
   // part05 R138 原型面 composedPath getter 同源复用（跨 IIFE 段经 globalThis）。
-  globalThis.__zwCpClosedFilter = function (path, ct) {
+  globalThis.__zwCpClosedFilter = function (path, flags, ct) {
     try {
-      if (!path || !path.length || !ct || !ct.nodeType) return path;
-      var _isShadowRootish = function (n) {
-        try { return !!(n && n.nodeType === 11 && n.host != null); } catch (_eIs) { return false; }
-      };
-      var _climb = function (n) {
-        var c = n, g = 0;
-        while (c && g++ < 64) {
-          var p = null;
-          try { p = c.parentNode; } catch (_eC) { p = null; }
-          if (!p) break;
-          c = p;
-        }
-        return c;
-      };
-      var _inside = function (node, root) {
-        var c = node, g = 0;
-        while (c && g++ < 64) {
-          if (c === root) return true;
-          if (_isShadowRootish(c)) { c = c.host; continue; }
-          var p2 = null;
-          try { p2 = c.parentNode; } catch (_eC2) { p2 = null; }
-          c = p2 || null;
-        }
-        return false;
-      };
-      // spec 口径（WPT event-composed-path test3/5/6/7/9/11 全型验证）：条目 E 隐藏
-      // ⟺ E 的 **shadow-including 祖先链**（上行跨 root→host 边）上存在某节点，其树根
-      // 是 closed shadow root 且 ct 不在该树内。plain tree-root 单点判定不够——嵌套
-      // open-in-closed（test6 host1 站：open sr2 内条目随其 host2 落入 closed sr1 而
-      // 隐藏）与 closed-in-closed（test7 sr1 站：sr2 条目按自身 closed 树隐藏）都对。
+      // spec composedPath() getter（dom-event-composedpath）：per-item flags
+      //（rootClosed = item 是 closed shadow root；slotInClosed = item 是 closed 树内
+      // slot）在派发期预计算 + hidden-level 计数——路径视图对后续 DOM mutation 稳定
+      //（WPT event-composed-path-after-dom-mutation）。
+      if (!path || !path.length) return [];
+      if (!flags) flags = [];
+      if (!ct || !ct.nodeType) return path.slice();
+      var level0 = 0, ctIdx = -1;
+      for (var i = path.length - 1; i >= 0; i--) {
+        if (flags[i] && flags[i].rootClosed) level0++;
+        if (path[i] === ct) { ctIdx = i; break; }
+        if (flags[i] && flags[i].slotInClosed) level0--;
+      }
+      if (ctIdx < 0) return path.slice();
       var out = [];
-      for (var i = 0; i < path.length; i++) {
-        var e = path[i];
-        var hide = false;
-        if (e && e.nodeType) {
-          var c = e, g = 0;
-          while (c && g++ < 64 && !hide) {
-            var top = _climb(c);
-            var root = _isShadowRootish(top) ? top : null;
-            if (root && root.mode === 'closed' && !_inside(ct, root)) { hide = true; break; }
-            if (_isShadowRootish(c)) { c = c.host; continue; }
-            var p2 = null;
-            try { p2 = c.parentNode; } catch (_eC3) { p2 = null; }
-            c = p2 || null;
-          }
+      var cur = level0, max = level0, pre = [];
+      for (var j = ctIdx - 1; j >= 0; j--) {
+        if (flags[j] && flags[j].rootClosed) cur++;
+        if (cur <= max) pre.push(path[j]);
+        if (flags[j] && flags[j].slotInClosed) {
+          cur--;
+          if (cur < max) max = cur;
         }
-        if (!hide) out.push(e);
+      }
+      for (var k2 = pre.length - 1; k2 >= 0; k2--) out.push(pre[k2]);
+      out.push(path[ctIdx]);
+      var cur2 = level0, max2 = level0;
+      for (var k = ctIdx + 1; k < path.length; k++) {
+        if (flags[k] && flags[k].slotInClosed) cur2++;
+        if (cur2 <= max2) out.push(path[k]);
+        if (flags[k] && flags[k].rootClosed) {
+          cur2--;
+          if (cur2 < max2) max2 = cur2;
+        }
       }
       return out;
     } catch (_eCpAll) { return path; }
   };
+
   // M3 扩批 XXXIV（media-elements）：detached 文档媒体元素 synthetic key 序号
   //（_zwMEl AUDIO/VIDEO 分支——'#dmN' 键入 _mediaState）。
   var _zwDetachedMediaSeq = 0;
@@ -5991,7 +5984,9 @@
         if (_r114Pm) {
           // ② shadow root 站入链（spec：path 含 shadow root 本体——root 有 EventTarget
           // 面，listener 在 root 站 fire；非 composed 事件 path 止于 root）。
-          chain.push({ sel: null, handle: _r114PH, shadow: true, adj: _r114Adj, adjStation: false, rel: _r114RelFor(null, _r114PH) });
+          // rootClosed = 本站是 closed shadow root（composedPath per-item flag）。
+          chain.push({ sel: null, handle: _r114PH, shadow: true, adj: _r114Adj, adjStation: false,
+            rootClosed: !!(_r114Pm.mode === 'closed'), rel: _r114RelFor(null, _r114PH) });
           _r114SeenAdd(null, _r114PH);
           if (!event.composed) { _r114PostRootEnd = true; break; }
           var _r114HostSel = _r114Pm.hostSel || null;
@@ -6064,9 +6059,11 @@
           }
           if (_r114SlotPr && _r114SlotPr.__zwHandle && !_r114Seen['h' + _r114SlotPr.__zwHandle]) {
             // 步进到 slot（light→shadow 穿越：抑制深度 +1；adjusted target 不变——
-            // 进入 shadow 树不 retarget，只有跨出才改）。
+            // 进入 shadow 树不 retarget，只有跨出才改）。slotInClosed = slot 所在树是
+            // closed（composedPath per-item flag，spec slotInClosedTree）。
             _r114CurDepth++;
-            chain.push({ sel: null, handle: _r114SlotPr.__zwHandle, shadow: true, adj: _r114Adj, adjStation: false, rel: _r114RelFor(null, _r114SlotPr.__zwHandle) });
+            chain.push({ sel: null, handle: _r114SlotPr.__zwHandle, shadow: true, adj: _r114Adj, adjStation: false,
+              slotInClosed: !!(_r114PMeta && _r114PMeta.mode === 'closed'), rel: _r114RelFor(null, _r114SlotPr.__zwHandle) });
             _r114SeenAdd(null, _r114SlotPr.__zwHandle);
             _r114Handle = _r114SlotPr.__zwHandle;
             continue;
@@ -6158,14 +6155,22 @@
     var cpTarget = isDocTarget ? docObj : (isWinTarget ? winObj : target);
     if (!cpTarget) cpTarget = target;
     var cpPath = [cpTarget];
+    // WC-M3 切片 8 第二增量四小步：composedPath per-item flags（rootClosed/slotInClosed
+    // ——spec composedPath() getter 的 hidden-level 计数输入；派发期预计算，mutation
+    // 稳定）。首站（target）自身是 closed shadow root 时 rootClosed 成立。
+    var cpFlags = [{ rootClosed: !!(cpTarget && cpTarget.nodeType === 11 && cpTarget.mode === 'closed'), slotInClosed: false }];
     // R114：链元素统一 {sel, handle} 解析（旧字符串 sel 与新 handle 对象两形态）。
-    // WC-M3 切片 8 第二增量：`shadow`（window.event 抑制判定）与 `adj`（该站
-    // shadow-adjusted target 身份）随对象形态透传——字符串站（纯 sel 域）无标记。
+    // WC-M3 切片 8 第二增量：`shadow`（window.event 抑制判定）、`adj`（该站
+    // shadow-adjusted target 身份）、`adjStation`（AT_TARGET eventPhase 面）、
+    // `rootClosed`/`slotInClosed`（composedPath flags）随对象形态透传——字符串站
+    //（纯 sel 域）无标记。
     function _r114Entry(e) {
       if (e && typeof e === 'object') {
-        return { sel: e.sel || null, handle: e.handle || null, shadow: !!e.shadow, adj: e.adj || null, rel: e.rel || null };
+        return { sel: e.sel || null, handle: e.handle || null, shadow: !!e.shadow, adj: e.adj || null,
+          adjStation: e.adjStation === true, rel: e.rel || null,
+          rootClosed: !!e.rootClosed, slotInClosed: !!e.slotInClosed };
       }
-      return { sel: e, handle: null, shadow: false, adj: null, rel: null };
+      return { sel: e, handle: null, shadow: false, adj: null, adjStation: false, rel: null, rootClosed: false, slotInClosed: false };
     }
     // WC-M3 切片 8 第二增量：per-station shadow-adjusted target（spec retargeting——
     // 每站独立改写 event.target/srcElement；`adj` 为 null 即原始 target。无条件设置：
@@ -6189,12 +6194,14 @@
     for (var cpi = 0; cpi < elemChain.length; cpi++) {
       var _r114E = _r114Entry(elemChain[cpi]);
       cpPath.push(_r114E.sel ? _wrapSelector(_r114E.sel) : _wrapHandle(_r114E.handle));
+      cpFlags.push({ rootClosed: _r114E.rootClosed, slotInClosed: _r114E.slotInClosed });
     }
     // R40：composedPath 与派发虚站一致——passDoc/passWin 控制 document/window 追加（document target 的
     // path = [document, window]；window target = [window]；元素连入文档 = [..., document, window]）。
-    if (passDoc && docObj) cpPath.push(docObj);
-    if (passWin && winObj) cpPath.push(winObj);
+    if (passDoc && docObj) { cpPath.push(docObj); cpFlags.push({ rootClosed: false, slotInClosed: false }); }
+    if (passWin && winObj) { cpPath.push(winObj); cpFlags.push({ rootClosed: false, slotInClosed: false }); }
     event._composedPath = cpPath;
+    try { event._composedPathFlags = cpFlags; } catch (_e8cpf) {}
 
     // js-dom M4 R33：`Window.event`（HTML `current event`）——dispatch 前 save 外层 event、set 当前 event。
     // 嵌套 dispatch（redispatch）时内层 finally 恢复外层（spec innermost-first，外层结束后其 event 仍可见）。
@@ -6322,6 +6329,7 @@
       return !event._defaultPrevented;
     } finally {
       event._composedPath = null;
+      try { event._composedPathFlags = null; } catch (_e8cpf2) {}
       // js-dom M4 R35：spec `concept-event-dispatch` 末尾——dispatch 结束 eventPhase→NONE(0)、currentTarget→null
       //（WPT Event-dispatch-order-at-target 等读 dispatch 后 eventPhase；event-global "currentTarget null after dispatch"）。
       event.eventPhase = 0;
@@ -6477,12 +6485,13 @@
       // 填充、finally 清空（spec：dispatch flag unset 时返空）。事件委托（e.composedPath()[0] === target）
       // + 祖先匹配（path.includes(ancestor)）高频。
       _composedPath: null,
+      _composedPathFlags: null,
       composedPath: function() {
         if (!this._composedPath) return [];
         // WC-M3 切片 8 第二增量：closed shadow tree 隐藏（spec dom-event-composedpath
-        // ——dispatch 期按 currentTarget 过滤；见 __zwCpClosedFilter 注记）。
+        // ——per-item 预计算 flags + level 计数；mutation 稳定）。
         return globalThis.__zwCpClosedFilter
-          ? globalThis.__zwCpClosedFilter(this._composedPath, this.currentTarget)
+          ? globalThis.__zwCpClosedFilter(this._composedPath, this._composedPathFlags, this.currentTarget)
           : this._composedPath.slice();
       },
       preventDefault: function() {
@@ -7590,7 +7599,9 @@
                     hit = String(k.tagName || '').toLowerCase() === mSimple[1].toLowerCase();
                   }
                   if (hit) out.push(k);
-                  walk(k);
+                  // WC-M3 切片 8 第四增量：template content 不在查询树内（同 R366 walk
+                  // 对齐——嵌套 template 不下钻）。
+                  if (String(k.nodeName || '').toLowerCase() !== 'template') walk(k);
                 }
               })(frag);
               return out;
@@ -7673,6 +7684,10 @@
       // 值分离：host 之后的 light 祖先站 target 值 = host 但非 adjusted 站）。
       var _s8AdjStation167 = [];
       var _s8NextAdjStation = true; // 首站 = target 本体（adjusted 非空）
+      // 切片 8 第二增量四小步：composedPath per-item flags（同 handle 世界；派发期
+      // 预计算 + level 计数，mutation 稳定）。
+      var _s8CpFlags = [];
+      var _s8NextSlotInClosed = false;
       // post-dispatch target（spec dispatch 末步，与 `_dispatchWithBubble` 侧同构）。
       var _s8PostAdj = null;
       var _s8PostRootEnd = false;
@@ -7718,10 +7733,18 @@
           // plain 轻量 shadow root 站（无 handle 印记 + `.host` 属性）——composed 跨
           // 边界推 host 站 + host 的 light 祖先；非 composed 止于本站。
           var _s8PlainRoot = false;
+          var _s8IsClosedRoot = false;
           if (cur167.nodeType === 11 && !(cur167.__zwHandle != null)
               && !(cur167.__zwSelector != null)) {
             try { _s8PlainRoot = cur167.host != null; } catch (_e8pr) { _s8PlainRoot = false; }
+            if (_s8PlainRoot) {
+              try { _s8IsClosedRoot = cur167.mode === 'closed'; } catch (_e8cr) { _s8IsClosedRoot = false; }
+            }
           }
+          // per-item flags：rootClosed（本站是 closed root）+ slotInClosed（detour 进入
+          // 的 closed 树内 slot——`_s8NextSlotInClosed` 由 detour 步设置、本站消费）。
+          _s8CpFlags.push({ rootClosed: _s8IsClosedRoot, slotInClosed: _s8NextSlotInClosed });
+          _s8NextSlotInClosed = false;
           if (_s8PlainRoot) {
             _s8RootIdx = chain167.length - 1;
             if (ev && ev.composed && cur167.host) {
@@ -7775,6 +7798,8 @@
               }
               if (_s8HitSlot && seen167.indexOf(_s8HitSlot) < 0) {
                 _s8NextAdjStation = false; // slot 站 = walk-back 站（非 adjusted 站）
+                // composedPath flag：slot 站在 closed 树内（spec slotInClosedTree）。
+                try { _s8NextSlotInClosed = _s8PSR.mode === 'closed'; } catch (_e8sic) { _s8NextSlotInClosed = false; }
                 cur167 = _s8HitSlot;
                 continue;
               }
@@ -7883,6 +7908,7 @@
       // WC-M3 切片 8：composedPath（spec dom §4.3——dispatch 期事件路径，含 shadow
       // root 站与 composed 跨边界 host/light 祖先；非 dispatch 由 finally 域清理）。
       try { ev._composedPath = chain167.slice(); } catch (_e8cp) {}
+      try { ev._composedPathFlags = _s8CpFlags; } catch (_e8cpf3) {}
       // 单站派发：target 站（_mEvListeners）/ view 站（_zwEvLs）/ doc 站
       //（_zwLocalListeners）。captureOnly 过滤（AT_TARGET 双 pass capture 先，
       // spec invoke 序）。once 派发后移除；派发中被移除跳过（R111）。
@@ -8070,6 +8096,7 @@
       // _dispatchWithBubble R3244 的 finally 清理同语义；WPT event-post-dispatch
       // 'composedPath().length === 0' 断言）。
       try { ev._composedPath = null; } catch (_e8cpc) {}
+      try { ev._composedPathFlags = null; } catch (_e8cpf4) {}
       return !(ev && ev.cancelable && ev.defaultPrevented);
     };
     // R151（js-dom M4）：`click()`（HTMLElement 合成激活入口，spec

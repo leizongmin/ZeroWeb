@@ -10604,11 +10604,11 @@
     if (!_r138EP) return;
     var _r138Defs = {
       // WC-M3 切片 8 第二增量：closed shadow tree 隐藏（spec dom-event-composedpath
-      // ——dispatch 期按 currentTarget 过滤；过滤实现见 part03 __zwCpClosedFilter）。
+      // ——per-item 预计算 flags + level 计数；过滤实现见 part03 __zwCpClosedFilter）。
       composedPath: function() {
         if (!this._composedPath) return [];
         return globalThis.__zwCpClosedFilter
-          ? globalThis.__zwCpClosedFilter(this._composedPath, this.currentTarget)
+          ? globalThis.__zwCpClosedFilter(this._composedPath, this._composedPathFlags, this.currentTarget)
           : this._composedPath.slice();
       },
       preventDefault: function() {

@@ -2,10 +2,10 @@
 
 **入口文档**: [../web-components.md](../web-components.md)
 **创建日期**: 2026-09-07（goal 拆分 bootstrap）
-**最后更新**: 2026-09-11（M3 切片 8 第二增量第三小步——event-with-related-target
-全清（label IDL set/get 对称 round-trip + relatedTarget handle 世界/目标站补完）+
-adjStation eventPhase 面（capturing-and-bubbling 全清），净 +31 零回归；余：every-slots
-的 shadow 身份分裂 2F + 尾簇 + DC-5 终判）
+**最后更新**: 2026-09-11（M3 切片 8 第二增量第四小步——every-slots 全清（R366 walk
+template content 下钻消除，结构性修复身份分裂）+ composedPath mutation 稳定视图（spec
+getter hidden-level 直译，`_composedPathFlags` per-item flags），净 +4 零回归；余：
+event-post-dispatch 尾 1F + slotchange 尾 12 案 + disabledFeatures 尾 2 案 + DC-5 终判）
 
 ---
 
@@ -87,11 +87,14 @@ Shadow DOM 渲染级 composed tree 排除（等用户点名专项）。
      Extensions-to-Event-Interface 同步 2→12/12
    - ~~capturing-and-bubbling 5F~~ ✅ 同日全清（adjStation eventPhase 面：adjusted 站
      capture/bubble 均报 AT_TARGET，walk-back 站按阶段报 1/3——spec invoke 直译）
-   - **every-slots 2F 根因已定位**：plain 克隆宿主 `.shadowRoot` 读值 ≠ attachShadow
-     注册对象（createTestTree walk 的 qSA 视图/真节点分裂——attachShadow 挂在视图宿主，
-     B-shadow 二次克隆；R366 查询归一域）。修法：detour 改走 identity 稳定源（A 宇宙
-     `_zwForceParentLink` 链上溯）或修 qSA 归一。
-   - event-composed-path-after-dom-mutation 1F、event-post-dispatch 尾 1F。
+   - ~~every-slots 2F~~ ✅ 2026-09-11 四小步全清（根因 = R366 子树 walk 下钻 template
+     content，同一嵌套 template 多代拷贝被重复装配（11 次 attachShadow/6 template）→
+     ids 表跨代混写；修 = walk 对 template 不再下钻，与序列化排除同口径）
+   - ~~event-composed-path-after-dom-mutation 2F~~ ✅ 同日（composedPath 重写为 spec
+     getter hidden-level 直译：per-item `_composedPathFlags` 派发期预计算，视图对
+     mutation 稳定；closed 隐藏语义经 test3/5/6/7/9/11 逐一复核等价）
+   - event-post-dispatch 尾 1F（listener 移动 target 后 relatedTarget 未清——handle
+     世界 clearTargets 的 rel 维度待补）。
 2. slotchange 尾 12 案 + disabledFeatures×attachShadow registry 集成（尾 2 案）。
 3. Rust `resolve_slots` 接线（渲染级消费等用户点名专项）+ **DC-5 终判**
    （make test + clippy + reftest 持续全绿基础上）。
@@ -110,11 +113,10 @@ Shadow DOM 渲染级 composed tree 排除（等用户点名专项）。
   + relatedTarget 全语义面~~ ✅ M3 切片 8 第二增量第二小步收口（event-composed-path
   11/11、event-inside-shadow-tree 12/12、event-inside-slotted-node 20/20、
   event-post-dispatch-no-listeners 5/5）
-- every-slots 2F：plain 克隆宿主 `.shadowRoot` getter 读值与 attachShadow 注册对象
-  身份分裂（B-shadow 二次克隆，detour 站无页面 listener）——修法见下一步计划
+- ~~every-slots 2F~~ ✅ 四小步全清（R366 walk template content 下钻消除）
 - ~~event-with-related-target 18F~~ ✅ 三小步全清
 - ~~capturing-and-bubbling 5F~~ ✅ 三小步全清
-- event-composed-path-after-dom-mutation 1F
+- ~~event-composed-path-after-dom-mutation 2F~~ ✅ 四小步全清
 - disabledFeatures=['shadow'] × attachShadow（尾 2 案——CE registry definition 感知）；
   canvas 等 createElement 产物 _realTag pending 回落 'div' 的 safelist 误放行
 - slotchange 尾 12 案（dispatch/observer 层）：innerHTML 尾计数（Chrome async host
@@ -133,7 +135,7 @@ crates/dom/` 核对渲染流域活跃面；碰 part01.js 前与 event-loop-spec 
 |--------|------|
 | M1 — WPT 基线建立 + Custom Elements 收口 | ✅ 2026-09-10（切片 1/2a/2b/3/4 全清——DC-1 基线 + DC-2 upgrade/whenDefined/adoptedCallback/双路径全收口） |
 | M2 — template 真实化 | ✅ 2026-09-10 收口（切片 1 + iframe/detached 工厂 content 视图——DC-3 全满足） |
-| M3 — slot 全链路 + 收尾 | ◐ 切片 1-7 ✅ + 切片 8 第一/二增量 ✅（composed path/shadow root 站/per-station retarget/relatedTarget 全语义面/eventPhase 面——累计净 +98）；余 every-slots 身份分裂 2F + 尾簇 + DC-5 终判 |
+| M3 — slot 全链路 + 收尾 | ◐ 切片 1-7 ✅ + 切片 8 第一/二增量 ✅（composed path/shadow root 站/per-station retarget/relatedTarget 全语义面/eventPhase 面/mutation 稳定 composedPath——累计净 +102）；余 event-post-dispatch 尾 1F + 尾簇 + DC-5 终判 |
 
 ## 待用户决策
 
@@ -146,10 +148,10 @@ crates/dom/` 核对渲染流域活跃面；碰 part01.js 前与 event-loop-spec 
 
 - 测试基线：立项时点全绿（`make test` / `make reftest` 入口，经 test-guard 包裹；
   禁止裸跑 cargo test）
-- WC 用例面：**3525 Pass / 4763 subtests（74.0%）**（2026-09-11 M3 切片 8 第二增量
-  第三小步，evidence/2026-09-11-wc-m3s8d.{md,json}。历史：基线 437=9% → 2a 689=15% →
+- WC 用例面：**3529 Pass / 4763 subtests（74.1%）**（2026-09-11 M3 切片 8 第二增量
+  第四小步，evidence/2026-09-11-wc-m3s8e.{md,json}。历史：基线 437=9% → 2a 689=15% →
   2b 2565=55% → 3 2720=58% → 4 3008=64% → M2 3014 → M3s1 3046 → M3s2 3050 → M3s3
   3105 → M3s4 3137 → M3s5 3142 → M3s6 3145 → M3s7 3413 → M3s8 3425 → M3s8b 3427 →
-  M3s8c 3494 → M3s8d 3525）
+  M3s8c 3494 → M3s8d 3525 → M3s8e 3529）
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过；
   dom 结构变更轮跑 `make reftest` 作渲染面守卫
