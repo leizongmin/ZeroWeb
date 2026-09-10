@@ -478,24 +478,90 @@ impl LayoutEngine {
         // gate 精确锁定（仅 canvas/embed/object/applet，排除 img——img 有 decoded intrinsic，
         // 其 definite-track grid 百分比案 grid-in-table-cell-with-img 须保持 taffy 原生解析，
         // 误纳会回归）。
+        // R4215（perf pullback slice 1）：sizing 子 pass 共享预扫描。三个纯样式驱动的
+        // 全树 walk 子 pass（intrinsic sizing / %height→auto / %margin-padding）在无目标
+        // 形态的页面上各自空转整棵 LayoutBox 树（block_layout_1000 探针实测三 walk 合计
+        // ~0.15ms）。此处一次 contiguous `styles.values()` 扫描（同 R3858 预扫描量级
+        // ~20µs）派生「页面是否存在目标形态」位标——判定域与各 pass 的 per-node gate
+        // 同源（宽放为超集），无目标即整 pass 跳过（changed 恒 false，语义不变）：
+        // - intrinsic：width/min-width/max-width content 关键字（R4149/R1018/R3925 域），
+        //   或 width:auto + float（R1015 shrink-to-fit 容器臂）；
+        // - %height：height:Percentage（R695 域；img intrinsic 在场时保守不跳过）；
+        // - %margin/padding：任意侧 Percentage。
+        struct SizingTargets {
+            intrinsic_kw_or_auto_float: bool,
+            pct_height: bool,
+            pct_box_side: bool,
+        }
+        let sizing_targets = SizingTargets {
+            intrinsic_kw_or_auto_float: false,
+            pct_height: false,
+            pct_box_side: false,
+        };
+        let sizing_targets = {
+            let mut t = sizing_targets;
+            for s in styles.values() {
+                let intrinsic_kw = matches!(
+                    s.width,
+                    LengthValue::MinContent | LengthValue::MaxContent | LengthValue::FitContent(_)
+                ) || matches!(
+                    s.min_width,
+                    LengthValue::MinContent | LengthValue::MaxContent | LengthValue::FitContent(_)
+                ) || matches!(
+                    s.max_width,
+                    LengthValue::MinContent | LengthValue::MaxContent | LengthValue::FitContent(_)
+                );
+                let auto_float = matches!(s.width, LengthValue::Auto) && !matches!(s.float, FloatValue::None);
+                if intrinsic_kw || auto_float {
+                    t.intrinsic_kw_or_auto_float = true;
+                }
+                // R695 pass 高度域 = Percentage + Stretch（sizing.rs Stretch 臂 R4086：
+                // stretch 按 Percentage(100) 同链解析——block-height-006 回归实证）。
+                if matches!(s.height, LengthValue::Percentage(_) | LengthValue::Stretch) {
+                    t.pct_height = true;
+                }
+                if matches!(s.margin_left, LengthValue::Percentage(_))
+                    || matches!(s.margin_right, LengthValue::Percentage(_))
+                    || matches!(s.margin_top, LengthValue::Percentage(_))
+                    || matches!(s.margin_bottom, LengthValue::Percentage(_))
+                    || matches!(s.padding_left, LengthValue::Percentage(_))
+                    || matches!(s.padding_right, LengthValue::Percentage(_))
+                    || matches!(s.padding_top, LengthValue::Percentage(_))
+                    || matches!(s.padding_bottom, LengthValue::Percentage(_))
+                {
+                    t.pct_box_side = true;
+                }
+                if t.intrinsic_kw_or_auto_float && t.pct_height && t.pct_box_side {
+                    break;
+                }
+            }
+            t
+        };
         let gathered_html_attr: HashMap<zero_dom::NodeId, (f32, f32)> =
             Self::gather_replaced_html_attr_intrinsic(doc, &root_box);
         let gathered_html_attr_ids: HashSet<zero_dom::NodeId> = gathered_html_attr.keys().copied().collect();
         for (nid, size) in gathered_html_attr {
             intrinsic_for_r695.entry(nid).or_insert(size);
         }
-        let changed_r695 = Self::apply_indefinite_percent_height_to_auto(
-            &mut taffy_tree,
-            &root_box,
-            &dom_to_taffy,
-            styles,
-            &intrinsic_for_r695,
-            self.viewport_height,
-            matches!(doc.quirks_mode(), zero_dom::QuirksMode::Quirks),
-            &gathered_html_attr_ids,
-        );
-        let changed_pct_padding =
-            Self::resolve_percentage_padding(&mut taffy_tree, &root_box, &dom_to_taffy, styles, self.viewport_width);
+        let changed_r695 = if sizing_targets.pct_height || !intrinsic_for_r695.is_empty() {
+            Self::apply_indefinite_percent_height_to_auto(
+                &mut taffy_tree,
+                &root_box,
+                &dom_to_taffy,
+                styles,
+                &intrinsic_for_r695,
+                self.viewport_height,
+                matches!(doc.quirks_mode(), zero_dom::QuirksMode::Quirks),
+                &gathered_html_attr_ids,
+            )
+        } else {
+            false
+        };
+        let changed_pct_padding = if sizing_targets.pct_box_side {
+            Self::resolve_percentage_padding(&mut taffy_tree, &root_box, &dom_to_taffy, styles, self.viewport_width)
+        } else {
+            false
+        };
         // R717：aspect-ratio flex item（ratio-only SVG `<img>` 或 CSS aspect-ratio 的 leaf 块）
         // 在 flex 容器内——第一趟 taffy 对 leaf 项无法从 aspect_ratio + Auto-cross 推导 main
         // 尺寸（ collapses）。此处按解析出的 cross 尺寸 + ratio 推导 main（CSS §10.3.2 + Flexbox §4.5）。
@@ -506,8 +572,12 @@ impl LayoutEngine {
         // 原先 `||` 短路求值会在前三趟任一 fire 时跳过 apply_intrinsic_content_sizing，
         // 致 flex 容器 shrink-to-fit / block max-content 在含 aspect-ratio/百分比 padding/不明确
         // 百分比 height 的页面失效。改为先求值再合并，确保四趟都执行。
-        let changed_intrinsic =
-            Self::apply_intrinsic_content_sizing(&mut taffy_tree, &root_box, &dom_to_taffy, styles, doc);
+        // R4215：无 content 关键字 / auto+float 目标形态时整 pass 跳过（预扫描位标同源）。
+        let changed_intrinsic = if sizing_targets.intrinsic_kw_or_auto_float {
+            Self::apply_intrinsic_content_sizing(&mut taffy_tree, &root_box, &dom_to_taffy, styles, doc)
+        } else {
+            false
+        };
         // R3929：全 auto 水平 inset 的 abspos 收缩适配宽度（taffy 给 0，§10.3.7 应为内容
         // shrink-to-fit）。与 intrinsic pass 同一 re-run 组（set_style+mark_dirty 后重跑 taffy）。
         let changed_abspos_shrink =
