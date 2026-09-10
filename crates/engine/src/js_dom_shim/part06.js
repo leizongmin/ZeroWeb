@@ -3127,6 +3127,15 @@
         };
         adoptAll(copy);
       } catch (_e132a) {}
+      // WC-M1 切片 3：importNode 的 handle 副本落 adopt 印记（ownerDocument trap 读；
+      // CE adoptedCallback 的 oldDoc 比对同样消费——否则 created-in-main → import →
+      // 插入他树派发 adopted(oldDoc=main) 的 oldDoc 读回主文档误同 newDoc 不派发）。
+      try {
+        if (copy && copy.__zwHandle) {
+          if (!globalThis.__zwAdoptDocByHandle) globalThis.__zwAdoptDocByHandle = {};
+          globalThis.__zwAdoptDocByHandle[String(copy.__zwHandle)] = globalThis.document;
+        }
+      } catch (_e132h) {}
       return copy;
     },
     // `document.implementation`（DOMImplementation，R2815）——feature-detection（jQuery support 等查 hasFeature）

@@ -602,7 +602,19 @@
         }
         // js-dom M4 R45：携带写入前捕获的 oldValue（part04 set trap 头预捕获 _moOldVal——仅 id/class/
         // title/lang 高频反射集；其余反射属性 oldValue 保持 null，partial）。
-        if (moAttr) _mo_notify(sel, handle, { type: 'attributes', attributeName: moAttr, oldValue: (typeof _moOldVal !== 'undefined' && _moOldVal !== undefined) ? _moOldVal : null });
+        if (moAttr) {
+          _mo_notify(sel, handle, { type: 'attributes', attributeName: moAttr, oldValue: (typeof _moOldVal !== 'undefined' && _moOldVal !== undefined) ? _moOldVal : null });
+          // WC-M1 切片 3（spec custom-element-reactions）：反射 setter 真写入了内容属性 →
+          // enqueue attributeChangedCallback（旧值 = set trap 头捕获的 _ceSetOld）。与
+          // setAttribute 直写路径（part04:2474）同语义：observed 过滤/值真变判定在 dispatch 内。
+          if (_ceSetEntry && _ceSetAttr) {
+            // 新值：handle 路径回读（__zw_get_attr_handle 读 pending mutations，同 turn
+            // latest-wins——set 得新串 / 布尔移除得 null = spec 移除语义 / presence 空值得
+            // ''）；sel 路径快照同 turn stale，回落写串（parsed 自定义标签 best-effort）。
+            var _ceNewVal = handle ? _ce_attrValue(sel, handle, _ceSetAttr) : String(value == null ? '' : value);
+            _ce_dispatchAttrChange(_ceSetEntry, proxy, _ceSetAttr, _ceSetOld, _ceNewVal, null);
+          }
+        }
         return true;
       },
       // R3046：expando 枚举表面（R3042 follow-up，闭合 R3042 已知限制④）。无此三 trap → `Object.keys(el)` /
@@ -985,6 +997,12 @@
     _zwAttrInstUpsert(key, qname, ns, prefix, local, _r122Val);
     bind.set(qname, attr);
     try { attr.ownerElement = _makeProxy(sel, handle); } catch (_eO) {}
+    // WC-M1 切片 3（spec custom-element-reactions）：setAttributeNode 族亦 CEReactions——
+    // 旧值 = 替换掉的 old Attr 值（无替换 → null）。
+    var _ceNEntry = (typeof _ceEntryFor === 'function') ? _ceEntryFor(key, sel, handle) : null;
+    if (_ceNEntry) {
+      _ce_dispatchAttrChange(_ceNEntry, _makeProxy(sel, handle), local, old ? String(old.value == null ? '' : old.value) : null, _r122Val, ns);
+    }
     _mo_notify(sel, handle, { type: 'attributes', attributeName: local, attributeNamespace: ns });
     return old;
   }
@@ -1018,6 +1036,12 @@
     }
     if (handle && typeof __zw_remove_attr_handle === 'function') __zw_remove_attr_handle(handle, qname);
     else if (typeof __zw_remove_attr === 'function') __zw_remove_attr(sel, qname);
+    // WC-M1 切片 3：removeAttributeNode 的 CE 旧值在 host 删除前捕获。
+    var _ceRnEntry = (typeof _ceEntryFor === 'function') ? _ceEntryFor(key, sel, handle) : null;
+    var _ceRnOld = null;
+    if (_ceRnEntry) {
+      try { _ceRnOld = attr.value != null ? String(attr.value) : null; } catch (_eRnV) { _ceRnOld = null; }
+    }
     // R122：实例层剔除（attr 的 ns 反查——限定名形态可能与 attr.name 不同）。
     var _rn122Ns = attr.namespaceURI != null ? String(attr.namespaceURI) : null;
     _zwAttrInstRemoveNS(key, _rn122Ns, local);
@@ -1026,6 +1050,7 @@
       var bAttr = bind.get(qname);
       if (bAttr) { bAttr.ownerElement = null; bind.delete(qname); }
     }
+    if (_ceRnEntry) _ce_dispatchAttrChange(_ceRnEntry, _makeProxy(sel, handle), local, _ceRnOld, null, _rn122Ns);
     _mo_notify(sel, handle, { type: 'attributes', attributeName: local });
     return attr;
   }
@@ -1973,6 +1998,34 @@
         el.childNodes.push(c); c.parentNode = el;
         if (c && c.__zwHandle && typeof _zwUnmarkRemovedHandle === 'function') _zwUnmarkRemovedHandle(c.__zwHandle);
         _r308Invalidate(el);
+        // WC-M1 切片 3：工厂元素的 CE 连接态派发（part03 _ceApplyConn 消费——
+        // WPT reactions testNodeConnector 的 `newDoc.documentElement.appendChild`
+        // 路径此前不触发任何回调）。连接态：宿主工厂元素是 documentElement 或
+        // 其后代（`_ceConn` 已标记——detached doc 的根链由标记传播）即 connected。
+        try {
+          if (typeof _ceApplyConn === 'function' && c && c.nodeType === 1) {
+            // 连接态判定：宿主是某文档的 documentElement → connected（根链顶）；
+            // 宿主自身已有 CE 连接标记（_ceConn）→ 沿用；其余（自由工厂元素）→ false。
+            var _wcConnected = false;
+            var _wcDoc = null;
+            try { _wcDoc = el.ownerDocument; } catch (_wcOd) {}
+            var _wcRoot = _wcDoc && _wcDoc.documentElement;
+            if (el === _wcRoot) _wcConnected = true;
+            else if (_wcRoot && el.nodeType === 1) {
+              var _wcCur = el;
+              var _wcGuard = 0;
+              while (_wcCur && _wcGuard++ < 64) {
+                if (_wcCur === _wcRoot) { _wcConnected = true; break; }
+                _wcCur = _wcCur.parentNode;
+              }
+            }
+            if (!_wcConnected) {
+              try { _wcConnected = !!_ceConn[_elKey(el.__zwSelector || null, el.__zwHandle || null)]; } catch (_wcCk) {}
+            }
+            // hintDoc：connected 时直传宿主 owner doc（plain 链 root walk 不可达）。
+            _ceApplyConn(c, _wcConnected, _wcConnected ? (_wcDoc || null) : null);
+          }
+        } catch (_wcCeF) {}
         return c;
       },
       // R249（js-dom M4）：**own removeChild**——iframe 工厂元素旧无自身 removeChild，

@@ -733,9 +733,19 @@
           // （lit-html：createElement('template') + innerHTML=）保持 R95 原样（无 own
           // cloneNode），走 Node.prototype 泛型克隆（registry 子全 mutation 语义；own
           // 版本曾遮蔽泛型致 lit 首渲染链断，e2e_lit_library 回归）。
+          // WC-M1 切片 3：contents owner document——per-template 独立 inert 文档
+          //（spec the-template-element「template contents owner document」；WPT
+          // template-contents-owner-test-001/002 断言 ownerDocument ≠ 主文档）。
+          // 惰性创建（content 首读时），挂 host proxy 槽。
+          if (!proxy._zwTplOwnerDoc) {
+            var _zwSrcDoc2 = null;
+            try { _zwSrcDoc2 = proxy.ownerDocument || null; } catch (_eToc3) { _zwSrcDoc2 = null; }
+            proxy._zwTplOwnerDoc = _zwTplOwnerDocFor(_zwSrcDoc2);
+          }
           var _tplContent = {
             nodeType: 11,
             nodeName: '#document-fragment',
+            get ownerDocument() { return proxy._zwTplOwnerDoc; },
             get childNodes() { return _r145SelKids(); },
             get firstChild() { var k = _r145SelKids(); return k.length ? k[0] : null; },
             get lastChild() { var k = _r145SelKids(); return k.length ? k[k.length - 1] : null; },
@@ -810,7 +820,64 @@
               }
               walk(this);
               return out;
-            }
+            },
+          // WC-M1 切片 3（spec custom-element-reactions + the-template-element）：
+            // content 视图的 mutation 面（document_types helper 的「the document of
+            // the template elements」→ `content.ownerDocument` 树 appendChild——
+            // 元素插入 template contents owner 树 = adopt 进该 doc，触发
+            // disconnected→adopted→connected）。插入前先摘旧父（spec pre-insert）。
+            appendChild: function (c) {
+              if (c === null || c === undefined || typeof c.nodeType !== 'number') {
+                throw new (globalThis.TypeError || TypeError)("Failed to execute 'appendChild' on 'Node': parameter 1 is not of type 'Node'.");
+              }
+              if (c.nodeType === 11) {
+                var _tcfk = c.childNodes || [];
+                var _tcfc = _tcfk.slice();
+                _tcfk.length = 0;
+                for (var _tcfi = 0; _tcfi < _tcfc.length; _tcfi++) _tplContent.appendChild(_tcfc[_tcfi]);
+                return c;
+              }
+              if (c.parentNode && c.parentNode.removeChild) { try { c.parentNode.removeChild(c); } catch (_tcrm) {} }
+              _r145SelKids().push(c);
+              c.parentNode = _tplContent;
+              // hintDoc = contents owner document（view 树 parentNode 链 root walk 不可达）。
+              try { if (typeof _ceApplyConn === 'function') _ceApplyConn(c, true, proxy._zwTplOwnerDoc); } catch (_tcce) {}
+              return c;
+            },
+            insertBefore: function (c, ref) {
+              if (c === null || c === undefined || typeof c.nodeType !== 'number') {
+                throw new (globalThis.TypeError || TypeError)("Failed to execute 'insertBefore' on 'Node': parameter 1 is not of type 'Node'.");
+              }
+              if (c.nodeType === 11) {
+                var _tibk = c.childNodes || [];
+                var _tibc = _tibk.slice();
+                _tibk.length = 0;
+                for (var _tibi = 0; _tibi < _tibc.length; _tibi++) _tplContent.insertBefore(_tibc[_tibi], ref);
+                return c;
+              }
+              var _tkids = _r145SelKids();
+              var _tidx = _tkids.indexOf(ref);
+              if (ref != null && _tidx < 0) {
+                throw new (globalThis.DOMException || Error)("The node before which the new node is to be inserted is not a child of this node.", 'NotFoundError');
+              }
+              if (c.parentNode && c.parentNode.removeChild) { try { c.parentNode.removeChild(c); } catch (_tibr) {} }
+              if (ref == null || _tidx < 0) _tkids.push(c); else _tkids.splice(_tidx, 0, c);
+              c.parentNode = _tplContent;
+              try { if (typeof _ceApplyConn === 'function') _ceApplyConn(c, true, proxy._zwTplOwnerDoc); } catch (_tibce) {}
+              return c;
+            },
+            removeChild: function (c) {
+              var _trkids = _r145SelKids();
+              var _tridx = _trkids.indexOf(c);
+              if (_tridx < 0) {
+                throw new (globalThis.DOMException || Error)("The node to be removed is not a child of this node.", 'NotFoundError');
+              }
+              // 派发先于拆链（root walk 断开记账要读**当下**树文档）。
+              try { if (typeof _ceApplyConn === 'function') _ceApplyConn(c, false); } catch (_trce) {}
+              _trkids.splice(_tridx, 1);
+              c.parentNode = null;
+              return c;
+            },
           };
           if (!handle) {
             _tplContent.cloneNode = function (deep) {
@@ -829,7 +896,7 @@
               return _r145F;
             };
           }
-          return _tplContent;
+return _tplContent;
         }
         if (prop === 'innerHTML') {
           // js-dom M4 R83：handle 元素（createElement 容器）——host 回调只反映
@@ -2706,6 +2773,9 @@
               }
               _r122IsFirst = _r122Cnt === 1;
             } catch (_eC) {}
+            // WC-M1 切片 3：CE 旧值须在 host 写入**前**捕获（写入后回读即新值）。
+            var _ceNsEntry = _ceEntryFor(key, sel, handle);
+            var _ceNsOld = _ceNsEntry ? _ce_attrValue(sel, handle, local) : null;
             if (_r122Added && _r122IsFirst) {
               if (handle && typeof __zw_set_attr_handle === 'function') __zw_set_attr_handle(handle, qn, String(value));
               else if (typeof __zw_set_attr === 'function') __zw_set_attr(sel, qn, String(value == null ? '' : value));
@@ -2716,6 +2786,14 @@
               type: 'attributes', attributeName: local,
               attributeNamespace: ns, oldValue: _nsOld,
             });
+            // WC-M1 切片 3（spec custom-element-reactions）：setAttributeNS 亦 CEReactions——
+            // 派发 attributeChangedCallback(local, old, new, namespace)（4 参签名带 ns）。
+            // 与 host 写入同门（_r122Added && _r122IsFirst——非首实例 host 不写，回调
+            // 读回旧值反而失真；dispatch 值真变判定按 observed 过滤）。
+            if (_ceNsEntry && _r122Added && _r122IsFirst) {
+              _ce_dispatchAttrChange(_ceNsEntry, proxy, local, _ceNsOld,
+                String(value == null ? '' : value), ns);
+            }
           };
         }
         // R116：NS 读**大小写敏感**（spec：NS 查找按 localName 精确匹配——区别于非 NS 族的
@@ -2823,6 +2901,9 @@
             } catch (_e) {}
             var _nsOld2 = (_nsExisted && _nsMoId2 != null && _mo_any_wants_attr_old(_nsMoId2, local))
               ? _mo_read_attr(sel, handle, qname) : null;
+            // WC-M1 切片 3：CE 旧值在 host 删除前捕获（observed 未命中时 dispatch 内短路，读值开销仅 observed 元素）。
+            var _ceNsRmEntry = _ceEntryFor(key, sel, handle);
+            var _ceNsRmOld = _ceNsRmEntry ? _ce_attrValue(sel, handle, local) : null;
             // 直删 host 回调（不经 proxy.removeAttribute——那条路径自带无 namespace 的 notify，会双发）。
             if (handle && typeof __zw_remove_attr_handle === 'function') __zw_remove_attr_handle(handle, qname);
             else if (typeof __zw_remove_attr === 'function') __zw_remove_attr(sel, qname);
@@ -2832,6 +2913,11 @@
               type: 'attributes', attributeName: local,
               attributeNamespace: ns, oldValue: _nsOld2,
             });
+            // WC-M1 切片 3（spec custom-element-reactions）：移除亦派发（newValue=null，spec
+            // `dom-element-removeattributens` CEReactions——缺失属性移除不派发，同 R46 presence guard）。
+            if (_ceNsRmEntry && _nsExisted) {
+              _ce_dispatchAttrChange(_ceNsRmEntry, proxy, local, _ceNsRmOld, null, ns);
+            }
           };
         }
         // `el.focus()` / `el.blur()`——焦点状态追踪（document.activeElement 对）+ 焦点事件派发（R3247）。
@@ -3125,6 +3211,10 @@
             var hasForce = force !== undefined;
             // R3025：MutationObserver attributeOldValue——toggle 前捕获 old value（有 observer 请求时）。
             var moOld = _mo_any_wants_attr_old(_mo_id(handle, sel), n) ? _mo_read_attr(sel, handle, n) : null;
+            // WC-M1 切片 3：toggle 亦 CEReactions——set/remove 两分支后派发（add 新值 '' presence /
+            // remove 新值 null）。observed 未命中在 dispatch 内短路。
+            var _ceTgEntry = _ceEntryFor(key, sel, handle);
+            var _ceTgOld = _ceTgEntry ? _ce_attrValue(sel, handle, n) : null;
             // R122：实例层感知 toggle——spec `dom-element-toggleattribute` 走「set an existing
             // attribute」/remove 语义：presence 按**限定名**判（miss 按 local first-match——
             // getAttribute 非 NS 读兜底同源）；remove 剔第一匹配实例（WPT "toggleAttribute
@@ -3187,12 +3277,14 @@
                 else __zw_set_attr(sel, n, '');
               }
               _mo_notify(sel, handle, { type: 'attributes', attributeName: n, oldValue: moOld });
+              if (_ceTgEntry) _ce_dispatchAttrChange(_ceTgEntry, proxy, n, _ceTgOld, wantT ? '' : null, null);
               return wantT;
             }
             if (sel && typeof __zw_toggle_attribute === 'function') {
               var fArg = hasForce ? (force ? '1' : '0') : '';
               var res = __zw_toggle_attribute(sel, n, fArg); // enqueue-时解析，返 post-toggle presence。
               _mo_notify(sel, handle, { type: 'attributes', attributeName: n, oldValue: moOld });
+              if (_ceTgEntry) _ce_dispatchAttrChange(_ceTgEntry, proxy, n, _ceTgOld, res === '1' ? '' : null, null);
               return res === '1';
             }
             // handle-only / fallback（无 host toggle 回调）：client-side 决策（latest-wins presence）。
@@ -3210,6 +3302,7 @@
               var want = hasForce ? !!force : !snapHas;
               if (want) __zw_set_attr_handle(handle, n, '');
               else if (typeof __zw_remove_attr_handle === 'function') __zw_remove_attr_handle(handle, n);
+              if (_ceTgEntry) _ce_dispatchAttrChange(_ceTgEntry, proxy, n, _ceTgOld, want ? '' : null, null);
             }
             return hasForce ? !!force : !snapHas;
           };
@@ -5712,6 +5805,12 @@
               _rmNext = ceSelf.nextSibling || null;
             } catch (_e) {}
             _zwRemoveIframeWindowClientForNode(ceSelf);
+            // WC-M1 切片 3：el.remove() 的 CE 断连派发提前到 host 移除前（此刻
+            // parentNode 链完整——_ceApplyConn 断开分支的 root walk 记录当下树文档，
+            // 供跨文档移动的 adoptedCallback oldDoc 比对；WPT adopted-callback.html
+            // 「Moving a custom element …」簇经此记录）。下方原 `_ceApplyConn(ceSelf,
+            // false)` 因同态跳过成为 no-op，零双派发。
+            _ceApplyConn(ceSelf, false);
             // R369（js-dom M4）：iframe 子文档 body 记录的移除委托——本节点经 part03
             // 串行合并分支记账进 innerBody（`_zwNodeParent[handle].innerBody`）时，host
             // 侧 `__zw_remove_handle` 只作用于主文档（本节点不在主档），innerBody 数组
@@ -7212,6 +7311,11 @@
         // old 值须在**写入前**捕获（写后读即新值）。旧实现 part05 末尾 notify 不带 oldValue（恒 null，WPT
         // MutationObserver-attributes "oldValue didn't match" 全族 fail）。此处按 IDL 名预判目标内容属性名，
         // 有 observer 请求 old 时读当前值暂存，末尾 notify 携带。非反射属性（expando 等）moAttr=null 不触发。
+        // WC-M1 切片 3（spec custom-element-reactions）：反射 setter 同为 CEReactions——写入前捕获
+        // CE entry + 目标内容属性旧值，末尾汇流点（moAttr 命中即真写入）派发 attributeChangedCallback。
+        var _ceSetEntry = _ceEntryFor(key, sel, handle);
+        var _ceSetAttr = _ceSetEntry ? _zwCeReflectionAttr(p) : null;
+        var _ceSetOld = (_ceSetEntry && _ceSetAttr) ? _ce_attrValue(sel, handle, _ceSetAttr) : null;
         var _moIdVal = _mo_id(handle, sel);
         var _moOldVal;
         {

@@ -3030,10 +3030,24 @@ pub fn query_text_from_mutations(mutations: &[DomMutation], handle: &str) -> Str
 /// 记录（如 DocumentFragment）→ 空串（shim fallback）。
 pub fn query_tag_from_mutations(mutations: &[DomMutation], handle: &str) -> String {
     for m in mutations.iter().rev() {
-        if let DomMutation::CreateElement { handle: h, tag } = m
-            && h == handle
-        {
-            return tag.clone();
+        match m {
+            DomMutation::CreateElement { handle: h, tag } if h == handle => {
+                return tag.clone();
+            }
+            // WC-M1 切片 3（web-components goal）：NS 创建同样记录 tag——旧只匹配
+            // CreateElement，`createElementNS(HTMLNS, 'template')` 的 `_realTag` 恒
+            // 回落 DIV → get trap 的 `content`（TEMPLATE gate）/接口化分支全部 miss
+            //（WPT document_types helper 的 template 入口 `createElementNS(...,
+            // 'template').content` 返 undefined）。qualified name 含 prefix 时原样
+            // 返回（'p:l' ≠ 'l'——调用方按整名比对，与 spec tagName 语义一致）。
+            DomMutation::CreateElementNS {
+                handle: h,
+                qualified_name,
+                ..
+            } if h == handle => {
+                return qualified_name.clone();
+            }
+            _ => {}
         }
     }
     String::new()

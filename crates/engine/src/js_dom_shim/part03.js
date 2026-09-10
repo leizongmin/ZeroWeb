@@ -2699,7 +2699,8 @@
       // 仅对**存在**的 observed 属性（真实浏览器 null→null 回调不触发；R3205 测试：
       // define 时 foo 未设，首次回调来自后续 setAttribute 的 null->a）。
       if (!has) continue;
-      try { acb.call(el, name, null, value); } catch (_e) {}
+      // 4 参签名（name, old, new, namespace=null）——同 _ce_dispatchAttrChange 切片 3 对齐。
+      try { acb.call(el, name, null, value, null); } catch (_e) {}
     }
   }
   // 读元素 tagName（小写 local name）——native 元素经 tagName getter（R3268）；polyfill Proxy 经 _realTag。
@@ -2837,8 +2838,36 @@
     _ceEntryByKey[key] = entry || false;
     return entry;
   }
+  // WC-M1 切片 3（spec custom-element-reactions）：IDL 反射 setter（el.id= / tabIndex= /
+  // aria*= / _REFLECTED_BOOL·STRING·UINT 全表）也是 CEReactions——写内容属性时同样
+  // enqueue attributeChangedCallback。本映射 IDL 名 → 目标内容属性名（与 set trap 各
+  // 分支实际写入名同源），供 set trap 写入**前**捕获旧值。miss → null（expando 等
+  // 非内容属性写入不派发）。ES5 风格（shim 同款）。
+  function _zwCeReflectionAttr(p) {
+    if (p === 'id') return 'id';
+    if (p === 'className') return 'class';
+    if (p === 'tabIndex') return 'tabindex';
+    if (p === 'accessKey') return 'accesskey';
+    if (p === 'contentEditable') return 'contenteditable';
+    if (p === 'htmlFor') return 'for';
+    if (p === 'slot' || p === 'title' || p === 'lang' || p === 'dir' || p === 'hidden'
+      || p === 'role' || p === 'popover' || p === 'autofocus' || p === 'inert'
+      || p === 'autocomplete' || p === 'draggable' || p === 'spellcheck' || p === 'translate') return p;
+    // AriaMixin IDL（ariaLabel → aria-label / ariaValueNow → aria-value-now）。
+    if (/^aria[A-Z]/.test(p)) {
+      var out = 'aria-' + p.slice(4).toLowerCase();
+      return out;
+    }
+    if (typeof _reflectedBoolAttr === 'function' && _reflectedBoolAttr(p)) return _reflectedBoolAttr(p);
+    if (typeof _reflectedStringAttr === 'function' && _reflectedStringAttr(p)) return _reflectedStringAttr(p);
+    if (typeof _REFLECTED_UINT !== 'undefined' && _REFLECTED_UINT[p]) return _REFLECTED_UINT[p].a;
+    return null;
+  }
   // 分派 attributeChangedCallback：仅当 attr ∈ ctor.observedAttributes 且值真变时（spec set/remove 同值无 change）。
-  function _ce_dispatchAttrChange(entry, proxy, name, oldVal, newVal) {
+  // WC-M1 切片 3：第 4 参 namespace（spec `attributeChangedCallback` 签名
+  //（localName, oldValue, newValue, namespace）——NS 变体传真 ns，无 ns 恒 null；
+  // WPT assert_attribute_log_entry 断言 log.namespace === null（缺参 = undefined）。）
+  function _ce_dispatchAttrChange(entry, proxy, name, oldVal, newVal, namespace) {
     var ctor = entry.ctor;
     var obs;
     try { obs = ctor && ctor.observedAttributes; } catch (_e) { return; }
@@ -2855,7 +2884,10 @@
     if (o === nv) return;
     var cb = ctor.prototype && ctor.prototype.attributeChangedCallback;
     if (typeof cb === 'function') {
-      try { cb.call(proxy, String(name), oldVal, newVal); } catch (_e) {}
+      // WC-M1 切片 3（web-components goal）：spec `attributeChangedCallback` 签名 4 参
+      //（localName, oldValue, newValue, namespace）——namespace 非功能属性恒 null
+      //（WPT assert_attribute_log_entry 断言 log.namespace === null，缺参 = undefined）。
+      try { cb.call(proxy, String(name), oldVal, newVal, namespace == null ? null : String(namespace)); } catch (_e) {}
     }
   }
   // 读元素属性值用于 CE old-value：absent → null（spec attributeChangedCallback old/new 为 null 表 absent），
@@ -3122,7 +3154,8 @@
   // **已知限制（既存，非本切片引入）**：① parsed 元素（HTML 源中的 <my-el>）不经 JS appendChild → 初始
   // connectedCallback 不触发（ createElement 路径才触发，框架主流用法）；② insertAdjacentHTML 解析生成
   // 的节点无 handle proxy → 不触发；③ upgrade/ctor 实例化仍 defer。
-  var _ceConn = {}; // element key → true（custom element 当前已连入 document 树；非 custom handle 元素亦入，作 detached container 传播连接态供其后代判定）
+  var _ceConn = {}; // element key → true
+  var _ceConnDoc = {}; // WC-M1 切片 3：元素 key → 最近一次连接的树 document（adoptedCallback 判定源：断开保留、连接更新）
 
   // 判定「插入操作的父」是否已连入 document：sel-based 父 → host `__zw_contains('html', sel)`（documentElement
   // 子树判定，权威，含 html/body/head 自身）；handle-based 父（detached createElement 容器 / shadow root /
@@ -3138,28 +3171,107 @@
     return false;
   }
 
-  // 对子树（rootProxy 及其 handle-registry 后代，pre-order tree order）应用连接态变更。
+  // 对子树（rootProxy 及其后代，pre-order tree order）应用连接态变更。
   // connected=true：未连→连（custom element 分派 connectedCallback）；connected=false：已连→断（disconnectedCallback）。
   // 非 custom handle 元素仅传播连接态（供其作父/容器时后代判定）；sel-based 非 custom 元素连接态由 host 权威，不追踪。
   // 仅 custom 元素在状态真转时调回调（再连再调、同态跳过）。回调异常 try/catch 吞（不中断脚本）。
-  function _ceApplyConn(rootProxy, connected) {
+  // WC-M1 切片 3（web-components goal，spec `concept-node-insert`）：
+  // ① **plain 元素分支**——detached doc 树（new Document()/createHTMLDocument/template
+  //   content 等）与 innerHTML/insertAdjacentHTML 解析子树是 `_zwMEl` plain 对象
+  //   （无 sel/handle），旧实现 `!ns && !nh → continue` 直接跳过，其 CE 回调从不
+  //   触发（WPT adopted/connected/reactions 跨文档簇根因）。plain 节点按 tag 反查
+  //   registry，子代走 `childNodes`（plain 树的容器视图）。
+  // ② **seen 防环**——parser `get_template_contents` 内联使嵌套 template 装配出现
+  //   childNodes 回指环（master.md 已知挂账），纯 childNodes 遍历会无限递归；
+  //   seen 数组身份去重（浅数组 indexOf，CE 树规模小）。
+  // ③ **per-node oldDoc 记账**——spec `concept-node-adopt`：node document 变更时先
+  //   adoptedCallback(oldDoc, newDoc) 再 connectedCallback。工厂元素 ownerDocument
+  //   不随插入迁移（R167 accessor 语义），故 oldDoc 用 `_ceConnDoc[key]` 记账：连接
+  //   时记当下 root-walk 判得的树文档，断开时保留（供再连接比对）。判定链：
+  //   上次记账文档 ≠ 本次树文档 → adopted；首次连接（无记账）→ 不派发（spec：新
+  //   元素首次插入无 old document）。
+  function _ceApplyConn(rootProxy, connected, hintDoc) {
     var stack = [rootProxy];
+    var seen = [rootProxy];
     while (stack.length) {
       var node = stack.shift();
       if (!node) continue;
       var ns = node.__zwSelector || null;
       var nh = node.__zwHandle || null;
-      if (!ns && !nh) continue;
       var key = _elKey(ns, nh);
-      var entry = _ceEntryFor(key, ns, nh);
+      var entry = null;
+      var isElement = false;
+      try { isElement = node.nodeType === 1; } catch (_eNt) { isElement = false; }
+      if (ns || nh) {
+        entry = _ceEntryFor(key, ns, nh);
+      } else if (isElement) {
+        // plain 元素（_zwMEl）：tag 反查 registry（_realTag 对无 sel/handle 回落 DIV，
+        // 不能用——直接读 tagName/localName）。
+        var ptag = '';
+        try { ptag = String(node.tagName || node.localName || '').toLowerCase(); } catch (_ePt) { ptag = ''; }
+        if (ptag) {
+          var pkey = 'plain:' + key;
+          entry = _ce_registry[ptag] || null;
+          key = pkey;
+        }
+      }
       if (entry) {
         var was = !!_ceConn[key];
         if (connected && !was) {
           _ceConn[key] = true;
+          // 连接时判本树的 document（祖先链 nodeType 9；上限 64 防环）——spec
+          // `in a connected document` 的 shim 近似（任何 document 树都算）。
+          // hintDoc：调用方已知的树文档（template content owner doc 等 proxy
+          // parentNode 链不可达的形态——get trap 不回 expando 的 parentNode 赋值）。
+          var _wcNewDoc = hintDoc || null;
+          if (!_wcNewDoc) try {
+            var _wcAnc = node.parentNode;
+            var _wcGuard = 0;
+            while (_wcAnc && _wcGuard++ < 64) {
+              try {
+                if (_wcAnc.nodeType === 9) { _wcNewDoc = _wcAnc; break; }
+                // template content 视图（fragment，无 parentNode 链）：树文档 =
+                // contents owner document（spec：contents 树挂 owner doc 下）。
+                if (_wcAnc.nodeType === 11) {
+                  var _wcFod = null;
+                  try { _wcFod = _wcAnc.ownerDocument || null; } catch (_eFod) { _wcFod = null; }
+                  if (_wcFod) { _wcNewDoc = _wcFod; }
+                  break;
+                }
+              } catch (_eNt2) { break; }
+              _wcAnc = _wcAnc.parentNode;
+            }
+          } catch (_ePw) { _wcNewDoc = null; }
+          // 首连无记账 → 回落元素 ownerDocument（spec adopt 的 oldDocument = 插入前的
+          // node document——createElement 所在文档；主文档 handle 元素 = 主 document，
+          // detached doc 工厂元素 = 该 doc，R167 accessor 语义）。
+          var _wcOldDoc = _ceConnDoc[key] || null;
+          if (!_wcOldDoc) {
+            try { _wcOldDoc = node.ownerDocument || null; } catch (_eOd3) { _wcOldDoc = null; }
+          }
+          _ceConnDoc[key] = _wcNewDoc;
+          // adoptedCallback(oldDoc, newDoc)：node document 变更（首次连接无记账不派发）。
+          if (_wcOldDoc && _wcNewDoc && _wcOldDoc !== _wcNewDoc) {
+            var acb3 = entry.ctor && entry.ctor.prototype && entry.ctor.prototype.adoptedCallback;
+            if (typeof acb3 === 'function') { try { acb3.call(node, _wcOldDoc, _wcNewDoc); } catch (_wcAe) {} }
+          }
           var ccb = entry.ctor && entry.ctor.prototype && entry.ctor.prototype.connectedCallback;
           if (typeof ccb === 'function') { try { ccb.call(node); } catch (_e) {} }
         } else if (!connected && was) {
           delete _ceConn[key];
+          // 断开时同样记录当下树文档（此刻祖先链还没拆——root walk 可判得 doc），
+          // 供再连接到**另一**文档树时的 adoptedCallback 比对（spec adopt：old
+          // document = 移动前 node document）。
+          try {
+            var _wcAnc2 = node.parentNode;
+            var _wcGuard2 = 0;
+            while (_wcAnc2 && _wcGuard2++ < 64) {
+              try {
+                if (_wcAnc2.nodeType === 9) { _ceConnDoc[key] = _wcAnc2; break; }
+              } catch (_eNt3) { break; }
+              _wcAnc2 = _wcAnc2.parentNode;
+            }
+          } catch (_ePw2) {}
           var dcb = entry.ctor && entry.ctor.prototype && entry.ctor.prototype.disconnectedCallback;
           if (typeof dcb === 'function') { try { dcb.call(node); } catch (_e) {} }
         }
@@ -3167,10 +3279,22 @@
         // 非 custom 纯 handle 元素：追踪连接态作传播（detached container 场景）。
         if (connected) _ceConn[key] = true; else delete _ceConn[key];
       }
-      // 递归 handle registry 后代（R2927/R2928 维护的容器子树，pre-order：先 shift 自身再压子）。
+      // 递归后代：handle registry 容器 + plain childNodes 双源（pre-order：先 shift
+      // 自身再压子）。seen 身份去重防 childNodes 回指环（嵌套 template 装配挂账）。
       if (nh) {
         var kids = _handleChildren[nh];
-        if (kids) for (var i = 0; i < kids.length; i++) stack.push(kids[i]);
+        if (kids) for (var i = 0; i < kids.length; i++) {
+          var k1 = kids[i];
+          if (k1 && seen.indexOf(k1) < 0) { seen.push(k1); stack.push(k1); }
+        }
+      }
+      var pkids = null;
+      try { pkids = node.childNodes; } catch (_eCn) { pkids = null; }
+      if (pkids && pkids.length) {
+        for (var j = 0; j < pkids.length; j++) {
+          var k2 = pkids[j];
+          if (k2 && k2.nodeType === 1 && seen.indexOf(k2) < 0) { seen.push(k2); stack.push(k2); }
+        }
       }
     }
   }
@@ -6210,9 +6334,21 @@
           // childNodes 别名模板子数组，importNode/cloneNode 走 Node.prototype 泛型
           // fragment 分支（kids 逐个带环守卫克隆——复制发生在用例显式调用点）。
           if (node._zwContentView) return node._zwContentView;
+          // WC-M1 切片 3：contents owner document——per-template 独立 inert 文档
+          //（spec the-template-element「template contents owner document」，WPT
+          // template-contents-owner-test-001/002 断言 ownerDocument 不等于任何
+          // 有 browsing context 的文档）。惰性创建（content 首读时），挂视图上。
+          if (!node._zwContentsOwnerDoc) {
+            var _zwSrcDoc = null;
+            try { _zwSrcDoc = node.ownerDocument || null; } catch (_eToc0) { _zwSrcDoc = null; }
+            node._zwContentsOwnerDoc = _zwTplOwnerDocFor(_zwSrcDoc);
+          }
           var frag = {
             nodeType: 11,
             nodeName: '#document-fragment',
+            // ownerDocument 读 owner doc（注意不在字面量上短路为 doc——getter 保
+            // 惰性序：owner doc 在本 getter 内建）。
+            get ownerDocument() { return node._zwContentsOwnerDoc; },
             get childNodes() { return node.childNodes; },
             hasChildNodes: function () { return node.childNodes.length > 0; },
             // mutation 面（WPT template-content：content.appendChild(el) 等装配断言）
@@ -8463,6 +8599,23 @@
       }
     } catch (_e370n) {}
   }
+  // WC-M1 切片 3：template contents owner document 按**源文档**共享（spec the-template-element
+  // 「template contents owner document」——同一 document 的全部 template 共享一个 owner；
+  // WPT template-content-node-document.html 的跨 template === 断言）。惰性创建并缓存。
+  function _zwTplOwnerDocFor(srcDoc) {
+    try {
+      if (!globalThis.__zwTplOwnerDocs) globalThis.__zwTplOwnerDocs = {};
+      var map = globalThis.__zwTplOwnerDocs;
+      var key = srcDoc ? (srcDoc.__zwTplDocId || (srcDoc.__zwTplDocId = 'd' + (map.__seq = (map.__seq || 0) + 1))) : 'main';
+      if (map[key]) return map[key];
+      var od = _makeDetachedDocument('');
+      try { od.contentType = 'text/html'; } catch (_eTocT) {}
+      map[key] = od;
+      return od;
+    } catch (_eTofE) {
+      return _makeDetachedDocument('');
+    }
+  }
   function _makeDetachedDocument(title) {
     var bodyHtml = '';
     var _tree = null; // R3017：cached mutable body 树（首次 childNodes 访问建，innerHTML setter 失效）
@@ -9191,6 +9344,16 @@
             for (var ci330 = 0; ci330 < k330.length; ci330++) adoptAll330(k330[ci330]);
           }
         })(c);
+        // WC-M1 切片 3（web-components goal）：detached doc documentElement 的 CE
+        // 连接态派发——`newDoc.documentElement.appendChild(inst)`（WPT reactions
+        // testNodeConnector 跨文档步）从此触发 disconnected→adopted→connected 链
+        //（adoptedCallback 判定在 _ceApplyConn 内，经 _ceConnDoc 记录的旧 doc 比对）。
+        try {
+          if (c && c.nodeType === 1 && typeof _ceApplyConn === 'function') {
+            // hintDoc = 本 detached doc（plain docEl 链 root walk 不可达）。
+            _ceApplyConn(c, true, doc);
+          }
+        } catch (_wcCe330) {}
         _r130WireSiblings(docEl.childNodes);
         return c;
       },
@@ -9698,6 +9861,43 @@
       // `document.createEvent("Event")`——detached doc 缺此方法直接 TypeError）。委托
       // 主 document 的 createEvent（事件对象本身与文档无关）。
       createEvent: function (type) { return globalThis.document.createEvent(type); },
+      // WC-M1 切片 3（web-components goal，2026-09-10）：**template contents owner
+      // document 共享**——spec：同一 document 的全部 template 共享一个 contents owner
+      //（WPT template-content-node-document.html 的
+      // `template1.content.ownerDocument === template2.content.ownerDocument` 断言，
+      // 跨 iframe 亦然）。以本 doc 为键登记（惰性建，主文档/iframe 文档各一实例）。
+      // WC-M1 切片 3（web-components goal，2026-09-10）：**Document 方法面补齐**——
+      // spec the-template-element「template contents owner document」是完整 Document
+      //（DOMPurify 3.x 加载时把 `document = template.content.ownerDocument` 并解构
+      // createNodeIterator/createDocumentFragment/getElementsByTagName——detached doc
+      // 缺 createNodeIterator 使 `createNodeIterator.call(...)` 抛 'Cannot read
+      // properties of undefined'，R3019 DOMPurify e2e 回归根因）。委托主文档同款实现
+      //（NodeIterator/TreeWalker 遍历锚 root 自身，产物与宿主 doc 无关）。
+      createNodeIterator: function (root, whatToShow, filter) {
+        return globalThis.document.createNodeIterator(root, whatToShow, filter);
+      },
+      createTreeWalker: function (root, whatToShow, filter) {
+        return globalThis.document.createTreeWalker(root, whatToShow, filter);
+      },
+      importNode: function (node, deep) { return globalThis.document.importNode(node, deep); },
+      adoptNode: function (node) { return globalThis.document.adoptNode(node); },
+      // getElementsByTagName / querySelector 族委托主文档实现——detached 自身
+      // queryAll 只查本 doc 树（_tree/detHtml 包装层），对外来文档树（DOMParser
+      // 产物等）不可达；DOMPurify 加载时解构本 doc 的 gNI 后对 parser 产物 doc 调用
+      // → 空壳 BODY → sanitize 全空。真实浏览器：Document 方法按 this doc 查询；
+      // shim 的 DOMParser 产物归主文档树，故主文档实现即正确查询域（与上方
+      // implementation 委托同款先例）。
+      // WC-M1 切片 3（R3019 回归修复）：getElementsByTagName **honor `this`**——
+      // DOMPurify 加载时解构本 doc 的 gNI，再 `gni.call(parserDoc,'body')` 查询
+      // parser 产物树。this 是**另一 Document**（有自身 querySelectorAll）→ 委托
+      // 该 doc 的查询面（spec：Document 级查询按 this 查）；this 是本 doc/主文档
+      // → 保持原 doc 作用域 queryAll（R3013/R3016 detached 查询语义零变化）。
+      getElementsByTagName: function (tag) {
+        if (this && this !== doc && this !== globalThis.document && typeof this.querySelectorAll === 'function') {
+          return this.querySelectorAll(String(tag));
+        }
+        return queryAll(String(tag));
+      },
       // js-dom M4 R112：detached doc 的事件面（WPT Event-dispatch-bubbles-true/false
       // "In new Document()" / "In DOMImplementation.createHTMLDocument()"——targets 含
       // doc/docEl/body，三者 addEventListener 缺失直接 TypeError）。detached doc 不经
