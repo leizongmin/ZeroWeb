@@ -13,7 +13,7 @@ use std::collections::HashMap;
 use zero_css_parser::values::{BoxSizingValue, DisplayValue, FlexDirectionValue, LengthValue, VisibilityValue};
 use zero_dom::{Document, NodeId};
 use zero_style_system::ComputedStyle;
-use zero_style_system::property::types::{ColumnSpanComputedValue, FlexBasisValue};
+use zero_style_system::property::types::{ColumnSpanComputedValue, FlexBasisValue, WhiteSpaceValue};
 
 use crate::types::LayoutBox;
 
@@ -635,8 +635,20 @@ pub(crate) fn text_content_max_width(node_id: NodeId, doc: &Document, styles: &H
     // 取最宽 line 而非全文本累加）。旧实现用 `doc.text_content`（递归扁平化，br 折成空）把
     // "short<br>much longer line<br>mid" 测成单行 201.6px（应 max-line 131.2px），致 inline-block
     // / float / leaf block shrink-to-fit 过宽。改为递归遍历 DOM 子树，按 `<br>` 切段，取最宽段。
+    let white_space = styles
+        .get(&node_id)
+        .map(|s| s.white_space.clone())
+        .unwrap_or(WhiteSpaceValue::Normal);
     let mut segments: Vec<f32> = vec![0.0];
-    text_max_width_walk(node_id, doc, font_size, is_ahem, &mut segments);
+    text_max_width_walk(
+        node_id,
+        doc,
+        font_size,
+        is_ahem,
+        &white_space,
+        Some(styles),
+        &mut segments,
+    );
     segments.into_iter().fold(0.0f32, f32::max)
 }
 
@@ -644,17 +656,60 @@ pub(crate) fn text_content_max_width(node_id: NodeId, doc: &Document, styles: &H
 /// 遇 `<br>` 元素开新段（嵌套 br 同样切段）。`segments` 每项 = 一段宽。
 /// R1748：改为处理 node 自身（text/br/element 三态），使 fragment_node_ids（可能是文本
 /// 节点）亦可用此函数。
-fn text_max_width_walk(node_id: NodeId, doc: &Document, font_size: f32, is_ahem: bool, segments: &mut Vec<f32>) {
+/// R4223（CSS Text 3 §4.1.3 + css-sizing-3）：保留换行模式（pre/pre-wrap/break-spaces/
+/// pre-line）下 `\n` 与 `<br>` 同为强制换行——按行切段取最宽行；pre 系行内空格保留逐字
+/// 计宽，pre-line 行内空格仍折叠。旧实现一律 `collapse_whitespace` 把 `\n` 折成空格测成
+/// 单长行（text-group-align ref 页 `.group{inline-size:min-content}` 全文本测 262px、
+/// 应最宽行 122px → 组盒溢出容器、margin-inline:auto 居中失效）。`styles` 供元素子查
+/// 自身 white-space 覆盖（None = 沿用继承值，fragment 语境无样式表可用）。
+fn text_max_width_walk(
+    node_id: NodeId,
+    doc: &Document,
+    font_size: f32,
+    is_ahem: bool,
+    white_space: &WhiteSpaceValue,
+    styles: Option<&HashMap<NodeId, ComputedStyle>>,
+    segments: &mut Vec<f32>,
+) {
     let Some(node) = doc.get(node_id) else { return };
     match &node.kind {
         zero_dom::NodeKind::Text(t) => {
-            let collapsed = crate::inline::collapse_whitespace(&t.content);
-            if !collapsed.is_empty() {
-                let w: f32 = collapsed
-                    .chars()
-                    .map(|ch| crate::inline::estimate_char_width(ch, font_size, is_ahem))
-                    .sum();
-                *segments.last_mut().expect("segments 非空") += w;
+            let preserve_spaces = matches!(
+                white_space,
+                WhiteSpaceValue::Pre | WhiteSpaceValue::PreWrap | WhiteSpaceValue::BreakSpaces
+            );
+            let forced_newline = preserve_spaces || matches!(white_space, WhiteSpaceValue::PreLine);
+            if !forced_newline {
+                let collapsed = crate::inline::collapse_whitespace(&t.content);
+                if !collapsed.is_empty() {
+                    let w: f32 = collapsed
+                        .chars()
+                        .map(|ch| crate::inline::estimate_char_width(ch, font_size, is_ahem))
+                        .sum();
+                    *segments.last_mut().expect("segments 非空") += w;
+                }
+            } else {
+                for (i, line) in t.content.split('\n').enumerate() {
+                    if i > 0 {
+                        segments.push(0.0);
+                    }
+                    if line.is_empty() {
+                        continue;
+                    }
+                    let measured = if preserve_spaces {
+                        line.to_string()
+                    } else {
+                        crate::inline::collapse_whitespace(line)
+                    };
+                    if measured.is_empty() {
+                        continue;
+                    }
+                    let w: f32 = measured
+                        .chars()
+                        .map(|ch| crate::inline::estimate_char_width(ch, font_size, is_ahem))
+                        .sum();
+                    *segments.last_mut().expect("segments 非空") += w;
+                }
             }
         }
         zero_dom::NodeKind::Element(e) if e.local_name().eq_ignore_ascii_case("br") => {
@@ -662,7 +717,11 @@ fn text_max_width_walk(node_id: NodeId, doc: &Document, font_size: f32, is_ahem:
         }
         zero_dom::NodeKind::Element(_) => {
             for child in doc.child_nodes(node_id) {
-                text_max_width_walk(child, doc, font_size, is_ahem, segments);
+                let child_ws = styles
+                    .and_then(|m| m.get(&child))
+                    .map(|s| s.white_space.clone())
+                    .unwrap_or_else(|| white_space.clone());
+                text_max_width_walk(child, doc, font_size, is_ahem, &child_ws, styles, segments);
             }
         }
         _ => {}
@@ -690,9 +749,12 @@ pub(crate) fn fragment_inline_max_width(
         .any(|f| f.trim_matches('"').eq_ignore_ascii_case("Ahem"));
     // R1748：br-aware —— fragment_node_ids 共享一组 segments（同片段 inline 级内容按序累入
     // 当前段，遇 br 切段），取最宽段。无 br 时单段 = 全文本累加（行为同旧 total）。
+    // R4223：保留换行模式同样按 \n 切段（white-space 取 split inline 自身，片段内无样式表
+    // 可查嵌套覆盖——传 None 沿用继承值）。
+    let white_space = inline_style.white_space.clone();
     let mut segments: Vec<f32> = vec![0.0];
     for nid in fragment_node_ids {
-        text_max_width_walk(*nid, doc, font_size, is_ahem, &mut segments);
+        text_max_width_walk(*nid, doc, font_size, is_ahem, &white_space, None, &mut segments);
     }
     segments.into_iter().fold(0.0f32, f32::max)
 }
@@ -1215,6 +1277,68 @@ mod tests {
         assert!(
             (w.unwrap_or(0.0) - 113.0).abs() < 1.0,
             "parent max-content must include CIS child (111 + border 2), got {w:?}"
+        );
+    }
+
+    // ── R4223（css-text-3 §4.1.3 + css-sizing-3）：保留换行的 \n 强制换行切段测量 ──
+
+    /// pre 块 max-content = 最宽行（13 字符行），而非全文本折叠单行（28 字符）。
+    /// text-group-align ref 页 `.group{inline-size:min-content}` 262px→114px 的根因锚。
+    #[test]
+    fn r4223_pre_newline_splits_intrinsic_segments() {
+        let w = compute_block_max_content(
+            r#"<html><body><div id="t" style="white-space: pre; font: 16px monospace">ABCDEFGHIJKLO
+AAAAAAAA
+AAAA</div></body></html>"#,
+            "t",
+        );
+        // 13 字符行最宽（若 \n 被折叠成空格测单行，宽度 ≈ 13+1+8+1+4 = 27 字符）。
+        let w13 = compute_block_max_content(
+            r#"<html><body><div id="t" style="white-space: pre; font: 16px monospace">ABCDEFGHIJKLO</div></body></html>"#,
+            "t",
+        );
+        let (a, b) = (w.unwrap_or(0.0), w13.unwrap_or(0.0));
+        assert!(
+            a > 0.0 && (a - b).abs() < 1.0,
+            "pre max-content must equal widest line: multi={a}, single={b}"
+        );
+    }
+
+    /// normal 白空间（\n 折叠为空格）行为不变：max-content = 全文本单行宽。
+    #[test]
+    fn r4223_normal_newline_still_collapses() {
+        let multi = compute_block_max_content(
+            r#"<html><body><div id="t" style="font: 16px monospace">ABCDEFGHIJKLO
+AAAAAAAA</div></body></html>"#,
+            "t",
+        );
+        let single = compute_block_max_content(
+            r#"<html><body><div id="t" style="font: 16px monospace">ABCDEFGHIJKLO AAAAAAAA</div></body></html>"#,
+            "t",
+        );
+        let (a, b) = (multi.unwrap_or(0.0), single.unwrap_or(0.0));
+        assert!(
+            a > 0.0 && (a - b).abs() < 1.0,
+            "normal white-space must collapse \\n to space: multi={a}, single={b}"
+        );
+    }
+
+    /// pre-line：\n 强制换行切段，行内空格折叠。
+    #[test]
+    fn r4223_preline_newline_splits_and_collapses_spaces() {
+        let split = compute_block_max_content(
+            r#"<html><body><div id="t" style="white-space: pre-line; font: 16px monospace">AAAAAAAA
+AAAA</div></body></html>"#,
+            "t",
+        );
+        let widest = compute_block_max_content(
+            r#"<html><body><div id="t" style="white-space: pre-line; font: 16px monospace">AAAAAAAA</div></body></html>"#,
+            "t",
+        );
+        let (a, b) = (split.unwrap_or(0.0), widest.unwrap_or(0.0));
+        assert!(
+            a > 0.0 && (a - b).abs() < 1.0,
+            "pre-line max-content must equal widest line: split={a}, widest={b}"
         );
     }
 
