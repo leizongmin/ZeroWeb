@@ -74,8 +74,10 @@ Shadow DOM 渲染级 composed tree 排除（等用户点名专项）。
 ## 下一步计划
 
 1. **M3 切片 3**：slots-fallback 簇（fallback 递归在 sel-clone 混合树的身份贯通——
-   assignedNodes 分派域 handle/plain 分裂）；imperative-slot-api（手动分配）；
-   Rust `resolve_slots` 接线（shadow.rs → engine 查询消费）
+   三层探针定位：createTestTree 的 shadowRoot.appendChild(importNode(...)) 产物 s1' 为
+   plain、其父容器身份/registry 记账在 handle 与 plain 双世界间分裂；需统一 slot 元素的
+   分派域或让 plain 子入容器 registry）；imperative-slot-api（手动分配）；
+   Rust `resolve_slots` 接线（shadow.rs → engine 查询消费——渲染级消费等用户点名专项）
 2. **DC-5 全量门禁**（`make test` + clippy + reftest 持续全绿基础上）终判
 
 ### 已知挂账（2026-09-10 M2 切片 1 更新）
@@ -88,6 +90,9 @@ Shadow DOM 渲染级 composed tree 排除（等用户点名专项）。
 - XHTML 悬空 body 查询域（`additions-to-parsing-xhtml-documents/node-document.html`
   5 案）——测试形态 `doc.body = createElement('body')` 不挂树 + doc 级查询以
   documentElement 起根；pre-existing（M2 前同 Fail），与 template 真实化无因果
+- slots-fallback 混合树身份贯通（2026-09-10 三层探针定位）：assignedNodes 分派域
+  handle/plain 分裂——plain slot 的父容器是 handle proxy 但 plain 子不入容器 registry，
+  assignedNodes({flatten}) 的 fallback 链在跨世界时断。M3 切片 3 主攻项
 - ElementData 加字段曾致 dom 微基准全线 +2-3x（分配/layout 阈值效应）——contents 已改
   Document 侧表规避；后续给 ElementData 加字段前必须过 bench-gate
 
