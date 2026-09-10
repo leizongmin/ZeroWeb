@@ -2521,7 +2521,16 @@ pub(crate) fn remeasure_inline_only_containers(
                 if sibling.is_absolute || sibling.is_fixed || !matches!(sibling.float, FloatValue::None) {
                     continue;
                 }
-                sibling.y += shift;
+                // R4220：position:relative 兄弟的 y 已含相对 inset（§9.4.3 视觉偏移烘焙进
+                // LayoutBox.y）——gap-close 位移公式（child_bottom − sibling.y）会把偏移量当
+                // 「可闭合间隙」整体清掉（margin-006-ref：table top:96px 被前行 0.4px 收缩
+                // 位移整体上移 96px，相对偏移丢失）。相对兄弟改用**纯流位 delta**（本 pass
+                // 引起的子盒高度变化量）位移——静态位随流走、偏移量保留。
+                if sibling.is_relative {
+                    sibling.y += shrink_delta;
+                } else {
+                    sibling.y += shift;
+                }
             }
         }
         // R3770c：对称的增长位移。本 remeasure 使某 in-flow 子盒**增高**（如
@@ -2557,7 +2566,12 @@ pub(crate) fn remeasure_inline_only_containers(
                     if sibling.is_absolute || sibling.is_fixed || !matches!(sibling.float, FloatValue::None) {
                         continue;
                     }
-                    sibling.y += shift;
+                    // R4220：同收缩臂——相对兄弟用纯流位 delta（height_delta）。
+                    if sibling.is_relative {
+                        sibling.y += height_delta;
+                    } else {
+                        sibling.y += shift;
+                    }
                 }
             }
         }
