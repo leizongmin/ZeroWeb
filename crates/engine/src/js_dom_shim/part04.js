@@ -2210,6 +2210,17 @@ return _tplContent;
             return globalThis.location ? String(globalThis.location.href) : 'about:blank';
           } catch (_e130bu) { return 'about:blank'; }
         }
+        // WC-M1 切片 4（spec html HTMLDivElement 等接口 + HTMLSizes 等——`is` IDL）：
+        // customized built-in 状态读 = is 内容属性（getAttribute('is')），缺省 null。
+        if (prop === 'is') {
+          var _wcIsV = null;
+          try {
+            _wcIsV = (handle && typeof __zw_get_attr_handle === 'function')
+              ? __zw_get_attr_handle(handle, 'is')
+              : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'is') : null);
+          } catch (_eIsG) { _wcIsV = null; }
+          return (_wcIsV == null || _wcIsV === '') ? null : String(_wcIsV);
+        }
         if (prop === 'ownerDocument') {
           // R191（js-dom M4）：adopt 印记优先（handle 注册表——proxy 的属性读写均经
           // trap，实例 defineProperty 不可达；spec concept-node-adopt 的跨文档
@@ -2539,6 +2550,11 @@ return _tplContent;
             }
             _mo_notify(sel, handle, { type: 'attributes', attributeName: n, oldValue: moOld });
             if (ceEntry) _ce_dispatchAttrChange(ceEntry, proxy, n, ceOld, v);
+            // WC-M1 切片 4：is 属性写入改变 customized built-in 判定 → 失效该 key 的
+            // CE entry 缓存（连接态派发依赖 is 反查结果）。
+            if (n === 'is' && typeof globalThis.__zwCeInvalidateEntry === 'function') {
+              globalThis.__zwCeInvalidateEntry(key);
+            }
           };
         }
         if (prop === 'removeAttribute') {
@@ -2625,6 +2641,10 @@ return _tplContent;
               try { _zwTrackScheduleLoad(sel, handle, { srcChange: true }); } catch (_eSaTr) {}
             }
             if (_rmExisted) _mo_notify(sel, handle, { type: 'attributes', attributeName: n, oldValue: moOld });
+            // WC-M1 切片 4：is 移除同样失效 CE entry 缓存。
+            if (n === 'is' && typeof globalThis.__zwCeInvalidateEntry === 'function') {
+              globalThis.__zwCeInvalidateEntry(key);
+            }
             if (ceEntry) _ce_dispatchAttrChange(ceEntry, proxy, n, ceOld, null);
           };
         }
@@ -7313,7 +7333,9 @@ return _tplContent;
         // 有 observer 请求 old 时读当前值暂存，末尾 notify 携带。非反射属性（expando 等）moAttr=null 不触发。
         // WC-M1 切片 3（spec custom-element-reactions）：反射 setter 同为 CEReactions——写入前捕获
         // CE entry + 目标内容属性旧值，末尾汇流点（moAttr 命中即真写入）派发 attributeChangedCallback。
-        var _ceSetEntry = _ceEntryFor(key, sel, handle);
+        // OPTIMIZATION：registry 空（_ce_registry_gen=0，绝大多数页面）零开销跳过——
+        // _ceEntryFor 的 is 反查含 host 回调（锁 + mutation 扫描），非 CE 页面热路径不可承受。
+        var _ceSetEntry = _ce_registry_gen ? _ceEntryFor(key, sel, handle) : null;
         var _ceSetAttr = _ceSetEntry ? _zwCeReflectionAttr(p) : null;
         var _ceSetOld = (_ceSetEntry && _ceSetAttr) ? _ce_attrValue(sel, handle, _ceSetAttr) : null;
         var _moIdVal = _mo_id(handle, sel);

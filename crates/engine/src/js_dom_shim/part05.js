@@ -241,7 +241,7 @@
           // https://html.spec.whatwg.org/multipage/media.html#dom-media-preload
           var _plTag = _realTag(sel, handle);
           var _plStr = (value === null || value === undefined) ? 'null' : String(value);
-          if (handle) __zw_set_attr_handle(handle, 'preload', _plStr);
+          if (handle) { __zw_set_attr_handle(handle, 'preload', _plStr); moAttr = 'preload'; } // WC-M1 切片 4
           else { __zw_set_attr(sel, 'preload', _plStr); moAttr = 'preload'; }
         } else if (p === 'crossOrigin') {
           // `media.crossOrigin = x`——enumerated 反射 setter：null → removeAttribute；
@@ -254,12 +254,12 @@
               // 直呼 host remove 回调绕过了它——不清理则 hasAttribute 读实例层 stale true）。
               try { _zwAttrInstRemoveNS(key, null, 'crossorigin'); } catch (_eCoRm) {}
               if (handle && typeof __zw_remove_attr_handle === 'function') {
-                __zw_remove_attr_handle(handle, 'crossorigin');
+                __zw_remove_attr_handle(handle, 'crossorigin'); moAttr = 'crossorigin'; // WC-M1 切片 4：handle 路径同样汇流（CE 反应）
               } else if (!handle && typeof __zw_remove_attr === 'function') {
                 __zw_remove_attr(sel, 'crossorigin'); moAttr = 'crossorigin';
               }
             } else {
-              if (handle) __zw_set_attr_handle(handle, 'crossorigin', String(value));
+              if (handle) { __zw_set_attr_handle(handle, 'crossorigin', String(value)); moAttr = 'crossorigin'; } // WC-M1 切片 4
               else { __zw_set_attr(sel, 'crossorigin', String(value)); moAttr = 'crossorigin'; }
             }
           }
@@ -268,7 +268,7 @@
           // （写同名内容属性；kind 的归一在 getter）。仅 TRACK。
           if (_realTag(sel, handle) === 'TRACK') {
             var _tls = (value == null) ? '' : String(value);
-            if (handle) __zw_set_attr_handle(handle, p, _tls);
+            if (handle) { __zw_set_attr_handle(handle, p, _tls); moAttr = p; } // WC-M1 切片 4
             else { __zw_set_attr(sel, p, _tls); moAttr = p; }
           }
         } else if (p === 'default' && _realTag(sel, handle) === 'TRACK') {
@@ -403,7 +403,7 @@
           // noValidate→novalidate / playsInline→playsinline / isMap→ismap / itemScope→itemscope 等）。
           var _bAttrName = _reflectedBoolAttr(p);
           if (value) {
-            if (handle) __zw_set_attr_handle(handle, _bAttrName, '');
+            if (handle) { __zw_set_attr_handle(handle, _bAttrName, ''); moAttr = _bAttrName; } // WC-M1 切片 4：handle 路径汇流
             else { __zw_set_attr(sel, _bAttrName, ''); moAttr = _bAttrName; }
           } else if (handle && typeof __zw_remove_attr_handle === 'function') {
             __zw_remove_attr_handle(handle, _bAttrName);
@@ -421,7 +421,7 @@
             var bsv = !!value;
             rc4[p] = bsv;
             if (bsv) {
-              if (handle) __zw_set_attr_handle(handle, p, '');
+              if (handle) { __zw_set_attr_handle(handle, p, ''); moAttr = p; } // WC-M1 切片 4
               else { __zw_set_attr(sel, p, ''); moAttr = p; }
             } else if (!handle && typeof __zw_remove_attr === 'function') {
               __zw_remove_attr(sel, p); moAttr = p;
@@ -745,6 +745,21 @@
         //（registry define 小写键）。
         if (globalThis.customElements && typeof globalThis.customElements.get === 'function') {
           var _r90Tag = _realTag(sel, handle).toLowerCase();
+          // WC-M1 切片 4：customized built-in 优先——parser 产物 `<a is="my-a">` 的 is
+          // 内容属性命中 registry（localName 匹配）→ 用户 ctor.prototype（spec
+          // concept-create-element：parser 升级 customized built-in）。
+          var _wcIsN = null;
+          try {
+            _wcIsN = (handle && typeof __zw_get_attr_handle === 'function')
+              ? __zw_get_attr_handle(handle, 'is')
+              : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'is') : null);
+          } catch (_eIsGp) { _wcIsN = null; }
+          if (_wcIsN && globalThis.__zwCERegistryLookup) {
+            var _wcIsEntry = globalThis.__zwCERegistryLookup(String(_wcIsN), _r90Tag);
+            if (_wcIsEntry && _wcIsEntry.ctor && _wcIsEntry.ctor.prototype) {
+              return _wcIsEntry.ctor.prototype;
+            }
+          }
           var _r90Ctor = globalThis.customElements.get(_r90Tag);
           if (typeof _r90Ctor === 'function' && _r90Ctor.prototype) return _r90Ctor.prototype;
         }

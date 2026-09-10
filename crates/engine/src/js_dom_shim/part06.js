@@ -2452,7 +2452,7 @@
       var nodes = _xpathRun(expr, ctx);
       return _xpathMakeResult(nodes, (type == null) ? 0 : (type | 0));
     },
-    createElement: function(tag) {
+    createElement: function(tag, options) {
       tag = String(tag);
       // spec `dom-document-createelement` validate：非法标签名（空/首字符非 name-start）→
       // 抛 InvalidCharacterError DOMException。R81 spec 纠正：HTML createElement 用 Name
@@ -2475,10 +2475,22 @@
       // 重放」限制（不是重放，是 this 注入）。getPrototypeOf trap（part05 R90）对
       // registry tag 动态返 ctor.prototype，_ceRunCtor 内 setPrototypeOf 使
       // Object.getPrototypeOf 同源。
+      // WC-M1 切片 4（spec element-definition + concept-create-element）：customized
+      // built-in——createElement(localName, { is }) 命中 registered entry（localName 与
+      // extends 匹配）→ 升级（ctor 体执行 + 原型挂接）。is 值未注册/不匹配 → 普通内建
+      // 元素（spec valid custom element name 查 registry per localName）。同时把 is 记为
+      // content attribute（spec：is 属性反映 customized 状态——`el.is` IDL 读它）。
       if (globalThis.customElements && typeof globalThis.customElements.get === 'function') {
-        var _r90Ctor = globalThis.customElements.get(String(tag).toLowerCase());
+        var _wcLc = String(tag).toLowerCase();
+        var _wcIsName = (options && options.is != null) ? String(options.is) : null;
+        var _wcEntry = (globalThis.__zwCERegistryLookup && _wcIsName != null)
+          ? globalThis.__zwCERegistryLookup(_wcIsName, _wcLc) : null;
+        var _r90Ctor = _wcEntry ? _wcEntry.ctor : globalThis.customElements.get(_wcLc);
         if (typeof _r90Ctor === 'function' && _r90Ctor.prototype) {
           _ceRunCtor(_r90Ctor, el);
+          if (_wcIsName != null && typeof el.setAttribute === 'function') {
+            try { el.setAttribute('is', _wcIsName); } catch (_eIsAttr) {}
+          }
         }
       }
       return el;

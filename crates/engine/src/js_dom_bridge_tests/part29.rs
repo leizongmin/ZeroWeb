@@ -99,3 +99,100 @@ out.join(' ; ');
         "CE 反应链 + 4 参 attributeChanged + 跨文档 adopted 序（spec 对齐）"
     );
 }
+
+
+/// WC-M1 切片 4（web-components goal）：customized built-ins + whenDefined 真等待 +
+/// registry 按 document 隔离。
+/// 覆盖：① createElement(localName, {is}) 升级（ctor 体 + is 内容属性）；
+/// ② connected/attributeChanged 反应链对 customized built-in 生效；③ new klass()
+/// 产生真实元素（localName = extends tag，prototype = klass.prototype）；
+/// ④ whenDefined define 前挂起、define 后 microtask resolve；⑤ detached doc 的
+/// createElement 不触发主 registry 升级（spec look up a custom element registry）。
+#[test]
+fn wc_m1_ce_customized_builtins() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    let js = r#"
+var out = [];
+var log = [];
+class CbiEl extends HTMLElement {
+  static get observedAttributes() { return ['alt']; }
+  constructor() { super(); log.push('constructed'); }
+  connectedCallback() { log.push('connected'); }
+  disconnectedCallback() { log.push('disconnected'); }
+  attributeChangedCallback() { log.push('attr'); }
+}
+customElements.define('wc-cbi-img', CbiEl, { extends: 'img' });
+
+// A: createElement(tag, {is}) 升级 + is 内容属性
+var a = document.createElement('img', { is: 'wc-cbi-img' });
+out.push('A-ctor:' + (a.constructor === CbiEl));
+out.push('A-is:' + a.getAttribute('is'));
+out.push('A-log:' + log.join(','));
+log.length = 0;
+
+// B: connected + attributeChanged 反应
+document.body.appendChild(a);
+out.push('B-append:' + log.join(','));
+log.length = 0;
+a.setAttribute('alt', 'x');
+out.push('B-set:' + log.join(','));
+log.length = 0;
+
+// C: new klass() 真实元素
+var c = new CbiEl();
+out.push('C-new:' + (c.nodeType === 1) + ':' + (c.tagName === 'IMG') + ':' + (Object.getPrototypeOf(c) === CbiEl.prototype) + ':' + (c.getAttribute('is') === 'wc-cbi-img'));
+
+// D: whenDefined 真等待
+var wdState = 'pending';
+customElements.whenDefined('wc-wd-el').then(function () { wdState = 'resolved'; });
+class WdEl extends HTMLElement {}
+customElements.define('wc-wd-el', WdEl);
+out.push('D-sync:' + wdState);
+Promise.resolve().then(function () { out.push('D-micro:' + wdState); });
+
+// E: detached doc 的 createElement 不升级（registry 隔离）
+var ddoc = document.implementation.createHTMLDocument('d');
+var de = ddoc.createElement('wc-cbi-unregistered');
+out.push('E-detached:' + (de.constructor !== CbiEl) + ':tag=' + de.tagName);
+
+// F: autonomous define 后已有同名元素升级（spec define upgrade step）
+var pre = document.createElement('wc-pre-exist');
+document.body.appendChild(pre);
+class PreEl extends HTMLElement { constructor() { super(); log.push('pre-constructed'); } }
+customElements.define('wc-pre-exist', PreEl);
+out.push('F-upgrade:' + (pre.constructor === PreEl) + ':' + log.join(','));
+log.length = 0;
+
+out.join(' ; ');
+"#;
+    let out = sandbox.execute(js).unwrap().value;
+    // D-micro：microtask 在 execute turn 结束后跑——第二段 execute 读结果。
+    let micro = sandbox.execute("'D-micro:' + wdState").unwrap().value;
+    assert_eq!(
+        out,
+        "A-ctor:true ; A-is:wc-cbi-img ; A-log:constructed ; \
+         B-append:connected ; B-set:attr ; \
+         C-new:true:true:true:true ; \
+         D-sync:pending ; \
+         E-detached:true:tag=WC-CBI-UNREGISTERED ; \
+         F-upgrade:true:constructed,constructed,attr,connected,constructed,attr,connected,pre-constructed",
+        "customized built-ins + whenDefined + registry 隔离（spec 对齐）"
+    );
+    assert_eq!(micro, "D-micro:resolved",
+        "whenDefined 在 define 后的 microtask resolve");
+}

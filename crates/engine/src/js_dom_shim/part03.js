@@ -287,6 +287,32 @@
         _zwCeExisting = null;
         return _zwCeEl;
       }
+      // WC-M1 切片 4（spec customized built-in constructor + autonomous constructor）：
+      // `new klass()`（无升级在途）——klass 注册名反查 registry：customized built-in →
+      // 建其 localName 元素；autonomous → 建同名元素。挂 new.target.prototype + is 属性
+      // 返回（derived-ctor：base 返回对象成为 ctor 链 this；R3019 保真——非在途路径旧
+      // 返 undefined → this=plain 对象，cloneNode/DOM 面全断，builtin-coverage 110F）。
+      try {
+        var _wcNt = new.target;
+        if (_wcNt && typeof globalThis.customElements.getName === 'function' &&
+            typeof globalThis.__zwCERegistryGet === 'function') {
+          var _wcNm2 = globalThis.customElements.getName(_wcNt);
+          if (_wcNm2) {
+            var _wcEn2 = globalThis.__zwCERegistryGet(_wcNm2);
+            if (_wcEn2) {
+              var _wcTag2 = _wcEn2.isCustomizedBuiltIn ? _wcEn2.localName : _wcNm2;
+              var _wcEl2 = globalThis.document.createElement(_wcTag2);
+              if (_wcNt.prototype) {
+                try { Object.setPrototypeOf(_wcEl2, _wcNt.prototype); } catch (_eNtP2) {}
+              }
+              if (_wcEn2.isCustomizedBuiltIn) {
+                try { _wcEl2.setAttribute('is', _wcNm2); } catch (_eIsS2) {}
+              }
+              return _wcEl2;
+            }
+          }
+        }
+      } catch (_eNewCe) {}
     };
     // R384：shim 自建标记（`_zwBuiltNodeChain` 复判依据，防止 shim 二次装载时误判）。
     try { globalThis.HTMLElement.prototype.__zwShimCtorBridge = true; } catch (_e) {}
@@ -902,7 +928,7 @@
   var _zwHtmlElementIfaces = [
     'HTMLAnchorElement','HTMLAreaElement','HTMLAudioElement','HTMLBRElement','HTMLBaseElement',
     'HTMLBodyElement','HTMLButtonElement','HTMLCanvasElement','HTMLDListElement','HTMLDataElement',
-    'HTMLDataListElement','HTMLDialogElement','HTMLDirectoryElement','HTMLDivElement','HTMLElement',
+    'HTMLDataListElement','HTMLDetailsElement','HTMLDialogElement','HTMLDirectoryElement','HTMLDivElement','HTMLElement',
     'HTMLEmbedElement','HTMLFieldSetElement','HTMLFontElement','HTMLFrameElement','HTMLFrameSetElement',
     'HTMLHRElement','HTMLHeadElement','HTMLHeadingElement','HTMLHtmlElement','HTMLIFrameElement',
     'HTMLImageElement','HTMLInputElement','HTMLLIElement','HTMLLabelElement','HTMLLegendElement',
@@ -940,10 +966,62 @@
         : Object.create(globalThis.SVGElement.prototype);
     }
   }
+  // WC-M1 切片 4（spec create-a-native-element / interface object [[Call]]）：
+  // 接口构造器被 **custom element 的 super() 调用**且无升级在途（`new klass()` 形态，
+  // spec customized built-in constructor：new klass() 产生真实元素，localName = 接口
+  // 对应 tag）→ 建该 tag 元素并返回（derived-ctor：base 返回对象成为 ctor 链 this）。
+  // 页面既有的 super() 消费面（_zwCeExisting 升级在途）不变——升级在途时 HTMLElement
+  // 桥已消费/返回既有元素，接口 stub 不被调用（class 链先命中 HTMLElement 桥）。
+  // 注意：仅对无既有定义的 stub 生效（media/audio/video 等 part01b 定义不动）。
+  // WC-M1 切片 4：接口 stub 的 super() 在途建元素——customized built-in 的
+  // `new klass()`（class extends HTMLAnchorElement）走 ctor 链 super() 命中接口 stub：
+  // 无升级在途（_zwCeExisting 空）→ 建该 tag 真实元素返回（spec customized built-in
+  // constructor：实例是真实元素，localName = 接口对应 tag；derived-ctor：base 返回对象
+  // 成为整条链 this，klass.prototype 由引擎在 derived ctor 实例化时挂接）。升级在途
+  // → 返 null（HTMLElement 桥已消费既有元素，接口 stub 不替换 this）。
+  globalThis.__zwIfaceSuperCreate = function (tag, newTarget, ifaceCtor) {
+    try {
+      if (typeof _zwCeExisting !== 'undefined' && _zwCeExisting !== null) return null;
+      var el = globalThis.document.createElement(tag);
+      // spec customized built-in constructor：base 返回元素前按 new.target.prototype
+      // 挂用户原型（V8 仅在 base 未返回对象时才代设——返回对象须自设）。
+      if (newTarget && newTarget.prototype) {
+        try { Object.setPrototypeOf(el, newTarget.prototype); } catch (_eNtP) {}
+      }
+      // is 内容属性：new.target 注册为 customized built-in（extends 本接口）→ 反查
+      // registry 名（spec：constructor 创建的元素带 is 值；builtin-coverage 的克隆
+      // 断言经 is 属性重升级）。
+      try {
+        if (newTarget && typeof globalThis.customElements.getName === 'function') {
+          var _wcNm = globalThis.customElements.getName(newTarget);
+          if (_wcNm) { el.setAttribute('is', _wcNm); }
+        }
+      } catch (_eIsS) {}
+      return el;
+    } catch (_eIsc) { return null; }
+  };
+
   for (var _zi = 0; _zi < _zwHtmlElementIfaces.length; _zi++) {
     var _zn = _zwHtmlElementIfaces[_zi];
     if (!globalThis[_zn]) {
-      globalThis[_zn] = new Function('return function ' + _zn + '() {}')();
+      var _znTag = null;
+      var _zwIfaceMap = globalThis.__zwHtmlTagIface;
+      if (_zwIfaceMap) {
+        for (var _zt in _zwIfaceMap) {
+          if (Object.prototype.hasOwnProperty.call(_zwIfaceMap, _zt) && _zwIfaceMap[_zt] === _zn) { _znTag = _zt; break; }
+        }
+      }
+      // tag 反查**延迟到调用时**——__zwHtmlTagIface 表（tag → 接口名字符串）定义在本
+      // loop 之后（字面量顺序），定义期读恒空；且值为接口名字符串非 ctor 引用，按名比对。
+      var _znCtor = new Function('return function ' + _zn + '() {' +
+        'var _zwMap = globalThis.__zwHtmlTagIface;' +
+        'var _zwTg = null;' +
+        'if (_zwMap) { for (var _k in _zwMap) { if (Object.prototype.hasOwnProperty.call(_zwMap, _k) && _zwMap[_k] === ' + JSON.stringify(_zn) + ') { _zwTg = _k; break; } } }' +
+        'if (_zwTg !== null && typeof globalThis.__zwIfaceSuperCreate === "function") {' +
+        '  var _zwSup = globalThis.__zwIfaceSuperCreate(_zwTg, new.target, ' + _zn + ');' +
+        '  if (_zwSup) return _zwSup; }' +
+        '}')();
+      globalThis[_zn] = _znCtor;
       // HTMLElement 自身 prototype 已建（_zwBuiltNodeChain）；其余子类 → HTMLElement.prototype。
       globalThis[_zn].prototype = (_zn === 'HTMLElement')
         ? globalThis.HTMLElement.prototype
@@ -959,6 +1037,30 @@
       if (globalThis.HTMLMediaElement && globalThis.HTMLMediaElement.prototype) {
         globalThis[_zn].prototype = Object.create(globalThis.HTMLMediaElement.prototype);
       }
+      // WC-M1 切片 4：customized built-in 的 super() 在途建元素——part01b 的 Illegal
+      // constructor 会让 `class extends HTMLAudioElement` 的 super() 抛 TypeError（WPT
+      // reactions/customized-builtins/HTMLMediaElement 整簇 constructed 缺失）。包装为
+      // 与上方 stub 同款语义：无升级在途 → 建 tag 元素 + new.target.prototype + is 属性；
+      // 直接调用（非 new）保持 Illegal constructor。
+      var _znMediaCtor = globalThis[_zn];
+      // tag 调用时反查（__zwHtmlTagIface 定义在本 loop 之后，定义期读恒空）。
+      var _znMediaProto = _znMediaCtor.prototype; // 先存（globalThis[_zn] 被覆盖后不可再取）
+      var _znMediaWrapped = function () {
+        if (new.target && typeof globalThis.__zwIfaceSuperCreate === 'function' && globalThis.__zwHtmlTagIface) {
+          var _zwMapM2 = globalThis.__zwHtmlTagIface;
+          for (var _ztM2 in _zwMapM2) {
+            if (Object.prototype.hasOwnProperty.call(_zwMapM2, _ztM2) && _zwMapM2[_ztM2] === _zn) {
+              var _zwSupM = globalThis.__zwIfaceSuperCreate(_ztM2, new.target);
+              if (_zwSupM) return _zwSupM;
+              break;
+            }
+          }
+        }
+        return _znMediaCtor.apply(this, arguments);
+      };
+      _znMediaWrapped.prototype = _znMediaProto;
+      try { Object.setPrototypeOf(_znMediaWrapped, _znMediaCtor); } catch (_eMst) {}
+      globalThis[_zn] = _znMediaWrapped;
     }
   }
   // R290（js-dom M4）：接口原型的 **constructor 自反属性**（spec WebIDL「interface
@@ -1021,7 +1123,7 @@
     button: 'HTMLButtonElement', canvas: 'HTMLCanvasElement', caption: 'HTMLTableCaptionElement',
     center: 'HTMLElement', cite: 'HTMLElement', code: 'HTMLElement', col: 'HTMLTableColElement',
     colgroup: 'HTMLTableColElement', data: 'HTMLDataElement', datalist: 'HTMLDataListElement',
-    dd: 'HTMLElement', del: 'HTMLModElement', details: 'HTMLElement', dfn: 'HTMLElement',
+    dd: 'HTMLElement', del: 'HTMLModElement', details: 'HTMLDetailsElement', dfn: 'HTMLElement',
     dialog: 'HTMLDialogElement', dir: 'HTMLDirectoryElement', div: 'HTMLDivElement', dl: 'HTMLDListElement',
     dt: 'HTMLElement', em: 'HTMLElement', embed: 'HTMLEmbedElement', fieldset: 'HTMLFieldSetElement',
     figcaption: 'HTMLElement', figure: 'HTMLElement', font: 'HTMLFontElement', footer: 'HTMLElement',
@@ -1391,7 +1493,12 @@
       } else {
         return null;
       }
-    if (o && o.nodeType === 1) { try { _zwMAttachQueryMethods(o); } catch (_e156q) {} }
+    if (o && o.nodeType === 1) {
+      try { _zwMAttachQueryMethods(o); } catch (_e156q) {}
+      // WC-M1 切片 4：克隆产物重升级（customized built-in/autonomous CE 断言面——
+      // builtin-coverage 的 cloneNode().constructor === klass）。
+      try { _ceUpgradeElIfRegistered(o); } catch (_e156ce) {}
+    }
     return o;
   };
   _zwDefProtoMethod(globalThis.Element.prototype, 'cloneNode', function (deep) {
@@ -2465,6 +2572,30 @@
   // hook 不消费 → 对 function ctor 回落 `ctor.call(el)`（非 class 可 .call 注入 this）。两者都
   // try/catch 吞异常（升级失败不中断页面脚本，与既有 best-effort 升级语义一致）。返回 el（无论
   // 哪条路径，升级目标都是 el 本身）。
+  // WC-M1 切片 4：元素克隆/解析产物的 CE 重升级——克隆 (_zwDeepCloneEl 产物 plain _zwMEl)
+  // 与 parser 产物丢失 custom 原型（constructor === klass 断言面）。按 tag + is 属性反查
+  // registry：customized built-in（is 命中 localName）或 autonomous（tag 命中名）→
+  // _ceRunCtor 重放（原型挂接 + ctor 体）。
+  function _ceUpgradeElIfRegistered(el) {
+    if (!el || el.nodeType !== 1) return el;
+    var tag = '';
+    try { tag = String(el.localName || el.tagName || '').toLowerCase(); } catch (_eT) { return el; }
+    if (!tag) return el;
+    var isName = null;
+    try { isName = el.getAttribute('is'); } catch (_eIs) { isName = null; }
+    var entry = null;
+    if (isName && globalThis.__zwCERegistryLookup) {
+      entry = globalThis.__zwCERegistryLookup(String(isName), tag);
+    }
+    if (!entry) entry = _ce_registry[tag] || null;
+    if (entry && entry.ctor) {
+      // 已是 custom 实例（原型已挂）不重放。
+      if (Object.getPrototypeOf(el) !== entry.ctor.prototype) {
+        _ceRunCtor(entry.ctor, el);
+      }
+    }
+    return el;
+  }
   function _ceRunCtor(ctor, el) {
     // 原型先挂（ctor 体内 this.bump() 等方法访问经原型链可达——探针实证 chain-set-before-body）。
     try { Object.setPrototypeOf(el, ctor.prototype); } catch (_e) {}
@@ -2539,8 +2670,18 @@
     if (byCtor.has(ctor)) {
       throw _zwDomException("Failed to execute 'define' on 'CustomElementRegistry': this constructor has already been used with this registry", 'NotSupportedError');
     }
-    reg[name] = { ctor: ctor, options: options || {} };
+    // WC-M1 切片 4（spec element-definition）：customized built-in——options.extends
+    // 记录目标 localName。autonomous（无 extends）entry.localName = null。校验：extends
+    // 值非内建 tag（无对应接口）spec 抛 NotSupportedError（WPT CustomElementRegistry
+    // define-with-invalid-extends 断言面）。本沙箱以内建 tag 表为准（__zwHtmlTagIface）。
+    var _wcExtends = (options && options.extends != null) ? String(options.extends).toLowerCase() : null;
+    if (_wcExtends !== null
+        && !(globalThis.__zwHtmlTagIface && globalThis.__zwHtmlTagIface[_wcExtends])) {
+      throw _zwDomException("Failed to execute 'define' on 'CustomElementRegistry': \"" + _wcExtends + "\" is not a valid custom element name", 'NotSupportedError');
+    }
+    reg[name] = { ctor: ctor, options: options || {}, localName: _wcExtends, isCustomizedBuiltIn: _wcExtends !== null };
     byCtor.set(ctor, name);
+    _ce_registry_gen++;
     try { void ctor.observedAttributes; } catch (_eObs) {}
     if (!opts.noUpgrade) {
       try {
@@ -2556,6 +2697,17 @@
       for (var i = 0; i < waiters.length; i++) { try { waiters[i](ctor); } catch (_e) {} }
     }
   }
+  // WC-M1 切片 4：registry 反查 hook（createElement(tag,{is}) 消费）——按 name 查 entry，
+  // 校验 entry 是 customized built-in 且 localName === tag（spec：is 值仅对该 localName 生效）。
+  globalThis.__zwCERegistryGet = globalThis.__zwCERegistryGet || function (name) {
+    return _ce_registry[String(name)] || null;
+  };
+  globalThis.__zwCERegistryLookup = globalThis.__zwCERegistryLookup || function (name, localName) {
+    var e = _ce_registry[String(name)];
+    if (!e || !e.isCustomizedBuiltIn) return null;
+    if (e.localName !== String(localName)) return null;
+    return e;
+  };
   // R364：参数化 whenDefined（主/子共享）。
   function _ceWhenDefined(reg, pending, name) {
     if (!_ce_validName(name)) {
@@ -2642,7 +2794,16 @@
   function _ceUpgradeNode(el) {
     var tag = _elTagName(el);
     if (tag) {
-      var entry = _ce_registry[tag.toLowerCase()];
+      var tagLc = tag.toLowerCase();
+      var entry = _ce_registry[tagLc];
+      // WC-M1 切片 4：customized built-in 升级——is 内容属性命中（localName 匹配）。
+      if (!entry) {
+        var upIs = null;
+        try { upIs = el.getAttribute('is'); } catch (_eUpIs) { upIs = null; }
+        if (upIs && globalThis.__zwCERegistryLookup) {
+          entry = globalThis.__zwCERegistryLookup(String(upIs), tagLc) || undefined;
+        }
+      }
       if (entry && entry.ctor) {
         // js-dom M3 R94：升级 = 原型挂接 + **用户 ctor 体执行**（`_ceRunCtor`——super() 返回值注入
         // this，闭合 R90「ctor 体不可重放」限制；spec `custom-elements-upgrades` upgrade step 的
@@ -2829,15 +2990,45 @@
   // upgrade / ctor 实例化、IDL 反射 setter（className=/id= 等，不走 setAttribute 函数）——独立 slice。
   // tag 不可变 → 每 element 首次属性变更时算一次 registry 查询并缓存（避 setAttribute 热路径每次 host 调用）。
   var _ceEntryByKey = {}; // element key → registry entry | false（false 哨兵 = 非 custom，避重查）
+  var _ceEntryByGen = 0;  // WC-M1 切片 4：缓存世代号——define 变更 registry 后失配全量重查
+                          //（createElement 先于 define 的元素：缓存 false 哨兵吞掉后续 customized
+                          // built-in 的 is 反查，connected/attributeChanged 全断）。
   function _ceEntryFor(key, sel, handle) {
+    if (_ceEntryByGen !== _ce_registry_gen) {
+      _ceEntryByKey = {};
+      _ceEntryByGen = _ce_registry_gen;
+    }
     if (Object.prototype.hasOwnProperty.call(_ceEntryByKey, key)) {
       var cached = _ceEntryByKey[key];
       return cached || null;
     }
-    var entry = _ce_registry[_realTag(sel, handle).toLowerCase()] || null;
+    var tag = _realTag(sel, handle).toLowerCase();
+    var entry = _ce_registry[tag] || null;
+    // WC-M1 切片 4：customized built-in——is 内容属性命中（localName 匹配）。结果入
+    // 缓存；is 写入/移除时经 __zwCeInvalidateEntry 失效（setAttribute('is') 自身写前
+    // 捕获旧值时 is mutation 未落，false 哨兵须在该写入后失效，否则吞掉后续连接派发）。
+    if (!entry && !Object.prototype.hasOwnProperty.call(_ceIsChecked, key)) {
+      _ceIsChecked[key] = true;
+      var isN0 = null;
+      try {
+        isN0 = (handle && typeof __zw_has_attr_handle === 'function' && __zw_has_attr_handle(handle, 'is') === '1')
+          ? __zw_get_attr_handle(handle, 'is')
+          : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'is') : null);
+      } catch (_eIsEf) { isN0 = null; }
+      if (isN0 && globalThis.__zwCERegistryLookup) {
+        entry = globalThis.__zwCERegistryLookup(String(isN0), tag) || null;
+      }
+    }
     _ceEntryByKey[key] = entry || false;
     return entry;
   }
+  var _ceIsChecked = {}; // key → is 反查已做（免每 setter 重查 host 回调——热路径）
+  var _ce_registry_gen = 0; // registry 世代号（define ++）
+  // is 属性写入/移除后失效该 key 的 CE entry 缓存（is 反查结果与 is 属性存在性耦合）。
+  globalThis.__zwCeInvalidateEntry = function (key) {
+    delete _ceEntryByKey[key];
+    delete _ceIsChecked[key];
+  };
   // WC-M1 切片 3（spec custom-element-reactions）：IDL 反射 setter（el.id= / tabIndex= /
   // aria*= / _REFLECTED_BOOL·STRING·UINT 全表）也是 CEReactions——写内容属性时同样
   // enqueue attributeChangedCallback。本映射 IDL 名 → 目标内容属性名（与 set trap 各
@@ -10221,7 +10412,7 @@
         } catch (_eR204p) {}
         return _r204r;
       },
-      createElement: function (t) {
+      createElement: function (t, options) {
         // R81 spec 纠正：XML 文档（_docNS null/undefined 且非 HTML doc）createElement 不小写
         // 不大写（WPT Node-properties xmlElement.tagName 期望原样 "igiveuponcreativenames"）。
         // HTML 文档（_docNS = HTML ns）保持小写输入 + tagName 大写（HTML 语义）。
@@ -10252,7 +10443,34 @@
         if (!_isHtmlDoc && globalThis.Element && globalThis.Element.prototype) {
           try { Object.setPrototypeOf(e, globalThis.Element.prototype); } catch (_e290xp) {}
         }
-        return e;
+                // WC-M1 切片 4：customized built-in——createElement(localName, { is }) 命中
+        // registered entry（localName 匹配）→ 升级 + is 内容属性。**registry 按 document
+        // 隔离**（spec look up a custom element registry：detached/iframe 文档用自己的
+        // registry——iframe doc 经 R365 `_zwCERegistry` 槽查 own registry；普通 detached
+        // doc（createHTMLDocument/new Document 等，无 browsing context）registry 为空 →
+        // 永不升级（WPT upgrading.html「Creating an element in <detached doc> must not
+        // enqueue a custom element upgrade reaction」断言面）。
+        var _wcRealmReg = null;
+        try { _wcRealmReg = doc._zwCERegistry || null; } catch (_eRealmR) { _wcRealmReg = null; }
+        if (_wcRealmReg || doc === globalThis.document) {
+          var _wcLcF = String(t).toLowerCase();
+          var _wcIsNameF = (options && options.is != null) ? String(options.is) : null;
+          var _wcEntryF = (_wcRealmReg && typeof _wcRealmReg.get === 'function' && _wcIsNameF != null)
+            ? (function () {
+                var _wcE = _wcRealmReg.get(_wcIsNameF);
+                return (_wcE && _wcE.isCustomizedBuiltIn && _wcE.localName === _wcLcF) ? _wcE : null;
+              })()
+            : (globalThis.__zwCERegistryLookup && _wcIsNameF != null)
+              ? globalThis.__zwCERegistryLookup(_wcIsNameF, _wcLcF) : null;
+          var _wcCtorF = _wcEntryF ? _wcEntryF.ctor : globalThis.customElements.get(_wcLcF);
+          if (typeof _wcCtorF === 'function' && _wcCtorF.prototype) {
+            _ceRunCtor(_wcCtorF, e);
+            if (_wcIsNameF != null && typeof e.setAttribute === 'function') {
+              try { e.setAttribute('is', _wcIsNameF); } catch (_eIsAttrF) {}
+            }
+          }
+        }
+return e;
       },
       createTextNode: function (t) { var n = _zwMText(String(t), null); n.ownerDocument = doc; return n; },
       // js-dom M4 R81：detached doc 的 createElementNS（WPT createElementNS_tests 经

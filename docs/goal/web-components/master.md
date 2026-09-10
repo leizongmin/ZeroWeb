@@ -2,7 +2,7 @@
 
 **入口文档**: [../web-components.md](../web-components.md)
 **创建日期**: 2026-09-07（goal 拆分 bootstrap）
-**最后更新**: 2026-09-10（M1 切片 3 落地——adoptedCallback 派发 + CEReactions 反应链全语义面 + template contents owner doc，55%→58%）
+**最后更新**: 2026-09-10（M1 切片 4 落地——customized built-ins 升级链路 + whenDefined/upgrade 收口，58%→64%。**M1 切片全清，M1 ✅**）
 
 ---
 
@@ -56,7 +56,7 @@ Shadow DOM 渲染级 composed tree 排除（等用户点名专项）。
 | # | 缺口 | 状态 |
 |---|------|------|
 | P1 | WPT 用例覆盖为零（fetch 脚本 + 三目录导入 + 基线） | ✅ 2026-09-10（265 案导入，基线 9%，见 evidence/2026-09-10-wc-baseline.md） |
-| P2 | CE 三缺口（upgrade no-op / whenDefined 假 resolve / adoptedCallback 无） | ◐ adoptedCallback ✅（切片 3）；upgrade/whenDefined M1 切片 4 |
+| P2 | CE 三缺口（upgrade no-op / whenDefined 假 resolve / adoptedCallback 无） | ✅ 2026-09-10 切片 4（adopted 切片 3；upgrade shim 真实现 + is-aware；whenDefined define 前 pending/define 后 microtask resolve——probe 断言） |
 | P3 | template DOM 层占位（parser + R145 规则收敛） | ⬜ M2 |
 | P4 | slot 全链路（IDL → 分配接线 → slotchange → assignedNodes） | ⬜ M3 |
 
@@ -73,11 +73,7 @@ Shadow DOM 渲染级 composed tree 排除（等用户点名专项）。
 
 ## 下一步计划
 
-1. **M1 收尾（切片 4）**：customized built-ins（`createElement(tag, {is})` 升级面——
-   builtin-coverage 331F + reactions/customized-builtins 全族 ~100F 的最大剩余簇）
-   + `customElements.upgrade` 真语义（quickjs `ce_upgrade` no-op 替换；shim 侧
-   `_ceUpgradeSubtree` 已有——两路径对齐）+ `whenDefined` 真 Promise 等待
-2. **M2 切片 1**：parser `get_template_contents` 真 inert fragment（根因修复——
+1. **M2 切片 1**：parser `get_template_contents` 真 inert fragment（根因修复——
    contents 内联使嵌套 template 装配出现 childNodes 回指环，sel-clone 深克隆
    无限递归 → complex 装配 90s 伪超时 5 案）+ R145 规则收敛
 3. **M3**：slot 全链路（IDL → 分配接线 → slotchange → assignedNodes）
@@ -89,8 +85,9 @@ Shadow DOM 渲染级 composed tree 排除（等用户点名专项）。
 - template content owner doc 面残余：`node-document-changes.html` 1 subtest 从
   vacuous pass（双方 undefined 相等）转 fail——owner doc 已真实化但 adopt 后
   descendants 重指语义未达（M2 parser 真实化后一并收敛）
-- customized built-ins（`createElement(tag, {is})` 升级不触发）+ builtin-coverage
-  接口化断言（~216F）——M1 切片 4 定向
+- builtin-coverage 的 innerHTML 解析簇（~108F）：sel 容器 innerHTML 后
+  getElementById 的 pending 融合（R380 查询融合域，非 CE 域）
+- reactions/ 表格族（table-scoped 解析升级）与 customized-builtins 的 iframe/reparse 面
 
 **碰撞管理**：碰 engine/dom 前先 `git log --since="14 days ago" -- crates/engine/
 crates/dom/` 核对渲染流域活跃面；碰 part01.js 前与 event-loop-spec 流互相核对。
@@ -99,7 +96,7 @@ crates/dom/` 核对渲染流域活跃面；碰 part01.js 前与 event-loop-spec 
 
 | 里程碑 | 状态 |
 |--------|------|
-| M1 — WPT 基线建立 + Custom Elements 收口 | ◐ 切片 1/2a/2b/3 ✅（2026-09-10）；切片 4（upgrade/whenDefined/customized built-ins）进行中 |
+| M1 — WPT 基线建立 + Custom Elements 收口 | ✅ 2026-09-10（切片 1/2a/2b/3/4 全清——DC-1 基线 + DC-2 upgrade/whenDefined/adoptedCallback/双路径全收口） |
 | M2 — template 真实化 | ⬜ |
 | M3 — slot 全链路 + 收尾 | ⬜ |
 
@@ -114,9 +111,8 @@ crates/dom/` 核对渲染流域活跃面；碰 part01.js 前与 event-loop-spec 
 
 - 测试基线：立项时点全绿（`make test` / `make reftest` 入口，经 test-guard 包裹；
   禁止裸跑 cargo test）
-- WC 用例面：**265 案 / 4677 subtests / 2720 Pass（58%）**（2026-09-10 切片 3，
-  evidence/2026-09-10-wc-after-slice3.{md,json}。历史：基线 9% → 2a 15% → 2b 55%）；
-  （旧基线 265 案 / 4730 subtests / 437 Pass（9%）2026-09-10 M1 切片 1，
-  evidence/2026-09-10-wc-baseline.{md,json}；`make testharness-web-components` 重建）
+- WC 用例面：**271 案 / 4675 subtests / 3008 Pass（64%）**（2026-09-10 切片 4，
+  evidence/2026-09-10-wc-after-slice4.{md,json}。历史：基线 437=9% → 2a 689=15% →
+  2b 2565=55% → 3 2720=58%；`make testharness-web-components` 重建）
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过；
   dom 结构变更轮跑 `make reftest` 作渲染面守卫
