@@ -298,6 +298,30 @@ pub fn interpolate_property_value(property: &str, from: &str, to: &str, t: f64) 
             let to_px = parse_px(to);
             format!("{:.2}px", lerp(from_px, to_px, t))
         }
+        // R4202：individual transform 属性插值——`translate` 逐分量 px/%（% 保真原样
+        // 从目标侧取值，progress 中点跃迁近似可接受）；`rotate` 角度线性（deg）；
+        // `scale` 数值线性（单值等比保持单值形态）。
+        "translate" => {
+            let (fx, fy) = parse_translate_pair(from);
+            let (tx, ty) = parse_translate_pair(to);
+            format!("{:.2}px {:.2}px", lerp(fx, tx, t), lerp(fy, ty, t))
+        }
+        "rotate" => {
+            let fa = parse_angle_deg(from);
+            let ta = parse_angle_deg(to);
+            format!("{:.2}deg", lerp(fa, ta, t))
+        }
+        "scale" => {
+            let (fx, fy) = parse_scale_pair(from);
+            let (tx, ty) = parse_scale_pair(to);
+            let sx = lerp(fx, tx, t);
+            let sy = lerp(fy, ty, t);
+            if (sx - sy).abs() < 1e-6 {
+                format!("{:.4}", sx)
+            } else {
+                format!("{:.4} {:.4}", sx, sy)
+            }
+        }
         _ => {
             // 不支持插值的属性，在进度 > 0.5 时切换到目标值
             if t > 0.5 { to.to_string() } else { from.to_string() }
@@ -319,6 +343,32 @@ fn parse_f64(s: &str) -> Option<f64> {
 fn parse_px(s: &str) -> f64 {
     let s = s.trim();
     s.strip_suffix("px").and_then(|v| v.trim().parse().ok()).unwrap_or(0.0)
+}
+
+/// R4202：解析 `translate` 值为 (x, y) px 数值对（% 分量按 0 近似——keyframes 的
+/// translate % 中点插值目标侧取值已由字符串臂覆盖主形态，此处数值化仅服务 lerp）。
+fn parse_translate_pair(s: &str) -> (f64, f64) {
+    let parts: Vec<&str> = s.split_whitespace().collect();
+    let x = parts.first().map(|p| parse_px(p)).unwrap_or(0.0);
+    let y = parts.get(1).map(|p| parse_px(p)).unwrap_or(0.0);
+    (x, y)
+}
+
+/// R4202：解析 `rotate` 角度值（deg 数值；无单位裸数字按 deg）。
+fn parse_angle_deg(s: &str) -> f64 {
+    let s = s.trim();
+    s.strip_suffix("deg")
+        .and_then(|v| v.trim().parse().ok())
+        .or_else(|| s.parse().ok())
+        .unwrap_or(0.0)
+}
+
+/// R4202：解析 `scale` 值为 (x, y) 数值对（单值等比展开）。
+fn parse_scale_pair(s: &str) -> (f64, f64) {
+    let parts: Vec<&str> = s.split_whitespace().collect();
+    let x: f64 = parts.first().and_then(|p| p.parse().ok()).unwrap_or(1.0);
+    let y: f64 = parts.get(1).and_then(|p| p.parse().ok()).unwrap_or(x);
+    (x, y)
 }
 
 /// RGBA 颜色（0-255 范围）。
@@ -976,6 +1026,37 @@ fn apply_single_property(name: &str, value: &str, style: &mut ComputedStyle) {
         }
         "padding-right" => {
             style.padding_right = LengthValue::Px(parse_px(value));
+        }
+        // R4202（css-transforms-2 §individual-transforms + css-transforms-1）：
+        // transform 系动画值**替换**对应字段（css-transforms-2 #individual-transforms：
+        // animated transform 替换 individual 基值合成——combine 案 assert「The scale
+        // property is replaced in the animation」），非与 underlying 叠加。动画期间
+        // 直接覆写字段即可（forwards fill 同路径）。
+        "transform" => {
+            if let Some(v) = zero_css_parser::values::parse_transform(value) {
+                style.transform = v;
+            }
+        }
+        "translate" => {
+            if value.trim().eq_ignore_ascii_case("none") {
+                style.individual_translate = None;
+            } else if let Some(f) = zero_css_parser::values::parse_individual_translate(value) {
+                style.individual_translate = Some(f);
+            }
+        }
+        "rotate" => {
+            if value.trim().eq_ignore_ascii_case("none") {
+                style.individual_rotate = None;
+            } else if let Some(f) = zero_css_parser::values::parse_individual_rotate(value) {
+                style.individual_rotate = Some(f);
+            }
+        }
+        "scale" => {
+            if value.trim().eq_ignore_ascii_case("none") {
+                style.individual_scale = None;
+            } else if let Some(f) = zero_css_parser::values::parse_individual_scale(value) {
+                style.individual_scale = Some(f);
+            }
         }
         _ => {
             // 其他属性暂不支持动画覆盖
