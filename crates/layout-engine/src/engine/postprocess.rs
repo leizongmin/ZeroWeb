@@ -2166,12 +2166,12 @@ pub(super) fn resolve_relative_inset(box_node: &LayoutBox, styles: &HashMap<Node
 /// content_height（静态本已容纳）而位移底超出，则把超额从父 height/content_height 扣除，
 /// 并对后续 in-flow 兄弟上移同量。taffy 已把子盒 y 位移到位（视觉正确），此处只修布局流。
 ///  dy<0 / 父定高（taffy 不膨胀定高容器）/ inline-level 均不触发。kill-switch
-/// `ZW_RELPOS_FLOW_LEAK=0`。
+/// kill-switch `ZW_RELPOS_FLOW_LEAK=0`。R4211：default-on——015 交互已解
+/// （sib_dy 静态底重建的 top 臂曾遮蔽 bottom 臂：top:Auto 走 resolve(Auto)=0，
+/// 未落到 bottom:-1in → div2 静态底虚低 96 → inflation 虚增 96 → div2 被二次上移）；
+/// 全量 A/B 净+2 零回归后转正。
 pub(super) fn compensate_block_relpos_flow_inflation(root: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) {
-    // 默认关闭（opt-in）：pass 本身收敛 relpos-block-001/002（3.69%→0.00%），
-    // 但 position-relative-015 交互未解（bottom inset 兄弟的静态底重建后仍 2.94% 红）
-    // ——解开 015 交互后再翻 default-on。
-    if std::env::var("ZW_RELPOS_FLOW_LEAK").as_deref() != Ok("1") {
+    if std::env::var("ZW_RELPOS_FLOW_LEAK").as_deref() == Ok("0") {
         return;
     }
     /// 后序遍历：返回本盒相对「静态流位置」收缩的总量（供父层上移本盒后续兄弟）。
@@ -2255,12 +2255,18 @@ pub(super) fn compensate_block_relpos_flow_inflation(root: &mut LayoutBox, style
                             .node_id
                             .and_then(|id| styles.get(&id))
                             .filter(|s| matches!(s.position, PositionValue::Relative))
-                            .map(|s| match &s.top {
-                                LengthValue::Percentage(_) => match &s.bottom {
-                                    LengthValue::Percentage(_) => 0.0,
-                                    lv => resolve_postprocess_real_length(lv, s).map(|v| -v).unwrap_or(0.0),
-                                },
-                                lv => resolve_postprocess_real_length(lv, s).unwrap_or(0.0),
+                            .map(|s| {
+                                // §9.4.3：top 优先，无 top 时取 bottom（负向）。Auto/百分比
+                                // 均不参与实长重建（百分比由 R711 pass 另行处理）。
+                                match (&s.top, &s.bottom) {
+                                    (LengthValue::Percentage(_), _) => 0.0,
+                                    (t, _) => resolve_postprocess_real_length(t, s)
+                                        .or_else(|| match &s.bottom {
+                                            LengthValue::Percentage(_) => None,
+                                            lv => resolve_postprocess_real_length(lv, s).map(|v| -v),
+                                        })
+                                        .unwrap_or(0.0),
+                                }
                             })
                             .unwrap_or(0.0);
                         sib.y - sib_dy + sib.height
