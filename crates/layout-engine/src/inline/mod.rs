@@ -1927,6 +1927,14 @@ impl InlineFormattingContext {
         preserve_whitespace: bool,
         break_at_newline: bool,
     ) -> Vec<String> {
+        // R4206（CSS Text 3 §4.1 + CSS2 §9.2.1.1）：空文本运行产出零词条——
+        // 空 inline 元素（如 `<span></span>`）在 preserve/pre-line 模式下不得经
+        // 各分支末尾的 `result.is_empty()` 兜底变幻影空格词（+1 字宽推进，后继
+        // 文本右移）。空 run 由 break_lines 的「空 inline 元素」零宽 fragment 分支
+        // 承载几何（padding/border/line-height），不推进水平位置。
+        if text.is_empty() {
+            return Vec::new();
+        }
         // word-break: keep-all — CJK 字符不被视为断行点，
         // 将连续的 CJK 文本保持为一个单词（类似拉丁文本的行为）
         if self.word_break == WordBreakMode::KeepAll {

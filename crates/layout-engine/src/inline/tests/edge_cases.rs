@@ -577,6 +577,32 @@ fn test_split_into_words_whitespace_only() {
     assert!(words.is_empty(), "仅空白字符不应产生单词");
 }
 
+/// R4206：空文本运行在所有 white-space 模式下产出零词条——空 inline 元素
+///（`<span></span>`）不得经 preserve/pre-line 分支的 `result.is_empty()` 兜底
+/// 变幻影空格词（+1 字宽推进，后继文本右移）。空 run 的几何（padding/border/
+/// line-height）由 break_lines「空 inline 元素」零宽 fragment 分支承载。
+#[test]
+fn test_split_into_words_empty_text_no_phantom_word() {
+    // preserve（pre/pre-wrap）：空文本 → 零词条（无幻影空格）
+    let ctx_pre = InlineFormattingContext::new(800.0).with_preserve_whitespace(true);
+    assert!(
+        ctx_pre.split_into_words("", false).is_empty(),
+        "preserve 模式空文本不应产生幻影空格词"
+    );
+    // pre-line：同上
+    let ctx_preline = InlineFormattingContext::new(800.0).with_break_at_newline(true);
+    assert!(
+        ctx_preline.split_into_words("", false).is_empty(),
+        "pre-line 模式空文本不应产生幻影空格词"
+    );
+    // normal：既有行为（空文本 → 零词条）不回归
+    let ctx_normal = InlineFormattingContext::new(800.0);
+    assert!(
+        ctx_normal.split_into_words("", false).is_empty(),
+        "normal 模式空文本应保持零词条"
+    );
+}
+
 /// R1927：white-space: pre-line（break_at_newline）应在换行符 `\n` 处强制断行
 ///（CSS Text 3 §4.2），同时折叠空白序列（区别于 pre-wrap 保留空白）。
 /// split_into_words 对 break_at_newline 按 `\n` 切段，段间插入空串强制断行标记
