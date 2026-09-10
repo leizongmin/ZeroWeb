@@ -3858,30 +3858,96 @@
   //（composed: true 由 Event 默认——dispatchEvent 通用面）。microtask 时序经
   // Promise.resolve().then（spec「queue a mutation observer microtask」近似）。
   var _zwSlotchangeQueued = {};
+  var _zwSlotchangeLast = {};
+  var _zwSlotchangePrev = {};
+  var _zwSlotchangeMarked = {};
   globalThis.__zwQueueSlotchangeForRoot = function (rootHandle) {
     try {
       if (!rootHandle || !_handleChildren[rootHandle]) return;
-      // 同根同微任务轮去重（spec：即使分配多次变化，slot 只 fire 一次 slotchange）。
-      if (_zwSlotchangeQueued[rootHandle]) return;
-      _zwSlotchangeQueued[rootHandle] = true;
-      Promise.resolve().then(function () {
-        _zwSlotchangeQueued[rootHandle] = false;
-        try {
-          var stack = (_handleChildren[rootHandle] || []).slice();
-          while (stack.length) {
-            var nd = stack.shift();
-            if (!nd || nd.nodeType !== 1) continue;
-            if (String(nd.tagName || '').toLowerCase() === 'slot') {
+      // WC-M3 切片 5（diff 化，marked-transition 链——同 part03 plain 路径口径）：
+      // 每次 hook 捕获根内全 slot 的 flatten 序列快照；轮内相邻快照 diff 增量并入
+      // marked；微任务对（prev ?? last）vs 终态 diff 后树序派发。upstream 口径：
+      // must-not-fire 簇（他 slot 变化我不 fire）+ fallback 变化 fire 簇 + 单变异轮
+      // last 为基（插入即获配 / 移除即失配均 fire）。
+      var flattenMap = function () {
+        var m = new Map();
+        var dfs = function (list) {
+          for (var di = 0; di < list.length; di++) {
+            var s = list[di];
+            if (!s || s.nodeType !== 1) continue;
+            if (String(s.tagName || '').toLowerCase() === 'slot') {
+              m.set(s, (typeof s.assignedNodes === 'function') ? s.assignedNodes({ flatten: true }) : []);
+            }
+            var kk = (s.__zwHandle && _handleChildren[s.__zwHandle]) ? _handleChildren[s.__zwHandle] : [];
+            for (var q = 0; q < kk.length; q++) dfs([kk[q]]);
+          }
+        };
+        dfs(_handleChildren[rootHandle] || []);
+        return m;
+      };
+      var diffInto = function (marked, A, B) {
+        A.forEach(function (av, slot) {
+          if (marked.indexOf(slot) >= 0) return;
+          var bv = B.get(slot);
+          if (!bv) bv = [];
+          if (av.length !== bv.length) { marked.push(slot); return; }
+          for (var i = 0; i < av.length; i++) {
+            if (av[i] !== bv[i]) { marked.push(slot); return; }
+          }
+        });
+        B.forEach(function (bv, slot) {
+          if (marked.indexOf(slot) >= 0) return;
+          if (A.has(slot)) return;
+          if (bv.length > 0) marked.push(slot);
+        });
+      };
+      if (!_zwSlotchangeQueued[rootHandle]) {
+        _zwSlotchangeQueued[rootHandle] = true;
+        _zwSlotchangePrev[rootHandle] = null;
+        _zwSlotchangeMarked[rootHandle] = [];
+        Promise.resolve().then(function () {
+          _zwSlotchangeQueued[rootHandle] = false;
+          try {
+            var finalMap = flattenMap();
+            var marked = _zwSlotchangeMarked[rootHandle] || [];
+            var prev = _zwSlotchangePrev[rootHandle];
+            // 双基 sweep（同 part03）：prev 链 + last（单变异轮首变异效果）。
+            var baseP = (prev && prev.size) ? prev : new Map();
+            diffInto(marked, baseP, finalMap);
+            diffInto(marked, _zwSlotchangeLast[rootHandle] || new Map(), finalMap);
+            var ordered = [];
+            var dfsO = function (list) {
+              for (var oi = 0; oi < list.length; oi++) {
+                var nd = list[oi];
+                if (!nd || nd.nodeType !== 1) continue;
+                if (marked.indexOf(nd) >= 0 && ordered.indexOf(nd) < 0) ordered.push(nd);
+                var kk = (nd.__zwHandle && _handleChildren[nd.__zwHandle]) ? _handleChildren[nd.__zwHandle] : [];
+                for (var qi = 0; qi < kk.length; qi++) dfsO([kk[qi]]);
+              }
+            };
+            dfsO(_handleChildren[rootHandle] || []);
+            for (var mi = 0; mi < marked.length; mi++) {
+              if (ordered.indexOf(marked[mi]) < 0) ordered.push(marked[mi]);
+            }
+            for (var fi = 0; fi < ordered.length; fi++) {
               try {
                 var ev = new globalThis.Event('slotchange', { bubbles: false, composed: false });
-                nd.dispatchEvent(ev);
+                ordered[fi].dispatchEvent(ev);
               } catch (_eEv) {}
             }
-            var kk = (nd.__zwHandle && _handleChildren[nd.__zwHandle]) ? _handleChildren[nd.__zwHandle] : [];
-            for (var qi = 0; qi < kk.length; qi++) stack.push(kk[qi]);
-          }
-        } catch (_eQ) {}
-      });
+            _zwSlotchangeLast[rootHandle] = finalMap;
+            _zwSlotchangePrev[rootHandle] = null;
+            _zwSlotchangeMarked[rootHandle] = [];
+          } catch (_eQ) {}
+        });
+      } else {
+        var prevMap = _zwSlotchangePrev[rootHandle];
+        var markedArr = _zwSlotchangeMarked[rootHandle] || [];
+        if (prevMap && prevMap.size) {
+          diffInto(markedArr, prevMap, flattenMap());
+        }
+      }
+      _zwSlotchangePrev[rootHandle] = flattenMap();
     } catch (_eQs) {}
   };
   // 挂接辅助：handle 增删后判定父链是否 shadow root（是 → 队列 slotchange）。

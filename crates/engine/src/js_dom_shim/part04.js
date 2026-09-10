@@ -7543,6 +7543,12 @@ return _tplContent;
             // e2e 'Hello WorldHello World' 实证）。含 markup 时保持 registry（结构子树）。
             if (handle && !(_ihVal.indexOf('<') < 0)) _handleChildren[handle] = _ihAdded;
             else if (handle && _ihVal.indexOf('<') < 0) _handleChildren[handle] = [];
+            // WC-M3 切片 5（web-components goal）：innerHTML 整体替换宿主子 → slot 分配
+            // 面变化（flatten diff 队列判定哪些 slot 需 slotchange——WPT slotchange-event
+            // 'when innerHTML modifies the children of the shadow host'）。
+            if (handle && typeof globalThis.__zwMaybeQueueSlotchange === 'function') {
+              try { globalThis.__zwMaybeQueueSlotchange(handle); } catch (_eScIh) {}
+            }
             // js-dom M4 R56：sel 路径替换后丢弃 childNodes 基底缓存条目。R55 的 identity
             // 稳定副作用 + 本行上方 _ihRemoved 读（把旧基底入缓存）→ 同回合内 `el.childNodes`
             // 缓存命中旧基底，overlay 的 pending-removed 剔除 identity 命中清空列表；而 added

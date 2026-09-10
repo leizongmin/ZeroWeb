@@ -1233,8 +1233,12 @@
   // htmlslotelement）：plain 世界（轻量 shadow / _zwMEl 克隆树）的 slotchange 微任务派发
   // ——与 part05 handle 域 __zwQueueSlotchangeForRoot 同构：变异后从容器上溯找 shadow
   // root（容器自身 nodeType 11+host，或容器是挂 shadowRoot 的宿主——light 子增删形态），
-  // 同根同微任务轮去重，树序遍历 shadow 树对每个 slot 派发 slotchange（bubbles:false）。
-  // WPT shadow-dom/slotchange.html 的 doneIfSlotChange 在 slot 元素上加 target 相侦听。
+  // 同根同微任务轮去重。
+  // WC-M3 切片 5（diff 化，marked-transition 链）：每次 hook 捕获根内全 slot 的 flatten
+  // 分配序列快照；轮内相邻快照 diff 增量并入 marked 集；微任务对（prev ?? last）vs 终态
+  // diff 后按树序派发（出树 slot 追加）。口径依据 upstream 期望矩阵：must-not-fire 簇
+  // （他 slot 变化我不 fire——flatten 不变不标）+ fallback 内容变化 fire 簇（direct 读不
+  // 变但 flatten 变）+ 首变异 fire 簇（单变异轮回落 last 为基——插入即获配也 fire）。
   globalThis.__zwQueuePlainSlotchange = function (container) {
     try {
       if (!container || typeof container !== 'object') return;
@@ -1256,31 +1260,89 @@
         if (!p) break;
         cur = p;
       }
-      if (!shadowRoot || shadowRoot.__zwSlotchangeQueued) return;
-      // WC-M3 切片 3：manual slotAssignment 树不派发——imperative assign 未实现，
-      // light DOM 自动分配语义不适用（spec slotAssignment manual；WPT
-      // imperative-slot-api-slotchange 'No slotchange event when adding another
-      // slotable.' 的 data-slot-assignment="manual" 树）。imperative 切片接 assign()。
+      if (!shadowRoot) return;
+      // WC-M3 切片 4：manual 树走 __zwManualMutationRemoved / assign 的精确 diff 面，
+      // 通用变异队列跳过（light DOM 自动分配语义不适用于 manual）。
       if (shadowRoot.slotAssignment === 'manual') return;
-      shadowRoot.__zwSlotchangeQueued = true;
-      Promise.resolve().then(function () {
-        shadowRoot.__zwSlotchangeQueued = false;
-        try {
-          var stack = (shadowRoot.childNodes || []).slice();
-          while (stack.length) {
-            var nd = stack.shift();
-            if (!nd || nd.nodeType !== 1) continue;
-            if (String(nd.tagName || '').toLowerCase() === 'slot') {
+      var flattenMap = function () {
+        var m = new Map();
+        var dfs = function (list) {
+          for (var di = 0; di < list.length; di++) {
+            var s = list[di];
+            if (!s || s.nodeType !== 1) continue;
+            if (String(s.tagName || '').toLowerCase() === 'slot') {
+              m.set(s, (typeof s.assignedNodes === 'function') ? s.assignedNodes({ flatten: true }) : []);
+            }
+            dfs(s.childNodes || []);
+          }
+        };
+        dfs(shadowRoot.childNodes || []);
+        return m;
+      };
+      var diffInto = function (marked, A, B) {
+        A.forEach(function (av, slot) {
+          if (marked.indexOf(slot) >= 0) return;
+          var bv = B.get(slot);
+          if (!bv) bv = [];
+          if (av.length !== bv.length) { marked.push(slot); return; }
+          for (var i = 0; i < av.length; i++) {
+            if (av[i] !== bv[i]) { marked.push(slot); return; }
+          }
+        });
+        B.forEach(function (bv, slot) {
+          if (marked.indexOf(slot) >= 0) return;
+          if (A.has(slot)) return;
+          if (bv.length > 0) marked.push(slot);
+        });
+      };
+      if (!shadowRoot.__zwSlotchangeQueued) {
+        shadowRoot.__zwSlotchangeQueued = true;
+        shadowRoot.__zwSlotchangePrev = null;
+        shadowRoot.__zwSlotchangeMarked = [];
+        Promise.resolve().then(function () {
+          shadowRoot.__zwSlotchangeQueued = false;
+          try {
+            var finalMap = flattenMap();
+            var marked = shadowRoot.__zwSlotchangeMarked || [];
+            var prev = shadowRoot.__zwSlotchangePrev;
+            // 双基 sweep：prev（轮内相邻快照链——轮末未消化的最后一次变异）+ last
+            //（上一轮终态——单变异轮的首变异效果，last 缺省 {} 时 B 支路标新增获配）。
+            var baseP = (prev && prev.size) ? prev : new Map();
+            diffInto(marked, baseP, finalMap);
+            diffInto(marked, shadowRoot.__zwSlotchangeLast || new Map(), finalMap);
+            // 树序派发（当前树内）+ 出树 slot 追加。
+            var ordered = [];
+            var dfsO = function (list) {
+              for (var oi = 0; oi < list.length; oi++) {
+                var nd = list[oi];
+                if (!nd || nd.nodeType !== 1) continue;
+                if (marked.indexOf(nd) >= 0 && ordered.indexOf(nd) < 0) ordered.push(nd);
+                dfsO(nd.childNodes || []);
+              }
+            };
+            dfsO(shadowRoot.childNodes || []);
+            for (var mi = 0; mi < marked.length; mi++) {
+              if (ordered.indexOf(marked[mi]) < 0) ordered.push(marked[mi]);
+            }
+            for (var fi = 0; fi < ordered.length; fi++) {
               try {
                 var ev = new globalThis.Event('slotchange', { bubbles: false, composed: false });
-                nd.dispatchEvent(ev);
+                ordered[fi].dispatchEvent(ev);
               } catch (_eEvP) {}
             }
-            var kk = (nd.childNodes) || [];
-            for (var qi = 0; qi < kk.length; qi++) stack.push(kk[qi]);
-          }
-        } catch (_eQW) {}
-      });
+            shadowRoot.__zwSlotchangeLast = finalMap;
+            shadowRoot.__zwSlotchangePrev = null;
+            shadowRoot.__zwSlotchangeMarked = [];
+          } catch (_eQW) {}
+        });
+      } else {
+        var prevMap = shadowRoot.__zwSlotchangePrev;
+        var markedArr = shadowRoot.__zwSlotchangeMarked || [];
+        if (prevMap && prevMap.size) {
+          diffInto(markedArr, prevMap, flattenMap());
+        }
+      }
+      shadowRoot.__zwSlotchangePrev = flattenMap();
     } catch (_eQsp) {}
   };
   // R134（js-dom M4）：Element.prototype 的 [Unscopable] 表（spec ChildNode 四方法
