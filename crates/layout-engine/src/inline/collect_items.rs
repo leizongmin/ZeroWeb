@@ -286,6 +286,14 @@ impl InlineFormattingContext {
                         // 被拆分为匿名块盒。这里简化处理：如果子元素是 block-level
                         // display，强制换行（与 <br> 类似），跳过其文本内容。
                         // block-level 子元素由 taffy 正常布局为独立的块盒。
+                        // R4205（CSS2 §17.2.1 匿名盒 + CSS Display 3 §2.4 blockification）：
+                        // table-internal 盒（cell/row/row-group/header-group/footer-group/
+                        // column/column-group/caption）在非 table 父（block 容器/inline 元素）
+                        // 中须生成**块级**匿名 table 包装——同 LayoutBox 层 adjust_table_layout
+                        // 的匿名包装语义。旧实现不在名单 → 走普通 inline 递归产出空 TextRun，
+                        // preserve 模式下空 run 被 split_into_words_with_ws 兜底成幻影空格词
+                        // （1 字宽推进）→ 后继文本右移（table-anonymous-objects-214 的
+                        // X 字形偏移 1ch 根因）。发 BlockBreak 使其脱离 IFC、后继文本独立成行。
                         let is_block_level = style.is_some_and(|s| {
                             matches!(
                                 s.display,
@@ -295,6 +303,14 @@ impl InlineFormattingContext {
                                     | DisplayValue::Table
                                     | DisplayValue::ListItem
                                     | DisplayValue::FlowRoot
+                                    | DisplayValue::TableCell
+                                    | DisplayValue::TableRow
+                                    | DisplayValue::TableRowGroup
+                                    | DisplayValue::TableHeaderGroup
+                                    | DisplayValue::TableFooterGroup
+                                    | DisplayValue::TableColumn
+                                    | DisplayValue::TableColumnGroup
+                                    | DisplayValue::TableCaption
                             )
                         });
                         if is_block_level {
