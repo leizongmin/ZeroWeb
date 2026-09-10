@@ -2,9 +2,9 @@
 
 **入口文档**: [../web-components.md](../web-components.md)
 **创建日期**: 2026-09-07（goal 拆分 bootstrap）
-**最后更新**: 2026-09-11（M3 切片 6 落地——slottable 规范过滤（Comment/PI 排除，
-HTMLSlotElement-interface 18/18）+ 纯文本 innerHTML 的文本 slottable 可见性，净 +3；
-余项：slotchange 尾 12 案（dispatch/observer 层）+ DC-5 终判）
+**最后更新**: 2026-09-11（M3 切片 7 落地——attachShadow 规范校验（非 HTML ns +
+safelist + _throwDom 异常 realm——R126 推广），净 +268；WC 面 3145→3413（72%）；
+余项：event retarget 族（~110）+ slotchange 尾 12 案 + DC-5 终判）
 
 ---
 
@@ -75,33 +75,34 @@ Shadow DOM 渲染级 composed tree 排除（等用户点名专项）。
 
 ## 下一步计划
 
-1. **DC-4/DC-5 收尾评估**：slot 语义观测面（assignedNodes/flatten/assignedSlot/
-   slotchange/imperative assign）已由 shim 满足且三目录通过率 66%；剩余 slotchange 尾
-   12 案为 dispatch/observer 层工作（wrapper 身份二相、MutationObserver 集成、嵌套
-   retarget、Chrome async host apply 语义差）——属 event/dispatch 基建，评估是否并入
-   event-loop-spec 流或等专项点名；Rust `resolve_slots` 接线的消费面为渲染级查询
-   （等用户点名后按 run-rules §9 协调）。若判定 DC-4 观测面已满足，则整理 DC-1~5
-   逐项核对材料做终判。
-2. **DC-5 全量门禁**（`make test` + clippy + reftest 持续全绿基础上）终判
+1. **M3 切片 8（event retarget 族，~110 subtest——Support Envelope 覆盖范围 4「事件
+   retarget 与 WPT 对齐」）**：event-composed-path / event-inside-slotted-node /
+   event-with-related-target / event-post-dispatch / Extensions-to-Event-Interface /
+   capturing-and-bubbling-across-shadow-trees——dispatch 层 composed-path retarget
+   （shadow 树边界的事件路径构造 + relatedTarget retarget + post-dispatch 语义）。
+   与 event-loop-spec 流碰 part01.js 前互相核对（run-rules §9）。
+2. slotchange 尾 12 案 + disabledFeatures×attachShadow registry 集成（尾 2 案）。
+3. Rust `resolve_slots` 接线（渲染级消费等用户点名专项）+ **DC-5 终判**
+   （make test + clippy + reftest 持续全绿基础上）。
 
-### 已知挂账（2026-09-11 M3 切片 6 更新）
+### 已知挂账（2026-09-11 M3 切片 7 更新）
 
 - ~~嵌套 template 装配的 childNodes 回指环~~ ✅ M2 结构性消除
 - ~~slots-fallback 混合树身份贯通~~ ✅ M3 切片 3 收口
 - ~~imperative-slot-api 全簇~~ ✅ M3 切片 4 收口
-- ~~name-mode slotchange diff 化~~ ✅ M3 切片 5 收口（flatten 口径 marked-transition 链）
-- ~~slottable 规范过滤（Comment/PI）+ 文本 slottable 可见性~~ ✅ M3 切片 6 收口
-- slotchange 尾 12 案（dispatch/observer 层——非 slot 语义）：
-  innerHTML 尾计数（Chrome async host apply 语义差，upstream 测试自带 FIXME 同域）、
-  transient slot（wrapper 身份二相——dispatch/retarget 层）、mutation-observer 交错
-  （需 MutationObserver 集成）、嵌套 retarget（composed-path 深化）
-- builtin-coverage 的 innerHTML 解析簇（~108F）：sel 容器 innerHTML 后
-  getElementById 的 pending 融合（R380 查询融合域，非 CE 域）
+- ~~name-mode slotchange diff 化~~ ✅ M3 切片 5 收口
+- ~~slottable 规范过滤 + 文本 slottable 可见性~~ ✅ M3 切片 6 收口
+- ~~attachShadow 规范校验（ns + safelist + 异常 realm）~~ ✅ M3 切片 7 收口
+  （attach-shadow-non-html-namespace 266/266）
+- event retarget 族（~110 subtest）——M3 切片 8
+- disabledFeatures=['shadow'] × attachShadow（尾 2 案——CE registry definition 感知）；
+  canvas 等 createElement 产物 _realTag pending 回落 'div' 的 safelist 误放行
+- slotchange 尾 12 案（dispatch/observer 层）：innerHTML 尾计数（Chrome async host
+  apply）、transient slot（wrapper 身份二相）、mutation-observer 交错、嵌套 retarget
+- builtin-coverage 的 innerHTML 解析簇（~108F）：R380 查询融合域，非 CE 域
 - reactions/ 表格族（table-scoped 解析升级）与 customized-builtins 的 iframe/reparse 面
-- XHTML 悬空 body 查询域（`additions-to-parsing-xhtml-documents/node-document.html`
-  5 案）——pre-existing（M2 前同 Fail），与 template 真实化无因果
-- ElementData 加字段曾致 dom 微基准全线 +2-3x（分配/layout 阈值效应）——contents 已改
-  Document 侧表规避；后续给 ElementData 加字段前必须过 bench-gate
+- XHTML 悬空 body 查询域（5 案）——pre-existing，与 template 真实化无因果
+- ElementData 加字段前必须过 bench-gate（历史 +2-3x 教训）
 
 **碰撞管理**：碰 engine/dom 前先 `git log --since="14 days ago" -- crates/engine/
 crates/dom/` 核对渲染流域活跃面；碰 part01.js 前与 event-loop-spec 流互相核对。
@@ -112,7 +113,7 @@ crates/dom/` 核对渲染流域活跃面；碰 part01.js 前与 event-loop-spec 
 |--------|------|
 | M1 — WPT 基线建立 + Custom Elements 收口 | ✅ 2026-09-10（切片 1/2a/2b/3/4 全清——DC-1 基线 + DC-2 upgrade/whenDefined/adoptedCallback/双路径全收口） |
 | M2 — template 真实化 | ✅ 2026-09-10 收口（切片 1 + iframe/detached 工厂 content 视图——DC-3 全满足） |
-| M3 — slot 全链路 + 收尾 | ◐ 切片 1-6 ✅（HTMLSlotElement 接口 + IDL + slotchange flatten-diff 化 + find-a-slot 仲裁 + flatten spec 形 + imperative slot API 全簇 + slottable 规范过滤）；余 DC-4/DC-5 收尾评估（见下一步计划） |
+| M3 — slot 全链路 + 收尾 | ◐ 切片 1-7 ✅（HTMLSlotElement 接口 + IDL + slotchange flatten-diff 化 + find-a-slot 仲裁 + flatten spec 形 + imperative slot API 全簇 + slottable 规范过滤 + attachShadow ns/safelist/realm 校验）；余切片 8（event retarget 族）+ DC-5 终判 |
 
 ## 待用户决策
 
@@ -125,9 +126,9 @@ crates/dom/` 核对渲染流域活跃面；碰 part01.js 前与 event-loop-spec 
 
 - 测试基线：立项时点全绿（`make test` / `make reftest` 入口，经 test-guard 包裹；
   禁止裸跑 cargo test）
-- WC 用例面：**3145 Pass / 4762 subtests（66%）**（2026-09-11 M3 切片 6，
-  evidence/2026-09-11-wc-m3s6.{md,json}。历史：基线 437=9% → 2a 689=15% → 2b 2565=55% →
+- WC 用例面：**3413 Pass / 4762 subtests（72%）**（2026-09-11 M3 切片 7，
+  evidence/2026-09-11-wc-m3s7.{md,json}。历史：基线 437=9% → 2a 689=15% → 2b 2565=55% →
   3 2720=58% → 4 3008=64% → M2 3014 → M3s1 3046 → M3s2 3050 → M3s3 3105 → M3s4 3137 →
-  M3s5 3142 → M3s6 3145）
+  M3s5 3142 → M3s6 3145 → M3s7 3413）
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过；
   dom 结构变更轮跑 `make reftest` 作渲染面守卫

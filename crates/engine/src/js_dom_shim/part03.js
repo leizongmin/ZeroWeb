@@ -463,6 +463,19 @@
         if (own && typeof own.value === 'function' && own.value !== globalThis.Element.prototype.attachShadow) {
           return own.value.call(this, init);
         }
+        // WC-M3 切片 7（spec attach a shadow root step 1）：host namespace 非 HTML →
+        // NotSupportedError（轻量路径宿主经 namespaceURI 读；无该属性/null/'' 回落
+        // HTML ns——sel 世界 proxy 的 namespaceURI 可为空串，非真 null ns 印记）。
+        var _hostNs194 = 'http://www.w3.org/1999/xhtml';
+        try {
+          var _uns194 = this.namespaceURI;
+          if (_uns194 != null && _uns194 !== '') _hostNs194 = String(_uns194);
+        } catch (_eNs194) {}
+        if (_hostNs194 !== 'http://www.w3.org/1999/xhtml') {
+          throw new (globalThis.DOMException || Error)(
+            "Failed to execute 'attachShadow' on 'Element': Shadow root cannot be created on a host which is not in the HTML namespace.",
+            'NotSupportedError');
+        }
         var el194 = this;
         // WC-M3 切片 4（spec slot assignment，https://dom.spec.whatwg.org/#dom-shadowrootinit-slotassignment）：
         // slotAssignment 仅 'manual'/'named' 合法，其余 TypeError（WPT imperative-slot-api

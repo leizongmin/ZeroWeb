@@ -3793,8 +3793,12 @@
   }
 
   // R2926 Shadow DOM：抛 DOMException（无 DOMException 环境回落 Error + name）。
+  // WC-M3 切片 7：经 globalThis.DOMException 构造（R126 同款教训——assert_throws_dom
+  // "wrong global" 要求异常 ctor 与用例 realm 一致；词法裸名落 shim 闭包内构造器，
+  // WPT Element-interface-attachShadow / attach-shadow-non-html-namespace 的
+  // NotSupportedError 断言族根因）。
   function _throwDom(name, msg) {
-    if (typeof DOMException === 'function') throw new DOMException(msg, name);
+    if (typeof globalThis.DOMException === 'function') throw new globalThis.DOMException(msg, name);
     var e = new Error(msg);
     e.name = name;
     throw e;
@@ -3829,6 +3833,40 @@
     var mode = String(init.mode);
     if (mode !== 'open' && mode !== 'closed') {
       throw new TypeError("Failed to execute 'attachShadow' on 'Element': member mode is required and must be 'open' or 'closed'.");
+    }
+    // WC-M3 切片 7（spec attach a shadow root step 1，https://dom.spec.whatwg.org/
+    // #concept-attach-a-shadow-root）：host namespace 非 HTML → NotSupportedError
+    //（createElementNS 产物经 _nsHandles 印记取 namespace；无印记 = HTML ns）。
+    // 印记**存在即采信**（null/'' ns 是合法印记值——createElementNS(null/'') 产物须
+    // throw，WPT 'null namespace'/'empty string namespace' 行）。
+    var _hostNs2926 = 'http://www.w3.org/1999/xhtml';
+    if (handle && typeof _nsHandles !== 'undefined' && _nsHandles[handle]) {
+      _hostNs2926 = _nsHandles[handle].namespace == null ? '' : String(_nsHandles[handle].namespace);
+    }
+    if (_hostNs2926 !== 'http://www.w3.org/1999/xhtml') {
+      _throwDom('NotSupportedError',
+        "Failed to execute 'attachShadow' on 'Element': Shadow root cannot be created on a host which is not in the HTML namespace.");
+    }
+    // WC-M3 切片 7（spec step 1 续——valid shadow host name）：HTML ns 的 host
+    // localName 须在 safelist（article/aside/blockquote/body/div/footer/h1-h6/header/
+    // main/nav/p/section/span）或为 valid custom element name（含连字符）——否则
+    // NotSupportedError（WPT Element-interface-attachShadow 'non-safelisted elements'）。
+    var _hostLn2926 = '';
+    try {
+      if (handle && typeof _nsHandles !== 'undefined' && _nsHandles[handle]
+          && _nsHandles[handle].qualifiedName) {
+        var _qn2926 = String(_nsHandles[handle].qualifiedName);
+        var _c2926 = _qn2926.indexOf(':');
+        _hostLn2926 = (_c2926 >= 0 ? _qn2926.slice(_c2926 + 1) : _qn2926).toLowerCase();
+      } else if (typeof _realTag === 'function') {
+        _hostLn2926 = String(_realTag(sel, handle) || '').toLowerCase();
+      }
+    } catch (_eLn2926) { _hostLn2926 = ''; }
+    if (_hostLn2926
+        && !/^(article|aside|blockquote|body|div|footer|h1|h2|h3|h4|h5|h6|header|main|nav|p|section|span)$/.test(_hostLn2926)
+        && !(_hostLn2926.indexOf('-') >= 0 && /^[a-z][a-z0-9._-]*$/.test(_hostLn2926))) {
+      _throwDom('NotSupportedError',
+        "Failed to execute 'attachShadow' on 'Element': Shadow root cannot be created on a host which is not a valid shadow host name.");
     }
     // WC-M3 切片 4（spec slot assignment）：slotAssignment 枚举校验——'manual'/'named'
     // 合法，其余 TypeError（同 part03 轻量路径；handle 域 manual 语义经
