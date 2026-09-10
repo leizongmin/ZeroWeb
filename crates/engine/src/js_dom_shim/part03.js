@@ -500,6 +500,24 @@
           get lastChild() { return this.childNodes.length ? this.childNodes[this.childNodes.length - 1] : null; },
           hasChildNodes: function () { return this.childNodes.length > 0; },
         };
+        // WC-M3 切片 8 第二增量（web-components goal）：轻量 shadow 的 EventTarget 面
+        // ——addEventListener/removeEventListener 存 `this._zwEvLs[type]`（R167 工厂
+        // 派发 fireStation 的 view 站读取域——shadow root 站入链后 listener 由此
+        // fire）。WPT event-post-dispatch 的 shadowRoot 站 listener（'node.
+        // addEventListener is not a function' 根因）+ event-composed 的 shadowRoot 站。
+        shadow.addEventListener = function (type, fn, opts) {
+          if (!this._zwEvLs) this._zwEvLs = {};
+          if (!this._zwEvLs[type]) this._zwEvLs[type] = [];
+          var cap = (typeof opts === 'boolean') ? opts : !!(opts && opts.capture);
+          this._zwEvLs[type].push({
+            fn: fn, capture: cap,
+            once: (typeof opts === 'object' && opts) ? !!opts.once : false,
+          });
+        };
+        shadow.removeEventListener = function (type, fn) {
+          var ls = this._zwEvLs && this._zwEvLs[type];
+          if (ls) this._zwEvLs[type] = ls.filter(function (e) { return e.fn !== fn; });
+        };
         try {
           if (globalThis.ShadowRoot && globalThis.ShadowRoot.prototype) {
             Object.setPrototypeOf(shadow, globalThis.ShadowRoot.prototype);
@@ -7591,6 +7609,9 @@
       }
       ev.eventPhase = 0;
       ev.currentTarget = null;
+      // WC-M3 切片 8：dispatch 结束恢复 ev.target = 原始 target（per-station retarget
+      // 的逐站改写不外溢——spec post-dispatch target = 原始 target）。
+      try { ev.target = node; } catch (_e8tr) {}
       // WC-M3 切片 8：dispatch 结束清 composedPath（spec：非 dispatch 态返 []——与
       // _dispatchWithBubble R3244 的 finally 清理同语义；WPT event-post-dispatch
       // 'composedPath().length === 0' 断言）。

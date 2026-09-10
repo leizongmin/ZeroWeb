@@ -2,10 +2,9 @@
 
 **入口文档**: [../web-components.md](../web-components.md)
 **创建日期**: 2026-09-07（goal 拆分 bootstrap）
-**最后更新**: 2026-09-11（M3 切片 8 第一增量落地——plain 世界 composed path/shadow
-root 站/per-station retarget + composedPath 生命周期 + native MouseEvent composed
-init 修补 + UA click composed，净 +12；WC 面 3413→3425；余项：handle 世界
-_dispatchWithBubble 同构化 + relatedTarget retarget + slotchange 尾 12 案 + DC-5 终判）
+**最后更新**: 2026-09-11（M3 切片 8 第二增量第一小步——轻量 shadow EventTarget 面
+（addEventListener 存 _zwEvLs，R167 fireStation 直读）+ R167 post-dispatch target
+恢复，净 +2；余项：R114 重设计三步 + slotchange 尾 12 案 + DC-5 终判）
 
 ---
 
@@ -76,18 +75,19 @@ Shadow DOM 渲染级 composed tree 排除（等用户点名专项）。
 
 ## 下一步计划
 
-1. **M3 切片 8 第二增量重设计（2026-09-11 首版实施已回退，侦察结论）**：R114（handle
-   世界 `_dispatchWithBubble`）的 slot detour + shadow root 站 + per-station retarget
-   首版 destabilize——实测两处坑：
-   - slot detour 在 `_zwNodeParent` registry 上行中引入环（log 86 站，hops guard 打满；
-     open/closed 变体 86/1 漂移——测试页内多树状态互染），链构造需先解决**去重/环检测**
-     （chain 身份集合，而非 seen 逐对象）
-   - shadow root 站的 `capAnc/bAnc = _wrapHandle(rootHandle)` 进 `_dispatchToListeners`
-     抛 'node.addEventListener is not a function'——该函数对非元素 thisObj 有隐含假设
-     （inline handler / once 移除路径），站接入前须先修 its thisObj 契约
-   - 下轮方案：① 先修 `_dispatchToListeners` 的 thisObj 契约（独立小步可验）；② 链构造
-     改为「先收集后去重」两段式（收集含 slot/root 站，chain.push 前按 handle 查重）；
-     ③ retarget 沿用第一增量的 idx/entry 模式（该模式在 R167 已验证）
+1. **M3 切片 8 第二增量续**：
+   - ~~轻量 shadow EventTarget 面~~ ✅（本步——addEventListener 存 _zwEvLs，
+     R167 fireStation 直读；post-dispatch target 恢复）
+   - R114（handle 世界）slot detour + shadow root 站 + per-station retarget 重设计
+     三步（2026-09-11 首版回退记因）：① `_dispatchToListeners` thisObj 契约——
+     勘误：lightweight shadow 的 EventTarget 面已单独消解，R114 站接入的
+     `_wrapHandle(rootHandle)` wrapper **有** trap 级 addEventListener（part04:3501
+     无域门），首版 'node.addEventListener' 报错实为 createTestTree plain 宿主的
+     轻量 shadow 缺方法（本步已修）——三步中①已消解；② 链构造「先收集后去重」
+     两段式（`_zwNodeParent` 上行的 slot detour 环：chain 身份集合查重）；③
+     retarget idx/entry 模式（R167 已验证）
+   - event-post-dispatch 尾案（wrapper 身份二相 identity 断言）
+   - relatedTarget retarget 过滤（event-with-related-target 族）
 2. slotchange 尾 12 案 + disabledFeatures×attachShadow registry 集成（尾 2 案）。
 3. Rust `resolve_slots` 接线（渲染级消费等用户点名专项）+ **DC-5 终判**
    （make test + clippy + reftest 持续全绿基础上）。
@@ -102,9 +102,9 @@ Shadow DOM 渲染级 composed tree 排除（等用户点名专项）。
 - ~~attachShadow 规范校验（ns + safelist + 异常 realm）~~ ✅ M3 切片 7 收口
 - ~~plain 世界 composed path/shadow root 站/retarget~~ ✅ M3 切片 8 第一增量收口
   （event-composed 9/9）
-- event retarget 续（第二增量）：handle 世界 `_dispatchWithBubble` shadow root 站 +
-  per-station retarget + relatedTarget 过滤（~60 subtest）——首版回退，重设计三步见
-  下一步计划（_dispatchToListeners thisObj 契约 → 链去重两段式 → retarget idx 模式）
+- event retarget 续（第二增量）：R114 重设计三步之 ②③（链去重两段式 + retarget
+  idx 模式；① EventTarget 面已消解）+ relatedTarget 过滤 + post-dispatch 尾案
+  （wrapper 身份二相）
 - disabledFeatures=['shadow'] × attachShadow（尾 2 案——CE registry definition 感知）；
   canvas 等 createElement 产物 _realTag pending 回落 'div' 的 safelist 误放行
 - slotchange 尾 12 案（dispatch/observer 层）：innerHTML 尾计数（Chrome async host
@@ -136,9 +136,9 @@ crates/dom/` 核对渲染流域活跃面；碰 part01.js 前与 event-loop-spec 
 
 - 测试基线：立项时点全绿（`make test` / `make reftest` 入口，经 test-guard 包裹；
   禁止裸跑 cargo test）
-- WC 用例面：**3425 Pass / 4762 subtests（72%）**（2026-09-11 M3 切片 8 第一增量，
-  evidence/2026-09-11-wc-m3s8.{md,json}。历史：基线 437=9% → 2a 689=15% → 2b 2565=55% →
-  3 2720=58% → 4 3008=64% → M2 3014 → M3s1 3046 → M3s2 3050 → M3s3 3105 → M3s4 3137 →
-  M3s5 3142 → M3s6 3145 → M3s7 3413 → M3s8 3425）
+- WC 用例面：**3427 Pass / 4762 subtests（72%）**（2026-09-11 M3 切片 8 第二增量
+  第一小步，evidence/2026-09-11-wc-m3s8b.{md,json}。历史：基线 437=9% → 2a 689=15% →
+  2b 2565=55% → 3 2720=58% → 4 3008=64% → M2 3014 → M3s1 3046 → M3s2 3050 → M3s3
+  3105 → M3s4 3137 → M3s5 3142 → M3s6 3145 → M3s7 3413 → M3s8 3425 → M3s8b 3427）
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过；
   dom 结构变更轮跑 `make reftest` 作渲染面守卫
