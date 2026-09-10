@@ -1908,7 +1908,19 @@ pub fn template_contents_json_doc(doc: &Document, elem_sel: &str) -> String {
                         )
                     })
                     .collect();
-                let kids: Vec<String> = doc.child_nodes(id).iter().filter_map(|&k| deep_entry(doc, k)).collect();
+                // WC-M3 切片 3（web-components goal）：嵌套 template 的 contents 递归——
+                // template 元素的子在 contents fragment（解析面 child_nodes 恒空），旧
+                // deep_entry 发射 children:[] → shim 侧嵌套 template.content 空（WPT
+                // shadow-dom slots.html createTestTree 嵌套 template 装配：Complex 树
+                // shadow2 内 slot 全 miss）。深 JSON 消费侧 _zwMBuildDeepEntry 把
+                // children 直入 wrapper childNodes，_zwMEl 的 content 视图别名
+                // childNodes（与顶层 contents 同约定）；动态装配面（contents 未登记）
+                // 回落 child_nodes 照旧。
+                let kids_src = match doc.template_contents_children(id) {
+                    tpl_kids if !tpl_kids.is_empty() => tpl_kids,
+                    _ => doc.child_nodes(id),
+                };
+                let kids: Vec<String> = kids_src.iter().filter_map(|&k| deep_entry(doc, k)).collect();
                 Some(format!(
                     "{{\"k\":\"E\",\"tag\":{},\"attrs\":[{}],\"children\":[{}]}}",
                     tag,
@@ -1962,7 +1974,13 @@ pub fn parse_template_contents_deep_json(html: &str, elem_sel: &str) -> String {
                         )
                     })
                     .collect();
-                let kids: Vec<String> = doc.child_nodes(id).iter().filter_map(|&k| deep_entry(doc, k)).collect();
+                // WC-M3 切片 3：嵌套 template 的 contents 递归（同 template_contents_json_doc
+                // 的 deep_entry——两份序列化器同一缺口，见彼处注释）。
+                let kids_src = match doc.template_contents_children(id) {
+                    tpl_kids if !tpl_kids.is_empty() => tpl_kids,
+                    _ => doc.child_nodes(id),
+                };
+                let kids: Vec<String> = kids_src.iter().filter_map(|&k| deep_entry(doc, k)).collect();
                 Some(format!(
                     "{{\"k\":\"E\",\"tag\":{},\"attrs\":[{}],\"children\":[{}]}}",
                     tag,

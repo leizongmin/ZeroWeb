@@ -3916,71 +3916,116 @@
     } catch (_eSrfh) { return null; }
   };
 
-  // WC-M3：`slottable.assignedSlot`——沿父链向上找宿主元素（其 shadow root 含本 slottable
-  // 可分配的 slot）。实现：找 slottable 的根（parentHandle 链顶）→ 该根若是某 host 的
-  // shadow root（_shadowHandleMeta）→ 遍历 shadow 树找 name 匹配（slottable.slot attr）
-  // 的第一个 slot（spec 树序）；slottable 在 shadow 树内 → null（spec：仅 light DOM 有分配）。
+  // WC-M3 切片 3：plain 轻量 shadow 树的 find-a-slot DFS（spec find-a-slot 树序
+  // pre-order——遍历整棵 shadow 树，slot 元素自匹配后仍递归其子；WPT slots.html
+  // 'Slot in Slot does not matter' 的嵌套 slot 与 'Complex case' 的多层树形态）。
+  globalThis.__zwFindSlotInShadow = function (shadowObj, name) {
+    try {
+      var dfs = function (node) {
+        var kids = (node && node.childNodes) || [];
+        for (var i = 0; i < kids.length; i++) {
+          var k = kids[i];
+          if (!k || k.nodeType !== 1) continue;
+          if (String(k.tagName || '').toLowerCase() === 'slot') {
+            var kn = '';
+            try { kn = k.getAttribute('name') || ''; } catch (_eKn) { kn = ''; }
+            if (kn === name) return k;
+            var subHit = dfs(k);
+            if (subHit) return subHit;
+          } else {
+            var deepHit = dfs(k);
+            if (deepHit) return deepHit;
+          }
+        }
+        return null;
+      };
+      return dfs(shadowObj);
+    } catch (_eFsis) { return null; }
+  };
+
+  // WC-M3 切片 3（spec find-flattened-slotables step 2/5.1 判定）：slottable 的根是否
+  // shadow root——沿 parentNode 链走到顶（world 无关的合并视图；_zwForceParentLink 保
+  // 反链一致），顶为 nodeType 11 且有 host 即在 shadow 树内。light-DOM slot 与已摘除
+  // slot（根=自身）均为 false。
+  globalThis.__zwRootIsShadowRoot = function (node) {
+    try {
+      var root = node;
+      var guard = 0;
+      while (root && guard++ < 64) {
+        var p = null;
+        try { p = root.parentNode; } catch (_ePp) { p = null; }
+        if (!p) break;
+        root = p;
+      }
+      return !!(root && root.nodeType === 11 && root.host);
+    } catch (_eRisr) { return false; }
+  };
+
+  // WC-M3 切片 3（spec find-a-slot，handle 域）：handle shadow 树（_handleChildren
+  // registry）的树序 DFS 找首个 name 匹配 slot——pre-order（子先于下一兄弟），slot 自身
+  // 命中检查后仍递归其子（'Slot in Slot does not matter'）。assignedNodes 的
+  // find-slotables 仲裁与 find-a-slot（assignedSlot）共用，保证两侧一致。
+  globalThis.__zwFindSlotInHandleShadow = function (rootHandle, name) {
+    try {
+      var stack = (_handleChildren[rootHandle] ? _handleChildren[rootHandle].slice() : []);
+      while (stack.length) {
+        var nd = stack.shift();
+        if (!nd || nd.nodeType !== 1) continue;
+        if (String(nd.tagName || '').toLowerCase() === 'slot') {
+          var ndN = '';
+          try { ndN = nd.getAttribute('name') || ''; } catch (_eNdN2) { ndN = ''; }
+          if (ndN === name) return nd;
+        }
+        var kk = (nd.__zwHandle && _handleChildren[nd.__zwHandle]) ? _handleChildren[nd.__zwHandle] : [];
+        for (var q = kk.length - 1; q >= 0; q--) stack.unshift(kk[q]);
+      }
+      return null;
+    } catch (_eFsih) { return null; }
+  };
+
+  // WC-M3：`slottable.assignedSlot`（spec find-a-slot，https://dom.spec.whatwg.org/
+  // #find-a-slot）——① 仅**直接父**是 shadow host 时有分配（宿主祖先树内的 slot 不
+  // 截胡深 light 后代——slots.html 'No direct host child' 的 c3 断言）；② closed
+  // shadow 不可经 assignedSlot 探测（mode!=='open' → null——'Slots in closed'/
+  // 'Closed > Closed' 断言面）；③ 命中 host 后在其 shadow 树**全树** DFS 找 name
+  // 匹配（含嵌套 slot——'Slot in Slot does not matter'）。handle 世界路径维持既有
+  // 根上溯 + chainHandles 判定（M3 切片 1 语义，本切片不动）。
   globalThis.__zwSlotForSlottable = function (proxy) {
     try {
       var sh = proxy ? proxy.__zwHandle : null;
       var ss = proxy ? proxy.__zwSelector : null;
-      // WC-M3：plain wrapper（cloneNode/解析产物，无 handle/sel）——沿 plain parentNode
-      // 上溯，找挂了 shadow root 的宿主（globalThis.__zwShadowRootForHost 桥），其 shadow
-      // 树内找 name 匹配 slot。
-      if (!sh && !ss && proxy && proxy.parentNode) {
-        var anc = proxy.parentNode;
-        var g0 = 0;
-        while (anc && g0++ < 64) {
-          // plain 世界的 shadow root：轻量 attachShadow（part03:466）挂 `host.shadowRoot`
-          // （own 槽）——shadow 树在 shadow.childNodes（非 handle registry）。
-          var shadowPlain = null;
-          try { shadowPlain = anc.shadowRoot || null; } catch (_eSrP) { shadowPlain = null; }
-          if (shadowPlain && shadowPlain.nodeType === 11 && shadowPlain.host === anc) {
-            var slotNameP = '';
-            try { slotNameP = (proxy.getAttribute ? proxy.getAttribute('slot') : '') || ''; } catch (_eSnP2) { slotNameP = ''; }
-            var kidsP = shadowPlain.childNodes || [];
-            for (var pi = 0; pi < kidsP.length; pi++) {
-              var ndP = kidsP[pi];
-              if (!ndP || ndP.nodeType !== 1) continue;
-              if (String(ndP.tagName || '').toLowerCase() === 'slot') {
-                var ndNP = '';
-                try { ndNP = ndP.getAttribute('name') || ''; } catch (_eNdP) { ndNP = ''; }
-                if (ndNP === slotNameP) return ndP;
-              }
-              // 浅一层（slot 内嵌套场景罕见，深递归按需）。
-              var kkP = ndP.childNodes || [];
-              for (var qp = 0; qp < kkP.length; qp++) {
-                var ndQ = kkP[qp];
-                if (!ndQ || ndQ.nodeType !== 1) continue;
-                if (String(ndQ.tagName || '').toLowerCase() === 'slot') {
-                  var ndNQ = '';
-                  try { ndNQ = ndQ.getAttribute('name') || ''; } catch (_eNdQ) { ndNQ = ''; }
-                  if (ndNQ === slotNameP) return ndQ;
-                }
-              }
-            }
-          }
-          var rootH0 = (typeof globalThis.__zwShadowRootForHost === 'function')
-            ? globalThis.__zwShadowRootForHost(anc) : null;
-          if (rootH0) {
-            var slotName0 = '';
-            try { slotName0 = (proxy.getAttribute ? proxy.getAttribute('slot') : '') || ''; } catch (_eSnP) { slotName0 = ''; }
-            var stack0 = (_handleChildren[rootH0] ? _handleChildren[rootH0].slice() : []);
-            while (stack0.length) {
-              var nd0 = stack0.shift();
-              if (!nd0 || nd0.nodeType !== 1) continue;
-              if (String(nd0.tagName || '').toLowerCase() === 'slot') {
-                var ndN0 = '';
-                try { ndN0 = nd0.getAttribute('name') || ''; } catch (_eNd0) { ndN0 = ''; }
-                if (ndN0 === slotName0) return nd0;
-              }
-              var kk0 = (nd0.__zwHandle && _handleChildren[nd0.__zwHandle]) ? _handleChildren[nd0.__zwHandle] : [];
-              for (var q0 = kk0.length - 1; q0 >= 0; q0--) stack0.unshift(kk0[q0]);
-            }
-          }
-          anc = anc.parentNode;
+      // WC-M3 切片 3：spec 直接父语义对**所有** slottable 形态生效（plain clone 与
+      // createElement handle proxy 混挂 plain 宿主——WPT slots.html 'Mutation:
+      // appendChild' 的 d1.assignedSlot）。未命中再按 handle/sel 遗留路径继续。
+      if (proxy && proxy.parentNode) {
+        var parentEl = proxy.parentNode;
+        var slotNameP = '';
+        try { slotNameP = (proxy.getAttribute ? proxy.getAttribute('slot') : '') || ''; } catch (_eSnP2) { slotNameP = ''; }
+        // ① plain 轻量 shadow（part03:466 attachShadow 产物——own 槽 host.shadowRoot）。
+        var shadowPlain = null;
+        try { shadowPlain = parentEl.shadowRoot || null; } catch (_eSrP) { shadowPlain = null; }
+        if (shadowPlain && shadowPlain.nodeType === 11 && shadowPlain.host === parentEl
+            && shadowPlain.mode === 'open') {
+          var hitP = globalThis.__zwFindSlotInShadow(shadowPlain, slotNameP);
+          if (hitP) return hitP;
         }
-        return null;
+        // ② handle shadow 宿主（part05 _attachShadow 容器——__zwShadowRootForHost 桥）。
+        var rootH0 = (typeof globalThis.__zwShadowRootForHost === 'function')
+          ? globalThis.__zwShadowRootForHost(parentEl) : null;
+        if (rootH0 && _shadowHandleMeta[rootH0] && _shadowHandleMeta[rootH0].mode === 'open') {
+          var stack0 = (_handleChildren[rootH0] ? _handleChildren[rootH0].slice() : []);
+          while (stack0.length) {
+            var nd0 = stack0.shift();
+            if (!nd0 || nd0.nodeType !== 1) continue;
+            if (String(nd0.tagName || '').toLowerCase() === 'slot') {
+              var ndN0 = '';
+              try { ndN0 = nd0.getAttribute('name') || ''; } catch (_eNd0) { ndN0 = ''; }
+              if (ndN0 === slotNameP) return nd0;
+            }
+            var kk0 = (nd0.__zwHandle && _handleChildren[nd0.__zwHandle]) ? _handleChildren[nd0.__zwHandle] : [];
+            for (var q0 = kk0.length - 1; q0 >= 0; q0--) stack0.unshift(kk0[q0]);
+          }
+        }
       }
       if (!sh && !ss) return null;
       // ① 上溯到根 + 收集链上父 handle 集（链上父非 shadow 容器 → 本节点在 shadow 树内）。
@@ -4099,79 +4144,47 @@
         cur = link.parentHandle || null;
         if (!cur && link.parentSel) break; // sel 父 = 已出 shadow 树（light DOM slot）
       }
-      if (!rootHandle) return [];
+      // WC-M3 切片 3：registry 上溯未命中 shadow root——本 slot 不在 handle shadow 树
+      // （createElement 产物混挂 plain clone 宿主的形态）→ 返回 null 让调用方回落
+      // plain 实现（[] 语义保留给「在 handle shadow 树内但无 assigned」）。
+      if (!rootHandle) return null;
       var meta = _shadowHandleMeta[rootHandle];
-      // ② host 的 light DOM 子（flatten 含后代，树序）。
-      var collected = [];
-      var collectKids = function (pSel, pHandle, recurse) {
-        // handle 父走 registry（_handleChildNodes）；sel 父走融合视图（_childNodeList）。
-        var kids = [];
-        if (pHandle && _handleChildren && _handleChildren[pHandle]) {
-          kids = _handleChildren[pHandle].slice();
-        } else if (pHandle && typeof _handleChildNodes === 'function') {
-          kids = _handleChildNodes(pHandle);
-        } else if (pSel && typeof _childNodeList === 'function') {
-          kids = _childNodeList(pSel, null);
-        }
-        for (var i = 0; i < kids.length; i++) {
-          var k = kids[i];
-          if (!k || k.nodeType === 11) continue;
-          collected.push(k);
-          if (recurse && k.nodeType === 1) collectKids(k.__zwSelector || null, k.__zwHandle || null, true);
-        }
-      };
-      collectKids(meta.hostSel || null, meta.hostHandle || null, flatten);
+      // ② host 的 light DOM **直接子**（spec find-slotables：后代不作 slottable——同
+      // part03 plain 路径，slots-outside-shadow-dom / slots-fallback-in-document）。
+      var kidsH = [];
+      if (meta.hostHandle && _handleChildren && _handleChildren[meta.hostHandle]) {
+        kidsH = _handleChildren[meta.hostHandle].slice();
+      } else if (meta.hostHandle && typeof _handleChildNodes === 'function') {
+        kidsH = _handleChildNodes(meta.hostHandle);
+      } else if (meta.hostSel && typeof _childNodeList === 'function') {
+        kidsH = _childNodeList(meta.hostSel, null);
+      }
       var slotName = '';
       try { slotName = slotProxy.getAttribute('name') || ''; } catch (_eN) { slotName = ''; }
       var matched = [];
-      for (var j = 0; j < collected.length; j++) {
-        var n = collected[j];
+      for (var j = 0; j < kidsH.length; j++) {
+        var n = kidsH[j];
+        if (!n || n.nodeType === 11) continue;
+        var nSlot = '';
         if (n.nodeType === 1) {
-          var nSlot = '';
           try { nSlot = n.getAttribute('slot') || ''; } catch (_eNs) { nSlot = ''; }
-          if (nSlot === slotName) matched.push(n);
-        } else if (!slotName) {
-          matched.push(n);
+          if (nSlot !== slotName) continue;
+        } else if (slotName) {
+          continue; // 文本节点只进默认 slot
         }
+        // spec find-slotables step 3：find-a-slot 仲裁（同 part03——'No direct host
+        // child' 赢者通吃 + 'Add a slot: after/before' 树序）。winner null = 未分配。
+        var winner = (typeof globalThis.__zwFindSlotInHandleShadow === 'function')
+          ? globalThis.__zwFindSlotInHandleShadow(rootHandle, nSlot) : null;
+        if (winner === null) continue;
+        if (winner === slotProxy) matched.push(n);
       }
-      // ③ flatten：嵌套 slot 展开（递归本 helper）+ 空 slot fallback（slot 自身子）。
-      // matched 空时 fallback 直接成为 flatten 输出（spec：flatten 树中空 slot 显示
-      // fallback 内容——WPT slots-fallback Basic）。
-      if (flatten && !matched.length) {
-        var fkAll = [];
-        if (slotProxy.__zwHandle && _handleChildren && _handleChildren[slotProxy.__zwHandle]) {
-          fkAll = _handleChildren[slotProxy.__zwHandle].slice();
-        } else if (slotProxy.__zwSelector && typeof _childNodeList === 'function') {
-          fkAll = _childNodeList(slotProxy.__zwSelector, null);
-        } else if (slotProxy.childNodes) {
-          fkAll = Array.prototype.slice.call(slotProxy.childNodes);
-        }
-        var seenAll = [];
-        var expandAll = function (list) {
-          for (var ai = 0; ai < list.length; ai++) {
-            var a = list[ai];
-            if (a && a.nodeType === 1 && String(a.tagName || '').toLowerCase() === 'slot') {
-              if (seenAll.indexOf(a) >= 0) continue;
-              seenAll.push(a);
-              var subA = globalThis.__zwSlotAssignedNodes(a, { flatten: true });
-              expandAll(subA || []);
-            } else {
-              fkAll.push(a);
-            }
-          }
-        };
-        var directOnly = fkAll.slice();
-        fkAll = [];
-        for (var di = 0; di < directOnly.length; di++) {
-          var dItem = directOnly[di];
-          if (dItem && dItem.nodeType === 1 && String(dItem.tagName || '').toLowerCase() === 'slot') {
-            if (seenAll.indexOf(dItem) < 0) { seenAll.push(dItem); expandAll(globalThis.__zwSlotAssignedNodes(dItem, { flatten: true }) || []); }
-          } else {
-            fkAll.push(dItem);
-          }
-        }
-        return fkAll;
-      }
+      // ③ flatten（spec DOM find-flattened-slotables，https://dom.spec.whatwg.org/
+      // #finding-flattened-slotables）：matched 空 → slottables 取 slot 自身子（fallback
+      // 内容）；嵌套 slot 仅当其根为 shadow root 才递归展平（fallback 语义由递归内的
+      // 同一规则承担），light-DOM slot / 已摘除 slot（根非 shadow root）原样输出、不展
+      // 平其 fallback（spec step 5.2——slots-outside-shadow-dom / slots-fallback
+      // 'Remove a slot'）。
       if (flatten) {
         var flat = [];
         var seen = [];
@@ -4181,39 +4194,43 @@
             if (e && e.nodeType === 1 && String(e.tagName || '').toLowerCase() === 'slot') {
               if (seen.indexOf(e) >= 0) continue;
               seen.push(e);
-              var sub = null;
-              try {
-                sub = (e.__zwHandle || e.__zwSelector)
-                  ? globalThis.__zwSlotAssignedNodes(e, { flatten: true })
-                  : (typeof e.assignedNodes === 'function' ? e.assignedNodes({ flatten: true }) : null);
-              } catch (_eSub) { sub = null; }
-              if (sub && sub.length) {
-                expand(sub);
-              } else {
-                // fallback：slot 自身子（嵌套 slot 的内容继续 flatten 递归）。
-                var fk = [];
-                if (e.__zwHandle && _handleChildren && _handleChildren[e.__zwHandle]) {
-                  fk = _handleChildren[e.__zwHandle].slice();
-                } else if (e.__zwSelector && typeof _childNodeList === 'function') {
-                  fk = _childNodeList(e.__zwSelector, null);
-                } else if (e.childNodes) {
-                  fk = Array.prototype.slice.call(e.childNodes);
-                }
-                for (var fj = 0; fj < fk.length; fj++) {
-                  var fkN = fk[fj];
-                  if (fkN && fkN.nodeType === 1 && String(fkN.tagName || '').toLowerCase() === 'slot') {
-                    if (seen.indexOf(fkN) < 0) { seen.push(fkN); expand([fkN]); }
-                  } else {
-                    flat.push(fkN);
+              if (globalThis.__zwRootIsShadowRoot && globalThis.__zwRootIsShadowRoot(e)) {
+                // 世界分派保持旧拓扑：handle/sel slot 走本权威实现（registry 域），
+                // null（不在 handle shadow 树——混挂 plain 宿主形态）回落其
+                // assignedNodes（part03 方法内再分派 plain 路径）；plain slot 直接走
+                // assignedNodes。
+                var sub = null;
+                try {
+                  sub = (e.__zwHandle || e.__zwSelector)
+                    ? (globalThis.__zwSlotAssignedNodes ? globalThis.__zwSlotAssignedNodes(e, { flatten: true }) : null)
+                    : (typeof e.assignedNodes === 'function' ? e.assignedNodes({ flatten: true }) : null);
+                  if ((sub === null || sub === undefined) && typeof e.assignedNodes === 'function') {
+                    sub = e.assignedNodes({ flatten: true });
                   }
-                }
+                } catch (_eSub) { sub = null; }
+                expand(sub || []);
+              } else {
+                flat.push(e);
               }
             } else {
               flat.push(e);
             }
           }
         };
-        expand(matched);
+        if (matched.length) {
+          expand(matched);
+        } else {
+          // spec step 4：assigned 空 → 自身子（fallback）进同一 step-5 循环。
+          var fk = [];
+          if (slotProxy.__zwHandle && _handleChildren && _handleChildren[slotProxy.__zwHandle]) {
+            fk = _handleChildren[slotProxy.__zwHandle].slice();
+          } else if (slotProxy.__zwSelector && typeof _childNodeList === 'function') {
+            fk = _childNodeList(slotProxy.__zwSelector, null);
+          } else if (slotProxy.childNodes) {
+            fk = Array.prototype.slice.call(slotProxy.childNodes);
+          }
+          expand(fk);
+        }
         return flat;
       }
       return matched;
@@ -4924,10 +4941,22 @@
         }
         result.push({ proxy: p, nodeInfo: info });
         var ph = _hSafe(function () { return p.__zwHandle; }, null);
-        if (ph) {
+        // WC-M3 切片 3（web-components goal，spec the-template-element）：template 的
+        // contents **不入查询树**（spec：template children 恒空，内容在独立 contents
+        // fragment）。本 shim 克隆经 innerHTML 序列化复制（cloneNode deep 分支），
+        // 克隆 template 的内容成为 registry 子——不拦则 QSA/matches 命中 template
+        // 内部（querySelectorAll('template') 误报嵌套模板——WPT shadow-dom
+        // createTestTree 的 walk() 把嵌套 template 装配两遍，ids 表被 stale clone
+        // wrapper 覆盖 → Complex/Open>Closed 簇 identity 断言全断）。doc 级查询
+        // （host 选择器引擎）已按 contents 语义排除，此处对齐。
+        var _wc3IsTpl = false;
+        try {
+          _wc3IsTpl = String(p.nodeName || p.tagName || '').toLowerCase() === 'template';
+        } catch (_eWc3t) { _wc3IsTpl = false; }
+        if (ph && !_wc3IsTpl) {
           // 递归：本节点成为子层的 parentInfo；ancestors 链含本节点（根→…→父）。
           visit(ph, info, ancestors.concat([info]));
-        } else {
+        } else if (!_wc3IsTpl) {
           // js-dom M3 R92：innerHTML= 解析的 _zwMEl 快照子（无 __zwHandle，子不在
           // _handleChildren registry）——直接沿其 childNodes 展开（元素子入 result，
           // 保文档序与兄弟上下文）。lit 模板渲染进 shadow root 的查询路径。
@@ -4956,10 +4985,13 @@
                 }
                 infoByProxy.set(r92p, r92info);
                 result.push({ proxy: r92p, nodeInfo: r92info });
-                // 深层 _zwMEl 递归展开（嵌套模板）。
+                // 深层 _zwMEl 递归展开（嵌套模板）。template 内容不入查询树（同上）。
                 var r92kids = _hSafe(function () { return r92p.childNodes; }, null);
                 (function expandDeep(dp, dparentInfo, danc) {
                   if (!dp) return;
+                  try {
+                    if (String(dp.nodeName || dp.tagName || '').toLowerCase() === 'template') return;
+                  } catch (_eWc3d) {}
                   var dk = _hSafe(function () { return dp.childNodes; }, null);
                   if (!dk || !dk.length) return;
                   var de = [];

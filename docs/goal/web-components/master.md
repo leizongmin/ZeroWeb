@@ -2,7 +2,8 @@
 
 **入口文档**: [../web-components.md](../web-components.md)
 **创建日期**: 2026-09-07（goal 拆分 bootstrap）
-**最后更新**: 2026-09-10（M3 切片 2 落地——plain wrapper slot IDL + plain shadow 上溯 + fallback flatten，slots.html +4 零回归；余项：fallback 混合树身份贯通 + Rust 接线）
+**最后更新**: 2026-09-10（M3 切片 3 落地——slots-fallback 混合树身份贯通 + find-a-slot
+仲裁 + plain slotchange 派发，净 +55 零回归；余项：imperative-slot-api + Rust 接线）
 
 ---
 
@@ -58,7 +59,7 @@ Shadow DOM 渲染级 composed tree 排除（等用户点名专项）。
 | P1 | WPT 用例覆盖为零（fetch 脚本 + 三目录导入 + 基线） | ✅ 2026-09-10（265 案导入，基线 9%，见 evidence/2026-09-10-wc-baseline.md） |
 | P2 | CE 三缺口（upgrade no-op / whenDefined 假 resolve / adoptedCallback 无） | ✅ 2026-09-10 切片 4（adopted 切片 3；upgrade shim 真实现 + is-aware；whenDefined define 前 pending/define 后 microtask resolve——probe 断言） |
 | P3 | template DOM 层占位（parser + R145 规则收敛） | ✅ 2026-09-10 M2 收口（DC-3 三项全满足；XHTML 悬空 body 5 案为 pre-existing 查询域问题，记挂账） |
-| P4 | slot 全链路（IDL → 分配接线 → slotchange → assignedNodes） | ◐ M3 切片 1 ✅（接口/IDL/slotchange 微任务/assignedNodes handle 世界）；sel 世界 flatten + Rust 接线切片 2 |
+| P4 | slot 全链路（IDL → 分配接线 → slotchange → assignedNodes） | ◐ M3 切片 1/2/3 ✅（IDL + assignedNodes/flatten spec 形 + find-a-slot 仲裁 + plain slotchange）；余 imperative-slot-api（slot.assign）+ Rust 接线 |
 
 ## 基线（2026-09-10 M1 切片 1）
 
@@ -73,32 +74,31 @@ Shadow DOM 渲染级 composed tree 排除（等用户点名专项）。
 
 ## 下一步计划
 
-1. **M3 切片 3**：slots-fallback 簇（fallback 递归在 sel-clone 混合树的身份贯通——
-   三层探针定位：createTestTree 的 shadowRoot.appendChild(importNode(...)) 产物 s1' 为
-   plain、其父容器身份/registry 记账在 handle 与 plain 双世界间分裂；需统一 slot 元素的
-   分派域或让 plain 子入容器 registry）；imperative-slot-api（手动分配）；
-   Rust `resolve_slots` 接线（shadow.rs → engine 查询消费——渲染级消费等用户点名专项）
-2. **DC-5 全量门禁**（`make test` + clippy + reftest 持续全绿基础上）终判
+1. **M3 切片 4**：imperative-slot-api（`slot.assign()` 全簇 36 案——manual
+   slotAssignment 的 imperative store + plain/handle 双路径 assignedNodes 消费 +
+   slotchange diff 化：本切片的 plain 派发是「变异触发即全树派发」近似，spec 仅在
+   分配变化时 fire，与 part05 handle 域队列同偏差，一并收口）
+2. Rust `resolve_slots` 接线（shadow.rs → engine 查询消费——渲染级消费等用户点名专项）
+3. **DC-5 全量门禁**（`make test` + clippy + reftest 持续全绿基础上）终判
 
-### 已知挂账（2026-09-10 M2 切片 1 更新）
+### 已知挂账（2026-09-10 M3 切片 3 更新）
 
 - ~~嵌套 template 装配的 childNodes 回指环~~ ✅ 结构性消除（contents 入独立 fragment，
   不再入文档树；CE 遍历 seen 防环守卫保留为纵深防御）
+- ~~slots-fallback 混合树身份贯通~~ ✅ M3 切片 3 收口（_zwForceParentLink 全反链写点 +
+  find-a-slot 仲裁 + find-flattened-slotables spec 形——slots.html 26/26、
+  slots-fallback.html 13/13）
 - builtin-coverage 的 innerHTML 解析簇（~108F）：sel 容器 innerHTML 后
   getElementById 的 pending 融合（R380 查询融合域，非 CE 域）
 - reactions/ 表格族（table-scoped 解析升级）与 customized-builtins 的 iframe/reparse 面
 - XHTML 悬空 body 查询域（`additions-to-parsing-xhtml-documents/node-document.html`
   5 案）——测试形态 `doc.body = createElement('body')` 不挂树 + doc 级查询以
   documentElement 起根；pre-existing（M2 前同 Fail），与 template 真实化无因果
-- slots-fallback 混合树身份贯通（2026-09-10 深挖两轮）：assignedNodes 分派域
-  handle/plain 分裂。已定位的完整证据链：createTestTree 里 host' 是 plain wrapper →
-  attachShadow 走 part03:466 轻量 shadow（plain object，非 handle 容器），但 probe 实测
-  s1.parentNode 是 `#document-fragment`（importNode 真产物，hosted:false）——展平后
-  parentNode 链残留在 fragment 残壳。修复方向：part03:494 轻量 shadow.appendChild 的
-  fragment 展平处统一设置展平子 parentNode=shadow 本体（非 handle），assignedNodes 的
-  plain 兜底沿 shadowPlain.childNodes 找 slot。注意 `_recordHandleChild` 容器放行 plain 子
-  与 flatten parentNode 重链两个 patch 已实现过但因主链路（轻量 shadow）不经过它们而
-  回滚，重做时从轻量 shadow.appendChild 入手
+- imperative-slot-api（`slot.assign()`）全簇 36 案 + manual slotAssignment 的
+  assignedNodes 语义（恒空近似）+ slotchange diff 化——M3 切片 4
+- slotchange.html 'A slot is assigned to another slot' 一案靠现有全树派发的巧合 fire
+  维持 Pass（spec direct-assignment 语义下 s2 无变化不 fire）——diff 化时该案预期转
+  Timeout，属向 spec 收敛的正常迁移
 - ElementData 加字段曾致 dom 微基准全线 +2-3x（分配/layout 阈值效应）——contents 已改
   Document 侧表规避；后续给 ElementData 加字段前必须过 bench-gate
 
@@ -111,7 +111,7 @@ crates/dom/` 核对渲染流域活跃面；碰 part01.js 前与 event-loop-spec 
 |--------|------|
 | M1 — WPT 基线建立 + Custom Elements 收口 | ✅ 2026-09-10（切片 1/2a/2b/3/4 全清——DC-1 基线 + DC-2 upgrade/whenDefined/adoptedCallback/双路径全收口） |
 | M2 — template 真实化 | ✅ 2026-09-10 收口（切片 1 + iframe/detached 工厂 content 视图——DC-3 全满足） |
-| M3 — slot 全链路 + 收尾 | ◐ 切片 1 ✅（HTMLSlotElement 接口 + slot/assignedSlot IDL + slotchange）；切片 2（sel 世界 flatten/Rust 接线）进行中 |
+| M3 — slot 全链路 + 收尾 | ◐ 切片 1/2/3 ✅（HTMLSlotElement 接口 + slot/assignedSlot IDL + slotchange plain 派发 + find-a-slot 仲裁 + flatten spec 形）；切片 4（imperative-slot-api + Rust 接线）待启 |
 
 ## 待用户决策
 
@@ -124,8 +124,8 @@ crates/dom/` 核对渲染流域活跃面；碰 part01.js 前与 event-loop-spec 
 
 - 测试基线：立项时点全绿（`make test` / `make reftest` 入口，经 test-guard 包裹；
   禁止裸跑 cargo test）
-- WC 用例面：**271 案 / 4752 subtests / 3050 Pass（64%）**（2026-09-10 M3 切片 2，
-  evidence/2026-09-10-wc-m3s2.{md,json}。历史：基线 437=9% → 2a 689=15% → 2b 2565=55% →
-  3 2720=58% → 4 3008=64% → M2 3014 → M3s1 3046；零回归）
+- WC 用例面：**3105 Pass / 4763 subtests（65%）**（2026-09-10 M3 切片 3，
+  evidence/2026-09-10-wc-m3s3.{md,json}。历史：基线 437=9% → 2a 689=15% → 2b 2565=55% →
+  3 2720=58% → 4 3008=64% → M2 3014 → M3s1 3046 → M3s2 3050 → M3s3 3105；零回归）
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过；
   dom 结构变更轮跑 `make reftest` 作渲染面守卫
