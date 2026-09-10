@@ -108,6 +108,30 @@ fn resolve_definite_real_length_for_style(value: &LengthValue, style: &ComputedS
     }
 }
 
+/// R4226（css22 §17.5.2.2 + §9.5）：float 定位前对「float 自身是 Table/InlineTable」的
+/// 子树提前跑全量表布局——float 定位（step 5）早于全量表布局（step 8），float:table
+/// 的表盒此时仍是 specified 宽，§17.5.2.2 used width = max(specified, min-content) 的
+/// 扩宽未发生，§9.5 放置判定以未扩宽尺寸误判「放得下」。后序遍历：内层 float 表先扩，
+/// 外层 float 表的列宽按扩宽后子内容度量。step 8 对同子树重跑同结果（列宽 DOM 度量，
+/// 无盒宽反馈回路）。
+fn pre_size_float_tables(
+    b: &mut LayoutBox,
+    doc: &Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    inline_fonts: crate::inline_finalization::InlineFontContext<'_>,
+) {
+    for child in b.children.iter_mut() {
+        pre_size_float_tables(child, doc, styles, inline_fonts);
+    }
+    if !matches!(b.float, FloatValue::None)
+        && b.node_id
+            .and_then(|id| styles.get(&id))
+            .is_some_and(|s| matches!(s.display, DisplayValue::Table | DisplayValue::InlineTable))
+    {
+        crate::table::adjust_table_layout_with_fonts(b, doc, styles, inline_fonts);
+    }
+}
+
 use crate::dirty::LayoutDirtyTracker;
 
 use crate::tree::{R109Wiring, build_layout_tree_with_r109};
@@ -826,6 +850,19 @@ impl LayoutEngine {
         // 空转。float 在场页走全 walk，行为零变化。
         let page_has_float = styles.values().any(|s| !matches!(s.float, FloatValue::None));
         if page_has_float {
+            // 5a.2（R4226，css22 §17.5.2.2 + §9.5）：float 表格 sizing 预 pass——float 定位
+            // （本步）早于全量表布局（step 8），float:table 的表盒此时仍是 specified 宽
+            //（taffy 按 CSS width 分配），§17.5.2.2 used width = max(specified, min-content)
+            // 的扩宽未发生 → float 定位以未扩宽尺寸判「放得下」贴排前序 float 旁
+            //（floated-table-wider-than-specified：50px 表含 200px 子，定位用 50 贴排，
+            // 应 200 放不下换到 float 下方）。本 pass 对「float 自身是 Table/InlineTable」
+            // 的子树提前跑全量表布局（后序：内层 float 表先扩，外表列宽按扩宽后子度量）；
+            // step 8 对同子树重跑同结果（列宽 DOM 度量，无盒宽反馈）。kill-switch
+            // `ZW_FLOAT_TABLE_SIZING=0`（default-on）。
+            if std::env::var("ZW_FLOAT_TABLE_SIZING").as_deref() != Ok("0") {
+                let inline_fonts = self.inline_font_context(&font_overrides);
+                pre_size_float_tables(&mut root_box, doc, styles, inline_fonts);
+            }
             adjust_float_positions(&mut root_box);
         } else {
             adjust_no_float_page(&mut root_box);
