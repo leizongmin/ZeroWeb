@@ -2513,7 +2513,84 @@
     if (typeof _zwMDefineSiblings === 'function') {
       try { _zwMDefineSiblings(el); } catch (_eR278s) {}
     }
-    return el;
+          // WC-M2（web-components goal）：iframe/detached 工厂 TEMPLATE 的 `content` 视图
+      // （spec the-template-element——同 part03:6304 _zwMEl 的 plain 视图；WPT
+      // template-contents-owner-test-002 的 `createElement('template').content` 断言链）。
+      // 惰性 fragment：childNodes 别名（内容动态面——appendChild 直写 el.childNodes），
+      // ownerDocument 为独立 inert 文档（per-template，_makeDetachedDocument）。
+      if (String(tag || '').toLowerCase() === 'template') {
+        Object.defineProperty(el, 'content', {
+          configurable: true,
+          get: function () {
+            if (el._zwContentView) return el._zwContentView;
+            if (!el._zwContentsOwnerDoc) {
+              el._zwContentsOwnerDoc = (typeof _makeDetachedDocument === 'function')
+                ? _makeDetachedDocument('') : {};
+              try { el._zwContentsOwnerDoc.contentType = 'text/html'; } catch (_eTocF) {}
+            }
+            var frag = {
+              nodeType: 11,
+              nodeName: '#document-fragment',
+              get ownerDocument() { return el._zwContentsOwnerDoc; },
+              get childNodes() { return el.childNodes; },
+              hasChildNodes: function () { return el.childNodes.length > 0; },
+              appendChild: function (c) {
+                if (c === null || c === undefined || typeof c.nodeType !== 'number') {
+                  throw new (globalThis.TypeError || TypeError)("Failed to execute 'appendChild' on 'Node': parameter 1 is not of type 'Node'.");
+                }
+                if (c.nodeType === 11) {
+                  var _tfk = c.childNodes || [];
+                  var _tfc = _tfk.slice();
+                  _tfk.length = 0;
+                  for (var _tfi = 0; _tfi < _tfc.length; _tfi++) frag.appendChild(_tfc[_tfi]);
+                  return c;
+                }
+                if (c.parentNode && c.parentNode.removeChild) { try { c.parentNode.removeChild(c); } catch (_tcrmF) {} }
+                el.childNodes.push(c); c.parentNode = el;
+                return c;
+              },
+              insertBefore: function (c, ref) {
+                if (c === null || c === undefined || typeof c.nodeType !== 'number') {
+                  throw new (globalThis.TypeError || TypeError)("Failed to execute 'insertBefore' on 'Node': parameter 1 is not of type 'Node'.");
+                }
+                var kids = el.childNodes;
+                var idx = kids.indexOf(ref);
+                if (ref != null && idx < 0) {
+                  throw new (globalThis.DOMException || Error)("The node before which the new node is to be inserted is not a child of this node.", 'NotFoundError');
+                }
+                if (c.nodeType === 11) {
+                  var _tik = c.childNodes || [];
+                  var _tic = _tik.slice();
+                  _tik.length = 0;
+                  for (var _tii = 0; _tii < _tic.length; _tii++) frag.insertBefore(_tic[_tii], ref);
+                  return c;
+                }
+                if (c.parentNode && c.parentNode.removeChild) { try { c.parentNode.removeChild(c); } catch (_tibrF) {} }
+                if (ref == null || idx < 0) kids.push(c); else kids.splice(idx, 0, c);
+                c.parentNode = el;
+                return c;
+              },
+              removeChild: function (c) {
+                var kids = el.childNodes;
+                var ridx = kids.indexOf(c);
+                if (ridx < 0) {
+                  throw new (globalThis.DOMException || Error)("The node to be removed is not a child of this node.", 'NotFoundError');
+                }
+                try { if (typeof _ceApplyConn === 'function') _ceApplyConn(c, false); } catch (_trceF) {}
+                kids.splice(ridx, 1);
+                c.parentNode = null;
+                return c;
+              },
+              get firstChild() { return el.childNodes.length ? el.childNodes[0] : null; },
+              get lastChild() { return el.childNodes.length ? el.childNodes[el.childNodes.length - 1] : null; },
+            };
+            try { Object.setPrototypeOf(frag, globalThis.DocumentFragment.prototype); } catch (_eFpF) {}
+            el._zwContentView = frag;
+            return frag;
+          },
+        });
+      }
+      return el;
   }
 
   // iframe contentWindow：最小 window 面（document + Element/Node 构造器转发主 window——

@@ -2,7 +2,7 @@
 
 **入口文档**: [../web-components.md](../web-components.md)
 **创建日期**: 2026-09-07（goal 拆分 bootstrap）
-**最后更新**: 2026-09-10（M2 切片 1 落地——parser `get_template_contents` 真 inert fragment + R145 收敛，64%等值维持、嵌套 template 回指环结构性消除）
+**最后更新**: 2026-09-10（**M2 ✅ 收口**——iframe/detached 工厂 TEMPLATE content 视图补齐，DC-3 三项全满足；余账：XHTML 悬空 body 查询域 pre-existing）
 
 ---
 
@@ -57,7 +57,7 @@ Shadow DOM 渲染级 composed tree 排除（等用户点名专项）。
 |---|------|------|
 | P1 | WPT 用例覆盖为零（fetch 脚本 + 三目录导入 + 基线） | ✅ 2026-09-10（265 案导入，基线 9%，见 evidence/2026-09-10-wc-baseline.md） |
 | P2 | CE 三缺口（upgrade no-op / whenDefined 假 resolve / adoptedCallback 无） | ✅ 2026-09-10 切片 4（adopted 切片 3；upgrade shim 真实现 + is-aware；whenDefined define 前 pending/define 后 microtask resolve——probe 断言） |
-| P3 | template DOM 层占位（parser + R145 规则收敛） | ◐ M2 切片 1 ✅（contents 真 fragment + R145 收敛 + 回指环消除）；XHTML 面尾差 M2 收口 |
+| P3 | template DOM 层占位（parser + R145 规则收敛） | ✅ 2026-09-10 M2 收口（DC-3 三项全满足；XHTML 悬空 body 5 案为 pre-existing 查询域问题，记挂账） |
 | P4 | slot 全链路（IDL → 分配接线 → slotchange → assignedNodes） | ⬜ M3 |
 
 ## 基线（2026-09-10 M1 切片 1）
@@ -73,9 +73,7 @@ Shadow DOM 渲染级 composed tree 排除（等用户点名专项）。
 
 ## 下一步计划
 
-1. **M2 收口**：innerHTML 语义细节（XHTML 面 `node-document.html`、`template-clone-children`
-   尾差）+ shim 老路径 template.content sel 直查残留清理
-2. **M3**：slot 全链路（IDL → 分配接线 → slotchange → assignedNodes）
+1. **M3**：slot 全链路（IDL → 分配接线 → slotchange → assignedNodes）
 
 ### 已知挂账（2026-09-10 M2 切片 1 更新）
 
@@ -84,8 +82,9 @@ Shadow DOM 渲染级 composed tree 排除（等用户点名专项）。
 - builtin-coverage 的 innerHTML 解析簇（~108F）：sel 容器 innerHTML 后
   getElementById 的 pending 融合（R380 查询融合域，非 CE 域）
 - reactions/ 表格族（table-scoped 解析升级）与 customized-builtins 的 iframe/reparse 面
-- XHTML 面模板（`additions-to-parsing-xhtml-documents/node-document.html`）——
-  XHTML 解析路径的 template 处理待核
+- XHTML 悬空 body 查询域（`additions-to-parsing-xhtml-documents/node-document.html`
+  5 案）——测试形态 `doc.body = createElement('body')` 不挂树 + doc 级查询以
+  documentElement 起根；pre-existing（M2 前同 Fail），与 template 真实化无因果
 - ElementData 加字段曾致 dom 微基准全线 +2-3x（分配/layout 阈值效应）——contents 已改
   Document 侧表规避；后续给 ElementData 加字段前必须过 bench-gate
 
@@ -97,7 +96,7 @@ crates/dom/` 核对渲染流域活跃面；碰 part01.js 前与 event-loop-spec 
 | 里程碑 | 状态 |
 |--------|------|
 | M1 — WPT 基线建立 + Custom Elements 收口 | ✅ 2026-09-10（切片 1/2a/2b/3/4 全清——DC-1 基线 + DC-2 upgrade/whenDefined/adoptedCallback/双路径全收口） |
-| M2 — template 真实化 | ◐ 切片 1 ✅（parser 真 fragment + R145 收敛 + 回指环消除）；收口（XHTML 面/尾差）进行中 |
+| M2 — template 真实化 | ✅ 2026-09-10 收口（切片 1 + iframe/detached 工厂 content 视图——DC-3 全满足） |
 | M3 — slot 全链路 + 收尾 | ⬜ |
 
 ## 待用户决策
@@ -111,8 +110,8 @@ crates/dom/` 核对渲染流域活跃面；碰 part01.js 前与 event-loop-spec 
 
 - 测试基线：立项时点全绿（`make test` / `make reftest` 入口，经 test-guard 包裹；
   禁止裸跑 cargo test）
-- WC 用例面：**271 案 / 4752 subtests / 3013 Pass（63%，分母扩后等值 64.4%）**
-  （2026-09-10 M2 切片 1，evidence/2026-09-10-wc-after-m2s1.{md,json}。历史：基线
-  437=9% → 2a 689=15% → 2b 2565=55% → 3 2720=58% → 4 3008=64%；零回归）
+- WC 用例面：**271 案 / 4752 subtests / 3014 Pass（63%，等值 64.4%）**（2026-09-10
+  M2 收口，evidence/2026-09-10-wc-m2-final.{md,json}。历史：基线 437=9% → 2a 689=15% →
+  2b 2565=55% → 3 2720=58% → 4 3008=64% → M2s1 3013；零回归）
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过；
   dom 结构变更轮跑 `make reftest` 作渲染面守卫
