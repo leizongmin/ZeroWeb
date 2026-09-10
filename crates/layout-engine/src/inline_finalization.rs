@@ -2109,10 +2109,57 @@ pub(crate) fn remeasure_text_with_float_exclusions(
         }
     }
 
+    // R4222（CSS §9.4.3）：float 排斥重排（本 pass + float walk）把子盒位置从静态
+    // 流位重算，子盒 y 中此前烘焙的 position:relative inset
+    //（apply_block_relative_percent_insets 在 float walk 之前应用）被丢弃——
+    // min-height-106：body 后继 relative 块（top:-200px）推压后未回加 inset，
+    // 视觉上不再覆盖前置 float。此处对含 float 容器的直接子盒**回加** Px 相对
+    // inset（镜像 apply_block_relative_percent_insets 的 Px 语义；Em/% 域仍归该
+    // pass 谱系）。仅相对盒回加一次，非相对盒零变化。
+    if has_floats {
+        for child in box_node.children.iter_mut() {
+            if child.is_relative && !child.is_absolute && !child.is_fixed {
+                let (dx, dy) = resolve_relative_px_inset(child, styles);
+                if dx != 0.0 || dy != 0.0 {
+                    child.x += dx;
+                    child.y += dy;
+                }
+            }
+        }
+    }
+
     // 递归处理子容器
     for child in &mut box_node.children {
         remeasure_text_with_float_exclusions(child, doc, styles, img_intrinsic_sizes, inline_fonts);
     }
+}
+
+/// R4222：解析 position:relative 的 Px 相对 inset（镜像 engine/postprocess
+/// `resolve_relative_inset`：水平取 left、无 left 取 right（负值），垂直取 top、
+/// 无 top 取 bottom（负值）；Em/Rem/Percent 归 percent-insets pass 谱系）。
+fn resolve_relative_px_inset(box_node: &LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) -> (f32, f32) {
+    use zero_css_parser::values::LengthValue;
+    let Some(node_id) = box_node.node_id else {
+        return (0.0, 0.0);
+    };
+    let Some(style) = styles.get(&node_id) else {
+        return (0.0, 0.0);
+    };
+    let dx = match &style.left {
+        LengthValue::Px(v) => *v as f32,
+        _ => match &style.right {
+            LengthValue::Px(v) => -(*v as f32),
+            _ => 0.0,
+        },
+    };
+    let dy = match &style.top {
+        LengthValue::Px(v) => *v as f32,
+        _ => match &style.bottom {
+            LengthValue::Px(v) => -(*v as f32),
+            _ => 0.0,
+        },
+    };
+    (dx, dy)
 }
 
 /// 为包含行内级子元素但无 float 的容器重新测量内容高度。
