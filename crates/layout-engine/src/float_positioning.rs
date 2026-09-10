@@ -808,25 +808,7 @@ pub(crate) fn adjust_float_positions_with_context(
     //   4. 容器 margin_top == 该子 margin_top（被折叠到该子的 mt）
     //   5. 该子 margin_top == 声明值（自身未被 taffy 膨胀）
     //   kill-switch：env `ZW_INLINE_FIRST_MT_UNHOIST=0` 关闭（default-on）。
-    if std::env::var("ZW_INLINE_FIRST_MT_UNHOIST").as_deref() != Ok("0")
-        && content_y_offset == 0.0
-        && box_node.margin_top > box_node.declared_margin_top + 0.01
-    {
-        if let Some(fc) = box_node
-            .children
-            .iter()
-            .find(|c| !c.is_absolute && !c.is_fixed && !c.is_anonymous_text_item)
-            .filter(|c| matches!(c.float, FloatValue::None) && !c.is_block_level)
-        {
-            let container_absorbed_atom_mt = (box_node.margin_top - fc.margin_top).abs() < 0.01;
-            let atom_mt_is_clean = (fc.margin_top - fc.declared_margin_top).abs() < 0.01;
-            if container_absorbed_atom_mt && atom_mt_is_clean {
-                let over_collapse = box_node.margin_top - box_node.declared_margin_top;
-                box_node.y -= over_collapse;
-                box_node.margin_top = box_node.declared_margin_top;
-            }
-        }
-    }
+    unhoist_inline_first_atom_mt(box_node, content_y_offset);
 
     // 第一阶段：重新定位 float 元素，记录每个 float 在 taffy 布局中占据的垂直空间
     //
@@ -1998,24 +1980,98 @@ pub(crate) fn adjust_float_positions_with_context(
         // 后 mb 与父底边折叠，不计父高（同 R4068 R1743 fold 修正语义；oracle：BFC 父 +
         // 空子 m30 → 父高 30 非 60）。有内容子/float 子保持 mb 计入（oracle：p mt30 h20
         // mb30 → 父 80 = 30+20+30）。
-        let content_bottom = box_node
+        recompute_bfc_auto_height(box_node, content_y_offset);
+    }
+}
+
+/// R4140（CSS §8.3.1）：**inline-level 子的 margin 不与块容器折叠**。taffy 把
+/// inline-block 等原子行内级映射为 Block 子，当容器首个流内子是原子且容器无
+/// border/padding-top 时，容器 margin-top 被折叠抬升到该原子的 mt（取 max）；
+/// 而原子自身的行内定位（IFC run.y，R3904/R3809）又应用一次 mt → 双计（容器及
+/// 全部后代整体偏低 over_collapse）。探针实证（debug_r4140_layout_dump）：body
+/// margin:8 + 首子 inline-block mt:32 → body y=32 应 8；原子 y 相对容器已由 IFC
+/// 正确摆位（=mt），故只需把容器多折叠的量从 y 扣除并恢复 margin_top——与上方
+/// float 修正同一形状。门控（五重）：
+///   1. 容器无 border-top/padding-top（margin 可与首个子元素折叠）
+///   2. 容器布局 margin_top > 声明值（发生了膨胀）
+///   3. 首个流内子为 inline-level（!is_block_level；含 anonymous text item 时
+///      其无 LayoutBox 或 mt=0，天然不匹配）
+///   4. 容器 margin_top == 该子 margin_top（被折叠到该子的 mt）
+///   5. 该子 margin_top == 声明值（自身未被 taffy 膨胀）
+///
+///   kill-switch：env `ZW_INLINE_FIRST_MT_UNHOIST=0` 关闭（default-on）。
+///
+/// R4217：从 [`adjust_float_positions_with_context`] 原样抽取为 helper——全 walk 与
+/// 无 float 快速路径（[`adjust_no_float_page`]）共用，语义零变化。
+fn unhoist_inline_first_atom_mt(box_node: &mut LayoutBox, content_y_offset: f32) {
+    if std::env::var("ZW_INLINE_FIRST_MT_UNHOIST").as_deref() != Ok("0")
+        && content_y_offset == 0.0
+        && box_node.margin_top > box_node.declared_margin_top + 0.01
+    {
+        if let Some(fc) = box_node
             .children
             .iter()
-            .filter(|child| !child.is_absolute && !child.is_fixed)
-            .map(|child| {
-                if crate::margin_collapse::is_empty_block(child) {
-                    child.y + child.height
-                } else {
-                    child.y + child.height + child.margin_bottom
-                }
-            })
-            .fold(0.0f32, f32::max);
-        let content_height = (content_bottom - content_y_offset).max(0.0);
-        box_node.content_height = content_height;
-        box_node.height = content_height
-            + box_node.padding_top
-            + box_node.padding_bottom
-            + box_node.border_top
-            + box_node.border_bottom;
+            .find(|c| !c.is_absolute && !c.is_fixed && !c.is_anonymous_text_item)
+            .filter(|c| matches!(c.float, FloatValue::None) && !c.is_block_level)
+        {
+            let container_absorbed_atom_mt = (box_node.margin_top - fc.margin_top).abs() < 0.01;
+            let atom_mt_is_clean = (fc.margin_top - fc.declared_margin_top).abs() < 0.01;
+            if container_absorbed_atom_mt && atom_mt_is_clean {
+                let over_collapse = box_node.margin_top - box_node.declared_margin_top;
+                box_node.y -= over_collapse;
+                box_node.margin_top = box_node.declared_margin_top;
+            }
+        }
+    }
+}
+
+/// https://www.w3.org/TR/CSS21/visudet.html#root-height（BFC auto-height 含浮动后代
+/// 重算，R4069 fold 语义）——原样抽取为 helper（R4217，同 [`unhoist_inline_first_atom_mt`]）。
+/// `content_y_offset` = 容器 border_top + padding_top（调用方现场计算，与全 walk 一致）。
+fn recompute_bfc_auto_height(box_node: &mut LayoutBox, content_y_offset: f32) {
+    let content_bottom = box_node
+        .children
+        .iter()
+        .filter(|child| !child.is_absolute && !child.is_fixed)
+        .map(|child| {
+            if crate::margin_collapse::is_empty_block(child) {
+                child.y + child.height
+            } else {
+                child.y + child.height + child.margin_bottom
+            }
+        })
+        .fold(0.0f32, f32::max);
+    let content_height = (content_bottom - content_y_offset).max(0.0);
+    box_node.content_height = content_height;
+    box_node.height =
+        content_height + box_node.padding_top + box_node.padding_bottom + box_node.border_top + box_node.border_bottom;
+}
+
+/// R4217（perf pullback slice 3）：**无 float 页面快速路径**。
+///
+/// 全 walk（[`adjust_float_positions_with_context`]）的 Phase 1/2 float 机制
+/// （float 重定位、clearance、BFC float 回填）在无 float 页面上逐节点空转
+/// （block_layout_1000 探针实测 ~0.15-0.29ms/布局）。无 float 时仍有行为的臂
+/// 只有两个，本快速路径以**同序**（self 臂 → 递归子 → 高度重算）保留：
+/// ① [`unhoist_inline_first_atom_mt`]（R4140，per 容器）；
+/// ② [`recompute_bfc_auto_height`]（per flow-root 容器，R4069 fold 语义）。
+/// 其余全 walk 臂在无 float 页面均为数值 no-op：is_layout_container float 归零
+/// （float 恒 None）、float-mt 解折叠（需 float 子，不可触发）、Phase 1/2 的
+/// float 定位 / clear 位移（float bottom 恒 0，max 无操作）。
+pub(crate) fn adjust_no_float_page(box_node: &mut LayoutBox) {
+    let content_y_offset = box_node.border_top + box_node.padding_top;
+    unhoist_inline_first_atom_mt(box_node, content_y_offset);
+    for child in &mut box_node.children {
+        adjust_no_float_page(child);
+    }
+    if box_node.declared_height_auto
+        && !box_node.is_absolute
+        && !box_node.is_fixed
+        && !box_node.is_replaced
+        && !box_node.is_flex_grid_item
+        && !box_node.has_size_containment
+        && (box_node.is_flow_root || matches!(box_node.float, FloatValue::Left | FloatValue::Right))
+    {
+        recompute_bfc_auto_height(box_node, content_y_offset);
     }
 }

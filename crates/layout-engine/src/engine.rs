@@ -820,7 +820,16 @@ impl LayoutEngine {
             self.advance_source.as_ref(),
             self.font_resolver.as_ref(),
         );
-        adjust_float_positions(&mut root_box);
+        // R4217（perf pullback slice 3）：float 在场预扫描（contiguous styles 扫描
+        // ~20µs，同 R3858/R4215 量级）——无 float 页走快速路径（仅保留 R4140 unhoist +
+        // BFC auto-height 重算两个无 float 亦生效的臂），跳过 Phase 1/2 float 机制逐节点
+        // 空转。float 在场页走全 walk，行为零变化。
+        let page_has_float = styles.values().any(|s| !matches!(s.float, FloatValue::None));
+        if page_has_float {
+            adjust_float_positions(&mut root_box);
+        } else {
+            adjust_no_float_page(&mut root_box);
+        }
 
         // 5.2 后处理（R699 CSS §10.5.1）：非 BFC 块级元素 height:auto 时高度只计 in-flow
         // 子元素，浮动子元素显式忽略。taffy 把 float 当 in-flow block 计入父 content
