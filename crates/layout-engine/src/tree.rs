@@ -338,6 +338,17 @@ pub(crate) fn run_in_following_block_sibling(
             // abspos/fixed 中间层不阻断（不产生 in-flow 内容），继续看下一个兄弟。
             continue;
         }
+        // R4209：display:none 中间层不阻断（CSS2.1 §9.2.4——不生成盒的元素不产生
+        // in-flow 内容）。run-in 与后继块之间的 display:none 兄弟（script 强制 flush、
+        // `.none{display:none}` 占位 div 等）旧实现落入 sib_is_block=false → 视为
+        // 「inline 中间层阻断并入」→ run-in 降级块盒独立成行（run-in-basic-010、
+        // run-in-display-none-between-001/002 簇 3.86% 根因）。
+        if styles
+            .get(&sib)
+            .is_some_and(|s| matches!(s.display, DisplayValue::None))
+        {
+            continue;
+        }
         let sib_is_block = styles
             .get(&sib)
             .is_some_and(|s| is_block_level_display(s) && !matches!(s.display, DisplayValue::None));
