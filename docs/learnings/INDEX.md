@@ -129,8 +129,9 @@
 - 2026-08-05 [回调闭包 Send+Sync 约束：不能缓存 Document](patterns/2026-08/2026-08-05-callback-closure-send-sync-no-document.md) — zero-engine（js_dom_bridge.rs）, zero-script-sandbox（register_callback）, zero-dom（Document）
 - 2026-07-20 [经验：reftest 布局诊断必须用 empirical ZW-output 验证，不能只靠 code-trace](patterns/2026-07/2026-07-20-reftest-layout-diagnosis-empirical-verification.md) — tests/wpt-runner（reftest harness）, crates/layout-engine（multicol 等）
 
-## Performance — 性能优化经验（37）
+## Performance — 性能优化经验（38）
 
+- 2026-09-10 [布局 pass 探针归因两坑：分段标记间隙误归因 + kill-switch env::var 提升反变慢](performance/2026-09/2026-09-10-layout-pass-profile-env-hoist-net-negative.md) — layout-engine
 - 2026-09-03 [bench-gate 失败指标集轮换 + 隔离复测回基线 = 负载噪声签名（非代码回归的快速判据）](performance/2026-09/2026-09-03-bench-gate-rotating-fail-noise-signature.md) — engine,dom,canvas,css-parser,render-foundation,host-runtime,browser-shell
 - 2026-08-19 [三例「合规修复顺手引入性能回归」的定位与修复（canvas/worker/CSP）](performance/2026-08/2026-08-19-perf-regression-triage-canvas-worker-csp.md) — zero-canvas, zero-script-sandbox, zero-security, 性能门禁体系
 - 2026-08-19 [bench-report.sh 编译/测量相位分离：批量 cargo 调用消掉串行编译开销](performance/2026-08/2026-08-19-bench-report-phase-split.md) — scripts, ci
