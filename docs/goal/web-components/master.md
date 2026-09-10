@@ -75,12 +75,22 @@ Shadow DOM 渲染级 composed tree 排除（等用户点名专项）。
 
 ## 下一步计划
 
-1. **M3 切片 8（event retarget 族，~110 subtest——Support Envelope 覆盖范围 4「事件
-   retarget 与 WPT 对齐」）**：event-composed-path / event-inside-slotted-node /
-   event-with-related-target / event-post-dispatch / Extensions-to-Event-Interface /
-   capturing-and-bubbling-across-shadow-trees——dispatch 层 composed-path retarget
-   （shadow 树边界的事件路径构造 + relatedTarget retarget + post-dispatch 语义）。
-   与 event-loop-spec 流碰 part01.js 前互相核对（run-rules §9）。
+1. **M3 切片 8（event retarget 族，~110 subtest——Support Envelope 覆盖范围 4）实施
+   侦察已毕（2026-09-11），下轮按下列三线并进**：
+   - **路径构造**：`_dispatchWithBubble`（R114）跨边界时 **shadow root 本体不入站**
+     （注释明言「shadow root 本身无 listener 站，直接断链」）——链须插入 shadow root
+     站（非 composed 止于它、composed 续到 host）；composedPath（R3244）同步补站
+   - **plain 世界**：createTestTree 树（plain clone）派发走 R167 工厂管线
+     （parentNode 链已含轻量 shadow 对象站），但 shadow 站的 listener 存储与
+     fireStation 读取域（`_mEvListeners`/`_zwEvLs`/`_zwLocalListeners`/
+     `_listenerStore` 四域）未接通——WPT event-composed.html 的
+     「expected 2 but got 1」（shadowRoot listener 已挂不 fire）即此
+   - **retarget 语义**：event.target 现单点设置（dispatch 入口），须按站 shadow-adjusted
+     retarget（shadow 树内站 = target；host 及以上 = 最近边界 host；嵌套 shadow 外层
+     root = 内层 host）；relatedTarget retarget（event-with-related-target 族）与
+     post-dispatch 语义在路径/retarget 落地后独立小步
+   - 改动域与 event-loop-spec 流的 part01.js 无直接共享段，动 `_dispatchWithBubble`
+     前照例 `git log --since="14 days ago" -- crates/engine/` 核对
 2. slotchange 尾 12 案 + disabledFeatures×attachShadow registry 集成（尾 2 案）。
 3. Rust `resolve_slots` 接线（渲染级消费等用户点名专项）+ **DC-5 终判**
    （make test + clippy + reftest 持续全绿基础上）。
