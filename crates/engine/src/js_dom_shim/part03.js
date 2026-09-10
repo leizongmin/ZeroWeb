@@ -3786,6 +3786,121 @@
   function _elKey(sel, handle) {
     return handle ? ('@' + handle) : sel;
   }
+  // WC-M3 切片 8 第二增量（web-components goal，spec DOM §retargeting / §shadow-including）：
+  // world 无关的关系 helpers——parentNode 链 + 「nodeType 11 且有 host」统一判定 shadow
+  // root（plain 轻量 shadow 对象与 handle 容器 wrapper 同构）。R167 与 composedPath
+  // closed 过滤共用；`_zwSiiDesc`/`_zwRetargetRel` 是 relatedTarget 站间 retarget 的
+  // spec 算法（https://dom.spec.whatwg.org/#retarget）。
+  function _zwIsSRNode(n) {
+    try { return !!(n && n.nodeType === 11 && n.host != null); } catch (_eIs) { return false; }
+  }
+  // plain root（spec "root"——parentNode 链顶，**不跨** shadow 容器：容器即链顶）。
+  function _zwNodeRootOf(n) {
+    var c = n, g = 0;
+    while (c && g++ < 64) {
+      var p = null;
+      try { p = c.parentNode; } catch (_eNr) { p = null; }
+      if (!p) break;
+      c = p;
+    }
+    return c;
+  }
+  // b 是 a 的 shadow-including inclusive descendant（spec：b 树后代，或 b 的 root 是
+  // shadow root 且 b 的 root 的 host 递归为 a 的 sii 后代）。
+  function _zwSiiDesc(a, b) {
+    if (a === b) return true;
+    if (!a || !b || !b.nodeType) return false;
+    var c = b, g = 0;
+    while (c && g++ < 64) {
+      var p = null;
+      try { p = c.parentNode; } catch (_eSd) { p = null; }
+      if (p === a) return true;
+      if (!p) break;
+      c = p;
+    }
+    var root = _zwNodeRootOf(b);
+    if (root && _zwIsSRNode(root)) {
+      var host = null;
+      try { host = root.host; } catch (_eSh) { host = null; }
+      return _zwSiiDesc(a, host);
+    }
+    return false;
+  }
+  // spec retargeting（A against B）：A 的 root 非 shadow root，或 A 的 root 是 B 的
+  // shadow-including inclusive ancestor 时返回 A；否则 A = A 的 root 的 host。
+  function _zwRetargetRel(a, b) {
+    var g = 0;
+    while (a && g++ < 64) {
+      if (!a.nodeType) return a;
+      var root = _zwNodeRootOf(a);
+      if (!_zwIsSRNode(root)) return a;
+      if (b && b.nodeType && _zwSiiDesc(root, b)) return a;
+      try { a = root.host; } catch (_eRr) { return a; }
+    }
+    return a;
+  }
+  // WC-M3 切片 8 第二增量（web-components goal，spec DOM §dom-event-composedpath）：
+  // dispatch 期 composedPath() 的 **closed shadow tree 隐藏**——「树根为 closed shadow
+  // root 且 currentTarget 不在该树内（shadow-including）」的路径条目对该站不可见
+  //（WPT event-composed-path test3/5/7/9/11：closed 边界外的站读到截断后的 path）。
+  // world 无关：plain 轻量 shadow（parentNode 链 + `.host`）与 handle 容器 wrapper
+  //（同 API 面）统一按「上行到顶 + 顶为 nodeType 11 且有 host」判定树根；currentTarget
+  // 归属判定上行时跨容器跳 host（shadow-including 祖先链）。非 dispatch（currentTarget
+  // 为空）不过滤——spec：过滤仅适用于「dispatch flag set 且 current target 非空」。
+  // part05 R138 原型面 composedPath getter 同源复用（跨 IIFE 段经 globalThis）。
+  globalThis.__zwCpClosedFilter = function (path, ct) {
+    try {
+      if (!path || !path.length || !ct || !ct.nodeType) return path;
+      var _isShadowRootish = function (n) {
+        try { return !!(n && n.nodeType === 11 && n.host != null); } catch (_eIs) { return false; }
+      };
+      var _climb = function (n) {
+        var c = n, g = 0;
+        while (c && g++ < 64) {
+          var p = null;
+          try { p = c.parentNode; } catch (_eC) { p = null; }
+          if (!p) break;
+          c = p;
+        }
+        return c;
+      };
+      var _inside = function (node, root) {
+        var c = node, g = 0;
+        while (c && g++ < 64) {
+          if (c === root) return true;
+          if (_isShadowRootish(c)) { c = c.host; continue; }
+          var p2 = null;
+          try { p2 = c.parentNode; } catch (_eC2) { p2 = null; }
+          c = p2 || null;
+        }
+        return false;
+      };
+      // spec 口径（WPT event-composed-path test3/5/6/7/9/11 全型验证）：条目 E 隐藏
+      // ⟺ E 的 **shadow-including 祖先链**（上行跨 root→host 边）上存在某节点，其树根
+      // 是 closed shadow root 且 ct 不在该树内。plain tree-root 单点判定不够——嵌套
+      // open-in-closed（test6 host1 站：open sr2 内条目随其 host2 落入 closed sr1 而
+      // 隐藏）与 closed-in-closed（test7 sr1 站：sr2 条目按自身 closed 树隐藏）都对。
+      var out = [];
+      for (var i = 0; i < path.length; i++) {
+        var e = path[i];
+        var hide = false;
+        if (e && e.nodeType) {
+          var c = e, g = 0;
+          while (c && g++ < 64 && !hide) {
+            var top = _climb(c);
+            var root = _isShadowRootish(top) ? top : null;
+            if (root && root.mode === 'closed' && !_inside(ct, root)) { hide = true; break; }
+            if (_isShadowRootish(c)) { c = c.host; continue; }
+            var p2 = null;
+            try { p2 = c.parentNode; } catch (_eC3) { p2 = null; }
+            c = p2 || null;
+          }
+        }
+        if (!hide) out.push(e);
+      }
+      return out;
+    } catch (_eCpAll) { return path; }
+  };
   // M3 扩批 XXXIV（media-elements）：detached 文档媒体元素 synthetic key 序号
   //（_zwMEl AUDIO/VIDEO 分支——'#dmN' 键入 _mediaState）。
   var _zwDetachedMediaSeq = 0;
@@ -5773,6 +5888,12 @@
     // 及以上站 false）。
     var chain = [];
     var _r114ShadowDepth = 0; // target 处的 shadow 嵌套深度（每跨出一层边界 -1）
+    // WC-M3 切片 8 第二增量（spec dispatch 末步 post-dispatch target）：路径最外站的
+    // shadow-adjusted target（`_r114PostAdj`，null = 原始 target）；非 composed 止于
+    // shadow root（最外站 = root）→ post target = null（WPT event-post-dispatch test2：
+    // open/composed → host、open/non-composed → null）。
+    var _r114PostAdj = null;
+    var _r114PostRootEnd = false;
     if (targetSel && typeof __zw_parent === 'function') {
       var cur = targetSel;
       while (true) {
@@ -5793,11 +5914,45 @@
         _r114H = _r114Link.parentHandle;
       }
       _r114ShadowDepth = _r114D;
-      // 上行建链：sel 优先（sel 节点经 __zw_parent 走 host 快照链）——与
-      // _zwFindClickActivation 的混合上行同款。`_r114CurDepth` 跟踪当前站剩余 shadow 层数
-      //（每跨出一层边界 -1，到 0 即 host 站——host 及以上不再抑制）。
+      // WC-M3 切片 8 第二增量（web-components goal，spec DOM §2.9 dispatch event path
+      // https://dom.spec.whatwg.org/#concept-event-dispatch + §retargeting）——上行建链
+      // 三规则（spec append-then-step）：
+      //   ① **slot detour**：cur 的直接父是 shadow host（有 shadow root）时，cur 作为
+      //      slottable 的 assigned slot 非空（spec find-a-slot：named 树序 DFS / manual
+      //      列表含 cur）→ 步进到该 slot（light→shadow 树穿越；分配与 open/closed 无关，
+      //      closed 不豁免——WPT event-inside-slotted-node detached closed 变体）；
+      //   ② **shadow root 站**：cur 的父是 shadow root 容器 → root 本体站入链（spec path
+      //      含 shadow root——非 composed 止于 root；此前「root 无 listener 站直接断链」
+      //      丢站）；composed 跨边界步进到 host；
+      //   ③ 其余步进到 parent。
+      // 每站带 `shadow`（window.event 抑制判定——树外 false；detour 穿越 +1 / host 跨出
+      // -1 的 `_r114CurDepth` 口径）与 `adj`（该站 shadow-adjusted target 身份；null =
+      // 原始 target）。retarget 规则（spec §retargeting，WPT 三文件口径验证）：adjusted
+      // target **只在跨出其所在 shadow 树时**改为 host——即 root 站 R→host 跨越且
+      // adjusted 的树根 === R；进入 shadow 树（slot/span/root 站）与 light 同树站均不改
+      // （WPT event-inside-slotted-node：light target 全程 target 不变；event-composed-
+      // path test4：shadow 内 target 跨出后 = host）。
+      // `_r114Seen` 身份查重（'h'+handle / 's'+sel）——反链数据异常成环时的最后防线
+      //（首版失控 86 站的教训；正常树序上行永不命中）。
+      var _r114Seen = {};
+      var _r114SeenAdd = function (sel, handle) { _r114Seen[handle ? ('h' + handle) : ('s' + sel)] = true; };
+      // adjusted target 的树根（所在 shadow 树的 root 容器 handle；null = light/detached 树）。
+      var _r114TreeRoot = function (h) {
+        var _t = h, _tg = 0;
+        while (_t && _tg++ < 64) {
+          var _tm = typeof _shadowHandleMeta !== 'undefined' ? _shadowHandleMeta[_t] : null;
+          if (_tm) return _t;
+          var _tl = _zwNodeParent[_t];
+          if (!_tl || _tl.parentSel) break;
+          _t = _tl.parentHandle;
+        }
+        return null;
+      };
+      var _r114Adj = null; // 当前站的 adjusted target（null = 原始 target）
+      var _r114AdjRoot = _r114TreeRoot(targetHandle);
       var _r114Sel = null, _r114Handle = targetHandle, _r114Hops = 0;
       var _r114CurDepth = _r114ShadowDepth;
+      _r114SeenAdd(null, targetHandle);
       while (_r114Hops++ < 64) {
         var _r114L = _zwNodeParent[_r114Handle];
         if (!_r114L) break;
@@ -5806,51 +5961,99 @@
           // shadow 外（sel 节点 = light DOM / host 快照内节点）——spec 近似：sel 域视为
           // 已出 shadow（快照树无 shadow 边界信息；hostSel 站 = host，正确不抑制）。
           _r114Sel = _r114L.parentSel;
-          chain.push(_r114Sel);
+          chain.push({ sel: _r114Sel, adj: _r114Adj });
+          _r114SeenAdd(_r114Sel, null);
           _r114Handle = null;
           break;
         }
         var _r114PH = _r114L.parentHandle;
-        if (!_r114PH) break;
+        if (!_r114PH || _r114Seen['h' + _r114PH]) break;
         var _r114Pm = typeof _shadowHandleMeta !== 'undefined' ? _shadowHandleMeta[_r114PH] : null;
         if (_r114Pm) {
-          // 父是 shadow root 容器：非 composed 止于此（path 到 shadow root 为止——shadow root
-          // 本身无 listener 站，直接断链）；composed 跨到 host 继续。
-          if (!event.composed) break;
+          // ② shadow root 站入链（spec：path 含 shadow root 本体——root 有 EventTarget
+          // 面，listener 在 root 站 fire；非 composed 事件 path 止于 root）。
+          chain.push({ sel: null, handle: _r114PH, shadow: true, adj: _r114Adj });
+          _r114SeenAdd(null, _r114PH);
+          if (!event.composed) { _r114PostRootEnd = true; break; }
           var _r114HostSel = _r114Pm.hostSel || null;
           var _r114HostHandle = _r114Pm.hostHandle || null;
+          // retarget：adjusted target 的树根 = 本 root（从其树内跨出）→ 自 host 站起 = host。
+          if (_r114AdjRoot === _r114PH && (_r114HostSel || _r114HostHandle)) {
+            _r114Adj = _r114HostSel ? { sel: _r114HostSel, handle: null }
+                                    : { sel: null, handle: _r114HostHandle };
+            _r114AdjRoot = _r114TreeRoot(_r114HostHandle || null);
+          }
+          _r114CurDepth = _r114CurDepth > 0 ? _r114CurDepth - 1 : 0;
           if (_r114HostSel) {
-            chain.push(_r114HostSel); // host 站（light 域，不抑制）
+            chain.push({ sel: _r114HostSel, shadow: false, adj: _r114Adj });
+            _r114SeenAdd(_r114HostSel, null);
             _r114Sel = _r114HostSel;
             _r114Handle = null;
-            _r114CurDepth = 0;
             break; // host 是 sel 节点——余下走 __zw_parent 链
           }
           if (_r114HostHandle) {
-            // host 站入链（shadow:false——host 即 light 域，window.event 从 host 起恢复可见），
-            // 然后从 host 继续上行（host 可能也在外层 shadow 内——嵌套 shadow 场景）。
-            // 注：只递减 _r114CurDepth（剩余 shadow 层数，站标记用）——**不动**
-            // _r114ShadowDepth（target 深度，target 站抑制判定用，immutable）。
-            chain.push({ sel: null, handle: _r114HostHandle, shadow: false });
+            // host 站入链，然后从 host 继续上行（host 可能也在外层 shadow 内——嵌套
+            // shadow 场景）。注：只递减 _r114CurDepth——**不动** _r114ShadowDepth
+            //（target 深度，target 站抑制判定用，immutable）。
+            chain.push({ sel: null, handle: _r114HostHandle, shadow: _r114CurDepth > 0, adj: _r114Adj });
+            _r114SeenAdd(null, _r114HostHandle);
             _r114Handle = _r114HostHandle;
-            _r114CurDepth--;
             continue;
           }
           break;
         }
-        chain.push({ sel: null, handle: _r114PH, shadow: _r114CurDepth > 0 });
+        // ① slot detour：直接父 _r114PH 是 shadow host → cur 的 assigned slot
+        //（spec find-a-slot；manual 树按 __zwManualAssigned 列表匹配）。
+        var _r114PRoot = (typeof _shadowRoots !== 'undefined' && _shadowRoots && _shadowRoots['@' + _r114PH])
+          ? _shadowRoots['@' + _r114PH].handle : null;
+        if (_r114PRoot) {
+          var _r114SlotPr = null;
+          var _r114PMeta = typeof _shadowHandleMeta !== 'undefined' ? _shadowHandleMeta[_r114PRoot] : null;
+          if (_r114PMeta && _r114PMeta.slotAssignment === 'manual') {
+            var _r114CurPr = _makeProxy ? _makeProxy(null, _r114Handle) : null;
+            var _r114StM = _handleChildren[_r114PRoot] ? _handleChildren[_r114PRoot].slice() : [];
+            while (_r114StM.length && !_r114SlotPr) {
+              var _r114NdM = _r114StM.shift();
+              if (!_r114NdM || _r114NdM.nodeType !== 1) continue;
+              var _r114LsM = _r114NdM.__zwManualAssigned;
+              if (_r114LsM && _r114CurPr && _r114LsM.indexOf(_r114CurPr) >= 0) { _r114SlotPr = _r114NdM; break; }
+              var _r114KkM = (_r114NdM.__zwHandle && _handleChildren[_r114NdM.__zwHandle]) ? _handleChildren[_r114NdM.__zwHandle] : [];
+              for (var _r114qM = _r114KkM.length - 1; _r114qM >= 0; _r114qM--) _r114StM.unshift(_r114KkM[_r114qM]);
+            }
+          } else {
+            var _r114SlName = '';
+            try { _r114SlName = __zw_get_attr_handle(_r114Handle, 'slot') || ''; } catch (_e114sn) { _r114SlName = ''; }
+            var _r114Hit = (typeof __zwFindSlotInHandleShadow === 'function')
+              ? __zwFindSlotInHandleShadow(_r114PRoot, _r114SlName) : null;
+            if (_r114Hit && _r114Hit.__zwHandle) _r114SlotPr = _r114Hit;
+          }
+          if (_r114SlotPr && _r114SlotPr.__zwHandle && !_r114Seen['h' + _r114SlotPr.__zwHandle]) {
+            // 步进到 slot（light→shadow 穿越：抑制深度 +1；adjusted target 不变——
+            // 进入 shadow 树不 retarget，只有跨出才改）。
+            _r114CurDepth++;
+            chain.push({ sel: null, handle: _r114SlotPr.__zwHandle, shadow: true, adj: _r114Adj });
+            _r114SeenAdd(null, _r114SlotPr.__zwHandle);
+            _r114Handle = _r114SlotPr.__zwHandle;
+            continue;
+          }
+        }
+        // ③ 普通父步进。
+        chain.push({ sel: null, handle: _r114PH, shadow: _r114CurDepth > 0, adj: _r114Adj });
+        _r114SeenAdd(null, _r114PH);
         _r114Handle = _r114PH;
       }
       if (_r114Sel && typeof __zw_parent === 'function') {
         var _r114C = _r114Sel;
-        while (true) {
+        var _r114SG = 0;
+        while (_r114C && _r114SG++ < 64) {
           var _r114P;
           try { _r114P = __zw_parent(_r114C); } catch (_e114) { _r114P = ''; }
           if (!_r114P) break;
-          chain.push(_r114P);
+          chain.push({ sel: _r114P, adj: _r114Adj });
           _r114C = _r114P;
         }
       }
+      _r114PostAdj = _r114Adj;
     }
     var propagate = chain.length > 0;
 
@@ -5921,8 +6124,25 @@
     if (!cpTarget) cpTarget = target;
     var cpPath = [cpTarget];
     // R114：链元素统一 {sel, handle} 解析（旧字符串 sel 与新 handle 对象两形态）。
+    // WC-M3 切片 8 第二增量：`shadow`（window.event 抑制判定）与 `adj`（该站
+    // shadow-adjusted target 身份）随对象形态透传——字符串站（纯 sel 域）无标记。
     function _r114Entry(e) {
-      return (e && typeof e === 'object') ? { sel: e.sel || null, handle: e.handle || null } : { sel: e, handle: null };
+      if (e && typeof e === 'object') {
+        return { sel: e.sel || null, handle: e.handle || null, shadow: !!e.shadow, adj: e.adj || null };
+      }
+      return { sel: e, handle: null, shadow: false, adj: null };
+    }
+    // WC-M3 切片 8 第二增量：per-station shadow-adjusted target（spec retargeting——
+    // 每站独立改写 event.target/srcElement；`adj` 为 null 即原始 target。无条件设置：
+    // capture 逆序由外向内 adj 从 retargeted 收敛回 null，须逐站复位）。
+    function _r114ApplyAdj(entry) {
+      var _adjT = target;
+      if (entry.adj) {
+        var _adjP = _makeProxy ? (_makeProxy(entry.adj.sel, entry.adj.handle) || target) : target;
+        if (_adjP) _adjT = _adjP;
+      }
+      try { event.target = _adjT; } catch (_e8t1) {}
+      try { event.srcElement = _adjT; } catch (_e8t2) {}
     }
     for (var cpi = 0; cpi < elemChain.length; cpi++) {
       var _r114E = _r114Entry(elemChain[cpi]);
@@ -5983,6 +6203,7 @@
           for (var i = elemChain.length - 1; i >= 0; i--) {
             // R114：链元素统一 {sel, handle} 解析（旧字符串 sel 与新 handle 对象两形态）。
             var _r114C = _r114Entry(elemChain[i]);
+            _r114ApplyAdj(_r114C); // 切片 8 第二增量：per-station shadow-adjusted target
             var capKey = _elKey(_r114C.sel, _r114C.handle);
             _ensureInlineHandler(capKey, _r114C.sel, _r114C.handle, event.type); // R2935 祖先 inline on* handler 触发
             var capAnc = _r114C.sel ? _wrapSelector(_r114C.sel) : _wrapHandle(_r114C.handle);
@@ -6025,6 +6246,7 @@
           for (var k = 0; k < elemChain.length; k++) {
             // R114：链元素统一 {sel, handle} 解析（旧字符串 sel 与新 handle 对象两形态）。
             var _r114B = _r114Entry(elemChain[k]);
+            _r114ApplyAdj(_r114B); // 切片 8 第二增量：per-station shadow-adjusted target
             var bKey = _elKey(_r114B.sel, _r114B.handle);
             _ensureInlineHandler(bKey, _r114B.sel, _r114B.handle, event.type); // R2935 祖先 inline on* handler 冒泡触发
             var bAnc = _r114B.sel ? _wrapSelector(_r114B.sel) : _wrapHandle(_r114B.handle);
@@ -6055,6 +6277,14 @@
       //（WPT Event-dispatch-order-at-target 等读 dispatch 后 eventPhase；event-global "currentTarget null after dispatch"）。
       event.eventPhase = 0;
       event.currentTarget = null;
+      // WC-M3 切片 8 第二增量：post-dispatch target（spec dispatch 末步）——路径最外
+      // 站的 shadow-adjusted target；非 composed 止于 shadow root → null（无 shadow
+      // 跨界时 = 原始 target，旧行为不变）。per-station retarget 的逐站改写不外溢。
+      try {
+        var _r114Post = _r114PostRootEnd ? null : (_r114PostAdj || target);
+        event.target = _r114Post;
+        try { event.srcElement = _r114Post; } catch (_e8sr) {}
+      } catch (_e8tr) {}
       // js-dom M4 R33：dispatch 结束 restore 外层 event（嵌套 dispatch 正确）；顶层 dispatch 后回 undefined
       //（WPT event-global "undefined after dispatch"）。须先于 _propagationStopped 重置，保证 restore 与 set 配对。
       globalThis.event = prevEvent;
@@ -6199,7 +6429,12 @@
       // + 祖先匹配（path.includes(ancestor)）高频。
       _composedPath: null,
       composedPath: function() {
-        return this._composedPath ? this._composedPath.slice() : [];
+        if (!this._composedPath) return [];
+        // WC-M3 切片 8 第二增量：closed shadow tree 隐藏（spec dom-event-composedpath
+        // ——dispatch 期按 currentTarget 过滤；见 __zwCpClosedFilter 注记）。
+        return globalThis.__zwCpClosedFilter
+          ? globalThis.__zwCpClosedFilter(this._composedPath, this.currentTarget)
+          : this._composedPath.slice();
       },
       preventDefault: function() {
         // R105：in passive listener flag 期间 no-op（spec：passive listener 的 preventDefault
@@ -7370,14 +7605,120 @@
       // 后的 shadow-adjusted target）。
       var _s8RootIdx = -1;
       var _s8HostStation = null;
+      // WC-M3 切片 8 第二增量（web-components goal）：**plain 轻量 shadow 世界**的
+      // shadow root 站 + slot detour + per-station retarget。createTestTree 克隆树
+      //（cloneNode/importNode 产物——无 `__zwHandle`/`__zwSelector` 印记）的 shadow
+      // 是 part03 轻量 attachShadow 产物（plain 对象：nodeType 11 + `.host` + 无 handle
+      // 印记）——上行链经其 parentNode 时 shadow root 站入链后断（host/testN 站缺）
+      // 且 light target 的 slot 形态无 detour（WPT event-composed-path test2-11 簇）。
+      // retarget 规则与 `_dispatchWithBubble` 侧同构（spec §retargeting）：adjusted
+      // target 只在「跨出其所在 shadow 树」（root 站 R→host 且 adjusted 树根 === R）
+      // 时改为 host；light target 穿入穿出 shadow 树不 retarget（WPT event-composed-
+      // path test8：host1/test8 站 target 恒 = light target）。`_s8Adj167` 与
+      // chain167 逐站对位（null = 原始 target node）；proxy 世界粗粒度
+      // `_s8RootIdx`/`_s8HostStation` 机制保留（两世界一次派发互斥——先跨界先断链）。
+      var _s8Adj167 = [];
+      var _s8Adj = null;
+      // post-dispatch target（spec dispatch 末步，与 `_dispatchWithBubble` 侧同构）。
+      var _s8PostAdj = null;
+      var _s8PostRootEnd = false;
+      // WC-M3 切片 8 第二增量（spec dispatch：relatedTarget 站间 retarget + 停止规则）：
+      // 每站 retargeted relatedTarget（`_s8Rel167` 与 chain167 对位）；「parent 是
+      // retargeted relatedTarget」→ path 止（spec Otherwise-branch）；「target ===
+      // retargeted relatedTarget」→ path 为空（spec 外层 guard——WPT
+      // event-composed-path-with-related-target test4 case3 零站）；clearTargets
+      // （最后 adjusted 站的 adjusted/relatedTarget 任一是 root 为 shadow root 的节点）
+      // → post target/relatedTarget = null（spec dispatch 末步）。
+      var _s8Rel167 = [];
+      var _s8RelOrig = null;
+      try { _s8RelOrig = (ev && ev.relatedTarget && ev.relatedTarget.nodeType) ? ev.relatedTarget : null; } catch (_e8ro) { _s8RelOrig = null; }
+      var _s8LastAdjRel = _s8RelOrig ? _zwRetargetRel(_s8RelOrig, node) : null;
+      var _s8ClearTargets = false;
+      var _s8EmptyPath = false;
+      var _s8PlainTreeRoot = function (x) {
+        var _c = x, _g = 0;
+        while (_c && _g++ < 64) {
+          var _p = null;
+          try { _p = _c.parentNode; } catch (_e8pt) { _p = null; }
+          if (!_p) break;
+          _c = _p;
+        }
+        return (_c && _c.nodeType === 11 && _c.host != null) ? _c : null;
+      };
+      var _s8AdjRoot = _s8PlainTreeRoot(node);
       try {
+        // spec 外层 guard：target === retargeted relatedTarget 且 target 不是
+        // event's relatedTarget 本身 → path 为空（零站派发）。
+        if (_s8RelOrig && _zwRetargetRel(_s8RelOrig, node) === node && _s8RelOrig !== node) {
+          _s8EmptyPath = true;
+        }
         var cur167 = node;
         var seen167 = [];
-        while (cur167 && seen167.indexOf(cur167) < 0) {
+        while (!_s8EmptyPath && cur167 && seen167.indexOf(cur167) < 0) {
           seen167.push(cur167);
           chain167.push(cur167);
+          _s8Adj167.push(_s8Adj);
+          _s8Rel167.push(_s8RelOrig ? _zwRetargetRel(_s8RelOrig, cur167) : null);
+          // plain 轻量 shadow root 站（无 handle 印记 + `.host` 属性）——composed 跨
+          // 边界推 host 站 + host 的 light 祖先；非 composed 止于本站。
+          var _s8PlainRoot = false;
+          if (cur167.nodeType === 11 && !(cur167.__zwHandle != null)
+              && !(cur167.__zwSelector != null)) {
+            try { _s8PlainRoot = cur167.host != null; } catch (_e8pr) { _s8PlainRoot = false; }
+          }
+          if (_s8PlainRoot) {
+            _s8RootIdx = chain167.length - 1;
+            if (ev && ev.composed && cur167.host) {
+              var _s8HostN = cur167.host;
+              // spec 三分支：adjusted 的树根是 host 的 shadow-incl inclusive ancestor →
+              // 站 adjusted 走 walk-back（不 retarget）；否则 host === retargeted
+              // relatedTarget → path 止；否则 adjusted = host。
+              var _s8Sii = _s8AdjRoot ? _zwSiiDesc(_s8AdjRoot, _s8HostN) : true;
+              var _s8RelAtHost = _s8RelOrig ? _zwRetargetRel(_s8RelOrig, _s8HostN) : null;
+              if (!_s8Sii && _s8RelAtHost === _s8HostN) break; // spec stop：path 止于 root
+              if (!_s8Sii) {
+                _s8Adj = _s8HostN;
+                _s8AdjRoot = _s8PlainTreeRoot(_s8HostN);
+              }
+              _s8PostAdj = _s8Adj;
+              _s8LastAdjRel = _s8RelAtHost;
+              // 续上行自 host：host 站由主循环顶入链；**嵌套 shadow**（host 本身在外层
+              // shadow 树内——sr2→host2→sr1）的下一个 root 站与 retarget 由主循环自然
+              // 续处理（WPT event-composed-path test4-7 的双 crossings）。
+              cur167 = _s8HostN;
+              continue;
+            }
+            _s8PostRootEnd = true; // 非 composed：path 止于 shadow root → post target = null
+            break;
+          }
           var next167 = null;
           try { next167 = cur167.parentNode; } catch (_e167p) { next167 = null; }
+          // plain slot detour：cur167 的直接父是持轻量 shadow 的宿主（plain `.shadowRoot`
+          // ——open/closed 均设，spec 分配与 mode 无关）且 cur167 有 assigned slot →
+          // 步进到该 slot（spec find-a-slot：named 树序 DFS / manual 列表）。slot 站在
+          // 下轮循环顶入链，其后沿 shadow 树内 parentNode 上行（…→plain shadow root 站
+          // →composed 跨 host）。
+          if (next167 && next167.nodeType === 1
+              && !(next167.__zwHandle != null) && !(next167.__zwSelector != null)) {
+            var _s8PSR = null;
+            try { _s8PSR = next167.shadowRoot || null; } catch (_e8psr) { _s8PSR = null; }
+            if (_s8PSR && _s8PSR.nodeType === 11 && _s8PSR.host === next167
+                && !(_s8PSR.__zwHandle != null)) {
+              var _s8SlotName = '';
+              try { _s8SlotName = (cur167.getAttribute && cur167.getAttribute('slot')) || ''; } catch (_e8sn) { _s8SlotName = ''; }
+              var _s8HitSlot = null;
+              if (_s8PSR.slotAssignment === 'manual'
+                  && typeof globalThis.__zwFindManualSlotInShadow === 'function') {
+                _s8HitSlot = globalThis.__zwFindManualSlotInShadow(_s8PSR, cur167);
+              } else if (typeof globalThis.__zwFindSlotInShadow === 'function') {
+                _s8HitSlot = globalThis.__zwFindSlotInShadow(_s8PSR, _s8SlotName);
+              }
+              if (_s8HitSlot && seen167.indexOf(_s8HitSlot) < 0) {
+                cur167 = _s8HitSlot;
+                continue;
+              }
+            }
+          }
           if (next167) {
             var isProxy167 = false;
             try {
@@ -7393,6 +7734,8 @@
             // R114 职责，交叉双触发 lit e2e 实证）。
             if (isProxy167) {
               chain167.push(next167);
+              _s8Adj167.push(_s8Adj);
+              _s8Rel167.push(_s8RelOrig ? _zwRetargetRel(_s8RelOrig, next167) : null);
               // WC-M3 切片 8（web-components goal，spec dom §dispatch composed path）：
               // shadow root 容器站（nodeType 11 + `_shadowHandles` 印记）——非 composed
               // 事件 path 止于 shadow root（本站入链后断）；composed 跨边界：续推 host
@@ -7410,7 +7753,11 @@
                   else if (_s8Meta && _s8Meta.hostSel) _s8Host = _makeProxy(_s8Meta.hostSel, null);
                   if (_s8Host) {
                     chain167.push(_s8Host);
+                    _s8Adj167.push(_s8Adj);
+                    _s8Rel167.push(_s8RelOrig ? _zwRetargetRel(_s8RelOrig, _s8Host) : null);
                     _s8HostStation = _s8Host;
+                    _s8PostAdj = _s8Host; // composed 跨界：最外站 adjusted = host
+                    _s8LastAdjRel = _s8RelOrig ? _zwRetargetRel(_s8RelOrig, _s8Host) : null;
                     // host 以上的 light 祖先（proxy 链）入链——retarget 恒 host。
                     var _s8Anc = _s8Host;
                     var _s8G = 0;
@@ -7419,9 +7766,13 @@
                       try { _s8P = _s8Anc.parentNode; } catch (_e8p) { _s8P = null; }
                       if (!_s8P) break;
                       chain167.push(_s8P);
+                      _s8Adj167.push(_s8Adj);
+                      _s8Rel167.push(_s8RelOrig ? _zwRetargetRel(_s8RelOrig, _s8P) : null);
                       _s8Anc = _s8P;
                     }
                   }
+                } else {
+                  _s8PostRootEnd = true; // 非 composed：path 止于 shadow root → post target = null
                 }
                 break;
               }
@@ -7435,6 +7786,8 @@
                   var adc167 = globalThis._zwEvDocChain;
                   if (adc167 && adc167.doc === above167 && chain167.indexOf(above167) < 0) {
                     chain167.push(above167);
+                    _s8Adj167.push(_s8Adj);
+                    _s8Rel167.push(_s8RelOrig ? _zwRetargetRel(_s8RelOrig, above167) : null);
                   }
                 }
               } catch (_e167ad) {}
@@ -7444,15 +7797,27 @@
           if (!next167 && cur167._zwOwnerDetDoc) {
             var odc = globalThis._zwEvDocChain;
             if (odc && odc.doc === cur167._zwOwnerDetDoc) {
-              if (odc.body && chain167.indexOf(odc.body) < 0) chain167.push(odc.body);
-              if (odc.docEl && chain167.indexOf(odc.docEl) < 0) chain167.push(odc.docEl);
+              if (odc.body && chain167.indexOf(odc.body) < 0) { chain167.push(odc.body); _s8Adj167.push(_s8Adj); _s8Rel167.push(_s8RelOrig ? _zwRetargetRel(_s8RelOrig, odc.body) : null); }
+              if (odc.docEl && chain167.indexOf(odc.docEl) < 0) { chain167.push(odc.docEl); _s8Adj167.push(_s8Adj); _s8Rel167.push(_s8RelOrig ? _zwRetargetRel(_s8RelOrig, odc.docEl) : null); }
               chain167.push(cur167._zwOwnerDetDoc);
+              _s8Adj167.push(_s8Adj);
+              _s8Rel167.push(_s8RelOrig ? _zwRetargetRel(_s8RelOrig, cur167._zwOwnerDetDoc) : null);
             }
             break;
           }
           cur167 = next167;
         }
       } catch (_e167c) {}
+      // spec clearTargets：最后一个 adjusted 非空站的 adjusted target 或 retargeted
+      // relatedTarget 任一是「root 为 shadow root 的节点」→ post target/relatedTarget
+      // = null（test2 non-composed：target 在 shadow 树内 → null；test4 case1：
+      // relatedTarget ∈ 外层 shadow 树 → null）。
+      try {
+        var _s8LastAdjNode = _s8Adj || node;
+        var _s8LastAdjRootN = _s8Adj ? _s8AdjRoot : _zwNodeRootOf(node);
+        _s8ClearTargets = (_zwIsSRNode(_s8LastAdjRootN))
+          || !!(_s8LastAdjRel && _zwIsSRNode(_zwNodeRootOf(_s8LastAdjRel)));
+      } catch (_e8ct) { _s8ClearTargets = false; }
       // WC-M3 切片 8：composedPath（spec dom §4.3——dispatch 期事件路径，含 shadow
       // root 站与 composed 跨边界 host/light 祖先；非 dispatch 由 finally 域清理）。
       try { ev._composedPath = chain167.slice(); } catch (_e8cp) {}
@@ -7465,9 +7830,21 @@
         // WC-M3 切片 8：per-station shadow-adjusted target——host 站及以上的 light
         // 祖先（composed 跨边界后）读到的 ev.target retarget 为 host；边界内站恒
         // target 本身（capture 逆序先经外层站，须逐站复位——spec retarget 每站独立）。
+        // 切片 8 第二增量：plain 世界用 `_s8Adj167` 逐站精确值（null = 原始 target，
+        // 含「light target 穿入穿出 shadow 树不 retarget」形态）；proxy 世界保留
+        // `_s8RootIdx`/`_s8HostStation` 粗粒度机制兜底（两世界一次派发互斥）。
         try {
-          ev.target = (_s8HostStation && _s8RootIdx >= 0 && chain167.indexOf(station) > _s8RootIdx)
-            ? _s8HostStation : node;
+          var _s8fi = chain167.indexOf(station);
+          var _s8AdjT = node;
+          if (_s8fi >= 0 && _s8Adj167[_s8fi]) _s8AdjT = _s8Adj167[_s8fi];
+          else if (_s8HostStation && _s8RootIdx >= 0 && _s8fi > _s8RootIdx) _s8AdjT = _s8HostStation;
+          ev.target = _s8AdjT;
+          try { ev.srcElement = _s8AdjT; } catch (_e8se) {}
+          // spec invoke：每站 event.relatedTarget = 该站的 retargeted relatedTarget
+          //（WPT event-composed-path-with-related-target 第三列断言）。
+          if (_s8RelOrig && _s8fi >= 0 && _s8Rel167[_s8fi] !== undefined) {
+            ev.relatedTarget = _s8Rel167[_s8fi];
+          }
         } catch (_e8tg) {}
         if (station === node) {
           var idx = [];
@@ -7599,19 +7976,29 @@
       // R167：capture 从链顶（doc 站）倒序到 target 前一站——含链尾（doc 在
       // `chain[length-1]`，旧 length-2 起跳过 doc 使 capture 期 doc 站缺失、
       // 顺序反转——WPT Event-dispatch-bubbles 断言 capture 首站是 Document）。
-      for (var ci = chain167.length - 1; ci >= 1; ci--) fireStation(chain167[ci], 1, true);
+      // guard 空路径（target === retargeted relatedTarget）时零站派发（spec：初始
+      // append 也在 guard 内）。
+      for (var ci = chain167.length - 1; !_s8EmptyPath && ci >= 1; ci--) fireStation(chain167[ci], 1, true);
       // target：AT_TARGET（2）——capture listener 先。
-      fireStation(node, 2, true);
-      fireStation(node, 2, false);
+      if (!_s8EmptyPath) fireStation(node, 2, true);
+      if (!_s8EmptyPath) fireStation(node, 2, false);
       // bubble：近→远（链正序 target+1 起），仅 ev.bubbles。
-      if (ev && ev.bubbles) {
+      if (ev && ev.bubbles && !_s8EmptyPath) {
         for (var bi = 1; bi < chain167.length; bi++) fireStation(chain167[bi], 3, false);
       }
       ev.eventPhase = 0;
       ev.currentTarget = null;
-      // WC-M3 切片 8：dispatch 结束恢复 ev.target = 原始 target（per-station retarget
-      // 的逐站改写不外溢——spec post-dispatch target = 原始 target）。
-      try { ev.target = node; } catch (_e8tr) {}
+      // WC-M3 切片 8：dispatch 结束恢复 ev.target（spec dispatch 末步——路径最外站的
+      // shadow-adjusted target；clearTargets / 非 composed 止于 shadow root → null；
+      // 无跨界 = 原始 target；guard 空路径 = 原始 target）。切片 8 第二增量：srcElement
+      // 同步恢复（R138 own-set 形态的 native 事件不随 accessor 自动跟随）；clearTargets
+      // 时 relatedTarget 同置 null（spec）。
+      try {
+        var _s8Post = _s8EmptyPath ? node : ((_s8ClearTargets || _s8PostRootEnd) ? null : (_s8PostAdj || node));
+        ev.target = _s8Post;
+        try { ev.srcElement = _s8Post; } catch (_e8sr167) {}
+        if (_s8ClearTargets) { try { ev.relatedTarget = null; } catch (_e8rr167) {} }
+      } catch (_e8tr) {}
       // WC-M3 切片 8：dispatch 结束清 composedPath（spec：非 dispatch 态返 []——与
       // _dispatchWithBubble R3244 的 finally 清理同语义；WPT event-post-dispatch
       // 'composedPath().length === 0' 断言）。
