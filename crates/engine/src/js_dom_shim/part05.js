@@ -3830,6 +3830,16 @@
     if (mode !== 'open' && mode !== 'closed') {
       throw new TypeError("Failed to execute 'attachShadow' on 'Element': member mode is required and must be 'open' or 'closed'.");
     }
+    // WC-M3 切片 4（spec slot assignment）：slotAssignment 枚举校验——'manual'/'named'
+    // 合法，其余 TypeError（同 part03 轻量路径；handle 域 manual 语义经
+    // _shadowHandleMeta[].slotAssignment + __zwManualAssigned 接通）。
+    var slotAssignment = 'named';
+    if (init.slotAssignment !== undefined && init.slotAssignment !== null) {
+      slotAssignment = String(init.slotAssignment);
+      if (slotAssignment !== 'manual' && slotAssignment !== 'named') {
+        throw new TypeError("Failed to execute 'attachShadow' on 'Element': Failed to read the 'slotAssignment' property from 'ShadowRootInit': The provided value '" + slotAssignment + "' is not a valid enum value of type ShadowRootSlotAssignment.");
+      }
+    }
     if (typeof __zw_create_document_fragment !== 'function') return null;
     var rootHandle = __zw_create_document_fragment();
     if (!rootHandle) return null;
@@ -3837,7 +3847,7 @@
     // + _shadowHandles（shadow-root 身份：'#shadow-root' / host / mode）。
     _fragmentHandles[rootHandle] = true;
     _shadowHandles[rootHandle] = true;
-    _shadowHandleMeta[rootHandle] = { hostSel: sel, hostHandle: handle, mode: mode };
+    _shadowHandleMeta[rootHandle] = { hostSel: sel, hostHandle: handle, mode: mode, slotAssignment: slotAssignment };
     _shadowRoots[key] = { handle: rootHandle, mode: mode };
     return _wrapHandle(rootHandle);
   }
@@ -4002,16 +4012,44 @@
         var slotNameP = '';
         try { slotNameP = (proxy.getAttribute ? proxy.getAttribute('slot') : '') || ''; } catch (_eSnP2) { slotNameP = ''; }
         // ① plain 轻量 shadow（part03:466 attachShadow 产物——own 槽 host.shadowRoot）。
+        // WC-M3 切片 4：manual 树 find-a-slot = shadow 树 DFS 树序首个 manual 列表含
+        // 本 slottable 的 slot（spec find-a-slot manual 分支；name 匹配不参与）。
+        // manual 判定带 handle wrapper 回落（handle 域 ShadowRoot proxy 不直挂
+        // slotAssignment——经 _shadowHandleMeta 查）。
         var shadowPlain = null;
         try { shadowPlain = parentEl.shadowRoot || null; } catch (_eSrP) { shadowPlain = null; }
         if (shadowPlain && shadowPlain.nodeType === 11 && shadowPlain.host === parentEl
             && shadowPlain.mode === 'open') {
-          var hitP = globalThis.__zwFindSlotInShadow(shadowPlain, slotNameP);
-          if (hitP) return hitP;
+          var manualP1 = shadowPlain.slotAssignment === 'manual';
+          if (!manualP1 && shadowPlain.__zwHandle && typeof _shadowHandleMeta !== 'undefined'
+              && _shadowHandleMeta[shadowPlain.__zwHandle]) {
+            manualP1 = _shadowHandleMeta[shadowPlain.__zwHandle].slotAssignment === 'manual';
+          }
+          if (manualP1) {
+            var hitManualP = (typeof globalThis.__zwFindManualSlotInShadow === 'function')
+              ? globalThis.__zwFindManualSlotInShadow(shadowPlain, proxy) : null;
+            if (hitManualP) return hitManualP;
+          } else {
+            var hitP = globalThis.__zwFindSlotInShadow(shadowPlain, slotNameP);
+            if (hitP) return hitP;
+          }
         }
         // ② handle shadow 宿主（part05 _attachShadow 容器——__zwShadowRootForHost 桥）。
         var rootH0 = (typeof globalThis.__zwShadowRootForHost === 'function')
           ? globalThis.__zwShadowRootForHost(parentEl) : null;
+        if (rootH0 && _shadowHandleMeta[rootH0] && _shadowHandleMeta[rootH0].mode === 'open'
+            && _shadowHandleMeta[rootH0].slotAssignment === 'manual') {
+          var stackM0 = (_handleChildren[rootH0] ? _handleChildren[rootH0].slice() : []);
+          while (stackM0.length) {
+            var ndM0 = stackM0.shift();
+            if (!ndM0 || ndM0.nodeType !== 1) continue;
+            var mL0 = ndM0.__zwManualAssigned;
+            if (mL0 && mL0.indexOf(proxy) >= 0) return ndM0;
+            var kkM0 = (ndM0.__zwHandle && _handleChildren[ndM0.__zwHandle]) ? _handleChildren[ndM0.__zwHandle] : [];
+            for (var qM0 = kkM0.length - 1; qM0 >= 0; qM0--) stackM0.unshift(kkM0[qM0]);
+          }
+          return null; // manual 树无 name 回落
+        }
         if (rootH0 && _shadowHandleMeta[rootH0] && _shadowHandleMeta[rootH0].mode === 'open') {
           var stack0 = (_handleChildren[rootH0] ? _handleChildren[rootH0].slice() : []);
           while (stack0.length) {
@@ -4149,6 +4187,65 @@
       // plain 实现（[] 语义保留给「在 handle shadow 树内但无 assigned」）。
       if (!rootHandle) return null;
       var meta = _shadowHandleMeta[rootHandle];
+      // ②b WC-M3 切片 4（spec find slotables manual 分支，handle 域）：assigned =
+      // manual 列表过滤「parent 为该根宿主」（__zwHandle/__zwSelector 对位——不依赖
+      // wrapper 获取）。imperative-slot-api crash/disconnected/cross-shadow 用例域。
+      if (meta.slotAssignment === 'manual') {
+        var manualL = slotProxy.__zwManualAssigned || [];
+        var matchedM = [];
+        for (var mi = 0; mi < manualL.length; mi++) {
+          var mn = manualL[mi];
+          if (!mn || mn.nodeType === 11) continue;
+          var mp = null;
+          try { mp = mn.parentNode; } catch (_eMnP) { mp = null; }
+          if (!mp) continue;
+          var isHost = (meta.hostHandle && mp.__zwHandle === meta.hostHandle)
+            || (meta.hostSel && mp.__zwSelector === meta.hostSel);
+          if (isHost) matchedM.push(mn);
+        }
+        if (!flatten) return matchedM;
+        var flatM2 = [];
+        var seenM2 = [];
+        var expandM2 = function (list) {
+          for (var fiM2 = 0; fiM2 < list.length; fiM2++) {
+            var eM2 = list[fiM2];
+            if (eM2 && eM2.nodeType === 1 && String(eM2.tagName || '').toLowerCase() === 'slot') {
+              if (seenM2.indexOf(eM2) >= 0) continue;
+              seenM2.push(eM2);
+              if (globalThis.__zwRootIsShadowRoot && globalThis.__zwRootIsShadowRoot(eM2)) {
+                var subM2 = null;
+                try {
+                  subM2 = (eM2.__zwHandle || eM2.__zwSelector)
+                    ? (globalThis.__zwSlotAssignedNodes ? globalThis.__zwSlotAssignedNodes(eM2, { flatten: true }) : null)
+                    : (typeof eM2.assignedNodes === 'function' ? eM2.assignedNodes({ flatten: true }) : null);
+                  if ((subM2 === null || subM2 === undefined) && typeof eM2.assignedNodes === 'function') {
+                    subM2 = eM2.assignedNodes({ flatten: true });
+                  }
+                } catch (_eMsM2) { subM2 = null; }
+                expandM2(subM2 || []);
+              } else {
+                flatM2.push(eM2);
+              }
+            } else {
+              flatM2.push(eM2);
+            }
+          }
+        };
+        if (matchedM.length) {
+          expandM2(matchedM);
+        } else {
+          var fkM2 = [];
+          if (slotProxy.__zwHandle && _handleChildren && _handleChildren[slotProxy.__zwHandle]) {
+            fkM2 = _handleChildren[slotProxy.__zwHandle].slice();
+          } else if (slotProxy.__zwSelector && typeof _childNodeList === 'function') {
+            fkM2 = _childNodeList(slotProxy.__zwSelector, null);
+          } else if (slotProxy.childNodes) {
+            fkM2 = Array.prototype.slice.call(slotProxy.childNodes);
+          }
+          expandM2(fkM2);
+        }
+        return flatM2;
+      }
       // ② host 的 light DOM **直接子**（spec find-slotables：后代不作 slottable——同
       // part03 plain 路径，slots-outside-shadow-dom / slots-fallback-in-document）。
       var kidsH = [];
