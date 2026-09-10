@@ -1334,8 +1334,14 @@ fn position_cells(
             row_box.height = row_height;
         }
 
-        // 定位每个单元格（起始 x 含左侧周界 spacing，§17.6.1）
-        let mut cell_x = perimeter_x;
+        // 定位每个单元格（§17.6.1）
+        // R4219：单元格起始 x 的坐标系与行级 row_x_offset 镜像——行组内的行（以及
+        // 显式 tr 直接子行，row_x_offset=perimeter_x）行帧已含左侧周界 spacing，
+        // 单元格相对行帧不再叠加（否则 +2×perimeter：margin-006-ref 96px spacing
+        // 下 td 偏右 96px 实证；默认 2px spacing 时隐藏为 ±2px 亚阈差）；仅
+        // 直接 table-cell 匿名行（row_box = table 本身，table-content 帧、无行偏移）
+        // 起始 x 含左侧周界 spacing。
+        let mut cell_x = if is_direct_cell_row { perimeter_x } else { 0.0 };
         for cell in &row.cells {
             // 根据 parent_rg_idx 查找单元格盒
             // 孤立模式下 row_box = table_box，嵌套行组的单元格通过
