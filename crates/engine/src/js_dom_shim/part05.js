@@ -10878,6 +10878,27 @@
       try { Object.defineProperty(WrappedKB, '__zwR109Patched', { value: true }); } catch (_eP109) {}
       globalThis.KeyboardEvent = WrappedKB;
     }
+    // WC-M3 切片 8：native MouseEvent 同款 composed init 修补——native 模板恒设
+    // composed=false、init dict 的 composed 丢弃（KeyboardEvent R109 注记同源）——
+    // WPT event-composed 'A synthetic MouseEvent with composed=true should not be
+    // scoped'（composed 事件不跨 shadow 边界，host 站缺 fire）。以 init dict 为事实源：
+    // 有 composed 键 → 采信；无键 → 保持 native false（EventInit 缺省）。
+    var ME109 = globalThis.MouseEvent;
+    if (ME109 && !ME109.__zwR109Patched && ME109 !== globalThis.Event) {
+      var WrappedME = function MouseEvent(type, options) {
+        var r = ME109.apply(this, arguments);
+        var inst = (r && typeof r === 'object') ? r : this;
+        var oM = (options == null || typeof options !== 'object') ? {} : options;
+        if (oM.composed != null) {
+          try { inst.composed = !!oM.composed; } catch (_eMc) {}
+        }
+        return r !== undefined ? r : inst;
+      };
+      try { Object.defineProperty(WrappedME, 'name', { value: 'MouseEvent', configurable: true }); } catch (_eNm109) {}
+      WrappedME.prototype = ME109.prototype;
+      try { Object.defineProperty(WrappedME, '__zwR109Patched', { value: true }); } catch (_ePm109) {}
+      globalThis.MouseEvent = WrappedME;
+    }
   })();
   // js-dom M4 R109（native 叠加路径原型链接线）：ZW_NATIVE_DOM=1 时 native bindings 先装
   //（Event/CustomEvent/MouseEvent/KeyboardEvent 为 V8 FunctionTemplate），shim 后装只覆盖

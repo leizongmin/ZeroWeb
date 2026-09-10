@@ -2,9 +2,10 @@
 
 **入口文档**: [../web-components.md](../web-components.md)
 **创建日期**: 2026-09-07（goal 拆分 bootstrap）
-**最后更新**: 2026-09-11（M3 切片 7 落地——attachShadow 规范校验（非 HTML ns +
-safelist + _throwDom 异常 realm——R126 推广），净 +268；WC 面 3145→3413（72%）；
-余项：event retarget 族（~110）+ slotchange 尾 12 案 + DC-5 终判）
+**最后更新**: 2026-09-11（M3 切片 8 第一增量落地——plain 世界 composed path/shadow
+root 站/per-station retarget + composedPath 生命周期 + native MouseEvent composed
+init 修补 + UA click composed，净 +12；WC 面 3413→3425；余项：handle 世界
+_dispatchWithBubble 同构化 + relatedTarget retarget + slotchange 尾 12 案 + DC-5 终判）
 
 ---
 
@@ -75,27 +76,16 @@ Shadow DOM 渲染级 composed tree 排除（等用户点名专项）。
 
 ## 下一步计划
 
-1. **M3 切片 8（event retarget 族，~110 subtest——Support Envelope 覆盖范围 4）实施
-   侦察已毕（2026-09-11），下轮按下列三线并进**：
-   - **路径构造**：`_dispatchWithBubble`（R114）跨边界时 **shadow root 本体不入站**
-     （注释明言「shadow root 本身无 listener 站，直接断链」）——链须插入 shadow root
-     站（非 composed 止于它、composed 续到 host）；composedPath（R3244）同步补站
-   - **plain 世界**：createTestTree 树（plain clone）派发走 R167 工厂管线
-     （parentNode 链已含轻量 shadow 对象站），但 shadow 站的 listener 存储与
-     fireStation 读取域（`_mEvListeners`/`_zwEvLs`/`_zwLocalListeners`/
-     `_listenerStore` 四域）未接通——WPT event-composed.html 的
-     「expected 2 but got 1」（shadowRoot listener 已挂不 fire）即此
-   - **retarget 语义**：event.target 现单点设置（dispatch 入口），须按站 shadow-adjusted
-     retarget（shadow 树内站 = target；host 及以上 = 最近边界 host；嵌套 shadow 外层
-     root = 内层 host）；relatedTarget retarget（event-with-related-target 族）与
-     post-dispatch 语义在路径/retarget 落地后独立小步
-   - 改动域与 event-loop-spec 流的 part01.js 无直接共享段，动 `_dispatchWithBubble`
-     前照例 `git log --since="14 days ago" -- crates/engine/` 核对
+1. **M3 切片 8 续（第二增量）**：handle 世界 `_dispatchWithBubble` 同构化——R114 链
+   插 shadow root 本体站（现「shadow root 本身无 listener 站，直接断链」）+ per-station
+   retarget（现 ev.target 单点设置）+ relatedTarget retarget 过滤（spec：relatedTarget
+   与 target 的 shadow-including 祖先相同时该站 skip——event-with-related-target 18 案、
+   event-inside-slotted-node 20 案主形态）。plain/handle 两域 composedPath 语义已对齐。
 2. slotchange 尾 12 案 + disabledFeatures×attachShadow registry 集成（尾 2 案）。
 3. Rust `resolve_slots` 接线（渲染级消费等用户点名专项）+ **DC-5 终判**
    （make test + clippy + reftest 持续全绿基础上）。
 
-### 已知挂账（2026-09-11 M3 切片 7 更新）
+### 已知挂账（2026-09-11 M3 切片 8 更新）
 
 - ~~嵌套 template 装配的 childNodes 回指环~~ ✅ M2 结构性消除
 - ~~slots-fallback 混合树身份贯通~~ ✅ M3 切片 3 收口
@@ -103,8 +93,10 @@ Shadow DOM 渲染级 composed tree 排除（等用户点名专项）。
 - ~~name-mode slotchange diff 化~~ ✅ M3 切片 5 收口
 - ~~slottable 规范过滤 + 文本 slottable 可见性~~ ✅ M3 切片 6 收口
 - ~~attachShadow 规范校验（ns + safelist + 异常 realm）~~ ✅ M3 切片 7 收口
-  （attach-shadow-non-html-namespace 266/266）
-- event retarget 族（~110 subtest）——M3 切片 8
+- ~~plain 世界 composed path/shadow root 站/retarget~~ ✅ M3 切片 8 第一增量收口
+  （event-composed 9/9）
+- event retarget 续（第二增量）：handle 世界 `_dispatchWithBubble` shadow root 站 +
+  per-station retarget + relatedTarget 过滤（~60 subtest）
 - disabledFeatures=['shadow'] × attachShadow（尾 2 案——CE registry definition 感知）；
   canvas 等 createElement 产物 _realTag pending 回落 'div' 的 safelist 误放行
 - slotchange 尾 12 案（dispatch/observer 层）：innerHTML 尾计数（Chrome async host
@@ -123,7 +115,7 @@ crates/dom/` 核对渲染流域活跃面；碰 part01.js 前与 event-loop-spec 
 |--------|------|
 | M1 — WPT 基线建立 + Custom Elements 收口 | ✅ 2026-09-10（切片 1/2a/2b/3/4 全清——DC-1 基线 + DC-2 upgrade/whenDefined/adoptedCallback/双路径全收口） |
 | M2 — template 真实化 | ✅ 2026-09-10 收口（切片 1 + iframe/detached 工厂 content 视图——DC-3 全满足） |
-| M3 — slot 全链路 + 收尾 | ◐ 切片 1-7 ✅（HTMLSlotElement 接口 + IDL + slotchange flatten-diff 化 + find-a-slot 仲裁 + flatten spec 形 + imperative slot API 全簇 + slottable 规范过滤 + attachShadow ns/safelist/realm 校验）；余切片 8（event retarget 族）+ DC-5 终判 |
+| M3 — slot 全链路 + 收尾 | ◐ 切片 1-7 ✅ + 切片 8 第一增量 ✅（+composed path/shadow root 站/retarget）；余切片 8 第二增量（handle 世界同构化 + relatedTarget）+ DC-5 终判 |
 
 ## 待用户决策
 
@@ -136,9 +128,9 @@ crates/dom/` 核对渲染流域活跃面；碰 part01.js 前与 event-loop-spec 
 
 - 测试基线：立项时点全绿（`make test` / `make reftest` 入口，经 test-guard 包裹；
   禁止裸跑 cargo test）
-- WC 用例面：**3413 Pass / 4762 subtests（72%）**（2026-09-11 M3 切片 7，
-  evidence/2026-09-11-wc-m3s7.{md,json}。历史：基线 437=9% → 2a 689=15% → 2b 2565=55% →
+- WC 用例面：**3425 Pass / 4762 subtests（72%）**（2026-09-11 M3 切片 8 第一增量，
+  evidence/2026-09-11-wc-m3s8.{md,json}。历史：基线 437=9% → 2a 689=15% → 2b 2565=55% →
   3 2720=58% → 4 3008=64% → M2 3014 → M3s1 3046 → M3s2 3050 → M3s3 3105 → M3s4 3137 →
-  M3s5 3142 → M3s6 3145 → M3s7 3413）
+  M3s5 3142 → M3s6 3145 → M3s7 3413 → M3s8 3425）
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过；
   dom 结构变更轮跑 `make reftest` 作渲染面守卫

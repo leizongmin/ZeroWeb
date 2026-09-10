@@ -7348,6 +7348,10 @@
       //（detached doc 的 body 视图与 `_tree` 根是两个对象，parentNode 链在树根断）。
       // 环守卫（seen 集）。
       var chain167 = [];
+      // WC-M3 切片 8：shadow root 站下标（retarget 边界）+ host 站（composed 跨边界
+      // 后的 shadow-adjusted target）。
+      var _s8RootIdx = -1;
+      var _s8HostStation = null;
       try {
         var cur167 = node;
         var seen167 = [];
@@ -7371,6 +7375,38 @@
             // R114 职责，交叉双触发 lit e2e 实证）。
             if (isProxy167) {
               chain167.push(next167);
+              // WC-M3 切片 8（web-components goal，spec dom §dispatch composed path）：
+              // shadow root 容器站（nodeType 11 + `_shadowHandles` 印记）——非 composed
+              // 事件 path 止于 shadow root（本站入链后断）；composed 跨边界：续推 host
+              // 站并沿 host 的 parentNode 上行收 light 祖先（retarget 边界，fireStation
+              // 按站序切 ev.target）。
+              var _s8IsRoot = next167.nodeType === 11
+                && typeof _shadowHandles !== 'undefined' && _shadowHandles[next167.__zwHandle];
+              if (_s8IsRoot) {
+                _s8RootIdx = chain167.length - 1;
+                if (ev && ev.composed) {
+                  var _s8Meta = (typeof _shadowHandleMeta !== 'undefined')
+                    ? _shadowHandleMeta[next167.__zwHandle] : null;
+                  var _s8Host = null;
+                  if (_s8Meta && _s8Meta.hostHandle) _s8Host = _makeProxy(null, _s8Meta.hostHandle);
+                  else if (_s8Meta && _s8Meta.hostSel) _s8Host = _makeProxy(_s8Meta.hostSel, null);
+                  if (_s8Host) {
+                    chain167.push(_s8Host);
+                    _s8HostStation = _s8Host;
+                    // host 以上的 light 祖先（proxy 链）入链——retarget 恒 host。
+                    var _s8Anc = _s8Host;
+                    var _s8G = 0;
+                    while (_s8G++ < 64) {
+                      var _s8P = null;
+                      try { _s8P = _s8Anc.parentNode; } catch (_e8p) { _s8P = null; }
+                      if (!_s8P) break;
+                      chain167.push(_s8P);
+                      _s8Anc = _s8P;
+                    }
+                  }
+                }
+                break;
+              }
               // R167：proxy 站的宿主 doc 接续——proxy.parentNode（get trap）到
               // 所属 doc（`new Document().appendChild(clone html)` 场景 doc 站
               // 在 proxy 之上；WPT Event-dispatch-bubbles "In new Document()"）。
@@ -7399,12 +7435,22 @@
           cur167 = next167;
         }
       } catch (_e167c) {}
+      // WC-M3 切片 8：composedPath（spec dom §4.3——dispatch 期事件路径，含 shadow
+      // root 站与 composed 跨边界 host/light 祖先；非 dispatch 由 finally 域清理）。
+      try { ev._composedPath = chain167.slice(); } catch (_e8cp) {}
       // 单站派发：target 站（_mEvListeners）/ view 站（_zwEvLs）/ doc 站
       //（_zwLocalListeners）。captureOnly 过滤（AT_TARGET 双 pass capture 先，
       // spec invoke 序）。once 派发后移除；派发中被移除跳过（R111）。
       var t = String(ev && ev.type);
       var fireStation = function (station, phase, captureOnly) {
         if (!station) return;
+        // WC-M3 切片 8：per-station shadow-adjusted target——host 站及以上的 light
+        // 祖先（composed 跨边界后）读到的 ev.target retarget 为 host；边界内站恒
+        // target 本身（capture 逆序先经外层站，须逐站复位——spec retarget 每站独立）。
+        try {
+          ev.target = (_s8HostStation && _s8RootIdx >= 0 && chain167.indexOf(station) > _s8RootIdx)
+            ? _s8HostStation : node;
+        } catch (_e8tg) {}
         if (station === node) {
           var idx = [];
           for (var i = 0; i < _mEvListeners.length; i++) if (_mEvListeners[i].type === t) idx.push(i);
@@ -7545,6 +7591,10 @@
       }
       ev.eventPhase = 0;
       ev.currentTarget = null;
+      // WC-M3 切片 8：dispatch 结束清 composedPath（spec：非 dispatch 态返 []——与
+      // _dispatchWithBubble R3244 的 finally 清理同语义；WPT event-post-dispatch
+      // 'composedPath().length === 0' 断言）。
+      try { ev._composedPath = null; } catch (_e8cpc) {}
       return !(ev && ev.cancelable && ev.defaultPrevented);
     };
     // R151（js-dom M4）：`click()`（HTMLElement 合成激活入口，spec
@@ -7576,8 +7626,10 @@
     node.click = function () {
       if (globalThis.__zwR155InlGen != null) globalThis.__zwR155InlGen++;
       var ev = (typeof _makeEvent === 'function')
-        ? _makeEvent('click', { bubbles: true, cancelable: true })
-        : { type: 'click', bubbles: true, cancelable: true, defaultPrevented: false };
+        // WC-M3 切片 8：UA 合成 click 为 **composed** 事件（spec click event 定义——
+        // composed: true），跨 shadow 边界（WPT event-composed 'A UA click event'）。
+        ? _makeEvent('click', { bubbles: true, cancelable: true, composed: true })
+        : { type: 'click', bubbles: true, cancelable: true, composed: true, defaultPrevented: false };
       // R155（js-dom M4）：inline onclick handler 的执行移到 INPUT 翻转**之后**——
       // spec 派发模型 = listener 之一，listener 在 pre-click activation（checked 翻转）
       // 之后触发（与 proxy 侧 R108 同序；WPT single-activation 的

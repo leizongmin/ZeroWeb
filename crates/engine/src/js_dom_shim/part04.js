@@ -4440,7 +4440,16 @@ return _tplContent;
               for (var _r97i = 0; _r97i < _r97Fk.length; _r97i++) {
                 var _r97c = _r97Fk[_r97i];
                 if (_r97c && _r97c.__zwHandle) _recordHandleChild(handle, _r97c);
-                else if (_r97c && _r97c.nodeType) _handleChildren[handle].push(_r97c);
+                else if (_r97c && _r97c.nodeType) {
+                  _handleChildren[handle].push(_r97c);
+                  // WC-M3 切片 8（web-components goal）：展平 plain 子的 parentNode 反链
+                  // 指 **canonical 容器 wrapper**（`_makeProxy` per-key 缓存——shadow 容器
+                  // 即页面持有的 ShadowRoot wrapper 同一对象）。旧版残留在 importNode
+                  // fragment 壳上（'#document-fragment' 散 wrapper）——R167 派发链上行时
+                  // shadow root 站 listener key（'@'+handle）对不上位（WPT event-composed
+                  // 'expected 2 but got 1'：shadowRoot listener 已挂不 fire 根因）。
+                  try { _zwForceParentLink(_r97c, _makeProxy(null, handle)); } catch (_e97pl) {}
+                }
               }
               var _r97Added = _r97Fk.slice();
               _mo_notify(sel, handle, { type: 'childList', addedNodes: _r97Added, removedNodes: [], previousSibling: null, nextSibling: null });
@@ -4634,6 +4643,20 @@ return _tplContent;
                 }
                 if (handle) __zw_append_fragment_children_handle(handle, child.__zwHandle);
                 else __zw_append_fragment_children(sel, child.__zwHandle);
+                // WC-M3 切片 8（web-components goal）：flatten 子的 parentNode 反链指
+                // **canonical 容器 wrapper**（`_makeProxy` per-key 缓存——shadow 容器即
+                // 页面持有的 ShadowRoot wrapper 同一对象）。旧版残留 importNode fragment
+                // 空壳链（'#document-fragment' 散 wrapper）——R167 派发链上行时 shadow
+                // root 站 listener key（'@'+handle）失配（WPT event-composed 'expected 2
+                // but got 1'：shadowRoot listener 已挂不 fire 根因）。
+                try {
+                  for (var _s8fi = 0; _s8fi < ceAdded.length; _s8fi++) {
+                    var _s8c = ceAdded[_s8fi];
+                    if (_s8c && _s8c.nodeType && typeof _makeProxy === 'function') {
+                      _zwForceParentLink(_s8c, _makeProxy(null, handle));
+                    }
+                  }
+                } catch (_e8fl) {}
               } else if (handle) {
                 ceAdded = [child];
                 __zw_append_child_handle(handle, child.__zwHandle);
