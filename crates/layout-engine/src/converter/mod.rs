@@ -759,6 +759,11 @@ fn convert_max_length_to_dimension(value: &LengthValue, vw: f32, vh: f32) -> taf
             }
         }
         LengthValue::FitContent(inner) => convert_max_length_to_dimension(inner, vw, vh),
+        // R4224（css-sizing-4 #stretch-fit-sizing + csswg #11044）：max 侧 stretch = CB
+        // content 尺寸（margin ignoring）——百分比不扣 margin 同语义；CB 尺寸 indefinite
+        // 时百分比 max 视 none，与 stretch 回退 content 行为一致（R4086 width 侧 auto
+        // 映射仅覆盖 fill 语义，max/min 侧无 fill 概念须显式映射）。
+        LengthValue::Stretch => taffy::style::Dimension::percent(1.0),
         LengthValue::MinContent | LengthValue::MaxContent => taffy::style::Dimension::auto(),
         _ => taffy::style::Dimension::auto(),
     }

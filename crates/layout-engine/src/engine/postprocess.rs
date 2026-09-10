@@ -1640,15 +1640,27 @@ fn fix_column_flex_nonstretch_replaced_main_inner(
     if !matches!(style.writing_mode, WritingModeValue::HorizontalTb) {
         return;
     }
-    // column/column-reverse：main = height，cross = width（row 由 restretch_abspos_flex 处理）。
-    if !matches!(
+    // column/column-reverse：main = height，cross = width；row/row-reverse：main = width，
+    // cross = height（row 非 stretch 替换 item main 由 restretch_abspos_flex 处理，此处仅
+    // 接 cross-stretch 臂）。
+    let is_column = matches!(
         style.flex_direction,
         FlexDirectionValue::Column | FlexDirectionValue::ColumnReverse
-    ) {
+    );
+    let is_row = matches!(
+        style.flex_direction,
+        FlexDirectionValue::Row | FlexDirectionValue::RowReverse
+    );
+    if !is_column && !is_row {
         return;
     }
-    // 容器须有 definite cross（width）。
-    if resolve_postprocess_real_length(&style.width, style).is_none() {
+    // 容器须有 definite cross（column → width；row → height）。
+    let container_cross_definite = if is_column {
+        resolve_postprocess_real_length(&style.width, style)
+    } else {
+        resolve_postprocess_real_length(&style.height, style)
+    };
+    if container_cross_definite.is_none() {
         return;
     }
 
@@ -1672,6 +1684,43 @@ fn fix_column_flex_nonstretch_replaced_main_inner(
             Some(s) => s,
             None => continue,
         };
+        // R4224（css-sizing-4 #stretch-fit-sizing）：definite `stretch` cross 可经 AR 传递
+        // main——column + width:stretch / row + height:stretch 的替换 item，cross = 容器
+        // content cross（margin 后），main = cross_content × 固有比（flexbox-auto-minimum-001/002
+        // 与 flexbox-flex-base-size-001/002：canvas 100×100 属性 + cross:stretch 应 200×200，
+        // taffy 下 converter stretch→auto（R4086）塌 0×0）。flex-basis:0 的 automatic minimum
+        // 与 flex-base-size 的 content base 同以传递值为下限——直接写传递终值。
+        let cross_stretch = (is_column && matches!(item_style.width, LengthValue::Stretch))
+            || (is_row && matches!(item_style.height, LengthValue::Stretch));
+        if cross_stretch {
+            let frame_x = item.padding_left + item.padding_right + item.border_left + item.border_right;
+            let frame_y = item.padding_top + item.padding_bottom + item.border_top + item.border_bottom;
+            let cross_content = if is_column {
+                (box_node.content_width - item.margin_left - item.margin_right - frame_x).max(0.0)
+            } else {
+                (box_node.content_height - item.margin_top - item.margin_bottom - frame_y).max(0.0)
+            };
+            if cross_content > 0.5 {
+                if is_column {
+                    let main_content = cross_content * (ih / iw);
+                    item.width = cross_content + frame_x;
+                    item.content_width = cross_content;
+                    item.height = main_content + frame_y;
+                    item.content_height = main_content;
+                } else {
+                    let main_content = cross_content * (iw / ih);
+                    item.height = cross_content + frame_y;
+                    item.content_height = cross_content;
+                    item.width = main_content + frame_x;
+                    item.content_width = main_content;
+                }
+            }
+            continue;
+        }
+        // 既有非 stretch 臂保持 column 语义（main = height）——row 非 stretch 另案。
+        if !is_column {
+            continue;
+        }
         // item 尺寸 Auto（无 definite CSS 尺寸，taffy 才会用 aspect-ratio 推导出错）。
         if !matches!(item_style.width, LengthValue::Auto) || !matches!(item_style.height, LengthValue::Auto) {
             continue;
