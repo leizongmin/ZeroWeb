@@ -337,6 +337,18 @@ pub fn register_dom_callbacks(
         }),
     );
 
+    // WC-M2：参数化 html 串的 template contents children（iframe/detached shim 文档的 JS 树
+    // 构建数据源——html 是文档自身串，非主文档快照；与 __zw_template_contents 的主文档域区分）。
+    // 深形态（children 嵌套）——contents 子非文档树节点，selector 二次定位不可达。
+    sandbox.register_callback(
+        "__zw_parse_template_contents",
+        Box::new(|args: &[String]| -> String {
+            let html = args.first().map(String::as_str).unwrap_or("");
+            let sel = args.get(1).map(String::as_str).unwrap_or("");
+            parse_template_contents_deep_json(html, sel)
+        }),
+    );
+
     // `crypto.subtle.digest(algo, data)`（R2793）——SHA-1/256/384/512 哈希。algo 从 arg[0]（串），
     // 字节从 arg[1]（逗号分隔十进制串）。返逗号分隔十进制 hash 串（unsupported → 空，shim reject）。
     sandbox.register_callback(
@@ -556,6 +568,30 @@ pub fn register_dom_callbacks(
             let elem_sel = args.first().map(String::from).unwrap_or_default();
             let snap = html.lock().unwrap_or_else(|e| e.into_inner());
             with_query_doc_live_aware(&snap, true, |doc| element_sibling_selectors_doc(doc, &elem_sel))
+        }),
+    );
+
+    // WC-M2（web-components goal）：template contents 视图——shim template.content 的
+    // 子节点数据源（contents fragment 的 children，非 template 的 children——后者解析后
+    // 恒空）。深形态 JSON（children 嵌套——contents 子 selector 二次定位不可达）。
+    let html = Arc::clone(dom_html);
+    sandbox.register_callback(
+        "__zw_template_contents_deep",
+        Box::new(move |args| {
+            let elem_sel = args.first().map(String::from).unwrap_or_default();
+            let snap = html.lock().unwrap_or_else(|e| e.into_inner());
+            with_query_doc_live_aware(&snap, true, |doc| template_contents_json_doc(doc, &elem_sel))
+        }),
+    );
+
+    // 主文档浅版（保留兼容命名；消费面已切深版）。
+    let html = Arc::clone(dom_html);
+    sandbox.register_callback(
+        "__zw_template_contents",
+        Box::new(move |args| {
+            let elem_sel = args.first().map(String::from).unwrap_or_default();
+            let snap = html.lock().unwrap_or_else(|e| e.into_inner());
+            with_query_doc_live_aware(&snap, true, |doc| template_contents_json_doc(doc, &elem_sel))
         }),
     );
 

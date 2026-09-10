@@ -1346,6 +1346,33 @@ fn copy_subtree_from(doc: &mut Document, src_doc: &Document, src_id: NodeId) -> 
                 let copied = copy_subtree_from(doc, src_doc, child);
                 doc.append_child(new_id, copied).ok();
             }
+            // WC-M2：template 的 contents 随子树拷贝深复制（源 frag → 新 frag，不入
+            // children——spec the-template-element；innerHTML/insertAdjacentHTML 的
+            // `<template>…</template>` round-trip 依赖）。
+            if local == "template"
+                && let Some(frag_src) = src_doc.template_contents(src_id)
+            {
+                let frag_copy = doc.create_document_fragment();
+                if let Some(nd) = doc.get_mut(frag_copy) {
+                    nd.parent = Some(new_id);
+                }
+                for child in src_doc.child_nodes(frag_src) {
+                    let cc = copy_subtree_from(doc, src_doc, child);
+                    if let Some(nd) = doc.get_mut(frag_copy) {
+                        nd.children.push(cc);
+                    }
+                    if let Some(cd) = doc.get_mut(cc) {
+                        cd.parent = Some(frag_copy);
+                    }
+                    // contents 子的 id 不入文档 id 索引（spec：contents 不在文档树，
+                    // getElementById 不可见）——create_element 路径 set_attribute 时
+                    // 已注册，此处逐个摘除。
+                    if let Some(idv) = doc.get_attribute(cc, "id") {
+                        doc.remove_id_entry(&idv, cc);
+                    }
+                }
+                doc.set_template_contents(new_id, frag_copy);
+            }
             new_id
         }
         _ => doc.create_text_node(""),
@@ -1842,6 +1869,116 @@ pub fn doc_doctype_json_doc(doc: &Document) -> String {
 pub fn child_nodes_json(html: &str, elem_sel: &str) -> String {
     let doc = parse_html(html);
     child_nodes_json_doc(&doc, elem_sel)
+}
+
+/// WC-M2（web-components goal）：`<template>` contents 的 childNodes JSON（与
+/// [`child_nodes_json`] 同形态）——shim template.content 视图的数据源（spec
+/// the-template-element：内容在独立 inert DocumentFragment，非 template 的 children）。
+pub fn template_contents_json(html: &str, elem_sel: &str) -> String {
+    let doc = parse_html(html);
+    template_contents_json_doc(&doc, elem_sel)
+}
+
+/// [`template_contents_json`] 的 doc 版（`with_query_doc` 缓存——同 [`child_nodes_json_doc`]）。
+pub fn template_contents_json_doc(doc: &Document, elem_sel: &str) -> String {
+    let Some(node) = find_by_selector(doc, elem_sel) else {
+        return "[]".to_string();
+    };
+    let Some(frag) = doc.template_contents(node) else {
+        return "[]".to_string();
+    };
+    // 深形态（children 嵌套）——contents 子在 fragment（非文档树），unique_selector 的
+    // 结构路径穿透 fragment 错位（element_parent 跳过非元素），浅 selector 二次定位不可达；
+    // shim 侧本地构建消费（_zwMBuildDeepEntry）。
+    fn deep_entry(doc: &Document, id: NodeId) -> Option<String> {
+        let node = doc.get(id)?;
+        match &node.kind {
+            NodeKind::Text(t) => Some(format!("{{\"k\":\"T\",\"v\":{}}}", json_str(&t.content))),
+            NodeKind::Comment(c) => Some(format!("{{\"k\":\"C\",\"v\":{}}}", json_str(&c.content))),
+            NodeKind::Element(e) => {
+                let tag = json_str(e.local_name());
+                let attrs: Vec<String> = e
+                    .attributes
+                    .iter()
+                    .map(|a| {
+                        format!(
+                            "{{\"n\":{},\"v\":{}}}",
+                            json_str(a.name.local.as_ref()),
+                            json_str(&a.value)
+                        )
+                    })
+                    .collect();
+                let kids: Vec<String> = doc.child_nodes(id).iter().filter_map(|&k| deep_entry(doc, k)).collect();
+                Some(format!(
+                    "{{\"k\":\"E\",\"tag\":{},\"attrs\":[{}],\"children\":[{}]}}",
+                    tag,
+                    attrs.join(","),
+                    kids.join(",")
+                ))
+            }
+            _ => None,
+        }
+    }
+    let entries: Vec<String> = doc
+        .child_nodes(frag)
+        .iter()
+        .filter_map(|&c| deep_entry(doc, c))
+        .collect();
+    format!("[{}]", entries.join(","))
+}
+
+/// WC-M2：主文档快照的 template contents **深 JSON**（shim content 视图——sel 路径）。
+pub fn template_contents_deep_json_doc(doc: &Document, elem_sel: &str) -> String {
+    template_contents_json_doc(doc, elem_sel)
+}
+
+/// WC-M2：参数化 html 串的 template contents **深 JSON**（含 children 嵌套，形态
+/// `{"k":"E","tag":"p","attrs":[...],"children":[...]}`）——iframe/detached shim 文档的
+/// JS 树构建用。contents 子在 fragment（非文档树），selector 无法二次定位（上层
+/// `unique_selector` 穿透 fragment 错位），须一次取全子树。
+pub fn parse_template_contents_deep_json(html: &str, elem_sel: &str) -> String {
+    let doc = parse_html(html);
+    let Some(node) = find_by_selector(&doc, elem_sel) else {
+        return "[]".to_string();
+    };
+    let Some(frag) = doc.template_contents(node) else {
+        return "[]".to_string();
+    };
+    fn deep_entry(doc: &Document, id: NodeId) -> Option<String> {
+        let node = doc.get(id)?;
+        match &node.kind {
+            NodeKind::Text(t) => Some(format!("{{\"k\":\"T\",\"v\":{}}}", json_str(&t.content))),
+            NodeKind::Comment(c) => Some(format!("{{\"k\":\"C\",\"v\":{}}}", json_str(&c.content))),
+            NodeKind::Element(e) => {
+                let tag = json_str(e.local_name());
+                let attrs: Vec<String> = e
+                    .attributes
+                    .iter()
+                    .map(|a| {
+                        format!(
+                            "{{\"n\":{},\"v\":{}}}",
+                            json_str(a.name.local.as_ref()),
+                            json_str(&a.value)
+                        )
+                    })
+                    .collect();
+                let kids: Vec<String> = doc.child_nodes(id).iter().filter_map(|&k| deep_entry(doc, k)).collect();
+                Some(format!(
+                    "{{\"k\":\"E\",\"tag\":{},\"attrs\":[{}],\"children\":[{}]}}",
+                    tag,
+                    attrs.join(","),
+                    kids.join(",")
+                ))
+            }
+            _ => None,
+        }
+    }
+    let entries: Vec<String> = doc
+        .child_nodes(frag)
+        .iter()
+        .filter_map(|&c| deep_entry(&doc, c))
+        .collect();
+    format!("[{}]", entries.join(","))
 }
 
 /// [`child_nodes_json`] 的 doc 版（调用方经 `with_query_doc` 缓存解析结果——js-dom R52：

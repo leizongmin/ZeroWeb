@@ -358,17 +358,19 @@ fn test_query_skips_template_contents_r145() {
 
 #[test]
 fn test_query_explicit_template_addressing_r145() {
+    // WC-M2 收敛：contents 真实化后 template 内解析产物在 contents fragment（不在文档树），
+    // **任何** light-DOM 查询（含显式 template 段组合链）都不可达——spec：contents 不是
+    // template 元素的文档树后代；shim 的 template.content 子代理走 contents 数据源
+    //（host `template_contents_children`），不再依赖结构路径直查。
     let doc = parse_html("<html><body><template><p>IN</p></template></body></html>");
     let root = doc.root();
-    // 显式含 template 段的组合链 → direct-address 例外（shim 的 template.content
-    // 子代理依赖结构路径可解析），template 内 p 可达。
-    let hit = doc
-        .query_selector(root, "body > template > p")
-        .expect("explicit template addressing resolves");
-    assert_eq!(doc.text_content(hit).as_deref(), Some("IN"));
-    // 列表形态同理。
-    let hits = doc.query_selector_all(root, "template p");
-    assert_eq!(hits.len(), 1);
+    assert_eq!(doc.query_selector(root, "body > template > p"), None);
+    assert!(doc.query_selector_all(root, "template p").is_empty());
+    // contents 内容仍可经 template_contents API 直达（fragment children）。
+    let tmpl = doc.query_selector(root, "template").expect("template found");
+    let contents = doc.template_contents(tmpl).expect("contents fragment");
+    assert_eq!(doc.child_nodes(contents).len(), 1);
+    assert_eq!(doc.text_content(contents).as_deref(), Some("IN"));
 }
 
 #[test]

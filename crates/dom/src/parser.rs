@@ -5,6 +5,7 @@ use crate::node::{
     CommentData, DocumentData, DocumentTypeData, NodeData, NodeId, NodeKind, ProcessingInstructionData, QuirksMode,
     TextData,
 };
+use hashbrown::HashMap;
 use html5ever::interface::{ElemName, ElementFlags, NodeOrText, TreeSink};
 use markup5ever::{Attribute, QualName};
 use std::borrow::Cow;
@@ -70,6 +71,9 @@ struct DomBuilderInner {
     nodes: slotmap::SlotMap<NodeId, NodeData>,
     root: NodeId,
     quirks_mode: QuirksMode,
+    /// WC-M2：template → contents fragment 侧表（解析期构建，finish 后移交 Document——
+    /// 见 `into_document` 的 `from_builder_parts` + map 搬移）。
+    template_contents_map: HashMap<NodeId, NodeId>,
 }
 
 impl DomBuilder {
@@ -86,6 +90,7 @@ impl DomBuilder {
                 nodes,
                 root,
                 quirks_mode: QuirksMode::NoQuirks,
+                template_contents_map: HashMap::new(),
             }),
         }
     }
@@ -96,7 +101,7 @@ impl DomBuilder {
         // 直接搬移节点表与树结构（NodeId 一致，parent/children 保持有效）——
         // 旧实现逐节点 clone 重建双树（10k 节点 ≈ 峰值内存翻倍 + 每节点
         // QualName/attrs/文本 2 次深拷贝），是 parse_html 30-40% 的开销。
-        let mut doc = Document::from_builder_parts(inner.nodes, inner.root);
+        let mut doc = Document::from_builder_parts(inner.nodes, inner.root, inner.template_contents_map);
 
         doc.set_quirks_mode(inner.quirks_mode);
         // 检测 XHTML 文档（DOCTYPE public_id 含 "XHTML"），置位 content_is_xml 供
@@ -300,8 +305,35 @@ impl TreeSink for DomBuilder {
     }
 
     fn get_template_contents(&self, target: &Self::Handle) -> Self::Handle {
-        // <template> 暂时返回目标节点自身
-        *target
+        // WC-M2（web-components goal，spec the-template-element）：`<template>` 的内容
+        // 解析进**独立 inert DocumentFragment**——不在文档树（template.children 恒空），
+        // 对查询/序列化/克隆按 contents 语义走（Document::template_contents 访问 +
+        // serializer template 分支）。fragment 惰性创建：html5ever 首次向 template 追加
+        // 内容时调用本方法；同一 template 的多次调用须返回同一 fragment（树构建器在
+        // template open 状态期间反复查询）。
+        // https://html.spec.whatwg.org/multipage/scripting.html#the-template-element
+        let mut inner = self.inner.borrow_mut();
+        {
+            let is_template = matches!(
+                inner.nodes.get(*target),
+                Some(NodeData {
+                    kind: NodeKind::Element(elem),
+                    ..
+                }) if elem.local_name() == "template"
+            );
+            if !is_template {
+                return *target;
+            }
+            if let Some(existing) = inner.template_contents_map.get(target) {
+                return *existing;
+            }
+        }
+        let frag = inner.nodes.insert(NodeData::new(NodeKind::DocumentFragment));
+        if let Some(node_data) = inner.nodes.get_mut(frag) {
+            node_data.parent = Some(*target);
+        }
+        inner.template_contents_map.insert(*target, frag);
+        frag
     }
 
     fn same_node(&self, x: &Self::Handle, y: &Self::Handle) -> bool {

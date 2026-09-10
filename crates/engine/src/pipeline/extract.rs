@@ -705,8 +705,10 @@ mod tests {
         // 仅 template 外的顶层脚本进入执行序列。
         assert_eq!(scripts.len(), 1, "template inline script must not execute");
         assert!(matches!(&scripts[0].0, PageScript::Inline(c) if c.contains("__topLevel")));
-        // 序号按全文档 script 计数（template 内 script 占 index 0，顶层为 index 1）——
-        // 与 shim getElementsByTagName('script') 的文档序一一对应（currentScript 对齐）。
-        assert_eq!(scripts[0].1, 1, "script index counts template scripts too");
+        // WC-M2 收敛：contents 真实化后 template 内 script 不在文档树——
+        // `get_elements_by_tag_name`（与 shim gEBTN 一致）不含它，序号从 0 起。
+        // （旧断言基于 parser 内联占位——template 内 script 误占 index 0。spec：
+        // contents 非文档树后代，真实浏览器 gEBTN 亦不含，两者一致。）
+        assert_eq!(scripts[0].1, 0, "template scripts are not in the document tree");
     }
 }

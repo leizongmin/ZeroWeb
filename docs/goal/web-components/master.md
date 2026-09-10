@@ -2,7 +2,7 @@
 
 **入口文档**: [../web-components.md](../web-components.md)
 **创建日期**: 2026-09-07（goal 拆分 bootstrap）
-**最后更新**: 2026-09-10（M1 切片 4 落地——customized built-ins 升级链路 + whenDefined/upgrade 收口，58%→64%。**M1 切片全清，M1 ✅**）
+**最后更新**: 2026-09-10（M2 切片 1 落地——parser `get_template_contents` 真 inert fragment + R145 收敛，64%等值维持、嵌套 template 回指环结构性消除）
 
 ---
 
@@ -57,7 +57,7 @@ Shadow DOM 渲染级 composed tree 排除（等用户点名专项）。
 |---|------|------|
 | P1 | WPT 用例覆盖为零（fetch 脚本 + 三目录导入 + 基线） | ✅ 2026-09-10（265 案导入，基线 9%，见 evidence/2026-09-10-wc-baseline.md） |
 | P2 | CE 三缺口（upgrade no-op / whenDefined 假 resolve / adoptedCallback 无） | ✅ 2026-09-10 切片 4（adopted 切片 3；upgrade shim 真实现 + is-aware；whenDefined define 前 pending/define 后 microtask resolve——probe 断言） |
-| P3 | template DOM 层占位（parser + R145 规则收敛） | ⬜ M2 |
+| P3 | template DOM 层占位（parser + R145 规则收敛） | ◐ M2 切片 1 ✅（contents 真 fragment + R145 收敛 + 回指环消除）；XHTML 面尾差 M2 收口 |
 | P4 | slot 全链路（IDL → 分配接线 → slotchange → assignedNodes） | ⬜ M3 |
 
 ## 基线（2026-09-10 M1 切片 1）
@@ -73,21 +73,21 @@ Shadow DOM 渲染级 composed tree 排除（等用户点名专项）。
 
 ## 下一步计划
 
-1. **M2 切片 1**：parser `get_template_contents` 真 inert fragment（根因修复——
-   contents 内联使嵌套 template 装配出现 childNodes 回指环，sel-clone 深克隆
-   无限递归 → complex 装配 90s 伪超时 5 案）+ R145 规则收敛
-3. **M3**：slot 全链路（IDL → 分配接线 → slotchange → assignedNodes）
+1. **M2 收口**：innerHTML 语义细节（XHTML 面 `node-document.html`、`template-clone-children`
+   尾差）+ shim 老路径 template.content sel 直查残留清理
+2. **M3**：slot 全链路（IDL → 分配接线 → slotchange → assignedNodes）
 
-### 已知挂账（2026-09-10 切片 3 更新）
+### 已知挂账（2026-09-10 M2 切片 1 更新）
 
-- 嵌套 template 装配的 childNodes 回指环：CE 连接态遍历已加 seen 防环守卫
-  （`_ceApplyConn`），克隆侧环守卫既有；根因收敛为 parser contents 内联（M2 范围）
-- template content owner doc 面残余：`node-document-changes.html` 1 subtest 从
-  vacuous pass（双方 undefined 相等）转 fail——owner doc 已真实化但 adopt 后
-  descendants 重指语义未达（M2 parser 真实化后一并收敛）
+- ~~嵌套 template 装配的 childNodes 回指环~~ ✅ 结构性消除（contents 入独立 fragment，
+  不再入文档树；CE 遍历 seen 防环守卫保留为纵深防御）
 - builtin-coverage 的 innerHTML 解析簇（~108F）：sel 容器 innerHTML 后
   getElementById 的 pending 融合（R380 查询融合域，非 CE 域）
 - reactions/ 表格族（table-scoped 解析升级）与 customized-builtins 的 iframe/reparse 面
+- XHTML 面模板（`additions-to-parsing-xhtml-documents/node-document.html`）——
+  XHTML 解析路径的 template 处理待核
+- ElementData 加字段曾致 dom 微基准全线 +2-3x（分配/layout 阈值效应）——contents 已改
+  Document 侧表规避；后续给 ElementData 加字段前必须过 bench-gate
 
 **碰撞管理**：碰 engine/dom 前先 `git log --since="14 days ago" -- crates/engine/
 crates/dom/` 核对渲染流域活跃面；碰 part01.js 前与 event-loop-spec 流互相核对。
@@ -97,7 +97,7 @@ crates/dom/` 核对渲染流域活跃面；碰 part01.js 前与 event-loop-spec 
 | 里程碑 | 状态 |
 |--------|------|
 | M1 — WPT 基线建立 + Custom Elements 收口 | ✅ 2026-09-10（切片 1/2a/2b/3/4 全清——DC-1 基线 + DC-2 upgrade/whenDefined/adoptedCallback/双路径全收口） |
-| M2 — template 真实化 | ⬜ |
+| M2 — template 真实化 | ◐ 切片 1 ✅（parser 真 fragment + R145 收敛 + 回指环消除）；收口（XHTML 面/尾差）进行中 |
 | M3 — slot 全链路 + 收尾 | ⬜ |
 
 ## 待用户决策
@@ -111,8 +111,8 @@ crates/dom/` 核对渲染流域活跃面；碰 part01.js 前与 event-loop-spec 
 
 - 测试基线：立项时点全绿（`make test` / `make reftest` 入口，经 test-guard 包裹；
   禁止裸跑 cargo test）
-- WC 用例面：**271 案 / 4675 subtests / 3008 Pass（64%）**（2026-09-10 切片 4，
-  evidence/2026-09-10-wc-after-slice4.{md,json}。历史：基线 437=9% → 2a 689=15% →
-  2b 2565=55% → 3 2720=58%；`make testharness-web-components` 重建）
+- WC 用例面：**271 案 / 4752 subtests / 3013 Pass（63%，分母扩后等值 64.4%）**
+  （2026-09-10 M2 切片 1，evidence/2026-09-10-wc-after-m2s1.{md,json}。历史：基线
+  437=9% → 2a 689=15% → 2b 2565=55% → 3 2720=58% → 4 3008=64%；零回归）
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过；
   dom 结构变更轮跑 `make reftest` 作渲染面守卫

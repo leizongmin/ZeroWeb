@@ -8613,11 +8613,71 @@
       try { var a = JSON.parse(__zw_parse_html_query(html, entry.s, '0')); if (a.length) snap = a[0]; } catch (_e) {}
     }
     var node = _zwMEl(snap, parent);
+    // WC-M2：`<template>` 的内容在 contents fragment（host parser 真实化）——读参数化
+    // html 的**深 JSON**（contents 子非文档树节点，selector 二次定位不可达），本地构建
+    // 子树（旧读路径——iframe 树 content 视图/序列化——零改动继续工作）。
+    if (String(node.tagName || '').toUpperCase() === 'TEMPLATE'
+        && typeof __zw_parse_template_contents === 'function') {
+      try {
+        var _mtcArr = JSON.parse(__zw_parse_template_contents(html, entry.s) || '[]');
+        for (var _mti = 0; _mti < _mtcArr.length; _mti++) {
+          var _mtc = _zwMBuildDeepEntry(_mtcArr[_mti], node);
+          if (_mtc) node.childNodes.push(_mtc);
+        }
+      } catch (_eTn) {}
+      return node;
+    }
     if (typeof __zw_parse_html_child_nodes === 'function') {
       try {
         var arr = JSON.parse(__zw_parse_html_child_nodes(html, entry.s));
         for (var i = 0; i < arr.length; i++) if (arr[i]) node.childNodes.push(_zwMBuildNode(html, arr[i], node));
       } catch (_e) {}
+    }
+    return node;
+  }
+  // WC-M2：plain 元素（深 JSON 本地构建产物）→ **handle 元素重建**（document.createElement
+  // + attrs/textContent 递归）——供 template.content.cloneNode 消费（replaceWith/appendChild
+  // 的 host wire 展开只认 handle 子）。文本/注释直接走工厂（createTextNode/createComment）。
+  function _wcRebuildAsHandle(node) {
+    try {
+      if (!node || typeof node !== 'object') return node;
+      if (node.nodeType === 3) return globalThis.document.createTextNode(String(node.data == null ? '' : node.data));
+      if (node.nodeType === 8) return globalThis.document.createComment(String(node.data == null ? '' : node.data));
+      if (node.nodeType !== 1) return node;
+      var tag = String(node.tagName || 'DIV').toLowerCase();
+      var el = globalThis.document.createElement(tag);
+      try {
+        var ats = node.attributes || [];
+        for (var i = 0; i < ats.length; i++) {
+          if (ats[i] && ats[i].name) el.setAttribute(String(ats[i].name), String(ats[i].value == null ? '' : ats[i].value));
+        }
+      } catch (_eAts) {}
+      var kids = node.childNodes || [];
+      for (var j = 0; j < kids.length; j++) {
+        var ck = _wcRebuildAsHandle(kids[j]);
+        if (ck) el.appendChild(ck);
+      }
+      return el;
+    } catch (_eReb) { return node; }
+  }
+  // WC-M2：contents 深 JSON 条目 → 本地节点（_zwMEl/_zwMText/_zwMComment，与
+  // _zwMBuildNode 产物同形态；element 建 attrs + 递归 children）。
+  function _zwMBuildDeepEntry(entry, parent) {
+    if (!entry) return null;
+    if (entry.k === 'T') return _zwMText(String(entry.v == null ? '' : entry.v), parent);
+    if (entry.k === 'C') return _zwMComment(String(entry.v == null ? '' : entry.v), parent);
+    var node = _zwMEl({ tag: String(entry.tag || 'div') }, parent);
+    if (Array.isArray(entry.attrs)) {
+      for (var ai = 0; ai < entry.attrs.length; ai++) {
+        var a = entry.attrs[ai];
+        if (a && a.n) node.setAttribute(String(a.n), String(a.v == null ? '' : a.v));
+      }
+    }
+    if (Array.isArray(entry.children)) {
+      for (var ci = 0; ci < entry.children.length; ci++) {
+        var ck = _zwMBuildDeepEntry(entry.children[ci], node);
+        if (ck) node.childNodes.push(ck);
+      }
     }
     return node;
   }

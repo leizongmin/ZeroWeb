@@ -80,6 +80,9 @@ pub struct ElementData {
     pub id: Option<String>,
     /// 缓存的 class 列表（如有）。
     pub class_list: Vec<String>,
+    // WC-M2：`<template>` contents 不入本 struct（NodeData 尺寸敏感——加 Option<NodeId>
+    // 曾致 dom 微基准全线 +2-3x 的分配/layout 劣化），改 Document 层侧表
+    //（`Document::template_contents_map`，仅 template 元素有条目——绝大多数文档空表）。
 }
 
 /// 辅助函数：比较 markup5ever LocalName 与 &str。

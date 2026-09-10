@@ -104,9 +104,22 @@ fn serialize_node_inner_ctx(doc: &Document, id: NodeId, parent_tag: Option<&str>
             // 自闭合元素
             if !is_void_element(tag) {
                 let tag_lower = tag.to_ascii_lowercase();
-                // 序列化子节点（传当前标签名，供 Text 节点判断 raw text 上下文）
-                for &child in &node_data.children {
-                    serialize_node_inner_ctx(doc, child, Some(&tag_lower), output);
+                // WC-M2：`<template>` 的可序列化内容在 contents fragment（独立 inert
+                // DocumentFragment，不在 children）——从 contents 序列化（spec the-template-
+                // element + §13.3：template 的 innerHTML/outerHTML 输出 contents 内容）。
+                if tag_lower == "template" {
+                    if let Some(frag) = doc.template_contents(id)
+                        && let Some(frags) = doc.get(frag)
+                    {
+                        for &child in &frags.children {
+                            serialize_node_inner_ctx(doc, child, Some(&tag_lower), output);
+                        }
+                    }
+                } else {
+                    // 序列化子节点（传当前标签名，供 Text 节点判断 raw text 上下文）
+                    for &child in &node_data.children {
+                        serialize_node_inner_ctx(doc, child, Some(&tag_lower), output);
+                    }
                 }
 
                 output.push_str("</");
@@ -160,6 +173,19 @@ pub fn inner_html(doc: &Document, id: NodeId) -> String {
     };
     let parent_tag_ref = parent_tag.as_deref();
 
+    // WC-M2：template 的 innerHTML = contents fragment 的子序列化（spec the-template-element）。
+    if let NodeKind::Element(e) = &node_data.kind
+        && e.local_name() == "template"
+    {
+        if let Some(frag) = doc.template_contents(id)
+            && let Some(frags) = doc.get(frag)
+        {
+            for &child in &frags.children {
+                serialize_node_inner_ctx(doc, child, parent_tag_ref, &mut output);
+            }
+        }
+        return output;
+    }
     for &child in &node_data.children {
         serialize_node_inner_ctx(doc, child, parent_tag_ref, &mut output);
     }

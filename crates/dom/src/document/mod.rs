@@ -80,6 +80,11 @@ pub struct Document {
     event_listeners: HashMap<(NodeId, String), Vec<ListenerEntry>>,
     /// 宿主元素 → ShadowRoot 节点映射。
     shadow_roots: HashMap<NodeId, NodeId>,
+    /// WC-M2（web-components goal）：`<template>` → contents fragment 映射（spec
+    /// the-template-element——内容是独立 inert DocumentFragment）。侧表而非 ElementData
+    /// 字段（NodeData 尺寸敏感：ElementData 加 Option<NodeId> 曾致 dom 微基准全线 +2-3x
+    /// 劣化——分配/layout 阈值效应）；仅 template 元素有条目，绝大多数文档空表。
+    template_contents_map: HashMap<NodeId, NodeId>,
     /// Slot 分配：键为 (slot 元素 NodeId, slot 名)，值为已分配的 NodeId 列表。
     slot_assignments: HashMap<(NodeId, String), Vec<NodeId>>,
 }
@@ -103,6 +108,7 @@ impl Document {
             pending_mutations: Vec::new(),
             event_listeners: HashMap::new(),
             shadow_roots: HashMap::new(),
+            template_contents_map: HashMap::new(),
             slot_assignments: HashMap::new(),
         }
     }
@@ -110,10 +116,15 @@ impl Document {
     /// 从 HTML 解析器（`DomBuilder`）直接搬移节点表构造——NodeId 与树结构
     /// （parent/children）保持有效，零克隆（旧实现逐节点 clone 重建双树，是
     /// `parse_html` 30-40% 的开销）。仅 parser 内部使用。
-    pub(crate) fn from_builder_parts(nodes: SlotMap<NodeId, NodeData>, root: NodeId) -> Self {
+    pub(crate) fn from_builder_parts(
+        nodes: SlotMap<NodeId, NodeData>,
+        root: NodeId,
+        template_contents_map: HashMap<NodeId, NodeId>,
+    ) -> Self {
         let mut doc = Self {
             nodes,
             root,
+            template_contents_map,
             id_map: HashMap::new(),
             url: None,
             referrer: None,
@@ -531,6 +542,28 @@ impl Document {
 
         let new_id = self.nodes.insert(NodeData::new(cloned_kind));
 
+        // WC-M2（spec clone a node 步骤 6.7）：template 克隆须把 contents 深复制进
+        // 新 template 的 contents（新 fragment 节点，不在新 template 的 children）。
+        if deep {
+            let contents_src = self.template_contents(node);
+            if let Some(frag_src) = contents_src {
+                let frag_copy = self.nodes.insert(NodeData::new(NodeKind::DocumentFragment));
+                if let Some(nd) = self.nodes.get_mut(frag_copy) {
+                    nd.parent = Some(new_id);
+                }
+                for child in self.child_nodes(frag_src) {
+                    let cc = self.clone_node(child, true);
+                    if let Some(nd) = self.nodes.get_mut(frag_copy) {
+                        nd.children.push(cc);
+                    }
+                    if let Some(cd) = self.nodes.get_mut(cc) {
+                        cd.parent = Some(frag_copy);
+                    }
+                }
+                self.set_template_contents(new_id, frag_copy);
+            }
+        }
+
         // 注意：克隆节点的 id 不注册到 id_map。
         // 原因：id 在文档中必须唯一，克隆节点与原始节点共享相同的 id 值，
         // 如果都注册会导致 id_map 条目被覆盖。
@@ -563,6 +596,27 @@ impl Document {
         };
 
         let new_id = self.nodes.insert(NodeData::new(cloned_kind));
+
+        // WC-M2：template contents 随导入深复制（同 clone_node）。
+        if deep {
+            let contents_src = self.template_contents(node_id);
+            if let Some(frag_src) = contents_src {
+                let frag_copy = self.nodes.insert(NodeData::new(NodeKind::DocumentFragment));
+                if let Some(nd) = self.nodes.get_mut(frag_copy) {
+                    nd.parent = Some(new_id);
+                }
+                for child in self.child_nodes(frag_src) {
+                    let cc = self.import_node(child, true);
+                    if let Some(nd) = self.nodes.get_mut(frag_copy) {
+                        nd.children.push(cc);
+                    }
+                    if let Some(cd) = self.nodes.get_mut(cc) {
+                        cd.parent = Some(frag_copy);
+                    }
+                }
+                self.set_template_contents(new_id, frag_copy);
+            }
+        }
 
         if deep && let Some(children) = self.nodes.get(node_id).map(|n| n.children.clone()) {
             for child in children {
@@ -1436,6 +1490,14 @@ impl Document {
     /// 递归移除节点及其后代在 id_map 中的条目。
     ///
     /// 当节点从文档树中移除时调用，确保 `get_element_by_id` 不再返回已移除的节点。
+    /// WC-M2（web-components goal）：摘除单节点的 id 索引条目（contents 子的 id 不入
+    /// 文档索引——spec the-template-element，contents 不在文档树）。
+    pub fn remove_id_entry(&mut self, id_val: &str, node: NodeId) {
+        if self.id_map.get(id_val) == Some(&node) {
+            self.id_map.remove(id_val);
+        }
+    }
+
     fn remove_id_map_recursive(&mut self, id: NodeId) {
         // 收集当前节点的 id（如果有）
         let node_id_value = self.nodes.get(id).and_then(|n| match &n.kind {
@@ -1639,10 +1701,12 @@ impl Document {
     /// `template.content` 子代理（`__zw_child_nodes` 生成的 sel）依赖该路径可解析。
     /// https://html.spec.whatwg.org/multipage/scripting.html#the-template-element
     fn is_query_opaque(&self, id: NodeId) -> bool {
-        matches!(
-            self.nodes.get(id),
-            Some(NodeData { kind: NodeKind::Element(e), .. }) if e.local_name() == "template"
-        )
+        // WC-M2 收敛：`get_template_contents` 真实化后，解析产物进 contents fragment
+        //（不在 children），查询遍历天然不进入；children 中的节点是真 light-DOM 子
+        //（appendChild），查询**应**命中。恒 false（R145 例外规则随数据面真实化自然消亡；
+        // 函数与调用点保留——skip_templates 形态留给 shim 老路径过渡期）。
+        let _ = id;
+        false
     }
 
     /// 节点是否为 `<template>` 元素（R328，供 engine 提取层判定 template 内容
@@ -1652,6 +1716,26 @@ impl Document {
             self.nodes.get(id),
             Some(NodeData { kind: NodeKind::Element(e), .. }) if e.local_name() == "template"
         )
+    }
+
+    /// WC-M2（web-components goal）：`<template>` 的 contents fragment（无 → None）。
+    /// spec the-template-element——内容是独立 inert DocumentFragment，不在文档树。
+    pub fn template_contents(&self, id: NodeId) -> Option<NodeId> {
+        self.template_contents_map.get(&id).copied()
+    }
+
+    /// WC-M2：登记/更新 template 的 contents fragment（parser/克隆/导入）。
+    pub fn set_template_contents(&mut self, template: NodeId, frag: NodeId) {
+        self.template_contents_map.insert(template, frag);
+    }
+
+    /// WC-M2：template contents 的子节点列表（无 contents/无 template → 空）。
+    /// 供 serializer/序列化面与 host 桥（shim content 视图数据源）。
+    pub fn template_contents_children(&self, id: NodeId) -> Vec<NodeId> {
+        match self.template_contents(id) {
+            Some(frag) => self.child_nodes(frag),
+            None => Vec::new(),
+        }
     }
 
     /// 选择器链是否显式寻址 `template` 段（任一部分 tag 为 template）——direct-address

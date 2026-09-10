@@ -722,8 +722,24 @@
           // 返 undefined → "Cannot read properties of undefined"）。
           var _r145SelKids = function () {
             if (handle) return _handleChildren[handle] || [];
+            // WC-M2：host 解析产物在 contents fragment（parser 真实化）——sel 路径读
+            // __zw_parse_template_contents（参数化 html 的**深 JSON**，本地构建节点——
+            // contents 子非文档树节点，浅 selector 二次定位不可达）。**仅非空时采用**——
+            // 动态装配（createElement('template') + innerHTML=/appendChild）走
+            // _handleChildren/_childNodeList（回退分支，既有语义）。
+            if (sel && typeof __zw_template_contents_deep === 'function') {
+              try {
+                var _tcArr = JSON.parse(__zw_template_contents_deep(sel) || '[]');
+                if (Array.isArray(_tcArr) && _tcArr.length) {
+                  var _tcParent = typeof _wrapSelector === 'function' ? _wrapSelector(sel) : null;
+                  return _tcArr.map(function (e) {
+                    return (typeof _zwMBuildDeepEntry === 'function') ? _zwMBuildDeepEntry(e, _tcParent) : null;
+                  }).filter(Boolean);
+                }
+              } catch (_eTcJ) {}
+            }
             return _childNodeList(sel, null);
-          };
+          }
           // R145：fragment 视图补 cloneNode（deep）——Node.prototype 泛型的 fragment 分支
           // 递归 clone 子（每子 proxy/视图自带 cloneNode）。WPT 同用例的
           // `.content.cloneNode(true).querySelector('p')`。
@@ -884,13 +900,24 @@
               // R145：内联 fragment 克隆（不经 Node.prototype 泛型——泛型的 own-property
               // 委托守卫会命中本 own cloneNode 再委托回来 → 无限递归）。建真 fragment
               // handle + 递归 clone 子。
+              // WC-M2：contents 子是深 JSON 本地构建的 plain 节点（无 sel/handle）——
+              // plain 子的 cloneNode 产物仍 plain，replaceWith(fragment) 的 R321 展开只认
+              // handle 子（host wire + 桶记账）→ 静默丢弃。此处以 **document 重建**
+              //（createElement + attrs + textContent 递归）产 handle 子，与旧 proxy 子
+              // 的 host-wire 语义对齐（R380 的 replaceWith 消费面）。
               var _r145F = globalThis.document.createDocumentFragment();
               if (deep) {
                 var _r145K = _r145SelKids();
                 for (var _r145i = 0; _r145i < _r145K.length; _r145i++) {
                   var _r145c = _r145K[_r145i];
-                  if (!_r145c || typeof _r145c.cloneNode !== 'function') continue;
-                  try { _r145F.appendChild(_r145c.cloneNode(true)); } catch (_e145c) {}
+                  if (!_r145c) continue;
+                  try {
+                    if (_r145c.__zwHandle || (_r145c.__zwSelector && typeof _r145c.cloneNode === 'function')) {
+                      _r145F.appendChild(_r145c.cloneNode(true));
+                    } else {
+                      _r145F.appendChild(_wcRebuildAsHandle(_r145c));
+                    }
+                  } catch (_e145c) {}
                 }
               }
               return _r145F;
@@ -1036,6 +1063,18 @@ return _tplContent;
           }
           if (handle) {
             try {
+              // WC-M2：text/comment handle 的 outerHTML 序列化（旧走元素 DIV 回落——
+              // template content 克隆子树的融合序列化文本子丢失根因）。
+              if (handle && _textHandles && _textHandles[handle]) {
+                var _wcTxt = '';
+                try { _wcTxt = String(this.data != null ? this.data : (this.nodeValue != null ? this.nodeValue : '')); } catch (_eWcT) {}
+                return _zwMEscapeText ? _zwMEscapeText(_wcTxt) : _wcTxt;
+              }
+              if (handle && _commentHandles && _commentHandles[handle]) {
+                var _wcCm = '';
+                try { _wcCm = String(this.data != null ? this.data : (this.nodeValue != null ? this.nodeValue : '')); } catch (_eWcC) {}
+                return '<!--' + _wcCm + '-->';
+              }
               var VOID = { area: 1, base: 1, br: 1, col: 1, embed: 1, hr: 1, img: 1, input: 1, link: 1, meta: 1, param: 1, source: 1, track: 1, wbr: 1 };
               var tag = (typeof __zw_get_tag_handle === 'function' ? __zw_get_tag_handle(handle) : '') || 'div';
               var names = (typeof __zw_attr_names_handle === 'function' ? __zw_attr_names_handle(handle) : '');
@@ -1056,6 +1095,25 @@ return _tplContent;
               }
               if (VOID[tag.toLowerCase()]) return '<' + tag + attrStr + '>';
               var inner = typeof __zw_get_inner_html_handle === 'function' ? (__zw_get_inner_html_handle(handle) || '') : '';
+              // WC-M2：host mutations 无该 handle 的 SetInnerHTML 记录（createElement +
+              // appendChild 子树——子逐个 wire，非整体 innerHTML）时，从 **JS registry**
+              //（_handleChildren）递归序列化（replaceWith( template.content.cloneNode() )
+              // 的同步融合视图依赖——WPT remove-next-sibling-during-replace-with）。
+              if (!inner && _handleChildren && _handleChildren[handle] && _handleChildren[handle].length) {
+                inner = (function _wcSerHandle(kids) {
+                  var out = '';
+                  for (var ki = 0; ki < kids.length; ki++) {
+                    var k = kids[ki];
+                    if (!k) continue;
+                    if (k.nodeType === 3) out += (_zwMEscapeText ? _zwMEscapeText(String(k.data == null ? '' : k.data)) : String(k.data == null ? '' : k.data));
+                    else if (k.nodeType === 8) out += '<!--' + String(k.data == null ? '' : k.data) + '-->';
+                    else if (k.nodeType === 1) {
+                      if (typeof k.outerHTML === 'string') out += k.outerHTML;
+                    }
+                  }
+                  return out;
+                })(_handleChildren[handle]);
+              }
               return '<' + tag + attrStr + '>' + inner + '</' + tag + '>';
             } catch (_e) { return ''; }
           }
