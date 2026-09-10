@@ -3050,6 +3050,10 @@
         for (var i = 0; i < kidsH.length; i++) {
           var k = kidsH[i];
           if (!k || k.nodeType === 11) continue; // fragment 不作 slottable
+          // WC-M3 切片 6（spec slottable = Element or Text）：Comment/ProcessingInstruction
+          // 不作 slottable（WPT HTMLSlotElement-interface 'inserting or removing slots'
+          // 的 comment/PI 排除断言）。
+          if (k.nodeType !== 1 && k.nodeType !== 3) continue;
           var kSlot = '';
           if (k.nodeType === 1) {
             try { kSlot = k.getAttribute('slot') || ''; } catch (_eKs) { kSlot = ''; }

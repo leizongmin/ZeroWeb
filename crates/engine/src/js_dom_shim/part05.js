@@ -4314,9 +4314,21 @@
       }
       // ② host 的 light DOM **直接子**（spec find-slotables：后代不作 slottable——同
       // part03 plain 路径，slots-outside-shadow-dom / slots-fallback-in-document）。
+      // WC-M3 切片 6：registry 空（[] 为 truthy 的旧判定恒短路）时回落 R100 本地文本
+      // 视图（_zwLocalChildNodes）——纯文本 innerHTML 的文本子是 host 的 slottable
+      //（WPT slotchange-event 'innerHTML modifies the children' 的 'baz' 文本分配/移除
+      // 序列），否则 default slot 的 flatten 看不见文本、失配 fire。
       var kidsH = [];
-      if (meta.hostHandle && _handleChildren && _handleChildren[meta.hostHandle]) {
+      if (meta.hostHandle && _handleChildren && _handleChildren[meta.hostHandle]
+          && _handleChildren[meta.hostHandle].length) {
         kidsH = _handleChildren[meta.hostHandle].slice();
+      } else if (meta.hostHandle && typeof _zwLocalChildNodes === 'function') {
+        var _tKids6 = _zwLocalChildNodes(meta.hostSel || null, meta.hostHandle);
+        if (_tKids6 && _tKids6.length) {
+          kidsH = _tKids6.slice();
+        } else if (meta.hostSel && typeof _childNodeList === 'function') {
+          kidsH = _childNodeList(meta.hostSel, null);
+        }
       } else if (meta.hostHandle && typeof _handleChildNodes === 'function') {
         kidsH = _handleChildNodes(meta.hostHandle);
       } else if (meta.hostSel && typeof _childNodeList === 'function') {
@@ -4328,6 +4340,9 @@
       for (var j = 0; j < kidsH.length; j++) {
         var n = kidsH[j];
         if (!n || n.nodeType === 11) continue;
+        // WC-M3 切片 6（spec slottable = Element or Text）：Comment/PI 不作 slottable
+        // （同 part03——HTMLSlotElement-interface 排除断言）。
+        if (n.nodeType !== 1 && n.nodeType !== 3) continue;
         var nSlot = '';
         if (n.nodeType === 1) {
           try { nSlot = n.getAttribute('slot') || ''; } catch (_eNs) { nSlot = ''; }

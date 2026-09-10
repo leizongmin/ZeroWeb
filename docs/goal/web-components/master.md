@@ -2,9 +2,9 @@
 
 **入口文档**: [../web-components.md](../web-components.md)
 **创建日期**: 2026-09-07（goal 拆分 bootstrap）
-**最后更新**: 2026-09-10（M3 切片 5 落地——name-mode slotchange diff 化（flatten 口径
-marked-transition 链 + innerHTML 接入），净 +5；must-not-fire 簇转绿；余项：slotchange
-尾 12 案三族（mutation-observer/retarget/wrapper 身份）+ Rust 接线 + DC-5 终判）
+**最后更新**: 2026-09-11（M3 切片 6 落地——slottable 规范过滤（Comment/PI 排除，
+HTMLSlotElement-interface 18/18）+ 纯文本 innerHTML 的文本 slottable 可见性，净 +3；
+余项：slotchange 尾 12 案（dispatch/observer 层）+ DC-5 终判）
 
 ---
 
@@ -75,34 +75,31 @@ Shadow DOM 渲染级 composed tree 排除（等用户点名专项）。
 
 ## 下一步计划
 
-1. **M3 切片 6（slotchange 尾 12 案三族，按 ROI 排序）**：
-   - innerHTML 尾断言（~4）：R100 文本节点不入 `_handleChildren` registry 的可见性
-     交互——纯文本子替换的 flatten 序列不可见（upstream 测试自带 FIXME 同域问题）
-   - transient slot（~4）：slot 移除后派发时 wrapper 身份二相（同节点双 wrapper——
-     `expected __n78 but got __n78`），需 dispatch/retarget 层的 canonical wrapper 解析
-   - mutation-observer 交错（~4）：slotchange 与 MutationObserver 微任务顺序——需
-     MutationObserver 集成（独立特性，先评估）
-   - 嵌套 slotchange retarget（~4，"must bubble"）：事件路径经 slot 分配 retarget 到
-     上层 slot 侦听器——dispatch 层 composed-path 深化
-2. Rust `resolve_slots` 接线（shadow.rs → engine 查询消费——渲染级消费等用户点名专项）
-3. **DC-5 全量门禁**（`make test` + clippy + reftest 持续全绿基础上）终判
+1. **DC-4/DC-5 收尾评估**：slot 语义观测面（assignedNodes/flatten/assignedSlot/
+   slotchange/imperative assign）已由 shim 满足且三目录通过率 66%；剩余 slotchange 尾
+   12 案为 dispatch/observer 层工作（wrapper 身份二相、MutationObserver 集成、嵌套
+   retarget、Chrome async host apply 语义差）——属 event/dispatch 基建，评估是否并入
+   event-loop-spec 流或等专项点名；Rust `resolve_slots` 接线的消费面为渲染级查询
+   （等用户点名后按 run-rules §9 协调）。若判定 DC-4 观测面已满足，则整理 DC-1~5
+   逐项核对材料做终判。
+2. **DC-5 全量门禁**（`make test` + clippy + reftest 持续全绿基础上）终判
 
-### 已知挂账（2026-09-10 M3 切片 5 更新）
+### 已知挂账（2026-09-11 M3 切片 6 更新）
 
-- ~~嵌套 template 装配的 childNodes 回指环~~ ✅ 结构性消除（contents 入独立 fragment，
-  不再入文档树；CE 遍历 seen 防环守卫保留为纵深防御）
+- ~~嵌套 template 装配的 childNodes 回指环~~ ✅ M2 结构性消除
 - ~~slots-fallback 混合树身份贯通~~ ✅ M3 切片 3 收口
 - ~~imperative-slot-api 全簇~~ ✅ M3 切片 4 收口
-- ~~name-mode slotchange diff 化~~ ✅ M3 切片 5 收口（flatten 口径 marked-transition 链
-  ——must-not-fire 簇 +4 转绿；slotchange.html 'Slotchange should be fired' 1 案按预判
-  迁移为挂起，低载过滤跑可达 Pass，属测量噪声域）
-- slotchange 尾 12 案三族（见下一步计划切片 6）
+- ~~name-mode slotchange diff 化~~ ✅ M3 切片 5 收口（flatten 口径 marked-transition 链）
+- ~~slottable 规范过滤（Comment/PI）+ 文本 slottable 可见性~~ ✅ M3 切片 6 收口
+- slotchange 尾 12 案（dispatch/observer 层——非 slot 语义）：
+  innerHTML 尾计数（Chrome async host apply 语义差，upstream 测试自带 FIXME 同域）、
+  transient slot（wrapper 身份二相——dispatch/retarget 层）、mutation-observer 交错
+  （需 MutationObserver 集成）、嵌套 retarget（composed-path 深化）
 - builtin-coverage 的 innerHTML 解析簇（~108F）：sel 容器 innerHTML 后
   getElementById 的 pending 融合（R380 查询融合域，非 CE 域）
 - reactions/ 表格族（table-scoped 解析升级）与 customized-builtins 的 iframe/reparse 面
 - XHTML 悬空 body 查询域（`additions-to-parsing-xhtml-documents/node-document.html`
-  5 案）——测试形态 `doc.body = createElement('body')` 不挂树 + doc 级查询以
-  documentElement 起根；pre-existing（M2 前同 Fail），与 template 真实化无因果
+  5 案）——pre-existing（M2 前同 Fail），与 template 真实化无因果
 - ElementData 加字段曾致 dom 微基准全线 +2-3x（分配/layout 阈值效应）——contents 已改
   Document 侧表规避；后续给 ElementData 加字段前必须过 bench-gate
 
@@ -115,7 +112,7 @@ crates/dom/` 核对渲染流域活跃面；碰 part01.js 前与 event-loop-spec 
 |--------|------|
 | M1 — WPT 基线建立 + Custom Elements 收口 | ✅ 2026-09-10（切片 1/2a/2b/3/4 全清——DC-1 基线 + DC-2 upgrade/whenDefined/adoptedCallback/双路径全收口） |
 | M2 — template 真实化 | ✅ 2026-09-10 收口（切片 1 + iframe/detached 工厂 content 视图——DC-3 全满足） |
-| M3 — slot 全链路 + 收尾 | ◐ 切片 1-5 ✅（HTMLSlotElement 接口 + IDL + slotchange flatten-diff 化 + find-a-slot 仲裁 + flatten spec 形 + imperative slot API 全簇）；余切片 6（slotchange 尾 12 案三族）+ Rust 接线 + DC-5 终判 |
+| M3 — slot 全链路 + 收尾 | ◐ 切片 1-6 ✅（HTMLSlotElement 接口 + IDL + slotchange flatten-diff 化 + find-a-slot 仲裁 + flatten spec 形 + imperative slot API 全簇 + slottable 规范过滤）；余 DC-4/DC-5 收尾评估（见下一步计划） |
 
 ## 待用户决策
 
@@ -128,9 +125,9 @@ crates/dom/` 核对渲染流域活跃面；碰 part01.js 前与 event-loop-spec 
 
 - 测试基线：立项时点全绿（`make test` / `make reftest` 入口，经 test-guard 包裹；
   禁止裸跑 cargo test）
-- WC 用例面：**3142 Pass / 4762 subtests（66%）**（2026-09-10 M3 切片 5，
-  evidence/2026-09-10-wc-m3s5.{md,json}。历史：基线 437=9% → 2a 689=15% → 2b 2565=55% →
+- WC 用例面：**3145 Pass / 4762 subtests（66%）**（2026-09-11 M3 切片 6，
+  evidence/2026-09-11-wc-m3s6.{md,json}。历史：基线 437=9% → 2a 689=15% → 2b 2565=55% →
   3 2720=58% → 4 3008=64% → M2 3014 → M3s1 3046 → M3s2 3050 → M3s3 3105 → M3s4 3137 →
-  M3s5 3142）
+  M3s5 3142 → M3s6 3145）
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过；
   dom 结构变更轮跑 `make reftest` 作渲染面守卫
