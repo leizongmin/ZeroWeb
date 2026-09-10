@@ -2156,6 +2156,140 @@ pub(super) fn resolve_relative_inset(box_node: &LayoutBox, styles: &HashMap<Node
     (dx, dy)
 }
 
+/// R4210（CSS §9.4.3）：taffy 0.7 对 block-level `position:relative` 的**正 top/bottom
+/// 实长 inset** 把位移计入父 content size——位移后的子底沿超出静态流底时父高膨胀、后续
+/// in-flow 兄弟被整体下推（relpos-block-001/002 3.69%：「run-in contains relpos block」
+/// 探针实证 +2em → 兄弟 +32px）。负 inset 不收缩（对称性三探针实证）。§9.4.3：relative
+/// 偏移不得影响兄弟位置/父高度。
+///
+/// 本 pass 自底向上补偿：对实长 dy>0 的 block-level relpos 子，若静态底（y−dy+h）≤ 父
+/// content_height（静态本已容纳）而位移底超出，则把超额从父 height/content_height 扣除，
+/// 并对后续 in-flow 兄弟上移同量。taffy 已把子盒 y 位移到位（视觉正确），此处只修布局流。
+///  dy<0 / 父定高（taffy 不膨胀定高容器）/ inline-level 均不触发。kill-switch
+/// `ZW_RELPOS_FLOW_LEAK=0`。
+pub(super) fn compensate_block_relpos_flow_inflation(root: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) {
+    // 默认关闭（opt-in）：pass 本身收敛 relpos-block-001/002（3.69%→0.00%），
+    // 但 position-relative-015 交互未解（bottom inset 兄弟的静态底重建后仍 2.94% 红）
+    // ——解开 015 交互后再翻 default-on。
+    if std::env::var("ZW_RELPOS_FLOW_LEAK").as_deref() != Ok("1") {
+        return;
+    }
+    /// 后序遍历：返回本盒相对「静态流位置」收缩的总量（供父层上移本盒后续兄弟）。
+    ///
+    /// 逐层职责：
+    /// 1. 先递归子代——子代返回的收缩量 d_i 在**本层**应用：i 之后的 in-flow 兄弟上移 d_i；
+    /// 2. 再检测本盒 auto-h 下的 direct relpos 子膨胀（含子代已收缩后的新 content_height），
+    ///    应用后并入返回总量；
+    /// 3. 本盒 height/content_height 按总量收缩（仅 auto-h；定高容器不被 taffy 膨胀）。
+    fn walk(b: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) -> f32 {
+        let mut total = 0.0f32;
+        for i in 0..b.children.len() {
+            let child_delta = walk(&mut b.children[i], styles);
+            if child_delta > 0.0 {
+                for sib in &mut b.children[i + 1..] {
+                    if is_shiftable_in_flow_block(sib) {
+                        sib.y -= child_delta;
+                    }
+                }
+                total += child_delta;
+            }
+        }
+        if total > 0.0 {
+            let auto_h = b
+                .node_id
+                .and_then(|id| styles.get(&id))
+                .is_some_and(|s| matches!(s.height, LengthValue::Auto));
+            if auto_h {
+                b.height -= total;
+                b.content_height = (b.content_height - total).max(0.0);
+            }
+        }
+        // 本层 direct relpos 子的膨胀回收（protruder 判定用已更新的 content_height）。
+        let auto_h = b
+            .node_id
+            .and_then(|id| styles.get(&id))
+            .is_some_and(|s| matches!(s.height, LengthValue::Auto));
+        if !auto_h {
+            return total;
+        }
+        let mut my_delta = 0.0f32;
+        for i in 0..b.children.len() {
+            let inflation = {
+                let c = &b.children[i];
+                let Some(style) = c.node_id.and_then(|id| styles.get(&id)) else {
+                    continue;
+                };
+                if !c.is_relative || c.is_absolute || c.is_fixed || !c.is_block_level {
+                    continue;
+                }
+                let dy = match &style.top {
+                    LengthValue::Percentage(_) => None,
+                    lv => resolve_postprocess_real_length(lv, style),
+                }
+                .or_else(|| {
+                    match &style.bottom {
+                        LengthValue::Percentage(_) => None,
+                        lv => resolve_postprocess_real_length(lv, style),
+                    }
+                    .map(|v| -v)
+                })
+                .unwrap_or(0.0);
+                if dy <= 0.0 {
+                    continue;
+                }
+                let static_bottom = c.y - dy + c.height;
+                let shifted_bottom = c.y + c.height;
+                // 其它兄弟的**静态**底——taffy 已把 relpos 兄弟的 y 位移到位（含负向），
+                // 其它内联定位取 y+height 后须回退其自身 dy 才是静态流位置
+                //（position-relative-015：div2 bottom:-1in 视觉上移 96 → 表观底 96，
+                //  静态底 192；不回退会虚增 inflation 96 → div2 被二次上移出画布）。
+                let other_max = b
+                    .children
+                    .iter()
+                    .enumerate()
+                    .filter(|(j, sib)| {
+                        *j != i && !sib.is_absolute && !sib.is_fixed && matches!(sib.float, FloatValue::None)
+                    })
+                    .map(|(_, sib)| {
+                        let sib_dy = sib
+                            .node_id
+                            .and_then(|id| styles.get(&id))
+                            .filter(|s| matches!(s.position, PositionValue::Relative))
+                            .map(|s| match &s.top {
+                                LengthValue::Percentage(_) => match &s.bottom {
+                                    LengthValue::Percentage(_) => 0.0,
+                                    lv => resolve_postprocess_real_length(lv, s).map(|v| -v).unwrap_or(0.0),
+                                },
+                                lv => resolve_postprocess_real_length(lv, s).unwrap_or(0.0),
+                            })
+                            .unwrap_or(0.0);
+                        sib.y - sib_dy + sib.height
+                    })
+                    .fold(0.0f32, f32::max);
+                // 本子为「突出者」：父当前内容高 ≈ 位移后底沿（膨胀由本子贡献）。
+                let is_protruder = (b.content_height - shifted_bottom).abs() <= 0.5;
+                if !is_protruder || static_bottom > b.content_height + 0.5 {
+                    0.0
+                } else {
+                    (shifted_bottom - static_bottom.max(other_max)).max(0.0)
+                }
+            };
+            if inflation > 0.0 {
+                b.height -= inflation;
+                b.content_height -= inflation;
+                my_delta += inflation;
+                for sib in &mut b.children[i + 1..] {
+                    if is_shiftable_in_flow_block(sib) {
+                        sib.y -= inflation;
+                    }
+                }
+            }
+        }
+        total + my_delta
+    }
+    walk(root, styles);
+}
+
 /// R711：block-level `position:relative` 的**百分比** inset（**仅 top/bottom `%`**）。
 ///
 /// taffy 0.7 对 relative 元素：应用 Length inset；**水平（left/right %）也已应用**；

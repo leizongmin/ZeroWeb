@@ -952,6 +952,11 @@ impl LayoutEngine {
 
             // R57 DEBUG: canvas y@step
         }
+        // R4210：taffy 0.7 对 block-level relative 的**正** top/bottom 实长 inset 把位移计入
+        // 父 content size（后续兄弟下推、父高膨胀）——§9.4.3 修复。须在全部以「子盒 extent」
+        // 为据的增高/兄弟位移 pass（R109 backfill / ZW_IFC_GROW_SHIFT 等）之后跑，否则膨胀被
+        // 下游 pass 重新计入。
+        compensate_block_relpos_flow_inflation(&mut root_box, styles);
         crate::form_layout::shrink_mixed_control_forms(&mut root_box, doc, styles);
 
         // R4195（css-contain-3 §containment-inline-size）：fieldset 直挂（无 form 父）
