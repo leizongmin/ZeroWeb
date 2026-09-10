@@ -76,11 +76,18 @@ Shadow DOM 渲染级 composed tree 排除（等用户点名专项）。
 
 ## 下一步计划
 
-1. **M3 切片 8 续（第二增量）**：handle 世界 `_dispatchWithBubble` 同构化——R114 链
-   插 shadow root 本体站（现「shadow root 本身无 listener 站，直接断链」）+ per-station
-   retarget（现 ev.target 单点设置）+ relatedTarget retarget 过滤（spec：relatedTarget
-   与 target 的 shadow-including 祖先相同时该站 skip——event-with-related-target 18 案、
-   event-inside-slotted-node 20 案主形态）。plain/handle 两域 composedPath 语义已对齐。
+1. **M3 切片 8 第二增量重设计（2026-09-11 首版实施已回退，侦察结论）**：R114（handle
+   世界 `_dispatchWithBubble`）的 slot detour + shadow root 站 + per-station retarget
+   首版 destabilize——实测两处坑：
+   - slot detour 在 `_zwNodeParent` registry 上行中引入环（log 86 站，hops guard 打满；
+     open/closed 变体 86/1 漂移——测试页内多树状态互染），链构造需先解决**去重/环检测**
+     （chain 身份集合，而非 seen 逐对象）
+   - shadow root 站的 `capAnc/bAnc = _wrapHandle(rootHandle)` 进 `_dispatchToListeners`
+     抛 'node.addEventListener is not a function'——该函数对非元素 thisObj 有隐含假设
+     （inline handler / once 移除路径），站接入前须先修 its thisObj 契约
+   - 下轮方案：① 先修 `_dispatchToListeners` 的 thisObj 契约（独立小步可验）；② 链构造
+     改为「先收集后去重」两段式（收集含 slot/root 站，chain.push 前按 handle 查重）；
+     ③ retarget 沿用第一增量的 idx/entry 模式（该模式在 R167 已验证）
 2. slotchange 尾 12 案 + disabledFeatures×attachShadow registry 集成（尾 2 案）。
 3. Rust `resolve_slots` 接线（渲染级消费等用户点名专项）+ **DC-5 终判**
    （make test + clippy + reftest 持续全绿基础上）。
@@ -96,7 +103,8 @@ Shadow DOM 渲染级 composed tree 排除（等用户点名专项）。
 - ~~plain 世界 composed path/shadow root 站/retarget~~ ✅ M3 切片 8 第一增量收口
   （event-composed 9/9）
 - event retarget 续（第二增量）：handle 世界 `_dispatchWithBubble` shadow root 站 +
-  per-station retarget + relatedTarget 过滤（~60 subtest）
+  per-station retarget + relatedTarget 过滤（~60 subtest）——首版回退，重设计三步见
+  下一步计划（_dispatchToListeners thisObj 契约 → 链去重两段式 → retarget idx 模式）
 - disabledFeatures=['shadow'] × attachShadow（尾 2 案——CE registry definition 感知）；
   canvas 等 createElement 产物 _realTag pending 回落 'div' 的 safelist 误放行
 - slotchange 尾 12 案（dispatch/observer 层）：innerHTML 尾计数（Chrome async host
