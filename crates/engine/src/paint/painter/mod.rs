@@ -838,7 +838,7 @@ impl Painter {
             && self.viewport_h > 0.0
             && let Some(doc) = doc
         {
-            use zero_style_system::property::types::ColorValue;
+            use zero_style_system::property::types::{ColorValue, ContentComputedValue};
             // 单次 DFS 收集 html+body（旧实现 2 次全树遍历，取首个）
             let (html_ids, body_ids): (Vec<_>, Vec<_>) = doc
                 .get_elements_by_tag_names(&["html", "body"])
@@ -876,6 +876,17 @@ impl Painter {
             let no_principal_box = |s: Option<&ComputedStyle>| {
                 s.is_some_and(|st| matches!(st.display, DisplayValue::None | DisplayValue::Contents))
             };
+            // R4208（css-content-3 #content-property + css-backgrounds-3 #body-background）：
+            // 根元素被 content 替换（`content: url()/<gradient>`）→ 根常规内容（body 子树）
+            // 不生成盒 → **body fallback** 背景无法传播到画布；html 自身背景不受影响
+            //（css-backgrounds-3 #root-background：replaced root 的背景仍是根背景，照常上画布
+            //——driving: element-replacement-root-canvas-bg chromium 全绿断言）。
+            let html_content_replaced = html_style.is_some_and(|hs| {
+                matches!(
+                    hs.content,
+                    ContentComputedValue::Url(_) | ContentComputedValue::Gradient(_)
+                )
+            });
             let (prop_node, prop_style) = if html_is_display_none {
                 // html display:none → body 作为其后代亦不渲染，不传播。
                 (None, None)
@@ -884,9 +895,11 @@ impl Painter {
                 (None, None)
             } else if html_has_bg {
                 (html_id, html_style)
-            } else if !contain_blocks(body_style) && !no_principal_box(body_style) {
-                // html 无背景 → body fallback 传播；body 被 contain 抑制，或 body 无 principal box
-                //（display:none/contents）则不传播。
+            } else if !html_content_replaced && !contain_blocks(body_style) && !no_principal_box(body_style) {
+                // html 无背景 → body fallback 传播；body 被 contain 抑制，body 无 principal box
+                //（display:none/contents），或根被 content 替换（body 不渲染）则不传播。
+                // driving: element-replacement-root-canvas-bg-from-body（chromium ref = 白底 +
+                // 替换图，body bg 不上画布）。
                 (body_id, body_style)
             } else {
                 (None, None)
