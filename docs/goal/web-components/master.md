@@ -90,9 +90,15 @@ Shadow DOM 渲染级 composed tree 排除（等用户点名专项）。
 - XHTML 悬空 body 查询域（`additions-to-parsing-xhtml-documents/node-document.html`
   5 案）——测试形态 `doc.body = createElement('body')` 不挂树 + doc 级查询以
   documentElement 起根；pre-existing（M2 前同 Fail），与 template 真实化无因果
-- slots-fallback 混合树身份贯通（2026-09-10 三层探针定位）：assignedNodes 分派域
-  handle/plain 分裂——plain slot 的父容器是 handle proxy 但 plain 子不入容器 registry，
-  assignedNodes({flatten}) 的 fallback 链在跨世界时断。M3 切片 3 主攻项
+- slots-fallback 混合树身份贯通（2026-09-10 深挖两轮）：assignedNodes 分派域
+  handle/plain 分裂。已定位的完整证据链：createTestTree 里 host' 是 plain wrapper →
+  attachShadow 走 part03:466 轻量 shadow（plain object，非 handle 容器），但 probe 实测
+  s1.parentNode 是 `#document-fragment`（importNode 真产物，hosted:false）——展平后
+  parentNode 链残留在 fragment 残壳。修复方向：part03:494 轻量 shadow.appendChild 的
+  fragment 展平处统一设置展平子 parentNode=shadow 本体（非 handle），assignedNodes 的
+  plain 兜底沿 shadowPlain.childNodes 找 slot。注意 `_recordHandleChild` 容器放行 plain 子
+  与 flatten parentNode 重链两个 patch 已实现过但因主链路（轻量 shadow）不经过它们而
+  回滚，重做时从轻量 shadow.appendChild 入手
 - ElementData 加字段曾致 dom 微基准全线 +2-3x（分配/layout 阈值效应）——contents 已改
   Document 侧表规避；后续给 ElementData 加字段前必须过 bench-gate
 
