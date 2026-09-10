@@ -7325,6 +7325,18 @@ return _tplContent;
             return (isNaN(_szN) || _szN < 0) ? 0 : _szN;
           }
         }
+        // WC-M3 切片 8 第二增量（web-components goal，WPT event-with-related-target
+        // createFixedTestTree helper 的 `element.label = name` 站点身份）：`label` IDL 名
+        // 的泛化读侧——与 R3069 set 侧「无条件写 label 内容属性」（part05，无 tag gate）
+        // 对称：读同名内容属性，未设返 undefined（继续原型链回落）。OPTION 的专用分支
+        //（属性缺省回落 text）优先级更高、不经此处。shadow root wrapper（fragment 容器）
+        // 的 `shadowRoot.label = name` 身份面同源 round-trip。
+        if (prop === 'label' && _realTag(sel, handle) !== 'OPTION') {
+          var _glbRaw = handle
+            ? __zw_get_attr_handle(handle, 'label')
+            : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'label') : __zw_get_attr(sel, 'label'));
+          if (_glbRaw) return _glbRaw;
+        }
         // R3038/R3041：reflected unsigned-long（numeric）属性读（colSpan/rowSpan/maxLength/minLength/cols/rows/start）。
         // parseInt 内容属性 → number；缺省/不可解析 → entry.d（spec default）；colSpan/rowSpan <1 → 1（min）。
         // 注：TABLE/THEAD/TBODY/TFOOT 的 `.rows` 在更早分支（part03）返行集合——此处仅对 textarea 命中（table 已 return）。

@@ -273,14 +273,16 @@
           // assignedSlot 是只读 accessor——赋值静默忽略（无 setter 语义，proxy set trap
           // 到达即吞，防落 expando）。
           return true;
-        } else if (p === 'kind' || p === 'label' || p === 'srclang') {
+        } else if ((p === 'kind' || p === 'label' || p === 'srclang') && _realTag(sel, handle) === 'TRACK') {
           // `track.kind/label/srclang = x`（HTMLTrackElement，M1 切片 3）——字符串反射 setter
-          // （写同名内容属性；kind 的归一在 getter）。仅 TRACK。
-          if (_realTag(sel, handle) === 'TRACK') {
-            var _tls = (value == null) ? '' : String(value);
-            if (handle) { __zw_set_attr_handle(handle, p, _tls); moAttr = p; } // WC-M1 切片 4
-            else { __zw_set_attr(sel, p, _tls); moAttr = p; }
-          }
+          // （写同名内容属性；kind 的归一在 getter）。仅 TRACK。WC-M3 切片 8 第二增量：
+          // tag gate 上提——旧版分支对所有元素命中但体内再 gate，非 TRACK 的 `el.label = x`
+          // 被静默吞（WPT event-with-related-target createFixedTestTree 的
+          // `element.label = name` 站点身份全 undefined 根因）；gate 后非 TRACK label 落
+          // R3069 反射分支（写 label 内容属性，get 侧 part04 对称读）。
+          var _tls = (value == null) ? '' : String(value);
+          if (handle) { __zw_set_attr_handle(handle, p, _tls); moAttr = p; } // WC-M1 切片 4
+          else { __zw_set_attr(sel, p, _tls); moAttr = p; }
         } else if (p === 'default' && _realTag(sel, handle) === 'TRACK') {
           // `track.default = x`——boolean 反射（truthy → presence；falsy → 移除）。移除同步
           // R122 实例层（同 crossOrigin——防 hasAttribute/getAttribute 读 stale 实例记录）。

@@ -5298,7 +5298,13 @@
     // CAPTURING_PHASE(1)、target（'all'）→ AT_TARGET(2)、bubble 祖先→ BUBBLING_PHASE(3)。target 阶段的 capture
     // 与 non-capture listener 都为 AT_TARGET（WPT Event-dispatch-order-at-target）。dispatch 后由调用方
     // （_dispatchWithBubble finally 或 _dispatchToListeners 末尾）复位为 NONE(0)。
-    event.eventPhase = phase === 'capture' ? 1 : (phase === 'bubble' ? 3 : 2);
+    // WC-M3 切片 8 第二增量三小步（web-components goal）：`_zwAdjStation` 标记站（shadow-adjusted
+    // target 非空——target 本体 + 跨界 host）在 capture/bubble 两阶段均报 AT_TARGET(2)（spec invoke：
+    // 「item's shadow-adjusted target is non-null → eventPhase = AT_TARGET」，WPT
+    // capturing-and-bubbling 的 host 站 capture 条目期望 2）。标记由 _r114ApplyAdj 逐站刷新，
+    // 其余派发路径不受影响。
+    event.eventPhase = event._zwAdjStation === true ? 2
+      : (phase === 'capture' ? 1 : (phase === 'bubble' ? 3 : 2));
     // js-dom M4 R331：spec `concept-event-dispatch` 步骤 4「let listeners be a **clone** of
     // event's currentTarget's event listener list」是**每站**（每结构遍历步）重新克隆——
     // 不再是整次 dispatch 一次快照。WPT Event-dispatch-handlers-changed：target 站
@@ -5936,6 +5942,19 @@
       //（首版失控 86 站的教训；正常树序上行永不命中）。
       var _r114Seen = {};
       var _r114SeenAdd = function (sel, handle) { _r114Seen[handle ? ('h' + handle) : ('s' + sel)] = true; };
+      // WC-M3 切片 8 第二增量三小步（spec dispatch relatedTarget 面）：每站 retargeted
+      // relatedTarget（`rel` 随站记录，_r114ApplyAdj 逐站设 ev.relatedTarget）+ 停止
+      // 规则（root→host 跨越时 host === retargeted relatedTarget → path 止于 root）。
+      var _r114RelOrig = null;
+      try {
+        _r114RelOrig = (event && event.relatedTarget && event.relatedTarget.nodeType)
+          ? event.relatedTarget : null;
+      } catch (_e8ro2) { _r114RelOrig = null; }
+      var _r114RelFor = function (sel, handle) {
+        if (!_r114RelOrig || typeof _zwRetargetRel !== 'function') return null;
+        var _rp = _makeProxy ? _makeProxy(sel, handle) : null;
+        return _rp ? _zwRetargetRel(_r114RelOrig, _rp) : null;
+      };
       // adjusted target 的树根（所在 shadow 树的 root 容器 handle；null = light/detached 树）。
       var _r114TreeRoot = function (h) {
         var _t = h, _tg = 0;
@@ -5961,7 +5980,7 @@
           // shadow 外（sel 节点 = light DOM / host 快照内节点）——spec 近似：sel 域视为
           // 已出 shadow（快照树无 shadow 边界信息；hostSel 站 = host，正确不抑制）。
           _r114Sel = _r114L.parentSel;
-          chain.push({ sel: _r114Sel, adj: _r114Adj });
+          chain.push({ sel: _r114Sel, adj: _r114Adj, adjStation: false, rel: _r114RelFor(_r114Sel, null) });
           _r114SeenAdd(_r114Sel, null);
           _r114Handle = null;
           break;
@@ -5972,11 +5991,27 @@
         if (_r114Pm) {
           // ② shadow root 站入链（spec：path 含 shadow root 本体——root 有 EventTarget
           // 面，listener 在 root 站 fire；非 composed 事件 path 止于 root）。
-          chain.push({ sel: null, handle: _r114PH, shadow: true, adj: _r114Adj });
+          chain.push({ sel: null, handle: _r114PH, shadow: true, adj: _r114Adj, adjStation: false, rel: _r114RelFor(null, _r114PH) });
           _r114SeenAdd(null, _r114PH);
           if (!event.composed) { _r114PostRootEnd = true; break; }
           var _r114HostSel = _r114Pm.hostSel || null;
           var _r114HostHandle = _r114Pm.hostHandle || null;
+          // 停止规则（spec Otherwise-branch）：adjusted 的树根非 host 的 shadow-including
+          // 祖先（= 从 adjusted 所在树跨出，即真 retarget 跨越）且 host === retargeted
+          // relatedTarget → path 止于 root（host 站不入链；WPT event-with-related-target
+          // 'should stop' 族 + event-composed-path-with-related-target test2）。
+          var _r114Crossing = _r114AdjRoot === _r114PH && (_r114HostSel || _r114HostHandle);
+          if (_r114Crossing && _r114RelOrig) {
+            var _r114HostPr = _r114HostHandle ? _makeProxy(null, _r114HostHandle)
+              : _makeProxy(_r114HostSel, null);
+            var _r114AdjNode = _r114Adj
+              ? (_makeProxy(_r114Adj.sel, _r114Adj.handle) || target) : target;
+            var _r114AdjRootN = _zwNodeRootOf(_r114AdjNode);
+            if (!_zwSiiDesc(_r114AdjRootN, _r114HostPr)) {
+              var _r114RelAtHost = _zwRetargetRel(_r114RelOrig, _r114HostPr);
+              if (_r114RelAtHost === _r114HostPr) break;
+            }
+          }
           // retarget：adjusted target 的树根 = 本 root（从其树内跨出）→ 自 host 站起 = host。
           if (_r114AdjRoot === _r114PH && (_r114HostSel || _r114HostHandle)) {
             _r114Adj = _r114HostSel ? { sel: _r114HostSel, handle: null }
@@ -5985,7 +6020,7 @@
           }
           _r114CurDepth = _r114CurDepth > 0 ? _r114CurDepth - 1 : 0;
           if (_r114HostSel) {
-            chain.push({ sel: _r114HostSel, shadow: false, adj: _r114Adj });
+            chain.push({ sel: _r114HostSel, shadow: false, adj: _r114Adj, adjStation: _r114Crossing, rel: _r114RelFor(_r114HostSel, null) });
             _r114SeenAdd(_r114HostSel, null);
             _r114Sel = _r114HostSel;
             _r114Handle = null;
@@ -5995,7 +6030,7 @@
             // host 站入链，然后从 host 继续上行（host 可能也在外层 shadow 内——嵌套
             // shadow 场景）。注：只递减 _r114CurDepth——**不动** _r114ShadowDepth
             //（target 深度，target 站抑制判定用，immutable）。
-            chain.push({ sel: null, handle: _r114HostHandle, shadow: _r114CurDepth > 0, adj: _r114Adj });
+            chain.push({ sel: null, handle: _r114HostHandle, shadow: _r114CurDepth > 0, adj: _r114Adj, adjStation: _r114Crossing, rel: _r114RelFor(null, _r114HostHandle) });
             _r114SeenAdd(null, _r114HostHandle);
             _r114Handle = _r114HostHandle;
             continue;
@@ -6031,14 +6066,14 @@
             // 步进到 slot（light→shadow 穿越：抑制深度 +1；adjusted target 不变——
             // 进入 shadow 树不 retarget，只有跨出才改）。
             _r114CurDepth++;
-            chain.push({ sel: null, handle: _r114SlotPr.__zwHandle, shadow: true, adj: _r114Adj });
+            chain.push({ sel: null, handle: _r114SlotPr.__zwHandle, shadow: true, adj: _r114Adj, adjStation: false, rel: _r114RelFor(null, _r114SlotPr.__zwHandle) });
             _r114SeenAdd(null, _r114SlotPr.__zwHandle);
             _r114Handle = _r114SlotPr.__zwHandle;
             continue;
           }
         }
         // ③ 普通父步进。
-        chain.push({ sel: null, handle: _r114PH, shadow: _r114CurDepth > 0, adj: _r114Adj });
+        chain.push({ sel: null, handle: _r114PH, shadow: _r114CurDepth > 0, adj: _r114Adj, adjStation: false, rel: _r114RelFor(null, _r114PH) });
         _r114SeenAdd(null, _r114PH);
         _r114Handle = _r114PH;
       }
@@ -6049,7 +6084,7 @@
           var _r114P;
           try { _r114P = __zw_parent(_r114C); } catch (_e114) { _r114P = ''; }
           if (!_r114P) break;
-          chain.push({ sel: _r114P, adj: _r114Adj });
+          chain.push({ sel: _r114P, adj: _r114Adj, adjStation: false, rel: _r114RelFor(_r114P, null) });
           _r114C = _r114P;
         }
       }
@@ -6128,13 +6163,15 @@
     // shadow-adjusted target 身份）随对象形态透传——字符串站（纯 sel 域）无标记。
     function _r114Entry(e) {
       if (e && typeof e === 'object') {
-        return { sel: e.sel || null, handle: e.handle || null, shadow: !!e.shadow, adj: e.adj || null };
+        return { sel: e.sel || null, handle: e.handle || null, shadow: !!e.shadow, adj: e.adj || null, rel: e.rel || null };
       }
-      return { sel: e, handle: null, shadow: false, adj: null };
+      return { sel: e, handle: null, shadow: false, adj: null, rel: null };
     }
     // WC-M3 切片 8 第二增量：per-station shadow-adjusted target（spec retargeting——
     // 每站独立改写 event.target/srcElement；`adj` 为 null 即原始 target。无条件设置：
-    // capture 逆序由外向内 adj 从 retargeted 收敛回 null，须逐站复位）。
+    // capture 逆序由外向内 adj 从 retargeted 收敛回 null，须逐站复位）。三小步：`rel`
+    // 非空时同步逐站设 event.relatedTarget（spec invoke 每站 retargeted relatedTarget）；
+    // `_zwAdjStation` 标记（adj 非空）使 eventPhase 在 capture/bubble 均报 AT_TARGET。
     function _r114ApplyAdj(entry) {
       var _adjT = target;
       if (entry.adj) {
@@ -6143,6 +6180,11 @@
       }
       try { event.target = _adjT; } catch (_e8t1) {}
       try { event.srcElement = _adjT; } catch (_e8t2) {}
+      if (entry.rel) {
+        try { event.relatedTarget = entry.rel; } catch (_e8rel) {}
+      }
+      // adjStation（target 本体/跨界 host）→ eventPhase 在 capture/bubble 均报 AT_TARGET。
+      try { event._zwAdjStation = entry.adjStation === true; } catch (_e8adj) {}
     }
     for (var cpi = 0; cpi < elemChain.length; cpi++) {
       var _r114E = _r114Entry(elemChain[cpi]);
@@ -6234,6 +6276,13 @@
       // 触发 = 双 fire，renderer R2941/R2943 回归）。其他元素 target 无共存槽位问题（slot undefined 全触发，
       // 旧行为）。
       var tgtSlotFilter = targetSlot !== undefined ? targetSlot : (targetSel === 'html' ? null : undefined);
+      // WC-M3 切片 8 第二增量三小步：target 站的 retargeted relatedTarget（spec invoke
+      // 每站独立设置——capture 段遗留值不得外溢到 target 站；WPT event-with-related-
+      // target 'B1a with relatedNode at B1b1' 站 0 = 'B1' 断言）。
+      if (_r114RelOrig) {
+        var _r114RelT = _r114RelFor(targetSel, targetHandle);
+        if (_r114RelT) { try { event.relatedTarget = _r114RelT; } catch (_e8relT) {} }
+      }
       // R114：target 在 shadow 树内 → target 站派发期间 window.event 抑制为 undefined。
       if (_r114Suppress) globalThis.event = undefined;
       _dispatchToListeners(targetKey, event, 'all', target, tgtSlotFilter);
@@ -7619,6 +7668,11 @@
       // `_s8RootIdx`/`_s8HostStation` 机制保留（两世界一次派发互斥——先跨界先断链）。
       var _s8Adj167 = [];
       var _s8Adj = null;
+      // 切片 8 第二增量三小步：adjStation 逐站标记（spec invoke 的「shadow-adjusted
+      // target 非空」判定——target 本体 + 跨界 host 站；与 `_s8Adj167` 的 walk-back
+      // 值分离：host 之后的 light 祖先站 target 值 = host 但非 adjusted 站）。
+      var _s8AdjStation167 = [];
+      var _s8NextAdjStation = true; // 首站 = target 本体（adjusted 非空）
       // post-dispatch target（spec dispatch 末步，与 `_dispatchWithBubble` 侧同构）。
       var _s8PostAdj = null;
       var _s8PostRootEnd = false;
@@ -7658,6 +7712,8 @@
           seen167.push(cur167);
           chain167.push(cur167);
           _s8Adj167.push(_s8Adj);
+          _s8AdjStation167.push(_s8NextAdjStation);
+          _s8NextAdjStation = false;
           _s8Rel167.push(_s8RelOrig ? _zwRetargetRel(_s8RelOrig, cur167) : null);
           // plain 轻量 shadow root 站（无 handle 印记 + `.host` 属性）——composed 跨
           // 边界推 host 站 + host 的 light 祖先；非 composed 止于本站。
@@ -7680,11 +7736,15 @@
                 _s8Adj = _s8HostN;
                 _s8AdjRoot = _s8PlainTreeRoot(_s8HostN);
               }
+              // adjusted 站标记只在真 retarget（first-branch 失败）时成立——light target
+              // 穿入穿出（sii 成功，walk-back 站）的 host 站不是 adjusted 站（WPT
+              // capturing-and-bubbling test4：host 站 capture phase 期望 CAPTURING(1)）。
+              _s8NextAdjStation = !_s8Sii;
               _s8PostAdj = _s8Adj;
               _s8LastAdjRel = _s8RelAtHost;
-              // 续上行自 host：host 站由主循环顶入链；**嵌套 shadow**（host 本身在外层
-              // shadow 树内——sr2→host2→sr1）的下一个 root 站与 retarget 由主循环自然
-              // 续处理（WPT event-composed-path test4-7 的双 crossings）。
+              // 续上行自 host：host 站由主循环顶入链（adjusted 站标记 ✓）；**嵌套 shadow**
+              //（host 本身在外层 shadow 树内——sr2→host2→sr1）的下一个 root 站与 retarget
+              // 由主循环自然续处理（WPT event-composed-path test4-7 的双 crossings）。
               cur167 = _s8HostN;
               continue;
             }
@@ -7714,6 +7774,7 @@
                 _s8HitSlot = globalThis.__zwFindSlotInShadow(_s8PSR, _s8SlotName);
               }
               if (_s8HitSlot && seen167.indexOf(_s8HitSlot) < 0) {
+                _s8NextAdjStation = false; // slot 站 = walk-back 站（非 adjusted 站）
                 cur167 = _s8HitSlot;
                 continue;
               }
@@ -7805,6 +7866,7 @@
             }
             break;
           }
+          _s8NextAdjStation = false; // 普通父步进 = walk-back 站
           cur167 = next167;
         }
       } catch (_e167c) {}
@@ -7839,6 +7901,11 @@
           if (_s8fi >= 0 && _s8Adj167[_s8fi]) _s8AdjT = _s8Adj167[_s8fi];
           else if (_s8HostStation && _s8RootIdx >= 0 && _s8fi > _s8RootIdx) _s8AdjT = _s8HostStation;
           ev.target = _s8AdjT;
+          // 切片 8 第二增量三小步（spec invoke）：adjusted target 非空的站（target 本体 +
+          // 跨界 host）在 capture/bubble 两阶段均报 AT_TARGET(2)（WPT
+          // capturing-and-bubbling 的 host 站 capture 条目 phase 期望 2）。
+          var _s8EffPhase = ((_s8fi >= 0 && _s8AdjStation167[_s8fi])
+            || (_s8HostStation && _s8RootIdx >= 0 && _s8fi === _s8RootIdx + 1)) ? 2 : phase;
           try { ev.srcElement = _s8AdjT; } catch (_e8se) {}
           // spec invoke：每站 event.relatedTarget = 该站的 retargeted relatedTarget
           //（WPT event-composed-path-with-related-target 第三列断言）。
@@ -7854,7 +7921,7 @@
             if (captureOnly !== null && captureOnly !== l.capture) continue;
             if (_mEvListeners.indexOf(l) < 0) continue;
             ev.currentTarget = station;
-            ev.eventPhase = phase;
+            ev.eventPhase = _s8EffPhase;
             try {
               if (typeof l.fn === 'function') l.fn.call(node, ev);
               else if (l.fn && typeof l.fn.handleEvent === 'function') l.fn.handleEvent(ev);
@@ -7881,7 +7948,7 @@
               ls167 = station._zwEvLs[t];
             }
             ev.currentTarget = station;
-            ev.eventPhase = phase;
+            ev.eventPhase = _s8EffPhase;
             var callable167 = typeof e167.fn === 'function' ? e167.fn : (e167.fn && e167.fn.handleEvent);
             if (typeof callable167 === 'function') {
               try { callable167.call(typeof e167.fn === 'function' ? station : e167.fn, ev); } catch (_e167f) {}
@@ -7898,7 +7965,7 @@
             if (captureOnly !== null && captureOnly !== me167.capture) continue;
             if (ml167.indexOf(me167) < 0) continue;
             ev.currentTarget = station;
-            ev.eventPhase = phase;
+            ev.eventPhase = _s8EffPhase;
             var mcall167 = typeof me167.fn === 'function' ? me167.fn : (me167.fn && me167.fn.handleEvent);
             if (typeof mcall167 === 'function') {
               try { mcall167.call(typeof me167.fn === 'function' ? station : me167.fn, ev); } catch (_e167mf) {}
@@ -7921,7 +7988,7 @@
                 var tve167 = tv167[tv167i];
                 if (captureOnly !== null && captureOnly !== tve167.capture) continue;
                 ev.currentTarget = v167;
-                ev.eventPhase = phase;
+                ev.eventPhase = _s8EffPhase;
                 var tvcall167 = typeof tve167.fn === 'function' ? tve167.fn : (tve167.fn && tve167.fn.handleEvent);
                 if (typeof tvcall167 === 'function') {
                   try { tvcall167.call(typeof tve167.fn === 'function' ? v167 : tve167.fn, ev); } catch (_e167tv) {}
@@ -7945,7 +8012,7 @@
                 _listenerStore[pk167][t] = pl167.filter(function (x) { return x !== pe167; });
               }
               ev.currentTarget = station;
-              ev.eventPhase = phase;
+              ev.eventPhase = _s8EffPhase;
               var pcall167 = typeof pe167.fn === 'function' ? pe167.fn : (pe167.fn && pe167.fn.handleEvent);
               if (typeof pcall167 === 'function') {
                 try { pcall167.call(typeof pe167.fn === 'function' ? station : pe167.fn, ev); } catch (_e167pf) {}
@@ -7965,7 +8032,7 @@
             station._zwLocalListeners[t] = curL.filter(function (x) { return x !== entry; });
           }
           ev.currentTarget = station;
-          ev.eventPhase = phase;
+          ev.eventPhase = _s8EffPhase;
           var callD = typeof entry.fn === 'function' ? entry.fn : (entry.fn && entry.fn.handleEvent);
           if (typeof callD === 'function') {
             try { callD.call(typeof entry.fn === 'function' ? station : entry.fn, ev); } catch (_e167df) {}
