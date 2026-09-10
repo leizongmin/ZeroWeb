@@ -2888,7 +2888,22 @@
         && !(globalThis.__zwHtmlTagIface && globalThis.__zwHtmlTagIface[_wcExtends])) {
       throw _zwDomException("Failed to execute 'define' on 'CustomElementRegistry': \"" + _wcExtends + "\" is not a valid custom element name", 'NotSupportedError');
     }
-    reg[name] = { ctor: ctor, options: options || {}, localName: _wcExtends, isCustomizedBuiltIn: _wcExtends !== null };
+    // WC-M3 切片 8 第五小步（spec look up disabledFeatures）：ctor.disabledFeatures
+    // 序列读取（best-effort——Get 顺序与异常 rethrow 的完整 spec 面属
+    // CustomElementRegistry 簇；此处供 _attachShadow 的 shadow 禁用判定消费）。
+    var _wcDisFeat = null;
+    try {
+      var _wcDisV = ctor.disabledFeatures;
+      if (_wcDisV != null) {
+        _wcDisFeat = [];
+        if (typeof _wcDisV[Symbol.iterator] === 'function') {
+          for (var _wcDi of _wcDisV) _wcDisFeat.push(String(_wcDi));
+        } else if (typeof _wcDisV.length === 'number') {
+          for (var _wcDi2 = 0; _wcDi2 < _wcDisV.length; _wcDi2++) _wcDisFeat.push(String(_wcDisV[_wcDi2]));
+        }
+      }
+    } catch (_eDis) { _wcDisFeat = null; }
+    reg[name] = { ctor: ctor, options: options || {}, localName: _wcExtends, isCustomizedBuiltIn: _wcExtends !== null, disabledFeatures: _wcDisFeat };
     byCtor.set(ctor, name);
     _ce_registry_gen++;
     try { void ctor.observedAttributes; } catch (_eObs) {}
@@ -5893,6 +5908,11 @@
     // open/composed → host、open/non-composed → null）。
     var _r114PostAdj = null;
     var _r114PostRootEnd = false;
+    // 五小步：clearTargets（spec dispatch 建链末段——最后一个 adjusted 非空站的
+    // adjusted target 或 retargeted relatedTarget 任一是「root 为 shadow root 的节点」
+    // → post target/relatedTarget 置 null；WPT event-post-dispatch 'moved out of the
+    // shadow tree' 的 relatedTarget 清空断言）。
+    var _r114ClearTargets = false;
     if (targetSel && typeof __zw_parent === 'function') {
       var cur = targetSel;
       while (true) {
@@ -5948,6 +5968,9 @@
         var _rp = _makeProxy ? _makeProxy(sel, handle) : null;
         return _rp ? _zwRetargetRel(_r114RelOrig, _rp) : null;
       };
+      // 最后一个 adjusted 站的 retargeted relatedTarget（clearTargets 判定的 rel 维度；
+      // 站 0 = target 站的值，跨界 retarget 时更新为 host 站值）。
+      var _r114LastAdjRel = _r114RelFor(targetSel, targetHandle);
       // adjusted target 的树根（所在 shadow 树的 root 容器 handle；null = light/detached 树）。
       var _r114TreeRoot = function (h) {
         var _t = h, _tg = 0;
@@ -6012,6 +6035,7 @@
             _r114Adj = _r114HostSel ? { sel: _r114HostSel, handle: null }
                                     : { sel: null, handle: _r114HostHandle };
             _r114AdjRoot = _r114TreeRoot(_r114HostHandle || null);
+            if (_r114RelOrig) _r114LastAdjRel = _r114RelFor(_r114HostSel, _r114HostHandle);
           }
           _r114CurDepth = _r114CurDepth > 0 ? _r114CurDepth - 1 : 0;
           if (_r114HostSel) {
@@ -6086,6 +6110,17 @@
         }
       }
       _r114PostAdj = _r114Adj;
+      // spec clearTargets（与 R167 侧 `_s8ClearTargets` 同构）：最后一个 adjusted 站的
+      // adjusted target 或其 retargeted relatedTarget 任一处于 shadow 树内 → 置标记。
+      try {
+        var _r114LAn = _r114Adj
+          ? (_makeProxy(_r114Adj.sel, _r114Adj.handle) || target) : target;
+        var _r114Clear = _zwIsSRNode(_zwNodeRootOf(_r114LAn));
+        if (!_r114Clear && _r114LastAdjRel) {
+          _r114Clear = _zwIsSRNode(_zwNodeRootOf(_r114LastAdjRel));
+        }
+        _r114ClearTargets = _r114Clear;
+      } catch (_e8ct2) { _r114ClearTargets = false; }
     }
     var propagate = chain.length > 0;
 
@@ -6337,10 +6372,14 @@
       // WC-M3 切片 8 第二增量：post-dispatch target（spec dispatch 末步）——路径最外
       // 站的 shadow-adjusted target；非 composed 止于 shadow root → null（无 shadow
       // 跨界时 = 原始 target，旧行为不变）。per-station retarget 的逐站改写不外溢。
+      // 五小步：clearTargets 时 relatedTarget 同置 null（spec dispatch 末段）。
       try {
-        var _r114Post = _r114PostRootEnd ? null : (_r114PostAdj || target);
+        var _r114Post = (_r114PostRootEnd || _r114ClearTargets) ? null : (_r114PostAdj || target);
         event.target = _r114Post;
         try { event.srcElement = _r114Post; } catch (_e8sr) {}
+        if (_r114PostRootEnd || _r114ClearTargets) {
+          try { event.relatedTarget = null; } catch (_e8relC) {}
+        }
       } catch (_e8tr) {}
       // js-dom M4 R33：dispatch 结束 restore 外层 event（嵌套 dispatch 正确）；顶层 dispatch 后回 undefined
       //（WPT event-global "undefined after dispatch"）。须先于 _propagationStopped 重置，保证 restore 与 set 配对。

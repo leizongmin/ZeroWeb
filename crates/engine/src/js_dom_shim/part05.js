@@ -3870,6 +3870,22 @@
       _throwDom('NotSupportedError',
         "Failed to execute 'attachShadow' on 'Element': Shadow root cannot be created on a host which is not a valid shadow host name.");
     }
+    // WC-M3 切片 8 第五小步（web-components goal，spec attach a shadow root 步 3 +
+    // custom-elements look up disabledFeatures）：宿主是 custom element 且其定义的
+    // disabledFeatures 含 'shadow' → NotSupportedError（WPT
+    // Element-interface-attachShadow-custom-element 的 disabledFeatures=["shadow"]
+    // autonomous/customized built-in 两案）。查找包 try、判定抛出在 try 外——
+    // NotSupportedError 不得被自身的查找兜底吞掉。
+    var _ceDisEntry = null;
+    try {
+      _ceDisEntry = (typeof _ceEntryFor === 'function') ? _ceEntryFor(key, sel, handle) : null;
+    } catch (_eCedis) { _ceDisEntry = null; }
+    var _ceDis = _ceDisEntry && _ceDisEntry.disabledFeatures;
+    if (_ceDis && typeof _ceDis.indexOf === 'function' && _ceDis.indexOf('shadow') >= 0) {
+      _throwDom('NotSupportedError',
+        "Failed to execute 'attachShadow' on 'Element': This element does not support attachShadow");
+    }
+
     // WC-M3 切片 4（spec slot assignment）：slotAssignment 枚举校验——'manual'/'named'
     // 合法，其余 TypeError（同 part03 轻量路径；handle 域 manual 语义经
     // _shadowHandleMeta[].slotAssignment + __zwManualAssigned 接通）。
