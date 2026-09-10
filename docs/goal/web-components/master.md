@@ -75,19 +75,13 @@ Shadow DOM 渲染级 composed tree 排除（等用户点名专项）。
 
 ## 下一步计划
 
-1. **M3 切片 8 第二增量续**：
-   - ~~轻量 shadow EventTarget 面~~ ✅（本步——addEventListener 存 _zwEvLs，
-     R167 fireStation 直读；post-dispatch target 恢复）
-   - R114（handle 世界）slot detour + shadow root 站 + per-station retarget 重设计
-     三步（2026-09-11 首版回退记因）：① `_dispatchToListeners` thisObj 契约——
-     勘误：lightweight shadow 的 EventTarget 面已单独消解，R114 站接入的
-     `_wrapHandle(rootHandle)` wrapper **有** trap 级 addEventListener（part04:3501
-     无域门），首版 'node.addEventListener' 报错实为 createTestTree plain 宿主的
-     轻量 shadow 缺方法（本步已修）——三步中①已消解；② 链构造「先收集后去重」
-     两段式（`_zwNodeParent` 上行的 slot detour 环：chain 身份集合查重）；③
-     retarget idx/entry 模式（R167 已验证）
-   - event-post-dispatch 尾案（wrapper 身份二相 identity 断言）
-   - relatedTarget retarget 过滤（event-with-related-target 族）
+1. **M3 切片 8 第二增量续（R114 重设计 ② 三试，2026-09-11 二试实测）**：身份查重版
+   （`_r114Seen` key 集）已消解环（detached open 变体 5 站、无 86 站失控），余一处
+   **站序缺陷**：expected [target, b, slot, span, root, host] 6 站得 5 站——slot 的
+   `_zwNodeParent` 直跳 span、span 跳 root 的两跳中一跳被吞（疑 detour(b) 后 slot 站
+   的上行分支吞了 span 站的 push 序）；closed 变体 1 站（dedup 与 closed 模式的交互）。
+   下轮：探针打点 `_r114Seen` 增序（每站 push 时 dump key 序列）定位吞站分支后再改；
+   ③ retarget idx/entry 模式已同步就位（随 ② 生效）。回退保持增量一现状（零回归）。
 2. slotchange 尾 12 案 + disabledFeatures×attachShadow registry 集成（尾 2 案）。
 3. Rust `resolve_slots` 接线（渲染级消费等用户点名专项）+ **DC-5 终判**
    （make test + clippy + reftest 持续全绿基础上）。
@@ -102,9 +96,8 @@ Shadow DOM 渲染级 composed tree 排除（等用户点名专项）。
 - ~~attachShadow 规范校验（ns + safelist + 异常 realm）~~ ✅ M3 切片 7 收口
 - ~~plain 世界 composed path/shadow root 站/retarget~~ ✅ M3 切片 8 第一增量收口
   （event-composed 9/9）
-- event retarget 续（第二增量）：R114 重设计三步之 ②③（链去重两段式 + retarget
-  idx 模式；① EventTarget 面已消解）+ relatedTarget 过滤 + post-dispatch 尾案
-  （wrapper 身份二相）
+- event retarget 续（第二增量）：R114 重设计 ② 三试余站序缺陷（detached open 5/6 站、
+  closed 1 站——探针打点 `_r114Seen` 定位吞站分支）；③ retarget 模式已就位随 ② 生效
 - disabledFeatures=['shadow'] × attachShadow（尾 2 案——CE registry definition 感知）；
   canvas 等 createElement 产物 _realTag pending 回落 'div' 的 safelist 误放行
 - slotchange 尾 12 案（dispatch/observer 层）：innerHTML 尾计数（Chrome async host
