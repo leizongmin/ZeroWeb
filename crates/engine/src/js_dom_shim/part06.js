@@ -2493,6 +2493,10 @@
           }
         }
       }
+      // WC-M3：slot 元素挂 HTMLSlotElement 原型（name/assignedNodes 方法面）。
+      if (typeof globalThis.__zwWireSlotElement === 'function') {
+        try { globalThis.__zwWireSlotElement(el); } catch (_eWire) {}
+      }
       return el;
     },
     // `createElementNS(ns, qualifiedName)`（js-dom M4 / spec `dom-document-createelementns`）：

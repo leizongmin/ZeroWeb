@@ -2270,6 +2270,26 @@ return _tplContent;
         }
         // WC-M1 切片 4（spec html HTMLDivElement 等接口 + HTMLSizes 等——`is` IDL）：
         // customized built-in 状态读 = is 内容属性（getAttribute('is')），缺省 null。
+        // WC-M3（web-components goal）：`el.slot` IDL 反射读（HTMLElement slot → slot
+        // 内容属性，缺省 ''）与 `el.assignedSlot`（light DOM 节点被分配的 slot——本 shim
+        // 的分配视图：沿宿主方向找 shadow root，其内 name 匹配的 slot）。
+        if (prop === 'slot') {
+          var _wcSlotV = '';
+          try {
+            _wcSlotV = (handle && typeof __zw_get_attr_handle === 'function')
+              ? (__zw_get_attr_handle(handle, 'slot') || '')
+              : (typeof __zw_get_attr_lw === 'function' ? (__zw_get_attr_lw(sel, 'slot') || '') : '');
+          } catch (_eSlotG) { _wcSlotV = ''; }
+          return _wcSlotV;
+        }
+        if (prop === 'assignedSlot') {
+          // spec assignedSlot：仅 light DOM（未在 shadow 树内）节点有分配；找包含本节点
+          // 宿主的 shadow root 内 name 匹配的 slot。经由全局 helper（part05 handle 世界）。
+          if (typeof globalThis.__zwSlotForSlottable === 'function') {
+            return globalThis.__zwSlotForSlottable(_makeProxy(sel, handle));
+          }
+          return null;
+        }
         if (prop === 'is') {
           var _wcIsV = null;
           try {
@@ -4741,6 +4761,10 @@ return _tplContent;
                 _ceApplyConn(ceAdded[ci], cePconn);
                 _zwStartConnectedIframe(ceAdded[ci], cePconn);
               }
+              // WC-M3：shadow 树内增删 → slotchange 微任务（slot 分配变化面）。
+              if (handle && typeof globalThis.__zwMaybeQueueSlotchange === 'function') {
+                try { globalThis.__zwMaybeQueueSlotchange(handle); } catch (_eSc4) {}
+              }
               // R263：insert 段边界调整（spec concept-node-pre-insert 末段——插入后
               // 调用，读插入后 newParent/newIndex；与开头的 remove 段成对构成移动
               // 语义）。fragment 形态逐子调整（flatten 后各自占位）。
@@ -5006,6 +5030,10 @@ return _tplContent;
               } catch (_eMediaRmH) {}
               // R2994 disconnectedCallback：移除子树断连（仅此前已连入的 custom element 分派）。
               _ceApplyConn(child, false);
+              // WC-M3：shadow 树内移除 → slotchange 微任务。
+              if (handle && typeof globalThis.__zwMaybeQueueSlotchange === 'function') {
+                try { globalThis.__zwMaybeQueueSlotchange(handle); } catch (_eSc5) {}
+              }
             }
             // R195（js-dom M4）：plain 子（_zwMEl——shadow/fragment 容器 innerHTML 解析
             // 产物，无 handle 无 sel）——两分支（handle/sel）均不命中时从容器 registry

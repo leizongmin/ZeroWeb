@@ -263,6 +263,16 @@
               else { __zw_set_attr(sel, 'crossorigin', String(value)); moAttr = 'crossorigin'; }
             }
           }
+        } else if (p === 'slot') {
+          // WC-M3（web-components goal）：`el.slot = x`（HTMLElement slot IDL → slot
+          // 内容属性反射——spec html-slot-element assigned-slottables 的属性面）。
+          var _slotV = value === null ? '' : String(value);
+          if (handle) { __zw_set_attr_handle(handle, 'slot', _slotV); moAttr = 'slot'; }
+          else { __zw_set_attr(sel, 'slot', _slotV); moAttr = 'slot'; }
+        } else if (p === 'assignedSlot') {
+          // assignedSlot 是只读 accessor——赋值静默忽略（无 setter 语义，proxy set trap
+          // 到达即吞，防落 expando）。
+          return true;
         } else if (p === 'kind' || p === 'label' || p === 'srclang') {
           // `track.kind/label/srclang = x`（HTMLTrackElement，M1 切片 3）——字符串反射 setter
           // （写同名内容属性；kind 的归一在 getter）。仅 TRACK。
@@ -3832,6 +3842,251 @@
     return _wrapHandle(rootHandle);
   }
 
+  // WC-M3（spec slotchange）：shadow 树内全 slot 的 slotchange 微任务派发——分配变化
+  //（host light 子增删 / slot name 变 / slot 增删）后调用。事件挂在各 slot 元素自身
+  //（spec：fire an event named slotchange at the slot），bubbles 不冒泡出 shadow 树
+  //（composed: true 由 Event 默认——dispatchEvent 通用面）。microtask 时序经
+  // Promise.resolve().then（spec「queue a mutation observer microtask」近似）。
+  var _zwSlotchangeQueued = {};
+  globalThis.__zwQueueSlotchangeForRoot = function (rootHandle) {
+    try {
+      if (!rootHandle || !_handleChildren[rootHandle]) return;
+      // 同根同微任务轮去重（spec：即使分配多次变化，slot 只 fire 一次 slotchange）。
+      if (_zwSlotchangeQueued[rootHandle]) return;
+      _zwSlotchangeQueued[rootHandle] = true;
+      Promise.resolve().then(function () {
+        _zwSlotchangeQueued[rootHandle] = false;
+        try {
+          var stack = (_handleChildren[rootHandle] || []).slice();
+          while (stack.length) {
+            var nd = stack.shift();
+            if (!nd || nd.nodeType !== 1) continue;
+            if (String(nd.tagName || '').toLowerCase() === 'slot') {
+              try {
+                var ev = new globalThis.Event('slotchange', { bubbles: false, composed: false });
+                nd.dispatchEvent(ev);
+              } catch (_eEv) {}
+            }
+            var kk = (nd.__zwHandle && _handleChildren[nd.__zwHandle]) ? _handleChildren[nd.__zwHandle] : [];
+            for (var qi = 0; qi < kk.length; qi++) stack.push(kk[qi]);
+          }
+        } catch (_eQ) {}
+      });
+    } catch (_eQs) {}
+  };
+  // 挂接辅助：handle 增删后判定父链是否 shadow root（是 → 队列 slotchange）。
+  globalThis.__zwMaybeQueueSlotchange = function (parentHandle) {
+    try {
+      if (!parentHandle) return;
+      // ① parentHandle 自身是 shadow root（shadow 树内增删）。
+      if (_shadowHandles[parentHandle]) { globalThis.__zwQueueSlotchangeForRoot(parentHandle); return; }
+      // ② parentHandle 是 shadow **host**（light 子增删改变分配——spec slotchange 的主形态）。
+      var hostKey = '@' + parentHandle;
+      if (_shadowRoots[hostKey]) { globalThis.__zwQueueSlotchangeForRoot(_shadowRoots[hostKey].handle); return; }
+      // ③ 深层：父链上溯到 shadow root。
+      var cur = parentHandle;
+      var guard = 0;
+      while (cur && guard++ < 64) {
+        var link = _zwNodeParent[cur];
+        if (!link || !link.parentHandle) break;
+        cur = link.parentHandle;
+        if (_shadowHandles[cur]) { globalThis.__zwQueueSlotchangeForRoot(cur); return; }
+      }
+    } catch (_eMq) {}
+  };
+  // WC-M3：`slottable.assignedSlot`——沿父链向上找宿主元素（其 shadow root 含本 slottable
+  // 可分配的 slot）。实现：找 slottable 的根（parentHandle 链顶）→ 该根若是某 host 的
+  // shadow root（_shadowHandleMeta）→ 遍历 shadow 树找 name 匹配（slottable.slot attr）
+  // 的第一个 slot（spec 树序）；slottable 在 shadow 树内 → null（spec：仅 light DOM 有分配）。
+  globalThis.__zwSlotForSlottable = function (proxy) {
+    try {
+      var sh = proxy ? proxy.__zwHandle : null;
+      var ss = proxy ? proxy.__zwSelector : null;
+      if (!sh && !ss) return null;
+      // ① 上溯到根 + 收集链上父 handle 集（链上父非 shadow 容器 → 本节点在 shadow 树内）。
+      var cur = sh || null;
+      var top = cur;
+      var chainHandles = [];
+      var guard = 0;
+      var inShadow = false;
+      while (cur && guard++ < 64) {
+        chainHandles.push(cur);
+        if (_shadowHandles[cur]) { inShadow = true; }
+        var link = _zwNodeParent[cur];
+        if (!link) break;
+        if (link.parentHandle) { cur = link.parentHandle; top = cur; }
+        else if (link.parentSel) { top = null; break; } // sel 父 = 出树（light DOM 路径）
+        else break;
+      }
+      if (inShadow) return null;
+      // ①b sel 世界（静态树）：c1 无 handle（__zwSelector 有）——沿 __zw_parent 上溯找
+      // _shadowRoots 键（hostSel 匹配祖先 sel）→ 其 shadow 树内找 name 匹配 slot。
+      var ancSel = ss || null;
+      var ancGuard = 0;
+      while (ancSel && ancGuard++ < 64) {
+        var rootInfoA = _shadowRoots[ancSel];
+        if (rootInfoA && rootInfoA.handle) {
+          var slotNameA = '';
+          try { slotNameA = proxy.getAttribute ? (proxy.getAttribute('slot') || '') : ''; } catch (_eSnA) { slotNameA = ''; }
+          var stackA = (_handleChildren[rootInfoA.handle] ? _handleChildren[rootInfoA.handle].slice() : []);
+          while (stackA.length) {
+            var ndA = stackA.shift();
+            if (!ndA || ndA.nodeType !== 1) continue;
+            if (String(ndA.tagName || '').toLowerCase() === 'slot') {
+              var ndNameA = '';
+              try { ndNameA = ndA.getAttribute('name') || ''; } catch (_eNdA) { ndNameA = ''; }
+              if (ndNameA === slotNameA) return ndA;
+            }
+            var kkA = (ndA.__zwHandle && _handleChildren[ndA.__zwHandle]) ? _handleChildren[ndA.__zwHandle] : [];
+            for (var qa = kkA.length - 1; qa >= 0; qa--) stackA.unshift(kkA[qa]);
+          }
+        }
+        try { ancSel = (typeof __zw_parent === 'function') ? (__zw_parent(ancSel) || null) : null; } catch (_eParA) { ancSel = null; }
+      }
+      // ② sel-based 节点：从 host 反查——遍历已 attachShadow 的 host，查其 shadow 树。
+      // （_shadowRoots 键 = elKey(sel,handle)；值 = { handle, mode }。）
+      var slotName = '';
+      try { slotName = proxy.getAttribute ? (proxy.getAttribute('slot') || '') : ''; } catch (_eSn2) { slotName = ''; }
+      var keys = Object.keys(_shadowRoots);
+      for (var ki = 0; ki < keys.length; ki++) {
+        var rootInfo = _shadowRoots[keys[ki]];
+        if (!rootInfo || !rootInfo.handle) continue;
+        var rootKids = (_handleChildren[rootInfo.handle]) ? _handleChildren[rootInfo.handle] : [];
+        // shadow 树 DFS 找第一个 name 匹配 slot。
+        var stack = rootKids.slice();
+        while (stack.length) {
+          var nd = stack.shift();
+          if (!nd || nd.nodeType !== 1) continue;
+          if (String(nd.tagName || '').toLowerCase() === 'slot') {
+            var ndName = '';
+            try { ndName = nd.getAttribute('name') || ''; } catch (_eNdN) { ndName = ''; }
+            if (ndName === slotName) return nd;
+          }
+          var kkids = (nd.__zwHandle && _handleChildren[nd.__zwHandle]) ? _handleChildren[nd.__zwHandle] : [];
+          for (var qi = kkids.length - 1; qi >= 0; qi--) stack.unshift(kkids[qi]);
+        }
+      }
+      return null;
+    } catch (_eAs) { return null; }
+  };
+  // WC-M3（web-components goal，spec html-slot-element + assign slottables）：handle 世界
+  // 的 slot 语义——`slotElement.assignedNodes({flatten})` 的权威实现（slot 元素多为
+  // createElement('slot') handle proxy，parent 链经容器 handle 反链）。上溯 parentHandle
+  // 找 shadow root 容器（_shadowHandleMeta 命中），取其 host（sel/handle）的 light DOM
+  // 子（_childNodeList），按 slot=name 匹配；flatten 展开嵌套 slot + 空 slot 的 fallback 子。
+  globalThis.__zwSlotAssignedNodes = function (slotProxy, options) {
+    try {
+      var flatten = !!(options && options.flatten);
+      var sh = slotProxy ? slotProxy.__zwHandle : null;
+      // WC-M3：sel 世界（parsed static <slot> 经 import 进 shadow 容器）——slot 无 handle，
+      // 经 _shadowRoots 全表反查包含本 slot 的 shadow root（registry identity 匹配）。
+      var ssSel = slotProxy ? slotProxy.__zwSelector : null;
+      if (!sh && ssSel) {
+        var keys0 = Object.keys(_shadowRoots);
+        for (var k0 = 0; k0 < keys0.length; k0++) {
+          var info0 = _shadowRoots[keys0[k0]];
+          var kids0 = info0 && info0.handle && _handleChildren[info0.handle] ? _handleChildren[info0.handle] : [];
+          for (var w0 = 0; w0 < kids0.length; w0++) {
+            if (kids0[w0] === slotProxy) { sh = info0.handle; break; }
+          }
+          if (sh) break;
+        }
+        if (!sh) {
+          // shadow 树深层：DFS registry 找 slot proxy。
+          for (var k1 = 0; k1 < keys0.length && !sh; k1++) {
+            var info1 = _shadowRoots[keys0[k1]];
+            if (!info1 || !info1.handle) continue;
+            var stack1 = _handleChildren[info1.handle] ? _handleChildren[info1.handle].slice() : [];
+            while (stack1.length && !sh) {
+              var nd1 = stack1.shift();
+              if (nd1 === slotProxy) { sh = info1.handle; break; }
+              var kk1 = (nd1 && nd1.__zwHandle && _handleChildren[nd1.__zwHandle]) ? _handleChildren[nd1.__zwHandle] : [];
+              for (var q1 = 0; q1 < kk1.length; q1++) stack1.push(kk1[q1]);
+            }
+          }
+        }
+        if (!sh) return [];
+      }
+      if (!sh) return null; // 非 handle 世界 → 调用方回落 plain 实现
+      // ① 上溯容器链找 shadow root。
+      var cur = sh;
+      var rootHandle = null;
+      var guard = 0;
+      while (cur && guard++ < 64) {
+        if (_shadowHandles[cur] && _shadowHandleMeta[cur]) { rootHandle = cur; break; }
+        var link = _zwNodeParent[cur];
+        if (!link) break;
+        cur = link.parentHandle || null;
+        if (!cur && link.parentSel) break; // sel 父 = 已出 shadow 树（light DOM slot）
+      }
+      if (!rootHandle) return [];
+      var meta = _shadowHandleMeta[rootHandle];
+      // ② host 的 light DOM 子（flatten 含后代，树序）。
+      var collected = [];
+      var collectKids = function (pSel, pHandle, recurse) {
+        // handle 父走 registry（_handleChildNodes）；sel 父走融合视图（_childNodeList）。
+        var kids = [];
+        if (pHandle && _handleChildren && _handleChildren[pHandle]) {
+          kids = _handleChildren[pHandle].slice();
+        } else if (pHandle && typeof _handleChildNodes === 'function') {
+          kids = _handleChildNodes(pHandle);
+        } else if (pSel && typeof _childNodeList === 'function') {
+          kids = _childNodeList(pSel, null);
+        }
+        for (var i = 0; i < kids.length; i++) {
+          var k = kids[i];
+          if (!k || k.nodeType === 11) continue;
+          collected.push(k);
+          if (recurse && k.nodeType === 1) collectKids(k.__zwSelector || null, k.__zwHandle || null, true);
+        }
+      };
+      collectKids(meta.hostSel || null, meta.hostHandle || null, flatten);
+      var slotName = '';
+      try { slotName = slotProxy.getAttribute('name') || ''; } catch (_eN) { slotName = ''; }
+      var matched = [];
+      for (var j = 0; j < collected.length; j++) {
+        var n = collected[j];
+        if (n.nodeType === 1) {
+          var nSlot = '';
+          try { nSlot = n.getAttribute('slot') || ''; } catch (_eNs) { nSlot = ''; }
+          if (nSlot === slotName) matched.push(n);
+        } else if (!slotName) {
+          matched.push(n);
+        }
+      }
+      // ③ flatten：嵌套 slot 展开（递归本 helper）+ 空 slot fallback（slot 自身子）。
+      if (flatten) {
+        var flat = [];
+        var seen = [];
+        var expand = function (list) {
+          for (var fi = 0; fi < list.length; fi++) {
+            var e = list[fi];
+            if (e && e.nodeType === 1 && String(e.tagName || '').toLowerCase() === 'slot') {
+              if (seen.indexOf(e) >= 0) continue;
+              seen.push(e);
+              var sub = globalThis.__zwSlotAssignedNodes(e, { flatten: true });
+              if (!sub || !sub.length) {
+                var fk = [];
+                if (e.__zwHandle && _handleChildren && _handleChildren[e.__zwHandle]) {
+                  fk = _handleChildren[e.__zwHandle].slice();
+                } else if (e.__zwSelector && typeof _childNodeList === 'function') {
+                  fk = _childNodeList(e.__zwSelector, null);
+                }
+                for (var fj = 0; fj < fk.length; fj++) flat.push(fk[fj]);
+              } else {
+                expand(sub);
+              }
+            } else {
+              flat.push(e);
+            }
+          }
+        };
+        expand(matched);
+        return flat;
+      }
+      return matched;
+    } catch (_eSlot) { return []; }
+  };
   // R2927 handle-children registry 辅助（容器 = shadow root / fragment handle）。这些容器无 selector，
   // 既有 childNodes/children 经 `__zw_child_nodes(sel)` 读（须 sel）恒返 []——registry 在 appendChild
   // 时同步记录子节点，使容器子树可观察（解锁 imperative custom-element shadow 构建模式自测）。

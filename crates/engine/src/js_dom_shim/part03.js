@@ -2789,6 +2789,145 @@
     globalThis.CustomElementRegistry = _CERegistryIface;
   }
 
+  // WC-M3（web-components goal，spec html-slot-element）：HTMLSlotElement 接口原型——
+  // `name`（读自身 name 内容属性，无 → ''）与 `assignedNodes({flatten})`。slot 元素即
+  // tag='slot' 的普通元素（本 shim 无 per-tag 类实例化），接口原型方法经
+  // `Object.setPrototypeOf(slotEl, HTMLSlotElement.prototype)` 在 slot 元素创建/查询
+  // 包裹点挂接（见 _zwWireSlotElement）。assignedNodes 算法（spec assign slottables）：
+  // ① 沿 parent 链上溯找宿主 shadowRoot（nodeType 11 + host 槽）；② host 的 light DOM
+  // 子树（直接子为主——flatten 时按树序含后代）里取 slot=name 匹配的节点序列；
+  // ③ flatten=true 时把结果中的嵌套 slot 递归替换为其 assignedNodes（spec
+  // flatten 算法）；④ 无 shadowRoot（light DOM slot）→ []。
+  globalThis.HTMLSlotElement = globalThis.HTMLSlotElement || function HTMLSlotElement() {
+    throw new TypeError('Illegal constructor');
+  };
+  if (globalThis.HTMLSlotElement.prototype &&
+      !Object.prototype.hasOwnProperty.call(globalThis.HTMLSlotElement.prototype, 'assignedNodes')) {
+    Object.defineProperty(globalThis.HTMLSlotElement.prototype, 'name', {
+      configurable: true,
+      get: function () {
+        try { var v = this.getAttribute('name'); return v == null ? '' : String(v); } catch (_eSn) { return ''; }
+      },
+      set: function (v) { try { this.setAttribute('name', v == null ? '' : String(v)); } catch (_eSnS) {} },
+    });
+    Object.defineProperty(globalThis.HTMLSlotElement.prototype, 'assignedNodes', {
+      value: function (options) {
+        // WC-M3：handle 世界（createElement 宿主/slot 的主流形态）走 part05 权威实现。
+        try {
+          if (this.__zwHandle && typeof globalThis.__zwSlotAssignedNodes === 'function') {
+            return globalThis.__zwSlotAssignedNodes(this, options);
+          }
+        } catch (_eHw) {}
+        var flatten = !!(options && options.flatten);
+        // ① 上溯 shadowRoot。
+        var root = this.parentNode;
+        var guard = 0;
+        while (root && guard++ < 64) {
+          if (root.nodeType === 11 && root.host !== undefined && root.host !== null) break;
+          root = root.parentNode;
+        }
+        if (!root || root.nodeType !== 11 || root.host === undefined || root.host === null) return [];
+        var host = root.host;
+        // ② host light DOM 收集（flatten 时含后代，树序）。
+        var collected = [];
+        var collectKids = function (node, recurse) {
+          var kids = [];
+          try { kids = node.childNodes || []; } catch (_eK) { kids = []; }
+          for (var i = 0; i < kids.length; i++) {
+            var k = kids[i];
+            if (!k || k.nodeType === 11) continue; // fragment 不作 slottable
+            collected.push(k);
+            if (recurse && k.nodeType === 1) collectKids(k, true);
+          }
+        };
+        collectKids(host, !!flatten);
+        var slotName = '';
+        try { slotName = this.getAttribute('name') || ''; } catch (_eN) { slotName = ''; }
+        var matched = [];
+        for (var j = 0; j < collected.length; j++) {
+          var n = collected[j];
+          if (n.nodeType === 1) {
+            var nSlot = '';
+            try { nSlot = n.getAttribute('slot') || ''; } catch (_eNs) { nSlot = ''; }
+            // 指名 slottable 只进同名 slot；未指名只进默认 slot（spec）。
+            if ((slotName || '') === nSlot) matched.push(n);
+          } else if (!slotName) {
+            matched.push(n); // 文本节点只进默认 slot
+          }
+        }
+        // ③ flatten：展开结果中的嵌套 slot（递归 assignedNodes）。
+        if (flatten) {
+          var flat = [];
+          var expand = function (list, seen) {
+            for (var fi = 0; fi < list.length; fi++) {
+              var e = list[fi];
+              if (e && e.nodeType === 1 && String(e.tagName || '').toLowerCase() === 'slot') {
+                if (seen.indexOf(e) >= 0) continue; // 循环守卫
+                seen.push(e);
+                var sub = e.assignedNodes({ flatten: true });
+                if (!sub.length) {
+                  // 空 slot 的 fallback 内容（slot 自身的子）。
+                  var fk = [];
+                  try { fk = e.childNodes || []; } catch (_eF) { fk = []; }
+                  for (var fj = 0; fj < fk.length; fj++) flat.push(fk[fj]);
+                } else {
+                  expand(sub, seen);
+                }
+              } else {
+                flat.push(e);
+              }
+            }
+          };
+          expand(matched, []);
+          return flat;
+        }
+        return matched;
+      },
+      writable: true,
+      configurable: true,
+    });
+  }
+  // WC-M3：assignedElements（元素过滤的 assignedNodes——spec html-slot-element）。
+  if (globalThis.HTMLSlotElement.prototype &&
+      !Object.prototype.hasOwnProperty.call(globalThis.HTMLSlotElement.prototype, 'assignedElements')) {
+    Object.defineProperty(globalThis.HTMLSlotElement.prototype, 'assignedElements', {
+      value: function (options) {
+        var nodes = this.assignedNodes(options);
+        var out = [];
+        for (var i = 0; i < nodes.length; i++) {
+          if (nodes[i] && nodes[i].nodeType === 1) out.push(nodes[i]);
+        }
+        return out;
+      },
+      writable: true,
+      configurable: true,
+    });
+  }
+  // WC-M3：slot 元素挂接——创建/包裹点对 tag=slot 的元素 setPrototypeOf 到
+  // HTMLSlotElement.prototype（instanceof + 方法面）。挂接点：
+  // ① 主文档 createElement('slot')（part06 R94 后置）；② _zwMEl plain 工厂；
+  // ③ 查询包裹（getPrototypeOf trap tag 映射）——R10 tag 表已把 slot → HTMLSlotElement
+  // prototype（instanceof 已通），方法面经原型链直达（本原型即该 prototype）。
+  globalThis.__zwWireSlotElement = function (el) {
+    try {
+      if (el && el.nodeType === 1
+          && String(el.tagName || el.localName || '').toLowerCase() === 'slot'
+          && globalThis.HTMLSlotElement
+          && Object.getPrototypeOf(el) !== globalThis.HTMLSlotElement.prototype) {
+        // spec upgrade：customized built-in 优先——元素已按 registry 升级（getName 命中）
+        // → 不覆盖 CE 原型（builtin-coverage 的 slot customized built-in 断言面）。
+        var _wcCtor = null;
+        try { _wcCtor = el.constructor; } catch (_eCtorG) { _wcCtor = null; }
+        if (_wcCtor && globalThis.customElements && typeof globalThis.customElements.getName === 'function'
+            && globalThis.customElements.getName(_wcCtor)) {
+          return el;
+        }
+        Object.setPrototypeOf(el, globalThis.HTMLSlotElement.prototype);
+      }
+    } catch (_eWs) {}
+    return el;
+  };
+
   // R3269 upgrade 子树遍历：DFS（firstChild → nextSibling），对每个 Element 节点，tag 命中 registry 则
   // setPrototypeOf 升级 + 已连入 document 触发 connectedCallback。Text/Comment 跳过（无 tag）。
   function _ceUpgradeNode(el) {
@@ -8679,7 +8818,9 @@
         if (ck) node.childNodes.push(ck);
       }
     }
-    return node;
+      // WC-M3：plain 工厂 slot 挂接（HTMLSlotElement 原型）。
+  try { if (typeof globalThis.__zwWireSlotElement === 'function') globalThis.__zwWireSlotElement(node); } catch (_eWs3) {}
+  return node;
   }
   // 建 body 元素节点树（root，parentNode=null）：从 <body>innerHtml</body> 取 body 子 entries 递归建。
   function _zwMBuildBodyTree(innerHtml) {
