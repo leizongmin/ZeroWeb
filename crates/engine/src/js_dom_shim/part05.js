@@ -3894,6 +3894,28 @@
       }
     } catch (_eMq) {}
   };
+  // WC-M3：host 元素 → 其 shadow root handle（plain 世界 assignedSlot 上溯消费）。
+  globalThis.__zwShadowRootForHost = function (hostEl) {
+    try {
+      if (!hostEl) return null;
+      var key = hostEl.__zwHandle ? ('@' + hostEl.__zwHandle) : (hostEl.__zwSelector || null);
+      if (!key) {
+        // plain 宿主：无 sel/handle——遍历 _shadowRoots 找 meta.hostHandle 的 proxy 与
+        // hostEl identity 匹配（registry 子树比对）。
+        var keys = Object.keys(_shadowRoots);
+        for (var i = 0; i < keys.length; i++) {
+          var info = _shadowRoots[keys[i]];
+          if (!info || !info.handle) continue;
+          var meta = _shadowHandleMeta[info.handle];
+          if (meta && meta.hostHandle && _proxyCache['@' + meta.hostHandle] === hostEl) return info.handle;
+        }
+        return null;
+      }
+      var r = _shadowRoots[key];
+      return r ? r.handle : null;
+    } catch (_eSrfh) { return null; }
+  };
+
   // WC-M3：`slottable.assignedSlot`——沿父链向上找宿主元素（其 shadow root 含本 slottable
   // 可分配的 slot）。实现：找 slottable 的根（parentHandle 链顶）→ 该根若是某 host 的
   // shadow root（_shadowHandleMeta）→ 遍历 shadow 树找 name 匹配（slottable.slot attr）
@@ -3902,6 +3924,64 @@
     try {
       var sh = proxy ? proxy.__zwHandle : null;
       var ss = proxy ? proxy.__zwSelector : null;
+      // WC-M3：plain wrapper（cloneNode/解析产物，无 handle/sel）——沿 plain parentNode
+      // 上溯，找挂了 shadow root 的宿主（globalThis.__zwShadowRootForHost 桥），其 shadow
+      // 树内找 name 匹配 slot。
+      if (!sh && !ss && proxy && proxy.parentNode) {
+        var anc = proxy.parentNode;
+        var g0 = 0;
+        while (anc && g0++ < 64) {
+          // plain 世界的 shadow root：轻量 attachShadow（part03:466）挂 `host.shadowRoot`
+          // （own 槽）——shadow 树在 shadow.childNodes（非 handle registry）。
+          var shadowPlain = null;
+          try { shadowPlain = anc.shadowRoot || null; } catch (_eSrP) { shadowPlain = null; }
+          if (shadowPlain && shadowPlain.nodeType === 11 && shadowPlain.host === anc) {
+            var slotNameP = '';
+            try { slotNameP = (proxy.getAttribute ? proxy.getAttribute('slot') : '') || ''; } catch (_eSnP2) { slotNameP = ''; }
+            var kidsP = shadowPlain.childNodes || [];
+            for (var pi = 0; pi < kidsP.length; pi++) {
+              var ndP = kidsP[pi];
+              if (!ndP || ndP.nodeType !== 1) continue;
+              if (String(ndP.tagName || '').toLowerCase() === 'slot') {
+                var ndNP = '';
+                try { ndNP = ndP.getAttribute('name') || ''; } catch (_eNdP) { ndNP = ''; }
+                if (ndNP === slotNameP) return ndP;
+              }
+              // 浅一层（slot 内嵌套场景罕见，深递归按需）。
+              var kkP = ndP.childNodes || [];
+              for (var qp = 0; qp < kkP.length; qp++) {
+                var ndQ = kkP[qp];
+                if (!ndQ || ndQ.nodeType !== 1) continue;
+                if (String(ndQ.tagName || '').toLowerCase() === 'slot') {
+                  var ndNQ = '';
+                  try { ndNQ = ndQ.getAttribute('name') || ''; } catch (_eNdQ) { ndNQ = ''; }
+                  if (ndNQ === slotNameP) return ndQ;
+                }
+              }
+            }
+          }
+          var rootH0 = (typeof globalThis.__zwShadowRootForHost === 'function')
+            ? globalThis.__zwShadowRootForHost(anc) : null;
+          if (rootH0) {
+            var slotName0 = '';
+            try { slotName0 = (proxy.getAttribute ? proxy.getAttribute('slot') : '') || ''; } catch (_eSnP) { slotName0 = ''; }
+            var stack0 = (_handleChildren[rootH0] ? _handleChildren[rootH0].slice() : []);
+            while (stack0.length) {
+              var nd0 = stack0.shift();
+              if (!nd0 || nd0.nodeType !== 1) continue;
+              if (String(nd0.tagName || '').toLowerCase() === 'slot') {
+                var ndN0 = '';
+                try { ndN0 = nd0.getAttribute('name') || ''; } catch (_eNd0) { ndN0 = ''; }
+                if (ndN0 === slotName0) return nd0;
+              }
+              var kk0 = (nd0.__zwHandle && _handleChildren[nd0.__zwHandle]) ? _handleChildren[nd0.__zwHandle] : [];
+              for (var q0 = kk0.length - 1; q0 >= 0; q0--) stack0.unshift(kk0[q0]);
+            }
+          }
+          anc = anc.parentNode;
+        }
+        return null;
+      }
       if (!sh && !ss) return null;
       // ① 上溯到根 + 收集链上父 handle 集（链上父非 shadow 容器 → 本节点在 shadow 树内）。
       var cur = sh || null;
@@ -4055,6 +4135,43 @@
         }
       }
       // ③ flatten：嵌套 slot 展开（递归本 helper）+ 空 slot fallback（slot 自身子）。
+      // matched 空时 fallback 直接成为 flatten 输出（spec：flatten 树中空 slot 显示
+      // fallback 内容——WPT slots-fallback Basic）。
+      if (flatten && !matched.length) {
+        var fkAll = [];
+        if (slotProxy.__zwHandle && _handleChildren && _handleChildren[slotProxy.__zwHandle]) {
+          fkAll = _handleChildren[slotProxy.__zwHandle].slice();
+        } else if (slotProxy.__zwSelector && typeof _childNodeList === 'function') {
+          fkAll = _childNodeList(slotProxy.__zwSelector, null);
+        } else if (slotProxy.childNodes) {
+          fkAll = Array.prototype.slice.call(slotProxy.childNodes);
+        }
+        var seenAll = [];
+        var expandAll = function (list) {
+          for (var ai = 0; ai < list.length; ai++) {
+            var a = list[ai];
+            if (a && a.nodeType === 1 && String(a.tagName || '').toLowerCase() === 'slot') {
+              if (seenAll.indexOf(a) >= 0) continue;
+              seenAll.push(a);
+              var subA = globalThis.__zwSlotAssignedNodes(a, { flatten: true });
+              expandAll(subA || []);
+            } else {
+              fkAll.push(a);
+            }
+          }
+        };
+        var directOnly = fkAll.slice();
+        fkAll = [];
+        for (var di = 0; di < directOnly.length; di++) {
+          var dItem = directOnly[di];
+          if (dItem && dItem.nodeType === 1 && String(dItem.tagName || '').toLowerCase() === 'slot') {
+            if (seenAll.indexOf(dItem) < 0) { seenAll.push(dItem); expandAll(globalThis.__zwSlotAssignedNodes(dItem, { flatten: true }) || []); }
+          } else {
+            fkAll.push(dItem);
+          }
+        }
+        return fkAll;
+      }
       if (flatten) {
         var flat = [];
         var seen = [];
@@ -4064,17 +4181,32 @@
             if (e && e.nodeType === 1 && String(e.tagName || '').toLowerCase() === 'slot') {
               if (seen.indexOf(e) >= 0) continue;
               seen.push(e);
-              var sub = globalThis.__zwSlotAssignedNodes(e, { flatten: true });
-              if (!sub || !sub.length) {
+              var sub = null;
+              try {
+                sub = (e.__zwHandle || e.__zwSelector)
+                  ? globalThis.__zwSlotAssignedNodes(e, { flatten: true })
+                  : (typeof e.assignedNodes === 'function' ? e.assignedNodes({ flatten: true }) : null);
+              } catch (_eSub) { sub = null; }
+              if (sub && sub.length) {
+                expand(sub);
+              } else {
+                // fallback：slot 自身子（嵌套 slot 的内容继续 flatten 递归）。
                 var fk = [];
                 if (e.__zwHandle && _handleChildren && _handleChildren[e.__zwHandle]) {
                   fk = _handleChildren[e.__zwHandle].slice();
                 } else if (e.__zwSelector && typeof _childNodeList === 'function') {
                   fk = _childNodeList(e.__zwSelector, null);
+                } else if (e.childNodes) {
+                  fk = Array.prototype.slice.call(e.childNodes);
                 }
-                for (var fj = 0; fj < fk.length; fj++) flat.push(fk[fj]);
-              } else {
-                expand(sub);
+                for (var fj = 0; fj < fk.length; fj++) {
+                  var fkN = fk[fj];
+                  if (fkN && fkN.nodeType === 1 && String(fkN.tagName || '').toLowerCase() === 'slot') {
+                    if (seen.indexOf(fkN) < 0) { seen.push(fkN); expand([fkN]); }
+                  } else {
+                    flat.push(fkN);
+                  }
+                }
               }
             } else {
               flat.push(e);

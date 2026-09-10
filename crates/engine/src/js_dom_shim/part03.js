@@ -2856,6 +2856,36 @@
           }
         }
         // ③ flatten：展开结果中的嵌套 slot（递归 assignedNodes）。
+        // matched 空 → fallback 直接成为输出（spec：空 slot 的 flatten 树含 fallback
+        // 内容——WPT slots-fallback Basic）。
+        if (flatten && !matched.length) {
+          var fkAll3 = Array.prototype.slice.call((function () { try { return this.childNodes || []; } catch (_eF3) { return []; } }).call(this));
+          var seenAll3 = [];
+          var expandAll3 = function (list) {
+            for (var ai3 = 0; ai3 < list.length; ai3++) {
+              var a3 = list[ai3];
+              if (a3 && a3.nodeType === 1 && String(a3.tagName || '').toLowerCase() === 'slot') {
+                if (seenAll3.indexOf(a3) >= 0) continue;
+                seenAll3.push(a3);
+                var subA3 = a3.assignedNodes ? a3.assignedNodes({ flatten: true }) : [];
+                expandAll3(subA3 || []);
+              } else {
+                fkAll3.push(a3);
+              }
+            }
+          };
+          var direct3 = fkAll3.slice();
+          fkAll3 = [];
+          for (var di3 = 0; di3 < direct3.length; di3++) {
+            var d3 = direct3[di3];
+            if (d3 && d3.nodeType === 1 && String(d3.tagName || '').toLowerCase() === 'slot') {
+              if (seenAll3.indexOf(d3) < 0) { seenAll3.push(d3); expandAll3(d3.assignedNodes ? d3.assignedNodes({ flatten: true }) : []); }
+            } else {
+              fkAll3.push(d3);
+            }
+          }
+          return fkAll3;
+        }
         if (flatten) {
           var flat = [];
           var expand = function (list, seen) {
@@ -7936,6 +7966,39 @@
       });
       if (snap.cls) node.className = String(snap.cls);
     } catch (_e307cls) {}
+    // WC-M3（web-components goal）：plain wrapper 的 slot IDL 面（spec html-slot-element）——
+    // cloneNode/树建/解析产物的 wrapper 无 part04 trap，`c1.slot`/`c1.assignedSlot` 恒
+    // undefined（WPT shadow-dom/slots.html 的 createTestTree 克隆树断言面）。slot 读属性
+    // 层；assignedSlot 经 plain 世界 slot 上溯（__zwSlotAssignedNodes 的 plain 兜底域）。
+    try {
+      Object.defineProperty(node, 'slot', {
+        configurable: true,
+        get: function () {
+          for (var _ws3i = 0; _ws3i < attrs.length; _ws3i++) {
+            if (attrs[_ws3i].name === 'slot') return attrs[_ws3i].value;
+          }
+          return '';
+        },
+        set: function (v) {
+          var _ws3v = v == null ? '' : String(v);
+          for (var _ws3j = 0; _ws3j < attrs.length; _ws3j++) {
+            if (attrs[_ws3j].name === 'slot') { attrs[_ws3j].value = _ws3v; return; }
+          }
+          attrs.push({ name: 'slot', value: _ws3v });
+        },
+      });
+      Object.defineProperty(node, 'assignedSlot', {
+        configurable: true,
+        get: function () {
+          // plain 世界 assignedSlot：本节点是 plain 树内 slottable——其宿主 shadow root
+          // 需 host 反查（本 shim 的 plain 树少有 attachShadow 宿主；缺省 null）。
+          if (typeof globalThis.__zwSlotForSlottable === 'function') {
+            try { return globalThis.__zwSlotForSlottable(node); } catch (_eWsAs) { return null; }
+          }
+          return null;
+        },
+      });
+    } catch (_eSlotM) {}
     // R307：内部槽直写口（_zwMReflectIdl 的回写绕过 setter——避免 removeAttribute
     // 后回写空值时反向把属性复活进 attrs）。
     try {

@@ -2,7 +2,7 @@
 
 **入口文档**: [../web-components.md](../web-components.md)
 **创建日期**: 2026-09-07（goal 拆分 bootstrap）
-**最后更新**: 2026-09-10（M3 切片 1 落地——HTMLSlotElement 接口 + slot/assignedSlot IDL + slotchange 微任务派发，净 +32；余项：sel 世界 flatten 细节 + Rust resolve_slots 接线）
+**最后更新**: 2026-09-10（M3 切片 2 落地——plain wrapper slot IDL + plain shadow 上溯 + fallback flatten，slots.html +4 零回归；余项：fallback 混合树身份贯通 + Rust 接线）
 
 ---
 
@@ -73,8 +73,9 @@ Shadow DOM 渲染级 composed tree 排除（等用户点名专项）。
 
 ## 下一步计划
 
-1. **M3 切片 2**：slots.html/slots-fallback 的 sel 世界 flatten 树序 + fallback 消费面；
-   imperative-slot-api（手动分配）；Rust `resolve_slots` 接线（shadow.rs → engine 查询消费）
+1. **M3 切片 3**：slots-fallback 簇（fallback 递归在 sel-clone 混合树的身份贯通——
+   assignedNodes 分派域 handle/plain 分裂）；imperative-slot-api（手动分配）；
+   Rust `resolve_slots` 接线（shadow.rs → engine 查询消费）
 2. **DC-5 全量门禁**（`make test` + clippy + reftest 持续全绿基础上）终判
 
 ### 已知挂账（2026-09-10 M2 切片 1 更新）
@@ -112,8 +113,8 @@ crates/dom/` 核对渲染流域活跃面；碰 part01.js 前与 event-loop-spec 
 
 - 测试基线：立项时点全绿（`make test` / `make reftest` 入口，经 test-guard 包裹；
   禁止裸跑 cargo test）
-- WC 用例面：**271 案 / 4752 subtests / 3046 Pass（64%）**（2026-09-10 M3 切片 1，
-  evidence/2026-09-10-wc-m3s1.{md,json}。历史：基线 437=9% → 2a 689=15% → 2b 2565=55% →
-  3 2720=58% → 4 3008=64% → M2 3014；零回归）
+- WC 用例面：**271 案 / 4752 subtests / 3050 Pass（64%）**（2026-09-10 M3 切片 2，
+  evidence/2026-09-10-wc-m3s2.{md,json}。历史：基线 437=9% → 2a 689=15% → 2b 2565=55% →
+  3 2720=58% → 4 3008=64% → M2 3014 → M3s1 3046；零回归）
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过；
   dom 结构变更轮跑 `make reftest` 作渲染面守卫
