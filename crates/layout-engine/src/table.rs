@@ -296,6 +296,30 @@ pub(crate) fn layout_table(
     styles: &HashMap<NodeId, ComputedStyle>,
     inline_fonts: crate::inline_finalization::InlineFontContext<'_>,
 ) {
+    layout_table_inner(table_box, doc, styles, inline_fonts, None);
+}
+
+/// 带宽度约束的表布局（R4227，CSS2 §9.5「may even shrink」）——`constraint` = BFC 避让
+/// 语境下表可用的最大宽（如右 float 左侧可用空间）。列宽总和超出约束时按比例收缩
+/// （§17.5.2.2 分配后统一缩放；显式 width 列同样让步，chromium 同语义）。仅
+/// fix_table_among_floats 的 auto-width 表 shrink 臂使用；其余调用方 None（零行为变化）。
+pub(crate) fn layout_table_with_width_constraint(
+    table_box: &mut LayoutBox,
+    doc: &zero_dom::Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    inline_fonts: crate::inline_finalization::InlineFontContext<'_>,
+    width_constraint: Option<f32>,
+) {
+    layout_table_inner(table_box, doc, styles, inline_fonts, width_constraint);
+}
+
+fn layout_table_inner(
+    table_box: &mut LayoutBox,
+    doc: &zero_dom::Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    inline_fonts: crate::inline_finalization::InlineFontContext<'_>,
+    width_constraint: Option<f32>,
+) {
     // 读取 border-spacing
     let (spacing_x, spacing_y) = table_box
         .node_id
@@ -316,7 +340,7 @@ pub(crate) fn layout_table(
     }
 
     // 2. 计算列宽
-    let col_widths = compute_column_widths(table_box, &grid, styles, doc, inline_fonts);
+    let col_widths = compute_column_widths_inner(table_box, &grid, styles, doc, inline_fonts, width_constraint);
 
     // 3. 定位单元格
     // α-4b-1：vertical-rl/lr 表走转置路径（行沿 x、cell 沿 y），
@@ -614,12 +638,16 @@ fn collect_table_col_backgrounds(
 /// 1. 扫描所有单元格，记录每列的最大内容宽度
 /// 2. 如果所有列宽之和小于容器宽度，按比例分配剩余空间
 /// 3. 如果所有列宽之和大于容器宽度，保持内容宽度不变
-fn compute_column_widths(
+///
+/// R4227：带 §9.5 宽度约束的列宽计算——约束在 §17.5.2.2 全部分配（含 R584 min-width
+/// 放大）之后统一应用：列宽总和超约束时按比例收缩（显式 width 列同样让步）。
+fn compute_column_widths_inner(
     table_box: &LayoutBox,
     grid: &TableGrid,
     styles: &HashMap<NodeId, ComputedStyle>,
     doc: &zero_dom::Document,
     inline_fonts: crate::inline_finalization::InlineFontContext<'_>,
+    width_constraint: Option<f32>,
 ) -> Vec<f32> {
     let available_width = table_box.content_width;
     let col_count = grid.col_count;
@@ -1042,6 +1070,20 @@ fn compute_column_widths(
             let ratio = min_cw / cur_total;
             for &i in &live {
                 col_max_widths[i] *= ratio;
+            }
+        }
+    }
+
+    // R4227（CSS2 §9.5「may even shrink」）：BFC 避让宽度约束——总和超约束时全列
+    // 按比例收缩（放在 R584 min-width 放大之后；CSS min-width 硬下限仍不越——
+    // 约束缩放后不低于 min-width 放大结果会破坏 §9.5 收缩语义，此处以约束为准，
+    // table 自身 CSS min-width 域由调用方在避让决策中权衡）。
+    if let Some(av) = width_constraint {
+        let total: f32 = col_max_widths.iter().sum();
+        if total > av && total > 0.0 {
+            let ratio = (av / total).max(0.0);
+            for w in col_max_widths.iter_mut() {
+                *w *= ratio;
             }
         }
     }

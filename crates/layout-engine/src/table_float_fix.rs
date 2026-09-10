@@ -29,7 +29,7 @@ use zero_dom::{Document, NodeId};
 use zero_style_system::ComputedStyle;
 
 use crate::float_positioning::adjust_float_positions;
-use crate::table::layout_table;
+use crate::table::{layout_table, layout_table_with_width_constraint};
 use crate::types::LayoutBox;
 
 /// table-among-floats scoped iterative fix 入口。post-order 遍历，对匹配结构的容器执行
@@ -120,8 +120,8 @@ fn fix_inner(
     layout_table(&mut root.children[tidx], doc, styles, inline_fonts);
 
     // 先用不可变读取计算 natural_y / avoidance_x / is_cleared（避免与下方可变借用冲突）
-    let table_h = root.children[tidx].height;
-    let table_w = root.children[tidx].width;
+    let mut table_h = root.children[tidx].height;
+    let mut table_w = root.children[tidx].width;
     // R1723：definite-width table 的「声明宽」（Px 或 Percentage 解析到容器 content_width）。
     // step5 `adjust_float_positions` 会把旁 float 的 BFC table **shrink** 到可用宽（如 150→100），
     // 故此处读到的是 shrink 后宽。但 CSS §9.5：definite-width table 应保持声明宽，放不下 float 旁
@@ -133,7 +133,7 @@ fn fix_inner(
         .node_id
         .and_then(|id| styles.get(&id))
         .and_then(|s| resolve_declared_table_width(s, content_width));
-    let effective_w = declared_w.unwrap_or(table_w);
+    let mut effective_w = declared_w.unwrap_or(table_w);
     // clear != None 的 table 应由 clear 逻辑定位（推到 float 下方），不做 §9.5 推开
     //（clear-applies-to-013：display:table + clear:both 应清到 float 下，非推到 float 右）。
     let is_cleared = !matches!(root.children[tidx].clear, ClearValue::None);
@@ -144,6 +144,46 @@ fn fix_inner(
         .take(tidx)
         .filter(|c| is_in_flow(c))
         .fold(0.0f32, |my, c| my.max(c.y + c.height));
+    // R1721：float:right avoidance 预读（提前到 shrink 臂前——两者共用重叠判定）。
+    let right_float_left: Option<f32> = {
+        let mut rl: Option<f32> = None;
+        for f in &root.children {
+            if matches!(f.float, FloatValue::Right) && natural_y < f.y + f.height && natural_y + table_h > f.y {
+                rl = Some(rl.map_or(f.x, |m: f32| m.min(f.x)));
+            }
+        }
+        rl
+    };
+    // === B2（R4227，CSS2 §9.5「may even shrink」）：auto-width 表右 float 避让收缩——
+    // effective_w > 右 float 群左侧可用宽（right_float_left = 与 table y 域重叠的右 float
+    // 最小 x）时，表按约束宽重排（列宽比例收缩，layout_table_with_width_constraint）后
+    // beside 放置，非推到 float 下方。table-sizing-with-adjacent-floats：auto 表 100
+    //（td width:100 列）+ 右 float 群 min-x=50 → 缩到 50 beside（chromium ref 绿 50×100）。
+    // 仅 auto-width（declared_w None）：definite-width 表维持 R1723 推下保声明宽
+    //（floats-wrap-bfc-005 子案：150 应推下非缩 100）。
+    // **cell 语境门**（empirical chromium 差异）：floats-wrap-bfc-003-right-table（同构形态
+    // 但父为 td）chromium **不收缩**——250 表在 200 可用旁仍推到 float 下方保全宽（ref
+    // 像素实证），故 td 内 float 表不适用 shrink 臂。kill-switch `ZW_TABLE_FLOAT_SHRINK=0`。
+    let root_is_cell = root
+        .node_id
+        .and_then(|id| styles.get(&id))
+        .is_some_and(|s| matches!(s.display, DisplayValue::TableCell));
+    if std::env::var("ZW_TABLE_FLOAT_SHRINK").as_deref() != Ok("0")
+        && declared_w.is_none()
+        && !is_cleared
+        && !root_is_cell
+        && let Some(rl) = right_float_left
+        && rl > 0.5
+        && effective_w > rl + 0.5
+    {
+        layout_table_with_width_constraint(&mut root.children[tidx], doc, styles, inline_fonts, Some(rl));
+        table_h = root.children[tidx].height;
+        table_w = root.children[tidx].width;
+        effective_w = table_w;
+        if dbg {
+            eprintln!("ZW_TABLE_FLOAT_DBG B2 shrink table: w -> {} (avail {rl})", table_w);
+        }
+    }
     // avoidance_x = 与 table 垂直范围 [natural_y, natural_y+h] 重叠的 float 的右 margin-box 边最大值
     let avoidance_x = root
         .children
@@ -168,15 +208,7 @@ fn fix_inner(
     // right_edge≈content_width → 右侧无空间 → table 错误推 below（应 beside 左 x=0 w=float.left）。
     // 仅纯右 float（natural_y 处有重叠右 float 且无重叠左 float）触发；混合 fall through 左 float 逻辑。
     // kill-switch ZW_TABLE_FLOAT_RIGHT_AVOID=0 关闭（default-on）。
-    let right_float_left: Option<f32> = {
-        let mut rl: Option<f32> = None;
-        for f in &root.children {
-            if matches!(f.float, FloatValue::Right) && natural_y < f.y + f.height && natural_y + table_h > f.y {
-                rl = Some(rl.map_or(f.x, |m: f32| m.min(f.x)));
-            }
-        }
-        rl
-    };
+    // R4227：right_float_left 预读已上移至 B2 shrink 臂前（两者共用重叠判定）。
     let has_left_overlap = root
         .children
         .iter()
@@ -188,6 +220,7 @@ fn fix_inner(
             // R1723：仅当 table 放得进左可用宽（right_float_left）时 beside；definite-width table
             // 声明宽 > 可用宽（floats-wrap-bfc-005 子案 2：150 > 100）→ 不 beside，fall through 到
             // 下方 left-float 算法推下（mirror 子案 1）。
+            // R4227：auto-width 表已在 B2 臂按约束收缩（effective_w ≤ rl），此处放行 beside。
             right_float_left.and_then(|rl| {
                 if effective_w <= rl + 0.5 {
                     Some((0.0, natural_y, rl))

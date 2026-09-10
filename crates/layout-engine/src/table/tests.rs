@@ -878,7 +878,7 @@ fn test_table_min_width_relative_length_expands_auto_columns() {
     };
 
     let grid = build_grid(&table_box, &doc, &styles);
-    let col_widths = compute_column_widths(&table_box, &grid, &styles, &doc, Default::default());
+    let col_widths = compute_column_widths_inner(&table_box, &grid, &styles, &doc, Default::default(), None);
 
     assert_eq!(col_widths.len(), 1);
     assert!(
@@ -1017,7 +1017,7 @@ fn test_fixed_layout_caps_columns_at_explicit_width_when_content_wider() {
     };
 
     let grid = build_grid(&table_box, &doc, &styles);
-    let col_widths = compute_column_widths(&table_box, &grid, &styles, &doc, Default::default());
+    let col_widths = compute_column_widths_inner(&table_box, &grid, &styles, &doc, Default::default(), None);
 
     // 修复前：内容 200px 撑宽列到 ~200；修复后：fixed + width:100px 收缩列到 ~100
     let total: f32 = col_widths.iter().sum();
@@ -1076,7 +1076,7 @@ fn test_r364_explicit_width_column_frozen_during_expansion() {
     };
 
     let grid = build_grid(&table_box, &doc, &styles);
-    let col_widths = compute_column_widths(&table_box, &grid, &styles, &doc, Default::default());
+    let col_widths = compute_column_widths_inner(&table_box, &grid, &styles, &doc, Default::default(), None);
     assert_eq!(col_widths.len(), 2, "应有 2 列");
     // 显式 20px 列冻结（不吸收剩余空间），保持 ~20 而非被比例撑大
     assert!(
@@ -1139,7 +1139,7 @@ fn test_explicit_cell_width_relative_length_freezes_column() {
     };
 
     let grid = build_grid(&table_box, &doc, &styles);
-    let col_widths = compute_column_widths(&table_box, &grid, &styles, &doc, Default::default());
+    let col_widths = compute_column_widths_inner(&table_box, &grid, &styles, &doc, Default::default(), None);
 
     assert_eq!(col_widths.len(), 2);
     assert!(
@@ -1190,7 +1190,7 @@ fn test_r364b_explicit_width_floored_at_min_content() {
     };
 
     let grid = build_grid(&table_box, &doc, &styles);
-    let col_widths = compute_column_widths(&table_box, &grid, &styles, &doc, Default::default());
+    let col_widths = compute_column_widths_inner(&table_box, &grid, &styles, &doc, Default::default(), None);
     // 列宽应 floor 到 min-content（~9.6），远大于显式 3px（修复前会返回 3）
     assert!(
         col_widths[0] >= 8.0,
