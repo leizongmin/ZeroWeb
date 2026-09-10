@@ -405,6 +405,9 @@ impl LayoutEngine {
         let mut intrinsic_for_r695 = img_intrinsic_sizes.clone();
         // R4113 副本：img_intrinsic_sizes 按值传入 tree build，此处已有 intrinsic_for_r695
         // 副本供 clamp_percentage_max_height 的匿名片段替换子 auto 宽重写（§10.3.2 固有比）。
+        // R4216：ratio-only img/svg 输入信号在 move 前捕获（converter 据此设 taffy
+        // aspect_ratio，是 AR 子 pass 的非 CSS 源）。
+        let has_img_ratio_input = !img_intrinsic_ratios.is_empty() || !img_intrinsic_no_ratio.is_empty();
         // 1. 构建 taffy 树（含 R109 接线产物，仅 R109_WIRE=1 时非空）
         let (mut taffy_tree, root_id, taffy_to_dom, r109) = build_layout_tree_with_r109(
             doc,
@@ -488,15 +491,25 @@ impl LayoutEngine {
         //   或 width:auto + float（R1015 shrink-to-fit 容器臂）；
         // - %height：height:Percentage（R695 域；img intrinsic 在场时保守不跳过）；
         // - %margin/padding：任意侧 Percentage。
+        // R4216 扩展（切片 2）：- AR 家族四 pass：styles aspect_ratio/aspect_ratio_auto
+        //   （CSS 源）∪ ratio-only img/svg 输入（converter 的非 CSS 源）；
+        //  - abspos shrink：position Absolute|Fixed（R4018/R3929 臂均在 abspos 盒上）；
+        //  - vertical sizing：任一非 HorizontalTb 书写模式。
         struct SizingTargets {
             intrinsic_kw_or_auto_float: bool,
             pct_height: bool,
             pct_box_side: bool,
+            ar_source: bool,
+            abspos: bool,
+            vertical_wm: bool,
         }
         let sizing_targets = SizingTargets {
             intrinsic_kw_or_auto_float: false,
             pct_height: false,
             pct_box_side: false,
+            ar_source: has_img_ratio_input,
+            abspos: false,
+            vertical_wm: false,
         };
         let sizing_targets = {
             let mut t = sizing_targets;
@@ -531,9 +544,35 @@ impl LayoutEngine {
                 {
                     t.pct_box_side = true;
                 }
-                if t.intrinsic_kw_or_auto_float && t.pct_height && t.pct_box_side {
+                if s.aspect_ratio.is_some() || s.aspect_ratio_auto {
+                    t.ar_source = true;
+                }
+                if matches!(s.position, PositionValue::Absolute | PositionValue::Fixed) {
+                    t.abspos = true;
+                }
+                if s.writing_mode != WritingModeValue::HorizontalTb {
+                    t.vertical_wm = true;
+                }
+                if t.intrinsic_kw_or_auto_float
+                    && t.pct_height
+                    && t.pct_box_side
+                    && t.ar_source
+                    && t.abspos
+                    && t.vertical_wm
+                {
                     break;
                 }
+            }
+            // R4216 修正（corpus 当轮抓获）：AR 的第三源 = 替换元素 HTML width/height
+            // 属性（tree.rs attr-match 设 taffy aspect_ratio，flex-aspect-ratio-img-row-006 /
+            // flex-aspect-ratio-028 实证）——styles 扫描无此信号，CSS 源缺席时以一次
+            // DOM 多 tag DFS 兜底（is_replaced_element_tag 同表）。
+            if !t.ar_source {
+                t.ar_source = !doc
+                    .get_elements_by_tag_names(&[
+                        "img", "video", "iframe", "embed", "object", "svg", "canvas", "applet",
+                    ])
+                    .is_empty();
             }
             t
         };
@@ -565,9 +604,13 @@ impl LayoutEngine {
         // R717：aspect-ratio flex item（ratio-only SVG `<img>` 或 CSS aspect-ratio 的 leaf 块）
         // 在 flex 容器内——第一趟 taffy 对 leaf 项无法从 aspect_ratio + Auto-cross 推导 main
         // 尺寸（ collapses）。此处按解析出的 cross 尺寸 + ratio 推导 main（CSS §10.3.2 + Flexbox §4.5）。
-        let changed_ratio_img =
+        // R4216：无 AR 源（styles aspect_ratio/aspect_ratio_auto + ratio-only img 输入）时跳过。
+        let changed_ratio_img = if sizing_targets.ar_source {
             Self::apply_flex_aspect_ratio_item_size(&mut taffy_tree, &root_box, &dom_to_taffy, styles)
-                || Self::apply_grid_aspect_ratio_item_size(&mut taffy_tree, &root_box, &dom_to_taffy, styles);
+                || Self::apply_grid_aspect_ratio_item_size(&mut taffy_tree, &root_box, &dom_to_taffy, styles)
+        } else {
+            false
+        };
         // R1018：四趟后处理 pass 共用同一 first-pass root_box，各自独立 set taffy style。
         // 原先 `||` 短路求值会在前三趟任一 fire 时跳过 apply_intrinsic_content_sizing，
         // 致 flex 容器 shrink-to-fit / block max-content 在含 aspect-ratio/百分比 padding/不明确
@@ -580,8 +623,12 @@ impl LayoutEngine {
         };
         // R3929：全 auto 水平 inset 的 abspos 收缩适配宽度（taffy 给 0，§10.3.7 应为内容
         // shrink-to-fit）。与 intrinsic pass 同一 re-run 组（set_style+mark_dirty 后重跑 taffy）。
-        let changed_abspos_shrink =
-            Self::apply_abspos_shrink_to_fit_width(&mut taffy_tree, &root_box, &dom_to_taffy, styles, doc);
+        // R4216：无 abspos 元素时跳过（R4018/R3929 臂均在 abspos 盒上）。
+        let changed_abspos_shrink = if sizing_targets.abspos {
+            Self::apply_abspos_shrink_to_fit_width(&mut taffy_tree, &root_box, &dom_to_taffy, styles, doc)
+        } else {
+            false
+        };
         // R1544 Phase 2 layout-time（两阶段 content-size 传播）：vertical 容器把 Auto 维度
         // 的正确 content-size（Σ 子宽 / max 子高）喂回 taffy + mark_dirty，让父级 re-layout
         // 时按正确 container width 传播——解 R1545 postprocess width-set 不传播的缺口（经 taffy
@@ -589,20 +636,31 @@ impl LayoutEngine {
         // 排除 float 容器；height-set 独立 env default-off 因回归）。
         // env ZW_VERTICAL_BLOCK_FLOW_LAYOUT default-on（`=0` kill-switch）；子位置仍由
         // step 12.7 postprocess（apply_vertical_block_flow）重定位。
-        let changed_vertical = crate::vertical_block_flow::apply_vertical_block_flow_sizing(
-            &mut taffy_tree,
-            &root_box,
-            &dom_to_taffy,
-            styles,
-        );
+        // R4216：无垂直书写模式时跳过。
+        let changed_vertical = if sizing_targets.vertical_wm {
+            crate::vertical_block_flow::apply_vertical_block_flow_sizing(
+                &mut taffy_tree,
+                &root_box,
+                &dom_to_taffy,
+                styles,
+            )
+        } else {
+            false
+        };
         // R2171：flex/grid 容器自身 cross 从 aspect-ratio + Auto-main 推导（taffy 0.12.1 gap，
         // cross 塌缩到 0 案）。driving flex-aspect-ratio-cross-size-002。kill-switch
         // ZW_AR_CONTAINER_CROSS（default-on）。
-        let changed_ar_container =
-            Self::apply_aspect_ratio_container_cross_size(&mut taffy_tree, &root_box, &dom_to_taffy, styles);
+        let changed_ar_container = if sizing_targets.ar_source {
+            Self::apply_aspect_ratio_container_cross_size(&mut taffy_tree, &root_box, &dom_to_taffy, styles)
+        } else {
+            false
+        };
         // R3913：row flex 容器 cross 从 item flexed main × ratio 传递（csswg #line-sizing）。
-        let changed_ar_flex_cross =
-            Self::apply_flex_cross_from_flexed_main(&mut taffy_tree, &root_box, &dom_to_taffy, styles);
+        let changed_ar_flex_cross = if sizing_targets.ar_source {
+            Self::apply_flex_cross_from_flexed_main(&mut taffy_tree, &root_box, &dom_to_taffy, styles)
+        } else {
+            false
+        };
         if changed_r695
             || changed_pct_padding
             || changed_ratio_img
