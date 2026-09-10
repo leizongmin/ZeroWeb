@@ -257,6 +257,7 @@ impl PropertyRegistry {
             // Text (新属性)
             "overflow-wrap" => Some(OverflowWrap(OverflowWrapValue::Normal)),
             "text-align-last" => Some(TextAlignLast(TextAlignLastValue::Auto)),
+            "text-group-align" => Some(TextGroupAlign(TextGroupAlignValue::None)),
             "font-variant-numeric" => Some(FontVariantNumeric(FontVariantNumericValue::Normal)),
             "font-variant-caps" => Some(FontVariantCaps(FontVariantCapsValue::Normal)),
             "font-variant-east-asian" => Some(FontVariantEastAsian(FontVariantEastAsianValue::Normal)),
@@ -396,6 +397,7 @@ impl PropertyRegistry {
                 | "pointer-events"
                 | "overflow-wrap"
                 | "text-align-last"
+                | "text-group-align"
                 | "font-variant-numeric"
                 | "font-variant-caps"
                 | "font-variant-east-asian"

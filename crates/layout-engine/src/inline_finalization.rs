@@ -10,7 +10,7 @@ use zero_css_parser::values::{DisplayValue, FloatValue, LengthValue, VerticalAli
 use zero_dom::{Document, NodeId, NodeKind};
 use zero_style_system::ComputedStyle;
 
-use crate::inline::{FloatExclusion, InlineFormattingContext, TextAlign, WordBreakMode};
+use crate::inline::{FloatExclusion, InlineFormattingContext, TextAlign, TextGroupAlign, WordBreakMode};
 pub(crate) use crate::inline_content::{has_direct_text, has_inline_content};
 pub(crate) use crate::inline_metric_storage::store_font_sizes_from_ifc;
 use crate::types::LayoutBox;
@@ -226,6 +226,37 @@ pub fn resolve_text_align_last(style: Option<&ComputedStyle>) -> Option<TextAlig
         // start/end 方向感知，与 resolve_text_align 一致（CSS Text 3 §6.2）。
         TextAlignLastValue::Start => Some(if is_rtl { TextAlign::Right } else { TextAlign::Left }),
         TextAlignLastValue::End => Some(if is_rtl { TextAlign::Left } else { TextAlign::Right }),
+    }
+}
+
+/// R4213（CSS Text 4）：解析 text-group-align → IFC 组对齐枚举。
+/// `start`/`end` 方向感知（同 resolve_text_align 的映射——LTR: start=Left/end=Right，
+/// RTL 反之）。
+pub fn resolve_text_group_align(style: Option<&ComputedStyle>) -> TextGroupAlign {
+    use zero_style_system::property::{DirectionValue, TextGroupAlignValue};
+    let Some(s) = style else {
+        return TextGroupAlign::None;
+    };
+    let is_rtl = matches!(s.direction, DirectionValue::Rtl);
+    match s.text_group_align {
+        TextGroupAlignValue::None => TextGroupAlign::None,
+        TextGroupAlignValue::Left => TextGroupAlign::Left,
+        TextGroupAlignValue::Right => TextGroupAlign::Right,
+        TextGroupAlignValue::Center => TextGroupAlign::Center,
+        TextGroupAlignValue::Start => {
+            if is_rtl {
+                TextGroupAlign::Right
+            } else {
+                TextGroupAlign::Left
+            }
+        }
+        TextGroupAlignValue::End => {
+            if is_rtl {
+                TextGroupAlign::Left
+            } else {
+                TextGroupAlign::Right
+            }
+        }
     }
 }
 
@@ -1070,6 +1101,7 @@ pub(crate) fn compute_final_inline_layouts(
 
     let mut inline_ctx = InlineFormattingContext::new(container_width)
         .with_text_align(text_align)
+        .with_text_group_align(resolve_text_group_align(Some(style)))
         .with_text_align_last(text_align_last)
         .with_break_word(break_word)
         .with_no_wrap(no_wrap)
@@ -1981,6 +2013,7 @@ pub(crate) fn remeasure_text_with_float_exclusions(
                 .with_vertical(is_vertical)
                 .with_vertical_rtl(is_vertical_rtl)
                 .with_text_align(text_align)
+                .with_text_group_align(resolve_text_group_align(styles.get(&dom_id)))
                 .with_text_align_last(text_align_last)
                 .with_no_wrap(no_wrap)
                 .with_inline_block_sizes(ib_sizes)
@@ -2364,6 +2397,7 @@ pub(crate) fn remeasure_inline_only_containers(
             .with_vertical(is_vertical)
             .with_vertical_rtl(is_vertical_rtl)
             .with_text_align(text_align)
+            .with_text_group_align(resolve_text_group_align(styles.get(&dom_id)))
             .with_text_align_last(text_align_last)
             .with_no_wrap(no_wrap)
             .with_preserve_whitespace(preserve)
@@ -2389,6 +2423,7 @@ pub(crate) fn remeasure_inline_only_containers(
                 .with_vertical(is_vertical)
                 .with_vertical_rtl(is_vertical_rtl)
                 .with_text_align(text_align)
+                .with_text_group_align(resolve_text_group_align(styles.get(&dom_id)))
                 .with_text_align_last(text_align_last)
                 .with_no_wrap(no_wrap)
                 .with_inline_block_sizes(ib_sizes_for_mc)

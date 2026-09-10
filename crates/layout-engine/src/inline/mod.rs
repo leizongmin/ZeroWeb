@@ -51,6 +51,9 @@ pub struct InlineFormattingContext {
     pub container_width: f32,
     /// 文本对齐方式。
     pub text_align: TextAlign,
+    /// R4213（CSS Text 4 #text-group-align-property）：行组对齐——将块内行盒整体
+    /// （组宽 = 行组 min-content 宽 ≈ 最宽行）作为单元在容器行内轴对齐。
+    pub text_group_align: TextGroupAlign,
     /// `unicode-bidi: plaintext` + `text-align:start` 时按段落基方向解析 start 边。
     pub plaintext_auto_align: bool,
     /// 容器级 `unicode-bidi: bidi-override` 的指定方向。
@@ -290,6 +293,7 @@ impl InlineFormattingContext {
         Self {
             container_width,
             text_align: TextAlign::default(),
+            text_group_align: TextGroupAlign::None,
             plaintext_auto_align: false,
             bidi_override_direction: None,
             plaintext_bidi_override: false,
@@ -362,6 +366,12 @@ impl InlineFormattingContext {
     /// 设置文本对齐方式。
     pub fn with_text_align(mut self, align: TextAlign) -> Self {
         self.text_align = align;
+        self
+    }
+
+    /// R4213：设置行组对齐（CSS Text 4）。
+    pub fn with_text_group_align(mut self, align: TextGroupAlign) -> Self {
+        self.text_group_align = align;
         self
     }
 
@@ -1341,12 +1351,38 @@ impl InlineFormattingContext {
         }
     }
 
+    /// R4213（CSS Text 4 #text-group-align-property）：行组盒测量。
+    ///
+    /// 组盒 = 全部行盒内容的包围盒 `(group_left, group_width)`（组宽 ≈ 行组
+    /// min-content 宽 = 最宽行）。供 text-align 的组内对齐与行组定位共用——
+    /// 对齐在未位移行上测量（text-align 前），定位在对齐后测量，二者稳定一致
+    ///（组内对齐不改变组盒边界：最宽行 remaining=0 不动）。
+    fn group_box(&self) -> (f32, f32) {
+        let mut min_x = f32::MAX;
+        let mut max_right = f32::MIN;
+        for line in &self.lines {
+            if line.runs.is_empty() {
+                continue;
+            }
+            min_x = min_x.min(line.runs.iter().map(|r| r.x).fold(f32::MAX, f32::min));
+            max_right = max_right.max(line.runs.iter().map(|r| r.x + r.width).fold(f32::MIN, f32::max));
+        }
+        if min_x > max_right {
+            return (0.0, 0.0);
+        }
+        (min_x, max_right - min_x)
+    }
+
     /// 根据当前 text_align 设置，调整每行中片段的 x 坐标。
     ///
     /// - Left: 不做调整（默认行为）。
     /// - Center: 整行居中于 container_width。
     /// - Right: 整行右对齐。
     /// - Justify: 非最后一行在单词间均匀分配剩余空间。
+    ///
+    /// R4213（CSS Text 4 #text-group-align-property）：`text-group-align` 非 none 时，
+    /// 对齐参照系从容器行内轴改为**行组盒**（组宽 = 最宽行）——text-align 完成
+    /// 组内对齐，组在容器中的整体位置由 [`Self::apply_text_group_alignment`] 随后处理。
     fn apply_text_alignment(&mut self) {
         if (self.text_align == TextAlign::Left && self.text_align_last.is_none()) || self.lines.is_empty() {
             return;
@@ -1372,6 +1408,9 @@ impl InlineFormattingContext {
             Vec::new()
         };
 
+        // R4213：行组对齐时对齐参照 = 组盒（在未位移行上测量）。
+        let group = (self.text_group_align != TextGroupAlign::None).then(|| self.group_box());
+
         let last_idx = self.lines.len() - 1;
         for (i, line) in self.lines.iter_mut().enumerate() {
             if line.runs.is_empty() {
@@ -1395,7 +1434,12 @@ impl InlineFormattingContext {
             let content_width = (raw_right + tail_box - hang).max(0.0);
 
             // 使用预计算的有效可用宽度
-            let (left_offset, avail_width) = line_areas[i];
+            // R4213：行组对齐时以组盒为参照（组内对齐——每行 remaining 基于组宽）。
+            let (left_offset, avail_width) = if let Some((group_left, group_width)) = group {
+                (group_left, group_width)
+            } else {
+                line_areas[i]
+            };
             let line_limit = left_offset + avail_width;
             let remaining = line_limit - content_width;
 
@@ -1444,6 +1488,44 @@ impl InlineFormattingContext {
                         }
                     }
                 }
+            }
+        }
+    }
+
+    /// R4213（CSS Text 4 #text-group-align-property）：行组对齐。
+    ///
+    /// 将块内全部行盒视为一个「组」（组宽 = 最宽行的内容宽 ≈ 行组 min-content 宽），
+    /// 在容器行内轴上按组对齐值整体位移。`text-align` 先行完成**组内**对齐
+    ///（各行的行内分布），本 pass 只动组的整体位置。
+    ///
+    /// 组宽测量用位移后的行内容宽（left/right 对齐不改行宽；center 平移不改宽），
+    /// 行的左边界取该行 runs 最小 x（bidi 反转后行首可能在右）。
+    fn apply_text_group_alignment(&mut self) {
+        if self.text_group_align == TextGroupAlign::None || self.lines.is_empty() {
+            return;
+        }
+        // 组盒（对齐后测量——组内对齐不动组盒边界，与对齐前测量一致）。
+        let (group_left, group_width) = self.group_box();
+        if group_width <= 0.0 {
+            return;
+        }
+        // 可用宽度 = 容器 content 宽（行区域基线；float 排斥下的精确 per-line 区域
+        // 不参与组对齐——组对齐的参照是容器）。
+        let avail = self.container_width;
+        let offset = match self.text_group_align {
+            TextGroupAlign::None => 0.0,
+            TextGroupAlign::Left => 0.0 - group_left,
+            TextGroupAlign::Right => (avail - group_width) - group_left,
+            TextGroupAlign::Center => ((avail - group_width) / 2.0) - group_left,
+            // Start/End 在 inline_finalization 装配期已按 direction 解析为 Left/Right。
+            TextGroupAlign::Start | TextGroupAlign::End => 0.0,
+        };
+        if offset == 0.0 {
+            return;
+        }
+        for line in &mut self.lines {
+            for run in &mut line.runs {
+                run.x += offset;
             }
         }
     }

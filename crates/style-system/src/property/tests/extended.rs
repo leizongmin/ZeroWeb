@@ -386,6 +386,59 @@ fn test_text_align_last_inherit() {
 }
 
 #[test]
+/// 测试 text-group-align apply_property_value（R4213）
+fn test_apply_text_group_align() {
+    let mut style = ComputedStyle::default();
+    assert_eq!(style.text_group_align, TextGroupAlignValue::None);
+
+    assert!(apply_property_value(&mut style, "text-group-align", "start"));
+    assert_eq!(style.text_group_align, TextGroupAlignValue::Start);
+
+    assert!(apply_property_value(&mut style, "text-group-align", "end"));
+    assert_eq!(style.text_group_align, TextGroupAlignValue::End);
+
+    assert!(apply_property_value(&mut style, "text-group-align", "left"));
+    assert_eq!(style.text_group_align, TextGroupAlignValue::Left);
+
+    assert!(apply_property_value(&mut style, "text-group-align", "right"));
+    assert_eq!(style.text_group_align, TextGroupAlignValue::Right);
+
+    assert!(apply_property_value(&mut style, "text-group-align", "center"));
+    assert_eq!(style.text_group_align, TextGroupAlignValue::Center);
+
+    assert!(apply_property_value(&mut style, "text-group-align", "none"));
+    assert_eq!(style.text_group_align, TextGroupAlignValue::None);
+
+    assert!(!apply_property_value(&mut style, "text-group-align", "invalid"));
+}
+
+#[test]
+/// 测试 text-group-align 继承性
+fn test_text_group_align_inherited() {
+    assert!(PropertyRegistry::is_inherited("text-group-align"));
+}
+
+#[test]
+/// 测试 text-group-align initial_value
+fn test_text_group_align_initial_value() {
+    assert!(PropertyRegistry::initial_value("text-group-align").is_some());
+    let mut style = ComputedStyle::default();
+    style.text_group_align = TextGroupAlignValue::Center;
+    assert!(apply_initial_value(&mut style, "text-group-align"));
+    assert_eq!(style.text_group_align, TextGroupAlignValue::None);
+}
+
+#[test]
+/// 测试 text-group-align 继承
+fn test_text_group_align_inherit() {
+    let mut parent = ComputedStyle::default();
+    parent.text_group_align = TextGroupAlignValue::Right;
+    let mut child = ComputedStyle::default();
+    assert!(inherit_property(&parent, &mut child, "text-group-align"));
+    assert_eq!(child.text_group_align, TextGroupAlignValue::Right);
+}
+
+#[test]
 /// 测试 font-variant-numeric apply_property_value
 fn test_apply_font_variant_numeric() {
     let mut style = ComputedStyle::default();

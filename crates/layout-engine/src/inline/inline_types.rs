@@ -26,6 +26,25 @@ pub enum TextAlign {
     Justify,
 }
 
+/// R4213（CSS Text 4 #text-group-align-property）：行组对齐 — 将块内行盒整体
+/// （组宽 = 最宽行 ≈ 行组 min-content 宽）作为一个单元在容器行内轴上对齐。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum TextGroupAlign {
+    /// none（默认——不应用组对齐）。
+    #[default]
+    None,
+    /// 行内起始边（direction 感知）。
+    Start,
+    /// 行内结束边。
+    End,
+    /// 左。
+    Left,
+    /// 右。
+    Right,
+    /// 居中。
+    Center,
+}
+
 /// 文本运行 — 一段连续的、具有相同样式的文本。
 #[derive(Debug, Clone)]
 pub struct TextRun {

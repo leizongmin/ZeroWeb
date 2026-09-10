@@ -7,8 +7,8 @@ use zero_css_parser::values::{ColorValue, DisplayValue, FloatValue, LengthValue}
 use zero_dom::{Document, NodeId, NodeKind};
 use zero_layout_engine::inline_finalization::{
     build_text_parent_override_map, resolve_tab_size_length_px, resolve_text_align, resolve_text_align_last,
-    resolve_text_indent, resolve_word_break_mode, subtree_font_differs_from, subtree_has_block_elem,
-    subtree_has_text_decoration,
+    resolve_text_group_align, resolve_text_indent, resolve_word_break_mode, subtree_font_differs_from,
+    subtree_has_block_elem, subtree_has_text_decoration,
 };
 use zero_layout_engine::{FloatExclusion, InlineFormattingContext, LayoutBox, NodeIdMap};
 use zero_render_foundation::color::Color;
@@ -1002,6 +1002,10 @@ impl super::Painter {
                     // run.font_id=None，行断回退 estimate（布局↔绘制宽度错位）。
                     .with_font_resolver(std::rc::Rc::new(self.font_resolver.clone()))
                     .with_text_align(text_align)
+                    // R4213（CSS Text 4）：行组对齐 Path B 同源——layout 侧存 IFC 的组位移
+                    // 在非存储路径重跑时不得丢失（text-group-align 转正后 Path B 漏注入
+                    // 会回到容器轴对齐）。
+                    .with_text_group_align(resolve_text_group_align(Some(style)))
                     .with_text_align_last(text_align_last)
                     .with_bidi_override_direction(zero_layout_engine::bidi_override_direction(style))
                     .with_plaintext_bidi(

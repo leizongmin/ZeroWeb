@@ -150,6 +150,10 @@ pub fn inherit_property(parent: &ComputedStyle, child: &mut ComputedStyle, prope
             child.text_align_last = parent.text_align_last.clone();
             true
         }
+        "text-group-align" => {
+            child.text_group_align = parent.text_group_align.clone();
+            true
+        }
         "font-variant-numeric" => {
             child.font_variant_numeric = parent.font_variant_numeric.clone();
             true
@@ -1277,6 +1281,10 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
         }
         "text-align-last" => {
             style.text_align_last = default_style.text_align_last;
+            true
+        }
+        "text-group-align" => {
+            style.text_group_align = default_style.text_group_align;
             true
         }
         "font-variant-numeric" => {

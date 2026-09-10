@@ -1818,6 +1818,7 @@ fn is_property_supported(property: &str, value: &str) -> bool {
         // Reuse the direct apply parsers for table, UI, writing-mode and text alignment values.
         "text-align" => crate::property::parse_text_align(trimmed).is_some(),
         "text-align-last" => parse_text_align_last(trimmed).is_some(),
+        "text-group-align" => zero_css_parser::values::parse_text_group_align(trimmed).is_some(),
         "white-space" => crate::property::parse_white_space(trimmed).is_some(),
         "vertical-align" => parse_vertical_align(trimmed).is_some(),
         "table-layout" => parse_table_layout(trimmed).is_some(),

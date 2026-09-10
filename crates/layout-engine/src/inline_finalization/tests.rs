@@ -1,8 +1,8 @@
 use super::{
     ComputedStyle, FinalInlineContext, InlineFontContext, InlineFormattingContext, LayoutBox, TextAlign,
-    compute_final_inline_layouts, extract_inline_visual_metrics, measure_text_content, resolve_text_align,
-    resolve_text_align_last, resolve_text_indent, sync_inline_block_positions_from_ifc,
-    vertical_decoration_free_with_mode,
+    TextGroupAlign, compute_final_inline_layouts, extract_inline_visual_metrics, measure_text_content,
+    resolve_text_align, resolve_text_align_last, resolve_text_group_align, resolve_text_indent,
+    sync_inline_block_positions_from_ifc, vertical_decoration_free_with_mode,
 };
 use std::collections::HashMap;
 use zero_css_parser::values::{DisplayValue, LengthValue};
@@ -482,4 +482,29 @@ fn r3991_run_in_sibling_predicate() {
     run_in_style.display = DisplayValue::RunIn;
     styles.insert(r, run_in_style);
     assert_eq!(run_in_following_block_sibling(&doc, &styles, r), None);
+}
+
+#[test]
+fn test_resolve_text_group_align_mapping() {
+    // R4213（CSS Text 4 #text-group-align-property）：物理值直映射，start/end 方向感知。
+    let mut style = ComputedStyle::default();
+    style.text_group_align = zero_style_system::property::TextGroupAlignValue::None;
+    assert_eq!(resolve_text_group_align(Some(&style)), TextGroupAlign::None);
+    style.text_group_align = zero_style_system::property::TextGroupAlignValue::Center;
+    assert_eq!(resolve_text_group_align(Some(&style)), TextGroupAlign::Center);
+    style.text_group_align = zero_style_system::property::TextGroupAlignValue::Left;
+    assert_eq!(resolve_text_group_align(Some(&style)), TextGroupAlign::Left);
+    style.text_group_align = zero_style_system::property::TextGroupAlignValue::Right;
+    assert_eq!(resolve_text_group_align(Some(&style)), TextGroupAlign::Right);
+    style.text_group_align = zero_style_system::property::TextGroupAlignValue::Start;
+    style.direction = DirectionValue::Ltr;
+    assert_eq!(resolve_text_group_align(Some(&style)), TextGroupAlign::Left);
+    style.direction = DirectionValue::Rtl;
+    assert_eq!(resolve_text_group_align(Some(&style)), TextGroupAlign::Right);
+    style.text_group_align = zero_style_system::property::TextGroupAlignValue::End;
+    style.direction = DirectionValue::Ltr;
+    assert_eq!(resolve_text_group_align(Some(&style)), TextGroupAlign::Right);
+    style.direction = DirectionValue::Rtl;
+    assert_eq!(resolve_text_group_align(Some(&style)), TextGroupAlign::Left);
+    assert_eq!(resolve_text_group_align(None), TextGroupAlign::None);
 }

@@ -750,6 +750,36 @@ pub fn parse_text_align_last(value: &str) -> Option<TextAlignLastValue> {
     }
 }
 
+/// CSS text-group-align 值（CSS Text 4 #text-group-align-property）。
+#[derive(Debug, Clone, PartialEq)]
+pub enum TextGroupAlignValue {
+    /// none（默认——行组不对齐）。
+    None,
+    /// start。
+    Start,
+    /// end。
+    End,
+    /// left。
+    Left,
+    /// right。
+    Right,
+    /// center。
+    Center,
+}
+
+/// 解析 CSS text-group-align 属性值。
+pub fn parse_text_group_align(value: &str) -> Option<TextGroupAlignValue> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "none" => Some(TextGroupAlignValue::None),
+        "start" => Some(TextGroupAlignValue::Start),
+        "end" => Some(TextGroupAlignValue::End),
+        "left" => Some(TextGroupAlignValue::Left),
+        "right" => Some(TextGroupAlignValue::Right),
+        "center" => Some(TextGroupAlignValue::Center),
+        _ => None,
+    }
+}
+
 /// CSS font-variant-numeric 值。
 #[derive(Debug, Clone, PartialEq)]
 pub enum FontVariantNumericValue {

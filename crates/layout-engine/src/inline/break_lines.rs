@@ -761,6 +761,8 @@ impl InlineFormattingContext {
 
         // 应用文本对齐
         self.apply_text_alignment();
+        // R4213（CSS Text 4）：行组对齐——组整体位移在 text-align（组内对齐）之后应用。
+        self.apply_text_group_alignment();
         if plaintext_enabled {
             self.apply_plaintext_direction(&plaintext_directions);
         }

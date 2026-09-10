@@ -952,6 +952,26 @@ pub enum TextAlignLastValue {
     Justify,
 }
 
+/// CSS text-group-align 属性值（CSS Text 4 #text-group-align-property）。
+/// 将块内行**组**（行盒整体）作为一个单元在容器行内轴上对齐——
+/// 组宽 = 行组的 min-content 宽（最宽行）。
+#[derive(Debug, Clone, PartialEq, Default)]
+pub enum TextGroupAlignValue {
+    /// none（默认——不应用组对齐）。
+    #[default]
+    None,
+    /// start（行内起始边）。
+    Start,
+    /// end（行内结束边）。
+    End,
+    /// left。
+    Left,
+    /// right。
+    Right,
+    /// center。
+    Center,
+}
+
 /// CSS font-kerning 属性值。
 /// https://drafts.csswg.org/css-fonts-4/#font-kerning-prop
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
@@ -1564,6 +1584,8 @@ pub enum PropertyValue {
     OverflowWrap(OverflowWrapValue),
     /// text-align-last 值。
     TextAlignLast(TextAlignLastValue),
+    /// text-group-align 值（CSS Text 4）。
+    TextGroupAlign(TextGroupAlignValue),
     /// font-kerning 值。
     FontKerning(FontKerningValue),
     /// font-variant-numeric 值。

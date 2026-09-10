@@ -291,6 +291,7 @@ impl Default for ComputedStyle {
             // Text (新属性)
             overflow_wrap: OverflowWrapValue::Normal,
             text_align_last: TextAlignLastValue::Auto,
+            text_group_align: TextGroupAlignValue::None,
             font_variant_numeric: FontVariantNumericValue::Normal,
             font_variant_caps: FontVariantCapsValue::Normal,
             font_variant_east_asian: FontVariantEastAsianValue::Normal,

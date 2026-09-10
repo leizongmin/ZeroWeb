@@ -1067,6 +1067,20 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
                 return true;
             }
         }
+        // ── TextGroupAlign 属性（CSS Text 4）──
+        "text-group-align" => {
+            if let Some(v) = values::parse_text_group_align(value) {
+                style.text_group_align = match v {
+                    zero_css_parser::values::TextGroupAlignValue::None => TextGroupAlignValue::None,
+                    zero_css_parser::values::TextGroupAlignValue::Start => TextGroupAlignValue::Start,
+                    zero_css_parser::values::TextGroupAlignValue::End => TextGroupAlignValue::End,
+                    zero_css_parser::values::TextGroupAlignValue::Left => TextGroupAlignValue::Left,
+                    zero_css_parser::values::TextGroupAlignValue::Right => TextGroupAlignValue::Right,
+                    zero_css_parser::values::TextGroupAlignValue::Center => TextGroupAlignValue::Center,
+                };
+                return true;
+            }
+        }
         // ── TextAlignLast 属性 ──
         "text-align-last" => {
             if let Some(v) = values::parse_text_align_last(value) {

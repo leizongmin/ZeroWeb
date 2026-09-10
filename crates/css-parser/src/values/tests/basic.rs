@@ -1404,6 +1404,37 @@ fn test_parse_text_align_last_case_insensitive() {
     assert_eq!(parse_text_align_last(" Center "), Some(TextAlignLastValue::Center));
 }
 
+// ── TextGroupAlign 测试（R4213）──
+
+#[test]
+fn test_parse_text_group_align_none() {
+    assert_eq!(parse_text_group_align("none"), Some(TextGroupAlignValue::None));
+}
+
+#[test]
+fn test_parse_text_group_align_start_end() {
+    assert_eq!(parse_text_group_align("start"), Some(TextGroupAlignValue::Start));
+    assert_eq!(parse_text_group_align("end"), Some(TextGroupAlignValue::End));
+}
+
+#[test]
+fn test_parse_text_group_align_left_right_center() {
+    assert_eq!(parse_text_group_align("left"), Some(TextGroupAlignValue::Left));
+    assert_eq!(parse_text_group_align("right"), Some(TextGroupAlignValue::Right));
+    assert_eq!(parse_text_group_align("center"), Some(TextGroupAlignValue::Center));
+}
+
+#[test]
+fn test_parse_text_group_align_invalid() {
+    assert_eq!(parse_text_group_align("invalid"), None);
+}
+
+#[test]
+fn test_parse_text_group_align_case_insensitive() {
+    assert_eq!(parse_text_group_align("NONE"), Some(TextGroupAlignValue::None));
+    assert_eq!(parse_text_group_align(" Center "), Some(TextGroupAlignValue::Center));
+}
+
 // ── FontVariantNumeric 测试 ──
 
 #[test]

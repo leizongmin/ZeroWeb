@@ -467,6 +467,8 @@ pub struct ComputedStyle {
     pub overflow_wrap: OverflowWrapValue,
     /// text-align-last 属性。
     pub text_align_last: TextAlignLastValue,
+    /// text-group-align 属性（CSS Text 4）。
+    pub text_group_align: TextGroupAlignValue,
     /// font-variant-numeric 属性。
     pub font_variant_numeric: FontVariantNumericValue,
     /// font-variant-caps 属性。
