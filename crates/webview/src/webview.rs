@@ -2103,7 +2103,18 @@ impl WebView {
         sandbox
             .execute(generate_js_dom_shim())
             .map_err(|e| WebViewError::Script(format!("DOM shim init: {e}")))?;
+        // 先置位再同步：sync 失败不可触发下次调用重装 shim（重复注入重置 _nodeMap 丢失监听器）。
         self.js_shim_initialized = true;
+        // viewport 真值同步（event-loop-spec ④ runner viewport 校准）：shim 常量 stub
+        // 1280×800 与实际布局 viewport（config，默认 800×600）永久错位——innerWidth/innerHeight/
+        // documentElement.client* 与 rootBounds 系统性偏差。安装后经 R3254 `__zw_user_resize`
+        // 桥接真值（inner/outer ← config；screen 保持设备常量语义）。此时页面脚本未运行，
+        // 无 resize 监听器/MQL，事件派发与 matchMedia 重评为 no-op。
+        let (w, h) = (self.config.width as f64, self.config.height as f64);
+        let sync = zero_engine::script_user_resize(w, h);
+        sandbox
+            .execute(&sync)
+            .map_err(|e| WebViewError::Script(format!("viewport sync: {e}")))?;
         Ok(())
     }
 
@@ -2902,13 +2913,9 @@ impl WebView {
             );
         }
 
-        // DOM shim 只注入一次（重复执行会重置 _nodeMap 丢失监听器）
-        if !self.js_shim_initialized {
-            if let Err(e) = sandbox.execute(generate_js_dom_shim()) {
-                return Err(WebViewError::Script(format!("DOM shim init: {e}")));
-            }
-            self.js_shim_initialized = true;
-        }
+        // DOM shim 只注入一次（重复执行会重置 _nodeMap 丢失监听器）；含安装后 viewport
+        // 真值同步（见 `ensure_js_shim`）——两处安装点收敛到同一 helper。
+        self.ensure_js_shim()?;
         for (script, script_index) in scripts {
             self.drain_async_navigation_callbacks_until_idle(std::time::Duration::from_millis(50));
             let sandbox = self.js_sandbox.as_mut().expect("js sandbox");
