@@ -360,6 +360,14 @@ fn test_grid_default_justify_content_is_stretch() {
 fn test_inline_grid_default_justify_content_is_stretch() {
     let mut style = ComputedStyle::default();
     style.display = DisplayValue::InlineGrid;
+    // R4253（css-grid §11.8 Stretch auto Tracks）：auto 轨道撑满仅在容器相关轴有
+    // definite 尺寸时发生——inline-grid 默认 Auto（shrink-to-fit，indefinite）→ 不强推
+    // STRETCH（grid-block/grid-inline：容器 w=50 而 item2 x=400 应 100/50 实证）。
+    let taffy_style = computed_style_to_taffy(&style, None, 800.0, 600.0);
+    assert_ne!(taffy_style.justify_content, Some(taffy::style::JustifyContent::STRETCH));
+
+    // 显式 definite 宽 → 维持 STRETCH（既有契约保留）
+    style.width = LengthValue::Px(400.0);
     let taffy_style = computed_style_to_taffy(&style, None, 800.0, 600.0);
     assert_eq!(taffy_style.justify_content, Some(taffy::style::JustifyContent::STRETCH));
 }

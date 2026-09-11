@@ -513,7 +513,7 @@ pub fn computed_style_to_taffy(
         align_items: convert_alignment_to_align_items(&style.align_items),
         align_self: convert_alignment_to_align_self(&style.align_self),
         align_content: convert_align_content(&style.align_content),
-        justify_content: grid_justify_content(&style.justify_content, &style.display),
+        justify_content: grid_justify_content(&style.justify_content, &style.display, style),
         justify_items: convert_justify_items(&style.justify_items),
         justify_self: convert_justify_self(&style.justify_self),
         gap: taffy::geometry::Size {
@@ -1014,10 +1014,25 @@ fn convert_alignment_to_justify_content(value: &AlignmentValue) -> Option<taffy:
 /// （grep 实证），故 FlexStart→STRETCH 对 grid 无回归风险。
 ///
 /// kill-switch `ZW_GRID_JUSTIFY_STRETCH=0`（default-on）。
-fn grid_justify_content(value: &AlignmentValue, display: &DisplayValue) -> Option<taffy::style::JustifyContent> {
+fn grid_justify_content(
+    value: &AlignmentValue,
+    display: &DisplayValue,
+    style: &ComputedStyle,
+) -> Option<taffy::style::JustifyContent> {
     let jc = convert_alignment_to_justify_content(value);
+    // R4253（CSS Grid §11.8 Stretch auto Tracks）：auto 轨道撑满仅在容器**相关轴有
+    // definite 尺寸**时发生。inline-grid 宽度是 shrink-to-fit（indefinite）——强推
+    // STRETCH 会让 auto 轨道按父 CB 宽均分而容器盒仍走内容宽（grid-block 等：
+    // 容器 w=50、item2 x=400 应 100/50）。inline-grid + 内容系宽度（Auto/fit-content/
+    // max-content/min-content）→ 保持转换值（FLEX_START 收拢不撑满）；显式宽（Px/%/
+    // calc 系）仍 definite → 维持 STRETCH。
+    let content_based_width = matches!(
+        style.width,
+        LengthValue::Auto | LengthValue::FitContent(_) | LengthValue::MaxContent | LengthValue::MinContent
+    );
     if matches!(value, AlignmentValue::FlexStart)
         && matches!(display, DisplayValue::Grid | DisplayValue::InlineGrid)
+        && !(matches!(display, DisplayValue::InlineGrid) && content_based_width)
         && std::env::var("ZW_GRID_JUSTIFY_STRETCH").as_deref() != Ok("0")
     {
         Some(taffy::style::JustifyContent::STRETCH)
