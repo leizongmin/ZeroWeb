@@ -60,17 +60,16 @@ pub fn load_file_reftests(wpt_data_dir: &Path) -> Vec<FileReftestCase> {
                 continue; // 非 reftest 文件，跳过
             }
 
-            // 为每个 reference 创建一个 reftest case
-            for (ref_idx, reference) in references.iter().enumerate() {
+            // 每个测试文件一个 case，携带全部参考（WPT「Multiple References」：
+            // match 至少一个匹配 + mismatch 全部不匹配，由 combine_multi_ref 聚合）。
+            let test_base = test_path.parent().map(|p| p.to_path_buf());
+            let mut refs = Vec::with_capacity(references.len());
+            for reference in &references {
                 let raw_ref = reference.ref_path.trim();
 
                 // about:blank 是 WPT reftest 的特殊参考（空白文档，常用于 match「应渲染为空白」
                 // 的用例）。它不是文件路径，不读磁盘——直接当空 HTML。否则 read_to_string 会
                 // 报 No such file 并把测试误排除出分母（DC-14 分母真实性，R551/R552 谱系）。
-                //
-                // ref_base_dir = 参考文件所在目录，用于解析参考页相对图片 URL。
-                // about:blank 无文件，回落到测试文件目录。
-                let test_base = test_path.parent().map(|p| p.to_path_buf());
                 let (ref_html, ref_base_dir) = if raw_ref == "about:blank" {
                     (
                         String::from("<!DOCTYPE html><html><head></head><body></body></html>"),
@@ -87,23 +86,23 @@ pub fn load_file_reftests(wpt_data_dir: &Path) -> Vec<FileReftestCase> {
                         }
                     }
                 };
-
-                let id = if references.len() == 1 {
-                    relative_str.clone()
-                } else {
-                    format!("{}#{}", relative_str, ref_idx)
-                };
-
-                cases.push(FileReftestCase {
-                    id,
-                    test_html: test_html.clone(),
+                refs.push(FileRef {
                     ref_html,
-                    is_match: reference.is_match(),
-                    category: ReftestCategory::from_path(&relative_str),
-                    base_dir: test_base,
                     ref_base_dir,
+                    is_match: reference.is_match(),
                 });
             }
+            if refs.is_empty() {
+                continue; // 参考文件全部读取失败（错误已在上方记录）
+            }
+
+            cases.push(FileReftestCase {
+                id: relative_str.clone(),
+                test_html: test_html.clone(),
+                refs,
+                category: ReftestCategory::from_path(&relative_str),
+                base_dir: test_base,
+            });
         }
     }
 
@@ -122,43 +121,117 @@ fn stable_case_id(relative: &Path) -> String {
     relative.to_string_lossy().replace('\\', "/")
 }
 
-/// 文件加载的上游 reftest case。
-pub struct FileReftestCase {
-    /// 测试标识符（相对于 wpt-data 的路径）。
-    pub id: String,
-    /// 测试 HTML 内容。
-    pub test_html: String,
+/// 多参考测试的单条参考（WPT「Multiple References」：一个测试文件可声明多条
+/// `<link rel="match">` / `<link rel="mismatch">`）。
+pub struct FileRef {
     /// 参考 HTML 内容。
     pub ref_html: String,
-    /// 比较模式：true=match，false=mismatch。
-    pub is_match: bool,
-    /// 分类。
-    pub category: ReftestCategory,
-    /// 测试文件所在目录（用于解析相对图片路径）。
-    pub base_dir: Option<PathBuf>,
     /// 参考文件所在目录（用于解析参考页相对图片路径）。
     ///
     /// 参考文件常位于 `reference/` 子目录，其相对图片 URL（如 `../support/x.png`）
     /// 必须相对参考文件自身目录解析。about:blank 参考无文件，回落到测试目录。
     pub ref_base_dir: Option<PathBuf>,
+    /// 比较模式：true=match，false=mismatch。
+    pub is_match: bool,
+}
+
+/// 文件加载的上游 reftest case。
+pub struct FileReftestCase {
+    /// 测试标识符（相对于 wpt-data 的路径；多参考测试不再展开 `#N` 变体后缀）。
+    pub id: String,
+    /// 测试 HTML 内容。
+    pub test_html: String,
+    /// 全部参考（≥1），按 `<link>` 声明序排列。
+    pub refs: Vec<FileRef>,
+    /// 分类。
+    pub category: ReftestCategory,
+    /// 测试文件所在目录（用于解析相对图片路径）。
+    pub base_dir: Option<PathBuf>,
 }
 
 impl FileReftestCase {
-    /// 转换为 ReftestCase（运行器使用的类型）。
-    pub fn to_reftest_case(&self) -> ReftestCase {
+    /// 首个参考（单参考测试的唯一参考；多参考测试的 diagnostics 用首页）。
+    pub fn first_ref(&self) -> &FileRef {
+        &self.refs[0]
+    }
+
+    /// 转换为第 `ref_idx` 条参考的 ReftestCase（运行器使用的类型）。
+    pub fn to_reftest_case(&self, ref_idx: usize) -> ReftestCase {
+        let r = &self.refs[ref_idx];
         ReftestCase {
             id: self.id.clone(),
             test_html: self.test_html.clone(),
-            ref_html: self.ref_html.clone(),
+            ref_html: r.ref_html.clone(),
             css: String::new(),
-            is_match: self.is_match,
-            ref_base_dir: self.ref_base_dir.clone(),
+            is_match: r.is_match,
+            ref_base_dir: r.ref_base_dir.clone(),
         }
     }
 
     /// 生成 ReftestConfig。
     pub fn to_config(&self, viewport_width: u32, viewport_height: u32) -> ReftestConfig {
         ReftestConfig::for_category(self.category).with_viewport(viewport_width, viewport_height)
+    }
+}
+
+/// WPT 多参考聚合判定（web-platform-tests.org/writing-tests/reftests.html
+/// 「Multiple References」）：「If there are any match references, at least one must
+/// match, and if there are any mismatch references, all must mismatch.」
+///
+/// 旧模型把每条参考展开成独立 case（每条都须 pass）——多 match 参考的测试被按 AND
+/// 记账，任一条配对不上即永红（如 table-anonymous-objects-115#0 配对的
+/// no_red_3x3_monospace_table-ref 与该测试内容无关，永远不可能匹配）。上游语义为
+/// match 取 any、mismatch 取 all，本函数按此聚合逐参考比较结果。
+///
+/// `per_ref`: (is_match, 该参考的比较结果)，顺序与 `refs` 一致。
+/// `representative` 为报告用的代表性比较下标（mismatch 失配优先，其次 diff 最小的
+/// 匹配成功项，再其次 diff 最小的任一 match 比较）。
+pub struct MultiRefVerdict {
+    pub passed: bool,
+    pub representative: usize,
+}
+
+pub fn combine_multi_ref(per_ref: &[(bool, crate::reftest::ReftestResult)]) -> MultiRefVerdict {
+    let mut mismatch_ok = true;
+    let mut first_mismatch_fail: Option<usize> = None;
+    for (i, (is_match, result)) in per_ref.iter().enumerate() {
+        if !is_match && !result.passed {
+            mismatch_ok = false;
+            first_mismatch_fail.get_or_insert(i);
+        }
+    }
+    let match_idxs: Vec<usize> = per_ref
+        .iter()
+        .enumerate()
+        .filter(|(_, (is_match, _))| *is_match)
+        .map(|(i, _)| i)
+        .collect();
+    let match_ok = match_idxs.is_empty() || match_idxs.iter().any(|&i| per_ref[i].1.passed);
+
+    // 代表性比较：mismatch 失配 > pass 的 match 中 diff 最小 > match 中 diff 最小 >
+    // 兜底 0（纯 mismatch 全过）。
+    let by_diff = |&a: &usize, &b: &usize| {
+        per_ref[a]
+            .1
+            .diff_ratio
+            .partial_cmp(&per_ref[b].1.diff_ratio)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    };
+    let representative = if let Some(i) = first_mismatch_fail {
+        i
+    } else {
+        match_idxs
+            .iter()
+            .copied()
+            .filter(|&i| per_ref[i].1.passed)
+            .min_by(by_diff)
+            .or_else(|| match_idxs.iter().copied().min_by(by_diff))
+            .unwrap_or_default()
+    };
+
+    MultiRefVerdict {
+        passed: match_ok && mismatch_ok,
+        representative,
     }
 }
 
@@ -250,7 +323,8 @@ fn should_skip(relative_path: &str, skip_list: &[String]) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::stable_case_id;
+    use super::{MultiRefVerdict, combine_multi_ref, stable_case_id};
+    use crate::reftest::ReftestResult;
     use std::path::Path;
 
     #[test]
@@ -259,5 +333,64 @@ mod tests {
             stable_case_id(Path::new(r"css\CSS2\abspos\case.xht")),
             "css/CSS2/abspos/case.xht"
         );
+    }
+
+    /// 构造聚合测试用的比较结果。
+    fn result(id: &str, is_match: bool, passed: bool, diff_ratio: f64) -> (bool, ReftestResult) {
+        (
+            is_match,
+            ReftestResult {
+                id: id.to_string(),
+                passed,
+                diff_pixels: 0,
+                total_pixels: 480000,
+                diff_ratio,
+                max_channel_diff: 0,
+                subpixel_diff_pixels: 0,
+                message: String::new(),
+                test_near_solid: false,
+            },
+        )
+    }
+
+    // WPT「Multiple References」：match 至少一个匹配 + mismatch 全部不匹配。
+
+    #[test]
+    fn multi_ref_match_any_passes() {
+        // table-anonymous-objects-115 谱系：两条 match 参考，一条配对不上（永红）
+        // 一条匹配 → 上游语义应 pass。
+        let per = vec![result("t", true, false, 0.0174), result("t", true, true, 0.0006)];
+        let MultiRefVerdict { passed, .. } = combine_multi_ref(&per);
+        assert!(passed, "任一 match 匹配即应通过");
+    }
+
+    #[test]
+    fn multi_ref_match_all_fail_stays_red() {
+        let per = vec![result("t", true, false, 0.02), result("t", true, false, 0.03)];
+        let MultiRefVerdict { passed, .. } = combine_multi_ref(&per);
+        assert!(!passed, "全部 match 失配应保持红");
+    }
+
+    #[test]
+    fn multi_ref_mismatch_must_all_mismatch() {
+        // match 匹配但 mismatch 参考与 test 渲染相同（min_mismatch_ratio 不达标）→ fail。
+        let per = vec![result("t", true, true, 0.0), result("t", false, false, 0.0)];
+        let MultiRefVerdict { passed, representative } = combine_multi_ref(&per);
+        assert!(!passed, "mismatch 参考未失配应不通过");
+        assert_eq!(representative, 1, "报告应指向失配的 mismatch 比较");
+    }
+
+    #[test]
+    fn multi_ref_mismatch_all_mismatch_passes() {
+        let per = vec![result("t", true, true, 0.001), result("t", false, true, 0.2)];
+        let MultiRefVerdict { passed, .. } = combine_multi_ref(&per);
+        assert!(passed, "match 匹配 + mismatch 全失配应通过");
+    }
+
+    #[test]
+    fn multi_ref_representative_prefers_passing_min_diff() {
+        let per = vec![result("t", true, true, 0.05), result("t", true, true, 0.001)];
+        let MultiRefVerdict { representative, .. } = combine_multi_ref(&per);
+        assert_eq!(representative, 1, "报告应取匹配成功中 diff 最小的比较");
     }
 }

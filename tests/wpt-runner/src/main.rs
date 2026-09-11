@@ -1981,17 +1981,36 @@ fn cmd_reftest_upstream(options: &CliOptions, filter: Option<&str>) {
     let start = std::time::Instant::now();
 
     let results: Vec<ReftestResult> = parallel_map(&filtered, jobs, |case| {
-        let reftest_case = case.to_reftest_case();
-        let _timer = CaseTimer::new(&reftest_case.id);
+        let _timer = CaseTimer::new(&case.id);
         let mut config = case.to_config(options.viewport_width as u32, options.viewport_height as u32);
         config.media_type = options.media_type;
         config.wpt_root = Some(wpt_data_dir.clone());
         let base_dir = case.base_dir.as_deref();
 
-        if options.use_gpu {
-            run_reftest_gpu_with_base(&reftest_case, &config, base_dir)
-        } else {
-            run_reftest_with_base(&reftest_case, &config, base_dir)
+        // R4242：逐参考比较后按 WPT「Multiple References」语义聚合（match 至少一个
+        // 匹配 + mismatch 全部不匹配）。比较总次数与旧「每参考一个 case」模型一致。
+        let mut per_ref: Vec<(bool, ReftestResult)> = Vec::with_capacity(case.refs.len());
+        for ref_idx in 0..case.refs.len() {
+            let reftest_case = case.to_reftest_case(ref_idx);
+            let result = if options.use_gpu {
+                run_reftest_gpu_with_base(&reftest_case, &config, base_dir)
+            } else {
+                run_reftest_with_base(&reftest_case, &config, base_dir)
+            };
+            per_ref.push((case.refs[ref_idx].is_match, result));
+        }
+        let verdict = wpt_file_loader::combine_multi_ref(&per_ref);
+        let rep = &per_ref[verdict.representative].1;
+        ReftestResult {
+            id: case.id.clone(),
+            passed: verdict.passed,
+            diff_pixels: rep.diff_pixels,
+            total_pixels: rep.total_pixels,
+            diff_ratio: rep.diff_ratio,
+            max_channel_diff: rep.max_channel_diff,
+            subpixel_diff_pixels: rep.subpixel_diff_pixels,
+            message: rep.message.clone(),
+            test_near_solid: rep.test_near_solid,
         }
     });
 
@@ -2125,9 +2144,9 @@ fn cmd_layout_dump(options: &CliOptions, filter: Option<&str>) {
         dump_layout_tree(&root, &rendered_html);
 
         if std::env::var("ZW_LAYOUT_DUMP_REF").is_ok() {
-            let ref_base = case.ref_base_dir.as_deref().or(base_dir);
+            let ref_base = case.first_ref().ref_base_dir.as_deref().or(base_dir);
             let (_, ref_root, ref_rendered) =
-                render_to_framebuffer_with_layout_with_base(&case.ref_html, "", &config, ref_base);
+                render_to_framebuffer_with_layout_with_base(&case.first_ref().ref_html, "", &config, ref_base);
             eprintln!("##### {} [REF] #####", case.id);
             dump_layout_tree(&ref_root, &ref_rendered);
         }
