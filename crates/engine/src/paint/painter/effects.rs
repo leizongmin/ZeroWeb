@@ -440,11 +440,29 @@ impl super::Painter {
                     // （4 条带互不重叠，tile 逐带求交集发射无双绘）。
                     let ring_strips = border_area_ring.as_deref();
 
+                    // R4247（CSS §3.4）：space 轴 tile 本体不缩放——resolve_repeat_params
+                    // 返回的 tile_w/h 是含间隙步距（eff），绘制尺寸须用 sized。按轴判
+                    //（TwoValue(Repeat, Space) 等混合形式旧整值用 eff 绘制 → 间隙被吞）。
+                    let axis_draw = |r: &BackgroundRepeatComputedValue, step: f32, sized: f32| {
+                        if matches!(r, BackgroundRepeatComputedValue::Space) {
+                            sized
+                        } else {
+                            step
+                        }
+                    };
+                    let (draw_w, draw_h) = match repeat {
+                        BackgroundRepeatComputedValue::TwoValue(rx, ry) => {
+                            (axis_draw(rx, tile_w, sized_w), axis_draw(ry, tile_h, sized_h))
+                        }
+                        BackgroundRepeatComputedValue::Space => (sized_w, sized_h),
+                        _ => (tile_w, tile_h),
+                    };
+
                     let mut y = repeat_y.0;
                     while y < repeat_y.1 {
                         let mut x = repeat_x.0;
                         while x < repeat_x.1 {
-                            let clipped = clip_tile_to_origin(x, y, tile_w, tile_h, clip_x, clip_y, clip_w, clip_h);
+                            let clipped = clip_tile_to_origin(x, y, draw_w, draw_h, clip_x, clip_y, clip_w, clip_h);
                             if let Some((cx, cy, cw, ch)) = clipped {
                                 // R3760：cover/contain（及任一维溢出 painting area 的 tile）
                                 // 不得把裁剪后矩形当 rect——ImagePrimitive 语义是 source
@@ -455,9 +473,9 @@ impl super::Painter {
                                 // clip=None（零行为变化，避免给所有平铺图元加裁剪开销）。
                                 let overflows = x < clip_x
                                     || y < clip_y
-                                    || x + tile_w > clip_x + clip_w
-                                    || y + tile_h > clip_y + clip_h;
-                                let prim_rect = Rect::new(x, y, tile_w, tile_h);
+                                    || x + draw_w > clip_x + clip_w
+                                    || y + draw_h > clip_y + clip_h;
+                                let prim_rect = Rect::new(x, y, draw_w, draw_h);
                                 if let Some(strips) = ring_strips {
                                     // border-area：tile 按环带条带分别发射（各带独立 clip，
                                     // 交集为空跳过；角部 tile 同时入 top/bottom 与 left/right
@@ -537,10 +555,22 @@ impl super::Painter {
                         let ((x0, x1), (y0, y1), step_w, step_h) = tiles;
                         // space：步距含间隙（eff），tile 本身不缩放——绘制尺寸用 sized（CSS §3.4
                         // space 只调间距不拉伸 tile；round/repeat 的 step 即 tile 尺寸）。
-                        let (draw_w, draw_h) = if matches!(repeat, BackgroundRepeatComputedValue::Space) {
-                            (sized_w, sized_h)
-                        } else {
-                            (step_w, step_h)
+                        // R4247（CSS §3.4）：space 轴 tile 本体不缩放——step 含间隙（eff），
+                        // 绘制尺寸用 sized。TwoValue 混合形式按轴判（旧整值判断漏
+                        // TwoValue(Repeat, Space) 的 y 轴 → tile 画成 eff 高，间隙被吞）。
+                        let axis_draw = |r: &BackgroundRepeatComputedValue, step: f32, sized: f32| {
+                            if matches!(r, BackgroundRepeatComputedValue::Space) {
+                                sized
+                            } else {
+                                step
+                            }
+                        };
+                        let (draw_w, draw_h) = match repeat {
+                            BackgroundRepeatComputedValue::TwoValue(rx, ry) => {
+                                (axis_draw(rx, step_w, sized_w), axis_draw(ry, step_h, sized_h))
+                            }
+                            BackgroundRepeatComputedValue::Space => (sized_w, sized_h),
+                            _ => (step_w, step_h),
                         };
                         // positioned 处的主 tile 优先发射（保持「首个 prim = positioned 主 tile」
                         // 的既有不变式——R1428/R3818 校准面按 g[0] 断言主 tile 位置）。

@@ -316,3 +316,4 @@ css/css-cascade/revert-layer-005.html css/reference/ref-filled-green-100px-squar
 css/css-cascade/revert-layer-012.html css/reference/ref-filled-green-100px-square.xht == 2026-09-11 R4245 同上——style 属性 important revert-layer 回退 author sheet
 css/css-cascade/import-conditional-001.html css/reference/ref-filled-green-100px-square.xht == 2026-09-11 R4246 修复媒体特征值绝对单位换算（in/pt/pc/cm/mm/q→px，旧只收 Px 致 40000in 恒假）+ 媒体查询 block comment 等价 whitespace（and /*c*/ (h) 解析失败整条丢弃）——条件 @import green 被误丢
 css/css-cascade/layer-media-toggle.html css/reference/ref-filled-green-100px-square.xht == 2026-09-11 R4246 修复 @layer 层序=层名首次出现序（@layer foo,bar; 语句与命名块注册名序，旧按块出现序致 foo(red) 反胜 bar(green)）
+css/css-backgrounds/background-repeat-space-4.html css/css-backgrounds/background-repeat-space-4-ref.html == 2026-09-11 R4247 修复 background-repeat space 轴 tile 绘制尺寸——resolve_repeat_params 返回含间隙步距 eff，绘制尺寸须按轴用 sized（TwoValue(Repeat,Space) 混合形式整值判断漏 y 轴，间隙被吞；image/gradient 两平铺循环同修）
