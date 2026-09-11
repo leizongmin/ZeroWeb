@@ -2,11 +2,11 @@
 
 **入口文档**: [../web-components.md](../web-components.md)
 **创建日期**: 2026-09-07（goal 拆分 bootstrap）
-**最后更新**: 2026-09-11（M3 切片 8 第二增量第十一小步——CE markup 构造管线：
-`__zwCeAttachForAdded` 附着口（upgrade + connected 双源判定）接入 innerHTML/outerHTML/
-insertAdjacent(HTML|Element)，plain 元素连接记账 key 碰撞修复、_zwMEl NS 读三件 +
-outerHTML setter、innerHTML 被替换子树断连——净 +59 零回归 3608/4764=75.7%；
-余 insertAdjacent 跨文档变体（per-document contains）+ width/height 数值反射）
+**最后更新**: 2026-09-11（M3 切片 8 第二增量第十二小步——跨文档 CE adopted/connected
+（R293 parent 链 plainParent 记账 + detached doc docEl.parentNode 接 doc + 工厂
+insertAdjacentElement 补 CE 派发；探针实证全序 disconnected/adopted/connected）+
+width/height 数值反射收口（handle 路径 moAttr + EMBED/VIDEO gate + CE 反应映射）——
+净 +9 零回归 3617/4764=75.9%；余 insertAdjacentHTML handle-only 两案 + goal 收口轮）
 
 ---
 
@@ -101,12 +101,13 @@ Shadow DOM 渲染级 composed tree 排除（等用户点名专项）。
      优先序均验证）。
 2. ~~slotchange 尾 12 案~~ ✅ 2026-09-11 第九小步全清（三簇 12F + attribute 面两案恢复，
    见 evidence/2026-09-11-wc-m3s8j.md）。
-3. ~~CE markup 构造管线~~ ✅ 2026-09-11 第十一小步收口（净 +59 零回归，
-   evidence/2026-09-11-wc-m3s8l.md）。余 insertAdjacent 跨文档变体（adopted/connected 需
-   per-document contains——`__zw_contains` 仅认主文档树，2-3 案）+ width/height 数值
-   反射（GET 缺省 per-tag 配表，~36F）。
-4. goal 文档 DC 清单逐项核对 + master.md 自洽压缩 + `docs/goal/web-components/archive/`
-   建立（goal 收口轮，待上余面收尾后）。
+3. ~~CE markup 构造管线 + 跨文档 CE + 数值反射~~ ✅ 2026-09-11 第十一/十二小步收口
+   （+59、+9 零回归，evidence/2026-09-11-wc-m3s8{l,m}.md）。余 insertAdjacentHTML
+   handle-only 两案（Element.html 46/47——markup 解析产物经 proxy appendChild 落位后
+   CE 构造面待查）。
+4. **goal 收口轮**：goal 文档 DC 清单逐项核对 + master.md 自洽压缩 +
+   `docs/goal/web-components/archive/` 建立 + DONE 判定（DC-1~5 已全绿的现状下，
+   余面为个位数案）。
 5. Rust `resolve_slots` 接线（渲染级消费等用户点名专项）。
 
 ### 已知挂账（2026-09-11 M3 切片 8 更新）
@@ -170,12 +171,12 @@ crates/dom/` 核对渲染流域活跃面；碰 part01.js 前与 event-loop-spec 
 
 - 测试基线：立项时点全绿（`make test` / `make reftest` 入口，经 test-guard 包裹；
   禁止裸跑 cargo test）
-- WC 用例面：**3608 Pass / 4764 subtests（75.7%）**（2026-09-11 M3 切片 8 第二增量
-  第十一小步 net +59 零回归。历史：基线 437=9% → 2a 689=15% → 2b 2565=55% → 3 2720=58%
+- WC 用例面：**3617 Pass / 4764 subtests（75.9%）**（2026-09-11 M3 切片 8 第二增量
+  第十二小步 net +9 零回归。历史：基线 437=9% → 2a 689=15% → 2b 2565=55% → 3 2720=58%
   → 4 3008=64% → M2 3014 → M3s1 3046 → M3s2 3050 → M3s3 3105 → M3s4 3137 → M3s5 3142
   → M3s6 3145 → M3s7 3413 → M3s8 3425 → M3s8b 3427 → M3s8c 3494 → M3s8d 3525 → M3s8e
   3529 → M3s8f 3532 → M3s8g 3532 → M3s8h 3536 → M3s8i 3536 → M3s8j 3549 → M3s8k 3594
-  → M3s8l 3608）
+  → M3s8l 3608 → M3s8m 3617）
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过；
   dom 结构变更轮跑 `make reftest` 作渲染面守卫。**DC-5 本轮实测（2026-09-11 第九小步）**：
   make test 全绿（service_worker skipWaiting 一次超时为 load 13 环境抖动——隔离重跑
