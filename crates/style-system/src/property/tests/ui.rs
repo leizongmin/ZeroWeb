@@ -1602,14 +1602,15 @@ fn test_gap_shorthand_expansion_via_expand_shorthands() {
     }
 
     // ── 双值形式：gap: 10px 20px → row-gap: 10px, column-gap: 20px ──
+    // （R4252：不下发 legacy gap——converter 以 0 值判 longhand 未设置即回退 legacy
+    // 字段，`gap: A 0px` 的显式 column-gap:0 会被污染为 A）
     let decls2: Vec<(String, String, bool, (u32, u32, u32))> =
         vec![("gap".to_string(), "10px 20px".to_string(), true, (0, 1, 0))];
     let expanded2 = expand_shorthands(&decls2);
 
-    assert_eq!(expanded2.len(), 3);
+    assert_eq!(expanded2.len(), 2);
 
     let props2: Vec<(&str, &str)> = expanded2.iter().map(|(p, v, _, _)| (p.as_str(), v.as_str())).collect();
-    assert!(props2.contains(&("gap", "10px")));
     assert!(props2.contains(&("row-gap", "10px")));
     assert!(props2.contains(&("column-gap", "20px")));
 

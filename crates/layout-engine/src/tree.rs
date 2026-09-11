@@ -7,7 +7,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::OnceLock;
 use taffy::prelude::*;
 use zero_css_parser::values::{
-    ClearValue, DisplayValue, FlexDirectionValue, FloatValue, LengthValue, OverflowValue, PositionValue,
+    ClearValue, DisplayValue, FlexDirectionValue, FlexWrapValue, FloatValue, LengthValue, OverflowValue, PositionValue,
 };
 use zero_dom::{Document, NodeId, NodeKind};
 use zero_style_system::{ComputedStyle, WritingModeValue};
@@ -1926,6 +1926,171 @@ fn collect_effective_block_children(
     out
 }
 
+/// R4252（css-box-4 §3.3.2）：wrap 多行 flex 容器的 line 归属拟合——按 item 假想主轴
+/// 外尺寸（margin box：margin+border+padding+content，CSS Flexbox §9.3.1 hypothetical
+/// main size）对容器主轴 content 尺寸贪心装行。拟合贡献剔除 line 首 item 的 start
+/// margin（对应 trim 开启时）与任一 item 的 end margin（对应 trim 开启时）——与归零后
+/// taffy 自身折行同口径，保证 line 归属一致。FIXME 乐观口径：mid-line item 的 end
+/// margin 实际不裁（只有 line 末 item 被裁），首行贴边的极端配置可能比 chromium 少折
+/// 一行；driving 案（等宽 item、贴边 margin）无影响。容器主轴 content 尺寸或任一 item
+/// 外尺寸不可解析（auto/% 容器、auto item 主尺寸、非 Px 盒边）→ None（调用方退化
+/// R4240 单行臂语义）。
+fn flex_wrap_lines(
+    styles: &HashMap<NodeId, ComputedStyle>,
+    items: &[NodeId],
+    ps: &ComputedStyle,
+    row: bool,
+) -> Option<Vec<Vec<usize>>> {
+    // 容器主轴 content 尺寸（content-box：width 即 content；border-box：width −
+    // padding − border）。% 宽相对 CB 不可静态解析 → None。
+    let container =
+        |main: &LengthValue, p1: &LengthValue, p2: &LengthValue, b1: &LengthValue, b2: &LengthValue| -> Option<f32> {
+            let mut inner = match main {
+                LengthValue::Px(v) => *v as f32,
+                _ => return None,
+            };
+            if matches!(ps.box_sizing, zero_css_parser::values::BoxSizingValue::BorderBox) {
+                for v in [p1, p2, b1, b2] {
+                    match v {
+                        LengthValue::Px(x) => inner -= *x as f32,
+                        _ => return None,
+                    }
+                }
+            }
+            Some(inner.max(0.0))
+        };
+    let inner = if row {
+        container(
+            &ps.width,
+            &ps.padding_left,
+            &ps.padding_right,
+            &ps.border_left_width,
+            &ps.border_right_width,
+        )
+    } else {
+        container(
+            &ps.height,
+            &ps.padding_top,
+            &ps.padding_bottom,
+            &ps.border_top_width,
+            &ps.border_bottom_width,
+        )
+    }?;
+    // item 主轴外尺寸：margin box。content 取 Px（% 相对容器 inner 近似解析）；盒边
+    // 取 Px；margin 取 Px。auto/fill 等 content → None。
+    let outer = |st: &ComputedStyle| -> Option<f32> {
+        let (m1, m2, p1, p2, b1, b2, content) = if row {
+            (
+                &st.margin_left,
+                &st.margin_right,
+                &st.padding_left,
+                &st.padding_right,
+                &st.border_left_width,
+                &st.border_right_width,
+                &st.width,
+            )
+        } else {
+            (
+                &st.margin_top,
+                &st.margin_bottom,
+                &st.padding_top,
+                &st.padding_bottom,
+                &st.border_top_width,
+                &st.border_bottom_width,
+                &st.height,
+            )
+        };
+        let mut o = 0.0_f32;
+        // border 宽度仅在对应 border-style 非 none/hidden 时计入（同 converter bw()
+        // 口径——`border-*-width` 计算值在 style:none 时仍是 medium 3px，不占空间）。
+        let bs = [
+            &st.border_left_style,
+            &st.border_right_style,
+            &st.border_top_style,
+            &st.border_bottom_style,
+        ];
+        use zero_style_system::property::types::BorderStyleValue as Bsv;
+        let borders_live = if row {
+            [
+                !matches!(bs[0], Bsv::None | Bsv::Hidden),
+                !matches!(bs[1], Bsv::None | Bsv::Hidden),
+            ]
+        } else {
+            [
+                !matches!(bs[2], Bsv::None | Bsv::Hidden),
+                !matches!(bs[3], Bsv::None | Bsv::Hidden),
+            ]
+        };
+        let edges = [m1, m2, p1, p2, b1, b2];
+        for (k, v) in edges.iter().enumerate() {
+            match v {
+                LengthValue::Px(x) => {
+                    // k=4/5 为 border 侧：style none/hidden → 0
+                    if k >= 4 && !borders_live[k - 4] {
+                        continue;
+                    }
+                    o += *x as f32;
+                }
+                _ => return None,
+            }
+        }
+        match content {
+            LengthValue::Px(x) => o += *x as f32,
+            LengthValue::Percentage(p) => o += (*p as f32) * inner / 100.0,
+            _ => return None,
+        }
+        Some(o)
+    };
+    let start_trim = if row {
+        ps.margin_trim.inline_start
+    } else {
+        ps.margin_trim.block_start
+    };
+    let end_trim = if row {
+        ps.margin_trim.inline_end
+    } else {
+        ps.margin_trim.block_end
+    };
+    let mut lines: Vec<Vec<usize>> = vec![Vec::new()];
+    let mut acc = 0.0_f32;
+    for (i, id) in items.iter().enumerate() {
+        let st = styles.get(id)?;
+        let full = outer(st)?;
+        let line_empty = lines.last().is_some_and(|l| l.is_empty());
+        // 贡献：line 首 item 剔除 start margin；任一 item 剔除 end margin（乐观口径）。
+        let mut c = full;
+        if line_empty && start_trim {
+            c -= axis_margin(st, row, true);
+        }
+        if end_trim {
+            c -= axis_margin(st, row, false);
+        }
+        if !line_empty && acc + c > inner {
+            lines.push(Vec::new());
+            acc = c - if start_trim { axis_margin(st, row, true) } else { 0.0 };
+        } else {
+            acc += c;
+        }
+        lines.last_mut().expect("line 非空").push(i);
+    }
+    Some(lines)
+}
+
+/// R4252：item 在主轴上的 start（`true`）/end（`false`）margin 值（Px，非 Px 记 0——
+/// 仅用于拟合贡献的剔除量，外尺寸解析已在 `flex_wrap_lines::outer` 完成 Px gate）。
+fn axis_margin(st: &ComputedStyle, row: bool, start: bool) -> f32 {
+    let v = match (row, start) {
+        (true, true) => &st.margin_left,
+        (true, false) => &st.margin_right,
+        (false, true) => &st.margin_top,
+        (false, false) => &st.margin_bottom,
+    };
+    match v {
+        LengthValue::Px(x) => *x as f32,
+        _ => 0.0,
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn build_subtree(
     ctx: &mut BuildContext,
@@ -2124,21 +2289,36 @@ fn build_subtree(
         }
     }
 
-    // margin-trim（css-box-4 §margin-trim）— flex 容器主轴（horizontal-tb，单行）：
-    // row → 主轴 = inline，`margin_trim.inline_start`/`inline_end` 裁首子 margin-left / 末子
-    // margin-right；column → 主轴 = block，`block_start`/`block_end` 裁首子 margin-top / 末子
-    // margin-bottom。单项时首末为同一子 → 两侧均裁（flex-grow/shrink 得空间填容器）。
-    // **bounded defer**：row-reverse/column-reverse（物理首末反向）、RTL row、cross 轴 trim、
-    // 多行（wrap）逐行首末——均需 taffy 行信息或方向映射，暂不处理（driving tests 皆 LTR 单行）。
-    // kill-switch 同 block 分支 `ZW_MARGIN_TRIM=0`（default-on）。driving: css/css-box/margin-trim/
-    // flex-row-grow / flex-row-shrink / flex-column-grow / flex-column-shrink。
+    // margin-trim（css-box-4 §3.3.2/§3.3.3）— flex/grid 容器（horizontal-tb）。
+    // R4240 单行臂通用化（R4252）：flex 容器「主轴平行边」（row 的 block-start/end、
+    // column 的 inline-start/end）裁**最靠近该边的 flex line 上全部 item** 的对应 margin；
+    // 「cross 轴平行边」（row 的 inline-start/end、column 的 block-start/end）裁**每条
+    // flex line 的首/末 item**。单行退化为全局首/末（cross 臂 = R4240 既有行为；主轴臂
+    // 为本轮新增的单行全覆盖）。多行（flex-wrap:wrap）按 item 假想主轴外尺寸（margin
+    // box）贪心拟合 line 归属；容器主轴 content 尺寸或任一 item 外尺寸不可解析时退化
+    // R4240 行为（仅 cross 臂全局首/末）。拟合口径：line 首 item 的 start margin（对应
+    // trim 开启时）与任一 item 的 end margin（对应 trim 开启时）从贡献中剔除——FIXME
+    // 乐观口径：mid-line item 的 end margin 实际不裁，首行贴边的极端配置可能比 chromium
+    // 少折一行（driving 案等宽 item 无影响；归零后 taffy 自身折行同口径 → line 一致）。
+    // grid（§3.3.3）：裁「与该边相邻 track 上每个 grid item」的对应 margin——bounded：
+    // grid-template-columns 空白计数为列数、auto-flow row 行主序近似 placement（显式
+    // Line() 行号 honor；span/named/dense/auto-fit collapsed tracks 的 adjacency 不建模
+    // ——grid-trim-ignores-collapsed-tracks defer）。
+    // bounded defer：row/column-reverse（物理首末反向）、RTL、wrap-reverse（line 序反转）、
+    // vertical writing mode、flex item blockify 前的 inline-level 子（沿用
+    // is_block_level_in_flow 过滤）。kill-switch 同 block 分支 `ZW_MARGIN_TRIM=0`
+    // （default-on）。driving: flex-row-block-multiline / flex-row-inline-multiline /
+    // flex-column-block-multiline、grid-block / grid-inline（R4252）；flex-row-grow 等
+    // 单行案（R4240）。
     if ctx.flags.margin_trim()
         && matches!(computed.writing_mode, WritingModeValue::HorizontalTb)
         && let Some(parent_id) = doc.parent_node(dom_id)
         && let Some(ps) = styles.get(&parent_id)
-        && matches!(ps.display, DisplayValue::Flex)
+        && matches!(
+            ps.display,
+            DisplayValue::Flex | DisplayValue::InlineFlex | DisplayValue::Grid | DisplayValue::InlineGrid
+        )
         && is_block_level_in_flow(&computed.display, &computed.position)
-        && matches!(ps.flex_direction, FlexDirectionValue::Row | FlexDirectionValue::Column)
     {
         let in_flow_flex: Vec<NodeId> = doc
             .child_nodes(parent_id)
@@ -2152,26 +2332,133 @@ fn build_subtree(
             .collect();
         if let Some(idx) = in_flow_flex.iter().position(|&s| s == dom_id) {
             let zero = taffy::style::LengthPercentageAuto::length(0.0_f32);
-            let is_first = idx == 0;
-            let is_last = idx + 1 == in_flow_flex.len();
-            match ps.flex_direction {
-                FlexDirectionValue::Row => {
-                    if is_first && ps.margin_trim.inline_start {
-                        taffy_style.margin.left = zero;
+            let is_grid = matches!(ps.display, DisplayValue::Grid | DisplayValue::InlineGrid);
+            // (line 内首/末, 首/末 line) 判定。flex：line = flex line；grid：相邻 track
+            // 臂映射——row ↔ line 序（block 臂）、col ↔ line 内序（inline 臂）。
+            let (is_line_first, is_line_last, is_first_line, is_last_line) = if is_grid {
+                let cols = ps
+                    .grid_template_columns
+                    .as_deref()
+                    .and_then(|t| {
+                        let t = t.trim();
+                        // repeat()/逗号形态不可空白计数 → 单列退化（bounded）
+                        if t.is_empty() || t.contains('(') || t.contains(',') {
+                            None
+                        } else {
+                            Some(t.split_whitespace().count())
+                        }
+                    })
+                    .unwrap_or(1);
+                // placement：显式 Line() 行号 honor，否则 auto-flow row 行主序近似
+                let col_of = |i: usize| -> usize {
+                    styles
+                        .get(&in_flow_flex[i])
+                        .and_then(|st| match st.grid_column_start {
+                            zero_style_system::property::types::GridLineValue::Line(n) if n >= 1 => {
+                                Some((n as usize) - 1)
+                            }
+                            _ => None,
+                        })
+                        .unwrap_or(i % cols)
+                };
+                let row_of = |i: usize| -> usize {
+                    styles
+                        .get(&in_flow_flex[i])
+                        .and_then(|st| match st.grid_row_start {
+                            zero_style_system::property::types::GridLineValue::Line(n) if n >= 1 => {
+                                Some((n as usize) - 1)
+                            }
+                            _ => None,
+                        })
+                        .unwrap_or(i / cols)
+                };
+                let max_col = (0..in_flow_flex.len()).map(col_of).max().unwrap_or(0);
+                let max_row = (0..in_flow_flex.len()).map(row_of).max().unwrap_or(0);
+                (
+                    col_of(idx) == 0,
+                    col_of(idx) == max_col,
+                    row_of(idx) == 0,
+                    row_of(idx) == max_row,
+                )
+            } else {
+                let row = matches!(ps.flex_direction, FlexDirectionValue::Row);
+                let wrapping = matches!(ps.flex_wrap, FlexWrapValue::Wrap);
+                let lines: Option<Vec<Vec<usize>>> = if !wrapping {
+                    Some(vec![(0..in_flow_flex.len()).collect()])
+                } else {
+                    flex_wrap_lines(styles, &in_flow_flex, ps, row)
+                };
+                match lines {
+                    Some(lines) => {
+                        let my = lines.iter().position(|l| l.contains(&idx));
+                        match my {
+                            Some(my) => (
+                                lines[my].first() == Some(&idx),
+                                lines[my].last() == Some(&idx),
+                                my == 0,
+                                my + 1 == lines.len(),
+                            ),
+                            // 拟合异常（空 line）→ 不裁
+                            None => (false, false, false, false),
+                        }
                     }
-                    if is_last && ps.margin_trim.inline_end {
-                        taffy_style.margin.right = zero;
-                    }
+                    // 拟合失败（尺寸不可解析）→ 退化 R4240：仅 cross 臂全局首/末
+                    None => (idx == 0, idx + 1 == in_flow_flex.len(), false, false),
                 }
-                FlexDirectionValue::Column => {
-                    if is_first && ps.margin_trim.block_start {
-                        taffy_style.margin.top = zero;
-                    }
-                    if is_last && ps.margin_trim.block_end {
-                        taffy_style.margin.bottom = zero;
-                    }
+            };
+            // 臂映射（horizontal-tb）：row 容器 cross 臂裁每 line 首/末 item、主轴臂裁
+            // 首/末 line 全部 item；column 容器镜像。
+            // grid：col ↔ line 内序、row ↔ line 序（block_start/end → 首/末 row 全部、
+            // inline_start/end → 首/末 col 全部）。
+            if is_grid {
+                if is_line_first && ps.margin_trim.inline_start {
+                    taffy_style.margin.left = zero;
                 }
-                _ => {}
+                if is_line_last && ps.margin_trim.inline_end {
+                    taffy_style.margin.right = zero;
+                }
+                if is_first_line && ps.margin_trim.block_start {
+                    taffy_style.margin.top = zero;
+                }
+                if is_last_line && ps.margin_trim.block_end {
+                    taffy_style.margin.bottom = zero;
+                }
+            } else {
+                match ps.flex_direction {
+                    FlexDirectionValue::Row => {
+                        // cross 轴平行边（inline-start/end）：每 line 首/末 item
+                        if is_line_first && ps.margin_trim.inline_start {
+                            taffy_style.margin.left = zero;
+                        }
+                        if is_line_last && ps.margin_trim.inline_end {
+                            taffy_style.margin.right = zero;
+                        }
+                        // 主轴平行边（block-start/end）：首/末 line 全部 item
+                        if is_first_line && ps.margin_trim.block_start {
+                            taffy_style.margin.top = zero;
+                        }
+                        if is_last_line && ps.margin_trim.block_end {
+                            taffy_style.margin.bottom = zero;
+                        }
+                    }
+                    FlexDirectionValue::Column => {
+                        // cross 轴平行边（block-start/end）：每 column 首/末 item
+                        if is_line_first && ps.margin_trim.block_start {
+                            taffy_style.margin.top = zero;
+                        }
+                        if is_line_last && ps.margin_trim.block_end {
+                            taffy_style.margin.bottom = zero;
+                        }
+                        // 主轴平行边（inline-start/end）：首/末 column 全部 item
+                        if is_first_line && ps.margin_trim.inline_start {
+                            taffy_style.margin.left = zero;
+                        }
+                        if is_last_line && ps.margin_trim.inline_end {
+                            taffy_style.margin.right = zero;
+                        }
+                    }
+                    _ => {}
+                }
             }
         }
     }

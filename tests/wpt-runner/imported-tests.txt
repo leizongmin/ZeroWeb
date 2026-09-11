@@ -323,3 +323,6 @@ css/css-box/margin-trim/block-container-block-in-inline-003.html css/reference/r
 css/css-box/margin-trim/block-container-block-end-self-collapsing-and-border.html css/reference/ref-filled-green-100px-square.xht == 2026-09-12 R4251 margin-trim block-end 自折叠连续链反向走查（R3872 单子臂推广）
 css/css-box/margin-trim/block-container-block-end-self-collapsing-block-start-margin.html css/reference/ref-filled-green-100px-square.xht == 2026-09-12 R4251 flow-root BFC margin 隔离（float-free gate）+ 自折叠走查
 css/css-overflow/line-clamp/line-clamp-auto-031.tentative.html css/css-overflow/line-clamp/reference/line-clamp-auto-029-ref.html == 2026-09-12 R4251 line-clamp 非 none 建立独立格式化上下文（CSS Overflow 4 §line-clamp BFC 臂）
+css/css-box/margin-trim/flex-row-block-multiline.html css/css-box/margin-trim/flex-row-block-multiline-ref.html == 2026-09-12 R4252 margin-trim flex 主轴平行边首/末 line 全裁 + gap 双值简写不再下发 legacy gap（column-gap:0 回退污染修复）
+css/css-box/margin-trim/flex-column-block-multiline.html css/reference/ref-filled-green-100px-square-only.html == 2026-09-12 R4252 margin-trim flex cross 轴平行边每 line 首/末 item 裁（column wrap 拟合）
+css/css-box/margin-trim/flex-row-inline-multiline.html css/reference/ref-filled-green-100px-square-only.html == 2026-09-12 R4252 margin-trim flex row wrap inline trim 每 line 首/末 item 裁

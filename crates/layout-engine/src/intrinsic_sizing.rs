@@ -893,10 +893,13 @@ pub(crate) fn flex_row_intrinsic_width(
     if count == 0 {
         return None;
     }
+    // R4252：水平 flex 主轴 gap = **column-gap** 长写（css-align §gap：row-gap 沿行轴、
+    // column-gap 沿列轴/主轴）；legacy `gap` 字段在双值简写下不再下发（shorthand R4252），
+    // Auto（normal）解析 0。
     let gap = box_node
         .node_id
         .and_then(|id| styles.get(&id))
-        .and_then(|s| resolve_intrinsic_real_length(&s.gap, s))
+        .and_then(|s| resolve_intrinsic_real_length(&s.column_gap, s))
         .unwrap_or(0.0);
     let frame = box_node.padding_left + box_node.padding_right + box_node.border_left + box_node.border_right;
     Some(sum + gap * (count - 1) as f32 + frame)
@@ -1645,7 +1648,9 @@ AAAA</div></body></html>"#,
         let mut container_style = ComputedStyle::default();
         container_style.display = DisplayValue::Flex;
         container_style.font_size = LengthValue::Px(20.0);
-        container_style.gap = LengthValue::Em(2.0);
+        // R4252：主轴 gap 消费 column_gap 长写（`gap: 2em` 经 shorthand expansion 落
+        // row-gap/column-gap；legacy `gap` 字段双值简写下不再下发，主轴臂不再消费）。
+        container_style.column_gap = LengthValue::Em(2.0);
         styles.insert(container_id, container_style);
 
         for child_id in [child_a_id, child_b_id] {

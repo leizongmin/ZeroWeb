@@ -203,25 +203,24 @@ fn test_gap_shorthand_single_value() {
 /// gap 简写双值：10px 20px 分别应用于 gap、row-gap 和 column-gap
 fn test_gap_shorthand_two_values() {
     let result = expand_one("gap", "10px 20px", false, (0, 0, 1));
-    assert_eq!(result.len(), 3);
-    assert_eq!(result[0].0, "gap");
+    // R4252：双值形态不再下发 legacy gap 声明（converter 以 0 值判「未设置」回退
+    // legacy 字段，显式 column-gap:0px 会被 gap 首值污染——flex-row-block-multiline）
+    assert_eq!(result.len(), 2);
+    assert_eq!(result[0].0, "row-gap");
     assert_eq!(result[0].1, "10px");
-    assert_eq!(result[1].0, "row-gap");
-    assert_eq!(result[1].1, "10px");
-    assert_eq!(result[2].0, "column-gap");
-    assert_eq!(result[2].1, "20px");
+    assert_eq!(result[1].0, "column-gap");
+    assert_eq!(result[1].1, "20px");
 }
 
 #[test]
 fn test_gap_shorthand_accepts_spaced_math_lengths() {
     let result = expand_one("gap", "calc(1px + 2px) min(10%, 20%)", false, (0, 0, 1));
-    assert_eq!(result.len(), 3);
-    assert_eq!(result[0].0, "gap");
+    // R4252：双值形态不下发 legacy gap（见 test_gap_shorthand_two_values）
+    assert_eq!(result.len(), 2);
+    assert_eq!(result[0].0, "row-gap");
     assert_eq!(result[0].1, "calc(1px + 2px)");
-    assert_eq!(result[1].0, "row-gap");
-    assert_eq!(result[1].1, "calc(1px + 2px)");
-    assert_eq!(result[2].0, "column-gap");
-    assert_eq!(result[2].1, "min(10%, 20%)");
+    assert_eq!(result[1].0, "column-gap");
+    assert_eq!(result[1].1, "min(10%, 20%)");
 }
 
 #[test]
@@ -240,10 +239,12 @@ fn test_gap_shorthand_rejects_invalid_tokens() {
     assert!(expand_one("gap", "-1px", false, (0, 0, 1)).is_empty());
 
     let result = expand_one("gap", "normal 10px", false, (0, 0, 1));
-    assert_eq!(result[1].0, "row-gap");
-    assert_eq!(result[1].1, "normal");
-    assert_eq!(result[2].0, "column-gap");
-    assert_eq!(result[2].1, "10px");
+    // R4252：双值形态两声明（无 legacy gap）
+    assert_eq!(result.len(), 2);
+    assert_eq!(result[0].0, "row-gap");
+    assert_eq!(result[0].1, "normal");
+    assert_eq!(result[1].0, "column-gap");
+    assert_eq!(result[1].1, "10px");
 }
 
 #[test]

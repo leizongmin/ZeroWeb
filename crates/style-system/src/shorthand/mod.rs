@@ -817,7 +817,11 @@ fn expand_one(property: &str, value: &str, important: bool, specificity: (u32, u
                     mk("column-gap", &parts[0]),
                 ],
                 2 => vec![
-                    mk("gap", &parts[0]),
+                    // R4252：双值形态**不再下发 legacy gap 声明**——legacy `gap` 字段被
+                    // converter 当作「longhand 未设置」时的回退值（col/row == 0 即回退），
+                    // `gap: A 0px` 会因显式 column-gap:0 命中回退 → column-gap 错为 A
+                    // （flex-row-block-multiline ref 页 `gap:20px 0px` 实证 1 item/row）。
+                    // 双值时长写已完备，gap 留默认 0 即可。
                     mk("row-gap", &parts[0]),
                     mk("column-gap", &parts[1]),
                 ],
