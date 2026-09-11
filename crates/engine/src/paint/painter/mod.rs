@@ -2441,7 +2441,12 @@ impl Painter {
             && let Some(style) = styles.get(&node_id)
             && !matches!(
                 style.appearance,
-                AppearanceComputedValue::None | AppearanceComputedValue::Auto
+                AppearanceComputedValue::None
+                    | AppearanceComputedValue::Auto
+                    | AppearanceComputedValue::Meter
+                    | AppearanceComputedValue::ProgressBar
+                    | AppearanceComputedValue::Listbox
+                    | AppearanceComputedValue::Menulist
             )
         {
             self.paint_appearance(box_node, abs_x, abs_y, style, doc);

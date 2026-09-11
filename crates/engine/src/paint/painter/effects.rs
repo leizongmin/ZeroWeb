@@ -1056,7 +1056,16 @@ impl super::Painter {
         doc: Option<&Document>,
     ) {
         match style.appearance {
-            AppearanceComputedValue::None | AppearanceComputedValue::Auto => return,
+            // R4249（CSS UI 4 §appearance-switching + chromium 兼容行为）：meter/
+            // progress-bar/listbox/menulist 是兼容别名——对适配元素 = 原生外观（auto），
+            // 对其他元素亦按原生处理（webkit-appearance-meter-001 断言与 auto ref 像素
+            // 一致）。这些变体无独立绘制消费者，按 auto 早退。
+            AppearanceComputedValue::None
+            | AppearanceComputedValue::Auto
+            | AppearanceComputedValue::Meter
+            | AppearanceComputedValue::ProgressBar
+            | AppearanceComputedValue::Listbox
+            | AppearanceComputedValue::Menulist => return,
             _ => {}
         }
 
