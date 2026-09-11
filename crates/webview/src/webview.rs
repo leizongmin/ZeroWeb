@@ -4778,8 +4778,97 @@ impl WebView {
         // 导出函数签名（page-wasm M1 切片 2：桥接层按声明类型做值转换）
         let descriptors = module.export_descriptors();
 
-        // 实例化
-        let mut instance = match module.instantiate(&sandbox) {
+        // importObject 函数链接（page-wasm M3 切片 1b，spec-rfc §8.4）：签名以模块声明
+        // 为权威（import_signatures 反查），JS 侧只传函数 id；HostFn 经线程局部重入
+        // 通道同步回调 JS 并按声明类型编组。非函数导入不注册——实例化以 unknown
+        // import 失败 → M2 切片 3 的 LinkError 面（FR-004 显式失败）。
+        let import_sigs = module.import_signatures();
+        let js_imports: Vec<(String, String, u64)> = parsed["imports"]
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| {
+                        Some((
+                            v["module"].as_str()?.to_string(),
+                            v["name"].as_str()?.to_string(),
+                            v["id"].as_u64()?,
+                        ))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        let mut linker_config = zero_wasm_sandbox::LinkerConfig::new();
+        for sig in &import_sigs {
+            let matched = js_imports
+                .iter()
+                .find(|(m, n, _)| m == &sig.module && n == &sig.name)
+                .map(|(_, _, id)| *id);
+            let Some(import_id) = matched else {
+                // JS 未提供该函数——不注册，实例化按 unknown import 失败（LinkError 面）
+                continue;
+            };
+            let params = sig.params.clone();
+            let result_types = sig.results.clone();
+            linker_config.define(zero_wasm_sandbox::HostFunction::new(
+                sig.module.clone(),
+                sig.name.clone(),
+                params.clone(),
+                result_types.clone(),
+                move |wasm_params, results_out| {
+                    // wasm→JS 编组：WasmValue → JSON 线格式（FR-003，复用线格式语义）
+                    let wire: Vec<serde_json::Value> = wasm_params.iter().map(wasm_value_to_wire_json).collect();
+                    let args_json = serde_json::to_string(&wire)
+                        .map_err(|e| zero_wasm_sandbox::WasmError::CallError(e.to_string()))?;
+                    let response = nested_invoke_import(import_id, &escape_js_string(&args_json))
+                        .ok_or_else(|| zero_wasm_sandbox::WasmError::CallError("import re-entry unavailable".into()))?;
+                    let parsed: serde_json::Value = serde_json::from_str(&response)
+                        .map_err(|e| zero_wasm_sandbox::WasmError::CallError(e.to_string()))?;
+                    if let Some(err) = parsed["e"].as_str() {
+                        return Err(zero_wasm_sandbox::WasmError::CallError(format!(
+                            "js import threw: {err}"
+                        )));
+                    }
+                    // JS→wasm 解编：按声明结果类型严格解编（类型不符 → trap，
+                    // FR-001 签名不匹配场景）；多结果按序
+                    let wire_results = if result_types.len() <= 1 {
+                        vec![parsed["v"].clone()]
+                    } else {
+                        parsed["v"]
+                            .as_array()
+                            .cloned()
+                            .unwrap_or_else(|| vec![parsed["v"].clone()])
+                    };
+                    // HostFn 约定：结果按序 PUSH（wasm-sandbox 包装层以空 Vec 接收，
+                    // 既有主机函数用例同款——索引赋值会被空 Vec 静默吞掉 → wasm 读到 0）
+                    for (i, ty) in result_types.iter().enumerate() {
+                        let Some(w) = wire_results.get(i) else {
+                            return Err(zero_wasm_sandbox::WasmError::CallError(format!(
+                                "import returned too few results: raw={response}"
+                            )));
+                        };
+                        let value = strict_wire_result(w, *ty).map_err(|e| match e {
+                            zero_wasm_sandbox::WasmError::CallError(msg) => {
+                                zero_wasm_sandbox::WasmError::CallError(format!("{msg} raw={response}"))
+                            }
+                            other => other,
+                        })?;
+                        results_out.push(value);
+                    }
+                    Ok(())
+                },
+            ));
+        }
+
+        // 实例化（_start 期间的 import 调用同样需要重入通道——作用域守卫覆盖；
+        // 守卫在错误处理前结束，LinkError 注入路径可自由借用 js_sandbox）
+        let instantiate_result = {
+            let Some(js) = self.js_sandbox.as_mut() else {
+                return Ok(script_output.to_string());
+            };
+            let _scope = set_nested_js_sandbox(js.as_mut());
+            module.instantiate_with_linker(&sandbox, &linker_config)
+        };
+        let mut instance = match instantiate_result {
             Ok(i) => i,
             Err(e) => {
                 tracing::warn!("WASM bridge: instantiate error: {e}");
@@ -5056,6 +5145,10 @@ impl WebView {
         }
 
         tracing::debug!("WASM bridge: processing {} pending export calls", calls.len());
+
+        // 排空作用域（page-wasm M3 切片 1b）：本次排空内 HostFn 经线程局部指针
+        // 重入 JS（guard Drop 清除；期间不持有 js_sandbox 的其他借用）
+        let _reentry_scope = self.js_sandbox.as_mut().map(|js| set_nested_js_sandbox(js.as_mut()));
 
         // 执行每个调用并收集结果
         let mut results_script = String::from(
@@ -5570,6 +5663,101 @@ fn js_descriptors_literal(descriptors: &[zero_wasm_sandbox::ExportDescriptor]) -
         })
         .collect();
     format!("[{}]", items.join(", "))
+}
+
+// ── WASM 桥 import 重入通道（page-wasm M3 切片 1b）──
+//
+// HostFn 要求 Send+Sync，而 `Box<dyn Sandbox>` 两者皆无——HostFn 闭包只捕获 import
+// id，JS 沙箱经线程局部指针在**排空作用域**内传递（WebView 单线程；set → call →
+// clear 严格作用域，期间宿主代码不持有 js_sandbox 的其他 Rust 借用）。
+thread_local! {
+    static NESTED_JS_SANDBOX: std::cell::RefCell<Option<*mut dyn zero_script_sandbox::Sandbox>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// 排空作用域守卫——Drop 时清除线程局部指针。
+struct NestedJsGuard;
+
+impl Drop for NestedJsGuard {
+    fn drop(&mut self) {
+        clear_nested_js_sandbox();
+    }
+}
+
+/// 在排空作用域内置入 JS 沙箱指针（作用域内 HostFn 可经 [`nested_invoke_import`] 重入）。
+/// 返回的 guard 存活期即作用域。
+fn set_nested_js_sandbox(sandbox: &mut dyn zero_script_sandbox::Sandbox) -> NestedJsGuard {
+    // 生命周期擦除：指针仅在 set→clear 同线程作用域内解引用（见 nested_invoke_import
+    // 文档）；guard 存活期即作用域边界。
+    let ptr: *mut (dyn zero_script_sandbox::Sandbox + 'static) =
+        unsafe { std::mem::transmute::<*mut dyn zero_script_sandbox::Sandbox, _>(sandbox) };
+    NESTED_JS_SANDBOX.with(|cell| *cell.borrow_mut() = Some(ptr));
+    NestedJsGuard
+}
+
+/// 结束排空作用域（RAII 或显式调用；指针立即失效）。
+fn clear_nested_js_sandbox() {
+    NESTED_JS_SANDBOX.with(|cell| *cell.borrow_mut() = None);
+}
+
+/// HostFn 调用侧：同步嵌套执行 JS import 回调，返回 `_invokeImport` 的 JSON 线格式
+/// （`{v: ...}` / `{e: msg}`）。作用域未置入（返回 None）或执行失败时返回 None。
+///
+/// SAFETY: 解引用 [`set_nested_js_sandbox`] 置入的裸指针——指针在 set→clear 严格
+/// 同线程作用域内有效，期间宿主不重新借用 `js_sandbox` 字段（WebView 单线程执行模型）。
+fn nested_invoke_import(import_id: u64, args_json_escaped: &str) -> Option<String> {
+    // _invokeImport 自身返回 JSON 字符串（execute 对字符串结果按 to_string 透传，
+    // 不再包一层 JSON.stringify——双重编码曾致响应解析为 JSON String、["v"] 取 Null）
+    let script = format!("WebAssembly._invokeImport({import_id}, '{args_json_escaped}')");
+    NESTED_JS_SANDBOX.with(|cell| {
+        let ptr = cell.borrow().as_ref().copied()?;
+        // SAFETY: 见函数文档——作用域内指针有效且无其他别名借用
+        let sandbox = unsafe { &mut *ptr };
+        sandbox.execute(&script).ok().map(|result| result.value)
+    })
+}
+
+/// `WasmValue` → JSON 线格式（wasm→JS 参数方向；i64 走十进制字符串——JSON 无 BigInt；
+/// 非有限浮点走字符串字面量——JSON 无 NaN/Infinity）。
+fn wasm_value_to_wire_json(v: &zero_wasm_sandbox::WasmValue) -> serde_json::Value {
+    match v {
+        zero_wasm_sandbox::WasmValue::I32(x) => serde_json::Value::Number((*x).into()),
+        zero_wasm_sandbox::WasmValue::I64(x) => serde_json::Value::String(x.to_string()),
+        zero_wasm_sandbox::WasmValue::F32(x) => match serde_json::Number::from_f64(*x as f64) {
+            Some(n) => serde_json::Value::Number(n),
+            // JSON 无 NaN/Infinity——回落 JS 字面量同名字符串（"NaN"/"Infinity"）
+            None => serde_json::Value::String(format_js_float(*x as f64)),
+        },
+        zero_wasm_sandbox::WasmValue::F64(x) => match serde_json::Number::from_f64(*x) {
+            Some(n) => serde_json::Value::Number(n),
+            None => serde_json::Value::String(format_js_float(*x)),
+        },
+    }
+}
+
+/// JS→wasm 结果严格解编（按声明类型；类型不符 → Err，wasm 侧表现为 trap——
+/// FR-001 签名不匹配场景）。注意：JS 侧 NaN 经 JSON.stringify 变 null → 此处报
+/// 非有限结果错误（v1 边界，spec 允许 NaN 语义后续协议扩展再接）。
+fn strict_wire_result(
+    w: &serde_json::Value,
+    ty: zero_wasm_sandbox::WasmValueType,
+) -> Result<zero_wasm_sandbox::WasmValue, zero_wasm_sandbox::WasmError> {
+    use zero_wasm_sandbox::{WasmError, WasmValue, WasmValueType};
+    let mismatch = || {
+        WasmError::CallError(format!(
+            "import result type mismatch: expected {ty:?}, got {w}, wire={w:?}"
+        ))
+    };
+    Ok(match ty {
+        WasmValueType::I32 => w.as_i64().map(|x| WasmValue::I32(x as i32)).ok_or_else(mismatch)?,
+        WasmValueType::I64 => w
+            .as_str()
+            .and_then(|s| s.parse::<i64>().ok())
+            .map(WasmValue::I64)
+            .ok_or_else(mismatch)?,
+        WasmValueType::F32 => w.as_f64().map(|x| WasmValue::F32(x as f32)).ok_or_else(mismatch)?,
+        WasmValueType::F64 => w.as_f64().map(WasmValue::F64).ok_or_else(mismatch)?,
+    })
 }
 
 /// 把 `WasmValue` 序列化为注入脚本中的 JS 字面量。

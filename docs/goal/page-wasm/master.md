@@ -2,7 +2,7 @@
 
 **入口文档**: [../page-wasm.md](../page-wasm.md)
 **创建日期**: 2026-09-07（goal 拆分 bootstrap）
-**最后更新**: 2026-09-12（M3 启动——host function 重入设计落地 + M3-1a 前半（签名反查 + 注册面））
+**最后更新**: 2026-09-12（M3 切片 1 完成——JS 函数真作 wasm import，同步重入全链打通）
 
 ---
 
@@ -62,21 +62,18 @@ Timeout × 4），证据：[evidence/2026-09-12-m1-wasm-jsapi-baseline.md](evide
 
 ## 下一步计划
 
-1. **M3 切片 1 后半（M3-1b/c）**：按设计文档
-   [page-wasm-host-function-spec-rfc.md](../../specs/page-wasm-host-function-spec-rfc.md)
-   §7 实施交接执行——探针确证 V8 嵌套 execute → webview instantiate 桥 imports 接线
-   （LinkerConfig 组装 + HostFn 重入编组）→ FR-001~005 e2e → make test 收口。
-   M3-1a 前半（`import_signatures()` 三后端 + polyfill `_importFns`/`_invokeImport`/
-   载荷 `imports` 字段）已落地，webview 消费面未接（无行为变化）
-2. **M3 切片 2**：validate 真实校验接线（wasm-sandbox 补 validate API → 桥接，替换
+1. **M3 切片 2**：validate 真实校验接线（wasm-sandbox 补 validate API → 桥接，替换
    魔术字节检查）；`compileStreaming`/`instantiateStreaming` 真实 Response body 路径
-   （fetch_handler 已有，接线 + Content-Type 校验）
+   （fetch_handler 已有，接线 + Content-Type 校验）——DC-3 最后两块
+2. **M3 切片 3（收尾判定）**：DC-1~4 逐条核账（对照 goal 文档 Done Criteria），残余项
+   处置（wpt 基线复跑、skip list 核对），满足则 DONE 判定
 3. **跨流协调**：V8 消息循环泵归 event-loop-spec 流（或用户授权跨域），落地后
    `make testharness-wasm` 复跑验证 4 案翻绿（99.4% → 100%）
 4. **已知限制（协议性，非缺陷）**：Global 导出为快照值（不可变全局精确；可变全局
    wasm 侧写入后不回读——桥异步协议无同步 getter 通道，live 值需协议扩展）；Table
    仅 length 快照（get/grow 未接线）；`__wasm_errors__` 通道为查询面（instantiate
-   Promise 已 resolve，无法回溯 reject——spec 形态的 promise 语义需桥协议演进）
+   Promise 已 resolve，无法回溯 reject——spec 形态的 promise 语义需桥协议演进）；
+   import 回调内 JS 返回 NaN 经 JSON 序列化变 null → 按 trap 处理（spec NaN 语义待协议扩展）
 
 **碰撞管理**：开工前先 `git log --since="14 days ago" -- crates/engine/src/dom_bridge.rs
 crates/webview/` 核对活跃面；有活跃编辑则先做零碰撞面（wasm-sandbox 单测、WPT 导入）。
@@ -89,7 +86,7 @@ wasm 段（`process_wasm_bridge` 及 `_callQueue` 排空区），避开 MO 区�
 |--------|------|
 | M1 — WPT 基线建立 + 类型扩展 | ✅ 切片 1（基线 99.4%）+ 切片 2（类型全映射）+ 切片 3（导出描述面）；残余 = P2 跨流卡点 |
 | M2 — Memory/Global/Table + 实例化语义 | ✅ 切片 1（Memory.grow 真实接线）+ 切片 2（Global/Table 导出面）+ 切片 3（错误分类面 + WA 状态幂等安装）；残余 = importObject JS 函数链接归 M3 重入设计 |
-| M3 — host function + 流式 + 收尾 | 🔄 切片 1：设计已落地（[spec-rfc](../../specs/page-wasm-host-function-spec-rfc.md)，Lint 23P/2W/0F）+ M3-1a 前半落地；M3-1b/c 待做 |
+| M3 — host function + 流式 + 收尾 | 🔄 切片 1 ✅（设计 + M3-1a/1b/1c：JS 函数真作 import，同步重入全链 + FR-001~005 e2e）；切片 2（validate + streaming）待做；切片 3（DC 核账收尾）待做 |
 
 ## 验证基线
 

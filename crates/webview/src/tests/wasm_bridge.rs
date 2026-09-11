@@ -745,3 +745,175 @@ fn test_wasm_bridge_error_classification() {
     assert!(r.contains("\"e2IsLink\":true"), "import 缺失应注入 LinkError 实例: {r}");
     assert!(r.contains("\"e2Name\":\"LinkError\""), "name 应为 LinkError: {r}");
 }
+
+// ── importObject JS 函数链接（page-wasm M3 切片 1b，spec-rfc FR-001~004）──
+
+/// FR-001/002/003 e2e：JS 函数真作 wasm import——HostFn 同步重入回调、返回值参与
+/// wasm 运算、i64 BigInt 双向精度（>2^53）。
+#[test]
+fn test_wasm_bridge_import_object_functions() {
+    let mut wv = WebView::new(WebViewConfig::default());
+    let wasm = wat::parse_str(
+        r#"(module
+            (import "env" "add" (func $add (param i32 i32) (result i32)))
+            (import "env" "inc64" (func $inc64 (param i64) (result i64)))
+            (func (export "call_add") (param i32 i32) (result i32)
+                local.get 0
+                local.get 1
+                call $add)
+            (func (export "call_inc") (param i64) (result i64)
+                local.get 0
+                call $inc64)
+        )"#,
+    )
+    .unwrap();
+    let js_bytes: String = wasm.iter().map(|b| b.to_string()).collect::<Vec<_>>().join(",");
+
+    // execute #1：带 importObject 实例化——host 按模块声明签名链接 JS 函数
+    let result = wv
+        .execute_script_with_dom(&format!(
+            r#"
+        var bytes = new Uint8Array([{js_bytes}]);
+        WebAssembly.instantiate(bytes, {{
+            env: {{
+                add: function(a, b) {{ return a * b; }},
+                inc64: function(n) {{ return BigInt(n) + 1n; }}
+            }}
+        }});
+        true
+        "#
+        ))
+        .unwrap();
+    assert_eq!(result, "true");
+    // 链接应成功（无错误注入）
+    let errs = wv
+        .execute_script("(typeof __wasm_errors__ === 'object') ? JSON.stringify(__wasm_errors__) : 'no-errors'")
+        .unwrap();
+    assert_eq!(errs, "no-errors", "函数 import 链接应成功: {errs}");
+
+    // execute #2：调用导出（排空内 HostFn 同步回调 JS：add→乘法、inc64→BigInt+1）
+    let queued = wv
+        .execute_script_with_dom(
+            r#"
+        (function() {
+            var id = Object.keys(globalThis.__wasm_results__)[0];
+            var ex = globalThis.__wasm_results__[id].exports;
+            ex.call_add(6, 7);
+            ex.call_inc(9007199254740993n);
+            return true;
+        })()
+        "#,
+        )
+        .unwrap();
+    assert_eq!(queued, "true");
+
+    // execute #3：读结果——JS 返回值生效（spec 同步语义）+ BigInt 精度保持
+    let r = wv
+        .execute_script(
+            r#"
+        (function() {
+            var cr = WebAssembly._callResults;
+            var keys = Object.keys(cr).map(Number).sort(function(a, b) { return a - b; });
+            return JSON.stringify({ add: cr[keys[0]], inc: cr[keys[1]].toString(), trace: globalThis.__zwImportTrace });
+        })()
+        "#,
+        )
+        .unwrap();
+    assert!(r.contains("\"add\":42"), "wasm 应取回 JS 返回值 6*7=42: {r}");
+    assert!(
+        r.contains("\"inc\":\"9007199254740994\""),
+        "i64 import 应保持 >2^53 BigInt 精度: {r}"
+    );
+}
+
+/// FR-002 异常路径：JS import 抛异常 → wasm 调用报错（结果 null）且不毒化同实例
+/// 后续调用。
+#[test]
+fn test_wasm_bridge_import_js_exception() {
+    let mut wv = WebView::new(WebViewConfig::default());
+    let wasm = wat::parse_str(
+        r#"(module
+            (import "env" "boom" (func $boom (result i32)))
+            (func (export "call_boom") (result i32) call $boom)
+            (func (export "ping") (result i32) i32.const 7)
+        )"#,
+    )
+    .unwrap();
+    let js_bytes: String = wasm.iter().map(|b| b.to_string()).collect::<Vec<_>>().join(",");
+
+    let result = wv
+        .execute_script_with_dom(&format!(
+            r#"
+        var bytes = new Uint8Array([{js_bytes}]);
+        WebAssembly.instantiate(bytes, {{ env: {{ boom: function() {{ throw new TypeError('boom-err'); }} }} }});
+        true
+        "#
+        ))
+        .unwrap();
+    assert_eq!(result, "true");
+
+    // execute #2：先调会炸的 import，再调健康导出（同实例不毒化）
+    let queued = wv
+        .execute_script_with_dom(
+            r#"
+        (function() {
+            var id = Object.keys(globalThis.__wasm_results__)[0];
+            var ex = globalThis.__wasm_results__[id].exports;
+            ex.call_boom();
+            ex.ping();
+            return true;
+        })()
+        "#,
+        )
+        .unwrap();
+    assert_eq!(queued, "true");
+
+    let r = wv
+        .execute_script(
+            r#"
+        (function() {
+            var cr = WebAssembly._callResults;
+            var keys = Object.keys(cr).map(Number).sort(function(a, b) { return a - b; });
+            return JSON.stringify({ boom: cr[keys[0]], ping: cr[keys[1]] });
+        })()
+        "#,
+        )
+        .unwrap();
+    assert!(r.contains("\"boom\":null"), "JS 异常应使 wasm 调用报错（null）: {r}");
+    assert!(r.contains("\"ping\":7"), "异常后同实例后续调用应可用: {r}");
+}
+
+/// FR-004：非函数 import（Memory 形态）显式失败——实例化 LinkError，消息含形态说明。
+#[test]
+fn test_wasm_bridge_import_non_function_link_error() {
+    let mut wv = WebView::new(WebViewConfig::default());
+    let wasm = wat::parse_str(r#"(module (import "env" "mem" (memory 1)) (func (export "f")))"#).unwrap();
+    let js_bytes: String = wasm.iter().map(|b| b.to_string()).collect::<Vec<_>>().join(",");
+
+    let result = wv
+        .execute_script_with_dom(&format!(
+            r#"
+        var bytes = new Uint8Array([{js_bytes}]);
+        WebAssembly.instantiate(bytes, {{ env: {{ mem: {{}} }} }});
+        true
+        "#
+        ))
+        .unwrap();
+    assert_eq!(result, "true");
+
+    let r = wv
+        .execute_script(
+            r#"
+        (function() {
+            var e = globalThis.__wasm_errors__ && globalThis.__wasm_errors__[2];
+            return JSON.stringify({
+                isLink: !!(e && e instanceof WebAssembly.LinkError),
+                hasKind: !!(e && /memory/i.test(e.message))
+            });
+        })()
+        "#,
+        )
+        .unwrap();
+    assert!(r.contains("\"isLink\":true"), "Memory import 应 LinkError 失败: {r}");
+    assert!(r.contains("\"hasKind\":true"), "消息应含形态说明（memory）: {r}");
+}
