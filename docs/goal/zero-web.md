@@ -77,7 +77,7 @@ Web 标准覆盖面极广，"最新标准"不可能在一个里程碑中完成�
 - CSS：`@layer` + Container Queries + `:has()` + Subgrid + `scroll-snap` + View Transitions
 - JS/Web API：IndexedDB + Service Worker（基础）+ IntersectionObserver + Clipboard API + Fullscreen API + Drag & Drop + Web Components（Custom Elements + Shadow DOM）（Service Worker 专项已完成：专项目标 2026-09-06 收口，DC 全满足——真实生命周期 + fetch 拦截 + Cache 集成，WPT 三 runner 652 subtest 全绿；入口文档与运行时面板已归档至 `docs/goal/archive/service-workers/`）
 - HTML：`<template>` + `<slot>` + `<dialog>` + `<details>/<summary>` + `<picture>`
-- 存储：IndexedDB + Cache API + OPFS（IndexedDB 与 Cache API 已完成归档；**OPFS 已拆专项目标** `docs/goal/storage-opfs.md`，2026-09-07 立项）
+- 存储：IndexedDB + Cache API + OPFS（IndexedDB 与 Cache API 已完成归档；OPFS 已拆专项目标，2026-09-07 立项、2026-09-09 收口归档至 `docs/goal/archive/storage-opfs.md`）
 
 **Tier 3 — 完整体验（持续扩展）**：
 - Canvas 2D 完整 API（Path2D、OffscreenCanvas、ImageBitmap）
@@ -496,7 +496,7 @@ zero-web/
 **交付物**：
 - [ ] WASM 支持（Wasmtime 集成，页面 WASM 与 JS 互操作）——**已拆专项目标** `docs/goal/page-wasm.md`（2026-09-07 立项：底座已闭环，深化导出面/类型/链接语义 + WPT jsapi 基线）
 - [ ] 更多 DOM API（MutationObserver、IntersectionObserver、ResizeObserver、Clipboard API、Fullscreen API、Drag & Drop）——MO host 触发 + IO/RO WPT 基线 + checkpoint spec 化**已拆专项目标** `docs/goal/event-loop-spec.md`（2026-09-07 立项）；Clipboard/Fullscreen/DnD 未立项
-- [ ] Web Components（Custom Elements + Shadow DOM）——**已拆专项目标** `docs/goal/web-components.md`（2026-09-07 立项；一期 dom/engine 侧，Shadow DOM 渲染级等用户点名专项）
+- [x] Web Components（Custom Elements + Shadow DOM）——专项目标 2026-09-07 立项、2026-09-11 收口归档至 `docs/goal/archive/web-components.md`（DC-1~5 ✅，WPT 三目录 76.0%；Shadow DOM 渲染级等用户点名专项）
 - [ ] `script-sandbox` crate 支持 QuickJS feature gate
 - [x] Service Worker 基础（注册、fetch 事件拦截、缓存管理）——专项目标 2026-09-06 收口（真实 worker 执行环境 + 生命周期真事件 + fetch 拦截 + Cache API 集成；归档于 `docs/goal/archive/service-workers/`）
 - [x] Cache API——专项目标 2026-09-06 收口归档（页面 `caches`/`Cache` 全 API 接 zero-storage 真实实现 + per-origin 持久化；WPT `cache-storage` window 面 39 case / 449 subtest 全绿；归档于 `docs/goal/archive/storage-cache-api/`）

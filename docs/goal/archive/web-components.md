@@ -1,9 +1,11 @@
 # Web Components — Custom Elements / template / slot 的 WPT 驱动补齐目标
 
 **版本**: v1.0
-**日期**: 2026-09-07
-**状态**: Active（一期：dom/engine 侧注册/升级/slot 分配；Shadow DOM 渲染级 composed
-tree 属深结构，等用户点名后协调 rendering-compat——见 Support Envelope 排除）
+**日期**: 2026-09-07（2026-09-11 收口归档）
+**状态**: ✅ Completed（2026-09-11——DC-1~5 全满足：WPT 三目录 265→271 案
+3619/4764 subtests（76.0%），基线 437/4730（9%）累计 +3182 Pass；Shadow DOM 渲染级
+composed tree 属深结构，等用户点名后协调 rendering-compat。收口判定与归档见
+[web-components/master.md](web-components/master.md)）
 **执行模式**: 轻量修复优先（永不停）；遇需用户决策项或深结构方向 → 记入「待用户决策」清单 → 跳过 → 继续其他轻量修复
 **父目标**: `docs/goal/zero-web.md`（M12「Web Components（Custom Elements + Shadow DOM）」
 + Tier 2「Web Components」列项）

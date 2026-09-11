@@ -1,8 +1,10 @@
 # OPFS 真实化 — WPT 驱动的 Origin Private File System 目标
 
 **版本**: v1.0
-**日期**: 2026-09-07
-**状态**: Active
+**日期**: 2026-09-07（2026-09-09 收口归档）
+**状态**: ✅ Completed（2026-09-09——M1-M3 全落毕，DC-1~4 全满足：OPFS 从 JS shim
+内存虚拟树升级为 zero-storage 真实实现 + per-origin 持久化。收口判定与归档见
+[storage-opfs/master.md](storage-opfs/master.md)）
 **执行模式**: 轻量修复优先（永不停）；遇需用户决策项或深结构方向 → 记入「待用户决策」清单 → 跳过 → 继续其他轻量修复
 **父目标**: `docs/goal/zero-web.md`（Tier 2「存储：IndexedDB + Cache API + OPFS」最后一块）
 
