@@ -2,7 +2,7 @@
 
 **入口文档**: [../page-wasm.md](../page-wasm.md)
 **创建日期**: 2026-09-07（goal 拆分 bootstrap）
-**最后更新**: 2026-09-12（M1 三切片全部落地——基线 99.4% + 类型化桥接协议 + 导出描述面）
+**最后更新**: 2026-09-12（M1 完成 + M2 切片 1/2 落地——grow 接线 + Global/Table 导出面）
 
 ---
 
@@ -61,15 +61,15 @@ Timeout × 4），证据：[evidence/2026-09-12-m1-wasm-jsapi-baseline.md](evide
 
 ## 下一步计划
 
-1. **M2 切片 1**：Memory 真实映射——`memory.grow` host 接线（当前 JS grow 是假实现：
-   返回 `floor(len/65536)+delta`，buffer 不真实扩容），grow 后重新注入 buffer 字节数
-2. **M2 切片 2**：Global 导出接 JS 面（`get_global_export` 已有——`exports.<name>` 值对象
-   `.value` getter / `valueOf`；i64 → BigInt）；Table 导出（`has_table` 已有，length 面
-   需 wasm-sandbox 补 API）
-3. **M2 切片 3**：importObject 链接语义 + LinkError 分类（`instantiate_with_linker` 已有
-   底座，桥接协议补 importObject 函数表传递 + 缺失/签名不匹配错误面）
-4. **跨流协调**：V8 消息循环泵归 event-loop-spec 流（或用户授权跨域），落地后
+1. **M2 切片 3**：importObject 链接语义 + LinkError 分类（`instantiate_with_linker` 已有
+   底座，桥接协议补 importObject 函数表传递 + 缺失/签名不匹配错误面）——DC-3
+2. **M3**：host function（JS 函数作 wasm import）、validate 真实校验接线、
+   `compileStreaming`/`instantiateStreaming` 真实 Response body 路径（DC-3 剩余）
+3. **跨流协调**：V8 消息循环泵归 event-loop-spec 流（或用户授权跨域），落地后
    `make testharness-wasm` 复跑验证 4 案翻绿（99.4% → 100%）
+4. **已知限制（协议性，非缺陷）**：Global 导出为快照值（不可变全局精确；可变全局
+   wasm 侧写入后不回读——桥异步协议无同步 getter 通道，live 值需协议扩展）；Table
+   仅 length 快照（get/grow 未接线）
 
 **碰撞管理**：开工前先 `git log --since="14 days ago" -- crates/engine/src/dom_bridge.rs
 crates/webview/` 核对活跃面；有活跃编辑则先做零碰撞面（wasm-sandbox 单测、WPT 导入）。
@@ -81,7 +81,7 @@ wasm 段（`process_wasm_bridge` 及 `_callQueue` 排空区），避开 MO 区�
 | 里程碑 | 状态 |
 |--------|------|
 | M1 — WPT 基线建立 + 类型扩展 | ✅ 切片 1（基线 99.4%）+ 切片 2（类型全映射）+ 切片 3（导出描述面）；残余 = P2 跨流卡点 |
-| M2 — Memory/Global/Table + 实例化语义 | ⬜ 切片计划见上 |
+| M2 — Memory/Global/Table + 实例化语义 | 🔄 切片 1（Memory.grow 真实接线）✅ + 切片 2（Global/Table 导出面）✅；切片 3（importObject 链接）待做 |
 | M3 — host function + 流式 + 收尾 | ⬜ |
 
 ## 验证基线
