@@ -81,10 +81,17 @@ WPT 基线 → MO host 触发（方案 C 设计已存在）→ checkpoint spec �
   透传 + target proxy + childList addedNodes 展开 + options 过滤不变）+ webview 集成
   （`tests/mo_host_trigger.rs`——native setAttribute → polyfill MO 收 record + OFF
   死路保持）+ `make test` 19,140P/0F + clippy 零警告 + fmt 干净
-- **A/B（trigger ON vs OFF，WPT testharness corpus）**：IO 94/122/1 = 94/122/1、
-  RO 19/32/6 = 19/32/6——逐 subtest 零 delta、零通知泄漏（native 写在 observer-only
-  页面不存在，排空天然静默）；A/B 零回归证据成立。全量 make test ON 臂留 default-on
-  决策前补做（当前无 default-on 计划，须用户点名）
+- **A/B（trigger ON vs OFF）双 corpus**：
+  - WPT testharness corpus：IO 94/122/1 = 94/122/1、RO 19/32/6 = 19/32/6——逐 subtest
+    零 delta
+  - **MO 主 corpus**（dom/nodes MutationObserver 12 上游文件，既导入面——js-dom goal
+    R45-R51/R188/R189 账本）：OFF 135P/3F/0T = ON 135P/3F/0T，138 subtests 逐条零
+    delta（3F 为 R188 已定性 parser-interleaving 深域，非本域）
+  - A/B 零回归证据成立；全量 make test ON 臂留 default-on 决策前补做（无 default-on
+    计划，须用户点名）
+- **MO 验证面澄清**：WPT MO 用例已随 dom/nodes 套件导入运行（12 文件常驻）——无需
+  另建 testharness-mutation-observer 导入切片；MO-S2 的标尺 = 该 corpus 的 3F 收口
+  （parser-interleaving 属增量解析管线，跨域）+ native 面新增集成测试
 - **遗留（MO-S2 候选）**：① oldValue/added/removed 的 NodeId 真值捕获（dom 层
   record_mutation 未记录 old_value——排空侧无法透传，需 dom 层小改）；② quickjs 路径
   sync_render 未接线（v8-gated，DC-7 对等后续）；③ WPT mutation-observer 导入子集
@@ -147,13 +154,12 @@ WPT 基线 → MO host 触发（方案 C 设计已存在）→ checkpoint spec �
 
 ## 下一步计划
 
-1. **M2 MO-S2：派发深化**（MO-S1 已通 identity 桥 + 排空）：
-   - dom 层 `record_mutation` 补 old_value / added/removed 身份捕获（排空侧透传真值；
-     当前 null 透传——集成测试注释已记）
-   - WPT `mutation-observer/` 导入子集（fetch 脚本 + `make testharness-mutation-observer`
-     入口 + 基线）——kill-switch OFF 下走 polyfill 路径建立标尺，MO-S4（escape-hatch
-     联动，须用户点名）前把 native 面也拉到该标尺
-   - quickjs 路径 sync_render 接线（DC-7 对等）
+1. **M2 MO-S2：native 面深化**（MO-S1 已通桥 + 排空 + A/B；oldValue 透传已验证——
+   dom 层写前捕获 → 排空 → observer，见 mo_host_trigger.rs 二次写断言）：
+   - childList added/removed 的 sibling 字段与 fragment 语义对齐（polyfill 路径 R47
+     同款语义，native record 侧 previous_sibling/next_sibling 排空透传）
+   - quickjs 路径 sync_render 接线（v8-gated，DC-7 对等）
+   - MO-S4（escape-hatch 联动验证）须用户点名（设计 §6）
 2. **M3**：task queue + per-task checkpoint（kill-switch → A/B → default-on）
 3. **跨流协调项（非本流可闭合，记录待碰头）**：
    - engine apply 路径稳定 selector 唯一性（RO observe-001..020 / IO handle 族根因）

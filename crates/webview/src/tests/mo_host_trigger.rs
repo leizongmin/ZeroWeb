@@ -23,6 +23,8 @@ fn test_mo_host_trigger_native_attribute_notifies_polyfill_mo() {
     )
     .unwrap();
     // native 写：native 元素绑定 setAttribute → Document::set_attribute → pending_mutations。
+    // 两次写：首写 class 无旧值（oldValue null 合法）；二写携带 dom 层捕获的旧值 'c1'
+    //（spec：attributeOldValue 时 oldValue = 写前值——MO-S1 排空侧透传验证面）。
     wv.execute_script("(()=>{ const e = __zw_native_element_for_id('t'); e.setAttribute('class', 'c1'); })()")
         .unwrap();
     // MO 回调经 microtask 派发；轮询至到达（沙箱每次 execute 后泵 pending microtasks）。
@@ -44,8 +46,26 @@ fn test_mo_host_trigger_native_attribute_notifies_polyfill_mo() {
     assert_eq!(
         detail.trim(),
         "attributes/class/null/t",
-        "record 形态：type/attributeName/target（oldValue 须 observer attributeOldValue:true 且排空侧携带——Native 记录 old_value 此处未捕获 → null，Rust 侧后续切片对齐）"
+        "record 形态：type/attributeName/target（首写无旧值 → oldValue null 合法）"
     );
+    // 二次 native 写：oldValue 透传（dom 层写前捕获 'c1' → 排空 → observer 收 'c1'）。
+    wv.execute_script("(()=>{ const e = __zw_native_element_for_id('t'); e.setAttribute('class', 'c2'); })()")
+        .unwrap();
+    let mut second = false;
+    for _ in 0..50 {
+        let detail2 = wv
+            .execute_script(
+                "var r = globalThis.__moRecs[1]; r ? (r.type + '/' + r.attributeName + '/' + r.oldValue + '/' + r.target.id) : 'pending'",
+            )
+            .unwrap();
+        if detail2.trim() == "attributes/class/c1/t" {
+            second = true;
+            break;
+        }
+        assert_ne!(detail2.trim(), "attributes/class/null/t", "二写 oldValue 应为写前值 'c1'，got {}", detail2.trim());
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    assert!(second, "二次 native 写应投递携 oldValue='c1' 的 record");
 }
 
 /// kill-switch OFF（默认）：native 写不投递——通知端死路保持（行为时序变更门禁）。
