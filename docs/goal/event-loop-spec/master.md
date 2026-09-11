@@ -51,9 +51,20 @@ WPT 基线 → MO host 触发（方案 C 设计已存在）→ checkpoint spec �
 | P2 | 事件循环时序差距清单（对照 spec 逐条）未建立 | ✅ 2026-09-11（evidence/2026-09-11-m1-event-loop-gap-list.md） |
 | P2.5 | IO/RO 语义修齐第一批（tick 接线 + threshold 越界 + 构造器校验/getter + root==target + documentElement client 尺寸） | ✅ 2026-09-11（切片 3a+3b+3c，基线 29.7% → 41.4%，evidence/2026-09-11-m1-slice3-observers-wiring-validation.md） |
 | P3 | MO host 触发未实施（通知端死路） | 🔄 M2 MO-S1+MO-S2 ✅ 2026-09-11（identity 桥 + 排空点 + kill-switch 默认 OFF + sibling 双向透传/removed '#id' 回落/oldValue 真值；余 fragment flatten + quickjs 接线；MO-S4 待用户点名） |
-| P4 | checkpoint 简化版（无 task queue、无 per-task checkpoint） | ⬜ M3 |
+| P4 | checkpoint 简化版（无 task queue、无 per-task checkpoint） | 🔄 M3-S1 ✅ 2026-09-11（runner timer 泵 per-task，kill-switch + A/B 零 delta；余 renderer tick 重构 + 显式 task queue） |
 
 ## 已完成切片
+
+### M3-S1 — runner timer 泵 per-task 边界（2026-09-11）✅
+
+- `__zw_fire_due_timers` per-task 模式（kill-switch `ZW_TESTHARNESS_TIMER_PER_TASK=1`
+  默认 OFF）：每次调用只派发首个到期 timer，未派发保留队列——probe 循环每迭代一个
+  execute → 一 timer 一 task 一 checkpoint，消除批量派发违反（gap-list §1.2 第一行）
+- A/B 双臂逐 subtest 零 delta：dom 全量 54,324P/163F/13T、MO 12 文件、IO、RO 四
+  corpus；runner 单测 213P/0F + clippy/fmt 干净；生产路径与 reftest 同步 stub 约束
+  零触碰（明细 evidence/2026-09-11-m3-s1-timer-per-task.md）
+- 后续：M3-S2 renderer `tick_observers` per-task（生产面，需渲染 A/B）→ M3-S3 显式
+  task queue（多队列 oldest-first）
 
 ### M2 MO-S2（第三批）— fragment flatten 验证 + quickjs 接线（2026-09-11）✅
 
@@ -237,7 +248,7 @@ crates/script-sandbox/` 核对渲染流域活跃面。
 |--------|------|
 | M1 — WPT 基线 + 时序差距清单 | ✅ 2026-09-11（基线 29.7% + 差距清单；语义修齐 3a+3b+3c → 41.4%；剩余聚类为跨流域协调项，主力转 M2） |
 | M2 — MutationObserver host 触发 | 🔄 MO-S1 ✅（identity 桥 + 排空点 + kill-switch OFF）；MO-S2（派发深化 + WPT 标尺）进行中 |
-| M3 — checkpoint spec 化 | ⬜ |
+| M3 — checkpoint spec 化 | 🔄 M3-S1 ✅（runner timer 泵 per-task + A/B 零 delta）；余 renderer tick 重构、显式 task queue |
 
 ## 验证基线
 

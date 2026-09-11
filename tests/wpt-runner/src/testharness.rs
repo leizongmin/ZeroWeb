@@ -4141,6 +4141,16 @@ fn run_testharness_html_inner(
     if raf_frame_driven {
         let _ = webview.execute_script("globalThis.__ZW_RAF_FRAME_DRIVEN = true;");
     }
+    // event-loop-spec M3-S1：timer 泵 per-task 边界（kill-switch，默认 OFF）。
+    // `ZW_TESTHARNESS_TIMER_PER_TASK=1` → `__zw_fire_due_timers` 每次调用只派发一个到期
+    // timer——probe 循环每次迭代一个 execute → 一 timer 一 task 一 checkpoint（spec
+    // event loop processing model step 3-6），消除「N timer 一个 execute、checkpoint
+    // 只在批尾」的批量派发违反（evidence/2026-09-11-m1-event-loop-gap-list.md §1.2）。
+    // 默认 OFF 维持整批排空（全部既有 testharness 套件零行为变化）。
+    let timer_per_task = std::env::var("ZW_TESTHARNESS_TIMER_PER_TASK").as_deref() == Ok("1");
+    if timer_per_task {
+        let _ = webview.execute_script("globalThis.__ZW_TIMER_PER_TASK = true;");
+    }
     let _zw_hb2 = std::fs::write("/tmp/zw-hb.txt", format!("pre-scripts {}\n", case_name));
     let script_result = webview.run_page_scripts_strict();
     let _zw_hb3 = std::fs::write("/tmp/zw-hb2.txt", format!("post-scripts {}\n", case_name));
@@ -4613,10 +4623,15 @@ add_completion_callback(function() {
         for (var i = 0; i < timers.length; i++) {\n\
           if (timers[i].at <= now) due.push(timers[i]); else rest.push(timers[i]);\n\
         }\n\
-        globalThis.__zw_timers = rest;\n\
-        for (var d = 0; d < due.length; d++) {\n\
-          var fn = globalThis.__zw_pending[due[d].id];\n\
-          if (fn) { delete globalThis.__zw_pending[due[d].id]; try { fn(); } catch (_e) {} }\n\
+        // event-loop-spec M3-S1：per-task 模式（__ZW_TIMER_PER_TASK，runner env\n\
+        // ZW_TESTHARNESS_TIMER_PER_TASK 置位）只派发首个到期 timer——未派发的 due\n\
+        // 保留队列（下一 probe 迭代再派），一 timer 一 execute 一 checkpoint。\n\
+        var limit = globalThis.__ZW_TIMER_PER_TASK ? 1 : due.length;\n\
+        var fired = due.splice(0, limit);\n\
+        globalThis.__zw_timers = due.concat(rest);\n\
+        for (var d = 0; d < fired.length; d++) {\n\
+          var fn = globalThis.__zw_pending[fired[d].id];\n\
+          if (fn) { delete globalThis.__zw_pending[fired[d].id]; try { fn(); } catch (_e) {} }\n\
         }\n\
       };\n";
     let harness = format!("<script>\n{timer_stub}{harness_source}\n{reporter}\n{cache_abort_fixture}\n</script>");
