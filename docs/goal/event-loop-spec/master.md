@@ -174,9 +174,14 @@ WPT 基线 → MO host 触发（方案 C 设计已存在）→ checkpoint spec �
    - 风险与验收：帧 pacing 变化（每帧多轮 execute+apply）→ 需 bench-gate +
      product-smoke + reftest（observer-free 页面应零变化）三面 A/B；验收标尺薄的
      风险已在——记录清楚再动
-2. **M3-S3：显式 task queue**（多队列 oldest-first，timer/network/UI 分源）——
-   timer 顺序由 host 线程完成时序决定（gap-list §1.3），生产 timer 顺序保证 +
-   `_defer` fallback 语义收口随本切片评估
+2. **M3-S3：显式 task queue**——2026-09-11 复核修正：gap-list §1.3「生产 timer 顺序
+   无保证」已过时——`TimerBridge` 自 R2952 起即单协调线程 + `(expiry, seq)` min-heap
+   顺序 resolve（timer_bridge.rs coordinator_loop，同 delay 严格 FIFO），生产 timer
+   顺序有保证。剩余真缺口收窄为两条：① 多队列 oldest-first（spec step 1-2，
+   timer/network/UI 分源——现为单 FIFO channel；跨 task source 优先级差的 WPT 可观测
+   面稀薄，深结构改动须用户点名）；② `_defer` fallback（timer 无 host 时压成微任务，
+   part01.js reftest/polyfill 面）语义收口。均低优先级缓行，M3 判定以 S1/S2 + default-on
+   决策为主轴
 3. **M2 MO-S3（候选）**：排空侧记录批派发合并（同 target+type 连续 childList 记录 →
    浏览器语义单记录——fragment append N 记录粒度差异；当前无 driving WPT 用例，冒进
    缓行）+ 排空批「单 execute 多 record」的 execute_script 次数优化（现逐条投递）
