@@ -101,8 +101,11 @@ Shadow DOM 渲染级 composed tree 排除（等用户点名专项）。
      优先序均验证）。
 2. ~~slotchange 尾 12 案~~ ✅ 2026-09-11 第九小步全清（三簇 12F + attribute 面两案恢复，
    见 evidence/2026-09-11-wc-m3s8j.md）。
-3. **DC-5 终判**（make test + clippy + reftest 持续全绿基础上）+ Rust `resolve_slots`
-   接线（渲染级消费等用户点名专项）。
+3. **DC-5 终判复核对账**（本轮 make test 全绿 + clippy -D warnings 全过 + reftest
+   687/687 100% 已达——下一轮做 goal 文档 DC 清单逐项核对 + master.md 自洽压缩 +
+   `docs/goal/web-components/archive/` 建立，评估 goal 收口；挂账 triage：
+   reactions/ 表格族（table-scoped 解析升级，dom/parser 域）入/出范围判定）。
+4. Rust `resolve_slots` 接线（渲染级消费等用户点名专项）。
 
 ### 已知挂账（2026-09-11 M3 切片 8 更新）
 
@@ -172,4 +175,6 @@ crates/dom/` 核对渲染流域活跃面；碰 part01.js 前与 event-loop-spec 
   M3s8b 3427 → M3s8c 3494 → M3s8d 3525 → M3s8e 3529 → M3s8f 3532 → M3s8g 3532 →
   M3s8h 3536 → M3s8i 3536 → M3s8j 3549）
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过；
-  dom 结构变更轮跑 `make reftest` 作渲染面守卫
+  dom 结构变更轮跑 `make reftest` 作渲染面守卫。**DC-5 本轮实测（2026-09-11 第九小步）**：
+  make test 全绿（service_worker skipWaiting 一次超时为 load 13 环境抖动——隔离重跑
+  0.07s 过 + 全模块 39/39 绿）+ clippy -D warnings 全过 + **reftest 687/687（100%）**
