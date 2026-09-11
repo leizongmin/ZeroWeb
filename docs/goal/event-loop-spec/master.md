@@ -2,7 +2,8 @@
 
 **入口文档**: [../event-loop-spec.md](../event-loop-spec.md)
 **创建日期**: 2026-09-07（goal 拆分 bootstrap）
-**最后更新**: 2026-09-11（M1 切片 3a+3b+3c——IO/RO 基线 29.7% → 41.4%）
+**最后更新**: 2026-09-11（M2 MO-S1 落地——host 侧 mutation 通知 identity 桥 + 排空点，
+kill-switch `ZW_MO_HOST_TRIGGER` 默认 OFF）
 
 ---
 
@@ -49,10 +50,41 @@ WPT 基线 → MO host 触发（方案 C 设计已存在）→ checkpoint spec �
 | P1 | IO/RO WPT 用例覆盖为零（fetch 脚本 + 导入 + 基线） | ✅ 2026-09-11（基线 29.7% 落 evidence/） |
 | P2 | 事件循环时序差距清单（对照 spec 逐条）未建立 | ✅ 2026-09-11（evidence/2026-09-11-m1-event-loop-gap-list.md） |
 | P2.5 | IO/RO 语义修齐第一批（tick 接线 + threshold 越界 + 构造器校验/getter + root==target + documentElement client 尺寸） | ✅ 2026-09-11（切片 3a+3b+3c，基线 29.7% → 41.4%，evidence/2026-09-11-m1-slice3-observers-wiring-validation.md） |
-| P3 | MO host 触发未实施（通知端死路） | ⬜ M2 |
+| P3 | MO host 触发未实施（通知端死路） | 🔄 M2 MO-S1 ✅ 2026-09-11（identity 桥 + 排空点 + kill-switch，默认 OFF；MO-S2 派发深化/childList sibling/oldValue 真值待做） |
 | P4 | checkpoint 简化版（无 task queue、无 per-task checkpoint） | ⬜ M3 |
 
 ## 已完成切片
+
+### M2 MO-S1 — host 侧 mutation 通知 identity 桥 + 排空点（2026-09-11）✅
+
+方案 C hybrid（设计片 p1b-mutationobserver-host-trigger-design §5）首切片落地：
+
+- **JS 入口**（part01.js MO 段）：`globalThis.__zw_mo_notify_native(sel, type, attrName,
+  oldValue, addedSels, removedSels)` → 组 record（attributes/childList/characterData；
+  characterData 自带 target——R188 分支跳过该型）→ 复用 polyfill `_mo_notify` 单注册表
+  派发（options 过滤/subtree 冒泡/oldValue 语义自动获益 = 设计 MO-S3 大半免做）。
+  addedSels/removedSels = '|' 分隔稳定 selector 串，逐个 `_makeProxy` 包 proxy
+- **Rust 排空点**（webview.rs `drain_native_mutations_to_mo`，挂在
+  `sync_render_after_native_dom` 尾）：`take_mutation_records()` 排空 +
+  `unique_selector_for_node` 逐条解析身份（唯一性校验；无身份 record 丢弃）→
+  execute_script 投递。覆盖全部三个 native 写检测面（execute_script /
+  execute_script_with_dom / dispatch_event 尾）。**去重天然成立**：polyfill apply 路径
+  自更 cached_html，不进 native 写检测分支（设计 §3 双重通知风险消解）。重入安全：
+  投递前 cached_html 已同步，回调内再写经下一轮检测再排空
+- **kill-switch**：`mo_host_trigger` 字段（env `ZW_MO_HOST_TRIGGER=1` 初值）+
+  `set_mo_host_trigger()` setter（测试直设避免进程 env 竞态），**默认 OFF**（DC-3
+  行为时序变更门禁）
+- **身份形态契约**（实施中发现）：shim MO 注册键 = `'s:' + __zwSelector`，selector 为
+  CSS 形态（'#t' 含 '#'）——排空侧必须传 `unique_selector_for_node` 原样输出，传裸 id
+  即投递丢失（无报错静默 miss）
+- **验证**：JS 入口单测（engine part03 `test_mo_native_notify_entry_m2_s1`——attributes
+  透传 + target proxy + childList addedNodes 展开 + options 过滤不变）+ webview 集成
+  （`tests/mo_host_trigger.rs`——native setAttribute → polyfill MO 收 record + OFF
+  死路保持）+ `make test` 19,140P/0F + clippy 零警告 + fmt 干净
+- **遗留（MO-S2 候选）**：① oldValue/added/removed 的 NodeId 真值捕获（dom 层
+  record_mutation 未记录 old_value——排空侧无法透传，需 dom 层小改）；② quickjs 路径
+  sync_render 未接线（v8-gated，DC-7 对等后续）；③ WPT mutation-observer 导入子集
+  作为 MO-S2 验收标尺（kill-switch OFF 下走 polyfill 路径，native 面仍靠集成测试）
 
 ### M1 切片 3c — IO/RO 语义修齐第二批 + 实验回退记账（2026-09-11）✅
 
@@ -111,23 +143,13 @@ WPT 基线 → MO host 触发（方案 C 设计已存在）→ checkpoint spec �
 
 ## 下一步计划
 
-1. **M2：MO host 触发（方案 C 实施）**——照
-   `docs/goal/zero-web/p1b-mutationobserver-host-trigger-design-2026-08-10.md` 切片。
-   **MO-S1（identity 桥）实施要点已勘察（2026-09-11）**：
-   - JS 侧（part01.js MO 段）：`globalThis.__zw_mo_notify_native(sel, handle, type,
-     attrName, oldValue)` → 组 baseRecord → 复用 `_mo_notify`（单注册表派发，
-     options/subtree/oldValue 自动获益 = MO-S3 免做主）
-   - Rust 排空点：`webview.rs sync_render_after_native_dom`（native 写检测 =
-     live outerHTML ≠ cached_html；polyfill apply 路径自更 cached_html 不触发此分支
-     → **与 polyfill Proxy-trap 去重天然成立**，设计 §3 风险项消解）。
-     `doc.borrow_mut().take_mutation_records()` 逐条 `unique_selector_for_node`
-     （engine js_dom_bridge 已有，nth-child 消歧）→ execute_script 投递；
-     **注意重入**：execute_script 尾部再进 sync_render → 需 reentrancy guard
-   - 注意：R384 后 native_dom kill-switch 已删（双引擎 default-on）——设计文档的
-     「native_dom 开分支」前提已变，新 kill-switch 用 `ZW_MO_HOST_TRIGGER`（默认 OFF，
-     本 goal DC-3 门禁约束；A/B 后再议 default-on）
-   - 验证：单测 native appendChild → polyfill MO 收 record（设计 MO-S1 验证面）+
-     make test；childList added/removed 的 proxy 面留 MO-S2
+1. **M2 MO-S2：派发深化**（MO-S1 已通 identity 桥 + 排空）：
+   - dom 层 `record_mutation` 补 old_value / added/removed 身份捕获（排空侧透传真值；
+     当前 null 透传——集成测试注释已记）
+   - WPT `mutation-observer/` 导入子集（fetch 脚本 + `make testharness-mutation-observer`
+     入口 + 基线）——kill-switch OFF 下走 polyfill 路径建立标尺，MO-S4（escape-hatch
+     联动，须用户点名）前把 native 面也拉到该标尺
+   - quickjs 路径 sync_render 接线（DC-7 对等）
 2. **M3**：task queue + per-task checkpoint（kill-switch → A/B → default-on）
 3. **跨流协调项（非本流可闭合，记录待碰头）**：
    - engine apply 路径稳定 selector 唯一性（RO observe-001..020 / IO handle 族根因）
@@ -139,6 +161,7 @@ WPT 基线 → MO host 触发（方案 C 设计已存在）→ checkpoint spec �
 - runner viewport 校准（1280×800 → 上游 WPT 校准 800×600）：牵动全部 testharness
   套件的绝对几何期望（一次性大重校准），非轻量修复
 - requestIdleCallback 真实 idle 时序（已在 goal 范围外条款）
+- MO-S4 + escape-hatch 收敛（设计文档 §6 决策门禁：生产路径主干变更须用户点名）
 
 **碰撞管理**：碰 engine 前先 `git log --since="14 days ago" -- crates/engine/
 crates/script-sandbox/` 核对渲染流域活跃面。
@@ -148,7 +171,7 @@ crates/script-sandbox/` 核对渲染流域活跃面。
 | 里程碑 | 状态 |
 |--------|------|
 | M1 — WPT 基线 + 时序差距清单 | ✅ 2026-09-11（基线 29.7% + 差距清单；语义修齐 3a+3b+3c → 41.4%；剩余聚类为跨流域协调项，主力转 M2） |
-| M2 — MutationObserver host 触发 | ⬜ |
+| M2 — MutationObserver host 触发 | 🔄 MO-S1 ✅（identity 桥 + 排空点 + kill-switch OFF）；MO-S2（派发深化 + WPT 标尺）进行中 |
 | M3 — checkpoint spec 化 | ⬜ |
 
 ## 验证基线

@@ -19,6 +19,9 @@ mod service_worker_iframe;
 mod service_worker_runtime;
 mod uncovered_paths;
 mod user_actions;
+// event-loop-spec M2 MO-S1：host 侧 mutation 通知排空（native 绑定域，v8 门控同 wasm_bridge）。
+#[cfg(feature = "v8")]
+mod mo_host_trigger;
 #[cfg(feature = "v8")]
 mod wasm_bridge;
 mod webview_coverage_final;

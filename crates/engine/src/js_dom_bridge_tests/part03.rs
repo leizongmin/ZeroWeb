@@ -3138,6 +3138,88 @@ fn test_mutation_observer_childlist_fragment_r47() {
 }
 
 #[test]
+fn test_mo_native_notify_entry_m2_s1() {
+    // event-loop-spec M2 MO-S1（方案 C hybrid）：host 侧 native mutation 投递入口
+    // `__zw_mo_notify_native(sel, type, attrName, oldValue, addedSels, removedSels)` 复用
+    // polyfill `_mo_notify` 单注册表派发（设计片
+    // p1b-mutationobserver-host-trigger-design §5 MO-S1 验证面）。本测试锁 JS 入口语义：
+    // ① attributes：observe(#t) 后投 attributes record → 回调收 attributeName + record.target
+    //    为 #t proxy（R188 面经 _mo_notify 派生）
+    // ② childList：addedSels '|' 串 → addedNodes proxy 列表（容器 observe 直接收记录）
+    // ③ 未订阅 childList 的 observer 不收 childList 投递（options 过滤复用）。sel 为 CSS
+    // 形态稳定 selector（' #t'——与 __zwSelector/unique_selector_for_node 同形；polyfill
+    // 注册键 = 's:' + selector，形态不一致即投递丢失——R45 身份链同款约束）
+    // Rust 侧排空（webview `drain_native_mutations_to_mo`）由 zero-webview 集成测试覆盖。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig { persistent_context: true, ..Default::default() };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id='t'></div><ul id='ul'></ul></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            "globalThis.__attrRecs = []; globalThis.__childRecs = []; globalThis.__otherRecs = [];\
+             var moA = new MutationObserver(function(rs) { globalThis.__attrRecs = globalThis.__attrRecs.concat(rs); });\
+             moA.observe(document.getElementById('t'), { attributes: true, attributeOldValue: true });\
+             var moC = new MutationObserver(function(rs) { globalThis.__childRecs = globalThis.__childRecs.concat(rs); });\
+             moC.observe(document.getElementById('ul'), { childList: true });\
+             var moO = new MutationObserver(function(rs) { globalThis.__otherRecs = globalThis.__otherRecs.concat(rs); });\
+             moO.observe(document.getElementById('ul'), { attributes: true });\
+             globalThis.__zw_mo_notify_native('#t', 'attributes', 'class', 'c0', '', '');\
+             globalThis.__zw_mo_notify_native('#ul', 'childList', null, null, '#li-new', '');",
+        )
+        .unwrap();
+    // flush 经 `_defer`（microtask，同 R45 泵模式——多轮 execute 轮询）。
+    let mut filled = false;
+    for _ in 0..50 {
+        let a = sandbox.execute("globalThis.__attrRecs.length").unwrap().value;
+        let c = sandbox.execute("globalThis.__childRecs.length").unwrap().value;
+        if a == "1" && c == "1" {
+            filled = true;
+            break;
+        }
+        let _ = sandbox.execute("0");
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    assert!(filled, "native 投递应经 microtask flush 到达（attr=1 child=1）");
+    assert_eq!(
+        sandbox
+            .execute(
+                "globalThis.__attrRecs[0].type + '/' + globalThis.__attrRecs[0].attributeName + '/' +\
+                 globalThis.__attrRecs[0].oldValue + '/' + globalThis.__attrRecs[0].target.id"
+            )
+            .unwrap()
+            .value,
+        "attributes/class/c0/t",
+        "attributes record：attributeName/oldValue 透传 + target 为 #t proxy（R188）"
+    );
+    assert_eq!(
+        sandbox
+            .execute(
+                "globalThis.__childRecs[0].type + '/' + globalThis.__childRecs[0].addedNodes.length + '/' +\
+                 (globalThis.__childRecs[0].addedNodes[0] ? 'proxy' : 'missing')"
+            )
+            .unwrap()
+            .value,
+        "childList/1/proxy",
+        "childList record：addedSels 串展开为 addedNodes proxy 列表"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__otherRecs.length").unwrap().value,
+        "0",
+        "③ 未订阅 childList 的 #ul attributes observer 不收 childList 投递（options 过滤复用）"
+    );
+}
+
+#[test]
 fn test_parsed_text_characterdata_r48() {
     // R48：parsed DOM 文本节点的 CharacterData 编辑 + MutationObserver record（WPT
     // MutationObserver-characterData 4P/12F→18P/0F 驱动）：

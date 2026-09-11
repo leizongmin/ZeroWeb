@@ -2422,6 +2422,45 @@
       }
     }
   }
+  // event-loop-spec M2 MO-S1（方案 C hybrid，设计片
+  // p1b-mutationobserver-host-trigger-design §4/§5）：host 侧 native mutation 投递入口。
+  // native/dom 写（R3108+ native 元素绑定、host 派发的 DOM 变更）入 dom 层
+  // `pending_mutations`（记录端既有），webview 在 native 写检测后排空队列并经
+  // NodeId→稳定 selector 桥（`unique_selector_for_node`）投递本入口 → 复用 polyfill
+  // `_mo_notify` 单注册表派发（options 过滤 / subtree 冒泡 / oldValue 语义自动获益）。
+  // 与 polyfill Proxy-trap 路径去重：排空点在 `sync_render_after_native_dom`（live
+  // outerHTML ≠ cached_html 才触发），polyfill apply 路径自更 cached_html 不进该分支。
+  // Rust 侧 kill-switch `ZW_MO_HOST_TRIGGER`（默认 OFF，时序变更门禁约束）。
+  // 参数：sel=目标稳定 selector；type=attributes/childList/characterData；attrName/
+  // oldValue 透传；addedSels/removedSels = '|' 分隔的子节点稳定 selector 串（逐个经
+  // _makeProxy 包 proxy；无身份节点已被 Rust 侧丢弃——spec：unobserved target 不通知）。
+  // https://dom.spec.whatwg.org/#mutationobserver
+  globalThis.__zw_mo_notify_native = function (sel, type, attrName, oldValue, addedSels, removedSels) {
+    if (typeof _mo_notify !== 'function') return;
+    var record = { type: type };
+    if (type === 'attributes') {
+      record.attributeName = attrName;
+      if (oldValue != null) record.oldValue = oldValue;
+    } else if (type === 'characterData') {
+      if (oldValue != null) record.oldValue = oldValue;
+      // characterData 的 record.target 须自带（_mo_notify 的 R188 分支跳过 characterData）。
+      try { if (typeof _makeProxy === 'function') record.target = _makeProxy(sel, null); } catch (_eMoNc) {}
+    } else if (type === 'childList') {
+      var toProxies = function (s) {
+        var out = [];
+        var parts = String(s || '').split('|');
+        for (var i = 0; i < parts.length; i++) {
+          if (parts[i] && typeof _makeProxy === 'function') {
+            try { out.push(_makeProxy(parts[i], null)); } catch (_eMoNp) {}
+          }
+        }
+        return out;
+      };
+      record.addedNodes = toProxies(addedSels);
+      record.removedNodes = toProxies(removedSels);
+    }
+    _mo_notify(sel, null, record);
+  };
   function _mo_scheduleFlush() {
     if (_moFlushScheduled) return;
     _moFlushScheduled = true;

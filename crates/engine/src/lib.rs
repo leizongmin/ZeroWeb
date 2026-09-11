@@ -93,6 +93,9 @@ pub use timer_bridge::*;
 pub use zero_css_parser::media_query::MediaType;
 pub use zero_css_parser::media_query::PrefersColorSchemeValue;
 pub use zero_render_foundation::display_list::DisplayList;
+// event-loop-spec M2 MO-S1：webview 排空 `pending_mutations` 时判别 record 类型与解析
+// added/removed 节点身份（webview 不直接依赖 zero-dom，经此 re-export 引用）。
+pub use zero_dom::{MutationType, NodeId};
 
 #[cfg(test)]
 mod tests;

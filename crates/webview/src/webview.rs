@@ -441,6 +441,11 @@ pub struct WebView {
     /// DOM shim（generate_js_dom_shim）是否已注入沙箱（M2：幂等保护——
     /// 重复执行会重置 _nodeMap 丢失监听器，故只注入一次）。
     js_shim_initialized: bool,
+    /// event-loop-spec M2 MO-S1：host 侧 mutation 通知排空开关（`drain_native_mutations_to_mo`）。
+    /// kill-switch 语义：默认 OFF（MO 通知是行为时序变更——本 goal DC-3 门禁：kill-switch +
+    /// A/B 零回归才 default-on）。初值读 env `ZW_MO_HOST_TRIGGER=1`（与 `ZW_RAF_FRAME_DRIVEN`
+    /// 同款 env 形态），测试经 [`WebView::set_mo_host_trigger`] 直设（避免进程级 env 竞态）。
+    mo_host_trigger: bool,
     /// R384（js-dom M5）：本 WebView 最近一次 install 时的引擎 native 线程局部代际
     ///（`dom_bindings::state_generation`）。install 前不符 → 缓存属于别的 Isolate，
     /// 先 reset 再装（跨 WebView 双缓存 panic 闭合）；相符 → 复用（同 WebView 跨
@@ -614,6 +619,7 @@ impl WebView {
             service_worker_event_backlog,
             service_worker_fetch_event_registry,
             js_shim_initialized: false,
+            mo_host_trigger: std::env::var("ZW_MO_HOST_TRIGGER").as_deref() == Ok("1"),
             #[cfg(feature = "v8")]
             native_state_gen: None,
             #[cfg(feature = "v8")]
@@ -2209,6 +2215,12 @@ impl WebView {
     /// `cached_html`/`last_render`，使 native 写入可见于渲染。polyfill 路径已同步（一致）
     /// 或 native 未改 → no-op（零额外开销）。详见 `docs/specs/p1b-v8-native-bindings-rfc.md` §3.7。
     #[cfg(feature = "v8")]
+    /// event-loop-spec M2 MO-S1：host 侧 mutation 通知排空开关（kill-switch，默认 OFF——
+    /// 初值读 env `ZW_MO_HOST_TRIGGER`）。测试/嵌入方经此直设，避免进程级 env 竞态。
+    pub fn set_mo_host_trigger(&mut self, enabled: bool) {
+        self.mo_host_trigger = enabled;
+    }
+
     fn sync_render_after_native_dom(&mut self) {
         let live_html = match self.pipeline.cached_doc_shared() {
             Some(doc_rc) => {
@@ -2227,6 +2239,77 @@ impl WebView {
             self.last_render = Some(render_result_to_webview(&result));
             // R150：native 写后 repaint——刷新 gBCR 快照（布局可能已变）。
             self.refresh_layout_rect_snapshot();
+        }
+        // event-loop-spec M2 MO-S1：native 写检测后排空 dom 层 mutation 队列（见 drain 注释）。
+        self.drain_native_mutations_to_mo();
+    }
+
+    /// event-loop-spec M2 MO-S1（方案 C hybrid，设计片
+    /// `docs/goal/zero-web/p1b-mutationobserver-host-trigger-design-2026-08-10.md` §4）：
+    /// dom 层 `pending_mutations` 通知端接活。native 写检测（live outerHTML ≠
+    /// cached_html）后排队列，逐条经 NodeId→稳定 selector 桥
+    /// （`unique_selector_for_node`，唯一性校验防 tag 歧义误投）投递 polyfill MO
+    /// 共享注册表（`__zw_mo_notify_native` → `_mo_notify`，options/subtree/oldValue
+    /// 语义复用）。与 polyfill Proxy-trap 路径去重：polyfill apply 路径自更
+    /// cached_html，不进 `sync_render_after_native_dom` 分支（设计 §3 风险项消解）。
+    /// kill-switch `ZW_MO_HOST_TRIGGER=1`（默认 OFF——MO 通知是行为时序变更，本 goal
+    /// DC-3 门禁约束：kill-switch + A/B 零回归才 default-on）。重入安全：投递前已刷
+    /// cached_html，`execute_script` 尾部再进 `sync_render_after_native_dom` 时
+    /// live==cached 早退；MO 回调内再写 → 该轮尾部再排空（与事件派发同收敛）。
+    /// 无唯一身份的 record 丢弃（设计 §7：unobserved target 不通知语义）。
+    /// 开关初值 = env `ZW_MO_HOST_TRIGGER`（[`WebView::new`]）；嵌入方可经
+    /// [`Self::set_mo_host_trigger`] 运行时切换。
+    fn drain_native_mutations_to_mo(&mut self) {
+        if !self.mo_host_trigger {
+            return;
+        }
+        let Some(doc_rc) = self.pipeline.cached_doc_shared() else {
+            return;
+        };
+        // 排空 + 身份解析在同一 borrow 窗口完成；投递在窗口外（execute_script 需 &mut self）。
+        let drained: Vec<DrainedMutation> = {
+            let mut doc = match doc_rc.try_borrow_mut() {
+                Ok(d) => d,
+                Err(_) => return,
+            };
+            doc.take_mutation_records()
+                .into_iter()
+                .filter_map(|r| {
+                    let sel = zero_engine::js_dom_bridge::unique_selector_for_node(&doc, r.target)?;
+                    let typ = match r.mutation_type {
+                        zero_engine::MutationType::Attributes => "attributes",
+                        zero_engine::MutationType::CharacterData => "characterData",
+                        zero_engine::MutationType::ChildList => "childList",
+                    };
+                    let resolve_list = |nodes: &[zero_engine::NodeId]| -> String {
+                        nodes
+                            .iter()
+                            .filter_map(|n| zero_engine::js_dom_bridge::unique_selector_for_node(&doc, *n))
+                            .collect::<Vec<_>>()
+                            .join("|")
+                    };
+                    let added = resolve_list(&r.added_nodes);
+                    let removed = resolve_list(&r.removed_nodes);
+                    Some((sel, typ, r.attribute_name.clone(), r.old_value.clone(), added, removed))
+                })
+                .collect()
+        };
+        for (sel, typ, attr, old, added, removed) in drained {
+            let js_str = |s: &str| format!("'{}'", escape_js_string(s));
+            let js_opt = |v: &Option<String>| match v {
+                Some(s) => js_str(s),
+                None => "null".to_string(),
+            };
+            let script = format!(
+                "if(typeof globalThis.__zw_mo_notify_native==='function')globalThis.__zw_mo_notify_native({},{},{},{},{},{});",
+                js_str(&sel),
+                js_str(typ),
+                js_opt(&attr),
+                js_opt(&old),
+                js_str(&added),
+                js_str(&removed),
+            );
+            let _ = self.execute_script(&script);
         }
     }
 
@@ -5208,6 +5291,10 @@ pub(crate) fn base64_decode(input: &str) -> Result<Vec<u8>, String> {
 /// 转义字符串中的 JavaScript 特殊字符，防止注入。
 ///
 /// 替换 `'`、`\`、`</script>` 等字符为安全序列。
+/// event-loop-spec M2 MO-S1 排空批条目：(target sel, record type, attributeName,
+/// oldValue, added 节点 selector 串，removed 节点 selector 串)。
+type DrainedMutation = (String, &'static str, Option<String>, Option<String>, String, String);
+
 fn escape_js_string(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for ch in s.chars() {
