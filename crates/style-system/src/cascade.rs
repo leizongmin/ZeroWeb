@@ -37,6 +37,11 @@ pub struct CascadeOrder {
     pub position: usize,
     /// 是否为 !important 声明。
     pub important: bool,
+    /// R4245（CSS Cascade 5「cascade contexts」）：style 属性是独立级联上下文——排序
+    /// 在 unlayered 之上（内联声明胜任意选择器 sheet 声明），且 style 属性内 revert-layer
+    /// 的回退「上一上下文」= author origin（driving: revert-layer-009/012）。sheet 声明
+    /// 恒 false（普通路径排序零变化）。
+    pub style_attribute: bool,
 }
 
 impl CascadeOrder {
@@ -54,6 +59,7 @@ impl CascadeOrder {
             specificity,
             position,
             important,
+            style_attribute: false,
         }
     }
 
@@ -63,11 +69,12 @@ impl CascadeOrder {
     /// 1. normal < important
     /// 2. important 时: user-agent > user > author（反转）
     ///    normal 时: author > user > user-agent
-    /// 3. unlayered > layered
-    /// 4. later layer > earlier layer
-    /// 5. higher specificity wins
-    /// 6. later position wins
-    fn sort_key(&self) -> (bool, u8, bool, usize, (u32, u32, u32), usize) {
+    /// 3. style 属性 > sheet 声明（独立级联上下文，R4245）
+    /// 4. unlayered > layered
+    /// 5. later layer > earlier layer
+    /// 6. higher specificity wins
+    /// 7. later position wins
+    fn sort_key(&self) -> (bool, u8, bool, bool, usize, (u32, u32, u32), usize) {
         // 计算 origin 排序值
         // normal: author(2) > user(1) > ua(0)
         // important: ua(0) > user(1) > author(2) -- 注意反转
@@ -92,12 +99,13 @@ impl CascadeOrder {
         let layer_idx = self.layer_index.unwrap_or(0);
 
         (
-            self.important,   // 1. important > normal
-            origin_priority,  // 2. 来源优先级
-            is_unlayered,     // 3. unlayered > layered
-            layer_idx,        // 4. later layer > earlier
-            self.specificity, // 5. higher specificity
-            self.position,    // 6. later position
+            self.important,       // 1. important > normal
+            origin_priority,      // 2. 来源优先级
+            self.style_attribute, // 3. style 属性上下文 > sheet（R4245）
+            is_unlayered,         // 4. unlayered > layered
+            layer_idx,            // 5. later layer > earlier
+            self.specificity,     // 6. higher specificity
+            self.position,        // 7. later position
         )
     }
 }
@@ -607,30 +615,42 @@ pub fn cascade<'a>(declarations: Vec<CascadedDeclaration<'a>>, quirks: bool) -> 
             continue;
         }
 
-        // Slow path（含合法 revert-layer）：降序探测 + tier 回退（语义见 effective_cascade_value 注释）。
+        // Slow path（含合法 revert-layer）：降序探测 + 层截止回退（语义见 effective_cascade_value 注释）。
+        // R4245：排序用 spec 语义键 cascade_slow_key（important 分区层序反转：早层 > 晚层、
+        // unlayered 最低——revert-layer-005：L2 的 revert-layer!important 须胜 L3 red!important；
+        // 全局 Ord（sort_key）保持旧序不动，slow path 仅 revert-layer 页进入，爆炸半径限于该族）。
         let mut sorted: Vec<&CascadedDeclaration> = decls.iter().collect();
-        sorted.sort_by(|a, b| b.order.cmp(&a.order));
+        sorted.sort_by_key(|a| std::cmp::Reverse(cascade_slow_key(&a.order)));
         let mut first_valid: Option<&CascadedDeclaration> = None;
         let mut winner: Option<&CascadedDeclaration> = None;
-        let mut i = 0;
-        while i < sorted.len() {
-            let d = sorted[i];
+        // R4245：revert-layer 触发后的层截止——只考虑「更靠下级联上下文」（同 origin：
+        // layered < unlayered < style 属性）的声明，同层及更上层（含任何 importance，per
+        // cascade-5「roll back the cascade to the previous layer」移除不区分 importance）
+        // 一并移除。多层嵌套 revert-layer 逐层更新截止。
+        let mut cutoff: Option<(Origin, CascadeCtx)> = None;
+        for d in &sorted {
             let valid = is_css_wide_keyword(d.value)
                 || (!is_invalid_negative_length(property, d.value)
                     && !is_invalid_enum_value(property, d.value)
                     && is_cascade_value_valid(property, d.value, quirks, &mut dummy));
             if !valid {
-                i += 1;
                 continue;
             }
             if first_valid.is_none() {
                 first_valid = Some(d);
             }
             if revert_layer_active && is_revert_layer_value(d.value) {
-                // 跳过整个 tier（同 tier 的较低优先级声明亦属「本层」须一并移除，不再探测）。
-                let tier = cascade_tier_key(&d.order);
-                while i < sorted.len() && cascade_tier_key(&sorted[i].order) == tier {
-                    i += 1;
+                cutoff = Some((d.order.origin, CascadeCtx::of(&d.order)));
+                continue;
+            }
+            if let Some((origin, ctx)) = &cutoff {
+                // R2388/cascade-5：同 origin 无更低上下文 → 行为同 revert，继续向更低
+                // origin（user → UA）回退（revert-layer-006：unlayered display:revert-layer
+                // 应落到 UA display:block）。allowed = 更低 origin，或同 origin 更低上下文。
+                let lower_origin = (d.order.origin as u8) < (*origin as u8);
+                if lower_origin || (d.order.origin == *origin && ctx.allows_below(&d.order)) {
+                    winner = Some(d);
+                    break;
                 }
                 continue;
             }
@@ -656,9 +676,82 @@ fn is_revert_layer_value(value: &str) -> bool {
     value.trim().eq_ignore_ascii_case("revert-layer")
 }
 
-/// 级联 tier 标识（origin + important + layer）——三者相同即同 tier。
-fn cascade_tier_key(order: &CascadeOrder) -> (Origin, bool, Option<usize>) {
-    (order.origin, order.important, order.layer_index)
+/// R4245：级联上下文（slow path revert-layer 层截止用）。
+///
+/// cascade-5 的「cascade contexts」：style 属性 > unlayered > 各 @layer（normal 序）；
+/// revert-layer 的回退语义 = 「roll back the cascade to the previous context」——移除
+/// 当前上下文及其上方的全部声明（不区分 importance），取余下声明的级联胜者。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CascadeCtx {
+    /// style 属性上下文（最高）。
+    StyleAttr,
+    /// 未分层作者声明。
+    Unlayered,
+    /// @layer i（i 越大越靠上）。
+    Layer(usize),
+}
+
+impl CascadeCtx {
+    fn of(order: &CascadeOrder) -> Self {
+        if order.style_attribute {
+            CascadeCtx::StyleAttr
+        } else {
+            match order.layer_index {
+                None => CascadeCtx::Unlayered,
+                Some(i) => CascadeCtx::Layer(i),
+            }
+        }
+    }
+
+    /// `order` 是否位于该上下文**之下**（即 revert-layer 回退后可参与的声明）。
+    fn allows_below(&self, order: &CascadeOrder) -> bool {
+        if order.style_attribute {
+            return false;
+        }
+        match self {
+            CascadeCtx::StyleAttr => true, // style 之下 = unlayered + 全部 layered
+            CascadeCtx::Unlayered => order.layer_index.is_some(),
+            CascadeCtx::Layer(i) => order.layer_index.is_some_and(|j| j < *i),
+        }
+    }
+}
+
+/// R4245：slow path 的 spec 语义排序键（降序）。
+///
+/// 与 [`CascadeOrder::sort_key`]（全局 Ord，兼容旧序）不同：important 分区**反转层序**
+///（cascade-5：important 时早层胜、unlayered 最低）——revert-layer-005：L2 的
+/// revert-layer!important 须胜 L3 red!important（旧序 L3 胜 → revert 不触发 → 恒红）。
+/// 仅 revert-layer 页进入 slow path，此键不影响普通页面。
+fn cascade_slow_key(order: &CascadeOrder) -> (bool, u8, u64, (u32, u32, u32), usize) {
+    let origin_priority = if order.important {
+        match order.origin {
+            Origin::UserAgent => 2,
+            Origin::User => 1,
+            Origin::Author => 0,
+        }
+    } else {
+        match order.origin {
+            Origin::Author => 2,
+            Origin::User => 1,
+            Origin::UserAgent => 0,
+        }
+    };
+    let ctx_rank = match (order.style_attribute, order.important, order.layer_index) {
+        (true, _, _) => u64::MAX, // style 属性上下文恒最高
+        // normal：layered(i) < unlayered < style
+        (false, false, None) => u64::MAX - 1,
+        (false, false, Some(i)) => i as u64,
+        // important：unlayered < layered 反转（早层 > 晚层）
+        (false, true, None) => 0,
+        (false, true, Some(i)) => (usize::MAX as u64) - i as u64,
+    };
+    (
+        order.important,
+        origin_priority,
+        ctx_rank,
+        order.specificity,
+        order.position,
+    )
 }
 
 /// 级联合法性探测：声明值能否被 apply 解析（drop-if-invalid 语义）。

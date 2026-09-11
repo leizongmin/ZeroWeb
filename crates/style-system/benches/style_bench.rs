@@ -75,6 +75,7 @@ fn bench_cascade(c: &mut Criterion) {
                             specificity: (i as u32 % 2, i as u32 % 3, i as u32),
                             position: i,
                             important: i % 10 == 0,
+                            style_attribute: false,
                         },
                     )
                 })

@@ -964,7 +964,7 @@ impl StyleSystem {
 
         // 1.5. 展开简写属性（保留层索引）
         #[allow(clippy::type_complexity)]
-        let mut expanded_with_layer: Vec<(String, String, bool, (u32, u32, u32), Option<usize>)> = Vec::new();
+        let mut expanded_with_layer: Vec<(String, String, bool, (u32, u32, u32), Option<usize>, bool)> = Vec::new();
         // 1.5a. CSS2 Appendix D 表现提示（img 的 width/height 属性 → 作者样式）。
         // Author origin + specificity (0,0,0) + 最早位置（cascade 按 origin/layer/specificity/
         // position 排序，(0,0,0) 低于任意真实选择器 ≥(0,0,1) 与 inline (1,0,0)，高于 UA 默认）。
@@ -977,7 +977,7 @@ impl StyleSystem {
                     .map(|(p, v)| (p.clone(), v.clone(), false, (0, 0, 0)))
                     .collect();
                 for (prop, val, imp, spec) in shorthand::expand_shorthands(&input) {
-                    expanded_with_layer.push((prop, val, imp, spec, None));
+                    expanded_with_layer.push((prop, val, imp, spec, None, false));
                 }
             }
         }
@@ -985,7 +985,7 @@ impl StyleSystem {
             let input = (property.clone(), value.clone(), *important, *specificity);
             let expanded = shorthand::expand_shorthands(&[input]);
             for (prop, val, imp, spec) in expanded {
-                expanded_with_layer.push((prop, val, imp, spec, *layer_index));
+                expanded_with_layer.push((prop, val, imp, spec, *layer_index, false));
             }
         }
 
@@ -1005,7 +1005,9 @@ impl StyleSystem {
                 let expanded = shorthand::expand_shorthands(&input);
                 for (prop, val, imp, spec) in expanded {
                     // 内联样式没有 layer，使用 None
-                    expanded_with_layer.push((prop, val, imp, spec, None));
+                    // 内联样式没有 layer，使用 None；R4245：标记 style 属性级联上下文
+                    //（排序在 unlayered 之上；revert-layer 回退「上一上下文」= author origin）
+                    expanded_with_layer.push((prop, val, imp, spec, None, true));
                 }
             }
         }
@@ -1559,12 +1561,20 @@ impl StyleSystem {
 
         // 2. 构建 CascadedDeclaration 列表（借用 expanded_with_layer，不克隆）
         let mut declarations = ua_declarations;
-        for (position, (property, value, important, specificity, layer_index)) in expanded_with_layer.iter().enumerate()
+        for (position, (property, value, important, specificity, layer_index, style_attribute)) in
+            expanded_with_layer.iter().enumerate()
         {
             declarations.push(CascadedDeclaration {
                 property: property.as_str(),
                 value: value.as_str(),
-                order: CascadeOrder::new(Origin::Author, *layer_index, *specificity, position, *important),
+                order: CascadeOrder {
+                    origin: Origin::Author,
+                    layer_index: *layer_index,
+                    specificity: *specificity,
+                    position,
+                    important: *important,
+                    style_attribute: *style_attribute,
+                },
             });
         }
 
