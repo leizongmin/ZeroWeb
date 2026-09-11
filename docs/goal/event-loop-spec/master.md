@@ -2,8 +2,8 @@
 
 **入口文档**: [../event-loop-spec.md](../event-loop-spec.md)
 **创建日期**: 2026-09-07（goal 拆分 bootstrap）
-**最后更新**: 2026-09-11（M2 MO-S1 落地——host 侧 mutation 通知 identity 桥 + 排空点，
-kill-switch `ZW_MO_HOST_TRIGGER` 默认 OFF）
+**最后更新**: 2026-09-11（M3-S1 落地——runner timer 泵 per-task 边界，kill-switch
+`ZW_TESTHARNESS_TIMER_PER_TASK` 默认 OFF，A/B 四 corpus 逐 subtest 零 delta）
 
 ---
 
@@ -146,14 +146,27 @@ WPT 基线 → MO host 触发（方案 C 设计已存在）→ checkpoint spec �
 
 ## 下一步计划
 
-1. **M2 MO-S3（候选）**：排空侧记录批派发合并（同 target+type 连续 childList 记录 →
+1. **M3-S2：renderer `tick_observers` per-task 重构**（生产面，实施要点已勘察
+   2026-09-11）：
+   - shim 增 `__zw_observers_tick_once()`（只 schedule/dispatch 首个活跃 observer；
+     返回是否仍有余量）——现 `__zw_observers_tick()` 单 execute 批派发全部 observer
+     + rAF 回调（gap-list §1.2 第二行违反点）
+   - renderer `page_scripts.rs tick_observers`（L353）：kill-switch
+     `ZW_RENDERER_TICK_PER_TASK` 下循环 execute→apply 逐 observer（observer 回调可改
+     DOM，每轮须走 apply_recorded_mutations）；默认 OFF 维持现合并 tick
+   - 风险与验收：帧 pacing 变化（每帧多轮 execute+apply）→ 需 bench-gate +
+     product-smoke + reftest（observer-free 页面应零变化）三面 A/B；验收标尺薄的
+     风险已在——记录清楚再动
+2. **M3-S3：显式 task queue**（多队列 oldest-first，timer/network/UI 分源）——
+   timer 顺序由 host 线程完成时序决定（gap-list §1.3），生产 timer 顺序保证 +
+   `_defer` fallback 语义收口随本切片评估
+3. **M2 MO-S3（候选）**：排空侧记录批派发合并（同 target+type 连续 childList 记录 →
    浏览器语义单记录——fragment append N 记录粒度差异；当前无 driving WPT 用例，冒进
    缓行）+ 排空批「单 execute 多 record」的 execute_script 次数优化（现逐条投递）
-2. **M3**：task queue + per-task checkpoint（kill-switch → A/B → default-on）
-3. **跨流协调项（非本流可闭合，记录待碰头）**：
+4. **跨流协调项（非本流可闭合，记录待碰头）**：
    - engine apply 路径稳定 selector 唯一性（RO observe-001..020 / IO handle 族根因）
    - 几何真值簇（scroll offset / transform / zoom / clip-path 参与 IO 几何）——渲染流域
-4. **本流后续小修候选**：detached doc 初通知抑制 + takeRecords 真排队模型（同做）；
+5. **本流后续小修候选**：detached doc 初通知抑制 + takeRecords 真排队模型（同做）；
    scroll-margin 臂
 
 **待用户决策清单**：
@@ -161,6 +174,8 @@ WPT 基线 → MO host 触发（方案 C 设计已存在）→ checkpoint spec �
   套件的绝对几何期望（一次性大重校准），非轻量修复
 - requestIdleCallback 真实 idle 时序（已在 goal 范围外条款）
 - MO-S4 + escape-hatch 收敛（设计文档 §6 决策门禁：生产路径主干变更须用户点名）
+- M3 per-task（timer 泵/renderer tick）与 task queue 的 default-on 时机（A/B 零回归
+  后仍须点名——行为时序变更门禁）
 
 ### M1 切片 3c — IO/RO 语义修齐第二批 + 实验回退记账（2026-09-11）✅
 
