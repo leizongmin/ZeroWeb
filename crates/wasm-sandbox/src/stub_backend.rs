@@ -112,6 +112,11 @@ impl WasmInstance {
         None
     }
 
+    /// 查询导出表的当前元素数（占位实现，恒为 None）
+    pub fn table_size(&self, _name: &str) -> Option<u32> {
+        None
+    }
+
     /// 检查导出表是否存在（占位）
     pub fn has_table(&self, _name: &str) -> bool {
         false

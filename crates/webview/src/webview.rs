@@ -4811,6 +4811,38 @@ impl WebView {
             65536
         };
 
+        // Global/Table 导出接 JS 面（page-wasm M2 切片 2，DC-2）：Global 注入快照值
+        // 对象（i64 → BigInt；**不可变全局精确，可变全局 wasm 侧写入后不回读**——
+        // 桥异步协议无同步 getter 通道，live 值需后续协议扩展）；Table 注入 length 快照。
+        // 必须在实例移入缓存前查询。
+        let mut global_table_scripts = Vec::new();
+        for d in &descriptors {
+            match d.kind {
+                zero_wasm_sandbox::WasmExternKind::Global => {
+                    if let Some(value) = instance.get_global_export(&d.name) {
+                        let escaped_name = d.name.replace('\'', "\\'");
+                        let literal = js_result_literal(&value);
+                        global_table_scripts.push(format!(
+                            r#"'{escaped_name}': (function() {{ var v = {literal}; return {{ value: v, valueOf: function() {{ return v; }}, toString: function() {{ return String(v); }} }}; }})()"#
+                        ));
+                    }
+                }
+                zero_wasm_sandbox::WasmExternKind::Table => {
+                    if let Some(len) = instance.table_size(&d.name) {
+                        let escaped_name = d.name.replace('\'', "\\'");
+                        global_table_scripts.push(format!(r#"'{escaped_name}': {{ length: {len} }}"#));
+                    }
+                }
+                _ => {}
+            }
+        }
+        // 前置逗号拼接（紧随 export_fns 之后；为空时零注入，避免对象字面量语法错误）
+        let global_table_fns = if global_table_scripts.is_empty() {
+            String::new()
+        } else {
+            format!(",\n{}", global_table_scripts.join(",\n"))
+        };
+
         // 缓存 WASM 实例与导出描述（page-wasm M1 切片 2/3：签名驱动类型化协议 + 导出面）
         self.wasm_instances.insert(instance_id, instance);
         self.wasm_descriptors.insert(instance_id, descriptors.clone());
@@ -4892,7 +4924,7 @@ impl WebView {
                     }},
                     __wasm_export_names__: {exports_json},
                     __host_backed__: true,
-                    {export_fns}
+                    {export_fns}{global_table_fns}
                 }};
                 // 如果有内存数据，写入 buffer
                 // （注意：JS 侧通过 DataView 写入 base64 解码后的字节）

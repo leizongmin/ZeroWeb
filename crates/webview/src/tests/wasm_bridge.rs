@@ -632,3 +632,53 @@ fn test_wasm_bridge_memory_grow() {
     );
     assert!(r.contains("\"byteLengthProp\":196608"), "byteLength 属性应同步: {r}");
 }
+
+/// Global/Table 导出接 JS 面（page-wasm M2 切片 2，DC-2）：Global 值对象
+/// （i64 → BigInt）+ Table length 快照。
+#[test]
+fn test_wasm_bridge_global_table_exports() {
+    let mut wv = WebView::new(WebViewConfig::default());
+    let wasm = wat::parse_str(
+        r#"(module
+            (global (export "counter") i32 (i32.const 7))
+            (global (export "big") i64 (i64.const 4294967296))
+            (table (export "funcs") 3 funcref)
+        )"#,
+    )
+    .unwrap();
+    let js_bytes: String = wasm.iter().map(|b| b.to_string()).collect::<Vec<_>>().join(",");
+
+    let result = wv
+        .execute_script_with_dom(&format!(
+            r#"
+        var bytes = new Uint8Array([{js_bytes}]);
+        WebAssembly.instantiate(bytes);
+        true
+        "#
+        ))
+        .unwrap();
+    assert_eq!(result, "true");
+
+    let r = wv
+        .execute_script(
+            r#"
+        (function() {
+            var id = Object.keys(globalThis.__wasm_results__)[0];
+            var ex = globalThis.__wasm_results__[id].exports;
+            return JSON.stringify({
+                counter: ex.counter.value,
+                counterValueOf: ex.counter.valueOf(),
+                bigIsBigInt: typeof ex.big.value === 'bigint',
+                big: ex.big.value.toString(),
+                tableLength: ex.funcs.length
+            });
+        })()
+        "#,
+        )
+        .unwrap();
+    assert!(r.contains("\"counter\":7"), "i32 global 应为 7: {r}");
+    assert!(r.contains("\"counterValueOf\":7"), "valueOf 应透传: {r}");
+    assert!(r.contains("\"bigIsBigInt\":true"), "i64 global 应为 BigInt: {r}");
+    assert!(r.contains("\"big\":\"4294967296\""), "i64 global 应保持 >2^32 值: {r}");
+    assert!(r.contains("\"tableLength\":3"), "table length 应为 3: {r}");
+}

@@ -352,6 +352,14 @@ impl WasmInstance {
         Some(wasmtime_val_to_wasm(&val))
     }
 
+    /// 查询导出表的当前元素数（page-wasm M2 切片 2——Table 导出 JS 面）
+    pub fn table_size(&self, name: &str) -> Option<u32> {
+        let mut store = self.store.borrow_mut();
+        self.instance
+            .get_table(&mut *store, name)
+            .map(|t| t.size(&*store) as u32)
+    }
+
     /// 检查导出表是否存在
     pub fn has_table(&self, name: &str) -> bool {
         let mut store = self.store.borrow_mut();
