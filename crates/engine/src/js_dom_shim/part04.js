@@ -2910,9 +2910,13 @@ return _tplContent;
             });
             // WC-M1 切片 3（spec custom-element-reactions）：setAttributeNS 亦 CEReactions——
             // 派发 attributeChangedCallback(local, old, new, namespace)（4 参签名带 ns）。
-            // 与 host 写入同门（_r122Added && _r122IsFirst——非首实例 host 不写，回调
-            // 读回旧值反而失真；dispatch 值真变判定按 observed 过滤）。
-            if (_ceNsEntry && _r122Added && _r122IsFirst) {
+            // WC-M3 切片 8 第十小步（web-components goal）：**替换既有属性同样派发**——
+            // spec change-an-attribute 步骤与 append 同样 handle attribute changes；
+            // 旧 gate `_r122Added && _r122IsFirst` 中 `_r122Added` 对原位更新（upsert
+            // 返 false）为 false → 替换路径无回调（WPT reactions 'setAttributeNS ...
+            // when replacing an existing attribute' 簇）。gate 收窄为 `_r122IsFirst`
+            //（首实例 upsert——新增与替换同真；非首实例多 ns 共存形态读回失真仍跳过）。
+            if (_ceNsEntry && _r122IsFirst) {
               _ce_dispatchAttrChange(_ceNsEntry, proxy, local, _ceNsOld,
                 String(value == null ? '' : value), ns);
             }
@@ -8135,9 +8139,27 @@ return _tplContent;
           else __zw_set_attr(sel, ariaAttr, String(value));
           moAttr = ariaAttr;
         } else if (p === 'value') {
-          // P1a select：编程设 `<select>.value = value` → 记 SelectOption mutation（apply 时
-          // mark 匹配 option selected + deselect 兄弟）。匹配浏览器：编程设值不自动派 change。
-          if (!handle && sel && typeof __zw_select_option === 'function' && _isTag(sel, 'SELECT')) {
+          // WC-M3 切片 8 第十小步（web-components goal，spec HTML 各元素的 reflected
+          // `value` IDL）：BUTTON/LI/METER/PROGRESS/PARAM/OPTION 的 value IDL 是**纯
+          // 内容属性反射**（无 INPUT 的 dirty-flag 语义）——写 value 属性 + moAttr 汇流
+          //（CEReactions attributeChanged + R45 MO record）。WPT reactions
+          // 'value on HTMLButtonElement/LI/Meter/Progress/Param ...' 簇。
+          var _rvTag = _realTag(sel, handle);
+          if (_rvTag === 'BUTTON' || _rvTag === 'LI' || _rvTag === 'METER'
+              || _rvTag === 'PROGRESS' || _rvTag === 'PARAM' || _rvTag === 'OPTION') {
+            // CE 反应内联派发（'value' 不入全局映射——INPUT 的 dirty-flag 语义不受影响）：
+            // 写前捕旧值，写后 dispatch（observed 过滤/值真变判定在 dispatch 内）。
+            var _rvEntry = _ce_registry_gen ? _ceEntryFor(key, sel, handle) : null;
+            var _rvOld = _rvEntry ? _ce_attrValue(sel, handle, 'value') : null;
+            var _rvVal = (value === null || value === undefined) ? '' : String(value);
+            if (handle) { __zw_set_attr_handle(handle, 'value', _rvVal); moAttr = 'value'; }
+            else { __zw_set_attr(sel, 'value', _rvVal); moAttr = 'value'; }
+            if (_rvEntry) {
+              _ce_dispatchAttrChange(_rvEntry, _makeProxy(sel, handle), 'value', _rvOld, _rvVal, null);
+            }
+          } else if (!handle && sel && typeof __zw_select_option === 'function' && _isTag(sel, 'SELECT')) {
+            // P1a select：编程设 `<select>.value = value` → 记 SelectOption mutation（apply 时
+            // mark 匹配 option selected + deselect 兄弟）。匹配浏览器：编程设值不自动派 change。
             __zw_select_option(sel, String(value));
             // SelectOption 改的是子 option 的 selected 属性，非 select 元素自身的属性 mutation；
             // 不发 select 的 attributes MO 通知（语义正确）。

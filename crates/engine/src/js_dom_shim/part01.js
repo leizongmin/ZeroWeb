@@ -556,8 +556,11 @@
   // spec reflected string 缺省空串）。1:1 小写名用 `_REFLECTED_STRING_FLAT`；camelCase→attr 映射用 `_REFLECTED_STRING_MAP`。
   // 数值型（size/maxLength/colSpan/rowSpan）+ 布尔型（required/readonly/multiple）spec 返 number/boolean，
   // 另列 follow-up（本切片仅 string）。
-  var _REFLECTED_STRING_FLAT = ' type name placeholder alt min max step pattern action method enctype target rel download headers srcset sizes loading accept inputmode src usemap sandbox ';
-  var _REFLECTED_STRING_MAP = { crossOrigin: 'crossorigin', formAction: 'formaction', formMethod: 'formmethod', formEnctype: 'formenctype', formTarget: 'formtarget', htmlFor: 'for' };
+  var _REFLECTED_STRING_FLAT = ' type name placeholder alt min max step pattern action method enctype target rel download headers srcset sizes loading accept inputmode src usemap sandbox cite coords shape ping media ';
+  // WC-M3 切片 8 第十小步（web-components goal）：reflected camelCase→attr 名补遗——
+  // referrerPolicy（img/iframe，spec referrerpolicy 内容属性）+ dateTime（ins/del/time，
+  // spec datetime 内容属性）。reactions 反射面 + get→attr round-trip 同源。
+  var _REFLECTED_STRING_MAP = { crossOrigin: 'crossorigin', formAction: 'formaction', formMethod: 'formmethod', formEnctype: 'formenctype', formTarget: 'formtarget', htmlFor: 'for', referrerPolicy: 'referrerpolicy', dateTime: 'datetime' };
   function _reflectedStringAttr(prop) {
     if (typeof prop !== 'string') return null;
     if (Object.prototype.hasOwnProperty.call(_REFLECTED_STRING_MAP, prop)) return _REFLECTED_STRING_MAP[prop];

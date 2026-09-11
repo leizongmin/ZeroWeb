@@ -3862,6 +3862,10 @@
     if (p === 'slot' || p === 'title' || p === 'lang' || p === 'dir' || p === 'hidden'
       || p === 'role' || p === 'popover' || p === 'autofocus' || p === 'inert'
       || p === 'autocomplete' || p === 'draggable' || p === 'spellcheck' || p === 'translate') return p;
+    // WC-M3 切片 8 第十小步（web-components goal）：boolean 反射显式分支四属性（disabled/
+    // checked/selected/hidden——set trap 走更早的显式分支含 default 态保护，不入
+    // _REFLECTED_BOOL，但 CE 反应映射同样要覆盖——WPT reactions 'disabled on ...' 簇）。
+    if (p === 'disabled' || p === 'checked' || p === 'selected') return p;
     // AriaMixin IDL（ariaLabel → aria-label / ariaValueNow → aria-value-now）。
     if (/^aria[A-Z]/.test(p)) {
       var out = 'aria-' + p.slice(4).toLowerCase();

@@ -158,10 +158,13 @@
             _lpMs.ended = false;
           }
           if (value) {
-            if (handle) __zw_set_attr_handle(handle, 'loop', '');
+            // WC-M3 切片 8 第十小步（web-components goal）：handle 路径同样汇流 moAttr
+            //（CE 反应 + R45 MO attribute 记录——旧仅 sel 路径汇流，createElement 产物
+            // 的 IDL 布尔反射无 attributeChanged/无 record）。preload/crossorigin 同款先例。
+            if (handle) { __zw_set_attr_handle(handle, 'loop', ''); moAttr = 'loop'; }
             else { __zw_set_attr(sel, 'loop', ''); moAttr = 'loop'; }
           } else if (handle && typeof __zw_remove_attr_handle === 'function') {
-            __zw_remove_attr_handle(handle, 'loop');
+            __zw_remove_attr_handle(handle, 'loop'); moAttr = 'loop';
           } else if (!handle && typeof __zw_remove_attr === 'function') {
             __zw_remove_attr(sel, 'loop'); moAttr = 'loop';
           }
@@ -287,12 +290,13 @@
           // `track.default = x`——boolean 反射（truthy → presence；falsy → 移除）。移除同步
           // R122 实例层（同 crossOrigin——防 hasAttribute/getAttribute 读 stale 实例记录）。
           if (value) {
-            if (handle) __zw_set_attr_handle(handle, 'default', '');
+            // WC-M3 切片 8 第十小步：handle 路径汇流 moAttr（CE 反应 + R45 record）。
+            if (handle) { __zw_set_attr_handle(handle, 'default', ''); moAttr = 'default'; }
             else { __zw_set_attr(sel, 'default', ''); moAttr = 'default'; }
           } else {
             try { _zwAttrInstRemoveNS(key, null, 'default'); } catch (_eDfRm) {}
             if (handle && typeof __zw_remove_attr_handle === 'function') {
-              __zw_remove_attr_handle(handle, 'default');
+              __zw_remove_attr_handle(handle, 'default'); moAttr = 'default';
             } else if (!handle && typeof __zw_remove_attr === 'function') {
               __zw_remove_attr(sel, 'default'); moAttr = 'default';
             }
@@ -306,14 +310,15 @@
           if (value === null || value === undefined) {
             try { _zwAttrInstRemoveNS(_mKey, null, 'src'); } catch (_eMSRm) {}
             if (handle && typeof __zw_remove_attr_handle === 'function') {
-              __zw_remove_attr_handle(handle, 'src');
+              __zw_remove_attr_handle(handle, 'src'); moAttr = 'src'; // WC-M3 切片 8 第十小步
             } else if (!handle && typeof __zw_remove_attr === 'function') {
               __zw_remove_attr(sel, 'src'); moAttr = 'src';
             }
             delete _resourceStates[_mKey]; // spec：src 移除 → 资源选择重置（headless 清状态可重载）
           } else {
             var _mSrc = String(value);
-            if (handle) __zw_set_attr_handle(handle, 'src', _mSrc);
+            // WC-M3 切片 8 第十小步：handle 路径汇流 moAttr（CE 反应 + R45 record）。
+            if (handle) { __zw_set_attr_handle(handle, 'src', _mSrc); moAttr = 'src'; }
             else { __zw_set_attr(sel, 'src', _mSrc); moAttr = 'src'; }
             var _mAbs = _mSrc;
             try {
@@ -338,7 +343,8 @@
           // M3 扩批 XII：headless 加载模拟——data:text/vtt 解析填 cue + load 事件
           //（TextTrackCue parsed-cue 子测断言面）。M3 扩批 XIII：srcChange 标记
           //（重调度清 cue——src-clear-cues 断言面）。
-          if (handle) __zw_set_attr_handle(handle, 'src', String(value));
+          // WC-M3 切片 8 第十小步：handle 路径汇流 moAttr（CE 反应 + R45 record）。
+          if (handle) { __zw_set_attr_handle(handle, 'src', String(value)); moAttr = 'src'; }
           else { __zw_set_attr(sel, 'src', String(value)); moAttr = 'src'; }
           if (typeof _zwTrackScheduleLoad === 'function') {
             try { _zwTrackScheduleLoad(sel, handle, { srcChange: true }); } catch (_eTsl) {}
