@@ -6481,6 +6481,14 @@ return _tplContent;
                   if (_iahHAdded[_iahHk]) _iahHParent.insertBefore(_iahHAdded[_iahHk], _iahHRef);
                 }
               }
+              // WC-M3 切片 8 第十二小步（web-components goal）：逐个 appendChild/insertBefore
+              // 落位走 R81 轻量子入 registry 分支（无 CE 构造）——解析产物补 CE 构造/连接
+              //（WPT reactions 'insertAdjacentHTML on Element' handle 容器簇 got [] 根因）。
+              if (typeof globalThis.__zwCeAttachForAdded === 'function') {
+                try {
+                  globalThis.__zwCeAttachForAdded(_iahHAdded, _ceParentConnected(null, handle));
+                } catch (_eCeIah2) {}
+              }
               return undefined;
             }
             return undefined;
