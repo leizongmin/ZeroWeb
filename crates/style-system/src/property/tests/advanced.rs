@@ -1032,11 +1032,15 @@ fn test_apply_letter_spacing_rejects_invalid_consumer_grammar() {
     assert!(apply_property_value(&mut style, "letter-spacing", "3px"));
     let previous = style.letter_spacing.clone();
 
-    for value in ["10%", "auto", "thin", "infpx", "NaNpx"] {
+    for value in ["auto", "thin", "infpx", "NaNpx"] {
         assert!(!apply_property_value(&mut style, "letter-spacing", value));
         assert_eq!(style.letter_spacing, previous, "{} should not overwrite", value);
         assert!(!style.letter_spacing_normal);
     }
+    // R4228（css-text-4 #letter-spacing）：`normal | <length-percentage>`——百分比合法
+    //（相对 used font-size，消费方 resolve 期按 font-size 解析），10% 不再拒绝。
+    assert!(apply_property_value(&mut style, "letter-spacing", "10%"));
+    assert_eq!(style.letter_spacing, LengthValue::Percentage(10.0));
 }
 
 #[test]

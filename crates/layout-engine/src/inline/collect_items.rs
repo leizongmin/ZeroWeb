@@ -883,6 +883,8 @@ impl InlineFormattingContext {
     fn resolve_letter_spacing(value: &LengthValue, font_size: f32) -> f32 {
         match value {
             LengthValue::Px(v) => *v as f32,
+            // R4228（css-text-4 #letter-spacing）：百分比相对 used font-size。
+            LengthValue::Percentage(p) => font_size * (*p as f32 / 100.0),
             other => zero_style_system::computed::resolve_length(other, font_size as f64, None, None) as f32,
         }
     }

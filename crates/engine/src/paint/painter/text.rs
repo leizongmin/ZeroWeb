@@ -644,6 +644,8 @@ impl super::Painter {
 
         let letter_spacing: f32 = match style.letter_spacing {
             LengthValue::Px(s) => s as f32,
+            // R4228（css-text-4 #letter-spacing）：百分比相对 used font-size。
+            LengthValue::Percentage(p) => font_size * (p as f32 / 100.0),
             ref lv => zero_style_system::computed::resolve_length(lv, font_size as f64, None, None) as f32,
         };
         let word_spacing: f32 = match style.word_spacing {

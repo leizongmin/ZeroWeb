@@ -1344,6 +1344,9 @@ pub(crate) fn letter_spacing_length_is_valid(raw: &str, value: &LengthValue) -> 
         | LengthValue::Ic(v)
         | LengthValue::Ric(v)
         | LengthValue::Lh(v) => v.is_finite(),
+        // R4228（css-text-4 #letter-spacing）：`normal | <length-percentage>`——百分比
+        // 相对 used font-size（消费方 resolve 期按 font-size 解析），合法值接受。
+        LengthValue::Percentage(v) => v.is_finite(),
         LengthValue::Calc(_) => true,
         _ => false,
     }

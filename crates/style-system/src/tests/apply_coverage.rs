@@ -401,6 +401,15 @@ fn test_apply_text_transform_full_width_and_kana() {
     assert!(matches!(s.text_transform, TextTransformValue::Uppercase));
 }
 
+/// R4228（css-text-4 #letter-spacing）：`normal | <length-percentage>`——百分比合法
+///（相对 used font-size，消费方按 font-size 解析），c542-letter-sp-001 `.ten{200%}`。
+#[test]
+fn r4228_letter_spacing_percentage_accepted() {
+    let (ok, style) = apply("letter-spacing", "200%");
+    assert!(ok, "letter-spacing percentage must be accepted per css-text-4");
+    assert_eq!(style.letter_spacing, crate::LengthValue::Percentage(200.0));
+}
+
 #[test]
 fn test_apply_text_align_last() {
     let (ok, _) = apply("text-align-last", "justify");

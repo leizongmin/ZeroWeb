@@ -382,7 +382,9 @@ pub(super) fn configure_paint_ifc_advance<S: BuildHasher>(
             let owner = styles?.get(&parent_id)?;
             const GENERIC_FAMILIES: [&str; 6] = ["sans-serif", "serif", "monospace", "cursive", "fantasy", "system-ui"];
             let no_spacing = matches!(owner.letter_spacing, LengthValue::Px(v) if v == 0.0)
-                && matches!(owner.word_spacing, LengthValue::Px(v) if v == 0.0);
+                && matches!(owner.word_spacing, LengthValue::Px(v) if v == 0.0)
+                && !matches!(owner.letter_spacing, LengthValue::Percentage(p) if p != 0.0)
+                && !matches!(owner.word_spacing, LengthValue::Percentage(p) if p != 0.0);
             let declared_generic = owner.font_family.iter().any(|family| {
                 GENERIC_FAMILIES
                     .iter()
@@ -632,8 +634,10 @@ pub(super) fn style_open_type_features(style: &zero_style_system::ComputedStyle)
 
     // https://drafts.csswg.org/css-fonts-4/#feature-precedence
     // Only non-zero letter-spacing suppresses ligatures; explicit `0em` does not.
+    // R4228：percentage 0% 同 0px（非零百分比按非零间距处理）。
     let has_nonzero_spacing = match style.letter_spacing {
         zero_style_system::LengthValue::Px(v) => v.abs() > f64::EPSILON,
+        zero_style_system::LengthValue::Percentage(p) => p != 0.0,
         _ => !style.letter_spacing_normal,
     };
     if has_nonzero_spacing {

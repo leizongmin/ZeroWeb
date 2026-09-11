@@ -634,7 +634,8 @@ fn test_property_supported_css_text_length_properties() {
     assert!(!is_property_supported("line-height", "-1"));
     assert!(!is_property_supported("line-height", "-2px"));
     assert!(!is_property_supported("line-height", "thin"));
-    assert!(!is_property_supported("letter-spacing", "10%"));
+    // R4228（css-text-4 #letter-spacing）：`normal | <length-percentage>`——百分比合法。
+    assert!(is_property_supported("letter-spacing", "10%"));
     assert!(!is_property_supported("letter-spacing", "thin"));
     assert!(!is_property_supported("word-spacing", "auto"));
     assert!(!is_property_supported("word-spacing", "thin"));
