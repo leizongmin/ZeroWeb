@@ -61,9 +61,12 @@ Timeout × 4），证据：[evidence/2026-09-12-m1-wasm-jsapi-baseline.md](evide
 
 ## 下一步计划
 
-1. **M2 切片 3**：importObject 链接语义 + LinkError 分类（`instantiate_with_linker` 已有
-   底座，桥接协议补 importObject 函数表传递 + 缺失/签名不匹配错误面）——DC-3
-2. **M3**：host function（JS 函数作 wasm import）、validate 真实校验接线、
+1. **M2 切片 3（已按架构约束收窄）**：错误分类面——polyfill 补 spec 错误类构造器
+   （`WebAssembly.CompileError/LinkError/RuntimeError`），host 桥接把编译/链接/陷阱错误
+   分类注入（import 缺失/签名不匹配 → LinkError）；`WasmError::LinkError` 分类已区分。
+   **JS 函数真作 import（wasm 调用回调 JS）不在此切片**——wasm 执行中同步回调 JS 需
+   宿主重入设计（`instance.call` 内再进 JS sandbox），归 M3 host function 一并设计
+2. **M3**：host function（JS 函数作 wasm import——重入桥设计）、validate 真实校验接线、
    `compileStreaming`/`instantiateStreaming` 真实 Response body 路径（DC-3 剩余）
 3. **跨流协调**：V8 消息循环泵归 event-loop-spec 流（或用户授权跨域），落地后
    `make testharness-wasm` 复跑验证 4 案翻绿（99.4% → 100%）
