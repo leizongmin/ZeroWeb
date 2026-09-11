@@ -1301,7 +1301,11 @@ pub(crate) fn adjust_float_positions_with_context(
                 // 前置内容约束 float 顶边）。否则 lifted float 后的 inline 内容会把
                 // 后续 float 再度推下。
                 if !lift_inline {
-                    flow_bottom = flow_bottom.max(child.y - content_y_offset + child.height);
+                    flow_bottom = flow_bottom.max(if clamp_content_rel {
+                        child.y + child.height
+                    } else {
+                        child.y - content_y_offset + child.height
+                    });
                 }
                 continue;
             }
@@ -1338,7 +1342,12 @@ pub(crate) fn adjust_float_positions_with_context(
                         // 最终位置 = max(clear_bottom, flow_bottom + child.margin_top)
                         // 当元素自身 margin-top 足够大时，即使不折叠也已在浮动之下
                         let uncollapsed_pos = flow_bottom + child.margin_top;
-                        child.y = content_y_offset + clear_bottom.max(uncollapsed_pos);
+                        // R4235：content-rel 模式（同 line_y/钳制分支）——写点去 offset。
+                        child.y = if clamp_content_rel {
+                            clear_bottom.max(uncollapsed_pos)
+                        } else {
+                            content_y_offset + clear_bottom.max(uncollapsed_pos)
+                        };
                         // R3808：正 clearance 吸收了该子的 margin-top（位置 = clear_bottom，
                         // margin 不再下推自身），但 taffy 已把该 mt 折叠进容器（§8.3.1
                         // parent-child collapse——首个流内块子的 mt 上浮），容器被多推下
@@ -1381,7 +1390,11 @@ pub(crate) fn adjust_float_positions_with_context(
                         // 因此元素位置 = hypothetical_y（使用折叠边距计算的假设位置）。
                         // 零 clearance 仍阻止 margin 折叠（CSSWG resolution），
                         // 但视觉位置与假设位置相同。
-                        child.y = content_y_offset + hypothetical_y;
+                        child.y = if clamp_content_rel {
+                            hypothetical_y
+                        } else {
+                            content_y_offset + hypothetical_y
+                        };
                         // R3808：零 clearance 同样使该子 margin 不与容器折叠链合并
                         //（collapse 被 clearance 打断）——taffy 已折叠进容器的 mt 按同一
                         // 泄漏签名撤销（与正 clearance 臂同构）。
@@ -1418,12 +1431,20 @@ pub(crate) fn adjust_float_positions_with_context(
                             && nested_for_side > 0.0
                             && (clear_bottom - nested_for_side).abs() < 0.5;
                         if adjoining {
-                            child.y = content_y_offset + clear_bottom;
+                            child.y = if clamp_content_rel {
+                                clear_bottom
+                            } else {
+                                content_y_offset + clear_bottom
+                            };
                             clearance_applied = true;
                             ran_adjoining_clearance = true;
                         } else {
                             // 普通情形：margin 正常折叠，clear 留在 hypothetical。
-                            child.y = content_y_offset + hypothetical_y;
+                            child.y = if clamp_content_rel {
+                                hypothetical_y
+                            } else {
+                                content_y_offset + hypothetical_y
+                            };
                         }
                     }
                     float_y_offset = (original_taffy_y - child.y).max(0.0);
@@ -1446,7 +1467,11 @@ pub(crate) fn adjust_float_positions_with_context(
                         let collapsed_margin =
                             crate::margin_collapse::collapse_two_margins(last_flow_mb, child.margin_top);
                         let correct_y = flow_bottom + collapsed_margin;
-                        child.y = content_y_offset + correct_y;
+                        child.y = if clamp_content_rel {
+                            correct_y
+                        } else {
+                            content_y_offset + correct_y
+                        };
                         // 更新 float_y_offset 以反映 taffy Y 与正确 Y 的差异
                         float_y_offset = (original_taffy_y - child.y).max(0.0);
                     }
@@ -1468,7 +1493,12 @@ pub(crate) fn adjust_float_positions_with_context(
                 last_flow_mb = crate::margin_collapse::collapse_two_margins(last_flow_mb, collapsed_self_margin);
             } else {
                 // 更新流内容追踪（使用 content-relative 坐标）
-                flow_bottom = child.y - content_y_offset + child.height;
+                // R4235：content-rel 模式下 child.y 已是内容盒相对，不再减 offset。
+                flow_bottom = if clamp_content_rel {
+                    child.y + child.height
+                } else {
+                    child.y - content_y_offset + child.height
+                };
                 last_flow_mb = child.margin_bottom;
             }
 
@@ -1933,7 +1963,13 @@ pub(crate) fn adjust_float_positions_with_context(
                     //（后者不含 border/padding）。否则带 border-top/padding-top 的容器
                     //（margin-collapse-clear-015 border-top:1px）content_height 会多算一段
                     // content_y_offset，容器偏高 → 后续 in-flow 兄弟整体下移（015 残余 1px）。
-                    let content_height = (content_bottom - content_y_offset).max(0.0);
+                    // R4235：content-rel 模式下 content_bottom 已是内容盒相对（float 写点
+                    // 与提取层同约定），不再减 offset（R1324 的减法按旧 border-rel 写点校准）。
+                    let content_height = if clamp_content_rel {
+                        content_bottom.max(0.0)
+                    } else {
+                        (content_bottom - content_y_offset).max(0.0)
+                    };
                     // 如果内容区域实际高度小于 taffy 计算的高度，收缩容器
                     if content_height < box_node.content_height {
                         box_node.content_height = content_height;
@@ -2083,7 +2119,13 @@ fn recompute_bfc_auto_height(box_node: &mut LayoutBox, content_y_offset: f32) {
             }
         })
         .fold(0.0f32, f32::max);
-    let content_height = (content_bottom - content_y_offset).max(0.0);
+    // R4235：content-rel 模式（同 walk 内各臂）——children y 已是内容盒相对，减
+    // offset 会按 border/padding 少算容器高（R1324 的减法按旧 border-rel 写点校准）。
+    let content_height = if *FLOAT_CLAMP_CONTENT_REL {
+        content_bottom.max(0.0)
+    } else {
+        (content_bottom - content_y_offset).max(0.0)
+    };
     box_node.content_height = content_height;
     box_node.height =
         content_height + box_node.padding_top + box_node.padding_bottom + box_node.border_top + box_node.border_bottom;
