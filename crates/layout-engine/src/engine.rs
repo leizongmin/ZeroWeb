@@ -1841,6 +1841,11 @@ impl LayoutEngine {
         // auto 会触发 R1015 shrink-to-fit 臂/收缩 pass 把 200 宽 stretch float 缩回内容宽
         //（stretch-float：empty float 塌 0 红底外露）。非 float 的 stretch 维持 R4086 行为
         //（BFC/float-avoidance 收缩依赖本标记）。
+        let declared_width_stretch = matches!(parent_writing_mode, WritingModeValue::HorizontalTb)
+            && computed.is_some_and(|c| {
+                matches!(c.width, zero_css_parser::values::LengthValue::Stretch)
+                    && !matches!(float, FloatValue::Left | FloatValue::Right)
+            });
         let declared_width_auto = matches!(parent_writing_mode, WritingModeValue::HorizontalTb)
             && computed.is_some_and(|c| {
                 let auto_or_stretch = matches!(
@@ -1950,6 +1955,7 @@ impl LayoutEngine {
             declared_margin_top,
             declared_margin_bottom,
             declared_width_auto,
+            declared_width_stretch,
             declared_width_px,
             declared_height_auto,
             has_size_containment,

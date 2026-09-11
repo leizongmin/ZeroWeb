@@ -89,6 +89,10 @@ pub struct LayoutBox {
     /// 但 CSS §10.3.5 规定浮动非替换元素 width:auto 应 shrink-to-fit 到内容。
     /// 此标记让 float 后处理识别 width:auto 的 float 并收缩到内容宽度。
     pub declared_width_auto: bool,
+    /// R4240（css-sizing-4 §6.1 + csswg #4028）：声明 width:stretch（非 float）——
+    /// stretch 尺寸 respect float 避让：float walk 据此把 box 放 float 右缘、宽取剩余
+    /// 可用（replaced-next-to-float-1：canvas width:stretch 应 100 宽避让而非 200 压 float）。
+    pub declared_width_stretch: bool,
     /// 计算样式声明的 definite width，折算为 border-box px。
     ///
     /// `None` 表示 width 为 auto、百分比或 intrinsic sizing。float/BFC 后处理用它区分
@@ -514,6 +518,7 @@ impl Default for LayoutBox {
             declared_margin_top: 0.0,
             declared_margin_bottom: 0.0,
             declared_width_auto: false,
+            declared_width_stretch: false,
             declared_width_px: None,
             declared_height_auto: false,
             margin_left_auto: false,

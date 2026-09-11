@@ -1502,6 +1502,49 @@ pub(crate) fn adjust_float_positions_with_context(
                 last_flow_mb = child.margin_bottom;
             }
 
+            // R4240（css-sizing-4 §6.1 + csswg #4028）：块级 replaced 的 width:stretch —
+            // stretch size respects float avoidance：与垂直重叠 float 并置时，box 放
+            // float 右缘、宽取剩余可用宽（replaced-next-to-float-1：canvas
+            // width:stretch 应 100 宽避让，旧实现 200 宽压 float 且 h 按固有比翻倍）。
+            // 不重叠（自然位已满宽）与非 replaced stretch（flow-root 窄化语义）不入本臂。
+            if clamp_content_rel
+                && child.declared_width_stretch
+                && child.is_replaced
+                && !child.is_absolute
+                && !child.is_fixed
+            {
+                let child_top = child.y;
+                let child_bottom = child.y + child.height;
+                let mut x_lo = if child.margin_left_auto { 0.0 } else { child.margin_left };
+                let mut overlapped = false;
+                for g in &float_geometries {
+                    let (fd, fx, fy, fw, fh, fmr) = g;
+                    let fbottom = *fy + *fh;
+                    if child_top < fbottom && child_bottom > *fy {
+                        if matches!(fd, FloatValue::Left) {
+                            x_lo = x_lo.max(*fx + *fw + *fmr);
+                        }
+                        overlapped = true;
+                    }
+                }
+                if overlapped {
+                    let avail = (container_width - x_lo).max(0.0);
+                    if (child.x - x_lo).abs() > 0.5 || (child.width - avail).abs() > 0.5 {
+                        let old_w = child.width;
+                        child.x = x_lo;
+                        child.width = avail;
+                        // R4240：auto 高 replaced 的高由固有比随宽解析（taffy 期按旧宽
+                        // 200 算出 h=200）——宽缩后高按同比例重算（1:1 attr canvas
+                        // 200/200 → 100/100）。
+                        if child.declared_height_auto && old_w > 0.5 {
+                            child.height *= avail / old_w;
+                        }
+                        shrink_bfc_content_width(child);
+                    }
+                }
+                continue;
+            }
+
             // BFC 浮动排斥（CSS 2.1 §9.5）：
             // 建立 BFC 的块级元素不得与同容器的浮动元素重叠。
             // 当 BFC 元素的垂直范围与浮动元素重叠时，水平偏移以避开浮动。
