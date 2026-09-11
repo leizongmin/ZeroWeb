@@ -1905,6 +1905,8 @@ pub fn collect_matching_declarations_with_media(
 ) -> Vec<MatchingDecl> {
     let mut results = Vec::new();
     let mut layer_counter: usize = 0;
+    // R4246：层名 → 层索引注册表（首次出现序，跨样式表共享）
+    let mut layer_map: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
 
     for (si, stylesheet) in stylesheets.iter().enumerate() {
         collect_from_rules(
@@ -1917,6 +1919,7 @@ pub fn collect_matching_declarations_with_media(
             container_ctx,
             None,
             &mut layer_counter,
+            &mut layer_map,
             None,
         );
     }
@@ -1940,6 +1943,8 @@ pub fn collect_pseudo_declarations_with_media(
 ) -> Vec<MatchingDecl> {
     let mut results = Vec::new();
     let mut layer_counter: usize = 0;
+    // R4246：层名 → 层索引注册表（首次出现序，跨样式表共享）
+    let mut layer_map: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
 
     for (si, stylesheet) in stylesheets.iter().enumerate() {
         collect_from_rules(
@@ -1952,6 +1957,7 @@ pub fn collect_pseudo_declarations_with_media(
             container_ctx,
             None,
             &mut layer_counter,
+            &mut layer_map,
             Some(pseudo_name),
         );
     }
@@ -2102,6 +2108,21 @@ fn collect_style_rule_decls(
     true
 }
 
+/// R4246：注册层名到层索引（首次出现序；已注册名返回既有索引）。
+fn register_layer_name(
+    layer_map: &mut std::collections::HashMap<String, usize>,
+    layer_counter: &mut usize,
+    name: &str,
+) -> usize {
+    if let Some(&idx) = layer_map.get(name) {
+        return idx;
+    }
+    let idx = *layer_counter;
+    *layer_counter += 1;
+    layer_map.insert(name.to_string(), idx);
+    idx
+}
+
 /// 递归从规则中收集匹配的声明。
 ///
 /// `current_layer` 为 `None` 表示未分层的声明，`Some(idx)` 表示当前级联层索引。
@@ -2117,6 +2138,7 @@ fn collect_from_rules(
     container_ctx: Option<&ContainerContext>,
     current_layer: Option<usize>,
     layer_counter: &mut usize,
+    layer_map: &mut std::collections::HashMap<String, usize>,
     pseudo: Option<&str>,
 ) {
     // R4024（CSS2 §6.4.1 源码顺序 + CSS Cascading 5 §6.4）：单趟源码序遍历。旧实现
@@ -2201,6 +2223,7 @@ fn collect_from_rules(
                                         container_ctx,
                                         current_layer,
                                         layer_counter,
+                                        layer_map,
                                         pseudo,
                                     );
                                 }
@@ -2219,21 +2242,44 @@ fn collect_from_rules(
                         // @keyframes 规则不参与样式匹配，跳过
                     }
                     zero_css_parser::ast::Rule::Layer(layer_rule) => {
-                        // @layer 规则：分配层索引并递归
-                        let layer_idx = *layer_counter;
-                        *layer_counter += 1;
-                        collect_from_rules(
-                            doc,
-                            element,
-                            &layer_rule.rules,
-                            None, // @layer 内层规则未进索引，全量匹配
-                            results,
-                            media_ctx,
-                            container_ctx,
-                            Some(layer_idx),
-                            layer_counter,
-                            pseudo,
-                        );
+                        // R4246（CSS Cascade 5 §6.4）：层序 = 层名首次出现序。语句
+                        //（`@layer foo, bar;`，parser 输出 name="foo,bar"、rules=[]）与命名空块
+                        // 只注册名序不递归；命名块按注册索引，匿名块按计数器。旧实现按块
+                        // 出现序分配且无视语句 → layer-media-toggle 的 foo,bar 序被无视，
+                        // foo(red) 反胜 bar(green)。
+                        if layer_rule.rules.is_empty() {
+                            if layer_rule.name.is_empty() {
+                                *layer_counter += 1; // 匿名空层也占层序位
+                            } else {
+                                for name in layer_rule.name.split(',') {
+                                    let name = name.trim();
+                                    if !name.is_empty() {
+                                        register_layer_name(layer_map, layer_counter, name);
+                                    }
+                                }
+                            }
+                        } else {
+                            let layer_idx = if layer_rule.name.is_empty() {
+                                let idx = *layer_counter;
+                                *layer_counter += 1;
+                                idx
+                            } else {
+                                register_layer_name(layer_map, layer_counter, layer_rule.name.trim())
+                            };
+                            collect_from_rules(
+                                doc,
+                                element,
+                                &layer_rule.rules,
+                                None, // @layer 内层规则未进索引，全量匹配
+                                results,
+                                media_ctx,
+                                container_ctx,
+                                Some(layer_idx),
+                                layer_counter,
+                                layer_map,
+                                pseudo,
+                            );
+                        }
                     }
                     zero_css_parser::ast::Rule::Import(_) => {
                         // @import 规则不参与样式匹配，跳过（实际导入由引擎处理）
@@ -2251,6 +2297,7 @@ fn collect_from_rules(
                                 container_ctx,
                                 current_layer,
                                 layer_counter,
+                                layer_map,
                                 pseudo,
                             );
                         }
@@ -2268,6 +2315,7 @@ fn collect_from_rules(
                                 container_ctx,
                                 current_layer,
                                 layer_counter,
+                                layer_map,
                                 pseudo,
                             );
                         }
@@ -2315,6 +2363,7 @@ fn collect_from_rules(
                         container_ctx,
                         current_layer,
                         layer_counter,
+                        layer_map,
                         pseudo,
                     );
                 }
@@ -2335,6 +2384,7 @@ fn self_at_rule_dispatch(
     container_ctx: Option<&ContainerContext>,
     current_layer: Option<usize>,
     layer_counter: &mut usize,
+    layer_map: &mut std::collections::HashMap<String, usize>,
     pseudo: Option<&str>,
 ) {
     match rule {
@@ -2358,6 +2408,7 @@ fn self_at_rule_dispatch(
                             container_ctx,
                             current_layer,
                             layer_counter,
+                            layer_map,
                             pseudo,
                         );
                     }
@@ -2365,20 +2416,40 @@ fn self_at_rule_dispatch(
             }
         }
         zero_css_parser::ast::Rule::Layer(layer_rule) => {
-            let layer_idx = *layer_counter;
-            *layer_counter += 1;
-            collect_from_rules(
-                doc,
-                element,
-                &layer_rule.rules,
-                None,
-                results,
-                media_ctx,
-                container_ctx,
-                Some(layer_idx),
-                layer_counter,
-                pseudo,
-            );
+            // R4246：同上——语句/空块注册名序，命名块查注册表，匿名块走计数器。
+            if layer_rule.rules.is_empty() {
+                if layer_rule.name.is_empty() {
+                    *layer_counter += 1;
+                } else {
+                    for name in layer_rule.name.split(',') {
+                        let name = name.trim();
+                        if !name.is_empty() {
+                            register_layer_name(layer_map, layer_counter, name);
+                        }
+                    }
+                }
+            } else {
+                let layer_idx = if layer_rule.name.is_empty() {
+                    let idx = *layer_counter;
+                    *layer_counter += 1;
+                    idx
+                } else {
+                    register_layer_name(layer_map, layer_counter, layer_rule.name.trim())
+                };
+                collect_from_rules(
+                    doc,
+                    element,
+                    &layer_rule.rules,
+                    None,
+                    results,
+                    media_ctx,
+                    container_ctx,
+                    Some(layer_idx),
+                    layer_counter,
+                    layer_map,
+                    pseudo,
+                );
+            }
         }
         zero_css_parser::ast::Rule::Supports(supports_rule) => {
             if evaluate_supports_condition(&supports_rule.condition) {
@@ -2392,6 +2463,7 @@ fn self_at_rule_dispatch(
                     container_ctx,
                     current_layer,
                     layer_counter,
+                    layer_map,
                     pseudo,
                 );
             }
@@ -2409,6 +2481,7 @@ fn self_at_rule_dispatch(
                 container_ctx,
                 current_layer,
                 layer_counter,
+                layer_map,
                 pseudo,
             );
         }

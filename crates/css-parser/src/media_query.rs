@@ -184,6 +184,11 @@ impl MediaContext {
 /// - `"only screen and ..."` — only 前缀（兼容旧浏览器）
 /// - `"screen, print"` — 逗号分隔 OR 查询
 pub fn parse_media_query(input: &str) -> Option<Vec<MediaQuery>> {
+    // R4246（CSS Syntax L3 §4.4）：媒体查询内 block comment 等价 whitespace——`@import "x.css"
+    // (w) and /* c */ (h), t` 的注释使 strip_and_prefix 见 `/` 而非 `(`，整条 query 解析失败
+    // 按 no-match 丢弃（driving: import-conditional-001 的 `and /* assuming screen < 1km */`）。
+    // 串感知剥离（media query 无合法字符串 token，保守仍跳过引号内容）。
+    let input = strip_block_comments(input);
     let input = input.trim();
     if input.is_empty() {
         // CSS Media Queries §3：媒体查询列表省略时隐含 `all`（`@media { ... }` ≡
@@ -229,6 +234,46 @@ fn split_media_queries(input: &str) -> Vec<&str> {
     }
     parts.push(&input[start..]);
     parts
+}
+
+/// 剥离 CSS block comment（`/* ... */`），等价 whitespace；引号内容跳过（不成对引号
+/// 按 EOF 终止注释扫描，保守不改动其后文本的注释语义）。
+fn strip_block_comments(input: &str) -> String {
+    if !input.contains("/*") {
+        return input.to_string();
+    }
+    let bytes = input.as_bytes();
+    let n = bytes.len();
+    let mut out = String::with_capacity(input.len());
+    let mut i = 0;
+    while i < n {
+        if bytes[i] == b'"' || bytes[i] == b'\'' {
+            let q = bytes[i];
+            out.push(bytes[i] as char);
+            i += 1;
+            while i < n {
+                out.push(bytes[i] as char);
+                if bytes[i] == q {
+                    i += 1;
+                    break;
+                }
+                i += 1;
+            }
+            continue;
+        }
+        if bytes[i] == b'/' && i + 1 < n && bytes[i + 1] == b'*' {
+            i += 2;
+            while i + 1 < n && !(bytes[i] == b'*' && bytes[i + 1] == b'/') {
+                i += 1;
+            }
+            i = (i + 2).min(n);
+            out.push(' '); // 注释等价一个空白
+            continue;
+        }
+        out.push(bytes[i] as char);
+        i += 1;
+    }
+    out
 }
 
 /// 解析单个媒体查询（不含逗号分隔）。
@@ -675,14 +720,32 @@ fn find_range_op_pos(s: &str) -> Option<usize> {
 fn parse_px_value(s: &str) -> Option<f64> {
     let s = s.trim();
     let lower = s.to_ascii_lowercase();
-    if ["px", "in", "pt", "pc", "cm", "mm", "q"]
+    // R4246（CSS Values 4 §6 绝对单位换算，CSS Media Queries 4 §5.1 媒体特征值）：
+    // 媒体特征值支持全部绝对长度单位——旧实现 ends_with 检查放行 `in/pt/pc/cm/mm/q`
+    // 但 match 只收 Px，非 px 单位恒 None → 整条 query 解析失败按 no-match 丢弃
+    //（import-conditional-001：`(max-width: 40000in)` 恒假致 green @import 被丢）。
+    // 换算（CSS Values 4）：1in=96px、1cm=96/2.54px、1mm=1/10cm、1q=1/40cm、
+    // 1pt=1/72in、1pc=12pt。
+    let unit = ["px", "in", "pt", "pc", "cm", "mm", "q"]
         .iter()
-        .any(|unit| lower.ends_with(unit))
-    {
-        return match crate::values::parse_length(s)? {
-            crate::values::LengthValue::Px(px) => px.is_finite().then_some(px),
-            _ => None,
+        .find(|u| lower.ends_with(*u));
+    if let Some(unit) = unit {
+        let num_part = &s[..s.len() - unit.len()];
+        let num: f64 = match num_part.parse::<f64>() {
+            Ok(v) if v.is_finite() => v,
+            _ => return None,
         };
+        let px = match *unit {
+            "px" => num,
+            "in" => num * 96.0,
+            "cm" => num * 96.0 / 2.54,
+            "mm" => num * 96.0 / 25.4,
+            "q" => num * 96.0 / 101.6,
+            "pt" => num * 96.0 / 72.0,
+            "pc" => num * 16.0,
+            _ => return None,
+        };
+        return px.is_finite().then_some(px);
     }
 
     parse_finite_css_number(s)
