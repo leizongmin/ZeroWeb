@@ -126,11 +126,16 @@ Shadow DOM 渲染级 composed tree 排除（等用户点名专项）。
 - ~~disabledFeatures=['shadow'] × attachShadow~~ ✅ 五小步全清（define 记录
   disabledFeatures + `_attachShadow` gate）；canvas 等 createElement 产物 _realTag
   pending 回落 'div' 的 safelist 误放行仍挂（未阻塞当前断言面）
-- slotchange 尾 12 案（四簇，signalSet 架构已就位——第六小步 net 0）：①嵌套 slots
-  4F——signal 级联顺序（外 slot 事件先于内 slot 自身事件，1st/2nd fire 反序）；
-  ②removed-immediately 4F——被移除 slot 的 proxy 身份二相（R52 消零重建 vs 页面持有
-  引用）；③innerHTML 尾计数 2F——async host apply 过度标记；④MO 交错 4F——filtered
-  run 改善在全文件上下文回退（文件内测试间状态污染待查）
+- slotchange 尾 12 案（四簇；第六小步 signalSet 架构（roots 队列 + MO flush 排空 +
+  bubbles: true）已落地 net 0；第七增量 per-slot 粒度重写实测回退已撤销，探针精化根因
+  如下）：①嵌套 slots 4F——mutation（outerHost.appendChild(span)）的 signal 依赖
+  outerShadow flatten 域内的 outerSlot（经 innerHost 光树可达 ✓），但 innerSlot 自身
+  的 setup 信号（innerShadow.appendChild(innerSlot)）丢失——**part04 insert 路径的
+  `__zwMaybeQueueSlotchange` 挂接仅在 CE-upgrade 分支**，普通 handle 分支（`_record-
+  HandleChild` 处）无挂接；直接补挂接实测过扩（其余簇 -10），需改为「flatten 域按树
+  隔离（outerShadow flatten 不含 innerShadow 树内变化）+ 挂接域收窄」组合修；②removed-
+  immediately 4F——被移除 slot 的 proxy 身份二相（R52 消零重建 vs 页面持有引用）；
+  ③innerHTML 尾计数 2F——async host apply 过度标记；④MO 交错 4F——依赖 ①的修复
 - builtin-coverage 的 innerHTML 解析簇（~108F）：R380 查询融合域，非 CE 域
 - reactions/ 表格族（table-scoped 解析升级）与 customized-builtins 的 iframe/reparse 面
 - XHTML 悬空 body 查询域（5 案）——pre-existing，与 template 真实化无因果
