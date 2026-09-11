@@ -553,6 +553,8 @@ pub struct ComputedStyle {
     pub background_clip: BackgroundClipComputedValue,
     /// background-origin 属性。
     pub background_origin: BackgroundOriginComputedValue,
+    /// corner-shape 属性（CSS Borders 4 §corner-shaping，R4248）。
+    pub corner_shape: CornerShapeComputedValue,
     /// border-image-source 属性。
     pub border_image_source: BorderImageSourceComputedValue,
     /// border-image-slice 属性。

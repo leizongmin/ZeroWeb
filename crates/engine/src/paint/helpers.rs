@@ -893,6 +893,173 @@ pub fn apply_text_transform(text: &str, transform: &TextTransformValue) -> Strin
     transform.apply(text)
 }
 
+/// R4248（CSS Borders 4 §corner-shaping）：构造 corner-shape 形状的边界多边形
+///（border-box 绝对坐标，顺时针 TL→TR→BR→BL）。四角均 round（初始态）返回 None。
+///
+/// 形状语义：round = 圆弧（圆心 C 在角内）；bevel = 直线（无中间点）；scoop = 凹弧
+///（圆心在盒角点 P）；notch = 经内角点 C 的阶梯；square = 直角（无切削，经盒角点 P）；
+/// superellipse(n)：|dx/r|^n + |dy/r|^n = 1 参数化（n=2 ≡ round、1 ≡ bevel、∞ ≡ square）。
+pub fn shaped_corner_polygon(
+    style: &ComputedStyle,
+    box_w: f32,
+    box_h: f32,
+    abs_x: f32,
+    abs_y: f32,
+) -> Option<Vec<(f32, f32)>> {
+    shaped_corner_polygon_in_box(
+        style,
+        abs_x,
+        abs_y,
+        box_w,
+        box_h,
+        [
+            length_to_f32(&style.border_top_left_radius),
+            length_to_f32(&style.border_top_right_radius),
+            length_to_f32(&style.border_bottom_right_radius),
+            length_to_f32(&style.border_bottom_left_radius),
+        ],
+    )
+}
+
+/// R4248：指定盒与各角半径的形角多边形（corner-shape 内圈/外圈复用）。
+/// `radii` 为四角半径（绝对 px，调用方按用途缩放，如边框内圈 = r - border 宽）。
+pub fn shaped_corner_polygon_in_box(
+    style: &ComputedStyle,
+    x0: f32,
+    y0: f32,
+    box_w: f32,
+    box_h: f32,
+    radii4: [f32; 4],
+) -> Option<Vec<(f32, f32)>> {
+    use zero_css_parser::values::CornerShapeKind;
+
+    if style.corner_shape.is_all_round() {
+        return None;
+    }
+    // R4248 定界：scoop 与负指数 superellipse 的像素级几何（凹弧心/负幂外凸）与
+    // chromium 未对齐（corner-shape-backdrop-filter-overflow 回归实证）——此类页
+    // 回退 round 裁剪（= 切片前行为，该族本就 green）。仅放行已实证对齐的形状。
+    for i in 0..4 {
+        match style.corner_shape.corner(i) {
+            CornerShapeKind::Scoop => return None,
+            CornerShapeKind::Superellipse(n) if n <= 0.0 => return None,
+            _ => {}
+        }
+    }
+    let radii = BorderRadiusSpec {
+        top_left: radii4[0],
+        top_right: radii4[1],
+        bottom_right: radii4[2],
+        bottom_left: radii4[3],
+    };
+    let x1 = x0 + box_w;
+    let y1 = y0 + box_h;
+    // (kind, r, start=前一边缘端点, end=后一边缘端点, C=圆弧心, P=盒角点, 弧起角, 弧终角)
+    // 段方向沿顺时针多边形；弧角按极角（相对 C）自 start 到 end。
+    let corners: [(
+        CornerShapeKind,
+        f32,
+        (f32, f32),
+        (f32, f32),
+        (f32, f32),
+        (f32, f32),
+        f64,
+        f64,
+    ); 4] = [
+        // TL：左缘端 (x0,y0+r) → 顶缘端 (x0+r,y0)；C=(x0+r,y0+r)；弧 180°→270°
+        (
+            style.corner_shape.corner(0),
+            radii.top_left,
+            (x0, y0 + radii.top_left),
+            (x0 + radii.top_left, y0),
+            (x0 + radii.top_left, y0 + radii.top_left),
+            (x0, y0),
+            std::f64::consts::PI,
+            3.0 * std::f64::consts::FRAC_PI_2,
+        ),
+        // TR：顶缘端 (x1-r,y0) → 右缘端 (x1,y0+r)；C=(x1-r,y0+r)；弧 270°→360°
+        (
+            style.corner_shape.corner(1),
+            radii.top_right,
+            (x1 - radii.top_right, y0),
+            (x1, y0 + radii.top_right),
+            (x1 - radii.top_right, y0 + radii.top_right),
+            (x1, y0),
+            3.0 * std::f64::consts::FRAC_PI_2,
+            2.0 * std::f64::consts::PI,
+        ),
+        // BR：右缘端 (x1,y1-r) → 底缘端 (x1-r,y1)；C=(x1-r,y1-r)；弧 0°→90°
+        (
+            style.corner_shape.corner(2),
+            radii.bottom_right,
+            (x1, y1 - radii.bottom_right),
+            (x1 - radii.bottom_right, y1),
+            (x1 - radii.bottom_right, y1 - radii.bottom_right),
+            (x1, y1),
+            0.0,
+            std::f64::consts::FRAC_PI_2,
+        ),
+        // BL：底缘端 (x0+r,y1) → 左缘端 (x0,y1-r)；C=(x0+r,y1-r)；弧 90°→180°
+        (
+            style.corner_shape.corner(3),
+            radii.bottom_left,
+            (x0 + radii.bottom_left, y1),
+            (x0, y1 - radii.bottom_left),
+            (x0 + radii.bottom_left, y1 - radii.bottom_left),
+            (x0, y1),
+            std::f64::consts::FRAC_PI_2,
+            std::f64::consts::PI,
+        ),
+    ];
+
+    let n_samples = 8usize;
+    let mut pts: Vec<(f32, f32)> = Vec::new();
+    for (kind, r, start, end, c, corner_pt, a0, a1) in corners {
+        pts.push(start);
+        match kind {
+            CornerShapeKind::Round | CornerShapeKind::Superellipse(_) => {
+                let e = match kind {
+                    CornerShapeKind::Superellipse(m) => m,
+                    _ => 2.0,
+                };
+                for k in 1..n_samples {
+                    let t = k as f64 / n_samples as f64;
+                    let ang = a0 + (a1 - a0) * t;
+                    // superellipse 参数化（n=2 退化为圆）：以 C 为基准，按角的象限符号。
+                    let (sx, sy) = ((ang.cos()).signum(), (ang.sin()).signum());
+                    let (ca, sa) = (ang.cos().abs(), ang.sin().abs());
+                    let px = c.0 as f64 + sx * r as f64 * ca.powf(2.0 / e);
+                    let py = c.1 as f64 + sy * r as f64 * sa.powf(2.0 / e);
+                    pts.push((px as f32, py as f32));
+                }
+            }
+            CornerShapeKind::Scoop => {
+                // 凹弧：圆心 = 盒角点 P；start/end 相对 P 的极角 = (a0+180°, a1+180°)。
+                for k in 1..n_samples {
+                    let t = k as f64 / n_samples as f64;
+                    let ang = a0 + std::f64::consts::PI + (a1 - a0) * t;
+                    pts.push((
+                        (corner_pt.0 as f64 + r as f64 * ang.cos()) as f32,
+                        (corner_pt.1 as f64 + r as f64 * ang.sin()) as f32,
+                    ));
+                }
+            }
+            CornerShapeKind::Notch => {
+                pts.push(c); // 经内角点的阶梯
+            }
+            CornerShapeKind::Square | CornerShapeKind::Bevel => {}
+        }
+        // square 直角：段终点换到盒角点（边界经 P）；其余形状段终点 = end。
+        pts.push(if matches!(kind, CornerShapeKind::Square) {
+            corner_pt
+        } else {
+            end
+        });
+        let _ = corner_pt;
+    }
+    Some(pts)
+}
+
 /// 四角圆角半径集合。
 #[derive(Debug, Clone, Copy)]
 pub struct BorderRadiusSpec {

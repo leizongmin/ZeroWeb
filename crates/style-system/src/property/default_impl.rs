@@ -340,6 +340,9 @@ impl Default for ComputedStyle {
                 Box::new(BackgroundPositionComputedValue::Percent(0.0)),
             )],
             background_repeat: vec![BackgroundRepeatComputedValue::Repeat],
+            corner_shape: zero_css_parser::values::CornerShapeValue::All(
+                zero_css_parser::values::CornerShapeKind::Round,
+            ),
             background_size: vec![BackgroundSizeComputedValue::Auto],
             background_attachment: BackgroundAttachmentComputedValue::Scroll,
             background_clip: BackgroundClipComputedValue::BorderBox,

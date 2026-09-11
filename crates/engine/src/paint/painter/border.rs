@@ -162,6 +162,57 @@ impl super::Painter {
         let collapse = matches!(style.border_collapse, BorderCollapseValue::Collapse);
         let outer_full = collapse && std::env::var("ZW_COLLAPSE_OUTER_FULL").as_deref() != Ok("0");
         let outer = &box_node.collapsed_border_outer_edge;
+        // R4248（CSS Borders 4 §corner-shaping）：形角盒的边框环——外圈形角多边形
+        //（边框色）+ 内圈形角多边形（背景色）叠出环带。前提：四边同色（含 collapse
+        // 覆盖差异为零）、背景非透明（内圈须遮出环带孔）、非 collapse 表格。
+        // 其余（杂色边框等）回退条带绘制（条带未经形状裁剪，近似旧渲染）。
+        let shaped_uniform = !style.corner_shape.is_all_round()
+            && !collapse
+            && style.background_color != ColorValue::Transparent
+            && style.border_top_color == style.border_right_color
+            && style.border_right_color == style.border_bottom_color
+            && style.border_bottom_color == style.border_left_color;
+        if std::env::var("ZW_CORNER_DBG").is_ok() {
+            eprintln!(
+                "[corner-ring] shaped_uniform={} colors t={:?} r={:?} bg={:?}",
+                shaped_uniform, style.border_top_color, style.border_right_color, style.background_color
+            );
+        }
+        if shaped_uniform {
+            let border_color = resolve_color_current(&style.border_top_color, &style.color);
+            if let Some(outer) = crate::paint::helpers::shaped_corner_polygon(style, w, h, abs_x, abs_y) {
+                if std::env::var("ZW_CORNER_DBG").is_ok() {
+                    eprintln!("[corner-ring] EMIT outer verts={}", outer.len());
+                }
+                self.primitives
+                    .add_path_fill(outer.into_iter().flat_map(|(x, y)| [x, y]).collect(), border_color);
+                let bt = box_node.border_top;
+                let br_ = box_node.border_right;
+                let bb = box_node.border_bottom;
+                let bl = box_node.border_left;
+                let clamp0 = |v: f32| v.max(0.0);
+                let radii4 = [
+                    clamp0(crate::paint::helpers::length_to_f32(&style.border_top_left_radius) - bl.max(bt)),
+                    clamp0(crate::paint::helpers::length_to_f32(&style.border_top_right_radius) - bt.max(br_)),
+                    clamp0(crate::paint::helpers::length_to_f32(&style.border_bottom_right_radius) - br_.max(bb)),
+                    clamp0(crate::paint::helpers::length_to_f32(&style.border_bottom_left_radius) - bb.max(bl)),
+                ];
+                let bg = resolve_color_current(&style.background_color, &style.color);
+                if let Some(inner) = crate::paint::helpers::shaped_corner_polygon_in_box(
+                    style,
+                    abs_x + bl,
+                    abs_y + bt,
+                    w - bl - br_,
+                    h - bt - bb,
+                    radii4,
+                ) {
+                    self.primitives
+                        .add_path_fill(inner.into_iter().flat_map(|(x, y)| [x, y]).collect(), bg);
+                }
+                return;
+            }
+        }
+
         // 每条边的有效厚度：collapse 时外边缘=full，内共享边=half；非 collapse=原值。
         let eff = |side: usize, v: f32| -> f32 {
             if collapse {

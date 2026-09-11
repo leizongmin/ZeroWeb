@@ -606,6 +606,54 @@ pub fn parse_counter_set(value: &str) -> Option<CounterSetValue> {
 /// 解析 CSS clip-path 属性值。
 ///
 /// 支持：none | inset() | circle() | ellipse() | polygon()
+/// R4248（CSS Borders 4 §corner-shaping）：解析 corner-shape 属性值。
+///
+/// 语法：`<corner-shape-value>{1,4}`，关键字 round/bevel/scoop/notch/square 或
+/// `superellipse(<number>)`（数值可负，如 superellipse(-5)）。角序同 border-radius：
+/// 1 值四角同形；2 值 [TL, TR]（BR=TL、BL=TR）；3 值 [TL, TR, BR]（BL=TR）；4 值全序。
+pub fn parse_corner_shape(value: &str) -> Option<CornerShapeValue> {
+    use crate::values::types::{CornerShapeKind, CornerShapeValue};
+    let parse_kind = |kw: &str| -> Option<CornerShapeKind> {
+        let lower = kw.trim().to_ascii_lowercase();
+        if let Some(inner) = lower.strip_prefix("superellipse(").and_then(|s| s.strip_suffix(')')) {
+            let n: f64 = inner.trim().parse().ok()?;
+            return n.is_finite().then_some(CornerShapeKind::Superellipse(n));
+        }
+        match lower.as_str() {
+            "round" => Some(CornerShapeKind::Round),
+            "bevel" => Some(CornerShapeKind::Bevel),
+            "scoop" => Some(CornerShapeKind::Scoop),
+            "notch" => Some(CornerShapeKind::Notch),
+            "square" => Some(CornerShapeKind::Square),
+            _ => None,
+        }
+    };
+    let parts: Vec<&str> = value.split_ascii_whitespace().collect();
+    match parts.len() {
+        1 => Some(CornerShapeValue::All(parse_kind(parts[0])?)),
+        2 => {
+            let tl = parse_kind(parts[0])?;
+            let tr = parse_kind(parts[1])?;
+            Some(CornerShapeValue::PerCorner(Box::new([tl, tr, tl, tr])))
+        }
+        3 => {
+            let tl = parse_kind(parts[0])?;
+            let tr = parse_kind(parts[1])?;
+            let br = parse_kind(parts[2])?;
+            Some(CornerShapeValue::PerCorner(Box::new([tl, tr, br, tr])))
+        }
+        4 => {
+            let tl = parse_kind(parts[0])?;
+            let tr = parse_kind(parts[1])?;
+            let br = parse_kind(parts[2])?;
+            let bl = parse_kind(parts[3])?;
+            Some(CornerShapeValue::PerCorner(Box::new([tl, tr, br, bl])))
+        }
+        _ => None,
+    }
+}
+
+/// 解析 clip-path 属性值（none / inset() / circle() / ellipse() / polygon()）。
 pub fn parse_clip_path(value: &str) -> Option<ClipPathValue> {
     let v = value.trim();
     if v.eq_ignore_ascii_case("none") {

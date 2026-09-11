@@ -843,6 +843,51 @@ pub enum CalcOp {
     Divide,
 }
 
+/// R4248（CSS Borders 4 §corner-shaping）：corner-shape 单角形状。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum CornerShapeKind {
+    /// round（初始值；≡ superellipse(2)）。
+    Round,
+    /// bevel 直线切角（≡ superellipse(1)）。
+    Bevel,
+    /// scoop 凹弧（弧心在盒角点）。
+    Scoop,
+    /// notch 方形内凹阶梯。
+    Notch,
+    /// square 直角（不切削）。
+    Square,
+    /// superellipse(n)：|x/r|^n + |y/r|^n = 1（n=2 圆、1 bevel、∞ square）。
+    Superellipse(f64),
+}
+
+/// R4248：corner-shape 计算值（单值四角同形，或按 border-radius 角序 TL/TR/BR/BL）。
+///
+/// PerCorner 载荷 Box 化（ComputedStyle 每元素一份；数组内联会把枚举撑到 72B，
+/// 深嵌套页的递归帧对 ComputedStyle 尺寸敏感——test_pipeline_deeply_nested_html
+/// 栈溢出实证）。
+#[derive(Debug, Clone, PartialEq)]
+pub enum CornerShapeValue {
+    /// 单值。
+    All(CornerShapeKind),
+    /// 四角 [TL, TR, BR, BL]。
+    PerCorner(Box<[CornerShapeKind; 4]>),
+}
+
+impl CornerShapeValue {
+    /// 取指定角（0=TL 1=TR 2=BR 3=BL）的形状。
+    pub fn corner(&self, idx: usize) -> CornerShapeKind {
+        match self {
+            CornerShapeValue::All(k) => *k,
+            CornerShapeValue::PerCorner(a) => a[idx],
+        }
+    }
+
+    /// 是否四角均为 round（初始态——painter 侧零开销判据）。
+    pub fn is_all_round(&self) -> bool {
+        (0..4).all(|i| self.corner(i) == CornerShapeKind::Round)
+    }
+}
+
 /// CSS clip-path 基本形状值。
 ///
 /// 支持 inset()、circle()、ellipse()、polygon() 四种基本形状，

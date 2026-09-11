@@ -1809,6 +1809,9 @@ pub enum FilterComputedValue {
 /// 因为计算阶段不需要额外转换。
 pub type ClipPathComputedValue = zero_css_parser::values::ClipPathValue;
 
+/// R4248（CSS Borders 4 §corner-shaping）：corner-shape 计算值。
+pub type CornerShapeComputedValue = zero_css_parser::values::CornerShapeValue;
+
 /// CSS clip 属性计算值。
 ///
 /// 直接复用 css-parser 的 ClipRectValue 类型。

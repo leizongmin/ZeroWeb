@@ -1737,6 +1737,13 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
                 }
             }
         }
+        "corner-shape" => {
+            // R4248（CSS Borders 4 §corner-shaping）：解析 1-4 值角形状。
+            if let Some(v) = zero_css_parser::values::parse_corner_shape(value) {
+                style.corner_shape = v;
+                return true;
+            }
+        }
         "background-repeat" => {
             // R2311：多层 `<repeat-style>#`，逐层映射，任一层失败则整条不应用。
             if let Some(list) = values::parse_background_repeat_list(value) {

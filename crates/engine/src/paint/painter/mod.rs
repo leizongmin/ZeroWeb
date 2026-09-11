@@ -109,6 +109,9 @@ pub struct Painter {
     /// 视口高度（像素）。语义同 `viewport_w`。
     pub viewport_h: f32,
     /// CSS §14.2 画布背景传播：背景传播到画布的元素 NodeId（html 或 body）。
+    /// R4248：corner-shape 装饰裁剪窗（形角多边形 + 图元计数快照）。
+    /// 存字段而非 paint() 栈局部——paint 按盒树逐元素递归，深嵌套页栈余量以字节计。
+    corner_shape_clip: Option<(Vec<(f32, f32)>, PrimitiveCounts)>,
     /// 该元素的背景（color + image）由 `paint()` 在画布上统一绘制；`paint_background_image`
     /// 跳过该元素自身的图像绘制，避免其 padding-box 起始的图像与画布 (0,0) 起始的图像
     /// 相位错位 double-paint（R507：扩展 R491 的 color-only 传播到含 image）。
@@ -518,6 +521,7 @@ impl Painter {
     pub fn new() -> Self {
         Self {
             primitives: RenderPrimitives::new(),
+            corner_shape_clip: None,
             measure_cache: std::cell::RefCell::new(std::collections::HashMap::new()),
             painted_inline_nodes: HashSet::new(),
             paint_skip_nodes: HashSet::new(),
@@ -1151,6 +1155,10 @@ impl Painter {
                     && !box_node.is_fixed
                     && box_node.height > inline_fs_px * 1.5
                     && doc.is_some_and(|d| text::has_direct_paintable_text(d, node_id, Some(styles)));
+                // R4248（CSS Borders 4 §corner-shaping）：corner-shape 装饰裁剪窗——
+                // 背景/边框/outline 图元绘制后统一裁到形角多边形。窗口准备走
+                // #[inline(never)] 助手（paint 递归帧敏感，深嵌套页栈溢出史）。
+                self.prepare_corner_shape_clip(style, box_node, abs_x, abs_y);
                 if style.background_color != ColorValue::Transparent && !skip_inline_box_bg {
                     self.paint_background(box_node, abs_x, abs_y, style, styles);
                 }
@@ -1204,6 +1212,11 @@ impl Painter {
                 }
                 if !is_table_internal {
                     self.paint_outline(box_node, abs_x, abs_y, style);
+                }
+
+                // R4248：形角多边形裁剪（背景 + 边框 + outline 一起裁）。
+                if let Some((polygon, counts)) = self.corner_shape_clip.take().as_ref() {
+                    super::helpers::clip_all_primitives_to_polygon(&mut self.primitives, counts, polygon);
                 }
             }
 
@@ -1983,6 +1996,50 @@ impl Painter {
                             )
                         })
                         .collect();
+                    // 轴对齐矩形多边形：矩形交集裁剪即精确（既有语义，测试依赖）。
+                    let is_axis_aligned_rect = polygon.len() == 4 && {
+                        let xs: Vec<f32> = polygon.iter().map(|p| p.0).collect();
+                        let ys: Vec<f32> = polygon.iter().map(|p| p.1).collect();
+                        xs.iter().filter(|&&v| (v - xs[0]).abs() < 0.01).count() == 2
+                            && xs.iter().filter(|&&v| (v - xs[2]).abs() < 0.01).count() == 2
+                            && ys.iter().filter(|&&v| (v - ys[0]).abs() < 0.01).count() == 2
+                            && ys.iter().filter(|&&v| (v - ys[2]).abs() < 0.01).count() == 2
+                    };
+                    if polygon.len() >= 3 && !is_axis_aligned_rect {
+                        // R4248：矩形交集裁剪对多边形只会整块丢弃填充（ref 页全白的根因）。
+                        // 被多边形完全覆盖的填充/圆角图元改写为多边形 path_fill（顶点均落
+                        // 在图元 rect 内 ≡ polygon ⊆ rect，改写不越界）；其余图元保持旧
+                        // 交集裁剪行为。
+                        let covered = |r: &Rect| {
+                            polygon.iter().all(|&(x, y)| {
+                                x >= r.left() - 0.5
+                                    && x <= r.right() + 0.5
+                                    && y >= r.top() - 0.5
+                                    && y <= r.bottom() + 0.5
+                            })
+                        };
+                        let mut rewritten: Vec<zero_render_foundation::color::Color> = Vec::new();
+                        for i in counts_before.fills..self.primitives.fills.len() {
+                            let rect = self.primitives.fills[i].rect;
+                            if covered(&rect) {
+                                rewritten.push(self.primitives.fills[i].color);
+                                self.primitives.fills[i].rect = Rect::new(0.0, 0.0, 0.0, 0.0);
+                            }
+                        }
+                        for i in counts_before.rounded_rects..self.primitives.rounded_rects.len() {
+                            let rect = self.primitives.rounded_rects[i].rect;
+                            if covered(&rect) {
+                                rewritten.push(self.primitives.rounded_rects[i].color);
+                                self.primitives.rounded_rects[i].rect = Rect::new(0.0, 0.0, 0.0, 0.0);
+                            }
+                        }
+                        let verts: Vec<f32> = polygon.iter().flat_map(|&(x, y)| [x, y]).collect();
+                        for color in rewritten {
+                            self.primitives.add_path_fill(verts.clone(), color);
+                        }
+                    }
+                    // 轴对齐矩形走矩形交集裁剪（精确）；非轴对齐多边形在改写填充后，
+                    // 剩余图元（image/gradient 等）仍按矩形交集裁剪。
                     if polygon.len() >= 3 {
                         super::helpers::clip_all_primitives_to_polygon(&mut self.primitives, &counts_before, &polygon);
                     }
@@ -2610,7 +2667,15 @@ impl Painter {
             return;
         }
 
-        if radii.is_zero() {
+        // R4248（CSS Borders 4 §corner-shaping）：非全 round 时背景按形角多边形填充
+        //（形状替代圆角语义；path_fill 光栅化支持任意凸/凹多边形）。
+        if let Some(verts) = super::helpers::shaped_corner_polygon(style, box_node.width, box_node.height, abs_x, abs_y)
+        {
+            self.primitives.add_path_fill(
+                verts.into_iter().flat_map(|(x, y)| [x, y]).collect(),
+                resolve_color_current(&style.background_color, &style.color),
+            );
+        } else if radii.is_zero() {
             // 无圆角：简单矩形填充
             self.primitives.add_fill(
                 Rect::new(clip_x, clip_y, clip_w, clip_h),
@@ -2628,6 +2693,26 @@ impl Painter {
                 bottom_left_radius: radii.bottom_left,
             });
         }
+    }
+
+    /// R4248：corner-shape 装饰裁剪窗准备（形角多边形 + 图元计数快照）。
+    ///
+    /// `#[inline(never)]`：多边形构造与快照的栈帧不并入 paint() 递归帧——
+    /// paint 按盒树逐元素递归，深嵌套页（test_pipeline_deeply_nested_html）的
+    /// 栈余量以字节计，本函数帧随装饰段返回即释放，不随元素深度嵌套。
+    #[inline(never)]
+    fn prepare_corner_shape_clip(&mut self, style: &ComputedStyle, box_node: &LayoutBox, abs_x: f32, abs_y: f32) {
+        if style.corner_shape.is_all_round() {
+            return;
+        }
+        let Some(polygon) = super::helpers::shaped_corner_polygon(style, box_node.width, box_node.height, abs_x, abs_y)
+        else {
+            return;
+        };
+        let counts = PrimitiveCounts::snapshot(&self.primitives);
+        // 存 self 字段而非 paint() 栈局部——paint 按盒树逐元素递归，深嵌套页
+        // （test_pipeline_deeply_nested_html）栈余量以字节计。
+        self.corner_shape_clip = Some((polygon, counts));
     }
 
     /// 获取生成的渲染图元（消费 painter）。
