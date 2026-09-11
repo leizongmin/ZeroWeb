@@ -198,8 +198,12 @@ impl InlineFormattingContext {
                         let (content_word, trailing_space_width) = if !run_preserve && word.ends_with(' ') {
                             let trimmed = word.trim_end_matches(' ');
                             let space_count = word.len() - trimmed.len();
-                            let space_w =
-                                self.advance_of(' ', run.font_id, run.font_size, run.is_ahem_font) * space_count as f32;
+                            // R4232（css-text-4 #letter-spacing）：空格亦为字符单元——每个空格
+                            // 字符后的 ls 计入词间 advance（旧实现漏计 → 词间间距逐词短 30，
+                            // c542-letter-sp-000 行 4-7 各词对依次左移 30/60/90）。
+                            let space_w = self.advance_of(' ', run.font_id, run.font_size, run.is_ahem_font)
+                                * space_count as f32
+                                + run.letter_spacing * space_count as f32;
                             (trimmed, space_w)
                         } else {
                             (word.as_str(), 0.0f32)
