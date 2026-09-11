@@ -661,6 +661,20 @@ fn compute_column_widths_inner(
         .node_id
         .and_then(|id| styles.get(&id))
         .is_some_and(|s| matches!(s.border_collapse, zero_style_system::BorderCollapseValue::Collapse));
+    // R4243（CSS2 §17.5.2 + §17.6.1）：列可用宽 = 表盒 content 宽 − border-spacing。
+    // separated 模式下水平 spacing 出现在相邻列之间 + 表四缘（n+1 个间隙）；
+    // collapse 模式 spacing 无效。separated-border-model-003b：table width:500px
+    // （§17.5.2 border-edge，converter 已扣 pb → content 400）− 2×50 spacing = 列轨 300，
+    // td content 200。spacing 0（collapse / 未声明）时与旧值一致（零回归面）。
+    let table_style = table_box.node_id.and_then(|id| styles.get(&id));
+    let spacing_x = table_style.map(get_border_spacing).map(|(sx, _)| sx).unwrap_or(0.0);
+    let separated_spacing =
+        table_style.is_some_and(|s| matches!(s.border_collapse, zero_style_system::BorderCollapseValue::Separate));
+    let col_available = if separated_spacing {
+        (available_width - spacing_x * (col_count + 1) as f32).max(0.0)
+    } else {
+        available_width
+    };
     // 收集每列的最大宽度（两遍算法）
     // CSS Tables §17.5.2.2：列宽首先由非跨列单元格决定（含显式 width），
     // 跨列单元格只把宽度分配给尚未被非跨列单元格约束的列，
@@ -926,7 +940,6 @@ fn compute_column_widths_inner(
         }
     }
 
-    let table_style = table_box.node_id.and_then(|id| styles.get(&id));
     let has_explicit_width = table_style.as_ref().is_some_and(|s| {
         use zero_css_parser::values::LengthValue;
         !matches!(s.width, LengthValue::Auto)
@@ -937,18 +950,15 @@ fn compute_column_widths_inner(
     // CSS Tables §17.5.2.1：table-layout:fixed 时表格宽度由 width 属性决定，列宽来自
     // <col>/首行而非内容。若内容列宽和 > 显式 width，应收缩列到 width（内容溢出 cell，
     // 由 cell 的 overflow 裁剪），而非让内容撑宽表格（当前 bug：fixed 表渲染成内容宽）。
+    // R4243：约束基准 = col_available（§17.5.2 表 width 为 border-edge 语义 + §17.6.1
+    // spacing 扣除后的列可用宽）。Px 表经 converter（border-edge → content）后
+    // available_width 已扣 pb；三臂统一 − spacing。spacing 0 时与旧值一致（R4238/R4239
+    // driving 用例无 spacing，零变化）。
     let fixed_explicit_px = if is_fixed_layout {
         table_style.as_ref().and_then(|s| {
             use zero_css_parser::values::LengthValue;
             match &s.width {
-                LengthValue::Px(v) => Some(*v as f32),
-                // R4239：%/stretch 同为 fixed 布局约束宽——% 相对容器可用宽；stretch =
-                // 表盒自身宽（R4238 converter percent(1.0) 使 taffy 取容器宽，
-                // available_width 即其 content 宽）。旧仅 Px 时 stretch/percent 表无
-                // 约束 → 内容列宽和胜出（fixed-table-1：fixed+width:stretch 表应 100
-                // 而非被 200px 内容撑宽）。
-                LengthValue::Percentage(p) => Some((*p as f32 / 100.0) * available_width),
-                LengthValue::Stretch => Some(available_width),
+                LengthValue::Px(_) | LengthValue::Percentage(_) | LengthValue::Stretch => Some(col_available),
                 _ => None,
             }
         })
@@ -1007,18 +1017,20 @@ fn compute_column_widths_inner(
     // 仅当 fixed 布局被上面收缩到 width（fixed_capped）时跳过填满扩展——否则会把
     // 收缩后的列再撑回内容宽；未收缩的 fixed 表（内容 fits width）仍正常扩展填满。
 
-    if has_explicit_width && !fixed_capped && total_width < available_width && total_width > 0.0 {
+    // R4243：填满扩展基准 = col_available（§17.5.2 列可用宽 = 表 content − border-spacing）。
+    // spacing 0（collapse/未声明）时 col_available == available_width，零行为变化。
+    if has_explicit_width && !fixed_capped && total_width < col_available && total_width > 0.0 {
         // R364：显式 width 列冻结（保持其宽），仅 auto 列吸收剩余空间。CSS Tables auto 布局：
         // 显式 width 单元格的列不增长，剩余空间分给 auto 列（按其当前宽度比例）。全部列均显式
         // width 时回退按比例扩展（避免剩余空间留白）。
-        let extra = available_width - total_width;
+        let extra = col_available - total_width;
         let auto_idx: Vec<usize> = (0..col_count)
             .filter(|&i| {
                 col_max_widths[i] > 0.0 && !col_explicit[i] && !grid.collapsed_cols.get(i).copied().unwrap_or(false)
             })
             .collect();
         if auto_idx.is_empty() {
-            let ratio = available_width / total_width;
+            let ratio = col_available / total_width;
             for w in &mut col_max_widths {
                 *w *= ratio;
             }

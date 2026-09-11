@@ -319,6 +319,52 @@ pub fn computed_style_to_taffy(
                     } else {
                         taffy::style::Dimension::auto()
                     }
+                }
+                // R4243（CSS2 §17.5.2.1 fixed 布局）：table-layout:fixed 时表 width 与
+                // 「列宽和 + spacing + 表 border/padding」同量纲比较（「the width of the
+                // table is then the greater of the value of the 'width' property and the
+                // sum of the column widths (plus cell spacing or borders)」）→ width 应用
+                // 于 border edge：taffy content = width − padding − border。
+                // separated-border-model-003b（fixed）：width:500px + padding 33/39 +
+                // border 11/17 应 border-edge 500；旧 content-box 解释致 600。**仅 fixed
+                // 布局**：auto 布局表（height-width-table-001 系 width:50px+border 25px
+                // 应 border-edge 100、collapsing-border-model-011 collapse 表 padding 不
+                // 应用）实测仍 content-box 语义，border-edge 扣除致 13 案红（corpus A/B
+                // 实证）→ 不入臂。% padding/非 Px border 不可静态解析 → 保持旧解释；
+                // box-sizing:border-box 表的 taffy box_sizing 已是 border-box 语义
+                //（convert_box_sizing），不重复扣。
+                else if matches!(style.display, DisplayValue::Table | DisplayValue::InlineTable)
+                    && matches!(style.table_layout, zero_style_system::TableLayoutValue::Fixed)
+                    && !matches!(style.box_sizing, BoxSizingValue::BorderBox)
+                    && matches!(&style.width, LengthValue::Px(_))
+                {
+                    let table_px = |v: &LengthValue| match v {
+                        LengthValue::Px(p) if p.is_finite() => Some(*p as f32),
+                        _ => None,
+                    };
+                    let border_px =
+                        |w: &LengthValue, s: &zero_style_system::property::types::BorderStyleValue| -> Option<f32> {
+                            if matches!(
+                                s,
+                                zero_style_system::property::types::BorderStyleValue::None
+                                    | zero_style_system::property::types::BorderStyleValue::Hidden
+                            ) {
+                                Some(0.0)
+                            } else {
+                                table_px(w)
+                            }
+                        };
+                    let frame_w = table_px(&style.padding_left)
+                        .zip(table_px(&style.padding_right))
+                        .and_then(|(pl, pr)| {
+                            let bl = border_px(&style.border_left_width, &style.border_left_style)?;
+                            let br = border_px(&style.border_right_width, &style.border_right_style)?;
+                            Some(pl + pr + bl + br)
+                        });
+                    match (&style.width, frame_w) {
+                        (LengthValue::Px(v), Some(pb)) => taffy::style::Dimension::length((*v as f32 - pb).max(0.0)),
+                        _ => convert_length_to_dimension(&style.width, vw, vh),
+                    }
                 } else {
                     convert_length_to_dimension(&style.width, vw, vh)
                 },
