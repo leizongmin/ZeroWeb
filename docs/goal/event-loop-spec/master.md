@@ -2,7 +2,7 @@
 
 **入口文档**: [../event-loop-spec.md](../event-loop-spec.md)
 **创建日期**: 2026-09-07（goal 拆分 bootstrap）
-**最后更新**: 2026-09-11（M1 切片 1 完成——IO/RO WPT 基线 29.7%）
+**最后更新**: 2026-09-11（M1 完成——IO/RO 基线 29.7% + 时序差距清单落 evidence/）
 
 ---
 
@@ -47,11 +47,21 @@ WPT 基线 → MO host 触发（方案 C 设计已存在）→ checkpoint spec �
 | # | 缺口 | 状态 |
 |---|------|------|
 | P1 | IO/RO WPT 用例覆盖为零（fetch 脚本 + 导入 + 基线） | ✅ 2026-09-11（基线 29.7% 落 evidence/） |
-| P2 | 事件循环时序差距清单（对照 spec 逐条）未建立 | ⬜ M1 |
+| P2 | 事件循环时序差距清单（对照 spec 逐条）未建立 | ✅ 2026-09-11（evidence/2026-09-11-m1-event-loop-gap-list.md） |
 | P3 | MO host 触发未实施（通知端死路） | ⬜ M2 |
 | P4 | checkpoint 简化版（无 task queue、无 per-task checkpoint） | ⬜ M3 |
 
 ## 已完成切片
+
+### M1 切片 2 — 事件循环时序差距清单（2026-09-11，纯文档）✅
+
+- `evidence/2026-09-11-m1-event-loop-gap-list.md`：checkpoint 调用点精确盘点
+  （v8_runtime.rs:422/486 唯一两点）+ HTML spec 事件循环算法逐条对照 + 差距→里程碑映射
+- 关键发现：① 常规路径（每 `<script>` / 每异步回调独立 execute）边界已吻合 spec；
+  ② 违反点集中在**批量派发**——runner `__zw_fire_due_timers`（N timer 一个 execute）、
+  renderer `tick_observers`（IO/RO/rAF 全部回调一个 execute）；③ part01.js 行号已漂移
+  （MO 现 L2113+、IO L2866+、rAF L3388+，契约 9/7 快照过时）
+- 待用户决策清单新增登记：requestIdleCallback 真实 idle 时序（已在 goal 范围外条款）
 
 ### M1 切片 1 — IO/RO WPT 基线（2026-09-11，零源码改动纯资产）✅
 
@@ -69,12 +79,14 @@ WPT 基线 → MO host 触发（方案 C 设计已存在）→ checkpoint spec �
 
 ## 下一步计划
 
-1. **M1 切片 2**：事件循环时序差距清单（v8_runtime.rs checkpoint 调用点盘点 +
-   HTML spec 事件循环算法逐条对照）
-2. **M1 切片 3**：IO/RO 语义轻量修复队列，从基线失败聚类取序：
-   - 候选 a：runner 侧 observer tick 接线（对齐 renderer `tick_observers` 语义，
-     解锁动态跟踪面——参照 `ZW_TESTHARNESS_RAF_FRAME_DRIVEN` opt-in 先例）
-   - 候选 b：IO 构造器异常校验（threshold 范围 / rootMargin 语法 throw，零几何依赖）
+1. **IO/RO 语义轻量修复队列**（M1 基线延伸，从失败聚类取序）：
+   - 切片 3a：runner 侧 observer tick 接线（对齐 renderer `tick_observers` 语义，
+     解锁动态跟踪面——IO 基线 65× `entries.length expected N but got 1` 簇的直接根因；
+     参照 `ZW_TESTHARNESS_RAF_FRAME_DRIVEN` runner 先例）
+   - 切片 3b：IO 构造器异常校验（threshold 范围 / rootMargin 语法 throw——
+     `observer-exceptions` 9 subtest 全簇失败，零几何依赖）
+2. **M2**：MO host 触发（方案 C 实施）
+3. **M3**：task queue + per-task checkpoint（kill-switch → A/B → default-on）
 
 **碰撞管理**：碰 engine 前先 `git log --since="14 days ago" -- crates/engine/
 crates/script-sandbox/` 核对渲染流域活跃面。
@@ -83,7 +95,7 @@ crates/script-sandbox/` 核对渲染流域活跃面。
 
 | 里程碑 | 状态 |
 |--------|------|
-| M1 — WPT 基线 + 时序差距清单 | 🔄 切片 1 ✅（切片 2/3 待做） |
+| M1 — WPT 基线 + 时序差距清单 | ✅ 2026-09-11（基线 29.7% + 差距清单 + 失败聚类；IO/RO 语义修复队列延续执行） |
 | M2 — MutationObserver host 触发 | ⬜ |
 | M3 — checkpoint spec 化 | ⬜ |
 
