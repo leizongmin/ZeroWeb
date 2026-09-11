@@ -81,6 +81,10 @@ WPT 基线 → MO host 触发（方案 C 设计已存在）→ checkpoint spec �
   透传 + target proxy + childList addedNodes 展开 + options 过滤不变）+ webview 集成
   （`tests/mo_host_trigger.rs`——native setAttribute → polyfill MO 收 record + OFF
   死路保持）+ `make test` 19,140P/0F + clippy 零警告 + fmt 干净
+- **A/B（trigger ON vs OFF，WPT testharness corpus）**：IO 94/122/1 = 94/122/1、
+  RO 19/32/6 = 19/32/6——逐 subtest 零 delta、零通知泄漏（native 写在 observer-only
+  页面不存在，排空天然静默）；A/B 零回归证据成立。全量 make test ON 臂留 default-on
+  决策前补做（当前无 default-on 计划，须用户点名）
 - **遗留（MO-S2 候选）**：① oldValue/added/removed 的 NodeId 真值捕获（dom 层
   record_mutation 未记录 old_value——排空侧无法透传，需 dom 层小改）；② quickjs 路径
   sync_render 未接线（v8-gated，DC-7 对等后续）；③ WPT mutation-observer 导入子集
