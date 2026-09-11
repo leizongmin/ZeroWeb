@@ -2,95 +2,76 @@
 
 **入口文档**: [../page-wasm.md](../page-wasm.md)
 **创建日期**: 2026-09-07（goal 拆分 bootstrap）
-**最后更新**: 2026-09-12（M3 切片 2 完成——validate API + compileStreaming/Content-Type 校验；仅剩收尾核账）
+**最后更新**: 2026-09-12（**goal DONE**——DC-1~4 全满足，M1/M2/M3 全部落地，归档建立）
 
 ---
 
-## 当前状态
+## 当前状态：DONE（2026-09-12）
 
-**M1 进行中**：切片 1（WPT 基线）已落地。基线实测 **715/719 = 99.4%**（31 案，
-Timeout × 4），证据：[evidence/2026-09-12-m1-wasm-jsapi-baseline.md](evidence/2026-09-12-m1-wasm-jsapi-baseline.md)。
+**判定依据**: [evidence/2026-09-12-m3-dc-closeout-audit.md](evidence/2026-09-12-m3-dc-closeout-audit.md)
 
-### 架构级发现（2026-09-12 基线实测，修正立项基线假设）
+### Done Criteria 核账
 
-1. **页面路径跑的是 V8 原生 WebAssembly**。生产 `run_page_scripts`（js_dom_shim）不安装
-   `generate_dom_api_polyfill()`——`globalThis.WebAssembly` 是 V8 原生完整实现；polyfill
-   （stub 导出面/仅 I32）只装在 `execute_script_with_dom`（embedder execute 路径 +
-   `tests/wpt-runner` wasm_bridge 类测试）。→ M1 原计划的「类型映射/exports 真实化」
-   切片针对的 polyfill 不在 WPT window 验收路径上；DC-2 仍对 polyfill 路径有效
-  （embedder 面真实消费方），但优先级重排到异步修复之后。
-2. **4 案 Timeout 根因 = V8 前台消息循环从不泵**。异步 `WebAssembly.compile()/
-   instantiate()` 的 promise 永不 settle（V8 后台编译完成后 resolve 任务投递在 platform
-   foreground task queue，`v8_runtime.rs` 只 `perform_microtask_checkpoint`，全仓无
-   `PumpMessageLoop`）；同步 `new Module/Instance` 全绿。修复位置 =
-   `crates/script-sandbox`（v8_runtime 泵消息循环）——**跨流卡点**，见下。
+| DC | 内容 | 状态 | 依据（commit / evidence） |
+|----|------|------|--------------------------|
+| DC-1 | WPT 用例导入 + 通过率基线 | ✅ | 31 案（pinned 31597693）+ fetch 脚本 + 基线 715/719=99.4%（文本+JSON evidence）+ 账本 +31 行 |
+| DC-2 | 导出面与类型真实化 | ✅ | 真实函数表 / Memory.buffer+grow（731de158c）/ I32~F64 全映射（d9565dddd）/ Global/Table 查询（a8912b310） |
+| DC-3 | 实例化语义 | ✅ | importObject JS 函数链接 + LinkError 分类（37efb24b0）；validate 接线——`WasmSandbox::validate()` 全量校验 + JS 面魔术字节快速检查按「或明确记录」条款记账（4c1750110）；compileStreaming/instantiateStreaming Content-Type 校验（4c1750110） |
+| DC-4 | 测试与质量不可退让 | ✅ | make test 19,168/0 全绿（M3 切片 2 收尾跑，源码此后零变更）；workspace clippy -D warnings 零警告；cargo build 通过（均本轮复跑）；每修复带单测/e2e + WPT 资产化 |
 
-### 跨流卡点（碰头信号，run-rules §9/§11）
+**基线复跑（收尾，release runner 重建后）**：715/719 = 99.4%，与 M1 基线零回归；
+27/31 案全绿；4 案 Timeout 为跨流卡点（见下），非本 goal DC 缺口。
 
-- **V8 消息循环泵**（解锁 4 案 Timeout，99.4% → 100%）：改动落在 `crates/script-sandbox`
-  （event-loop-spec 流域，本 goal 与其声明的边界即「无共享面」）。消息循环泵本就是
-  event loop spec 化的天然组成件（timer/微任务/前台任务统一处理），建议归并该流推进；
-  若用户希望本流接手，须明确授权跨域。
-  - 已知影响面不止 wasm：一切以 V8 前台任务队列收尾的异步 builtin 均挂。
+**执行日志归档**: [archive/2026-09-12-m1-m3-execution-log.md](archive/2026-09-12-m1-m3-execution-log.md)
+（M1/M2/M3 各切片执行记录、关键决策与 bug 根因，只追加不修改。）
 
-**与兄弟 goal 的边界**：
-- rendering-compat — 渲染流域 crate 域零重叠；`dom_bridge.rs` / `webview.rs` 共享大文件
-  按 run-rules §9 `git log` 核对后再动
-- event-loop-spec — script-sandbox 归其域（见上跨流卡点）；`dom_bridge.rs` WebAssembly
-  段归本流
-- storage-opfs — 无共享面
+---
 
-## 实测基线（2026-09-12，M1 切片 1）
+## 移交后续的事项（不阻塞本 goal）
 
-- **WPT wasm/jsapi**：31 案 / 719 subtests，**99.4% Pass**（715/719，Timeout×4 集中在
-  `constructor/` 异步面）；27/31 案全绿
+### 跨流卡点（P2，碰头信号——run-rules §9/§11）
+
+- **V8 前台消息循环泵**：4 案 `constructor/` 异步面 Timeout 根因——异步
+  compile/instantiate 的 promise resolve 任务滞留 platform foreground queue
+  （`v8_runtime.rs` 只泵 microtask，全仓无 PumpMessageLoop）。修复落
+  `crates/script-sandbox`（event-loop-spec 流域）。落地后 `make testharness-wasm`
+  复跑预期 99.4% → 100%。影响面不止 wasm（一切 V8 前台任务收尾的异步 builtin）。
+
+### 协议性已知限制（非缺陷）
+
+- Global 导出为快照值（不可变全局精确；可变全局 wasm 写入后不回读——桥异步协议
+  无同步 getter 通道）；Table 仅 length 快照
+- `__wasm_errors__` 通道为查询面（instantiate Promise 已 resolve，无法回溯 reject）
+- import 回调 JS 返回 NaN 经 JSON 序列化变 null → 按 trap 处理
+- JS 侧 `WebAssembly.validate` 为魔术字节快速检查（同步返回值无法经异步桥全量校验；
+  真实校验在 `WasmSandbox::validate()`，host compile/instantiate 路径即全量校验）
+- compileStreaming/instantiateStreaming body 经 arrayBuffer 聚合（增量流式编译待
+  内核流式 API）
+- spec-rfc TBD（docs/specs/page-wasm-host-function-spec-rfc.md §10）：QuickJS 后端
+  importObject 重入可行性（TBD-1）、iterator-protocol 多返回值 import（TBD-2）
+
+### fetch 脚本落点记账
+
+goal 文档所写 `scripts/fetch-wasm-subset.sh` 实际落 `tests/wpt-runner/scripts/`——
+沿用仓内 17 个同类 fetch 脚本的既有目录约定（与 `fetch-cache-storage-window-subset.sh`
+同目录），偏差已在此记账。
+
+---
+
+## 实测基线（收尾时点）
+
+- **WPT wasm/jsapi**：31 案 / 719 subtests，**99.4%**（715/719，Timeout×4 = 跨流卡点）；
+  27/31 案全绿；复跑零回归
 - **polyfill 路径**（execute_script_with_dom → `__WASM_BRIDGE__` → zero-wasm-sandbox）：
-  `tests/wasm_bridge.rs` 15 测试全绿（基线不变）
-- 既有实现盘点（2026-09-07 立项时）仍准确：wasm-sandbox 1392 行三后端；polyfill stub
-  导出面/仅 I32/validate 魔术字节/instantiateStreaming 回退
+  wasm_bridge 测试族 31 测试全绿（含 importObject 链接/错误分类/streaming/grow/
+  Global/Table/类型化全链）
+- **wasm-sandbox**：207 测试全绿（validate/import_signatures/export_descriptors/
+  grow_memory/grow 链接执行等新增面均有单测）
+- **质量门禁**：make test 全绿 + `cargo clippy --workspace --all-targets -- -D warnings`
+  零警告 + `cargo build --workspace` 通过（收尾复跑）
 
-## 缺口清单
+## 验证入口（后续复跑）
 
-| # | 缺口 | 状态 |
-|---|------|------|
-| P1 | WPT 用例覆盖 + 通过率基线 | ✅ M1 切片 1（31 案入账本，evidence/ 落盘） |
-| P2 | 异步 compile/instantiate promise 永挂（V8 消息循环不泵） | ⬜ 跨流卡点——待 event-loop-spec 流或用户授权 |
-| P3 | polyfill 路径参数/返回类型仅 I32 | ✅ M1 切片 2（i64 BigInt 双向含 >2^53 精度 / f32 / f64 / 多返回值 / 零返回 undefined） |
-| P4 | polyfill 导出面 stub | ✅ M1 切片 3（`Module.exports()` 描述数组）+ M2 切片 2（Global 值对象 / Table length）+ M2 切片 1（Memory.grow 真实接线） |
-| P5 | 实例化语义（错误分类） | ✅ M2 切片 3（CompileError/LinkError/RuntimeError 构造器 + host 分类注入；WA 桥状态幂等安装修复跨 execute id 错位） |
-| P6 | importObject JS 函数链接 + validate + streaming | ⬜ M3（host function 重入设计前置） |
-
-## 下一步计划
-
-1. **M3 切片 3（收尾判定）**：DC-1~4 逐条核账（对照 goal 文档 Done Criteria），残余项
-   处置（`make testharness-wasm` 复跑确认 99.4% 基线稳定、skip list 与 fetch 脚本核对、
-   evidence 收尾），满足则 DONE 判定
-2. **跨流协调**：V8 消息循环泵归 event-loop-spec 流（或用户授权跨域），落地后
-   `make testharness-wasm` 复跑验证 4 案翻绿（99.4% → 100%）
-3. **已知限制（协议性，非缺陷）**：Global 导出为快照值（不可变全局精确；可变全局
-   wasm 侧写入后不回读——桥异步协议无同步 getter 通道，live 值需协议扩展）；Table
-   仅 length 快照（get/grow 未接线）；`__wasm_errors__` 通道为查询面（instantiate
-   Promise 已 resolve，无法回溯 reject——spec 形态的 promise 语义需桥协议演进）；
-   import 回调内 JS 返回 NaN 经 JSON 序列化变 null → 按 trap 处理（spec NaN 语义待协议扩展）；
-   **JS 侧 `WebAssembly.validate` 仍为魔术字节快速检查**——同步返回值无法经异步桥
-   请求 host 全量校验；真实校验已落 `WasmSandbox::validate()`（三后端，host compile/
-   instantiate 路径即全量校验），DC-3「或明确记录」条款按此记账
-
-**碰撞管理**：开工前先 `git log --since="14 days ago" -- crates/engine/src/dom_bridge.rs
-crates/webview/` 核对活跃面；有活跃编辑则先做零碰撞面（wasm-sandbox 单测、WPT 导入）。
-2026-09-12 实测：webview/ 昨日（09-11）有 event-loop-spec MO 提交——webview.rs 仅动
-wasm 段（`process_wasm_bridge` 及 `_callQueue` 排空区），避开 MO 区。
-
-## 里程碑状态
-
-| 里程碑 | 状态 |
-|--------|------|
-| M1 — WPT 基线建立 + 类型扩展 | ✅ 切片 1（基线 99.4%）+ 切片 2（类型全映射）+ 切片 3（导出描述面）；残余 = P2 跨流卡点 |
-| M2 — Memory/Global/Table + 实例化语义 | ✅ 切片 1（Memory.grow 真实接线）+ 切片 2（Global/Table 导出面）+ 切片 3（错误分类面 + WA 状态幂等安装）；残余 = importObject JS 函数链接归 M3 重入设计 |
-| M3 — host function + 流式 + 收尾 | 🔄 切片 1 ✅（同步重入全链）+ 切片 2 ✅（`WasmSandbox::validate()` 三后端 + `compileStreaming`/Content-Type 校验）；切片 3（DC 核账收尾）待做 |
-
-## 验证基线
-
-- 测试基线：`make test` / `make reftest` 入口（test-guard 包裹；禁止裸跑 cargo test）
-- WASM 用例面：`make testharness-wasm`（31 案，99.4%；4 Timeout 为 P2 跨流卡点）
-- 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过
+- `make testharness-wasm`（31 案基线；FILTER 按路径子串）
+- `make test` / `make reftest`（test-guard 包裹；禁止裸跑 cargo test）
+- `cargo clippy --workspace --all-targets -- -D warnings`
