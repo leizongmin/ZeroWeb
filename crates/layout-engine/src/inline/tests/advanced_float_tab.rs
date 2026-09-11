@@ -654,3 +654,84 @@ fn r3786_newline_after_block_break_in_flow_block() {
         ctx.lines.len()
     );
 }
+
+/// R4234：行首原子盒放不下 float 缩短后的可用宽时，行位下移到最早结束的重叠
+/// float 带底重算（CSS2 §9.5 rule 8「shortened line box…moved down until it fits」；
+/// 0 < avail < 盒宽的非 avail≤0 臂，与 R3785 互补）。
+///
+/// 驱动案 css/CSS2/css1/c414-flt-fit-001（3×float 挡路 → br img 应落入第二行右槽）
+/// 与 floats-wrap-top-below-bfc-003l/r。
+#[test]
+fn r4234_line_initial_inline_block_pushed_below_float_band() {
+    // 场景 ①：container 250，两 float 带 [10,110) 各占宽 100、第三带 [110,210) 占宽 100。
+    // 首行 [0,100) 缩窄后 avail=50 < 盒宽 100 → 下移至 y=110（p1/p2 带底），该带
+    // 左缘=100、avail=150 ≥ 100 → 原子盒落 (100, 110)。
+    let mut ctx = InlineFormattingContext::new(250.0).with_float_exclusions(vec![
+        FloatExclusion {
+            y: 10.0,
+            height: 100.0,
+            width: 100.0,
+            is_left: true,
+        },
+        FloatExclusion {
+            y: 10.0,
+            height: 100.0,
+            width: 100.0,
+            is_left: true,
+        },
+        FloatExclusion {
+            y: 110.0,
+            height: 100.0,
+            width: 100.0,
+            is_left: true,
+        },
+    ]);
+    ctx.break_items_into_lines(vec![InlineItem::InlineBlock(InlineBlockBox {
+        node_id: NodeId::default(),
+        width: 100.0,
+        height: 100.0,
+        baseline: 100.0,
+        margin_left: 0.0,
+        margin_right: 0.0,
+        margin_top: 0.0,
+        margin_bottom: 0.0,
+        vertical_align: VA::Baseline,
+    })]);
+    assert_eq!(ctx.lines.len(), 1, "R4234: 原子盒应单行");
+    assert!(
+        (ctx.lines[0].y - 110.0).abs() < 1.0,
+        "R4234: 行应下移到 float 带底 y=110，实际 {}",
+        ctx.lines[0].y
+    );
+    let frag = &ctx.lines[0].runs[0];
+    assert!(
+        (frag.x - 100.0).abs() < 1.0,
+        "R4234: 行首 x 应对齐下移后带左缘 100，实际 {}",
+        frag.x
+    );
+
+    // 场景 ②（守卫）：无重叠 float（排除带在 y=500 之外）→ 保持旧行为（不推、
+    // 行首从带左缘 0 起），防「纯容器溢出被误推」。
+    let mut ctx2 = InlineFormattingContext::new(250.0).with_float_exclusions(vec![FloatExclusion {
+        y: 500.0,
+        height: 100.0,
+        width: 100.0,
+        is_left: true,
+    }]);
+    ctx2.break_items_into_lines(vec![InlineItem::InlineBlock(InlineBlockBox {
+        node_id: NodeId::default(),
+        width: 100.0,
+        height: 100.0,
+        baseline: 100.0,
+        margin_left: 0.0,
+        margin_right: 0.0,
+        margin_top: 0.0,
+        margin_bottom: 0.0,
+        vertical_align: VA::Baseline,
+    })]);
+    assert!(
+        (ctx2.lines[0].y).abs() < 1.0,
+        "R4234: 无重叠 float 时行位不下移，实际 y={}",
+        ctx2.lines[0].y
+    );
+}

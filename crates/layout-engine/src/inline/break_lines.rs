@@ -554,11 +554,43 @@ impl InlineFormattingContext {
                     } else {
                         box_height.max(default_line_height)
                     };
-                    let (left_offset, avail_width) = self.effective_content_area(current_y, est_height);
+                    let (mut left_offset, mut avail_width) = self.effective_content_area(current_y, est_height);
 
-                    // 调整 current_x 到浮动排除区域之后
-                    if current_line.runs.is_empty() && current_x < left_offset {
-                        current_x = left_offset;
+                    // R4234（CSS2 §9.5 rule 8「shortened line box」）：行首原子盒放不下
+                    // float 缩短后的可用宽（0 < avail < 盒宽，非 avail≤0 的 R3785 臂）时，
+                    // 行位下移到最早结束的重叠 float 带底重算，直到放得下或不再与 float
+                    // 重叠（c414-flt-fit-001：2×100 float 挡路 → 100px img 下移到 p3 右侧
+                    // 空槽，旧实现溢出在 left_offset 处与 float 重叠）。无重叠 float（纯
+                    // 容器溢出）保持旧行为。行首 x 统一在下移后的新 left_offset 处对齐。
+                    if !self.no_wrap
+                        && current_line.runs.is_empty()
+                        && !self.float_exclusions.is_empty()
+                        && box_width > avail_width
+                    {
+                        loop {
+                            let next_y = self
+                                .float_exclusions
+                                .iter()
+                                .filter(|e| e.y < current_y + est_height && e.y + e.height > current_y)
+                                .map(|e| e.y + e.height)
+                                .filter(|bottom| *bottom > current_y)
+                                .fold(None::<f32>, |acc, b| match acc {
+                                    Some(cur) if cur <= b => Some(cur),
+                                    _ => Some(b),
+                                });
+                            let Some(next_y) = next_y else { break };
+                            let (lo, aw) = self.effective_content_area(next_y, est_height);
+                            current_y = next_y;
+                            left_offset = lo;
+                            avail_width = aw;
+                            if box_width <= avail_width {
+                                break;
+                            }
+                        }
+                        // 行首 x = max(text-indent, 下移后带左缘)——FloatAnchor/断行可能
+                        // 已把 current_x 预置到**旧 y 带**的 left_offset（200），下移后须
+                        // 重算而非只调大（max 会保留 stale 值 → img 落回 float 右侧）。
+                        current_x = self.text_indent.max(left_offset);
                     }
 
                     // 检查当前行是否放得下（当行非空时）

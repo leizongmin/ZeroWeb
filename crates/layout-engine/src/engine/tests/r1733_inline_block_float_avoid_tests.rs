@@ -156,16 +156,18 @@ fn r1733_multifloat_inline_block_not_misplaced_when_infeasible() {
     let result = engine.compute(&doc, &styles);
 
     let ib_box = find_child_by_node_id(&result.root, ib).expect("inline-block found");
-    // R3779b 后：只剩 float_l 垂直重叠 → 单 float 分支 shift 到右缘 x=250 + 收缩到剩余宽
-    // 150（非 over-shrink 到任意小值，非错移到右 float 旁）。
+    // R4234 后：float 旁空间（左带右缘 250..150 右带，avail=150）容不下 200 宽原子盒
+    // → CSS2 §9.5 rule 8「shortened line box too small → moved down until it fits」——
+    // IFC 行位下移越过两个 float 带（y=150 = float_r 带底 75+75），行首 x 回到带左缘 0。
+    // 旧期望（x=250 + 收缩 150）是 R1733 终末近似，被排除感知 IFC 的 spec 行为取代。
     assert!(
-        ib_box.x >= 245.0,
-        "单 float 重叠时 inline-block 应 shift 到 float:left 右缘旁（x≈250），实际 x={}",
-        ib_box.x
+        ib_box.y >= 145.0,
+        "inline-block 应被推到两个 float 带底之下（y≈150），实际 y={}",
+        ib_box.y
     );
     assert!(
-        (ib_box.width - 150.0).abs() < 1.0,
-        "inline-block 应收缩到 float 右侧剩余宽 150，实际 width={}",
+        (ib_box.width - 200.0).abs() < 1.0,
+        "inline-block 下推后保持声明宽 200，实际 width={}",
         ib_box.width
     );
 }
@@ -220,14 +222,17 @@ fn r3613_multifloat_infeasible_relative_inline_block_preserves_declared_width() 
     let result = engine.compute(&doc, &styles);
 
     let ib_box = find_child_by_node_id(&result.root, ib).expect("inline-block found");
+    // R4234 后：同 r1733_multifloat——rule 8 下推到 float 带底（y≈150）；taffy raw
+    // `Em(10)` 的 10px 宽不得留到最终布局，声明宽 used-value 恢复（R3612）由排除感知
+    // IFC 同步路径接管。
     assert!(
-        ib_box.x >= 245.0,
-        "单 float 重叠时 inline-block 应 shift 到 float:left 右缘旁（x≈250），实际 x={}",
-        ib_box.x
+        ib_box.y >= 145.0,
+        "inline-block 应被推到两个 float 带底之下（y≈150），实际 y={}",
+        ib_box.y
     );
     assert!(
-        (ib_box.width - 150.0).abs() < 1.0,
-        "relative inline-block 收缩宽应为 float 右侧剩余 150（used-value 恢复），实际 {}",
+        (ib_box.width - 200.0).abs() < 1.0,
+        "relative inline-block 声明宽 used-value 恢复为 200，实际 {}",
         ib_box.width
     );
 }

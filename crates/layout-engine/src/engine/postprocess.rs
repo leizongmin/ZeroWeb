@@ -331,13 +331,35 @@ pub(super) fn adjust_inline_block_positions(
     let no_wrap = styles
         .get(&container_node_id)
         .is_some_and(|s| matches!(s.white_space, WhiteSpaceValue::Pre | WhiteSpaceValue::Nowrap));
+    // R4234：float 排除——含 float 子的容器，原子行内盒的行位/行首 x 须避开 float 带
+    //（c414-flt-fit-001：2×100 float 挡路 → 100px img 下移到第二行右槽；无排除 IFC 会把
+    // img 定回首行起点与 float 重叠，覆盖 remeasure 的排除感知结果）。坐标 = root 内容盒
+    // 相对（c.y 与 IFC 行 y 同系，与 remeasure/compute_final 的排除构建一致）。
+    let float_exclusions: Vec<crate::inline::FloatExclusion> = root
+        .children
+        .iter()
+        .filter(|c| !matches!(c.float, FloatValue::None))
+        .filter_map(|c| {
+            let rel_y = c.y;
+            if rel_y < 0.0 || c.width <= 0.0 || c.height <= 0.0 {
+                return None;
+            }
+            Some(crate::inline::FloatExclusion {
+                y: rel_y + c.margin_top,
+                height: c.height + c.margin_bottom,
+                width: c.width + c.margin_left + c.margin_right,
+                is_left: matches!(c.float, FloatValue::Left),
+            })
+        })
+        .collect();
     let mut inline_ctx = crate::inline::InlineFormattingContext::new(container_width)
         .with_vertical(is_vertical)
         .with_vertical_rtl(is_vertical_rtl)
         .with_text_align(container_text_align)
         .with_inline_block_sizes(ib_sizes)
         .with_baseline_overrides(baseline_overrides)
-        .with_no_wrap(no_wrap);
+        .with_no_wrap(no_wrap)
+        .with_float_exclusions(float_exclusions);
     inline_ctx.layout(doc, container_node_id, styles);
 
     // 存储 IFC 片段中各文本节点的 font_size，供 paint 系统计算基线偏移

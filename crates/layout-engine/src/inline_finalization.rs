@@ -731,6 +731,23 @@ fn sync_inline_block_positions_from_ifc(
         };
         child.x = fragment.x;
         child.y = fragment.y;
+        // R4234：IFC 预定位接管 R1733 终末 pass 的输入态时，声明宽 used-value 恢复
+        //（R3612）随之前移——非 replaced 的 inline-block taffy raw `Em(N)` 按外层
+        // font-size 误析的 raw 宽不得留到最终布局（镜像 float_positioning 终末分支）。
+        // **两类除外**：①replaced（img 等）——taffy 尺寸链已含 min/max 钳制与固有比
+        // 传递（R4149-R4151 域）；②带 min/max-width 约束的元素——恢复声明宽会打掉钳制
+        //（inline-replaced-height-010/011、max/min-width-applies-to-012 实证回归）。
+        let unconstrained = styles.get(&child_id).is_some_and(|s| {
+            matches!(s.min_width, LengthValue::Auto) && matches!(s.max_width, LengthValue::Px(v) if v.is_infinite())
+        });
+        if !child.is_replaced
+            && unconstrained
+            && let Some(w) = child.declared_width_px
+        {
+            child.width = w;
+            let frame = child.border_left + child.border_right + child.padding_left + child.padding_right;
+            child.content_width = (child.width - frame).max(0.0);
+        }
         matched_any = true;
     }
 
@@ -2027,6 +2044,11 @@ pub(crate) fn remeasure_text_with_float_exclusions(
             // 存储 IFC 片段中各文本节点的 font_size，供 paint 系统计算基线偏移
             store_font_sizes_from_ifc(&inline_ctx, box_node, doc, styles);
             sync_inline_child_boxes_from_ifc(box_node, &inline_ctx, styles);
+            // R4234：atomic inline（img / inline-block）子盒位置同步——排除感知 IFC 把
+            // 行首原子盒下推/缩排后，其 LayoutBox 若停在 taffy 块堆叠位（float-unaware）
+            // 会与 float 重叠（c414-flt-fit-001 的 br img 落在首行起点）。all-or-nothing
+            // 语义（任一 atomic 子缺 fragment 即整体不动）防半同步撕裂。
+            sync_inline_block_positions_from_ifc(box_node, &inline_ctx, doc, styles);
 
             // R3784：clamp 点后的 float 子隐藏（css-overflow-4 with-floats-003：「floats
             // after the clamp point are always hidden」）。锚行号 ≥ clamp cap = float 在
