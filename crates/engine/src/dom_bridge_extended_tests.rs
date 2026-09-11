@@ -581,7 +581,9 @@ fn test_polyfill_length_reasonable() {
     // attr/pseudo AND）+ ~15 静态可判定伪类 + nth-child(an+b) 使 polyfill 增长至 ~57KB，上限 55000 →
     // 60000 容纳伪类面一致化。此为合理性护栏，非硬预算——突破时评估是否该收敛 A 代 polyfill 为
     // B 代 shim 的薄封装（A 代维护独立虚拟 DOM，与 B 代 live Document 路径并存是历史债），而非单纯抬上限）。
-    assert!(polyfill.len() < 60000, "Polyfill too large: {} bytes", polyfill.len());
+    // page-wasm M2 切片 3 评估：WA 段补 spec 错误类构造器/Module.exports 描述面/幂等安装
+    // 均为规范面增项（+1.5KB，61.0KB），A→B 收敛是大重构不宜捆绑本切片，上限 60000 → 63000。
+    assert!(polyfill.len() < 63000, "Polyfill too large: {} bytes", polyfill.len());
 }
 
 // ── Web Worker API 测试 ──

@@ -4761,11 +4761,13 @@ impl WebView {
             Ok(m) => m,
             Err(e) => {
                 tracing::warn!("WASM bridge: compile error: {e}");
-                // SEC-08: 转义错误消息中的 JS 特殊字符，防止注入
+                // SEC-08: 转义错误消息中的 JS 特殊字符，防止注入。
+                // 错误分类面（page-wasm M2 切片 3）：注入 spec 错误类实例而非字符串，
+                // JS 侧可 instanceof 判别（编译失败 → CompileError）
                 let err_msg = escape_js_string(&format!("{e}"));
                 let err_script = format!(
                     "if (!globalThis.__wasm_errors__) globalThis.__wasm_errors__ = {{}}; \
-                     globalThis.__wasm_errors__[{instance_id}] = 'compile: {err_msg}'"
+                     globalThis.__wasm_errors__[{instance_id}] = new WebAssembly.CompileError('{err_msg}')"
                 );
                 let _ = self.execute_script_raw(&err_script);
                 return Ok(script_output.to_string());
@@ -4781,11 +4783,14 @@ impl WebView {
             Ok(i) => i,
             Err(e) => {
                 tracing::warn!("WASM bridge: instantiate error: {e}");
-                // SEC-08: 转义错误消息中的 JS 特殊字符，防止注入
+                // SEC-08: 转义错误消息中的 JS 特殊字符，防止注入。
+                // 错误分类面（page-wasm M2 切片 3）：spec 语义——import 缺失/签名
+                // 不匹配等链接失败 → LinkError（wasmi 缺失 import 归 InstantiationError，
+                // 此处统一映射 LinkError）
                 let err_msg = escape_js_string(&format!("{e}"));
                 let err_script = format!(
                     "if (!globalThis.__wasm_errors__) globalThis.__wasm_errors__ = {{}}; \
-                     globalThis.__wasm_errors__[{instance_id}] = 'instantiate: {err_msg}'"
+                     globalThis.__wasm_errors__[{instance_id}] = new WebAssembly.LinkError('{err_msg}')"
                 );
                 let _ = self.execute_script_raw(&err_script);
                 return Ok(script_output.to_string());
@@ -4984,6 +4989,13 @@ impl WebView {
             Ok(m) => m,
             Err(e) => {
                 tracing::warn!("WASM compile bridge: compile error: {e}");
+                // 错误分类面（page-wasm M2 切片 3）：编译失败注入 CompileError 实例
+                let err_msg = escape_js_string(&format!("{e}"));
+                let err_script = format!(
+                    "if (!globalThis.__wasm_errors__) globalThis.__wasm_errors__ = {{}}; \
+                     globalThis.__wasm_errors__[{module_id}] = new WebAssembly.CompileError('{err_msg}')"
+                );
+                let _ = self.execute_script_raw(&err_script);
                 return Ok(script_output.to_string());
             }
         };

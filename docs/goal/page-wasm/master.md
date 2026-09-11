@@ -2,7 +2,7 @@
 
 **入口文档**: [../page-wasm.md](../page-wasm.md)
 **创建日期**: 2026-09-07（goal 拆分 bootstrap）
-**最后更新**: 2026-09-12（M1 完成 + M2 切片 1/2 落地——grow 接线 + Global/Table 导出面）
+**最后更新**: 2026-09-12（M2 切片 3 落地——错误分类面 + WA 桥状态幂等安装；M2 全部完成）
 
 ---
 
@@ -56,23 +56,24 @@ Timeout × 4），证据：[evidence/2026-09-12-m1-wasm-jsapi-baseline.md](evide
 | P1 | WPT 用例覆盖 + 通过率基线 | ✅ M1 切片 1（31 案入账本，evidence/ 落盘） |
 | P2 | 异步 compile/instantiate promise 永挂（V8 消息循环不泵） | ⬜ 跨流卡点——待 event-loop-spec 流或用户授权 |
 | P3 | polyfill 路径参数/返回类型仅 I32 | ✅ M1 切片 2（i64 BigInt 双向含 >2^53 精度 / f32 / f64 / 多返回值 / 零返回 undefined） |
-| P4 | polyfill 导出面 stub | ✅ M1 切片 3（`WebAssembly.Module.exports()` 静态 + `{name, kind}` 描述数组，compile/instantiate 双路径注入） |
-| P5 | 实例化语义（importObject 链接、错误分类、validate、streaming） | ⬜ M2-M3 |
+| P4 | polyfill 导出面 stub | ✅ M1 切片 3（`Module.exports()` 描述数组）+ M2 切片 2（Global 值对象 / Table length）+ M2 切片 1（Memory.grow 真实接线） |
+| P5 | 实例化语义（错误分类） | ✅ M2 切片 3（CompileError/LinkError/RuntimeError 构造器 + host 分类注入；WA 桥状态幂等安装修复跨 execute id 错位） |
+| P6 | importObject JS 函数链接 + validate + streaming | ⬜ M3（host function 重入设计前置） |
 
 ## 下一步计划
 
-1. **M2 切片 3（已按架构约束收窄）**：错误分类面——polyfill 补 spec 错误类构造器
-   （`WebAssembly.CompileError/LinkError/RuntimeError`），host 桥接把编译/链接/陷阱错误
-   分类注入（import 缺失/签名不匹配 → LinkError）；`WasmError::LinkError` 分类已区分。
-   **JS 函数真作 import（wasm 调用回调 JS）不在此切片**——wasm 执行中同步回调 JS 需
-   宿主重入设计（`instance.call` 内再进 JS sandbox），归 M3 host function 一并设计
-2. **M3**：host function（JS 函数作 wasm import——重入桥设计）、validate 真实校验接线、
-   `compileStreaming`/`instantiateStreaming` 真实 Response body 路径（DC-3 剩余）
+1. **M3 切片 1**：host function 设计前置——wasm 执行中同步回调 JS 需宿主重入设计
+   （`instance.call` 内再进 JS sandbox），importObject 的 JS 函数表传递与其同一机制，
+   先出设计记本文档再动代码（DC-3/DC-4 深水区）
+2. **M3 切片 2**：validate 真实校验接线（wasm-sandbox 补 validate API → 桥接，替换
+   魔术字节检查）；`compileStreaming`/`instantiateStreaming` 真实 Response body 路径
+   （fetch_handler 已有，接线 + Content-Type 校验）
 3. **跨流协调**：V8 消息循环泵归 event-loop-spec 流（或用户授权跨域），落地后
    `make testharness-wasm` 复跑验证 4 案翻绿（99.4% → 100%）
 4. **已知限制（协议性，非缺陷）**：Global 导出为快照值（不可变全局精确；可变全局
    wasm 侧写入后不回读——桥异步协议无同步 getter 通道，live 值需协议扩展）；Table
-   仅 length 快照（get/grow 未接线）
+   仅 length 快照（get/grow 未接线）；`__wasm_errors__` 通道为查询面（instantiate
+   Promise 已 resolve，无法回溯 reject——spec 形态的 promise 语义需桥协议演进）
 
 **碰撞管理**：开工前先 `git log --since="14 days ago" -- crates/engine/src/dom_bridge.rs
 crates/webview/` 核对活跃面；有活跃编辑则先做零碰撞面（wasm-sandbox 单测、WPT 导入）。
@@ -84,8 +85,8 @@ wasm 段（`process_wasm_bridge` 及 `_callQueue` 排空区），避开 MO 区�
 | 里程碑 | 状态 |
 |--------|------|
 | M1 — WPT 基线建立 + 类型扩展 | ✅ 切片 1（基线 99.4%）+ 切片 2（类型全映射）+ 切片 3（导出描述面）；残余 = P2 跨流卡点 |
-| M2 — Memory/Global/Table + 实例化语义 | 🔄 切片 1（Memory.grow 真实接线）✅ + 切片 2（Global/Table 导出面）✅；切片 3（importObject 链接）待做 |
-| M3 — host function + 流式 + 收尾 | ⬜ |
+| M2 — Memory/Global/Table + 实例化语义 | ✅ 切片 1（Memory.grow 真实接线）+ 切片 2（Global/Table 导出面）+ 切片 3（错误分类面 + WA 状态幂等安装）；残余 = importObject JS 函数链接归 M3 重入设计 |
+| M3 — host function + 流式 + 收尾 | ⬜ 切片计划见上（重入设计前置） |
 
 ## 验证基线
 

@@ -1345,6 +1345,20 @@ fn test_polyfill_contains_webassembly() {
 }
 
 #[test]
+fn test_polyfill_webassembly_error_classes() {
+    // 错误分类面（page-wasm M2 切片 3）：spec 错误类构造器 + host 注入实例面
+    let polyfill = generate_dom_api_polyfill();
+    assert!(polyfill.contains("__wasmMakeErrorClass__"));
+    assert!(polyfill.contains("CompileError"));
+    assert!(polyfill.contains("LinkError"));
+    assert!(polyfill.contains("RuntimeError"));
+    assert!(
+        polyfill.contains("Object.setPrototypeOf"),
+        "错误实例须挂到类原型（instanceof 判别）"
+    );
+}
+
+#[test]
 fn test_polyfill_webassembly_compile() {
     let polyfill = generate_dom_api_polyfill();
     assert!(polyfill.contains("Promise.resolve"));

@@ -682,3 +682,66 @@ fn test_wasm_bridge_global_table_exports() {
     assert!(r.contains("\"big\":\"4294967296\""), "i64 global 应保持 >2^32 值: {r}");
     assert!(r.contains("\"tableLength\":3"), "table length 应为 3: {r}");
 }
+
+/// 错误分类面（page-wasm M2 切片 3，DC-3）：编译失败 → CompileError、
+/// import 缺失/链接失败 → LinkError，注入 `__wasm_errors__` 的为 spec 错误类
+/// 实例（`instanceof` 判别 + `name` 对齐）。
+#[test]
+fn test_wasm_bridge_error_classification() {
+    let mut wv = WebView::new(WebViewConfig::default());
+    // 魔术字节正确但版本段损坏 → 编译失败；干净模块带未提供 import → 链接失败
+    let missing_import = wat::parse_str(r#"(module (import "env" "missing" (func)))"#).unwrap();
+    let import_bytes: String = missing_import
+        .iter()
+        .map(|b| b.to_string())
+        .collect::<Vec<_>>()
+        .join(",");
+
+    // 桥协议限制：_pendingBridge 为单槽通道，一次 execute 只承载一个桥命令——
+    // 两个 instantiate 须分两次 execute（id 序列延续：moduleId/instanceId 交替自增）
+    let result = wv
+        .execute_script_with_dom(
+            r#"
+        WebAssembly.instantiate(new Uint8Array([0x00, 0x61, 0x73, 0x6D, 0x01, 0xFF]));
+        true
+        "#,
+        )
+        .unwrap();
+    assert_eq!(result, "true", "无效字节 instantiate 应返回 Promise");
+    let result = wv
+        .execute_script_with_dom(&format!(
+            r#"
+        WebAssembly.instantiate(new Uint8Array([{import_bytes}]));
+        true
+        "#
+        ))
+        .unwrap();
+    assert_eq!(result, "true", "缺 import instantiate 应返回 Promise");
+
+    // execute #2：instanceof 判别
+    let r = wv
+        .execute_script(
+            r#"
+        (function() {
+            var e1 = globalThis.__wasm_errors__ && globalThis.__wasm_errors__[2];
+            var e2 = globalThis.__wasm_errors__ && globalThis.__wasm_errors__[4];
+            return JSON.stringify({
+                e1Name: e1 && e1.name,
+                e1IsCompile: !!(e1 && e1 instanceof WebAssembly.CompileError),
+                e1IsError: !!(e1 && e1 instanceof Error),
+                e2Name: e2 && e2.name,
+                e2IsLink: !!(e2 && e2 instanceof WebAssembly.LinkError)
+            });
+        })()
+        "#,
+        )
+        .unwrap();
+    assert!(r.contains("\"e1IsError\":true"), "错误实例应为 Error 子类: {r}");
+    assert!(
+        r.contains("\"e1IsCompile\":true"),
+        "编译失败应注入 CompileError 实例: {r}"
+    );
+    assert!(r.contains("\"e1Name\":\"CompileError\""), "name 应为 CompileError: {r}");
+    assert!(r.contains("\"e2IsLink\":true"), "import 缺失应注入 LinkError 实例: {r}");
+    assert!(r.contains("\"e2Name\":\"LinkError\""), "name 应为 LinkError: {r}");
+}

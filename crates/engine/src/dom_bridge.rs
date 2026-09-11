@@ -349,6 +349,14 @@ fn extract_string_arg(input: &str) -> Option<String> {
 ///
 /// 此代码在 JS 引擎中创建 `document` 和基本 DOM API 的桩实现，
 /// 实际操作通过桥接层转发到 Rust DOM。
+///
+/// WebAssembly 段为幂等安装（page-wasm M2 切片 3）：此前每次
+/// `execute_script_with_dom` 都用全新对象覆写 `globalThis.WebAssembly`，
+/// `_nextId`/`_callResults`/`_moduleExports` 跨 execute 重置——host 按 id 寻址的
+/// 注入（错误/调用结果/导出描述）在多 execute 消费流中错位（实测：第二个
+/// instantiate 的错误覆写第一个的）。已装本桥（`_modules` 标记）则整段跳过；
+/// 原生 V8 WebAssembly（无 `_modules`，js_dom_shim 页面路径）仍被桥接对象覆盖，
+/// execute 路径既有契约不变。
 pub fn generate_dom_api_polyfill() -> String {
     r#"(function() {
   // DOM API polyfill for ZeroBrowser
@@ -392,6 +400,26 @@ pub fn generate_dom_api_polyfill() -> String {
     return null;
   }
 
+  // 错误类工厂 — spec js-api「error objects」：CompileError/LinkError/RuntimeError
+  // 均为 Error 子类（instanceof 两者皆成立），name 固定为类名
+  function __wasmMakeErrorClass__(name) {
+    var C = function(message) {
+      var e = new Error(message === undefined ? '' : message);
+      e.name = name;
+      Object.setPrototypeOf(e, C.prototype);
+      return e;
+    };
+    C.prototype = Object.create(Error.prototype);
+    C.prototype.constructor = C;
+    C.prototype.name = name;
+    return C;
+  }
+
+  // 幂等安装（详见函数级文档）——已有本桥（_modules 标记）则保留跨 execute 状态；
+  // 原生 V8 WebAssembly（无 _modules）仍被桥接对象覆盖（execute 路径既有契约）
+  if (typeof globalThis.WebAssembly !== 'undefined' && globalThis.WebAssembly._modules) {
+    return;
+  }
   globalThis.WebAssembly = {
     _modules: {},
     _instances: {},
@@ -534,7 +562,13 @@ pub fn generate_dom_api_polyfill() -> String {
         }
         return typeof module.exports === 'function' ? module.exports() : [];
       }
-    }
+    },
+
+    // 错误类构造器 — https://webassembly.github.io/spec/js-api/#error-objects
+    // host 桥接按错误类别注入实例（__wasm_errors__[id]），JS 侧可 instanceof 判别
+    CompileError: __wasmMakeErrorClass__('CompileError'),
+    LinkError: __wasmMakeErrorClass__('LinkError'),
+    RuntimeError: __wasmMakeErrorClass__('RuntimeError')
   };
 
   if (globalThis.document && (globalThis.document.__zwHandle !== undefined || globalThis.document.__zwShimInstalled)) return;
