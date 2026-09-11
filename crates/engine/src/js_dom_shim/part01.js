@@ -2806,6 +2806,14 @@
     var rootRect = this._rootSel
       ? _io_rectFromSel(this._rootSel)
       : { x: 0, y: 0, w: globalThis.innerWidth | 0, h: globalThis.innerHeight | 0 };
+    // root == target（event-loop-spec M1 切片 3c）：spec skip-to-step-11 臂——intersection
+    // root 为 Element 且 target 非其后代（containing block chain；自身非自身后代）→
+    // targetRect/intersectionRect 留零、isIntersecting false、ratio 0，仍派初通知。
+    //（intersection-observer/target-is-root 断言面。）
+    if (this._rootSel && sel && this._rootSel === sel) {
+      return { target: t.proxy, targetRect: { x: 0, y: 0, w: 0, h: 0 }, rootRect: rootRect,
+               inter: { x: 0, y: 0, w: 0, h: 0 }, ratio: 0, isIntersecting: false };
+    }
     // R2966：rootMargin 展开/收缩 root rect（% 按 root 自身维度）。零 margin（默认）原样。
     rootRect = _io_applyRootMargin(rootRect, this._rootMargins);
     // path A：sel 空（createElement 元素）时用 handle，host 查 handle→selector map 解析。

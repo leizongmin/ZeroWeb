@@ -2,7 +2,7 @@
 
 **入口文档**: [../event-loop-spec.md](../event-loop-spec.md)
 **创建日期**: 2026-09-07（goal 拆分 bootstrap）
-**最后更新**: 2026-09-11（M1 切片 3a+3b——IO/RO 基线 29.7% → 38.8%）
+**最后更新**: 2026-09-11（M1 切片 3a+3b+3c——IO/RO 基线 29.7% → 41.4%）
 
 ---
 
@@ -48,11 +48,26 @@ WPT 基线 → MO host 触发（方案 C 设计已存在）→ checkpoint spec �
 |---|------|------|
 | P1 | IO/RO WPT 用例覆盖为零（fetch 脚本 + 导入 + 基线） | ✅ 2026-09-11（基线 29.7% 落 evidence/） |
 | P2 | 事件循环时序差距清单（对照 spec 逐条）未建立 | ✅ 2026-09-11（evidence/2026-09-11-m1-event-loop-gap-list.md） |
-| P2.5 | IO/RO 语义修齐第一批（tick 接线 + threshold 越界 + 构造器校验/getter） | ✅ 2026-09-11（切片 3a+3b，基线 29.7% → 38.8%，evidence/2026-09-11-m1-slice3-observers-wiring-validation.md） |
+| P2.5 | IO/RO 语义修齐第一批（tick 接线 + threshold 越界 + 构造器校验/getter + root==target + documentElement client 尺寸） | ✅ 2026-09-11（切片 3a+3b+3c，基线 29.7% → 41.4%，evidence/2026-09-11-m1-slice3-observers-wiring-validation.md） |
 | P3 | MO host 触发未实施（通知端死路） | ⬜ M2 |
 | P4 | checkpoint 简化版（无 task queue、无 per-task checkpoint） | ⬜ M3 |
 
 ## 已完成切片
+
+### M1 切片 3c — IO/RO 语义修齐第二批 + 实验回退记账（2026-09-11）✅
+
+- 落地两小修：① target-is-root（root==target → spec skip-to-step-11 臂：rect 留零 +
+  isIntersecting false + ratio 0，仍派初通知）；② documentElement.clientWidth/Height
+  viewport 化（part04 element trap；html 根 client 尺寸 = viewport 而非内容高——
+  empty-root-margin 全簇 + scrollTo 族翻绿，IO +7 零回归）
+- 实验后回退（详见 evidence「实验后回退」节）：observe 初通知就绪门 + rect 读
+  handle→selector 回落——zw-ro-probe 诊断证实 **RO observe-001..020 族真根因 = engine
+  apply 路径给 createElement 元素派 `div` 类裸 tag 稳定 selector，与既有同 tag 元素
+  歧义致反查断裂**（js-dom/WC 流 apply 域协调项）；且就绪门时序变化使 observe-007/017
+  回退。回退后 IO 94/217 = 43.3%、RO 19/56 = 33.9%（合计 41.4%），全量零回归
+- 质量门禁：zero-engine + integration 3,455P/0F；后续剩余聚类全部落在几何真值 /
+  viewport 校准 / 稳定 selector 唯一性三处跨流域 → 本流 IO/RO 轻量修复面收敛，
+  主力转 M2
 
 ### M1 切片 3a+3b — IO/RO 动态跟踪接线 + 语义修齐第一批（2026-09-11）✅
 
@@ -96,14 +111,15 @@ WPT 基线 → MO host 触发（方案 C 设计已存在）→ checkpoint spec �
 
 ## 下一步计划
 
-1. **IO/RO 语义轻量修复第二批（切片 3c，从残留聚类取序，全 in-shim）**：
-   - documentElement.clientWidth/Height 对根元素返 viewport 尺寸（empty-root-margin）
-   - zero-area target intersectionRatio=1（spec §2.2.11-12）+ edge-inclusive isIntersecting
-   - target-is-root（root==target skip-to-step-11 臂 → 不相交）
-   - detached document 初通知抑制（ownerDocument≠主文档 → observe 不派初通知，
-     adopt 后 tick 重算；与 takeRecords 排队模型一并评估）
-2. **M2**：MO host 触发（方案 C 实施）
-3. **M3**：task queue + per-task checkpoint（kill-switch → A/B → default-on）
+1. **M2：MO host 触发（方案 C 实施）**——dom 层 `pending_mutations` 通知端接活 +
+   共享注册表 + NodeId↔handle/selector 身份桥（R3106 关联复用）+ kill-switch + A/B。
+   照 `zero-web/p1b-mutationobserver-host-trigger-design-2026-08-10.md` 切片实施
+2. **M3**：task queue + per-task checkpoint（kill-switch → A/B → default-on）
+3. **跨流协调项（非本流可闭合，记录待碰头）**：
+   - engine apply 路径稳定 selector 唯一性（RO observe-001..020 / IO handle 族根因）
+   - 几何真值簇（scroll offset / transform / zoom / clip-path 参与 IO 几何）——渲染流域
+4. **本流后续小修候选**：detached doc 初通知抑制 + takeRecords 真排队模型（同做）；
+   scroll-margin 臂
 
 **待用户决策清单**：
 - runner viewport 校准（1280×800 → 上游 WPT 校准 800×600）：牵动全部 testharness
@@ -117,16 +133,17 @@ crates/script-sandbox/` 核对渲染流域活跃面。
 
 | 里程碑 | 状态 |
 |--------|------|
-| M1 — WPT 基线 + 时序差距清单 | ✅ 2026-09-11（基线 29.7% + 差距清单；语义修齐第一批 3a+3b 落地 → 38.8%，第二批 3c 取序中） |
+| M1 — WPT 基线 + 时序差距清单 | ✅ 2026-09-11（基线 29.7% + 差距清单；语义修齐 3a+3b+3c → 41.4%；剩余聚类为跨流域协调项，主力转 M2） |
 | M2 — MutationObserver host 触发 | ⬜ |
 | M3 — checkpoint spec 化 | ⬜ |
 
 ## 验证基线
 
 - 测试基线：立项时点全绿（`make test` / `make reftest` 入口，经 test-guard 包裹；
-  禁止裸跑 cargo test）。2026-09-11 切片 3a+3b 后：make test 19,134P/0F
-- IO/RO 用例面：基线 29.7%（IO 30.9% / RO 25.0%）→ 切片 3a+3b 后 **38.8%**
-  （IO 87/217 = 40.1% / RO 19/56 = 33.9%），明细见 evidence/
+  禁止裸跑 cargo test）。2026-09-11 切片 3a+3b 后：make test 19,134P/0F；切片 3c 后
+  engine + integration 3,455P/0F
+- IO/RO 用例面：基线 29.7%（IO 30.9% / RO 25.0%）→ 切片 3a+3b+3c 后 **41.4%**
+  （IO 94/217 = 43.3% / RO 19/56 = 33.9%），明细见 evidence/
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过；
   时序变更必须 kill-switch + 全量 A/B 零回归；渲染相关门禁（product-smoke/bench-gate）
   在 tick 排布变更轮按 run-rules §12 判断是否需要（本切片仅 runner probe 循环加一次

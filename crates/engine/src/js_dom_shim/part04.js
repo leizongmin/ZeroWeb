@@ -7408,9 +7408,21 @@ return _tplContent;
         // 相对 viewport，顶层元素精确、嵌套近似）——近似对 visibility/sizing 检查足够。
         if (prop === 'offsetWidth' || prop === 'clientWidth') {
           var r = _layoutRect(sel, handle);
+          // 根元素（html）clientWidth = viewport 宽（CSSOM View spec；shim 布局 rect 根盒
+          // 宽即 viewport 宽，此处恒等，显式化以免 rect 未命中时返 0）。
+          if (prop === 'clientWidth' && _realTag(sel, handle) === 'HTML') {
+            return globalThis.innerWidth | 0;
+          }
           return r ? r.w : 0;
         }
         if (prop === 'offsetHeight' || prop === 'clientHeight') {
+          // 根元素（html）clientHeight = viewport 高而非内容高（CSSOM View spec；shim 布局
+          // rect 的根盒高是内容高，直读使 `documentElement.clientHeight` 失去 viewport
+          // 语义——intersection-observer/empty-root-margin 断言 rootBounds.bottom ==
+          // documentElement.clientHeight 的根因）。offsetHeight 保持内容高（浏览器语义）。
+          if (prop === 'clientHeight' && _realTag(sel, handle) === 'HTML') {
+            return globalThis.innerHeight | 0;
+          }
           var r = _layoutRect(sel, handle);
           return r ? r.h : 0;
         }
