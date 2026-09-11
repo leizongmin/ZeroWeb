@@ -129,10 +129,15 @@ Shadow DOM 渲染级 composed tree 排除（等用户点名专项）。
   pending 回落 'div' 的 safelist 误放行仍挂（未阻塞当前断言面）
 - ~~slotchange nested slots 4F~~ ✅ 第七小步全清（signal 派发深度降序：最深的
   shadow 树最先 flush——级联源头信号先发；`__zwSlotRootDepth` 探针实证 outer=1/inner=2）
-- slotchange 尾 8 案（两簇）：①removed-immediately 4F——被移除 slot 的 proxy 身份
-  二相（R52 消零重建 vs 页面持有引用）；②end-of-microtask 4F——signal 与 MO records
-  投递分界（per-observer 排空语义）
-- slotchange innerHTML 尾计数 4F——async host apply 过度标记
+- slotchange 尾 8 案（两簇，第八增量探针精化）：①end-of-microtask 4F——**变体序依赖**
+  （open+in-document 首变体过、后续变体 slotchange 先于 MO1 投递）——探针实证孤立复现
+  序列正确（MO1:0→slotchange→MO2:1✓），多变体连续执行时错乱，疑点 = `_deferBudget`
+  预算耗尽丢 flush 调度 + `_moFlushScheduled` 重入吞排空（MO1 内变异的次轮信号丢失
+  与 late-fire 并存）——修法：flush 调度去预算化/重入安全 + signal 排空挂 per-observer
+  投递点（spec notify mutation observers 每 observer 后排空 signalSet）；②removed-
+  immediately 4F——被移除 slot 的 proxy 身份二相（R52 消零重建 vs 页面持有引用）
+- slotchange innerHTML 尾计数 4F——async host apply 过度标记（疑与 ①的 flush 重入
+  同源：apply 期间多次排空）
 - builtin-coverage 的 innerHTML 解析簇（~108F）：R380 查询融合域，非 CE 域
 - reactions/ 表格族（table-scoped 解析升级）与 customized-builtins 的 iframe/reparse 面
 - XHTML 悬空 body 查询域（5 案）——pre-existing，与 template 真实化无因果
