@@ -71,6 +71,39 @@ fn test_mo_host_trigger_native_attribute_notifies_polyfill_mo() {
         std::thread::sleep(std::time::Duration::from_millis(5));
     }
     assert!(second, "二次 native 写应投递携 oldValue='c1' 的 record");
+    // MO-S2：childList 移除——removedNodes 经 '#id' 回落身份化（脱树节点 unique 路径
+    // 必败）+ previousSibling 透传（dom 层写前捕获）。
+    let mut wv2 = WebView::new(WebViewConfig::default());
+    wv2.load_html(
+        "<html><body><ul id='ul'><li id='a'></li><li id='b'></li></ul><script>0;</script></body></html>",
+        None,
+    );
+    wv2.run_page_scripts().expect("run page scripts");
+    wv2.set_mo_host_trigger(true);
+    wv2.execute_script(
+        "globalThis.__ulRecs = [];\
+         globalThis.__moUl = new MutationObserver(function (rs) { globalThis.__ulRecs = globalThis.__ulRecs.concat(rs); });\
+         globalThis.__moUl.observe(document.getElementById('ul'), { childList: true });",
+    )
+    .unwrap();
+    // native 移除 #b（native 绑定 remove → dom remove_child → previous_sibling=#a 捕获）。
+    wv2.execute_script("(()=>{ const ul = __zw_native_element_for_id('ul'); const b = __zw_native_element_for_id('b'); ul.removeChild(b); })()")
+        .unwrap();
+    let mut removed = false;
+    for _ in 0..50 {
+        let detail = wv2
+            .execute_script(
+                "var r = globalThis.__ulRecs.find(function (x) { return x.removedNodes.length > 0; });\
+                 r ? (r.target.id + '/' + r.removedNodes.length + '/' + (r.removedNodes[0] ? 'proxy' : 'missing') + '/' + (r.previousSibling ? (r.previousSibling.id || 'nopx') : 'null')) : 'pending'",
+            )
+            .unwrap();
+        if detail.trim() == "ul/1/proxy/a" {
+            removed = true;
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    assert!(removed, "childList 移除应投递 removedNodes(1) + previousSibling=#a");
 }
 
 /// kill-switch OFF（默认）：native 写不投递——通知端死路保持（行为时序变更门禁）。

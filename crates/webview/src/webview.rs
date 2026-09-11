@@ -2281,33 +2281,55 @@ impl WebView {
                         zero_engine::MutationType::CharacterData => "characterData",
                         zero_engine::MutationType::ChildList => "childList",
                     };
-                    let resolve_list = |nodes: &[zero_engine::NodeId]| -> String {
-                        nodes
-                            .iter()
-                            .filter_map(|n| zero_engine::js_dom_bridge::unique_selector_for_node(&doc, *n))
-                            .collect::<Vec<_>>()
-                            .join("|")
+                    // 在树节点（added/sibling/attr target）走唯一 selector；removed 节点已
+                    // 脱树——query 唯一性校验必败——回落 `stable_selector_for_node` 的
+                    // '#id' 形态（属性派生、不依赖树位置）；非 id 形态丢弃（tag.class/
+                    // nth-child 在脱树语境无稳定语义，误配比缺失更糟）。
+                    let resolve_in_tree =
+                        |n: &zero_engine::NodeId| zero_engine::js_dom_bridge::unique_selector_for_node(&doc, *n);
+                    let resolve_detached = |n: &zero_engine::NodeId| {
+                        zero_engine::js_dom_bridge::stable_selector_for_node(&doc, *n).filter(|s| s.starts_with('#'))
                     };
-                    let added = resolve_list(&r.added_nodes);
-                    let removed = resolve_list(&r.removed_nodes);
-                    Some((sel, typ, r.attribute_name.clone(), r.old_value.clone(), added, removed))
+                    let added = r
+                        .added_nodes
+                        .iter()
+                        .filter_map(resolve_in_tree)
+                        .collect::<Vec<_>>()
+                        .join("|");
+                    let removed = r
+                        .removed_nodes
+                        .iter()
+                        .filter_map(|n| resolve_in_tree(n).or_else(|| resolve_detached(n)))
+                        .collect::<Vec<_>>()
+                        .join("|");
+                    let prev = r.previous_sibling.and_then(|n| resolve_in_tree(&n));
+                    Some((
+                        sel,
+                        typ,
+                        r.attribute_name.clone(),
+                        r.old_value.clone(),
+                        added,
+                        removed,
+                        prev,
+                    ))
                 })
                 .collect()
         };
-        for (sel, typ, attr, old, added, removed) in drained {
+        for (sel, typ, attr, old, added, removed, prev) in drained {
             let js_str = |s: &str| format!("'{}'", escape_js_string(s));
             let js_opt = |v: &Option<String>| match v {
                 Some(s) => js_str(s),
                 None => "null".to_string(),
             };
             let script = format!(
-                "if(typeof globalThis.__zw_mo_notify_native==='function')globalThis.__zw_mo_notify_native({},{},{},{},{},{});",
+                "if(typeof globalThis.__zw_mo_notify_native==='function')globalThis.__zw_mo_notify_native({},{},{},{},{},{},{});",
                 js_str(&sel),
                 js_str(typ),
                 js_opt(&attr),
                 js_opt(&old),
                 js_str(&added),
                 js_str(&removed),
+                js_opt(&prev),
             );
             let _ = self.execute_script(&script);
         }
@@ -5292,8 +5314,17 @@ pub(crate) fn base64_decode(input: &str) -> Result<Vec<u8>, String> {
 ///
 /// 替换 `'`、`\`、`</script>` 等字符为安全序列。
 /// event-loop-spec M2 MO-S1 排空批条目：(target sel, record type, attributeName,
-/// oldValue, added 节点 selector 串，removed 节点 selector 串)。
-type DrainedMutation = (String, &'static str, Option<String>, Option<String>, String, String);
+/// oldValue, added 节点 selector 串，removed 节点 selector 串, previousSibling sel)。
+/// （MO-S2 扩展 prev 臂；nextSibling dom 层 MutationRecord 无字段，见 master.md 遗留。）
+type DrainedMutation = (
+    String,
+    &'static str,
+    Option<String>,
+    Option<String>,
+    String,
+    String,
+    Option<String>,
+);
 
 fn escape_js_string(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
