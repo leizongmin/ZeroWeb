@@ -2,7 +2,7 @@
 
 **入口文档**: [../event-loop-spec.md](../event-loop-spec.md)
 **创建日期**: 2026-09-07（goal 拆分 bootstrap）
-**最后更新**: 2026-09-07（立项——M1 待启动）
+**最后更新**: 2026-09-11（M1 切片 1 完成——IO/RO WPT 基线 29.7%）
 
 ---
 
@@ -46,18 +46,35 @@ WPT 基线 → MO host 触发（方案 C 设计已存在）→ checkpoint spec �
 
 | # | 缺口 | 状态 |
 |---|------|------|
-| P1 | IO/RO WPT 用例覆盖为零（fetch 脚本 + 导入 + 基线） | ⬜ M1 |
+| P1 | IO/RO WPT 用例覆盖为零（fetch 脚本 + 导入 + 基线） | ✅ 2026-09-11（基线 29.7% 落 evidence/） |
 | P2 | 事件循环时序差距清单（对照 spec 逐条）未建立 | ⬜ M1 |
 | P3 | MO host 触发未实施（通知端死路） | ⬜ M2 |
 | P4 | checkpoint 简化版（无 task queue、无 per-task checkpoint） | ⬜ M3 |
 
+## 已完成切片
+
+### M1 切片 1 — IO/RO WPT 基线（2026-09-11，零源码改动纯资产）✅
+
+- `tests/wpt-runner/scripts/fetch-observers-subset.sh`（WPT `3159769338` pin，110 IO +
+  40 RO top-level .html 全量 + resources 全目录；.window.js 包装形态不拉取）
+- runner 入口 `make testharness-intersection-observer` / `make testharness-resize-observer`
+  （`observers_case_skipped` 内容规则筛减：ref 页 / source 含 `<iframe` / v2 / resources；
+  内容规则而非名字规则——document-scrolling-element-root.html 名字无 iframe 但内容用）
+- **基线**：IO 81 cases / 217 subtests / **30.9% Pass**；RO 33 cases / 56 subtests /
+  **25.0% Pass**（合计 29.7%）。明细 + 失败聚类：
+  `evidence/2026-09-11-m1-observers-wpt-baseline.{md,json}`
+- 账本：114 用例记入 `imported-testharness.txt`（`EVLOOP-M1-observers-baseline`）
+- 关键归因：IO 最大失败簇（65×）= 初通知后动态跟踪面不可达——testharness runner 不调
+  `__zw_observers_tick` 且无渲染循环；runner 环境限制已记入 evidence，切片 3 修
+
 ## 下一步计划
 
-1. **M1 切片 1**：fetch 脚本（intersection-observer / resize-observer）+ 用例导入 +
-   分类通过率基线（零源码改动，纯资产）
-2. **M1 切片 2**：事件循环时序差距清单（v8_runtime.rs checkpoint 调用点盘点 +
+1. **M1 切片 2**：事件循环时序差距清单（v8_runtime.rs checkpoint 调用点盘点 +
    HTML spec 事件循环算法逐条对照）
-3. **M1 切片 3**：IO/RO 语义轻量修复队列（rootMargin/threshold 等 WPT 驱动）
+2. **M1 切片 3**：IO/RO 语义轻量修复队列，从基线失败聚类取序：
+   - 候选 a：runner 侧 observer tick 接线（对齐 renderer `tick_observers` 语义，
+     解锁动态跟踪面——参照 `ZW_TESTHARNESS_RAF_FRAME_DRIVEN` opt-in 先例）
+   - 候选 b：IO 构造器异常校验（threshold 范围 / rootMargin 语法 throw，零几何依赖）
 
 **碰撞管理**：碰 engine 前先 `git log --since="14 days ago" -- crates/engine/
 crates/script-sandbox/` 核对渲染流域活跃面。
@@ -66,7 +83,7 @@ crates/script-sandbox/` 核对渲染流域活跃面。
 
 | 里程碑 | 状态 |
 |--------|------|
-| M1 — WPT 基线 + 时序差距清单 | ⬜ 待启动 |
+| M1 — WPT 基线 + 时序差距清单 | 🔄 切片 1 ✅（切片 2/3 待做） |
 | M2 — MutationObserver host 触发 | ⬜ |
 | M3 — checkpoint spec 化 | ⬜ |
 

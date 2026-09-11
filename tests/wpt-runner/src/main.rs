@@ -47,6 +47,10 @@ Commands:
   testharness-fs  Run pinned File System (OPFS) window testharness cases (storage-opfs goal M1)
   testharness-web-components  Run imported custom-elements/shadow-dom/the-template-element
                        testharness cases (web-components goal M1 / DC-1)
+  testharness-intersection-observer  Run imported IntersectionObserver testharness cases
+                       (event-loop-spec goal M1 / DC-1)
+  testharness-resize-observer  Run imported ResizeObserver testharness cases
+                       (event-loop-spec goal M1 / DC-1)
   testharness-service-workers  Run pinned Service Worker M1 core testharness cases
   testharness-service-workers-fetch  Run pinned Service Worker M2 fetch testharness cases
   testharness-service-workers-cache-storage  Run pinned Service Worker CacheStorage testharness cases
@@ -244,6 +248,8 @@ fn main() {
         "testharness-cache-storage" => cmd_testharness_cache_storage(&options, filter.as_deref()),
         "testharness-fs" => cmd_testharness_fs(&options, filter.as_deref()),
         "testharness-web-components" => cmd_testharness_web_components(&options, filter.as_deref()),
+        "testharness-intersection-observer" => cmd_testharness_intersection_observer(&options, filter.as_deref()),
+        "testharness-resize-observer" => cmd_testharness_resize_observer(&options, filter.as_deref()),
         "testharness-service-workers" => cmd_testharness_service_workers(&options, filter.as_deref()),
         "testharness-service-workers-fetch" => cmd_testharness_service_workers_fetch(&options, filter.as_deref()),
         "testharness-service-workers-cache-storage" => {
@@ -869,6 +875,67 @@ fn cmd_testharness_web_components(options: &CliOptions, filter: Option<&str>) {
     if failed || cases.is_empty() {
         std::process::exit(1);
     }
+}
+
+/// `testharness-intersection-observer` / `testharness-resize-observer` 子命令 — 跑导入的
+/// 上游 IO/RO testharness 用例（event-loop-spec goal M1 / DC-1——observers window
+/// 可执行面基线）。
+///
+/// 用例由 `fetch-observers-subset.sh` 按需拉到 `wpt-data/`（gitignored），运行面按
+/// 内容规则筛减（`observers_case_skipped`：ref 页 / iframe 依赖 / v2 / resources）。
+/// 退出码：有用例非 Pass 或用例集为空 → 1（与 testharness-dom 一致）。基线首跑即便
+/// 大量 Fail 也只用于记录通过率（agent 经 `--json` 捕获后写 evidence/），不作为
+/// land 门禁。filter 按路径子串透传：make testharness-intersection-observer
+/// FILTER=root-margin。
+fn run_observers_cmd<F>(options: &CliOptions, filter: Option<&str>, run_cases: F)
+where
+    F: FnOnce(&std::path::Path, Option<&str>) -> Vec<(String, Vec<testharness::HarnessSubtestResult>)>,
+{
+    let wpt_root = options
+        .wpt_data
+        .as_deref()
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::path::PathBuf::from("tests/wpt-runner/wpt-data"));
+    let cases = run_cases(&wpt_root, filter);
+    let failed = cases.iter().any(|(_, results)| {
+        results
+            .iter()
+            .any(|result| result.status != testharness::HarnessStatus::Pass)
+    });
+
+    match options.format {
+        OutputFormat::Json => {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&cases).unwrap_or_else(|_| "[]".into())
+            );
+        }
+        OutputFormat::Text | OutputFormat::Tap => {
+            for (case, results) in &cases {
+                for result in results {
+                    println!("{:?} {case} :: {}", result.status, result.name);
+                    if let Some(message) = &result.message {
+                        println!("  {message}");
+                    }
+                }
+            }
+        }
+    }
+    if failed || cases.is_empty() {
+        std::process::exit(1);
+    }
+}
+
+fn cmd_testharness_intersection_observer(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness::run_intersection_observer_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_resize_observer(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness::run_resize_observer_cases(wpt_root, filter)
+    });
 }
 
 fn cmd_testharness_service_workers(options: &CliOptions, filter: Option<&str>) {

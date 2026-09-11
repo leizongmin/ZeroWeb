@@ -2593,6 +2593,94 @@ fn collect_wc_cases(
     }
 }
 
+/// IntersectionObserver / ResizeObserver pinned upstream subset——event-loop-spec goal
+/// M1 / DC-1。两目录 top-level .html 用例由 `fetch-observers-subset.sh` 全量拉取
+/// （WPT 315976933870b34d6ea30e3f6643403edae678ba）into `wpt-data/`（gitignored），
+/// 运行面按 [`observers_case_skipped`] 内容规则筛减。
+///
+/// skip 规则（fetch 脚本头注释同域，双保险）：
+/// - *-ref.html / *-notref.html（reftest 参照页）
+/// - source 含 `<iframe`——iframe 依赖面（runner 无 iframe 文档/几何管道）；按内容
+///   而非名字判定（document-scrolling-element-root.html 名字无 iframe 但内容用 iframe）
+/// - `intersection-observer/v2/`（IO v2 trackVisibility 范围外，fetch 侧不拉——双保险）
+/// - `*/resources/`（helper 资产，inline_local_scripts / script fetcher 消费）
+fn observers_case_skipped(relative: &str, source: &str) -> bool {
+    let name = relative.rsplit('/').next().unwrap_or(relative);
+    if name.ends_with("-ref.html") || name.ends_with("-notref.html") {
+        return true;
+    }
+    for skipped_dir in [
+        "intersection-observer/resources",
+        "intersection-observer/v2",
+        "resize-observer/resources",
+    ] {
+        if relative.starts_with(skipped_dir) {
+            return true;
+        }
+    }
+    source.contains("<iframe")
+}
+
+/// Run the pinned upstream IntersectionObserver window subset
+/// （event-loop-spec goal M1 / DC-1）。filter 按路径子串过滤。
+pub fn run_intersection_observer_cases(
+    wpt_root: &Path,
+    filter: Option<&str>,
+) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_observers_subdir(wpt_root, "intersection-observer", filter)
+}
+
+/// Run the pinned upstream ResizeObserver window subset
+/// （event-loop-spec goal M1 / DC-1）。filter 按路径子串过滤。
+pub fn run_resize_observer_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_observers_subdir(wpt_root, "resize-observer", filter)
+}
+
+fn run_observers_subdir(
+    wpt_root: &Path,
+    subdir: &str,
+    filter: Option<&str>,
+) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    let harness_source = match std::fs::read_to_string(wpt_root.join("resources/testharness.js")) {
+        Ok(source) => source,
+        Err(error) => {
+            return vec![(
+                format!("{subdir}/"),
+                vec![HarnessSubtestResult {
+                    name: "load testharness.js".into(),
+                    status: HarnessStatus::Fail,
+                    message: Some(error.to_string()),
+                }],
+            )];
+        }
+    };
+    // 两目录用例均为 flat 布局（resources/ 与 v2/ 是子目录），无需递归。
+    let mut cases = Vec::new();
+    let entries = match std::fs::read_dir(wpt_root.join(subdir)) {
+        Ok(entries) => entries,
+        Err(_) => return cases,
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() || path.extension().is_none_or(|ext| ext != "html") {
+            continue;
+        }
+        let relative = format!("{subdir}/{}", entry.file_name().to_string_lossy());
+        if filter.is_some_and(|filter| !relative.contains(filter)) {
+            continue;
+        }
+        let Ok(source) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        if observers_case_skipped(&relative, &source) {
+            continue;
+        }
+        let results = run_testharness_html(wpt_root, &relative, &source, &harness_source, CASE_TIMEOUT);
+        cases.push((relative, results));
+    }
+    cases
+}
+
 /// Run the fixed Service Worker M1 core testharness corpus.
 pub fn run_service_worker_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
     run_service_worker_case_set(wpt_root, filter, SERVICE_WORKER_CORE_CASES)

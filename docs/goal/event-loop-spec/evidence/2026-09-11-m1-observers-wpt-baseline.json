@@ -1,0 +1,1987 @@
+{
+  "date": "2026-09-11",
+  "goal": "event-loop-spec M1 / DC-1",
+  "wpt_rev": "315976933870b34d6ea30e3f6643403edae678ba",
+  "fetch_script": "tests/wpt-runner/scripts/fetch-observers-subset.sh",
+  "runner_modes": [
+    "testharness-intersection-observer",
+    "testharness-resize-observer"
+  ],
+  "skip_rules": [
+    "*-ref.html / *-notref.html (reftest refs)",
+    "source contains '<iframe' (runner has no iframe document/geometry pipeline)",
+    "intersection-observer/v2/ (IO v2 out of scope)",
+    "*/resources/ (helpers)"
+  ],
+  "fetched": {
+    "intersection-observer": 110,
+    "resize-observer": 40
+  },
+  "ran": {
+    "intersection-observer": 81,
+    "resize-observer": 33
+  },
+  "domains": {
+    "intersection-observer": {
+      "cases": 81,
+      "subtests": 217,
+      "by_status": {
+        "Fail": 148,
+        "Pass": 67,
+        "Timeout": 2
+      },
+      "pass_rate_pct": 30.9
+    },
+    "resize-observer": {
+      "cases": 33,
+      "subtests": 56,
+      "by_status": {
+        "Pass": 14,
+        "Timeout": 6,
+        "Fail": 36
+      },
+      "pass_rate_pct": 25.0
+    }
+  },
+  "cases": {
+    "intersection-observer": [
+      {
+        "case": "intersection-observer/animating.html",
+        "subtests": [
+          {
+            "name": "IntersectionObserver generates notifications when a transform animation changes intersection state",
+            "status": "Fail",
+            "message": "promise_test: Unhandled rejection with value: \"Did not get a not-intersecting notification within 3 seconds.\""
+          }
+        ]
+      },
+      {
+        "case": "intersection-observer/bounding-box.html",
+        "subtests": [
+          {
+            "name": "Test that the target's border bounding box is used to calculate intersection.",
+            "status": "Pass",
+            "message": null
+          },
+          {
+            "name": "First rAF.",
+            "status": "Fail",
+            "message": "assert_approx_equals: entries[0].intersectionRect.left expected 0 +/- 0 but got 26"
+          },
+          {
+            "name": "target.style.transform = 'translateY(195px)'",
+            "status": "Fail",
+            "message": "assert_equals: entries.length expected 2 but got 1"
+          },
+          {
+            "name": "target.style.transform = 'translateY(300px)'",
+            "status": "Fail",
+            "message": "assert_equals: entries.length expected 3 but got 1"
+          },
+          {
+            "name": "target.style.zoom = 2",
+            "status": "Fail",
+            "message": "assert_equals: entries.length expected 4 but got 1"
+          }
+        ]
+      },
+      {
+        "case": "intersection-observer/clip-path-animation.html",
+        "subtests": [
+          {
+            "name": "clip-path-animation",
+            "status": "Fail",
+            "message": "assert_approx_equals: entries[1].intersectionRect.left expected 0 +/- 0 but got 28"
+          }
+        ]
+      },
+      {
+        "case": "intersection-observer/clip-path.html",
+        "subtests": [
+          {
+            "name": "clip-path",
+            "status": "Fail",
+            "message": "assert_approx_equals: entries[0].rootBounds.right expected 800 +/- 0 but got 1280"
+          }
+        ]
+      },
+      {
+        "case": "intersection-observer/containing-block.html",
+        "subtests": [
+          {
+            "name": "IntersectionObserver should only report intersections if root is a containing block ancestor of target.",
+            "status": "Pass",
+            "message": null
+          },
+          {
+            "name": "In containing block and intersecting.",
+            "status": "Fail",
+            "message": "assert_approx_equals: entries[0].boundingClientRect.top expected 18 +/- 0 but got 258"
+          },
+          {
+            "name": "In containing block and not intersecting.",
+            "status": "Fail",
+            "message": "assert_equals: entries.length expected 2 but got 1"
+          },
+          {
+            "name": "Not in containing block and intersecting.",
+            "status": "Fail",
+            "message": "assert_equals: entries.length expected 2 but got 1"
+          },
+          {
+            "name": "Not in containing block and not intersecting.",
+            "status": "Fail",
+            "message": "assert_equals: entries.length expected 2 but got 1"
+          }
+        ]
+      },
+      {
+        "case": "intersection-observer/disconnect.html",
+        "subtests": [
+          {
+            "name": "IntersectionObserver should not deliver pending notifications after disconnect().",
+            "status": "Pass",
+            "message": null
+          },
+          {
+            "name": "First rAF.",
+            "status": "Pass",
+            "message": null
+          },
+          {
+            "name": "observer.disconnect()",
+            "status": "Pass",
+            "message": null
+          }
+        ]
+      },
+      {
+        "case": "intersection-observer/display-none.html",
+        "subtests": [
+          {
+            "name": "display-none",
+            "status": "Fail",
+            "message": "assert_approx_equals: entries[0].rootBounds.right expected 800 +/- 0 but got 1280"
+          }
+        ]
+      },
+      {
+        "case": "intersection-observer/edge-inclusive-intersection.html",
+        "subtests": [
+          {
+            "name": "IntersectionObserver should detect and report edge-adjacent and zero-area intersections.",
+            "status": "Pass",
+            "message": null
+          },
+          {
+            "name": "First rAF.",
+            "status": "Fail",
+            "message": "assert_approx_equals: entries[0].boundingClientRect.top expected 258 +/- 0 but got 8"
+          },
+          {
+            "name": "Set transform=translateY(200px) on target.",
+            "status": "Fail",
+            "message": "assert_equals: entries.length expected 2 but got 1"
+          },
+          {
+            "name": "Set transform=translateY(201px) on target.",
+            "status": "Fail",
+            "message": "assert_equals: entries.length expected 3 but got 1"
+          },
+          {
+            "name": "Set transform=translateY(185px) on target.",
+            "status": "Fail",
+            "message": "assert_equals: entries.length expected 4 but got 1"
+          }
+        ]
+      },
+      {
+        "case": "intersection-observer/empty-root-margin.html",
+        "subtests": [
+          {
+            "name": "An empty rootMargin string is interpreted as a margin of size zero",
+            "status": "Fail",
+            "message": "assert_equals: expected 800 but got 1280"
+          }
+        ]
+      },
+      {
+        "case": "intersection-observer/explicit-root-different-document.html",
+        "subtests": [
+          {
+            "name": "intersection-observer/explicit-root-different-document.html",
+            "status": "Timeout",
+            "message": "testharness completion callback was not called (test=function, hook=function, scripts=[200448, 457], state={\"loaded\":true,\"pending\":1,\"phase\":4,\"tests\":1}, test_wait=false)"
+          }
+        ]
+      },
+      {
+        "case": "intersection-observer/fixed-position-child-scroll.html",
+        "subtests": [
+          {
+            "name": "Fixed-position intersection observer on scroll",
+            "status": "Pass",
+            "message": null
+          },
+          {
+            "name": "First rAF.",
+            "status": "Fail",
+            "message": "assert_approx_equals: entries[0].rootBounds.right expected 800 +/- 0 but got 1280"
+          },
+          {
+            "name": "scrollTo(0, 1000)",
+            "status": "Fail",
+            "message": "assert_approx_equals: entries[0].rootBounds.right expected 800 +/- 0 but got 1280"
+          }
+        ]
+      },
+      {
+        "case": "intersection-observer/fixed-position-scroll.html",
+        "subtests": [
+          {
+            "name": "Fixed-position intersection observer on scroll",
+            "status": "Pass",
+            "message": null
+          },
+          {
+            "name": "First rAF.",
+            "status": "Fail",
+            "message": "assert_approx_equals: entries[0].rootBounds.right expected 800 +/- 0 but got 1280"
+          },
+          {
+            "name": "scrollTo(0, 1000)",
+            "status": "Fail",
+            "message": "assert_approx_equals: entries[0].rootBounds.right expected 800 +/- 0 but got 1280"
+          }
+        ]
+      },
+      {
+        "case": "intersection-observer/grow-height-and-scrolled.html",
+        "subtests": [
+          {
+            "name": "IntersectionObserver should only report intersection change after the target grows height and is scrolled.",
+            "status": "Pass",
+            "message": null
+          },
+          {
+            "name": "grow-height-and-scrolled",
+            "status": "Pass",
+            "message": null
+          },
+          {
+            "name": "grow-height-and-scrolled 1",
+            "status": "Pass",
+            "message": null
+          }
+        ]
+      },
+      {
+        "case": "intersection-observer/initial-observation-with-threshold.html",
+        "subtests": [
+          {
+            "name": "First observation with a threshold.",
+            "status": "Pass",
+            "message": null
+          },
+          {
+            "name": "First rAF",
+            "status": "Fail",
+            "message": "assert_approx_equals: entries[0].intersectionRect.bottom expected 251 +/- 0 but got 254"
+          },
+          {
+            "name": "root.scrollTop = 20",
+            "status": "Fail",
+            "message": "assert_equals: entries.length expected 2 but got 1"
+          }
+        ]
+      },
+      {
+        "case": "intersection-observer/inline-client-rect.html",
+        "subtests": [
+          {
+            "name": "Inline target",
+            "status": "Pass",
+            "message": null
+          },
+          {
+            "name": "First rAF",
+            "status": "Fail",
+            "message": "assert_approx_equals: entries[0].boundingClientRect.left expected 308 +/- 0 but got 0"
+          },
+          {
+            "name": "scroller.scrollLeft = 90",
+            "status": "Fail",
+            "message": "assert_equals: entries.length expected 2 but got 1"
+          }
+        ]
+      },
+      {
+        "case": "intersection-observer/inline-with-block-child-client-rect.html",
+        "subtests": [
+          {
+            "name": "Inline target containing a block child",
+            "status": "Pass",
+            "message": null
+          },
+          {
+            "name": "First rAF",
+            "status": "Pass",
+            "message": null
+          }
+        ]
+      },
+      {
+        "case": "intersection-observer/intersection-ratio-ib-split.html",
+        "subtests": [
+          {
+            "name": "IntersectionObserver on an IB split gets the right intersection ratio - INLINE",
+            "status": "Fail",
+            "message": "assert_true: INLINE: Should be intersecting expected true got false"
+          },
+          {
+            "name": "IntersectionObserver on an IB split gets the right intersection ratio - BLOCK",
+            "status": "Pass",
+            "message": null
+          }
+        ]
+      },
+      {
+        "case": "intersection-observer/intersection-ratio-with-fractional-bounds-2.html",
+        "subtests": [
+          {
+            "name": "IntersectionObserver ratio with fractional bounds",
+            "status": "Pass",
+            "message": null
+          }
+        ]
+      },
+      {
+        "case": "intersection-observer/intersection-ratio-with-fractional-bounds.html",
+        "subtests": [
+          {
+            "name": "IntersectionObserver ratio with fractional bounds",
+            "status": "Pass",
+            "message": null
+          }
+        ]
+      },
+      {
+        "case": "intersection-observer/isIntersecting-change-events.html",
+        "subtests": [
+          {
+            "name": "isIntersecting changes should trigger notifications.",
+            "status": "Pass",
+            "message": null
+          },
+          {
+            "name": "Rects in initial notifications should report initial positions.",
+            "status": "Fail",
+            "message": "assert_equals: entries[2].target.isIntersecting equals true expected true but got false"
+          }
+        ]
+      },
+      {
+        "case": "intersection-observer/isIntersecting-threshold.html",
+        "subtests": [
+          {
+            "name": "At initial scroll position",
+            "status": "Pass",
+            "message": null
+          },
+          {
+            "name": "Scrolled to half way through target element",
+            "status": "Fail",
+            "message": "assert_equals: expected 2 but got 1"
+          },
+          {
+            "name": "Scrolled to target element completely off screen",
+            "status": "Fail",
+            "message": "assert_equals: expected 2 but got 1"
+          }
+        ]
+      },
+      {
+        "case": "intersection-observer/multicol-2.html",
+        "subtests": [
+          {
+            "name": "IntersectionObserver with a fragmented intersection root.",
+            "status": "Pass",
+            "message": null
+          }
+        ]
+      },
+      {
+        "case": "intersection-observer/multicol.html",
+        "subtests": [
+          {
+            "name": "IntersectionObserver with a fragmented intersection root.",
+            "status": "Pass",
+            "message": null
+          }
+        ]
+      },
+      {
+        "case": "intersection-observer/multiple-targets.html",
+        "subtests": [
+          {
+            "name": "One observer with multiple targets.",
+            "status": "Pass",
+            "message": null
+          },
+          {
+            "name": "First rAF.",
+            "status": "Pass",
+            "message": null
+          },
+          {
+            "name": "document.scrollingElement.scrollTop = 150",
+            "status": "Fail",
+            "message": "assert_equals: Four notifications. expected 4 but got 3"
+          },
+          {
+            "name": "document.scrollingElement.scrollTop = 10000",
+            "status": "Fail",
+            "message": "assert_equals: Six notifications. expected 6 but got 3"
+          },
+          {
+            "name": "document.scrollingElement.scrollTop = 0",
+            "status": "Fail",
+            "message": "assert_equals: Nine notifications. expected 9 but got 3"
+          }
+        ]
+      },
+      {
+        "case": "intersection-observer/multiple-thresholds.html",
+        "subtests": [
+          {
+            "name": "Observer with multiple thresholds.",
+            "status": "Pass",
+            "message": null
+          },
+          {
+            "name": "First rAF.",
+            "status": "Fail",
+            "message": "assert_approx_equals: entries[0].boundingClientRect.top expected 1624 +/- 0 but got 708"
+          },
+          {
+            "name": "document.scrollingElement.scrollTop = 120",
+            "status": "Fail",
+            "message": "assert_equals: entries.length expected 2 but got 1"
+          },
+          {
+            "name": "document.scrollingElement.scrollTop = 160",
+            "status": "Fail",
+            "message": "assert_equals: entries.length expected 3 but got 1"
+          },
+          {
+            "name": "document.scrollingElement.scrollTop = 200",
+            "status": "Fail",
+            "message": "assert_equals: entries.length expected 4 but got 1"
+          },
+          {
+            "name": "document.scrollingElement.scrollTop = 240",
+            "status": "Fail",
+            "message": "assert_equals: entries.length expected 5 but got 1"
+          },
+          {
+            "name": "document.scrollingElement.scrollTop = window.innerHeight + 140",
+            "status": "Fail",
+            "message": "assert_equals: entries.length expected 6 but got 1"
+          },
+          {
+            "name": "document.scrollingElement.scrollTop = window.innerHeight + 160",
+            "status": "Fail",
+            "message": "assert_equals: entries.length expected 7 but got 1"
+          },
+          {
+            "name": "document.scrollingElement.scrollTop = window.innerHeight + 200",
+            "status": "Fail",
+            "message": "assert_equals: entries.length expected 8 but got 1"
+          }
+        ]
+      },
+      {
+        "case": "intersection-observer/not-in-containing-block-chain.html",
+        "subtests": [
+          {
+            "name": "IntersectionObserver reports a (non-intersecting) entry even if not in the containing block chain",
+            "status": "Pass",
+            "message": null
+          }
+        ]
+      },
+      {
+        "case": "intersection-observer/observer-attributes.html",
+        "subtests": [
+          {
+            "name": "observer.root",
+            "status": "Fail",
+            "message": "assert_equals: expected (object) null but got (undefined) undefined"
+          },
+          {
+            "name": "observer.thresholds",
+            "status": "Fail",
+            "message": "assert_array_equals: value is undefined, expected array"
+          },
+          {
+            "name": "observer.rootMargin",
+            "status": "Fail",
+            "message": "assert_equals: expected (string) \"0px 0px 0px 0px\" but got (undefined) undefined"
+          },
+          {
+            "name": "empty observer.thresholds",
+            "status": "Fail",
+            "message": "assert_array_equals: value is undefined, expected array"
+          },
+          {
+            "name": "whitespace observer.rootMargin",
+            "status": "Fail",
+            "message": "assert_equals: expected (string) \"0px 0px 0px 0px\" but got (undefined) undefined"
+          },
+          {
+            "name": "set observer.root",
+            "status": "Fail",
+            "message": "assert_equals: expected (object) object \"#root\" but got (undefined) undefined"
+          },
+          {
+            "name": "set observer.thresholds",
+            "status": "Fail",
+            "message": "assert_array_equals: value is undefined, expected array"
+          },
+          {
+            "name": "set observer.rootMargin",
+            "status": "Fail",
+            "message": "assert_equals: expected (string) \"10% 20px 10% 20px\" but got (undefined) undefined"
+          },
+          {
+            "name": "Observer attribute getters.",
+            "status": "Pass",
+            "message": null
+          }
+        ]
+      },
+      {
+        "case": "intersection-observer/observer-callback-arguments.html",
+        "subtests": [
+          {
+            "name": "Callback is invoked with |this| value of IntersectionObserver and two arguments",
+            "status": "Fail",
+            "message": "assert_true: expected true got false"
+          }
+        ]
+      },
+      {
+        "case": "intersection-observer/observer-exceptions.html",
+        "subtests": [
+          {
+            "name": "IntersectionObserver constructor with { threshold: [1.1] }",
+            "status": "Fail",
+            "message": "assert_throws_js: function \"function() {\n    new IntersectionObserver(e => {}, {threshold: [1.1]})\n  }\" did not throw"
+          },
+          {
+            "name": "IntersectionObserver constructor with { threshold: [\"foo\"] }",
+            "status": "Fail",
+            "message": "assert_throws_js: function \"function() {\n    new IntersectionObserver(e => {}, {threshold: [\"foo\"]})\n  }\" did not throw"
+          },
+          {
+            "name": "IntersectionObserver constructor with { rootMargin: \"1\" }",
+            "status": "Fail",
+            "message": "assert_throws_dom: function \"function() {\n    new IntersectionObserver(e => {}, {rootMargin: \"1\"})\n  }\" did not throw"
+          },
+          {
+            "name": "IntersectionObserver constructor with { rootMargin: \"2em\" }",
+            "status": "Fail",
+            "message": "assert_throws_dom: function \"function() {\n    new IntersectionObserver(e => {}, {rootMargin: \"2em\"})\n  }\" did not throw"
+          },
+          {
+            "name": "IntersectionObserver constructor with { rootMargin: \"auto\" }",
+            "status": "Fail",
+            "message": "assert_throws_dom: function \"function() {\n    new IntersectionObserver(e => {}, {rootMargin: \"auto\"})\n  }\" did not throw"
+          },
+          {
+            "name": "IntersectionObserver constructor with { rootMargin: \"calc(1px + 2px)\" }",
+            "status": "Fail",
+            "message": "assert_throws_dom: function \"function() {\n    new IntersectionObserver(e => {}, {rootMargin: \"calc(1px + 2px)\"})\n  }\" did not throw"
+          },
+          {
+            "name": "IntersectionObserver constructor with { rootMargin: \"1px !important\" }",
+            "status": "Fail",
+            "message": "assert_throws_dom: function \"function() {\n    new IntersectionObserver(e => {}, {rootMargin: \"1px !important\"})\n  }\" did not throw"
+          },
+          {
+            "name": "IntersectionObserver constructor with { rootMargin: \"1px 1px 1px 1px 1px\" }",
+            "status": "Fail",
+            "message": "assert_throws_dom: function \"function() {\n    new IntersectionObserver(e => {}, {rootMargin: \"1px 1px 1px 1px 1px\"})\n  }\" did not throw"
+          },
+          {
+            "name": "IntersectionObserver.observe(\"foo\")",
+            "status": "Fail",
+            "message": "assert_throws_js: function \"function() {\n    let observer = new IntersectionObserver(c => {}, {});\n    observer.observe(\"foo\");\n  }\" did not throw"
+          }
+        ]
+      },
+      {
+        "case": "intersection-observer/observer-without-js-reference.html",
+        "subtests": [
+          {
+            "name": "IntersectionObserver that is unreachable in js should still generate notifications.",
+            "status": "Pass",
+            "message": null
+          },
+          {
+            "name": "First rAF",
+            "status": "Pass",
+            "message": null
+          },
+          {
+            "name": "document.scrollingElement.scrollTop = 300",
+            "status": "Fail",
+            "message": "assert_equals: Two notifications. expected 2 but got 1"
+          }
+        ]
+      },
+      {
+        "case": "intersection-observer/padding-clip.html",
+        "subtests": [
+          {
+            "name": "Scrollport is used rather than content rect to compute intersection ratio",
+            "status": "Pass",
+            "message": null
+          }
+        ]
+      },
+      {
+        "case": "intersection-observer/reinsert-element.html",
+        "subtests": [
+          {
+            "name": "An element that is removed and reinserted without an intervening rendering update doesn't generate a 'not-intersecting' notification.",
+            "status": "Pass",
+            "message": null
+          }
+        ]
+      },
+      {
+        "case": "intersection-observer/remove-element.html",
+        "subtests": [
+          {
+            "name": "Verify that not-intersecting notifications are sent when a target is removed from the DOM tree.",
+            "status": "Pass",
+            "message": null
+          },
+          {
+            "name": "First rAF",
+            "status": "Fail",
+            "message": "assert_approx_equals: entries[0].rootBounds.left expected 11 +/- 0 but got 8"
+          },
+          {
+            "name": "root.scrollTop = 150",
+            "status": "Fail",
+            "message": "assert_equals: entries.length expected 2 but got 1"
+          },
+          {
+            "name": "root.removeChild(target).",
+            "status": "Fail",
+            "message": "assert_equals: entries.length expected 3 but got 1"
+          },
+          {
+            "name": "root.insertBefore(target, trailingSpace).",
+            "status": "Fail",
+            "message": "assert_equals: entries.length expected 3 but got 1"
+          },
+          {
+            "name": "root.scrollTop = 150 after reinserting target.",
+            "status": "Fail",
+            "message": "assert_equals: entries.length expected 4 but got 1"
+          }
+        ]
+      },
+      {
+        "case": "intersection-observer/root-is-table-with-overflow-scroll.html",
+        "subtests": [
+          {
+            "name": "IntersectionObserver observing an element inside a root table.",
+            "status": "Pass",
+            "message": null
+          },
+          {
+            "name": "First rAF.",
+            "status": "Pass",
+            "message": null
+          },
+          {
+            "name": "Moving the target to the right bottom corner of the table.",
+            "status": "Fail",
+            "message": "assert_equals: entries.length expected 2 but got 1"
+          }
+        ]
+      },
+      {
+        "case": "intersection-observer/root-margin-root-element.html",
+        "subtests": [
+          {
+            "name": "Root margin with explicit root.",
+            "status": "Pass",
+            "message": null
+          },
+          {
+            "name": "First rAF",
+            "status": "Fail",
+            "message": "assert_approx_equals: entries[0].boundingClientRect.top expected 2725 +/- 0 but got 1011"
+          },
+          {
+            "name": "document.scrollingElement.scrollTop = window.innerHeight.",
+            "status": "Pass",
+            "message": null
+          },
+          {
+            "name": "root.scrollTop = 50, putting target into root margin",
+            "status": "Fail",
+            "message": "assert_equals: entries.length expected 2 but got 1"
+          },
+          {
+            "name": "document.scrollingElement.scrollTop = 0.",
+            "status": "Fail",
+            "message": "assert_equals: entries.length expected 2 but got 1"
+          },
+          {
+            "name": "root.scrollTop = 0",
+            "status": "Fail",
+            "message": "assert_equals: entries.length expected 3 but got 1"
+          },
+          {
+            "name": "root.scrollTop = 50 with root scrolled out of view.",
+            "status": "Fail",
+            "message": "assert_equals: entries.length expected 4 but got 1"
+          }
+        ]
+      },
+      {
+        "case": "intersection-observer/root-margin-rounding.html",
+        "subtests": [
+          {
+            "name": "IntersectionObserver root margin cannot end up with negative rect (and thus non-intersecting) due to rounding",
+            "status": "Fail",
+            "message": "assert_true: should be intersecting at 0 expected true got false"
+          }
+        ]
+      },
+      {
+        "case": "intersection-observer/root-margin.html",
+        "subtests": [
+          {
+            "name": "Root margin tests",
+            "status": "Pass",
+            "message": null
+          },
+          {
+            "name": "First rAF.",
+            "status": "Fail",
+            "message": "assert_approx_equals: entries[0].intersectionRect.left expected 0 +/- 0 but got 12"
+          },
+          {
+            "name": "document.scrollingElement.scrollLeft = 100",
+            "status": "Fail",
+            "message": "assert_equals: entries.length expected 2 but got 1"
+          },
+          {
+            "name": "document.scrollingElement.scrollTop = document.documentElement.clientHeight + 200",
+            "status": "Fail",
+            "message": "assert_equals: entries.length expected 2 but got 1"
+          },
+          {
+            "name": "document.scrollingElement.scrollTop = document.documentElement.clientHeight + 300",
+            "status": "Fail",
+            "message": "assert_equals: entries.length expected 3 but got 1"
+          }
+        ]
+      },
+      {
+        "case": "intersection-observer/root-vertical-rl.html",
+        "subtests": [
+          {
+            "name": "IntersectionObserver vertical-rl root.",
+            "status": "Pass",
+            "message": null
+          },
+          {
+            "name": "First rAF.",
+            "status": "Fail",
+            "message": "assert_approx_equals: entries[0].boundingClientRect.left expected 251 +/- 0 but got 50"
+          },
+          {
+            "name": "Set transform=translateX(50px) on target.",
+            "status": "Fail",
+            "message": "assert_equals: entries.length expected 2 but got 1"
+          }
+        ]
+      },
+      {
+        "case": "intersection-observer/rtl-clipped-root.html",
+        "subtests": [
+          {
+            "name": "Explicit rtl root with overflow clipping",
+            "status": "Pass",
+            "message": null
+          },
+          {
+            "name": "First rAF",
+            "status": "Fail",
+            "message": "assert_false: Target at scroll end is not intersecting expected false got true"
+          }
+        ]
+      },
+      {
+        "case": "intersection-observer/same-document-no-root.html",
+        "subtests": [
+          {
+            "name": "IntersectionObserver in a single document using the implicit root.",
+            "status": "Pass",
+            "message": null
+          },
+          {
+            "name": "First rAF.",
+            "status": "Fail",
+            "message": "assert_approx_equals: entries[0].boundingClientRect.top expected 1624 +/- 0 but got 708"
+          },
+          {
+            "name": "document.scrollingElement.scrollTop = 300",
+            "status": "Fail",
+            "message": "assert_equals: entries.length expected 2 but got 1"
+          },
+          {
+            "name": "document.scrollingElement.scrollTop = 100",
+            "status": "Fail",
+            "message": "assert_equals: entries.length expected 3 but got 1"
+          }
+        ]
+      },
+      {
+        "case": "intersection-observer/same-document-root.html",
+        "subtests": [
+          {
+            "name": "IntersectionObserver in a single document with explicit root.",
+            "status": "Pass",
+            "message": null
+          },
+          {
+            "name": "First rAF",
+            "status": "Fail",
+            "message": "assert_approx_equals: entries[0].boundingClientRect.top expected 2725 +/- 0 but got 1011"
+          },
+          {
+            "name": "document.scrollingElement.scrollTop = window.innerHeight.",
+            "status": "Pass",
+            "message": null
+          },
+          {
+            "name": "root.scrollTop = 150 with root scrolled into view.",
+            "status": "Fail",
+            "message": "assert_equals: entries.length expected 2 but got 1"
+          },
+          {
+            "name": "document.scrollingElement.scrollTop = 0.",
+            "status": "Fail",
+            "message": "assert_equals: entries.length expected 2 but got 1"
+          },
+          {
+            "name": "root.scrollTop = 0",
+            "status": "Fail",
+            "message": "assert_equals: entries.length expected 3 but got 1"
+          },
+          {
+            "name": "root.scrollTop = 150 with root scrolled out of view.",
+            "status": "Fail",
+            "message": "assert_equals: entries.length expected 4 but got 1"
+          }
+        ]
+      },
+      {
+        "case": "intersection-observer/same-document-with-document-root.html",
+        "subtests": [
+          {
+            "name": "IntersectionObserver in a single document using document as root.",
+            "status": "Pass",
+            "message": null
+          },
+          {
+            "name": "First rAF.",
+            "status": "Fail",
+            "message": "assert_approx_equals: entries[0].boundingClientRect.top expected 1624 +/- 0 but got 708"
+          },
+          {
+            "name": "document.scrollingElement.scrollTop = 300",
+            "status": "Fail",
+            "message": "assert_equals: entries.length expected 2 but got 1"
+          }
+        ]
+      },
+      {
+        "case": "intersection-observer/same-document-zero-size-target.html",
+        "subtests": [
+          {
+            "name": "Observing a zero-area target.",
+            "status": "Pass",
+            "message": null
+          },
+          {
+            "name": "First rAF",
+            "status": "Fail",
+            "message": "assert_approx_equals: entries[0].boundingClientRect.top expected 1524 +/- 0 but got 708"
+          },
+          {
+            "name": "document.scrollingElement.scrollTop = 300",
+            "status": "Fail",
+            "message": "assert_equals: entries.length expected 2 but got 1"
+          },
+          {
+            "name": "document.scrollingElement.scrollTop = 100",
+            "status": "Fail",
+            "message": "assert_equals: entries.length expected 3 but got 1"
+          }
+        ]
+      },
+      {
+        "case": "intersection-observer/scroll-and-root-margin.html",
+        "subtests": [
+          {
+            "name": "Test scroll margin intersection",
+            "status": "Fail",
+            "message": "assert_approx_equals: intersectionRatio expected 0.04 +/- 0.0001 but got 1"
+          }
+        ]
+      },
+      {
+        "case": "intersection-observer/scroll-margin-4-val.html",
+        "subtests": [
+          {
+            "name": "Test scroll margin intersection",
+            "status": "Fail",
+            "message": "assert_approx_equals: intersectionRatio expected 0.2 +/- 0.001 but got 1"
+          }
+        ]
+      },
+      {
+        "case": "intersection-observer/scroll-margin-clip-path.html",
+        "subtests": [
+          {
+            "name": "Test scroll margin intersection",
+            "status": "Fail",
+            "message": "assert_approx_equals: intersectionRatio expected 0.2 +/- 0.001 but got 1"
+          }
+        ]
+      },
+      {
+        "case": "intersection-observer/scroll-margin-dynamic.html",
+        "subtests": [
+          {
+            "name": "Test no initial scroll margin intersection",
+            "status": "Fail",
+            "message": "assert_false: isIntersectingInitial expected false got true"
+          }
+        ]
+      },
+      {
+        "case": "intersection-observer/scroll-margin-horizontal.html",
+        "subtests": [
+          {
+            "name": "Test scroll margin intersection",
+            "status": "Fail",
+            "message": "assert_approx_equals: intersectionRatio expected 0.2 +/- 0.001 but got 1"
+          }
+        ]
+      },
+      {
+        "case": "intersection-observer/scroll-margin-nested-2.html",
+        "subtests": [
+          {
+            "name": "Test scroll margin intersection",
+            "status": "Fail",
+            "message": "assert_approx_equals: intersectionRatio expected 0.4 +/- 0.001 but got 1"
+          }
+        ]
+      },
+      {
+        "case": "intersection-observer/scroll-margin-nested-3.html",
+        "subtests": [
+          {
+            "name": "Test scroll margin intersection",
+            "status": "Fail",
+            "message": "assert_approx_equals: intersectionRatio expected 0.2 +/- 0.001 but got 1"
+          }
+        ]
+      },
+      {
+        "case": "intersection-observer/scroll-margin-nested.html",
+        "subtests": [
+          {
+            "name": "Test scroll margin intersection",
+            "status": "Fail",
+            "message": "assert_approx_equals: intersectionRatio expected 0.2 +/- 0.001 but got 1"
+          }
+        ]
+      },
+      {
+        "case": "intersection-observer/scroll-margin-no-intersect.html",
+        "subtests": [
+          {
+            "name": "Test scroll margin intersection",
+            "status": "Fail",
+            "message": "assert_false: isIntersecting expected false got true"
+          }
+        ]
+      },
+      {
+        "case": "intersection-observer/scroll-margin-non-scrolling-root.html",
+        "subtests": [
+          {
+            "name": "Test scroll margin intersection",
+            "status": "Pass",
+            "message": null
+          }
+        ]
+      },
+      {
+        "case": "intersection-observer/scroll-margin-not-contained.html",
+        "subtests": [
+          {
+            "name": "Test scroll margin intersection",
+            "status": "Pass",
+            "message": null
+          }
+        ]
+      },
+      {
+        "case": "intersection-observer/scroll-margin-percent.html",
+        "subtests": [
+          {
+            "name": "Test scroll margin intersection",
+            "status": "Fail",
+            "message": "assert_approx_equals: intersectionRatio expected 0.2 +/- 0.001 but got 1"
+          }
+        ]
+      },
+      {
+        "case": "intersection-observer/scroll-margin-with-border-outline.html",
+        "subtests": [
+          {
+            "name": "Test scroll margin intersection",
+            "status": "Fail",
+            "message": "assert_approx_equals: intersectionRatio expected 0.2 +/- 0.001 but got 1"
+          }
+        ]
+      },
+      {
+        "case": "intersection-observer/scroll-margin-zero.html",
+        "subtests": [
+          {
+            "name": "Test scroll margin intersection",
+            "status": "Fail",
+            "message": "assert_false: isIntersecting expected false got true"
+          }
+        ]
+      },
+      {
+        "case": "intersection-observer/scroll-margin.html",
+        "subtests": [
+          {
+            "name": "Test scroll margin intersection",
+            "status": "Fail",
+            "message": "assert_approx_equals: intersectionRatio expected 0.2 +/- 0.001 but got 1"
+          }
+        ]
+      },
+      {
+        "case": "intersection-observer/shadow-content.html",
+        "subtests": [
+          {
+            "name": "Observing a target inside shadow DOM.",
+            "status": "Pass",
+            "message": null
+          },
+          {
+            "name": "First rAF after creating shadow DOM.",
+            "status": "Fail",
+            "message": "assert_equals: entries.length expected 1 but got 0"
+          }
+        ]
+      },
+      {
+        "case": "intersection-observer/svg-clipped-rect-target.html",
+        "subtests": [
+          {
+            "name": "IntersectionObserver observing a clipped SVG <rect> element",
+            "status": "Pass",
+            "message": null
+          },
+          {
+            "name": "First rAF.",
+            "status": "Fail",
+            "message": "assert_approx_equals: entries[0].boundingClientRect.left expected 108 +/- 0 but got 8"
+          },
+          {
+            "name": "document.scrollingElement.scrollTop = 300",
+            "status": "Fail",
+            "message": "assert_equals: entries.length expected 2 but got 1"
+          },
+          {
+            "name": "document.scrollingElement.scrollTop = 100",
+            "status": "Fail",
+            "message": "assert_equals: entries.length expected 3 but got 1"
+          }
+        ]
+      },
+      {
+        "case": "intersection-observer/svg-container-element.html",
+        "subtests": [
+          {
+            "name": "IntersectionObserver observing an SVG container element changing position",
+            "status": "Pass",
+            "message": null
+          },
+          {
+            "name": "First rAF.",
+            "status": "Fail",
+            "message": "assert_approx_equals: entries[0].boundingClientRect.top expected 10024 +/- 1 but got 8"
+          },
+          {
+            "name": "Change inner svg element",
+            "status": "Fail",
+            "message": "assert_equals: entries.length expected 2 but got 1"
+          }
+        ]
+      },
+      {
+        "case": "intersection-observer/svg-group-target.html",
+        "subtests": [
+          {
+            "name": "IntersectionObserver observing an SVG <g> element",
+            "status": "Pass",
+            "message": null
+          },
+          {
+            "name": "First rAF.",
+            "status": "Fail",
+            "message": "assert_approx_equals: entries[0].boundingClientRect.left expected 108 +/- 0 but got 8"
+          },
+          {
+            "name": "descendant rect translated down by 150 units (out of SVG viewport)",
+            "status": "Fail",
+            "message": "assert_equals: entries.length expected 2 but got 1"
+          },
+          {
+            "name": "descendant rect translated down by 100 units",
+            "status": "Fail",
+            "message": "assert_equals: entries.length expected 3 but got 1"
+          }
+        ]
+      },
+      {
+        "case": "intersection-observer/svg-image.html",
+        "subtests": [
+          {
+            "name": "IntersectionObserver observing an SVG image element changing position",
+            "status": "Pass",
+            "message": null
+          },
+          {
+            "name": "First rAF.",
+            "status": "Fail",
+            "message": "assert_approx_equals: entries[0].boundingClientRect.left expected 8 +/- 0 but got 0"
+          },
+          {
+            "name": "change image location",
+            "status": "Fail",
+            "message": "assert_equals: entries.length expected 2 but got 1"
+          }
+        ]
+      },
+      {
+        "case": "intersection-observer/svg-intersection-with-fractional-bounds-2.html",
+        "subtests": [
+          {
+            "name": "IntersectionObserver observing an SVG <rect> with fractional bounds element",
+            "status": "Pass",
+            "message": null
+          },
+          {
+            "name": "Initial Observation",
+            "status": "Fail",
+            "message": "assert_approx_equals: entries[0].boundingClientRect.right expected 0.004 +/- 0.0001 but got 1"
+          },
+          {
+            "name": "Changing target y position to -2 (-0.002 in root coordinates)",
+            "status": "Fail",
+            "message": "assert_equals: entries.length expected 2 but got 1"
+          },
+          {
+            "name": "Changing target y position to -1 (-0.001 in root coordinates)",
+            "status": "Fail",
+            "message": "assert_equals: entries.length expected 3 but got 1"
+          },
+          {
+            "name": "Changing target y position to -4 (-0.004 in root coordinates)",
+            "status": "Fail",
+            "message": "assert_equals: entries.length expected 4 but got 1"
+          },
+          {
+            "name": "Changing target y position to 0",
+            "status": "Fail",
+            "message": "assert_equals: entries.length expected 5 but got 1"
+          }
+        ]
+      },
+      {
+        "case": "intersection-observer/svg-intersection-with-fractional-bounds.html",
+        "subtests": [
+          {
+            "name": "IntersectionObserver observing an SVG <rect> with fractional bounds element",
+            "status": "Pass",
+            "message": null
+          },
+          {
+            "name": "Initial Observation",
+            "status": "Fail",
+            "message": "assert_approx_equals: entries[0].boundingClientRect.left expected 9 +/- 0.0001 but got 8"
+          },
+          {
+            "name": "Intersection observation after scrolling 300",
+            "status": "Fail",
+            "message": "assert_equals: entries.length expected 2 but got 1"
+          },
+          {
+            "name": "Intersection observation after scrolling 100",
+            "status": "Fail",
+            "message": "assert_equals: entries.length expected 3 but got 1"
+          }
+        ]
+      },
+      {
+        "case": "intersection-observer/svg-rect-target.html",
+        "subtests": [
+          {
+            "name": "IntersectionObserver observing an SVG <rect> element",
+            "status": "Pass",
+            "message": null
+          },
+          {
+            "name": "First rAF.",
+            "status": "Fail",
+            "message": "assert_approx_equals: entries[0].boundingClientRect.left expected 108 +/- 0 but got 8"
+          },
+          {
+            "name": "document.scrollingElement.scrollTop = 300",
+            "status": "Fail",
+            "message": "assert_equals: entries.length expected 2 but got 1"
+          },
+          {
+            "name": "document.scrollingElement.scrollTop = 100",
+            "status": "Fail",
+            "message": "assert_equals: entries.length expected 3 but got 1"
+          }
+        ]
+      },
+      {
+        "case": "intersection-observer/svg-stroke-change.html",
+        "subtests": [
+          {
+            "name": "IntersectionObserver observing an SVG element while its stroke is changed",
+            "status": "Pass",
+            "message": null
+          },
+          {
+            "name": "First rAF.",
+            "status": "Fail",
+            "message": "assert_approx_equals: entries[0].boundingClientRect.left expected 8 +/- 0 but got 0"
+          },
+          {
+            "name": "change stroke",
+            "status": "Fail",
+            "message": "assert_equals: entries.length expected 2 but got 1"
+          }
+        ]
+      },
+      {
+        "case": "intersection-observer/svg-target-changes-position.html",
+        "subtests": [
+          {
+            "name": "IntersectionObserver observing an SVG element changing position",
+            "status": "Pass",
+            "message": null
+          },
+          {
+            "name": "First rAF.",
+            "status": "Fail",
+            "message": "assert_approx_equals: entries[0].boundingClientRect.left expected 8 +/- 0 but got 0"
+          },
+          {
+            "name": "Move SVG element up",
+            "status": "Fail",
+            "message": "assert_equals: entries.length expected 2 but got 1"
+          }
+        ]
+      },
+      {
+        "case": "intersection-observer/svg-transformed-rect-target.html",
+        "subtests": [
+          {
+            "name": "IntersectionObserver observing an SVG <rect> element with changing 'transform'",
+            "status": "Pass",
+            "message": null
+          },
+          {
+            "name": "First rAF.",
+            "status": "Fail",
+            "message": "assert_approx_equals: entries[0].boundingClientRect.left expected 108 +/- 0 but got 8"
+          },
+          {
+            "name": "translated down by 150 units (out of SVG viewport)",
+            "status": "Fail",
+            "message": "assert_equals: entries.length expected 2 but got 1"
+          },
+          {
+            "name": "translated down by 50 units",
+            "status": "Fail",
+            "message": "assert_equals: entries.length expected 3 but got 1"
+          }
+        ]
+      },
+      {
+        "case": "intersection-observer/svg-viewbox.html",
+        "subtests": [
+          {
+            "name": "IntersectionObserver observing an SVG <rect> element with changing 'transform'",
+            "status": "Pass",
+            "message": null
+          },
+          {
+            "name": "First rAF.",
+            "status": "Fail",
+            "message": "assert_approx_equals: entries[0].intersectionRect.right expected 10 +/- 0 but got 0"
+          },
+          {
+            "name": "change target's y property to -64)",
+            "status": "Fail",
+            "message": "assert_equals: entries.length expected 2 but got 1"
+          }
+        ]
+      },
+      {
+        "case": "intersection-observer/target-in-detached-document.html",
+        "subtests": [
+          {
+            "name": "IntersectionObserver in a single document using the implicit root.",
+            "status": "Pass",
+            "message": null
+          },
+          {
+            "name": "First rAF.",
+            "status": "Pass",
+            "message": null
+          },
+          {
+            "name": "Adopt target.",
+            "status": "Fail",
+            "message": "assert_equals: entries.length expected 1 but got 0"
+          }
+        ]
+      },
+      {
+        "case": "intersection-observer/target-in-different-window.html",
+        "subtests": [
+          {
+            "name": "IntersectionObserver with target in a different window.",
+            "status": "Fail",
+            "message": "Cannot read properties of null (reading 'document')"
+          }
+        ]
+      },
+      {
+        "case": "intersection-observer/target-is-root.html",
+        "subtests": [
+          {
+            "name": "IntersectionObserver when root == target doesn't compute an intersection",
+            "status": "Fail",
+            "message": "assert_equals: expected 0 but got 1"
+          }
+        ]
+      },
+      {
+        "case": "intersection-observer/text-target.html",
+        "subtests": [
+          {
+            "name": "IntersectionObserver observing a br element.",
+            "status": "Pass",
+            "message": null
+          },
+          {
+            "name": "First rAF.",
+            "status": "Fail",
+            "message": "assert_approx_equals: entries[0].boundingClientRect.top expected 1543 +/- 0 but got 708"
+          },
+          {
+            "name": "document.scrollingElement.scrollTop = 300",
+            "status": "Fail",
+            "message": "assert_equals: entries.length expected 2 but got 1"
+          },
+          {
+            "name": "document.scrollingElement.scrollTop = 100",
+            "status": "Fail",
+            "message": "assert_equals: entries.length expected 3 but got 1"
+          }
+        ]
+      },
+      {
+        "case": "intersection-observer/timestamp.html",
+        "subtests": [
+          {
+            "name": "intersection-observer/timestamp.html",
+            "status": "Timeout",
+            "message": "testharness completion callback was not called (test=function, hook=function, scripts=[200448, 8181, 3471], state={\"loaded\":true,\"pending\":1,\"phase\":4,\"tests\":1}, test_wait=false)"
+          }
+        ]
+      },
+      {
+        "case": "intersection-observer/transform-animation.html",
+        "subtests": [
+          {
+            "name": "An element that already intersects with the viewport does not trigger the observer callback when animating its transform.",
+            "status": "Pass",
+            "message": null
+          }
+        ]
+      },
+      {
+        "case": "intersection-observer/unclipped-root.html",
+        "subtests": [
+          {
+            "name": "Test that border bounding box is used to calculate intersection with a non-scrolling root.",
+            "status": "Pass",
+            "message": null
+          },
+          {
+            "name": "First rAF.",
+            "status": "Fail",
+            "message": "assert_approx_equals: entries[0].boundingClientRect.top expected 315 +/- 0 but got 15"
+          },
+          {
+            "name": "target.style.transform = 'translateY(195px)'",
+            "status": "Fail",
+            "message": "assert_equals: entries.length expected 2 but got 1"
+          }
+        ]
+      },
+      {
+        "case": "intersection-observer/visibility-hidden.html",
+        "subtests": [
+          {
+            "name": "IntersectionObserver observing a visibility:hidden element.",
+            "status": "Pass",
+            "message": null
+          },
+          {
+            "name": "First rAF.",
+            "status": "Fail",
+            "message": "assert_approx_equals: entries[0].boundingClientRect.top expected 1600 +/- 0 but got 700"
+          },
+          {
+            "name": "document.scrollingElement.scrollTop = 300",
+            "status": "Fail",
+            "message": "assert_equals: entries.length expected 2 but got 1"
+          }
+        ]
+      },
+      {
+        "case": "intersection-observer/zero-area-element-hidden.html",
+        "subtests": [
+          {
+            "name": "A zero-area hidden target should not be intersecting.",
+            "status": "Pass",
+            "message": null
+          },
+          {
+            "name": "First rAF.",
+            "status": "Fail",
+            "message": "assert_approx_equals: entries[0].rootBounds.right expected 800 +/- 0 but got 1280"
+          }
+        ]
+      },
+      {
+        "case": "intersection-observer/zero-area-element-visible.html",
+        "subtests": [
+          {
+            "name": "Ensure that a zero-area target intersecting root generates a notification with intersectionRatio == 1",
+            "status": "Pass",
+            "message": null
+          },
+          {
+            "name": "First rAF should generate a notification.",
+            "status": "Fail",
+            "message": "assert_equals: intersectionRatio == 1 expected 1 but got 0"
+          }
+        ]
+      },
+      {
+        "case": "intersection-observer/zoom-scaled-target.html",
+        "subtests": [
+          {
+            "name": "IntersectionObserver observing elements with css zoom",
+            "status": "Pass",
+            "message": null
+          },
+          {
+            "name": "Validate intersection rect",
+            "status": "Fail",
+            "message": "assert_approx_equals: entries[0].boundingClientRect.right expected 264 +/- 0 but got 72"
+          }
+        ]
+      }
+    ],
+    "resize-observer": [
+      {
+        "case": "resize-observer/calculate-depth-for-node.html",
+        "subtests": [
+          {
+            "name": "\"Calculate depth for node\" algorithm with Shadow DOM",
+            "status": "Pass",
+            "message": null
+          }
+        ]
+      },
+      {
+        "case": "resize-observer/change-layout-in-error.html",
+        "subtests": [
+          {
+            "name": "resize-observer/change-layout-in-error.html",
+            "status": "Timeout",
+            "message": "testharness completion callback was not called (test=function, hook=function, scripts=[200448, 543], state={\"loaded\":true,\"pending\":1,\"phase\":4,\"tests\":1}, test_wait=false)"
+          }
+        ]
+      },
+      {
+        "case": "resize-observer/devicepixel.html",
+        "subtests": [
+          {
+            "name": "resize-observer/devicepixel.html",
+            "status": "Pass",
+            "message": null
+          }
+        ]
+      },
+      {
+        "case": "resize-observer/devicepixel2.html",
+        "subtests": [
+          {
+            "name": "resize-observer/devicepixel2.html",
+            "status": "Fail",
+            "message": "page script threw (declared tests: 0): Script error: module compile: Compile error: Module ./create-pattern-data-url.js does not provide an export named default"
+          }
+        ]
+      },
+      {
+        "case": "resize-observer/eventloop.html",
+        "subtests": [
+          {
+            "name": "ResizeObserver implemented",
+            "status": "Pass",
+            "message": null
+          },
+          {
+            "name": "test0: multiple notifications inside same event loop",
+            "status": "Fail",
+            "message": "assert_unreached: Timed out waiting for notification. (1000ms) Reached unreachable code"
+          },
+          {
+            "name": "resize-observer/eventloop.html",
+            "status": "Timeout",
+            "message": "testharness completion callback was not called (test=function, hook=function, scripts=[200448, 5697, 7151], state={\"loaded\":true,\"pending\":1,\"phase\":3,\"tests\":3}, test_wait=false)"
+          }
+        ]
+      },
+      {
+        "case": "resize-observer/fragments.html",
+        "subtests": [
+          {
+            "name": "Single fragment",
+            "status": "Fail",
+            "message": "assert_unreached: Missing ResizeObserver notification Reached unreachable code"
+          },
+          {
+            "name": "Adding 2nd fragment",
+            "status": "Fail",
+            "message": "assert_unreached: Missing ResizeObserver notification Reached unreachable code"
+          },
+          {
+            "name": "Resizing 2nd fragment",
+            "status": "Fail",
+            "message": "assert_unreached: Missing ResizeObserver notification Reached unreachable code"
+          },
+          {
+            "name": "Resizing all fragments",
+            "status": "Fail",
+            "message": "assert_unreached: Missing ResizeObserver notification Reached unreachable code"
+          },
+          {
+            "name": "Removing 2nd fragment",
+            "status": "Fail",
+            "message": "assert_unreached: Missing ResizeObserver notification Reached unreachable code"
+          }
+        ]
+      },
+      {
+        "case": "resize-observer/notify.html",
+        "subtests": [
+          {
+            "name": "ResizeObserver implemented",
+            "status": "Pass",
+            "message": null
+          },
+          {
+            "name": "test0: notification ordering",
+            "status": "Pass",
+            "message": null
+          },
+          {
+            "name": "test1: display:none triggers notification",
+            "status": "Fail",
+            "message": "assert_unreached: Timed out waiting for notification. (1000ms) Reached unreachable code"
+          },
+          {
+            "name": "test2: remove/appendChild trigger notification",
+            "status": "Fail",
+            "message": "assert_unreached: Timed out waiting for notification. (1000ms) Reached unreachable code"
+          },
+          {
+            "name": "resize-observer/notify.html",
+            "status": "Timeout",
+            "message": "testharness completion callback was not called (test=function, hook=function, scripts=[200448, 5697, 9804], state={\"loaded\":true,\"pending\":1,\"phase\":4,\"tests\":5}, test_wait=false)"
+          }
+        ]
+      },
+      {
+        "case": "resize-observer/observe-001.html",
+        "subtests": [
+          {
+            "name": "simple observation",
+            "status": "Fail",
+            "message": "assert_equals: target width expected 5 but got 0"
+          }
+        ]
+      },
+      {
+        "case": "resize-observer/observe-002.html",
+        "subtests": [
+          {
+            "name": "multiple observation on same element trigger only one",
+            "status": "Pass",
+            "message": null
+          }
+        ]
+      },
+      {
+        "case": "resize-observer/observe-003.html",
+        "subtests": [
+          {
+            "name": "throw exception when observing non-element",
+            "status": "Fail",
+            "message": "assert_throws_js: function \"_=> {\n      let ro = new ResizeObserver(() => {});\n      ro.observe({});\n    }\" did not throw"
+          }
+        ]
+      },
+      {
+        "case": "resize-observer/observe-004.html",
+        "subtests": [
+          {
+            "name": "disconnect stops all notifications",
+            "status": "Pass",
+            "message": null
+          }
+        ]
+      },
+      {
+        "case": "resize-observer/observe-005.html",
+        "subtests": [
+          {
+            "name": "unobserve target stops notifications, unobserve non-observed does nothing",
+            "status": "Pass",
+            "message": null
+          }
+        ]
+      },
+      {
+        "case": "resize-observer/observe-006.html",
+        "subtests": [
+          {
+            "name": "resize-observer/observe-006.html",
+            "status": "Timeout",
+            "message": "testharness completion callback was not called (test=function, hook=function, scripts=[200448, 5697, 1038], state={\"loaded\":true,\"pending\":0,\"phase\":1,\"tests\":0}, test_wait=false)"
+          }
+        ]
+      },
+      {
+        "case": "resize-observer/observe-007.html",
+        "subtests": [
+          {
+            "name": "iframe notifications",
+            "status": "Fail",
+            "message": "assert_equals: expected \"success\" but got \"fail\""
+          }
+        ]
+      },
+      {
+        "case": "resize-observer/observe-008.html",
+        "subtests": [
+          {
+            "name": "callback.this",
+            "status": "Pass",
+            "message": null
+          }
+        ]
+      },
+      {
+        "case": "resize-observer/observe-009.html",
+        "subtests": [
+          {
+            "name": "simple content-box observation",
+            "status": "Fail",
+            "message": "assert_equals: target width expected 100 but got 0"
+          }
+        ]
+      },
+      {
+        "case": "resize-observer/observe-010.html",
+        "subtests": [
+          {
+            "name": "simple content-box observation but keep border-box size unchanged",
+            "status": "Fail",
+            "message": "assert_equals: target width expected 100 but got 0"
+          }
+        ]
+      },
+      {
+        "case": "resize-observer/observe-011.html",
+        "subtests": [
+          {
+            "name": "simple border-box observation",
+            "status": "Fail",
+            "message": "assert_equals: target width expected 100 but got 0"
+          }
+        ]
+      },
+      {
+        "case": "resize-observer/observe-012.html",
+        "subtests": [
+          {
+            "name": "simple observation with vertical writing mode",
+            "status": "Fail",
+            "message": "assert_equals: target width expected 50 but got 0"
+          }
+        ]
+      },
+      {
+        "case": "resize-observer/observe-013.html",
+        "subtests": [
+          {
+            "name": "no observation is fired after the change of writing mode when box's specified size comes from logical size properties.",
+            "status": "Fail",
+            "message": "assert_equals: target width expected 50 but got 0"
+          }
+        ]
+      },
+      {
+        "case": "resize-observer/observe-014.html",
+        "subtests": [
+          {
+            "name": "an observation is fired after the change of writing mode when box's specified size comes from physical size properties.",
+            "status": "Fail",
+            "message": "assert_equals: target width expected 50 but got 0"
+          }
+        ]
+      },
+      {
+        "case": "resize-observer/observe-015.html",
+        "subtests": [
+          {
+            "name": "observe the same target but using a different box should override the previous one",
+            "status": "Fail",
+            "message": "assert_equals: target width expected 100 but got 0"
+          }
+        ]
+      },
+      {
+        "case": "resize-observer/observe-016.html",
+        "subtests": [
+          {
+            "name": "an observation is fired with box dimensions 0 when element's display property is set to inline",
+            "status": "Fail",
+            "message": "assert_equals: target width expected 50 but got 0"
+          }
+        ]
+      },
+      {
+        "case": "resize-observer/observe-017.html",
+        "subtests": [
+          {
+            "name": "observations fire once with 0x0 size for non-replaced inline elements",
+            "status": "Pass",
+            "message": null
+          }
+        ]
+      },
+      {
+        "case": "resize-observer/observe-018.html",
+        "subtests": [
+          {
+            "name": "Box sizing and Resize Observer notifications",
+            "status": "Fail",
+            "message": "assert_equals: target width expected 40 but got 0"
+          }
+        ]
+      },
+      {
+        "case": "resize-observer/observe-019.html",
+        "subtests": [
+          {
+            "name": "an observation is fired when device-pixel-content-box is being observed",
+            "status": "Fail",
+            "message": "assert_equals: target width expected 50 but got 0"
+          }
+        ]
+      },
+      {
+        "case": "resize-observer/observe-020.html",
+        "subtests": [
+          {
+            "name": "resize-observer/observe-020.html",
+            "status": "Timeout",
+            "message": "testharness completed without reporting registered tests (state={\"loaded\":true,\"pending\":0,\"phase\":4,\"tests\":0})"
+          }
+        ]
+      },
+      {
+        "case": "resize-observer/ordering.html",
+        "subtests": [
+          {
+            "name": "ResizeObserver and IntersectionObserver ordering",
+            "status": "Pass",
+            "message": null
+          }
+        ]
+      },
+      {
+        "case": "resize-observer/scrollbars-2.html",
+        "subtests": [
+          {
+            "name": "ResizeObserver content-box size and scrollbars",
+            "status": "Fail",
+            "message": "assert_equals: expected 120 but got 100"
+          }
+        ]
+      },
+      {
+        "case": "resize-observer/scrollbars.html",
+        "subtests": [
+          {
+            "name": "ResizeObserver content-box size and scrollbars",
+            "status": "Fail",
+            "message": "assert_equals: ResizeObserver should subtract scrollbar sizes from content-box rect expected 2 but got 1"
+          }
+        ]
+      },
+      {
+        "case": "resize-observer/svg-with-css-box-001.html",
+        "subtests": [
+          {
+            "name": "ResizeObserver implemented",
+            "status": "Pass",
+            "message": null
+          },
+          {
+            "name": "test0: observe `foreignObject` SVG in HTML document",
+            "status": "Fail",
+            "message": "assert_unreached: Timed out waiting for notification. (1000ms) Reached unreachable code"
+          },
+          {
+            "name": "guard",
+            "status": "Pass",
+            "message": null
+          },
+          {
+            "name": "test1: observe inline SVG in HTML",
+            "status": "Fail",
+            "message": "assert_unreached: Timed out waiting for notification. (1000ms) Reached unreachable code"
+          }
+        ]
+      },
+      {
+        "case": "resize-observer/svg.html",
+        "subtests": [
+          {
+            "name": "ResizeObserver implemented",
+            "status": "Pass",
+            "message": null
+          },
+          {
+            "name": "test0: observe svg:circle",
+            "status": "Fail",
+            "message": "assert_unreached: Timed out waiting for notification. (1000ms) Reached unreachable code"
+          },
+          {
+            "name": "test1: observe svg:ellipse",
+            "status": "Fail",
+            "message": "assert_unreached: Timed out waiting for notification. (1000ms) Reached unreachable code"
+          },
+          {
+            "name": "test2: observe svg:foreignObject",
+            "status": "Fail",
+            "message": "assert_unreached: Timed out waiting for notification. (1000ms) Reached unreachable code"
+          },
+          {
+            "name": "test3: observe svg:image",
+            "status": "Fail",
+            "message": "assert_unreached: Timed out waiting for notification. (1000ms) Reached unreachable code"
+          },
+          {
+            "name": "test4: observe svg:line",
+            "status": "Fail",
+            "message": "assert_unreached: Timed out waiting for notification. (1000ms) Reached unreachable code"
+          },
+          {
+            "name": "test5: observe svg:path",
+            "status": "Fail",
+            "message": "assert_unreached: Timed out waiting for notification. (1000ms) Reached unreachable code"
+          },
+          {
+            "name": "test6: observe svg:polygon",
+            "status": "Fail",
+            "message": "assert_unreached: Timed out waiting for notification. (1000ms) Reached unreachable code"
+          },
+          {
+            "name": "test7: observe svg:polyline",
+            "status": "Fail",
+            "message": "assert_unreached: Timed out waiting for notification. (1000ms) Reached unreachable code"
+          },
+          {
+            "name": "test8: observe svg:rect",
+            "status": "Fail",
+            "message": "assert_unreached: Timed out waiting for notification. (1000ms) Reached unreachable code"
+          },
+          {
+            "name": "resize-observer/svg.html",
+            "status": "Timeout",
+            "message": "testharness completion callback was not called (test=function, hook=function, scripts=[200448, 5697, 16976], state={\"loaded\":true,\"pending\":2,\"phase\":3,\"tests\":12}, test_wait=false)"
+          }
+        ]
+      },
+      {
+        "case": "resize-observer/zoom.html",
+        "subtests": [
+          {
+            "name": "ResizeObserver sizes account for zoom",
+            "status": "Fail",
+            "message": "assert_equals: content-rect top should be scaled by zoom expected 5 but got 18"
+          }
+        ]
+      }
+    ]
+  }
+}
