@@ -1843,7 +1843,9 @@ impl WebView {
                 tracing::debug!("execute_script completed in {:.2}ms", result.execution_time_ms);
                 // P1b L1b（R3108）：native 写经此路径直改 live cached_doc（不经 polyfill
                 // DomMutation 队列）→ 检测并重渲染，使 native 写入可见于渲染。
-                #[cfg(feature = "v8")]
+                // event-loop-spec M2：gate 扩 quickjs（M6 S0q 起双引擎均有 native 绑定——
+                // quickjs native 写此前既无重渲染也无 MO 排空，DC-7 对等收口）。
+                #[cfg(any(feature = "v8", feature = "quickjs"))]
                 self.sync_render_after_native_dom();
                 Ok(result.value)
             }
@@ -2206,6 +2208,12 @@ impl WebView {
         }
     }
 
+    /// event-loop-spec M2 MO-S1：host 侧 mutation 通知排空开关（kill-switch，默认 OFF——
+    /// 初值读 env `ZW_MO_HOST_TRIGGER`）。测试/嵌入方经此直设，避免进程级 env 竞态。
+    pub fn set_mo_host_trigger(&mut self, enabled: bool) {
+        self.mo_host_trigger = enabled;
+    }
+
     /// P1b L1b（R3108）：native 写触发重渲染，闭合 R3107 caveat ①（native 写「live 且渲染」）。
     ///
     /// native 绑定直接改 live `cached_doc`（不经 `DomMutation` 队列），polyfill 增量路径
@@ -2214,13 +2222,9 @@ impl WebView {
     /// native mutation 可任意——属性/树/文本，无法像 polyfill 那样分类增量）+ 同步
     /// `cached_html`/`last_render`，使 native 写入可见于渲染。polyfill 路径已同步（一致）
     /// 或 native 未改 → no-op（零额外开销）。详见 `docs/specs/p1b-v8-native-bindings-rfc.md` §3.7。
-    #[cfg(feature = "v8")]
-    /// event-loop-spec M2 MO-S1：host 侧 mutation 通知排空开关（kill-switch，默认 OFF——
-    /// 初值读 env `ZW_MO_HOST_TRIGGER`）。测试/嵌入方经此直设，避免进程级 env 竞态。
-    pub fn set_mo_host_trigger(&mut self, enabled: bool) {
-        self.mo_host_trigger = enabled;
-    }
-
+    /// event-loop-spec M2：gate 扩 quickjs（双引擎 native 绑定均直改 live doc——M6 S0q 起
+    /// quickjs native 写此前既无重渲染也无 MO 排空，DC-7 对等收口）。
+    #[cfg(any(feature = "v8", feature = "quickjs"))]
     fn sync_render_after_native_dom(&mut self) {
         let live_html = match self.pipeline.cached_doc_shared() {
             Some(doc_rc) => {
@@ -3030,7 +3034,8 @@ impl WebView {
         if !pending {
             // P1b L1b（R3108）：polyfill 无变更，但 native 绑定可能已直改 live doc → 检测并重渲染
             //（helper 内部比对 live-doc vs cached_html；一致则 no-op）。返回最新 cached_html 快照。
-            #[cfg(feature = "v8")]
+            // event-loop-spec M2：gate 扩 quickjs（同 execute_script 注记）。
+            #[cfg(any(feature = "v8", feature = "quickjs"))]
             self.sync_render_after_native_dom();
             return Ok(self.cached_html.clone());
         }
@@ -3104,7 +3109,8 @@ impl WebView {
         };
         if !pending {
             // P1b L1b（R3108）：事件处理器经 native 绑定可能已直改 live doc → 检测并重渲染。
-            #[cfg(feature = "v8")]
+            // event-loop-spec M2：gate 扩 quickjs（同 execute_script 注记）。
+            #[cfg(any(feature = "v8", feature = "quickjs"))]
             self.sync_render_after_native_dom();
             return Ok(());
         }

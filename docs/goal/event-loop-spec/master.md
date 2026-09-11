@@ -55,6 +55,21 @@ WPT 基线 → MO host 触发（方案 C 设计已存在）→ checkpoint spec �
 
 ## 已完成切片
 
+### M2 MO-S2（第三批）— fragment flatten 验证 + quickjs 接线（2026-09-11）✅
+
+- **fragment flatten 澄清与锁定**：native appendChild(DocumentFragment) 的树结构语义已由
+  绑定层 `insert_with_fragment_flatten`（R3132）保证——逐子移动、fragment 不入树，排空侧
+  每个 child 各产一条 childList record（addedNodes=[该子]，prev/next 正确）。新增 v8 门控
+  集成测试锁定（f1/f2 入树 + MO 记录可达）。**批派发粒度差异**（浏览器单记录 N addedNodes
+  vs 本实现 N 记录）记 MO-S3 候选（同 target+type 连续记录合并，无当前 driving 用例不冒进）
+- **quickjs 接线（DC-7 对等收口）**：三处 `sync_render_after_native_dom` 调用点 gate 从
+  v8 扩到 any(v8, quickjs)，`sync_render_after_native_dom`/`drain_native_mutations_to_mo`
+  同步扩——quickjs native 写此前既无重渲染也无 MO 通知；mo_host_trigger 测试模块门控同扩
+  （fragment 用例保留 v8-only——quickjs 绑定面缺 `__zw_native_create_document_fragment`
+  工厂，DC-7 缺口记档）
+- **验证**：v8 3P + quickjs 2P（attributes/remove 双引擎端到端）+ 双引擎 clippy 零警告 +
+  `make test` 19,153P/0F + fmt 干净
+
 ### M2 MO-S2（第二批）— childList nextSibling 树反推导（2026-09-11）✅
 
 - dom 层 MutationRecord 无 next_sibling 字段（结构缺口不动）——排空侧从**当前树 +
@@ -120,12 +135,9 @@ WPT 基线 → MO host 触发（方案 C 设计已存在）→ checkpoint spec �
 
 ## 下一步计划
 
-1. **M2 MO-S2 余项**（previousSibling 透传 + removed '#id' 回落 + nextSibling 树反推
-   已落地，2026-09-11）：
-   - fragment added flatten 语义对齐（polyfill R47 同款：addedNodes = flatten 子）
-   - quickjs 路径 sync_render 接线（v8-gated，DC-7 对等——quickjs native 写后既无
-     重渲染也无 MO 通知，属更大的 quickjs native 写收口面）
-   - MO-S4（escape-hatch 联动验证）须用户点名（设计 §6）
+1. **M2 MO-S3（候选）**：排空侧记录批派发合并（同 target+type 连续 childList 记录 →
+   浏览器语义单记录——fragment append N 记录粒度差异；当前无 driving WPT 用例，冒进
+   缓行）+ 排空批「单 execute 多 record」的 execute_script 次数优化（现逐条投递）
 2. **M3**：task queue + per-task checkpoint（kill-switch → A/B → default-on）
 3. **跨流协调项（非本流可闭合，记录待碰头）**：
    - engine apply 路径稳定 selector 唯一性（RO observe-001..020 / IO handle 族根因）

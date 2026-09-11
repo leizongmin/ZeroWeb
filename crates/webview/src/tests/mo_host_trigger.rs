@@ -110,6 +110,61 @@ fn test_mo_host_trigger_native_attribute_notifies_polyfill_mo() {
     );
 }
 
+/// MO-S2 fragment flatten（v8-only：quickjs 绑定面缺 `__zw_native_create_document_fragment`——
+/// DC-7 对等缺口，master.md 记档）：native appendChild(DocumentFragment) 经绑定层
+/// `insert_with_fragment_flatten`（R3132）逐子移动——fragment 自身不入树，每个子各产一条
+/// childList record（addedNodes=[该子]；与浏览器「单记录 N addedNodes」的批派发粒度差异
+/// 记 master.md MO-S3 候选）。
+#[cfg(feature = "v8")]
+#[test]
+fn test_mo_host_trigger_fragment_flatten_v8() {
+    let mut wv3 = WebView::new(WebViewConfig::default());
+    wv3.load_html("<html><body><ul id='ul'></ul><script>0;</script></body></html>", None);
+    wv3.run_page_scripts().expect("run page scripts");
+    wv3.set_mo_host_trigger(true);
+    wv3.execute_script(
+        "globalThis.__fragRecs = [];\
+         globalThis.__moFrag = new MutationObserver(function (rs) { globalThis.__fragRecs = globalThis.__fragRecs.concat(rs); });\
+         globalThis.__moFrag.observe(document.getElementById('ul'), { childList: true });",
+    )
+    .unwrap();
+    wv3.execute_script(
+        "(()=>{ const ul = __zw_native_element_for_id('ul');\
+           const frag = __zw_native_create_document_fragment();\
+           const p = __zw_native_create_element('li'); p.id = 'f1';\
+           const q = __zw_native_create_element('li'); q.id = 'f2';\
+           frag.appendChild(p); frag.appendChild(q);\
+           ul.appendChild(frag); })()",
+    )
+    .unwrap();
+    let mut frag_ok = false;
+    for _ in 0..50 {
+        let detail = wv3
+            .execute_script(
+                "var total = 0; var known = false;\
+                 for (var i = 0; i < globalThis.__fragRecs.length; i++) {\
+                   var r = globalThis.__fragRecs[i];\
+                   for (var j = 0; j < r.addedNodes.length; j++) {\
+                     total++;\
+                     if (r.addedNodes[j].id === 'f1' || r.addedNodes[j].id === 'f2') known = true;\
+                   }\
+                 }\
+                 var lis = document.getElementById('ul').querySelectorAll('li');\
+                 'added=' + total + '/known=' + known + '/li=' + lis.length",
+            )
+            .unwrap();
+        if detail.trim() == "added=2/known=true/li=2" {
+            frag_ok = true;
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    assert!(
+        frag_ok,
+        "fragment append：两个 li 入树且 MO 记录各自可达（fragment 自身不入树）"
+    );
+}
+
 /// kill-switch OFF（默认）：native 写不投递——通知端死路保持（行为时序变更门禁）。
 #[test]
 fn test_mo_host_trigger_default_off_no_notify() {
