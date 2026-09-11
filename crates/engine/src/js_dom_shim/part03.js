@@ -1301,98 +1301,123 @@
       // 通用变异队列跳过（light DOM 自动分配语义不适用于 manual）。
       if (shadowRoot.slotAssignment === 'manual') return;
       var flattenMap = function () {
-        var m = new Map();
+        // WC-M3 切片 8 第九增量：双 map 快照（a = assigned、f = flatten——与 part05
+        // handle 域同构）。
+        var a = new Map();
+        var f = new Map();
         var dfs = function (list) {
           for (var di = 0; di < list.length; di++) {
             var s = list[di];
             if (!s || s.nodeType !== 1) continue;
             if (String(s.tagName || '').toLowerCase() === 'slot') {
-              m.set(s, (typeof s.assignedNodes === 'function') ? s.assignedNodes({ flatten: true }) : []);
+              if (typeof s.assignedNodes === 'function') {
+                a.set(s, s.assignedNodes());
+                f.set(s, s.assignedNodes({ flatten: true }));
+              } else {
+                a.set(s, []);
+                f.set(s, []);
+              }
             }
             dfs(s.childNodes || []);
           }
         };
         dfs(shadowRoot.childNodes || []);
-        return m;
+        return { a: a, f: f };
       };
-      var diffInto = function (marked, A, B) {
-        A.forEach(function (av, slot) {
+      var diffInto = function (marked, P, C) {
+        // ① assigned 变化 → mark；出树 slot 命中。② 空 assigned slot 的 fallback
+        // 面变化 → mark（spec insert/remove「parent 是空分配 slot → signal」）。
+        // ③ 新入树 slot 即获配 → mark。
+        P.a.forEach(function (av, slot) {
           if (marked.indexOf(slot) >= 0) return;
-          var bv = B.get(slot);
+          var bv = C.a.get(slot);
           if (!bv) bv = [];
           if (av.length !== bv.length) { marked.push(slot); return; }
           for (var i = 0; i < av.length; i++) {
             if (av[i] !== bv[i]) { marked.push(slot); return; }
           }
+          if (av.length === 0) {
+            var pf = P.f.get(slot) || [];
+            var cf = C.f.get(slot) || [];
+            if (pf.length !== cf.length) { marked.push(slot); return; }
+            for (var j = 0; j < pf.length; j++) {
+              if (pf[j] !== cf[j]) { marked.push(slot); return; }
+            }
+          }
         });
-        B.forEach(function (bv, slot) {
+        C.a.forEach(function (bv, slot) {
           if (marked.indexOf(slot) >= 0) return;
-          if (A.has(slot)) return;
+          if (P.a.has(slot)) return;
           if (bv.length > 0) marked.push(slot);
         });
       };
-      // WC-M3 切片 8 第六增量（spec notify mutation observers）：slotchange 改经全局
-      // signalSet + MO flush 派发（MO 回调之后同一复合微任务，bubbles: true）——不再
-      // 自持微任务。同根待派发时仅更新 prev 快照（marked 增量并入）。
+      // WC-M3 切片 8 第九增量（web-components goal，spec signal a slot change /
+      // notify mutation observers）：transition 判定移到 **queue 时**（与 part05
+      // handle 域同构——prev 链对照、轮首回落 last），命中 slot 并入 pending
+      // signal 集；dispatch 只消费 flush 快照点取走的 pending——投递期新 signal
+      // 落下一轮（两轮变异 → 两个 distinct slotchange）。
+      if (!shadowRoot.__zwSlotchangeMarked) shadowRoot.__zwSlotchangeMarked = [];
+      var prevChain = shadowRoot.__zwSlotchangePrev;
+      var curMap = flattenMap();
+      var baseP = (prevChain && prevChain.a && prevChain.a.size) ? prevChain : (shadowRoot.__zwSlotchangeLast || { a: new Map(), f: new Map() });
+      diffInto(shadowRoot.__zwSlotchangeMarked, baseP, curMap);
+      shadowRoot.__zwSlotchangePrev = curMap;
       if (!shadowRoot.__zwSlotchangeQueued) {
         shadowRoot.__zwSlotchangeQueued = true;
-        shadowRoot.__zwSlotchangePrev = null;
-        shadowRoot.__zwSlotchangeMarked = [];
         globalThis.__zwSlotSignalRoots = globalThis.__zwSlotSignalRoots || [];
         globalThis.__zwSlotSignalRoots.push({ kind: 'plain', shadowRoot: shadowRoot });
-        if (typeof globalThis.__zw_mo_flush_lite === 'function') globalThis.__zw_mo_flush_lite();
-      } else {
-        var prevMap = shadowRoot.__zwSlotchangePrev;
-        var markedArr = shadowRoot.__zwSlotchangeMarked || [];
-        if (prevMap && prevMap.size) {
-          diffInto(markedArr, prevMap, flattenMap());
-        }
       }
-      shadowRoot.__zwSlotchangePrev = flattenMap();
+      if (typeof globalThis.__zw_mo_flush_lite === 'function') globalThis.__zw_mo_flush_lite();
     } catch (_eQsp) {}
+  };
+  // WC-M3 切片 8 第九增量：flush 快照点取走 pending + 复位 queued 标记
+  //（投递期新 signal 重新 push 活列表 + 调度下一轮）。
+  globalThis.__zwTakePlainSlotPending = function (shadowRoot) {
+    try {
+      var arr = shadowRoot.__zwSlotchangeMarked || [];
+      shadowRoot.__zwSlotchangeMarked = [];
+      shadowRoot.__zwSlotchangeQueued = false;
+      return arr;
+    } catch (_eTpp) { return []; }
+  };
+  // 快照分发口：按 entry kind 取走对应世界的 pending（part01 MO flush 快照点调用）。
+  globalThis.__zwTakeSlotPending = function (ent) {
+    try {
+      if (ent.kind === 'plain') return globalThis.__zwTakePlainSlotPending(ent.shadowRoot);
+      if (ent.kind === 'handle' && typeof globalThis.__zwTakeHandleSlotPending === 'function') {
+        return globalThis.__zwTakeHandleSlotPending(ent.rootHandle);
+      }
+    } catch (_eTp) {}
+    return [];
   };
   // WC-M3 切片 8 第六增量：signalSet 派发体——plain 世界（diff/树序逻辑原样，事件改
   // bubbles: true）。handle 世界（rootHandle 形态）经 __zwFlushHandleSlotSignals
   //（part05）分派。
-  globalThis.__zwFlushPlainSlotSignals = function (shadowRoot) {
+  globalThis.__zwFlushPlainSlotSignals = function (shadowRoot, slots) {
     try {
-      shadowRoot.__zwSlotchangeQueued = false;
       var finalMap = (function () {
-        var m = new Map();
+        var a = new Map();
+        var f = new Map();
         var dfs = function (list) {
           for (var di = 0; di < list.length; di++) {
             var s = list[di];
             if (!s || s.nodeType !== 1) continue;
             if (String(s.tagName || '').toLowerCase() === 'slot') {
-              m.set(s, (typeof s.assignedNodes === 'function') ? s.assignedNodes({ flatten: true }) : []);
+              if (typeof s.assignedNodes === 'function') {
+                a.set(s, s.assignedNodes());
+                f.set(s, s.assignedNodes({ flatten: true }));
+              } else {
+                a.set(s, []);
+                f.set(s, []);
+              }
             }
             dfs(s.childNodes || []);
           }
         };
         dfs(shadowRoot.childNodes || []);
-        return m;
+        return { a: a, f: f };
       })();
-      var marked = shadowRoot.__zwSlotchangeMarked || [];
-      var diffInto = function (markedArr, A, B) {
-        A.forEach(function (av, slot) {
-          if (markedArr.indexOf(slot) >= 0) return;
-          var bv = B.get(slot);
-          if (!bv) bv = [];
-          if (av.length !== bv.length) { markedArr.push(slot); return; }
-          for (var i = 0; i < av.length; i++) {
-            if (av[i] !== bv[i]) { markedArr.push(slot); return; }
-          }
-        });
-        B.forEach(function (bv, slot) {
-          if (markedArr.indexOf(slot) >= 0) return;
-          if (A.has(slot)) return;
-          if (bv.length > 0) markedArr.push(slot);
-        });
-      };
-      var prev = shadowRoot.__zwSlotchangePrev;
-      var baseP = (prev && prev.size) ? prev : new Map();
-      diffInto(marked, baseP, finalMap);
-      diffInto(marked, shadowRoot.__zwSlotchangeLast || new Map(), finalMap);
+      var marked = slots || [];
       var ordered = [];
       var dfsO = function (list) {
         for (var oi = 0; oi < list.length; oi++) {
@@ -1415,8 +1440,7 @@
         } catch (_eEvP) {}
       }
       shadowRoot.__zwSlotchangeLast = finalMap;
-      shadowRoot.__zwSlotchangePrev = null;
-      shadowRoot.__zwSlotchangeMarked = [];
+      shadowRoot.__zwSlotchangePrev = finalMap;
     } catch (_eQW) {}
   };
   // WC-M3 切片 8 第八增量（web-components goal）：signal 派发按 shadow 树**深度排序**
@@ -1445,10 +1469,18 @@
       return d;
     } catch (_eD) { return 0; }
   };
-  globalThis.__zwFlushSlotSignals = function () {
+  // WC-M3 切片 8 第九增量（web-components goal，spec notify mutation observers 步骤
+  // 4-5/7）：可传**快照**列表——MO flush 体在投递前快照 signalSet、投递后只对快照
+  // 派发（投递期间新入队的 signal 留活列表等下一轮）。无参调用保持旧语义：排空活列表。
+  globalThis.__zwFlushSlotSignals = function (snapshot) {
     try {
-      var list = globalThis.__zwSlotSignalRoots || [];
-      globalThis.__zwSlotSignalRoots = [];
+      var list;
+      if (snapshot) {
+        list = snapshot;
+      } else {
+        list = globalThis.__zwSlotSignalRoots || [];
+        globalThis.__zwSlotSignalRoots = [];
+      }
       // 内层根先派发（深度**降序**——最深的 shadow 树最先 flush：其 slot 的 setup/
       // 变异信号是级联源头，外层 slot 的信号（含经 assigned-slot 父边冒泡到内层监听
       // 的事件）随后；同深度保持入队序——稳定排序）。WPT nested slots：inner listener
@@ -1460,9 +1492,9 @@
         var ent = list[si];
         try {
           if (ent.kind === 'plain') {
-            globalThis.__zwFlushPlainSlotSignals(ent.shadowRoot);
+            globalThis.__zwFlushPlainSlotSignals(ent.shadowRoot, ent.slots);
           } else if (ent.kind === 'handle' && typeof globalThis.__zwFlushHandleSlotSignals === 'function') {
-            globalThis.__zwFlushHandleSlotSignals(ent.rootHandle);
+            globalThis.__zwFlushHandleSlotSignals(ent.rootHandle, ent.slots);
           }
         } catch (_eEnt) {}
       }
@@ -5907,8 +5939,17 @@
     return false;
   }
 
-  function _dispatchWithBubble(targetKey, targetSel, targetHandle, event, targetSlot) {
+  function _dispatchWithBubble(targetKey, targetSel, targetHandle, event, targetSlot, receiverProxy) {
     var target = _makeProxy(targetSel, targetHandle);
+    // WC-M3 切片 8 第九增量（web-components goal）：**receiver identity 保持**——
+    // dispatchEvent 的接收者本身是页面持有的 proxy；R52 消零清 `_proxyCache` 后
+    // `_makeProxy` 重建分裂 proxy B，event.target 与页面持有对象分裂（WPT
+    // slotchange-event removed-immediately 簇 `event.target === slot` 断言根因
+    // ——expected/got 同 handle 字符串不同 proxy）。R315 重挂 identity 翻转同款
+    // 「页面视角 identity = 页面持有 proxy」口径。
+    if (receiverProxy && receiverProxy.nodeType != null) {
+      target = receiverProxy;
+    }
     // M3 扩批 XV：window.event（legacy——spec「current event」在 dispatch 期间暴露为
     // window.event；嵌套 dispatch 栈式恢复。track-default-attribute 用例 handler 内读
     // 裸 `event.target` 断言面）。
@@ -8574,15 +8615,30 @@
     // setAttribute 已存在则更新值（latest-wins），否则追加；id/class 同步 IDL 反射字段。
     node.setAttribute = function (n, v) {
       n = String(n); var sv = v == null ? '' : String(v);
-      for (var i = 0; i < attrs.length; i++) { if (attrs[i].name === n) { attrs[i].value = sv; _zwMReflectIdl(node, n); return; } }
+      for (var i = 0; i < attrs.length; i++) { if (attrs[i].name === n) { attrs[i].value = sv; _zwMReflectIdl(node, n); _zwMQueueSlotAttr(n); return; } }
       attrs.push({ name: n, value: sv });
       _zwMReflectIdl(node, n);
+      _zwMQueueSlotAttr(n);
     };
     // removeAttribute 移除全部同名属性（去重保险），同步清 IDL 反射字段。
     node.removeAttribute = function (n) {
       n = String(n);
+      var _hadSlotAttr = attrs.some(function (a) { return a.name === n; }) && (n === 'slot' || String(n).toLowerCase() === 'name');
       for (var i = attrs.length - 1; i >= 0; i--) { if (attrs[i].name === n) attrs.splice(i, 1); }
       _zwMReflectIdl(node, n);
+      if (_hadSlotAttr) _zwMQueueSlotAttr(n);
+    };
+    // WC-M3 切片 8 第九增量（web-components goal，spec slot's/slottable's name 的
+    // attribute change steps → assign slottables → signal）：slot 的 name / slottable 的
+    // slot 属性写入后队列 plain 世界 slotchange 分配面 diff（__zwQueuePlainSlotchange
+    // 自元素上溯找 shadow root——WPT slotchange.html 'Change slot=/name= ... assigned'
+    // 两案；createTestTree 的 template 装配元素即本工厂产物）。
+    var _zwMQueueSlotAttr = function (n) {
+      var ln = String(n).toLowerCase();
+      if (ln !== 'slot' && ln !== 'name') return;
+      if (typeof globalThis.__zwQueuePlainSlotchange === 'function') {
+        try { globalThis.__zwQueuePlainSlotchange(node); } catch (_eScAttrP) {}
+      }
     };
     // js-dom M3 R96：setAttributeNS（WPT attributes.html 非 HTML 文档变体在 detached doc 元素上
     // 调 `el.setAttributeNS(ns, qn, v)`——旧缺方法抛 TypeError 整 subtest 崩）。最小语义：忽略 ns 按

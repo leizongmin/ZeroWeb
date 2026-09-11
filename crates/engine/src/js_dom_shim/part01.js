@@ -2430,44 +2430,63 @@
     var _moFlushBody = function() {
       _moFlushScheduled = false;
       var observers = globalThis.__zw_mo_observers;
-      for (var i = 0; i < observers.length; i++) {
-        var obs = observers[i];
-        if (obs._records.length > 0) {
-          var records = obs._records;
-          obs._records = [];
-          // R302（js-dom M4）：回调抛异常经「report the exception」上报（spec
-          // WebIDL invoke——MO 回调异常不静默吞）。上报目标 = **callback 的关联
-          // realm**（印记 `_zwRealmWin` / `__zwRealmOf` 注册表反查——R187 同款）；
-          // 无印记回落主 window。WPT MutationObserver-cross-realm-callback-
-          // report-exception：frames[1].Function 造的回调抛错 → frame1 的 onerror。
-          try {
-            obs._callback(records, obs);
-          } catch (_e302) {
-            var _r302Realm = null;
-            // R370 勘误：callback 是**函数**——旧 `typeof === 'object'` 检查使函数回调的
-            // `_zwRealmWin` 印记永远读不到（R302 只覆盖对象形态回调），全部落主 window
-            //（WPT MutationObserver-cross-realm-callback-report-exception 的
-            // onerrorCalls expected ["frame1"] got ["top"]）。
-            try { _r302Realm = (obs._callback && (typeof obs._callback === 'object' || typeof obs._callback === 'function')) ? obs._callback._zwRealmWin : null; } catch (_e302s) {}
-            if (!_r302Realm && globalThis.__zwRealmOf) {
-              try { _r302Realm = globalThis.__zwRealmOf.get(obs._callback) || null; } catch (_e302m) {}
-            }
-            if (typeof globalThis._zwReportListenerError === 'function') {
-              try { globalThis._zwReportListenerError(_e302, _r302Realm); } catch (_e302r) {}
-            }
-          }
-          // WC-M3 切片 8 第六增量（web-components goal，spec notify mutation observers
-          // ——signalSet 的 slotchange 在**每个 observer 回调投递之后**派发（bubbles:
-          // true）：回调内的断言可见「slotchange 尚未 fire/已 fire 一次」的分界——WPT
-          // slotchange-event 'after mutation observers are invoked' 簇的分轮断言）。
-          if (typeof globalThis.__zwFlushSlotSignals === 'function') {
-            try { globalThis.__zwFlushSlotSignals(); } catch (_e8ss1) {}
+      // WC-M3 切片 8 第九增量（web-components goal，spec notify mutation observers
+      // 步骤 4-5）：signalSet **快照**在投递前取——投递期间（回调内变异）入队的新
+      // signal 留在活列表，等下一轮 notify 微任务（signal a slot change 自带
+      // queue a mutation observer microtask）——两轮变异 → 两个 distinct slotchange。
+      var _sigSnapshot = null;
+      var _sigList = globalThis.__zwSlotSignalRoots;
+      if (_sigList && _sigList.length > 0) {
+        _sigSnapshot = _sigList;
+        globalThis.__zwSlotSignalRoots = [];
+        // 快照点同步**取走**各根 pending signal 集（copy + 清空 + 复位 queued 标记
+        // ——投递期 queue 调用重新 push 活列表并调度下一轮，spec notify 步骤 4-5
+        // signal slots 先克隆清空的 per-root 面）。
+        if (typeof globalThis.__zwTakeSlotPending === 'function') {
+          for (var k = 0; k < _sigSnapshot.length; k++) {
+            _sigSnapshot[k].slots = globalThis.__zwTakeSlotPending(_sigSnapshot[k]);
           }
         }
       }
-      // 兜底：无 observer 注册（或本轮零投递）时 signalSet 仍须派发。
-      if (typeof globalThis.__zwFlushSlotSignals === 'function') {
-        try { globalThis.__zwFlushSlotSignals(); } catch (_e8ss2) {}
+      // spec 步骤 2-3：notifySet = 本轮开启时 record 队列非空的 observer 快照——
+      // 投递期间新入队的 observer（如 MO1 回调里 setAttribute 触发 MO2）落下一轮。
+      var _notifySet = [];
+      for (var i = 0; i < observers.length; i++) {
+        if (observers[i]._records.length > 0) _notifySet.push(observers[i]);
+      }
+      // spec 步骤 6：**全部** observer 投递完才进步骤 7（旧实现每 observer 投递后
+      // 排空活 signalSet——把下一轮的信号并入本轮单一事件，且使 MO1 的分轮断言
+      // 可见「slotchange 已 fire」——WPT slotchange-event end-of-microtask 簇根因）。
+      for (var j = 0; j < _notifySet.length; j++) {
+        var obs = _notifySet[j];
+        var records = obs._records;
+        obs._records = [];
+        // R302（js-dom M4）：回调抛异常经「report the exception」上报（spec
+        // WebIDL invoke——MO 回调异常不静默吞）。上报目标 = **callback 的关联
+        // realm**（印记 `_zwRealmWin` / `__zwRealmOf` 注册表反查——R187 同款）；
+        // 无印记回落主 window。WPT MutationObserver-cross-realm-callback-
+        // report-exception：frames[1].Function 造的回调抛错 → frame1 的 onerror。
+        try {
+          obs._callback(records, obs);
+        } catch (_e302) {
+          var _r302Realm = null;
+          // R370 勘误：callback 是**函数**——旧 `typeof === 'object'` 检查使函数回调的
+          // `_zwRealmWin` 印记永远读不到（R302 只覆盖对象形态回调），全部落主 window
+          //（WPT MutationObserver-cross-realm-callback-report-exception 的
+          // onerrorCalls expected ["frame1"] got ["top"]）。
+          try { _r302Realm = (obs._callback && (typeof obs._callback === 'object' || typeof obs._callback === 'function')) ? obs._callback._zwRealmWin : null; } catch (_e302s) {}
+          if (!_r302Realm && globalThis.__zwRealmOf) {
+            try { _r302Realm = globalThis.__zwRealmOf.get(obs._callback) || null; } catch (_e302m) {}
+          }
+          if (typeof globalThis._zwReportListenerError === 'function') {
+            try { globalThis._zwReportListenerError(_e302, _r302Realm); } catch (_e302r) {}
+          }
+        }
+      }
+      // spec 步骤 7：对**快照**（非活列表）派发 slotchange（bubbles: true）。无 observer
+      // 注册（或本轮零投递）时快照照常派发——signal 不依赖 observer 存在。
+      if (_sigSnapshot && typeof globalThis.__zwFlushSlotSignals === 'function') {
+        try { globalThis.__zwFlushSlotSignals(_sigSnapshot); } catch (_e8ss) {}
       }
     };
     if (typeof queueMicrotask === 'function') {

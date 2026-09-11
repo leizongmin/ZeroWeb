@@ -2,9 +2,11 @@
 
 **入口文档**: [../web-components.md](../web-components.md)
 **创建日期**: 2026-09-07（goal 拆分 bootstrap）
-**最后更新**: 2026-09-11（M3 切片 8 第二增量第八小步（硬化轮）——MO flush 调度
-预算外化（queueMicrotask 直发，net 0 零回归）+ end-of-microtask 簇根因收窄至 MO 投递
-分轮语义；余：slotchange 尾 8 案 + innerHTML 尾计数 4F + DC-5 终判）
+**最后更新**: 2026-09-11（M3 切片 8 第二增量第九小步——notify mutation observers 步骤
+4-7 spec 直译（signalSet 快照分轮 + 全 observer 投递后派发）+ slotchange diff queue 时化
+（assigned/flatten 双 map）+ slot/name 属性挂钩 + innerHTML 队列点下移 + 空文本注册不构成
+子节点 + 派发接收者 identity 保持——slotchange 三簇 12F 全清，净 +13 零回归；
+余 DC-5 终判）
 
 ---
 
@@ -97,13 +99,10 @@ Shadow DOM 渲染级 composed tree 排除（等用户点名专项）。
    - ~~disabledFeatures×attachShadow 尾 2 案~~ ✅ 同日（define 记录 disabledFeatures +
      `_attachShadow` gate；`['SHADOW']` 大小写敏感、无定义不触发、二次 attachShadow
      优先序均验证）。
-2. **slotchange 尾 12 案**（三簇——nested slots 4F 已由第七小步深度序全清）：
-   ①removed-immediately 4F（R52 身份二相：被移除 slot 的 proxy 消零重建 vs 页面持有
-   引用，`__n111 vs __n111` 同句柄不同代理）；②end-of-microtask 4F（signal 与 MO
-   records 投递分界：per-observer 排空语义）；③innerHTML 尾计数 4F（async host apply
-   过度标记）。
-3. Rust `resolve_slots` 接线（渲染级消费等用户点名专项）+ **DC-5 终判**
-   （make test + clippy + reftest 持续全绿基础上）。
+2. ~~slotchange 尾 12 案~~ ✅ 2026-09-11 第九小步全清（三簇 12F + attribute 面两案恢复，
+   见 evidence/2026-09-11-wc-m3s8j.md）。
+3. **DC-5 终判**（make test + clippy + reftest 持续全绿基础上）+ Rust `resolve_slots`
+   接线（渲染级消费等用户点名专项）。
 
 ### 已知挂账（2026-09-11 M3 切片 8 更新）
 
@@ -128,12 +127,17 @@ Shadow DOM 渲染级 composed tree 排除（等用户点名专项）。
   pending 回落 'div' 的 safelist 误放行仍挂（未阻塞当前断言面）
 - ~~slotchange nested slots 4F~~ ✅ 第七小步全清（signal 派发深度降序：最深的
   shadow 树最先 flush——级联源头信号先发；`__zwSlotRootDepth` 探针实证 outer=1/inner=2）
-- slotchange 尾 8 案（两簇，第八增量根因收窄）：①end-of-microtask 4F——**MO 投递
-  分轮语义**（预算外调度落地后原样——预算耗尽非根因；attribute 记录 MO1 与 childList
-  signal 的投递门控不同轮，signal 在 MO1 投递前已排空——查 `_mo_deliverToId` 的
-  subtree 门控/延迟投递分支）；②removed-immediately 4F——被移除 slot 的 proxy 身份
-  二相（R52 消零重建 vs 页面持有引用）
-- slotchange innerHTML 尾计数 4F——async host apply 过度标记
+- ~~slotchange 尾 8 案~~ ✅ 第九小步全清（net +13 零回归，见 evidence/2026-09-11-wc-m3s8j.md）：
+  ①end-of-microtask 4F——notify mutation observers 步骤 4-7 spec 直译（signalSet 投递前
+  快照 + 全 observer 投递完才派发 slotchange + 投递期新 signal 落下一轮）；②removed-
+  immediately 4F——dispatchEvent 接收者 proxy 透传（`_dispatchWithBubble` 第 6 参），
+  event.target identity = 页面持有对象（R52 消零重建分裂 proxy 的 countermeasure）；
+  嵌套 slots 的 1st/2nd fire 错位回归由 diff 双 map 口径修复（assigned 正依据 + 空分配
+  slot 的 fallback 面——级联可见性归冒泡）
+- ~~slotchange innerHTML 尾计数 4F~~ ✅ 第九小步全清（innerHTML 的 slotchange 钩子下移到
+  本地文本视图重注册之后 + `_zwLocalChildNodes` 空文本注册返回 []——spec string-replace-all
+  空串无子）+ slot/name 属性变更挂钩（part04 handle/sel 两域 + part03 plain 工厂——
+  slotchange.html attribute 面两案恢复报 PASS）
 - builtin-coverage 的 innerHTML 解析簇（~108F）：R380 查询融合域，非 CE 域
 - reactions/ 表格族（table-scoped 解析升级）与 customized-builtins 的 iframe/reparse 面
 - XHTML 悬空 body 查询域（5 案）——pre-existing，与 template 真实化无因果
@@ -148,7 +152,7 @@ crates/dom/` 核对渲染流域活跃面；碰 part01.js 前与 event-loop-spec 
 |--------|------|
 | M1 — WPT 基线建立 + Custom Elements 收口 | ✅ 2026-09-10（切片 1/2a/2b/3/4 全清——DC-1 基线 + DC-2 upgrade/whenDefined/adoptedCallback/双路径全收口） |
 | M2 — template 真实化 | ✅ 2026-09-10 收口（切片 1 + iframe/detached 工厂 content 视图——DC-3 全满足） |
-| M3 — slot 全链路 + 收尾 | ◐ 切片 1-7 ✅ + 切片 8 第一/二增量 ✅（composed path/shadow root 站/per-station retarget/relatedTarget/eventPhase/mutation 稳定 composedPath/disabledFeatures gate/signal 深度序——累计净 +109）；余 slotchange 尾 8 案（两簇）+ innerHTML 尾计数 4F + DC-5 终判 |
+| M3 — slot 全链路 + 收尾 | ◐ 切片 1-7 ✅ + 切片 8 第一/二增量（1-9 小步）✅（composed path/shadow root 站/per-station retarget/relatedTarget/eventPhase/mutation 稳定 composedPath/disabledFeatures gate/signal 深度序/MO 投递 spec 直译/slotchange 三簇全清——累计净 +122）；余 DC-5 终判 |
 
 ## 待用户决策
 
@@ -161,11 +165,11 @@ crates/dom/` 核对渲染流域活跃面；碰 part01.js 前与 event-loop-spec 
 
 - 测试基线：立项时点全绿（`make test` / `make reftest` 入口，经 test-guard 包裹；
   禁止裸跑 cargo test）
-- WC 用例面：**3536 Pass / 4763 subtests（74.2%）**（2026-09-11 M3 切片 8 第二增量
-  第八小步（硬化轮 net 0），evidence/2026-09-11-wc-m3s8i.{md,json}。历史：基线 437=9% →
+- WC 用例面：**3549 Pass / 4765 subtests（74.5%）**（2026-09-11 M3 切片 8 第二增量
+  第九小步 net +13 零回归，evidence/2026-09-11-wc-m3s8j.{md,json}。历史：基线 437=9% →
   2a 689=15% → 2b 2565=55% → 3 2720=58% → 4 3008=64% → M2 3014 → M3s1 3046 → M3s2
   3050 → M3s3 3105 → M3s4 3137 → M3s5 3142 → M3s6 3145 → M3s7 3413 → M3s8 3425 →
   M3s8b 3427 → M3s8c 3494 → M3s8d 3525 → M3s8e 3529 → M3s8f 3532 → M3s8g 3532 →
-  M3s8h 3536 → M3s8i 3536）
+  M3s8h 3536 → M3s8i 3536 → M3s8j 3549）
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过；
   dom 结构变更轮跑 `make reftest` 作渲染面守卫

@@ -2628,6 +2628,21 @@ return _tplContent;
             }
             _mo_notify(sel, handle, { type: 'attributes', attributeName: n, oldValue: moOld });
             if (ceEntry) _ce_dispatchAttrChange(ceEntry, proxy, n, ceOld, v);
+            // WC-M3 切片 8 第九增量（web-components goal，spec DOM「use these attribute
+            // change steps to update a slot's/slottable's name」——slot 的 name 属性与
+            // slottable 的 slot 属性变更步进 assign slottables → signal）：slot/name 属性
+            // 写入后队列 slotchange 分配面 diff（旧版靠 flush 时 sweep 覆盖，queue 时
+            // diff 化后须显式挂钩——WPT slotchange.html 'Change slot=/name= ... assigned'
+            // 两案）。handle 域自元素上溯找受影响 shadow root（__zwMaybeQueueSlotchange
+            // ③）；sel 域（静态页面元素——createTestTree 的 light 子 c2 形态）走
+            // __zwQueuePlainSlotchange 的 parentNode 上溯。
+            if (n === 'slot' || String(n).toLowerCase() === 'name') {
+              if (handle && typeof globalThis.__zwMaybeQueueSlotchange === 'function') {
+                try { globalThis.__zwMaybeQueueSlotchange(handle); } catch (_eScAttr) {}
+              } else if (sel && typeof globalThis.__zwQueuePlainSlotchange === 'function') {
+                try { globalThis.__zwQueuePlainSlotchange(proxy); } catch (_eScAttrS) {}
+              }
+            }
             // WC-M1 切片 4：is 属性写入改变 customized built-in 判定 → 失效该 key 的
             // CE entry 缓存（连接态派发依赖 is 反查结果）。
             if (n === 'is' && typeof globalThis.__zwCeInvalidateEntry === 'function') {
@@ -2719,6 +2734,15 @@ return _tplContent;
               try { _zwTrackScheduleLoad(sel, handle, { srcChange: true }); } catch (_eSaTr) {}
             }
             if (_rmExisted) _mo_notify(sel, handle, { type: 'attributes', attributeName: n, oldValue: moOld });
+            // WC-M3 切片 8 第九增量：slot/name 属性移除的 slotchange 队列面（与
+            // setAttribute 挂钩对称——移除 slot 属性使 slottable 失配/回默认分配）。
+            if (_rmExisted && (n === 'slot' || String(n).toLowerCase() === 'name')) {
+              if (handle && typeof globalThis.__zwMaybeQueueSlotchange === 'function') {
+                try { globalThis.__zwMaybeQueueSlotchange(handle); } catch (_eScAttrRm) {}
+              } else if (sel && typeof globalThis.__zwQueuePlainSlotchange === 'function') {
+                try { globalThis.__zwQueuePlainSlotchange(proxy); } catch (_eScAttrRmS) {}
+              }
+            }
             // WC-M1 切片 4：is 移除同样失效 CE entry 缓存。
             if (n === 'is' && typeof globalThis.__zwCeInvalidateEntry === 'function') {
               globalThis.__zwCeInvalidateEntry(key);
@@ -3542,7 +3566,10 @@ return _tplContent;
             // js-dom M4 R106：spec 入口守卫（TypeError / InvalidStateError，
             // WPT EventTarget-dispatchEvent "Calling dispatchEvent(null)" 等）。
             globalThis._zwDispatchGuard(event);
-            return _dispatchWithBubble(key, sel, handle, event);
+            // WC-M3 切片 8 第九增量（web-components goal）：receiver proxy 透传
+            // ——event.target 保持页面持有对象 identity（R52 消零后 `_makeProxy`
+            // 重建分裂 proxy 的 countermeasure；见 _dispatchWithBubble 注记）。
+            return _dispatchWithBubble(key, sel, handle, event, undefined, this);
           };
         }
         if (prop === 'click') {
@@ -7578,12 +7605,15 @@ return _tplContent;
             // e2e 'Hello WorldHello World' 实证）。含 markup 时保持 registry（结构子树）。
             if (handle && !(_ihVal.indexOf('<') < 0)) _handleChildren[handle] = _ihAdded;
             else if (handle && _ihVal.indexOf('<') < 0) _handleChildren[handle] = [];
+            // WC-M3 切片 8 第九增量：slotchange 队列钩子**下移**到本地文本视图重注册
+            // （下方 _zwRegisterTextEl/_zwUnregisterTextEl）之后——queue 时 diff 读的
+            // assignedNodes 经 _zwLocalChildNodes 回落文本注册表；钩子在注册前跑会把
+            // 旧文本（如 'baz'）计入 cur 快照，innerHTML='' 轮的 [baz]→[] 差分失配
+            // 丢 fire（WPT slotchange-event 'innerHTML modifies the children' 尾簇）。
             // WC-M3 切片 5（web-components goal）：innerHTML 整体替换宿主子 → slot 分配
             // 面变化（flatten diff 队列判定哪些 slot 需 slotchange——WPT slotchange-event
             // 'when innerHTML modifies the children of the shadow host'）。
-            if (handle && typeof globalThis.__zwMaybeQueueSlotchange === 'function') {
-              try { globalThis.__zwMaybeQueueSlotchange(handle); } catch (_eScIh) {}
-            }
+            var _zwIhQueueSlotchange = handle && typeof globalThis.__zwMaybeQueueSlotchange === 'function';
             // js-dom M4 R56：sel 路径替换后丢弃 childNodes 基底缓存条目。R55 的 identity
             // 稳定副作用 + 本行上方 _ihRemoved 读（把旧基底入缓存）→ 同回合内 `el.childNodes`
             // 缓存命中旧基底，overlay 的 pending-removed 剔除 identity 命中清空列表；而 added
@@ -7615,6 +7645,10 @@ return _tplContent;
               } catch (_e294t) {}
             } else if (typeof _zwUnregisterTextEl === 'function' && typeof _makeProxy === 'function') {
               _zwUnregisterTextEl(_makeProxy(sel, handle));
+            }
+            // WC-M3 切片 8 第九增量：下移后的 slotchange 队列点（本地文本视图定稿后）。
+            if (_zwIhQueueSlotchange) {
+              try { globalThis.__zwMaybeQueueSlotchange(handle); } catch (_eScIh) {}
             }
             // R304（js-dom M4）：innerHTML 解析 wrapper 打挂父槽（sel 容器的同 turn
             // 可见性——wrapper 无 handle/sel，_zwOverlayPendingChildNodes 的反链

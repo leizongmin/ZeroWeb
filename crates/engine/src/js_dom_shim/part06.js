@@ -11914,7 +11914,13 @@ var _zwTextElsByHandle = new Map();
 var _zwTextElsBySel = new Map();
 function _zwLocalChildNodes(sel, handle) {
   var e = (handle && _zwTextElsByHandle.get(handle)) || (sel && _zwTextElsBySel.get(sel)) || null;
-  return e ? [e.node] : null;
+  if (!e) return null;
+  // WC-M3 切片 8 第九增量（web-components goal）：空文本注册（innerHTML=''/textContent=''
+  // 覆写先前的非空文本）**不构成子节点**——spec string-replace-all：空串 → node null →
+  // 无子。否则注册表残留 [text('')] 使 childNodes/assignedNodes 虚报 1 子（WPT
+  // slotchange-event innerHTML='' 轮的 default slot 分配差分 [baz]→[] 失配丢 fire）。
+  if (e.node && (e.node.__nv === '' || e.node.length === 0)) return [];
+  return [e.node];
 }
 // 临时 measure context（缓存——与页面 canvas 同共享 registry）
 var _zwMeasureCtxHandle = null;

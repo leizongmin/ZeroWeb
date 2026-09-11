@@ -3926,105 +3926,122 @@
       // must-not-fire 簇（他 slot 变化我不 fire）+ fallback 变化 fire 簇 + 单变异轮
       // last 为基（插入即获配 / 移除即失配均 fire）。
       var flattenMap = function () {
-        var m = new Map();
+        // WC-M3 切片 8 第九增量：双 map 快照——`a` = **assigned**（spec signal 依据：
+        // assign slottables 的 identical 比较）、`f` = flatten（fallback 变异判定面）。
+        var a = new Map();
+        var f = new Map();
         var dfs = function (list) {
           for (var di = 0; di < list.length; di++) {
             var s = list[di];
             if (!s || s.nodeType !== 1) continue;
             if (String(s.tagName || '').toLowerCase() === 'slot') {
-              m.set(s, (typeof s.assignedNodes === 'function') ? s.assignedNodes({ flatten: true }) : []);
+              if (typeof s.assignedNodes === 'function') {
+                a.set(s, s.assignedNodes());
+                f.set(s, s.assignedNodes({ flatten: true }));
+              } else {
+                a.set(s, []);
+                f.set(s, []);
+              }
             }
             var kk = (s.__zwHandle && _handleChildren[s.__zwHandle]) ? _handleChildren[s.__zwHandle] : [];
             for (var q = 0; q < kk.length; q++) dfs([kk[q]]);
           }
         };
         dfs(_handleChildren[rootHandle] || []);
-        return m;
+        return { a: a, f: f };
       };
-      var diffInto = function (marked, A, B) {
-        A.forEach(function (av, slot) {
+      var diffInto = function (marked, P, C) {
+        // ① assigned 变化 → mark（spec assign slottables 的 signal 依据）。出树 slot
+        //（prev 有 cur 无）同样命中——removed-immediately 面。
+        P.a.forEach(function (av, slot) {
           if (marked.indexOf(slot) >= 0) return;
-          var bv = B.get(slot);
+          var bv = C.a.get(slot);
           if (!bv) bv = [];
           if (av.length !== bv.length) { marked.push(slot); return; }
           for (var i = 0; i < av.length; i++) {
             if (av[i] !== bv[i]) { marked.push(slot); return; }
           }
+          // ② 同 assigned 且**空分配** slot 的 fallback 面变化 → mark（spec insert/
+          // remove 步骤「parent 是空分配 slot → signal parent」——fallback 内容增删）。
+          if (av.length === 0) {
+            var pf = P.f.get(slot) || [];
+            var cf = C.f.get(slot) || [];
+            if (pf.length !== cf.length) { marked.push(slot); return; }
+            for (var j = 0; j < pf.length; j++) {
+              if (pf[j] !== cf[j]) { marked.push(slot); return; }
+            }
+          }
         });
-        B.forEach(function (bv, slot) {
+        // ③ 新入树 slot 即获配 → mark（插入即 assigned 非空）。
+        C.a.forEach(function (bv, slot) {
           if (marked.indexOf(slot) >= 0) return;
-          if (A.has(slot)) return;
+          if (P.a.has(slot)) return;
           if (bv.length > 0) marked.push(slot);
         });
       };
-      // WC-M3 切片 8 第六增量（spec notify mutation observers）：slotchange 改经全局
-      // signalSet + MO flush 派发（MO 回调之后同一复合微任务，bubbles: true）。派发体
-      // = __zwFlushHandleSlotSignals（下方）。
+      // WC-M3 切片 8 第九增量（web-components goal，spec signal a slot change /
+      // notify mutation observers 步骤 4-7）：transition 判定移到 **queue 时**——
+      // 对照上次 queue 时的快照（prev 链；轮首回落上次 dispatch 快照
+      // last——单变异轮首变异效果），命中 slot 并入 **pending signal 集**
+      //（`_zwSlotchangeMarked`，spec signal slots 的 per-root 面）。dispatch 只消费
+      // **flush 快照点**取走的 pending——投递期（MO 回调内变异）再入队的 transition
+      // 留 pending 落下一轮（signal a slot change 自带 queue a mutation observer
+      // microtask）——两轮变异 → 两个 distinct slotchange（WPT slotchange-event
+      // end-of-microtask 簇）。派发体 = __zwFlushHandleSlotSignals（下方）。
+      var markedArr = _zwSlotchangeMarked[rootHandle] || (_zwSlotchangeMarked[rootHandle] = []);
+      var prevChain = _zwSlotchangePrev[rootHandle];
+      var curMap = flattenMap();
+      var baseP = (prevChain && prevChain.a && prevChain.a.size) ? prevChain : (_zwSlotchangeLast[rootHandle] || { a: new Map(), f: new Map() });
+      diffInto(markedArr, baseP, curMap);
+      _zwSlotchangePrev[rootHandle] = curMap;
       if (!_zwSlotchangeQueued[rootHandle]) {
         _zwSlotchangeQueued[rootHandle] = true;
-        _zwSlotchangePrev[rootHandle] = null;
-        _zwSlotchangeMarked[rootHandle] = [];
         globalThis.__zwSlotSignalRoots = globalThis.__zwSlotSignalRoots || [];
         globalThis.__zwSlotSignalRoots.push({ kind: 'handle', rootHandle: rootHandle });
-        if (typeof globalThis.__zw_mo_flush_lite === 'function') globalThis.__zw_mo_flush_lite();
-      } else {
-        var prevMap = _zwSlotchangePrev[rootHandle];
-        var markedArr = _zwSlotchangeMarked[rootHandle] || [];
-        if (prevMap && prevMap.size) {
-          diffInto(markedArr, prevMap, flattenMap());
-        }
       }
-      _zwSlotchangePrev[rootHandle] = flattenMap();
+      if (typeof globalThis.__zw_mo_flush_lite === 'function') globalThis.__zw_mo_flush_lite();
     } catch (_eQs) {}
   };
-  // WC-M3 切片 8 第六增量：signalSet 派发体——handle 世界（diff/树序逻辑原样，事件改
-  // bubbles: true，由 part03 __zwFlushSlotSignals 分派）。spec notify mutation
-  // observers 末段：slotchange bubbles: true（嵌套 slot 的上游监听经 assigned-slot
-  // 父边可达——WPT nested slots's contents change 簇）。
-  globalThis.__zwFlushHandleSlotSignals = function (rootHandle) {
-    // 注意：flattenMap/diffInto 为队列函数局部——本 flush 体自带同构实现（模块域
-    // 只依赖 _handleChildren/_zwSlotchange* 表）。
+  // WC-M3 切片 8 第九增量：flush 快照点取走 pending（移出 + 清空）并复位 queued——
+  // 投递期（MO 回调内）新 signal 重新 push 活列表 + 调度下一轮（spec notify 步骤
+  // 4-5 signal slots 先克隆清空；queued 复位使投递期 queue 调用重新入列）。
+  globalThis.__zwTakeHandleSlotPending = function (rootHandle) {
+    var arr = _zwSlotchangeMarked[rootHandle] || [];
+    _zwSlotchangeMarked[rootHandle] = [];
+    _zwSlotchangeQueued[rootHandle] = false;
+    return arr;
+  };
+  // WC-M3 切片 8 第九增量：signalSet 派发体——handle 世界。消费**flush 快照点**
+  // 取走的 pending slot 列表（`slots`，spec notify 步骤 7 对 signalSet 克隆派发；
+  // 由 part03 __zwFlushSlotSignals 分派），树序化 + 出树 slot 追加后逐个派发
+  // slotchange（bubbles: true——嵌套 slot 的上游监听经 assigned-slot 父边可达）。
+  // 末段更新 last/prev 参照快照（下一轮 queue 时 diff 的基）。
+  globalThis.__zwFlushHandleSlotSignals = function (rootHandle, slots) {
     var flattenMap = function () {
-      var m = new Map();
+      var a = new Map();
+      var f = new Map();
       var dfs = function (list) {
         for (var di = 0; di < list.length; di++) {
           var s = list[di];
           if (!s || s.nodeType !== 1) continue;
           if (String(s.tagName || '').toLowerCase() === 'slot') {
-            m.set(s, (typeof s.assignedNodes === 'function') ? s.assignedNodes({ flatten: true }) : []);
+            if (typeof s.assignedNodes === 'function') {
+              a.set(s, s.assignedNodes());
+              f.set(s, s.assignedNodes({ flatten: true }));
+            } else {
+              a.set(s, []);
+              f.set(s, []);
+            }
           }
           var kk = (s.__zwHandle && _handleChildren[s.__zwHandle]) ? _handleChildren[s.__zwHandle] : [];
           for (var q = 0; q < kk.length; q++) dfs([kk[q]]);
         }
       };
       dfs(_handleChildren[rootHandle] || []);
-      return m;
-    };
-    var diffInto = function (marked, A, B) {
-      A.forEach(function (av, slot) {
-        if (marked.indexOf(slot) >= 0) return;
-        var bv = B.get(slot);
-        if (!bv) bv = [];
-        if (av.length !== bv.length) { marked.push(slot); return; }
-        for (var i = 0; i < av.length; i++) {
-          if (av[i] !== bv[i]) { marked.push(slot); return; }
-        }
-      });
-      B.forEach(function (bv, slot) {
-        if (marked.indexOf(slot) >= 0) return;
-        if (A.has(slot)) return;
-        if (bv.length > 0) marked.push(slot);
-      });
+      return { a: a, f: f };
     };
     try {
-      _zwSlotchangeQueued[rootHandle] = false;
-      var finalMap = flattenMap();
-      var marked = _zwSlotchangeMarked[rootHandle] || [];
-      var prev = _zwSlotchangePrev[rootHandle];
-      // 双基 sweep（同 part03）：prev 链 + last（单变异轮首变异效果）。
-      var baseP = (prev && prev.size) ? prev : new Map();
-      diffInto(marked, baseP, finalMap);
-      diffInto(marked, _zwSlotchangeLast[rootHandle] || new Map(), finalMap);
+      var marked = slots || [];
       var ordered = [];
       var dfsO = function (list) {
         for (var oi = 0; oi < list.length; oi++) {
@@ -4045,9 +4062,9 @@
           ordered[fi].dispatchEvent(ev);
         } catch (_eEv) {}
       }
+      var finalMap = flattenMap();
       _zwSlotchangeLast[rootHandle] = finalMap;
-      _zwSlotchangePrev[rootHandle] = null;
-      _zwSlotchangeMarked[rootHandle] = [];
+      _zwSlotchangePrev[rootHandle] = finalMap;
     } catch (_eQ) {}
   };
   // 挂接辅助：handle 增删后判定父链是否 shadow root（是 → 队列 slotchange）。
