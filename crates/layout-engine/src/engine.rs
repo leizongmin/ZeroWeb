@@ -1836,12 +1836,20 @@ impl LayoutEngine {
         //（仅水平书写模式）供 float 后处理收缩宽度。
         // R4086：width:stretch 同样标记——converter 已把 Stretch 映射 auto（fill CB），
         // BFC/float-avoidance 收缩（css-sizing-4 §7.2：stretch 须回避 float）依赖本标记。
+        // R4237（css-sizing-4 §6.1）：float 自身的 width:stretch **不入** auto 标记——
+        // float 的 stretch 是 fill CB（converter percent(1.0)），非 shrink-to-fit；标记为
+        // auto 会触发 R1015 shrink-to-fit 臂/收缩 pass 把 200 宽 stretch float 缩回内容宽
+        //（stretch-float：empty float 塌 0 红底外露）。非 float 的 stretch 维持 R4086 行为
+        //（BFC/float-avoidance 收缩依赖本标记）。
         let declared_width_auto = matches!(parent_writing_mode, WritingModeValue::HorizontalTb)
             && computed.is_some_and(|c| {
-                matches!(
+                let auto_or_stretch = matches!(
                     c.width,
                     zero_css_parser::values::LengthValue::Auto | zero_css_parser::values::LengthValue::Stretch
-                )
+                );
+                let is_stretch_float = matches!(c.width, zero_css_parser::values::LengthValue::Stretch)
+                    && matches!(float, FloatValue::Left | FloatValue::Right);
+                auto_or_stretch && !is_stretch_float
             });
         let declared_width_px = if matches!(parent_writing_mode, WritingModeValue::HorizontalTb) {
             computed.and_then(|c| {

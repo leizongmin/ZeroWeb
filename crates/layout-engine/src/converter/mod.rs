@@ -252,6 +252,10 @@ pub fn computed_style_to_taffy(
                         | LengthValue::MinContent
                         | LengthValue::MaxContent
                         | LengthValue::FitContent(_) => taffy::style::Dimension::auto(),
+                        // R4237：float 的 stretch ≠ auto——float auto 是 shrink-to-fit，
+                        // stretch 是 fill CB（stretch-float：200 容器两个 width:stretch
+                        // float 应各 200 竖排铺满，shrink 0 宽则红底外露）。
+                        LengthValue::Stretch if is_float => taffy::style::Dimension::percent(1.0),
                         LengthValue::Stretch => taffy::style::Dimension::auto(),
                         _ => convert_length_to_dimension(&style.width, vw, vh),
                     }
@@ -267,6 +271,8 @@ pub fn computed_style_to_taffy(
                         | LengthValue::MaxContent
                         | LengthValue::FitContent(_) => cis_dim_boxed(&style.contain_intrinsic_width, frame_x),
                         // R4086：width:stretch → auto（contain:size 下 CIS 替代同 auto 族）。
+                        // R4237：float 例外同上——stretch=fill CB 而非 shrink-to-fit。
+                        LengthValue::Stretch if is_float => taffy::style::Dimension::percent(1.0),
                         LengthValue::Stretch => taffy::style::Dimension::auto(),
                         _ => convert_length_to_dimension(&style.width, vw, vh),
                     }
@@ -302,8 +308,15 @@ pub fn computed_style_to_taffy(
             taffy::geometry::Size {
                 // R4086：width:stretch → auto（fill CB 宽；BFC/float-avoidance 收缩
                 // 由既有 float machinery 处理——flow-root width:auto 同语义）。
+                // R4237：float 例外——float 的 auto 是 shrink-to-fit（empty float 塌 0），
+                // stretch 是 fill CB（css-sizing-4 §6.1：resolves against containing block,
+                // not shrink to avoid sibling floats）。percent(1.0) = 父 content 宽。
                 width: if matches!(style.width, LengthValue::Stretch) {
-                    taffy::style::Dimension::auto()
+                    if is_float {
+                        taffy::style::Dimension::percent(1.0)
+                    } else {
+                        taffy::style::Dimension::auto()
+                    }
                 } else {
                     convert_length_to_dimension(&style.width, vw, vh)
                 },
@@ -333,11 +346,11 @@ pub fn computed_style_to_taffy(
             taffy::geometry::Size {
                 width: match &style.min_width {
                     LengthValue::Auto => taffy::style::Dimension::length(0.0),
-                    _ => convert_length_to_dimension(&style.min_width, vw, vh),
+                    _ => convert_min_length_to_dimension(&style.min_width, vw, vh),
                 },
                 height: match &style.min_height {
                     LengthValue::Auto => taffy::style::Dimension::length(0.0),
-                    _ => convert_length_to_dimension(&style.min_height, vw, vh),
+                    _ => convert_min_length_to_dimension(&style.min_height, vw, vh),
                 },
             }
         } else if style.contain.has_inline_size() {
@@ -346,17 +359,17 @@ pub fn computed_style_to_taffy(
                 // 显式 min 长度保留（containment 只抑制 content-based auto）。
                 width: match (&style.min_width, style.writing_mode.is_vertical_block_flow()) {
                     (LengthValue::Auto, false) => taffy::style::Dimension::length(0.0),
-                    (v, _) => convert_length_to_dimension(v, vw, vh),
+                    (v, _) => convert_min_length_to_dimension(v, vw, vh),
                 },
                 height: match (&style.min_height, style.writing_mode.is_vertical_block_flow()) {
                     (LengthValue::Auto, true) => taffy::style::Dimension::length(0.0),
-                    (v, _) => convert_length_to_dimension(v, vw, vh),
+                    (v, _) => convert_min_length_to_dimension(v, vw, vh),
                 },
             }
         } else {
             taffy::geometry::Size {
-                width: convert_length_to_dimension(&style.min_width, vw, vh),
-                height: convert_length_to_dimension(&style.min_height, vw, vh),
+                width: convert_min_length_to_dimension(&style.min_width, vw, vh),
+                height: convert_min_length_to_dimension(&style.min_height, vw, vh),
             }
         },
         max_size: taffy::geometry::Size {
@@ -766,6 +779,19 @@ fn convert_max_length_to_dimension(value: &LengthValue, vw: f32, vh: f32) -> taf
         LengthValue::Stretch => taffy::style::Dimension::percent(1.0),
         LengthValue::MinContent | LengthValue::MaxContent => taffy::style::Dimension::auto(),
         _ => taffy::style::Dimension::auto(),
+    }
+}
+
+/// 将 min-width/min-height 的 LengthValue 转换为 Dimension。
+///
+/// R4237（css-sizing-4 #stretch-fit-sizing）：min 侧 stretch = CB 尺寸地板
+///（min-width-1：100 容器内 width:50 + min-width:stretch 的子应被撑到 100）——
+/// taffy min_size percent 相对父 content 解析，语义同尺寸地板；旧实现落
+/// convert_length_to_dimension 的 `_ => auto()`（无 min 地板）。
+fn convert_min_length_to_dimension(value: &LengthValue, vw: f32, vh: f32) -> taffy::style::Dimension {
+    match value {
+        LengthValue::Stretch => taffy::style::Dimension::percent(1.0),
+        other => convert_length_to_dimension(other, vw, vh),
     }
 }
 
