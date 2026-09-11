@@ -940,10 +940,16 @@ fn compute_column_widths_inner(
     let fixed_explicit_px = if is_fixed_layout {
         table_style.as_ref().and_then(|s| {
             use zero_css_parser::values::LengthValue;
-            if let LengthValue::Px(v) = s.width {
-                Some(v as f32)
-            } else {
-                None
+            match &s.width {
+                LengthValue::Px(v) => Some(*v as f32),
+                // R4239：%/stretch 同为 fixed 布局约束宽——% 相对容器可用宽；stretch =
+                // 表盒自身宽（R4238 converter percent(1.0) 使 taffy 取容器宽，
+                // available_width 即其 content 宽）。旧仅 Px 时 stretch/percent 表无
+                // 约束 → 内容列宽和胜出（fixed-table-1：fixed+width:stretch 表应 100
+                // 而非被 200px 内容撑宽）。
+                LengthValue::Percentage(p) => Some((*p as f32 / 100.0) * available_width),
+                LengthValue::Stretch => Some(available_width),
+                _ => None,
             }
         })
     } else {
