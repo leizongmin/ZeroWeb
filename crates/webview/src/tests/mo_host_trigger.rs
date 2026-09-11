@@ -62,7 +62,12 @@ fn test_mo_host_trigger_native_attribute_notifies_polyfill_mo() {
             second = true;
             break;
         }
-        assert_ne!(detail2.trim(), "attributes/class/null/t", "二写 oldValue 应为写前值 'c1'，got {}", detail2.trim());
+        assert_ne!(
+            detail2.trim(),
+            "attributes/class/null/t",
+            "二写 oldValue 应为写前值 'c1'，got {}",
+            detail2.trim()
+        );
         std::thread::sleep(std::time::Duration::from_millis(5));
     }
     assert!(second, "二次 native 写应投递携 oldValue='c1' 的 record");
