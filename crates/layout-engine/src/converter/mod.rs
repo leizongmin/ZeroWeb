@@ -311,8 +311,10 @@ pub fn computed_style_to_taffy(
                 // R4237：float 例外——float 的 auto 是 shrink-to-fit（empty float 塌 0），
                 // stretch 是 fill CB（css-sizing-4 §6.1：resolves against containing block,
                 // not shrink to avoid sibling floats）。percent(1.0) = 父 content 宽。
+                // R4238：table 同族——§17.5.2 auto 表宽按内容收缩（fixed-table-1：
+                // table-layout:fixed + width:stretch 应取 CB 100 使 fixed 模式生效）。
                 width: if matches!(style.width, LengthValue::Stretch) {
-                    if is_float {
+                    if is_float || matches!(style.display, DisplayValue::Table | DisplayValue::InlineTable) {
                         taffy::style::Dimension::percent(1.0)
                     } else {
                         taffy::style::Dimension::auto()

@@ -378,7 +378,13 @@ impl LayoutEngine {
             let right_def = res_px(&s.right);
             let top_def = res_px(&s.top);
             let bottom_def = res_px(&s.bottom);
-            let mut width_fix = matches!(s.width, LengthValue::Auto) && !(left_def.is_some() && right_def.is_some());
+            // R4238（css-sizing-4 §6.1）：abspos 的 width:stretch = fill CB（insets 之间的
+            // 可用宽），非 shrink-to-fit——converter Stretch→auto 使 taffy abspos auto 宽
+            // 塌 0（abspos-1：relative 容器内 width:stretch abspos 应 100×100 铺满）。
+            // 双 definite inset 时 taffy 已按 inset 拉伸解析（auto 宽 fill），不需本臂。
+            let width_stretch = matches!(s.width, LengthValue::Stretch) && !(left_def.is_some() && right_def.is_some());
+            let mut width_fix =
+                (matches!(s.width, LengthValue::Auto) || width_stretch) && !(left_def.is_some() && right_def.is_some());
             let mut height_fix = matches!(s.height, LengthValue::Auto) && !(top_def.is_some() && bottom_def.is_some());
             // taffy 已解出非 0 宽/高（如 width-019 的 float 内容、margin-applies-to 族）时不
             // 覆写——本 pass 只救 taffy 恒 0 的场景（全/半 auto inset 无内容测量）。
@@ -402,6 +408,16 @@ impl LayoutEngine {
                 if width_fix && (width_collapsed || !b.is_replaced) {
                     let used = left_def.unwrap_or(0.0) + right_def.unwrap_or(0.0);
                     let available = (cb_width - used).max(0.0);
+                    // R4238：stretch 臂——直接取 insets 之间可用宽（border-box），无收缩。
+                    if width_stretch {
+                        if available.is_finite() && available > 0.5 {
+                            style.size.width = taffy::style::Dimension::length(available);
+                            let _ = taffy_tree.set_style(taffy_id, style);
+                            let _ = taffy_tree.mark_dirty(taffy_id);
+                            changed = true;
+                        }
+                        continue;
+                    }
                     // R4015：塌 0 的 replaced 叶（height-only svg 等）——子树递归测 0（svg
                     // 内容不生成 in-flow 子贡献），用 svg default object size contribution
                     //（css-sizing-3：无固有宽/比 → 300；% 宽 → 300；ratio-only → 0）。
