@@ -2078,6 +2078,55 @@ fn flex_wrap_lines(
 
 /// R4252：item 在主轴上的 start（`true`）/end（`false`）margin 值（Px，非 Px 记 0——
 /// 仅用于拟合贡献的剔除量，外尺寸解析已在 `flex_wrap_lines::outer` 完成 Px gate）。
+/// R4252/R4253：显式（非 auto-fit）模板的 grid track adjacency——首/末 col/row 判定。
+/// placement：显式 Line() 行号 honor，否则 auto-flow row 行主序近似（列数 =
+/// grid-template-columns 空白计数；repeat()/逗号形态不可空白计数 → 单列退化 bounded）。
+fn grid_track_adjacency_explicit(
+    styles: &HashMap<NodeId, ComputedStyle>,
+    items: &[NodeId],
+    ps: &ComputedStyle,
+    idx: usize,
+) -> (bool, bool, bool, bool) {
+    let cols = ps
+        .grid_template_columns
+        .as_deref()
+        .and_then(|t| {
+            let t = t.trim();
+            if t.is_empty() || t.contains('(') || t.contains(',') {
+                None
+            } else {
+                Some(t.split_whitespace().count())
+            }
+        })
+        .unwrap_or(1);
+    let col_of = |i: usize| -> usize {
+        styles
+            .get(&items[i])
+            .and_then(|st| match st.grid_column_start {
+                zero_style_system::property::types::GridLineValue::Line(n) if n >= 1 => Some((n as usize) - 1),
+                _ => None,
+            })
+            .unwrap_or(i % cols)
+    };
+    let row_of = |i: usize| -> usize {
+        styles
+            .get(&items[i])
+            .and_then(|st| match st.grid_row_start {
+                zero_style_system::property::types::GridLineValue::Line(n) if n >= 1 => Some((n as usize) - 1),
+                _ => None,
+            })
+            .unwrap_or(i / cols)
+    };
+    let max_col = (0..items.len()).map(col_of).max().unwrap_or(0);
+    let max_row = (0..items.len()).map(row_of).max().unwrap_or(0);
+    (
+        col_of(idx) == 0,
+        col_of(idx) == max_col,
+        row_of(idx) == 0,
+        row_of(idx) == max_row,
+    )
+}
+
 fn axis_margin(st: &ComputedStyle, row: bool, start: bool) -> f32 {
     let v = match (row, start) {
         (true, true) => &st.margin_left,
@@ -2336,50 +2385,59 @@ fn build_subtree(
             // (line 内首/末, 首/末 line) 判定。flex：line = flex line；grid：相邻 track
             // 臂映射——row ↔ line 序（block 臂）、col ↔ line 内序（inline 臂）。
             let (is_line_first, is_line_last, is_first_line, is_last_line) = if is_grid {
-                let cols = ps
-                    .grid_template_columns
-                    .as_deref()
-                    .and_then(|t| {
-                        let t = t.trim();
-                        // repeat()/逗号形态不可空白计数 → 单列退化（bounded）
-                        if t.is_empty() || t.contains('(') || t.contains(',') {
-                            None
-                        } else {
-                            Some(t.split_whitespace().count())
+                let cols_tpl = ps.grid_template_columns.as_deref().unwrap_or("");
+                let rows_tpl = ps.grid_template_rows.as_deref().unwrap_or("");
+                // R4254（css-box-4 §3.3.3 adjacency + CSS Grid §7.2.3.2 repeat-to-fill）：
+                // auto-fit 重复中无 item 的轨**坍缩**（零尺寸），margin-trim adjacency
+                // 「ignores collapsed tracks」——item 与某边相邻 ⇔ 该边与其占用线号之间
+                // 无其他**占用**轨。bounded：仅显式 Line() 定位的 item 参与 occupancy
+                // （auto-flow item 在 auto-fit 下的坍缩 placement 不建模 → 不裁）。
+                let col_autofit = cols_tpl.contains("auto-fit");
+                let row_autofit = rows_tpl.contains("auto-fit");
+                if col_autofit || row_autofit {
+                    let explicit_line = |v: &zero_style_system::property::types::GridLineValue| -> Option<usize> {
+                        match v {
+                            zero_style_system::property::types::GridLineValue::Line(n) if *n >= 1 => {
+                                Some((*n as usize) - 1)
+                            }
+                            _ => None,
                         }
-                    })
-                    .unwrap_or(1);
-                // placement：显式 Line() 行号 honor，否则 auto-flow row 行主序近似
-                let col_of = |i: usize| -> usize {
-                    styles
-                        .get(&in_flow_flex[i])
-                        .and_then(|st| match st.grid_column_start {
-                            zero_style_system::property::types::GridLineValue::Line(n) if n >= 1 => {
-                                Some((n as usize) - 1)
-                            }
-                            _ => None,
+                    };
+                    let all_explicit = (0..in_flow_flex.len()).all(|i| {
+                        styles.get(&in_flow_flex[i]).is_some_and(|st| {
+                            explicit_line(&st.grid_column_start).is_some()
+                                && explicit_line(&st.grid_row_start).is_some()
                         })
-                        .unwrap_or(i % cols)
-                };
-                let row_of = |i: usize| -> usize {
-                    styles
-                        .get(&in_flow_flex[i])
-                        .and_then(|st| match st.grid_row_start {
-                            zero_style_system::property::types::GridLineValue::Line(n) if n >= 1 => {
-                                Some((n as usize) - 1)
-                            }
-                            _ => None,
-                        })
-                        .unwrap_or(i / cols)
-                };
-                let max_col = (0..in_flow_flex.len()).map(col_of).max().unwrap_or(0);
-                let max_row = (0..in_flow_flex.len()).map(row_of).max().unwrap_or(0);
-                (
-                    col_of(idx) == 0,
-                    col_of(idx) == max_col,
-                    row_of(idx) == 0,
-                    row_of(idx) == max_row,
-                )
+                    });
+                    if all_explicit && idx < in_flow_flex.len() {
+                        let occ_col = |i: usize| -> usize {
+                            explicit_line(
+                                &styles
+                                    .get(&in_flow_flex[i])
+                                    .expect("all_explicit 已查")
+                                    .grid_column_start,
+                            )
+                            .unwrap_or(0)
+                        };
+                        let occ_row = |i: usize| -> usize {
+                            explicit_line(&styles.get(&in_flow_flex[i]).expect("all_explicit 已查").grid_row_start)
+                                .unwrap_or(0)
+                        };
+                        let my_col = occ_col(idx);
+                        let my_row = occ_row(idx);
+                        (
+                            !(0..in_flow_flex.len()).any(|i| occ_col(i) < my_col),
+                            !(0..in_flow_flex.len()).any(|i| occ_col(i) > my_col),
+                            !(0..in_flow_flex.len()).any(|i| occ_row(i) < my_row),
+                            !(0..in_flow_flex.len()).any(|i| occ_row(i) > my_row),
+                        )
+                    } else {
+                        // 含 auto-flow item（坍缩 placement 未建模）→ 不裁（保守）
+                        (false, false, false, false)
+                    }
+                } else {
+                    grid_track_adjacency_explicit(styles, &in_flow_flex, ps, idx)
+                }
             } else {
                 let row = matches!(ps.flex_direction, FlexDirectionValue::Row);
                 let wrapping = matches!(ps.flex_wrap, FlexWrapValue::Wrap);
