@@ -50,10 +50,31 @@ WPT 基线 → MO host 触发（方案 C 设计已存在）→ checkpoint spec �
 | P1 | IO/RO WPT 用例覆盖为零（fetch 脚本 + 导入 + 基线） | ✅ 2026-09-11（基线 29.7% 落 evidence/） |
 | P2 | 事件循环时序差距清单（对照 spec 逐条）未建立 | ✅ 2026-09-11（evidence/2026-09-11-m1-event-loop-gap-list.md） |
 | P2.5 | IO/RO 语义修齐第一批（tick 接线 + threshold 越界 + 构造器校验/getter + root==target + documentElement client 尺寸） | ✅ 2026-09-11（切片 3a+3b+3c，基线 29.7% → 41.4%，evidence/2026-09-11-m1-slice3-observers-wiring-validation.md） |
-| P3 | MO host 触发未实施（通知端死路） | 🔄 M2 MO-S1 ✅ 2026-09-11（identity 桥 + 排空点 + kill-switch，默认 OFF；MO-S2 派发深化/childList sibling/oldValue 真值待做） |
+| P3 | MO host 触发未实施（通知端死路） | 🔄 M2 MO-S1+MO-S2 ✅ 2026-09-11（identity 桥 + 排空点 + kill-switch 默认 OFF + sibling 双向透传/removed '#id' 回落/oldValue 真值；余 fragment flatten + quickjs 接线；MO-S4 待用户点名） |
 | P4 | checkpoint 简化版（无 task queue、无 per-task checkpoint） | ⬜ M3 |
 
 ## 已完成切片
+
+### M2 MO-S2（第二批）— childList nextSibling 树反推导（2026-09-11）✅
+
+- dom 层 MutationRecord 无 next_sibling 字段（结构缺口不动）——排空侧从**当前树 +
+  record 自身数据反推**：prev 存在 → `doc.next_sibling(prev)`（移除后即被移除节点旧
+  next）；prev None 且有 added → `doc.next_sibling(added[0])`；首子移除型（prev None +
+  removed 非空）→ 移除后新首子即旧 next；非 childList 恒 None
+- JS 入口追加 nextSel 参数 → record.nextSibling proxy
+- 验证：webview 集成移除中间子断言 `ul/1/proxy/a/l`（prev=#a + next=#l 双臂）+
+  `make test` 19,150P/0F + clippy 零警告 + fmt 干净
+
+### M2 MO-S2（第一批）— childList previousSibling 透传 + removed '#id' 回落（2026-09-11）✅
+
+- Rust 排空：`DrainedMutation` 扩 prev 臂——previous_sibling 经 `unique_selector_for_node`
+  （在树）；removed 节点已脱树、query 唯一性必败 → 回落 `stable_selector_for_node` 的
+  '#id' 形态（属性派生不依赖树位置），非 id 形态丢弃（脱树语境无稳定语义，误配比缺失糟）
+- JS 入口：`__zw_mo_notify_native` 追加 prevSel 参数 → record.previousSibling proxy
+- 验证：webview 集成三段（attributes 二次写 oldValue='c1' 透传 + childList 移除
+  `ul/1/proxy/a`——target/removedNodes.length/removed proxy/prevSibling.id）+
+  `make test` 19,140P/0F + clippy/fmt 干净
+- 遗留（第二批已收 nextSibling）：fragment added flatten 语义；quickjs 接线
 
 ### M2 MO-S1 — host 侧 mutation 通知 identity 桥 + 排空点（2026-09-11）✅
 
@@ -97,17 +118,26 @@ WPT 基线 → MO host 触发（方案 C 设计已存在）→ checkpoint spec �
   sync_render 未接线（v8-gated，DC-7 对等后续）；③ WPT mutation-observer 导入子集
   作为 MO-S2 验收标尺（kill-switch OFF 下走 polyfill 路径，native 面仍靠集成测试）
 
-### M2 MO-S2（第一批）— childList previousSibling 透传 + removed '#id' 回落（2026-09-11）✅
+## 下一步计划
 
-- Rust 排空：`DrainedMutation` 扩 prev 臂——previous_sibling 经 `unique_selector_for_node`
-  （在树）；removed 节点已脱树、query 唯一性必败 → 回落 `stable_selector_for_node` 的
-  '#id' 形态（属性派生不依赖树位置），非 id 形态丢弃（脱树语境无稳定语义，误配比缺失糟）
-- JS 入口：`__zw_mo_notify_native` 追加 prevSel 参数 → record.previousSibling proxy
-- 验证：webview 集成三段（attributes 二次写 oldValue='c1' 透传 + childList 移除
-  `ul/1/proxy/a`——target/removedNodes.length/removed proxy/prevSibling.id）+
-  `make test` 19,140P/0F + clippy/fmt 干净
-- 遗留：dom 层 MutationRecord 无 next_sibling 字段（spec next 语义，dom 结构小改 +
-  排空扩位已留）；fragment added flatten 语义；quickjs 接线
+1. **M2 MO-S2 余项**（previousSibling 透传 + removed '#id' 回落 + nextSibling 树反推
+   已落地，2026-09-11）：
+   - fragment added flatten 语义对齐（polyfill R47 同款：addedNodes = flatten 子）
+   - quickjs 路径 sync_render 接线（v8-gated，DC-7 对等——quickjs native 写后既无
+     重渲染也无 MO 通知，属更大的 quickjs native 写收口面）
+   - MO-S4（escape-hatch 联动验证）须用户点名（设计 §6）
+2. **M3**：task queue + per-task checkpoint（kill-switch → A/B → default-on）
+3. **跨流协调项（非本流可闭合，记录待碰头）**：
+   - engine apply 路径稳定 selector 唯一性（RO observe-001..020 / IO handle 族根因）
+   - 几何真值簇（scroll offset / transform / zoom / clip-path 参与 IO 几何）——渲染流域
+4. **本流后续小修候选**：detached doc 初通知抑制 + takeRecords 真排队模型（同做）；
+   scroll-margin 臂
+
+**待用户决策清单**：
+- runner viewport 校准（1280×800 → 上游 WPT 校准 800×600）：牵动全部 testharness
+  套件的绝对几何期望（一次性大重校准），非轻量修复
+- requestIdleCallback 真实 idle 时序（已在 goal 范围外条款）
+- MO-S4 + escape-hatch 收敛（设计文档 §6 决策门禁：生产路径主干变更须用户点名）
 
 ### M1 切片 3c — IO/RO 语义修齐第二批 + 实验回退记账（2026-09-11）✅
 

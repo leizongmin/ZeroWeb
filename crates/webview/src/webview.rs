@@ -2303,6 +2303,24 @@ impl WebView {
                         .collect::<Vec<_>>()
                         .join("|");
                     let prev = r.previous_sibling.and_then(|n| resolve_in_tree(&n));
+                    // nextSibling 推导（dom 层 MutationRecord 无 next_sibling 字段）：childList
+                    // 记录从当前树 + record 自身数据反推——prev 存在 → prev 的下一兄弟（移除后
+                    // 即被移除节点的旧 next；插入后即插入点的旧 next）；prev None 且有 added →
+                    // added[0] 的下一兄弟；首子移除型（prev None + removed 非空）→ 移除后的新
+                    // 首子即旧 next。非 childList 恒 None（spec：attributes/characterData 无
+                    // sibling 语义）。
+                    let next = if r.mutation_type == zero_engine::MutationType::ChildList {
+                        if let Some(p) = r.previous_sibling {
+                            doc.next_sibling(p)
+                        } else if let Some(first) = r.added_nodes.first() {
+                            doc.next_sibling(*first)
+                        } else {
+                            doc.child_nodes(r.target).first().copied()
+                        }
+                    } else {
+                        None
+                    };
+                    let next_sel = next.and_then(|n| resolve_in_tree(&n));
                     Some((
                         sel,
                         typ,
@@ -2311,18 +2329,19 @@ impl WebView {
                         added,
                         removed,
                         prev,
+                        next_sel,
                     ))
                 })
                 .collect()
         };
-        for (sel, typ, attr, old, added, removed, prev) in drained {
+        for (sel, typ, attr, old, added, removed, prev, next) in drained {
             let js_str = |s: &str| format!("'{}'", escape_js_string(s));
             let js_opt = |v: &Option<String>| match v {
                 Some(s) => js_str(s),
                 None => "null".to_string(),
             };
             let script = format!(
-                "if(typeof globalThis.__zw_mo_notify_native==='function')globalThis.__zw_mo_notify_native({},{},{},{},{},{},{});",
+                "if(typeof globalThis.__zw_mo_notify_native==='function')globalThis.__zw_mo_notify_native({},{},{},{},{},{},{},{});",
                 js_str(&sel),
                 js_str(typ),
                 js_opt(&attr),
@@ -2330,6 +2349,7 @@ impl WebView {
                 js_str(&added),
                 js_str(&removed),
                 js_opt(&prev),
+                js_opt(&next),
             );
             let _ = self.execute_script(&script);
         }
@@ -5314,8 +5334,8 @@ pub(crate) fn base64_decode(input: &str) -> Result<Vec<u8>, String> {
 ///
 /// 替换 `'`、`\`、`</script>` 等字符为安全序列。
 /// event-loop-spec M2 MO-S1 排空批条目：(target sel, record type, attributeName,
-/// oldValue, added 节点 selector 串，removed 节点 selector 串, previousSibling sel)。
-/// （MO-S2 扩展 prev 臂；nextSibling dom 层 MutationRecord 无字段，见 master.md 遗留。）
+/// oldValue, added 节点 selector 串，removed 节点 selector 串, previousSibling sel,
+/// nextSibling sel)。（MO-S2 扩展 prev/next 臂——next 由当前树反推，见 drain 注释。）
 type DrainedMutation = (
     String,
     &'static str,
@@ -5323,6 +5343,7 @@ type DrainedMutation = (
     Option<String>,
     String,
     String,
+    Option<String>,
     Option<String>,
 );
 

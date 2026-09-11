@@ -2434,10 +2434,10 @@
   // 参数：sel=目标稳定 selector；type=attributes/childList/characterData；attrName/
   // oldValue 透传；addedSels/removedSels = '|' 分隔的子节点稳定 selector 串（逐个经
   // _makeProxy 包 proxy；无身份节点已被 Rust 侧丢弃——spec：unobserved target 不通知）；
-  // prevSel = previousSibling 稳定 selector（MO-S2，Rust 侧解析失败为 null——spec
-  // previousSibling 无兄弟时 null 语义一致）。
+  // prevSel/nextSel = previousSibling/nextSibling 稳定 selector（MO-S2，Rust 侧解析
+  // 失败为 null——spec 无兄弟时 null 语义一致；next 由 Rust 侧从当前树反推）。
   // https://dom.spec.whatwg.org/#mutationobserver
-  globalThis.__zw_mo_notify_native = function (sel, type, attrName, oldValue, addedSels, removedSels, prevSel) {
+  globalThis.__zw_mo_notify_native = function (sel, type, attrName, oldValue, addedSels, removedSels, prevSel, nextSel) {
     if (typeof _mo_notify !== 'function') return;
     var record = { type: type };
     if (type === 'attributes') {
@@ -2460,8 +2460,13 @@
       };
       record.addedNodes = toProxies(addedSels);
       record.removedNodes = toProxies(removedSels);
-      if (prevSel && typeof _makeProxy === 'function') {
-        try { record.previousSibling = _makeProxy(prevSel, null); } catch (_eMoNps) {}
+      if (typeof _makeProxy === 'function') {
+        if (prevSel) {
+          try { record.previousSibling = _makeProxy(prevSel, null); } catch (_eMoNps) {}
+        }
+        if (nextSel) {
+          try { record.nextSibling = _makeProxy(nextSel, null); } catch (_eMoNns) {}
+        }
       }
     }
     _mo_notify(sel, null, record);
