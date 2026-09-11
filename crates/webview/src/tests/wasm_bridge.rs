@@ -498,3 +498,63 @@ fn test_wasm_bridge_typed_args_and_results() {
     );
     assert!(r.contains("\"noResult\":\"undefined\""), "零返回值应为 undefined: {r}");
 }
+
+/// `WebAssembly.Module.exports()` 描述面（page-wasm M1 切片 3）：compile 与
+/// instantiate 两条桥路径都应注入 `{name, kind}` 描述数组（function/global/
+/// table/memory 四类）。
+#[test]
+fn test_wasm_bridge_module_exports_descriptors() {
+    let mut wv = WebView::new(WebViewConfig::default());
+    let wasm = wat::parse_str(
+        r#"(module
+            (func (export "add") (param i32 i32) (result i32)
+                local.get 0
+                local.get 1
+                i32.add)
+            (memory (export "mem") 1)
+            (global (export "g") (mut i32) (i32.const 7))
+            (table (export "t") 1 funcref)
+        )"#,
+    )
+    .unwrap();
+    let js_bytes: String = wasm.iter().map(|b| b.to_string()).collect::<Vec<_>>().join(",");
+
+    // execute #1：compile + instantiate（Promise 均同步 resolve，微任务排空后捕获）
+    let result = wv
+        .execute_script_with_dom(&format!(
+            r#"
+        var bytes = new Uint8Array([{js_bytes}]);
+        var compiledModule = null;
+        var instantiated = null;
+        WebAssembly.compile(bytes).then(function(m) {{ compiledModule = m; }});
+        WebAssembly.instantiate(bytes).then(function(r) {{ instantiated = r; }});
+        true
+        "#
+        ))
+        .unwrap();
+    assert_eq!(result, "true");
+
+    // execute #2：读两条路径的描述数组
+    let r = wv
+        .execute_script(
+            r#"
+        (function() {
+            return JSON.stringify({
+                compiled: WebAssembly.Module.exports(compiledModule),
+                instantiated: WebAssembly.Module.exports(instantiated.module)
+            });
+        })()
+        "#,
+        )
+        .unwrap();
+    for path in ["compiled", "instantiated"] {
+        for expected in [
+            "{\"name\":\"add\",\"kind\":\"function\"}",
+            "{\"name\":\"mem\",\"kind\":\"memory\"}",
+            "{\"name\":\"g\",\"kind\":\"global\"}",
+            "{\"name\":\"t\",\"kind\":\"table\"}",
+        ] {
+            assert!(r.contains(expected), "{path} 应含描述 {expected}: {r}");
+        }
+    }
+}

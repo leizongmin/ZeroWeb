@@ -131,17 +131,45 @@ pub enum WasmValueType {
     F64,
 }
 
-/// 导出函数签名（page-wasm M1 切片 2——参数/返回类型全映射）
+/// 导出外部项类别（page-wasm M1 切片 3——`WebAssembly.Module.exports()` 描述面）
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WasmExternKind {
+    /// 函数导出
+    Func,
+    /// 全局导出
+    Global,
+    /// 表导出
+    Table,
+    /// 内存导出
+    Memory,
+}
+
+impl WasmExternKind {
+    /// `WebAssembly.Module.exports()` 描述对象中的 `kind` 字符串
+    pub fn as_js_kind(&self) -> &'static str {
+        match self {
+            WasmExternKind::Func => "function",
+            WasmExternKind::Global => "global",
+            WasmExternKind::Table => "table",
+            WasmExternKind::Memory => "memory",
+        }
+    }
+}
+
+/// 导出项描述（page-wasm M1 切片 2/3——参数/返回类型全映射 + 导出面真实化）
 ///
 /// 供桥接层按声明类型做 JS ↔ wasm 值转换（如 JS BigInt ↔ i64、
-/// JS Number ↔ f32/f64），不再把一切参数按 i32 截断。
+/// JS Number ↔ f32/f64），不再把一切参数按 i32 截断；并支撑
+/// `WebAssembly.Module.exports()` 的 `{name, kind}` 描述数组。
 #[derive(Debug, Clone, PartialEq)]
-pub struct ExportSignature {
-    /// 导出函数名
+pub struct ExportDescriptor {
+    /// 导出名
     pub name: String,
-    /// 参数类型列表
+    /// 导出类别
+    pub kind: WasmExternKind,
+    /// 参数类型列表（仅函数导出，其余为空）
     pub params: Vec<WasmValueType>,
-    /// 返回值类型列表
+    /// 返回值类型列表（仅函数导出，其余为空）
     pub results: Vec<WasmValueType>,
 }
 

@@ -1651,3 +1651,46 @@ fn test_host_function_multiple_results() {
         .expect("call2");
     assert_eq!(r[0], WasmValue::I32(16), "100 divmod 7 的商+余数应为 14+2=16");
 }
+
+/// 测试导出项描述（page-wasm M1 切片 3）：kind 分类 + 函数签名反射
+#[test]
+fn test_export_descriptors_kinds_and_signatures() {
+    let sandbox = WasmSandbox::new();
+    let wasm = wat_to_wasm(
+        r#"(module
+            (func (export "f") (param i32 i64) (result f64) f64.const 1)
+            (global (export "g") (mut i32) (i32.const 7))
+            (table (export "t") 1 funcref)
+            (memory (export "m") 1)
+        )"#,
+    );
+    let module = sandbox.compile(&wasm).expect("compile");
+    let ds = module.export_descriptors();
+    assert_eq!(ds.len(), 4, "应有 4 个导出描述");
+
+    let f = ds.iter().find(|d| d.name == "f").expect("func descriptor");
+    assert_eq!(f.kind, crate::WasmExternKind::Func);
+    assert_eq!(f.params, vec![WasmValueType::I32, WasmValueType::I64]);
+    assert_eq!(f.results, vec![WasmValueType::F64]);
+
+    assert_eq!(
+        ds.iter().find(|d| d.name == "g").map(|d| d.kind),
+        Some(crate::WasmExternKind::Global),
+        "global 导出应分类为 Global"
+    );
+    assert_eq!(
+        ds.iter().find(|d| d.name == "t").map(|d| d.kind),
+        Some(crate::WasmExternKind::Table),
+        "table 导出应分类为 Table"
+    );
+    assert_eq!(
+        ds.iter().find(|d| d.name == "m").map(|d| d.kind),
+        Some(crate::WasmExternKind::Memory),
+        "memory 导出应分类为 Memory"
+    );
+    assert_eq!(
+        crate::WasmExternKind::Func.as_js_kind(),
+        "function",
+        "JS kind 字符串对齐 WebAssembly.Module.exports() 规范值"
+    );
+}

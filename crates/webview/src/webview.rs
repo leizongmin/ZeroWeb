@@ -503,7 +503,7 @@ pub struct WebView {
     /// WASM 导出函数签名缓存（按 instance_id）— 桥接层按声明类型做 JS ↔ wasm
     /// 值转换（i64 ↔ BigInt、f32/f64 ↔ Number），不再把一切参数按 i32 截断
     /// （page-wasm M1 切片 2）。
-    wasm_signatures: HashMap<u64, Vec<zero_wasm_sandbox::ExportSignature>>,
+    wasm_descriptors: HashMap<u64, Vec<zero_wasm_sandbox::ExportDescriptor>>,
     // HTTP 响应缓存（性能门禁优化 S6，2026-08-08）：统一走
     // zero_net::shared_http_cache()——webview / fetch_proxy / net_pool 共享一份，
     // 避免同一 URL 在不同路径反复走网络。
@@ -650,7 +650,7 @@ impl WebView {
             workers: HashMap::new(),
             next_worker_id: 1,
             wasm_instances: HashMap::new(),
-            wasm_signatures: HashMap::new(),
+            wasm_descriptors: HashMap::new(),
             image_cache: ImageCache::default(),
             video_players: std::sync::Arc::new(
                 std::sync::Mutex::new(crate::video_registry::VideoPlayerRegistry::new()),
@@ -4731,6 +4731,8 @@ impl WebView {
         };
 
         let instance_id = parsed["id"].as_u64().unwrap_or(0);
+        // 模块 ID（page-wasm M1 切片 3：`WebAssembly.Module.exports()` 描述面按模块 ID 注入）
+        let module_id = parsed["moduleId"].as_u64().unwrap_or(0);
         let b64_bytes = match parsed["bytes"].as_str() {
             Some(b) => b,
             None => {
@@ -4772,7 +4774,7 @@ impl WebView {
 
         let export_names = module.exports();
         // 导出函数签名（page-wasm M1 切片 2：桥接层按声明类型做值转换）
-        let signatures = module.export_signatures();
+        let descriptors = module.export_descriptors();
 
         // 实例化
         let mut instance = match module.instantiate(&sandbox) {
@@ -4809,12 +4811,15 @@ impl WebView {
             65536
         };
 
-        // 缓存 WASM 实例与导出签名（page-wasm M1 切片 2：签名驱动类型化协议）
+        // 缓存 WASM 实例与导出描述（page-wasm M1 切片 2/3：签名驱动类型化协议 + 导出面）
         self.wasm_instances.insert(instance_id, instance);
-        self.wasm_signatures.insert(instance_id, signatures.clone());
+        self.wasm_descriptors.insert(instance_id, descriptors.clone());
 
         // 构建可调用的导出函数
         let exports_json = serde_json::to_string(&export_names).unwrap_or_else(|_| "[]".to_string());
+
+        // `WebAssembly.Module.exports()` 描述数组（page-wasm M1 切片 3）
+        let descriptors_json = js_descriptors_literal(&descriptors);
 
         // 生成每个导出函数的 JS 可调用包装（按声明签名做参数/返回值类型化：
         // i32 → number、i64 → 十进制字符串线格式（JSON 不支持 BigInt）/ BigInt 字面量
@@ -4827,7 +4832,7 @@ impl WebView {
             }
             let name = export_name.as_str();
             let escaped_name = name.replace('\'', "\\'");
-            let signature = signatures.iter().find(|s| s.name == *name);
+            let signature = descriptors.iter().find(|s| s.name == *name);
             // 参数线格式化表达式——按声明类型逐位生成
             let coercions: Vec<String> = signature
                 .map(|sig| {
@@ -4888,6 +4893,10 @@ impl WebView {
                 if (typeof WebAssembly !== 'undefined' && WebAssembly._instances[{instance_id}]) {{
                     WebAssembly._instances[{instance_id}].stub = globalThis.__wasm_results__[{instance_id}];
                 }}
+                // 模块导出描述（WebAssembly.Module.exports(module) 静态面）
+                if (typeof WebAssembly !== 'undefined' && WebAssembly._moduleExports) {{
+                    WebAssembly._moduleExports[{module_id}] = {descriptors_json};
+                }}
             }})();
             "#,
         );
@@ -4935,8 +4944,10 @@ impl WebView {
             }
         };
 
-        let export_names = module.exports();
-        let exports_json = serde_json::to_string(&export_names).unwrap_or_else(|_| "[]".to_string());
+        let descriptors = module.export_descriptors();
+        // `WebAssembly.Module.exports()` 描述数组（page-wasm M1 切片 3：
+        // `{name, kind}` 对象数组，取代旧的纯名字字符串数组）
+        let descriptors_json = js_descriptors_literal(&descriptors);
 
         // 不需要实例化，仅注入编译结果
         let inject_script = format!(
@@ -4946,8 +4957,11 @@ impl WebView {
                 _id: {module_id},
                 _bytes: globalThis.WebAssembly._modules[{module_id}],
                 _compiled: true,
-                exports: function() {{ return {exports_json}; }}
+                exports: function() {{ return {descriptors_json}; }}
             }};
+            if (typeof WebAssembly !== 'undefined' && WebAssembly._moduleExports) {{
+                WebAssembly._moduleExports[{module_id}] = {descriptors_json};
+            }}
             "#,
         );
         let _ = self.execute_script_raw(&inject_script);
@@ -5001,7 +5015,7 @@ impl WebView {
             // 构造 WASM 参数——按导出签名声明的类型解析线格式（page-wasm M1 切片 2：
             // i64 线格式为十进制字符串、f32/f64 为 number；无签名（旧协议）回落全 i32）
             let param_types = self
-                .wasm_signatures
+                .wasm_descriptors
                 .get(&instance_id)
                 .and_then(|sigs| sigs.iter().find(|s| s.name == name))
                 .map(|s| s.params.clone());
@@ -5455,6 +5469,19 @@ fn js_arg_coercion(ty: zero_wasm_sandbox::WasmValueType, index: usize) -> String
         }
         WasmValueType::F32 | WasmValueType::F64 => format!("Number(args[{index}])"),
     }
+}
+
+/// 导出描述列表 → JS 字面量（`WebAssembly.Module.exports()` 的
+/// `{name, kind}` 描述数组；名字经 JSON 转义防注入）。
+fn js_descriptors_literal(descriptors: &[zero_wasm_sandbox::ExportDescriptor]) -> String {
+    let items: Vec<String> = descriptors
+        .iter()
+        .map(|d| {
+            let name = serde_json::to_string(&d.name).unwrap_or_else(|_| "\"\"".into());
+            format!("{{name: {}, kind: '{}'}}", name, d.kind.as_js_kind())
+        })
+        .collect();
+    format!("[{}]", items.join(", "))
 }
 
 /// 把 `WasmValue` 序列化为注入脚本中的 JS 字面量。

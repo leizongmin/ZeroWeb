@@ -395,6 +395,8 @@ pub fn generate_dom_api_polyfill() -> String {
   globalThis.WebAssembly = {
     _modules: {},
     _instances: {},
+    // 模块导出描述缓存（host 注入，{name, kind} 数组）— WebAssembly.Module.exports() 消费
+    _moduleExports: {},
     _nextId: 1,
     _pendingBridge: null,
     // 导出函数调用队列 — 每次调用存储 {instanceId, name, args, callId}
@@ -457,9 +459,9 @@ pub fn generate_dom_api_polyfill() -> String {
         } catch(e) {}
       }
 
-      // 发送实例化桥接命令
+      // 发送实例化桥接命令（moduleId 供 host 注入 WebAssembly.Module.exports() 描述）
       var b64 = __wasmToBase64(bytes);
-      self._pendingBridge = '__WASM_BRIDGE__:' + JSON.stringify({id: instanceId, bytes: b64, importKeys: importKeys});
+      self._pendingBridge = '__WASM_BRIDGE__:' + JSON.stringify({id: instanceId, moduleId: moduleId, bytes: b64, importKeys: importKeys});
 
       // 如果 host 已经预解析了此实例（第二次 instantiate 同一模块），直接返回缓存
       if (globalThis.__wasm_results__ && globalThis.__wasm_results__[instanceId]) {
@@ -519,6 +521,19 @@ pub fn generate_dom_api_polyfill() -> String {
       if (!bytes || bytes.length < 8) return false;
       // WASM 魔术字节: 0x00 0x61 0x73 0x6D (即 \0asm)
       return bytes[0] === 0x00 && bytes[1] === 0x61 && bytes[2] === 0x73 && bytes[3] === 0x6D;
+    },
+
+    // 静态命名空间 — https://webassembly.github.io/spec/js-api/#modules
+    // exports(module) 返回 [{name, kind}] 描述数组（kind: function/global/table/memory），
+    // 描述由 host 桥接注入 _moduleExports（按模块 ID）；未注入时回落模块对象自带方法
+    Module: {
+      exports: function(module) {
+        if (!module || module._id === undefined) return [];
+        if (WebAssembly._moduleExports[module._id] !== undefined) {
+          return WebAssembly._moduleExports[module._id];
+        }
+        return typeof module.exports === 'function' ? module.exports() : [];
+      }
     }
   };
 

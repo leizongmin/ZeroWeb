@@ -2,7 +2,7 @@
 //!
 //! 基于 wasmi 纯 Rust WASM 解释器的沙箱运行时实现。
 
-use crate::{ExportSignature, LinkerConfig, SandboxConfig, WasmError, WasmValue, WasmValueType};
+use crate::{ExportDescriptor, LinkerConfig, SandboxConfig, WasmError, WasmExternKind, WasmValue, WasmValueType};
 use std::fmt;
 use std::sync::Arc;
 
@@ -168,25 +168,35 @@ impl WasmModule {
         self.module.exports().map(|e| e.name().to_string()).collect()
     }
 
-    /// 获取导出函数签名列表（仅函数导出，page-wasm M1 切片 2）
-    pub fn export_signatures(&self) -> Vec<ExportSignature> {
+    /// 获取导出项描述列表（page-wasm M1 切片 2/3——签名 + 类别）
+    pub fn export_descriptors(&self) -> Vec<ExportDescriptor> {
         self.module
             .exports()
-            .filter_map(|e| match e.ty() {
-                wasmi::ExternType::Func(func_type) => Some(ExportSignature {
+            .map(|e| {
+                let (kind, params, results) = match e.ty() {
+                    wasmi::ExternType::Func(func_type) => (
+                        WasmExternKind::Func,
+                        func_type
+                            .params()
+                            .iter()
+                            .filter_map(wasmi_valtype_to_wasm_value_type)
+                            .collect(),
+                        func_type
+                            .results()
+                            .iter()
+                            .filter_map(wasmi_valtype_to_wasm_value_type)
+                            .collect(),
+                    ),
+                    wasmi::ExternType::Global(_) => (WasmExternKind::Global, vec![], vec![]),
+                    wasmi::ExternType::Table(_) => (WasmExternKind::Table, vec![], vec![]),
+                    wasmi::ExternType::Memory(_) => (WasmExternKind::Memory, vec![], vec![]),
+                };
+                ExportDescriptor {
                     name: e.name().to_string(),
-                    params: func_type
-                        .params()
-                        .iter()
-                        .filter_map(wasmi_valtype_to_wasm_value_type)
-                        .collect(),
-                    results: func_type
-                        .results()
-                        .iter()
-                        .filter_map(wasmi_valtype_to_wasm_value_type)
-                        .collect(),
-                }),
-                _ => None,
+                    kind,
+                    params,
+                    results,
+                }
             })
             .collect()
     }

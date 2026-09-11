@@ -2,7 +2,7 @@
 
 **入口文档**: [../page-wasm.md](../page-wasm.md)
 **创建日期**: 2026-09-07（goal 拆分 bootstrap）
-**最后更新**: 2026-09-12（M1 切片 1 落地——wasm/jsapi 基线 99.4%，两条架构级发现）
+**最后更新**: 2026-09-12（M1 三切片全部落地——基线 99.4% + 类型化桥接协议 + 导出描述面）
 
 ---
 
@@ -55,17 +55,21 @@ Timeout × 4），证据：[evidence/2026-09-12-m1-wasm-jsapi-baseline.md](evide
 |---|------|------|
 | P1 | WPT 用例覆盖 + 通过率基线 | ✅ M1 切片 1（31 案入账本，evidence/ 落盘） |
 | P2 | 异步 compile/instantiate promise 永挂（V8 消息循环不泵） | ⬜ 跨流卡点——待 event-loop-spec 流或用户授权 |
-| P3 | polyfill 路径参数/返回类型仅 I32 | ⬜ M1 切片 2（DC-2，embedder 面） |
-| P4 | polyfill 路径导出面 stub（函数表/memory/global/table） | ⬜ M1 切片 3（DC-2，embedder 面） |
+| P3 | polyfill 路径参数/返回类型仅 I32 | ✅ M1 切片 2（i64 BigInt 双向含 >2^53 精度 / f32 / f64 / 多返回值 / 零返回 undefined） |
+| P4 | polyfill 导出面 stub | ✅ M1 切片 3（`WebAssembly.Module.exports()` 静态 + `{name, kind}` 描述数组，compile/instantiate 双路径注入） |
 | P5 | 实例化语义（importObject 链接、错误分类、validate、streaming） | ⬜ M2-M3 |
 
 ## 下一步计划
 
-1. **M1 切片 2**：polyfill 路径 `WasmValue` 桥接层类型转换全映射（I64/F32/F64，
-   `__WASM_BRIDGE__` 协议扩展 + webview wasm 段转换 + wasm_bridge 单测）——DC-2 embedder 面
-2. **M1 切片 3**：polyfill exports 函数表真实化（`exports()` API 接 JS 面）
-3. **跨流协调**：V8 消息循环泵归 event-loop-spec 流（或用户授权跨域），落地后
-   `make testharness-wasm` 复跑验证 4 案翻绿
+1. **M2 切片 1**：Memory 真实映射——`memory.grow` host 接线（当前 JS grow 是假实现：
+   返回 `floor(len/65536)+delta`，buffer 不真实扩容），grow 后重新注入 buffer 字节数
+2. **M2 切片 2**：Global 导出接 JS 面（`get_global_export` 已有——`exports.<name>` 值对象
+   `.value` getter / `valueOf`；i64 → BigInt）；Table 导出（`has_table` 已有，length 面
+   需 wasm-sandbox 补 API）
+3. **M2 切片 3**：importObject 链接语义 + LinkError 分类（`instantiate_with_linker` 已有
+   底座，桥接协议补 importObject 函数表传递 + 缺失/签名不匹配错误面）
+4. **跨流协调**：V8 消息循环泵归 event-loop-spec 流（或用户授权跨域），落地后
+   `make testharness-wasm` 复跑验证 4 案翻绿（99.4% → 100%）
 
 **碰撞管理**：开工前先 `git log --since="14 days ago" -- crates/engine/src/dom_bridge.rs
 crates/webview/` 核对活跃面；有活跃编辑则先做零碰撞面（wasm-sandbox 单测、WPT 导入）。
@@ -76,8 +80,8 @@ wasm 段（`process_wasm_bridge` 及 `_callQueue` 排空区），避开 MO 区�
 
 | 里程碑 | 状态 |
 |--------|------|
-| M1 — WPT 基线建立 + 类型扩展 | 🔄 切片 1 ✅（基线 99.4%）；切片 2/3 待做 |
-| M2 — Memory/Global/Table + 实例化语义 | ⬜ |
+| M1 — WPT 基线建立 + 类型扩展 | ✅ 切片 1（基线 99.4%）+ 切片 2（类型全映射）+ 切片 3（导出描述面）；残余 = P2 跨流卡点 |
+| M2 — Memory/Global/Table + 实例化语义 | ⬜ 切片计划见上 |
 | M3 — host function + 流式 + 收尾 | ⬜ |
 
 ## 验证基线

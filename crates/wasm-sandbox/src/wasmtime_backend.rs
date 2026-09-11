@@ -3,7 +3,7 @@
 //! 基于 Wasmtime JIT 编译器的高性能 WASM 运行时。
 //! 适用于需要接近原生执行速度的页面级 WASM 场景。
 
-use crate::{ExportSignature, LinkerConfig, SandboxConfig, WasmError, WasmValue, WasmValueType};
+use crate::{ExportDescriptor, LinkerConfig, SandboxConfig, WasmError, WasmExternKind, WasmValue, WasmValueType};
 use std::cell::RefCell;
 use std::sync::Arc;
 
@@ -210,26 +210,41 @@ impl WasmModule {
         self.module.exports().map(|e| e.name().to_string()).collect()
     }
 
-    /// 获取导出函数签名列表（仅函数导出，page-wasm M1 切片 2）
-    pub fn export_signatures(&self) -> Vec<ExportSignature> {
+    /// 获取导出项描述列表（page-wasm M1 切片 2/3——签名 + 类别）
+    pub fn export_descriptors(&self) -> Vec<ExportDescriptor> {
         self.module
             .exports()
-            .filter_map(|export| {
+            .map(|export| {
                 let ty = export.ty();
-                let func_type = ty.func()?;
-                Some(ExportSignature {
+                let (kind, params, results) = if let Some(func_type) = ty.func() {
+                    (
+                        WasmExternKind::Func,
+                        func_type
+                            .params()
+                            .iter()
+                            .map(|&p| wasm_valtype_to_wasm_value_type(p))
+                            .collect::<Option<Vec<_>>>()
+                            .unwrap_or_default(),
+                        func_type
+                            .results()
+                            .iter()
+                            .map(|&r| wasm_valtype_to_wasm_value_type(r))
+                            .collect::<Option<Vec<_>>>()
+                            .unwrap_or_default(),
+                    )
+                } else if ty.global().is_some() {
+                    (WasmExternKind::Global, vec![], vec![])
+                } else if ty.table().is_some() {
+                    (WasmExternKind::Table, vec![], vec![])
+                } else {
+                    (WasmExternKind::Memory, vec![], vec![])
+                };
+                ExportDescriptor {
                     name: export.name().to_string(),
-                    params: func_type
-                        .params()
-                        .iter()
-                        .map(|&p| wasm_valtype_to_wasm_value_type(p))
-                        .collect::<Option<Vec<_>>>()?,
-                    results: func_type
-                        .results()
-                        .iter()
-                        .map(|&r| wasm_valtype_to_wasm_value_type(r))
-                        .collect::<Option<Vec<_>>>()?,
-                })
+                    kind,
+                    params,
+                    results,
+                }
             })
             .collect()
     }
