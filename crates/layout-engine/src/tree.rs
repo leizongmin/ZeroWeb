@@ -464,6 +464,10 @@ struct BuildContext {
     /// R3808：float 元素集合（构树期一次预计算，O(styles)）——float-then-clear 容器
     /// 抑制判定的廉价位测（替代逐子 HashMap styles 查询，1000 元素页微基准敏感）。
     r3808_float_nodes: HashSet<NodeId>,
+    /// R4251：文档内是否存在 float 元素（O(styles) 一次预扫，独立于 R3808 guard）。
+    /// flow-root BFC margin 隔离臂仅在无 float 文档启用（R3755 float-adjacent
+    /// 负交互定界的收窄 gate——无 float 时 float-avoidance 几何无从交互）。
+    has_any_float: bool,
     /// R3808：带 clear 的块级元素集合（同上预计算）。
     r3808_cleared_block_nodes: HashSet<NodeId>,
 }
@@ -483,12 +487,16 @@ impl BuildContext {
             flags,
             r3808_float_nodes: HashSet::new(),
             r3808_cleared_block_nodes: HashSet::new(),
+            has_any_float: false,
         }
     }
 
     /// R3808：构树入口处一次性预计算 float / cleared-block 节点集合（O(styles)），
     /// 供 float-then-clear 容器抑制判定的位测查询（避免逐容器逐子 HashMap 查询）。
     fn precompute_r3808_sets(&mut self, styles: &HashMap<NodeId, ComputedStyle>) {
+        // R4251：无条件 float 存在位测（不受 R3808 guard 影响——flow-root BFC
+        // margin 隔离臂的 float-free gate 消费，guard 关闭时仍须正确）。
+        self.has_any_float = styles.values().any(|cs| !matches!(cs.float, FloatValue::None));
         static GUARD_ON: OnceLock<bool> = OnceLock::new();
         let on = *GUARD_ON.get_or_init(|| std::env::var("ZW_CLEAR_MT_TAFFY_GUARD").as_deref() != Ok("0"));
         if !on {
@@ -1876,6 +1884,48 @@ fn is_block_level_in_flow(display: &DisplayValue, position: &PositionValue) -> b
     ) && !matches!(position, PositionValue::Absolute | PositionValue::Fixed)
 }
 
+/// R4251（css-box-4 §margin-trim × CSS2 §9.2.1.1）：元素的有效块容器——直接 DOM 父，
+/// 或向上打穿**纯 inline** 祖先链后的最近非 inline 祖先。块容器的匿名块切分视角下，
+/// 藏在纯 inline 链后的 in-flow block-level 子就是该容器的直接块级子。原子 inline
+/// （inline-block 等）建立独立格式化上下文，不打穿（返回该原子盒自身，由调用方
+/// display gate 拒绝）。
+fn effective_block_container(doc: &Document, styles: &HashMap<NodeId, ComputedStyle>, id: NodeId) -> Option<NodeId> {
+    let mut cur = doc.parent_node(id)?;
+    while styles
+        .get(&cur)
+        .is_some_and(|st| matches!(st.display, DisplayValue::Inline))
+    {
+        cur = doc.parent_node(cur)?;
+    }
+    Some(cur)
+}
+
+/// R4251：容器有效 in-flow block-level 子（按文档序）——直接块级子 + 纯 inline 子树
+/// 内的块级后代（匿名块扁平化视角，见 `effective_block_container`）。打穿仅发生在
+/// 纯 inline 节点；block-level 子的子树归属其自身不入集；原子 inline / abspos /
+/// display:none / 文本不入集也不下钻。
+fn collect_effective_block_children(
+    doc: &Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    container_id: NodeId,
+) -> Vec<NodeId> {
+    fn walk(doc: &Document, styles: &HashMap<NodeId, ComputedStyle>, id: NodeId, out: &mut Vec<NodeId>) {
+        for child in doc.child_nodes(id) {
+            let Some(st) = styles.get(&child) else {
+                continue; // 文本等无样式节点
+            };
+            if matches!(st.display, DisplayValue::Inline) {
+                walk(doc, styles, child, out);
+            } else if is_block_level_in_flow(&st.display, &st.position) {
+                out.push(child);
+            }
+        }
+    }
+    let mut out = Vec::new();
+    walk(doc, styles, container_id, &mut out);
+    out
+}
+
 #[allow(clippy::too_many_arguments)]
 fn build_subtree(
     ctx: &mut BuildContext,
@@ -1999,18 +2049,23 @@ fn build_subtree(
             crate::converter::convert_length_to_lp(&computed.padding_bottom, viewport_w, viewport_h);
     }
 
-    // margin-trim（css-box-4 §margin-trim）：父块容器声明 margin-trim 的 block / block-start /
-    // block-end 时，归零首子 block-start（margin-top）与/或末子 block-end（margin-bottom）。
-    // 在 taffy 布局前修改 taffy_style.margin，使整个流正确重算（trim 到 0 即移除参与折叠的
-    // margin，对 collapsing / non-collapsing 案均正确）。bounded scope：仅水平书写模式
-    // （horizontal-tb）；inline 轴 trim 对块级子无效（block-container-inline-001 实证：`margin-trim:
-    // inline` 不裁剪块级子的 inline 边距）；flex/grid/multicol 容器有独立语义（defer）；自折叠 /
-    // 嵌套深案（block-container-block-*-self-collapsing-*）defer。kill-switch `ZW_MARGIN_TRIM=0`
-    // （default-on）。driving: css/css-box/margin-trim/block-container-block-001 等。
+    // margin-trim（css-box-4 §margin-trim）：块容器声明 margin-trim 的 block / block-start /
+    // block-end 时，归零首/末 in-flow 子的边缘 margin。在 taffy 布局前修改 taffy_style.margin，
+    // 使整个流正确重算（trim 到 0 即移除参与折叠的 margin，对 collapsing / non-collapsing 案
+    // 均正确）。bounded scope：仅水平书写模式（horizontal-tb）；inline 轴 trim 对块级子无效
+    // （block-container-inline-001 实证：`margin-trim: inline` 不裁剪块级子的 inline 边距）；
+    // flex/grid/multicol 容器有独立语义（defer）。kill-switch `ZW_MARGIN_TRIM=0`（default-on）。
+    // driving: css/css-box/margin-trim/block-container-block-001 等。
+    //
+    // R4251（css-box-4 §margin-trim × CSS2 §9.2.1.1 匿名块扁平化）：in-flow block-level 子与
+    // trim 容器之间的**纯 inline 祖先链**（`<span>` 等非原子 inline）对 trim 透明——块容器
+    // 视角这些子经匿名块切分就是它的直接块级子。此前 gate 只看直接 DOM 父（span=Inline →
+    // 不入 Block/FlowRoot/ListItem），整簇 block-in-inline-002..007 完全不 trim。此处向上爬过
+    // 纯 inline 祖先找有效块容器；原子 inline（inline-block 等）与块级容器不打穿。
     if ctx.flags.margin_trim()
         && matches!(computed.writing_mode, WritingModeValue::HorizontalTb)
-        && let Some(parent_id) = doc.parent_node(dom_id)
-        && let Some(ps) = styles.get(&parent_id)
+        && let Some(container_id) = effective_block_container(doc, styles, dom_id)
+        && let Some(ps) = styles.get(&container_id)
         && matches!(
             ps.display,
             DisplayValue::Block | DisplayValue::FlowRoot | DisplayValue::ListItem
@@ -2018,50 +2073,51 @@ fn build_subtree(
         && (ps.margin_trim.block_start || ps.margin_trim.block_end)
         && is_block_level_in_flow(&computed.display, &computed.position)
     {
-        // 父容器 in-flow block-level 子（按文档序），用于定位当前子是否为首/末子。
-        let in_flow_block: Vec<NodeId> = doc
-            .child_nodes(parent_id)
-            .iter()
-            .copied()
-            .filter(|&s| {
-                styles
-                    .get(&s)
-                    .is_some_and(|st| is_block_level_in_flow(&st.display, &st.position))
-            })
-            .collect();
+        // 有效容器 in-flow block-level 子（按文档序，打穿纯 inline 链），定位当前子的序位。
+        let in_flow_block = collect_effective_block_children(doc, styles, container_id);
         if let Some(idx) = in_flow_block.iter().position(|&s| s == dom_id) {
             let zero = taffy::style::LengthPercentageAuto::length(0.0_f32);
             // R3872：自折叠子（css-box-4：h=0 且无 border/padding → mt/mb 折叠穿透合一）
             // 的**穿透合计 margin** 才是与容器边缘折叠的对象——trim 须两侧同归零，仅归零
-            // edge 侧会留下另一侧穿透 margin（driving: block-container-block-end/start-
-            // self-collapsing-item-has-larger-block-start/end 四案）。bounded：height 指定
-            // Px(0)（auto 自折叠需内容空判定，FIXME）；有 border/padding 不折叠。
+            // edge 侧会留下另一侧穿透 margin。bounded：height 指定 Px(0) 或 auto 空元素；
+            // 有 border/padding 不折叠。
             // R4191（css-box-4 §margin-trim × CSS2 §8.3.1）：补 **height:auto 空元素**自折叠
             // 臂——CSS2 §8.3.1：无 border/padding 且自身无内容（in-flow 流内容为零）的元素
-            // 其 mt/mb 自行折叠穿透。driving: block-container-block-end-self-collapsing-and-
-            // border（末子 `margin-top:222px; outline:…` 空元素，outline 非 border 不阻折叠
-            // → mb 应被 block-end trim 归零）。判定：height Auto + 无 border/padding +
-            // **无子节点**（有子则内容非空不折叠；文本子亦算内容——child_nodes 含文本）。
-            let no_box_edges = matches!(
-                computed.border_top_style,
-                zero_style_system::property::types::BorderStyleValue::None
-            ) && matches!(
-                computed.border_bottom_style,
-                zero_style_system::property::types::BorderStyleValue::None
-            ) && matches!(computed.padding_top, LengthValue::Px(v) if v == 0.0)
-                && matches!(computed.padding_bottom, LengthValue::Px(v) if v == 0.0);
-            let self_collapsing = no_box_edges
-                && (matches!(computed.height, LengthValue::Px(v) if v == 0.0)
-                    || (matches!(computed.height, LengthValue::Auto) && doc.child_nodes(dom_id).is_empty()));
-            if idx == 0 && ps.margin_trim.block_start {
+            // 其 mt/mb 自行折叠穿透（outline 非 border 不阻折叠）。判定：height Auto +
+            // 无 border/padding + **无子节点**（有子则内容非空不折叠；文本子亦算内容——
+            // child_nodes 含文本）。
+            let self_collapsing = |id: NodeId| -> bool {
+                styles.get(&id).is_some_and(|st| {
+                    let no_box_edges = matches!(
+                        st.border_top_style,
+                        zero_style_system::property::types::BorderStyleValue::None
+                    ) && matches!(
+                        st.border_bottom_style,
+                        zero_style_system::property::types::BorderStyleValue::None
+                    ) && matches!(st.padding_top, LengthValue::Px(v) if v == 0.0)
+                        && matches!(st.padding_bottom, LengthValue::Px(v) if v == 0.0);
+                    no_box_edges
+                        && (matches!(st.height, LengthValue::Px(v) if v == 0.0)
+                            || (matches!(st.height, LengthValue::Auto) && doc.child_nodes(id).is_empty()))
+                })
+            };
+            // R4251（css-box-4 §margin-trim 自折叠走查）：block-start trim 归零的是首个**非
+            // 自折叠** in-flow 子的 block-start margin；其前连续自折叠子的穿透 margin 两侧
+            // 全归零（R3872 单首子臂推广为连续链走查——链上任一未归零都会把穿透 margin
+            // 留在容器边缘）。block-end 对称（自末子反向走查）。driving:
+            // block-container-block-end-self-collapsing-and-border（末尾两个空 mt:222 子）、
+            // block-in-inline-003/004/006/007（span 内自折叠链）。
+            let walk_start = ps.margin_trim.block_start && in_flow_block[..idx].iter().all(|&s| self_collapsing(s));
+            let walk_end = ps.margin_trim.block_end && in_flow_block[idx + 1..].iter().all(|&s| self_collapsing(s));
+            if walk_start {
                 taffy_style.margin.top = zero;
-                if self_collapsing {
+                if self_collapsing(dom_id) {
                     taffy_style.margin.bottom = zero;
                 }
             }
-            if idx + 1 == in_flow_block.len() && ps.margin_trim.block_end {
+            if walk_end {
                 taffy_style.margin.bottom = zero;
-                if self_collapsing {
+                if self_collapsing(dom_id) {
                     taffy_style.margin.top = zero;
                 }
             }
@@ -2400,6 +2456,26 @@ fn build_subtree(
         // 内 div mt 100 应 contained 为 caption 内部空间（chromium caption 100×100），
         // taffy 折叠后 caption h=0）。
         let establishes_bfc = matches!(computed.display, DisplayValue::TableCaption)
+            // R4251（CSS2 §9.4.1）：display:flow-root 建立 BFC——taffy overflow:Hidden
+            // 阻止父子 margin 折叠穿透。R3755 曾因 float-adjacent 负交互（bfc-next-to-
+            // float-2 / replaced-next-to-float-2 / margin-trim-005 均含 float 或相邻
+            // float 几何）收窄；本轮仅**无 float 文档**启用（ctx.has_any_float 位测）——
+            // float-avoidance 几何无从交互，负回归面被 gate 整体排除。driving:
+            // css/css-box/margin-trim/block-in-inline-002..007、block-end-self-collapsing-
+            // block-start-margin ×2（trim 后余 margin 穿透 flow-root → 方块整体下移）。
+            || (matches!(computed.display, DisplayValue::FlowRoot) && !ctx.has_any_float)
+            // R4251（CSS Overflow 4 §line-clamp）：line-clamp 非 none 的块容器建立独立
+            // 格式化上下文——同臂抑制 taffy 父子 margin 折叠穿透。R4251 flow-root 臂使
+            // line-clamp-auto-030..032 的 **ref 页**（display:flow-root）margin 转为
+            // contained 而 test 页（line-clamp: auto）仍穿透 → 差异暴露；补本臂使两侧
+            // 同语义（029-ref 同域 ref 基础设施案）。driving: line-clamp-auto-030..032。
+            || (!matches!(
+                computed.line_clamp,
+                zero_style_system::property::types::LineClampComputedValue::None
+            ) && !matches!(
+                computed.display,
+                DisplayValue::Inline | DisplayValue::Contents | DisplayValue::None
+            ))
             || ((computed.contain.has_layout() || computed.contain.has_paint())
                 && !matches!(
                     computed.display,

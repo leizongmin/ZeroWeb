@@ -50,16 +50,21 @@ fn find_by_id(root: &crate::LayoutBox, id: NodeId) -> Option<&crate::LayoutBox> 
 }
 
 #[test]
-/// 对照（本轮 net 负未纳入）：flow-root 父的 taffy BFC 化因 float-adjacent 收缩几何
-/// 回归（css-sizing bfc-next-to-float-2 / margin-trim block-in-inline-005）暂缓，
-/// 记录现状：flow-root 父内子 mt 仍被 taffy 折叠（child.y=0）。
-fn r3755_flow_root_parent_margin_collapse_deferred() {
+/// R4251：flow-root 父建立 BFC——子 mt 不再折叠出父盒（CSS2 §9.4.1）。R3755 曾因
+/// float-adjacent 收缩几何回归收窄；R4251 在**无 float 文档**（ctx.has_any_float gate）
+/// 启用 taffy overflow:Hidden 隔离臂，float-adjacent 回归面（bfc-next-to-float-2 /
+/// margin-trim block-in-inline-005）被 gate 整体排除。本测试文档无 float → 隔离生效。
+fn r4251_flow_root_parent_does_not_collapse_child_margin_top() {
     let (result, _parent, child) = layout_bfc_parent_with_margin_child(|s| {
         s.display = zero_style_system::DisplayValue::FlowRoot;
     });
     let root = &result.root;
     let c = find_by_id(root, child).expect("child box");
-    assert!(c.y.abs() < 0.5, "现状记录：flow-root 子 mt 仍折叠（child.y={}）", c.y);
+    assert!(
+        (c.y - 30.0).abs() < 0.5,
+        "flow-root 父内子 margin-top 应保留在内容盒内（child.y={}, 期望 30）",
+        c.y
+    );
 }
 
 #[test]
