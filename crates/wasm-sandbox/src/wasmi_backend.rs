@@ -49,6 +49,12 @@ impl WasmSandbox {
         Ok(WasmModule { module })
     }
 
+    /// 完整校验 WASM 字节（page-wasm M3 切片 2——WebAssembly.validate 语义，
+    /// 全模块校验而非仅魔术字节）
+    pub fn validate(&self, bytes: &[u8]) -> bool {
+        wasmi::Module::new(&self.engine, bytes).is_ok()
+    }
+
     /// 获取引擎引用
     pub fn engine(&self) -> &wasmi::Engine {
         &self.engine

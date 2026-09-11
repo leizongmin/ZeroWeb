@@ -917,3 +917,112 @@ fn test_wasm_bridge_import_non_function_link_error() {
     assert!(r.contains("\"isLink\":true"), "Memory import 应 LinkError 失败: {r}");
     assert!(r.contains("\"hasKind\":true"), "消息应含形态说明（memory）: {r}");
 }
+
+// ── streaming / validate（page-wasm M3 切片 2，DC-3）──
+
+/// `compileStreaming` 真实 Response 路径：Content-Type 校验（spec TypeError）+
+/// body 消费 → Module（描述可查询）。
+#[test]
+fn test_wasm_bridge_compile_streaming() {
+    let mut wv = WebView::new(WebViewConfig::default());
+    let wasm = wasm_add_module();
+    let js_bytes: String = wasm.iter().map(|b| b.to_string()).collect::<Vec<_>>().join(",");
+
+    // execute #1：compileStreaming（合法 Content-Type）+ 错误 Content-Type + 非 Response
+    let result = wv
+        .execute_script_with_dom(&format!(
+            r#"
+        var bytes = new Uint8Array([{js_bytes}]);
+        function makeResponse(ct) {{
+            return {{
+                headers: {{ get: function(name) {{ return name === 'content-type' ? ct : null; }} }},
+                arrayBuffer: function() {{ return Promise.resolve(bytes.buffer); }}
+            }};
+        }}
+        globalThis.__csModule = null;
+        globalThis.__csBadMime = null;
+        globalThis.__csBadSource = null;
+        WebAssembly.compileStreaming(makeResponse('application/wasm')).then(function(m) {{ globalThis.__csModule = m; }});
+        WebAssembly.compileStreaming(makeResponse('text/plain')).catch(function(e) {{ globalThis.__csBadMime = e; }});
+        WebAssembly.compileStreaming(42).catch(function(e) {{ globalThis.__csBadSource = e; }});
+        true
+        "#
+        ))
+        .unwrap();
+    assert_eq!(result, "true");
+
+    // execute #2：读结果（模块描述已由 compile 桥注入）
+    let r = wv
+        .execute_script(
+            r#"
+        (function() {
+            return JSON.stringify({
+                moduleOk: !!(globalThis.__csModule && globalThis.__csModule._compiled),
+                addExported: globalThis.__csModule && WebAssembly.Module.exports(globalThis.__csModule)
+                    .some(function(d) { return d.name === 'add' && d.kind === 'function'; }),
+                badMimeName: globalThis.__csBadMime && globalThis.__csBadMime.name,
+                badSourceName: globalThis.__csBadSource && globalThis.__csBadSource.name
+            });
+        })()
+        "#,
+        )
+        .unwrap();
+    assert!(r.contains("\"moduleOk\":true"), "合法 mime 应产出编译模块: {r}");
+    assert!(r.contains("\"addExported\":true"), "模块描述应含 add 函数: {r}");
+    assert!(
+        r.contains("\"badMimeName\":\"TypeError\""),
+        "错误 Content-Type 应 TypeError（spec）: {r}"
+    );
+    assert!(
+        r.contains("\"badSourceName\":\"TypeError\""),
+        "非 Response 应 TypeError: {r}"
+    );
+}
+
+/// `instantiateStreaming` Content-Type 校验：合法 mime 全链（实例可调用），错误 mime
+/// TypeError（对齐 spec——旧实现无校验、无条件 arrayBuffer 回退）。
+#[test]
+fn test_wasm_bridge_instantiate_streaming_mime_check() {
+    let mut wv = WebView::new(WebViewConfig::default());
+    let wasm = wasm_add_module();
+    let js_bytes: String = wasm.iter().map(|b| b.to_string()).collect::<Vec<_>>().join(",");
+
+    let result = wv
+        .execute_script_with_dom(&format!(
+            r#"
+        var bytes = new Uint8Array([{js_bytes}]);
+        function makeResponse(ct) {{
+            return {{
+                headers: {{ get: function(name) {{ return name === 'content-type' ? ct : null; }} }},
+                arrayBuffer: function() {{ return Promise.resolve(bytes.buffer); }}
+            }};
+        }}
+        globalThis.__isOk = false;
+        globalThis.__isBad = null;
+        WebAssembly.instantiateStreaming(makeResponse('application/wasm')).then(function(pair) {{ globalThis.__isOk = pair.instance; }});
+        WebAssembly.instantiateStreaming(makeResponse('application/json')).catch(function(e) {{ globalThis.__isBad = e; }});
+        true
+        "#
+        ))
+        .unwrap();
+    assert_eq!(result, "true");
+
+    let r = wv
+        .execute_script(
+            r#"
+        (function() {
+            var ex = globalThis.__isOk && globalThis.__isOk.exports;
+            return JSON.stringify({
+                hasExports: !!ex,
+                badMimeName: globalThis.__isBad && globalThis.__isBad.name
+            });
+        })()
+        "#,
+        )
+        .unwrap();
+    assert!(r.contains("\"hasExports\":true"), "合法 mime 应产出实例: {r}");
+    assert!(
+        r.contains("\"badMimeName\":\"TypeError\""),
+        "错误 Content-Type 应 TypeError（spec）: {r}"
+    );
+}

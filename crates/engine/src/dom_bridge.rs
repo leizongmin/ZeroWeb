@@ -523,19 +523,55 @@ pub fn generate_dom_api_polyfill() -> String {
     },
 
     // WebAssembly.instantiateStreaming() — 从 Response 流式编译
+    // Response Content-Type 校验（spec：非 application/wasm → TypeError reject，
+    // https://webassembly.github.io/spec/js-api/#dom-webassembly-instantiateStreaming）
+    _validateStreamingSource: function(source, api) {
+      if (source && typeof source.arrayBuffer === 'function' && source.headers && typeof source.headers.get === 'function') {
+        var ct = '';
+        try { ct = source.headers.get('content-type') || ''; } catch (e) {}
+        if (String(ct).toLowerCase().indexOf('application/wasm') !== 0) {
+          return 'invalid Content-Type ' + JSON.stringify(String(ct));
+        }
+      }
+      return null;
+    },
+
     instantiateStreaming: function(source, importObject) {
       var self = this;
-      // 在无头环境中 Response 可能不可用，回退到 ArrayBuffer 路径
+      var mimeError = this._validateStreamingSource(source, 'instantiateStreaming');
+      if (mimeError) {
+        return Promise.reject(new TypeError('WebAssembly.instantiateStreaming(): ' + mimeError));
+      }
+      // Response 形态——消费真实 body（arrayBuffer 聚合读取）
       if (source && typeof source.arrayBuffer === 'function') {
         return source.arrayBuffer().then(function(buffer) {
           return self.instantiate(new Uint8Array(buffer), importObject);
         });
       }
-      // 如果 source 已经是 ArrayBuffer/Uint8Array，直接使用
+      // 如果 source 已经是 ArrayBuffer/Uint8Array，直接使用（兼容路径）
       if (source instanceof ArrayBuffer || source instanceof Uint8Array) {
         return self.instantiate(source, importObject);
       }
       return Promise.reject(new TypeError('WebAssembly.instantiateStreaming(): source must be a Response or buffer source'));
+    },
+
+    // compileStreaming（page-wasm M3 切片 2，DC-3）：Response → Module Promise；
+    // 语义为真（Content-Type/响应形态），body 经 arrayBuffer 聚合（增量编译为已知限制）
+    compileStreaming: function(source) {
+      var self = this;
+      var mimeError = this._validateStreamingSource(source, 'compileStreaming');
+      if (mimeError) {
+        return Promise.reject(new TypeError('WebAssembly.compileStreaming(): ' + mimeError));
+      }
+      if (source && typeof source.arrayBuffer === 'function') {
+        return source.arrayBuffer().then(function(buffer) {
+          return self.compile(new Uint8Array(buffer));
+        });
+      }
+      if (source instanceof ArrayBuffer || source instanceof Uint8Array) {
+        return self.compile(source);
+      }
+      return Promise.reject(new TypeError('WebAssembly.compileStreaming(): source must be a Response or buffer source'));
     },
 
     _createInstance: function(instanceId, bytes, importObject) {

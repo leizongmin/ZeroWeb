@@ -27,6 +27,11 @@ impl WasmSandbox {
         ))
     }
 
+    /// 完整校验 WASM 字节（占位实现，恒为 false）
+    pub fn validate(&self, _bytes: &[u8]) -> bool {
+        false
+    }
+
     /// 返回沙箱配置的引用
     pub fn config(&self) -> &SandboxConfig {
         &self.config

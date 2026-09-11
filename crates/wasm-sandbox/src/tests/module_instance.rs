@@ -1742,3 +1742,24 @@ fn test_import_signatures_reflection() {
         .expect("compile");
     assert!(empty.import_signatures().is_empty(), "无导入应恒空");
 }
+
+/// 测试完整校验（page-wasm M3 切片 2）：合法模块 true、非法字节 false——
+/// 含「魔术字节正确但结构损坏」的用例（魔术字节检查会误放行的形态）
+#[test]
+fn test_validate_full_module_validation() {
+    let sandbox = WasmSandbox::new();
+    let valid = wat_to_wasm(r#"(module (func (export "f")))"#);
+    assert!(sandbox.validate(&valid), "合法模块应通过校验");
+
+    // 魔术字节正确但版本段损坏——仅查魔术字节的实现会误判 true
+    let mut corrupt_magic_ok = valid.clone();
+    corrupt_magic_ok[3] = 0xFF;
+    assert!(!sandbox.validate(&corrupt_magic_ok), "版本段损坏应拒绝");
+
+    // 截断：合法模块砍半（结构必然不完整）
+    let truncated = &valid[..valid.len() / 2];
+    assert!(!sandbox.validate(truncated), "截断模块应拒绝");
+
+    // 纯垃圾
+    assert!(!sandbox.validate(&[0xDE, 0xAD, 0xBE, 0xEF]), "垃圾字节应拒绝");
+}

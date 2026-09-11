@@ -583,7 +583,9 @@ fn test_polyfill_length_reasonable() {
     // B 代 shim 的薄封装（A 代维护独立虚拟 DOM，与 B 代 live Document 路径并存是历史债），而非单纯抬上限）。
     // page-wasm M2 切片 3 评估：WA 段补 spec 错误类构造器/Module.exports 描述面/幂等安装
     // 均为规范面增项（+1.5KB，61.0KB），A→B 收敛是大重构不宜捆绑本切片，上限 60000 → 63000。
-    assert!(polyfill.len() < 63000, "Polyfill too large: {} bytes", polyfill.len());
+    // page-wasm M3 切片 2 评估：compileStreaming/Response Content-Type 校验为 DC-3 规范面
+    // 增项（+1.7KB，64.7KB），同结论——上限 63000 → 66000。
+    assert!(polyfill.len() < 66000, "Polyfill too large: {} bytes", polyfill.len());
 }
 
 // ── Web Worker API 测试 ──
