@@ -111,9 +111,23 @@ WPT 基线 → MO host 触发（方案 C 设计已存在）→ checkpoint spec �
 
 ## 下一步计划
 
-1. **M2：MO host 触发（方案 C 实施）**——dom 层 `pending_mutations` 通知端接活 +
-   共享注册表 + NodeId↔handle/selector 身份桥（R3106 关联复用）+ kill-switch + A/B。
-   照 `zero-web/p1b-mutationobserver-host-trigger-design-2026-08-10.md` 切片实施
+1. **M2：MO host 触发（方案 C 实施）**——照
+   `docs/goal/zero-web/p1b-mutationobserver-host-trigger-design-2026-08-10.md` 切片。
+   **MO-S1（identity 桥）实施要点已勘察（2026-09-11）**：
+   - JS 侧（part01.js MO 段）：`globalThis.__zw_mo_notify_native(sel, handle, type,
+     attrName, oldValue)` → 组 baseRecord → 复用 `_mo_notify`（单注册表派发，
+     options/subtree/oldValue 自动获益 = MO-S3 免做主）
+   - Rust 排空点：`webview.rs sync_render_after_native_dom`（native 写检测 =
+     live outerHTML ≠ cached_html；polyfill apply 路径自更 cached_html 不触发此分支
+     → **与 polyfill Proxy-trap 去重天然成立**，设计 §3 风险项消解）。
+     `doc.borrow_mut().take_mutation_records()` 逐条 `unique_selector_for_node`
+     （engine js_dom_bridge 已有，nth-child 消歧）→ execute_script 投递；
+     **注意重入**：execute_script 尾部再进 sync_render → 需 reentrancy guard
+   - 注意：R384 后 native_dom kill-switch 已删（双引擎 default-on）——设计文档的
+     「native_dom 开分支」前提已变，新 kill-switch 用 `ZW_MO_HOST_TRIGGER`（默认 OFF，
+     本 goal DC-3 门禁约束；A/B 后再议 default-on）
+   - 验证：单测 native appendChild → polyfill MO 收 record（设计 MO-S1 验证面）+
+     make test；childList added/removed 的 proxy 面留 MO-S2
 2. **M3**：task queue + per-task checkpoint（kill-switch → A/B → default-on）
 3. **跨流协调项（非本流可闭合，记录待碰头）**：
    - engine apply 路径稳定 selector 唯一性（RO observe-001..020 / IO handle 族根因）
