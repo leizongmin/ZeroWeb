@@ -2422,7 +2422,12 @@
   function _mo_scheduleFlush() {
     if (_moFlushScheduled) return;
     _moFlushScheduled = true;
-    _defer(function() {
+    // WC-M3 切片 8 第八增量（web-components goal）：MO flush 调度**绕过 _deferBudget**
+    // ——spec notify mutation observers 是 microtask（不可省略）；_deferBudget 为页面
+    // 级脚本预算，长测试文件（slotchange-event 61 subtest 连续变异）中途耗尽使后续
+    // flush 调度静默丢失 → signal 晚发/丢发（变体序依赖 + innerHTML 尾计数的根因）。
+    // 直发 queueMicrotask（预算外），_defer 为无 queueMicrotask 环境的回落。
+    var _moFlushBody = function() {
       _moFlushScheduled = false;
       var observers = globalThis.__zw_mo_observers;
       for (var i = 0; i < observers.length; i++) {
@@ -2464,7 +2469,12 @@
       if (typeof globalThis.__zwFlushSlotSignals === 'function') {
         try { globalThis.__zwFlushSlotSignals(); } catch (_e8ss2) {}
       }
-    });
+    };
+    if (typeof queueMicrotask === 'function') {
+      queueMicrotask(function() { try { _moFlushBody(); } catch (_eMoF) {} });
+    } else {
+      _defer(_moFlushBody);
+    }
   }
 
   globalThis.MutationObserver = function(callback) {

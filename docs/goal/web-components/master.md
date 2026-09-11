@@ -2,10 +2,9 @@
 
 **入口文档**: [../web-components.md](../web-components.md)
 **创建日期**: 2026-09-07（goal 拆分 bootstrap）
-**最后更新**: 2026-09-11（M3 切片 8 第二增量第七小步——nested slots 4F 全清
-（signal 派发按 shadow 树深度降序：最深的树最先 flush，级联源头信号先发），净 +4
-零回归；余：slotchange 尾 8 案（removed-immediately 身份二相 4F + end-of-microtask
-MO 分界 4F）+ innerHTML 尾计数 4F + DC-5 终判）
+**最后更新**: 2026-09-11（M3 切片 8 第二增量第八小步（硬化轮）——MO flush 调度
+预算外化（queueMicrotask 直发，net 0 零回归）+ end-of-microtask 簇根因收窄至 MO 投递
+分轮语义；余：slotchange 尾 8 案 + innerHTML 尾计数 4F + DC-5 终判）
 
 ---
 
@@ -129,15 +128,12 @@ Shadow DOM 渲染级 composed tree 排除（等用户点名专项）。
   pending 回落 'div' 的 safelist 误放行仍挂（未阻塞当前断言面）
 - ~~slotchange nested slots 4F~~ ✅ 第七小步全清（signal 派发深度降序：最深的
   shadow 树最先 flush——级联源头信号先发；`__zwSlotRootDepth` 探针实证 outer=1/inner=2）
-- slotchange 尾 8 案（两簇，第八增量探针精化）：①end-of-microtask 4F——**变体序依赖**
-  （open+in-document 首变体过、后续变体 slotchange 先于 MO1 投递）——探针实证孤立复现
-  序列正确（MO1:0→slotchange→MO2:1✓），多变体连续执行时错乱，疑点 = `_deferBudget`
-  预算耗尽丢 flush 调度 + `_moFlushScheduled` 重入吞排空（MO1 内变异的次轮信号丢失
-  与 late-fire 并存）——修法：flush 调度去预算化/重入安全 + signal 排空挂 per-observer
-  投递点（spec notify mutation observers 每 observer 后排空 signalSet）；②removed-
-  immediately 4F——被移除 slot 的 proxy 身份二相（R52 消零重建 vs 页面持有引用）
-- slotchange innerHTML 尾计数 4F——async host apply 过度标记（疑与 ①的 flush 重入
-  同源：apply 期间多次排空）
+- slotchange 尾 8 案（两簇，第八增量根因收窄）：①end-of-microtask 4F——**MO 投递
+  分轮语义**（预算外调度落地后原样——预算耗尽非根因；attribute 记录 MO1 与 childList
+  signal 的投递门控不同轮，signal 在 MO1 投递前已排空——查 `_mo_deliverToId` 的
+  subtree 门控/延迟投递分支）；②removed-immediately 4F——被移除 slot 的 proxy 身份
+  二相（R52 消零重建 vs 页面持有引用）
+- slotchange innerHTML 尾计数 4F——async host apply 过度标记
 - builtin-coverage 的 innerHTML 解析簇（~108F）：R380 查询融合域，非 CE 域
 - reactions/ 表格族（table-scoped 解析升级）与 customized-builtins 的 iframe/reparse 面
 - XHTML 悬空 body 查询域（5 案）——pre-existing，与 template 真实化无因果
@@ -166,9 +162,10 @@ crates/dom/` 核对渲染流域活跃面；碰 part01.js 前与 event-loop-spec 
 - 测试基线：立项时点全绿（`make test` / `make reftest` 入口，经 test-guard 包裹；
   禁止裸跑 cargo test）
 - WC 用例面：**3536 Pass / 4763 subtests（74.2%）**（2026-09-11 M3 切片 8 第二增量
-  第七小步，evidence/2026-09-11-wc-m3s8h.{md,json}。历史：基线 437=9% → 2a 689=15% →
-  2b 2565=55% → 3 2720=58% → 4 3008=64% → M2 3014 → M3s1 3046 → M3s2 3050 → M3s3
-  3105 → M3s4 3137 → M3s5 3142 → M3s6 3145 → M3s7 3413 → M3s8 3425 → M3s8b 3427 →
-  M3s8c 3494 → M3s8d 3525 → M3s8e 3529 → M3s8f 3532 → M3s8g 3532 → M3s8h 3536）
+  第八小步（硬化轮 net 0），evidence/2026-09-11-wc-m3s8i.{md,json}。历史：基线 437=9% →
+  2a 689=15% → 2b 2565=55% → 3 2720=58% → 4 3008=64% → M2 3014 → M3s1 3046 → M3s2
+  3050 → M3s3 3105 → M3s4 3137 → M3s5 3142 → M3s6 3145 → M3s7 3413 → M3s8 3425 →
+  M3s8b 3427 → M3s8c 3494 → M3s8d 3525 → M3s8e 3529 → M3s8f 3532 → M3s8g 3532 →
+  M3s8h 3536 → M3s8i 3536）
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过；
   dom 结构变更轮跑 `make reftest` 作渲染面守卫
