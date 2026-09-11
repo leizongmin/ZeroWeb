@@ -2,8 +2,8 @@
 
 **入口文档**: [../event-loop-spec.md](../event-loop-spec.md)
 **创建日期**: 2026-09-07（goal 拆分 bootstrap）
-**最后更新**: 2026-09-11（M3-S2 落地——renderer tick_observers per-task 重构，kill-switch
-`ZW_RENDERER_TICK_PER_TASK` 默认 OFF；product-smoke 20.30% 超阈为干净 main 即有的跨流域漂移，已归因记档）
+**最后更新**: 2026-09-11（M1 切片 3 收尾——detached document 初通知抑制，IO 95 Pass 等效；
+takeRecords 排队模型缓行记档）
 
 ---
 
@@ -54,6 +54,16 @@ WPT 基线 → MO host 触发（方案 C 设计已存在）→ checkpoint spec �
 | P4 | checkpoint 简化版（无 task queue、无 per-task checkpoint） | 🔄 M3-S1+S2 ✅ 2026-09-11（runner timer 泵 / renderer tick 双 per-task，kill-switch 默认 OFF；余显式 task queue + default-on 决策） |
 
 ## 已完成切片
+
+### M1 切片 3 收尾 — detached document 初通知抑制（2026-09-11）✅
+
+- IO/RO `_schedule` 派发循环：target `ownerDocument !== globalThis.document` → 跳过且
+  不更新 lastState（spec：非全活跃 document 无渲染更新不产出通知；adopt 入主文档后
+  tick 携新几何派发）——`target-in-detached-document` "First rAF." Fail→Pass（IO 95
+  Pass 等效 +1，全量零 Pass 回归；`Adopt target.` 仍在 known 身份缺山上）
+- 附带状态翻转：`explicit-root-different-document` Fail→Timeout（同 non-Pass 桶，
+  跨文档 root 用例 completion 面）
+- 验证：定向 2/3（自 1/3）+ IO 全量零 Pass 回归；make test 门禁本轮提交前跑
 
 ### M3-S1 — runner timer 泵 per-task 边界（2026-09-11）✅
 
@@ -267,8 +277,8 @@ WPT 基线 → MO host 触发（方案 C 设计已存在）→ checkpoint spec �
 3. **跨流协调项（非本流可闭合，记录待碰头）**：
    - engine apply 路径稳定 selector 唯一性（RO observe-001..020 / IO handle 族根因）
    - 几何真值簇（scroll offset / transform / zoom / clip-path 参与 IO 几何）——渲染流域
-4. **本流后续小修候选**：detached doc 初通知抑制 + takeRecords 真排队模型（同做）；
-   scroll-margin 臂
+4. **本流后续小修候选**：takeRecords 真排队模型（compute/queue 与 deliver 分相——
+   现架构无 user-code 插窗，无当前 failing driving 断言，缓行）；scroll-margin 臂
 
 **待用户决策清单**：
 - runner viewport 校准（1280×800 → 上游 WPT 校准 800×600）：牵动全部 testharness

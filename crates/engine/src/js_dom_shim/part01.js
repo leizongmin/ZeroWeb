@@ -2903,6 +2903,14 @@
       self._scheduled = false;
       var entries = [];
       for (var id in self._targets) {
+        var _t = self._targets[id];
+        // 非主文档 target 跳过（event-loop-spec M1 切片 3 收尾）：spec 无渲染更新的
+        // document（detached/created doc）不产出 intersection 通知——ownerDocument !==
+        // 主文档即跳过且不更新 lastState（adopt 入主文档后的 tick 携新几何派发）。
+        //（intersection-observer/target-in-detached-document 断言面。）
+        var _od = null;
+        try { _od = _t.proxy.ownerDocument; } catch (_eOd) {}
+        if (_od && _od !== globalThis.document) continue;
         var c = self._compute(id);
         if (!c) continue;
         var index = self._thresholdIndex(c.ratio, c.isIntersecting);
@@ -3003,6 +3011,10 @@
       var entries = [];
       for (var id in self._targets) {
         var t = self._targets[id];
+        // 非主文档 target 跳过（同 IO _schedule 注记——detached doc 无渲染更新不派发）。
+        var _od = null;
+        try { _od = t.proxy.ownerDocument; } catch (_eOdRo) {}
+        if (_od && _od !== globalThis.document) continue;
         // path A：sel 空（createElement 元素）时用 handle。
         var r = _io_rectFromSel(t.proxy.__zwSelector || t.proxy.__zwHandle);
         var prev = self._lastSize[id];
