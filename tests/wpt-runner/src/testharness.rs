@@ -811,6 +811,50 @@ pub const FS_CASES: &[&str] = &[
     "fs/FileSystemWritableFileStream-piped.https.any.js",
 ];
 
+/// Page WASM goal（page-wasm M1 / DC-1）pinned upstream WebAssembly (`wasm/jsapi/`)
+/// window subset——标准（非 tentative）JS API 面：Module/Instance/Memory/Table/Global/
+/// compile/instantiate/validate/导出面/链接错误。Cases are fetched by
+/// `fetch-wasm-subset.sh`（WPT 315976933870b34d6ea30e3f6643403edae678ba）into
+/// `wpt-data/`（gitignored）.
+///
+/// `.any.js` 用例以 window 变体执行；support 脚本由各用例 `// META: script=` 声明自动
+/// 解析（与 fs 子集同机制）。skip 域（Support Envelope 排除项：esm-integration/jspi/
+/// js-string/gc/exception/tag/function[tentative]/functions[realm harness]/idlharness）
+/// 见 fetch 脚本头注释，双侧一致。
+pub const WASM_CASES: &[&str] = &[
+    "wasm/jsapi/interface.any.js",
+    "wasm/jsapi/prototypes.any.js",
+    "wasm/jsapi/constructor/compile.any.js",
+    "wasm/jsapi/constructor/instantiate.any.js",
+    "wasm/jsapi/constructor/instantiate-bad-imports.any.js",
+    "wasm/jsapi/constructor/multi-value.any.js",
+    "wasm/jsapi/constructor/toStringTag.any.js",
+    "wasm/jsapi/constructor/validate.any.js",
+    "wasm/jsapi/global/constructor.any.js",
+    "wasm/jsapi/global/toString.any.js",
+    "wasm/jsapi/global/value-get-set.any.js",
+    "wasm/jsapi/global/valueOf.any.js",
+    "wasm/jsapi/instance/constructor.any.js",
+    "wasm/jsapi/instance/constructor-bad-imports.any.js",
+    "wasm/jsapi/instance/constructor-caching.any.js",
+    "wasm/jsapi/instance/exports.any.js",
+    "wasm/jsapi/instance/toString.any.js",
+    "wasm/jsapi/memory/buffer.any.js",
+    "wasm/jsapi/memory/constructor.any.js",
+    "wasm/jsapi/memory/grow.any.js",
+    "wasm/jsapi/memory/toString.any.js",
+    "wasm/jsapi/module/constructor.any.js",
+    "wasm/jsapi/module/customSections.any.js",
+    "wasm/jsapi/module/exports.any.js",
+    "wasm/jsapi/module/imports.any.js",
+    "wasm/jsapi/module/toString.any.js",
+    "wasm/jsapi/table/constructor.any.js",
+    "wasm/jsapi/table/get-set.any.js",
+    "wasm/jsapi/table/grow.any.js",
+    "wasm/jsapi/table/length.any.js",
+    "wasm/jsapi/table/toString.any.js",
+];
+
 const ZEROWEB_CACHE_FILTERED_RESPONSE_TYPES_SOURCE: &str = r#"
 // META: title=ZeroWeb CacheStorage filtered response type generation
 // META: global=window
@@ -2427,6 +2471,80 @@ pub fn run_fs_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<H
                             (*path).to_string(),
                             vec![HarnessSubtestResult {
                                 name: format!("load File System support {script}"),
+                                status: HarnessStatus::Fail,
+                                message: Some(error.to_string()),
+                            }],
+                        );
+                    }
+                }
+            }
+            let support_refs = support_sources
+                .iter()
+                .map(|(name, source)| (name.as_str(), source.as_str()))
+                .collect::<Vec<_>>();
+            let html = any_js_window_wrapper(path, &support_refs, &case_source);
+            let results = run_testharness_html(wpt_root, path, &html, &harness_source, CASE_TIMEOUT);
+            ((*path).to_string(), results)
+        })
+        .collect()
+}
+
+/// Run the pinned upstream WebAssembly jsapi window subset
+/// （page-wasm goal M1 / DC-1）。结构同 [`run_fs_cases`]：固定清单 + META script
+/// 自动解析 + [`any_js_window_wrapper`] window 变体执行。
+pub fn run_wasm_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    let harness_source = match std::fs::read_to_string(wpt_root.join("resources/testharness.js")) {
+        Ok(source) => source,
+        Err(error) => {
+            return WASM_CASES
+                .iter()
+                .filter(|path| filter.is_none_or(|filter| path.contains(filter)))
+                .map(|path| {
+                    (
+                        (*path).to_string(),
+                        vec![HarnessSubtestResult {
+                            name: "load testharness.js".into(),
+                            status: HarnessStatus::Fail,
+                            message: Some(error.to_string()),
+                        }],
+                    )
+                })
+                .collect();
+        }
+    };
+
+    WASM_CASES
+        .iter()
+        .filter(|path| filter.is_none_or(|filter| path.contains(filter)))
+        .map(|path| {
+            let case_source = match std::fs::read_to_string(wpt_root.join(path)) {
+                Ok(source) => source,
+                Err(error) => {
+                    return (
+                        (*path).to_string(),
+                        vec![HarnessSubtestResult {
+                            name: "load WebAssembly case".into(),
+                            status: HarnessStatus::Fail,
+                            message: Some(error.to_string()),
+                        }],
+                    );
+                }
+            };
+            let case_dir = Path::new(path).parent().unwrap_or_else(|| Path::new(""));
+            let mut support_sources = Vec::new();
+            for script in wpt_meta_scripts(path, &case_source) {
+                let support_path = if let Some(root_relative) = script.strip_prefix('/') {
+                    wpt_root.join(root_relative)
+                } else {
+                    wpt_root.join(case_dir).join(&script)
+                };
+                match std::fs::read_to_string(support_path) {
+                    Ok(source) => support_sources.push((script, source)),
+                    Err(error) => {
+                        return (
+                            (*path).to_string(),
+                            vec![HarnessSubtestResult {
+                                name: format!("load WebAssembly support {script}"),
                                 status: HarnessStatus::Fail,
                                 message: Some(error.to_string()),
                             }],
