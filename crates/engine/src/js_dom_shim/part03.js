@@ -3637,6 +3637,11 @@
         if (_elConnected(el)) {
           var ccb = entry.ctor.prototype && entry.ctor.prototype.connectedCallback;
           if (typeof ccb === 'function') { try { ccb.call(el); } catch (_e) {} }
+          // WC-M3 切片 8 第十一小步（web-components goal）：连接态记账同步——upgrade 期
+          // 已派 connected 的元素登记 `_ceConn`（key 经 _ceConnKeyFor，与 _ceApplyConn
+          // 同源），防 markup 构造面（parentNode 先指容器的形态——upgrade 的
+          // _elConnected 判真）后续 _ceApplyConn 重复派发。
+          _ceConn[_ceConnKeyFor(el)] = true;
         }
       }
     }
@@ -3929,6 +3934,51 @@
   function _elKey(sel, handle) {
     return handle ? ('@' + handle) : sel;
   }
+  // WC-M3 切片 8 第十一小步（web-components goal）：CE 连接态记账 key——sel/handle 元素
+  // 用 _elKey；plain（_zwMEl）元素按**对象身份**盖章（_elKey(null,null) 对全部 plain
+  // 元素同值 null，`'plain:'+key` 记账跨元素碰撞——多 plain custom 元素只首个派
+  // connected，markup 构造面（innerHTML 解析产物）整簇失效的根因之一）。
+  var _zwPlainCeSeq = 0;
+  function _ceConnKeyFor(node) {
+    var ns = null, nh = null;
+    try { ns = node.__zwSelector || null; } catch (_eCkNs) { ns = null; }
+    try { nh = node.__zwHandle || null; } catch (_eCkH) { nh = null; }
+    if (ns || nh) return _elKey(ns, nh);
+    try {
+      if (node.__zwPlainCeId === undefined) {
+        _zwPlainCeSeq += 1;
+        node.__zwPlainCeId = 'p' + _zwPlainCeSeq;
+      }
+      return 'plain:' + node.__zwPlainCeId;
+    } catch (_eCkP) { return 'plain:?'; }
+  }
+  // markup 构造面的 CE 生命周期附着口（innerHTML/outerHTML/insertAdjacentHTML 解析产物
+  // ——spec「创建元素」步：lookup definition → construct（upgrade：ctor + 初始
+  // attributeChanged）→ connected（容器已连时）。连接判定**双源**：调用方的
+  // parentConnected（sel host contains / handle 记账）+ 根自身的 parentNode 链上行
+  //（_elConnected——跨文档插入 detached doc 树（新 doc 的 documentElement 子）等
+  // 记账未覆盖形态的兜底；spec connected = shadow-including root is document，
+  // detached doc 亦真——WPT reactions cross-document connector 簇）。
+  // upgrade 期 _elConnected 判真（parentNode 先指容器形态）经 _ceUpgradeNode 的记账
+  // 同步不重复；此处 _ceApplyConn 的 was 门兜底。
+  globalThis.__zwCeAttachForAdded = function (roots, parentConnected) {
+    try {
+      var list = roots ? (roots.length !== undefined ? roots : [roots]) : [];
+      for (var i = 0; i < list.length; i++) {
+        var root = list[i];
+        if (!root || typeof root !== 'object') continue;
+        var nt = 0;
+        try { nt = root.nodeType; } catch (_eNtA) { nt = 0; }
+        if (nt !== 1) continue;
+        _ceUpgradeSubtree(root);
+        var pc = parentConnected === true;
+        if (!pc) {
+          try { pc = _elConnected(root); } catch (_ePcW) { pc = pc; }
+        }
+        if (pc) _ceApplyConn(root, true);
+      }
+    } catch (_eCea) {}
+  };
   // WC-M3 切片 8 第二增量（web-components goal，spec DOM §retargeting / §shadow-including）：
   // world 无关的关系 helpers——parentNode 链 + 「nodeType 11 且有 host」统一判定 shadow
   // root（plain 轻量 shadow 对象与 handle 容器 wrapper 同构）。R167 与 composedPath
@@ -4322,13 +4372,12 @@
         entry = _ceEntryFor(key, ns, nh);
       } else if (isElement) {
         // plain 元素（_zwMEl）：tag 反查 registry（_realTag 对无 sel/handle 回落 DIV，
-        // 不能用——直接读 tagName/localName）。
+        // 不能用——直接读 tagName/localName）。记账 key 经 _ceConnKeyFor（对象身份章）。
         var ptag = '';
         try { ptag = String(node.tagName || node.localName || '').toLowerCase(); } catch (_ePt) { ptag = ''; }
         if (ptag) {
-          var pkey = 'plain:' + key;
           entry = _ce_registry[ptag] || null;
-          key = pkey;
+          key = _ceConnKeyFor(node);
         }
       }
       if (entry) {
@@ -8648,6 +8697,91 @@
     // 调 `el.setAttributeNS(ns, qn, v)`——旧缺方法抛 TypeError 整 subtest 崩）。最小语义：忽略 ns 按
     // qualifiedName 存（与元素 proxy NS 族 `_nsQualName` 的「忽略 ns 按限定名」既有近似一致）。
     node.setAttributeNS = function (_ns, qn, v) { node.setAttribute(qn, v); };
+    // WC-M3 切片 8 第十一小步（web-components goal）：NS 读/测/删三件——WPT reactions
+    // harness 的 `create_attribute_changed_callback_log` 调 `element.getAttributeNS(ns,
+    // name)` 记账（upgrade 初始 attributeChanged 面的每一案），_zwMEl 缺方法 → TypeError
+    // 被派发侧吞 → 日志缺 attributeChanged（got [constructed, connected] 根因）。NS 匹配
+    // 按 (ns, local)（entry.ns 缺省 null；local = 限定名冒号后段，HTML 形态恒无名前缀）。
+    var _zwMNsLocal = function (name) {
+      var c = String(name).indexOf(':');
+      return c >= 0 ? String(name).slice(c + 1) : String(name);
+    };
+    var _zwMNsMatch = function (entry, ns, local) {
+      var eNs = entry && entry.ns != null ? String(entry.ns) : null;
+      return eNs === (ns == null || ns === '' ? null : String(ns)) && _zwMNsLocal(entry.name) === String(local);
+    };
+    node.getAttributeNS = function (ns, local) {
+      for (var i = 0; i < attrs.length; i++) {
+        if (_zwMNsMatch(attrs[i], ns, local)) return attrs[i].value;
+      }
+      return null;
+    };
+    node.hasAttributeNS = function (ns, local) {
+      for (var i = 0; i < attrs.length; i++) {
+        if (_zwMNsMatch(attrs[i], ns, local)) return true;
+      }
+      return false;
+    };
+    node.removeAttributeNS = function (ns, local) {
+      for (var i = attrs.length - 1; i >= 0; i--) {
+        if (_zwMNsMatch(attrs[i], ns, local)) attrs.splice(i, 1);
+      }
+    };
+    // WC-M3 切片 8 第十一小步（web-components goal）：plain 元素 outerHTML setter——
+    // 解析 + 父容器原位替换（_zwMEl 父 splice childNodes / handle 容器 splice
+    // _handleChildren）+ handle 父的 MO record + 替换产物 CE 构造/连接。旧无 setter：
+    // 赋值成 own expando 静默 no-op（WPT reactions testInsertingMarkup
+    // 'firstChild.outerHTML = markup' 第二轮起 firstChild 是前轮解析产物 = plain → 整面
+    // got []）。仅定义 set（get 缺省 undefined 与现状一致，零读回归）。
+    Object.defineProperty(node, 'outerHTML', {
+      configurable: true,
+      set: function (markup) {
+        var parent = null;
+        try { parent = node.parentNode; } catch (_eOhP) { parent = null; }
+        if (!parent || typeof parent !== 'object') return;
+        var added = _zwFragmentAdded(markup == null ? '' : String(markup));
+        if (typeof _ceApplyConn === 'function') {
+          try { _ceApplyConn(node, false); } catch (_eOhD) {}
+        }
+        var idx = -1;
+        if (parent.childNodes && typeof parent.childNodes.indexOf === 'function') {
+          idx = parent.childNodes.indexOf(node);
+          if (idx >= 0) {
+            parent.childNodes.splice(idx, 1);
+            for (var j = added.length - 1; j >= 0; j--) parent.childNodes.splice(idx, 0, added[j]);
+            // WC-M3 切片 8 第十一小步：parent 链重指/清链（同 part04 handle 父形态）。
+            for (var j2 = 0; j2 < added.length; j2++) {
+              if (added[j2]) { try { _zwForceParentLink(added[j2], parent); } catch (_eOhPl3) {} }
+            }
+            try { _zwForceParentLink(node, null); } catch (_eOhPl4) {}
+          }
+        } else if (parent.__zwHandle && _handleChildren[parent.__zwHandle]) {
+          var arr = _handleChildren[parent.__zwHandle];
+          idx = arr.indexOf(node);
+          if (idx < 0) {
+            for (var fi = 0; fi < arr.length; fi++) {
+              if (arr[fi] === node) { idx = fi; break; }
+            }
+          }
+          if (idx >= 0) {
+            arr.splice(idx, 1);
+            for (var k = added.length - 1; k >= 0; k--) arr.splice(idx, 0, added[k]);
+            for (var k2 = 0; k2 < added.length; k2++) {
+              if (added[k2]) { try { _zwForceParentLink(added[k2], parent); } catch (_eOhPl5) {} }
+            }
+            try { _zwForceParentLink(node, null); } catch (_eOhPl6) {}
+            if (typeof _mo_notify === 'function') {
+              _mo_notify(null, parent.__zwHandle, { type: 'childList', addedNodes: added, removedNodes: [node] });
+            }
+          }
+        }
+        if (idx >= 0 && typeof globalThis.__zwCeAttachForAdded === 'function') {
+          var pcOh = false;
+          try { pcOh = _elConnected(parent); } catch (_eOhC) { pcOh = false; }
+          globalThis.__zwCeAttachForAdded(added, pcOh);
+        }
+      },
+    });
     // js-dom M3 R96：`.attributes` NamedNodeMap 视图（WPT attributes.html "include all qualified
     // names"——`Object.getOwnPropertyNames(el.attributes)` 期望 [indices…, qualified names…]，
     // 旧裸 attrs 数组把方法名（length/item/…）当 own keys + named getter 语义全无）。Lazy

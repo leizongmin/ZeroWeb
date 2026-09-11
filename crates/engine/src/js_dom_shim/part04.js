@@ -6441,7 +6441,47 @@ return _tplContent;
                 } else {
                   _mo_notify(sel, handle, { type: 'childList', addedNodes: _iahAdded, removedNodes: [] });
                 }
+                // WC-M3 切片 8 第十一小步（web-components goal）：解析产物的 CE 构造/连接
+                //（实际插入父的连接态——beforebegin/afterend 站 target 的父）。
+                if (typeof globalThis.__zwCeAttachForAdded === 'function') {
+                  try {
+                    globalThis.__zwCeAttachForAdded(_iahAdded, _ceParentConnected(_iahParentSel, _iahParentHandle));
+                  } catch (_eCeIah) {}
+                }
               } catch (_e) {}
+            }
+            // WC-M3 切片 8 第十一小步（web-components goal）：handle-only 容器形态
+            //（target 无 sel——WPT reactions 'insertAdjacentHTML on Element' 的
+            // createElement 容器；旧分支 gate 在 `sel` → 整体 no-op）。解析 + 既有
+            // proxy 插入原语逐个落位（registry 记账 + MO record + CE attach 全链）。
+            if (!sel && handle) {
+              var _iahHAdded = _zwFragmentAdded(text, handle);
+              var _iahHSelf = _makeProxy(sel, handle);
+              var _iahHPos = String(position == null ? '' : position).trim().toLowerCase();
+              var _iahHParent = null;
+              try { _iahHParent = _iahHSelf.parentNode; } catch (_eIahHp) { _iahHParent = null; }
+              if (_iahHPos === 'beforeend') {
+                for (var _iahHi = 0; _iahHi < _iahHAdded.length; _iahHi++) {
+                  if (_iahHAdded[_iahHi]) _iahHSelf.appendChild(_iahHAdded[_iahHi]);
+                }
+              } else if (_iahHPos === 'afterbegin') {
+                var _iahHFc = null;
+                try { _iahHFc = _iahHSelf.firstChild; } catch (_eIahHf) { _iahHFc = null; }
+                for (var _iahHj = 0; _iahHj < _iahHAdded.length; _iahHj++) {
+                  if (_iahHAdded[_iahHj]) _iahHSelf.insertBefore(_iahHAdded[_iahHj], _iahHFc);
+                }
+              } else if (_iahHParent && typeof _iahHParent.insertBefore === 'function') {
+                var _iahHRef = null;
+                if (_iahHPos === 'beforebegin') {
+                  _iahHRef = _iahHSelf;
+                } else {
+                  try { _iahHRef = _iahHSelf.nextSibling; } catch (_eIaiHn) { _iahHRef = null; }
+                }
+                for (var _iahHk = 0; _iahHk < _iahHAdded.length; _iahHk++) {
+                  if (_iahHAdded[_iahHk]) _iahHParent.insertBefore(_iahHAdded[_iahHk], _iahHRef);
+                }
+              }
+              return undefined;
             }
             return undefined;
           };
@@ -6547,12 +6587,65 @@ return _tplContent;
                 "Failed to execute 'insertAdjacentElement' on 'Element': A document node cannot be inserted here.",
                 'HierarchyRequestError');
             }
+            // ⓪ WC-M3 切片 8 第十一小步（web-components goal）：handle-only 容器形态
+            //（target 无 sel——createElement 容器 + createElement 元素，WPT reactions
+            // connector 簇形态；旧两分支都 gate 在 `sel` → 整体 no-op，connected 永不派）。
+            // 经既有 proxy 插入原语（appendChild/insertBefore——registry 记账 + MO record +
+            // _ceApplyConn 全链）实现四位置；移动语义的断连由 insertBefore 自身的
+            // reparent 摘除面承接，显式预断连保 _ceConn 记账收敛。
+            if (!sel && handle && element.__zwHandle) {
+              var _iaeSelf = _makeProxy(sel, handle);
+              var _iaeParent = null;
+              try { _iaeParent = _iaeSelf.parentNode; } catch (_eIaeP) { _iaeParent = null; }
+              // WC-M3 切片 8 第十一小步：插入后按**元素自身** parent 链判连接态收口
+              //（detached doc 树的 documentElement 容器无 _ceConn 记账——容器记账门
+              // 恒 false 漏 connected；spec connected = 树根是 document，detached doc
+              // 亦真。adopted 由 _ceApplyConn 的 old/new doc 比对面承接）。
+              if (pos === 'beforeend') {
+                if (typeof _ceApplyConn === 'function') { try { _ceApplyConn(element, false); } catch (_eIaeD0) {} }
+                _iaeSelf.appendChild(element);
+                if (typeof _elConnected === 'function') {
+                  try { _ceApplyConn(element, _elConnected(element)); } catch (_eIaeC0) {}
+                }
+                return element;
+              }
+              if (pos === 'afterbegin') {
+                var _iaeFc = null;
+                try { _iaeFc = _iaeSelf.firstChild; } catch (_eIaeF) { _iaeFc = null; }
+                if (typeof _ceApplyConn === 'function') { try { _ceApplyConn(element, false); } catch (_eIaeD1) {} }
+                _iaeSelf.insertBefore(element, _iaeFc);
+                if (typeof _elConnected === 'function') {
+                  try { _ceApplyConn(element, _elConnected(element)); } catch (_eIaeC1) {}
+                }
+                return element;
+              }
+              if (_iaeParent && typeof _iaeParent.insertBefore === 'function') {
+                var _iaeRef = null;
+                if (pos === 'beforebegin') {
+                  _iaeRef = _iaeSelf;
+                } else {
+                  try { _iaeRef = _iaeSelf.nextSibling; } catch (_eIaeN) { _iaeRef = null; }
+                }
+                if (typeof _ceApplyConn === 'function') { try { _ceApplyConn(element, false); } catch (_eIaeD2) {} }
+                _iaeParent.insertBefore(element, _iaeRef);
+                if (typeof _elConnected === 'function') {
+                  try { _ceApplyConn(element, _elConnected(element)); } catch (_eIaeC2) {}
+                }
+                return element;
+              }
+              return null;
+            }
             // ① handle 子：host InsertAdjacentElement（复用 append_child reparent 移动语义）。
             if (
               sel &&
               element.__zwHandle &&
               typeof __zw_insert_adjacent_element === 'function'
             ) {
+              // WC-M3 切片 8 第十一小步：移动语义先断旧树连接态（_ceConn 已记账才真派
+              // disconnect；跨文档移动的 adopted 在重连分支的 doc 比对面）。
+              if (typeof _ceApplyConn === 'function') {
+                try { _ceApplyConn(element, false); } catch (_eCeIaeD) {}
+              }
               __zw_insert_adjacent_element(sel, pos, element.__zwHandle);
               // R293（js-dom M4）：pending bucket 按**实际插入父**记账——beforebegin/
               // afterend 的子落在 target 的父（overlay 从父的 _childNodeList 读，
@@ -6584,6 +6677,12 @@ return _tplContent;
               } catch (_e293np) {}
               _mo_notify(_r293pSel, _r293pHandle, { type: 'childList', addedNodes: [element], removedNodes: [], nextSibling: _r293ref });
               if (globalThis._zwSiblingBaseInvalidateAll) globalThis._zwSiblingBaseInvalidateAll();
+              // WC-M3 切片 8 第十一小步（web-components goal）：插入元素（已构造）的
+              // connected 派发——实际插入父的连接态（WPT reactions 'insertAdjacentElement
+              // on Element' connector 簇）。
+              if (typeof _ceApplyConn === 'function') {
+                try { _ceApplyConn(element, _ceParentConnected(_r293pSel, _r293pHandle)); } catch (_eCeIae) {}
+              }
               return element;
             }
             // R182（js-dom M4）：sel 子形态（静态页面元素——无 handle，WPT
@@ -6632,6 +6731,10 @@ return _tplContent;
             // 无可解析父（detached/root 越界）→ 保守 null 返（旧行为）。
             if (!_r182ParentSel) return null;
             var _r182ChildSel = element.__zwSelector;
+            // WC-M3 切片 8 第十一小步：移动语义先断旧树连接态（同 handle 分支）。
+            if (typeof _ceApplyConn === 'function') {
+              try { _ceApplyConn(element, false); } catch (_eCeIaeD2) {}
+            }
             if (typeof __zw_insert_adjacent_sel_element === 'function') {
               try { __zw_insert_adjacent_sel_element(sel, pos, _r182ChildSel); } catch (_e182h) {}
             }
@@ -6651,6 +6754,11 @@ return _tplContent;
               //（overlay 差异不在其失效面），sel 子移入/移出旧父与新父两站须重读。
               if (globalThis._zwSiblingBaseInvalidateAll) globalThis._zwSiblingBaseInvalidateAll();
             } catch (_e182n) {}
+            // WC-M3 切片 8 第十一小步（web-components goal）：sel 子插入的 connected 派发
+            //（同 handle 分支——R182 形态）。
+            if (typeof _ceApplyConn === 'function') {
+              try { _ceApplyConn(element, _ceParentConnected(_r182ParentSel, null)); } catch (_eCeIae2) {}
+            }
             return element;
           };
         }
@@ -7654,6 +7762,24 @@ return _tplContent;
             if (_zwIhQueueSlotchange) {
               try { globalThis.__zwMaybeQueueSlotchange(handle); } catch (_eScIh) {}
             }
+            // WC-M3 切片 8 第十一小步（web-components goal，spec replace-all → 移除步）：
+            // 被替换子树的 CE 断连——innerHTML 整体替换前已连的 custom element（前一轮
+            // 解析产物）派 disconnectedCallback（WPT reactions testNodeDisconnector
+            // 'parentNode.innerHTML = ""' 簇——got [] 根因：只插新不删旧）。
+            if (typeof _ceApplyConn === 'function' && _ihRemoved && _ihRemoved.length) {
+              for (var _ihR = 0; _ihR < _ihRemoved.length; _ihR++) {
+                try { _ceApplyConn(_ihRemoved[_ihR], false); } catch (_eCeIhR) {}
+              }
+            }
+            // WC-M3 切片 8 第十一小步（web-components goal，spec create-element 步）：
+            // markup 解析产物的 CE 构造/连接——registry 命中 → construct（ctor + 初始
+            // attributeChanged），容器已连 → connectedCallback（WPT reactions
+            // 'innerHTML on ...' inserting-markup 簇 + builtin-coverage 解析实例化面）。
+            if (typeof globalThis.__zwCeAttachForAdded === 'function') {
+              try {
+                globalThis.__zwCeAttachForAdded(_ihAdded, _ceParentConnected(sel, handle));
+              } catch (_eCeIh) {}
+            }
             // R304（js-dom M4）：innerHTML 解析 wrapper 打挂父槽（sel 容器的同 turn
             // 可见性——wrapper 无 handle/sel，_zwOverlayPendingChildNodes 的反链
             // miss 使 firstChild/childNodes 在 host apply 前读 stale 快照；R303
@@ -7959,13 +8085,62 @@ return _tplContent;
                 var _ohN = _ohAdded[_ohI];
                 if (_ohN && _ohN.id && typeof _zwPAIdAdd === 'function') _zwPAIdAdd(_ohN);
               }
+              // WC-M3 切片 8 第十一小步（web-components goal）：替换片段的 CE 构造/连接
+              //（父树连接态——被替换元素自身在父树内，父连即子连）。
+              if (typeof globalThis.__zwCeAttachForAdded === 'function') {
+                try {
+                  globalThis.__zwCeAttachForAdded(_ohAdded, _ceParentConnected(sel, handle));
+                } catch (_eCeOh) {}
+              }
             } catch (_e) {}
           } else if (handle) {
             var _ohParentSel = null;
+            var _ohParentHandle = null;
             try {
               var _ohLink = _zwNodeParent[handle];
               if (_ohLink && _ohLink.parentSel) _ohParentSel = _ohLink.parentSel;
+              if (_ohLink && _ohLink.parentHandle) _ohParentHandle = _ohLink.parentHandle;
             } catch (_eP125) {}
+            // WC-M3 切片 8 第十一小步（web-components goal）：handle 父容器形态（WPT
+            // reactions testInsertingMarkup 'firstChild.outerHTML = markup'——旧仅认
+            // parentSel，handle 容器内的整体替换整体 no-op）。registry 原位替换：摘自身、
+            // 解析产物同位插入、MO record、自身断连 + 产物 CE 构造/连接。
+            if (!_ohParentSel && _ohParentHandle && _handleChildren[_ohParentHandle]) {
+              var _ohHArr = _handleChildren[_ohParentHandle];
+              var _ohSelfProxy = _makeProxy(sel, handle);
+              var _ohIdx = _ohHArr.indexOf(_ohSelfProxy);
+              if (_ohIdx < 0) {
+                for (var _ohFi = 0; _ohFi < _ohHArr.length; _ohFi++) {
+                  if (_ohHArr[_ohFi] && _ohHArr[_ohFi].__zwHandle === handle) { _ohIdx = _ohFi; break; }
+                }
+              }
+              if (_ohIdx >= 0) {
+                var _ohRAdded = _zwFragmentAdded(value);
+                if (typeof _ceApplyConn === 'function') {
+                  try { _ceApplyConn(_ohSelfProxy, false); } catch (_eCeOhD) {}
+                }
+                _ohHArr.splice(_ohIdx, 1);
+                for (var _ohRi = _ohRAdded.length - 1; _ohRi >= 0; _ohRi--) {
+                  _ohHArr.splice(_ohIdx, 0, _ohRAdded[_ohRi]);
+                }
+                // WC-M3 切片 8 第十一小步：parent 链重指（解析产物的 parentNode 原挂在
+                // 解析 pseudo-body——不重指则下一轮以本元素为基准的关系/CE 判定全走
+                // 假树；removed 自身清链）。
+                var _ohNewParent = _makeProxy(null, _ohParentHandle);
+                for (var _ohRl = 0; _ohRl < _ohRAdded.length; _ohRl++) {
+                  if (_ohRAdded[_ohRl]) { try { _zwForceParentLink(_ohRAdded[_ohRl], _ohNewParent); } catch (_eOhPl) {} }
+                }
+                try { _zwForceParentLink(_ohSelfProxy, null); } catch (_eOhPl2) {}
+                try { delete _zwNodeParent[handle]; } catch (_eOhNp) {}
+                if (typeof _zwMarkRemovedHandle === 'function') _zwMarkRemovedHandle(handle);
+                _mo_notify(null, _ohParentHandle, { type: 'childList', addedNodes: _ohRAdded, removedNodes: [_ohSelfProxy] });
+                if (typeof globalThis.__zwCeAttachForAdded === 'function') {
+                  try {
+                    globalThis.__zwCeAttachForAdded(_ohRAdded, _ceParentConnected(null, _ohParentHandle));
+                  } catch (_eCeOh3) {}
+                }
+              }
+            }
             if (_ohParentSel && typeof __zw_insert_adjacent_html === 'function'
                 && typeof __zw_remove_handle === 'function') {
               var _ohHAdded = _zwFragmentAdded(value);
@@ -7976,6 +8151,12 @@ return _tplContent;
               if (typeof _zwMarkRemovedHandle === 'function') _zwMarkRemovedHandle(handle);
               _mo_notify(sel, handle, { type: 'childList', addedNodes: _ohHAdded, removedNodes: [_ohSelf] });
               _ceApplyConn(_ohSelf, false);
+              // WC-M3 切片 8 第十一小步：替换片段的 CE 构造/连接（父 sel 树连接态）。
+              if (typeof globalThis.__zwCeAttachForAdded === 'function') {
+                try {
+                  globalThis.__zwCeAttachForAdded(_ohHAdded, _ceParentConnected(_ohParentSel, null));
+                } catch (_eCeOh2) {}
+              }
               for (var _ohJ = 0; _ohJ < _ohHAdded.length; _ohJ++) {
                 var _ohN2 = _ohHAdded[_ohJ];
                 if (_ohN2 && _ohN2.id && typeof _zwPAIdAdd === 'function') _zwPAIdAdd(_ohN2);
