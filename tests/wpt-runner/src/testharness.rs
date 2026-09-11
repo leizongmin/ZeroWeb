@@ -4369,6 +4369,16 @@ fn run_testharness_html_inner(
             let raf_ms = playback_clock_origin.elapsed().as_secs_f64() * 1000.0;
             let _ = webview.execute_script(&format!("__zw_raf_tick({raf_ms});"));
         }
+        // event-loop-spec M1 切片 3a：observer tick 接线——对齐 renderer post-render tick
+        // 语义（apps/renderer/src/page_scripts.rs `tick_observers`：`__zw_observers_tick()`
+        // 重算 IO/RO threshold 越界/size-diff 并派发后续通知）。testharness runner 无渲染
+        // 循环，此前 observe() 之后的动态跟踪面（scroll/样式变化后再通知）天然不可达——
+        // IO 基线 65× `entries.length expected N but got 1` 失败簇的直接根因
+        //（evidence/2026-09-11-m1-observers-wpt-baseline.md）。回调内 DOM 写走 native
+        // 绑定直改 live doc + sync_render_after_native_dom 重渲染（execute_script 既有
+        // 路径），rect 快照随渲染刷新，下一轮 tick 读到新几何。无 observer 注册时 shim
+        // 侧空表早返，零开销。
+        let _ = webview.execute_script("if(globalThis.__zw_observers_tick)globalThis.__zw_observers_tick();");
         // js-dom R342：动画时钟泵——页面脚本设置的 transition/animation 需要第二轮
         // re-style + 时钟 tick 才产生事件（run_page_scripts 只执行脚本不重渲染）。
         // 真实时间作时钟源：probe 循环的墙钟间隔自然推进 30ms/100ms 量级测试动画；

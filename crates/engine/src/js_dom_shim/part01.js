@@ -2702,47 +2702,63 @@
     if (x1 <= x0 || y1 <= y0) return { x: 0, y: 0, w: 0, h: 0 };
     return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
   }
-  // 归一化 threshold：number | number[] → 升序去重、clamp 到 [0,1] 的数组（空→[0]）。
-  function _io_normThresholds(threshold) {
-    var arr = [];
-    if (typeof threshold === 'number') {
-      arr = [threshold];
-    } else if (Object.prototype.toString.call(threshold) === '[object Array]') {
-      for (var i = 0; i < threshold.length; i++) {
-        if (typeof threshold[i] === 'number') arr.push(threshold[i]);
+  // 归一化 threshold（event-loop-spec M1 切片 3b，spec 构造器步骤直译）：number |
+  // number[] → 升序数组（空 → [0]）。IDL union (double or sequence<double>) 转换——
+  // 非 number 元素（如 string "foo"）→ TypeError（union 分支不匹配）；任一值 <0 或
+  // >1 → RangeError（spec：不再 clamp 到 [0,1]，此前 clamp 吞掉了 observer-exceptions
+  // 断言面）。无去重（spec 仅排序 + 空表补 0，无去重步骤）。
+  // https://w3c.github.io/IntersectionObserver/#initialize-a-new-intersectionobserver
+  function _io_parseThresholds(threshold) {
+    var raw;
+    if (threshold === undefined) raw = [0];
+    else if (typeof threshold === 'number') raw = [threshold];
+    else if (Object.prototype.toString.call(threshold) === '[object Array]') raw = threshold;
+    else {
+      throw new TypeError('Failed to construct IntersectionObserver: threshold must be double or sequence<double>.');
+    }
+    var ths = [];
+    for (var i = 0; i < raw.length; i++) {
+      var v = raw[i];
+      if (typeof v !== 'number') {
+        throw new TypeError('Failed to construct IntersectionObserver: threshold values must be numbers.');
       }
+      if (v < 0 || v > 1) {
+        throw new RangeError('Failed to construct IntersectionObserver: Threshold values must be numbers between 0 and 1.');
+      }
+      ths.push(v);
     }
-    if (arr.length === 0) arr = [0];
-    arr.sort(function(a, b) { return a - b; });
-    var uniq = [];
-    for (var j = 0; j < arr.length; j++) {
-      var v = arr[j];
-      if (v < 0) v = 0; else if (v > 1) v = 1;
-      if (uniq.length === 0 || uniq[uniq.length - 1] !== v) uniq.push(v);
-    }
-    return uniq;
+    ths.sort(function(a, b) { return a - b; });
+    if (ths.length === 0) ths = [0];
+    return ths;
   }
   function _io_id(handle, sel) {
     if (handle != null) return 'h:' + handle;
     if (sel) return 's:' + sel;
     return null;
   }
-  // 解析 rootMargin 串（CSS margin shorthand）→ 4 个 {val, pct} 部分（top/right/bottom/left）。
-  // R2966：rootMargin 此前按 0 处理（defer）。px 直取并标记 pct=false；% 标记 pct=true（compute 时按
-  // root 维度展开：top/bottom→root 高，left/right→root 宽，spec §2.1）。其它单位/非法值 → 0（spec：
-  // rootMargin 仅支持 <length>/<percentage>，fail-to-parse 视为 0）。1-4 值按 CSS margin 简写展开。
+  // 解析 rootMargin 串（spec "parse a margin" 直译，event-loop-spec M1 切片 3b）→ 4 个
+  // {val, pct} 部分（top/right/bottom/left）。1-4 个 <length(px)> / <percentage> 组件按
+  // CSS margin 简写展开；空白串 → 全 0px（spec：zero tokens → ["0px"]）。>4 组件 /
+  // 非法 token（unitless "1"、em 等相对单位、calc()、!important、任意 ident）→
+  // throw SyntaxError DOMException（spec：Otherwise, return failure → SyntaxError）——
+  // 此前静默按 0 处理吞掉了 observer-exceptions 断言面。绝对长度单位换算（cm/in 等）
+  // 未实现（WPT 导入面未覆盖，component 匹配仅 px/%——注记的接受限制）。
+  // https://w3c.github.io/IntersectionObserver/#parse-a-margin
   function _io_parseRootMargin(str) {
     var raw = (typeof str === 'string' ? str : '').trim().split(/\s+/).filter(function (s) { return s.length > 0; });
-    if (raw.length === 0) raw = ['0px', '0px', '0px', '0px'];
-    else if (raw.length === 1) raw = [raw[0], raw[0], raw[0], raw[0]];
-    else if (raw.length === 2) raw = [raw[0], raw[1], raw[0], raw[1]];
-    else if (raw.length === 3) raw = [raw[0], raw[1], raw[2], raw[1]];
+    if (raw.length > 4) {
+      throw new (globalThis.DOMException || Error)('rootMargin must be specified in pixels or percent.', 'SyntaxError');
+    }
+    if (raw.length === 0) raw = ['0px'];
     var norm = function (s) {
-      var m = /^(-?\d+(?:\.\d+)?)(px|%)?$/.exec(String(s).trim());
-      if (!m) return { val: 0, pct: false };
+      var m = /^([+-]?(?:\d+(?:\.\d+)?|\.\d+))(px|%)$/.exec(String(s).trim());
+      if (!m) {
+        throw new (globalThis.DOMException || Error)('rootMargin must be specified in pixels or percent.', 'SyntaxError');
+      }
       return { val: parseFloat(m[1]) || 0, pct: m[2] === '%' };
     };
-    return [norm(raw[0]), norm(raw[1]), norm(raw[2]), norm(raw[3])];
+    var one = norm(raw[0]), two = norm(raw[1] || raw[0]), three = norm(raw[2] || raw[0]), four = norm(raw[3] || raw[1] || raw[0]);
+    return [one, two, three, four];
   }
   // 按 rootMargin 4 部分展开/收缩 root rect（负 margin 收缩）。% 按 root 自身维度展开（compute 时 rootRect
   // 已知）。返回新 rect（不改原）。零 margin（默认）→ 原样返回（零回归既有 IO 行为）。
@@ -2757,16 +2773,31 @@
   globalThis.IntersectionObserver = function(callback, options) {
     this._callback = callback;
     var opts = options || {};
-    this._thresholds = _io_normThresholds(opts.threshold);
-    // root：null（默认 viewport）或元素（取其 __zwSelector 的 rect）。
-    this._rootSel = (opts.root && opts.root.__zwSelector) ? opts.root.__zwSelector : null;
+    // spec 构造器步骤顺序：rootMargin parse（失败 SyntaxError）先于 threshold 范围检查。
     // R2966：rootMargin（CSS margin shorthand，px/%），compute 时展开/收缩 root rect。
     this._rootMargins = _io_parseRootMargin(opts.rootMargin);
+    this._thresholds = _io_parseThresholds(opts.threshold);
+    // root 属性（observer-attributes 断言 observer.root === 元素 / 默认 null）。
+    this._root = (opts.root == null) ? null : opts.root;
+    // root：null（默认 viewport）或元素（取其 __zwSelector 的 rect）。
+    this._rootSel = (opts.root && opts.root.__zwSelector) ? opts.root.__zwSelector : null;
     this._targets = {};        // id (h:handle / s:sel) -> { proxy }
-    this._lastRatio = {};      // id -> 上次派发的 ratio（undefined = 未派发过 → initial）
+    this._lastState = {};      // id -> { index, intersecting }（undefined = 未派发过 → initial）
     this._scheduled = false;
     _zwObservers.push(this);   // P1a Slice 2b：注册到 tick 表
   };
+  // readonly 属性 getter（event-loop-spec M1 切片 3b）——此前全 undefined
+  //（observer-attributes 5 断言簇：thresholds 数组 + rootMargin "0px 0px 0px 0px"
+  // 规范化串 + root 元素身份）。
+  // https://w3c.github.io/IntersectionObserver/#dom-intersectionobserver-root
+  Object.defineProperty(globalThis.IntersectionObserver.prototype, 'root', {
+    get: function() { return this._root; }, enumerable: true, configurable: true });
+  Object.defineProperty(globalThis.IntersectionObserver.prototype, 'thresholds', {
+    get: function() { return this._thresholds; }, enumerable: true, configurable: true });
+  Object.defineProperty(globalThis.IntersectionObserver.prototype, 'rootMargin', {
+    get: function() {
+      return this._rootMargins.map(function(m) { return m.val + (m.pct ? '%' : 'px'); }).join(' ');
+    }, enumerable: true, configurable: true });
   // 计算单个 target 的 intersection 数据（rect / ratio / isIntersecting）。
   globalThis.IntersectionObserver.prototype._compute = function(id) {
     var t = this._targets[id];
@@ -2784,15 +2815,27 @@
     var ratio = targetArea > 0 ? (inter.w * inter.h) / targetArea : 0;
     return { target: t.proxy, targetRect: targetRect, rootRect: rootRect, inter: inter, ratio: ratio, isIntersecting: inter.w > 0 && inter.h > 0 };
   };
-  // threshold 越界检测：未派发过（initial）或 ratio 与上次跨过任一 threshold 边界。
-  globalThis.IntersectionObserver.prototype._crossed = function(id, ratio) {
-    var prev = this._lastRatio[id];
-    if (prev == null) return true;
-    for (var i = 0; i < this._thresholds.length; i++) {
-      var th = this._thresholds[i];
-      if ((prev >= th) !== (ratio >= th)) return true;
-    }
-    return false;
+  // thresholdIndex 计算（event-loop-spec M1 切片 3a）：spec/Chromium 语义——
+  // 不相交 → 0；相交 → 首个 > ratio 的 threshold 索引（无则 thresholds.length）。
+  // 此前按 (prevRatio>=th)!==(ratio>=th) 判越阈：默认 threshold [0] 下 off→on（ratio
+  // 0→1）两侧均 >=0 → 永不判越阈 → 初次通知后再无任何通知（WPT IO 基线 65×
+  // `entries.length expected N but got 1` 失败簇根因，evidence/
+  // 2026-09-11-m1-observers-wpt-baseline.md）；边缘相交（ratio=0、threshold 0）同样漏判。
+  // https://w3c.github.io/IntersectionObserver/#update-intersection-observations-steps
+  globalThis.IntersectionObserver.prototype._thresholdIndex = function(ratio, isIntersecting) {
+    if (!isIntersecting) return 0;
+    var ths = this._thresholds, i = 0;
+    while (i < ths.length && ths[i] <= ratio) i++;
+    return i;
+  };
+  // 通知条件（spec update intersection observations 步骤直译）：thresholdIndex 或
+  // isIntersecting 任一与上次派发不同即排队 entry（isVisible 臂属 v2，范围外）。多
+  // threshold 下部分相交（相交但 ratio < threshold[0]）index 与不相交同为 0——仅
+  // isIntersecting 翻转时靠该 OR 臂派发（multiple-thresholds.html 断言面）。
+  globalThis.IntersectionObserver.prototype._crossed = function(id, index, isIntersecting) {
+    var prev = this._lastState[id];
+    if (!prev) return true;
+    return prev.index !== index || prev.intersecting !== isIntersecting;
   };
   // 排队一次 microtask 派发：遍历所有 target，对越阈值的构造 entry 投递 callback。
   globalThis.IntersectionObserver.prototype._schedule = function() {
@@ -2805,7 +2848,8 @@
       for (var id in self._targets) {
         var c = self._compute(id);
         if (!c) continue;
-        if (self._crossed(id, c.ratio)) {
+        var index = self._thresholdIndex(c.ratio, c.isIntersecting);
+        if (self._crossed(id, index, c.isIntersecting)) {
           entries.push({
             time: 0,
             target: c.target,
@@ -2816,7 +2860,7 @@
             isIntersecting: c.isIntersecting,
             toJSON: function() { return this; }
           });
-          self._lastRatio[id] = c.ratio;
+          self._lastState[id] = { index: index, intersecting: c.isIntersecting };
         }
       }
       if (entries.length > 0) {
@@ -2825,12 +2869,16 @@
     });
   };
   globalThis.IntersectionObserver.prototype.observe = function(target) {
-    if (!target) return this;
-    var id = _io_id(target.__zwHandle, target.__zwSelector);
-    if (id != null) {
-      this._targets[id] = { proxy: target };
-      this._schedule();
+    // spec observe(Element target)：IDL 接口转换——非 Element（string "foo"、number、
+    // null、无 nodeType 的 plain object {}）→ TypeError（observer-exceptions 断言面）。
+    // 身份判据用 nodeType===1（shim 全部元素 proxy 实现；shadow DOM / detached document
+    // 元素无 __zwHandle/__zwSelector 但 nodeType 仍为 1——observe 不得拒收）。
+    if (!target || typeof target !== 'object' || target.nodeType !== 1) {
+      throw new TypeError('Failed to execute observe on IntersectionObserver: parameter 1 is not of type Element.');
     }
+    var id = _io_id(target.__zwHandle, target.__zwSelector);
+    this._targets[id] = { proxy: target };
+    this._schedule();
     return this;
   };
   globalThis.IntersectionObserver.prototype.unobserve = function(target) {
@@ -2838,13 +2886,13 @@
     var id = _io_id(target.__zwHandle, target.__zwSelector);
     if (id != null) {
       delete this._targets[id];
-      delete this._lastRatio[id];
+      delete this._lastState[id];
     }
     return this;
   };
   globalThis.IntersectionObserver.prototype.disconnect = function() {
     this._targets = {};
-    this._lastRatio = {};
+    this._lastState = {};
     return this;
   };
   globalThis.IntersectionObserver.prototype.takeRecords = function() {
@@ -2931,14 +2979,17 @@
     });
   };
   globalThis.ResizeObserver.prototype.observe = function(target) {
-    if (!target) return this;
-    var id = _io_id(target.__zwHandle, target.__zwSelector);
-    if (id != null) {
-      // 已观察的 target 重复 observe：spec 视为 no-op（不重置 last），但 _schedule 的 size-diff
-      // 检测会在 layout 变化时自然派发（last 保留上次派发尺寸）。
-      this._targets[id] = { proxy: target };
-      this._schedule();
+    // observe(Element target) 的 IDL 接口转换——非 Element → TypeError（上游
+    // resize-observer/observe-003 断言面：`ro.observe({})` throw TypeError）。身份
+    // 判据 nodeType===1，同 IO observe 注记。
+    if (!target || typeof target !== 'object' || target.nodeType !== 1) {
+      throw new TypeError('Failed to execute observe on ResizeObserver: parameter 1 is not of type Element.');
     }
+    var id = _io_id(target.__zwHandle, target.__zwSelector);
+    // 已观察的 target 重复 observe：spec 视为 no-op（不重置 last），但 _schedule 的 size-diff
+    // 检测会在 layout 变化时自然派发（last 保留上次派发尺寸）。
+    this._targets[id] = { proxy: target };
+    this._schedule();
     return this;
   };
   globalThis.ResizeObserver.prototype.unobserve = function(target) {

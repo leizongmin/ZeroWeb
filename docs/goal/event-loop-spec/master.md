@@ -2,7 +2,7 @@
 
 **入口文档**: [../event-loop-spec.md](../event-loop-spec.md)
 **创建日期**: 2026-09-07（goal 拆分 bootstrap）
-**最后更新**: 2026-09-11（M1 完成——IO/RO 基线 29.7% + 时序差距清单落 evidence/）
+**最后更新**: 2026-09-11（M1 切片 3a+3b——IO/RO 基线 29.7% → 38.8%）
 
 ---
 
@@ -48,10 +48,27 @@ WPT 基线 → MO host 触发（方案 C 设计已存在）→ checkpoint spec �
 |---|------|------|
 | P1 | IO/RO WPT 用例覆盖为零（fetch 脚本 + 导入 + 基线） | ✅ 2026-09-11（基线 29.7% 落 evidence/） |
 | P2 | 事件循环时序差距清单（对照 spec 逐条）未建立 | ✅ 2026-09-11（evidence/2026-09-11-m1-event-loop-gap-list.md） |
+| P2.5 | IO/RO 语义修齐第一批（tick 接线 + threshold 越界 + 构造器校验/getter） | ✅ 2026-09-11（切片 3a+3b，基线 29.7% → 38.8%，evidence/2026-09-11-m1-slice3-observers-wiring-validation.md） |
 | P3 | MO host 触发未实施（通知端死路） | ⬜ M2 |
 | P4 | checkpoint 简化版（无 task queue、无 per-task checkpoint） | ⬜ M3 |
 
 ## 已完成切片
+
+### M1 切片 3a+3b — IO/RO 动态跟踪接线 + 语义修齐第一批（2026-09-11）✅
+
+- 切片 3a：runner probe 循环接 `__zw_observers_tick`（对齐 renderer `tick_observers`）
+  + IO threshold 越界判定 spec 化（`_thresholdIndex` + `_crossed` OR 臂——thresholdIndex
+  或 isIntersecting 任一变化即派发；旧双侧比较在默认 [0] 下永不判越阈 = 65× 簇根因）
+- 切片 3b：IO 构造器校验（threshold RangeError/TypeError、rootMargin SyntaxError
+  DOMException）+ `root`/`thresholds`/`rootMargin` getter + IO/RO `observe()` 非 Element
+  TypeError（nodeType 判据——第一版 handle/selector 判据误伤 shadow/detached 元素已修正）
+- 基线：IO 67→87（30.9%→40.1%）、RO 14→19（25.0%→33.9%）、合计 29.7%→38.8%（+9.1pp）
+- 质量门禁：make test 19,134P/0F + clippy 零警告 + fmt 干净；明细与翻绿清单落
+  `evidence/2026-09-11-m1-slice3-observers-wiring-validation.md`
+- 残留取序（3c+）：几何真值簇（transform/zoom/scroll-offset——多数属渲染流域，碰头
+  协调）、runner viewport 校准（800×600 vs 1280×800，**待用户决策**，牵动全部套件）、
+  documentElement.clientHeight viewport 化、zero-area ratio=1 + edge-inclusive、
+  target-is-root、detached-doc 初通知抑制
 
 ### M1 切片 2 — 事件循环时序差距清单（2026-09-11，纯文档）✅
 
@@ -79,14 +96,19 @@ WPT 基线 → MO host 触发（方案 C 设计已存在）→ checkpoint spec �
 
 ## 下一步计划
 
-1. **IO/RO 语义轻量修复队列**（M1 基线延伸，从失败聚类取序）：
-   - 切片 3a：runner 侧 observer tick 接线（对齐 renderer `tick_observers` 语义，
-     解锁动态跟踪面——IO 基线 65× `entries.length expected N but got 1` 簇的直接根因；
-     参照 `ZW_TESTHARNESS_RAF_FRAME_DRIVEN` runner 先例）
-   - 切片 3b：IO 构造器异常校验（threshold 范围 / rootMargin 语法 throw——
-     `observer-exceptions` 9 subtest 全簇失败，零几何依赖）
+1. **IO/RO 语义轻量修复第二批（切片 3c，从残留聚类取序，全 in-shim）**：
+   - documentElement.clientWidth/Height 对根元素返 viewport 尺寸（empty-root-margin）
+   - zero-area target intersectionRatio=1（spec §2.2.11-12）+ edge-inclusive isIntersecting
+   - target-is-root（root==target skip-to-step-11 臂 → 不相交）
+   - detached document 初通知抑制（ownerDocument≠主文档 → observe 不派初通知，
+     adopt 后 tick 重算；与 takeRecords 排队模型一并评估）
 2. **M2**：MO host 触发（方案 C 实施）
 3. **M3**：task queue + per-task checkpoint（kill-switch → A/B → default-on）
+
+**待用户决策清单**：
+- runner viewport 校准（1280×800 → 上游 WPT 校准 800×600）：牵动全部 testharness
+  套件的绝对几何期望（一次性大重校准），非轻量修复
+- requestIdleCallback 真实 idle 时序（已在 goal 范围外条款）
 
 **碰撞管理**：碰 engine 前先 `git log --since="14 days ago" -- crates/engine/
 crates/script-sandbox/` 核对渲染流域活跃面。
@@ -95,15 +117,17 @@ crates/script-sandbox/` 核对渲染流域活跃面。
 
 | 里程碑 | 状态 |
 |--------|------|
-| M1 — WPT 基线 + 时序差距清单 | ✅ 2026-09-11（基线 29.7% + 差距清单 + 失败聚类；IO/RO 语义修复队列延续执行） |
+| M1 — WPT 基线 + 时序差距清单 | ✅ 2026-09-11（基线 29.7% + 差距清单；语义修齐第一批 3a+3b 落地 → 38.8%，第二批 3c 取序中） |
 | M2 — MutationObserver host 触发 | ⬜ |
 | M3 — checkpoint spec 化 | ⬜ |
 
 ## 验证基线
 
 - 测试基线：立项时点全绿（`make test` / `make reftest` 入口，经 test-guard 包裹；
-  禁止裸跑 cargo test）
-- IO/RO 用例面：无基线（未导入/未建）
+  禁止裸跑 cargo test）。2026-09-11 切片 3a+3b 后：make test 19,134P/0F
+- IO/RO 用例面：基线 29.7%（IO 30.9% / RO 25.0%）→ 切片 3a+3b 后 **38.8%**
+  （IO 87/217 = 40.1% / RO 19/56 = 33.9%），明细见 evidence/
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过；
   时序变更必须 kill-switch + 全量 A/B 零回归；渲染相关门禁（product-smoke/bench-gate）
-  在 tick 排布变更轮按 run-rules §12 判断是否需要
+  在 tick 排布变更轮按 run-rules §12 判断是否需要（本切片仅 runner probe 循环加一次
+  shim 调用 + JS 语义，未触渲染管线，product-smoke 不适用）
