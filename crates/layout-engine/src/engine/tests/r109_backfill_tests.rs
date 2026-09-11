@@ -38,6 +38,7 @@ fn make_line(y: f32, height: f32) -> InlineLayoutLine {
             is_ahem_font: false,
             text: String::new(),
             source: None,
+            letter_spacing: 0.0,
             node_id: None,
             baseline_y: height,
         }],

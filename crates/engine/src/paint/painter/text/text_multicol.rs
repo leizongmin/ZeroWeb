@@ -407,6 +407,7 @@ mod r1424_tests {
                     is_ahem_font: true,
                     text: "Abcd".into(),
                     source: None,
+                    letter_spacing: 0.0,
                     node_id: None,
                     baseline_y: 20.0,
                 }],

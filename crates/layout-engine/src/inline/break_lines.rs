@@ -169,13 +169,19 @@ impl InlineFormattingContext {
                     // 连续纯空白 run 折叠为单个空格（last_was_collapsible_ws）。
                     if words.is_empty() {
                         if !current_line.runs.is_empty() && !last_was_collapsible_ws {
-                            current_x += self.advance_of(' ', run.font_id, run.font_size, run.is_ahem_font);
+                            // R4233（css-text-4 #letter-spacing）：空格亦为字符单元——
+                            // 词间纯空白 run / run 前导可折叠空格的 advance 同样计 ls
+                            //（与 R4232 词尾空格同语义；旧实现漏计 → c542-letter-sp-001
+                            // 行 6 span 后空格 advance 多 15px，词右移）。
+                            current_x += self.advance_of(' ', run.font_id, run.font_size, run.is_ahem_font)
+                                + run.letter_spacing;
                             last_was_collapsible_ws = true;
                         }
                         continue;
                     }
                     if has_leading_collapsible_space && !current_line.runs.is_empty() && !last_was_collapsible_ws {
-                        current_x += self.advance_of(' ', run.font_id, run.font_size, run.is_ahem_font);
+                        current_x += self.advance_of(' ', run.font_id, run.font_size, run.is_ahem_font)
+                            + run.letter_spacing;
                     }
                     last_was_collapsible_ws = false;
 

@@ -878,6 +878,10 @@ impl super::Painter {
                 text: String,
                 source: Option<zero_layout_engine::TextFragmentSource>,
                 node_id: NodeId,
+                // R4233：片段自身 letter-spacing（layout IFC 按 run 记账）——paint 侧
+                // glyph advance 须用片段值而非容器盒值（span 声明 ls 与容器不同时，
+                // 旧实现用容器值 → 字形间距/宽度与布局错位，c542-letter-sp-001 行 3/4）。
+                letter_spacing: f32,
             }
 
             let stored_fragments: Vec<PaintFragment> = if use_stored {
@@ -914,6 +918,7 @@ impl super::Painter {
                                 text: f.text.clone(),
                                 source: f.source.clone(),
                                 node_id: nid,
+                                letter_spacing: f.letter_spacing,
                             })
                         })
                     })
@@ -956,8 +961,15 @@ impl super::Painter {
                     })
                     .collect();
 
-                let parent_letter_spacing: NodeIdMap<f32> =
+                let mut parent_letter_spacing: NodeIdMap<f32> =
                     build_text_parent_override_map(doc, &box_node.text_node_letter_spacing);
+                // R4233：Path B 直系文本兜底——盒无 stored per-fragment 键时（合成盒 /
+                // 存储缺失），重跑 IFC 的直系文本 run 查不到覆盖会落 0，而容器自身 ls
+                // 即直系文本 run 的 ls（继承语义）。以盒 id 播种兜底；span 内 run 的
+                // 父键不受影响（paint advance 已改用片段值，见 render_fragment!）。
+                if let Some(nid) = box_node.node_id {
+                    parent_letter_spacing.entry(nid).or_insert(letter_spacing);
+                }
 
                 // R4133：word-spacing 声明在 inline 元素上时，layout IFC 的 element 分支
                 // 产出片段 node_id = 元素自身，text_node_word_spacing 按元素 id 键存。
@@ -1279,6 +1291,9 @@ impl super::Painter {
                                         None,
                                     ) as f32,
                                 };
+                                // R4233：per-fragment letter-spacing（同上 word-spacing 理由，
+                                // 镜像 R4133）——片段 run 声明的 ls ≠ 容器盒值时以片段为准。
+                                let frag_letter_spacing = fragment.letter_spacing;
                                 let frag_word_spacing = owner_style
                                     .map(|s| match s.word_spacing {
                                         LengthValue::Px(v) => v as f32,
@@ -1335,7 +1350,7 @@ impl super::Painter {
                                         ch,
                                         fragment.font_size,
                                         frag_is_ahem,
-                                    ) + letter_spacing
+                                    ) + frag_letter_spacing
                                         + if zero_style_system::is_word_separator(ch) {
                                             frag_word_spacing
                                         } else {
@@ -1387,7 +1402,7 @@ impl super::Painter {
                                             ch,
                                             fragment.font_size,
                                             frag_is_ahem,
-                                        ) + letter_spacing;
+                                        ) + frag_letter_spacing;
                                         if zero_style_system::is_word_separator(ch) {
                                             w + frag_word_spacing
                                         } else {
@@ -1416,7 +1431,7 @@ impl super::Painter {
                                                 )
                                             })
                                             .sum::<f32>()
-                                            + letter_spacing * base.chars().count() as f32;
+                                            + frag_letter_spacing * base.chars().count() as f32;
                                         if !annot.is_empty() {
                                             let annot_w: f32 = annot
                                                 .chars()
@@ -1493,7 +1508,13 @@ impl super::Painter {
                         .filter(|s| s.background_color != ColorValue::Transparent)
                         .map(|s| color_value_to_render(&s.background_color));
                     macro_rules! render_fragment {
-                        ($frag_x:expr, $frag_y:expr, $frag_width:expr, $baseline_offset:expr, $frag_fs:expr, $frag_text:expr, $frag_nid:expr, $is_ahem:expr, $frag_source:expr) => {{
+                        ($frag_x:expr, $frag_y:expr, $frag_width:expr, $baseline_offset:expr, $frag_fs:expr, $frag_text:expr, $frag_nid:expr, $is_ahem:expr, $frag_source:expr, $frag_ls:expr) => {{
+                            // R4233：per-fragment letter-spacing（镜像 R4133 per-fragment
+                            // word-spacing）——片段所属 run 声明的 ls 与容器盒不同时
+                            //（span{letter-spacing} / 容器内 normal 重置），glyph advance、
+                            // text_width、ruby 段宽须用片段值；容器值仅作 fallback 语义保留
+                            //（shaped-eligibility gate 仍读容器值，见下）。
+                            let frag_letter_spacing: f32 = $frag_ls;
                             // CSS 2.1 §9.2.1.1: an inline-block is an atomic inline-level box.
                             // Its parent IFC emits an empty placeholder solely for positioning; the
                             // inline-block's own box must still paint its text.
@@ -1674,10 +1695,13 @@ impl super::Painter {
                             let transformed = apply_text_transform(&$frag_text, &style.text_transform);
 
                             // R639：text_width 先算（glyph loop 之前），支持 inline bg 在 glyph 下绘制。
+                            // R4233：用片段 letter-spacing（与布局片段宽度同源，span 声明
+                            // ls ≠ 容器时旧容器值会使宽度错位、text-align 偏移）。
                             let text_width: f32 = transformed
                                 .chars()
                                 .map(|ch| {
-                                    let w = self.measure_char_cached(frag_font_id.0, ch, $frag_fs, $is_ahem) + letter_spacing;
+                                    let w = self.measure_char_cached(frag_font_id.0, ch, $frag_fs, $is_ahem)
+                                        + frag_letter_spacing;
                                     if zero_style_system::is_word_separator(ch) { w + frag_word_spacing } else { w }
                                 })
                                 .sum();
@@ -1703,7 +1727,7 @@ impl super::Painter {
                                             .take(fl_len)
                                             .map(|ch| {
                                                 self.measure_char_cached(frag_font_id.0, ch, $frag_fs, $is_ahem)
-                                                    + letter_spacing
+                                                    + frag_letter_spacing
                                             })
                                             .sum();
                                         self.primitives.add_fill(
@@ -1732,7 +1756,7 @@ impl super::Painter {
                                         .chars()
                                         .map(|c| self.measure_char_cached(frag_font_id.0, c, $frag_fs, $is_ahem))
                                         .sum::<f32>()
-                                        + letter_spacing * base.chars().count() as f32;
+                                        + frag_letter_spacing * base.chars().count() as f32;
                                     if !annot.is_empty() {
                                         let annot_w: f32 = annot
                                             .chars()
@@ -1871,7 +1895,11 @@ impl super::Painter {
                             );
                             let shaped_text_eligible = !char_advance_is_y
                                 && !$is_ahem
+                                // R4233：容器与片段任一带 ls 即走逐字符路径（与 advance
+                                // 公式的 ls 来源保持同口径；片段级 ls 原被漏判 → shaped
+                                // 路径 glyph 间距丢失）。
                                 && letter_spacing == 0.0
+                                && frag_letter_spacing == 0.0
                                 && word_spacing == 0.0
                                 && active_text_shadows.is_empty()
                                 && emphasis_mark.is_none()
@@ -2037,7 +2065,7 @@ impl super::Painter {
                                 let advance = glyph
                                     .advance_x
                                     .unwrap_or_else(|| self.measure_char_cached(frag_font_id.0, ch, $frag_fs, $is_ahem))
-                                    + letter_spacing
+                                    + frag_letter_spacing
                                     + if zero_style_system::is_word_separator(ch) {
                                         frag_word_spacing
                                     } else {
@@ -2134,7 +2162,8 @@ impl super::Painter {
                                 frag.text,
                                 frag.node_id,
                                 frag.is_ahem,
-                                frag.source.as_ref()
+                                frag.source.as_ref(),
+                                frag.letter_spacing
                             );
                         }
                     } else {
@@ -2162,7 +2191,8 @@ impl super::Painter {
                                 fragment.text,
                                 fragment.node_id,
                                 fragment.is_ahem,
-                                fragment.source.as_ref()
+                                fragment.source.as_ref(),
+                                fragment.letter_spacing
                             );
                         }
                     }

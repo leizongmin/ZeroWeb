@@ -496,6 +496,62 @@ fn r1450_letter_spacing_between_adjacent_cjk_preserved() {
     );
 }
 
+/// R4233：run 前导可折叠空格 / 纯空白 run 的 advance 计入 letter-spacing
+///（css-text-4 #letter-spacing：空格亦为 typographic character unit，与 R4232
+/// 词尾空格同语义）。
+///
+/// 驱动案 css/CSS2/css1/c542-letter-sp-001 行 6：`.eleven{letter-spacing:-0.5em}` 的
+/// fill span 之后的 " x " 前导空格旧实现漏 ls（advance 30 而非 15）→ 词右移 15px。
+#[test]
+fn r4233_leading_space_and_ws_run_advance_include_letter_spacing() {
+    // 场景 ①：run2 前导可折叠空格（has_leading_collapsible_space 臂）。
+    // "x" @0（advance 40）+ " "（20+ls20=40）→ "x" @ 80；旧实现漏 ls → 60。
+    let mut ctx = InlineFormattingContext::new(800.0);
+    let mut r1 = TextRun::simple("x".to_string(), NodeId::default(), 20.0, 20.0, VA::Baseline);
+    r1.is_ahem_font = true;
+    r1.letter_spacing = 20.0;
+    let mut r2 = TextRun::simple(" x".to_string(), NodeId::default(), 20.0, 20.0, VA::Baseline);
+    r2.is_ahem_font = true;
+    r2.letter_spacing = 20.0;
+    ctx.break_into_lines(vec![r1, r2]);
+    let x2 = ctx.lines[0]
+        .runs
+        .iter()
+        .filter(|r| r.text.contains('x'))
+        .nth(1)
+        .expect("应有第二个 'x' 片段");
+    assert!(
+        (x2.x - 80.0).abs() < 1.0,
+        "R4233: 前导空格 advance 应含 ls，第二个 'x' @ 80，实际 {:.1}",
+        x2.x
+    );
+
+    // 场景 ②：中间 run 为纯空白（words.is_empty() 臂）。
+    // "x" @0（advance 40）+ " "（40）→ "x" @ 80；旧实现漏 ls → 60。
+    let mut ctx2 = InlineFormattingContext::new(800.0);
+    let mut a = TextRun::simple("x".to_string(), NodeId::default(), 20.0, 20.0, VA::Baseline);
+    a.is_ahem_font = true;
+    a.letter_spacing = 20.0;
+    let mut ws = TextRun::simple(" ".to_string(), NodeId::default(), 20.0, 20.0, VA::Baseline);
+    ws.is_ahem_font = true;
+    ws.letter_spacing = 20.0;
+    let mut b = TextRun::simple("x".to_string(), NodeId::default(), 20.0, 20.0, VA::Baseline);
+    b.is_ahem_font = true;
+    b.letter_spacing = 20.0;
+    ctx2.break_into_lines(vec![a, ws, b]);
+    let x3 = ctx2.lines[0]
+        .runs
+        .iter()
+        .filter(|r| r.text.contains('x'))
+        .nth(1)
+        .expect("空白 run 后应有第二个 'x' 片段");
+    assert!(
+        (x3.x - 80.0).abs() < 1.0,
+        "R4233: 纯空白 run 的 advance 应含 ls，第二个 'x' @ 80，实际 {:.1}",
+        x3.x
+    );
+}
+
 // ── R3786：块断行后紧随的强制断行不重复推空行盒 ──────────────────────────
 
 /// R3786：FloatAnchor（块断行）刚开启的新行上，紧随的 `\n`（pre 强制断行标记）

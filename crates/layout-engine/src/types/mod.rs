@@ -638,6 +638,9 @@ pub struct InlineLayoutFragment {
     pub text: String,
     /// BiDi 重排后的视觉字符到逻辑源码映射。
     pub source: Option<crate::inline::TextFragmentSource>,
+    /// R4233：片段 run 的 letter-spacing（px）——paint glyph advance 须按片段值而非
+    /// 容器盒值（span 声明 ls 与容器不同时两者错位，c542-letter-sp-001 行 3/4）。
+    pub letter_spacing: f32,
     /// 对应 DOM 节点 ID（用于去重）。
     pub node_id: Option<NodeId>,
     /// 片段基线相对行顶的 y（baseline 对齐时 = line.baseline_y + vertical_align_offset）。
