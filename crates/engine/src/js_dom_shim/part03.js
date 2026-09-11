@@ -1419,10 +1419,43 @@
       shadowRoot.__zwSlotchangeMarked = [];
     } catch (_eQW) {}
   };
+  // WC-M3 切片 8 第八增量（web-components goal）：signal 派发按 shadow 树**深度排序**
+  //（内层根先于外层根）——spec signalSet 为 per-slot 插入序（内层 slot 的 setup 信号
+  // 先入队、外层 slot 的变异信号后入队）；roots 队列模型下按深度还原该序（WPT
+  // slotchange-event nested slots：inner listener 的 1st fire 须为 inner 自身事件，
+  // 2nd 才是 outer 事件经 assigned-slot 父边冒泡）。
+  globalThis.__zwSlotRootDepth = function (ent) {
+    try {
+      var sr = ent.kind === 'plain' ? ent.shadowRoot
+        : (ent.kind === 'handle' && typeof _wrapHandle === 'function' ? _wrapHandle(ent.rootHandle) : null);
+      if (!sr || sr.nodeType !== 11) return 0;
+      var d = 1, h = null;
+      try { h = sr.host; } catch (_eH) { return d; }
+      var g = 0;
+      while (h && g++ < 64) {
+        var top = h, g2 = 0, p = null;
+        while (top && g2++ < 64) {
+          try { p = top.parentNode; } catch (_eP) { p = null; }
+          if (!p) break;
+          top = p;
+        }
+        if (top && top.nodeType === 11 && top.host != null) { d++; try { h = top.host; } catch (_eH2) { break; } }
+        else break;
+      }
+      return d;
+    } catch (_eD) { return 0; }
+  };
   globalThis.__zwFlushSlotSignals = function () {
     try {
       var list = globalThis.__zwSlotSignalRoots || [];
       globalThis.__zwSlotSignalRoots = [];
+      // 内层根先派发（深度**降序**——最深的 shadow 树最先 flush：其 slot 的 setup/
+      // 变异信号是级联源头，外层 slot 的信号（含经 assigned-slot 父边冒泡到内层监听
+      // 的事件）随后；同深度保持入队序——稳定排序）。WPT nested slots：inner listener
+      // 的 1st fire 须为 inner 自身事件、2nd 才是 outer 事件。
+      if (typeof globalThis.__zwSlotRootDepth === 'function') {
+        list.sort(function (a, b) { return globalThis.__zwSlotRootDepth(b) - globalThis.__zwSlotRootDepth(a); });
+      }
       for (var si = 0; si < list.length; si++) {
         var ent = list[si];
         try {
