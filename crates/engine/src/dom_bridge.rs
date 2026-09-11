@@ -425,6 +425,10 @@ pub fn generate_dom_api_polyfill() -> String {
     _instances: {},
     // 模块导出描述缓存（host 注入，{name, kind} 数组）— WebAssembly.Module.exports() 消费
     _moduleExports: {},
+    // 函数 import 注册表（page-wasm M3 切片 1）——id → JS 函数引用；host 经
+    // _invokeImport 同步回调
+    _importFns: {},
+    _nextImportId: 1,
     _nextId: 1,
     _pendingBridge: null,
     // 导出函数调用队列 — 每次调用存储 {instanceId, name, args, callId}
@@ -469,8 +473,11 @@ pub fn generate_dom_api_polyfill() -> String {
       self._modules[moduleId] = bytes;
       var instanceId = self._nextId++;
 
-      // 收集 importObject 的键名传给 host
+      // 收集 importObject 传给 host（page-wasm M3 切片 1）：函数成员注册到
+      // _importFns（host 按 import_signatures() 反查签名后经 _invokeImport 同步
+      // 回调）；importKeys 保留供旧协议兼容。签名以模块声明为权威，JS 不传类型。
       var importKeys = [];
+      var imports = [];
       if (importObject) {
         try {
           var moduleKeys = Object.keys(importObject);
@@ -481,6 +488,11 @@ pub fn generate_dom_api_polyfill() -> String {
               var fnKeys = Object.keys(modVal);
               for (var fi = 0; fi < fnKeys.length; fi++) {
                 importKeys.push(modName + '.' + fnKeys[fi]);
+                if (typeof modVal[fnKeys[fi]] === 'function') {
+                  var importId = self._nextImportId++;
+                  self._importFns[importId] = modVal[fnKeys[fi]];
+                  imports.push({module: modName, name: fnKeys[fi], id: importId});
+                }
               }
             }
           }
@@ -489,7 +501,7 @@ pub fn generate_dom_api_polyfill() -> String {
 
       // 发送实例化桥接命令（moduleId 供 host 注入 WebAssembly.Module.exports() 描述）
       var b64 = __wasmToBase64(bytes);
-      self._pendingBridge = '__WASM_BRIDGE__:' + JSON.stringify({id: instanceId, moduleId: moduleId, bytes: b64, importKeys: importKeys});
+      self._pendingBridge = '__WASM_BRIDGE__:' + JSON.stringify({id: instanceId, moduleId: moduleId, bytes: b64, importKeys: importKeys, imports: imports});
 
       // 如果 host 已经预解析了此实例（第二次 instantiate 同一模块），直接返回缓存
       if (globalThis.__wasm_results__ && globalThis.__wasm_results__[instanceId]) {
@@ -541,6 +553,26 @@ pub fn generate_dom_api_polyfill() -> String {
           __host_backed__: false
         }
       };
+    },
+
+    // host 侧回调入口（page-wasm M3 切片 1）：按 id 执行注册的 import 函数，
+    // 返回 JSON 线格式 {v: <wire>}；异常返回 {e: message}。i64 参数以十进制字符串
+    // 线格式传入（JSON 不支持 BigInt），函数内按需 BigInt(...) 还原
+    _invokeImport: function(id, argsJson) {
+      var fn = this._importFns[id];
+      if (typeof fn !== 'function') {
+        return JSON.stringify({e: 'import fn missing: ' + id});
+      }
+      var args = JSON.parse(argsJson);
+      try {
+        var v = fn.apply(null, args);
+        if (Array.isArray(v)) {
+          return JSON.stringify({v: v.map(function(x) { return typeof x === 'bigint' ? x.toString() : x; })});
+        }
+        return JSON.stringify({v: typeof v === 'bigint' ? v.toString() : v});
+      } catch (e) {
+        return JSON.stringify({e: String((e && e.message) || e)});
+      }
     },
 
     validate: function(bufferSource) {

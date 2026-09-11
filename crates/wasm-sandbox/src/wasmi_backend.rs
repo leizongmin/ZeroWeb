@@ -2,7 +2,10 @@
 //!
 //! 基于 wasmi 纯 Rust WASM 解释器的沙箱运行时实现。
 
-use crate::{ExportDescriptor, LinkerConfig, SandboxConfig, WasmError, WasmExternKind, WasmValue, WasmValueType};
+use crate::{
+    ExportDescriptor, ImportDescriptor, LinkerConfig, SandboxConfig, WasmError, WasmExternKind, WasmValue,
+    WasmValueType,
+};
 use std::fmt;
 use std::sync::Arc;
 
@@ -166,6 +169,30 @@ impl WasmModule {
     /// 获取导出名称列表
     pub fn exports(&self) -> Vec<String> {
         self.module.exports().map(|e| e.name().to_string()).collect()
+    }
+
+    /// 获取导入项描述列表（仅函数导入，page-wasm M3 切片 1——链接签名反查面）
+    pub fn import_signatures(&self) -> Vec<ImportDescriptor> {
+        self.module
+            .imports()
+            .filter_map(|imp| match imp.ty() {
+                wasmi::ExternType::Func(func_type) => Some(ImportDescriptor {
+                    module: imp.module().to_string(),
+                    name: imp.name().to_string(),
+                    params: func_type
+                        .params()
+                        .iter()
+                        .filter_map(wasmi_valtype_to_wasm_value_type)
+                        .collect(),
+                    results: func_type
+                        .results()
+                        .iter()
+                        .filter_map(wasmi_valtype_to_wasm_value_type)
+                        .collect(),
+                }),
+                _ => None,
+            })
+            .collect()
     }
 
     /// 获取导出项描述列表（page-wasm M1 切片 2/3——签名 + 类别）

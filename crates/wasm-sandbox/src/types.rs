@@ -58,6 +58,22 @@ impl fmt::Display for WasmValue {
     }
 }
 
+/// 导入项描述（page-wasm M3 切片 1——importObject 链接的签名反查面）
+///
+/// 仅函数导入（`ExternType::Func`）收录；host 侧以模块声明为权威构建
+/// `LinkerConfig`，JS 侧只传函数身份不传类型。
+#[derive(Debug, Clone, PartialEq)]
+pub struct ImportDescriptor {
+    /// 导入模块名
+    pub module: String,
+    /// 导入字段名
+    pub name: String,
+    /// 参数类型列表
+    pub params: Vec<WasmValueType>,
+    /// 返回值类型列表
+    pub results: Vec<WasmValueType>,
+}
+
 /// 主机函数签名
 ///
 /// WASM 调用主机函数时传入的参数和返回值的缓冲区。

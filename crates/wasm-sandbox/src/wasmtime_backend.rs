@@ -3,7 +3,10 @@
 //! 基于 Wasmtime JIT 编译器的高性能 WASM 运行时。
 //! 适用于需要接近原生执行速度的页面级 WASM 场景。
 
-use crate::{ExportDescriptor, LinkerConfig, SandboxConfig, WasmError, WasmExternKind, WasmValue, WasmValueType};
+use crate::{
+    ExportDescriptor, ImportDescriptor, LinkerConfig, SandboxConfig, WasmError, WasmExternKind, WasmValue,
+    WasmValueType,
+};
 use std::cell::RefCell;
 use std::sync::Arc;
 
@@ -208,6 +211,31 @@ impl WasmModule {
     /// 获取导出名称列表
     pub fn exports(&self) -> Vec<String> {
         self.module.exports().map(|e| e.name().to_string()).collect()
+    }
+
+    /// 获取导入项描述列表（仅函数导入，page-wasm M3 切片 1——链接签名反查面）
+    pub fn import_signatures(&self) -> Vec<ImportDescriptor> {
+        self.module
+            .imports()
+            .filter_map(|imp| {
+                let ty = imp.ty();
+                let func_type = ty.func()?;
+                Some(ImportDescriptor {
+                    module: imp.module().to_string(),
+                    name: imp.name().to_string(),
+                    params: func_type
+                        .params()
+                        .iter()
+                        .map(|&p| wasm_valtype_to_wasm_value_type(p))
+                        .collect::<Option<Vec<_>>>()?,
+                    results: func_type
+                        .results()
+                        .iter()
+                        .map(|&r| wasm_valtype_to_wasm_value_type(r))
+                        .collect::<Option<Vec<_>>>()?,
+                })
+            })
+            .collect()
     }
 
     /// 获取导出项描述列表（page-wasm M1 切片 2/3——签名 + 类别）

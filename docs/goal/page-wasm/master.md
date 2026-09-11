@@ -2,7 +2,7 @@
 
 **入口文档**: [../page-wasm.md](../page-wasm.md)
 **创建日期**: 2026-09-07（goal 拆分 bootstrap）
-**最后更新**: 2026-09-12（M2 切片 3 落地——错误分类面 + WA 桥状态幂等安装；M2 全部完成）
+**最后更新**: 2026-09-12（M3 启动——host function 重入设计落地 + M3-1a 前半（签名反查 + 注册面））
 
 ---
 
@@ -62,9 +62,12 @@ Timeout × 4），证据：[evidence/2026-09-12-m1-wasm-jsapi-baseline.md](evide
 
 ## 下一步计划
 
-1. **M3 切片 1**：host function 设计前置——wasm 执行中同步回调 JS 需宿主重入设计
-   （`instance.call` 内再进 JS sandbox），importObject 的 JS 函数表传递与其同一机制，
-   先出设计记本文档再动代码（DC-3/DC-4 深水区）
+1. **M3 切片 1 后半（M3-1b/c）**：按设计文档
+   [page-wasm-host-function-spec-rfc.md](../../specs/page-wasm-host-function-spec-rfc.md)
+   §7 实施交接执行——探针确证 V8 嵌套 execute → webview instantiate 桥 imports 接线
+   （LinkerConfig 组装 + HostFn 重入编组）→ FR-001~005 e2e → make test 收口。
+   M3-1a 前半（`import_signatures()` 三后端 + polyfill `_importFns`/`_invokeImport`/
+   载荷 `imports` 字段）已落地，webview 消费面未接（无行为变化）
 2. **M3 切片 2**：validate 真实校验接线（wasm-sandbox 补 validate API → 桥接，替换
    魔术字节检查）；`compileStreaming`/`instantiateStreaming` 真实 Response body 路径
    （fetch_handler 已有，接线 + Content-Type 校验）
@@ -86,7 +89,7 @@ wasm 段（`process_wasm_bridge` 及 `_callQueue` 排空区），避开 MO 区�
 |--------|------|
 | M1 — WPT 基线建立 + 类型扩展 | ✅ 切片 1（基线 99.4%）+ 切片 2（类型全映射）+ 切片 3（导出描述面）；残余 = P2 跨流卡点 |
 | M2 — Memory/Global/Table + 实例化语义 | ✅ 切片 1（Memory.grow 真实接线）+ 切片 2（Global/Table 导出面）+ 切片 3（错误分类面 + WA 状态幂等安装）；残余 = importObject JS 函数链接归 M3 重入设计 |
-| M3 — host function + 流式 + 收尾 | ⬜ 切片计划见上（重入设计前置） |
+| M3 — host function + 流式 + 收尾 | 🔄 切片 1：设计已落地（[spec-rfc](../../specs/page-wasm-host-function-spec-rfc.md)，Lint 23P/2W/0F）+ M3-1a 前半落地；M3-1b/c 待做 |
 
 ## 验证基线
 

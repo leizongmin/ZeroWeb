@@ -1714,3 +1714,31 @@ fn test_grow_memory_returns_previous_pages() {
         "缺失导出应 ExportNotFound"
     );
 }
+
+/// 测试导入项签名反查（page-wasm M3 切片 1）：仅函数导入收录、双段命名、签名对齐声明
+#[test]
+fn test_import_signatures_reflection() {
+    let sandbox = WasmSandbox::new();
+    let wasm = wat_to_wasm(
+        r#"(module
+            (import "env" "add" (func (param i32 i64) (result f64)))
+            (import "env" "mem" (memory 1))
+            (func (export "noop"))
+        )"#,
+    );
+    let module = sandbox.compile(&wasm).expect("compile");
+    let sigs = module.import_signatures();
+    assert_eq!(sigs.len(), 1, "仅函数导入收录（memory 导入不入列）");
+
+    let add = &sigs[0];
+    assert_eq!(add.module, "env");
+    assert_eq!(add.name, "add");
+    assert_eq!(add.params, vec![WasmValueType::I32, WasmValueType::I64]);
+    assert_eq!(add.results, vec![WasmValueType::F64]);
+
+    // 无导入模块恒空
+    let empty = sandbox
+        .compile(&wat_to_wasm(r#"(module (func (export "f")))"#))
+        .expect("compile");
+    assert!(empty.import_signatures().is_empty(), "无导入应恒空");
+}
