@@ -23,6 +23,13 @@ use crate::types::LayoutBox;
 /// - float 元素的 clear 属性正确生效
 /// - 非 float 块元素的 clear 使用 max(normal_flow_Y, float_bottom)
 /// - 非 float、非 clear 元素的 Y 偏移扣除 float 元素占据的垂直空间
+///
+/// R4235：float walk 坐标约定开关（content-rel 默认开；`ZW_FLOAT_CLAMP_CONTENT_REL=0`
+/// 回退 border-rel）。LazyLock 进程级缓存——walk 按容器逐次调用，逐次 env::var 兼作
+/// LLVM 优化栅栏有净负前科（R4214）。
+static FLOAT_CLAMP_CONTENT_REL: std::sync::LazyLock<bool> =
+    std::sync::LazyLock::new(|| std::env::var("ZW_FLOAT_CLAMP_CONTENT_REL").as_deref() != Ok("0"));
+
 pub(crate) fn adjust_float_positions(box_node: &mut LayoutBox) {
     let content_abs_y = box_node.y + box_node.content_y;
     adjust_float_positions_with_context(box_node, content_abs_y, 0.0, 0.0, &[]);
@@ -746,6 +753,15 @@ pub(crate) fn adjust_float_positions_with_context(
     // 容器的内容区域宽度
     let container_width = box_node.content_width;
 
+    // R4235：本 walk 的读/写按 **border 盒相对** y 约定写就（child.y ± content_y_offset），
+    // 但引擎提取层（engine.rs extract_layout）已把全部流内子节点 y 换算为**内容盒相对**
+    // ——border/padding 非零的容器内，float 的 line_y 定位写点与钳制假设流位各偏
+    // +content_y_offset（c414-flt-fit-001：border 5px 容器内 float p 整体 +5px，与无
+    // float 的 ref 页不对称暴露）。content-rel 模式（默认开）在两处写点/钳制读点去掉
+    // offset；kill-switch `ZW_FLOAT_CLAMP_CONTENT_REL=0` 回退旧 border-rel 约定。
+    // LazyLock 缓存（R4214 教训：walk 热路径逐次 env::var 兼作 LLVM 优化栅栏，净负）。
+    let clamp_content_rel = *FLOAT_CLAMP_CONTENT_REL;
+
     // CSS Flexbox §4 / Grid §4 / Tables §2.4：flex/grid/table 容器的流内子元素
     //（即布局项）其 `float` 与 `clear` 不产生浮动或清除效果——`float` 计算为 `none`。
     // taffy 内部已据此布局，但 ZeroWeb 的浮动后处理（本函数）按 `child.float` 重新
@@ -1048,7 +1064,11 @@ pub(crate) fn adjust_float_positions_with_context(
         match child.float {
             FloatValue::Left => {
                 child.x = left_used_width + child.margin_left;
-                child.y = content_y_offset + line_y + child.margin_top;
+                child.y = if clamp_content_rel {
+                    line_y + child.margin_top
+                } else {
+                    content_y_offset + line_y + child.margin_top
+                };
 
                 left_used_width += child_outer_width;
                 let new_bottom = line_y + child_outer_height;
@@ -1057,7 +1077,11 @@ pub(crate) fn adjust_float_positions_with_context(
             FloatValue::Right => {
                 right_used_width += child_outer_width;
                 child.x = container_width - right_used_width + child.margin_left;
-                child.y = content_y_offset + line_y + child.margin_top;
+                child.y = if clamp_content_rel {
+                    line_y + child.margin_top
+                } else {
+                    content_y_offset + line_y + child.margin_top
+                };
 
                 let new_bottom = line_y + child_outer_height;
                 right_float_bottom = right_float_bottom.max(new_bottom);
@@ -1206,7 +1230,12 @@ pub(crate) fn adjust_float_positions_with_context(
                 // CSS 2.1 §9.5.1：float 元素不应高于正常流内容的位置。
                 // Phase 1 定位 float 时不知道 normal flow 的位置，
                 // 这里修正：将 float 的 Y 推到至少与当前流位置齐平。
-                // 注意：flow_bottom 是 content-relative，child.y 是 border-relative。
+                // 注意：flow_bottom 与 child.y 均按 content-relative 读写的分支内约定
+                // （R4235：引擎提取层 extract_layout 已把子节点 y 换算为**内容盒相对**，
+                // 旧实现此处按 border-relative 再减 content_y_offset → 假设流位虚减
+                // border+padding，首个 float 恒触发钳制并写回 +content_y_offset（border
+                // 双计）→ c414-flt-fit-001 有 border 容器内 float p 整体 +5px，与无 float
+                // 的 ref 页不对称暴露）。kill-switch `ZW_FLOAT_CLAMP_CONTENT_REL=0` 回退。
                 // R4176（§9.5.1 + chromium 实证 negative-block-margin-pushing-float-
                 // out-of-block-formatting-context）：钳制基准是 float 的**假设流位置**
                 //（Phase 1 的 line_y，即 margin 应用前的 border-box 目标位），非 margin
@@ -1214,9 +1243,17 @@ pub(crate) fn adjust_float_positions_with_context(
                 //（chromium：BFC 内唯一 float `mt:-100` 渲染于流位上移 100，不被钳回）。
                 // 旧实现拿 mt 应用后的 y 与 flow_bottom 比较，负 mt 恒触发钳制
                 //（y 被拉回 flow_bottom，负 margin 整体失效）。
-                let child_hypothetical_y = child.y - content_y_offset - child.margin_top;
+                let child_hypothetical_y = if clamp_content_rel {
+                    child.y - child.margin_top
+                } else {
+                    child.y - content_y_offset - child.margin_top
+                };
                 if child_hypothetical_y < flow_bottom {
-                    child.y = content_y_offset + flow_bottom + child.margin_top;
+                    child.y = if clamp_content_rel {
+                        flow_bottom + child.margin_top
+                    } else {
+                        content_y_offset + flow_bottom + child.margin_top
+                    };
                     // R1832：修复 float/clear Y-staircase。旧代码在此 `active_*_float_bottom
                     // += shift`，但 active_*_float_bottom 追踪「前序 float 底边」非本 float
                     // 原始位置——把 shift（本 float 被下推量）加到前序底边 = 双重计数：
@@ -1237,7 +1274,12 @@ pub(crate) fn adjust_float_positions_with_context(
 
                 let float_total_height = child.margin_top + child.height + child.margin_bottom;
                 float_y_offset += float_total_height;
-                let child_bottom = child.y - content_y_offset + child.height + child.margin_bottom;
+                // R4235：child_bottom 同分支内约定（content-rel 输入，不再减 offset）。
+                let child_bottom = if clamp_content_rel {
+                    child.y + child.height + child.margin_bottom
+                } else {
+                    child.y - content_y_offset + child.height + child.margin_bottom
+                };
                 match child.float {
                     FloatValue::Left => active_left_float_bottom = active_left_float_bottom.max(child_bottom),
                     FloatValue::Right => active_right_float_bottom = active_right_float_bottom.max(child_bottom),
