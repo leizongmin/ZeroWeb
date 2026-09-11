@@ -1950,7 +1950,15 @@
     if (element.parentNode && element.parentNode.removeChild) {
       try { element.parentNode.removeChild(element); } catch (_e293r) {}
     }
-    try { element.parentNode = this; } catch (_e293pp) {}
+    // WC-M3 切片 8 第十二小步（web-components goal）：parent 链记账——handle 子的
+    // parentNode 是 proxy getter（读 _zwNodeParent 反链），裸赋值被 set trap 吞
+    //（getter-only 静默拒绝——removeChild 已摘链 → parentNode 恒 null）。记 R180
+    // plainParent 槽（_parentNodeFor 消费）；plain 子保持裸赋值。
+    if (element.__zwHandle && typeof _zwNodeParent !== 'undefined' && _zwNodeParent) {
+      _zwNodeParent[element.__zwHandle] = { parentSel: null, parentHandle: null, plainParent: this, nextSibling: null };
+    } else {
+      try { element.parentNode = this; } catch (_e293pp) {}
+    }
     if (pos293 === 'afterbegin') this.childNodes.unshift(element);
     else if (pos293 === 'beforeend') this.childNodes.push(element);
     else if (p293) {
@@ -1960,6 +1968,12 @@
       if (ix293 < 0) { pk293.push(element); }
       else if (pos293 === 'beforebegin') pk293.splice(ix293, 0, element);
       else pk293.splice(ix293 + 1, 0, element);
+    }
+    // WC-M3 切片 8 第十二小步（web-components goal）：插入产物的 CE 连接派发
+    //（前树 disconnect 已由 removeChild 面派发；连接判定 was 门去重——detached
+    // doc 树的 adopted old/new doc 比对在 _ceApplyConn 内沿 parent 链走）。
+    if (typeof _ceApplyConn === 'function') {
+      try { _ceApplyConn(element, true); } catch (_e293ce) {}
     }
     return element;
   });
@@ -3871,6 +3885,10 @@
     // checked/selected/hidden——set trap 走更早的显式分支含 default 态保护，不入
     // _REFLECTED_BOOL，但 CE 反应映射同样要覆盖——WPT reactions 'disabled on ...' 簇）。
     if (p === 'disabled' || p === 'checked' || p === 'selected') return p;
+    // WC-M3 切片 8 第十二小步：数值维度反射（width/height——canvas/embed/img/iframe/
+    // video 的 R2851 显式分支，同不入字符串表但 CE 反应映射须覆盖——WPT reactions
+    // 'width/height on ...' 簇）。
+    if (p === 'width' || p === 'height') return p;
     // AriaMixin IDL（ariaLabel → aria-label / ariaValueNow → aria-value-now）。
     if (/^aria[A-Z]/.test(p)) {
       var out = 'aria-' + p.slice(4).toLowerCase();

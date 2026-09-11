@@ -455,7 +455,7 @@
             if (handle) __zw_set_attr_handle(handle, p, attrV);
             else { __zw_set_attr(sel, p, attrV); moAttr = p; }
           }
-        } else if ((p === 'width' || p === 'height') && (_realTag(sel, handle) === 'IMG' || _realTag(sel, handle) === 'IFRAME' || _realTag(sel, handle) === 'CANVAS')) {
+        } else if ((p === 'width' || p === 'height') && (_realTag(sel, handle) === 'IMG' || _realTag(sel, handle) === 'IFRAME' || _realTag(sel, handle) === 'CANVAS' || _realTag(sel, handle) === 'EMBED' || _realTag(sel, handle) === 'VIDEO')) {
           // reflected unsigned-long 维度 setter（R2851）：归一（NaN/负 → 0）→ 缓存数值 + 写 width/height
           // 内容属性（getter 优先读缓存保 sync set→get）。R3077：CANVAS width/height 反射（保 set→get 一致）。
           // R3308：CANVAS 设 width/height 触发 bitmap resize（HTML spec §4.12.5.1——清空 bitmap + 重置绘图状态）。
@@ -468,7 +468,9 @@
           })();
           var wrc = _reflectedAttrs[key] || (_reflectedAttrs[key] = {});
           wrc[p] = wv;
-          if (handle) __zw_set_attr_handle(handle, p, String(wv));
+          // WC-M3 切片 8 第十二小步（web-components goal）：handle 路径汇流 moAttr
+          //（CE 反应 + R45 MO record——同 loop/muted 修复模式）。
+          if (handle) { __zw_set_attr_handle(handle, p, String(wv)); moAttr = p; }
           else { __zw_set_attr(sel, p, String(wv)); moAttr = p; }
           // CANVAS resize：取该元素的 context handle（_zwCanvasCtx[key] standalone 或 el._ctx），调 host resizeContext。
           // R3254-C12：transferControlToOffscreen 后（_transferred）DOM canvas 尺寸 setter 不触达
@@ -1257,6 +1259,12 @@
         // 子树重挂；WPT Range mega-case 链）。原型接 HTMLHtmlElement.prototype
         //（Node.prototype.cloneNode 等经链可达）；append 同 R207 iframe 工厂族。
         docEl.childNodes = [];
+        // WC-M3 切片 8 第十二小步（web-components goal，spec：documentElement 的
+        // parent 即文档）：docEl.parentNode 接 doc——CE 连接态的树文档上行
+        //（_ceApplyConn 连接时的 adopted old/new doc 判定从 node.parentNode 上行走，
+        // docEl 无 parent 链则 _wcNewDoc 恒 null → adopted 永不派——WPT reactions
+        // cross-document connector 簇 'disconnected, adopted, connected'）。
+        try { docEl.parentNode = doc; } catch (_eR207dp) {}
         docEl.hasChildNodes = function () { return docEl.childNodes.length > 0; };
         docEl.appendChild = function (c) {
           if (c && c.parentNode && c.parentNode.removeChild) { try { c.parentNode.removeChild(c); } catch (_eR207a) {} }
@@ -1312,6 +1320,13 @@
           try { element293.parentNode = docEl; } catch (_e293pp) {}
           if (pos293e === 'afterbegin') docEl.childNodes.unshift(element293);
           else docEl.childNodes.push(element293);
+          // WC-M3 切片 8 第十二小步（web-components goal）：插入产物的 CE 连接派发
+          //（connected + adopted（old/new doc 比对面——docEl.parentNode 已接 doc）；
+          // spec：detached doc 树的树根亦是 document → connected 为真。was 门去重，
+          // 前树的 disconnect 已由旧父 removeChild 面派发）。
+          if (typeof _ceApplyConn === 'function') {
+            try { _ceApplyConn(element293, true); } catch (_e293ce) {}
+          }
           return element293;
         };
         docEl.insertAdjacentText = function (position293, text293) {

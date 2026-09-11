@@ -349,7 +349,7 @@
             }
             return 0;
           }
-          if ((rgTag === 'IMG' || rgTag === 'IFRAME') && (prop === 'width' || prop === 'height')) {
+          if ((rgTag === 'IMG' || rgTag === 'IFRAME' || rgTag === 'EMBED' || rgTag === 'VIDEO') && (prop === 'width' || prop === 'height')) {
             // sync set→get 优先读缓存（setter 写数值）；无缓存则解析 width/height 内容属性（缺省/非负整数失败 → 0）。
             // R3204：sel 读源 latest-wins（`__zw_get_attr_lw`）反映同批 setAttribute。
             var drc = _reflectedAttrs[key];
@@ -6561,6 +6561,41 @@ return _tplContent;
         if (prop === 'insertAdjacentElement') {
           return function(position, element) {
             var pos = String(position == null ? '' : position).trim().toLowerCase();
+            // WC-M3 切片 8 第十二小步（web-components goal）：plain 接收者形态（detached
+            // doc 的 documentElement——createHTMLDocument 产物无 sel/handle，旧两分支全
+            // 跳过 → 插入 no-op，spec connected 的「树根是 document（含 detached doc）」
+            // 的 adopted/connected 面整段丢失——WPT reactions cross-document connector
+            // 簇）。经接收者自身的插入原语落位（R180 plain 父记账 _zwNodeParent
+            // plainParent 槽），插入后按元素自身 parent 链收口 CE 连接（adopted 由
+            // _ceApplyConn 的 old/new doc 比对面承接）。
+            var _iaeRecv = this;
+            if (!sel && !handle && _iaeRecv && typeof _iaeRecv === 'object'
+                && _iaeRecv.nodeType === 1) {
+              if (typeof _ceApplyConn === 'function') {
+                try { _ceApplyConn(element, false); } catch (_eIaeRmD) {}
+              }
+              if (pos === 'beforeend' && typeof _iaeRecv.appendChild === 'function') {
+                _iaeRecv.appendChild(element);
+              } else if (pos === 'afterbegin' && typeof _iaeRecv.insertBefore === 'function') {
+                var _iaeRFc = null;
+                try { _iaeRFc = _iaeRecv.firstChild; } catch (_eIaeRf) { _iaeRFc = null; }
+                _iaeRecv.insertBefore(element, _iaeRFc);
+              } else if (typeof _iaeRecv.insertBefore === 'function' && _iaeRecv.parentNode) {
+                var _iaeRRef = null;
+                if (pos === 'beforebegin') {
+                  _iaeRRef = _iaeRecv;
+                } else {
+                  try { _iaeRRef = _iaeRecv.nextSibling; } catch (_eIaeRn) { _iaeRRef = null; }
+                }
+                _iaeRecv.parentNode.insertBefore(element, _iaeRRef);
+              } else {
+                return null;
+              }
+              if (typeof _ceApplyConn === 'function') {
+                try { _ceApplyConn(element, true); } catch (_eIaeRmC) {}
+              }
+              return element;
+            }
             if (pos !== 'beforebegin' && pos !== 'afterbegin' && pos !== 'beforeend' && pos !== 'afterend') {
               throw new (globalThis.DOMException || Error)(
                 "Failed to execute 'insertAdjacentElement' on 'Element': The value provided ('" + String(position) + "') is not one of 'beforebegin', 'afterbegin', 'beforeend', or 'afterend'.",
