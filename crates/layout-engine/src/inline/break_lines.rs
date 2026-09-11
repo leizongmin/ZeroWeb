@@ -319,14 +319,20 @@ impl InlineFormattingContext {
 
                         // 基础宽度 + letter-spacing（仅基于内容字符，不含尾部空格）
                         let content_char_count = content_word.chars().count();
-                        // R1450：letter-spacing 只在**相邻字母间**应用（词内 count-1 个间距），
-                        // 不在词尾（行末/空格前）应用（CSS Text 3 §9.2 "not at start/end of
-                        // line"，且不跨空格）。旧实现 ls×count 每词多算一个尾随 ls → "1 2" 单字
-                        // 词也加 ls，致 letter-spacing-200/201 test 比 no-ls ref 宽。
-                        // 词间相邻字母（break-all/CJK 无空格相邻）的 ls 经下方 adjacent_ls 前导补回。
+                        // R4231（css-text-4 #letter-spacing）：spacing applies **after each
+                        // typographic character unit**（含词尾字符；trailing spacing 保留，
+                        // css-text-4 已废除 css-text-3 的行尾裁剪语言）——word_width = ls×count。
+                        // 旧 R1450 ls×(count-1)「仅词内相邻字母」致单字词（"x x"）/词尾间隙
+                        // 全部丢间距（c542-letter-sp-000 行 4-7 条纹周期 30 应 60；
+                        // letter-spacing-200 四盒自洽破坏：单行盒 count-1 vs 折行盒 count
+                        // [本函数 line ~824 与 break-all 逐字符臂均为 count]）。
+                        // 词间相邻字母（break-all/CJK 无空格相邻）的词尾 ls 已含于本式，
+                        // 下方 adjacent_ls 前导补偿随之撤销（避免双计）。
                         let word_width =
-                            self.advance_run_width(content_word, &run)
-                                + run.letter_spacing * content_char_count.saturating_sub(1) as f32;
+                            self.advance_run_width(content_word, &run) + run.letter_spacing * content_char_count as f32;
+                        if std::env::var("ZW_LS_TRACE").is_ok() {
+                            eprintln!("[ZW_LS_TRACE] word={:?} ls={} count={} ww={}", content_word, run.letter_spacing, content_char_count, word_width);
+                        }
                         // R1086：word-spacing 作为词间前导间隙（CSS：词与词之间的额外间距）。
                         // 旧实现把 word_spacing 计入 word_width → fragment.x（=current_x，置位前）
                         // 不含 gap，仅推进 current_x 给下一词，致本词 glyph 位缺 gap
@@ -334,16 +340,15 @@ impl InlineFormattingContext {
                         // current_x。行首词（word_idx==0 或换行后 runs 空）无前导 gap。
                         // R1215：text-autospace——相邻词（上一词不以空白结尾）在 ideograph↔letter
                         // /numeric 类别边界额外插 0.125em 前导 gap（CSS Text 4 §8）。
-                        // R1450：adjacent_ls——前一词以字母结尾（无空格相隔，preserve 空格段/
-                        // normal 尾随空格都会让 prev_last 为空白）且本词以字母开头时，补一个 ls
-                        // 作两相邻字母间的间距（break-all/CJK 单字词相邻场景）。空格分隔的词不触发。
+                        // R4231：adjacent_ls 补偿撤销——R1450 count-1 语义下词尾 ls 丢失需前导
+                        // 补回；count 语义下词尾 ls 已含于上一词 word_width，此处再补即双计。
                         let (autospace_gap, adjacent_ls) = if word_idx > 0 && !current_line.runs.is_empty() {
                             let prev_last = words.get(word_idx - 1).and_then(|w| w.chars().last());
                             let curr_first = content_word.chars().next();
                             match (prev_last, curr_first) {
                                 (Some(pc), Some(cc)) if !pc.is_whitespace() && !cc.is_whitespace() => (
                                     autospace_gap_for(pc, cc, self.text_autospace, run.font_size),
-                                    run.letter_spacing,
+                                    0.0,
                                 ),
                                 _ => (0.0, 0.0),
                             }
@@ -696,6 +701,21 @@ impl InlineFormattingContext {
         if !current_line.runs.is_empty() || current_line.height > 0.0 {
             current_line.y = current_y;
             self.lines.push(current_line);
+        }
+
+        // R4231（css-text-3 §8.1「not applied at the end of the line」+ css-text-4 行尾裁剪）：
+        // count 语义下每字符（含词尾）后均有 ls——行末最后一可见字符的 ls 在此裁剪，
+        // 恢复行尾不参与布局的语义（letter-spacing-204：词尾 D 的行尾 ls 不膨胀行盒；
+        // text-align 对齐亦按裁剪后宽）。裁剪对象 = 行末非空白结尾的词片段（空白悬挂/
+        // 折叠片段不动）。
+        for line in &mut self.lines {
+            if let Some(last) = line.runs.last_mut()
+                && last.letter_spacing != 0.0
+                && last.width >= last.letter_spacing
+                && last.text.chars().last().is_some_and(|c| !c.is_whitespace())
+            {
+                last.width -= last.letter_spacing;
+            }
         }
 
         // R1476：CSS 2.1 §9.4.2 + WPT empty-inline-001——仅含「裸空 inline 元素」的行盒

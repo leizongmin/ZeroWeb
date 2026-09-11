@@ -447,9 +447,12 @@ fn r1449_zwsp_is_break_opportunity_in_preserve_mode() {
 /// → "1 2" 单字符词也加 ls → test 比 no-ls ref 宽。修复 ls×(count-1)（词内相邻字母间）
 /// + adjacent_ls（无空格相邻字母间，break-all/CJK）。
 #[test]
-fn r1450_letter_spacing_not_applied_across_space() {
+fn r4231_letter_spacing_applied_across_space() {
     // "1 2" ls:1em Ahem 20px，preserve：["1"," ","2"]。
-    // "1"(20) + " "(20) = 40，"2" @ 40（ls 不跨空格）。旧实现 "1" 尾随 ls → "1" 宽 40，"2" @ 60。
+    // R4231（css-text-4 #letter-spacing）：spacing applies after each typographic
+    // character unit——空格自身亦是字符单元，词尾 ls 计入（R1450「不跨空格」系对
+    // css-text-3 行尾语言 的过度泛化；行尾裁剪由行级后处理承担）。"1"=40（含词尾
+    // ls）、" "=40（含词尾 ls）、"2" @ 80。
     let mut ctx = InlineFormattingContext::new(800.0).with_preserve_whitespace(true);
     let mut run = TextRun::simple("1 2".to_string(), NodeId::default(), 20.0, 20.0, VA::Baseline);
     run.is_ahem_font = true;
@@ -461,8 +464,8 @@ fn r1450_letter_spacing_not_applied_across_space() {
         .find(|r| r.text.contains('2'))
         .expect("'2' 片段");
     assert!(
-        (two.x - 40.0).abs() < 1.0,
-        "R1450: '2' 应在 x=40（ls 不跨空格，单字符词无 ls），实际 {:.1}（旧实现 ls×count → @60）",
+        (two.x - 80.0).abs() < 1.0,
+        "R4231: '2' 应在 x=80（ls 应用于每个字符单元之后，含跨空格），实际 {:.1}",
         two.x
     );
 }
