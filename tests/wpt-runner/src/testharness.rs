@@ -4259,13 +4259,15 @@ fn run_testharness_html_inner(
     if raf_frame_driven {
         let _ = webview.execute_script("globalThis.__ZW_RAF_FRAME_DRIVEN = true;");
     }
-    // event-loop-spec M3-S1：timer 泵 per-task 边界（kill-switch，默认 OFF）。
-    // `ZW_TESTHARNESS_TIMER_PER_TASK=1` → `__zw_fire_due_timers` 每次调用只派发一个到期
-    // timer——probe 循环每次迭代一个 execute → 一 timer 一 task 一 checkpoint（spec
+    // event-loop-spec M3-S1：timer 泵 per-task 边界（2026-09-12 default-on，opt-out
+    // `ZW_TESTHARNESS_TIMER_PER_TASK=0`）。ON → `__zw_fire_due_timers` 每次调用只派发一个
+    // 到期 timer——probe 循环每次迭代一个 execute → 一 timer 一 task 一 checkpoint（spec
     // event loop processing model step 3-6），消除「N timer 一个 execute、checkpoint
     // 只在批尾」的批量派发违反（evidence/2026-09-11-m1-event-loop-gap-list.md §1.2）。
-    // 默认 OFF 维持整批排空（全部既有 testharness 套件零行为变化）。
-    let timer_per_task = std::env::var("ZW_TESTHARNESS_TIMER_PER_TASK").as_deref() == Ok("1");
+    // A/B 零回归证据：evidence/2026-09-11-m3-s1-timer-per-task.md（dom 全量 54k subtest
+    // / MO / IO / RO 双臂零 delta）+ evidence/2026-09-12-m4-runner-viewport-bridging.md
+    // 后 IO/RO 复跑零 delta；runner 侧开关，生产路径零触碰。
+    let timer_per_task = std::env::var("ZW_TESTHARNESS_TIMER_PER_TASK").as_deref() != Ok("0");
     if timer_per_task {
         let _ = webview.execute_script("globalThis.__ZW_TIMER_PER_TASK = true;");
     }
