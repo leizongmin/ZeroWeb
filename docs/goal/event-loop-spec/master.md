@@ -2,8 +2,8 @@
 
 **入口文档**: [../event-loop-spec.md](../event-loop-spec.md)
 **创建日期**: 2026-09-07（goal 拆分 bootstrap）
-**最后更新**: 2026-09-11（M1 切片 3 收尾——detached document 初通知抑制，IO 95 Pass 等效；
-takeRecords 排队模型缓行记档）
+**最后更新**: 2026-09-12（四项待决策落地——④ viewport 真值桥接 + ②a/②b default-on
+翻默认 + ①③挂起记档；明细 evidence/2026-09-12-*）
 
 ---
 
@@ -12,6 +12,8 @@ takeRecords 排队模型缓行记档）
 **专项定位**：父目标 P1a 遗留面收敛（microtask checkpoint 简化版 = DC2 缺口②、host 侧
 MO 通知端死路、IO/RO WPT 覆盖为零）。rAF 帧驱动切片已落地不重做；本目标三线 = IO/RO
 WPT 基线 → MO host 触发（方案 C 设计已存在）→ checkpoint spec 化（kill-switch）。
+**2026-09-12 起三线主体收口**：IO/RO 基线+语义修齐 ✅、MO host 触发 default-on ✅、
+per-task checkpoint default-on（timer 泵）✅；剩余为缓行候选与跨流协调项（见下）。
 
 **与兄弟 goal 的边界**：
 - rendering-compat — crate 层面零重叠（渲染流域活跃面是 css-parser/style-system/
@@ -50,10 +52,41 @@ WPT 基线 → MO host 触发（方案 C 设计已存在）→ checkpoint spec �
 | P1 | IO/RO WPT 用例覆盖为零（fetch 脚本 + 导入 + 基线） | ✅ 2026-09-11（基线 29.7% 落 evidence/） |
 | P2 | 事件循环时序差距清单（对照 spec 逐条）未建立 | ✅ 2026-09-11（evidence/2026-09-11-m1-event-loop-gap-list.md） |
 | P2.5 | IO/RO 语义修齐第一批（tick 接线 + threshold 越界 + 构造器校验/getter + root==target + documentElement client 尺寸） | ✅ 2026-09-11（切片 3a+3b+3c，基线 29.7% → 41.4%，evidence/2026-09-11-m1-slice3-observers-wiring-validation.md） |
-| P3 | MO host 触发未实施（通知端死路） | 🔄 M2 MO-S1+MO-S2 ✅ 2026-09-11（identity 桥 + 排空点 + kill-switch 默认 OFF + sibling 双向透传/removed '#id' 回落/oldValue 真值；余 fragment flatten + quickjs 接线；MO-S4 待用户点名） |
-| P4 | checkpoint 简化版（无 task queue、无 per-task checkpoint） | 🔄 M3-S1+S2 ✅ 2026-09-11（runner timer 泵 / renderer tick 双 per-task，kill-switch 默认 OFF；余显式 task queue + default-on 决策） |
+| P3 | MO host 触发未实施（通知端死路） | ✅ 2026-09-12（MO-S1+MO-S2 落地 + ②b default-on——`ZW_MO_HOST_TRIGGER` 翻 opt-out `=0`；余 MO-S3 批派发合并缓行、MO-S4 归 zero-web 流） |
+| P4 | checkpoint 简化版（无 task queue、无 per-task checkpoint） | 🔄 M3-S1+S2 ✅ + ②a timer 泵 default-on ✅ 2026-09-12（`ZW_TESTHARNESS_TIMER_PER_TASK` 翻 opt-out `=0`）；余 renderer tick default-on（压后，条件见决策记账）+ 显式 task queue（缓行记档） |
 
 ## 已完成切片
+
+### ②b — MO host trigger default-on（2026-09-12）✅
+
+- 前置 TODO「全量 make test ON 臂」完成：16,659P/1F，唯一失败即 default-off 断言面
+  本身（构造默认 WebView 依赖 env 初值），非回归 → `ZW_MO_HOST_TRIGGER` 翻 opt-out
+  `=0`；default_off 测试改写 opt_out（setter 直设防 env 竞态）+ 新增 default_on_notify
+  钉住新默认；新默认下全量 make test **19,155P/0F**
+- 明细 evidence/2026-09-12-m2-mo-host-trigger-default-on.md
+
+### ②a — runner timer 泵 default-on（2026-09-12）✅
+
+- `ZW_TESTHARNESS_TIMER_PER_TASK` 翻 opt-out `=0`（一 timer 一 task 一 checkpoint 成为
+  testharness 默认）；`ZW_TESTHARNESS_RAF_FRAME_DRIVEN` 保持 opt-in（reftest 同步 stub
+  约束不变）
+- ④ 新基线上 A/B 复验：IO/RO/html 零 delta；dom 唯一回摆 handler-count 经定向双臂
+  ×2 定性为超时边界 arm 无关 flake，非 per-task 因果；runner 单测 213P/0F
+- 明细 evidence/2026-09-12-m3-per-task-default-on.md
+
+### M4 — runner viewport 真值桥接 + 差分重校准（2026-09-12）✅
+
+- 根因：三处真值互相矛盾——runner 布局 800×600、reftest 800×600、shim stub 1280×800
+  （全仓无桥接），documentElement.client*（3c viewport 化）读 stub 值与 rootBounds
+  系统性错位
+- 结构修复：`ensure_js_shim` 安装 shim 后经 R3254 `__zw_user_resize` 桥接 config 尺寸
+  （inner/outer ← config；screen 保持设备常量；先置位再 sync 防 shim 重装）；
+  `run_page_scripts_impl` 内联安装块收敛至 `ensure_js_shim` 单点。仅 in-process 嵌入
+  路径受影响，生产多进程（IPC SetViewport 链路）零触碰
+- 差分（逐 subtest 双臂）：IO 94→100 Pass（`First rAF.` 簇 ×6 翻绿）/ RO、html 零
+  delta / dom 零实质 delta（超时噪声 +1）；自写探针 zw-probe 改视口无关断言；
+  make test 19,153P/0F
+- 明细 evidence/2026-09-12-m4-runner-viewport-bridging.md
 
 ### M1 切片 3 收尾 — detached document 初通知抑制（2026-09-11）✅
 
@@ -173,41 +206,38 @@ WPT 基线 → MO host 触发（方案 C 设计已存在）→ checkpoint spec �
 
 ## 下一步计划
 
-1. **M3-S2：renderer `tick_observers` per-task 重构**（生产面，实施要点已勘察
-   2026-09-11）：
-   - shim 增 `__zw_observers_tick_once()`（只 schedule/dispatch 首个活跃 observer；
-     返回是否仍有余量）——现 `__zw_observers_tick()` 单 execute 批派发全部 observer
-     + rAF 回调（gap-list §1.2 第二行违反点）
-   - renderer `page_scripts.rs tick_observers`（L353）：kill-switch
-     `ZW_RENDERER_TICK_PER_TASK` 下循环 execute→apply 逐 observer（observer 回调可改
-     DOM，每轮须走 apply_recorded_mutations）；默认 OFF 维持现合并 tick
-   - 风险与验收：帧 pacing 变化（每帧多轮 execute+apply）→ 需 bench-gate +
-     product-smoke + reftest（observer-free 页面应零变化）三面 A/B；验收标尺薄的
-     风险已在——记录清楚再动
-2. **M3-S3：显式 task queue**——2026-09-11 复核修正：gap-list §1.3「生产 timer 顺序
-   无保证」已过时——`TimerBridge` 自 R2952 起即单协调线程 + `(expiry, seq)` min-heap
-   顺序 resolve（timer_bridge.rs coordinator_loop，同 delay 严格 FIFO），生产 timer
-   顺序有保证。剩余真缺口收窄为两条：① 多队列 oldest-first（spec step 1-2，
-   timer/network/UI 分源——现为单 FIFO channel；跨 task source 优先级差的 WPT 可观测
-   面稀薄，深结构改动须用户点名）；② `_defer` fallback（timer 无 host 时压成微任务，
-   part01.js reftest/polyfill 面）语义收口。均低优先级缓行，M3 判定以 S1/S2 + default-on
-   决策为主轴
-3. **M2 MO-S3（候选）**：排空侧记录批派发合并（同 target+type 连续 childList 记录 →
-   浏览器语义单记录——fragment append N 记录粒度差异；当前无 driving WPT 用例，冒进
-   缓行）+ 排空批「单 execute 多 record」的 execute_script 次数优化（现逐条投递）
+1. **renderer tick default-on（M3 剩余，压后）**——`ZW_RENDERER_TICK_PER_TASK` 翻默认
+   的前置条件（2026-09-12 决策记账）：
+   - product-smoke 基线被 rendering-compat 流修复（当前干净 main 上 20.30% > 20.00%
+     阈值，红着的门禁无判别力）
+   - bench-gate + product-smoke + reftest 三面 A/B（M3-S2 计划面）
+   - 明确正向收益判据（该开关不进 testharness corpus 面，WPT 无证据力；为生产
+     observer 回调 task 边界合规而翻，须说清为哪类行为差异翻）
+2. **M3-S3：显式 task queue——缓行记档（2026-09-12 决策：不做）**：驱动用例已消失
+   （R2952 `(expiry,seq)` heap 保证生产 timer 顺序），WPT 跨 task source 优先级可观测
+   面稀薄，无 driving 失败用例即无可验证成功标准。**重入条件**：出现明确要求跨 task
+   source 顺序语义的 driving WPT 失败簇。`_defer` fallback 语义收口同理（reftest/
+   polyfill 面出现可归因失败时再做）
+3. **M2 MO-S3（候选，缓行）**：排空侧记录批派发合并（同 target+type 连续 childList
+   记录 → 浏览器语义单记录；当前无 driving WPT 用例不冒进）+ 排空批「单 execute 多
+   record」优化（现逐条投递）
 4. **跨流协调项（非本流可闭合，记录待碰头）**：
    - engine apply 路径稳定 selector 唯一性（RO observe-001..020 / IO handle 族根因）
    - 几何真值簇（scroll offset / transform / zoom / clip-path 参与 IO 几何）——渲染流域
-5. **本流后续小修候选**：detached doc 初通知抑制 + takeRecords 真排队模型（同做）；
+5. **本流后续小修候选**：takeRecords 真排队模型（compute/queue 与 deliver 分相）；
    scroll-margin 臂
 
-**待用户决策清单**：
-- runner viewport 校准（1280×800 → 上游 WPT 校准 800×600）：牵动全部 testharness
-  套件的绝对几何期望（一次性大重校准），非轻量修复
+**待用户决策清单（2026-09-12 更新）**：
+- ~~runner viewport 校准~~ ✅ 2026-09-12（结构桥接 + 差分重校准，IO +6 零回归）
+- ~~M3 timer 泵 default-on~~ ✅ 2026-09-12（②a）
+- ~~MO host trigger default-on~~ ✅ 2026-09-12（②b，ON 臂前置 TODO 已补）
+- renderer tick default-on：压后，前置条件见上第 1 条（行为时序门禁保留）
 - requestIdleCallback 真实 idle 时序（已在 goal 范围外条款）
-- MO-S4 + escape-hatch 收敛（设计文档 §6 决策门禁：生产路径主干变更须用户点名）
-- M3 per-task（timer 泵/renderer tick）与 task queue 的 default-on 时机（A/B 零回归
-  后仍须点名——行为时序变更门禁）
+- MO-S4 + escape-hatch 收敛：**移出本 goal 决策清单**，归 zero-web 流 P1b S6 窗口
+  （设计文档 §6 同款结论）。启动前置三条件：① engine apply 路径稳定 selector 唯一性
+  修复（RO observe-001..020 根因——escape-hatch 把身份解析推到生产全量 mutation 规模，
+  歧义 selector 断链等比放大）；② MO-S3 批派发粒度决策（N 记录 vs 浏览器单记录，
+  框架高频依赖 childList，不可带病上主干）；③ product-smoke 基线恢复
 
 ### M1 切片 3c — IO/RO 语义修齐第二批 + 实验回退记账（2026-09-11）✅
 
@@ -266,6 +296,9 @@ WPT 基线 → MO host 触发（方案 C 设计已存在）→ checkpoint spec �
 
 ## 下一步计划
 
+> （2026-09-12 归档说明：以下为 M1 时期旧版计划，仅存档防线索断；现行计划与待用户
+> 决策清单以文首「## 下一步计划」为准，勿据本节行动。）
+
 1. **M2 MO-S2 余项**（previousSibling 透传 + removed '#id' 回落已落地，2026-09-11）：
    - dom 层 MutationRecord 补 next_sibling 字段（spec removedNodes.next——dom 层结构
      缺口，排空侧已留 DrainedMutation 扩位）+ fragment added 语义对齐（polyfill R47
@@ -281,8 +314,8 @@ WPT 基线 → MO host 触发（方案 C 设计已存在）→ checkpoint spec �
    现架构无 user-code 插窗，无当前 failing driving 断言，缓行）；scroll-margin 臂
 
 **待用户决策清单**：
-- runner viewport 校准（1280×800 → 上游 WPT 校准 800×600）：牵动全部 testharness
-  套件的绝对几何期望（一次性大重校准），非轻量修复
+- ~~runner viewport 校准~~ ✅ 2026-09-12
+- ~~MO host trigger default-on~~ ✅ 2026-09-12
 - requestIdleCallback 真实 idle 时序（已在 goal 范围外条款）
 - MO-S4 + escape-hatch 收敛（设计文档 §6 决策门禁：生产路径主干变更须用户点名）
 
@@ -293,17 +326,22 @@ crates/script-sandbox/` 核对渲染流域活跃面。
 
 | 里程碑 | 状态 |
 |--------|------|
-| M1 — WPT 基线 + 时序差距清单 | ✅ 2026-09-11（基线 29.7% + 差距清单；语义修齐 3a+3b+3c → 41.4%；剩余聚类为跨流域协调项，主力转 M2） |
-| M2 — MutationObserver host 触发 | 🔄 MO-S1 ✅（identity 桥 + 排空点 + kill-switch OFF）；MO-S2（派发深化 + WPT 标尺）进行中 |
-| M3 — checkpoint spec 化 | 🔄 M3-S1 ✅ + M3-S2 ✅（runner timer 泵 / renderer tick_observers 双 per-task，均 kill-switch 默认 OFF）；余显式 task queue |
+| M1 — WPT 基线 + 时序差距清单 | ✅ 2026-09-11（基线 29.7% + 差距清单；语义修齐 3a+3b+3c → 41.4%；2026-09-12 ④ viewport 真值桥接 → IO 100/218 = 45.9%；剩余聚类为跨流域协调项） |
+| M2 — MutationObserver host 触发 | ✅ 主体 2026-09-12（MO-S1+S2 落地 + ②b default-on；MO-S3 批派发合并缓行无 driving 用例；MO-S4 归 zero-web 流 P1b S6 窗口，前置三条件见决策清单） |
+| M3 — checkpoint spec 化 | 🔄 M3-S1+S2 ✅ + ②a timer 泵 default-on ✅ 2026-09-12；余 renderer tick default-on（前置条件见决策清单第 1 条）+ 显式 task queue（缓行记档，重入条件见决策清单第 2 条） |
 
 ## 验证基线
 
 - 测试基线：立项时点全绿（`make test` / `make reftest` 入口，经 test-guard 包裹；
-  禁止裸跑 cargo test）。2026-09-11 切片 3a+3b 后：make test 19,134P/0F；切片 3c 后
-  engine + integration 3,455P/0F
-- IO/RO 用例面：基线 29.7%（IO 30.9% / RO 25.0%）→ 切片 3a+3b+3c 后 **41.4%**
-  （IO 94/217 = 43.3% / RO 19/56 = 33.9%），明细见 evidence/
+  禁止裸跑 cargo test）。2026-09-11 切片 3a+3b 后：make test 19,134P/0F；2026-09-12
+  ④ viewport 桥接轮 19,153P/0F；②b default-on 后 **19,155P/0F**（含 default-on/
+  opt-out 两枚新断言）
+- IO/RO 用例面：基线 29.7%（IO 30.9% / RO 25.0%）→ 切片 3a+3b+3c 后 41.4% →
+  2026-09-12 ④ viewport 真值桥接后 **IO 100/218 = 45.9%**（RO 18/57，corpus 组成
+  微漂以双臂差分为准），明细见 evidence/
+- 默认行为基线（2026-09-12 ②a/②b 后）：`ZW_TESTHARNESS_TIMER_PER_TASK=0` /
+  `ZW_MO_HOST_TRIGGER=0` / `ZW_RENDERER_TICK_PER_TASK=1`（仍 opt-in 默认 OFF）为
+  三处时序开关的显式逃生口；shim innerWidth/innerHeight ← WebView config 真值
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过；
   时序变更必须 kill-switch + 全量 A/B 零回归；渲染相关门禁（product-smoke/bench-gate）
   在 tick 排布变更轮按 run-rules §12 判断是否需要（本切片仅 runner probe 循环加一次
