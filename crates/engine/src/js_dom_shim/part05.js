@@ -3957,45 +3957,16 @@
           if (bv.length > 0) marked.push(slot);
         });
       };
+      // WC-M3 切片 8 第六增量（spec notify mutation observers）：slotchange 改经全局
+      // signalSet + MO flush 派发（MO 回调之后同一复合微任务，bubbles: true）。派发体
+      // = __zwFlushHandleSlotSignals（下方）。
       if (!_zwSlotchangeQueued[rootHandle]) {
         _zwSlotchangeQueued[rootHandle] = true;
         _zwSlotchangePrev[rootHandle] = null;
         _zwSlotchangeMarked[rootHandle] = [];
-        Promise.resolve().then(function () {
-          _zwSlotchangeQueued[rootHandle] = false;
-          try {
-            var finalMap = flattenMap();
-            var marked = _zwSlotchangeMarked[rootHandle] || [];
-            var prev = _zwSlotchangePrev[rootHandle];
-            // 双基 sweep（同 part03）：prev 链 + last（单变异轮首变异效果）。
-            var baseP = (prev && prev.size) ? prev : new Map();
-            diffInto(marked, baseP, finalMap);
-            diffInto(marked, _zwSlotchangeLast[rootHandle] || new Map(), finalMap);
-            var ordered = [];
-            var dfsO = function (list) {
-              for (var oi = 0; oi < list.length; oi++) {
-                var nd = list[oi];
-                if (!nd || nd.nodeType !== 1) continue;
-                if (marked.indexOf(nd) >= 0 && ordered.indexOf(nd) < 0) ordered.push(nd);
-                var kk = (nd.__zwHandle && _handleChildren[nd.__zwHandle]) ? _handleChildren[nd.__zwHandle] : [];
-                for (var qi = 0; qi < kk.length; qi++) dfsO([kk[qi]]);
-              }
-            };
-            dfsO(_handleChildren[rootHandle] || []);
-            for (var mi = 0; mi < marked.length; mi++) {
-              if (ordered.indexOf(marked[mi]) < 0) ordered.push(marked[mi]);
-            }
-            for (var fi = 0; fi < ordered.length; fi++) {
-              try {
-                var ev = new globalThis.Event('slotchange', { bubbles: false, composed: false });
-                ordered[fi].dispatchEvent(ev);
-              } catch (_eEv) {}
-            }
-            _zwSlotchangeLast[rootHandle] = finalMap;
-            _zwSlotchangePrev[rootHandle] = null;
-            _zwSlotchangeMarked[rootHandle] = [];
-          } catch (_eQ) {}
-        });
+        globalThis.__zwSlotSignalRoots = globalThis.__zwSlotSignalRoots || [];
+        globalThis.__zwSlotSignalRoots.push({ kind: 'handle', rootHandle: rootHandle });
+        if (typeof globalThis.__zw_mo_flush_lite === 'function') globalThis.__zw_mo_flush_lite();
       } else {
         var prevMap = _zwSlotchangePrev[rootHandle];
         var markedArr = _zwSlotchangeMarked[rootHandle] || [];
@@ -4005,6 +3976,79 @@
       }
       _zwSlotchangePrev[rootHandle] = flattenMap();
     } catch (_eQs) {}
+  };
+  // WC-M3 切片 8 第六增量：signalSet 派发体——handle 世界（diff/树序逻辑原样，事件改
+  // bubbles: true，由 part03 __zwFlushSlotSignals 分派）。spec notify mutation
+  // observers 末段：slotchange bubbles: true（嵌套 slot 的上游监听经 assigned-slot
+  // 父边可达——WPT nested slots's contents change 簇）。
+  globalThis.__zwFlushHandleSlotSignals = function (rootHandle) {
+    // 注意：flattenMap/diffInto 为队列函数局部——本 flush 体自带同构实现（模块域
+    // 只依赖 _handleChildren/_zwSlotchange* 表）。
+    var flattenMap = function () {
+      var m = new Map();
+      var dfs = function (list) {
+        for (var di = 0; di < list.length; di++) {
+          var s = list[di];
+          if (!s || s.nodeType !== 1) continue;
+          if (String(s.tagName || '').toLowerCase() === 'slot') {
+            m.set(s, (typeof s.assignedNodes === 'function') ? s.assignedNodes({ flatten: true }) : []);
+          }
+          var kk = (s.__zwHandle && _handleChildren[s.__zwHandle]) ? _handleChildren[s.__zwHandle] : [];
+          for (var q = 0; q < kk.length; q++) dfs([kk[q]]);
+        }
+      };
+      dfs(_handleChildren[rootHandle] || []);
+      return m;
+    };
+    var diffInto = function (marked, A, B) {
+      A.forEach(function (av, slot) {
+        if (marked.indexOf(slot) >= 0) return;
+        var bv = B.get(slot);
+        if (!bv) bv = [];
+        if (av.length !== bv.length) { marked.push(slot); return; }
+        for (var i = 0; i < av.length; i++) {
+          if (av[i] !== bv[i]) { marked.push(slot); return; }
+        }
+      });
+      B.forEach(function (bv, slot) {
+        if (marked.indexOf(slot) >= 0) return;
+        if (A.has(slot)) return;
+        if (bv.length > 0) marked.push(slot);
+      });
+    };
+    try {
+      _zwSlotchangeQueued[rootHandle] = false;
+      var finalMap = flattenMap();
+      var marked = _zwSlotchangeMarked[rootHandle] || [];
+      var prev = _zwSlotchangePrev[rootHandle];
+      // 双基 sweep（同 part03）：prev 链 + last（单变异轮首变异效果）。
+      var baseP = (prev && prev.size) ? prev : new Map();
+      diffInto(marked, baseP, finalMap);
+      diffInto(marked, _zwSlotchangeLast[rootHandle] || new Map(), finalMap);
+      var ordered = [];
+      var dfsO = function (list) {
+        for (var oi = 0; oi < list.length; oi++) {
+          var nd = list[oi];
+          if (!nd || nd.nodeType !== 1) continue;
+          if (marked.indexOf(nd) >= 0 && ordered.indexOf(nd) < 0) ordered.push(nd);
+          var kk = (nd.__zwHandle && _handleChildren[nd.__zwHandle]) ? _handleChildren[nd.__zwHandle] : [];
+          for (var qi = 0; qi < kk.length; qi++) dfsO([kk[qi]]);
+        }
+      };
+      dfsO(_handleChildren[rootHandle] || []);
+      for (var mi = 0; mi < marked.length; mi++) {
+        if (ordered.indexOf(marked[mi]) < 0) ordered.push(marked[mi]);
+      }
+      for (var fi = 0; fi < ordered.length; fi++) {
+        try {
+          var ev = new globalThis.Event('slotchange', { bubbles: true, composed: false });
+          ordered[fi].dispatchEvent(ev);
+        } catch (_eEv) {}
+      }
+      _zwSlotchangeLast[rootHandle] = finalMap;
+      _zwSlotchangePrev[rootHandle] = null;
+      _zwSlotchangeMarked[rootHandle] = [];
+    } catch (_eQ) {}
   };
   // 挂接辅助：handle 增删后判定父链是否 shadow root（是 → 队列 slotchange）。
   globalThis.__zwMaybeQueueSlotchange = function (parentHandle) {

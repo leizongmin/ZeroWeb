@@ -2451,7 +2451,18 @@
               try { globalThis._zwReportListenerError(_e302, _r302Realm); } catch (_e302r) {}
             }
           }
+          // WC-M3 切片 8 第六增量（web-components goal，spec notify mutation observers
+          // ——signalSet 的 slotchange 在**每个 observer 回调投递之后**派发（bubbles:
+          // true）：回调内的断言可见「slotchange 尚未 fire/已 fire 一次」的分界——WPT
+          // slotchange-event 'after mutation observers are invoked' 簇的分轮断言）。
+          if (typeof globalThis.__zwFlushSlotSignals === 'function') {
+            try { globalThis.__zwFlushSlotSignals(); } catch (_e8ss1) {}
+          }
         }
+      }
+      // 兜底：无 observer 注册（或本轮零投递）时 signalSet 仍须派发。
+      if (typeof globalThis.__zwFlushSlotSignals === 'function') {
+        try { globalThis.__zwFlushSlotSignals(); } catch (_e8ss2) {}
       }
     });
   }

@@ -2,10 +2,10 @@
 
 **入口文档**: [../web-components.md](../web-components.md)
 **创建日期**: 2026-09-07（goal 拆分 bootstrap）
-**最后更新**: 2026-09-11（M3 切片 8 第二增量第五小步——disabledFeatures=['shadow']×
-attachShadow 全清（define 记录 disabledFeatures + _attachShadow gate；教训：判定抛出
-不得在查找兜底 try 内）+ clearTargets rel 维度（handle 世界），净 +3 零回归；余：
-slotchange 尾 12 案（四簇）+ DC-5 终判）
+**最后更新**: 2026-09-11（M3 切片 8 第二增量第六小步（进行中）——slotchange 迁移
+spec signalSet 模型（bubbles: true + MO 复合微任务派发 + `__zwSlotSignalRoots`），
+全文件级 net 0 零回归；余：slotchange 文件内级联顺序 + 三簇（removed-immediately/
+嵌套 slots/innerHTML 尾计数）+ DC-5 终判）
 
 ---
 
@@ -98,7 +98,10 @@ Shadow DOM 渲染级 composed tree 排除（等用户点名专项）。
    - ~~disabledFeatures×attachShadow 尾 2 案~~ ✅ 同日（define 记录 disabledFeatures +
      `_attachShadow` gate；`['SHADOW']` 大小写敏感、无定义不触发、二次 attachShadow
      优先序均验证）。
-2. **slotchange 尾 12 案**（四簇，独立切片——见挂账明细）。
+2. **slotchange 尾 12 案**（四簇，signalSet 架构已就位（第六小步，net 0）——续：
+   ①文件内级联顺序（嵌套 slots 的 1st/2nd fire 反序——内树信号须先于外树派发）；
+   ②removed-immediately 4F（R52 身份二相）；③innerHTML 尾计数 2F；④MO 交错 4F
+   （filtered 改善回退，文件内上下文待查））。
 3. Rust `resolve_slots` 接线（渲染级消费等用户点名专项）+ **DC-5 终判**
    （make test + clippy + reftest 持续全绿基础上）。
 
@@ -123,10 +126,11 @@ Shadow DOM 渲染级 composed tree 排除（等用户点名专项）。
 - ~~disabledFeatures=['shadow'] × attachShadow~~ ✅ 五小步全清（define 记录
   disabledFeatures + `_attachShadow` gate）；canvas 等 createElement 产物 _realTag
   pending 回落 'div' 的 safelist 误放行仍挂（未阻塞当前断言面）
-- slotchange 尾 12 案（四簇，独立切片）：①removed-immediately 4F——被移除 slot 的
-  proxy 身份二相（R52 消零重建 vs 页面持有引用）；②MO 交错 4F——slotchange 须在
-  mutation records 投递后同一复合微任务；③嵌套 slots 4F——内 slot 分配变化连带标记
-  外 slot；④innerHTML 尾计数 2F——async host apply 过度标记
+- slotchange 尾 12 案（四簇，signalSet 架构已就位——第六小步 net 0）：①嵌套 slots
+  4F——signal 级联顺序（外 slot 事件先于内 slot 自身事件，1st/2nd fire 反序）；
+  ②removed-immediately 4F——被移除 slot 的 proxy 身份二相（R52 消零重建 vs 页面持有
+  引用）；③innerHTML 尾计数 2F——async host apply 过度标记；④MO 交错 4F——filtered
+  run 改善在全文件上下文回退（文件内测试间状态污染待查）
 - builtin-coverage 的 innerHTML 解析簇（~108F）：R380 查询融合域，非 CE 域
 - reactions/ 表格族（table-scoped 解析升级）与 customized-builtins 的 iframe/reparse 面
 - XHTML 悬空 body 查询域（5 案）——pre-existing，与 template 真实化无因果
@@ -155,9 +159,10 @@ crates/dom/` 核对渲染流域活跃面；碰 part01.js 前与 event-loop-spec 
 - 测试基线：立项时点全绿（`make test` / `make reftest` 入口，经 test-guard 包裹；
   禁止裸跑 cargo test）
 - WC 用例面：**3532 Pass / 4763 subtests（74.2%）**（2026-09-11 M3 切片 8 第二增量
-  第五小步，evidence/2026-09-11-wc-m3s8f.{md,json}。历史：基线 437=9% → 2a 689=15% →
-  2b 2565=55% → 3 2720=58% → 4 3008=64% → M2 3014 → M3s1 3046 → M3s2 3050 → M3s3
-  3105 → M3s4 3137 → M3s5 3142 → M3s6 3145 → M3s7 3413 → M3s8 3425 → M3s8b 3427 →
-  M3s8c 3494 → M3s8d 3525 → M3s8e 3529 → M3s8f 3532）
+  第六小步（架构迁移 net 0），evidence/2026-09-11-wc-m3s8g.{md,json}。历史：基线
+  437=9% → 2a 689=15% → 2b 2565=55% → 3 2720=58% → 4 3008=64% → M2 3014 → M3s1
+  3046 → M3s2 3050 → M3s3 3105 → M3s4 3137 → M3s5 3142 → M3s6 3145 → M3s7 3413 →
+  M3s8 3425 → M3s8b 3427 → M3s8c 3494 → M3s8d 3525 → M3s8e 3529 → M3s8f 3532 →
+  M3s8g 3532）
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过；
   dom 结构变更轮跑 `make reftest` 作渲染面守卫

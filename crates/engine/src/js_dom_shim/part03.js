@@ -1331,46 +1331,16 @@
           if (bv.length > 0) marked.push(slot);
         });
       };
+      // WC-M3 切片 8 第六增量（spec notify mutation observers）：slotchange 改经全局
+      // signalSet + MO flush 派发（MO 回调之后同一复合微任务，bubbles: true）——不再
+      // 自持微任务。同根待派发时仅更新 prev 快照（marked 增量并入）。
       if (!shadowRoot.__zwSlotchangeQueued) {
         shadowRoot.__zwSlotchangeQueued = true;
         shadowRoot.__zwSlotchangePrev = null;
         shadowRoot.__zwSlotchangeMarked = [];
-        Promise.resolve().then(function () {
-          shadowRoot.__zwSlotchangeQueued = false;
-          try {
-            var finalMap = flattenMap();
-            var marked = shadowRoot.__zwSlotchangeMarked || [];
-            var prev = shadowRoot.__zwSlotchangePrev;
-            // 双基 sweep：prev（轮内相邻快照链——轮末未消化的最后一次变异）+ last
-            //（上一轮终态——单变异轮的首变异效果，last 缺省 {} 时 B 支路标新增获配）。
-            var baseP = (prev && prev.size) ? prev : new Map();
-            diffInto(marked, baseP, finalMap);
-            diffInto(marked, shadowRoot.__zwSlotchangeLast || new Map(), finalMap);
-            // 树序派发（当前树内）+ 出树 slot 追加。
-            var ordered = [];
-            var dfsO = function (list) {
-              for (var oi = 0; oi < list.length; oi++) {
-                var nd = list[oi];
-                if (!nd || nd.nodeType !== 1) continue;
-                if (marked.indexOf(nd) >= 0 && ordered.indexOf(nd) < 0) ordered.push(nd);
-                dfsO(nd.childNodes || []);
-              }
-            };
-            dfsO(shadowRoot.childNodes || []);
-            for (var mi = 0; mi < marked.length; mi++) {
-              if (ordered.indexOf(marked[mi]) < 0) ordered.push(marked[mi]);
-            }
-            for (var fi = 0; fi < ordered.length; fi++) {
-              try {
-                var ev = new globalThis.Event('slotchange', { bubbles: false, composed: false });
-                ordered[fi].dispatchEvent(ev);
-              } catch (_eEvP) {}
-            }
-            shadowRoot.__zwSlotchangeLast = finalMap;
-            shadowRoot.__zwSlotchangePrev = null;
-            shadowRoot.__zwSlotchangeMarked = [];
-          } catch (_eQW) {}
-        });
+        globalThis.__zwSlotSignalRoots = globalThis.__zwSlotSignalRoots || [];
+        globalThis.__zwSlotSignalRoots.push({ kind: 'plain', shadowRoot: shadowRoot });
+        if (typeof globalThis.__zw_mo_flush_lite === 'function') globalThis.__zw_mo_flush_lite();
       } else {
         var prevMap = shadowRoot.__zwSlotchangePrev;
         var markedArr = shadowRoot.__zwSlotchangeMarked || [];
@@ -1380,6 +1350,90 @@
       }
       shadowRoot.__zwSlotchangePrev = flattenMap();
     } catch (_eQsp) {}
+  };
+  // WC-M3 切片 8 第六增量：signalSet 派发体——plain 世界（diff/树序逻辑原样，事件改
+  // bubbles: true）。handle 世界（rootHandle 形态）经 __zwFlushHandleSlotSignals
+  //（part05）分派。
+  globalThis.__zwFlushPlainSlotSignals = function (shadowRoot) {
+    try {
+      shadowRoot.__zwSlotchangeQueued = false;
+      var finalMap = (function () {
+        var m = new Map();
+        var dfs = function (list) {
+          for (var di = 0; di < list.length; di++) {
+            var s = list[di];
+            if (!s || s.nodeType !== 1) continue;
+            if (String(s.tagName || '').toLowerCase() === 'slot') {
+              m.set(s, (typeof s.assignedNodes === 'function') ? s.assignedNodes({ flatten: true }) : []);
+            }
+            dfs(s.childNodes || []);
+          }
+        };
+        dfs(shadowRoot.childNodes || []);
+        return m;
+      })();
+      var marked = shadowRoot.__zwSlotchangeMarked || [];
+      var diffInto = function (markedArr, A, B) {
+        A.forEach(function (av, slot) {
+          if (markedArr.indexOf(slot) >= 0) return;
+          var bv = B.get(slot);
+          if (!bv) bv = [];
+          if (av.length !== bv.length) { markedArr.push(slot); return; }
+          for (var i = 0; i < av.length; i++) {
+            if (av[i] !== bv[i]) { markedArr.push(slot); return; }
+          }
+        });
+        B.forEach(function (bv, slot) {
+          if (markedArr.indexOf(slot) >= 0) return;
+          if (A.has(slot)) return;
+          if (bv.length > 0) markedArr.push(slot);
+        });
+      };
+      var prev = shadowRoot.__zwSlotchangePrev;
+      var baseP = (prev && prev.size) ? prev : new Map();
+      diffInto(marked, baseP, finalMap);
+      diffInto(marked, shadowRoot.__zwSlotchangeLast || new Map(), finalMap);
+      var ordered = [];
+      var dfsO = function (list) {
+        for (var oi = 0; oi < list.length; oi++) {
+          var nd = list[oi];
+          if (!nd || nd.nodeType !== 1) continue;
+          if (marked.indexOf(nd) >= 0 && ordered.indexOf(nd) < 0) ordered.push(nd);
+          dfsO(nd.childNodes || []);
+        }
+      };
+      dfsO(shadowRoot.childNodes || []);
+      for (var mi = 0; mi < marked.length; mi++) {
+        if (ordered.indexOf(marked[mi]) < 0) ordered.push(marked[mi]);
+      }
+      // spec notify mutation observers 末段：slotchange bubbles: true（嵌套 slot 的
+      // 上游监听经 assigned-slot 父边可达——WPT nested slots's contents change 簇）。
+      for (var fi = 0; fi < ordered.length; fi++) {
+        try {
+          var ev = new globalThis.Event('slotchange', { bubbles: true, composed: false });
+          ordered[fi].dispatchEvent(ev);
+        } catch (_eEvP) {}
+      }
+      shadowRoot.__zwSlotchangeLast = finalMap;
+      shadowRoot.__zwSlotchangePrev = null;
+      shadowRoot.__zwSlotchangeMarked = [];
+    } catch (_eQW) {}
+  };
+  globalThis.__zwFlushSlotSignals = function () {
+    try {
+      var list = globalThis.__zwSlotSignalRoots || [];
+      globalThis.__zwSlotSignalRoots = [];
+      for (var si = 0; si < list.length; si++) {
+        var ent = list[si];
+        try {
+          if (ent.kind === 'plain') {
+            globalThis.__zwFlushPlainSlotSignals(ent.shadowRoot);
+          } else if (ent.kind === 'handle' && typeof globalThis.__zwFlushHandleSlotSignals === 'function') {
+            globalThis.__zwFlushHandleSlotSignals(ent.rootHandle);
+          }
+        } catch (_eEnt) {}
+      }
+    } catch (_eFlush) {}
   };
   // R134（js-dom M4）：Element.prototype 的 [Unscopable] 表（spec ChildNode 四方法
   // before/after/replaceWith/remove + ParentNode prepend/append 均 [Unscopable]——
