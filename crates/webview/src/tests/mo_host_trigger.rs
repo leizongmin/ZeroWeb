@@ -1,5 +1,6 @@
 //! event-loop-spec M2 MO-S1：host 侧 mutation 通知排空（`drain_native_mutations_to_mo`）。
-//! kill-switch `set_mo_host_trigger` / env `ZW_MO_HOST_TRIGGER`（默认 OFF）。
+//! 开关 `set_mo_host_trigger` / env `ZW_MO_HOST_TRIGGER`（2026-09-12 ②b default-on，
+//! opt-out `=0`）。
 
 use super::super::*;
 
@@ -165,14 +166,45 @@ fn test_mo_host_trigger_fragment_flatten_v8() {
     );
 }
 
-/// kill-switch OFF（默认）：native 写不投递——通知端死路保持（行为时序变更门禁）。
+/// default-on（2026-09-12 ②b）：无 env 干预（CI 默认无 `ZW_MO_HOST_TRIGGER`）即投递——
+/// 钉住新默认，防未来意外回退到 OFF。
 #[test]
-fn test_mo_host_trigger_default_off_no_notify() {
+fn test_mo_host_trigger_default_on_notify() {
     let mut wv = WebView::new(WebViewConfig::default());
     // 内联 script 必须存在——空脚本时 run_page_scripts 早返、不注册 dom 查询回调。
     wv.load_html("<html><body><div id='t'></div><script>0;</script></body></html>", None);
     wv.run_page_scripts().expect("run page scripts");
-    // 不调 set_mo_host_trigger（默认 OFF；CI 环境无 ZW_MO_HOST_TRIGGER）。
+    // 不调 set_mo_host_trigger（默认 ON；CI 环境无 ZW_MO_HOST_TRIGGER）。
+    wv.execute_script(
+        "globalThis.__moRecs = [];\
+         globalThis.__mo = new MutationObserver(function (rs) { globalThis.__moRecs = globalThis.__moRecs.concat(rs); });\
+         globalThis.__mo.observe(document.getElementById('t'), { attributes: true });",
+    )
+    .unwrap();
+    wv.execute_script("(()=>{ const e = __zw_native_element_for_id('t'); e.setAttribute('class', 'c1'); })()")
+        .unwrap();
+    let mut arrived = false;
+    for _ in 0..50 {
+        let n = wv.execute_script("String(globalThis.__moRecs.length)").unwrap();
+        if n.trim() == "1" {
+            arrived = true;
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    assert!(arrived, "default-on 下 native 写应投递 polyfill MO（recs=1）");
+}
+
+/// opt-out（`ZW_MO_HOST_TRIGGER=0` 或 setter false）：native 写不投递——通知端死路
+/// 保持（行为时序门禁的显式逃生口）。经 [`WebView::set_mo_host_trigger`] 直设而非
+/// env 写入（进程级 env 竞态——并行测试共用进程 env）。
+#[test]
+fn test_mo_host_trigger_opt_out_no_notify() {
+    let mut wv = WebView::new(WebViewConfig::default());
+    // 内联 script 必须存在——空脚本时 run_page_scripts 早返、不注册 dom 查询回调。
+    wv.load_html("<html><body><div id='t'></div><script>0;</script></body></html>", None);
+    wv.run_page_scripts().expect("run page scripts");
+    wv.set_mo_host_trigger(false);
     wv.execute_script(
         "globalThis.__moRecs = [];\
          globalThis.__mo = new MutationObserver(function (rs) { globalThis.__moRecs = globalThis.__moRecs.concat(rs); });\
@@ -183,7 +215,7 @@ fn test_mo_host_trigger_default_off_no_notify() {
         .unwrap();
     for _ in 0..20 {
         let n = wv.execute_script("String(globalThis.__moRecs.length)").unwrap();
-        assert_eq!(n.trim(), "0", "kill-switch OFF 时 native 写不得投递 MO");
+        assert_eq!(n.trim(), "0", "opt-out 关闭时 native 写不得投递 MO");
         std::thread::sleep(std::time::Duration::from_millis(5));
     }
 }

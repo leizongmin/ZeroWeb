@@ -442,9 +442,10 @@ pub struct WebView {
     /// 重复执行会重置 _nodeMap 丢失监听器，故只注入一次）。
     js_shim_initialized: bool,
     /// event-loop-spec M2 MO-S1：host 侧 mutation 通知排空开关（`drain_native_mutations_to_mo`）。
-    /// kill-switch 语义：默认 OFF（MO 通知是行为时序变更——本 goal DC-3 门禁：kill-switch +
-    /// A/B 零回归才 default-on）。初值读 env `ZW_MO_HOST_TRIGGER=1`（与 `ZW_RAF_FRAME_DRIVEN`
-    /// 同款 env 形态），测试经 [`WebView::set_mo_host_trigger`] 直设（避免进程级 env 竞态）。
+    /// 2026-09-12 ②b default-on（opt-out `ZW_MO_HOST_TRIGGER=0`）：MO 通知是行为时序变更，
+    /// 经 DC-3 门禁（kill-switch 下 A/B 零回归 + 全量 make test ON 臂绿，见
+    /// evidence/2026-09-12-m2-mo-host-trigger-default-on.md）后翻默认。测试经
+    /// [`WebView::set_mo_host_trigger`] 直设（避免进程级 env 竞态）。
     mo_host_trigger: bool,
     /// R384（js-dom M5）：本 WebView 最近一次 install 时的引擎 native 线程局部代际
     ///（`dom_bindings::state_generation`）。install 前不符 → 缓存属于别的 Isolate，
@@ -623,7 +624,7 @@ impl WebView {
             service_worker_event_backlog,
             service_worker_fetch_event_registry,
             js_shim_initialized: false,
-            mo_host_trigger: std::env::var("ZW_MO_HOST_TRIGGER").as_deref() == Ok("1"),
+            mo_host_trigger: std::env::var("ZW_MO_HOST_TRIGGER").as_deref() != Ok("0"),
             #[cfg(feature = "v8")]
             native_state_gen: None,
             #[cfg(feature = "v8")]
@@ -2224,8 +2225,8 @@ impl WebView {
         }
     }
 
-    /// event-loop-spec M2 MO-S1：host 侧 mutation 通知排空开关（kill-switch，默认 OFF——
-    /// 初值读 env `ZW_MO_HOST_TRIGGER`）。测试/嵌入方经此直设，避免进程级 env 竞态。
+    /// event-loop-spec M2 MO-S1：host 侧 mutation 通知排空开关（2026-09-12 ②b default-on，
+    /// opt-out env `ZW_MO_HOST_TRIGGER=0`）。测试/嵌入方经此直设，避免进程级 env 竞态。
     pub fn set_mo_host_trigger(&mut self, enabled: bool) {
         self.mo_host_trigger = enabled;
     }
@@ -2272,8 +2273,8 @@ impl WebView {
     /// 共享注册表（`__zw_mo_notify_native` → `_mo_notify`，options/subtree/oldValue
     /// 语义复用）。与 polyfill Proxy-trap 路径去重：polyfill apply 路径自更
     /// cached_html，不进 `sync_render_after_native_dom` 分支（设计 §3 风险项消解）。
-    /// kill-switch `ZW_MO_HOST_TRIGGER=1`（默认 OFF——MO 通知是行为时序变更，本 goal
-    /// DC-3 门禁约束：kill-switch + A/B 零回归才 default-on）。重入安全：投递前已刷
+    /// kill-switch `ZW_MO_HOST_TRIGGER=0`（2026-09-12 ②b default-on——opt-out 门禁，
+    /// 翻默认依据：kill-switch 下 A/B 零回归 + 全量 make test ON 臂绿）。重入安全：投递前已刷
     /// cached_html，`execute_script` 尾部再进 `sync_render_after_native_dom` 时
     /// live==cached 早退；MO 回调内再写 → 该轮尾部再排空（与事件派发同收敛）。
     /// 无唯一身份的 record 丢弃（设计 §7：unobserved target 不通知语义）。
