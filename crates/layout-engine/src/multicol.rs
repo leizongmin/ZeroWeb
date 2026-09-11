@@ -29,6 +29,7 @@ use std::collections::HashMap;
 use zero_css_parser::values::LengthValue;
 use zero_dom::NodeId;
 use zero_style_system::ComputedStyle;
+use zero_style_system::WritingModeValue;
 use zero_style_system::property::types::{
     BreakValue, ColumnCountComputedValue, ColumnFillComputedValue, ColumnSpanComputedValue, ColumnWidthComputedValue,
 };
@@ -488,7 +489,7 @@ fn try_layout_nested_spanner(
         .collect();
 
     // 跑现有 spanner 布局（synthetic 上：区域分割 + 列平衡 + spanner 全宽插入）。
-    layout_multicol_with_spanners(&mut synth, info, styles);
+    layout_multicol_with_spanners(&mut synth, info, styles, false);
 
     // 回填位置到真实 wrapper 子（补偿 wrapper 偏移 dx/dy）。
     let wrapper = &mut container.children[wrapper_idx];
@@ -792,6 +793,37 @@ fn layout_multicol(container: &mut LayoutBox, info: &ColumnInfo, styles: &HashMa
         child.column_span_offsets.clear();
     }
 
+    // R4250（css-box-4 §margin-trim）：multicol 容器 extends——旧 bounded gate
+    // （tree.rs）仅 Block/FlowRoot/ListItem 父，multicol 容器 defer。此处 block-start/
+    // block-end trim 归零首个/末个 in-flow 子的 margin_top/margin_bottom（含
+    // column-span:all spanner——spanner 定位 y_base + margin_top 与列内子定位
+    // position_multicol_children 均直接消费 LayoutBox.margin_*，归零即全路径生效）。
+    // bounded：仅水平书写模式。driving: margin-trim/multicol-spanner-004..006。
+    let container_style = container.node_id.and_then(|id| styles.get(&id));
+    let trim_block_start = container_style
+        .is_some_and(|st| matches!(st.writing_mode, WritingModeValue::HorizontalTb) && st.margin_trim.block_start);
+    let trim_block_end = container_style
+        .is_some_and(|st| matches!(st.writing_mode, WritingModeValue::HorizontalTb) && st.margin_trim.block_end);
+    if trim_block_start || trim_block_end {
+        let in_flow: Vec<usize> = container
+            .children
+            .iter()
+            .enumerate()
+            .filter(|(_, c)| !c.is_absolute && !c.is_fixed)
+            .map(|(i, _)| i)
+            .collect();
+        if let Some(&first) = in_flow.first()
+            && trim_block_start
+        {
+            container.children[first].margin_top = 0.0;
+        }
+        if let Some(&last) = in_flow.last()
+            && trim_block_end
+        {
+            container.children[last].margin_bottom = 0.0;
+        }
+    }
+
     // R1340：嵌套 spanner 检测（multicol wrapper-fragmentation 基础）。
     // layout_multicol 主循环只检测直接子 column-span:all；嵌套 spanner（multicol >
     // 非 multicol wrapper > spanner）当前未实现 fragmentation（R1336 诊断：wrapper 被
@@ -858,7 +890,14 @@ fn layout_multicol(container: &mut LayoutBox, info: &ColumnInfo, styles: &HashMa
 
     // column-span:all spanner 路径：独立处理（区域分割 + 全宽 spanner），不走走单区域路径。
     if has_spanner {
-        layout_multicol_with_spanners(container, info, styles);
+        // R4250：adjoining-margin 模型与容器高写回仅在 margin-trim 生效的容器启用
+        //（旧 summing/taffy 高度语义对既有 span-all 页是 load-bearing——button/fieldset/
+        // rule/fill-auto 8 案回归实证，见本轮 A/B）。
+        let trim_active = container
+            .node_id
+            .and_then(|id| styles.get(&id))
+            .is_some_and(|st| st.margin_trim.block_start || st.margin_trim.block_end);
+        layout_multicol_with_spanners(container, info, styles, trim_active);
         return;
     }
 
@@ -1016,6 +1055,7 @@ fn layout_multicol_with_spanners(
     container: &mut LayoutBox,
     info: &ColumnInfo,
     styles: &HashMap<NodeId, ComputedStyle>,
+    trim_active: bool,
 ) {
     let col_count = info.count;
     if col_count == 0 {
@@ -1045,6 +1085,9 @@ fn layout_multicol_with_spanners(
 
     // 2. 逐区域分配 + 定位，spanner 全宽插入其後。
     let mut y_base = 0.0f32;
+    // R4250：尚未与下一元素顶边合并的末元素 margin_bottom（CSS2 §8.3.1 adjoining
+    // margins：prev.mb ⊔ next.mt = max）。spanner 与区域首子边界均按合并推进。
+    let mut pending_mb = 0.0f32;
     for (region_idx, region_children) in regions.iter().enumerate() {
         // 该区域子元素高度信息（break 标志暂不传递——spanner 区域内 break-before/after:column 罕见）。
         let region_child_info: Vec<(usize, f32)> = region_children
@@ -1130,9 +1173,25 @@ fn layout_multicol_with_spanners(
             )
         };
 
+        // R4250：区域首子的 margin_top 与 pending_mb 合并（取 max）——先把合并量推进
+        // 到 y_base，再把首子 mt 置零（position 内部不再重复加）。空区域跳过。
+        // （仅 trim_active 容器——见 dispatch 处定界注。）
+        if let Some(&first_idx) = region_children.first().filter(|_| trim_active) {
+            let first_mt = container.children[first_idx].margin_top;
+            y_base += pending_mb.max(first_mt) - pending_mb;
+            container.children[first_idx].margin_top = 0.0;
+            pending_mb = 0.0;
+        }
         // 定位该区域子元素（列内 y 从 y_base 起），返回该区域高度。
         let region_height = position_multicol_children(container, &assignments, info, y_base, row_height);
         y_base += region_height;
+        // 区域末子的 mb 成为新的 pending（region_height 已含它——从累计中扣除，
+        // 改由 pending 语义与下一元素的 mt 合并）。
+        if let Some(&last_idx) = region_children.last().filter(|_| trim_active) {
+            let last_mb = container.children[last_idx].margin_bottom;
+            y_base -= last_mb;
+            pending_mb = last_mb;
+        }
 
         // 该区域之后插入对应 spanner（region_idx 与 spanner_idx 一一对应；末区域无 spanner）。
         if region_idx < spanners.len() {
@@ -1142,9 +1201,27 @@ fn layout_multicol_with_spanners(
             // 容器 content_width（全宽），显式 width（如 `width:100px; column-span:all`）须尊重。
             spanner.column_span_offsets.clear();
             spanner.x = spanner.margin_left;
-            spanner.y = y_base + spanner.margin_top;
-            y_base += spanner.height + spanner.margin_top + spanner.margin_bottom;
+            // R4250（CSS2 §8.3.1 adjoining margins）：spanner.mt 与 pending_mb 合并
+            //（取 max，非求和——旧实现两侧相加，40px 间隙应 20px）；spanner.mb 记为
+            // 新 pending 与下一元素合并。driving: margin-trim/multicol-spanner-004..006
+            //（margin-trim 下首/末 margin 归零后 spanner 序列应精确平铺 100px）。
+            let adj_top = if trim_active {
+                pending_mb.max(spanner.margin_top)
+            } else {
+                spanner.margin_top
+            };
+            y_base += adj_top - pending_mb;
+            pending_mb = spanner.margin_bottom;
+            spanner.y = y_base;
+            y_base += spanner.height;
         }
+    }
+    // R4250：末元素的 pending mb 计入容器高度（margin-trim block_end 已把它归零）。
+    // 容器高写回同理仅 trim_active——taffy 高度语义对既有 span-all 页 load-bearing。
+    if trim_active {
+        y_base += pending_mb;
+        container.content_height = y_base;
+        container.height = y_base;
     }
 }
 
