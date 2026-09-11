@@ -3091,6 +3091,26 @@
       }
     }
   };
+  // event-loop-spec M3-S2：per-task 模式（renderer kill-switch
+  // ZW_RENDERER_TICK_PER_TASK）——无状态游标协议：`tick_once(from)` 从 from 起 schedule
+  // 首个活跃 observer（其回调在本 execute 末 checkpoint 派发，即「一 observer 一 task
+  // 一 checkpoint」，spec event loop processing model step 3-6），返回下一游标（int）；
+  // 耗尽返 -1。host 循环 execute→apply 直到 -1。与 `__zw_observers_tick`（整批
+  // schedule）并存。
+  globalThis.__zw_observers_tick_once = function(from) {
+    var i = parseInt(from, 10);
+    if (isNaN(i) || i < 0) i = 0;
+    for (; i < _zwObservers.length; i++) {
+      var obs = _zwObservers[i];
+      if (!obs || !obs._targets) continue;
+      var has = false;
+      for (var _k in obs._targets) { has = true; break; }
+      if (!has) continue;
+      try { obs._schedule(); } catch (_e) {}
+      return i + 1;
+    }
+    return -1;
+  };
 
   // https://w3c.github.io/input-events/#input-event-order-during-user-initiated-editing
   // host 在 keydown 默认动作阶段调用：先派 cancelable beforeinput；未取消才更新 value/selection，

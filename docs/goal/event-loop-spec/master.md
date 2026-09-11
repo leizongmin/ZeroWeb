@@ -2,8 +2,8 @@
 
 **入口文档**: [../event-loop-spec.md](../event-loop-spec.md)
 **创建日期**: 2026-09-07（goal 拆分 bootstrap）
-**最后更新**: 2026-09-11（M3-S1 落地——runner timer 泵 per-task 边界，kill-switch
-`ZW_TESTHARNESS_TIMER_PER_TASK` 默认 OFF，A/B 四 corpus 逐 subtest 零 delta）
+**最后更新**: 2026-09-11（M3-S2 落地——renderer tick_observers per-task 重构，kill-switch
+`ZW_RENDERER_TICK_PER_TASK` 默认 OFF；product-smoke 20.30% 超阈为干净 main 即有的跨流域漂移，已归因记档）
 
 ---
 
@@ -51,7 +51,7 @@ WPT 基线 → MO host 触发（方案 C 设计已存在）→ checkpoint spec �
 | P2 | 事件循环时序差距清单（对照 spec 逐条）未建立 | ✅ 2026-09-11（evidence/2026-09-11-m1-event-loop-gap-list.md） |
 | P2.5 | IO/RO 语义修齐第一批（tick 接线 + threshold 越界 + 构造器校验/getter + root==target + documentElement client 尺寸） | ✅ 2026-09-11（切片 3a+3b+3c，基线 29.7% → 41.4%，evidence/2026-09-11-m1-slice3-observers-wiring-validation.md） |
 | P3 | MO host 触发未实施（通知端死路） | 🔄 M2 MO-S1+MO-S2 ✅ 2026-09-11（identity 桥 + 排空点 + kill-switch 默认 OFF + sibling 双向透传/removed '#id' 回落/oldValue 真值；余 fragment flatten + quickjs 接线；MO-S4 待用户点名） |
-| P4 | checkpoint 简化版（无 task queue、无 per-task checkpoint） | 🔄 M3-S1 ✅ 2026-09-11（runner timer 泵 per-task，kill-switch + A/B 零 delta；余 renderer tick 重构 + 显式 task queue） |
+| P4 | checkpoint 简化版（无 task queue、无 per-task checkpoint） | 🔄 M3-S1+S2 ✅ 2026-09-11（runner timer 泵 / renderer tick 双 per-task，kill-switch 默认 OFF；余显式 task queue + default-on 决策） |
 
 ## 已完成切片
 
@@ -65,6 +65,23 @@ WPT 基线 → MO host 触发（方案 C 设计已存在）→ checkpoint spec �
   零触碰（明细 evidence/2026-09-11-m3-s1-timer-per-task.md）
 - 后续：M3-S2 renderer `tick_observers` per-task（生产面，需渲染 A/B）→ M3-S3 显式
   task queue（多队列 oldest-first）
+
+### M3-S2 — renderer `tick_observers` per-task 重构（2026-09-11）✅
+
+- shim `__zw_observers_tick_once(from)`：无状态游标协议——从 from 起 schedule 首个活跃
+  observer 并返回下一游标，-1 = 耗尽（首版「返回是否有余量」协议因扫描不推进致死循环，
+  已换游标制）；与 `__zw_observers_tick`（整批）并存
+- renderer `tick_observers_with(ctx, per_task)`：per-task 下循环 execute→apply 逐
+  observer（上限 64 轮），rAF tick 在队列排空后单独一 execute；默认 OFF 维持现合并
+  tick。kill-switch env `ZW_RENDERER_TICK_PER_TASK=1`（OnceLock 进程缓存），
+  `tick_observers` 包装读它，模式注入形态供测试双模式直设
+- 验证：渲染器单测 2 案（per-task 对 2 活跃 observer 调 tick_once 3 次=2 schedule+1
+  终止探测、游标越界返 -1；合并模式 0 次 tick_once + 交付面不变 1/1）+ `make test`
+  19,153P/0F + clippy 零警告 + fmt 干净
+- **跨流观察（rule 10 归因）**：product-smoke 在**干净 main（无本切片改动）**上即
+  20.30% > 20.00% 阈值（REGRESSION），与本切片无关——渲染流域近期 font/letter-spacing
+  提交漂移所致，属 rendering-compat 域，本流不改不判
+- reftest：本切片默认 OFF 且 reftest 单渲染路径不经 tick 循环，约束保持有效
 
 ### M2 MO-S2（第三批）— fragment flatten 验证 + quickjs 接线（2026-09-11）✅
 
@@ -263,7 +280,7 @@ crates/script-sandbox/` 核对渲染流域活跃面。
 |--------|------|
 | M1 — WPT 基线 + 时序差距清单 | ✅ 2026-09-11（基线 29.7% + 差距清单；语义修齐 3a+3b+3c → 41.4%；剩余聚类为跨流域协调项，主力转 M2） |
 | M2 — MutationObserver host 触发 | 🔄 MO-S1 ✅（identity 桥 + 排空点 + kill-switch OFF）；MO-S2（派发深化 + WPT 标尺）进行中 |
-| M3 — checkpoint spec 化 | 🔄 M3-S1 ✅（runner timer 泵 per-task + A/B 零 delta）；余 renderer tick 重构、显式 task queue |
+| M3 — checkpoint spec 化 | 🔄 M3-S1 ✅ + M3-S2 ✅（runner timer 泵 / renderer tick_observers 双 per-task，均 kill-switch 默认 OFF）；余显式 task queue |
 
 ## 验证基线
 

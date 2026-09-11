@@ -351,12 +351,57 @@ pub fn dispatch_dom_event(
 /// tick 先于 rAF，rAF 回调见到的 DOM 反映 observer 本帧变更；两者 mutation 合并由
 /// `apply_recorded_mutations` 单次 rerender。
 pub fn tick_observers(ctx: &mut PageScriptContext<'_>) -> bool {
+    tick_observers_with(ctx, tick_per_task_enabled())
+}
+
+/// M3-S2 per-task 开关（进程级缓存——每帧 tick 不重复读 env）。
+fn tick_per_task_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| std::env::var("ZW_RENDERER_TICK_PER_TASK").as_deref() == Ok("1"))
+}
+
+/// `tick_observers` 的模式注入形态（`per_task` = kill-switch
+/// `ZW_RENDERER_TICK_PER_TASK`，测试双模式直设避免进程级 env 竞态）。
+pub fn tick_observers_with(ctx: &mut PageScriptContext<'_>, per_task: bool) -> bool {
     ctx.js_worker.set_dom_snapshot(ctx.html, ctx.url);
     ctx.js_worker
         .mutations()
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .clear();
+    // event-loop-spec M3-S2：per-task 模式——每次 execute 只 schedule 首个活跃 observer
+    //（`__zw_observers_tick_once`，其回调在本 execute 末 checkpoint 派发）→ 一 observer
+    // 一 task 一 checkpoint（spec event loop processing model step 3-6），消除「IO/RO/rAF
+    // 全部回调一个 execute」的批量派发违反（evidence/2026-09-11-m1-event-loop-gap-list.md
+    // §1.2）。observer 回调可改 DOM → 每轮 execute 后 apply_recorded_mutations；上限 64
+    // 轮防回调内重注册死循环。rAF tick 在 observer 队列排空后单独一 execute（rAF 见到的
+    // DOM 反映全部 observer 变更，与合并模式的单次 apply 时序一致）。
+    // 默认 OFF 维持现合并 tick（零行为变化）。
+    if per_task {
+        // 无状态游标协议：`tick_once(cursor)` schedule 首个活跃 observer 并返回下一
+        // 游标，-1 = 耗尽（上限 64 轮防回调内重注册死循环）。
+        let mut cursor: i64 = 0;
+        for _ in 0..64 {
+            let res = ctx
+                .js_worker
+                .execute_script_direct(&format!(
+                    "(function(){{return String(globalThis.__zw_observers_tick_once({cursor}));}})()"
+                ))
+                .unwrap_or_else(|_| "-1".to_string());
+            let next = res.trim().parse::<i64>().unwrap_or(-1);
+            let html_snap = ctx.html.clone();
+            apply_recorded_mutations(ctx, &html_snap);
+            if next < 0 {
+                break;
+            }
+            cursor = next;
+        }
+        let _ = ctx.js_worker.execute_script_direct(
+            "if(globalThis.__zw_raf_tick)globalThis.__zw_raf_tick(globalThis.performance?performance.now():0);",
+        );
+        let html_snap = ctx.html.clone();
+        return apply_recorded_mutations(ctx, &html_snap).is_some();
+    }
     let _ = ctx.js_worker.execute_script_direct(
         "if(globalThis.__zw_observers_tick)globalThis.__zw_observers_tick();\
          if(globalThis.__zw_raf_tick)globalThis.__zw_raf_tick(globalThis.performance?performance.now():0);",

@@ -2892,6 +2892,9 @@ mod compositor_publish_tests;
 #[cfg(test)]
 #[path = "keyboard_input_tests.rs"]
 mod keyboard_input_tests;
+#[cfg(test)]
+#[path = "tick_per_task_tests.rs"]
+mod tick_per_task_tests;
 
 #[cfg(test)]
 mod runtime_smoke {
