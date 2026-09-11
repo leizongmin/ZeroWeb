@@ -163,6 +163,77 @@ fn native_element_focus_blur_r3148() {
     );
 }
 
+/// focus()/blur() 镜像焦点到 live Document（`set_focus_element`）：`:focus`/`:focus-within`
+/// 样式判定源（focus 子模块权威判定）。C 侧读数验证——脚本执行后 live Document 的焦点元素
+/// 与 `.focus()`/`.blur()` 调用一致（镜像 run_script_return_doc_html 的 run-后-read 模式）。
+#[test]
+fn native_element_focus_document_mirror() {
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
+    use super::install_dom_bindings;
+    use zero_dom::parse_html;
+
+    let html = r#"<div id="p"><span id="a"></span><span id="b"></span></div>"#;
+    zero_script_sandbox::ensure_v8_initialized();
+    let dom = Rc::new(RefCell::new(parse_html(html)));
+    let isolate = &mut v8::Isolate::new(Default::default());
+    {
+        v8::scope!(let scope, isolate);
+        let context = v8::Context::new(scope, Default::default());
+        let scope = &mut v8::ContextScope::new(scope, context);
+        install_dom_bindings(scope, context, Rc::clone(&dom));
+        let code = v8::String::new(
+            scope,
+            "(()=>{ const a=__zw_native_element_for_id('a'); const b=__zw_native_element_for_id('b');\
+             a.focus(); b.focus(); b.blur(); return 'ok'; })()",
+        )
+        .expect("v8 string");
+        let compiled = v8::Script::compile(scope, code, None).expect("compile");
+        compiled.run(scope).expect("run");
+    }
+    // a.focus() → b.focus()（切换）→ b.blur()（清）→ Document 焦点应为空。
+    let doc = dom.borrow();
+    let a = doc.get_element_by_id("a").expect("a");
+    let b = doc.get_element_by_id("b").expect("b");
+    assert!(!doc.is_focus_element(a), "焦点切换后 a 不应再是焦点");
+    assert!(!doc.is_focus_element(b), "blur 后 b 不应是焦点");
+    drop(doc);
+    drop(dom);
+    // 清线程局部绑定状态（首 isolate 的 Global 句柄），否则次 isolate 报
+    // 「attempt to use Handle in an Isolate that is not its host」。
+    crate::dom_bindings::gc::test_helpers::reset_for_test();
+
+    // 不清焦点路径：仅 a.focus() → Document 焦点 = a。
+    let dom2 = Rc::new(RefCell::new(parse_html(html)));
+    let isolate = &mut v8::Isolate::new(Default::default());
+    {
+        v8::scope!(let scope, isolate);
+        let context = v8::Context::new(scope, Default::default());
+        let scope = &mut v8::ContextScope::new(scope, context);
+        install_dom_bindings(scope, context, Rc::clone(&dom2));
+        let code = v8::String::new(
+            scope,
+            "(()=>{ __zw_native_element_for_id('a').focus(); return 'ok'; })()",
+        )
+        .expect("v8 string");
+        let compiled = v8::Script::compile(scope, code, None).expect("compile");
+        compiled.run(scope).expect("run");
+    }
+    let doc = dom2.borrow();
+    let a = doc.get_element_by_id("a").expect("a");
+    let b = doc.get_element_by_id("b").expect("b");
+    assert!(
+        doc.is_focus_element(a),
+        "focus() 后 Document 焦点应为 a（:focus 判定源）"
+    );
+    assert!(!doc.is_focus_element(b), "非焦点元素不应命中");
+    assert!(
+        doc.has_focus_within(doc.get_element_by_id("p").expect("p")),
+        "祖先应命中 :focus-within"
+    );
+}
+
 /// R3149 focusin/focusout（冒泡焦点事件）：focus()/blur() 按 spec 焦点事件序列派发 focusout（旧，冒泡）→
 /// focusin（new，冒泡）→ blur（旧）→ focus（new）。focusin/focusout 冒泡到祖先（焦点事件委托唯一手段，
 /// jQuery/a11y 库惯用 `document.addEventListener('focusin', ...)`）。闭合焦点事件模型（polyfill 旧不派发）。

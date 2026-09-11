@@ -316,6 +316,18 @@ impl RenderPipeline {
         self.focused_selector.as_deref()
     }
 
+    /// R4241：焦点注入 render Document（`:focus`/`:focus-within` 样式判定源，Selectors L4 §13/§14）。
+    /// render 路径的 Document 每帧从 HTML 重建，retained 焦点（`focused_selector`——宿主经 shim
+    /// FocusChanged 同步；native 路径则由 `.focus()` 桥直接写 live Document）不携带 → parse 后
+    /// 显式注入。painter 的 `set_focused_node` 只管原生控件焦点外观，此处补样式匹配面。
+    fn inject_focus_state(&self, doc: &mut zero_dom::Document) {
+        if let Some(selector) = self.focused_selector.as_deref()
+            && let Some(id) = doc.query_selector(doc.root(), selector)
+        {
+            doc.set_focus_element(Some(id));
+        }
+    }
+
     /// R3268：设置 CanvasRegistry（宿主创建，与 register_dom_callbacks 共享同一实例——
     /// canvas 显示链路：JS getContext 写入的像素经 painter 桥接为图元）。
     pub fn set_canvas_registry(
@@ -920,7 +932,8 @@ impl RenderPipeline {
 
         // 1. 解析 HTML → DOM
         let parse_start = Instant::now();
-        let doc = zero_dom::parse_html(html);
+        let mut doc = zero_dom::parse_html(html);
+        self.inject_focus_state(&mut doc);
         let parse_ms = parse_start.elapsed().as_secs_f64() * 1000.0;
 
         // 2. 解析 CSS → Stylesheets
@@ -1125,6 +1138,7 @@ impl RenderPipeline {
         // 1. 解析 HTML → DOM
         let parse_start = Instant::now();
         let mut doc = zero_dom::parse_html(html);
+        self.inject_focus_state(&mut doc);
         let parse_ms = parse_start.elapsed().as_secs_f64() * 1000.0;
 
         // 2. 解析 CSS → Stylesheets（外部 CSS + HTML 内 `<style>`）

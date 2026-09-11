@@ -6,6 +6,7 @@ use crate::node::*;
 use hashbrown::HashMap;
 use slotmap::SlotMap;
 
+mod focus;
 mod form_state;
 mod lang_dir;
 mod shadow;
@@ -87,6 +88,10 @@ pub struct Document {
     template_contents_map: HashMap<NodeId, NodeId>,
     /// Slot 分配：键为 (slot 元素 NodeId, slot 名)，值为已分配的 NodeId 列表。
     slot_assignments: HashMap<(NodeId, String), Vec<NodeId>>,
+    /// 运行时焦点元素（`element.focus()`/`element.blur()` 设/清；Selectors L4 §14 `:focus`/
+    /// `:focus-within` 判定源）。解析不携带（焦点是运行时状态），由 engine JS 桥注入；
+    /// CSS matcher 与 DOM `querySelector` 复评共享同一权威（`:target` 的 URL 同模式）。
+    focus_element: Option<NodeId>,
 }
 
 impl Document {
@@ -110,6 +115,7 @@ impl Document {
             shadow_roots: HashMap::new(),
             template_contents_map: HashMap::new(),
             slot_assignments: HashMap::new(),
+            focus_element: None,
         }
     }
 
@@ -133,6 +139,7 @@ impl Document {
             event_listeners: HashMap::new(),
             shadow_roots: HashMap::new(),
             slot_assignments: HashMap::new(),
+            focus_element: None,
         };
         // 重建 id 索引（builder 的 TreeSink 不维护 id_map；成本与旧实现（builder 的 TreeSink 不维护 id_map；成本与旧实现
         // create_element_with_qname 注册相同——O(E) 遍历 + 哈希插入）
@@ -1220,6 +1227,12 @@ impl Document {
     /// 注入文档 URL（engine 在页面加载后调，来自导航层）。
     pub fn set_url(&mut self, url: Option<String>) {
         self.url = url;
+    }
+
+    /// 注入运行时焦点元素（engine JS 桥在 `element.focus()`/`element.blur()` 时调）。
+    /// 判定面见 `focus` 子模块（`is_focus_element`/`has_focus_within`）。
+    pub fn set_focus_element(&mut self, id: Option<NodeId>) {
+        self.focus_element = id;
     }
 
     /// 获取文档 referrer（`document.referrer` 读，spec `dom-document-referrer`）。

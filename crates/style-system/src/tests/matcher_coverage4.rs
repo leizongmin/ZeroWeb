@@ -779,6 +779,43 @@ fn test_expand_shorthand_border_left() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
+// matcher/mod.rs — :focus / :focus-within（Document 焦点状态，Selectors L4 §13/§14）
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_focus_pseudo_document_state() {
+    // 焦点由 engine JS 桥（.focus()/.blur()）注入 Document；matcher 读焦点状态真实匹配。
+    // driving: WPT css/selectors/focus-within-001..011（.focus() + :focus/:focus-within 边框色）。
+    let mut doc = Document::new();
+    let root = doc.root();
+    let outer = doc.create_element("div");
+    doc.append_child(root, outer).unwrap();
+    let inner = doc.create_element("input");
+    doc.append_child(outer, inner).unwrap();
+
+    // 无焦点：:focus/:focus-within 均不匹配。
+    assert!(!matches_selector(&doc, inner, &make_pseudo_selector("focus")));
+    assert!(!matches_selector(&doc, inner, &make_pseudo_selector("focus-within")));
+    assert!(!matches_selector(&doc, outer, &make_pseudo_selector("focus-within")));
+
+    // 焦点注入 inner：:focus 仅 inner；:focus-within inner 及祖先 outer。
+    doc.set_focus_element(Some(inner));
+    assert!(matches_selector(&doc, inner, &make_pseudo_selector("focus")));
+    assert!(!matches_selector(&doc, outer, &make_pseudo_selector("focus")));
+    assert!(matches_selector(&doc, inner, &make_pseudo_selector("focus-within")));
+    assert!(matches_selector(&doc, outer, &make_pseudo_selector("focus-within")));
+
+    // 焦点切换/清除随动。
+    doc.set_focus_element(None);
+    assert!(!matches_selector(&doc, inner, &make_pseudo_selector("focus")));
+    assert!(!matches_selector(&doc, outer, &make_pseudo_selector("focus-within")));
+
+    // :focus-visible 留恒不匹配（键盘 vs 鼠标启发式无运行时信号）。
+    doc.set_focus_element(Some(inner));
+    assert!(!matches_selector(&doc, inner, &make_pseudo_selector("focus-visible")));
+}
+
+// ═══════════════════════════════════════════════════════════════════════
 // Helper functions
 // ═══════════════════════════════════════════════════════════════════════
 

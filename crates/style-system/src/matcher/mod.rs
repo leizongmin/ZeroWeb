@@ -312,6 +312,11 @@ fn matches_pseudo_class(doc: &Document, element: NodeId, pc: &PseudoClassSelecto
             // :target：当前文档 URL fragment 指向的唯一元素（CSS Selectors L3 §6.6.2）。
             // 委派 Document 权威方法（R3283 与 DOM 选择器同源，逻辑在 dom/document/target.rs）。
             "target" => doc.is_target_element(element),
+            // :focus / :focus-within：运行时焦点状态（CSS Selectors L4 §13/§14）。焦点由 engine
+            // JS 桥（.focus()/.blur()）注入 Document，委派 focus 子模块权威判定（与 DOM 选择器
+            // 同源）。:focus-visible 留 `_ => false`——键盘 vs 鼠标启发式无运行时交互信号。
+            "focus" => doc.is_focus_element(element),
+            "focus-within" => doc.has_focus_within(element),
             // 约束校验伪类（HTML §4.10.20 + CSS Selectors L4）：候选校验元素的约束状态。
             // 委派 Document 权威方法（R3284 与 DOM 选择器同源，逻辑在 dom/document/validation.rs）。
             "valid" => doc.is_valid_element(element),

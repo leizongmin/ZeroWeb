@@ -185,17 +185,19 @@ pub enum PseudoClass {
     /// 不可知 → 静态永不匹配（镜像 [`PseudoClass::Visited`]）。识别此伪类使复合选择器如
     /// `dialog:not(:modal)` 不再被当无效，与 CSS matcher 一致。
     Modal,
-    /// `:focus`——当前获得焦点的元素（CSS Selectors L3 §6.6.2 / DOM §3.3 Focus）。焦点须 JS `.focus()`
-    /// 或用户交互激活（运行时状态），静态解析的 DOM 不可知（焦点 NodeId 由 engine shim `_activeElKey`
-    /// 追踪，DOM re-parse 不携带）→ 静态永不匹配（镜像 [`PseudoClass::Visited`]/[`PseudoClass::Fullscreen`]）。
-    /// 识别此伪类使复合选择器如 `input:not(:focus)` 不再被当无效，与 CSS matcher 一致。
-    /// 真保真（`<input autofocus>` 静态匹配）须 engine-shim 共享面改动（run-rules §9），defer。
+    /// `:focus`——当前获得焦点的元素（CSS Selectors L3 §6.6.2 / DOM §3.3 Focus）。焦点为运行时
+    /// 状态（engine JS 桥 `.focus()`/`.blur()` 注入 `Document`，`set_focus_element`），DOM 静态
+    /// 解析不可知 → `querySelector` 恒不匹配（镜像 [`PseudoClass::Visited`]/[`PseudoClass::Fullscreen`]）。
+    /// CSS 渲染路径不受此限：style-system matcher 持 Document，经 focus 子模块
+    ///（`is_focus_element`/`has_focus_within`）真实匹配 `:focus`/`:focus-within`。
     Focus,
     /// `:focus-visible`——键盘导航获得焦点的元素（CSS Selectors L4 §14）。焦点启发式（键盘 vs 鼠标）
-    /// 须运行时交互信号，静态不可知 → 静态永不匹配（镜像 [`PseudoClass::Focus`]）。
+    /// 须运行时交互信号，静态不可知 → 静态永不匹配（镜像 [`PseudoClass::Focus`]；CSS matcher 侧
+    /// 亦留恒不匹配——无键盘/鼠标信号源）。
     FocusVisible,
-    /// `:focus-within`——自身或后代获得焦点的元素（CSS Selectors L4 §14）。焦点须运行时状态，
-    /// 静态不可知 → 静态永不匹配（镜像 [`PseudoClass::Focus`]）。
+    /// `:focus-within`——自身或后代获得焦点的元素（CSS Selectors L4 §14）。运行时焦点状态，
+    /// DOM 静态解析不可知 → 恒不匹配（镜像 [`PseudoClass::Focus`]；CSS 渲染路径经 focus 子模块
+    /// `has_focus_within` 真实匹配）。
     FocusWithin,
 }
 
@@ -494,8 +496,10 @@ impl SimpleSelector {
             // 静态解析的 DOM 不可知 → 永不匹配（matches_full=false，非延后——line 1604 早返）。
             PseudoClass::Fullscreen | PseudoClass::Modal => false,
             // `:focus`/`:focus-visible`/`:focus-within`——运行时焦点状态（JS .focus()/用户交互），
-            // 静态解析的 DOM 不可知（焦点 NodeId 由 engine shim 追踪，re-parse 不携带）→ 永不匹配
-            //（matches_full=false，非延后——line 1604 早返）。真保真须 engine-shim 改动（defer）。
+            // 静态解析的 DOM 不可知（matches_full=false，非延后——延后会在 `:not(:focus)` 等否定
+            // 嵌套里把「延后 true」泄漏成真匹配，同 :target/:valid 家族的两阶段模型局限）。
+            // CSS 渲染路径（style-system matcher）不受此限：matcher 持 Document，直接读焦点
+            // 状态（`Document::is_focus_element`/`has_focus_within`，focus 子模块权威判定）。
             PseudoClass::Focus | PseudoClass::FocusVisible | PseudoClass::FocusWithin => false,
             // `:defined`——纯元素 tag 名求值（静态近似，无需 Document）：合法 custom element 名
             // → parse 时视为未升级 → 不匹配；其余 tag（原生/含大写/无连字符）→ 已定义 → 匹配。

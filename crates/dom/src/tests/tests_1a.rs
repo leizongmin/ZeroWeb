@@ -2631,9 +2631,9 @@ fn test_query_selector_fullscreen_modal_r3301() {
 
 // R3302：DOM `:focus`/`:focus-visible`/`:focus-within` 伪类识别（CSS Selectors L3 §6.6.2 + L4 §14）。
 // 此前 CSS 解析器识别三者但 DOM `query.rs::parse_pseudo` 落 `_ => None` → `input:not(:focus)` 等
-// 复合选择器被当无效。三者表运行时焦点状态（JS .focus() / 用户交互激活，焦点 NodeId 由 engine shim
-// `_activeElKey` 追踪，DOM re-parse 不携带）→ 静态永不匹配（镜像 :visited/:fullscreen）。补全为
-// 识别伪类但 matches_full=false（复合选择器不再失效），与 CSS matcher（`_ => false`）一致。
+// 复合选择器被当无效。补全为识别伪类；`:focus-visible` 表键盘 vs 鼠标启发式（运行时交互信号）→
+// 恒不匹配（镜像 :visited/:fullscreen），`:focus`/`:focus-within` 由 Document 焦点状态驱动
+//（engine JS 桥 `.focus()`/`.blur()` 注入，focus 子模块权威判定）——无焦点注入时同样无匹配。
 #[test]
 fn test_query_selector_focus_family_r3302() {
     let html = "<html><body>\
@@ -2690,4 +2690,43 @@ fn test_query_selector_focus_family_r3302() {
         doc.query_selector_all(root, "div:focus-within").is_empty(),
         "div:focus-within 静态应无匹配"
     );
+}
+
+// `:focus`/`:focus-within` Document 焦点状态权威判定（CSS Selectors L4 §13/§14）。焦点由
+// engine JS 桥（.focus()/.blur()）注入 Document（set_focus_element），focus 子模块上溯判定
+// `:focus-within`（自身或后代获得焦点 → 元素及其祖先链命中）。CSS 渲染路径（style-system
+// matcher 持 Document）消费此判定；DOM `querySelector` 仍静态恒不匹配（R3302——延后复评会在
+// `:not(:focus)` 否定嵌套里把「延后 true」泄漏成真匹配，同 :target/:valid 两阶段局限）。
+#[test]
+fn test_query_selector_focus_state_driven() {
+    let mut doc = parse_html(
+        "<html id='html'><body id='bd'>\
+         <div id='outer'><input id='inner'></div>\
+         <input id='other'>\
+         </body></html>",
+    );
+
+    // 权威方法：:focus 仅焦点元素本身；:focus-within 含其全部元素祖先。
+    let inner = doc.get_element_by_id("inner").unwrap();
+    doc.set_focus_element(Some(inner));
+    assert!(doc.is_focus_element(inner), "is_focus_element 对焦点元素应返 true");
+    assert!(doc.has_focus_within(inner), "has_focus_within 对焦点元素自身应返 true");
+    let outer = doc.get_element_by_id("outer").unwrap();
+    assert!(doc.has_focus_within(outer), "has_focus_within 对焦点元素祖先应返 true");
+    assert!(!doc.is_focus_element(outer), "is_focus_element 对祖先应返 false");
+    let bd = doc.get_element_by_id("bd").unwrap();
+    assert!(doc.has_focus_within(bd), "has_focus_within 对远祖 body 应返 true");
+    let other = doc.get_element_by_id("other").unwrap();
+    assert!(!doc.has_focus_within(other), "has_focus_within 对无关元素应返 false");
+
+    // 焦点切换：旧焦点链全部退出。
+    doc.set_focus_element(Some(other));
+    assert!(doc.is_focus_element(other), "焦点切换后 is_focus_element 应随动");
+    assert!(!doc.is_focus_element(inner), "旧焦点元素应退出");
+    assert!(!doc.has_focus_within(outer), "旧焦点祖先链应退出");
+
+    // blur（清焦点）。
+    doc.set_focus_element(None);
+    assert!(!doc.is_focus_element(other), "清焦点后 is_focus_element 应返 false");
+    assert!(!doc.has_focus_within(bd), "清焦点后 has_focus_within 应返 false");
 }

@@ -18,7 +18,7 @@ use zero_dom::NodeId;
 
 use super::gc::{
     active_element, add_listener, encode_node_id, listener_present, listeners_local, remove_listener,
-    set_active_element, with_dom,
+    set_active_element, with_dom, with_dom_mut,
 };
 use super::{get_or_create_native_element, read_node_id, string_arg};
 
@@ -380,8 +380,10 @@ fn dispatch_focus_event(scope: &mut v8::PinScope, target_id: NodeId, event_type:
 
 /// `element.focus()`（spec `dom-element-focus`，焦点更新步骤）：若非已聚焦——按 spec 焦点事件序列派发
 /// `focusout`（旧，冒泡）→ `focusin`（this，冒泡）→ `blur`（旧，非冒泡）→ `focus`（this，非冒泡），
-/// 设 `document.activeElement` = this（gc.rs `ACTIVE_ELEMENT`）。已聚焦（active==this）→ no-op（spec）。
-/// R3149：补 focusin/focusout 冒泡版（闭合焦点事件模型——polyfill 旧不派发任何焦点事件）。
+/// 设 `document.activeElement` = this（gc.rs `ACTIVE_ELEMENT`）并镜像焦点到 Document
+///（`set_focus_element`——`document.activeElement` JS 追踪与 CSS `:focus`/`:focus-within` 判定共享）。
+/// 已聚焦（active==this）→ no-op（spec）。R3149：补 focusin/focusout 冒泡版（闭合焦点事件模型——
+/// polyfill 旧不派发任何焦点事件）。
 /// **已知限制**：不校验可聚焦性（任何元素均可 focus，同 polyfill；spec 须 focusable/tabindex）。
 pub(super) fn native_element_focus_invoke(
     scope: &mut v8::PinScope,
@@ -405,12 +407,14 @@ pub(super) fn native_element_focus_invoke(
         dispatch_focus_event(scope, old, "blur", false); // 非冒泡
     }
     set_active_element(Some(id));
+    // 焦点镜像到 Document（`:focus`/`:focus-within` 样式判定源；纯字段写，无 JS 再入）。
+    with_dom_mut(|doc| doc.set_focus_element(Some(id)));
     dispatch_focus_event(scope, id, "focus", false); // 非冒泡
 }
 
 /// `element.blur()`（spec `dom-element-blur`，失焦步骤）：若 this 为当前焦点——派发 `focusout`（this，
-/// 冒泡）→ `blur`（this，非冒泡）+ 清 `document.activeElement`（gc.rs `ACTIVE_ELEMENT` = None）。
-/// 非当前焦点 → no-op（spec）。R3149：补 focusout 冒泡版。
+/// 冒泡）→ `blur`（this，非冒泡）+ 清 `document.activeElement`（gc.rs `ACTIVE_ELEMENT` = None）并
+/// 清 Document 焦点镜像。非当前焦点 → no-op（spec）。R3149：补 focusout 冒泡版。
 pub(super) fn native_element_blur_invoke(
     scope: &mut v8::PinScope,
     _args: v8::FunctionCallbackArguments,
@@ -424,6 +428,7 @@ pub(super) fn native_element_blur_invoke(
         return; // 非当前焦点 → no-op
     }
     set_active_element(None);
+    with_dom_mut(|doc| doc.set_focus_element(None));
     dispatch_focus_event(scope, id, "focusout", true); // 冒泡
     dispatch_focus_event(scope, id, "blur", false); // 非冒泡
 }

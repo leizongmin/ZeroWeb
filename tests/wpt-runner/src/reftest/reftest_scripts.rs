@@ -11,16 +11,20 @@ use zero_engine::{
     DomMutation, apply_mutations_to_html, extract_page_scripts, generate_js_dom_shim, register_dom_callbacks,
 };
 
+/// 返回 (JS 后最终 HTML, 页面最终焦点 selector)。焦点 selector 取 FocusChanged 记录的
+/// **最后一条**（spec 焦点转移语义：最后一次 focus/blur 胜出），供渲染管线
+/// `set_focused_selector` 注入 `:focus`/`:focus-within` 样式判定（R4241——serialize→re-parse
+/// 边界不携带焦点，须显式跨接）。
 pub(super) fn apply_scripted_dom_mutations(
     html: &str,
     base_dir: Option<&Path>,
     wpt_root: Option<&Path>,
     canvas_registry: &std::sync::Arc<std::sync::Mutex<zero_engine::js_dom_bridge::CanvasRegistry>>,
-) -> String {
+) -> (String, Option<String>) {
     let scripts = extract_page_scripts(html);
     let onload_handlers = extract_onload_handlers(html);
     if scripts.is_empty() && onload_handlers.is_empty() {
-        return html.to_string();
+        return (html.to_string(), None);
     }
 
     use std::sync::Arc;
@@ -36,13 +40,13 @@ pub(super) fn apply_scripted_dom_mutations(
     #[cfg(feature = "v8")]
     let mut sandbox: Box<dyn zero_script_sandbox::Sandbox> = match zero_script_sandbox::V8Sandbox::with_config(config) {
         Ok(s) => Box::new(s),
-        Err(_) => return html.to_string(),
+        Err(_) => return (html.to_string(), None),
     };
     #[cfg(feature = "quickjs")]
     let mut sandbox: Box<dyn zero_script_sandbox::Sandbox> =
         match zero_script_sandbox::QuickJSSandbox::with_config(config) {
             Ok(s) => Box::new(s),
-            Err(_) => return html.to_string(),
+            Err(_) => return (html.to_string(), None),
         };
 
     let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(Vec::new()));
@@ -52,7 +56,7 @@ pub(super) fn apply_scripted_dom_mutations(
 
     if let Err(e) = sandbox.execute(generate_js_dom_shim()) {
         eprintln!("  [reftest JS] DOM shim init warning: {e}");
-        return html.to_string();
+        return (html.to_string(), None);
     }
     // reftest harness 自有更完整的 <body>/<frameset>/<html> onload 处理（下方直接执行 handler 体 + 派发
     // 'load'）；禁用 R2946 body→window 反射以避免双 fire（重复 mutation 致 apply_mutations_to_html 失败）。
@@ -116,19 +120,28 @@ pub(super) fn apply_scripted_dom_mutations(
         eprintln!("  [reftest JS] original html (first 800): {sample}");
     }
     if recorded.is_empty() {
-        return html.to_string();
+        return (html.to_string(), None);
     }
+    // 最终焦点 = 最后一条 FocusChanged（spec：焦点转移最后胜出；blur 记录为 None）。
+    let focus_selector = recorded
+        .iter()
+        .filter_map(|m| match m {
+            DomMutation::FocusChanged { selector } => Some(selector.clone()),
+            _ => None,
+        })
+        .next_back()
+        .flatten();
     match apply_mutations_to_html(html, &recorded) {
         Ok(new_html) => {
             if std::env::var("REFTEST_DEBUG_HTML").is_ok() {
                 let sample = new_html.chars().take(2000).collect::<String>();
                 eprintln!("  [reftest JS] mutated html (first 2000): {sample}");
             }
-            new_html
+            (new_html, focus_selector)
         }
         Err(e) => {
             eprintln!("  [reftest JS] apply mutations warning: {e}");
-            html.to_string()
+            (html.to_string(), focus_selector)
         }
     }
 }
