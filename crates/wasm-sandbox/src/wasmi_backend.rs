@@ -249,6 +249,17 @@ impl WasmInstance {
         Some(data[offset..end].to_vec())
     }
 
+    /// 增长线性内存（返回增长前的页数，page-wasm M2 切片 1——JS `Memory.grow` 语义）
+    pub fn grow_memory(&mut self, name: &str, delta_pages: u32) -> Result<u32, WasmError> {
+        let memory = self
+            .instance
+            .get_memory(&self.store, name)
+            .ok_or_else(|| WasmError::ExportNotFound { name: name.to_string() })?;
+        memory
+            .grow(&mut self.store, delta_pages)
+            .map_err(|e| WasmError::MemoryError(e.to_string()))
+    }
+
     /// 写入线性内存
     pub fn write_memory(&mut self, name: &str, offset: usize, data: &[u8]) -> Result<(), WasmError> {
         let memory = self

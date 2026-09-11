@@ -312,6 +312,19 @@ impl WasmInstance {
         Ok(())
     }
 
+    /// 增长线性内存（返回增长前的页数，page-wasm M2 切片 1——JS `Memory.grow` 语义）
+    pub fn grow_memory(&self, name: &str, delta_pages: u32) -> Result<u32, WasmError> {
+        let mut store = self.store.borrow_mut();
+        let memory = self
+            .instance
+            .get_memory(&mut *store, name)
+            .ok_or_else(|| WasmError::ExportNotFound { name: name.to_string() })?;
+        memory
+            .grow(&mut *store, delta_pages as u64)
+            .map(|prev| prev as u32)
+            .map_err(|e| WasmError::MemoryError(e.to_string()))
+    }
+
     /// 检查导出函数是否存在
     pub fn has_func(&self, name: &str) -> bool {
         let mut store = self.store.borrow_mut();

@@ -1694,3 +1694,23 @@ fn test_export_descriptors_kinds_and_signatures() {
         "JS kind 字符串对齐 WebAssembly.Module.exports() 规范值"
     );
 }
+
+/// 测试线性内存增长（page-wasm M2 切片 1）：返回增长前页数，size 反映新页数
+#[test]
+fn test_grow_memory_returns_previous_pages() {
+    let sandbox = WasmSandbox::new();
+    let wasm = wat_to_wasm(r#"(module (memory (export "mem") 1))"#);
+    let module = sandbox.compile(&wasm).expect("compile");
+    let mut instance = module.instantiate(&sandbox).expect("instantiate");
+
+    let prev = instance.grow_memory("mem", 2).expect("grow");
+    assert_eq!(prev, 1, "grow 应返回增长前页数（1 页）");
+    assert_eq!(instance.memory_size("mem"), Some(3 * 65536), "增长后应为 3 页字节量");
+
+    // 不存在的内存导出应报错而非 panic
+    let missing = instance.grow_memory("nope", 1);
+    assert!(
+        matches!(missing, Err(WasmError::ExportNotFound { .. })),
+        "缺失导出应 ExportNotFound"
+    );
+}

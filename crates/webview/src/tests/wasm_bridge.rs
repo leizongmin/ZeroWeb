@@ -336,14 +336,30 @@ fn wasm_bridge_memory_byte_length_reflects_real_pages_r3352() {
         "2 页 memory 模块的 JS byteLength 须为 131072（旧实现错误得 65536）"
     );
 
-    // grow 基线也须基于真实页数：grow(1) 返回 3（2 真实页 + 1），非旧实现的 2（1 + 1）。
-    let grow_ret = wv
+    // grow 真实接线（page-wasm M2 切片 1）：桥异步协议下 host 增长后注入返回值。
+    // spec 语义（https://webassembly.github.io/spec/js-api/#dom-memory-grow）：
+    // grow(1) 返回**增长前**页数 2（旧假实现返 2页+1=3 的新总数，本就不符 spec），
+    // buffer 替换为 3 页（196608）。
+    wv.execute_script_with_dom(
+        "(function(){ var k = Object.keys(__wasm_results__)[0]; \
+         globalThis.__grow_prev__ = __wasm_results__[k].exports.memory.grow(1); })()",
+    )
+    .unwrap();
+    let grow_state = wv
         .execute_script(
-            "(function(){{ var k = Object.keys(__wasm_results__)[0]; \
-             return __wasm_results__[k].exports.memory.grow(1); }})()",
+            "(function(){ var k = Object.keys(__wasm_results__)[0]; \
+             return JSON.stringify({ prev: WebAssembly._callResults[Object.keys(WebAssembly._callResults)[0]], \
+             bytes: __wasm_results__[k].exports.memory.buffer.byteLength }); })()",
         )
         .unwrap();
-    assert_eq!(grow_ret, "3", "grow(1) 须基于真实 2 页基线返 3（旧实现错误得 2）");
+    assert!(
+        grow_state.contains("\"prev\":2"),
+        "grow(1) 须返回增长前页数 2（spec）: {grow_state}"
+    );
+    assert!(
+        grow_state.contains("\"bytes\":196608"),
+        "grow 后 buffer 须替换为 3 页（196608）: {grow_state}"
+    );
 }
 
 #[test]
@@ -557,4 +573,62 @@ fn test_wasm_bridge_module_exports_descriptors() {
             assert!(r.contains(expected), "{path} 应含描述 {expected}: {r}");
         }
     }
+}
+
+/// `Memory.grow` 真实接线（page-wasm M2 切片 1）：host 增长线性内存、注入增长前
+/// 页数（spec 返回值）并替换 JS buffer（新字节数）。
+#[test]
+fn test_wasm_bridge_memory_grow() {
+    let mut wv = WebView::new(WebViewConfig::default());
+    let wasm = wat::parse_str(r#"(module (memory (export "memory") 1))"#).unwrap();
+    let js_bytes: String = wasm.iter().map(|b| b.to_string()).collect::<Vec<_>>().join(",");
+
+    // execute #1：实例化
+    let result = wv
+        .execute_script_with_dom(&format!(
+            r#"
+        var bytes = new Uint8Array([{js_bytes}]);
+        WebAssembly.instantiate(bytes);
+        true
+        "#
+        ))
+        .unwrap();
+    assert_eq!(result, "true");
+
+    // execute #2：grow(2)——本 execute 尾的桥接排空执行并注入结果 + 新 buffer
+    let queued = wv
+        .execute_script_with_dom(
+            r#"
+        (function() {
+            var id = Object.keys(globalThis.__wasm_results__)[0];
+            globalThis.__wasm_results__[id].exports.memory.grow(2);
+            return true;
+        })()
+        "#,
+        )
+        .unwrap();
+    assert_eq!(queued, "true", "memory.grow 应可入队");
+
+    // execute #3：读结果——增长前页数 1 + buffer 已替换为 3 页
+    let r = wv
+        .execute_script(
+            r#"
+        (function() {
+            var id = Object.keys(globalThis.__wasm_results__)[0];
+            var mem = globalThis.__wasm_results__[id].exports.memory;
+            return JSON.stringify({
+                prevPages: WebAssembly._callResults[Object.keys(WebAssembly._callResults)[0]],
+                byteLength: mem.buffer.byteLength,
+                byteLengthProp: mem.byteLength
+            });
+        })()
+        "#,
+        )
+        .unwrap();
+    assert!(r.contains("\"prevPages\":1"), "grow 应返回增长前页数 1: {r}");
+    assert!(
+        r.contains("\"byteLength\":196608"),
+        "buffer 应替换为 3 页（196608 字节）: {r}"
+    );
+    assert!(r.contains("\"byteLengthProp\":196608"), "byteLength 属性应同步: {r}");
 }

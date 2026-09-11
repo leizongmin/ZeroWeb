@@ -82,6 +82,11 @@ impl WasmInstance {
         None
     }
 
+    /// 增长线性内存（占位实现，恒为错误）
+    pub fn grow_memory(&mut self, _name: &str, _delta_pages: u32) -> Result<u32, WasmError> {
+        Err(WasmError::MemoryError("no backend".into()))
+    }
+
     /// 写入线性内存
     pub fn write_memory(&mut self, _name: &str, _offset: usize, _data: &[u8]) -> Result<(), WasmError> {
         Err(WasmError::MemoryError("no backend".into()))

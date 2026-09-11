@@ -4875,7 +4875,19 @@ impl WebView {
                 var exports = {{
                     memory: {{
                         buffer: new ArrayBuffer({memory_len}),
-                        grow: function(delta) {{ return Math.floor({memory_len} / 65536) + delta; }},
+                        grow: function(delta) {{
+                            // 真实 grow 走桥接队列（page-wasm M2 切片 1）：host 增长
+                            // wasm 线性内存后注入新页数与替换 buffer；桥异步协议下
+                            // 调用点无已缓存值可回（返回 undefined 非伪造值）
+                            var callId = WebAssembly._nextCallId++;
+                            WebAssembly._callQueue.push({{instanceId: {instance_id}, grow: (typeof delta === 'number' ? (delta|0) : 0), callId: callId}});
+                            if (WebAssembly._callResults[callId] !== undefined) {{
+                                var r = WebAssembly._callResults[callId];
+                                delete WebAssembly._callResults[callId];
+                                return r;
+                            }}
+                            return undefined;
+                        }},
                         byteLength: {memory_len}
                     }},
                     __wasm_export_names__: {exports_json},
@@ -5011,6 +5023,38 @@ impl WebView {
             let name = call["name"].as_str().unwrap_or("");
             let call_id = call["callId"].as_u64().unwrap_or(0);
             let args_array = call["args"].as_array();
+
+            // Memory.grow 线调用（page-wasm M2 切片 1）：`grow` 字段标记（与导出
+            // 函数调用区分，避免魔法导出名碰撞）。host 增长线性内存，注入增长前
+            // 页数（spec 返回值）并替换 JS 侧 buffer（ArrayBuffer 定长，grow 后
+            // 按新字节数重建——spec 语义：buffer getter 返回新 buffer）
+            if let Some(delta) = call["grow"].as_i64() {
+                if let Some(instance) = self.wasm_instances.get_mut(&instance_id) {
+                    match instance.grow_memory("memory", delta.clamp(0, u32::MAX as i64) as u32) {
+                        Ok(prev_pages) => {
+                            // 新字节数直接问实例取（避免页数算术溢出/与后端上限漂移）
+                            let new_bytes = instance
+                                .memory_size("memory")
+                                .filter(|&sz| sz > 0)
+                                .unwrap_or(prev_pages as usize * 65536);
+                            results_script.push_str(&format!("WebAssembly._callResults[{call_id}] = {prev_pages};\n"));
+                            results_script.push_str(&format!(
+                                "(function(){{ var inst = globalThis.__wasm_results__ && globalThis.__wasm_results__[{instance_id}]; \
+                                 if (inst && inst.exports && inst.exports.memory) {{ \
+                                 inst.exports.memory.buffer = new ArrayBuffer({new_bytes}); \
+                                 inst.exports.memory.byteLength = {new_bytes}; }} }})();\n"
+                            ));
+                        }
+                        Err(e) => {
+                            tracing::debug!("WASM memory.grow error: {e}");
+                            results_script.push_str(&format!("WebAssembly._callResults[{call_id}] = null;\n"));
+                        }
+                    }
+                } else {
+                    results_script.push_str(&format!("WebAssembly._callResults[{call_id}] = null;\n"));
+                }
+                continue;
+            }
 
             // 构造 WASM 参数——按导出签名声明的类型解析线格式（page-wasm M1 切片 2：
             // i64 线格式为十进制字符串、f32/f64 为 number；无签名（旧协议）回落全 i32）
