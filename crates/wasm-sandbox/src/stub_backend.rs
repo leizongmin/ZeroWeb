@@ -2,7 +2,7 @@
 //!
 //! 当未启用 wasmi feature 时提供的空壳实现，所有操作返回错误。
 
-use crate::{LinkerConfig, SandboxConfig, WasmError, WasmValue};
+use crate::{ExportSignature, LinkerConfig, SandboxConfig, WasmError, WasmValue};
 
 /// WASM 沙箱运行时（占位实现）
 pub struct WasmSandbox {
@@ -59,6 +59,11 @@ impl WasmModule {
 
     /// 获取导出名称列表
     pub fn exports(&self) -> Vec<String> {
+        vec![]
+    }
+
+    /// 获取导出函数签名列表（占位实现，恒为空）
+    pub fn export_signatures(&self) -> Vec<ExportSignature> {
         vec![]
     }
 }

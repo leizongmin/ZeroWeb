@@ -2,7 +2,7 @@
 //!
 //! 基于 wasmi 纯 Rust WASM 解释器的沙箱运行时实现。
 
-use crate::{LinkerConfig, SandboxConfig, WasmError, WasmValue, WasmValueType};
+use crate::{ExportSignature, LinkerConfig, SandboxConfig, WasmError, WasmValue, WasmValueType};
 use std::fmt;
 use std::sync::Arc;
 
@@ -74,6 +74,17 @@ fn wasm_value_type_to_wasmi(ty: WasmValueType) -> wasmi::core::ValType {
         WasmValueType::I64 => wasmi::core::ValType::I64,
         WasmValueType::F32 => wasmi::core::ValType::F32,
         WasmValueType::F64 => wasmi::core::ValType::F64,
+    }
+}
+
+fn wasmi_valtype_to_wasm_value_type(ty: &wasmi::core::ValType) -> Option<WasmValueType> {
+    match ty {
+        wasmi::core::ValType::I32 => Some(WasmValueType::I32),
+        wasmi::core::ValType::I64 => Some(WasmValueType::I64),
+        wasmi::core::ValType::F32 => Some(WasmValueType::F32),
+        wasmi::core::ValType::F64 => Some(WasmValueType::F64),
+        // 引用类型（funcref/externref）不在桥接层值映射范围
+        wasmi::core::ValType::FuncRef | wasmi::core::ValType::ExternRef => None,
     }
 }
 
@@ -155,6 +166,29 @@ impl WasmModule {
     /// 获取导出名称列表
     pub fn exports(&self) -> Vec<String> {
         self.module.exports().map(|e| e.name().to_string()).collect()
+    }
+
+    /// 获取导出函数签名列表（仅函数导出，page-wasm M1 切片 2）
+    pub fn export_signatures(&self) -> Vec<ExportSignature> {
+        self.module
+            .exports()
+            .filter_map(|e| match e.ty() {
+                wasmi::ExternType::Func(func_type) => Some(ExportSignature {
+                    name: e.name().to_string(),
+                    params: func_type
+                        .params()
+                        .iter()
+                        .filter_map(wasmi_valtype_to_wasm_value_type)
+                        .collect(),
+                    results: func_type
+                        .results()
+                        .iter()
+                        .filter_map(wasmi_valtype_to_wasm_value_type)
+                        .collect(),
+                }),
+                _ => None,
+            })
+            .collect()
     }
 }
 

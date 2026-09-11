@@ -131,6 +131,20 @@ pub enum WasmValueType {
     F64,
 }
 
+/// 导出函数签名（page-wasm M1 切片 2——参数/返回类型全映射）
+///
+/// 供桥接层按声明类型做 JS ↔ wasm 值转换（如 JS BigInt ↔ i64、
+/// JS Number ↔ f32/f64），不再把一切参数按 i32 截断。
+#[derive(Debug, Clone, PartialEq)]
+pub struct ExportSignature {
+    /// 导出函数名
+    pub name: String,
+    /// 参数类型列表
+    pub params: Vec<WasmValueType>,
+    /// 返回值类型列表
+    pub results: Vec<WasmValueType>,
+}
+
 /// 沙箱配置
 ///
 /// 用于创建 `WasmSandbox` 时指定可选功能。

@@ -500,6 +500,10 @@ pub struct WebView {
     next_worker_id: u64,
     /// WASM 实例缓存 — JS 端 WebAssembly.instantiate() 自动桥接到 wasm-sandbox。
     wasm_instances: HashMap<u64, WasmInstance>,
+    /// WASM 导出函数签名缓存（按 instance_id）— 桥接层按声明类型做 JS ↔ wasm
+    /// 值转换（i64 ↔ BigInt、f32/f64 ↔ Number），不再把一切参数按 i32 截断
+    /// （page-wasm M1 切片 2）。
+    wasm_signatures: HashMap<u64, Vec<zero_wasm_sandbox::ExportSignature>>,
     // HTTP 响应缓存（性能门禁优化 S6，2026-08-08）：统一走
     // zero_net::shared_http_cache()——webview / fetch_proxy / net_pool 共享一份，
     // 避免同一 URL 在不同路径反复走网络。
@@ -646,6 +650,7 @@ impl WebView {
             workers: HashMap::new(),
             next_worker_id: 1,
             wasm_instances: HashMap::new(),
+            wasm_signatures: HashMap::new(),
             image_cache: ImageCache::default(),
             video_players: std::sync::Arc::new(
                 std::sync::Mutex::new(crate::video_registry::VideoPlayerRegistry::new()),
@@ -4766,6 +4771,8 @@ impl WebView {
         };
 
         let export_names = module.exports();
+        // 导出函数签名（page-wasm M1 切片 2：桥接层按声明类型做值转换）
+        let signatures = module.export_signatures();
 
         // 实例化
         let mut instance = match module.instantiate(&sandbox) {
@@ -4802,13 +4809,16 @@ impl WebView {
             65536
         };
 
-        // 缓存 WASM 实例
+        // 缓存 WASM 实例与导出签名（page-wasm M1 切片 2：签名驱动类型化协议）
         self.wasm_instances.insert(instance_id, instance);
+        self.wasm_signatures.insert(instance_id, signatures.clone());
 
         // 构建可调用的导出函数
         let exports_json = serde_json::to_string(&export_names).unwrap_or_else(|_| "[]".to_string());
 
-        // 生成每个导出函数的 JS 可调用包装
+        // 生成每个导出函数的 JS 可调用包装（按声明签名做参数/返回值类型化：
+        // i32 → number、i64 → 十进制字符串线格式（JSON 不支持 BigInt）/ BigInt 字面量
+        // 返回、f32/f64 → number）
         let mut export_fn_scripts = Vec::new();
         for export_name in &export_names {
             // 跳过特殊导出
@@ -4817,22 +4827,36 @@ impl WebView {
             }
             let name = export_name.as_str();
             let escaped_name = name.replace('\'', "\\'");
+            let signature = signatures.iter().find(|s| s.name == *name);
+            // 参数线格式化表达式——按声明类型逐位生成
+            let coercions: Vec<String> = signature
+                .map(|sig| {
+                    sig.params
+                        .iter()
+                        .enumerate()
+                        .map(|(i, ty)| js_arg_coercion(*ty, i))
+                        .collect()
+                })
+                .unwrap_or_default();
+            let coercions = if coercions.is_empty() {
+                "[]".to_string()
+            } else {
+                format!("[{}]", coercions.join(", "))
+            };
             export_fn_scripts.push(format!(
                 r#"'{escaped_name}': function() {{
                     var callId = WebAssembly._nextCallId++;
                     var args = Array.prototype.slice.call(arguments);
-                    var numArgs = args.map(function(a) {{
-                        if (typeof a === 'number') return a|0;
-                        return 0;
-                    }});
-                    WebAssembly._callQueue.push({{instanceId: {instance_id}, name: '{escaped_name}', args: numArgs, callId: callId}});
-                    // 检查是否有缓存结果
+                    var wire = {coercions};
+                    WebAssembly._callQueue.push({{instanceId: {instance_id}, name: '{escaped_name}', args: wire, callId: callId}});
+                    // 结果由 host 在下一次桥接排空时注入 _callResults（异步桥协议）；
+                    // callId 未命中时无已缓存值可回（不再回错误的 0——结果类型随签名变化）
                     if (WebAssembly._callResults[callId] !== undefined) {{
                         var r = WebAssembly._callResults[callId];
                         delete WebAssembly._callResults[callId];
                         return r;
                     }}
-                    return 0;
+                    return undefined;
                 }}"#
             ));
         }
@@ -4974,24 +4998,51 @@ impl WebView {
             let call_id = call["callId"].as_u64().unwrap_or(0);
             let args_array = call["args"].as_array();
 
-            // 构造 WASM 参数
-            let wasm_args: Vec<zero_wasm_sandbox::WasmValue> = args_array
-                .map(|arr| {
-                    arr.iter()
-                        .map(|v| zero_wasm_sandbox::WasmValue::I32(v.as_i64().unwrap_or(0) as i32))
-                        .collect()
-                })
-                .unwrap_or_default();
+            // 构造 WASM 参数——按导出签名声明的类型解析线格式（page-wasm M1 切片 2：
+            // i64 线格式为十进制字符串、f32/f64 为 number；无签名（旧协议）回落全 i32）
+            let param_types = self
+                .wasm_signatures
+                .get(&instance_id)
+                .and_then(|sigs| sigs.iter().find(|s| s.name == name))
+                .map(|s| s.params.clone());
+            let wasm_args: Vec<zero_wasm_sandbox::WasmValue> = match &param_types {
+                Some(types) => args_array
+                    .map(|arr| {
+                        arr.iter()
+                            .enumerate()
+                            .map(|(i, v)| {
+                                parse_wire_arg(
+                                    v,
+                                    types.get(i).copied().unwrap_or(zero_wasm_sandbox::WasmValueType::I32),
+                                )
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default(),
+                // 旧协议兼容：无签名实例按全 i32 解析
+                None => args_array
+                    .map(|arr| {
+                        arr.iter()
+                            .map(|v| zero_wasm_sandbox::WasmValue::I32(v.as_i64().unwrap_or(0) as i32))
+                            .collect()
+                    })
+                    .unwrap_or_default(),
+            };
 
             // 执行调用
             if let Some(instance) = self.wasm_instances.get_mut(&instance_id) {
                 match instance.call(name, &wasm_args) {
                     Ok(results) => {
-                        let result_val = if results.is_empty() {
-                            "null".to_string()
-                        } else {
-                            // 取第一个返回值
-                            results[0].to_string()
+                        // 结果按声明类型注入 JS 字面量（i64 → BigInt 字面量、
+                        // 多返回值 → Array、无返回值 → undefined——WebAssembly JS API
+                        // 语义：0 结果 undefined、1 结果值本身、N 结果数组）
+                        let result_val = match results.len() {
+                            0 => "undefined".to_string(),
+                            1 => js_result_literal(&results[0]),
+                            _ => {
+                                let items: Vec<String> = results.iter().map(js_result_literal).collect();
+                                format!("[{}]", items.join(", "))
+                            }
                         };
                         results_script.push_str(&format!("WebAssembly._callResults[{call_id}] = {result_val};\n"));
                     }
@@ -5372,6 +5423,63 @@ fn escape_js_string(s: &str) -> String {
         }
     }
     out
+}
+
+// ── WASM 桥接类型化协议助手（page-wasm M1 切片 2）──
+//
+// 线格式（JS ↔ host 协议字符串，JSON 兼容）：
+// - i32 → number；f32/f64 → number（宿主侧按声明类型收敛到 WasmValue）
+// - i64 → 十进制字符串（JSON.stringify 不支持 BigInt）
+// - 返回值注入为 JS 字面量：i64 → `Nn`（BigInt 字面量）、NaN/±Infinity → JS 同名
+//   字面量（Rust Display 的 `inf` 不是合法 JS 标识）
+
+/// 按声明类型把 JS 侧线格式值解析为 `WasmValue`。
+fn parse_wire_arg(v: &serde_json::Value, ty: zero_wasm_sandbox::WasmValueType) -> zero_wasm_sandbox::WasmValue {
+    use zero_wasm_sandbox::{WasmValue, WasmValueType};
+    match ty {
+        WasmValueType::I32 => WasmValue::I32(v.as_i64().unwrap_or(0) as i32),
+        WasmValueType::I64 => WasmValue::I64(v.as_str().and_then(|s| s.parse::<i64>().ok()).unwrap_or(0)),
+        WasmValueType::F32 => WasmValue::F32(v.as_f64().unwrap_or(0.0) as f32),
+        WasmValueType::F64 => WasmValue::F64(v.as_f64().unwrap_or(0.0)),
+    }
+}
+
+/// 生成 JS 实参（按声明类型）转线格式值的表达式（在导出包装函数体内求值，
+/// `args` 为 arguments 数组）。
+fn js_arg_coercion(ty: zero_wasm_sandbox::WasmValueType, index: usize) -> String {
+    use zero_wasm_sandbox::WasmValueType;
+    match ty {
+        WasmValueType::I32 => format!("(typeof args[{index}] === 'number' ? (args[{index}]|0) : 0)"),
+        WasmValueType::I64 => {
+            format!("(typeof args[{index}] === 'bigint' ? args[{index}].toString() : String(args[{index}]))")
+        }
+        WasmValueType::F32 | WasmValueType::F64 => format!("Number(args[{index}])"),
+    }
+}
+
+/// 把 `WasmValue` 序列化为注入脚本中的 JS 字面量。
+fn js_result_literal(v: &zero_wasm_sandbox::WasmValue) -> String {
+    match v {
+        zero_wasm_sandbox::WasmValue::I32(x) => format!("{x}"),
+        zero_wasm_sandbox::WasmValue::I64(x) => format!("{x}n"),
+        zero_wasm_sandbox::WasmValue::F32(x) => format_js_float(*x as f64),
+        zero_wasm_sandbox::WasmValue::F64(x) => format_js_float(*x),
+    }
+}
+
+/// f64 → JS 数字字面量（NaN/±Infinity 用 JS 同名字面量，Rust Display 的 `inf` 非法）。
+fn format_js_float(x: f64) -> String {
+    if x.is_nan() {
+        "NaN".to_string()
+    } else if x.is_infinite() {
+        if x > 0.0 {
+            "Infinity".to_string()
+        } else {
+            "-Infinity".to_string()
+        }
+    } else {
+        format!("{x}")
+    }
 }
 
 // R3334：native_dom=true 的 WebView Drop 时清空 engine dom_bindings 的线程局部状态。

@@ -396,3 +396,105 @@ fn test_wasm_call_queue_infrastructure() {
         .unwrap();
     assert_eq!(result, "true", "调用队列基础设施应可用");
 }
+
+// ── 类型化参数/返回值（page-wasm M1 切片 2）──
+
+/// 类型化桥接协议端到端：i64（BigInt 双向，含 >2^53 精度）、f64、f32、
+/// 多返回值（Array）、零返回值（undefined）。
+///
+/// 桥协议时序：execute #1 instantiate（host 注入真实导出包装）→ execute #2 调用
+/// 导出（队列在本 execute 尾被 host 排空执行，结果注入 `_callResults`）→
+/// execute #3 读结果。
+#[test]
+fn test_wasm_bridge_typed_args_and_results() {
+    let mut wv = WebView::new(WebViewConfig::default());
+    let wasm = wat::parse_str(
+        r#"(module
+            (func (export "add_i64") (param i64 i64) (result i64)
+                local.get 0
+                local.get 1
+                i64.add)
+            (func (export "half_f64") (param f64) (result f64)
+                local.get 0
+                f64.const 2
+                f64.div)
+            (func (export "half_f32") (param f32) (result f32)
+                local.get 0
+                f32.const 2
+                f32.div)
+            (func (export "swap") (param i32 i32) (result i32 i32)
+                local.get 1
+                local.get 0)
+            (func (export "no_result") (param i32)
+                nop)
+        )"#,
+    )
+    .unwrap();
+    let js_bytes: String = wasm.iter().map(|b| b.to_string()).collect::<Vec<_>>().join(",");
+
+    // execute #1：实例化（host 编译/实例化/注入导出包装）
+    let result = wv
+        .execute_script_with_dom(&format!(
+            r#"
+        var bytes = new Uint8Array([{js_bytes}]);
+        WebAssembly.instantiate(bytes);
+        true
+        "#
+        ))
+        .unwrap();
+    assert_eq!(result, "true", "instantiate 应成功");
+
+    // execute #2：调用类型化导出（host 在本 execute 尾排空队列并注入结果）
+    let queued = wv
+        .execute_script_with_dom(
+            r#"
+        (function() {
+            var id = Object.keys(globalThis.__wasm_results__)[0];
+            var ex = globalThis.__wasm_results__[id].exports;
+            ex.add_i64(9007199254740993n, 1n);
+            ex.half_f64(3.5);
+            ex.half_f32(3.25);
+            ex.swap(7, 4);
+            ex.no_result(1);
+            return true;
+        })()
+        "#,
+        )
+        .unwrap();
+    assert_eq!(queued, "true", "类型化导出调用应可入队");
+
+    // execute #3：读回结果（callId 按调用序 1..N；i64 结果为 BigInt，不能进 JSON）
+    let r = wv
+        .execute_script(
+            r#"
+        (function() {
+            var cr = WebAssembly._callResults;
+            var keys = Object.keys(cr).map(Number).sort(function(a, b) { return a - b; });
+            return JSON.stringify({
+                count: keys.length,
+                i64type: typeof cr[keys[0]],
+                i64sum: cr[keys[0]].toString(),
+                f64: cr[keys[1]],
+                f32: cr[keys[2]],
+                swapIsArray: Array.isArray(cr[keys[3]]),
+                swap: cr[keys[3]] ? [cr[keys[3]][0], cr[keys[3]][1]] : null,
+                noResult: String(cr[keys[4]])
+            });
+        })()
+        "#,
+        )
+        .unwrap();
+    assert!(r.contains("\"count\":5"), "5 个调用都应有结果注入: {r}");
+    assert!(r.contains("\"i64type\":\"bigint\""), "i64 结果应为 BigInt: {r}");
+    assert!(
+        r.contains("\"i64sum\":\"9007199254740994\""),
+        "i64 应保持 >2^53 精度（BigInt 双向）: {r}"
+    );
+    assert!(r.contains("\"f64\":1.75"), "f64 结果应为 1.75: {r}");
+    assert!(r.contains("\"f32\":1.625"), "f32 结果应为 1.625: {r}");
+    assert!(
+        r.contains("\"swapIsArray\":true") && r.contains("\"swap\":[4,7]"),
+        "多返回值应为 Array [4, 7]: {r}"
+    );
+    assert!(r.contains("\"noResult\":\"undefined\""), "零返回值应为 undefined: {r}");
+}

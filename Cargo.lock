@@ -7245,6 +7245,7 @@ dependencies = [
  "thiserror 2.0.18",
  "tracing",
  "url",
+ "wat",
  "zero-engine",
  "zero-host-runtime",
  "zero-media",

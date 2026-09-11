@@ -40,6 +40,7 @@ decode-av1 = ["zero-media/decode-av1"]
 criterion = { workspace = true }
 png = "0.17"
 serial_test = { workspace = true }
+wat = "1"
 
 [[bench]]
 name = "webview_bench"

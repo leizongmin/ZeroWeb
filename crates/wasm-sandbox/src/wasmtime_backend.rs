@@ -3,7 +3,7 @@
 //! 基于 Wasmtime JIT 编译器的高性能 WASM 运行时。
 //! 适用于需要接近原生执行速度的页面级 WASM 场景。
 
-use crate::{LinkerConfig, SandboxConfig, WasmError, WasmValue, WasmValueType};
+use crate::{ExportSignature, LinkerConfig, SandboxConfig, WasmError, WasmValue, WasmValueType};
 use std::cell::RefCell;
 use std::sync::Arc;
 
@@ -54,6 +54,17 @@ impl Default for WasmSandbox {
 /// 编译后的 WASM 模块
 pub struct WasmModule {
     module: wasmtime::Module,
+}
+
+fn wasm_valtype_to_wasm_value_type(ty: wasmtime::ValType) -> Option<WasmValueType> {
+    match ty {
+        wasmtime::ValType::I32 => Some(WasmValueType::I32),
+        wasmtime::ValType::I64 => Some(WasmValueType::I64),
+        wasmtime::ValType::F32 => Some(WasmValueType::F32),
+        wasmtime::ValType::F64 => Some(WasmValueType::F64),
+        // 引用/向量类型不在桥接层值映射范围
+        _ => None,
+    }
 }
 
 fn wasm_value_type_to_wasmtime(ty: WasmValueType) -> wasmtime::ValType {
@@ -197,6 +208,30 @@ impl WasmModule {
     /// 获取导出名称列表
     pub fn exports(&self) -> Vec<String> {
         self.module.exports().map(|e| e.name().to_string()).collect()
+    }
+
+    /// 获取导出函数签名列表（仅函数导出，page-wasm M1 切片 2）
+    pub fn export_signatures(&self) -> Vec<ExportSignature> {
+        self.module
+            .exports()
+            .filter_map(|export| {
+                let ty = export.ty();
+                let func_type = ty.func()?;
+                Some(ExportSignature {
+                    name: export.name().to_string(),
+                    params: func_type
+                        .params()
+                        .iter()
+                        .map(|&p| wasm_valtype_to_wasm_value_type(p))
+                        .collect::<Option<Vec<_>>>()?,
+                    results: func_type
+                        .results()
+                        .iter()
+                        .map(|&r| wasm_valtype_to_wasm_value_type(r))
+                        .collect::<Option<Vec<_>>>()?,
+                })
+            })
+            .collect()
     }
 }
 
