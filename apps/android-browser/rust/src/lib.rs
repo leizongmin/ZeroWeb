@@ -26,7 +26,7 @@ const NATIVE_VERSION: &str = "ZeroWeb Android M2";
 
 #[cfg(target_os = "android")]
 const ANDROID_COMPOSITOR_SURFACE_ID: u64 = 1;
-#[cfg(target_os = "android")]
+#[cfg(any(target_os = "android", test))]
 const MAX_COMPOSITOR_SURFACE_DIMENSION: u32 = 4_096;
 #[cfg(target_os = "android")]
 const ANDROID_PAGE_VIEWPORT_WIDTH: u32 = 320;
@@ -803,6 +803,13 @@ fn compositor_test_frame(width: jni::sys::jint, height: jni::sys::jint) -> Resul
 
 #[cfg(target_os = "android")]
 fn compositor_pixel_len(width: jni::sys::jint, height: jni::sys::jint) -> Result<(u32, u32, usize), String> {
+    validate_compositor_dimensions(width, height)
+}
+
+// 尺寸校验是纯逻辑，cfg 放宽到 test：bounds 契约保持宿主可测
+// （android-browser goal M2 P3——JNI 桥接测试覆盖）。
+#[cfg(any(target_os = "android", test))]
+fn validate_compositor_dimensions(width: jni::sys::jint, height: jni::sys::jint) -> Result<(u32, u32, usize), String> {
     let width = u32::try_from(width).map_err(|_| "compositor width must be non-negative".to_string())?;
     let height = u32::try_from(height).map_err(|_| "compositor height must be non-negative".to_string())?;
     if width == 0
@@ -940,7 +947,7 @@ pub extern "system" fn Java_com_leizm_zeroweb_NativeBridge_nativeProbeCompositor
 
 #[cfg(test)]
 mod tests {
-    use super::is_known_role;
+    use super::{MAX_COMPOSITOR_SURFACE_DIMENSION, NATIVE_VERSION, is_known_role, validate_compositor_dimensions};
 
     #[test]
     fn only_declared_process_roles_are_accepted() {
@@ -949,5 +956,36 @@ mod tests {
         assert!(is_known_role("image-decoder"));
         assert!(!is_known_role("browser"));
         assert!(!is_known_role("renderer0"));
+    }
+
+    #[test]
+    fn compositor_dimensions_reject_out_of_bounds() {
+        assert!(validate_compositor_dimensions(0, 100).is_err());
+        assert!(validate_compositor_dimensions(100, 0).is_err());
+        assert!(validate_compositor_dimensions(-1, 100).is_err());
+        assert!(validate_compositor_dimensions(100, -1).is_err());
+        assert!(validate_compositor_dimensions(MAX_COMPOSITOR_SURFACE_DIMENSION as i32 + 1, 100).is_err());
+        assert!(validate_compositor_dimensions(100, MAX_COMPOSITOR_SURFACE_DIMENSION as i32 + 1).is_err());
+    }
+
+    #[test]
+    fn compositor_dimensions_accept_bounded_size_and_compute_rgba_len() {
+        assert_eq!(validate_compositor_dimensions(1, 1), Ok((1, 1, 4)));
+        assert_eq!(
+            validate_compositor_dimensions(
+                MAX_COMPOSITOR_SURFACE_DIMENSION as i32,
+                MAX_COMPOSITOR_SURFACE_DIMENSION as i32
+            ),
+            Ok((
+                MAX_COMPOSITOR_SURFACE_DIMENSION,
+                MAX_COMPOSITOR_SURFACE_DIMENSION,
+                4_096 * 4_096 * 4
+            ))
+        );
+    }
+
+    #[test]
+    fn native_version_exposes_product_prefix() {
+        assert!(NATIVE_VERSION.starts_with("ZeroWeb Android"));
     }
 }
