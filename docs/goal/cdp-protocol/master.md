@@ -50,6 +50,14 @@
   期 renderer 通道无人消费（fetch 的 FetchRequest/console IPC 饿死）——已修：transport
   WS read 改 120ms 轮询 + `drain_renderer_channel`（fetch 代理 + console/network 事件
   即时推送，600s 空闲 deadline 语义保持）。
+  **第四层（S13 定位+修复）**：fetch settle 路径 `__zwServiceWorkerFetchSettled →
+  ensureDocument → __zw_sw_controller` 走 SW IPC client 同步等待（20s 超时），headless
+  从不应答 `ServiceWorkerRequest` → JS worker 挂 20s、PW click 10s 超时。修复：headless
+  `handle_renderer_message` 应答 SW 请求（Controller→无 controller、GetRegistrations→空、
+  StateChanges→空、写类→NotFound——headless 无 SW 支持=正确语义）。
+  **fetch 观测管线（FetchObserved IPC + renderer 观测 handler）已实现后回退**：队列 Arc
+  双实例错接 + 诊断期 println 污染 IPC 帧流导致 renderer 通道崩溃（12 步回退事故）；
+  已全部回退至 S12 等效状态，观测管线待独立切片以正确队列所有权重做。
   绿步维持 25（无回退）；deterministic 双跑一致。
 - **S11（2026-09-13）console value-only 小切片 + emulation.media 接线**：
   **console.collect（P5 降级方案落地）**：shim `_zwConsoleEmit` 增逐参值序列化

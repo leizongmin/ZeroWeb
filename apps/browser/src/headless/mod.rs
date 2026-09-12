@@ -250,6 +250,7 @@ impl HeadlessServer {
                         // 轮询超时：drain renderer 通道（fetch 代理/console 转发），并把
                         // 产生的事件即时推给客户端（页面 session 盖章——单会话模型取首个
                         // 已附接 session）。
+                        tracing::info!("[S13] idle drain tick");
                         self.drain_renderer_channel(&mut session, &mut ws);
                         if idle_since.elapsed() > WS_IDLE_DEADLINE {
                             tracing::info!("WebSocket idle deadline ({}s)", WS_IDLE_DEADLINE.as_secs());

@@ -187,6 +187,42 @@ impl HeadlessSession {
                     .push((params.level, params.text, params.args_json));
                 Ok(None)
             }
+            // S13：page fetch 观测 → Network 事件队列（Network.enable 门控）。
+            // phase 0=requestWillBeSent / 1=responseReceived / 2=loadingFinished|loadingFailed。
+            // S13：headless 无 Service Worker 支持，但必须**应答** renderer 的 SW 请求——
+            // shim 的 fetch settle 路径（`__zwServiceWorkerFetchSettled` → ensureDocument →
+            // `__zw_sw_controller`）会同步阻塞等响应（SW IPC client 20s 超时），不应答则
+            // JS worker 挂死、PW click 10s 超时（network.events 实测根因）。
+            // 语义：无注册/无 controller（headless 正确状态）。
+            IpcMessageKind::ServiceWorkerRequest(params) => {
+                use zero_protocol::message::{
+                    ServiceWorkerError, ServiceWorkerErrorCode, ServiceWorkerOperation, ServiceWorkerResponseParams,
+                    ServiceWorkerResult,
+                };
+                let result = match &params.operation {
+                    ServiceWorkerOperation::Controller => Ok(ServiceWorkerResult::OptionalSnapshot(None)),
+                    ServiceWorkerOperation::GetRegistrations => Ok(ServiceWorkerResult::Snapshots(Vec::new())),
+                    ServiceWorkerOperation::StateChanges { .. } => Ok(ServiceWorkerResult::StateChanges(
+                        zero_protocol::message::ServiceWorkerStateChanges {
+                            latest_sequence: 0,
+                            states: Vec::new(),
+                            claim_clients: false,
+                        },
+                    )),
+                    // 写类操作在无 SW 支持的 headless 中一律 NotFound（spec：无注册）。
+                    _ => Err(ServiceWorkerError {
+                        code: ServiceWorkerErrorCode::NotFound,
+                        message: "service workers are not supported in headless mode".into(),
+                    }),
+                };
+                self.renderer
+                    .send(IpcMessage {
+                        id: message.id,
+                        kind: IpcMessageKind::ServiceWorkerResponse(ServiceWorkerResponseParams { result }),
+                    })
+                    .map_err(|error| error.to_string())?;
+                Ok(None)
+            }
             _ => Ok(None),
         }
     }
