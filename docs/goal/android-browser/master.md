@@ -2,15 +2,16 @@
 
 **入口文档**: [../android-browser.md](../android-browser.md)
 **创建日期**: 2026-09-07（goal 拆分 bootstrap）
-**最后更新**: 2026-09-12（M5 切片 13 FR-010 依赖与许可证清单——license-manifest.sh 可重复生成，341 包全宽松许可零未知；模拟器环境核查记入 evidence/emulator-feasibility.md）
+**最后更新**: 2026-09-12（master.md 收口压缩 + archive 建立：M0→M4 代码切片流水归档，控制面只留当前态）
 
 ---
 
 ## 当前状态
 
-**专项定位**：Android 线治理与可用化。现状 = 功能中期（M2 级：22 JNI 导出、四类进程角色、
-帧桥接/滚动/网络代理已落地）、治理缺位（零 CI、零 goal 追踪、文档滞后）。先治理（CI 门禁）
-后验收（冒烟证据）。
+**专项定位**：Android 线治理与可用化。**现状**：治理面（CI 门禁/构建入口/签名/文档/测试）
+与 RFC M0→M4 代码面全部落地（28 个 JNI 导出、断连恢复×2、多标签换槽、点击/滚动/键盘 IME、
+真实 viewport、下载全链路、缩略图、双语+无障碍），剩余为**设备/模拟器环境门控的验收执行**
+（冒烟、端到端、性能/chaos 负测试）。
 
 **与兄弟 goal 的边界**：
 - rendering-compat — 渲染流域 crate 域零重叠；android-browser/rust 只读消费
@@ -18,151 +19,41 @@
 - page-wasm / storage-opfs / webdriver — 无共享面
 - 共享面：Cargo.lock（依赖变更前 `git log` 核对，冲突即暂缓，run-rules §9）
 
-## 实测基线（2026-09-07 立项时）
-
-### 现有实现
-
-- ✅ Kotlin 侧：MainActivity.kt（478 行 Compose UI）+ NativeBridge.kt（22 external fun）
-  + NativeRoleService.kt（renderer×8/compositor/image-decoder）+ AIDL + 中英资源
-- ✅ Rust 侧：apps/android-browser/rust（workspace member）lib.rs 949 行 22 个 JNI 导出 +
-  facade.rs 228 行（复用 BrowserShell）；PipeTransport 多进程角色；`NATIVE_VERSION =
-  "ZeroWeb Android M2"`
-- ✅ 已落地：renderer fetch 代理、renderer→compositor 帧转发、compositor 帧 Bitmap 回传、
-  滚动转发、WSL renderer 构建产物
-- ⚠️ CI：`.github/workflows/` 8 个 yml **零 Android job**
-- ⚠️ renderer Android transport adapter 未完成（README 自述「后续 M1 切片」——RFC 域，
-  本 goal 不实施）
-  → 2026-09-12 核实修正：adapter 已于 `73f2d7d57` 落地（`run_android_role` 完整 runtime
-  管线），Kotlin `RendererService0-7` 经 `nativeRunRole(role, slot, fd)` 交 FD，slot→
-  `renderer_id` 透传本轮补齐；剩余真缺口=多标签换槽接线（MainActivity 现只绑 slot 0）
-  与真机验证（M3）。默认 release 构建不含 renderer feature（renderer-less shell 产物，
-  `nativeRendererLinked()` 门控），完整版走 `make android-renderer-apk`
-  → 2026-09-12 续：**M3 切片 1 renderer 断连恢复落地**（`6b1ee64ce`）——recv 断连清槽 +
-  attach 握手失败清槽 + `nativeIsRendererAttached` 查询 + Kotlin 导航失败重绑
-  RendererService0
-  → 2026-09-12 续：**M3 切片 2 多标签换槽落地**（`e226fe361`）——facade tab→slot 亲和表
-  （空闲优先/LRU 逐出/关闭回收，host 测试覆盖）、native 8 槽注册表（transport/帧缓冲/
-  meta 全部按槽），navigate 路由活动槽、fetch 响应按来路槽回、snapshot 增
-  `activeRendererSlot` 驱动 Kotlin 按槽绑槽与预览
-  → 2026-09-12 续：**被逐标签切回自动重导航落地**——快照驱动恢复（有 URL 无附着槽 →
-  导航分配槽 → 失败按槽重绑 → attach 后补导航），启动恢复上次会话活动标签、外部
-  intent 新标签同链路；rebind 节流（3 次/选择周期）防循环；被逐标签预览留空不再
-  错拿他槽帧。多标签换槽功能面就此闭环，余真机冒烟（M3 收口）
-  → 2026-09-12 续：**M3 切片 3 compositor 断连恢复落地**（RFC M3「renderer/compositor
-  death 处理」后半，对称切片 1）——三处 compositor send/recv 往返收敛进 `compositor_round`
-  助手，传输失败即清槽 + `tracing::warn`；新增 `nativeDetachCompositor`；Kotlin
-  `onServiceDisconnected(CompositorService)` 作废附着标记并清 native 僵尸 transport，
-  BIND_AUTO_CREATE 重启后 `onServiceConnected` 重新走 attach 协议。宿主 7/7 + android
-  clippy + renderer APK（25 JNI 导出含新导出）构建通过
-- ⚠️ 版本串不一致：lib.rs `M2` vs README `M0`（文档滞后）
-- ⚠️ RFC `docs/specs/android-browser-spec-rfc.md`（1097 行）状态「待确认」；
-  FR-006/007/009 未见对应代码
-- ⚠️ 无 arm64 真机验收记录、无 Release APK 交付记录
-
-## 缺口清单
-
-| # | 缺口 | 状态 |
-|---|------|------|
-| P1 | Android CI job（NDK 构建 + assemble + 单测） | ✅ M1——ci.yml android job（34665015108 全绿） |
-| P2 | 版本串/README/RFC 状态文档滞后 | 🔶 M1——README/版本串已对齐（601138470）；RFC 状态待批准 |
-| P3 | JNI 桥接测试覆盖 + 进程角色冒烟断言 | 🔶 M2——宿主侧纯逻辑单测 5 项（roles/尺寸契约/版本串）已入；真机/模拟器冒烟属 M3 |
-| P4 | APK 构建入口 + 构建文档 | ✅ M2——`make android-apk/release-apk/renderer-apk`（test-guard 包裹）+ 签名（local.properties keystore，回退 unsigned）+ evidence 两篇 |
-| P5 | 模拟器冒烟证据 + RFC 决策清单 | ⬜ M3 |
-
-## 下一步计划
-
-1. **M1 切片 1**：本地打通 NDK 交叉编译 android-browser/rust + Gradle assemble，
-   记录依赖与可重复命令到 evidence/
-   → 2026-09-12 基础路径已打通（默认 feature、无 V8）：cargo 交叉编译 277 crate 通过 +
-   `make android-release-apk` 产出 unsigned APK；依赖与可重复命令见
-   [evidence/local-toolchain-bootstrap.md](evidence/local-toolchain-bootstrap.md)。
-   剩余：renderer feature 路径（V8 从源码，5 项前置缺 3）、gradlew 可执行位入库修复
-   → 2026-09-12 续：**renderer/V8 路径亦已本地打通**——六项前置装齐、`build-native-wsl.sh
-   arm64-v8a` 产出 90M 含 V8 的 .so（29m33s，三轮踩坑修复，含补丁新增 BUILDCONFIG
-   declare_args hunk），见 [evidence/v8-renderer-path.md](evidence/v8-renderer-path.md)
-2. **M1 切片 2**：CI Android job 落地（照既有 build-and-test 矩阵风格；不 continue-on-error）
-   → 2026-09-12 ✅ ci.yml android job 首跑全绿（run 34665015108）：clippy android target
-   （经 cargo ndk 包裹）+ 宿主单测 + assembleArm64Release + APK artifact。修复两处
-   android-cfg clippy 盲区 lint（3f5fad847）。M1 全部切片完成
-3. **M1 切片 3**：README/版本串对齐
-   → 2026-09-12 README 两处已对齐（版本串 M2、transport adapter 表述改待 RFC）；RFC 状态行仍待用户批准
-4. **RFC M3 剩余功能面**（RFC 批准后按 M2→M4 排期推进）
-   → 2026-09-12 ✅ 切片 3 compositor 断连恢复（见上）
-   → 2026-09-12 ✅ 切片 4 预览点击 → DOM click：Kotlin `detectTapGestures` 按预览显示区
-   归一化坐标 → `nativePageTap(normX, normY)`（纯函数 `tap_viewport_point` 校验
-   0..=1/有限值，宿主测试覆盖）→ 活动槽 `MouseEvent(Click)`，复用 renderer 桌面
-   hit-test/focus/表单提交语义
-   → 2026-09-12 ✅ 切片 5 viewport 真实尺寸贯通——替换写死 320×180：Kotlin
-   `computePageViewport()` 按真实 display 推算（CSS 宽 = 物理宽/density 夹在 320-480，
-   高按纵横比，密度单边帧上限 1280 内下调）；`nativeAttachRenderer` 增 (w,h,density)
-   参数，`validate_page_viewport` 纯函数校验（宿主测试）后作该槽 SetViewport 与每槽
-   视口注册表（tap/滚动光标换算同源）；帧出槽带 8 字节小端尺寸头
-   （`encode_page_frame`），`page_frame_dims` 校验 compositor 回帧有界自洽；清槽点
-   收敛 `clear_renderer_slot`（transport+视口同清）
-   → 2026-09-12 ✅ 切片 6 键盘/IME 输入通路——零 renderer/protocol 改动，复用桌面
-   `ImeEvent` IPC：Kotlin `PageInputView`（1dp 隐形 AndroidView + `BaseInputConnection`，
-   「键盘」开关按钮弹/收软键盘）→ `commitText` → `nativePageText`（ImeEvent::Commit，
-   CJK 主通路）、删除/回车 → `nativePageKey`（Backspace/Enter 白名单 → keydown+keyup，
-   renderer 侧默认动作删字/提交表单）。纯函数校验（文本 ≤4096 字节、键白名单）宿主
-   测试覆盖。RFC M3「焦点、IME」项就此闭合（焦点已随点击落位）
-5. **RFC M4 功能面**（按 RFC §7.2 排期）
-   → 2026-09-12 ✅ 切片 7 FR-006 下载接管与记录——browser 进程数据面闭环：fetch 代理对
-   `document` 资源的 `Content-Disposition: attachment` 响应拦截（`capture_attachment_download`），
-   字节落 `<profile>/downloads/<id>-<文件名>`（`facade::record_download`，DownloadManager
-   完成态 + save_profile 持久化；写盘失败标 Failed 不伪造完成；文件路径不回传 renderer，
-   renderer 收错误响应停留原页面）。文件名推导 `derive_download_filename` 纯函数
-   （Content-Disposition `filename=` → URL 末段 → 兜底，严格消毒防路径逃逸/控制符，
-   截断 100 字符）宿主测试覆盖。下载页 UI（现有 snapshot.downloads 渲染）零改动即见效。
-   剩余（切片 8 候选，设备面）：SAF DocumentUri 写用户可见位置、系统通知、ACTION_VIEW
-   打开、用户确认文件名
-   → 2026-09-12 ✅ 切片 8 多标签缩略图（FR-003 M4 项）——快照 tabs 增 `rendererSlot`
-   （宿主测试断言按标签槽位），Kotlin `BrowserTab` 解析 + `mutableStateMapOf` 缩略图缓存
-   （非活动标签解码该槽 `nativeLatestPageFrame` → `createScaledBitmap` 112px 宽小图，
-   每标签只解码一次——后台标签帧在其非活动期间不变；活动标签走大预览、被逐/关闭
-   标签随快照清理缓存）。标签行前置 56×36dp 缩略图（contentDescription=null，装饰性）。
-   已知限制：缩略图为最后渲染态，后台帧变化不实时刷新（设备验证时按需加失效钩子）
-   → 2026-09-12 ✅ 切片 9 双语资源与 chrome 无障碍（NFR-007 + RFC M4「双语和 chrome
-   无障碍」）——chrome 全量文案（页面/动作/空态/错误/contentDescription/统计行，35 键）
-   入 `values/`（EN 默认）+ `values-zh-rCN/`，按键位一一对应；MainActivity 32 处硬编码
-   中文 UI 串迁移 `stringResource`（组合项）/`getString`（Activity 侧），Kotlin 零硬编码
-   中文 UI 串；`BrowserPage` 枚举标签改资源引用；`BrowserTab.displayTitle` 回退词参数化
-   （数据类无 Context，回退词在组合项解析）。已知遗留：`bootstrap_role_summary` 资源键
-   立项即未被引用（非本次造成，未删）；下载条目 state 为枚举英文名（后续本地化候选）
-   → 2026-09-12 ✅ 切片 10 下载系统通知（FR-006「下载页和系统通知显示完成」）——快照
-   水位线驱动（download id 去重，首次快照仅立基线覆盖 profile 恢复，仅 Completed 新条目
-   通知）；附件下载接管后无新帧的轮询路径也刷新快照（通知触发源）；NotificationChannel
-   onCreate 幂等创建 + `POST_NOTIFICATIONS` 权限（API 33+ 未授权时静默跳过，不阻塞下载）；
-   通知点击回 MainActivity；框架 `Notification.Builder` 零新依赖。效果验证随设备面挂起
-   → 2026-09-12 ✅ 切片 11 FR-006 SAF 导出与打开——下载页 Completed 条目增「导出/打开」：
-   导出走 `ActivityResultContracts.CreateDocument`（用户授予 URI 由 browser 进程写入，
-   取消/写失败仅报错误不伪造记录）；打开走 `FileProvider`（manifest provider +
-   `file_paths.xml` 仅暴露 `profile/downloads/`）content URI + ACTION_VIEW 只读授予，
-   mime 按扩展名白名单推断；零新增 JNI（Kotlin 与 facade::record_download 同进程、
-   存储布局耦合已注释标注）。端到端验证随设备面挂起（FR-006 验收场景对应项）
-   → 2026-09-12 ✅ 切片 12 验收就绪包——`scripts/android/install-smoke.sh`（ps1 忠实
-   移植：四进程拓扑/UID 隔离/probe 断言，`--require-renderer` 增 socket 连接与页面帧
-   就绪断言）+ `make android-install-smoke` Linux 分支接通（不再占位 echo）+
-   [evidence/device-acceptance-checklist.md](evidence/device-acceptance-checklist.md)
-   （FR-001~009 步骤化清单 + 记录表格），环境解锁后冒烟一键执行
-   → 2026-09-12 ✅ 切片 13 FR-010 依赖与许可证清单——`scripts/android/license-manifest.sh`
-   （cargo metadata --filter-platform 闭包遍历，可重复生成）产出
-   [evidence/license-manifest.md](evidence/license-manifest.md)：341 包（aarch64-android
-   闭包，workspace 内 13）全宽松许可、零未知许可证、无 copyleft；APK 非闭包组件
-   （libc++_shared/V8/Compose/framework）单列。发布前重跑即可刷新
-6. **模拟器/真机冒烟（M3 收口）**：等 KVM 授权或设备（待用户决策，不阻塞功能切片）
-
-**碰撞管理**：Cargo.lock 变更前 `git log --since="14 days ago" -- Cargo.lock` 核对；
-只读消费其他 crate 公开 API。
+**历史**：立项基线与切片 1-13 流水见
+[archive/2026-09-12-m0-to-m4-code-slices.md](archive/2026-09-12-m0-to-m4-code-slices.md)。
 
 ## 里程碑状态
 
 | 里程碑 | 状态 |
 |--------|------|
-| M1 — CI 门禁 + 构建修复 | ✅ 全切片完成（CI job 全绿 34665015108、本地双路径打通、README/版本串对齐） |
-| M2 — 回归保护 + 可安装产物 | 🔶 APK 入口/签名/构建文档 ✅（P4）；JNI 桥接测试宿主侧 7 项已入、真机/模拟器冒烟断言待 M3 设备面（P3） |
-| M3 — 冒烟验收 + 决策清单 | 🔶 决策清单 ✅（RFC 已批准）；RFC M3 功能面（断连恢复×2/多标签换槽/点击/viewport/键盘 IME）✅ 全部落地，模拟器冒烟受 KVM 环境阻塞（见待用户决策），真机待设备 |
-| M4 — 完整首期功能（RFC 路线） | 🔶 FR-006 全链路代码面 ✅（切片 7 数据面 + 10 系统通知 + 11 SAF 导出/打开，端到端待设备）；多标签缩略图 ✅（切片 8）、双语 + chrome 无障碍 ✅（切片 9）；FR-007 全场景待设备验证 |
-| M5 — 质量与交付 | 🔶 验收就绪包 ✅（切片 12）、依赖/许可证清单 ✅（切片 13）；性能/内存/chaos/安全负测试与验收报告待设备+模拟器解锁 |
+| M1 — CI 门禁 + 构建修复 | ✅ 完成（CI job 全绿、本地双路径打通、README/版本串对齐） |
+| M2 — 回归保护 + 可安装产物 | ✅ 完成（构建入口/签名/构建文档；宿主侧纯逻辑单测 16 项，进程拓扑断言入 install-smoke） |
+| M3 — 冒烟验收 + 决策清单 | 🔶 决策清单 ✅（RFC 已批准）、RFC M3 功能面 ✅、验收就绪包 ✅；**冒烟执行待 KVM/设备** |
+| M4 — 完整首期功能（RFC 路线） | 🔶 代码面全部落地（FR-006 全链路/缩略图/双语+无障碍）；**端到端待设备** |
+| M5 — 质量与交付 | 🔶 验收清单/许可证清单 ✅；性能/内存/chaos/安全负测试与验收报告待设备+模拟器解锁 |
+
+## 缺口清单（当前）
+
+| # | 缺口 | 状态 |
+|---|------|------|
+| P1 | Android CI job | ✅ ci.yml android job 全绿（34665015108） |
+| P2 | 版本串/README/RFC 文档滞后 | ✅ 全部对齐（RFC 2026-09-12 批准） |
+| P3 | JNI 桥接测试 + 进程角色冒烟断言 | ✅ 宿主侧纯逻辑单测 16 项 + install-smoke.sh 拓扑/UID/probe 断言 |
+| P4 | APK 构建入口 + 构建文档 | ✅ make 三入口（test-guard 包裹）+ 签名 + evidence 文档 |
+| P5 | 模拟器/真机冒烟**执行**与证据 | ⬜ 等 KVM 授权或设备（唯一剩余缺口，验收清单已就绪） |
+
+## 下一步（环境解锁后按序执行）
+
+1. **模拟器冒烟**（KVM 授权后）：`make android-install-smoke` →
+   按 [evidence/device-acceptance-checklist.md](evidence/device-acceptance-checklist.md)
+   §0-9 逐项执行并回填记录表格。
+2. **真机验收**（设备到位后）：`make android-renderer-apk` 产物安装 →
+   清单全项 + FR-006 端到端（下载/通知/导出/打开）+ FR-007 旋转/后台回收。
+3. **发布前**：重跑 `scripts/android/license-manifest.sh` 刷新许可证清单；
+   `make android-release-apk` 签名产物 + 验收报告入 evidence。
+
+**碰撞管理**：Cargo.lock 变更前 `git log --since="14 days ago" -- Cargo.lock` 核对；
+只读消费其他 crate 公开 API。
 
 ## 待用户决策
 
@@ -170,10 +61,19 @@
 |----|------|------|
 | android-browser-spec-rfc.md 批准 | ✅ 已批准（2026-09-12） | transport adapter、FR-006/007/009 解锁，按路线 M2→M4 排期 |
 | 真机验收设备 | ⬜ 等设备 | 同父目标 P3 GPU 物理机门控模式；模拟器冒烟不阻塞 |
-| 本机模拟器 KVM 授权 | ⬜ 等用户一次性授权（已征询） | WSL2 `/dev/kvm` 存在但用户不在 kvm 组且 sudo 需密码，模拟器无法启动；`sudo usermod -aG kvm lei` 一次即可解锁（详情 evidence/emulator-feasibility.md）。解锁前 RFC M3 功能切片继续推进，不阻塞。**GB-20260912 巡检飞书征询 msg `om_x100b6561b60c38a0c27902f51665a6e`（2026-09-12，含建议操作与不操作均不阻塞口径）** |
+| 本机模拟器 KVM 授权 | ⬜ 等用户一次性授权（已征询） | WSL2 `/dev/kvm` 存在但当前用户不在 kvm 组且 sudo 需密码，模拟器无法启动；`sudo usermod -aG kvm $USER` 一次即可解锁（详情 evidence/emulator-feasibility.md）。解锁前功能切片已推进完毕，仅验收执行待此。**GB-20260912 巡检飞书征询 msg `om_x100b6561b60c38a0c27902f51665a6e`（2026-09-12，含建议操作与不操作均不阻塞口径）** |
 
 ## 验证基线
 
-- 测试基线：立项时点全绿（`make test` 入口，经 test-guard 包裹；禁止裸跑 cargo test）
-- Android 构建：无 CI 基线（M1 建立）
+- 测试基线：`make guarded-test` 全绿（test-guard 包裹；禁止裸跑 cargo test）
+- Android 构建：CI android job + 本地 `make android-apk/release-apk/renderer-apk`（签名产物）
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过
+- Android 质量口径：host/android-target 双配置 clippy + crate 宿主单测 + renderer APK 构建与 JNI 导出核对
+
+## 治理
+
+- **归档区域** `archive/`：只追加不修改（当前
+  [2026-09-12-m0-to-m4-code-slices.md](archive/2026-09-12-m0-to-m4-code-slices.md)）
+- **证据区域** `evidence/`：构建/冒烟/清单证据持续追加
+  （local-toolchain-bootstrap、v8-renderer-path、emulator-feasibility、
+  device-acceptance-checklist、license-manifest）
