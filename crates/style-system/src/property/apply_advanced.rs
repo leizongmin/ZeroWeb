@@ -1661,6 +1661,26 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
                 return true;
             }
         }
+        // R4257（CSS Overflow 5 §scroll-marker-group）：组盒生成位置（before/after 滚动
+        // 内容）。单指针载荷：side 置此，伪样式在 style 计算伪元素相位补齐（lib.rs）；
+        // 布局侧据 `computed.scroll_marker_group` 生成组盒，paint 以伪样式绘制。
+        "scroll-marker-group" => {
+            if let Some(v) = values::parse_scroll_marker_group(value) {
+                style.scroll_marker_group = match v {
+                    zero_css_parser::values::ScrollMarkerGroupValue::None => None,
+                    side => Some(Box::new(ScrollMarkerGroupPseudo {
+                        side: match side {
+                            zero_css_parser::values::ScrollMarkerGroupValue::Before => {
+                                ScrollMarkerGroupComputedValue::Before
+                            }
+                            _ => ScrollMarkerGroupComputedValue::After,
+                        },
+                        style: Box::default(),
+                    })),
+                };
+                return true;
+            }
+        }
         "background-image" => {
             if let Some(layers) = values::parse_background_image_layers(value) {
                 style.background_image = layers

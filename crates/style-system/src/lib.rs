@@ -662,6 +662,22 @@ impl StyleSystem {
                         computed.marker_pseudo = Some(Box::new(marker));
                     }
                 }
+                // R4257（CSS Overflow 5 §scroll-marker-group）：`::scroll-marker-group`
+                // 伪元素——元素声明 `scroll-marker-group` 非 none 时计算并存储。组盒的
+                // 布局生成（tree.rs before/after 滚动内容）与绘制（paint 伪样式覆盖）
+                // 均消费本样式；与 ::marker 同型的「伪样式存 owner ComputedStyle」路径。
+                if let Some(pseudo) = &mut computed.scroll_marker_group {
+                    pseudo.style = self.compute_element_style_internal(
+                        doc,
+                        node,
+                        stylesheets,
+                        rule_index,
+                        Some(&elem_style),
+                        &saved_custom,
+                        quirks_mode,
+                        Some("scroll-marker-group"),
+                    );
+                }
                 // ::first-letter 伪元素（CSS2 §5.12.2）：样式作用于块容器首个格式化行的首字母
                 //（穿透嵌套 inline，first-letter-nested-001..007 族）。compute_element_style_internal
                 // 的伪元素收集对 first-letter 通用（PseudoElementSelector::Standard 路由已存在）。

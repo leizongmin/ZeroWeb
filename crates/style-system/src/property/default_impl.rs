@@ -332,6 +332,7 @@ impl Default for ComputedStyle {
             hyphens: HyphensComputedValue::None,
             line_clamp: LineClampComputedValue::None,
             line_clamp_legacy_webkit: false,
+            scroll_marker_group: None,
 
             // Background Image / Position / Repeat / Size / Attachment / Clip / Origin
             background_image: vec![],

@@ -886,6 +886,30 @@ pub enum LineClampComputedValue {
     Auto,
 }
 
+/// CSS scroll-marker-group 属性值（CSS Overflow 5）。
+// https://drafts.csswg.org/css-overflow-5/#scroll-marker-group
+#[derive(Debug, Clone, PartialEq, Default)]
+pub enum ScrollMarkerGroupComputedValue {
+    /// none（默认值）— 不生成组盒。
+    #[default]
+    None,
+    /// before — 组盒置于滚动内容之前。
+    Before,
+    /// after — 组盒置于滚动内容之后。
+    After,
+}
+
+/// R4257：`::scroll-marker-group` 伪样式载荷——Box 化（R3867 帧体量纪律：ComputedStyle
+/// 内联增长会推破深嵌套页递归栈顶），`scroll_marker_group` 单指针字段承载
+/// 位置（side）+ 伪样式（style）。
+#[derive(Debug, Clone)]
+pub struct ScrollMarkerGroupPseudo {
+    /// before / after 滚动内容。
+    pub side: ScrollMarkerGroupComputedValue,
+    /// `::scroll-marker-group` 计算样式。
+    pub style: Box<ComputedStyle>,
+}
+
 // 背景与边框图像相关计算值类型（background-* / border-image-* / mask-mode /
 // list-style-image）。R2534：抽出为 `image` 子模块以满足单文件 ≤2000 行（CLAUDE.md §5）；
 // 纯数据类型机械迁移，下方 `pub use` 保持原 `property::types::*` 路径与本文件内部引用不变。

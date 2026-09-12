@@ -533,6 +533,7 @@ pub struct ComputedStyle {
     pub hyphens: HyphensComputedValue,
     /// line-clamp 属性。
     pub line_clamp: LineClampComputedValue,
+
     /// R3768：line-clamp 值是否来自 legacy `-webkit-line-clamp` 别名。legacy -webkit-box
     /// 语义（逐 flex item clamp，与本仓跨块累计 clamp 不同）下跨块 pass 跳过，避免
     /// webkit-line-clamp-008/009 类用例被误 clamp（其 ref 为不 clamp 全内容）。
@@ -585,6 +586,10 @@ pub struct ComputedStyle {
     /// `::marker` 伪元素的计算样式（CSS Lists 3；仅 `<li>` 计算，继承自本元素 → 默认
     /// color 等同本元素，paint_list_marker 据此应用 `::marker { color/content }` 覆盖）。
     pub marker_pseudo: Option<Box<ComputedStyle>>,
+    /// R4257（CSS Overflow 5）：`scroll-marker-group` + `::scroll-marker-group` 伪样式
+    /// 合一载荷（单指针，帧体量纪律）。None = 无组盒；Some = side（before/after）+ 伪
+    /// 计算样式（layout 生成组盒 / paint 伪样式绘制）。
+    pub scroll_marker_group: Option<Box<ScrollMarkerGroupPseudo>>,
     /// `::first-letter` 伪元素的计算样式（CSS2 §5.12.2）。仅当级联存在 `::first-letter`
     /// 声明且**样式可 paint 侧应用**（当前切片：color 与元素不同）时存储。
     /// paint 侧把块容器首个文本片段的首字符按本样式绘制（不改几何——font/metrics

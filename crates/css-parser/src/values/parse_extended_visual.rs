@@ -580,6 +580,35 @@ pub fn parse_line_clamp(value: &str) -> Option<LineClampValue> {
     if n > 0 { Some(LineClampValue::Count(n)) } else { None }
 }
 
+// ── CSS Scroll Marker Group 值类型 ────────────────────────────────────
+
+/// CSS scroll-marker-group 属性值（CSS Overflow 5）。
+// https://drafts.csswg.org/css-overflow-5/#scroll-marker-group
+#[derive(Debug, Clone, PartialEq)]
+pub enum ScrollMarkerGroupValue {
+    /// none（默认值）— 不生成组盒。
+    None,
+    /// before — 组盒置于滚动内容之前。
+    Before,
+    /// after — 组盒置于滚动内容之后。
+    After,
+}
+
+/// 解析 CSS scroll-marker-group 属性值。
+///
+/// 支持格式如 `"none"`、`"before"`、`"after"`。
+pub fn parse_scroll_marker_group(value: &str) -> Option<ScrollMarkerGroupValue> {
+    let value = value.trim();
+    match value.eq_ignore_ascii_case("none") {
+        true => Some(ScrollMarkerGroupValue::None),
+        false => match value.eq_ignore_ascii_case("before") {
+            true => Some(ScrollMarkerGroupValue::Before),
+            false if value.eq_ignore_ascii_case("after") => Some(ScrollMarkerGroupValue::After),
+            _ => None,
+        },
+    }
+}
+
 // ── CSS Background 值类型 ──────────────────────────────────────────────
 
 /// CSS background-image 属性值。

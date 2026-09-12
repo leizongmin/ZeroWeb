@@ -329,3 +329,4 @@ css/css-box/margin-trim/flex-row-inline-multiline.html css/reference/ref-filled-
 css/css-box/margin-trim/grid-block.html css/reference/ref-filled-green-100px-square-only.html == 2026-09-12 R4253 inline-grid 内容系宽度不撑满 auto 轨道（css-grid §11.8 definite 尺寸 gate）+ grid trim 相邻 track 臂
 css/css-box/margin-trim/grid-inline.html css/reference/ref-filled-green-100px-square-only.html == 2026-09-12 R4253 inline-grid inline trim 首末 col track 全裁（同 sizing gate）
 css/css-box/margin-trim/grid-trim-ignores-collapsed-tracks.html css/reference/ref-filled-green-100px-square-only.html == 2026-09-12 R4254 margin-trim adjacency ignores collapsed tracks——auto-fit 空轨坍缩下按占用线号判边邻接（css-box-4 §3.3.3 × CSS Grid §7.2.3.2）
+css/css-overflow/scroll-markers/scroll-marker-group-001.html css/css-overflow/scroll-markers/scroll-marker-group-001-ref.html == 2026-09-12 R4257 scroll-marker-group 属性解析 + ::scroll-marker-group 组盒合成（auto 高度 scroll 容器切片 1）

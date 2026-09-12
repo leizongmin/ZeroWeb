@@ -1541,6 +1541,9 @@ impl LayoutEngine {
         let own_writing_mode = computed.map_or(WritingModeValue::HorizontalTb, |s| s.writing_mode.clone());
 
         let is_absolute = computed.is_some_and(|s| matches!(s.position, PositionValue::Absolute));
+        // R4257（CSS Overflow 5）：`::scroll-marker-group` 生成组盒标记（paint 以属主
+        // 伪样式绘制）。
+        let is_scroll_marker_group = false;
         let is_fixed = computed.is_some_and(|s| matches!(s.position, PositionValue::Fixed));
         // R2084 dim-aware：fixed 某 inset 维（x=left/right, y=top/bottom）全 auto 时，该维
         // 位置 = 静态位置（§10.3.7/§10.6.4），adjust_fixed_to_viewport 据此跳过该维「扣除祖先
@@ -1881,7 +1884,7 @@ impl LayoutEngine {
         let content_x = border_left + padding_left;
         let content_y = border_top + padding_top;
         let content_width = (width - border_left - border_right - padding_left - padding_right).max(0.0);
-        let content_height = (height - border_top - border_bottom - padding_top - padding_bottom).max(0.0);
+        let mut content_height = (height - border_top - border_bottom - padding_top - padding_bottom).max(0.0);
 
         // 递归提取子节点（使用此元素自身的 writing mode）
         let children_taffy = taffy.children(taffy_id).unwrap_or_default();
@@ -1930,6 +1933,112 @@ impl LayoutEngine {
             }
         }
 
+        // R4257（CSS Overflow 5 §scroll-marker-group）：`::scroll-marker-group` 组盒合成——
+        // 元素声明 `scroll-marker-group` 非 none 且伪样式存在时，在滚动内容前/后合成组盒
+        // LayoutBox（无 taffy 节点：taffy 子节点会被 scroll-sizing/DOM 内容高度后处理
+        // 归零——组盒无 DOM 身份无法参与该管线）。组盒 node_id = 属主 + is_scroll_marker_group
+        // 旗标，paint 以属主 `scroll_marker_group_pseudo` 伪样式绘制（painter 专用分支）。
+        // **切片 1 bounded**：尺寸仅 Px（非 Px 不生成）；不贡献属主 auto 高度（空 scroller
+        // 页溢出绘制即视觉兑现）；::scroll-marker per-item 盒留切片 2。
+        if let Some(group_pseudo) = computed.and_then(|s| s.scroll_marker_group.as_deref()) {
+            // gate：①属性非 none ②**scroll 容器**（overflow 非 visible——group-010：
+            // 非 scroll 容器不生成组盒）③**auto 高度**（组盒参与内容流；definite 高度
+            // scroller 的组盒是 scrollport 绝对定位（UA 组样式），切片 2 建模）。
+            let is_scroll_container = computed.is_some_and(|s| {
+                !matches!(s.overflow_x, zero_css_parser::values::OverflowValue::Visible)
+                    || !matches!(s.overflow_y, zero_css_parser::values::OverflowValue::Visible)
+            });
+            let auto_height = computed.is_some_and(|s| matches!(s.height, LengthValue::Auto));
+            let group_style: &zero_style_system::ComputedStyle = &group_pseudo.style;
+            let group_on = is_scroll_container && auto_height;
+            if group_on
+                && matches!(group_style.width, LengthValue::Px(n) if n.is_finite())
+                && matches!(group_style.height, LengthValue::Px(n) if n.is_finite())
+            {
+                let gw = match group_style.width {
+                    LengthValue::Px(n) => n as f32,
+                    _ => 0.0,
+                };
+                let gh = match group_style.height {
+                    LengthValue::Px(n) => n as f32,
+                    _ => 0.0,
+                };
+                let before = matches!(
+                    group_pseudo.side,
+                    zero_style_system::property::types::ScrollMarkerGroupComputedValue::Before
+                );
+                // 组盒计入滚动内容：属主 auto 高度按「组盒底缘」扩张（CSS Overflow 5：
+                // 组盒是 scrollport 的一部分——否则 overflow:auto 的 0 高属主把组盒
+                // 裁剪到不可见，scroll-marker-group-001 的绿块全消）。
+                let group_bottom = if before { gh } else { content_height + gh };
+                if group_bottom > content_height {
+                    content_height = group_bottom;
+                    let frame = border_top + border_bottom + padding_top + padding_bottom;
+                    if content_height + frame > height {
+                        height = content_height + frame;
+                    }
+                }
+                // R3867 帧体量纪律：LayoutBox ~KB 级栈局部会令 extract_layout 递归帧
+                // 推过深嵌套页栈顶（test_pipeline_deeply_nested_html 实证）——Box 化。
+                let group_box = Box::new(LayoutBox {
+                    node_id: dom_id,
+                    x: 0.0,
+                    y: if before { 0.0 } else { content_height - gh },
+                    width: gw,
+                    height: gh,
+                    content_x: 0.0,
+                    content_y: 0.0,
+                    content_width: gw,
+                    content_height: gh,
+                    border_top: 0.0,
+                    border_right: 0.0,
+                    border_bottom: 0.0,
+                    border_left: 0.0,
+                    padding_top: 0.0,
+                    padding_right: 0.0,
+                    padding_bottom: 0.0,
+                    padding_left: 0.0,
+                    margin_top: 0.0,
+                    margin_right: 0.0,
+                    margin_bottom: 0.0,
+                    margin_left: 0.0,
+                    declared_margin_top: 0.0,
+                    declared_margin_bottom: 0.0,
+                    declared_width_auto: false,
+                    declared_width_stretch: false,
+                    declared_width_px: Some(gw),
+                    declared_height_auto: false,
+                    has_size_containment: false,
+                    margin_left_auto: false,
+                    margin_right_auto: false,
+                    children: Vec::new(),
+                    is_absolute: false,
+                    is_scroll_marker_group: true,
+                    is_replaced: false,
+                    is_fixed: false,
+                    fixed_x_insets_all_auto: false,
+                    fixed_y_insets_all_auto: false,
+                    is_sticky: false,
+                    is_flex_grid_item: false,
+                    is_abspos_cb: false,
+                    float: FloatValue::None,
+                    clear: ClearValue::None,
+                    overflow_x: OverflowClip::Visible,
+                    overflow_y: OverflowClip::Visible,
+                    // display:flex/block-level（作者伪样式）→ 块级盒；false 会被
+                    // remeasure_inline_only_containers 误判 inline 子触发 IFC 重测
+                    //（scroller 高度被行盒重算归零）。
+                    is_block_level: true,
+                    ..Default::default()
+                });
+                if before {
+                    children_boxes.insert(0, *group_box);
+                } else {
+                    children_boxes.push(*group_box);
+                }
+            }
+        }
+
         LayoutBox {
             node_id: dom_id,
             x,
@@ -1963,6 +2072,7 @@ impl LayoutEngine {
             margin_right_auto,
             children: children_boxes,
             is_absolute,
+            is_scroll_marker_group,
             is_replaced,
             is_fixed,
             fixed_x_insets_all_auto,

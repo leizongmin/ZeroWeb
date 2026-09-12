@@ -119,6 +119,9 @@ pub struct LayoutBox {
     pub children: Vec<LayoutBox>,
     /// 是否为绝对定位。
     pub is_absolute: bool,
+    /// R4257（CSS Overflow 5）：`::scroll-marker-group` 生成组盒（无 DOM 身份）——
+    /// paint 以属主元素 `scroll_marker_group_pseudo` 伪样式绘制背景/边框。
+    pub is_scroll_marker_group: bool,
     /// 是否为替换元素（img/video/iframe/embed/object/svg/canvas 等有固有尺寸）。
     ///
     /// CSS §10.3.8/§10.6.6：替换元素的 auto 尺寸按固有尺寸 + 宽高比解析，**不**按
@@ -525,6 +528,7 @@ impl Default for LayoutBox {
             margin_right_auto: false,
             children: Vec::new(),
             is_absolute: false,
+            is_scroll_marker_group: false,
             is_replaced: false,
             is_fixed: false,
             fixed_x_insets_all_auto: false,

@@ -1020,6 +1020,13 @@ impl<'a> Parser<'a> {
                 | "highlight"
                 | "shadow-tree"
                 | "content"
+                // R4257（CSS Overflow 5）：scroll-marker 组盒/标记/滚动按钮伪元素——
+                // `::scroll-marker-group` 由 style-system 计算伪样式 + layout 生成组盒 +
+                // paint 伪样式绘制（切片 1 组盒）；`::scroll-marker`/`::scroll-button`
+                // 先放行选择器解析（布局/绘制支持后续切片）。
+                | "scroll-marker-group"
+                | "scroll-marker"
+                | "scroll-button"
         )
     }
 

@@ -1072,6 +1072,22 @@ impl Painter {
             || box_node.overflow_y != OverflowClip::Visible
             || box_node.line_clamp_clip;
 
+        // R4257：`::scroll-marker-group` 生成组盒——脏矩形路径同主路径按伪样式绘制
+        //（见 paint_node_inner 同名分支）。
+        if box_node.is_scroll_marker_group
+            && let Some(group_style) = box_node
+                .node_id
+                .and_then(|id| styles.get(&id))
+                .and_then(|s| s.scroll_marker_group.as_deref())
+                .map(|g| &g.style)
+        {
+            if group_style.background_color != ColorValue::Transparent || !group_style.background_image.is_empty() {
+                self.paint_background(box_node, abs_x, abs_y, group_style, styles);
+            }
+            self.paint_borders(box_node, abs_x, abs_y, group_style);
+            return;
+        }
+
         // R792：overflow 裁剪基线快照。paint_text 绘制盒子**自身**直属文本（在子节点之前），
         // 原快照取于 paint_text 之后，致裁剪范围 [snapshot..end] 只含子节点、漏掉自身文本——
         // overflow!=visible 的盒子（如 max-width-106 的 float+overflow:scroll）直属溢出文本
@@ -1354,6 +1370,24 @@ impl Painter {
 
         let abs_x = offset_x + box_node.x;
         let abs_y = offset_y + box_node.y;
+
+        // R4257（CSS Overflow 5 §scroll-marker-group）：`::scroll-marker-group` 生成组盒
+        // 专用绘制——组盒无 DOM 身份（node_id = 属主），按属主 `scroll_marker_group_pseudo`
+        // 伪样式绘制背景/边框后返回（切片 1：组盒为叶，无 per-item marker 子盒；子盒排布
+        // 留切片 2）。不走常规路径：属主样式（背景/边框/文本）会污染组盒。
+        if box_node.is_scroll_marker_group
+            && let Some(group_style) = box_node
+                .node_id
+                .and_then(|id| styles.get(&id))
+                .and_then(|s| s.scroll_marker_group.as_deref())
+                .map(|g| &g.style)
+        {
+            if group_style.background_color != ColorValue::Transparent || !group_style.background_image.is_empty() {
+                self.paint_background(box_node, abs_x, abs_y, group_style, styles);
+            }
+            self.paint_borders(box_node, abs_x, abs_y, group_style);
+            return;
+        }
 
         // 判断是否需要裁剪子内容（overflow 或 contain:paint 触发）
         let needs_clip = compute_needs_clip(box_node, styles, doc);
