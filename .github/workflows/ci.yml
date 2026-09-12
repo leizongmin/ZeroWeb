@@ -664,8 +664,11 @@ jobs:
             android-cargo-
             ${{ runner.os }}-cargo-
 
+      # 必须 cargo ndk 包裹：裸 cargo clippy --target 无 NDK 的 CC/linker 环境，
+      # cc-rs（ring）找不到 aarch64-linux-android-clang（34664560843 首跑实证）。
+      # cargo ndk 与 buildRustNative 同款注入，clippy 参数经 `--` 原样透传。
       - name: Run clippy (aarch64-linux-android, default features)
-        run: cargo clippy -p zero-android-browser --target aarch64-linux-android -- -D warnings
+        run: cargo ndk -t arm64-v8a -P 26 clippy -p zero-android-browser -- -D warnings
 
       - name: Run host unit tests
         timeout-minutes: 20

@@ -45,7 +45,9 @@ static ANDROID_RENDERER: OnceLock<Mutex<Option<AndroidRendererTransport>>> = Onc
 #[cfg(target_os = "android")]
 static ANDROID_PAGE_FRAME: OnceLock<Mutex<Option<Vec<u8>>>> = OnceLock::new();
 #[cfg(target_os = "android")]
-static ANDROID_PAGE_META: OnceLock<Mutex<Option<(u64, u64, u64, f32)>>> = OnceLock::new();
+type AndroidPageMeta = (u64, u64, u64, f32);
+#[cfg(target_os = "android")]
+static ANDROID_PAGE_META: OnceLock<Mutex<Option<AndroidPageMeta>>> = OnceLock::new();
 #[cfg(target_os = "android")]
 static ANDROID_SECURITY: OnceLock<Mutex<zero_security::SecurityContext>> = OnceLock::new();
 #[cfg(target_os = "android")]
@@ -743,6 +745,8 @@ pub extern "system" fn Java_com_leizm_zeroweb_NativeBridge_nativeCompositorTestF
 fn compositor_test_frame(width: jni::sys::jint, height: jni::sys::jint) -> Result<Vec<u8>, String> {
     let (width, height, len) = compositor_pixel_len(width, height)?;
     let mut rgba = vec![0; len];
+    // MSRV 1.85：clippy 建议的 as_chunks_mut 1.88 才稳定，保留 chunks_exact_mut
+    #[allow(clippy::chunks_exact_to_as_chunks)]
     for pixel in rgba.chunks_exact_mut(4) {
         pixel.copy_from_slice(&[12, 34, 56, 255]);
     }
