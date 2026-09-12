@@ -323,6 +323,7 @@ fn snapshot_locked(state: &Option<AndroidBrowser>) -> Result<String, String> {
                 "title": tab.title(),
                 "loading": tab.is_loading(),
                 "crashed": tab.is_crashed(),
+                "rendererSlot": browser.tab_slots.get(&tab.id()).copied(),
             })
         })
         .collect();
@@ -429,6 +430,18 @@ mod tests {
             assert_eq!(slot, i);
             assert_eq!(evicted, None);
             tabs.push(active_tab());
+        }
+
+        // 快照按标签暴露渲染槽（多标签缩略图数据源，M4 切片 8）
+        let snap: Value = serde_json::from_str(&snapshot().unwrap()).unwrap();
+        for (i, tab_id) in tabs.iter().enumerate() {
+            let entry = snap["tabs"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|tab| tab["id"].as_u64() == Some(*tab_id))
+                .unwrap();
+            assert_eq!(entry["rendererSlot"].as_u64(), Some(i as u64));
         }
 
         // 触碰槽 0 的租户（模拟用户切回第一个标签），再建第 9 个标签：

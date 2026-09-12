@@ -2,7 +2,7 @@
 
 **入口文档**: [../android-browser.md](../android-browser.md)
 **创建日期**: 2026-09-07（goal 拆分 bootstrap）
-**最后更新**: 2026-09-12（M4 切片 7 FR-006 下载接管落地——browser 进程拦截 attachment 并落盘记录；模拟器环境核查记入 evidence/emulator-feasibility.md）
+**最后更新**: 2026-09-12（M4 切片 8 多标签缩略图落地——快照按标签暴露渲染槽，标签列表显示后台标签最后帧缩略图；模拟器环境核查记入 evidence/emulator-feasibility.md）
 
 ---
 
@@ -115,6 +115,12 @@
    截断 100 字符）宿主测试覆盖。下载页 UI（现有 snapshot.downloads 渲染）零改动即见效。
    剩余（切片 8 候选，设备面）：SAF DocumentUri 写用户可见位置、系统通知、ACTION_VIEW
    打开、用户确认文件名
+   → 2026-09-12 ✅ 切片 8 多标签缩略图（FR-003 M4 项）——快照 tabs 增 `rendererSlot`
+   （宿主测试断言按标签槽位），Kotlin `BrowserTab` 解析 + `mutableStateMapOf` 缩略图缓存
+   （非活动标签解码该槽 `nativeLatestPageFrame` → `createScaledBitmap` 112px 宽小图，
+   每标签只解码一次——后台标签帧在其非活动期间不变；活动标签走大预览、被逐/关闭
+   标签随快照清理缓存）。标签行前置 56×36dp 缩略图（contentDescription=null，装饰性）。
+   已知限制：缩略图为最后渲染态，后台帧变化不实时刷新（设备验证时按需加失效钩子）
 6. **模拟器/真机冒烟（M3 收口）**：等 KVM 授权或设备（待用户决策，不阻塞功能切片）
 
 **碰撞管理**：Cargo.lock 变更前 `git log --since="14 days ago" -- Cargo.lock` 核对；
@@ -127,7 +133,7 @@
 | M1 — CI 门禁 + 构建修复 | ✅ 全切片完成（CI job 全绿 34665015108、本地双路径打通、README/版本串对齐） |
 | M2 — 回归保护 + 可安装产物 | 🔶 APK 入口/签名/构建文档 ✅（P4）；JNI 桥接测试宿主侧 7 项已入、真机/模拟器冒烟断言待 M3 设备面（P3） |
 | M3 — 冒烟验收 + 决策清单 | 🔶 决策清单 ✅（RFC 已批准）；RFC M3 功能面（断连恢复×2/多标签换槽/点击/viewport/键盘 IME）✅ 全部落地，模拟器冒烟受 KVM 环境阻塞（见待用户决策），真机待设备 |
-| M4 — 完整首期功能（RFC 路线） | 🔶 FR-006 下载 browser 进程数据面 ✅（切片 7）；SAF/通知/打开待设备（切片 8）；多标签缩略图、无障碍、FR-007 全场景待排期 |
+| M4 — 完整首期功能（RFC 路线） | 🔶 FR-006 下载 browser 进程数据面 ✅（切片 7）、多标签缩略图 ✅（切片 8）；SAF/通知/打开待设备；无障碍、FR-007 全场景待排期 |
 
 ## 待用户决策
 

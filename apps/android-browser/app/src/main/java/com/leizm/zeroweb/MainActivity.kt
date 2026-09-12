@@ -36,10 +36,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
@@ -50,6 +52,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import org.json.JSONObject
 import java.nio.ByteBuffer
+
+/** 标签缩略图缩放目标宽（像素）：56dp @2x，缓存体量与解码成本折中。 */
+private const val TAB_THUMB_WIDTH_PX = 112
 
 /** Android launcher Activity for the ZeroWeb browser process. */
 class MainActivity : ComponentActivity() {
@@ -80,6 +85,8 @@ class MainActivity : ComponentActivity() {
     /** 页面 IME 托管视图（预览下方 1dp 隐形槽），键盘开关时接管软键盘。 */
     private var pageInputView: PageInputView? = null
     private var keyboardRequested by mutableStateOf(false)
+    /** 非活动标签缩略图缓存（tabId → 缩放后小图；活动标签走大预览，被逐标签无帧）。 */
+    private val tabThumbnails = mutableStateMapOf<Long, ImageBitmap>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -119,6 +126,7 @@ class MainActivity : ComponentActivity() {
                     keyboardRequested = keyboardRequested,
                     onToggleKeyboard = ::toggleKeyboard,
                     onPageInputViewCreated = ::registerPageInputView,
+                    tabThumbnails = tabThumbnails,
                 )
             }
         }
@@ -268,8 +276,31 @@ class MainActivity : ComponentActivity() {
             .onSuccess {
                 browserState = it
                 browserError = null
+                refreshTabThumbnails()
             }
             .onFailure { browserError = it.message ?: "无法读取浏览器状态" }
+    }
+
+    /**
+     * 非活动标签缩略图刷新（M4 切片 8）：后台标签帧在其非活动期间不变，故每标签
+     * 只解码一次并缩放缓存；活动标签走大预览，被逐/关闭标签条目随快照清理。
+     */
+    private fun refreshTabThumbnails() {
+        val snapshot = browserState ?: return
+        val seen = mutableSetOf<Long>()
+        snapshot.tabs.forEach { tab ->
+            val slot = tab.rendererSlot
+            if (tab.id != snapshot.activeTabId && slot != null && !tabThumbnails.containsKey(tab.id)) {
+                NativeBridge.nativeLatestPageFrame(slot)?.toPageBitmap()?.let { full ->
+                    val scale = TAB_THUMB_WIDTH_PX.toFloat() / full.width
+                    val thumb =
+                        Bitmap.createScaledBitmap(full, TAB_THUMB_WIDTH_PX, (full.height * scale).toInt().coerceAtLeast(1), true)
+                    tabThumbnails[tab.id] = thumb.asImageBitmap()
+                }
+            }
+            if (tab.id != snapshot.activeTabId) seen += tab.id
+        }
+        tabThumbnails.keys.removeAll { id -> id !in seen }
     }
 
     private fun bindRole(roleService: Class<out Service>) {
@@ -506,6 +537,7 @@ private fun BrowserScreen(
     keyboardRequested: Boolean,
     onToggleKeyboard: () -> Unit,
     onPageInputViewCreated: (PageInputView) -> Unit,
+    tabThumbnails: Map<Long, ImageBitmap>,
 ) {
     var page by remember { mutableStateOf(BrowserPage.BROWSE) }
     BackHandler(enabled = page != BrowserPage.BROWSE) { page = BrowserPage.BROWSE }
@@ -552,6 +584,13 @@ private fun BrowserScreen(
         Text(text = "标签 ${snapshot.tabs.size} · 书签 ${snapshot.bookmarkCount} · 历史 ${snapshot.historyCount} · 下载 ${snapshot.downloadCount}")
         snapshot.tabs.forEach { tab ->
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                tabThumbnails[tab.id]?.let { thumb ->
+                    Image(
+                        bitmap = thumb,
+                        contentDescription = null, // 装饰性缩略图：语义由标题文本承载
+                        modifier = Modifier.size(56.dp, 36.dp),
+                    )
+                }
                 TextButton(onClick = { onSelectTab(tab.id) }, modifier = Modifier.weight(1f)) {
                     Text(if (tab.id == snapshot.activeTabId) "● ${tab.displayTitle}" else tab.displayTitle)
                 }
@@ -681,7 +720,7 @@ private enum class BrowserPage(val label: String) {
     DOWNLOADS("下载"),
 }
 
-private data class BrowserTab(val id: Long, val url: String?, val title: String?) {
+private data class BrowserTab(val id: Long, val url: String?, val title: String?, val rendererSlot: Int?) {
     val displayTitle: String get() = title ?: url ?: "新标签"
 }
 
@@ -720,6 +759,7 @@ private data class BrowserSnapshot(
                         id = tab.getLong("id"),
                         url = if (tab.isNull("url")) null else tab.getString("url"),
                         title = if (tab.isNull("title")) null else tab.getString("title"),
+                        rendererSlot = if (tab.isNull("rendererSlot")) null else tab.getInt("rendererSlot"),
                     )
                 },
                 bookmarked = json.getBoolean("bookmarked"),
