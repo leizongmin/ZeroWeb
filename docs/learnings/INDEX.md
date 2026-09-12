@@ -5,8 +5,10 @@
 > 布局契约：`<分类>/<YYYY-MM>/<YYYY-MM-DD>-<topic>.md`，日期以 frontmatter 为准。
 > 方法论蒸馏层见 `.agents/skills/zeroweb-guidelines/SKILL.md`。
 
-## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（104）
+## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（106）
 
+- 2026-09-12 [tungstenite write() 缓冲不落盘 + peek 阶段 read timeout 未恢复 → CDP 客户端首连必败](bugs/2026-09/2026-09-12-tungstenite-write-buffer-stale-read-timeout.md) — apps/browser
+- 2026-09-12 [import-wpt 空 REF 触发下载失败路径删除测试文件](bugs/2026-09/2026-09-12-import-wpt-empty-ref-deletes-test-file.md) — tests/wpt-runner
 - 2026-09-03 [Service Worker iframe controllerchange event state must be event-scoped](bugs/2026-09/2026-09-03-sw-iframe-controllerchange-event-state.md) — engine/js-dom-shim, service-worker, wpt-runner
 - 2026-09-03 [Service Worker waitUntil 必须等待全部 lifetime promises settle](bugs/2026-09/2026-09-03-service-worker-waituntil-settlement.md) — script-sandbox,page-runtime,wpt-runner
 - 2026-09-03 [Service Worker Iframe Registration State Sync](bugs/2026-09/2026-09-03-service-worker-iframe-registration-state-sync.md) — engine, webview, wpt-runner
