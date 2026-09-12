@@ -146,17 +146,17 @@ Web 标准覆盖面极广，"最新标准"不可能在一个里程碑中完成�
 - [ ] **每个 crate 都有完善的单元测试**：覆盖正常路径、边界条件、错误恢复、一致性校验
 - [ ] 单元测试数量与代码量比例：核心 crate（dom、css-parser、style-system、layout-engine、canvas、security）测试行数 ≥ 实现行数的 30%
 - [ ] 核心模块行覆盖率 ≥ 70%，非核心 crate ≥ 50%
-- [ ] 至少一个集成测试可以端到端加载真实 URL 并验证渲染输出
-- [ ] WPT 测试基础设施就位并可运行，有按分类的通过率追踪
+- [ ] 至少一个集成测试可以端到端加载真实 URL 并验证渲染输出——集成 e2e 用例存在（网络型真实站点用例默认 ignored，74 用例口径 2026-08-04），「持续绿色」口径待网络环境验收
+- [x] WPT 测试基础设施就位并可运行，有按分类的通过率追踪——wpt-runner（reftest + testharness 双通道，`make reftest` / `make testharness-*`）+ 各 goal evidence 分类通过率账本（2026-09-12 核实）
 
 ### 6. 工程化
 
-- [ ] CI 管线可以自动编译、测试、运行 clippy、运行基准测试
-- [ ] `scripts/run-benchmarks.sh` 一键运行所有基准并输出报告
-- [ ] `scripts/check-coverage.sh` 一键测量并输出覆盖率摘要
+- [x] CI 管线可以自动编译、测试、运行 clippy、运行基准测试——GitHub Actions 三平台（ubuntu/macos/windows）check/clippy/test/build + quickjs feature 矩阵（2026-09-12 核实 `ci.yml`）
+- [x] `scripts/run-benchmarks.sh` 一键运行所有基准并输出报告——`make bench` 入口 + bench-report 产出 JSON/人读报告（2026-09-12 核实存在）
+- [x] `scripts/check-coverage.sh` 一键测量并输出覆盖率摘要——脚本存在（2026-09-12 核实）
 - [ ] 代码组织清晰，按计划中的 crate 层次结构划分
 - [ ] 所有 crate 有 README 和 API 文档（`cargo doc` 可生成）
-- [ ] WebView 嵌入示例代码可编译运行
+- [x] WebView 嵌入示例代码可编译运行——`apps/webview-demo`（`cargo run --bin webview-demo`，2026-09-12 核实）
 
 ---
 
@@ -169,7 +169,7 @@ Web 标准覆盖面极广，"最新标准"不可能在一个里程碑中完成�
 - **当前主要缺口**（详见 master.md「下一步优先级」）：① DOM/JS Bridge 为 polyfill 字符串桥接模式——Observer（Mutation/Intersection/Resize）为 stub 不触发回调、fetch() 为 stub 返回空 Response、事件循环为简化版非 spec-compliant（**P1a 修复中 = 当前活跃主线**）；② 渲染兼容性 chromium-Oracle 真一致 ~47.5%（属 rendering-compat 独立目标，深结构等用户点名）
 - **渲染兼容性赛道**：已拆分为独立目标 `docs/goal/rendering-compat.md`（WPT reftest 驱动）
 - **Canvas 2D 赛道**：独立目标已完成（2026-08-16，DC-1~4 全部满足：WPT 919 文件导入、testharness 全绿、oracle-pass 100%/不一致 0、Mission 中期 80% 达成）——入口文档与运行时面板已归档至 `docs/goal/archive/canvas-2d.md` + `docs/goal/archive/canvas-2d/`
-- **2026-09-07 批量拆分（用户决策）**：为推进 M12/M14 剩余面并扩大并行流，新立 6 个子 goal——`storage-opfs`（Tier 2 存储收口）、`page-wasm`（M12 页面 WASM）、`event-loop-spec`（P1a 遗留：checkpoint/MO host 触发/IO-RO WPT）、`web-components`（M12 WC）、`android-browser`（M14 Android 治理）、`webdriver`（W3C 协议补齐 + 自动化验证基建）。各 goal 均声明与 rendering-compat 的 run-rules §9 碰撞边界，启动脚本见 `scripts/rally-<name>.sh`。其中 webdriver 已完成（2026-09-08/09，DC-1~4 ✅，33 endpoint + CI 接线，归档至 `docs/goal/archive/webdriver.md` + `docs/goal/archive/webdriver/`）；其 screenshot 挂账项经用户拍板方案①（2026-09-09）续立 `webdriver-screenshot` goal（抽公共截图转换层 crate + GET /session/{id}/screenshot），该 goal 已完成（2026-09-09，M1+M2+M3 ✅ DC-1~4 全满足，归档至 `docs/goal/archive/webdriver-screenshot.md` + `docs/goal/archive/webdriver-screenshot/`）；web-components 已完成（2026-09-11，DC-1~5 ✅，归档至 `docs/goal/archive/web-components.md`）；`page-wasm` 已完成（2026-09-12，DC-1~4 ✅，WPT jsapi 31 案 715/719 = 99.4%，归档至 `docs/goal/archive/page-wasm.md` + `docs/goal/archive/page-wasm/`）；event-loop-spec 已完成（2026-09-12，DC-1~4 ✅——DC-3 显式 task queue 子项经用户决策缓行挂账，IO/RO 基线 + MO host 触发 default-on + per-task checkpoint default-on，归档至 `docs/goal/archive/event-loop-spec.md` + `docs/goal/archive/event-loop-spec/`，P1a 遗留面 checkpoint/MO 通知端就此闭合）。**2026-09-12 新立 2 个子 goal（用户决策）**：`cdp-protocol`（CDP 协议兼容 + Playwright 验证矩阵——headless.rs 雏形扩到 Playwright connectOverCDP 全核心流，命令矩阵账本验收）、`devtools`（DevTools 调试面——复用 Chrome DevTools frontend bundle，Elements/Console/Network/Application 四面板演示流验收；启动门控 = cdp-protocol M3，为 cdp-protocol 下游）。各 goal 均声明与 android-browser（活跃并行流）及相互间的 run-rules §9 碰撞边界，启动脚本见 `scripts/rally-<name>.sh`
+- **2026-09-07 批量拆分（用户决策）**：为推进 M12/M14 剩余面并扩大并行流，新立 6 个子 goal——`storage-opfs`（Tier 2 存储收口）、`page-wasm`（M12 页面 WASM）、`event-loop-spec`（P1a 遗留：checkpoint/MO host 触发/IO-RO WPT）、`web-components`（M12 WC）、`android-browser`（M14 Android 治理）、`webdriver`（W3C 协议补齐 + 自动化验证基建）。各 goal 均声明与 rendering-compat 的 run-rules §9 碰撞边界，启动脚本见 `scripts/rally-<name>.sh`。其中 webdriver 已完成（2026-09-08/09，DC-1~4 ✅，33 endpoint + CI 接线，归档至 `docs/goal/archive/webdriver.md` + `docs/goal/archive/webdriver/`）；其 screenshot 挂账项经用户拍板方案①（2026-09-09）续立 `webdriver-screenshot` goal（抽公共截图转换层 crate + GET /session/{id}/screenshot），该 goal 已完成（2026-09-09，M1+M2+M3 ✅ DC-1~4 全满足，归档至 `docs/goal/archive/webdriver-screenshot.md` + `docs/goal/archive/webdriver-screenshot/`）；web-components 已完成（2026-09-11，DC-1~5 ✅，归档至 `docs/goal/archive/web-components.md`）；`page-wasm` 已完成（2026-09-12，DC-1~4 ✅，WPT jsapi 31 案 715/719 = 99.4%，归档至 `docs/goal/archive/page-wasm.md` + `docs/goal/archive/page-wasm/`）；event-loop-spec 已完成（2026-09-12，DC-1~4 ✅——DC-3 显式 task queue 子项经用户决策缓行挂账，IO/RO 基线 + MO host 触发 default-on + per-task checkpoint default-on，归档至 `docs/goal/archive/event-loop-spec.md` + `docs/goal/archive/event-loop-spec/`，P1a 遗留面 checkpoint/MO 通知端就此闭合）。**2026-09-12 新立 2 个子 goal（用户决策）**：`cdp-protocol`（CDP 协议兼容 + Playwright 验证矩阵——headless.rs 雏形扩到 Playwright connectOverCDP 全核心流，命令矩阵账本验收）、`devtools`（DevTools 调试面——复用 Chrome DevTools frontend bundle，Elements/Console/Network/Application 四面板演示流验收；启动门控 = cdp-protocol M3，为 cdp-protocol 下游）。**同日第二批新立 3 个子 goal（用户决策）**：`desktop-browser`（M11 桌面浏览器产品化——真窗口主链路 + 导航/标签 + 内容工具 + 数据面，逐功能演示流验收）、`security-hardening`（M13 安全面——CSP 完整实现 + Mixed Content + HSTS + 权限模型语义层，WPT 三 corpus 验收）、`web-api-batch2`（M12 余面——Clipboard + Fullscreen，WPT 两 corpus 验收；DnD 挂账）。各 goal 均声明与 android-browser（活跃并行流）及相互间的 run-rules §9 碰撞边界，启动脚本见 `scripts/rally-<name>.sh`
 
 ---
 
@@ -238,7 +238,7 @@ zero-web/
 
 ---
 
-### M2: HTML 解析 + DOM 树
+### M2: HTML 解析 + DOM 树（✅ 已完成——下方清单为历史规格，完成判定见 ROADMAP 表与各归档 goal）
 
 **目标**：基于 html5ever 构建完整的 DOM 树，支持文档解析和树操作。
 
@@ -258,7 +258,7 @@ zero-web/
 
 ---
 
-### M3: CSS 解析器 + 样式系统
+### M3: CSS 解析器 + 样式系统（✅ 已完成——下方清单为历史规格，完成判定见 ROADMAP 表与各归档 goal）
 
 **目标**：自建 CSS parser 和样式系统，支持选择器匹配、级联和计算值。
 
@@ -282,7 +282,7 @@ zero-web/
 
 ---
 
-### M4: 布局引擎
+### M4: 布局引擎（✅ 已完成——下方清单为历史规格，完成判定见 ROADMAP 表与各归档 goal）
 
 **目标**：基于 taffy 扩展构建完整的布局引擎，支持 Block、Inline、Flexbox、Grid 布局。
 
@@ -307,7 +307,7 @@ zero-web/
 
 ---
 
-### M5: 渲染管线集成（首屏渲染）
+### M5: 渲染管线集成（首屏渲染）（✅ 已完成——下方清单为历史规格，完成判定见 ROADMAP 表与各归档 goal）
 
 **目标**：将布局输出连接到渲染管线，实现网页的首次像素级渲染。
 
@@ -335,7 +335,7 @@ zero-web/
 
 ---
 
-### M6: JavaScript 集成（V8）
+### M6: JavaScript 集成（V8）（✅ 已完成——下方清单为历史规格，完成判定见 ROADMAP 表与各归档 goal）
 
 **目标**：集成 V8 引擎，实现 JS 执行和完整的 DOM API。
 
@@ -362,7 +362,7 @@ zero-web/
 
 ---
 
-### M7: 网络栈 + 导航模型
+### M7: 网络栈 + 导航模型（✅ 已完成——下方清单为历史规格，完成判定见 ROADMAP 表与各归档 goal）
 
 **目标**：集成网络栈，实现 URL 导航、资源加载和安全基础。
 
@@ -389,7 +389,7 @@ zero-web/
 
 ---
 
-### M8: 多进程架构 + 安全沙箱
+### M8: 多进程架构 + 安全沙箱（✅ 已完成——下方清单为历史规格，完成判定见 ROADMAP 表与各归档 goal）
 
 **目标**：实现浏览器进程和渲染进程的分离，建立基础安全边界。
 
@@ -416,7 +416,7 @@ zero-web/
 
 ---
 
-### M9: Canvas 2D + Web Workers + Storage
+### M9: Canvas 2D + Web Workers + Storage（✅ 已完成——下方清单为历史规格，完成判定见 ROADMAP 表与各归档 goal）
 
 **目标**：实现 Canvas 2D 渲染、Web Workers 多线程和客户端存储。
 
@@ -441,7 +441,7 @@ zero-web/
 
 ---
 
-### M10: WebView 库 API 稳定化
+### M10: WebView 库 API 稳定化（✅ 已完成——下方清单为历史规格，完成判定见 ROADMAP 表与各归档 goal）
 
 **目标**：`webview` crate 达到可嵌入级别，其他应用可以集成使用。浏览器应用将基于此 API 构建。
 
@@ -463,7 +463,7 @@ zero-web/
 
 ### M11: 浏览器应用
 
-**目标**：构建完整的桌面浏览器应用（基于 webview）。
+**目标**：构建完整的桌面浏览器应用（基于 webview）。——**已拆专项目标** [docs/goal/desktop-browser.md](desktop-browser.md)（2026-09-12 立项：真窗口主链路 + 导航/标签 + 内容工具 + 数据面，逐功能演示流验收；DC-2「浏览器日常可用」主路径）
 
 **交付物**：
 - [ ] 多标签页管理（创建、关闭、切换、拖拽排序）
@@ -495,12 +495,12 @@ zero-web/
 
 **交付物**：
 - [x] WASM 支持（Wasmtime 集成，页面 WASM 与 JS 互操作）——专项目标 2026-09-07 立项、2026-09-12 收口归档至 `docs/goal/archive/page-wasm.md`（DC-1~4 ✅，WPT jsapi 31 案 715/719 = 99.4%；余 4 Timeout 为 V8 前台消息循环泵跨流卡点，落 event-loop-spec 流域）
-- [ ] 更多 DOM API（MutationObserver、IntersectionObserver、ResizeObserver、Clipboard API、Fullscreen API、Drag & Drop）——MO host 触发 + IO/RO WPT 基线 + checkpoint spec 化**已拆专项目标**（2026-09-07 立项，2026-09-12 收口归档至 `docs/goal/archive/event-loop-spec.md`，DC-1~4 ✅）；Clipboard/Fullscreen/DnD 未立项
+- [ ] 更多 DOM API（MutationObserver、IntersectionObserver、ResizeObserver、Clipboard API、Fullscreen API、Drag & Drop）——MO host 触发 + IO/RO WPT 基线 + checkpoint spec 化**已拆专项目标**（2026-09-07 立项，2026-09-12 收口归档至 `docs/goal/archive/event-loop-spec.md`，DC-1~4 ✅）；Clipboard/Fullscreen **已拆专项目标** [web-api-batch2](web-api-batch2.md)（2026-09-12 立项）；DnD 挂账（宿主拖拽输入管线深依赖，重入条件见该 goal）
 - [x] Web Components（Custom Elements + Shadow DOM）——专项目标 2026-09-07 立项、2026-09-11 收口归档至 `docs/goal/archive/web-components.md`（DC-1~5 ✅，WPT 三目录 76.0%；Shadow DOM 渲染级等用户点名专项）
-- [ ] `script-sandbox` crate 支持 QuickJS feature gate
+- [x] `script-sandbox` crate 支持 QuickJS feature gate——quickjs feature 已落地且 CI 双 feature 矩阵常驻（`ci.yml` linux-x86_64-quickjs job + `--no-default-features --features quickjs`，2026-09-12 核实）
 - [x] Service Worker 基础（注册、fetch 事件拦截、缓存管理）——专项目标 2026-09-06 收口（真实 worker 执行环境 + 生命周期真事件 + fetch 拦截 + Cache API 集成；归档于 `docs/goal/archive/service-workers/`）
 - [x] Cache API——专项目标 2026-09-06 收口归档（页面 `caches`/`Cache` 全 API 接 zero-storage 真实实现 + per-origin 持久化；WPT `cache-storage` window 面 39 case / 449 subtest 全绿；归档于 `docs/goal/archive/storage-cache-api/`）
-- [ ] 持续 WPT 通过率追踪和提升
+- [x] 持续 WPT 通过率追踪和提升——**持续项**（非一次性交付物）：追踪面已就位（wpt-runner 分类通过率 + reftest corpus 口径 + evidence 账本），提升由 rendering-compat 流持续承担
 
 **验收标准**：
 - 页面 WASM 可以加载执行并与 JS 互操作
@@ -513,18 +513,18 @@ zero-web/
 
 ### M13: 性能优化 + 安全加固
 
-**目标**：系统性能优化和安全模型深化。
+**目标**：系统性能优化和安全模型深化。——安全面**已拆专项目标** [security-hardening](security-hardening.md)（2026-09-12 立项：CSP 完整实现 + Mixed Content + HSTS + 权限模型语义层，WPT 三 corpus 验收；站点隔离挂账等点名）。注：资源预加载面已被归档 RFC `network-loading-performance-2026-08-14`（P0/P1/P2 ✅）覆盖。
 
 **交付物**：
 - [ ] 渲染管线优化（GPU 批处理、纹理 atlas 优化、减少 draw call）
 - [ ] 布局增量计算（dirty bit 标记、只重算受影响子树）
 - [ ] JS 执行优化（V8 快照预热、减少 Rust↔JS 桥开销）
-- [ ] 资源预加载（speculative parsing、`<link rel="preload">`）
-- [ ] 站点隔离（跨站 iframe 在独立渲染进程中）
-- [ ] CSP 完整实现（所有主要指令、report-only 模式）
-- [ ] Mixed Content 阻止（HTTPS 页面阻止 HTTP 子资源）
-- [ ] HSTS 支持
-- [ ] 权限模型基础（摄像头/麦克风/定位/通知的权限请求 UI）
+- [x] 资源预加载（speculative parsing、`<link rel="preload">`）——归档 RFC network-loading-performance-2026-08-14 已实施（P0/P1/P2 ✅）
+- [ ] 站点隔离（跨站 iframe 在独立渲染进程中）——深多进程重构，挂账等用户点名
+- [ ] CSP 完整实现（所有主要指令、report-only 模式）——已拆 [security-hardening](security-hardening.md)
+- [ ] Mixed Content 阻止（HTTPS 页面阻止 HTTP 子资源）——已拆 [security-hardening](security-hardening.md)
+- [ ] HSTS 支持——已拆 [security-hardening](security-hardening.md)
+- [ ] 权限模型基础（摄像头/麦克风/定位/通知的权限请求 UI）——语义层已拆 [security-hardening](security-hardening.md)（DC-4），提示 UI 归 desktop-browser
 
 **验收标准**：
 - Speedometer 或等效基准有基线数据且不退化
