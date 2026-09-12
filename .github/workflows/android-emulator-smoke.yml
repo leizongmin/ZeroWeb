@@ -161,6 +161,11 @@ jobs:
             bash scripts/android/install-smoke.sh "$APK"
           fi
 
+      # M5 chaos：角色进程 kill → 断连恢复重绑（RFC M3 death recovery 语义执行验证）。
+      # 脚本内自取 adb root（google_apis 非 playstore 镜像支持）。
+      - name: Run chaos smoke (role kill → rebind recovery)
+        run: bash scripts/android/chaos-smoke.sh
+
       - name: Collect smoke diagnostics
         if: failure()
         run: |
