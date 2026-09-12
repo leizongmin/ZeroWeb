@@ -2353,6 +2353,12 @@ fn cmd_reftest_oracle(options: &CliOptions, filter: Option<&str>) {
             viewport_width: options.viewport_width as u32,
             viewport_height: options.viewport_height as u32,
             media_type: options.media_type,
+            // R4283：与 self-source upstream 路径同口径——配 wpt_root 使
+            // /common/reftest-wait.js、rendering-utils.js 可解析，脚本 DOM 变更
+            // （waitForAtLeastOneFrame().then(...) 后 rename/remove）在 oracle 渲染中
+            // 同真实执行。chromium 截图即真机执行变更后的帧，不配则 ZW 侧停在变更前
+            // 状态（delete/rename-002 全页伪差实证），A/B 失真。
+            wpt_root: Some(wpt_data_dir.clone()),
             ..Default::default()
         };
         let (test_fb, layout_root, mutated_html) =

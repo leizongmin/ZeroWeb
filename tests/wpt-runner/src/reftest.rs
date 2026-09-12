@@ -664,6 +664,9 @@ fn render_with_layout_inner(
     pipeline.set_image_ratios(image_ratios);
     pipeline.set_image_no_ratio(image_no_ratio);
     pipeline.set_image_natural_sizes(image_natural_sizes);
+    // R4283：接通 R4282 的共享注入链——此前 shared_image_cache 无赋值点恒为 None，
+    // isolate 离屏栅格化仍收不到页面图像（含 <img> 的 filter 子树为空）。
+    pipeline.set_shared_image_cache(Some(image_cache.clone()));
 
     // 字体查找表（在 render_html 之前，供 Painter 解析 CSS font-family）。
     // 扫描外链/传入 CSS + 内联 <style> 的 @font-face（常声明在内联 <style>）。

@@ -633,6 +633,18 @@ impl RenderPipeline {
         self.document_base = base;
     }
 
+    /// R4283：设置渲染侧 ImageCache 共享句柄（filter url() isolate 离屏栅格化用）。
+    ///
+    /// 宿主在构建页面 ImageCache 后注入 Arc 句柄，`apply_filter_isolates` 的离屏
+    /// `render_full_scene` 才能解析子树里的 `<img>` 图元；未注入时收 `None`
+    /// （离屏无页面图像，含 `<img>` 的 filter 子树渲染为空）。
+    pub fn set_shared_image_cache(
+        &mut self,
+        cache: Option<std::sync::Arc<std::sync::Mutex<zero_render_foundation::image_cache::ImageCache>>>,
+    ) {
+        self.shared_image_cache = cache;
+    }
+
     /// R4276：filter url() 非常量链 isolate 应用（svg-filter-reference-isolation-design
     /// 方案 C 步骤 2-4）：子树旁路图元 → render_full_scene 离屏栅格化 → 像素 PNG
     /// data-URI 包装 `<image filter="url(#id)">` 过 resvg（rasterize_svg_at 既有通路）
