@@ -124,7 +124,7 @@
 |----|------|------|
 | android-browser-spec-rfc.md 批准 | ✅ 已批准（2026-09-12） | transport adapter、FR-006/007/009 解锁，按路线 M2→M4 排期 |
 | 真机验收设备 | ⬜ 等设备 | 同父目标 P3 GPU 物理机门控模式；模拟器冒烟不阻塞 |
-| 本机模拟器 KVM 授权 | ⬜ 等用户一次性授权 | WSL2 `/dev/kvm` 存在但用户不在 kvm 组且 sudo 需密码，模拟器无法启动；`sudo usermod -aG kvm lei` 一次即可解锁（详情 evidence/emulator-feasibility.md）。解锁前 RFC M3 功能切片继续推进，不阻塞 |
+| 本机模拟器 KVM 授权 | ⬜ 等用户一次性授权（已征询） | WSL2 `/dev/kvm` 存在但用户不在 kvm 组且 sudo 需密码，模拟器无法启动；`sudo usermod -aG kvm lei` 一次即可解锁（详情 evidence/emulator-feasibility.md）。解锁前 RFC M3 功能切片继续推进，不阻塞。**GB-20260912 巡检飞书征询 msg `om_x100b6561b60c38a0c27902f51665a6e`（2026-09-12，含建议操作与不操作均不阻塞口径）** |
 
 ## 验证基线
 
