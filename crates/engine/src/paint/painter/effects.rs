@@ -795,7 +795,38 @@ impl super::Painter {
             return;
         }
 
-        let rect = Rect::new(abs_x, abs_y, box_node.width, box_node.height);
+        // R4293：filter region 外扩（css-filters §6：blur 的输出溢出元素边界——
+        // region 须容纳 blur 半径；drop-shadow 容纳偏移+模糊。chromium 同语义：
+        // 外溢晕开可见）。CPU 后处理按此 rect 裁剪模糊作用域，不外扩则外溢被裁。
+        // （backdrop-filter 不外扩——§BackdropFilterProperty 语义裁剪到元素盒。）
+        // **自身带 transform 的元素不外扩**：主帧后处理无隔离语义，外扩 region 会
+        // 把邻近兄弟内容卷进模糊采样（preserve3d-and-filter-with-perspective 回归
+        // 实证：perspective+rotateX 场景下污染可见）——transformed 元素的 blur(1px)
+        // 级外溢远小于污染风险，保持紧 region。
+        let outset_allowed = matches!(style.transform, zero_css_parser::values::TransformValue::None);
+        let mut outset_x = 0.0f32;
+        let mut outset_y = 0.0f32;
+        if outset_allowed {
+            for f in &filters {
+                match f {
+                    FilterKind::Blur(r) => {
+                        outset_x = outset_x.max(*r);
+                        outset_y = outset_y.max(*r);
+                    }
+                    FilterKind::DropShadow(dx, dy, blur, _) => {
+                        outset_x = outset_x.max(blur + dx.abs());
+                        outset_y = outset_y.max(blur + dy.abs());
+                    }
+                    _ => {}
+                }
+            }
+        }
+        let rect = Rect::new(
+            abs_x - outset_x,
+            abs_y - outset_y,
+            box_node.width + 2.0 * outset_x,
+            box_node.height + 2.0 * outset_y,
+        );
         self.primitives.add_filter(FilterPrimitive { rect, filters });
     }
 
