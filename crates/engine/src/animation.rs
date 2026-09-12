@@ -15,7 +15,7 @@ use std::collections::HashMap;
 
 use zero_css_parser::ast::{KeyframeBlock, KeyframeSelector, KeyframesRule};
 use zero_css_parser::values::{AnimationDirectionValue, AnimationFillModeValue, TimingFunctionValue};
-use zero_style_system::ComputedStyle;
+use zero_style_system::{ComputedStyle, FilterComputedValue};
 
 /// 关键帧点 — 某个时间进度处的属性快照。
 #[derive(Debug, Clone)]
@@ -322,10 +322,170 @@ pub fn interpolate_property_value(property: &str, from: &str, to: &str, t: f64) 
                 format!("{:.4} {:.4}", sx, sy)
             }
         }
+        // R4272（filter-effects-1 #animation）：filter 函数列表插值——同构列表逐函数
+        // 数值插值；一侧为 none 时按另一侧函数序列展开为初始值列表；异构（含
+        // drop-shadow）回落离散切换。
+        "filter" | "backdrop-filter" => match interpolate_filter_list(from, to, t) {
+            Some(v) => v,
+            None if t > 0.5 => to.to_string(),
+            None => from.to_string(),
+        },
         _ => {
             // 不支持插值的属性，在进度 > 0.5 时切换到目标值
             if t > 0.5 { to.to_string() } else { from.to_string() }
         }
+    }
+}
+
+/// filter 函数列表插值（filter-effects-1 #animation）。
+///
+/// 同长同序的同名函数逐参数线性插值（drop-shadow 含 x/y/blur + 颜色分量）；`none`
+/// 一侧按另一侧函数展开为初始值列表（blur(0)/brightness(1)/contrast(1)/grayscale(0)/
+/// hue-rotate(0deg)/invert(0)/opacity(1)/saturate(1)/sepia(0)/drop-shadow(0 0 0
+/// transparent)）；异构返回 `None` 走离散。双 none 返回 "none"。
+fn interpolate_filter_list(from: &str, to: &str, t: f64) -> Option<String> {
+    let from_list = zero_css_parser::values::parse_filter_list(from)?;
+    let to_list = zero_css_parser::values::parse_filter_list(to)?;
+    // none 展开：与另一侧同构的初始值列表。
+    let expand = |list: &[zero_css_parser::values::FilterValue],
+                  model: &[zero_css_parser::values::FilterValue]|
+     -> Vec<zero_css_parser::values::FilterValue> {
+        if list.is_empty() {
+            model.iter().map(filter_function_initial).collect()
+        } else {
+            list.to_vec()
+        }
+    };
+    if from_list.is_empty() && to_list.is_empty() {
+        return Some("none".to_string());
+    }
+    let a = expand(&from_list, &to_list);
+    let b = expand(&to_list, &from_list);
+    if a.len() != b.len() {
+        return None;
+    }
+    let mut parts = Vec::with_capacity(a.len());
+    for (fa, fb) in a.iter().zip(b.iter()) {
+        if filter_function_name(fa) != filter_function_name(fb) {
+            // 同长但函数不同构（filter-effects-1 #animation：仅同名函数可插值）。
+            return None;
+        }
+        parts.push(interpolate_filter_pair(fa, fb, t)?);
+    }
+    Some(parts.join(" "))
+}
+
+/// 插值一对同名 filter 函数，产出 parse_filter 可回解析的规范形。
+fn interpolate_filter_pair(
+    fa: &zero_css_parser::values::FilterValue,
+    fb: &zero_css_parser::values::FilterValue,
+    t: f64,
+) -> Option<String> {
+    use zero_css_parser::values::FilterValue as F;
+    match (fa, fb) {
+        // drop-shadow：x/y/blur 数值 + 颜色分量分别插值（css-filters-animation-drop-shadow
+        // 驱动：30px 30px 0px black × none → 15px 15px 0px rgba(0,0,0,.5)）。
+        (F::DropShadow(x1, y1, b1, c1), F::DropShadow(x2, y2, b2, c2)) => {
+            let ca = color_value_rgba(c1)?;
+            let cb = color_value_rgba(c2)?;
+            let (r, g, b, a) = lerp_color(ca, cb, t);
+            let x = lerp(*x1 as f64, *x2 as f64, t);
+            let y = lerp(*y1 as f64, *y2 as f64, t);
+            let bl = lerp(*b1 as f64, *b2 as f64, t);
+            Some(format!(
+                "drop-shadow({:.2}px {:.2}px {:.2}px rgba({}, {}, {}, {:.2}))",
+                x,
+                y,
+                bl,
+                r.round() as u8,
+                g.round() as u8,
+                b.round() as u8,
+                a
+            ))
+        }
+        _ => {
+            let va = filter_function_param(fa)?;
+            let vb = filter_function_param(fb)?;
+            let v = lerp(va as f64, vb as f64, t) as f32;
+            Some(match fa {
+                F::Blur(_) => format!("blur({v:.2}px)"),
+                F::HueRotate(_) => format!("hue-rotate({v:.2}deg)"),
+                F::Brightness(_) => format!("brightness({v:.4})"),
+                F::Contrast(_) => format!("contrast({v:.4})"),
+                F::Grayscale(_) => format!("grayscale({v:.4})"),
+                F::Invert(_) => format!("invert({v:.4})"),
+                F::Opacity(_) => format!("opacity({v:.4})"),
+                F::Saturate(_) => format!("saturate({v:.4})"),
+                F::Sepia(_) => format!("sepia({v:.4})"),
+                _ => return None,
+            })
+        }
+    }
+}
+
+/// ColorValue → animation Rgba 元组（0-255 + 0-1 alpha）；未解析形（Mix/RCS/
+/// CurrentColor/Hsla）返回 None 走离散（命名色在 parse 阶段已短路为 Rgba）。
+fn color_value_rgba(c: &zero_css_parser::values::ColorValue) -> Option<Rgba> {
+    match c {
+        zero_css_parser::values::ColorValue::Rgba(r, g, b, a) => {
+            Some((*r as f64, *g as f64, *b as f64, *a as f64 / 255.0))
+        }
+        zero_css_parser::values::ColorValue::Transparent => Some((0.0, 0.0, 0.0, 0.0)),
+        _ => None,
+    }
+}
+
+/// filter 单函数的规范名（同构判定用）。
+fn filter_function_name(f: &zero_css_parser::values::FilterValue) -> &'static str {
+    use zero_css_parser::values::FilterValue as F;
+    match f {
+        F::Blur(_) => "blur",
+        F::Brightness(_) => "brightness",
+        F::Contrast(_) => "contrast",
+        F::Grayscale(_) => "grayscale",
+        F::HueRotate(_) => "hue-rotate",
+        F::Invert(_) => "invert",
+        F::Opacity(_) => "opacity",
+        F::Saturate(_) => "saturate",
+        F::Sepia(_) => "sepia",
+        F::DropShadow(..) => "drop-shadow",
+        F::None => "none",
+    }
+}
+
+/// filter 单函数的可插值参数；drop-shadow 无（颜色分量不做数值插值）→ None。
+fn filter_function_param(f: &zero_css_parser::values::FilterValue) -> Option<f32> {
+    use zero_css_parser::values::FilterValue as F;
+    match f {
+        F::Blur(v)
+        | F::Brightness(v)
+        | F::Contrast(v)
+        | F::Grayscale(v)
+        | F::HueRotate(v)
+        | F::Invert(v)
+        | F::Opacity(v)
+        | F::Saturate(v)
+        | F::Sepia(v) => Some(*v),
+        F::DropShadow(..) | F::None => None,
+    }
+}
+
+/// filter 单函数取初始值（同变体，§filter 初始值表；drop-shadow none 展开 =
+/// 0 偏移 0 模糊透明色，css-filters-animation-drop-shadow ref 实证）。
+fn filter_function_initial(f: &zero_css_parser::values::FilterValue) -> zero_css_parser::values::FilterValue {
+    use zero_css_parser::values::{ColorValue, FilterValue as F};
+    match f {
+        F::Blur(_) => F::Blur(0.0),
+        F::Brightness(_) => F::Brightness(1.0),
+        F::Contrast(_) => F::Contrast(1.0),
+        F::Grayscale(_) => F::Grayscale(0.0),
+        F::HueRotate(_) => F::HueRotate(0.0),
+        F::Invert(_) => F::Invert(0.0),
+        F::Opacity(_) => F::Opacity(1.0),
+        F::Saturate(_) => F::Saturate(1.0),
+        F::Sepia(_) => F::Sepia(0.0),
+        F::DropShadow(..) => F::DropShadow(0.0, 0.0, 0.0, ColorValue::Transparent),
+        F::None => f.clone(),
     }
 }
 
@@ -1058,6 +1218,35 @@ fn apply_single_property(name: &str, value: &str, style: &mut ComputedStyle) {
                 style.individual_scale = Some(f);
             }
         }
+        // R4272：动画插值后的 filter / backdrop-filter 函数列表写回对应字段
+        // （parse_filter_list("none") = 空 Vec = none；与 apply_advanced 静态声明
+        // 同一转换）。
+        "filter" | "backdrop-filter" => {
+            if let Some(list) = zero_css_parser::values::parse_filter_list(value) {
+                use zero_css_parser::values::FilterValue;
+                let mapped = list
+                    .into_iter()
+                    .map(|v| match v {
+                        FilterValue::None => FilterComputedValue::None,
+                        FilterValue::Blur(n) => FilterComputedValue::Blur(n),
+                        FilterValue::Brightness(n) => FilterComputedValue::Brightness(n),
+                        FilterValue::Contrast(n) => FilterComputedValue::Contrast(n),
+                        FilterValue::Grayscale(n) => FilterComputedValue::Grayscale(n),
+                        FilterValue::HueRotate(n) => FilterComputedValue::HueRotate(n),
+                        FilterValue::Invert(n) => FilterComputedValue::Invert(n),
+                        FilterValue::Opacity(n) => FilterComputedValue::Opacity(n),
+                        FilterValue::Saturate(n) => FilterComputedValue::Saturate(n),
+                        FilterValue::Sepia(n) => FilterComputedValue::Sepia(n),
+                        FilterValue::DropShadow(x, y, b, c) => FilterComputedValue::DropShadow(x, y, b, c),
+                    })
+                    .collect();
+                if name == "filter" {
+                    style.filter = mapped;
+                } else {
+                    style.backdrop_filter = mapped;
+                }
+            }
+        }
         _ => {
             // 其他属性暂不支持动画覆盖
         }
@@ -1166,6 +1355,64 @@ mod tests {
     fn test_interpolate_opacity_end() {
         let result = interpolate_property_value("opacity", "0.0", "1.0", 1.0);
         assert!((result.parse::<f64>().unwrap() - 1.0).abs() < 0.01);
+    }
+
+    // ── R4272 filter 函数列表插值（filter-effects-1 #animation）──
+
+    /// 同构列表逐函数数值插值：hue-rotate(90deg)→hue-rotate(0deg) @0.5 = 45deg
+    /// （css-filters-animation-hue-rotate 驱动）。
+    #[test]
+    fn test_interpolate_filter_hue_rotate() {
+        let result = interpolate_property_value("filter", "hue-rotate(90deg)", "none", 0.5);
+        assert_eq!(result, "hue-rotate(45.00deg)", "none 展开为初始值 hue-rotate(0)");
+    }
+
+    /// 百分数参数插值：saturate(4900%)→none(saturate(1)) @0.5 = 25
+    /// （css-filters-animation-saturate 驱动，ref 静态 2500%）。
+    #[test]
+    fn test_interpolate_filter_saturate_percent() {
+        let result = interpolate_property_value("filter", "saturate(4900%)", "none", 0.5);
+        assert_eq!(result, "saturate(25.0000)");
+    }
+
+    /// 多函数同序列表插值 + 回解析。
+    #[test]
+    fn test_interpolate_filter_multi_function() {
+        let result = interpolate_property_value("filter", "blur(2px) brightness(2)", "blur(4px) brightness(1)", 0.25);
+        assert_eq!(result, "blur(2.50px) brightness(1.7500)");
+    }
+
+    /// 异构列表回落离散切换（filter-effects-1：不同构不可数值插值）。
+    #[test]
+    fn test_interpolate_filter_mismatched_falls_back_discrete() {
+        let result = interpolate_property_value("filter", "blur(2px)", "brightness(2)", 0.25);
+        assert_eq!(result, "blur(2px)", "t<=0.5 取 from");
+        let result = interpolate_property_value("filter", "blur(2px)", "brightness(2)", 0.75);
+        assert_eq!(result, "brightness(2)", "t>0.5 取 to");
+    }
+
+    /// drop-shadow 成对插值（x/y/blur + 颜色分量；none 展开 = 0 0 0 transparent）：
+    /// 30px 30px 0px black × none @0.5 = 15px 15px 0px rgba(0,0,0,.5)
+    /// （css-filters-animation-drop-shadow ref 值）。
+    #[test]
+    fn test_interpolate_filter_drop_shadow() {
+        let result = interpolate_property_value("filter", "drop-shadow(30px 30px 0px black)", "none", 0.5);
+        assert_eq!(result, "drop-shadow(15.00px 15.00px 0.00px rgba(0, 0, 0, 0.50))");
+    }
+
+    /// 插值结果须可回解析为 ComputedStyle.filter（apply_single_property 路径）。
+    #[test]
+    fn test_apply_interpolated_filter_to_style() {
+        let mut style = ComputedStyle::default();
+        apply_single_property("filter", "hue-rotate(45.00deg)", &mut style);
+        assert_eq!(style.filter.len(), 1, "插值 filter 应写入 style");
+        assert!(
+            matches!(style.filter[0], FilterComputedValue::HueRotate(deg) if (deg - 45.0).abs() < 0.01),
+            "应为 HueRotate(45)，got {:?}",
+            style.filter
+        );
+        apply_single_property("filter", "none", &mut style);
+        assert!(style.filter.is_empty(), "none 应清空 filter 列表");
     }
 
     #[test]

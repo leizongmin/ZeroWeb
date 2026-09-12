@@ -297,30 +297,30 @@ fn box_blur_channel(data: &mut [u8], width: usize, height: usize, radius: usize)
 }
 
 /// 色相旋转辅助函数 — 将 RGB 通过色相旋转矩阵变换。
-fn hue_rotate(r: u8, g: u8, _b: u8, cos_a: f32, sin_a: f32) -> [u8; 3] {
-    // CSS filter hue-rotate 矩阵
-    let sq3 = 3.0_f32.sqrt();
-    let inv3 = 1.0 / 3.0;
-    let ma = cos_a + (1.0 - cos_a) * inv3;
-    let mb = (1.0 - cos_a) * inv3 - sq3 * sin_a * inv3;
-    let mc = (1.0 - cos_a) * inv3 + sq3 * sin_a * inv3;
-
-    let matrix: [[f32; 3]; 3] = [[ma, mb, mc], [mc, ma, mb], [mb, mc, ma]];
+///
+/// R4272：改为 filter-effects-1 `funcdef-filter-hue-rotate` 规范矩阵（基于 Rec601
+/// luma 权重 0.213/0.715/0.072）——旧实现用循环置换矩阵（对角循环），与规范/Chromium
+/// 输出不符（red+hue-rotate(90deg) 旧 (85,232,0) vs 规范 (0,91,0)）。
+fn hue_rotate(r: u8, g: u8, b: u8, cos_a: f32, sin_a: f32) -> [u8; 3] {
+    // https://drafts.fxtf.org/filter-effects-1/#funcdef-filter-hue-rotate
+    let m00 = 0.213 + cos_a * 0.787 - sin_a * 0.213;
+    let m01 = 0.715 - cos_a * 0.715 - sin_a * 0.715;
+    let m02 = 0.072 - cos_a * 0.072 + sin_a * 0.928;
+    let m10 = 0.213 - cos_a * 0.213 + sin_a * 0.143;
+    let m11 = 0.715 + cos_a * 0.285 + sin_a * 0.140;
+    let m12 = 0.072 - cos_a * 0.072 - sin_a * 0.283;
+    let m20 = 0.213 - cos_a * 0.213 - sin_a * 0.787;
+    let m21 = 0.715 - cos_a * 0.715 + sin_a * 0.715;
+    let m22 = 0.072 + cos_a * 0.928 + sin_a * 0.072;
 
     let rf = r as f32;
     let gf = g as f32;
-    let bf = _b as f32;
+    let bf = b as f32;
 
     [
-        (matrix[0][0] * rf + matrix[0][1] * gf + matrix[0][2] * bf)
-            .round()
-            .clamp(0.0, 255.0) as u8,
-        (matrix[1][0] * rf + matrix[1][1] * gf + matrix[1][2] * bf)
-            .round()
-            .clamp(0.0, 255.0) as u8,
-        (matrix[2][0] * rf + matrix[2][1] * gf + matrix[2][2] * bf)
-            .round()
-            .clamp(0.0, 255.0) as u8,
+        (m00 * rf + m01 * gf + m02 * bf).round().clamp(0.0, 255.0) as u8,
+        (m10 * rf + m11 * gf + m12 * bf).round().clamp(0.0, 255.0) as u8,
+        (m20 * rf + m21 * gf + m22 * bf).round().clamp(0.0, 255.0) as u8,
     ]
 }
 
@@ -521,6 +521,28 @@ mod tests {
     use super::*;
     use crate::geometry::Rect;
     use crate::primitive::FilterPrimitive;
+
+    /// R4272：hue-rotate 改 filter-effects-1 规范矩阵（Rec601 luma 权重）——
+    /// red+90° → (0,91,0)、blue+45° → (173,0,199)；0° 恒等。
+    /// 旧循环矩阵输出 red+90° → (85,232,0)、blue+45° → (129,0,205)，与规范/Chromium 不符。
+    #[test]
+    fn hue_rotate_spec_matrix_values() {
+        let c90 = 90.0_f32.to_radians();
+        let out = hue_rotate(255, 0, 0, c90.cos(), c90.sin());
+        assert_eq!(out, [0, 91, 0], "red + hue-rotate(90deg) 应为规范矩阵值");
+
+        let c45 = 45.0_f32.to_radians();
+        let out = hue_rotate(0, 0, 255, c45.cos(), c45.sin());
+        assert_eq!(
+            out,
+            [173, 0, 199],
+            "blue + hue-rotate(45deg) 应为规范矩阵值（css-filters-animation-hue-rotate 驱动）"
+        );
+
+        let c0 = 0.0_f32.to_radians();
+        let out = hue_rotate(120, 60, 30, c0.cos(), c0.sin());
+        assert_eq!(out, [120, 60, 30], "0° 应为恒等变换");
+    }
 
     #[test]
     fn filter_blur_produces_different_output() {

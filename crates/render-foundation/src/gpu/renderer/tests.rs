@@ -1670,8 +1670,9 @@ fn test_gpu_full_scene_filter_grayscale() {
     );
 }
 
-/// DC-9 GPU filter:hue-rotate — 红色填充 + HueRotate(120)，断言 120° 旋转将红映射为绿
-///（mode 4 路径：CSS hue-rotate 循环矩阵，120° 时 ma=mb=0,mc=1 → red→green）。
+/// DC-9 GPU filter:hue-rotate — 红色填充 + HueRotate(120)，断言规范矩阵输出
+///（R4272：filter-effects-1 规范矩阵基于 Rec601 luma 权重，非真 hue 旋转——
+/// red+120° → (0,113,0)，循环矩阵旧断言 red→(0,255,0) 与规范/Chromium 相悖）。
 #[serial]
 #[test]
 fn test_gpu_full_scene_filter_hue_rotate() {
@@ -1701,8 +1702,12 @@ fn test_gpu_full_scene_filter_hue_rotate() {
 
     let pixels = renderer.read_pixels().expect("read_pixels");
     let (r, g, b) = (pixels[0] as i32, pixels[1] as i32, pixels[2] as i32);
-    // hue-rotate(120°) 把红 (255,0,0) 旋转到绿 (0,255,0)。
-    assert!(g > 200, "G should be ~255 (red→green) after HueRotate(120), got g={g}");
+    // 规范矩阵：red+120° → R=0.213−0.5·0.787−(√3/2)·0.213 <0→0，G=0.4433·255≈113，
+    // B<0→0（spec funcdef-filter-hue-rotate）。
+    assert!(
+        (100..=126).contains(&g),
+        "G should be ~113 (spec matrix) after HueRotate(120), got g={g}"
+    );
     assert!(r < 30, "R should be ~0 after HueRotate(120), got r={r}");
     assert!(b < 30, "B should be ~0 after HueRotate(120), got b={b}");
 }

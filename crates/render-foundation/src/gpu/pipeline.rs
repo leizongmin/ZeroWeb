@@ -464,19 +464,21 @@ fn fs_color_filter(in: VertexOutput) -> @location(0) vec4f {
         let gray = dot(c.rgb, vec3(0.299, 0.587, 0.114));
         out = mix(c.rgb, vec3(gray), p);
     } else if (m < 4.5) {
-        // 4 = hue-rotate(p degrees)：CSS 色相旋转循环矩阵（CPU hue_rotate 同矩阵）
+        // 4 = hue-rotate(p degrees)：filter-effects-1 规范矩阵（Rec601 luma 权重，
+        // R4272 与 CPU hue_rotate 同步由循环矩阵修正，见 funcdef-filter-hue-rotate）
         let angle = radians(p);
         let cos_a = cos(angle);
         let sin_a = sin(angle);
-        let sq3 = sqrt(3.0);
-        let inv3 = 1.0 / 3.0;
-        let ma = cos_a + (1.0 - cos_a) * inv3;
-        let mb = (1.0 - cos_a) * inv3 - sq3 * sin_a * inv3;
-        let mc = (1.0 - cos_a) * inv3 + sq3 * sin_a * inv3;
         out = vec3(
-            ma * c.r + mb * c.g + mc * c.b,
-            mc * c.r + ma * c.g + mb * c.b,
-            mb * c.r + mc * c.g + ma * c.b,
+            (0.213 + cos_a * 0.787 - sin_a * 0.213) * c.r
+                + (0.715 - cos_a * 0.715 - sin_a * 0.715) * c.g
+                + (0.072 - cos_a * 0.072 + sin_a * 0.928) * c.b,
+            (0.213 - cos_a * 0.213 + sin_a * 0.143) * c.r
+                + (0.715 + cos_a * 0.285 + sin_a * 0.140) * c.g
+                + (0.072 - cos_a * 0.072 - sin_a * 0.283) * c.b,
+            (0.213 - cos_a * 0.213 - sin_a * 0.787) * c.r
+                + (0.715 - cos_a * 0.715 + sin_a * 0.715) * c.g
+                + (0.072 + cos_a * 0.928 + sin_a * 0.072) * c.b,
         );
     } else if (m < 5.5) {
         // 5 = invert(p)：CPU c + (255-2c)*amt ≡ mix(c, 1-c, p)
