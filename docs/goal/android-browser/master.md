@@ -32,6 +32,11 @@
 - ⚠️ CI：`.github/workflows/` 8 个 yml **零 Android job**
 - ⚠️ renderer Android transport adapter 未完成（README 自述「后续 M1 切片」——RFC 域，
   本 goal 不实施）
+  → 2026-09-12 核实修正：adapter 已于 `73f2d7d57` 落地（`run_android_role` 完整 runtime
+  管线），Kotlin `RendererService0-7` 经 `nativeRunRole(role, slot, fd)` 交 FD，slot→
+  `renderer_id` 透传本轮补齐；剩余真缺口=多标签换槽接线（MainActivity 现只绑 slot 0）
+  与真机验证（M3）。默认 release 构建不含 renderer feature（renderer-less shell 产物，
+  `nativeRendererLinked()` 门控），完整版走 `make android-renderer-apk`
 - ⚠️ 版本串不一致：lib.rs `M2` vs README `M0`（文档滞后）
 - ⚠️ RFC `docs/specs/android-browser-spec-rfc.md`（1097 行）状态「待确认」；
   FR-006/007/009 未见对应代码

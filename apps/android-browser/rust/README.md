@@ -4,7 +4,7 @@
 
 ## 概述
 
-`zero-android-browser` 是 Android 端浏览器（应用 ID `com.leizm.zeroweb`）的原生库（`cdylib`），为 Kotlin/Jetpack Compose 宿主提供 JNI 入口：校验服务角色、把 detached socket FD 交给共享 Rust 角色循环，并暴露引导屏版本号与 decoder/compositor socket 探针。它保持 renderer、compositor、image-decoder 的物理多进程隔离，其中 decoder 与 compositor 已走原生线程运行（复用 `zero-image-decoder` / `zero-compositor` 的 `run_role`），renderer 暂保持 Kotlin Service 拓扑，Android transport adapter 待 android-browser RFC 批准后实施（见 goal 控制面待用户决策项）。
+`zero-android-browser` 是 Android 端浏览器（应用 ID `com.leizm.zeroweb`）的原生库（`cdylib`），为 Kotlin/Jetpack Compose 宿主提供 JNI 入口：校验服务角色、把 detached socket FD 交给共享 Rust 角色循环，并暴露引导屏版本号与 decoder/compositor socket 探针。它保持 renderer、compositor、image-decoder 的物理多进程隔离，其中 decoder 与 compositor 已走原生线程运行（复用 `zero-image-decoder` / `zero-compositor` 的 `run_role`），renderer 经 `zero_renderer::run_android_role` 走原生线程（transport adapter 已落地；RFC 已于 2026-09-12 批准，`RendererService0-7` 的槽位号经 `nativeRunRole` 透传为 `renderer_id`）。
 
 设计背景见 [docs/specs/android-browser-spec-rfc.md](../../../docs/specs/android-browser-spec-rfc.md)。
 
@@ -20,7 +20,7 @@
 ## Kotlin 侧契约
 
 - `app/src/main/java/com/leizm/zeroweb/NativeBridge.kt` — `System.loadLibrary("zero_android_browser")`，声明上述五个 `external` 方法
-- `NativeRoleService.kt` — AIDL `IRoleService.Stub`：`onCreate` 调 `nativeStartRole` 校验，`start(socket: ParcelFileDescriptor)` 调 `nativeRunRole` 并 `socket.detachFd()` 移交所有权；仅 decoder/compositor 两个 role 走 native 线程，其余拒绝
+- `NativeRoleService.kt` — AIDL `IRoleService.Stub`：`onCreate` 调 `nativeStartRole` 校验，`start(socket: ParcelFileDescriptor)` 调 `nativeRunRole(role, slot, fd)` 并 `socket.detachFd()` 移交所有权；三个 role 均走 native 线程（renderer 需 `--features android-renderer`，未链接时该 role 启动被拒且 FD 关闭），未知 role 拒绝
 
 ## 构建
 

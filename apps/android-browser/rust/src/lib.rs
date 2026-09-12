@@ -91,6 +91,17 @@ fn is_known_role(role: &str) -> bool {
     matches!(role, "renderer" | "compositor" | "image-decoder")
 }
 
+// RFC §6.3：8 个预声明 isolated Service slots。slot 号由 Kotlin Service 类名
+// （RendererService0-7）透传为 renderer_id，兼作 compositor 帧的 surface_id。
+// 仅 renderer feature 构建与宿主测试编译，避免 android 无 feature 构建的 dead_code。
+#[cfg(any(feature = "android-renderer", test))]
+fn renderer_slot_id(slot: jni::sys::jint) -> Result<u64, String> {
+    u64::try_from(slot)
+        .ok()
+        .filter(|id| *id < 8)
+        .ok_or_else(|| "renderer slot must be within 0-7".to_string())
+}
+
 /// Returns the native host version shown by the Android bootstrap screen.
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_leizm_zeroweb_NativeBridge_nativeVersion(env: JNIEnv, _class: JClass) -> jstring {
@@ -279,15 +290,15 @@ pub extern "system" fn Java_com_leizm_zeroweb_NativeBridge_nativeStartRole(
 
 /// Starts an Android role with ownership of a detached socket FD.
 ///
-/// Decoder and compositor already use their shared Rust role loops. Renderer
-/// keeps its Service topology while its Android transport adapter is completed
-/// in a subsequent M1 slice.
+/// All three roles run their shared Rust role loops. `slot` identifies the
+/// predeclared renderer Service slot (RFC §6.3，0-7）；非 renderer 角色忽略该值。
 #[cfg(target_os = "android")]
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_leizm_zeroweb_NativeBridge_nativeRunRole(
     mut env: JNIEnv,
     _class: JClass,
     role: JString,
+    _slot: jni::sys::jint,
     fd: jni::sys::jint,
 ) -> jboolean {
     let Ok(role) = env.get_string(&role) else {
@@ -296,10 +307,16 @@ pub extern "system" fn Java_com_leizm_zeroweb_NativeBridge_nativeRunRole(
     };
     match role.to_str().ok() {
         #[cfg(feature = "android-renderer")]
-        Some("renderer") => std::thread::Builder::new()
-            .name("android-renderer".to_string())
-            .spawn(move || zero_renderer::run_android_role(0, fd))
-            .map_or(JNI_FALSE, |_| JNI_TRUE),
+        Some("renderer") => match renderer_slot_id(_slot) {
+            Ok(renderer_id) => std::thread::Builder::new()
+                .name("android-renderer".to_string())
+                .spawn(move || zero_renderer::run_android_role(renderer_id, fd))
+                .map_or(JNI_FALSE, |_| JNI_TRUE),
+            Err(_) => {
+                close_android_fd(fd);
+                JNI_FALSE
+            }
+        },
         Some("image-decoder") | Some("compositor") => {
             let Ok(mut transport) = zero_protocol::android_socket_transport_from_fd(fd) else {
                 return JNI_FALSE;
@@ -947,7 +964,18 @@ pub extern "system" fn Java_com_leizm_zeroweb_NativeBridge_nativeProbeCompositor
 
 #[cfg(test)]
 mod tests {
-    use super::{MAX_COMPOSITOR_SURFACE_DIMENSION, NATIVE_VERSION, is_known_role, validate_compositor_dimensions};
+    use super::{
+        MAX_COMPOSITOR_SURFACE_DIMENSION, NATIVE_VERSION, is_known_role, renderer_slot_id,
+        validate_compositor_dimensions,
+    };
+
+    #[test]
+    fn renderer_slots_map_to_u64_ids_within_eight() {
+        assert_eq!(renderer_slot_id(0), Ok(0));
+        assert_eq!(renderer_slot_id(7), Ok(7));
+        assert!(renderer_slot_id(8).is_err());
+        assert!(renderer_slot_id(-1).is_err());
+    }
 
     #[test]
     fn only_declared_process_roles_are_accepted() {
