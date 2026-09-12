@@ -122,6 +122,14 @@ pub struct Painter {
     /// R3268 canvas 显示链路：本帧产生的 canvas 像素快照（ctx_id, w, h, rgba），
     /// paint 后由调用方注入渲染侧 ImageCache（ImagePrimitive.image_key = ctx_id）。
     pub canvas_images: Vec<(u64, u32, u32, Vec<u8>)>,
+    /// R4276：filter url() 非常量链 isolate（主遍已抑制元素、旁路绘制子树图元），
+    /// paint 后由 pipeline 离屏栅格化 + resvg 链应用（svg_filter_chain 模块）。
+    pub(crate) filter_isolates: Vec<crate::paint::svg_filter_chain::FilterIsolate>,
+    /// R4276：pipeline 侧信号——渲染侧 FontLoader 可用（isolate 离屏栅格化前提）；
+    /// 不可用时 isolate 机制整体旁路（行为回 R4273 态）。
+    pub(crate) font_loader_ready: bool,
+    /// R4276：isolate 结果图 key 分配游标（FILTER_KEY_BASE 命名空间内递增）。
+    pub(crate) filter_key_cursor: u64,
     /// R639：NodeId → LayoutBox.height 索引（paint() 开头预扫描布局树填充）。
     /// render_fragment 宏处理某 inline 片段时，box_node 是 **IFC owner**（其文本所在
     /// 容器）而非 inline 本身；为使 per-fragment bg 门控与 paint_node 抑制（在 inline 自身
@@ -543,6 +551,9 @@ impl Painter {
             canvas_propagated_node: None,
             canvas_registry: None,
             canvas_images: Vec::new(),
+            filter_isolates: Vec::new(),
+            font_loader_ready: false,
+            filter_key_cursor: 0,
             inline_heights: HashMap::new(),
             document_url: None,
             counter_styles: HashMap::new(),
@@ -1000,7 +1011,192 @@ impl Painter {
         // 自身 height（box_node 是 IFC owner 非 inline 本身）。
         self.inline_heights.clear();
         Self::collect_box_heights(layout, &mut self.inline_heights);
+        // R4276（filter url() 非常量链）：主遍前收集 isolate 并抑制元素自身绘制；
+        // 主遍后旁路重绘子树图元，pipeline 离屏栅格化 + resvg 链应用。
+        // 旁路条件：kill-switch 关、或渲染侧 FontLoader 不可用 → 整体旁路（行为回
+        // R4273 态：常量链填充路径仍生效，非常量链 = 无 filter 现状）。
+        let mut isolate_specs = Vec::new();
+        if crate::paint::svg_filter_chain::url_chain_enabled()
+            && self.font_loader_ready
+            && let Some(doc) = doc
+        {
+            self.collect_filter_isolates(layout, styles, doc, 0.0, 0.0, &mut isolate_specs);
+            for spec in &isolate_specs {
+                self.paint_skip_nodes.insert(spec.node_id);
+            }
+        }
         self.paint_node(layout, styles, 0.0, 0.0, doc, true);
+        for spec in isolate_specs {
+            self.paint_isolate_subtree(&spec, layout, styles, doc);
+        }
+    }
+
+    /// R4276：filter isolate 结果图 key（FILTER_KEY_BASE 命名空间内递增）。
+    fn next_filter_key(&mut self) -> u64 {
+        self.filter_key_cursor += 1;
+        crate::paint::svg_filter_chain::FILTER_KEY_BASE + self.filter_key_cursor
+    }
+
+    /// R4276：布局树走查收集 filter url() 非常量链 isolate。
+    ///
+    /// 偏移算术镜像 paint_node 主流（child_offset = abs + padding + border）——
+    /// multicol/abspos 等异构偏移链首版不覆盖。门禁（A/B 实证收敛）：
+    /// ①混合列表（filter-function + url 并存）→ 旁路（首版不做函数×链组合，
+    ///   tainting-css-dropshadow-currentcolor 回归实证）；
+    /// ②空 `<filter>`（无原语子元素）= 恒等链 → 旁路（filter-chained-url-url 回归
+    ///   实证：resvg 空链输出透明）；
+    /// ③常量链 → R4273 填充快速路径，不进本机制；
+    /// ④子树含 CSS transform / will-change 后代 → 旁路（region 逃逸语义首版
+    ///   不做，filter-region-transformed-composited-child-001 回归实证）；
+    /// ⑤region 像素对齐（floor/ceil 外扩）——小盒 obb region 分数原点致占位
+    ///   image 亚像素重采样（filter-scale-001 回归实证；Chromium 同样对 filter
+    ///   bounds 做设备像素对齐）。
+    fn collect_filter_isolates(
+        &mut self,
+        box_node: &LayoutBox,
+        styles: &HashMap<NodeId, ComputedStyle>,
+        doc: &Document,
+        abs_x: f32,
+        abs_y: f32,
+        out: &mut Vec<IsolateSpec>,
+    ) {
+        let Some(node_id) = box_node.node_id else {
+            // 无 DOM 身份盒：仅递归子树（偏移同主流）。
+            let child_offset_x = abs_x + box_node.padding_left + box_node.border_left;
+            let child_offset_y = abs_y + box_node.padding_top + box_node.border_top;
+            for child in &box_node.children {
+                self.collect_filter_isolates(child, styles, doc, child_offset_x, child_offset_y, out);
+            }
+            return;
+        };
+        if self.paint_skip_nodes.contains(&node_id) {
+            return; // 已抑制（嵌套 isolate 由外层承载）
+        }
+        let Some(style) = styles.get(&node_id) else {
+            return;
+        };
+        let url_refs: Vec<String> = style
+            .filter
+            .iter()
+            .filter_map(|f| match f {
+                FilterComputedValue::Url(r) => Some(r.trim().trim_start_matches('#').to_string()),
+                _ => None,
+            })
+            .collect();
+        // 门禁①：混合列表（存在非 Url 项）或无 url 引用 → 旁路。
+        let has_functions = style.filter.iter().any(|f| !matches!(f, FilterComputedValue::Url(_)));
+        if url_refs.is_empty() || has_functions {
+            return;
+        }
+        // 门禁④：子树含 transform / will-change 后代 → 旁路（region 逃逸）。
+        if crate::paint::svg_filter_chain::subtree_has_transform(doc, styles, node_id) {
+            return;
+        }
+        let mut filter_node_ids = Vec::new();
+        for reference in &url_refs {
+            let Some(filter_node_id) = doc.get_element_by_id(reference) else {
+                continue;
+            };
+            // 门禁②：空 filter = 恒等链 → 该引用跳过（其余引用继续）。
+            if crate::paint::svg_filter_chain::chain_is_empty(doc, filter_node_id) {
+                continue;
+            }
+            // 门禁③：常量链走 R4273 填充路径（主遍 apply_svg_reference_filter 发射）。
+            if effects::constant_filter_chain_color(doc, filter_node_id).is_some() {
+                continue;
+            }
+            filter_node_ids.push(filter_node_id);
+        }
+        if filter_node_ids.is_empty() {
+            return;
+        }
+        // 门禁⑤：region 像素对齐（外扩）。取首个可解析引用的 region（同元素多引用
+        // 的 region 按 spec = 各链输出合成区域，首版以并集近似——顺序应用逐链产出）。
+        let mut region = None;
+        for fid in &filter_node_ids {
+            if let Some(r) = effects::svg_filter_region(doc, *fid, box_node, abs_x, abs_y) {
+                let x = r.origin.x.floor();
+                let y = r.origin.y.floor();
+                let w = (r.origin.x + r.size.width).ceil() - x;
+                let h = (r.origin.y + r.size.height).ceil() - y;
+                region = Some(zero_render_foundation::geometry::Rect::new(x, y, w, h));
+                break;
+            }
+        }
+        let Some(region) = region else {
+            return;
+        };
+        let w = region.size.width.max(1.0) as u32;
+        let h = region.size.height.max(1.0) as u32;
+        if w > 8192 || h > 8192 {
+            return; // region 异常巨大（设计 §5 数据面上限）→ 旁路
+        }
+        let key = self.next_filter_key();
+        out.push(IsolateSpec {
+            node_id,
+            region,
+            filter_node_ids,
+            key,
+        });
+        // 占位 ImagePrimitive：主遍发射（元素自身被抑制），pipeline 回填
+        // canvas_images 同 key 像素。
+        self.primitives
+            .add_image(zero_render_foundation::primitive::ImagePrimitive {
+                rect: region,
+                image_key: zero_render_foundation::image_cache::ImageKey::new(key),
+                clip: None,
+                source: None,
+            });
+        let child_offset_x = abs_x + box_node.padding_left + box_node.border_left;
+        let child_offset_y = abs_y + box_node.padding_top + box_node.border_top;
+        for child in &box_node.children {
+            self.collect_filter_isolates(child, styles, doc, child_offset_x, child_offset_y, out);
+        }
+    }
+
+    /// R4276：isolate 子树旁路绘制——临时换仓 self.primitives，paint_node 以
+    /// 「region 原点对齐」偏移重绘（paint_node 根入口 abs = offset + box.x/y），
+    /// 子树自身临时移出 paint_skip_nodes（抑制只作用于主遍）。
+    fn paint_isolate_subtree(
+        &mut self,
+        spec: &IsolateSpec,
+        layout: &LayoutBox,
+        styles: &HashMap<NodeId, ComputedStyle>,
+        doc: Option<&Document>,
+    ) {
+        let Some(doc) = doc else {
+            return;
+        };
+        // 重找盒（paint 主遍后不可持有借用）。
+        let Some(box_root) = find_layout_box_by_node(layout, spec.node_id) else {
+            return;
+        };
+        let was_skipped = self.paint_skip_nodes.remove(&spec.node_id);
+        let main_primitives = std::mem::take(&mut self.primitives);
+        let off_x = spec.region.origin.x - box_root.x;
+        let off_y = spec.region.origin.y - box_root.y;
+        self.paint_node(box_root, styles, off_x, off_y, Some(doc), false);
+        let side = std::mem::replace(&mut self.primitives, main_primitives);
+        if was_skipped {
+            self.paint_skip_nodes.insert(spec.node_id);
+        }
+        self.filter_isolates
+            .push(crate::paint::svg_filter_chain::FilterIsolate {
+                primitives: side,
+                region: spec.region,
+                filter_node_ids: spec.filter_node_ids.clone(),
+                key: spec.key,
+            });
+    }
+
+    /// R4276：pipeline 在 paint 后取走 isolate（一次性）。
+    pub(crate) fn take_filter_isolates(&mut self) -> Vec<crate::paint::svg_filter_chain::FilterIsolate> {
+        std::mem::take(&mut self.filter_isolates)
+    }
+
+    /// R4276：pipeline 信号渲染侧 FontLoader 可用（paint 前调用）。
+    pub(crate) fn set_font_loader_ready(&mut self, ready: bool) {
+        self.font_loader_ready = ready;
     }
 
     /// R639：递归遍历布局树，收集每个有 node_id 的盒的 height 到索引。
@@ -2885,6 +3081,31 @@ pub(crate) fn in_svg_subtree(doc: &Document, node_id: NodeId) -> bool {
         cur = doc.parent_node(id);
     }
     false
+}
+
+/// R4276：filter isolate 收集规格（paint 主遍前收集、主遍后旁路绘制用）。
+pub(crate) struct IsolateSpec {
+    /// isolate 元素节点（主遍抑制 + 子树重找）。
+    node_id: NodeId,
+    /// filter region（页面绝对坐标）。
+    region: zero_render_foundation::geometry::Rect,
+    /// 被引用 `<filter>` 元素（多引用按声明序，pipeline 顺序链应用）。
+    filter_node_ids: Vec<zero_dom::NodeId>,
+    /// 占位 ImagePrimitive / canvas_images 共享 key。
+    key: u64,
+}
+
+/// R4276：布局树按 node_id 深搜找盒（paint 主遍后重找 isolate 子树根）。
+fn find_layout_box_by_node(box_node: &LayoutBox, node_id: NodeId) -> Option<&LayoutBox> {
+    if box_node.node_id == Some(node_id) {
+        return Some(box_node);
+    }
+    for child in &box_node.children {
+        if let Some(found) = find_layout_box_by_node(child, node_id) {
+            return Some(found);
+        }
+    }
+    None
 }
 
 /// R3938（CSS Transforms 1 §transform-attribute-specificity + SVG2 presentation

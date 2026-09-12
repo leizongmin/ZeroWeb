@@ -1570,7 +1570,7 @@ fn filter_computed_to_kind(value: &FilterComputedValue) -> Option<FilterKind> {
 /// 缺省 120%（objectBoundingBox 分量比）。userSpaceOnUse 字面 px，锚定引用元素盒
 /// 原点（HTML 引用者的 user space = 其自身盒坐标，见 apply_svg_reference_filter 注）。
 /// 非法/缺失数值按缺省；region 宽高 ≤ 0 → None（空 region 无输出）。
-fn svg_filter_region(
+pub(crate) fn svg_filter_region(
     doc: &Document,
     filter_node_id: zero_dom::NodeId,
     box_node: &LayoutBox,
@@ -1637,7 +1637,7 @@ fn svg_filter_region(
 /// R4273：常量输出链判定——`<filter>` 恰一个**元素**子（文本/注释忽略），且为
 /// feFlood 或常量 feColorMatrix；返回输出色。多原语组合（feComposite/feMerge 等
 /// 需 SourceGraphic 隔离）→ None（调用方 no-op）。
-fn constant_filter_chain_color(doc: &Document, filter_node_id: zero_dom::NodeId) -> Option<Color> {
+pub(crate) fn constant_filter_chain_color(doc: &Document, filter_node_id: zero_dom::NodeId) -> Option<Color> {
     let element_children: Vec<zero_dom::NodeId> = doc
         .child_nodes(filter_node_id)
         .into_iter()

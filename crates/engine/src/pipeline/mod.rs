@@ -180,6 +180,9 @@ pub struct RenderPipeline {
     pub(crate) image_no_ratio: HashMap<u64, (Option<f32>, Option<f32>)>,
     /// CSS font-family 查找表（字体族名 → FontId）。
     pub(crate) font_resolver: HashMap<String, u32>,
+    /// R4276：渲染侧字体加载器（filter url() 非常量链 isolate 离屏栅格化前提）。
+    /// 未设置时 isolate 机制整体旁路（行为回 R4273 态）。
+    pub(crate) font_loader: Option<std::sync::Arc<zero_render_foundation::font::loader::FontLoader>>,
     /// 当前文档 URL（用于解析相对 `<img src>` 与 image_sizes 键）。
     pub(crate) document_url: Option<String>,
     /// 文档 referrer（来源页 URL；`document.referrer` 读，导航层注入 = 导航前的页面 URL）。
@@ -371,6 +374,7 @@ impl RenderPipeline {
             image_ratios: HashMap::new(),
             image_no_ratio: HashMap::new(),
             font_resolver: HashMap::new(),
+            font_loader: None,
             document_url: None,
             referrer: None,
         }
@@ -609,6 +613,70 @@ impl RenderPipeline {
     ///
     /// 由调用方从 `FontLoader::build_font_resolver()` 构建并传入。
     /// 用于将 CSS font-family 列表解析为具体的 FontId。
+    /// R4276：设置渲染侧字体加载器（filter url() 非常量链 isolate 离屏栅格化）。
+    pub fn set_font_loader(
+        &mut self,
+        loader: Option<std::sync::Arc<zero_render_foundation::font::loader::FontLoader>>,
+    ) {
+        self.font_loader = loader;
+    }
+
+    /// R4276：filter url() 非常量链 isolate 应用（svg-filter-reference-isolation-design
+    /// 方案 C 步骤 2-4）：子树旁路图元 → render_full_scene 离屏栅格化 → 像素 PNG
+    /// data-URI 包装 `<image filter="url(#id)">` 过 resvg（rasterize_svg_at 既有通路）
+    /// → 输出 rgba 回注 canvas_images（主遍占位 ImagePrimitive 同 key）。
+    /// 链应用失败 → 全透明回退（与 spec 链输出透明一致；抑制已发生不可撤销）。
+    fn apply_filter_isolates(
+        &self,
+        painter: &mut Painter,
+        doc: &zero_dom::Document,
+        canvas_images: &mut Vec<(u64, u32, u32, Vec<u8>)>,
+    ) {
+        let isolates = painter.take_filter_isolates();
+        if isolates.is_empty() {
+            return;
+        }
+        let Some(loader) = self.font_loader.as_deref() else {
+            return;
+        };
+        let mut glyph_cache = zero_render_foundation::font::cache::GlyphCache::new(64);
+        for iso in isolates {
+            let w = iso.region.size.width.ceil().max(1.0) as u32;
+            let h = iso.region.size.height.ceil().max(1.0) as u32;
+            let fb = zero_render_foundation::cpu::render_full_scene(
+                w,
+                h,
+                1.0,
+                &iso.primitives,
+                loader,
+                &mut glyph_cache,
+                None,
+                &[],
+                &[],
+                &[],
+                &[],
+            );
+            // 多 url() 引用按声明序顺序链应用：上一链输出作为下一链 SourceGraphic
+            // （filter-effects-1 #FilterProperty <filter-value-list> 顺序合成）。
+            let mut pixels: Option<Vec<u8>> = None;
+            for fid in &iso.filter_node_ids {
+                let source = pixels.take().unwrap_or_else(|| fb.data.clone());
+                let applied = (|| -> Option<Vec<u8>> {
+                    let wrapper = crate::paint::svg_filter_chain::build_wrapper_svg(doc, *fid, &iso.region, &source)?;
+                    let data = zero_render_foundation::image_cache::rasterize_svg_at(wrapper.as_bytes(), w, h).ok()?;
+                    Some(data.pixels)
+                })();
+                pixels = applied;
+                if pixels.is_none() {
+                    break; // 链应用失败 → 全透明回退
+                }
+            }
+            let applied = pixels.unwrap_or_else(|| [0, 0, 0, 0].repeat(w as usize * h as usize));
+            canvas_images.push((iso.key, w, h, applied));
+        }
+    }
+
+    /// 由调用方从 `FontLoader::build_font_resolver()` 构建并传入。
     pub fn set_font_resolver(&mut self, resolver: HashMap<String, u32>) {
         self.layout_engine.set_font_resolver(resolver.clone());
         if std::env::var("ZW_SHAPED_TEXT").as_deref() != Ok("0")
@@ -1218,8 +1286,13 @@ impl RenderPipeline {
         painter.viewport_w = self.viewport_width;
         painter.viewport_h = self.viewport_height;
         painter.paint_skip_nodes = layout_result.paint_skip_node_ids.clone();
+        // R4276：渲染侧 loader 可用性门控 painter 的 isolate 收集（未设置 = 旁路）。
+        painter.set_font_loader_ready(self.font_loader.is_some());
         painter.paint(&layout_result.root, &styles, Some(&doc));
-        let canvas_images = painter.canvas_images.clone();
+        let mut canvas_images = painter.canvas_images.clone();
+        // R4276：filter url() 非常量链 isolate 应用（离屏栅格化 + resvg 链 + 回注
+        // canvas_images 占位 key）。
+        self.apply_filter_isolates(&mut painter, &doc, &mut canvas_images);
         let mut primitives = painter.into_primitives();
         // 视口剔除 — 移除视口外的图元（高度取文档布局范围，供浏览器滚动消费）
         let viewport = paint_cull_viewport(self.viewport_width, self.viewport_height, &layout_result.root);
