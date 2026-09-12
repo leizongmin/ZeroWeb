@@ -2,7 +2,7 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-13（S14：FetchObserved 观测管线基建落地——renderer fetch 生命周期 → headless Network 事件映射；network.events 的 PW 送达仍待定位。绿步维持 25）
+**最后更新**: 2026-09-13（S15：network.events 翻绿——FetchObserved 事件 payload 补齐 CDP 必需形状；绿步 25→26，基线同步扩至 26）
 
 ---
 
@@ -197,10 +197,11 @@
 
 1. **network.events 的 PW 送达定位（S14 剩余一环）**：S12 的两个前置修复已落地
    （hit-test 溢出剪枝 + SW IPC 应答），FetchObserved 观测管线基建已合入（S14）——
-   renderer 观测 handler 确认运行（文件探针）、队列→tick→IPC 链路打通；但 PW
-   `page.on('request')` 未见 /api/data 事件。下轮插桩两处：① headless FetchObserved arm
-   加 println 验证 IPC 到达与 network_enabled 状态；② transport flush 处验证 S2C 帧
-   写出与 sessionId 盖章。修通后 network.events 翻绿（绿步 25→26）。
+   renderer 观测 handler 确认运行（文件探针）、队列→tick→IPC 链路打通。**S15 修复**：
+   FetchObserved 映射的 Network 事件 payload 补齐 CDP 必需形状（request.headers、
+   initiator、wallTime；response 的 type/statusText/headers/mimeType/connection* 等）——
+   payload 缺形状时 PW requestReceivedResponse 解析抛错使 flow 崩溃。**network.events
+   翻绿（绿步 25→26）**，基线同步扩至 26。
 2. **page.setContent**（shim `document.open/write/close` 三连缺失——PW setContent 走
    此路径；需 shim 文档级写面 + 整文档替换 mutation/renderer 应用通路，engine 域）。
 3. **keyboard.type+press**（Ctrl+A 全选编辑面缺失——type 'abc' 后 Ctrl+A no-op、值
@@ -229,7 +230,7 @@
 | M2 — Page/Input 域 → 点击/填充/键盘/导航流 | 🚧 S10：goto/title/fill/click 全族/dialog/键盘裸 API/导航事件族绿；#btn-fetch 点击静默失败待查（下步 #1） |
 | M3 — DOM/CSS/Emulation → locator 流 | 🚧 S10：locator.boundingBox/viewport/媒体/截图 clip+element+fullPage 绿；iframe 面维持挂起 |
 | M4 — Network/cookies/console 对象化（cookie 落点=Storage 域） | 🚧 S11：cookie 域 + UA override + Network 事件雏形 + **consoleAPICalled（value-only）** 绿；dataReceived 待 net 观测点 |
-| M5 — 矩阵收口 | 🚧 绿步 25/30（expected-green 基线同步扩至 25）；余 5 步根因定位（#btn-fetch 点击/编辑面/document.open/frames 挂起） |
+| M5 — 矩阵收口 | 🚧 绿步 26/30（expected-green 基线同步扩至 26）；余 4 步根因定位（frames 挂起/编辑面/document.open） |
 
 ## 验证基线
 

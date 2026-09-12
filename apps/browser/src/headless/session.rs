@@ -191,6 +191,7 @@ impl HeadlessSession {
             // phase 0=requestWillBeSent / 1=responseReceived / 2=loadingFinished|loadingFailed；
             // seq 为三阶段关联 id（headless 作 requestId）。
             IpcMessageKind::FetchObserved(params) => {
+                println!("[S14] hl FetchObserved phase={} seq={} url={} net_enabled={}", params.phase, params.seq, params.url, self.network_enabled);
                 if self.network_enabled {
                     let frame_id = self.active_frame_id().unwrap_or_default();
                     let request_id = format!("zw-net-{}", params.seq);
@@ -206,8 +207,14 @@ impl HeadlessSession {
                             serde_json::json!({
                                 "requestId": request_id,
                                 "frameId": frame_id,
-                                "request": { "url": params.url, "method": params.method },
+                                "request": {
+                                    "url": params.url,
+                                    "method": params.method,
+                                    "headers": {},
+                                },
                                 "timestamp": now(),
+                                "wallTime": now() as f64 / 1000.0,
+                                "initiator": { "type": "other" },
                             }),
                         )),
                         1 => self.pending_network_events.push((
@@ -215,13 +222,33 @@ impl HeadlessSession {
                             serde_json::json!({
                                 "requestId": request_id,
                                 "frameId": frame_id,
-                                "response": { "url": params.url, "status": params.status },
+                                "type": "XHR",
+                                "response": {
+                                    "url": params.url,
+                                    "status": params.status,
+                                    "statusText": if params.status == 200 { "OK" } else { "" },
+                                    "headers": {},
+                                    "mimeType": "application/json",
+                                    "connectionReused": false,
+                                    "connectionId": 0,
+                                    "remoteIPAddress": "",
+                                    "remotePort": 0,
+                                    "fromDiskCache": false,
+                                    "fromServiceWorker": false,
+                                    "fromPrefetchCache": false,
+                                    "encodedDataLength": -1,
+                                    "protocol": "http/1.1",
+                                },
                                 "timestamp": now(),
                             }),
                         )),
                         _ => self.pending_network_events.push((
                             "Network.loadingFinished".into(),
-                            serde_json::json!({ "requestId": request_id, "timestamp": now() }),
+                            serde_json::json!({
+                                "requestId": request_id,
+                                "timestamp": now(),
+                                "encodedDataLength": 0,
+                            }),
                         )),
                     }
                 }

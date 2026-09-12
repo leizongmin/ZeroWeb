@@ -1,5 +1,5 @@
 {
-  "description": "ZeroWeb CDP E2E 期望绿步骤基线（M5 收口门）——任一步骤回退即 make cdp-e2e 失败。S11 后基线扩至 25 步；余 5 步挂 #btn-fetch 点击/network.events、键盘 Ctrl+A 编辑面、document.open、frames（挂起），见 master.md 下一步计划。",
+  "description": "ZeroWeb CDP E2E 期望绿步骤基线（M5 收口门）——任一步骤回退即 make cdp-e2e 失败。S15 后基线扩至 26 步；余 4 步挂 frames（挂起）、keyboard Ctrl+A 编辑面、document.open，见 master.md 下一步计划。",
   "expected_green": [
     "click.button",
     "click.dblclick",
@@ -17,6 +17,7 @@
     "evaluate.withArgs",
     "fill.input",
     "locator.boundingBox",
+    "network.events",
     "page.goto",
     "page.new",
     "page.second.lifecycle",
