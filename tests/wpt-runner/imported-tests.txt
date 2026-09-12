@@ -363,3 +363,6 @@ css/css-overflow/line-clamp/line-clamp-007.html css/css-overflow/line-clamp/refe
 css/css-overflow/line-clamp/webkit-line-clamp-011.html css/css-overflow/line-clamp/reference/webkit-line-clamp-011-ref.html == 2026-09-12 R4265 scrollbar 预留语义（auto 仅溢出才预留）兑现
 css/css-pseudo/relative-box-order-of-pseudo-elements.html css/css-pseudo/relative-box-order-of-pseudo-elements-ref.html == 2026-09-12 R4265 scrollbar 预留语义（auto 仅溢出才预留）兑现
 css/css-ui/resize-child-will-change-transform.html css/css-ui/resize-child-will-change-transform-ref.html == 2026-09-12 R4265 scrollbar 预留语义（auto 仅溢出才预留）兑现
+css/css-multicol/always-balancing-before-column-span.html css/css-multicol/../reference/ref-filled-green-100px-square.xht == 2026-09-12 R4267 spanner 路径碎片化容器高写回（auto 高度+真分片+收缩向 gate）
+css/css-contain/contain-inline-size-multicol.html css/css-contain/../reference/ref-filled-green-100px-square.xht == 2026-09-12 R4267 spanner 路径碎片化容器高写回（auto 高度+真分片+收缩向 gate）
+css/css-multicol/multicol-span-all-children-height-011.html css/css-multicol/../reference/ref-filled-green-100px-square.xht == 2026-09-12 R4267 spanner 路径碎片化容器高写回（auto 高度+真分片+收缩向 gate）

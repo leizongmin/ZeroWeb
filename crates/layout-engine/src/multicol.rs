@@ -1088,6 +1088,8 @@ fn layout_multicol_with_spanners(
     // R4250：尚未与下一元素顶边合并的末元素 margin_bottom（CSS2 §8.3.1 adjoining
     // margins：prev.mb ⊔ next.mt = max）。spanner 与区域首子边界均按合并推进。
     let mut pending_mb = 0.0f32;
+    // R4267：任一区域发生真分片（跨列延续片段）——容器高写回 gate 之一。
+    let mut any_split = false;
     for (region_idx, region_children) in regions.iter().enumerate() {
         // 该区域子元素高度信息（break 标志暂不传递——spanner 区域内 break-before/after:column 罕见）。
         let region_child_info: Vec<(usize, f32)> = region_children
@@ -1182,6 +1184,12 @@ fn layout_multicol_with_spanners(
             container.children[first_idx].margin_top = 0.0;
             pending_mb = 0.0;
         }
+        if assignments
+            .iter()
+            .any(|col| col.iter().any(|f| f.fragment_y_offset > 0.0))
+        {
+            any_split = true;
+        }
         // 定位该区域子元素（列内 y 从 y_base 起），返回该区域高度。
         let region_height = position_multicol_children(container, &assignments, info, y_base, row_height);
         y_base += region_height;
@@ -1222,6 +1230,29 @@ fn layout_multicol_with_spanners(
         y_base += pending_mb;
         container.content_height = y_base;
         container.height = y_base;
+    }
+
+    // R4267（CSS Multicol §column filling）：碎片化后容器高写回（auto 高度 + 收缩向 + 真分片）。
+    // taffy 容器高 = **未碎片化**内容堆叠和（列平衡前），spanner 路径把内容平衡/碎片到各列，
+    // 真实内容高 = y_base——taffy 残值在容器下方露出背景色带（always-balancing-before-
+    // column-span：auto 高 .columns 容器 200 残高，应 100 → 红带 100×100 = 2.10% 同签名带）。
+    // gate：①容器 height:auto（definite 高度是布局输入非输出，不动）；②**真分片**——区域内容
+    // 存在跨列延续片段（fragment_y_offset > 0）才写回：整子逐列分布（multicol-span-all-button
+    // 谱系：2 块各占 1 列，无分片）的容器高语义 ref 侧（非 spanner 路径不回写）仍为 taffy 值，
+    // 单侧收缩破坏自源配对一致性（button-001 实证 140→85 错位）；③仅收缩（y_base < 现值，
+    // R4250 taffy-高度 load-bearing 面不放大）；④非 trim_active（上方 trim 臂已写回）。
+    if !trim_active
+        && y_base > 0.0
+        && y_base < container.content_height - 0.5
+        && any_split
+        && container
+            .node_id
+            .and_then(|id| styles.get(&id))
+            .is_some_and(|st| !is_explicit_height(st))
+    {
+        let frame = container.height - container.content_height;
+        container.content_height = y_base;
+        container.height = y_base + frame;
     }
 }
 
