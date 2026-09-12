@@ -703,6 +703,9 @@ impl Painter {
         // in，位移不生效）。resvg 不实现 taint，对位移一律执行——源级静态分析把命中原语
         // 改写为恒等 feOffset。kill-switch ZW_SVG_TAINT=0。
         source = crate::paint::svg_filter_taint::apply_svg_filter_taint_rules(&source);
+        // R4274（SVG2 shapes/paths）：零尺寸/空几何形状元素禁用渲染（含 filter 输出）
+        // ——序列化源级移除，resvg 无从渲染。kill-switch ZW_SVG_SHAPE_DISABLE=0。
+        source = crate::paint::svg_shape_disable::disable_empty_shapes(&source);
         // ZW_DEBUG_SVG_SOURCE=1：dump 合成后序列化源（svg transform 域调试设施）。
         if std::env::var("ZW_DEBUG_SVG_SOURCE").as_deref() == Ok("1") {
             eprintln!("R3938-SOURCE: {source}");

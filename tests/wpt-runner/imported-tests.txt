@@ -418,3 +418,4 @@ css/filter-effects/empty-element-with-filter-002.html css/filter-effects/referen
 css/filter-effects/empty-element-with-filter-003.html css/filter-effects/reference/green-100x100.html == 2026-09-12 2026-09-12 R4273 CSS filter url(#id) 引用 SVG filter 常量输出链（feFlood/常量 feColorMatrix + filter region userSpaceOnUse/objectBoundingBox）
 css/filter-effects/empty-element-with-filter-004.html css/filter-effects/reference/green-100x100.html == 2026-09-12 2026-09-12 R4273 CSS filter url(#id) 引用 SVG filter 常量输出链（feFlood/常量 feColorMatrix + filter region userSpaceOnUse/objectBoundingBox）
 css/filter-effects/visibility-hidden-element-with-filter-001.html css/filter-effects/reference/green-100x100.html == 2026-09-12 2026-09-12 R4273 CSS filter url(#id) 引用 SVG filter 常量输出链（feFlood/常量 feColorMatrix + filter region userSpaceOnUse/objectBoundingBox）
+css/filter-effects/svg-empty-element-with-filter-001.html common/blank.html == 2026-09-12 R4274 SVG2 零尺寸/空几何形状渲染禁用（序列化源级移除，含 filter 输出）
