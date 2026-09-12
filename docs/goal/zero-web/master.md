@@ -379,12 +379,12 @@ Limit。**前轮 R3303**：TextMetrics 全 10 字段。**前轮 R3302**：`:focu
 |----|------|
 | 仓库代码 | ✅ Cargo workspace 32 个 member（22 库 + 7 应用 + 2 测试工具 + 1 开发工具，含 runtime-config、paint-convert、android-browser 与 media；全部有实质实现） |
 | 编译状态 | ✅ `cargo build --workspace` 通过 |
-| 测试状态 | ✅ `cargo test --workspace` ~17,000+（2026-09-09 静态统计 17,741 个 `#[test]`，不含宏生成/doctest；rendering-compat R4157-G 守成轮实测 make test 19,043 Pass / 0 Fail（webdriver 终验轮 19,037 Pass / 0 Fail），运行时计数含参数化与集成 subtest；预存失败 `default_actions_work_without_javascript` 为并行流既存，多轮记录，clean HEAD 同败） |
+| 测试状态 | ✅ `cargo test --workspace` ~17,000+（2026-09-13 静态统计 17,912 个 `#[test]`，不含宏生成/doctest；rendering-compat R4157-G 守成轮实测 make test 19,043 Pass / 0 Fail（webdriver 终验轮 19,037 Pass / 0 Fail），运行时计数含参数化与集成 subtest；预存失败 `default_actions_work_without_javascript` 为并行流既存，多轮记录，clean HEAD 同败） |
 | Clippy | ✅ 零警告（全 workspace） |
 | 基准测试 | ✅ 16/16 crate 有 criterion 基准（78+ 个基准） |
 | CI | ✅ GitHub Actions（ubuntu/macos/windows）|
 
-### 已实现 crate（21 个）
+### 已实现 crate（22 个）
 
 | Crate | 测试 | 基准 | 说明 |
 |-------|------|------|------|
@@ -409,6 +409,7 @@ Limit。**前轮 R3303**：TextMetrics 全 10 字段。**前轮 R3302**：`:focu
 | product-version | 2 | — | 产品版本号（从构建日期推导，随 `zero-product-version` 分发） |
 | psl | 25 | — | **公共后缀列表（PSL）解析与注册域名（eTLD+1）提取**：三类规则解析（普通/通配/例外，与上游 `public_suffix_list.dat` 语法一致）、`registrable_domain()`（IP/单标签/公共后缀原样返回）、全局共享实例 `shared()`、`from_rules()` 可注入完整数据；接入 site-isolation（R3380，`Site::from_origin` 经 PSL 计算真 eTLD+1） |
 | media | 55（默认 feature）/ 56（audio-cpal） | — | **媒体解码管线（media-playback / media-audio goal 产物，2026-09-01）**：webm/Matroska + mp4/ISO-BMFF demux、VP9 纯 Rust 解码（`rusty_vp9`）、AV1（`decode-av1`）、H.264（`decode-h264`，openh264，D-RFC-3 获批切片 1+2——切片 2 含 AAC 音频链/伴生轨/precise-seek）、YUV→RGBA、音频解码（symphonia mp3/ogg-vorbis、opus-decoder、webm 音轨重封装）、`open_media` 容器/编码嗅探自路由、`VideoPlayer` 播放驱动（`VideoClock` trait）、`AudioSink` 输出面（NullSink 可观测 / CpalSink 真设备）、混音总线、Web Audio 振荡器合成最小面 |
+| paint-convert | 3 | — | **IPC 图元快照 → 渲染图元公共转换层（webdriver-screenshot goal 产物，2026-09-09）**：`to_render_primitives` 唯一映射实现（compositor/browser/webdriver 三端共享），13 类绘制图元逐一映射 + 字体变轴校验 + 字形文本源 intern + text_control_boundaries 透传；取代 compositor `convert.rs` / browser `paint_ipc.rs` 双份维护 |
 
 ### 跨 crate 集成测试
 
@@ -1080,7 +1081,7 @@ P1a 低风险、可快速见效（主要改 `dom_bridge.rs` + `script-sandbox` +
 
 切片 1-3 均低风险可独立 land；验证基线 = tab_js_worker 既有测试（fetch 端到端 663-810 / 定时器 811-852 / MutationObserver 五连测 906-1065，`wait_for_global` 轮询模式）+ 每切片 `make test` 零回归。P1b（V8 原生绑定）仍需独立 RFC。**P1a 主线实质完成 → 当前活跃推进面 = security/storage/net deep-review（自主域）+ P1b（S6/S7 等用户拍板 default-on）+ P3 GPU/Display（需物理环境）**。
 
-> **2026-09-04 状态勘误**：上行「P1b 待 default-on 拍板」已过时——P1b 全部完成（R383/R384 双引擎 default-on land + kill-switch 删除，js-dom goal 2026-08-31 收官归档，见上方「当前状态」P1b 条）；security/storage/net deep-review 自主域亦经 R3388–R3398 逐文件审后收敛（见「最近完成的改进」）。媒体线三 goal（2026-09-05）与存储/Service Worker 两 goal（2026-09-06）均已收口整树归档（见 `docs/goal/archive/`）；keyboard/editing 三 goal 与 webdriver goal 已于 2026-09-08 收口整树归档（editing selection 终态 2994P/5F = 99.8%、隐式提交 3/3；webdriver 9→33 endpoint，DC-1~4 ✅）；webdriver-screenshot goal 已于 2026-09-09 收口整树归档（`zero-paint-convert` 公共转换层 + GET /session/{id}/screenshot，33→34 endpoint，DC-1~4 ✅）；storage-opfs goal 已于 2026-09-09 收口整树归档（DC-1~4 ✅）；web-components goal 已于 2026-09-11 收口整树归档（DC-1~5 ✅）；page-wasm goal 已于 2026-09-12 收口整树归档（DC-1~4 ✅，WPT jsapi 31 案 99.4%）；event-loop-spec goal 已于 2026-09-12 收口整树归档（P1a 遗留面闭合——IO/RO WPT 基线 + MO host 触发 default-on + per-task checkpoint default-on，DC-1~4 ✅，task queue 子项经用户决策缓行挂账）；当前父目标活跃面 = 渲染兼容性收口（rendering-compat 流，R4193 轮 corpus 14664/16813 = 87.2%）+ 拆分子 goal 6 个活跃（android-browser / cdp-protocol / devtools / desktop-browser / security-hardening / web-api-batch2，2026-09-12 用户决策同日新立后三个）与零星自主域复扫。
+> **2026-09-04 状态勘误**：上行「P1b 待 default-on 拍板」已过时——P1b 全部完成（R383/R384 双引擎 default-on land + kill-switch 删除，js-dom goal 2026-08-31 收官归档，见上方「当前状态」P1b 条）；security/storage/net deep-review 自主域亦经 R3388–R3398 逐文件审后收敛（见「最近完成的改进」）。媒体线三 goal（2026-09-05）与存储/Service Worker 两 goal（2026-09-06）均已收口整树归档（见 `docs/goal/archive/`）；keyboard/editing 三 goal 与 webdriver goal 已于 2026-09-08 收口整树归档（editing selection 终态 2994P/5F = 99.8%、隐式提交 3/3；webdriver 9→33 endpoint，DC-1~4 ✅）；webdriver-screenshot goal 已于 2026-09-09 收口整树归档（`zero-paint-convert` 公共转换层 + GET /session/{id}/screenshot，33→34 endpoint，DC-1~4 ✅）；storage-opfs goal 已于 2026-09-09 收口整树归档（DC-1~4 ✅）；web-components goal 已于 2026-09-11 收口整树归档（DC-1~5 ✅）；page-wasm goal 已于 2026-09-12 收口整树归档（DC-1~4 ✅，WPT jsapi 31 案 99.4%）；event-loop-spec goal 已于 2026-09-12 收口整树归档（P1a 遗留面闭合——IO/RO WPT 基线 + MO host 触发 default-on + per-task checkpoint default-on，DC-1~4 ✅，task queue 子项经用户决策缓行挂账）；android-browser goal 已于 2026-09-13 判定 DONE（DC-1~4 ✅——多标签槽位/视口真值/IME 输入/下载通知 SAF/双语无障碍/CI 模拟器冒烟 + chaos 断连恢复，真机门控冒烟项见其 master「下一步」，待模式 A 整树归档）；M12/M14 首批拆分六子 goal 全部达成；2026-09-12/13 用户决策新立十四个子 goal（cdp-protocol / devtools / desktop-browser / security-hardening / web-api-batch2 + 九个 WPT 分域 compat goal：svg / net-api / navigation / workers / timing-animation / encoding / html-syntax / uievents / webgl）；当前父目标活跃面 = 渲染兼容性收口（rendering-compat 流，R4290 轮 corpus 14742/16594 = 88.8%）+ 上述十四个新子 goal 推进（cdp-protocol 绿步 6→25）与零星自主域复扫。
 
 ---
 
