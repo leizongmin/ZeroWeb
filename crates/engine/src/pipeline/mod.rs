@@ -183,6 +183,8 @@ pub struct RenderPipeline {
     /// R4276：渲染侧字体加载器（filter url() 非常量链 isolate 离屏栅格化前提）。
     /// 未设置时 isolate 机制整体旁路（行为回 R4273 态）。
     pub(crate) font_loader: Option<std::sync::Arc<zero_render_foundation::font::loader::FontLoader>>,
+    /// R4279：文档基准目录（filter url() 链内 feImage 相对 href 的 file 解析基准）。
+    pub(crate) document_base: Option<std::path::PathBuf>,
     /// 当前文档 URL（用于解析相对 `<img src>` 与 image_sizes 键）。
     pub(crate) document_url: Option<String>,
     /// 文档 referrer（来源页 URL；`document.referrer` 读，导航层注入 = 导航前的页面 URL）。
@@ -375,6 +377,7 @@ impl RenderPipeline {
             image_no_ratio: HashMap::new(),
             font_resolver: HashMap::new(),
             font_loader: None,
+            document_base: None,
             document_url: None,
             referrer: None,
         }
@@ -621,6 +624,11 @@ impl RenderPipeline {
         self.font_loader = loader;
     }
 
+    /// R4279：设置文档基准目录（filter url() 链内 feImage 相对 href 解析基准）。
+    pub fn set_document_base(&mut self, base: Option<std::path::PathBuf>) {
+        self.document_base = base;
+    }
+
     /// R4276：filter url() 非常量链 isolate 应用（svg-filter-reference-isolation-design
     /// 方案 C 步骤 2-4）：子树旁路图元 → render_full_scene 离屏栅格化 → 像素 PNG
     /// data-URI 包装 `<image filter="url(#id)">` 过 resvg（rasterize_svg_at 既有通路）
@@ -662,9 +670,13 @@ impl RenderPipeline {
             for fid in &iso.filter_node_ids {
                 let source = pixels.take().unwrap_or_else(|| fb.data.clone());
                 let applied = (|| -> Option<Vec<u8>> {
-                    let Some(wrapper) =
-                        crate::paint::svg_filter_chain::build_wrapper_svg(doc, *fid, &iso.region, &source)
-                    else {
+                    let Some(wrapper) = crate::paint::svg_filter_chain::build_wrapper_svg(
+                        doc,
+                        *fid,
+                        &iso.region,
+                        &source,
+                        self.document_base.as_deref(),
+                    ) else {
                         if std::env::var("ZW_URL_CHAIN_DEBUG").as_deref() == Ok("1") {
                             eprintln!("[url-chain] key={} build_wrapper_svg -> None", iso.key);
                         }

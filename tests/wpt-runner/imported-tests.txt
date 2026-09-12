@@ -431,3 +431,7 @@ css/filter-effects/effect-reference-on-span.html css/filter-effects/reference/ef
 css/filter-effects/filter-external-001-test.html css/filter-effects/filter-external-001-ref.html == 2026-09-12 2026-09-13 R4278 url() 隔离保真度批次——obb 分数语义/cif 继承提升/无光源 lighting 透明改写/定稿位点重构
 css/filter-effects/filter-turbulence-invalid-001.html css/filter-effects/reference/filter-turbulence-invalid-001-ref.html == 2026-09-12 2026-09-13 R4278 url() 隔离保真度批次——obb 分数语义/cif 继承提升/无光源 lighting 透明改写/定稿位点重构
 css/filter-effects/svg-feimage-005.html css/filter-effects/reference/green-100x100.html == 2026-09-12 2026-09-13 R4278 url() 隔离保真度批次——obb 分数语义/cif 继承提升/无光源 lighting 透明改写/定稿位点重构
+css/filter-effects/effect-reference-feimage-001.html css/filter-effects/reference/effect-reference-feimage-001-ref.html == 2026-09-12 2026-09-13 R4279 feImage 相对 href 内联（文档基准目录 + data URI）+ 包装 SVG xmlns:xlink 声明
+css/filter-effects/effect-reference-feimage-002.html css/filter-effects/reference/effect-reference-feimage-002-ref.html == 2026-09-12 2026-09-13 R4279 feImage 相对 href 内联（文档基准目录 + data URI）+ 包装 SVG xmlns:xlink 声明
+css/filter-effects/effect-reference-feimage-003.html css/filter-effects/reference/effect-reference-feimage-003-ref.html == 2026-09-12 2026-09-13 R4279 feImage 相对 href 内联（文档基准目录 + data URI）+ 包装 SVG xmlns:xlink 声明
+css/filter-effects/effect-reference-feimage-004.html css/filter-effects/reference/effect-reference-feimage-004-ref.html == 2026-09-12 2026-09-13 R4279 feImage 相对 href 内联（文档基准目录 + data URI）+ 包装 SVG xmlns:xlink 声明

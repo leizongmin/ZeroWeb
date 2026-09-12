@@ -755,6 +755,8 @@ fn render_with_layout_inner(
     // R4276：filter url() 非常量链 isolate 离屏栅格化前提——渲染侧 loader 传入
     // pipeline（painter 经 set_font_loader_ready 门控收集）。
     pipeline.set_font_loader(Some(std::sync::Arc::new(font_loader.duplicate())));
+    // R4279：filter url() 链内 feImage 相对 href 的文档基准目录。
+    pipeline.set_document_base(base_dir.map(|p| p.to_path_buf()));
 
     let _zw_t5 = std::time::Instant::now();
     let result = runner_text_metrics::with_measure_ctx(font_loader, 0u32, || pipeline.render_html(html, &combined_css));
