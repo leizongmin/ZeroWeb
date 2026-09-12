@@ -2,7 +2,7 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-13（S12：引擎 hit-test 溢出剪枝修复——祖先盒不含点不再剪枝，溢出内容可命中；CDP 空闲期 renderer 通道轮询 drain。绿步维持 25，btn-fetch 点击已落地（fetch 触达 API），余 PW action 完成态问题）
+**最后更新**: 2026-09-13（S14：FetchObserved 观测管线基建落地——renderer fetch 生命周期 → headless Network 事件映射；network.events 的 PW 送达仍待定位。绿步维持 25）
 
 ---
 
@@ -195,12 +195,12 @@
 
 ## 下一步计划
 
-1. **host-dispatched listener 内 fetch promise 不落定（S12 收窄，network.events 最后
-   一环）**：hit-test 剪枝修复后点击已真实落地（fetch 触达 API），但 handler 的
-   `.then` 链不执行（`__fetched` 恒 null）→ PW click action 等不到完成态 10s 超时。
-   疑 FetchBridge 在宿主派发事件的 execute 内同步 resolve（嵌套 sandbox.execute 重入）；
-   下轮先插桩 FetchBridge resolve 路径（正常 page-script fetch vs host-event fetch 对比），
-   修通后 network.events + frames.click+evaluate 应翻绿（绿步 25→27）。
+1. **network.events 的 PW 送达定位（S14 剩余一环）**：S12 的两个前置修复已落地
+   （hit-test 溢出剪枝 + SW IPC 应答），FetchObserved 观测管线基建已合入（S14）——
+   renderer 观测 handler 确认运行（文件探针）、队列→tick→IPC 链路打通；但 PW
+   `page.on('request')` 未见 /api/data 事件。下轮插桩两处：① headless FetchObserved arm
+   加 println 验证 IPC 到达与 network_enabled 状态；② transport flush 处验证 S2C 帧
+   写出与 sessionId 盖章。修通后 network.events 翻绿（绿步 25→26）。
 2. **page.setContent**（shim `document.open/write/close` 三连缺失——PW setContent 走
    此路径；需 shim 文档级写面 + 整文档替换 mutation/renderer 应用通路，engine 域）。
 3. **keyboard.type+press**（Ctrl+A 全选编辑面缺失——type 'abc' 后 Ctrl+A no-op、值
