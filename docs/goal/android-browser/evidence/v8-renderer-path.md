@@ -54,8 +54,25 @@ bash scripts/android/build-native-wsl.sh <repo-root> <output-dir> arm64-v8a
 - `strings` 命中 `v8-version`（V8 静态链接嵌入；`nm -D` 无 v8::internal 动态导出属预期——静态库符号隐藏）
 - JNI 导出：`nm -D | grep Java_com_leizm | wc -l` = 23（M2 基线 22，renderer feature 路径新增导出）
 
+## gradle Linux 分支 + 签名 APK（2026-09-12 续）
+
+- `app/build.gradle.kts` 的 `buildRustNative`：`useWslRenderer` 分支按 OS 分叉——Windows 仍走
+  `.ps1`→`wsl.exe` 转发壳；**Linux/macOS 直调 `build-native-wsl.sh`**（Exec 继承环境，六项
+  ZERO_* 由调用方导出，脚本自校验）。
+- Makefile 新增 `make android-renderer-apk`（Linux，test-guard 包裹，3600s 墙钟，见 run-rules #14）。
+- **release 签名**：`local.properties`（gitignored）提供 `zeroweb.keystore.path/password/alias`
+  三项即启用签名，缺任一回退 unsigned。本地 keystore 生成：
+  `keytool -genkeypair -keystore $HOME/.android/zeroweb-release.keystore -alias zeroweb -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=ZeroWeb, O=ZeroWeb"`
+  （keystore 与口令仅存本机 local.properties，不入库）。
+- 验证：`-PuseWslRenderer :app:assembleArm64Release` → `BUILD SUCCESSFUL in 58s`（V8 缓存热；
+  冷缓存加 V8 ninja ~30-40min）→ `app-arm64-release.apk`（107M，无 `-unsigned` 后缀），
+  内含 90M `libzero_android_browser.so` + `libc++_shared.so`；
+  `apksigner verify --print-certs` → `CN=ZeroWeb, O=ZeroWeb` ✓。
+- Kotlin DSL 坑：`.kts` 中 `java.util.Properties` 必须文件顶 `import java.util.Properties`
+  （裸写 `java.util` 与 `java {}` 扩展访问器冲突报 Unresolved reference）。
+
 ## 边界说明
 
-本 evidence 只覆盖「V8 从源码交叉编译 + renderer feature .so 产出」；renderer 的 Android
-transport adapter 属 RFC 域（待 `android-browser-spec-rfc.md` 批准），gradle `useWslRenderer`
-路径仍调 PowerShell（Linux 需 pwsh 或后续补 Linux 分支），未在本轮范围内。
+本 evidence 覆盖「V8 从源码交叉编译 + renderer feature .so 产出 + gradle Linux 出包 + 签名」；
+renderer 的 Android transport adapter 属 RFC 域（待 `android-browser-spec-rfc.md` 批准），
+未在本轮范围内——即 APK 内 renderer 仍走 Kotlin Service 拓扑，V8 就绪但 transport 未切换。

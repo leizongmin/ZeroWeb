@@ -43,8 +43,8 @@
 |---|------|------|
 | P1 | Android CI job（NDK 构建 + assemble + 单测） | ✅ M1——ci.yml android job（34665015108 全绿） |
 | P2 | 版本串/README/RFC 状态文档滞后 | 🔶 M1——README/版本串已对齐（601138470）；RFC 状态待批准 |
-| P3 | JNI 桥接测试覆盖 + 进程角色冒烟断言 | ⬜ M2 |
-| P4 | APK 构建入口 + 构建文档 | ⬜ M2 |
+| P3 | JNI 桥接测试覆盖 + 进程角色冒烟断言 | 🔶 M2——宿主侧纯逻辑单测 5 项（roles/尺寸契约/版本串）已入；真机/模拟器冒烟属 M3 |
+| P4 | APK 构建入口 + 构建文档 | ✅ M2——`make android-apk/release-apk/renderer-apk`（test-guard 包裹）+ 签名（local.properties keystore，回退 unsigned）+ evidence 两篇 |
 | P5 | 模拟器冒烟证据 + RFC 决策清单 | ⬜ M3 |
 
 ## 下一步计划
