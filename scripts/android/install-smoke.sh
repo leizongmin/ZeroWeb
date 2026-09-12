@@ -28,6 +28,9 @@ if [[ "$require_renderer" == 1 ]] && ! tar -tf "$apk" | grep -q "lib/[^/]*/libc\
 fi
 
 "$ADB" wait-for-device
+# 模拟器 logcat 噪声 ~1000 行/s（CI 实证 8529 行/8.2s），默认 ~256KB 主环仅存 ~2s——
+# 扩环 + 按 tag 过滤读（-s），避免 probe 行被噪声冲出读取窗口（34707541575 实证误报）
+"$ADB" logcat -G 4M
 "$ADB" logcat -c
 "$ADB" install -r "$apk"
 "$ADB" shell am start -W -n com.leizm.zeroweb/.MainActivity
@@ -54,11 +57,11 @@ fi
 
 echo "$processes"
 # probe 日志晚于 am start -W 返回（软件渲染冷启动首帧 4s+，probe 在服务连接后台线程），
-# 固定窗口会误报——轮询等待，上限 60s。CI 实证：34706845122 两次 attempt 各差一个 probe。
+# 固定窗口会误报——轮询等待，上限 60s；读法按 tag 过滤（见上方 -G/-s 注记）
 probe_deadline=$((SECONDS + 60))
 probes=""
 while (( SECONDS < probe_deadline )); do
-  probes=$("$ADB" logcat -d -t 2000)
+  probes=$("$ADB" logcat -d -s ZeroWebRole:*)
   if grep -q "decoder probe succeeded" <<<"$probes" && grep -q "compositor bridge ready" <<<"$probes"; then
     break
   fi
@@ -69,7 +72,7 @@ for probe in "decoder probe succeeded" "compositor bridge ready"; do
 done
 if [[ "$require_renderer" == 1 ]]; then
   while (( SECONDS < probe_deadline )); do
-    probes=$("$ADB" logcat -d -t 2000)
+    probes=$("$ADB" logcat -d -s ZeroWebRole:*)
     if grep -q "renderer socket connected" <<<"$probes" && grep -q "renderer page frame ready" <<<"$probes"; then
       break
     fi
