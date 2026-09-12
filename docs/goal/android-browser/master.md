@@ -2,7 +2,7 @@
 
 **入口文档**: [../android-browser.md](../android-browser.md)
 **创建日期**: 2026-09-07（goal 拆分 bootstrap）
-**最后更新**: 2026-09-07（立项——M1 待启动）
+**最后更新**: 2026-09-12（M1 切片 1 本地构建打通，见 evidence/local-toolchain-bootstrap.md）
 
 ---
 
@@ -51,6 +51,10 @@
 
 1. **M1 切片 1**：本地打通 NDK 交叉编译 android-browser/rust + Gradle assemble，
    记录依赖与可重复命令到 evidence/
+   → 2026-09-12 基础路径已打通（默认 feature、无 V8）：cargo 交叉编译 277 crate 通过 +
+   `make android-release-apk` 产出 unsigned APK；依赖与可重复命令见
+   [evidence/local-toolchain-bootstrap.md](evidence/local-toolchain-bootstrap.md)。
+   剩余：renderer feature 路径（V8 从源码，5 项前置缺 3）、gradlew 可执行位入库修复
 2. **M1 切片 2**：CI Android job 落地（照既有 build-and-test 矩阵风格；不 continue-on-error）
 3. **M1 切片 3**：README/版本串对齐
 
