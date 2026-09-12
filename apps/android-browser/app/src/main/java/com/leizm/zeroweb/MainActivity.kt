@@ -47,6 +47,13 @@ class MainActivity : ComponentActivity() {
     private var rendererConnection: ServiceConnection? = null
     private var readyServiceCount by mutableStateOf(0)
 
+    /** 待补导航的 URL：槽重绑 attach 完成后消费（断连/换槽恢复）。 */
+    private var pendingRestoreUrl: String? = null
+    /** 恢复尝试节流：单标签连续 3 次未成功即停，防止 renderer 反复死亡引发循环重绑。 */
+    private var restoreAttempts = 0
+    /** 正在绑定中的 renderer 槽号（onServiceConnected 到达前防重复触发 rebind）。 */
+    private var pendingRendererBindSlot: Int? = null
+
     /** RFC §6.3：8 个 renderer Service 槽位类，下标即槽号（RendererServiceN = 槽 N）。 */
     private val rendererServiceClasses =
         listOf(
@@ -123,6 +130,7 @@ class MainActivity : ComponentActivity() {
 
     private fun loadBrowserProfile() {
         applySnapshot(NativeBridge.nativeLoadProfile(filesDir.resolve("profile").absolutePath))
+        restoreActiveTabRenderer()
     }
 
     private fun handleExternalIntent(intent: Intent?) {
@@ -134,6 +142,7 @@ class MainActivity : ComponentActivity() {
         }
         if (NativeBridge.nativeNewTabWithUrl(url)) {
             refreshBrowserSnapshot()
+            restoreActiveTabRenderer()
         } else {
             browserError = "仅支持 HTTP(S) 外部地址"
         }
@@ -145,6 +154,8 @@ class MainActivity : ComponentActivity() {
 
     private fun navigate(url: String) {
         if (NativeBridge.nativeNavigate(url)) {
+            restoreAttempts = 0
+            pendingRestoreUrl = null
             refreshBrowserSnapshot()
             refreshRendererPreview()
         } else {
@@ -153,12 +164,47 @@ class MainActivity : ComponentActivity() {
             if (NativeBridge.nativeRendererLinked() && slot != null &&
                 !NativeBridge.nativeIsRendererAttached(slot)
             ) {
-                // 渲染进程死亡/LRU 换槽后该槽未附着：按快照指示重绑对应槽
-                // （android-browser goal M3 切片 1/2——断连恢复与多标签换槽）。
+                // 渲染进程死亡/LRU 换槽后该槽未附着：按快照指示重绑对应槽，
+                // attach 完成后补导航本次目标 URL。
+                pendingRestoreUrl = url
                 rebindRenderer(slot)
                 browserError = "渲染进程恢复中，请重试"
             } else {
                 browserError = "仅支持有效的 HTTP(S) 地址"
+            }
+        }
+    }
+
+    /**
+     * 活动标签渲染恢复（LRU 逐出切回/启动恢复/外部intent新标签）：有 URL 而无附着槽
+     * 时先导航（native 侧顺带分配槽），失败则按快照指示重绑并挂起补导航。
+     */
+    private fun restoreActiveTabRenderer() {
+        if (!NativeBridge.nativeRendererLinked()) return
+        val snapshot = browserState ?: return
+        val url = snapshot.tabs.firstOrNull { it.id == snapshot.activeTabId }?.url ?: return
+        val slot = snapshot.activeRendererSlot
+        if (slot != null && NativeBridge.nativeIsRendererAttached(slot)) {
+            // 槽在：有帧直接刷新预览；无帧（attach 后从未加载本标签内容）补导航
+            if (rendererPreview == null) navigate(url) else refreshRendererPreview()
+            return
+        }
+        if (restoreAttempts >= 3) {
+            android.util.Log.e("ZeroWebRole", "renderer restore exceeded attempts")
+            return
+        }
+        if (NativeBridge.nativeNavigate(url)) {
+            refreshRendererPreview()
+            return
+        }
+        refreshBrowserSnapshot()
+        val newSlot = browserState?.activeRendererSlot
+        if (newSlot != null && !NativeBridge.nativeIsRendererAttached(newSlot)) {
+            pendingRestoreUrl = url
+            if (pendingRendererBindSlot == newSlot) {
+                android.util.Log.i("ZeroWebRole", "restore pending bind of slot $newSlot")
+            } else {
+                rebindRenderer(newSlot)
             }
         }
     }
@@ -169,8 +215,9 @@ class MainActivity : ComponentActivity() {
 
     private fun selectTab(id: Long) {
         if (NativeBridge.nativeSelectTab(id)) {
+            restoreAttempts = 0
             refreshBrowserSnapshot()
-            refreshRendererPreview()
+            restoreActiveTabRenderer()
         }
     }
 
@@ -211,6 +258,9 @@ class MainActivity : ComponentActivity() {
         val connection = object : ServiceConnection {
             override fun onServiceConnected(name: ComponentName, service: IBinder) {
                 readyServiceCount += 1
+                if (roleService in rendererServiceClasses) {
+                    pendingRendererBindSlot = null
+                }
                 if (roleService in rendererServiceClasses && NativeBridge.nativeRendererLinked()) {
                     val sockets = ParcelFileDescriptor.createSocketPair()
                     IRoleService.Stub.asInterface(service).start(sockets[1])
@@ -248,14 +298,22 @@ class MainActivity : ComponentActivity() {
             }
         }
         serviceConnections += connection
-        if (roleService in rendererServiceClasses) {
+        val rendererSlotIndex = rendererServiceClasses.indexOf(roleService)
+        if (rendererSlotIndex >= 0) {
             rendererConnection = connection
+            pendingRendererBindSlot = rendererSlotIndex
         }
         bindService(Intent(this, roleService), connection, Context.BIND_AUTO_CREATE)
     }
 
     /** renderer 断连/换槽后的重绑：关旧 socket、解绑旧连接、按槽重新走 bind → socketpair → attach。 */
     private fun rebindRenderer(slot: Int) {
+        if (restoreAttempts >= 3) {
+            android.util.Log.e("ZeroWebRole", "renderer rebind exceeded attempts for slot $slot")
+            browserError = "渲染进程恢复失败，请稍后重试"
+            return
+        }
+        restoreAttempts += 1
         rendererSocket?.close()
         rendererSocket = null
         rendererConnection?.let { connection ->
@@ -272,14 +330,28 @@ class MainActivity : ComponentActivity() {
         val slot = browserState?.activeRendererSlot ?: 0
         if (!compositorAttached || !NativeBridge.nativeAttachRenderer(slot, socket.detachFd())) return
         rendererSocket = null
-        refreshRendererPreview()
+        // 断连/换槽恢复链：attach 完成即补导航被挂起的 URL（如为空则刷新预览）
+        val restoreUrl = pendingRestoreUrl
+        pendingRestoreUrl = null
+        if (restoreUrl != null) {
+            navigate(restoreUrl)
+        } else {
+            refreshRendererPreview()
+        }
     }
 
     private fun refreshRendererPreview() {
-        val slot = browserState?.activeRendererSlot ?: 0
+        // 被逐标签（有快照但无槽）没有本标签帧：预览留空，不可错拿其他槽的帧
+        val snapshot = browserState
+        val slot = if (snapshot == null) 0 else snapshot.activeRendererSlot
+        if (snapshot != null && slot == null) {
+            rendererPreview = null
+            return
+        }
+        val targetSlot = slot ?: 0
         listOf(1_000L, 5_000L, 10_000L).forEach { delayMillis ->
             window.decorView.postDelayed({
-                rendererPreview = NativeBridge.nativeLatestPageFrame(slot)?.toBitmap(320, 180)
+                rendererPreview = NativeBridge.nativeLatestPageFrame(targetSlot)?.toBitmap(320, 180)
                 if (rendererPreview == null) android.util.Log.e("ZeroWebRole", "renderer page frame unavailable")
                 else {
                     refreshBrowserSnapshot()

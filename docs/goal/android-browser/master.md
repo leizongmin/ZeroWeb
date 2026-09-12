@@ -43,8 +43,11 @@
   → 2026-09-12 续：**M3 切片 2 多标签换槽落地**（`e226fe361`）——facade tab→slot 亲和表
   （空闲优先/LRU 逐出/关闭回收，host 测试覆盖）、native 8 槽注册表（transport/帧缓冲/
   meta 全部按槽），navigate 路由活动槽、fetch 响应按来路槽回、snapshot 增
-  `activeRendererSlot` 驱动 Kotlin 按槽绑槽与预览。剩余：被逐标签切回的自动重导航
-  （facade 有 URL，待接）、真机冒烟（M3 收口）
+  `activeRendererSlot` 驱动 Kotlin 按槽绑槽与预览
+  → 2026-09-12 续：**被逐标签切回自动重导航落地**——快照驱动恢复（有 URL 无附着槽 →
+  导航分配槽 → 失败按槽重绑 → attach 后补导航），启动恢复上次会话活动标签、外部
+  intent 新标签同链路；rebind 节流（3 次/选择周期）防循环；被逐标签预览留空不再
+  错拿他槽帧。多标签换槽功能面就此闭环，余真机冒烟（M3 收口）
 - ⚠️ 版本串不一致：lib.rs `M2` vs README `M0`（文档滞后）
 - ⚠️ RFC `docs/specs/android-browser-spec-rfc.md`（1097 行）状态「待确认」；
   FR-006/007/009 未见对应代码
