@@ -2,7 +2,9 @@
 
 **版本**: v1.0
 **日期**: 2026-09-07
-**状态**: Active
+**状态**: ✅ Completed（2026-09-12——DC-1~4 满足收口；DC-3「显式 task queue」子项经用户
+决策缓行挂账（2026-09-12，驱动用例消失 + WPT 可观测面稀薄，重入条件见 master.md 决策
+清单）；归档 `docs/goal/archive/event-loop-spec.md` + `docs/goal/archive/event-loop-spec/`）
 **执行模式**: 轻量修复优先（永不停）；遇需用户决策项或深结构方向 → 记入「待用户决策」清单 → 跳过 → 继续其他轻量修复
 **父目标**: `docs/goal/zero-web.md`（P1a 非阻塞 follow-up + DC2 缺口②「事件循环 microtask
 checkpoint 时序简化」）
@@ -134,33 +136,57 @@ checkpoint 时序简化」）
 
 ### DC-1: WPT 用例导入与通过率基线
 
-- [ ] 从上游 WPT 导入 `intersection-observer` / `resize-observer` window 可执行面真实用例；
-      新增 fetch 脚本（照 indexeddb/cache-storage 先例）
-- [ ] 建立分类通过率报告（文本 + JSON），记录基线
-- [ ] 事件循环时序差距清单（对照 HTML spec 事件循环算法逐条标注现状）持久化到 evidence/
-- [ ] 每项修复的 driving WPT 用例经常驻断言集并记入账本（`imported-testharness.txt`）
+- [x] 从上游 WPT 导入 `intersection-observer` / `resize-observer` window 可执行面真实用例；
+      新增 fetch 脚本（照 indexeddb/cache-storage 先例）——`fetch-observers-subset.sh`
+      （WPT pin `3159769338`，110 IO + 40 RO），M1 切片 1（2026-09-11）
+- [x] 建立分类通过率报告（文本 + JSON），记录基线——evidence/2026-09-11-m1-observers-wpt-baseline.{md,json}
+      （29.7%）→ 切片 3 语义修齐 41.4% → ④ viewport 真值桥接后 IO 100/218 = 45.9%
+      （evidence/2026-09-12-m4-runner-viewport-bridging.md）
+- [x] 事件循环时序差距清单（对照 HTML spec 事件循环算法逐条标注现状）持久化到 evidence/
+      ——evidence/2026-09-11-m1-event-loop-gap-list.md（M1 切片 2）
+- [x] 每项修复的 driving WPT 用例经常驻断言集并记入账本（`imported-testharness.txt`）
+      ——114 用例 `EVLOOP-M1-observers-baseline` + MO 12 文件（js-dom 账本沿用）
 
 ### DC-2: MutationObserver host 侧触发
 
-- [ ] dom 层 `pending_mutations` 通知端接活（方案 C hybrid：共享注册表 + host hook 投递）
-- [ ] host 驱动 mutation（native 路径 DOM 操作）可被页面 MO 观测（端到端测试：native
-      appendChild → 页面 MO 回调收到记录）
-- [ ] NodeId↔handle/selector 身份桥接（R3106 关联复用）
-- [ ] kill-switch 门控 + JS 驱动路径零回归（polyfill MO 现有测试全绿）
+- [x] dom 层 `pending_mutations` 通知端接活（方案 C hybrid：共享注册表 + host hook 投递）
+      ——MO-S1（`drain_native_mutations_to_mo` 挂 execute_script/with_dom/dispatch_event
+      三检测面尾）+ MO-S2 三批深化（previousSibling/nextSibling 反推导、removed '#id'
+      回落、fragment flatten 锁定、quickjs 对等接线）
+- [x] host 驱动 mutation（native 路径 DOM 操作）可被页面 MO 观测（端到端测试：native
+      appendChild → 页面 MO 回调收到记录）——`crates/webview/src/tests/mo_host_trigger.rs`
+      （attributes/childList/fragment/oldValue 全链）
+- [x] NodeId↔handle/selector 身份桥接（R3106 关联复用）——`unique_selector_for_node`
+      唯一性校验 + 脱树 '#id' 回落
+- [x] kill-switch 门控 + JS 驱动路径零回归（polyfill MO 现有测试全绿）——A/B 双 corpus
+      逐 subtest 零 delta（MO 138 subtests + IO/RO）后 ②b default-on（2026-09-12，
+      `ZW_MO_HOST_TRIGGER=0` opt-out；evidence/2026-09-12-m2-mo-host-trigger-default-on.md）
 
 ### DC-3: microtask checkpoint spec 化
 
-- [ ] 显式 task queue 结构落地（setTimeout/rAF/rIC/MO/IO 回调统一排队）
-- [ ] per-task microtask checkpoint（kill-switch 默认 OFF）
-- [ ] 全量 A/B 零回归后 default-on（A/B 有回归即回退并记录结论）
-- [ ] reftest 单渲染路径（同步 stub 约束）保持有效
+- [ ] ~~显式 task queue 结构落地（setTimeout/rAF/rIC/MO/IO 回调统一排队）~~
+      **经用户决策缓行挂账（2026-09-12）**：驱动用例已消失（R2952 `(expiry,seq)` heap
+      保证生产 timer 顺序）+ 跨 task source 优先级 WPT 可观测面稀薄，无可验证成功标准；
+      重入条件 = 跨 task source 顺序语义的 driving WPT 失败簇出现（master.md 决策清单）
+- [x] per-task microtask checkpoint（kill-switch 默认 OFF）——M3-S1 runner timer 泵 +
+      M3-S2 renderer `tick_observers` 双面落地，均先 kill-switch 默认 OFF land
+- [x] 全量 A/B 零回归后 default-on（A/B 有回归即回退并记录结论）——②a timer 泵
+      （`ZW_TESTHARNESS_TIMER_PER_TASK=0` opt-out，runner 侧，新基线 A/B 零可复现 delta，
+      evidence/2026-09-12-m3-per-task-default-on.md）+ ②b MO host trigger（全量 make test
+      ON 臂 16,659P/1F，唯一失败即默认断言面本身）；renderer tick default-on 压后挂账
+      （前置条件：product-smoke 基线恢复 + 三面 A/B + 正向收益判据，master.md 决策清单）
+- [x] reftest 单渲染路径（同步 stub 约束）保持有效——收口轮 make reftest 687/687 全绿
+      （`ZW_RAF_FRAME_DRIVEN` 保持 opt-in、reftest 不走 testharness probe 循环）
 
 ### DC-4: 测试与质量不可退让
 
-- [ ] `make test` 全绿，零失败
-- [ ] `cargo clippy --workspace --all-targets -- -D warnings` 零警告
-- [ ] 每项修复有对应单元测试 + driving WPT 用例资产化
-- [ ] `make reftest` 无回归（时序变更的渲染面守卫）
+- [x] `make test` 全绿，零失败——收口轮 19,155P/0F（2026-09-12 新默认基线）
+- [x] `cargo clippy --workspace --all-targets -- -D warnings` 零警告——每切片提交前验证
+- [x] 每项修复有对应单元测试 + driving WPT 用例资产化——M2/M3 各切片带单测
+      （mo_host_trigger 组 4P、runner 213P、renderer tick_per_task 2 案）+ IO/RO/MO
+      上游 corpus 常驻（114 用例账本）
+- [x] `make reftest` 无回归（时序变更的渲染面守卫）——收口轮 687/687（Layout 485 +
+      Text 202）
 
 ---
 
@@ -233,8 +259,8 @@ default-on）→ DC 全满足判定。
 
 - **入口文档**（本文件）：定义 Mission、Done Criteria、执行协议和文档治理规则。**修改条件**：
   仅在目标本身发生实质性变化时修改。**禁止行为**：每轮执行不重写本文件。
-- **运行时控制平面** `docs/goal/event-loop-spec/master.md`：当前真实状态的唯一控制面板。
+- **运行时控制平面** `docs/goal/archive/event-loop-spec/master.md`：当前真实状态的唯一控制面板。
   治理规则：持续演进、不允许无限增长（过时内容压缩或归档）、各章节必须自洽。
-- **归档区域** `docs/goal/event-loop-spec/archive/`：只追加不修改。
-- **证据区域** `docs/goal/event-loop-spec/evidence/`：通过率报告、A/B 证据、差距清单，
+- **归档区域** `docs/goal/archive/event-loop-spec/archive/`：只追加不修改。
+- **证据区域** `docs/goal/archive/event-loop-spec/evidence/`：通过率报告、A/B 证据、差距清单，
   持续追加。
