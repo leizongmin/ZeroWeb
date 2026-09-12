@@ -3,7 +3,10 @@
 **入口文档**: [../android-browser.md](../android-browser.md)
 **创建日期**: 2026-09-07（goal 拆分 bootstrap）
 **最后更新**: 2026-09-13（**目标 DONE**：DC-1~4 全满足并经终树复验；chrome 级冒烟 +
-chaos 断连恢复 CI 稳定绿；剩余为真机/renderer 门控项待设备，详见下方「下一步」）
+chaos 断连恢复 CI 稳定绿；剩余为真机/renderer 门控项待设备，详见下方「下一步」。
+终局复核补齐：`apps/android-browser/rust/README.md` 对齐代码事实——28 个 JNI 导出面
+（含 facade 桥接 12 个 chrome 状态导出）、16 项宿主单测、make 三构建入口 + 产物路径 +
+签名 + CI 门禁，DC-2「构建文档」由滞后转为实际满足）
 
 ---
 
@@ -30,7 +33,7 @@ chaos 断连恢复 CI 稳定绿；剩余为真机/renderer 门控项待设备，
 
 | 里程碑 | 状态 |
 |--------|------|
-| M1 — CI 门禁 + 构建修复 | ✅ 完成（CI job 全绿、本地双路径打通、README/版本串对齐） |
+| M1 — CI 门禁 + 构建修复 | ✅ 完成（CI job 全绿、本地双路径打通、README/版本串对齐——README 终态对齐 2026-09-13 补齐：28 JNI 导出面/16 宿主单测/make 入口+产物+签名） |
 | M2 — 回归保护 + 可安装产物 | ✅ 完成（构建入口/签名/构建文档；宿主侧纯逻辑单测 16 项，进程拓扑断言入 install-smoke） |
 | M3 — 冒烟验收 + 决策清单 | ✅ 完成（决策清单 ✅ RFC 批准；**chrome 级模拟器冒烟 CI 稳定绿**——拓扑/UID 隔离/双 probe，连续两轮，evidence/ci-emulator-smoke.md；页面级/真机归 M4 验收） |
 | M4 — 完整首期功能（RFC 路线） | 🔶 代码面全部落地（FR-006 全链路/缩略图/双语+无障碍）；**端到端待设备（门控项，不算未满足 DC）** |
@@ -41,7 +44,7 @@ chaos 断连恢复 CI 稳定绿；剩余为真机/renderer 门控项待设备，
 | # | 缺口 | 状态 |
 |---|------|------|
 | P1 | Android CI job | ✅ ci.yml android job 全绿（34665015108） |
-| P2 | 版本串/README/RFC 文档滞后 | ✅ 全部对齐（RFC 2026-09-12 批准） |
+| P2 | 版本串/README/RFC 文档滞后 | ✅ 全部对齐（RFC 2026-09-12 批准；rust/README.md 2026-09-13 终态对齐：28 JNI 导出面含 facade 桥接、16 宿主单测、make 三入口+产物路径+签名） |
 | P3 | JNI 桥接测试 + 进程角色冒烟断言 | ✅ 宿主侧纯逻辑单测 16 项 + install-smoke.sh 拓扑/UID/probe 断言 + chaos-smoke.sh 断连恢复断言 |
 | P4 | APK 构建入口 + 构建文档 | ✅ make 四入口（test-guard 包裹）+ 签名 + evidence 文档 |
 | P5 | 模拟器/真机冒烟**执行**与证据 | ✅ chrome 级 + chaos：CI 模拟器稳定绿（34711012620/34711555597，evidence/ci-emulator-smoke.md + ci-chaos-smoke.md）；真机端到端待设备（门控项） |
