@@ -37,6 +37,9 @@
   `renderer_id` 透传本轮补齐；剩余真缺口=多标签换槽接线（MainActivity 现只绑 slot 0）
   与真机验证（M3）。默认 release 构建不含 renderer feature（renderer-less shell 产物，
   `nativeRendererLinked()` 门控），完整版走 `make android-renderer-apk`
+  → 2026-09-12 续：**M3 切片 1 renderer 断连恢复落地**（`6b1ee64ce`）——recv 断连清槽 +
+  attach 握手失败清槽 + `nativeIsRendererAttached` 查询 + Kotlin 导航失败重绑
+  RendererService0。M3 切片 2（多标签换槽：slot 1-7 接线 + LRU 挂起）待排期
 - ⚠️ 版本串不一致：lib.rs `M2` vs README `M0`（文档滞后）
 - ⚠️ RFC `docs/specs/android-browser-spec-rfc.md`（1097 行）状态「待确认」；
   FR-006/007/009 未见对应代码
