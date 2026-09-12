@@ -3,6 +3,13 @@
 use std::net::SocketAddr;
 
 use super::HeadlessServer;
+use super::session::HeadlessSession;
+
+/// 归一化发现路径 — 容忍尾斜杠（Playwright connectOverCDP 实际请求
+/// `/json/version/`，精确匹配会 404 致首连失败）。
+pub(super) fn normalize_discovery_path(path: &str) -> &str {
+    path.trim_end_matches('/')
+}
 
 impl HeadlessServer {
     /// 判断是否为普通 HTTP GET 请求（非 WebSocket 升级）。
@@ -26,11 +33,12 @@ impl HeadlessServer {
     }
 
     /// 处理 HTTP 发现请求（CDP 风格的 /json 端点）。
-    pub(super) fn handle_http_discovery(stream: &std::net::TcpStream, addr: SocketAddr) {
+    pub(super) fn handle_http_discovery(&self, stream: &std::net::TcpStream, session: &HeadlessSession) {
         use std::io::{Read, Write};
 
+        let addr = self.addr;
         let mut read_buf = [0u8; 4096];
-        let path = if let Ok(mut readable) = stream.try_clone() {
+        let raw_path = if let Ok(mut readable) = stream.try_clone() {
             let n = readable.read(&mut read_buf).unwrap_or(0);
             let request = String::from_utf8_lossy(&read_buf[..n]);
             request
@@ -44,23 +52,11 @@ impl HeadlessServer {
         } else {
             "/".to_string()
         };
+        let path = normalize_discovery_path(&raw_path);
 
-        let (status, content_type, body) = match path.as_str() {
+        let (status, content_type, body) = match path {
             "/json/version" => ("200 OK", "application/json", Self::http_version_json(addr)),
-            "/json" | "/json/list" => (
-                "200 OK",
-                "application/json",
-                serde_json::json!([{
-                    "description": "ZeroWeb headless instance",
-                    "devtoolsFrontendUrl": format!("devtools://devtools/bundled/inspector.html?ws={addr}"),
-                    "id": "zeroweb-main",
-                    "title": "ZeroWeb",
-                    "type": "page",
-                    "url": "about:blank",
-                    "webSocketDebuggerUrl": format!("ws://{addr}"),
-                }])
-                .to_string(),
-            ),
+            "/json" | "/json/list" => ("200 OK", "application/json", http_targets_json(session, addr)),
             _ => ("404 Not Found", "text/plain", "Not Found".to_string()),
         };
 
@@ -88,4 +84,27 @@ impl HeadlessServer {
         })
         .to_string()
     }
+}
+
+/// HTTP GET /json、/json/list — 按真实标签页枚举 page target（CDP shape）。
+///
+/// url/title 取自 shell 模型（`BrowserShell::tabs()`），id 与 TabId 一一对应
+/// （`zeroweb-tab-<n>`），供后续 Target 域把 targetId 映射回标签页。
+pub(super) fn http_targets_json(session: &HeadlessSession, addr: SocketAddr) -> String {
+    let targets: Vec<serde_json::Value> = session
+        .shell
+        .tabs()
+        .map(|tab| {
+            serde_json::json!({
+                "description": "",
+                "devtoolsFrontendUrl": format!("devtools://devtools/bundled/inspector.html?ws={addr}"),
+                "id": format!("zeroweb-tab-{}", tab.id().0),
+                "title": tab.title().unwrap_or("ZeroWeb"),
+                "type": "page",
+                "url": tab.url().unwrap_or("about:blank"),
+                "webSocketDebuggerUrl": format!("ws://{addr}"),
+            })
+        })
+        .collect();
+    serde_json::to_string(&targets).unwrap_or_else(|_| "[]".to_string())
 }

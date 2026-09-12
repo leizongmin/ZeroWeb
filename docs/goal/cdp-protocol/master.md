@@ -28,11 +28,20 @@
 | P4 | Node/Playwright 测试链（pin + E2E 用例集 + make 入口） | 🔶 pin 工程已入库（tests/playwright-matrix/，playwright-core 1.63.0）；E2E 用例与 make 入口随 M1 建 |
 | P5 | console 对象化（V8 侧结构化序列化，替换扁平字符串） | ⏳ M4（矩阵 G5） |
 | P6 | net 请求事件总线（Network 域 + devtools Network 面板共用脊柱） | ⏳ M4（矩阵 G4） |
-| P7 | WS 层 sessionId 多路复用（单连接扁平会话 → per-target session，响应回显 sessionId） | ⏳ M1 结构前提（矩阵 G1，2026-09-12 捕获新增） |
-| P8 | `/json/version` 尾斜杠 404（Playwright 请求 `/json/version/`） | ⏳ M1（矩阵 G2，2026-09-12 捕获新增） |
+| P7 | WS 层 sessionId 多路复用（单连接扁平会话 → per-target session，响应回显 sessionId） | 🔶 M1 切片 2 传输面完成：解析/回显/未附接校验（-32001）+ 附接注册表；per-target 真路由随切片 3 Target 域落地 |
+| P8 | `/json/version` 尾斜杠 404（Playwright 请求 `/json/version/`） | ✅ M1 切片 2（normalize_discovery_path 容忍尾斜杠；`/json`、`/json/list` 同步受益） |
 
 ## 已完成切片
 
+- **S3（2026-09-12）M1 切片 2 — 传输层 sessionId 复用 + 发现端点修正**：`ClientRequest/
+  ServerResponse` 增 `sessionId`（camelCase rename，回显 + 未附接 `-32001`）；`/json/version`
+  尾斜杠容忍（P8/G2 收口）；`/json`、`/json/list` 按真实标签页枚举（`zeroweb-tab-<n>`，
+  url/title 取自 shell 模型）；会话提升为服务器级（target 跨连接持续，CDP 语义）；**实测
+  拦截两个传输层存量 bug**——tungstenite 0.29 `write()` 小消息不落盘（响应滞留缓冲）+
+  peek 阶段 5s read timeout 未恢复（空闲误杀连接），已修并沉淀 learning（2026-09-12
+  tungstenite-write-buffer-stale-read-timeout）。Playwright 直连 smoke：WS 往返已通，
+  connect 推进至 `Browser.getVersion` -32601（切片 3 范围）。`make test` 19,174P/0F
+  （基线 19,170 + 新增 4 传输层单测）。
 - **S2（2026-09-12）M1 切片 1 — headless.rs 职责拆分**（P2/G6 收口）：`apps/browser/src/headless.rs`
   （2256 行超限）→ `headless/` 9 模块（mod=transport / protocol / session / security /
   discovery / domains / client / tests / gpu_screenshot_tests），纯搬移零语义变化，
@@ -48,13 +57,12 @@
 
 ## 下一步计划
 
-1. **M1 切片 2**：传输层 sessionId 多路复用（P7/G1）+ `/json/version` 尾斜杠（P8/G2）
-   + `/json` 真实 target 枚举——headless/mod.rs transport 面改造，响应回显 sessionId
-2. **M1 切片 3**：Target 域（setAutoAttach flatten / getTargetInfo / createTarget）+
+1. **M1 切片 3**：Target 域（setAutoAttach flatten / getTargetInfo / createTarget /
+   attachedToTarget 事件 + attach_session 注册表接线）+ `Browser.getVersion` +
    Runtime.enable / evaluate remoteObject 雏形 / releaseObject / runIfWaitingForDebugger
    stub → `CDP_ENDPOINT_URL=… npm run capture:chromium` 首连验收（steps-report 为差距
-   清单）
-3. **M2-M4**：按矩阵三态逐域收敛；cookie 落点以 **Storage.getCookies/setCookies/
+   清单；smoke 已确认 connect 首个缺口是 `Browser.getVersion` -32601）
+2. **M2-M4**：按矩阵三态逐域收敛；cookie 落点以 **Storage.getCookies/setCookies/
    clearCookies** 为准（发现 #2 修正）；CSS.getMatchedStylesForNode 与 DOM.getDocument
    归 M3 goal 扩展面（devtools 前置）
 
@@ -66,7 +74,7 @@
 
 | 里程碑 | 状态 |
 |--------|------|
-| M1 — 传输/发现/Target 基座 + Playwright 首连 | 🚧 拆分完成（S2）+ 前置资产（S1）；sessionId 多路复用与 Target/Runtime 域未开始 |
+| M1 — 传输/发现/Target 基座 + Playwright 首连 | 🚧 传输/发现面完成（S2 拆分 + S3 sessionId/尾斜杠/枚举）；Target/Runtime 域未开始（首连缺口 = `Browser.getVersion`） |
 | M2 — Page/Input 域 → 点击/填充/键盘/导航流 | ⏳ |
 | M3 — DOM/CSS/Emulation → locator 流 | ⏳ |
 | M4 — Network/cookies/console 对象化（cookie 落点=Storage 域） | ⏳ |

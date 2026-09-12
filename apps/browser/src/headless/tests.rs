@@ -110,6 +110,7 @@ fn test_server_response_serialize() {
         id: 1,
         result: Some(serde_json::json!({"ready": true})),
         error: None,
+        session_id: None,
     };
     let json = serde_json::to_string(&resp).unwrap();
     assert!(json.contains("\"id\":1"));
@@ -126,6 +127,7 @@ fn test_server_response_error() {
             code: -32601,
             message: "Unknown method".into(),
         }),
+        session_id: None,
     };
     let json = serde_json::to_string(&resp).unwrap();
     assert!(json.contains("\"error\""));
@@ -335,6 +337,65 @@ fn test_dispatch_cdp_network_enable() {
     assert!(events.is_empty());
 }
 
+// ── M1 切片 2：CDP 传输层（sessionId 复用 / 发现端点尾斜杠 / 真实 target 枚举）──
+
+#[test]
+fn test_discovery_path_trailing_slash() {
+    use super::discovery::normalize_discovery_path;
+    assert_eq!(normalize_discovery_path("/json/version/"), "/json/version");
+    assert_eq!(normalize_discovery_path("/json/version"), "/json/version");
+    assert_eq!(normalize_discovery_path("/json/list/"), "/json/list");
+    // 根路径剥成空串 → 走 404 分支（与旧行为等价："/" 不匹配任何端点）
+    assert_eq!(normalize_discovery_path("/"), "");
+}
+
+#[test]
+fn test_session_id_echoed_in_response() {
+    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let mut session = HeadlessSession::new(800.0, 600.0);
+    server.attach_session("test-session-1");
+    let raw = r#"{"id":7,"method":"session.status","params":{},"sessionId":"test-session-1"}"#;
+    let (response, _) = server.handle_message_with_events(&mut session, raw);
+    assert!(response.result.is_some());
+    assert_eq!(response.session_id.as_deref(), Some("test-session-1"));
+}
+
+#[test]
+fn test_unknown_session_id_rejected() {
+    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let mut session = HeadlessSession::new(800.0, 600.0);
+    let raw = r#"{"id":8,"method":"session.status","params":{},"sessionId":"ghost"}"#;
+    let (response, _) = server.handle_message_with_events(&mut session, raw);
+    let error = response.error.expect("unknown session must error");
+    assert_eq!(error.code, -32001);
+    assert!(error.message.contains("ghost"));
+    // 回显 sessionId（客户端需据以配对）
+    assert_eq!(response.session_id.as_deref(), Some("ghost"));
+}
+
+#[test]
+fn test_json_targets_enumerates_real_tabs() {
+    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let mut session = HeadlessSession::new(800.0, 600.0);
+    // 枚举前新建一个标签页并给活跃页导航，验证 url 取自 shell 模型
+    //（BrowserShell::new 自带 1 个默认 tab，故用增量断言而非绝对数）。
+    let before = session.shell.tab_count();
+    session.shell.new_tab(None);
+    session.shell.navigate("https://example.com/page");
+
+    let targets: Vec<serde_json::Value> =
+        serde_json::from_str(&super::discovery::http_targets_json(&session, server.addr())).unwrap();
+    assert_eq!(targets.len(), before + 1, "one entry per tab");
+    assert!(targets.iter().all(|t| t["type"] == "page"));
+    assert!(
+        targets.iter().any(|t| t["url"] == "https://example.com/page"),
+        "navigated url must appear in discovery list"
+    );
+    let ids: Vec<&str> = targets.iter().map(|t| t["id"].as_str().unwrap()).collect();
+    assert!(ids.iter().all(|id| id.starts_with("zeroweb-tab-")));
+    assert!(!ids.contains(&"zeroweb-main"), "static placeholder id retired");
+}
+
 #[test]
 fn test_dispatch_cdp_target_get_targets() {
     let server = HeadlessServer::new(0, 800.0, 600.0);
@@ -467,11 +528,13 @@ impl ProtocolTestRunner {
                 id,
                 result: Some(value),
                 error: None,
+                session_id: None,
             },
             Err(err) => ServerResponse {
                 id,
                 result: None,
                 error: Some(err),
+                session_id: None,
             },
         };
         let response_json = serde_json::to_string(&response).unwrap();

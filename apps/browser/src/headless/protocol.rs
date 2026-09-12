@@ -6,6 +6,9 @@ use serde_json::Value;
 // ── 协议消息类型 ──
 
 /// 接收到的客户端请求。
+///
+/// CDP 扁平协议：浏览器级命令不带 `sessionId`；附接目标上的命令携带
+/// `Target.attachedToTarget` 分配的 `sessionId`，响应必须原样回显。
 #[derive(Debug, Deserialize)]
 pub(super) struct ClientRequest {
     /// 消息 ID，响应时原样返回。
@@ -15,6 +18,9 @@ pub(super) struct ClientRequest {
     /// 命令参数。
     #[serde(default)]
     pub(super) params: Value,
+    /// CDP 会话 ID（附接目标上的命令携带；缺省 = 浏览器级命令）。
+    #[serde(default, rename = "sessionId")]
+    pub(super) session_id: Option<String>,
 }
 
 /// 发送给客户端的响应。
@@ -28,6 +34,9 @@ pub(super) struct ServerResponse {
     /// 错误信息（失败时）。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) error: Option<ProtocolError>,
+    /// 回显请求的 CDP 会话 ID（仅当请求携带时序列化）。
+    #[serde(skip_serializing_if = "Option::is_none", rename = "sessionId")]
+    pub(super) session_id: Option<String>,
 }
 
 /// 协议错误。

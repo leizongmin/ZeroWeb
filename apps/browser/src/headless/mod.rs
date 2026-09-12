@@ -41,8 +41,6 @@ use session::HeadlessSession;
 
 // ── 协议服务器 ──
 
-// ── 协议服务器 ──
-
 /// 无头协议服务器。
 pub struct HeadlessServer {
     /// 监听地址。
@@ -55,6 +53,9 @@ pub struct HeadlessServer {
     pub(super) viewport_height: f32,
     /// 安全配置（Phase 5）。
     security: HeadlessSecurityConfig,
+    /// 已附接的 CDP sessionId 注册表（Target.attachedToTarget 时登记；
+    /// 命令携带未登记 sessionId → `-32001`）。切片 3 Target 域写入。
+    attached_sessions: std::sync::Mutex<std::collections::HashSet<String>>,
 }
 
 impl HeadlessServer {
@@ -67,7 +68,24 @@ impl HeadlessServer {
             viewport_width,
             viewport_height,
             security: HeadlessSecurityConfig::default(),
+            attached_sessions: std::sync::Mutex::new(std::collections::HashSet::new()),
         }
+    }
+
+    /// 登记 CDP sessionId（Target 域附接目标时调用）。
+    pub(super) fn attach_session(&self, session_id: &str) {
+        self.attached_sessions
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(session_id.to_string());
+    }
+
+    /// 查询 sessionId 是否已附接。
+    pub(super) fn session_attached(&self, session_id: &str) -> bool {
+        self.attached_sessions
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .contains(session_id)
     }
 
     /// 设置安全配置。
@@ -95,6 +113,10 @@ impl HeadlessServer {
 
         tracing::info!("Headless protocol server listening on ws://{}", self.addr);
 
+        // CDP 语义：target 生命周期跨客户端连接持续（同一 renderer 服务所有连接，
+        // HTTP 发现枚举与 WS 会话共享同一浏览器状态）。
+        let mut session = HeadlessSession::new(self.viewport_width, self.viewport_height);
+
         // 连接接受循环：支持 HTTP 发现 + WebSocket 协议
         loop {
             let (stream, peer) = listener.accept().map_err(|e| format!("Accept failed: {e}"))?;
@@ -121,7 +143,7 @@ impl HeadlessServer {
                     tracing::warn!("HTTP request from disallowed origin: {origin:?} from {peer}");
                     continue;
                 }
-                Self::handle_http_discovery(&stream, self.addr);
+                self.handle_http_discovery(&stream, &session);
                 continue;
             }
 
@@ -132,9 +154,11 @@ impl HeadlessServer {
                 continue;
             }
 
-            // WebSocket 连接
+            // WebSocket 连接。peek 阶段的 5s read timeout 是为 HTTP 探测设的；WS 会话
+            // 恢复宽裕空闲超时——CDP 客户端（如 Playwright）连接后可能长时间静默等
+            // 事件，沿用 5s 会把健康连接误杀（EAGAIN → 断连）。
+            stream.set_read_timeout(Some(std::time::Duration::from_secs(600))).ok();
             let mut ws = accept(stream).map_err(|e| format!("WebSocket handshake failed: {e}"))?;
-            let mut session = HeadlessSession::new(self.viewport_width, self.viewport_height);
 
             // 认证状态：首个有效请求完成认证
             let mut authenticated = self.security.auth_token.is_none();
@@ -149,6 +173,8 @@ impl HeadlessServer {
                     }
                     Ok(Message::Ping(data)) => {
                         let _ = ws.write(Message::Pong(data));
+                        // tungstenite write() 对可入缓冲的小消息不保证落盘，必须显式 flush
+                        let _ = ws.flush();
                         continue;
                     }
                     Ok(_) => continue,
@@ -175,9 +201,11 @@ impl HeadlessServer {
                                     code: -32001,
                                     message: "Authentication required: invalid or missing token".into(),
                                 }),
+                                session_id: None,
                             };
                             if let Ok(json) = serde_json::to_string(&err) {
                                 let _ = ws.write(Message::Text(json.into()));
+                                let _ = ws.flush();
                             }
                             continue;
                         }
@@ -189,9 +217,11 @@ impl HeadlessServer {
                                 code: -32001,
                                 message: "Authentication required".into(),
                             }),
+                            session_id: None,
                         };
                         if let Ok(json) = serde_json::to_string(&err) {
                             let _ = ws.write(Message::Text(json.into()));
+                            let _ = ws.flush();
                         }
                         continue;
                     }
@@ -218,6 +248,13 @@ impl HeadlessServer {
                     tracing::error!("WebSocket write error: {e}");
                     break;
                 }
+
+                // tungstenite write() 对可入缓冲的小消息不保证落盘（should_flush=false），
+                // 命令响应必须显式 flush，否则客户端收不到任何回包。
+                if let Err(e) = ws.flush() {
+                    tracing::error!("WebSocket flush error: {e}");
+                    break;
+                }
             }
 
             tracing::info!("Headless session ended");
@@ -232,6 +269,9 @@ impl HeadlessServer {
     }
 
     /// 处理单条客户端消息，返回响应和事件通知列表。
+    ///
+    /// CDP 扁平协议会话路由：请求携带 `sessionId` 时须为已附接会话（否则 `-32001`），
+    /// 响应原样回显该 `sessionId`；缺省 = 浏览器级命令，路由到全局会话。
     fn handle_message_with_events(
         &self,
         session: &mut HeadlessSession,
@@ -248,6 +288,7 @@ impl HeadlessServer {
                             code: -32700,
                             message: format!("Parse error: {e}"),
                         }),
+                        session_id: None,
                     },
                     Vec::new(),
                 );
@@ -255,6 +296,23 @@ impl HeadlessServer {
         };
 
         let id = req.id;
+        // 会话校验（未附接的 sessionId 直接拒绝，防串话）
+        if let Some(ref sid) = req.session_id {
+            if !self.session_attached(sid) {
+                return (
+                    ServerResponse {
+                        id,
+                        result: None,
+                        error: Some(ProtocolError {
+                            code: -32001,
+                            message: format!("Session not found: {sid}"),
+                        }),
+                        session_id: req.session_id,
+                    },
+                    Vec::new(),
+                );
+            }
+        }
         let (result, events) = self.dispatch_with_events(session, &req.method, req.params);
 
         let response = match result {
@@ -262,11 +320,13 @@ impl HeadlessServer {
                 id,
                 result: Some(value),
                 error: None,
+                session_id: req.session_id,
             },
             Err(err) => ServerResponse {
                 id,
                 result: None,
                 error: Some(err),
+                session_id: req.session_id,
             },
         };
 

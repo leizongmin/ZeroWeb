@@ -51,8 +51,8 @@ DC-3 基线）。「现状」列以 2026-09-12 `apps/browser/src/headless.rs`（
 
 | 端点 | Playwright 使用 | ZeroWeb 现状 | 差距要点 | 计划 |
 |------|----------------|--------------|----------|------|
-| `GET /json/version`（含 `/` 尾斜杠） | Y（连接入口） | ⚠️ 精确匹配无尾斜杠 → 404 | 尾斜杠容忍；形状已兼容（Browser/Protocol-Version/webSocketDebuggerUrl 等六字段齐） | M1 |
-| `GET /json`、`/json/list` | N（chrome://inspect、devtools 用） | ⚠️ 单个静态 target 条目 | 按 Target 域真实枚举 target | M2 |
+| `GET /json/version`（含 `/` 尾斜杠） | Y（连接入口） | ✅ 尾斜杠容忍（S3）+ 六字段齐 | — | 完成（M1 S3） |
+| `GET /json`、`/json/list` | N（chrome://inspect、devtools 用） | ✅ 按真实标签页枚举（S3，`zeroweb-tab-<n>` + shell url/title） | targetId ↔ 标签页映射由 Target 域消费 | 完成（M1 S3） |
 | `PUT /json/new`、`/json/close/<id>` 等 | N | ❌ | 不在账本（Playwright 矩阵不需要） | 不实现 |
 
 ### Browser 域
@@ -191,9 +191,10 @@ DC-3 基线）。「现状」列以 2026-09-12 `apps/browser/src/headless.rs`（
 
 | # | 缺口 | 影响 |
 |---|------|------|
-| G1 | WS 层无 `sessionId` 多路复用（单连接扁平会话，响应不回显 sessionId） | 所有域命令；M1 传输层重构核心 |
-| G2 | `/json/version` 尾斜杠 404 | connectOverCDP 第一步即失败 |
+| G1 | WS 层 sessionId 多路复用 | 🔶 传输面已解（S3：解析/回显/未附接 -32001/附接注册表）；per-target 真路由随 Target 域（切片 3） |
+| G2 | `/json/version` 尾斜杠 404 | ✅ 已解（S3） |
+| G2b | tungstenite write() 缓冲不落盘 + peek 5s read timeout 未恢复 → 任何 CDP 客户端收不到响应 | ✅ 已解（S3，实测发现；learning 2026-09-12） |
 | G3 | `Runtime.evaluate` 扁平字符串结果，无 remoteObject/objectId | 全部 evaluate/locator 流 |
 | G4 | 无请求事件总线（net 生命周期无观测点） | Network 域 + devtools 面板（P6） |
 | G5 | console 走 `__zw_console_log` 扁平字符串宿主回调 | consoleAPICalled remoteObject 形态（P5） |
-| G6 | `headless.rs` 2256 行超 2000 上限 | M1 须先拆分（transport/discovery/domains/session） |
+| G6 | `headless.rs` 2256 行超 2000 上限 | ✅ 已解（S2 拆分 9 模块） |
