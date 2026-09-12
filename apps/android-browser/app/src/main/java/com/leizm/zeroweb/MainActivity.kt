@@ -46,6 +46,14 @@ class MainActivity : ComponentActivity() {
     private var rendererSocket: ParcelFileDescriptor? = null
     private var rendererConnection: ServiceConnection? = null
     private var readyServiceCount by mutableStateOf(0)
+
+    /** RFC §6.3：8 个 renderer Service 槽位类，下标即槽号（RendererServiceN = 槽 N）。 */
+    private val rendererServiceClasses =
+        listOf(
+            RendererService0::class.java, RendererService1::class.java, RendererService2::class.java,
+            RendererService3::class.java, RendererService4::class.java, RendererService5::class.java,
+            RendererService6::class.java, RendererService7::class.java,
+        )
     private var browserState by mutableStateOf(BrowserSnapshot.empty())
     private var browserError by mutableStateOf<String?>(null)
     private var compositorPreview by mutableStateOf<Bitmap?>(null)
@@ -139,13 +147,19 @@ class MainActivity : ComponentActivity() {
         if (NativeBridge.nativeNavigate(url)) {
             refreshBrowserSnapshot()
             refreshRendererPreview()
-        } else if (NativeBridge.nativeRendererLinked() && !NativeBridge.nativeIsRendererAttached()) {
-            // 渲染进程死亡后槽位已被 native 侧清除：重绑 RendererService0 恢复
-            // （android-browser goal M3 切片 1——renderer 断连恢复）。
-            rebindRenderer()
-            browserError = "渲染进程恢复中，请重试"
         } else {
-            browserError = "仅支持有效的 HTTP(S) 地址"
+            refreshBrowserSnapshot()
+            val slot = browserState?.activeRendererSlot
+            if (NativeBridge.nativeRendererLinked() && slot != null &&
+                !NativeBridge.nativeIsRendererAttached(slot)
+            ) {
+                // 渲染进程死亡/LRU 换槽后该槽未附着：按快照指示重绑对应槽
+                // （android-browser goal M3 切片 1/2——断连恢复与多标签换槽）。
+                rebindRenderer(slot)
+                browserError = "渲染进程恢复中，请重试"
+            } else {
+                browserError = "仅支持有效的 HTTP(S) 地址"
+            }
         }
     }
 
@@ -154,7 +168,10 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun selectTab(id: Long) {
-        if (NativeBridge.nativeSelectTab(id)) refreshBrowserSnapshot()
+        if (NativeBridge.nativeSelectTab(id)) {
+            refreshBrowserSnapshot()
+            refreshRendererPreview()
+        }
     }
 
     private fun closeTab(id: Long) {
@@ -194,7 +211,7 @@ class MainActivity : ComponentActivity() {
         val connection = object : ServiceConnection {
             override fun onServiceConnected(name: ComponentName, service: IBinder) {
                 readyServiceCount += 1
-                if (roleService == RendererService0::class.java && NativeBridge.nativeRendererLinked()) {
+                if (roleService in rendererServiceClasses && NativeBridge.nativeRendererLinked()) {
                     val sockets = ParcelFileDescriptor.createSocketPair()
                     IRoleService.Stub.asInterface(service).start(sockets[1])
                     rendererSocket = sockets[0]
@@ -231,14 +248,14 @@ class MainActivity : ComponentActivity() {
             }
         }
         serviceConnections += connection
-        if (roleService == RendererService0::class.java) {
+        if (roleService in rendererServiceClasses) {
             rendererConnection = connection
         }
         bindService(Intent(this, roleService), connection, Context.BIND_AUTO_CREATE)
     }
 
-    /** renderer 断连后的重绑：关旧 socket、解绑旧连接、重新走 bind → socketpair → attach。 */
-    private fun rebindRenderer() {
+    /** renderer 断连/换槽后的重绑：关旧 socket、解绑旧连接、按槽重新走 bind → socketpair → attach。 */
+    private fun rebindRenderer(slot: Int) {
         rendererSocket?.close()
         rendererSocket = null
         rendererConnection?.let { connection ->
@@ -246,20 +263,23 @@ class MainActivity : ComponentActivity() {
             serviceConnections.remove(connection)
         }
         rendererConnection = null
-        bindRole(RendererService0::class.java)
+        bindRole(rendererServiceClasses[slot])
     }
 
     private fun attachRendererIfReady() {
         val socket = rendererSocket ?: return
-        if (!compositorAttached || !NativeBridge.nativeAttachRenderer(socket.detachFd())) return
+        // attach 目标槽 = 快照指示的活动标签槽（缺省 0 兼容启动早期无快照）
+        val slot = browserState?.activeRendererSlot ?: 0
+        if (!compositorAttached || !NativeBridge.nativeAttachRenderer(slot, socket.detachFd())) return
         rendererSocket = null
         refreshRendererPreview()
     }
 
     private fun refreshRendererPreview() {
+        val slot = browserState?.activeRendererSlot ?: 0
         listOf(1_000L, 5_000L, 10_000L).forEach { delayMillis ->
             window.decorView.postDelayed({
-                rendererPreview = NativeBridge.nativeLatestPageFrame()?.toBitmap(320, 180)
+                rendererPreview = NativeBridge.nativeLatestPageFrame(slot)?.toBitmap(320, 180)
                 if (rendererPreview == null) android.util.Log.e("ZeroWebRole", "renderer page frame unavailable")
                 else {
                     refreshBrowserSnapshot()
@@ -444,6 +464,7 @@ private data class BrowserDownload(val filename: String, val url: String, val st
 
 private data class BrowserSnapshot(
     val activeTabId: Long?,
+    val activeRendererSlot: Int?,
     val tabs: List<BrowserTab>,
     val bookmarked: Boolean,
     val bookmarkCount: Int,
@@ -454,7 +475,8 @@ private data class BrowserSnapshot(
     val downloads: List<BrowserDownload>,
 ) {
     companion object {
-        fun empty() = BrowserSnapshot(null, emptyList(), false, 0, 0, 0, emptyList(), emptyList(), emptyList())
+        fun empty() =
+            BrowserSnapshot(null, null, emptyList(), false, 0, 0, 0, emptyList(), emptyList(), emptyList())
 
         fun fromJson(raw: String): BrowserSnapshot {
             val json = JSONObject(raw)
@@ -462,6 +484,7 @@ private data class BrowserSnapshot(
             val tabs = json.getJSONArray("tabs")
             return BrowserSnapshot(
                 activeTabId = if (json.isNull("activeTabId")) null else json.getLong("activeTabId"),
+                activeRendererSlot = if (json.isNull("activeRendererSlot")) null else json.getInt("activeRendererSlot"),
                 tabs = List(tabs.length()) { index ->
                     val tab = tabs.getJSONObject(index)
                     BrowserTab(

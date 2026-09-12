@@ -41,13 +41,13 @@ type AndroidRendererTransport =
 #[cfg(target_os = "android")]
 static ANDROID_COMPOSITOR: OnceLock<Mutex<Option<AndroidCompositorTransport>>> = OnceLock::new();
 #[cfg(target_os = "android")]
-static ANDROID_RENDERER: OnceLock<Mutex<Option<AndroidRendererTransport>>> = OnceLock::new();
+static ANDROID_RENDERER: OnceLock<Vec<Mutex<Option<AndroidRendererTransport>>>> = OnceLock::new();
 #[cfg(target_os = "android")]
-static ANDROID_PAGE_FRAME: OnceLock<Mutex<Option<Vec<u8>>>> = OnceLock::new();
+static ANDROID_PAGE_FRAME: OnceLock<Vec<Mutex<Option<Vec<u8>>>>> = OnceLock::new();
 #[cfg(target_os = "android")]
 type AndroidPageMeta = (u64, u64, u64, f32);
 #[cfg(target_os = "android")]
-static ANDROID_PAGE_META: OnceLock<Mutex<Option<AndroidPageMeta>>> = OnceLock::new();
+static ANDROID_PAGE_META: OnceLock<Vec<Mutex<Option<AndroidPageMeta>>>> = OnceLock::new();
 #[cfg(target_os = "android")]
 static ANDROID_SECURITY: OnceLock<Mutex<zero_security::SecurityContext>> = OnceLock::new();
 #[cfg(target_os = "android")]
@@ -58,19 +58,29 @@ fn android_compositor() -> &'static Mutex<Option<AndroidCompositorTransport>> {
     ANDROID_COMPOSITOR.get_or_init(|| Mutex::new(None))
 }
 
+/// RFC §6.3 槽位注册表：每个 renderer isolated Service slot 一个 transport 槽。
 #[cfg(target_os = "android")]
-fn android_renderer() -> &'static Mutex<Option<AndroidRendererTransport>> {
-    ANDROID_RENDERER.get_or_init(|| Mutex::new(None))
+fn android_renderer() -> &'static Vec<Mutex<Option<AndroidRendererTransport>>> {
+    ANDROID_RENDERER.get_or_init(|| (0..facade::RENDERER_SLOT_COUNT).map(|_| Mutex::new(None)).collect())
+}
+
+/// 槽号越界视为未附着（防御 Kotlin 侧错传）。
+#[cfg(target_os = "android")]
+fn renderer_slot(slot: usize) -> Option<&'static Mutex<Option<AndroidRendererTransport>>> {
+    android_renderer().get(slot)
 }
 
 #[cfg(target_os = "android")]
-fn android_page_frame() -> &'static Mutex<Option<Vec<u8>>> {
-    ANDROID_PAGE_FRAME.get_or_init(|| Mutex::new(None))
+fn android_page_frame(slot: usize) -> Option<&'static Mutex<Option<Vec<u8>>>> {
+    let frames =
+        ANDROID_PAGE_FRAME.get_or_init(|| (0..facade::RENDERER_SLOT_COUNT).map(|_| Mutex::new(None)).collect());
+    frames.get(slot)
 }
 
 #[cfg(target_os = "android")]
-fn android_page_meta() -> &'static Mutex<Option<(u64, u64, u64, f32)>> {
-    ANDROID_PAGE_META.get_or_init(|| Mutex::new(None))
+fn android_page_meta(slot: usize) -> Option<&'static Mutex<Option<AndroidPageMeta>>> {
+    let metas = ANDROID_PAGE_META.get_or_init(|| (0..facade::RENDERER_SLOT_COUNT).map(|_| Mutex::new(None)).collect());
+    metas.get(slot)
 }
 
 #[cfg(target_os = "android")]
@@ -93,8 +103,9 @@ fn is_known_role(role: &str) -> bool {
 
 // RFC §6.3：8 个预声明 isolated Service slots。slot 号由 Kotlin Service 类名
 // （RendererService0-7）透传为 renderer_id，兼作 compositor 帧的 surface_id。
-// 仅 renderer feature 构建与宿主测试编译，避免 android 无 feature 构建的 dead_code。
-#[cfg(any(feature = "android-renderer", test))]
+// attach 协议在 renderer-less 构建同样存在（需要拒绝越界槽并关 FD），故仅对宿主
+// 非 android 构建豁免。
+#[cfg(any(target_os = "android", test))]
 fn renderer_slot_id(slot: jni::sys::jint) -> Result<u64, String> {
     u64::try_from(slot)
         .ok()
@@ -193,10 +204,24 @@ pub extern "system" fn Java_com_leizm_zeroweb_NativeBridge_nativeCloseTab(
     _class: JClass,
     id: jni::sys::jlong,
 ) -> jboolean {
-    u64::try_from(id)
+    let outcome = u64::try_from(id)
         .map_err(|_| "tab ID must be non-negative".to_string())
-        .and_then(facade::close_tab)
-        .map_or(JNI_FALSE, |_| JNI_TRUE)
+        .and_then(|tab_id| {
+            // 回收该标签的渲染槽：transport 就地丢弃，旧 renderer 收到 EOF 自行退出
+            let released = facade::tab_slot(tab_id)?;
+            facade::close_tab(tab_id)?;
+            #[cfg(not(target_os = "android"))]
+            let _ = released;
+            #[cfg(target_os = "android")]
+            if let Some(slot) = released
+                && let Some(slot_lock) = renderer_slot(slot)
+                && let Ok(mut slot_guard) = slot_lock.lock()
+            {
+                *slot_guard = None;
+            }
+            Ok(())
+        });
+    outcome.map_or(JNI_FALSE, |_| JNI_TRUE)
 }
 
 /// Selects the active tab and persists the browser profile.
@@ -398,10 +423,20 @@ pub extern "system" fn Java_com_leizm_zeroweb_NativeBridge_nativeAttachComposito
 pub extern "system" fn Java_com_leizm_zeroweb_NativeBridge_nativeAttachRenderer(
     _env: JNIEnv,
     _class: JClass,
+    slot: jni::sys::jint,
     fd: jni::sys::jint,
 ) -> jboolean {
     use std::os::unix::io::FromRawFd;
 
+    let Ok(slot) = renderer_slot_id(slot).map(|id| id as usize).map_err(|_| {
+        close_android_fd(fd);
+    }) else {
+        return JNI_FALSE;
+    };
+    let Some(slot_lock) = renderer_slot(slot) else {
+        close_android_fd(fd);
+        return JNI_FALSE;
+    };
     if fd < 0 {
         return JNI_FALSE;
     }
@@ -412,17 +447,17 @@ pub extern "system" fn Java_com_leizm_zeroweb_NativeBridge_nativeAttachRenderer(
     let Ok(writer) = stream.try_clone() else {
         return JNI_FALSE;
     };
-    let Ok(mut slot) = android_renderer().lock() else {
+    let Ok(mut slot_guard) = slot_lock.lock() else {
         return JNI_FALSE;
     };
-    if slot.is_some() {
+    if slot_guard.is_some() {
         return JNI_FALSE;
     }
-    *slot = Some(zero_protocol::PipeTransport::new(stream, writer));
-    drop(slot);
+    *slot_guard = Some(zero_protocol::PipeTransport::new(stream, writer));
+    drop(slot_guard);
 
     if std::thread::Builder::new()
-        .name("android-renderer-frames".to_string())
+        .name(format!("android-renderer-frames-{slot}"))
         .spawn(move || {
             let mut inbound = zero_protocol::PipeTransport::new(reader, std::io::sink());
             while let Ok(message) = inbound.recv() {
@@ -436,7 +471,7 @@ pub extern "system" fn Java_com_leizm_zeroweb_NativeBridge_nativeAttachRenderer(
                         let _ = forward_renderer_frame(surface_id, navigation_epoch, frame_id, *paint);
                     }
                     IpcMessageKind::FetchRequest(params) => {
-                        let _ = proxy_renderer_fetch(params);
+                        let _ = proxy_renderer_fetch(slot, params);
                     }
                     IpcMessageKind::TitleChanged(title) => {
                         let _ = facade::page_loaded(&title);
@@ -444,30 +479,33 @@ pub extern "system" fn Java_com_leizm_zeroweb_NativeBridge_nativeAttachRenderer(
                     _ => {}
                 }
             }
-            // renderer 进程死亡/断连：清除槽位僵尸 transport，允许 Kotlin 重新走
+            // renderer 进程死亡/断连：清除该槽僵尸 transport，允许 Kotlin 重新走
             // attach 协议（renderer slot 恢复，android-browser goal M3 切片 1）。
-            if let Ok(mut slot) = android_renderer().lock() {
-                *slot = None;
+            if let Some(slot_lock) = renderer_slot(slot)
+                && let Ok(mut slot_guard) = slot_lock.lock()
+            {
+                *slot_guard = None;
             }
-            tracing::warn!("android renderer transport detached");
+            tracing::warn!("android renderer transport detached: slot {slot}");
         })
         .is_err()
     {
-        let Ok(mut slot) = android_renderer().lock() else {
-            return JNI_FALSE;
-        };
-        *slot = None;
+        if let Ok(mut slot_guard) = slot_lock.lock() {
+            *slot_guard = None;
+        }
         return JNI_FALSE;
     }
 
-    let handshake = send_renderer(IpcMessageKind::SetViewport(SetViewportParams {
+    let handshake = send_renderer_to_slot(slot, IpcMessageKind::SetViewport(SetViewportParams {
         width: ANDROID_PAGE_VIEWPORT_WIDTH,
         height: ANDROID_PAGE_VIEWPORT_HEIGHT,
         device_scale_factor: 1.0,
     }))
-    .and_then(|_| send_renderer(IpcMessageKind::SetFramePublishMode(FramePublishMode::Compositor)))
     .and_then(|_| {
-        send_renderer(IpcMessageKind::LoadHtml(LoadHtmlParams {
+        send_renderer_to_slot(slot, IpcMessageKind::SetFramePublishMode(FramePublishMode::Compositor))
+    })
+    .and_then(|_| {
+        send_renderer_to_slot(slot, IpcMessageKind::LoadHtml(LoadHtmlParams {
             html: "<html><body style='margin:0;background:#0c2238;color:white'><h1>ZeroWeb Android renderer</h1><p>renderer → compositor → Compose</p></body></html>".to_string(),
             css: None,
             url: Some("zero://android-renderer-smoke".to_string()),
@@ -476,36 +514,50 @@ pub extern "system" fn Java_com_leizm_zeroweb_NativeBridge_nativeAttachRenderer(
     });
     // 握手失败说明刚 attach 的 transport 已不可用：清除避免僵尸槽位。
     if handshake.is_err() {
-        if let Ok(mut slot) = android_renderer().lock() {
-            *slot = None;
+        if let Ok(mut slot_guard) = slot_lock.lock() {
+            *slot_guard = None;
         }
         return JNI_FALSE;
     }
     JNI_TRUE
 }
 
-/// Reports whether a renderer transport is currently attached. Kotlin 在导航失败时
-/// 据此触发 renderer Service 重绑（renderer-less 构建恒为 false）。
+/// Reports whether a renderer transport is currently attached on the slot.
+/// Kotlin 在导航失败/快照驱动绑槽时据此判断（renderer-less 构建恒为 false）。
 #[cfg(target_os = "android")]
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_leizm_zeroweb_NativeBridge_nativeIsRendererAttached(
     _env: JNIEnv,
     _class: JClass,
+    slot: jni::sys::jint,
 ) -> jboolean {
-    let Ok(slot) = android_renderer().lock() else {
+    let Ok(slot) = renderer_slot_id(slot).map(|id| id as usize) else {
         return JNI_FALSE;
     };
-    if slot.is_some() { JNI_TRUE } else { JNI_FALSE }
+    let Some(slot_lock) = renderer_slot(slot) else {
+        return JNI_FALSE;
+    };
+    let Ok(slot_guard) = slot_lock.lock() else {
+        return JNI_FALSE;
+    };
+    if slot_guard.is_some() { JNI_TRUE } else { JNI_FALSE }
 }
 
-/// Returns the latest renderer page frame after compositor rasterization.
+/// Returns the latest renderer page frame of the slot after compositor rasterization.
 #[cfg(target_os = "android")]
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_leizm_zeroweb_NativeBridge_nativeLatestPageFrame(
     env: JNIEnv,
     _class: JClass,
+    slot: jni::sys::jint,
 ) -> jbyteArray {
-    let Ok(frame) = android_page_frame().lock() else {
+    let Ok(slot) = renderer_slot_id(slot).map(|id| id as usize) else {
+        return std::ptr::null_mut();
+    };
+    let Some(frame_lock) = android_page_frame(slot) else {
+        return std::ptr::null_mut();
+    };
+    let Ok(frame) = frame_lock.lock() else {
         return std::ptr::null_mut();
     };
     frame
@@ -523,11 +575,26 @@ fn navigate_renderer(url: &str) -> Result<(), String> {
         .lock()
         .map_err(|_| "Android security context lock poisoned".to_string())?
         .set_page_origin(url);
-    send_renderer(IpcMessageKind::Navigate(NavigateParams {
-        url: url.to_string(),
-        referrer: None,
-        navigation_epoch: epoch,
-    }))
+    // 活动标签的渲染槽：无槽则按 LRU 分配；被逐出的旧租户 transport 立即丢弃
+    // （旧 renderer 收到 EOF 自行退出，其槽交由 Kotlin 重新 bind）。
+    let (slot, evicted) = facade::assign_active_tab_slot()?;
+    if evicted.is_some()
+        && let Some(slot_lock) = renderer_slot(slot)
+        && let Ok(mut slot_guard) = slot_lock.lock()
+    {
+        *slot_guard = None;
+    }
+    if !renderer_attached(slot) {
+        return Err(format!("renderer slot {slot} is not attached"));
+    }
+    send_renderer_to_slot(
+        slot,
+        IpcMessageKind::Navigate(NavigateParams {
+            url: url.to_string(),
+            referrer: None,
+            navigation_epoch: epoch,
+        }),
+    )
 }
 
 #[cfg(target_os = "android")]
@@ -540,32 +607,42 @@ pub extern "system" fn Java_com_leizm_zeroweb_NativeBridge_nativeScroll(
     if !delta_y.is_finite() || delta_y.abs() > 4_096.0 {
         return JNI_FALSE;
     }
-    if send_renderer(IpcMessageKind::ScrollEvent(ScrollEventParams {
-        delta_x: 0.0,
-        delta_y,
-        cursor_x: ANDROID_PAGE_VIEWPORT_WIDTH as f32 / 2.0,
-        cursor_y: ANDROID_PAGE_VIEWPORT_HEIGHT as f32 / 2.0,
-    }))
+    // 滚动作用于活动标签的渲染槽
+    let Ok(Some(active_slot)) = facade::active_tab_slot() else {
+        return JNI_FALSE;
+    };
+    if send_renderer_to_slot(
+        active_slot,
+        IpcMessageKind::ScrollEvent(ScrollEventParams {
+            delta_x: 0.0,
+            delta_y,
+            cursor_x: ANDROID_PAGE_VIEWPORT_WIDTH as f32 / 2.0,
+            cursor_y: ANDROID_PAGE_VIEWPORT_HEIGHT as f32 / 2.0,
+        }),
+    )
     .is_err()
     {
         return JNI_FALSE;
     }
-    compositor_scroll(delta_y).map_or(JNI_FALSE, |_| JNI_TRUE)
+    compositor_scroll(active_slot, delta_y).map_or(JNI_FALSE, |_| JNI_TRUE)
 }
 
 #[cfg(target_os = "android")]
-fn compositor_scroll(delta_y: f32) -> Result<(), String> {
-    let mut meta = android_page_meta()
+fn compositor_scroll(slot: usize, delta_y: f32) -> Result<(), String> {
+    let Some(meta_lock) = android_page_meta(slot) else {
+        return Err("renderer slot is out of range".to_string());
+    };
+    let mut meta = meta_lock
         .lock()
         .map_err(|_| "Android page metadata lock poisoned".to_string())?;
     let (surface_id, navigation_epoch, frame_id, scroll_y) = meta
         .as_mut()
         .ok_or_else(|| "Android page frame is not ready".to_string())?;
     *scroll_y = (*scroll_y + delta_y).max(0.0);
-    let mut slot = android_compositor()
+    let mut compositor = android_compositor()
         .lock()
         .map_err(|_| "Android compositor socket lock poisoned".to_string())?;
-    let transport = slot
+    let transport = compositor
         .as_mut()
         .ok_or_else(|| "Android compositor socket is not attached".to_string())?;
     transport
@@ -604,14 +681,17 @@ fn compositor_scroll(delta_y: f32) -> Result<(), String> {
         } if !rgba.is_empty() => rgba,
         _ => return Err("Android compositor returned no scrolled frame".to_string()),
     };
-    *android_page_frame()
+    let Some(frame_lock) = android_page_frame(slot) else {
+        return Err("renderer slot is out of range".to_string());
+    };
+    *frame_lock
         .lock()
         .map_err(|_| "Android page frame lock poisoned".to_string())? = Some(frame);
     Ok(())
 }
 
 #[cfg(target_os = "android")]
-fn proxy_renderer_fetch(params: FetchParams) -> Result<(), String> {
+fn proxy_renderer_fetch(slot: usize, params: FetchParams) -> Result<(), String> {
     const MAX_RESPONSE_BYTES: usize = 64 * 1024 * 1024;
     let resource_type = params
         .headers
@@ -628,6 +708,7 @@ fn proxy_renderer_fetch(params: FetchParams) -> Result<(), String> {
         zero_security::ResourceCheckResult::Upgraded(url) => url,
         zero_security::ResourceCheckResult::Blocked(reason) => {
             return send_fetch_response(
+                slot,
                 params.request_id,
                 0,
                 Vec::new(),
@@ -659,40 +740,57 @@ fn proxy_renderer_fetch(params: FetchParams) -> Result<(), String> {
             let mut headers = response.headers;
             headers.push(("X-Zero-Resource-Type".to_string(), resource_type.to_string()));
             headers.push(("X-Zero-Final-Url".to_string(), response.url));
-            send_fetch_response(params.request_id, response.status_code, headers, response.body)
+            send_fetch_response(slot, params.request_id, response.status_code, headers, response.body)
         }
         Ok(_) => send_fetch_response(
+            slot,
             params.request_id,
             0,
             Vec::new(),
             b"resource exceeds Android IPC frame limit".to_vec(),
         ),
-        Err(error) => send_fetch_response(params.request_id, 0, Vec::new(), error.to_string().into_bytes()),
+        Err(error) => send_fetch_response(slot, params.request_id, 0, Vec::new(), error.to_string().into_bytes()),
     }
 }
 
 #[cfg(target_os = "android")]
 fn send_fetch_response(
+    slot: usize,
     request_id: u64,
     status_code: u16,
     headers: Vec<(String, String)>,
     body: Vec<u8>,
 ) -> Result<(), String> {
-    send_renderer(IpcMessageKind::FetchResponse(FetchResponseParams {
-        request_id,
-        status_code,
-        headers,
-        body,
-    }))
+    // fetch 响应必须回到请求所在的槽（reader 线程上下文），不能路由到活动槽。
+    send_renderer_to_slot(
+        slot,
+        IpcMessageKind::FetchResponse(FetchResponseParams {
+            request_id,
+            status_code,
+            headers,
+            body,
+        }),
+    )
 }
 
 #[cfg(target_os = "android")]
-fn send_renderer(kind: IpcMessageKind) -> Result<(), String> {
-    let mut slot = android_renderer()
+fn renderer_attached(slot: usize) -> bool {
+    renderer_slot(slot)
+        .and_then(|slot_lock| slot_lock.lock().ok().map(|slot_guard| slot_guard.is_some()))
+        .unwrap_or(false)
+}
+
+#[cfg(target_os = "android")]
+fn send_renderer_to_slot(slot: usize, kind: IpcMessageKind) -> Result<(), String> {
+    let Some(slot_lock) = renderer_slot(slot) else {
+        return Err(format!("renderer slot {slot} is out of range"));
+    };
+    let mut slot_guard = slot_lock
         .lock()
         .map_err(|_| "Android renderer socket lock poisoned".to_string())?;
-    slot.as_mut()
-        .ok_or_else(|| "Android renderer socket is not attached".to_string())?
+    slot_guard
+        .as_mut()
+        .ok_or_else(|| format!("renderer slot {slot} is not attached"))?
         .send(IpcMessage { id: 1, kind })
         .map_err(|error| error.to_string())
 }
@@ -758,10 +856,17 @@ fn forward_renderer_frame(
         }
         _ => return Err("Android compositor returned an unexpected page frame".to_string()),
     };
-    *android_page_frame()
+    // 帧按其来源 surface 归档（renderer_id == slot）：多标签各回各的帧缓冲
+    let Some(frame_lock) = android_page_frame(surface_id as usize) else {
+        return Err("renderer frame surface is out of range".to_string());
+    };
+    *frame_lock
         .lock()
         .map_err(|_| "Android page frame lock poisoned".to_string())? = Some(frame);
-    *android_page_meta()
+    let Some(meta_lock) = android_page_meta(surface_id as usize) else {
+        return Err("renderer frame surface is out of range".to_string());
+    };
+    *meta_lock
         .lock()
         .map_err(|_| "Android page metadata lock poisoned".to_string())? =
         Some((surface_id, navigation_epoch, frame_id, 0.0));

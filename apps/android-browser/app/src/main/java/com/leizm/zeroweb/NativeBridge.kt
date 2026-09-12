@@ -52,7 +52,7 @@ object NativeBridge {
     external fun nativeStartRole(role: String): Boolean
 
     @JvmStatic
-    external fun nativeIsRendererAttached(): Boolean
+    external fun nativeIsRendererAttached(slot: Int): Boolean
 
     @JvmStatic
     external fun nativeRunRole(role: String, slot: Int, fd: Int): Boolean
@@ -64,10 +64,10 @@ object NativeBridge {
     external fun nativeCompositorTestFrame(width: Int, height: Int): ByteArray?
 
     @JvmStatic
-    external fun nativeAttachRenderer(fd: Int): Boolean
+    external fun nativeAttachRenderer(slot: Int, fd: Int): Boolean
 
     @JvmStatic
-    external fun nativeLatestPageFrame(): ByteArray?
+    external fun nativeLatestPageFrame(slot: Int): ByteArray?
 
     @JvmStatic
     external fun nativeScroll(deltaY: Float): Boolean
