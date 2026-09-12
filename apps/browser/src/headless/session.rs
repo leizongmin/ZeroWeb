@@ -5,6 +5,8 @@
 use zero_browser_shell::BrowserShell;
 #[cfg(not(test))]
 use zero_net::{HttpClient, HttpMethod, HttpRequest};
+#[cfg(test)]
+use zero_protocol::message::AutomationValue;
 #[cfg(not(test))]
 use zero_protocol::message::{
     AutomationOperation, AutomationRequest, AutomationResult, AutomationValue, FetchParams, FramePublishMode,
@@ -195,6 +197,15 @@ impl HeadlessSession {
     }
 
     pub(super) fn execute_script_renderer(&mut self, script: &str) -> Result<String, String> {
+        match self.execute_script_typed_renderer(script)? {
+            AutomationValue::String(value) => Ok(value),
+            value => serde_json::to_string(&value).map_err(|error| error.to_string()),
+        }
+    }
+
+    /// 执行脚本并返回类型化结果（CDP Runtime 域 remoteObject 需要值类型；
+    /// renderer 的 ExecuteScript 以 JSON envelope 返回类型化 AutomationValue）。
+    pub(super) fn execute_script_typed_renderer(&mut self, script: &str) -> Result<AutomationValue, String> {
         let request_id = self.next_request_id;
         self.next_request_id = self.next_request_id.wrapping_add(1).max(1);
         self.renderer
@@ -226,9 +237,25 @@ impl HeadlessSession {
             }
         };
         match response.result.map_err(|error| error.message)? {
-            AutomationResult::Value(AutomationValue::String(value)) => Ok(value),
-            AutomationResult::Value(value) => serde_json::to_string(&value).map_err(|error| error.to_string()),
-            _ => Ok(String::new()),
+            AutomationResult::Value(value) => Ok(value),
+            _ => Ok(AutomationValue::Null),
+        }
+    }
+}
+
+impl HeadlessSession {
+    /// CDP Runtime 域脚本执行入口：类型化结果（测试进程内路径为扁平字符串语义）。
+    pub(super) fn execute_script_typed(&mut self, script: &str) -> Result<AutomationValue, String> {
+        #[cfg(test)]
+        {
+            self.webview
+                .execute_script(script)
+                .map(AutomationValue::String)
+                .map_err(|error| error.to_string())
+        }
+        #[cfg(not(test))]
+        {
+            self.execute_script_typed_renderer(script)
         }
     }
 }

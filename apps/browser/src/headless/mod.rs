@@ -53,9 +53,12 @@ pub struct HeadlessServer {
     pub(super) viewport_height: f32,
     /// 安全配置（Phase 5）。
     security: HeadlessSecurityConfig,
-    /// 已附接的 CDP sessionId 注册表（Target.attachedToTarget 时登记；
-    /// 命令携带未登记 sessionId → `-32001`）。切片 3 Target 域写入。
-    attached_sessions: std::sync::Mutex<std::collections::HashSet<String>>,
+    /// 已附接的 CDP sessionId 注册表（sessionId → targetId；
+    /// Target.attachedToTarget 时登记，detach/close 时移除；
+    /// 命令携带未登记 sessionId → `-32001`）。
+    attached_sessions: std::sync::Mutex<std::collections::HashMap<String, String>>,
+    /// Target.setAutoAttach 的 autoAttach 开关（开启后新 target 自动附接）。
+    auto_attach: std::sync::atomic::AtomicBool,
 }
 
 impl HeadlessServer {
@@ -68,16 +71,32 @@ impl HeadlessServer {
             viewport_width,
             viewport_height,
             security: HeadlessSecurityConfig::default(),
-            attached_sessions: std::sync::Mutex::new(std::collections::HashSet::new()),
+            attached_sessions: std::sync::Mutex::new(std::collections::HashMap::new()),
+            auto_attach: std::sync::atomic::AtomicBool::new(false),
         }
     }
 
-    /// 登记 CDP sessionId（Target 域附接目标时调用）。
-    pub(super) fn attach_session(&self, session_id: &str) {
+    /// 分配新的 CDP sessionId（不透明字符串，客户端按原样回传）。
+    pub(super) fn next_cdp_session(&self) -> String {
+        let n = self.next_session_id.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        format!("zeroweb-session-{n}")
+    }
+
+    /// 登记 CDP sessionId 与其 target 的关联（Target 域附接时调用）。
+    pub(super) fn attach_session(&self, session_id: &str, target_id: &str) {
         self.attached_sessions
             .lock()
             .unwrap_or_else(|e| e.into_inner())
-            .insert(session_id.to_string());
+            .insert(session_id.to_string(), target_id.to_string());
+    }
+
+    /// 移除 sessionId 附接登记，返回是否存在过。
+    pub(super) fn detach_session(&self, session_id: &str) -> bool {
+        self.attached_sessions
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(session_id)
+            .is_some()
     }
 
     /// 查询 sessionId 是否已附接。
@@ -85,7 +104,39 @@ impl HeadlessServer {
         self.attached_sessions
             .lock()
             .unwrap_or_else(|e| e.into_inner())
-            .contains(session_id)
+            .contains_key(session_id)
+    }
+
+    /// 查询 sessionId 附接的 targetId。
+    pub(super) fn session_target(&self, session_id: &str) -> Option<String> {
+        self.attached_sessions
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(session_id)
+            .cloned()
+    }
+
+    /// 移除某 target 的全部附接登记（closeTarget 时）。
+    pub(super) fn detach_sessions_for_target(&self, target_id: &str) -> Vec<String> {
+        let mut registry = self.attached_sessions.lock().unwrap_or_else(|e| e.into_inner());
+        let removed: Vec<String> = registry
+            .iter()
+            .filter(|(_, tid)| tid.as_str() == target_id)
+            .map(|(sid, _)| sid.clone())
+            .collect();
+        for sid in &removed {
+            registry.remove(sid);
+        }
+        removed
+    }
+
+    /// 读写 autoAttach 开关。
+    pub(super) fn set_auto_attach(&self, enabled: bool) {
+        self.auto_attach.store(enabled, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    pub(super) fn auto_attach_enabled(&self) -> bool {
+        self.auto_attach.load(std::sync::atomic::Ordering::SeqCst)
     }
 
     /// 设置安全配置。
@@ -313,7 +364,22 @@ impl HeadlessServer {
                 );
             }
         }
-        let (result, events) = self.dispatch_with_events(session, &req.method, req.params);
+        let (result, mut events) =
+            self.dispatch_with_events_for(session, req.session_id.as_deref(), &req.method, req.params);
+
+        // 事件路由：session 级事件盖章请求的 sessionId（客户端据此投递到 child
+        // session——不带会被当作浏览器级事件丢弃）；Target 域的宣告事件本身是
+        // 浏览器级（新会话 id 在 params 里），保持不带。
+        if let Some(sid) = req.session_id.as_deref() {
+            for event in &mut events {
+                if !matches!(
+                    event.method.as_str(),
+                    "Target.attachedToTarget" | "Target.detachedFromTarget" | "Target.targetDestroyed"
+                ) {
+                    event.session_id = Some(sid.to_string());
+                }
+            }
+        }
 
         let response = match result {
             Ok(value) => ServerResponse {

@@ -247,6 +247,7 @@ fn test_server_event_serialize() {
     let event = ServerEvent {
         method: "browsingContext.load".into(),
         params: serde_json::json!({ "url": "https://example.com" }),
+        session_id: None,
     };
     let json = serde_json::to_string(&event).unwrap();
     assert!(json.contains("\"method\""));
@@ -353,7 +354,7 @@ fn test_discovery_path_trailing_slash() {
 fn test_session_id_echoed_in_response() {
     let server = HeadlessServer::new(0, 800.0, 600.0);
     let mut session = HeadlessSession::new(800.0, 600.0);
-    server.attach_session("test-session-1");
+    server.attach_session("test-session-1", "zeroweb-tab-1");
     let raw = r#"{"id":7,"method":"session.status","params":{},"sessionId":"test-session-1"}"#;
     let (response, _) = server.handle_message_with_events(&mut session, raw);
     assert!(response.result.is_some());
@@ -396,13 +397,145 @@ fn test_json_targets_enumerates_real_tabs() {
     assert!(!ids.contains(&"zeroweb-main"), "static placeholder id retired");
 }
 
+// ── M1 切片 3：Target 域 + Browser/Runtime 雏形（Playwright 连接脊柱）──
+
+#[test]
+fn test_browser_get_version() {
+    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let mut session = HeadlessSession::new(800.0, 600.0);
+    let result = server
+        .dispatch(&mut session, "Browser.getVersion", Value::Null)
+        .unwrap();
+    assert_eq!(result["protocolVersion"], "1.3");
+    assert!(result["product"].as_str().unwrap().starts_with("ZeroWeb/"));
+    assert!(!result["userAgent"].as_str().unwrap().is_empty());
+    assert!(result["jsVersion"].as_str().is_some());
+}
+
+#[test]
+fn test_target_set_auto_attach_emits_attached_to_target() {
+    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let mut session = HeadlessSession::new(800.0, 600.0);
+    let tab_count = session.shell.tab_count();
+    let params = serde_json::json!({ "autoAttach": true, "waitForDebuggerOnStart": false, "flatten": true });
+    let (result, events) = server.dispatch_with_events(&mut session, "Target.setAutoAttach", params);
+    assert!(result.is_ok());
+    assert_eq!(events.len(), tab_count, "one attachedToTarget per existing tab");
+    let first = &events[0];
+    assert_eq!(first.method, "Target.attachedToTarget");
+    assert_eq!(first.params["targetInfo"]["type"], "page");
+    assert_eq!(first.params["waitingForDebugger"], false);
+    let sid = first.params["sessionId"].as_str().unwrap();
+    assert!(server.session_attached(sid), "session must be registered");
+    // 新 target 自动附接
+    let (result, events) = server.dispatch_with_events(
+        &mut session,
+        "Target.createTarget",
+        serde_json::json!({ "url": "about:blank" }),
+    );
+    assert!(result.is_ok());
+    assert_eq!(events.len(), 1, "createTarget auto-attaches when enabled");
+}
+
+#[test]
+fn test_target_get_target_info_browser_level() {
+    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let mut session = HeadlessSession::new(800.0, 600.0);
+    let result = server
+        .dispatch(&mut session, "Target.getTargetInfo", Value::Null)
+        .unwrap();
+    assert_eq!(result["targetInfo"]["type"], "browser");
+    assert_eq!(result["targetInfo"]["attached"], true);
+}
+
+#[test]
+fn test_target_create_and_close_target_lifecycle() {
+    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let mut session = HeadlessSession::new(800.0, 600.0);
+    server.set_auto_attach(true);
+    let tabs_before = session.shell.tab_count();
+
+    let (result, events) = server.dispatch_with_events(
+        &mut session,
+        "Target.createTarget",
+        serde_json::json!({ "url": "about:blank" }),
+    );
+    let result = result.unwrap();
+    let target_id = result["targetId"].as_str().unwrap().to_string();
+    assert!(target_id.starts_with("zeroweb-tab-"));
+    assert_eq!(events.len(), 1);
+    let sid = events[0].params["sessionId"].as_str().unwrap().to_string();
+    assert!(server.session_attached(&sid));
+    assert_eq!(session.shell.tab_count(), tabs_before + 1);
+
+    // closeTarget：target 销毁事件 + 会话摘除
+    let (result, events) = server.dispatch_with_events(
+        &mut session,
+        "Target.closeTarget",
+        serde_json::json!({ "targetId": target_id }),
+    );
+    let result = result.unwrap();
+    assert_eq!(result["success"], true);
+    assert!(events.iter().any(|e| e.method == "Target.targetDestroyed"));
+    assert!(events.iter().any(|e| e.method == "Target.detachedFromTarget"));
+    assert!(
+        !server.session_attached(&sid),
+        "closed target's session must be removed"
+    );
+}
+
+#[test]
+fn test_target_detach_from_target() {
+    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let mut session = HeadlessSession::new(800.0, 600.0);
+    server.set_auto_attach(true);
+    let (result, events) = server.dispatch_with_events(&mut session, "Target.createTarget", serde_json::json!({}));
+    result.unwrap();
+    let sid = events[0].params["sessionId"].as_str().unwrap().to_string();
+
+    let (result, events) = server.dispatch_with_events(
+        &mut session,
+        "Target.detachFromTarget",
+        serde_json::json!({ "sessionId": sid }),
+    );
+    assert!(result.is_ok());
+    assert!(events.iter().any(|e| e.method == "Target.detachedFromTarget"));
+    assert!(!server.session_attached(&sid));
+    // detach 后该会话上的命令必须被拒
+    let raw = format!(r#"{{"id":1,"method":"session.status","params":{{}},"sessionId":"{sid}"}}"#);
+    let (response, _) = server.handle_message_with_events(&mut session, &raw);
+    assert_eq!(response.error.as_ref().unwrap().code, -32001);
+}
+
+#[test]
+fn test_runtime_enable_emits_execution_context() {
+    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let mut session = HeadlessSession::new(800.0, 600.0);
+    let (result, events) = server.dispatch_with_events(&mut session, "Runtime.enable", Value::Null);
+    assert!(result.is_ok());
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].method, "Runtime.executionContextCreated");
+    assert!(events[0].params["context"]["id"].is_number());
+}
+
+#[test]
+fn test_runtime_run_if_waiting_for_debugger_ok() {
+    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let mut session = HeadlessSession::new(800.0, 600.0);
+    let result = server
+        .dispatch(&mut session, "Runtime.runIfWaitingForDebugger", Value::Null)
+        .unwrap();
+    assert!(result.is_object());
+}
+
 #[test]
 fn test_dispatch_cdp_target_get_targets() {
     let server = HeadlessServer::new(0, 800.0, 600.0);
     let mut session = HeadlessSession::new(800.0, 600.0);
     let (result, events) = server.dispatch_with_events(&mut session, "Target.getTargets", Value::Null);
     assert!(result.is_ok());
-    assert!(result.as_ref().unwrap().get("contexts").is_some());
+    // M1 切片 3：CDP 形状修正（旧实现误用 BiDi tree 的 contexts 形状）
+    assert!(result.as_ref().unwrap().get("targetInfos").is_some());
 }
 
 #[test]
@@ -731,9 +864,9 @@ fn test_smoke_cdp_command_sequence() {
     assert_eq!(version["Browser"], format!("ZeroWeb/{}", zero_product_version::VERSION));
     assert!(version["webSocketDebuggerUrl"].as_str().unwrap().starts_with("ws://"));
 
-    // 2. Target.getTargets
+    // 2. Target.getTargets（M1 切片 3：CDP 形状 targetInfos，替换旧 BiDi tree contexts）
     let targets = runner.send("Target.getTargets", Value::Null).unwrap();
-    assert!(targets.get("contexts").is_some());
+    assert!(targets.get("targetInfos").is_some());
 
     // 3. Runtime.evaluate
     let eval_result = runner

@@ -2,7 +2,7 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-12（M1 切片 1 落地：headless.rs 拆分 9 模块）
+**最后更新**: 2026-09-12（M1 切片 3 落地：Playwright 首连成功 + objectId 桥记待用户决策）
 
 ---
 
@@ -33,6 +33,20 @@
 
 ## 已完成切片
 
+- **S4（2026-09-12）M1 切片 3 — Target/Browser/Runtime 域 + Playwright 首连**：
+  `Target.setAutoAttach`（flatten，浏览器级附接全部 page target + attachedToTarget 事件，
+  会话级正确语义=仅子 target→无事件）/ `getTargetInfo`（浏览器级+按 targetId）/
+  `createTarget`（autoAttach 自动附接）/ `closeTarget`（targetDestroyed+会话摘除）/
+  `detachFromTarget` / `getTargets` CDP 形状修形（targetInfos）；`Browser.getVersion`/
+  `setDownloadBehavior` stub；`Runtime.enable`（executionContextCreated + auxData 契约）/
+  `Runtime.evaluate`+`callFunctionOn`（无 objectId 路径，renderer 类型化 AutomationValue →
+  remoteObject returnByValue）/ `runIfWaitingForDebugger`；`Page.enable`/`getFrameTree`
+  （**主 frame id = targetId**，CDP 硬契约）/`createIsolatedWorld`（utility world 记账）/
+  init 命令族 stub；**ServerEvent 增 sessionId 盖章**（session 级事件客户端路由必需，
+  Target 宣告事件除外）。**Playwright connectOverCDP 首连成功**：connect/attach/
+  context.newPage 全通；evaluate 执行到 utilityScript 句柄处暴露 objectId 桥缺口
+  （→ 待用户决策）。实测确认三条 CDP 硬契约：主 frame id=targetId、session 级事件必带
+  sessionId、executionContextCreated 必带 auxData.frameId/isDefault。
 - **S3（2026-09-12）M1 切片 2 — 传输层 sessionId 复用 + 发现端点修正**：`ClientRequest/
   ServerResponse` 增 `sessionId`（camelCase rename，回显 + 未附接 `-32001`）；`/json/version`
   尾斜杠容忍（P8/G2 收口）；`/json`、`/json/list` 按真实标签页枚举（`zeroweb-tab-<n>`，
@@ -57,25 +71,33 @@
 
 ## 下一步计划
 
-1. **M1 切片 3**：Target 域（setAutoAttach flatten / getTargetInfo / createTarget /
-   attachedToTarget 事件 + attach_session 注册表接线）+ `Browser.getVersion` +
-   Runtime.enable / evaluate remoteObject 雏形 / releaseObject / runIfWaitingForDebugger
-   stub → `CDP_ENDPOINT_URL=… npm run capture:chromium` 首连验收（steps-report 为差距
-   清单；smoke 已确认 connect 首个缺口是 `Browser.getVersion` -32601）
-2. **M2-M4**：按矩阵三态逐域收敛；cookie 落点以 **Storage.getCookies/setCookies/
-   clearCookies** 为准（发现 #2 修正）；CSS.getMatchedStylesForNode 与 DOM.getDocument
-   归 M3 goal 扩展面（devtools 前置）
+1. **M2（转域推进，objectId 桥挂起等决策）**：Page 导航事件族（frameNavigated/
+   frameStarted/StoppedLoading/lifecycleEvent/loadEventFired 实义化，addScript 注入源
+   真执行 + 新文档持久化）+ Page.getLayoutMetrics + handleJavaScriptDialog +
+   Input.dispatch 双域接 host 管线 → goto/click/fill/keyboard 核心流（均 value-only，
+   不依赖 objectId 桥）
+2. **M3**：DOM 句柄桥 + Emulation.setDeviceMetricsOverride 实义（当前 -32601）+
+   setEmulatedMedia 实义
+3. **M4**：Network 事件总线 + Storage cookie 域 + console 对象化
+4. **objectId 桥获批后**：renderer/protocol/engine 跨 crate 对象注册表（evaluate/
+   locator 流收口）
 
 **待用户决策清单**：
-- （暂无。V8 对象句柄桥（Runtime.callFunctionOn/objectId）按入口文档先走「自主实现」；
-  若 M1 首连实测其深结构拦路，再记此处）
+- **objectId 句柄桥（深结构，2026-09-12 实测确认）**：Playwright evaluate/locator 全
+  管线依赖 `utilityScript` 对象句柄——需 renderer 侧 JS 对象注册表（retain JSValue 跨
+  IPC）+ protocol 新消息（EvaluateRetainingHandle/CallFunctionOnHandle/ReleaseHandle）+
+  headless Runtime.evaluate(callFunctionOn) returnByValue:false objectId 返回 +
+  Runtime.releaseObject。现有 AutomationElementRef 仅覆盖 DOM 节点，不覆盖任意 JS 对象。
+  改动面跨 protocol/page-runtime（renderer 自动化域）/engine/browser 四处，属跨 crate
+  协议扩展。**M2/M3/M4 域不受阻**（value-only），本 goal 按入口文档「跳过并继续其他域」
+  执行，等拍板后作为独立切片落地。
 
 ## 里程碑状态
 
 | 里程碑 | 状态 |
 |--------|------|
-| M1 — 传输/发现/Target 基座 + Playwright 首连 | 🚧 传输/发现面完成（S2 拆分 + S3 sessionId/尾斜杠/枚举）；Target/Runtime 域未开始（首连缺口 = `Browser.getVersion`） |
-| M2 — Page/Input 域 → 点击/填充/键盘/导航流 | ⏳ |
+| M1 — 传输/发现/Target 基座 + Playwright 首连 | 🚧 连接面全通（S4：connect/attach/newPage ✓）；evaluate 收口卡 objectId 桥（待用户决策） |
+| M2 — Page/Input 域 → 点击/填充/键盘/导航流 | ⏳ 下一里程碑（value-only，不受 objectId 桥阻塞） |
 | M3 — DOM/CSS/Emulation → locator 流 | ⏳ |
 | M4 — Network/cookies/console 对象化（cookie 落点=Storage 域） | ⏳ |
 | M5 — 矩阵收口 | ⏳ |

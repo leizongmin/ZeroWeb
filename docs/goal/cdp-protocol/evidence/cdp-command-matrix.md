@@ -1,6 +1,6 @@
 # CDP 命令矩阵账本（DC-1 控制件）
 
-**版本**: v0.1（M1 前置纯资产切片产出）
+**版本**: v0.2（S4 后三态推进；v0.1 为 M1 前置纯资产切片初稿）
 **日期**: 2026-09-12
 **捕获客户端**: playwright-core **1.63.0**（pin，见 `tests/playwright-matrix/package.json` + lockfile）
 **捕获目标**: Chromium 153.0.8010.12（playwright 缓存 chromium-1243，headless=new）
@@ -43,7 +43,8 @@ CDP 流量。零源码改动。
 ## 三态登记
 
 三态：✅ 实现 / ⚠️ 部分（命令被接受但语义/形状不全）/ ❌ 不实现（当前返回 `-32601`，符合
-DC-3 基线）。「现状」列以 2026-09-12 `apps/browser/src/headless.rs`（2256 行）为准。
+DC-3 基线）。「现状」列以 2026-09-12 `apps/browser/src/headless/`（M1 拆分后模块树，S4
+切片状态）为准；行内（Sx）标记对应 master.md 已完成切片编号。
 
 策略记号：**stub** = 先接受返回 `{}`（解附接摩擦），实义语义后续里程碑补。
 
@@ -59,44 +60,44 @@ DC-3 基线）。「现状」列以 2026-09-12 `apps/browser/src/headless.rs`（
 
 | 方法 | 捕获调用 | 参数键 | ZeroWeb 现状 | 计划 |
 |------|---------|--------|--------------|------|
-| `Browser.getVersion` | 1 | — | ❌ | M1（数据已有，纯形状） |
-| `Browser.setDownloadBehavior` | 1 | behavior/downloadPath/eventsEnabled | ❌ | M1 stub |
+| `Browser.getVersion` | 1 | — | ✅（S4） | 完成（M1 S4） |
+| `Browser.setDownloadBehavior` | 1 | behavior/downloadPath/eventsEnabled | ✅ stub 接受（S4） | 完成（M1 S4；下载能力待点名） |
 
 ### Target 域
 
 | 方法 | 捕获调用 | 参数键 | ZeroWeb 现状 | 计划 |
 |------|---------|--------|--------------|------|
-| `Target.setAutoAttach` | 4 | autoAttach/flatten/waitForDebuggerOnStart | ❌ | M1（连接脊柱） |
-| `Target.getTargetInfo` | 1 | — | ❌ | M1 |
-| `Target.createTarget` | 2 | url | ❌ | M1（newPage 依赖） |
-| `Target.closeTarget` | 1 | targetId | ❌ | M2 |
-| `Target.detachFromTarget` | 3 | sessionId | ❌ | M2 |
-| `Target.getTargets` | **0（未调用）** | — | ⚠️ 返回 BiDi tree 形状非 CDP `targetInfos` | M1 修形（devtools 面兜底） |
+| `Target.setAutoAttach` | 4 | autoAttach/flatten/waitForDebuggerOnStart | ✅（S4：浏览器级附接全部 page target + 会话级仅子 target 语义） | 完成（M1 S4） |
+| `Target.getTargetInfo` | 1 | — | ✅（S4：浏览器级 + 按 targetId） | 完成（M1 S4） |
+| `Target.createTarget` | 2 | url | ✅（S4：autoAttach 时自动附接发事件） | 完成（M1 S4） |
+| `Target.closeTarget` | 1 | targetId | ✅（S4：targetDestroyed + 会话摘除） | 完成（M1 S4） |
+| `Target.detachFromTarget` | 3 | sessionId | ✅（S4） | 完成（M1 S4） |
+| `Target.getTargets` | **0（未调用）** | — | ✅ CDP 形状修正（S4，`targetInfos`） | 完成（M1 S4） |
 | `Target.attachToTarget` | 0（flatten 路径不需要） | — | ❌ | 不实现（账本注明） |
 
 ### Runtime 域
 
 | 方法 | 捕获调用 | 参数键 | ZeroWeb 现状 | 计划 |
 |------|---------|--------|--------------|------|
-| `Runtime.enable` | 5 | — | ❌ | M1 |
-| `Runtime.evaluate` | 8 | contextId/expression | ⚠️ 扁平 `{type:"string",value}`；无 objectId/exceptionDetails/contextId | M1（remoteObject 雏形） |
-| `Runtime.callFunctionOn` | **156** | arguments/awaitPromise/functionDeclaration/objectId/returnByValue/userGesture | ❌ | M1 雏形 → M3 全量（objectId 桥） |
-| `Runtime.releaseObject` | 51 | objectId | ❌ | M1（objectId 生命周期） |
-| `Runtime.runIfWaitingForDebugger` | 8 | — | ❌ | M1 stub |
+| `Runtime.enable` | 5 | — | ✅（S4：补发 executionContextCreated + auxData 契约） | 完成（M1 S4） |
+| `Runtime.evaluate` | 8 | contextId/expression | ⚠️ 类型化 remoteObject（S4，returnByValue）+ exceptionDetails；**缺 objectId 句柄（utilityScript 深结构，待用户决策）** | M1 收口挂 objectId 桥 |
+| `Runtime.callFunctionOn` | **156** | arguments/awaitPromise/functionDeclaration/objectId/returnByValue/userGesture | ⚠️ 无 objectId 路径已实现（S4：value 参数 + 表达式包装 + 类型化返回）；objectId 路径 -32601 | 收口挂 objectId 桥（待用户决策） |
+| `Runtime.releaseObject` | 51 | objectId | ❌（与 objectId 桥配对，挂起） | objectId 桥获批后 |
+| `Runtime.runIfWaitingForDebugger` | 8 | — | ✅ stub 接受（S4） | 完成（M1 S4） |
 
 ### Page 域
 
 | 方法 | 捕获调用 | 参数键 | ZeroWeb 现状 | 计划 |
 |------|---------|--------|--------------|------|
-| `Page.enable` | 13 | — | ❌ | M1 |
+| `Page.enable` | 13 | — | ✅（S4） | 完成（M1 S4） |
 | `Page.navigate` | 2 | frameId/url/referrerPolicy | ⚠️ 返回 `{url,title,success}` ≠ `{frameId,loaderId}`；无 frameId/referrer 参数 | M2（形状对齐 + 事件族） |
 | `Page.captureScreenshot` | 3 | captureBeyondViewport/clip/format | ⚠️ 无 clip/format/captureBeyondViewport | M2 |
 | `Page.getLayoutMetrics` | 3 | — | ❌ | M2 |
 | `Page.handleJavaScriptDialog` | 3 | accept/promptText | ❌ | M2 |
-| `Page.addScriptToEvaluateOnNewDocument` | 3 | source/worldName | ❌ | M2（utility 脚本，locator 依赖） |
-| `Page.createIsolatedWorld` | 3 | frameId/grantUniveralAccess/worldName | ❌ | M2 |
-| `Page.getFrameTree` | 3 | — | ❌ | M2 |
-| `Page.setLifecycleEventsEnabled` | 3 | enabled | ❌ | M2（导航等待的事件源） |
+| `Page.addScriptToEvaluateOnNewDocument` | 3 | source/worldName | ⚠️ 返回 identifier（S4）；**source 未真执行/未跨导航持久化** | M2 实义 |
+| `Page.createIsolatedWorld` | 3 | frameId/grantUniveralAccess/worldName | ⚠️ 返回新 contextId + worldName 事件（S4）；world 不隔离（单引擎） | 记账注记；真隔离随引擎能力 |
+| `Page.getFrameTree` | 3 | — | ✅（S4：主 frame id=targetId 硬契约；会话级按 target 归属） | 完成（M1 S4） |
+| `Page.setLifecycleEventsEnabled` | 3 | enabled | ⚠️ stub 接受（S4）；lifecycleEvent 事件未产 | M2 实义 |
 | `Page.setFontFamilies` | 3 | fontFamilies | ❌ | M2 stub |
 
 ### Input 域
@@ -123,8 +124,8 @@ DC-3 基线）。「现状」列以 2026-09-12 `apps/browser/src/headless.rs`（
 | 方法 | 捕获调用 | 参数键 | ZeroWeb 现状 | 计划 |
 |------|---------|--------|--------------|------|
 | `Emulation.setDeviceMetricsOverride` | 2 | deviceScaleFactor/height/mobile/screenHeight/screenOrientation/screenWidth/width | ❌ | M3（viewport 桥） |
-| `Emulation.setEmulatedMedia` | 4 | features/media | ❌ | M3 |
-| `Emulation.setFocusEmulationEnabled` | 3 | enabled | ❌ | M3 stub |
+| `Emulation.setEmulatedMedia` | 4 | features/media | ⚠️ stub 接受（S4）；媒体仿真未生效 | M3 实义 |
+| `Emulation.setFocusEmulationEnabled` | 3 | enabled | ✅ stub 接受（S4） | 完成（M1 S4） |
 | `Emulation.setUserAgentOverride` | 2 | userAgent | ❌ | M3 stub → M4 实义（net UA 接线） |
 
 ### Network 域
@@ -145,14 +146,15 @@ DC-3 基线）。「现状」列以 2026-09-12 `apps/browser/src/headless.rs`（
 
 | 方法 | 捕获调用 | 参数键 | ZeroWeb 现状 | 计划 |
 |------|---------|--------|--------------|------|
-| `Log.enable` | 3 | — | ❌ | M2 stub（`Log.entryAdded` 可选） |
+| `Log.enable` | 3 | — | ✅ stub 接受（S4） | 完成（M1 S4；entryAdded 不实现-ok） |
 
 ### 浏览器事件（S2C 无 id，捕获 30 种）
 
 | 事件 | 次数 | ZeroWeb 现状 | 计划 |
 |------|------|--------------|------|
-| `Target.attachedToTarget` | 8 | ❌ | M1（auto-attach 应答） |
-| `Runtime.executionContextCreated` | 14 | ❌ | M1 |
+| `Target.attachedToTarget` | 8 | ✅（S4） | 完成（M1 S4） |
+| `Target.detachedFromTarget` / `Target.targetDestroyed` | 4 / — | ✅（S4：closeTarget/detachFromTarget 应答） | 完成（M1 S4） |
+| `Runtime.executionContextCreated` | 14 | ✅（S4：auxData.frameId/isDefault 硬契约） | 完成（M1 S4） |
 | `Runtime.executionContextsCleared` | 4 | ❌ | M2 |
 | `Runtime.executionContextDestroyed` | 2 | ❌ | M2 |
 | `Runtime.consoleAPICalled` | 14 | ❌ | M4（console 对象化，P5 缺口） |
@@ -194,7 +196,7 @@ DC-3 基线）。「现状」列以 2026-09-12 `apps/browser/src/headless.rs`（
 | G1 | WS 层 sessionId 多路复用 | 🔶 传输面已解（S3：解析/回显/未附接 -32001/附接注册表）；per-target 真路由随 Target 域（切片 3） |
 | G2 | `/json/version` 尾斜杠 404 | ✅ 已解（S3） |
 | G2b | tungstenite write() 缓冲不落盘 + peek 5s read timeout 未恢复 → 任何 CDP 客户端收不到响应 | ✅ 已解（S3，实测发现；learning 2026-09-12） |
-| G3 | `Runtime.evaluate` 扁平字符串结果，无 remoteObject/objectId | 全部 evaluate/locator 流 |
+| G3 | `Runtime.evaluate` 扁平字符串结果，无 remoteObject/objectId | 🔶 类型化 returnByValue 已解（S4）；objectId 句柄待用户决策（utilityScript 深结构） |
 | G4 | 无请求事件总线（net 生命周期无观测点） | Network 域 + devtools 面板（P6） |
 | G5 | console 走 `__zw_console_log` 扁平字符串宿主回调 | consoleAPICalled remoteObject 形态（P5） |
 | G6 | `headless.rs` 2256 行超 2000 上限 | ✅ 已解（S2 拆分 9 模块） |

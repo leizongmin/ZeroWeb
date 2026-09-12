@@ -49,6 +49,9 @@ pub(super) struct ProtocolError {
 }
 
 /// 发送给客户端的事件通知（Phase 2 使用）。
+///
+/// CDP 扁平协议：session 级事件必须携带 `sessionId` 供客户端路由到对应
+/// child session；浏览器级宣告事件（Target.attachedToTarget 等）不带。
 #[derive(Debug, Serialize)]
 #[allow(dead_code)]
 pub(super) struct ServerEvent {
@@ -56,4 +59,7 @@ pub(super) struct ServerEvent {
     pub(super) method: String,
     /// 事件参数。
     pub(super) params: Value,
+    /// 事件归属的 CDP 会话（session 级事件必带；浏览器级事件为 None）。
+    #[serde(skip_serializing_if = "Option::is_none", rename = "sessionId")]
+    pub(super) session_id: Option<String>,
 }
