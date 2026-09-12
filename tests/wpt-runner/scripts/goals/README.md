@@ -31,6 +31,13 @@ goal 入口文档 `docs/goal/<goal>.md` DC-1。
 | 92 | [web-api-batch2](../../../../docs/goal/web-api-batch2.md) | clipboard-apis; fullscreen | 已立项（2026-09-12） |
 | 99 | [webgl-compat](../../../../docs/goal/webgl-compat.md) | webgl | **远期门控**（M2+ 全门控，M1 盘点为唯一自主切片） |
 
+## 与 rally 启动脚本的关系
+
+- `scripts/rally-N-<goal>.sh`（仓库根 scripts/，编号 6-14 对应本目录 10-99）：**启动
+  无人值守推进循环**（`rally run docs/goal/<goal>.md`）——这是 goal 的执行入口。
+- 本目录 `NN-<goal>.sh`：**M1 语料预置**（fetch + 盘点 + 检查单），rally 轮内或
+  手动执行均可；两者编号不同（rally-6 ↔ 本目录 10），各脚本头注释互相指向。
+
 ## 约定
 
 - **同一 WPT_REV pin**（lib.sh，与既有 fetch-*-subset.sh 一致）——保证语料可比、可复现
