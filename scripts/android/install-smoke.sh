@@ -53,11 +53,28 @@ if [[ "$renderer_uid" == "$browser_uid" || "$decoder_uid" == "$browser_uid" || "
 fi
 
 echo "$processes"
-probes=$("$ADB" logcat -d -t 500)
+# probe 日志晚于 am start -W 返回（软件渲染冷启动首帧 4s+，probe 在服务连接后台线程），
+# 固定窗口会误报——轮询等待，上限 60s。CI 实证：34706845122 两次 attempt 各差一个 probe。
+probe_deadline=$((SECONDS + 60))
+probes=""
+while (( SECONDS < probe_deadline )); do
+  probes=$("$ADB" logcat -d -t 2000)
+  if grep -q "decoder probe succeeded" <<<"$probes" && grep -q "compositor bridge ready" <<<"$probes"; then
+    break
+  fi
+  sleep 2
+done
 for probe in "decoder probe succeeded" "compositor bridge ready"; do
   grep -q "$probe" <<<"$probes" || fail "Android socket probe did not report success: $probe"
 done
 if [[ "$require_renderer" == 1 ]]; then
+  while (( SECONDS < probe_deadline )); do
+    probes=$("$ADB" logcat -d -t 2000)
+    if grep -q "renderer socket connected" <<<"$probes" && grep -q "renderer page frame ready" <<<"$probes"; then
+      break
+    fi
+    sleep 2
+  done
   grep -q "renderer socket connected" <<<"$probes" || fail "Renderer-enabled APK did not connect its native renderer socket"
   grep -q "renderer page frame ready" <<<"$probes" || fail "Renderer-enabled APK did not produce a page frame"
 fi
