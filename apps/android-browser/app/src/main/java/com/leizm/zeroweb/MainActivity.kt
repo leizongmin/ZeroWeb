@@ -22,6 +22,7 @@ import android.view.inputmethod.InputMethodManager
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.Image
@@ -54,7 +55,9 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.content.FileProvider
 import org.json.JSONObject
+import java.io.File
 import java.nio.ByteBuffer
 
 /** 标签缩略图缩放目标宽（像素）：56dp @2x，缓存体量与解码成本折中。 */
@@ -63,6 +66,23 @@ private const val TAB_THUMB_WIDTH_PX = 112
 /** 下载通知渠道/Tag（FR-006）：渠道在 onCreate 幂等创建，通知按 Tag 固定复用。 */
 private const val DOWNLOAD_NOTIFICATION_CHANNEL = "downloads"
 private const val DOWNLOAD_NOTIFICATION_TAG = "downloads"
+
+/** 下载打开/导出的 MIME 推断：常见类型白名单，未知类型走通用二进制。 */
+private fun mimeFor(filename: String): String = when (filename.substringAfterLast('.', "").lowercase()) {
+    "pdf" -> "application/pdf"
+    "png" -> "image/png"
+    "jpg", "jpeg" -> "image/jpeg"
+    "gif" -> "image/gif"
+    "webp" -> "image/webp"
+    "svg" -> "image/svg+xml"
+    "txt" -> "text/plain"
+    "html", "htm" -> "text/html"
+    "json" -> "application/json"
+    "mp4" -> "video/mp4"
+    "mp3" -> "audio/mpeg"
+    "zip" -> "application/zip"
+    else -> "application/octet-stream"
+}
 
 /** Android launcher Activity for the ZeroWeb browser process. */
 class MainActivity : ComponentActivity() {
@@ -97,6 +117,14 @@ class MainActivity : ComponentActivity() {
     private val tabThumbnails = mutableStateMapOf<Long, ImageBitmap>()
     /** 已通知/见过的最大下载 id 水位线（0 = 尚未立基线，首次快照只立线不通知）。 */
     private var notifiedDownloadId = 0L
+    /** 正在导出的下载条目：CreateDocument 选择器返回后消费。 */
+    private var pendingExportDownload: BrowserDownload? = null
+    private val exportLauncher =
+        registerForActivityResult(ActivityResultContracts.CreateDocument("*/*")) { uri ->
+            val entry = pendingExportDownload
+            pendingExportDownload = null
+            if (uri != null && entry != null) exportDownloadTo(entry, uri)
+        }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -138,6 +166,8 @@ class MainActivity : ComponentActivity() {
                     onToggleKeyboard = ::toggleKeyboard,
                     onPageInputViewCreated = ::registerPageInputView,
                     tabThumbnails = tabThumbnails,
+                    onExportDownload = ::startExportDownload,
+                    onOpenDownload = ::openDownload,
                 )
             }
         }
@@ -522,6 +552,43 @@ class MainActivity : ComponentActivity() {
             .build()
         manager.notify(DOWNLOAD_NOTIFICATION_TAG, 0, notification)
     }
+
+    /** 下载落盘文件（与 facade::record_download 的存储布局耦合，同进程读取）。 */
+    private fun downloadFileFor(entry: BrowserDownload): File =
+        File(filesDir, "profile/downloads/${entry.id}-${entry.filename}")
+
+    /** SAF 导出（FR-006）：弹出系统文件选择器，用户授予的 URI 由 browser 进程写入。 */
+    private fun startExportDownload(entry: BrowserDownload) {
+        pendingExportDownload = entry
+        exportLauncher.launch(entry.filename)
+    }
+
+    private fun exportDownloadTo(entry: BrowserDownload, uri: android.net.Uri) {
+        Thread {
+            runCatching {
+                val bytes = downloadFileFor(entry).readBytes()
+                contentResolver.openOutputStream(uri)?.use { stream -> stream.write(bytes) }
+                    ?: error("output stream unavailable for $uri")
+            }.onFailure { error ->
+                android.util.Log.e("ZeroWebRole", "download export failed: $error")
+                browserError = getString(R.string.error_download_export_failed)
+            }
+        }.start()
+    }
+
+    /** ACTION_VIEW 打开（FR-006）：FileProvider content URI 只读授予外部查看器。 */
+    private fun openDownload(entry: BrowserDownload) {
+        val file = downloadFileFor(entry)
+        if (!file.isFile) {
+            browserError = getString(R.string.error_download_missing)
+            return
+        }
+        val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", file)
+        val intent = Intent(Intent.ACTION_VIEW).setDataAndType(uri, mimeFor(entry.filename))
+            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        runCatching { startActivity(intent) }
+            .onFailure { browserError = getString(R.string.error_download_missing) }
+    }
 }
 
 /**
@@ -590,6 +657,8 @@ private fun BrowserScreen(
     onToggleKeyboard: () -> Unit,
     onPageInputViewCreated: (PageInputView) -> Unit,
     tabThumbnails: Map<Long, ImageBitmap>,
+    onExportDownload: (BrowserDownload) -> Unit,
+    onOpenDownload: (BrowserDownload) -> Unit,
 ) {
     var page by remember { mutableStateOf(BrowserPage.BROWSE) }
     BackHandler(enabled = page != BrowserPage.BROWSE) { page = BrowserPage.BROWSE }
@@ -617,6 +686,8 @@ private fun BrowserScreen(
                 onOpenUrl = onNavigate,
                 onRemoveBookmark = onRemoveBookmark,
                 onClearHistory = onClearHistory,
+                onExportDownload = onExportDownload,
+                onOpenDownload = onOpenDownload,
             )
             return@Column
         }
@@ -734,6 +805,8 @@ private fun BrowserLibraryPage(
     onOpenUrl: (String) -> Unit,
     onRemoveBookmark: (String) -> Unit,
     onClearHistory: () -> Unit,
+    onExportDownload: (BrowserDownload) -> Unit,
+    onOpenDownload: (BrowserDownload) -> Unit,
 ) {
     when (page) {
         BrowserPage.BOOKMARKS -> {
@@ -762,6 +835,12 @@ private fun BrowserLibraryPage(
             snapshot.downloads.forEach { entry ->
                 Text("${entry.filename} · ${entry.state}")
                 Text(entry.url, style = MaterialTheme.typography.labelSmall)
+                if (entry.state == "Completed") {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TextButton(onClick = { onExportDownload(entry) }) { Text(stringResource(R.string.action_export)) }
+                        TextButton(onClick = { onOpenDownload(entry) }) { Text(stringResource(R.string.action_open)) }
+                    }
+                }
             }
         }
         BrowserPage.BROWSE -> Unit

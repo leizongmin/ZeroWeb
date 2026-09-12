@@ -38,4 +38,8 @@
     <string name="error_renderer_restore_failed">Renderer recovery failed, please try again later</string>
     <string name="notification_channel_downloads">Downloads</string>
     <string name="notification_download_complete">Download complete</string>
+    <string name="action_export">Export</string>
+    <string name="action_open">Open</string>
+    <string name="error_download_export_failed">Failed to export download</string>
+    <string name="error_download_missing">Download file is missing</string>
 </resources>

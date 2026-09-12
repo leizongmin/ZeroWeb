@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- FR-006：仅暴露下载落盘目录（facade::record_download 的写入位置） -->
+<paths>
+    <files-path
+        name="downloads"
+        path="profile/downloads/" />
+</paths>

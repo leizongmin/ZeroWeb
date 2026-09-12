@@ -35,5 +35,16 @@
         <service android:name=".RendererService7" android:exported="false" android:isolatedProcess="true" />
         <service android:name=".CompositorService" android:exported="false" android:process=":compositor" />
         <service android:name=".ImageDecoderService" android:exported="false" android:isolatedProcess="true" />
+
+        <!-- FR-006：下载文件经 FileProvider 以 content:// 授予 ACTION_VIEW 查看器只读访问 -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
     </application>
 </manifest>
