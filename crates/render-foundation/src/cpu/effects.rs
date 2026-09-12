@@ -469,49 +469,51 @@ fn box_blur_channel(data: &mut [u8], width: usize, height: usize, radius: usize)
         return;
     }
 
-    let kernel_size = radius * 2 + 1;
+    // R4292：滑动窗口修正——原实现两处算法错误（Python 逐行模拟复现）：
+    // ① **初始化双计**：init 累加 `[0..=radius]`（r+1 像素）后 x=0 迭代又加
+    //    `data[radius]`，x=r 处 sum 达 r+2 像素值（22×255/21 = 267）→ `as u8`
+    //    **截断为 11**（黑柱伪影）；
+    // ② **边界除数错**：钳位窗口（x<r）实际窗宽 < 2r+1 却仍除 kernel_size →
+    //    左/上缘 r 像素均匀暗带。三遍 H+V 放大使暗柱扩散为整片衰减（均匀纯红
+    //    内部 255→15，G/B=0——backdrop-filter 集群「透明黑拉」假象的真身，
+    //    R4286-N 诊断的终解）。
+    // 修正：窗口和**先发后滑**（emit 用当前窗和，advance 再加减），除数 =
+    // 实际钳位窗宽（hi-lo+1），和 ≤ 窗宽×255 无溢出、emit ≤ 255 无截断。
+    let mut temp = vec![0u8; data.len()];
 
     // 水平模糊
-    let mut temp = vec![0u8; data.len()];
     for y in 0..height {
-        let mut sum = 0u32;
-        // 初始化窗口
-        for dx in 0..=radius.min(width - 1) {
-            sum += data[y * width + dx] as u32;
-        }
+        let row = y * width;
+        let init_hi = radius.min(width - 1);
+        let mut sum: u32 = data[row..row + init_hi + 1].iter().map(|&v| v as u32).sum();
         for x in 0..width {
-            let right_x = x + radius;
-            let left_x = if x > radius { x - radius - 1 } else { usize::MAX };
-
-            if right_x < width {
-                sum += data[y * width + right_x] as u32;
+            let lo = x.saturating_sub(radius);
+            let hi = (x + radius).min(width - 1);
+            temp[row + x] = (sum / (hi - lo + 1) as u32) as u8;
+            // advance：window(x+1) = [x+1-r, x+1+r]（钳位）——加新右缘、去旧左缘
+            if x + radius + 1 < width {
+                sum += data[row + x + radius + 1] as u32;
             }
-            if left_x != usize::MAX {
-                sum -= data[y * width + left_x] as u32;
+            if x >= radius {
+                sum -= data[row + x - radius] as u32;
             }
-
-            temp[y * width + x] = (sum / kernel_size as u32) as u8;
         }
     }
 
     // 垂直模糊
     for x in 0..width {
-        let mut sum = 0u32;
-        for dy in 0..=radius.min(height - 1) {
-            sum += temp[dy * width + x] as u32;
-        }
+        let init_hi = radius.min(height - 1);
+        let mut sum: u32 = (0..=init_hi).map(|dy| temp[dy * width + x] as u32).sum();
         for y in 0..height {
-            let bottom_y = y + radius;
-            let top_y = if y > radius { y - radius - 1 } else { usize::MAX };
-
-            if bottom_y < height {
-                sum += temp[bottom_y * width + x] as u32;
+            let lo = y.saturating_sub(radius);
+            let hi = (y + radius).min(height - 1);
+            data[y * width + x] = (sum / (hi - lo + 1) as u32) as u8;
+            if y + radius + 1 < height {
+                sum += temp[(y + radius + 1) * width + x] as u32;
             }
-            if top_y != usize::MAX {
-                sum -= temp[top_y * width + x] as u32;
+            if y >= radius {
+                sum -= temp[(y - radius) * width + x] as u32;
             }
-
-            data[y * width + x] = (sum / kernel_size as u32) as u8;
         }
     }
 }
