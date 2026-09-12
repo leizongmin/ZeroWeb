@@ -1072,8 +1072,25 @@ impl Painter {
             || box_node.overflow_y != OverflowClip::Visible
             || box_node.line_clamp_clip;
 
+        // R4261（CSS Overflow 5 §scroll-marker）：组盒内 per-item 伪盒（无 DOM 身份，
+        // node_id = 属主子元素）按其 `scroll_marker_pseudo` 伪样式绘制背景/边框——叶盒
+        // 无子无文本（content 非 normal 已在样式相位 gate；装箱坐标由 layout 合成）。
+        if box_node.is_scroll_marker
+            && let Some(marker_style) = box_node
+                .node_id
+                .and_then(|id| styles.get(&id))
+                .and_then(|s| s.scroll_marker_pseudo.as_deref())
+        {
+            if marker_style.background_color != ColorValue::Transparent || !marker_style.background_image.is_empty() {
+                self.paint_background(box_node, abs_x, abs_y, marker_style, styles);
+            }
+            self.paint_borders(box_node, abs_x, abs_y, marker_style);
+            return;
+        }
+
         // R4257：`::scroll-marker-group` 生成组盒——脏矩形路径同主路径按伪样式绘制
-        //（见 paint_node_inner 同名分支）。
+        //（见 paint_node_inner 同名分支）。R4261：组盒含 per-item marker 子盒（切片 1
+        // 组盒为叶），绘制子盒（坐标相对组盒内容盒）。
         if box_node.is_scroll_marker_group
             && let Some(group_style) = box_node
                 .node_id
@@ -1085,6 +1102,11 @@ impl Painter {
                 self.paint_background(box_node, abs_x, abs_y, group_style, styles);
             }
             self.paint_borders(box_node, abs_x, abs_y, group_style);
+            let group_child_x = abs_x + box_node.padding_left + box_node.border_left;
+            let group_child_y = abs_y + box_node.padding_top + box_node.border_top;
+            for child in &box_node.children {
+                self.paint_node_in_rect(child, styles, group_child_x, group_child_y, dirty_rect, doc);
+            }
             return;
         }
 
@@ -1371,10 +1393,27 @@ impl Painter {
         let abs_x = offset_x + box_node.x;
         let abs_y = offset_y + box_node.y;
 
+        // R4261（CSS Overflow 5 §scroll-marker）：组盒内 per-item 伪盒（无 DOM 身份，
+        // node_id = 属主子元素）按其 `scroll_marker_pseudo` 伪样式绘制背景/边框——叶盒
+        // 无子无文本（content 非 normal 已在样式相位 gate；装箱坐标由 layout 合成）。
+        if box_node.is_scroll_marker
+            && let Some(marker_style) = box_node
+                .node_id
+                .and_then(|id| styles.get(&id))
+                .and_then(|s| s.scroll_marker_pseudo.as_deref())
+        {
+            if marker_style.background_color != ColorValue::Transparent || !marker_style.background_image.is_empty() {
+                self.paint_background(box_node, abs_x, abs_y, marker_style, styles);
+            }
+            self.paint_borders(box_node, abs_x, abs_y, marker_style);
+            return;
+        }
+
         // R4257（CSS Overflow 5 §scroll-marker-group）：`::scroll-marker-group` 生成组盒
         // 专用绘制——组盒无 DOM 身份（node_id = 属主），按属主 `scroll_marker_group_pseudo`
-        // 伪样式绘制背景/边框后返回（切片 1：组盒为叶，无 per-item marker 子盒；子盒排布
-        // 留切片 2）。不走常规路径：属主样式（背景/边框/文本）会污染组盒。
+        // 伪样式绘制背景/边框。不走常规路径：属主样式（背景/边框/文本）会污染组盒。
+        // R4261：组盒含 per-item marker 子盒（切片 1 组盒为叶），绘制子盒（坐标相对组盒
+        // 内容盒；组盒 border/padding 当前恒 0）。
         if box_node.is_scroll_marker_group
             && let Some(group_style) = box_node
                 .node_id
@@ -1386,6 +1425,11 @@ impl Painter {
                 self.paint_background(box_node, abs_x, abs_y, group_style, styles);
             }
             self.paint_borders(box_node, abs_x, abs_y, group_style);
+            let group_child_x = abs_x + box_node.padding_left + box_node.border_left;
+            let group_child_y = abs_y + box_node.padding_top + box_node.border_top;
+            for child in &box_node.children {
+                self.paint_node(child, styles, group_child_x, group_child_y, doc, false);
+            }
             return;
         }
 

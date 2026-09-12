@@ -1951,17 +1951,69 @@ impl LayoutEngine {
             let auto_height = computed.is_some_and(|s| matches!(s.height, LengthValue::Auto));
             let group_style: &zero_style_system::ComputedStyle = &group_pseudo.style;
             let group_on = is_scroll_container && auto_height;
-            if group_on
-                && matches!(group_style.width, LengthValue::Px(n) if n.is_finite())
-                && matches!(group_style.height, LengthValue::Px(n) if n.is_finite())
-            {
-                let gw = match group_style.width {
-                    LengthValue::Px(n) => n as f32,
-                    _ => 0.0,
+            if group_on {
+                // R4261（CSS Overflow 5 §scroll-marker）：per-item ::scroll-marker 伪盒合成——
+                // 子元素带 scroll_marker_pseudo（content 非 normal gate 已在样式相位过滤）
+                // 时在组盒内 float:left 逐行贪心装箱（spec：组盒排布 marker；group-015 四
+                // marker 50×50 → 2×2 绿块）。per-item 尺寸须 Px（非 Px 伪盒跳过，切片 3）。
+                let group_w = match group_style.width {
+                    LengthValue::Px(n) if n.is_finite() => n as f32,
+                    // 尺寸回退（R4259-N）：无 `::scroll-marker-group` 规则的案伪样式为默认
+                    // Auto——组盒横贯滚动内容，宽 → 属主内容宽。
+                    _ => content_width,
                 };
+                let mut marker_boxes: Vec<LayoutBox> = Vec::new();
+                let (mut pack_x, mut pack_y, mut row_h) = (0.0f32, 0.0f32, 0.0f32);
+                for child in &children_boxes {
+                    let Some(marker_pseudo) = child
+                        .node_id
+                        .and_then(|id| styles.get(&id))
+                        .and_then(|s| s.scroll_marker_pseudo.as_deref())
+                    else {
+                        continue;
+                    };
+                    let (mw, mh) = match (&marker_pseudo.width, &marker_pseudo.height) {
+                        (LengthValue::Px(w), LengthValue::Px(h)) if w.is_finite() && h.is_finite() => {
+                            (*w as f32, *h as f32)
+                        }
+                        _ => continue,
+                    };
+                    // 装箱：放不下当前行且非行首 → 换行（float:left 行内左对齐逐个排布）。
+                    if pack_x > 0.0 && pack_x + mw > group_w {
+                        pack_x = 0.0;
+                        pack_y += row_h;
+                        row_h = 0.0;
+                    }
+                    marker_boxes.push(LayoutBox {
+                        node_id: child.node_id,
+                        x: pack_x,
+                        y: pack_y,
+                        width: mw,
+                        height: mh,
+                        content_x: 0.0,
+                        content_y: 0.0,
+                        content_width: mw,
+                        content_height: mh,
+                        declared_width_px: Some(mw),
+                        // 伪盒坐标为装箱终值：float 置 none（装箱已烘焙，不进 float walk
+                        // 二次定位——合成值被改写的候选源）、块级盒（免 remeasure 误判
+                        // inline 子触发 IFC 重测，同组盒）。
+                        is_scroll_marker: true,
+                        is_block_level: true,
+                        ..Default::default()
+                    });
+                    pack_x += mw;
+                    row_h = row_h.max(mh);
+                }
                 let gh = match group_style.height {
-                    LengthValue::Px(n) => n as f32,
-                    _ => 0.0,
+                    LengthValue::Px(n) if n.is_finite() => n as f32,
+                    // 尺寸回退：高 → 装箱 extent（由 per-item 盒生长；切片 1 的固定 0
+                    // 使 marker 案组盒不可见）。
+                    _ => pack_y + row_h,
+                };
+                let gw = match group_style.width {
+                    LengthValue::Px(n) if n.is_finite() => n as f32,
+                    _ => content_width,
                 };
                 let before = matches!(
                     group_pseudo.side,
@@ -2011,7 +2063,7 @@ impl LayoutEngine {
                     has_size_containment: false,
                     margin_left_auto: false,
                     margin_right_auto: false,
-                    children: Vec::new(),
+                    children: marker_boxes,
                     is_absolute: false,
                     is_scroll_marker_group: true,
                     is_replaced: false,
@@ -2073,6 +2125,7 @@ impl LayoutEngine {
             children: children_boxes,
             is_absolute,
             is_scroll_marker_group,
+            is_scroll_marker: false,
             is_replaced,
             is_fixed,
             fixed_x_insets_all_auto,

@@ -1433,8 +1433,9 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
         "line-clamp" => {
             style.line_clamp = default_style.line_clamp;
             // scroll-marker-group 非继承（CSS Overflow 5）；::scroll-marker-group 伪样式
-            // 属元素级，同样随重置清空（R4257）。
+            // 属元素级，同样随重置清空（R4257）。::scroll-marker per-item 伪样式同型（R4261）。
             style.scroll_marker_group = default_style.scroll_marker_group;
+            style.scroll_marker_pseudo = default_style.scroll_marker_pseudo;
             true
         }
         "background-image" => {

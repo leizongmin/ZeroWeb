@@ -1036,6 +1036,14 @@ fn shift_siblings_after_ifc_grow_inner(
 ) {
     use zero_css_parser::values::{DisplayValue, FloatValue};
     use zero_style_system::property::types::{ColumnCountComputedValue, ColumnWidthComputedValue};
+    // R4261（CSS Overflow 5 §scroll-marker）：合成组盒内部是 per-item ::scroll-marker 伪盒
+    // 的 float:left 装箱 **2D 排布**（坐标 = extract 期装箱终值），非垂直块流——本 pass 的
+    // 「prev.bottom > next.y」重叠模型把同行并排的 marker 逐个下推（group-015：2×2 装箱
+    // 被改写为 (0,0)/(50,50)/(0,100)/(50,150) 对角 zigzag，文件式 trace t16 实证）。整组
+    // 跳过：组盒自身仍作为兄弟参与父级链位移与父高回填（调用方循环处理），仅不下钻。
+    if box_node.is_scroll_marker_group {
+        return;
+    }
     // 真实元素 + block-level + 非 R109-split + display 为参与垂直块流的盒型。Block/Flow/FlowRoot/
     // ListItem 是普通块流盒；Table/InlineTable 是块级（inline-table 视 block-level 标志），其整盒
     // 随前序兄弟长高而下移是正确的（内部行/列布局与 y 无关，安全）——R1498 修：morning @375

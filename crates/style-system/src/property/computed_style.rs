@@ -590,6 +590,10 @@ pub struct ComputedStyle {
     /// 合一载荷（单指针，帧体量纪律）。None = 无组盒；Some = side（before/after）+ 伪
     /// 计算样式（layout 生成组盒 / paint 伪样式绘制）。
     pub scroll_marker_group: Option<Box<ScrollMarkerGroupPseudo>>,
+    /// R4261（CSS Overflow 5 §scroll-marker）：`::scroll-marker` per-item 伪样式——
+    /// 滚动容器**子元素** owner-存储（::marker 同型，仅 content 非 normal 时存储）。
+    /// 布局侧据其合成组盒内 per-item 伪盒，paint 以伪样式绘制。
+    pub scroll_marker_pseudo: Option<Box<ComputedStyle>>,
     /// `::first-letter` 伪元素的计算样式（CSS2 §5.12.2）。仅当级联存在 `::first-letter`
     /// 声明且**样式可 paint 侧应用**（当前切片：color 与元素不同）时存储。
     /// paint 侧把块容器首个文本片段的首字符按本样式绘制（不改几何——font/metrics

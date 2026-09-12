@@ -643,7 +643,9 @@ impl StyleSystem {
                     NodeKind::Element(e) if e.local_name().eq_ignore_ascii_case("li")
                 );
                 if is_li {
-                    let marker = *self.compute_element_style_internal(
+                    // R3867 帧体量纪律（R4261 深嵌套页测试实证临界）：持 Box 指针不解引用——
+                    // `*compute` 会把 3.3KB ComputedStyle 落回本递归帧。
+                    let marker = self.compute_element_style_internal(
                         doc,
                         node,
                         stylesheets,
@@ -659,7 +661,7 @@ impl StyleSystem {
                         || marker.color != elem_style.color
                         || marker.letter_spacing != elem_style.letter_spacing
                     {
-                        computed.marker_pseudo = Some(Box::new(marker));
+                        computed.marker_pseudo = Some(marker);
                     }
                 }
                 // R4257（CSS Overflow 5 §scroll-marker-group）：`::scroll-marker-group`
@@ -677,6 +679,29 @@ impl StyleSystem {
                         quirks_mode,
                         Some("scroll-marker-group"),
                     );
+                }
+                // R4261（CSS Overflow 5 §scroll-marker）：`::scroll-marker` per-item 伪元素——
+                // 生成主体是 scroll 容器的**子元素**（组盒 per-item 伪盒，group-015 型
+                // `#scroller>*::scroll-marker`），故 gate = 父元素声明 scroll-marker-group 非
+                // none（本元素自身的组盒声明在上方相位已补齐伪样式，子元素此时可见）。
+                // 与 ::marker 同型 owner-存储；仅 content 非 normal 时存储（伪盒无 IFC 文本
+                // 语义，仅背景/边框参与布局与绘制——零行为面）。
+                // R3867 帧体量纪律：持有 Box 指针不解引用（`*compute` 会把 3.3KB
+                // ComputedStyle 落回本递归帧，深嵌套页测试栈顶实证）。
+                if parent_style.is_some_and(|p| p.scroll_marker_group.is_some()) {
+                    let marker = self.compute_element_style_internal(
+                        doc,
+                        node,
+                        stylesheets,
+                        rule_index,
+                        Some(&elem_style),
+                        &saved_custom,
+                        quirks_mode,
+                        Some("scroll-marker"),
+                    );
+                    if !matches!(marker.content, property::types::ContentComputedValue::Normal) {
+                        computed.scroll_marker_pseudo = Some(marker);
+                    }
                 }
                 // ::first-letter 伪元素（CSS2 §5.12.2）：样式作用于块容器首个格式化行的首字母
                 //（穿透嵌套 inline，first-letter-nested-001..007 族）。compute_element_style_internal
