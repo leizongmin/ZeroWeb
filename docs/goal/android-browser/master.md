@@ -2,7 +2,7 @@
 
 **入口文档**: [../android-browser.md](../android-browser.md)
 **创建日期**: 2026-09-07（goal 拆分 bootstrap）
-**最后更新**: 2026-09-12（M1 切片 1 本地构建打通，见 evidence/local-toolchain-bootstrap.md）
+**最后更新**: 2026-09-12（M3 切片 3 compositor 断连恢复落地；模拟器环境核查记入 evidence/emulator-feasibility.md）
 
 ---
 
@@ -48,6 +48,12 @@
   导航分配槽 → 失败按槽重绑 → attach 后补导航），启动恢复上次会话活动标签、外部
   intent 新标签同链路；rebind 节流（3 次/选择周期）防循环；被逐标签预览留空不再
   错拿他槽帧。多标签换槽功能面就此闭环，余真机冒烟（M3 收口）
+  → 2026-09-12 续：**M3 切片 3 compositor 断连恢复落地**（RFC M3「renderer/compositor
+  death 处理」后半，对称切片 1）——三处 compositor send/recv 往返收敛进 `compositor_round`
+  助手，传输失败即清槽 + `tracing::warn`；新增 `nativeDetachCompositor`；Kotlin
+  `onServiceDisconnected(CompositorService)` 作废附着标记并清 native 僵尸 transport，
+  BIND_AUTO_CREATE 重启后 `onServiceConnected` 重新走 attach 协议。宿主 7/7 + android
+  clippy + renderer APK（25 JNI 导出含新导出）构建通过
 - ⚠️ 版本串不一致：lib.rs `M2` vs README `M0`（文档滞后）
 - ⚠️ RFC `docs/specs/android-browser-spec-rfc.md`（1097 行）状态「待确认」；
   FR-006/007/009 未见对应代码
@@ -80,6 +86,12 @@
    android-cfg clippy 盲区 lint（3f5fad847）。M1 全部切片完成
 3. **M1 切片 3**：README/版本串对齐
    → 2026-09-12 README 两处已对齐（版本串 M2、transport adapter 表述改待 RFC）；RFC 状态行仍待用户批准
+4. **RFC M3 剩余功能面**（RFC 批准后按 M2→M4 排期推进）
+   → 2026-09-12 ✅ 切片 3 compositor 断连恢复（见上）；剩余候选：触摸点击（协议
+   `MouseEvent`/Click 已具备，Kotlin tap 手势 → JNI → 活动槽）、viewport 真实尺寸
+   （现固定 320×180，接 surface 实际宽高）、焦点/IME——宿主可开发，效果验证待
+   模拟器/真机解锁
+5. **模拟器/真机冒烟（M3 收口）**：等 KVM 授权或设备（待用户决策，不阻塞功能切片）
 
 **碰撞管理**：Cargo.lock 变更前 `git log --since="14 days ago" -- Cargo.lock` 核对；
 只读消费其他 crate 公开 API。
@@ -88,9 +100,9 @@
 
 | 里程碑 | 状态 |
 |--------|------|
-| M1 — CI 门禁 + 构建修复 | ⬜ 待启动 |
-| M2 — 回归保护 + 可安装产物 | ⬜ |
-| M3 — 冒烟验收 + 决策清单 | ⬜ |
+| M1 — CI 门禁 + 构建修复 | ✅ 全切片完成（CI job 全绿 34665015108、本地双路径打通、README/版本串对齐） |
+| M2 — 回归保护 + 可安装产物 | 🔶 APK 入口/签名/构建文档 ✅（P4）；JNI 桥接测试宿主侧 7 项已入、真机/模拟器冒烟断言待 M3 设备面（P3） |
+| M3 — 冒烟验收 + 决策清单 | 🔶 决策清单 ✅（RFC 已批准）；RFC M3 功能面——renderer 断连恢复/多标签换槽/compositor 断连恢复 ✅，模拟器冒烟受 KVM 环境阻塞（见待用户决策），真机待设备 |
 
 ## 待用户决策
 
@@ -98,6 +110,7 @@
 |----|------|------|
 | android-browser-spec-rfc.md 批准 | ✅ 已批准（2026-09-12） | transport adapter、FR-006/007/009 解锁，按路线 M2→M4 排期 |
 | 真机验收设备 | ⬜ 等设备 | 同父目标 P3 GPU 物理机门控模式；模拟器冒烟不阻塞 |
+| 本机模拟器 KVM 授权 | ⬜ 等用户一次性授权 | WSL2 `/dev/kvm` 存在但用户不在 kvm 组且 sudo 需密码，模拟器无法启动；`sudo usermod -aG kvm lei` 一次即可解锁（详情 evidence/emulator-feasibility.md）。解锁前 RFC M3 功能切片继续推进，不阻塞 |
 
 ## 验证基线
 

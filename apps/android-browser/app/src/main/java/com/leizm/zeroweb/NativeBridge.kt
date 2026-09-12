@@ -61,6 +61,9 @@ object NativeBridge {
     external fun nativeAttachCompositor(fd: Int, width: Int, height: Int): Boolean
 
     @JvmStatic
+    external fun nativeDetachCompositor(): Boolean
+
+    @JvmStatic
     external fun nativeCompositorTestFrame(width: Int, height: Int): ByteArray?
 
     @JvmStatic

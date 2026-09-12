@@ -416,6 +416,27 @@ pub extern "system" fn Java_com_leizm_zeroweb_NativeBridge_nativeAttachComposito
     JNI_TRUE
 }
 
+/// Drops a stale compositor transport after the compositor Service process
+/// died. Kotlin calls this from `onServiceDisconnected` so the restarted
+/// Service's attach handshake is not rejected by the zombie slot entry.
+/// Returns whether a transport was actually dropped.
+#[cfg(target_os = "android")]
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_leizm_zeroweb_NativeBridge_nativeDetachCompositor(
+    _env: JNIEnv,
+    _class: JClass,
+) -> jboolean {
+    let Ok(mut slot) = android_compositor().lock() else {
+        return JNI_FALSE;
+    };
+    let had_transport = slot.is_some();
+    if had_transport {
+        tracing::warn!("android compositor transport detached by host request");
+    }
+    *slot = None;
+    if had_transport { JNI_TRUE } else { JNI_FALSE }
+}
+
 /// Attaches the browser-side renderer endpoint and starts forwarding renderer
 /// compositor frames through the already attached compositor Service channel.
 #[cfg(target_os = "android")]
@@ -639,42 +660,26 @@ fn compositor_scroll(slot: usize, delta_y: f32) -> Result<(), String> {
         .as_mut()
         .ok_or_else(|| "Android page frame is not ready".to_string())?;
     *scroll_y = (*scroll_y + delta_y).max(0.0);
-    let mut compositor = android_compositor()
-        .lock()
-        .map_err(|_| "Android compositor socket lock poisoned".to_string())?;
-    let transport = compositor
-        .as_mut()
-        .ok_or_else(|| "Android compositor socket is not attached".to_string())?;
-    transport
-        .send(IpcMessage {
-            id: 12,
-            kind: IpcMessageKind::CompositorSetScroll {
-                surface_id: *surface_id,
-                scroll_x: 0.0,
-                scroll_y: *scroll_y,
-            },
-        })
-        .map_err(|e| e.to_string())?;
-    if !matches!(
-        transport.recv(),
-        Ok(IpcMessage {
-            id: 12,
-            kind: IpcMessageKind::Ok
-        })
-    ) {
-        return Err("Android compositor rejected scroll".to_string());
-    }
-    transport
-        .send(IpcMessage {
-            id: 13,
-            kind: IpcMessageKind::GetCompositorFrame {
-                surface_id: *surface_id,
-                navigation_epoch: *navigation_epoch,
-                frame_id: *frame_id,
-            },
-        })
-        .map_err(|e| e.to_string())?;
-    let frame = match transport.recv().map_err(|e| e.to_string())? {
+    compositor_round(
+        12,
+        IpcMessageKind::CompositorSetScroll {
+            surface_id: *surface_id,
+            scroll_x: 0.0,
+            scroll_y: *scroll_y,
+        },
+    )
+    .and_then(|message| match message.kind {
+        IpcMessageKind::Ok => Ok(()),
+        _ => Err("Android compositor rejected scroll".to_string()),
+    })?;
+    let frame = match compositor_round(
+        13,
+        IpcMessageKind::GetCompositorFrame {
+            surface_id: *surface_id,
+            navigation_epoch: *navigation_epoch,
+            frame_id: *frame_id,
+        },
+    )? {
         IpcMessage {
             id: 13,
             kind: IpcMessageKind::CompositorFrameData { rgba, .. },
@@ -802,43 +807,27 @@ fn forward_renderer_frame(
     frame_id: u64,
     paint: zero_protocol::paint_snapshot::PaintSnapshotParams,
 ) -> Result<(), String> {
-    let mut slot = android_compositor()
-        .lock()
-        .map_err(|_| "Android compositor socket lock poisoned".to_string())?;
-    let transport = slot
-        .as_mut()
-        .ok_or_else(|| "Android compositor socket is not attached".to_string())?;
-    transport
-        .send(IpcMessage {
-            id: 10,
-            kind: IpcMessageKind::CompositorFrame {
-                surface_id,
-                navigation_epoch,
-                frame_id,
-                paint: Box::new(paint),
-            },
-        })
-        .map_err(|error| error.to_string())?;
-    if !matches!(
-        transport.recv(),
-        Ok(IpcMessage {
-            id: 10,
-            kind: IpcMessageKind::CompositorFrameResult { .. }
-        })
-    ) {
-        return Err("Android compositor rejected renderer frame".to_string());
-    }
-    transport
-        .send(IpcMessage {
-            id: 11,
-            kind: IpcMessageKind::GetCompositorFrame {
-                surface_id,
-                navigation_epoch,
-                frame_id,
-            },
-        })
-        .map_err(|error| error.to_string())?;
-    let frame = match transport.recv().map_err(|error| error.to_string())? {
+    compositor_round(
+        10,
+        IpcMessageKind::CompositorFrame {
+            surface_id,
+            navigation_epoch,
+            frame_id,
+            paint: Box::new(paint),
+        },
+    )
+    .and_then(|message| match message.kind {
+        IpcMessageKind::CompositorFrameResult { .. } => Ok(()),
+        _ => Err("Android compositor rejected renderer frame".to_string()),
+    })?;
+    let frame = match compositor_round(
+        11,
+        IpcMessageKind::GetCompositorFrame {
+            surface_id,
+            navigation_epoch,
+            frame_id,
+        },
+    )? {
         IpcMessage {
             id: 11,
             kind: IpcMessageKind::CompositorFrameData {
@@ -873,6 +862,30 @@ fn forward_renderer_frame(
     Ok(())
 }
 
+/// Runs one send/recv round trip against the compositor Service. A transport
+/// failure means the compositor process is gone: drop the zombie transport
+/// in place (renderer 断连恢复的对称面，android-browser goal M3 切片 3) so the
+/// restarted Service can re-run the attach protocol. "Not attached" is not a
+/// transport failure and leaves the slot untouched.
+#[cfg(target_os = "android")]
+fn compositor_round(id: u64, kind: IpcMessageKind) -> Result<IpcMessage, String> {
+    let mut slot = android_compositor()
+        .lock()
+        .map_err(|_| "Android compositor socket lock poisoned".to_string())?;
+    let outcome = match slot.as_mut() {
+        Some(transport) => transport
+            .send(IpcMessage { id, kind })
+            .map_err(|error| error.to_string())
+            .and_then(|()| transport.recv().map_err(|error| error.to_string())),
+        None => Err("Android compositor socket is not attached".to_string()),
+    };
+    if outcome.is_err() && slot.as_ref().is_some() {
+        *slot = None;
+        tracing::warn!("android compositor transport detached: send/recv failed");
+    }
+    outcome
+}
+
 /// Publishes a deterministic compositor frame and reads it back from the
 /// independent compositor process for Android UI verification.
 #[cfg(target_os = "android")]
@@ -899,42 +912,26 @@ fn compositor_test_frame(width: jni::sys::jint, height: jni::sys::jint) -> Resul
     for pixel in rgba.chunks_exact_mut(4) {
         pixel.copy_from_slice(&[12, 34, 56, 255]);
     }
-    let mut slot = android_compositor()
-        .lock()
-        .map_err(|_| "Android compositor socket lock poisoned".to_string())?;
-    let transport = slot
-        .as_mut()
-        .ok_or_else(|| "Android compositor socket is not attached".to_string())?;
-    transport
-        .send(IpcMessage {
-            id: 2,
-            kind: IpcMessageKind::CompositorUiFrame {
-                surface_id: ANDROID_COMPOSITOR_SURFACE_ID,
-                width,
-                height,
-                rgba: rgba.clone(),
-                shm_name: None,
-            },
-        })
-        .map_err(|error| error.to_string())?;
-    if !matches!(
-        transport.recv(),
-        Ok(IpcMessage {
-            id: 2,
-            kind: IpcMessageKind::Ok
-        })
-    ) {
-        return Err("Android compositor rejected UI frame".to_string());
-    }
-    transport
-        .send(IpcMessage {
-            id: 3,
-            kind: IpcMessageKind::GetCompositorUiFrame {
-                surface_id: ANDROID_COMPOSITOR_SURFACE_ID,
-            },
-        })
-        .map_err(|error| error.to_string())?;
-    match transport.recv().map_err(|error| error.to_string())? {
+    compositor_round(
+        2,
+        IpcMessageKind::CompositorUiFrame {
+            surface_id: ANDROID_COMPOSITOR_SURFACE_ID,
+            width,
+            height,
+            rgba: rgba.clone(),
+            shm_name: None,
+        },
+    )
+    .and_then(|message| match message.kind {
+        IpcMessageKind::Ok => Ok(()),
+        _ => Err("Android compositor rejected UI frame".to_string()),
+    })?;
+    match compositor_round(
+        3,
+        IpcMessageKind::GetCompositorUiFrame {
+            surface_id: ANDROID_COMPOSITOR_SURFACE_ID,
+        },
+    )? {
         IpcMessage {
             id: 3,
             kind:

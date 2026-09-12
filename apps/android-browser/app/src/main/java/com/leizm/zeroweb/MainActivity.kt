@@ -295,6 +295,15 @@ class MainActivity : ComponentActivity() {
 
             override fun onServiceDisconnected(name: ComponentName) {
                 readyServiceCount = (readyServiceCount - 1).coerceAtLeast(0)
+                if (roleService == CompositorService::class.java) {
+                    // compositor 进程死亡（renderer/compositor death 处理，RFC M3，
+                    // 对称于 renderer 断连恢复）：作废本地附着标记并清除 native 僵尸
+                    // transport，让 BIND_AUTO_CREATE 重启后的 onServiceConnected
+                    // 重新走 attach 协议，不退回进程内执行。
+                    compositorAttached = false
+                    NativeBridge.nativeDetachCompositor()
+                    android.util.Log.w("ZeroWebRole", "compositor service disconnected; native transport detached")
+                }
             }
         }
         serviceConnections += connection
