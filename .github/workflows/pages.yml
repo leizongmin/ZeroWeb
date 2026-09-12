@@ -8,6 +8,7 @@ on:
       - 'scripts/generate-website-metrics.py'
       - 'docs/perf/trends/benchmark-trend.csv'
       - 'docs/goal/rendering-compat/evidence/wpt-trends/trend.csv'
+      - 'docs/compat/trends/wpt-suites.csv'
       - '.github/workflows/pages.yml'
   workflow_dispatch:
 

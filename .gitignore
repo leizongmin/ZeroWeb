@@ -90,3 +90,6 @@ core.*
 # Chrome parity 本地 Oracle 浏览器（npx @puppeteer/browsers install）
 tests/wpt-runner/scripts/chromium/
 tests/wpt-runner/scripts/chrome/
+
+# 官网 metrics 数据——pages.yml 部署时由 scripts/generate-website-metrics.py 重新生成，仓库内旧产物是假事实源
+website/metrics.json

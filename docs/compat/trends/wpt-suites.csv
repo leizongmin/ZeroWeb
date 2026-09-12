@@ -1,0 +1,29 @@
+# WPT 测试集覆盖总表（跨 goal 聚合，供官网数据页 website/progress.html 使用）
+# 数据来源：各 goal 的收口文档与 evidence（evidence 列给出来源路径）。本文件是 website/metrics.json 的唯一 suites 数据源，
+# 由 scripts/generate-website-metrics.py 在 GitHub Pages 部署时读取生成。
+# 维护约定：
+#   1) 某测试集每完成一次全量跑（或 goal 收口），追加一行：同 suite_id、date 为实测日、新数字；
+#      生成器只取每个 suite_id 的最新一行，历史行保留作审计。
+#   2) 新 goal 立项但尚未全量跑时，追加一行 status=planned（total/passed/rate 留空），页面显示"规划中"。
+#   3) 口径诚实性：unit 必须如实（tests=reftest/用例文件数、subtests=testharness 子测试数、files=导入文件数）；
+#      Fail/Timeout/部分通过（PF）一律计入分母；分母构成特殊时写入 note。
+#   4) 任何字段内禁止半角逗号（本文件不做引号转义）；多目录用分号";"分隔。
+#   5) rate 列留空由生成器按 passed/total 重算；若手工填写则必须与 passed/total 一致（偏差>0.05 生成器报错）。
+# date,suite_id,name_en,name_zh,wpt_dirs,harness,unit,total,passed,rate,status,goal,evidence,note_en,note_zh
+2026-09-12,rendering-compat,CSS rendering compatibility,CSS 渲染兼容（reftest）,css2;CSS2;flexbox;grid;position;tables;multicol;text;writing-modes;fonts;text-decor,reftest,tests,16595,14644,,active,95,docs/goal/rendering-compat.md,Self-source reftest: test and ref pages both rendered by ZeroWeb and compared pixel-wise; not comparable to wpt.fyi browser scores. Corpus snapshot v1.10.,self-source reftest：test 与 ref 两页均由 ZeroWeb 渲染后逐像素比对；与 wpt.fyi 浏览器分数口径不同。语料快照 v1.10。
+2026-08-31,js-dom,DOM (js-dom),DOM（js-dom 桥）,dom,testharness,subtests,55835,55808,,completed,,docs/goal/archive/js-dom.md,11 failures + 16 timeouts counted in denominator (R388 full sweep).,11 Fail + 16 Timeout 计入分母（R388 全量 sweep）。
+2026-09-11,web-components,Web Components,Web Components,custom-elements;shadow-dom;the-template-element,testharness,subtests,4764,3619,,completed,,docs/goal/archive/web-components.md,271 test files across three directories.,三目录 271 用例文件。
+2026-08-17,form-validation,Form validation,表单校验,html/semantics/forms,testharness,subtests,919,919,,completed,,docs/goal/form-validation/archive/form-validation-goal-v1-2026-08-17.md,45 constraints cases + requestSubmit + checkValidity at v1 close.,45 个 constraints 用例 + requestSubmit + checkValidity；v1 收口。
+2026-08-16,canvas-2d,Canvas 2D,Canvas 2D,html/canvas,testharness,tests,832,832,,completed,,docs/goal/archive/canvas-2d.md,919 upstream files imported; 832 executable testharness tests all pass. Chromium oracle strict true-pass sample 34/41 (82.9%).,导入上游 919 文件；832 个可执行 testharness 用例全绿。Chromium oracle 严格真通过抽样 34/41（82.9%）。
+2026-09-05,media-audio,Web Audio,Web Audio,webaudio,testharness,subtests,1418,1418,,completed,,docs/goal/archive/media-audio.md,50 test files / 1418 subtests all pass.,50 用例 / 1418 子测试全绿。
+2026-08-19,storage-indexeddb,IndexedDB,IndexedDB,IndexedDB,testharness,subtests,1073,1073,,completed,,docs/goal/archive/storage-indexeddb.md,168 of 210 upstream files imported at pinned revision; zero skips.,固定 revision 导入上游 168/210 文件；零 skip。
+2026-09-06,storage-cache-api,Cache API,Cache API,cache-storage,testharness,subtests,449,449,,completed,,docs/goal/archive/storage-cache-api.md,39 test files / 449 subtests (window scope).,39 用例 / 449 子测试（window 面）。
+2026-09-06,service-workers,Service Workers (subset),Service Workers（子集）,service-workers,testharness,subtests,652,652,,completed,,docs/goal/archive/service-workers.md,121 cases across core/fetch/CacheStorage runners; deterministic double-run green.,121 用例（core/fetch/CacheStorage 三 runner）；双跑确定性全绿。
+2026-09-08,editing-contenteditable,Editing & selection,编辑与选区,selection,testharness,subtests,2999,2994,,completed,,docs/goal/archive/editing-contenteditable.md,5 failures counted in denominator; baseline at goal start was 45 pass (1.7%).,5 Fail 计入分母；立项基线仅 45 Pass（1.7%）。
+2026-09-12,page-wasm,WebAssembly (jsapi),WebAssembly（jsapi）,wasm/jsapi,testharness,subtests,719,715,,completed,,docs/goal/archive/page-wasm.md,4 timeouts counted in denominator; upstream revision pinned.,4 个 Timeout 计入分母；上游 revision 已 pin。
+2026-09-04,media-elements,Media elements,媒体元素语义,html/semantics/embedded-content/media-elements,testharness,subtests,653,640,,completed,,docs/goal/archive/media-elements.md,13 partial-pass counted in denominator; 209 test files.,13 个部分通过（PF）计入分母；209 用例文件。
+2026-09-09,storage-opfs,Origin Private File System,OPFS（私有文件系统）,fs,testharness,subtests,133,126,,completed,,docs/goal/archive/storage-opfs.md,13 WPT fs cases (window scope); 7 failures counted in denominator. In-memory shim baseline was 48/133 (36.1%).,13 个 WPT fs 用例（window 面）；7 Fail 计入分母。内存 shim 基线为 48/133（36.1%）。
+2026-09-08,keyboard-default-actions,Keyboard default actions,键盘默认动作,keyboard,testharness,tests,27,18,,completed,,docs/goal/archive/keyboard-default-actions.md,Completed = goal's semantic scope closed; 7 failures + 2 timeouts counted in denominator with residual assertions attributed cross-stream.,完成 = 目标语义面收口；7 Fail + 2 Timeout 计入分母，残余断言已跨域归因。
+2026-09-12,event-loop-spec,Intersection/Resize observers,交叉/尺寸观察器,intersection-observer;resize-observer,testharness,subtests,275,118,,completed,,docs/goal/archive/event-loop-spec.md,IntersectionObserver 100/218 (45.9%) + ResizeObserver 18/57 (31.6%) combined; residual clusters tracked as cross-stream coordination items.,IntersectionObserver 100/218（45.9%）+ ResizeObserver 18/57（31.6%）合并口径；残余聚类为跨流域协调项。
+,web-api-batch2,Clipboard & fullscreen,剪贴板与全屏,clipboard-apis;fullscreen,testharness,subtests,,,,planned,,docs/goal/web-api-batch2.md,Goal active; baseline recorded after first full run.,目标已立项；首轮全量跑完后录入基线。
+,security-hardening,Security (CSP / mixed content / secure contexts),安全（CSP / 混合内容 / 安全上下文）,content-security-policy;mixed-content;secure-contexts,testharness,subtests,,,,planned,,docs/goal/security-hardening.md,Goal active; baseline recorded after first full run.,目标已立项；首轮全量跑完后录入基线。
