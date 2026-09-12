@@ -170,7 +170,7 @@ DC-3 基线）。「现状」列以 2026-09-12 `apps/browser/src/headless/`（M1
 | `Page.documentOpened` | 1 | ❌ | M3（低优） |
 | `Page.frameRequestedNavigation` | 1 | ❌ | M3（低优） |
 | `Page.frameSubtreeWillBeDetached` | 1 | ❌ | M3（低优） |
-| `Network.requestWillBeSent` / `responseReceived` / `loadingFinished` / `dataReceived` | 9 / 8 / 9 / 10 | 🔶 S7：前三者随 proxy_fetch 发出（Network.enable 门控）；dataReceived 未产 | 完成（M4 S7 雏形；P6 net 观测点扩展后补全字段） |
+| `Network.requestWillBeSent` / `responseReceived` / `loadingFinished` / `dataReceived` | 9 / 8 / 9 / 10 | ✅（S7+：随 proxy_fetch 发出（Network.enable 门控，headers/mimeType/frameId 齐，失败路径 loadingFailed）；**frameId 为 PW 硬要求——缺省请求被丢弃（实测）**；dataReceived 未产） | 完成（M4 S7+；dataReceived 随 net 观测点扩展） |
 | `Network.requestWillBeSentExtraInfo` / `responseReceivedExtraInfo` | 9 / 9 | ❌ | M4（低优，header 面） |
 | `Network.policyUpdated` | 6 | ❌ | 不实现（Chromium 内部策略事件） |
 | `Log.entryAdded` | 2 | ❌ | 不实现-ok（console 覆盖） |

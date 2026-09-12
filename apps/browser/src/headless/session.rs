@@ -2,6 +2,7 @@
 //!
 //! 发布构建只持有 renderer IPC（进程隔离）；进程内 WebView 仅用于单元测试。
 
+use serde_json::Value;
 use zero_browser_shell::BrowserShell;
 use zero_net::cookie::CookieStore;
 #[cfg(not(test))]
@@ -181,15 +182,21 @@ impl HeadlessSession {
 
         // Network 事件源（Network.enable 门控）：requestWillBeSent
         let net_request_id = format!("zw-net-{}", self.next_request_id);
+        let frame_id = self.active_frame_id();
         if self.network_enabled {
+            let request_headers: serde_json::Map<String, Value> = headers
+                .iter()
+                .map(|(k, v)| (k.clone(), serde_json::Value::String(v.clone())))
+                .collect();
             self.pending_network_events.push((
                 "Network.requestWillBeSent".to_string(),
                 serde_json::json!({
                     "requestId": net_request_id,
+                    "frameId": frame_id,
                     "request": {
                         "url": params.url,
                         "method": params.method,
-                        "headers": {},
+                        "headers": request_headers,
                     },
                     "timestamp": std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
@@ -224,16 +231,28 @@ impl HeadlessSession {
                 }
                 // Network 事件：responseReceived + loadingFinished
                 if self.network_enabled {
+                    let response_headers: serde_json::Map<String, Value> = response
+                        .headers
+                        .iter()
+                        .map(|(k, v)| (k.clone(), serde_json::Value::String(v.clone())))
+                        .collect();
+                    let mime_type = response
+                        .headers
+                        .iter()
+                        .find(|(k, _)| k.eq_ignore_ascii_case("content-type"))
+                        .map(|(_, v)| v.clone())
+                        .unwrap_or_default();
                     self.pending_network_events.push((
                         "Network.responseReceived".to_string(),
                         serde_json::json!({
                             "requestId": net_request_id,
+                            "frameId": frame_id,
                             "response": {
                                 "url": response.url,
                                 "status": response.status_code,
                                 "statusText": "",
-                                "headers": {},
-                                "mimeType": "",
+                                "headers": response_headers,
+                                "mimeType": mime_type,
                             },
                         }),
                     ));
@@ -250,6 +269,16 @@ impl HeadlessSession {
                 )
             }
             Err(error) => {
+                if self.network_enabled {
+                    self.pending_network_events.push((
+                        "Network.loadingFailed".to_string(),
+                        serde_json::json!({
+                            "requestId": net_request_id,
+                            "errorText": error.to_string(),
+                            "canceled": false,
+                        }),
+                    ));
+                }
                 self.renderer
                     .send_fetch_response(params.request_id, 0, Vec::new(), error.to_string().into_bytes())
             }
@@ -482,6 +511,11 @@ impl HeadlessSession {
 }
 
 impl HeadlessSession {
+    /// 活跃标签页的主 frame id（proxy_fetch 等 session 侧无 CDP 会话上下文的场景）。
+    pub(super) fn active_frame_id(&self) -> Option<String> {
+        self.shell.active_tab().map(|tab| format!("zeroweb-tab-{}", tab.id().0))
+    }
+
     /// CDP Runtime 域脚本执行入口：类型化结果（测试进程内路径为扁平字符串语义）。
     pub(super) fn execute_script_typed(&mut self, script: &str) -> Result<AutomationValue, String> {
         #[cfg(test)]

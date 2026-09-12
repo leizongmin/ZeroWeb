@@ -389,6 +389,14 @@ impl HeadlessServer {
                 }
             }
         }
+        // Network 域事件排空（proxy_fetch 生命周期产出，归当前命令会话盖章发送）
+        for (method, params) in session.pending_network_events.drain(..) {
+            events.push(ServerEvent {
+                method,
+                params,
+                session_id: req.session_id.clone(),
+            });
+        }
 
         let response = match result {
             Ok(value) => ServerResponse {
