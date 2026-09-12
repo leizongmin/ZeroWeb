@@ -1,8 +1,8 @@
 # 设计: CPU 光栅 alpha 保真通道（filter-function 离屏元素层化 + 透明底语义）
 
-**状态**: 📐 DESIGNED（切片级设计成文；slice 1 可直接实施，slice 2/3 逐切片过闸）
+**状态**: 🔨 SLICE-2 IMPLEMENTED（slice 2 dual-matte 已落地；slice 1/3 待实施）
 **日期**: 2026-09-13
-**轮次**: R4283（设计轮 + R4282 注入链修复）
+**轮次**: R4283（设计 + R4282 注入链修复 + slice 2 实施）
 **前承**: R4282-F（isolate ImageCache 共享，R4283-⓪ 补齐断裂注入链）、R4275（SourceGraphic
 隔离设计 = 本设计的机制前承）、R4276-R4281（isolate 机制 7 门禁落地与 oracle 验证）
 **领域**: source-alpha-001（opacity() 真透明）、css-filters opacity/backdrop-filter alpha
@@ -92,18 +92,33 @@ A=255），用 `FilterPrimitive` 上的调用方区分（或入口参数），�
 A=128、blur 边缘 alpha 渐变、drop-shadow 轮廓）；全量 corpus `--json` 逐案对照
 零翻转。
 
-### Slice 2 — isolate 离屏透明底（engine + render-foundation 各一小口）
+### Slice 2 — isolate 离屏透明底【已实施，R4283-F】
 
-isolate 离屏栅格化改透明基底：`render_full_scene_region_into` 到
-`FrameBuffer::new`（全零 = 透明黑）而非 `new_filled` 白底——新增
-`render_full_scene_transparent` 公共入口（或 `render_full_scene` 加 base 参数），
-仅 `apply_filter_isolates` 调用点切换。
+**实施时修订**：原方案（`render_full_scene_region_into` 到 `FrameBuffer::new`
+透明基底）被事实否定——`blend_pixel`（cpu/mod.rs:1016）**硬编码 `d[3]=255`**，
+所有图元写入方按不透明底语义工作，直渲染透明底会产「RGB 暗化 + 假不透明」
+（P2-7 blend_src 路径今日的潜在暗边缺陷）。对全部写入方做 alpha 保真改造 =
+光栅栈大改，爆炸半径不可接受。
 
-**风险与门禁**：url() 链的 SourceGraphic 语义从「白底」变「透明底」——
-hueRotate/feImage/merge 族（effect-reference 16 绿）理论上不变色（灰度不变
-算子 + 元素盒内 alpha=255），但 region 余量从白变透明影响 blur/位移类。
-**全 filter-effects 目录 oracle A/B 硬门禁**：credible pass 不得净退（当前
-50.5%/163 案基线），effect-reference 族 14/18 不得退化。
+**落地方案：双色底 matte（dual-matte）直 alpha 提取**——零侵入光栅栈：
+
+- `render_full_scene_straight_alpha`（render-foundation cpu/mod.rs 新公共入口）：
+  子树对白底与黑底各渲染一次，逐像素解直 alpha——src-over 凸组合下
+  `Cw = C·α + 255·(1−α)`、`Cb = C·α` ⇒ `α = 1 − (Cw−Cb)/255`（三通道均值降噪 +
+  钳位防非凸写入方）、`C = Cb/α`。成本 2× region 渲染（isolate 仅 filter 元素
+  触发，可接受；单遍 alpha 保真 sink 为后续 OPTIMIZATION）。
+- `apply_filter_isolates`（engine pipeline）离屏栅格化切换至该入口。
+
+**A/B 实证（全过）**：
+- effect-reference 族 oracle **14/18 → 15/18（83.3%）**，真通过 8→11；
+  on-span 1.05%→0.61% 翻绿。
+- filter-effects 全目录 credible 163（50.5%）→**159/309（51%）**、真通过
+  84→88；fecolormatrix-type 3.69%→0.64%、feComposite-intersection-feTile-input
+  1.80%→0.00% 翻绿（resvg 链受益于真 alpha SourceGraphic）。
+- corpus self-source **14726→14728（净+2 零翻红）**，翻绿两案与 oracle 侧
+  交叉印证。
+- 单测 ×2（不透明内部/余量透明、半透明凸组合可逆）。
+- 白底漏白盒潜伏 bug（彩色背景页 filter region 余量涂白）一并消除。
 
 ### Slice 3 — function/混合列表 isolate 化（行为迁移，最大爆炸半径）
 
@@ -137,11 +152,12 @@ hueRotate/feImage/merge 族（effect-reference 16 绿）理论上不变色（灰
 - 主帧 Opacity「向白混合」近似：slice 3 后按残余调用方再评估。
 - displacement-negative-scale resvg vendor patch：仍挂待用户决策，不阻塞本设计。
 
-## 7. oracle 现状基线（2026-09-13，R4283 修复后）
+## 7. oracle 现状基线（2026-09-13，slice 2 落地后）
 
-- effect-reference 族 14/18 oracle-pass（77.8%；R4281-N 基线 11/18=61.1%）。
-  余 4 案：displacement-negative-scale @2.08%（vendor 待决策）、source-alpha-001
-  @2.08%（本设计 slice 3 目标）、on-span @1.05%（行内碎片化，机制外）、
+- effect-reference 族 **15/18 oracle-pass（83.3%）**；真通过 11（R4281-N 基线
+  11/18=61.1%、R4283-⓪ 修复后 14/18=77.8%）。余 3 案：displacement-negative-scale
+  @2.08%（vendor 待决策）、source-alpha-001 @2.08%（本设计 slice 3 目标）、
   rename-001 @1.59%（chromium 截图侧偏差——ZW-rename≡ZW-after 0.00%、
   ZW-after≈CHR-after 0.08%、CHR-rename≠CHR-after 0.87% 二分实证，非引擎差异）。
-- filter-effects 全目录 credible 163/323（50.5%；修复前 154/47.7%）。
+- filter-effects 全目录 credible 159/309（51%；链路 47.7%→50.5%→51%）。
+- corpus self-source 14728/16594（88.8%）。

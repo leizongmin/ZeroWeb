@@ -672,7 +672,10 @@ impl RenderPipeline {
                 .shared_image_cache
                 .as_ref()
                 .map(|c| c.lock().unwrap_or_else(|e| e.into_inner()));
-            let fb = zero_render_foundation::cpu::render_full_scene(
+            // R4283：dual-matte 直 alpha 光栅化（alpha 保真 slice 2）——SourceGraphic
+            // 携带真实透明语义：region 余量透明（白底会经占位 ImagePrimitive 把余量
+            // 涂白，彩色背景漏白盒），resvg 链的 SourceAlpha 不再恒 255。
+            let fb = zero_render_foundation::cpu::render_full_scene_straight_alpha(
                 w,
                 h,
                 1.0,

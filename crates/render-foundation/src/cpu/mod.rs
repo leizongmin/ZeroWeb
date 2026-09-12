@@ -194,11 +194,46 @@ pub fn render_full_scene_region(
     overlay_rounded_rects: &[RoundedRectPrimitive],
     region: Option<Rect>,
 ) -> FrameBuffer {
+    render_full_scene_region_on_background(
+        [255, 255, 255],
+        width,
+        height,
+        scale_factor,
+        primitives,
+        font_loader,
+        glyph_cache,
+        image_cache,
+        ui_glyphs,
+        overlay_fills,
+        overlay_glyphs,
+        overlay_rounded_rects,
+        region,
+    )
+}
+
+/// 同 [`render_full_scene_region`]，以指定纯色背景打底（R4283 dual-matte 直 alpha
+/// 提取的黑底通道用；常规渲染统一白底）。
+#[allow(clippy::too_many_arguments)] // 光栅化全参数（同上）
+fn render_full_scene_region_on_background(
+    bg: [u8; 3],
+    width: u32,
+    height: u32,
+    scale_factor: f32,
+    primitives: &RenderPrimitives,
+    font_loader: &FontLoader,
+    glyph_cache: &mut GlyphCache,
+    image_cache: Option<&mut ImageCache>,
+    ui_glyphs: &[GlyphDraw],
+    overlay_fills: &[FillPrimitive],
+    overlay_glyphs: &[GlyphDraw],
+    overlay_rounded_rects: &[RoundedRectPrimitive],
+    region: Option<Rect>,
+) -> FrameBuffer {
     let scale = normalize_scale_factor(scale_factor);
     let physical_width = scale_dimension(width, scale);
     let physical_height = scale_dimension(height, scale);
-    // new_filled：一次 memset 构造白底（免 new + clear 两遍全缓冲写，1080p 省 ~4.6MB 写）
-    let mut fb = FrameBuffer::new_filled(physical_width, physical_height, 255, 255, 255, 255);
+    // new_filled：一次 memset 构造纯色底（免 new + clear 两遍全缓冲写，1080p 省 ~4.6MB 写）
+    let mut fb = FrameBuffer::new_filled(physical_width, physical_height, bg[0], bg[1], bg[2], 255);
     render_full_scene_region_into(
         &mut fb,
         primitives,
@@ -213,6 +248,99 @@ pub fn render_full_scene_region(
         scale,
     );
     fb
+}
+
+/// 双色底 matte 直 alpha 光栅化（R4283，alpha 保真通道 slice 2）——子树对白底与
+/// 黑底各渲染一次，逐像素解出**直 alpha** RGBA。
+///
+/// filter isolate 的 SourceGraphic 需要真实透明语义（filter-effects-1 §8.3）：
+/// 区域余量应为透明而非白底——白底输出经 ImagePrimitive 回贴会把 filter region
+/// 余量不透明涂白（彩色页面背景漏白盒）；且 resvg 链的 SourceAlpha 在白底下恒
+/// 255，blur/位移类链的 alpha 语义失真。
+///
+/// 数学（src-over 凸组合）：`Cw = C·α + 255·(1−α)`、`Cb = C·α` ⇒
+/// `α = 1 − (Cw − Cb)/255`、`C = Cb/α`。零侵入既有光栅栈——blend_pixel 等写入方
+/// 按不透明底语义硬编码 A=255（P2-7 blend_src 现状），直渲染透明底会产暗边假
+/// alpha，双色底 matte 绕开该约束。
+///
+// OPTIMIZATION: 单遍 alpha 保真 sink（全部图元写入方直 alpha 化）可省一次渲染；
+// isolate 仅对 filter 元素触发且 region 尺寸，当前 2× 成本可接受。
+#[allow(clippy::too_many_arguments)] // 光栅化全参数（本文件多处同款）
+pub fn render_full_scene_straight_alpha(
+    width: u32,
+    height: u32,
+    scale_factor: f32,
+    primitives: &RenderPrimitives,
+    font_loader: &FontLoader,
+    glyph_cache: &mut GlyphCache,
+    mut image_cache: Option<&mut ImageCache>,
+    ui_glyphs: &[GlyphDraw],
+    overlay_fills: &[FillPrimitive],
+    overlay_glyphs: &[GlyphDraw],
+    overlay_rounded_rects: &[RoundedRectPrimitive],
+) -> FrameBuffer {
+    let white = render_full_scene_region_on_background(
+        [255, 255, 255],
+        width,
+        height,
+        scale_factor,
+        primitives,
+        font_loader,
+        glyph_cache,
+        image_cache.as_deref_mut(),
+        ui_glyphs,
+        overlay_fills,
+        overlay_glyphs,
+        overlay_rounded_rects,
+        None,
+    );
+    let black = render_full_scene_region_on_background(
+        [0, 0, 0],
+        width,
+        height,
+        scale_factor,
+        primitives,
+        font_loader,
+        glyph_cache,
+        image_cache.as_deref_mut(),
+        ui_glyphs,
+        overlay_fills,
+        overlay_glyphs,
+        overlay_rounded_rects,
+        None,
+    );
+    // ref_count 语义同 render_full_scene：渲染 get 递增 / render_image release，
+    // 两遍渲染各自配平，gc 一次即可（见 render_full_scene 注释）。
+    if let Some(cache) = image_cache {
+        cache.gc();
+    }
+    matte_to_straight_alpha(&white, &black)
+}
+
+/// 逐像素解 dual-matte 直 alpha（公式见 [`render_full_scene_straight_alpha`]）。
+fn matte_to_straight_alpha(white: &FrameBuffer, black: &FrameBuffer) -> FrameBuffer {
+    debug_assert_eq!((white.width, white.height), (black.width, black.height));
+    let mut out = FrameBuffer::new(white.width, white.height);
+    for idx in (0..white.data.len()).step_by(4) {
+        // α = 1 − (Cw − Cb)/255；三通道均值降噪（彩色像素逐通道残差数值抖动）。
+        // 钳位防混合模式等非凸写入学（Cw < Cb 局部违凸）下溢。
+        let drift: i32 = (0..3)
+            .map(|c| white.data[idx + c] as i32 - black.data[idx + c] as i32)
+            .sum::<i32>()
+            .clamp(0, 765);
+        let alpha = 255.0 - drift as f32 / 3.0;
+        if alpha <= 0.5 {
+            continue; // 全透明（FrameBuffer::new 初始 0,0,0,0）
+        }
+        let a = alpha / 255.0;
+        out.data[idx + 3] = alpha.round().clamp(0.0, 255.0) as u8;
+        for c in 0..3 {
+            // C = Cb/α（直 alpha 色还原），饱和截断。
+            let color = black.data[idx + c] as f32 / a;
+            out.data[idx + c] = color.round().clamp(0.0, 255.0) as u8;
+        }
+    }
+    out
 }
 
 /// 渲染到既有帧缓冲（**不清全帧**）——滚动 translate-blit 只重绘新露出的条带

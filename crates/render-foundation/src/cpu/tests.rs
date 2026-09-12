@@ -2603,3 +2603,79 @@ fn chrome_strip_rerender_does_not_touch_page_region() {
         "chrome strip re-render must not change page-region pixels (S1b reuse frame)"
     );
 }
+
+#[test]
+fn straight_alpha_dual_matte_extracts_true_alpha() {
+    // R4283：dual-matte 直 alpha——不透明矩形内部 (255,0,0,255)、区域余量透明。
+    let mut primitives = RenderPrimitives::new();
+    primitives.fills.push(FillPrimitive {
+        rect: Rect::new(10.0, 10.0, 50.0, 50.0),
+        color: Color::rgb(255, 0, 0),
+    });
+
+    let font_loader = FontLoader::new();
+    let mut glyph_cache = GlyphCache::new(64);
+    let fb = render_full_scene_straight_alpha(
+        100,
+        100,
+        1.0,
+        &primitives,
+        &font_loader,
+        &mut glyph_cache,
+        None,
+        &[],
+        &[],
+        &[],
+        &[],
+    );
+
+    let inside = fb.get_pixel(30, 30);
+    assert_eq!(
+        inside,
+        [255, 0, 0, 255],
+        "opaque fill interior must keep straight color with full alpha"
+    );
+    let outside = fb.get_pixel(5, 5);
+    assert_eq!(
+        outside,
+        [0, 0, 0, 0],
+        "region margin must be transparent, not white-matte"
+    );
+}
+
+#[test]
+fn straight_alpha_dual_matte_recovers_semitransparent_fill() {
+    // 半透明填充（src=红 a=128）：白底渲染 = 混白、黑底渲染 = 混黑，matte 解出
+    // 直 alpha ≈ (255,0,0,128)（凸组合可逆性的端到端验证）。
+    let mut primitives = RenderPrimitives::new();
+    primitives.fills.push(FillPrimitive {
+        rect: Rect::new(10.0, 10.0, 50.0, 50.0),
+        color: Color::rgba(255, 0, 0, 128),
+    });
+
+    let font_loader = FontLoader::new();
+    let mut glyph_cache = GlyphCache::new(64);
+    let fb = render_full_scene_straight_alpha(
+        100,
+        100,
+        1.0,
+        &primitives,
+        &font_loader,
+        &mut glyph_cache,
+        None,
+        &[],
+        &[],
+        &[],
+        &[],
+    );
+
+    let px = fb.get_pixel(30, 30);
+    assert_eq!(px[0], 255, "red channel restored");
+    assert_eq!(px[1], 0, "green channel restored");
+    assert_eq!(px[2], 0, "blue channel restored");
+    assert!(
+        (110..=146).contains(&px[3]),
+        "alpha ≈ 128 (fill 50% coverage), got {}",
+        px[3]
+    );
+}
