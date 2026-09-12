@@ -1020,7 +1020,7 @@ impl Painter {
             && self.font_loader_ready
             && let Some(doc) = doc
         {
-            self.collect_filter_isolates(layout, styles, doc, 0.0, 0.0, &mut isolate_specs);
+            self.collect_filter_isolates(layout, styles, doc, 0.0, 0.0, false, &mut isolate_specs);
             for spec in &isolate_specs {
                 self.paint_skip_nodes.insert(spec.node_id);
             }
@@ -1058,6 +1058,7 @@ impl Painter {
         doc: &Document,
         abs_x: f32,
         abs_y: f32,
+        ancestor_has_transform: bool,
         out: &mut Vec<IsolateSpec>,
     ) {
         let Some(node_id) = box_node.node_id else {
@@ -1065,7 +1066,15 @@ impl Painter {
             let child_offset_x = abs_x + box_node.padding_left + box_node.border_left;
             let child_offset_y = abs_y + box_node.padding_top + box_node.border_top;
             for child in &box_node.children {
-                self.collect_filter_isolates(child, styles, doc, child_offset_x, child_offset_y, out);
+                self.collect_filter_isolates(
+                    child,
+                    styles,
+                    doc,
+                    child_offset_x,
+                    child_offset_y,
+                    ancestor_has_transform,
+                    out,
+                );
             }
             return;
         };
@@ -1083,38 +1092,87 @@ impl Painter {
                 _ => None,
             })
             .collect();
-        // 门禁①：混合列表（存在非 Url 项）或无 url 引用 → 旁路。
+        // R4277 修复：门禁只裁定**本节点**是否 isolate，不得短路子树递归（首版
+        // gate1/4 提前 return 使无 filter 祖先的后代永不走查——empty-element-with-
+        // filter 的 .turbulent div 因 html/body 先落 gate1 而永不可达）。
+        // 门禁①：混合列表（存在非 Url 项）或无 url 引用 → 本节点旁路。
         let has_functions = style.filter.iter().any(|f| !matches!(f, FilterComputedValue::Url(_)));
-        if url_refs.is_empty() || has_functions {
-            return;
-        }
-        // 门禁④：子树含 transform / will-change 后代 → 旁路（region 逃逸）。
-        if crate::paint::svg_filter_chain::subtree_has_transform(doc, styles, node_id) {
-            return;
-        }
-        let mut filter_node_ids = Vec::new();
-        for reference in &url_refs {
-            let Some(filter_node_id) = doc.get_element_by_id(reference) else {
-                continue;
-            };
-            // 门禁②：空 filter = 恒等链 → 该引用跳过（其余引用继续）。
-            if crate::paint::svg_filter_chain::chain_is_empty(doc, filter_node_id) {
-                continue;
+        // 门禁⑥：transformed 祖先 → 旁路（离屏 SourceGraphic 不含祖先变换坐标系，
+        // 占位 image 虽随祖先 TransformPrimitive 缩放但源像素坐标系错位——
+        // filter-scale-001 回归实证）。元素自身 transform 不触发（主遍合成 ✓）。
+        let self_transform = !matches!(style.transform, zero_css_parser::values::TransformValue::None);
+        let eligible = !url_refs.is_empty() && !has_functions && !ancestor_has_transform;
+        if eligible {
+            // 门禁④：子树含 transform / will-change 后代 → 旁路（region 逃逸）。
+            if crate::paint::svg_filter_chain::subtree_has_transform(doc, styles, node_id) {
+                url_chain_debug(node_id, "gate4-subtree-transform");
+            } else {
+                let mut filter_node_ids = Vec::new();
+                for reference in &url_refs {
+                    let Some(filter_node_id) = doc.get_element_by_id(reference) else {
+                        continue;
+                    };
+                    // 门禁②：空 filter = 恒等链 → 该引用跳过（其余引用继续）。
+                    if crate::paint::svg_filter_chain::chain_is_empty(doc, filter_node_id) {
+                        continue;
+                    }
+                    // 门禁③：常量链走 R4273 填充路径（主遍 apply_svg_reference_filter 发射）。
+                    if effects::constant_filter_chain_color(doc, filter_node_id).is_some() {
+                        continue;
+                    }
+                    filter_node_ids.push(filter_node_id);
+                }
+                if filter_node_ids.is_empty() {
+                    url_chain_debug(node_id, "gate2/3-all-refs-skipped");
+                } else {
+                    self.push_isolate_spec(box_node, doc, node_id, abs_x, abs_y, filter_node_ids, out);
+                }
             }
-            // 门禁③：常量链走 R4273 填充路径（主遍 apply_svg_reference_filter 发射）。
-            if effects::constant_filter_chain_color(doc, filter_node_id).is_some() {
-                continue;
-            }
-            filter_node_ids.push(filter_node_id);
         }
-        if filter_node_ids.is_empty() {
-            return;
+        // 子树递归不受本节点门禁结果影响（R4277 修复）；变换状态沿链传播（门禁⑥）。
+        let child_offset_x = abs_x + box_node.padding_left + box_node.border_left;
+        let child_offset_y = abs_y + box_node.padding_top + box_node.border_top;
+        for child in &box_node.children {
+            self.collect_filter_isolates(
+                child,
+                styles,
+                doc,
+                child_offset_x,
+                child_offset_y,
+                ancestor_has_transform || self_transform,
+                out,
+            );
         }
+    }
+    /// R4277：由已通过门禁①-④的引用集合构建 isolate 规格（门禁⑤ region 像素
+    /// 对齐 + 尺寸上限在此裁定），发射占位 ImagePrimitive 并入队。
+    fn push_isolate_spec(
+        &mut self,
+        box_node: &LayoutBox,
+        doc: &Document,
+        node_id: NodeId,
+        abs_x: f32,
+        abs_y: f32,
+        filter_node_ids: Vec<zero_dom::NodeId>,
+        out: &mut Vec<IsolateSpec>,
+    ) {
         // 门禁⑤：region 像素对齐（外扩）。取首个可解析引用的 region（同元素多引用
         // 的 region 按 spec = 各链输出合成区域，首版以并集近似——顺序应用逐链产出）。
+        // 门禁⑦：region 须完整覆盖元素盒——部分 region 会裁掉盒外溢内容（spec：region
+        // 外不渲染），旁路保 legacy（filter-region-transformed-child-001 x=25% w=50%
+        // 回归实证）。
+        const REGION_EPSILON: f32 = 1.0;
         let mut region = None;
         for fid in &filter_node_ids {
             if let Some(r) = effects::svg_filter_region(doc, *fid, box_node, abs_x, abs_y) {
+                let covers_box = r.origin.x <= abs_x + REGION_EPSILON
+                    && r.origin.y <= abs_y + REGION_EPSILON
+                    && r.origin.x + r.size.width >= abs_x + box_node.width - REGION_EPSILON
+                    && r.origin.y + r.size.height >= abs_y + box_node.height - REGION_EPSILON;
+                if !covers_box {
+                    url_chain_debug(node_id, "gate7-partial-region");
+                    return;
+                }
                 let x = r.origin.x.floor();
                 let y = r.origin.y.floor();
                 let w = (r.origin.x + r.size.width).ceil() - x;
@@ -1124,16 +1182,21 @@ impl Painter {
             }
         }
         let Some(region) = region else {
+            url_chain_debug(node_id, "gate-region-unresolvable");
             return;
         };
         let w = region.size.width.max(1.0) as u32;
         let h = region.size.height.max(1.0) as u32;
         if w > 8192 || h > 8192 {
+            url_chain_debug(node_id, "gate-region-oversize");
             return; // region 异常巨大（设计 §5 数据面上限）→ 旁路
         }
+        url_chain_debug(node_id, "isolated");
         let key = self.next_filter_key();
         out.push(IsolateSpec {
             node_id,
+            abs_x,
+            abs_y,
             region,
             filter_node_ids,
             key,
@@ -1147,11 +1210,6 @@ impl Painter {
                 clip: None,
                 source: None,
             });
-        let child_offset_x = abs_x + box_node.padding_left + box_node.border_left;
-        let child_offset_y = abs_y + box_node.padding_top + box_node.border_top;
-        for child in &box_node.children {
-            self.collect_filter_isolates(child, styles, doc, child_offset_x, child_offset_y, out);
-        }
     }
 
     /// R4276：isolate 子树旁路绘制——临时换仓 self.primitives，paint_node 以
@@ -1173,8 +1231,12 @@ impl Painter {
         };
         let was_skipped = self.paint_skip_nodes.remove(&spec.node_id);
         let main_primitives = std::mem::take(&mut self.primitives);
-        let off_x = spec.region.origin.x - box_root.x;
-        let off_y = spec.region.origin.y - box_root.y;
+        // 离屏平移：元素须落在 region 内的主遍相对位置（offscreen_abs = main_abs −
+        // region.origin；paint_node 根入口 abs = offset + box.x/y → 抵消 box.x/y）。
+        // 首版 `offset = region.origin − box.x/y` 丢掉 main_abs，致 body margin 等
+        // 偏移的元素整体错位 8px（filter-chained-url-url-001 取证实证）。
+        let off_x = spec.abs_x - spec.region.origin.x - box_root.x;
+        let off_y = spec.abs_y - spec.region.origin.y - box_root.y;
         self.paint_node(box_root, styles, off_x, off_y, Some(doc), false);
         let side = std::mem::replace(&mut self.primitives, main_primitives);
         if was_skipped {
@@ -3083,10 +3145,21 @@ pub(crate) fn in_svg_subtree(doc: &Document, node_id: NodeId) -> bool {
     false
 }
 
+/// R4277：isolate 收集决策插桩（env `ZW_URL_CHAIN_DEBUG=1` 时 dump 每元素走查
+/// 结论——门禁编号/isolated；供逐案排障与 oracle 交叉验证定位）。
+fn url_chain_debug(node_id: NodeId, decision: &str) {
+    if std::env::var("ZW_URL_CHAIN_DEBUG").as_deref() == Ok("1") {
+        eprintln!("[url-chain] node={node_id:?} -> {decision}");
+    }
+}
+
 /// R4276：filter isolate 收集规格（paint 主遍前收集、主遍后旁路绘制用）。
 pub(crate) struct IsolateSpec {
     /// isolate 元素节点（主遍抑制 + 子树重找）。
     node_id: NodeId,
+    /// 主遍绝对位置（walk 偏移链，R4277 离屏平移公式用）。
+    abs_x: f32,
+    abs_y: f32,
     /// filter region（页面绝对坐标）。
     region: zero_render_foundation::geometry::Rect,
     /// 被引用 `<filter>` 元素（多引用按声明序，pipeline 顺序链应用）。
