@@ -73,9 +73,17 @@ function collectTests(dir, base = dir) {
     const full = join(dir, name);
     if (statSync(full).isDirectory()) {
       out.push(...collectTests(full, base));
-    } else if ((name.endsWith('.html') || name.endsWith('.xht'))
-               && !name.includes('-ref') && !name.includes('notref') && !name.includes('reference')) {
-      out.push(relative(base, full));
+    } else if (name.endsWith('.html') || name.endsWith('.xht')) {
+      // R4281：ref/notref 判定改为**词干精确后缀**——旧 includes('-ref')/includes(
+      // 'reference') 子串匹配误伤 effect-reference-*（CSS reference filter 用例族，
+      // 全族 19 案从未被抓取）。reference/ 目录经相对路径段判定排除。
+      const stem = name.replace(/\.(html|xht)$/, '');
+      const rel = relative(base, full);
+      const inReferenceDir = rel.split(/[\\/]/).includes('reference');
+      if (inReferenceDir || stem.endsWith('-ref') || stem.endsWith('notref')) {
+        continue;
+      }
+      out.push(rel);
     }
   }
   return out;
