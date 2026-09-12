@@ -640,9 +640,12 @@ fn render_with_layout_inner(
 
     let _zw_t2 = std::time::Instant::now();
     // 先构建图像缓存，提取固有尺寸供 paint 阶段使用
-    let mut image_cache = build_image_cache(html, base_dir);
-    let (image_sizes, image_ratios, image_no_ratio, image_natural_sizes) =
-        extract_image_metrics(&mut image_cache, html);
+    // R4282：Arc<Mutex> 共享给 pipeline（filter url() isolate 离屏栅格化需要页面图像）。
+    let image_cache = std::sync::Arc::new(std::sync::Mutex::new(build_image_cache(html, base_dir)));
+    let (image_sizes, image_ratios, image_no_ratio, image_natural_sizes) = {
+        let mut guard = image_cache.lock().unwrap_or_else(|e| e.into_inner());
+        extract_image_metrics(&mut guard, html)
+    };
 
     let combined_css = merge_page_css(html, css, base_dir, Some(&media_ctx));
     let _zw_t3 = std::time::Instant::now();
@@ -763,7 +766,10 @@ fn render_with_layout_inner(
     // R3268：canvas 像素注入 ImageCache（图元 image_key = ctx_id）
     for (ctx_id, cw, ch, rgba) in &result.canvas_images {
         if let Ok(data) = ImageData::from_rgba(rgba.clone(), *cw, *ch) {
-            image_cache.insert_with_key(ImageKey::new(*ctx_id), data);
+            image_cache
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .insert_with_key(ImageKey::new(*ctx_id), data);
         }
     }
     let _zw_t6 = std::time::Instant::now();
@@ -859,7 +865,7 @@ fn render_with_layout_inner(
             &result.display_list.primitives,
             font_loader,
             &mut glyph_cache,
-            &mut image_cache,
+            &mut image_cache.lock().unwrap_or_else(|e| e.into_inner()),
         )
     } else if render_threading_enabled_for_tests() {
         std::thread::scope(|s| {
@@ -871,7 +877,7 @@ fn render_with_layout_inner(
                     &result.display_list.primitives,
                     font_loader,
                     &mut glyph_cache,
-                    Some(&mut image_cache),
+                    Some(&mut image_cache.lock().unwrap_or_else(|e| e.into_inner())),
                     &[],
                     &[],
                     &[],
@@ -889,7 +895,7 @@ fn render_with_layout_inner(
             &result.display_list.primitives,
             font_loader,
             &mut glyph_cache,
-            Some(&mut image_cache),
+            Some(&mut image_cache.lock().unwrap_or_else(|e| e.into_inner())),
             &[],
             &[],
             &[],
@@ -947,9 +953,12 @@ pub fn render_via_webview_to_framebuffer_with_base(
     };
     let html: &str = &styled_html;
 
-    let mut image_cache = build_image_cache(html, base_dir);
-    let (image_sizes, image_ratios, image_no_ratio, image_natural_sizes) =
-        extract_image_metrics(&mut image_cache, html);
+    // R4282：Arc<Mutex> 共享给 pipeline（filter url() isolate 离屏栅格化需要页面图像）。
+    let image_cache = std::sync::Arc::new(std::sync::Mutex::new(build_image_cache(html, base_dir)));
+    let (image_sizes, image_ratios, image_no_ratio, image_natural_sizes) = {
+        let mut guard = image_cache.lock().unwrap_or_else(|e| e.into_inner());
+        extract_image_metrics(&mut guard, html)
+    };
     let combined_css = merge_page_css(html, css, base_dir, Some(&media_ctx));
 
     let mut font_loader = create_font_loader();
@@ -987,7 +996,7 @@ pub fn render_via_webview_to_framebuffer_with_base(
         &result.primitives,
         &font_loader,
         &mut glyph_cache,
-        Some(&mut image_cache),
+        Some(&mut image_cache.lock().unwrap_or_else(|e| e.into_inner())),
         &[],
         &[],
         &[],

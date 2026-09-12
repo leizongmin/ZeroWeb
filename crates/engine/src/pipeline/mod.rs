@@ -185,6 +185,9 @@ pub struct RenderPipeline {
     pub(crate) font_loader: Option<std::sync::Arc<zero_render_foundation::font::loader::FontLoader>>,
     /// R4279：文档基准目录（filter url() 链内 feImage 相对 href 的 file 解析基准）。
     pub(crate) document_base: Option<std::path::PathBuf>,
+    /// R4282：渲染侧 ImageCache 共享句柄（isolate 离屏栅格化用）。
+    pub(crate) shared_image_cache:
+        Option<std::sync::Arc<std::sync::Mutex<zero_render_foundation::image_cache::ImageCache>>>,
     /// 当前文档 URL（用于解析相对 `<img src>` 与 image_sizes 键）。
     pub(crate) document_url: Option<String>,
     /// 文档 referrer（来源页 URL；`document.referrer` 读，导航层注入 = 导航前的页面 URL）。
@@ -378,6 +381,7 @@ impl RenderPipeline {
             font_resolver: HashMap::new(),
             font_loader: None,
             document_base: None,
+            shared_image_cache: None,
             document_url: None,
             referrer: None,
         }
@@ -651,6 +655,11 @@ impl RenderPipeline {
         for iso in isolates {
             let w = iso.region.size.width.ceil().max(1.0) as u32;
             let h = iso.region.size.height.ceil().max(1.0) as u32;
+            // R4282：页面 ImageCache 注入——含 <img> 的 filter 子树离屏渲染不再为空。
+            let mut cache_guard = self
+                .shared_image_cache
+                .as_ref()
+                .map(|c| c.lock().unwrap_or_else(|e| e.into_inner()));
             let fb = zero_render_foundation::cpu::render_full_scene(
                 w,
                 h,
@@ -658,7 +667,7 @@ impl RenderPipeline {
                 &iso.primitives,
                 loader,
                 &mut glyph_cache,
-                None,
+                cache_guard.as_deref_mut(),
                 &[],
                 &[],
                 &[],
