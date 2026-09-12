@@ -1461,3 +1461,12 @@ android-renderer-apk: android-preflight target-disk-guard target/test-guard
 android-install-smoke: android-apk
 	@echo "android-install-smoke is implemented by the Windows local-emulator script in M0"
 endif
+
+# ── cdp-protocol goal：Playwright E2E 收口门（M5）──
+# 零源码依赖的 Node 测试链（tests/playwright-matrix/）：spawn 独立 headless 双跑
+# 全核心流 → deterministic 判定 + expected-green 回归门（objectId 桥待决策，
+# evaluate/locator 族步骤不在基线内，见 tests/playwright-matrix/expected-green.json）。
+# 前置：node >= 20 + tests/playwright-matrix/node_modules（npm install）。
+cdp-e2e: target-disk-guard target/test-guard
+	cargo build -p zero-browser --bin zero-browser
+	cd tests/playwright-matrix && ZERO_NOPROXY=1 ../../target/test-guard --time-limit 600 --per-proc-mem 4 --total-mem 8 -- node scripts/verify-deterministic.mjs

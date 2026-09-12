@@ -2,7 +2,7 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-12（M4 切片落地：Storage cookie 域 + UA override + Network 事件总线雏形）
+**最后更新**: 2026-09-12（M5 收口预备落地：cdp-e2e make 门 + deterministic 双跑 + DC 盘点）
 
 ---
 
@@ -25,14 +25,26 @@
 | P1 | Playwright 命令矩阵账本（pin 版空跑导出命令全集 + 三态登记） | ✅ 初稿落地（evidence/cdp-command-matrix.md；随域更新三态） |
 | P2 | headless.rs 职责拆分（2256 行超 2000 上限；transport/discovery/domains/session） | ✅ M1 切片 1（headless/ 9 模块，纯搬移零语义变化，make test 19,170P/0F 与基线一致） |
 | P3 | Target/Runtime/Page/Input/DOM/CSS/Network/Emulation 域实现 | ⏳ M1-M4 |
-| P4 | Node/Playwright 测试链（pin + E2E 用例集 + make 入口） | 🔶 pin 工程已入库（tests/playwright-matrix/，playwright-core 1.63.0）；E2E 用例与 make 入口随 M1 建 |
-| P5 | console 对象化（V8 侧结构化序列化，替换扁平字符串） | ⏳ M4（矩阵 G5） |
-| P6 | net 请求事件总线（Network 域 + devtools Network 面板共用脊柱） | ⏳ M4（矩阵 G4） |
+| P4 | Node/Playwright 测试链（pin + E2E 用例集 + make 入口） | ✅ S8：`make cdp-e2e`（test-guard 包裹，deterministic 双跑 + expected-green 回归门）；用例集=30 步全核心流 |
+| P5 | console 对象化（V8 侧结构化序列化，替换扁平字符串） | ⏳ 挂 engine 碰头窗口（S7 记档） |
+| P6 | net 请求事件总线（Network 域 + devtools Network 面板共用脊柱） | 🔶 S7 雏形（proxy_fetch 生命周期三事件）；字段补全挂 net 观测点扩展 |
 | P7 | WS 层 sessionId 多路复用（单连接扁平会话 → per-target session，响应回显 sessionId） | 🔶 M1 切片 2 传输面完成：解析/回显/未附接校验（-32001）+ 附接注册表；per-target 真路由随切片 3 Target 域落地 |
 | P8 | `/json/version` 尾斜杠 404（Playwright 请求 `/json/version/`） | ✅ M1 切片 2（normalize_discovery_path 容忍尾斜杠；`/json`、`/json/list` 同步受益） |
 
 ## 已完成切片
 
+- **S8（2026-09-12）M5 收口预备 — cdp-e2e 门 + DC 盘点**：
+  `make cdp-e2e` 入口落地（test-guard 包裹，spawn 独立 headless 双跑全核心流）：
+  **deterministic 双跑一致**（两次入口运行均 YES）+ **expected-green 回归门**（6 步基线
+  `expected-green.json`：context.default/page.new/setViewportSize/goto/cookies.roundtrip/
+  screenshot.viewport，任一回退即门禁失败）。DC-1~4 盘点（见下）。CI 可行性记账：
+  node 20.19 本机在位、playwright 缓存 chromium-1243 命中（npm install 仅装
+  playwright-core+ws 两个包，lockfile 离线可复现）、CI 需 pre-step `npm ci` +
+  `cargo build -p zero-browser`；CI 集成等 goal 收口时随 M5 定稿评估。
+  **DC 盘点**：DC-1 ✅（账本 40 方法三态全登记 + goal 扩展面）；DC-2 ⏳（绿步 6/30，
+  双跑 deterministic ✅ 已门禁化，全绿挂 objectId 桥决策）；DC-3 ✅（-32601/-32700/
+  loopback/token-origin 语义保持；超大 payload 记档待专项验证）；DC-4 ✅（make test
+  全绿 + clippy/fmt + cdp-e2e 门 + BiDi 既有面零回归）。
 - **S7（2026-09-12）M4 — Storage cookie 域 + UA override + Network 事件总线雏形**：
   session 级 `CookieStore`（net 既有 jar 复用，goal 支持包络「net 只加观测点」——新增
   只读 `CookieStore::all()`）；`Storage.getCookies/setCookies/clearCookies` 实义
@@ -102,14 +114,12 @@
 
 ## 下一步计划
 
-1. **M4 收口余项**：console 对象化（P5，engine 宿主回调扩展——并行流碰头管理，等
-   zero-web 流窗口）+ Network 事件字段补全（net 观测点扩展：headers/mimeType/
-   dataReceived）
-2. **iframe 子帧事件源**：需引擎子帧可见性（渲染流域协调点），frames.access 步骤依赖
-3. **M5 矩阵收口预备**：E2E 用例集（playwright-matrix 工程已有 30 步流）建 make 入口
-   + 双跑 deterministic 判定 + DC-1~4 逐项盘点
-4. **objectId 桥获批后**：renderer/protocol/engine 跨 crate 对象注册表——收口
-   evaluate/locator/click/fill 全族（~20 步，占差距大头）
+1. **收口门禁依赖项（全部挂外部窗口）**：objectId 桥（用户决策）→ evaluate/locator
+   全族 ~20 步；console 对象化（engine 碰头窗口）；iframe 子帧事件面（渲染流域协调）；
+   Network 事件字段补全（net 观测点扩展）
+2. **M5 定稿（依赖项解除后）**：expected-green 基线扩至全绿 → cdp-e2e 即 DC-2 门；
+   DC-3 超大 payload 专项验证；挂账清单（不实现域）终稿
+3. **持续推进**：每轮 pull → cdp-e2e 门 + make test 防回归，余项按窗口逐个解冻
 
 **待用户决策清单**：
 - **objectId 句柄桥（深结构，2026-09-12 实测确认）**：Playwright evaluate/locator 全
@@ -129,7 +139,7 @@
 | M2 — Page/Input 域 → 点击/填充/键盘/导航流 | 🚧 S5：goto 绿 + Input 域全通 + 导航事件族；locator 类点击/填充仍挂 objectId 桥（value-only 面已尽） |
 | M3 — DOM/CSS/Emulation → locator 流 | 🚧 S6：viewport 桥/媒体仿真/截图 clip 绿；DOM 句柄桥挂 objectId 桥；iframe 子帧挂引擎子帧事件面 |
 | M4 — Network/cookies/console 对象化（cookie 落点=Storage 域） | 🚧 S7：cookie 域 + UA override + Network 事件雏形绿；console 对象化挂 engine 碰头窗口 |
-| M5 — 矩阵收口 | ⏳ |
+| M5 — 矩阵收口 | 🚧 S8 收口预备完成（cdp-e2e 门 + DC 盘点）；终稿挂 objectId 桥等外部窗口 |
 
 ## 验证基线
 

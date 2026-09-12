@@ -15,6 +15,8 @@ CDP 协议 goal（`docs/goal/cdp-protocol.md`）的 Playwright 测试工程。No
 ```sh
 npm run capture:chromium   # 启动 Chromium → 经捕获代理 connectOverCDP → 全核心流空跑
 npm run matrix             # 从 out/capture.jsonl 生成捕获明细 + 汇总 JSON
+make cdp-e2e               # （仓库根）ZeroWeb 收口门：双跑全核心流 @ ZeroWeb headless
+                           #   → deterministic 判定 + expected-green 回归门（test-guard 包裹）
 ```
 
 产物（`out/`，gitignore，可重新生成）：
