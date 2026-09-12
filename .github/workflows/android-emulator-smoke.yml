@@ -21,6 +21,11 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
+  # avdmanager（新 cmdline-tools 走 ANDROID_USER_HOME）与 emulator 37.x（走
+  # ANDROID_AVD_HOME → ANDROID_SDK_HOME/avd → HOME/.android/avd）的默认 AVD 目录
+  # 在 runner 上不一致，实证 run 34703425006/34704966636：emulator 报
+  # Unknown AVD name 即刻退出。显式钉死同一目录给两个工具。
+  ANDROID_AVD_HOME: ${{ github.workspace }}/avd-home
 
 jobs:
   emulator-smoke:
@@ -96,7 +101,17 @@ jobs:
           echo "SMOKE_IMAGE=$IMG" >> "$GITHUB_ENV"
 
       - name: Create AVD
-        run: echo no | "$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager" create avd -n zeroweb-smoke -k "$SMOKE_IMAGE" -d pixel
+        run: |
+          mkdir -p "$ANDROID_AVD_HOME"
+          echo no | "$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager" create avd -n zeroweb-smoke -k "$SMOKE_IMAGE" -d pixel
+          ls -la "$ANDROID_AVD_HOME"
+          # 用 emulator 自己的发现路径预检，防「创建在 A、启动找 B」的静默错位
+          listed=$("$ANDROID_HOME/emulator/emulator" -list-avds)
+          echo "emulator-visible AVDs: $listed"
+          grep -qx zeroweb-smoke <<<"$listed" || {
+            echo "::error::emulator cannot discover AVD zeroweb-smoke (searches \$ANDROID_AVD_HOME/\$ANDROID_SDK_HOME/avd/\$HOME/.android/avd)"
+            exit 1
+          }
 
       # adb server 先起：emulator 启动期注册到已存在的 server，避免晚起 server 的注册竞态。
       # -cores 4 + -memory 4096 压首启 dexopt 时长；-no-metrics 防 CI 上的遥测卡顿。
@@ -123,6 +138,7 @@ jobs:
           if [ "$boot" != "1" ]; then
             echo "::error::emulator boot timed out"
             pgrep -af qemu || pgrep -af emulator || true
+            ls -la "$ANDROID_AVD_HOME" || true
             "$ADB" devices -l || true
             tail -50 emulator-boot.log || true
             exit 1
@@ -155,6 +171,7 @@ jobs:
           timeout 90 "$ADB" logcat -d > smoke-logs/logcat.txt 2>&1 || true
           timeout 60 "$ADB" shell ps -A -o USER,NAME > smoke-logs/ps.txt 2>&1 || true
           pgrep -af qemu > smoke-logs/emulator-process.txt 2>&1 || true
+          ls -la "$ANDROID_AVD_HOME" > smoke-logs/avd-home.txt 2>&1 || true
           cp emulator-boot.log sdkmanager-install.log smoke-logs/ 2>/dev/null || true
 
       - name: Upload smoke diagnostics
