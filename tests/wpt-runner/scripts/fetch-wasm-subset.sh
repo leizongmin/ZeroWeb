@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Fetch the pinned WebAssembly (wasm/jsapi) testharness subset used by page-wasm.
 #
-# 页面 WASM goal（docs/goal/page-wasm.md）M1 / DC-1。window 环境可执行的真实上游用例，
+# 页面 WASM goal（docs/goal/archive/page-wasm.md，2026-09-12 收口归档）M1 / DC-1。window 环境可执行的真实上游用例，
 # 标准（非 tentative）JS API 面：Module/Instance/Memory/Table/Global/compile/instantiate/
 # validate/导出面/链接错误。
 #

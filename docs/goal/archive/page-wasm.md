@@ -1,8 +1,11 @@
 # 页面 WASM 深化 — WPT 驱动的 WebAssembly 页面可用性目标
 
 **版本**: v1.0
-**日期**: 2026-09-07
-**状态**: Active
+**日期**: 2026-09-07（2026-09-12 收口归档）
+**状态**: ✅ Completed（2026-09-12——M1/M2/M3 全落毕，DC-1~4 全满足：导出面与类型
+真实化、Memory/Global/Table 真实映射、importObject 链接 + 错误分类、host function
+真重入、streaming Content-Type 校验；WPT wasm/jsapi 31 案 715/719 = 99.4%。收口判定
+与归档见 [page-wasm/master.md](page-wasm/master.md)）
 **执行模式**: 轻量修复优先（永不停）；遇需用户决策项或深结构方向 → 记入「待用户决策」清单 → 跳过 → 继续其他轻量修复
 **父目标**: `docs/goal/zero-web.md`（M12「页面 WASM 可以加载执行并与 JS 互操作」未勾项）
 

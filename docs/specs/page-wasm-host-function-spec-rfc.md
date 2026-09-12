@@ -3,7 +3,7 @@
 **版本**: v1.0
 **日期**: 2026-09-12
 **状态**: 草稿（Rally 交棒件——下一轮按 §7 实施交接执行）
-**父目标**: docs/goal/page-wasm.md M3（master.md「下一步计划」切片 1）
+**父目标**: docs/goal/archive/page-wasm.md M3（master.md「下一步计划」切片 1，goal 已于 2026-09-12 收口归档）
 **规范依据**: https://webassembly.github.io/spec/js-api/ （WebAssembly JavaScript API）
 
 ---
@@ -286,7 +286,7 @@ wasm→JS 的同步回调是 M3 的核心难点：HostFn 在 `WasmInstance::call
   `crates/engine/src/dom_bridge.rs`（polyfill WebAssembly 段——`_importFns`/
   `_invokeImport`/载荷组装）、`crates/webview/src/webview.rs`（wasm 段：
   instantiate 桥 imports 接线 + HostFn 闭包）、`crates/webview/src/tests/wasm_bridge.rs`
-  （新用例）、`docs/goal/page-wasm/**`、`docs/specs/page-wasm-host-function-spec-rfc.md`。
+  （新用例）、`docs/goal/archive/page-wasm/**`、`docs/specs/page-wasm-host-function-spec-rfc.md`。
 - **禁止修改**：`crates/engine/src/js_dom_shim/**`、`crates/script-sandbox/**`（重入
   探针失败需升级方案时先停下按 §8.9 处理，不顺手改沙箱）、`tests/wpt-runner/**`
   （WPT 面不属本切片）、渲染流域 crate（run-rules §9）。
