@@ -42,7 +42,7 @@
 | # | 缺口 | 状态 |
 |---|------|------|
 | P1 | Android CI job（NDK 构建 + assemble + 单测） | ⬜ M1 |
-| P2 | 版本串/README/RFC 状态文档滞后 | ⬜ M1 |
+| P2 | 版本串/README/RFC 状态文档滞后 | 🔶 M1——README/版本串已对齐（601138470）；RFC 状态待批准 |
 | P3 | JNI 桥接测试覆盖 + 进程角色冒烟断言 | ⬜ M2 |
 | P4 | APK 构建入口 + 构建文档 | ⬜ M2 |
 | P5 | 模拟器冒烟证据 + RFC 决策清单 | ⬜ M3 |
@@ -57,6 +57,7 @@
    剩余：renderer feature 路径（V8 从源码，5 项前置缺 3）、gradlew 可执行位入库修复
 2. **M1 切片 2**：CI Android job 落地（照既有 build-and-test 矩阵风格；不 continue-on-error）
 3. **M1 切片 3**：README/版本串对齐
+   → 2026-09-12 README 两处已对齐（版本串 M2、transport adapter 表述改待 RFC）；RFC 状态行仍待用户批准
 
 **碰撞管理**：Cargo.lock 变更前 `git log --since="14 days ago" -- Cargo.lock` 核对；
 只读消费其他 crate 公开 API。
