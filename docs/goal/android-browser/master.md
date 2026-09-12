@@ -2,7 +2,7 @@
 
 **入口文档**: [../android-browser.md](../android-browser.md)
 **创建日期**: 2026-09-07（goal 拆分 bootstrap）
-**最后更新**: 2026-09-12（M3 切片 3 compositor 断连恢复 + 切片 4 预览点击落 DOM click；模拟器环境核查记入 evidence/emulator-feasibility.md）
+**最后更新**: 2026-09-12（M3 切片 5 viewport 真实尺寸贯通——宿主按 display 注入视口，帧带尺寸头出槽；模拟器环境核查记入 evidence/emulator-feasibility.md）
 
 ---
 
@@ -90,10 +90,16 @@
    → 2026-09-12 ✅ 切片 3 compositor 断连恢复（见上）
    → 2026-09-12 ✅ 切片 4 预览点击 → DOM click：Kotlin `detectTapGestures` 按预览显示区
    归一化坐标 → `nativePageTap(normX, normY)`（纯函数 `tap_viewport_point` 校验
-   0..=1/有限值并映射 320×180 视口，宿主测试覆盖）→ 活动槽 `MouseEvent(Click)`，
-   复用 renderer 桌面 hit-test/focus/表单提交语义。剩余候选：viewport 真实尺寸
-   （现固定 320×180，接 surface 实际宽高）、焦点/IME——宿主可开发，效果验证待
-   模拟器/真机解锁
+   0..=1/有限值，宿主测试覆盖）→ 活动槽 `MouseEvent(Click)`，复用 renderer 桌面
+   hit-test/focus/表单提交语义
+   → 2026-09-12 ✅ 切片 5 viewport 真实尺寸贯通——替换写死 320×180：Kotlin
+   `computePageViewport()` 按真实 display 推算（CSS 宽 = 物理宽/density 夹在 320-480，
+   高按纵横比，密度单边帧上限 1280 内下调）；`nativeAttachRenderer` 增 (w,h,density)
+   参数，`validate_page_viewport` 纯函数校验（宿主测试）后作该槽 SetViewport 与每槽
+   视口注册表（tap/滚动光标换算同源）；帧出槽带 8 字节小端尺寸头
+   （`encode_page_frame`），`page_frame_dims` 校验 compositor 回帧有界自洽；清槽点
+   收敛 `clear_renderer_slot`（transport+视口同清）。剩余候选：焦点/IME——宿主可开发，
+   效果验证待模拟器/真机解锁
 5. **模拟器/真机冒烟（M3 收口）**：等 KVM 授权或设备（待用户决策，不阻塞功能切片）
 
 **碰撞管理**：Cargo.lock 变更前 `git log --since="14 days ago" -- Cargo.lock` 核对；
@@ -105,7 +111,7 @@
 |--------|------|
 | M1 — CI 门禁 + 构建修复 | ✅ 全切片完成（CI job 全绿 34665015108、本地双路径打通、README/版本串对齐） |
 | M2 — 回归保护 + 可安装产物 | 🔶 APK 入口/签名/构建文档 ✅（P4）；JNI 桥接测试宿主侧 7 项已入、真机/模拟器冒烟断言待 M3 设备面（P3） |
-| M3 — 冒烟验收 + 决策清单 | 🔶 决策清单 ✅（RFC 已批准）；RFC M3 功能面——renderer 断连恢复/多标签换槽/compositor 断连恢复/预览点击 ✅，模拟器冒烟受 KVM 环境阻塞（见待用户决策），真机待设备 |
+| M3 — 冒烟验收 + 决策清单 | 🔶 决策清单 ✅（RFC 已批准）；RFC M3 功能面——renderer 断连恢复/多标签换槽/compositor 断连恢复/预览点击/viewport 真实尺寸 ✅，模拟器冒烟受 KVM 环境阻塞（见待用户决策），真机待设备 |
 
 ## 待用户决策
 

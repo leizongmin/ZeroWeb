@@ -28,11 +28,6 @@ const NATIVE_VERSION: &str = "ZeroWeb Android M2";
 const ANDROID_COMPOSITOR_SURFACE_ID: u64 = 1;
 #[cfg(any(target_os = "android", test))]
 const MAX_COMPOSITOR_SURFACE_DIMENSION: u32 = 4_096;
-// 视口尺寸宿主测试同样触达（tap 坐标映射的纯函数契约），cfg 放宽到 test。
-#[cfg(any(target_os = "android", test))]
-const ANDROID_PAGE_VIEWPORT_WIDTH: u32 = 320;
-#[cfg(any(target_os = "android", test))]
-const ANDROID_PAGE_VIEWPORT_HEIGHT: u32 = 180;
 #[cfg(target_os = "android")]
 type AndroidCompositorTransport =
     zero_protocol::PipeTransport<std::os::unix::net::UnixStream, std::os::unix::net::UnixStream>;
@@ -45,6 +40,12 @@ static ANDROID_COMPOSITOR: OnceLock<Mutex<Option<AndroidCompositorTransport>>> =
 static ANDROID_RENDERER: OnceLock<Vec<Mutex<Option<AndroidRendererTransport>>>> = OnceLock::new();
 #[cfg(target_os = "android")]
 static ANDROID_PAGE_FRAME: OnceLock<Vec<Mutex<Option<Vec<u8>>>>> = OnceLock::new();
+/// 每槽页面视口（CSS 宽、高、密度）：attach 时由宿主按真实 display 注入（M3 切片 5），
+/// SetViewport/tap/滚动的坐标换算与其同源。宿主测试触达纯函数契约，cfg 放宽到 test。
+#[cfg(any(target_os = "android", test))]
+type PageViewport = (u32, u32, f32);
+#[cfg(target_os = "android")]
+static ANDROID_VIEWPORT: OnceLock<Vec<Mutex<Option<PageViewport>>>> = OnceLock::new();
 #[cfg(target_os = "android")]
 type AndroidPageMeta = (u64, u64, u64, f32);
 #[cfg(target_os = "android")]
@@ -82,6 +83,29 @@ fn android_page_frame(slot: usize) -> Option<&'static Mutex<Option<Vec<u8>>>> {
 fn android_page_meta(slot: usize) -> Option<&'static Mutex<Option<AndroidPageMeta>>> {
     let metas = ANDROID_PAGE_META.get_or_init(|| (0..facade::RENDERER_SLOT_COUNT).map(|_| Mutex::new(None)).collect());
     metas.get(slot)
+}
+
+#[cfg(target_os = "android")]
+fn android_viewport(slot: usize) -> Option<&'static Mutex<Option<PageViewport>>> {
+    let viewports =
+        ANDROID_VIEWPORT.get_or_init(|| (0..facade::RENDERER_SLOT_COUNT).map(|_| Mutex::new(None)).collect());
+    viewports.get(slot)
+}
+
+/// 清除槽的 transport 与视口注册（断连/逐出/关标签/attach 失败共用）：旧 renderer
+/// 收到 EOF 自行退出，其槽交由 Kotlin 重新 bind/attach。
+#[cfg(target_os = "android")]
+fn clear_renderer_slot(slot: usize) {
+    if let Some(slot_lock) = renderer_slot(slot)
+        && let Ok(mut slot_guard) = slot_lock.lock()
+    {
+        *slot_guard = None;
+    }
+    if let Some(viewport_lock) = android_viewport(slot)
+        && let Ok(mut viewport_guard) = viewport_lock.lock()
+    {
+        *viewport_guard = None;
+    }
 }
 
 #[cfg(target_os = "android")]
@@ -214,11 +238,8 @@ pub extern "system" fn Java_com_leizm_zeroweb_NativeBridge_nativeCloseTab(
             #[cfg(not(target_os = "android"))]
             let _ = released;
             #[cfg(target_os = "android")]
-            if let Some(slot) = released
-                && let Some(slot_lock) = renderer_slot(slot)
-                && let Ok(mut slot_guard) = slot_lock.lock()
-            {
-                *slot_guard = None;
+            if let Some(slot) = released {
+                clear_renderer_slot(slot);
             }
             Ok(())
         });
@@ -440,6 +461,8 @@ pub extern "system" fn Java_com_leizm_zeroweb_NativeBridge_nativeDetachComposito
 
 /// Attaches the browser-side renderer endpoint and starts forwarding renderer
 /// compositor frames through the already attached compositor Service channel.
+/// The page viewport (CSS width/height + density) is injected by the host from
+/// the real display metrics (M3 切片 5) and becomes the slot's SetViewport.
 #[cfg(target_os = "android")]
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_leizm_zeroweb_NativeBridge_nativeAttachRenderer(
@@ -447,9 +470,17 @@ pub extern "system" fn Java_com_leizm_zeroweb_NativeBridge_nativeAttachRenderer(
     _class: JClass,
     slot: jni::sys::jint,
     fd: jni::sys::jint,
+    width: jni::sys::jint,
+    height: jni::sys::jint,
+    density: jfloat,
 ) -> jboolean {
     use std::os::unix::io::FromRawFd;
 
+    let Ok(viewport) = validate_page_viewport(width, height, density).map_err(|_| {
+        close_android_fd(fd);
+    }) else {
+        return JNI_FALSE;
+    };
     let Ok(slot) = renderer_slot_id(slot).map(|id| id as usize).map_err(|_| {
         close_android_fd(fd);
     }) else {
@@ -501,27 +532,21 @@ pub extern "system" fn Java_com_leizm_zeroweb_NativeBridge_nativeAttachRenderer(
                     _ => {}
                 }
             }
-            // renderer 进程死亡/断连：清除该槽僵尸 transport，允许 Kotlin 重新走
-            // attach 协议（renderer slot 恢复，android-browser goal M3 切片 1）。
-            if let Some(slot_lock) = renderer_slot(slot)
-                && let Ok(mut slot_guard) = slot_lock.lock()
-            {
-                *slot_guard = None;
-            }
+            // renderer 进程死亡/断连：清除该槽僵尸 transport 与视口注册，允许
+            // Kotlin 重新走 attach 协议（renderer slot 恢复，M3 切片 1）。
+            clear_renderer_slot(slot);
             tracing::warn!("android renderer transport detached: slot {slot}");
         })
         .is_err()
     {
-        if let Ok(mut slot_guard) = slot_lock.lock() {
-            *slot_guard = None;
-        }
+        clear_renderer_slot(slot);
         return JNI_FALSE;
     }
 
     let handshake = send_renderer_to_slot(slot, IpcMessageKind::SetViewport(SetViewportParams {
-        width: ANDROID_PAGE_VIEWPORT_WIDTH,
-        height: ANDROID_PAGE_VIEWPORT_HEIGHT,
-        device_scale_factor: 1.0,
+        width: viewport.0,
+        height: viewport.1,
+        device_scale_factor: viewport.2,
     }))
     .and_then(|_| {
         send_renderer_to_slot(slot, IpcMessageKind::SetFramePublishMode(FramePublishMode::Compositor))
@@ -536,10 +561,14 @@ pub extern "system" fn Java_com_leizm_zeroweb_NativeBridge_nativeAttachRenderer(
     });
     // 握手失败说明刚 attach 的 transport 已不可用：清除避免僵尸槽位。
     if handshake.is_err() {
-        if let Ok(mut slot_guard) = slot_lock.lock() {
-            *slot_guard = None;
-        }
+        clear_renderer_slot(slot);
         return JNI_FALSE;
+    }
+    // 视口注册与 attach 同生命周期（SetViewport 已被 renderer 接受）
+    if let Some(viewport_lock) = android_viewport(slot)
+        && let Ok(mut viewport_guard) = viewport_lock.lock()
+    {
+        *viewport_guard = Some(viewport);
     }
     JNI_TRUE
 }
@@ -565,7 +594,8 @@ pub extern "system" fn Java_com_leizm_zeroweb_NativeBridge_nativeIsRendererAttac
     if slot_guard.is_some() { JNI_TRUE } else { JNI_FALSE }
 }
 
-/// Returns the latest renderer page frame of the slot after compositor rasterization.
+/// Returns the latest renderer page frame of the slot after compositor
+/// rasterization. Payload: 8-byte little-endian (width, height) header + RGBA.
 #[cfg(target_os = "android")]
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_leizm_zeroweb_NativeBridge_nativeLatestPageFrame(
@@ -600,11 +630,8 @@ fn navigate_renderer(url: &str) -> Result<(), String> {
     // 活动标签的渲染槽：无槽则按 LRU 分配；被逐出的旧租户 transport 立即丢弃
     // （旧 renderer 收到 EOF 自行退出，其槽交由 Kotlin 重新 bind）。
     let (slot, evicted) = facade::assign_active_tab_slot()?;
-    if evicted.is_some()
-        && let Some(slot_lock) = renderer_slot(slot)
-        && let Ok(mut slot_guard) = slot_lock.lock()
-    {
-        *slot_guard = None;
+    if evicted.is_some() {
+        clear_renderer_slot(slot);
     }
     if !renderer_attached(slot) {
         return Err(format!("renderer slot {slot} is not attached"));
@@ -629,8 +656,18 @@ pub extern "system" fn Java_com_leizm_zeroweb_NativeBridge_nativeScroll(
     if !delta_y.is_finite() || delta_y.abs() > 4_096.0 {
         return JNI_FALSE;
     }
-    // 滚动作用于活动标签的渲染槽
+    // 滚动作用于活动标签的渲染槽；命中光标取该槽视口中心（attach 注入的真实尺寸）
     let Ok(Some(active_slot)) = facade::active_tab_slot() else {
+        return JNI_FALSE;
+    };
+    let Some((cursor_x, cursor_y)) = android_viewport(active_slot)
+        .and_then(|viewport_lock| viewport_lock.lock().ok())
+        .and_then(|viewport_guard| {
+            viewport_guard
+                .as_ref()
+                .map(|(width, height, _)| (*width as f32 / 2.0, *height as f32 / 2.0))
+        })
+    else {
         return JNI_FALSE;
     };
     if send_renderer_to_slot(
@@ -638,8 +675,8 @@ pub extern "system" fn Java_com_leizm_zeroweb_NativeBridge_nativeScroll(
         IpcMessageKind::ScrollEvent(ScrollEventParams {
             delta_x: 0.0,
             delta_y,
-            cursor_x: ANDROID_PAGE_VIEWPORT_WIDTH as f32 / 2.0,
-            cursor_y: ANDROID_PAGE_VIEWPORT_HEIGHT as f32 / 2.0,
+            cursor_x,
+            cursor_y,
         }),
     )
     .is_err()
@@ -657,11 +694,18 @@ pub extern "system" fn Java_com_leizm_zeroweb_NativeBridge_nativePageTap(
     norm_x: jfloat,
     norm_y: jfloat,
 ) -> jboolean {
-    // Kotlin 输入视为不可信：归一化坐标先过纯函数校验（宿主测试覆盖契约）
-    let Some((x, y)) = tap_viewport_point(norm_x, norm_y) else {
+    let Ok(Some(active_slot)) = facade::active_tab_slot() else {
         return JNI_FALSE;
     };
-    let Ok(Some(active_slot)) = facade::active_tab_slot() else {
+    // Kotlin 输入视为不可信：归一化坐标先过纯函数校验（宿主测试覆盖契约），
+    // 并按该槽 attach 时注入的真实视口映射为 CSS 坐标。
+    let Some((x, y)) = android_viewport(active_slot)
+        .and_then(|viewport_lock| viewport_lock.lock().ok())
+        .and_then(|viewport_guard| match viewport_guard.as_ref() {
+            Some((width, height, _)) => tap_viewport_point(norm_x, norm_y, *width, *height),
+            None => None,
+        })
+    else {
         return JNI_FALSE;
     };
     // 预览点击 → 视口坐标的 DOM click（renderer 复用桌面 hit-test/focus/表单语义）
@@ -677,18 +721,57 @@ pub extern "system" fn Java_com_leizm_zeroweb_NativeBridge_nativePageTap(
     .map_or(JNI_FALSE, |_| JNI_TRUE)
 }
 
-/// tap 归一化坐标（预览显示区内 0..=1）→ 页面视口像素坐标。非有限值或越界拒绝。
+/// tap 归一化坐标（预览显示区内 0..=1）→ 页面视口 CSS 坐标。非有限值或越界拒绝。
 #[cfg(any(target_os = "android", test))]
-fn tap_viewport_point(norm_x: f32, norm_y: f32) -> Option<(f32, f32)> {
+fn tap_viewport_point(norm_x: f32, norm_y: f32, viewport_width: u32, viewport_height: u32) -> Option<(f32, f32)> {
     for value in [norm_x, norm_y] {
         if !value.is_finite() || !(0.0..=1.0).contains(&value) {
             return None;
         }
     }
-    Some((
-        norm_x * ANDROID_PAGE_VIEWPORT_WIDTH as f32,
-        norm_y * ANDROID_PAGE_VIEWPORT_HEIGHT as f32,
-    ))
+    Some((norm_x * viewport_width as f32, norm_y * viewport_height as f32))
+}
+
+/// 页面视口契约：CSS 尺寸复用 compositor 画布边界（非零、≤4096），密度有限且在 (0, 8]。
+/// Kotlin 输入视为不可信（RFC §IF-002）。
+#[cfg(any(target_os = "android", test))]
+fn validate_page_viewport(width: jni::sys::jint, height: jni::sys::jint, density: f32) -> Result<PageViewport, String> {
+    let (width, height, _) = validate_compositor_dimensions(width, height)?;
+    if !density.is_finite() || density <= 0.0 || density > 8.0 {
+        return Err("page viewport density is outside Android bounds".to_string());
+    }
+    Ok((width, height, density))
+}
+
+/// 合成帧契约：尺寸有界且 RGBA 载荷与声明的 w×h×4 自洽（compositor 独立进程，输出不可信）。
+#[cfg(any(target_os = "android", test))]
+fn page_frame_dims(width: u32, height: u32, rgba_len: usize) -> Result<(u32, u32), String> {
+    if width == 0
+        || height == 0
+        || width > MAX_COMPOSITOR_SURFACE_DIMENSION
+        || height > MAX_COMPOSITOR_SURFACE_DIMENSION
+    {
+        return Err("page frame dimensions are outside Android bounds".to_string());
+    }
+    let expected = usize::try_from(width)
+        .unwrap_or(usize::MAX)
+        .saturating_mul(usize::try_from(height).unwrap_or(usize::MAX))
+        .saturating_mul(4);
+    if rgba_len != expected {
+        return Err("page frame RGBA payload does not match its dimensions".to_string());
+    }
+    Ok((width, height))
+}
+
+/// 帧出槽 JNI 载荷：8 字节小端 (w, h) 头 + RGBA——Kotlin 解码随 attach 注入的真实
+/// 视口尺寸走，不再依赖编译期常量。
+#[cfg(any(target_os = "android", test))]
+fn encode_page_frame(width: u32, height: u32, rgba: &[u8]) -> Vec<u8> {
+    let mut payload = Vec::with_capacity(8 + rgba.len());
+    payload.extend_from_slice(&width.to_le_bytes());
+    payload.extend_from_slice(&height.to_le_bytes());
+    payload.extend_from_slice(rgba);
+    payload
 }
 
 #[cfg(target_os = "android")]
@@ -725,8 +808,13 @@ fn compositor_scroll(slot: usize, delta_y: f32) -> Result<(), String> {
     )? {
         IpcMessage {
             id: 13,
-            kind: IpcMessageKind::CompositorFrameData { rgba, .. },
-        } if !rgba.is_empty() => rgba,
+            kind: IpcMessageKind::CompositorFrameData {
+                width, height, rgba, ..
+            },
+        } => match page_frame_dims(width, height, rgba.len()) {
+            Ok((frame_width, frame_height)) => encode_page_frame(frame_width, frame_height, &rgba),
+            Err(error) => return Err(error),
+        },
         _ => return Err("Android compositor returned no scrolled frame".to_string()),
     };
     let Some(frame_lock) = android_page_frame(slot) else {
@@ -876,19 +964,14 @@ fn forward_renderer_frame(
             kind: IpcMessageKind::CompositorFrameData {
                 width, height, rgba, ..
             },
-        } if width == ANDROID_PAGE_VIEWPORT_WIDTH
-            && height == ANDROID_PAGE_VIEWPORT_HEIGHT
-            && rgba.len()
-                == usize::try_from(width)
-                    .unwrap_or(usize::MAX)
-                    .saturating_mul(usize::try_from(height).unwrap_or(usize::MAX))
-                    .saturating_mul(4) =>
-        {
-            rgba
-        }
+        } => match page_frame_dims(width, height, rgba.len()) {
+            Ok((frame_width, frame_height)) => encode_page_frame(frame_width, frame_height, &rgba),
+            Err(error) => return Err(error),
+        },
         _ => return Err("Android compositor returned an unexpected page frame".to_string()),
     };
-    // 帧按其来源 surface 归档（renderer_id == slot）：多标签各回各的帧缓冲
+    // 帧按其来源 surface 归档（renderer_id == slot）：多标签各回各的帧缓冲；
+    // 载荷带 8 字节尺寸头，Kotlin 解码随 attach 注入的真实视口走
     let Some(frame_lock) = android_page_frame(surface_id as usize) else {
         return Err("renderer frame surface is out of range".to_string());
     };
@@ -1137,22 +1220,50 @@ pub extern "system" fn Java_com_leizm_zeroweb_NativeBridge_nativeProbeCompositor
 #[cfg(test)]
 mod tests {
     use super::{
-        ANDROID_PAGE_VIEWPORT_HEIGHT, ANDROID_PAGE_VIEWPORT_WIDTH, MAX_COMPOSITOR_SURFACE_DIMENSION, NATIVE_VERSION,
-        is_known_role, renderer_slot_id, tap_viewport_point, validate_compositor_dimensions,
+        MAX_COMPOSITOR_SURFACE_DIMENSION, NATIVE_VERSION, encode_page_frame, is_known_role, page_frame_dims,
+        renderer_slot_id, tap_viewport_point, validate_compositor_dimensions, validate_page_viewport,
     };
 
     #[test]
     fn tap_points_reject_out_of_range_and_map_to_viewport() {
-        assert_eq!(tap_viewport_point(0.0, 0.0), Some((0.0, 0.0)));
-        assert_eq!(tap_viewport_point(0.5, 0.25), Some((160.0, 45.0)));
+        assert_eq!(tap_viewport_point(0.0, 0.0, 320, 180), Some((0.0, 0.0)));
+        assert_eq!(tap_viewport_point(0.5, 0.25, 320, 180), Some((160.0, 45.0)));
+        assert_eq!(tap_viewport_point(1.0, 1.0, 412, 914), Some((412.0, 914.0)));
+        assert!(tap_viewport_point(-0.01, 0.5, 320, 180).is_none());
+        assert!(tap_viewport_point(1.01, 0.5, 320, 180).is_none());
+        assert!(tap_viewport_point(0.5, f32::NAN, 320, 180).is_none());
+        assert!(tap_viewport_point(f32::INFINITY, 0.5, 320, 180).is_none());
+    }
+
+    #[test]
+    fn page_viewports_reject_out_of_bounds_and_accept_display_driven_sizes() {
+        assert!(validate_page_viewport(0, 180, 1.0).is_err());
+        assert!(validate_page_viewport(320, 0, 1.0).is_err());
+        assert!(validate_page_viewport(-1, 180, 1.0).is_err());
+        assert!(validate_page_viewport(320, 180, 0.0).is_err());
+        assert!(validate_page_viewport(320, 180, f32::NAN).is_err());
+        assert!(validate_page_viewport(320, 180, 8.5).is_err());
+        assert_eq!(validate_page_viewport(412, 914, 2.625), Ok((412, 914, 2.625)));
         assert_eq!(
-            tap_viewport_point(1.0, 1.0),
-            Some((ANDROID_PAGE_VIEWPORT_WIDTH as f32, ANDROID_PAGE_VIEWPORT_HEIGHT as f32))
+            validate_page_viewport(MAX_COMPOSITOR_SURFACE_DIMENSION as i32, 180, 1.0),
+            Ok((MAX_COMPOSITOR_SURFACE_DIMENSION, 180, 1.0))
         );
-        assert!(tap_viewport_point(-0.01, 0.5).is_none());
-        assert!(tap_viewport_point(1.01, 0.5).is_none());
-        assert!(tap_viewport_point(0.5, f32::NAN).is_none());
-        assert!(tap_viewport_point(f32::INFINITY, 0.5).is_none());
+    }
+
+    #[test]
+    fn page_frames_require_bounded_dims_matching_payload() {
+        assert!(page_frame_dims(0, 180, 0).is_err());
+        assert!(page_frame_dims(320, 0, 0).is_err());
+        assert!(page_frame_dims(MAX_COMPOSITOR_SURFACE_DIMENSION + 1, 180, 0).is_err());
+        assert!(page_frame_dims(320, 180, 320 * 180 * 4 - 1).is_err());
+        assert_eq!(page_frame_dims(320, 180, 320 * 180 * 4), Ok((320, 180)));
+    }
+
+    #[test]
+    fn page_frames_carry_little_endian_dims_header() {
+        let payload = encode_page_frame(320, 180, &[1, 2, 3, 4]);
+        assert_eq!(&payload[..8], &[320u32.to_le_bytes(), 180u32.to_le_bytes()].concat());
+        assert_eq!(&payload[8..], &[1, 2, 3, 4]);
     }
 
     #[test]

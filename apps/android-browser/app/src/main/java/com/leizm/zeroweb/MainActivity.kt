@@ -337,11 +337,31 @@ class MainActivity : ComponentActivity() {
         bindRole(rendererServiceClasses[slot])
     }
 
+    /**
+     * 页面视口（CSS 宽、高、密度）：按真实 display 推算（M3 切片 5）——CSS 宽取物理宽
+     * /density 并夹在移动端典型区间，高按屏幕纵横比推算；帧像素 = css × density，
+     * 单边上限 1280 防 RGBA 帧 IPC 内存放大（密度随之下调，待真机调优）。
+     */
+    private fun computePageViewport(): Triple<Int, Int, Float> {
+        val metrics = resources.displayMetrics
+        val widthPx = metrics.widthPixels.coerceAtLeast(1)
+        val heightPx = metrics.heightPixels.coerceAtLeast(1)
+        val cssWidth = (widthPx / metrics.density).coerceIn(320f, 480f)
+        val cssHeight = (cssWidth * heightPx / widthPx).coerceIn(320f, 1024f)
+        val density = minOf(metrics.density, 1280f / cssWidth, 1280f / cssHeight).coerceIn(1f, 3f)
+        return Triple(cssWidth.toInt(), cssHeight.toInt(), density)
+    }
+
     private fun attachRendererIfReady() {
         val socket = rendererSocket ?: return
         // attach 目标槽 = 快照指示的活动标签槽（缺省 0 兼容启动早期无快照）
         val slot = browserState?.activeRendererSlot ?: 0
-        if (!compositorAttached || !NativeBridge.nativeAttachRenderer(slot, socket.detachFd())) return
+        val (cssWidth, cssHeight, density) = computePageViewport()
+        if (!compositorAttached ||
+            !NativeBridge.nativeAttachRenderer(slot, socket.detachFd(), cssWidth, cssHeight, density)
+        ) {
+            return
+        }
         rendererSocket = null
         // 断连/换槽恢复链：attach 完成即补导航被挂起的 URL（如为空则刷新预览）
         val restoreUrl = pendingRestoreUrl
@@ -364,7 +384,7 @@ class MainActivity : ComponentActivity() {
         val targetSlot = slot ?: 0
         listOf(1_000L, 5_000L, 10_000L).forEach { delayMillis ->
             window.decorView.postDelayed({
-                rendererPreview = NativeBridge.nativeLatestPageFrame(targetSlot)?.toBitmap(320, 180)
+                rendererPreview = NativeBridge.nativeLatestPageFrame(targetSlot)?.toPageBitmap()
                 if (rendererPreview == null) android.util.Log.e("ZeroWebRole", "renderer page frame unavailable")
                 else {
                     refreshBrowserSnapshot()
@@ -505,6 +525,20 @@ private fun ByteArray.toBitmap(width: Int, height: Int): Bitmap? {
     if (size != width * height * 4) return null
     return Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888).also { bitmap ->
         bitmap.copyPixelsFromBuffer(ByteBuffer.wrap(this))
+    }
+}
+
+/** 页面帧解码：8 字节小端 (width, height) 头 + RGBA（native 侧已做有界校验，此处防御复核）。 */
+private fun ByteArray.toPageBitmap(): Bitmap? {
+    if (size < 8) return null
+    val header = ByteBuffer.wrap(this).order(java.nio.ByteOrder.LITTLE_ENDIAN)
+    val width = header.int
+    val height = header.int
+    if (width <= 0 || height <= 0 || width > 4_096 || height > 4_096) return null
+    val rgba = ByteBuffer.wrap(this, 8, size - 8)
+    if (rgba.remaining() != width * height * 4) return null
+    return Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888).also { bitmap ->
+        bitmap.copyPixelsFromBuffer(rgba)
     }
 }
 
