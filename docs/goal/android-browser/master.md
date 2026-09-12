@@ -55,6 +55,9 @@
    `make android-release-apk` 产出 unsigned APK；依赖与可重复命令见
    [evidence/local-toolchain-bootstrap.md](evidence/local-toolchain-bootstrap.md)。
    剩余：renderer feature 路径（V8 从源码，5 项前置缺 3）、gradlew 可执行位入库修复
+   → 2026-09-12 续：**renderer/V8 路径亦已本地打通**——六项前置装齐、`build-native-wsl.sh
+   arm64-v8a` 产出 90M 含 V8 的 .so（29m33s，三轮踩坑修复，含补丁新增 BUILDCONFIG
+   declare_args hunk），见 [evidence/v8-renderer-path.md](evidence/v8-renderer-path.md)
 2. **M1 切片 2**：CI Android job 落地（照既有 build-and-test 矩阵风格；不 continue-on-error）
    → 2026-09-12 ✅ ci.yml android job 首跑全绿（run 34665015108）：clippy android target
    （经 cargo ndk 包裹）+ 宿主单测 + assembleArm64Release + APK artifact。修复两处
