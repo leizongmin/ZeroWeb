@@ -1678,6 +1678,7 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
                         style: Box::default(),
                     })),
                 };
+                crate::SCROLL_PSEUDO_PRESENT.store(true, std::sync::atomic::Ordering::Relaxed);
                 return true;
             }
         }

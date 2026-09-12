@@ -341,3 +341,16 @@ css/css-overflow/scroll-markers/scroll-buttons-004.html css/css-overflow/scroll-
 css/css-overflow/scroll-markers/scroll-buttons-layout-parent.html css/reference/ref-filled-green-100px-square.xht == 2026-09-12 R4263 ::scroll-button 后置兄弟流位合成（flex 父 + 负 margin 拉回覆盖源）
 css/css-overflow/scroll-markers/scroll-button-reattachment-position.html css/css-overflow/scroll-markers/scroll-button-reattachment-position-ref.html == 2026-09-12 R4263 按钮作者 position:fixed 参与 + OOF 源静态流位锚定
 css/css-overflow/scroll-markers/scroll-buttons-disabled-snapping.html css/css-overflow/scroll-markers/scroll-buttons-disabled-snapping-ref.html == 2026-09-12 R4263 按钮后置兄弟流位 + * 通配（disabled 语义差异带内）
+css/css-overflow/scroll-markers/scroll-marker-001.html css/css-overflow/scroll-markers/scroll-marker-001-ref.html == 2026-09-12 R4264 组盒兄弟位迁移（spec §3.1.4 sibling 模型）+ 组盒 border/padding + marker margin 装箱
+css/css-overflow/scroll-markers/scroll-marker-002.html css/css-overflow/scroll-markers/scroll-marker-002-ref.html == 2026-09-12 R4264 组盒兄弟位迁移（spec §3.1.4 sibling 模型）+ 组盒 border/padding + marker margin 装箱
+css/css-overflow/scroll-markers/scroll-marker-003.html css/css-overflow/scroll-markers/scroll-marker-003-ref.html == 2026-09-12 R4264 组盒兄弟位迁移（spec §3.1.4 sibling 模型）+ 组盒 border/padding + marker margin 装箱
+css/css-overflow/scroll-markers/scroll-marker-004.html css/css-overflow/scroll-markers/scroll-marker-004-ref.html == 2026-09-12 R4264 组盒兄弟位迁移（spec §3.1.4 sibling 模型）+ 组盒 border/padding + marker margin 装箱
+css/css-overflow/scroll-markers/scroll-marker-010.html css/css-overflow/scroll-markers/scroll-marker-010-ref.html == 2026-09-12 R4264 组盒兄弟位迁移（spec §3.1.4 sibling 模型）+ 组盒 border/padding + marker margin 装箱
+css/css-overflow/scroll-markers/scroll-marker-counters.html css/css-overflow/scroll-markers/scroll-marker-counters-ref.html == 2026-09-12 R4264 组盒兄弟位迁移兑现
+css/css-overflow/scroll-markers/scroll-marker-dynamic.html css/css-overflow/scroll-markers/scroll-marker-dynamic-ref.html == 2026-09-12 R4264 组盒兄弟位迁移兑现
+css/css-overflow/scroll-markers/scroll-marker-group-016.html css/css-overflow/scroll-markers/../../reference/ref-filled-green-100px-square.xht == 2026-09-12 R4264 组盒兄弟位迁移兑现（definite 高度源 + 组盒 border/padding）
+css/css-overflow/scroll-markers/scroll-marker-group-017.html css/css-overflow/scroll-markers/../../reference/ref-filled-green-100px-square.xht == 2026-09-12 R4264 组盒兄弟位迁移兑现（definite 高度源 + 组盒 border/padding）
+css/css-overflow/scroll-markers/scroll-marker-group-add-dynamic-002.html css/css-overflow/scroll-markers/../../reference/ref-filled-green-100px-square.xht == 2026-09-12 R4264 组盒兄弟位迁移兑现（definite 高度源 + 组盒 border/padding）
+css/css-overflow/scroll-markers/scroll-marker-group-add-dynamic-003.html css/css-overflow/scroll-markers/../../reference/ref-filled-green-100px-square.xht == 2026-09-12 R4264 组盒兄弟位迁移兑现（definite 高度源 + 组盒 border/padding）
+css/css-overflow/scroll-markers/scroll-marker-group-add-dynamic-004.html css/css-overflow/scroll-markers/../../reference/ref-filled-green-100px-square.xht == 2026-09-12 R4264 组盒兄弟位迁移兑现（definite 高度源 + 组盒 border/padding）
+css/css-overflow/scroll-markers/scroll-marker-selection-in-2d.html css/css-overflow/scroll-markers/scroll-marker-selection-in-2d-ref.html == 2026-09-12 R4264 组盒兄弟位迁移兑现（definite 高度源 + 组盒 border/padding）

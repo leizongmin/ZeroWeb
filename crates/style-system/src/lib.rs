@@ -31,6 +31,12 @@ pub mod matcher;
 pub mod property;
 pub mod shorthand;
 
+/// R4264：进程级「存在 scroll 伪样式」快照（单调置真）——style 相位任何
+/// scroll-marker-group / scroll-button 伪样式存储即置位；layout 提取的兄弟
+/// 合成 pass 据此整体跳过（无此类规则的页面合成扫描零成本，bench-gate
+/// wide_tree_500_children 实证 +51% 为逐子 styles 查表成本）。
+pub static SCROLL_PSEUDO_PRESENT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 pub use cascade::*;
 pub use computed::*;
 pub use inheritance::*;
@@ -762,6 +768,7 @@ impl StyleSystem {
                     }
                     if !buttons.is_empty() {
                         computed.scroll_buttons = Some(Box::new(property::types::ScrollButtonsPseudo { buttons }));
+                        SCROLL_PSEUDO_PRESENT.store(true, std::sync::atomic::Ordering::Relaxed);
                     }
                 }
                 // ::first-letter 伪元素（CSS2 §5.12.2）：样式作用于块容器首个格式化行的首字母
