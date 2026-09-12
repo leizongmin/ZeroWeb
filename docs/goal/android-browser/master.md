@@ -2,9 +2,8 @@
 
 **入口文档**: [../android-browser.md](../android-browser.md)
 **创建日期**: 2026-09-07（goal 拆分 bootstrap）
-**最后更新**: 2026-09-13（M5 chaos 冒烟 CI 落地并稳定绿——角色 kill → 断连恢复重绑
-执行验证（compositor 重连/decoder 重探针/renderer 重启），模拟器侧可推进的质量面收口；
-除真机门控项外全部完成，DONE 判定见下方里程碑表）
+**最后更新**: 2026-09-13（**目标 DONE**：DC-1~4 全满足并经终树复验；chrome 级冒烟 +
+chaos 断连恢复 CI 稳定绿；剩余为真机/renderer 门控项待设备，详见下方「下一步」）
 
 ---
 
@@ -12,10 +11,11 @@
 
 **专项定位**：Android 线治理与可用化。**现状**：治理面（CI 门禁/构建入口/签名/文档/测试）
 与 RFC M0→M4 代码面全部落地（28 个 JNI 导出、断连恢复×2、多标签换槽、点击/滚动/键盘 IME、
-真实 viewport、下载全链路、缩略图、双语+无障碍）；**chrome 级模拟器冒烟已在 CI 落地并
-稳定绿**（GitHub runner KVM，无需本机授权，见 evidence/ci-emulator-smoke.md）。
-剩余：M5 质量面（性能/内存/chaos/安全负测试——CI 模拟器已解锁可推进）与真机端到端验收
-（等设备）。
+真实 viewport、下载全链路、缩略图、双语+无障碍）；**chrome 级模拟器冒烟 + chaos 断连恢复
+负测试已在 CI 落地并稳定绿**（GitHub runner KVM，无需本机授权）。
+**目标 DONE（2026-09-13）**：DC-1~4 全满足（终树 guarded-test 19248/0 + guarded-clippy
+零警告 + 冒烟证据持久化）；CI 稳定绿非单次（smoke+chaos 连续两轮 34711012620/34711555597）；
+剩余全部为真机/renderer 门控项（下表），按门控注记记录为等设备，不算未满足 DC。
 
 **与兄弟 goal 的边界**：
 - rendering-compat — 渲染流域 crate 域零重叠；android-browser/rust 只读消费
