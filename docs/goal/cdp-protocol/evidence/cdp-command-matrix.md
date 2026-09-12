@@ -80,8 +80,8 @@ DC-3 基线）。「现状」列以 2026-09-12 `apps/browser/src/headless/`（M1
 | 方法 | 捕获调用 | 参数键 | ZeroWeb 现状 | 计划 |
 |------|---------|--------|--------------|------|
 | `Runtime.enable` | 5 | — | ✅（S4：补发 executionContextCreated + auxData 契约） | 完成（M1 S4） |
-| `Runtime.evaluate` | 8 | contextId/expression | ⚠️ 类型化 remoteObject（S4，returnByValue）+ exceptionDetails；**缺 objectId 句柄（utilityScript 深结构，待用户决策）** | M1 收口挂 objectId 桥 |
-| `Runtime.callFunctionOn` | **156** | arguments/awaitPromise/functionDeclaration/objectId/returnByValue/userGesture | ⚠️ 无 objectId 路径已实现（S4：value 参数 + 表达式包装 + 类型化返回）；objectId 路径 -32601 | 收口挂 objectId 桥（待用户决策） |
+| `Runtime.evaluate` | 8 | contextId/expression | ⚠️ 类型化 remoteObject（S4，returnByValue）+ exceptionDetails；**缺 objectId 句柄——已拍板全量 remoteObject 桥（2026-09-12），待切片落地** | M1 收口挂 objectId 桥 |
+| `Runtime.callFunctionOn` | **156** | arguments/awaitPromise/functionDeclaration/objectId/returnByValue/userGesture | ⚠️ 无 objectId 路径已实现（S4：value 参数 + 表达式包装 + 类型化返回）；objectId 路径 -32601 | 收口挂 objectId 桥（已拍板） |
 | `Runtime.releaseObject` | 51 | objectId | ❌（与 objectId 桥配对，挂起） | objectId 桥获批后 |
 | `Runtime.runIfWaitingForDebugger` | 8 | — | ✅ stub 接受（S4） | 完成（M1 S4） |
 
@@ -196,7 +196,7 @@ DC-3 基线）。「现状」列以 2026-09-12 `apps/browser/src/headless/`（M1
 | G1 | WS 层 sessionId 多路复用 | 🔶 传输面已解（S3：解析/回显/未附接 -32001/附接注册表）；per-target 真路由随 Target 域（切片 3） |
 | G2 | `/json/version` 尾斜杠 404 | ✅ 已解（S3） |
 | G2b | tungstenite write() 缓冲不落盘 + peek 5s read timeout 未恢复 → 任何 CDP 客户端收不到响应 | ✅ 已解（S3，实测发现；learning 2026-09-12） |
-| G3 | `Runtime.evaluate` 扁平字符串结果，无 remoteObject/objectId | 🔶 类型化 returnByValue 已解（S4）；objectId 句柄待用户决策（utilityScript 深结构） |
+| G3 | `Runtime.evaluate` 扁平字符串结果，无 remoteObject/objectId | 🔶 类型化 returnByValue 已解（S4）；objectId 句柄**已拍板全量 remoteObject 桥（2026-09-12）**，待切片落地 |
 | G4 | 无请求事件总线（net 生命周期无观测点） | Network 域 + devtools 面板（P6） |
 | G5 | console 走 `__zw_console_log` 扁平字符串宿主回调 | consoleAPICalled remoteObject 形态（P5） |
 | G6 | `headless.rs` 2256 行超 2000 上限 | ✅ 已解（S2 拆分 9 模块） |

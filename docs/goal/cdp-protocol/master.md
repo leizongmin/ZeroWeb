@@ -2,7 +2,7 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-12（M5 收口预备落地：cdp-e2e make 门 + deterministic 双跑 + DC 盘点）
+**最后更新**: 2026-09-12（objectId 桥用户拍板：全量 remoteObject 桥；console 方案降级 value-only 小切片；收口依赖清单补 dialog/fullPage 遗漏项）
 
 ---
 
@@ -26,8 +26,8 @@
 | P2 | headless.rs 职责拆分（2256 行超 2000 上限；transport/discovery/domains/session） | ✅ M1 切片 1（headless/ 9 模块，纯搬移零语义变化，make test 19,170P/0F 与基线一致） |
 | P3 | Target/Runtime/Page/Input/DOM/CSS/Network/Emulation 域实现 | ⏳ M1-M4 |
 | P4 | Node/Playwright 测试链（pin + E2E 用例集 + make 入口） | ✅ S8：`make cdp-e2e`（test-guard 包裹，deterministic 双跑 + expected-green 回归门）；用例集=30 步全核心流 |
-| P5 | console 对象化（V8 侧结构化序列化，替换扁平字符串） | ⏳ 挂 engine 碰头窗口（S7 记档） |
-| P6 | net 请求事件总线（Network 域 + devtools Network 面板共用脊柱） | 🔶 S7 雏形（proxy_fetch 生命周期三事件）；字段补全挂 net 观测点扩展 |
+| P5 | console 对象化（V8 侧结构化序列化，替换扁平字符串） | 🔶 **方案降级（2026-09-12）**：value-only 小切片——consoleAPICalled 的 args 用既有 value-only remoteObject 形状即可（PW 消费面=msg.type()/text()），shim `(level, args[])` JSON 序列化 + callbacks.rs 签名 + headless 转事件；不等 engine 大窗口，碰前核对 shim console 段活跃度 |
+| P6 | net 请求事件总线（Network 域 + devtools Network 面板共用脊柱） | 🔶 S7 雏形（proxy_fetch 生命周期三事件）；dataReceived 挂 net 观测点扩展——**net 近 14 天无外部流占用，窗口已开**（2026-09-12 实测） |
 | P7 | WS 层 sessionId 多路复用（单连接扁平会话 → per-target session，响应回显 sessionId） | 🔶 M1 切片 2 传输面完成：解析/回显/未附接校验（-32001）+ 附接注册表；per-target 真路由随切片 3 Target 域落地 |
 | P8 | `/json/version` 尾斜杠 404（Playwright 请求 `/json/version/`） | ✅ M1 切片 2（normalize_discovery_path 容忍尾斜杠；`/json`、`/json/list` 同步受益） |
 
@@ -116,22 +116,35 @@
 
 ## 下一步计划
 
-1. **收口门禁依赖项（全部挂外部窗口）**：objectId 桥（用户决策）→ evaluate/locator
-   全族 ~20 步；console 对象化（engine 碰头窗口）；iframe 子帧事件面（渲染流域协调）；
-   Network 事件字段补全（net 观测点扩展）
-2. **M5 定稿（依赖项解除后）**：expected-green 基线扩至全绿 → cdp-e2e 即 DC-2 门；
-   挂账清单（不实现域）终稿
-3. **持续推进**：每轮 pull → cdp-e2e 门 + make test 防回归，余项按窗口逐个解冻
+1. **objectId 句柄桥（已拍板，2026-09-12）→ 独立切片落地**：用户拍板**全量 remoteObject
+   桥**（非最小面）——含 object group/releaseObjectGroup、DOM.resolveNode 桥接、
+   description/preview inspect 形状，为 devtools goal 前置铺路。设计要点：
+   protocol `AutomationValue` 增 `Handle(u64)` + EvaluateRetaining/CallFunctionOnHandle/
+   ReleaseHandle/ReleaseObjectGroup 消息；renderer 注册表按 executionContextId 分桶、
+   document_generation 变更整表失效、上限防 GC 泄漏；engine 加「保留句柄执行」原语
+   （V8/QuickJS 双 runtime）；headless returnByValue:false → objectId + releaseObject。
+   一次解锁 evaluate/locator 全族 ~13 步。
+2. **窗口已开小切片（先行收割）**：Network dataReceived（proxy_fetch 读 body 循环加
+   chunk 观测点）+ console value-only 降级版（P5）+ `Page.loadEventFired` timestamp 修正。
+3. **dialog ×2 步决策（2026-09-12 盘点遗漏，新入清单）**：`dialog.accept`/
+   `dialog.confirm+prompt` 依赖 `javascriptDialogOpening` 事件源（引擎无阻塞对话框
+   语义）——**待用户决策：立项引擎对话框语义（跨流域）or 挂账不实现并从 DC-2 口径剔除**。
+   `screenshot.fullPage`（captureBeyondViewport）依赖 contentSize 暴露，疑似本 goal 内
+   可解，实测确认后从挂起项转正常切片。
+4. **全量 30 步实测**：S8 只跑 expected-green 6 步门；跑一次全量拿真实绿数，验证
+   `page.setContent`/`page.second.lifecycle`/`emulation.media`/`viewport.verified` 等是否已绿，
+   刷新依赖清单虚胖项。
+5. **M5 定稿（依赖项解除后）**：expected-green 基线扩至全绿 → cdp-e2e 即 DC-2 门；
+   挂账清单（不实现域）终稿；矩阵账本漂移刷新（executionContextDestroyed/
+   setLifecycleEventsEnabled/setFontFamilies 等计划列停在 M2/M3，改记账口径）。
+6. **持续推进**：每轮 pull → cdp-e2e 门 + make test 防回归，余项按窗口逐个解冻。
 
 **待用户决策清单**：
-- **objectId 句柄桥（深结构，2026-09-12 实测确认）**：Playwright evaluate/locator 全
-  管线依赖 `utilityScript` 对象句柄——需 renderer 侧 JS 对象注册表（retain JSValue 跨
-  IPC）+ protocol 新消息（EvaluateRetainingHandle/CallFunctionOnHandle/ReleaseHandle）+
-  headless Runtime.evaluate(callFunctionOn) returnByValue:false objectId 返回 +
-  Runtime.releaseObject。现有 AutomationElementRef 仅覆盖 DOM 节点，不覆盖任意 JS 对象。
-  改动面跨 protocol/page-runtime（renderer 自动化域）/engine/browser 四处，属跨 crate
-  协议扩展。**M2/M3/M4 域不受阻**（value-only），本 goal 按入口文档「跳过并继续其他域」
-  执行，等拍板后作为独立切片落地。
+- **dialog 事件源（2026-09-12 新入）**：见下一步计划 #3——引擎对话框语义立项 vs 挂账。
+- ~~objectId 句柄桥~~ **已拍板（2026-09-12）：全量 remoteObject 桥**，转独立切片执行。
+
+**维持挂起**：iframe 子帧事件面（frames.access/frames.click+evaluate 2 步）——渲染流域
+真协调（engine 子帧可见性），rendering 流 R41xx-R42xx 高频活跃，维持挂起合理。
 
 ## 里程碑状态
 
@@ -141,7 +154,7 @@
 | M2 — Page/Input 域 → 点击/填充/键盘/导航流 | 🚧 S5：goto 绿 + Input 域全通 + 导航事件族；locator 类点击/填充仍挂 objectId 桥（value-only 面已尽） |
 | M3 — DOM/CSS/Emulation → locator 流 | 🚧 S6：viewport 桥/媒体仿真/截图 clip 绿；DOM 句柄桥挂 objectId 桥；iframe 子帧挂引擎子帧事件面 |
 | M4 — Network/cookies/console 对象化（cookie 落点=Storage 域） | 🚧 S7：cookie 域 + UA override + Network 事件雏形绿；console 对象化挂 engine 碰头窗口 |
-| M5 — 矩阵收口 | 🚧 S8 收口预备完成（cdp-e2e 门 + DC 盘点）；终稿挂 objectId 桥等外部窗口 |
+| M5 — 矩阵收口 | 🚧 S8 收口预备完成（cdp-e2e 门 + DC 盘点）；objectId 桥已拍板（全量面）待切片落地，终稿挂其 + dialog/fullPage 决策 |
 
 ## 验证基线
 
