@@ -238,6 +238,60 @@ pub(crate) fn base64_encode(data: &[u8]) -> String {
 /// 构造链应用包装 SVG：`<filter>` 原样序列化进 defs，元素像素作 data-URI image
 /// 并挂 `filter="url(#id)"`——SourceGraphic = image 像素（含 alpha），其余原语
 /// 语义全部由 resvg 原生执行。
+/// R4285：feImage 文档内元素引用收集——href="#id"/xlink:href="#id" 指向同文档
+/// SVG 元素（`<g>`/`<image>`/`<rect>` 等）的 id 集合（含引用子树内的嵌套引用，
+/// visited 防环）。
+fn collect_feimage_element_refs(doc: &Document, node_id: zero_dom::NodeId, visited: &mut Vec<String>) {
+    for child in doc.child_nodes(node_id) {
+        let Some(node) = doc.get(child) else {
+            continue;
+        };
+        if let NodeKind::Element(elem) = &node.kind {
+            for attr in ["href", "xlink:href"] {
+                if let Some(value) = elem.get_attribute(attr) {
+                    let value = value.trim();
+                    if let Some(id) = value.strip_prefix('#')
+                        && !id.is_empty()
+                        && !visited.iter().any(|s| s == id)
+                    {
+                        visited.push(id.to_string());
+                        // 嵌套引用：引用目标子树内可能再引用其它元素。
+                        if let Some(target) = doc.get_element_by_id(id) {
+                            collect_feimage_element_refs(doc, target, visited);
+                        }
+                    }
+                }
+            }
+        }
+        collect_feimage_element_refs(doc, child, visited);
+    }
+}
+
+/// R4285：feImage 文档内元素引用内联——把引用元素子树序列化进 wrapper `<defs>`
+///（id 保持）。wrapper SVG 仅含 filter+image，resvg 解析不到文档内引用目标 →
+/// feImage 输出空（feimage-element-ref-geometry @17.73% 实证：绿色 `<g>` 缺失）。
+/// wrapper 用户空间与页面 SVG 1:1（viewport = region 尺寸、原点 = region 原点），
+/// 引用元素按自身 user-space 坐标落位——与 chromium 同文档引用渲染一致。
+fn inline_feimage_element_refs(doc: &Document, filter_node_id: zero_dom::NodeId, chain_xml: &mut String) {
+    let mut ids = Vec::new();
+    collect_feimage_element_refs(doc, filter_node_id, &mut ids);
+    let mut defs = String::new();
+    for id in &ids {
+        let Some(target) = doc.get_element_by_id(id) else {
+            continue;
+        };
+        // filter 自引用不重复序列化（wrapper 内已有同 id `<filter>`，重复 id 会
+        // 破坏 usvg 的 url(#) 解析）。
+        if target == filter_node_id {
+            continue;
+        }
+        defs.push_str(&doc.outer_html(target));
+    }
+    if !defs.is_empty() {
+        chain_xml.insert_str(0, &format!("<defs>{defs}</defs>"));
+    }
+}
+
 pub(crate) fn build_wrapper_svg(
     doc: &Document,
     filter_node_id: zero_dom::NodeId,
@@ -264,6 +318,8 @@ pub(crate) fn build_wrapper_svg(
     // 基准目录可依（usvg resources_dir 未设），相对引用必落空（feimage-001..004
     // @2.98% 实证：palette 图全白）。按文档基准目录读文件内联。
     inline_feimage_hrefs(doc, filter_node_id, &mut chain_xml, document_base);
+    // R4285：feImage 文档内元素引用（href="#id"）——引用元素子树进 wrapper defs。
+    inline_feimage_element_refs(doc, filter_node_id, &mut chain_xml);
     // color-interpolation-filters 为**可继承**属性：声明在祖先（常见于 `<svg>` 根）
     // 时 outer_html 序列化不含它 → resvg 按缺省 linearRGB 计算，与引用页 sRGB 语义
     // 相左（effect-reference-lighting-no-light 4.17% 实证）。沿祖先链取首个显式
