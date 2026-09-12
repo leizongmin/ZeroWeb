@@ -449,6 +449,7 @@ fn filter_function_name(f: &zero_css_parser::values::FilterValue) -> &'static st
         F::Saturate(_) => "saturate",
         F::Sepia(_) => "sepia",
         F::DropShadow(..) => "drop-shadow",
+        F::Url(_) => "url",
         F::None => "none",
     }
 }
@@ -466,7 +467,7 @@ fn filter_function_param(f: &zero_css_parser::values::FilterValue) -> Option<f32
         | F::Opacity(v)
         | F::Saturate(v)
         | F::Sepia(v) => Some(*v),
-        F::DropShadow(..) | F::None => None,
+        F::DropShadow(..) | F::Url(_) | F::None => None,
     }
 }
 
@@ -485,7 +486,7 @@ fn filter_function_initial(f: &zero_css_parser::values::FilterValue) -> zero_css
         F::Saturate(_) => F::Saturate(1.0),
         F::Sepia(_) => F::Sepia(0.0),
         F::DropShadow(..) => F::DropShadow(0.0, 0.0, 0.0, ColorValue::Transparent),
-        F::None => f.clone(),
+        F::Url(_) | F::None => f.clone(),
     }
 }
 
@@ -1238,6 +1239,7 @@ fn apply_single_property(name: &str, value: &str, style: &mut ComputedStyle) {
                         FilterValue::Saturate(n) => FilterComputedValue::Saturate(n),
                         FilterValue::Sepia(n) => FilterComputedValue::Sepia(n),
                         FilterValue::DropShadow(x, y, b, c) => FilterComputedValue::DropShadow(x, y, b, c),
+                        FilterValue::Url(r) => FilterComputedValue::Url(r),
                     })
                     .collect();
                 if name == "filter" {

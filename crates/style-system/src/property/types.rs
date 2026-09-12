@@ -1847,6 +1847,8 @@ pub enum FilterComputedValue {
     Sepia(f32),
     /// drop-shadow(x-offset, y-offset, blur-radius, color)。
     DropShadow(f32, f32, f32, ColorValue),
+    /// url(#id)——SVG `<filter>` 引用（R4273，filter-effects-1 #typedef-filter-url）。
+    Url(String),
 }
 
 /// CSS clip-path 属性计算值。

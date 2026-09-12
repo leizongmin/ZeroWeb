@@ -2083,6 +2083,8 @@ fn filter_function_to_css(f: &FilterComputedValue, element_color: &ColorValue) -
             format_num(*blur as f64, "px"),
             color_to_css(&crate::resolve_color_current(color, element_color)),
         ),
+        // R4273：url() 引用原样回序列化（含前导 #）。
+        F::Url(r) => format!("url({r})"),
     }
 }
 

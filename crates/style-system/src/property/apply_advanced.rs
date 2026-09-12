@@ -1393,6 +1393,7 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
                         FilterValue::Saturate(n) => FilterComputedValue::Saturate(n),
                         FilterValue::Sepia(n) => FilterComputedValue::Sepia(n),
                         FilterValue::DropShadow(x, y, b, c) => FilterComputedValue::DropShadow(x, y, b, c),
+                        FilterValue::Url(r) => FilterComputedValue::Url(r),
                     })
                     .collect();
                 return true;
@@ -1414,6 +1415,7 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
                         FilterValue::Saturate(n) => FilterComputedValue::Saturate(n),
                         FilterValue::Sepia(n) => FilterComputedValue::Sepia(n),
                         FilterValue::DropShadow(x, y, b, c) => FilterComputedValue::DropShadow(x, y, b, c),
+                        FilterValue::Url(r) => FilterComputedValue::Url(r),
                     })
                     .collect();
                 return true;

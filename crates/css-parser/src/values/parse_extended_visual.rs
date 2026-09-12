@@ -58,6 +58,9 @@ pub enum FilterValue {
     Sepia(f32),
     /// drop-shadow(x-offset, y-offset, blur-radius, color)。
     DropShadow(f32, f32, f32, ColorValue),
+    /// url(#id) / url(id)——SVG `<filter>` 引用（filter-effects-1 #typedef-filter-url）。
+    /// 引用串原样保留（含前导 `#`，引号已剥）。
+    Url(String),
 }
 
 /// 解析 CSS filter 属性值。
@@ -119,6 +122,20 @@ pub fn parse_filter(value: &str) -> Option<FilterValue> {
                 Some(FilterValue::Sepia(n))
             }
             "drop-shadow" => parse_drop_shadow(inner),
+            // R4273：`url(#id)` / `url("id")`——SVG `<filter>` 引用
+            //（filter-effects-1 #typedef-filter-url，引号可省略、大小写不敏感 `URL`）。
+            "url" => {
+                let fragment = inner
+                    .trim()
+                    .strip_prefix('"')
+                    .and_then(|s| s.strip_suffix('"'))
+                    .or_else(|| inner.trim().strip_prefix('\'').and_then(|s| s.strip_suffix('\'')))
+                    .unwrap_or(inner.trim());
+                if fragment.is_empty() {
+                    return None;
+                }
+                Some(FilterValue::Url(fragment.to_string()))
+            }
             _ => None,
         }
     } else {

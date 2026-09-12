@@ -624,6 +624,31 @@ fn test_filter_hue_rotate_angle_units_case() {
     assert!(parse_filter("hue-rotate(50GRAD)").is_some(), "GRAD");
 }
 
+/// R4273：`url(#id)` / `url("id")` / 大小写不敏感 `URL()`——SVG `<filter>` 引用
+///（filter-effects-1 #typedef-filter-url）；空引用非法。
+#[test]
+fn test_filter_url_reference() {
+    let f = parse_filter("url(#myfilter)").expect("fragment ref must parse");
+    match f {
+        crate::values::FilterValue::Url(r) => assert_eq!(r, "#myfilter"),
+        other => panic!("expected Url, got {other:?}"),
+    }
+    // 引号形式（引号剥离）。
+    let f = parse_filter("url(\"myfilter\")").expect("quoted ref must parse");
+    match f {
+        crate::values::FilterValue::Url(r) => assert_eq!(r, "myfilter"),
+        other => panic!("expected Url, got {other:?}"),
+    }
+    // 函数名大小写不敏感。
+    assert!(matches!(
+        parse_filter("URL(#f)"),
+        Some(crate::values::FilterValue::Url(_))
+    ));
+    // 空引用非法。
+    assert!(parse_filter("url()").is_none());
+    assert!(parse_filter("url(\"\")").is_none());
+}
+
 #[test]
 fn test_filter_invert() {
     let f = parse_filter("invert(0.5)");

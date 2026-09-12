@@ -22,9 +22,9 @@ use zero_style_system::property::types::DisplayValue;
 use zero_style_system::{
     AccentColorComputedValue, AppearanceComputedValue, BackgroundAttachmentComputedValue, BackgroundClipComputedValue,
     BorderCollapseValue, BorderImageSourceComputedValue, CaretColorComputedValue, ClipPathComputedValue, ComputedStyle,
-    ContainComputedValue, ContentVisibilityValue, HyphensComputedValue, ImageRenderingValue, IsolationValue,
-    MixBlendModeComputedValue, OverscrollBehaviorValue, PointerEventsValue, ResizeValue, ScrollbarGutterComputedValue,
-    ScrollbarWidthComputedValue, TouchActionValue, UserSelectValue,
+    ContainComputedValue, ContentVisibilityValue, FilterComputedValue, HyphensComputedValue, ImageRenderingValue,
+    IsolationValue, MixBlendModeComputedValue, OverscrollBehaviorValue, PointerEventsValue, ResizeValue,
+    ScrollbarGutterComputedValue, ScrollbarWidthComputedValue, TouchActionValue, UserSelectValue,
 };
 
 use self::effects::ShadowPhase;
@@ -2193,6 +2193,14 @@ impl Painter {
             && let Some(style) = styles.get(&node_id)
         {
             self.apply_filter(box_node, abs_x, abs_y, style);
+            // R4273：filter: url(#id) 引用 SVG <filter> 的常量输出链（feFlood /
+            // 常量 feColorMatrix）——引用元素可为 hidden/空盒（filter 输出替换元素
+            // 渲染，visibility-hidden/empty-element-with-filter 族语义）。
+            if style.filter.iter().any(|f| matches!(f, FilterComputedValue::Url(_)))
+                && let Some(doc) = doc
+            {
+                self.apply_svg_reference_filter(doc, box_node, abs_x, abs_y, style);
+            }
         }
 
         // CSS transform — 为含 rotate/scale/skew 的元素生成 TransformPrimitive

@@ -7,7 +7,7 @@
 //! will-change、pointer-events、user-select、overscroll-behavior、touch-action。
 
 use zero_css_parser::values::{ColorValue, LengthValue};
-use zero_dom::Document;
+use zero_dom::{Document, NodeKind};
 use zero_layout_engine::LayoutBox;
 use zero_render_foundation::color::Color;
 use zero_render_foundation::geometry::Rect;
@@ -789,13 +789,55 @@ impl super::Painter {
     pub(super) fn apply_filter(&mut self, box_node: &LayoutBox, abs_x: f32, abs_y: f32, style: &ComputedStyle) {
         // R2306：filter 多函数列表（CSS Filter Effects：<filter-function>+）。空 Vec = none。
         // render 侧 FilterPrimitive.filters: Vec<FilterKind> 已支持多函数顺序应用。
-        let filters: Vec<_> = style.filter.iter().map(filter_computed_to_kind).collect();
+        // R4273：url() 引用项由 apply_svg_reference_filter 处理，不进 FilterKind 列表。
+        let filters: Vec<_> = style.filter.iter().filter_map(filter_computed_to_kind).collect();
         if filters.is_empty() {
             return;
         }
 
         let rect = Rect::new(abs_x, abs_y, box_node.width, box_node.height);
         self.primitives.add_filter(FilterPrimitive { rect, filters });
+    }
+
+    /// R4273（filter-effects-1 #typedef-filter-url）：CSS `filter: url(#id)` 引用
+    /// SVG `<filter>` 元素——本函数实现**常量输出链**：恰一个原语子元素且输出与
+    /// SourceGraphic 无关（feFlood；feColorMatrix type=matrix 全零输入系数 = 常量色
+    /// 矩阵）。输出以填充图元覆盖 filter region（#FilterEffectsRegion：filterUnits
+    /// objectBoundingBox 默认 x/y=-10% w/h=120%；userSpaceOnUse 字面 px，坐标锚定
+    /// 引用元素盒原点——empty-element-with-filter-002/003 的 0×0 盒 + region
+    /// (0,0,100,100) 产出 body-margin 偏移的绿块与 ref 对齐即此语义）。
+    ///
+    /// 引用不可解析（#not-found）= 无 filter（filter-invalid「Invalid filter draws
+    /// unfiltered frame」）；可解析但链非常量（feMerge/feComposite/多原语组合）暂不
+    /// 处理（SourceGraphic 隔离深域，本函数 no-op）。region 外溢不裁剪——filter
+    /// region 本就是链的输出边界。
+    pub(super) fn apply_svg_reference_filter(
+        &mut self,
+        doc: &Document,
+        box_node: &LayoutBox,
+        abs_x: f32,
+        abs_y: f32,
+        style: &ComputedStyle,
+    ) {
+        for value in &style.filter {
+            let FilterComputedValue::Url(reference) = value else {
+                continue;
+            };
+            let id = reference.trim().trim_start_matches('#');
+            if id.is_empty() {
+                continue;
+            }
+            let Some(filter_node_id) = doc.get_element_by_id(id) else {
+                continue;
+            };
+            let Some(region) = svg_filter_region(doc, filter_node_id, box_node, abs_x, abs_y) else {
+                continue;
+            };
+            let Some(color) = constant_filter_chain_color(doc, filter_node_id) else {
+                continue;
+            };
+            self.primitives.add_fill(region, color);
+        }
     }
 
     /// R3851：`filter: drop-shadow()` 投影发射（Filter Effects §5.3）。
@@ -842,7 +884,11 @@ impl super::Painter {
         style: &ComputedStyle,
     ) {
         // R2306：backdrop-filter 多函数列表（同 filter）。空 Vec = none。
-        let filters: Vec<_> = style.backdrop_filter.iter().map(filter_computed_to_kind).collect();
+        let filters: Vec<_> = style
+            .backdrop_filter
+            .iter()
+            .filter_map(filter_computed_to_kind)
+            .collect();
         if filters.is_empty() {
             return;
         }
@@ -1495,21 +1541,166 @@ fn smooth_circle_coverage(radius: f32, distance: f32) -> f32 {
 }
 
 /// 将 ComputedStyle 中的 filter 值转换为渲染层 FilterKind。
-fn filter_computed_to_kind(value: &FilterComputedValue) -> FilterKind {
+fn filter_computed_to_kind(value: &FilterComputedValue) -> Option<FilterKind> {
     match value {
-        FilterComputedValue::None => FilterKind::Blur(0.0),
-        FilterComputedValue::Blur(px) => FilterKind::Blur(*px),
-        FilterComputedValue::Brightness(n) => FilterKind::Brightness(*n),
-        FilterComputedValue::Contrast(n) => FilterKind::Contrast(*n),
-        FilterComputedValue::Grayscale(n) => FilterKind::Grayscale(*n),
-        FilterComputedValue::HueRotate(deg) => FilterKind::HueRotate(*deg),
-        FilterComputedValue::Invert(n) => FilterKind::Invert(*n),
-        FilterComputedValue::Opacity(n) => FilterKind::Opacity(*n),
-        FilterComputedValue::Saturate(n) => FilterKind::Saturate(*n),
-        FilterComputedValue::Sepia(n) => FilterKind::Sepia(*n),
-        FilterComputedValue::DropShadow(x, y, blur, color) => {
-            FilterKind::DropShadow(*x, *y, *blur, super::super::color::color_value_to_render(color))
+        FilterComputedValue::None => Some(FilterKind::Blur(0.0)),
+        FilterComputedValue::Blur(px) => Some(FilterKind::Blur(*px)),
+        FilterComputedValue::Brightness(n) => Some(FilterKind::Brightness(*n)),
+        FilterComputedValue::Contrast(n) => Some(FilterKind::Contrast(*n)),
+        FilterComputedValue::Grayscale(n) => Some(FilterKind::Grayscale(*n)),
+        FilterComputedValue::HueRotate(deg) => Some(FilterKind::HueRotate(*deg)),
+        FilterComputedValue::Invert(n) => Some(FilterKind::Invert(*n)),
+        FilterComputedValue::Opacity(n) => Some(FilterKind::Opacity(*n)),
+        FilterComputedValue::Saturate(n) => Some(FilterKind::Saturate(*n)),
+        FilterComputedValue::Sepia(n) => Some(FilterKind::Sepia(*n)),
+        FilterComputedValue::DropShadow(x, y, blur, color) => Some(FilterKind::DropShadow(
+            *x,
+            *y,
+            *blur,
+            super::super::color::color_value_to_render(color),
+        )),
+        // R4273：url() 引用不走 FilterKind 后处理（需按引用解析 SVG <filter>），
+        // 由 apply_svg_reference_filter 单独发射。
+        FilterComputedValue::Url(_) => None,
+    }
+}
+
+/// R4273：SVG `<filter>` 元素的 filter region（filter-effects-1 #FilterEffectsRegion）。
+/// filterUnits 缺省 objectBoundingBox（SVG1.1 §15.3）；x/y 缺省 -10%、width/height
+/// 缺省 120%（objectBoundingBox 分量比）。userSpaceOnUse 字面 px，锚定引用元素盒
+/// 原点（HTML 引用者的 user space = 其自身盒坐标，见 apply_svg_reference_filter 注）。
+/// 非法/缺失数值按缺省；region 宽高 ≤ 0 → None（空 region 无输出）。
+fn svg_filter_region(
+    doc: &Document,
+    filter_node_id: zero_dom::NodeId,
+    box_node: &LayoutBox,
+    abs_x: f32,
+    abs_y: f32,
+) -> Option<Rect> {
+    let node = doc.get(filter_node_id)?;
+    let NodeKind::Element(elem) = &node.kind else {
+        return None;
+    };
+    if elem.local_name() != "filter" {
+        return None;
+    }
+    // <length-percentage>：百分比 → 分量比，否则字面 px（SVG 尺寸 attr 无单位 = 用户单位）。
+    let parse_len = |v: &str| -> Option<(f32, bool)> {
+        let v = v.trim();
+        if let Some(p) = v.strip_suffix('%') {
+            p.trim()
+                .parse::<f32>()
+                .ok()
+                .filter(|n| n.is_finite())
+                .map(|n| (n / 100.0, true))
+        } else {
+            v.parse::<f32>().ok().filter(|n| n.is_finite()).map(|n| (n, false))
         }
+    };
+    let units = elem.get_attribute("filterUnits").unwrap_or_default();
+    let (x, y, w, h) = if units.eq_ignore_ascii_case("userSpaceOnUse") {
+        let literal = |attr: &str, dflt: f32| -> Option<f32> {
+            match elem.get_attribute(attr) {
+                Some(v) => parse_len(&v).map(|(n, _)| n),
+                None => Some(dflt),
+            }
+        };
+        (
+            literal("x", -0.1 * box_node.width)?,
+            literal("y", -0.1 * box_node.height)?,
+            literal("width", 1.2 * box_node.width)?,
+            literal("height", 1.2 * box_node.height)?,
+        )
+    } else {
+        // objectBoundingBox：x/width 以 bbox 宽为基准、y/height 以 bbox 高为基准
+        //（SVG1.1 §15.3 region 属性定义）。
+        let pct = |attr: &str, dflt: f32, base: f32| -> Option<f32> {
+            match elem.get_attribute(attr) {
+                Some(v) => parse_len(&v).map(|(n, is_pct)| if is_pct { n * base } else { n }),
+                None => Some(dflt * base),
+            }
+        };
+        (
+            pct("x", -0.1, box_node.width)?,
+            pct("y", -0.1, box_node.height)?,
+            pct("width", 1.2, box_node.width)?,
+            pct("height", 1.2, box_node.height)?,
+        )
+    };
+    let (x, y) = (abs_x + x, abs_y + y);
+    if w <= 0.0 || h <= 0.0 {
+        return None;
+    }
+    Some(Rect::new(x, y, w, h))
+}
+
+/// R4273：常量输出链判定——`<filter>` 恰一个**元素**子（文本/注释忽略），且为
+/// feFlood 或常量 feColorMatrix；返回输出色。多原语组合（feComposite/feMerge 等
+/// 需 SourceGraphic 隔离）→ None（调用方 no-op）。
+fn constant_filter_chain_color(doc: &Document, filter_node_id: zero_dom::NodeId) -> Option<Color> {
+    let element_children: Vec<zero_dom::NodeId> = doc
+        .child_nodes(filter_node_id)
+        .into_iter()
+        .filter(|id| matches!(doc.get(*id).map(|n| &n.kind), Some(NodeKind::Element(_))))
+        .collect();
+    if element_children.len() != 1 {
+        return None;
+    }
+    let node = doc.get(element_children[0])?;
+    let NodeKind::Element(elem) = &node.kind else {
+        return None;
+    };
+    match elem.local_name() {
+        // feFlood：flood-color（缺省 black）× flood-opacity（缺省 1）。
+        "feFlood" => {
+            let color = match elem.get_attribute("flood-color") {
+                Some(v) => zero_css_parser::values::parse_color(v.trim())?,
+                None => ColorValue::Rgba(0, 0, 0, 255),
+            };
+            let ColorValue::Rgba(r, g, b, a) = color else {
+                return None;
+            };
+            let opacity = elem
+                .get_attribute("flood-opacity")
+                .and_then(|v| v.trim().parse::<f32>().ok())
+                .unwrap_or(1.0);
+            Some(Color {
+                r,
+                g,
+                b,
+                a: ((a as f32 / 255.0) * opacity * 255.0).round().clamp(0.0, 255.0) as u8,
+            })
+        }
+        // feColorMatrix type=matrix（缺省）：20 值按行主序 [R,G,B,A]×[c0..c3,offset]。
+        // 四行输入系数全零 → 常量色（offset×255）。
+        "feColorMatrix" => {
+            if let Some(t) = elem.get_attribute("type")
+                && !t.trim().eq_ignore_ascii_case("matrix")
+            {
+                return None;
+            }
+            let values = elem.get_attribute("values")?;
+            let nums: Vec<f32> = values
+                .split_whitespace()
+                .map(|t| t.parse::<f32>())
+                .collect::<Result<_, _>>()
+                .ok()?;
+            if nums.len() != 20 {
+                return None;
+            }
+            let zero_input = |row: usize| nums[row * 5..row * 5 + 4].iter().all(|c| *c == 0.0);
+            if !(0..4).all(zero_input) {
+                return None;
+            }
+            let ch = |i: usize| (nums[i * 5 + 4] * 255.0).round().clamp(0.0, 255.0) as u8;
+            Some(Color {
+                r: ch(0),
+                g: ch(1),
+                b: ch(2),
+                a: ch(3),
+            })
+        }
+        _ => None,
     }
 }
 
@@ -1963,6 +2154,74 @@ fn compute_gradient_mask_alpha(gradient: &GradientPrimitive) -> f64 {
 
 #[cfg(test)]
 mod tests {
+
+    /// R4273：filter url() 引用链解析——feFlood 常量输出 + userSpaceOnUse region
+    /// 锚定引用元素盒原点；feColorMatrix 常量矩阵；不可解析引用 / 非常量链 no-op。
+    #[test]
+    fn r4273_svg_reference_filter_resolution() {
+        use super::{constant_filter_chain_color, svg_filter_region};
+        use zero_dom::{NodeId, parse_html};
+
+        // empty-element-with-filter-002 形态：0×0 盒 + userSpaceOnUse (0,0,100,100)。
+        let doc = parse_html(
+            r#"<html><body><div></div><svg width="0" height="0"><defs>
+                <filter id="f_flood" filterUnits="userSpaceOnUse" x="0" y="0" width="100" height="100">
+                    <feFlood flood-color="green"/>
+                </filter></defs></svg></body></html>"#,
+        );
+        let fid = doc.get_element_by_id("f_flood").expect("filter by id");
+        let region = svg_filter_region(&doc, fid, &build_box(0.0, 0.0, 8.0, 8.0, 0.0, 0.0), 8.0, 8.0)
+            .expect("userSpaceOnUse region");
+        assert_eq!(
+            (region.origin.x, region.origin.y, region.size.width, region.size.height),
+            (8.0, 8.0, 100.0, 100.0)
+        );
+        let color = constant_filter_chain_color(&doc, fid).expect("feFlood constant chain");
+        assert_eq!((color.r, color.g, color.b, color.a), (0, 128, 0, 255), "green flood");
+
+        // effect-reference-on-transparent-element 形态：常量 feColorMatrix（全零输入系数）。
+        let doc = parse_html(
+            r#"<html><body><svg width="0" height="0"><defs>
+                <filter id="flood_green" x="0%" y="0%" width="100%" height="100%">
+                    <feColorMatrix type="matrix" values="0 0 0 0 0  0 0 0 0 1  0 0 0 0 0  0 0 0 0 1"/>
+                </filter></defs></svg></body></html>"#,
+        );
+        let fid = doc.get_element_by_id("flood_green").expect("filter by id");
+        let region = svg_filter_region(&doc, fid, &build_box(0.0, 0.0, 8.0, 8.0, 100.0, 100.0), 8.0, 8.0)
+            .expect("objectBoundingBox region");
+        assert_eq!(
+            (region.origin.x, region.origin.y, region.size.width, region.size.height),
+            (8.0, 8.0, 100.0, 100.0)
+        );
+        let color = constant_filter_chain_color(&doc, fid).expect("constant matrix chain");
+        assert_eq!((color.r, color.g, color.b, color.a), (0, 255, 0, 255));
+
+        // 非常量链（feMerge）→ None；filterUnits 缺省 = objectBoundingBox（-10%/120%）。
+        let doc = parse_html(
+            r#"<html><body><svg width="0" height="0"><defs>
+                <filter id="f_merge"><feMerge><feMergeNode/></feMerge></filter>
+            </defs></svg></body></html>"#,
+        );
+        let fid = doc.get_element_by_id("f_merge").expect("filter by id");
+        assert!(constant_filter_chain_color(&doc, fid).is_none(), "feMerge 非常量链");
+        let region = svg_filter_region(&doc, fid, &build_box(0.0, 0.0, 8.0, 8.0, 100.0, 100.0), 8.0, 8.0)
+            .expect("default region");
+        // 缺省 x/y=-10% w/h=120%：origin = 8-10 = -2（spec 缺省 region 外扩 10%）。
+        let approx = |a: f32, b: f32| (a - b).abs() < 0.01;
+        assert!(approx(region.origin.x, -2.0) && approx(region.origin.y, -2.0));
+        assert!(approx(region.size.width, 120.0) && approx(region.size.height, 120.0));
+    }
+
+    /// R4273 观测辅助：构造最小 LayoutBox（origin 用 x/y 字段）。
+    fn build_box(_x: f32, _y: f32, abs_x: f32, abs_y: f32, w: f32, h: f32) -> zero_layout_engine::LayoutBox {
+        zero_layout_engine::LayoutBox {
+            x: abs_x,
+            y: abs_y,
+            width: w,
+            height: h,
+            ..Default::default()
+        }
+    }
 
     /// R4118（css-backgrounds-3 §3.6）：right/bottom 关键字 ≡ 100%——图大于容器时
     /// 偏移为**负**（露出图右下部分），不得钳 0（table-backgrounds-bs-table-001
