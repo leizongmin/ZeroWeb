@@ -712,6 +712,17 @@ impl Painter {
         {
             source.insert_str(idx, " xmlns=\"http://www.w3.org/2000/svg\"");
         }
+        // R4291：HTML 解析对未声明前缀宽容（`xlink:href` 直接进属性名），序列化为
+        // standalone SVG 源后 `xlink:` 前缀未声明 = 非法 XML → usvg 解析失败 → 整个
+        // svg 渲染为空（svg-feimage-001/002 @19.35% 实证：含 feImage xlink:href 的
+        // svg 全缺，连无 filter 的普通 rect 都不渲染）。检测到 xlink: 前缀使用而根
+        // 标签未声明时补 xmlns:xlink（与 build_wrapper_svg 的 R4279 注入同款）。
+        if source.contains("xlink:")
+            && !source.contains("xmlns:xlink=")
+            && let Some(idx) = source.find('>')
+        {
+            source.insert_str(idx, " xmlns:xlink=\"http://www.w3.org/1999/xlink\"");
+        }
         // R3938：把 CSS transform 合成进序列化文本（逐元素按 attr 文本定位改写）。
         if !css_transforms.is_empty() {
             source = apply_css_transforms_to_source(&source, &css_transforms, doc, node_id);
