@@ -39,7 +39,12 @@
   `nativeRendererLinked()` 门控），完整版走 `make android-renderer-apk`
   → 2026-09-12 续：**M3 切片 1 renderer 断连恢复落地**（`6b1ee64ce`）——recv 断连清槽 +
   attach 握手失败清槽 + `nativeIsRendererAttached` 查询 + Kotlin 导航失败重绑
-  RendererService0。M3 切片 2（多标签换槽：slot 1-7 接线 + LRU 挂起）待排期
+  RendererService0
+  → 2026-09-12 续：**M3 切片 2 多标签换槽落地**（`e226fe361`）——facade tab→slot 亲和表
+  （空闲优先/LRU 逐出/关闭回收，host 测试覆盖）、native 8 槽注册表（transport/帧缓冲/
+  meta 全部按槽），navigate 路由活动槽、fetch 响应按来路槽回、snapshot 增
+  `activeRendererSlot` 驱动 Kotlin 按槽绑槽与预览。剩余：被逐标签切回的自动重导航
+  （facade 有 URL，待接）、真机冒烟（M3 收口）
 - ⚠️ 版本串不一致：lib.rs `M2` vs README `M0`（文档滞后）
 - ⚠️ RFC `docs/specs/android-browser-spec-rfc.md`（1097 行）状态「待确认」；
   FR-006/007/009 未见对应代码
