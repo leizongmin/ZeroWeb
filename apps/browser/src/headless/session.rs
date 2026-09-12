@@ -72,6 +72,27 @@ pub(super) struct HeadlessSession {
 }
 
 impl HeadlessSession {
+    /// S12：非阻塞取一条 renderer 消息（CDP 空闲期 transport 轮询 drain 用；
+    /// 测试进程内无 renderer → 恒 None）。
+    #[cfg(not(test))]
+    pub(super) fn try_recv_renderer(&mut self) -> Option<IpcMessage> {
+        self.renderer.try_recv().ok().flatten()
+    }
+
+    #[cfg(test)]
+    pub(super) fn try_recv_renderer(&mut self) -> Option<zero_protocol::message::IpcMessage> {
+        None
+    }
+
+    /// S12：测试进程内无 renderer 消息面（空实现保持 drain 调用面编译完整）。
+    #[cfg(test)]
+    pub(super) fn handle_renderer_message(
+        &mut self,
+        _message: zero_protocol::message::IpcMessage,
+    ) -> Result<Option<Result<(), String>>, String> {
+        Ok(None)
+    }
+
     #[cfg(test)]
     pub(super) fn new(viewport_width: f32, viewport_height: f32) -> Self {
         let mut shell = BrowserShell::new();
@@ -144,7 +165,10 @@ impl HeadlessSession {
 
 #[cfg(not(test))]
 impl HeadlessSession {
-    fn handle_renderer_message(&mut self, message: IpcMessage) -> Result<Option<Result<(), String>>, String> {
+    pub(super) fn handle_renderer_message(
+        &mut self,
+        message: IpcMessage,
+    ) -> Result<Option<Result<(), String>>, String> {
         match message.kind {
             IpcMessageKind::FetchRequest(params) => {
                 self.proxy_fetch(params)?;

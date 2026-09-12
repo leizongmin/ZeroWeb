@@ -214,10 +214,16 @@ impl HeadlessServer {
                 continue;
             }
 
-            // WebSocket 连接。peek 阶段的 5s read timeout 是为 HTTP 探测设的；WS 会话
-            // 恢复宽裕空闲超时——CDP 客户端（如 Playwright）连接后可能长时间静默等
-            // 事件，沿用 5s 会把健康连接误杀（EAGAIN → 断连）。
-            stream.set_read_timeout(Some(std::time::Duration::from_secs(600))).ok();
+            // WebSocket 连接。peek 阶段的 5s read timeout 是为 HTTP 探测设的；WS 会话用
+            // **短轮询 read timeout**（120ms）——超时即 drain renderer 通道（fetch 代理/
+            // console 转发是 renderer → session 单向消息，CDP 空闲期 session 无人消费会
+            // 饿死 renderer 侧 fetch 的阻塞等待——S12 network.events 实测根因）。长空闲
+            // 由下方 IDLE_DEADLINE（600s 无任何消息）兜底断开，语义与旧 600s read timeout
+            // 一致。
+            const WS_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(120);
+            const WS_IDLE_DEADLINE: std::time::Duration = std::time::Duration::from_secs(600);
+            stream.set_read_timeout(Some(WS_POLL_INTERVAL)).ok();
+            let idle_since = std::time::Instant::now();
             let mut ws = accept(stream).map_err(|e| format!("WebSocket handshake failed: {e}"))?;
 
             // 认证状态：首个有效请求完成认证
@@ -238,6 +244,19 @@ impl HeadlessServer {
                         continue;
                     }
                     Ok(_) => continue,
+                    Err(tungstenite::Error::Io(ref e))
+                        if e.kind() == std::io::ErrorKind::WouldBlock || e.kind() == std::io::ErrorKind::TimedOut =>
+                    {
+                        // 轮询超时：drain renderer 通道（fetch 代理/console 转发），并把
+                        // 产生的事件即时推给客户端（页面 session 盖章——单会话模型取首个
+                        // 已附接 session）。
+                        self.drain_renderer_channel(&mut session, &mut ws);
+                        if idle_since.elapsed() > WS_IDLE_DEADLINE {
+                            tracing::info!("WebSocket idle deadline ({}s)", WS_IDLE_DEADLINE.as_secs());
+                            break;
+                        }
+                        continue;
+                    }
                     Err(e) => {
                         tracing::error!("WebSocket read error: {e}");
                         break;
@@ -318,6 +337,66 @@ impl HeadlessServer {
             }
 
             tracing::info!("Headless session ended");
+        }
+    }
+
+    /// S12：CDP 空闲期 drain renderer 通道——fetch 代理（`FetchRequest`/`FetchResponse`）
+    /// 与 console 转发（`ConsoleLog`）是 renderer → session 单向消息；CDP 命令间歇期
+    /// session 无人消费，renderer 侧 `ipc_fetch` 阻塞等待会饿死（network.events 实测：
+    /// 点击 handler 的 fetch 挂起 → PW click 10s 超时）。返回本函数起始时刻（供空闲
+    /// deadline 记账——真实消息处理会重置调用方的 idle_since）。
+    fn drain_renderer_channel(
+        &self,
+        session: &mut HeadlessSession,
+        ws: &mut tungstenite::WebSocket<std::net::TcpStream>,
+    ) {
+        let mut events: Vec<ServerEvent> = Vec::new();
+        while let Some(message) = session.try_recv_renderer() {
+            let _ = session.handle_renderer_message(message);
+        }
+        // 排空产生的 CDP 事件（console/network）即时推送——单会话模型：盖章到首个
+        // 已附接的页面 session（未附接则丢弃，客户端未就绪）。
+        let page_session = self
+            .attached_sessions
+            .lock()
+            .ok()
+            .and_then(|map| map.keys().next().cloned());
+        for (level, _text, args_json) in session.pending_console_events.drain(..) {
+            let args = serde_json::from_str::<serde_json::Value>(&args_json)
+                .ok()
+                .and_then(|v| v.as_array().cloned())
+                .unwrap_or_default();
+            let cdp_type = match level.as_str() {
+                "warn" => "warning",
+                "debug" | "trace" => "debug",
+                other => other,
+            };
+            events.push(ServerEvent {
+                method: "Runtime.consoleAPICalled".into(),
+                params: serde_json::json!({
+                    "type": cdp_type,
+                    "args": args.iter().map(console_value_to_remote_object).collect::<Vec<_>>(),
+                    "executionContextId": 1,
+                    "timestamp": std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_millis() as u64,
+                }),
+                session_id: page_session.clone(),
+            });
+        }
+        for (method, params) in session.pending_network_events.drain(..) {
+            events.push(ServerEvent {
+                method,
+                params,
+                session_id: page_session.clone(),
+            });
+        }
+        for event in events {
+            if let Ok(event_json) = serde_json::to_string(&event) {
+                let _ = ws.write(Message::Text(event_json.into()));
+                let _ = ws.flush();
+            }
         }
     }
 

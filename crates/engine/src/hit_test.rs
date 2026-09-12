@@ -393,12 +393,16 @@ fn deepest_node_at(
 ) {
     let box_x = abs_x + layout.x;
     let box_y = abs_y + layout.y;
+    let contains =
+        point_x >= box_x && point_y >= box_y && point_x < box_x + layout.width && point_y < box_y + layout.height;
 
-    if point_x < box_x || point_y < box_y || point_x >= box_x + layout.width || point_y >= box_y + layout.height {
-        return;
-    }
-
-    if let Some(node_id) = layout.node_id
+    // S12（cdp-protocol hit-target）：**不按祖先包含剪枝**——祖先盒不包含点仍继续下探，
+    // 只把「盒包含点」的节点记入候选。祖先盒可能小于溢出的子内容（实测：body 高 6px、
+    // 按钮 24.6px 溢出——按钮在自身中心 elementFromPoint 返 html 兜底）；真浏览器按绘制
+    // 盒命中，溢出内容（overflow:visible）可命中。overflow:hidden 的裁剪语义未建模
+    //（FIXME：被裁剪子盒在此近似下仍可命中，边缘语义偏差可接受）。
+    if contains
+        && let Some(node_id) = layout.node_id
         && depth >= best.0
     {
         *best = (depth, node_id);
@@ -424,12 +428,12 @@ fn collect_nodes_at(
 ) {
     let box_x = abs_x + layout.x;
     let box_y = abs_y + layout.y;
+    let contains =
+        point_x >= box_x && point_y >= box_y && point_x < box_x + layout.width && point_y < box_y + layout.height;
 
-    if point_x < box_x || point_y < box_y || point_x >= box_x + layout.width || point_y >= box_y + layout.height {
-        return;
-    }
-
-    if let Some(node_id) = layout.node_id {
+    // S12：同 deepest_node_at——不按祖先包含剪枝（溢出子内容可命中），仅记录包含点
+    // 的盒（elementsAtPoint 序列语义不变）。
+    if contains && let Some(node_id) = layout.node_id {
         out.push((depth, node_id));
     }
 

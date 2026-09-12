@@ -2,7 +2,7 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-13（S11：console value-only 小切片 + emulation.media colorScheme 接线，绿步 23→25；expected-green 基线扩至 25 步）
+**最后更新**: 2026-09-13（S12：引擎 hit-test 溢出剪枝修复——祖先盒不含点不再剪枝，溢出内容可命中；CDP 空闲期 renderer 通道轮询 drain。绿步维持 25，btn-fetch 点击已落地（fetch 触达 API），余 PW action 完成态问题）
 
 ---
 
@@ -33,6 +33,24 @@
 
 ## 已完成切片
 
+- **S12（2026-09-13）hit-test 溢出剪枝修复 + CDP 空闲期 renderer 通道 drain**：
+  **根因定位（插桩 PW coreBundle 注入诊断 + 点阵探测）**：`#btn-fetch` 点击失败的真因是
+  **引擎 hit-test 溢出剪枝**——`deepest_node_at`/`collect_nodes_at` 对「祖先盒不含点」整棵
+  剪枝，而裸页 body 盒高仅 6px（gBCR 实测 [8,8,784,6]）容不下 24.6px 的按钮 → 按钮在自身
+  中心 `elementFromPoint` 返 html 兜底（点阵探测：按钮盒内仅 y∈[8,11] 命中，其余全 html）
+  → PW `setupHitTargetInterceptor` 的 preliminary check 返回 `<html>` description → 无限
+  重试。**修复**：hit-test 走树不再按包含剪枝（下探全树、仅记录含点的盒）——溢出内容
+  （overflow:visible）可命中，与真浏览器绘制盒命中语义对齐；overflow:hidden 裁剪语义
+  未建模（FIXME 记档）。**验证**：点击已真实落地（btn-fetch handler 的 fetch 触达测试
+  服务器 API，apiHits=1）。
+  **第二层（新发现，未解）**：点击落地后 PW click action 仍不完成——**host-dispatched
+  listener 内的 fetch promise 不落定**（handler 内 `fetch()` 的 `.then` 链不执行，
+  `__fetched` 恒 null；独立 evaluate 的 fetch 正常）——疑 FetchBridge 在宿主派发事件
+  的 execute 内同步 resolve 的**重入死锁**（嵌套 sandbox.execute）。**第三层**：CDP 空闲
+  期 renderer 通道无人消费（fetch 的 FetchRequest/console IPC 饿死）——已修：transport
+  WS read 改 120ms 轮询 + `drain_renderer_channel`（fetch 代理 + console/network 事件
+  即时推送，600s 空闲 deadline 语义保持）。
+  绿步维持 25（无回退）；deterministic 双跑一致。
 - **S11（2026-09-13）console value-only 小切片 + emulation.media 接线**：
   **console.collect（P5 降级方案落地）**：shim `_zwConsoleEmit` 增逐参值序列化
   `_zwSerializeConsoleValue`（string/number/boolean 原样、undefined 标记串、对象 JSON
@@ -169,12 +187,12 @@
 
 ## 下一步计划
 
-1. **network.events 的 `#btn-fetch` 点击超时（S10 实测收窄）**：hit-target 修复后
-   `#btn` 点击可过（带重试），但 `#btn-fetch` 首次点击的 hit-target 复查静默失败并无限
-   重试——capture 显示 resolve/quads/坐标全对（534.4,100.12 → quads 正确）、拦截器
-   elementFromPoint(534,100) 返回正确元素、无 JS 异常——疑点收窄到拦截器 `expectHitTarget`
-   的 `hitParents` 走链对「adopt 句柄实例 vs 命中实例」的身份判定或 polling 时序；
-   下轮先以 DEBUG=pw:api + 拦截器返回值插值定位。解锁 network.events + frames.click+evaluate。
+1. **host-dispatched listener 内 fetch promise 不落定（S12 收窄，network.events 最后
+   一环）**：hit-test 剪枝修复后点击已真实落地（fetch 触达 API），但 handler 的
+   `.then` 链不执行（`__fetched` 恒 null）→ PW click action 等不到完成态 10s 超时。
+   疑 FetchBridge 在宿主派发事件的 execute 内同步 resolve（嵌套 sandbox.execute 重入）；
+   下轮先插桩 FetchBridge resolve 路径（正常 page-script fetch vs host-event fetch 对比），
+   修通后 network.events + frames.click+evaluate 应翻绿（绿步 25→27）。
 2. **page.setContent**（shim `document.open/write/close` 三连缺失——PW setContent 走
    此路径；需 shim 文档级写面 + 整文档替换 mutation/renderer 应用通路，engine 域）。
 3. **keyboard.type+press**（Ctrl+A 全选编辑面缺失——type 'abc' 后 Ctrl+A no-op、值
