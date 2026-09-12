@@ -5,8 +5,8 @@
 # 数据面，逐功能演示流验收）。注意与 android-browser / devtools 的 apps/browser 碰撞边界。
 #
 # 用法：
-#   bash scripts/rally-desktop-browser.sh                # 推进 desktop-browser goal
-#   bash scripts/rally-desktop-browser.sh --dry-run      # 只打印命令
+#   bash scripts/rally-5-desktop-browser.sh                # 推进 desktop-browser goal
+#   bash scripts/rally-5-desktop-browser.sh --dry-run      # 只打印命令
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

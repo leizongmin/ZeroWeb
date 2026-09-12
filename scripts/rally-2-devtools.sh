@@ -5,8 +5,8 @@
 # 演示流验收）。注意启动门控：cdp-protocol M3 前仅推进 M0 自主面（bundle/serve/判据）。
 #
 # 用法：
-#   bash scripts/rally-devtools.sh                # 推进 devtools goal
-#   bash scripts/rally-devtools.sh --dry-run      # 只打印命令
+#   bash scripts/rally-2-devtools.sh                # 推进 devtools goal
+#   bash scripts/rally-2-devtools.sh --dry-run      # 只打印命令
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

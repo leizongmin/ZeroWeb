@@ -5,8 +5,8 @@
 # 验收；DnD 挂账不在范围）。
 #
 # 用法：
-#   bash scripts/rally-web-api-batch2.sh                # 推进 web-api-batch2 goal
-#   bash scripts/rally-web-api-batch2.sh --dry-run      # 只打印命令
+#   bash scripts/rally-3-web-api-batch2.sh                # 推进 web-api-batch2 goal
+#   bash scripts/rally-3-web-api-batch2.sh --dry-run      # 只打印命令
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

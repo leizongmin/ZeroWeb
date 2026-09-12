@@ -5,8 +5,8 @@
 # WPT 三 corpus 验收）。行为变更走 kill-switch + A/B 门禁。
 #
 # 用法：
-#   bash scripts/rally-security-hardening.sh                # 推进 security-hardening goal
-#   bash scripts/rally-security-hardening.sh --dry-run      # 只打印命令
+#   bash scripts/rally-4-security-hardening.sh                # 推进 security-hardening goal
+#   bash scripts/rally-4-security-hardening.sh --dry-run      # 只打印命令
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
