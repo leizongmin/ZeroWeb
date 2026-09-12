@@ -354,3 +354,12 @@ css/css-overflow/scroll-markers/scroll-marker-group-add-dynamic-002.html css/css
 css/css-overflow/scroll-markers/scroll-marker-group-add-dynamic-003.html css/css-overflow/scroll-markers/../../reference/ref-filled-green-100px-square.xht == 2026-09-12 R4264 组盒兄弟位迁移兑现（definite 高度源 + 组盒 border/padding）
 css/css-overflow/scroll-markers/scroll-marker-group-add-dynamic-004.html css/css-overflow/scroll-markers/../../reference/ref-filled-green-100px-square.xht == 2026-09-12 R4264 组盒兄弟位迁移兑现（definite 高度源 + 组盒 border/padding）
 css/css-overflow/scroll-markers/scroll-marker-selection-in-2d.html css/css-overflow/scroll-markers/scroll-marker-selection-in-2d-ref.html == 2026-09-12 R4264 组盒兄弟位迁移兑现（definite 高度源 + 组盒 border/padding）
+css/css-overflow/scroll-markers/scroll-marker-group-007.html css/css-overflow/scroll-markers/scroll-marker-group-007-ref.html == 2026-09-12 R4265 scrollbar 预留语义（auto 仅溢出才预留）
+css/css-overflow/scroll-markers/column-scroll-marker-001.html css/css-overflow/scroll-markers/column-scroll-marker-001-ref.html == 2026-09-12 R4265 scrollbar 预留语义（auto 仅溢出才预留）
+css/css-overflow/scroll-markers/column-scroll-marker-002.html css/css-overflow/scroll-markers/column-scroll-marker-002-ref.html == 2026-09-12 R4265 scrollbar 预留语义（auto 仅溢出才预留）
+css/css-contain/contain-size-block-003.html css/css-contain/contain-size-block-003-ref.html == 2026-09-12 R4265 scrollbar 预留语义（auto 仅溢出才预留）兑现
+css/css-flexbox/flexbox-definite-sizes-005.html css/css-flexbox/flexbox-definite-sizes-005-ref.html == 2026-09-12 R4265 scrollbar 预留语义（auto 仅溢出才预留）兑现
+css/css-overflow/line-clamp/line-clamp-007.html css/css-overflow/line-clamp/reference/webkit-line-clamp-011-ref.html == 2026-09-12 R4265 scrollbar 预留语义（auto 仅溢出才预留）兑现
+css/css-overflow/line-clamp/webkit-line-clamp-011.html css/css-overflow/line-clamp/reference/webkit-line-clamp-011-ref.html == 2026-09-12 R4265 scrollbar 预留语义（auto 仅溢出才预留）兑现
+css/css-pseudo/relative-box-order-of-pseudo-elements.html css/css-pseudo/relative-box-order-of-pseudo-elements-ref.html == 2026-09-12 R4265 scrollbar 预留语义（auto 仅溢出才预留）兑现
+css/css-ui/resize-child-will-change-transform.html css/css-ui/resize-child-will-change-transform-ref.html == 2026-09-12 R4265 scrollbar 预留语义（auto 仅溢出才预留）兑现

@@ -129,10 +129,26 @@ pub fn computed_style_to_taffy(
             x: convert_overflow(&style.overflow_x),
             y: convert_overflow(&style.overflow_y),
         },
-        scrollbar_width: match style.scrollbar_width {
-            zero_style_system::ScrollbarWidthComputedValue::Auto => 15.0,
-            zero_style_system::ScrollbarWidthComputedValue::Thin => 8.0,
-            zero_style_system::ScrollbarWidthComputedValue::None => 0.0,
+        // R4265（CSS Overflow §scrollbar 预留语义）：taffy 仅对 `Overflow::Scroll` 轴预留
+        // `scrollbar_width` 槽位，而 ZW 把 CSS overflow:auto 并入 Scroll 映射 → 每个 auto
+        // 容器无条件获得 15px 槽位（空 overflow:auto 容器高/宽 +15，group-007 实证）。
+        // chromium 语义：auto 仅内容实际溢出才出现滚动条（预布局期不可知）→ CSS overflow
+        // 两轴均非 scroll 时不预留（显式 scrollbar-width:none 恒 0、thin 恒 8 不变；
+        // 任一轴 scroll 维持预留——混合轴近似，bounded）。
+        scrollbar_width: {
+            let base = match style.scrollbar_width {
+                zero_style_system::ScrollbarWidthComputedValue::Auto => 15.0,
+                zero_style_system::ScrollbarWidthComputedValue::Thin => 8.0,
+                zero_style_system::ScrollbarWidthComputedValue::None => 0.0,
+            };
+            if base > 0.0
+                && !matches!(style.overflow_x, OverflowValue::Scroll)
+                && !matches!(style.overflow_y, OverflowValue::Scroll)
+            {
+                0.0
+            } else {
+                base
+            }
         },
         position: convert_position(&style.position),
         inset: if is_static {
@@ -701,6 +717,8 @@ fn convert_overflow(value: &OverflowValue) -> taffy::style::Overflow {
         OverflowValue::Visible => taffy::style::Overflow::Visible,
         OverflowValue::Hidden => taffy::style::Overflow::Hidden,
         OverflowValue::Clip => taffy::style::Overflow::Clip,
+        // taffy 无 Auto 变体：Auto 并入 Scroll（布局语义同；滚动条槽位的按值抑制见
+        // scrollbar_width 接线处——R4265）。
         OverflowValue::Scroll | OverflowValue::Auto => taffy::style::Overflow::Scroll,
     }
 }
@@ -1877,6 +1895,21 @@ mod inline_tests {
         let result = computed_style_to_taffy(&style, None, 800.0, 600.0);
         assert_eq!(result.overflow.x, taffy::style::Overflow::Hidden);
         assert_eq!(result.overflow.y, taffy::style::Overflow::Scroll);
+    }
+
+    #[test]
+    fn test_computed_style_to_taffy_overflow_auto_no_scrollbar_reservation() {
+        // R4265：overflow:auto（两轴）零滚动条预留——taffy 仅对 Scroll 轴预留，auto
+        // 容器空内容时零槽位（chromium auto 滚动条仅内容溢出出现）。
+        let mut style = ComputedStyle::default();
+        style.overflow_x = OverflowValue::Auto;
+        style.overflow_y = OverflowValue::Auto;
+        let result = computed_style_to_taffy(&style, None, 800.0, 600.0);
+        assert_eq!(result.scrollbar_width, 0.0);
+        // 任一轴显式 scroll 维持预留（classic 恒预留）。
+        style.overflow_x = OverflowValue::Scroll;
+        let result = computed_style_to_taffy(&style, None, 800.0, 600.0);
+        assert_eq!(result.scrollbar_width, 15.0);
     }
 
     #[test]
