@@ -1,5 +1,9 @@
 package com.leizm.zeroweb
 
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
 import android.app.Service
 import android.graphics.Bitmap
 import android.content.ComponentName
@@ -56,6 +60,10 @@ import java.nio.ByteBuffer
 /** 标签缩略图缩放目标宽（像素）：56dp @2x，缓存体量与解码成本折中。 */
 private const val TAB_THUMB_WIDTH_PX = 112
 
+/** 下载通知渠道/Tag（FR-006）：渠道在 onCreate 幂等创建，通知按 Tag 固定复用。 */
+private const val DOWNLOAD_NOTIFICATION_CHANNEL = "downloads"
+private const val DOWNLOAD_NOTIFICATION_TAG = "downloads"
+
 /** Android launcher Activity for the ZeroWeb browser process. */
 class MainActivity : ComponentActivity() {
     private val serviceConnections = mutableListOf<ServiceConnection>()
@@ -87,9 +95,12 @@ class MainActivity : ComponentActivity() {
     private var keyboardRequested by mutableStateOf(false)
     /** 非活动标签缩略图缓存（tabId → 缩放后小图；活动标签走大预览，被逐标签无帧）。 */
     private val tabThumbnails = mutableStateMapOf<Long, ImageBitmap>()
+    /** 已通知/见过的最大下载 id 水位线（0 = 尚未立基线，首次快照只立线不通知）。 */
+    private var notifiedDownloadId = 0L
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        createDownloadNotificationChannel()
         loadBrowserProfile()
         handleExternalIntent(intent)
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
@@ -277,6 +288,7 @@ class MainActivity : ComponentActivity() {
                 browserState = it
                 browserError = null
                 refreshTabThumbnails()
+                notifyNewDownloads(it)
             }
             .onFailure { browserError = it.message ?: getString(R.string.error_snapshot_unreadable) }
     }
@@ -431,10 +443,9 @@ class MainActivity : ComponentActivity() {
             window.decorView.postDelayed({
                 rendererPreview = NativeBridge.nativeLatestPageFrame(targetSlot)?.toPageBitmap()
                 if (rendererPreview == null) android.util.Log.e("ZeroWebRole", "renderer page frame unavailable")
-                else {
-                    refreshBrowserSnapshot()
-                    android.util.Log.i("ZeroWebRole", "renderer page frame ready")
-                }
+                else android.util.Log.i("ZeroWebRole", "renderer page frame ready")
+                // 无新帧（如 attachment 下载接管后停留原页）时快照仍刷新，驱动下载通知
+                refreshBrowserSnapshot()
             }, delayMillis)
         }
     }
@@ -469,6 +480,47 @@ class MainActivity : ComponentActivity() {
     private fun registerPageInputView(view: PageInputView) {
         pageInputView = view
         view.onInputCommitted = ::refreshRendererPreview
+    }
+
+    /** 下载通知渠道（API 26+，minSdk 26 覆盖）；幂等，重复创建为 no-op。 */
+    private fun createDownloadNotificationChannel() {
+        val manager = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
+        manager.createNotificationChannel(
+            NotificationChannel(
+                DOWNLOAD_NOTIFICATION_CHANNEL,
+                getString(R.string.notification_channel_downloads),
+                NotificationManager.IMPORTANCE_DEFAULT,
+            ),
+        )
+    }
+
+    /** 快照驱动下载通知（FR-006）：水位线去重，仅 Completed 的新条目通知。 */
+    private fun notifyNewDownloads(snapshot: BrowserSnapshot) {
+        val latest = snapshot.downloads.maxOfOrNull { it.id } ?: return
+        if (notifiedDownloadId == 0L) {
+            notifiedDownloadId = latest
+            return
+        }
+        snapshot.downloads
+            .filter { it.id > notifiedDownloadId && it.state == "Completed" }
+            .maxByOrNull { it.id }
+            ?.let { postDownloadNotification(it.filename) }
+        notifiedDownloadId = maxOf(notifiedDownloadId, latest)
+    }
+
+    private fun postDownloadNotification(filename: String) {
+        val manager = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
+        if (!manager.areNotificationsEnabled()) return
+        val notification = Notification.Builder(this, DOWNLOAD_NOTIFICATION_CHANNEL)
+            .setSmallIcon(android.R.drawable.stat_sys_download_done)
+            .setContentTitle(getString(R.string.notification_download_complete))
+            .setContentText(filename)
+            .setContentIntent(
+                PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE),
+            )
+            .setAutoCancel(true)
+            .build()
+        manager.notify(DOWNLOAD_NOTIFICATION_TAG, 0, notification)
     }
 }
 
@@ -731,7 +783,7 @@ private data class BrowserEntry(val title: String, val url: String) {
     val displayTitle: String get() = if (title.isBlank()) url else title
 }
 
-private data class BrowserDownload(val filename: String, val url: String, val state: String)
+private data class BrowserDownload(val id: Long, val filename: String, val url: String, val state: String)
 
 private data class BrowserSnapshot(
     val activeTabId: Long?,
@@ -787,7 +839,12 @@ private data class BrowserSnapshot(
             val downloads = snapshot.getJSONArray("downloads")
             return List(downloads.length()) { index ->
                 val download = downloads.getJSONObject(index)
-                BrowserDownload(download.getString("filename"), download.getString("url"), download.getString("state"))
+                BrowserDownload(
+                    id = download.getLong("id"),
+                    filename = download.getString("filename"),
+                    url = download.getString("url"),
+                    state = download.getString("state"),
+                )
             }
         }
     }

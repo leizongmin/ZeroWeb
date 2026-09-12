@@ -36,4 +36,6 @@
     <string name="error_snapshot_unreadable">无法读取浏览器状态</string>
     <string name="error_renderer_restoring">渲染进程恢复中，请重试</string>
     <string name="error_renderer_restore_failed">渲染进程恢复失败，请稍后重试</string>
+    <string name="notification_channel_downloads">下载</string>
+    <string name="notification_download_complete">下载完成</string>
 </resources>

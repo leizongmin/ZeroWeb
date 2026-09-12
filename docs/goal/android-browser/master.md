@@ -2,7 +2,7 @@
 
 **入口文档**: [../android-browser.md](../android-browser.md)
 **创建日期**: 2026-09-07（goal 拆分 bootstrap）
-**最后更新**: 2026-09-12（M4 切片 9 双语资源与 chrome 无障碍落地——chrome 全量文案入 EN/zh-rCN 双资源，Kotlin 零硬编码中文 UI 串；模拟器环境核查记入 evidence/emulator-feasibility.md）
+**最后更新**: 2026-09-12（M4 切片 10 下载系统通知落地——快照水位线驱动 Completed 通知，POST_NOTIFICATIONS 未授权静默降级；模拟器环境核查记入 evidence/emulator-feasibility.md）
 
 ---
 
@@ -128,6 +128,11 @@
    中文 UI 串；`BrowserPage` 枚举标签改资源引用；`BrowserTab.displayTitle` 回退词参数化
    （数据类无 Context，回退词在组合项解析）。已知遗留：`bootstrap_role_summary` 资源键
    立项即未被引用（非本次造成，未删）；下载条目 state 为枚举英文名（后续本地化候选）
+   → 2026-09-12 ✅ 切片 10 下载系统通知（FR-006「下载页和系统通知显示完成」）——快照
+   水位线驱动（download id 去重，首次快照仅立基线覆盖 profile 恢复，仅 Completed 新条目
+   通知）；附件下载接管后无新帧的轮询路径也刷新快照（通知触发源）；NotificationChannel
+   onCreate 幂等创建 + `POST_NOTIFICATIONS` 权限（API 33+ 未授权时静默跳过，不阻塞下载）；
+   通知点击回 MainActivity；框架 `Notification.Builder` 零新依赖。效果验证随设备面挂起
 6. **模拟器/真机冒烟（M3 收口）**：等 KVM 授权或设备（待用户决策，不阻塞功能切片）
 
 **碰撞管理**：Cargo.lock 变更前 `git log --since="14 days ago" -- Cargo.lock` 核对；
@@ -140,7 +145,7 @@
 | M1 — CI 门禁 + 构建修复 | ✅ 全切片完成（CI job 全绿 34665015108、本地双路径打通、README/版本串对齐） |
 | M2 — 回归保护 + 可安装产物 | 🔶 APK 入口/签名/构建文档 ✅（P4）；JNI 桥接测试宿主侧 7 项已入、真机/模拟器冒烟断言待 M3 设备面（P3） |
 | M3 — 冒烟验收 + 决策清单 | 🔶 决策清单 ✅（RFC 已批准）；RFC M3 功能面（断连恢复×2/多标签换槽/点击/viewport/键盘 IME）✅ 全部落地，模拟器冒烟受 KVM 环境阻塞（见待用户决策），真机待设备 |
-| M4 — 完整首期功能（RFC 路线） | 🔶 FR-006 下载 browser 进程数据面 ✅（切片 7）、多标签缩略图 ✅（切片 8）、双语 + chrome 无障碍 ✅（切片 9）；SAF/通知/打开待设备；FR-007 全场景待设备验证 |
+| M4 — 完整首期功能（RFC 路线） | 🔶 FR-006 下载 browser 进程数据面 ✅（切片 7）+ 系统通知 ✅（切片 10）、多标签缩略图 ✅（切片 8）、双语 + chrome 无障碍 ✅（切片 9）；SAF DocumentUri/ACTION_VIEW 打开待设备；FR-007 全场景待设备验证 |
 
 ## 待用户决策
 

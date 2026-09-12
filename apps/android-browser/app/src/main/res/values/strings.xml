@@ -36,4 +36,6 @@
     <string name="error_snapshot_unreadable">Unable to read browser state</string>
     <string name="error_renderer_restoring">Renderer is recovering, please retry</string>
     <string name="error_renderer_restore_failed">Renderer recovery failed, please try again later</string>
+    <string name="notification_channel_downloads">Downloads</string>
+    <string name="notification_download_complete">Download complete</string>
 </resources>
