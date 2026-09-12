@@ -126,21 +126,21 @@ DC-3 基线）。「现状」列以 2026-09-12 `apps/browser/src/headless/`（M1
 | `Emulation.setDeviceMetricsOverride` | 2 | deviceScaleFactor/height/mobile/screenHeight/screenOrientation/screenWidth/width | ✅（S6：→renderer SetViewport + 服务器视口状态联动 getLayoutMetrics/captureScreenshot + frameResized 事件；宽高 0=恢复默认） | 完成（M3 S6） |
 | `Emulation.setEmulatedMedia` | 4 | features/media | ✅（S6：prefers-color-scheme→SetColorScheme、media type→SetMediaType；reduced-motion 等无 IPC 面暂忽略） | 完成（M3 S6；余 feature 随引擎能力） |
 | `Emulation.setFocusEmulationEnabled` | 3 | enabled | ✅ stub 接受（S4） | 完成（M1 S4） |
-| `Emulation.setUserAgentOverride` | 2 | userAgent | ❌ | M3 stub → M4 实义（net UA 接线） |
+| `Emulation.setUserAgentOverride` | 2 | userAgent | ✅（S7：proxy_fetch 注入 User-Agent；accept-language 等附带头暂忽略） | 完成（M4 S7） |
 
 ### Network 域
 
 | 方法 | 捕获调用 | 参数键 | ZeroWeb 现状 | 计划 |
 |------|---------|--------|--------------|------|
-| `Network.enable` | 5 | — | ⚠️ stub 接受不产事件 | M4（请求事件总线，P6 缺口） |
+| `Network.enable` | 5 | — | ✅（S7：真实门控 + headless proxy_fetch 生命周期事件 requestWillBeSent/responseReceived/loadingFinished，session 盖章） | 完成（M4 S7；renderer 侧请求观测随 net 观测点扩展） |
 
 ### Storage 域
 
 | 方法 | 捕获调用 | 参数键 | ZeroWeb 现状 | 计划 |
 |------|---------|--------|--------------|------|
-| `Storage.getCookies` | 2 | — | ❌ | M4（cookie jar；域落点修正见发现 #2） |
-| `Storage.setCookies` | 1 | cookies | ❌ | M4 |
-| `Storage.clearCookies` | 1 | — | ❌ | M4 |
+| `Storage.getCookies` | 2 | — | ✅（S7：session 级 jar 全量枚举，CDP cookie 形状） | 完成（M4 S7） |
+| `Storage.setCookies` | 1 | cookies | ✅（S7：url/domain+path 作用域 + expires/secure/httpOnly） | 完成（M4 S7） |
+| `Storage.clearCookies` | 1 | — | ✅（S7） | 完成（M4 S7） |
 
 ### Log 域
 
@@ -170,7 +170,7 @@ DC-3 基线）。「现状」列以 2026-09-12 `apps/browser/src/headless/`（M1
 | `Page.documentOpened` | 1 | ❌ | M3（低优） |
 | `Page.frameRequestedNavigation` | 1 | ❌ | M3（低优） |
 | `Page.frameSubtreeWillBeDetached` | 1 | ❌ | M3（低优） |
-| `Network.requestWillBeSent` / `responseReceived` / `loadingFinished` / `dataReceived` | 9 / 8 / 9 / 10 | ❌ | M4 |
+| `Network.requestWillBeSent` / `responseReceived` / `loadingFinished` / `dataReceived` | 9 / 8 / 9 / 10 | 🔶 S7：前三者随 proxy_fetch 发出（Network.enable 门控）；dataReceived 未产 | 完成（M4 S7 雏形；P6 net 观测点扩展后补全字段） |
 | `Network.requestWillBeSentExtraInfo` / `responseReceivedExtraInfo` | 9 / 9 | ❌ | M4（低优，header 面） |
 | `Network.policyUpdated` | 6 | ❌ | 不实现（Chromium 内部策略事件） |
 | `Log.entryAdded` | 2 | ❌ | 不实现-ok（console 覆盖） |

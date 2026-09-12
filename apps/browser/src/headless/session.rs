@@ -3,6 +3,7 @@
 //! 发布构建只持有 renderer IPC（进程隔离）；进程内 WebView 仅用于单元测试。
 
 use zero_browser_shell::BrowserShell;
+use zero_net::cookie::CookieStore;
 #[cfg(not(test))]
 use zero_net::{HttpClient, HttpMethod, HttpRequest};
 #[cfg(not(test))]
@@ -53,6 +54,14 @@ pub(super) struct HeadlessSession {
     pub(super) next_request_id: u64,
     /// addScriptToEvaluateOnNewDocument 注册的脚本（新文档加载后重放）。
     pub(super) injected_scripts: Vec<InjectedScript>,
+    /// Cookie jar（Storage 域 + proxy_fetch 双向接线；会话级——单会话模型即浏览器级）。
+    pub(super) cookie_store: CookieStore,
+    /// Emulation.setUserAgentOverride（None = 默认 UA）。
+    pub(super) user_agent_override: Option<String>,
+    /// Network.enable 门控（Network 域事件源开关）。
+    pub(super) network_enabled: bool,
+    /// Network 域事件队列（proxy_fetch 生命周期观测，transport 逐命令排空盖章）。
+    pub(super) pending_network_events: Vec<(String, serde_json::Value)>,
     /// R3282（#4）：可选 GPU 截图渲染器（`ZW_HEADLESS_GPU_SCREENSHOT=1` 启用；
     /// 默认 CPU——oracle 像素对比基线稳定）。
     pub(super) gpu_renderer: Option<zero_render_foundation::gpu::renderer::GpuRenderer>,
@@ -73,6 +82,10 @@ impl HeadlessSession {
             shell,
             webview,
             injected_scripts: Vec::new(),
+            cookie_store: CookieStore::new(),
+            user_agent_override: None,
+            network_enabled: false,
+            pending_network_events: Vec::new(),
             gpu_renderer: None,
         }
     }
@@ -114,6 +127,10 @@ impl HeadlessSession {
             navigation_epoch: 0,
             next_request_id: 1,
             injected_scripts: Vec::new(),
+            cookie_store: CookieStore::new(),
+            user_agent_override: None,
+            network_enabled: false,
+            pending_network_events: Vec::new(),
             gpu_renderer: None,
         }
     }
@@ -147,19 +164,91 @@ impl HeadlessSession {
             "OPTIONS" => HttpMethod::Options,
             _ => HttpMethod::Get,
         };
+        let parsed_url = zero_net::parse_url(&params.url).ok();
+        // Cookie 注入（Storage jar → 请求头）+ UA override
+        let mut headers = params.headers;
+        if let Some(parsed) = &parsed_url {
+            let cookie_header = self.cookie_store.cookie_header(parsed);
+            if !cookie_header.is_empty() {
+                headers.retain(|(k, _)| !k.eq_ignore_ascii_case("cookie"));
+                headers.push(("Cookie".to_string(), cookie_header));
+            }
+        }
+        if let Some(ua) = &self.user_agent_override {
+            headers.retain(|(k, _)| !k.eq_ignore_ascii_case("user-agent"));
+            headers.push(("User-Agent".to_string(), ua.clone()));
+        }
+
+        // Network 事件源（Network.enable 门控）：requestWillBeSent
+        let net_request_id = format!("zw-net-{}", self.next_request_id);
+        if self.network_enabled {
+            self.pending_network_events.push((
+                "Network.requestWillBeSent".to_string(),
+                serde_json::json!({
+                    "requestId": net_request_id,
+                    "request": {
+                        "url": params.url,
+                        "method": params.method,
+                        "headers": {},
+                    },
+                    "timestamp": std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_millis() as f64,
+                    "initiator": { "type": "other" },
+                }),
+            ));
+        }
+
         let response = self.http.send(HttpRequest {
             method,
-            url: params.url,
-            headers: params.headers,
+            url: params.url.clone(),
+            headers,
             body: params.body,
         });
         match response {
-            Ok(response) => self.renderer.send_fetch_response(
-                params.request_id,
-                response.status_code,
-                response.headers,
-                response.body,
-            ),
+            Ok(response) => {
+                // Set-Cookie 捕获（响应 → Storage jar）
+                if let Some(parsed) = &parsed_url {
+                    let set_cookies: Vec<String> = response
+                        .headers
+                        .iter()
+                        .filter(|(k, _)| k.eq_ignore_ascii_case("set-cookie"))
+                        .map(|(_, v)| v.clone())
+                        .collect();
+                    for header_value in set_cookies {
+                        if let Ok(cookie) = CookieStore::parse_set_cookie(&header_value) {
+                            self.cookie_store.add_from_url(cookie, parsed);
+                        }
+                    }
+                }
+                // Network 事件：responseReceived + loadingFinished
+                if self.network_enabled {
+                    self.pending_network_events.push((
+                        "Network.responseReceived".to_string(),
+                        serde_json::json!({
+                            "requestId": net_request_id,
+                            "response": {
+                                "url": response.url,
+                                "status": response.status_code,
+                                "statusText": "",
+                                "headers": {},
+                                "mimeType": "",
+                            },
+                        }),
+                    ));
+                    self.pending_network_events.push((
+                        "Network.loadingFinished".to_string(),
+                        serde_json::json!({ "requestId": net_request_id }),
+                    ));
+                }
+                self.renderer.send_fetch_response(
+                    params.request_id,
+                    response.status_code,
+                    response.headers,
+                    response.body,
+                )
+            }
             Err(error) => {
                 self.renderer
                     .send_fetch_response(params.request_id, 0, Vec::new(), error.to_string().into_bytes())

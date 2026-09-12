@@ -397,6 +397,91 @@ fn test_json_targets_enumerates_real_tabs() {
     assert!(!ids.contains(&"zeroweb-main"), "static placeholder id retired");
 }
 
+// ── M4：Storage cookie 域 / UA override / Network 门控 ──
+
+#[test]
+fn test_storage_cookies_roundtrip() {
+    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let mut session = HeadlessSession::new(800.0, 600.0);
+    let empty = server
+        .dispatch(&mut session, "Storage.getCookies", Value::Null)
+        .unwrap();
+    assert!(empty["cookies"].as_array().unwrap().is_empty());
+
+    let set = serde_json::json!({
+        "cookies": [{ "name": "zw", "value": "1", "domain": "127.0.0.1", "path": "/" }],
+    });
+    assert!(server.dispatch(&mut session, "Storage.setCookies", set).is_ok());
+    let got = server
+        .dispatch(&mut session, "Storage.getCookies", Value::Null)
+        .unwrap();
+    let cookies = got["cookies"].as_array().unwrap();
+    assert_eq!(cookies.len(), 1);
+    assert_eq!(cookies[0]["name"], "zw");
+    assert_eq!(cookies[0]["value"], "1");
+    assert_eq!(cookies[0]["domain"], "127.0.0.1");
+
+    assert!(
+        server
+            .dispatch(&mut session, "Storage.clearCookies", Value::Null)
+            .is_ok()
+    );
+    let after = server
+        .dispatch(&mut session, "Storage.getCookies", Value::Null)
+        .unwrap();
+    assert!(after["cookies"].as_array().unwrap().is_empty());
+}
+
+#[test]
+fn test_storage_set_cookies_with_url_scopes_to_host() {
+    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let mut session = HeadlessSession::new(800.0, 600.0);
+    let set = serde_json::json!({
+        "cookies": [{ "name": "scoped", "value": "abc", "url": "https://example.com/page" }],
+    });
+    assert!(server.dispatch(&mut session, "Storage.setCookies", set).is_ok());
+    let got = server
+        .dispatch(&mut session, "Storage.getCookies", Value::Null)
+        .unwrap();
+    let cookies = got["cookies"].as_array().unwrap();
+    assert_eq!(cookies.len(), 1);
+    assert_eq!(cookies[0]["domain"], "example.com");
+    assert_eq!(cookies[0]["secure"], true);
+}
+
+#[test]
+fn test_set_user_agent_override_stored() {
+    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let mut session = HeadlessSession::new(800.0, 600.0);
+    assert!(session.user_agent_override.is_none());
+    let params = serde_json::json!({ "userAgent": "test-ua/1.0" });
+    assert!(
+        server
+            .dispatch(&mut session, "Emulation.setUserAgentOverride", params)
+            .is_ok()
+    );
+    assert_eq!(session.user_agent_override.as_deref(), Some("test-ua/1.0"));
+}
+
+#[test]
+fn test_set_user_agent_override_missing_rejected() {
+    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let mut session = HeadlessSession::new(800.0, 600.0);
+    let result = server.dispatch(&mut session, "Emulation.setUserAgentOverride", Value::Null);
+    assert_eq!(result.unwrap_err().code, -32602);
+}
+
+#[test]
+fn test_network_enable_disable_gates_flag() {
+    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let mut session = HeadlessSession::new(800.0, 600.0);
+    assert!(!session.network_enabled);
+    assert!(server.dispatch(&mut session, "Network.enable", Value::Null).is_ok());
+    assert!(session.network_enabled);
+    assert!(server.dispatch(&mut session, "Network.disable", Value::Null).is_ok());
+    assert!(!session.network_enabled);
+}
+
 // ── M3：Emulation viewport 桥 / 媒体仿真 / 截图 clip ──
 
 #[test]
@@ -1112,9 +1197,9 @@ fn test_smoke_cdp_command_sequence() {
         .unwrap();
     assert!(eval_result.get("result").is_some());
 
-    // 4. Network.enable
+    // 4. Network.enable（S7：真实门控，CDP 语义响应 {}）
     let net_enable = runner.send("Network.enable", Value::Null).unwrap();
-    assert_eq!(net_enable["result"], "enabled");
+    assert!(net_enable.is_object());
 
     // 5. Page.captureScreenshot（S6：CDP 形状 {data: base64}，BiDi 对象形另测）
     let screenshot = runner.send("Page.captureScreenshot", Value::Null).unwrap();

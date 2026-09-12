@@ -497,6 +497,12 @@ impl CookieStore {
     }
 
     /// 获取匹配 URL 且未过期的所有 cookies。
+    /// 全量只读枚举（CDP Storage.getCookies 浏览器级语义需要；纯观测，无行为副作用）。
+    pub fn all(&self) -> Vec<&Cookie> {
+        self.cookies.iter().collect()
+    }
+
+    /// 获取匹配 URL 且未过期的所有 cookies。
     pub fn get_for_url(&self, url: &ParsedUrl) -> Vec<&Cookie> {
         self.cookies
             .iter()

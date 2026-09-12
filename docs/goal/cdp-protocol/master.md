@@ -2,7 +2,7 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-12（M3 切片落地：viewport 桥/媒体仿真/CDP 截图形状+clip）
+**最后更新**: 2026-09-12（M4 切片落地：Storage cookie 域 + UA override + Network 事件总线雏形）
 
 ---
 
@@ -33,6 +33,16 @@
 
 ## 已完成切片
 
+- **S7（2026-09-12）M4 — Storage cookie 域 + UA override + Network 事件总线雏形**：
+  session 级 `CookieStore`（net 既有 jar 复用，goal 支持包络「net 只加观测点」——新增
+  只读 `CookieStore::all()`）；`Storage.getCookies/setCookies/clearCookies` 实义
+  （url/domain 作用域 + expires/secure/httpOnly，CDP cookie 形状）+ proxy_fetch 双向
+  接线（Set-Cookie 捕获 + Cookie 请求头注入）→ **Playwright cookies.roundtrip 绿**；
+  `Emulation.setUserAgentOverride`（proxy_fetch 注入 User-Agent）；`Network.enable/
+  disable` 真实门控 + proxy_fetch 生命周期事件（requestWillBeSent/responseReceived/
+  loadingFinished，session 盖章排空）——P6 net 观测点雏形。**Playwright 绿步 5→6**。
+  console 对象化（P5）挂起：需 engine 宿主回调签名扩展（engine 为并行流活跃面，
+  碰头管理延后）。make test 全绿（+6 M4 单测）。
 - **S6（2026-09-12）M3 — viewport 桥 + 媒体仿真 + CDP 截图形状**：
   `Emulation.setDeviceMetricsOverride` 实义（→renderer SetViewport IPC + 服务器视口状态
   联动 getLayoutMetrics/captureScreenshot + Page.frameResized 事件；宽高 0=恢复默认；
@@ -92,10 +102,13 @@
 
 ## 下一步计划
 
-1. **M4**：Storage cookie 域（阻 cookies.roundtrip 1 步）+ Network 事件总线（P6）+
-   console 对象化（P5）+ Emulation.setUserAgentOverride（net UA 接线）
+1. **M4 收口余项**：console 对象化（P5，engine 宿主回调扩展——并行流碰头管理，等
+   zero-web 流窗口）+ Network 事件字段补全（net 观测点扩展：headers/mimeType/
+   dataReceived）
 2. **iframe 子帧事件源**：需引擎子帧可见性（渲染流域协调点），frames.access 步骤依赖
-3. **objectId 桥获批后**：renderer/protocol/engine 跨 crate 对象注册表——收口
+3. **M5 矩阵收口预备**：E2E 用例集（playwright-matrix 工程已有 30 步流）建 make 入口
+   + 双跑 deterministic 判定 + DC-1~4 逐项盘点
+4. **objectId 桥获批后**：renderer/protocol/engine 跨 crate 对象注册表——收口
    evaluate/locator/click/fill 全族（~20 步，占差距大头）
 
 **待用户决策清单**：
@@ -115,7 +128,7 @@
 | M1 — 传输/发现/Target 基座 + Playwright 首连 | 🚧 连接面全通（S4：connect/attach/newPage ✓）；evaluate 收口卡 objectId 桥（待用户决策） |
 | M2 — Page/Input 域 → 点击/填充/键盘/导航流 | 🚧 S5：goto 绿 + Input 域全通 + 导航事件族；locator 类点击/填充仍挂 objectId 桥（value-only 面已尽） |
 | M3 — DOM/CSS/Emulation → locator 流 | 🚧 S6：viewport 桥/媒体仿真/截图 clip 绿；DOM 句柄桥挂 objectId 桥；iframe 子帧挂引擎子帧事件面 |
-| M4 — Network/cookies/console 对象化（cookie 落点=Storage 域） | ⏳ |
+| M4 — Network/cookies/console 对象化（cookie 落点=Storage 域） | 🚧 S7：cookie 域 + UA override + Network 事件雏形绿；console 对象化挂 engine 碰头窗口 |
 | M5 — 矩阵收口 | ⏳ |
 
 ## 验证基线
