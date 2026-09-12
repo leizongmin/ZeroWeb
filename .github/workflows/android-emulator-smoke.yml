@@ -1,0 +1,154 @@
+name: Android Emulator Smoke
+
+# Android 模拟器冒烟（android-browser goal M3，2026-09-12）：
+# GitHub ubuntu runner 具备嵌套虚拟化（/dev/kvm），无需本机 KVM 授权即可执行
+# chrome 级冒烟——四进程拓扑 + UID 隔离 + decoder/compositor socket probe
+# （scripts/android/install-smoke.sh，emulator flavor 默认 feature，零 V8 依赖）。
+# 页面级冒烟（renderer APK，V8 x86_64 交叉编译）不在本 job 范围，仍归真机路径。
+# 门控与 ci.yml android job 一致：workflow_dispatch 或 OWNER 批准的 PR review。
+# runner 无 /dev/kvm 时本 job 直接失败——以运行日志为据回落「等 KVM/设备」，不静默绿。
+on:
+  workflow_dispatch:
+  pull_request_review:
+    types: [submitted]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-emulator-smoke-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  emulator-smoke:
+    if: github.event_name == 'workflow_dispatch' || (github.event.review.state == 'approved' && github.event.review.author_association == 'OWNER')
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-linux-android
+
+      - name: Install cargo-ndk
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-ndk
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Cache gradle
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ hashFiles('apps/android-browser/gradle/libs.versions.toml', 'apps/android-browser/gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: |
+            gradle-
+
+      - name: Cache cargo
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: android-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            android-cargo-
+            ${{ runner.os }}-cargo-
+
+      - name: Check KVM
+        run: |
+          if [ ! -e /dev/kvm ]; then
+            echo "::error::runner exposes no /dev/kvm — emulator smoke cannot run on this runner"
+            exit 1
+          fi
+          sudo chmod 666 /dev/kvm
+          ls -l /dev/kvm
+
+      - name: Build emulator debug APK (x86_64 native via gradle buildRustNative)
+        working-directory: apps/android-browser
+        run: ./gradlew --no-daemon :app:assembleEmulatorDebug
+
+      # 镜像优先 API 36（与 evidence/local-toolchain-bootstrap 对齐），server 无此包则回落 API 35
+      - name: Install emulator and system image
+        run: |
+          SDKM="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          IMG="system-images;android-36;google_apis;x86_64"
+          yes | "$SDKM" --install "emulator" "$IMG" > sdkmanager-install.log 2>&1 \
+            || { IMG="system-images;android-35;google_apis;x86_64"; yes | "$SDKM" --install "emulator" "$IMG" > sdkmanager-install.log 2>&1; }
+          tail -5 sdkmanager-install.log
+          echo "SMOKE_IMAGE=$IMG" >> "$GITHUB_ENV"
+
+      - name: Create AVD
+        run: echo no | "$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager" create avd -n zeroweb-smoke -k "$SMOKE_IMAGE" -d pixel
+
+      - name: Boot emulator (headless, swiftshader)
+        run: |
+          "$ANDROID_HOME/emulator/emulator" -avd zeroweb-smoke \
+            -no-window -gpu swiftshader_indirect -no-audio -no-boot-anim \
+            -no-snapshot -camera-back none -camera-front none \
+            > emulator-boot.log 2>&1 &
+
+      - name: Wait for boot completion
+        run: |
+          ADB="$ANDROID_HOME/platform-tools/adb"
+          timeout 300 "$ADB" wait-for-device
+          boot=""
+          for i in $(seq 1 90); do
+            boot=$("$ADB" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')
+            [ "$boot" = "1" ] && break
+            sleep 5
+          done
+          if [ "$boot" != "1" ]; then
+            echo "::error::emulator boot timed out"
+            tail -30 emulator-boot.log
+            exit 1
+          fi
+          api=$("$ADB" shell getprop ro.build.version.sdk | tr -d '\r')
+          abi=$("$ADB" shell getprop ro.product.cpu.abi | tr -d '\r')
+          echo "emulator boot completed (api $api, abi $abi)"
+
+      # install-smoke.sh 自带 wait-for-device / install / am start / 拓扑与 probe 断言。
+      # 慢启动兜底重试一次：force-stop 后整树重启，probe 日志会在脚本清空 logcat 后
+      # 重新产生（断言不放宽——重试后仍须全项通过）。
+      - name: Run install smoke (topology / UID isolation / probe assertions)
+        run: |
+          APK=apps/android-browser/app/build/outputs/apk/emulator/debug/app-emulator-debug.apk
+          ADB="$ANDROID_HOME/platform-tools/adb"
+          if ! bash scripts/android/install-smoke.sh "$APK"; then
+            echo "::warning::smoke attempt 1 failed; retrying once after force-stop"
+            "$ADB" shell am force-stop com.leizm.zeroweb || true
+            sleep 10
+            bash scripts/android/install-smoke.sh "$APK"
+          fi
+
+      - name: Collect smoke diagnostics
+        if: failure()
+        run: |
+          mkdir -p smoke-logs
+          ADB="$ANDROID_HOME/platform-tools/adb"
+          "$ADB" logcat -d > smoke-logs/logcat.txt 2>&1 || true
+          "$ADB" shell ps -A -o USER,NAME > smoke-logs/ps.txt 2>&1 || true
+          cp emulator-boot.log sdkmanager-install.log smoke-logs/ 2>/dev/null || true
+
+      - name: Upload smoke diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: emulator-smoke-diagnostics
+          path: smoke-logs/
+          retention-days: 14
