@@ -41,7 +41,7 @@
 
 | # | 缺口 | 状态 |
 |---|------|------|
-| P1 | Android CI job（NDK 构建 + assemble + 单测） | ⬜ M1 |
+| P1 | Android CI job（NDK 构建 + assemble + 单测） | ✅ M1——ci.yml android job（34665015108 全绿） |
 | P2 | 版本串/README/RFC 状态文档滞后 | 🔶 M1——README/版本串已对齐（601138470）；RFC 状态待批准 |
 | P3 | JNI 桥接测试覆盖 + 进程角色冒烟断言 | ⬜ M2 |
 | P4 | APK 构建入口 + 构建文档 | ⬜ M2 |
@@ -56,6 +56,9 @@
    [evidence/local-toolchain-bootstrap.md](evidence/local-toolchain-bootstrap.md)。
    剩余：renderer feature 路径（V8 从源码，5 项前置缺 3）、gradlew 可执行位入库修复
 2. **M1 切片 2**：CI Android job 落地（照既有 build-and-test 矩阵风格；不 continue-on-error）
+   → 2026-09-12 ✅ ci.yml android job 首跑全绿（run 34665015108）：clippy android target
+   （经 cargo ndk 包裹）+ 宿主单测 + assembleArm64Release + APK artifact。修复两处
+   android-cfg clippy 盲区 lint（3f5fad847）。M1 全部切片完成
 3. **M1 切片 3**：README/版本串对齐
    → 2026-09-12 README 两处已对齐（版本串 M2、transport adapter 表述改待 RFC）；RFC 状态行仍待用户批准
 
