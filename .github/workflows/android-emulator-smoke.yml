@@ -83,39 +83,48 @@ jobs:
         working-directory: apps/android-browser
         run: ./gradlew --no-daemon :app:assembleEmulatorDebug
 
-      # 镜像优先 API 36（与 evidence/local-toolchain-bootstrap 对齐），server 无此包则回落 API 35
+      # API 35 google_apis：CI 实证最稳的平衡档（API 36 首轮实证 300s 内 adb 不上线，见
+      # run 34703425006）；无此包则回落 API 34。镜像缺包失败立即回落，镜像在但 boot 慢由
+      # 后续 boot 步骤暴露。
       - name: Install emulator and system image
         run: |
           SDKM="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
-          IMG="system-images;android-36;google_apis;x86_64"
+          IMG="system-images;android-35;google_apis;x86_64"
           yes | "$SDKM" --install "emulator" "$IMG" > sdkmanager-install.log 2>&1 \
-            || { IMG="system-images;android-35;google_apis;x86_64"; yes | "$SDKM" --install "emulator" "$IMG" > sdkmanager-install.log 2>&1; }
+            || { IMG="system-images;android-34;google_apis;x86_64"; yes | "$SDKM" --install "emulator" "$IMG" > sdkmanager-install.log 2>&1; }
           tail -5 sdkmanager-install.log
           echo "SMOKE_IMAGE=$IMG" >> "$GITHUB_ENV"
 
       - name: Create AVD
         run: echo no | "$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager" create avd -n zeroweb-smoke -k "$SMOKE_IMAGE" -d pixel
 
+      # adb server 先起：emulator 启动期注册到已存在的 server，避免晚起 server 的注册竞态。
+      # -cores 4 + -memory 4096 压首启 dexopt 时长；-no-metrics 防 CI 上的遥测卡顿。
       - name: Boot emulator (headless, swiftshader)
         run: |
+          "$ANDROID_HOME/platform-tools/adb" start-server
           "$ANDROID_HOME/emulator/emulator" -avd zeroweb-smoke \
             -no-window -gpu swiftshader_indirect -no-audio -no-boot-anim \
-            -no-snapshot -camera-back none -camera-front none \
+            -no-snapshot -no-metrics -camera-back none -camera-front none \
+            -cores 4 -memory 4096 \
             > emulator-boot.log 2>&1 &
 
       - name: Wait for boot completion
         run: |
           ADB="$ANDROID_HOME/platform-tools/adb"
-          timeout 300 "$ADB" wait-for-device
+          timeout 600 "$ADB" wait-for-device || true
+          "$ADB" devices -l || true
           boot=""
-          for i in $(seq 1 90); do
-            boot=$("$ADB" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')
+          for i in $(seq 1 120); do
+            boot=$(timeout 10 "$ADB" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')
             [ "$boot" = "1" ] && break
             sleep 5
           done
           if [ "$boot" != "1" ]; then
             echo "::error::emulator boot timed out"
-            tail -30 emulator-boot.log
+            pgrep -af qemu || pgrep -af emulator || true
+            "$ADB" devices -l || true
+            tail -50 emulator-boot.log || true
             exit 1
           fi
           api=$("$ADB" shell getprop ro.build.version.sdk | tr -d '\r')
@@ -141,8 +150,11 @@ jobs:
         run: |
           mkdir -p smoke-logs
           ADB="$ANDROID_HOME/platform-tools/adb"
-          "$ADB" logcat -d > smoke-logs/logcat.txt 2>&1 || true
-          "$ADB" shell ps -A -o USER,NAME > smoke-logs/ps.txt 2>&1 || true
+          # adb 对 offline 设备可能无限等待，一律 timeout 包裹防 hang（首轮实证）
+          timeout 60 "$ADB" devices -l > smoke-logs/adb-devices.txt 2>&1 || true
+          timeout 90 "$ADB" logcat -d > smoke-logs/logcat.txt 2>&1 || true
+          timeout 60 "$ADB" shell ps -A -o USER,NAME > smoke-logs/ps.txt 2>&1 || true
+          pgrep -af qemu > smoke-logs/emulator-process.txt 2>&1 || true
           cp emulator-boot.log sdkmanager-install.log smoke-logs/ 2>/dev/null || true
 
       - name: Upload smoke diagnostics
