@@ -197,6 +197,226 @@ pub fn apply_filter(fb: &mut FrameBuffer, filter: &FilterPrimitive, scale: f32) 
     }
 }
 
+/// 直 alpha 语义的 CSS 滤镜应用（R4283 alpha 保真 slice 3，filter-effects-1 §8）。
+///
+/// 输入帧为**直 alpha**（isolate 离屏 dual-matte 产物，A 承载元素形状）：
+/// - `Opacity(a)`：`A' = A·a`，RGB 不变（直 alpha 定义——opacity(0) = 全透明，
+///   不再依赖「主帧恒 255」前提的变暗模拟）
+/// - `Blur`：premultiply → RGBA 四通道 box-blur → unpremultiply（alpha 轮廓随
+///   模糊扩散）
+/// - 色算子：RGB 公式与主帧路径一致，**A 透传**
+/// - `DropShadow`：no-op（painter 的 ShadowPrimitive 近似已随子树发射，双绘防护
+///   与主帧路径一致）
+///
+/// 与主帧 `apply_filter` 的分工：主帧 A 恒 255、背景已烧入，Opacity 无法得知
+/// 局部背景色（彩色底不可能正确），只能变暗近似——直 alpha 路径从机制上消除该
+/// 近似（先隔离后应用，spec 语义）。
+pub fn apply_filter_straight_alpha(fb: &mut FrameBuffer, filters: &[FilterKind], scale: f32) {
+    if filters.is_empty() || fb.width == 0 || fb.height == 0 {
+        return;
+    }
+    // 全帧作用域：调用方（isolate 离屏）帧即 region 像素，无需 rect 裁剪。
+    let left = 0u32;
+    let top = 0u32;
+    let right = fb.width;
+    let bottom = fb.height;
+
+    for f in filters {
+        match f {
+            FilterKind::Opacity(amount) => {
+                let amt = *amount;
+                for idx in (0..fb.data.len()).step_by(4) {
+                    fb.data[idx + 3] = (fb.data[idx + 3] as f32 * amt).round().clamp(0.0, 255.0) as u8;
+                }
+            }
+            FilterKind::Blur(radius) => {
+                let r = (radius * scale).ceil() as usize;
+                if r > 0 {
+                    apply_box_blur_premultiplied(fb, left, top, right, bottom, r);
+                }
+            }
+            FilterKind::Brightness(amount) => {
+                apply_region_color_op(fb, left, top, right, bottom, |p| {
+                    [
+                        (p[0] as f32 * amount).round().clamp(0.0, 255.0) as u8,
+                        (p[1] as f32 * amount).round().clamp(0.0, 255.0) as u8,
+                        (p[2] as f32 * amount).round().clamp(0.0, 255.0) as u8,
+                        p[3],
+                    ]
+                });
+            }
+            FilterKind::Contrast(amount) => {
+                apply_region_color_op(fb, left, top, right, bottom, |p| {
+                    [
+                        ((p[0] as f32 - 128.0) * amount + 128.0).round().clamp(0.0, 255.0) as u8,
+                        ((p[1] as f32 - 128.0) * amount + 128.0).round().clamp(0.0, 255.0) as u8,
+                        ((p[2] as f32 - 128.0) * amount + 128.0).round().clamp(0.0, 255.0) as u8,
+                        p[3],
+                    ]
+                });
+            }
+            FilterKind::Grayscale(amount) => {
+                apply_region_color_op(fb, left, top, right, bottom, |p| {
+                    let gray = p[0] as f32 * 0.299 + p[1] as f32 * 0.587 + p[2] as f32 * 0.114;
+                    [
+                        (p[0] as f32 + (gray - p[0] as f32) * amount).round().clamp(0.0, 255.0) as u8,
+                        (p[1] as f32 + (gray - p[1] as f32) * amount).round().clamp(0.0, 255.0) as u8,
+                        (p[2] as f32 + (gray - p[2] as f32) * amount).round().clamp(0.0, 255.0) as u8,
+                        p[3],
+                    ]
+                });
+            }
+            FilterKind::HueRotate(degrees) => {
+                let angle = degrees.to_radians();
+                let cos_a = angle.cos();
+                let sin_a = angle.sin();
+                apply_region_color_op(fb, left, top, right, bottom, |p| {
+                    let [r, g, b] = hue_rotate(p[0], p[1], p[2], cos_a, sin_a);
+                    [r, g, b, p[3]]
+                });
+            }
+            FilterKind::Invert(amount) => {
+                apply_region_color_op(fb, left, top, right, bottom, |p| {
+                    [
+                        (p[0] as f32 + (255.0 - 2.0 * p[0] as f32) * amount)
+                            .round()
+                            .clamp(0.0, 255.0) as u8,
+                        (p[1] as f32 + (255.0 - 2.0 * p[1] as f32) * amount)
+                            .round()
+                            .clamp(0.0, 255.0) as u8,
+                        (p[2] as f32 + (255.0 - 2.0 * p[2] as f32) * amount)
+                            .round()
+                            .clamp(0.0, 255.0) as u8,
+                        p[3],
+                    ]
+                });
+            }
+            FilterKind::Saturate(amount) => {
+                apply_region_color_op(fb, left, top, right, bottom, |p| {
+                    let gray = p[0] as f32 * 0.299 + p[1] as f32 * 0.587 + p[2] as f32 * 0.114;
+                    [
+                        (gray + (p[0] as f32 - gray) * amount).round().clamp(0.0, 255.0) as u8,
+                        (gray + (p[1] as f32 - gray) * amount).round().clamp(0.0, 255.0) as u8,
+                        (gray + (p[2] as f32 - gray) * amount).round().clamp(0.0, 255.0) as u8,
+                        p[3],
+                    ]
+                });
+            }
+            FilterKind::Sepia(amount) => {
+                apply_region_color_op(fb, left, top, right, bottom, |p| {
+                    let sr = (p[0] as f32 * 0.393 + p[1] as f32 * 0.769 + p[2] as f32 * 0.189).min(255.0);
+                    let sg = (p[0] as f32 * 0.349 + p[1] as f32 * 0.686 + p[2] as f32 * 0.168).min(255.0);
+                    let sb = (p[0] as f32 * 0.272 + p[1] as f32 * 0.534 + p[2] as f32 * 0.131).min(255.0);
+                    [
+                        (p[0] as f32 + (sr - p[0] as f32) * amount).round().clamp(0.0, 255.0) as u8,
+                        (p[1] as f32 + (sg - p[1] as f32) * amount).round().clamp(0.0, 255.0) as u8,
+                        (p[2] as f32 + (sb - p[2] as f32) * amount).round().clamp(0.0, 255.0) as u8,
+                        p[3],
+                    ]
+                });
+            }
+            FilterKind::DropShadow(..) => {}
+        }
+    }
+}
+
+/// 区域逐像素色算子（RGB 变换，A 透传）。
+fn apply_region_color_op(
+    fb: &mut FrameBuffer,
+    left: u32,
+    top: u32,
+    right: u32,
+    bottom: u32,
+    op: impl Fn([u8; 4]) -> [u8; 4],
+) {
+    for y in top..bottom {
+        for x in left..right {
+            let p = fb.get_pixel(x, y);
+            fb.set_pixel(x, y, op(p));
+        }
+    }
+}
+
+/// premultiplied 域的四通道 box-blur（单遍双向，与 [`apply_box_blur`] 同为单遍
+/// 盒模糊近似等级）：blur 前乘 alpha、blur 后除回——alpha 轮廓（半透明边缘）
+/// 正确扩散，RGB 不从透明像素「漏色」。
+fn apply_box_blur_premultiplied(fb: &mut FrameBuffer, left: u32, top: u32, right: u32, bottom: u32, radius: usize) {
+    let w = (right - left) as usize;
+    let h = (bottom - top) as usize;
+    // 逐像素 premultiply 到临时缓冲（[f32] 免中间舍入）。
+    let mut buf = vec![0.0f32; w * h * 4];
+    for y in top..bottom {
+        for x in left..right {
+            let p = fb.get_pixel(x, y);
+            let a = p[3] as f32 / 255.0;
+            let i = ((y - top) as usize * w + (x - left) as usize) * 4;
+            buf[i] = p[0] as f32 * a;
+            buf[i + 1] = p[1] as f32 * a;
+            buf[i + 2] = p[2] as f32 * a;
+            buf[i + 3] = p[3] as f32;
+        }
+    }
+    box_blur_f32(&mut buf, w, h, radius);
+    // unpremultiply 回直 alpha 写回。
+    for y in top..bottom {
+        for x in left..right {
+            let i = ((y - top) as usize * w + (x - left) as usize) * 4;
+            let a = buf[i + 3];
+            let inv = if a > 0.5 { 1.0 / (a / 255.0) } else { 0.0 };
+            fb.set_pixel(
+                x,
+                y,
+                [
+                    (buf[i] * inv).round().clamp(0.0, 255.0) as u8,
+                    (buf[i + 1] * inv).round().clamp(0.0, 255.0) as u8,
+                    (buf[i + 2] * inv).round().clamp(0.0, 255.0) as u8,
+                    a.round().clamp(0.0, 255.0) as u8,
+                ],
+            );
+        }
+    }
+}
+
+/// [f32] 平面（RGBA premultiplied，行优先 4 通道）的单遍双向 box-blur：前缀和
+/// 窗口均值，边界按钳位窗口宽归一（与 apply_box_blur 的近似等级一致）。
+fn box_blur_f32(buf: &mut [f32], w: usize, h: usize, radius: usize) {
+    if radius == 0 || buf.len() < w * h * 4 {
+        return;
+    }
+    let mut tmp = vec![0.0f32; buf.len()];
+    let mut prefix = vec![0.0f32; (w.max(h) + 1) * 4];
+    // 水平
+    for y in 0..h {
+        let row = y * w * 4;
+        for c in 0..4 {
+            prefix[c] = 0.0;
+            for x in 0..w {
+                prefix[(x + 1) * 4 + c] = prefix[x * 4 + c] + buf[row + x * 4 + c];
+            }
+            for x in 0..w {
+                let lo = x.saturating_sub(radius);
+                let hi = (x + radius).min(w - 1);
+                tmp[row + x * 4 + c] = (prefix[(hi + 1) * 4 + c] - prefix[lo * 4 + c]) / (hi - lo + 1) as f32;
+            }
+        }
+    }
+    // 垂直
+    for x in 0..w {
+        let col = x * 4;
+        for c in 0..4 {
+            prefix[c] = 0.0;
+            for y in 0..h {
+                prefix[(y + 1) * 4 + c] = prefix[y * 4 + c] + tmp[y * w * 4 + col + c];
+            }
+            for y in 0..h {
+                let lo = y.saturating_sub(radius);
+                let hi = (y + radius).min(h - 1);
+                buf[y * w * 4 + col + c] = (prefix[(hi + 1) * 4 + c] - prefix[lo * 4 + c]) / (hi - lo + 1) as f32;
+            }
+        }
+    }
+}
+
 /// 对帧缓冲指定区域应用 box-blur（单遍，双向）。
 fn apply_box_blur(fb: &mut FrameBuffer, left: u32, top: u32, right: u32, bottom: u32, radius: usize) {
     let w = (right - left) as usize;

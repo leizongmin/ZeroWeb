@@ -19,6 +19,8 @@ mod effects;
 mod gradient;
 mod shadow;
 
+pub use effects::apply_filter_straight_alpha;
+
 use crate::geometry::Rect;
 mod stroke;
 

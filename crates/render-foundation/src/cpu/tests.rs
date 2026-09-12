@@ -2679,3 +2679,51 @@ fn straight_alpha_dual_matte_recovers_semitransparent_fill() {
         px[3]
     );
 }
+
+#[test]
+fn straight_alpha_filter_opacity_multiplies_alpha() {
+    // R4283 slice 3：直 alpha Opacity 写 A 分量（opacity(0)=全透明、opacity(0.5)
+    // A 减半、RGB 不变）——主帧变暗模拟的机制性替代。
+    let mut fb = FrameBuffer::new_filled(4, 1, 200, 30, 40, 255);
+    fb.set_pixel(1, 0, [200, 30, 40, 128]);
+    apply_filter_straight_alpha(&mut fb, &[FilterKind::Opacity(0.0), FilterKind::Opacity(0.5)], 1.0);
+    // opacity(0) 全透明（A=0；直 alpha 下 RGB 为 don't-care，实现保留原 RGB）
+    assert_eq!(fb.get_pixel(0, 0)[3], 0);
+    // opacity(0)·opacity(0.5) = opacity(0)（声明序累积）
+    assert_eq!(fb.get_pixel(1, 0)[3], 0);
+
+    let mut fb2 = FrameBuffer::new_filled(2, 1, 200, 30, 40, 255);
+    fb2.set_pixel(1, 0, [200, 30, 40, 128]);
+    apply_filter_straight_alpha(&mut fb2, &[FilterKind::Opacity(0.5)], 1.0);
+    let opaque = fb2.get_pixel(0, 0);
+    assert_eq!((opaque[0], opaque[1], opaque[2]), (200, 30, 40), "RGB unchanged");
+    assert!((124..=130).contains(&opaque[3]), "alpha 255·0.5≈128, got {}", opaque[3]);
+    let semi = fb2.get_pixel(1, 0);
+    assert!((60..=68).contains(&semi[3]), "alpha 128·0.5≈64, got {}", semi[3]);
+}
+
+#[test]
+fn straight_alpha_filter_color_ops_pass_alpha_through() {
+    let mut fb = FrameBuffer::new_filled(2, 1, 100, 100, 100, 255);
+    fb.set_pixel(1, 0, [255, 0, 0, 140]);
+    apply_filter_straight_alpha(&mut fb, &[FilterKind::Invert(1.0)], 1.0);
+    let px = fb.get_pixel(1, 0);
+    assert_eq!((px[0], px[1], px[2]), (0, 255, 255), "invert on RGB");
+    assert_eq!(px[3], 140, "alpha passthrough");
+}
+
+#[test]
+fn straight_alpha_filter_blur_spreads_alpha() {
+    // 不透明块 blur 后 alpha 轮廓向外扩散（透明区出现中间 alpha，premultiplied
+    // 域无透明像素漏色）。
+    let mut fb = FrameBuffer::new(40, 1); // 透明底
+    for x in 10..30 {
+        fb.set_pixel(x, 0, [255, 0, 0, 255]);
+    }
+    apply_filter_straight_alpha(&mut fb, &[FilterKind::Blur(2.0)], 1.0);
+    let inside = fb.get_pixel(20, 0);
+    assert_eq!((inside[3], inside[0]), (255, 255), "interior stays opaque red");
+    let edge = fb.get_pixel(9, 0);
+    assert!(edge[3] > 0 && edge[3] < 255, "alpha spreads outward, got {:?}", edge);
+    assert!(edge[0] > 200, "no dark leak from transparent pixels, got {:?}", edge);
+}

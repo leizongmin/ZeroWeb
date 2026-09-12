@@ -688,37 +688,53 @@ impl RenderPipeline {
                 &[],
                 &[],
             );
-            // 多 url() 引用按声明序顺序链应用：上一链输出作为下一链 SourceGraphic
-            // （filter-effects-1 #FilterProperty <filter-value-list> 顺序合成）。
+            // R4283 slice 3：链步骤按 CSS <filter-value-list> **声明序**交错应用
+            //（filter-effects-1 §7.1 顺序合成）——function 项走 CPU 直 alpha 应用
+            //（straight-alpha 语义：Opacity 写 A 分量、色算子 A 透传），url 项走
+            // resvg 链；上一步输出作为下一步 SourceGraphic。
             let mut pixels: Option<Vec<u8>> = None;
-            for fid in &iso.filter_node_ids {
+            for step in &iso.steps {
                 let source = pixels.take().unwrap_or_else(|| fb.data.clone());
-                let applied = (|| -> Option<Vec<u8>> {
-                    let Some(wrapper) = crate::paint::svg_filter_chain::build_wrapper_svg(
-                        doc,
-                        *fid,
-                        &iso.region,
-                        &source,
-                        self.document_base.as_deref(),
-                    ) else {
-                        if std::env::var("ZW_URL_CHAIN_DEBUG").as_deref() == Ok("1") {
-                            eprintln!("[url-chain] key={} build_wrapper_svg -> None", iso.key);
-                        }
-                        return None;
-                    };
-                    match zero_render_foundation::image_cache::rasterize_svg_at(wrapper.as_bytes(), w, h) {
-                        Ok(data) => Some(data.pixels),
-                        Err(e) => {
-                            if std::env::var("ZW_URL_CHAIN_DEBUG").as_deref() == Ok("1") {
-                                eprintln!("[url-chain] key={} rasterize err: {e}", iso.key);
+                match step {
+                    crate::paint::svg_filter_chain::FilterStep::Function(kind) => {
+                        let mut step_fb = zero_render_foundation::surface::FrameBuffer::from_rgba(source, w, h)
+                            .expect("isolate 像素长度由离屏栅格化保证");
+                        zero_render_foundation::cpu::apply_filter_straight_alpha(
+                            &mut step_fb,
+                            std::slice::from_ref(kind),
+                            1.0,
+                        );
+                        pixels = Some(step_fb.data);
+                    }
+                    crate::paint::svg_filter_chain::FilterStep::Url(fid) => {
+                        let applied = (|| -> Option<Vec<u8>> {
+                            let Some(wrapper) = crate::paint::svg_filter_chain::build_wrapper_svg(
+                                doc,
+                                *fid,
+                                &iso.region,
+                                &source,
+                                self.document_base.as_deref(),
+                            ) else {
+                                if std::env::var("ZW_URL_CHAIN_DEBUG").as_deref() == Ok("1") {
+                                    eprintln!("[url-chain] key={} build_wrapper_svg -> None", iso.key);
+                                }
+                                return None;
+                            };
+                            match zero_render_foundation::image_cache::rasterize_svg_at(wrapper.as_bytes(), w, h) {
+                                Ok(data) => Some(data.pixels),
+                                Err(e) => {
+                                    if std::env::var("ZW_URL_CHAIN_DEBUG").as_deref() == Ok("1") {
+                                        eprintln!("[url-chain] key={} rasterize err: {e}", iso.key);
+                                    }
+                                    None
+                                }
                             }
-                            None
+                        })();
+                        pixels = applied;
+                        if pixels.is_none() {
+                            break; // 链应用失败 → 全透明回退
                         }
                     }
-                })();
-                pixels = applied;
-                if pixels.is_none() {
-                    break; // 链应用失败 → 全透明回退
                 }
             }
             let applied = pixels.unwrap_or_else(|| [0, 0, 0, 0].repeat(w as usize * h as usize));

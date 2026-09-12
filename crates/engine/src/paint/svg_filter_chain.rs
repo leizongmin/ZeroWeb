@@ -23,10 +23,20 @@ pub(crate) struct FilterIsolate {
     pub primitives: zero_render_foundation::primitive::RenderPrimitives,
     /// filter region（页面绝对坐标，宽高向下取整供栅格化）。
     pub region: Rect,
-    /// 被引用的 `<filter>` 元素节点（多引用按声明序顺序链应用）。
-    pub filter_node_ids: Vec<zero_dom::NodeId>,
+    /// filter 链步骤（R4283 slice 3：function / url 混合列表按 CSS
+    /// `<filter-value-list>` 声明序交错应用，filter-effects-1 §7.1）。
+    pub steps: Vec<FilterStep>,
     /// 主遍占位 ImagePrimitive 的 canvas_images key。
     pub key: u64,
+}
+
+/// filter 链的单个步骤（R4283 slice 3）：CSS filter 函数或 SVG `<filter>` 引用。
+#[derive(Clone, Debug)]
+pub(crate) enum FilterStep {
+    /// CSS filter-function 项（render-foundation CPU 直 alpha 应用）。
+    Function(zero_render_foundation::primitive::FilterKind),
+    /// url(#id) 引用的 `<filter>` 元素（resvg 链应用）。
+    Url(zero_dom::NodeId),
 }
 
 /// R4276 门禁②：空 `<filter>`（无原语子元素）= 恒等链（resvg 空链输出透明，

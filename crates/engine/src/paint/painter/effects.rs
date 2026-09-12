@@ -1541,7 +1541,7 @@ fn smooth_circle_coverage(radius: f32, distance: f32) -> f32 {
 }
 
 /// 将 ComputedStyle 中的 filter 值转换为渲染层 FilterKind。
-fn filter_computed_to_kind(value: &FilterComputedValue) -> Option<FilterKind> {
+pub(super) fn filter_computed_to_kind(value: &FilterComputedValue) -> Option<FilterKind> {
     match value {
         FilterComputedValue::None => Some(FilterKind::Blur(0.0)),
         FilterComputedValue::Blur(px) => Some(FilterKind::Blur(*px)),
