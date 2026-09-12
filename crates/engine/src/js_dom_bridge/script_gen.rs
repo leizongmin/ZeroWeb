@@ -29,6 +29,12 @@ pub struct DomEventDetail {
     /// `SubmitEvent.submitter`——触发 submit 的按钮唯一选择器（R2984）。click submit button → 该按钮；
     /// Enter 隐式提交 → None（spec：表单默认提交按钮或 null）。
     pub submitter: Option<String>,
+    /// MouseEvent.clientX——视口 CSS 坐标（CDP `Input.dispatchMouseEvent` → DOM 指针事件；
+    /// Playwright hit-target 拦截器经 `event.clientX/Y` 复核命中点，缺省 undefined 会被判
+    /// 未命中 → "html intercepts pointer events"）。
+    pub client_x: Option<f32>,
+    /// MouseEvent.clientY——同上。
+    pub client_y: Option<f32>,
 }
 
 fn escape_js_string(s: &str) -> String {
@@ -75,8 +81,10 @@ pub fn script_dispatch_dom_event(selector: &str, event_type: &str, detail: Optio
             let ctrl_key = d.ctrl_key;
             let alt_key = d.alt_key;
             let meta_key = d.meta_key;
+            let client_x = d.client_x.map(|v| format!("{v}")).unwrap_or_else(|| "null".to_string());
+            let client_y = d.client_y.map(|v| format!("{v}")).unwrap_or_else(|| "null".to_string());
             format!(
-                "{{key:{key},code:{code},submitter:{submitter},data:{data},inputType:{input_type},isComposing:{is_composing},shiftKey:{shift_key},ctrlKey:{ctrl_key},altKey:{alt_key},metaKey:{meta_key}}}"
+                "{{key:{key},code:{code},submitter:{submitter},data:{data},inputType:{input_type},isComposing:{is_composing},shiftKey:{shift_key},ctrlKey:{ctrl_key},altKey:{alt_key},metaKey:{meta_key},clientX:{client_x},clientY:{client_y}}}"
             )
         }
     };

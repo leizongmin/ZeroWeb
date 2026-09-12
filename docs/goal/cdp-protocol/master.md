@@ -2,7 +2,7 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-13（S9：objectId 全量 remoteObject 桥落地——Runtime/DOM 域句柄面 + 表达式语义修复，绿步 6→17；expected-green 基线同步扩至 17 步）
+**最后更新**: 2026-09-13（S10：click hit-target 修复——合成鼠标事件 clientX/Y + mousemove 送达 + 视口提示校正，绿步 17→23；expected-green 基线扩至 23 步）
 
 ---
 
@@ -33,6 +33,24 @@
 
 ## 已完成切片
 
+- **S10（2026-09-13）click hit-target 修复 — 合成输入事件面 + 视口真值**：
+  S9 后 click 族卡「PW hit-target 拦截器判 `<html> intercepts pointer events`」，三层实测定位：
+  ① PW `_hitTargetInterceptor` 读 `event.clientX/clientY` 复核命中点——宿主合成鼠标事件走
+  `_makeEvent` 泛型面无坐标（undefined → elementFromPoint(undefined) → null → documentElement
+  兜底）；② renderer `handle_mouse_event` 对 mousemove 直接跳过派发——拦截器挂 document
+  mousemove 捕获收不到事件。修复：`DomEventDetail` 增 `client_x/client_y`（engine script_gen）
+  + shim `__zw_dispatch_event` 新增鼠标类型分支（`new MouseEvent` 带 coords/click detail，
+  UI Events §MouseEventInit）+ renderer 坐标随事件注入 + mousemove 照常派发（未命中目标时
+  dispatch_dom_at 内部 no-op）。**click 事件保持泛型 Event 不入鼠标分支**——R108 pre-click
+  activation/取消回滚协议与宿主激活事务（execute_shared_action）的 checked 翻转/取消语义按
+  旧路径协作（实测：click 改 MouseEvent 会双重翻转 checked 且破坏三宿主 conformance）。
+  ③ `screenshot.fullPage`：shim innerWidth/
+  innerHeight 缺省 1280x800 与真实视口失配（PW `_fullPageSize` 以 scrollWidth 族测量）——
+  js_worker 增 `SetViewportHint`（renderer 启动/SetViewport 时注入，快照换代后幂等校正）。
+  **Playwright 绿步 17→23**（click.button/dblclick/withPosition + dialog.accept/confirm+prompt
+  + screenshot.fullPage 翻绿）；deterministic 双跑一致；expected-green 基线同步扩至 23。
+  诊断资产：tests/playwright-matrix/scripts/{raw-min,debug-zw-pw}.mjs（不入 git 调试脚本：
+  局部复现 + 捕获代理 + 事件字段探测）。
 - **S9（2026-09-13）objectId 全量 remoteObject 桥 — Runtime/DOM 域句柄面（用户拍板全量面）**：
   protocol `AutomationValue::Handle(AutomationHandleRef{id,node})` + 四操作
   `EvaluateRetaining/CallFunctionOnHandle/ReleaseHandle/ReleaseObjectGroup`（含 serde 契约
@@ -136,20 +154,20 @@
 
 ## 下一步计划
 
-1. **click 命中目标（S9 实测新定位，解锁 click 族 4 步 + network.events + frames.click）**：
-   PW click 管线已通到 `Input.dispatchMouseEvent`（quads/scroll/adopt 全绿），卡最后一步
-   hit-target 复查——**鼠标事件分发后 `elementFromPoint(点击点)` 返回 `<html>`**（分发前
-   同坐标同查询返回 BUTTON，实测）；疑似 renderer ElementFromPointCache 在合成输入 /
-   publish 后失效或坐标基错位。定位点：`ElementFromPointBridge` cache 生命周期 ×
-   renderer 输入事务 publish 时序。
+1. **network.events 的 `#btn-fetch` 点击超时（S10 实测收窄）**：hit-target 修复后
+   `#btn` 点击可过（带重试），但 `#btn-fetch` 首次点击的 hit-target 复查静默失败并无限
+   重试——capture 显示 resolve/quads/坐标全对（534.4,100.12 → quads 正确）、拦截器
+   elementFromPoint(534,100) 返回正确元素、无 JS 异常——疑点收窄到拦截器 `expectHitTarget`
+   的 `hitParents` 走链对「adopt 句柄实例 vs 命中实例」的身份判定或 polling 时序；
+   下轮先以 DEBUG=pw:api + 拦截器返回值插值定位。解锁 network.events + frames.click+evaluate。
 2. **console value-only 小切片（P5，console.collect 1 步）**：shim `(level, args[])` JSON
    序列化 + callbacks.rs 签名扩展 + headless 转 `Runtime.consoleAPICalled`（args 用
    value-only remoteObject 形状）。碰前核对 shim console 段活跃度。
-3. **小修清单（S9 实测定位，各 1 步）**：`keyboard.type+press`（fill 后 type 值 "abca"
-   累积语义——查 shim input value 与 fill 交互）；`screenshot.fullPage`（getLayoutMetrics
-   contentSize 报 shim innerWidth 假值 1280x800 vs 真实 frame 800x600——改取 session
-   viewport）；`page.setContent`（shim `document.open` 缺失）；`emulation.media`
-   （SetColorScheme 已发但 `matchMedia` 读回 false——prefers-color-scheme 求值链核对）。
+3. **小修清单（各 1 步）**：`keyboard.type+press`（Ctrl+A 全选编辑面缺失——type 'abc' 后
+   Ctrl+A no-op + Enter 插入，值 'abca'；需 shim input 选区/全选语义，编辑面属 engine 域）；
+   `page.setContent`（shim `document.open` 缺失——PW setContent 走 document.open/write/close
+   三连）；`emulation.media`（SetColorScheme 已发但 `matchMedia("(prefers-color-scheme: dark)")`
+   读回 false——shim matchMedia 与 host color-scheme 接线核对）。
 4. **Network dataReceived**（proxy_fetch 读 body 循环加 chunk 观测点，net 窗口已开）。
 5. **dialog ×2 步决策（维持待用户）**：`dialog.accept`/`dialog.confirm+prompt` 依赖
    `javascriptDialogOpening` 事件源（引擎无阻塞对话框语义）——立项引擎对话框语义（跨流域）
@@ -171,10 +189,10 @@
 | 里程碑 | 状态 |
 |--------|------|
 | M1 — 传输/发现/Target 基座 + Playwright 首连 | ✅ S9 收口：连接面 + evaluate 全族（literal/function/withArgs/object/async）+ releaseObject(Group) 全通 |
-| M2 — Page/Input 域 → 点击/填充/键盘/导航流 | 🚧 S9：goto/title/fill/键盘裸 API/导航事件族绿；click 挂 hit-target（renderer elementFromPoint 时序） |
-| M3 — DOM/CSS/Emulation → locator 流 | 🚧 S9：locator.boundingBox/viewport/媒体/截图 clip+element 绿；click 族挂 hit-target；iframe 面维持挂起 |
+| M2 — Page/Input 域 → 点击/填充/键盘/导航流 | 🚧 S10：goto/title/fill/click 全族/dialog/键盘裸 API/导航事件族绿；#btn-fetch 点击静默失败待查（下步 #1） |
+| M3 — DOM/CSS/Emulation → locator 流 | 🚧 S10：locator.boundingBox/viewport/媒体/截图 clip+element+fullPage 绿；iframe 面维持挂起 |
 | M4 — Network/cookies/console 对象化（cookie 落点=Storage 域） | 🚧 S9：cookie 域 + UA override + Network 事件雏形绿；console value-only 小切片待做；dataReceived 待 net 观测点 |
-| M5 — 矩阵收口 | 🚧 绿步 17/30（expected-green 基线同步扩至 17）；余项根因全部定位（click hit-target/console/小修清单/dialog 决策/frames 挂起） |
+| M5 — 矩阵收口 | 🚧 绿步 23/30（expected-green 基线同步扩至 23）；余 7 步根因定位（#btn-fetch 点击/console/编辑面/document.open/colorScheme/frames 挂起） |
 
 ## 验证基线
 

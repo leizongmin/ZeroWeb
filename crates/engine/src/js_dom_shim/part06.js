@@ -11342,6 +11342,22 @@
         altKey: !!detail.altKey,
         metaKey: !!detail.metaKey
       });
+    } else if (type === 'mousedown' || type === 'mouseup' || type === 'mousemove'
+               || type === 'contextmenu' || type === 'mouseover' || type === 'mouseout') {
+      // UI Events §MouseEventInit：指针事件带视口坐标（detail.clientX/Y 由宿主注入——CDP
+      // Input.dispatchMouseEvent 的 x/y）。Playwright hit-target 拦截器在 mousemove/mousedown
+      // 上读 event.clientX/Y 复核命中点；缺省 undefined → elementFromPoint(undefined) → null
+      // → 误判 "html intercepts pointer events"（cdp-protocol S10 实测根因）。
+      // **click/dblclick 不在此分支**：保持 _makeEvent 泛型 Event——R108 pre-click activation
+      // / 取消回滚协议与宿主激活事务（execute_shared_action）的 checked 翻转/取消语义按旧
+      // 路径协作；改成 MouseEvent 会双重翻转（webdriver http_session）且破坏三宿主
+      // conformance（html_compat across-hosts 实测回归）。
+      ev = new MouseEvent(type, {
+        bubbles: true,
+        cancelable: true,
+        clientX: (detail && typeof detail.clientX === 'number') ? detail.clientX : 0,
+        clientY: (detail && typeof detail.clientY === 'number') ? detail.clientY : 0,
+      });
     } else {
       ev = _makeEvent(type, { bubbles: true, cancelable: true });
     }

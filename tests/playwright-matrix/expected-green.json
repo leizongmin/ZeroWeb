@@ -1,8 +1,13 @@
 {
-  "description": "ZeroWeb CDP E2E 期望绿步骤基线（M5 收口门）——任一步骤回退即 make cdp-e2e 失败。S9 后基线扩至 17 步；余 13 步挂 click hit-target/console/dialog/frames，见 master.md 下一步计划。",
+  "description": "ZeroWeb CDP E2E 期望绿步骤基线（M5 收口门）——任一步骤回退即 make cdp-e2e 失败。S10 后基线扩至 23 步；余 7 步挂 #btn-fetch 点击/console/编辑面/document.open/colorScheme/frames，见 master.md 下一步计划。",
   "expected_green": [
+    "click.button",
+    "click.dblclick",
+    "click.withPosition",
     "context.default",
     "cookies.roundtrip",
+    "dialog.accept",
+    "dialog.confirm+prompt",
     "evaluate.async",
     "evaluate.function",
     "evaluate.literal",
@@ -16,6 +21,7 @@
     "page.setViewportSize",
     "page.title",
     "screenshot.element",
+    "screenshot.fullPage",
     "screenshot.viewport",
     "viewport.verified"
   ]

@@ -85,6 +85,13 @@ enum JsWorkerCommand {
     ResetDocumentState {
         reply: Sender<()>,
     },
+    /// 视口提示（renderer 真实窗口尺寸）：快照换代后 shim `innerWidth/innerHeight` 缺省
+    /// 1280x800 与真实视口不一致——首次 install 后按 hint 校正（幂等 guard，仅在失配时
+    /// 调 `__zw_user_resize`）。CDP 面 PW fullPage 尺寸测量（scrollWidth 族）依赖真值。
+    SetViewportHint {
+        width: u32,
+        height: u32,
+    },
     DispatchIndexedDbConnectionEvent {
         connection_id: u64,
         old_version: u64,
@@ -253,6 +260,12 @@ impl RendererJsWorker {
     /// 在 JS 线程执行脚本（不经 WebView 包装）。
     pub fn execute_script_direct(&self, script: &str) -> Result<String, String> {
         (self.executor)(script)
+    }
+
+    /// 注入真实视口尺寸提示（shim `innerWidth/innerHeight` 缺省 1280x800 的校正源；
+    /// renderer 启动与 `SetViewport` 时各发一次，worker 在快照换代后按需校正）。
+    pub fn set_viewport_hint(&self, width: u32, height: u32) {
+        let _ = self.cmd_tx.send(JsWorkerCommand::SetViewportHint { width, height });
     }
 
     /// 脚本执行前更新 DOM HTML 快照与页面 URL。
@@ -591,6 +604,7 @@ fn js_worker_main(
     if let Err(e) = sandbox.execute(shim) {
         tracing::error!("JS DOM shim init failed: {e}");
     }
+    let mut viewport_hint: (u32, u32) = (0, 0);
 
     while let Ok(cmd) = cmd_rx.recv() {
         match cmd {
@@ -611,6 +625,16 @@ fn js_worker_main(
                 let _ = reply.send(result);
             }
             JsWorkerCommand::SetDomSnapshot { html, url } => {
+                // 视口提示校正：shim 缺省 innerWidth/innerHeight 1280x800 与真实视口失配时
+                // （首次 install 后必失配）按 hint 校正（幂等——匹配即 no-op，零事件噪声）。
+                if viewport_hint.0 > 0 && viewport_hint.1 > 0 {
+                    let guard = format!(
+                        "if (typeof __zw_user_resize === 'function' && (globalThis.innerWidth !== {w} || globalThis.innerHeight !== {h})) __zw_user_resize({w}, {h});",
+                        w = viewport_hint.0,
+                        h = viewport_hint.1
+                    );
+                    let _ = sandbox.execute(&guard);
+                }
                 // P1a form input：URL 变化（导航）→ 清 shim value 缓存，防跨页同选择器 stale value。
                 let url_changed = page_url.lock().map(|u| *u != url).unwrap_or(true);
                 if let Ok(mut snap) = dom_html.lock() {
@@ -662,6 +686,13 @@ fn js_worker_main(
                 // media-audio M3：注册 Web Audio 宿主桥（`__zwWA*` 回调族——多进程
                 // 路径 AudioContext 最小面 NullSink 可观测，镜像 browser 路径）。
                 zero_webview::webaudio_registry::register_webaudio_bridge_callbacks(&mut *sandbox, registry);
+            }
+            JsWorkerCommand::SetViewportHint { width, height } => {
+                viewport_hint = (width, height);
+                let guard = format!(
+                    "if (typeof __zw_user_resize === 'function' && (globalThis.innerWidth !== {width} || globalThis.innerHeight !== {height})) __zw_user_resize({width}, {height});"
+                );
+                let _ = sandbox.execute(&guard);
             }
             JsWorkerCommand::ResetDocumentState { reply } => {
                 // https://html.spec.whatwg.org/multipage/browsing-the-web.html#navigate

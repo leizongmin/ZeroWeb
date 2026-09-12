@@ -288,6 +288,9 @@ impl RendererRuntime {
         // test 构建不注入（renderer runtime 单测用合成 handler）。
         #[cfg(not(test))]
         js_worker.set_fetch_handler(crate::js_worker::default_fetch_handler());
+        // 视口提示初值：renderer 默认 1280x800（webview config 同源）——快照换代后 shim
+        // innerWidth/innerHeight 校正（headless 经 SetViewport 覆写为真实值）。
+        js_worker.set_viewport_hint(1280, 800);
         // B3：renderer 内部持有 WebView，渲染/字体/脚本全经 WebView（与 tabworker 同一页面运行时）。
         // external_script 委派 js_worker（避免双 V8）；font_resolver 设到 WebView（paint 字体面）。
         let mut webview = zero_webview::WebView::new(zero_webview::WebViewConfig {
@@ -1108,15 +1111,34 @@ impl RendererRuntime {
     }
 
     fn dispatch_checked_click(&mut self, target: String) -> Result<(DomDispatchResult, bool), String> {
+        self.dispatch_checked_click_with_pointer(target, DomEventDetail::default())
+    }
+
+    /// [`Self::dispatch_checked_click`] 带指针坐标变体：click 事件携带 clientX/Y（CDP
+    /// Input 面的 PW hit-target 拦截器读坐标复核；W3C WebDriver 面用缺省值）。
+    fn dispatch_checked_click_with_pointer(
+        &mut self,
+        target: String,
+        pointer_detail: DomEventDetail,
+    ) -> Result<(DomDispatchResult, bool), String> {
         if !zero_engine::is_checkbox(&self.cached_html, &target) && !zero_engine::is_radio(&self.cached_html, &target) {
-            return Ok((self.dispatch_dom_at(Some(target), 0.0, 0.0, "click", None), false));
+            return Ok((
+                self.dispatch_dom_at(Some(target), 0.0, 0.0, "click", Some(pointer_detail)),
+                false,
+            ));
         }
         self.interaction.set_pointer_target(target.clone());
         let Some(result) = self.execute_shared_action(&target, zero_page_runtime::HtmlUserAction::Activate)? else {
-            return Ok((self.dispatch_dom_at(Some(target), 0.0, 0.0, "click", None), false));
+            return Ok((
+                self.dispatch_dom_at(Some(target), 0.0, 0.0, "click", Some(pointer_detail)),
+                false,
+            ));
         };
         if result.noop_reason == Some(zero_page_runtime::ActionNoopReason::AlreadySelected) {
-            return Ok((self.dispatch_dom_at(Some(target), 0.0, 0.0, "click", None), true));
+            return Ok((
+                self.dispatch_dom_at(Some(target), 0.0, 0.0, "click", Some(pointer_detail)),
+                true,
+            ));
         }
         Ok((
             DomDispatchResult {
@@ -1958,6 +1980,8 @@ impl RendererRuntime {
         } else {
             1.0
         };
+        // 同步 worker 视口提示（快照换代后 shim innerWidth/innerHeight 校正源）。
+        self.js_worker.set_viewport_hint(params.width, params.height);
         if let Some(wv) = self.webview.as_mut() {
             wv.resize(params.width, params.height);
         }
@@ -2185,6 +2209,14 @@ impl RendererRuntime {
             MouseEventType::Click => "click",
             MouseEventType::DblClick => "dblclick",
         };
+        // 指针坐标随事件注入（UI Events MouseEventInit）——CDP Input 面 Playwright
+        // hit-target 拦截器经 event.clientX/Y 复核命中点（S10 实测：缺坐标 → 误判
+        // "html intercepts pointer events"）。
+        let pointer_detail = DomEventDetail {
+            client_x: Some(params.x),
+            client_y: Some(params.y),
+            ..Default::default()
+        };
         let (dispatch_result, checked_handled) = if event_type == "click" {
             let target = self
                 .webview
@@ -2192,18 +2224,19 @@ impl RendererRuntime {
                 .and_then(|webview| webview.hit_test_element(params.x, params.y))
                 .map(|hit| selector_from_element_hit(&hit));
             if let Some(target) = target {
-                self.dispatch_checked_click(target)?
+                self.dispatch_checked_click_with_pointer(target, pointer_detail)?
             } else {
-                (self.dispatch_dom_at(None, params.x, params.y, event_type, None), false)
+                (
+                    self.dispatch_dom_at(None, params.x, params.y, event_type, Some(pointer_detail)),
+                    false,
+                )
             }
-        } else if event_type != "mousemove" {
-            (self.dispatch_dom_at(None, params.x, params.y, event_type, None), false)
         } else {
+            // mousemove 照常派发（P1a 此前跳过——页面 hover 面与命中拦截面（PW hit-target
+            // 拦截器挂 document mousemove 捕获）依赖其送达；未命中目标时 dispatch_dom_at
+            // 内部无选择器即 no-op）。
             (
-                DomDispatchResult {
-                    default_allowed: true,
-                    html_changed: false,
-                },
+                self.dispatch_dom_at(None, params.x, params.y, event_type, Some(pointer_detail)),
                 false,
             )
         };
