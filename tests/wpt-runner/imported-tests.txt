@@ -338,3 +338,6 @@ css/css-overflow/scroll-markers/scroll-buttons-001.html css/css-overflow/scroll-
 css/css-overflow/scroll-markers/scroll-buttons-002.html css/css-overflow/scroll-markers/scroll-buttons-001-ref.html == 2026-09-12 R4262 ::scroll-button(<direction>) 函数伪元素解析 + 按钮盒流位合成（auto 高度切片 1）
 css/css-overflow/scroll-markers/scroll-buttons-003.html css/css-overflow/scroll-markers/scroll-buttons-001-ref.html == 2026-09-12 R4262 ::scroll-button(<direction>) 函数伪元素解析 + 按钮盒流位合成（auto 高度切片 1）
 css/css-overflow/scroll-markers/scroll-buttons-004.html css/css-overflow/scroll-markers/scroll-buttons-001-ref.html == 2026-09-12 R4262 ::scroll-button(<direction>) 函数伪元素解析 + 按钮盒流位合成（auto 高度切片 1）
+css/css-overflow/scroll-markers/scroll-buttons-layout-parent.html css/reference/ref-filled-green-100px-square.xht == 2026-09-12 R4263 ::scroll-button 后置兄弟流位合成（flex 父 + 负 margin 拉回覆盖源）
+css/css-overflow/scroll-markers/scroll-button-reattachment-position.html css/css-overflow/scroll-markers/scroll-button-reattachment-position-ref.html == 2026-09-12 R4263 按钮作者 position:fixed 参与 + OOF 源静态流位锚定
+css/css-overflow/scroll-markers/scroll-buttons-disabled-snapping.html css/css-overflow/scroll-markers/scroll-buttons-disabled-snapping-ref.html == 2026-09-12 R4263 按钮后置兄弟流位 + * 通配（disabled 语义差异带内）

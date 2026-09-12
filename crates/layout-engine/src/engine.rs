@@ -1933,87 +1933,6 @@ impl LayoutEngine {
             }
         }
 
-        // R4262（CSS Overflow 5 §scroll-buttons）：`::scroll-button(<direction>)` 按钮盒
-        // 合成——元素有 content 非 normal 方向的按钮伪样式时，按 canonical 方向合成流位
-        // 按钮盒（无 taffy 节点，同组盒）。gate = **auto 高度**（按钮参与元素流：start 系
-        // 方向置于内容前并整体下移流内子、end 系置于内容后；definite 高度 scroller 的
-        // 按钮是 scrollport 边缘绝对定位，后续切片建模）。尺寸须 Px（非 Px 按钮跳过）。
-        // 001 型实证（chromium）：空 div + block-start/block-end 各 100×50 → 纵向流位
-        // 堆叠 100×100；`*` 通配 → 4 方向各一盒。
-        if let Some(owner_style) = computed.and_then(|s| s.scroll_buttons.as_deref())
-            && matches!(computed.map(|s| &s.height), Some(LengthValue::Auto))
-        {
-            let mut start_boxes: Vec<LayoutBox> = Vec::new();
-            let mut end_boxes: Vec<LayoutBox> = Vec::new();
-            let mut h_start = 0.0f32;
-            let mut h_end = 0.0f32;
-            for (slot, style) in &owner_style.buttons {
-                let (bw, bh) = match (&style.width, &style.height) {
-                    (LengthValue::Px(w), LengthValue::Px(h)) if w.is_finite() && h.is_finite() => {
-                        (*w as f32, *h as f32)
-                    }
-                    _ => continue,
-                };
-                // 族内累计 y（start 系自内容顶向上预留、end 系自内容底向下；end 系的
-                // h_start 平移在循环后补——canonical 序 start/end 交错，循环内 h_start
-                // 未终值）。
-                let y_in_family = if matches!(slot, 0 | 2) { h_start } else { h_end };
-                let btn = LayoutBox {
-                    node_id: dom_id,
-                    x: 0.0,
-                    y: y_in_family,
-                    width: bw,
-                    height: bh,
-                    content_x: 0.0,
-                    content_y: 0.0,
-                    content_width: bw,
-                    content_height: bh,
-                    declared_width_px: Some(bw),
-                    // 流位按钮盒：块级（免 remeasure 误判 inline 子）、float none
-                    //（坐标已烘焙）。
-                    scroll_button_dir: *slot,
-                    is_block_level: true,
-                    ..Default::default()
-                };
-                if matches!(slot, 0 | 2) {
-                    h_start += bh;
-                    start_boxes.push(btn);
-                } else {
-                    h_end += bh;
-                    end_boxes.push(btn);
-                }
-            }
-            for b in &mut end_boxes {
-                b.y += h_start;
-            }
-            if h_start > 0.0 {
-                // start 系按钮置于内容前：流内子整体下移（abspos/fixed 坐标约定独立，
-                // 不随流位移——同 content-rel 换算的跳过条件）。
-                for child in &mut children_boxes {
-                    if !child.is_absolute && !child.is_fixed {
-                        child.y += h_start;
-                    }
-                }
-                content_height += h_start;
-            }
-            if h_end > 0.0 {
-                content_height += h_end;
-            }
-            if h_start + h_end > 0.0 {
-                let frame = border_top + border_bottom + padding_top + padding_bottom;
-                if content_height + frame > height {
-                    height = content_height + frame;
-                }
-                // R3867 帧体量纪律：Box 化。
-                let mut start_ptr = start_boxes.into_iter().map(Box::new).collect::<Vec<_>>();
-                let end_ptr = end_boxes.into_iter().map(Box::new).collect::<Vec<_>>();
-                for (i, b) in start_ptr.drain(..).enumerate() {
-                    children_boxes.insert(i, *b);
-                }
-                children_boxes.extend(end_ptr.into_iter().map(|b| *b));
-            }
-        }
-
         // R4257（CSS Overflow 5 §scroll-marker-group）：`::scroll-marker-group` 组盒合成——
         // 元素声明 `scroll-marker-group` 非 none 且伪样式存在时，在滚动内容前/后合成组盒
         // LayoutBox（无 taffy 节点：taffy 子节点会被 scroll-sizing/DOM 内容高度后处理
@@ -2168,6 +2087,184 @@ impl LayoutEngine {
                     children_boxes.insert(0, *group_box);
                 } else {
                     children_boxes.push(*group_box);
+                }
+            }
+        }
+
+        // R4263（CSS Overflow 5 §scroll-buttons）：`::scroll-button` 按钮**后置兄弟流位**
+        // 合成（父级 pass）——spec §3.2 按钮生成为源元素的兄弟盒；chromium reftest 实证为
+        // **后置**兄弟：reattachment-position 的 fixed 源流位槽被按钮顶替（绿绘于红上 =
+        // ref）、layout-parent 的 `margin-left:-100px` 把源右缘流位拉回覆盖源（[sc
+        // 0..100][btn 0..50][btn 50..100] = ref）。按钮是**父容器**流内盒（源内子位会被
+        // overflow 裁剪，不可达该几何）：block-flow 父纵向堆叠于源底缘后、flex row 父横向
+        // 接续于源右缘；后续同容器流内兄弟按按钮主轴外延整体平移；block-flow 父按 extent
+        // 扩高。fixed/absolute 源 OOF：按钮覆其静态流位（x/y 锚源盒原点）、仍平移后续
+        // 兄弟（按钮顶替其流位槽）。尺寸/边距须 Px（非 Px 跳过该按钮）。
+        // R1502 同型守卫：合成盒坐标烘焙，shift_siblings_after_ifc_grow 对按钮盒跳过
+        //（postprocess 同步落点）。
+        let self_display_flex = matches!(
+            computed.map(|s| &s.display),
+            Some(DisplayValue::Flex | DisplayValue::InlineFlex)
+        );
+        if self_display_flex
+            || matches!(
+                computed.map(|s| &s.display),
+                Some(DisplayValue::Block | DisplayValue::Flow | DisplayValue::FlowRoot | DisplayValue::ListItem)
+            )
+        {
+            let flex_row = self_display_flex
+                && matches!(
+                    computed.map(|s| &s.flex_direction),
+                    Some(FlexDirectionValue::Row | FlexDirectionValue::RowReverse)
+                );
+            // 相位 1：收集按钮规格（子 idx、OOF、各方向尺寸边距）。布局解算前置收集，
+            // 避免相位 2 的 children_boxes 可变借用与 styles 查表交织。
+            struct BtnGeometry {
+                dir: u8,
+                w: f32,
+                h: f32,
+                ml: f32,
+                mr: f32,
+                mt: f32,
+                mb: f32,
+                is_abs: bool,
+                is_fix: bool,
+            }
+            struct ButtonSpec {
+                child_idx: usize,
+                oof: bool,
+                buttons: Vec<BtnGeometry>,
+            }
+            let mut collected: Vec<ButtonSpec> = Vec::new();
+            for (idx, child) in children_boxes.iter().enumerate() {
+                if child.is_r109_split {
+                    continue;
+                }
+                let Some(entry) = child
+                    .node_id
+                    .and_then(|id| styles.get(&id))
+                    .and_then(|s| s.scroll_buttons.as_deref())
+                else {
+                    continue;
+                };
+                let mut buttons = Vec::new();
+                for (slot, style) in &entry.buttons {
+                    let px = |l: &LengthValue| match l {
+                        LengthValue::Px(n) if n.is_finite() => Some(*n as f32),
+                        _ => None,
+                    };
+                    let (Some(w), Some(h)) = (px(&style.width), px(&style.height)) else {
+                        continue;
+                    };
+                    let m = |l: &LengthValue| match l {
+                        LengthValue::Px(n) if n.is_finite() => *n as f32,
+                        _ => 0.0,
+                    };
+                    buttons.push(BtnGeometry {
+                        dir: *slot,
+                        w,
+                        h,
+                        ml: m(&style.margin_left),
+                        mr: m(&style.margin_right),
+                        mt: m(&style.margin_top),
+                        mb: m(&style.margin_bottom),
+                        is_abs: matches!(style.position, PositionValue::Absolute),
+                        is_fix: matches!(style.position, PositionValue::Fixed),
+                    });
+                }
+                if !buttons.is_empty() {
+                    collected.push(ButtonSpec {
+                        child_idx: idx,
+                        oof: child.is_absolute || child.is_fixed,
+                        buttons,
+                    });
+                }
+            }
+            // 相位 2：顺序插入 + 后续兄弟平移（先前插入的主轴平移对后续锚点已即时生效）。
+            let mut inserted = 0usize;
+            let mut max_btn_bottom = 0.0f32;
+            for spec in collected {
+                let i = spec.child_idx + inserted;
+                let (cx, cy, cw, ch) = {
+                    let c = &children_boxes[i];
+                    (c.x, c.y, c.width, c.height)
+                };
+                let mut btns: Vec<LayoutBox> = Vec::new();
+                let mut cursor = if flex_row { cx + cw } else { cy + ch };
+                for BtnGeometry {
+                    dir,
+                    w,
+                    h,
+                    ml,
+                    mr,
+                    mt,
+                    mb,
+                    is_abs,
+                    is_fix,
+                } in spec.buttons
+                {
+                    let (bx, by) = if spec.oof {
+                        // OOF 源：按钮覆其静态流位（源盒原点 + 边距）。
+                        (cx + ml, cy + mt)
+                    } else if flex_row {
+                        (cursor + ml, cy + mt)
+                    } else {
+                        (ml, cursor + mt)
+                    };
+                    let bottom = by + h + mb;
+                    if bottom > max_btn_bottom {
+                        max_btn_bottom = bottom;
+                    }
+                    btns.push(LayoutBox {
+                        node_id: children_boxes[i].node_id,
+                        x: bx,
+                        y: by,
+                        width: w,
+                        height: h,
+                        content_x: 0.0,
+                        content_y: 0.0,
+                        content_width: w,
+                        content_height: h,
+                        declared_width_px: Some(w),
+                        declared_height_auto: false,
+                        // 作者 position 参与（reattachment-position：按钮 position:fixed
+                        // 后与 fixed 源同层叠段绘序——否则静态按钮被 positioned-descendant
+                        // 阶段的 fixed 源盖住）。坐标已烘焙 = 静态流位（无 inset）。
+                        is_absolute: is_abs,
+                        is_fixed: is_fix,
+                        // 流位按钮盒：块级（免 remeasure 误判 inline 子）；坐标烘焙。
+                        scroll_button_dir: dir,
+                        is_block_level: true,
+                        ..Default::default()
+                    });
+                    cursor += if flex_row { ml + w + mr } else { mt + h + mb };
+                }
+                let extent = if flex_row {
+                    cursor - (cx + cw)
+                } else {
+                    cursor - (cy + ch)
+                };
+                let btn_count = btns.len();
+                children_boxes.splice(i + 1..i + 1, btns);
+                // 仅平移插入块之后的真实兄弟（不含本次插入的按钮盒）。
+                for s in children_boxes[i + 1 + btn_count..].iter_mut() {
+                    if s.is_absolute || s.is_fixed {
+                        continue;
+                    }
+                    if flex_row {
+                        s.x += extent;
+                    } else {
+                        s.y += extent;
+                    }
+                }
+                inserted += btn_count;
+            }
+            // block-flow 父扩高（flex 行高由 taffy item 驱动，不在此扩）。
+            if !flex_row && max_btn_bottom > content_height {
+                content_height = max_btn_bottom;
+                let frame = border_top + border_bottom + padding_top + padding_bottom;
+                if content_height + frame > height {
+                    height = content_height + frame;
                 }
             }
         }

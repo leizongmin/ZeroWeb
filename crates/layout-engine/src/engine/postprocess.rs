@@ -1041,7 +1041,10 @@ fn shift_siblings_after_ifc_grow_inner(
     // 「prev.bottom > next.y」重叠模型把同行并排的 marker 逐个下推（group-015：2×2 装箱
     // 被改写为 (0,0)/(50,50)/(0,100)/(50,150) 对角 zigzag，文件式 trace t16 实证）。整组
     // 跳过：组盒自身仍作为兄弟参与父级链位移与父高回填（调用方循环处理），仅不下钻。
-    if box_node.is_scroll_marker_group {
+    // R4263：::scroll-button 合成按钮盒同理——坐标 = extract 期流位终值，flex row 父内
+    // 并排按钮被「prev.bottom > next.y」误判重叠逐个下推（layout-parent 同型）；按钮盒
+    // 为叶，直接跳过（父级兄弟链中由调用方循环统一处理其位移贡献）。
+    if box_node.is_scroll_marker_group || box_node.scroll_button_dir != 255 {
         return;
     }
     // 真实元素 + block-level + 非 R109-split + display 为参与垂直块流的盒型。Block/Flow/FlowRoot/
@@ -1191,9 +1194,12 @@ fn shift_siblings_after_ifc_grow_inner(
             || child.is_fixed
             || child.is_relative
             || child.is_sticky
+            || child.scroll_button_dir != 255
             || !matches!(child.float, FloatValue::None);
         if skip {
-            // 仍下钻（子可能是 block-flow 容器）。
+            // 仍下钻（子可能是 block-flow 容器）。R4263：::scroll-button 合成盒叶（坐标
+            // 烘焙）——不入 prev/shiftee 链（flex row 并排按钮被重叠模型逐个下推），
+            // 亦不被累积位移改写。
             shift_siblings_after_ifc_grow_inner(child, styles, children_inside_multicol, parent_backfill);
             continue;
         }
