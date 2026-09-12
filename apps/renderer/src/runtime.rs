@@ -321,11 +321,6 @@ impl RendererRuntime {
             });
             js_worker.set_fetch_handler(observer);
         }
-        // P1b S3 / R2923（镜像 browser tab_worker）：注入生产 fetch handler（经 ResourceLoader 真实 HTTP，
-        // 支持全方法/头/体）。js_worker 早于 WebView 创建；共享加载器不依赖 WebView 句柄，故可立即注入。
-        // test 构建不注入（renderer runtime 单测用合成 handler）。
-        #[cfg(not(test))]
-        js_worker.set_fetch_handler(crate::js_worker::default_fetch_handler());
         // 视口提示初值：renderer 默认 1280x800（webview config 同源）——快照换代后 shim
         // innerWidth/innerHeight 校正（headless 经 SetViewport 覆写为真实值）。
         js_worker.set_viewport_hint(1280, 800);
@@ -2251,17 +2246,14 @@ impl RendererRuntime {
     /// phase/seq 语义见 protocol `FetchObservedParams`。
     fn tick_fetch_observed_drain(&mut self) {
         for (phase, seq, url, method, status) in self.js_worker.take_fetch_observed() {
-            if let Err(e) = self.send_regular(IpcMessageKind::FetchObserved(
-                zero_protocol::message::FetchObservedParams {
-                    phase,
-                    seq,
-                    url,
-                    method,
-                    status,
-                },
-            )) {
-                tracing::debug!("forward fetch observed: {e}");
-            }
+            let send_result = self.send_regular(IpcMessageKind::FetchObserved(
+                zero_protocol::message::FetchObservedParams { phase, seq, url, method, status },
+            ));
+            std::fs::write(
+                "/tmp/zw-s14-send.log",
+                std::format!("tick send phase={phase} seq={seq} ok={:?}", send_result.is_ok()),
+            )
+            .ok();
         }
     }
 
