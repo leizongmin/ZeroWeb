@@ -397,6 +397,149 @@ fn test_json_targets_enumerates_real_tabs() {
     assert!(!ids.contains(&"zeroweb-main"), "static placeholder id retired");
 }
 
+// ── M2：导航事件族 / 布局面 / 注入脚本 / Input 域 ──
+
+#[test]
+fn test_navigation_event_family_sequence() {
+    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let mut session = HeadlessSession::new(800.0, 600.0);
+    server.set_auto_attach(true);
+    let (result, events) = server.dispatch_with_events(&mut session, "Target.createTarget", serde_json::json!({}));
+    result.unwrap();
+    let sid = events[0].params["sessionId"].as_str().unwrap().to_string();
+    let target_id = events[0].params["targetInfo"]["targetId"].as_str().unwrap().to_string();
+
+    let mut nav_events = Vec::new();
+    server.emit_navigation_event_family(
+        &mut session,
+        Some(&sid),
+        &target_id,
+        "zw-loader-1",
+        "http://x/",
+        &mut nav_events,
+    );
+    let methods: Vec<&str> = nav_events.iter().map(|e| e.method.as_str()).collect();
+    assert_eq!(
+        methods,
+        vec![
+            "Page.frameStartedLoading",
+            "Page.frameNavigated",
+            "Runtime.executionContextsCleared",
+            "Runtime.executionContextCreated",
+            "Page.lifecycleEvent",
+            "Page.domContentEventFired",
+            "Page.lifecycleEvent",
+            "Page.loadEventFired",
+            "Page.frameStoppedLoading",
+        ]
+    );
+    // frameNavigated 的 frame.id 与主 frame id（=targetId）一致
+    assert_eq!(nav_events[1].params["frame"]["id"], target_id.as_str());
+    let load_idx = methods.iter().position(|m| *m == "Page.loadEventFired").unwrap();
+    assert!(matches!(nav_events[load_idx - 1].params["name"].as_str(), Some("load")));
+}
+
+#[test]
+fn test_page_navigate_success_path_via_load_html_page() {
+    // 成功路径的事件族由 Playwright goto 冒烟验收；此处断言注入脚本在导航后重放的
+    // 存储面（emit_navigation_event_family 内部调用 replay）。
+    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let mut session = HeadlessSession::new(800.0, 600.0);
+    let (result, _events) = server.dispatch_with_events(
+        &mut session,
+        "Page.addScriptToEvaluateOnNewDocument",
+        serde_json::json!({ "source": "1;" }),
+    );
+    let identifier = result.unwrap()["identifier"].as_str().unwrap().to_string();
+    assert!(identifier.starts_with("zw-script-"));
+    assert_eq!(session.injected_scripts.len(), 1);
+    assert_eq!(session.injected_scripts[0].identifier, identifier);
+
+    // 重放辅助直接调用（导航成功路径内部同样调用）
+    let mut nav_events = Vec::new();
+    server.emit_navigation_event_family(
+        &mut session,
+        None,
+        "zeroweb-tab-1",
+        "zw-loader-2",
+        "about:blank",
+        &mut nav_events,
+    );
+    assert!(nav_events.iter().any(|e| e.method == "Page.loadEventFired"));
+}
+
+#[test]
+fn test_page_get_layout_metrics_shape() {
+    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let mut session = HeadlessSession::new(800.0, 600.0);
+    let result = server
+        .dispatch(&mut session, "Page.getLayoutMetrics", Value::Null)
+        .unwrap();
+    assert_eq!(result["cssLayoutViewport"]["clientWidth"], 800);
+    assert_eq!(result["cssLayoutViewport"]["clientHeight"], 600);
+    assert_eq!(result["layoutViewport"]["clientWidth"], 800);
+    assert_eq!(result["cssVisualViewport"]["scale"], 1);
+}
+
+#[test]
+fn test_input_dispatch_key_event_ok() {
+    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let mut session = HeadlessSession::new(800.0, 600.0);
+    let params = serde_json::json!({
+        "type": "keyDown", "key": "a", "code": "KeyA",
+        "windowsVirtualKeyCode": 65, "modifiers": 8,
+    });
+    let result = server.dispatch(&mut session, "Input.dispatchKeyEvent", params);
+    assert!(result.is_ok());
+}
+
+#[test]
+fn test_input_dispatch_key_event_char_type() {
+    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let mut session = HeadlessSession::new(800.0, 600.0);
+    let params = serde_json::json!({ "type": "char", "key": "a", "text": "a" });
+    assert!(server.dispatch(&mut session, "Input.dispatchKeyEvent", params).is_ok());
+}
+
+#[test]
+fn test_input_dispatch_mouse_unknown_type_rejected() {
+    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let mut session = HeadlessSession::new(800.0, 600.0);
+    let params = serde_json::json!({ "type": "bogus", "x": 1, "y": 2 });
+    let result = server.dispatch(&mut session, "Input.dispatchMouseEvent", params);
+    assert_eq!(result.unwrap_err().code, -32602);
+}
+
+#[test]
+fn test_input_mouse_press_release_ok() {
+    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let mut session = HeadlessSession::new(800.0, 600.0);
+    let press = serde_json::json!({ "type": "mousePressed", "x": 10, "y": 20, "button": "left", "clickCount": 1 });
+    let release = serde_json::json!({ "type": "mouseReleased", "x": 10, "y": 20, "button": "left", "clickCount": 1 });
+    assert!(server.dispatch(&mut session, "Input.dispatchMouseEvent", press).is_ok());
+    assert!(
+        server
+            .dispatch(&mut session, "Input.dispatchMouseEvent", release)
+            .is_ok()
+    );
+}
+
+#[test]
+fn test_input_insert_text_ok() {
+    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let mut session = HeadlessSession::new(800.0, 600.0);
+    let params = serde_json::json!({ "text": "hello" });
+    assert!(server.dispatch(&mut session, "Input.insertText", params).is_ok());
+}
+
+#[test]
+fn test_input_missing_text_rejected() {
+    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let mut session = HeadlessSession::new(800.0, 600.0);
+    let result = server.dispatch(&mut session, "Input.insertText", Value::Null);
+    assert_eq!(result.unwrap_err().code, -32602);
+}
+
 // ── M1 切片 3：Target 域 + Browser/Runtime 雏形（Playwright 连接脊柱）──
 
 #[test]

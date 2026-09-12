@@ -2,7 +2,7 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-12（M1 切片 3 落地：Playwright 首连成功 + objectId 桥记待用户决策）
+**最后更新**: 2026-09-12（M2 切片落地：goto/导航事件族/Input 域/getLayoutMetrics）
 
 ---
 
@@ -33,6 +33,18 @@
 
 ## 已完成切片
 
+- **S5（2026-09-12）M2 — 导航事件族 + Input 域 + getLayoutMetrics**：
+  `Page.navigate` 实义化（`{frameId,loaderId,errorText?}` 形状 + Chromium 时序导航事件族
+  frameStarted/StoppedLoading→frameNavigated→executionContextsCleared→新文档 context→
+  domContent→load）；`addScriptToEvaluateOnNewDocument` 真执行 + 跨导航重放 + worldName
+  登记/新文档 world context 重发（**实测修复 title/evaluate 在导航后永久挂起**——PW 的
+  `utilityContext()` 等待 world context 事件）；`Page.getLayoutMetrics`（固定视口映射）；
+  `handleJavaScriptDialog` stub；**Input 域全接**：dispatchMouseEvent（→renderer
+  MouseEvent/ScrollEvent，released 按 clickCount 合成 Click/DblClick）、dispatchKeyEvent
+  （Down/Up/Press + modifiers 位解码）、insertText（→ImeEvent Commit）——裸 API 实测
+  keyboard.press/type、mouse click/wheel 全通。**Playwright goto 核心流绿**（47ms）；
+  全流 30 步无挂起（此前 title/evaluate 挂起根因即 world context 缺失）。make test
+  19,194P/0F（+10 M2 单测）。
 - **S4（2026-09-12）M1 切片 3 — Target/Browser/Runtime 域 + Playwright 首连**：
   `Target.setAutoAttach`（flatten，浏览器级附接全部 page target + attachedToTarget 事件，
   会话级正确语义=仅子 target→无事件）/ `getTargetInfo`（浏览器级+按 targetId）/
@@ -71,16 +83,13 @@
 
 ## 下一步计划
 
-1. **M2（转域推进，objectId 桥挂起等决策）**：Page 导航事件族（frameNavigated/
-   frameStarted/StoppedLoading/lifecycleEvent/loadEventFired 实义化，addScript 注入源
-   真执行 + 新文档持久化）+ Page.getLayoutMetrics + handleJavaScriptDialog +
-   Input.dispatch 双域接 host 管线 → goto/click/fill/keyboard 核心流（均 value-only，
-   不依赖 objectId 桥）
-2. **M3**：DOM 句柄桥 + Emulation.setDeviceMetricsOverride 实义（当前 -32601）+
-   setEmulatedMedia 实义
-3. **M4**：Network 事件总线 + Storage cookie 域 + console 对象化
-4. **objectId 桥获批后**：renderer/protocol/engine 跨 crate 对象注册表（evaluate/
-   locator 流收口）
+1. **M3**：Emulation.setDeviceMetricsOverride 实义（viewport 桥接 SetViewport IPC，
+   当前 -32601 阻 2 步）+ setEmulatedMedia 实义 + iframe 帧模型（frameAttached 事件族，
+   frames.access 步骤依赖）+ Page.captureScreenshot clip/format
+2. **M4**：Storage cookie 域（阻 cookies.roundtrip 1 步）+ Network 事件总线（P6）+
+   console 对象化（P5）
+3. **objectId 桥获批后**：renderer/protocol/engine 跨 crate 对象注册表——收口
+   evaluate/locator/click/fill 全族（~20 步，占差距大头）
 
 **待用户决策清单**：
 - **objectId 句柄桥（深结构，2026-09-12 实测确认）**：Playwright evaluate/locator 全
@@ -97,7 +106,7 @@
 | 里程碑 | 状态 |
 |--------|------|
 | M1 — 传输/发现/Target 基座 + Playwright 首连 | 🚧 连接面全通（S4：connect/attach/newPage ✓）；evaluate 收口卡 objectId 桥（待用户决策） |
-| M2 — Page/Input 域 → 点击/填充/键盘/导航流 | ⏳ 下一里程碑（value-only，不受 objectId 桥阻塞） |
+| M2 — Page/Input 域 → 点击/填充/键盘/导航流 | 🚧 S5：goto 绿 + Input 域全通 + 导航事件族；locator 类点击/填充仍挂 objectId 桥（value-only 面已尽） |
 | M3 — DOM/CSS/Emulation → locator 流 | ⏳ |
 | M4 — Network/cookies/console 对象化（cookie 落点=Storage 域） | ⏳ |
 | M5 — 矩阵收口 | ⏳ |

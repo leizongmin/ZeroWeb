@@ -7,6 +7,7 @@ use zero_browser_shell::TabId;
 use zero_protocol::message::AutomationValue;
 #[cfg(not(test))]
 use zero_protocol::message::{IpcMessage, IpcMessageKind};
+use zero_protocol::message::{KeyboardEventType, MouseEventType};
 use zero_render_foundation::cpu::render_full_scene;
 use zero_render_foundation::font::cache::GlyphCache;
 use zero_render_foundation::font::loader::FontLoader;
@@ -15,7 +16,7 @@ use zero_render_foundation::surface::FrameBuffer;
 use super::HeadlessServer;
 
 use super::protocol::{ProtocolError, ServerEvent};
-use super::session::HeadlessSession;
+use super::session::{HeadlessSession, InjectedScript};
 
 /// R1601：把 RGBA8 FrameBuffer 编码为 base64 PNG 字符串，供 `captureScreenshot`
 /// 协议响应携带像素数据（headless 截图用于像素对比，DC-13 line 315）。
@@ -125,11 +126,18 @@ impl HeadlessServer {
             "Log.enable" => Ok(serde_json::json!({})),
             "Page.setLifecycleEventsEnabled" => Ok(serde_json::json!({})),
             "Page.addScriptToEvaluateOnNewDocument" => {
-                let n = self.next_session_id.fetch_add(1, Ordering::SeqCst);
-                Ok(serde_json::json!({ "identifier": format!("zw-script-{n}") }))
+                self.cmd_page_add_script_to_evaluate_on_new_document(session, params)
             }
             "Emulation.setFocusEmulationEnabled" => Ok(serde_json::json!({})),
             "Emulation.setEmulatedMedia" => Ok(serde_json::json!({})),
+            // Page 布局面（M2）：viewport 来自 headless 启动参数（固定视口）
+            "Page.getLayoutMetrics" => Ok(self.cmd_page_get_layout_metrics()),
+            // 对话框：引擎暂无阻塞式 JS 对话语义 → 接受（无 javascriptDialogOpening 事件源）
+            "Page.handleJavaScriptDialog" => Ok(serde_json::json!({})),
+            // Input 域（M2）：CDP 输入 → renderer IPC（MouseEvent/KeyboardEvent/ScrollEvent/ImeEvent）
+            "Input.dispatchMouseEvent" => self.cmd_input_dispatch_mouse_event(session, params),
+            "Input.dispatchKeyEvent" => self.cmd_input_dispatch_key_event(session, params),
+            "Input.insertText" => self.cmd_input_insert_text(session, params),
             // ── 未知命令 ──
             _ => Err(ProtocolError {
                 code: -32601,
@@ -225,18 +233,11 @@ impl HeadlessServer {
                 }
                 (result, events)
             }
-            // CDP 兼容域（Phase 3）
+            // CDP Page.navigate（M2）：{frameId,loaderId} 形状 + 导航事件族
+            //（frameStarted/StoppedLoading、frameNavigated、lifecycle、load/domContent、
+            // executionContextsCleared + 新文档上下文、注入脚本重放）
             "Page.navigate" => {
-                let url = params.get("url").and_then(|v| v.as_str()).unwrap_or("");
-                let nav_params = serde_json::json!({ "url": url });
-                let result = self.cmd_navigate(session, nav_params);
-                if result.is_ok() {
-                    events.push(ServerEvent {
-                        method: "Page.loadEventFired".into(),
-                        params: serde_json::json!({ "timestamp": 0.0 }),
-                        session_id: None,
-                    });
-                }
+                let result = self.cmd_page_navigate(session, cdp_session, params, &mut events);
                 (result, events)
             }
             "Page.captureScreenshot" => (self.cmd_capture_screenshot(session), events),
@@ -248,22 +249,7 @@ impl HeadlessServer {
             // PW 的 _onExecutionContextCreated 无 auxData 时直接丢弃上下文，页面
             // 初始化将永不完成（2026-09-12 首连实测）。
             "Runtime.enable" => {
-                let frame_id = self.session_frame_id(session, cdp_session);
-                events.push(ServerEvent {
-                    method: "Runtime.executionContextCreated".into(),
-                    params: serde_json::json!({
-                        "context": {
-                            "id": 1,
-                            "origin": "://",
-                            "name": "main",
-                            "auxData": {
-                                "frameId": frame_id,
-                                "isDefault": true,
-                            }
-                        }
-                    }),
-                    session_id: None,
-                });
+                self.push_main_world_context_event(session, cdp_session, &mut events);
                 (Ok(serde_json::json!({})), events)
             }
             // Target 域（M1 切片 3，Playwright connectOverCDP 连接脊柱）
@@ -726,6 +712,336 @@ impl HeadlessServer {
                 },
             })),
         }
+    }
+
+    // ── Page 域（M2 — 导航事件族 / 布局面 / 注入脚本）──
+
+    /// Page.addScriptToEvaluateOnNewDocument — 登记并在**当前文档**立即执行；
+    /// 新文档加载后由导航路径重放（ZeroWeb 单引擎：主 world 执行，无 world 隔离）。
+    fn cmd_page_add_script_to_evaluate_on_new_document(
+        &self,
+        session: &mut HeadlessSession,
+        params: Value,
+    ) -> Result<Value, ProtocolError> {
+        let source = params.get("source").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let world_name = params.get("worldName").and_then(|v| v.as_str()).map(str::to_string);
+        let n = self.next_session_id.fetch_add(1, Ordering::SeqCst);
+        let identifier = format!("zw-script-{n}");
+        // 当前文档立即执行（Chromium 对已加载文档同样生效）；失败不阻塞注册
+        let _ = session.execute_script_typed(&source);
+        session.injected_scripts.push(InjectedScript {
+            identifier: identifier.clone(),
+            source,
+            world_name,
+        });
+        Ok(serde_json::json!({ "identifier": identifier }))
+    }
+
+    /// 重放已登记的注入脚本（导航成功后调用；单条失败不阻断其余）。
+    fn replay_injected_scripts(&self, session: &mut HeadlessSession) {
+        let sources: Vec<String> = session
+            .injected_scripts
+            .iter()
+            .map(|script| script.source.clone())
+            .collect();
+        for source in sources {
+            let _ = session.execute_script_typed(&source);
+        }
+    }
+
+    /// 主 world 执行上下文事件（Runtime.enable 与导航后新文档共用）。
+    fn push_main_world_context_event(
+        &self,
+        session: &mut HeadlessSession,
+        cdp_session: Option<&str>,
+        events: &mut Vec<ServerEvent>,
+    ) {
+        let frame_id = self.session_frame_id(session, cdp_session);
+        events.push(ServerEvent {
+            method: "Runtime.executionContextCreated".into(),
+            params: serde_json::json!({
+                "context": {
+                    "id": 1,
+                    "origin": "://",
+                    "name": "main",
+                    "auxData": {
+                        "frameId": frame_id,
+                        "isDefault": true,
+                    }
+                }
+            }),
+            session_id: None,
+        });
+    }
+
+    fn cdp_timestamp_now() -> f64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as f64
+    }
+
+    /// CDP Page.navigate — {frameId, loaderId} 形状；成功后补发导航事件族
+    ///（Chromium 时序：frameStartedLoading → frameNavigated → executionContextsCleared
+    /// → 新文档 context → domContentEventFired → loadEventFired → frameStoppedLoading），
+    /// 并重放 addScriptToEvaluateOnNewDocument 注入脚本。
+    fn cmd_page_navigate(
+        &self,
+        session: &mut HeadlessSession,
+        cdp_session: Option<&str>,
+        params: Value,
+        events: &mut Vec<ServerEvent>,
+    ) -> Result<Value, ProtocolError> {
+        let url = params.get("url").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let frame_id = self.session_frame_id(session, cdp_session);
+        let loader_id = format!("zw-loader-{}", self.next_session_id.fetch_add(1, Ordering::SeqCst));
+
+        let nav_params = serde_json::json!({ "url": url });
+        let result = self.cmd_navigate(session, nav_params);
+        let (success, error_text) = match result {
+            Ok(val) => (val.get("success").and_then(|v| v.as_bool()).unwrap_or(false), None),
+            Err(err) => (false, Some(err.message)),
+        };
+        if !success {
+            return Ok(serde_json::json!({
+                "frameId": frame_id,
+                "loaderId": loader_id,
+                "errorText": error_text.unwrap_or_else(|| "net::ERR_FAILED".into()),
+            }));
+        }
+
+        self.emit_navigation_event_family(session, cdp_session, &frame_id, &loader_id, &url, events);
+        Ok(serde_json::json!({ "frameId": frame_id, "loaderId": loader_id }))
+    }
+
+    /// 导航成功后的事件族（Chromium 时序：frameStartedLoading → frameNavigated →
+    /// executionContextsCleared → 新文档 context → domContent → load → frameStoppedLoading），
+    /// 含注入脚本重放。pub(super) 供单测直测事件序列。
+    pub(super) fn emit_navigation_event_family(
+        &self,
+        session: &mut HeadlessSession,
+        cdp_session: Option<&str>,
+        frame_id: &str,
+        loader_id: &str,
+        url: &str,
+        events: &mut Vec<ServerEvent>,
+    ) {
+        let ts = Self::cdp_timestamp_now();
+        let frame_event = |method: &str| ServerEvent {
+            method: method.into(),
+            params: serde_json::json!({ "frameId": frame_id }),
+            session_id: None,
+        };
+        events.push(frame_event("Page.frameStartedLoading"));
+        events.push(ServerEvent {
+            method: "Page.frameNavigated".into(),
+            params: serde_json::json!({
+                "frame": {
+                    "id": frame_id,
+                    "loaderId": loader_id,
+                    "url": url,
+                    "mimeType": "text/html",
+                }
+            }),
+            session_id: None,
+        });
+        events.push(ServerEvent {
+            method: "Runtime.executionContextsCleared".into(),
+            params: serde_json::json!({}),
+            session_id: None,
+        });
+        self.replay_injected_scripts(session);
+        self.push_main_world_context_event(session, cdp_session, events);
+        // 新文档后重发 world 级 context（如 Playwright utility world——title/evaluate
+        // 管线在 utilityContext() 上等待，缺事件会永久挂起，2026-09-12 实测）
+        let frame_id_str = frame_id.to_string();
+        let worlds: Vec<String> = session
+            .injected_scripts
+            .iter()
+            .filter_map(|script| script.world_name.clone())
+            .collect();
+        for world_name in worlds {
+            let n = self.next_session_id.fetch_add(1, Ordering::SeqCst);
+            events.push(ServerEvent {
+                method: "Runtime.executionContextCreated".into(),
+                params: serde_json::json!({
+                    "context": {
+                        "id": n as i64,
+                        "origin": "://",
+                        "name": world_name,
+                        "auxData": {
+                            "frameId": frame_id_str,
+                            "isDefault": false,
+                        }
+                    }
+                }),
+                session_id: None,
+            });
+        }
+        events.push(ServerEvent {
+            method: "Page.lifecycleEvent".into(),
+            params: serde_json::json!({ "frameId": frame_id, "name": "DOMContentLoaded", "timestamp": ts }),
+            session_id: None,
+        });
+        events.push(ServerEvent {
+            method: "Page.domContentEventFired".into(),
+            params: serde_json::json!({ "timestamp": ts }),
+            session_id: None,
+        });
+        events.push(ServerEvent {
+            method: "Page.lifecycleEvent".into(),
+            params: serde_json::json!({ "frameId": frame_id, "name": "load", "timestamp": ts }),
+            session_id: None,
+        });
+        events.push(ServerEvent {
+            method: "Page.loadEventFired".into(),
+            params: serde_json::json!({ "timestamp": ts }),
+            session_id: None,
+        });
+        events.push(frame_event("Page.frameStoppedLoading"));
+    }
+
+    /// Page.getLayoutMetrics — headless 固定视口（启动参数）映射。
+    fn cmd_page_get_layout_metrics(&self) -> Value {
+        let w = self.viewport_width as i64;
+        let h = self.viewport_height as i64;
+        serde_json::json!({
+            "layoutViewport": { "pageX": 0, "pageY": 0, "clientWidth": w, "clientHeight": h },
+            "visualViewport": {
+                "offsetX": 0, "offsetY": 0, "pageX": 0, "pageY": 0,
+                "clientWidth": w, "clientHeight": h, "scale": 1, "zoom": 1,
+            },
+            "contentSize": { "x": 0, "y": 0, "width": w, "height": h },
+            "cssLayoutViewport": { "pageX": 0, "pageY": 0, "clientWidth": w, "clientHeight": h },
+            "cssVisualViewport": {
+                "offsetX": 0, "offsetY": 0, "pageX": 0, "pageY": 0,
+                "clientWidth": w, "clientHeight": h, "scale": 1, "zoom": 1,
+            },
+            "cssContentSize": { "x": 0, "y": 0, "width": w, "height": h },
+        })
+    }
+
+    // ── Input 域（M2 — CDP 输入 → renderer IPC）──
+
+    /// CDP modifiers 位掩码 → KeyboardEventParams 布尔组（Alt=1 Ctrl=2 Meta=4 Shift=8）。
+    fn decode_modifiers(mask: i64) -> (bool, bool, bool, bool) {
+        (mask & 2 != 0, mask & 8 != 0, mask & 1 != 0, mask & 4 != 0)
+    }
+
+    /// Input.dispatchMouseEvent — mousePressed/Released/Moved/Wheel →
+    /// renderer MouseEvent/ScrollEvent。click 语义：released 时按 clickCount 合成
+    /// Click/DblClick（renderer 侧 `Click` 类型即完整 click DOM 事件合成）。
+    fn cmd_input_dispatch_mouse_event(
+        &self,
+        session: &mut HeadlessSession,
+        params: Value,
+    ) -> Result<Value, ProtocolError> {
+        let event_type = params.get("type").and_then(|v| v.as_str()).unwrap_or("");
+        let x = params.get("x").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
+        let y = params.get("y").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
+        let button = params.get("button").and_then(|v| v.as_str()).unwrap_or("none");
+        let button_id = match button {
+            "left" => 0u8,
+            "middle" => 1,
+            "right" => 2,
+            _ => 0,
+        };
+        let click_count = params.get("clickCount").and_then(|v| v.as_i64()).unwrap_or(0);
+
+        let send = |session: &mut HeadlessSession, m: MouseEventType| {
+            session
+                .send_input_mouse(x, y, button_id, m)
+                .map_err(|error| ProtocolError {
+                    code: -32000,
+                    message: error,
+                })
+        };
+        match event_type {
+            "mousePressed" => {
+                send(session, MouseEventType::Down)?;
+            }
+            "mouseReleased" => {
+                send(session, MouseEventType::Up)?;
+                match click_count {
+                    2 => send(session, MouseEventType::DblClick)?,
+                    1..=i64::MAX => send(session, MouseEventType::Click)?,
+                    _ => {}
+                }
+            }
+            "mouseMoved" => send(session, MouseEventType::Move)?,
+            "mouseWheel" => {
+                let delta_x = params.get("deltaX").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
+                let delta_y = params.get("deltaY").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
+                session
+                    .send_input_scroll(delta_x, delta_y, x, y)
+                    .map_err(|error| ProtocolError {
+                        code: -32000,
+                        message: error,
+                    })?;
+            }
+            other => {
+                return Err(ProtocolError {
+                    code: -32602,
+                    message: format!("Unknown mouse event type: {other}"),
+                });
+            }
+        }
+        Ok(serde_json::json!({}))
+    }
+
+    /// Input.dispatchKeyEvent — keyDown/rawKeyDown→Down、keyUp→Up、char→Press
+    ///（Press 优先用 text 作为输入内容）。
+    fn cmd_input_dispatch_key_event(
+        &self,
+        session: &mut HeadlessSession,
+        params: Value,
+    ) -> Result<Value, ProtocolError> {
+        let event_type = params.get("type").and_then(|v| v.as_str()).unwrap_or("");
+        let key = params.get("key").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let code = params.get("code").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let modifiers = params.get("modifiers").and_then(|v| v.as_i64()).unwrap_or(0);
+        let (ctrl, shift, alt, meta) = Self::decode_modifiers(modifiers);
+        let key_type = match event_type {
+            "keyDown" | "rawKeyDown" => KeyboardEventType::Down,
+            "keyUp" => KeyboardEventType::Up,
+            "char" => KeyboardEventType::Press,
+            other => {
+                return Err(ProtocolError {
+                    code: -32602,
+                    message: format!("Unknown key event type: {other}"),
+                });
+            }
+        };
+        let key_text = params
+            .get("text")
+            .and_then(|v| v.as_str())
+            .filter(|t| !t.is_empty())
+            .unwrap_or(&key)
+            .to_string();
+        session
+            .send_input_key(key_text, code, ctrl, shift, alt, meta, key_type)
+            .map_err(|error| ProtocolError {
+                code: -32000,
+                message: error,
+            })?;
+        Ok(serde_json::json!({}))
+    }
+
+    /// Input.insertText — ImeEvent Commit（合成文本提交）。
+    fn cmd_input_insert_text(&self, session: &mut HeadlessSession, params: Value) -> Result<Value, ProtocolError> {
+        let text = params
+            .get("text")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| ProtocolError {
+                code: -32602,
+                message: "Missing 'text' parameter".into(),
+            })?
+            .to_string();
+        session.send_input_ime_commit(text).map_err(|error| ProtocolError {
+            code: -32000,
+            message: error,
+        })?;
+        Ok(serde_json::json!({}))
     }
 
     // ── Target 域（M1 切片 3 — Playwright connectOverCDP 连接脊柱）──

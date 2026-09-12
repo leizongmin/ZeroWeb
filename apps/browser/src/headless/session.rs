@@ -5,12 +5,14 @@
 use zero_browser_shell::BrowserShell;
 #[cfg(not(test))]
 use zero_net::{HttpClient, HttpMethod, HttpRequest};
-#[cfg(test)]
-use zero_protocol::message::AutomationValue;
 #[cfg(not(test))]
 use zero_protocol::message::{
-    AutomationOperation, AutomationRequest, AutomationResult, AutomationValue, FetchParams, FramePublishMode,
-    IpcMessage, IpcMessageKind, LoadHtmlParams, SetViewportParams,
+    AutomationOperation, AutomationRequest, AutomationResult, FetchParams, FramePublishMode, IpcMessage,
+    IpcMessageKind, LoadHtmlParams, SetViewportParams,
+};
+use zero_protocol::message::{
+    AutomationValue, ImeEventParams, ImeEventType, KeyboardEventParams, KeyboardEventType, MouseEventParams,
+    MouseEventType, ScrollEventParams,
 };
 #[cfg(not(test))]
 use zero_protocol::process::RendererHandle;
@@ -18,6 +20,15 @@ use zero_protocol::process::RendererHandle;
 use zero_webview::{WebView, WebViewConfig};
 
 // ── 会话 ──
+
+/// Page.addScriptToEvaluateOnNewDocument 登记的注入脚本。
+///（ZeroWeb 单引擎无 world 隔离：一律在主 world 执行，见矩阵 createIsolatedWorld 注记。）
+pub(super) struct InjectedScript {
+    pub(super) identifier: String,
+    pub(super) source: String,
+    /// 注册时的 worldName（如 Playwright 的 utility world）；None = 主 world。
+    pub(super) world_name: Option<String>,
+}
 
 /// 浏览器会话。发布构建只持有 renderer IPC；进程内 WebView 仅用于单元测试。
 pub(super) struct HeadlessSession {
@@ -39,6 +50,8 @@ pub(super) struct HeadlessSession {
     pub(super) navigation_epoch: u64,
     #[cfg(not(test))]
     pub(super) next_request_id: u64,
+    /// addScriptToEvaluateOnNewDocument 注册的脚本（新文档加载后重放）。
+    pub(super) injected_scripts: Vec<InjectedScript>,
     /// R3282（#4）：可选 GPU 截图渲染器（`ZW_HEADLESS_GPU_SCREENSHOT=1` 启用；
     /// 默认 CPU——oracle 像素对比基线稳定）。
     pub(super) gpu_renderer: Option<zero_render_foundation::gpu::renderer::GpuRenderer>,
@@ -58,6 +71,7 @@ impl HeadlessSession {
         Self {
             shell,
             webview,
+            injected_scripts: Vec::new(),
             gpu_renderer: None,
         }
     }
@@ -98,6 +112,7 @@ impl HeadlessSession {
             snapshot: crate::tab_snapshot::TabSnapshot::default(),
             navigation_epoch: 0,
             next_request_id: 1,
+            injected_scripts: Vec::new(),
             gpu_renderer: None,
         }
     }
@@ -241,6 +256,88 @@ impl HeadlessSession {
             _ => Ok(AutomationValue::Null),
         }
     }
+
+    /// CDP Input 域 → renderer IPC 发送辅助（见各 send_input_*）。
+    pub(super) fn send_input_mouse(
+        &mut self,
+        x: f32,
+        y: f32,
+        button: u8,
+        event_type: MouseEventType,
+    ) -> Result<(), String> {
+        self.renderer
+            .send(IpcMessage {
+                id: 0,
+                kind: IpcMessageKind::MouseEvent(MouseEventParams {
+                    x,
+                    y,
+                    button,
+                    event_type,
+                }),
+            })
+            .map_err(|error| error.to_string())
+    }
+
+    pub(super) fn send_input_scroll(
+        &mut self,
+        delta_x: f32,
+        delta_y: f32,
+        cursor_x: f32,
+        cursor_y: f32,
+    ) -> Result<(), String> {
+        self.renderer
+            .send(IpcMessage {
+                id: 0,
+                kind: IpcMessageKind::ScrollEvent(ScrollEventParams {
+                    delta_x,
+                    delta_y,
+                    cursor_x,
+                    cursor_y,
+                }),
+            })
+            .map_err(|error| error.to_string())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn send_input_key(
+        &mut self,
+        key: String,
+        code: String,
+        ctrl: bool,
+        shift: bool,
+        alt: bool,
+        meta: bool,
+        event_type: KeyboardEventType,
+    ) -> Result<(), String> {
+        self.renderer
+            .send(IpcMessage {
+                id: 0,
+                kind: IpcMessageKind::KeyboardEvent(KeyboardEventParams {
+                    key,
+                    code,
+                    ctrl,
+                    shift,
+                    alt,
+                    meta,
+                    event_type,
+                }),
+            })
+            .map_err(|error| error.to_string())
+    }
+
+    pub(super) fn send_input_ime_commit(&mut self, text: String) -> Result<(), String> {
+        self.renderer
+            .send(IpcMessage {
+                id: 0,
+                kind: IpcMessageKind::ImeEvent(ImeEventParams {
+                    event_type: ImeEventType::Commit,
+                    text,
+                    cursor_start: None,
+                    cursor_end: None,
+                }),
+            })
+            .map_err(|error| error.to_string())
+    }
 }
 
 impl HeadlessSession {
@@ -257,5 +354,47 @@ impl HeadlessSession {
         {
             self.execute_script_typed_renderer(script)
         }
+    }
+}
+
+#[cfg(test)]
+impl HeadlessSession {
+    /// 测试进程内无 renderer：Input 域 IPC 发送为 no-op（形状断言在域层单测覆盖）。
+    pub(super) fn send_input_mouse(
+        &mut self,
+        _x: f32,
+        _y: f32,
+        _button: u8,
+        _event_type: MouseEventType,
+    ) -> Result<(), String> {
+        Ok(())
+    }
+
+    pub(super) fn send_input_scroll(
+        &mut self,
+        _delta_x: f32,
+        _delta_y: f32,
+        _cursor_x: f32,
+        _cursor_y: f32,
+    ) -> Result<(), String> {
+        Ok(())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn send_input_key(
+        &mut self,
+        _key: String,
+        _code: String,
+        _ctrl: bool,
+        _shift: bool,
+        _alt: bool,
+        _meta: bool,
+        _event_type: KeyboardEventType,
+    ) -> Result<(), String> {
+        Ok(())
+    }
+
+    pub(super) fn send_input_ime_commit(&mut self, _text: String) -> Result<(), String> {
+        Ok(())
     }
 }

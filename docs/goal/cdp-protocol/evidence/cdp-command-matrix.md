@@ -90,23 +90,23 @@ DC-3 基线）。「现状」列以 2026-09-12 `apps/browser/src/headless/`（M1
 | 方法 | 捕获调用 | 参数键 | ZeroWeb 现状 | 计划 |
 |------|---------|--------|--------------|------|
 | `Page.enable` | 13 | — | ✅（S4） | 完成（M1 S4） |
-| `Page.navigate` | 2 | frameId/url/referrerPolicy | ⚠️ 返回 `{url,title,success}` ≠ `{frameId,loaderId}`；无 frameId/referrer 参数 | M2（形状对齐 + 事件族） |
+| `Page.navigate` | 2 | frameId/url/referrerPolicy | ✅（S5：`{frameId,loaderId,errorText?}` 形状 + 导航事件族 + 注入脚本重放） | 完成（M2 S5） |
 | `Page.captureScreenshot` | 3 | captureBeyondViewport/clip/format | ⚠️ 无 clip/format/captureBeyondViewport | M2 |
-| `Page.getLayoutMetrics` | 3 | — | ❌ | M2 |
-| `Page.handleJavaScriptDialog` | 3 | accept/promptText | ❌ | M2 |
-| `Page.addScriptToEvaluateOnNewDocument` | 3 | source/worldName | ⚠️ 返回 identifier（S4）；**source 未真执行/未跨导航持久化** | M2 实义 |
+| `Page.getLayoutMetrics` | 3 | — | ✅（S5：headless 固定视口映射，css* 全字段） | 完成（M2 S5；动态视口随 M3 viewport 桥） |
+| `Page.handleJavaScriptDialog` | 3 | accept/promptText | ⚠️ stub 接受（S5）；引擎无阻塞式对话框语义 → 无 javascriptDialogOpening 事件源 | 事件源随引擎对话框能力 |
+| `Page.addScriptToEvaluateOnNewDocument` | 3 | source/worldName | ✅（S5：真执行 + 跨导航重放 + worldName 登记/新文档 world context 重发；单引擎主 world 执行） | 完成（M2 S5；world 隔离随引擎能力） |
 | `Page.createIsolatedWorld` | 3 | frameId/grantUniveralAccess/worldName | ⚠️ 返回新 contextId + worldName 事件（S4）；world 不隔离（单引擎） | 记账注记；真隔离随引擎能力 |
 | `Page.getFrameTree` | 3 | — | ✅（S4：主 frame id=targetId 硬契约；会话级按 target 归属） | 完成（M1 S4） |
 | `Page.setLifecycleEventsEnabled` | 3 | enabled | ⚠️ stub 接受（S4）；lifecycleEvent 事件未产 | M2 实义 |
-| `Page.setFontFamilies` | 3 | fontFamilies | ❌ | M2 stub |
+| `Page.setFontFamilies` | 3 | fontFamilies | ❌（PW 容忍缺失，实测未阻流） | M3 stub |
 
 ### Input 域
 
 | 方法 | 捕获调用 | 参数键 | ZeroWeb 现状 | 计划 |
 |------|---------|--------|--------------|------|
-| `Input.dispatchMouseEvent` | 35 | button/buttons/clickCount/force/modifiers/type/x/y | ❌ | M2 |
-| `Input.dispatchKeyEvent` | 14 | autoRepeat/code/commands/isKeypad/key/location/modifiers/text/type/unmodifiedText/windowsVirtualKeyCode | ❌ | M2 |
-| `Input.insertText` | 1 | text | ❌ | M2 |
+| `Input.dispatchMouseEvent` | 35 | button/buttons/clickCount/force/modifiers/type/x/y | ✅（S5：→renderer MouseEvent/ScrollEvent；released 按 clickCount 合成 Click/DblClick；wheel→ScrollEvent） | 完成（M2 S5） |
+| `Input.dispatchKeyEvent` | 14 | autoRepeat/code/commands/isKeypad/key/location/modifiers/text/type/unmodifiedText/windowsVirtualKeyCode | ✅（S5：keyDown/rawKeyDown→Down、keyUp→Up、char→Press(text 优先)、modifiers 位解码） | 完成（M2 S5） |
+| `Input.insertText` | 1 | text | ✅（S5：→ImeEvent Commit） | 完成（M2 S5） |
 
 ### DOM 域
 
@@ -155,15 +155,15 @@ DC-3 基线）。「现状」列以 2026-09-12 `apps/browser/src/headless/`（M1
 | `Target.attachedToTarget` | 8 | ✅（S4） | 完成（M1 S4） |
 | `Target.detachedFromTarget` / `Target.targetDestroyed` | 4 / — | ✅（S4：closeTarget/detachFromTarget 应答） | 完成（M1 S4） |
 | `Runtime.executionContextCreated` | 14 | ✅（S4：auxData.frameId/isDefault 硬契约） | 完成（M1 S4） |
-| `Runtime.executionContextsCleared` | 4 | ❌ | M2 |
+| `Runtime.executionContextsCleared` | 4 | ✅（S5，导航 commit 时） | 完成（M2 S5） |
 | `Runtime.executionContextDestroyed` | 2 | ❌ | M2 |
 | `Runtime.consoleAPICalled` | 14 | ❌ | M4（console 对象化，P5 缺口） |
 | `Page.loadEventFired` | 3 | ⚠️ 有雏形（timestamp 恒 0.0） | M2 |
-| `Page.frameNavigated` | 3 | ❌ | M2 |
-| `Page.frameStartedLoading` / `frameStoppedLoading` | 3 / 5 | ❌ | M2 |
+| `Page.frameNavigated` | 3 | ✅（S5，frame.id=targetId） | 完成（M2 S5） |
+| `Page.frameStartedLoading` / `frameStoppedLoading` | 3 / 5 | ✅（S5） | 完成（M2 S5） |
 | `Page.frameStartedNavigating` | 3 | ❌ | M2（低优） |
-| `Page.domContentEventFired` | 3 | ❌ | M2 |
-| `Page.lifecycleEvent` | 42 | ❌ | M2（setLifecycleEventsEnabled 开关下） |
+| `Page.domContentEventFired` | 3 | ✅（S5） | 完成（M2 S5） |
+| `Page.lifecycleEvent` | 42 | 🔶 S5：DOMContentLoaded/load 两点随导航发出；细粒度事件未逐一生效 | M4 补齐（逐 lifecycle 对齐） |
 | `Page.javascriptDialogOpening` / `javascriptDialogClosed` | 3 / 3 | ❌ | M2 |
 | `Page.frameAttached` / `frameDetached` | 1 / 1 | ❌ | M2 |
 | `Page.frameResized` | 4 | ❌ | M3（viewport 变更时） |
