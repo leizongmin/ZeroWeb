@@ -2,7 +2,7 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-12（M1 前置纯资产切片落地：pin 测试链 + Chromium 空跑 + 命令矩阵初稿）
+**最后更新**: 2026-09-12（M1 切片 1 落地：headless.rs 拆分 9 模块）
 
 ---
 
@@ -23,7 +23,7 @@
 | # | 缺口 | 状态 |
 |---|------|------|
 | P1 | Playwright 命令矩阵账本（pin 版空跑导出命令全集 + 三态登记） | ✅ 初稿落地（evidence/cdp-command-matrix.md；随域更新三态） |
-| P2 | headless.rs 职责拆分（2256 行超 2000 上限；transport/discovery/domains/session） | ⏳ M1（矩阵 G6） |
+| P2 | headless.rs 职责拆分（2256 行超 2000 上限；transport/discovery/domains/session） | ✅ M1 切片 1（headless/ 9 模块，纯搬移零语义变化，make test 19,170P/0F 与基线一致） |
 | P3 | Target/Runtime/Page/Input/DOM/CSS/Network/Emulation 域实现 | ⏳ M1-M4 |
 | P4 | Node/Playwright 测试链（pin + E2E 用例集 + make 入口） | 🔶 pin 工程已入库（tests/playwright-matrix/，playwright-core 1.63.0）；E2E 用例与 make 入口随 M1 建 |
 | P5 | console 对象化（V8 侧结构化序列化，替换扁平字符串） | ⏳ M4（矩阵 G5） |
@@ -33,6 +33,11 @@
 
 ## 已完成切片
 
+- **S2（2026-09-12）M1 切片 1 — headless.rs 职责拆分**（P2/G6 收口）：`apps/browser/src/headless.rs`
+  （2256 行超限）→ `headless/` 9 模块（mod=transport / protocol / session / security /
+  discovery / domains / client / tests / gpu_screenshot_tests），纯搬移零语义变化，
+  `pub(super)` 子树内可见，测试代码零改动；`make test` 19,170P/0F 与拆分前基线一致，
+  workspace clippy `-D warnings` 全过。
 - **S1（2026-09-12）M1 前置纯资产切片**：`tests/playwright-matrix/` pin 工程
   （playwright-core 1.63.0 + lockfile）+ CDP 捕获代理 + 全核心流空跑脚本（30 步全绿
   @ Chromium 153.0.8010.12）→ 命令全集 395 调用/40 方法/30 事件 →
@@ -43,15 +48,13 @@
 
 ## 下一步计划
 
-1. **M1 切片 1**：headless.rs 拆分（transport/discovery/domains/session 四模块，解
-   P2/G6 超限）——纯搬移不改语义，`make test` 全绿后独立 land
-2. **M1 切片 2**：传输层 sessionId 多路复用（P7/G1）+ `/json/version` 尾斜杠（P8/G2）
-   + `/json` 真实 target 枚举
-3. **M1 切片 3**：Target 域（setAutoAttach flatten / getTargetInfo / createTarget）+
+1. **M1 切片 2**：传输层 sessionId 多路复用（P7/G1）+ `/json/version` 尾斜杠（P8/G2）
+   + `/json` 真实 target 枚举——headless/mod.rs transport 面改造，响应回显 sessionId
+2. **M1 切片 3**：Target 域（setAutoAttach flatten / getTargetInfo / createTarget）+
    Runtime.enable / evaluate remoteObject 雏形 / releaseObject / runIfWaitingForDebugger
    stub → `CDP_ENDPOINT_URL=… npm run capture:chromium` 首连验收（steps-report 为差距
    清单）
-4. **M2-M4**：按矩阵三态逐域收敛；cookie 落点以 **Storage.getCookies/setCookies/
+3. **M2-M4**：按矩阵三态逐域收敛；cookie 落点以 **Storage.getCookies/setCookies/
    clearCookies** 为准（发现 #2 修正）；CSS.getMatchedStylesForNode 与 DOM.getDocument
    归 M3 goal 扩展面（devtools 前置）
 
@@ -63,7 +66,7 @@
 
 | 里程碑 | 状态 |
 |--------|------|
-| M1 — 传输/发现/Target 基座 + Playwright 首连 | 🚧 前置资产切片完成（S1），拆分+域实现未开始 |
+| M1 — 传输/发现/Target 基座 + Playwright 首连 | 🚧 拆分完成（S2）+ 前置资产（S1）；sessionId 多路复用与 Target/Runtime 域未开始 |
 | M2 — Page/Input 域 → 点击/填充/键盘/导航流 | ⏳ |
 | M3 — DOM/CSS/Emulation → locator 流 | ⏳ |
 | M4 — Network/cookies/console 对象化（cookie 落点=Storage 域） | ⏳ |
