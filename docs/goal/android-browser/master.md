@@ -2,7 +2,7 @@
 
 **入口文档**: [../android-browser.md](../android-browser.md)
 **创建日期**: 2026-09-07（goal 拆分 bootstrap）
-**最后更新**: 2026-09-12（M3/M5 切片 12 验收就绪包——install-smoke Linux 脚本 + 设备验收清单入 evidence；模拟器环境核查记入 evidence/emulator-feasibility.md）
+**最后更新**: 2026-09-12（M5 切片 13 FR-010 依赖与许可证清单——license-manifest.sh 可重复生成，341 包全宽松许可零未知；模拟器环境核查记入 evidence/emulator-feasibility.md）
 
 ---
 
@@ -144,6 +144,11 @@
    就绪断言）+ `make android-install-smoke` Linux 分支接通（不再占位 echo）+
    [evidence/device-acceptance-checklist.md](evidence/device-acceptance-checklist.md)
    （FR-001~009 步骤化清单 + 记录表格），环境解锁后冒烟一键执行
+   → 2026-09-12 ✅ 切片 13 FR-010 依赖与许可证清单——`scripts/android/license-manifest.sh`
+   （cargo metadata --filter-platform 闭包遍历，可重复生成）产出
+   [evidence/license-manifest.md](evidence/license-manifest.md)：341 包（aarch64-android
+   闭包，workspace 内 13）全宽松许可、零未知许可证、无 copyleft；APK 非闭包组件
+   （libc++_shared/V8/Compose/framework）单列。发布前重跑即可刷新
 6. **模拟器/真机冒烟（M3 收口）**：等 KVM 授权或设备（待用户决策，不阻塞功能切片）
 
 **碰撞管理**：Cargo.lock 变更前 `git log --since="14 days ago" -- Cargo.lock` 核对；
@@ -157,6 +162,7 @@
 | M2 — 回归保护 + 可安装产物 | 🔶 APK 入口/签名/构建文档 ✅（P4）；JNI 桥接测试宿主侧 7 项已入、真机/模拟器冒烟断言待 M3 设备面（P3） |
 | M3 — 冒烟验收 + 决策清单 | 🔶 决策清单 ✅（RFC 已批准）；RFC M3 功能面（断连恢复×2/多标签换槽/点击/viewport/键盘 IME）✅ 全部落地，模拟器冒烟受 KVM 环境阻塞（见待用户决策），真机待设备 |
 | M4 — 完整首期功能（RFC 路线） | 🔶 FR-006 全链路代码面 ✅（切片 7 数据面 + 10 系统通知 + 11 SAF 导出/打开，端到端待设备）；多标签缩略图 ✅（切片 8）、双语 + chrome 无障碍 ✅（切片 9）；FR-007 全场景待设备验证 |
+| M5 — 质量与交付 | 🔶 验收就绪包 ✅（切片 12）、依赖/许可证清单 ✅（切片 13）；性能/内存/chaos/安全负测试与验收报告待设备+模拟器解锁 |
 
 ## 待用户决策
 
