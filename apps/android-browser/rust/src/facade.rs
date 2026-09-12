@@ -16,6 +16,9 @@ pub(crate) const RENDERER_SLOT_COUNT: usize = 8;
 struct AndroidBrowser {
     shell: BrowserShell,
     paths: ProfilePaths,
+    /// profile 根目录（下载字节落 `<root>/downloads/`；宿主仅测试触达，定向豁免）。
+    #[allow(dead_code)]
+    root: PathBuf,
     revision: u64,
     /// tab → renderer slot 亲和（RFC §6.3 换槽模型）。槽是稀缺资源：标签首次
     /// 需要渲染时分配，超量按 LRU 逐出（挂起语义：切回该标签时重新导航）。
@@ -39,7 +42,8 @@ pub(crate) fn load_profile(root: &str) -> Result<String, String> {
     if root.is_empty() {
         return Err("Android profile path is empty".to_string());
     }
-    let paths = ProfilePaths::new(PathBuf::from(root));
+    let root = PathBuf::from(root);
+    let paths = ProfilePaths::new(root.clone());
     let shell = BrowserShell::load_profile(&paths);
     let mut state = browser()
         .lock()
@@ -47,6 +51,7 @@ pub(crate) fn load_profile(root: &str) -> Result<String, String> {
     *state = Some(AndroidBrowser {
         shell,
         paths,
+        root,
         revision: 1,
         tab_slots: HashMap::new(),
         slot_tenants: [None; RENDERER_SLOT_COUNT],
@@ -252,6 +257,39 @@ pub(crate) fn page_loaded(title: &str) -> Result<(), String> {
     mutate(|browser| browser.shell.on_page_loaded(title))
 }
 
+#[allow(dead_code)]
+/// 记录并落盘一次下载（FR-006 browser 进程接管）：字节写入 `<profile>/downloads/`
+/// （文件名前缀 DownloadId 防碰撞，展示名保持干净），DownloadManager 记完成态并随
+/// profile 持久化；写盘失败标 Failed，不伪造完成记录。文件路径不回传 renderer。
+pub(crate) fn record_download(url: &str, filename: &str, body: &[u8]) -> Result<(), String> {
+    let mut state = browser()
+        .lock()
+        .map_err(|_| "Android browser state lock poisoned".to_string())?;
+    let browser = state
+        .as_mut()
+        .ok_or_else(|| "Android browser profile is not initialized".to_string())?;
+    let id = browser.shell.downloads_mut().start_download(url, filename);
+    let dir = browser.root.join("downloads");
+    let outcome = std::fs::create_dir_all(&dir)
+        .and_then(|()| std::fs::write(dir.join(format!("{}-{filename}", id.0)), body))
+        .map_err(|error| format!("write download failed: {error}"));
+    match outcome {
+        Ok(()) => {
+            let total = body.len() as u64;
+            browser.shell.downloads_mut().update_progress(id, total, Some(total));
+            browser.shell.downloads_mut().mark_completed(id);
+        }
+        Err(error) => {
+            browser.shell.downloads_mut().mark_failed(id);
+            browser.shell.save_profile(&browser.paths)?;
+            return Err(error);
+        }
+    }
+    browser.shell.save_profile(&browser.paths)?;
+    browser.revision = browser.revision.saturating_add(1);
+    Ok(())
+}
+
 fn mutate(update: impl FnOnce(&mut AndroidBrowser)) -> Result<(), String> {
     let mut state = browser()
         .lock()
@@ -361,7 +399,7 @@ mod tests {
     fn renderer_slots_assign_evict_lru_and_release() {
         use super::{
             RENDERER_SLOT_COUNT, active_tab_slot, assign_active_tab_slot, load_profile, new_tab_with_url,
-            release_tab_slot, select_tab, snapshot, touch_active_tab_slot,
+            record_download, release_tab_slot, select_tab, snapshot, touch_active_tab_slot,
         };
         use serde_json::Value;
         use std::sync::atomic::{AtomicU64, Ordering};
@@ -407,5 +445,18 @@ mod tests {
         let current = active_tab();
         release_tab_slot(current).unwrap();
         assert_eq!(active_tab_slot().unwrap(), None, "新活动标签尚未分配槽");
+
+        // 下载记录：落盘 + 完成态进快照（FR-006 browser 进程接管）
+        let body = b"zeroweb download payload";
+        record_download("https://example.com/report.pdf", "report.pdf", body).unwrap();
+        let snap: Value = serde_json::from_str(&snapshot().unwrap()).unwrap();
+        assert_eq!(snap["downloadCount"].as_u64().unwrap(), 1);
+        let entry = &snap["downloads"][0];
+        assert_eq!(entry["filename"].as_str().unwrap(), "report.pdf");
+        assert_eq!(entry["state"].as_str().unwrap(), "Completed");
+        assert_eq!(entry["totalBytes"].as_u64().unwrap(), body.len() as u64);
+        let stored =
+            std::fs::read(root.join(format!("downloads/{}-report.pdf", entry["id"].as_u64().unwrap()))).unwrap();
+        assert_eq!(stored, body);
     }
 }

@@ -836,6 +836,48 @@ fn validate_page_key(key: &str) -> Result<&str, String> {
     }
 }
 
+/// 下载文件名推导（FR-006）：优先 Content-Disposition 的 `filename=`，其次 URL 路径
+/// 末段，兜底 "download"。服务端输入视为不可信——剥离路径分隔符/通配符/控制符，
+/// 空名与全点名兜底，截断至 100 字符（字符边界安全）。
+#[cfg(any(target_os = "android", test))]
+fn derive_download_filename(content_disposition: Option<&str>, url: &str) -> String {
+    const FALLBACK: &str = "download";
+    let sanitize = |name: &str| -> Option<String> {
+        let cleaned: String = name
+            .trim()
+            .trim_matches('"')
+            .chars()
+            .filter(|c| !c.is_control() && !matches!(c, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|'))
+            .collect();
+        let trimmed = cleaned.trim();
+        if trimmed.is_empty() || trimmed.chars().all(|c| c == '.') {
+            None
+        } else {
+            Some(trimmed.chars().take(100).collect())
+        }
+    };
+    if let Some(disposition) = content_disposition
+        && let Some(name) = disposition
+            .split(';')
+            .map(str::trim)
+            .find_map(|part| part.strip_prefix("filename="))
+        && let Some(name) = sanitize(name)
+    {
+        return name;
+    }
+    let path = url.split(['?', '#']).next().unwrap_or("");
+    sanitize(path.rsplit('/').next().unwrap_or("")).unwrap_or_else(|| FALLBACK.to_string())
+}
+
+/// HTTP 头大小写不敏感取值。
+#[cfg(any(target_os = "android", test))]
+fn header_value<'a>(headers: &'a [(String, String)], name: &str) -> Option<&'a str> {
+    headers
+        .iter()
+        .find(|(key, _)| key.eq_ignore_ascii_case(name))
+        .map(|(_, value)| value.as_str())
+}
+
 /// 合成帧契约：尺寸有界且 RGBA 载荷与声明的 w×h×4 自洽（compositor 独立进程，输出不可信）。
 #[cfg(any(target_os = "android", test))]
 fn page_frame_dims(width: u32, height: u32, rgba_len: usize) -> Result<(u32, u32), String> {
@@ -959,13 +1001,31 @@ fn proxy_renderer_fetch(slot: usize, params: FetchParams) -> Result<(), String> 
         .into_iter()
         .filter(|(name, _)| !name.to_ascii_lowercase().starts_with("x-zero-"))
         .collect();
+    // 请求 URL 随请求体 move，attachment 接管仍需引用它（宿主构建不可达，android 专属）
+    let request_url = url;
     match zero_net::HttpClient::new().send(zero_net::HttpRequest {
         method,
-        url,
+        url: request_url.clone(),
         headers,
         body: params.body,
     }) {
         Ok(response) if response.body.len() <= MAX_RESPONSE_BYTES => {
+            // 顶层导航的 attachment 响应由 browser 进程接管为下载（FR-006），不再
+            // 交给页面渲染；回给 renderer 错误响应使其停留原页面。
+            let disposition = header_value(&response.headers, "content-disposition").map(str::to_string);
+            if resource_type == "document"
+                && disposition
+                    .as_deref()
+                    .is_some_and(|value| value.trim_start().to_ascii_lowercase().starts_with("attachment"))
+            {
+                return capture_attachment_download(
+                    slot,
+                    params.request_id,
+                    &request_url,
+                    &disposition,
+                    &response.body,
+                );
+            }
             let mut headers = response.headers;
             headers.push(("X-Zero-Resource-Type".to_string(), resource_type.to_string()));
             headers.push(("X-Zero-Final-Url".to_string(), response.url));
@@ -1000,6 +1060,27 @@ fn send_fetch_response(
             body,
         }),
     )
+}
+
+/// 顶层导航 attachment 响应的下载接管：字节交 facade 落盘并记入 DownloadManager，
+/// renderer 收到错误响应（不暴露文件路径，FR-006）。
+#[cfg(target_os = "android")]
+fn capture_attachment_download(
+    slot: usize,
+    request_id: u64,
+    url: &str,
+    disposition: &Option<String>,
+    body: &[u8],
+) -> Result<(), String> {
+    let filename = derive_download_filename(disposition.as_deref(), url);
+    let message = match facade::record_download(url, &filename, body) {
+        Ok(()) => format!("download captured: {filename}"),
+        Err(error) => {
+            tracing::warn!("android download capture failed: {error}");
+            format!("download failed: {error}")
+        }
+    };
+    send_fetch_response(slot, request_id, 0, Vec::new(), message.into_bytes())
 }
 
 #[cfg(target_os = "android")]
@@ -1313,9 +1394,9 @@ pub extern "system" fn Java_com_leizm_zeroweb_NativeBridge_nativeProbeCompositor
 #[cfg(test)]
 mod tests {
     use super::{
-        MAX_COMPOSITOR_SURFACE_DIMENSION, NATIVE_VERSION, encode_page_frame, is_known_role, page_frame_dims,
-        renderer_slot_id, tap_viewport_point, validate_compositor_dimensions, validate_page_input_text,
-        validate_page_key, validate_page_viewport,
+        MAX_COMPOSITOR_SURFACE_DIMENSION, NATIVE_VERSION, derive_download_filename, encode_page_frame, header_value,
+        is_known_role, page_frame_dims, renderer_slot_id, tap_viewport_point, validate_compositor_dimensions,
+        validate_page_input_text, validate_page_key, validate_page_viewport,
     };
 
     #[test]
@@ -1375,6 +1456,56 @@ mod tests {
         assert_eq!(validate_page_key("Enter"), Ok("Enter"));
         assert!(validate_page_key("Shift").is_err());
         assert!(validate_page_key("").is_err());
+    }
+
+    #[test]
+    fn http_header_lookup_is_case_insensitive() {
+        let headers = vec![("Content-Disposition".to_string(), "attachment".to_string())];
+        assert_eq!(header_value(&headers, "content-disposition"), Some("attachment"));
+        assert_eq!(header_value(&headers, "CONTENT-DISPOSITION"), Some("attachment"));
+        assert_eq!(header_value(&headers, "content-length"), None);
+    }
+
+    #[test]
+    fn download_filenames_prefer_disposition_then_url_then_fallback() {
+        assert_eq!(
+            derive_download_filename(Some("attachment; filename=\"年度报告.pdf\""), "https://a.b/x"),
+            "年度报告.pdf"
+        );
+        assert_eq!(
+            derive_download_filename(Some("attachment; filename=report.pdf"), "https://a.b/x"),
+            "report.pdf"
+        );
+        assert_eq!(
+            derive_download_filename(Some("attachment"), "https://a.b/path/档案?dl=1#frag"),
+            "档案"
+        );
+        assert_eq!(derive_download_filename(None, "https://a.b/"), "download");
+    }
+
+    #[test]
+    fn download_filenames_strip_path_and_control_characters() {
+        // 路径穿越被剥离分隔符，无法逃逸下载目录
+        assert_eq!(
+            derive_download_filename(Some("attachment; filename=../../etc/passwd"), "https://a.b/x"),
+            "....etcpasswd"
+        );
+        assert_eq!(
+            derive_download_filename(Some("attachment; filename=\"a/b\\c\""), "https://a.b/x"),
+            "abc"
+        );
+        // 文件名非法时回退 URL 末段；URL 也无末段时兜底 download
+        assert_eq!(
+            derive_download_filename(Some("attachment; filename=\"..\""), "https://a.b/x"),
+            "x"
+        );
+        assert_eq!(
+            derive_download_filename(Some("attachment; filename=\"\""), "https://a.b/"),
+            "download"
+        );
+        // 超长名截断至 100 字符
+        let truncated = derive_download_filename(Some(&format!("attachment; filename={}", "x".repeat(300))), "u");
+        assert_eq!(truncated.chars().count(), 100);
     }
 
     #[test]
