@@ -7,13 +7,20 @@
 //! 序列化文本上做 filter 链静态分析：按文档序走查原语、建模 taint 传播、把命中的
 //! feDisplacementMap 改写为恒等 feOffset（`<feOffset in="{in}" dx="0" dy="0"/>`——
 //! resvg 对 feOffset 的实现 = in 原样平移 0，视觉恒等 pass through；result 属性保留
-//! 使下游引用不断链）。
+//! 使下游引用不断链；in 未指定时改写体同样省略，由 §9.2 默认规则承载「输出 = 主输入」）。
+//!
+//! 输入默认规则（§9.2 公共属性）：`in`/`in2` 未指定时，首个原语用 SourceGraphic、
+//! 后续原语用**前一原语的结果**——二者各自独立解析该默认，`in2` 未指定 **不是** 取
+//! `in` 的值（R4271 修正：首版误判致 no-taint 位移被恒改写为 pass through）。
 //!
 //! taint 源（§15.1）：①feFlood/feDropShadow 的 flood-color 计算为 currentColor；
 //! ②feDiffuseLighting/feSpecularLighting 的 lighting-color 计算为 currentColor；
 //! ③feImage（url 引用元素或 No-CORS——源级无法判定 CORS，保守全 tainted）；④标准输入
 //! SourceGraphic/SourceAlpha/BackgroundImage/BackgroundAlpha/FillPaint/StrokePaint 恒
-//! tainted。传播：任何以 tainted 原语结果为输入的原语亦 tainted。
+//! tainted。传播按**像素数据流**：输出携带输入像素的原语，任一输入 tainted → 结果
+//! tainted；feFlood/feImage 输出与输入无关，其结果 taint 仅由自身规则决定（§15.1
+//! 「有 tainted 输入即 tainted」按字面套在默认 SourceGraphic 输入上会与 stripe ref
+//! 矛盾，R4271 精化）。
 //!
 //! kill-switch：env `ZW_SVG_TAINT=0`（default-on）。
 
@@ -101,33 +108,35 @@ fn rewrite_filter_block(block: &str) -> String {
             let result = attrs.get("result").map(|s| s.to_string());
             let in_attr = attrs.get("in").map(|s| s.to_string());
             let in2_attr = attrs.get("in2").map(|s| s.to_string());
-            // 隐式输入：首个原语默认 SourceGraphic，后续默认前一原语输出。
-            let implicit_input = if first_primitive {
-                "SourceGraphic".to_string()
-            } else {
-                last_implicit_name(i)
+            // 输入 taint 判定。显式引用：标准输入恒 tainted，或已传播的 tainted 命名
+            // 结果。未指定（§9.2 公共属性默认规则）：首个原语默认 SourceGraphic（标准
+            // 输入，恒 tainted）；后续原语默认**前一原语的结果**，其 taint 由隐式链布尔
+            // 携带——in 与 in2 各自独立取该默认，in2 未指定 **不是** 取 in 的值（首版
+            // 误把 in2 默认为 in，使 `in="SourceGraphic"` 无 in2 的位移恒按标准输入
+            // tainted 走 pass through，17 案 no-taint 变体被误改写，R4271 修正）。
+            let input_tainted = |attr: Option<&String>| match attr {
+                Some(n) => is_standard_input(n) || tainted.contains(n),
+                None => first_primitive || last_implicit_tainted,
             };
-            let in_name = in_attr.clone().unwrap_or_else(|| implicit_input.clone());
-            let in2_name = in2_attr.clone().unwrap_or_else(|| in_name.clone());
-
-            let input_tainted = |n: &str| is_standard_input(n) || tainted.contains(n);
             // 自 taint 源（§15.1 规则 1-5）。
             let self_tainted = match name {
                 "feImage" => true,
-                "feFlood" | "feDropShadow" => attrs
-                    .get("flood-color")
-                    .is_some_and(|v| v.eq_ignore_ascii_case("currentcolor")),
-                "feDiffuseLighting" | "feSpecularLighting" => attrs
-                    .get("lighting-color")
-                    .is_some_and(|v| v.eq_ignore_ascii_case("currentcolor")),
+                "feFlood" | "feDropShadow" => color_prop_is_currentcolor(&attrs, "flood-color"),
+                "feDiffuseLighting" | "feSpecularLighting" => color_prop_is_currentcolor(&attrs, "lighting-color"),
                 _ => false,
             };
-            let in_tainted = input_tainted(&in_name);
-            let in2_tainted = input_tainted(&in2_name);
+            let in_tainted = input_tainted(in_attr.as_ref());
+            let in2_tainted = input_tainted(in2_attr.as_ref());
 
             // §15.2：位移映射（in2）tainted → pass through（输出 = in）。
             if name == "feDisplacementMap" && in2_tainted {
-                let mut replacement = format!("<feOffset in=\"{}\" dx=\"0\" dy=\"0\"", in_name);
+                // 改写体省略 in 时，feOffset 同样按 §9.2 默认规则取前一原语结果——
+                // 与被改写原语的默认主输入精确一致（未命名结果无名字可写）。
+                let mut replacement = String::from("<feOffset");
+                if let Some(n) = &in_attr {
+                    replacement.push_str(&format!(" in=\"{n}\""));
+                }
+                replacement.push_str(" dx=\"0\" dy=\"0\"");
                 if let Some(r) = &result {
                     replacement.push_str(&format!(" result=\"{}\"", r));
                 }
@@ -151,9 +160,17 @@ fn rewrite_filter_block(block: &str) -> String {
                 continue;
             }
 
-            // 一般 taint 传播：任一输入 tainted 或自身 taint 源 → 结果 tainted。
-            let result_tainted =
-                in_tainted || in2_tainted || self_tainted || last_implicit_tainted && in_attr.is_none();
+            // 一般 taint 传播：任一输入 tainted（含隐式默认输入）或自身 taint 源 →
+            // 结果 tainted。例外：feFlood/feImage 的输出与输入像素无关（纯色 / 外部
+            // 图像），其结果 taint 仅由自身规则决定——若按 §15.1 字面「有 tainted 输入
+            // 即 tainted」把默认 SourceGraphic 输入传入 feFlood，则 no-taint 链（如
+            // feFlood 常规色 → feDisplacementMap）会被恒判 tainted，与 stripe ref
+            // 矛盾（tainting-fe*-001 族实证，R4271）。
+            let result_tainted = if matches!(name, "feFlood" | "feImage") {
+                self_tainted
+            } else {
+                in_tainted || in2_tainted || self_tainted
+            };
             if let Some(r) = &result
                 && result_tainted
             {
@@ -175,14 +192,29 @@ fn rewrite_filter_block(block: &str) -> String {
     out
 }
 
-/// 隐式链输入名（引用 taint 集合用哨兵名——未命名结果不可被显式引用，taint 经
-/// last_implicit_tainted 布尔传播，此名仅占位）。
-fn last_implicit_name(_idx: usize) -> String {
-    String::new()
-}
-
 fn is_standard_input(n: &str) -> bool {
     STANDARD_INPUTS.contains(&n)
+}
+
+/// flood-color/lighting-color 有效值是否「computes to currentColor」（§15.1）：值文本
+/// 任意位置含 currentcolor 即判 tainted——`color-mix(in srgb, currentcolor …)` /
+/// `contrast-color(currentcolor)` 等函数内嵌 currentcolor 的计算值同样依赖 color
+/// 属性（保守超集，tainting-feflood-003/004 实证）。级联取值：内联 style 声明优先于
+/// presentation 属性——JS 动态变更（`style.floodColor = …`）的序列化落点即 style
+/// 声明（tainting-feflood-dynamic-001/002 实证）。
+fn color_prop_is_currentcolor(attrs: &std::collections::HashMap<String, String>, prop: &str) -> bool {
+    if let Some(style) = attrs.get("style") {
+        let ci = style.to_ascii_lowercase();
+        let pat = format!("{prop}:");
+        if let Some(rel) = ci.find(&pat) {
+            let vs = rel + pat.len();
+            let ve = ci[vs..].find(';').map_or(ci.len(), |e| vs + e);
+            return ci[vs..ve].contains("currentcolor");
+        }
+    }
+    attrs
+        .get(prop)
+        .is_some_and(|v| v.to_ascii_lowercase().contains("currentcolor"))
 }
 
 /// 原语白名单（filter primitive，§4 Terminology；feMergeNode/feFunc*/光源子元素非原语）。
@@ -254,5 +286,100 @@ fn utf8_char_len(b: u8) -> usize {
         3
     } else {
         4
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// R4271（§9.2 公共属性默认规则）：`in2` 未指定 = 前一原语的结果，**不是** `in`
+    /// 的值。feFlood 常规色非 taint 源 → 隐式链 untainted → 位移应照常执行，不得改写
+    /// （tainting-fe*-001 族 17 案的驱动形态，ref = 位移后的 stripe）。
+    #[test]
+    fn in2_defaults_to_previous_result_not_in_value() {
+        let src = r#"<filter id="f" color-interpolation-filters="sRGB"><feFlood flood-color="rgb(0%, 100%, 50%)"/><feDisplacementMap in="SourceGraphic" xChannelSelector="G" yChannelSelector="B" scale="100"/></filter>"#;
+        let out = apply_svg_filter_taint_rules(src);
+        assert!(out.contains("feDisplacementMap"), "no-taint 位移不应被改写: {out}");
+        assert!(!out.contains("feOffset"), "不应出现改写体: {out}");
+    }
+
+    /// R4270 回归守护：currentcolor feFlood 为 taint 源 → feOffset 隐式链传播 →
+    /// feDisplacementMap 的 in2（隐式 = 前一结果）tainted → 改写为恒等 feOffset，
+    /// 显式 in 与 result 引用保留。
+    #[test]
+    fn currentcolor_flood_taints_implicit_chain_into_pass_through() {
+        let src = r#"<filter id="f"><feFlood flood-color="currentcolor"/><feOffset/><feDisplacementMap in="SourceGraphic" result="out" scale="100"/></filter>"#;
+        let out = apply_svg_filter_taint_rules(src);
+        assert!(!out.contains("feDisplacementMap"), "tainted 位移应被改写: {out}");
+        assert!(out.contains("in=\"SourceGraphic\""), "主输入须保留: {out}");
+        assert!(out.contains("result=\"out\""), "result 须保留使下游引用不断链: {out}");
+        assert!(out.contains("dx=\"0\" dy=\"0\""), "{out}");
+    }
+
+    /// 首个原语位移且无 in/in2：两者默认 SourceGraphic（标准输入恒 tainted）→ 改写。
+    #[test]
+    fn first_primitive_displacement_defaults_to_tainted_sourcegraphic() {
+        let src = r#"<filter id="f"><feDisplacementMap scale="100"/></filter>"#;
+        let out = apply_svg_filter_taint_rules(src);
+        assert!(!out.contains("feDisplacementMap"), "标准输入位移应被改写: {out}");
+        assert!(out.contains("<feOffset dx=\"0\" dy=\"0\"/>"), "{out}");
+    }
+
+    /// 隐式主输入 + tainted 隐式 in2：改写体省略 in，由 §9.2 默认规则承载
+    /// 「pass through 输出 = 主输入」（未命名结果无名字可写）。
+    #[test]
+    fn tainted_implicit_chain_rewrite_omits_in() {
+        let src = r#"<filter id="f"><feFlood flood-color="currentcolor"/><feDisplacementMap scale="100"/></filter>"#;
+        let out = apply_svg_filter_taint_rules(src);
+        assert!(!out.contains("feDisplacementMap"), "{out}");
+        assert!(out.contains("<feOffset dx=\"0\" dy=\"0\"/>"), "{out}");
+        assert!(!out.contains("in=\"\""), "不得产出空引用: {out}");
+    }
+
+    /// in2 显式引用 untainted 命名结果（即使 in = SourceGraphic 恒 tainted）→
+    /// §15.2 仅约束 in2，位移照常执行，不得改写。
+    #[test]
+    fn untainted_named_in2_keeps_displacement() {
+        let src = r#"<filter id="f"><feFlood flood-color="green" result="fl"/><feDisplacementMap in="SourceGraphic" in2="fl" scale="100"/></filter>"#;
+        let out = apply_svg_filter_taint_rules(src);
+        assert!(out.contains("feDisplacementMap"), "in2 untainted 不应改写: {out}");
+    }
+
+    /// in2 显式引用 tainted 命名结果（feImage 恒 taint 源）→ 改写；pass through 后
+    /// 该 result 的 taint 随主输入（此处 in 亦 tainted，命名结果保持 tainted）。
+    #[test]
+    fn explicit_tainted_in2_rewrites_and_propagates_result_taint() {
+        let src = r##"<filter id="f"><feImage href="#a" result="img"/><feDisplacementMap in="img" in2="img" result="disp" scale="100"/><feComposite in="disp"/></filter>"##;
+        let out = apply_svg_filter_taint_rules(src);
+        assert!(!out.contains("feDisplacementMap"), "{out}");
+        assert!(out.contains("in=\"img\""), "{out}");
+    }
+
+    /// R4271（§15.1「computes to currentColor」）：color-mix()/contrast-color() 内嵌
+    /// currentcolor 的 flood-color/lighting-color 同为 taint 源（首版仅匹配裸关键字
+    /// 漏检，tainting-feflood-003/004、tainting-fespecularlighting-004 形态）。
+    #[test]
+    fn currentcolor_embedded_in_color_function_taints() {
+        let src = r#"<filter id="f"><feFlood flood-color="color-mix(in srgb, currentcolor 99.9%, black)"/><feDisplacementMap in="SourceGraphic" scale="100"/></filter>"#;
+        let out = apply_svg_filter_taint_rules(src);
+        assert!(!out.contains("feDisplacementMap"), "{out}");
+        let src = r#"<filter id="f"><feSpecularLighting lighting-color="contrast-color(currentcolor)"><feDistantLight elevation="90"/></feSpecularLighting><feDisplacementMap in="SourceGraphic" scale="100"/></filter>"#;
+        let out = apply_svg_filter_taint_rules(src);
+        assert!(!out.contains("feDisplacementMap"), "{out}");
+    }
+
+    /// R4271：内联 style 声明优先于 presentation 属性（级联）——JS 动态变更
+    /// `style.floodColor = 'currentcolor'` 的序列化落点是 style 声明
+    /// （tainting-feflood-dynamic-001/002 形态）；style 未声明该属性时回落属性值，
+    /// 无关属性（color）含 currentcolor 不影响判定。
+    #[test]
+    fn inline_style_declaration_overrides_presentation_attribute() {
+        let src = r#"<filter id="f"><feFlood flood-color="rgb(0%, 100%, 50%)" style="color: rgb(0%, 100%, 50%); flood-color: currentcolor"/><feDisplacementMap in="SourceGraphic" scale="100"/></filter>"#;
+        let out = apply_svg_filter_taint_rules(src);
+        assert!(!out.contains("feDisplacementMap"), "{out}");
+        let src = r#"<filter id="f"><feFlood flood-color="rgb(0%, 100%, 50%)" style="color: currentcolor; flood-color: rgb(0%, 100%, 50%)"/><feDisplacementMap in="SourceGraphic" scale="100"/></filter>"#;
+        let out = apply_svg_filter_taint_rules(src);
+        assert!(out.contains("feDisplacementMap"), "常规 style 值不应判 tainted: {out}");
     }
 }
