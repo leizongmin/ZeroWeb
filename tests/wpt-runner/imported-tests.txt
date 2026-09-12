@@ -435,3 +435,5 @@ css/filter-effects/effect-reference-feimage-001.html css/filter-effects/referenc
 css/filter-effects/effect-reference-feimage-002.html css/filter-effects/reference/effect-reference-feimage-002-ref.html == 2026-09-12 2026-09-13 R4279 feImage 相对 href 内联（文档基准目录 + data URI）+ 包装 SVG xmlns:xlink 声明
 css/filter-effects/effect-reference-feimage-003.html css/filter-effects/reference/effect-reference-feimage-003-ref.html == 2026-09-12 2026-09-13 R4279 feImage 相对 href 内联（文档基准目录 + data URI）+ 包装 SVG xmlns:xlink 声明
 css/filter-effects/effect-reference-feimage-004.html css/filter-effects/reference/effect-reference-feimage-004-ref.html == 2026-09-12 2026-09-13 R4279 feImage 相对 href 内联（文档基准目录 + data URI）+ 包装 SVG xmlns:xlink 声明
+css/filter-effects/filter-invalid.html css/filter-effects/filter-invalid-ref.html == 2026-09-12 2026-09-13 R4280 SVG presentation CSS 注入——fill 属性（V1 色值）+ 缺失几何 attr 注入（width/height authored 优先）
+css/filter-effects/backdrop-filter-invalid.html css/filter-effects/filter-invalid-ref.html == 2026-09-12 2026-09-13 R4280 SVG presentation CSS 注入——fill 属性（V1 色值）+ 缺失几何 attr 注入（width/height authored 优先）

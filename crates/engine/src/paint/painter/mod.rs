@@ -720,6 +720,16 @@ impl Painter {
         // R4274（SVG2 shapes/paths）：零尺寸/空几何形状元素禁用渲染（含 filter 输出）
         // ——序列化源级移除，resvg 无从渲染。kill-switch ZW_SVG_SHAPE_DISABLE=0。
         source = crate::paint::svg_shape_disable::disable_empty_shapes(&source);
+        // R4280（SVG2 presentation）：CSS `fill`/`width`/`height` 声明注入序列化
+        // style/geometry attr——css-parser 尚无 fill 属性管道（R4280 V1），CSS 声明经
+        // style attr 让 usvg 采纳（style > presentation attr，与 CSS 优先级语义一致）；
+        // width/height 为 SVG2 几何属性（resvg 按 attr 取形）。
+        {
+            let mut fills: Vec<(NodeId, String)> = Vec::new();
+            let mut geometry: Vec<(NodeId, String, String)> = Vec::new();
+            collect_css_svg_presentation(doc, node_id, styles, &mut fills, &mut geometry);
+            source = apply_css_svg_presentation_to_source(&source, &fills, &geometry, doc, node_id);
+        }
         // ZW_DEBUG_SVG_SOURCE=1：dump 合成后序列化源（svg transform 域调试设施）。
         if std::env::var("ZW_DEBUG_SVG_SOURCE").as_deref() == Ok("1") {
             eprintln!("R3938-SOURCE: {source}");
@@ -3252,6 +3262,210 @@ fn find_layout_box_by_node(box_node: &LayoutBox, node_id: NodeId) -> Option<&Lay
 ///   与 fill-box 同框）。
 /// - StrokeBox / BorderBox → bbox 外扩 stroke（暂近似 fill-box：ZW 无 stroke bbox
 ///   API；stroke 案残差归后续切片）。
+///
+/// R4280：收集 svg 子树内 CSS presentation 声明 → 序列化串。
+/// - fill：V1 色值子集。
+/// - width/height：SVG2 几何属性非 auto 值。
+fn collect_css_svg_presentation(
+    doc: &Document,
+    subtree_root: NodeId,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    fills: &mut Vec<(NodeId, String)>,
+    geometry: &mut Vec<(NodeId, String, String)>,
+) {
+    if let Some(style) = styles.get(&subtree_root) {
+        if let Some(fill) = &style.fill {
+            fills.push((subtree_root, fill_color_to_css(fill)));
+        }
+        let geo =
+            |geometry: &mut Vec<(NodeId, String, String)>, attr: &str, v: &zero_css_parser::values::LengthValue| {
+                match v {
+                    zero_css_parser::values::LengthValue::Px(px) => {
+                        geometry.push((subtree_root, attr.to_string(), format!("{px}")))
+                    }
+                    zero_css_parser::values::LengthValue::Percentage(p) => {
+                        geometry.push((subtree_root, attr.to_string(), format!("{p}%")))
+                    }
+                    _ => {} // em/ex 等按字体上下文解析留后续；auto 不注入
+                }
+            };
+        let mut geo_push = |attr: &str, v: &zero_css_parser::values::LengthValue| {
+            geo(geometry, attr, v);
+        };
+        // R4278 门禁：仅当元素**无 authored attr** 时注入——计算 width 是布局解析值
+        //（svg 根可能 ≠ authored attr，view-box-nested 外层 svg 400 vs attr 200 实证），
+        // 注入会覆盖 authored 几何致整块错位。authored attr 优先（CSS 覆盖 authored
+        // 需声明级追踪，留后续切片）。
+        let elem_has_attr = |attr: &str| -> bool {
+            doc.get(subtree_root).is_some_and(|n| match &n.kind {
+                NodeKind::Element(e) => e.get_attribute(attr).is_some(),
+                _ => false,
+            })
+        };
+        if !elem_has_attr("width") && !matches!(style.width, zero_css_parser::values::LengthValue::Auto) {
+            geo_push("width", &style.width);
+        }
+        if !elem_has_attr("height") && !matches!(style.height, zero_css_parser::values::LengthValue::Auto) {
+            geo_push("height", &style.height);
+        }
+    }
+    for child in doc.child_nodes(subtree_root) {
+        collect_css_svg_presentation(doc, child, styles, fills, geometry);
+    }
+}
+
+/// R4280：ColorValue → svg fill 色串（currentColor 落 black——元素 color 继承解析
+/// 留后续；alpha<255 → rgba）。
+fn fill_color_to_css(fill: &zero_css_parser::values::ColorValue) -> String {
+    let c = crate::paint::color::color_value_to_render(fill);
+    if c.a == 255 {
+        format!("rgb({}, {}, {})", c.r, c.g, c.b)
+    } else {
+        format!("rgba({}, {}, {}, {:.3})", c.r, c.g, c.b, c.a as f32 / 255.0)
+    }
+}
+
+/// R4280：把 CSS fill 注入序列化源——定位元素开标签（id/class 指纹，退化为子树内
+/// 首个同标签），合并进 style attr（usvg 采纳 style presentation > attr，与 CSS
+/// 优先级一致）。无 id/class 且子树内同标签多个时注入首个（V1 局限，corpus 场景
+/// 多为单元素）。
+fn apply_css_svg_presentation_to_source(
+    source: &str,
+    fills: &[(NodeId, String)],
+    geometry: &[(NodeId, String, String)],
+    doc: &Document,
+    subtree_root: NodeId,
+) -> String {
+    let mut out = source.to_string();
+    for (node_id, fill_value) in fills {
+        if let Some(new_source) = rewrite_fill_for_node(&out, *node_id, fill_value, doc, subtree_root) {
+            out = new_source;
+        }
+    }
+    for (node_id, attr, value) in geometry {
+        if std::env::var("ZW_URL_CHAIN_DEBUG").as_deref() == Ok("1") {
+            eprintln!("[url-chain] geo-inject node={node_id:?} {attr}={value}");
+        }
+        if let Some(new_source) = rewrite_geometry_attr_for_node(&out, *node_id, attr, value, doc, subtree_root) {
+            out = new_source;
+        }
+    }
+    out
+}
+
+/// R4280：注入/改写 svg 元素开标签的几何 attr（width/height——authored attr 被
+/// CSS 声明覆盖，SVG2 geometry properties 语义）。
+fn rewrite_geometry_attr_for_node(
+    source: &str,
+    node_id: NodeId,
+    attr: &str,
+    value: &str,
+    doc: &Document,
+    subtree_root: NodeId,
+) -> Option<String> {
+    let node = doc.get(node_id)?;
+    let NodeKind::Element(elem) = &node.kind else {
+        return None;
+    };
+    let tag = elem.local_name().to_string();
+    let needle = if node_id == subtree_root {
+        format!("<{tag}")
+    } else if let Some(id) = elem.get_attribute("id") {
+        format!(r#"<{tag} id="{id}""#)
+    } else if let Some(cls) = elem.get_attribute("class") {
+        let first = cls.split_whitespace().next().unwrap_or("");
+        format!(r#"<{tag} class="{first}"#)
+    } else {
+        format!("<{tag}")
+    };
+    let pos = source.find(&needle)?;
+    let gt_rel = source[pos..].find('>')?;
+    let tag_end = pos + gt_rel;
+    let lt = source[pos..=tag_end].rfind('<').unwrap_or(pos);
+    let tag_text = &source[lt..=tag_end];
+    let attr_pattern = format!("{attr}=\"");
+    let new_tag = if let Some(apos) = tag_text.find(&attr_pattern) {
+        let vstart = apos + attr_pattern.len();
+        let vend_rel = tag_text[vstart..].find('"')?;
+        let vend = vstart + vend_rel;
+        format!("{}{}{}", &tag_text[..vstart], value, &tag_text[vend..])
+    } else if let Some(stripped) = tag_text.strip_suffix("/>") {
+        format!("{stripped} {attr}=\"{value}\"/>")
+    } else {
+        format!("{} {attr}=\"{value}\">", &tag_text[..tag_text.len() - 1])
+    };
+    Some(format!("{}{}{}", &source[..lt], new_tag, &source[tag_end + 1..]))
+}
+
+fn rewrite_fill_for_node(
+    source: &str,
+    node_id: NodeId,
+    fill_value: &str,
+    doc: &Document,
+    subtree_root: NodeId,
+) -> Option<String> {
+    let node = doc.get(node_id)?;
+    let NodeKind::Element(elem) = &node.kind else {
+        return None;
+    };
+    let tag = elem.local_name().to_string();
+    let needle = if node_id == subtree_root {
+        format!("<{tag}")
+    } else if let Some(id) = elem.get_attribute("id") {
+        format!(r#"<{tag} id="{id}""#)
+    } else if let Some(cls) = elem.get_attribute("class") {
+        let first = cls.split_whitespace().next().unwrap_or("");
+        if first.is_empty() {
+            format!("<{tag} class=")
+        } else {
+            format!(r#"<{tag} class="{first}"#)
+        }
+    } else {
+        format!("<{tag}")
+    };
+    let pos = source.find(&needle)?;
+    let gt_rel = source[pos..].find('>')?;
+    let tag_end = pos + gt_rel;
+    let lt = source[pos..=tag_end].rfind('<').map(|r| pos + r).unwrap_or(pos);
+    let tag_text = &source[lt..=tag_end];
+    let new_tag = merge_style_fill_in_tag(tag_text, fill_value);
+    Some(format!("{}{}{}", &source[..lt], new_tag, &source[tag_end + 1..]))
+}
+
+/// R4280：开标签文本内合并 `fill: <value>` 进 style attr（无 style attr 则新增）。
+fn merge_style_fill_in_tag(tag_text: &str, fill_value: &str) -> String {
+    let decl = format!("fill: {fill_value}");
+    if let Some(spos) = tag_text.find("style=\"") {
+        let vstart = spos + "style=\"".len();
+        let Some(vend_rel) = tag_text[vstart..].find('"') else {
+            return tag_text.to_string();
+        };
+        let vend = vstart + vend_rel;
+        let style_val = &tag_text[vstart..vend];
+        // 已有 fill 声明 → 替换；否则前插。
+        let merged = if style_val.to_ascii_lowercase().contains("fill:") {
+            let mut repl = String::new();
+            for d in style_val.split(';') {
+                let dt = d.trim();
+                if dt.to_ascii_lowercase().starts_with("fill:") {
+                    repl.push_str(&decl);
+                } else if !dt.is_empty() {
+                    repl.push_str(dt);
+                }
+                repl.push_str("; ");
+            }
+            repl.trim_end_matches("; ").to_string()
+        } else {
+            format!("{decl}; {style_val}")
+        };
+        format!("{}style=\"{}\"{}", &tag_text[..spos], merged, &tag_text[vend + 1..])
+    } else if let Some(stripped) = tag_text.strip_suffix("/>") {
+        format!("{stripped} style=\"{decl}\"/>")
+    } else {
+        format!("{} style=\"{decl}\">", &tag_text[..tag_text.len() - 1])
+    }
+}
+
 pub(crate) fn collect_css_transforms(
     doc: &Document,
     subtree_root: NodeId,

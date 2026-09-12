@@ -204,6 +204,8 @@ impl Default for ComputedStyle {
             transform_box: TransformBoxValue::ViewBox,
             // SVG2 §11.4：stroke-width 初始值 1（用户单位）。
             stroke_width: LengthValue::Px(1.0),
+            // R4280：fill 未声明 = None（authored attr / resvg 缺省 black 生效）。
+            fill: None,
             perspective: LengthValue::Px(0.0),
             perspective_origin_x: LengthValue::Percentage(50.0),
             perspective_origin_y: LengthValue::Percentage(50.0),

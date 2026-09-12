@@ -781,6 +781,20 @@ pub fn apply_property_value_with_quirks(
                 return true;
             }
         }
+        "fill" => {
+            // R4280：SVG2 presentation `fill`（V1 色值子集；`none` → Transparent——
+            // 视觉等价于不绘制；url() paint server 未支持 → 声明丢弃）。
+            // 继承语义 V1 不做（直接声明覆盖 corpus 场景；继承由后续切片补）。
+            let v = value.trim();
+            if v.eq_ignore_ascii_case("none") {
+                style.fill = Some(zero_css_parser::values::ColorValue::Transparent);
+                return true;
+            }
+            if let Some(c) = zero_css_parser::values::parse_color(v) {
+                style.fill = Some(c);
+                return true;
+            }
+        }
         "writing-mode" => {
             if let Some(v) = parse_writing_mode(value) {
                 style.writing_mode = v;
