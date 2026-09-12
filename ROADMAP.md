@@ -75,7 +75,7 @@
 
 ## 随后计划
 
-1. **M12/M14 拆分子 goal 推进**（storage-opfs / android-browser 推进中；keyboard/editing 三 goal 已于 2026-09-08 收口归档，webdriver 已于 2026-09-08 收口归档，webdriver-screenshot 已于 2026-09-09 收口归档，storage-opfs M1 已于 2026-09-09 落地，web-components 已于 2026-09-11 收口归档，page-wasm 已于 2026-09-12 收口归档——WPT jsapi 31 案 99.4%，event-loop-spec 已于 2026-09-12 收口归档——IO/RO 基线 + MO host 触发 default-on + per-task checkpoint default-on）
+1. **M12/M14 拆分子 goal 推进**（android-browser 推进中；keyboard/editing 三 goal 已于 2026-09-08 收口归档，webdriver 已于 2026-09-08 收口归档，webdriver-screenshot 已于 2026-09-09 收口归档，storage-opfs 已于 2026-09-09 收口归档，web-components 已于 2026-09-11 收口归档，page-wasm 已于 2026-09-12 收口归档——WPT jsapi 31 案 99.4%，event-loop-spec 已于 2026-09-12 收口归档——IO/RO 基线 + MO host 触发 default-on + per-task checkpoint default-on）
 2. **媒体线延续**（媒体三 goal 2026-09-05 已完成收口归档——H.264 分发前法务复核、Mixer N→1 桌面可选切片、切片 3 stss 索引加速评估等余项挂账；存储/Service Worker 两 goal 亦已于 2026-09-06 收口归档）
 3. **render-compact** 深结构（Phase A IFC metric coherence、multicol 碎片化等仍等用户点名授权）
 4. **browser-shell** 最小可用产品形态
