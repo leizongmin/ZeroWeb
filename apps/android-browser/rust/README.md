@@ -4,13 +4,13 @@
 
 ## 概述
 
-`zero-android-browser` 是 Android 端浏览器（应用 ID `com.leizm.zeroweb`）的原生库（`cdylib`），为 Kotlin/Jetpack Compose 宿主提供 JNI 入口：校验服务角色、把 detached socket FD 交给共享 Rust 角色循环，并暴露引导屏版本号与 decoder/compositor socket 探针。它保持 renderer、compositor、image-decoder 的物理多进程隔离，其中 decoder 与 compositor 已走原生线程运行（复用 `zero-image-decoder` / `zero-compositor` 的 `run_role`），renderer 暂保持 Kotlin Service 拓扑，Android transport adapter 在后续 M1 切片完成。
+`zero-android-browser` 是 Android 端浏览器（应用 ID `com.leizm.zeroweb`）的原生库（`cdylib`），为 Kotlin/Jetpack Compose 宿主提供 JNI 入口：校验服务角色、把 detached socket FD 交给共享 Rust 角色循环，并暴露引导屏版本号与 decoder/compositor socket 探针。它保持 renderer、compositor、image-decoder 的物理多进程隔离，其中 decoder 与 compositor 已走原生线程运行（复用 `zero-image-decoder` / `zero-compositor` 的 `run_role`），renderer 暂保持 Kotlin Service 拓扑，Android transport adapter 待 android-browser RFC 批准后实施（见 goal 控制面待用户决策项）。
 
 设计背景见 [docs/specs/android-browser-spec-rfc.md](../../../docs/specs/android-browser-spec-rfc.md)。
 
 ## 主要功能
 
-- **nativeVersion** — 返回引导屏显示的版本串（`ZeroWeb Android M0`）
+- **nativeVersion** — 返回引导屏显示的版本串（`ZeroWeb Android M2`，与 `lib.rs` 的 `NATIVE_VERSION` 一致）
 - **nativeStartRole** — Service 进程报告就绪前校验 role（仅接受 `renderer` / `compositor` / `image-decoder`）
 - **nativeRunRole** — 取得 detached socket FD（`zero_protocol::android_socket_transport_from_fd`），按角色起线程运行 `zero_image_decoder::run_role` / `zero_compositor::run_role`；FD 所有权由 Kotlin 侧 `ParcelFileDescriptor.detachFd()` 移交，失败路径负责 `close`
 - **nativeProbeDecoder** — 经 socket 发送畸形 `ImageDecodeRequest`，校验错误回复
