@@ -39,33 +39,55 @@ fetch_raw() {
 }
 
 fetch_dir_html() {
-  local dir="$1"
+  local dir="$1" depth="${2:-0}"
   local local_dir="${WPT_DATA}/${dir}"
   # 幂等快路径：WPT_REV 固定 → 文件集稳定；已拉过且未 FORCE=1 则跳过 API 列目录
-  # （避免未认证 60 req/h 限流 403 阻断）。
+  # （避免未认证 60 req/h 限流 403 阻断）。注意：仅当目录已含 .html 才跳过——
+  # 用例全在子目录的域（如 web-animations/）每次仍会重列，属预期。
   if [[ "${FORCE:-0}" != "1" && -d "${local_dir}" ]]; then
     if compgen -G "${local_dir}/*.html" > /dev/null; then
       echo "  ${dir}: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）"
       return 0
     fi
   fi
-  local names
+  local listing
   # ?ref=<pin>：列目录与 raw 拉取同 rev——不加 ref 会列默认分支 HEAD，
   # HEAD 与 pin 漂移时列出 pin 中不存在的文件 → 404。
-  names=$(curl --fail --location --silent --show-error --retry 3 \
+  # python3 解析拿 type：子目录递归一层（depth<1），防 API 限流不深挖。
+  # 列目录失败（403 限流/网络）优雅降级：跳过该目录不中止，重跑幂等续拉。
+  if ! listing=$(curl --fail --location --silent --show-error --retry 3 \
     --connect-timeout 8 --max-time 30 \
-    "${API_ROOT}/${dir}?ref=${WPT_REV}" | grep -o '"name": "[^"]*"')
-  while IFS= read -r line; do
-    local name="${line#\"name\": \"}"
-    name="${name%\"}"
-    # 拉 .html 用例 + .js 依赖；排除 .worker.js / .any.js 变体（需 dedicated worker /
-    # wrapper harness，runner 形态支持由各 goal M1 rally 轮评估）。
-    case "${name}" in
-      *.worker.js | *.any.js) ;;
-      *.html | *.js | *.xml | *.xhtml | *.svg) fetch_raw "${dir}/${name}" ;;
+    "${API_ROOT}/${dir}?ref=${WPT_REV}" \
+    | python3 -c 'import json,sys
+for entry in json.load(sys.stdin):
+    print(entry["type"], entry["name"])' 2>/dev/null); then
+    echo "  ${dir}: API 列目录失败（限流/网络）——跳过，稍后重跑续拉" >&2
+    return 0
+  fi
+  local type name
+  while read -r type name; do
+    [[ -z "${name}" ]] && continue
+    case "${type}" in
+      dir)
+        if [[ "${depth}" -lt 1 ]]; then
+          fetch_dir_html "${dir}/${name}" $((depth + 1))
+        fi
+        ;;
+      file)
+        # 拉 .html 用例 + .js 依赖；排除 .worker.js / .any.js 变体（需 dedicated
+        # worker / wrapper harness，runner 形态支持由各 goal M1 rally 轮评估）。
+        case "${name}" in
+          *.worker.js | *.any.js) ;;
+          *.html | *.js | *.xml | *.xhtml | *.svg)
+            fetch_raw "${dir}/${name}" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
+            ;;
+        esac
+        ;;
     esac
-  done <<< "${names}"
+  done <<< "${listing}"
 }
+
+FAILED_FETCHES=0
 
 goals_fetch_all() {
   echo "== fetch 语料（pin ${WPT_REV:0:9}，FORCE=${FORCE:-0}）=="
@@ -73,15 +95,18 @@ goals_fetch_all() {
   for dir in "${DIRS[@]}"; do
     fetch_dir_html "${dir}"
   done
+  if [[ "${FAILED_FETCHES}" -gt 0 ]]; then
+    echo "  ⚠ ${FAILED_FETCHES} 个文件拉取失败（瞬时错误不计入中止；重跑脚本幂等续拉）" >&2
+  fi
 }
 
 goals_inventory() {
-  echo "== 语料盘点（wpt-data 本地 top-level .html）=="
+  echo "== 语料盘点（wpt-data 本地 .html，含子目录）=="
   local dir n
   for dir in "${DIRS[@]}"; do
     n=0
     if [[ -d "${WPT_DATA}/${dir}" ]]; then
-      n=$(find "${WPT_DATA}/${dir}" -maxdepth 1 -name '*.html' 2>/dev/null | wc -l)
+      n=$(find "${WPT_DATA}/${dir}" -name '*.html' 2>/dev/null | wc -l)
     fi
     printf '  %-28s %5d 案\n' "${dir}" "${n}"
   done

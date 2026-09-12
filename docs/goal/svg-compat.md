@@ -76,7 +76,7 @@ XML 序列化底座共享（DOMParser），改动互核；与 uievents-compat �
 
 ## 活跃里程碑
 
-**M1** 导入基线（含渲染面占比盘点）→ **M2** SVG DOM 类层级 → **M3** 几何接口/
+**M1** 导入基线（含渲染面占比盘点；corpus fetch 用编号脚本 `tests/wpt-runner/scripts/goals/80-svg-compat.sh`（索引 README；幂等续拉，GitHub API 限流时部分目录跳过属预期））→ **M2** SVG DOM 类层级 → **M3** 几何接口/
 事件 → **M4** 收口（SMIL/渲染断言面挂账定稿）。
 
 ## Final Output Protocol

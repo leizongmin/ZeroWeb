@@ -73,7 +73,7 @@ encoding-compat 嗅探划界双向记账；与 js-dom（已归档）DOM 接口�
 
 ## 活跃里程碑
 
-**M1** 导入基线 → **M2** 解析树一致性 → **M3** 序列化/接口面 → **M4** 收口。
+**M1** 导入基线（corpus fetch 用编号脚本 `tests/wpt-runner/scripts/goals/40-html-syntax-compat.sh`（索引 README；幂等续拉，GitHub API 限流时部分目录跳过属预期））→ **M2** 解析树一致性 → **M3** 序列化/接口面 → **M4** 收口。
 
 ## Final Output Protocol
 

@@ -113,7 +113,7 @@
 
 ### M1 — WPT 导入与基线
 
-**目标**：四 corpus fetch 脚本 + 导入 + 基线（纯资产零源码改动）。
+**目标**：四 corpus fetch 脚本 + 导入 + 基线（纯资产零源码改动）；corpus fetch 用编号脚本 `tests/wpt-runner/scripts/goals/10-timing-animation-compat.sh`（索引 README；幂等续拉，GitHub API 限流时部分目录跳过属预期）。
 
 ### M2 — 计时面
 

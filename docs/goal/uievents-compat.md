@@ -75,7 +75,7 @@ pointerenter/leave 边界序 / touch-events 评估记账。
 
 ## 活跃里程碑
 
-**M1** 导入基线 → **M2** 鼠标事件序 → **M3** Pointer 语义 → **M4** 收口
+**M1** 导入基线（corpus fetch 用编号脚本 `tests/wpt-runner/scripts/goals/50-uievents-compat.sh`（索引 README；幂等续拉，GitHub API 限流时部分目录跳过属预期））→ **M2** 鼠标事件序 → **M3** Pointer 语义 → **M4** 收口
 （touch/pointerlock/IME 挂账定稿）。
 
 ## Final Output Protocol

@@ -76,7 +76,7 @@ zero-protocol 契约；触 GPU 进程边界即 BLOCK 上报。
 
 ## 活跃里程碑
 
-**M1** 导入盘点（唯一自主切片）→ **M2-M3**（门控切片，边界用户定）→
+**M1** 导入盘点（唯一自主切片；corpus fetch 用编号脚本 `tests/wpt-runner/scripts/goals/99-webgl-compat.sh`（索引 README；幂等续拉，GitHub API 限流时部分目录跳过属预期））→ **M2-M3**（门控切片，边界用户定）→
 **M4** 收口（WebGL2/WebGPU 挂账定稿）。
 
 ## Final Output Protocol

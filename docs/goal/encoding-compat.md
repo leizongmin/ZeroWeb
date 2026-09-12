@@ -70,7 +70,7 @@ goal 的划界线，双向记账；与其他 goal 无共享面。
 
 ## 活跃里程碑
 
-**M1** 导入基线（纯资产）→ **M2** 标签表 + legacy 解码 → **M3** TextEncoder/模式
+**M1** 导入基线（纯资产；corpus fetch 用编号脚本 `tests/wpt-runner/scripts/goals/30-encoding-compat.sh`（索引 README；幂等续拉，GitHub API 限流时部分目录跳过属预期））→ **M2** 标签表 + legacy 解码 → **M3** TextEncoder/模式
 语义 → **M4** 收口（文档级嗅探挂账定稿）。
 
 ## Final Output Protocol
