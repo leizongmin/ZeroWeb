@@ -43,8 +43,10 @@
   `cargo build -p zero-browser`；CI 集成等 goal 收口时随 M5 定稿评估。
   **DC 盘点**：DC-1 ✅（账本 40 方法三态全登记 + goal 扩展面）；DC-2 ⏳（绿步 6/30，
   双跑 deterministic ✅ 已门禁化，全绿挂 objectId 桥决策）；DC-3 ✅（-32601/-32700/
-  loopback/token-origin 语义保持；超大 payload 记档待专项验证）；DC-4 ✅（make test
-  全绿 + clippy/fmt + cdp-e2e 门 + BiDi 既有面零回归）。
+  -32602/loopback/token-origin 语义保持；**超大 payload 实测**：100MB 消息触发
+  tungstenite 16MB 帧上限干净拒绝（`Message too long` + 连接断开），服务器存活、
+  后续连接正常——安全拒绝语义成立）；DC-4 ✅（make test 全绿 + clippy/fmt +
+  cdp-e2e 门 + BiDi 既有面零回归）。
 - **S7（2026-09-12）M4 — Storage cookie 域 + UA override + Network 事件总线雏形**：
   session 级 `CookieStore`（net 既有 jar 复用，goal 支持包络「net 只加观测点」——新增
   只读 `CookieStore::all()`）；`Storage.getCookies/setCookies/clearCookies` 实义
@@ -118,7 +120,7 @@
    全族 ~20 步；console 对象化（engine 碰头窗口）；iframe 子帧事件面（渲染流域协调）；
    Network 事件字段补全（net 观测点扩展）
 2. **M5 定稿（依赖项解除后）**：expected-green 基线扩至全绿 → cdp-e2e 即 DC-2 门；
-   DC-3 超大 payload 专项验证；挂账清单（不实现域）终稿
+   挂账清单（不实现域）终稿
 3. **持续推进**：每轮 pull → cdp-e2e 门 + make test 防回归，余项按窗口逐个解冻
 
 **待用户决策清单**：
