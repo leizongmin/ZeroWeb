@@ -19,7 +19,7 @@ use zero_protocol::IpcChannel;
 #[cfg(target_os = "android")]
 use zero_protocol::message::{
     FetchParams, FetchResponseParams, FramePublishMode, ImageDecodeParams, IpcMessage, IpcMessageKind, LoadHtmlParams,
-    NavigateParams, ScrollEventParams, SetViewportParams,
+    MouseEventParams, MouseEventType, NavigateParams, ScrollEventParams, SetViewportParams,
 };
 
 const NATIVE_VERSION: &str = "ZeroWeb Android M2";
@@ -28,9 +28,10 @@ const NATIVE_VERSION: &str = "ZeroWeb Android M2";
 const ANDROID_COMPOSITOR_SURFACE_ID: u64 = 1;
 #[cfg(any(target_os = "android", test))]
 const MAX_COMPOSITOR_SURFACE_DIMENSION: u32 = 4_096;
-#[cfg(target_os = "android")]
+// 视口尺寸宿主测试同样触达（tap 坐标映射的纯函数契约），cfg 放宽到 test。
+#[cfg(any(target_os = "android", test))]
 const ANDROID_PAGE_VIEWPORT_WIDTH: u32 = 320;
-#[cfg(target_os = "android")]
+#[cfg(any(target_os = "android", test))]
 const ANDROID_PAGE_VIEWPORT_HEIGHT: u32 = 180;
 #[cfg(target_os = "android")]
 type AndroidCompositorTransport =
@@ -649,6 +650,48 @@ pub extern "system" fn Java_com_leizm_zeroweb_NativeBridge_nativeScroll(
 }
 
 #[cfg(target_os = "android")]
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_leizm_zeroweb_NativeBridge_nativePageTap(
+    _env: JNIEnv,
+    _class: JClass,
+    norm_x: jfloat,
+    norm_y: jfloat,
+) -> jboolean {
+    // Kotlin 输入视为不可信：归一化坐标先过纯函数校验（宿主测试覆盖契约）
+    let Some((x, y)) = tap_viewport_point(norm_x, norm_y) else {
+        return JNI_FALSE;
+    };
+    let Ok(Some(active_slot)) = facade::active_tab_slot() else {
+        return JNI_FALSE;
+    };
+    // 预览点击 → 视口坐标的 DOM click（renderer 复用桌面 hit-test/focus/表单语义）
+    send_renderer_to_slot(
+        active_slot,
+        IpcMessageKind::MouseEvent(MouseEventParams {
+            x,
+            y,
+            button: 0,
+            event_type: MouseEventType::Click,
+        }),
+    )
+    .map_or(JNI_FALSE, |_| JNI_TRUE)
+}
+
+/// tap 归一化坐标（预览显示区内 0..=1）→ 页面视口像素坐标。非有限值或越界拒绝。
+#[cfg(any(target_os = "android", test))]
+fn tap_viewport_point(norm_x: f32, norm_y: f32) -> Option<(f32, f32)> {
+    for value in [norm_x, norm_y] {
+        if !value.is_finite() || !(0.0..=1.0).contains(&value) {
+            return None;
+        }
+    }
+    Some((
+        norm_x * ANDROID_PAGE_VIEWPORT_WIDTH as f32,
+        norm_y * ANDROID_PAGE_VIEWPORT_HEIGHT as f32,
+    ))
+}
+
+#[cfg(target_os = "android")]
 fn compositor_scroll(slot: usize, delta_y: f32) -> Result<(), String> {
     let Some(meta_lock) = android_page_meta(slot) else {
         return Err("renderer slot is out of range".to_string());
@@ -1094,9 +1137,23 @@ pub extern "system" fn Java_com_leizm_zeroweb_NativeBridge_nativeProbeCompositor
 #[cfg(test)]
 mod tests {
     use super::{
-        MAX_COMPOSITOR_SURFACE_DIMENSION, NATIVE_VERSION, is_known_role, renderer_slot_id,
-        validate_compositor_dimensions,
+        ANDROID_PAGE_VIEWPORT_HEIGHT, ANDROID_PAGE_VIEWPORT_WIDTH, MAX_COMPOSITOR_SURFACE_DIMENSION, NATIVE_VERSION,
+        is_known_role, renderer_slot_id, tap_viewport_point, validate_compositor_dimensions,
     };
+
+    #[test]
+    fn tap_points_reject_out_of_range_and_map_to_viewport() {
+        assert_eq!(tap_viewport_point(0.0, 0.0), Some((0.0, 0.0)));
+        assert_eq!(tap_viewport_point(0.5, 0.25), Some((160.0, 45.0)));
+        assert_eq!(
+            tap_viewport_point(1.0, 1.0),
+            Some((ANDROID_PAGE_VIEWPORT_WIDTH as f32, ANDROID_PAGE_VIEWPORT_HEIGHT as f32))
+        );
+        assert!(tap_viewport_point(-0.01, 0.5).is_none());
+        assert!(tap_viewport_point(1.01, 0.5).is_none());
+        assert!(tap_viewport_point(0.5, f32::NAN).is_none());
+        assert!(tap_viewport_point(f32::INFINITY, 0.5).is_none());
+    }
 
     #[test]
     fn renderer_slots_map_to_u64_ids_within_eight() {

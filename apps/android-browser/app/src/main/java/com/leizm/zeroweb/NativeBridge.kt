@@ -76,6 +76,9 @@ object NativeBridge {
     external fun nativeScroll(deltaY: Float): Boolean
 
     @JvmStatic
+    external fun nativePageTap(normX: Float, normY: Float): Boolean
+
+    @JvmStatic
     external fun nativeProbeDecoder(fd: Int): Boolean
 
     @JvmStatic

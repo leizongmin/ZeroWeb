@@ -2,7 +2,7 @@
 
 **入口文档**: [../android-browser.md](../android-browser.md)
 **创建日期**: 2026-09-07（goal 拆分 bootstrap）
-**最后更新**: 2026-09-12（M3 切片 3 compositor 断连恢复落地；模拟器环境核查记入 evidence/emulator-feasibility.md）
+**最后更新**: 2026-09-12（M3 切片 3 compositor 断连恢复 + 切片 4 预览点击落 DOM click；模拟器环境核查记入 evidence/emulator-feasibility.md）
 
 ---
 
@@ -87,8 +87,11 @@
 3. **M1 切片 3**：README/版本串对齐
    → 2026-09-12 README 两处已对齐（版本串 M2、transport adapter 表述改待 RFC）；RFC 状态行仍待用户批准
 4. **RFC M3 剩余功能面**（RFC 批准后按 M2→M4 排期推进）
-   → 2026-09-12 ✅ 切片 3 compositor 断连恢复（见上）；剩余候选：触摸点击（协议
-   `MouseEvent`/Click 已具备，Kotlin tap 手势 → JNI → 活动槽）、viewport 真实尺寸
+   → 2026-09-12 ✅ 切片 3 compositor 断连恢复（见上）
+   → 2026-09-12 ✅ 切片 4 预览点击 → DOM click：Kotlin `detectTapGestures` 按预览显示区
+   归一化坐标 → `nativePageTap(normX, normY)`（纯函数 `tap_viewport_point` 校验
+   0..=1/有限值并映射 320×180 视口，宿主测试覆盖）→ 活动槽 `MouseEvent(Click)`，
+   复用 renderer 桌面 hit-test/focus/表单提交语义。剩余候选：viewport 真实尺寸
    （现固定 320×180，接 surface 实际宽高）、焦点/IME——宿主可开发，效果验证待
    模拟器/真机解锁
 5. **模拟器/真机冒烟（M3 收口）**：等 KVM 授权或设备（待用户决策，不阻塞功能切片）
@@ -102,7 +105,7 @@
 |--------|------|
 | M1 — CI 门禁 + 构建修复 | ✅ 全切片完成（CI job 全绿 34665015108、本地双路径打通、README/版本串对齐） |
 | M2 — 回归保护 + 可安装产物 | 🔶 APK 入口/签名/构建文档 ✅（P4）；JNI 桥接测试宿主侧 7 项已入、真机/模拟器冒烟断言待 M3 设备面（P3） |
-| M3 — 冒烟验收 + 决策清单 | 🔶 决策清单 ✅（RFC 已批准）；RFC M3 功能面——renderer 断连恢复/多标签换槽/compositor 断连恢复 ✅，模拟器冒烟受 KVM 环境阻塞（见待用户决策），真机待设备 |
+| M3 — 冒烟验收 + 决策清单 | 🔶 决策清单 ✅（RFC 已批准）；RFC M3 功能面——renderer 断连恢复/多标签换槽/compositor 断连恢复/预览点击 ✅，模拟器冒烟受 KVM 环境阻塞（见待用户决策），真机待设备 |
 
 ## 待用户决策
 

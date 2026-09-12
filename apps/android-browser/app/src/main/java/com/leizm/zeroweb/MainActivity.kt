@@ -15,6 +15,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -34,8 +35,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import org.json.JSONObject
 import java.nio.ByteBuffer
@@ -101,6 +104,7 @@ class MainActivity : ComponentActivity() {
                     compositorPreview = compositorPreview,
                     rendererPreview = rendererPreview,
                     onPageScroll = ::scrollPage,
+                    onPageTap = ::pageTap,
                 )
             }
         }
@@ -373,6 +377,11 @@ class MainActivity : ComponentActivity() {
     private fun scrollPage(deltaY: Float) {
         if (NativeBridge.nativeScroll(deltaY)) refreshRendererPreview()
     }
+
+    /** 预览点击 → 活动标签渲染槽的 DOM click（坐标按预览显示区归一化）。 */
+    private fun pageTap(normX: Float, normY: Float) {
+        if (NativeBridge.nativePageTap(normX, normY)) refreshRendererPreview()
+    }
 }
 
 @androidx.compose.runtime.Composable
@@ -393,6 +402,7 @@ private fun BrowserScreen(
     compositorPreview: Bitmap?,
     rendererPreview: Bitmap?,
     onPageScroll: (Float) -> Unit,
+    onPageTap: (Float, Float) -> Unit,
 ) {
     var page by remember { mutableStateOf(BrowserPage.BROWSE) }
     BackHandler(enabled = page != BrowserPage.BROWSE) { page = BrowserPage.BROWSE }
@@ -448,11 +458,13 @@ private fun BrowserScreen(
         Text(text = activeTab?.url ?: "新标签")
         rendererPreview?.let { preview ->
             var totalDragY = 0f
+            var previewSize by remember { mutableStateOf(IntSize.Zero) }
             Image(
                 bitmap = preview.asImageBitmap(),
                 contentDescription = "来自 renderer 与 compositor 的页面帧",
                 modifier = Modifier
                     .fillMaxWidth()
+                    .onSizeChanged { previewSize = it }
                     .pointerInput(Unit) {
                         detectVerticalDragGestures(
                             onVerticalDrag = { _, amount -> totalDragY += amount },
@@ -461,6 +473,17 @@ private fun BrowserScreen(
                                 totalDragY = 0f
                             },
                         )
+                    }
+                    .pointerInput(Unit) {
+                        // 点击坐标按显示区归一化，native 侧映射回页面视口（RFC M3 触摸）
+                        detectTapGestures { offset ->
+                            if (previewSize.width > 0 && previewSize.height > 0) {
+                                onPageTap(
+                                    (offset.x / previewSize.width).coerceIn(0f, 1f),
+                                    (offset.y / previewSize.height).coerceIn(0f, 1f),
+                                )
+                            }
+                        }
                     }
                     .testTag("rendererPreview"),
             )
