@@ -662,9 +662,23 @@ impl RenderPipeline {
             for fid in &iso.filter_node_ids {
                 let source = pixels.take().unwrap_or_else(|| fb.data.clone());
                 let applied = (|| -> Option<Vec<u8>> {
-                    let wrapper = crate::paint::svg_filter_chain::build_wrapper_svg(doc, *fid, &iso.region, &source)?;
-                    let data = zero_render_foundation::image_cache::rasterize_svg_at(wrapper.as_bytes(), w, h).ok()?;
-                    Some(data.pixels)
+                    let Some(wrapper) =
+                        crate::paint::svg_filter_chain::build_wrapper_svg(doc, *fid, &iso.region, &source)
+                    else {
+                        if std::env::var("ZW_URL_CHAIN_DEBUG").as_deref() == Ok("1") {
+                            eprintln!("[url-chain] key={} build_wrapper_svg -> None", iso.key);
+                        }
+                        return None;
+                    };
+                    match zero_render_foundation::image_cache::rasterize_svg_at(wrapper.as_bytes(), w, h) {
+                        Ok(data) => Some(data.pixels),
+                        Err(e) => {
+                            if std::env::var("ZW_URL_CHAIN_DEBUG").as_deref() == Ok("1") {
+                                eprintln!("[url-chain] key={} rasterize err: {e}", iso.key);
+                            }
+                            None
+                        }
+                    }
                 })();
                 pixels = applied;
                 if pixels.is_none() {
@@ -672,6 +686,16 @@ impl RenderPipeline {
                 }
             }
             let applied = pixels.unwrap_or_else(|| [0, 0, 0, 0].repeat(w as usize * h as usize));
+            if std::env::var("ZW_URL_CHAIN_DEBUG").as_deref() == Ok("1") {
+                let non_zero = applied.chunks(4).filter(|p| p.iter().any(|c| *c != 0)).count();
+                let center = ((h as usize / 2) * w as usize + w as usize / 2) * 4;
+                eprintln!(
+                    "[url-chain] key={} w={w} h={h} applied_nonzero_px={non_zero} offscreen_nonzero_px={} center={:?}",
+                    iso.key,
+                    fb.data.chunks(4).filter(|p| p.iter().any(|c| *c != 0)).count(),
+                    applied.get(center..center + 4).map(|c| [c[0], c[1], c[2], c[3]]),
+                );
+            }
             canvas_images.push((iso.key, w, h, applied));
         }
     }
@@ -1294,6 +1318,20 @@ impl RenderPipeline {
         // canvas_images 占位 key）。
         self.apply_filter_isolates(&mut painter, &doc, &mut canvas_images);
         let mut primitives = painter.into_primitives();
+        if std::env::var("ZW_URL_CHAIN_DEBUG").as_deref() == Ok("1") {
+            for img in &primitives.images {
+                if img.image_key.0 >= crate::paint::svg_filter_chain::FILTER_KEY_BASE {
+                    eprintln!(
+                        "[url-chain] placeholder key={} rect=({},{},{},{})",
+                        img.image_key.0,
+                        img.rect.origin.x,
+                        img.rect.origin.y,
+                        img.rect.size.width,
+                        img.rect.size.height
+                    );
+                }
+            }
+        }
         // 视口剔除 — 移除视口外的图元（高度取文档布局范围，供浏览器滚动消费）
         let viewport = paint_cull_viewport(self.viewport_width, self.viewport_height, &layout_result.root);
         // S7b：cull_invisible 原位剔除（primitives 变量即结果，不再返回新对象）

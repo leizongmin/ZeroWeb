@@ -130,6 +130,8 @@ pub struct Painter {
     pub(crate) font_loader_ready: bool,
     /// R4276：isolate 结果图 key 分配游标（FILTER_KEY_BASE 命名空间内递增）。
     pub(crate) filter_key_cursor: u64,
+    /// R4277：主遍前的 isolate 规格（收集期部分填充，paint_node_inner 定稿）。
+    pub(crate) isolate_specs: Vec<IsolateSpec>,
     /// R639：NodeId → LayoutBox.height 索引（paint() 开头预扫描布局树填充）。
     /// render_fragment 宏处理某 inline 片段时，box_node 是 **IFC owner**（其文本所在
     /// 容器）而非 inline 本身；为使 per-fragment bg 门控与 paint_node 抑制（在 inline 自身
@@ -554,6 +556,7 @@ impl Painter {
             filter_isolates: Vec::new(),
             font_loader_ready: false,
             filter_key_cursor: 0,
+            isolate_specs: Vec::new(),
             inline_heights: HashMap::new(),
             document_url: None,
             counter_styles: HashMap::new(),
@@ -1015,19 +1018,32 @@ impl Painter {
         // 主遍后旁路重绘子树图元，pipeline 离屏栅格化 + resvg 链应用。
         // 旁路条件：kill-switch 关、或渲染侧 FontLoader 不可用 → 整体旁路（行为回
         // R4273 态：常量链填充路径仍生效，非常量链 = 无 filter 现状）。
-        let mut isolate_specs = Vec::new();
         if crate::paint::svg_filter_chain::url_chain_enabled()
             && self.font_loader_ready
             && let Some(doc) = doc
         {
-            self.collect_filter_isolates(layout, styles, doc, 0.0, 0.0, false, &mut isolate_specs);
-            for spec in &isolate_specs {
-                self.paint_skip_nodes.insert(spec.node_id);
+            // R4278：收集期**不再预抑制**——region 门禁（⑤⑦）需主遍真实 abs，
+            // 在 paint_node_inner 定稿位点裁定：过门禁 → 当场抑制+占位；不过 →
+            // 继续常规绘制（legacy）。预抑制会让被拒元素永久不可见（本轮
+            // filter-region-transformed-child-001 回归实证）。
+            self.collect_filter_isolates(layout, styles, doc, 0.0, 0.0, false);
+            if std::env::var("ZW_URL_CHAIN_DEBUG").as_deref() == Ok("1") {
+                eprintln!(
+                    "[url-chain] collect done: specs={} skip_contains_first={}",
+                    self.isolate_specs.len(),
+                    self.isolate_specs
+                        .first()
+                        .is_some_and(|s| self.paint_skip_nodes.contains(&s.node_id))
+                );
             }
         }
         self.paint_node(layout, styles, 0.0, 0.0, doc, true);
-        for spec in isolate_specs {
-            self.paint_isolate_subtree(&spec, layout, styles, doc);
+        // 只旁路绘制已定稿（region 就绪）的 isolate——门禁⑤⑦拦截的丢弃 = legacy。
+        let specs: Vec<IsolateSpec> = std::mem::take(&mut self.isolate_specs);
+        for spec in &specs {
+            if spec.region.is_some() {
+                self.paint_isolate_subtree(spec, layout, styles, doc);
+            }
         }
     }
 
@@ -1059,7 +1075,6 @@ impl Painter {
         abs_x: f32,
         abs_y: f32,
         ancestor_has_transform: bool,
-        out: &mut Vec<IsolateSpec>,
     ) {
         let Some(node_id) = box_node.node_id else {
             // 无 DOM 身份盒：仅递归子树（偏移同主流）。
@@ -1073,11 +1088,13 @@ impl Painter {
                     child_offset_x,
                     child_offset_y,
                     ancestor_has_transform,
-                    out,
                 );
             }
             return;
         };
+        if std::env::var("ZW_URL_CHAIN_DEBUG").as_deref() == Ok("1") {
+            eprintln!("[url-chain] visit node={node_id:?}");
+        }
         if self.paint_skip_nodes.contains(&node_id) {
             return; // 已抑制（嵌套 isolate 由外层承载）
         }
@@ -1125,7 +1142,20 @@ impl Painter {
                 if filter_node_ids.is_empty() {
                     url_chain_debug(node_id, "gate2/3-all-refs-skipped");
                 } else {
-                    self.push_isolate_spec(box_node, doc, node_id, abs_x, abs_y, filter_node_ids, out);
+                    // 收集期只记（node_id, 链引用）；region/占位在主遍真实 abs 处定稿
+                    //（paint_node_inner skip 位点——walk 偏移算术对 inline-block/IFC
+                    // 片段盒不可达真实位置，R4277 lighting-no-light 双占位 (0,0) 实证）。
+                    let key = self.next_filter_key();
+                    if std::env::var("ZW_URL_CHAIN_DEBUG").as_deref() == Ok("1") {
+                        eprintln!("[url-chain] pushed node={node_id:?} key={key}");
+                    }
+                    self.isolate_specs.push(IsolateSpec {
+                        node_id,
+                        filter_node_ids,
+                        abs: None,
+                        region: None,
+                        key,
+                    });
                 }
             }
         }
@@ -1140,27 +1170,32 @@ impl Painter {
                 child_offset_x,
                 child_offset_y,
                 ancestor_has_transform || self_transform,
-                out,
             );
         }
     }
-    /// R4277：由已通过门禁①-④的引用集合构建 isolate 规格（门禁⑤ region 像素
-    /// 对齐 + 尺寸上限在此裁定），发射占位 ImagePrimitive 并入队。
-    fn push_isolate_spec(
+    /// R4277：isolate 定稿——在主遍真实 abs（paint_node_inner skip 位点调用）处
+    /// 裁定门禁⑤（region 像素对齐 + 尺寸上限）与⑦（region 覆盖元素盒），发射占位
+    /// ImagePrimitive；未过门禁的 spec 保持 region=None（paint 后被丢弃 = legacy）。
+    fn finalize_isolate_spec(
         &mut self,
         box_node: &LayoutBox,
         doc: &Document,
-        node_id: NodeId,
         abs_x: f32,
         abs_y: f32,
-        filter_node_ids: Vec<zero_dom::NodeId>,
-        out: &mut Vec<IsolateSpec>,
+        spec_index: usize,
     ) {
-        // 门禁⑤：region 像素对齐（外扩）。取首个可解析引用的 region（同元素多引用
-        // 的 region 按 spec = 各链输出合成区域，首版以并集近似——顺序应用逐链产出）。
-        // 门禁⑦：region 须完整覆盖元素盒——部分 region 会裁掉盒外溢内容（spec：region
-        // 外不渲染），旁路保 legacy（filter-region-transformed-child-001 x=25% w=50%
-        // 回归实证）。
+        let Some(spec) = self.isolate_specs.get_mut(spec_index) else {
+            return;
+        };
+        if spec.abs.is_some() {
+            return; // 已定稿
+        }
+        spec.abs = Some((abs_x, abs_y));
+        let filter_node_ids = spec.filter_node_ids.clone();
+        let node_id = spec.node_id;
+        // 门禁⑤：region 像素对齐（外扩）。门禁⑦：region 须完整覆盖元素盒——部分
+        // region 会裁掉盒外溢内容（spec：region 外不渲染），旁路保 legacy
+        //（filter-region-transformed-child-001 x=25% w=50% 回归实证）。
         const REGION_EPSILON: f32 = 1.0;
         let mut region = None;
         for fid in &filter_node_ids {
@@ -1192,15 +1227,9 @@ impl Painter {
             return; // region 异常巨大（设计 §5 数据面上限）→ 旁路
         }
         url_chain_debug(node_id, "isolated");
-        let key = self.next_filter_key();
-        out.push(IsolateSpec {
-            node_id,
-            abs_x,
-            abs_y,
-            region,
-            filter_node_ids,
-            key,
-        });
+        let spec = &mut self.isolate_specs[spec_index];
+        spec.region = Some(region);
+        let key = spec.key;
         // 占位 ImagePrimitive：主遍发射（元素自身被抑制），pipeline 回填
         // canvas_images 同 key 像素。
         self.primitives
@@ -1235,8 +1264,11 @@ impl Painter {
         // region.origin；paint_node 根入口 abs = offset + box.x/y → 抵消 box.x/y）。
         // 首版 `offset = region.origin − box.x/y` 丢掉 main_abs，致 body margin 等
         // 偏移的元素整体错位 8px（filter-chained-url-url-001 取证实证）。
-        let off_x = spec.abs_x - spec.region.origin.x - box_root.x;
-        let off_y = spec.abs_y - spec.region.origin.y - box_root.y;
+        let (Some((abs_x, abs_y)), Some(region)) = (spec.abs, spec.region) else {
+            return;
+        };
+        let off_x = abs_x - region.origin.x - box_root.x;
+        let off_y = abs_y - region.origin.y - box_root.y;
         self.paint_node(box_root, styles, off_x, off_y, Some(doc), false);
         let side = std::mem::replace(&mut self.primitives, main_primitives);
         if was_skipped {
@@ -1245,7 +1277,7 @@ impl Painter {
         self.filter_isolates
             .push(crate::paint::svg_filter_chain::FilterIsolate {
                 primitives: side,
-                region: spec.region,
+                region,
                 filter_node_ids: spec.filter_node_ids.clone(),
                 key: spec.key,
             });
@@ -1631,6 +1663,27 @@ impl Painter {
         // R2197 Phase A slice 3：orphan inline LayoutBox（paint_skip_nodes）跳过递归绘制。
         // 其文本/背景已由父 IFC 片段绘制（R639 part2），此处跳过避免双绘 + 避免 approximate
         // 几何盒被当独立盒误绘。default 空集 → 不触发，零行为变更。
+        // R4277/R4278：skip 位点即 isolate 定稿位点（须在 skip return 之前）——
+        // 此处 abs = offset + box.x/y 为真实主遍位置。门禁全过 → 抑制本节点 +
+        // 发射占位（链输出稍后替换）；任一 region 门禁未过 → 落到常规绘制
+        // （legacy 无 filter），不抑制。
+        if let Some(node_id) = box_node.node_id
+            && !self.isolate_specs.is_empty()
+            && let Some(spec_index) = self
+                .isolate_specs
+                .iter()
+                .position(|spec| spec.node_id == node_id && spec.region.is_none())
+        {
+            if let Some(doc) = doc {
+                self.finalize_isolate_spec(box_node, doc, offset_x + box_node.x, offset_y + box_node.y, spec_index);
+                if self.isolate_specs[spec_index].region.is_some() {
+                    self.paint_skip_nodes.insert(node_id);
+                    return;
+                }
+            }
+            // region=None（门禁⑤⑦拒绝）→ 从规格表移除，本节点照常绘制。
+            self.isolate_specs.remove(spec_index);
+        }
         if box_node.node_id.is_some_and(|id| self.paint_skip_nodes.contains(&id)) {
             return;
         }
@@ -1677,6 +1730,12 @@ impl Painter {
 
         let abs_x = offset_x + box_node.x;
         let abs_y = offset_y + box_node.y;
+
+        // R4277：skip 位点即 isolate 定稿位点——此处 abs 为真实主遍位置（含
+        // body margin / IFC 片段偏移），region 与占位 ImagePrimitive 在此落定。
+        if box_node.node_id.is_some_and(|id| self.paint_skip_nodes.contains(&id)) {
+            return;
+        }
 
         // R4262（CSS Overflow 5 §scroll-buttons）：按钮盒（无 DOM 身份，node_id = 属主
         // 元素）按方向槽位查属主 `scroll_buttons` 载荷伪样式绘制背景/边框——叶盒无子，
@@ -3157,13 +3216,13 @@ fn url_chain_debug(node_id: NodeId, decision: &str) {
 pub(crate) struct IsolateSpec {
     /// isolate 元素节点（主遍抑制 + 子树重找）。
     node_id: NodeId,
-    /// 主遍绝对位置（walk 偏移链，R4277 离屏平移公式用）。
-    abs_x: f32,
-    abs_y: f32,
-    /// filter region（页面绝对坐标）。
-    region: zero_render_foundation::geometry::Rect,
     /// 被引用 `<filter>` 元素（多引用按声明序，pipeline 顺序链应用）。
     filter_node_ids: Vec<zero_dom::NodeId>,
+    /// 主遍绝对位置（paint_node_inner 定稿——walk 算术对 inline-block/IFC 片段
+    /// 盒不可达真实位置，R4277 lighting-no-light 双占位 (0,0) 实证）。
+    abs: Option<(f32, f32)>,
+    /// filter region（绝对坐标；None = 门禁⑤⑦未过 → 丢弃）。
+    region: Option<zero_render_foundation::geometry::Rect>,
     /// 占位 ImagePrimitive / canvas_images 共享 key。
     key: u64,
 }

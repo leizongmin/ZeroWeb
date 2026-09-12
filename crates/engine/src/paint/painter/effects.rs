@@ -1612,11 +1612,12 @@ pub(crate) fn svg_filter_region(
             literal("height", 1.2 * box_node.height)?,
         )
     } else {
-        // objectBoundingBox：x/width 以 bbox 宽为基准、y/height 以 bbox 高为基准
-        //（SVG1.1 §15.3 region 属性定义）。
+        // objectBoundingBox：**所有值（含无单位数）都是 bbox 分量比**——SVG1.1 §15.3
+        // `x="0" width="1"` 即 0%..100%（首版把无单位当 px 致 1×1 region → 门禁⑦
+        // 误拦 effect-reference-lighting-no-light / obb-dimensions 族）。
         let pct = |attr: &str, dflt: f32, base: f32| -> Option<f32> {
             match elem.get_attribute(attr) {
-                Some(v) => parse_len(&v).map(|(n, is_pct)| if is_pct { n * base } else { n }),
+                Some(v) => parse_len(&v).map(|(n, _)| n * base),
                 None => Some(dflt * base),
             }
         };

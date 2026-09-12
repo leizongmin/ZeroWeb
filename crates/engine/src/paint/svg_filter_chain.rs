@@ -73,6 +73,57 @@ pub(crate) fn subtree_has_transform(
         .any(|child| walk(doc, styles, child))
 }
 
+/// R4278：把序列化链中的**无光源** lighting 原语替换为等价透明 feFlood
+///（`flood-color=#000` + `flood-opacity=0` = 透明黑，与 spec 错误处理语义一致）。
+/// 逐子元素序列化重建（替换基于 outer_html 的逐元素精确匹配）。
+fn rewrite_lightless_lighting(doc: &Document, filter_node_id: zero_dom::NodeId, chain_xml: String) -> String {
+    let mut out = chain_xml;
+    for child in doc.child_nodes(filter_node_id) {
+        let Some(node) = doc.get(child) else {
+            continue;
+        };
+        let NodeKind::Element(elem) = &node.kind else {
+            continue;
+        };
+        let name = elem.local_name();
+        if name != "feDiffuseLighting" && name != "feSpecularLighting" {
+            continue;
+        }
+        let has_light = doc.child_nodes(child).into_iter().any(|gc| {
+            doc.get(gc).is_some_and(|n| {
+                matches!(&n.kind, NodeKind::Element(e)
+                    if matches!(e.local_name(), "feDistantLight" | "fePointLight" | "feSpotLight"))
+            })
+        });
+        if has_light {
+            continue;
+        }
+        let child_xml = doc.outer_html(child);
+        // 序列化形：开标签（可能带属性）+ 可选内容 + 闭标签。替换整段为透明 flood。
+        if let Some(start) = out.find(&child_xml) {
+            let replacement = r##"<feFlood flood-color="#000000" flood-opacity="0"/>"##;
+            out.replace_range(start..start + child_xml.len(), replacement);
+        }
+    }
+    out
+}
+
+/// R4278：沿祖先链找首个显式 `color-interpolation-filters` 声明（可继承属性，
+/// filter-effects-1 §color-interpolation-filters——缺省 linearRGB）。
+fn inherited_color_interpolation(doc: &Document, filter_node_id: zero_dom::NodeId) -> Option<String> {
+    let mut cur = doc.parent_node(filter_node_id);
+    while let Some(id) = cur {
+        if let Some(node) = doc.get(id)
+            && let NodeKind::Element(elem) = &node.kind
+            && let Some(v) = elem.get_attribute("color-interpolation-filters")
+        {
+            return Some(v);
+        }
+        cur = doc.parent_node(id);
+    }
+    None
+}
+
 /// kill-switch（default-on）。painter 收集侧与 pipeline 应用侧共用。
 pub(crate) fn url_chain_enabled() -> bool {
     std::env::var("ZW_SVG_URL_CHAIN").as_deref() != Ok("0")
@@ -132,14 +183,38 @@ pub(crate) fn build_wrapper_svg(
         return None;
     }
     let id = elem.id.clone()?;
-    let chain_xml = doc.outer_html(filter_node_id);
+    let mut chain_xml = doc.outer_html(filter_node_id);
+    // R4278：无光源 lighting 原语 spec 语义改写——feDiffuseLighting/feSpecularLighting
+    // 无 <fe*DistantLight|PointLight|SpotLight> 子元素时输出**恒为透明黑**
+    //（filter-effects-1 #feDiffuseLightingElement error handling；本族 test assert
+    // 实证）。resvg 对无光源 lighting 按输入像素计算（非 conformant——不透明输入产
+    // 非透明输出），序列化时替换为等价透明 feFlood。
+    chain_xml = rewrite_lightless_lighting(doc, filter_node_id, chain_xml);
+    // color-interpolation-filters 为**可继承**属性：声明在祖先（常见于 `<svg>` 根）
+    // 时 outer_html 序列化不含它 → resvg 按缺省 linearRGB 计算，与引用页 sRGB 语义
+    // 相左（effect-reference-lighting-no-light 4.17% 实证）。沿祖先链取首个显式
+    // 声明并注入序列化 `<filter>` 开标签。
+    if elem.get_attribute("color-interpolation-filters").is_none()
+        && let Some(inherited) = inherited_color_interpolation(doc, filter_node_id)
+        && let Some(rel) = chain_xml.find('>')
+    {
+        chain_xml.insert_str(rel, &format!(r#" color-interpolation-filters="{inherited}""#));
+    }
     let w = region.size.width.ceil().max(1.0) as u32;
     let h = region.size.height.ceil().max(1.0) as u32;
     let png = encode_png_rgba(rgba, w, h)?;
-    Some(format!(
+    let svg = format!(
         r#"<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}">{chain_xml}<image x="0" y="0" width="{w}" height="{h}" filter="url(#{id})" href="data:image/png;base64,{}"/></svg>"#,
         base64_encode(&png)
-    ))
+    );
+    if std::env::var("ZW_URL_CHAIN_DEBUG").as_deref() == Ok("1") {
+        let chain_head: String = svg.chars().take(400).collect();
+        eprintln!(
+            "[url-chain] wrapper id={id} hasFlood={} chain={chain_head}",
+            svg.contains("feFlood")
+        );
+    }
+    Some(svg)
 }
 
 #[cfg(test)]
