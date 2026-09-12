@@ -63,6 +63,9 @@ pub(super) struct HeadlessSession {
     pub(super) network_enabled: bool,
     /// Network 域事件队列（proxy_fetch 生命周期观测，transport 逐命令排空盖章）。
     pub(super) pending_network_events: Vec<(String, serde_json::Value)>,
+    /// Console 事件队列（S11：renderer `ConsoleLog` → `Runtime.consoleAPICalled`，
+    /// transport 逐命令排空盖章；`(level, text, args_json)`）。
+    pub(super) pending_console_events: Vec<(String, String, String)>,
     /// R3282（#4）：可选 GPU 截图渲染器（`ZW_HEADLESS_GPU_SCREENSHOT=1` 启用；
     /// 默认 CPU——oracle 像素对比基线稳定）。
     pub(super) gpu_renderer: Option<zero_render_foundation::gpu::renderer::GpuRenderer>,
@@ -87,6 +90,7 @@ impl HeadlessSession {
             user_agent_override: None,
             network_enabled: false,
             pending_network_events: Vec::new(),
+            pending_console_events: Vec::new(),
             gpu_renderer: None,
         }
     }
@@ -132,6 +136,7 @@ impl HeadlessSession {
             user_agent_override: None,
             network_enabled: false,
             pending_network_events: Vec::new(),
+            pending_console_events: Vec::new(),
             gpu_renderer: None,
         }
     }
@@ -151,6 +156,13 @@ impl HeadlessSession {
             }
             IpcMessageKind::LoadComplete => Ok(Some(Ok(()))),
             IpcMessageKind::LoadFailed(message) | IpcMessageKind::CrashNotification(message) => Ok(Some(Err(message))),
+            // S11：page console 输出 → 会话事件队列（transport 逐命令排空盖章为
+            // `Runtime.consoleAPICalled`； PW 消费面 = msg.type()/text()）。
+            IpcMessageKind::ConsoleLog(params) => {
+                self.pending_console_events
+                    .push((params.level, params.text, params.args_json));
+                Ok(None)
+            }
             _ => Ok(None),
         }
     }

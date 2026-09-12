@@ -136,6 +136,8 @@ pub(crate) struct RendererRuntime {
     inbound_threads: Vec<JoinHandle<()>>,
     /// 当前视口（CSS 逻辑像素），随 SetViewport 更新；publish 用。
     viewport: (u32, u32),
+    /// S11：宿主媒体上下文（matchMedia 用户偏好；js_worker `__zw_match_media` 消费）。
+    media_ctx: Arc<std::sync::Mutex<zero_css_parser::media_query::MediaContext>>,
     /// 当前窗口设备缩放因子，仅用于 compositor 位图的光栅分辨率。
     device_scale_factor: f32,
     /// 页面运行时（B3：渲染/字体/脚本/hit-test 全经 WebView，与 tabworker 同一页面运行时）。
@@ -283,6 +285,9 @@ impl RendererRuntime {
         set_hmtx_measure_fn(text_metrics::measure_text_hmtx);
         let js_worker =
             RendererJsWorker::spawn_with_handlers(renderer_id, indexed_db_handler, Some(service_worker_client));
+        // S11：宿主媒体上下文与 js_worker 共享 cell（SetColorScheme/SetMediaType 更新，
+        // worker `__zw_match_media` 求值消费）。
+        let media_ctx = js_worker.media_ctx();
         // P1b S3 / R2923（镜像 browser tab_worker）：注入生产 fetch handler（经 ResourceLoader 真实 HTTP，
         // 支持全方法/头/体）。js_worker 早于 WebView 创建；共享加载器不依赖 WebView 句柄，故可立即注入。
         // test 构建不注入（renderer runtime 单测用合成 handler）。
@@ -321,6 +326,7 @@ impl RendererRuntime {
             inbound_rx,
             inbound_threads: vec![inbound_thread],
             viewport: (1280, 800),
+            media_ctx,
             device_scale_factor: 1.0,
             webview: Some(webview),
             font_loader,
@@ -2005,6 +2011,10 @@ impl RendererRuntime {
     }
 
     fn handle_set_color_scheme(&mut self, params: SetColorSchemeParams) -> Result<(), String> {
+        // S11：同步宿主媒体上下文（matchMedia prefers-color-scheme 求值真值源）。
+        if let Ok(mut ctx) = self.media_ctx.lock() {
+            ctx.prefers_color_scheme = ipc_scheme_to_engine(params.scheme);
+        }
         if let Some(wv) = self.webview.as_mut() {
             wv.set_prefers_color_scheme(ipc_scheme_to_engine(params.scheme));
         }
@@ -2012,6 +2022,10 @@ impl RendererRuntime {
     }
 
     fn handle_set_media_type(&mut self, params: SetMediaTypeParams) -> Result<(), String> {
+        // S11：同步宿主媒体上下文（matchMedia media type 求值真值源）。
+        if let Ok(mut ctx) = self.media_ctx.lock() {
+            ctx.media_type = ipc_media_to_engine(params.media_type);
+        }
         if let Some(wv) = self.webview.as_mut() {
             wv.set_media_type(ipc_media_to_engine(params.media_type));
         }
@@ -2200,6 +2214,20 @@ impl RendererRuntime {
         )
     }
 
+    /// S11：drain worker console 队列 → browser/headless IPC（`ConsoleLog`）。
+    /// level/text/args_json 语义见 shim `_zwConsoleEmit` 与 protocol `ConsoleLogParams`。
+    fn tick_console_log_drain(&mut self) {
+        for (level, text, args_json) in self.js_worker.take_console_logs() {
+            if let Err(e) = self.send_regular(IpcMessageKind::ConsoleLog(zero_protocol::message::ConsoleLogParams {
+                level,
+                text,
+                args_json,
+            })) {
+                tracing::debug!("forward console log: {e}");
+            }
+        }
+    }
+
     fn handle_mouse_event(&mut self, params: MouseEventParams) -> Result<(), String> {
         use zero_protocol::message::MouseEventType;
         let event_type = match params.event_type {
@@ -2374,6 +2402,8 @@ impl RendererRuntime {
 
     fn dispatch_message(&mut self, msg: IpcMessage) -> Result<(), String> {
         match msg.kind {
+            // console 输出是 renderer → browser 单向事件，本进程不消费。
+            IpcMessageKind::ConsoleLog(_) => Ok(()),
             IpcMessageKind::Navigate(params) => self.handle_navigate(params),
             IpcMessageKind::LoadHtml(params) => self.handle_load_html(params),
             IpcMessageKind::SetViewport(params) => self.handle_set_viewport(params),
@@ -2520,6 +2550,10 @@ impl RendererRuntime {
             // R3058 JS 跨文档导航：drain location.href=/assign/replace 投递的导航 URL，handle_navigate（fetch 新文档）。
             // 多次导航取最后一条（real browser 亦取最后发起；前者被后者覆盖）。任意时刻可来，故每轮检查。
             self.tick_pending_navigation()?;
+
+            // S11（cdp-protocol value-only console 面）：drain page console 输出（任意脚本
+            // 执行均可产生，故每轮检查）→ browser/headless（`Runtime.consoleAPICalled`）。
+            self.tick_console_log_drain();
 
             // R3254-M7'：drain 页面 JS focus()/blur() 变更（任意脚本执行均可产生，故每轮检查）。
             self.sync_focus_from_js();

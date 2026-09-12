@@ -251,6 +251,10 @@ pub enum IpcMessageKind {
     ServiceWorkerHostCommand(ServiceWorkerHostCommandParams),
     /// Service Worker runtime 事件（renderer → browser owner）。
     ServiceWorkerHostEvent(ServiceWorkerHostEventParams),
+
+    /// 页面 console 输出（renderer → headless CDP 会话；`Runtime.consoleAPICalled` 事件源，
+    /// cdp-protocol S11 value-only 面）。
+    ConsoleLog(crate::message::ConsoleLogParams),
 }
 
 /// 焦点变更信息（渲染→浏览器）。
@@ -449,6 +453,18 @@ pub enum AutomationResult {
     Elements(Vec<AutomationElementRef>),
     /// JSON 兼容脚本返回值。
     Value(AutomationValue),
+}
+
+/// renderer 页面 console 输出（CDP `Runtime.consoleAPICalled` 事件源；value-only 面）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConsoleLogParams {
+    /// console 方法名（log/info/warn/error/debug/trace）。
+    pub level: String,
+    /// 序列化后的单行文本（既有 tracing 面，与 shim `_zwSerializeConsoleArg` 拼接一致）。
+    pub text: String,
+    /// 逐参值的 JSON 数组（shim `_zwSerializeConsoleValue`；`__zw_undefined__` 标记
+    /// undefined）——headless 侧映射为 value-only remoteObject 列表。
+    pub args_json: String,
 }
 
 /// 自动化脚本值。

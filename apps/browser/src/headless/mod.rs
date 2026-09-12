@@ -397,6 +397,33 @@ impl HeadlessServer {
                 session_id: req.session_id.clone(),
             });
         }
+        // Console 事件排空（S11：renderer ConsoleLog → `Runtime.consoleAPICalled`，
+        // value-only remoteObject args；归当前命令会话盖章发送）
+        for (level, _text, args_json) in session.pending_console_events.drain(..) {
+            let args = serde_json::from_str::<serde_json::Value>(&args_json)
+                .ok()
+                .and_then(|v| v.as_array().cloned())
+                .unwrap_or_default();
+            let cdp_type = match level.as_str() {
+                "warn" => "warning",
+                "debug" | "trace" => "debug",
+                other => other,
+            };
+            events.push(ServerEvent {
+                method: "Runtime.consoleAPICalled".into(),
+                params: serde_json::json!({
+                    "type": cdp_type,
+                    "args": args.iter().map(console_value_to_remote_object).collect::<Vec<_>>(),
+                    // 主 world 上下文 id（S4 契约：executionContextCreated 恒 id=1）。
+                    "executionContextId": 1,
+                    "timestamp": std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_millis() as u64,
+                }),
+                session_id: req.session_id.clone(),
+            });
+        }
 
         let response = match result {
             Ok(value) => ServerResponse {
@@ -414,6 +441,29 @@ impl HeadlessServer {
         };
 
         (response, events)
+    }
+}
+
+/// S11：console 逐参值 → value-only CDP remoteObject（`__zw_undefined__` 标记 →
+/// `{type:"undefined"}`；对象/数组保结构内联 value——headless 单机无句柄需求）。
+fn console_value_to_remote_object(value: &serde_json::Value) -> serde_json::Value {
+    match value {
+        serde_json::Value::Null => serde_json::json!({ "type": "object", "subtype": "null", "value": null }),
+        serde_json::Value::Bool(v) => serde_json::json!({ "type": "boolean", "value": v }),
+        serde_json::Value::Number(v) => serde_json::json!({ "type": "number", "value": v }),
+        serde_json::Value::String(s) if s == "__zw_undefined__" => serde_json::json!({ "type": "undefined" }),
+        serde_json::Value::String(s) => serde_json::json!({ "type": "string", "value": s }),
+        serde_json::Value::Array(items) => serde_json::json!({
+            "type": "object", "subtype": "array",
+            "value": items.iter().map(console_value_to_remote_object).collect::<Vec<_>>(),
+        }),
+        serde_json::Value::Object(entries) => serde_json::json!({
+            "type": "object",
+            "value": entries
+                .iter()
+                .map(|(k, v)| (k.clone(), console_value_to_remote_object(v)))
+                .collect::<serde_json::Map<String, serde_json::Value>>(),
+        }),
     }
 }
 

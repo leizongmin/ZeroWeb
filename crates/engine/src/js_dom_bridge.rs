@@ -3391,6 +3391,32 @@ fn set_url_host_and_port(url: &mut url::Url, value: &str) -> bool {
 /// `{"matches":bool,"media":<query>}`。viewport 宽高由 JS 侧传入（innerWidth/innerHeight，生产由
 /// host 更新为真 viewport）。提取为纯函数便于单测复用。
 #[cfg(feature = "script-runtime")]
+pub fn match_media_to_json_ctx(
+    query: &str,
+    width: f64,
+    height: f64,
+    ctx_cell: &std::sync::Arc<std::sync::Mutex<zero_css_parser::media_query::MediaContext>>,
+) -> String {
+    // 用户媒体偏好（prefers-color-scheme / media type 等）由宿主经共享 cell 注入
+    // （renderer SetColorScheme/SetMediaType/SetViewport 更新）；视口尺寸以调用参数为准。
+    let defaults = ctx_cell
+        .lock()
+        .map(|c| c.clone())
+        .unwrap_or_else(|_| zero_css_parser::media_query::MediaContext::new(width, height));
+    let ctx = zero_css_parser::media_query::MediaContext {
+        viewport_width: width,
+        viewport_height: height,
+        ..defaults
+    };
+    let matches = zero_css_parser::media_query::parse_media_query(query)
+        .map(|mqs| {
+            mqs.iter()
+                .any(|mq| zero_css_parser::media_query::evaluate_media_query(mq, &ctx))
+        })
+        .unwrap_or(false);
+    format!(r#"{{"matches":{},"media":{}}}"#, matches, json_str(query))
+}
+
 pub(crate) fn match_media_to_json(query: &str, width: f64, height: f64) -> String {
     let ctx = zero_css_parser::media_query::MediaContext::new(width, height);
     let matches = zero_css_parser::media_query::parse_media_query(query)

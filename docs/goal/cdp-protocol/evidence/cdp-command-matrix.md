@@ -126,7 +126,7 @@ DC-3 基线）。「现状」列以 2026-09-12 `apps/browser/src/headless/`（M1
 | 方法 | 捕获调用 | 参数键 | ZeroWeb 现状 | 计划 |
 |------|---------|--------|--------------|------|
 | `Emulation.setDeviceMetricsOverride` | 2 | deviceScaleFactor/height/mobile/screenHeight/screenOrientation/screenWidth/width | ✅（S6：→renderer SetViewport + 服务器视口状态联动 getLayoutMetrics/captureScreenshot + frameResized 事件；宽高 0=恢复默认） | 完成（M3 S6） |
-| `Emulation.setEmulatedMedia` | 4 | features/media | ✅（S6：prefers-color-scheme→SetColorScheme、media type→SetMediaType；reduced-motion 等无 IPC 面暂忽略） | 完成（M3 S6；余 feature 随引擎能力） |
+| `Emulation.setEmulatedMedia` | 4 | features/media | ✅（S6→S11：prefers-color-scheme→SetColorScheme、media type→SetMediaType；S11 补 matchMedia 求值接线——宿主媒体上下文 cell 注入 `__zw_match_media`，PW 读回真值——emulation.media 绿；reduced-motion 等无 IPC 面暂忽略） | 完成（M3 S6 + M4 S11；余 feature 随引擎能力） |
 | `Emulation.setFocusEmulationEnabled` | 3 | enabled | ✅ stub 接受（S4） | 完成（M1 S4） |
 | `Emulation.setUserAgentOverride` | 2 | userAgent | ✅（S7：proxy_fetch 注入 User-Agent；accept-language 等附带头暂忽略） | 完成（M4 S7） |
 
@@ -159,7 +159,7 @@ DC-3 基线）。「现状」列以 2026-09-12 `apps/browser/src/headless/`（M1
 | `Runtime.executionContextCreated` | 14 | ✅（S4：auxData.frameId/isDefault 硬契约） | 完成（M1 S4） |
 | `Runtime.executionContextsCleared` | 4 | ✅（S5，导航 commit 时） | 完成（M2 S5） |
 | `Runtime.executionContextDestroyed` | 2 | ❌ | M2 |
-| `Runtime.consoleAPICalled` | 14 | ❌ | M4（console 对象化，P5 缺口） |
+| `Runtime.consoleAPICalled` | 14 | ✅（S11：renderer ConsoleLog IPC → 会话事件排空盖章；value-only remoteObject args + level→CDP type 映射——console.collect 绿） | 完成（M4 S11） |
 | `Page.loadEventFired` | 3 | ⚠️ 有雏形（timestamp 恒 0.0） | M2 |
 | `Page.frameNavigated` | 3 | ✅（S5，frame.id=targetId） | 完成（M2 S5） |
 | `Page.frameStartedLoading` / `frameStoppedLoading` | 3 / 5 | ✅（S5） | 完成（M2 S5） |

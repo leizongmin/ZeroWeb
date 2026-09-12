@@ -234,6 +234,9 @@ impl RendererRuntime {
         };
         self.sync_focus_from_js();
         self.sync_cached_html_from_webview();
+        // S11：脚本执行产生的 console 输出先于 AutomationResponse 转发（headless 在
+        // 自动化往返中消费并入同一命令的事件排空——晚了要等下一条命令才可见）。
+        self.tick_console_log_drain();
         if changed {
             self.publish_webview(None, true).map_err(internal_error)?;
         }

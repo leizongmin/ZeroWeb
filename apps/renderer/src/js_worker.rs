@@ -104,6 +104,10 @@ enum JsWorkerCommand {
 /// 渲染进程 JS worker 句柄。
 pub struct RendererJsWorker {
     cmd_tx: Sender<JsWorkerCommand>,
+    /// S11：page console 输出队列（worker 回调推入，runtime drain）。
+    console_logs: Arc<std::sync::Mutex<Vec<(String, String, String)>>>,
+    /// S11：宿主媒体上下文（matchMedia 求值的用户偏好源）。
+    media_ctx: Arc<std::sync::Mutex<zero_css_parser::media_query::MediaContext>>,
     join: Option<JoinHandle<()>>,
     executor: ScriptFn,
     module_executor: ModuleFn,
@@ -164,6 +168,17 @@ impl RendererJsWorker {
         let nav_bridge = zero_engine::NavigationBridge::new();
         let navigations = nav_bridge.queue();
         let focus_changes: Arc<std::sync::Mutex<Vec<Option<String>>>> = Arc::default();
+        // S11（cdp-protocol value-only console 面）：page console 输出队列——worker 回调
+        // 推入，runtime 主循环 drain → browser/headless（`Runtime.consoleAPICalled`）。
+        let console_logs: Arc<std::sync::Mutex<Vec<(String, String, String)>>> = Arc::default();
+        let console_logs_for_worker = Arc::clone(&console_logs);
+        // S11（emulation.media）：宿主媒体上下文共享 cell——renderer SetColorScheme/
+        // SetMediaType/SetViewport 更新；`__zw_match_media` 重注册（后注册者胜）后
+        // prefers-color-scheme 等用户偏好进 matchMedia 求值。
+        let media_ctx: Arc<std::sync::Mutex<zero_css_parser::media_query::MediaContext>> = Arc::new(
+            std::sync::Mutex::new(zero_css_parser::media_query::MediaContext::new(0.0, 0.0)),
+        );
+        let media_ctx_for_worker = Arc::clone(&media_ctx);
         let async_callbacks_ready = Arc::new(AtomicBool::new(false));
         #[cfg(test)]
         let execution_count = Arc::new(AtomicU64::new(0));
@@ -185,6 +200,8 @@ impl RendererJsWorker {
                 js_worker_main(
                     cmd_rx,
                     cmd_for_worker,
+                    console_logs_for_worker,
+                    media_ctx_for_worker,
                     mutations_for_worker,
                     rect_snapshot_for_worker,
                     handle_selector_map_for_worker,
@@ -233,6 +250,8 @@ impl RendererJsWorker {
             join: Some(join),
             executor,
             module_executor,
+            console_logs,
+            media_ctx,
             mutations,
             rect_snapshot,
             handle_selector_map,
@@ -266,6 +285,21 @@ impl RendererJsWorker {
     /// renderer 启动与 `SetViewport` 时各发一次，worker 在快照换代后按需校正）。
     pub fn set_viewport_hint(&self, width: u32, height: u32) {
         let _ = self.cmd_tx.send(JsWorkerCommand::SetViewportHint { width, height });
+    }
+
+    /// S11：宿主媒体上下文 cell（`SetColorScheme`/`SetMediaType`/`SetViewport` 更新，
+    /// `__zw_match_media` 求值消费）。
+    pub fn media_ctx(&self) -> Arc<std::sync::Mutex<zero_css_parser::media_query::MediaContext>> {
+        Arc::clone(&self.media_ctx)
+    }
+
+    /// S11：原子取出 page console 输出（`(level, text, args_json)`），供 runtime 主循环
+    /// 转发 browser/headless（`Runtime.consoleAPICalled` 事件源）。
+    pub fn take_console_logs(&self) -> Vec<(String, String, String)> {
+        self.console_logs
+            .lock()
+            .map(|mut q| std::mem::take(&mut *q))
+            .unwrap_or_default()
     }
 
     /// 脚本执行前更新 DOM HTML 快照与页面 URL。
@@ -510,6 +544,8 @@ fn refresh_worker_native_dom_source(
 fn js_worker_main(
     cmd_rx: Receiver<JsWorkerCommand>,
     cmd_tx: Sender<JsWorkerCommand>,
+    console_logs_for_worker: Arc<std::sync::Mutex<Vec<(String, String, String)>>>,
+    media_ctx_for_worker: Arc<std::sync::Mutex<zero_css_parser::media_query::MediaContext>>,
     mutations: Arc<std::sync::Mutex<Vec<DomMutation>>>,
     rect_snapshot: LayoutRectSnapshot,
     handle_selector_map: HandleSelectorMap,
@@ -539,6 +575,49 @@ fn js_worker_main(
     let canvas_registry: std::sync::Arc<std::sync::Mutex<zero_engine::js_dom_bridge::CanvasRegistry>> =
         std::sync::Arc::new(std::sync::Mutex::new(zero_engine::js_dom_bridge::CanvasRegistry::new()));
     register_dom_callbacks(&mut *sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    // S11（cdp-protocol value-only console 面）：覆盖引擎的 `__zw_console_log`（后注册者
+    // 胜——execute 边界按注册序 re-bind 全局），tracing 行为保持 + 逐条推入共享队列供
+    // renderer 主循环 drain → browser/headless（`Runtime.consoleAPICalled` 事件源）。
+    {
+        let console_queue = Arc::clone(&console_logs_for_worker);
+        sandbox.register_callback(
+            "__zw_console_log",
+            Box::new(move |args: &[String]| -> String {
+                let level = args.first().cloned().unwrap_or_else(|| "log".into());
+                let text = args.get(1).cloned().unwrap_or_default();
+                let args_json = args.get(2).cloned().unwrap_or_else(|| "[]".into());
+                match level.as_str() {
+                    "error" => tracing::error!("[console] {text}"),
+                    "warn" => tracing::warn!("[console] {text}"),
+                    "info" | "log" | "table" => tracing::info!("[console] {text}"),
+                    _ => tracing::debug!("[console.{level}] {text}"),
+                }
+                if let Ok(mut q) = console_queue.lock() {
+                    q.push((level, text, args_json));
+                    if q.len() > 512 {
+                        let drop = q.len() - 512;
+                        q.drain(..drop);
+                    }
+                }
+                String::new()
+            }),
+        );
+    }
+    // `__zw_match_media` 宿主媒体上下文重注册（覆盖 register_dom_callbacks 的缺省 Light 版）——
+    // renderer SetColorScheme/SetMediaType/SetViewport 更新共享 cell，matchMedia 求值即得
+    // 用户偏好真值（CDP Emulation 面；S11 emulation.media）。
+    {
+        let media_ctx = Arc::clone(&media_ctx_for_worker);
+        sandbox.register_callback(
+            "__zw_match_media",
+            Box::new(move |args: &[String]| -> String {
+                let query = args.first().map(String::as_str).unwrap_or("");
+                let width = args.get(1).and_then(|s| s.parse::<f64>().ok()).unwrap_or(0.0);
+                let height = args.get(2).and_then(|s| s.parse::<f64>().ok()).unwrap_or(0.0);
+                zero_engine::match_media_to_json_ctx(query, width, height, &media_ctx)
+            }),
+        );
+    }
     // js-dom R386（DC-1 多进程生产路径收口）：worker 沙箱装原生 DOM 绑定——镜像 webview
     // `install_native_dom_bindings`（R384 default-on），使 renderer worker 的页面 JS↔DOM
     // 桥不再只走 polyfill 字符串桥。worker 的 DOM 真相是 `dom_html` 快照字符串（live

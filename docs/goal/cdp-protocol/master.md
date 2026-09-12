@@ -2,7 +2,7 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-13（S10：click hit-target 修复——合成鼠标事件 clientX/Y + mousemove 送达 + 视口提示校正，绿步 17→23；expected-green 基线扩至 23 步）
+**最后更新**: 2026-09-13（S11：console value-only 小切片 + emulation.media colorScheme 接线，绿步 23→25；expected-green 基线扩至 25 步）
 
 ---
 
@@ -33,6 +33,21 @@
 
 ## 已完成切片
 
+- **S11（2026-09-13）console value-only 小切片 + emulation.media 接线**：
+  **console.collect（P5 降级方案落地）**：shim `_zwConsoleEmit` 增逐参值序列化
+  `_zwSerializeConsoleValue`（string/number/boolean 原样、undefined 标记串、对象 JSON
+  round-trip）→ `__zw_console_log(level, text, args_json)` 三参（tracing 面不变）；
+  renderer js_worker 后注册覆盖引擎回调（last-wins）推共享队列 → runtime 主循环 +
+  脚本执行尾 drain → IPC `ConsoleLog`（protocol 末位追加）→ headless session
+  `pending_console_events` → transport 逐命令盖章 `Runtime.consoleAPICalled`
+  （value-only remoteObject args、executionContextId=1、level→CDP type 映射）。
+  **时序要点**：console 事件须先于 AutomationResponse 转发（run_page_context_script 尾
+  drain），否则 headless 在响应后才收到、要等下一条命令才排空（实测单命令消费面失效）。
+  **emulation.media**：engine `match_media_to_json_ctx`（MediaContext 用户偏好注入）+
+  renderer `MediaBridge` 重注册 `__zw_match_media`（共享 cell——SetColorScheme/
+  SetMediaType 更新 prefers_color_scheme/media_type）→ matchMedia 读回真值。
+  **绿步 23→25**（console.collect + emulation.media 翻绿）；deterministic 双跑一致；
+  expected-green 基线扩至 25。
 - **S10（2026-09-13）click hit-target 修复 — 合成输入事件面 + 视口真值**：
   S9 后 click 族卡「PW hit-target 拦截器判 `<html> intercepts pointer events`」，三层实测定位：
   ① PW `_hitTargetInterceptor` 读 `event.clientX/clientY` 复核命中点——宿主合成鼠标事件走
@@ -160,14 +175,10 @@
    elementFromPoint(534,100) 返回正确元素、无 JS 异常——疑点收窄到拦截器 `expectHitTarget`
    的 `hitParents` 走链对「adopt 句柄实例 vs 命中实例」的身份判定或 polling 时序；
    下轮先以 DEBUG=pw:api + 拦截器返回值插值定位。解锁 network.events + frames.click+evaluate。
-2. **console value-only 小切片（P5，console.collect 1 步）**：shim `(level, args[])` JSON
-   序列化 + callbacks.rs 签名扩展 + headless 转 `Runtime.consoleAPICalled`（args 用
-   value-only remoteObject 形状）。碰前核对 shim console 段活跃度。
-3. **小修清单（各 1 步）**：`keyboard.type+press`（Ctrl+A 全选编辑面缺失——type 'abc' 后
-   Ctrl+A no-op + Enter 插入，值 'abca'；需 shim input 选区/全选语义，编辑面属 engine 域）；
-   `page.setContent`（shim `document.open` 缺失——PW setContent 走 document.open/write/close
-   三连）；`emulation.media`（SetColorScheme 已发但 `matchMedia("(prefers-color-scheme: dark)")`
-   读回 false——shim matchMedia 与 host color-scheme 接线核对）。
+2. **page.setContent**（shim `document.open/write/close` 三连缺失——PW setContent 走
+   此路径；需 shim 文档级写面 + 整文档替换 mutation/renderer 应用通路，engine 域）。
+3. **keyboard.type+press**（Ctrl+A 全选编辑面缺失——type 'abc' 后 Ctrl+A no-op、值
+   'abca'；需 shim input 选区/全选语义，engine 编辑面）。
 4. **Network dataReceived**（proxy_fetch 读 body 循环加 chunk 观测点，net 窗口已开）。
 5. **dialog ×2 步决策（维持待用户）**：`dialog.accept`/`dialog.confirm+prompt` 依赖
    `javascriptDialogOpening` 事件源（引擎无阻塞对话框语义）——立项引擎对话框语义（跨流域）
@@ -191,8 +202,8 @@
 | M1 — 传输/发现/Target 基座 + Playwright 首连 | ✅ S9 收口：连接面 + evaluate 全族（literal/function/withArgs/object/async）+ releaseObject(Group) 全通 |
 | M2 — Page/Input 域 → 点击/填充/键盘/导航流 | 🚧 S10：goto/title/fill/click 全族/dialog/键盘裸 API/导航事件族绿；#btn-fetch 点击静默失败待查（下步 #1） |
 | M3 — DOM/CSS/Emulation → locator 流 | 🚧 S10：locator.boundingBox/viewport/媒体/截图 clip+element+fullPage 绿；iframe 面维持挂起 |
-| M4 — Network/cookies/console 对象化（cookie 落点=Storage 域） | 🚧 S9：cookie 域 + UA override + Network 事件雏形绿；console value-only 小切片待做；dataReceived 待 net 观测点 |
-| M5 — 矩阵收口 | 🚧 绿步 23/30（expected-green 基线同步扩至 23）；余 7 步根因定位（#btn-fetch 点击/console/编辑面/document.open/colorScheme/frames 挂起） |
+| M4 — Network/cookies/console 对象化（cookie 落点=Storage 域） | 🚧 S11：cookie 域 + UA override + Network 事件雏形 + **consoleAPICalled（value-only）** 绿；dataReceived 待 net 观测点 |
+| M5 — 矩阵收口 | 🚧 绿步 25/30（expected-green 基线同步扩至 25）；余 5 步根因定位（#btn-fetch 点击/编辑面/document.open/frames 挂起） |
 
 ## 验证基线
 

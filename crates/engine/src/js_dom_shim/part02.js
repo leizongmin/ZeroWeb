@@ -4367,11 +4367,31 @@
     try { return JSON.stringify(a); } catch (_) {}
     try { return String(a); } catch (_) { return '[unknown]'; }
   }
+  // S11（cdp-protocol value-only console 面）：逐参值序列化——string/number/boolean 原样，
+  // null→null，undefined→标记串（JSON 无法承载，headless 侧映射 type:"undefined"），
+  // 对象/数组走 JSON round-trip（保结构），失败回退 String()。与 _zwSerializeConsoleArg
+  // 的单行拼接并存：第 3 参 = 值数组 JSON（headless → `Runtime.consoleAPICalled` 的
+  // value-only remoteObject 列表），第 2 参仍为单行文本（tracing 面不变）。
+  function _zwSerializeConsoleValue(a) {
+    var t = typeof a;
+    if (t === 'string') return a;
+    if (t === 'number' || t === 'boolean') return a;
+    if (a === null) return null;
+    if (a === undefined) return '__zw_undefined__';
+    try { return JSON.parse(JSON.stringify(a)); } catch (_) {}
+    try { return String(a); } catch (_) { return '[unknown]'; }
+  }
   function _zwConsoleEmit(level, args) {
     if (typeof __zw_console_log !== 'function') return; // 宿主未注册 → no-op（向后兼容）
     var parts = [];
-    for (var i = 0; i < args.length; i++) parts.push(_zwSerializeConsoleArg(args[i]));
-    try { __zw_console_log(level, parts.join(' ')); } catch (_) {}
+    var values = [];
+    for (var i = 0; i < args.length; i++) {
+      parts.push(_zwSerializeConsoleArg(args[i]));
+      values.push(_zwSerializeConsoleValue(args[i]));
+    }
+    var valuesJson = '[]';
+    try { valuesJson = JSON.stringify(values); } catch (_) {}
+    try { __zw_console_log(level, parts.join(' '), valuesJson); } catch (_) {}
   }
   globalThis.console = {
     log: function() { _zwConsoleEmit('log', arguments); },
