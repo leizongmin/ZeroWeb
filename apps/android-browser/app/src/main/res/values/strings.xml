@@ -4,4 +4,36 @@
     <string name="bootstrap_ready">Native browser process is ready</string>
     <string name="bootstrap_starting">Starting isolated browser services…</string>
     <string name="bootstrap_role_summary">Renderer, compositor, and image decoder run outside the browser process.</string>
+
+    <!-- Browser chrome i18n + a11y (M4 slice 9): EN is the default locale. -->
+    <string name="page_browse">Browse</string>
+    <string name="page_bookmarks">Bookmarks</string>
+    <string name="page_history">History</string>
+    <string name="page_downloads">Downloads</string>
+    <string name="address_label">Address</string>
+    <string name="action_back">Back</string>
+    <string name="action_forward">Forward</string>
+    <string name="action_go">Go</string>
+    <string name="action_new_tab">New tab</string>
+    <string name="action_bookmark">Bookmark</string>
+    <string name="action_bookmarked">Bookmarked</string>
+    <string name="action_close">Close</string>
+    <string name="action_delete">Delete</string>
+    <string name="action_clear_all">Clear all</string>
+    <string name="action_keyboard">Keyboard</string>
+    <string name="action_hide_keyboard">Hide keyboard</string>
+    <string name="tab_summary">Tabs %1$d · Bookmarks %2$d · History %3$d · Downloads %4$d</string>
+    <string name="tab_untitled">New tab</string>
+    <string name="empty_bookmarks">No bookmarks yet</string>
+    <string name="empty_history">No history yet</string>
+    <string name="empty_downloads">No downloads yet</string>
+    <string name="chrome_persisted_hint">Page renderer is preparing; chrome state is persisted by the Rust profile.</string>
+    <string name="preview_page_frame_content">Page frame rendered by the renderer and compositor</string>
+    <string name="preview_compositor_frame_content">Test frame from the standalone compositor</string>
+    <string name="error_invalid_url">Only valid HTTP(S) addresses are supported</string>
+    <string name="error_external_url_scheme">Only HTTP(S) external addresses are supported</string>
+    <string name="error_external_url_too_long">External address is too long</string>
+    <string name="error_snapshot_unreadable">Unable to read browser state</string>
+    <string name="error_renderer_restoring">Renderer is recovering, please retry</string>
+    <string name="error_renderer_restore_failed">Renderer recovery failed, please try again later</string>
 </resources>

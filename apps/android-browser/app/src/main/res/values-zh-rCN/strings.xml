@@ -4,4 +4,36 @@
     <string name="bootstrap_ready">原生浏览器进程已就绪</string>
     <string name="bootstrap_starting">正在启动隔离浏览器服务…</string>
     <string name="bootstrap_role_summary">渲染器、合成器和图像解码器均在浏览器进程外运行。</string>
+
+    <!-- Browser chrome i18n + a11y (M4 slice 9)：与默认（英文）资源按键位一一对应。 -->
+    <string name="page_browse">浏览</string>
+    <string name="page_bookmarks">书签</string>
+    <string name="page_history">历史</string>
+    <string name="page_downloads">下载</string>
+    <string name="address_label">地址</string>
+    <string name="action_back">后退</string>
+    <string name="action_forward">前进</string>
+    <string name="action_go">前往</string>
+    <string name="action_new_tab">新建标签</string>
+    <string name="action_bookmark">收藏</string>
+    <string name="action_bookmarked">已收藏</string>
+    <string name="action_close">关闭</string>
+    <string name="action_delete">删除</string>
+    <string name="action_clear_all">清除全部</string>
+    <string name="action_keyboard">键盘</string>
+    <string name="action_hide_keyboard">收起键盘</string>
+    <string name="tab_summary">标签 %1$d · 书签 %2$d · 历史 %3$d · 下载 %4$d</string>
+    <string name="tab_untitled">新标签</string>
+    <string name="empty_bookmarks">暂无书签</string>
+    <string name="empty_history">暂无历史记录</string>
+    <string name="empty_downloads">暂无下载</string>
+    <string name="chrome_persisted_hint">页面渲染器正在准备；当前 chrome 状态已由 Rust profile 持久化。</string>
+    <string name="preview_page_frame_content">来自 renderer 与 compositor 的页面帧</string>
+    <string name="preview_compositor_frame_content">来自独立 compositor 的测试帧</string>
+    <string name="error_invalid_url">仅支持有效的 HTTP(S) 地址</string>
+    <string name="error_external_url_scheme">仅支持 HTTP(S) 外部地址</string>
+    <string name="error_external_url_too_long">外部地址过长</string>
+    <string name="error_snapshot_unreadable">无法读取浏览器状态</string>
+    <string name="error_renderer_restoring">渲染进程恢复中，请重试</string>
+    <string name="error_renderer_restore_failed">渲染进程恢复失败，请稍后重试</string>
 </resources>

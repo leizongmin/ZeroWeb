@@ -163,14 +163,14 @@ class MainActivity : ComponentActivity() {
         if (intent?.action != Intent.ACTION_VIEW) return
         val url = intent.data?.toString() ?: return
         if (url.length > 16 * 1024) {
-            browserError = "外部地址过长"
+            browserError = getString(R.string.error_external_url_too_long)
             return
         }
         if (NativeBridge.nativeNewTabWithUrl(url)) {
             refreshBrowserSnapshot()
             restoreActiveTabRenderer()
         } else {
-            browserError = "仅支持 HTTP(S) 外部地址"
+            browserError = getString(R.string.error_external_url_scheme)
         }
     }
 
@@ -194,9 +194,9 @@ class MainActivity : ComponentActivity() {
                 // attach 完成后补导航本次目标 URL。
                 pendingRestoreUrl = url
                 rebindRenderer(slot)
-                browserError = "渲染进程恢复中，请重试"
+                browserError = getString(R.string.error_renderer_restoring)
             } else {
-                browserError = "仅支持有效的 HTTP(S) 地址"
+                browserError = getString(R.string.error_invalid_url)
             }
         }
     }
@@ -278,7 +278,7 @@ class MainActivity : ComponentActivity() {
                 browserError = null
                 refreshTabThumbnails()
             }
-            .onFailure { browserError = it.message ?: "无法读取浏览器状态" }
+            .onFailure { browserError = it.message ?: getString(R.string.error_snapshot_unreadable) }
     }
 
     /**
@@ -368,7 +368,7 @@ class MainActivity : ComponentActivity() {
     private fun rebindRenderer(slot: Int) {
         if (restoreAttempts >= 3) {
             android.util.Log.e("ZeroWebRole", "renderer rebind exceeded attempts for slot $slot")
-            browserError = "渲染进程恢复失败，请稍后重试"
+            browserError = getString(R.string.error_renderer_restore_failed)
             return
         }
         restoreAttempts += 1
@@ -542,6 +542,7 @@ private fun BrowserScreen(
     var page by remember { mutableStateOf(BrowserPage.BROWSE) }
     BackHandler(enabled = page != BrowserPage.BROWSE) { page = BrowserPage.BROWSE }
     val activeTab = snapshot.tabs.firstOrNull { it.id == snapshot.activeTabId }
+    val untitledTitle = stringResource(R.string.tab_untitled)
     var address by remember(activeTab?.id, activeTab?.url) { mutableStateOf(activeTab?.url.orEmpty()) }
     Column(
         modifier = Modifier
@@ -554,7 +555,7 @@ private fun BrowserScreen(
         Text(text = if (readyServiceCount == 3) stringResource(R.string.bootstrap_ready) else stringResource(R.string.bootstrap_starting))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             BrowserPage.entries.forEach { candidate ->
-                TextButton(onClick = { page = candidate }) { Text(candidate.label) }
+                TextButton(onClick = { page = candidate }) { Text(stringResource(candidate.labelRes)) }
             }
         }
         if (page != BrowserPage.BROWSE) {
@@ -571,17 +572,19 @@ private fun BrowserScreen(
             value = address,
             onValueChange = { address = it },
             modifier = Modifier.fillMaxWidth().testTag("addressBar"),
-            label = { Text("地址") },
+            label = { Text(stringResource(R.string.address_label)) },
             singleLine = true,
         )
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            TextButton(onClick = onGoBack) { Text("后退") }
-            TextButton(onClick = onGoForward) { Text("前进") }
-            Button(onClick = { onNavigate(address) }, modifier = Modifier.testTag("navigateButton")) { Text("前往") }
-            TextButton(onClick = onNewTab) { Text("新建标签") }
-            TextButton(onClick = onToggleBookmark) { Text(if (snapshot.bookmarked) "已收藏" else "收藏") }
+            TextButton(onClick = onGoBack) { Text(stringResource(R.string.action_back)) }
+            TextButton(onClick = onGoForward) { Text(stringResource(R.string.action_forward)) }
+            Button(onClick = { onNavigate(address) }, modifier = Modifier.testTag("navigateButton")) { Text(stringResource(R.string.action_go)) }
+            TextButton(onClick = onNewTab) { Text(stringResource(R.string.action_new_tab)) }
+            TextButton(onClick = onToggleBookmark) {
+                    Text(stringResource(if (snapshot.bookmarked) R.string.action_bookmarked else R.string.action_bookmark))
+                }
         }
-        Text(text = "标签 ${snapshot.tabs.size} · 书签 ${snapshot.bookmarkCount} · 历史 ${snapshot.historyCount} · 下载 ${snapshot.downloadCount}")
+        Text(text = stringResource(R.string.tab_summary, snapshot.tabs.size, snapshot.bookmarkCount, snapshot.historyCount, snapshot.downloadCount))
         snapshot.tabs.forEach { tab ->
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 tabThumbnails[tab.id]?.let { thumb ->
@@ -592,18 +595,18 @@ private fun BrowserScreen(
                     )
                 }
                 TextButton(onClick = { onSelectTab(tab.id) }, modifier = Modifier.weight(1f)) {
-                    Text(if (tab.id == snapshot.activeTabId) "● ${tab.displayTitle}" else tab.displayTitle)
+                    Text(if (tab.id == snapshot.activeTabId) "● ${tab.displayTitle(untitledTitle)}" else tab.displayTitle(untitledTitle))
                 }
-                TextButton(onClick = { onCloseTab(tab.id) }) { Text("关闭") }
+                TextButton(onClick = { onCloseTab(tab.id) }) { Text(stringResource(R.string.action_close)) }
             }
         }
-        Text(text = activeTab?.url ?: "新标签")
+        Text(text = activeTab?.url ?: untitledTitle)
         rendererPreview?.let { preview ->
             var totalDragY = 0f
             var previewSize by remember { mutableStateOf(IntSize.Zero) }
             Image(
                 bitmap = preview.asImageBitmap(),
-                contentDescription = "来自 renderer 与 compositor 的页面帧",
+                contentDescription = stringResource(R.string.preview_page_frame_content),
                 modifier = Modifier
                     .fillMaxWidth()
                     .onSizeChanged { previewSize = it }
@@ -635,17 +638,17 @@ private fun BrowserScreen(
                 modifier = Modifier.fillMaxWidth().height(1.dp),
             )
             TextButton(onClick = onToggleKeyboard) {
-                Text(if (keyboardRequested) "收起键盘" else "键盘")
+                Text(stringResource(if (keyboardRequested) R.string.action_hide_keyboard else R.string.action_keyboard))
             }
         }
         compositorPreview?.let { preview ->
             Image(
                 bitmap = preview.asImageBitmap(),
-                contentDescription = "来自独立 compositor 的测试帧",
+                contentDescription = stringResource(R.string.preview_compositor_frame_content),
                 modifier = Modifier.size(96.dp).testTag("compositorPreview"),
             )
         }
-        Text(text = "页面渲染器正在准备；当前 chrome 状态已由 Rust profile 持久化。")
+        Text(text = stringResource(R.string.chrome_persisted_hint))
         error?.let { Text(text = it, color = MaterialTheme.colorScheme.error) }
         Text(text = nativeVersion, style = MaterialTheme.typography.labelSmall)
     }
@@ -682,28 +685,28 @@ private fun BrowserLibraryPage(
 ) {
     when (page) {
         BrowserPage.BOOKMARKS -> {
-            Text(text = "书签", style = MaterialTheme.typography.titleLarge)
-            if (snapshot.bookmarks.isEmpty()) Text("暂无书签")
+            Text(text = stringResource(R.string.page_bookmarks), style = MaterialTheme.typography.titleLarge)
+            if (snapshot.bookmarks.isEmpty()) Text(stringResource(R.string.empty_bookmarks))
             snapshot.bookmarks.forEach { entry ->
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     TextButton(onClick = { onOpenUrl(entry.url) }, modifier = Modifier.weight(1f)) { Text(entry.displayTitle) }
-                    TextButton(onClick = { onRemoveBookmark(entry.url) }) { Text("删除") }
+                    TextButton(onClick = { onRemoveBookmark(entry.url) }) { Text(stringResource(R.string.action_delete)) }
                 }
             }
         }
         BrowserPage.HISTORY -> {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(text = "历史", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
-                TextButton(onClick = onClearHistory) { Text("清除全部") }
+                Text(text = stringResource(R.string.page_history), style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+                TextButton(onClick = onClearHistory) { Text(stringResource(R.string.action_clear_all)) }
             }
-            if (snapshot.history.isEmpty()) Text("暂无历史记录")
+            if (snapshot.history.isEmpty()) Text(stringResource(R.string.empty_history))
             snapshot.history.forEach { entry ->
                 TextButton(onClick = { onOpenUrl(entry.url) }, modifier = Modifier.fillMaxWidth()) { Text(entry.displayTitle) }
             }
         }
         BrowserPage.DOWNLOADS -> {
-            Text(text = "下载", style = MaterialTheme.typography.titleLarge)
-            if (snapshot.downloads.isEmpty()) Text("暂无下载")
+            Text(text = stringResource(R.string.page_downloads), style = MaterialTheme.typography.titleLarge)
+            if (snapshot.downloads.isEmpty()) Text(stringResource(R.string.empty_downloads))
             snapshot.downloads.forEach { entry ->
                 Text("${entry.filename} · ${entry.state}")
                 Text(entry.url, style = MaterialTheme.typography.labelSmall)
@@ -713,15 +716,15 @@ private fun BrowserLibraryPage(
     }
 }
 
-private enum class BrowserPage(val label: String) {
-    BROWSE("浏览"),
-    BOOKMARKS("书签"),
-    HISTORY("历史"),
-    DOWNLOADS("下载"),
+private enum class BrowserPage(val labelRes: Int) {
+    BROWSE(R.string.page_browse),
+    BOOKMARKS(R.string.page_bookmarks),
+    HISTORY(R.string.page_history),
+    DOWNLOADS(R.string.page_downloads),
 }
 
 private data class BrowserTab(val id: Long, val url: String?, val title: String?, val rendererSlot: Int?) {
-    val displayTitle: String get() = title ?: url ?: "新标签"
+    fun displayTitle(fallback: String): String = title ?: url ?: fallback
 }
 
 private data class BrowserEntry(val title: String, val url: String) {
