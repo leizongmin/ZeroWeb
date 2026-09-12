@@ -110,6 +110,33 @@ pub(super) fn is_fixed_cb_containment(s: &ComputedStyle) -> bool {
         )
 }
 
+/// R4295（filter-effects-1 §3 / filter-effects-2 #BackdropFilterProperty / CSS Transforms
+/// §3 / css-will-change §3）：非 none 的 `filter`/`backdrop-filter`/`transform`/
+/// `perspective`，及 will-change 提示这些属性，使元素成为 absolute/fixed 后代的包含块
+///（同 positioned 祖先语义）。driving: backdrop-filter-containing-block（backdrop-filter
+/// 容器捕获 fixed/absolute 子）、filter-cb-abspos-inline-001/002/003（filter/perspective
+/// 的 inline span）、同测试 ref 页 will-change:transform。
+pub(super) fn creates_cb_for_abspos_descendants(s: &ComputedStyle) -> bool {
+    !s.filter.is_empty()
+        || !s.backdrop_filter.is_empty()
+        || !matches!(s.transform, zero_css_parser::values::TransformValue::None)
+        || !matches!(s.perspective, zero_css_parser::values::LengthValue::Px(0.0))
+        || s.will_change.iter().any(|w| {
+            matches!(
+                w,
+                zero_style_system::WillChangeValue::Custom(c)
+                    if matches!(c.as_str(), "transform" | "perspective" | "filter" | "backdrop-filter")
+            )
+        })
+}
+
+/// fixed 后代 CB 判定（树遍历点用）：containment（R4122/csswg #10544）∪ 视觉 CB
+///（R4295）。根元素检查点（engine.rs step 4/11.6 的 root_under_containment）保持
+/// containment-only——filter-effects-1 §3 根元素例外（root 的 CB 本就是 ICB）。
+pub(super) fn is_fixed_cb_ancestor(s: &ComputedStyle) -> bool {
+    is_fixed_cb_containment(s) || creates_cb_for_abspos_descendants(s)
+}
+
 /// 递归调整 fixed 定位元素的坐标为视口相对。
 ///
 /// taffy 将 `position: fixed` 当作 `absolute` 处理，坐标是相对于包含块的。
@@ -164,7 +191,7 @@ pub(super) fn adjust_fixed_to_viewport(
             || child
                 .node_id
                 .and_then(|id| styles.get(&id))
-                .is_some_and(is_fixed_cb_containment);
+                .is_some_and(is_fixed_cb_ancestor);
         adjust_fixed_to_viewport(child, offset_x, offset_y, styles, child_under);
     }
 }
@@ -244,11 +271,12 @@ pub(super) fn adjust_absolute_pct_to_viewport(
     use zero_css_parser::values::LengthValue;
     let child_has_positioned_ancestor = has_positioned_ancestor || box_node.is_abspos_cb;
     // R4122：本节点自身为 containment 包含块 → 其下 fixed 后代的 CB 是它而非视口。
+    // R4295：视觉 CB（filter/backdrop-filter/transform/perspective/will-change）同表。
     let child_under_containment = under_containment_cb
         || box_node
             .node_id
             .and_then(|id| styles.get(&id))
-            .is_some_and(is_fixed_cb_containment);
+            .is_some_and(is_fixed_cb_ancestor);
 
     for child in &mut box_node.children {
         // R1308：fixed 元素 CB 恒为视口（CSS §10.1），其 inset/百分比应恒对视口解析
@@ -447,7 +475,7 @@ pub(super) fn adjust_absolute_pct_to_viewport(
                 || child
                     .node_id
                     .and_then(|id| styles.get(&id))
-                    .is_some_and(is_fixed_cb_containment),
+                    .is_some_and(is_fixed_cb_ancestor),
         );
     }
 }
@@ -488,7 +516,7 @@ pub(super) fn stretch_fixed_to_viewport_size(
         box_node
             .node_id
             .and_then(|id| styles.get(&id))
-            .filter(|s| is_fixed_cb_containment(s))
+            .filter(|s| is_fixed_cb_ancestor(s))
             .map(|_| {
                 (
                     (box_node.width - box_node.border_left - box_node.border_right).max(0.0),
@@ -1945,5 +1973,50 @@ mod r2062_tests {
         //（无 panic/跳过）即为链路贯通。
         assert_eq!(mid_box.children[0].x, 0.0);
         assert_eq!(mid_box.children[0].y, 0.0);
+    }
+
+    /// R4295（filter-effects-1 §3 / filter-effects-2 #BackdropFilterProperty / CSS Transforms
+    /// §3 / css-will-change §3）：非 none 的 filter/backdrop-filter/transform/perspective
+    ///（含 will-change 提示）建立 abspos/fixed 后代包含块。driving:
+    /// backdrop-filter-containing-block（backdrop-filter 容器捕获 fixed/absolute 子）。
+    #[test]
+    fn r4295_visual_cb_predicates() {
+        use zero_css_parser::values::parse_transform::TransformValue;
+        use zero_style_system::property::types::{FilterComputedValue, WillChangeValue};
+
+        // 全默认：不建 CB。
+        assert!(!creates_cb_for_abspos_descendants(&ComputedStyle::default()));
+        assert!(!is_fixed_cb_ancestor(&ComputedStyle::default()));
+        // filter / backdrop-filter 非 none。
+        let mut s = ComputedStyle::default();
+        s.filter = vec![FilterComputedValue::Invert(1.0)];
+        assert!(creates_cb_for_abspos_descendants(&s));
+        let mut s = ComputedStyle::default();
+        s.backdrop_filter = vec![FilterComputedValue::Invert(1.0)];
+        assert!(creates_cb_for_abspos_descendants(&s));
+        assert!(is_fixed_cb_ancestor(&s));
+        // transform 非 none / perspective 非 0。
+        let mut s = ComputedStyle::default();
+        s.transform = TransformValue::List(Vec::new());
+        assert!(creates_cb_for_abspos_descendants(&s));
+        let mut s = ComputedStyle::default();
+        s.perspective = LengthValue::Px(100.0);
+        assert!(creates_cb_for_abspos_descendants(&s));
+        // will-change 提示：transform/perspective/filter/backdrop-filter 建 CB，
+        // 其他属性提示（opacity）与 auto 不建。
+        for prop in ["transform", "perspective", "filter", "backdrop-filter"] {
+            let mut s = ComputedStyle::default();
+            s.will_change = vec![WillChangeValue::Custom(prop.to_string())];
+            assert!(creates_cb_for_abspos_descendants(&s), "will-change: {prop}");
+        }
+        let mut s = ComputedStyle::default();
+        s.will_change = vec![WillChangeValue::Custom("opacity".into())];
+        assert!(!creates_cb_for_abspos_descendants(&s));
+        // containment 臂经 is_fixed_cb_ancestor 仍生效（R4122 语义保持）；display 须
+        // 非 inline——containment 对非原子 inline 整体忽略（R4070）。
+        let mut s = ComputedStyle::default();
+        s.display = zero_css_parser::values::DisplayValue::Block;
+        s.contain = zero_style_system::property::types::ContainComputedValue::Layout;
+        assert!(is_fixed_cb_ancestor(&s));
     }
 }

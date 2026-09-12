@@ -1574,10 +1574,22 @@ impl LayoutEngine {
             })
         });
         let is_sticky = computed.is_some_and(|s| matches!(s.position, PositionValue::Sticky));
+        // R4295（filter-effects-1 §3 根元素例外）：「文档根元素」的 filter 不建 CB
+        //（root 的 CB 本就是 ICB）。根元素 = 父节点为 Document。
+        let is_root_element = dom_id.is_some_and(|id| {
+            doc.parent_node(id).is_some_and(|pid| {
+                !doc.get(pid)
+                    .is_some_and(|n| matches!(n.kind, zero_dom::NodeKind::Document(_)))
+            })
+        });
         // R3902（CSS Containment §3.1/§4.1）：contain:layout/paint（content/strict 含之）
         // 使元素成为 absolute/fixed 后代的包含块，与 positioned 祖先同等进入 abspos CB 链。
+        // R4295（filter-effects-1 §3 / filter-effects-2 #BackdropFilterProperty / CSS
+        // Transforms §3）：非 none 的 filter/backdrop-filter/transform/perspective（含
+        // will-change 提示）同建 CB，根元素例外。driving: backdrop-filter-containing-block。
         let is_abspos_cb = computed.is_some_and(|s| {
             !matches!(s.position, PositionValue::Static)
+                || (is_root_element && creates_cb_for_abspos_descendants(s))
                 || ((s.contain.has_layout() || s.contain.has_paint())
                     && !matches!(
                         s.display,
