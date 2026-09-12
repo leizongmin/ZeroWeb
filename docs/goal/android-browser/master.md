@@ -80,7 +80,7 @@
 
 | 项 | 状态 | 说明 |
 |----|------|------|
-| android-browser-spec-rfc.md 批准 | ⬜ 待确认 | transport adapter、FR-006/007/009 实施的前提 |
+| android-browser-spec-rfc.md 批准 | ✅ 已批准（2026-09-12） | transport adapter、FR-006/007/009 解锁，按路线 M2→M4 排期 |
 | 真机验收设备 | ⬜ 等设备 | 同父目标 P3 GPU 物理机门控模式；模拟器冒烟不阻塞 |
 
 ## 验证基线
