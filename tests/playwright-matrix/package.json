@@ -1,0 +1,18 @@
+{
+  "name": "zeroweb-playwright-matrix",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Playwright (pin) E2E 测试链 — CDP 命令矩阵捕获与 ZeroWeb 验证（Node 为测试-only 依赖）",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "capture:chromium": "node scripts/capture-core-flow.mjs",
+    "matrix": "node scripts/build-matrix.mjs"
+  },
+  "devDependencies": {
+    "playwright-core": "1.63.0",
+    "ws": "8.18.3"
+  }
+}

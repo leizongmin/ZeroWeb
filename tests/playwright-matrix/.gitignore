@@ -1,0 +1,2 @@
+# 捕获运行产物（原始 JSONL / 中间报告）— 可由 capture:chromium 重新生成
+out/

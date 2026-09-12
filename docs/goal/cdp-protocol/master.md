@@ -2,7 +2,7 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-12（立项）
+**最后更新**: 2026-09-12（M1 前置纯资产切片落地：pin 测试链 + Chromium 空跑 + 命令矩阵初稿）
 
 ---
 
@@ -22,37 +22,51 @@
 
 | # | 缺口 | 状态 |
 |---|------|------|
-| P1 | Playwright 命令矩阵账本（pin 版空跑导出命令全集 + 三态登记） | ⏳ M1 前置纯资产切片 |
-| P2 | headless.rs 职责拆分（2256 行超 2000 上限；transport/discovery/domains/session） | ⏳ M1 |
+| P1 | Playwright 命令矩阵账本（pin 版空跑导出命令全集 + 三态登记） | ✅ 初稿落地（evidence/cdp-command-matrix.md；随域更新三态） |
+| P2 | headless.rs 职责拆分（2256 行超 2000 上限；transport/discovery/domains/session） | ⏳ M1（矩阵 G6） |
 | P3 | Target/Runtime/Page/Input/DOM/CSS/Network/Emulation 域实现 | ⏳ M1-M4 |
-| P4 | Node/Playwright 测试链（pin + E2E 用例集 + make 入口） | ⏳ M1 起随域建 |
-| P5 | console 对象化（V8 侧结构化序列化，替换扁平字符串） | ⏳ M4 |
-| P6 | net 请求事件总线（Network 域 + devtools Network 面板共用脊柱） | ⏳ M4 |
+| P4 | Node/Playwright 测试链（pin + E2E 用例集 + make 入口） | 🔶 pin 工程已入库（tests/playwright-matrix/，playwright-core 1.63.0）；E2E 用例与 make 入口随 M1 建 |
+| P5 | console 对象化（V8 侧结构化序列化，替换扁平字符串） | ⏳ M4（矩阵 G5） |
+| P6 | net 请求事件总线（Network 域 + devtools Network 面板共用脊柱） | ⏳ M4（矩阵 G4） |
+| P7 | WS 层 sessionId 多路复用（单连接扁平会话 → per-target session，响应回显 sessionId） | ⏳ M1 结构前提（矩阵 G1，2026-09-12 捕获新增） |
+| P8 | `/json/version` 尾斜杠 404（Playwright 请求 `/json/version/`） | ⏳ M1（矩阵 G2，2026-09-12 捕获新增） |
 
 ## 已完成切片
 
-（立项轮，暂无）
+- **S1（2026-09-12）M1 前置纯资产切片**：`tests/playwright-matrix/` pin 工程
+  （playwright-core 1.63.0 + lockfile）+ CDP 捕获代理 + 全核心流空跑脚本（30 步全绿
+  @ Chromium 153.0.8010.12）→ 命令全集 395 调用/40 方法/30 事件 →
+  `evidence/cdp-command-matrix.md` 初稿（三态登记 + 6 条关键契约发现 + G1-G6 结构缺口）。
+  关键修正：cookie 走 **Storage 域**（非 Network.getCookies 族）；Playwright 不调
+  `Target.getTargets`（连接靠 setAutoAttach flatten）；locator 流不用 DOM.getDocument/
+  CSS.*，脊柱是 Runtime.callFunctionOn（156 次）→ objectId 桥。
 
 ## 下一步计划
 
-1. **M1 前置纯资产切片**：pin Playwright 版本（package.json + lockfile 入库
-   `tests/playwright-matrix/`）→ 对 Chromium `connectOverCDP` 空跑全核心流 →
-   DEBUG 日志导出 CDP 命令全集 → `evidence/cdp-command-matrix.md` 初稿（三态登记
-   由人工判定补全）
-2. **M1**：headless.rs 拆分 + Target 域 + Runtime enable/evaluate → Playwright 首连
-3. **M2-M4**：按入口文档里程碑逐域收敛，每域 E2E 用例随 land
+1. **M1 切片 1**：headless.rs 拆分（transport/discovery/domains/session 四模块，解
+   P2/G6 超限）——纯搬移不改语义，`make test` 全绿后独立 land
+2. **M1 切片 2**：传输层 sessionId 多路复用（P7/G1）+ `/json/version` 尾斜杠（P8/G2）
+   + `/json` 真实 target 枚举
+3. **M1 切片 3**：Target 域（setAutoAttach flatten / getTargetInfo / createTarget）+
+   Runtime.enable / evaluate remoteObject 雏形 / releaseObject / runIfWaitingForDebugger
+   stub → `CDP_ENDPOINT_URL=… npm run capture:chromium` 首连验收（steps-report 为差距
+   清单）
+4. **M2-M4**：按矩阵三态逐域收敛；cookie 落点以 **Storage.getCookies/setCookies/
+   clearCookies** 为准（发现 #2 修正）；CSS.getMatchedStylesForNode 与 DOM.getDocument
+   归 M3 goal 扩展面（devtools 前置）
 
 **待用户决策清单**：
-- （暂无）
+- （暂无。V8 对象句柄桥（Runtime.callFunctionOn/objectId）按入口文档先走「自主实现」；
+  若 M1 首连实测其深结构拦路，再记此处）
 
 ## 里程碑状态
 
 | 里程碑 | 状态 |
 |--------|------|
-| M1 — 传输/发现/Target 基座 + Playwright 首连 | ⏳ |
+| M1 — 传输/发现/Target 基座 + Playwright 首连 | 🚧 前置资产切片完成（S1），拆分+域实现未开始 |
 | M2 — Page/Input 域 → 点击/填充/键盘/导航流 | ⏳ |
 | M3 — DOM/CSS/Emulation → locator 流 | ⏳ |
-| M4 — Network/cookies/console 对象化 | ⏳ |
+| M4 — Network/cookies/console 对象化（cookie 落点=Storage 域） | ⏳ |
 | M5 — 矩阵收口 | ⏳ |
 
 ## 验证基线
@@ -61,6 +75,9 @@
   cargo test，经 test-guard）
 - CDP 现状：`Page.navigate` / `Runtime.evaluate` / `Target.getTargets` 3 命令 +
   `/json/version` + `/json` 发现（headless.rs L782-796/L571/L1159）
+- **命令矩阵捕获基线（S1，2026-09-12）**：playwright-core 1.63.0 @ Chromium 153.0.8010.12
+  （chromium-1243 缓存），全核心流 30 步全绿，395 调用/40 方法/30 事件；
+  `evidence/chromium-capture-2026-09-12.md` + `…-summary.json`（生成物，复现命令见账本头）
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过；
   Playwright E2E 用例须双跑 deterministic 才计入账本「绿」
 

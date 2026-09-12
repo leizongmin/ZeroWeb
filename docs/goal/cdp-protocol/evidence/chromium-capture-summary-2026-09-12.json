@@ -1,0 +1,682 @@
+{
+  "capture": {
+    "source": "capture.jsonl",
+    "lines": 980,
+    "malformed": 0
+  },
+  "totals": {
+    "commands": 395,
+    "uniqueMethods": 40,
+    "eventDeliveries": 187,
+    "uniqueEvents": 30
+  },
+  "discoveryEndpoints": [
+    "GET /json/version/"
+  ],
+  "methods": [
+    {
+      "method": "Browser.getVersion",
+      "domain": "Browser",
+      "count": 1,
+      "ok": 1,
+      "err": 0,
+      "errSamples": [],
+      "paramKeys": [],
+      "sessionScoped": false,
+      "resultSample": "{\"protocolVersion\":\"1.3\",\"product\":\"Chrome/153.0.8010.12\",\"revision\":\"@971a7443b0c9b0a9b2860529b33331b76077ec62\",\"userAgent\":\"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/153.0.0.0 Safari/537.36\",\"jsVersion\":\"15.3.76.4\"}"
+    },
+    {
+      "method": "Browser.setDownloadBehavior",
+      "domain": "Browser",
+      "count": 1,
+      "ok": 1,
+      "err": 0,
+      "errSamples": [],
+      "paramKeys": [
+        "behavior",
+        "downloadPath",
+        "eventsEnabled"
+      ],
+      "sessionScoped": false,
+      "resultSample": "{}"
+    },
+    {
+      "method": "DOM.describeNode",
+      "domain": "DOM",
+      "count": 7,
+      "ok": 7,
+      "err": 0,
+      "errSamples": [],
+      "paramKeys": [
+        "objectId"
+      ],
+      "sessionScoped": true,
+      "resultSample": "{\"node\":{\"nodeId\":0,\"backendNodeId\":9,\"nodeType\":1,\"nodeName\":\"DIV\",\"localName\":\"div\",\"nodeValue\":\"\",\"childNodeCount\":1,\"attributes\":[\"id\",\"clicked-1\"]}}"
+    },
+    {
+      "method": "DOM.getBoxModel",
+      "domain": "DOM",
+      "count": 4,
+      "ok": 4,
+      "err": 0,
+      "errSamples": [],
+      "paramKeys": [
+        "objectId"
+      ],
+      "sessionScoped": true,
+      "resultSample": "{\"model\":{\"content\":[205,82.875,253.875,82.875,253.875,97.875,205,97.875],\"padding\":[199,81.875,259.875,81.875,259.875,98.875,199,98.875],\"border\":[197,79.875,261.875,79.875,261.875,100.875,197,100.875],\"margin\":[197,79.875,261.875,79.875,261.875,100.875,197,100.875],\"width\":65,\"height\":21}}"
+    },
+    {
+      "method": "DOM.getContentQuads",
+      "domain": "DOM",
+      "count": 10,
+      "ok": 10,
+      "err": 0,
+      "errSamples": [],
+      "paramKeys": [
+        "objectId"
+      ],
+      "sessionScoped": true,
+      "resultSample": "{\"quads\":[[197,79.875,261.875,79.875,261.875,100.875,197,100.875]]}"
+    },
+    {
+      "method": "DOM.getFrameOwner",
+      "domain": "DOM",
+      "count": 1,
+      "ok": 1,
+      "err": 0,
+      "errSamples": [],
+      "paramKeys": [
+        "frameId"
+      ],
+      "sessionScoped": true,
+      "resultSample": "{\"backendNodeId\":8}"
+    },
+    {
+      "method": "DOM.resolveNode",
+      "domain": "DOM",
+      "count": 7,
+      "ok": 7,
+      "err": 0,
+      "errSamples": [],
+      "paramKeys": [
+        "backendNodeId",
+        "executionContextId"
+      ],
+      "sessionScoped": true,
+      "resultSample": "{\"object\":{\"type\":\"object\",\"subtype\":\"node\",\"className\":\"HTMLDivElement\",\"description\":\"div#clicked-1\",\"objectId\":\"-9199741618047099485.3.5\"}}"
+    },
+    {
+      "method": "DOM.scrollIntoViewIfNeeded",
+      "domain": "DOM",
+      "count": 13,
+      "ok": 13,
+      "err": 0,
+      "errSamples": [],
+      "paramKeys": [
+        "objectId",
+        "rect"
+      ],
+      "sessionScoped": true,
+      "resultSample": "{}"
+    },
+    {
+      "method": "Emulation.setDeviceMetricsOverride",
+      "domain": "Emulation",
+      "count": 2,
+      "ok": 2,
+      "err": 0,
+      "errSamples": [],
+      "paramKeys": [
+        "deviceScaleFactor",
+        "height",
+        "mobile",
+        "screenHeight",
+        "screenOrientation",
+        "screenWidth",
+        "width"
+      ],
+      "sessionScoped": true,
+      "resultSample": "{}"
+    },
+    {
+      "method": "Emulation.setEmulatedMedia",
+      "domain": "Emulation",
+      "count": 4,
+      "ok": 4,
+      "err": 0,
+      "errSamples": [],
+      "paramKeys": [
+        "features",
+        "media"
+      ],
+      "sessionScoped": true,
+      "resultSample": "{}"
+    },
+    {
+      "method": "Emulation.setFocusEmulationEnabled",
+      "domain": "Emulation",
+      "count": 3,
+      "ok": 3,
+      "err": 0,
+      "errSamples": [],
+      "paramKeys": [
+        "enabled"
+      ],
+      "sessionScoped": true,
+      "resultSample": "{}"
+    },
+    {
+      "method": "Emulation.setUserAgentOverride",
+      "domain": "Emulation",
+      "count": 2,
+      "ok": 2,
+      "err": 0,
+      "errSamples": [],
+      "paramKeys": [
+        "userAgent"
+      ],
+      "sessionScoped": true,
+      "resultSample": "{}"
+    },
+    {
+      "method": "Input.dispatchKeyEvent",
+      "domain": "Input",
+      "count": 14,
+      "ok": 14,
+      "err": 0,
+      "errSamples": [],
+      "paramKeys": [
+        "autoRepeat",
+        "code",
+        "commands",
+        "isKeypad",
+        "key",
+        "location",
+        "modifiers",
+        "text",
+        "type",
+        "unmodifiedText",
+        "windowsVirtualKeyCode"
+      ],
+      "sessionScoped": true,
+      "resultSample": "{}"
+    },
+    {
+      "method": "Input.dispatchMouseEvent",
+      "domain": "Input",
+      "count": 35,
+      "ok": 35,
+      "err": 0,
+      "errSamples": [],
+      "paramKeys": [
+        "button",
+        "buttons",
+        "clickCount",
+        "force",
+        "modifiers",
+        "type",
+        "x",
+        "y"
+      ],
+      "sessionScoped": true,
+      "resultSample": "{}"
+    },
+    {
+      "method": "Input.insertText",
+      "domain": "Input",
+      "count": 1,
+      "ok": 1,
+      "err": 0,
+      "errSamples": [],
+      "paramKeys": [
+        "text"
+      ],
+      "sessionScoped": true,
+      "resultSample": "{}"
+    },
+    {
+      "method": "Log.enable",
+      "domain": "Log",
+      "count": 3,
+      "ok": 3,
+      "err": 0,
+      "errSamples": [],
+      "paramKeys": [],
+      "sessionScoped": true,
+      "resultSample": "{}"
+    },
+    {
+      "method": "Network.enable",
+      "domain": "Network",
+      "count": 5,
+      "ok": 5,
+      "err": 0,
+      "errSamples": [],
+      "paramKeys": [],
+      "sessionScoped": true,
+      "resultSample": "{}"
+    },
+    {
+      "method": "Page.addScriptToEvaluateOnNewDocument",
+      "domain": "Page",
+      "count": 3,
+      "ok": 3,
+      "err": 0,
+      "errSamples": [],
+      "paramKeys": [
+        "source",
+        "worldName"
+      ],
+      "sessionScoped": true,
+      "resultSample": "{\"identifier\":\"1\"}"
+    },
+    {
+      "method": "Page.captureScreenshot",
+      "domain": "Page",
+      "count": 3,
+      "ok": 3,
+      "err": 0,
+      "errSamples": [],
+      "paramKeys": [
+        "captureBeyondViewport",
+        "clip",
+        "format"
+      ],
+      "sessionScoped": true,
+      "resultSample": "{\"data\":\"iVBORw0KGgoAAAANSUhEUgAAAyAAAAJYCAIAAAAVFBUnAAAQAElEQVR4nOzde7xWY/4//hURksM4nxWfGJRTyPk4ZZAwJVT6TOSQPiahlIzjkGnwmQZFzikSapyNUgg55zgiUkREoiJEv/dnr9/cj/u7d3vb7X3J3vV8/nE/1r3u6173tdZ9rbVe67rWvnfdhQsXZgAApLNcBgBAUgIWAEBiAhYAQGICFgBAYgIWAEBiAhYAQGICFgBAYgIWAEBiAhYAQGICFgBAYgIWAEBiAhYAQGICFgBAYgIWAEBiAhYAQGICFgBAYgIWAEBiAhYAQGICFgBAYgIWAEBiAhYAQGICFgBAYgIWAEBiAhYAQGICFgBAYgIWAEBiAhYAQGLLYsCaOXNm586dt99++7XXXrtBgwZbbbXVn/70pzr/rxVXXDEDAKiSZS5gPf3009ttt93NN9/82muvffPNN40bN548efL777//6quv/v73v88AAKpt2QpY8+bN++///u/PPvssfxph66WXXurWrVtMN23adMcdd8wAAKqtbrYsueGGG6K/Kp+OkcE8UZ144onRm5UBACSybAWs4iC…"
+    },
+    {
+      "method": "Page.createIsolatedWorld",
+      "domain": "Page",
+      "count": 3,
+      "ok": 3,
+      "err": 0,
+      "errSamples": [],
+      "paramKeys": [
+        "frameId",
+        "grantUniveralAccess",
+        "worldName"
+      ],
+      "sessionScoped": true,
+      "resultSample": "{\"executionContextId\":2}"
+    },
+    {
+      "method": "Page.enable",
+      "domain": "Page",
+      "count": 13,
+      "ok": 13,
+      "err": 0,
+      "errSamples": [],
+      "paramKeys": [],
+      "sessionScoped": true,
+      "resultSample": "{}"
+    },
+    {
+      "method": "Page.getFrameTree",
+      "domain": "Page",
+      "count": 3,
+      "ok": 3,
+      "err": 0,
+      "errSamples": [],
+      "paramKeys": [],
+      "sessionScoped": true,
+      "resultSample": "{\"frameTree\":{\"frame\":{\"id\":\"EA06B199540F05605223812A6370E570\",\"loaderId\":\"E7C8EBC4D432074B7CD5BE0FCF9927CA\",\"url\":\"about:blank\",\"domainAndRegistry\":\"\",\"securityOrigin\":\"://\",\"securityOriginDetails\":{\"isLocalhost\":false},\"mimeType\":\"text/html\",\"adFrameStatus\":{\"adFrameType\":\"none\"},\"secureContextType\":\"InsecureScheme\",\"crossOriginIsolatedContextType\":\"NotIsolated\",\"gatedAPIFeatures\":[]}}}"
+    },
+    {
+      "method": "Page.getLayoutMetrics",
+      "domain": "Page",
+      "count": 3,
+      "ok": 3,
+      "err": 0,
+      "errSamples": [],
+      "paramKeys": [],
+      "sessionScoped": true,
+      "resultSample": "{\"layoutViewport\":{\"pageX\":0,\"pageY\":0,\"clientWidth\":800,\"clientHeight\":600},\"visualViewport\":{\"offsetX\":0,\"offsetY\":0,\"pageX\":0,\"pageY\":0,\"clientWidth\":800,\"clientHeight\":600,\"scale\":1,\"zoom\":1},\"contentSize\":{\"x\":0,\"y\":0,\"width\":800,\"height\":600},\"cssLayoutViewport\":{\"pageX\":0,\"pageY\":0,\"clientWidth\":800,\"clientHeight\":600},\"cssVisualViewport\":{\"offsetX\":0,\"offsetY\":0,\"pageX\":0,\"pageY\":0,\"clientWidth\":800,\"clientHeight\":600,\"scale\":1,\"zoom\":1},\"cssContentSize\":{\"x\":0,\"y\":0,\"width\":800,\"height\":600}}"
+    },
+    {
+      "method": "Page.handleJavaScriptDialog",
+      "domain": "Page",
+      "count": 3,
+      "ok": 3,
+      "err": 0,
+      "errSamples": [],
+      "paramKeys": [
+        "accept",
+        "promptText"
+      ],
+      "sessionScoped": true,
+      "resultSample": "{}"
+    },
+    {
+      "method": "Page.navigate",
+      "domain": "Page",
+      "count": 2,
+      "ok": 2,
+      "err": 0,
+      "errSamples": [],
+      "paramKeys": [
+        "frameId",
+        "referrerPolicy",
+        "url"
+      ],
+      "sessionScoped": true,
+      "resultSample": "{\"frameId\":\"623A961F257026804E504BB613B03239\",\"loaderId\":\"7357B5D8EEC4B45D3744305599DAC4C0\",\"isDownload\":false}"
+    },
+    {
+      "method": "Page.setFontFamilies",
+      "domain": "Page",
+      "count": 3,
+      "ok": 3,
+      "err": 0,
+      "errSamples": [],
+      "paramKeys": [
+        "fontFamilies"
+      ],
+      "sessionScoped": true,
+      "resultSample": "{}"
+    },
+    {
+      "method": "Page.setLifecycleEventsEnabled",
+      "domain": "Page",
+      "count": 3,
+      "ok": 3,
+      "err": 0,
+      "errSamples": [],
+      "paramKeys": [
+        "enabled"
+      ],
+      "sessionScoped": true,
+      "resultSample": "{}"
+    },
+    {
+      "method": "Runtime.callFunctionOn",
+      "domain": "Runtime",
+      "count": 156,
+      "ok": 156,
+      "err": 0,
+      "errSamples": [],
+      "paramKeys": [
+        "arguments",
+        "awaitPromise",
+        "functionDeclaration",
+        "objectId",
+        "returnByValue",
+        "userGesture"
+      ],
+      "sessionScoped": true,
+      "resultSample": "{\"result\":{\"type\":\"string\",\"value\":\"matrix-main\"}}"
+    },
+    {
+      "method": "Runtime.enable",
+      "domain": "Runtime",
+      "count": 5,
+      "ok": 5,
+      "err": 0,
+      "errSamples": [],
+      "paramKeys": [],
+      "sessionScoped": true,
+      "resultSample": "{}"
+    },
+    {
+      "method": "Runtime.evaluate",
+      "domain": "Runtime",
+      "count": 8,
+      "ok": 8,
+      "err": 0,
+      "errSamples": [],
+      "paramKeys": [
+        "contextId",
+        "expression"
+      ],
+      "sessionScoped": true,
+      "resultSample": "{\"result\":{\"type\":\"object\",\"className\":\"UtilityScript\",\"description\":\"UtilityScript\",\"objectId\":\"-9199741618047099485.4.1\"}}"
+    },
+    {
+      "method": "Runtime.releaseObject",
+      "domain": "Runtime",
+      "count": 51,
+      "ok": 51,
+      "err": 0,
+      "errSamples": [],
+      "paramKeys": [
+        "objectId"
+      ],
+      "sessionScoped": true,
+      "resultSample": "{}"
+    },
+    {
+      "method": "Runtime.runIfWaitingForDebugger",
+      "domain": "Runtime",
+      "count": 8,
+      "ok": 8,
+      "err": 0,
+      "errSamples": [],
+      "paramKeys": [],
+      "sessionScoped": true,
+      "resultSample": "{}"
+    },
+    {
+      "method": "Storage.clearCookies",
+      "domain": "Storage",
+      "count": 1,
+      "ok": 1,
+      "err": 0,
+      "errSamples": [],
+      "paramKeys": [],
+      "sessionScoped": false,
+      "resultSample": "{}"
+    },
+    {
+      "method": "Storage.getCookies",
+      "domain": "Storage",
+      "count": 2,
+      "ok": 2,
+      "err": 0,
+      "errSamples": [],
+      "paramKeys": [],
+      "sessionScoped": false,
+      "resultSample": "{\"cookies\":[{\"name\":\"zw\",\"value\":\"1\",\"domain\":\"127.0.0.1\",\"path\":\"/\",\"expires\":-1,\"size\":3,\"httpOnly\":false,\"secure\":false,\"session\":true,\"priority\":\"Medium\",\"sourceScheme\":\"NonSecure\",\"sourcePort\":80}]}"
+    },
+    {
+      "method": "Storage.setCookies",
+      "domain": "Storage",
+      "count": 1,
+      "ok": 1,
+      "err": 0,
+      "errSamples": [],
+      "paramKeys": [
+        "cookies"
+      ],
+      "sessionScoped": false,
+      "resultSample": "{}"
+    },
+    {
+      "method": "Target.closeTarget",
+      "domain": "Target",
+      "count": 1,
+      "ok": 1,
+      "err": 0,
+      "errSamples": [],
+      "paramKeys": [
+        "targetId"
+      ],
+      "sessionScoped": false,
+      "resultSample": "{\"success\":true}"
+    },
+    {
+      "method": "Target.createTarget",
+      "domain": "Target",
+      "count": 2,
+      "ok": 2,
+      "err": 0,
+      "errSamples": [],
+      "paramKeys": [
+        "url"
+      ],
+      "sessionScoped": false,
+      "resultSample": "{\"targetId\":\"623A961F257026804E504BB613B03239\"}"
+    },
+    {
+      "method": "Target.detachFromTarget",
+      "domain": "Target",
+      "count": 3,
+      "ok": 3,
+      "err": 0,
+      "errSamples": [],
+      "paramKeys": [
+        "sessionId"
+      ],
+      "sessionScoped": false,
+      "resultSample": "{}"
+    },
+    {
+      "method": "Target.getTargetInfo",
+      "domain": "Target",
+      "count": 1,
+      "ok": 1,
+      "err": 0,
+      "errSamples": [],
+      "paramKeys": [],
+      "sessionScoped": false,
+      "resultSample": "{\"targetInfo\":{\"targetId\":\"d083a748-5aa6-49f9-98a6-e36c8534a8a3\",\"type\":\"browser\",\"title\":\"\",\"url\":\"\",\"attached\":true,\"canAccessOpener\":false}}"
+    },
+    {
+      "method": "Target.setAutoAttach",
+      "domain": "Target",
+      "count": 4,
+      "ok": 4,
+      "err": 0,
+      "errSamples": [],
+      "paramKeys": [
+        "autoAttach",
+        "flatten",
+        "waitForDebuggerOnStart"
+      ],
+      "sessionScoped": true,
+      "resultSample": "{}"
+    }
+  ],
+  "browserEvents": [
+    {
+      "method": "Inspector.workerScriptLoaded",
+      "count": 2
+    },
+    {
+      "method": "Log.entryAdded",
+      "count": 2
+    },
+    {
+      "method": "Network.dataReceived",
+      "count": 10
+    },
+    {
+      "method": "Network.loadingFinished",
+      "count": 9
+    },
+    {
+      "method": "Network.policyUpdated",
+      "count": 6
+    },
+    {
+      "method": "Network.requestWillBeSent",
+      "count": 9
+    },
+    {
+      "method": "Network.requestWillBeSentExtraInfo",
+      "count": 9
+    },
+    {
+      "method": "Network.responseReceived",
+      "count": 8
+    },
+    {
+      "method": "Network.responseReceivedExtraInfo",
+      "count": 9
+    },
+    {
+      "method": "Page.documentOpened",
+      "count": 1
+    },
+    {
+      "method": "Page.domContentEventFired",
+      "count": 3
+    },
+    {
+      "method": "Page.frameAttached",
+      "count": 1
+    },
+    {
+      "method": "Page.frameDetached",
+      "count": 1
+    },
+    {
+      "method": "Page.frameNavigated",
+      "count": 3
+    },
+    {
+      "method": "Page.frameRequestedNavigation",
+      "count": 1
+    },
+    {
+      "method": "Page.frameResized",
+      "count": 4
+    },
+    {
+      "method": "Page.frameStartedLoading",
+      "count": 3
+    },
+    {
+      "method": "Page.frameStartedNavigating",
+      "count": 3
+    },
+    {
+      "method": "Page.frameStoppedLoading",
+      "count": 5
+    },
+    {
+      "method": "Page.frameSubtreeWillBeDetached",
+      "count": 1
+    },
+    {
+      "method": "Page.javascriptDialogClosed",
+      "count": 3
+    },
+    {
+      "method": "Page.javascriptDialogOpening",
+      "count": 3
+    },
+    {
+      "method": "Page.lifecycleEvent",
+      "count": 42
+    },
+    {
+      "method": "Page.loadEventFired",
+      "count": 3
+    },
+    {
+      "method": "Runtime.consoleAPICalled",
+      "count": 14
+    },
+    {
+      "method": "Runtime.executionContextCreated",
+      "count": 14
+    },
+    {
+      "method": "Runtime.executionContextDestroyed",
+      "count": 2
+    },
+    {
+      "method": "Runtime.executionContextsCleared",
+      "count": 4
+    },
+    {
+      "method": "Target.attachedToTarget",
+      "count": 8
+    },
+    {
+      "method": "Target.detachedFromTarget",
+      "count": 4
+    }
+  ]
+}
