@@ -697,6 +697,12 @@ impl Painter {
         if !css_transforms.is_empty() {
             source = apply_css_transforms_to_source(&source, &css_transforms, doc, node_id);
         }
+        // R4270（filter-effects-1 §15 Privacy Considerations）：SVG filter tainting 规则——
+        // 受限原语 feDisplacementMap 的位移映射（in2）为 tainted 输入（标准输入恒 tainted；
+        // feFlood/feDropShadow currentcolor 系；feImage）时按 spec 作 pass through（输出 =
+        // in，位移不生效）。resvg 不实现 taint，对位移一律执行——源级静态分析把命中原语
+        // 改写为恒等 feOffset。kill-switch ZW_SVG_TAINT=0。
+        source = crate::paint::svg_filter_taint::apply_svg_filter_taint_rules(&source);
         // ZW_DEBUG_SVG_SOURCE=1：dump 合成后序列化源（svg transform 域调试设施）。
         if std::env::var("ZW_DEBUG_SVG_SOURCE").as_deref() == Ok("1") {
             eprintln!("R3938-SOURCE: {source}");

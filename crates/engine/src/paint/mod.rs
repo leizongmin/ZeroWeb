@@ -3,6 +3,7 @@
 mod color;
 mod helpers;
 pub(crate) mod painter;
+pub(crate) mod svg_filter_taint;
 
 // Re-export all public items so `pub use paint::*` in lib.rs works unchanged.
 pub use color::*;

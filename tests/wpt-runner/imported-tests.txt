@@ -366,3 +366,30 @@ css/css-ui/resize-child-will-change-transform.html css/css-ui/resize-child-will-
 css/css-multicol/always-balancing-before-column-span.html css/css-multicol/../reference/ref-filled-green-100px-square.xht == 2026-09-12 R4267 spanner 路径碎片化容器高写回（auto 高度+真分片+收缩向 gate）
 css/css-contain/contain-inline-size-multicol.html css/css-contain/../reference/ref-filled-green-100px-square.xht == 2026-09-12 R4267 spanner 路径碎片化容器高写回（auto 高度+真分片+收缩向 gate）
 css/css-multicol/multicol-span-all-children-height-011.html css/css-multicol/../reference/ref-filled-green-100px-square.xht == 2026-09-12 R4267 spanner 路径碎片化容器高写回（auto 高度+真分片+收缩向 gate）
+css/filter-effects/tainting-feblend-002.html css/filter-effects/reference/green-100x100.html == 2026-09-12 R4270 SVG filter tainting 规则（feDisplacementMap in2 tainted → pass through 恒等 feOffset 改写）
+css/filter-effects/tainting-fecomponenttransfer-002.html css/filter-effects/reference/green-100x100.html == 2026-09-12 R4270 SVG filter tainting 规则（feDisplacementMap in2 tainted → pass through 恒等 feOffset 改写）
+css/filter-effects/tainting-fecomposite-002.html css/filter-effects/reference/green-100x100.html == 2026-09-12 R4270 SVG filter tainting 规则（feDisplacementMap in2 tainted → pass through 恒等 feOffset 改写）
+css/filter-effects/tainting-feconvolvematrix-002.html css/filter-effects/reference/green-100x100.html == 2026-09-12 R4270 SVG filter tainting 规则（feDisplacementMap in2 tainted → pass through 恒等 feOffset 改写）
+css/filter-effects/tainting-fediffuselighting-002.html css/filter-effects/reference/green-100x100.html == 2026-09-12 R4270 SVG filter tainting 规则（feDisplacementMap in2 tainted → pass through 恒等 feOffset 改写）
+css/filter-effects/tainting-fediffuselighting-003.html css/filter-effects/reference/green-100x100.html == 2026-09-12 R4270 SVG filter tainting 规则（feDisplacementMap in2 tainted → pass through 恒等 feOffset 改写）
+css/filter-effects/tainting-fediffuselighting-004.html css/filter-effects/reference/green-100x100.html == 2026-09-12 R4270 SVG filter tainting 规则（feDisplacementMap in2 tainted → pass through 恒等 feOffset 改写）
+css/filter-effects/tainting-fediffuselighting-dynamic-001.html css/filter-effects/reference/green-100x100.html == 2026-09-12 R4270 SVG filter tainting 规则（feDisplacementMap in2 tainted → pass through 恒等 feOffset 改写）
+css/filter-effects/tainting-fediffuselighting-dynamic-002.html css/filter-effects/reference/green-100x100.html == 2026-09-12 R4270 SVG filter tainting 规则（feDisplacementMap in2 tainted → pass through 恒等 feOffset 改写）
+css/filter-effects/tainting-fedisplacementmap-002.html css/filter-effects/reference/green-100x100.html == 2026-09-12 R4270 SVG filter tainting 规则（feDisplacementMap in2 tainted → pass through 恒等 feOffset 改写）
+css/filter-effects/tainting-fedropshadow-002.html css/filter-effects/reference/green-100x100.html == 2026-09-12 R4270 SVG filter tainting 规则（feDisplacementMap in2 tainted → pass through 恒等 feOffset 改写）
+css/filter-effects/tainting-fedropshadow-003.html css/filter-effects/reference/green-100x100.html == 2026-09-12 R4270 SVG filter tainting 规则（feDisplacementMap in2 tainted → pass through 恒等 feOffset 改写）
+css/filter-effects/tainting-fedropshadow-004.html css/filter-effects/reference/green-100x100.html == 2026-09-12 R4270 SVG filter tainting 规则（feDisplacementMap in2 tainted → pass through 恒等 feOffset 改写）
+css/filter-effects/tainting-feflood-002.html css/filter-effects/reference/green-100x100.html == 2026-09-12 R4270 SVG filter tainting 规则（feDisplacementMap in2 tainted → pass through 恒等 feOffset 改写）
+css/filter-effects/tainting-feflood-003.html css/filter-effects/reference/green-100x100.html == 2026-09-12 R4270 SVG filter tainting 规则（feDisplacementMap in2 tainted → pass through 恒等 feOffset 改写）
+css/filter-effects/tainting-feflood-004.html css/filter-effects/reference/green-100x100.html == 2026-09-12 R4270 SVG filter tainting 规则（feDisplacementMap in2 tainted → pass through 恒等 feOffset 改写）
+css/filter-effects/tainting-feflood-005.html css/filter-effects/reference/green-100x100.html == 2026-09-12 R4270 SVG filter tainting 规则（feDisplacementMap in2 tainted → pass through 恒等 feOffset 改写）
+css/filter-effects/tainting-feflood-006.html css/filter-effects/reference/green-100x100.html == 2026-09-12 R4270 SVG filter tainting 规则（feDisplacementMap in2 tainted → pass through 恒等 feOffset 改写）
+css/filter-effects/tainting-feflood-dynamic-001.html css/filter-effects/reference/green-100x100.html == 2026-09-12 R4270 SVG filter tainting 规则（feDisplacementMap in2 tainted → pass through 恒等 feOffset 改写）
+css/filter-effects/tainting-feflood-dynamic-002.html css/filter-effects/reference/green-100x100.html == 2026-09-12 R4270 SVG filter tainting 规则（feDisplacementMap in2 tainted → pass through 恒等 feOffset 改写）
+css/filter-effects/tainting-fegaussianblur-002.html css/filter-effects/reference/green-100x100.html == 2026-09-12 R4270 SVG filter tainting 规则（feDisplacementMap in2 tainted → pass through 恒等 feOffset 改写）
+css/filter-effects/tainting-femorphology-002.html css/filter-effects/reference/green-100x100.html == 2026-09-12 R4270 SVG filter tainting 规则（feDisplacementMap in2 tainted → pass through 恒等 feOffset 改写）
+css/filter-effects/tainting-feoffset-002.html css/filter-effects/reference/green-100x100.html == 2026-09-12 R4270 SVG filter tainting 规则（feDisplacementMap in2 tainted → pass through 恒等 feOffset 改写）
+css/filter-effects/tainting-fespecularlighting-002.html css/filter-effects/reference/green-100x100.html == 2026-09-12 R4270 SVG filter tainting 规则（feDisplacementMap in2 tainted → pass through 恒等 feOffset 改写）
+css/filter-effects/tainting-fespecularlighting-003.html css/filter-effects/reference/green-100x100.html == 2026-09-12 R4270 SVG filter tainting 规则（feDisplacementMap in2 tainted → pass through 恒等 feOffset 改写）
+css/filter-effects/tainting-fespecularlighting-004.html css/filter-effects/reference/green-100x100.html == 2026-09-12 R4270 SVG filter tainting 规则（feDisplacementMap in2 tainted → pass through 恒等 feOffset 改写）
+css/filter-effects/tainting-fetile-002.html css/filter-effects/reference/green-100x100.html == 2026-09-12 R4270 SVG filter tainting 规则（feDisplacementMap in2 tainted → pass through 恒等 feOffset 改写）
