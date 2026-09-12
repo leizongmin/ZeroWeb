@@ -444,6 +444,12 @@ pub extern "system" fn Java_com_leizm_zeroweb_NativeBridge_nativeAttachRenderer(
                     _ => {}
                 }
             }
+            // renderer 进程死亡/断连：清除槽位僵尸 transport，允许 Kotlin 重新走
+            // attach 协议（renderer slot 恢复，android-browser goal M3 切片 1）。
+            if let Ok(mut slot) = android_renderer().lock() {
+                *slot = None;
+            }
+            tracing::warn!("android renderer transport detached");
         })
         .is_err()
     {
@@ -454,7 +460,7 @@ pub extern "system" fn Java_com_leizm_zeroweb_NativeBridge_nativeAttachRenderer(
         return JNI_FALSE;
     }
 
-    send_renderer(IpcMessageKind::SetViewport(SetViewportParams {
+    let handshake = send_renderer(IpcMessageKind::SetViewport(SetViewportParams {
         width: ANDROID_PAGE_VIEWPORT_WIDTH,
         height: ANDROID_PAGE_VIEWPORT_HEIGHT,
         device_scale_factor: 1.0,
@@ -467,8 +473,29 @@ pub extern "system" fn Java_com_leizm_zeroweb_NativeBridge_nativeAttachRenderer(
             url: Some("zero://android-renderer-smoke".to_string()),
             navigation_epoch: 1,
         }))
-    })
-    .map_or(JNI_FALSE, |_| JNI_TRUE)
+    });
+    // 握手失败说明刚 attach 的 transport 已不可用：清除避免僵尸槽位。
+    if handshake.is_err() {
+        if let Ok(mut slot) = android_renderer().lock() {
+            *slot = None;
+        }
+        return JNI_FALSE;
+    }
+    JNI_TRUE
+}
+
+/// Reports whether a renderer transport is currently attached. Kotlin 在导航失败时
+/// 据此触发 renderer Service 重绑（renderer-less 构建恒为 false）。
+#[cfg(target_os = "android")]
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_leizm_zeroweb_NativeBridge_nativeIsRendererAttached(
+    _env: JNIEnv,
+    _class: JClass,
+) -> jboolean {
+    let Ok(slot) = android_renderer().lock() else {
+        return JNI_FALSE;
+    };
+    if slot.is_some() { JNI_TRUE } else { JNI_FALSE }
 }
 
 /// Returns the latest renderer page frame after compositor rasterization.

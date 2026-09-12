@@ -52,6 +52,9 @@ object NativeBridge {
     external fun nativeStartRole(role: String): Boolean
 
     @JvmStatic
+    external fun nativeIsRendererAttached(): Boolean
+
+    @JvmStatic
     external fun nativeRunRole(role: String, slot: Int, fd: Int): Boolean
 
     @JvmStatic

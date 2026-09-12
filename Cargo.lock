@@ -6792,6 +6792,7 @@ dependencies = [
  "jni 0.21.1",
  "libc",
  "serde_json",
+ "tracing",
  "zero-browser-shell",
  "zero-compositor",
  "zero-image-decoder",

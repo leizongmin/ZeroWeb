@@ -44,6 +44,7 @@ import java.nio.ByteBuffer
 class MainActivity : ComponentActivity() {
     private val serviceConnections = mutableListOf<ServiceConnection>()
     private var rendererSocket: ParcelFileDescriptor? = null
+    private var rendererConnection: ServiceConnection? = null
     private var readyServiceCount by mutableStateOf(0)
     private var browserState by mutableStateOf(BrowserSnapshot.empty())
     private var browserError by mutableStateOf<String?>(null)
@@ -138,6 +139,11 @@ class MainActivity : ComponentActivity() {
         if (NativeBridge.nativeNavigate(url)) {
             refreshBrowserSnapshot()
             refreshRendererPreview()
+        } else if (NativeBridge.nativeRendererLinked() && !NativeBridge.nativeIsRendererAttached()) {
+            // 渲染进程死亡后槽位已被 native 侧清除：重绑 RendererService0 恢复
+            // （android-browser goal M3 切片 1——renderer 断连恢复）。
+            rebindRenderer()
+            browserError = "渲染进程恢复中，请重试"
         } else {
             browserError = "仅支持有效的 HTTP(S) 地址"
         }
@@ -225,7 +231,22 @@ class MainActivity : ComponentActivity() {
             }
         }
         serviceConnections += connection
+        if (roleService == RendererService0::class.java) {
+            rendererConnection = connection
+        }
         bindService(Intent(this, roleService), connection, Context.BIND_AUTO_CREATE)
+    }
+
+    /** renderer 断连后的重绑：关旧 socket、解绑旧连接、重新走 bind → socketpair → attach。 */
+    private fun rebindRenderer() {
+        rendererSocket?.close()
+        rendererSocket = null
+        rendererConnection?.let { connection ->
+            unbindService(connection)
+            serviceConnections.remove(connection)
+        }
+        rendererConnection = null
+        bindRole(RendererService0::class.java)
     }
 
     private fun attachRendererIfReady() {
