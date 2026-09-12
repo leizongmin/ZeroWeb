@@ -42,14 +42,15 @@ jobs:
       session_reuse: false
 
   # 每周在 Weekly Build / 趋势任务完成后维护官网进展；首次运行会建立最小静态更新区，
-  # 后续仅追加可追溯的中英双语周报，并提交到 main 触发 GitHub Pages 发布。
+  # 后续仅追加可追溯的中英双语周报，并同步 WPT 测试集总表（wpt-suites.csv），
+  # 提交到 main 触发 GitHub Pages 发布。
   - id: "website-progress-weekly"
     enabled: true
     schedule: "30 10 * * 0"
     command: "rally"
     args:
       - "query"
-      - "维护 ZeroWeb 官网的最新进展。先 git pull --rebase 同步 main；以本周新增提交、ROADMAP.md、docs/goal/*/master.md、docs/monthly/、WPT 与性能趋势为唯一事实来源。首次运行时，建立最小的网站更新区：首页显示最新 3 条、独立更新归档页，并使用可版本控制的数据文件承载内容；之后每周只追加一条中英双语周报。每条必须包含日期、摘要、已完成项、进行中项、来源链接；没有可验证事实时不要编造，改为输出 DONE。不得改 Rust 源码、Cargo 配置、路线图 Mission/Done Criteria 或 GitHub Actions；不要修改既有更新的事实内容。同时把首页统计卡（website/index.html 中 .summary-primary strong）开头的 commit 总数刷新为 `git rev-list --count HEAD` 的当前值，按百位向下取整展示（如 6,900+），保留其后的 `<small>` 单位元素与卡片其余文案不变。新增周报的中英文文案在定稿后、提交前，必须调用 /lei-humanizer skill 做人性化处理（去除 AI 写作痕迹，如公式化句式、三段式列举、宣传腔、金句），处理时不得改动事实、数字与来源链接。完成后按 docs/rally/run-rules.md 执行适用检查、lei-pre-commit-guard，提交并推送 main，触发 GitHub Pages 发布。"
+      - "维护 ZeroWeb 官网的最新进展。先 git pull --rebase 同步 main；以本周新增提交、ROADMAP.md、docs/goal/*/master.md、docs/monthly/、WPT 与性能趋势为唯一事实来源。首次运行时，建立最小的网站更新区：首页显示最新 3 条、独立更新归档页，并使用可版本控制的数据文件承载内容；之后每周只追加一条中英双语周报。每条必须包含日期、摘要、已完成项、进行中项、来源链接；没有可验证事实时不要编造，改为输出 DONE。不得改 Rust 源码、Cargo 配置、路线图 Mission/Done Criteria 或 GitHub Actions；不要修改既有更新的事实内容。同时把首页统计卡（website/index.html 中 .summary-primary strong）开头的 commit 总数刷新为 `git rev-list --count HEAD` 的当前值，按百位向下取整展示（如 6,900+），保留其后的 `<small>` 单位元素与卡片其余文案不变。同时核对 docs/compat/trends/wpt-suites.csv（维护约定见该文件头注释）：若 rendering-compat 的最新全量实测有更新（以 docs/goal/rendering-compat.md 顶部记录为准），或有 goal 收口出终态数字、新 goal 立项出基线、planned 转有数据，则按约定追加或更新对应行——evidence 列必须给出来源文档路径，数字必须与来源一致，禁止推算或编造；完全无变化则不动该文件。新增周报的中英文文案在定稿后、提交前，必须调用 /lei-humanizer skill 做人性化处理（去除 AI 写作痕迹，如公式化句式、三段式列举、宣传腔、金句），处理时不得改动事实、数字与来源链接。完成后按 docs/rally/run-rules.md 执行适用检查、lei-pre-commit-guard，提交并推送 main，触发 GitHub Pages 发布。"
       - "-w"
       - "."
       - "--agent-command"
