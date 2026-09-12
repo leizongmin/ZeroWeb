@@ -2,7 +2,7 @@
 
 **入口文档**: [../android-browser.md](../android-browser.md)
 **创建日期**: 2026-09-07（goal 拆分 bootstrap）
-**最后更新**: 2026-09-12（M4 切片 11 FR-006 SAF 导出与打开落地——下载页 Completed 条目经 CreateDocument 导出、FileProvider + ACTION_VIEW 打开；端到端验证随设备面挂起）
+**最后更新**: 2026-09-12（M3/M5 切片 12 验收就绪包——install-smoke Linux 脚本 + 设备验收清单入 evidence；模拟器环境核查记入 evidence/emulator-feasibility.md）
 
 ---
 
@@ -139,6 +139,11 @@
    `file_paths.xml` 仅暴露 `profile/downloads/`）content URI + ACTION_VIEW 只读授予，
    mime 按扩展名白名单推断；零新增 JNI（Kotlin 与 facade::record_download 同进程、
    存储布局耦合已注释标注）。端到端验证随设备面挂起（FR-006 验收场景对应项）
+   → 2026-09-12 ✅ 切片 12 验收就绪包——`scripts/android/install-smoke.sh`（ps1 忠实
+   移植：四进程拓扑/UID 隔离/probe 断言，`--require-renderer` 增 socket 连接与页面帧
+   就绪断言）+ `make android-install-smoke` Linux 分支接通（不再占位 echo）+
+   [evidence/device-acceptance-checklist.md](evidence/device-acceptance-checklist.md)
+   （FR-001~009 步骤化清单 + 记录表格），环境解锁后冒烟一键执行
 6. **模拟器/真机冒烟（M3 收口）**：等 KVM 授权或设备（待用户决策，不阻塞功能切片）
 
 **碰撞管理**：Cargo.lock 变更前 `git log --since="14 days ago" -- Cargo.lock` 核对；

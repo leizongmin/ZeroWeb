@@ -1458,8 +1458,10 @@ android-release-apk: android-preflight target-disk-guard target/test-guard
 android-renderer-apk: android-preflight target-disk-guard target/test-guard
 	./target/test-guard --time-limit 3600 --per-proc-mem 8 --total-mem 16 -- sh -c 'cd apps/android-browser && ./gradlew --no-daemon -PuseWslRenderer :app:assembleArm64Release'
 
+# 安装冒烟（M3/M5 切片 12）：Linux bash 移植自 Windows ps1（四进程拓扑/UID 隔离/
+# probe 断言）。前置 = 运行中的模拟器/真机（KVM 或设备，见 evidence/emulator-feasibility.md）。
 android-install-smoke: android-apk
-	@echo "android-install-smoke is implemented by the Windows local-emulator script in M0"
+	./scripts/android/install-smoke.sh apps/android-browser/app/build/outputs/apk/emulator/debug/app-emulator-debug.apk
 endif
 
 # ── cdp-protocol goal：Playwright E2E 收口门（M5）──
