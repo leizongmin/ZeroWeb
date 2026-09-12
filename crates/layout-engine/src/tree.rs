@@ -793,6 +793,21 @@ fn apply_replaced_element_sizing(
             // 负 dh = 比信号（width % + viewBox/ar）：保留 aspect_ratio 让 taffy 由解析宽
             // 推高；正 dh = definite 高（default / 无比）。
             taffy_style.size.height = if dh < 0.0 {
+                // R4290：viewBox **自然比**（无 CSS aspect-ratio 声明）时补设 taffy 比——
+                // R4161 臂仅覆盖 CSS `aspect-ratio: auto <ratio>` 声明（aspect_ratio_auto
+                // 标志），svg 无声明时 svg_ratio_value 回落 viewBox 但 R4161 不执行 →
+                // height auto 无比可推 → taffy 内容高 0（fecolormatrix-negative 的
+                // viewBox-only svg 784×0 实证；chromium 按自然比推 784×784）。
+                // 例外：**嵌套 svg**（父为 svg viewport）height:auto = 父 viewport 高的
+                // 100%（SVG2 §7.1），宽高各自 % 解析、比不相干（view-box-viewbox-nested
+                // 回归实证：400×200 viewport 内层 svg 被比推成 400×400）。
+                let nested_in_svg = doc.parent_node(dom_id).is_some_and(|p| {
+                    doc.get(p)
+                        .is_some_and(|n| matches!(&n.kind, NodeKind::Element(e) if e.local_name() == "svg"))
+                });
+                if taffy_style.aspect_ratio.is_none() && !nested_in_svg {
+                    taffy_style.aspect_ratio = Some(-dh);
+                }
                 taffy::style::Dimension::auto()
             } else {
                 taffy::style::Dimension::length(dh)

@@ -418,7 +418,12 @@ pub(crate) fn shrink_inline_blocks_to_content(
             doc.get(id).is_some_and(|n| match &n.kind {
                 zero_dom::NodeKind::Element(e) => matches!(
                     e.local_name(),
-                    "canvas" | "video" | "audio" | "iframe" | "embed" | "object" | "applet" | "img"
+                    // R4290：+ svg——inline `<svg>` 为 replaced 元素，width:auto 走
+                    // R4000 缺省尺寸（viewBox-only 隐式 100%），不得按 DOM 子树内容宽
+                    // shrink（defs/filter 等非渲染子盒被 box_content_max_width 度量 →
+                    // 784 塌 20，fecolormatrix-negative @90.46% / svg-feimage-001/002
+                    // @19.35% 实证；同 R57 canvas fallback 内容收缩教训）。
+                    "canvas" | "video" | "audio" | "iframe" | "embed" | "object" | "applet" | "img" | "svg"
                 ),
                 _ => false,
             })
