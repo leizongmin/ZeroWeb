@@ -924,7 +924,20 @@ impl super::Painter {
             return;
         }
 
-        let rect = Rect::new(abs_x, abs_y, box_node.width, box_node.height);
+        // R4296：inline 非原子盒的垂直 padding/border 渲染于行盒之外（CSS2 §10.8.1
+        // 布局不入行盒高，绘制须外延）——backdrop-filter 区域 = border-box。
+        // default-off（见 inline_bleed_enabled 字段文档）。
+        let (bleed_top, bleed_bottom) = if self.inline_bleed_enabled {
+            super::super::helpers::inline_box_vertical_bleed(style)
+        } else {
+            (0.0, 0.0)
+        };
+        let rect = Rect::new(
+            abs_x,
+            abs_y - bleed_top,
+            box_node.width,
+            box_node.height + bleed_top + bleed_bottom,
+        );
         self.primitives.add_filter(FilterPrimitive { rect, filters });
     }
 

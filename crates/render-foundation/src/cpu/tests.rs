@@ -2727,3 +2727,44 @@ fn straight_alpha_filter_blur_spreads_alpha() {
     assert!(edge[3] > 0 && edge[3] < 255, "alpha spreads outward, got {:?}", edge);
     assert!(edge[0] > 200, "no dark leak from transparent pixels, got {:?}", edge);
 }
+
+// ─── R4296 隔离实验：FilterPrimitive rect 扩展是否被渲染器消费 ───
+
+#[test]
+fn r4296_probe_expanded_filter_rect_applies() {
+    use crate::font::loader::FontLoader;
+    let font_loader = FontLoader::new();
+    let mut primitives = RenderPrimitives::new();
+    // 橙色画布 100×300
+    primitives.add_fill(
+        Rect::new(0.0, 0.0, 100.0, 300.0),
+        Color {
+            r: 255,
+            g: 165,
+            b: 0,
+            a: 255,
+        },
+    );
+    // 扩展 invert 区域 (10,50)-(60,250)：条带本体 (10,140)-(60,160) 之外也应被反转
+    primitives.add_filter(FilterPrimitive {
+        rect: Rect::new(10.0, 50.0, 50.0, 200.0),
+        filters: vec![FilterKind::Invert(1.0)],
+    });
+    let fb = render_full_scene(
+        100,
+        300,
+        1.0,
+        &primitives,
+        &font_loader,
+        &mut GlyphCache::new(8),
+        None,
+        &[],
+        &[],
+        &[],
+        &[],
+    );
+    let p = fb.get_pixel(30, 100); // 条带外、扩展区域内：应为反转橙 = (0,90,255)
+    assert_eq!((p[0], p[1], p[2]), (0, 90, 255), "expanded region pixel");
+    let q = fb.get_pixel(30, 150); // 条带内：同样反转
+    assert_eq!((q[0], q[1], q[2]), (0, 90, 255), "strip pixel");
+}

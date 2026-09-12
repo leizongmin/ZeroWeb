@@ -42,6 +42,12 @@ pub struct Painter {
     pub(crate) measure_cache: std::cell::RefCell<std::collections::HashMap<(u32, u32, u32, bool), f32>>,
     /// 已由父级行内格式化上下文绘制过文本的节点。
     pub(crate) painted_inline_nodes: HashSet<NodeId>,
+    /// R4296：inline 非原子盒垂直 border-box 外延（背景/backdrop-filter 区域按
+    /// ComputedStyle 的 CSS padding/border 外延，CSS2 §10.8.1）——**default-off**
+    /// （`ZW_INLINE_BLEED=1` 启用）。外延依赖 inline 盒行位准确，ZW 现锚定单行 inline
+    /// 盒于容器首行原点（层②缺陷），盒位错误时外延放大错位墨水（bleed-001/002 翻红
+    /// 实证），待行位锚定切片落地后 default-on。构造期单次读取，热路径零 env 查询。
+    pub(crate) inline_bleed_enabled: bool,
     /// R2197 Phase A slice 3：paint 期须跳过递归绘制的 orphan inline 元素 NodeId 集合。
     ///
     /// 这些元素经 `ZW_PHASEA_MULTI_INLINE` gate 跳过 taffy 节点，layout 期已回填 LayoutBox
@@ -538,6 +544,7 @@ impl Painter {
             corner_shape_clip: None,
             measure_cache: std::cell::RefCell::new(std::collections::HashMap::new()),
             painted_inline_nodes: HashSet::new(),
+            inline_bleed_enabled: std::env::var("ZW_INLINE_BLEED").as_deref() == Ok("1"),
             paint_skip_nodes: HashSet::new(),
             counters: HashMap::new(),
             skip_indicators: false,
@@ -3213,12 +3220,23 @@ impl Painter {
         let radii = super::helpers::BorderRadiusSpec::from_style_with_box(style, box_node.width, box_node.height);
 
         // 根据 background-clip 决定背景绘制区域
+        // R4296：inline 非原子盒垂直外延（padding/border 渲染于行盒之外，CSS2 §10.8.1；
+        // taffy 布局已归零故 box_node.height 是行盒高）——border-box 背景区域按外延绘制。
+        // default-off（见 inline_bleed_enabled 字段文档）。
+        let (bleed_top, bleed_bottom) = if self.inline_bleed_enabled {
+            super::helpers::inline_box_vertical_bleed(style)
+        } else {
+            (0.0, 0.0)
+        };
         let (clip_x, mut clip_y, clip_w, mut clip_h) = match style.background_clip {
             // R3908：border-area 的背景**色**按 border-box 绘制（环带裁剪只作用于背景
             // 图像——chromium bg-color 仍铺满 painting area，border 绘其上遮盖 padding 区）。
-            BackgroundClipComputedValue::BorderBox | BackgroundClipComputedValue::BorderArea => {
-                (abs_x, abs_y, box_node.width, box_node.height)
-            }
+            BackgroundClipComputedValue::BorderBox | BackgroundClipComputedValue::BorderArea => (
+                abs_x,
+                abs_y - bleed_top,
+                box_node.width,
+                box_node.height + bleed_top + bleed_bottom,
+            ),
             BackgroundClipComputedValue::PaddingBox => (
                 abs_x + box_node.border_left,
                 abs_y + box_node.border_top,

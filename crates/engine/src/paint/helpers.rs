@@ -1471,6 +1471,38 @@ where
         .collect()
 }
 
+/// R4296（CSS2 §8.3/§8.4 + filter-effects-2 #BackdropFilterProperty）：inline 非原子盒的
+/// 垂直 border-box 外延量 `(top, bottom)`。
+///
+/// CSS2 §10.8.1：inline 的垂直 margin/padding/border 不入行盒高——taffy 布局将其归零
+///（LayoutBox.padding_top/border_top = 0，driving 探针实证），但**绘制**发生于 inline box
+/// 之外、可上溢/下溢覆盖邻接行盒。box-level 背景（paint_background）与 backdrop-filter
+/// 区域（apply_backdrop_filter）的矩形须按 ComputedStyle 的 CSS 值外延——R1442 已对
+/// **多行** inline 的 fragment bg/border 做 bleed，此处为**单行** box-level 统一口径。
+/// 厚度取 Px 值（Em/% 等非 Px 与 R1442 px_of 同口径记 0）。非 inline 盒 → (0, 0)。
+/// driving: backdrop-filter-inline-positioning（50px padding 的 inline span，backdrop
+/// 区域应 120px 高而非 21px 行盒）。
+///
+/// **default-off**（调用方经 `Painter.inline_bleed_enabled` 构造期单次读取 env
+/// `ZW_INLINE_BLEED=1` 门控，热路径零 env 查询——R3858 同款教训）：外延依赖 inline
+/// 元素 LayoutBox 的行位准确——ZW 现将单行 inline 元素盒锚定在容器**首行原点**（真实
+/// 行位在 IFC fragment 数据中，R4296 探针实证 border-padding-bleed-001 的第二行 span
+/// 盒 y=div content top）。盒位错误时外延把更多墨水涂到错误行（bleed-001/002 等 5 案
+/// self-source 翻红），故先挂 gate，待 inline 盒行位锚定切片（层②）落地后再 default-on。
+pub fn inline_box_vertical_bleed(style: &ComputedStyle) -> (f32, f32) {
+    if !matches!(style.display, zero_css_parser::values::DisplayValue::Inline) {
+        return (0.0, 0.0);
+    }
+    use zero_style_system::property::types::BorderStyleValue;
+    let side = |w: &LengthValue, s: &BorderStyleValue| match s {
+        BorderStyleValue::None | BorderStyleValue::Hidden => 0.0,
+        _ => length_to_f32(w),
+    };
+    let top = length_to_f32(&style.padding_top) + side(&style.border_top_width, &style.border_top_style);
+    let bottom = length_to_f32(&style.padding_bottom) + side(&style.border_bottom_width, &style.border_bottom_style);
+    (top, bottom)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2702,6 +2734,30 @@ mod tests {
         assert!(!transform_shows_backface(&mirror), "scaleX(-1) 是正面（2D 镜像非背面）");
         // 无 transform
         assert!(!transform_shows_backface(&ComputedStyle::default()));
+    }
+
+    #[test]
+    fn test_r4296_inline_bleed_helper() {
+        // 纯函数：50px padding + 1px solid border 每侧 = 51px 外延。
+        let mut s = ComputedStyle::default();
+        s.display = zero_css_parser::values::DisplayValue::Inline;
+        s.padding_top = LengthValue::Px(50.0);
+        s.padding_bottom = LengthValue::Px(50.0);
+        s.border_top_width = LengthValue::Px(1.0);
+        s.border_bottom_width = LengthValue::Px(1.0);
+        s.border_top_style = zero_style_system::property::types::BorderStyleValue::Solid;
+        s.border_bottom_style = zero_style_system::property::types::BorderStyleValue::Solid;
+        assert_eq!(inline_box_vertical_bleed(&s), (51.0, 51.0));
+        // 非 inline 盒不外延。
+        let mut b = ComputedStyle::default();
+        b.display = zero_css_parser::values::DisplayValue::Block;
+        b.padding_top = LengthValue::Px(50.0);
+        assert_eq!(inline_box_vertical_bleed(&b), (0.0, 0.0));
+        // border-style none 的边不计入。
+        let mut n = ComputedStyle::default();
+        n.display = zero_css_parser::values::DisplayValue::Inline;
+        n.border_top_width = LengthValue::Px(3.0);
+        assert_eq!(inline_box_vertical_bleed(&n).0, 0.0, "border-style none");
     }
 
     #[test]

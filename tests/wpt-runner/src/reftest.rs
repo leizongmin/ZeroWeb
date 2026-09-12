@@ -836,6 +836,17 @@ fn render_with_layout_inner(
                 i, img.rect.origin.x, img.rect.origin.y, img.rect.size.width, img.rect.size.height, img.image_key
             );
         }
+        for (i, flt) in result.primitives().filters.iter().enumerate().take(10) {
+            eprintln!(
+                "  filter[{}]: ({:.1},{:.1},{:.1},{:.1}) n={}",
+                i,
+                flt.rect.origin.x,
+                flt.rect.origin.y,
+                flt.rect.size.width,
+                flt.rect.size.height,
+                flt.filters.len()
+            );
+        }
     }
 
     let mut glyph_cache = GlyphCache::new(1024);
