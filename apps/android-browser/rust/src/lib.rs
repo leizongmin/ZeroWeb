@@ -18,11 +18,16 @@ use zero_protocol::CompositorUiSurfaceInfo;
 use zero_protocol::IpcChannel;
 #[cfg(target_os = "android")]
 use zero_protocol::message::{
-    FetchParams, FetchResponseParams, FramePublishMode, ImageDecodeParams, IpcMessage, IpcMessageKind, LoadHtmlParams,
-    MouseEventParams, MouseEventType, NavigateParams, ScrollEventParams, SetViewportParams,
+    FetchParams, FetchResponseParams, FramePublishMode, ImageDecodeParams, ImeEventParams, ImeEventType, IpcMessage,
+    IpcMessageKind, KeyboardEventParams, KeyboardEventType, LoadHtmlParams, MouseEventParams, MouseEventType,
+    NavigateParams, ScrollEventParams, SetViewportParams,
 };
 
 const NATIVE_VERSION: &str = "ZeroWeb Android M2";
+
+/// IME commit 批次字节上限：防 IPC 载荷放大（Kotlin 输入视为不可信）。
+#[cfg(any(target_os = "android", test))]
+const MAX_PAGE_INPUT_BYTES: usize = 4_096;
 
 #[cfg(target_os = "android")]
 const ANDROID_COMPOSITOR_SURFACE_ID: u64 = 1;
@@ -721,6 +726,76 @@ pub extern "system" fn Java_com_leizm_zeroweb_NativeBridge_nativePageTap(
     .map_or(JNI_FALSE, |_| JNI_TRUE)
 }
 
+/// Commits IME text (Android `commitText`) on the active tab's renderer slot
+/// through the same `ImeEvent::Commit` path the desktop browser uses
+/// (compositionend + 一次编辑批次，CJK 输入的主通路)。
+#[cfg(target_os = "android")]
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_leizm_zeroweb_NativeBridge_nativePageText(
+    mut env: JNIEnv,
+    _class: JClass,
+    text: JString,
+) -> jboolean {
+    let Ok(text) = env.get_string(&text) else {
+        return JNI_FALSE;
+    };
+    let Ok(text) = validate_page_input_text(text.to_str().unwrap_or_default()) else {
+        return JNI_FALSE;
+    };
+    let Ok(Some(active_slot)) = facade::active_tab_slot() else {
+        return JNI_FALSE;
+    };
+    send_renderer_to_slot(
+        active_slot,
+        IpcMessageKind::ImeEvent(ImeEventParams {
+            event_type: ImeEventType::Commit,
+            text: text.to_string(),
+            cursor_start: None,
+            cursor_end: None,
+        }),
+    )
+    .map_or(JNI_FALSE, |_| JNI_TRUE)
+}
+
+/// Forwards a whitelisted special key as keydown+keyup on the active slot
+/// (renderer 侧 keydown 默认动作：Backspace 删除、Enter 提交表单/换行)。
+#[cfg(target_os = "android")]
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_leizm_zeroweb_NativeBridge_nativePageKey(
+    mut env: JNIEnv,
+    _class: JClass,
+    key: JString,
+) -> jboolean {
+    let Ok(key) = env.get_string(&key) else {
+        return JNI_FALSE;
+    };
+    let Ok(key) = validate_page_key(key.to_str().unwrap_or_default()) else {
+        return JNI_FALSE;
+    };
+    let Ok(Some(active_slot)) = facade::active_tab_slot() else {
+        return JNI_FALSE;
+    };
+    for event_type in [KeyboardEventType::Down, KeyboardEventType::Up] {
+        if send_renderer_to_slot(
+            active_slot,
+            IpcMessageKind::KeyboardEvent(KeyboardEventParams {
+                key: key.to_string(),
+                code: key.to_string(),
+                ctrl: false,
+                shift: false,
+                alt: false,
+                meta: false,
+                event_type,
+            }),
+        )
+        .is_err()
+        {
+            return JNI_FALSE;
+        }
+    }
+    JNI_TRUE
+}
+
 /// tap 归一化坐标（预览显示区内 0..=1）→ 页面视口 CSS 坐标。非有限值或越界拒绝。
 #[cfg(any(target_os = "android", test))]
 fn tap_viewport_point(norm_x: f32, norm_y: f32, viewport_width: u32, viewport_height: u32) -> Option<(f32, f32)> {
@@ -741,6 +816,24 @@ fn validate_page_viewport(width: jni::sys::jint, height: jni::sys::jint, density
         return Err("page viewport density is outside Android bounds".to_string());
     }
     Ok((width, height, density))
+}
+
+/// 页面输入文本契约：非空且 ≤4096 字节（IME commit 批次，对应 winit Commit 路径）。
+#[cfg(any(target_os = "android", test))]
+fn validate_page_input_text(text: &str) -> Result<&str, String> {
+    if text.is_empty() || text.len() > MAX_PAGE_INPUT_BYTES {
+        return Err("page input text must be between 1 and 4096 bytes".to_string());
+    }
+    Ok(text)
+}
+
+/// 键盘特殊键白名单：默认动作可观察的键（删除/提交）才透传，可打印字符走 IME Commit。
+#[cfg(any(target_os = "android", test))]
+fn validate_page_key(key: &str) -> Result<&str, String> {
+    match key {
+        "Backspace" | "Enter" => Ok(key),
+        _ => Err("page key is not supported".to_string()),
+    }
 }
 
 /// 合成帧契约：尺寸有界且 RGBA 载荷与声明的 w×h×4 自洽（compositor 独立进程，输出不可信）。
@@ -1221,7 +1314,8 @@ pub extern "system" fn Java_com_leizm_zeroweb_NativeBridge_nativeProbeCompositor
 mod tests {
     use super::{
         MAX_COMPOSITOR_SURFACE_DIMENSION, NATIVE_VERSION, encode_page_frame, is_known_role, page_frame_dims,
-        renderer_slot_id, tap_viewport_point, validate_compositor_dimensions, validate_page_viewport,
+        renderer_slot_id, tap_viewport_point, validate_compositor_dimensions, validate_page_input_text,
+        validate_page_key, validate_page_viewport,
     };
 
     #[test]
@@ -1264,6 +1358,23 @@ mod tests {
         let payload = encode_page_frame(320, 180, &[1, 2, 3, 4]);
         assert_eq!(&payload[..8], &[320u32.to_le_bytes(), 180u32.to_le_bytes()].concat());
         assert_eq!(&payload[8..], &[1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn page_input_text_requires_nonempty_bounded_batch() {
+        assert!(validate_page_input_text("中文").is_ok());
+        assert!(validate_page_input_text(" ").is_ok(), "空白符是合法输入");
+        assert!(validate_page_input_text("").is_err());
+        assert!(validate_page_input_text(&"x".repeat(4096)).is_ok());
+        assert!(validate_page_input_text(&"x".repeat(4097)).is_err());
+    }
+
+    #[test]
+    fn page_keys_are_whitelisted_to_default_action_keys() {
+        assert_eq!(validate_page_key("Backspace"), Ok("Backspace"));
+        assert_eq!(validate_page_key("Enter"), Ok("Enter"));
+        assert!(validate_page_key("Shift").is_err());
+        assert!(validate_page_key("").is_err());
     }
 
     #[test]

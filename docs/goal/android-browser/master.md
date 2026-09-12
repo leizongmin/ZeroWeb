@@ -2,7 +2,7 @@
 
 **入口文档**: [../android-browser.md](../android-browser.md)
 **创建日期**: 2026-09-07（goal 拆分 bootstrap）
-**最后更新**: 2026-09-12（M3 切片 5 viewport 真实尺寸贯通——宿主按 display 注入视口，帧带尺寸头出槽；模拟器环境核查记入 evidence/emulator-feasibility.md）
+**最后更新**: 2026-09-12（M3 切片 6 键盘/IME 输入通路落地——复用桌面 ImeEvent IPC；模拟器环境核查记入 evidence/emulator-feasibility.md）
 
 ---
 
@@ -98,8 +98,13 @@
    参数，`validate_page_viewport` 纯函数校验（宿主测试）后作该槽 SetViewport 与每槽
    视口注册表（tap/滚动光标换算同源）；帧出槽带 8 字节小端尺寸头
    （`encode_page_frame`），`page_frame_dims` 校验 compositor 回帧有界自洽；清槽点
-   收敛 `clear_renderer_slot`（transport+视口同清）。剩余候选：焦点/IME——宿主可开发，
-   效果验证待模拟器/真机解锁
+   收敛 `clear_renderer_slot`（transport+视口同清）
+   → 2026-09-12 ✅ 切片 6 键盘/IME 输入通路——零 renderer/protocol 改动，复用桌面
+   `ImeEvent` IPC：Kotlin `PageInputView`（1dp 隐形 AndroidView + `BaseInputConnection`，
+   「键盘」开关按钮弹/收软键盘）→ `commitText` → `nativePageText`（ImeEvent::Commit，
+   CJK 主通路）、删除/回车 → `nativePageKey`（Backspace/Enter 白名单 → keydown+keyup，
+   renderer 侧默认动作删字/提交表单）。纯函数校验（文本 ≤4096 字节、键白名单）宿主
+   测试覆盖。RFC M3「焦点、IME」项就此闭合（焦点已随点击落位）
 5. **模拟器/真机冒烟（M3 收口）**：等 KVM 授权或设备（待用户决策，不阻塞功能切片）
 
 **碰撞管理**：Cargo.lock 变更前 `git log --since="14 days ago" -- Cargo.lock` 核对；
@@ -111,7 +116,7 @@
 |--------|------|
 | M1 — CI 门禁 + 构建修复 | ✅ 全切片完成（CI job 全绿 34665015108、本地双路径打通、README/版本串对齐） |
 | M2 — 回归保护 + 可安装产物 | 🔶 APK 入口/签名/构建文档 ✅（P4）；JNI 桥接测试宿主侧 7 项已入、真机/模拟器冒烟断言待 M3 设备面（P3） |
-| M3 — 冒烟验收 + 决策清单 | 🔶 决策清单 ✅（RFC 已批准）；RFC M3 功能面——renderer 断连恢复/多标签换槽/compositor 断连恢复/预览点击/viewport 真实尺寸 ✅，模拟器冒烟受 KVM 环境阻塞（见待用户决策），真机待设备 |
+| M3 — 冒烟验收 + 决策清单 | 🔶 决策清单 ✅（RFC 已批准）；RFC M3 功能面（断连恢复×2/多标签换槽/点击/viewport/键盘 IME）✅ 全部落地，模拟器冒烟受 KVM 环境阻塞（见待用户决策），真机待设备 |
 
 ## 待用户决策
 

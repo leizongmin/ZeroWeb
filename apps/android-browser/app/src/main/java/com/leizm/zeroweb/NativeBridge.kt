@@ -79,6 +79,12 @@ object NativeBridge {
     external fun nativePageTap(normX: Float, normY: Float): Boolean
 
     @JvmStatic
+    external fun nativePageText(text: String): Boolean
+
+    @JvmStatic
+    external fun nativePageKey(key: String): Boolean
+
+    @JvmStatic
     external fun nativeProbeDecoder(fd: Int): Boolean
 
     @JvmStatic

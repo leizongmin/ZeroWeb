@@ -9,6 +9,12 @@ import android.content.ServiceConnection
 import android.os.Bundle
 import android.os.IBinder
 import android.os.ParcelFileDescriptor
+import android.text.InputType
+import android.view.View
+import android.view.inputmethod.BaseInputConnection
+import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputConnection
+import android.view.inputmethod.InputMethodManager
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.compose.setContent
@@ -21,6 +27,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Button
@@ -40,6 +47,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
 import org.json.JSONObject
 import java.nio.ByteBuffer
 
@@ -69,6 +77,9 @@ class MainActivity : ComponentActivity() {
     private var compositorPreview by mutableStateOf<Bitmap?>(null)
     private var rendererPreview by mutableStateOf<Bitmap?>(null)
     private var compositorAttached = false
+    /** 页面 IME 托管视图（预览下方 1dp 隐形槽），键盘开关时接管软键盘。 */
+    private var pageInputView: PageInputView? = null
+    private var keyboardRequested by mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -105,6 +116,9 @@ class MainActivity : ComponentActivity() {
                     rendererPreview = rendererPreview,
                     onPageScroll = ::scrollPage,
                     onPageTap = ::pageTap,
+                    keyboardRequested = keyboardRequested,
+                    onToggleKeyboard = ::toggleKeyboard,
+                    onPageInputViewCreated = ::registerPageInputView,
                 )
             }
         }
@@ -402,6 +416,72 @@ class MainActivity : ComponentActivity() {
     private fun pageTap(normX: Float, normY: Float) {
         if (NativeBridge.nativePageTap(normX, normY)) refreshRendererPreview()
     }
+
+    /** 键盘开关：开启时焦点交给页面 IME 托管视图并弹出软键盘，输入经 nativePageText/Key 落页。 */
+    private fun toggleKeyboard() {
+        val inputView = pageInputView
+        val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
+        if (inputView == null || imm == null) return
+        if (keyboardRequested) {
+            keyboardRequested = false
+            inputView.imeRequested = false
+            imm.hideSoftInputFromWindow(inputView.windowToken, 0)
+            inputView.clearFocus()
+        } else {
+            keyboardRequested = true
+            inputView.imeRequested = true
+            inputView.requestFocus()
+            imm.showSoftInput(inputView, InputMethodManager.SHOW_IMPLICIT)
+        }
+    }
+
+    private fun registerPageInputView(view: PageInputView) {
+        pageInputView = view
+        view.onInputCommitted = ::refreshRendererPreview
+    }
+}
+
+/**
+ * 页面文本输入托管视图（RFC §IF-003 InputConnection 的最小实现）：开启键盘后接管
+ * 软键盘连接，commitText → ImeEvent::Commit（CJK 主通路）、删除/回车 → 特殊键
+ * keydown+keyup，全部落到活动标签渲染槽的焦点元素。
+ */
+private class PageInputView(context: Context) : View(context) {
+    /** 键盘开关状态：关闭时 onCreateInputConnection 返回 null（IME 不弹）。 */
+    var imeRequested = false
+
+    /** 输入落地后的刷新回调（注入 Activity 的预览刷新）。 */
+    var onInputCommitted: (() -> Unit)? = null
+
+    init {
+        isFocusable = true
+        isFocusableInTouchMode = true
+    }
+
+    override fun onCreateInputConnection(outAttrs: EditorInfo): InputConnection? {
+        if (!imeRequested) return null
+        outAttrs.inputType = InputType.TYPE_CLASS_TEXT
+        outAttrs.imeOptions = EditorInfo.IME_FLAG_NO_EXTRACT_UI
+        return object : BaseInputConnection(this, false) {
+            override fun commitText(text: CharSequence?, newCursorPosition: Int): Boolean {
+                val committed = text != null && NativeBridge.nativePageText(text.toString())
+                if (committed) onInputCommitted?.invoke()
+                return committed
+            }
+
+            override fun deleteSurroundingText(beforeLength: Int, afterLength: Int): Boolean {
+                val deleted = NativeBridge.nativePageKey("Backspace")
+                if (deleted) onInputCommitted?.invoke()
+                return deleted
+            }
+
+            override fun performEditorAction(actionCode: Int): Boolean {
+                val done = NativeBridge.nativePageKey("Enter")
+                if (done) onInputCommitted?.invoke()
+                return done
+            }
+        }
+    }
 }
 
 @androidx.compose.runtime.Composable
@@ -423,6 +503,9 @@ private fun BrowserScreen(
     rendererPreview: Bitmap?,
     onPageScroll: (Float) -> Unit,
     onPageTap: (Float, Float) -> Unit,
+    keyboardRequested: Boolean,
+    onToggleKeyboard: () -> Unit,
+    onPageInputViewCreated: (PageInputView) -> Unit,
 ) {
     var page by remember { mutableStateOf(BrowserPage.BROWSE) }
     BackHandler(enabled = page != BrowserPage.BROWSE) { page = BrowserPage.BROWSE }
@@ -507,6 +590,14 @@ private fun BrowserScreen(
                     }
                     .testTag("rendererPreview"),
             )
+            // 页面 IME 托管视图：1dp 隐形槽承载软键盘连接，输入经 native 落到焦点元素
+            AndroidView(
+                factory = { context -> PageInputView(context).also(onPageInputViewCreated) },
+                modifier = Modifier.fillMaxWidth().height(1.dp),
+            )
+            TextButton(onClick = onToggleKeyboard) {
+                Text(if (keyboardRequested) "收起键盘" else "键盘")
+            }
         }
         compositorPreview?.let { preview ->
             Image(
