@@ -321,6 +321,53 @@ pub enum AutomationOperation {
         /// 传给脚本的 JSON 兼容参数。
         arguments: Vec<AutomationValue>,
     },
+    /// 在页面脚本上下文执行表达式，并把对象/函数结果保留在 renderer 注册表中，
+    /// 以 [`AutomationValue::Handle`] 引用返回（CDP `Runtime.evaluate` 的
+    /// `returnByValue:false` 语义）。
+    ///
+    /// https://chromedevtools.github.io/devtools-protocol/tot/Runtime/#method-evaluate
+    EvaluateRetaining {
+        /// 表达式源码。
+        script: String,
+        /// object group 名（CDP `objectGroup`；同组句柄可经
+        /// [`AutomationOperation::ReleaseObjectGroup`] 整体释放）。
+        group: Option<String>,
+        /// `returnByValue`：true 时对象结果按值深序列化（不保留句柄）。
+        return_by_value: bool,
+    },
+    /// 以保留句柄指向的对象为 `this` 调用函数（CDP `Runtime.callFunctionOn` 的
+    /// `objectId` 语义）。参数中的 [`AutomationValue::Handle`] 在页面侧还原为
+    /// 保留对象引用。
+    ///
+    /// https://chromedevtools.github.io/devtools-protocol/tot/Runtime/#method-callFunctionOn
+    CallFunctionOnHandle {
+        /// 目标对象句柄。
+        handle: u64,
+        /// 函数声明（CDP `functionDeclaration`）。
+        function_declaration: String,
+        /// 函数参数（含值与句柄引用）。
+        arguments: Vec<AutomationValue>,
+        /// `returnByValue`：true 时结果按值深序列化，false 时对象结果保留为新句柄。
+        return_by_value: bool,
+        /// `awaitPromise`：结果为 thenable 时等待其落定后再返回。
+        await_promise: bool,
+        /// 结果对象的 object group。
+        group: Option<String>,
+    },
+    /// 释放一个保留句柄（CDP `Runtime.releaseObject`）。
+    ///
+    /// https://chromedevtools.github.io/devtools-protocol/tot/Runtime/#method-releaseObject
+    ReleaseHandle {
+        /// 要释放的句柄。
+        handle: u64,
+    },
+    /// 释放一个 object group 内的全部保留句柄（CDP `Runtime.releaseObjectGroup`）。
+    ///
+    /// https://chromedevtools.github.io/devtools-protocol/tot/Runtime/#method-releaseObjectGroup
+    ReleaseObjectGroup {
+        /// object group 名。
+        group: String,
+    },
     /// 显式表示适配层尚未支持的命令；renderer 只返回错误，不执行名称内容。
     Unsupported {
         /// 未支持命令名。
@@ -419,6 +466,22 @@ pub enum AutomationValue {
     Array(Vec<AutomationValue>),
     /// 对象键值列表。
     Object(Vec<(String, AutomationValue)>),
+    /// renderer 侧保留 JS 对象注册表条目的引用（CDP remoteObject `objectId` 语义）。
+    /// 仅由 [`AutomationOperation::EvaluateRetaining`] /
+    /// [`AutomationOperation::CallFunctionOnHandle`] 产出、
+    /// [`AutomationOperation::CallFunctionOnHandle`] 消费；经既有
+    /// `ExecuteScript` 传参时按 `null` 降级（WebDriver/WPT 面不产出此变体）。
+    Handle(AutomationHandleRef),
+}
+
+/// 保留句柄引用及其节点性（CDP remoteObject `subtype:"node"`——Playwright 据
+/// 此把返回值生成 ElementHandle 而非 JSHandle，locator/adopt 管线的分叉点）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AutomationHandleRef {
+    /// 注册表句柄 id。
+    pub id: u64,
+    /// 保留值是否为 DOM 节点（shim 元素具 `nodeType`）。
+    pub node: bool,
 }
 
 /// 自动化错误。

@@ -329,6 +329,116 @@ fn test_dispatch_cdp_runtime_evaluate() {
     assert!(events.is_empty(), "Runtime.evaluate should not produce events");
 }
 
+// ── M4+：Runtime objectId 桥（evaluate returnByValue:false / callFunctionOn objectId /
+//    releaseObject 族；语义链由 renderer 单测 + cdp-e2e 覆盖，此处收 CDP 层形状）──
+
+#[test]
+fn test_cdp_runtime_evaluate_return_by_value_false_goes_handle_bridge() {
+    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let mut session = HeadlessSession::new(800.0, 600.0);
+    let params = serde_json::json!({ "expression": "({a: 1})", "returnByValue": false });
+    let (result, _) = server.dispatch_with_events(&mut session, "Runtime.evaluate", params);
+    // 测试进程无 renderer：句柄桥操作以异常形状回传（真实链路在 renderer 单测/cdp-e2e）。
+    let result = result.expect("handle bridge failure must be exceptionDetails, not transport error");
+    assert!(
+        result.get("exceptionDetails").is_some(),
+        "expected exceptionDetails shape, got {result}"
+    );
+}
+
+#[test]
+fn test_cdp_runtime_call_function_on_invalid_object_id_is_invalid_params() {
+    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let mut session = HeadlessSession::new(800.0, 600.0);
+    let params = serde_json::json!({
+        "functionDeclaration": "(function(){})",
+        "objectId": "not-an-zw-object-id",
+    });
+    let result = server.dispatch(&mut session, "Runtime.callFunctionOn", params);
+    let error = result.expect_err("foreign objectId must be rejected");
+    assert_eq!(error.code, -32602);
+}
+
+#[test]
+fn test_cdp_runtime_call_function_on_object_id_routes_handle_bridge() {
+    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let mut session = HeadlessSession::new(800.0, 600.0);
+    let params = serde_json::json!({
+        "functionDeclaration": "(function(){ return 1; })",
+        "objectId": "zw:7",
+        "arguments": [
+            { "value": 2 },
+            { "objectId": "zw:8" },
+            { "other": true }
+        ],
+        "returnByValue": true,
+        "awaitPromise": true,
+    });
+    let (result, _) = server.dispatch_with_events(&mut session, "Runtime.callFunctionOn", params);
+    let result = result.expect("zw: objectId must route into the handle bridge");
+    assert!(
+        result.get("exceptionDetails").is_some(),
+        "expected exceptionDetails, got {result}"
+    );
+}
+
+#[test]
+fn test_cdp_runtime_release_object_validates_object_id() {
+    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let mut session = HeadlessSession::new(800.0, 600.0);
+
+    let result = server.dispatch(&mut session, "Runtime.releaseObject", Value::Null);
+    assert_eq!(result.expect_err("missing objectId").code, -32602);
+
+    let result = server.dispatch(
+        &mut session,
+        "Runtime.releaseObject",
+        serde_json::json!({ "objectId": "chrome-object-1" }),
+    );
+    assert_eq!(result.expect_err("foreign objectId").code, -32602);
+
+    let (result, _) = server.dispatch_with_events(
+        &mut session,
+        "Runtime.releaseObject",
+        serde_json::json!({ "objectId": "zw:3" }),
+    );
+    assert!(
+        result.is_err() || result.unwrap().is_object(),
+        "zw: objectId accepted at CDP layer"
+    );
+}
+
+#[test]
+fn test_cdp_runtime_release_object_group_validates_group() {
+    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let mut session = HeadlessSession::new(800.0, 600.0);
+
+    let result = server.dispatch(&mut session, "Runtime.releaseObjectGroup", Value::Null);
+    assert_eq!(result.expect_err("missing objectGroup").code, -32602);
+
+    let (result, _) = server.dispatch_with_events(
+        &mut session,
+        "Runtime.releaseObjectGroup",
+        serde_json::json!({ "objectGroup": "pw-utilities" }),
+    );
+    // 校验通过后进入执行面——测试进程无 renderer，以 -32000 传回（非参数错）。
+    let error = result.expect_err("valid group must route past validation");
+    assert_eq!(error.code, -32000);
+}
+
+#[test]
+fn test_cdp_object_id_wire_format_roundtrip() {
+    use super::domains::{object_id_string, parse_object_id};
+    for handle in [1u64, 42, u64::MAX] {
+        let object_id = object_id_string(handle);
+        assert_eq!(parse_object_id(&object_id), Some(handle));
+    }
+    assert_eq!(parse_object_id("zw:"), None);
+    assert_eq!(parse_object_id("zw:abc"), None);
+    assert_eq!(parse_object_id("1"), None);
+    assert_eq!(parse_object_id(""), None);
+}
+
 #[test]
 fn test_dispatch_cdp_network_enable() {
     let server = HeadlessServer::new(0, 800.0, 600.0);

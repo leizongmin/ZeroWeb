@@ -4,6 +4,8 @@ use std::sync::atomic::Ordering;
 
 use serde_json::Value;
 use zero_browser_shell::TabId;
+use zero_protocol::message::AutomationOperation;
+use zero_protocol::message::AutomationResult;
 use zero_protocol::message::AutomationValue;
 #[cfg(not(test))]
 use zero_protocol::message::{IpcMessage, IpcMessageKind};
@@ -50,10 +52,34 @@ fn decode_png_to_rgba(bytes: &[u8]) -> Result<(u32, u32, Vec<u8>), String> {
     Ok((info.width, info.height, rgba))
 }
 
-/// 类型化值 → CDP remoteObject（returnByValue 语义，可序列化值直接内联）。
-/// 不可序列化对象的 objectId 句柄（V8 桥）尚未实现——见命令矩阵 G3。
+/// CDP remoteObject `objectId` 的 ZeroWeb 线格式：`zw:<handle>`（对客户端不透明；
+/// Playwright 仅按不透明串回传）。注册表本体在 renderer 侧，headless 无状态映射。
+pub(super) fn object_id_string(handle: u64) -> String {
+    format!("zw:{handle}")
+}
+
+/// 解析本服务发出的 objectId 线格式；非本服务格式 → None（调用方 -32602）。
+pub(super) fn parse_object_id(object_id: &str) -> Option<u64> {
+    object_id.strip_prefix("zw:")?.parse().ok()
+}
+
+/// remoteObject 形状（注册表句柄 → `{type:"object", objectId}`；DOM 节点加
+/// `subtype:"node"`——PW 据此生成 ElementHandle，locator/adopt 管线分叉点）。
+fn handle_to_remote_object(handle: zero_protocol::message::AutomationHandleRef) -> Value {
+    let mut obj = serde_json::json!({
+        "type": "object",
+        "objectId": object_id_string(handle.id),
+    });
+    if handle.node {
+        obj["subtype"] = serde_json::json!("node");
+    }
+    obj
+}
+
+/// AutomationValue → CDP remoteObject 形状；句柄变体产出 `objectId`（不落 value）。
 fn automation_value_to_remote_object(value: &AutomationValue) -> Value {
     match value {
+        AutomationValue::Handle(handle) => handle_to_remote_object(*handle),
         AutomationValue::Null => serde_json::json!({ "type": "object", "subtype": "null", "value": null }),
         AutomationValue::Bool(v) => serde_json::json!({ "type": "boolean", "value": v }),
         AutomationValue::Number(v) => serde_json::json!({ "type": "number", "value": v }),
@@ -73,15 +99,72 @@ fn automation_value_to_remote_object(value: &AutomationValue) -> Value {
     }
 }
 
-/// 嵌套值走纯 JSON（remoteObject 嵌套层不重复包 type/value 外壳，Chromium returnByValue 同）。
+/// 嵌套值走纯 JSON（remoteObject 嵌套层不重复包 type/value 外壳，Chromium returnByValue 同；
+/// PW 的 value 线格式依赖嵌套数组/对象原样保真——包装致 `{o:[...]}` 变非迭代对象）。
 fn automation_value_to_remote_object_value(value: &AutomationValue) -> Value {
     match value {
         AutomationValue::Null => Value::Null,
         AutomationValue::Bool(v) => serde_json::json!(v),
         AutomationValue::Number(v) => serde_json::json!(v),
         AutomationValue::String(v) => serde_json::json!(v),
-        other => automation_value_to_remote_object(other),
+        AutomationValue::Array(items) => Value::Array(
+            items
+                .iter()
+                .map(automation_value_to_remote_object_value)
+                .collect::<Vec<_>>(),
+        ),
+        AutomationValue::Object(entries) => Value::Object(
+            entries
+                .iter()
+                .map(|(k, v)| (k.clone(), automation_value_to_remote_object_value(v)))
+                .collect::<serde_json::Map<String, Value>>(),
+        ),
+        // 句柄仅在 remoteObject 顶层有 `objectId` 形态；嵌套句柄无纯 JSON 形态，防御性降级。
+        AutomationValue::Handle(_) => Value::Null,
     }
+}
+
+/// CDP `arguments[]` 单个实参 → AutomationValue：`{value}` 走纯 JSON，
+/// `{objectId}` 还原为本服务签发的句柄引用（其他键忽略，Chromium 同宽容语义）。
+fn cdp_call_argument_to_automation_value(argument: &Value) -> AutomationValue {
+    if let Some(object_id) = argument.get("objectId").and_then(|v| v.as_str()) {
+        return match parse_object_id(object_id) {
+            // 实参回传的句柄 node 性不可知（不影响还原——页面侧只用 id）。
+            Some(id) => AutomationValue::Handle(zero_protocol::message::AutomationHandleRef { id, node: false }),
+            None => AutomationValue::Null,
+        };
+    }
+    match argument.get("value") {
+        Some(value) => json_to_automation_value(value),
+        None => AutomationValue::Null,
+    }
+}
+
+/// 纯 JSON → AutomationValue（CDP `{value}` 实参的嵌套形态）。
+fn json_to_automation_value(value: &Value) -> AutomationValue {
+    match value {
+        Value::Null => AutomationValue::Null,
+        Value::Bool(v) => AutomationValue::Bool(*v),
+        Value::Number(v) => AutomationValue::Number(v.as_f64().unwrap_or_default()),
+        Value::String(v) => AutomationValue::String(v.clone()),
+        Value::Array(items) => AutomationValue::Array(items.iter().map(json_to_automation_value).collect()),
+        Value::Object(entries) => AutomationValue::Object(
+            entries
+                .iter()
+                .map(|(k, v)| (k.clone(), json_to_automation_value(v)))
+                .collect(),
+        ),
+    }
+}
+
+/// 脚本异常的 CDP 形状：`{result:{type:"undefined"}, exceptionDetails:{text}}`。
+fn exception_details_response(message: String) -> Value {
+    serde_json::json!({
+        "result": { "type": "undefined" },
+        "exceptionDetails": {
+            "text": message,
+        },
+    })
 }
 
 impl HeadlessServer {
@@ -137,6 +220,16 @@ impl HeadlessServer {
             "Browser.setDownloadBehavior" => Ok(serde_json::json!({})),
             "Target.getTargetInfo" => self.cmd_target_get_target_info(session, params),
             "Runtime.callFunctionOn" => self.cmd_runtime_call_function_on(session, params),
+            // objectId 桥配对命令（M4+）：释放 renderer 保留句柄
+            "Runtime.releaseObject" => self.cmd_runtime_release_object(session, params),
+            "Runtime.releaseObjectGroup" => self.cmd_runtime_release_object_group(session, params),
+            // DOM 域 objectId 面（M4+）：geometry/身份经句柄桥求值
+            "DOM.scrollIntoViewIfNeeded" => self.cmd_dom_scroll_into_view_if_needed(session, params),
+            "DOM.getContentQuads" => self.cmd_dom_get_content_quads(session, params),
+            "DOM.getBoxModel" => self.cmd_dom_get_box_model(session, params),
+            "DOM.describeNode" => self.cmd_dom_describe_node(session, params),
+            // adopt 流程另一半：backendNodeId → objectId（utility → main world 重析）
+            "DOM.resolveNode" => self.cmd_dom_resolve_node(session, params),
             "Runtime.runIfWaitingForDebugger" => Ok(serde_json::json!({})),
             // Playwright page 初始化命令族：stub 接受解附接摩擦，实义语义随 M2
             "Log.enable" => Ok(serde_json::json!({})),
@@ -806,7 +899,8 @@ impl HeadlessServer {
     // ── Runtime 域（M1 切片 3 — remoteObject 类型化返回）──
 
     /// Runtime.evaluate — remoteObject 形状返回（BiDi `script.evaluate` 的扁平字符串
-    /// 语义不受影响，走独立实现）。
+    /// 语义不受影响，走独立实现）。`returnByValue:false`（Playwright 句柄获取路径）
+    /// 走 objectId 桥：对象结果保留在 renderer 注册表，返回 `objectId` 引用。
     fn cmd_runtime_evaluate(&self, session: &mut HeadlessSession, params: Value) -> Result<Value, ProtocolError> {
         let expression = params
             .get("expression")
@@ -815,32 +909,33 @@ impl HeadlessServer {
                 code: -32602,
                 message: "Missing 'expression' parameter".into(),
             })?;
-        match session.execute_script_typed(expression) {
-            Ok(value) => Ok(serde_json::json!({
+        let return_by_value = params.get("returnByValue").and_then(|v| v.as_bool()).unwrap_or(false);
+        let group = params.get("objectGroup").and_then(|v| v.as_str()).map(str::to_string);
+        // 双分支统一走 objectId 桥：表达式语义（W3C ExecuteScript 是函数体语义，
+        // 不满足 CDP evaluate 的表达式形态——裸表达式读数恒 undefined，实测）。
+        // contextId 忽略：单引擎共享一个页面脚本上下文（无 world 隔离，矩阵已记账）。
+        match session.automation_request(AutomationOperation::EvaluateRetaining {
+            script: expression.to_string(),
+            group,
+            return_by_value,
+        }) {
+            Ok(AutomationResult::Value(value)) => Ok(serde_json::json!({
                 "result": automation_value_to_remote_object(&value),
             })),
-            Err(e) => Ok(serde_json::json!({
-                "result": { "type": "undefined" },
-                "exceptionDetails": {
-                    "text": e,
-                },
-            })),
+            Ok(_) => Ok(serde_json::json!({ "result": { "type": "undefined" } })),
+            Err(e) => Ok(exception_details_response(e)),
         }
     }
 
-    /// Runtime.callFunctionOn — 无 objectId 路径：函数体包装为表达式在页面上下文执行
-    ///（returnByValue 语义）。objectId（远程对象句柄）未实现 → 标准报错，见矩阵 G3。
+    /// Runtime.callFunctionOn — 双路径：
+    /// - `objectId`（Playwright utilityScript 主路径）：以保留句柄对象为 `this` 调用
+    ///   函数，`arguments[].objectId` 还原为保留对象，`awaitPromise` 落定后返回；
+    /// - 无 objectId（既有 value 路径）：函数体包装为表达式按值执行。
     fn cmd_runtime_call_function_on(
         &self,
         session: &mut HeadlessSession,
         params: Value,
     ) -> Result<Value, ProtocolError> {
-        if params.get("objectId").is_some() {
-            return Err(ProtocolError {
-                code: -32601,
-                message: "Runtime.callFunctionOn with objectId is not implemented".into(),
-            });
-        }
         let function_declaration = params
             .get("functionDeclaration")
             .and_then(|v| v.as_str())
@@ -848,6 +943,34 @@ impl HeadlessServer {
                 code: -32602,
                 message: "Missing 'functionDeclaration' parameter".into(),
             })?;
+        let return_by_value = params.get("returnByValue").and_then(|v| v.as_bool()).unwrap_or(false);
+        let await_promise = params.get("awaitPromise").and_then(|v| v.as_bool()).unwrap_or(false);
+        let group = params.get("objectGroup").and_then(|v| v.as_str()).map(str::to_string);
+        if let Some(object_id) = params.get("objectId").and_then(|v| v.as_str()) {
+            let handle = parse_object_id(object_id).ok_or_else(|| ProtocolError {
+                code: -32602,
+                message: format!("Invalid objectId '{object_id}'"),
+            })?;
+            let arguments = params
+                .get("arguments")
+                .and_then(|v| v.as_array())
+                .map(|args| args.iter().map(cdp_call_argument_to_automation_value).collect())
+                .unwrap_or_default();
+            return match session.automation_request(AutomationOperation::CallFunctionOnHandle {
+                handle,
+                function_declaration: function_declaration.to_string(),
+                arguments,
+                return_by_value,
+                await_promise,
+                group,
+            }) {
+                Ok(AutomationResult::Value(value)) => Ok(serde_json::json!({
+                    "result": automation_value_to_remote_object(&value),
+                })),
+                Ok(_) => Ok(serde_json::json!({ "result": { "type": "undefined" } })),
+                Err(e) => Ok(exception_details_response(e)),
+            };
+        }
         let args_json: Vec<String> = params
             .get("arguments")
             .and_then(|v| v.as_array())
@@ -862,12 +985,251 @@ impl HeadlessServer {
             Ok(value) => Ok(serde_json::json!({
                 "result": automation_value_to_remote_object(&value),
             })),
-            Err(e) => Ok(serde_json::json!({
-                "result": { "type": "undefined" },
-                "exceptionDetails": {
-                    "text": e,
+            Err(e) => Ok(exception_details_response(e)),
+        }
+    }
+
+    /// Runtime.releaseObject — 释放 renderer 保留句柄（objectId 桥配对命令）。
+    fn cmd_runtime_release_object(&self, session: &mut HeadlessSession, params: Value) -> Result<Value, ProtocolError> {
+        let object_id = params
+            .get("objectId")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| ProtocolError {
+                code: -32602,
+                message: "Missing 'objectId' parameter".into(),
+            })?;
+        let handle = parse_object_id(object_id).ok_or_else(|| ProtocolError {
+            code: -32602,
+            message: format!("Invalid objectId '{object_id}'"),
+        })?;
+        session
+            .automation_request(AutomationOperation::ReleaseHandle { handle })
+            .map_err(|e| ProtocolError {
+                code: -32000,
+                message: e,
+            })?;
+        Ok(serde_json::json!({}))
+    }
+
+    /// Runtime.releaseObjectGroup — 整组释放 renderer 保留句柄。
+    fn cmd_runtime_release_object_group(
+        &self,
+        session: &mut HeadlessSession,
+        params: Value,
+    ) -> Result<Value, ProtocolError> {
+        let group = params
+            .get("objectGroup")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| ProtocolError {
+                code: -32602,
+                message: "Missing 'objectGroup' parameter".into(),
+            })?;
+        session
+            .automation_request(AutomationOperation::ReleaseObjectGroup {
+                group: group.to_string(),
+            })
+            .map_err(|e| ProtocolError {
+                code: -32000,
+                message: e,
+            })?;
+        Ok(serde_json::json!({}))
+    }
+
+    /// DOM 域 objectId 面（M4+）：经 objectId 桥对保留元素求值——geometry/身份探测
+    /// 复用既有 CallFunctionOnHandle 原语，页面侧 rect 来自 shim `getBoundingClientRect`
+    ///（RectBridge 真实布局矩形）。
+    ///
+    /// https://chromedevtools.github.io/devtools-protocol/tot/DOM/
+    fn dom_element_probe(
+        &self,
+        session: &mut HeadlessSession,
+        params: &Value,
+        probe: &str,
+    ) -> Result<AutomationValue, ProtocolError> {
+        let object_id = params
+            .get("objectId")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| ProtocolError {
+                code: -32602,
+                message: "Missing 'objectId' parameter".into(),
+            })?;
+        let handle = parse_object_id(object_id).ok_or_else(|| ProtocolError {
+            code: -32602,
+            message: format!("Invalid objectId '{object_id}'"),
+        })?;
+        match session.automation_request(AutomationOperation::CallFunctionOnHandle {
+            handle,
+            function_declaration: probe.to_string(),
+            arguments: vec![AutomationValue::Handle(zero_protocol::message::AutomationHandleRef {
+                id: handle,
+                node: true,
+            })],
+            return_by_value: true,
+            await_promise: false,
+            group: None,
+        }) {
+            Ok(AutomationResult::Value(value)) => Ok(value),
+            Ok(_) => Ok(AutomationValue::Null),
+            // 句柄失效 = 文档已换代/节点已脱离（PW 识别该文案 → error:notconnected）。
+            Err(e) => Err(ProtocolError {
+                code: -32000,
+                message: format!("Node is detached from document: {e}"),
+            }),
+        }
+    }
+
+    /// DOM.scrollIntoViewIfNeeded — 元素滚动入视口（shim scrollIntoView 面；
+    /// 无布局对象 → PW 可识别的 notvisible 语义错误）。
+    fn cmd_dom_scroll_into_view_if_needed(
+        &self,
+        session: &mut HeadlessSession,
+        params: Value,
+    ) -> Result<Value, ProtocolError> {
+        let result = self.dom_element_probe(
+            session,
+            &params,
+            "(e) => { if (!e || typeof e.getBoundingClientRect !== 'function') return 'no-layout';\
+             try { if (typeof e.scrollIntoViewIfNeeded === 'function') e.scrollIntoViewIfNeeded();\
+             else if (typeof e.scrollIntoView === 'function') e.scrollIntoView(); } catch (_e) {} return true; }",
+        )?;
+        if result == AutomationValue::String("no-layout".into()) {
+            return Err(ProtocolError {
+                code: -32000,
+                message: "Node does not have a layout object".into(),
+            });
+        }
+        Ok(serde_json::json!({}))
+    }
+
+    /// DOM.getContentQuads — 元素内容四边形（视口坐标 flat 8 数；PW 据此算点击点）。
+    fn cmd_dom_get_content_quads(&self, session: &mut HeadlessSession, params: Value) -> Result<Value, ProtocolError> {
+        let result = self.dom_element_probe(
+            session,
+            &params,
+            "(e) => { if (!e || typeof e.getBoundingClientRect !== 'function') return null;\
+             var r = e.getBoundingClientRect();\
+             if (r.width === 0 && r.height === 0) return null;\
+             return [r.x, r.y, r.x + r.width, r.y, r.x + r.width, r.y + r.height, r.x, r.y + r.height]; }",
+        )?;
+        let quad = automation_value_to_remote_object_value(&result);
+        if !quad.is_array() {
+            return Err(ProtocolError {
+                code: -32000,
+                message: "Node does not have a layout object".into(),
+            });
+        }
+        Ok(serde_json::json!({ "quads": [quad] }))
+    }
+
+    /// DOM.getBoxModel — 盒模型（content/padding/border/margin 四 quad + 尺寸；headless
+    /// 单一面板：全部同 content quad）。
+    fn cmd_dom_get_box_model(&self, session: &mut HeadlessSession, params: Value) -> Result<Value, ProtocolError> {
+        let result = self.dom_element_probe(
+            session,
+            &params,
+            "(e) => { if (!e || typeof e.getBoundingClientRect !== 'function') return null;\
+             var r = e.getBoundingClientRect();\
+             if (r.width === 0 && r.height === 0) return null;\
+             return [r.x, r.y, r.width, r.height]; }",
+        )?;
+        let AutomationValue::Array(rect) = &result else {
+            return Err(ProtocolError {
+                code: -32000,
+                message: "Node does not have a layout object".into(),
+            });
+        };
+        let nums = |i: usize| {
+            rect.get(i).and_then(|v| match v {
+                AutomationValue::Number(n) => Some(*n),
+                _ => None,
+            })
+        };
+        let (x, y, w, h) = match (nums(0), nums(1), nums(2), nums(3)) {
+            (Some(x), Some(y), Some(w), Some(h)) => (x, y, w, h),
+            _ => {
+                return Err(ProtocolError {
+                    code: -32000,
+                    message: "Node does not have a layout object".into(),
+                });
+            }
+        };
+        let quad = [x, y, x + w, y, x + w, y + h, x, y + h];
+        let model = serde_json::json!({
+            "content": quad, "padding": quad, "border": quad, "margin": quad,
+            "width": w, "height": h,
+        });
+        Ok(serde_json::json!({ "model": model }))
+    }
+
+    /// DOM.describeNode — 节点描述 + `backendNodeId`（= 句柄 id；PW adopt 流程以它
+    /// 经 `DOM.resolveNode` 把 utility world 句柄跨上下文重析为 objectId）。
+    fn cmd_dom_describe_node(&self, session: &mut HeadlessSession, params: Value) -> Result<Value, ProtocolError> {
+        let object_id = params
+            .get("objectId")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| ProtocolError {
+                code: -32602,
+                message: "Missing 'objectId' parameter".into(),
+            })?;
+        let handle = parse_object_id(object_id).ok_or_else(|| ProtocolError {
+            code: -32602,
+            message: format!("Invalid objectId '{object_id}'"),
+        })?;
+        let result = self.dom_element_probe(
+            session,
+            &params,
+            "(e) => ({ nodeName: e.nodeName || '', tagName: e.tagName || '',\
+             nodeType: e.nodeType || 1, childElementCount: e.childElementCount || 0,\
+             attributes: e.attributes ? Array.from(e.attributes).map(function (a) { return [a.name, a.value]; }) : [] })",
+        )?;
+        let mut node = automation_value_to_remote_object_value(&result);
+        if let Some(map) = node.as_object_mut() {
+            map.insert("backendNodeId".into(), serde_json::json!(handle));
+            map.insert("nodeId".into(), serde_json::json!(handle));
+        }
+        Ok(serde_json::json!({ "node": node }))
+    }
+
+    /// DOM.resolveNode — backendNodeId → objectId（NodeId↔句柄桥的另一半）。
+    /// backendNodeId 即原句柄 id：对注册表条目**重新保留**为新句柄返回（原句柄可能已
+    /// 被 `Runtime.releaseObject` 释放——PW adopt 后 dispose 原句柄、只保留析出的新句柄；
+    /// subtype:"node" 使 PW 侧生成 ElementHandle 而非 JSHandle）。
+    fn cmd_dom_resolve_node(&self, session: &mut HeadlessSession, params: Value) -> Result<Value, ProtocolError> {
+        let backend_node_id = params
+            .get("backendNodeId")
+            .and_then(|v| v.as_u64())
+            .ok_or_else(|| ProtocolError {
+                code: -32602,
+                message: "Missing 'backendNodeId' parameter".into(),
+            })?;
+        let result = session.automation_request(AutomationOperation::CallFunctionOnHandle {
+            handle: backend_node_id,
+            function_declaration: "(e) => e".into(),
+            arguments: vec![AutomationValue::Handle(zero_protocol::message::AutomationHandleRef {
+                id: backend_node_id,
+                node: true,
+            })],
+            return_by_value: false,
+            await_promise: false,
+            group: None,
+        });
+        match result {
+            Ok(AutomationResult::Value(AutomationValue::Handle(new_handle))) => Ok(serde_json::json!({
+                "object": {
+                    "type": "object",
+                    "subtype": "node",
+                    "objectId": object_id_string(new_handle.id),
+                    "description": "",
                 },
             })),
+            Ok(_) => Err(ProtocolError {
+                code: -32000,
+                message: "Node is detached from document".into(),
+            }),
+            Err(e) => Err(ProtocolError {
+                code: -32000,
+                message: format!("Node is detached from document: {e}"),
+            }),
         }
     }
 

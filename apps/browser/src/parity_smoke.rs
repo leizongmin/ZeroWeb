@@ -630,6 +630,8 @@ fn automation_value_to_json(value: AutomationValue) -> Value {
                 .map(|(key, value)| (key, automation_value_to_json(value)))
                 .collect(),
         ),
+        // parity 面不产出句柄引用（仅 CDP objectId 桥使用）；防御性降级为 null。
+        AutomationValue::Handle(_) => Value::Null,
     }
 }
 

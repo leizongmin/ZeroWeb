@@ -340,17 +340,25 @@ impl HeadlessSession {
     /// 执行脚本并返回类型化结果（CDP Runtime 域 remoteObject 需要值类型；
     /// renderer 的 ExecuteScript 以 JSON envelope 返回类型化 AutomationValue）。
     pub(super) fn execute_script_typed_renderer(&mut self, script: &str) -> Result<AutomationValue, String> {
+        let result = self.automation_request(AutomationOperation::ExecuteScript {
+            script: script.to_string(),
+            arguments: Vec::new(),
+        })?;
+        Ok(match result {
+            AutomationResult::Value(value) => value,
+            _ => AutomationValue::Null,
+        })
+    }
+
+    /// 自动化操作统一入口：发 `AutomationRequest`、等响应、提取结果
+    ///（Runtime objectId 桥四操作与既有 ExecuteScript 共用同一 IPC 往返）。
+    pub(super) fn automation_request(&mut self, operation: AutomationOperation) -> Result<AutomationResult, String> {
         let request_id = self.next_request_id;
         self.next_request_id = self.next_request_id.wrapping_add(1).max(1);
         self.renderer
             .send(IpcMessage {
                 id: request_id,
-                kind: IpcMessageKind::AutomationRequest(AutomationRequest {
-                    operation: AutomationOperation::ExecuteScript {
-                        script: script.to_string(),
-                        arguments: Vec::new(),
-                    },
-                }),
+                kind: IpcMessageKind::AutomationRequest(AutomationRequest { operation }),
             })
             .map_err(|error| error.to_string())?;
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
@@ -370,10 +378,7 @@ impl HeadlessSession {
                 None => std::thread::sleep(std::time::Duration::from_millis(2)),
             }
         };
-        match response.result.map_err(|error| error.message)? {
-            AutomationResult::Value(value) => Ok(value),
-            _ => Ok(AutomationValue::Null),
-        }
+        response.result.map_err(|error| error.message)
     }
 
     /// CDP Input 域 → renderer IPC 发送辅助（见各 send_input_*）。
@@ -588,5 +593,14 @@ impl HeadlessSession {
 
     pub(super) fn send_set_media_type(&mut self, _print: bool) -> Result<(), String> {
         Ok(())
+    }
+
+    /// 测试进程内无 renderer：句柄桥操作不在此层执行（renderer 单测 + cdp-e2e
+    /// 覆盖语义；此处仅保证编译面完整，dispatch 层形状断言用 -32000 传回）。
+    pub(super) fn automation_request(
+        &mut self,
+        _operation: zero_protocol::message::AutomationOperation,
+    ) -> Result<zero_protocol::message::AutomationResult, String> {
+        Err("renderer unavailable in unit tests".into())
     }
 }

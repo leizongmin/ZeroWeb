@@ -39,6 +39,29 @@ fn automation_operations_roundtrip() {
         AutomationOperation::Unsupported {
             name: "test_driver.set_permission".into(),
         },
+        // CDP objectId 桥（Runtime.evaluate returnByValue:false / callFunctionOn objectId /
+        // releaseObject 族）。
+        AutomationOperation::EvaluateRetaining {
+            script: "(() => ({ a: 1 }))()".into(),
+            group: Some("pw-utilities".into()),
+            return_by_value: false,
+        },
+        AutomationOperation::CallFunctionOnHandle {
+            handle: 7,
+            function_declaration: "(utilityScript, ...args) => utilityScript.evaluate(...args)".into(),
+            arguments: vec![
+                AutomationValue::Handle(AutomationHandleRef { id: 7, node: false }),
+                AutomationValue::String("expression".into()),
+                AutomationValue::Array(vec![AutomationValue::Number(1.0)]),
+            ],
+            return_by_value: false,
+            await_promise: true,
+            group: None,
+        },
+        AutomationOperation::ReleaseHandle { handle: 7 },
+        AutomationOperation::ReleaseObjectGroup {
+            group: "pw-utilities".into(),
+        },
     ];
 
     for (index, operation) in operations.into_iter().enumerate() {
@@ -91,6 +114,14 @@ fn automation_response_roundtrips_missing_element_and_values() {
             navigation_epoch: 7,
             document_generation: 3,
             result: Ok(AutomationResult::Value(AutomationValue::String("ok".into()))),
+        },
+        AutomationResponse {
+            navigation_epoch: 7,
+            document_generation: 3,
+            result: Ok(AutomationResult::Value(AutomationValue::Handle(AutomationHandleRef {
+                id: 51,
+                node: false,
+            }))),
         },
         AutomationResponse {
             navigation_epoch: 7,

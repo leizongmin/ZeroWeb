@@ -1,7 +1,7 @@
 # CDP 命令矩阵账本（DC-1 控制件）
 
-**版本**: v0.2（S4 后三态推进；v0.1 为 M1 前置纯资产切片初稿）
-**日期**: 2026-09-12
+**版本**: v0.3（S9 objectId 桥后三态推进；v0.2 S4、v0.1 M1 前置初稿）
+**日期**: 2026-09-13
 **捕获客户端**: playwright-core **1.63.0**（pin，见 `tests/playwright-matrix/package.json` + lockfile）
 **捕获目标**: Chromium 153.0.8010.12（playwright 缓存 chromium-1243，headless=new）
 **捕获方式**: `tests/playwright-matrix/scripts/capture-core-flow.mjs` — Playwright
@@ -80,9 +80,11 @@ DC-3 基线）。「现状」列以 2026-09-12 `apps/browser/src/headless/`（M1
 | 方法 | 捕获调用 | 参数键 | ZeroWeb 现状 | 计划 |
 |------|---------|--------|--------------|------|
 | `Runtime.enable` | 5 | — | ✅（S4：补发 executionContextCreated + auxData 契约） | 完成（M1 S4） |
-| `Runtime.evaluate` | 8 | contextId/expression | ⚠️ 类型化 remoteObject（S4，returnByValue）+ exceptionDetails；**缺 objectId 句柄——已拍板全量 remoteObject 桥（2026-09-12），待切片落地** | M1 收口挂 objectId 桥 |
-| `Runtime.callFunctionOn` | **156** | arguments/awaitPromise/functionDeclaration/objectId/returnByValue/userGesture | ⚠️ 无 objectId 路径已实现（S4：value 参数 + 表达式包装 + 类型化返回）；objectId 路径 -32601 | 收口挂 objectId 桥（已拍板） |
-| `Runtime.releaseObject` | 51 | objectId | ❌（与 objectId 桥配对，挂起） | objectId 桥获批后 |
+| `Runtime.evaluate` | 8 | contextId/expression | ✅（S9：returnByValue 双分支统一走 objectId 桥——表达式语义修复（W3C ExecuteScript 函数体语义 ≠ CDP evaluate 表达式形态）；对象结果保留句柄返回 `objectId`） | 完成（M4 S9） |
+| `Runtime.callFunctionOn` | **156** | arguments/awaitPromise/functionDeclaration/objectId/returnByValue/userGesture | ✅（S9：objectId 路径——句柄为 `this` 调用 + `arguments[].objectId` 实参顶层还原 + `awaitPromise` 落定轮询（microtask drain + timer 泵）；falsy 实参标记误判已修） | 完成（M4 S9） |
+| `Runtime.releaseObject` | 51 | objectId | ✅（S9：renderer 注册表释放，objectId 桥配对） | 完成（M4 S9） |
+| `Runtime.releaseObjectGroup` | 0（矩阵外） | objectGroup | ✅（S9：整组释放；goal 扩展面） | 完成（M4 S9） |
+| `Runtime.getProperties` | 0（未调用） | objectId/ownProperties | ❌ | 不实现（矩阵不需要；devtools 前置等点名） |
 | `Runtime.runIfWaitingForDebugger` | 8 | — | ✅ stub 接受（S4） | 完成（M1 S4） |
 
 ### Page 域
@@ -112,12 +114,12 @@ DC-3 基线）。「现状」列以 2026-09-12 `apps/browser/src/headless/`（M1
 
 | 方法 | 捕获调用 | 参数键 | ZeroWeb 现状 | 计划 |
 |------|---------|--------|--------------|------|
-| `DOM.scrollIntoViewIfNeeded` | 13 | objectId/rect | ❌ | M3 |
-| `DOM.getContentQuads` | 10 | objectId | ❌ | M3（click 坐标来源） |
-| `DOM.describeNode` | 7 | objectId | ❌ | M3 |
-| `DOM.resolveNode` | 7 | backendNodeId/executionContextId | ❌ | M3（NodeId↔objectId 桥） |
-| `DOM.getBoxModel` | 4 | objectId | ❌ | M3 |
-| `DOM.getFrameOwner` | 1 | frameId | ❌ | M3 |
+| `DOM.scrollIntoViewIfNeeded` | 13 | objectId/rect | ✅（S9：句柄桥求值 + shim scrollIntoView 面；无布局对象 → PW 可识别 notvisible 错误形状） | 完成（M4 S9） |
+| `DOM.getContentQuads` | 10 | objectId | ✅（S9：句柄桥求值，rect 来自 shim gBCR/RectBridge 真实布局；flat 8 数 quad——click 坐标来源） | 完成（M4 S9） |
+| `DOM.describeNode` | 7 | objectId | ✅（S9：句柄桥求值 + `backendNodeId`=句柄 id） | 完成（M4 S9） |
+| `DOM.resolveNode` | 7 | backendNodeId/executionContextId | ✅（S9：backendNodeId（=句柄 id）重保留为新句柄返回 `subtype:"node"`——PW adopt 流程（utility→main world 重析）全通） | 完成（M4 S9） |
+| `DOM.getBoxModel` | 4 | objectId | ✅（S9：句柄桥求值，四 quad 同 content（headless 单一面板）） | 完成（M4 S9） |
+| `DOM.getFrameOwner` | 1 | frameId | ❌ | 不实现（iframe 面随引擎子帧能力，维持挂起） |
 
 ### Emulation 域
 
@@ -196,7 +198,7 @@ DC-3 基线）。「现状」列以 2026-09-12 `apps/browser/src/headless/`（M1
 | G1 | WS 层 sessionId 多路复用 | 🔶 传输面已解（S3：解析/回显/未附接 -32001/附接注册表）；per-target 真路由随 Target 域（切片 3） |
 | G2 | `/json/version` 尾斜杠 404 | ✅ 已解（S3） |
 | G2b | tungstenite write() 缓冲不落盘 + peek 5s read timeout 未恢复 → 任何 CDP 客户端收不到响应 | ✅ 已解（S3，实测发现；learning 2026-09-12） |
-| G3 | `Runtime.evaluate` 扁平字符串结果，无 remoteObject/objectId | 🔶 类型化 returnByValue 已解（S4）；objectId 句柄**已拍板全量 remoteObject 桥（2026-09-12）**，待切片落地 |
+| G3 | `Runtime.evaluate` 扁平字符串结果，无 remoteObject/objectId | ✅ 已解（S9：objectId 全量 remoteObject 桥——注册表/renderer 原语/双路径 evaluate + DOM 域句柄面） |
 | G4 | 无请求事件总线（net 生命周期无观测点） | Network 域 + devtools 面板（P6） |
 | G5 | console 走 `__zw_console_log` 扁平字符串宿主回调 | consoleAPICalled remoteObject 形态（P5） |
 | G6 | `headless.rs` 2256 行超 2000 上限 | ✅ 已解（S2 拆分 9 模块） |

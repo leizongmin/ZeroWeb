@@ -154,6 +154,56 @@ impl RendererRuntime {
                 let value = self.run_page_context_script(&source)?;
                 Ok(AutomationResult::Value(automation_value_from_script(&value)))
             }
+            AutomationOperation::EvaluateRetaining {
+                script,
+                group,
+                return_by_value,
+            } => {
+                if script.is_empty() {
+                    return Err(automation_error(
+                        AutomationErrorCode::InvalidArgument,
+                        "script must not be empty",
+                    ));
+                }
+                let group = group.unwrap_or_else(|| DEFAULT_OBJECT_GROUP.to_string());
+                // 对象结果保留进注册表（句柄随文档换代经 JS context 重建自然失效）。
+                let source = evaluate_retaining_script(&script, &group, return_by_value);
+                match self.run_handle_operation(&source)? {
+                    HandleOutcome::Pending => Err(internal_error("evaluate cannot be awaited".into())),
+                    HandleOutcome::Result(result) => Ok(result),
+                }
+            }
+            AutomationOperation::CallFunctionOnHandle {
+                handle,
+                function_declaration,
+                arguments,
+                return_by_value,
+                await_promise,
+                group,
+            } => {
+                let group = group.unwrap_or_else(|| DEFAULT_OBJECT_GROUP.to_string());
+                let arguments = serde_json::Value::Array(arguments.iter().map(automation_value_to_json).collect());
+                let source = call_function_on_handle_script(
+                    handle,
+                    &function_declaration,
+                    &arguments.to_string(),
+                    return_by_value,
+                    await_promise,
+                    &group,
+                );
+                match self.run_handle_operation(&source)? {
+                    HandleOutcome::Pending => self.await_pending_operation(&group, return_by_value),
+                    HandleOutcome::Result(result) => Ok(result),
+                }
+            }
+            AutomationOperation::ReleaseHandle { handle } => {
+                self.run_handle_operation(&release_handle_script(handle))?;
+                Ok(AutomationResult::Empty)
+            }
+            AutomationOperation::ReleaseObjectGroup { group } => {
+                self.run_handle_operation(&release_object_group_script(&group))?;
+                Ok(AutomationResult::Empty)
+            }
             AutomationOperation::Unsupported { name } => Err(automation_error(
                 AutomationErrorCode::UnsupportedOperation,
                 format!("unsupported automation operation: {name}"),
@@ -188,6 +238,58 @@ impl RendererRuntime {
             self.publish_webview(None, true).map_err(internal_error)?;
         }
         Ok(value)
+    }
+
+    /// 句柄操作的公共尾：执行生成脚本、解包络（含 pending/句柄/错误信号）。
+    fn run_handle_operation(&mut self, source: &str) -> Result<HandleOutcome, AutomationError> {
+        let value = self.run_page_context_script(source)?;
+        parse_handle_operation_envelope(&value)
+    }
+
+    /// `awaitPromise` 落定循环：`__zwAutomationAwait` 由首个 execute 投递，此后每轮
+    /// 泵宿主 timer 回调 + 读 done 哨兵（execute 边界 drain microtask，见
+    /// script-sandbox `perform_microtask_checkpoint` / QuickJS job queue drain），
+    /// 直到落定或有界超时。落定值留在注册表脚本侧读取（保对象本体，不走 JSON 往返）。
+    fn await_pending_operation(
+        &mut self,
+        group: &str,
+        return_by_value: bool,
+    ) -> Result<AutomationResult, AutomationError> {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(AWAIT_PROMISE_TIMEOUT_SECS);
+        loop {
+            {
+                let current_url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
+                let mut context = PageScriptContext {
+                    html: &mut self.cached_html,
+                    url: &current_url,
+                    js_worker: &self.js_worker,
+                    webview: self.webview.as_mut(),
+                };
+                // await 期间 timer 回调的 DOM 变更照常提交到活 DOM。
+                super::page_scripts::drain_pending_dom_mutations(&mut context);
+            }
+            let state = self
+                .js_worker
+                .execute_script_direct(AWAIT_POLL_SCRIPT)
+                .map_err(|message| automation_error(AutomationErrorCode::JavascriptError, message))?;
+            let settled = serde_json::from_str::<serde_json::Value>(&state)
+                .ok()
+                .and_then(|value| value.get("done").and_then(serde_json::Value::as_bool));
+            if settled == Some(true) {
+                break;
+            }
+            if std::time::Instant::now() >= deadline {
+                return Err(automation_error(AutomationErrorCode::Timeout, "awaitPromise timed out"));
+            }
+            std::thread::sleep(std::time::Duration::from_millis(4));
+        }
+        let source = pending_settled_script(group, return_by_value);
+        match self.run_handle_operation(&source)? {
+            HandleOutcome::Pending => Err(internal_error(
+                "await sentinel reported done but tail read pending".into(),
+            )),
+            HandleOutcome::Result(result) => Ok(result),
+        }
     }
 
     /// 元素状态查询的公共尾：执行生成的脚本并解 JSON 包络。
@@ -354,7 +456,188 @@ fn automation_value_to_json(value: &AutomationValue) -> serde_json::Value {
                 .map(|(key, value)| (key.clone(), automation_value_to_json(value)))
                 .collect(),
         ),
+        // 句柄参数以标记对象下传，页面脚本在实参列表顶层还原为保留对象
+        //（CDP `Runtime.callFunctionOn` 的 `arguments[].objectId` 只出现在实参顶层）。
+        AutomationValue::Handle(handle) => serde_json::json!({ "__zwHandleRef": handle.id }),
     }
+}
+
+/// 未显式指定 `objectGroup` 时句柄落入的默认组。
+const DEFAULT_OBJECT_GROUP: &str = "zw-automation";
+/// `awaitPromise` 落定循环的有界超时（秒）——headless 侧自动化 IPC 超时为 10s，留余量。
+const AWAIT_PROMISE_TIMEOUT_SECS: u64 = 8;
+
+/// 落定哨兵：只读 done 标志（落定值本体留在 `__zwAutomationAwait`，由尾部脚本按
+/// returnByValue 语义取用）。
+const AWAIT_POLL_SCRIPT: &str =
+    "JSON.stringify(globalThis.__zwAutomationAwait?{done:globalThis.__zwAutomationAwait.done}:{done:null})";
+
+/// 句柄注册表 bootstrap 片段——每个操作脚本内联一份，幂等（首次执行时初始化）。
+/// 注册表活在页面 JS context 全局对象上：导航换代 context 销毁重建
+///（`reset_document_state` → `sandbox.reset_context`）→ 全部句柄自然失效，
+/// 与 CDP「execution context destroyed」语义一致。
+const HANDLE_REGISTRY_JS: &str = r#"
+var __zw = globalThis.__zwAutomationHandles = globalThis.__zwAutomationHandles || (function () {
+  var r = { next: 1, byId: Object.create(null), groups: Object.create(null) };
+  r.retain = function (v, group) {
+    if (r.next > 65536) throw new Error('automation handle registry full');
+    var id = r.next;
+    r.next = r.next + 1;
+    r.byId[id] = v;
+    (r.groups[group] = r.groups[group] || Object.create(null))[id] = true;
+    return id;
+  };
+  r.tail = function (v, group, byValue) {
+    var t = typeof v;
+    if (byValue || v === null || v === undefined || t === 'boolean' || t === 'number' || t === 'string') {
+      if (v === undefined) return JSON.stringify({ defined: false });
+      return JSON.stringify({ defined: true, value: v });
+    }
+    // node 性随句柄上报：shim DOM 节点具 nodeType（CDP subtype:"node" 判定面）。
+    var isNode = v && typeof v === 'object' && typeof v.nodeType === 'number' && v.nodeType >= 1 && v.nodeType <= 12;
+    return JSON.stringify({ defined: true, handle: r.retain(v, group), node: !!isNode });
+  };
+  return r;
+})();"#;
+
+/// [`AutomationOperation::EvaluateRetaining`] 脚本：执行表达式并按
+/// returnByValue 语义处理结果（false：对象 → 注册表句柄；true：对象按值深序列化）。
+/// 表达式语义（Chromium `Runtime.evaluate` 单表达式形态）；末尾分号剥除——
+/// PW 安装源为 IIFE 自调用（`...();`），直拼 `(...;)` 不编译。
+fn evaluate_retaining_script(script: &str, group: &str, return_by_value: bool) -> String {
+    let expression = script.trim_end().strip_suffix(';').unwrap_or_else(|| script.trim_end());
+    let by_value = if return_by_value { "true" } else { "false" };
+    format!(
+        "(function(){{{HANDLE_REGISTRY_JS}\nvar __zwV = ({expression});\nreturn __zw.tail(__zwV, {group:?}, {by_value});}})()"
+    )
+}
+
+/// [`AutomationOperation::CallFunctionOnHandle`] 脚本：句柄对象为 `this` 调用函数，
+/// 顶层句柄实参还原为保留对象；`awaitPromise` 时 thenable 结果转落定哨兵。
+#[allow(clippy::too_many_arguments)]
+fn call_function_on_handle_script(
+    handle: u64,
+    function_declaration: &str,
+    arguments_json: &str,
+    return_by_value: bool,
+    await_promise: bool,
+    group: &str,
+) -> String {
+    let await_open = if await_promise { "true" } else { "false" };
+    let by_value = if return_by_value { "true" } else { "false" };
+    format!(
+        "(function(){{{HANDLE_REGISTRY_JS}
+var __zwT = __zw.byId[{handle}];
+if (!__zwT) return JSON.stringify({{defined:true,zwMiss:true}});
+var __zwF = ({function_declaration});
+var __zwA = {arguments_json};
+for (var __zwI = 0; __zwI < __zwA.length; __zwI++) {{
+  var __zwM = __zwA[__zwI];
+  // 仅对象形态的标记（{{__zwHandleRef:n}}）还原为保留对象；裸 falsy 实参
+  // （false/0/''）不得进入查找——`falsy && x` 会被误判为标记（实测根因）。
+  if (__zwM && typeof __zwM === 'object' && __zwM.__zwHandleRef !== undefined) {{
+    __zwA[__zwI] = __zw.byId[__zwM.__zwHandleRef];
+    if (!__zwA[__zwI]) return JSON.stringify({{defined:true,zwMiss:true,dbgWanted:__zwM.__zwHandleRef}});
+  }}
+}}
+var __zwV;
+try {{ __zwV = __zwF.apply(__zwT, __zwA); }}
+catch (__zwE) {{ return JSON.stringify({{defined:true,zwThrow:String(__zwE && __zwE.message || __zwE)}}); }}
+if ({await_open} && __zwV && typeof __zwV.then === 'function') {{
+  globalThis.__zwAutomationAwait = {{ done: false }};
+  Promise.resolve(__zwV).then(
+    function (v) {{ globalThis.__zwAutomationAwait = {{ done: true, ok: true, value: v }}; }},
+    function (e) {{ globalThis.__zwAutomationAwait = {{ done: true, ok: false, error: String(e && e.message || e) }}; }}
+  );
+  return JSON.stringify({{ defined: true, pending: true }});
+}}
+return __zw.tail(__zwV, {group:?}, {by_value});}})()"
+    )
+}
+
+/// `awaitPromise` 落定后的收尾脚本：从 `__zwAutomationAwait` 取落定值本体并套用
+/// returnByValue 语义（保对象本体，不走 JSON 往返）。
+fn pending_settled_script(group: &str, return_by_value: bool) -> String {
+    let by_value = if return_by_value { "true" } else { "false" };
+    format!(
+        "(function(){{{HANDLE_REGISTRY_JS}
+var __zwA = globalThis.__zwAutomationAwait;
+globalThis.__zwAutomationAwait = undefined;
+if (!__zwA || !__zwA.done) return JSON.stringify({{defined:true,pending:true}});
+if (!__zwA.ok) return JSON.stringify({{defined:true,zwThrow:String(__zwA.error)}});
+return __zw.tail(__zwA.value, {group:?}, {by_value});}})()"
+    )
+}
+
+/// [`AutomationOperation::ReleaseHandle`] 脚本：从全部组与注册表移除句柄。
+fn release_handle_script(handle: u64) -> String {
+    format!(
+        "(function(){{{HANDLE_REGISTRY_JS}
+for (var __zwK in __zw.groups) delete __zw.groups[__zwK][{handle}];
+delete __zw.byId[{handle}];
+return JSON.stringify({{defined:true,value:true}});}})()"
+    )
+}
+
+/// [`AutomationOperation::ReleaseObjectGroup`] 脚本：整组移除注册表句柄。
+fn release_object_group_script(group: &str) -> String {
+    format!(
+        "(function(){{{HANDLE_REGISTRY_JS}
+var __zwIds = __zw.groups[{group:?}];
+if (__zwIds) for (var __zwId in __zwIds) delete __zw.byId[__zwId];
+delete __zw.groups[{group:?}];
+return JSON.stringify({{defined:true,value:true}});}})()"
+    )
+}
+
+/// 句柄操作包络的解析结果：终值或 `awaitPromise` 落定哨兵。
+enum HandleOutcome {
+    Result(AutomationResult),
+    Pending,
+}
+
+/// 解包络：`zwThrow`/`zwMiss` → 脚本错误；`handle` → 句柄引用；`pending` → 落定哨兵；
+/// 其余走既有包络解析（`{defined,value}`）。
+fn parse_handle_operation_envelope(value: &str) -> Result<HandleOutcome, AutomationError> {
+    let envelope = match serde_json::from_str::<serde_json::Value>(value) {
+        Ok(serde_json::Value::Object(envelope)) if envelope.contains_key("defined") => envelope,
+        _ => {
+            return Ok(HandleOutcome::Result(AutomationResult::Value(
+                automation_value_from_script(value),
+            )));
+        }
+    };
+    if envelope.get("zwThrow").and_then(serde_json::Value::as_str).is_some() {
+        let message = envelope
+            .get("zwThrow")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default();
+        return Err(automation_error(
+            AutomationErrorCode::JavascriptError,
+            message.to_string(),
+        ));
+    }
+    if envelope.get("zwMiss").and_then(serde_json::Value::as_bool) == Some(true) {
+        return Err(automation_error(
+            AutomationErrorCode::JavascriptError,
+            "object handle is unknown or has been released".to_string(),
+        ));
+    }
+    if envelope.get("pending").and_then(serde_json::Value::as_bool) == Some(true) {
+        return Ok(HandleOutcome::Pending);
+    }
+    if let Some(handle) = envelope.get("handle").and_then(serde_json::Value::as_u64) {
+        let node = envelope
+            .get("node")
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false);
+        return Ok(HandleOutcome::Result(AutomationResult::Value(AutomationValue::Handle(
+            zero_protocol::message::AutomationHandleRef { id: handle, node },
+        ))));
+    }
+    Ok(HandleOutcome::Result(AutomationResult::Value(
+        automation_value_from_script(value),
+    )))
 }
 
 fn automation_value_from_script(value: &str) -> AutomationValue {
@@ -547,5 +830,214 @@ mod tests {
             })
             .expect_err("unsupported operation");
         assert_eq!(error.code, AutomationErrorCode::UnsupportedOperation);
+    }
+
+    // ── objectId 句柄桥（CDP Runtime.evaluate returnByValue:false 语义）──
+
+    /// 保留对象返回句柄引用、原始类型按值返回。
+    #[test]
+    fn evaluate_retaining_splits_objects_and_primitives() {
+        let mut runtime = runtime();
+        let result = runtime
+            .execute_automation_request(AutomationRequest {
+                operation: AutomationOperation::EvaluateRetaining {
+                    script: "1 + 2".into(),
+                    group: None,
+                    return_by_value: false,
+                },
+            })
+            .expect("retain primitive");
+        assert_eq!(result, AutomationResult::Value(AutomationValue::Number(3.0)));
+
+        let result = runtime
+            .execute_automation_request(AutomationRequest {
+                operation: AutomationOperation::EvaluateRetaining {
+                    script: "({a: 1, b: 21})".into(),
+                    group: None,
+                    return_by_value: false,
+                },
+            })
+            .expect("retain object");
+        let AutomationResult::Value(AutomationValue::Handle(_)) = result else {
+            panic!("object result must be a handle, got {result:?}");
+        };
+    }
+
+    /// 句柄对象作 `this` 调用函数；句柄实参还原为保留对象。
+    #[test]
+    fn call_function_on_handle_resolves_this_and_handle_arguments() {
+        let mut runtime = runtime();
+        let target = retain_object(&mut runtime, "({v: 20})");
+        let argument = retain_object(&mut runtime, "({v: 1})");
+        let result = runtime
+            .execute_automation_request(AutomationRequest {
+                operation: AutomationOperation::CallFunctionOnHandle {
+                    handle: target.id,
+                    function_declaration: "(function (o) { return this.v + o.v; })".into(),
+                    arguments: vec![AutomationValue::Handle(argument)],
+                    return_by_value: true,
+                    await_promise: false,
+                    group: None,
+                },
+            })
+            .expect("call on handle");
+        assert_eq!(result, AutomationResult::Value(AutomationValue::Number(21.0)));
+    }
+
+    /// returnByValue:false 的对象结果保留为新句柄（Playwright 句柄链）。
+    #[test]
+    fn call_function_on_handle_retains_object_results() {
+        let mut runtime = runtime();
+        let target = retain_object(&mut runtime, "({v: 5})");
+        let result = runtime
+            .execute_automation_request(AutomationRequest {
+                operation: AutomationOperation::CallFunctionOnHandle {
+                    handle: target.id,
+                    function_declaration: "(function () { return { nested: this.v * 2 }; })".into(),
+                    arguments: vec![],
+                    return_by_value: false,
+                    await_promise: false,
+                    group: None,
+                },
+            })
+            .expect("retain call result");
+        let AutomationResult::Value(AutomationValue::Handle(nested)) = result else {
+            panic!("object result must be a handle, got {result:?}");
+        };
+        let result = runtime
+            .execute_automation_request(AutomationRequest {
+                operation: AutomationOperation::CallFunctionOnHandle {
+                    handle: nested.id,
+                    function_declaration: "(function () { return this.nested + 1; })".into(),
+                    arguments: vec![],
+                    return_by_value: true,
+                    await_promise: false,
+                    group: None,
+                },
+            })
+            .expect("read nested via handle");
+        assert_eq!(result, AutomationResult::Value(AutomationValue::Number(11.0)));
+    }
+
+    /// `awaitPromise`：已落定 Promise 与 setTimeout 异步落定都等待后返回。
+    #[test]
+    fn call_function_on_handle_awaits_promises() {
+        let mut runtime = runtime();
+        let target = retain_object(&mut runtime, "({v: 1})");
+        let result = runtime
+            .execute_automation_request(AutomationRequest {
+                operation: AutomationOperation::CallFunctionOnHandle {
+                    handle: target.id,
+                    function_declaration: "(function () { return Promise.resolve(7); })".into(),
+                    arguments: vec![],
+                    return_by_value: true,
+                    await_promise: true,
+                    group: None,
+                },
+            })
+            .expect("await settled promise");
+        assert_eq!(result, AutomationResult::Value(AutomationValue::Number(7.0)));
+
+        let result = runtime
+            .execute_automation_request(AutomationRequest {
+                operation: AutomationOperation::CallFunctionOnHandle {
+                    handle: target.id,
+                    function_declaration: "(function () { var self = this; return new Promise(function (r) { setTimeout(function () { r(self.v + 3); }, 30); }); })".into(),
+                    arguments: vec![],
+                    return_by_value: true,
+                    await_promise: true,
+                    group: None,
+                },
+            })
+            .expect("await timer promise");
+        assert_eq!(result, AutomationResult::Value(AutomationValue::Number(4.0)));
+    }
+
+    /// releaseHandle 后句柄引用失效（CDP releaseObject 配对语义）。
+    #[test]
+    fn release_handle_invalidates_reference() {
+        let mut runtime = runtime();
+        let handle = retain_object(&mut runtime, "({v: 1})");
+        runtime
+            .execute_automation_request(AutomationRequest {
+                operation: AutomationOperation::ReleaseHandle { handle: handle.id },
+            })
+            .expect("release handle");
+        let error = runtime
+            .execute_automation_request(AutomationRequest {
+                operation: AutomationOperation::CallFunctionOnHandle {
+                    handle: handle.id,
+                    function_declaration: "(function () { return this.v; })".into(),
+                    arguments: vec![],
+                    return_by_value: true,
+                    await_promise: false,
+                    group: None,
+                },
+            })
+            .expect_err("released handle must fail");
+        assert_eq!(error.code, AutomationErrorCode::JavascriptError);
+    }
+
+    /// releaseObjectGroup 整组失效，组外句柄不受影响。
+    #[test]
+    fn release_object_group_scopes_to_group() {
+        let mut runtime = runtime();
+        let grouped = retain_object_in_group(&mut runtime, "({v: 1})", "gtest");
+        let untouched = retain_object_in_group(&mut runtime, "({v: 2})", "other");
+        runtime
+            .execute_automation_request(AutomationRequest {
+                operation: AutomationOperation::ReleaseObjectGroup { group: "gtest".into() },
+            })
+            .expect("release group");
+        let error = runtime
+            .execute_automation_request(AutomationRequest {
+                operation: AutomationOperation::CallFunctionOnHandle {
+                    handle: grouped.id,
+                    function_declaration: "(function () { return this.v; })".into(),
+                    arguments: vec![],
+                    return_by_value: true,
+                    await_promise: false,
+                    group: None,
+                },
+            })
+            .expect_err("grouped handle must be released");
+        assert_eq!(error.code, AutomationErrorCode::JavascriptError);
+        let result = runtime
+            .execute_automation_request(AutomationRequest {
+                operation: AutomationOperation::CallFunctionOnHandle {
+                    handle: untouched.id,
+                    function_declaration: "(function () { return this.v; })".into(),
+                    arguments: vec![],
+                    return_by_value: true,
+                    await_promise: false,
+                    group: None,
+                },
+            })
+            .expect("other group survives");
+        assert_eq!(result, AutomationResult::Value(AutomationValue::Number(2.0)));
+    }
+
+    fn retain_object(runtime: &mut RendererRuntime, script: &str) -> zero_protocol::message::AutomationHandleRef {
+        retain_object_in_group(runtime, script, "zw-automation")
+    }
+
+    fn retain_object_in_group(
+        runtime: &mut RendererRuntime,
+        script: &str,
+        group: &str,
+    ) -> zero_protocol::message::AutomationHandleRef {
+        let result = runtime
+            .execute_automation_request(AutomationRequest {
+                operation: AutomationOperation::EvaluateRetaining {
+                    script: script.into(),
+                    group: Some(group.into()),
+                    return_by_value: false,
+                },
+            })
+            .expect("retain object");
+        let AutomationResult::Value(AutomationValue::Handle(handle)) = result else {
+            panic!("expected handle, got {result:?}");
+        };
+        handle
     }
 }

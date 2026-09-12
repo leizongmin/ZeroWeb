@@ -682,7 +682,15 @@
             || prop === 'loop' || prop === 'played' || prop === 'seekable' || prop === 'buffered'
             || prop === 'kind' || prop === 'label' || prop === 'srclang'
             || prop === 'default' || prop === 'src' || prop === 'textTracks'
-            || prop === 'addTextTrack' || prop === 'track' || prop === 'controlsList') {
+            || prop === 'addTextTrack' || prop === 'track' || prop === 'controlsList'
+            // cdp-protocol objectId 桥（PW injectedScript）：节点身份与表单约束面的
+            // `in` 可见性——locator CSS 引擎 `queryEngineAll` 对每个命中断言
+            // `"nodeName" in element`（缺列抛 "Expected a Node"）；表单字段探测断言
+            // `"validity" in element` / `"value" in e`。与 get trap 供给面同源。
+            || prop === 'nodeName' || prop === 'nodeType' || prop === 'tagName'
+            || prop === 'validity' || prop === 'willValidate' || prop === 'validationMessage'
+            || prop === 'checkValidity' || prop === 'reportValidity' || prop === 'setCustomValidity'
+            || prop === 'value') {
           return true;
         }
         // media-playback M2a：videoWidth/videoHeight——HTMLVideoElement 专属接口成员

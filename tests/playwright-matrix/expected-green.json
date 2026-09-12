@@ -1,11 +1,22 @@
 {
-  "description": "ZeroWeb CDP E2E 期望绿步骤基线（M5 收口门）——任一步骤回退即 make cdp-e2e 失败。objectId 桥待用户决策，其依赖步骤（evaluate/locator 族）不在基线内。",
+  "description": "ZeroWeb CDP E2E 期望绿步骤基线（M5 收口门）——任一步骤回退即 make cdp-e2e 失败。S9 后基线扩至 17 步；余 13 步挂 click hit-target/console/dialog/frames，见 master.md 下一步计划。",
   "expected_green": [
     "context.default",
-    "page.new",
-    "page.setViewportSize",
-    "page.goto",
     "cookies.roundtrip",
-    "screenshot.viewport"
+    "evaluate.async",
+    "evaluate.function",
+    "evaluate.literal",
+    "evaluate.object",
+    "evaluate.withArgs",
+    "fill.input",
+    "locator.boundingBox",
+    "page.goto",
+    "page.new",
+    "page.second.lifecycle",
+    "page.setViewportSize",
+    "page.title",
+    "screenshot.element",
+    "screenshot.viewport",
+    "viewport.verified"
   ]
 }

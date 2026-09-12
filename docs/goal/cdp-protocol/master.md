@@ -2,7 +2,7 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-12（objectId 桥用户拍板：全量 remoteObject 桥；console 方案降级 value-only 小切片；收口依赖清单补 dialog/fullPage 遗漏项）
+**最后更新**: 2026-09-13（S9：objectId 全量 remoteObject 桥落地——Runtime/DOM 域句柄面 + 表达式语义修复，绿步 6→17；expected-green 基线同步扩至 17 步）
 
 ---
 
@@ -24,7 +24,7 @@
 |---|------|------|
 | P1 | Playwright 命令矩阵账本（pin 版空跑导出命令全集 + 三态登记） | ✅ 初稿落地（evidence/cdp-command-matrix.md；随域更新三态） |
 | P2 | headless.rs 职责拆分（2256 行超 2000 上限；transport/discovery/domains/session） | ✅ M1 切片 1（headless/ 9 模块，纯搬移零语义变化，make test 19,170P/0F 与基线一致） |
-| P3 | Target/Runtime/Page/Input/DOM/CSS/Network/Emulation 域实现 | ⏳ M1-M4 |
+| P3 | Target/Runtime/Page/Input/DOM/CSS/Network/Emulation 域实现 | 🚧 S9 核心收口：Runtime evaluate/callFunctionOn/releaseObject(Group) + DOM 域 objectId 面（quads/boxModel/scroll/describe/resolveNode）全通；余 click hit-target（renderer ElementFromPointCache × 合成输入） |
 | P4 | Node/Playwright 测试链（pin + E2E 用例集 + make 入口） | ✅ S8：`make cdp-e2e`（test-guard 包裹，deterministic 双跑 + expected-green 回归门）；用例集=30 步全核心流 |
 | P5 | console 对象化（V8 侧结构化序列化，替换扁平字符串） | 🔶 **方案降级（2026-09-12）**：value-only 小切片——consoleAPICalled 的 args 用既有 value-only remoteObject 形状即可（PW 消费面=msg.type()/text()），shim `(level, args[])` JSON 序列化 + callbacks.rs 签名 + headless 转事件；不等 engine 大窗口，碰前核对 shim console 段活跃度 |
 | P6 | net 请求事件总线（Network 域 + devtools Network 面板共用脊柱） | 🔶 S7 雏形（proxy_fetch 生命周期三事件）；dataReceived 挂 net 观测点扩展——**net 近 14 天无外部流占用，窗口已开**（2026-09-12 实测） |
@@ -33,6 +33,26 @@
 
 ## 已完成切片
 
+- **S9（2026-09-13）objectId 全量 remoteObject 桥 — Runtime/DOM 域句柄面（用户拍板全量面）**：
+  protocol `AutomationValue::Handle(AutomationHandleRef{id,node})` + 四操作
+  `EvaluateRetaining/CallFunctionOnHandle/ReleaseHandle/ReleaseObjectGroup`（含 serde 契约
+  测试）；renderer 侧 JS 句柄注册表（页面 context 全局单例、65536 上限、objectGroup 分组、
+  primitive 按值/对象保留双尾；**导航换代经 `sandbox.reset_context` 整体失效 = CDP context
+  destroyed 语义**，无需显式清理）+ `awaitPromise` 有界轮询（execute 边界 microtask drain +
+  宿主 timer 泵，8s 超时）；headless Runtime.evaluate 双分支统一走桥（**表达式语义修复**：
+  W3C ExecuteScript 是函数体语义、CDP evaluate 是表达式形态——裸表达式旧恒 undefined，
+  PW 全管线的真实根因）+ callFunctionOn objectId（`arguments[].objectId` 实参顶层还原 +
+  falsy 实参标记误判修复）+ `releaseObject/releaseObjectGroup` + **DOM 域 objectId 面**
+  （scrollIntoViewIfNeeded/getContentQuads/getBoxModel/describeNode/resolveNode——经句柄桥
+  对保留元素求值，rect 来自 shim gBCR/RectBridge 真实布局；`backendNodeId`=句柄 id，
+  resolveNode 重保留新句柄支撑 PW adopt 流程）+ shim has-trap 白名单补
+  nodeName/nodeType/tagName/validity 族/value（PW queryEngine `"nodeName" in element` 断言面）
+  + 嵌套值纯 JSON 保真（remoteObject 嵌套不再包 type/value 外壳——PW `{o:[...]}` 线格式）。
+  remoteObject 句柄形态带 `subtype:"node"`（PW ElementHandle 分叉点）。
+  **Playwright 绿步 6→17**（evaluate 全族 5 步 + title + fill + locator.boundingBox +
+  setContent 面前移 + screenshot.element + page.second.lifecycle + viewport.verified 翻绿）；
+  deterministic 双跑一致；make test 19,238P/0F；workspace clippy -D warnings 全过。
+  余 13 步根因已定位（见下一步计划）。
 - **S8（2026-09-12）M5 收口预备 — cdp-e2e 门 + DC 盘点**：
   `make cdp-e2e` 入口落地（test-guard 包裹，spawn 独立 headless 双跑全核心流）：
   **deterministic 双跑一致**（两次入口运行均 YES）+ **expected-green 回归门**（6 步基线
@@ -116,32 +136,32 @@
 
 ## 下一步计划
 
-1. **objectId 句柄桥（已拍板，2026-09-12）→ 独立切片落地**：用户拍板**全量 remoteObject
-   桥**（非最小面）——含 object group/releaseObjectGroup、DOM.resolveNode 桥接、
-   description/preview inspect 形状，为 devtools goal 前置铺路。设计要点：
-   protocol `AutomationValue` 增 `Handle(u64)` + EvaluateRetaining/CallFunctionOnHandle/
-   ReleaseHandle/ReleaseObjectGroup 消息；renderer 注册表按 executionContextId 分桶、
-   document_generation 变更整表失效、上限防 GC 泄漏；engine 加「保留句柄执行」原语
-   （V8/QuickJS 双 runtime）；headless returnByValue:false → objectId + releaseObject。
-   一次解锁 evaluate/locator 全族 ~13 步。
-2. **窗口已开小切片（先行收割）**：Network dataReceived（proxy_fetch 读 body 循环加
-   chunk 观测点）+ console value-only 降级版（P5）+ `Page.loadEventFired` timestamp 修正。
-3. **dialog ×2 步决策（2026-09-12 盘点遗漏，新入清单）**：`dialog.accept`/
-   `dialog.confirm+prompt` 依赖 `javascriptDialogOpening` 事件源（引擎无阻塞对话框
-   语义）——**待用户决策：立项引擎对话框语义（跨流域）or 挂账不实现并从 DC-2 口径剔除**。
-   `screenshot.fullPage`（captureBeyondViewport）依赖 contentSize 暴露，疑似本 goal 内
-   可解，实测确认后从挂起项转正常切片。
-4. **全量 30 步实测**：S8 只跑 expected-green 6 步门；跑一次全量拿真实绿数，验证
-   `page.setContent`/`page.second.lifecycle`/`emulation.media`/`viewport.verified` 等是否已绿，
-   刷新依赖清单虚胖项。
-5. **M5 定稿（依赖项解除后）**：expected-green 基线扩至全绿 → cdp-e2e 即 DC-2 门；
+1. **click 命中目标（S9 实测新定位，解锁 click 族 4 步 + network.events + frames.click）**：
+   PW click 管线已通到 `Input.dispatchMouseEvent`（quads/scroll/adopt 全绿），卡最后一步
+   hit-target 复查——**鼠标事件分发后 `elementFromPoint(点击点)` 返回 `<html>`**（分发前
+   同坐标同查询返回 BUTTON，实测）；疑似 renderer ElementFromPointCache 在合成输入 /
+   publish 后失效或坐标基错位。定位点：`ElementFromPointBridge` cache 生命周期 ×
+   renderer 输入事务 publish 时序。
+2. **console value-only 小切片（P5，console.collect 1 步）**：shim `(level, args[])` JSON
+   序列化 + callbacks.rs 签名扩展 + headless 转 `Runtime.consoleAPICalled`（args 用
+   value-only remoteObject 形状）。碰前核对 shim console 段活跃度。
+3. **小修清单（S9 实测定位，各 1 步）**：`keyboard.type+press`（fill 后 type 值 "abca"
+   累积语义——查 shim input value 与 fill 交互）；`screenshot.fullPage`（getLayoutMetrics
+   contentSize 报 shim innerWidth 假值 1280x800 vs 真实 frame 800x600——改取 session
+   viewport）；`page.setContent`（shim `document.open` 缺失）；`emulation.media`
+   （SetColorScheme 已发但 `matchMedia` 读回 false——prefers-color-scheme 求值链核对）。
+4. **Network dataReceived**（proxy_fetch 读 body 循环加 chunk 观测点，net 窗口已开）。
+5. **dialog ×2 步决策（维持待用户）**：`dialog.accept`/`dialog.confirm+prompt` 依赖
+   `javascriptDialogOpening` 事件源（引擎无阻塞对话框语义）——立项引擎对话框语义（跨流域）
+   or 挂账不实现并从 DC-2 口径剔除。
+6. **M5 定稿（依赖项解除后）**：expected-green 基线扩至全绿 → cdp-e2e 即 DC-2 门；
    挂账清单（不实现域）终稿；矩阵账本漂移刷新（executionContextDestroyed/
    setLifecycleEventsEnabled/setFontFamilies 等计划列停在 M2/M3，改记账口径）。
-6. **持续推进**：每轮 pull → cdp-e2e 门 + make test 防回归，余项按窗口逐个解冻。
+7. **持续推进**：每轮 pull → cdp-e2e 门（基线 17 步）+ make test 防回归，余项按窗口逐个解冻。
 
 **待用户决策清单**：
-- **dialog 事件源（2026-09-12 新入）**：见下一步计划 #3——引擎对话框语义立项 vs 挂账。
-- ~~objectId 句柄桥~~ **已拍板（2026-09-12）：全量 remoteObject 桥**，转独立切片执行。
+- **dialog 事件源（2026-09-12 新入，维持）**：见下一步计划 #5——引擎对话框语义立项 vs 挂账。
+- ~~objectId 句柄桥~~ **已拍板（2026-09-12）：全量 remoteObject 桥**——✅ S9 落地。
 
 **维持挂起**：iframe 子帧事件面（frames.access/frames.click+evaluate 2 步）——渲染流域
 真协调（engine 子帧可见性），rendering 流 R41xx-R42xx 高频活跃，维持挂起合理。
@@ -150,16 +170,16 @@
 
 | 里程碑 | 状态 |
 |--------|------|
-| M1 — 传输/发现/Target 基座 + Playwright 首连 | 🚧 连接面全通（S4：connect/attach/newPage ✓）；evaluate 收口卡 objectId 桥（待用户决策） |
-| M2 — Page/Input 域 → 点击/填充/键盘/导航流 | 🚧 S5：goto 绿 + Input 域全通 + 导航事件族；locator 类点击/填充仍挂 objectId 桥（value-only 面已尽） |
-| M3 — DOM/CSS/Emulation → locator 流 | 🚧 S6：viewport 桥/媒体仿真/截图 clip 绿；DOM 句柄桥挂 objectId 桥；iframe 子帧挂引擎子帧事件面 |
-| M4 — Network/cookies/console 对象化（cookie 落点=Storage 域） | 🚧 S7：cookie 域 + UA override + Network 事件雏形绿；console 对象化挂 engine 碰头窗口 |
-| M5 — 矩阵收口 | 🚧 S8 收口预备完成（cdp-e2e 门 + DC 盘点）；objectId 桥已拍板（全量面）待切片落地，终稿挂其 + dialog/fullPage 决策 |
+| M1 — 传输/发现/Target 基座 + Playwright 首连 | ✅ S9 收口：连接面 + evaluate 全族（literal/function/withArgs/object/async）+ releaseObject(Group) 全通 |
+| M2 — Page/Input 域 → 点击/填充/键盘/导航流 | 🚧 S9：goto/title/fill/键盘裸 API/导航事件族绿；click 挂 hit-target（renderer elementFromPoint 时序） |
+| M3 — DOM/CSS/Emulation → locator 流 | 🚧 S9：locator.boundingBox/viewport/媒体/截图 clip+element 绿；click 族挂 hit-target；iframe 面维持挂起 |
+| M4 — Network/cookies/console 对象化（cookie 落点=Storage 域） | 🚧 S9：cookie 域 + UA override + Network 事件雏形绿；console value-only 小切片待做；dataReceived 待 net 观测点 |
+| M5 — 矩阵收口 | 🚧 绿步 17/30（expected-green 基线同步扩至 17）；余项根因全部定位（click hit-target/console/小修清单/dialog 决策/frames 挂起） |
 
 ## 验证基线
 
-- 测试基线：立项时点全绿（`make test` 19,170P/0F，2026-09-12 变基后口径；禁止裸跑
-  cargo test，经 test-guard）
+- 测试基线：立项时点全绿（`make test` 19,170P/0F，2026-09-12 变基后口径；S9 后
+  19,238P/0F；禁止裸跑 cargo test，经 test-guard）
 - CDP 现状：`Page.navigate` / `Runtime.evaluate` / `Target.getTargets` 3 命令 +
   `/json/version` + `/json` 发现（headless.rs L782-796/L571/L1159）
 - **命令矩阵捕获基线（S1，2026-09-12）**：playwright-core 1.63.0 @ Chromium 153.0.8010.12
