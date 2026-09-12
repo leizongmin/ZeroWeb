@@ -1433,18 +1433,23 @@ android-wsl-renderer-install-smoke: android-wsl-renderer-apk
 android-install-smoke: android-apk
 	powershell -NoProfile -ExecutionPolicy Bypass -File scripts\android\install-smoke.ps1 -ApkPath apps\android-browser\app\build\outputs\apk\emulator\debug\app-emulator-debug.apk
 else
+# Android 工具链默认布局：一律相对 $HOME（路径通用化）。env 供 preflight 与
+# 构建脚本用；gradle 侧另走 apps/android-browser/local.properties，两者并存。
+# 2026-09-12 起 android 构建入口纳入 test-guard 包裹（无人值守规则，run-rules #14）；
+# 阈值较常规入口放宽到 8/16GB：gradle JVM 与 rustc release 峰值合法高于 4/8 档。
+export ANDROID_HOME ?= $(HOME)/Android/Sdk
+
 android-preflight:
-	@test -n "$$ANDROID_HOME" || (echo "ANDROID_HOME must be set"; exit 2)
-	@test -d "$$ANDROID_HOME/platforms/android-36" || (echo "Android SDK platform 36 is required"; exit 2)
+	@test -d "$$ANDROID_HOME/platforms/android-36" || (echo "Android SDK platform 36 is required under $$ANDROID_HOME"; exit 2)
 	@rustup target list --installed | grep -qx aarch64-linux-android
 	@rustup target list --installed | grep -qx x86_64-linux-android
 	@command -v cargo-ndk >/dev/null
 
-android-apk: android-preflight target-disk-guard
-	cd apps/android-browser && ./gradlew --no-daemon :app:assembleEmulatorDebug
+android-apk: android-preflight target-disk-guard target/test-guard
+	./target/test-guard --time-limit 1800 --per-proc-mem 8 --total-mem 16 -- sh -c 'cd apps/android-browser && ./gradlew --no-daemon :app:assembleEmulatorDebug'
 
-android-release-apk: android-preflight target-disk-guard
-	cd apps/android-browser && ./gradlew --no-daemon :app:assembleArm64Release
+android-release-apk: android-preflight target-disk-guard target/test-guard
+	./target/test-guard --time-limit 1800 --per-proc-mem 8 --total-mem 16 -- sh -c 'cd apps/android-browser && ./gradlew --no-daemon :app:assembleArm64Release'
 
 android-install-smoke: android-apk
 	@echo "android-install-smoke is implemented by the Windows local-emulator script in M0"
