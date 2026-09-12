@@ -255,6 +255,9 @@ pub enum IpcMessageKind {
     /// 页面 console 输出（renderer → headless CDP 会话；`Runtime.consoleAPICalled` 事件源，
     /// cdp-protocol S11 value-only 面）。
     ConsoleLog(crate::message::ConsoleLogParams),
+    /// 页面 fetch 观测（renderer → headless CDP 会话；`Network.requestWillBeSent`/
+    /// `responseReceived`/`loadingFinished` 事件源，cdp-protocol S14）。
+    FetchObserved(crate::message::FetchObservedParams),
 }
 
 /// 焦点变更信息（渲染→浏览器）。
@@ -465,6 +468,21 @@ pub struct ConsoleLogParams {
     /// 逐参值的 JSON 数组（shim `_zwSerializeConsoleValue`；`__zw_undefined__` 标记
     /// undefined）——headless 侧映射为 value-only remoteObject 列表。
     pub args_json: String,
+}
+
+/// renderer 页面 fetch 观测（cdp-protocol S14）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FetchObservedParams {
+    /// 观测阶段（0=requestWillBeSent / 1=responseReceived / 2=loadingFinished|failed）。
+    pub phase: u8,
+    /// 同一 fetch 的关联序号（三阶段共用，headless 作 requestId）。
+    pub seq: u64,
+    /// 请求 URL。
+    pub url: String,
+    /// HTTP 方法（request 阶段）。
+    pub method: String,
+    /// 响应状态码（response 阶段；其余 0）。
+    pub status: u16,
 }
 
 /// 自动化脚本值。

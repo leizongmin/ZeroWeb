@@ -353,6 +353,7 @@ impl HeadlessServer {
     ) {
         let mut events: Vec<ServerEvent> = Vec::new();
         while let Some(message) = session.try_recv_renderer() {
+            println!("[S13] hl recv: {:?}", std::mem::discriminant(&message.kind));
             let _ = session.handle_renderer_message(message);
         }
         // 排空产生的 CDP 事件（console/network）即时推送——单会话模型：盖章到首个

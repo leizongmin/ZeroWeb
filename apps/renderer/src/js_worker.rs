@@ -101,6 +101,10 @@ enum JsWorkerCommand {
     Shutdown,
 }
 
+/// S14：fetch 观测记录 `(phase, seq, url, method, status)`——phase 0=request /
+/// 1=response / 2=finished|failed；seq 三阶段关联。
+pub type FetchObservedRecord = (u8, u64, String, String, u16);
+
 /// 渲染进程 JS worker 句柄。
 pub struct RendererJsWorker {
     cmd_tx: Sender<JsWorkerCommand>,
@@ -108,6 +112,8 @@ pub struct RendererJsWorker {
     console_logs: Arc<std::sync::Mutex<Vec<(String, String, String)>>>,
     /// S11：宿主媒体上下文（matchMedia 求值的用户偏好源）。
     media_ctx: Arc<std::sync::Mutex<zero_css_parser::media_query::MediaContext>>,
+    /// S14：renderer fetch 观测队列（worker 观测 handler 推入，runtime drain）。
+    fetch_observed: Arc<std::sync::Mutex<Vec<FetchObservedRecord>>>,
     join: Option<JoinHandle<()>>,
     executor: ScriptFn,
     module_executor: ModuleFn,
@@ -172,6 +178,10 @@ impl RendererJsWorker {
         // 推入，runtime 主循环 drain → browser/headless（`Runtime.consoleAPICalled`）。
         let console_logs: Arc<std::sync::Mutex<Vec<(String, String, String)>>> = Arc::default();
         let console_logs_for_worker = Arc::clone(&console_logs);
+        // S14（cdp-protocol network.events）：renderer fetch 观测队列——**唯一实例在本
+        // spawn 内创建**，worker 侧观测 handler 推入、runtime 经 accessor 持同 Arc drain
+        // → browser/headless（`Network.*` 事件源）。S13 教训：双实例 Arc 错接致事件丢失。
+        let fetch_observed: Arc<std::sync::Mutex<Vec<FetchObservedRecord>>> = Arc::default();
         // S11（emulation.media）：宿主媒体上下文共享 cell——renderer SetColorScheme/
         // SetMediaType/SetViewport 更新；`__zw_match_media` 重注册（后注册者胜）后
         // prefers-color-scheme 等用户偏好进 matchMedia 求值。
@@ -252,6 +262,7 @@ impl RendererJsWorker {
             module_executor,
             console_logs,
             media_ctx,
+            fetch_observed,
             mutations,
             rect_snapshot,
             handle_selector_map,
@@ -291,6 +302,20 @@ impl RendererJsWorker {
     /// `__zw_match_media` 求值消费）。
     pub fn media_ctx(&self) -> Arc<std::sync::Mutex<zero_css_parser::media_query::MediaContext>> {
         Arc::clone(&self.media_ctx)
+    }
+
+    /// S14：fetch 观测队列句柄（runtime 持同 Arc；观测 handler 包装经此推入）。
+    pub fn fetch_observed_queue(&self) -> Arc<std::sync::Mutex<Vec<FetchObservedRecord>>> {
+        Arc::clone(&self.fetch_observed)
+    }
+
+    /// S14：原子取出 fetch 观测记录（`(phase, seq, url, method, status)`），供 runtime 主
+    /// 循环转发 browser/headless（`Network.*` 事件源）。
+    pub fn take_fetch_observed(&self) -> Vec<FetchObservedRecord> {
+        self.fetch_observed
+            .lock()
+            .map(|mut q| std::mem::take(&mut *q))
+            .unwrap_or_default()
     }
 
     /// S11：原子取出 page console 输出（`(level, text, args_json)`），供 runtime 主循环

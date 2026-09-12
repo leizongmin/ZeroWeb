@@ -288,6 +288,39 @@ impl RendererRuntime {
         // S11：宿主媒体上下文与 js_worker 共享 cell（SetColorScheme/SetMediaType 更新，
         // worker `__zw_match_media` 求值消费）。
         let media_ctx = js_worker.media_ctx();
+        // S14：fetch 观测包装——page fetch（fetch()/XHR 均走 `__zw_fetch` 的 handler cell）
+        // 的请求/响应/失败生命周期推入 worker 观测队列（单一 Arc，runtime 持同队列 drain）
+        // → headless `Network.*` 事件。**队列所有权**：唯一实例在 js_worker spawn 内创建，
+        // runtime 经 accessor 取同 Arc——严禁本侧另建（S13 双实例错接教训）。
+        #[cfg(not(test))]
+        {
+            let fetch_observed = js_worker.fetch_observed_queue();
+            let fetch_observed = Arc::clone(&fetch_observed);
+            let fetch_seq = Arc::new(std::sync::atomic::AtomicU64::new(0));
+            let inner = crate::js_worker::default_fetch_handler();
+            let observer: zero_engine::FetchHandler = Arc::new(move |req: &zero_engine::FetchRequest| {
+                let seq = fetch_seq.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+                if let Ok(mut q) = fetch_observed.lock() {
+                    q.push((0u8, seq, req.url.clone(), req.method.clone(), 0u16));
+                }
+                match inner(req) {
+                    Ok(resp) => {
+                        if let Ok(mut q) = fetch_observed.lock() {
+                            q.push((1u8, seq, req.url.clone(), String::new(), resp.status));
+                            q.push((2u8, seq, req.url.clone(), String::new(), 0u16));
+                        }
+                        Ok(resp)
+                    }
+                    Err(e) => {
+                        if let Ok(mut q) = fetch_observed.lock() {
+                            q.push((2u8, seq, req.url.clone(), String::new(), 0u16));
+                        }
+                        Err(e)
+                    }
+                }
+            });
+            js_worker.set_fetch_handler(observer);
+        }
         // P1b S3 / R2923（镜像 browser tab_worker）：注入生产 fetch handler（经 ResourceLoader 真实 HTTP，
         // 支持全方法/头/体）。js_worker 早于 WebView 创建；共享加载器不依赖 WebView 句柄，故可立即注入。
         // test 构建不注入（renderer runtime 单测用合成 handler）。
@@ -2214,6 +2247,24 @@ impl RendererRuntime {
         )
     }
 
+    /// S14：drain worker fetch 观测队列 → browser/headless IPC（`FetchObserved`）。
+    /// phase/seq 语义见 protocol `FetchObservedParams`。
+    fn tick_fetch_observed_drain(&mut self) {
+        for (phase, seq, url, method, status) in self.js_worker.take_fetch_observed() {
+            if let Err(e) = self.send_regular(IpcMessageKind::FetchObserved(
+                zero_protocol::message::FetchObservedParams {
+                    phase,
+                    seq,
+                    url,
+                    method,
+                    status,
+                },
+            )) {
+                tracing::debug!("forward fetch observed: {e}");
+            }
+        }
+    }
+
     /// S11：drain worker console 队列 → browser/headless IPC（`ConsoleLog`）。
     /// level/text/args_json 语义见 shim `_zwConsoleEmit` 与 protocol `ConsoleLogParams`。
     fn tick_console_log_drain(&mut self) {
@@ -2404,6 +2455,8 @@ impl RendererRuntime {
         match msg.kind {
             // console 输出是 renderer → browser 单向事件，本进程不消费。
             IpcMessageKind::ConsoleLog(_) => Ok(()),
+            // fetch 观测是 renderer → browser 单向事件，本进程不消费。
+            IpcMessageKind::FetchObserved(_) => Ok(()),
             IpcMessageKind::Navigate(params) => self.handle_navigate(params),
             IpcMessageKind::LoadHtml(params) => self.handle_load_html(params),
             IpcMessageKind::SetViewport(params) => self.handle_set_viewport(params),
@@ -2554,6 +2607,10 @@ impl RendererRuntime {
             // S11（cdp-protocol value-only console 面）：drain page console 输出（任意脚本
             // 执行均可产生，故每轮检查）→ browser/headless（`Runtime.consoleAPICalled`）。
             self.tick_console_log_drain();
+
+            // S14（cdp-protocol network.events）：drain page fetch 观测 → browser/headless
+            // （`Network.requestWillBeSent`/`responseReceived`/`loadingFinished`）。
+            self.tick_fetch_observed_drain();
 
             // R3254-M7'：drain 页面 JS focus()/blur() 变更（任意脚本执行均可产生，故每轮检查）。
             self.sync_focus_from_js();

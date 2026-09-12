@@ -187,6 +187,46 @@ impl HeadlessSession {
                     .push((params.level, params.text, params.args_json));
                 Ok(None)
             }
+            // S14：page fetch 观测 → Network 事件队列（Network.enable 门控）。
+            // phase 0=requestWillBeSent / 1=responseReceived / 2=loadingFinished|loadingFailed；
+            // seq 为三阶段关联 id（headless 作 requestId）。
+            IpcMessageKind::FetchObserved(params) => {
+                if self.network_enabled {
+                    let frame_id = self.active_frame_id().unwrap_or_default();
+                    let request_id = format!("zw-net-{}", params.seq);
+                    let now = || {
+                        std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_millis() as u64
+                    };
+                    match params.phase {
+                        0 => self.pending_network_events.push((
+                            "Network.requestWillBeSent".into(),
+                            serde_json::json!({
+                                "requestId": request_id,
+                                "frameId": frame_id,
+                                "request": { "url": params.url, "method": params.method },
+                                "timestamp": now(),
+                            }),
+                        )),
+                        1 => self.pending_network_events.push((
+                            "Network.responseReceived".into(),
+                            serde_json::json!({
+                                "requestId": request_id,
+                                "frameId": frame_id,
+                                "response": { "url": params.url, "status": params.status },
+                                "timestamp": now(),
+                            }),
+                        )),
+                        _ => self.pending_network_events.push((
+                            "Network.loadingFinished".into(),
+                            serde_json::json!({ "requestId": request_id, "timestamp": now() }),
+                        )),
+                    }
+                }
+                Ok(None)
+            }
             // S13：page fetch 观测 → Network 事件队列（Network.enable 门控）。
             // phase 0=requestWillBeSent / 1=responseReceived / 2=loadingFinished|loadingFailed。
             // S13：headless 无 Service Worker 支持，但必须**应答** renderer 的 SW 请求——
