@@ -1030,6 +1030,35 @@ impl<'a> Parser<'a> {
         )
     }
 
+    /// R4262（CSS Overflow 5 §scroll-buttons）：带参伪元素白名单——`::scroll-button(<arg>)`。
+    fn is_known_functional_pseudo_element(name: &str) -> bool {
+        matches!(name, "scroll-button")
+    }
+
+    /// R4262：`::scroll-button(<arg>)` 方向关键字合法性（CSS Overflow 5：非法参数 =
+    /// 选择器非法）。flow/logical/physical 别名归一化放行；`*` 通配全部方向。
+    fn is_valid_scroll_button_arg(arg: &str) -> bool {
+        matches!(
+            arg,
+            "*" | "block-start"
+                | "block-end"
+                | "inline-start"
+                | "inline-end"
+                | "box-start"
+                | "box-end"
+                | "self-start"
+                | "self-end"
+                | "start"
+                | "end"
+                | "up"
+                | "down"
+                | "left"
+                | "right"
+                | "top"
+                | "bottom"
+        )
+    }
+
     /// 消耗复合选择器。
     fn consume_compound_selector(&mut self) -> Option<CompoundSelector> {
         let mut type_selector = None;
@@ -1106,9 +1135,63 @@ impl<'a> Parser<'a> {
                             if !Self::is_known_pseudo_element(&name) {
                                 return None;
                             }
+                            self.advance();
+                            // R4262（CSS Overflow 5 §scroll-buttons）：函数伪元素
+                            // `::scroll-button(<direction>)`——`::name(...)` 形式此前
+                            // 悬空 LParen 使整条规则非法被弃（同 ::scroll-marker-group
+                            // 切片 1 前困境）。仅放行已知函数伪元素，参数须为合法方向
+                            // 关键字或 `*`（CSS：非法参数 = 选择器非法）。
+                            if matches!(self.peek(), Token::LParen) {
+                                if !Self::is_known_functional_pseudo_element(&name) {
+                                    self.consume_balanced_function_args();
+                                    return None;
+                                }
+                                self.advance(); // (
+                                let arg = match self.peek().clone() {
+                                    Token::Ident(a) => a.to_ascii_lowercase(),
+                                    Token::Delim('*') => "*".to_string(),
+                                    _ => return None,
+                                };
+                                if !Self::is_valid_scroll_button_arg(&arg) {
+                                    return None;
+                                }
+                                self.advance();
+                                if !matches!(self.peek(), Token::RParen) {
+                                    return None;
+                                }
+                                self.advance(); // )
+                                subclass_selectors.push(SubclassSelector::PseudoElement(
+                                    PseudoElementSelector::Functional { name, arg },
+                                ));
+                                continue;
+                            }
                             subclass_selectors
                                 .push(SubclassSelector::PseudoElement(PseudoElementSelector::Standard(name)));
+                        } else if let Token::Function(name) = self.peek().clone() {
+                            // R4262：函数伪元素 Function token 形式——tokenizer 对
+                            // `ident + (` 无空白直连产生 Function（已含 `(`），如
+                            // `::scroll-button(block-end)`。语义同 Ident+LParen 分支。
+                            let name = name.to_ascii_lowercase();
+                            if !Self::is_known_functional_pseudo_element(&name) {
+                                return None;
+                            }
+                            self.advance(); // Function token（已含 `(`）
+                            let arg = match self.peek().clone() {
+                                Token::Ident(a) => a.to_ascii_lowercase(),
+                                Token::Delim('*') => "*".to_string(),
+                                _ => return None,
+                            };
+                            if !Self::is_valid_scroll_button_arg(&arg) {
+                                return None;
+                            }
                             self.advance();
+                            if !matches!(self.peek(), Token::RParen) {
+                                return None;
+                            }
+                            self.advance(); // )
+                            subclass_selectors.push(SubclassSelector::PseudoElement(
+                                PseudoElementSelector::Functional { name, arg },
+                            ));
                         }
                     } else if let Token::Ident(name) = self.peek().clone() {
                         // 简单伪类或函数伪类（Ident + LParen 形式）。伪类名 ASCII 大小写不敏感

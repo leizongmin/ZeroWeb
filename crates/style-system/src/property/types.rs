@@ -910,6 +910,28 @@ pub struct ScrollMarkerGroupPseudo {
     pub style: Box<ComputedStyle>,
 }
 
+/// R4262（CSS Overflow 5 §scroll-buttons）：`::scroll-button(<direction>)` per-direction
+/// 伪样式载荷——Box 化单指针承载（R3867 同上）。
+#[derive(Debug, Clone)]
+pub struct ScrollButtonsPseudo {
+    /// 已生成按钮（canonical 方向 + 该方向计算样式）。方向编码：
+    /// 0=block-start 1=block-end 2=inline-start 3=inline-end。
+    pub buttons: Vec<(u8, Box<ComputedStyle>)>,
+}
+
+/// `::scroll-button` 方向关键字 → canonical 槽位（R4262）。
+/// flow/logical/physical 别名映射（horizontal-tb LTR 近似：left=inline-start、
+/// right=inline-end、top/up=block-start、bottom/down=block-end）；`None` = `*` 通配。
+pub fn scroll_button_arg_to_slot(arg: &str) -> Option<u8> {
+    Some(match arg {
+        "block-start" | "box-start" | "self-start" | "start" | "top" | "up" => 0,
+        "block-end" | "box-end" | "self-end" | "end" | "bottom" | "down" => 1,
+        "inline-start" | "left" => 2,
+        "inline-end" | "right" => 3,
+        _ => return None,
+    })
+}
+
 // 背景与边框图像相关计算值类型（background-* / border-image-* / mask-mode /
 // list-style-image）。R2534：抽出为 `image` 子模块以满足单文件 ≤2000 行（CLAUDE.md §5）；
 // 纯数据类型机械迁移，下方 `pub use` 保持原 `property::types::*` 路径与本文件内部引用不变。

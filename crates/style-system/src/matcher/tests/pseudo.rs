@@ -532,7 +532,10 @@ fn test_pseudo_element_declaration_routing() {
         Rule::Style(sr) => sr,
         _ => panic!("expected style rule"),
     };
-    assert_eq!(selector_pseudo_element(&style_rule.selectors[0]), Some("before"));
+    assert_eq!(
+        selector_pseudo_element(&style_rule.selectors[0]),
+        Some("before".to_string())
+    );
 
     let stylesheets = [stylesheet];
 
@@ -597,7 +600,10 @@ fn test_double_colon_pseudo_element_routing() {
         Rule::Style(sr) => sr,
         _ => panic!("expected style rule"),
     };
-    assert_eq!(selector_pseudo_element(&style_rule.selectors[0]), Some("after"));
+    assert_eq!(
+        selector_pseudo_element(&style_rule.selectors[0]),
+        Some("after".to_string())
+    );
     let stylesheets = [stylesheet];
     let after_decls = collect_pseudo_declarations_with_media(
         &_doc,

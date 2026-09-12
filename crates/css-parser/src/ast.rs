@@ -458,6 +458,15 @@ pub struct NthPattern {
 pub enum PseudoElementSelector {
     /// 标准伪元素（如 `::before`、`::after`）。
     Standard(String),
+    /// R4262（CSS Overflow 5 §scroll-buttons）：函数伪元素 `::scroll-button(<arg>)`。
+    /// arg 为滚动方向关键字（block-start/block-end/inline-start/inline-end/*/up/down/
+    /// left/right/top/bottom，已归一化小写）。matcher 以 `"name(arg)"` 复合键匹配。
+    Functional {
+        /// 伪元素名（当前仅 `scroll-button`）。
+        name: String,
+        /// 方向关键字或 `*` 通配（已归一化小写）。
+        arg: String,
+    },
 }
 
 // ── @supports ─────────────────────────────────────────────────────────

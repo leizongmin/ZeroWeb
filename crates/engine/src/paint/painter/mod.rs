@@ -1072,6 +1072,24 @@ impl Painter {
             || box_node.overflow_y != OverflowClip::Visible
             || box_node.line_clamp_clip;
 
+        // R4262（CSS Overflow 5 §scroll-buttons）：按钮盒（无 DOM 身份，node_id = 属主
+        // 元素）按方向槽位查属主 `scroll_buttons` 载荷伪样式绘制背景/边框——叶盒无子，
+        // 文本 content 绘制留后续切片（content 非 normal 已在样式相位 gate）。
+        if box_node.scroll_button_dir != 255
+            && let Some(btn_style) = box_node
+                .node_id
+                .and_then(|id| styles.get(&id))
+                .and_then(|s| s.scroll_buttons.as_deref())
+                .and_then(|v| v.buttons.iter().find(|(d, _)| *d == box_node.scroll_button_dir))
+                .map(|(_, st)| &**st)
+        {
+            if btn_style.background_color != ColorValue::Transparent || !btn_style.background_image.is_empty() {
+                self.paint_background(box_node, abs_x, abs_y, btn_style, styles);
+            }
+            self.paint_borders(box_node, abs_x, abs_y, btn_style);
+            return;
+        }
+
         // R4261（CSS Overflow 5 §scroll-marker）：组盒内 per-item 伪盒（无 DOM 身份，
         // node_id = 属主子元素）按其 `scroll_marker_pseudo` 伪样式绘制背景/边框——叶盒
         // 无子无文本（content 非 normal 已在样式相位 gate；装箱坐标由 layout 合成）。
@@ -1392,6 +1410,24 @@ impl Painter {
 
         let abs_x = offset_x + box_node.x;
         let abs_y = offset_y + box_node.y;
+
+        // R4262（CSS Overflow 5 §scroll-buttons）：按钮盒（无 DOM 身份，node_id = 属主
+        // 元素）按方向槽位查属主 `scroll_buttons` 载荷伪样式绘制背景/边框——叶盒无子，
+        // 文本 content 绘制留后续切片（content 非 normal 已在样式相位 gate）。
+        if box_node.scroll_button_dir != 255
+            && let Some(btn_style) = box_node
+                .node_id
+                .and_then(|id| styles.get(&id))
+                .and_then(|s| s.scroll_buttons.as_deref())
+                .and_then(|v| v.buttons.iter().find(|(d, _)| *d == box_node.scroll_button_dir))
+                .map(|(_, st)| &**st)
+        {
+            if btn_style.background_color != ColorValue::Transparent || !btn_style.background_image.is_empty() {
+                self.paint_background(box_node, abs_x, abs_y, btn_style, styles);
+            }
+            self.paint_borders(box_node, abs_x, abs_y, btn_style);
+            return;
+        }
 
         // R4261（CSS Overflow 5 §scroll-marker）：组盒内 per-item 伪盒（无 DOM 身份，
         // node_id = 属主子元素）按其 `scroll_marker_pseudo` 伪样式绘制背景/边框——叶盒

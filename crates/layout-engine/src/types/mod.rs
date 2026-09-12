@@ -126,6 +126,10 @@ pub struct LayoutBox {
     /// （无 DOM 身份，node_id = 属主子元素）——paint 以属主子元素 `scroll_marker_pseudo`
     /// 伪样式绘制；坐标为合成期装箱终值，后处理对合成子树跳过坐标改写。
     pub is_scroll_marker: bool,
+    /// R4262（CSS Overflow 5 §scroll-buttons）：`::scroll-button` 按钮盒方向槽位
+    /// （255 = 非按钮盒）。0=block-start 1=block-end 2=inline-start 3=inline-end；
+    /// paint 据此查属主 `scroll_buttons` 载荷伪样式；坐标为合成期流位终值。
+    pub scroll_button_dir: u8,
     /// 是否为替换元素（img/video/iframe/embed/object/svg/canvas 等有固有尺寸）。
     ///
     /// CSS §10.3.8/§10.6.6：替换元素的 auto 尺寸按固有尺寸 + 宽高比解析，**不**按
@@ -534,6 +538,7 @@ impl Default for LayoutBox {
             is_absolute: false,
             is_scroll_marker_group: false,
             is_scroll_marker: false,
+            scroll_button_dir: 255,
             is_replaced: false,
             is_fixed: false,
             fixed_x_insets_all_auto: false,

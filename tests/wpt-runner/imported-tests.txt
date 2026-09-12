@@ -334,3 +334,7 @@ css/css-overflow/scroll-markers/scroll-marker-group-015.html css/reference/ref-f
 css/css-overflow/scroll-markers/scroll-marker-006.html css/reference/ref-filled-green-100px-square.xht == 2026-09-12 R4261 ::scroll-marker per-item 伪盒（嵌套容器 + ::scroll-marker-group flex 组）
 css/css-overflow/scroll-markers/scroll-marker-008.html css/reference/ref-filled-green-100px-square.xht == 2026-09-12 R4261 ::scroll-marker per-item 伪盒（abspos marker 覆盖组盒背景，OOF 子）
 css/css-overflow/scroll-markers/scroll-marker-009.html css/reference/ref-filled-green-100px-square.xht == 2026-09-12 R4261 ::scroll-marker per-item 伪盒（abspos marker + before 组盒）
+css/css-overflow/scroll-markers/scroll-buttons-001.html css/css-overflow/scroll-markers/scroll-buttons-001-ref.html == 2026-09-12 R4262 ::scroll-button(<direction>) 函数伪元素解析 + 按钮盒流位合成（auto 高度切片 1）
+css/css-overflow/scroll-markers/scroll-buttons-002.html css/css-overflow/scroll-markers/scroll-buttons-001-ref.html == 2026-09-12 R4262 ::scroll-button(<direction>) 函数伪元素解析 + 按钮盒流位合成（auto 高度切片 1）
+css/css-overflow/scroll-markers/scroll-buttons-003.html css/css-overflow/scroll-markers/scroll-buttons-001-ref.html == 2026-09-12 R4262 ::scroll-button(<direction>) 函数伪元素解析 + 按钮盒流位合成（auto 高度切片 1）
+css/css-overflow/scroll-markers/scroll-buttons-004.html css/css-overflow/scroll-markers/scroll-buttons-001-ref.html == 2026-09-12 R4262 ::scroll-button(<direction>) 函数伪元素解析 + 按钮盒流位合成（auto 高度切片 1）

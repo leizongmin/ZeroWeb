@@ -1933,6 +1933,87 @@ impl LayoutEngine {
             }
         }
 
+        // R4262（CSS Overflow 5 §scroll-buttons）：`::scroll-button(<direction>)` 按钮盒
+        // 合成——元素有 content 非 normal 方向的按钮伪样式时，按 canonical 方向合成流位
+        // 按钮盒（无 taffy 节点，同组盒）。gate = **auto 高度**（按钮参与元素流：start 系
+        // 方向置于内容前并整体下移流内子、end 系置于内容后；definite 高度 scroller 的
+        // 按钮是 scrollport 边缘绝对定位，后续切片建模）。尺寸须 Px（非 Px 按钮跳过）。
+        // 001 型实证（chromium）：空 div + block-start/block-end 各 100×50 → 纵向流位
+        // 堆叠 100×100；`*` 通配 → 4 方向各一盒。
+        if let Some(owner_style) = computed.and_then(|s| s.scroll_buttons.as_deref())
+            && matches!(computed.map(|s| &s.height), Some(LengthValue::Auto))
+        {
+            let mut start_boxes: Vec<LayoutBox> = Vec::new();
+            let mut end_boxes: Vec<LayoutBox> = Vec::new();
+            let mut h_start = 0.0f32;
+            let mut h_end = 0.0f32;
+            for (slot, style) in &owner_style.buttons {
+                let (bw, bh) = match (&style.width, &style.height) {
+                    (LengthValue::Px(w), LengthValue::Px(h)) if w.is_finite() && h.is_finite() => {
+                        (*w as f32, *h as f32)
+                    }
+                    _ => continue,
+                };
+                // 族内累计 y（start 系自内容顶向上预留、end 系自内容底向下；end 系的
+                // h_start 平移在循环后补——canonical 序 start/end 交错，循环内 h_start
+                // 未终值）。
+                let y_in_family = if matches!(slot, 0 | 2) { h_start } else { h_end };
+                let btn = LayoutBox {
+                    node_id: dom_id,
+                    x: 0.0,
+                    y: y_in_family,
+                    width: bw,
+                    height: bh,
+                    content_x: 0.0,
+                    content_y: 0.0,
+                    content_width: bw,
+                    content_height: bh,
+                    declared_width_px: Some(bw),
+                    // 流位按钮盒：块级（免 remeasure 误判 inline 子）、float none
+                    //（坐标已烘焙）。
+                    scroll_button_dir: *slot,
+                    is_block_level: true,
+                    ..Default::default()
+                };
+                if matches!(slot, 0 | 2) {
+                    h_start += bh;
+                    start_boxes.push(btn);
+                } else {
+                    h_end += bh;
+                    end_boxes.push(btn);
+                }
+            }
+            for b in &mut end_boxes {
+                b.y += h_start;
+            }
+            if h_start > 0.0 {
+                // start 系按钮置于内容前：流内子整体下移（abspos/fixed 坐标约定独立，
+                // 不随流位移——同 content-rel 换算的跳过条件）。
+                for child in &mut children_boxes {
+                    if !child.is_absolute && !child.is_fixed {
+                        child.y += h_start;
+                    }
+                }
+                content_height += h_start;
+            }
+            if h_end > 0.0 {
+                content_height += h_end;
+            }
+            if h_start + h_end > 0.0 {
+                let frame = border_top + border_bottom + padding_top + padding_bottom;
+                if content_height + frame > height {
+                    height = content_height + frame;
+                }
+                // R3867 帧体量纪律：Box 化。
+                let mut start_ptr = start_boxes.into_iter().map(Box::new).collect::<Vec<_>>();
+                let end_ptr = end_boxes.into_iter().map(Box::new).collect::<Vec<_>>();
+                for (i, b) in start_ptr.drain(..).enumerate() {
+                    children_boxes.insert(i, *b);
+                }
+                children_boxes.extend(end_ptr.into_iter().map(|b| *b));
+            }
+        }
+
         // R4257（CSS Overflow 5 §scroll-marker-group）：`::scroll-marker-group` 组盒合成——
         // 元素声明 `scroll-marker-group` 非 none 且伪样式存在时，在滚动内容前/后合成组盒
         // LayoutBox（无 taffy 节点：taffy 子节点会被 scroll-sizing/DOM 内容高度后处理
@@ -2126,6 +2207,7 @@ impl LayoutEngine {
             is_absolute,
             is_scroll_marker_group,
             is_scroll_marker: false,
+            scroll_button_dir: 255,
             is_replaced,
             is_fixed,
             fixed_x_insets_all_auto,

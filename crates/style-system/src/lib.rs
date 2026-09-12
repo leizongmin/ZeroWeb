@@ -397,6 +397,8 @@ impl StyleSystem {
         //（旧实现每元素仍执行 2 次 collect_pseudo_declarations 全规则扫描——
         // medium 4400 元素 × 2 次 × 全规则扫描是 style 阶段的大头）。
         let has_pseudo_rules = stylesheets.iter().any(|s| stylesheet_has_pseudo_rules(&s.rules));
+        // R4262：scroll-button 规则预扫描（S10 同型）——无则跳过每元素按钮探针。
+        let has_scroll_button_rules = stylesheets.iter().any(|s| stylesheet_has_scroll_button_rules(&s.rules));
         // S11：样式键缓存可用性（无属性选择器/伪类/var——计算样式仅依赖键）
         let cache_safe = stylesheet_cache_safe(stylesheets);
         let delay_parent_insert = std::env::var("ZW_STYLE_DELAY_PARENT_INSERT").as_deref() != Ok("0");
@@ -418,6 +420,7 @@ impl StyleSystem {
             &mut styles,
             quirks_mode,
             has_pseudo_rules,
+            has_scroll_button_rules,
             cache_safe,
             &mut style_cache,
             delay_parent_insert,
@@ -455,6 +458,7 @@ impl StyleSystem {
         self.font_feature_values = collect_font_feature_values(stylesheets);
         let quirks_mode = doc.quirks_mode();
         let has_pseudo_rules = stylesheets.iter().any(|s| stylesheet_has_pseudo_rules(&s.rules));
+        let has_scroll_button_rules = stylesheets.iter().any(|s| stylesheet_has_scroll_button_rules(&s.rules));
         let cache_safe = stylesheet_cache_safe(stylesheets);
         let delay_parent_insert = std::env::var("ZW_STYLE_DELAY_PARENT_INSERT").as_deref() != Ok("0");
         let mut style_cache: std::collections::HashMap<std::rc::Rc<StyleKey>, ComputedStyle> =
@@ -499,6 +503,7 @@ impl StyleSystem {
                 styles,
                 quirks_mode,
                 has_pseudo_rules,
+                has_scroll_button_rules,
                 cache_safe,
                 &mut style_cache,
                 delay_parent_insert,
@@ -520,6 +525,7 @@ impl StyleSystem {
         styles: &mut HashMap<NodeId, ComputedStyle>,
         quirks_mode: QuirksMode,
         has_pseudo_rules: bool,
+        has_scroll_button_rules: bool,
         cache_safe: bool,
         style_cache: &mut std::collections::HashMap<std::rc::Rc<StyleKey>, ComputedStyle>,
         delay_parent_insert: bool,
@@ -703,6 +709,61 @@ impl StyleSystem {
                         computed.scroll_marker_pseudo = Some(marker);
                     }
                 }
+                // R4262（CSS Overflow 5 §scroll-buttons）：`::scroll-button(<direction>)`
+                // per-direction 伪样式——先以裸键 `"scroll-button"` 探针（特异性/普通键 +
+                // `*` 通配均命中）判定本元素是否有按钮规则，非空才按 4 个 canonical 方向
+                // 各自完整级联（`"scroll-button(<dir>)"` 检索键，`*` 规则经 matcher 通配
+                // 并入）。仅 content 非 normal 的方向生成按钮盒（零默认行为面）。Box 直持
+                // 不解引用（R3867 帧体量纪律）。探针上下文与 compute_element_style_internal
+                // 同构（媒体/容器链顶），@media/@container 内按钮规则不漏探。
+                let scroll_button_probe = {
+                    let media_ctx = match (self.viewport_width, self.viewport_height) {
+                        (Some(w), Some(h)) => {
+                            let mut ctx = zero_css_parser::media_query::MediaContext::new(w, h);
+                            ctx.prefers_color_scheme = self.prefers_color_scheme;
+                            ctx.media_type = self.media_type;
+                            Some(ctx)
+                        }
+                        _ => None,
+                    };
+                    let container_ctx = self.container_chain.last().map(|c| matcher::ContainerContext {
+                        container_width: c.width,
+                        container_height: c.height,
+                    });
+                    !matcher::collect_pseudo_declarations_with_media(
+                        doc,
+                        node,
+                        stylesheets,
+                        rule_index,
+                        media_ctx.as_ref(),
+                        container_ctx.as_ref(),
+                        "scroll-button",
+                    )
+                    .is_empty()
+                };
+                if has_scroll_button_rules && scroll_button_probe {
+                    const SCROLL_BUTTON_DIRECTIONS: [&str; 4] =
+                        ["block-start", "block-end", "inline-start", "inline-end"];
+                    let mut buttons = Vec::new();
+                    for (slot, dir) in SCROLL_BUTTON_DIRECTIONS.iter().enumerate() {
+                        let style = self.compute_element_style_internal(
+                            doc,
+                            node,
+                            stylesheets,
+                            rule_index,
+                            Some(&elem_style),
+                            &saved_custom,
+                            quirks_mode,
+                            Some(&format!("scroll-button({dir})")),
+                        );
+                        if !matches!(style.content, property::types::ContentComputedValue::Normal) {
+                            buttons.push((slot as u8, style));
+                        }
+                    }
+                    if !buttons.is_empty() {
+                        computed.scroll_buttons = Some(Box::new(property::types::ScrollButtonsPseudo { buttons }));
+                    }
+                }
                 // ::first-letter 伪元素（CSS2 §5.12.2）：样式作用于块容器首个格式化行的首字母
                 //（穿透嵌套 inline，first-letter-nested-001..007 族）。compute_element_style_internal
                 // 的伪元素收集对 first-letter 通用（PseudoElementSelector::Standard 路由已存在）。
@@ -839,6 +900,7 @@ impl StyleSystem {
                 styles,
                 quirks_mode,
                 has_pseudo_rules,
+                has_scroll_button_rules,
                 cache_safe,
                 style_cache,
                 delay_parent_insert,
@@ -2513,6 +2575,31 @@ fn stylesheet_has_pseudo_rules(rules: &[zero_css_parser::ast::Rule]) -> bool {
                 }
             }
             // 其余 @规则（@keyframes/@layer/@import/@font-face...）不含伪元素选择器
+            _ => {}
+        }
+    }
+    false
+}
+
+/// R4262（CSS Overflow 5 §scroll-buttons）：规则树是否含 `::scroll-button` 选择器
+/// （含函数形式）。无则跳过每元素的按钮探针（S10 同型：零成本门禁）。
+fn stylesheet_has_scroll_button_rules(rules: &[zero_css_parser::ast::Rule]) -> bool {
+    for rule in rules {
+        match rule {
+            zero_css_parser::ast::Rule::Style(style_rule) => {
+                for selector in &style_rule.selectors {
+                    if matcher::selector_pseudo_element(selector).is_some_and(|p| p.starts_with("scroll-button")) {
+                        return true;
+                    }
+                }
+            }
+            zero_css_parser::ast::Rule::At(at) => {
+                if let zero_css_parser::ast::AtRuleBody::Block(nested) = &at.body
+                    && stylesheet_has_scroll_button_rules(nested)
+                {
+                    return true;
+                }
+            }
             _ => {}
         }
     }

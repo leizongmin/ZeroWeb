@@ -334,6 +334,7 @@ impl Default for ComputedStyle {
             line_clamp_legacy_webkit: false,
             scroll_marker_group: None,
             scroll_marker_pseudo: None,
+            scroll_buttons: None,
 
             // Background Image / Position / Repeat / Size / Attachment / Clip / Origin
             background_image: vec![],

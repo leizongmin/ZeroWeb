@@ -1968,19 +1968,51 @@ pub fn collect_pseudo_declarations_with_media(
 /// 返回选择器的尾部伪元素名（如 `"before"`/`"after"`），若无则 `None`。
 ///
 /// 按 CSS 语法，伪元素总是最后一个复合选择器的最后一个子类选择器。
-pub fn selector_pseudo_element(selector: &Selector) -> Option<&str> {
+/// R4262：函数伪元素返回 `"name(arg)"` 复合键（如 `"scroll-button(block-end)"`），
+/// 调用方（compute_element_style_internal 的 pseudo 参数）以同形式检索。
+pub fn selector_pseudo_element(selector: &Selector) -> Option<String> {
     use zero_css_parser::ast::PseudoElementSelector;
     let (compound, _) = selector.complex.parts.last()?;
     match compound.subclass_selectors.last()? {
-        SubclassSelector::PseudoElement(PseudoElementSelector::Standard(name)) => Some(name.as_str()),
+        SubclassSelector::PseudoElement(PseudoElementSelector::Standard(name)) => Some(name.clone()),
+        SubclassSelector::PseudoElement(PseudoElementSelector::Functional { name, arg }) => {
+            Some(format!("{name}({arg})"))
+        }
         _ => None,
     }
 }
 
-/// 检查元素是否匹配「以指定伪元素结尾」的选择器：尾部伪元素必须等于 `pseudo_name`，
-/// 且元素匹配去除该尾部伪元素后的选择器主体。
+/// R4262：`"scroll-button(<arg>)"` 检索键 → canonical 方向槽位（非 scroll-button 键 → None）。
+fn scroll_button_key_slot(key: &str) -> Option<u8> {
+    let (name, rest) = key.split_once('(')?;
+    if name != "scroll-button" {
+        return None;
+    }
+    let arg = rest.strip_suffix(')')?;
+    crate::property::types::scroll_button_arg_to_slot(arg)
+}
+
+/// 检查元素是否匹配「以指定伪元素结尾」的选择器：尾部伪元素必须等于 `pseudo_name`
+///（函数伪元素支持通配——`::scroll-button(*)` 匹配任意方向检索键），且元素匹配去除
+/// 该尾部伪元素后的选择器主体。
 fn matches_selector_for_pseudo(doc: &Document, element: NodeId, selector: &Selector, pseudo_name: &str) -> bool {
-    if selector_pseudo_element(selector) != Some(pseudo_name) {
+    let Some(sel_pseudo) = selector_pseudo_element(selector) else {
+        return false;
+    };
+    // R4262：`::name(*)` 通配——匹配同 name 的任意检索键（`"name(arg)"` 或裸 name 探针键）。
+    // Standard 伪元素名不含 `(`，`(*)` 后缀检测不误伤。函数伪元素另支持：①裸 name 键
+    // 探针（style-system 仅以裸键做「是否有该函数伪元素规则」探针）；②方向别名等价——
+    // `scroll-button(down)` 与检索键 `scroll-button(block-end)` 指向同一 canonical 槽位。
+    let pseudo_matches = if let Some(base) = sel_pseudo.strip_suffix("(*)") {
+        pseudo_name == base || pseudo_name.starts_with(&format!("{base}("))
+    } else if sel_pseudo == pseudo_name || sel_pseudo.split('(').next() == Some(pseudo_name) {
+        true
+    } else {
+        let sel_slot = scroll_button_key_slot(&sel_pseudo);
+        let key_slot = scroll_button_key_slot(pseudo_name);
+        sel_slot.is_some() && sel_slot == key_slot
+    };
+    if !pseudo_matches {
         return false;
     }
     // 克隆并移除尾部伪元素子类，得到「主体」选择器，复用常规匹配。

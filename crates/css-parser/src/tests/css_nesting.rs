@@ -35,8 +35,15 @@ fn compound_to_string(c: &CompoundSelector) -> String {
             }
             SubclassSelector::PseudoElement(pe) => {
                 s.push_str("::");
-                let PseudoElementSelector::Standard(n) = pe;
-                s.push_str(n);
+                match pe {
+                    PseudoElementSelector::Standard(n) => s.push_str(n),
+                    PseudoElementSelector::Functional { name, arg } => {
+                        s.push_str(name);
+                        s.push('(');
+                        s.push_str(arg);
+                        s.push(')');
+                    }
+                }
             }
             SubclassSelector::PseudoClass(pc) => {
                 s.push(':');

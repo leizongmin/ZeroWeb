@@ -96,6 +96,14 @@ fn css_selector_to_string(sel: &zero_css_parser::Selector) -> String {
                         s.push_str("::");
                         s.push_str(name);
                     }
+                    // R4262：函数伪元素序列化保真（`::scroll-button(block-end)`）。
+                    zero_css_parser::PseudoElementSelector::Functional { name, arg } => {
+                        s.push_str("::");
+                        s.push_str(name);
+                        s.push('(');
+                        s.push_str(arg);
+                        s.push(')');
+                    }
                 },
                 SubclassSelector::Nesting => s.push('&'),
             }
