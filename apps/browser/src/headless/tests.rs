@@ -397,6 +397,98 @@ fn test_json_targets_enumerates_real_tabs() {
     assert!(!ids.contains(&"zeroweb-main"), "static placeholder id retired");
 }
 
+// ── M3：Emulation viewport 桥 / 媒体仿真 / 截图 clip ──
+
+#[test]
+fn test_emulation_set_device_metrics_updates_state_and_emits_resize() {
+    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let mut session = HeadlessSession::new(800.0, 600.0);
+    let params = serde_json::json!({
+        "width": 500, "height": 400, "deviceScaleFactor": 1, "mobile": false,
+        "screenWidth": 500, "screenHeight": 400,
+    });
+    let (result, events) = server.dispatch_with_events(&mut session, "Emulation.setDeviceMetricsOverride", params);
+    result.unwrap();
+    assert_eq!(server.viewport_size(), (500.0, 400.0));
+    assert_eq!(events.len(), 1, "size change emits frameResized");
+    assert_eq!(events[0].method, "Page.frameResized");
+    // getLayoutMetrics 联动
+    let metrics = server
+        .dispatch(&mut session, "Page.getLayoutMetrics", Value::Null)
+        .unwrap();
+    assert_eq!(metrics["cssLayoutViewport"]["clientWidth"], 500);
+    assert_eq!(metrics["cssLayoutViewport"]["clientHeight"], 400);
+}
+
+#[test]
+fn test_emulation_set_device_metrics_same_size_no_event() {
+    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let mut session = HeadlessSession::new(800.0, 600.0);
+    let params = serde_json::json!({ "width": 800, "height": 600, "deviceScaleFactor": 1, "mobile": false });
+    let (result, events) = server.dispatch_with_events(&mut session, "Emulation.setDeviceMetricsOverride", params);
+    result.unwrap();
+    assert!(events.is_empty(), "same-size override emits no frameResized");
+}
+
+#[test]
+fn test_emulation_set_emulated_media_ok() {
+    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let mut session = HeadlessSession::new(800.0, 600.0);
+    let params = serde_json::json!({
+        "media": "",
+        "features": [
+            { "name": "prefers-color-scheme", "value": "dark" },
+            { "name": "prefers-reduced-motion", "value": "reduce" },
+        ],
+    });
+    assert!(
+        server
+            .dispatch(&mut session, "Emulation.setEmulatedMedia", params)
+            .is_ok()
+    );
+    let print_params = serde_json::json!({ "media": "print" });
+    assert!(
+        server
+            .dispatch(&mut session, "Emulation.setEmulatedMedia", print_params)
+            .is_ok()
+    );
+}
+
+#[test]
+fn test_capture_screenshot_clip_crops() {
+    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let mut session = HeadlessSession::new(800.0, 600.0);
+    let _ = session.webview.load_html(
+        r#"<html><body style="margin:0"><div style="width:800px;height:600px;background:#0f0;"></div></body></html>"#,
+        None,
+    );
+    let params = serde_json::json!({
+        "clip": { "x": 10, "y": 20, "width": 100, "height": 50, "scale": 1 },
+    });
+    let (result, _events) = server.dispatch_with_events(&mut session, "Page.captureScreenshot", params);
+    let result = result.unwrap();
+    // CDP 形状：data 为 base64 字符串
+    let data = result["data"].as_str().expect("CDP data must be a string");
+    assert!(!data.is_empty());
+    // 裁剪尺寸验证：解码 PNG 后应为 100x50
+    use base64::Engine;
+    let bytes = base64::engine::general_purpose::STANDARD.decode(data).unwrap();
+    let decoder = png::Decoder::new(&bytes[..]);
+    let reader = decoder.read_info().unwrap();
+    assert_eq!((reader.info().width, reader.info().height), (100, 50));
+}
+
+#[test]
+fn test_capture_screenshot_clip_out_of_bounds_rejected() {
+    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let mut session = HeadlessSession::new(800.0, 600.0);
+    let params = serde_json::json!({
+        "clip": { "x": 700, "y": 500, "width": 200, "height": 200, "scale": 1 },
+    });
+    let (result, _events) = server.dispatch_with_events(&mut session, "Page.captureScreenshot", params);
+    assert_eq!(result.unwrap_err().code, -32602);
+}
+
 // ── M2：导航事件族 / 布局面 / 注入脚本 / Input 域 ──
 
 #[test]
@@ -1024,11 +1116,9 @@ fn test_smoke_cdp_command_sequence() {
     let net_enable = runner.send("Network.enable", Value::Null).unwrap();
     assert_eq!(net_enable["result"], "enabled");
 
-    // 5. Page.captureScreenshot
+    // 5. Page.captureScreenshot（S6：CDP 形状 {data: base64}，BiDi 对象形另测）
     let screenshot = runner.send("Page.captureScreenshot", Value::Null).unwrap();
-    let (w, h, _) = HeadlessClient::parse_screenshot(&screenshot).unwrap();
-    assert_eq!(w, 800);
-    assert_eq!(h, 600);
+    assert!(screenshot["data"].as_str().map(|s| !s.is_empty()).unwrap_or(false));
 }
 
 /// 冒烟测试：脚本执行和错误处理。

@@ -34,6 +34,22 @@ fn framebuffer_to_png_base64(fb: &FrameBuffer) -> String {
     base64::engine::general_purpose::STANDARD.encode(&png_buf)
 }
 
+/// 解码 PNG 字节为 (width, height, RGBA8 像素)（clip 裁剪前置步骤；Rgb 补 alpha）。
+fn decode_png_to_rgba(bytes: &[u8]) -> Result<(u32, u32, Vec<u8>), String> {
+    use png::ColorType;
+    let decoder = png::Decoder::new(bytes);
+    let mut reader = decoder.read_info().map_err(|e| format!("png read_info: {e}"))?;
+    let info = reader.info().clone();
+    let mut buf = vec![0u8; reader.output_buffer_size()];
+    reader.next_frame(&mut buf).map_err(|e| format!("png decode: {e}"))?;
+    let rgba = if info.color_type == ColorType::Rgb {
+        buf.chunks(3).flat_map(|px| [px[0], px[1], px[2], 255u8]).collect()
+    } else {
+        buf
+    };
+    Ok((info.width, info.height, rgba))
+}
+
 /// 类型化值 → CDP remoteObject（returnByValue 语义，可序列化值直接内联）。
 /// 不可序列化对象的 objectId 句柄（V8 桥）尚未实现——见命令矩阵 G3。
 fn automation_value_to_remote_object(value: &AutomationValue) -> Value {
@@ -129,7 +145,8 @@ impl HeadlessServer {
                 self.cmd_page_add_script_to_evaluate_on_new_document(session, params)
             }
             "Emulation.setFocusEmulationEnabled" => Ok(serde_json::json!({})),
-            "Emulation.setEmulatedMedia" => Ok(serde_json::json!({})),
+            // M3 媒体仿真：prefers-color-scheme → SetColorScheme；media type → SetMediaType
+            "Emulation.setEmulatedMedia" => self.cmd_emulation_set_emulated_media(session, params),
             // Page 布局面（M2）：viewport 来自 headless 启动参数（固定视口）
             "Page.getLayoutMetrics" => Ok(self.cmd_page_get_layout_metrics()),
             // 对话框：引擎暂无阻塞式 JS 对话语义 → 接受（无 javascriptDialogOpening 事件源）
@@ -240,7 +257,8 @@ impl HeadlessServer {
                 let result = self.cmd_page_navigate(session, cdp_session, params, &mut events);
                 (result, events)
             }
-            "Page.captureScreenshot" => (self.cmd_capture_screenshot(session), events),
+            // CDP 形状：{data: "<base64>"}（BiDi browsingContext.captureScreenshot 走对象形）
+            "Page.captureScreenshot" => (self.cmd_page_capture_screenshot(session, params), events),
             "Page.enable" => (Ok(serde_json::json!({})), events),
             // CDP Runtime 域：remoteObject 类型化形状（BiDi script.evaluate 走旧实现）
             "Runtime.evaluate" => (self.cmd_runtime_evaluate(session, params), events),
@@ -284,6 +302,13 @@ impl HeadlessServer {
             // executionContextId 并补发 executionContextCreated（worldName 对齐）
             "Page.createIsolatedWorld" => {
                 let result = self.cmd_page_create_isolated_world(session, cdp_session, &params, &mut events);
+                (result, events)
+            }
+            // M3 viewport 桥：renderer SetViewport + 服务器视口状态 + frameResized 事件
+            "Emulation.setDeviceMetricsOverride" => {
+                let (result, resize_events) =
+                    self.cmd_emulation_set_device_metrics_override(session, cdp_session, params);
+                events.extend(resize_events);
                 (result, events)
             }
             // PW CRPage 初始化需要 frame 树确定主 frame id（后续 frameNavigated 同 id 对齐）
@@ -376,7 +401,8 @@ impl HeadlessServer {
         }
     }
 
-    fn cmd_capture_screenshot(&self, session: &mut HeadlessSession) -> Result<Value, ProtocolError> {
+    /// 渲染当前页面帧（GPU 开关路径 → CPU 兜底），供 BiDi 与 CDP 截图共用。
+    fn render_page_framebuffer(&self, session: &mut HeadlessSession) -> Result<FrameBuffer, ProtocolError> {
         #[cfg(test)]
         let result = session.webview.render();
         #[cfg(not(test))]
@@ -396,8 +422,9 @@ impl HeadlessServer {
         // 默认 CPU——DC-13 oracle 对比基线稳定）。GPU 支持子集与 CPU 逐像素一致
         //（parity/reftest 验证），未实现特性返回 false 自动回退 CPU。
         let fb = if std::env::var("ZW_HEADLESS_GPU_SCREENSHOT").as_deref() == Ok("1") {
-            let w = self.viewport_width as u32;
-            let h = self.viewport_height as u32;
+            let (vw, vh) = self.viewport_size();
+            let w = vw as u32;
+            let h = vh as u32;
             // R3254-G5：设备丢失（真实）后丢弃 renderer——保留带标志的实例会
             // 永不重建、截图永久回退 CPU。
             if session.gpu_renderer.as_ref().is_some_and(|g| g.is_device_lost()) {
@@ -452,9 +479,10 @@ impl HeadlessServer {
                 )
             }
         } else {
+            let (vw, vh) = self.viewport_size();
             render_full_scene(
-                self.viewport_width as u32,
-                self.viewport_height as u32,
+                vw as u32,
+                vh as u32,
                 1.0,
                 &result.primitives,
                 &font_loader,
@@ -469,7 +497,11 @@ impl HeadlessServer {
                 &[],
             )
         };
+        Ok(fb)
+    }
 
+    fn cmd_capture_screenshot(&self, session: &mut HeadlessSession) -> Result<Value, ProtocolError> {
+        let fb = self.render_page_framebuffer(session)?;
         // R1601：返回 base64 PNG 像素数据（旧版仅返回尺寸，headless 截图无法用于像素对比）。
         // 保留 width/height/pixelCount 供 HeadlessClient::parse_screenshot 向后兼容。
         let png_b64 = framebuffer_to_png_base64(&fb);
@@ -482,6 +514,120 @@ impl HeadlessServer {
                 "png": png_b64,
             }
         }))
+    }
+
+    /// CDP Page.captureScreenshot — `{"data": "<base64 png>"}` 形状（区别于 BiDi 对象形）；
+    /// 支持 clip 裁剪（原始 fb 行级裁剪）。format 仅支持 png（jpeg 编码器未接入）。
+    fn cmd_page_capture_screenshot(
+        &self,
+        session: &mut HeadlessSession,
+        params: Value,
+    ) -> Result<Value, ProtocolError> {
+        if let Some(format) = params.get("format").and_then(|v| v.as_str()) {
+            if format != "png" {
+                return Err(ProtocolError {
+                    code: -32601,
+                    message: format!("captureScreenshot format '{format}' not implemented (png only)"),
+                });
+            }
+        }
+        let fb = self.render_page_framebuffer(session)?;
+        let fb = match params.get("clip") {
+            Some(clip) => {
+                let fx = clip.get("x").and_then(|v| v.as_f64()).unwrap_or(0.0).max(0.0) as u32;
+                let fy = clip.get("y").and_then(|v| v.as_f64()).unwrap_or(0.0).max(0.0) as u32;
+                let fw = clip.get("width").and_then(|v| v.as_f64()).unwrap_or(0.0).max(0.0) as u32;
+                let fh = clip.get("height").and_then(|v| v.as_f64()).unwrap_or(0.0).max(0.0) as u32;
+                if fw == 0 || fh == 0 || fx + fw > fb.width || fy + fh > fb.height {
+                    return Err(ProtocolError {
+                        code: -32602,
+                        message: format!(
+                            "clip out of bounds: frame {}x{}, clip {}x{} at ({fx},{fy})",
+                            fb.width, fb.height, fw, fh
+                        ),
+                    });
+                }
+                let mut cropped = Vec::with_capacity((fw * fh * 4) as usize);
+                for row in fy..fy + fh {
+                    let start = ((row * fb.width) + fx) as usize * 4;
+                    cropped.extend_from_slice(&fb.data[start..start + (fw as usize) * 4]);
+                }
+                FrameBuffer {
+                    data: cropped,
+                    width: fw,
+                    height: fh,
+                }
+            }
+            None => fb,
+        };
+        Ok(serde_json::json!({ "data": framebuffer_to_png_base64(&fb) }))
+    }
+
+    /// Emulation.setDeviceMetricsOverride — viewport 桥：renderer SetViewport +
+    /// 服务器视口状态（getLayoutMetrics/captureScreenshot 联动）+ Page.frameResized 事件。
+    fn cmd_emulation_set_device_metrics_override(
+        &self,
+        session: &mut HeadlessSession,
+        cdp_session: Option<&str>,
+        params: Value,
+    ) -> (Result<Value, ProtocolError>, Vec<ServerEvent>) {
+        let width = params.get("width").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
+        let height = params.get("height").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
+        let dsf = params.get("deviceScaleFactor").and_then(|v| v.as_f64()).unwrap_or(1.0) as f32;
+        if width <= 0.0 || height <= 0.0 {
+            // Chromium：width/height 0 = 清除覆盖，恢复默认视口
+            let (default_w, default_h) = (800.0_f32, 600.0_f32);
+            self.set_viewport_size(default_w, default_h);
+            let _ = session.send_set_viewport(default_w, default_h, dsf);
+        } else {
+            let (old_w, old_h) = self.viewport_size();
+            self.set_viewport_size(width, height);
+            let _ = session.send_set_viewport(width, height, dsf);
+            if (old_w - width).abs() > f32::EPSILON || (old_h - height).abs() > f32::EPSILON {
+                // Chromium frameResized 无参数体；事件归属当前会话
+                return (
+                    Ok(serde_json::json!({})),
+                    vec![ServerEvent {
+                        method: "Page.frameResized".into(),
+                        params: serde_json::json!({}),
+                        session_id: Some(cdp_session.unwrap_or_default().to_string()),
+                    }],
+                );
+            }
+        }
+        (Ok(serde_json::json!({})), Vec::new())
+    }
+
+    /// Emulation.setEmulatedMedia — prefers-color-scheme → SetColorScheme；
+    /// media type → SetMediaType；其余 feature（reduced-motion 等）引擎无 IPC 面暂忽略。
+    fn cmd_emulation_set_emulated_media(
+        &self,
+        session: &mut HeadlessSession,
+        params: Value,
+    ) -> Result<Value, ProtocolError> {
+        if let Some(media) = params.get("media").and_then(|v| v.as_str()) {
+            session
+                .send_set_media_type(media == "print")
+                .map_err(|error| ProtocolError {
+                    code: -32000,
+                    message: error,
+                })?;
+        }
+        if let Some(features) = params.get("features").and_then(|v| v.as_array()) {
+            for feature in features {
+                let name = feature.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                let value = feature.get("value").and_then(|v| v.as_str()).unwrap_or("");
+                if name == "prefers-color-scheme" {
+                    session
+                        .send_set_color_scheme(value == "dark")
+                        .map_err(|error| ProtocolError {
+                            code: -32000,
+                            message: error,
+                        })?;
+                }
+            }
+        }
+        Ok(serde_json::json!({}))
     }
 
     /// DC-13 line 315：加载内联 HTML（绕过 fetch_url 的 HTTP-only 限制），供 headless 路径
@@ -901,10 +1047,11 @@ impl HeadlessServer {
         events.push(frame_event("Page.frameStoppedLoading"));
     }
 
-    /// Page.getLayoutMetrics — headless 固定视口（启动参数）映射。
+    /// Page.getLayoutMetrics — 视口映射（启动参数初始化，Emulation 运行时可变）。
     fn cmd_page_get_layout_metrics(&self) -> Value {
-        let w = self.viewport_width as i64;
-        let h = self.viewport_height as i64;
+        let (vw, vh) = self.viewport_size();
+        let w = vw as i64;
+        let h = vh as i64;
         serde_json::json!({
             "layoutViewport": { "pageX": 0, "pageY": 0, "clientWidth": w, "clientHeight": h },
             "visualViewport": {

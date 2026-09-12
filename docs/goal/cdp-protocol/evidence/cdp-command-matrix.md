@@ -91,7 +91,7 @@ DC-3 基线）。「现状」列以 2026-09-12 `apps/browser/src/headless/`（M1
 |------|---------|--------|--------------|------|
 | `Page.enable` | 13 | — | ✅（S4） | 完成（M1 S4） |
 | `Page.navigate` | 2 | frameId/url/referrerPolicy | ✅（S5：`{frameId,loaderId,errorText?}` 形状 + 导航事件族 + 注入脚本重放） | 完成（M2 S5） |
-| `Page.captureScreenshot` | 3 | captureBeyondViewport/clip/format | ⚠️ 无 clip/format/captureBeyondViewport | M2 |
+| `Page.captureScreenshot` | 3 | captureBeyondViewport/clip/format | ✅（S6：CDP `{data:"<b64>"}` 形状 + clip 原始 fb 裁剪；format 仅 png，jpeg -32601；BiDi 对象形不动） | 完成（M3 S6；captureBeyondViewport 随内容尺寸暴露） |
 | `Page.getLayoutMetrics` | 3 | — | ✅（S5：headless 固定视口映射，css* 全字段） | 完成（M2 S5；动态视口随 M3 viewport 桥） |
 | `Page.handleJavaScriptDialog` | 3 | accept/promptText | ⚠️ stub 接受（S5）；引擎无阻塞式对话框语义 → 无 javascriptDialogOpening 事件源 | 事件源随引擎对话框能力 |
 | `Page.addScriptToEvaluateOnNewDocument` | 3 | source/worldName | ✅（S5：真执行 + 跨导航重放 + worldName 登记/新文档 world context 重发；单引擎主 world 执行） | 完成（M2 S5；world 隔离随引擎能力） |
@@ -123,8 +123,8 @@ DC-3 基线）。「现状」列以 2026-09-12 `apps/browser/src/headless/`（M1
 
 | 方法 | 捕获调用 | 参数键 | ZeroWeb 现状 | 计划 |
 |------|---------|--------|--------------|------|
-| `Emulation.setDeviceMetricsOverride` | 2 | deviceScaleFactor/height/mobile/screenHeight/screenOrientation/screenWidth/width | ❌ | M3（viewport 桥） |
-| `Emulation.setEmulatedMedia` | 4 | features/media | ⚠️ stub 接受（S4）；媒体仿真未生效 | M3 实义 |
+| `Emulation.setDeviceMetricsOverride` | 2 | deviceScaleFactor/height/mobile/screenHeight/screenOrientation/screenWidth/width | ✅（S6：→renderer SetViewport + 服务器视口状态联动 getLayoutMetrics/captureScreenshot + frameResized 事件；宽高 0=恢复默认） | 完成（M3 S6） |
+| `Emulation.setEmulatedMedia` | 4 | features/media | ✅（S6：prefers-color-scheme→SetColorScheme、media type→SetMediaType；reduced-motion 等无 IPC 面暂忽略） | 完成（M3 S6；余 feature 随引擎能力） |
 | `Emulation.setFocusEmulationEnabled` | 3 | enabled | ✅ stub 接受（S4） | 完成（M1 S4） |
 | `Emulation.setUserAgentOverride` | 2 | userAgent | ❌ | M3 stub → M4 实义（net UA 接线） |
 
@@ -165,8 +165,8 @@ DC-3 基线）。「现状」列以 2026-09-12 `apps/browser/src/headless/`（M1
 | `Page.domContentEventFired` | 3 | ✅（S5） | 完成（M2 S5） |
 | `Page.lifecycleEvent` | 42 | 🔶 S5：DOMContentLoaded/load 两点随导航发出；细粒度事件未逐一生效 | M4 补齐（逐 lifecycle 对齐） |
 | `Page.javascriptDialogOpening` / `javascriptDialogClosed` | 3 / 3 | ❌ | M2 |
-| `Page.frameAttached` / `frameDetached` | 1 / 1 | ❌ | M2 |
-| `Page.frameResized` | 4 | ❌ | M3（viewport 变更时） |
+| `Page.frameAttached` / `frameDetached` | 1 / 1 | ❌（子帧事件源需引擎子帧可见性，渲染流域协调；iframe 面挂起） | 随引擎子帧能力 |
+| `Page.frameResized` | 4 | ✅（S6：尺寸变更时发出） | 完成（M3 S6） |
 | `Page.documentOpened` | 1 | ❌ | M3（低优） |
 | `Page.frameRequestedNavigation` | 1 | ❌ | M3（低优） |
 | `Page.frameSubtreeWillBeDetached` | 1 | ❌ | M3（低优） |

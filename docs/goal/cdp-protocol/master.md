@@ -2,7 +2,7 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-12（M2 切片落地：goto/导航事件族/Input 域/getLayoutMetrics）
+**最后更新**: 2026-09-12（M3 切片落地：viewport 桥/媒体仿真/CDP 截图形状+clip）
 
 ---
 
@@ -33,6 +33,15 @@
 
 ## 已完成切片
 
+- **S6（2026-09-12）M3 — viewport 桥 + 媒体仿真 + CDP 截图形状**：
+  `Emulation.setDeviceMetricsOverride` 实义（→renderer SetViewport IPC + 服务器视口状态
+  联动 getLayoutMetrics/captureScreenshot + Page.frameResized 事件；宽高 0=恢复默认；
+  实测 page.setViewportSize 绿）；`setEmulatedMedia` 实义（prefers-color-scheme→
+  SetColorScheme、media type→SetMediaType）；`Page.captureScreenshot` CDP 形状修正
+  （`{data:"<b64>"}` 字符串形——此前对象形致 PW screenshot 直接报错，BiDi 对象形不动）
+  + clip 原始 fb 行级裁剪（实测 screenshot.viewport 绿）。**Playwright 绿步 4→5**。
+  挂起记档：iframe 子帧事件源需引擎子帧可见性（渲染流域协调），frames.access 步骤
+  随引擎能力。make test 全绿（+5 M3 单测）。
 - **S5（2026-09-12）M2 — 导航事件族 + Input 域 + getLayoutMetrics**：
   `Page.navigate` 实义化（`{frameId,loaderId,errorText?}` 形状 + Chromium 时序导航事件族
   frameStarted/StoppedLoading→frameNavigated→executionContextsCleared→新文档 context→
@@ -83,11 +92,9 @@
 
 ## 下一步计划
 
-1. **M3**：Emulation.setDeviceMetricsOverride 实义（viewport 桥接 SetViewport IPC，
-   当前 -32601 阻 2 步）+ setEmulatedMedia 实义 + iframe 帧模型（frameAttached 事件族，
-   frames.access 步骤依赖）+ Page.captureScreenshot clip/format
-2. **M4**：Storage cookie 域（阻 cookies.roundtrip 1 步）+ Network 事件总线（P6）+
-   console 对象化（P5）
+1. **M4**：Storage cookie 域（阻 cookies.roundtrip 1 步）+ Network 事件总线（P6）+
+   console 对象化（P5）+ Emulation.setUserAgentOverride（net UA 接线）
+2. **iframe 子帧事件源**：需引擎子帧可见性（渲染流域协调点），frames.access 步骤依赖
 3. **objectId 桥获批后**：renderer/protocol/engine 跨 crate 对象注册表——收口
    evaluate/locator/click/fill 全族（~20 步，占差距大头）
 
@@ -107,7 +114,7 @@
 |--------|------|
 | M1 — 传输/发现/Target 基座 + Playwright 首连 | 🚧 连接面全通（S4：connect/attach/newPage ✓）；evaluate 收口卡 objectId 桥（待用户决策） |
 | M2 — Page/Input 域 → 点击/填充/键盘/导航流 | 🚧 S5：goto 绿 + Input 域全通 + 导航事件族；locator 类点击/填充仍挂 objectId 桥（value-only 面已尽） |
-| M3 — DOM/CSS/Emulation → locator 流 | ⏳ |
+| M3 — DOM/CSS/Emulation → locator 流 | 🚧 S6：viewport 桥/媒体仿真/截图 clip 绿；DOM 句柄桥挂 objectId 桥；iframe 子帧挂引擎子帧事件面 |
 | M4 — Network/cookies/console 对象化（cookie 落点=Storage 域） | ⏳ |
 | M5 — 矩阵收口 | ⏳ |
 

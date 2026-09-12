@@ -47,10 +47,9 @@ pub struct HeadlessServer {
     addr: SocketAddr,
     /// 会话 ID 生成器。
     pub(super) next_session_id: Arc<AtomicU64>,
-    /// 视口宽度。
-    pub(super) viewport_width: f32,
-    /// 视口高度。
-    pub(super) viewport_height: f32,
+    /// 视口（宽,高，CSS px）——headless 启动参数初始化，
+    /// Emulation.setDeviceMetricsOverride 运行时可变（M3 viewport 桥）。
+    pub(super) viewport: std::sync::Mutex<(f32, f32)>,
     /// 安全配置（Phase 5）。
     security: HeadlessSecurityConfig,
     /// 已附接的 CDP sessionId 注册表（sessionId → targetId；
@@ -68,8 +67,7 @@ impl HeadlessServer {
         Self {
             addr,
             next_session_id: Arc::new(AtomicU64::new(1)),
-            viewport_width,
-            viewport_height,
+            viewport: std::sync::Mutex::new((viewport_width, viewport_height)),
             security: HeadlessSecurityConfig::default(),
             attached_sessions: std::sync::Mutex::new(std::collections::HashMap::new()),
             auto_attach: std::sync::atomic::AtomicBool::new(false),
@@ -139,6 +137,16 @@ impl HeadlessServer {
         self.auto_attach.load(std::sync::atomic::Ordering::SeqCst)
     }
 
+    /// 当前视口（宽,高）。
+    pub(super) fn viewport_size(&self) -> (f32, f32) {
+        *self.viewport.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// 更新视口（Emulation.setDeviceMetricsOverride）。
+    pub(super) fn set_viewport_size(&self, width: f32, height: f32) {
+        *self.viewport.lock().unwrap_or_else(|e| e.into_inner()) = (width, height);
+    }
+
     /// 设置安全配置。
     #[allow(dead_code)]
     pub fn with_security(mut self, config: HeadlessSecurityConfig) -> Self {
@@ -166,7 +174,8 @@ impl HeadlessServer {
 
         // CDP 语义：target 生命周期跨客户端连接持续（同一 renderer 服务所有连接，
         // HTTP 发现枚举与 WS 会话共享同一浏览器状态）。
-        let mut session = HeadlessSession::new(self.viewport_width, self.viewport_height);
+        let (viewport_width, viewport_height) = self.viewport_size();
+        let mut session = HeadlessSession::new(viewport_width, viewport_height);
 
         // 连接接受循环：支持 HTTP 发现 + WebSocket 协议
         loop {

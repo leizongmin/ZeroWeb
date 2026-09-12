@@ -8,11 +8,12 @@ use zero_net::{HttpClient, HttpMethod, HttpRequest};
 #[cfg(not(test))]
 use zero_protocol::message::{
     AutomationOperation, AutomationRequest, AutomationResult, FetchParams, FramePublishMode, IpcMessage,
-    IpcMessageKind, LoadHtmlParams, SetViewportParams,
+    IpcMessageKind, LoadHtmlParams,
 };
 use zero_protocol::message::{
-    AutomationValue, ImeEventParams, ImeEventType, KeyboardEventParams, KeyboardEventType, MouseEventParams,
-    MouseEventType, ScrollEventParams,
+    AutomationValue, ImeEventParams, ImeEventType, IpcColorScheme, IpcMediaType, KeyboardEventParams,
+    KeyboardEventType, MouseEventParams, MouseEventType, ScrollEventParams, SetColorSchemeParams, SetMediaTypeParams,
+    SetViewportParams,
 };
 #[cfg(not(test))]
 use zero_protocol::process::RendererHandle;
@@ -338,6 +339,57 @@ impl HeadlessSession {
             })
             .map_err(|error| error.to_string())
     }
+
+    /// Emulation.setDeviceMetricsOverride → renderer SetViewport。
+    pub(super) fn send_set_viewport(
+        &mut self,
+        width: f32,
+        height: f32,
+        device_scale_factor: f32,
+    ) -> Result<(), String> {
+        self.renderer
+            .send(IpcMessage {
+                id: 0,
+                kind: IpcMessageKind::SetViewport(SetViewportParams {
+                    width: width as u32,
+                    height: height as u32,
+                    device_scale_factor,
+                }),
+            })
+            .map_err(|error| error.to_string())
+    }
+
+    /// Emulation.setEmulatedMedia（prefers-color-scheme）→ renderer SetColorScheme。
+    pub(super) fn send_set_color_scheme(&mut self, dark: bool) -> Result<(), String> {
+        self.renderer
+            .send(IpcMessage {
+                id: 0,
+                kind: IpcMessageKind::SetColorScheme(SetColorSchemeParams {
+                    scheme: if dark {
+                        IpcColorScheme::Dark
+                    } else {
+                        IpcColorScheme::Light
+                    },
+                }),
+            })
+            .map_err(|error| error.to_string())
+    }
+
+    /// Emulation.setEmulatedMedia（media type）→ renderer SetMediaType。
+    pub(super) fn send_set_media_type(&mut self, print: bool) -> Result<(), String> {
+        self.renderer
+            .send(IpcMessage {
+                id: 0,
+                kind: IpcMessageKind::SetMediaType(SetMediaTypeParams {
+                    media_type: if print {
+                        IpcMediaType::Print
+                    } else {
+                        IpcMediaType::Screen
+                    },
+                }),
+            })
+            .map_err(|error| error.to_string())
+    }
 }
 
 impl HeadlessSession {
@@ -395,6 +447,23 @@ impl HeadlessSession {
     }
 
     pub(super) fn send_input_ime_commit(&mut self, _text: String) -> Result<(), String> {
+        Ok(())
+    }
+
+    pub(super) fn send_set_viewport(
+        &mut self,
+        _width: f32,
+        _height: f32,
+        _device_scale_factor: f32,
+    ) -> Result<(), String> {
+        Ok(())
+    }
+
+    pub(super) fn send_set_color_scheme(&mut self, _dark: bool) -> Result<(), String> {
+        Ok(())
+    }
+
+    pub(super) fn send_set_media_type(&mut self, _print: bool) -> Result<(), String> {
         Ok(())
     }
 }
