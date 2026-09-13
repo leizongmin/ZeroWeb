@@ -441,3 +441,5 @@ css/filter-effects/backdrop-filter-containing-block.html css/filter-effects/back
 css/CSS2/linebox/border-padding-bleed-001.xht css/CSS2/linebox/border-padding-bleed-001-ref.xht == 2026-09-13 R4297 inline 行位同步（层②）——border-box 几何重写 + 缺失量 bleed 口径
 css/css-counter-styles/counter-style-at-rule/system-symbolic.html css/css-counter-styles/counter-style-at-rule/system-symbolic-ref.html == 2026-09-14 R4321 fix: symbolic/fixed 隐式值域负值 fallback + reftest harness document.write 无 close 兜底（ref 页 write 行落地）
 css/css-counter-styles/counter-style-at-rule/system-additive.html css/css-counter-styles/counter-style-at-rule/system-additive-ref.html == 2026-09-14 R4321 fix: additive system §3.1.6 贪婪算法落地（含 weight-0 符号表 0）+ harness document.write 兜底
+css/css-text/text-group-align/text-group-align-center.html css/css-text/text-group-align/text-group-align-center-ref.html == 2026-09-14 R4322 fix: S11 style-key 缓存不可键父链碰撞（attr-chain 指纹修复）+ text-group-align Path B 组对齐注入
+css/css-text/text-group-align/text-group-align-right.html css/css-text/text-group-align/text-group-align-right-ref.html == 2026-09-14 R4322 fix: 同上

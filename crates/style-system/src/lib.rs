@@ -431,6 +431,7 @@ impl StyleSystem {
             &mut style_cache,
             delay_parent_insert,
             None,
+            0, // R4322：根的祖先链指纹空
         );
 
         styles
@@ -514,8 +515,34 @@ impl StyleSystem {
                 &mut style_cache,
                 delay_parent_insert,
                 None,
+                0, // R4322：增量起点祖先链指纹空（局部 style_cache）
             );
         }
+    }
+
+
+    /// R4322：祖先属性链指纹累积——把本元素的 (tag, attrs) 混入父链哈希。
+    /// FNV-1a 逐属性（name=value）+ tag；顺序敏感（同集合异序父链按异构处理，
+    /// 保守正确）。属性值字符串哈希经 DefaultHasher（SipHash，碰撞面可忽略）。
+    fn mix_chain_hash(chain: u64, node_data: &zero_dom::NodeData) -> u64 {
+        let NodeKind::Element(e) = &node_data.kind else {
+            return chain;
+        };
+        let mut h = chain;
+        for b in e.name.local.as_ref().as_bytes().iter() {
+            h = (h ^ (*b as u64)).wrapping_mul(0x100000001b3);
+        }
+        for a in &e.attributes {
+            h = (h ^ 0xff).wrapping_mul(0x100000001b3);
+            for b in a.name.local.as_ref().as_bytes().iter() {
+                h = (h ^ (*b as u64)).wrapping_mul(0x100000001b3);
+            }
+            h = (h ^ 0x1f).wrapping_mul(0x100000001b3);
+            for b in a.value.as_bytes().iter() {
+                h = (h ^ (*b as u64)).wrapping_mul(0x100000001b3);
+            }
+        }
+        h
     }
 
     /// 递归计算样式。
@@ -536,6 +563,9 @@ impl StyleSystem {
         style_cache: &mut std::collections::HashMap<std::rc::Rc<StyleKey>, ComputedStyle>,
         delay_parent_insert: bool,
         parent_key: Option<std::rc::Rc<StyleKey>>,
+        // R4322：父链属性指纹——从根到本元素父的 (tag, attrs) 逐级哈希累积。
+        // 本元素不可键时，子元素键以它为 unkeyed_parent_chain 组件。
+        chain_hash: u64,
     ) {
         let node_data = match doc.get(node) {
             Some(n) => n,
@@ -555,6 +585,9 @@ impl StyleSystem {
 
         // 只为元素节点计算样式
         if is_element {
+            // R4322：父不可键（class/id 外属性）→ parent=None 丢失继承链，
+            // 改用 unkeyed_parent_chain（祖先属性链指纹）刻画继承态——同构父链
+            // 同指纹（S11 跨子树复用保住），异构父链异指纹（碰撞消除）。
             cache_key = if cache_safe {
                 match &node_data.kind {
                     NodeKind::Element(e)
@@ -563,7 +596,12 @@ impl StyleSystem {
                             n == "class" || n == "id"
                         }) =>
                     {
-                        Some(std::rc::Rc::new(StyleKey::from_element(e, parent_key.clone())))
+                        let unkeyed = if parent_key.is_some() { 0 } else { chain_hash };
+                        Some(std::rc::Rc::new(StyleKey::from_element(
+                            e,
+                            parent_key.clone(),
+                            unkeyed,
+                        )))
                     }
                     _ => None,
                 }
@@ -896,6 +934,10 @@ impl StyleSystem {
             self.container_chain.push(entry.clone());
         }
 
+        // R4322：子元素的祖先属性链指纹 = 本元素（tag, attrs）混入父链指纹。
+        // 本元素不可键时它刻画子元素继承态的全部来源（cache_safe 已排除
+        // 属性选择器/伪类/伪元素等键外依赖）。
+        let child_chain = Self::mix_chain_hash(chain_hash, node_data);
         for child in children {
             self.compute_styles_recursive(
                 doc,
@@ -912,6 +954,7 @@ impl StyleSystem {
                 style_cache,
                 delay_parent_insert,
                 cache_key.clone(),
+                child_chain,
             );
         }
         if pushed_container.is_some() {
@@ -2430,16 +2473,31 @@ fn apply_quirks_mode_adjustments(
 /// 计算样式仅依赖 (tag, classes, id, 父链样式)——样式表无属性选择器/伪类/
 /// var()/自定义属性时，相同键的元素（如 4000 个 `.item`）计算样式完全相同，
 /// 命中直接 clone（~1µs）替代全量级联+继承+计算值（~48µs/元素）。
+///
+/// R4322：`unkeyed_parent_chain` = 祖先**属性链指纹**（父可键时为 0，此时继承态
+/// 已由 `parent` 键链完整刻画）。S11 原键在父不可键（带 style/dir 等 class/id 外
+/// 属性，继承链无法进键）时 parent=None——不同不可键父下的同 tag/class/id 子
+/// **键碰撞**，后者直接 clone 前者的继承态（`<ul dir=rtl><li>A` 后 `<ul><li>B`
+/// 的 B 错误继承 A 的 direction=Rtl 实锤；row 上 style="color:red" 差异同理）。
+/// 身份组件（NodeId）可修碰撞但打散跨子树复用（medium 4000 同构 row 下
+/// style_ms 8.4× 实测回归）——属性链指纹两全：同构父链同指纹（复用保住），
+/// 异构父链必异指纹（碰撞消除）。稳健性：cache_safe 样式表无属性选择器/
+/// 伪类（键外依赖已排除），子元素计算态 = f(自身 attrs, 祖先 attrs 链)。
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct StyleKey {
     tag: String,
     classes: Vec<String>,
     id: Option<String>,
     parent: Option<std::rc::Rc<StyleKey>>,
+    unkeyed_parent_chain: u64,
 }
 
 impl StyleKey {
-    fn from_element(e: &zero_dom::ElementData, parent: Option<std::rc::Rc<StyleKey>>) -> Self {
+    fn from_element(
+        e: &zero_dom::ElementData,
+        parent: Option<std::rc::Rc<StyleKey>>,
+        unkeyed_parent_chain: u64,
+    ) -> Self {
         let mut classes = e.class_list.clone();
         classes.sort();
         Self {
@@ -2447,6 +2505,7 @@ impl StyleKey {
             classes,
             id: e.id.clone(),
             parent,
+            unkeyed_parent_chain,
         }
     }
 }
@@ -2704,6 +2763,34 @@ mod style_cache_tests {
         assert!(stylesheet_cache_safe(&[descendant]));
         let child = zero_css_parser::Parser::parse_stylesheet("div > p { color: red; }");
         assert!(stylesheet_cache_safe(&[child]));
+    }
+
+    /// R4322：不可键父（class/id 外属性，如 style/dir）的子元素 StyleKey 不得跨父
+    /// 碰撞——S11 原键 parent=None 使「不同不可键父下的同 tag/class/id 子」共享键，
+    /// 后者直接 clone 前者的继承态（`<ul dir=rtl><li>A` 后 `<ul><li>B` 的 B 错误
+    /// 继承 A 的 direction=Rtl 实锤；style 属性同理）。parent_node 组件修复后，
+    /// 各父下的 li 各自计算，direction 按各自父继承。
+    #[test]
+    fn style_key_children_of_unkeyable_parents_do_not_collide() {
+        let html =
+            r#"<ul dir="rtl" style="font: 20px Ahem"><li>one</li></ul><ul style="font: 20px Ahem"><li>two</li></ul>"#;
+        let doc = zero_dom::parse_html(html);
+        let mut system = StyleSystem::new();
+        let styles = system.compute_styles(&doc, &[]);
+        let lis = doc.get_elements_by_tag_name("li");
+        assert_eq!(lis.len(), 2, "probe setup: two li");
+        let d0 = styles.get(&lis[0]).expect("li#0 style").direction.clone();
+        let d1 = styles.get(&lis[1]).expect("li#1 style").direction.clone();
+        assert_eq!(
+            d0,
+            property::types::DirectionValue::Rtl,
+            "li#0 继承 dir=rtl 父的 direction"
+        );
+        assert_eq!(
+            d1,
+            property::types::DirectionValue::Ltr,
+            "li#1（无 dir 父）不得复用 li#0 的键缓存继承态（R4322 键碰撞修复）"
+        );
     }
 }
 

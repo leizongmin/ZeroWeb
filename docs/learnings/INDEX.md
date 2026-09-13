@@ -5,9 +5,11 @@
 > 布局契约：`<分类>/<YYYY-MM>/<YYYY-MM-DD>-<topic>.md`，日期以 frontmatter 为准。
 > 方法论蒸馏层见 `.agents/skills/zeroweb-guidelines/SKILL.md`。
 
-## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（108）
+## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（110）
 
+- 2026-09-14 [S11 style-key 缓存的不可键父链继承态碰撞（dir=rtl 泄漏实证）](bugs/2026-09/2026-09-14-style-key-cache-inherited-state-collision.md) — zero-style-system
 - 2026-09-13 [Playwright session.send() 对桥 miss 不 throw——CDP 自动化错误走 exceptionDetails 而非协议错误](bugs/2026-09/2026-09-13-pw-cdp-session-send-exceptiondetails-not-throw.md) — apps/browser,tests/playwright-matrix
+- 2026-09-13 [修正字体 URL 后丢字：资源与度量必须穿过整条生产链路](bugs/2026-09/2026-09-13-downloaded-fonts-compositor-resource-gap.md) — webview,renderer,compositor,protocol,render-foundation,layout-engine,engine
 - 2026-09-13 [CDP 子帧元数据面跨 target 串扰与 frameAttached 主帧改写契约](bugs/2026-09/2026-09-13-cdp-frame-metadata-across-targets.md) — apps/browser
 - 2026-09-12 [tungstenite write() 缓冲不落盘 + peek 阶段 read timeout 未恢复 → CDP 客户端首连必败](bugs/2026-09/2026-09-12-tungstenite-write-buffer-stale-read-timeout.md) — apps/browser
 - 2026-09-12 [import-wpt 空 REF 触发下载失败路径删除测试文件](bugs/2026-09/2026-09-12-import-wpt-empty-ref-deletes-test-file.md) — tests/wpt-runner
@@ -134,8 +136,9 @@
 - 2026-08-05 [回调闭包 Send+Sync 约束：不能缓存 Document](patterns/2026-08/2026-08-05-callback-closure-send-sync-no-document.md) — zero-engine（js_dom_bridge.rs）, zero-script-sandbox（register_callback）, zero-dom（Document）
 - 2026-07-20 [经验：reftest 布局诊断必须用 empirical ZW-output 验证，不能只靠 code-trace](patterns/2026-07/2026-07-20-reftest-layout-diagnosis-empirical-verification.md) — tests/wpt-runner（reftest harness）, crates/layout-engine（multicol 等）
 
-## Performance — 性能优化经验（38）
+## Performance — 性能优化经验（39）
 
+- 2026-09-13 [绑核后退出成功，不代表相对性能预算已通过](performance/2026-09/2026-09-13-affinity-available-parallelism-budget-gate.md) — wpt-runner,benchmark
 - 2026-09-10 [布局 pass 探针归因两坑：分段标记间隙误归因 + kill-switch env::var 提升反变慢](performance/2026-09/2026-09-10-layout-pass-profile-env-hoist-net-negative.md) — layout-engine
 - 2026-09-03 [bench-gate 失败指标集轮换 + 隔离复测回基线 = 负载噪声签名（非代码回归的快速判据）](performance/2026-09/2026-09-03-bench-gate-rotating-fail-noise-signature.md) — engine,dom,canvas,css-parser,render-foundation,host-runtime,browser-shell
 - 2026-08-19 [三例「合规修复顺手引入性能回归」的定位与修复（canvas/worker/CSP）](performance/2026-08/2026-08-19-perf-regression-triage-canvas-worker-csp.md) — zero-canvas, zero-script-sandbox, zero-security, 性能门禁体系
