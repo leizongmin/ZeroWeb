@@ -2,7 +2,7 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-13（S22：例行验证轮 + R4297-F 后组合态全量刷新——cdp-e2e 门 PASS 28 绿；make test 19,254P/0F 零跨流回归；dead_code 噪音定性记档）
+**最后更新**: 2026-09-13（S23：例行验证轮——R4298-F 后组合态 cdp-e2e 门 PASS 28 绿零漂移；全量测试同树已由渲染流自带验证，未重复；挂起理由复核维持）
 
 ---
 
@@ -33,6 +33,15 @@
 
 ## 已完成切片
 
+- **S23（2026-09-13）例行验证轮 — R4298-F 后组合态 cdp-e2e 门复核（纯验证切片，绿步维持 28）**：
+  渲染流 R4298-F（auto 表格列宽压缩 + cell 重排，layout-engine 域）落在 S22 全量刷新之后
+  18 分钟，本流补跑自有回归门：**cdp-e2e 门 PASS**（28 绿、deterministic 双跑一致，与
+  S22 基线零漂移）。全量 make test 未重复——R4298-F 提交在**同一棵树**（29caa06d4 直接
+  子于本流 S22 提交 5a2352600）自带全量验证：make test 19,255P/0F（+1 R4298 单测）+
+  fmt/clippy clean + product-smoke 全 fixture struct PASS + 定向 bench-gate GATE PASS
+  （归因渲染流，rule 10；本流自 S22 零代码变更）。**挂起理由复核**：engine 近 7 天 =
+  R4297-F inline border-box / R4296-N bleed / R4293 filter / R4291 svg，无子帧文档加载
+  工作——frames×2 维持挂起；DC-2 口径维持待用户决策，无新信息、无扩展面。
 - **S22（2026-09-13）例行验证轮 + R4297-F 后组合态全量刷新（纯验证切片，绿步维持 28）**：
   渲染流 R4297-F（inline border-box 几何重写）落在 S18 全量基线**之后**，组合态此前
   未做全量验证——本轮补齐（rule 10 归因纪律）。**结果**：cdp-e2e 门 PASS（28 绿、
@@ -331,13 +340,15 @@
 ## 验证基线
 
 - 测试基线：立项时点全绿（`make test` 19,170P/0F，2026-09-12 变基后口径；S9 后
-  19,238P/0F；S18 全量刷新 19,251P/0F；**S22 组合态刷新 19,254P/0F EXIT=0**
-  （2026-09-13，含渲染流 R4297-F；并行流计数会漂移，以当轮实跑为准）；禁止裸跑
+  19,238P/0F；S18 全量刷新 19,251P/0F；S22 组合态刷新 19,254P/0F EXIT=0；
+  **S23 时点 19,255P/0F**（含渲染流 R4298-F，+1 单测——该树全量由渲染流
+  R4298-F 提交自带验证，本流未重复跑；并行流计数会漂移，以当轮实跑为准）；禁止裸跑
   cargo test，经 test-guard。注：make test 的 workspace 腿 exclude zero-renderer——
   renderer lib 单测不在全量门内，跨流红灯（form fixture×2）经显式
   `-p zero-renderer --lib` 跟踪）
-- **CDP E2E 基线（S16，2026-09-13）**：绿步 28/30，deterministic 双跑一致，
-  expected-green 基线 28 步（余 frames.access/frames.click+evaluate 挂 engine 子帧可见性）
+- **CDP E2E 基线（S16，2026-09-13；S23 复核 @ R4298-F 组合态）**：绿步 28/30，
+  deterministic 双跑一致，expected-green 基线 28 步（余
+  frames.access/frames.click+evaluate 挂 engine 子帧可见性）
 - CDP 现状：`Page.navigate` / `Runtime.evaluate` / `Target.getTargets` 3 命令 +
   `/json/version` + `/json` 发现（headless.rs L782-796/L571/L1159）——历史基线，现行面
   见缺口清单 P3/P4 与切片记录
