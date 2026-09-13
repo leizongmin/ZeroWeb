@@ -2,14 +2,12 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-14（S287：静默监测轮——同 tip 复核（c68079c9e，即 S286
-提交本身），双层锚点零漂移（自有面维持 apps/browser README +1 已归因基线，
-全树锚点零外部变化），门结论引用 S278 活跑（净窗首调即收口 PASS 33 绿
-deterministic YES EXIT=0 ZERO_DRIFT=YES，05:29 落盘），引用计数 9/10
-**S288 为活跑最后期限——届时必须执行 cdp-e2e 门活跑刷新（引用计数 10/10
-触发，S218/S238/S255/S268/S278 先例）**；绿步维持 33；解冻条件①观察面不变
-（crates/ 自 8fb39cd46 零新增，渲染流子帧能力未落树），②DC-2 无新拍板；净窗
-延续（负载 0.22 零验证腿在窗，rally 双流主进程 + cron 主进程均非验证面）；
+**最后更新**: 2026-09-14（S288：活跑最后期限轮——引用计数 10/10 触发 cdp-e2e
+门活跑刷新（S278 先例），净窗首调即收口 **PASS 33 绿 deterministic 双跑 YES
+EXIT=0 ZERO_DRIFT=YES**（steps/determinism-report 05:40 同轮新鲜落盘），
+**引用计数归零，下次活跑至迟 S298**；绿步维持 33；解冻条件①观察面不变
+（crates/ 自 8fb39cd46 零新增，渲染流子帧能力未落树），②DC-2 无新拍板；
+净窗执行（门前负载 0.28 零验证腿在窗；门收口后渲染流 bench 腿入窗非竞争族）；
 零 zombie 零遗留端口，19222 清场后维持空闲）
 
 ---
@@ -41,6 +39,37 @@ deterministic YES EXIT=0 ZERO_DRIFT=YES，05:29 落盘），引用计数 9/10
 
 ## 已完成切片
 
+- **S288（2026-09-14）活跑最后期限轮 — 引用计数 10/10 触发 cdp-e2e 门活跑刷新
+  （无代码变更，绿步维持 33）**：
+  pull 零新提交（tip = 438753a95，即 S287 提交本身）——双层锚点口径复核通过：
+  本流自有面锚点增量零漂移（硬核对 `git diff 765429dda..HEAD -- apps/browser
+  tests/playwright-matrix scripts/test-guard.rs Makefile` 维持仅命中 apps/browser/
+  README.md +1 行 = S255 已归因的 52695a7c1 漂移基线，其后零新增漂移）；全树
+  锚点复核（基 438753a95=S287 tip，树零变化）零外部变化。双解冻条件实质判定
+  不变：① crates/ 自 8fb39cd46 零新增提交，渲染流子帧文档加载 + JS realm 能力
+  未落树（frames.click+evaluate 解挂前提未到——树未变，S258 组合态 make test
+  19,280P/0F 同 crates/ 树结论延续可引用，本轮免 make test 复跑）；② docs/goal
+  自 S287 零非本流提交，DC-2 口径无新拍板记录。**活跑动因**：引用计数 10/10
+  最后期限（S279-S287 九轮引用 S278；S218/S238/S255/S268/S278 先例）。
+  **S198 前置复核通过**（零 make cdp-e2e 腿的验收链在窗、9222/45029/34293/
+  19222 全空闲），净窗执行（门前负载 1min 均值 0.28，零验证腿在窗——在窗仅
+  桌面 chrome 远程桌面进程族（lightos-remote-desktop，9月10日起）+ rally 双流
+  主进程，均非验证面非端口竞争族）。**活跑结果（单次调用首调即收口）**：
+  **PASS 33 绿 deterministic 双跑 YES EXIT=0**（门前置 cargo build 0.17s no-op
+  缓存温；run1/run2 各 33 ok + frames.click+evaluate 预期失败项一致）；绿步集
+  机械 diff expected-green 双向零漂移（**ZERO_DRIFT=YES**——report.green 33 vs
+  baseline 33 双向 diff 空、report.expected 快照与 baseline 文件一致、regressions
+  空）；steps-report/determinism-report 05:40 同轮新鲜落盘（steps 35 计
+  observations 统计项、ok 34、fatal 无、green 33）。**S168 形态再现计数**：
+  本轮首调即 PASS 零再现（S278 后首个活跑样本；S168 形态累计两例非聚集记账
+  维持）。**观测记档**：门前置 cargo build 腿 zero-engine dead_code warning
+  （match_media_to_json）按 S268 已归因结论延续（2026-08-06 d8aeb7b97 即在，
+  非本轮回归，共享面不单方改）；门收口后渲染流 bench-gate 腿入窗
+  （bench-report/perf-gate 经 test-guard，05:40 起，负载 1min 4.32）——非端口
+  竞争族非本流面，活跑已在其前收口，记负载下样本边界外。机器卫生复核（门后）：
+  零 zombie、9222/45029/34293/19222 全空闲、门腿零遗留进程。**引用计数归零
+  （本轮活跑新鲜落盘），下次活跑至迟 S298**。goal 自有面零新缺口、无扩展面
+  （S40-S287 重审结论延续）。
 - **S287（2026-09-14）静默监测轮 — 同 tip 复核（无代码变更，绿步维持 33）**：
   pull 零新提交（tip = c68079c9e，即 S286 提交本身）——双层锚点口径复核通过：
   自有面锚点增量零漂移（硬核对维持仅 apps/browser/README.md +1 行 = S255 已
@@ -4045,7 +4074,8 @@ deterministic YES EXIT=0 ZERO_DRIFT=YES，05:29 落盘），引用计数 9/10
    EXIT=0）；后续轮次
    若再现该形态，同口径归因并留意复现频率——单轮偶发记账、多轮聚集升级 #0 排查
    （S168 形态累计两例相隔 ~97 轮非聚集）；
-   S278 已执行（净窗首调即收口），下次活跑至迟 S288；若活跑时逢并行流负载窗口则
+   S278 已执行（净窗首调即收口）；S288 已执行（净窗首调即收口，门收口后渲染流
+   bench 腿入窗非竞争族），下次活跑至迟 S298；若活跑时逢并行流负载窗口则
    优先窗口内执行，负载下样本对 #0 更有价值（负载窗口口径含并行流 browser 进程型与
    编译测试负载型两亚型，净窗亚型 S208 起并行记录；**端口竞争亚型口径 S198 新增**：
    并行流含 make cdp-e2e 腿
@@ -4124,7 +4154,10 @@ deterministic YES EXIT=0 ZERO_DRIFT=YES，05:29 落盘），引用计数 9/10
   emulation.userAgentOverride，零 regression 零 fatal 二进制零漂移，**S168 形态第二例
   新亚型 = 负载窗内同轮二调红**）→ 三调复跑即 PASS 33 绿 deterministic 双跑 YES
   EXIT=0，绿步集机械 diff 基线零漂移（ZERO_DRIFT=YES）；形态累计两例相隔 ~97 轮
-  非聚集，单轮偶发记账维持
+  非聚集，单轮偶发记账维持。**S288 注记**：期限轮净窗活跑（S278 后首个样本）——
+  首调即 PASS 33 绿 deterministic 双跑 YES EXIT=0，绿步集机械 diff 基线零漂移
+  （ZERO_DRIFT=YES），steps/determinism-report 05:40 同轮新鲜落盘，首调红形态
+  零再现（累计两例非聚集记账维持）
 - CDP 现状：`Page.navigate` / `Runtime.evaluate` / `Target.getTargets` 3 命令 +
   `/json/version` + `/json` 发现（headless.rs L782-796/L571/L1159）——历史基线，现行面
   见缺口清单 P3/P4 与切片记录
