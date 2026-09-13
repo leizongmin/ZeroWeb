@@ -2,7 +2,7 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-13（S18：M5 定稿预案双分支预备 + 子帧缺口探针实证 + 全量基线刷新；绿步维持 28/30）
+**最后更新**: 2026-09-13（S19 维护轮：cdp-e2e 门 PASS 28 绿 deterministic + 缺口清单 P5/P7 收口状态修正；无新切片，待 DC-2 口径）
 
 ---
 
@@ -26,9 +26,9 @@
 | P2 | headless.rs 职责拆分（2256 行超 2000 上限；transport/discovery/domains/session） | ✅ M1 切片 1（headless/ 9 模块，纯搬移零语义变化，make test 19,170P/0F 与基线一致） |
 | P3 | Target/Runtime/Page/Input/DOM/CSS/Network/Emulation 域实现 | 🚧 S16 后余 frames 面：locator/evaluate/editing/viewport/媒体全通；唯余 iframe 子帧事件源（frames.access/click+evaluate 2 步，挂 engine 子帧可见性——渲染流域协调） |
 | P4 | Node/Playwright 测试链（pin + E2E 用例集 + make 入口） | ✅ S8：`make cdp-e2e`（test-guard 包裹，deterministic 双跑 + expected-green 回归门）；用例集=30 步全核心流 |
-| P5 | console 对象化（V8 侧结构化序列化，替换扁平字符串） | 🔶 **方案降级（2026-09-12）**：value-only 小切片——consoleAPICalled 的 args 用既有 value-only remoteObject 形状即可（PW 消费面=msg.type()/text()），shim `(level, args[])` JSON 序列化 + callbacks.rs 签名 + headless 转事件；不等 engine 大窗口，碰前核对 shim console 段活跃度 |
+| P5 | console 对象化（V8 侧结构化序列化，替换扁平字符串） | ✅ S11 value-only 面落地（consoleAPICalled 绿——shim 逐参值序列化 + `__zw_console_log` 三参 + headless 转事件，PW 消费面 msg.type()/text() 全通）；完整对象句柄化（remoteObject preview/objectId）挂账随 devtools 面需求 |
 | P6 | net 请求事件总线（Network 域 + devtools Network 面板共用脊柱） | 🔶 雏形已建（S7 proxy_fetch 三事件 + S14 renderer FetchObserved + S17 dataReceived 双路径）；分块流式观测点待 net 窗口流式化——**net 近 14 天无外部流占用，窗口已开**（2026-09-12 实测） |
-| P7 | WS 层 sessionId 多路复用（单连接扁平会话 → per-target session，响应回显 sessionId） | 🔶 M1 切片 2 传输面完成：解析/回显/未附接校验（-32001）+ 附接注册表；per-target 真路由随切片 3 Target 域落地 |
+| P7 | WS 层 sessionId 多路复用（单连接扁平会话 → per-target session，响应回显 sessionId） | ✅ S4 收口：解析/回显/未附接校验（-32001）+ 附接注册表 + Target 域 per-target 会话（ServerEvent sessionId 盖章路由，Target 宣告事件除外）——实测复核 35 方法零漂移佐证 |
 | P8 | `/json/version` 尾斜杠 404（Playwright 请求 `/json/version/`） | ✅ M1 切片 2（normalize_discovery_path 容忍尾斜杠；`/json`、`/json/list` 同步受益） |
 
 ## 已完成切片
