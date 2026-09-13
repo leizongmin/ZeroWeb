@@ -2,7 +2,7 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-13（S53：静默轮——tip 与 S52 逐字节一致，S48 组合态复核结论全量引用；绿步维持 33）
+**最后更新**: 2026-09-13（S53：静默轮 + push 窗口双扰动归因（PR #26 门禁图外 / R4314-F 自带全量仅补本流门 PASS 33 绿）；绿步维持 33）
 
 ---
 
@@ -44,7 +44,14 @@
   （rule 10）**：首推 non-fast-forward，rebase 拉入 PR #26 合并（用户侧
   zeroweb-site-optimizer skill 资产，9 文件全在 .agents/skills/ 下）——门禁图外
   路径（零 cargo 编译面，make test / cdp-e2e 零消费），免复跑判定成立，S48
-  结论延续；该 PR 不触子帧工作与 DC-2 口径，双解冻条件不变。
+  结论延续；该 PR 不触子帧工作与 DC-2 口径，双解冻条件不变。**扰动二（渲染流
+  代码）**：补记推送时再拉入 83b63f1a8（R4314-F——paint CJK 计数器万亿组系
+  合成，engine/paint text_list.rs 单文件）+ d870cd597（docs）——R4314-F 自带
+  全套验证（make test 67 套件全绿 + clippy -D warnings clean + reftest
+  14767/16594）→ S23 先例：免重复全量，仅补本流自有门。**新 tip 组合态门**：
+  cdp-e2e **PASS 33 绿 deterministic 双跑一致**（绿步集与 S39 基线零漂移）。
+  归因：paint 文本域与本流零重叠，非子帧工作（活跃面仍零子帧文档加载）；
+  DC-2 口径无新拍板。
 - **S52（2026-09-13）静默轮 — 同 tip 复核（无代码变更，绿步维持 33）**：
   pull 零新提交（tip = d7749fe22，即 S51 补记提交本身）——tracked 树硬核对：tip 为
   S48 组合态门验证代码树（a0a8146e2）之上仅 docs 增量（S49-S51 记录 + 9825b8e54
