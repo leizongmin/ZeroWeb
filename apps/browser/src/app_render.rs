@@ -1355,6 +1355,7 @@ impl BrowserApp {
             }
         }
 
+        let page_glyph_start = glyphs.len();
         let rendered = append_webview_primitives(
             page_primitives,
             fills,
@@ -1366,6 +1367,9 @@ impl BrowserApp {
             Some((clip_top, clip_bottom)),
             clip_rounded,
         );
+        for glyph in &mut glyphs[page_glyph_start..] {
+            if let Some(id) = self.page_font_imports.get(&glyph.font_id) { glyph.font_id = *id; }
+        }
         if self.tabs.page_focus_in_text_input(tab_id)
             && let Some((x, y, _width, height)) = self.tabs.page_ime_rect(tab_id)
         {

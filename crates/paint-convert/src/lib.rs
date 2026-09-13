@@ -9,6 +9,8 @@
 //! 映射语义以 compositor 在用版本为基准（主链路真值）；调用方在其上组合各自的
 //! 副作用（browser 写 `TabSnapshot` 缓存、compositor 进程内光栅化）。
 
+pub mod fonts;
+
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use zero_protocol::paint_snapshot::{

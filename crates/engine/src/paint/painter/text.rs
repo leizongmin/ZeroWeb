@@ -1068,6 +1068,7 @@ impl super::Painter {
                     .with_letter_spacing_overrides(parent_letter_spacing)
                     .with_word_spacing_overrides(parent_word_spacing)
                     .with_line_height_overrides(parent_line_heights)
+                    .with_ascent_ratio_overrides(box_node.text_node_ascent_ratios.clone())
                     .with_text_transform_overrides(parent_text_transforms)
                     .with_inline_element_metrics(inline_metrics)
                     .with_margin_overrides(margin_overrides)

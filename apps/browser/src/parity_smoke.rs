@@ -242,7 +242,7 @@ impl ParitySmoke {
         framebuffer: &FrameBuffer,
         source: &str,
     ) -> Result<bool, String> {
-        if !self.started || app.any_tab_loading() {
+        if !self.started || app.any_tab_loading() || !app.parity_resources_settled() {
             return Ok(false);
         }
         if source != "compositor_bitmap" {

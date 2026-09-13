@@ -2201,6 +2201,7 @@ pub(crate) fn remeasure_inline_only_containers(
     styles: &HashMap<NodeId, ComputedStyle>,
     img_intrinsic_sizes: &HashMap<NodeId, (f32, f32)>,
     positioned_inline_blocks: &mut NodeIdSet,
+    inline_fonts: InlineFontContext<'_>,
 ) {
     let mut position_reuse: Option<(NodeId, InlineFormattingContext)> = None;
     // flex/grid 容器不走 IFC 重算——它们的子元素是 flex/grid item，
@@ -2232,7 +2233,14 @@ pub(crate) fn remeasure_inline_only_containers(
         if !is_table_without_internals {
             // 仍然递归处理子容器
             for child in &mut box_node.children {
-                remeasure_inline_only_containers(child, doc, styles, img_intrinsic_sizes, positioned_inline_blocks);
+                remeasure_inline_only_containers(
+                    child,
+                    doc,
+                    styles,
+                    img_intrinsic_sizes,
+                    positioned_inline_blocks,
+                    inline_fonts,
+                );
             }
             return;
         }
@@ -2396,6 +2404,7 @@ pub(crate) fn remeasure_inline_only_containers(
             .with_preserve_whitespace(resolve_preserve_for_ifc_measure(styles.get(&dom_id)))
             .with_break_at_newline(resolve_break_at_newline_for_ifc_measure(styles.get(&dom_id)));
         inline_ctx.set_fragment_node_ids(frag_ids);
+        inline_ctx = configure_inline_fonts(inline_ctx, inline_fonts, false);
         inline_ctx.layout(doc, dom_id, styles);
         let frag_h = inline_ctx.total_height();
         if frag_h > box_node.content_height + 0.5 {
@@ -2476,6 +2485,7 @@ pub(crate) fn remeasure_inline_only_containers(
             .with_break_at_newline(break_at_newline)
             .with_inline_block_sizes(ib_sizes)
             .with_img_intrinsic_sizes(img_intrinsic_sizes.clone());
+        inline_ctx = configure_inline_fonts(inline_ctx, inline_fonts, false);
         inline_ctx.layout(doc, dom_id, styles);
 
         // 存储 IFC 片段中各文本节点的 font_size，供 paint 系统计算基线偏移
@@ -2500,6 +2510,7 @@ pub(crate) fn remeasure_inline_only_containers(
                 .with_no_wrap(no_wrap)
                 .with_inline_block_sizes(ib_sizes_for_mc)
                 .with_img_intrinsic_sizes(img_intrinsic_sizes.clone());
+            col_ctx = configure_inline_fonts(col_ctx, inline_fonts, false);
             col_ctx.layout(doc, dom_id, styles);
             let total = col_ctx.total_height();
             let n = col_ctx.lines.len();
@@ -2565,6 +2576,7 @@ pub(crate) fn remeasure_inline_only_containers(
             styles,
             img_intrinsic_sizes,
             positioned_inline_blocks,
+            inline_fonts,
         );
         let height_delta = box_node.children[idx].height - old_height;
         let content_height_delta = box_node.children[idx].content_height - old_content_height;

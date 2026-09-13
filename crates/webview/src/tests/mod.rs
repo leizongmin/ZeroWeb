@@ -17,6 +17,7 @@ mod opfs_owner;
 mod service_worker_fetch;
 mod service_worker_iframe;
 mod service_worker_runtime;
+mod stylesheet_urls;
 mod uncovered_paths;
 mod user_actions;
 // event-loop-spec M2 MO-S1：host 侧 mutation 通知排空（双引擎 native 绑定域——fragment

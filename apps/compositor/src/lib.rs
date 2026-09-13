@@ -16,6 +16,7 @@ use zero_render_foundation::display_list::DisplayList;
 use zero_render_foundation::font::{FontLoader, GlyphCache};
 use zero_render_foundation::rendering_thread::{RenderingThread, render_threading_enabled};
 
+mod font_resources;
 mod gpu_raster;
 mod present;
 mod rasterize;
@@ -23,6 +24,8 @@ mod recovery;
 mod sandbox;
 mod scroll_transform;
 
+#[cfg(test)]
+mod font_resource_tests;
 #[cfg(test)]
 mod rasterize_tests;
 
@@ -52,6 +55,7 @@ struct SurfaceState {
     rasterized_scroll_y: f32,
     paint: Option<zero_protocol::paint_snapshot::PaintSnapshotParams>,
     image_cache: zero_render_foundation::image_cache::ImageCache,
+    fonts: zero_paint_convert::fonts::PaintFonts,
 }
 
 struct UiSurfaceState {
@@ -88,10 +92,12 @@ pub fn run_role<C: IpcChannel>(transport: &mut C) {
     let mut surfaces: HashMap<u64, SurfaceState> = HashMap::new();
     let mut ui_surfaces: HashMap<u64, UiSurfaceState> = HashMap::new();
     let mut window_surface: Option<zero_protocol::CompositorWindowSurfaceInfo> = None;
-    let font_loader = Arc::new(load_compositor_fonts());
+    let base_fonts = Arc::new(load_compositor_fonts());
+    let mut font_loader = base_fonts.clone();
+    let mut font_namespace: Option<(u64, u64, u64)> = None;
     sandbox::apply_landlock_after_init();
     let mut glyph_cache = GlyphCache::new(1024);
-    let render_thread = render_threading_enabled().then(|| RenderingThread::spawn(Arc::clone(&font_loader), 1024));
+    let mut render_thread = render_threading_enabled().then(|| RenderingThread::spawn(Arc::clone(&font_loader), 1024));
 
     // C3 GPU 光栅化（Linux 默认开；`ZW_COMPOSITOR_GPU=0` 禁用）：headless wgpu 上下文在合成器
     // 进程内（对照 Ladybird GPU 隔离）；初始化失败/GPU 不可用 → 回退 CPU。
@@ -167,15 +173,44 @@ pub fn run_role<C: IpcChannel>(transport: &mut C) {
                     rasterized_scroll_y: 0.0,
                     paint: None,
                     image_cache: zero_render_foundation::image_cache::ImageCache::new(2048, 256 * 1024 * 1024),
+                    fonts: zero_paint_convert::fonts::PaintFonts::new(base_fonts.clone()),
                 });
                 if surface.navigation_epoch != navigation_epoch {
                     surface.image_cache.clear();
+                    surface.fonts = zero_paint_convert::fonts::PaintFonts::new(base_fonts.clone());
                     // R3254-M4：GPU 纹理缓存同样按导航 epoch 清理（进程级共享 renderer——
                     // clear 会误伤其他 surface 的纹理缓存，仅重传开销，无害）。
                     if let Some(renderer) = gpu_renderer.as_mut() {
                         renderer.clear_image_texture_cache();
                     }
                 }
+                if let Err(error) = surface.fonts.update(&paint.font_payloads) {
+                    tracing::warn!(%error, surface_id, "compositor: rejected font resources");
+                    if transport
+                        .send(IpcMessage {
+                            id: msg.id,
+                            kind: IpcMessageKind::Error(error),
+                        })
+                        .is_err()
+                    {
+                        break;
+                    }
+                    continue;
+                }
+                let namespace = surface.fonts.has_downloaded_fonts().then_some((
+                    surface_id,
+                    navigation_epoch,
+                    surface.fonts.revision,
+                ));
+                font_resources::activate(
+                    namespace,
+                    &surface.fonts.loader,
+                    &mut font_namespace,
+                    &mut font_loader,
+                    &mut glyph_cache,
+                    &mut gpu_renderer,
+                    &mut render_thread,
+                );
                 for image in &paint.image_payloads {
                     let Ok(data) = zero_render_foundation::image_cache::ImageData::from_rgba(
                         image.rgba.clone(),
@@ -192,12 +227,13 @@ pub fn run_role<C: IpcChannel>(transport: &mut C) {
                 }
                 surface.backing.resize(w, h);
 
-                let raster_paint = if zero_protocol::compositor_scroll_transform_enabled() {
+                let mut raster_paint = if zero_protocol::compositor_scroll_transform_enabled() {
                     let scale = rasterize::device_scale_factor(&paint);
                     scroll_transform::paint_for_viewport(&paint, surface.scroll_x / scale, surface.scroll_y / scale)
                 } else {
                     (*paint).clone()
                 };
+                surface.fonts.remap(&mut raster_paint);
                 let primitives = zero_paint_convert::to_render_primitives(raster_paint.clone());
                 let is_partial = !zero_protocol::compositor_scroll_transform_enabled()
                     && !DisplayList::new(primitives.clone(), dirty_rects.clone())
@@ -306,11 +342,26 @@ pub fn run_role<C: IpcChannel>(transport: &mut C) {
                                 && let Some(paint) = surface.paint.clone()
                             {
                                 let scale = rasterize::device_scale_factor(&paint);
-                                let viewport_paint = scroll_transform::paint_for_viewport(
+                                let mut viewport_paint = scroll_transform::paint_for_viewport(
                                     &paint,
                                     surface.scroll_x / scale,
                                     surface.scroll_y / scale,
                                 );
+                                let namespace = surface.fonts.has_downloaded_fonts().then_some((
+                                    surface_id,
+                                    surface.navigation_epoch,
+                                    surface.fonts.revision,
+                                ));
+                                font_resources::activate(
+                                    namespace,
+                                    &surface.fonts.loader,
+                                    &mut font_namespace,
+                                    &mut font_loader,
+                                    &mut glyph_cache,
+                                    &mut gpu_renderer,
+                                    &mut render_thread,
+                                );
+                                surface.fonts.remap(&mut viewport_paint);
                                 let primitives = zero_paint_convert::to_render_primitives(viewport_paint.clone());
                                 // 滚动后的可见区与旧 back buffer 没有可复用的坐标关系；全量重绘。
                                 rasterize::rasterize_into_back(
@@ -428,6 +479,17 @@ pub fn run_role<C: IpcChannel>(transport: &mut C) {
                 }
             }
             IpcMessageKind::ReleaseCompositorSurface { surface_id } => {
+                if font_namespace.is_some_and(|(id, _, _)| id == surface_id) {
+                    font_resources::activate(
+                        None,
+                        &base_fonts,
+                        &mut font_namespace,
+                        &mut font_loader,
+                        &mut glyph_cache,
+                        &mut gpu_renderer,
+                        &mut render_thread,
+                    );
+                }
                 if surfaces.remove(&surface_id).is_some() {
                     tracing::info!("compositor: surface {surface_id} 已释放");
                 }

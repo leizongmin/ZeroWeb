@@ -74,6 +74,8 @@ pub struct BrowserApp {
     render_mode: RenderMode,
     /// 字体加载器
     font_loader: FontLoader,
+    /// renderer-local → browser-local 下载字体 ID，仅用于页面 glyph。
+    page_font_imports: HashMap<u32, u32>,
     /// Glyph 缓存
     glyph_cache: GlyphCache,
     /// 已加载的系统字体 ID
@@ -246,6 +248,7 @@ impl BrowserApp {
             last_rendered_tab: None,
             render_mode,
             font_loader,
+            page_font_imports: HashMap::new(),
             glyph_cache: GlyphCache::new(8192),
             font_id,
             surface_configured: false,
@@ -1493,6 +1496,14 @@ impl BrowserApp {
         self.shell.active_tab_id()
     }
 
+    /// 首帧不能代表 webfont 等初始资源已加载；采集器须等同一导航的完成事件。
+    pub fn parity_resources_settled(&self) -> bool {
+        self.shell
+            .active_tab_id()
+            .and_then(|id| self.tabs.snapshot(id))
+            .is_some_and(|snapshot| snapshot.resources_settled)
+    }
+
     /// 产品一致性验收：最新可显示 compositor 页面帧序号。
     pub fn parity_compositor_frame_id(&self, tab_id: TabId) -> u64 {
         self.tabs.compositor_frame_id(tab_id)
@@ -2432,3 +2443,4 @@ include!("app_render_address.rs");
 // 平台相关独立函数（is_wayland、字体加载、颜色方案检测等）
 // 拆分到独立文件以控制 app.rs 体积
 include!("app_platform.rs");
+include!("app_page_fonts.rs");

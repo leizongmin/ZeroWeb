@@ -288,69 +288,6 @@ fn render_result_to_webview(result: &RenderResult) -> WebViewRenderResult {
     }
 }
 
-/// 外链样式表内 `url(...)` 相对引用 → 绝对（CSS 相对 url 基准 = 样式表 URL）。
-/// 大小写不敏感扫描 `url(`（ASCII 小写化保持字节位）；引号内/裸值均可；
-/// `data:` 与已含 scheme 的绝对 URL 不动。best-effort（转义函数名如 `U\r4c(` 不处理——
-/// tokenizer 解码面由 extract_css_image_urls 负责，重写面覆盖 WPT 平文引用）。
-fn absolutize_css_urls(css: &str, stylesheet_url: &str) -> String {
-    let lower = css.to_ascii_lowercase();
-    let base = url::Url::parse(stylesheet_url).ok();
-    let mut out = String::with_capacity(css.len() + 64);
-    let mut from = 0usize;
-    while let Some(rel) = lower[from..].find("url(") {
-        let start = from + rel;
-        // url( 之后：可选空白 + 可选引号。
-        let mut i = start + 4;
-        let bytes = css.as_bytes();
-        while i < bytes.len() && (bytes[i] as char).is_whitespace() {
-            i += 1;
-        }
-        let quote = if i < bytes.len() && (bytes[i] == b'"' || bytes[i] == b'\'') {
-            let q = bytes[i];
-            i += 1;
-            Some(q)
-        } else {
-            None
-        };
-        let val_start = i;
-        while i < bytes.len() {
-            let b = bytes[i];
-            if let Some(q) = quote {
-                if b == q {
-                    break;
-                }
-            } else if b == b')' {
-                break;
-            }
-            i += 1;
-        }
-        let value = css[val_start..i].trim();
-        let replaced = if value.is_empty() || value.starts_with("data:") || value.contains("://") {
-            value.to_string()
-        } else {
-            match base.as_ref().and_then(|b| b.join(value).ok()) {
-                Some(u) => u.to_string(),
-                None => value.to_string(),
-            }
-        };
-        out.push_str(&css[from..val_start]);
-        out.push_str(&replaced);
-        if i >= bytes.len() {
-            // 未闭合引号/值——原样保留剩余部分。
-            out.push_str(&css[val_start..]);
-            return out;
-        }
-        out.push_str(&css[i..i + 1]); // 闭合引号（若有）或 ')'——原样复制
-        from = i + 1;
-        if quote.is_some() {
-            // 跳过闭合引号后的 ')'（可能夹空白，剩余部分由尾部复制兜底）
-            from = i + 2;
-        }
-    }
-    out.push_str(&css[from..]);
-    out
-}
-
 /// WebView 事件回调。
 #[derive(Debug, Clone)]
 pub enum WebViewEvent {
@@ -974,7 +911,7 @@ impl WebView {
                     // combined 后按页面 URL 解析 → 外链 @font-face 字体/背景图 404
                     // （driving: 2d.text.variationSelectors 的 variation-sequences.css
                     // `url(../../resources/vs/...)` 字体引用）。data:/绝对/占位符不动。
-                    let css = absolutize_css_urls(&css, &abs);
+                    let css = crate::css_urls::absolutize_css_urls(&css, &abs);
                     combined.push_str(&css);
                     combined.push('\n');
                 }

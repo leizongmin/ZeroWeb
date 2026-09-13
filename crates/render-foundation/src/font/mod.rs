@@ -21,6 +21,8 @@ pub use woff::{decode_woff, is_woff};
 pub struct FontFamilyMetrics {
     /// 字体 ID。
     pub font_id: u32,
+    /// 是否来自显式 @font-face family；与平台字体兼容策略分开。
+    pub is_web_font: bool,
     /// 每 em ascent。
     pub ascent: f32,
     /// 每 em descent（负值）。

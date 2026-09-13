@@ -7,6 +7,7 @@ use std::sync::{Arc, OnceLock};
 
 mod hmtx;
 mod metrics;
+mod release;
 mod shaping;
 mod unicode_range;
 

@@ -1,6 +1,27 @@
 // 行内条目收集方法（collect_inline_items）— 从 mod.rs 拆分以控制文件体积
 // （include! 模式，≡ apps/browser/src/app.rs → app_input.rs；零行为/可见性变更）
 impl InlineFormattingContext {
+    fn capture_downloaded_font_metrics(
+        &mut self,
+        items: &[InlineItem],
+        doc: &Document,
+        styles: &HashMap<NodeId, ComputedStyle>,
+    ) {
+        let Some(provider) = &self.font_metric_provider else { return };
+        // https://drafts.csswg.org/css2/#s10.8.1
+        // 只在本 IFC 已收集的 run 上查询一次；不扫描整个文档，也不改变系统字体策略。
+        for item in items {
+            let InlineItem::Text(run) = item else { continue };
+            let style = styles.get(&run.node_id).or_else(||
+                doc.parent_node(run.node_id).and_then(|id| styles.get(&id)));
+            if let Some(metrics) = style.and_then(|s| provider.downloaded_line_metrics(&s.font_family, 1.0))
+                && metrics.ascent.is_finite() && metrics.ascent > 0.0
+            {
+                self.ascent_ratio_overrides.insert(run.node_id, metrics.ascent);
+            }
+        }
+    }
+
     /// R3778：ComputedStyle.white_space → run 级 white-space 三标志
     ///（preserve / break_at_newline / no_wrap）。与 inline_finalization 容器级映射同源
     ///（Pre=(T,T,T) 的 `\n` 断行由 preserve 模式的 split_into_words 承载，故

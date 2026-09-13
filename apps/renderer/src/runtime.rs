@@ -144,6 +144,10 @@ pub(crate) struct RendererRuntime {
     webview: Option<zero_webview::WebView>,
     /// 字体加载器：为 paint 阶段提供真实字符 advance。
     font_loader: FontLoader,
+    /// 基础字体字节共享，导航重置无需重复读取系统字体。
+    base_font_loader: FontLoader,
+    /// 当前文档下载字体；系统字体继续使用双方约定的基础字体表。
+    downloaded_font_ids: std::collections::HashSet<u32>,
     /// 当前主字体 id。
     font_id: Option<u32>,
     /// 当前 URL。
@@ -329,7 +333,9 @@ impl RendererRuntime {
             media_ctx,
             device_scale_factor: 1.0,
             webview: Some(webview),
+            base_font_loader: font_loader.duplicate(),
             font_loader,
+            downloaded_font_ids: Default::default(),
             font_id,
             current_url: None,
             next_msg_id: 1,
@@ -705,6 +711,7 @@ impl RendererRuntime {
             payloads,
             self.navigation_epoch,
             self.document_generation,
+            crate::font_payloads::for_primitives(&self.font_loader, &self.downloaded_font_ids, &frame.primitives)?,
         )?;
         // R3254-M1：legacy 同步路径写出的帧在此标记 sent（compositor 路径由发布线程回传）。
         self.sent_image_keys.extend(sent_now);
@@ -1467,6 +1474,7 @@ impl RendererRuntime {
             let font_resolver = self.font_loader.build_font_resolver();
             if let Some(wv) = self.webview.as_mut() {
                 wv.set_font_resolver(font_resolver);
+                wv.set_font_metric_map(self.font_loader.build_line_metric_map());
             }
             // 请求重绘使新字体生效——经 pending_load（若有）的 request_rerender，否则直接 try_publish。
             if let Some(pending) = self.pending_load.as_mut() {
@@ -1513,6 +1521,7 @@ impl RendererRuntime {
             tracing::warn!(family = %family, "font load_font failed");
             return false;
         };
+        self.downloaded_font_ids.insert(id);
         if let Some(features) = metadata.0 {
             self.font_loader.register_font_features(id, features.to_vec());
         }
@@ -1601,6 +1610,7 @@ impl RendererRuntime {
                     let resolver = self.font_loader.build_font_resolver();
                     if let Some(wv) = self.webview.as_mut() {
                         wv.set_font_resolver(resolver);
+                        wv.set_font_metric_map(self.font_loader.build_line_metric_map());
                     }
                     pending.load.request_rerender();
                 }
@@ -1821,6 +1831,17 @@ impl RendererRuntime {
         self.history.get(index).map(String::as_str)
     }
 
+    fn reset_document_fonts(&mut self) {
+        // https://drafts.csswg.org/css-font-loading/#font-face-source
+        // 下载字体属于文档；URL、LoadHtml 和历史导航共用这一释放边界。
+        self.font_loader = self.base_font_loader.duplicate();
+        self.downloaded_font_ids.clear();
+        if let Some(wv) = self.webview.as_mut() {
+            wv.set_font_resolver(self.font_loader.build_font_resolver());
+            wv.set_font_metric_map(self.font_loader.build_line_metric_map());
+        }
+    }
+
     fn run_staged_load(
         &mut self,
         page_url: String,
@@ -1828,6 +1849,7 @@ impl RendererRuntime {
         push_history: bool,
         send_complete: bool,
     ) -> Result<(), String> {
+        self.reset_document_fonts();
         self.pending_script_prefetch = None;
         self.executed_external_scripts.clear();
         self.inflight_fetches.clear();
@@ -1914,6 +1936,7 @@ impl RendererRuntime {
         self.cached_css.clear();
         // S8：新页面图片 key 空间不同——清空已发送记录，确保新页图片像素被传输
         self.sent_image_keys.clear();
+        self.reset_document_fonts();
         // P1a change-on-blur：导航清焦点状态（新页面无焦点）。
         self.form_controls.clear();
         self.interaction.clear();
@@ -2653,13 +2676,14 @@ fn publish_render_with_layout(
     image_payloads: Vec<zero_protocol::IpcImagePayload>,
     navigation_epoch: u64,
     document_generation: u64,
+    font_payloads: Vec<zero_protocol::IpcFontPayload>,
 ) -> Result<Vec<u64>, String> {
     // R3254-M1：同步写出成功后才标记这些 key（sent 标记 = 实际在线上）。
     let sync_sent_keys = image_payloads
         .iter()
         .map(|payload| payload.image_key)
         .collect::<Vec<u64>>();
-    let paint = paint_export::paint_snapshot_from_primitives(
+    let mut paint = paint_export::paint_snapshot_from_primitives(
         frame.viewport.0,
         frame.viewport.1,
         device_scale_factor,
@@ -2671,6 +2695,7 @@ fn publish_render_with_layout(
         navigation_epoch,
         document_generation,
     );
+    paint.font_payloads = font_payloads;
     let frame_id = publish_state.next_frame_id;
     publish_state.next_frame_id += 1;
     if std::env::var("ZERO_BROWSER_PRODUCT_SMOKE").as_deref() == Ok("1") {

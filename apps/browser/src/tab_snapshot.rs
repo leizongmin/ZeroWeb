@@ -66,6 +66,8 @@ pub struct CompositorDmabufPending {
 pub struct TabSnapshot {
     /// 最近一次渲染图元。
     pub last_render: Option<PageRenderResult>,
+    /// 完整帧的下载字体，供 browser 本地滚动/legacy 回退消费。
+    pub font_payloads: Vec<zero_protocol::IpcFontPayload>,
     /// 文本控件 caret 边界交互元数据（compositor 模式也保留）。
     pub text_control_boundaries: Vec<TextControlBoundary>,
     /// 图片子资源缓存（绘制 `<img>` 时消费）。
@@ -85,6 +87,8 @@ pub struct TabSnapshot {
     pub document_width: Option<f32>,
     /// 是否仍在加载。
     pub loading: bool,
+    /// 初始文档资源加载已结束；不同于首帧可交互的 loading=false。
+    pub resources_settled: bool,
     /// 页面标题。
     pub title: Option<String>,
     /// 当前 URL。
@@ -135,12 +139,14 @@ impl TabSnapshot {
             image_cache: wv.snapshot_image_cache(),
             document_height: wv.document_height(),
             loading: wv.is_loading(),
+            resources_settled: !wv.is_loading(),
             title: wv.title().map(str::to_string),
             url: wv.url().map(str::to_string),
             html_source: if html.is_empty() { None } else { Some(html.to_string()) },
             hit_test: wv.build_hit_test_cache(),
             navigation_epoch: 0,
             document_generation: 1,
+            font_payloads: Vec::new(),
             compositor_submission: None,
             compositor_frame: None,
             compositor_present: None,
@@ -161,7 +167,9 @@ impl TabSnapshot {
 
     /// 清除 paint 与命中数据（保留 url/title/loading 由调用方设置）。
     pub fn clear_paint(&mut self) {
+        self.resources_settled = false;
         self.last_render = None;
+        self.font_payloads.clear();
         self.text_control_boundaries.clear();
         self.compositor_submission = None;
         self.compositor_frame = None;
@@ -356,6 +364,12 @@ mod tests {
     fn begin_navigation_clears_paint_and_sets_loading() {
         let mut snap = TabSnapshot {
             last_render: Some(blue_render()),
+            resources_settled: true,
+            font_payloads: vec![zero_protocol::IpcFontPayload {
+                font_id: 42,
+                face_index: 0,
+                data: vec![1],
+            }],
             loading: false,
             url: Some("https://old.example".into()),
             ..Default::default()
@@ -365,6 +379,8 @@ mod tests {
         assert_eq!(snap.navigation_epoch, 1);
 
         assert!(snap.last_render.is_none());
+        assert!(!snap.resources_settled);
+        assert!(snap.font_payloads.is_empty());
         assert!(snap.loading);
         assert!(!snap.should_composite_paint());
         assert_eq!(snap.url.as_deref(), Some("https://new.example"));

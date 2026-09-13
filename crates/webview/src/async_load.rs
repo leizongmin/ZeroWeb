@@ -631,6 +631,8 @@ impl AsyncPageLoad {
             if let Ok(result) = rx.try_recv() {
                 match result {
                     Ok(css) => {
+                        // https://drafts.csswg.org/css-values-4/#relative-urls
+                        let css = crate::css_urls::absolutize_css_urls(&css, url);
                         self.css.push_str(&css);
                         self.css.push('\n');
                         self.link_element_events.push((url.clone(), "load"));
