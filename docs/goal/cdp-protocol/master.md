@@ -2,12 +2,13 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-14（S257：静默监测轮——tip 与 S256 提交一致（4efeda93a），
+**最后更新**: 2026-09-14（S258：静默监测轮——tip 与 S257 提交一致（097de29c7），
 本流自有面锚点增量零漂移（apps/browser README +1 维持 S255 已归因基线态），
 全树锚点维持归因态零新增不可归因文件，门结论引用 S255 活跑（PASS 33 绿
-ZERO_DRIFT=True），引用计数 2/10 **下次活跑至迟 S265**；绿步维持 33；S198
-亚型解除态维持无 cdp-e2e 腿，cronjob 流 test-guard 腿 + 表单输入性能腿在窗 +
-ZeroWeb-3-wt-baidu browser 进程 9333 延续（均非本流面）；零 zombie 零遗留端口）
+ZERO_DRIFT=True），引用计数 3/10 **下次活跑至迟 S265**；绿步维持 33；S198
+亚型解除态维持无 cdp-e2e 腿，cronjob 流 test-guard/perf 腿已收尾（负载回落
+1.72）+ ZeroWeb-3-wt-baidu browser 进程 9333 延续（均非本流面）；零 zombie
+零遗留端口）
 
 ---
 
@@ -38,6 +39,25 @@ ZeroWeb-3-wt-baidu browser 进程 9333 延续（均非本流面）；零 zombie 
 
 ## 已完成切片
 
+- **S258（2026-09-14）静默监测轮 — 同 tip 复核（无代码变更，绿步维持 33）**：
+  pull 零新提交（tip = 097de29c7，即 S257 提交本身）——双层锚点口径复核通过：
+  本流自有面锚点增量零漂移（硬核对 `git diff 765429dda..HEAD -- apps/browser
+  tests/playwright-matrix scripts/test-guard.rs Makefile` 维持仅命中 apps/browser/
+  README.md +1 行 = S255 已归因的 52695a7c1 漂移基线，其后零新增漂移）；全树
+  锚点 numstat 复核（基 097de29c7=S257 tip）零外部变化——维持归因态零新增
+  不可归因文件。门结论引用 S255 活跑（PASS 33 绿 deterministic 双跑 YES 零
+  漂移 ZERO_DRIFT=True + steps/determinism-report 04:24 同轮落盘），引用计数
+  3/10，**下次活跑至迟 S265**。双解冻条件实质判定不变：① crates/ 自 65d2c2851
+  = 930cdd684（R4322-F）+ 4a879d408（fmt，零语义）+ 52695a7c1（webview README
+  文档行，零语义零子帧相关性）——渲染流 R4323 尚未落 main；② docs/goal 自
+  S257 零非本流提交，DC-2 口径无新拍板记录。机器卫生复核：零 zombie（二次
+  核查同零）、9222/45029/34293/96xx 全空闲、零 cdp-e2e 腿。**并行流观察**：
+  S198 端口竞争亚型解除态维持（无 cdp-e2e 腿）；在窗负载回落——S257 在窗的
+  cronjob 流 test-guard integration 腿与表单输入性能腿均已收尾（负载均值
+  6.79→1.72），延续在窗仅 rally query CI 守护腿 + ZeroWeb-3-wt-baidu 浏览器
+  进程（9333 非 9222 族，同 PID 3934955 满 1h 延续非重启）（均非本流自有面）；
+  渲染流 rally 主进程在、ZeroWeb-2 验证腿维持不在窗。S78 故障窗口后持续零
+  复现，监测态维持。goal 自有面零新缺口、无扩展面（S40-S257 重审结论延续）。
 - **S257（2026-09-14）静默监测轮 — 同 tip 复核（无代码变更，绿步维持 33）**：
   pull 零新提交（tip = 4efeda93a，即 S256 提交本身）——双层锚点口径复核通过：
   本流自有面锚点增量零漂移（硬核对 `git diff 765429dda..HEAD -- apps/browser
