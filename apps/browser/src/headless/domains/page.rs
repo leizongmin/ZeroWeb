@@ -7,7 +7,6 @@ use zero_browser_shell::TabId;
 use zero_protocol::message::AutomationValue;
 use zero_render_foundation::cpu::render_full_scene;
 use zero_render_foundation::font::cache::GlyphCache;
-use zero_render_foundation::font::loader::FontLoader;
 use zero_render_foundation::surface::FrameBuffer;
 
 use crate::headless::HeadlessServer;
@@ -217,7 +216,9 @@ impl HeadlessServer {
             message: "No renderer frame available".into(),
         })?;
 
-        let font_loader = FontLoader::new();
+        // session 侧注册表（系统基表 + 本帧下载字体，ID 已按帧重写）；
+        // 空表会导致全部字形光栅化失败（截图无文字）。
+        let font_loader = session.paint_fonts.loader.clone();
         let mut glyph_cache = GlyphCache::new(1024);
         // R1600：用 render_full_scene 渲染**全部 13 种图元**（旧 render_scene_to_framebuffer 仅
         // 渲染 fills+glyphs，静默丢弃 gradients/shadows/images/strokes/paths/transforms/clips/

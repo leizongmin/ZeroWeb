@@ -1705,3 +1705,59 @@ fn test_frame_probe_tolerates_script_failure() {
     let (tree, _) = server.dispatch_with_events(&mut session, "Page.getFrameTree", Value::Null);
     assert_eq!(tree.unwrap()["frameTree"]["childFrames"].as_array().unwrap().len(), 0);
 }
+
+// R-baidu1：headless 截图字体注册表——下载字体按帧原子导入且 surface-local 数字
+// ID 在快照转换前被重写为 loader 侧 ID（系统基表来自进程级共享解析）。
+// 光栅化消费点（render_page_framebuffer 用 session.paint_fonts.loader）为
+// cfg(not(test)) 渲染路径，由 welcome.html/baidu 截图证据与 product-smoke 覆盖。
+#[test]
+fn paint_frame_fonts_import_downloaded_bytes_and_rewrite_surface_local_ids() {
+    let (base, _) = crate::app::shared_system_fonts();
+    let mut paint_fonts = zero_paint_convert::fonts::PaintFonts::new(std::sync::Arc::new(base));
+    let ahem = include_bytes!("../../../../tests/wpt-runner/fonts/Ahem.ttf").to_vec();
+    let payloads = vec![zero_protocol::IpcFontPayload {
+        font_id: 42,
+        face_index: 0,
+        data: ahem.clone(),
+    }];
+    let mut glyphs = vec![zero_protocol::IpcGlyph {
+        x: 1.0,
+        y: 2.0,
+        font_size: 16.0,
+        glyph_id: 'X' as u32,
+        font_glyph_index: None,
+        source: None,
+        font_id: 42,
+        font_variation_id: None,
+        color: zero_protocol::IpcColor {
+            r: 0,
+            g: 0,
+            b: 0,
+            a: 255,
+        },
+        rotation: 0.0,
+        synthetic_italic: false,
+    }];
+
+    super::session::apply_frame_fonts(&mut paint_fonts, &payloads, &mut glyphs);
+    let mapped = glyphs[0].font_id;
+    assert_ne!(mapped, 42, "surface-local ID must be rewritten before raster");
+    assert_eq!(
+        paint_fonts.loader.get_font_data(mapped),
+        Some(ahem.as_slice()),
+        "mapped ID must resolve to the downloaded bytes"
+    );
+
+    // 无效资源不得替换当前可用 registry（fail closed，保留上一帧）。
+    let bad = vec![zero_protocol::IpcFontPayload {
+        font_id: 43,
+        face_index: 0,
+        data: vec![1, 2, 3],
+    }];
+    super::session::apply_frame_fonts(&mut paint_fonts, &bad, &mut glyphs);
+    assert_eq!(
+        paint_fonts.loader.get_font_data(glyphs[0].font_id),
+        Some(ahem.as_slice()),
+        "rejected frame must keep last good registry"
+    );
+}

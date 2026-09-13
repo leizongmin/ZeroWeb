@@ -2,7 +2,7 @@
 
 use std::{collections::HashMap, sync::Arc};
 use zero_protocol::{
-    IpcFontPayload, MAX_PAINT_FONT_BYTES, MAX_PAINT_FONTS, MAX_PAINT_FONTS_BYTES, PaintSnapshotParams,
+    IpcFontPayload, IpcGlyph, MAX_PAINT_FONT_BYTES, MAX_PAINT_FONTS, MAX_PAINT_FONTS_BYTES, PaintSnapshotParams,
 };
 use zero_render_foundation::font::FontLoader;
 
@@ -69,7 +69,12 @@ impl PaintFonts {
 
     /// Rewrite only downloaded font IDs before converting the frame to raster primitives.
     pub fn remap(&self, paint: &mut PaintSnapshotParams) {
-        for glyph in &mut paint.glyphs {
+        self.remap_glyphs(&mut paint.glyphs);
+    }
+
+    /// Rewrite downloaded font IDs on a glyph slice (callers holding pre-split frame fields).
+    pub fn remap_glyphs(&self, glyphs: &mut [IpcGlyph]) {
+        for glyph in glyphs {
             if let Some(id) = self.mapping.get(&glyph.font_id) {
                 glyph.font_id = *id;
             }

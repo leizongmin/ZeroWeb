@@ -75,6 +75,23 @@ pub(super) struct HeadlessSession {
     /// R3282（#4）：可选 GPU 截图渲染器（`ZW_HEADLESS_GPU_SCREENSHOT=1` 启用；
     /// 默认 CPU——oracle 像素对比基线稳定）。
     pub(super) gpu_renderer: Option<zero_render_foundation::gpu::renderer::GpuRenderer>,
+    /// Surface-local 字体注册表（系统基表 + 下载字体）：截图光栅化用，与
+    /// compositor 同一资源模型（renderer 数字 ID ≠ 全局资源 ID）。
+    pub(super) paint_fonts: zero_paint_convert::fonts::PaintFonts,
+}
+
+/// 按帧更新下载字体注册表并重写 surface-local 数字 ID（compositor 主路径同序：
+/// update → remap → to_render_primitives）。校验失败保留上一帧可用 registry
+///（信任边界：无效资源不得替换当前可用集合）。
+pub(super) fn apply_frame_fonts(
+    paint_fonts: &mut zero_paint_convert::fonts::PaintFonts,
+    font_payloads: &[zero_protocol::IpcFontPayload],
+    glyphs: &mut [zero_protocol::IpcGlyph],
+) {
+    if let Err(error) = paint_fonts.update(font_payloads) {
+        tracing::warn!(%error, "headless: rejected page font resources");
+    }
+    paint_fonts.remap_glyphs(glyphs);
 }
 
 impl HeadlessSession {
@@ -136,6 +153,7 @@ impl HeadlessSession {
             active_child_frames: std::collections::HashMap::new(),
             next_frame_seq: 1,
             gpu_renderer: None,
+            paint_fonts: new_session_paint_fonts(),
         }
     }
 
@@ -184,8 +202,16 @@ impl HeadlessSession {
             active_child_frames: std::collections::HashMap::new(),
             next_frame_seq: 1,
             gpu_renderer: None,
+            paint_fonts: new_session_paint_fonts(),
         }
     }
+}
+
+/// 进程级共享系统字体表作基表（与 BrowserApp/renderer 枚举同源 → 数字 ID 对齐）；
+/// 首次解析 ~0.5s 后进程内缓存，会话构建均摊免费。
+fn new_session_paint_fonts() -> zero_paint_convert::fonts::PaintFonts {
+    let (system_fonts, _) = crate::app::shared_system_fonts();
+    zero_paint_convert::fonts::PaintFonts::new(std::sync::Arc::new(system_fonts))
 }
 
 #[cfg(not(test))]
@@ -200,7 +226,9 @@ impl HeadlessSession {
                 Ok(None)
             }
             IpcMessageKind::CompositorFrame { paint, .. } | IpcMessageKind::ViewPainted(paint) => {
-                crate::paint_ipc::apply_paint_snapshot(&mut self.snapshot, *paint);
+                let mut paint = *paint;
+                apply_frame_fonts(&mut self.paint_fonts, &paint.font_payloads, &mut paint.glyphs);
+                crate::paint_ipc::apply_paint_snapshot(&mut self.snapshot, paint);
                 Ok(None)
             }
             IpcMessageKind::LoadComplete => Ok(Some(Ok(()))),
