@@ -51,7 +51,15 @@
   14767/16594）→ S23 先例：免重复全量，仅补本流自有门。**新 tip 组合态门**：
   cdp-e2e **PASS 33 绿 deterministic 双跑一致**（绿步集与 S39 基线零漂移）。
   归因：paint 文本域与本流零重叠，非子帧工作（活跃面仍零子帧文档加载）；
-  DC-2 口径无新拍板。
+  DC-2 口径无新拍板。**扰动三（用户 PR，共享面）**：补记 2 推送时拉入 PR #27
+  合并（downloaded-fonts production pipeline，46+ 代码文件：apps/browser/
+  compositor/renderer + engine/paint + layout-engine + paint-convert + protocol
+  + render-foundation + webview + integration，触 Cargo.lock 共享面）——验收
+  文档自带全套验证（完整 make test 含 V8/QuickJS 追加检查 + clippy + fmt +
+  reftest 687/687，S23 免全量条件成立）→ 仅补本流门：新 tip（8e2265a11）
+  cdp-e2e **PASS 33 绿 deterministic YES**（绿步集零漂移）。归因：字体管线面
+  与本流零重叠，非子帧文档加载工作；DC-2 口径无新拍板。本轮三扰动均已在档
+  归因，门禁锚定最新 tip。
 - **S52（2026-09-13）静默轮 — 同 tip 复核（无代码变更，绿步维持 33）**：
   pull 零新提交（tip = d7749fe22，即 S51 补记提交本身）——tracked 树硬核对：tip 为
   S48 组合态门验证代码树（a0a8146e2）之上仅 docs 增量（S49-S51 记录 + 9825b8e54
