@@ -142,6 +142,43 @@ welcome 375px、320px，五项结构门均通过；没有删减断言。
 回归、完整测试或 clippy。两张 PNG 已另存为 `welcome-original.png` 和
 `welcome-candidate.png`，不会被后续 smoke 的默认输出覆盖。
 
+## 延长验证：固定 CPU 的完整重跑
+
+用户批准延长约 20 分钟后，在未修改产品代码的 `da2c80e4a` 上执行完整重跑。
+通过 `CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER='taskset -c 2'` 绑定实际测量
+进程，编译和外层负载守卫不绑核；观察到基准进程运行在 CPU 2。仍执行全部
+16 个 crate、3 个页面和 retained form input；使用原内存/墙钟包裹器。
+未设置 busy-guard 豁免，未修改脚本、阈值、样本配置或共享基线。
+
+新报告为 `tests/benchmarks/results/benchmark_20260913_190446.json`，
+`git_dirty=false`、`suspect=false`，日志为 `bench-gate-pinned.log`。
+
+| 检查 | 结果 |
+|---|---|
+| 微基准执行完整性 | 16/16 执行成功，不等于预算通过 |
+| 页面总耗时及 retained form 硬预算 | 通过 |
+| medium 首帧 p95 | 247.67ms，低于原预算 262.46ms；本次未复现先前尾延迟 |
+| 原脚本相对比较 | 跳过：绑核使 `available_parallelism()` 报 1，基线记为 16 |
+| 原预算公式逐项补验 | 113 项中 18 项超预算，不能转普通 PR |
+
+不能把 `make bench-gate` 此次退出 0 当作完整通过：原脚本在核数不匹配分支只判
+页面绝对预算与表单硬预算。报告的可用核数保持原值 1，没有改成 16 来绕过检查。
+补验先确认机器可见的 CPU 型号及逻辑核数与基线一致，再直接执行
+`scripts/perf-gate.sh` 的原始 jq 预算表达式；要求 113 个指标完整且没有 NEW/SKIP。
+该补验在旧报告上准确重现相同的 15 个失败 ID，结果见 `budget-check-control.json`；
+新结果见 `pinned-budget-comparison.json`。它是保守的补充诊断，不将不同 affinity
+配置宣称为完全可比，也不改变原门禁结论。
+
+新旧失败集合仅重合 `compositing_layer_analysis_200` 和 `block_layout_1000_elements`
+两项。新失败还分布于 browser-shell、CSS parser、DOM、host-runtime、net 等此次未
+修改的 crate；同机观察到其他工作区的全量测试，但缺少覆盖整个测量区间的调度/
+频率数据，不能将失败全部归因于资源竞争，也不能排除字体改动的局部影响。
+
+最终仍为 **inconclusive / Draft**。下一步应先取得可比较、可控负载的测量窗口，
+对上述两个重复超预算项和 medium 首帧做同时保留原版/候选的阶段级分析；本轮
+未追加性能修复、更新共享基线或扩展欢迎页例外。工具行为详见
+[绑核与性能门禁的核数语义](../learnings/performance/2026-09/2026-09-13-affinity-available-parallelism-budget-gate.md)。
+
 ## 未覆盖与续作
 
 采集等待初始导航资源完成，不等同于所有延迟 JS、动态 FontFace、动画及站外脚本
