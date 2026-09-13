@@ -2,13 +2,12 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-14（S227：静默监测轮——tip 与 S226 提交一致（6d76f5633），
-本流自有面零漂移复核通过，全树锚点 12 文件维持 S218 归因态零新增，门结论引用
-S218 活跑（R4321-F+R4322-F 组合态首次覆盖 PASS 33 绿 deterministic 双跑 YES 零
-漂移），引用计数 9/10 **S228 活跑最后期限**；绿步维持 33；新见第三工作面
-ZeroWeb-3-wt-baidu 浏览器进程（headless 9333 非 9222 族无竞争）+ workspace
-clippy/check 编译负载、zeroseed 构建负载延续（均非本流面）；零 zombie 零遗留
-端口）
+**最后更新**: 2026-09-14（S228：活跑最后期限轮（引用计数 10/10 触发）——pull 1 新
+提交 7df35d6ad（CI benchmarks dispatch 自动更新 docs/perf 基线/趋势，非本流面）；
+本流自有面零漂移，全树锚点 12 文件维持 S218 归因态零新增；负载窗口内活跑（cronjob
+编译测试负载 + ZeroWeb-3-wt-baidu 浏览器进程 9333 双亚型并窗）PASS 33 绿
+deterministic 双跑 YES、绿步集机械 diff 基线零漂移、首调红形态连续第六次零再现；
+引用计数归零，下次活跑至迟 S238；绿步维持 33；零 zombie 零遗留端口）
 
 ---
 
@@ -39,6 +38,40 @@ clippy/check 编译负载、zeroseed 构建负载延续（均非本流面）；�
 
 ## 已完成切片
 
+- **S228（2026-09-14）活跑最后期限轮 — 引用计数 10/10 触发，负载窗口内活跑（无代码
+  变更，绿步维持 33）**：
+  pull 1 新提交（tip c5a99bebc→**7df35d6ad**，`chore(perf): 更新 CI 性能基线/趋势
+  （benchmarks dispatch）`，仅 docs/perf 3 文件——CI benchmarks dispatch 自动化面，
+  非 crates/、非 docs/goal、非本流自有面）——双层锚点口径复核通过：本流自有面与
+  S99 门禁验证态逐字节一致（硬核对 `git diff 765429dda..HEAD -- apps/browser
+  tests/playwright-matrix scripts/test-guard.rs Makefile` 为空）；全树锚点 numstat
+  复核（基 820a67dfb=S217 tip）12 文件仅 master.md +195/-10（本流控制面逐轮自
+  增长），外部面 11 文件零变化、维持 S218 归因态零新增不可归因文件。双解冻条件
+  实质判定不变：① crates/ 自 65d2c2851 仅 930cdd684（R4322-F，子帧相关性零命中
+  ——渲染流 R4323 尚未落 main）；② docs/goal 自 S227 零非本流提交，DC-2 口径无
+  新拍板记录。**活跑动因**：引用计数 10/10 触发最后期限（S219-S227 十轮引用上次
+  活跑 S218）。**执行前并行流复核（S198 端口竞争亚型口径）**：本机无 make cdp-e2e
+  腿的验收链在窗，端口竞争亚型不触发、9222 全空闲；在窗负载双腿——**ZeroWeb-3-
+  wt-baidu 浏览器进程型**（`zero-browser --headless --remote-debugging-port=9333`
+  detachment PPID 1 + 站点优化 playwright 腿 connectOverCDP 9333，非 9222 端口族
+  无竞争，按 browser 进程型亚型窗口内执行）+ **cronjob 流编译测试负载型**
+  （ZeroWeb-cronjob test-guard compile-first `cargo test --workspace --exclude
+  zero-browser --exclude zero-renderer` + 渲染 crate 族 clippy 腿）——负载平均
+  17.6，属混合负载窗口，按计划 #3 口径窗口内执行（负载下样本对 #0 更有价值）。
+  **活跑结果：PASS 33 绿 deterministic 双跑 YES、绿步集与基线 33 步机械 diff 零
+  漂移（missing/extra 均空，ZERO_DRIFT=True）**；唯一非绿步仍为挂账
+  frames.click+evaluate（子帧文档挂账预期形态）；**无首调红形态**（S168 形态连续
+  第六次零再现——S178/S188/S198/S208/S218/S228）。steps-report/determinism-report
+  03:25 同轮落盘新鲜（verify 门禁化新鲜性检查 PASS 即含，另机械核实时间戳）。
+  **负载条件**：混合负载窗口——第十一个负载下样本（cronjob 编译测试负载亚型 +
+  ZeroWeb-3 browser 进程型亚型并窗，第 3/4 个该类亚型样本），两亚型证据互补服务
+  #0 复现监测。**warning 归因维持 S198 注记**：`cargo build -p zero-browser` 段
+  再现 zero-engine dead_code warning（`match_media_to_json` never used，
+  js_dom_bridge.rs:3420）——单 `-p` build feature unification 已知亚型，非门禁
+  步骤、非新回归。活跑后机器卫生复核：本流零遗留浏览器进程（在窗 zero 进程均为
+  并行流既有面）、9222/45029/34293/96xx 全空闲、零 zombie。引用计数归零，**下次
+  活跑至迟 S238**。S78 故障窗口后持续零复现，监测态维持。goal 自有面零新缺口、
+  无扩展面（S40-S227 重审结论延续）。
 - **S227（2026-09-14）静默监测轮 — 同 tip 复核（无代码变更，绿步维持 33）**：
   pull 零新提交（tip = 6d76f5633，即 S226 提交本身）——双层锚点口径复核通过：本流
   自有面与 S99 门禁验证态逐字节一致（diff 空）；全树锚点 numstat 复核 12 文件维持
@@ -2884,7 +2917,7 @@ clippy/check 编译负载、zeroseed 构建负载延续（均非本流面）；�
    steps-report 新鲜性**）；tracked 树变化时门 + make test。**连续引用不超过 10 轮**
    （S98 新增：S78 故障为负载触发、可在树不变时复发——纯引用协议探测不到环境性复发，
    超限即活跑一次刷新证据新鲜度，服务 #0 复现监测；S98/S108/S118/S128/S138/S148/
-   S158/S168/S178/S188/S198/S208/S218 已执行——S168 为期限轮负载窗口内活跑（第六个负载下样本）且
+   S158/S168/S178/S188/S198/S208/S218/S228 已执行——S168 为期限轮负载窗口内活跑（第六个负载下样本）且
    首次出现「首调红（run 1 瞬态 11 步失败 → deterministic NO）/ 复跑即 PASS」形态，
    四点机械归因定性单次瞬态环境事件（见 S168 记录）；S178 为期限轮并行编译负载窗内
    活跑（第七个负载下样本、首个编译 CPU 竞争亚型，PASS 33 绿零漂移，首调红形态零
@@ -2897,9 +2930,11 @@ clippy/check 编译负载、zeroseed 构建负载延续（均非本流面）；�
    #0，首调红形态连续第四次零再现）；S218 为期限轮外部项目测试负载窗内活跑（第十个
    负载下样本、zeroseed test-all 负载亚型，**R4321-F+R4322-F 组合态首次覆盖**——
    R4322-F style-system 入树后门禁绿态不受影响，PASS 33 绿零漂移，首调红形态连续
-   第五次零再现）；后续轮次
+   第五次零再现）；S228 为期限轮混合负载窗口内活跑（第十一个负载下样本、cronjob
+   编译测试负载 + ZeroWeb-3-wt-baidu browser 进程型双亚型并窗，PASS 33 绿零漂移，
+   首调红形态连续第六次零再现）；后续轮次
    若再现该形态，同口径归因并留意复现频率——单轮偶发记账、多轮聚集升级 #0 排查；
-   下次活跑至迟 S228；若活跑时逢并行流负载窗口则
+   下次活跑至迟 S238；若活跑时逢并行流负载窗口则
    优先窗口内执行，负载下样本对 #0 更有价值（负载窗口口径含并行流 browser 进程型与
    编译测试负载型两亚型，净窗亚型 S208 起并行记录；**端口竞争亚型口径 S198 新增**：
    并行流含 make cdp-e2e 腿
@@ -2960,7 +2995,10 @@ clippy/check 编译负载、zeroseed 构建负载延续（均非本流面）；�
   形态按计划 #3 口径跟踪。**S218 注记**：R4321-F+R4322-F 组合态首次活跑覆盖（外部
   项目测试负载窗内，第十个负载下样本）——PASS 33 绿 deterministic 双跑 YES，绿步集
   机械 diff 基线零漂移，R4322-F（style-system→zero-engine 依赖链）门禁绿态不受影响，
-  首调红形态连续第五次零再现
+  首调红形态连续第五次零再现。**S228 注记**：期限轮混合负载窗口内活跑（第十一个
+  负载下样本，cronjob 编译测试负载 + ZeroWeb-3 browser 进程型双亚型并窗）——
+  PASS 33 绿 deterministic 双跑 YES，绿步集机械 diff 基线零漂移，首调红形态连续
+  第六次零再现
 - CDP 现状：`Page.navigate` / `Runtime.evaluate` / `Target.getTargets` 3 命令 +
   `/json/version` + `/json` 发现（headless.rs L782-796/L571/L1159）——历史基线，现行面
   见缺口清单 P3/P4 与切片记录
