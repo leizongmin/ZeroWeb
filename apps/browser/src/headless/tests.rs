@@ -796,6 +796,39 @@ fn test_navigation_event_family_sequence() {
 }
 
 #[test]
+fn test_frame_detached_on_document_swap() {
+    // 文档换代：上一文档的子帧记录先 detach（reason=frameRemoved）、记录清空。
+    // （记录由 frameAttached 探测填充；此处手工预置以脱离 renderer 依赖。）
+    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let mut session = HeadlessSession::new(800.0, 600.0);
+    session.active_child_frames.insert(
+        "zeroweb-tab-1".into(),
+        vec!["zeroweb-frame-1".into(), "zeroweb-frame-2".into()],
+    );
+
+    let mut nav_events = Vec::new();
+    server.emit_navigation_event_family(
+        &mut session,
+        None,
+        "zeroweb-tab-1",
+        "zw-loader-2",
+        "about:blank",
+        &mut nav_events,
+    );
+    let detached: Vec<_> = nav_events.iter().filter(|e| e.method == "Page.frameDetached").collect();
+    assert_eq!(detached.len(), 2);
+    assert_eq!(detached[0].params["frameId"], "zeroweb-frame-1");
+    assert_eq!(detached[1].params["frameId"], "zeroweb-frame-2");
+    assert_eq!(detached[0].params["reason"], "frameRemoved");
+    // detach 位于 frameStartedLoading 之前（文档换代时序）
+    assert_eq!(nav_events[0].method, "Page.frameDetached");
+    assert_eq!(nav_events[1].method, "Page.frameDetached");
+    assert_eq!(nav_events[2].method, "Page.frameStartedLoading");
+    // 记录清空（探测失败路径下无新 attach）
+    assert!(session.active_child_frames.is_empty());
+}
+
+#[test]
 fn test_page_navigate_success_path_via_load_html_page() {
     // 成功路径的事件族由 Playwright goto 冒烟验收；此处断言注入脚本在导航后重放的
     // 存储面（emit_navigation_event_family 内部调用 replay）。
@@ -1637,4 +1670,38 @@ fn test_server_with_security_config() {
 fn test_server_binds_to_localhost_only() {
     let server = HeadlessServer::new(0, 800.0, 600.0);
     assert_eq!(server.addr.ip(), std::net::IpAddr::from([127, 0, 0, 1]));
+}
+#[test]
+fn test_frame_probe_tolerates_script_failure() {
+    // 探测容错：查询脚本失败（测试进程内 webview 缺 querySelectorAll 宿主绑定）
+    // → 零 attach、事件族完整不阻塞。生产路径（renderer 完整 shim）的 attach 面
+    // 由 cdp-e2e 门 frames.access 验证。
+    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let mut session = HeadlessSession::new(800.0, 600.0);
+    session.webview.load_html(
+        r#"<html><body><iframe id="a" src="x.html"></iframe><iframe id="b"></iframe></body></html>"#,
+        None,
+    );
+    let mut nav_events = Vec::new();
+    server.emit_navigation_event_family(
+        &mut session,
+        None,
+        "zeroweb-tab-1",
+        "zw-loader-3",
+        "about:blank",
+        &mut nav_events,
+    );
+    assert_eq!(
+        nav_events.iter().filter(|e| e.method == "Page.frameAttached").count(),
+        0,
+        "probe failure must not emit frameAttached"
+    );
+    let methods: Vec<&str> = nav_events.iter().map(|e| e.method.as_str()).collect();
+    assert!(
+        methods.contains(&"Page.loadEventFired"),
+        "event family must stay intact"
+    );
+    assert!(session.active_child_frames.is_empty());
+    let (tree, _) = server.dispatch_with_events(&mut session, "Page.getFrameTree", Value::Null);
+    assert_eq!(tree.unwrap()["frameTree"]["childFrames"].as_array().unwrap().len(), 0);
 }

@@ -1,5 +1,5 @@
 {
-  "description": "ZeroWeb CDP E2E 期望绿步骤基线（M5 收口门）——任一步骤回退即 make cdp-e2e 失败。S25 后基线扩至 32 步（target.getTargets / target.attachDetach / runtime.releaseObjectGroup / emulation.userAgentOverride——DC-1 缺口补测，新增 Target.attachToBrowserTarget/attachToTarget 建会话面）；余 2 步挂 frames（engine 子帧可见性，渲染流域协调），见 master.md 下一步计划。",
+  "description": "ZeroWeb CDP E2E 期望绿步骤基线（M5 收口门）——任一步骤回退即 make cdp-e2e 失败。S39 后基线扩至 33 步（frames.access 翻绿——子帧元数据探测：frameAttached/frameDetached/getFrameTree childFrames，纯 headless 面）；余 1 步 frames.click+evaluate 挂子帧文档加载+JS realm（engine 子帧能力，渲染流域协调），见 master.md 下一步计划。",
   "expected_green": [
     "click.button",
     "click.dblclick",
@@ -17,6 +17,7 @@
     "evaluate.object",
     "evaluate.withArgs",
     "fill.input",
+    "frames.access",
     "keyboard.type+press",
     "locator.boundingBox",
     "network.events",

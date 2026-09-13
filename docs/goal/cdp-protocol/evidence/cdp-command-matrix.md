@@ -1,6 +1,6 @@
 # CDP 命令矩阵账本（DC-1 控制件）
 
-**版本**: v0.5（S25 补测行/审计节 + S28 组合态复核与复现链闭合；v0.4 S17 漂移刷新——
+**版本**: v0.6（S39 子帧元数据面三行——frameAttached/frameDetached ❌→✅、getFrameTree childFrames 扩展；v0.5 S25 补测行/审计节 + S28 组合态复核与复现链闭合；v0.4 S17 漂移刷新——
 S12-S17 落地面三态/口径逐行核对，ground truth=
 `apps/browser/src/headless/domains/` dispatch 表（S32 起，原单文件 domains.rs）；v0.3 S9、v0.2 S4、v0.1 M1 前置初稿）
 **日期**: 2026-09-13
@@ -101,7 +101,7 @@ DC-3 基线）。「现状」列 v0.4 起以 S17 时点 dispatch 表（时点文
 | `Page.handleJavaScriptDialog` | 3 | accept/promptText | ⚠️ stub 接受（S5）。S10 澄清：dialog 步绿因**引擎无阻塞对话框语义**——shim alert no-op、confirm/prompt 立即返回（无事件、无挂起），步骤「不挂起即过」；真对话框事件面属跨流域立项 | 事件源随引擎对话框能力（不阻 M5 收口） |
 | `Page.addScriptToEvaluateOnNewDocument` | 3 | source/worldName | ✅（S5：真执行 + 跨导航重放 + worldName 登记/新文档 world context 重发；单引擎主 world 执行） | 完成（M2 S5；world 隔离随引擎能力） |
 | `Page.createIsolatedWorld` | 3 | frameId/grantUniveralAccess/worldName | ⚠️ 返回新 contextId + worldName 事件（S4）；world 不隔离（单引擎） | 记账注记；真隔离随引擎能力 |
-| `Page.getFrameTree` | 3 | — | ✅（S4：主 frame id=targetId 硬契约；会话级按 target 归属） | 完成（M1 S4） |
+| `Page.getFrameTree` | 3 | — | ✅（S4：主 frame id=targetId 硬契约；会话级按 target 归属；S39：childFrames 来自子帧元数据记录） | 完成（M1 S4 + S39 扩展） |
 | `Page.setLifecycleEventsEnabled` | 3 | enabled | ⚠️ stub 接受（S4）；lifecycleEvent 事件已产（S5 导航族 + S16 write 落定重发）但**不随本开关门控**（恒发） | 记账：门控语义随域收口（PW 消费面不依赖开关） |
 | `Page.setFontFamilies` | 3 | fontFamilies | ❌（PW 容忍缺失，实测未阻流） | M3 stub |
 
@@ -170,7 +170,7 @@ DC-3 基线）。「现状」列 v0.4 起以 S17 时点 dispatch 表（时点文
 | `Page.domContentEventFired` | 3 | ✅（S5） | 完成（M2 S5） |
 | `Page.lifecycleEvent` | 42 | 🔶 S5+S16：DOMContentLoaded/load 两点随导航发出 + document.write 落定重发；细粒度事件未逐一生效 | 记账：逐 lifecycle 对齐随 devtools 面需求 |
 | `Page.javascriptDialogOpening` / `javascriptDialogClosed` | 3 / 3 | ❌（S10 澄清：引擎无阻塞对话框语义 → 无事件源；dialog 步骤经 shim 立即返回语义通过） | 随引擎对话框能力（不阻 M5 收口） |
-| `Page.frameAttached` / `frameDetached` | 1 / 1 | ❌（子帧事件源需引擎子帧可见性，渲染流域协调；iframe 面挂起） | 随引擎子帧能力 |
+| `Page.frameAttached` / `frameDetached` | 1 / 1 | ✅（S39 子帧元数据面：导航事件族内探测 iframe 元素数 → frameAttached{frameId,parentFrameId}、文档换代 frameDetached；记录按主帧分组防跨 target 串扰。语义边界：子帧无文档加载/渲染/JS realm——url 停留 about:blank、无子帧 frameNavigated） | 完成（M3 S39，frames.access 步验证） |
 | `Page.frameResized` | 4 | ✅（S6：尺寸变更时发出） | 完成（M3 S6） |
 | `Page.documentOpened` | 1 | ❌ | M3（低优） |
 | `Page.frameRequestedNavigation` | 1 | ❌ | M3（低优） |

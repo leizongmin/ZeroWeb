@@ -2,7 +2,7 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-13（S38：静默轮——tip 与 S37 逐字节一致，结论全量引用；绿步维持 32）
+**最后更新**: 2026-09-13（S39：子帧元数据探测落地——frames.access 翻绿，绿步 32→33 零回归）
 
 ---
 
@@ -24,7 +24,7 @@
 |---|------|------|
 | P1 | Playwright 命令矩阵账本（pin 版空跑导出命令全集 + 三态登记） | ✅ 初稿落地（evidence/cdp-command-matrix.md；随域更新三态） |
 | P2 | headless.rs 职责拆分（2256 行超 2000 上限；transport/discovery/domains/session） | ✅ M1 切片 1（headless/ 9 模块，纯搬移零语义变化，make test 19,170P/0F 与基线一致） |
-| P3 | Target/Runtime/Page/Input/DOM/CSS/Network/Emulation 域实现 | 🚧 S16 后余 frames 面：locator/evaluate/editing/viewport/媒体全通；唯余 iframe 子帧事件源（frames.access/click+evaluate 2 步，挂 engine 子帧可见性——渲染流域协调） |
+| P3 | Target/Runtime/Page/Input/DOM/CSS/Network/Emulation 域实现 | 🚧 S39 后余 1 步：frames.access 翻绿（子帧元数据探测，纯 headless 面）；唯余 frames.click+evaluate（挂子帧文档加载+JS realm——engine 子帧能力，渲染流域协调） |
 | P4 | Node/Playwright 测试链（pin + E2E 用例集 + make 入口） | ✅ S8：`make cdp-e2e`（test-guard 包裹，deterministic 双跑 + expected-green 回归门）；用例集=34 步全核心流 + DC-1 缺口补测（S25） |
 | P5 | console 对象化（V8 侧结构化序列化，替换扁平字符串） | ✅ S11 value-only 面落地（consoleAPICalled 绿——shim 逐参值序列化 + `__zw_console_log` 三参 + headless 转事件，PW 消费面 msg.type()/text() 全通）；完整对象句柄化（remoteObject preview/objectId）挂账随 devtools 面需求 |
 | P6 | net 请求事件总线（Network 域 + devtools Network 面板共用脊柱） | 🔶 雏形已建（S7 proxy_fetch 三事件 + S14 renderer FetchObserved + S17 dataReceived 双路径）；分块流式观测点待 net 窗口流式化——**net 近 14 天无外部流占用，窗口已开**（2026-09-12 实测） |
@@ -33,6 +33,31 @@
 
 ## 已完成切片
 
+- **S39（2026-09-13）子帧元数据探测 — frames.access 翻绿，绿步 32→33（代码切片，纯 apps/browser 面）**：
+  **缺口重审**：S18「三件套跨流域」论证针对 frames×2 整体；逐步拆解发现 `frames.access`
+  仅断言 `page.frames().length >= 2`——纯元数据面（PW 的 Frame 对象来自
+  `Page.frameAttached{frameId,parentFrameId}` 事件，PW 1.63 coreBundle 实证：带
+  parentFrameId 即建子 Frame；不带会误触发主帧 id 改写分支），无需子帧文档加载/渲染/
+  realm——本流可单方解。
+  **实现**：① 导航事件族（emit_navigation_event_family）在 domContent 前经既有
+  automation_request 探测 `return String(document.querySelectorAll('iframe').length)`
+  （**ExecuteScript 函数体语义须带 return——首版缺 return 探测恒 0**）；② 为每个
+  iframe 发 frameAttached + 文档换代时对旧记录发 frameDetached{reason:frameRemoved}；
+  ③ getFrameTree childFrames 从记录填充；④ 探测失败按 0 容错不阻塞事件族。
+  **多 target 串扰修复（回归定位）**：首跑门禁 frames.access 绿但
+  page.second.lifecycle/target.attachDetach 双回归（`newPage: Frame has been
+  detached`）——raw-CDP 探针实证：`active_child_frames` 原为 session 级扁平记录，
+  p1 的记录被 p2 的导航误 detach（串扰事件盖 p2 会话）+ p2 getFrameTree 读到幽灵
+  child——PW 沿 parent 链找 per-frame session 失败即抛。修复：记录改按主帧 id
+  （=targetId）HashMap 分组，detach/attach/getFrameTree 均只操作本页分组。
+  **语义边界记账**：子帧 url 停留 about:blank、无子帧 frameNavigated（无子帧文档
+  加载）；frames.click+evaluate 仍挂子帧文档+realm（真跨流域）。
+  **工具坑**：进程内 webview（cfg(test)）缺 querySelectorAll 宿主绑定（`__zw_query_all`
+  未注册）——单测覆盖容错路径，生产 attach 面由 cdp-e2e 门验证。
+  **验证**：cdp-e2e 门 PASS **33 绿** deterministic 双跑一致（零回归，两处串扰回归
+  修复后消除）；headless 单测 98P（+2：探测容错/文档换代 detach 语义）；make test
+  全量 **19,259P/0F EXIT=0**（S32 基线 19,257 + 2 新单测精确吻合）；fmt clean +
+  clippy -D warnings 全过。
 - **S38（2026-09-13）静默轮 — 同 tip 复核（无代码变更、无 docs 变化轮，绿步维持 32）**：
   pull 零新提交（tip = ff841c435，即 S37 提交本身——工作树与 S37 时点逐字节一致，
   含 docs）。同 tip 同日 → S37 全部复核结论直接延续：① 渲染流近 14 天活跃面维持
@@ -423,32 +448,33 @@
 
 ## 下一步计划
 
-1. **M5 收口评估（绿步 32/34，余 2 步全挂同一协调点）**：`frames.access`/
-   `frames.click+evaluate` 依赖 engine 子帧可见性（iframe 子帧 DOM/事件面）——渲染流域
-   真协调。DC-2 口径决策：等子帧能力解冻后 34/34 收口，or 以「挂账 + 口径剔除」先定稿
-   （见待用户决策）。**实测复核已过**（S17：35 被调方法零漂移；S25：DC-1 覆盖审计
-   缺口 4 项已补齐，实现态命令 e2e 全覆盖）——DC-2 口径一决即可定稿。
+1. **M5 收口评估（绿步 33/34，余 1 步）**：`frames.access` 已解（S39 子帧元数据探测，
+   本流单方落地）；余 `frames.click+evaluate` 真挂子帧文档加载 + JS realm + child
+   quads（S18 三件套论证对其成立）——渲染流域真协调。DC-2 口径决策：等子帧能力解冻后
+   34/34 收口，or 以「挂账 + 口径剔除」先定稿（见待用户决策）。**实测复核已过**（S17：
+   35 被调方法零漂移；S25：DC-1 覆盖审计缺口 4 项已补齐，实现态命令 e2e 全覆盖）——
+   DC-2 口径一决即可定稿。
 2. **M5 定稿（口径确定后）**：expected-green 基线定稿 → cdp-e2e 即 DC-2 门；挂账清单
    （不实现域）终稿；CI 集成可行性随收口评估（S8 记账：node 20.19 + lockfile 离线可复现）。
    **定稿预案（S18 预备，双分支机械执行）**：
    - **分支 A（等 30/30）**：goal 维持 Active；每轮门禁防回归；渲染流域子帧能力落地后
-     解 frames×2 → 基线扩 30 → DC-2 ✅ → M5 定稿。挂账清单不豁免 frames 项。
+     解 frames.click+evaluate → 基线扩 34 → DC-2 ✅ → M5 定稿。挂账清单不豁免 frames 项。
    - **分支 B（挂账剔除定稿）**：① 矩阵账本「ZeroWeb 侧实测捕获」节加口径注记（frames×2
      记「挂账：随引擎子帧能力，M5 定稿时点不阻收口」）；② master.md 里程碑 M3/M5 改
      ✅（口径挂账注记）；③ goal 入口文档 DC-2 行加挂账口径注记（不改判定语义原文，仅
      注记）；④ expected-green 基线维持 28 不动（frames 步骤继续跑、不门禁）；⑤ CI 集成
      评估出结论记账。四步全 docs，一个提交。
-3. **持续推进**：每轮 pull → cdp-e2e 门防回归（基线 32 步；**免复跑条件**：pull 后
+3. **持续推进**：每轮 pull → cdp-e2e 门防回归（基线 **33** 步；**免复跑条件**：pull 后
    HEAD 未变且 tracked 树无变更——S26 验证过的 tip 可引用其结论，S27 复核未跟踪探针
    不入门禁图）；tracked 树变化时门 + make test。余项按窗口逐个解冻。
 
 **待用户决策清单**：
-- **DC-2 收口口径（2026-09-13 新入，维持）**：余 2 步（frames.access/frames.click+evaluate）
-  挂 engine 子帧可见性——S18 探针实证：`iframe.contentDocument` 为 null（引擎不加载子帧
-  文档）、`page.frames()`=1（无 frameAttached 事件源）；且子帧**渲染面**（子文档布局/
-  iframe 区域绘制/child quads 坐标）属 layout-engine/paint——渲染流域专属 crate，本流
-  不可单方解。「等子帧能力后 30/30 收口」vs「挂账剔除先定稿」。口径不清则 M5 无法判定
-  完成（**M5 定稿预案见下，口径一决机械执行**）。
+- **DC-2 收口口径（2026-09-13 新入，S39 后语境收窄维持）**：余 1 步（frames.click+evaluate）
+  真挂子帧文档加载 + JS realm + child quads——S18 探针实证：`iframe.contentDocument`
+  为 null（引擎不加载子帧文档）；且子帧**渲染面**属 layout-engine/paint——渲染流域专属
+  crate，本流不可单方解（frames.access 元数据面已于 S39 本流单方解）。「等子帧能力后
+  34/34 收口」vs「挂账剔除先定稿」。口径不清则 M5 无法判定完成（**M5 定稿预案见下，
+  口径一决机械执行**）。
 - ~~dialog 事件源~~ **绿步已过、语义挂账（S10 现状澄清 2026-09-13）**：dialog.accept/
   dialog.confirm+prompt 绿因**引擎无阻塞对话框语义**——shim alert no-op、confirm/prompt
   立即返回（无 javascriptDialogOpening 事件、无挂起）、`Page.handleJavaScriptDialog` 为
@@ -456,8 +482,9 @@
   不阻 M5 收口（PW 消费面绿）。
 - ~~objectId 句柄桥~~ **已拍板（2026-09-12）：全量 remoteObject 桥**——✅ S9 落地。
 
-**维持挂起**：iframe 子帧事件面（frames.access/frames.click+evaluate 2 步）——渲染流域
-真协调（engine 子帧可见性），rendering 流 R41xx-R42xx 高频活跃，维持挂起合理。
+**维持挂起**：iframe 子帧内容面（frames.click+evaluate 1 步）——渲染流域真协调
+（子帧文档加载/渲染/realm 三件套），rendering 流 R41xx-R43xx 高频活跃，维持挂起合理。
+（frames.access 元数据面已于 S39 解除挂起——纯 headless 面落地。）
 
 **跨流红灯记录（S16 时点归因，非本流）**：`cargo test -p zero-renderer --lib` 2 失败
 （page_scripts::tests::form_interaction_fixture_complete_sequence /
@@ -471,22 +498,21 @@
 |--------|------|
 | M1 — 传输/发现/Target 基座 + Playwright 首连 | ✅ S9 收口：连接面 + evaluate 全族（literal/function/withArgs/object/async）+ releaseObject(Group) 全通 |
 | M2 — Page/Input 域 → 点击/填充/键盘/导航流 | ✅ S16 收口：goto/title/fill/click 全族/dialog/键盘 type+press（Ctrl+A 全选）/导航事件族全绿 |
-| M3 — DOM/CSS/Emulation → locator 流 | 🚧 S16：locator.boundingBox/viewport/媒体/截图 clip+element+fullPage 绿；iframe 面维持挂起（frames×2） |
+| M3 — DOM/CSS/Emulation → locator 流 | 🚧 S39：locator.boundingBox/viewport/媒体/截图 clip+element+fullPage/frames.access 绿；iframe 内容面维持挂起（frames.click+evaluate） |
 | M4 — Network/cookies/console 对象化（cookie 落点=Storage 域） | ✅ S17 收口：cookie 域 + UA override + Network 事件族（含 dataReceived，S17）+ consoleAPICalled（value-only）绿；分块流式观测记账 |
-| M5 — 矩阵收口 | 🚧 绿步 32/34（expected-green 基线同步扩至 32，S25）；余 2 步全挂 engine 子帧可见性（DC-2 口径待决策） |
+| M5 — 矩阵收口 | 🚧 绿步 33/34（expected-green 基线同步扩至 33，S39）；余 1 步挂子帧文档+realm（DC-2 口径待决策） |
 
 ## 验证基线
 
 - 测试基线：立项时点全绿（`make test` 19,170P/0F，2026-09-12 变基后口径；S9 后
   19,238P/0F；S18 全量刷新 19,251P/0F；S22 组合态刷新 19,254P/0F EXIT=0；
-  **S23 时点 19,255P/0F**（含渲染流 R4298-F，+1 单测——该树全量由渲染流
-  R4298-F 提交自带验证，本流未重复跑；并行流计数会漂移，以当轮实跑为准）；禁止裸跑
-  cargo test，经 test-guard。注：make test 的 workspace 腿 exclude zero-renderer——
-  renderer lib 单测不在全量门内，跨流红灯（form fixture×2）经显式
-  `-p zero-renderer --lib` 跟踪）
-- **CDP E2E 基线（S25，2026-09-13）**：绿步 32/34，deterministic 双跑一致，
-  expected-green 基线 32 步（S25：+4 DC-1 缺口补测步；余
-  frames.access/frames.click+evaluate 挂 engine 子帧可见性）
+  S23 时点 19,255P/0F；S32 时点 19,257P/0F；**S39 时点 19,259P/0F EXIT=0**
+  （+2 子帧探测单测，精确吻合）；禁止裸跑 cargo test，经 test-guard。注：make test
+  的 workspace 腿 exclude zero-renderer——renderer lib 单测不在全量门内，跨流红灯
+  （form fixture×2）经显式 `-p zero-renderer --lib` 跟踪）
+- **CDP E2E 基线（S39，2026-09-13）**：绿步 33/34，deterministic 双跑一致，
+  expected-green 基线 33 步（S39：frames.access 翻绿——子帧元数据探测；余
+  frames.click+evaluate 挂子帧文档+realm）
 - CDP 现状：`Page.navigate` / `Runtime.evaluate` / `Target.getTargets` 3 命令 +
   `/json/version` + `/json` 发现（headless.rs L782-796/L571/L1159）——历史基线，现行面
   见缺口清单 P3/P4 与切片记录

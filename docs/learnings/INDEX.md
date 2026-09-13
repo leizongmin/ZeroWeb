@@ -5,9 +5,10 @@
 > 布局契约：`<分类>/<YYYY-MM>/<YYYY-MM-DD>-<topic>.md`，日期以 frontmatter 为准。
 > 方法论蒸馏层见 `.agents/skills/zeroweb-guidelines/SKILL.md`。
 
-## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（107）
+## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（108）
 
 - 2026-09-13 [Playwright session.send() 对桥 miss 不 throw——CDP 自动化错误走 exceptionDetails 而非协议错误](bugs/2026-09/2026-09-13-pw-cdp-session-send-exceptiondetails-not-throw.md) — apps/browser,tests/playwright-matrix
+- 2026-09-13 [CDP 子帧元数据面跨 target 串扰与 frameAttached 主帧改写契约](bugs/2026-09/2026-09-13-cdp-frame-metadata-across-targets.md) — apps/browser
 - 2026-09-12 [tungstenite write() 缓冲不落盘 + peek 阶段 read timeout 未恢复 → CDP 客户端首连必败](bugs/2026-09/2026-09-12-tungstenite-write-buffer-stale-read-timeout.md) — apps/browser
 - 2026-09-12 [import-wpt 空 REF 触发下载失败路径删除测试文件](bugs/2026-09/2026-09-12-import-wpt-empty-ref-deletes-test-file.md) — tests/wpt-runner
 - 2026-09-03 [Service Worker iframe controllerchange event state must be event-scoped](bugs/2026-09/2026-09-03-sw-iframe-controllerchange-event-state.md) — engine/js-dom-shim, service-worker, wpt-runner

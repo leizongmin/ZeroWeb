@@ -66,6 +66,12 @@ pub(super) struct HeadlessSession {
     /// Console 事件队列（S11：renderer `ConsoleLog` → `Runtime.consoleAPICalled`，
     /// transport 逐命令排空盖章；`(level, text, args_json)`）。
     pub(super) pending_console_events: Vec<(String, String, String)>,
+    /// 子帧元数据记录（frameAttached 已宣告、未 detach 的 child frame id），
+    /// 按主帧 id（=targetId）分组——单 session 多 target，记录不得跨页串扰。
+    /// ZeroWeb 无子帧文档加载——frame 为纯元数据面（url 停留 about:blank）。
+    pub(super) active_child_frames: std::collections::HashMap<String, Vec<String>>,
+    /// 子帧 frameId 序号（`zeroweb-frame-<n>`）。
+    pub(super) next_frame_seq: u64,
     /// R3282（#4）：可选 GPU 截图渲染器（`ZW_HEADLESS_GPU_SCREENSHOT=1` 启用；
     /// 默认 CPU——oracle 像素对比基线稳定）。
     pub(super) gpu_renderer: Option<zero_render_foundation::gpu::renderer::GpuRenderer>,
@@ -112,6 +118,8 @@ impl HeadlessSession {
             network_enabled: false,
             pending_network_events: Vec::new(),
             pending_console_events: Vec::new(),
+            active_child_frames: std::collections::HashMap::new(),
+            next_frame_seq: 1,
             gpu_renderer: None,
         }
     }
@@ -158,6 +166,8 @@ impl HeadlessSession {
             network_enabled: false,
             pending_network_events: Vec::new(),
             pending_console_events: Vec::new(),
+            active_child_frames: std::collections::HashMap::new(),
+            next_frame_seq: 1,
             gpu_renderer: None,
         }
     }

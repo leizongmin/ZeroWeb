@@ -4,6 +4,7 @@ use std::sync::atomic::Ordering;
 
 use serde_json::Value;
 use zero_browser_shell::TabId;
+use zero_protocol::message::AutomationValue;
 use zero_render_foundation::cpu::render_full_scene;
 use zero_render_foundation::font::cache::GlyphCache;
 use zero_render_foundation::font::loader::FontLoader;
@@ -138,7 +139,8 @@ impl HeadlessServer {
         })
     }
 
-    /// Page.getFrameTree — 主 frame 树（ZeroWeb 无子 frame 语义，childFrames 恒空）。
+    /// Page.getFrameTree — 主 frame 树。childFrames 来自会话子帧元数据记录
+    ///（frameAttached 探测面；url 停留 about:blank——无子帧文档加载）。
     /// frame id 取 `zeroweb-frame-<TabId>`，后续 Page.frameNavigated 等事件须对齐同 id。
     /// 请求来自某个附接会话时，frame 归属该会话的 target（而非全局活跃 tab）。
     pub(super) fn cmd_page_get_frame_tree(
@@ -146,20 +148,32 @@ impl HeadlessServer {
         session: &mut HeadlessSession,
         cdp_session: Option<&str>,
     ) -> Result<Value, ProtocolError> {
-        self.session_tab(session, cdp_session)
+        let tab_info = self
+            .session_tab(session, cdp_session)
+            .map(|tab| (tab.id(), tab.url().unwrap_or("about:blank").to_string()))
             .ok_or_else(|| ProtocolError {
                 code: -32000,
                 message: "No active tab".into(),
+            })?;
+        let main_frame_id = Self::frame_id_for_tab(tab_info.0);
+        let frame = serde_json::json!({
+            "id": main_frame_id,
+            "loaderId": "",
+            "url": tab_info.1,
+            "mimeType": "text/html",
+        });
+        let child_frames: Vec<Value> = session
+            .active_child_frames
+            .get(&main_frame_id)
+            .into_iter()
+            .flatten()
+            .map(|id| {
+                serde_json::json!({
+                    "frame": { "id": id, "loaderId": "", "url": "about:blank", "mimeType": "text/html" },
+                })
             })
-            .map(|tab| {
-                let frame = serde_json::json!({
-                    "id": Self::frame_id_for_tab(tab.id()),
-                    "loaderId": "",
-                    "url": tab.url().unwrap_or("about:blank"),
-                    "mimeType": "text/html",
-                });
-                serde_json::json!({ "frameTree": { "frame": frame, "childFrames": [] } })
-            })
+            .collect();
+        Ok(serde_json::json!({ "frameTree": { "frame": frame, "childFrames": child_frames } }))
     }
 
     /// Page.createIsolatedWorld — 隔离执行 world（ZeroWeb 单引擎，world 仅记账不隔离）。
@@ -349,6 +363,17 @@ impl HeadlessServer {
         events: &mut Vec<ServerEvent>,
     ) {
         let ts = Self::cdp_timestamp_now();
+        // 文档换代：本页上一文档的子帧全部 detach（Chromium 语义——旧文档销毁其嵌套
+        // browsing context；ZeroWeb 子帧为纯元数据面，见下方 attach 探测注记）。
+        // 记录按主帧分组：只 detach 本页（frame_id）的记录，不跨 target 串扰。
+        let stale_frames = session.active_child_frames.remove(frame_id).unwrap_or_default();
+        for child_id in &stale_frames {
+            events.push(ServerEvent {
+                method: "Page.frameDetached".into(),
+                params: serde_json::json!({ "frameId": child_id, "reason": "frameRemoved" }),
+                session_id: None,
+            });
+        }
         let frame_event = |method: &str| ServerEvent {
             method: method.into(),
             params: serde_json::json!({ "frameId": frame_id }),
@@ -397,6 +422,34 @@ impl HeadlessServer {
                         }
                     }
                 }),
+                session_id: None,
+            });
+        }
+        // 子帧元数据探测：新文档的 iframe 元素逐一 attach（DOM 解析期间的 frameAttached
+        // 时序近似）。仅元数据面——ZeroWeb 引擎无子帧文档加载/渲染/JS realm（跨渲染
+        // 流域，见 master.md 维持挂起），frame url 停留 about:blank、无子帧
+        // frameNavigated。ExecuteScript 为函数体语义（S9）→ 脚本须带 return。
+        // 探测失败（renderer 不可达/非 String 返回）按 0 处理不阻塞导航事件族。
+        let iframe_count = session
+            .execute_script_typed("return String(document.querySelectorAll('iframe').length)")
+            .ok()
+            .and_then(|value| match value {
+                AutomationValue::String(text) => text.parse::<u32>().ok(),
+                _ => None,
+            })
+            .unwrap_or(0);
+        for _ in 0..iframe_count {
+            let n = session.next_frame_seq;
+            session.next_frame_seq = session.next_frame_seq.wrapping_add(1).max(1);
+            let child_id = format!("zeroweb-frame-{n}");
+            session
+                .active_child_frames
+                .entry(frame_id.to_string())
+                .or_default()
+                .push(child_id.clone());
+            events.push(ServerEvent {
+                method: "Page.frameAttached".into(),
+                params: serde_json::json!({ "frameId": child_id, "parentFrameId": frame_id }),
                 session_id: None,
             });
         }
