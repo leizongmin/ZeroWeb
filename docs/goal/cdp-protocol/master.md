@@ -2,7 +2,7 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-13（S31：静默轮——pull 零新提交、双解冻条件不变、门免复跑；S28/29/30 收口面复核零新缺口；绿步维持 32）
+**最后更新**: 2026-09-13（S32：domains.rs 2010 行超限拆分——按域 10 子模块纯搬移，全门禁过（19,257P/0F + cdp-e2e 32 绿）；绿步维持 32）
 
 ---
 
@@ -33,6 +33,23 @@
 
 ## 已完成切片
 
+- **S32（2026-09-13）headless/domains.rs 超限拆分 — 按域 10 子模块纯搬移（代码重构切片，绿步维持 32）**：
+  **动机**：S25 后 `apps/browser/src/headless/domains.rs` 达 **2010 行**，超 CLAUDE.md §5
+  2000 行上限（S2 拆 headless.rs 同款约束驱动；本流独占面）。**拆分**：`domains.rs` →
+  `domains/` 子目录 10 模块——mod.rs（dispatch/dispatch_with_events 路由）+ remote_object
+  （remoteObject/objectId/PNG 助手）+ bidi（goal 前遗留面）+ runtime/dom/page/input/
+  emulation/storage/target（CDP 各域）；结构感知纯搬移（按 fn 名映射、逐行零语义变化），
+  子模块方法统一 `pub(super)`（可见域仍限 domains 子树）；`emit_navigation_event_family`
+  升 `pub(in crate::headless)`、再导出行加 `#[cfg(test)]`——tests.rs 零改动。
+  **文件大小审计附记**：`renderer/js_worker.rs` 3528 / `protocol/message.rs` 2366 同超限
+  ——跨流/共享面，按 §9 碰头纪律只记档不动手，留待协调。
+  **验证**：cargo check --all-targets 0E/0W；fmt clean + clippy -D warnings 全过；
+  cdp-e2e 门 **PASS 32 绿 deterministic 双跑一致**（真实 PW 客户端端到端验证拆分零语义
+  漂移）；make test 全量 **19,257P/0F EXIT=0**（与 S25 时点基线精确一致——纯搬移零新增
+  测试）。**flake 归因记档（rule 10）**：前两轮全量分别 1F/4F（均为 wpt-runner
+  testharness 时序型 Timeout，两轮失败集不同）——隔离复跑 0.98s PASS + pristine HEAD
+  stash 对照（双方 testharness 35P/0F 一致）+ crate 零依赖 → 并行 sweep 负载 flake
+  （S16/S25 同型），第三轮全量干净通过。
 - **S31（2026-09-13）静默轮 — 条件复核 + 收口面回归核对（无代码变更，绿步维持 32）**：
   pull 零新提交（tip = 427cad098；自 S28 门禁验证代码树 359679334 以来仅 docs 变更
   S29/S30——门结论延续有效，免复跑）。双解冻条件不变（零上游提交 → 渲染流域无新工作；
