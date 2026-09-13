@@ -2,7 +2,7 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-13（S27：静默轮——pull 零新提交、双解冻条件复核均未满足，门按 S26 预案免复跑；下一步计划 #3 门禁基线漂移修正 28→32）
+**最后更新**: 2026-09-13（S28：evidence 复现链闭合——S17 捕获探针入库 + 当前 tip 组合态捕获复核零未登记漂移；门 PASS 32 绿）
 
 ---
 
@@ -33,6 +33,17 @@
 
 ## 已完成切片
 
+- **S28（2026-09-13）evidence 复现链闭合 — S17 捕获探针入库 + 组合态捕获复核（测试资产小切片，绿步维持 32）**：
+  **缺口**：已入库 evidence（`zeroweb-capture-2026-09-13-summary.json`）的复现命令引用
+  未入库脚本 `probe-s17-capture.mjs`（账本 L201 自注「不入 git」）——复现链断裂，「evidence
+  账本持久化」存在可复现性缺口。**收口**：脚本原样入库（101 行，相对路径零硬编码；依赖
+  `cdp-capture-proxy.mjs`/`capture-core-flow.mjs`/chromium 基线 summary 全部已入库；不改
+  一字保留证据产出溯源），账本复现注记同步；**实跑验证**复现链可执行并取得当前 tip
+  组合态捕获复核：41 方法全为账本「实现」态、chromium-only 缺口 5→3（S25 补测覆盖
+  detachFromTarget/setUserAgentOverride，余 3 挂账有因）、事件类型 17 不变——**零未登记
+  漂移**（明细见账本 S28 节）。其余未跟踪探针维持调试资产不入 git（S10 历史注记不变）。
+  **验证**：cdp-e2e 门 PASS 32 绿 deterministic 双跑一致（tracked 树变化触发复跑，S27
+  规则）；cargo fmt --check clean；clippy 见下（零 Rust delta）。
 - **S27（2026-09-13）静默轮 — 双解冻条件复核 + 门免复跑（无代码变更，绿步维持 32）**：
   pull 零新提交（tip = c61520efb，tracked 树与 S26 门禁验证时点逐字节一致——cdp-e2e 门
   按 S26 预案**免复跑**）。双解冻条件复核（2026-09-13 实测）：① 渲染流域子帧能力仍冻结

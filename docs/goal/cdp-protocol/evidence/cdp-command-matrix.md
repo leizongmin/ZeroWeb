@@ -198,7 +198,8 @@ DC-3 基线）。「现状」列 v0.4 起以 S17 时点 `apps/browser/src/headle
 **方式**：捕获代理 + `capture-core-flow.mjs`（`CDP_ENDPOINT_URL` 指向代理）对 ZeroWeb
 headless 重跑全核心流——真实 Playwright 客户端发送面实测（frames×2 期望失败不影响统计）。
 明细（生成物）：[zeroweb-capture-2026-09-13-summary.json](zeroweb-capture-2026-09-13-summary.json)
-（复现：`tests/playwright-matrix/scripts/probe-s17-capture.mjs`，本地调试脚本不入 git）。
+（复现：`node tests/playwright-matrix/scripts/probe-s17-capture.mjs`——S28 起已入库；
+生成物写 `out/`，不入 git）。
 
 | 维度 | Chromium 基线 | ZeroWeb S17 | 差异归因 |
 |------|--------------|-------------|----------|
@@ -217,6 +218,17 @@ headless 重跑全核心流——真实 Playwright 客户端发送面实测（fr
 
 **结论**：35 个被调方法全部为账本「实现」态方法，**真实客户端命令面与账本登记零漂移**；
 M5 矩阵收口的实测复核通过。
+
+### S28 复现链验证 + 组合态捕获复核（2026-09-13）
+
+复现脚本 `probe-s17-capture.mjs` 入库（原样，保留证据产出溯源），并在当前 tip
+（S27，含 S25 raw-CDP 面）实跑验证——**复现链闭合，零未登记漂移**：
+
+| 维度 | S17 时点 | S28 复核（当前 tip） | 漂移归因 |
+|------|---------|---------------------|----------|
+| 命令调用 | 429 / 35 方法 | 456 / **41** 方法 | +4 方法 = S25 补测步集合（`Target.getTargets`/`attachToTarget`/`attachToBrowserTarget`/`Runtime.releaseObjectGroup`，账本全登记）；调用数增量为新增步 + PW 重试放大 |
+| 事件 | 81 / 17 种 | 136 / **17** 种 | 类型零漂移；数量随步数增长 |
+| chromium-only 缺口 | 5 项 | **3 项** | S25 补测覆盖 `detachFromTarget`/`setUserAgentOverride`；余 3 项挂账有因（getFrameOwner=frames 挂起下游、handleJavaScriptDialog=无事件源、setFontFamilies=-32601 容忍） |
 
 ## ZeroWeb 侧 DC-1 覆盖审计（S25，2026-09-13）
 
