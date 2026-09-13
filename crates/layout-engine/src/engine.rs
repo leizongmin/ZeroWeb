@@ -2320,6 +2320,7 @@ impl LayoutEngine {
             text_node_text_transform: Default::default(),
             plaintext_bidi_nodes: Default::default(),
             inline_vertical_nodes: Default::default(),
+            inline_block_child_nodes: Default::default(),
             text_node_bidi_overrides: Default::default(),
             text_node_font_families: Default::default(),
             text_node_font_size_adjust: Default::default(),

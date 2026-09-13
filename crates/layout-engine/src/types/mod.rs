@@ -392,6 +392,12 @@ pub struct LayoutBox {
     /// 读此集合（`store_font_sizes_from_ifc` 按 run owner 填充——竖排子经 layout 侧
     /// 同一判定门必然走 flatten 持有 run，故覆盖完备）。
     pub inline_vertical_nodes: NodeIdSet,
+    /// R4312：含**块级元素子**（display 非 inline 级）的 inline 元素集合（key = 元素
+    /// NodeId）。FLAT_CHILD_WALK 的块子门信号——块子经 R109 block-in-inline 机制
+    /// 处理，walk 展开会改变盒树/intrinsic 测量（td>span>div{width:500} cell 被过测
+    /// 到 500px，r1153_table_cell_inline_child_not_over_measured 实证）。填充方式同
+    /// `inline_vertical_nodes`。
+    pub inline_block_child_nodes: NodeIdSet,
     /// R3840：元素级 `unicode-bidi: bidi-override` 映射（key = inline owner 元素
     /// NodeId，value = 方向 rtl?）。paint Path B 空 styles 恢复 per-run 字符反转。
     pub text_node_bidi_overrides: NodeIdMap<bool>,
@@ -599,6 +605,7 @@ impl Default for LayoutBox {
             text_node_text_transform: NodeIdMap::default(),
             plaintext_bidi_nodes: NodeIdSet::default(),
             inline_vertical_nodes: NodeIdSet::default(),
+            inline_block_child_nodes: NodeIdSet::default(),
             text_node_bidi_overrides: NodeIdMap::default(),
             text_node_font_families: NodeIdMap::default(),
             text_node_font_size_adjust: NodeIdMap::default(),

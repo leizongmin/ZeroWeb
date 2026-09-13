@@ -738,14 +738,16 @@ impl InlineFormattingContext {
                         // 纯文本子（无元素子）走下方既有单 run 路径（字节不变）。
                         // kill-switch `ZW_FLAT_CHILD_WALK=0`。ruby 的 rt/rp 特例
                         //（R1022）不走 walk（含元素子时仍走旧扁平化）。
-                        // **default-off（探针挂账，R4300）**：walk 本体已实现并实测——
-                        // child-attribution 变体 net −7（white-space/contain 族翻绿但
-                        // border-color-012 的 .text 吸收、ruby-vertical、quotes 配序、
-                        // bidi 控制字符域翻红），ancestor-absorption 变体 net −11。
-                        // 待逐域 gate（quotes 配序 / ruby vertical / bidi 控制字符）后
-                        // 再 default-on；`ZW_FLAT_CHILD_WALK=1` 可显式开启探针。
+                        // **default-on（R4312，2026-09-13）**：R4300 探针挂账的逐域
+                        // gate 已收敛——quotes 配序（R4308 font 度量三级回退）、
+                        // ruby 递归（R4308 特例门）、bidi 控制字符（R4300c/R4303）、
+                        // 竖排 writing-mode（R4310 per-node 信号通道 + 门）、SVG 行盒
+                        // 贡献（R4311 特例门）逐域清偿后，walk-on 全量 corpus 14765
+                        // 反超 walk-off baseline 14763（净 +2：5 翻绿/3 翻红，余
+                        // font-size-121/R109-split/intrinsic×IB 三深域挂账）。
+                        // `ZW_FLAT_CHILD_WALK=0` 回退旧扁平化。
                         static FLAT_CHILD_WALK: std::sync::LazyLock<bool> = std::sync::LazyLock::new(|| {
-                            std::env::var("ZW_FLAT_CHILD_WALK").as_deref() == Ok("1")
+                            std::env::var("ZW_FLAT_CHILD_WALK").as_deref() != Ok("0")
                         });
                         // R4300b：bidi 特殊元素（rtl / unicode-bidi ≠ normal）不走 walk——
                         // 双向重排按 run 序列切分视觉段，拆 run 会改变重排段组成
@@ -781,6 +783,17 @@ impl InlineFormattingContext {
                                 )
                             })
                             .unwrap_or_else(|| self.vertical_walk_nodes.contains(&child_id));
+                        // R4312：含块级元素子的 inline 不走 walk——块子经 R109
+                        // block-in-inline 机制处理，walk 展开会改变盒树/intrinsic 测量
+                        //（td>span>div{width:500} cell 被过测到 500px，
+                        // r1153_table_cell_inline_child_not_over_measured 实证）。判定
+                        // 通道同竖排门：layout 有 styles 直判，paint Path B 读存储信号。
+                        let child_has_block_element_child = Self::has_block_level_child(
+                            doc,
+                            styles,
+                            child_id,
+                            &self.block_child_walk_nodes,
+                        );
                         let has_element_children = *FLAT_CHILD_WALK
                             && elem_data.local_name() != "ruby"
                             // R4311：SVG 子树不走 walk——flatten 路径对 svg 落零宽 run
@@ -791,6 +804,7 @@ impl InlineFormattingContext {
                             && !bidi_special
                             && !has_bidi_controls
                             && !child_declares_vertical_wm
+                            && !child_has_block_element_child
                             && !self.vertical
                             && doc.child_nodes(child_id).iter().any(|&gc| {
                                 doc.get(gc).is_some_and(|n| matches!(&n.kind, NodeKind::Element(_)))
@@ -1196,7 +1210,15 @@ impl InlineFormattingContext {
                             )
                         })
                         .unwrap_or_else(|| self.vertical_walk_nodes.contains(&gc));
-                    if gc_is_special_elem || gc_has_bidi_controls || gc_declares_vertical_wm {
+                    // R4312：块级元素子同门（主 collect 路径同判定）——递归深入含块子
+                    // 的 inline 会改变 R109 block-in-inline 盒树/intrinsic 测量。
+                    let gc_has_block_child =
+                        Self::has_block_level_child(doc, styles, gc, &self.block_child_walk_nodes);
+                    if gc_is_special_elem
+                        || gc_has_bidi_controls
+                        || gc_declares_vertical_wm
+                        || gc_has_block_child
+                    {
                         if let Some(item) = self.build_flatten_run_for_element(doc, gc, styles) {
                             items.push(item);
                         }
@@ -1211,6 +1233,36 @@ impl InlineFormattingContext {
         // 末段文本：仅当其后无元素子时携带外层 mr/pr（有则由末元素子后续 frame 承接，
         // 简化处理：末段文本始终携带——外层 mr/pr 丢失于「末子为元素」形态，挂账）。
         flush_pending(&mut text_pending, items, !emitted_text_run, true);
+    }
+
+    /// R4312：`id` 的元素子中是否存在**块级**（display 非 inline 级）——walk 块子门
+    /// 判定。有 styles（layout IFC）直判；paint Path B（空 styles）读存储信号
+    /// `stored`（`LayoutBox.inline_block_child_nodes`，store_font_sizes_from_ifc 按
+    /// run owner 填充，覆盖完备性与竖排门同论证）。
+    fn has_block_level_child(
+        doc: &Document,
+        styles: &HashMap<NodeId, ComputedStyle>,
+        id: NodeId,
+        stored: &NodeIdSet,
+    ) -> bool {
+        styles
+            .get(&id)
+            .map(|_| {
+                doc.child_nodes(id).iter().any(|&gc| {
+                    doc.get(gc).is_some_and(|n| matches!(n.kind, NodeKind::Element(_)))
+                        && styles.get(&gc).is_some_and(|st| {
+                            !matches!(
+                                st.display,
+                                DisplayValue::Inline
+                                    | DisplayValue::InlineBlock
+                                    | DisplayValue::InlineFlex
+                                    | DisplayValue::InlineGrid
+                                    | DisplayValue::InlineTable
+                            )
+                        })
+                })
+            })
+            .unwrap_or_else(|| stored.contains(&id))
     }
 
     fn resolve_word_spacing(value: &LengthValue, font_size: f32) -> f32 {

@@ -105,6 +105,26 @@ fn store_font_sizes_from_ifc_mode(
                 box_node.inline_vertical_nodes.insert(owner);
             }
         }
+        // R4312：块级元素子信号（FLAT_CHILD_WALK 块子门）——含块级子的 inline 走
+        // R109 block-in-inline 机制，walk 展开会改变盒树/intrinsic 测量。按 run
+        // owner 填充（经 layout 同一判定门该元素必走 flatten 持有 run，覆盖完备）。
+        if let Some(owner) = font_owner
+            && doc.child_nodes(owner).iter().any(|&gc| {
+                doc.get(gc).is_some_and(|n| matches!(n.kind, NodeKind::Element(_)))
+                    && styles.get(&gc).is_some_and(|st| {
+                        !matches!(
+                            st.display,
+                            zero_css_parser::values::DisplayValue::Inline
+                                | zero_css_parser::values::DisplayValue::InlineBlock
+                                | zero_css_parser::values::DisplayValue::InlineFlex
+                                | zero_css_parser::values::DisplayValue::InlineGrid
+                                | zero_css_parser::values::DisplayValue::InlineTable
+                        )
+                    })
+            })
+        {
+            box_node.inline_block_child_nodes.insert(owner);
+        }
         box_node.text_node_line_heights.insert(frag.node_id, frag.height);
         // R1012: text-transform belongs to the text node's parent style but is
         // restored by fragment NodeId when paint reruns IFC with empty styles.

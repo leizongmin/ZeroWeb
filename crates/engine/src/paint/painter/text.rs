@@ -1033,6 +1033,8 @@ impl super::Painter {
                     // R4310：竖排 writing-mode 元素信号——FLAT_CHILD_WALK 竖排子门在
                     // paint Path B（空 styles）下按 layout 期存储复现判定。
                     .with_vertical_walk_nodes(box_node.inline_vertical_nodes.clone())
+                    // R4312：块级元素子信号——walk 块子门同通道恢复。
+                    .with_block_child_walk_nodes(box_node.inline_block_child_nodes.clone())
                     // R3840：元素级 bidi-override 恢复（layout 期按文本节点 id 存储）。
                     .with_text_node_bidi_overrides(box_node.text_node_bidi_overrides.clone())
                     // R3778：run 级有效 white-space 覆盖——inline 包裹层声明的 pre 等在
