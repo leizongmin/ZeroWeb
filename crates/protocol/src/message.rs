@@ -255,6 +255,8 @@ pub enum IpcMessageKind {
     /// 页面 console 输出（renderer → headless CDP 会话；`Runtime.consoleAPICalled` 事件源，
     /// cdp-protocol S11 value-only 面）。
     ConsoleLog(crate::message::ConsoleLogParams),
+    /// 未捕获脚本错误（renderer → browser；headless 映射 `Runtime.exceptionThrown`，P3）。
+    ScriptError(crate::message::ScriptErrorParams),
     /// 页面 fetch 观测（renderer → headless CDP 会话；`Network.requestWillBeSent`/
     /// `responseReceived`/`loadingFinished` 事件源，cdp-protocol S14）。
     FetchObserved(crate::message::FetchObservedParams),
@@ -460,6 +462,19 @@ pub enum AutomationResult {
     Elements(Vec<AutomationElementRef>),
     /// JSON 兼容脚本返回值。
     Value(AutomationValue),
+}
+
+/// renderer 未捕获脚本错误（CDP `Runtime.exceptionThrown` 事件源；P3）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScriptErrorParams {
+    /// 错误消息（`Error.stack` 首行或 message）。
+    pub text: String,
+    /// 脚本来源 URL（页面 URL——宿主侧执行错误无独立 script 文件）。
+    pub source: String,
+    /// 行号（宿主执行粒度缺失时为 0）。
+    pub line_number: u32,
+    /// 列号（同上）。
+    pub column_number: u32,
 }
 
 /// renderer 页面 console 输出（CDP `Runtime.consoleAPICalled` 事件源；value-only 面）。

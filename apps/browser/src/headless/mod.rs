@@ -388,6 +388,29 @@ impl HeadlessServer {
                 session_id: page_session.clone(),
             });
         }
+        for err in session.pending_script_errors.drain(..) {
+            events.push(ServerEvent {
+                method: "Runtime.exceptionThrown".into(),
+                params: serde_json::json!({
+                    "timestamp": std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_millis() as u64,
+                    "exceptionDetails": {
+                        "text": err.text,
+                        "url": err.source,
+                        "lineNumber": err.line_number,
+                        "columnNumber": err.column_number,
+                        "exception": {
+                            "type": "object",
+                            "subtype": "error",
+                            "description": err.text,
+                        },
+                    },
+                }),
+                session_id: page_session.clone(),
+            });
+        }
         for (method, params) in session.pending_network_events.drain(..) {
             events.push(ServerEvent {
                 method,

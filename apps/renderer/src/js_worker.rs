@@ -110,6 +110,9 @@ pub struct RendererJsWorker {
     cmd_tx: Sender<JsWorkerCommand>,
     /// S11：page console 输出队列（worker 回调推入，runtime drain）。
     console_logs: Arc<std::sync::Mutex<Vec<(String, String, String)>>>,
+    /// R-baidu2/P3：未捕获脚本错误队列（page_scripts 推入，runtime drain 后
+    /// 经 IPC `ScriptError` 转发 browser/headless——`Runtime.exceptionThrown` 源）。
+    script_errors: Arc<std::sync::Mutex<Vec<zero_protocol::message::ScriptErrorParams>>>,
     /// S16：document.write 落定信号队列（worker 回调推入，runtime drain）。
     doc_write_settled: Arc<std::sync::Mutex<Vec<()>>>,
     /// S11：宿主媒体上下文（matchMedia 求值的用户偏好源）。
@@ -179,6 +182,8 @@ impl RendererJsWorker {
         // S11（cdp-protocol value-only console 面）：page console 输出队列——worker 回调
         // 推入，runtime 主循环 drain → browser/headless（`Runtime.consoleAPICalled`）。
         let console_logs: Arc<std::sync::Mutex<Vec<(String, String, String)>>> = Arc::default();
+        let script_errors: Arc<std::sync::Mutex<Vec<zero_protocol::message::ScriptErrorParams>>> = Arc::default();
+        let script_errors_for_worker = Arc::clone(&script_errors);
         let console_logs_for_worker = Arc::clone(&console_logs);
         // S14（cdp-protocol network.events）：renderer fetch 观测队列——**唯一实例在本
         // spawn 内创建**，worker 侧观测 handler 推入、runtime 经 accessor 持同 Arc drain
@@ -218,6 +223,7 @@ impl RendererJsWorker {
                     cmd_rx,
                     cmd_for_worker,
                     console_logs_for_worker,
+                    script_errors_for_worker,
                     doc_write_settled_for_worker,
                     media_ctx_for_worker,
                     mutations_for_worker,
@@ -269,6 +275,7 @@ impl RendererJsWorker {
             executor,
             module_executor,
             console_logs,
+            script_errors,
             doc_write_settled,
             media_ctx,
             fetch_observed,
@@ -322,6 +329,22 @@ impl RendererJsWorker {
     /// 循环转发 browser/headless（`Network.*` 事件源）。
     pub fn take_fetch_observed(&self) -> Vec<FetchObservedRecord> {
         self.fetch_observed
+            .lock()
+            .map(|mut q| std::mem::take(&mut *q))
+            .unwrap_or_default()
+    }
+
+    /// R-baidu2/P3：推入一条未捕获脚本错误（页面脚本执行失败时由 page_scripts 调用）。
+    pub fn push_script_error(&self, params: zero_protocol::message::ScriptErrorParams) {
+        if let Ok(mut q) = self.script_errors.lock() {
+            q.push(params);
+        }
+    }
+
+    /// R-baidu2/P3：原子取出未捕获脚本错误，供 runtime 主循环转发 browser/headless
+    /// （`Runtime.exceptionThrown` 事件源）。
+    pub fn take_script_errors(&self) -> Vec<zero_protocol::message::ScriptErrorParams> {
+        self.script_errors
             .lock()
             .map(|mut q| std::mem::take(&mut *q))
             .unwrap_or_default()
@@ -592,6 +615,7 @@ fn js_worker_main(
     cmd_rx: Receiver<JsWorkerCommand>,
     cmd_tx: Sender<JsWorkerCommand>,
     console_logs_for_worker: Arc<std::sync::Mutex<Vec<(String, String, String)>>>,
+    script_errors_for_worker: Arc<std::sync::Mutex<Vec<zero_protocol::message::ScriptErrorParams>>>,
     doc_write_settled_for_worker: Arc<std::sync::Mutex<Vec<()>>>,
     media_ctx_for_worker: Arc<std::sync::Mutex<zero_css_parser::media_query::MediaContext>>,
     mutations: Arc<std::sync::Mutex<Vec<DomMutation>>>,
@@ -756,6 +780,19 @@ fn js_worker_main(
                 execution_count.fetch_add(1, Ordering::Relaxed);
                 let full = format!("__zw_begin_script && __zw_begin_script();\n{script}");
                 let result = sandbox.execute(&full).map(|r| r.value).map_err(|e| e.to_string());
+                // R-baidu2/P3：未捕获脚本错误统一在此汇出（页面脚本/定时器/事件回调
+                // 的异常都经某次 execute 的 Err 冒出）→ `Runtime.exceptionThrown`。
+                if let Err(ref message) = result {
+                    let source = page_url.lock().map(|mut g| std::mem::take(&mut *g)).unwrap_or_default();
+                    if let Ok(mut q) = script_errors_for_worker.lock() {
+                        q.push(zero_protocol::message::ScriptErrorParams {
+                            text: message.clone(),
+                            source,
+                            line_number: 0,
+                            column_number: 0,
+                        });
+                    }
+                }
                 let _ = reply.send(result);
             }
             JsWorkerCommand::ExecuteModule {

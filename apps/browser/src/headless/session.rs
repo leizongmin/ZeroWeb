@@ -76,6 +76,9 @@ pub(super) struct HeadlessSession {
     /// Console 事件队列（S11：renderer `ConsoleLog` → `Runtime.consoleAPICalled`，
     /// transport 逐命令排空盖章；`(level, text, args_json)`）。
     pub(super) pending_console_events: Vec<(String, String, String)>,
+    /// 未捕获脚本错误队列（R-baidu2/P3：renderer `ScriptError` →
+    /// `Runtime.exceptionThrown` 事件源）。
+    pub(super) pending_script_errors: Vec<zero_protocol::message::ScriptErrorParams>,
     /// 子帧元数据记录（frameAttached 已宣告、未 detach 的 child frame id），
     /// 按主帧 id（=targetId）分组——单 session 多 target，记录不得跨页串扰。
     /// ZeroWeb 无子帧文档加载——frame 为纯元数据面（url 停留 about:blank）。
@@ -166,6 +169,7 @@ impl HeadlessSession {
             network_enabled: false,
             pending_network_events: Vec::new(),
             pending_console_events: Vec::new(),
+            pending_script_errors: Vec::new(),
             active_child_frames: std::collections::HashMap::new(),
             next_frame_seq: 1,
             gpu_renderer: None,
@@ -216,6 +220,7 @@ impl HeadlessSession {
             network_enabled: false,
             pending_network_events: Vec::new(),
             pending_console_events: Vec::new(),
+            pending_script_errors: Vec::new(),
             active_child_frames: std::collections::HashMap::new(),
             next_frame_seq: 1,
             gpu_renderer: None,
@@ -254,6 +259,10 @@ impl HeadlessSession {
             IpcMessageKind::LoadFailed(message) | IpcMessageKind::CrashNotification(message) => Ok(Some(Err(message))),
             // S11：page console 输出 → 会话事件队列（transport 逐命令排空盖章为
             // `Runtime.consoleAPICalled`； PW 消费面 = msg.type()/text()）。
+            IpcMessageKind::ScriptError(params) => {
+                self.pending_script_errors.push(params);
+                Ok(None)
+            }
             IpcMessageKind::ConsoleLog(params) => {
                 self.pending_console_events
                     .push((params.level, params.text, params.args_json));
