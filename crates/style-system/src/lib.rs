@@ -520,7 +520,6 @@ impl StyleSystem {
         }
     }
 
-
     /// R4322：祖先属性链指纹累积——把本元素的 (tag, attrs) 混入父链哈希。
     /// FNV-1a 逐属性（name=value）+ tag；顺序敏感（同集合异序父链按异构处理，
     /// 保守正确）。属性值字符串哈希经 DefaultHasher（SipHash，碰撞面可忽略）。
@@ -597,11 +596,7 @@ impl StyleSystem {
                         }) =>
                     {
                         let unkeyed = if parent_key.is_some() { 0 } else { chain_hash };
-                        Some(std::rc::Rc::new(StyleKey::from_element(
-                            e,
-                            parent_key.clone(),
-                            unkeyed,
-                        )))
+                        Some(std::rc::Rc::new(StyleKey::from_element(e, parent_key.clone(), unkeyed)))
                     }
                     _ => None,
                 }
