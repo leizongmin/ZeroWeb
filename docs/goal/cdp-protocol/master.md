@@ -2,7 +2,7 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-13（S26：静默验证轮——R4300-N 组合态 cdp-e2e 门 PASS 32 绿零漂移；该 tip 已门禁验证，后续轮次代码树不变时可免复跑）
+**最后更新**: 2026-09-13（S27：静默轮——pull 零新提交、双解冻条件复核均未满足，门按 S26 预案免复跑；下一步计划 #3 门禁基线漂移修正 28→32）
 
 ---
 
@@ -33,6 +33,16 @@
 
 ## 已完成切片
 
+- **S27（2026-09-13）静默轮 — 双解冻条件复核 + 门免复跑（无代码变更，绿步维持 32）**：
+  pull 零新提交（tip = c61520efb，tracked 树与 S26 门禁验证时点逐字节一致——cdp-e2e 门
+  按 S26 预案**免复跑**）。双解冻条件复核（2026-09-13 实测）：① 渲染流域子帧能力仍冻结
+  ——engine/layout-engine 近 14 天活跃面 = filter/svg/inline 布局修复，无子帧文档加载
+  工作（git log 命中的 iframe 项为旧 editing goal 的 realm 面遗留；layout "frame" 命中
+  为 CSS border-box 术语，非 HTML 子帧）；② DC-2 口径无新拍板记录（docs/goal 近 3 天
+  提交全为本流）。控制面自洽核查：expected-green.json = 32 步与记录一致；门禁图核查——
+  verify-deterministic/capture-core-flow 仅 import 已入库模块，scripts/ 下未跟踪探针
+  不入门禁图（「免复跑」判定在存在未跟踪文件时仍成立）。DC-2 口径维持待用户决策，无新
+  信息、无扩展面。
 - **S26（2026-09-13）静默验证轮 — R4300-N 组合态门复核（无代码变更，绿步维持 32）**：
   pull 拉入渲染流 R4300-N（inline flatten 保子序列 walk 探针，layout-engine 单文件，
   **default-off** 零默认行为变化）；新 tip 上 cdp-e2e 门 **PASS**（32 绿、deterministic
@@ -340,7 +350,9 @@
      ✅（口径挂账注记）；③ goal 入口文档 DC-2 行加挂账口径注记（不改判定语义原文，仅
      注记）；④ expected-green 基线维持 28 不动（frames 步骤继续跑、不门禁）；⑤ CI 集成
      评估出结论记账。四步全 docs，一个提交。
-3. **持续推进**：每轮 pull → cdp-e2e 门（基线 28 步）+ make test 防回归，余项按窗口逐个解冻。
+3. **持续推进**：每轮 pull → cdp-e2e 门防回归（基线 32 步；**免复跑条件**：pull 后
+   HEAD 未变且 tracked 树无变更——S26 验证过的 tip 可引用其结论，S27 复核未跟踪探针
+   不入门禁图）；tracked 树变化时门 + make test。余项按窗口逐个解冻。
 
 **待用户决策清单**：
 - **DC-2 收口口径（2026-09-13 新入，维持）**：余 2 步（frames.access/frames.click+evaluate）
