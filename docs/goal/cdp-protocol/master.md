@@ -2,12 +2,12 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-14（S271：静默监测轮——tip 与 S270 提交一致（2e4f629ba），
+**最后更新**: 2026-09-14（S272：静默监测轮——tip 与 S271 提交一致（407af26b3），
 双层锚点零漂移（自有面维持 apps/browser README +1 已归因基线，全树锚点零外部
 变化），门结论引用 S268 活跑（同轮三调序列收口 PASS 33 绿 deterministic YES
-EXIT=0 ZERO_DRIFT=YES，05:15 落盘），引用计数 3/10 下次活跑至迟 S278；绿步维持
+EXIT=0 ZERO_DRIFT=YES，05:15 落盘），引用计数 4/10 下次活跑至迟 S278；绿步维持
 33；解冻条件①观察面不变（crates/ 自 8fb39cd46 零新增，渲染流子帧能力未落树），
-②DC-2 无新拍板；净窗延续（负载 0.90 零验证腿，rally 双流主进程 + cron 主进程
+②DC-2 无新拍板；净窗延续（负载 0.48 零验证腿，rally 双流主进程 + cron 主进程
 在窗均非验证面）；零 zombie 零遗留端口）
 
 ---
@@ -39,6 +39,24 @@ EXIT=0 ZERO_DRIFT=YES，05:15 落盘），引用计数 3/10 下次活跑至迟 S
 
 ## 已完成切片
 
+- **S272（2026-09-14）静默监测轮 — 同 tip 复核（无代码变更，绿步维持 33）**：
+  pull 零新提交（tip = 407af26b3，即 S271 提交本身）——双层锚点口径复核通过：
+  本流自有面锚点增量零漂移（硬核对 `git diff 765429dda..HEAD -- apps/browser
+  tests/playwright-matrix scripts/test-guard.rs Makefile` 维持仅命中 apps/browser/
+  README.md +1 行 = S255 已归因的 52695a7c1 漂移基线，其后零新增漂移）；全树
+  锚点复核（基 407af26b3=S271 tip，仅 docs/goal/cdp-protocol/master.md 本流
+  控制面）零外部变化——维持归因态零新增不可归因文件。门结论引用 S268 活跑
+  （负载窗口内同轮三调序列收口 PASS 33 绿 deterministic 双跑 YES EXIT=0
+  ZERO_DRIFT=YES，steps/determinism-report 05:15 落盘），引用计数 4/10，
+  **下次活跑至迟 S278**。双解冻条件：① 观察面不变——crates/ 自 8fb39cd46 零
+  新增提交，渲染流子帧文档加载 + JS realm 能力未落树（frames.click+evaluate
+  解挂前提未到）；② docs/goal 自 S271 零非本流提交，DC-2 口径无新拍板记录。
+  机器卫生复核：零 zombie、9222/45029/34293/96xx 全空闲、本流零遗留进程。
+  **并行流观察**：净窗延续（负载 0.48，零验证腿在窗——无 test-guard/cargo/
+  cdp-e2e/playwright 持久进程），延续在窗仅 rally 双流主进程（本流
+  cdp-protocol + 渲染流 ZeroWeb-2）+ rally cron 主进程（均非验证面非本流自有
+  面）。S78 故障窗口后持续零复现，监测态维持；S168 形态累计两例非聚集记账
+  维持。goal 自有面零新缺口、无扩展面（S40-S271 重审结论延续）。
 - **S271（2026-09-14）静默监测轮 — 同 tip 复核（无代码变更，绿步维持 33）**：
   pull 零新提交（tip = 2e4f629ba，即 S270 提交本身）——双层锚点口径复核通过：
   本流自有面锚点增量零漂移（硬核对 `git diff 765429dda..HEAD -- apps/browser
