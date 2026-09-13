@@ -926,9 +926,10 @@ impl super::Painter {
 
         // R4296：inline 非原子盒的垂直 padding/border 渲染于行盒之外（CSS2 §10.8.1
         // 布局不入行盒高，绘制须外延）——backdrop-filter 区域 = border-box。
+        // R4297：外延量改缺失量口径（box 字段差值，防 taffy 已含 border 双计）。
         // default-off（见 inline_bleed_enabled 字段文档）。
         let (bleed_top, bleed_bottom) = if self.inline_bleed_enabled {
-            super::super::helpers::inline_box_vertical_bleed(style)
+            super::super::helpers::inline_box_vertical_bleed(style, box_node)
         } else {
             (0.0, 0.0)
         };

@@ -75,6 +75,16 @@ pub fn check_sibling_overlaps(
                 {
                     continue;
                 }
+                // R4297：跳过 inline 级盒对（任一 !is_block_level）——本检查的目标是
+                // block/flex/grid/float 正常流兄弟（见函数文档首句）；inline 兄弟的几何是
+                // IFC fragment 派生（R2197 orphan 并集盒、R4297 行位同步盒同理），**跨行
+                // inline 的并集盒会与首行 inline sibling 相交但不代表视觉重叠**（其文字/背景
+                // 由父 IFC 按行片段绘制，R639/R1442）——morning-work CC 许可 `<a>`（435×48
+                // 两行并集）×「老雷」`<a>`（同首行 32×24）实证，像素逐字节同值。R2198 的
+                // orphan 豁免是本条的真子集（orphan 盒 !is_block_level）。
+                if !ci.is_block_level || !cj.is_block_level {
+                    continue;
+                }
                 let (ov, ov_h) = rect_overlap_area(
                     (child_off_x + ci.x, child_off_y + ci.y, ci.width, ci.height),
                     (child_off_x + cj.x, child_off_y + cj.y, cj.width, cj.height),

@@ -1115,15 +1115,32 @@ fn compute_column_widths_inner(
 /// floats-wrap-bfc-001：float 100 + BFC 50 = 150，应 max(100,50)=100）。
 /// 此处把 in-flow 子（sum，垂直堆叠）与浮动子（max 外底边，BFC 包含）分离，
 /// 取两者 max。返回该单元格「BFC 包含浮动后」的内容高度下限。
-fn cell_float_aware_content_height(cell_box: &LayoutBox) -> f32 {
-    // 内容高度 = in-flow 子元素 border-box 底边最大值（c.y 已含定位 + margin_top，
+fn cell_float_aware_content_height(cell_box: &LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) -> f32 {
+    // 内容高度 = in-flow 子元素底边最大值（c.y 已含定位 + margin_top，
     // adjust_float_positions 可能把 BFC/table 子推到 float 下方使 c.y>0，此时 sum(heights)
     // 低估——须用 max(c.y + height + mb)）。c.y 相对 cell border-box。
+    // R4297：display:inline 子取**内容域**底（c.content_height）——CSS2 §10.8.1 inline 的
+    // 垂直 padding/border 不入行盒、不参与容器高度；R4297 行位同步把 inline 子盒重写为 CSS
+    // border-box（h 含垂直 padding，padding-applies-to-017 的 span.test h=16+160）后，
+    // border-box 底会把 td/行高撑到 padding 底（红底外露）。按 computed display 判 inline
+    //（LayoutBox.is_block_level 对 Default 盒不可靠——table/tests BFC 夹具实证）；无样式
+    // 的子仍用完整 border-box 底。
+    let in_flow_bottom = |c: &LayoutBox| {
+        let inline_display = c
+            .node_id
+            .and_then(|id| styles.get(&id))
+            .is_some_and(|s| matches!(s.display, DisplayValue::Inline));
+        if inline_display {
+            c.y + c.content_height + c.margin_bottom
+        } else {
+            c.y + c.height + c.margin_bottom
+        }
+    };
     let in_flow_height: f32 = cell_box
         .children
         .iter()
         .filter(|c| !c.is_absolute && !c.is_fixed && matches!(c.float, FloatValue::None))
-        .fold(0.0f32, |max_y, c| max_y.max(c.y + c.height + c.margin_bottom));
+        .fold(0.0f32, |max_y, c| max_y.max(in_flow_bottom(c)));
     let float_bottom: f32 = cell_box
         .children
         .iter()
@@ -1341,7 +1358,7 @@ fn position_cells(
                     // 导致 table 高度 < 单元格 BFC 高度（td 溢出不可见）。
                     row_height = row_height
                         .max(cell_box.height)
-                        .max(cell_float_aware_content_height(cell_box));
+                        .max(cell_float_aware_content_height(cell_box, styles));
                 }
             }
             // 空行（单元格无内容）高度为 0——chromium 对空 cell 渲染 0px
@@ -1481,7 +1498,7 @@ fn position_cells(
             // 取 max(行高, 单元格内容的累积高度)。
             // 注意：正常流子元素是垂直堆叠的，应使用 sum 而非 max。
             // R1390：BFC 包含浮动后的内容高度（见 cell_float_aware_content_height）。
-            let cell_content_height: f32 = cell_float_aware_content_height(cell_box);
+            let cell_content_height: f32 = cell_float_aware_content_height(cell_box, styles);
             let cell_height = row_height.max(cell_content_height);
             cell_box.height = cell_height;
             // 同步更新 content_height，确保 overflow 裁剪使用增长后的高度

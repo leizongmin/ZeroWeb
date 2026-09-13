@@ -620,19 +620,99 @@ pub(crate) fn extract_inline_visual_metrics(style: &ComputedStyle) -> InlineVisu
 
 /// 将 IFC 计算出的直接 inline 子元素几何写回 LayoutBox。
 ///
-/// 仅处理「单个 fragment 即可完整表示」的简单 inline 元素：
-/// - `display:inline`
-/// - 非 absolute/fixed
-/// - 在当前 IFC 中恰好对应一个 fragment
+/// 两档：
+/// - **空 inline 元素**（零宽 TextRun，单 fragment）：全几何重写（既有路径）——
+///   paint 阶段使用更接近真实 inline box 的几何去绘制背景/边框，避免 taffy 将
+///   inline 元素当作 block 后得到的零尺寸或错误尺寸。
+/// - **含文本 inline 元素**（R4297）：行位重写为 CSS inline border-box 语义。
+///   taffy 把 display:inline 子当 block 堆叠，LayoutBox 锚定容器流位（x=行首、
+///   y=容器顶），真实行位仅在 IFC fragment 数据中——前驱 inline 兄弟
+///   （`<i>AB</i><span>` 的 span x=行首覆盖「AB」）或折行到后继行（span y=容器顶）
+///   时盒位系统性错误，背景 / backdrop-filter 区域（R4296 `ZW_INLINE_BLEED` 前提）、
+///   R1442/R639 per-fragment 门控（inline_heights）、hit-test 随错。
 ///
-/// 这样可以让 paint 阶段使用更接近真实 inline box 的几何去绘制背景/边框，
-/// 避免 taffy 将 inline 元素当作 block 后得到的零尺寸或错误尺寸。
+/// R4297 文本路径重写口径（x/y/高 + 垂直盒字段；**宽只外扩不收缩**）：
+/// - **y** = 首个匹配 fragment 所在行盒顶（line.y）− padding_top − border_top。
+///   fragment y 是 baseline 对齐位（`run.y = baseline_y − run.height`，inline/mod.rs
+///   valign pass）非行盒顶。
+/// - **x** = fragment 并集最左 − margin/padding/border-left。首词 run.x 已含 IFC 前驱
+///   推进与自身 margin/padding-left 前进（break_lines 先推进后落词）；IFC 水平推进不含
+///   border-left（TextRun 无此字段），由 metrics 补。
+/// - **高** = fragment 并集 + 垂直 padding/border（CSS border-box；并集跨行自然 >
+///   1.5×fs → 与 R639/R1442 per-fragment 门控（同读 inline_heights，同轮改存 content
+///   域）一致联动，padded/multi-line span 由 fragment 路径按行绘）。
+/// - **宽** = max(并集宽, taffy 宽)。IFC 对空 inline 元素的推进不完整（r4134：
+///   `A <span pad-left:64></span>B` 的 spacer 64px 未入 run 推进，并集 21.6 < taffy 64；
+///   taffy/intrinsic 宽经 R4134 frame 贡献更接近真值）；外扩场景（bidi 折行 /
+///   white-space / target-text 族）并集 ≥ taffy 才生效。
+///
+/// 收窄门（仅文本路径）：①水平书写模式（垂直模式 `line.y` 是列 x，轴语义不同，
+/// R1456）；②容器无块级 in-flow 子——混排容器 IFC 只测 inline 序列，fragment y
+/// 不含块级子占据的流高，写回会上移（R4108 view-box 同域教训）；③非 relative 子
+/// （相对 inset 已烘焙进盒位，覆写会丢弃）；④非替换元素——其 fragment 可能是 collect
+/// 扁平化的**子树文本**（如 `<svg><style>` 的 CSS 源码文本，css-e-notation 实证），
+/// 几何归 R4149-R4151/R4288-R4290 replaced 域；空文本原子 fragment 仍走既有全几何
+/// 重写路径（行为不变）。kill-switch `ZW_INLINE_FRAG_POS=0`（LazyLock 构造期单读，
+/// R3858 热路径零 env 查询教训）。
+///
+/// 实现（R4297 性能重构）：对 IFC 行盒做**单遍聚合**（node_id → 首 fragment + 并集
+/// bbox + 计数），文本路径与既有空 inline 路径共用。旧实现经
+/// `all_fragments_with_line_y()` 全量 clone fragment 文本串（逐容器热路径分配，
+/// bench first_paint +35% 实证后重构）——直接遍历 `lines`/`runs` 零 clone；y 合成与
+/// 该函数同口径（水平 run.y + line.y；垂直仅 run.y，R1456）。
 pub(crate) fn sync_inline_child_boxes_from_ifc(
     box_node: &mut LayoutBox,
     inline_ctx: &InlineFormattingContext,
     styles: &HashMap<NodeId, ComputedStyle>,
 ) {
-    let fragments = inline_ctx.all_fragments_with_line_y();
+    static FRAG_POS_ON: std::sync::LazyLock<bool> =
+        std::sync::LazyLock::new(|| std::env::var("ZW_INLINE_FRAG_POS").as_deref() != Ok("0"));
+    let frag_pos_on = *FRAG_POS_ON;
+    let pure_inline_container = !box_node
+        .children
+        .iter()
+        .any(|c| c.is_block_level && !c.is_absolute && !c.is_fixed);
+
+    struct FragAgg {
+        line_y: f32,
+        first_x: f32,
+        first_y: f32,
+        first_w: f32,
+        first_ml: f32,
+        first_pl: f32,
+        text_empty: bool,
+        count: u32,
+        min_x: f32,
+        max_x: f32,
+        min_y: f32,
+        max_y: f32,
+    }
+    let mut aggs: HashMap<NodeId, FragAgg> = HashMap::new();
+    let vertical = inline_ctx.vertical;
+    for line in &inline_ctx.lines {
+        for run in &line.runs {
+            let y = if vertical { run.y } else { run.y + line.y };
+            let a = aggs.entry(run.node_id).or_insert(FragAgg {
+                line_y: line.y,
+                first_x: run.x,
+                first_y: y,
+                first_w: run.width,
+                first_ml: run.margin_left,
+                first_pl: run.padding_left,
+                text_empty: run.text.is_empty(),
+                count: 0,
+                min_x: run.x,
+                max_x: run.x + run.width,
+                min_y: y,
+                max_y: y + run.height,
+            });
+            a.count += 1;
+            a.min_x = a.min_x.min(run.x);
+            a.max_x = a.max_x.max(run.x + run.width);
+            a.min_y = a.min_y.min(y);
+            a.max_y = a.max_y.max(y + run.height);
+        }
+    }
 
     for child in &mut box_node.children {
         if child.is_block_level || child.is_absolute || child.is_fixed {
@@ -648,34 +728,62 @@ pub(crate) fn sync_inline_child_boxes_from_ifc(
         if !matches!(style.display, DisplayValue::Inline) {
             continue;
         }
-
-        let mut matching = fragments.iter().filter(|fragment| fragment.node_id == child_id);
-        let Some(fragment) = matching.next() else {
+        let Some(agg) = aggs.get(&child_id) else {
             continue;
         };
-        if matching.next().is_some() {
-            continue;
-        }
-        // 跳过含文本内容的 fragment：
-        // 文本 fragment 的位置来自 layout IFC（使用真实样式），
-        // 而 paint 阶段运行独立的 paint IFC（使用空样式），
-        // 两者行断行为不同，直接使用 layout IFC 坐标会导致背景与文字错位。
-        // 仅对空 inline 元素（零宽度 TextRun）应用几何修正。
-        if !fragment.text.is_empty() {
-            continue;
-        }
 
+        if !agg.text_empty {
+            if !child.is_replaced && frag_pos_on && pure_inline_container && !vertical && !child.is_relative {
+                let metrics = extract_inline_visual_metrics(style);
+                child.x = agg.min_x - agg.first_ml - agg.first_pl - metrics.border_left;
+                child.y = agg.line_y - metrics.padding_top - metrics.border_top;
+                child.height = (agg.max_y - agg.min_y).max(0.0)
+                    + metrics.padding_top
+                    + metrics.padding_bottom
+                    + metrics.border_top
+                    + metrics.border_bottom;
+                child.content_y = metrics.border_top + metrics.padding_top;
+                child.content_height = (agg.max_y - agg.min_y).max(0.0);
+                let union_width = (agg.max_x - agg.min_x).max(0.0)
+                    + metrics.padding_left
+                    + metrics.padding_right
+                    + metrics.border_left
+                    + metrics.border_right;
+                child.width = union_width.max(child.width);
+                child.content_width = (child.width
+                    - metrics.padding_left
+                    - metrics.padding_right
+                    - metrics.border_left
+                    - metrics.border_right)
+                    .max(0.0);
+                child.padding_top = metrics.padding_top;
+                child.padding_bottom = metrics.padding_bottom;
+                child.border_top = metrics.border_top;
+                child.border_bottom = metrics.border_bottom;
+            }
+            continue;
+        }
+        if agg.count != 1 {
+            // 空 inline 但多 fragment（跨行）——既有行为不动（无可信单几何）。
+            continue;
+        }
+        // 空 inline（零宽 TextRun）单 fragment：既有全几何重写路径。文本 fragment 的
+        // 位置来自 layout IFC（使用真实样式），而 paint 阶段运行独立的 paint IFC（使用
+        // 空样式），两者行断行为不同；空零宽 run 不参与行断，几何可直接采信。
         let metrics = extract_inline_visual_metrics(style);
-        child.x = fragment.x;
-        child.y = fragment.y - metrics.padding_top - metrics.border_top;
+        child.x = agg.first_x;
+        child.y = agg.first_y - metrics.padding_top - metrics.border_top;
         child.width =
-            fragment.width + metrics.padding_left + metrics.padding_right + metrics.border_left + metrics.border_right;
-        child.height =
-            fragment.height + metrics.padding_top + metrics.padding_bottom + metrics.border_top + metrics.border_bottom;
+            agg.first_w + metrics.padding_left + metrics.padding_right + metrics.border_left + metrics.border_right;
+        child.height = agg.max_y - agg.min_y
+            + metrics.padding_top
+            + metrics.padding_bottom
+            + metrics.border_top
+            + metrics.border_bottom;
         child.content_x = metrics.border_left + metrics.padding_left;
         child.content_y = metrics.border_top + metrics.padding_top;
-        child.content_width = fragment.width;
-        child.content_height = fragment.height;
+        child.content_width = agg.first_w;
+        child.content_height = agg.max_y - agg.min_y;
         child.padding_top = metrics.padding_top;
         child.padding_right = metrics.padding_right;
         child.padding_bottom = metrics.padding_bottom;

@@ -1461,9 +1461,12 @@ impl Painter {
     /// R639：递归遍历布局树，收集每个有 node_id 的盒的 height 到索引。
     /// 用于 render_fragment 宏按 owner_id（inline 元素）查其自身 box height，
     /// 而非 IFC owner 的 box_node.height（消除 inline-ownership split 致抑制/per-fragment 分歧）。
+    /// R4297：改存**内容域** content_height（多行判据与 box-level 抑制门控 mod.rs 同口径，
+    /// 防 padded 单行 span 双路齐发/齐熄；height 含垂直 padding/border 的 border-box 语义后
+    /// 不再是行数代理）。
     fn collect_box_heights(box_node: &LayoutBox, map: &mut HashMap<NodeId, f32>) {
         if let Some(node_id) = box_node.node_id {
-            map.insert(node_id, box_node.height);
+            map.insert(node_id, box_node.content_height);
         }
         for child in &box_node.children {
             Self::collect_box_heights(child, map);
@@ -1673,7 +1676,13 @@ impl Painter {
                     && style.background_color != ColorValue::Transparent
                     && !box_node.is_absolute
                     && !box_node.is_fixed
-                    && box_node.height > inline_fs_px * 1.5
+                    // R4297：多行判据用**内容域**（content_height）——R4297 行位同步把
+                    // inline 盒重写为 CSS border-box（h 含垂直 padding/border），单行 padded
+                    // span 的 h 可 > 1.5×fs 而实际单行；h 判据会误抑制 box-level bg（其矩形
+                    // 已是正确 border-box）并漏给 fragment 路径（line_top 位错 ~descent）。
+                    // content_height 与 fragment 门控（inline_heights，同轮改存 content 域）
+                    // 同口径，两路恰一者生效。
+                    && box_node.content_height > inline_fs_px * 1.5
                     && doc.is_some_and(|d| text::has_direct_paintable_text(d, node_id, Some(styles)));
                 // R4248（CSS Borders 4 §corner-shaping）：corner-shape 装饰裁剪窗——
                 // 背景/边框/outline 图元绘制后统一裁到形角多边形。窗口准备走
@@ -2094,7 +2103,11 @@ impl Painter {
                     && style.background_color != ColorValue::Transparent
                     && !box_node.is_absolute
                     && !box_node.is_fixed
-                    && box_node.height > inline_fs_px * 1.5
+                    // R4297：多行判据用**内容域**（与 paint_node_in_rect 同口径——R4297 行位
+                    // 同步把 inline 盒重写为 border-box（h 含垂直 padding/border），h 不再是
+                    // 行数代理；单行 padded span 误抑制会丢 box-level bg）。与 inline_heights
+                    // （同轮改存 content 域）联动，两路恰一者生效。
+                    && box_node.content_height > inline_fs_px * 1.5
                     && doc.is_some_and(|d| text::has_direct_paintable_text(d, node_id, Some(styles)));
                 if style.background_color != ColorValue::Transparent
                     && !skip_split_inline_deco
@@ -3222,9 +3235,10 @@ impl Painter {
         // 根据 background-clip 决定背景绘制区域
         // R4296：inline 非原子盒垂直外延（padding/border 渲染于行盒之外，CSS2 §10.8.1；
         // taffy 布局已归零故 box_node.height 是行盒高）——border-box 背景区域按外延绘制。
+        // R4297：外延量改缺失量口径（box 字段差值，防 taffy 已含 border 双计）。
         // default-off（见 inline_bleed_enabled 字段文档）。
         let (bleed_top, bleed_bottom) = if self.inline_bleed_enabled {
-            super::helpers::inline_box_vertical_bleed(style)
+            super::helpers::inline_box_vertical_bleed(style, box_node)
         } else {
             (0.0, 0.0)
         };

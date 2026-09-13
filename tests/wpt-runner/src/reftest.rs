@@ -1214,11 +1214,12 @@ pub fn dump_layout_tree(root: &zero_layout_engine::types::LayoutBox, html: &str)
             .cloned()
             .unwrap_or_else(|| "(anon)".to_string());
         eprintln!(
-            "{:indent$}{:24} abs_y={:7.1} h={:6.1} mt={:5.1} pt={:5.1} x={:6.1} w={:6.1} dmt={:5.1}",
+            "{:indent$}{:24} abs_y={:7.1} h={:6.1} ch={:6.1} mt={:5.1} pt={:5.1} x={:6.1} w={:6.1} dmt={:5.1}",
             "",
             label,
             abs_y,
             b.height,
+            b.content_height,
             b.margin_top,
             b.padding_top,
             abs_x,

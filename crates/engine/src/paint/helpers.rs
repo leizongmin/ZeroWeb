@@ -4,6 +4,7 @@ use zero_css_parser::values::{
     ColorHueMethod, ColorInterpolation, ColorInterpolationSpace, ColorValue, GradientColorStop, GradientDirection,
     GradientValue, LengthValue, RadialSize, TransformFunction, TransformValue, eval_calc,
 };
+use zero_layout_engine::LayoutBox;
 use zero_render_foundation::geometry::Rect;
 use zero_render_foundation::primitive::{
     GradientColorSpace, GradientInterpolation, GradientKind, GradientPrimitive, GradientStop, HueMethod,
@@ -1472,24 +1473,28 @@ where
 }
 
 /// R4296（CSS2 §8.3/§8.4 + filter-effects-2 #BackdropFilterProperty）：inline 非原子盒的
-/// 垂直 border-box 外延量 `(top, bottom)`。
+/// 垂直 border-box **缺失外延量** `(top, bottom)`（R4297 改口径：缺失量 = CSS 厚度 − 盒
+/// 已含厚度，非全额 CSS 厚度）。
 ///
-/// CSS2 §10.8.1：inline 的垂直 margin/padding/border 不入行盒高——taffy 布局将其归零
-///（LayoutBox.padding_top/border_top = 0，driving 探针实证），但**绘制**发生于 inline box
-/// 之外、可上溢/下溢覆盖邻接行盒。box-level 背景（paint_background）与 backdrop-filter
-/// 区域（apply_backdrop_filter）的矩形须按 ComputedStyle 的 CSS 值外延——R1442 已对
-/// **多行** inline 的 fragment bg/border 做 bleed，此处为**单行** box-level 统一口径。
-/// 厚度取 Px 值（Em/% 等非 Px 与 R1442 px_of 同口径记 0）。非 inline 盒 → (0, 0)。
+/// CSS2 §10.8.1：inline 的垂直 margin/padding/border 不入行盒高，但**绘制**发生于 inline
+/// box 之外、可上溢/下溢覆盖邻接行盒。box-level 背景（paint_background）与 backdrop-filter
+/// 区域（apply_backdrop_filter）的矩形须补足缺失厚度——R1442 已对**多行** inline 的
+/// fragment bg/border 做 bleed，此处为**单行** box-level 统一口径。厚度取 Px 值（Em/% 等
+/// 非 Px 与 R1442 px_of 同口径记 0）。非 inline 盒 → (0, 0)。
 /// driving: backdrop-filter-inline-positioning（50px padding 的 inline span，backdrop
-/// 区域应 120px 高而非 21px 行盒）。
+/// 区域应 ~120px 高而非 ~20px 行盒）。
+///
+/// **R4297 缺失量口径**：taffy 对 display:inline 归零垂直 padding（converter
+/// `inline_vpadding_zero`）但**保留 border**（box h = 行盒 + border，bleed-001 实证
+/// h=55=40+15）；R2197 空 inline 全几何重写盒与 R4297 fragment 行位同步盒则把各自厚度
+/// 写进了 box 字段。全额外延会把已含部分双计（bleed-001：h55 + 全额 40 = 95 vs chromium
+/// 80）。故按 box 字段差值取 `max(0, style − box)`——未同步 taffy 盒 padding_top=0 得
+/// 全额 padding、border 差 0；已同步盒差值为 0。
 ///
 /// **default-off**（调用方经 `Painter.inline_bleed_enabled` 构造期单次读取 env
-/// `ZW_INLINE_BLEED=1` 门控，热路径零 env 查询——R3858 同款教训）：外延依赖 inline
-/// 元素 LayoutBox 的行位准确——ZW 现将单行 inline 元素盒锚定在容器**首行原点**（真实
-/// 行位在 IFC fragment 数据中，R4296 探针实证 border-padding-bleed-001 的第二行 span
-/// 盒 y=div content top）。盒位错误时外延把更多墨水涂到错误行（bleed-001/002 等 5 案
-/// self-source 翻红），故先挂 gate，待 inline 盒行位锚定切片（层②）落地后再 default-on。
-pub fn inline_box_vertical_bleed(style: &ComputedStyle) -> (f32, f32) {
+/// `ZW_INLINE_BLEED=1` 门控，热路径零 env 查询——R3858 同款教训）。R4297 层②
+/// fragment 行位同步落地后行位已锚定，转由 corpus A/B 定 default。
+pub fn inline_box_vertical_bleed(style: &ComputedStyle, box_node: &LayoutBox) -> (f32, f32) {
     if !matches!(style.display, zero_css_parser::values::DisplayValue::Inline) {
         return (0.0, 0.0);
     }
@@ -1498,8 +1503,17 @@ pub fn inline_box_vertical_bleed(style: &ComputedStyle) -> (f32, f32) {
         BorderStyleValue::None | BorderStyleValue::Hidden => 0.0,
         _ => length_to_f32(w),
     };
-    let top = length_to_f32(&style.padding_top) + side(&style.border_top_width, &style.border_top_style);
-    let bottom = length_to_f32(&style.padding_bottom) + side(&style.border_bottom_width, &style.border_bottom_style);
+    let missing = |style_v: f32, box_v: f32| (style_v - box_v).max(0.0);
+    let top = missing(length_to_f32(&style.padding_top), box_node.padding_top)
+        + missing(
+            side(&style.border_top_width, &style.border_top_style),
+            box_node.border_top,
+        );
+    let bottom = missing(length_to_f32(&style.padding_bottom), box_node.padding_bottom)
+        + missing(
+            side(&style.border_bottom_width, &style.border_bottom_style),
+            box_node.border_bottom,
+        );
     (top, bottom)
 }
 
@@ -2738,7 +2752,8 @@ mod tests {
 
     #[test]
     fn test_r4296_inline_bleed_helper() {
-        // 纯函数：50px padding + 1px solid border 每侧 = 51px 外延。
+        // 纯函数：未同步 taffy 盒（padding_top=0、border 已入 h）——50px padding 全额
+        // 外延、border 差值 0 = 50px；R4297 缺失量口径（非 R4296 全额 51px）。
         let mut s = ComputedStyle::default();
         s.display = zero_css_parser::values::DisplayValue::Inline;
         s.padding_top = LengthValue::Px(50.0);
@@ -2747,17 +2762,27 @@ mod tests {
         s.border_bottom_width = LengthValue::Px(1.0);
         s.border_top_style = zero_style_system::property::types::BorderStyleValue::Solid;
         s.border_bottom_style = zero_style_system::property::types::BorderStyleValue::Solid;
-        assert_eq!(inline_box_vertical_bleed(&s), (51.0, 51.0));
+        let box_node = LayoutBox {
+            border_top: 1.0,
+            border_bottom: 1.0,
+            ..Default::default()
+        };
+        assert_eq!(inline_box_vertical_bleed(&s, &box_node), (50.0, 50.0));
+        // 已同步盒（box 字段已含 CSS 厚度）→ 缺失量 0。
+        let mut synced = box_node.clone();
+        synced.padding_top = 50.0;
+        synced.padding_bottom = 50.0;
+        assert_eq!(inline_box_vertical_bleed(&s, &synced), (0.0, 0.0));
         // 非 inline 盒不外延。
         let mut b = ComputedStyle::default();
         b.display = zero_css_parser::values::DisplayValue::Block;
         b.padding_top = LengthValue::Px(50.0);
-        assert_eq!(inline_box_vertical_bleed(&b), (0.0, 0.0));
+        assert_eq!(inline_box_vertical_bleed(&b, &box_node), (0.0, 0.0));
         // border-style none 的边不计入。
         let mut n = ComputedStyle::default();
         n.display = zero_css_parser::values::DisplayValue::Inline;
         n.border_top_width = LengthValue::Px(3.0);
-        assert_eq!(inline_box_vertical_bleed(&n).0, 0.0, "border-style none");
+        assert_eq!(inline_box_vertical_bleed(&n, &box_node).0, 0.0, "border-style none");
     }
 
     #[test]

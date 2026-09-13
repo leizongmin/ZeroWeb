@@ -2,7 +2,7 @@ use super::{
     ComputedStyle, FinalInlineContext, InlineFontContext, InlineFormattingContext, LayoutBox, TextAlign,
     TextGroupAlign, compute_final_inline_layouts, extract_inline_visual_metrics, measure_text_content,
     resolve_text_align, resolve_text_align_last, resolve_text_group_align, resolve_text_indent,
-    sync_inline_block_positions_from_ifc, vertical_decoration_free_with_mode,
+    sync_inline_block_positions_from_ifc, sync_inline_child_boxes_from_ifc, vertical_decoration_free_with_mode,
 };
 use std::collections::HashMap;
 use zero_css_parser::values::{DisplayValue, LengthValue};
@@ -507,4 +507,180 @@ fn test_resolve_text_group_align_mapping() {
     style.direction = DirectionValue::Rtl;
     assert_eq!(resolve_text_group_align(Some(&style)), TextGroupAlign::Left);
     assert_eq!(resolve_text_group_align(None), TextGroupAlign::None);
+}
+
+/// R4297（CSS2 §10.3.1 inline 非原子盒行位）：折行到第二行的 inline span，其 LayoutBox
+/// 锚定 IFC 首行盒顶（taffy 把 display:inline 当 block 堆叠 → y=0），同步后 y = 首个
+/// fragment 所在行盒的 line.y（>0）。宽 = max(并集, taffy)——不因重写收缩。
+#[test]
+fn r4297_wrapped_inline_child_anchors_to_first_fragment_line() {
+    let mut doc = Document::new();
+    let container = doc.create_element("div");
+    // 前驱文本占满首行 → span 折到第二行起（R4296 border-padding-bleed-001 拓扑）。
+    let lead = doc.create_text_node("xx xx xx xx");
+    let span = doc.create_element("span");
+    let text = doc.create_text_node("yy yy yy yy");
+    doc.append_child(container, lead).unwrap();
+    doc.append_child(container, span).unwrap();
+    doc.append_child(span, text).unwrap();
+
+    let mut styles = HashMap::new();
+    styles.insert(container, ComputedStyle::default());
+    let mut span_style = ComputedStyle::default();
+    span_style.display = DisplayValue::Inline;
+    styles.insert(span, span_style);
+
+    let mut context = InlineFormattingContext::new(50.0);
+    context.layout(&doc, container, &styles);
+    assert!(
+        context.lines.len() >= 2,
+        "前置条件：文本须折行（lines={}）",
+        context.lines.len()
+    );
+
+    let mut root = LayoutBox {
+        node_id: Some(container),
+        children: vec![LayoutBox {
+            node_id: Some(span),
+            x: 0.0,
+            y: 0.0,
+            width: 40.0,
+            height: 20.0,
+            ..LayoutBox::default()
+        }],
+        ..LayoutBox::default()
+    };
+    sync_inline_child_boxes_from_ifc(&mut root, &context, &styles);
+    let child = &root.children[0];
+    let span_line_y = context
+        .lines
+        .iter()
+        .find(|line| line.runs.iter().any(|run| run.node_id == span))
+        .map(|line| line.y)
+        .unwrap();
+    assert!(span_line_y > 0.0, "前置条件：span 须折到非首行");
+    assert!(
+        (child.y - span_line_y).abs() < 0.5,
+        "span 盒 y 应取首个 fragment 所在行盒顶 {}（taffy 块堆叠位 0），实际 {}",
+        span_line_y,
+        child.y
+    );
+}
+
+/// R4297：前驱 inline 兄弟（文本节点）之后的 span，x 取其 fragment 位（非行首 0）。
+#[test]
+fn r4297_preceded_by_text_sibling_takes_fragment_x() {
+    let mut doc = Document::new();
+    let container = doc.create_element("div");
+    let lead = doc.create_text_node("AB");
+    let span = doc.create_element("span");
+    let text = doc.create_text_node("xx");
+    doc.append_child(container, lead).unwrap();
+    doc.append_child(container, span).unwrap();
+    doc.append_child(span, text).unwrap();
+
+    let mut styles = HashMap::new();
+    styles.insert(container, ComputedStyle::default());
+    let mut span_style = ComputedStyle::default();
+    span_style.display = DisplayValue::Inline;
+    styles.insert(span, span_style);
+
+    let mut context = InlineFormattingContext::new(200.0);
+    context.layout(&doc, container, &styles);
+    let frag_x = context
+        .all_fragments_with_line_y()
+        .into_iter()
+        .find(|fragment| fragment.node_id == span)
+        .expect("span 扁平文本 fragment")
+        .x;
+    assert!(frag_x > 0.0, "前置条件：span 前有「AB」文本，fragment x 应 > 0");
+
+    let mut root = LayoutBox {
+        node_id: Some(container),
+        children: vec![LayoutBox {
+            node_id: Some(span),
+            x: 0.0,
+            y: 0.0,
+            width: 20.0,
+            height: 20.0,
+            ..LayoutBox::default()
+        }],
+        ..LayoutBox::default()
+    };
+    sync_inline_child_boxes_from_ifc(&mut root, &context, &styles);
+    assert!(
+        (root.children[0].x - frag_x).abs() < 0.5,
+        "span 盒 x 应取 fragment 位 {}（taffy 块堆叠位 = 行首 0 会覆盖前驱「AB」），实际 {}",
+        frag_x,
+        root.children[0].x
+    );
+}
+
+/// R4297：垂直 padding 计入重写后的盒高（CSS border-box 语义），盒 y 上移 padding_top；
+/// 替换元素（原子 inline）不走文本路径（其 fragment 可能是扁平化子树文本）。
+#[test]
+fn r4297_vertical_padding_baked_into_height_and_replaced_skipped() {
+    let mut doc = Document::new();
+    let container = doc.create_element("div");
+    let span = doc.create_element("span");
+    let text = doc.create_text_node("xx");
+    doc.append_child(container, span).unwrap();
+    doc.append_child(span, text).unwrap();
+
+    let mut styles = HashMap::new();
+    styles.insert(container, ComputedStyle::default());
+    let mut span_style = ComputedStyle::default();
+    span_style.display = DisplayValue::Inline;
+    span_style.padding_top = LengthValue::Px(10.0);
+    styles.insert(span, span_style);
+
+    let mut context = InlineFormattingContext::new(200.0);
+    context.layout(&doc, container, &styles);
+
+    // 替换元素：几何保持 taffy 值（宽不被并集收缩/外扩，y 不移动）。
+    let mut root = LayoutBox {
+        node_id: Some(container),
+        children: vec![LayoutBox {
+            node_id: Some(span),
+            is_replaced: true,
+            x: 5.0,
+            y: 7.0,
+            width: 30.0,
+            height: 20.0,
+            ..LayoutBox::default()
+        }],
+        ..LayoutBox::default()
+    };
+    sync_inline_child_boxes_from_ifc(&mut root, &context, &styles);
+    assert_eq!(root.children[0].y, 7.0, "替换元素不走文本路径：y 不动");
+    assert_eq!(root.children[0].width, 30.0, "替换元素：宽不动");
+
+    // 非 replaced：padding_top 计入盒高、y 上移 padding_top。
+    let mut root2 = LayoutBox {
+        node_id: Some(container),
+        children: vec![LayoutBox {
+            node_id: Some(span),
+            x: 0.0,
+            y: 0.0,
+            width: 30.0,
+            height: 20.0,
+            ..LayoutBox::default()
+        }],
+        ..LayoutBox::default()
+    };
+    sync_inline_child_boxes_from_ifc(&mut root2, &context, &styles);
+    let child = &root2.children[0];
+    let line_y = context.lines[0].y;
+    let frag_h = context.all_fragments_with_line_y()[0].height;
+    assert!(
+        (child.y - (line_y - 10.0)).abs() < 0.5,
+        "y = 行盒顶 − padding_top，实际 {}",
+        child.y
+    );
+    assert!(
+        (child.height - (frag_h + 10.0)).abs() < 0.5,
+        "盒高 = 并集高 + padding_top（{} + 10），实际 {}",
+        frag_h,
+        child.height
+    );
 }

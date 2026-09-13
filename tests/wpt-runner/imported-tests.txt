@@ -438,3 +438,4 @@ css/filter-effects/effect-reference-feimage-004.html css/filter-effects/referenc
 css/filter-effects/filter-invalid.html css/filter-effects/filter-invalid-ref.html == 2026-09-12 2026-09-13 R4280 SVG presentation CSS 注入——fill 属性（V1 色值）+ 缺失几何 attr 注入（width/height authored 优先）
 css/filter-effects/backdrop-filter-invalid.html css/filter-effects/filter-invalid-ref.html == 2026-09-12 2026-09-13 R4280 SVG presentation CSS 注入——fill 属性（V1 色值）+ 缺失几何 attr 注入（width/height authored 优先）
 css/filter-effects/backdrop-filter-containing-block.html css/filter-effects/backdrop-filter-containing-block-ref.html == 2026-09-13 R4295 filter/backdrop-filter/transform/perspective/will-change 建立 abspos/fixed 后代包含块
+css/CSS2/linebox/border-padding-bleed-001.xht css/CSS2/linebox/border-padding-bleed-001-ref.xht == 2026-09-13 R4297 inline 行位同步（层②）——border-box 几何重写 + 缺失量 bleed 口径
