@@ -2,13 +2,13 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-14（S258：静默监测轮——tip 与 S257 提交一致（097de29c7），
-本流自有面锚点增量零漂移（apps/browser README +1 维持 S255 已归因基线态），
-全树锚点维持归因态零新增不可归因文件，门结论引用 S255 活跑（PASS 33 绿
-ZERO_DRIFT=True），引用计数 3/10 **下次活跑至迟 S265**；绿步维持 33；S198
-亚型解除态维持无 cdp-e2e 腿，cronjob 流 test-guard/perf 腿已收尾（负载回落
-1.72）+ ZeroWeb-3-wt-baidu browser 进程 9333 延续（均非本流面）；零 zombie
-零遗留端口）
+**最后更新**: 2026-09-14（S258：静默监测轮 + 树变化刷新轮——监测段同 tip 复核
+097de29c7 双层锚点零漂移后，推送前 pull rebase 拉入渲染流 R4323-F（8fb39cd46，
+crates/engine paint 两文件）触发 S245 先例「tracked 树变化时门 + make test 双刷
+新」：cdp-e2e 门活跑 PASS 33 绿 deterministic YES ZERO_DRIFT=True + make test
+19,280P/0F 双证据同轮新鲜落盘，引用计数归零 **下次活跑至迟 S268**；绿步维持
+33；解冻条件①消耗（R4323-F 已落 main 并经组合态刷新覆盖，挂账 frames.click+
+evaluate 维持——该修复零子帧文档加载/JS realm 相关性）；零 zombie 零遗留端口）
 
 ---
 
@@ -39,25 +39,41 @@ ZERO_DRIFT=True），引用计数 3/10 **下次活跑至迟 S265**；绿步维�
 
 ## 已完成切片
 
-- **S258（2026-09-14）静默监测轮 — 同 tip 复核（无代码变更，绿步维持 33）**：
-  pull 零新提交（tip = 097de29c7，即 S257 提交本身）——双层锚点口径复核通过：
-  本流自有面锚点增量零漂移（硬核对 `git diff 765429dda..HEAD -- apps/browser
-  tests/playwright-matrix scripts/test-guard.rs Makefile` 维持仅命中 apps/browser/
-  README.md +1 行 = S255 已归因的 52695a7c1 漂移基线，其后零新增漂移）；全树
-  锚点 numstat 复核（基 097de29c7=S257 tip）零外部变化——维持归因态零新增
-  不可归因文件。门结论引用 S255 活跑（PASS 33 绿 deterministic 双跑 YES 零
-  漂移 ZERO_DRIFT=True + steps/determinism-report 04:24 同轮落盘），引用计数
-  3/10，**下次活跑至迟 S265**。双解冻条件实质判定不变：① crates/ 自 65d2c2851
-  = 930cdd684（R4322-F）+ 4a879d408（fmt，零语义）+ 52695a7c1（webview README
-  文档行，零语义零子帧相关性）——渲染流 R4323 尚未落 main；② docs/goal 自
-  S257 零非本流提交，DC-2 口径无新拍板记录。机器卫生复核：零 zombie（二次
-  核查同零）、9222/45029/34293/96xx 全空闲、零 cdp-e2e 腿。**并行流观察**：
-  S198 端口竞争亚型解除态维持（无 cdp-e2e 腿）；在窗负载回落——S257 在窗的
-  cronjob 流 test-guard integration 腿与表单输入性能腿均已收尾（负载均值
-  6.79→1.72），延续在窗仅 rally query CI 守护腿 + ZeroWeb-3-wt-baidu 浏览器
-  进程（9333 非 9222 族，同 PID 3934955 满 1h 延续非重启）（均非本流自有面）；
-  渲染流 rally 主进程在、ZeroWeb-2 验证腿维持不在窗。S78 故障窗口后持续零
-  复现，监测态维持。goal 自有面零新缺口、无扩展面（S40-S257 重审结论延续）。
+- **S258（2026-09-14）静默监测轮 + 树变化刷新轮 — R4323-F 入树触发门 + make test
+  双刷新（无本流代码变更，绿步维持 33）**：
+  **监测段**：pull 零新提交（tip = 097de29c7，即 S257 提交本身）——双层锚点口径
+  复核通过：本流自有面锚点增量零漂移（硬核对 `git diff 765429dda..HEAD --
+  apps/browser tests/playwright-matrix scripts/test-guard.rs Makefile` 维持仅命中
+  apps/browser/README.md +1 行 = S255 已归因的 52695a7c1 漂移基线，其后零新增
+  漂移）；全树锚点 numstat 复核（基 097de29c7=S257 tip）零外部变化——维持归因
+  态零新增不可归因文件。双解冻条件当时实质判定不变：① crates/ 自 65d2c2851 =
+  930cdd684（R4322-F）+ 4a879d408（fmt，零语义）+ 52695a7c1（webview README
+  文档行，零语义零子帧相关性）；② docs/goal 自 S257 零非本流提交，DC-2 口径
+  无新拍板记录。机器卫生复核：零 zombie（二次核查同零）、9222/45029/34293/96xx
+  全空闲、零 cdp-e2e 腿；在窗负载回落（6.79→1.72，S257 在窗 cronjob 流
+  test-guard/perf 腿均已收尾），延续仅 rally query CI 守护腿 + ZeroWeb-3-wt-baidu
+  浏览器进程（9333 非 9222 族，时点同 PID 3934955）。
+  **刷新段（树变化动因）**：推送前 `git pull --rebase` 拉入 1 新提交
+  **8fb39cd46**（渲染流 `fix(paint): R4323-F — RTL inside-marker 镜像定位
+  （paint_list_marker 方向感知）`：crates/engine paint 两文件 +305/-235 +
+  rendering-compat.md +2）——**渲染流 R4323 落 main，解冻条件①触发**，按
+  S218/S245 先例「tracked 树变化时门 + make test」执行双刷新。S198 前置复核
+  通过（无 make cdp-e2e 腿、9222/45029/34293 全空闲、负载 0.40 净窗）后开跑。
+  **门刷新结果：cdp-e2e gate PASS 33 绿 deterministic 双跑 YES、EXIT=0、绿步集
+  机械 diff 基线零漂移（ZERO_DRIFT=YES，expected-green 33 步双向 diff 均空）**
+  ——engine paint 变更经 zero-browser 链增量重编译后门禁绿态不受影响；唯一非绿
+  步维持挂账 frames.click+evaluate（R4323-F 为 paint 层 list marker RTL 镜像
+  定位，零子帧文档加载/JS realm 相关性——挂账前提未变）；无首调红形态（S168
+  形态连续第十次零再现）。steps-report/determinism-report 04:32 同轮落盘新鲜。
+  **make test 刷新结果：19,280P/0F EXIT=0**（67 组 result 全 ok，与 S245 基线
+  计数逐项一致零漂移）。**引用计数归零（本轮双证据新鲜落盘），下次活跑至迟
+  S268**。**解冻条件①消耗**：R4323-F 已落 main 并经组合态刷新覆盖；剩余观察
+  面改为渲染流是否落子帧文档加载 + JS realm 能力（frames.click+evaluate 解挂
+  前提）——条件②不变（DC-2 口径无新拍板）。刷新后机器卫生复核：零 zombie、
+  9222/45029/34293/96xx 全空闲、本流零遗留进程（门/测试腿全部收尾）；
+  ZeroWeb-3-wt-baidu 浏览器进程 9333 **重启换 PID**（3934955→233514，04:43 起，
+  /proc cwd 归因 siteopt 流，非 9222 族非本流面）。S78 故障窗口后持续零复现，
+  监测态维持。goal 自有面零新缺口、无扩展面（S40-S257 重审结论延续）。
 - **S257（2026-09-14）静默监测轮 — 同 tip 复核（无代码变更，绿步维持 33）**：
   pull 零新提交（tip = 4efeda93a，即 S256 提交本身）——双层锚点口径复核通过：
   本流自有面锚点增量零漂移（硬核对 `git diff 765429dda..HEAD -- apps/browser
