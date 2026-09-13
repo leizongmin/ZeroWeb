@@ -2,12 +2,15 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-14（S244：静默监测轮——tip 与 S243 提交一致（b3f241601），
-本流自有面零漂移复核通过，全树锚点维持 S218 归因态零新增不可归因文件，门结论
-引用 S238 活跑（混合负载窗口内活跑 PASS 33 绿 deterministic 双跑 YES 零漂移
-ZERO_DRIFT=True），引用计数 6/10 **下次活跑至迟 S248**；绿步维持 33；S198 亚型
-解除态维持无 cdp-e2e 腿，cronjob 编译测试负载双腿已结束回零、ZeroWeb-3-wt-baidu
-browser 进程 9333 + CI 守护腿延续在窗（均非本流面）；零 zombie 零遗留端口）
+**最后更新**: 2026-09-14（S245：树变化刷新轮——pull 1 新提交 4a879d408（渲染流
+fmt-only 零语义，R4322-F 遗留格式回归修复，仅 crates/style-system/src/lib.rs，
+子帧相关性零），按计划 #3 口径「tracked 树变化时门 + make test」双刷新：cdp-e2e
+门 PASS 33 绿 deterministic 双跑 YES 零漂移 ZERO_DRIFT=True（style-system→
+page-runtime→browser 链重编译后门禁绿态不受影响，S218 先例兑现）+ make test
+19,280P/0F EXIT=0（67 组 result 全 ok，较 S78 +5 跨流计数漂移零失败）；引用计数
+归零**下次活跑至迟 S255**；绿步维持 33；双解冻条件实质判定不变（R4323 尚未落
+main）；渲染流转活跃（ZeroWeb-2 自家 make test 验证腿在窗）；零 zombie 零遗留
+端口）
 
 ---
 
@@ -38,6 +41,34 @@ browser 进程 9333 + CI 守护腿延续在窗（均非本流面）；零 zombie
 
 ## 已完成切片
 
+- **S245（2026-09-14）树变化刷新轮 — 外部 fmt 提交入树，门 + make test 双刷新（绿步
+  维持 33）**：
+  pull 1 新提交（tip b3f241601→**4a879d408**，`style(style-system): cargo fmt 修复
+  R4322-F 遗留格式回归`，仅 crates/style-system/src/lib.rs +1/-6——渲染流域 crate
+  面 fmt-only 零语义变更（删多余空行 + from_element 调用折行还原 rustfmt 规范输出），
+  子帧相关性零命中；提交自带验证记录 fmt ✓/clippy ✓/make test exit 0）。本流自有面
+  与 S99 门禁验证态逐字节一致（diff 空）不受影响。**刷新动因**：tracked 树变化
+  （crates/style-system 入 main），按计划 #3 口径「tracked 树变化时门 + make test」
+  执行双刷新。**门刷新结果：cdp-e2e PASS 33 绿 deterministic 双跑 YES、EXIT=0、
+  绿步集机械 diff 基线零漂移（ZERO_DRIFT=True）**——style-system→page-runtime→
+  browser 链增量重编译（6.02s）后门禁绿态不受 fmt 提交影响，S218「R4322-F 组合态
+  门禁绿态不受影响」先例口径兑现；唯一非绿步维持挂账 frames.click+evaluate；无
+  首调红形态（S168 形态连续第八次零再现）。steps-report/determinism-report 03:55
+  同轮落盘新鲜。**make test 刷新结果：19,280P/0F EXIT=0**（67 组 result 全 ok，
+  较 S78 时点 +5 = 跨流自带测试计数漂移，零失败）——test-guard 包裹全量门，
+  与 fmt 提交自带验证记录一致。**warning 归因维持 S198 注记**（match_media_to_json
+  dead_code，单 -p build 已知亚型）。引用计数归零（本轮门证据新鲜落盘），**下次
+  活跑至迟 S255**。双解冻条件实质判定不变：① crates/ 自 65d2c2851 = 930cdd684
+  （R4322-F）+ 4a879d408（fmt 遗留修复，零语义）——子帧能力面零新增，渲染流
+  R4323 尚未落 main；② docs/goal 自 S244 零非本流提交，DC-2 口径无新拍板记录。
+  机器卫生复核：零 zombie、9222/45029/34293/96xx 全空闲、本流零遗留进程（残余
+  test-guard 双腿经 /proc cwd 核实属 ZeroWeb-2 渲染流 04:05 自家 make test 验证
+  腿）。**并行流观察**：渲染流转活跃——4a879d408 fmt 收尾 + ZeroWeb-2 自家
+  make test 腿在窗（R4323 迭代前置验证概率上升，解冻条件 ① 监测维持）；
+  ZeroWeb-3-wt-baidu 浏览器进程（9333 非 9222 族）+ rally query CI 守护腿延续
+  （均非本流自有面）；无 make cdp-e2e 腿在窗，S198 端口竞争亚型不触发。S78 故障
+  窗口后持续零复现，监测态维持。goal 自有面零新缺口、无扩展面（S40-S244 重审
+  结论延续）。
 - **S244（2026-09-14）静默监测轮 — 同 tip 复核（无代码变更，绿步维持 33）**：
   pull 零新提交（tip = b3f241601，即 S243 提交本身）——双层锚点口径复核通过：本流
   自有面与 S99 门禁验证态逐字节一致（diff 空）；全树锚点 numstat 复核（基
@@ -3188,7 +3219,7 @@ browser 进程 9333 + CI 守护腿延续在窗（均非本流面）；零 zombie
    steps-report 新鲜性**）；tracked 树变化时门 + make test。**连续引用不超过 10 轮**
    （S98 新增：S78 故障为负载触发、可在树不变时复发——纯引用协议探测不到环境性复发，
    超限即活跑一次刷新证据新鲜度，服务 #0 复现监测；S98/S108/S118/S128/S138/S148/
-   S158/S168/S178/S188/S198/S208/S218/S228/S238 已执行——S168 为期限轮负载窗口内活跑（第六个负载下样本）且
+   S158/S168/S178/S188/S198/S208/S218/S228/S238/S245 已执行——S168 为期限轮负载窗口内活跑（第六个负载下样本）且
    首次出现「首调红（run 1 瞬态 11 步失败 → deterministic NO）/ 复跑即 PASS」形态，
    四点机械归因定性单次瞬态环境事件（见 S168 记录）；S178 为期限轮并行编译负载窗内
    活跑（第七个负载下样本、首个编译 CPU 竞争亚型，PASS 33 绿零漂移，首调红形态零
@@ -3205,9 +3236,12 @@ browser 进程 9333 + CI 守护腿延续在窗（均非本流面）；零 zombie
    编译测试负载 + ZeroWeb-3-wt-baidu browser 进程型双亚型并窗，PASS 33 绿零漂移，
    首调红形态连续第六次零再现）；S238 为期限轮混合负载窗口内活跑（第十二个
    负载下样本、cronjob 编译测试负载 + ZeroWeb-3-wt-baidu browser 进程型双亚型
-   并窗同 S228 形态，PASS 33 绿零漂移，首调红形态连续第七次零再现）；后续轮次
+   并窗同 S228 形态，PASS 33 绿零漂移，首调红形态连续第七次零再现）；S245 为外部
+   fmt 提交（4a879d408）入树触发的**树变化刷新轮**（非引用超限动因，同属活跑证据
+   刷新——门 PASS 33 绿零漂移 + make test 19,280P/0F 双刷新，S218 组合态先例口径
+   兑现）；后续轮次
    若再现该形态，同口径归因并留意复现频率——单轮偶发记账、多轮聚集升级 #0 排查；
-   下次活跑至迟 S248；若活跑时逢并行流负载窗口则
+   下次活跑至迟 S255；若活跑时逢并行流负载窗口则
    优先窗口内执行，负载下样本对 #0 更有价值（负载窗口口径含并行流 browser 进程型与
    编译测试负载型两亚型，净窗亚型 S208 起并行记录；**端口竞争亚型口径 S198 新增**：
    并行流含 make cdp-e2e 腿
@@ -3255,6 +3289,8 @@ browser 进程 9333 + CI 守护腿延续在窗（均非本流面）；零 zombie
   19,238P/0F；S18 全量刷新 19,251P/0F；S22 组合态刷新 19,254P/0F EXIT=0；
   S23 时点 19,255P/0F；S32 时点 19,257P/0F；S39 时点 19,259P/0F EXIT=0；
   **S78 时点 19,275P/0F EXIT=0**（较 S39 +16 = 期间跨流自带测试计数漂移，零失败）；
+  **S245 时点 19,280P/0F EXIT=0**（较 S78 +5 跨流计数漂移，零失败——4a879d408
+  fmt 提交入树后全量刷新，67 组 result 全 ok）；
   禁止裸跑 cargo test，经 test-guard。注：make test
   的 workspace 腿 exclude zero-renderer——renderer lib 单测不在全量门内，跨流红灯
   （form fixture×2）经显式 `-p zero-renderer --lib` 跟踪）
@@ -3274,7 +3310,11 @@ browser 进程 9333 + CI 守护腿延续在窗（均非本流面）；零 zombie
   第六次零再现。**S238 注记**：期限轮混合负载窗口内活跑（第十二个负载下样本，
   cronjob 编译测试负载 + ZeroWeb-3 browser 进程型双亚型并窗，同 S228 形态）——
   PASS 33 绿 deterministic 双跑 YES，绿步集机械 diff 基线零漂移（ZERO_DRIFT=True），
-  首调红形态连续第七次零再现
+  首调红形态连续第七次零再现。**S245 注记**：树变化刷新轮（外部 fmt 提交
+  4a879d408 入树，style-system→page-runtime→browser 链重编译后活跑）——PASS 33
+  绿 deterministic 双跑 YES，绿步集机械 diff 基线零漂移（ZERO_DRIFT=True），门禁
+  绿态不受 fmt-only 提交影响（S218 组合态先例口径兑现），首调红形态连续第八次
+  零再现
 - CDP 现状：`Page.navigate` / `Runtime.evaluate` / `Target.getTargets` 3 命令 +
   `/json/version` + `/json` 发现（headless.rs L782-796/L571/L1159）——历史基线，现行面
   见缺口清单 P3/P4 与切片记录
