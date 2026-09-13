@@ -2,8 +2,10 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-14（S149：静默监测轮——tip 与 S148 逐字节一致，S148 负载窗口
-内活跑门结论引用，引用计数 1/10，下次活跑至迟 S158；绿步维持 33）
+**最后更新**: 2026-09-14（S150：静默监测轮——main 组合态拾取渲染流 R4321-F，本流
+自有面与 S99 门禁态逐字节一致（锚点 diff 非空部分全部归因渲染流共享面，子帧相关性
+零命中），S148 负载窗口内活跑门结论引用，引用计数 2/10，下次活跑至迟 S158；绿步
+维持 33）
 
 ---
 
@@ -34,6 +36,28 @@
 
 ## 已完成切片
 
+- **S150（2026-09-14）静默监测轮 — S149 补充注记兑现轮：组合态归因复核（无代码变更，绿步维持 33）**：
+  pull 零新提交（tip = b80281297，即 S149 补充注记提交本身）。**锚点硬核对首次非空**
+  ——`git diff 765429dda..HEAD -- ':!docs' ':!.claude'` 命中 4 文件 +314 行，按
+  S149 补充注记口径逐项归因：**全部**来自渲染流 R4321-F（65d2c2851：crates/engine
+  paint text_list / crates/layout-engine inline collect_items / wpt-runner 测试
+  资产）；**本流自有面零漂移**——`git diff 765429dda..HEAD -- apps/browser
+  tests/playwright-matrix scripts/test-guard.rs Makefile` 为空，S99 门禁验证态的
+  本流面逐字节一致。**子帧相关性零命中**：R4321-F 变更内容 grep
+  iframe/subframe/realm/frame-load 无一命中，确证渲染兼容域（counter-style/additive
+  算法），frames.click+evaluate 挂账解冻条件实质判定不变；R4321-F 之后（65d2c2851
+  ..HEAD）零新提交（仅本流 S149 docs 两笔）。**门结论引用 S148 活跑**（负载窗口内
+  PASS 33 绿 deterministic 双跑 YES，引用计数 2/10，下次活跑至迟 S158——若逢并行流
+  负载窗口优先窗口内执行）；**诚实归因**：S148 活跑基线树不含 R4321-F（活跑 01:12
+  执行，R4321-F 01:16 提交、S149 push 时才进本 clone）——R4321-F 触及 zero-browser
+  依赖链（crates/engine），下次活跑（至迟 S158）将首次覆盖含 R4321-F 的组合态，
+  归因渲染绘制语义 + 本流面零漂移，门禁绿态预期不受影响，S158 活跑即组合态验证点。
+  双解冻条件：① 渲染流有新工作（R4321-F）但非子帧文档加载+realm 工作，实质闭合；
+  ② docs/goal 自 S148 有渲染流自身控制面提交（rendering-compat.md），无 DC-2 口径
+  新拍板记录。机器卫生复核：零 zombie、本流自有面零遗留端口；siteopt 并行流
+  headless 维持同进程（PID 3238979 / port 9333，etime ~2.9 分钟，不触碰），负载
+  窗口延续。S78 故障窗口后持续零复现，监测态维持。goal 自有面零新缺口、无扩展面
+  （S40-S149 重审结论延续）。
 - **S149（2026-09-14）静默监测轮 — 同 tip 复核（无代码变更，绿步维持 33）**：
   pull 零新提交（tip = 33c2ac078，即 S148 提交本身）——tracked 树与 S99 门禁验证态
   逐字节一致（硬核对 `git diff 765429dda..HEAD -- ':!docs' ':!.claude'` 为空），门
