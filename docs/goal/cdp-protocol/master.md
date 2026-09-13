@@ -2,7 +2,7 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-13（S20 维护轮：cdp-e2e 门 PASS 28 绿 deterministic + 扩展面挂账判定（getDocument 族/CSS 面按 devtools 需求驱动，防推测性开发）；待 DC-2 口径）
+**最后更新**: 2026-09-13（S21：DC-2 连接生命周期健壮性实证（顺序重连×3/异常断开×3/断后重连全通）+ 并发第二客户端单连接限制记账；绿步维持 28/30）
 
 ---
 
@@ -33,6 +33,17 @@
 
 ## 已完成切片
 
+- **S21（2026-09-13）DC-2 连接生命周期健壮性实证（验证切片，绿步维持 28）**：
+  **实证**（真实 PW 客户端 + 裸 WS 探针）：① 顺序重连 ×3（connect → newPage →
+  setContent → locator → close 循环）全通、无状态残留；② 异常断开 ×3（裸 WS 发一条
+  命令后不发 close 帧 RST 直断）全部被吸收——transport read error 分支 break 内循环 →
+  外循环接受下一连接，无进程崩溃、无句柄悬挂；③ 断后新连接完全可用 + `/json/version`
+  存活。**DC-2「连接生命周期健壮（重复连接、异常断开）」就此验证**。
+  **限制记账（非缺陷，结构注记）**：transport 为单连接 serve loop（一次服务一个 WS
+  连接）——第一客户端存活期间第二并发客户端在 TCP backlog 等待（不报错不泄漏，仅
+  不可用）；Chromium 支持多并发 CDP 客户端。多客户端多路复用需 HeadlessSession 共享
+  化（Arc<Mutex> 重构）= 结构变更，按需立项（Playwright 典型用法单客户端；e2e 门不受
+  影响）。
 - **S18（2026-09-13）M5 定稿预案 + 子帧缺口实证（纯文档/验证切片，绿步维持 28）**：
   **子帧缺口探针实证**（挂起理由从假设升级为实测）：iframe 元素存在但
   `contentDocument`=null（引擎不加载子帧文档，无子帧 DOM）、`contentWindow`=object
