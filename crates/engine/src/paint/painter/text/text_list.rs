@@ -1338,6 +1338,48 @@ impl super::super::Painter {
         let text_marker_font_size = font_size;
         let text_marker_baseline_y = marker_y + text_marker_baseline_offset(style, text_marker_font_size);
 
+        // R4323：提前测量 inside marker 步进宽度（原尾部块提升为 helper）。LTR 行为
+        // 不变（paint_text 于本函数完成后消费 map）；RTL（水平书写模式）inside 的
+        // 行内起点在**内容盒右缘**——marker 须在绘制前拿到 A 以右对齐定位。
+        // ::marker content 覆盖面（None 抑制 / 具体生成内容替代）不走默认测量块
+        // （与原尾部块被 early-return 跳过等价）。
+        let marker_content_overrides = style.marker_pseudo.as_deref().is_some_and(|m| {
+            matches!(
+                m.content,
+                ContentComputedValue::None
+                    | ContentComputedValue::String(_)
+                    | ContentComputedValue::Counter { .. }
+                    | ContentComputedValue::Counters { .. }
+                    | ContentComputedValue::List(_)
+            )
+        });
+        let inside_marker_advance = if marker_content_overrides {
+            0.0
+        } else {
+            self.measure_inside_marker_advance(style, doc, node_id, font_size, default_font_id)
+        };
+        let rtl_inside = matches!(style.direction, zero_style_system::DirectionValue::Rtl)
+            && matches!(style.writing_mode, zero_style_system::WritingModeValue::HorizontalTb)
+            && matches!(
+                style.list_style_position,
+                zero_css_parser::values::ListStylePositionValue::Inside
+            );
+        let (actual_marker_x, text_marker_x) = if rtl_inside {
+            // CSS Lists 3 §list-style-position：inside marker 是首行第一个 inline，
+            // RTL 行首在右——文本型 marker 右缘对齐 content_right（A 含 suffix 空隙），
+            // 几何型盒 [right - 1.5ms, right - 0.5ms]（镜像 LTR [0.5ms, 1.5ms]）。
+            let content_right = marker_x + box_node.padding_left + box_node.content_width;
+            let is_geometric = matches!(
+                style.list_style_type,
+                ListStyleTypeValue::Disc | ListStyleTypeValue::Circle | ListStyleTypeValue::Square
+            );
+            let x = content_right - inside_marker_advance - if is_geometric { marker_size * 0.25 } else { 0.0 };
+            (x, x)
+        } else {
+            (actual_marker_x, text_marker_x)
+        };
+        let content_right = marker_x + box_node.padding_left + box_node.content_width;
+
         // ::marker 伪元素 content 覆盖（CSS Lists 3）：marker_pseudo 存在时，content 决定标记
         // 文本——`none` 抑制标记；具体生成内容（String/Counter/Counters/List）替代默认
         // list-style-type 标记；`normal`/Attr/Url 落默认标记。color 已由上方 marker_pseudo.color
@@ -1352,7 +1394,17 @@ impl super::super::Painter {
                 | ContentComputedValue::Counters { .. }
                 | ContentComputedValue::List(_) => {
                     if let Some(text) = self.resolve_generated_content_text(&marker_style.content, style) {
-                        let mut char_x = text_marker_x;
+                        // R4323：RTL inside 时 content 文本右缘对齐内容盒右缘（无步进登记，
+                        // 与 LTR「content 文本即 inline 流开头、内容不偏移」语义镜像）。
+                        let mut char_x = if rtl_inside {
+                            let w: f32 = text
+                                .chars()
+                                .map(|ch| self.measure_char_cached(default_font_id.0, ch, text_marker_font_size, false))
+                                .sum();
+                            content_right - w - marker_letter_spacing * (text.chars().count().saturating_sub(1)) as f32
+                        } else {
+                            text_marker_x
+                        };
                         let char_y = text_marker_baseline_y;
                         for ch in text.chars() {
                             self.primitives.add_glyph(GlyphPrimitive {
@@ -1707,246 +1759,251 @@ impl super::super::Painter {
                 }
             }
         }
+    }
 
-        // R3835：inside **counter 型** marker → 记录 marker 步进宽度，paint_text 首片段
-        // 右移（CSS Lists 3 §list-style-position：inside marker 是首行行盒第一个 inline，
-        // 内容排其后。旧实现 marker 与内容同 x 重叠——css-counter-styles 024 等 `1AAA`）。
-        // 从样式源独立重推 marker 文本测宽（marker 绘制臂各自局部 char_x，不外传）；
-        // marker 绘制不在热路径，重复格式化可接受。outside 几何 marker 不记录
-        //（outside 内容位置由布局 margin 让位，现状正确）。
-        // String / Custom（::marker content / list-style-type:"..."）不记录：其 marker
-        // 文本即 inline 流的开头，内容紧随其后无后缀间隔（css-pseudo marker-content-018：
-        // content "1 " 尾随空格语义 = 文本自身，偏移会破坏 white-space 用例；ZW 内容起点
-        // 不动 + marker 画在起点 ≡ chromium 紧贴排布）。
-        if matches!(
+    /// R3835/R4323：inside 非文本容器型 marker 的步进宽度测量 + 登记（paint_text 消费）。
+    /// 原为 paint_list_marker 尾部块（R3835）；R4323 提前调用供 RTL inside 右缘定位。
+    /// 插入 map 的时序仍在 paint_list_marker 内完成（paint_text 于其后消费），行为不变。
+    #[allow(clippy::too_many_lines)]
+    fn measure_inside_marker_advance(
+        &mut self,
+        style: &ComputedStyle,
+        doc: &Document,
+        node_id: NodeId,
+        font_size: f32,
+        default_font_id: zero_render_foundation::primitive::FontId,
+    ) -> f32 {
+        if !matches!(
             style.list_style_position,
             zero_css_parser::values::ListStylePositionValue::Inside
-        ) && !matches!(
+        ) || matches!(
             style.list_style_type,
             ListStyleTypeValue::None | ListStyleTypeValue::String(_) | ListStyleTypeValue::Custom(_)
         ) {
-            let index = self
-                .get_counter("list-item")
-                .unwrap_or_else(|| self.compute_list_item_index(doc, node_id));
-            let text: String = match &style.list_style_type {
-                ListStyleTypeValue::Decimal => format!("{index}."),
-                ListStyleTypeValue::DecimalLeadingZero if (0..10).contains(&index) => format!("0{index}."),
-                ListStyleTypeValue::LowerAlpha if index > 0 && index <= 26 => {
-                    format!("{}.", (b'a' + (index as u8 - 1)) as char)
-                }
-                ListStyleTypeValue::UpperAlpha if index > 0 && index <= 26 => {
-                    format!("{}.", (b'A' + (index as u8 - 1)) as char)
-                }
-                ListStyleTypeValue::LowerRoman => {
-                    if index <= 0 {
-                        format!("{index}.")
-                    } else {
-                        format!("{}.", to_roman(index as usize).to_lowercase())
-                    }
-                }
-                ListStyleTypeValue::UpperRoman => {
-                    if index <= 0 {
-                        format!("{index}.")
-                    } else {
-                        format!("{}.", to_roman(index as usize))
-                    }
-                }
-                ListStyleTypeValue::LowerGreek if index > 0 => format!("{}.", to_greek(index as usize)),
-                ListStyleTypeValue::Persian if index >= 0 => format!("{}.", to_persian(index as usize)),
-                ListStyleTypeValue::Armenian if index > 0 => format!("{}.", to_armenian(index as usize)),
-                ListStyleTypeValue::LowerArmenian if index > 0 => {
-                    format!("{}.", to_armenian(index as usize).to_lowercase())
-                }
-                ListStyleTypeValue::Georgian if index > 0 => format!("{}.", to_georgian(index as usize)),
-                ListStyleTypeValue::Hebrew if index > 0 => format!("{}.", to_hebrew(index as usize)),
-                ListStyleTypeValue::ArabicIndic if index >= 0 => format!("{}.", to_arabic_indic(index as usize)),
-                ListStyleTypeValue::EthiopicNumeric => {
-                    format!("{}.", to_ethiopic_numeric(index).unwrap_or_else(|| index.to_string()))
-                }
-                ListStyleTypeValue::CjkDecimal if index >= 0 => format!("{}.", to_cjk_decimal(index as usize)),
-                ListStyleTypeValue::Devanagari if index >= 0 => format!("{}.", to_digit_script(index as usize, 0x0966)),
-                ListStyleTypeValue::Bengali if index >= 0 => format!("{}.", to_digit_script(index as usize, 0x09E6)),
-                ListStyleTypeValue::Gujarati if index >= 0 => format!("{}.", to_digit_script(index as usize, 0x0AE6)),
-                ListStyleTypeValue::Gurmukhi if index >= 0 => format!("{}.", to_digit_script(index as usize, 0x0A66)),
-                ListStyleTypeValue::Kannada if index >= 0 => format!("{}.", to_digit_script(index as usize, 0x0CE6)),
-                ListStyleTypeValue::Malayalam if index >= 0 => format!("{}.", to_digit_script(index as usize, 0x0D66)),
-                ListStyleTypeValue::Tamil if index >= 0 => format!("{}.", to_digit_script(index as usize, 0x0BE6)),
-                ListStyleTypeValue::Telugu if index >= 0 => format!("{}.", to_digit_script(index as usize, 0x0C66)),
-                // R3889：oriya/mongolian/tibetan/thai（§6.1 numeric 脚本族补全）。
-                ListStyleTypeValue::Oriya if index >= 0 => format!("{}.", to_digit_script(index as usize, 0x0B66)),
-                ListStyleTypeValue::Mongolian if index >= 0 => format!("{}.", to_digit_script(index as usize, 0x1810)),
-                ListStyleTypeValue::Tibetan if index >= 0 => format!("{}.", to_digit_script(index as usize, 0x1040)),
-                ListStyleTypeValue::Thai if index >= 0 => format!("{}.", to_digit_script(index as usize, 0x0E50)),
-                ListStyleTypeValue::Lao if index >= 0 => format!("{}.", to_digit_script(index as usize, 0x0ED0)),
-                ListStyleTypeValue::Khmer if index >= 0 => format!("{}.", to_digit_script(index as usize, 0x17E0)),
-                ListStyleTypeValue::Myanmar if index >= 0 => format!("{}.", to_digit_script(index as usize, 0x1040)),
-                // R3835：§6.2 家族（与绘制臂同源，越界 → decimal）。
-                ListStyleTypeValue::JapaneseInformal => {
-                    format!(
-                        "{}{}",
-                        to_cjk_num(index, &JAPANESE_INFORMAL).unwrap_or_else(|| index.to_string()),
-                        counter_suffix(&style.list_style_type)
-                    )
-                }
-                ListStyleTypeValue::JapaneseFormal => {
-                    format!(
-                        "{}{}",
-                        to_cjk_num(index, &JAPANESE_FORMAL).unwrap_or_else(|| index.to_string()),
-                        counter_suffix(&style.list_style_type)
-                    )
-                }
-                ListStyleTypeValue::SimpChineseInformal => {
-                    format!(
-                        "{}{}",
-                        to_cjk_num(index, &SIMP_CHINESE_INFORMAL).unwrap_or_else(|| index.to_string()),
-                        counter_suffix(&style.list_style_type)
-                    )
-                }
-                ListStyleTypeValue::SimpChineseFormal => {
-                    format!(
-                        "{}{}",
-                        to_cjk_num(index, &SIMP_CHINESE_FORMAL).unwrap_or_else(|| index.to_string()),
-                        counter_suffix(&style.list_style_type)
-                    )
-                }
-                ListStyleTypeValue::TradChineseInformal => {
-                    format!(
-                        "{}{}",
-                        to_cjk_num(index, &TRAD_CHINESE_INFORMAL).unwrap_or_else(|| index.to_string()),
-                        counter_suffix(&style.list_style_type)
-                    )
-                }
-                ListStyleTypeValue::TradChineseFormal => {
-                    format!(
-                        "{}{}",
-                        to_cjk_num(index, &TRAD_CHINESE_FORMAL).unwrap_or_else(|| index.to_string()),
-                        counter_suffix(&style.list_style_type)
-                    )
-                }
-                ListStyleTypeValue::KoreanHangulFormal => {
-                    format!(
-                        "{}{}",
-                        to_cjk_num(index, &KOREAN_HANGUL_FORMAL).unwrap_or_else(|| index.to_string()),
-                        counter_suffix(&style.list_style_type)
-                    )
-                }
-                ListStyleTypeValue::KoreanHanjaInformal => {
-                    format!(
-                        "{}{}",
-                        to_cjk_num(index, &KOREAN_HANJA_INFORMAL).unwrap_or_else(|| index.to_string()),
-                        counter_suffix(&style.list_style_type)
-                    )
-                }
-                ListStyleTypeValue::KoreanHanjaFormal => {
-                    format!(
-                        "{}{}",
-                        to_cjk_num(index, &KOREAN_HANJA_FORMAL).unwrap_or_else(|| index.to_string()),
-                        counter_suffix(&style.list_style_type)
-                    )
-                }
-                ListStyleTypeValue::CjkEarthlyBranch => {
-                    format!(
-                        "{}{}",
-                        to_symbol_cycle(index, CJK_EARTHLY_BRANCH).unwrap_or_else(|| index.to_string()),
-                        counter_suffix(&style.list_style_type)
-                    )
-                }
-                ListStyleTypeValue::CjkHeavenlyStem => {
-                    format!(
-                        "{}{}",
-                        to_symbol_cycle(index, CJK_HEAVENLY_STEM).unwrap_or_else(|| index.to_string()),
-                        counter_suffix(&style.list_style_type)
-                    )
-                }
-                ListStyleTypeValue::Hiragana => {
-                    format!(
-                        "{}{}",
-                        to_symbol_alpha(index, HIRAGANA).unwrap_or_else(|| index.to_string()),
-                        counter_suffix(&style.list_style_type)
-                    )
-                }
-                ListStyleTypeValue::HiraganaIroha => {
-                    format!(
-                        "{}{}",
-                        to_symbol_alpha(index, HIRAGANA_IROHA).unwrap_or_else(|| index.to_string()),
-                        counter_suffix(&style.list_style_type)
-                    )
-                }
-                ListStyleTypeValue::Katakana => {
-                    format!(
-                        "{}{}",
-                        to_symbol_alpha(index, KATAKANA).unwrap_or_else(|| index.to_string()),
-                        counter_suffix(&style.list_style_type)
-                    )
-                }
-                ListStyleTypeValue::KatakanaIroha => {
-                    format!(
-                        "{}{}",
-                        to_symbol_alpha(index, KATAKANA_IROHA).unwrap_or_else(|| index.to_string()),
-                        counter_suffix(&style.list_style_type)
-                    )
-                }
-                ListStyleTypeValue::String(s) => s.clone(),
-                ListStyleTypeValue::Custom(name) => match self.counter_styles.get(name) {
-                    Some(rule) => counter_style_marker_text(rule, index, Some(&self.counter_styles), Some(style)),
-                    None => format!("{index}."),
-                },
-                // disc/circle/square 几何 marker：宽度 = marker_size（同 paint 臂）。
-                ListStyleTypeValue::Disc | ListStyleTypeValue::Circle | ListStyleTypeValue::Square => {
-                    self.list_inside_marker_advance
-                        .insert(node_id, font_size * 0.4 + font_size * 0.1);
-                    return;
-                }
-                // disclosure 文本臂（含尾随空格）。
-                ListStyleTypeValue::DisclosureOpen | ListStyleTypeValue::DisclosureClosed => {
-                    format!(
-                        "{} ",
-                        disclosure_symbol(
-                            matches!(style.list_style_type, ListStyleTypeValue::DisclosureOpen),
-                            Some(style)
-                        )
-                    )
-                }
-                ListStyleTypeValue::None => return,
-                // 其余（guard 未命中的 index 越界面 / 未列举面）与绘制臂同走 decimal
-                // fallback 或空 advance：alpha>26 绘 '?'，scripts 越界走 index.to_string()。
-                ListStyleTypeValue::DecimalLeadingZero
-                | ListStyleTypeValue::LowerAlpha
-                | ListStyleTypeValue::UpperAlpha
-                | ListStyleTypeValue::LowerGreek
-                | ListStyleTypeValue::Persian
-                | ListStyleTypeValue::Armenian
-                | ListStyleTypeValue::LowerArmenian
-                | ListStyleTypeValue::Georgian
-                | ListStyleTypeValue::Hebrew
-                | ListStyleTypeValue::ArabicIndic
-                | ListStyleTypeValue::Devanagari
-                | ListStyleTypeValue::Bengali
-                | ListStyleTypeValue::Gujarati
-                | ListStyleTypeValue::Gurmukhi
-                | ListStyleTypeValue::Kannada
-                | ListStyleTypeValue::Malayalam
-                | ListStyleTypeValue::Tamil
-                | ListStyleTypeValue::Telugu
-                | ListStyleTypeValue::Oriya
-                | ListStyleTypeValue::Mongolian
-                | ListStyleTypeValue::Tibetan
-                | ListStyleTypeValue::Thai
-                | ListStyleTypeValue::Lao
-                | ListStyleTypeValue::Khmer
-                | ListStyleTypeValue::Myanmar
-                | ListStyleTypeValue::CjkDecimal => format!("{index}."),
-            };
-            let mut advance: f32 = text
-                .chars()
-                .map(|ch| self.measure_char_cached(default_font_id.0, ch, font_size, false))
-                .sum();
-            // chromium inside counter marker 与内容间的间隔 = 计数器样式 suffix 的尾随
-            // 空格（predefined suffix = ". "，WPT ref "X. X"）。本块只处理 counter 类
-            // marker（String/Custom 已在入口排除），间隔恒补。
-            advance += self.measure_char_cached(default_font_id.0, ' ', font_size, false);
-            self.list_inside_marker_advance.insert(node_id, advance);
+            return 0.0;
         }
+        let index = self
+            .get_counter("list-item")
+            .unwrap_or_else(|| self.compute_list_item_index(doc, node_id));
+        let text: String = match &style.list_style_type {
+            ListStyleTypeValue::Decimal => format!("{index}."),
+            ListStyleTypeValue::DecimalLeadingZero if (0..10).contains(&index) => format!("0{index}."),
+            ListStyleTypeValue::LowerAlpha if index > 0 && index <= 26 => {
+                format!("{}.", (b'a' + (index as u8 - 1)) as char)
+            }
+            ListStyleTypeValue::UpperAlpha if index > 0 && index <= 26 => {
+                format!("{}.", (b'A' + (index as u8 - 1)) as char)
+            }
+            ListStyleTypeValue::LowerRoman => {
+                if index <= 0 {
+                    format!("{index}.")
+                } else {
+                    format!("{}.", to_roman(index as usize).to_lowercase())
+                }
+            }
+            ListStyleTypeValue::UpperRoman => {
+                if index <= 0 {
+                    format!("{index}.")
+                } else {
+                    format!("{}.", to_roman(index as usize))
+                }
+            }
+            ListStyleTypeValue::LowerGreek if index > 0 => format!("{}.", to_greek(index as usize)),
+            ListStyleTypeValue::Persian if index >= 0 => format!("{}.", to_persian(index as usize)),
+            ListStyleTypeValue::Armenian if index > 0 => format!("{}.", to_armenian(index as usize)),
+            ListStyleTypeValue::LowerArmenian if index > 0 => {
+                format!("{}.", to_armenian(index as usize).to_lowercase())
+            }
+            ListStyleTypeValue::Georgian if index > 0 => format!("{}.", to_georgian(index as usize)),
+            ListStyleTypeValue::Hebrew if index > 0 => format!("{}.", to_hebrew(index as usize)),
+            ListStyleTypeValue::ArabicIndic if index >= 0 => format!("{}.", to_arabic_indic(index as usize)),
+            ListStyleTypeValue::EthiopicNumeric => {
+                format!("{}.", to_ethiopic_numeric(index).unwrap_or_else(|| index.to_string()))
+            }
+            ListStyleTypeValue::CjkDecimal if index >= 0 => format!("{}.", to_cjk_decimal(index as usize)),
+            ListStyleTypeValue::Devanagari if index >= 0 => format!("{}.", to_digit_script(index as usize, 0x0966)),
+            ListStyleTypeValue::Bengali if index >= 0 => format!("{}.", to_digit_script(index as usize, 0x09E6)),
+            ListStyleTypeValue::Gujarati if index >= 0 => format!("{}.", to_digit_script(index as usize, 0x0AE6)),
+            ListStyleTypeValue::Gurmukhi if index >= 0 => format!("{}.", to_digit_script(index as usize, 0x0A66)),
+            ListStyleTypeValue::Kannada if index >= 0 => format!("{}.", to_digit_script(index as usize, 0x0CE6)),
+            ListStyleTypeValue::Malayalam if index >= 0 => format!("{}.", to_digit_script(index as usize, 0x0D66)),
+            ListStyleTypeValue::Tamil if index >= 0 => format!("{}.", to_digit_script(index as usize, 0x0BE6)),
+            ListStyleTypeValue::Telugu if index >= 0 => format!("{}.", to_digit_script(index as usize, 0x0C66)),
+            // R3889：oriya/mongolian/tibetan/thai（§6.1 numeric 脚本族补全）。
+            ListStyleTypeValue::Oriya if index >= 0 => format!("{}.", to_digit_script(index as usize, 0x0B66)),
+            ListStyleTypeValue::Mongolian if index >= 0 => format!("{}.", to_digit_script(index as usize, 0x1810)),
+            ListStyleTypeValue::Tibetan if index >= 0 => format!("{}.", to_digit_script(index as usize, 0x1040)),
+            ListStyleTypeValue::Thai if index >= 0 => format!("{}.", to_digit_script(index as usize, 0x0E50)),
+            ListStyleTypeValue::Lao if index >= 0 => format!("{}.", to_digit_script(index as usize, 0x0ED0)),
+            ListStyleTypeValue::Khmer if index >= 0 => format!("{}.", to_digit_script(index as usize, 0x17E0)),
+            ListStyleTypeValue::Myanmar if index >= 0 => format!("{}.", to_digit_script(index as usize, 0x1040)),
+            // R3835：§6.2 家族（与绘制臂同源，越界 → decimal）。
+            ListStyleTypeValue::JapaneseInformal => {
+                format!(
+                    "{}{}",
+                    to_cjk_num(index, &JAPANESE_INFORMAL).unwrap_or_else(|| index.to_string()),
+                    counter_suffix(&style.list_style_type)
+                )
+            }
+            ListStyleTypeValue::JapaneseFormal => {
+                format!(
+                    "{}{}",
+                    to_cjk_num(index, &JAPANESE_FORMAL).unwrap_or_else(|| index.to_string()),
+                    counter_suffix(&style.list_style_type)
+                )
+            }
+            ListStyleTypeValue::SimpChineseInformal => {
+                format!(
+                    "{}{}",
+                    to_cjk_num(index, &SIMP_CHINESE_INFORMAL).unwrap_or_else(|| index.to_string()),
+                    counter_suffix(&style.list_style_type)
+                )
+            }
+            ListStyleTypeValue::SimpChineseFormal => {
+                format!(
+                    "{}{}",
+                    to_cjk_num(index, &SIMP_CHINESE_FORMAL).unwrap_or_else(|| index.to_string()),
+                    counter_suffix(&style.list_style_type)
+                )
+            }
+            ListStyleTypeValue::TradChineseInformal => {
+                format!(
+                    "{}{}",
+                    to_cjk_num(index, &TRAD_CHINESE_INFORMAL).unwrap_or_else(|| index.to_string()),
+                    counter_suffix(&style.list_style_type)
+                )
+            }
+            ListStyleTypeValue::TradChineseFormal => {
+                format!(
+                    "{}{}",
+                    to_cjk_num(index, &TRAD_CHINESE_FORMAL).unwrap_or_else(|| index.to_string()),
+                    counter_suffix(&style.list_style_type)
+                )
+            }
+            ListStyleTypeValue::KoreanHangulFormal => {
+                format!(
+                    "{}{}",
+                    to_cjk_num(index, &KOREAN_HANGUL_FORMAL).unwrap_or_else(|| index.to_string()),
+                    counter_suffix(&style.list_style_type)
+                )
+            }
+            ListStyleTypeValue::KoreanHanjaInformal => {
+                format!(
+                    "{}{}",
+                    to_cjk_num(index, &KOREAN_HANJA_INFORMAL).unwrap_or_else(|| index.to_string()),
+                    counter_suffix(&style.list_style_type)
+                )
+            }
+            ListStyleTypeValue::KoreanHanjaFormal => {
+                format!(
+                    "{}{}",
+                    to_cjk_num(index, &KOREAN_HANJA_FORMAL).unwrap_or_else(|| index.to_string()),
+                    counter_suffix(&style.list_style_type)
+                )
+            }
+            ListStyleTypeValue::CjkEarthlyBranch => {
+                format!(
+                    "{}{}",
+                    to_symbol_cycle(index, CJK_EARTHLY_BRANCH).unwrap_or_else(|| index.to_string()),
+                    counter_suffix(&style.list_style_type)
+                )
+            }
+            ListStyleTypeValue::CjkHeavenlyStem => {
+                format!(
+                    "{}{}",
+                    to_symbol_cycle(index, CJK_HEAVENLY_STEM).unwrap_or_else(|| index.to_string()),
+                    counter_suffix(&style.list_style_type)
+                )
+            }
+            ListStyleTypeValue::Hiragana => {
+                format!(
+                    "{}{}",
+                    to_symbol_alpha(index, HIRAGANA).unwrap_or_else(|| index.to_string()),
+                    counter_suffix(&style.list_style_type)
+                )
+            }
+            ListStyleTypeValue::HiraganaIroha => {
+                format!(
+                    "{}{}",
+                    to_symbol_alpha(index, HIRAGANA_IROHA).unwrap_or_else(|| index.to_string()),
+                    counter_suffix(&style.list_style_type)
+                )
+            }
+            ListStyleTypeValue::Katakana => {
+                format!(
+                    "{}{}",
+                    to_symbol_alpha(index, KATAKANA).unwrap_or_else(|| index.to_string()),
+                    counter_suffix(&style.list_style_type)
+                )
+            }
+            ListStyleTypeValue::KatakanaIroha => {
+                format!(
+                    "{}{}",
+                    to_symbol_alpha(index, KATAKANA_IROHA).unwrap_or_else(|| index.to_string()),
+                    counter_suffix(&style.list_style_type)
+                )
+            }
+            ListStyleTypeValue::String(s) => s.clone(),
+            ListStyleTypeValue::Custom(name) => match self.counter_styles.get(name) {
+                Some(rule) => counter_style_marker_text(rule, index, Some(&self.counter_styles), Some(style)),
+                None => format!("{index}."),
+            },
+            // disc/circle/square 几何 marker：宽度 = marker_size（同 paint 臂）。
+            ListStyleTypeValue::Disc | ListStyleTypeValue::Circle | ListStyleTypeValue::Square => {
+                let geo_advance = font_size * 0.4 + font_size * 0.1;
+                self.list_inside_marker_advance.insert(node_id, geo_advance);
+                return geo_advance;
+            }
+            // disclosure 文本臂（含尾随空格）。
+            ListStyleTypeValue::DisclosureOpen | ListStyleTypeValue::DisclosureClosed => {
+                format!(
+                    "{} ",
+                    disclosure_symbol(
+                        matches!(style.list_style_type, ListStyleTypeValue::DisclosureOpen),
+                        Some(style)
+                    )
+                )
+            }
+            ListStyleTypeValue::None => return 0.0,
+            // 其余（guard 未命中的 index 越界面 / 未列举面）与绘制臂同走 decimal
+            // fallback 或空 advance：alpha>26 绘 '?'，scripts 越界走 index.to_string()。
+            ListStyleTypeValue::DecimalLeadingZero
+            | ListStyleTypeValue::LowerAlpha
+            | ListStyleTypeValue::UpperAlpha
+            | ListStyleTypeValue::LowerGreek
+            | ListStyleTypeValue::Persian
+            | ListStyleTypeValue::Armenian
+            | ListStyleTypeValue::LowerArmenian
+            | ListStyleTypeValue::Georgian
+            | ListStyleTypeValue::Hebrew
+            | ListStyleTypeValue::ArabicIndic
+            | ListStyleTypeValue::Devanagari
+            | ListStyleTypeValue::Bengali
+            | ListStyleTypeValue::Gujarati
+            | ListStyleTypeValue::Gurmukhi
+            | ListStyleTypeValue::Kannada
+            | ListStyleTypeValue::Malayalam
+            | ListStyleTypeValue::Tamil
+            | ListStyleTypeValue::Telugu
+            | ListStyleTypeValue::Oriya
+            | ListStyleTypeValue::Mongolian
+            | ListStyleTypeValue::Tibetan
+            | ListStyleTypeValue::Thai
+            | ListStyleTypeValue::Lao
+            | ListStyleTypeValue::Khmer
+            | ListStyleTypeValue::Myanmar
+            | ListStyleTypeValue::CjkDecimal => format!("{index}."),
+        };
+        let mut advance: f32 = text
+            .chars()
+            .map(|ch| self.measure_char_cached(default_font_id.0, ch, font_size, false))
+            .sum();
+        // chromium inside counter marker 与内容间的间隔 = 计数器样式 suffix 的尾随
+        // 空格（predefined suffix = ". "，WPT ref "X. X"）。本块只处理 counter 类
+        // marker（String/Custom 已在入口排除），间隔恒补。
+        advance += self.measure_char_cached(default_font_id.0, ' ', font_size, false);
+        self.list_inside_marker_advance.insert(node_id, advance);
+        advance
     }
 
     /// 计算当前列表项在其兄弟中的 1-based 索引。

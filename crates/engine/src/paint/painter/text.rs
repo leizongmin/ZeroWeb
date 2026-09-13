@@ -671,10 +671,21 @@ impl super::Painter {
         // remove 消费一次；paint_list_marker（先于本函数执行）已按 li NodeId 填充。
         // 近似说明：IFC 起点全市偏移会使多行 li 的后续行同样缩进（chromium 仅首行），
         // 但 ZW block-IFC 无逐行 marker 模型；现状（marker 与内容重叠）远劣于此。
-        let content_x = match box_node.node_id {
-            Some(id) => content_x + self.list_inside_marker_advance.remove(&id).unwrap_or(0.0),
-            None => content_x,
+        // R4323：RTL（水平书写模式）行内起点在右——inside marker 占据行右端 A，
+        // 内容线整体左移 A（IFC 对齐域 = [content_x, content_x + container_width]，
+        // origin 平移即整线平移：Path A stored 片段与 Path B 重跑同受此坐标约定）。
+        let marker_advance = match box_node.node_id {
+            Some(id) => self.list_inside_marker_advance.remove(&id).unwrap_or(0.0),
+            None => 0.0,
         };
+        let content_x = if matches!(style.direction, zero_style_system::DirectionValue::Rtl)
+            && matches!(style.writing_mode, zero_style_system::WritingModeValue::HorizontalTb)
+        {
+            content_x - marker_advance
+        } else {
+            content_x + marker_advance
+        };
+
         // R1717：+ valign_offset — 表格单元格文本的 vertical-align 内容偏移（仅 table-cell，
         // table.rs position_cells 设置；其他盒默认 0.0，零影响）。
         let content_y = abs_y + box_node.border_top + box_node.padding_top + box_node.valign_offset;
