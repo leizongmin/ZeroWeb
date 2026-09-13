@@ -39,7 +39,10 @@
   S48 全部门结论全量引用免复跑（cdp-e2e 门 PASS 33 绿 deterministic +
   make test 19,259P/0F EXIT=0）。双解冻条件不变：① 渲染流零新提交（活跃面维持
   inline walk 域，零子帧文档加载工作）；② DC-2 口径无新拍板记录。goal 自有面
-  零新缺口、无扩展面（S40-S50 重审结论延续）。
+  零新缺口、无扩展面（S40-S50 重审结论延续）。**push 窗口扰动归因（rule 10）**：
+  首推 non-fast-forward，rebase 拉入 9825b8e54（CI bot benchmarks dispatch 自动
+  记账，三文件全在 docs/perf/ 基线/趋势数据）——门禁图外路径（make test / cdp-e2e
+  零消费 docs/perf/，零编译面），免复跑判定成立，S48 结论延续。
 - **S50（2026-09-13）静默轮 — 同 tip 复核（无代码变更，绿步维持 33）**：
   pull 零新提交（tip = 02d716667，即 S49 提交本身）——tracked 树硬核对：tip 为
   S48 组合态门验证树（a0a8146e2）之上仅 S49 docs 增量，非 docs 面零变更，S48
