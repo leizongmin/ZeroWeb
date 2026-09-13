@@ -2,7 +2,7 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-13（S17：Network dataReceived 补齐 + 矩阵账本 v0.4 漂移刷新；绿步维持 28/30）
+**最后更新**: 2026-09-13（S18：M5 定稿预案双分支预备 + 子帧缺口探针实证 + 全量基线刷新；绿步维持 28/30）
 
 ---
 
@@ -33,6 +33,18 @@
 
 ## 已完成切片
 
+- **S18（2026-09-13）M5 定稿预案 + 子帧缺口实证（纯文档/验证切片，绿步维持 28）**：
+  **子帧缺口探针实证**（挂起理由从假设升级为实测）：iframe 元素存在但
+  `contentDocument`=null（引擎不加载子帧文档，无子帧 DOM）、`contentWindow`=object
+  （stub）、`page.frames()`=1（无 frameAttached 事件源）——frames×2 需引擎子帧文档
+  加载 + 子帧渲染面（子文档布局/iframe 区域绘制/child quads 坐标，属 layout-engine/
+  paint 渲染流域专属 crate）+ 子帧 JS realm——三件套均跨流域，本流不可单方解。
+  **M5 定稿预案**（双分支机械执行清单，见下一步计划 #2）：分支 A（等 30/30，维持
+  门禁防回归）／分支 B（挂账剔除定稿，四步全 docs 一个提交）——DC-2 口径一决即执行。
+  **全量基线刷新**：make test 全套经 test-guard（结果见验证基线）。
+  **引擎碰撞核对**：`git log --since="14 days ago" -- crates/engine/` = 渲染流 paint
+  域修复（R4285-R4296 filter/svg/bleed），无子帧相关工作——维持挂起不变。
+  **跨流红灯跟踪**：renderer lib form fixture 2 失败仍在（S16 时点归因不变）。
 - **S17（2026-09-13）Network dataReceived + 矩阵账本 v0.4 漂移刷新（绿步维持 28）**：
   **dataReceived**：protocol `FetchObservedParams` 增 `data_length`（末位追加）；renderer
   fetch 观测记录扩为六元组（loadingFinished 阶段带 body 字节数——`body_bytes` 原始字节
@@ -248,12 +260,23 @@
    实测捕获节）——DC-2 口径一决即可定稿。
 2. **M5 定稿（口径确定后）**：expected-green 基线定稿 → cdp-e2e 即 DC-2 门；挂账清单
    （不实现域）终稿；CI 集成可行性随收口评估（S8 记账：node 20.19 + lockfile 离线可复现）。
+   **定稿预案（S18 预备，双分支机械执行）**：
+   - **分支 A（等 30/30）**：goal 维持 Active；每轮门禁防回归；渲染流域子帧能力落地后
+     解 frames×2 → 基线扩 30 → DC-2 ✅ → M5 定稿。挂账清单不豁免 frames 项。
+   - **分支 B（挂账剔除定稿）**：① 矩阵账本「ZeroWeb 侧实测捕获」节加口径注记（frames×2
+     记「挂账：随引擎子帧能力，M5 定稿时点不阻收口」）；② master.md 里程碑 M3/M5 改
+     ✅（口径挂账注记）；③ goal 入口文档 DC-2 行加挂账口径注记（不改判定语义原文，仅
+     注记）；④ expected-green 基线维持 28 不动（frames 步骤继续跑、不门禁）；⑤ CI 集成
+     评估出结论记账。四步全 docs，一个提交。
 3. **持续推进**：每轮 pull → cdp-e2e 门（基线 28 步）+ make test 防回归，余项按窗口逐个解冻。
 
 **待用户决策清单**：
-- **DC-2 收口口径（2026-09-13 新入）**：余 2 步（frames.access/frames.click+evaluate）
-  挂 engine 子帧可见性（渲染流域活跃协调点）——「等子帧能力后 30/30 收口」vs「挂账
-  剔除先定稿」。口径不清则 M5 无法判定完成。
+- **DC-2 收口口径（2026-09-13 新入，维持）**：余 2 步（frames.access/frames.click+evaluate）
+  挂 engine 子帧可见性——S18 探针实证：`iframe.contentDocument` 为 null（引擎不加载子帧
+  文档）、`page.frames()`=1（无 frameAttached 事件源）；且子帧**渲染面**（子文档布局/
+  iframe 区域绘制/child quads 坐标）属 layout-engine/paint——渲染流域专属 crate，本流
+  不可单方解。「等子帧能力后 30/30 收口」vs「挂账剔除先定稿」。口径不清则 M5 无法判定
+  完成（**M5 定稿预案见下，口径一决机械执行**）。
 - ~~dialog 事件源~~ **绿步已过、语义挂账（S10 现状澄清 2026-09-13）**：dialog.accept/
   dialog.confirm+prompt 绿因**引擎无阻塞对话框语义**——shim alert no-op、confirm/prompt
   立即返回（无 javascriptDialogOpening 事件、无挂起）、`Page.handleJavaScriptDialog` 为
@@ -283,7 +306,10 @@
 ## 验证基线
 
 - 测试基线：立项时点全绿（`make test` 19,170P/0F，2026-09-12 变基后口径；S9 后
-  19,238P/0F；S16 时点 integration 781P/0F；禁止裸跑 cargo test，经 test-guard）
+  19,238P/0F；**S18 全量刷新 19,251P/0F EXIT=0**（2026-09-13；并行流计数会漂移，
+  以当轮实跑为准）；禁止裸跑 cargo test，经 test-guard。注：make test 的 workspace 腿
+  exclude zero-renderer——renderer lib 单测不在全量门内，跨流红灯（form fixture×2）
+  经显式 `-p zero-renderer --lib` 跟踪）
 - **CDP E2E 基线（S16，2026-09-13）**：绿步 28/30，deterministic 双跑一致，
   expected-green 基线 28 步（余 frames.access/frames.click+evaluate 挂 engine 子帧可见性）
 - CDP 现状：`Page.navigate` / `Runtime.evaluate` / `Target.getTargets` 3 命令 +
