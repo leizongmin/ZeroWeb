@@ -2,15 +2,13 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-14（S245：树变化刷新轮——pull 1 新提交 4a879d408（渲染流
-fmt-only 零语义，R4322-F 遗留格式回归修复，仅 crates/style-system/src/lib.rs，
-子帧相关性零），按计划 #3 口径「tracked 树变化时门 + make test」双刷新：cdp-e2e
-门 PASS 33 绿 deterministic 双跑 YES 零漂移 ZERO_DRIFT=True（style-system→
-page-runtime→browser 链重编译后门禁绿态不受影响，S218 先例兑现）+ make test
-19,280P/0F EXIT=0（67 组 result 全 ok，较 S78 +5 跨流计数漂移零失败）；引用计数
-归零**下次活跑至迟 S255**；绿步维持 33；双解冻条件实质判定不变（R4323 尚未落
-main）；渲染流转活跃（ZeroWeb-2 自家 make test 验证腿在窗）；零 zombie 零遗留
-端口）
+**最后更新**: 2026-09-14（S246：静默监测轮——tip 与 S245 提交一致（bbb1e658e），
+本流自有面零漂移复核通过，全树锚点维持归因态零新增不可归因文件，门结论引用
+S245 刷新（树变化刷新轮门 + make test 双刷新：PASS 33 绿 deterministic 双跑 YES
+零漂移 ZERO_DRIFT=True + make test 19,280P/0F），引用计数 1/10 **下次活跑至迟
+S255**；绿步维持 33；S198 亚型解除态维持无 cdp-e2e 腿，渲染流 ZeroWeb-2 make
+test 腿 + ZeroWeb-3-wt-baidu browser 进程 9333 延续在窗（均非本流面）；零 zombie
+零遗留端口）
 
 ---
 
@@ -41,6 +39,20 @@ main）；渲染流转活跃（ZeroWeb-2 自家 make test 验证腿在窗）；�
 
 ## 已完成切片
 
+- **S246（2026-09-14）静默监测轮 — 同 tip 复核（无代码变更，绿步维持 33）**：
+  pull 零新提交（tip = bbb1e658e，即 S245 提交本身）——双层锚点口径复核通过：本流
+  自有面与 S99 门禁验证态逐字节一致（diff 空）；全树锚点 numstat 复核（基
+  bbb1e658e=S245 tip）零外部变化——维持归因态零新增不可归因文件。门结论引用
+  S245 刷新（树变化刷新轮，门 PASS 33 绿 deterministic 双跑 YES 零漂移
+  ZERO_DRIFT=True + make test 19,280P/0F EXIT=0 双证据同轮新鲜），引用计数 1/10，
+  **下次活跑至迟 S255**。双解冻条件实质判定不变：① crates/ 自 65d2c2851 =
+  930cdd684（R4322-F）+ 4a879d408（fmt 遗留修复，零语义零子帧相关性）——渲染流
+  R4323 尚未落 main；② docs/goal 自 S245 零非本流提交，DC-2 口径无新拍板记录。
+  机器卫生复核：零 zombie、9222/45029/34293/96xx 全空闲。**并行流观察**：S198
+  端口竞争亚型解除态维持（无 cdp-e2e 腿）；在窗负载延续——渲染流活跃腿
+  （ZeroWeb-2 自家 make test 腿 04:11 周期延续）+ ZeroWeb-3-wt-baidu 浏览器进程
+  （9333 非 9222 族）+ rally query CI 守护腿（均非本流自有面）。S78 故障窗口后
+  持续零复现，监测态维持。goal 自有面零新缺口、无扩展面（S40-S245 重审结论延续）。
 - **S245（2026-09-14）树变化刷新轮 — 外部 fmt 提交入树，门 + make test 双刷新（绿步
   维持 33）**：
   pull 1 新提交（tip b3f241601→**4a879d408**，`style(style-system): cargo fmt 修复
