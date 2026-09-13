@@ -795,6 +795,24 @@ impl InlineFormattingContext {
             }
         }
 
+        if std::env::var("ZW_ITEMS_DEBUG").is_ok() {
+            for (idx, it) in items.iter().enumerate() {
+                match it {
+                    InlineItem::Text(r) => eprintln!(
+                        "[items] {:2} Text nid={:?} ws={:?} pl={} text={:?}",
+                        idx,
+                        r.node_id,
+                        r.ws_override.as_ref().map(|w| (w.preserve, w.no_wrap)),
+                        r.padding_left,
+                        r.text.chars().take(40).collect::<String>()
+                    ),
+                    InlineItem::InlineBlock(b) => {
+                        eprintln!("[items] {:2} IB nid={:?}", idx, b.node_id)
+                    }
+                    _ => eprintln!("[items] {:2} other", idx),
+                }
+            }
+        }
         items
     }
 
@@ -1090,15 +1108,16 @@ impl InlineFormattingContext {
                             .get(&gc)
                             .map(|st| Self::run_white_space(&st.white_space))
                             .or_else(|| self.ws_overrides.get(&gc).copied());
-                        let ws_same = match (run_ws, child_ws) {
-                            (Some(a), Some(b)) => {
-                                a.preserve == b.preserve
-                                    && a.break_at_newline == b.break_at_newline
-                                    && a.no_wrap == b.no_wrap
-                            }
-                            (None, None) => true,
-                            _ => false,
+                        // R4300d 修正：ws_override=None = **继承容器 flags**（collect 主路径
+                        // 同语义），非「与父不同」——旧比较把 (Some, None) 判异，把继承态
+                        // 子（如 `<q>` 嵌套）无谓拆 run（quotes-001 的 27v1 整段被拆成
+                        // 27/29/32 三段，页高 74→111.7 实证）。按**有效三元组**比较：
+                        // None 解析为容器级 preserve/break_at_newline/no_wrap。
+                        let effective = |ws: Option<crate::inline::RunWhiteSpace>| {
+                            ws.map(|w| (w.preserve, w.break_at_newline, w.no_wrap))
+                                .unwrap_or((self.preserve_whitespace, self.break_at_newline, self.no_wrap))
                         };
+                        let ws_same = effective(run_ws) == effective(child_ws);
                         if ws_same {
                             if let Some(txt) = doc.text_content(gc) {
                                 text_pending.push_str(&txt);
