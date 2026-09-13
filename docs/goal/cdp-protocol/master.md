@@ -2,7 +2,7 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-13（S39：子帧元数据探测落地——frames.access 翻绿，绿步 32→33 零回归）
+**最后更新**: 2026-09-13（S40：静默轮——tip 即 S39 门禁验证树，结论全量引用；绿步维持 33）
 
 ---
 
@@ -33,6 +33,14 @@
 
 ## 已完成切片
 
+- **S40（2026-09-13）静默轮 — S39 同 tip 复核（无代码变更，绿步维持 33）**：
+  pull 零新提交（tip = cbf705e32，即 S39 门禁验证提交本身）——S39 全部门结论直接
+  延续：cdp-e2e 门 PASS 33 绿 deterministic + make test 19,259P/0F + fmt/clippy，
+  免复跑。双解冻条件不变：① 渲染流活跃面仍为 inline/quotes 域（R4308-F font 度量、
+  R4309-N ruby 竖排探查），零子帧文档加载工作；② DC-2 口径无新拍板记录（docs/goal
+  零新提交）。goal 自有面缺口重审：S39 探测切片的后续语义边界（子帧 url 停留
+  about:blank = 最诚实语义、DocumentWriteSettled 路径探测缺失已有记账且无用例依赖、
+  closeTarget 后残留分组为无害死数据）均不构成账本缺口、无扩展面。
 - **S39（2026-09-13）子帧元数据探测 — frames.access 翻绿，绿步 32→33（代码切片，纯 apps/browser 面）**：
   **缺口重审**：S18「三件套跨流域」论证针对 frames×2 整体；逐步拆解发现 `frames.access`
   仅断言 `page.frames().length >= 2`——纯元数据面（PW 的 Frame 对象来自
