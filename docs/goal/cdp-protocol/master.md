@@ -2,14 +2,14 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-14（S278：活跑最后期限轮——pull 零新提交（tip = 19fa0acc5），
-双层锚点零漂移（自有面维持 apps/browser README +1 已归因基线，全树锚点零外部
-变化），**cdp-e2e 门活跑刷新执行：PASS 33 绿 deterministic 双跑 YES EXIT=0
-ZERO_DRIFT=YES（33/33/33 机械 diff 双向空），steps/determinism-report 05:29
-同轮新鲜落盘，首调即收口（S168 形态零再现）**；**引用计数归零，下次活跑至迟
-S288**；绿步维持 33；解冻条件①观察面不变（crates/ 自 8fb39cd46 零新增，渲染流
-子帧能力未落树），②DC-2 无新拍板；净窗执行（负载 0.47→0.26 零验证腿）；本流
-遗留探针 fixture（19222，~10h）门前清场，门后零 zombie 零遗留端口）
+**最后更新**: 2026-09-14（S279：静默监测轮——同 tip 复核（3c35e78d2，即 S278
+提交本身），双层锚点零漂移（自有面维持 apps/browser README +1 已归因基线，
+全树锚点零外部变化），门结论引用 S278 活跑（净窗首调即收口 PASS 33 绿
+deterministic YES EXIT=0 ZERO_DRIFT=YES，05:29 落盘），引用计数 1/10 下次
+活跑至迟 S288；绿步维持 33；解冻条件①观察面不变（crates/ 自 8fb39cd46 零
+新增，渲染流子帧能力未落树），②DC-2 无新拍板；净窗延续（负载 0.30 零验证
+腿在窗，rally 双流主进程 + cron 主进程均非验证面）；零 zombie 零遗留端口，
+S278 清场后 19222 维持空闲）
 
 ---
 
@@ -40,6 +40,22 @@ S288**；绿步维持 33；解冻条件①观察面不变（crates/ 自 8fb39cd4
 
 ## 已完成切片
 
+- **S279（2026-09-14）静默监测轮 — 同 tip 复核（无代码变更，绿步维持 33）**：
+  pull 零新提交（tip = 3c35e78d2，即 S278 提交本身）——双层锚点口径复核通过：
+  本流自有面锚点增量零漂移（硬核对 `git diff 765429dda..HEAD -- apps/browser
+  tests/playwright-matrix scripts/test-guard.rs Makefile` 维持仅命中 apps/browser/
+  README.md +1 行 = S255 已归因的 52695a7c1 漂移基线，其后零新增漂移）；全树
+  锚点复核（基 3c35e78d2=S278 tip，树零变化）零外部变化。双解冻条件实质判定
+  不变：① crates/ 自 8fb39cd46 零新增提交，渲染流子帧文档加载 + JS realm 能力
+  未落树（frames.click+evaluate 解挂前提未到——树未变，S258 组合态 make test
+  19,280P/0F 同 crates/ 树结论延续可引用，本轮免 make test 复跑）；② docs/goal
+  自 S278 零非本流提交，DC-2 口径无新拍板记录。门结论引用 S278 活跑（净窗
+  首调即收口 PASS 33 绿 deterministic 双跑 YES EXIT=0 ZERO_DRIFT=YES，
+  steps/determinism-report 05:29 落盘），引用计数 1/10，下次活跑至迟 S288。
+  机器卫生复核：零 zombie、9222/45029/34293/19222/96xx 全空闲（S278 清场后
+  19222 维持空闲）、本流零遗留进程；净窗延续（负载 0.30，零验证腿在窗——在窗
+  仅 rally 双流主进程 + rally cron 主进程，均非验证面）。S78 故障窗口后持续零
+  复现、S168 形态累计两例非聚集记账维持。goal 自有面零新缺口、无扩展面。
 - **S278（2026-09-14）活跑最后期限轮 — 引用计数 10/10 触发 cdp-e2e 门活跑刷新
   （无代码变更，绿步维持 33）**：
   pull 零新提交（tip = 19fa0acc5，即 S277 提交本身）——双层锚点口径复核通过：
