@@ -40,6 +40,18 @@
   免复跑（cdp-e2e 门 PASS 33 绿 deterministic YES）。双解冻条件不变：① 渲染流/
   用户 PR 零新提交（活跃面维持 paint/字体域，零子帧文档加载工作）；② DC-2
   口径无新拍板记录。goal 自有面零新缺口、无扩展面（S40-S59 重审结论延续）。
+  **push 窗口扰动归因（rule 10）**：推送时 rebase 拉入 9de74d956（chore:
+  symlink skills——`.claude/skills` → `../.agents/skills` 相对符号链接单条目，
+  PR #26 同一 skill 资产面的接线）——门禁图外路径（零编译面，make test /
+  cdp-e2e 零消费 .claude/，S51 docs/perf 同型判定），免复跑成立，S53 门结论
+  延续；该扰动不触子帧工作与 DC-2 口径，双解冻条件不变。S60 以 92e037c1e
+  推出（fast-forward）。
+  pull 零新提交（tip = 7b67fbaf1，即 S59 提交本身）——tracked 树硬核对：
+  `git diff 8e2265a11..HEAD -- ':!docs'` 为空（tip 为 S53 扰动三门禁验证树，
+  PR #27 组合态之上仅 docs 增量（补记 3 + S54-S59）），S53 门结论全量引用
+  免复跑（cdp-e2e 门 PASS 33 绿 deterministic YES）。双解冻条件不变：① 渲染流/
+  用户 PR 零新提交（活跃面维持 paint/字体域，零子帧文档加载工作）；② DC-2
+  口径无新拍板记录。goal 自有面零新缺口、无扩展面（S40-S59 重审结论延续）。
 - **S59（2026-09-13）静默轮 — 同 tip 复核（无代码变更，绿步维持 33）**：
   pull 零新提交（tip = 2ea8a9373，即 S58 提交本身）——tracked 树硬核对：
   `git diff 8e2265a11..HEAD -- ':!docs'` 为空（tip 为 S53 扰动三门禁验证树，
