@@ -24,6 +24,16 @@ use zero_webview::{WebView, WebViewConfig};
 
 // ── 会话 ──
 
+/// 已完成的代理 fetch（worker 线程 → 会话线程）。cookie 应用、Network 事件与
+/// 响应回发全部由会话线程在排空时执行——会话状态保持单线程变更。
+pub(super) struct CompletedFetch {
+    pub(super) request_id: u64,
+    pub(super) net_request_id: String,
+    pub(super) network_enabled: bool,
+    pub(super) origin_url: String,
+    pub(super) outcome: Result<zero_net::HttpResponse, zero_net::NetError>,
+}
+
 /// Page.addScriptToEvaluateOnNewDocument 登记的注入脚本。
 ///（ZeroWeb 单引擎无 world 隔离：一律在主 world 执行，见矩阵 createIsolatedWorld 注记。）
 pub(super) struct InjectedScript {
@@ -78,6 +88,12 @@ pub(super) struct HeadlessSession {
     /// Surface-local 字体注册表（系统基表 + 下载字体）：截图光栅化用，与
     /// compositor 同一资源模型（renderer 数字 ID ≠ 全局资源 ID）。
     pub(super) paint_fonts: zero_paint_convert::fonts::PaintFonts,
+    /// R-baidu2/P7：代理 fetch 完成队列——HTTP 在 worker 线程执行，会话线程
+    /// 在各等待点排空（会话不再被单次 fetch 阻塞，CDP 保持响应）。
+    #[cfg(not(test))]
+    pub(super) fetch_completion_tx: std::sync::mpsc::Sender<CompletedFetch>,
+    #[cfg(not(test))]
+    pub(super) fetch_completions_rx: std::sync::mpsc::Receiver<CompletedFetch>,
 }
 
 /// 按帧更新下载字体注册表并重写 surface-local 数字 ID（compositor 主路径同序：
@@ -186,6 +202,7 @@ impl HeadlessSession {
             .unwrap_or_else(|error| panic!("failed to set headless viewport: {error}"));
         let mut shell = BrowserShell::new();
         shell.new_tab(None);
+        let (fetch_completion_tx, fetch_completions_rx) = std::sync::mpsc::channel();
         Self {
             shell,
             renderer,
@@ -203,6 +220,8 @@ impl HeadlessSession {
             next_frame_seq: 1,
             gpu_renderer: None,
             paint_fonts: new_session_paint_fonts(),
+            fetch_completion_tx,
+            fetch_completions_rx,
         }
     }
 }
@@ -439,13 +458,81 @@ impl HeadlessSession {
             ));
         }
 
-        let response = self.http.send(HttpRequest {
-            method,
-            url: params.url.clone(),
-            headers,
-            body: params.body,
-        });
-        match response {
+        // R-baidu2/P7：HTTP 移交 worker 线程执行——会话线程若在此阻塞（最长
+        // http 超时 30s × 重定向链），CDP 命令与 renderer 消息全部饿死（SERP
+        // 图片加载实测冻结自动化分钟级）。结果经完成队列由会话线程排空。
+        let request_id = params.request_id;
+        let net_request_id_clone = net_request_id.clone();
+        let network_enabled = self.network_enabled;
+        let job_url = params.url.clone();
+        let job_method = method.clone();
+        let job_headers = headers.clone();
+        let job_body = params.body.clone();
+        let outcome_tx = self.fetch_completion_tx.clone();
+        let http = self.http.clone();
+        let spawn = std::thread::Builder::new()
+            .name("headless-fetch".into())
+            .spawn(move || {
+                let outcome = http.send(HttpRequest {
+                    method: job_method,
+                    url: job_url.clone(),
+                    headers: job_headers,
+                    body: job_body,
+                });
+                let _ = outcome_tx.send(CompletedFetch {
+                    request_id,
+                    net_request_id: net_request_id_clone,
+                    network_enabled,
+                    origin_url: job_url,
+                    outcome,
+                });
+            });
+        if let Err(error) = spawn {
+            // 线程创建失败（极端场景）：同步兜底，正确性优先于响应性。
+            tracing::warn!("headless fetch worker spawn failed, running inline: {error}");
+            let outcome = self.http.send(HttpRequest {
+                method,
+                url: params.url.clone(),
+                headers,
+                body: params.body,
+            });
+            self.apply_fetch_completion(CompletedFetch {
+                request_id,
+                net_request_id,
+                network_enabled,
+                origin_url: params.url,
+                outcome,
+            })?;
+        }
+        Ok(())
+    }
+
+    /// 排空已完成的代理 fetch：cookie 应用 → Network 事件 → 响应回发。
+    /// 必须在所有等待 renderer 消息的循环中周期调用，否则 renderer 侧
+    /// `ipc_fetch` 永久阻塞（learning #24 同族）。
+    pub(super) fn drain_fetch_completions(&mut self) {
+        let mut completions: Vec<CompletedFetch> = Vec::new();
+        while let Ok(completion) = self.fetch_completions_rx.try_recv() {
+            completions.push(completion);
+        }
+        for completion in completions {
+            if let Err(e) = self.apply_fetch_completion(completion) {
+                tracing::warn!("fetch completion apply failed: {e}");
+            }
+        }
+    }
+
+    fn apply_fetch_completion(&mut self, completion: CompletedFetch) -> Result<(), String> {
+        let CompletedFetch {
+            request_id,
+            net_request_id,
+            network_enabled,
+            origin_url,
+            outcome,
+        } = completion;
+        let parsed_url = zero_net::parse_url(&origin_url).ok();
+        let frame_id = self.active_frame_id();
+        match outcome {
             Ok(response) => {
                 // Set-Cookie 捕获（响应 → Storage jar）
                 if let Some(parsed) = &parsed_url {
@@ -462,7 +549,7 @@ impl HeadlessSession {
                     }
                 }
                 // Network 事件：responseReceived + loadingFinished
-                if self.network_enabled {
+                if network_enabled {
                     let response_headers: serde_json::Map<String, Value> = response
                         .headers
                         .iter()
@@ -508,15 +595,11 @@ impl HeadlessSession {
                         serde_json::json!({ "requestId": net_request_id }),
                     ));
                 }
-                self.renderer.send_fetch_response(
-                    params.request_id,
-                    response.status_code,
-                    response.headers,
-                    response.body,
-                )
+                self.renderer
+                    .send_fetch_response(request_id, response.status_code, response.headers, response.body)
             }
             Err(error) => {
-                if self.network_enabled {
+                if network_enabled {
                     self.pending_network_events.push((
                         "Network.loadingFailed".to_string(),
                         serde_json::json!({
@@ -527,7 +610,7 @@ impl HeadlessSession {
                     ));
                 }
                 self.renderer
-                    .send_fetch_response(params.request_id, 0, Vec::new(), error.to_string().into_bytes())
+                    .send_fetch_response(request_id, 0, Vec::new(), error.to_string().into_bytes())
             }
         }
         .map_err(|error| error.to_string())
@@ -539,6 +622,7 @@ impl HeadlessSession {
             if std::time::Instant::now() >= deadline {
                 return Err("navigation timed out".into());
             }
+            self.drain_fetch_completions();
             match self.renderer.try_recv().map_err(|error| error.to_string())? {
                 Some(message) => {
                     if let Some(result) = self.handle_renderer_message(message)? {
@@ -613,6 +697,7 @@ impl HeadlessSession {
             if std::time::Instant::now() >= deadline {
                 return Err("automation request timeout".into());
             }
+            self.drain_fetch_completions();
             match self.renderer.try_recv().map_err(|error| error.to_string())? {
                 Some(IpcMessage {
                     id,

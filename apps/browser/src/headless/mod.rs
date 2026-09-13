@@ -352,6 +352,8 @@ impl HeadlessServer {
         ws: &mut tungstenite::WebSocket<std::net::TcpStream>,
     ) {
         let mut events: Vec<ServerEvent> = Vec::new();
+        #[cfg(not(test))]
+        session.drain_fetch_completions();
         while let Some(message) = session.try_recv_renderer() {
             let _ = session.handle_renderer_message(message);
         }
