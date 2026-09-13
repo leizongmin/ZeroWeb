@@ -2,14 +2,14 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-14（S277：静默监测轮——tip 与 S276 提交一致（8f363d409），
+**最后更新**: 2026-09-14（S278：活跑最后期限轮——pull 零新提交（tip = 19fa0acc5），
 双层锚点零漂移（自有面维持 apps/browser README +1 已归因基线，全树锚点零外部
-变化），门结论引用 S268 活跑（同轮三调序列收口 PASS 33 绿 deterministic YES
-EXIT=0 ZERO_DRIFT=YES，05:15 落盘），引用计数 9/10 **S278 为活跑最后期限——届时
-必须执行 cdp-e2e 门活跑刷新（引用计数 10/10 触发，S218/S238/S255/S268 先例）**；
-绿步维持 33；解冻条件①观察面不变（crates/ 自 8fb39cd46 零新增，渲染流子帧能力
-未落树），②DC-2 无新拍板；净窗延续（负载 0.20 零验证腿，rally 双流主进程 +
-cron 主进程在窗均非验证面）；零 zombie 零遗留端口）
+变化），**cdp-e2e 门活跑刷新执行：PASS 33 绿 deterministic 双跑 YES EXIT=0
+ZERO_DRIFT=YES（33/33/33 机械 diff 双向空），steps/determinism-report 05:29
+同轮新鲜落盘，首调即收口（S168 形态零再现）**；**引用计数归零，下次活跑至迟
+S288**；绿步维持 33；解冻条件①观察面不变（crates/ 自 8fb39cd46 零新增，渲染流
+子帧能力未落树），②DC-2 无新拍板；净窗执行（负载 0.47→0.26 零验证腿）；本流
+遗留探针 fixture（19222，~10h）门前清场，门后零 zombie 零遗留端口）
 
 ---
 
@@ -40,6 +40,40 @@ cron 主进程在窗均非验证面）；零 zombie 零遗留端口）
 
 ## 已完成切片
 
+- **S278（2026-09-14）活跑最后期限轮 — 引用计数 10/10 触发 cdp-e2e 门活跑刷新
+  （无代码变更，绿步维持 33）**：
+  pull 零新提交（tip = 19fa0acc5，即 S277 提交本身）——双层锚点口径复核通过：
+  本流自有面锚点增量零漂移（硬核对 `git diff 765429dda..HEAD -- apps/browser
+  tests/playwright-matrix scripts/test-guard.rs Makefile` 维持仅命中 apps/browser/
+  README.md +1 行 = S255 已归因的 52695a7c1 漂移基线，其后零新增漂移）；全树
+  锚点复核（基 8f363d409=S276 tip，仅 docs/goal/cdp-protocol/master.md 本流
+  控制面）零外部变化。双解冻条件实质判定不变：① crates/ 自 8fb39cd46 零新增
+  提交，渲染流子帧文档加载 + JS realm 能力未落树（frames.click+evaluate 解挂
+  前提未到——树未变，S258 组合态 make test 19,280P/0F 同 crates/ 树结论延续
+  可引用，本轮免 make test 复跑）；② docs/goal 自 S276 零非本流提交，DC-2 口径
+  无新拍板记录。**活跑动因**：引用计数 10/10 最后期限（S269-S277 九轮引用
+  S268；S218/S238/S255/S268 先例）。**S198 前置复核通过**（零 make cdp-e2e 腿
+  的验收链在窗、9222/45029/34293 全空闲），净窗执行（负载 1min 均值 0.47→门后
+  0.26，零验证腿在窗——在窗仅 rally 双流主进程 + rally cron 主进程 + codex
+  主进程，均非验证面）。**清场记档**：门前发现本流遗留探针 fixture 服务
+  （`node -e` matrix-home/frame，监听 19222，cwd tests/playwright-matrix，存活
+  ~10h——跨 S269-S277 多轮未察，此前卫生核对仅覆盖 9222/45029/34293/96xx 固定
+  端口族；门 fixture/CDP 端口均为 `listen(0)` 临时端口，该遗留不构成门禁竞争，
+  纯卫生清理）——本轮 kill 清场；同窗另一 fixture 服务（9341，cwd
+  ZeroWeb-3-wt-baidu/.acceptance/site-optimizer）归因 siteopt 流非本流面，不动。
+  **活跑结果（单次调用首调即收口）**：**PASS 33 绿 deterministic 双跑 YES
+  EXIT=0**（门前置 cargo build 0.16s no-op 缓存温；run1/run2 各 33 ok +
+  frames.click+evaluate 预期失败项一致）；绿步集机械 diff expected-green 双向
+  零漂移（**ZERO_DRIFT=YES**——report.green 33 vs baseline 33 双向 diff 空、
+  report.expected 快照与 baseline 文件一致、regressions 空）；steps-report/
+  determinism-report 05:29 同轮新鲜落盘（steps 35 计 observations 统计项、
+  ok 34、fatal 无、green 33）。**S168 形态再现计数**：本轮首调即 PASS 零再现
+  （S268 后首个活跑样本；S168 形态累计两例非聚集记账维持）。**观测记档**：
+  门前置 cargo build 腿 zero-engine dead_code warning（match_media_to_json）
+  按 S268 已归因结论延续（2026-08-06 d8aeb7b97 即在，非本轮回归，共享面不单方
+  改）。机器卫生复核（门后）：零 zombie、9222/45029/34293/19222/96xx 全空闲、
+  门腿零遗留进程。**引用计数归零（本轮活跑新鲜落盘），下次活跑至迟 S288**。
+  goal 自有面零新缺口、无扩展面（S40-S277 重审结论延续）。
 - **S277（2026-09-14）静默监测轮 — 同 tip 复核（无代码变更，绿步维持 33）**：
   pull 零新提交（tip = 8f363d409，即 S276 提交本身）——双层锚点口径复核通过：
   本流自有面锚点增量零漂移（硬核对 `git diff 765429dda..HEAD -- apps/browser
@@ -3869,7 +3903,7 @@ cron 主进程在窗均非验证面）；零 zombie 零遗留端口）
    steps-report 新鲜性**）；tracked 树变化时门 + make test。**连续引用不超过 10 轮**
    （S98 新增：S78 故障为负载触发、可在树不变时复发——纯引用协议探测不到环境性复发，
    超限即活跑一次刷新证据新鲜度，服务 #0 复现监测；S98/S108/S118/S128/S138/S148/
-   S158/S168/S178/S188/S198/S208/S218/S228/S238/S245/S255/S258/S268 已执行——S168 为期限轮负载窗口内活跑（第六个负载下样本）且
+   S158/S168/S178/S188/S198/S208/S218/S228/S238/S245/S255/S258/S268/S278 已执行——S168 为期限轮负载窗口内活跑（第六个负载下样本）且
    首次出现「首调红（run 1 瞬态 11 步失败 → deterministic NO）/ 复跑即 PASS」形态，
    四点机械归因定性单次瞬态环境事件（见 S168 记录）；S178 为期限轮并行编译负载窗内
    活跑（第七个负载下样本、首个编译 CPU 竞争亚型，PASS 33 绿零漂移，首调红形态零
@@ -3898,7 +3932,7 @@ cron 主进程在窗均非验证面）；零 zombie 零遗留端口）
    EXIT=0）；后续轮次
    若再现该形态，同口径归因并留意复现频率——单轮偶发记账、多轮聚集升级 #0 排查
    （S168 形态累计两例相隔 ~97 轮非聚集）；
-   S268 已执行，下次活跑至迟 S278；若活跑时逢并行流负载窗口则
+   S278 已执行（净窗首调即收口），下次活跑至迟 S288；若活跑时逢并行流负载窗口则
    优先窗口内执行，负载下样本对 #0 更有价值（负载窗口口径含并行流 browser 进程型与
    编译测试负载型两亚型，净窗亚型 S208 起并行记录；**端口竞争亚型口径 S198 新增**：
    并行流含 make cdp-e2e 腿
