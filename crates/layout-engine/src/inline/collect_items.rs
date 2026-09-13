@@ -1224,6 +1224,22 @@ impl InlineFormattingContext {
                         }
                         continue;
                     }
+                    // R4313：子树**无文本**的包装层（嵌套空 span，如 block-in-inline
+                    // split ref 页的 notstart/notend 空包装）不递归——递归会把零宽 run
+                    // 经 frame_sum 分支归因到最内层空子，外层自身的垂直 border/padding
+                    // 行盒贡献丢失（walk-off flatten 按 text_content 归因外层，ref 页
+                    // 行盒高随之漂移 → block-in-inline-insert-011 对比 0.82%→3.25%）。
+                    // 按 text_content 判定（style 无关，paint IFC 恒等），与 walk-off
+                    // 形状逐字节一致。
+                    if doc
+                        .text_content(gc)
+                        .is_none_or(|t| t.chars().all(|c| c.is_whitespace()))
+                    {
+                        if let Some(item) = self.build_flatten_run_for_element(doc, gc, styles) {
+                            items.push(item);
+                        }
+                        continue;
+                    }
                     self.collect_flat_inline_children(doc, gc, styles, items);
                     continue;
                 }
