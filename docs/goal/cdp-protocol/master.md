@@ -2,13 +2,13 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-14（S265：静默监测轮——tip 与 S264 提交一致（2dce435e3），
+**最后更新**: 2026-09-14（S266：静默监测轮——tip 与 S265 提交一致（7e1c91b68），
 双层锚点零漂移（自有面维持 apps/browser README +1 已归因基线，全树锚点零外部
 变化），门结论引用 S258 双刷新（PASS 33 绿 ZERO_DRIFT=YES + make test
-19,280P/0F），引用计数 7/10 **下次活跑至迟 S268**；绿步维持 33；解冻条件①
+19,280P/0F），引用计数 8/10 **下次活跑至迟 S268**；绿步维持 33；解冻条件①
 观察面不变（crates/ 自 8fb39cd46 零新增，渲染流子帧能力未落树），②DC-2 无新
-拍板；净窗延续（负载 0.76，两个秒级瞬时 shell 进程自愈退出按 S215/S240 口径
-记档，9333 延续均非本流面）；零 zombie 零遗留端口）
+拍板；渲染流 ZeroWeb-2 perf 腿新起在窗（bench-report + perf-gate，/proc cwd
+归因，负载 6.50，非本流面不触 9222 族）；零 zombie 零遗留端口）
 
 ---
 
@@ -39,6 +39,28 @@
 
 ## 已完成切片
 
+- **S266（2026-09-14）静默监测轮 — 同 tip 复核（无代码变更，绿步维持 33）**：
+  pull 零新提交（tip = 7e1c91b68，即 S265 提交本身；仅 siteopt/baidu-round2
+  远端分支推进 f2d82769c 非 main 面）——双层锚点口径复核通过：本流自有面锚点
+  增量零漂移（硬核对 `git diff 765429dda..HEAD -- apps/browser
+  tests/playwright-matrix scripts/test-guard.rs Makefile` 维持仅命中
+  apps/browser/README.md +1 行 = S255 已归因的 52695a7c1 漂移基线，其后零新增
+  漂移）；全树锚点 numstat 复核（基 7e1c91b68=S265 tip）零外部变化——维持
+  归因态零新增不可归因文件。门结论引用 S258 双刷新（cdp-e2e 门活跑 PASS 33 绿
+  deterministic 双跑 YES ZERO_DRIFT=YES + make test 19,280P/0F，
+  steps/determinism-report 04:32 落盘），引用计数 8/10，**下次活跑至迟 S268**。
+  双解冻条件：① 观察面不变——crates/ 自 8fb39cd46（R4323-F，S258 组合态刷新
+  已覆盖）零新增提交，渲染流子帧文档加载 + JS realm 能力未落树
+  （frames.click+evaluate 解挂前提未到）；② docs/goal 自 S265 零非本流提交，
+  DC-2 口径无新拍板记录。机器卫生复核：零 zombie、9222/45029/34293/96xx 全
+  空闲、本流零遗留进程。**并行流观察**：渲染流 ZeroWeb-2 验证腿回窗——
+  bench-report.sh + perf-gate.sh 腿新起（test-guard 包裹，cargo release 构建
+  zero-wpt-runner/form-input-perf，/proc cwd 归因 ZeroWeb-2，负载均值 6.50，
+  非 9222 端口族非本流自有面）+ rally 双流主进程 + ZeroWeb-3-wt-baidu 浏览器
+  进程（9333 非 9222 族，同 PID 233514 延续非重启）；siteopt/baidu-round2
+  远端分支推进（非 main 面）。后续轮次若需活跑逢该 perf 腿按负载窗口口径执行
+  （S218 先例：负载下样本与净窗样本互补）。S78 故障窗口后持续零复现，监测态
+  维持。goal 自有面零新缺口、无扩展面（S40-S265 重审结论延续）。
 - **S265（2026-09-14）静默监测轮 — 同 tip 复核（无代码变更，绿步维持 33）**：
   pull 零新提交（tip = 2dce435e3，即 S264 提交本身）——双层锚点口径复核通过：
   本流自有面锚点增量零漂移（硬核对 `git diff 765429dda..HEAD -- apps/browser
