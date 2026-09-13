@@ -2,16 +2,14 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-14（S290：树变化刷新轮——afdd423df R4328-F（paint run-in
-自盒重影抑制，S289 双腿完成后入树）触发，S245/S258 先例门 + make test 双刷新：
-门净窗首调即收口 **PASS 33 绿 deterministic 双跑 YES EXIT=0 ZERO_DRIFT=YES**
-（06:46 落盘）+ **make test 组合态 run2 19,281P/0F EXIT=0**（run1 单例瞬态红
-——webview sw navigator_update 首断言无轮询竞速 promise 解析，e55038a2a/
-763cfd996 已知 flake 家族第三漏改点，R4328-F 零 webview 触碰排除因果；隔离复跑
-0.07s PASS + 全量复跑绿）；**引用计数自本轮活跑起计，下次活跑至迟 S300**；
-绿步维持 33；解冻条件①实质不变（crates/ 新增 9b4488d3a + afdd423df 均非渲染流
-子帧文档加载 + JS realm，frames.click+evaluate 维持挂起），②DC-2 无新拍板；
-零 zombie 零遗留端口，19222 清场后维持空闲）
+**最后更新**: 2026-09-14（S291：静默监测轮——同 tip 复核（6a10571d9，即 S290
+提交本身），双层锚点零漂移（自有面维持 apps/browser README +1 已归因基线，
+全树锚点零外部变化），门结论引用 S290 活跑（净窗首调即收口 PASS 33 绿
+deterministic 双跑 YES EXIT=0 ZERO_DRIFT=YES 06:46 落盘；组合态 make test
+19,281P/0F），引用计数 1/10 下次活跑至迟 S300；绿步维持 33；解冻条件①观察面
+不变（crates/ 自 8fb39cd46 = 9b4488d3a + afdd423df 均非渲染流子帧能力），
+②DC-2 无新拍板；渲染流重负载腿在窗（reftest-upstream + ab-base release
+构建，负载 11.89——本轮零活跑需求不受影响）；零 zombie 零遗留端口）
 
 ---
 
@@ -42,6 +40,25 @@
 
 ## 已完成切片
 
+- **S291（2026-09-14）静默监测轮 — 同 tip 复核（无代码变更，绿步维持 33）**：
+  pull 零新提交（tip = 6a10571d9，即 S290 提交本身）——双层锚点口径复核通过：
+  自有面锚点增量零漂移（硬核对维持仅 apps/browser/README.md +1 行 = S255 已
+  归因的 52695a7c1 漂移基线）；全树锚点复核（基 6a10571d9=S290 tip，树零变化）
+  零外部变化。双解冻条件实质判定不变：① crates/ 自 8fb39cd46 = 9b4488d3a +
+  afdd423df 两枚，均非渲染流子帧文档加载 + JS realm 能力（frames.click+
+  evaluate 解挂前提未到——tracked 代码树对 S290 双腿刷新基树零变化，S290 门
+  PASS 33 绿 ZERO_DRIFT=YES + make test 19,281P/0F 结论延续可引用，本轮免复跑）；
+  ② docs/goal 自 S290 零非本流提交，DC-2 口径无新拍板记录。门结论引用 S290
+  活跑（净窗首调即收口 PASS 33 绿 deterministic 双跑 YES EXIT=0 ZERO_DRIFT=YES，
+  06:46 落盘；组合态 make test run2 19,281P/0F），引用计数 1/10，下次活跑至迟
+  S300。机器卫生复核：零 zombie、9222/45029/34293/19222 全空闲、本流零遗留
+  进程；**并行流观察**：渲染流重负载腿在窗（`zero-wpt-runner reftest-upstream`
+  + ZeroWeb-ab-base release 构建 rustc×3，负载 1min 11.89）——本轮静默监测零
+  活跑需求不受影响，负载窗口观察记档（若 S292 前该窗口未散，门活跑按负载窗口
+  口径在窗内执行，负载下样本对 #0 更有价值）。S78 零复现维持、S168 形态累计
+  两例非聚集记账维持；S290 跨流记档的 webview sw L1139 flake 家族第三漏改点
+  维持待 zero-web 流按 e55038a2a 先例修复。goal 自有面零新缺口、无扩展面
+  （S40-S290 重审结论延续）。
 - **S290（2026-09-14）树变化刷新轮 — afdd423df R4328-F 入树触发门 + make test
   双刷新（S245/S258 先例，绿步维持 33）**：
   pull 零新提交（tip = 8a5a8928c，即 S289 提交本身）——树变化 = afdd423df
