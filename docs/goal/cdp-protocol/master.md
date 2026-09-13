@@ -2,13 +2,13 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-14（S264：静默监测轮——tip 与 S263 提交一致（497aacfb7），
+**最后更新**: 2026-09-14（S265：静默监测轮——tip 与 S264 提交一致（2dce435e3），
 双层锚点零漂移（自有面维持 apps/browser README +1 已归因基线，全树锚点零外部
 变化），门结论引用 S258 双刷新（PASS 33 绿 ZERO_DRIFT=YES + make test
-19,280P/0F），引用计数 6/10 **下次活跑至迟 S268**；绿步维持 33；解冻条件①
+19,280P/0F），引用计数 7/10 **下次活跑至迟 S268**；绿步维持 33；解冻条件①
 观察面不变（crates/ 自 8fb39cd46 零新增，渲染流子帧能力未落树），②DC-2 无新
-拍板；净窗延续（负载 1.05，gate4 链收尾后无新验收腿，9333 延续均非本流面）；
-零 zombie 零遗留端口）
+拍板；净窗延续（负载 0.76，两个秒级瞬时 shell 进程自愈退出按 S215/S240 口径
+记档，9333 延续均非本流面）；零 zombie 零遗留端口）
 
 ---
 
@@ -39,6 +39,27 @@
 
 ## 已完成切片
 
+- **S265（2026-09-14）静默监测轮 — 同 tip 复核（无代码变更，绿步维持 33）**：
+  pull 零新提交（tip = 2dce435e3，即 S264 提交本身）——双层锚点口径复核通过：
+  本流自有面锚点增量零漂移（硬核对 `git diff 765429dda..HEAD -- apps/browser
+  tests/playwright-matrix scripts/test-guard.rs Makefile` 维持仅命中 apps/browser/
+  README.md +1 行 = S255 已归因的 52695a7c1 漂移基线，其后零新增漂移）；全树
+  锚点 numstat 复核（基 2dce435e3=S264 tip）零外部变化——维持归因态零新增
+  不可归因文件。门结论引用 S258 双刷新（cdp-e2e 门活跑 PASS 33 绿 deterministic
+  双跑 YES ZERO_DRIFT=YES + make test 19,280P/0F，steps/determinism-report
+  04:32 落盘），引用计数 7/10，**下次活跑至迟 S268**。双解冻条件：① 观察面
+  不变——crates/ 自 8fb39cd46（R4323-F，S258 组合态刷新已覆盖）零新增提交，
+  渲染流子帧文档加载 + JS realm 能力未落树（frames.click+evaluate 解挂前提
+  未到）；② docs/goal 自 S264 零非本流提交，DC-2 口径无新拍板记录。机器卫生
+  复核：零 zombie、9222/45029/34293/96xx 全空闲、本流零遗留进程；复核时点
+  捕获两个新起瞬时进程（PID 408566/408569，bash/test shell 碎片，05:04 起）
+  ——/proc 复核均已秒级自愈退出非持久进程，按 S215/S240 瞬时口径记档零遗留。
+  **并行流观察**：净窗延续（负载均值 0.76）——siteopt gate4 链收尾后无新验收
+  腿入窗（无 test-guard/cargo/cdp-e2e 持久腿），延续在窗仅 rally 双流主进程
+  （本流 + rendering-compat）零活动验证腿 + ZeroWeb-3-wt-baidu 浏览器进程
+  （9333 非 9222 族，同 PID 233514 延续非重启）（均非本流自有面）；rally query
+  CI 守护腿不在窗。S78 故障窗口后持续零复现，监测态维持。goal 自有面零新缺口、
+  无扩展面（S40-S264 重审结论延续）。
 - **S264（2026-09-14）静默监测轮 — 同 tip 复核（无代码变更，绿步维持 33）**：
   pull 零新提交（tip = 497aacfb7，即 S263 提交本身）——双层锚点口径复核通过：
   本流自有面锚点增量零漂移（硬核对 `git diff 765429dda..HEAD -- apps/browser
