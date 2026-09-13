@@ -385,6 +385,13 @@ pub struct LayoutBox {
     pub text_node_text_transform: NodeIdMap<zero_style_system::TextTransformValue>,
     /// paint Path B 空 styles IFC 中需要恢复 `unicode-bidi: plaintext` 的 inline owner。
     pub plaintext_bidi_nodes: NodeIdSet,
+    /// R4310：声明竖排 writing-mode（vertical-rl/lr）的 inline 元素集合（key = 元素
+    /// NodeId）。FLAT_CHILD_WALK 的竖排子门信号——walk 不得展开竖排子（其内容有
+    /// 自身盒几何/列偏移，扁平化进水平 IFC 会丢失原点，ruby-overhang-spaces-
+    /// vertical-004/006 实证）。layout IFC 有 styles 直判；paint Path B 空 styles
+    /// 读此集合（`store_font_sizes_from_ifc` 按 run owner 填充——竖排子经 layout 侧
+    /// 同一判定门必然走 flatten 持有 run，故覆盖完备）。
+    pub inline_vertical_nodes: NodeIdSet,
     /// R3840：元素级 `unicode-bidi: bidi-override` 映射（key = inline owner 元素
     /// NodeId，value = 方向 rtl?）。paint Path B 空 styles 恢复 per-run 字符反转。
     pub text_node_bidi_overrides: NodeIdMap<bool>,
@@ -591,6 +598,7 @@ impl Default for LayoutBox {
             text_node_line_heights: NodeIdMap::default(),
             text_node_text_transform: NodeIdMap::default(),
             plaintext_bidi_nodes: NodeIdSet::default(),
+            inline_vertical_nodes: NodeIdSet::default(),
             text_node_bidi_overrides: NodeIdMap::default(),
             text_node_font_families: NodeIdMap::default(),
             text_node_font_size_adjust: NodeIdMap::default(),

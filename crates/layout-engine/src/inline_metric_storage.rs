@@ -93,6 +93,17 @@ fn store_font_sizes_from_ifc_mode(
                 frag.node_id,
                 resolve_word_spacing_for_paint(&style.word_spacing, frag.font_size),
             );
+            // R4310：竖排 writing-mode 元素信号（FLAT_CHILD_WALK 竖排子门）。竖排子
+            // 经 layout 侧同一判定门必然走 flatten 持有 run（owner = 元素自身），
+            // 故按 run owner 填充覆盖完备；paint Path B（空 styles）据此复现 layout
+            // 侧「不展开竖排子」的判定，两段形状恒等。
+            if matches!(
+                style.writing_mode,
+                zero_style_system::WritingModeValue::VerticalRl | zero_style_system::WritingModeValue::VerticalLr
+            ) && let Some(owner) = font_owner
+            {
+                box_node.inline_vertical_nodes.insert(owner);
+            }
         }
         box_node.text_node_line_heights.insert(frag.node_id, frag.height);
         // R1012: text-transform belongs to the text node's parent style but is

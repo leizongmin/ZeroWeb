@@ -766,10 +766,26 @@ impl InlineFormattingContext {
                             .is_some_and(|t| {
                                 t.chars().any(|c| ('\u{202A}'..='\u{202E}').contains(&c))
                             });
+                        // R4310：自身声明竖排 writing-mode（vertical-rl/lr）的子不走 walk
+                        // ——竖排子内容有自身盒几何/列偏移，扁平化进正交轴 IFC 会丢失
+                        // 原点（ruby-overhang-spaces-vertical-004/006 实证：walk-off 落
+                        // span 盒原点 x=51.1、walk-on 落容器游标 x=0.0 全体左移）。有
+                        // styles（layout IFC）直判；paint Path B（空 styles）读存储信号
+                        //（见 child_declares_vertical_wm）。
+                        let child_declares_vertical_wm = style
+                            .map(|st| {
+                                matches!(
+                                    st.writing_mode,
+                                    zero_style_system::WritingModeValue::VerticalRl
+                                        | zero_style_system::WritingModeValue::VerticalLr
+                                )
+                            })
+                            .unwrap_or_else(|| self.vertical_walk_nodes.contains(&child_id));
                         let has_element_children = *FLAT_CHILD_WALK
                             && elem_data.local_name() != "ruby"
                             && !bidi_special
                             && !has_bidi_controls
+                            && !child_declares_vertical_wm
                             && !self.vertical
                             && doc.child_nodes(child_id).iter().any(|&gc| {
                                 doc.get(gc).is_some_and(|n| matches!(&n.kind, NodeKind::Element(_)))
@@ -1158,7 +1174,20 @@ impl InlineFormattingContext {
                     let gc_has_bidi_controls = doc
                         .text_content(gc)
                         .is_some_and(|t| t.chars().any(|c| ('\u{202A}'..='\u{202E}').contains(&c)));
-                    if gc_is_ruby || gc_has_bidi_controls {
+                    // R4310：竖排 writing-mode 子同门（主 collect 路径同判定，见
+                    // child_declares_vertical_wm）——递归深入会把竖排子内容扁平化进
+                    // 正交轴 IFC 丢失其盒原点。
+                    let gc_declares_vertical_wm = styles
+                        .get(&gc)
+                        .map(|st| {
+                            matches!(
+                                st.writing_mode,
+                                zero_style_system::WritingModeValue::VerticalRl
+                                    | zero_style_system::WritingModeValue::VerticalLr
+                            )
+                        })
+                        .unwrap_or_else(|| self.vertical_walk_nodes.contains(&gc));
+                    if gc_is_ruby || gc_has_bidi_controls || gc_declares_vertical_wm {
                         if let Some(item) = self.build_flatten_run_for_element(doc, gc, styles) {
                             items.push(item);
                         }

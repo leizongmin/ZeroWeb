@@ -62,6 +62,10 @@ pub struct InlineFormattingContext {
     pub plaintext_bidi_override: bool,
     /// paint IFC 无 style map 时按 inline owner 恢复 plaintext。
     pub plaintext_bidi_overrides: NodeIdSet,
+    /// R4310：竖排 writing-mode inline 元素集合——FLAT_CHILD_WALK 竖排子门在
+    /// paint Path B（空 styles）下的判定信号。layout IFC 有 styles 直判不消费。
+    /// 见 `LayoutBox.inline_vertical_nodes`。
+    pub vertical_walk_nodes: NodeIdSet,
     /// R3840：paint Path B 恢复元素级 `unicode-bidi: bidi-override`（key = inline
     /// owner 元素 NodeId，value = 方向 rtl?）。layout 期经
     /// `LayoutBox.text_node_bidi_overrides` 存储。
@@ -298,6 +302,7 @@ impl InlineFormattingContext {
             bidi_override_direction: None,
             plaintext_bidi_override: false,
             plaintext_bidi_overrides: NodeIdSet::default(),
+            vertical_walk_nodes: NodeIdSet::default(),
             text_node_bidi_overrides: NodeIdMap::default(),
             text_align_last: None,
             break_word: false,
@@ -391,6 +396,12 @@ impl InlineFormattingContext {
     /// 注入 paint Path B 的 per-inline plaintext owner。
     pub fn with_plaintext_bidi_overrides(mut self, overrides: NodeIdSet) -> Self {
         self.plaintext_bidi_overrides = overrides;
+        self
+    }
+
+    /// R4310：注入 paint Path B 的竖排 writing-mode 元素集合（walk 竖排子门信号）。
+    pub fn with_vertical_walk_nodes(mut self, nodes: NodeIdSet) -> Self {
+        self.vertical_walk_nodes = nodes;
         self
     }
 
