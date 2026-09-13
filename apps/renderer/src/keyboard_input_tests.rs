@@ -204,11 +204,11 @@ fn keyboard_defaults_enforce_readonly_and_maxlength() {
     }
 
     runtime.focus_target("#readonly").unwrap();
-    runtime.apply_keydown_default("#readonly", "x", false).unwrap();
+    runtime.apply_keydown_default("#readonly", "x", false, false).unwrap();
     runtime.blur_focused().unwrap();
     runtime.focus_target("#limited").unwrap();
-    runtime.apply_keydown_default("#limited", "😀", false).unwrap();
-    runtime.apply_keydown_default("#limited", "B", false).unwrap();
+    runtime.apply_keydown_default("#limited", "😀", false, false).unwrap();
+    runtime.apply_keydown_default("#limited", "B", false, false).unwrap();
 
     assert_eq!(
         runtime
@@ -263,7 +263,7 @@ fn pointer_selection_uses_utf16_paint_boundary() {
             },
         )
         .unwrap();
-    runtime.apply_keydown_default("#name", "X", false).unwrap();
+    runtime.apply_keydown_default("#name", "X", false, false).unwrap();
 
     assert_eq!(
         runtime
@@ -271,5 +271,42 @@ fn pointer_selection_uses_utf16_paint_boundary() {
             .execute_script_direct("document.getElementById('name').value")
             .unwrap(),
         "i中X😀W"
+    );
+}
+
+#[test]
+fn ctrl_a_selects_all_text_without_inserting_character() {
+    // cdp-protocol S16：Ctrl+A keydown 默认动作 = 全选文本控件（不注入 'a'）。
+    let html = r#"<html><body>
+        <input id="name" value="">
+    </body></html>"#;
+    let url = "https://zero.test/ctrl-a-select-all";
+    let mut runtime = RendererRuntime::new(912);
+    runtime.compositor_publish = None;
+    runtime.outbound = PipeTransport::new(std::io::empty(), Box::new(std::io::sink()));
+    runtime.current_url = Some(url.to_string());
+    runtime.cached_html = html.to_string();
+    runtime.webview.as_mut().unwrap().prepare_document_state(url);
+    runtime.webview.as_mut().unwrap().load_html(html, None);
+    runtime.focus_target("#name").unwrap();
+
+    // 输入 'abc'（含非 ASCII，验证 UTF-16 偏移口径）后 Ctrl+A 全选。
+    runtime.apply_keydown_default("#name", "中", false, false).unwrap();
+    runtime.apply_keydown_default("#name", "a", false, false).unwrap();
+    runtime.apply_keydown_default("#name", "b", false, false).unwrap();
+    runtime.apply_keydown_default("#name", "c", false, false).unwrap();
+    runtime.apply_keydown_default("#name", "a", false, true).unwrap();
+
+    let state = runtime.form_controls.get("#name").expect("form state");
+    assert_eq!(state.value, "中abc");
+    assert_eq!((state.selection_start, state.selection_end), (0, 4));
+    assert_eq!(
+        runtime
+            .js_worker
+            .execute_script_direct(
+                "document.getElementById('name').selectionStart + ':' + document.getElementById('name').selectionEnd"
+            )
+            .unwrap(),
+        "0:4"
     );
 }

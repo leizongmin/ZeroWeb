@@ -187,11 +187,36 @@ impl HeadlessSession {
                     .push((params.level, params.text, params.args_json));
                 Ok(None)
             }
+            // S16：document.write 写周期落定 → load 生命周期重发（`Page.lifecycleEvent`
+            // + `Page.loadEventFired`；PW page.setContent 在 console tag 清 lifecycle 后
+            // 等待新 load——spec document.close() 解析结束触发 load 的软导航语义）。
+            // 不发 frameNavigated/contextsCleared：文档对象与 JS context 未换代。
+            IpcMessageKind::DocumentWriteSettled(_) => {
+                let frame_id = self.active_frame_id().unwrap_or_default();
+                let ts = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_millis() as u64;
+                self.pending_network_events.push((
+                    "Page.lifecycleEvent".into(),
+                    serde_json::json!({ "frameId": frame_id, "name": "DOMContentLoaded", "timestamp": ts }),
+                ));
+                self.pending_network_events.push((
+                    "Page.domContentEventFired".into(),
+                    serde_json::json!({ "timestamp": ts }),
+                ));
+                self.pending_network_events.push((
+                    "Page.lifecycleEvent".into(),
+                    serde_json::json!({ "frameId": frame_id, "name": "load", "timestamp": ts }),
+                ));
+                self.pending_network_events
+                    .push(("Page.loadEventFired".into(), serde_json::json!({ "timestamp": ts })));
+                Ok(None)
+            }
             // S14：page fetch 观测 → Network 事件队列（Network.enable 门控）。
             // phase 0=requestWillBeSent / 1=responseReceived / 2=loadingFinished|loadingFailed；
             // seq 为三阶段关联 id（headless 作 requestId）。
             IpcMessageKind::FetchObserved(params) => {
-                println!("[S14] hl FetchObserved phase={} seq={} url={} net_enabled={}", params.phase, params.seq, params.url, self.network_enabled);
                 if self.network_enabled {
                     let frame_id = self.active_frame_id().unwrap_or_default();
                     let request_id = format!("zw-net-{}", params.seq);

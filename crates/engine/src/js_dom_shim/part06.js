@@ -3410,6 +3410,49 @@
     get scrollingElement() { return globalThis.document.documentElement || null; },
     body: _wrapSelector('body'),
     head: _wrapSelector('head'),
+    // cdp-protocol S16（2026-09-13）：document.open/write/close——Playwright page.setContent
+    // 在 utility world 执行 `document.open(); console.debug(tag); document.write(html);
+    // document.close();`（PW frames.ts setContent 路径），三连此前缺失 → TypeError。
+    // https://html.spec.whatwg.org/multipage/dynamic.html#dom-document-open
+    // **简化语义（记录）**：open() 清空 body 内容并重置写缓冲；write()/writeln() 追加缓冲；
+    // close() 把缓冲作为 body innerHTML 一次性应用（live host 解析 + 重排版，查询/渲染立即可见）。
+    // FIXME：head/title 剥离、unload/beforeunload 事件、未 open 先 write 的隐式 open、
+    // 多次 open 的再入清空——均未建模（PW setContent 消费面只需 body 内容替换）。
+    open: function () {
+      globalThis.__zwDocWriteBuffer = '';
+      try {
+        var _dwoBody = globalThis.document.body;
+        if (_dwoBody) _dwoBody.innerHTML = '';
+      } catch (_eDwo) {}
+      return globalThis.document;
+    },
+    write: function () {
+      if (typeof globalThis.__zwDocWriteBuffer !== 'string') globalThis.__zwDocWriteBuffer = '';
+      for (var _dwW = 0; _dwW < arguments.length; _dwW++) {
+        globalThis.__zwDocWriteBuffer += String(arguments[_dwW] == null ? '' : arguments[_dwW]);
+      }
+    },
+    writeln: function () {
+      var _dww = globalThis.document.write;
+      _dww.apply(null, arguments);
+      globalThis.__zwDocWriteBuffer += '\n';
+    },
+    close: function () {
+      var _dwcHtml = globalThis.__zwDocWriteBuffer;
+      globalThis.__zwDocWriteBuffer = null;
+      if (typeof _dwcHtml === 'string' && _dwcHtml !== '') {
+        try {
+          var _dwcBody = globalThis.document.body;
+          if (_dwcBody) _dwcBody.innerHTML = _dwcHtml;
+        } catch (_eDwc) {}
+      }
+      // spec：close() 解析结束触发 load 生命周期——宿主回调（renderer 排空 → headless
+      // 重发 `Page.loadEventFired` 族；PW setContent 在 console tag 后等待新 load）。
+      // 宿主未注册（非 renderer 执行环境）→ no-op。
+      if (typeof __zw_document_write_settled === 'function') {
+        try { __zw_document_write_settled(); } catch (_eDws) {}
+      }
+    },
     // js-dom M4 R79：`document.doctype`（spec Document.doctype：首个 DocumentType 子或 null）。
     // WPT dom/common.js `doctype = document.doctype` + testNodes 遍历（缺 → undefined →
     // Node-contains/compareDocumentPosition 的 doctype 行 eval 崩）。host 无 doctype 跟踪——

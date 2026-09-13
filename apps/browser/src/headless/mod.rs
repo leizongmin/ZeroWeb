@@ -353,7 +353,6 @@ impl HeadlessServer {
     ) {
         let mut events: Vec<ServerEvent> = Vec::new();
         while let Some(message) = session.try_recv_renderer() {
-            println!("[S13] hl recv: {:?}", std::mem::discriminant(&message.kind));
             let _ = session.handle_renderer_message(message);
         }
         // 排空产生的 CDP 事件（console/network）即时推送——单会话模型：盖章到首个
@@ -470,16 +469,10 @@ impl HeadlessServer {
                 }
             }
         }
-        // Network 域事件排空（proxy_fetch 生命周期产出，归当前命令会话盖章发送）
-        for (method, params) in session.pending_network_events.drain(..) {
-            events.push(ServerEvent {
-                method,
-                params,
-                session_id: req.session_id.clone(),
-            });
-        }
         // Console 事件排空（S11：renderer ConsoleLog → `Runtime.consoleAPICalled`，
-        // value-only remoteObject args；归当前命令会话盖章发送）
+        // value-only remoteObject args；归当前命令会话盖章发送）。
+        // S16 时序契约：console 事件先于 page lifecycle 重发——PW setContent 的
+        // console tag 到达时 `_onClearLifecycle()` 清生命周期，load 族须在其后送达。
         for (level, _text, args_json) in session.pending_console_events.drain(..) {
             let args = serde_json::from_str::<serde_json::Value>(&args_json)
                 .ok()
@@ -502,6 +495,15 @@ impl HeadlessServer {
                         .unwrap_or_default()
                         .as_millis() as u64,
                 }),
+                session_id: req.session_id.clone(),
+            });
+        }
+        // Network/Page 域事件排空（proxy_fetch 生命周期产出 + document.write 落定的
+        // load 生命周期重发，归当前命令会话盖章发送）
+        for (method, params) in session.pending_network_events.drain(..) {
+            events.push(ServerEvent {
+                method,
+                params,
                 session_id: req.session_id.clone(),
             });
         }

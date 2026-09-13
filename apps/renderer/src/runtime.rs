@@ -786,6 +786,22 @@ impl RendererRuntime {
             .map(|_| ())
     }
 
+    /// Ctrl/Cmd+A keydown 默认动作：选中目标文本控件全部内容（复用指针选区设定路径
+    /// `set_pointer_text_selection` → shim setSelectionRange，UTF-16 偏移语义一致）。
+    /// 非文本控件目标（无 form 状态）为 no-op。
+    fn apply_select_all_at(&mut self, selector: &str) -> Result<(), String> {
+        let Some(state) = self.form_controls.get(selector) else {
+            return Ok(());
+        };
+        let len_utf16: usize = state.value.chars().map(char::len_utf16).sum();
+        if len_utf16 == 0 {
+            return Ok(());
+        }
+        // 控件 value 长度远低于 u32 上限；截断只发生在病态超大 value（不成立）。
+        self.set_pointer_text_selection(selector, 0, len_utf16 as u32);
+        Ok(())
+    }
+
     fn execute_shared_action(
         &mut self,
         selector: &str,
@@ -903,12 +919,17 @@ impl RendererRuntime {
 
     /// 执行未取消 keydown 的用户代理默认动作；两条键盘 IPC 入口共用。
     // https://w3c.github.io/uievents/#event-type-keydown
-    fn apply_keydown_default(&mut self, target: &str, key: &str, shift: bool) -> Result<(), String> {
+    fn apply_keydown_default(&mut self, target: &str, key: &str, shift: bool, accel: bool) -> Result<(), String> {
         if key == "Tab" {
             self.execute_shared_action(target, zero_page_runtime::HtmlUserAction::MoveFocus { forward: !shift })?;
         } else if is_printable_key(key) && !self.is_composing_at(target) {
             // R3254-L5：IME 合成期间跳过可打印字符，避免与 Commit 双写。
-            self.apply_text_input_at(target, key)?;
+            if accel && key.eq_ignore_ascii_case("a") {
+                // Ctrl/Cmd+A：选中文本控件全部内容（keydown 默认动作），不注入字符。
+                self.apply_select_all_at(target)?;
+            } else {
+                self.apply_text_input_at(target, key)?;
+            }
         } else if key == "Backspace" {
             self.apply_text_delete_at(target)?;
         } else if key == "Enter" {
@@ -2209,7 +2230,7 @@ impl RendererRuntime {
                 .focus_owner()
                 .unwrap_or_else(|| self.interaction.pointer_target())
                 .to_string();
-            self.apply_keydown_default(&target, key.as_deref().unwrap_or_default(), params.shift)?;
+            self.apply_keydown_default(&target, key.as_deref().unwrap_or_default(), params.shift, false)?;
         } else if result.default_allowed && event_type == "mousedown" {
             // R3254-M8：焦点切换在 mousedown（UI Events：focus 是 mousedown 默认动作，与
             // Chrome/Firefox 一致——mousedown preventDefault 阻止聚焦）。blur/change/focus
@@ -2246,14 +2267,17 @@ impl RendererRuntime {
     /// phase/seq 语义见 protocol `FetchObservedParams`。
     fn tick_fetch_observed_drain(&mut self) {
         for (phase, seq, url, method, status) in self.js_worker.take_fetch_observed() {
-            let send_result = self.send_regular(IpcMessageKind::FetchObserved(
-                zero_protocol::message::FetchObservedParams { phase, seq, url, method, status },
-            ));
-            std::fs::write(
-                "/tmp/zw-s14-send.log",
-                std::format!("tick send phase={phase} seq={seq} ok={:?}", send_result.is_ok()),
-            )
-            .ok();
+            if let Err(e) = self.send_regular(IpcMessageKind::FetchObserved(
+                zero_protocol::message::FetchObservedParams {
+                    phase,
+                    seq,
+                    url,
+                    method,
+                    status,
+                },
+            )) {
+                tracing::debug!("forward fetch observed: {e}");
+            }
         }
     }
 
@@ -2267,6 +2291,18 @@ impl RendererRuntime {
                 args_json,
             })) {
                 tracing::debug!("forward console log: {e}");
+            }
+        }
+    }
+
+    /// S16：drain worker document.write 落定信号 → browser/headless IPC（
+    /// `DocumentWriteSettled`，headless 重发 `Page.loadEventFired` 族）。
+    fn tick_document_write_drain(&mut self) {
+        for _ in 0..self.js_worker.take_document_write_settled() {
+            if let Err(e) = self.send_regular(IpcMessageKind::DocumentWriteSettled(
+                zero_protocol::message::DocumentWriteSettledParams { generation: 0 },
+            )) {
+                tracing::debug!("forward document write settled: {e}");
             }
         }
     }
@@ -2392,7 +2428,8 @@ impl RendererRuntime {
             .to_string();
         let result = self.dispatch_dom_at(Some(target.clone()), 0.0, 0.0, event_type, Some(detail));
         if matches!(params.event_type, KeyboardEventType::Down) && result.default_allowed {
-            self.apply_keydown_default(&target, &params.key, params.shift)?;
+            let accel = params.ctrl || params.meta;
+            self.apply_keydown_default(&target, &params.key, params.shift, accel)?;
         }
         Ok(())
     }
@@ -2449,6 +2486,8 @@ impl RendererRuntime {
             IpcMessageKind::ConsoleLog(_) => Ok(()),
             // fetch 观测是 renderer → browser 单向事件，本进程不消费。
             IpcMessageKind::FetchObserved(_) => Ok(()),
+            // document.write 落定是 renderer → browser 单向事件，本进程不消费。
+            IpcMessageKind::DocumentWriteSettled(_) => Ok(()),
             IpcMessageKind::Navigate(params) => self.handle_navigate(params),
             IpcMessageKind::LoadHtml(params) => self.handle_load_html(params),
             IpcMessageKind::SetViewport(params) => self.handle_set_viewport(params),
@@ -2599,6 +2638,8 @@ impl RendererRuntime {
             // S11（cdp-protocol value-only console 面）：drain page console 输出（任意脚本
             // 执行均可产生，故每轮检查）→ browser/headless（`Runtime.consoleAPICalled`）。
             self.tick_console_log_drain();
+            // S16：document.write 落定信号同点 drain（→ `Page.loadEventFired` 族重发）。
+            self.tick_document_write_drain();
 
             // S14（cdp-protocol network.events）：drain page fetch 观测 → browser/headless
             // （`Network.requestWillBeSent`/`responseReceived`/`loadingFinished`）。

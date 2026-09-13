@@ -237,6 +237,9 @@ impl RendererRuntime {
         // S11：脚本执行产生的 console 输出先于 AutomationResponse 转发（headless 在
         // 自动化往返中消费并入同一命令的事件排空——晚了要等下一条命令才可见）。
         self.tick_console_log_drain();
+        // S16：document.write 落定信号同尾 drain（PW setContent 在 evaluate 返回前
+        // 需要 console tag 与 load 生命周期重发均在途）。
+        self.tick_document_write_drain();
         if changed {
             self.publish_webview(None, true).map_err(internal_error)?;
         }

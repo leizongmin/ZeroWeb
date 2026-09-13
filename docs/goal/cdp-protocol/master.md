@@ -2,7 +2,7 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-13（S15：network.events 翻绿——FetchObserved 事件 payload 补齐 CDP 必需形状；绿步 25→26，基线同步扩至 26）
+**最后更新**: 2026-09-13（S16：keyboard.type+press + page.setContent 翻绿——Ctrl+A 全选编辑面 + document.open/write/close 三连 + write 落定 load 生命周期重发；绿步 26→28，基线同步扩至 28）
 
 ---
 
@@ -24,7 +24,7 @@
 |---|------|------|
 | P1 | Playwright 命令矩阵账本（pin 版空跑导出命令全集 + 三态登记） | ✅ 初稿落地（evidence/cdp-command-matrix.md；随域更新三态） |
 | P2 | headless.rs 职责拆分（2256 行超 2000 上限；transport/discovery/domains/session） | ✅ M1 切片 1（headless/ 9 模块，纯搬移零语义变化，make test 19,170P/0F 与基线一致） |
-| P3 | Target/Runtime/Page/Input/DOM/CSS/Network/Emulation 域实现 | 🚧 S9 核心收口：Runtime evaluate/callFunctionOn/releaseObject(Group) + DOM 域 objectId 面（quads/boxModel/scroll/describe/resolveNode）全通；余 click hit-target（renderer ElementFromPointCache × 合成输入） |
+| P3 | Target/Runtime/Page/Input/DOM/CSS/Network/Emulation 域实现 | 🚧 S16 后余 frames 面：locator/evaluate/editing/viewport/媒体全通；唯余 iframe 子帧事件源（frames.access/click+evaluate 2 步，挂 engine 子帧可见性——渲染流域协调） |
 | P4 | Node/Playwright 测试链（pin + E2E 用例集 + make 入口） | ✅ S8：`make cdp-e2e`（test-guard 包裹，deterministic 双跑 + expected-green 回归门）；用例集=30 步全核心流 |
 | P5 | console 对象化（V8 侧结构化序列化，替换扁平字符串） | 🔶 **方案降级（2026-09-12）**：value-only 小切片——consoleAPICalled 的 args 用既有 value-only remoteObject 形状即可（PW 消费面=msg.type()/text()），shim `(level, args[])` JSON 序列化 + callbacks.rs 签名 + headless 转事件；不等 engine 大窗口，碰前核对 shim console 段活跃度 |
 | P6 | net 请求事件总线（Network 域 + devtools Network 面板共用脊柱） | 🔶 S7 雏形（proxy_fetch 生命周期三事件）；dataReceived 挂 net 观测点扩展——**net 近 14 天无外部流占用，窗口已开**（2026-09-12 实测） |
@@ -33,6 +33,30 @@
 
 ## 已完成切片
 
+- **S16（2026-09-13）keyboard Ctrl+A 编辑面 + document.open/write/close（绿步 26→28）**：
+  **keyboard.type+press**：`Control+a` 此前被当普通可打印键注入 `'a'`（实测值
+  'abca'）。修复：`apply_keydown_default` 增 `accel` 形参（CDP dispatchKeyEvent 路径传
+  `ctrl||meta`；DispatchDomEventParams 路径无修饰键字段保持 `false`，协议不动）——
+  accel+A 命中可打印分支时改走 `apply_select_all_at`（复用指针选区路径
+  `set_pointer_text_selection` → shim setSelectionRange，UTF-16 偏移口径；非文本控件
+  no-op）。
+  **page.setContent（四层落点）**：① shim part06 `document` 补 `open/write/writeln/close`
+  三连（PW setContent 在 utility world 执行 `open(); console.debug(tag); write(html);
+  close();`——三函数此前缺失 → TypeError）。简化语义：open 清 body + 起缓冲、write 缓冲、
+  close 把缓冲作 body innerHTML 一次性应用（live host 解析+重排版，探针验证查询/读回
+  可达）；head/title 剥离、unload、隐式 open 未建模（FIXME 记档）。② **console tag 时序**：
+  PW 在 tag console 消息到达时 `_onClearLifecycle()` 清 `_firedLifecycleEvents` 再等新
+  'load'——headless 逐命令排空此前 network 队列先于 console 队列，load 族先到被清 → 挂起。
+  修复：排空序改 console → network/Page（与空闲期 drain 一致）。③ **load 生命周期重发**：
+  spec close() 解析结束触发 load（软导航语义）——新增 protocol `DocumentWriteSettled`
+  （renderer → headless 单向事件，末位追加；shim close() 经 `__zw_document_write_settled`
+  回调 → js_worker 共享队列 → runtime 尾 drain）→ headless 重发
+  `Page.lifecycleEvent{DOMContentLoaded,load}` + `domContentEventFired`/`loadEventFired`
+  （不发 frameNavigated/contextsCleared：文档对象与 JS context 未换代）。④ 清理 S14 残留
+  诊断（headless 两处 println + runtime tick 内 /tmp 文件写——println 污染即 S12 事故根因类）。
+  **验证**：绿步 26→28；deterministic 双跑一致；expected-green 基线扩至 28；
+  integration 781P/0F（全仓一轮中 network_loading 单测并行负载下偶发 1 失败、隔离与整包
+  重跑均绿，非本切片回归）；余 2 步 = frames×2（挂 engine 子帧可见性）。
 - **S12（2026-09-13）hit-test 溢出剪枝修复 + CDP 空闲期 renderer 通道 drain**：
   **根因定位（插桩 PW coreBundle 注入诊断 + 点阵探测）**：`#btn-fetch` 点击失败的真因是
   **引擎 hit-test 溢出剪枝**——`deepest_node_at`/`collect_nodes_at` 对「祖先盒不含点」整棵
@@ -195,49 +219,58 @@
 
 ## 下一步计划
 
-1. **network.events 的 PW 送达定位（S14 剩余一环）**：S12 的两个前置修复已落地
-   （hit-test 溢出剪枝 + SW IPC 应答），FetchObserved 观测管线基建已合入（S14）——
-   renderer 观测 handler 确认运行（文件探针）、队列→tick→IPC 链路打通。**S15 修复**：
-   FetchObserved 映射的 Network 事件 payload 补齐 CDP 必需形状（request.headers、
-   initiator、wallTime；response 的 type/statusText/headers/mimeType/connection* 等）——
-   payload 缺形状时 PW requestReceivedResponse 解析抛错使 flow 崩溃。**network.events
-   翻绿（绿步 25→26）**，基线同步扩至 26。
-2. **page.setContent**（shim `document.open/write/close` 三连缺失——PW setContent 走
-   此路径；需 shim 文档级写面 + 整文档替换 mutation/renderer 应用通路，engine 域）。
-3. **keyboard.type+press**（Ctrl+A 全选编辑面缺失——type 'abc' 后 Ctrl+A no-op、值
-   'abca'；需 shim input 选区/全选语义，engine 编辑面）。
-4. **Network dataReceived**（proxy_fetch 读 body 循环加 chunk 观测点，net 窗口已开）。
-5. **dialog ×2 步决策（维持待用户）**：`dialog.accept`/`dialog.confirm+prompt` 依赖
-   `javascriptDialogOpening` 事件源（引擎无阻塞对话框语义）——立项引擎对话框语义（跨流域）
-   or 挂账不实现并从 DC-2 口径剔除。
-6. **M5 定稿（依赖项解除后）**：expected-green 基线扩至全绿 → cdp-e2e 即 DC-2 门；
-   挂账清单（不实现域）终稿；矩阵账本漂移刷新（executionContextDestroyed/
-   setLifecycleEventsEnabled/setFontFamilies 等计划列停在 M2/M3，改记账口径）。
-7. **持续推进**：每轮 pull → cdp-e2e 门（基线 17 步）+ make test 防回归，余项按窗口逐个解冻。
+1. **M5 收口评估（绿步 28/30，余 2 步全挂同一协调点）**：`frames.access`/
+   `frames.click+evaluate` 依赖 engine 子帧可见性（iframe 子帧 DOM/事件面）——渲染流域
+   真协调。DC-2 口径决策：等子帧能力解冻后 30/30 收口，or 以「挂账 + 口径剔除」先定稿
+   （见待用户决策）。
+2. **Network dataReceived**（proxy_fetch 读 body 循环加 chunk 观测点，net 窗口已开）——
+   增强 Network 事件保真度，不影响绿步判定。
+3. **矩阵账本漂移刷新**：S9-S16 落地的方法（Runtime 句柄面/DOM objectId 面/Storage
+   cookie/Emulation/dialog stub）三态在 evidence/cdp-command-matrix.md 逐项刷新；M2/M3
+   计划列（executionContextDestroyed/setLifecycleEventsEnabled/setFontFamilies 等）改记账口径。
+4. **M5 定稿（口径确定后）**：expected-green 基线定稿 → cdp-e2e 即 DC-2 门；挂账清单
+   （不实现域）终稿；CI 集成可行性随收口评估（S8 记账：node 20.19 + lockfile 离线可复现）。
+5. **持续推进**：每轮 pull → cdp-e2e 门（基线 28 步）+ make test 防回归，余项按窗口逐个解冻。
 
 **待用户决策清单**：
-- **dialog 事件源（2026-09-12 新入，维持）**：见下一步计划 #5——引擎对话框语义立项 vs 挂账。
+- **DC-2 收口口径（2026-09-13 新入）**：余 2 步（frames.access/frames.click+evaluate）
+  挂 engine 子帧可见性（渲染流域活跃协调点）——「等子帧能力后 30/30 收口」vs「挂账
+  剔除先定稿」。口径不清则 M5 无法判定完成。
+- ~~dialog 事件源~~ **绿步已过、语义挂账（S10 现状澄清 2026-09-13）**：dialog.accept/
+  dialog.confirm+prompt 绿因**引擎无阻塞对话框语义**——shim alert no-op、confirm/prompt
+  立即返回（无 javascriptDialogOpening 事件、无挂起）、`Page.handleJavaScriptDialog` 为
+  stub——步骤「不挂起即过」。真对话框事件面（引擎阻塞语义 + 事件源）仍属跨流域立项，
+  不阻 M5 收口（PW 消费面绿）。
 - ~~objectId 句柄桥~~ **已拍板（2026-09-12）：全量 remoteObject 桥**——✅ S9 落地。
 
 **维持挂起**：iframe 子帧事件面（frames.access/frames.click+evaluate 2 步）——渲染流域
 真协调（engine 子帧可见性），rendering 流 R41xx-R42xx 高频活跃，维持挂起合理。
+
+**跨流红灯记录（S16 时点归因，非本流）**：`cargo test -p zero-renderer --lib` 2 失败
+（page_scripts::tests::form_interaction_fixture_complete_sequence /
+…_dispatches_idless_reset_and_submit_buttons——`apply_reset_on_click` 断言）。stash 验证
+干净树同败（S16 变更无关），疑似 `514f07b29`（tick_observers per-task 重构）或渲染流
+4fed099dc 组合态引入——归 event-loop-spec/渲染流修，本流不碰 page_scripts.rs 工作面。
 
 ## 里程碑状态
 
 | 里程碑 | 状态 |
 |--------|------|
 | M1 — 传输/发现/Target 基座 + Playwright 首连 | ✅ S9 收口：连接面 + evaluate 全族（literal/function/withArgs/object/async）+ releaseObject(Group) 全通 |
-| M2 — Page/Input 域 → 点击/填充/键盘/导航流 | 🚧 S10：goto/title/fill/click 全族/dialog/键盘裸 API/导航事件族绿；#btn-fetch 点击静默失败待查（下步 #1） |
-| M3 — DOM/CSS/Emulation → locator 流 | 🚧 S10：locator.boundingBox/viewport/媒体/截图 clip+element+fullPage 绿；iframe 面维持挂起 |
-| M4 — Network/cookies/console 对象化（cookie 落点=Storage 域） | 🚧 S11：cookie 域 + UA override + Network 事件雏形 + **consoleAPICalled（value-only）** 绿；dataReceived 待 net 观测点 |
-| M5 — 矩阵收口 | 🚧 绿步 26/30（expected-green 基线同步扩至 26）；余 4 步根因定位（frames 挂起/编辑面/document.open） |
+| M2 — Page/Input 域 → 点击/填充/键盘/导航流 | ✅ S16 收口：goto/title/fill/click 全族/dialog/键盘 type+press（Ctrl+A 全选）/导航事件族全绿 |
+| M3 — DOM/CSS/Emulation → locator 流 | 🚧 S16：locator.boundingBox/viewport/媒体/截图 clip+element+fullPage 绿；iframe 面维持挂起（frames×2） |
+| M4 — Network/cookies/console 对象化（cookie 落点=Storage 域） | 🚧 S15：cookie 域 + UA override + Network 事件族 + consoleAPICalled（value-only）绿；dataReceived 待 net 观测点 |
+| M5 — 矩阵收口 | 🚧 绿步 28/30（expected-green 基线同步扩至 28）；余 2 步全挂 engine 子帧可见性（DC-2 口径待决策） |
 
 ## 验证基线
 
 - 测试基线：立项时点全绿（`make test` 19,170P/0F，2026-09-12 变基后口径；S9 后
-  19,238P/0F；禁止裸跑 cargo test，经 test-guard）
+  19,238P/0F；S16 时点 integration 781P/0F；禁止裸跑 cargo test，经 test-guard）
+- **CDP E2E 基线（S16，2026-09-13）**：绿步 28/30，deterministic 双跑一致，
+  expected-green 基线 28 步（余 frames.access/frames.click+evaluate 挂 engine 子帧可见性）
 - CDP 现状：`Page.navigate` / `Runtime.evaluate` / `Target.getTargets` 3 命令 +
-  `/json/version` + `/json` 发现（headless.rs L782-796/L571/L1159）
+  `/json/version` + `/json` 发现（headless.rs L782-796/L571/L1159）——历史基线，现行面
+  见缺口清单 P3/P4 与切片记录
 - **命令矩阵捕获基线（S1，2026-09-12）**：playwright-core 1.63.0 @ Chromium 153.0.8010.12
   （chromium-1243 缓存），全核心流 30 步全绿，395 调用/40 方法/30 事件；
   `evidence/chromium-capture-2026-09-12.md` + `…-summary.json`（生成物，复现命令见账本头）

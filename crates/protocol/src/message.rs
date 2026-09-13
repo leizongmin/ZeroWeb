@@ -258,6 +258,10 @@ pub enum IpcMessageKind {
     /// 页面 fetch 观测（renderer → headless CDP 会话；`Network.requestWillBeSent`/
     /// `responseReceived`/`loadingFinished` 事件源，cdp-protocol S14）。
     FetchObserved(crate::message::FetchObservedParams),
+    /// document.write 写周期落定（renderer → headless CDP 会话；`Page.loadEventFired`
+    /// 生命周期重发事件源，cdp-protocol S16——PW page.setContent 在 console tag 后等待
+    /// 新 load 生命周期）。
+    DocumentWriteSettled(crate::message::DocumentWriteSettledParams),
 }
 
 /// 焦点变更信息（渲染→浏览器）。
@@ -483,6 +487,18 @@ pub struct FetchObservedParams {
     pub method: String,
     /// 响应状态码（response 阶段；其余 0）。
     pub status: u16,
+}
+
+/// renderer document.write 写周期落定信号（cdp-protocol S16）。
+///
+// https://html.spec.whatwg.org/multipage/dynamic.html#dom-document-close
+// `document.close()` 解析结束即触发 load 生命周期（Chromium 同款软导航语义）；
+// headless 据此重发 `Page.lifecycleEvent`/`loadEventFired`（Playwright setContent
+// 在 console tag 清 lifecycle 后等待新 load）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DocumentWriteSettledParams {
+    /// 预留关联字段（当前无载荷；空结构保 serde 契约可扩展）。
+    pub generation: u64,
 }
 
 /// 自动化脚本值。

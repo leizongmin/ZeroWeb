@@ -110,6 +110,8 @@ pub struct RendererJsWorker {
     cmd_tx: Sender<JsWorkerCommand>,
     /// S11：page console 输出队列（worker 回调推入，runtime drain）。
     console_logs: Arc<std::sync::Mutex<Vec<(String, String, String)>>>,
+    /// S16：document.write 落定信号队列（worker 回调推入，runtime drain）。
+    doc_write_settled: Arc<std::sync::Mutex<Vec<()>>>,
     /// S11：宿主媒体上下文（matchMedia 求值的用户偏好源）。
     media_ctx: Arc<std::sync::Mutex<zero_css_parser::media_query::MediaContext>>,
     /// S14：renderer fetch 观测队列（worker 观测 handler 推入，runtime drain）。
@@ -182,6 +184,11 @@ impl RendererJsWorker {
         // spawn 内创建**，worker 侧观测 handler 推入、runtime 经 accessor 持同 Arc drain
         // → browser/headless（`Network.*` 事件源）。S13 教训：双实例 Arc 错接致事件丢失。
         let fetch_observed: Arc<std::sync::Mutex<Vec<FetchObservedRecord>>> = Arc::default();
+        // S16（cdp-protocol page.setContent）：document.write 写周期落定队列——worker 侧
+        // `__zw_document_write_settled` 回调推入，runtime 主循环 drain → browser/headless
+        // （`Page.loadEventFired` 族重发事件源）。
+        let doc_write_settled: Arc<std::sync::Mutex<Vec<()>>> = Arc::default();
+        let doc_write_settled_for_worker = Arc::clone(&doc_write_settled);
         // S11（emulation.media）：宿主媒体上下文共享 cell——renderer SetColorScheme/
         // SetMediaType/SetViewport 更新；`__zw_match_media` 重注册（后注册者胜）后
         // prefers-color-scheme 等用户偏好进 matchMedia 求值。
@@ -211,6 +218,7 @@ impl RendererJsWorker {
                     cmd_rx,
                     cmd_for_worker,
                     console_logs_for_worker,
+                    doc_write_settled_for_worker,
                     media_ctx_for_worker,
                     mutations_for_worker,
                     rect_snapshot_for_worker,
@@ -261,6 +269,7 @@ impl RendererJsWorker {
             executor,
             module_executor,
             console_logs,
+            doc_write_settled,
             media_ctx,
             fetch_observed,
             mutations,
@@ -325,6 +334,19 @@ impl RendererJsWorker {
             .lock()
             .map(|mut q| std::mem::take(&mut *q))
             .unwrap_or_default()
+    }
+
+    /// S16：原子取出 document.write 落定信号数（本 tick 内 close() 次数），供 runtime
+    /// 主循环转发 browser/headless（`Page.loadEventFired` 族重发事件源）。
+    pub fn take_document_write_settled(&self) -> usize {
+        self.doc_write_settled
+            .lock()
+            .map(|mut q| {
+                let n = q.len();
+                q.clear();
+                n
+            })
+            .unwrap_or(0)
     }
 
     /// 脚本执行前更新 DOM HTML 快照与页面 URL。
@@ -570,6 +592,7 @@ fn js_worker_main(
     cmd_rx: Receiver<JsWorkerCommand>,
     cmd_tx: Sender<JsWorkerCommand>,
     console_logs_for_worker: Arc<std::sync::Mutex<Vec<(String, String, String)>>>,
+    doc_write_settled_for_worker: Arc<std::sync::Mutex<Vec<()>>>,
     media_ctx_for_worker: Arc<std::sync::Mutex<zero_css_parser::media_query::MediaContext>>,
     mutations: Arc<std::sync::Mutex<Vec<DomMutation>>>,
     rect_snapshot: LayoutRectSnapshot,
@@ -623,6 +646,22 @@ fn js_worker_main(
                         let drop = q.len() - 512;
                         q.drain(..drop);
                     }
+                }
+                String::new()
+            }),
+        );
+    }
+    // S16（cdp-protocol page.setContent）：`__zw_document_write_settled`——shim document.close()
+    // 应用写内容后调用（spec：close() 解析结束触发 load 生命周期）；推入共享队列供 runtime
+    // drain → browser/headless 重发 `Page.loadEventFired` 族（PW setContent 等待新 load）。
+    {
+        let settled_queue = Arc::clone(&doc_write_settled_for_worker);
+        sandbox.register_callback(
+            "__zw_document_write_settled",
+            Box::new(move |_args: &[String]| -> String {
+                tracing::debug!("document.write cycle settled");
+                if let Ok(mut q) = settled_queue.lock() {
+                    q.push(());
                 }
                 String::new()
             }),
