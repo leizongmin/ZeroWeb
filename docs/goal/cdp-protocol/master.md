@@ -2,7 +2,7 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-13（S21：DC-2 连接生命周期健壮性实证（顺序重连×3/异常断开×3/断后重连全通）+ 并发第二客户端单连接限制记账；绿步维持 28/30）
+**最后更新**: 2026-09-13（S22：例行验证轮 + R4297-F 后组合态全量刷新——cdp-e2e 门 PASS 28 绿；make test 19,254P/0F 零跨流回归；dead_code 噪音定性记档）
 
 ---
 
@@ -33,6 +33,20 @@
 
 ## 已完成切片
 
+- **S22（2026-09-13）例行验证轮 + R4297-F 后组合态全量刷新（纯验证切片，绿步维持 28）**：
+  渲染流 R4297-F（inline border-box 几何重写）落在 S18 全量基线**之后**，组合态此前
+  未做全量验证——本轮补齐（rule 10 归因纪律）。**结果**：cdp-e2e 门 PASS（28 绿、
+  deterministic 双跑一致）；make test 全套 **19,254P/0F EXIT=0**（S18 基线 19,251 →
+  +3 为并行流新增测试，零失败零跨流回归）；renderer lib 红灯维持 161P+2 已知
+  form fixture（S16 归因不变）。**噪音定性（防后续轮次重复排查）**：`cargo build
+  -p zero-browser` 日志出现 `match_media_to_json` dead_code 警告——单包构建 feature
+  解析所致（script-runtime 不在 zero-browser 单包图内启用 → engine callbacks.rs
+  子模块不编译 → 非 ctx 版函数仅剩测试引用）；CI/本地门禁 `--workspace` 全量统一
+  feature 后该函数有调用方（quickjs 注册路径），已实证
+  `cargo clippy -p zero-engine --lib`（默认 feature）PASS——**非门禁问题，不修**
+  （共享面 engine 碰头纪律，无门禁影响）。DC-2 口径维持待用户决策，frames×2 维持
+  挂起（渲染流近 14 天活跃面 = filter/svg/inline 布局修复，无子帧文档加载工作，
+  2026-09-13 复核）。
 - **S21（2026-09-13）DC-2 连接生命周期健壮性实证（验证切片，绿步维持 28）**：
   **实证**（真实 PW 客户端 + 裸 WS 探针）：① 顺序重连 ×3（connect → newPage →
   setContent → locator → close 循环）全通、无状态残留；② 异常断开 ×3（裸 WS 发一条
@@ -317,10 +331,11 @@
 ## 验证基线
 
 - 测试基线：立项时点全绿（`make test` 19,170P/0F，2026-09-12 变基后口径；S9 后
-  19,238P/0F；**S18 全量刷新 19,251P/0F EXIT=0**（2026-09-13；并行流计数会漂移，
-  以当轮实跑为准）；禁止裸跑 cargo test，经 test-guard。注：make test 的 workspace 腿
-  exclude zero-renderer——renderer lib 单测不在全量门内，跨流红灯（form fixture×2）
-  经显式 `-p zero-renderer --lib` 跟踪）
+  19,238P/0F；S18 全量刷新 19,251P/0F；**S22 组合态刷新 19,254P/0F EXIT=0**
+  （2026-09-13，含渲染流 R4297-F；并行流计数会漂移，以当轮实跑为准）；禁止裸跑
+  cargo test，经 test-guard。注：make test 的 workspace 腿 exclude zero-renderer——
+  renderer lib 单测不在全量门内，跨流红灯（form fixture×2）经显式
+  `-p zero-renderer --lib` 跟踪）
 - **CDP E2E 基线（S16，2026-09-13）**：绿步 28/30，deterministic 双跑一致，
   expected-green 基线 28 步（余 frames.access/frames.click+evaluate 挂 engine 子帧可见性）
 - CDP 现状：`Page.navigate` / `Runtime.evaluate` / `Target.getTargets` 3 命令 +
