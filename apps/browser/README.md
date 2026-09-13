@@ -33,6 +33,7 @@ cargo run --bin zero-browser
 ```
 zero-browser
 ├── app.rs               — BrowserApp 主循环（连接 Shell + renderer/compositor + HostRuntime）
+├── app_page_fonts.rs    — 页面下载字体收纳（renderer 字体载荷 → TabSnapshot → compositor）
 ├── app_input*.rs        — 输入处理（按键、上下文菜单、平台输入适配）
 ├── app_render*.rs       — GPU chrome 渲染（标签栏、地址栏、导航按钮、菜单等）
 ├── compositor_client.rs — zero-compositor 子进程发现与连接（ZW_COMPOSITOR_BIN）

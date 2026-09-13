@@ -13,7 +13,8 @@
 - **页面运行时** — 页面脚本执行（V8/QuickJS）、Service Worker 注册与 fetch 拦截、Web Worker、WASM 自动桥接、`SecurityContext` 安全检查（HSTS 升级 / 混合内容阻止）
 - **媒体注册表** — `video_registry`（HTMLVideoElement 解码面桥接，VP9/AV1 codec 自路由）与 `webaudio_registry`（Web Audio `AudioContext` 门面 → `zero-media` 输出面）
 - **渲染管线** — 自动完成 DOM 解析、样式计算、布局、渲染，返回图元和耗时统计
-- **CSS 注入** — `inject_css` 向已加载页面追加样式并重新渲染
+- **CSS 注入** — `inject_css` 向已加载页面追加样式并重新渲染；外链样式表中的相对 URL（`url()` 引用）按样式表地址绝对化后再参与加载
+- **下载字体贯通** — 页面 `@font-face` 网络下载字体经多进程字体载荷管线送达合成器，参与生产渲染与 headless 截图
 - **动态调整** — `resize` 运行时修改视口尺寸，自动重建渲染管线
 - **状态查询** — 获取当前 URL、页面标题、加载状态、上次渲染结果
 - **事件回调** — `WebViewEvent` 枚举覆盖加载开始/完成/失败、标题变更、URL 变更等事件

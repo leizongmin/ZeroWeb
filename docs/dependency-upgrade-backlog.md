@@ -2,7 +2,7 @@
 
 待升级但存在 **API 破坏性变更** 的依赖项清单，需通过专项逐个处理。
 
-> 最后检查日期：2026-09-13（本轮复核：上表五项版本与本表记载一致，无漂移；2026-09-09 以来依赖变动为 apps/android-browser/rust 新增 `tracing`（workspace 既有版本）与 zero-webview dev-dependencies 新增 `wat 1`（wasm 测试文本格式，dev-only），均为新增引入非升级项，不入积压；另 tests/playwright-matrix 为 Node 测试-only 工程（playwright-core 1.63.0 pin + ws），不属 Rust 依赖积压范畴；此前 2026-09-07 zero-storage 新增 `getrandom 0.3` 与 2026-09-05 媒体解码依赖（symphonia/opus-decoder/dav1d/rusty_vp9/matroska-demuxer/cpal/openh264，D-RFC-3 获批）均为此前已核对的新增引入项）
+> 最后检查日期：2026-09-14（本轮复核：上表五项版本与本表记载一致，无漂移；2026-09-13 以来唯一依赖变动为 zero-webview 新增 `zero-css-parser`（workspace 内部依赖，外链样式表 URL 绝对化用），非第三方升级项不入积压；此前 2026-09-09～09-13 变动为 apps/android-browser/rust 新增 `tracing`（workspace 既有）与 zero-webview dev-dependencies 新增 `wat 1`（dev-only），均不入积压；另 tests/playwright-matrix 为 Node 测试-only 工程（playwright-core 1.63.0 pin + ws），不属 Rust 依赖积压范畴）
 
 ## 概要
 
