@@ -2,7 +2,7 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-13（S48：R4311-R4313 组合态门复核——walk default-on 翻转后新 tip 门+全量复跑全绿；绿步维持 33）
+**最后更新**: 2026-09-13（S49：静默轮——tip 与 S48 逐字节一致，S48 组合态复核结论全量引用；绿步维持 33）
 
 ---
 
@@ -33,6 +33,13 @@
 
 ## 已完成切片
 
+- **S49（2026-09-13）静默轮 — 同 tip 复核（无代码变更，绿步维持 33）**：
+  pull 零新提交（tip = a48ed5178，即 S48 提交本身）——tracked 树硬核对：
+  `git diff a0a8146e2..HEAD -- ':!docs'` 为空（S48 组合态门验证树起点，非 docs
+  面零变更），S48 全部门结论全量引用免复跑（cdp-e2e 门 PASS 33 绿 deterministic
+  + make test 19,259P/0F EXIT=0）。双解冻条件不变：① 渲染流零新提交（活跃面
+  维持 inline walk 域，零子帧文档加载工作）；② DC-2 口径无新拍板记录。goal
+  自有面零新缺口、无扩展面（S40-S48 重审结论延续）。
 - **S48（2026-09-13）R4311-R4313 组合态门复核 — walk default-on 翻转后新 tip 全绿（无本流代码变更，绿步维持 33）**：
   第二次推送时 rebase 拉入渲染流三提交：R4312-F（**FLAT_CHILD_WALK default-on
   翻转** + 块子门，ZW_FLAT_CHILD_WALK=0 kill-switch 保留）+ R4311-F（SVG 特例门，
