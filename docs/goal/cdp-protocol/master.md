@@ -47,6 +47,12 @@
   接续——siteopt 验收持续轮换、负载窗口延续（不触碰）；S108/S118/S128/S148 四次
   负载窗口活跑均 PASS，证据模式跨多代进程成立。S78 故障窗口后持续零复现，监测态
   维持。goal 自有面零新缺口、无扩展面（S40-S148 重审结论延续）。
+  **Push 时 rebase 补充注记（rule 10）**：push 前 pull --rebase 拾取并行流新提交
+  65d2c2851（渲染流 R4321-F：paint text_list / layout-engine inline collect_items，
+  counter-style/additive 算法渲染兼容域）——「上游自 S148 零新提交」以本轮核查时点
+  为准为真，push 后 main 组合态已有渲染流新提交；R4321-F 非 engine 子帧文档加载+
+  realm 工作，frames.click+evaluate 挂账解冻条件实质判定不变；S150 复核以新 tip
+  （7d83cd453 之后）为基线重新核对。
 - **S148（2026-09-14）监测轮 — 活跑最后期限轮 · 负载窗口内活跑（无代码变更，绿步维持 33）**：
   pull 零新提交（tip = fcec091cf，即 S147 提交本身）——tracked 树与 S99 门禁验证态
   逐字节一致（硬核对 `git diff 765429dda..HEAD -- ':!docs' ':!.claude'` 为空）。
