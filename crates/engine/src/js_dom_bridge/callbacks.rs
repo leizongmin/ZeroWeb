@@ -1939,6 +1939,8 @@ thread_local! {
     /// 缓存；回调闭包 'static 可直接访问静态）。
     static QUERY_DOC_CACHE: std::cell::RefCell<Option<(String, zero_dom::Document)>> =
         const { std::cell::RefCell::new(None) };
+    /// R-baidu2 查询重解析风暴预算（见 [`query_reparse_guard`]）。
+    static QUERY_REPARSE: std::cell::RefCell<Option<QueryReparseGuard>> = const { std::cell::RefCell::new(None) };
     /// js-dom M1 L2（R102）：查询回调的 **live Document** 源——pipeline
     /// `cached_doc` 共享句柄（webview 每次 execute/apply 前发布最新；load_html 换代
     /// 发布 None）。发布后无 pending structural mutation 的查询**直接读 live doc**
@@ -2026,16 +2028,129 @@ fn query_tag_selector_doc(doc: &zero_dom::Document, selector: &str) -> String {
         .unwrap_or_default()
 }
 
+/// 查询重解析风暴预算守卫（R-baidu2）。
+///
+/// baidu 类页面以「mutation + query 交替」高频运行：每个 mutation 都使
+/// [`QUERY_DOC_CACHE`] 失效，后续每次查询触发**全文档 `parse_html`**，单脚本
+/// 执行被拖到分钟级；页面脚本在 renderer 主循环上同步执行（`run_page_scripts`
+/// 的 mpmc recv 等待），整条 IPC 管线（自动化响应/子资源推进/绘制发布）随之
+/// 冻结。V8 watchdog 的 `terminate_execution` 无法打断宿主回调内的原生解析，
+/// 故在解析入口做**预算**：
+///
+/// - 滚动窗口（5s）内累计重解析耗时 < [`QUERY_REPARSE_BUDGET`]：正常重解析，
+///   零语义变化（小文档/常规交互页永远不会触达预算）。
+/// - 预算耗尽：进入指数退避（100ms 起，×2 封顶 2s）——退避到期的那次查询
+///   仍刷新文档，期间的查询**服务上一次解析的文档**（有界过期快照）。
+///   https://dom.spec.whatwg.org/#dom-parentelement-queryselector 要求查询
+///   反映当前 DOM；此处是「冻结 vs 有界过期」的显式权衡，仅病理页面触达。
+#[derive(Debug)]
+struct QueryReparseGuard {
+    window_start: std::time::Instant,
+    window_spent: std::time::Duration,
+    backoff: std::time::Duration,
+    last_parse: std::time::Instant,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum ReparseDecision {
+    /// 全量重解析（缓存键未变或预算内）。
+    Parse,
+    /// 服务上一次解析的文档（预算耗尽 + 退避未到期）。
+    Stale,
+}
+
+const QUERY_REPARSE_WINDOW: std::time::Duration = Duration::from_secs(5);
+const QUERY_REPARSE_BUDGET: std::time::Duration = Duration::from_millis(1200);
+const QUERY_REPARSE_BACKOFF_START: std::time::Duration = Duration::from_millis(100);
+const QUERY_REPARSE_BACKOFF_MAX: std::time::Duration = Duration::from_secs(2);
+use std::time::Duration;
+
+impl QueryReparseGuard {
+    fn new(now: std::time::Instant) -> Self {
+        Self {
+            window_start: now,
+            window_spent: Duration::ZERO,
+            backoff: Duration::ZERO,
+            last_parse: now,
+        }
+    }
+
+    /// 缓存 miss 时的决策：`Parse`（随后必须 [`Self::record`]）或 `Stale`。
+    fn decide(&mut self, now: std::time::Instant) -> ReparseDecision {
+        if now.duration_since(self.window_start) >= QUERY_REPARSE_WINDOW {
+            self.window_start = now;
+            self.window_spent = Duration::ZERO;
+            self.backoff = Duration::ZERO;
+        }
+        if self.window_spent < QUERY_REPARSE_BUDGET {
+            return ReparseDecision::Parse;
+        }
+        // 预算耗尽：退避到期放行一次刷新（并阶梯加倍），否则服务有界过期快照。
+        if now.duration_since(self.last_parse) >= self.backoff {
+            self.backoff = (self.backoff * 2)
+                .max(QUERY_REPARSE_BACKOFF_START)
+                .min(QUERY_REPARSE_BACKOFF_MAX);
+            ReparseDecision::Parse
+        } else {
+            ReparseDecision::Stale
+        }
+    }
+
+    fn record(&mut self, now: std::time::Instant, cost: Duration) {
+        if now.duration_since(self.window_start) >= QUERY_REPARSE_WINDOW {
+            self.window_start = now;
+            self.window_spent = Duration::ZERO;
+        }
+        self.window_spent += cost;
+        self.last_parse = now;
+    }
+}
+
 /// 在查询 doc（html → Document 缓存解析结果）上执行闭包。
 ///
 /// 缓存键 = html 文本（mutation 应用 / load_html 后快照变化 → 自动失效）；快照相同
 /// 复用解析结果（省每次查询全文档 parse_html）。RefMut 无法逃逸 thread_local::with，
 /// 故查询逻辑经闭包在 with 内执行。
+///
+/// R-baidu2：缓存 miss 时先问 [`QUERY_REPARSE`] 预算——超预算且退避未到期的
+/// 查询服务上一次解析的文档（`f` 收到的 doc 落后于 `html`，有界过期）。
 fn with_query_doc<R>(html: &str, f: impl FnOnce(&zero_dom::Document) -> R) -> R {
     QUERY_DOC_CACHE.with(|cache| {
         let mut guard = cache.borrow_mut();
         if guard.as_ref().map(|(h, _)| h.as_str()) != Some(html) {
-            *guard = Some((html.to_string(), parse_html(html)));
+            let miss_at = std::time::Instant::now();
+            let stale_doc = QUERY_REPARSE.with(|slot| {
+                let decision = match slot.borrow_mut().as_mut() {
+                    Some(g) => g.decide(miss_at),
+                    // 首次查询：无旧文档可回退，必须解析。
+                    None => ReparseDecision::Parse,
+                };
+                match decision {
+                    ReparseDecision::Parse => None,
+                    ReparseDecision::Stale => {
+                        if guard.as_ref().is_some() {
+                            Some(())
+                        } else {
+                            // 无旧文档（不应发生：decide 首查即 Parse），强制解析。
+                            if let Some(g) = slot.borrow_mut().as_mut() {
+                                g.record(miss_at, Duration::ZERO);
+                            }
+                            None
+                        }
+                    }
+                }
+            });
+            if stale_doc.is_none() {
+                let parse_start = std::time::Instant::now();
+                let doc = parse_html(html);
+                let cost = parse_start.elapsed();
+                QUERY_REPARSE.with(|slot| {
+                    slot.borrow_mut()
+                        .get_or_insert_with(|| QueryReparseGuard::new(parse_start))
+                        .record(parse_start, cost)
+                });
+                *guard = Some((html.to_string(), doc));
+            }
         }
         let doc = &guard.as_ref().expect("cache populated").1;
         f(doc)
@@ -2063,4 +2178,119 @@ fn with_query_doc_live_aware<R>(html: &str, live_ok: bool, f: impl FnOnce(&zero_
         }
     }
     with_query_doc(html, f.expect("live miss path: f not consumed"))
+}
+
+#[cfg(test)]
+mod query_reparse_tests {
+    use super::*;
+
+    /// 预算内：miss 一律重解析（零语义变化——常规页面永不触达预算）。
+    #[test]
+    fn budget_not_tripped_allows_every_reparse() {
+        let t0 = std::time::Instant::now();
+        let mut g = QueryReparseGuard::new(t0);
+        assert_eq!(g.decide(t0), ReparseDecision::Parse);
+        g.record(t0 + Duration::from_millis(5), Duration::from_millis(5));
+        // 每轮 miss → parse(5ms) × 100 = 累计 500ms < 1200ms 预算，全部放行。
+        for i in 1..=100 {
+            let now = t0 + Duration::from_millis(5 + i * 10);
+            assert_eq!(g.decide(now), ReparseDecision::Parse);
+            g.record(now, Duration::from_millis(5));
+        }
+    }
+
+    /// 预算耗尽：进入指数退避——退避内服务过期快照，到期放行一次刷新并加倍退避。
+    #[test]
+    fn budget_exhausted_escalates_backoff_with_periodic_refresh() {
+        let t0 = std::time::Instant::now();
+        let mut g = QueryReparseGuard::new(t0);
+        // 打满预算（单窗口 1200ms）。
+        g.record(t0 + Duration::from_millis(1), QUERY_REPARSE_BUDGET);
+        // 预算刚好耗尽后的首次 miss：退避尚未设置（0）→ 立即放行一次刷新，退避升至 START。
+        assert_eq!(g.decide(t0 + Duration::from_millis(2)), ReparseDecision::Parse);
+        g.record(t0 + Duration::from_millis(2), Duration::ZERO);
+        assert_eq!(g.backoff, QUERY_REPARSE_BACKOFF_START);
+        // 退避窗口内 → 过期快照。
+        assert_eq!(g.decide(t0 + Duration::from_millis(60)), ReparseDecision::Stale);
+        // 退避到期 → 放行刷新，退避翻倍。
+        assert_eq!(g.decide(t0 + Duration::from_millis(105)), ReparseDecision::Parse);
+        g.record(t0 + Duration::from_millis(105), Duration::ZERO);
+        assert_eq!(g.backoff, QUERY_REPARSE_BACKOFF_START * 2);
+        assert_eq!(g.decide(t0 + Duration::from_millis(250)), ReparseDecision::Stale);
+        assert_eq!(g.decide(t0 + Duration::from_millis(310)), ReparseDecision::Parse);
+        g.record(t0 + Duration::from_millis(310), Duration::ZERO);
+        assert_eq!(g.backoff, QUERY_REPARSE_BACKOFF_START * 4);
+        // 同一窗口内（<5s）继续：退避到期逐次放行并翻倍，直至 2s 封顶。
+        assert_eq!(g.decide(t0 + Duration::from_millis(560)), ReparseDecision::Stale);
+        assert_eq!(g.decide(t0 + Duration::from_millis(810)), ReparseDecision::Parse);
+        g.record(t0 + Duration::from_millis(810), Duration::ZERO);
+        assert_eq!(g.backoff, QUERY_REPARSE_BACKOFF_START * 8);
+        assert_eq!(g.decide(t0 + Duration::from_millis(1610)), ReparseDecision::Parse);
+        g.record(t0 + Duration::from_millis(1610), Duration::ZERO);
+        assert_eq!(g.backoff, QUERY_REPARSE_BACKOFF_START * 16);
+        // 再翻倍触及 2s 封顶。
+        assert_eq!(g.decide(t0 + Duration::from_millis(3220)), ReparseDecision::Parse);
+        g.record(t0 + Duration::from_millis(3220), Duration::ZERO);
+        assert_eq!(g.backoff, QUERY_REPARSE_BACKOFF_MAX);
+        // 封顶后（仍在窗口内）：退避未到期 → 过期快照。
+        assert_eq!(g.decide(t0 + Duration::from_millis(4220)), ReparseDecision::Stale);
+        // 窗口滚过（≥5s）：预算与退避复位 → 恢复正常重解析语义。
+        assert_eq!(g.decide(t0 + Duration::from_millis(5230)), ReparseDecision::Parse);
+        assert_eq!(g.window_spent, Duration::ZERO);
+        assert_eq!(g.backoff, Duration::ZERO);
+    }
+
+    /// 滚动窗口：窗口滚过后预算与退避复位（风暴平息后自动恢复正常语义）。
+    #[test]
+    fn window_roll_resets_budget_and_backoff() {
+        let t0 = std::time::Instant::now();
+        let mut g = QueryReparseGuard::new(t0);
+        g.record(t0 + Duration::from_millis(1), QUERY_REPARSE_BUDGET);
+        assert_eq!(g.decide(t0 + Duration::from_millis(2)), ReparseDecision::Parse);
+        assert!(g.backoff >= QUERY_REPARSE_BACKOFF_START);
+        // 窗口（5s）过期后的第一次 decide：spent/backoff 复位。
+        assert_eq!(
+            g.decide(t0 + QUERY_REPARSE_WINDOW + Duration::from_millis(10)),
+            ReparseDecision::Parse
+        );
+        assert_eq!(g.window_spent, Duration::ZERO);
+        assert_eq!(g.backoff, Duration::ZERO);
+    }
+
+    /// 集成路径：预算耗尽时 `with_query_doc` 服务过期文档（查询结果落后于最新 html），
+    /// 退避到期后恢复刷新。操纵 QUERY_REPARSE thread_local 以确定性触达预算。
+    #[test]
+    fn with_query_doc_serves_stale_doc_while_budget_tripped() {
+        let html_a = "<html><body><div id=\"a\"></div></body></html>";
+        let html_b = "<html><body><div id=\"a\"></div><div id=\"b\"></div></body></html>";
+        let count_divs = |doc: &zero_dom::Document| {
+            // `query_all_selector_list_doc` 返回「唯一选择器 | 串」——div 数 = 段数。
+            crate::js_dom_bridge::query_all_selector_list_doc(doc, "div")
+                .split('|')
+                .filter(|s| !s.is_empty())
+                .count()
+        };
+        // 首查填充缓存（html_a）。
+        let seen_a = with_query_doc(html_a, count_divs);
+        assert_eq!(seen_a, 1);
+        // 打满预算 + 刚解析过（backoff 窗口内）→ html_b 的查询服务 html_a 的旧文档。
+        QUERY_REPARSE.with(|slot| {
+            let mut g = slot.borrow_mut();
+            let now = std::time::Instant::now();
+            let guard = g.get_or_insert_with(|| QueryReparseGuard::new(now));
+            guard.window_spent = QUERY_REPARSE_BUDGET;
+            guard.last_parse = now;
+            guard.backoff = QUERY_REPARSE_BACKOFF_MAX;
+        });
+        let seen_stale = with_query_doc(html_b, count_divs);
+        assert_eq!(seen_stale, 1, "budget-tripped miss must serve the stale cached doc");
+        // 退避到期 → 刷新到 html_b。
+        QUERY_REPARSE.with(|slot| {
+            if let Some(g) = slot.borrow_mut().as_mut() {
+                g.backoff = Duration::ZERO;
+            }
+        });
+        let seen_fresh = with_query_doc(html_b, count_divs);
+        assert_eq!(seen_fresh, 2, "post-backoff miss must reparse to the fresh doc");
+    }
 }
