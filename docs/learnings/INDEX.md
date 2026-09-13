@@ -5,8 +5,9 @@
 > 布局契约：`<分类>/<YYYY-MM>/<YYYY-MM-DD>-<topic>.md`，日期以 frontmatter 为准。
 > 方法论蒸馏层见 `.agents/skills/zeroweb-guidelines/SKILL.md`。
 
-## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（106）
+## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（107）
 
+- 2026-09-13 [Playwright session.send() 对桥 miss 不 throw——CDP 自动化错误走 exceptionDetails 而非协议错误](bugs/2026-09/2026-09-13-pw-cdp-session-send-exceptiondetails-not-throw.md) — apps/browser,tests/playwright-matrix
 - 2026-09-12 [tungstenite write() 缓冲不落盘 + peek 阶段 read timeout 未恢复 → CDP 客户端首连必败](bugs/2026-09/2026-09-12-tungstenite-write-buffer-stale-read-timeout.md) — apps/browser
 - 2026-09-12 [import-wpt 空 REF 触发下载失败路径删除测试文件](bugs/2026-09/2026-09-12-import-wpt-empty-ref-deletes-test-file.md) — tests/wpt-runner
 - 2026-09-03 [Service Worker iframe controllerchange event state must be event-scoped](bugs/2026-09/2026-09-03-sw-iframe-controllerchange-event-state.md) — engine/js-dom-shim, service-worker, wpt-runner
@@ -114,8 +115,9 @@
 - 2026-07-29 [reftest-upstream 大目录触发 test-guard OOM 杀进程（fail-list 捕获空致误判）](bugs/2026-07/2026-07-29-reftest-upstream-large-dir-testguard-oom.md) — tests/wpt-runner（cmd_reftest_upstream）, scripts/test-guard.rs（OOM 包裹器）
 - 2026-07-25 [product-smoke 输出 PNG 路径陷阱（stale 文件致假 bug 误判）](bugs/2026-07/2026-07-25-product-smoke-png-stale-trap.md) — tests/wpt-runner（cmd_product_smoke）, legacy/product smoke 诊断流程
 
-## Patterns — 可复用代码模式与最佳实践（14）
+## Patterns — 可复用代码模式与最佳实践（15）
 
+- 2026-09-13 [Node 父进程内嵌服务 + execFileSync 子进程 = 双向死锁](patterns/2026-09/2026-09-13-node-sync-child-exec-deadlocks-inprocess-server.md) — tests/playwright-matrix
 - 2026-09-04 [collapse 边框中心线迁移：taffy 拉伸伪影 × paint 盒内绘制模型的双耦合面](patterns/2026-09/2026-09-04-collapse-border-centerline-migration.md) — layout-engine, engine
 - 2026-08-22 [Storage root layout compatibility](patterns/2026-08/2026-08-22-storage-root-layout-compatibility.md) — storage, webview
 - 2026-08-22 [用 python 块级 replace 编辑大文件把 441KB 控制面截断成 3.4KB](patterns/2026-08/2026-08-22-python-block-replace-truncates-large-files.md) — js-dom, docs

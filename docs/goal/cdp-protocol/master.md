@@ -2,7 +2,7 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-13（S29：控制面一致性收口——README 过时项修正（ws 版本/步骤清单/结构节）+ 账本版本头 v0.5；绿步维持 32）
+**最后更新**: 2026-09-13（S30：经验资产收口——S25 exceptionDetails 工具坑补 learning + INDEX 重建；绿步维持 32）
 
 ---
 
@@ -33,6 +33,16 @@
 
 ## 已完成切片
 
+- **S30（2026-09-13）经验资产收口 — S25 工具坑补 learning（纯 docs 切片，绿步维持 32）**：
+  pull 零新提交（tip = 631522221，其上仅 docs 变更——S28 时点门结论延续有效，免复跑）；
+  双解冻条件不变。按 CLAUDE.md 经验沉淀契约核查 master.md 两处 learning 引用：S17
+  execFileSync 死锁已入库（patterns/2026-09-13-node-sync-child-exec-deadlocks...）✓；
+  **S25 exceptionDetails 工具坑缺失** → 补
+  `docs/learnings/bugs/2026-09/2026-09-13-pw-cdp-session-send-exceptiondetails-not-throw.md`
+  （问题描述/根因/解决方案三段；语义分界成文：协议错误码=传输/参数/未实现，
+  exceptionDetails=页面/V8/桥层失败；断言兼容双形状以账本 releaseObjectGroup 步实测
+  形态为准）。`make learnings-index` 重建 INDEX（175 条，格式校验过）。goal 自有面
+  learning 引用就此零悬挂。
 - **S29（2026-09-13）控制面一致性收口 — README 过时项修正 + 账本版本头（纯 docs 切片，绿步维持 32）**：
   pull 零新提交（tip = 359679334，即 S28 门禁验证时点——门免复跑）；双解冻条件不变
   （零上游提交，渲染流域无新工作）。**README 三处过时修正**
