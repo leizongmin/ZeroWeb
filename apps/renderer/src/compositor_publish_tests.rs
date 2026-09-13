@@ -88,6 +88,7 @@ fn publish_frame_emits_viewpainted_with_primitives() {
         Vec::new(),
         7,
         3,
+        Vec::new(),
     )
     .expect("publish");
 
@@ -129,6 +130,7 @@ fn publish_frame_emits_compositor_sequence_with_full_paint_payload() {
             Vec::new(),
             epoch,
             1,
+            Vec::new(),
         )
         .expect("publish compositor frame");
     }
@@ -176,6 +178,7 @@ fn publish_compositor_frame_carries_dirty_rects() {
         Vec::new(),
         11,
         1,
+        Vec::new(),
     )
     .expect("publish compositor frame");
 
@@ -213,6 +216,7 @@ fn publish_mode_switch_republishes_legacy_only() {
         Vec::new(),
         6,
         1,
+        Vec::new(),
     )
     .expect("publish compositor frame");
     publish_state.set_mode(FramePublishMode::Legacy);
@@ -228,6 +232,7 @@ fn publish_mode_switch_republishes_legacy_only() {
             Vec::new(),
             6,
             1,
+            Vec::new(),
         )
         .expect("publish legacy frame");
     }

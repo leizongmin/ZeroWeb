@@ -2180,6 +2180,11 @@ impl GpuRenderer {
         self.image_texture_cache.clear();
     }
 
+    /// Invalidate glyph IDs when switching between independent font registries.
+    pub fn clear_glyph_atlas(&mut self) {
+        self.atlas.clear();
+    }
+
     fn collect_stroke_vertices(&self, strokes: &[crate::primitive::StrokePrimitive], scale: f32) -> Vec<Vec<f32>> {
         let mut batches = Vec::new();
         for stroke in strokes {

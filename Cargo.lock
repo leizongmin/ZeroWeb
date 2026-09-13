@@ -7247,6 +7247,7 @@ dependencies = [
  "tracing",
  "url",
  "wat",
+ "zero-css-parser",
  "zero-engine",
  "zero-host-runtime",
  "zero-media",

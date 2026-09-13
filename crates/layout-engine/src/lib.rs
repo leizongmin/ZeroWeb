@@ -29,6 +29,7 @@ pub mod inline_block_split;
 mod inline_content;
 pub mod inline_finalization;
 mod inline_metric_storage;
+mod intrinsic_font_measure;
 pub mod intrinsic_sizing;
 pub mod margin_collapse;
 pub mod multicol;

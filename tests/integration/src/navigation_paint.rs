@@ -80,6 +80,7 @@ fn red_paint_snapshot(epoch: u64) -> PaintSnapshotParams {
         shadows: vec![],
         images: vec![],
         image_payloads: vec![],
+        font_payloads: vec![],
         strokes: vec![],
         path_fills: vec![],
         path_strokes: vec![],

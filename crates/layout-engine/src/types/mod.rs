@@ -3,7 +3,7 @@
 //! 定义 [`LayoutBox`] 和 [`LayoutResult`] 作为布局引擎的输出格式，
 //! 描述元素在页面上的几何位置和大小。
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 pub use zero_css_parser::values::ClearValue;
 use zero_css_parser::values::{FloatValue, OverflowClipMarginBox};
@@ -374,6 +374,8 @@ pub struct LayoutBox {
     /// 的元素，近似值会导致行盒高度与 layout IFC 不一致。
     /// 使用此映射确保 paint IFC 的行盒高度与 layout IFC 一致。
     pub text_node_line_heights: NodeIdMap<f32>,
+    /// 文档字体的真实 ascent / em，供空 styles 的 paint IFC 恢复基线。
+    pub text_node_ascent_ratios: HashMap<NodeId, f32>,
     /// 文本节点的 text-transform 映射（来自 layout engine 的 IFC 运行）。
     ///
     /// **R1012 Phase A IFC 统一首切**：text-transform 须在行断前应用，使 layout
@@ -602,6 +604,7 @@ impl Default for LayoutBox {
             text_node_letter_spacing: NodeIdMap::default(),
             text_node_word_spacing: NodeIdMap::default(),
             text_node_line_heights: NodeIdMap::default(),
+            text_node_ascent_ratios: HashMap::new(),
             text_node_text_transform: NodeIdMap::default(),
             plaintext_bidi_nodes: NodeIdSet::default(),
             inline_vertical_nodes: NodeIdSet::default(),

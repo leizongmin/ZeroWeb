@@ -954,6 +954,7 @@ impl InlineFormattingContext {
             self.bidi_override_direction = bidi_override_direction(style);
         }
         let items = self.collect_inline_items(doc, container, styles);
+        self.capture_downloaded_font_metrics(&items, doc, styles);
         self.break_items_into_lines(items);
         // R3836：容器级 RTL bidi-override 的行级 run 序反转（UAX #9 L2——重排按行
         // 反转整个显示序，非仅 run 内字符）。旧实现逐 run 反转字符但 run 序保持逻辑序，

@@ -2,6 +2,7 @@
 
 mod compositor_publish_thread;
 mod error_page;
+mod font_payloads;
 mod ipc_fetch;
 mod ipc_indexed_db;
 mod ipc_service_worker;

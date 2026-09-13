@@ -14,6 +14,7 @@
 #![allow(clippy::doc_lazy_continuation)]
 
 mod async_load;
+mod css_urls;
 mod image_decoder;
 mod indexed_db_owner;
 mod net_pool;

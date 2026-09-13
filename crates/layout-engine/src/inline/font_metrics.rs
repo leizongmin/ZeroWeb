@@ -59,6 +59,11 @@ pub trait FontMetricProvider {
     /// （零回归）。调用方不得假设一定有值。
     fn line_metrics(&self, font_family: &[String], size: f32) -> Option<LineMetrics>;
 
+    /// 文档下载字体的度量；默认不改变平台字体的历史基线策略。
+    fn downloaded_line_metrics(&self, _font_family: &[String], _size: f32) -> Option<LineMetrics> {
+        None
+    }
+
     /// 解析 CSS `font-family` 列表到具体 font_id（C3 advance 解锁，R223 font_id gap）。
     ///
     /// IFC 在 `TextRun` 构造处经本方法 populate `run.font_id`（当前恒 `None`，致
@@ -111,6 +116,11 @@ impl FontMetricProviderHandle {
     /// （替换 `0.8` 启发式）；step-1 仅提供接口，IFC 默认 `None` 不调用本方法。
     pub fn line_metrics(&self, font_family: &[String], size: f32) -> Option<LineMetrics> {
         self.0.line_metrics(font_family, size)
+    }
+
+    /// 查询文档字体度量，供布局和 paint 共同保存真实基线。
+    pub fn downloaded_line_metrics(&self, font_family: &[String], size: f32) -> Option<LineMetrics> {
+        self.0.downloaded_line_metrics(font_family, size)
     }
 
     /// 经由内部 provider 解析 family → font_id（C3 advance，R223 gap）。
@@ -232,7 +242,7 @@ impl FontMetricMap {
 impl FontMetricProvider for FontMetricMap {
     fn line_metrics(&self, font_family: &[String], size: f32) -> Option<LineMetrics> {
         if !self.line_metrics_enabled {
-            return None;
+            return self.downloaded_line_metrics(font_family, size);
         }
         let metrics = font_family.iter().find_map(|fam| {
             let bare = fam.trim_matches('"').trim_matches('\'');
@@ -244,6 +254,25 @@ impl FontMetricProvider for FontMetricMap {
             })
         })?;
         Some(LineMetrics {
+            ascent: metrics.ascent * size,
+            descent: metrics.descent * size,
+            line_gap: metrics.line_gap * size,
+        })
+    }
+
+    fn downloaded_line_metrics(&self, font_family: &[String], size: f32) -> Option<LineMetrics> {
+        // https://drafts.csswg.org/css-fonts-4/#first-available-font
+        // 首个已匹配 family 为系统字体时不能跳过它去取后面的 webfont。
+        let metrics = font_family.iter().find_map(|family| {
+            let bare = family.trim_matches(['\'', '"']);
+            self.map.get(bare).or_else(|| {
+                self.map
+                    .iter()
+                    .find(|(name, _)| name.eq_ignore_ascii_case(bare))
+                    .map(|(_, value)| value)
+            })
+        })?;
+        metrics.is_web_font.then_some(LineMetrics {
             ascent: metrics.ascent * size,
             descent: metrics.descent * size,
             line_gap: metrics.line_gap * size,
@@ -317,6 +346,7 @@ mod tests {
     fn family_metrics(size_adjust: f32) -> zero_render_foundation::font::FontFamilyMetrics {
         zero_render_foundation::font::FontFamilyMetrics {
             font_id: 7,
+            is_web_font: false,
             ascent: 0.8,
             descent: -0.2,
             line_gap: 0.1,

@@ -160,6 +160,24 @@ pub struct IpcImagePayload {
     pub rgba: Vec<u8>,
 }
 
+/// 本帧引用的下载字体；完整快照使 latest-wins 丢帧不丢资源。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct IpcFontPayload {
+    /// renderer 本地字体 ID，仅在当前 surface/document 内解释。
+    pub font_id: u32,
+    /// sfnt/TTC face index。
+    pub face_index: u32,
+    /// 已解容器的字体字节，接收端仍须验证。
+    pub data: Vec<u8>,
+}
+
+/// 单字体 sfnt 字节上限。
+pub const MAX_PAINT_FONT_BYTES: usize = 32 * 1024 * 1024;
+/// 单帧字体资源总上限。
+pub const MAX_PAINT_FONTS_BYTES: usize = 32 * 1024 * 1024;
+/// 单帧字体资源数量上限。
+pub const MAX_PAINT_FONTS: usize = 128;
+
 /// IPC 渐变色标。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IpcGradientStop {
@@ -544,6 +562,9 @@ pub struct PaintSnapshotParams {
     pub images: Vec<IpcImage>,
     /// 解码后的图片像素（填充 browser 侧 ImageCache）。
     pub image_payloads: Vec<IpcImagePayload>,
+    /// 本帧所需的全部下载字体；不得依赖先前帧的增量资源。
+    #[serde(default)]
+    pub font_payloads: Vec<IpcFontPayload>,
     /// 描边线段。
     pub strokes: Vec<IpcStroke>,
     /// 路径填充。
@@ -646,6 +667,7 @@ impl Default for PaintSnapshotParams {
             shadows: Vec::new(),
             images: Vec::new(),
             image_payloads: Vec::new(),
+            font_payloads: Vec::new(),
             strokes: Vec::new(),
             path_fills: Vec::new(),
             path_strokes: Vec::new(),
@@ -720,6 +742,11 @@ mod tests {
             synthetic_italic: true,
         };
         let snapshot = PaintSnapshotParams {
+            font_payloads: vec![IpcFontPayload {
+                font_id: 7,
+                face_index: 2,
+                data: vec![1, 2, 3],
+            }],
             font_variations: vec![vec![IpcFontVariation {
                 tag: *b"wdth",
                 value: 125.0,
@@ -742,6 +769,7 @@ mod tests {
         let bytes = bincode::serialize(&snapshot).expect("serialize PaintSnapshotParams");
         let decoded: PaintSnapshotParams = bincode::deserialize(&bytes).expect("deserialize PaintSnapshotParams");
         let glyph = &decoded.glyphs[0];
+        assert_eq!(decoded.font_payloads, snapshot.font_payloads);
 
         assert_eq!(glyph.glyph_id, 'A' as u32);
         assert_eq!(glyph.font_glyph_index, Some(42));

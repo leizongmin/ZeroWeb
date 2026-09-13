@@ -134,10 +134,12 @@ impl FontLoader {
                     .font_metric_aspect(id, crate::font::FontSizeAdjustMetric::IcWidth)
                     .unwrap_or(1.0);
                 let size_adjust = self.font_size_scale(id);
+                let is_web_font = self.family_aliases.contains(&family);
                 Some((
                     family,
                     crate::font::FontFamilyMetrics {
                         font_id: id,
+                        is_web_font,
                         ascent,
                         descent,
                         line_gap,

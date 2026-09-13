@@ -33,6 +33,9 @@ use indexed_db_connections::{
 };
 use indexed_db_transactions::{IndexedDbTransactionOwner, parse_transaction_request};
 
+#[cfg(test)]
+#[path = "process_backend/font_readiness_tests.rs"]
+mod font_readiness_tests;
 #[path = "process_backend/indexed_db_connections.rs"]
 mod indexed_db_connections;
 #[cfg(test)]
@@ -980,7 +983,12 @@ impl ProcessTabBackend {
         self.stage_indexed_db_navigation(renderer_id, &params.url, params.navigation_epoch);
     }
 
-    fn handle_navigation_committed(&mut self, tab_id: TabId, renderer_id: u64, params: NavigationCommittedParams) {
+    fn handle_navigation_committed(
+        &mut self,
+        tab_id: TabId,
+        renderer_id: u64,
+        params: NavigationCommittedParams,
+    ) -> bool {
         let Some(pending) = self.pending_indexed_db_navigations.get(&renderer_id) else {
             tracing::warn!(
                 "Rejected navigation commit without start tab {} renderer {} epoch {}",
@@ -988,7 +996,7 @@ impl ProcessTabBackend {
                 renderer_id,
                 params.navigation_epoch
             );
-            return;
+            return false;
         };
         if pending.navigation_epoch != params.navigation_epoch || pending.url != params.url {
             tracing::warn!(
@@ -997,7 +1005,7 @@ impl ProcessTabBackend {
                 renderer_id,
                 params.navigation_epoch
             );
-            return;
+            return false;
         }
         let pending = self
             .pending_indexed_db_navigations
@@ -1021,6 +1029,7 @@ impl ProcessTabBackend {
         {
             tracing::warn!("Rejected committed Service Worker client: {error}");
         }
+        true
     }
 
     fn handle_indexed_db_connection_request(
@@ -1611,7 +1620,14 @@ impl ProcessTabBackend {
                         self.handle_navigation_started(tab_id, rid, snapshot, params);
                     }
                     IpcMessageKind::NavigationCommitted(params) => {
-                        self.handle_navigation_committed(tab_id, rid, params);
+                        let epoch = params.navigation_epoch;
+                        let committed = self.handle_navigation_committed(tab_id, rid, params);
+                        if let Some(snapshot) = snapshots.get_mut(&tab_id)
+                            && committed
+                            && snapshot.navigation_epoch == epoch
+                        {
+                            snapshot.resources_settled = true;
+                        }
                     }
                     IpcMessageKind::DispatchDomEventResult(result) => {
                         self.pending_dispatch_results.push((msg.id, result.default_allowed));
@@ -1874,6 +1890,7 @@ mod navigation_contract_tests {
             shadows: vec![],
             images: vec![],
             image_payloads: vec![],
+            font_payloads: vec![],
             strokes: vec![],
             path_fills: vec![],
             path_strokes: vec![],

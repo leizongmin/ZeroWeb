@@ -300,6 +300,7 @@ impl BrowserApp {
         if !present || !self.window_focused {
             return;
         }
+        if !self.sync_page_fonts() { return; }
         // R3254-M4：标签切换时清 GPU 图片纹理缓存（旧标签纹理滞留会累积显存）。
         let active_tab = self.shell.active_tab_id();
         if active_tab != self.last_rendered_tab
@@ -412,6 +413,7 @@ impl BrowserApp {
         if !present {
             return None;
         }
+        if !self.sync_page_fonts() { return None; }
 
         if let Some(fb) = self.try_blit_compositor_present(width, height, cpu_surface) {
             self.forward_compositor_chrome_ui(width, height);
@@ -814,6 +816,7 @@ impl BrowserApp {
         width: u32,
         height: u32,
     ) -> zero_render_foundation::surface::FrameBuffer {
+        assert!(self.sync_page_fonts(), "invalid test page font resources");
         let (fills, glyphs, overlay_fills, overlay_glyphs, chrome_shadows, overlay_rounded_rects) = self.build_scene(width, height);
         let webview_extras = self.get_webview_extra_primitives();
         let mut scene_primitives = webview_extras;
@@ -850,6 +853,7 @@ impl BrowserApp {
         width: u32,
         height: u32,
     ) -> Result<zero_render_foundation::surface::FrameBuffer, String> {
+        if !self.sync_page_fonts() { return Err("invalid page font resources".into()); }
         let (fills, glyphs, overlay_fills, overlay_glyphs, chrome_shadows, overlay_rounded_rects) =
             self.build_scene(width, height);
         let webview_extras = self.get_webview_extra_primitives_for_capture();

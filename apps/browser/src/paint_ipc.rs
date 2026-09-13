@@ -19,6 +19,7 @@ use crate::tab_snapshot::{PageRenderResult, TabSnapshot};
 pub fn apply_paint_snapshot(snap: &mut TabSnapshot, params: PaintSnapshotParams) {
     let primitives: RenderPrimitives = zero_paint_convert::to_render_primitives(params.clone());
 
+    snap.font_payloads = params.font_payloads;
     for payload in params.image_payloads {
         if let Ok(data) = ImageData::from_rgba(payload.rgba, payload.width, payload.height) {
             snap.image_cache.insert_with_key(ImageKey::new(payload.image_key), data);

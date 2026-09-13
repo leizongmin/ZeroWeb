@@ -126,6 +126,11 @@ fn store_font_sizes_from_ifc_mode(
             box_node.inline_block_child_nodes.insert(owner);
         }
         box_node.text_node_line_heights.insert(frag.node_id, frag.height);
+        if let Some(ratio) = inline_ctx.ascent_ratio_overrides.get(&frag.node_id) {
+            box_node.text_node_ascent_ratios.insert(frag.node_id, *ratio);
+        } else {
+            box_node.text_node_ascent_ratios.remove(&frag.node_id);
+        }
         // R1012: text-transform belongs to the text node's parent style but is
         // restored by fragment NodeId when paint reruns IFC with empty styles.
         if doc

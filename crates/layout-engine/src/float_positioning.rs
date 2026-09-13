@@ -400,6 +400,7 @@ pub(crate) fn shrink_inline_blocks_to_content(
     box_node: &mut LayoutBox,
     doc: &zero_dom::Document,
     styles: &HashMap<NodeId, ComputedStyle>,
+    inline_fonts: crate::inline_finalization::InlineFontContext<'_>,
 ) {
     let own_horizontal = matches!(box_node.writing_mode, WritingModeValue::HorizontalTb);
     if own_horizontal && !box_node.is_absolute && !box_node.is_fixed {
@@ -461,7 +462,9 @@ pub(crate) fn shrink_inline_blocks_to_content(
             // 测得 0（aspect-ratio 空 item 等 box_content 无法度量）时，fallback 到专用 flex_intrinsic
             //（含 aspect-ratio transferred + container-cross 推导）；否则保留 box_content_max_width
             //（覆盖 gap/abspos/文本等有 content 案，避免回归）。
-            let intrinsic_border_box = crate::intrinsic_sizing::box_content_max_width(box_node, doc, styles);
+            let intrinsic_border_box =
+                crate::intrinsic_font_measure::downloaded_text_border_width(box_node, doc, styles, inline_fonts)
+                    .unwrap_or_else(|| crate::intrinsic_sizing::box_content_max_width(box_node, doc, styles));
             let intrinsic_border_box = if intrinsic_border_box > 0.5 {
                 intrinsic_border_box
             } else {
@@ -645,7 +648,7 @@ pub(crate) fn shrink_inline_blocks_to_content(
     }
 
     for child in &mut box_node.children {
-        shrink_inline_blocks_to_content(child, doc, styles);
+        shrink_inline_blocks_to_content(child, doc, styles, inline_fonts);
     }
 }
 

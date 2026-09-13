@@ -350,6 +350,7 @@ pub fn paint_snapshot_from_primitives(
             })
             .collect(),
         image_payloads,
+        font_payloads: Vec::new(),
         strokes: primitives
             .strokes
             .iter()
