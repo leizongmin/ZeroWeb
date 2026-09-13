@@ -2,7 +2,7 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-13（S47：静默轮——tip 与 S46 逐字节一致，结论全量引用；绿步维持 33）
+**最后更新**: 2026-09-13（S47：R4310-F 组合态门复核——推送时 rebase 拉入渲染流 walk 竖排子门，新 tip 门+全量复跑全绿；绿步维持 33）
 
 ---
 
@@ -33,14 +33,19 @@
 
 ## 已完成切片
 
-- **S47（2026-09-13）静默轮 — 同 tip 复核（无代码变更，绿步维持 33）**：
-  pull 零新提交（tip = 759be6716，即 S46 提交本身）——tracked 树硬核对：
-  `git diff cbf705e32..HEAD -- ':!docs'` 为空（S39 门禁验证树起点，非 docs 面零变更），
-  S39 门禁验证树结论全量引用免复跑（cdp-e2e 门 PASS 33 绿 deterministic +
-  make test 19,259P/0F）；未跟踪探针维持调试资产不入门禁图（S37 核查结论延续）。
-  双解冻条件不变：① 渲染流零新提交（子帧文档加载+realm 维持冻结）；② DC-2 口径
-  无新拍板记录（docs/goal 零新提交）。goal 自有面零新缺口、无扩展面（S40-S46
-  重审结论延续）。
+- **S47（2026-09-13）R4310-F 组合态门复核 — 推送时 rebase 拉入渲染流 walk 竖排子门（无本流代码变更，绿步维持 33）**：
+  pull 零新提交（tip = 759be6716，即 S46 提交本身）；记录入档时点 tracked 树硬核对
+  `git diff cbf705e32..HEAD -- ':!docs'` 为空；**推送时 rebase 拉入渲染流 R4310-F**
+  （6dabee66e walk 竖排子门 + per-node vertical 信号通道——layout-engine inline 域
+  + engine/paint text 微触 3 行，walk 仍 default-off，自带 reftest A/B walk-on/off
+  总数精确持平 14763）→ tracked 树变化触发复跑（下一步计划 #3）。**新 tip 组合态
+  门**：cdp-e2e 门 **PASS 33 绿 deterministic 双跑一致**（绿步集与 S39 基线零漂移）；
+  make test 全量 **19,259P/0F EXIT=0**（与 S39 时点基线精确一致——渲染流零新增单测；
+  并行 quickjs clippy 腿 rc 聚合同过）。归因 rule 10：R4310-F 工作面与本流零重叠
+  （headless/CDP 面零触），零回归。双解冻条件不变：① 渲染流活跃面仍 inline/quotes
+  域（R4310-F = walk 竖排子门，非子帧文档加载）——子帧能力维持冻结；② DC-2 口径
+  无新拍板记录。未跟踪探针维持调试资产不入门禁图（S37 核查结论延续）。
+  goal 自有面零新缺口、无扩展面（S40-S46 重审结论延续）。
 - **S46（2026-09-13）静默轮 — 同 tip 复核（无代码变更，绿步维持 33）**：
   pull 零新提交（tip = 06f6f41f6，即 S45 提交本身）——工作树与 S45 时点逐字节一致，
   S39 门禁验证树结论全量引用免复跑（cdp-e2e 门 PASS 33 绿 deterministic +
