@@ -2,12 +2,13 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-14（S239：静默监测轮——tip 与 S238 提交一致（196fbf0bd），
+**最后更新**: 2026-09-14（S240：静默监测轮——tip 与 S239 提交一致（96aa5198d），
 本流自有面零漂移复核通过，全树锚点维持 S218 归因态零新增不可归因文件，门结论
 引用 S238 活跑（混合负载窗口内活跑 PASS 33 绿 deterministic 双跑 YES 零漂移
-ZERO_DRIFT=True），引用计数 1/10 **下次活跑至迟 S248**；绿步维持 33；S198 亚型
+ZERO_DRIFT=True），引用计数 2/10 **下次活跑至迟 S248**；绿步维持 33；S198 亚型
 解除态维持无 cdp-e2e 腿，cronjob 编译测试负载 + ZeroWeb-3-wt-baidu browser 进程
-9333 + CI 守护腿延续在窗（均非本流面）；零 zombie 零遗留端口）
+9333 延续在窗（均非本流面）；轮中瞬时 zombie 已自愈收割终态零 zombie 零遗留
+端口）
 
 ---
 
@@ -38,6 +39,25 @@ ZERO_DRIFT=True），引用计数 1/10 **下次活跑至迟 S248**；绿步维�
 
 ## 已完成切片
 
+- **S240（2026-09-14）静默监测轮 — 同 tip 复核（无代码变更，绿步维持 33）**：
+  pull 零新提交（tip = 96aa5198d，即 S239 提交本身）——双层锚点口径复核通过：本流
+  自有面与 S99 门禁验证态逐字节一致（diff 空）；全树锚点 numstat 复核（基
+  96aa5198d=S239 tip）零外部变化——维持 S218 归因态零新增不可归因文件。门结论
+  引用 S238 活跑（混合负载窗口内活跑，PASS 33 绿 deterministic 双跑 YES、绿步集
+  机械 diff 基线零漂移 ZERO_DRIFT=True），引用计数 2/10，**下次活跑至迟 S248**。
+  双解冻条件实质判定不变：① crates/ 自 65d2c2851 仅 930cdd684（R4322-F，子帧相关
+  性零命中——渲染流 R4323 尚未落 main）；② docs/goal 自 S239 零非本流提交，DC-2
+  口径无新拍板记录。机器卫生复核：**轮中见一瞬时 zombie（PID 4072543，
+  zero_protocol 测试二进制 defunct，03:47）**——时点与 cronjob 流
+  zero_integration_tests→zero_protocol 测试子进程 churn 吻合，非本流自有面
+  （zero-browser/test-guard 进程面零关联），20s 后二次核查已自愈收割（终态零
+  zombie）+ 9222/45029/34293/96xx 全空闲——同 S215 瞬时 zombie 先例形态，终态
+  零 zombie 零遗留端口。**并行流观察**：S198 端口竞争亚型解除态维持（无 cdp-e2e
+  腿）；在窗负载延续——cronjob 流编译测试负载（03:42 新周期 test-guard
+  compile-first 双腿 + zero_protocol 测试二进制腿）+ ZeroWeb-2 渲染流 rally 主
+  进程零活动腿 + ZeroWeb-3-wt-baidu 浏览器进程（9333 非 9222 族）+ rally query
+  CI 守护腿（均非本流自有面）。S78 故障窗口后持续零复现，监测态维持。goal 自有
+  面零新缺口、无扩展面（S40-S239 重审结论延续）。
 - **S239（2026-09-14）静默监测轮 — 同 tip 复核（无代码变更，绿步维持 33）**：
   pull 零新提交（tip = 196fbf0bd，即 S238 提交本身）——双层锚点口径复核通过：本流
   自有面与 S99 门禁验证态逐字节一致（diff 空）；全树锚点 numstat 复核（基
