@@ -950,10 +950,21 @@ impl InlineFormattingContext {
             .map(|s| Self::run_white_space(&s.white_space))
             .or_else(|| self.ws_overrides.get(&elem_id).copied());
         let run_preserves = run_ws.map_or(self.preserve_whitespace, |ws| ws.preserve);
-        let (font_size, line_height) = resolve_font_metrics_with_provider(
-            style,
-            self.font_metric_provider.as_ref(),
-        );
+        // R4308（quotes-001 walk-on 9324px paint 残差根因）：font 度量须走与
+        // `build_flatten_run_for_element` 同款三级回退——paint IFC（空 styles）下
+        // `resolve_font_metrics_with_provider(None)` 落 16px 默认，而 layout IFC 走
+        // 真实 styles（32px）：同一段落 layout 32px / paint 16px，paint 侧行断与
+        // 行盒 y 全体错位（此前误归因为「字形发射坐标系混用」）。有 styles 首消费
+        // font_metric_provider（per-font line-height），paint IFC 回落 layout 存储的
+        // `inline_element_metrics`，最后才落默认值。
+        let (font_size, line_height) = if style.is_some() {
+            resolve_font_metrics_with_provider(style, self.font_metric_provider.as_ref())
+        } else if let Some(&(fs, lh)) = self.inline_element_metrics.get(&elem_id) {
+            (fs, lh)
+        } else {
+            self.default_font_metrics
+                .unwrap_or((DEFAULT_FONT_SIZE, DEFAULT_FONT_SIZE * NORMAL_LINE_HEIGHT_RATIO))
+        };
         let letter_spacing = style
             .map(|s| Self::resolve_letter_spacing(&s.letter_spacing, font_size))
             .unwrap_or_else(|| self.letter_spacing_overrides.get(&elem_id).copied().unwrap_or(0.0));
@@ -1128,6 +1139,31 @@ impl InlineFormattingContext {
                     }
                     flush_pending(&mut text_pending, items, !emitted_text_run, false);
                     emitted_text_run = true;
+                    // R4308：递归不绕过主路径特例门——collect 主路径对 ruby / bidi
+                    // 控制字符子不走 walk（R1022 ruby rt/rp 注音语义 / R4300c 控制字符
+                    // 重排作用域横跨整段），walk 递归若直接深入会以扁平化吞噬这些特例
+                    //（ruby-overhang-spaces-vertical-002/004/006 + ruby-intrinsic-isize-003
+                    // walk-on 翻红实证：span.walk 递归进 <ruby> 把 rt 注音折进 base 流）。
+                    // 门取**style 无关谓词**（local_name / 文本内容）：paint IFC（空
+                    // styles）与 layout IFC 判定恒等，不引入两段分歧。命中即按旧扁平化
+                    // 形状落独立 run（build_flatten_run_for_element 对 ruby 自带 rt/rp
+                    // 排除）。
+                    let gc_is_ruby = doc
+                        .get(gc)
+                        .and_then(|n| match &n.kind {
+                            NodeKind::Element(e) => Some(e.local_name() == "ruby"),
+                            _ => None,
+                        })
+                        .unwrap_or(false);
+                    let gc_has_bidi_controls = doc
+                        .text_content(gc)
+                        .is_some_and(|t| t.chars().any(|c| ('\u{202A}'..='\u{202E}').contains(&c)));
+                    if gc_is_ruby || gc_has_bidi_controls {
+                        if let Some(item) = self.build_flatten_run_for_element(doc, gc, styles) {
+                            items.push(item);
+                        }
+                        continue;
+                    }
                     self.collect_flat_inline_children(doc, gc, styles, items);
                     continue;
                 }
