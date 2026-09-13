@@ -2,10 +2,12 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-14（S196：静默监测轮——tip 与 S195 逐字节一致，本流自有面
-零漂移复核通过，锚点 diff 维持已归因态零新增，S188 活跑门结论引用（bench CPU 竞争
-负载窗内 PASS 33 绿零漂移），引用计数 8/10 下次活跑至迟 S198；绿步维持 33；并行流
-siteopt headless 与 make test quickjs 腿双负载窗延续、零 zombie 零遗留端口）
+**最后更新**: 2026-09-14（S197：静默监测轮——tip 与 S196 补充注记逐字节一致，本流
+自有面零漂移复核通过，锚点 diff 维持新归因态（6 文件 +346/-20 = R4321-F 4 文件 +
+5172a9561 website 2 文件）零新增，S188 活跑门结论引用（bench CPU 竞争负载窗内
+PASS 33 绿零漂移），引用计数 9/10 **S198 活跑最后期限**；绿步维持 33；并行流观察：
+siteopt gate2 验收链（make test → make cdp-e2e）开跑——S198 活跑前须避开其 cdp-e2e
+腿（9222 端口族机器级竞争）；零 zombie 零遗留端口）
 
 ---
 
@@ -36,6 +38,30 @@ siteopt headless 与 make test quickjs 腿双负载窗延续、零 zombie 零遗
 
 ## 已完成切片
 
+- **S197（2026-09-14）静默监测轮 — 同 tip 复核（无代码变更，绿步维持 33）**：
+  pull 零新提交（tip = 19cf0c8a2，即 S196 补充注记提交本身）——双层锚点口径复核
+  通过：本流自有面与 S99 门禁验证态逐字节一致（diff 空）；全树锚点 diff 维持 S196
+  补充注记确立的新归因态（numstat 复核 6 文件 +346/-20 = R4321-F 渲染流共享面 4
+  文件 +314/-19 + 5172a9561 website 周报 2 文件 +32/-1）零新增。R4321-F 之后 crates/
+  零新提交——渲染流无后续子帧/realm 工作，frames.click+evaluate 挂账解冻条件实质
+  判定不变。门结论引用 S188 活跑（bench CPU 竞争负载窗内 PASS 33 绿 deterministic
+  双跑 YES，第八个负载下样本、CPU 竞争亚型第二样本，首调红形态零再现），引用计数
+  9/10，**S198 活跑最后期限**。双解冻条件不变：① 上游自 S196 零新提交（渲染流域
+  crates 零新工作，零子帧文档加载工作）；② docs/goal 自 S196 零非本流提交，DC-2
+  口径无新拍板记录。机器卫生复核：零 zombie、本流自有面零遗留端口（9222/45029/
+  34293/96xx 全空闲）。**并行流观察（gate2 验收链开跑——新冲突亚型预警）**：S196
+  记档的 ZeroWeb-2 make test 全链已收尾退出；siteopt headless 维持同进程（PID
+  3501658 / port 9333，etime ~7.5 分钟，不触碰）；新见 siteopt 验收 **gate2 链**
+  （bash 3630165 → test-guard 3630168 → make test 3630175，日志落
+  `.acceptance/site-optimizer/2026-09-13-baidu/gate2-{test,cdp-e2e}.log`）——顺序
+  执行 make test（当前编译段，cargo build zero-renderer/compositor/image-decoder，
+  etime ~19 秒，time-limit 2700s）后**接续 make cdp-e2e**（time-limit 900s）；另见
+  test-guard.sh 包裹 release 构建（cargo build --release --locked，etime ~1.7 分钟）。
+  **S198 活跑执行前必须复核该 gate2 链状态**：其 cdp-e2e 腿与本流门禁同绑 9222
+  端口族（机器级端口竞争、非单纯负载）——若其 cdp-e2e 腿在窗则等待其收尾后再活跑
+  （端口冲突会产生两流门禁双输的假失败），仅 make test 编译负载在窗则按计划 #3
+  正常落窗。S78 故障窗口后持续零复现，监测态维持。goal 自有面零新缺口、无扩展面
+  （S40-S196 重审结论延续）。
 - **S196（2026-09-14）静默监测轮 — 同 tip 复核（无代码变更，绿步维持 33）**：
   pull 零新提交（tip = 748830f79，即 S195 提交本身）——双层锚点口径复核通过：本流
   自有面与 S99 门禁验证态逐字节一致（diff 空）；全树锚点 diff 维持 S150 已归因态
