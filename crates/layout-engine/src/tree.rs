@@ -464,10 +464,18 @@ struct BuildContext {
     /// R3808：float 元素集合（构树期一次预计算，O(styles)）——float-then-clear 容器
     /// 抑制判定的廉价位测（替代逐子 HashMap styles 查询，1000 元素页微基准敏感）。
     r3808_float_nodes: HashSet<NodeId>,
-    /// R4251：文档内是否存在 float 元素（O(styles) 一次预扫，独立于 R3808 guard）。
-    /// flow-root BFC margin 隔离臂仅在无 float 文档启用（R3755 float-adjacent
-    /// 负交互定界的收窄 gate——无 float 时 float-avoidance 几何无从交互）。
-    has_any_float: bool,
+    /// R4325：float 节点的 DFS 序（文档序）升序表 + 全节点 DFS 序映射。
+    /// flow-root BFC margin 隔离臂的 gate 由 R4251 的「文档无 float」收窄为
+    /// 「**文档序先于本元素**无 float」——float 只影响其后的同 BFC 域内容
+    /// （CSS2 §9.5），后置/子内 float 与本盒无交互；R3755 float-adjacent
+    /// 负交互案（bfc-next-to-float-2 / replaced-next-to-float-2）的 float 均
+    /// 前置于 flow-root，gate 语义保持排除，而 display-flow-root-001 等
+    /// 「前段无 float 的 BFC 用例」得以启用。
+    float_dfs_order: Vec<u32>,
+    /// R4325：(NodeId, DFS 序) 全节点表——push-only Vec + 线性扫（float_precedes
+    /// 仅对 display:flow-root 节点调用，频次 ≈ flow-root 数/页；HashMap 的
+    /// SipHash 插入 ×500 节点在 wide_tree 微基准实测 ~47µs 级开销，故弃用）。
+    dfs_order: Vec<(NodeId, u32)>,
     /// R3808：带 clear 的块级元素集合（同上预计算）。
     r3808_cleared_block_nodes: HashSet<NodeId>,
 }
@@ -487,16 +495,60 @@ impl BuildContext {
             flags,
             r3808_float_nodes: HashSet::new(),
             r3808_cleared_block_nodes: HashSet::new(),
-            has_any_float: false,
+            float_dfs_order: Vec::new(),
+            dfs_order: Vec::new(),
+        }
+    }
+
+    /// R4325：DFS（文档序）遍历赋序——全节点统一单调递增序；float 节点序入表。
+    fn assign_dfs_order(
+        doc: &Document,
+        node: NodeId,
+        counter: &mut u32,
+        styles: &HashMap<NodeId, ComputedStyle>,
+        order: &mut Vec<(NodeId, u32)>,
+        float_idx: &mut Vec<u32>,
+    ) {
+        let my = *counter;
+        *counter += 1;
+        order.push((node, my));
+        if styles
+            .get(&node)
+            .is_some_and(|cs| !matches!(cs.float, FloatValue::None))
+        {
+            float_idx.push(my);
+        }
+        for child in doc.child_nodes(node) {
+            Self::assign_dfs_order(doc, child, counter, styles, order, float_idx);
+        }
+    }
+
+    /// R4325：文档序是否存在**先于** `dom_id` 的 float 元素（CSS2 §9.5：float 只
+    /// 影响其后的同 BFC 域内容——后置 float / 自身子树 float 与本盒无交互）。
+    fn float_precedes(&self, dom_id: NodeId) -> bool {
+        match self.dfs_order.iter().find(|(id, _)| *id == dom_id) {
+            Some(&(_, my)) => self.float_dfs_order.partition_point(|&f| f < my) > 0,
+            None => true, // 无序号（罕见）→ 保守视为有 float 前置（保持旧行为）
         }
     }
 
     /// R3808：构树入口处一次性预计算 float / cleared-block 节点集合（O(styles)），
     /// 供 float-then-clear 容器抑制判定的位测查询（避免逐容器逐子 HashMap 查询）。
-    fn precompute_r3808_sets(&mut self, styles: &HashMap<NodeId, ComputedStyle>) {
-        // R4251：无条件 float 存在位测（不受 R3808 guard 影响——flow-root BFC
-        // margin 隔离臂的 float-free gate 消费，guard 关闭时仍须正确）。
-        self.has_any_float = styles.values().any(|cs| !matches!(cs.float, FloatValue::None));
+    fn precompute_r3808_sets(&mut self, doc: &Document, styles: &HashMap<NodeId, ComputedStyle>) {
+        // R4325：DFS（文档）序映射 + float 节点序表。flow-root BFC 隔离臂的
+        // 「先于本元素无 float」gate 消费（float 集合通常极小，二分 O(logF)）。
+        self.dfs_order.clear();
+        self.float_dfs_order.clear();
+        let mut counter: u32 = 0;
+        Self::assign_dfs_order(
+            doc,
+            doc.root(),
+            &mut counter,
+            styles,
+            &mut self.dfs_order,
+            &mut self.float_dfs_order,
+        );
+        self.float_dfs_order.sort_unstable();
         static GUARD_ON: OnceLock<bool> = OnceLock::new();
         let on = *GUARD_ON.get_or_init(|| std::env::var("ZW_CLEAR_MT_TAFFY_GUARD").as_deref() != Ok("0"));
         if !on {
@@ -564,7 +616,7 @@ pub(crate) fn build_layout_tree_with_r109(
     ctx.img_intrinsic_sizes = img_intrinsic_sizes;
     ctx.img_intrinsic_ratios = img_intrinsic_ratios;
     ctx.img_intrinsic_no_ratio = img_intrinsic_no_ratio;
-    ctx.precompute_r3808_sets(styles);
+    ctx.precompute_r3808_sets(doc, styles);
 
     // 找到第一个元素节点作为根（通常是 document > html）
     let root = doc.root();
@@ -2823,7 +2875,7 @@ fn build_subtree(
             // float-avoidance 几何无从交互，负回归面被 gate 整体排除。driving:
             // css/css-box/margin-trim/block-in-inline-002..007、block-end-self-collapsing-
             // block-start-margin ×2（trim 后余 margin 穿透 flow-root → 方块整体下移）。
-            || (matches!(computed.display, DisplayValue::FlowRoot) && !ctx.has_any_float)
+            || (matches!(computed.display, DisplayValue::FlowRoot) && !ctx.float_precedes(dom_id))
             // R4251（CSS Overflow 4 §line-clamp）：line-clamp 非 none 的块容器建立独立
             // 格式化上下文——同臂抑制 taffy 父子 margin 折叠穿透。R4251 flow-root 臂使
             // line-clamp-auto-030..032 的 **ref 页**（display:flow-root）margin 转为

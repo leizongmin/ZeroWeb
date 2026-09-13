@@ -1726,3 +1726,44 @@ fn test_canvas_in_span_grid_structure() {
     assert_eq!(style.size.width, taffy::style::Dimension::length(100.0));
     assert_eq!(style.size.height, taffy::style::Dimension::length(50.0));
 }
+
+/// R4325：flow-root BFC 隔离臂的「文档序先于本元素无 float」gate——
+/// float_precedes 语义三态：前置 float → true（gate 排除，R3755 float-adjacent
+/// 语义保持）；后置/无 float → false（display-flow-root-001 前段启用）；自身子树
+/// 内 float 不算前置（display-flow-root-001 div2「grows to fit child floats」）。
+#[test]
+fn float_precedes_is_document_order_scoped() {
+    let html = r#"<html><body>
+<div id="first">a</div>
+<div id="fr2" style="display:flow-root"><div id="f3" style="float:left"></div></div>
+<div id="f1" style="float:left"></div>
+<div id="fr" style="display:flow-root"><div id="f2" style="float:left"></div></div>
+<div id="last">b</div>
+</body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut styles_map = HashMap::new();
+    let mut system = zero_style_system::StyleSystem::new();
+    for (k, v) in system.compute_styles(&doc, &[]) {
+        styles_map.insert(k, v);
+    }
+    let mut ctx = BuildContext::new();
+    ctx.precompute_r3808_sets(&doc, &styles_map);
+    let id = |name: &str| {
+        doc.get_elements_by_tag_name("div")
+            .into_iter()
+            .find(|&n| doc.get_attribute(n, "id") == Some(name.to_string()))
+            .expect("node by id")
+    };
+    // 前置 float（#f1 在 #fr 之前）→ gate 排除（float-adjacent 旧行为保持）。
+    assert!(ctx.float_precedes(id("fr")), "fr: 前置 float 应判 true");
+    // 前置无 float（#first 在任何 float 之前）→ 启用（display-flow-root-001 前段）。
+    assert!(!ctx.float_precedes(id("first")), "first: 无前置 float 应判 false");
+    // 后置普通块（#last 在 #fr 之后，前置 float = #f1 存在）→ true（float 已前置）。
+    assert!(ctx.float_precedes(id("last")), "last: #f1 先于 last");
+    // display-flow-root-001 div2 形态：flow-root 仅含**子内 float**（#f3 序号大于
+    // #fr2）、文档序无前置 float → gate 启用（BFC grows to fit child floats）。
+    assert!(
+        !ctx.float_precedes(id("fr2")),
+        "fr2: 仅子内 float、无前置 float 应判 false（BFC 包含子 float 语义）"
+    );
+}
