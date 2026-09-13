@@ -136,8 +136,9 @@
 - 2026-08-05 [回调闭包 Send+Sync 约束：不能缓存 Document](patterns/2026-08/2026-08-05-callback-closure-send-sync-no-document.md) — zero-engine（js_dom_bridge.rs）, zero-script-sandbox（register_callback）, zero-dom（Document）
 - 2026-07-20 [经验：reftest 布局诊断必须用 empirical ZW-output 验证，不能只靠 code-trace](patterns/2026-07/2026-07-20-reftest-layout-diagnosis-empirical-verification.md) — tests/wpt-runner（reftest harness）, crates/layout-engine（multicol 等）
 
-## Performance — 性能优化经验（39）
+## Performance — 性能优化经验（40）
 
+- 2026-09-14 [CPU 频率窗效应——bench-gate 微基准跨窗漂移可达 2-3×（compositing_layer_analysis 误判归因）](performance/2026-09/2026-09-14-cpu-freq-window-bench-drift.md) — zero-engine,perf-gate
 - 2026-09-13 [绑核后退出成功，不代表相对性能预算已通过](performance/2026-09/2026-09-13-affinity-available-parallelism-budget-gate.md) — wpt-runner,benchmark
 - 2026-09-10 [布局 pass 探针归因两坑：分段标记间隙误归因 + kill-switch env::var 提升反变慢](performance/2026-09/2026-09-10-layout-pass-profile-env-hoist-net-negative.md) — layout-engine
 - 2026-09-03 [bench-gate 失败指标集轮换 + 隔离复测回基线 = 负载噪声签名（非代码回归的快速判据）](performance/2026-09/2026-09-03-bench-gate-rotating-fail-noise-signature.md) — engine,dom,canvas,css-parser,render-foundation,host-runtime,browser-shell
