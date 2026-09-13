@@ -2,7 +2,7 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-13（S24：静默轮——两流零新提交，同树门复跑 PASS 28 绿零漂移；DC-2 口径卡点已飞书通报用户，无新信息不重复通报）
+**最后更新**: 2026-09-13（S25：DC-1 覆盖审计 + 缺口补测——差集实证 4 个实现态命令无 e2e 触达，新增 4 步全绿 + raw-CDP 建会话面 2 命令（attachToBrowserTarget/attachToTarget），绿步 28→32；UA override 语义边界记账）
 
 ---
 
@@ -25,7 +25,7 @@
 | P1 | Playwright 命令矩阵账本（pin 版空跑导出命令全集 + 三态登记） | ✅ 初稿落地（evidence/cdp-command-matrix.md；随域更新三态） |
 | P2 | headless.rs 职责拆分（2256 行超 2000 上限；transport/discovery/domains/session） | ✅ M1 切片 1（headless/ 9 模块，纯搬移零语义变化，make test 19,170P/0F 与基线一致） |
 | P3 | Target/Runtime/Page/Input/DOM/CSS/Network/Emulation 域实现 | 🚧 S16 后余 frames 面：locator/evaluate/editing/viewport/媒体全通；唯余 iframe 子帧事件源（frames.access/click+evaluate 2 步，挂 engine 子帧可见性——渲染流域协调） |
-| P4 | Node/Playwright 测试链（pin + E2E 用例集 + make 入口） | ✅ S8：`make cdp-e2e`（test-guard 包裹，deterministic 双跑 + expected-green 回归门）；用例集=30 步全核心流 |
+| P4 | Node/Playwright 测试链（pin + E2E 用例集 + make 入口） | ✅ S8：`make cdp-e2e`（test-guard 包裹，deterministic 双跑 + expected-green 回归门）；用例集=34 步全核心流 + DC-1 缺口补测（S25） |
 | P5 | console 对象化（V8 侧结构化序列化，替换扁平字符串） | ✅ S11 value-only 面落地（consoleAPICalled 绿——shim 逐参值序列化 + `__zw_console_log` 三参 + headless 转事件，PW 消费面 msg.type()/text() 全通）；完整对象句柄化（remoteObject preview/objectId）挂账随 devtools 面需求 |
 | P6 | net 请求事件总线（Network 域 + devtools Network 面板共用脊柱） | 🔶 雏形已建（S7 proxy_fetch 三事件 + S14 renderer FetchObserved + S17 dataReceived 双路径）；分块流式观测点待 net 窗口流式化——**net 近 14 天无外部流占用，窗口已开**（2026-09-12 实测） |
 | P7 | WS 层 sessionId 多路复用（单连接扁平会话 → per-target session，响应回显 sessionId） | ✅ S4 收口：解析/回显/未附接校验（-32001）+ 附接注册表 + Target 域 per-target 会话（ServerEvent sessionId 盖章路由，Target 宣告事件除外）——实测复核 35 方法零漂移佐证 |
@@ -33,6 +33,32 @@
 
 ## 已完成切片
 
+- **S25（2026-09-13）DC-1 覆盖审计 + 缺口补测 — 绿步 28→32（代码+测试资产切片）**：
+  **审计（Mission 验收标尺「已实现的全部验证过」逐条核对）**：以 S17 ZeroWeb 捕获
+  方法集 × 矩阵实现态清单做差集——PW 高层流只触达 35 方法，「已实现但高层流不调用」
+  4 项无任何 e2e 触达：`Target.getTargets`/`Target.detachFromTarget`/
+  `Runtime.releaseObjectGroup`/`Emulation.setUserAgentOverride`（S8 时点 DC-1 ✅ 判定
+  基于绿步 6，此后命令面大扩未复审）。
+  **raw-CDP 建会话面补齐（探针实证 PW 客户端真实依赖）**：`context.newCDPSession(page)`/
+  `browser.newBrowserCDPSession()` 先后发送 `Target.attachToBrowserTarget`（建会话）+
+  `Target.attachToTarget`（绑页面 target）——两命令此前 -32601，raw-CDP-via-PW 面
+  完全不可用。实现：attachToBrowserTarget 分配 sessionId 登记活跃 target（flat 模型
+  浏览器级/页面级同面）；attachToTarget 校验 targetId（-32602/-32000）→ 登记 →
+  `{sessionId}` 无事件；detachFromTarget 命令发起的事件盖发起会话 sessionId（发起方
+  flat 路由可达，closeTarget 广播保持无盖章）。2 个新单测。
+  **4 个新 e2e 步全绿**（`target.getTargets`/`target.attachDetach`/
+  `runtime.releaseObjectGroup`/`emulation.userAgentOverride`）：绿步 28→**32**，
+  deterministic 双跑一致，expected-green 扩至 32（全量 34 步，frames×2 挂起不变）。
+  **UA override 语义边界记账（探针三路对照实证）**：注入面 = proxy 子资源路径
+  （img 随文档加载携带 override UA）；renderer 直连 fetch（ResourceLoader 观测路径）
+  不经 override——Chromium 全请求语义差距，随 renderer fetch 管线统一时收口（账本
+  「语义边界记账」注记）。
+  **工具坑（learning）**：桥 miss 语义经 `exceptionDetails`（200 形响应）传回而非协议
+  错误——PW `session.send()` 不 throw，断言须查 exceptionDetails。
+  **验证**：cdp-e2e 门 PASS 32 绿（deterministic 双跑一致）；make test 全量
+  **19,257P/0F EXIT=0**（基线 19,254 + R4298 +1 + 本轮 +2 新单测，精确吻合；首轮遇
+  webview SW activation 1 flake——隔离复跑 0.06s PASS、webview 全包 712P/0F，归因
+  渲染流 reftest 重负载并发，复跑干净）；fmt clean + clippy -D warnings 全过。
 - **S24（2026-09-13）静默轮 — 卡点通报 + 同树门复跑（无代码变更，绿步维持 28）**：
   两流零新提交（main = S23 docs 提交），代码树与在档 PASS 时点逐字节一致；cdp-e2e 门
   复跑 **PASS**（28 绿、deterministic 一致，零漂移）。**按 run-rules #7 飞书通报 DC-2
@@ -292,11 +318,11 @@
 
 ## 下一步计划
 
-1. **M5 收口评估（绿步 28/30，余 2 步全挂同一协调点）**：`frames.access`/
+1. **M5 收口评估（绿步 32/34，余 2 步全挂同一协调点）**：`frames.access`/
    `frames.click+evaluate` 依赖 engine 子帧可见性（iframe 子帧 DOM/事件面）——渲染流域
-   真协调。DC-2 口径决策：等子帧能力解冻后 30/30 收口，or 以「挂账 + 口径剔除」先定稿
-   （见待用户决策）。**实测复核已过**（S17：35 被调方法零漂移，见矩阵账本 ZeroWeb 侧
-   实测捕获节）——DC-2 口径一决即可定稿。
+   真协调。DC-2 口径决策：等子帧能力解冻后 34/34 收口，or 以「挂账 + 口径剔除」先定稿
+   （见待用户决策）。**实测复核已过**（S17：35 被调方法零漂移；S25：DC-1 覆盖审计
+   缺口 4 项已补齐，实现态命令 e2e 全覆盖）——DC-2 口径一决即可定稿。
 2. **M5 定稿（口径确定后）**：expected-green 基线定稿 → cdp-e2e 即 DC-2 门；挂账清单
    （不实现域）终稿；CI 集成可行性随收口评估（S8 记账：node 20.19 + lockfile 离线可复现）。
    **定稿预案（S18 预备，双分支机械执行）**：
@@ -340,7 +366,7 @@
 | M2 — Page/Input 域 → 点击/填充/键盘/导航流 | ✅ S16 收口：goto/title/fill/click 全族/dialog/键盘 type+press（Ctrl+A 全选）/导航事件族全绿 |
 | M3 — DOM/CSS/Emulation → locator 流 | 🚧 S16：locator.boundingBox/viewport/媒体/截图 clip+element+fullPage 绿；iframe 面维持挂起（frames×2） |
 | M4 — Network/cookies/console 对象化（cookie 落点=Storage 域） | ✅ S17 收口：cookie 域 + UA override + Network 事件族（含 dataReceived，S17）+ consoleAPICalled（value-only）绿；分块流式观测记账 |
-| M5 — 矩阵收口 | 🚧 绿步 28/30（expected-green 基线同步扩至 28）；余 2 步全挂 engine 子帧可见性（DC-2 口径待决策） |
+| M5 — 矩阵收口 | 🚧 绿步 32/34（expected-green 基线同步扩至 32，S25）；余 2 步全挂 engine 子帧可见性（DC-2 口径待决策） |
 
 ## 验证基线
 
@@ -351,8 +377,8 @@
   cargo test，经 test-guard。注：make test 的 workspace 腿 exclude zero-renderer——
   renderer lib 单测不在全量门内，跨流红灯（form fixture×2）经显式
   `-p zero-renderer --lib` 跟踪）
-- **CDP E2E 基线（S16，2026-09-13；S23 复核 @ R4298-F 组合态）**：绿步 28/30，
-  deterministic 双跑一致，expected-green 基线 28 步（余
+- **CDP E2E 基线（S25，2026-09-13）**：绿步 32/34，deterministic 双跑一致，
+  expected-green 基线 32 步（S25：+4 DC-1 缺口补测步；余
   frames.access/frames.click+evaluate 挂 engine 子帧可见性）
 - CDP 现状：`Page.navigate` / `Runtime.evaluate` / `Target.getTargets` 3 命令 +
   `/json/version` + `/json` 发现（headless.rs L782-796/L571/L1159）——历史基线，现行面

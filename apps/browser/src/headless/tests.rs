@@ -427,6 +427,75 @@ fn test_cdp_runtime_release_object_group_validates_group() {
 }
 
 #[test]
+fn test_cdp_target_attach_to_browser_target_registers_session() {
+    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let mut session = HeadlessSession::new(800.0, 600.0);
+
+    // 浏览器级调用（无 sessionId）→ 返回新 sessionId
+    let (response, _) = server.handle_message_with_events(
+        &mut session,
+        r#"{"id":1,"method":"Target.attachToBrowserTarget","params":{}}"#,
+    );
+    let result = response.result.expect("attachToBrowserTarget must succeed");
+    let sid = result["sessionId"].as_str().expect("sessionId in result");
+    assert!(sid.starts_with("zeroweb-session-"), "opaque sid: {sid}");
+    // 登记后：携带该 sessionId 的命令不再被 -32001 拒绝（未附接校验）
+    let raw = format!(r#"{{"id":2,"method":"Target.getTargets","params":{{}},"sessionId":"{sid}"}}"#);
+    let (response, _) = server.handle_message_with_events(&mut session, &raw);
+    assert!(response.error.is_none(), "registered sid must pass: {response:?}");
+}
+
+#[test]
+fn test_cdp_target_attach_to_target_and_detach_event_stamped() {
+    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let mut session = HeadlessSession::new(800.0, 600.0);
+    let tab_id = session.shell.active_tab_id().expect("default tab");
+    let target_id = format!("zeroweb-tab-{}", tab_id.0);
+
+    // 未知/缺参 targetId 校验
+    let (result, _) = server.dispatch_with_events(&mut session, "Target.attachToTarget", Value::Null);
+    assert_eq!(result.expect_err("missing targetId").code, -32602);
+    let (result, _) = server.dispatch_with_events(
+        &mut session,
+        "Target.attachToTarget",
+        serde_json::json!({ "targetId": "zeroweb-tab-999", "flatten": true }),
+    );
+    assert_eq!(result.expect_err("unknown target").code, -32000);
+
+    // 附接 → detachFromTarget → 事件盖发起会话（发起方按 sessionId 收到应答事件）
+    let raw = format!(
+        r#"{{"id":1,"method":"Target.attachToTarget","params":{{"targetId":"{target_id}","flatten":true}},"sessionId":"caller-1"}}"#
+    );
+    // caller-1 未登记 → 先经 attachToBrowserTarget 建会话再调用
+    let (resp, _) = server.handle_message_with_events(
+        &mut session,
+        r#"{"id":0,"method":"Target.attachToBrowserTarget","params":{}}"#,
+    );
+    let caller_sid = resp.result.unwrap()["sessionId"].as_str().unwrap().to_string();
+    let raw = format!(
+        r#"{{"id":1,"method":"Target.attachToTarget","params":{{"targetId":"{target_id}","flatten":true}},"sessionId":"{caller_sid}"}}"#
+    );
+    let (resp, _) = server.handle_message_with_events(&mut session, &raw);
+    let attached_sid = resp.result.unwrap()["sessionId"].as_str().unwrap().to_string();
+
+    let raw = format!(
+        r#"{{"id":2,"method":"Target.detachFromTarget","params":{{"sessionId":"{attached_sid}"}},"sessionId":"{caller_sid}"}}"#
+    );
+    let (resp, events) = server.handle_message_with_events(&mut session, &raw);
+    assert!(resp.error.is_none(), "detach must succeed: {resp:?}");
+    let ev = events
+        .iter()
+        .find(|e| e.method == "Target.detachedFromTarget")
+        .expect("detach event emitted");
+    assert_eq!(
+        ev.session_id.as_deref(),
+        Some(caller_sid.as_str()),
+        "stamped to initiator"
+    );
+    assert_eq!(ev.params["sessionId"], attached_sid.as_str());
+}
+
+#[test]
 fn test_cdp_object_id_wire_format_roundtrip() {
     use super::domains::{object_id_string, parse_object_id};
     for handle in [1u64, 42, u64::MAX] {

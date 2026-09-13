@@ -72,9 +72,10 @@ DC-3 基线）。「现状」列 v0.4 起以 S17 时点 `apps/browser/src/headle
 | `Target.getTargetInfo` | 1 | — | ✅（S4：浏览器级 + 按 targetId） | 完成（M1 S4） |
 | `Target.createTarget` | 2 | url | ✅（S4：autoAttach 时自动附接发事件） | 完成（M1 S4） |
 | `Target.closeTarget` | 1 | targetId | ✅（S4：targetDestroyed + 会话摘除） | 完成（M1 S4） |
-| `Target.detachFromTarget` | 3 | sessionId | ✅（S4） | 完成（M1 S4） |
-| `Target.getTargets` | **0（未调用）** | — | ✅ CDP 形状修正（S4，`targetInfos`） | 完成（M1 S4） |
-| `Target.attachToTarget` | 0（flatten 路径不需要） | — | ❌ | 不实现（账本注明） |
+| `Target.detachFromTarget` | 3 | sessionId | ✅（S4；S25：命令发起的 detachedFromTarget 事件盖发起会话 sessionId——发起方按 flat 路由收到应答；closeTarget 广播路径保持无盖章不变）。e2e：`target.attachDetach`（attachToTarget → detach → 事件配对） | 完成（M1 S4 + S25） |
+| `Target.getTargets` | **0（未调用）** | — | ✅ CDP 形状修正（S4，`targetInfos`）。e2e：`target.getTargets`（S25——PW 高层流不调用，经 CDPSession 直发验证） | 完成（M1 S4 + S25 e2e） |
+| `Target.attachToTarget` | 0（**前提修正 S25**：高层流不需要，但 PW `context.newCDPSession(page)` 建会话后经此绑定页面 target——raw-CDP 面真实入口） | targetId/flatten | ✅（S25：校验 targetId（缺参 -32602/未知 -32000）→ 登记 → `{sessionId}`，无事件（PW 按响应配对））。e2e：`target.attachDetach` | 完成（S25） |
+| `Target.attachToBrowserTarget` | 0（矩阵外；PW `newBrowserCDPSession`/`newCDPSession` 的建会话入口，S25 探针实测） | — | ✅（S25：分配 sessionId 登记到活跃 target，flat 模型浏览器级/页面级命令同面）。e2e：全部 4 个新步的前置建会话路径 | 完成（S25） |
 
 ### Runtime 域
 
@@ -84,7 +85,7 @@ DC-3 基线）。「现状」列 v0.4 起以 S17 时点 `apps/browser/src/headle
 | `Runtime.evaluate` | 8 | contextId/expression | ✅（S9：returnByValue 双分支统一走 objectId 桥——表达式语义修复（W3C ExecuteScript 函数体语义 ≠ CDP evaluate 表达式形态）；对象结果保留句柄返回 `objectId`） | 完成（M4 S9） |
 | `Runtime.callFunctionOn` | **156** | arguments/awaitPromise/functionDeclaration/objectId/returnByValue/userGesture | ✅（S9：objectId 路径——句柄为 `this` 调用 + `arguments[].objectId` 实参顶层还原 + `awaitPromise` 落定轮询（microtask drain + timer 泵）；falsy 实参标记误判已修） | 完成（M4 S9） |
 | `Runtime.releaseObject` | 51 | objectId | ✅（S9：renderer 注册表释放，objectId 桥配对） | 完成（M4 S9） |
-| `Runtime.releaseObjectGroup` | 0（矩阵外） | objectGroup | ✅（S9：整组释放；goal 扩展面） | 完成（M4 S9） |
+| `Runtime.releaseObjectGroup` | 0（矩阵外） | objectGroup | ✅（S9：整组释放；goal 扩展面）。e2e：`runtime.releaseObjectGroup`（S25——释放后 callFunctionOn 返回 exceptionDetails 即句柄失效语义） | 完成（M4 S9 + S25 e2e） |
 | `Runtime.getProperties` | 0（未调用） | objectId/ownProperties | ❌ | 不实现（矩阵不需要；devtools 前置等点名） |
 | `Runtime.runIfWaitingForDebugger` | 8 | — | ✅ stub 接受（S4） | 完成（M1 S4） |
 
@@ -129,7 +130,7 @@ DC-3 基线）。「现状」列 v0.4 起以 S17 时点 `apps/browser/src/headle
 | `Emulation.setDeviceMetricsOverride` | 2 | deviceScaleFactor/height/mobile/screenHeight/screenOrientation/screenWidth/width | ✅（S6：→renderer SetViewport + 服务器视口状态联动 getLayoutMetrics/captureScreenshot + frameResized 事件；宽高 0=恢复默认） | 完成（M3 S6） |
 | `Emulation.setEmulatedMedia` | 4 | features/media | ✅（S6→S11：prefers-color-scheme→SetColorScheme、media type→SetMediaType；S11 补 matchMedia 求值接线——宿主媒体上下文 cell 注入 `__zw_match_media`，PW 读回真值——emulation.media 绿；reduced-motion 等无 IPC 面暂忽略） | 完成（M3 S6 + M4 S11；余 feature 随引擎能力） |
 | `Emulation.setFocusEmulationEnabled` | 3 | enabled | ✅ stub 接受（S4） | 完成（M1 S4） |
-| `Emulation.setUserAgentOverride` | 2 | userAgent | ✅（S7：proxy_fetch 注入 User-Agent；accept-language 等附带头暂忽略） | 完成（M4 S7） |
+| `Emulation.setUserAgentOverride` | 2 | userAgent | ✅（S7：proxy_fetch 注入 User-Agent；accept-language 等附带头暂忽略）。e2e：`emulation.userAgentOverride`（S25——img 子资源经 proxy_fetch 携带 override UA，服务端回读断言）。**语义边界记账（S25 实证）**：注入面 = proxy 子资源路径；renderer 直连 fetch（ResourceLoader 观测路径）不经 override——Chromium 全请求语义的差距，随 renderer fetch 管线统一时收口 | 完成（M4 S7 + S25 e2e；边界记账） |
 
 ### Network 域
 
@@ -156,7 +157,7 @@ DC-3 基线）。「现状」列 v0.4 起以 S17 时点 `apps/browser/src/headle
 | 事件 | 次数 | ZeroWeb 现状 | 计划 |
 |------|------|--------------|------|
 | `Target.attachedToTarget` | 8 | ✅（S4） | 完成（M1 S4） |
-| `Target.detachedFromTarget` / `Target.targetDestroyed` | 4 / — | ✅（S4：closeTarget/detachFromTarget 应答） | 完成（M1 S4） |
+| `Target.detachedFromTarget` / `Target.targetDestroyed` | 4 / — | ✅（S4：closeTarget/detachFromTarget 应答；S25：detachFromTarget 命令路径的事件盖发起会话 sessionId，closeTarget 广播保持无盖章）。e2e：`target.attachDetach`（S25） | 完成（M1 S4 + S25） |
 | `Runtime.executionContextCreated` | 14 | ✅（S4：auxData.frameId/isDefault 硬契约） | 完成（M1 S4） |
 | `Runtime.executionContextsCleared` | 4 | ✅（S5，导航 commit 时） | 完成（M2 S5） |
 | `Runtime.executionContextDestroyed` | 2 | ❌ 不单发——导航换代经 `sandbox.reset_context` 整体失效（= CDP context destroyed 语义），由 `executionContextsCleared` 覆盖（S9 实测 PW 消费面绿） | 记账：不实现-ok |
@@ -208,12 +209,35 @@ headless 重跑全核心流——真实 Playwright 客户端发送面实测（fr
 - `DOM.getFrameOwner` — frames×2 挂起（引擎子帧可见性）的下游，PW 未走到
 - `Page.handleJavaScriptDialog` — 无 `javascriptDialogOpening` 事件源 → PW 无从应答（S10 澄清）
 - `Page.setFontFamilies` — ❌ -32601，PW 容忍（S4 实测）
-- `Target.detachFromTarget` — ZW 面关闭路径差异，PW 未调用（drift 记账，不影响消费面）
+- `Target.detachFromTarget` — ZW 面关闭路径差异，PW 未调用（drift 记账，不影响消费面；
+  **S25 已以 `target.attachDetach` 步直发验证**）
 - `Emulation.setUserAgentOverride` — PW 未对 ZW 调用（Chromium 会话 init 发 2 次）；
-  ZW 的 `Browser.getVersion` UA 直读路径使 override 非必需（drift 记账）
+  ZW 的 `Browser.getVersion` UA 直读路径使 override 非必需（drift 记账；
+  **S25 已以 `emulation.userAgentOverride` 步直发验证**）
 
 **结论**：35 个被调方法全部为账本「实现」态方法，**真实客户端命令面与账本登记零漂移**；
 M5 矩阵收口的实测复核通过。
+
+## ZeroWeb 侧 DC-1 覆盖审计（S25，2026-09-13）
+
+**审计口径**：DC-1 要求「实现」态每命令 ≥1 个 E2E 用例。S17 捕获（35 方法）只证明
+「被 PW 高层流调用的命令已验证」——不覆盖「已实现但 PW 高层流不调用」的命令。以
+S17 捕获方法集 × 矩阵实现态清单做差集，**缺口 4 项**：`Target.getTargets`、
+`Target.detachFromTarget`、`Runtime.releaseObjectGroup`、`Emulation.setUserAgentOverride`。
+
+**S25 收口**：
+- 新增 4 个 e2e 步（`target.getTargets` / `target.attachDetach` /
+  `runtime.releaseObjectGroup` / `emulation.userAgentOverride`），绿步 28 → **32**，
+  expected-green 基线同步扩至 32（全量 34 步，余 frames×2 挂起不变）。
+- 补齐 raw-CDP 会话面 2 命令（探针实证 PW 客户端真实依赖）：`Target.attachToBrowserTarget`
+  （`newBrowserCDPSession`/`newCDPSession` 建会话入口）、`Target.attachToTarget`
+  （newCDPSession(page) 绑定页面 target）——账本由「矩阵外/❌」转 ✅。
+- `target.attachDetach` 同时覆盖 attachToTarget/detachFromTarget/detachedFromTarget
+  事件三面（事件盖发起会话后 PW 可收、可断言 sessionId 配对）。
+
+**工具坑（learning）**：PW `session.send()` 对桥 miss 语义不 throw——headless 把
+automation 错误译为 `exceptionDetails`（200 形响应），断言须查 `exceptionDetails` 而非
+异常捕获（`runtime.releaseObjectGroup` 步实证）。
 
 ---
 

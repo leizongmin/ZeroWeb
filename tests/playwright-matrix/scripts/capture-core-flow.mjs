@@ -107,17 +107,30 @@ const FRAME_PAGE = `<!DOCTYPE html>
   </script>
 </body></html>`
 
+// UA override 验证页（emulation.userAgentOverride）：img 子资源经 proxy_fetch 发出
+const UA_PAGE = `<!DOCTYPE html>
+<html><head><title>matrix-ua</title></head>
+<body><img id="ua-img" src="/api/echo-ua?via=img"></body></html>`
+
 function startContentServer() {
   return new Promise((resolve) => {
+    // UA 记录：img 子资源请求到达时的 User-Agent（emulation.userAgentOverride 断言源）
+    const uaByVia = {}
     const server = createHttpServer((req, res) => {
-      const p = new URL(req.url, 'http://x').pathname
+      const u = new URL(req.url, 'http://x')
+      const p = u.pathname
       const reply = (code, body, type = 'text/html; charset=utf-8') => {
         res.writeHead(code, { 'content-type': type })
         res.end(body)
       }
       if (p === '/') reply(200, MAIN_PAGE)
       else if (p === '/frame.html') reply(200, FRAME_PAGE)
+      else if (p === '/ua.html') reply(200, UA_PAGE)
       else if (p === '/api/data') reply(200, JSON.stringify({ ok: true, n: 1 }), 'application/json')
+      else if (p === '/api/echo-ua') {
+        uaByVia[u.searchParams.get('via') || 'direct'] = req.headers['user-agent'] || ''
+        reply(200, JSON.stringify({ ua: req.headers['user-agent'] || '' }), 'application/json')
+      } else if (p === '/api/ua-map') reply(200, JSON.stringify(uaByVia), 'application/json')
       else if (p === '/img.png') reply(200, '', 'image/png')
       else if (p === '/redirect') { res.writeHead(302, { location: '/api/data' }); res.end() }
       else reply(404, 'not found', 'text/plain')
@@ -350,6 +363,67 @@ async function runCoreFlow(browser, baseUrl) {
     const t = await p2.title()
     if (t !== 'matrix-frame') throw new Error(`unexpected title: ${t}`)
     await p2.close()
+  })
+
+  // ── DC-1 缺口补测（S25）：此前 30 步流未触达的 4 个实现态命令 ──
+
+  await step('target.getTargets', async () => {
+    const sess = await context.newCDPSession(page)
+    const { targetInfos } = await sess.send('Target.getTargets')
+    if (!Array.isArray(targetInfos) || !targetInfos.some((t) => t.type === 'page')) {
+      throw new Error(`unexpected targetInfos: ${JSON.stringify(targetInfos)?.slice(0, 200)}`)
+    }
+  })
+
+  await step('target.attachDetach', async () => {
+    const browserSess = await browser.newBrowserCDPSession()
+    const p2 = await context.newPage()
+    await p2.goto(`${baseUrl}/frame.html`)
+    const { targetInfos } = await browserSess.send('Target.getTargets')
+    const info = targetInfos.find((t) => (t.url || '').includes('/frame.html'))
+    if (!info) throw new Error(`frame page target not found: ${JSON.stringify(targetInfos).slice(0, 200)}`)
+    const { sessionId } = await browserSess.send('Target.attachToTarget', { targetId: info.targetId, flatten: true })
+    if (!sessionId) throw new Error('attachToTarget returned no sessionId')
+    const detached = new Promise((resolve, reject) => {
+      const t = setTimeout(() => reject(new Error('no detachedFromTarget within 5s')), 5000)
+      browserSess.once('Target.detachedFromTarget', (e) => { clearTimeout(t); resolve(e) })
+    })
+    await browserSess.send('Target.detachFromTarget', { sessionId })
+    const ev = await detached
+    if (ev.sessionId !== sessionId) throw new Error(`detach event sessionId mismatch: ${JSON.stringify(ev)}`)
+    await browserSess.send('Target.closeTarget', { targetId: info.targetId })
+  })
+
+  await step('runtime.releaseObjectGroup', async () => {
+    const sess = await context.newCDPSession(page)
+    const ev = await sess.send('Runtime.evaluate', { expression: '({ g: 1 })', objectGroup: 'zw-e2e-group' })
+    const objectId = ev?.result?.objectId
+    if (!objectId) throw new Error(`no objectId: ${JSON.stringify(ev).slice(0, 200)}`)
+    await sess.send('Runtime.releaseObjectGroup', { objectGroup: 'zw-e2e-group' })
+    // 释放后句柄不可用：调用返回 exceptionDetails（桥 miss 语义）或协议错误均算失效
+    let invalidated = false
+    try {
+      const r = await sess.send('Runtime.callFunctionOn', { objectId, functionDeclaration: 'function() { return 1 }' })
+      invalidated = !!r?.exceptionDetails
+    } catch {
+      invalidated = true
+    }
+    if (!invalidated) throw new Error('object handle still usable after releaseObjectGroup')
+  })
+
+  await step('emulation.userAgentOverride', async () => {
+    const sess = await context.newCDPSession(page)
+    await sess.send('Emulation.setUserAgentOverride', { userAgent: 'zw-e2e-ua/1' })
+    // UA 注入面 = proxy 子资源路径（S7 语义）：img 随文档加载发出
+    await page.goto(`${baseUrl}/ua.html`, { waitUntil: 'load' })
+    await page.waitForTimeout(300)
+    const uaMap = await page.evaluate(async () => {
+      const r = await fetch('/api/ua-map')
+      return r.json()
+    })
+    if (uaMap.img !== 'zw-e2e-ua/1') {
+      throw new Error(`UA override not applied to subresource: ${JSON.stringify(uaMap)}`)
+    }
   })
 
   // 观测数据收编进步骤报告（不作为判定项）

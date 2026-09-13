@@ -398,10 +398,20 @@ impl HeadlessServer {
                 (result, events)
             }
             "Target.detachFromTarget" => {
-                let result = self.cmd_target_detach_from_target(&params, &mut events);
+                let result = self.cmd_target_detach_from_target(&params, cdp_session, &mut events);
                 (result, events)
             }
             "Target.getTargets" => (self.cmd_target_get_targets(session), events),
+            // Target.attachToBrowserTarget：PW `newBrowserCDPSession`/`newCDPSession`
+            // 的建会话入口（2026-09-13 探针实测）。flat 模型：分配 sessionId 登记到
+            // 活跃 target，后续命令照常按方法路由（单页面模型，浏览器级/页面级同面）
+            "Target.attachToBrowserTarget" => (self.cmd_target_attach_to_browser_target(session), events),
+            // Target.attachToTarget：PW newCDPSession(page) 建会话后绑定页面 target
+            //（同经探针实测）；响应携带 sessionId，无事件（PW 按响应配对）
+            "Target.attachToTarget" => {
+                let result = self.cmd_target_attach_to_target(session, params);
+                (result, events)
+            }
             // PW evaluate 管线需要隔离 world（utility script 宿主）：返回新
             // executionContextId 并补发 executionContextCreated（worldName 对齐）
             "Page.createIsolatedWorld" => {
@@ -1808,9 +1818,12 @@ impl HeadlessServer {
     }
 
     /// Target.detachFromTarget — 客户端主动解除附接，发 `Target.detachedFromTarget`。
+    /// 事件盖发起会话的 sessionId（命令发起的应答送达发起方——flat 路由按 sessionId
+    /// 投递；closeTarget 广播路径保持无盖章，见 cmd_target_close_target）。
     fn cmd_target_detach_from_target(
         &self,
         params: &Value,
+        cdp_session: Option<&str>,
         events: &mut Vec<ServerEvent>,
     ) -> Result<Value, ProtocolError> {
         let sid = params
@@ -1828,10 +1841,54 @@ impl HeadlessServer {
                     "sessionId": sid,
                     "targetId": target_id.unwrap_or_default(),
                 }),
-                session_id: None,
+                session_id: cdp_session.map(str::to_string),
             });
         }
         Ok(serde_json::json!({}))
+    }
+
+    /// Target.attachToBrowserTarget — PW 附加 CDP 会话入口（`browser.newBrowserCDPSession`
+    /// / `context.newCDPSession(page)` 均经此建会话）。flat 模型：分配 sessionId 并登记
+    /// 到活跃 target（attached_sessions 注册表——未登记 sessionId 会被 `-32001` 拒绝），
+    /// 返回 `{sessionId}`；Chromium 形状一致。
+    fn cmd_target_attach_to_browser_target(&self, session: &mut HeadlessSession) -> Result<Value, ProtocolError> {
+        let sid = self.next_cdp_session();
+        let target_id = session
+            .shell
+            .active_tab_id()
+            .map(|id| format!("zeroweb-tab-{}", id.0))
+            .unwrap_or_default();
+        self.attach_session(&sid, &target_id);
+        Ok(serde_json::json!({ "sessionId": sid }))
+    }
+
+    /// Target.attachToTarget — 附接会话到指定 target，返回 `{sessionId}`（无事件——
+    /// PW createSession 按响应配对）。target 缺参 `-32602`、未知 `-32000`。
+    fn cmd_target_attach_to_target(
+        &self,
+        session: &mut HeadlessSession,
+        params: Value,
+    ) -> Result<Value, ProtocolError> {
+        let target_id = params
+            .get("targetId")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| ProtocolError {
+                code: -32602,
+                message: "Missing 'targetId' parameter".into(),
+            })?;
+        let tab_id = Self::parse_target_id(target_id).ok_or_else(|| ProtocolError {
+            code: -32000,
+            message: format!("Unknown targetId '{target_id}'"),
+        })?;
+        if session.shell.tab(tab_id).is_none() {
+            return Err(ProtocolError {
+                code: -32000,
+                message: format!("Unknown targetId '{target_id}'"),
+            });
+        }
+        let sid = self.next_cdp_session();
+        self.attach_session(&sid, target_id);
+        Ok(serde_json::json!({ "sessionId": sid }))
     }
 
     /// Target.getTargetInfo — 无 targetId = 浏览器级 target；带 targetId = 查标签页。
