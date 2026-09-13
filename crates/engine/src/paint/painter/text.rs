@@ -731,6 +731,13 @@ impl super::Painter {
             if !has_direct_paintable_text(doc, node_id, styles) && box_node.run_in_prepended.is_none() {
                 return;
             }
+            // R4328：已并入后继块的 run-in 自盒抑制 DOM 文本绘制——其内容由后继块
+            // IFC 前置渲染；自盒 Path B 仍按 DOM 子文本绘出会在块外重影
+            //（run-in-breaking-001「Run-in header」块外重影实证：target PathB 79
+            // runs 含前置内容，自盒 78 runs 同文本再绘）。
+            if box_node.is_run_in_merged {
+                return;
+            }
             // R109：匿名块片段跳过 painted_inline_nodes 去重——多个片段共享 inline 的
             // node_id，首个片段渲染后会标记该 id，须放行后续片段各自渲染其片段文本。
             // R1548/R1549：vertical 容器内全 inset auto 的 abspos/fixed 盒由
@@ -1110,6 +1117,18 @@ impl super::Painter {
                     ctx.set_run_in_prepended(run_in_id);
                 }
                 ctx.layout(doc, node_id, &HashMap::new());
+                if std::env::var("ZW_PROBE_4328").is_ok() {
+                    let n: usize = ctx.lines.iter().map(|l| l.runs.len()).sum();
+                    let first = ctx
+                        .lines
+                        .first()
+                        .and_then(|l| l.runs.first())
+                        .map(|r| (r.x, r.text.chars().take(20).collect::<String>()));
+                    eprintln!(
+                        "[p4328] PathB node={:?} rip={:?} runs={n} first={first:?}",
+                        box_node.node_id, box_node.run_in_prepended
+                    );
+                }
                 ctx
             };
 

@@ -2337,6 +2337,8 @@ impl LayoutEngine {
             r109_last_fragment,
             // R3991：并入本容器首行的 run-in 元素（后继块视角，build_subtree 注册）。
             run_in_prepended: dom_id.and_then(|id| r109.run_in_prepended.get(&id).copied()),
+            // R4328：run-in 视角——本元素是某后继块的 run_in_prepended 源（已并入）。
+            is_run_in_merged: dom_id.is_some_and(|id| r109.run_in_prepended.values().any(|&v| v == id)),
             table_col_backgrounds: Vec::new(),
             valign_offset: 0.0,
         }

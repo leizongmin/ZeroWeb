@@ -374,6 +374,7 @@ fn r3991_run_in_prepended_collects_run_in_content_first() {
         is_block_level: true,
         // build_subtree 注册（后继块视角）：run-in 元素并入本容器首行。
         run_in_prepended: Some(run_in),
+        is_run_in_merged: false,
         ..Default::default()
     };
     let mut paint_skip = std::collections::HashSet::new();

@@ -468,6 +468,11 @@ pub struct LayoutBox {
     /// Path B 重跑 IFC 时经 `IFC::set_run_in_prepended` 前置收集 run-in 的 inline
     /// 内容。`None` = 无 run-in 并入。
     pub run_in_prepended: Option<NodeId>,
+    /// R4328：本元素是**已并入后继块**的 run-in 盒（run-in 视角）——其 inline 内容
+    /// 由后继块的 IFC 前置渲染，自盒须抑制 DOM 文本绘制（R3992 零尺寸测量只压了
+    /// 测量面；paint 侧自盒 Path B 仍按 DOM 文本绘出内容于块外——run-in-breaking-001
+    /// 「Run-in header」块外重影实证）。
+    pub is_run_in_merged: bool,
     /// 表格列背景绘制信息（CSS Tables §17.5.3 列背景）。
     ///
     /// `<col>`/`<colgroup>` 元素不生成常规流盒，其 `background-color` 须由表格
@@ -622,6 +627,7 @@ impl Default for LayoutBox {
             r109_first_fragment: false,
             r109_last_fragment: false,
             run_in_prepended: None,
+            is_run_in_merged: false,
             table_col_backgrounds: Vec::new(),
             valign_offset: 0.0,
         }
