@@ -426,6 +426,9 @@ pub enum ListStyleTypeValue {
     /// cjk-decimal（CJK ideographic digits 〇一二...九，非连续 → lookup table；CSS Counter
     /// Styles 3 §6.1 预定义 numeric system，digit 0=U+3007 / 1-9=U+4E00,U+4E8C...）。R2472。
     CjkDecimal,
+    /// ethiopic-numeric（Ethiopic numerals，位对合成 + 百位符 ፻/万位符 ፼；CSS Counter
+    /// Styles 3 §6.1 专有算法，非标准 numeric/additive system 可表达）。R4316。
+    EthiopicNumeric,
     /// R3835：CSS Counter Styles 3 §6.2 limited CJK/日韩预定义（additive-numeric 语义，
     /// 按家族符号表 + leading-one/zero-mid 规则合成；详见 text_list.rs `to_cjk_formal`）。
     JapaneseInformal,

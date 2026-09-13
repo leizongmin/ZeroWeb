@@ -276,7 +276,9 @@ pub fn parse_list_style_type(value: &str) -> Option<ListStyleTypeValue> {
         "myanmar" => Some(ListStyleTypeValue::Myanmar),
         // R2472：cjk-decimal（CJK ideographic digits，非连续 lookup）。cambodian ≡ khmer 别名。
         "cjk-decimal" => Some(ListStyleTypeValue::CjkDecimal),
+        // R4316：ethiopic-numeric（§6.1 专有算法，位对 + ፻/፼）。
         "cambodian" => Some(ListStyleTypeValue::Khmer),
+        "ethiopic-numeric" => Some(ListStyleTypeValue::EthiopicNumeric),
         // R3835：CSS Counter Styles 3 §6.2 limited CJK/日/韩预定义 + §6.1 fixed 日文假名
         //（cyclic 地支/天干、alphabetic 假名）。
         "japanese-informal" => Some(ListStyleTypeValue::JapaneseInformal),

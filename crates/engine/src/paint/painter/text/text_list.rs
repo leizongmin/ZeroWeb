@@ -591,6 +591,62 @@ fn to_georgian(value: usize) -> String {
 /// additive-symbols: ... }`。37 对（码点取自 spec，部分符号为 2 字符：千位 = 字母+geresh U+05F3，
 /// 15-19 用特殊形 טו/טז/יז/יח/יט 避免神圣名）。range 1-10999；0 或 ≥11000 走 decimal fallback。
 /// ground-truth + spec 双验证：hebrew-015/016/016a（1=א, 15=טו, 16=טז, 17=יז, 10999=י׳תתקצט）。
+/// R4316：CSS Counter Styles 3 §6.1 ethiopic-numeric 专有算法（非标准
+/// numeric/additive system 可表达）——十进制位对合成：百位组符 ፻（U+137B，
+/// 组值 1 省数字：100=፻）、千位（1000-9999）按 10-99 百位计数（1000=፲፻）、
+/// 万位组符 ፼（U+137C，组值 1 省：10000=፼）。个位 ፩..፱（U+1369+）、十位
+/// ፲..፺（U+1372+）。ground-truth：WPT counter-ethiopic-numeric（1-1065 全表）。
+fn to_ethiopic_numeric(value: i64) -> Option<String> {
+    if value <= 0 || value > 99_999_999 {
+        return None;
+    }
+    fn digit_glyph(d: u32) -> char {
+        char::from_u32(0x1369 + d - 1).unwrap_or('\u{1369}')
+    }
+    fn tens_glyph(t: u32) -> char {
+        char::from_u32(0x1372 + t - 1).unwrap_or('\u{1372}')
+    }
+    fn pair(v: u32) -> String {
+        let h = v / 100;
+        let r = v % 100;
+        let mut s = String::new();
+        if h > 0 {
+            if h / 10 > 0 {
+                s.push(tens_glyph(h / 10));
+            }
+            if !h.is_multiple_of(10) {
+                s.push(digit_glyph(h % 10));
+            }
+            s.push('\u{137B}');
+        }
+        if r / 10 > 0 {
+            s.push(tens_glyph(r / 10));
+        }
+        if !r.is_multiple_of(10) {
+            s.push(digit_glyph(r % 10));
+        }
+        s
+    }
+    fn rec(v: u64) -> String {
+        if v >= 10000 {
+            let g = v / 10000;
+            let r = v % 10000;
+            let mut s = String::new();
+            if g > 1 {
+                s.push_str(&rec(g));
+            }
+            s.push('\u{137C}');
+            if r > 0 {
+                s.push_str(&pair(r as u32));
+            }
+            s
+        } else {
+            pair(v as u32)
+        }
+    }
+    Some(rec(value as u64))
+}
+
 fn to_hebrew(value: usize) -> String {
     if value == 0 || value > 10999 {
         return value.to_string();
@@ -979,6 +1035,8 @@ pub(crate) fn format_builtin_list_style(value: i64, list_style_type: &ListStyleT
         ListStyleTypeValue::Khmer if index >= 0 => to_digit_script(index as usize, 0x17E0),
         ListStyleTypeValue::Myanmar if index >= 0 => to_digit_script(index as usize, 0x1040),
         ListStyleTypeValue::CjkDecimal if index >= 0 => to_cjk_decimal(index as usize),
+        // R4316：ethiopic-numeric（§6.1 位对专有算法，越界 → decimal fallback）。
+        ListStyleTypeValue::EthiopicNumeric => to_ethiopic_numeric(index).unwrap_or_else(|| index.to_string()),
         // R3835：§6.2 limited CJK/日/韩 + 假名 + 天干地支。越界（korean 系
         // range 1-9999、假名/循环 value ≤ 0）→ decimal fallback。
         ListStyleTypeValue::JapaneseInformal => {
@@ -1430,6 +1488,7 @@ impl super::super::Painter {
             | ListStyleTypeValue::Khmer
             | ListStyleTypeValue::Myanmar
             | ListStyleTypeValue::CjkDecimal
+            | ListStyleTypeValue::EthiopicNumeric
             | ListStyleTypeValue::JapaneseInformal
             | ListStyleTypeValue::JapaneseFormal
             | ListStyleTypeValue::SimpChineseInformal
@@ -1631,6 +1690,9 @@ impl super::super::Painter {
                 ListStyleTypeValue::Georgian if index > 0 => format!("{}.", to_georgian(index as usize)),
                 ListStyleTypeValue::Hebrew if index > 0 => format!("{}.", to_hebrew(index as usize)),
                 ListStyleTypeValue::ArabicIndic if index >= 0 => format!("{}.", to_arabic_indic(index as usize)),
+                ListStyleTypeValue::EthiopicNumeric => {
+                    format!("{}.", to_ethiopic_numeric(index).unwrap_or_else(|| index.to_string()))
+                }
                 ListStyleTypeValue::CjkDecimal if index >= 0 => format!("{}.", to_cjk_decimal(index as usize)),
                 ListStyleTypeValue::Devanagari if index >= 0 => format!("{}.", to_digit_script(index as usize, 0x0966)),
                 ListStyleTypeValue::Bengali if index >= 0 => format!("{}.", to_digit_script(index as usize, 0x09E6)),

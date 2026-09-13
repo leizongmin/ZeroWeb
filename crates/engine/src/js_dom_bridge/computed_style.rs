@@ -1918,6 +1918,7 @@ fn list_style_type_str(t: &ListStyleTypeValue) -> String {
         ListStyleTypeValue::Khmer => "khmer".into(),
         ListStyleTypeValue::Myanmar => "myanmar".into(),
         ListStyleTypeValue::CjkDecimal => "cjk-decimal".into(),
+        ListStyleTypeValue::EthiopicNumeric => "ethiopic-numeric".into(),
         // R3835：§6.2 limited CJK/日/韩预定义序列化。
         ListStyleTypeValue::JapaneseInformal => "japanese-informal".into(),
         ListStyleTypeValue::JapaneseFormal => "japanese-formal".into(),
