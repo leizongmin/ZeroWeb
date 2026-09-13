@@ -149,6 +149,17 @@ struct CjkNumSymbols {
     zero_value: &'static str,
     /// 负值前缀。
     negative: &'static str,
+    /// R4314：万亿组系组符 [万(10^4), 亿(10^8), 万亿/兆(10^12)]（CSS Counter
+    /// Styles 3 #limited-chinese/#limited-japanese/#limited-korean——WPT extended
+    /// refs：10000=一万、10^8=一亿、10^12=一万亿；日 = 万/億/兆；韩 = 만/억/조）。
+    groups: [&'static str; 3],
+    /// 组间分隔符（korean 系空格「일만 일천」；中日空串）。
+    group_sep: &'static str,
+    /// 组间零桥（中文系「一亿零一」；日韩系无零桥「一億一」）。
+    bridge_zero: bool,
+    /// R4314：组值为 1 时整组数字体省略（仅 korean-hanja-informal：10000=萬；
+    /// japanese-informal 同为 AllUnits 但保留「一万」——家族特例非 omit_one 推论）。
+    omit_group_one: bool,
 }
 
 /// 数字 1 在位符前的省略规则。
@@ -202,6 +213,10 @@ const JAPANESE_INFORMAL: CjkNumSymbols = CjkNumSymbols {
     zero_char: '零',
     zero_value: "〇",
     negative: "マイナス",
+    groups: ["万", "億", "兆"],
+    group_sep: "",
+    bridge_zero: false,
+    omit_group_one: false,
 };
 const JAPANESE_FORMAL: CjkNumSymbols = CjkNumSymbols {
     digits: JAPANESE_FORMAL_DIGITS,
@@ -211,6 +226,10 @@ const JAPANESE_FORMAL: CjkNumSymbols = CjkNumSymbols {
     zero_char: '零',
     zero_value: "零",
     negative: "マイナス",
+    groups: ["萬", "億", "兆"],
+    group_sep: "",
+    bridge_zero: false,
+    omit_group_one: false,
 };
 const SIMP_CHINESE_INFORMAL: CjkNumSymbols = CjkNumSymbols {
     digits: SIMP_CHINESE_DIGITS,
@@ -220,6 +239,10 @@ const SIMP_CHINESE_INFORMAL: CjkNumSymbols = CjkNumSymbols {
     zero_char: '零',
     zero_value: "零",
     negative: "负",
+    groups: ["万", "亿", "万亿"],
+    group_sep: "",
+    bridge_zero: true,
+    omit_group_one: false,
 };
 const SIMP_CHINESE_FORMAL: CjkNumSymbols = CjkNumSymbols {
     digits: SIMP_CHINESE_FORMAL_DIGITS,
@@ -229,6 +252,10 @@ const SIMP_CHINESE_FORMAL: CjkNumSymbols = CjkNumSymbols {
     zero_char: '零',
     zero_value: "零",
     negative: "负",
+    groups: ["万", "亿", "万亿"],
+    group_sep: "",
+    bridge_zero: true,
+    omit_group_one: false,
 };
 const TRAD_CHINESE_INFORMAL: CjkNumSymbols = CjkNumSymbols {
     digits: SIMP_CHINESE_DIGITS,
@@ -238,6 +265,10 @@ const TRAD_CHINESE_INFORMAL: CjkNumSymbols = CjkNumSymbols {
     zero_char: '零',
     zero_value: "零",
     negative: "負",
+    groups: ["万", "亿", "万亿"],
+    group_sep: "",
+    bridge_zero: true,
+    omit_group_one: false,
 };
 const TRAD_CHINESE_FORMAL: CjkNumSymbols = CjkNumSymbols {
     digits: TRAD_CHINESE_FORMAL_DIGITS,
@@ -247,6 +278,10 @@ const TRAD_CHINESE_FORMAL: CjkNumSymbols = CjkNumSymbols {
     zero_char: '零',
     zero_value: "零",
     negative: "負",
+    groups: ["万", "亿", "万亿"],
+    group_sep: "",
+    bridge_zero: true,
+    omit_group_one: false,
 };
 const KOREAN_HANGUL_FORMAL: CjkNumSymbols = CjkNumSymbols {
     digits: KOREAN_HANGUL_DIGITS,
@@ -256,6 +291,10 @@ const KOREAN_HANGUL_FORMAL: CjkNumSymbols = CjkNumSymbols {
     zero_char: '영',
     zero_value: "영",
     negative: "마이너스 ",
+    groups: ["만", "억", "조"],
+    group_sep: " ",
+    bridge_zero: false,
+    omit_group_one: false,
 };
 const KOREAN_HANJA_INFORMAL: CjkNumSymbols = CjkNumSymbols {
     digits: SIMP_CHINESE_DIGITS,
@@ -265,6 +304,10 @@ const KOREAN_HANJA_INFORMAL: CjkNumSymbols = CjkNumSymbols {
     zero_char: '零',
     zero_value: "零",
     negative: "마이너스 ",
+    groups: ["萬", "億", "兆"],
+    group_sep: " ",
+    bridge_zero: false,
+    omit_group_one: true,
 };
 const KOREAN_HANJA_FORMAL: CjkNumSymbols = CjkNumSymbols {
     digits: &['零', '壹', '貳', '參', '四', '五', '六', '七', '八', '九'],
@@ -274,6 +317,10 @@ const KOREAN_HANJA_FORMAL: CjkNumSymbols = CjkNumSymbols {
     zero_char: '零',
     zero_value: "零",
     negative: "마이너스 ",
+    groups: ["萬", "億", "兆"],
+    group_sep: " ",
+    bridge_zero: false,
+    omit_group_one: false,
 };
 
 /// 按家族符号表合成 CJK 数字文本（`value` ≥ 1；0/负值由调用方按家族表处理）。
@@ -317,33 +364,96 @@ fn cjk_compose(value: usize, sym: &CjkNumSymbols) -> String {
     out
 }
 
-/// §6.2 家族完整入口（含 0/负值/越界处理）。返回 `None` = 超出该家族 range，调用方
-/// 走 decimal fallback（korean 系）。
-fn to_cjk_num(value: i64, sym: &CjkNumSymbols, fallback_above: bool) -> Option<String> {
-    if fallback_above && value > 9999 {
-        return None;
+/// 十进制位数（1 起）。
+fn dec_digit_count(mut g: u64) -> u32 {
+    let mut d = 0;
+    while g > 0 {
+        d += 1;
+        g /= 10;
     }
-    if value < 0 {
-        // R3885：绝对值 ≥10000 与正值同轨（千进制合成表只有 3 单位位阶，≥10000
-        // 进 compose 会 digits 越界——counter-reset n -100000 实证 panic）。chromium
-        // 语义 = 负号 + cjk-decimal 式逐字映射。
-        let abs = (-value) as usize;
-        let body = if abs > 9999 {
-            to_cjk_decimal(abs)
+    d
+}
+
+/// 十进制最低非零位的位置（个位 = 0）。
+fn dec_trailing_zero_digits(mut g: u64) -> u32 {
+    let mut t = 0;
+    while g.is_multiple_of(10) {
+        t += 1;
+        g /= 10;
+    }
+    t
+}
+
+/// R4314：万亿组系合成（CSS Counter Styles 3 #limited-chinese 等——ground-truth =
+/// WPT counter-*-extended refs / css3-counter-styles-07x 全值表）。
+///
+/// 4 位一组（10^4 万 / 10^8 亿 / 10^12 万亿），组内千进制合成（[`cjk_compose`]，
+/// 零补位/省一规则沿用），组间按家族规则衔接：
+/// - 中文系 `bridge_zero`：两组间最高渲染位不相邻时插零（一亿**零**一；
+///   一万亿零十亿零一百万一千零一 = 1001001001001）。
+/// - korean 系 `group_sep` 空格（일만 일천；구억 구천구백구십구만 …）。
+/// - 日系两者皆无（一億一；一兆十億百万千一）。
+/// - 组值为 1 且 `omit_group_one` 的组仅落组符（korean-hanja-informal 10000=萬）。
+///
+/// range 上限 10^16-1（9999999999999999 = 九千九百九十九万九千九百九十九万亿…），
+/// 越界由调用方走 cjk-decimal 逐字映射（10^16 = 一〇〇…〇）。
+fn cjk_compose_grouped(value: u64, sym: &CjkNumSymbols) -> String {
+    let mut out = String::new();
+    let mut p_prev: Option<u32> = None;
+    for k in (0..4).rev() {
+        let scale = 10u64.pow(k * 4);
+        let g = (value / scale) % 10000;
+        if g == 0 {
+            continue;
+        }
+        let q = k * 4 + dec_digit_count(g) - 1;
+        if !out.is_empty() {
+            if sym.bridge_zero && q + 1 < p_prev.unwrap_or(0) {
+                out.push(sym.zero_char);
+            } else {
+                out.push_str(sym.group_sep);
+            }
+        }
+        let body = if g == 1 && sym.omit_group_one {
+            String::new()
         } else {
-            cjk_compose(abs, sym)
+            cjk_compose(g as usize, sym)
+        };
+        out.push_str(&body);
+        // k=0 为个位组（无组符）；k=1/2/3 → 万/亿/万亿。
+        if k > 0 {
+            out.push_str(sym.groups[(k - 1) as usize]);
+        }
+        p_prev = Some(k * 4 + dec_trailing_zero_digits(g));
+    }
+    out
+}
+
+/// §6.2 家族完整入口（含 0/负值/越界处理）。返回 `None` = 超出该家族 range（|v|
+/// ≥ 10^16），调用方走 decimal fallback。
+fn to_cjk_num(value: i64, sym: &CjkNumSymbols) -> Option<String> {
+    const RANGE_MAX: u64 = 9_999_999_999_999_999;
+    if value < 0 {
+        // R4314：负值与正值同轨组系合成（WPT extended refs：-10000=负一万、
+        // -9999999999999999 = 负 + 全组系合成），越界走 cjk-decimal。
+        let abs = (-value) as u64;
+        let body = if abs > RANGE_MAX {
+            to_cjk_decimal(abs as usize)
+        } else {
+            cjk_compose_grouped(abs, sym)
         };
         return Some(format!("{}{}", sym.negative, body));
     }
     if value == 0 {
         return Some(sym.zero_value.to_string());
     }
-    // ≥10000（无 range limit 的日/中家族）：chromium 按位逐字映射（cjk-decimal 式，
-    // 10000 = 一〇〇〇〇；WPT 044/078 ground-truth），不进入千进制合成。
-    if value > 9999 {
-        return Some(to_cjk_decimal(value as usize));
+    let v = value as u64;
+    if v > RANGE_MAX {
+        // range 上限（10^16-1）之外：cjk-decimal 式逐字映射（10^16 = 一〇〇…〇，
+        // WPT extended refs ground-truth）。
+        return Some(to_cjk_decimal(v as usize));
     }
-    Some(cjk_compose(value as usize, sym))
+    Some(cjk_compose_grouped(v, sym))
 }
 
 /// R3835：§6.1/§6.2 fixed alphabetic 假名 + cyclic 天干地支符号表。
@@ -872,31 +982,29 @@ pub(crate) fn format_builtin_list_style(value: i64, list_style_type: &ListStyleT
         // R3835：§6.2 limited CJK/日/韩 + 假名 + 天干地支。越界（korean 系
         // range 1-9999、假名/循环 value ≤ 0）→ decimal fallback。
         ListStyleTypeValue::JapaneseInformal => {
-            to_cjk_num(index, &JAPANESE_INFORMAL, false).unwrap_or_else(|| index.to_string())
+            to_cjk_num(index, &JAPANESE_INFORMAL).unwrap_or_else(|| index.to_string())
         }
-        ListStyleTypeValue::JapaneseFormal => {
-            to_cjk_num(index, &JAPANESE_FORMAL, false).unwrap_or_else(|| index.to_string())
-        }
+        ListStyleTypeValue::JapaneseFormal => to_cjk_num(index, &JAPANESE_FORMAL).unwrap_or_else(|| index.to_string()),
         ListStyleTypeValue::SimpChineseInformal => {
-            to_cjk_num(index, &SIMP_CHINESE_INFORMAL, false).unwrap_or_else(|| index.to_string())
+            to_cjk_num(index, &SIMP_CHINESE_INFORMAL).unwrap_or_else(|| index.to_string())
         }
         ListStyleTypeValue::SimpChineseFormal => {
-            to_cjk_num(index, &SIMP_CHINESE_FORMAL, false).unwrap_or_else(|| index.to_string())
+            to_cjk_num(index, &SIMP_CHINESE_FORMAL).unwrap_or_else(|| index.to_string())
         }
         ListStyleTypeValue::TradChineseInformal => {
-            to_cjk_num(index, &TRAD_CHINESE_INFORMAL, false).unwrap_or_else(|| index.to_string())
+            to_cjk_num(index, &TRAD_CHINESE_INFORMAL).unwrap_or_else(|| index.to_string())
         }
         ListStyleTypeValue::TradChineseFormal => {
-            to_cjk_num(index, &TRAD_CHINESE_FORMAL, false).unwrap_or_else(|| index.to_string())
+            to_cjk_num(index, &TRAD_CHINESE_FORMAL).unwrap_or_else(|| index.to_string())
         }
         ListStyleTypeValue::KoreanHangulFormal => {
-            to_cjk_num(index, &KOREAN_HANGUL_FORMAL, true).unwrap_or_else(|| index.to_string())
+            to_cjk_num(index, &KOREAN_HANGUL_FORMAL).unwrap_or_else(|| index.to_string())
         }
         ListStyleTypeValue::KoreanHanjaInformal => {
-            to_cjk_num(index, &KOREAN_HANJA_INFORMAL, true).unwrap_or_else(|| index.to_string())
+            to_cjk_num(index, &KOREAN_HANJA_INFORMAL).unwrap_or_else(|| index.to_string())
         }
         ListStyleTypeValue::KoreanHanjaFormal => {
-            to_cjk_num(index, &KOREAN_HANJA_FORMAL, true).unwrap_or_else(|| index.to_string())
+            to_cjk_num(index, &KOREAN_HANJA_FORMAL).unwrap_or_else(|| index.to_string())
         }
         ListStyleTypeValue::CjkEarthlyBranch => {
             to_symbol_cycle(index, CJK_EARTHLY_BRANCH).unwrap_or_else(|| index.to_string())
@@ -1535,63 +1643,63 @@ impl super::super::Painter {
                 ListStyleTypeValue::JapaneseInformal => {
                     format!(
                         "{}{}",
-                        to_cjk_num(index, &JAPANESE_INFORMAL, false).unwrap_or_else(|| index.to_string()),
+                        to_cjk_num(index, &JAPANESE_INFORMAL).unwrap_or_else(|| index.to_string()),
                         counter_suffix(&style.list_style_type)
                     )
                 }
                 ListStyleTypeValue::JapaneseFormal => {
                     format!(
                         "{}{}",
-                        to_cjk_num(index, &JAPANESE_FORMAL, false).unwrap_or_else(|| index.to_string()),
+                        to_cjk_num(index, &JAPANESE_FORMAL).unwrap_or_else(|| index.to_string()),
                         counter_suffix(&style.list_style_type)
                     )
                 }
                 ListStyleTypeValue::SimpChineseInformal => {
                     format!(
                         "{}{}",
-                        to_cjk_num(index, &SIMP_CHINESE_INFORMAL, false).unwrap_or_else(|| index.to_string()),
+                        to_cjk_num(index, &SIMP_CHINESE_INFORMAL).unwrap_or_else(|| index.to_string()),
                         counter_suffix(&style.list_style_type)
                     )
                 }
                 ListStyleTypeValue::SimpChineseFormal => {
                     format!(
                         "{}{}",
-                        to_cjk_num(index, &SIMP_CHINESE_FORMAL, false).unwrap_or_else(|| index.to_string()),
+                        to_cjk_num(index, &SIMP_CHINESE_FORMAL).unwrap_or_else(|| index.to_string()),
                         counter_suffix(&style.list_style_type)
                     )
                 }
                 ListStyleTypeValue::TradChineseInformal => {
                     format!(
                         "{}{}",
-                        to_cjk_num(index, &TRAD_CHINESE_INFORMAL, false).unwrap_or_else(|| index.to_string()),
+                        to_cjk_num(index, &TRAD_CHINESE_INFORMAL).unwrap_or_else(|| index.to_string()),
                         counter_suffix(&style.list_style_type)
                     )
                 }
                 ListStyleTypeValue::TradChineseFormal => {
                     format!(
                         "{}{}",
-                        to_cjk_num(index, &TRAD_CHINESE_FORMAL, false).unwrap_or_else(|| index.to_string()),
+                        to_cjk_num(index, &TRAD_CHINESE_FORMAL).unwrap_or_else(|| index.to_string()),
                         counter_suffix(&style.list_style_type)
                     )
                 }
                 ListStyleTypeValue::KoreanHangulFormal => {
                     format!(
                         "{}{}",
-                        to_cjk_num(index, &KOREAN_HANGUL_FORMAL, true).unwrap_or_else(|| index.to_string()),
+                        to_cjk_num(index, &KOREAN_HANGUL_FORMAL).unwrap_or_else(|| index.to_string()),
                         counter_suffix(&style.list_style_type)
                     )
                 }
                 ListStyleTypeValue::KoreanHanjaInformal => {
                     format!(
                         "{}{}",
-                        to_cjk_num(index, &KOREAN_HANJA_INFORMAL, true).unwrap_or_else(|| index.to_string()),
+                        to_cjk_num(index, &KOREAN_HANJA_INFORMAL).unwrap_or_else(|| index.to_string()),
                         counter_suffix(&style.list_style_type)
                     )
                 }
                 ListStyleTypeValue::KoreanHanjaFormal => {
                     format!(
                         "{}{}",
-                        to_cjk_num(index, &KOREAN_HANJA_FORMAL, true).unwrap_or_else(|| index.to_string()),
+                        to_cjk_num(index, &KOREAN_HANJA_FORMAL).unwrap_or_else(|| index.to_string()),
                         counter_suffix(&style.list_style_type)
                     )
                 }
@@ -2149,44 +2257,55 @@ mod tests {
     /// 1 前全省（10=十、100=百、1000=千）、无中间补零（101=百一）、0=〇、负前缀マイナス。
     #[test]
     fn test_r3835_cjk_japanese_informal() {
-        assert_eq!(to_cjk_num(1, &JAPANESE_INFORMAL, false).unwrap(), "一");
-        assert_eq!(to_cjk_num(9, &JAPANESE_INFORMAL, false).unwrap(), "九");
-        assert_eq!(to_cjk_num(10, &JAPANESE_INFORMAL, false).unwrap(), "十");
-        assert_eq!(to_cjk_num(11, &JAPANESE_INFORMAL, false).unwrap(), "十一");
-        assert_eq!(to_cjk_num(100, &JAPANESE_INFORMAL, false).unwrap(), "百");
-        assert_eq!(to_cjk_num(101, &JAPANESE_INFORMAL, false).unwrap(), "百一");
-        assert_eq!(to_cjk_num(999, &JAPANESE_INFORMAL, false).unwrap(), "九百九十九");
-        assert_eq!(to_cjk_num(1000, &JAPANESE_INFORMAL, false).unwrap(), "千");
-        assert_eq!(to_cjk_num(9999, &JAPANESE_INFORMAL, false).unwrap(), "九千九百九十九");
-        // 10000+ 按位逐字（chromium 语义，WPT 044）。
-        assert_eq!(to_cjk_num(10000, &JAPANESE_INFORMAL, false).unwrap(), "一〇〇〇〇");
-        assert_eq!(to_cjk_num(0, &JAPANESE_INFORMAL, false).unwrap(), "〇");
-        assert_eq!(to_cjk_num(-11, &JAPANESE_INFORMAL, false).unwrap(), "マイナス十一");
+        assert_eq!(to_cjk_num(1, &JAPANESE_INFORMAL).unwrap(), "一");
+        assert_eq!(to_cjk_num(9, &JAPANESE_INFORMAL).unwrap(), "九");
+        assert_eq!(to_cjk_num(10, &JAPANESE_INFORMAL).unwrap(), "十");
+        assert_eq!(to_cjk_num(11, &JAPANESE_INFORMAL).unwrap(), "十一");
+        assert_eq!(to_cjk_num(100, &JAPANESE_INFORMAL).unwrap(), "百");
+        assert_eq!(to_cjk_num(101, &JAPANESE_INFORMAL).unwrap(), "百一");
+        assert_eq!(to_cjk_num(999, &JAPANESE_INFORMAL).unwrap(), "九百九十九");
+        assert_eq!(to_cjk_num(1000, &JAPANESE_INFORMAL).unwrap(), "千");
+        assert_eq!(to_cjk_num(9999, &JAPANESE_INFORMAL).unwrap(), "九千九百九十九");
+        // R4314：10000+ 万亿组系合成（WPT extended refs ground-truth：10000=一万、
+        // 10001=一万一——日系无零桥）。
+        assert_eq!(to_cjk_num(10000, &JAPANESE_INFORMAL).unwrap(), "一万");
+        assert_eq!(to_cjk_num(12345, &JAPANESE_INFORMAL).unwrap(), "一万二千三百四十五");
+        assert_eq!(to_cjk_num(0, &JAPANESE_INFORMAL).unwrap(), "〇");
+        assert_eq!(to_cjk_num(-11, &JAPANESE_INFORMAL).unwrap(), "マイナス十一");
     }
 
     /// §6.2 simp-chinese-formal：恒写 digit+unit（10=壹拾）、中间补零（101=壹佰零壹）、
-    /// 越界 10000=一〇〇〇〇（WPT 076/078）。
+    /// R4314 万亿组系（10000=壹万；10^16 越界 → cjk-decimal 逐字）。
     #[test]
     fn test_r3835_cjk_simp_chinese_formal() {
-        assert_eq!(to_cjk_num(1, &SIMP_CHINESE_FORMAL, false).unwrap(), "壹");
-        assert_eq!(to_cjk_num(10, &SIMP_CHINESE_FORMAL, false).unwrap(), "壹拾");
-        assert_eq!(to_cjk_num(11, &SIMP_CHINESE_FORMAL, false).unwrap(), "壹拾壹");
-        assert_eq!(to_cjk_num(101, &SIMP_CHINESE_FORMAL, false).unwrap(), "壹佰零壹");
-        assert_eq!(to_cjk_num(222, &SIMP_CHINESE_FORMAL, false).unwrap(), "贰佰贰拾贰");
-        assert_eq!(to_cjk_num(9999, &SIMP_CHINESE_FORMAL, false).unwrap(), "玖仟玖佰玖拾玖");
-        assert_eq!(to_cjk_num(10000, &SIMP_CHINESE_FORMAL, false).unwrap(), "一〇〇〇〇");
-        assert_eq!(to_cjk_num(-9, &SIMP_CHINESE_FORMAL, false).unwrap(), "负玖");
+        assert_eq!(to_cjk_num(1, &SIMP_CHINESE_FORMAL).unwrap(), "壹");
+        assert_eq!(to_cjk_num(10, &SIMP_CHINESE_FORMAL).unwrap(), "壹拾");
+        assert_eq!(to_cjk_num(11, &SIMP_CHINESE_FORMAL).unwrap(), "壹拾壹");
+        assert_eq!(to_cjk_num(101, &SIMP_CHINESE_FORMAL).unwrap(), "壹佰零壹");
+        assert_eq!(to_cjk_num(222, &SIMP_CHINESE_FORMAL).unwrap(), "贰佰贰拾贰");
+        assert_eq!(to_cjk_num(9999, &SIMP_CHINESE_FORMAL).unwrap(), "玖仟玖佰玖拾玖");
+        assert_eq!(to_cjk_num(10000, &SIMP_CHINESE_FORMAL).unwrap(), "壹万");
+        assert_eq!(to_cjk_num(10001, &SIMP_CHINESE_FORMAL).unwrap(), "壹万零壹");
+        assert_eq!(
+            to_cjk_num(10000000000000000, &SIMP_CHINESE_FORMAL).unwrap(),
+            "一〇〇〇〇〇〇〇〇〇〇〇〇〇〇〇〇"
+        );
+        assert_eq!(to_cjk_num(-9, &SIMP_CHINESE_FORMAL).unwrap(), "负玖");
     }
 
-    /// §6.2 korean-hanja-formal：恒写 digit+unit、无补零、range 1-9999（越界 → None 走
-    /// decimal fallback，WPT 065 期望 10000="10000."）。
+    /// §6.2 korean-hanja-formal：恒写 digit+unit、无补零、R4314 组系合成 range 扩到
+    /// 10^16-1（10000=壹萬；越界 10^16 → None 走 decimal fallback）。
     #[test]
     fn test_r3835_cjk_korean_hanja_formal_range_fallback() {
-        assert_eq!(to_cjk_num(9999, &KOREAN_HANJA_FORMAL, true).unwrap(), "九仟九百九拾九");
-        assert_eq!(to_cjk_num(10, &KOREAN_HANJA_FORMAL, true).unwrap(), "壹拾");
-        assert!(
-            to_cjk_num(10000, &KOREAN_HANJA_FORMAL, true).is_none(),
-            "korean range 1-9999 越界走 fallback"
+        assert_eq!(to_cjk_num(9999, &KOREAN_HANJA_FORMAL).unwrap(), "九仟九百九拾九");
+        assert_eq!(to_cjk_num(10, &KOREAN_HANJA_FORMAL).unwrap(), "壹拾");
+        assert_eq!(to_cjk_num(10000, &KOREAN_HANJA_FORMAL).unwrap(), "壹萬");
+        // korean 系组间空格分隔（WPT extended refs：10001 = 壹萬 壹）。
+        assert_eq!(to_cjk_num(10001, &KOREAN_HANJA_FORMAL).unwrap(), "壹萬 壹");
+        // range 10^16 越界 → cjk-decimal 逐字映射（WPT extended refs）。
+        assert_eq!(
+            to_cjk_num(10000000000000000, &KOREAN_HANJA_FORMAL).unwrap(),
+            "一〇〇〇〇〇〇〇〇〇〇〇〇〇〇〇〇"
         );
     }
 
