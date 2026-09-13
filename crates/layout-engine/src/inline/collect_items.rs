@@ -724,144 +724,70 @@ impl InlineFormattingContext {
                             continue;
                         }
 
+                        // R4300（CSS2.1 §8.4 + §9.4.2）：含**元素子**的 inline 元素扁平化
+                        // 保持子序列——旧 `text_content` 扁平化把整棵子树折成单 run，
+                        // **子元素被丢弃**：childless inline 子（spacer span）的零宽 run 不入
+                        // IFC，其水平 margin/padding 不推进（word-spacing-characters-001
+                        // control 条 `A <spacer>B` 短 64px、r4134 outer 并集宽丢 spacer 贡献
+                        // 实证）。walk 规则：文本子 → run（node_id = **本元素 id**，延续既有
+                        // 归因契约：R4297 sync / R2197 orphan / R638 inline_heights 均按元素
+                        // id 查）；childless inline 子 → 零宽 run（node_id = 该子 id，样式取
+                        // 自该子，其 ml/pl/mr/pr 经 break_lines 空元素分支推进）；有元素子的
+                        // inline 子 → 递归同规则。本元素水平 frame（ml/pl/mr/pr）只落在
+                        // 首/末 run（break_lines 逐 run 推进，多 run 会重复推进）。
+                        // 纯文本子（无元素子）走下方既有单 run 路径（字节不变）。
+                        // kill-switch `ZW_FLAT_CHILD_WALK=0`。ruby 的 rt/rp 特例
+                        //（R1022）不走 walk（含元素子时仍走旧扁平化）。
+                        // **default-off（探针挂账，R4300）**：walk 本体已实现并实测——
+                        // child-attribution 变体 net −7（white-space/contain 族翻绿但
+                        // border-color-012 的 .text 吸收、ruby-vertical、quotes 配序、
+                        // bidi 控制字符域翻红），ancestor-absorption 变体 net −11。
+                        // 待逐域 gate（quotes 配序 / ruby vertical / bidi 控制字符）后
+                        // 再 default-on；`ZW_FLAT_CHILD_WALK=1` 可显式开启探针。
+                        static FLAT_CHILD_WALK: std::sync::LazyLock<bool> = std::sync::LazyLock::new(|| {
+                            std::env::var("ZW_FLAT_CHILD_WALK").as_deref() == Ok("1")
+                        });
+                        // R4300b：bidi 特殊元素（rtl / unicode-bidi ≠ normal）不走 walk——
+                        // 双向重排按 run 序列切分视觉段，拆 run 会改变重排段组成
+                        // （line-breaking-bidi-003 0.91→7.67 实证），保持整段扁平化。
+                        let bidi_special = style
+                            .is_some_and(|st| {
+                                matches!(st.direction, zero_style_system::DirectionValue::Rtl)
+                                    || !matches!(
+                                        st.unicode_bidi,
+                                        zero_style_system::UnicodeBidiValue::Normal
+                                    )
+                            });
+                        // R4300c：扁平化文本含 bidi 控制字符（U+202A-U+202E）不走 walk——
+                        // 控制字符的重排作用域横跨整个 run，拆 run 改变重排段组成
+                        //（line-breaking-bidi-003 0.91→7.67 实证），保持整段扁平化。
+                        let has_bidi_controls = style
+                            .and_then(|_| doc.text_content(child_id))
+                            .is_some_and(|t| {
+                                t.chars().any(|c| ('\u{202A}'..='\u{202E}').contains(&c))
+                            });
+                        let has_element_children = *FLAT_CHILD_WALK
+                            && elem_data.local_name() != "ruby"
+                            && !bidi_special
+                            && !has_bidi_controls
+                            && !self.vertical
+                            && doc.child_nodes(child_id).iter().any(|&gc| {
+                                doc.get(gc).is_some_and(|n| matches!(&n.kind, NodeKind::Element(_)))
+                            });
+                        if has_element_children {
+                            let mut walked = Vec::new();
+                            self.collect_flat_inline_children(doc, child_id, styles, &mut walked);
+                            items.extend(walked);
+                            continue;
+                        }
                         // 其他 inline 元素的文本内容也收集进来
                         // R1022：<ruby> 默认 text_content 会扁平化 <rt>/<rp> 文本
                         // （● 当行内字符渲染）。改为只收集 rb 文本作 inline 流，
                         // rt 文本由 paint 期作 zero-width annotation 上移到 rb 之上。
-                        let style = styles.get(&child_id);
-                        // R3778：run 级有效 white-space 在**折叠前**判定（collapse 有损，
-                        // `\n`→空格不可逆）——inline 元素声明的 pre 使其整段文本保留原始
-                        // 换行/空白（line-clamp-014 类：span 包裹 pre 代码块）。
-                        let run_ws = style
-                            .map(|s| Self::run_white_space(&s.white_space))
-                            .or_else(|| self.ws_overrides.get(&child_id).copied());
-                        let run_preserves = run_ws.map_or(self.preserve_whitespace, |ws| ws.preserve);
-                        let text = if elem_data.local_name() == "ruby" {
-                            Self::collect_text_excluding(doc, child_id, &["rt", "rp"])
-                        } else {
-                            doc.text_content(child_id).unwrap_or_default()
-                        };
-                        let trimmed = if run_preserves { text } else { collapse_whitespace(&text) };
-                        let (font_size, line_height) = if style.is_some() {
-                            // U1b：layout IFC（有真实 styles）首消费 font_metric_provider
-                            // （per-font line-height）。provider 缺省时等价于 resolve_font_metrics。
-                            resolve_font_metrics_with_provider(style, self.font_metric_provider.as_ref())
-                        } else if let Some(&(fs, lh)) = self.inline_element_metrics.get(&child_id) {
-                            // paint IFC（空 styles）：使用 layout IFC 存储的 (font_size, line_height)
-                            // 这仅影响行盒高度（垂直定位），不影响行断。
-                            (fs, lh)
-                        } else {
-                            self.default_font_metrics
-                                .unwrap_or((DEFAULT_FONT_SIZE, DEFAULT_FONT_SIZE * NORMAL_LINE_HEIGHT_RATIO))
-                        };
-                        let vertical_align = style
-                            .map(|s| s.vertical_align.clone())
-                            .unwrap_or(VerticalAlignValue::Baseline);
-                        let letter_spacing = style
-                            .map(|s| Self::resolve_letter_spacing(&s.letter_spacing, font_size))
-                            .unwrap_or_else(|| self.letter_spacing_overrides.get(&child_id).copied().unwrap_or(0.0));
-                        let word_spacing = style
-                            .map(|s| Self::resolve_word_spacing(&s.word_spacing, font_size))
-                            .unwrap_or_else(|| self.word_spacing_overrides.get(&child_id).copied().unwrap_or(0.0));
-                        // 提取 inline 元素的水平 margin
-                        // 优先从 style 获取；若无 style（paint IFC），使用 margin_overrides。
-                        let margin_left = style
-                            .map(|s| Self::resolve_inline_margin(&s.margin_left, s))
-                            .unwrap_or_else(|| self.margin_overrides.get(&child_id).map(|(ml, _)| *ml).unwrap_or(0.0));
-                        let margin_right = style
-                            .map(|s| Self::resolve_inline_margin(&s.margin_right, s))
-                            .unwrap_or_else(|| self.margin_overrides.get(&child_id).map(|(_, mr)| *mr).unwrap_or(0.0));
-                        // R3837：inline 水平 padding 参与 inline 轴推进（CSS2.1 §8.4）。
-                        // paint IFC（无 style）经 padding_overrides 恢复（fragment 级存储）。
-                        let padding_left = style
-                            .map(|s| Self::resolve_inline_padding(&s.padding_left, s))
-                            .unwrap_or_else(|| self.padding_overrides.get(&child_id).map(|(pl, _)| *pl).unwrap_or(0.0));
-                        let padding_right = style
-                            .map(|s| Self::resolve_inline_padding(&s.padding_right, s))
-                            .unwrap_or_else(|| self.padding_overrides.get(&child_id).map(|(_, pr)| *pr).unwrap_or(0.0));
-                        let is_ahem_font = style
-                            .map(|s| s.font_family.iter().any(|f| f.trim_matches('"').eq_ignore_ascii_case("Ahem")))
-                            .unwrap_or_else(|| self.is_ahem_overrides.get(&child_id).copied().unwrap_or(false));
-                        // CSS 2.1: inline 元素的 padding 和 border 参与行盒高度计算
-                        let (padding_top, padding_bottom, border_top, border_bottom) =
-                            Self::extract_inline_box_metrics(style);
-                        if !trimmed.is_empty() {
-                            items.push(InlineItem::Text(TextRun {
-                                ws_override: run_ws,
-                                text: trimmed,
-                                node_id: child_id,
-                                font_size,
-                                line_height,
-                                vertical_align,
-                                letter_spacing,
-                                word_spacing,
-                                margin_left,
-                                margin_right,
-                                padding_left,
-                                padding_right,
-                                padding_top,
-                                padding_bottom,
-                                border_top,
-                                border_bottom,
-                                is_ahem_font,
-                                font_id: self.shaping_font_id_for_style(
-                                    Some(child_id),
-                                    style,
-                                    is_ahem_font,
-                                    letter_spacing,
-                                    word_spacing,
-                                    elem_data.local_name() == "ruby",
-                                ),
-                                is_rtl: style.is_some_and(|s| {
-                                    matches!(s.direction, zero_style_system::DirectionValue::Rtl)
-                                }),
-                                // R3840：元素级 unicode-bidi:bidi-override——其文本按 UAX #9
-                                // X2/X3 强制方向逐字符反转（R3319 只实现容器级）。
-                                bidi_override: Self::element_bidi_override(style),
-                                is_plaintext_bidi: style
-                                    .map(|s| {
-                                        matches!(s.unicode_bidi, zero_style_system::UnicodeBidiValue::Plaintext)
-                                    })
-                                    .unwrap_or_else(|| {
-                                        self.plaintext_bidi_override
-                                            || self.plaintext_bidi_overrides.contains(&child_id)
-                                    }),
-                            }));
-                        } else {
-                            // CSS 规范：空 inline 元素仍需通过 line-height + padding + border 影响行盒高度
-                            // 生成零宽度 TextRun，贡献 line-height + padding + border
-                            items.push(InlineItem::Text(TextRun {
-                                ws_override: style.map(|s| Self::run_white_space(&s.white_space)),
-                                text: String::new(),
-                                node_id: child_id,
-                                font_size,
-                                line_height,
-                                vertical_align,
-                                letter_spacing: 0.0,
-                                word_spacing: 0.0,
-                                margin_left,
-                                margin_right,
-                                padding_left,
-                                padding_right,
-                                padding_top,
-                                padding_bottom,
-                                border_top,
-                                border_bottom,
-                                is_ahem_font,
-                                font_id: None,
-                                is_rtl: style.is_some_and(|s| {
-                                    matches!(s.direction, zero_style_system::DirectionValue::Rtl)
-                                }),
-                                bidi_override: Self::element_bidi_override(style),
-                                is_plaintext_bidi: style
-                                    .map(|s| {
-                                        matches!(s.unicode_bidi, zero_style_system::UnicodeBidiValue::Plaintext)
-                                    })
-                                    .unwrap_or_else(|| {
-                                        self.plaintext_bidi_override
-                                            || self.plaintext_bidi_overrides.contains(&child_id)
-                                    }),
-                            }));
+                        // R4300：构造逻辑提取至 `build_flatten_run_for_element`（walk 路径
+                        // 复用同一构造，保证两条路径 run 形状一致）。
+                        if let Some(item) = self.build_flatten_run_for_element(doc, child_id, styles) {
+                            items.push(item);
                         }
                     }
                     _ => {}
@@ -870,6 +796,306 @@ impl InlineFormattingContext {
         }
 
         items
+    }
+
+    /// R4300：inline 元素扁平化 run 构造（主 collect 路径与 `collect_flat_inline_children`
+    /// walk 共用）。text_content（ruby 按 R1022 排除 rt/rp）折叠后：
+    /// 非空 → 文本 run（node_id = 元素自身，归因契约：R4297 sync / R2197 orphan /
+    /// R638 inline_heights 按元素 id 查）；空 → 零宽 run（line-height + padding + border
+    /// 仍贡献行盒高，CSS2.1 §10.8）。返回 None 仅当... 不发生（两分支都 push）。
+    fn build_flatten_run_for_element(
+        &self,
+        doc: &Document,
+        child_id: NodeId,
+        styles: &HashMap<NodeId, ComputedStyle>,
+    ) -> Option<InlineItem> {
+        let NodeKind::Element(elem_data) = &doc.get(child_id)?.kind else {
+            return None;
+        };
+        let style = styles.get(&child_id);
+        let run_ws = style
+            .map(|s| Self::run_white_space(&s.white_space))
+            .or_else(|| self.ws_overrides.get(&child_id).copied());
+        let run_preserves = run_ws.map_or(self.preserve_whitespace, |ws| ws.preserve);
+        let text = if elem_data.local_name() == "ruby" {
+            Self::collect_text_excluding(doc, child_id, &["rt", "rp"])
+        } else {
+            doc.text_content(child_id).unwrap_or_default()
+        };
+        let trimmed = if run_preserves { text } else { collapse_whitespace(&text) };
+        let (font_size, line_height) = if style.is_some() {
+            // U1b：layout IFC（有真实 styles）首消费 font_metric_provider
+            // （per-font line-height）。provider 缺省时等价于 resolve_font_metrics。
+            resolve_font_metrics_with_provider(style, self.font_metric_provider.as_ref())
+        } else if let Some(&(fs, lh)) = self.inline_element_metrics.get(&child_id) {
+            // paint IFC（空 styles）：使用 layout IFC 存储的 (font_size, line_height)
+            (fs, lh)
+        } else {
+            self.default_font_metrics
+                .unwrap_or((DEFAULT_FONT_SIZE, DEFAULT_FONT_SIZE * NORMAL_LINE_HEIGHT_RATIO))
+        };
+        let vertical_align = style
+            .map(|s| s.vertical_align.clone())
+            .unwrap_or(VerticalAlignValue::Baseline);
+        let letter_spacing = style
+            .map(|s| Self::resolve_letter_spacing(&s.letter_spacing, font_size))
+            .unwrap_or_else(|| self.letter_spacing_overrides.get(&child_id).copied().unwrap_or(0.0));
+        let word_spacing = style
+            .map(|s| Self::resolve_word_spacing(&s.word_spacing, font_size))
+            .unwrap_or_else(|| self.word_spacing_overrides.get(&child_id).copied().unwrap_or(0.0));
+        let margin_left = style
+            .map(|s| Self::resolve_inline_margin(&s.margin_left, s))
+            .unwrap_or_else(|| self.margin_overrides.get(&child_id).map(|(ml, _)| *ml).unwrap_or(0.0));
+        let margin_right = style
+            .map(|s| Self::resolve_inline_margin(&s.margin_right, s))
+            .unwrap_or_else(|| self.margin_overrides.get(&child_id).map(|(_, mr)| *mr).unwrap_or(0.0));
+        let padding_left = style
+            .map(|s| Self::resolve_inline_padding(&s.padding_left, s))
+            .unwrap_or_else(|| self.padding_overrides.get(&child_id).map(|(pl, _)| *pl).unwrap_or(0.0));
+        let padding_right = style
+            .map(|s| Self::resolve_inline_padding(&s.padding_right, s))
+            .unwrap_or_else(|| self.padding_overrides.get(&child_id).map(|(pr, _)| *pr).unwrap_or(0.0));
+        let is_ahem_font = style
+            .map(|s| s.font_family.iter().any(|f| f.trim_matches('"').eq_ignore_ascii_case("Ahem")))
+            .unwrap_or_else(|| self.is_ahem_overrides.get(&child_id).copied().unwrap_or(false));
+        let (padding_top, padding_bottom, border_top, border_bottom) = Self::extract_inline_box_metrics(style);
+        if !trimmed.is_empty() {
+            Some(InlineItem::Text(TextRun {
+                ws_override: run_ws,
+                text: trimmed,
+                node_id: child_id,
+                font_size,
+                line_height,
+                vertical_align,
+                letter_spacing,
+                word_spacing,
+                margin_left,
+                margin_right,
+                padding_left,
+                padding_right,
+                padding_top,
+                padding_bottom,
+                border_top,
+                border_bottom,
+                is_ahem_font,
+                font_id: self.shaping_font_id_for_style(
+                    Some(child_id),
+                    style,
+                    is_ahem_font,
+                    letter_spacing,
+                    word_spacing,
+                    elem_data.local_name() == "ruby",
+                ),
+                is_rtl: style.is_some_and(|s| {
+                    matches!(s.direction, zero_style_system::DirectionValue::Rtl)
+                }),
+                bidi_override: Self::element_bidi_override(style),
+                is_plaintext_bidi: style
+                    .map(|s| {
+                        matches!(s.unicode_bidi, zero_style_system::UnicodeBidiValue::Plaintext)
+                    })
+                    .unwrap_or_else(|| {
+                        self.plaintext_bidi_override || self.plaintext_bidi_overrides.contains(&child_id)
+                    }),
+            }))
+        } else {
+            // CSS 规范：空 inline 元素仍需通过 line-height + padding + border 影响行盒高度
+            Some(InlineItem::Text(TextRun {
+                ws_override: style.map(|s| Self::run_white_space(&s.white_space)),
+                text: String::new(),
+                node_id: child_id,
+                font_size,
+                line_height,
+                vertical_align,
+                letter_spacing: 0.0,
+                word_spacing: 0.0,
+                margin_left,
+                margin_right,
+                padding_left,
+                padding_right,
+                padding_top,
+                padding_bottom,
+                border_top,
+                border_bottom,
+                is_ahem_font,
+                font_id: None,
+                is_rtl: style.is_some_and(|s| {
+                    matches!(s.direction, zero_style_system::DirectionValue::Rtl)
+                }),
+                bidi_override: Self::element_bidi_override(style),
+                is_plaintext_bidi: style
+                    .map(|s| {
+                        matches!(s.unicode_bidi, zero_style_system::UnicodeBidiValue::Plaintext)
+                    })
+                    .unwrap_or_else(|| {
+                        self.plaintext_bidi_override || self.plaintext_bidi_overrides.contains(&child_id)
+                    }),
+            }))
+        }
+    }
+
+    /// R4300：含元素子的 inline 元素扁平化 walk——保持**子序列**收集（详见 flatten
+    /// 分支处的 gate 注释）。文本子归因到**外层元素 id**（既有归因契约不变）；零宽子
+    /// 归因到该子自身 id。外层水平 frame（ml/pl/mr/pr）只落首/末 run（break_lines
+    /// 逐 run 推进）；子级 frame 由其自身 run 携带。
+    fn collect_flat_inline_children(
+        &self,
+        doc: &Document,
+        elem_id: NodeId,
+        styles: &HashMap<NodeId, ComputedStyle>,
+        items: &mut Vec<InlineItem>,
+    ) {
+        let style = styles.get(&elem_id);
+        let run_ws = style
+            .map(|s| Self::run_white_space(&s.white_space))
+            .or_else(|| self.ws_overrides.get(&elem_id).copied());
+        let run_preserves = run_ws.map_or(self.preserve_whitespace, |ws| ws.preserve);
+        let (font_size, line_height) = resolve_font_metrics_with_provider(
+            style,
+            self.font_metric_provider.as_ref(),
+        );
+        let letter_spacing = style
+            .map(|s| Self::resolve_letter_spacing(&s.letter_spacing, font_size))
+            .unwrap_or_else(|| self.letter_spacing_overrides.get(&elem_id).copied().unwrap_or(0.0));
+        let word_spacing = style
+            .map(|s| Self::resolve_word_spacing(&s.word_spacing, font_size))
+            .unwrap_or_else(|| self.word_spacing_overrides.get(&elem_id).copied().unwrap_or(0.0));
+        let is_ahem_font = style
+            .map(|s| s.font_family.iter().any(|f| f.trim_matches('"').eq_ignore_ascii_case("Ahem")))
+            .unwrap_or_else(|| self.is_ahem_overrides.get(&elem_id).copied().unwrap_or(false));
+        let (padding_top, padding_bottom, border_top, border_bottom) = Self::extract_inline_box_metrics(style);
+        let margin_left = style
+            .map(|s| Self::resolve_inline_margin(&s.margin_left, s))
+            .unwrap_or_else(|| self.margin_overrides.get(&elem_id).map(|(ml, _)| *ml).unwrap_or(0.0));
+        let margin_right = style
+            .map(|s| Self::resolve_inline_margin(&s.margin_right, s))
+            .unwrap_or_else(|| self.margin_overrides.get(&elem_id).map(|(_, mr)| *mr).unwrap_or(0.0));
+        let padding_left = style
+            .map(|s| Self::resolve_inline_padding(&s.padding_left, s))
+            .unwrap_or_else(|| self.padding_overrides.get(&elem_id).map(|(pl, _)| *pl).unwrap_or(0.0));
+        let padding_right = style
+            .map(|s| Self::resolve_inline_padding(&s.padding_right, s))
+            .unwrap_or_else(|| self.padding_overrides.get(&elem_id).map(|(pr, _)| *pr).unwrap_or(0.0));
+
+        // 依次收集子节点。
+        let children = doc.child_nodes(elem_id);
+        let mut text_pending = String::new();
+        let mut emitted_text_run = false;
+        let flush_pending = |text_pending: &mut String, items: &mut Vec<InlineItem>, first: bool, last_text: bool| {
+            if text_pending.is_empty() {
+                return;
+            }
+            let trimmed = if run_preserves { std::mem::take(text_pending) } else { collapse_whitespace(text_pending) };
+            if trimmed.is_empty() {
+                return;
+            }
+            items.push(InlineItem::Text(TextRun {
+                ws_override: run_ws,
+                text: trimmed,
+                node_id: elem_id,
+                font_size,
+                line_height,
+                vertical_align: style
+                    .map(|s| s.vertical_align.clone())
+                    .unwrap_or(VerticalAlignValue::Baseline),
+                letter_spacing,
+                word_spacing,
+                margin_left: if first { margin_left } else { 0.0 },
+                margin_right: if last_text { margin_right } else { 0.0 },
+                padding_left: if first { padding_left } else { 0.0 },
+                padding_right: if last_text { padding_right } else { 0.0 },
+                padding_top,
+                padding_bottom,
+                border_top,
+                border_bottom,
+                is_ahem_font,
+                font_id: self.shaping_font_id_for_style(Some(elem_id), style, is_ahem_font, letter_spacing, word_spacing, false),
+                is_rtl: style.is_some_and(|s| matches!(s.direction, zero_style_system::DirectionValue::Rtl)),
+                bidi_override: Self::element_bidi_override(style),
+                is_plaintext_bidi: style
+                    .map(|s| matches!(s.unicode_bidi, zero_style_system::UnicodeBidiValue::Plaintext))
+                    .unwrap_or_else(|| {
+                        self.plaintext_bidi_override || self.plaintext_bidi_overrides.contains(&elem_id)
+                    }),
+            }));
+            *text_pending = String::new();
+        };
+
+        for &gc in &children {
+            let Some(node) = doc.get(gc) else { continue };
+            match &node.kind {
+                NodeKind::Text(text_data) => {
+                    text_pending.push_str(&text_data.content);
+                }
+                NodeKind::Element(_) => {
+                    // R109 split 容器成员表：元素子不在成员表时跳过（文本子随外层扁平化，
+                    // 不受成员表约束）。
+                    if let Some(ids) = &self.fragment_node_ids {
+                        if !ids.contains(&gc) {
+                            continue;
+                        }
+                    }
+                    let gc_has_element_children = doc.child_nodes(gc).iter().any(|&gk| {
+                        doc.get(gk).is_some_and(|n| matches!(&n.kind, NodeKind::Element(_)))
+                    });
+                    // R4300c：无元素子的 inline 子一律**折回 pending**（text_content 并入
+                    // 外层 pending、归因外层）= 旧扁平化的祖先吸收语义（border-color-012 的
+                    // `.text` 壳归因 .inner、ruby rt/rp 随祖先 text_content 携带、bidi 特殊子
+                    // 整段吸收，均以此为准）。唯一例外：「空文本 + 有 frame」的 spacer 类子
+                    // 落零宽 run（其 ml/pl/mr/pr 经 break_lines 空元素分支推进——这是本
+                    // walk 的存在意义，R4299；全无 frame 的空壳不落——保持空白折叠连续性，
+                    // border-color-012 的空 `<span class=text>` 后导空格实证）。有元素子：
+                    // 递归同规则。
+                    if !gc_has_element_children {
+                        let gc_text_empty = doc
+                            .text_content(gc)
+                            .is_none_or(|t| t.chars().all(|c| c.is_whitespace()));
+                        if gc_text_empty {
+                            let child_style0 = styles.get(&gc);
+                            let frame_sum = {
+                                let (pt, pb, bt, bb) = Self::extract_inline_box_metrics(child_style0);
+                                let m =
+                                    |v: &LengthValue, st: &ComputedStyle| Self::resolve_inline_margin(v, st);
+                                let pd =
+                                    |v: &LengthValue, st: &ComputedStyle| Self::resolve_inline_padding(v, st);
+                                child_style0
+                                    .map(|st| {
+                                        m(&st.margin_left, st)
+                                            + m(&st.margin_right, st)
+                                            + pd(&st.padding_left, st)
+                                            + pd(&st.padding_right, st)
+                                            + pt
+                                            + pb
+                                            + bt
+                                            + bb
+                                    })
+                                    .unwrap_or(0.0)
+                            };
+                            if frame_sum > 0.0 {
+                                flush_pending(&mut text_pending, items, !emitted_text_run, false);
+                                emitted_text_run = true;
+                                if let Some(item) = self.build_flatten_run_for_element(doc, gc, styles) {
+                                    items.push(item);
+                                }
+                            }
+                            continue;
+                        }
+                        if let Some(txt) = doc.text_content(gc) {
+                            text_pending.push_str(&txt);
+                        }
+                        continue;
+                    }
+                    flush_pending(&mut text_pending, items, !emitted_text_run, false);
+                    emitted_text_run = true;
+                    self.collect_flat_inline_children(doc, gc, styles, items);
+                    continue;
+                }
+                _ => {}
+            }
+        }
+        // 末段文本：仅当其后无元素子时携带外层 mr/pr（有则由末元素子后续 frame 承接，
+        // 简化处理：末段文本始终携带——外层 mr/pr 丢失于「末子为元素」形态，挂账）。
+        flush_pending(&mut text_pending, items, !emitted_text_run, true);
     }
 
     fn resolve_word_spacing(value: &LengthValue, font_size: f32) -> f32 {
