@@ -2,7 +2,7 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-13（S16：keyboard.type+press + page.setContent 翻绿——Ctrl+A 全选编辑面 + document.open/write/close 三连 + write 落定 load 生命周期重发；绿步 26→28，基线同步扩至 28）
+**最后更新**: 2026-09-13（S17：Network dataReceived 补齐 + 矩阵账本 v0.4 漂移刷新；绿步维持 28/30）
 
 ---
 
@@ -27,12 +27,27 @@
 | P3 | Target/Runtime/Page/Input/DOM/CSS/Network/Emulation 域实现 | 🚧 S16 后余 frames 面：locator/evaluate/editing/viewport/媒体全通；唯余 iframe 子帧事件源（frames.access/click+evaluate 2 步，挂 engine 子帧可见性——渲染流域协调） |
 | P4 | Node/Playwright 测试链（pin + E2E 用例集 + make 入口） | ✅ S8：`make cdp-e2e`（test-guard 包裹，deterministic 双跑 + expected-green 回归门）；用例集=30 步全核心流 |
 | P5 | console 对象化（V8 侧结构化序列化，替换扁平字符串） | 🔶 **方案降级（2026-09-12）**：value-only 小切片——consoleAPICalled 的 args 用既有 value-only remoteObject 形状即可（PW 消费面=msg.type()/text()），shim `(level, args[])` JSON 序列化 + callbacks.rs 签名 + headless 转事件；不等 engine 大窗口，碰前核对 shim console 段活跃度 |
-| P6 | net 请求事件总线（Network 域 + devtools Network 面板共用脊柱） | 🔶 S7 雏形（proxy_fetch 生命周期三事件）；dataReceived 挂 net 观测点扩展——**net 近 14 天无外部流占用，窗口已开**（2026-09-12 实测） |
+| P6 | net 请求事件总线（Network 域 + devtools Network 面板共用脊柱） | 🔶 雏形已建（S7 proxy_fetch 三事件 + S14 renderer FetchObserved + S17 dataReceived 双路径）；分块流式观测点待 net 窗口流式化——**net 近 14 天无外部流占用，窗口已开**（2026-09-12 实测） |
 | P7 | WS 层 sessionId 多路复用（单连接扁平会话 → per-target session，响应回显 sessionId） | 🔶 M1 切片 2 传输面完成：解析/回显/未附接校验（-32001）+ 附接注册表；per-target 真路由随切片 3 Target 域落地 |
 | P8 | `/json/version` 尾斜杠 404（Playwright 请求 `/json/version/`） | ✅ M1 切片 2（normalize_discovery_path 容忍尾斜杠；`/json`、`/json/list` 同步受益） |
 
 ## 已完成切片
 
+- **S17（2026-09-13）Network dataReceived + 矩阵账本 v0.4 漂移刷新（绿步维持 28）**：
+  **dataReceived**：protocol `FetchObservedParams` 增 `data_length`（末位追加）；renderer
+  fetch 观测记录扩为六元组（loadingFinished 阶段带 body 字节数——`body_bytes` 原始字节
+  优先、文本回退）；headless 双路径在 loadingFinished 前发 `Network.dataReceived`——
+  proxy 子资源路径（session proxy_fetch，body 同步在握）+ renderer 观测路径（JS
+  fetch/XHR）。**body 一次性到达语义**（dataLength=encodedDataLength=body 字节），
+  分块流式随 net 观测点流式化（记账）。两类流量本就分路（子资源=proxy、页面
+  fetch=ResourceLoader 直连观测），无重复发射。
+  **账本 v0.4**：evidence/cdp-command-matrix.md 逐行以 domains.rs dispatch 表为 ground
+  truth 核对——loadEventFired（雏形→✅ S5+S16）、lifecycleEvent（补 S16 重发）、
+  setLifecycleEventsEnabled（门控语义记账）、executionContextDestroyed（❌→不实现-ok，
+  contextsCleared 覆盖）、dispatchKeyEvent（S16 accel+A 注记）、dialog 行（S10 澄清）、
+  dataReceived 行（✅ S17）、G4 请求事件总线（雏形已建）。
+  **验证**：cdp-e2e 28 绿 deterministic 双跑一致；browser bin 449P/0F；integration
+  781P/0F；renderer lib 161P+2 已知跨流失败（无新增）；clippy -D warnings + fmt 全过。
 - **S16（2026-09-13）keyboard Ctrl+A 编辑面 + document.open/write/close（绿步 26→28）**：
   **keyboard.type+press**：`Control+a` 此前被当普通可打印键注入 `'a'`（实测值
   'abca'）。修复：`apply_keydown_default` 增 `accel` 形参（CDP dispatchKeyEvent 路径传
@@ -223,14 +238,12 @@
    `frames.click+evaluate` 依赖 engine 子帧可见性（iframe 子帧 DOM/事件面）——渲染流域
    真协调。DC-2 口径决策：等子帧能力解冻后 30/30 收口，or 以「挂账 + 口径剔除」先定稿
    （见待用户决策）。
-2. **Network dataReceived**（proxy_fetch 读 body 循环加 chunk 观测点，net 窗口已开）——
-   增强 Network 事件保真度，不影响绿步判定。
-3. **矩阵账本漂移刷新**：S9-S16 落地的方法（Runtime 句柄面/DOM objectId 面/Storage
-   cookie/Emulation/dialog stub）三态在 evidence/cdp-command-matrix.md 逐项刷新；M2/M3
-   计划列（executionContextDestroyed/setLifecycleEventsEnabled/setFontFamilies 等）改记账口径。
-4. **M5 定稿（口径确定后）**：expected-green 基线定稿 → cdp-e2e 即 DC-2 门；挂账清单
+2. **M5 定稿（口径确定后）**：expected-green 基线定稿 → cdp-e2e 即 DC-2 门；挂账清单
    （不实现域）终稿；CI 集成可行性随收口评估（S8 记账：node 20.19 + lockfile 离线可复现）。
-5. **持续推进**：每轮 pull → cdp-e2e 门（基线 28 步）+ make test 防回归，余项按窗口逐个解冻。
+3. **ZeroWeb 侧捕获复核（可选，M5 定稿前置）**：经捕获代理对 ZeroWeb 重跑全核心流，
+   与 Chromium 基线（395 调用/40 方法/30 事件）比对命令面漂移——矩阵账本 v0.4 已按
+   dispatch 表核对，实测比对作 double-check。
+4. **持续推进**：每轮 pull → cdp-e2e 门（基线 28 步）+ make test 防回归，余项按窗口逐个解冻。
 
 **待用户决策清单**：
 - **DC-2 收口口径（2026-09-13 新入）**：余 2 步（frames.access/frames.click+evaluate）
@@ -259,7 +272,7 @@
 | M1 — 传输/发现/Target 基座 + Playwright 首连 | ✅ S9 收口：连接面 + evaluate 全族（literal/function/withArgs/object/async）+ releaseObject(Group) 全通 |
 | M2 — Page/Input 域 → 点击/填充/键盘/导航流 | ✅ S16 收口：goto/title/fill/click 全族/dialog/键盘 type+press（Ctrl+A 全选）/导航事件族全绿 |
 | M3 — DOM/CSS/Emulation → locator 流 | 🚧 S16：locator.boundingBox/viewport/媒体/截图 clip+element+fullPage 绿；iframe 面维持挂起（frames×2） |
-| M4 — Network/cookies/console 对象化（cookie 落点=Storage 域） | 🚧 S15：cookie 域 + UA override + Network 事件族 + consoleAPICalled（value-only）绿；dataReceived 待 net 观测点 |
+| M4 — Network/cookies/console 对象化（cookie 落点=Storage 域） | ✅ S17 收口：cookie 域 + UA override + Network 事件族（含 dataReceived，S17）+ consoleAPICalled（value-only）绿；分块流式观测记账 |
 | M5 — 矩阵收口 | 🚧 绿步 28/30（expected-green 基线同步扩至 28）；余 2 步全挂 engine 子帧可见性（DC-2 口径待决策） |
 
 ## 验证基线

@@ -1,6 +1,7 @@
 # CDP 命令矩阵账本（DC-1 控制件）
 
-**版本**: v0.3（S9 objectId 桥后三态推进；v0.2 S4、v0.1 M1 前置初稿）
+**版本**: v0.4（S17 漂移刷新——S12-S17 落地面三态/口径逐行核对，ground truth=
+`apps/browser/src/headless/domains.rs` dispatch 表；v0.3 S9、v0.2 S4、v0.1 M1 前置初稿）
 **日期**: 2026-09-13
 **捕获客户端**: playwright-core **1.63.0**（pin，见 `tests/playwright-matrix/package.json` + lockfile）
 **捕获目标**: Chromium 153.0.8010.12（playwright 缓存 chromium-1243，headless=new）
@@ -43,8 +44,8 @@ CDP 流量。零源码改动。
 ## 三态登记
 
 三态：✅ 实现 / ⚠️ 部分（命令被接受但语义/形状不全）/ ❌ 不实现（当前返回 `-32601`，符合
-DC-3 基线）。「现状」列以 2026-09-12 `apps/browser/src/headless/`（M1 拆分后模块树，S4
-切片状态）为准；行内（Sx）标记对应 master.md 已完成切片编号。
+DC-3 基线）。「现状」列 v0.4 起以 S17 时点 `apps/browser/src/headless/domains.rs` dispatch
+表为 ground truth 逐行核对；行内（Sx）标记对应 master.md 已完成切片编号。
 
 策略记号：**stub** = 先接受返回 `{}`（解附接摩擦），实义语义后续里程碑补。
 
@@ -95,11 +96,11 @@ DC-3 基线）。「现状」列以 2026-09-12 `apps/browser/src/headless/`（M1
 | `Page.navigate` | 2 | frameId/url/referrerPolicy | ✅（S5：`{frameId,loaderId,errorText?}` 形状 + 导航事件族 + 注入脚本重放） | 完成（M2 S5） |
 | `Page.captureScreenshot` | 3 | captureBeyondViewport/clip/format | ✅（S6：CDP `{data:"<b64>"}` 形状 + clip 原始 fb 裁剪；format 仅 png，jpeg -32601；BiDi 对象形不动） | 完成（M3 S6；captureBeyondViewport 随内容尺寸暴露） |
 | `Page.getLayoutMetrics` | 3 | — | ✅（S5：headless 固定视口映射，css* 全字段） | 完成（M2 S5；动态视口随 M3 viewport 桥） |
-| `Page.handleJavaScriptDialog` | 3 | accept/promptText | ⚠️ stub 接受（S5）；引擎无阻塞式对话框语义 → 无 javascriptDialogOpening 事件源 | 事件源随引擎对话框能力 |
+| `Page.handleJavaScriptDialog` | 3 | accept/promptText | ⚠️ stub 接受（S5）。S10 澄清：dialog 步绿因**引擎无阻塞对话框语义**——shim alert no-op、confirm/prompt 立即返回（无事件、无挂起），步骤「不挂起即过」；真对话框事件面属跨流域立项 | 事件源随引擎对话框能力（不阻 M5 收口） |
 | `Page.addScriptToEvaluateOnNewDocument` | 3 | source/worldName | ✅（S5：真执行 + 跨导航重放 + worldName 登记/新文档 world context 重发；单引擎主 world 执行） | 完成（M2 S5；world 隔离随引擎能力） |
 | `Page.createIsolatedWorld` | 3 | frameId/grantUniveralAccess/worldName | ⚠️ 返回新 contextId + worldName 事件（S4）；world 不隔离（单引擎） | 记账注记；真隔离随引擎能力 |
 | `Page.getFrameTree` | 3 | — | ✅（S4：主 frame id=targetId 硬契约；会话级按 target 归属） | 完成（M1 S4） |
-| `Page.setLifecycleEventsEnabled` | 3 | enabled | ⚠️ stub 接受（S4）；lifecycleEvent 事件未产 | M2 实义 |
+| `Page.setLifecycleEventsEnabled` | 3 | enabled | ⚠️ stub 接受（S4）；lifecycleEvent 事件已产（S5 导航族 + S16 write 落定重发）但**不随本开关门控**（恒发） | 记账：门控语义随域收口（PW 消费面不依赖开关） |
 | `Page.setFontFamilies` | 3 | fontFamilies | ❌（PW 容忍缺失，实测未阻流） | M3 stub |
 
 ### Input 域
@@ -107,7 +108,7 @@ DC-3 基线）。「现状」列以 2026-09-12 `apps/browser/src/headless/`（M1
 | 方法 | 捕获调用 | 参数键 | ZeroWeb 现状 | 计划 |
 |------|---------|--------|--------------|------|
 | `Input.dispatchMouseEvent` | 35 | button/buttons/clickCount/force/modifiers/type/x/y | ✅（S5：→renderer MouseEvent/ScrollEvent；released 按 clickCount 合成 Click/DblClick；wheel→ScrollEvent） | 完成（M2 S5） |
-| `Input.dispatchKeyEvent` | 14 | autoRepeat/code/commands/isKeypad/key/location/modifiers/text/type/unmodifiedText/windowsVirtualKeyCode | ✅（S5：keyDown/rawKeyDown→Down、keyUp→Up、char→Press(text 优先)、modifiers 位解码） | 完成（M2 S5） |
+| `Input.dispatchKeyEvent` | 14 | autoRepeat/code/commands/isKeypad/key/location/modifiers/text/type/unmodifiedText/windowsVirtualKeyCode | ✅（S5：keyDown/rawKeyDown→Down、keyUp→Up、char→Press(text 优先)、modifiers 位解码。S16：accel(Ctrl/Meta)+A → 全选默认动作——`apply_select_all_at`（shim setSelectionRange 全选），keyboard.type+press 绿） | 完成（M2 S5 + S16） |
 | `Input.insertText` | 1 | text | ✅（S5：→ImeEvent Commit） | 完成（M2 S5） |
 
 ### DOM 域
@@ -158,21 +159,21 @@ DC-3 基线）。「现状」列以 2026-09-12 `apps/browser/src/headless/`（M1
 | `Target.detachedFromTarget` / `Target.targetDestroyed` | 4 / — | ✅（S4：closeTarget/detachFromTarget 应答） | 完成（M1 S4） |
 | `Runtime.executionContextCreated` | 14 | ✅（S4：auxData.frameId/isDefault 硬契约） | 完成（M1 S4） |
 | `Runtime.executionContextsCleared` | 4 | ✅（S5，导航 commit 时） | 完成（M2 S5） |
-| `Runtime.executionContextDestroyed` | 2 | ❌ | M2 |
+| `Runtime.executionContextDestroyed` | 2 | ❌ 不单发——导航换代经 `sandbox.reset_context` 整体失效（= CDP context destroyed 语义），由 `executionContextsCleared` 覆盖（S9 实测 PW 消费面绿） | 记账：不实现-ok |
 | `Runtime.consoleAPICalled` | 14 | ✅（S11：renderer ConsoleLog IPC → 会话事件排空盖章；value-only remoteObject args + level→CDP type 映射——console.collect 绿） | 完成（M4 S11） |
-| `Page.loadEventFired` | 3 | ⚠️ 有雏形（timestamp 恒 0.0） | M2 |
+| `Page.loadEventFired` | 3 | ✅（S5：导航族真 timestamp；S16：document.write 落定重发——PW setContent console tag 清 lifecycle 后等新 load 的时序契约） | 完成（M2 S5 + S16） |
 | `Page.frameNavigated` | 3 | ✅（S5，frame.id=targetId） | 完成（M2 S5） |
 | `Page.frameStartedLoading` / `frameStoppedLoading` | 3 / 5 | ✅（S5） | 完成（M2 S5） |
 | `Page.frameStartedNavigating` | 3 | ❌ | M2（低优） |
 | `Page.domContentEventFired` | 3 | ✅（S5） | 完成（M2 S5） |
-| `Page.lifecycleEvent` | 42 | 🔶 S5：DOMContentLoaded/load 两点随导航发出；细粒度事件未逐一生效 | M4 补齐（逐 lifecycle 对齐） |
-| `Page.javascriptDialogOpening` / `javascriptDialogClosed` | 3 / 3 | ❌ | M2 |
+| `Page.lifecycleEvent` | 42 | 🔶 S5+S16：DOMContentLoaded/load 两点随导航发出 + document.write 落定重发；细粒度事件未逐一生效 | 记账：逐 lifecycle 对齐随 devtools 面需求 |
+| `Page.javascriptDialogOpening` / `javascriptDialogClosed` | 3 / 3 | ❌（S10 澄清：引擎无阻塞对话框语义 → 无事件源；dialog 步骤经 shim 立即返回语义通过） | 随引擎对话框能力（不阻 M5 收口） |
 | `Page.frameAttached` / `frameDetached` | 1 / 1 | ❌（子帧事件源需引擎子帧可见性，渲染流域协调；iframe 面挂起） | 随引擎子帧能力 |
 | `Page.frameResized` | 4 | ✅（S6：尺寸变更时发出） | 完成（M3 S6） |
 | `Page.documentOpened` | 1 | ❌ | M3（低优） |
 | `Page.frameRequestedNavigation` | 1 | ❌ | M3（低优） |
 | `Page.frameSubtreeWillBeDetached` | 1 | ❌ | M3（低优） |
-| `Network.requestWillBeSent` / `responseReceived` / `loadingFinished` / `dataReceived` | 9 / 8 / 9 / 10 | ✅（S7+：随 proxy_fetch 发出（Network.enable 门控，headers/mimeType/frameId 齐，失败路径 loadingFailed）；**frameId 为 PW 硬要求——缺省请求被丢弃（实测）**；dataReceived 未产） | 完成（M4 S7+；dataReceived 随 net 观测点扩展） |
+| `Network.requestWillBeSent` / `responseReceived` / `loadingFinished` / `dataReceived` | 9 / 8 / 9 / 10 | ✅（S7+：随 proxy_fetch 发出（Network.enable 门控，headers/mimeType/frameId 齐，失败路径 loadingFailed）；**frameId 为 PW 硬要求——缺省请求被丢弃（实测）**。S17：dataReceived 补齐——proxy 子资源路径 + renderer 观测（JS fetch/XHR）双路径均在 loadingFinished 前发出，body 一次性到达语义（dataLength=encodedDataLength=body 字节）；分块流式随 net 观测点流式化） | 完成（M4 S7 + S17） |
 | `Network.requestWillBeSentExtraInfo` / `responseReceivedExtraInfo` | 9 / 9 | ❌ | M4（低优，header 面） |
 | `Network.policyUpdated` | 6 | ❌ | 不实现（Chromium 内部策略事件） |
 | `Log.entryAdded` | 2 | ❌ | 不实现-ok（console 覆盖） |
@@ -199,6 +200,6 @@ DC-3 基线）。「现状」列以 2026-09-12 `apps/browser/src/headless/`（M1
 | G2 | `/json/version` 尾斜杠 404 | ✅ 已解（S3） |
 | G2b | tungstenite write() 缓冲不落盘 + peek 5s read timeout 未恢复 → 任何 CDP 客户端收不到响应 | ✅ 已解（S3，实测发现；learning 2026-09-12） |
 | G3 | `Runtime.evaluate` 扁平字符串结果，无 remoteObject/objectId | ✅ 已解（S9：objectId 全量 remoteObject 桥——注册表/renderer 原语/双路径 evaluate + DOM 域句柄面） |
-| G4 | 无请求事件总线（net 生命周期无观测点） | Network 域 + devtools 面板（P6） |
+| G4 | 无请求事件总线（net 生命周期无观测点） | 🔶 雏形已建（S7 proxy_fetch 生命周期 + S14 renderer FetchObserved 观测管线 + S17 dataReceived）；分块流式观测点待 net 窗口流式化（P6） |
 | G5 | console 走 `__zw_console_log` 扁平字符串宿主回调 | consoleAPICalled remoteObject 形态（P5） |
 | G6 | `headless.rs` 2256 行超 2000 上限 | ✅ 已解（S2 拆分 9 模块） |

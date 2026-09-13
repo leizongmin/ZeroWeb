@@ -267,14 +267,29 @@ impl HeadlessSession {
                                 "timestamp": now(),
                             }),
                         )),
-                        _ => self.pending_network_events.push((
-                            "Network.loadingFinished".into(),
-                            serde_json::json!({
-                                "requestId": request_id,
-                                "timestamp": now(),
-                                "encodedDataLength": 0,
-                            }),
-                        )),
+                        // S17：loadingFinished 前发 dataReceived（body 一次性到达语义——
+                        // dataLength=encodedDataLength=观测 body 字节数；分块流式随 net
+                        // 观测点流式化。失败路径 data_length=0 → 只发 dataLength 0 事件，
+                        // PW/devtools 按 finished 空载消费）。
+                        _ => {
+                            self.pending_network_events.push((
+                                "Network.dataReceived".into(),
+                                serde_json::json!({
+                                    "requestId": request_id,
+                                    "timestamp": now(),
+                                    "dataLength": params.data_length,
+                                    "encodedDataLength": params.data_length,
+                                }),
+                            ));
+                            self.pending_network_events.push((
+                                "Network.loadingFinished".into(),
+                                serde_json::json!({
+                                    "requestId": request_id,
+                                    "timestamp": now(),
+                                    "encodedDataLength": params.data_length,
+                                }),
+                            ));
+                        }
                     }
                 }
                 Ok(None)
@@ -418,6 +433,21 @@ impl HeadlessSession {
                                 "headers": response_headers,
                                 "mimeType": mime_type,
                             },
+                        }),
+                    ));
+                    // S17：dataReceived（body 一次性到达语义——proxy_fetch 同步取回完整
+                    // body，dataLength=encodedDataLength=body 字节数；分块流式随 net
+                    // 观测点流式化）。
+                    self.pending_network_events.push((
+                        "Network.dataReceived".to_string(),
+                        serde_json::json!({
+                            "requestId": net_request_id,
+                            "timestamp": std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .unwrap_or_default()
+                                .as_millis() as u64,
+                            "dataLength": response.body.len(),
+                            "encodedDataLength": response.body.len(),
                         }),
                     ));
                     self.pending_network_events.push((

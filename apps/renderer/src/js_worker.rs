@@ -103,7 +103,7 @@ enum JsWorkerCommand {
 
 /// S14：fetch 观测记录 `(phase, seq, url, method, status)`——phase 0=request /
 /// 1=response / 2=finished|failed；seq 三阶段关联。
-pub type FetchObservedRecord = (u8, u64, String, String, u16);
+pub type FetchObservedRecord = (u8, u64, String, String, u16, u64);
 
 /// 渲染进程 JS worker 句柄。
 pub struct RendererJsWorker {

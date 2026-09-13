@@ -301,19 +301,26 @@ impl RendererRuntime {
             let observer: zero_engine::FetchHandler = Arc::new(move |req: &zero_engine::FetchRequest| {
                 let seq = fetch_seq.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
                 if let Ok(mut q) = fetch_observed.lock() {
-                    q.push((0u8, seq, req.url.clone(), req.method.clone(), 0u16));
+                    q.push((0u8, seq, req.url.clone(), req.method.clone(), 0u16, 0u64));
                 }
                 match inner(req) {
                     Ok(resp) => {
                         if let Ok(mut q) = fetch_observed.lock() {
-                            q.push((1u8, seq, req.url.clone(), String::new(), resp.status));
-                            q.push((2u8, seq, req.url.clone(), String::new(), 0u16));
+                            q.push((1u8, seq, req.url.clone(), String::new(), resp.status, 0u64));
+                            // S17：loadingFinished 阶段携带 body 字节数（headless 映射
+                            // `Network.dataReceived`；body 文本长度 ≈ 传输字节数，
+                            // body_bytes 二进制路径按原始字节计）。
+                            let data_len = resp
+                                .body_bytes
+                                .as_ref()
+                                .map_or_else(|| resp.body.len() as u64, |bytes| bytes.len() as u64);
+                            q.push((2u8, seq, req.url.clone(), String::new(), 0u16, data_len));
                         }
                         Ok(resp)
                     }
                     Err(e) => {
                         if let Ok(mut q) = fetch_observed.lock() {
-                            q.push((2u8, seq, req.url.clone(), String::new(), 0u16));
+                            q.push((2u8, seq, req.url.clone(), String::new(), 0u16, 0u64));
                         }
                         Err(e)
                     }
@@ -2266,7 +2273,7 @@ impl RendererRuntime {
     /// S14：drain worker fetch 观测队列 → browser/headless IPC（`FetchObserved`）。
     /// phase/seq 语义见 protocol `FetchObservedParams`。
     fn tick_fetch_observed_drain(&mut self) {
-        for (phase, seq, url, method, status) in self.js_worker.take_fetch_observed() {
+        for (phase, seq, url, method, status, data_length) in self.js_worker.take_fetch_observed() {
             if let Err(e) = self.send_regular(IpcMessageKind::FetchObserved(
                 zero_protocol::message::FetchObservedParams {
                     phase,
@@ -2274,6 +2281,7 @@ impl RendererRuntime {
                     url,
                     method,
                     status,
+                    data_length,
                 },
             )) {
                 tracing::debug!("forward fetch observed: {e}");

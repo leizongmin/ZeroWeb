@@ -487,6 +487,9 @@ pub struct FetchObservedParams {
     pub method: String,
     /// 响应状态码（response 阶段；其余 0）。
     pub status: u16,
+    /// 响应体字节数（loadingFinished 阶段携带，headless 映射 `Network.dataReceived`；
+    /// S17 加入——失败路径/请求阶段为 0）。
+    pub data_length: u64,
 }
 
 /// renderer document.write 写周期落定信号（cdp-protocol S16）。
