@@ -50,6 +50,22 @@
   观察代）——非 ZeroWeb 面、不触 9222 端口族、无 cdp-e2e 腿，引用轮不受影响。
   S78 故障窗口后持续零复现，监测态维持。goal 自有面零新缺口、无扩展面（S40-S209
   重审结论延续）。
+  **Push 时 rebase 补充注记（rule 10）**：push 前 pull --rebase 拾取并行流新提交
+  930cdd684（渲染流 R4322-F：style-system S11 style-key 缓存不可键父链继承态碰撞
+  attr-chain 指纹修复，+rendering-compat.md 控制面 2 行 + learnings 2 文件 +
+  imported-tests.txt 2 行）——S210 记档时点各项结论（tip = 8896fb52a、crates 零
+  新提交、锚点 6 文件 +346/-20）在记录时点精确成立；新 tip（b7127392b）下复核：
+  **本流自有面仍逐字节一致**（diff 空，R4322-F 不触 apps/browser / tests/
+  playwright-matrix / test-guard / Makefile）；全树锚点新增态 = **7 文件 +437/-22**
+  （R4321-F 4 文件 +314/-19 + R4322-F style-system 1 文件 +91/-2 + website 2 文件
+  +32/-1，imported-tests.txt 累计 +4 归因两代 R43xx），全部归因渲染流两代修复与
+  website 周报，零本流面触及。**解冻条件实质判定不变**：① crates/ 自 65d2c2851
+  新增 1 提交（R4322-F），但其内容 grep iframe/subframe/realm/frame-load 零命中
+  ——样式缓存域修复、非子帧文档加载+JS realm 工作；② docs/goal 新增 rendering-
+  compat.md 2 行 = 渲染流自身控制面（S150 先例），非 DC-2 口径拍板。引用计数与
+  活跑期限不受影响（门结论引用 S208 活跑，其基线树不含 R4322-F——R4322-F 触
+  zero-browser 依赖链 style-system，下次活跑至迟 S218 将覆盖含 R4322-F 组合态，
+  归因样式缓存语义 + 本流面零漂移，门禁绿态预期不受影响）。
 - **S209（2026-09-14）静默监测轮 — 同 tip 复核（无代码变更，绿步维持 33）**：
   pull 零新提交（tip = 6ed368a52，即 S208 提交本身）——双层锚点口径复核通过：本流
   自有面与 S99 门禁验证态逐字节一致（diff 空）；全树锚点 diff 维持新归因态（6 文件
