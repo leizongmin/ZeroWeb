@@ -1047,6 +1047,12 @@ impl InlineFormattingContext {
                     // border-color-012 的空 `<span class=text>` 后导空格实证）。有元素子：
                     // 递归同规则。
                     if !gc_has_element_children {
+                        // R4300d：**white-space 模式不一致的子不折回**——折叠语义随 run 的
+                        // ws_override 走，折入父 pending 会按父模式坍缩子文本
+                        //（white-space-mixed-001 的 `<span class=pre> </span>` 嵌入 normal
+                        // 父：pre 空格被坍缩，20.47→21.38 实证）。模式一致 → 折回（旧祖先
+                        // 吸收语义，border-color-012 `.text` 壳归因 .inner）；不一致 → 子自
+                        // 身构造独立 run（= 主 collect 路径到达该子时的形状）。
                         let gc_text_empty = doc
                             .text_content(gc)
                             .is_none_or(|t| t.chars().all(|c| c.is_whitespace()));
@@ -1080,8 +1086,29 @@ impl InlineFormattingContext {
                             }
                             continue;
                         }
-                        if let Some(txt) = doc.text_content(gc) {
-                            text_pending.push_str(&txt);
+                        let child_ws = styles
+                            .get(&gc)
+                            .map(|st| Self::run_white_space(&st.white_space))
+                            .or_else(|| self.ws_overrides.get(&gc).copied());
+                        let ws_same = match (run_ws, child_ws) {
+                            (Some(a), Some(b)) => {
+                                a.preserve == b.preserve
+                                    && a.break_at_newline == b.break_at_newline
+                                    && a.no_wrap == b.no_wrap
+                            }
+                            (None, None) => true,
+                            _ => false,
+                        };
+                        if ws_same {
+                            if let Some(txt) = doc.text_content(gc) {
+                                text_pending.push_str(&txt);
+                            }
+                            continue;
+                        }
+                        flush_pending(&mut text_pending, items, !emitted_text_run, false);
+                        emitted_text_run = true;
+                        if let Some(item) = self.build_flatten_run_for_element(doc, gc, styles) {
+                            items.push(item);
                         }
                         continue;
                     }
