@@ -2,6 +2,8 @@
 
 这是模板，不是通过凭据。复制到 `.acceptance/site-optimizer/<run-id>/run.md`，删除提示并
 填写事实；未采集项写 unknown/unavailable。相关路径相对运行目录，敏感 URL 参数脱敏。
+同时保存 `checkpoint.json`（见 skill 的 `references/checkpoint.md`）；本记录负责解释，
+JSON 负责核对身份、预算与逐项门禁。两者不一致时先纠正，不以文字结论覆盖机器结果。
 
 ## 合约与身份
 
@@ -14,6 +16,8 @@
 - locale / theme / reduced motion / 缓存 / 网络 / 账号状态：
 - 控制面探针证据和每项能力 available/unavailable/unverified：
 - 当前阶段 / 上次检查点时间 / 停止原因（运行中留空）：
+- 实际执行状态 / 宿主任务或拥有的进程身份 / 最近核对时间 / 是否仍有后台执行：
+- 验证耗时估计及来源 / 保存报告耗时 / 动态收尾预留 / 是否允许开始新候选：
 
 ## 冻结任务覆盖
 
@@ -34,6 +38,9 @@
 - 原网站前后任务、输入与帧证据 / UI 和页面结论分别记录：
 - console、网络错误、崩溃 / 性能每次结果、中位数、范围和噪声：
 - 工程门禁命令、资源包裹、退出码、证据及未覆盖项：
+- 必需检查清单 / 实际 PASS、FAIL、INCONCLUSIVE、SKIPPED / 可比性 / 报告摘要：
+- 目标缺陷结论与交付就绪结论 / 精确豁免项、适用候选/分支及用户授权来源：
+- 性能预检（亲和性、可用并行度、features、基线）/ 重跑假设、改变的条件和成本：
 - accept/reject/inconclusive / 理由 / best 是否更新 / 拒绝候选如何保全或撤销：
 
 ## 探索时段与恢复
