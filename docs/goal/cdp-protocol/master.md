@@ -2,11 +2,12 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-14（S254：静默监测轮——tip 与 S253 提交一致（8ed2e9c09），
-本流自有面零漂移复核通过，全树锚点维持归因态零新增不可归因文件，门结论引用
-S245 刷新（树变化刷新轮门 + make test 双刷新），引用计数 9/10 **S255 为活跑
-最后期限**；绿步维持 33；S198 亚型解除态维持无 cdp-e2e 腿，cronjob 流
-test-guard 腿延续 + ZeroWeb-3-wt-baidu browser 进程 9333 延续（均非本流面）；
+**最后更新**: 2026-09-14（S255：活跑最后期限轮——pull 1 新提交 52695a7c1 文档
+维护第十轮（纯 docs，apps/browser README 架构树补行触本流声明面 = 自有面锚点
+首次漂移，S99 先例口径归因）；引用计数 10/10 + 锚点漂移双动因触发 cdp-e2e 门
+活跑：**PASS 33 绿 deterministic 双跑 YES EXIT=0 绿步集机械 diff 基线零漂移
+ZERO_DRIFT=True**，steps/determinism-report 04:24 同轮落盘新鲜，引用计数归零
+**下次活跑至迟 S265**；绿步维持 33；解冻条件实质判定不变 R4323 尚未落 main；
 零 zombie 零遗留端口）
 
 ---
@@ -38,6 +39,39 @@ test-guard 腿延续 + ZeroWeb-3-wt-baidu browser 进程 9333 延续（均非本
 
 ## 已完成切片
 
+- **S255（2026-09-14）活跑最后期限轮 — 引用计数 10/10 + 自有面锚点漂移双动因，
+  cdp-e2e 门活跑刷新（无代码变更，绿步维持 33）**：
+  pull 1 新提交（tip ed2ba3ed5→**52695a7c1**，`docs: 文档维护第十轮 —
+  R4322/89.0% 口径同步、CDP 绿步 6→33、下载字体生产管线入账`，纯 docs 提交 8
+  文件 +17/-13：项目级 README/ROADMAP/CHANGELOG/architecture + docs/goal/
+  zero-web/master.md + crates/webview README + **apps/browser README** +
+  dependency-upgrade-backlog，零 crates/ 代码变更）。**双层锚点口径**：本流自有面
+  锚点首次漂移——`git diff 765429dda..HEAD` 命中 apps/browser/README.md +1 行
+  （架构树补 `app_page_fonts.rs` 条目，PR #27 页面下载字体管线的 README 补记，
+  文档行零代码语义、与 CDP 域正交，S99 先例「触声明面记档 + 补自有门」口径）；
+  全树锚点 8 文件全归因文档维护第十轮（含 zero-web master.md 口径同步 + 项目级
+  文档把本流 cdp-protocol 进度 S1–S12→S1–S39、绿步 6→33 入账——外部面把本流
+  成果入账非语义变更）——零新增不可归因文件。**活跑动因**：① 引用计数 10/10
+  最后期限（S246-S254 九轮引用 S245）；② 自有面锚点漂移（apps/browser README
+  文档行）。**S198 前置复核通过**（零 make cdp-e2e 腿、9222/45029/34293 全
+  空闲）后开跑。**活跑结果：cdp-e2e gate PASS 33 绿、deterministic 双跑 YES、
+  EXIT=0、绿步集机械 diff 基线零漂移（ZERO_DRIFT=True，33 步与 expected-green
+  基线逐项一致）**——zero-browser 增量编译 3.47s 后门禁绿态不受 docs 提交影响；
+  唯一非绿步维持挂账 frames.click+evaluate；无首调红形态（S168 形态连续第九次
+  零再现）。steps-report/determinism-report 04:24 同轮落盘新鲜（steps 35 计
+  observations 统计项、fatal 无、green 33）。**引用计数归零（本轮活跑新鲜落盘），
+  下次活跑至迟 S265**。双解冻条件实质判定不变：① crates/ 自 65d2c2851 =
+  930cdd684（R4322-F）+ 4a879d408（fmt，零语义）+ 52695a7c1（crates/webview
+  README 文档行，零语义零子帧相关性），engine 面零提交——渲染流 R4323 尚未落
+  main；② docs/goal 自 S254 1 新提交 52695a7c1（zero-web master.md 口径同步，
+  非本流控制面非拍板记录），DC-2 口径无新拍板。机器卫生复核：零 zombie、
+  9222/45029/34293/96xx 全空闲、本流零遗留进程（活跑腿全部收尾）。**并行流
+  观察**：S198 端口竞争亚型解除态维持（活跑前后均无外部 cdp-e2e 腿）；在窗
+  负载——cronjob 流 test-guard integration 腿（02:51）+ ZeroWeb-3-wt-baidu
+  浏览器进程（9333 非 9222 族，1h+ 延续）+ rally query CI 守护腿 + 双流 rally
+  主进程零活动腿（均非本流自有面）；渲染流 ZeroWeb-2 验证腿维持不在窗。S78
+  故障窗口后持续零复现，监测态维持。goal 自有面零新缺口、无扩展面（S40-S254
+  重审结论延续）。
 - **S254（2026-09-14）静默监测轮 — 同 tip 复核（无代码变更，绿步维持 33）**：
   pull 零新提交（tip = 8ed2e9c09，即 S253 提交本身）——双层锚点口径复核通过：本流
   自有面与 S99 门禁验证态逐字节一致（硬核对 `git diff 765429dda..HEAD -- apps/browser
