@@ -2,14 +2,15 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-14（S289：树变化刷新轮——9b4488d3a R4325-F（layout-engine
-BFC 隔离臂 gate 收窄）入树触发，S245/S258 先例门 + make test 双刷新：cdp-e2e
-门负载窗内首调即收口 **PASS 33 绿 deterministic 双跑 YES EXIT=0
-ZERO_DRIFT=YES**（05:45 落盘）+ **make test 组合态 19,281P/0F**（67 组 result
-全 ok，较 S258 时点 19,280 +1 = R4325-F 新增用例）；**引用计数自本轮活跑起计，
-下次活跑至迟 S299**；绿步维持 33；解冻条件①实质不变（crates/ 唯一新增
-9b4488d3a 非渲染流子帧文档加载 + JS realm 能力，frames.click+evaluate 维持
-挂起），②DC-2 无新拍板；负载窗执行（渲染流 bench 腿在窗，负载下样本第 14 个）；
+**最后更新**: 2026-09-14（S290：树变化刷新轮——afdd423df R4328-F（paint run-in
+自盒重影抑制，S289 双腿完成后入树）触发，S245/S258 先例门 + make test 双刷新：
+门净窗首调即收口 **PASS 33 绿 deterministic 双跑 YES EXIT=0 ZERO_DRIFT=YES**
+（06:46 落盘）+ **make test 组合态 run2 19,281P/0F EXIT=0**（run1 单例瞬态红
+——webview sw navigator_update 首断言无轮询竞速 promise 解析，e55038a2a/
+763cfd996 已知 flake 家族第三漏改点，R4328-F 零 webview 触碰排除因果；隔离复跑
+0.07s PASS + 全量复跑绿）；**引用计数自本轮活跑起计，下次活跑至迟 S300**；
+绿步维持 33；解冻条件①实质不变（crates/ 新增 9b4488d3a + afdd423df 均非渲染流
+子帧文档加载 + JS realm，frames.click+evaluate 维持挂起），②DC-2 无新拍板；
 零 zombie 零遗留端口，19222 清场后维持空闲）
 
 ---
@@ -41,6 +42,43 @@ ZERO_DRIFT=YES**（05:45 落盘）+ **make test 组合态 19,281P/0F**（67 组 
 
 ## 已完成切片
 
+- **S290（2026-09-14）树变化刷新轮 — afdd423df R4328-F 入树触发门 + make test
+  双刷新（S245/S258 先例，绿步维持 33）**：
+  pull 零新提交（tip = 8a5a8928c，即 S289 提交本身）——树变化 = afdd423df
+  （fix(paint) R4328-F run-in 自盒重影抑制，06:37:50 渲染流 clone 提交，
+  **晚于 S289 双腿完成时点（门 05:45 / make test 06:17:33）入树**，故 S289 刷新
+  证据基树（9b4488d3a）被其超越，本轮成立）。双层锚点口径复核：本流自有面锚点
+  增量零漂移（硬核对维持仅 apps/browser/README.md +1 行 = S255 已归因基线）；
+  全树对 S289 刷新基树增量全部可归因——afdd423df 的 layout-engine/paint 面 +
+  7cc042d6f rendering-compat.md 探针记录（渲染流控制面）+ 本流 master.md
+  （S289 记档），零不可归因文件。**解冻条件①实质判定不变**：crates/ 自
+  8fb39cd46 新增 = 9b4488d3a + afdd423df（BFC gate 收窄 + run-in 自盒重影
+  抑制），**均非**渲染流子帧文档加载 + JS realm 能力，frames.click+evaluate
+  解挂前提未到（维持挂起）；② docs/goal 自 S289 零非本流提交，DC-2 口径无新
+  拍板记录。**S198 前置复核通过**（零 make cdp-e2e 腿的验收链在窗、9222/45029/
+  34293/19222 全空闲），净窗执行（门前负载 1min 0.45，零验证腿在窗）。
+  **腿 1 门活跑（首调即收口）**：**PASS 33 绿 deterministic 双跑 YES EXIT=0**
+  （门前置 R4328-F 链 zero-page-runtime/zero-browser 重编译 10.12s；run1/run2
+  各 33 ok + frames.click+evaluate 预期失败项一致）；绿步集机械 diff
+  expected-green 双向零漂移（**ZERO_DRIFT=YES**）；steps-report/
+  determinism-report 06:46 同轮新鲜落盘。**S168 形态再现计数**：本轮首调即
+  PASS 零再现（连续第三个首调收口样本；S168 形态累计两例非聚集记账维持）。
+  **腿 2 make test 组合态刷新（两调收口）**：**run1 单例瞬态红**——
+  `tests::service_worker_runtime::navigator_update_activates_replacement_
+  without_a_controlled_client`（crates/webview/src/tests/service_worker_runtime.rs
+  L1139）断言 "pending" != "ready"（654P/1F）；机械归因四点：① L1139 首断言
+  无轮询直接断言，register→serviceWorker.ready promise 链异步，负载下与
+  execute_script 竞速——同文件 L1105-1114/L1153 均为 e55038a2a（deadline
+  20s→60s）+ 763cfd996（漏改补片）修复过的 deadline 轮询模式，L1139 为**同
+  家族第三漏改点**；② R4328-F 零 webview/storage 文件触碰，因果排除；③ 隔离
+  复跑（test-guard 包裹 `-p zero-webview --lib` 单测）0.07s PASS；④ 全量复跑
+  **run2 19,281P/0F EXIT=0**（67 组 result 全 ok，计数与 S289 时点一致
+  ——R4328-F 零新增用例，R4321-F+R4322-F+R4325-F+R4328-F 组合态首次全量
+  覆盖）。**跨流红灯记档（S16 先例口径）**：该 flake 属 zero-web 流 webview
+  面工作域，本流不单方修（避免碰其活跃工作面）；L1139 补 deadline 轮询为
+  机械修法，归 webview 面流按 e55038a2a 先例处理。**引用计数自本轮活跑起计
+  （刷新即新鲜门证据），下次活跑至迟 S300**。goal 自有面零新缺口、无扩展面
+  （S40-S289 重审结论延续）。
 - **S289（2026-09-14）树变化刷新轮 — 9b4488d3a R4325-F 入树触发门 + make test
   双刷新（S245/S258 先例，绿步维持 33）**：
   pull 零新提交（tip = edba3ef54，即 S288 提交本身）——树变化来自 S288 push 时
@@ -4084,7 +4122,7 @@ ZERO_DRIFT=YES**（05:45 落盘）+ **make test 组合态 19,281P/0F**（67 组 
    steps-report 新鲜性**）；tracked 树变化时门 + make test。**连续引用不超过 10 轮**
    （S98 新增：S78 故障为负载触发、可在树不变时复发——纯引用协议探测不到环境性复发，
    超限即活跑一次刷新证据新鲜度，服务 #0 复现监测；S98/S108/S118/S128/S138/S148/
-   S158/S168/S178/S188/S198/S208/S218/S228/S238/S245/S255/S258/S268/S278/S288/S289 已执行——S168 为期限轮负载窗口内活跑（第六个负载下样本）且
+   S158/S168/S178/S188/S198/S208/S218/S228/S238/S245/S255/S258/S268/S278/S288/S289/S290 已执行——S168 为期限轮负载窗口内活跑（第六个负载下样本）且
    首次出现「首调红（run 1 瞬态 11 步失败 → deterministic NO）/ 复跑即 PASS」形态，
    四点机械归因定性单次瞬态环境事件（见 S168 记录）；S178 为期限轮并行编译负载窗内
    活跑（第七个负载下样本、首个编译 CPU 竞争亚型，PASS 33 绿零漂移，首调红形态零
@@ -4114,8 +4152,9 @@ ZERO_DRIFT=YES**（05:45 落盘）+ **make test 组合态 19,281P/0F**（67 组 
    若再现该形态，同口径归因并留意复现频率——单轮偶发记账、多轮聚集升级 #0 排查
    （S168 形态累计两例相隔 ~97 轮非聚集）；
    S278 已执行（净窗首调即收口）；S288 已执行（净窗首调即收口）；S289 已执行
-   （9b4488d3a 入树触发的树变化刷新轮，负载窗内双腿刷新，S245/S258 先例），
-   下次活跑至迟 S299；若活跑时逢并行流负载窗口则
+   （9b4488d3a 入树触发的树变化刷新轮，负载窗内双腿刷新，S245/S258 先例）；
+   S290 已执行（afdd423df 入树触发的树变化刷新轮，净窗门首调收口 + make test
+   两调收口），下次活跑至迟 S300；若活跑时逢并行流负载窗口则
    优先窗口内执行，负载下样本对 #0 更有价值（负载窗口口径含并行流 browser 进程型与
    编译测试负载型两亚型，净窗亚型 S208 起并行记录；**端口竞争亚型口径 S198 新增**：
    并行流含 make cdp-e2e 腿
@@ -4167,6 +4206,9 @@ ZERO_DRIFT=YES**（05:45 落盘）+ **make test 组合态 19,281P/0F**（67 组 
   fmt 提交入树后全量刷新，67 组 result 全 ok）；
   **S289 时点 19,281P/0F EXIT=0**（较 S245 +1 = 9b4488d3a R4325-F 新增用例；
   9b4488d3a 入树触发的组合态刷新，67 组 result 全 ok）；
+  **S290 时点 19,281P/0F EXIT=0**（run2 复跑收口，run1 单例瞬态红已机械归因
+  ——webview sw L1139 无轮询首断言 flake 家族第三漏改点，跨流记档不单方修；
+  R4321-F+R4322-F+R4325-F+R4328-F 组合态首次全量覆盖）；
   禁止裸跑 cargo test，经 test-guard。注：make test
   的 workspace 腿 exclude zero-renderer——renderer lib 单测不在全量门内，跨流红灯
   （form fixture×2）经显式 `-p zero-renderer --lib` 跟踪）
@@ -4204,7 +4246,11 @@ ZERO_DRIFT=YES**（05:45 落盘）+ **make test 组合态 19,281P/0F**（67 组 
   PASS 33 绿 deterministic 双跑 YES EXIT=0，绿步集机械 diff 基线零漂移
   （ZERO_DRIFT=YES），05:45 落盘；make test 组合态 19,281P/0F（R4321-F+
   R4322-F+R4325-F 组合态首次全量覆盖，渲染流 layout 修复对门禁绿态零影响）；
-  负载下样本第 14 个，首调红形态零再现
+  负载下样本第 14 个，首调红形态零再现。**S290 注记**：afdd423df R4328-F 入树
+  触发的树变化刷新轮——门净窗首调即 PASS 33 绿 deterministic 双跑 YES EXIT=0，
+  绿步集机械 diff 基线零漂移（ZERO_DRIFT=YES），06:46 落盘；make test 两调收口
+  19,281P/0F（run1 webview sw L1139 单例瞬态红，flake 家族归因四点全过、隔离
+  0.07s PASS、run2 全绿——非基线回归非 R4328-F 因果）；首调红形态零再现
 - CDP 现状：`Page.navigate` / `Runtime.evaluate` / `Target.getTargets` 3 命令 +
   `/json/version` + `/json` 发现（headless.rs L782-796/L571/L1159）——历史基线，现行面
   见缺口清单 P3/P4 与切片记录
