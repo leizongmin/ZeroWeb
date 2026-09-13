@@ -247,6 +247,9 @@ pub struct InlineFormattingContext {
     /// **inline 子内容**前置到条目序列开头（run-in 自身 inline 语义透传：文本/子
     /// inline 均按其自身样式渲染）。None = 无 run-in 并入。
     pub run_in_prepended: Option<NodeId>,
+    /// R4330：并入 run-in 的分裂边框载荷（collect 后处理折入前/末 run 水平 margin
+    /// 完成推进 + paint 侧绘条几何）。
+    pub run_in_border: Option<crate::types::RunInBorder>,
     /// Phase A font-metric 提供者（可选）。
     ///
     /// `None`（默认）= `apply_vertical_alignment` 回退 `0.8·fs` 启发式（当前行为，零回归）。
@@ -347,6 +350,7 @@ impl InlineFormattingContext {
             padding_overrides: NodeIdMap::default(),
             fragment_node_ids: None,
             run_in_prepended: None,
+            run_in_border: None,
             font_metric_provider: None,
             advance_source: None,
             font_resolver: None,
@@ -368,6 +372,12 @@ impl InlineFormattingContext {
     ///
     /// collect 时把该 run-in 元素的 inline 子内容前置到条目序列开头（run-in 自身
     /// inline 语义透传：文本/子 inline 均按其自身样式渲染）。
+    /// R4330：设置并入 run-in 的分裂边框载荷（Path B 自 LayoutBox.run_in_border）。
+    pub fn set_run_in_border(&mut self, border: Option<crate::types::RunInBorder>) {
+        self.run_in_border = border;
+    }
+
+    /// R3991：注册并入本容器首行的 run-in 元素（collect 前置收集其 inline 内容）。
     pub fn set_run_in_prepended(&mut self, run_in_id: NodeId) {
         self.run_in_prepended = Some(run_in_id);
     }

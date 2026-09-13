@@ -25,7 +25,22 @@ pub enum OverflowClip {
     Scroll,
 }
 
-/// 布局盒 — 一个元素在页面上的几何位置和大小。
+/// R4330：run-in 分裂边框载荷（display 值已 resolve 为 px；color 打包 0xRRGGBBAA）。
+#[derive(Debug, Clone, Copy)]
+pub struct RunInBorder {
+    /// 左竖边宽（px，样式非 none/hidden 时取值）。
+    pub left: f32,
+    /// 右竖边宽（px）。
+    pub right: f32,
+    /// 顶横边宽（px）。
+    pub top: f32,
+    /// 底横边宽（px）。
+    pub bottom: f32,
+    /// 边框颜色（0xRRGGBBAA，CurrentColor 已按元素 color 解析）。
+    pub color: u32,
+}
+
+/// 布局盒 — 一个元素在页面上的几何位置与绘制信息（含 R4330 run-in 分裂边框载荷）。
 #[derive(Debug, Clone)]
 pub struct LayoutBox {
     /// 对应的 DOM 节点 ID。
@@ -473,6 +488,11 @@ pub struct LayoutBox {
     /// 测量面；paint 侧自盒 Path B 仍按 DOM 文本绘出内容于块外——run-in-breaking-001
     /// 「Run-in header」块外重影实证）。
     pub is_run_in_merged: bool,
+    /// R4330：并入本容器首行的 run-in 元素的**分裂边框载荷**（后继块视角）——
+    /// (border_left, border_right, border_top, border_bottom, color_u32)。
+    /// run-in 内容以无盒 run 形式前置进本容器 IFC（无独立 LayoutBox 可挂边框），
+    /// paint 侧据此对前缀首/末片段绘条（首片段左竖+顶横，末片段右竖+底横）。
+    pub run_in_border: Option<RunInBorder>,
     /// 表格列背景绘制信息（CSS Tables §17.5.3 列背景）。
     ///
     /// `<col>`/`<colgroup>` 元素不生成常规流盒，其 `background-color` 须由表格
@@ -628,6 +648,7 @@ impl Default for LayoutBox {
             r109_last_fragment: false,
             run_in_prepended: None,
             is_run_in_merged: false,
+            run_in_border: None,
             table_col_backgrounds: Vec::new(),
             valign_offset: 0.0,
         }

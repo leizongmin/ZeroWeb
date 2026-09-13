@@ -1115,6 +1115,7 @@ impl super::Painter {
                 // 其 inline 内容（与 layout IFC 同源，paint 重跑一致）。
                 if let Some(run_in_id) = box_node.run_in_prepended {
                     ctx.set_run_in_prepended(run_in_id);
+                    ctx.set_run_in_border(box_node.run_in_border);
                 }
                 ctx.layout(doc, node_id, &HashMap::new());
                 if std::env::var("ZW_PROBE_4328").is_ok() {
@@ -2233,6 +2234,58 @@ impl super::Painter {
                         }
                     }
                 } // end non-multicol else block
+
+                // R4330：run-in 分裂边框描绘（Path B）——前置内容首片段（左竖+顶横）
+                // 与末片段（右竖+底横）绘边条。片段识别 = node_id 的父为 run-in 源元素；
+                // 阅读序首个/末个分别承载横边（顶/底），竖边占片段外缘。
+                if !use_stored
+                    && let Some(rb) = &box_node.run_in_border
+                    && let Some(run_in_id) = box_node.run_in_prepended
+                {
+                    let ri_frags: Vec<&zero_layout_engine::TextFragment> = fragments
+                        .iter()
+                        .filter(|f| doc.parent_node(f.node_id) == Some(run_in_id))
+                        .collect();
+                    if let (Some(first), Some(last)) = (ri_frags.first(), ri_frags.last()) {
+                        let bc = zero_render_foundation::color::Color {
+                            r: (rb.color >> 24) as u8,
+                            g: (rb.color >> 16) as u8,
+                            b: (rb.color >> 8) as u8,
+                            a: rb.color as u8,
+                        };
+                        // 首片段：左竖（margin 空间 [fx-bl, fx]）+ 顶横（含左右边宽）
+                        let fx = content_x + first.x;
+                        let fy = content_y + first.y;
+                        if rb.left > 0.0 {
+                            self.primitives
+                                .add_fill(Rect::new(fx - rb.left, fy, rb.left, first.height), bc);
+                        }
+                        if rb.top > 0.0 {
+                            self.primitives.add_fill(
+                                Rect::new(fx - rb.left, fy, first.width + rb.left + rb.right, rb.top),
+                                bc,
+                            );
+                        }
+                        // 末片段：右竖（margin 空间 [lx+w, lx+w+br]）+ 底横
+                        let lx = content_x + last.x;
+                        let ly = content_y + last.y;
+                        if rb.right > 0.0 {
+                            self.primitives
+                                .add_fill(Rect::new(lx + last.width, ly, rb.right, last.height), bc);
+                        }
+                        if rb.bottom > 0.0 {
+                            self.primitives.add_fill(
+                                Rect::new(
+                                    lx - rb.right,
+                                    ly + last.height - rb.bottom,
+                                    last.width + rb.left + rb.right,
+                                    rb.bottom,
+                                ),
+                                bc,
+                            );
+                        }
+                    }
+                }
 
                 // text-overflow: ellipsis 后处理
                 if needs_ellipsis && container_width > 0.0 {

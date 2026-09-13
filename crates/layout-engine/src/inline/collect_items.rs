@@ -872,6 +872,40 @@ impl InlineFormattingContext {
             }
         }
 
+        // R4330：run-in 分裂边框后处理——载荷（IFC 字段）折入前缀首/末 TextRun 的
+        // 水平 margin（margin 已参与首/末 run 推进与对齐尾盒，免改 break_lines），
+        // paint 侧按载荷对首/末片段绘竖条/横条于 margin 空间（无文字重叠）。
+        if let (Some(run_in_id), Some(b)) = (self.run_in_prepended, &self.run_in_border) {
+            let in_prefix = |it: &InlineItem| match it {
+                InlineItem::Text(r) => doc.parent_node(r.node_id) == Some(run_in_id),
+                InlineItem::Br => true,
+                _ => false,
+            };
+            let mut prefix_end = 0usize;
+            for (i, it) in items.iter().enumerate() {
+                if in_prefix(it) {
+                    prefix_end = i + 1;
+                } else {
+                    break;
+                }
+            }
+            let first_text = items[..prefix_end].iter().position(|it| matches!(it, InlineItem::Text(_)));
+            let last_text = items[..prefix_end].iter().rposition(|it| matches!(it, InlineItem::Text(_)));
+            if let (Some(fi), Some(li)) = (first_text, last_text) {
+                for (i, it) in items.iter_mut().enumerate() {
+                    if i >= prefix_end {
+                        break;
+                    }
+                    let InlineItem::Text(r) = it else { continue };
+                    if i == fi {
+                        r.margin_left += b.left;
+                    }
+                    if i == li {
+                        r.margin_right += b.right;
+                    }
+                }
+            }
+        }
         items
     }
 

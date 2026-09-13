@@ -2339,6 +2339,51 @@ impl LayoutEngine {
             run_in_prepended: dom_id.and_then(|id| r109.run_in_prepended.get(&id).copied()),
             // R4328：run-in 视角——本元素是某后继块的 run_in_prepended 源（已并入）。
             is_run_in_merged: dom_id.is_some_and(|id| r109.run_in_prepended.values().any(|&v| v == id)),
+            // R4330：后继块视角——并入 run-in 的分裂边框载荷（供 paint 对前置内容
+            // 首末片段绘边条）。边宽/样式/颜色取 run-in 元素 computed style。
+            run_in_border: dom_id.and_then(|id| {
+                let src = r109.run_in_prepended.get(&id).copied()?;
+                let rs = styles.get(&src)?;
+                let px = |lv: &zero_css_parser::values::LengthValue| match lv {
+                    zero_css_parser::values::LengthValue::Px(v) => *v as f32,
+                    _ => 0.0,
+                };
+                let solid = |st: &zero_style_system::property::types::BorderStyleValue| {
+                    !matches!(
+                        st,
+                        zero_style_system::property::types::BorderStyleValue::None
+                            | zero_style_system::property::types::BorderStyleValue::Hidden
+                    )
+                };
+                let bl = px(&rs.border_left_width);
+                let br = px(&rs.border_right_width);
+                let bt = px(&rs.border_top_width);
+                let bb = px(&rs.border_bottom_width);
+                let any = (solid(&rs.border_left_style) && bl > 0.0)
+                    || (solid(&rs.border_right_style) && br > 0.0)
+                    || (solid(&rs.border_top_style) && bt > 0.0)
+                    || (solid(&rs.border_bottom_style) && bb > 0.0);
+                if !any {
+                    return None;
+                }
+                let pack = |c: &zero_css_parser::values::ColorValue| match c {
+                    zero_css_parser::values::ColorValue::Rgba(r, g, b, a) => {
+                        (*r as u32) << 24 | (*g as u32) << 16 | (*b as u32) << 8 | *a as u32
+                    }
+                    _ => 0x000000ff,
+                };
+                let color = match &rs.border_left_color {
+                    zero_css_parser::values::ColorValue::CurrentColor => pack(&rs.color),
+                    other => pack(other),
+                };
+                Some(super::types::RunInBorder {
+                    left: if solid(&rs.border_left_style) { bl } else { 0.0 },
+                    right: if solid(&rs.border_right_style) { br } else { 0.0 },
+                    top: if solid(&rs.border_top_style) { bt } else { 0.0 },
+                    bottom: if solid(&rs.border_bottom_style) { bb } else { 0.0 },
+                    color,
+                })
+            }),
             table_col_backgrounds: Vec::new(),
             valign_offset: 0.0,
         }
