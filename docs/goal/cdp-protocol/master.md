@@ -59,6 +59,9 @@
   **19,257P/0F EXIT=0**（基线 19,254 + R4298 +1 + 本轮 +2 新单测，精确吻合；首轮遇
   webview SW activation 1 flake——隔离复跑 0.06s PASS、webview 全包 712P/0F，归因
   渲染流 reftest 重负载并发，复跑干净）；fmt clean + clippy -D warnings 全过。
+  **R4299-N 组合态复核**：push 时 rebase 拉入渲染流 R4299-N（inline 空 span 水平
+  padding 推进，layout-engine 单文件，零工作面重叠）——新 tip 上 cdp-e2e 门复跑
+  **PASS 32 绿** deterministic 一致，rule 10 归因闭合。
 - **S24（2026-09-13）静默轮 — 卡点通报 + 同树门复跑（无代码变更，绿步维持 28）**：
   两流零新提交（main = S23 docs 提交），代码树与在档 PASS 时点逐字节一致；cdp-e2e 门
   复跑 **PASS**（28 绿、deterministic 一致，零漂移）。**按 run-rules #7 飞书通报 DC-2
