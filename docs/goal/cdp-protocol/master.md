@@ -2,12 +2,12 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-14（S253：静默监测轮——tip 与 S252 提交一致（150536496），
+**最后更新**: 2026-09-14（S254：静默监测轮——tip 与 S253 提交一致（8ed2e9c09），
 本流自有面零漂移复核通过，全树锚点维持归因态零新增不可归因文件，门结论引用
-S245 刷新（树变化刷新轮门 + make test 双刷新），引用计数 8/10 **下次活跑至迟
-S255**；绿步维持 33；S198 亚型解除态维持无 cdp-e2e 腿，cronjob 流 test-guard
-编译测试负载轮转至 zero-browser 腿 + 渲染流 ZeroWeb-2 验证腿已收尾 +
-ZeroWeb-3-wt-baidu browser 进程 9333 延续（均非本流面）；零 zombie 零遗留端口）
+S245 刷新（树变化刷新轮门 + make test 双刷新），引用计数 9/10 **S255 为活跑
+最后期限**；绿步维持 33；S198 亚型解除态维持无 cdp-e2e 腿，cronjob 流
+test-guard 腿延续 + ZeroWeb-3-wt-baidu browser 进程 9333 延续（均非本流面）；
+零 zombie 零遗留端口）
 
 ---
 
@@ -38,6 +38,24 @@ ZeroWeb-3-wt-baidu browser 进程 9333 延续（均非本流面）；零 zombie 
 
 ## 已完成切片
 
+- **S254（2026-09-14）静默监测轮 — 同 tip 复核（无代码变更，绿步维持 33）**：
+  pull 零新提交（tip = 8ed2e9c09，即 S253 提交本身）——双层锚点口径复核通过：本流
+  自有面与 S99 门禁验证态逐字节一致（硬核对 `git diff 765429dda..HEAD -- apps/browser
+  tests/playwright-matrix scripts/test-guard.rs Makefile` 为空）；全树锚点 numstat
+  复核（基 8ed2e9c09=S253 tip）零外部变化——维持归因态零新增不可归因文件。门结论
+  引用 S245 刷新（树变化刷新轮，门 PASS 33 绿 deterministic 双跑 YES 零漂移
+  ZERO_DRIFT=True + make test 19,280P/0F EXIT=0 双证据），引用计数 9/10，
+  **S255 为活跑最后期限——若 S255 仍同 tip 静默则必须执行 cdp-e2e 门活跑刷新
+  （引用计数 10/10 触发，S218/S238 先例）**。双解冻条件实质判定不变：① crates/
+  自 65d2c2851 = 930cdd684（R4322-F）+ 4a879d408（fmt 遗留修复，零语义零子帧
+  相关性）——渲染流 R4323 尚未落 main；② docs/goal 自 S253 零非本流提交，DC-2
+  口径无新拍板记录。机器卫生复核：零 zombie、9222/45029/34293/96xx 全空闲。
+  **并行流观察**：S198 端口竞争亚型解除态维持（无 cdp-e2e 腿）；在窗负载延续
+  ——cronjob 流 test-guard 编译测试负载（integration-tests/wpt-runner 腿
+  06:05，quickjs zero-browser 腿已收尾）+ ZeroWeb-3-wt-baidu 浏览器进程（9333
+  非 9222 族，同 PID 3934955 满 1h 延续非重启）+ rally query CI 守护腿（均非
+  本流自有面）；渲染流 ZeroWeb-2 验证腿维持不在窗。S78 故障窗口后持续零复现，
+  监测态维持。goal 自有面零新缺口、无扩展面（S40-S253 重审结论延续）。
 - **S253（2026-09-14）静默监测轮 — 同 tip 复核（无代码变更，绿步维持 33）**：
   pull 零新提交（tip = 150536496，即 S252 提交本身）——双层锚点口径复核通过：本流
   自有面与 S99 门禁验证态逐字节一致（硬核对 `git diff 765429dda..HEAD -- apps/browser
