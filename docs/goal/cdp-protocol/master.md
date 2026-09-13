@@ -2,13 +2,14 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-14（S266：静默监测轮——tip 与 S265 提交一致（7e1c91b68），
+**最后更新**: 2026-09-14（S267：静默监测轮——tip 与 S266 提交一致（43581b826），
 双层锚点零漂移（自有面维持 apps/browser README +1 已归因基线，全树锚点零外部
 变化），门结论引用 S258 双刷新（PASS 33 绿 ZERO_DRIFT=YES + make test
-19,280P/0F），引用计数 8/10 **下次活跑至迟 S268**；绿步维持 33；解冻条件①
-观察面不变（crates/ 自 8fb39cd46 零新增，渲染流子帧能力未落树），②DC-2 无新
-拍板；渲染流 ZeroWeb-2 perf 腿新起在窗（bench-report + perf-gate，/proc cwd
-归因，负载 6.50，非本流面不触 9222 族）；零 zombie 零遗留端口）
+19,280P/0F），引用计数 9/10 **S268 为活跑最后期限——届时必须执行 cdp-e2e 门
+活跑刷新（引用计数 10/10 触发，S218/S238/S255 先例）**；绿步维持 33；解冻
+条件①观察面不变（crates/ 自 8fb39cd46 零新增，渲染流子帧能力未落树），②DC-2
+无新拍板；渲染流 ZeroWeb-2 验证链延续（perf 腿收尾→clippy/check 腿在窗，负载
+3.98，非本流面不触 9222 族）；零 zombie 零遗留端口）
 
 ---
 
@@ -39,6 +40,27 @@
 
 ## 已完成切片
 
+- **S267（2026-09-14）静默监测轮 — 同 tip 复核（无代码变更，绿步维持 33）**：
+  pull 零新提交（tip = 43581b826，即 S266 提交本身）——双层锚点口径复核通过：
+  本流自有面锚点增量零漂移（硬核对 `git diff 765429dda..HEAD -- apps/browser
+  tests/playwright-matrix scripts/test-guard.rs Makefile` 维持仅命中 apps/browser/
+  README.md +1 行 = S255 已归因的 52695a7c1 漂移基线，其后零新增漂移）；全树
+  锚点 numstat 复核（基 43581b826=S266 tip）零外部变化——维持归因态零新增
+  不可归因文件。门结论引用 S258 双刷新（cdp-e2e 门活跑 PASS 33 绿 deterministic
+  双跑 YES ZERO_DRIFT=YES + make test 19,280P/0F，steps/determinism-report
+  04:32 落盘），引用计数 9/10，**S268 为活跑最后期限——届时必须执行 cdp-e2e
+  门活跑刷新（引用计数 10/10 触发，S218/S238/S255 先例；执行前先复核并行流是
+  否含 make cdp-e2e 腿的验收链在窗，端口竞争亚型按 S198 口径避让）**。双解冻
+  条件：① 观察面不变——crates/ 自 8fb39cd46（R4323-F，S258 组合态刷新已覆盖）
+  零新增提交，渲染流子帧文档加载 + JS realm 能力未落树（frames.click+evaluate
+  解挂前提未到）；② docs/goal 自 S266 零非本流提交，DC-2 口径无新拍板记录。
+  机器卫生复核：零 zombie、9222/45029/34293/96xx 全空闲、本流零遗留进程。
+  **并行流观察**：渲染流 ZeroWeb-2 验证链延续——S266 在窗的 bench-report/
+  perf-gate 腿已收尾，clippy --workspace + check --workspace 验证腿新起在窗
+  （/proc cwd 归因 ZeroWeb-2，负载均值 3.98，非 9222 端口族非本流自有面）+
+  rally 双流主进程 + ZeroWeb-3-wt-baidu 浏览器进程（9333 非 9222 族，同 PID
+  233514 延续非重启）。S78 故障窗口后持续零复现，监测态维持。goal 自有面零新
+  缺口、无扩展面（S40-S266 重审结论延续）。
 - **S266（2026-09-14）静默监测轮 — 同 tip 复核（无代码变更，绿步维持 33）**：
   pull 零新提交（tip = 7e1c91b68，即 S265 提交本身；仅 siteopt/baidu-round2
   远端分支推进 f2d82769c 非 main 面）——双层锚点口径复核通过：本流自有面锚点
