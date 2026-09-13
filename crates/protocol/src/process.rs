@@ -183,9 +183,20 @@ impl RendererHandle {
             .name(format!("renderer-{id}-ipc-in"))
             .spawn(move || {
                 let mut transport = recv_transport;
-                while let Ok(msg) = transport.recv() {
-                    if inbound_tx.send(msg).is_err() {
-                        break;
+                loop {
+                    match transport.recv() {
+                        Ok(msg) => {
+                            if inbound_tx.send(msg).is_err() {
+                                break;
+                            }
+                        }
+                        // S78 诊断：reader 静默退出曾使通道死因不可见（stdout EOF 或
+                        // 帧解析失败无从区分）。本 crate 无 tracing 依赖，照 job.rs
+                        // 先例以 eprintln! 落浏览器 stderr。
+                        Err(error) => {
+                            eprintln!("[zero-protocol/renderer-{id}] ipc reader terminated: {error}");
+                            break;
+                        }
                     }
                 }
             })

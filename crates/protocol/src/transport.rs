@@ -100,7 +100,17 @@ impl<R: Read, W: Write> IpcChannel for PipeTransport<R, W> {
 
     fn recv(&mut self) -> Result<IpcMessage, ProtocolError> {
         let data = self.recv_frame()?;
-        serialize::deserialize(&data)
+        serialize::deserialize(&data).map_err(|e| {
+            // S78 诊断：帧完整但载荷反序列化失败 = 流内混入异质字节（stdout 污染，
+            // S12 同病）。转储帧头文本定位污染源（cap 256B 防大帧刷屏）。
+            let cap = data.len().min(256);
+            eprintln!(
+                "[zero-protocol/ipc] frame deserialize failed: {e}; len={} text={:?}",
+                data.len(),
+                String::from_utf8_lossy(&data[..cap])
+            );
+            e
+        })
     }
 
     fn try_recv(&mut self) -> Result<Option<IpcMessage>, ProtocolError> {

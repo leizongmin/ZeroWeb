@@ -498,5 +498,16 @@ async function main() {
 
 main().catch((err) => {
   console.error('capture failed:', err)
+  // S78：致命错误也必须落报告——verify 以 steps-report 判定，崩溃时不写，
+  // 下一轮会读到陈旧报告把崩溃误判为 PASS（S78 实测假绿事故）。
+  try {
+    const report = {
+      browser: { endpoint: process.env.CDP_ENDPOINT_URL || 'launched', fatal: String(err?.message ?? err) },
+      playwright: '1.63.0',
+      steps,
+      fatal: String(err?.message ?? err),
+    }
+    fs.writeFileSync(path.join(OUT_DIR, 'steps-report.json'), JSON.stringify(report, null, 2))
+  } catch { /* 报告兜底失败不掩盖原始错误 */ }
   process.exit(2)
 })

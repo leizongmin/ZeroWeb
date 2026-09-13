@@ -85,14 +85,18 @@ async function runOnce(index) {
         stdio: 'pipe',
       })
     } catch (err) {
-      // 期望失败步骤（objectId 桥挂起项）使流程退出非零——以 steps-report 为准
-      if (err.status === undefined || err.status > 2) throw err
+      // 期望失败步骤（挂账项）使流程退出 1——以 steps-report 为准。exit 2 = 致命
+      // 崩溃（如 page.new 失败，S78），绝不容忍：崩溃时 capture-core-flow 会写
+      // `fatal` 报告，若照旧放行会与上一轮的陈旧 steps-report 叠加成假绿。
+      if (err.status === undefined || err.status > 1) throw err
       console.log(`  run ${index}: flow exited ${err.status}（含期望失败步骤）`)
     }
   } finally {
     await terminate(proc)
   }
   const report = JSON.parse(fs.readFileSync(path.join(MATRIX_DIR, 'out', 'steps-report.json'), 'utf8'))
+  // S78：致命报告（崩溃时 capture-core-flow 兜底落盘）显式 fail，防陈旧报告假绿。
+  if (report.fatal) fail(`run ${index}: flow fatal: ${report.fatal}`)
   return report.steps.filter((s) => s.step !== 'observations')
 }
 

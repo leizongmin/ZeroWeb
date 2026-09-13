@@ -99,6 +99,21 @@ impl HeadlessSession {
         Ok(None)
     }
 
+    /// S78 诊断：renderer stderr 临终输出 tail（进程死亡前的 panic/退出原因）。
+    ///
+    /// tail 此前只进内部环形缓冲、headless 全程无人消费——renderer 死亡时命令面
+    /// 只见「Channel error: Broken pipe」，死因不可见（S78 排障实测缺口）。
+    /// 测试构建为进程内 WebView、无 renderer，恒返回空。
+    #[cfg(test)]
+    pub(super) fn renderer_stderr_tail(&self) -> String {
+        String::new()
+    }
+
+    #[cfg(not(test))]
+    pub(super) fn renderer_stderr_tail(&self) -> String {
+        self.renderer.stderr_tail()
+    }
+
     #[cfg(test)]
     pub(super) fn new(viewport_width: f32, viewport_height: f32) -> Self {
         let mut shell = BrowserShell::new();

@@ -2,7 +2,8 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-13（S77：静默轮——tip 与 S76 逐字节一致，S53 组合态门结论全量引用；绿步维持 33）
+**最后更新**: 2026-09-13（S78：cdp-e2e 门假绿事故修复 + renderer IPC 流损坏根因定位（负载触发的
+compositor 发布线程写竞态，单写者对照实验实锤）；诚实门禁复核 33 绿维持）
 
 ---
 
@@ -25,7 +26,7 @@
 | P1 | Playwright 命令矩阵账本（pin 版空跑导出命令全集 + 三态登记） | ✅ 初稿落地（evidence/cdp-command-matrix.md；随域更新三态） |
 | P2 | headless.rs 职责拆分（2256 行超 2000 上限；transport/discovery/domains/session） | ✅ M1 切片 1（headless/ 9 模块，纯搬移零语义变化，make test 19,170P/0F 与基线一致） |
 | P3 | Target/Runtime/Page/Input/DOM/CSS/Network/Emulation 域实现 | 🚧 S39 后余 1 步：frames.access 翻绿（子帧元数据探测，纯 headless 面）；唯余 frames.click+evaluate（挂子帧文档加载+JS realm——engine 子帧能力，渲染流域协调） |
-| P4 | Node/Playwright 测试链（pin + E2E 用例集 + make 入口） | ✅ S8：`make cdp-e2e`（test-guard 包裹，deterministic 双跑 + expected-green 回归门）；用例集=34 步全核心流 + DC-1 缺口补测（S25） |
+| P4 | Node/Playwright 测试链（pin + E2E 用例集 + make 入口） | ✅ S8：`make cdp-e2e`（test-guard 包裹，deterministic 双跑 + expected-green 回归门）；用例集=34 步全核心流 + DC-1 缺口补测（S25）；**S78 门禁诚实性修复**（verify 容忍码 2→1 + capture-core-flow 致命路径兜底落 fatal 报告——此前崩溃+陈旧报告叠加可成假绿） |
 | P5 | console 对象化（V8 侧结构化序列化，替换扁平字符串） | ✅ S11 value-only 面落地（consoleAPICalled 绿——shim 逐参值序列化 + `__zw_console_log` 三参 + headless 转事件，PW 消费面 msg.type()/text() 全通）；完整对象句柄化（remoteObject preview/objectId）挂账随 devtools 面需求 |
 | P6 | net 请求事件总线（Network 域 + devtools Network 面板共用脊柱） | 🔶 雏形已建（S7 proxy_fetch 三事件 + S14 renderer FetchObserved + S17 dataReceived 双路径）；分块流式观测点待 net 窗口流式化——**net 近 14 天无外部流占用，窗口已开**（2026-09-12 实测） |
 | P7 | WS 层 sessionId 多路复用（单连接扁平会话 → per-target session，响应回显 sessionId） | ✅ S4 收口：解析/回显/未附接校验（-32001）+ 附接注册表 + Target 域 per-target 会话（ServerEvent sessionId 盖章路由，Target 宣告事件除外）——实测复核 35 方法零漂移佐证 |
@@ -33,6 +34,44 @@
 
 ## 已完成切片
 
+- **S78（2026-09-13）cdp-e2e 门假绿事故修复 + renderer IPC 流损坏根因定位（诊断切片 + 测试资产切片，绿步维持 33）**：
+  **起因**：静默轮例行「子帧能力行为探针」（git-log 间接推断升级为行为实测）意外暴露——手动
+  spawn 的 headless 在 page.new 处 `-32000 Channel error: 写入帧头失败 (EPIPE)`，22:03-22:30
+  窗口内 100% 复现，而 `make cdp-e2e` 同时段却报 PASS 33 绿。
+  **假绿机制（已修复，tests/playwright-matrix 本流面）**：capture-core-flow 致命崩溃时
+  `main().catch` 直接 `process.exit(2)` **不写 steps-report.json**；verify-deterministic 容忍码
+  `err.status > 2` 放行（原意仅容忍期望失败步 exit 1）→ 读到上一轮**陈旧报告**（mtime
+  21:31:53 = S53 run 1）→ deterministic 双跑=同文件对比自身（假 YES）+ expected-green 全保
+  （假 PASS）。S53 run 2（21:33）起 gate 即已带病（run 1 真实、run 2 崩溃+读陈旧）；本轮
+  22:07/22:15 两次 gate 全假绿。**修复三处**：① verify 容忍码收紧 2→1（exit 2 必 throw）；
+  ② capture-core-flow catch 路径兜底写 `fatal` 报告（消灭 stale read 面）；③ verify 读报告后
+  fatal 显式 fail。
+  **根因定位链（三段诊断，apps/browser headless + crates/protocol，均在 goal 声明面）**：
+  ① headless 错误路径透出 `renderer_stderr_tail`（session.rs 双 cfg 访问器 + mod.rs
+  -32000 分支；此前 tail 无人消费、死因不可见）——实测 tail 仅 startup 行 = 无 panic 非
+  被杀；② protocol reader 线程死因 eprintln（`[zero-protocol/renderer-N] ipc reader
+  terminated`，本 crate 无 tracing、照 job.rs 先例）——实测死因 = **帧载荷反序列化
+  "unexpected end of file"**（帧头帧体完整，payload 非法）→ renderer 周期写 EPIPE →
+  「Browser IPC disconnected」**体面退出（/proc 僵尸 exit code = 0）** → 会话发送侧
+  EPIPE → page.new 必挂；③ 帧反序列化失败处转储帧字节——456B paint 形状帧为下游尸体，
+  首个失同步点在更早帧。
+  **单写者对照实验（决定性）**：kill-switch `compositor_publish_threading_enabled()=false`
+  （本地实验，已回滚，apps/renderer 零 diff）→ newPage OK + setContent OK——失同步
+  **定位于 compositor 发布线程路径**（R3254 遗产：SharedWriter 锁内整帧 flush 设计下仍可
+  撕裂；精确撕裂点未定位，见下一步计划 #0）。
+  **环境相关性（rule 10 归因）**：故障窗口 21:33-22:32 与同机并行流（ZeroWeb-3-wt-baidu
+  站点优化验收，test-guard 包裹 headless 浏览器多轮驱动）活跃窗口重合；该轮退出后
+  22:35 诚实门禁**真实 PASS 33 绿**（flow exit 1 = 仅期望失败步，零 desync 帧）。定性：
+  **负载触发的发布线程写竞态**（潜伏缺陷，重负载开窗；窗口内 tracked 树零变更，非本流
+  回归；apps/renderer 共享面，修复须 §9 碰头协调）。
+  **验证**：cargo fmt clean；clippy --workspace --all-targets -D warnings 全过；cdp-e2e 门
+  （修复后诚实版）**PASS 33 绿 deterministic**（22:35，steps-report 新鲜度已核实）；
+  make test 全量 **19,275P/0F EXIT=0**（较 S39 时点 19,259 +16 = 期间跨流自带测试入库的
+  计数漂移，零失败零回归）。诊断探针 probe-s78-* 维持调试资产不入 git。
+  **双解冻条件①行为级首次确认**：健康窗口内子帧能力行为探针实测 `iframe.contentDocument`
+  仍为 null（引擎不加载子帧文档，与 S18 探针一致）、PW FRAMES=2（S39 frameAttached 元数据
+  事件族工作）——frames.click+evaluate 维持挂起合理；此前 S38-S77 轮的冻结判定均为
+  git-log 间接推断，本轮升级为行为实测。DC-2 口径无新拍板（条件②不变）。
 - **S77（2026-09-13）静默轮 — 同 tip 复核（无代码变更，绿步维持 33）**：
   pull 零新提交（tip = 5b098b048，即 S76 提交本身）——tracked 树硬核对：
   `git diff 8e2265a11..HEAD -- ':!docs' ':!.claude'` 为空（S53 扰动三门禁验证树
@@ -770,6 +809,13 @@
 
 ## 下一步计划
 
+0. **renderer compositor 发布线程写竞态根因修复（S78 新入，最高优先）**：S78 实锤
+   IPC 帧流失同步位于发布线程路径（单写者对照实验：关发布线程即愈）；精确撕裂点
+   未定位。切片：双侧帧长/序号审计（browser reader 记录帧长序列 vs renderer writer
+   记录发送序列）或 SharedWriter/M6 回退路径代码审计 → 修复 → 负载注入回归
+   （并行驱动器重放 S78 故障窗口条件）。此项卡 headless 自动化面可用性（DC-2
+   健壮性直接相关）；**apps/renderer = 共享面，动手前按 §9 碰头纪律核对渲染流/
+   event-loop 流活跃段**（R3254 遗产文件）。
 1. **M5 收口评估（绿步 33/34，余 1 步）**：`frames.access` 已解（S39 子帧元数据探测，
    本流单方落地）；余 `frames.click+evaluate` 真挂子帧文档加载 + JS realm + child
    quads（S18 三件套论证对其成立）——渲染流域真协调。DC-2 口径决策：等子帧能力解冻后
@@ -788,7 +834,8 @@
      评估出结论记账。四步全 docs，一个提交。
 3. **持续推进**：每轮 pull → cdp-e2e 门防回归（基线 **33** 步；**免复跑条件**：pull 后
    HEAD 未变且 tracked 树无变更——S26 验证过的 tip 可引用其结论，S27 复核未跟踪探针
-   不入门禁图）；tracked 树变化时门 + make test。余项按窗口逐个解冻。
+   不入门禁图；**S78 补强：verify 已门禁化 fatal 报告检查 + 容忍码收紧，PASS 即含
+   steps-report 新鲜性**）；tracked 树变化时门 + make test。余项按窗口逐个解冻。
 
 **待用户决策清单**：
 - **DC-2 收口口径（2026-09-13 新入，S39 后语境收窄维持）**：余 1 步（frames.click+evaluate）
@@ -828,13 +875,16 @@
 
 - 测试基线：立项时点全绿（`make test` 19,170P/0F，2026-09-12 变基后口径；S9 后
   19,238P/0F；S18 全量刷新 19,251P/0F；S22 组合态刷新 19,254P/0F EXIT=0；
-  S23 时点 19,255P/0F；S32 时点 19,257P/0F；**S39 时点 19,259P/0F EXIT=0**
-  （+2 子帧探测单测，精确吻合）；禁止裸跑 cargo test，经 test-guard。注：make test
+  S23 时点 19,255P/0F；S32 时点 19,257P/0F；S39 时点 19,259P/0F EXIT=0；
+  **S78 时点 19,275P/0F EXIT=0**（较 S39 +16 = 期间跨流自带测试计数漂移，零失败）；
+  禁止裸跑 cargo test，经 test-guard。注：make test
   的 workspace 腿 exclude zero-renderer——renderer lib 单测不在全量门内，跨流红灯
   （form fixture×2）经显式 `-p zero-renderer --lib` 跟踪）
-- **CDP E2E 基线（S39，2026-09-13）**：绿步 33/34，deterministic 双跑一致，
-  expected-green 基线 33 步（S39：frames.access 翻绿——子帧元数据探测；余
-  frames.click+evaluate 挂子帧文档+realm）
+- **CDP E2E 基线（S78 诚实复核，2026-09-13）**：绿步 33/34，deterministic 双跑一致，
+  expected-green 基线 33 步（frames.access 在列；余 frames.click+evaluate 挂子帧文档+
+  realm）。**S78 事故注记**：21:33-22:32 窗口内 gate 曾因「verify 容忍 exit 2 + 陈旧
+  steps-report」假绿（已修复）；renderer IPC 流损坏在并行流重负载窗口可复现
+  （下一步计划 #0 修复项），轻负载下 33 绿可复现
 - CDP 现状：`Page.navigate` / `Runtime.evaluate` / `Target.getTargets` 3 命令 +
   `/json/version` + `/json` 发现（headless.rs L782-796/L571/L1159）——历史基线，现行面
   见缺口清单 P3/P4 与切片记录

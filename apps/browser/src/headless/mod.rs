@@ -515,12 +515,23 @@ impl HeadlessServer {
                 error: None,
                 session_id: req.session_id,
             },
-            Err(err) => ServerResponse {
-                id,
-                result: None,
-                error: Some(err),
-                session_id: req.session_id,
-            },
+            Err(err) => {
+                // S78 诊断：-32000 Channel 类错误通常意味着 renderer 子进程已死或
+                // IPC 通道断裂——renderer 的 stderr 临终输出只进内部 tail 缓冲，
+                // 在错误路径透出（热路径零开销），否则死因排障不可见。
+                if err.code == -32000 {
+                    let tail = session.renderer_stderr_tail();
+                    if !tail.is_empty() {
+                        tracing::error!("renderer stderr tail on channel error: {tail}");
+                    }
+                }
+                ServerResponse {
+                    id,
+                    result: None,
+                    error: Some(err),
+                    session_id: req.session_id,
+                }
+            }
         };
 
         (response, events)
