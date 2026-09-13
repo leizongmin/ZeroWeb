@@ -2,15 +2,13 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-14（S259：静默监测轮——tip 与 S258 补记提交一致（595718c8e），
-双层锚点零漂移（自有面维持 apps/browser README +1 已归因基线；全树锚点零外部
-变化）；S258 推送后入树两笔提交均零 crates/ 零编译面（c2f15cd76 rendering-compat
-docs +2、b1fca5eb9 CI perf 基线数据面）不影响双刷新证据有效性；门结论引用 S258
-双刷新（PASS 33 绿 ZERO_DRIFT=YES + make test 19,280P/0F），引用计数 1/10
-**下次活跑至迟 S268**；绿步维持 33；解冻条件①观察面=渲染流子帧文档加载+JS
-realm 能力（8fb39cd46 后零新增 crates/ 提交）；**siteopt 流 gate4 验收链在窗
-（make cdp-e2e 腿 04:57 起运行，调试端口 9341 非 9222 族，S198 不触发，后续活跑
-前须避让复核）**；零 zombie 零遗留端口）
+**最后更新**: 2026-09-14（S260：静默监测轮——tip 与 S259 提交一致（07eb21ea1），
+双层锚点零漂移（自有面维持 apps/browser README +1 已归因基线，全树锚点零外部
+变化），门结论引用 S258 双刷新（PASS 33 绿 ZERO_DRIFT=YES + make test
+19,280P/0F），引用计数 2/10 **下次活跑至迟 S268**；绿步维持 33；解冻条件①
+观察面不变（crates/ 自 8fb39cd46 零新增，渲染流子帧能力未落树），②DC-2 无新
+拍板；S259 在窗 siteopt gate4 验收链已收尾（gate4.done 落盘，cdp-e2e 腿退出
+窗口，活跑避让提示解除，当前净窗负载 0.84）；零 zombie 零遗留端口）
 
 ---
 
@@ -41,6 +39,26 @@ realm 能力（8fb39cd46 后零新增 crates/ 提交）；**siteopt 流 gate4 �
 
 ## 已完成切片
 
+- **S260（2026-09-14）静默监测轮 — 同 tip 复核（无代码变更，绿步维持 33）**：
+  pull 零新提交（tip = 07eb21ea1，即 S259 提交本身）——双层锚点口径复核通过：
+  本流自有面锚点增量零漂移（硬核对 `git diff 765429dda..HEAD -- apps/browser
+  tests/playwright-matrix scripts/test-guard.rs Makefile` 维持仅命中 apps/browser/
+  README.md +1 行 = S255 已归因的 52695a7c1 漂移基线，其后零新增漂移）；全树
+  锚点 numstat 复核（基 07eb21ea1=S259 tip）零外部变化——维持归因态零新增
+  不可归因文件。门结论引用 S258 双刷新（cdp-e2e 门活跑 PASS 33 绿 deterministic
+  双跑 YES ZERO_DRIFT=YES + make test 19,280P/0F，steps/determinism-report
+  04:32 落盘），引用计数 2/10，**下次活跑至迟 S268**。双解冻条件：① 观察面
+  不变——crates/ 自 8fb39cd46（R4323-F，S258 组合态刷新已覆盖）零新增提交，
+  渲染流子帧文档加载 + JS realm 能力未落树（frames.click+evaluate 解挂前提
+  未到）；② docs/goal 自 S259 零非本流提交，DC-2 口径无新拍板记录。机器卫生
+  复核：零 zombie、9222/45029/34293/96xx 全空闲、本流零遗留进程。
+  **并行流观察**：**S259 在窗的 siteopt 流 gate4 验收链已收尾**（gate4.done
+  标记落盘，make test + make cdp-e2e 双腿退出窗口）——**S259 记档的活跑避让
+  提示解除**，当前净窗（负载均值 0.84）；延续在窗仅 rally 双流主进程（本流 +
+  rendering-compat）零活动验证腿 + ZeroWeb-3-wt-baidu 浏览器进程（9333 非
+  9222 族，同 PID 233514 延续非重启）（均非本流自有面）；rally query CI 守护腿
+  不在窗。S78 故障窗口后持续零复现，监测态维持。goal 自有面零新缺口、无扩展
+  面（S40-S259 重审结论延续）。
 - **S259（2026-09-14）静默监测轮 — 同 tip 复核（无代码变更，绿步维持 33）**：
   pull 零新提交（tip = 595718c8e，即 S258 补记提交本身）——双层锚点口径复核通过：
   本流自有面锚点增量零漂移（硬核对 `git diff 765429dda..HEAD -- apps/browser
