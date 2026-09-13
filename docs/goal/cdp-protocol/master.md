@@ -2,13 +2,12 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-14（S255：活跑最后期限轮——pull 1 新提交 52695a7c1 文档
-维护第十轮（纯 docs，apps/browser README 架构树补行触本流声明面 = 自有面锚点
-首次漂移，S99 先例口径归因）；引用计数 10/10 + 锚点漂移双动因触发 cdp-e2e 门
-活跑：**PASS 33 绿 deterministic 双跑 YES EXIT=0 绿步集机械 diff 基线零漂移
-ZERO_DRIFT=True**，steps/determinism-report 04:24 同轮落盘新鲜，引用计数归零
-**下次活跑至迟 S265**；绿步维持 33；解冻条件实质判定不变 R4323 尚未落 main；
-零 zombie 零遗留端口）
+**最后更新**: 2026-09-14（S256：静默监测轮——tip 与 S255 提交一致（9adc8d18b），
+本流自有面锚点增量零漂移（apps/browser README +1 为 S255 已归因漂移新基线，
+其后零新增），全树锚点维持归因态零新增不可归因文件，门结论引用 S255 活跑
+（PASS 33 绿 ZERO_DRIFT=True），引用计数 1/10 **下次活跑至迟 S265**；绿步
+维持 33；S198 亚型解除态维持无 cdp-e2e 腿，cronjob 流 test-guard 腿延续 +
+ZeroWeb-3-wt-baidu browser 进程 9333 延续（均非本流面）；零 zombie 零遗留端口）
 
 ---
 
@@ -39,6 +38,25 @@ ZERO_DRIFT=True**，steps/determinism-report 04:24 同轮落盘新鲜，引用�
 
 ## 已完成切片
 
+- **S256（2026-09-14）静默监测轮 — 同 tip 复核（无代码变更，绿步维持 33）**：
+  pull 零新提交（tip = 9adc8d18b，即 S255 提交本身）——双层锚点口径复核通过：
+  本流自有面锚点增量零漂移（硬核对 `git diff 765429dda..HEAD -- apps/browser
+  tests/playwright-matrix scripts/test-guard.rs Makefile` 仅命中 apps/browser/
+  README.md +1 行，即 S255 已归因的 52695a7c1 文档维护第十轮漂移，本轮起作
+  为已消化新基线，其后零新增漂移）；全树锚点 numstat 复核（基
+  9adc8d18b=S255 tip）零外部变化——维持归因态零新增不可归因文件。门结论引用
+  **S255 活跑**（引用计数 10/10 + 锚点漂移双动因触发，PASS 33 绿 deterministic
+  双跑 YES 零漂移 ZERO_DRIFT=True + steps/determinism-report 04:24 同轮落盘
+  新鲜），引用计数 1/10，**下次活跑至迟 S265**。双解冻条件实质判定不变：
+  ① crates/ 自 65d2c2851 = 930cdd684（R4322-F）+ 4a879d408（fmt，零语义）+
+  52695a7c1（webview README 文档行，零语义零子帧相关性）——渲染流 R4323
+  尚未落 main；② docs/goal 自 S255 零非本流提交，DC-2 口径无新拍板记录。
+  机器卫生复核：零 zombie、9222/45029/34293/96xx 全空闲、零 cdp-e2e 腿。
+  **并行流观察**：S198 端口竞争亚型解除态维持（无 cdp-e2e 腿）；在窗负载
+  延续——cronjob 流 test-guard integration 腿（04:09）+ ZeroWeb-3-wt-baidu
+  浏览器进程（9333 非 9222 族，1h+ 延续）+ rally query CI 守护腿（均非本流
+  自有面）；渲染流 ZeroWeb-2 验证腿维持不在窗。S78 故障窗口后持续零复现，
+  监测态维持。goal 自有面零新缺口、无扩展面（S40-S255 重审结论延续）。
 - **S255（2026-09-14）活跑最后期限轮 — 引用计数 10/10 + 自有面锚点漂移双动因，
   cdp-e2e 门活跑刷新（无代码变更，绿步维持 33）**：
   pull 1 新提交（tip ed2ba3ed5→**52695a7c1**，`docs: 文档维护第十轮 —
