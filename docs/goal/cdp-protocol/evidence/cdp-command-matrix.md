@@ -192,6 +192,31 @@ DC-3 基线）。「现状」列 v0.4 起以 S17 时点 `apps/browser/src/headle
 
 ---
 
+## ZeroWeb 侧实测捕获（S17，2026-09-13）
+
+**方式**：捕获代理 + `capture-core-flow.mjs`（`CDP_ENDPOINT_URL` 指向代理）对 ZeroWeb
+headless 重跑全核心流——真实 Playwright 客户端发送面实测（frames×2 期望失败不影响统计）。
+明细（生成物）：[zeroweb-capture-2026-09-13-summary.json](zeroweb-capture-2026-09-13-summary.json)
+（复现：`tests/playwright-matrix/scripts/probe-s17-capture.mjs`，本地调试脚本不入 git）。
+
+| 维度 | Chromium 基线 | ZeroWeb S17 | 差异归因 |
+|------|--------------|-------------|----------|
+| 命令调用 | 395 / 40 方法 | 429 / 35 方法 | 调用数+34 = frames 步骤失败的 PW 重试放大（dispatchMouseEvent 32 vs 35 基线近似） |
+| 事件 | 187 / 30 种 | 81 / 17 种 | 未发事件均为账本 ❌/挂起 项（对话框族/子帧族/extraInfo/executionContextDestroyed 等） |
+
+**方法面差异（chromium-only 5 项，零意外缺口）**：
+- `DOM.getFrameOwner` — frames×2 挂起（引擎子帧可见性）的下游，PW 未走到
+- `Page.handleJavaScriptDialog` — 无 `javascriptDialogOpening` 事件源 → PW 无从应答（S10 澄清）
+- `Page.setFontFamilies` — ❌ -32601，PW 容忍（S4 实测）
+- `Target.detachFromTarget` — ZW 面关闭路径差异，PW 未调用（drift 记账，不影响消费面）
+- `Emulation.setUserAgentOverride` — PW 未对 ZW 调用（Chromium 会话 init 发 2 次）；
+  ZW 的 `Browser.getVersion` UA 直读路径使 override 非必需（drift 记账）
+
+**结论**：35 个被调方法全部为账本「实现」态方法，**真实客户端命令面与账本登记零漂移**；
+M5 矩阵收口的实测复核通过。
+
+---
+
 ## ZeroWeb 结构性缺口（域实现的前提）
 
 | # | 缺口 | 影响 |

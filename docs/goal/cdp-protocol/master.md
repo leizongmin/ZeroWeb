@@ -48,6 +48,13 @@
   dataReceived 行（✅ S17）、G4 请求事件总线（雏形已建）。
   **验证**：cdp-e2e 28 绿 deterministic 双跑一致；browser bin 449P/0F；integration
   781P/0F；renderer lib 161P+2 已知跨流失败（无新增）；clippy -D warnings + fmt 全过。
+  **M5 实测复核（同切片）**：ZeroWeb 侧经捕获代理重跑全核心流——429 调用/35 方法 vs
+  Chromium 基线 395/40（+34 调用=frames 失败重试放大）；35 个被调方法全部为账本「实现」态，
+  **命令面与账本登记零漂移**（5 个 chromium-only 方法全部挂账有因：getFrameOwner=frames
+  挂起下游、handleJavaScriptDialog=无事件源、setFontFamilies=-32601 容忍、
+  detachFromTarget/setUserAgentOverride=drift 记账）；证据
+  evidence/zeroweb-capture-2026-09-13-summary.json。工具坑：execFileSync 冻结父进程事件
+  循环致父内嵌代理 × 子进程消费双向死锁——异步 spawn 解（learning 2026-09-13）。
 - **S16（2026-09-13）keyboard Ctrl+A 编辑面 + document.open/write/close（绿步 26→28）**：
   **keyboard.type+press**：`Control+a` 此前被当普通可打印键注入 `'a'`（实测值
   'abca'）。修复：`apply_keydown_default` 增 `accel` 形参（CDP dispatchKeyEvent 路径传
@@ -237,13 +244,11 @@
 1. **M5 收口评估（绿步 28/30，余 2 步全挂同一协调点）**：`frames.access`/
    `frames.click+evaluate` 依赖 engine 子帧可见性（iframe 子帧 DOM/事件面）——渲染流域
    真协调。DC-2 口径决策：等子帧能力解冻后 30/30 收口，or 以「挂账 + 口径剔除」先定稿
-   （见待用户决策）。
+   （见待用户决策）。**实测复核已过**（S17：35 被调方法零漂移，见矩阵账本 ZeroWeb 侧
+   实测捕获节）——DC-2 口径一决即可定稿。
 2. **M5 定稿（口径确定后）**：expected-green 基线定稿 → cdp-e2e 即 DC-2 门；挂账清单
    （不实现域）终稿；CI 集成可行性随收口评估（S8 记账：node 20.19 + lockfile 离线可复现）。
-3. **ZeroWeb 侧捕获复核（可选，M5 定稿前置）**：经捕获代理对 ZeroWeb 重跑全核心流，
-   与 Chromium 基线（395 调用/40 方法/30 事件）比对命令面漂移——矩阵账本 v0.4 已按
-   dispatch 表核对，实测比对作 double-check。
-4. **持续推进**：每轮 pull → cdp-e2e 门（基线 28 步）+ make test 防回归，余项按窗口逐个解冻。
+3. **持续推进**：每轮 pull → cdp-e2e 门（基线 28 步）+ make test 防回归，余项按窗口逐个解冻。
 
 **待用户决策清单**：
 - **DC-2 收口口径（2026-09-13 新入）**：余 2 步（frames.access/frames.click+evaluate）
