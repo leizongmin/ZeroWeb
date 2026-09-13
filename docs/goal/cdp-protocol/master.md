@@ -2,7 +2,7 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-13（S47：R4310-F 组合态门复核——推送时 rebase 拉入渲染流 walk 竖排子门，新 tip 门+全量复跑全绿；绿步维持 33）
+**最后更新**: 2026-09-13（S48：R4311-R4313 组合态门复核——walk default-on 翻转后新 tip 门+全量复跑全绿；绿步维持 33）
 
 ---
 
@@ -33,6 +33,21 @@
 
 ## 已完成切片
 
+- **S48（2026-09-13）R4311-R4313 组合态门复核 — walk default-on 翻转后新 tip 全绿（无本流代码变更，绿步维持 33）**：
+  第二次推送时 rebase 拉入渲染流三提交：R4312-F（**FLAT_CHILD_WALK default-on
+  翻转** + 块子门，ZW_FLAT_CHILD_WALK=0 kill-switch 保留）+ R4311-F（SVG 特例门，
+  与 R4312 同提交入账）+ R4313-F（空包装层形状守卫）——inline walk 域默认行为
+  翻转，组合态最需复验的变更类。R4312 自带全套验证（reftest default 14762±flake
+  + make test 67 套件全绿 + product-smoke 双变体 + bench-gate GATE PASS），但
+  其上的 R4313-F 记录仅有 reftest 验证 → 按协议组合态复跑（rule 10：单树全绿
+  ≠ main 全绿）。**新 tip（a0a8146e2）组合态门**：cdp-e2e 门 **PASS 33 绿
+  deterministic 双跑一致**（绿步集与 S39 基线零漂移）；make test 全量
+  **19,259P/0F EXIT=0**（与 S39 时点基线精确一致——零单测漂移、零回归；验证
+  全程上游零漂移）。归因 rule 10：工作面 = layout-engine inline walk，与本流
+  headless/CDP 面零重叠，default 翻转对 CDP 面零影响（门全绿实证）。
+  双解冻条件不变：① 渲染流活跃面仍 inline/quotes 域（walk 常态化收尾）——零
+  子帧文档加载工作，子帧能力维持冻结；② DC-2 口径无新拍板记录。goal 自有面
+  零新缺口、无扩展面（S40-S47 重审结论延续）。
 - **S47（2026-09-13）R4310-F 组合态门复核 — 推送时 rebase 拉入渲染流 walk 竖排子门（无本流代码变更，绿步维持 33）**：
   pull 零新提交（tip = 759be6716，即 S46 提交本身）；记录入档时点 tracked 树硬核对
   `git diff cbf705e32..HEAD -- ':!docs'` 为空；**推送时 rebase 拉入渲染流 R4310-F**
