@@ -2,16 +2,14 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-14（S300：期限活跑轮（引用计数 10/10 到期）——pull 零新
-提交（tip = aca1b25a8，即 S299 提交本身），双层锚点零漂移（自有面维持 apps/
-browser README +1 已归因基线，全树锚点零外部变化），cdp-e2e 门活跑净窗首调即
-收口 PASS 33 绿 deterministic 双跑 YES EXIT=0 ZERO_DRIFT=YES（expected_green
-33 对称差 none regressions 空）07:31 落盘，引用计数清零重计 1/10 下次活跑至迟
-S310；绿步维持 33；解冻条件①观察面不变（crates/ 自 8fb39cd46 = 9b4488d3a +
-afdd423df 均非渲染流子帧能力），②DC-2 无新拍板；净窗亚型（负载 1.39 零并行
-腿零端口竞争，首调红形态连续第九次零再现）；观察面记档 zero-engine dead_code
-warning 既有形态（bins-only 条件 dead，clippy all-targets 零命中门零回归）；
-零 zombie 零遗留端口）
+**最后更新**: 2026-09-14（S301：静默监测轮——同 tip 复核（8f17bcebc，即 S300
+提交本身），双层锚点零漂移（自有面维持 apps/browser README +1 已归因基线，
+全树锚点零外部变化），门结论引用 S300 活跑（净窗首调即收口 PASS 33 绿
+deterministic 双跑 YES EXIT=0 ZERO_DRIFT=YES 07:31 落盘），引用计数 2/10
+下次活跑至迟 S310；绿步维持 33；解冻条件①观察面不变（crates/ 自 8fb39cd46
+= 9b4488d3a + afdd423df 均非渲染流子帧能力），②DC-2 无新拍板；渲染流重负载
+腿并窗（负载 5.52，四源验证腿——本轮零活跑需求不受影响）；零 zombie 零遗留
+端口）
 
 ---
 
@@ -42,6 +40,26 @@ warning 既有形态（bins-only 条件 dead，clippy all-targets 零命中门�
 
 ## 已完成切片
 
+- **S301（2026-09-14）静默监测轮 — 同 tip 复核（无代码变更，绿步维持 33）**：
+  pull 零新提交（tip = 8f17bcebc，即 S300 提交本身）——双层锚点口径复核通过：
+  自有面锚点增量零漂移（硬核对维持仅 apps/browser/README.md +1 行 = S255 已
+  归因的 52695a7c1 漂移基线，对 HEAD 与 8fb39cd46 双点 diff 均零变化）；全树
+  锚点复核（基 8f17bcebc=S300 tip，树零变化；S291..HEAD 零非 docs 变更复核
+  维持——tracked 代码树对 S290 双腿刷新基树零变化、且 S300 门活跑即在此树上
+  首调收口）零外部变化。双解冻条件实质判定不变：① crates/ 自 8fb39cd46 =
+  9b4488d3a + afdd423df 两枚，均非渲染流子帧文档加载 + JS realm 能力（S300
+  门 PASS 33 绿 ZERO_DRIFT=YES 结论新鲜可引用，本轮免复跑）；② docs/goal 自
+  S300 零非本流提交，DC-2 口径无新拍板记录。门结论引用 S300 活跑（净窗首调即
+  收口 PASS 33 绿 deterministic 双跑 YES EXIT=0 ZERO_DRIFT=YES，07:31 落盘），
+  引用计数 2/10，下次活跑至迟 S310。机器卫生复核：零 zombie、9222/45029/
+  34293/19222 全空闲、本流零遗留进程；渲染流重负载腿并窗（负载 1min 5.52 /
+  5min 5.43 / 15min 5.83——cargo test --workspace + clippy 组合链、bench-report
+  + perf-gate、ZeroWeb-2 跨 clone integration tests、css-parser bench 四源验证
+  腿 6 进程，本轮零活跑需求不受影响，S310 期限活跑若在窗按负载窗口口径执行）。
+  S78 零复现维持、S168 形态累计两例非聚集记账维持；webview sw L1139 flake
+  家族第三漏改点维持待 zero-web 流修复；zero-engine dead_code warning 既有
+  形态记档维持（bins-only 条件 dead，门零回归）。goal 自有面零新缺口、无扩展
+  面（S40-S300 重审结论延续）。
 - **S300（2026-09-14）期限活跑轮 — 引用计数 10/10 到期，cdp-e2e 门活跑刷新（净窗
   首调即收口，绿步维持 33）**：pull 零新提交（tip = aca1b25a8，即 S299 提交本身）
   ——执行前核对：双层锚点零漂移（自有面 apps/browser/README.md 对 8fb39cd46 零
