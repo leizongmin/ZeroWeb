@@ -52,6 +52,14 @@ siteopt headless 与 make test quickjs 腿双负载窗延续、零 zombie 零遗
   ~1.2 分钟），已进执行段（内层 zero_integration_tests etime ~49 秒）——负载窗
   实质延续（不触碰）。S78 故障窗口后持续零复现，监测态维持。goal 自有面零新缺口、
   无扩展面（S40-S195 重审结论延续）。
+  **Push 时 rebase 补充注记（rule 10）**：push 前 pull --rebase 拾取并行流新提交
+  5172a9561（docs(website) 9/14 周报：website/updates.json +31、website/index.html
+  commit 计数刷新、docs/compat/trends/wpt-suites.csv 追加 R4321-F 实测行）——
+  **crates/ 零触及**（解冻条件①实质判定不变、零子帧/realm 工作），docs/goal 零触及
+  （解冻条件②不变、DC-2 口径无新拍板）；新 tip 下双层锚点复核通过：本流自有面仍
+  逐字节一致（diff 空），全树锚点新增 2 文件 +32/-1（website 2 文件）全部归因
+  5172a9561，S196 记档时点的「锚点维持 4 文件 +314/-19」结论在记录时点（tip =
+  748830f79）精确成立，新归因态 = 6 文件 +346/-20 交 S197 起续用。
 - **S195（2026-09-14）静默监测轮 — 同 tip 复核（无代码变更，绿步维持 33）**：
   pull 零新提交（tip = 8e1ef9028，即 S194 提交本身）——双层锚点口径复核通过：本流
   自有面与 S99 门禁验证态逐字节一致（diff 空）；全树锚点 diff 维持 S150 已归因态
