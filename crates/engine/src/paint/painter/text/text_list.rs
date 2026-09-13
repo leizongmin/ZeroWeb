@@ -1456,6 +1456,15 @@ impl super::super::Painter {
                 // R3835：suffix 按家族（见 counter_suffix）。
                 let suffix = counter_suffix(&style.list_style_type);
                 let text = format!("{body}{suffix}");
+                // R4316：Hebrew marker 正文为 RTL run——后缀「.」属中性，按 bidi 在
+                // RTL 语境落 run 视觉左侧；逐字 LTR 绘制会错挂右侧
+                //（css3-counter-styles-016 ref「.טו」实证，test 误渲「טו.」）。
+                // 纯 RTL body + 中性 suffix 的视觉序 = 逻辑序整体反转。
+                let text = if matches!(style.list_style_type, ListStyleTypeValue::Hebrew) {
+                    text.chars().rev().collect::<String>()
+                } else {
+                    text
+                };
                 let mut char_x = text_marker_x;
                 let char_y = text_marker_baseline_y;
                 for ch in text.chars() {
