@@ -2,11 +2,10 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-14（S188：活跑最后期限轮——引用计数 10/10 触发，决策时点
-并行流 bench CPU 竞争负载窗开窗（bench-gate cargo bench + 定向单测编译），窗内
-活跑 PASS 33 绿 deterministic 双跑 YES、绿步集与基线零漂移（第八个负载下样本、
-CPU 竞争亚型第二样本），steps-report 新鲜度核实，引用计数归零下次活跑至迟 S198；
-绿步维持 33；活跑后负载窗闭合、并行流退出态回归、零 zombie）
+**最后更新**: 2026-09-14（S189：静默监测轮——tip 与 S188 逐字节一致，本流自有面
+零漂移复核通过，锚点 diff 维持已归因态零新增，S188 活跑门结论引用（bench CPU 竞争
+负载窗内 PASS 33 绿零漂移），引用计数 1/10 下次活跑至迟 S198；绿步维持 33；并行流
+siteopt headless 与 make test 双负载窗并存、零 zombie 零遗留端口）
 
 ---
 
@@ -37,6 +36,26 @@ CPU 竞争亚型第二样本），steps-report 新鲜度核实，引用计数归
 
 ## 已完成切片
 
+- **S189（2026-09-14）静默监测轮 — 同 tip 复核（无代码变更，绿步维持 33）**：
+  pull 零新提交（tip = 343280879，即 S188 提交本身）——双层锚点口径复核通过：本流
+  自有面（`apps/browser tests/playwright-matrix scripts/test-guard.rs Makefile`）与
+  S99 门禁验证态逐字节一致（diff 空）；全树锚点 diff 维持 S150 已归因态（numstat
+  复核 4 文件 +314/-19，全部为 R4321-F 渲染流共享面）零新增。R4321-F 之后 crates/
+  零新提交——渲染流无后续子帧/realm 工作，frames.click+evaluate 挂账解冻条件实质
+  判定不变。门结论引用 S188 活跑（bench CPU 竞争负载窗内 PASS 33 绿 deterministic
+  双跑 YES，第八个负载下样本、CPU 竞争亚型第二样本，首调红形态零再现），引用计数
+  1/10，下次活跑至迟 S198——若逢并行流负载窗口优先窗口内执行。双解冻条件不变：
+  ① 上游自 S188 零新提交（渲染流域 crates 零新工作，零子帧文档加载工作）；②
+  docs/goal 自 S188 零非本流提交，DC-2 口径无新拍板记录。机器卫生复核：零 zombie、
+  本流自有面零遗留端口（9222/45029/34293/96xx 全空闲）。**并行流观察（双负载窗
+  并存）**：siteopt headless 负载窗重开——zero-browser 3483785（headless，port
+  9333，etime ~2.9 分钟，renderer 3483788 来自 ZeroWeb-3-wt-baidu clone）；
+  ZeroWeb-2 make test 编译测试负载窗延续——make 3482499（etime ~3.2 分钟）→
+  test-guard 3484380（compile-first cargo test --workspace + clippy quickjs 定向，
+  time-limit 900s）执行中（内层 zero_integration_tests etime ~1.9 分钟）——两窗
+  并存、均不触碰；S108/S118/S128/S148/S158/S168/S178/S188 八次负载窗口活跑均 PASS，
+  证据模式跨多代进程成立。S78 故障窗口后持续零复现，监测态维持。goal 自有面零新
+  缺口、无扩展面（S40-S188 重审结论延续）。
 - **S188（2026-09-14）监测轮 — 活跑最后期限轮 · bench CPU 竞争负载窗内活跑 PASS（无代码变更，绿步维持 33）**：
   pull 零新提交（tip = 3810b708b，即 S187 提交本身）——双层锚点口径复核通过：本流
   自有面（`apps/browser tests/playwright-matrix scripts/test-guard.rs Makefile`）与
