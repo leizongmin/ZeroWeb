@@ -2,7 +2,7 @@
 
 **版本**: v0.5（S25 补测行/审计节 + S28 组合态复核与复现链闭合；v0.4 S17 漂移刷新——
 S12-S17 落地面三态/口径逐行核对，ground truth=
-`apps/browser/src/headless/domains.rs` dispatch 表；v0.3 S9、v0.2 S4、v0.1 M1 前置初稿）
+`apps/browser/src/headless/domains/` dispatch 表（S32 起，原单文件 domains.rs）；v0.3 S9、v0.2 S4、v0.1 M1 前置初稿）
 **日期**: 2026-09-13
 **捕获客户端**: playwright-core **1.63.0**（pin，见 `tests/playwright-matrix/package.json` + lockfile）
 **捕获目标**: Chromium 153.0.8010.12（playwright 缓存 chromium-1243，headless=new）
@@ -45,8 +45,8 @@ CDP 流量。零源码改动。
 ## 三态登记
 
 三态：✅ 实现 / ⚠️ 部分（命令被接受但语义/形状不全）/ ❌ 不实现（当前返回 `-32601`，符合
-DC-3 基线）。「现状」列 v0.4 起以 S17 时点 `apps/browser/src/headless/domains.rs` dispatch
-表为 ground truth 逐行核对；行内（Sx）标记对应 master.md 已完成切片编号。
+DC-3 基线）。「现状」列 v0.4 起以 S17 时点 dispatch 表（时点文件 `domains.rs`，S32 起为
+`domains/` 子模块）为 ground truth 逐行核对；行内（Sx）标记对应 master.md 已完成切片编号。
 
 策略记号：**stub** = 先接受返回 `{}`（解附接摩擦），实义语义后续里程碑补。
 
