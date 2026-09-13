@@ -184,11 +184,11 @@ DC-3 基线）。「现状」列 v0.4 起以 S17 时点 `apps/browser/src/headle
 
 ### goal 扩展面（非 Playwright 矩阵项，devtools goal 前置）
 
-| 方法 | 来源 | 计划 |
-|------|------|------|
-| `DOM.getDocument` / `DOM.querySelector` / `DOM.querySelectorAll` | 入口文档 M3 句柄桥 | M3 |
-| `CSS.getMatchedStylesForNode` | 入口文档 M3 | M3 |
-| `Target.getTargets` CDP 形状修正 | 见上 | M1 |
+| 方法 | 来源 | 状态（S20 挂账判定） |
+|------|------|----------------------|
+| `DOM.getDocument` / `DOM.querySelector` / `DOM.querySelectorAll` | 入口文档 M3 句柄桥 | ❌ 挂账——**devtools 面需求驱动**：nodeId 持久化语义/子树分页/backendNodeId 注册表等形状须按 devtools frontend 真实消费面设计（M3 计划作废——S9 实证 locator 脊柱不用此族，提前实现即推测性开发）；句柄桥（S9）为其实现基座 |
+| `CSS.getMatchedStylesForNode` | 入口文档 M3 | ❌ 挂账——需 style-system 查询面（**渲染流域专属 crate**，跨流域协调点）；随 devtools 面需求立项 |
+| `Target.getTargets` CDP 形状修正 | 见上 | ✅ 完成（M1 S4） |
 
 ---
 

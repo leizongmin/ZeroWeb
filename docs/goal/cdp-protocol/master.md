@@ -2,7 +2,7 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-13（S19 维护轮：cdp-e2e 门 PASS 28 绿 deterministic + 缺口清单 P5/P7 收口状态修正；无新切片，待 DC-2 口径）
+**最后更新**: 2026-09-13（S20 维护轮：cdp-e2e 门 PASS 28 绿 deterministic + 扩展面挂账判定（getDocument 族/CSS 面按 devtools 需求驱动，防推测性开发）；待 DC-2 口径）
 
 ---
 
