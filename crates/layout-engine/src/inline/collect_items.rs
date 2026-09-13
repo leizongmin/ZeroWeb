@@ -783,6 +783,11 @@ impl InlineFormattingContext {
                             .unwrap_or_else(|| self.vertical_walk_nodes.contains(&child_id));
                         let has_element_children = *FLAT_CHILD_WALK
                             && elem_data.local_name() != "ruby"
+                            // R4311：SVG 子树不走 walk——flatten 路径对 svg 落零宽 run
+                            //（行盒高参与），walk 递归对无文本 SVG 内部产出零 item，
+                            // svg 的行盒贡献丢失 → 首行高变化 → img 等 sibling 位移
+                            //（effect-reference-after-001 1.23% 实证，页面无文本节点）。
+                            && elem_data.local_name() != "svg"
                             && !bidi_special
                             && !has_bidi_controls
                             && !child_declares_vertical_wm
@@ -1164,10 +1169,14 @@ impl InlineFormattingContext {
                     // styles）与 layout IFC 判定恒等，不引入两段分歧。命中即按旧扁平化
                     // 形状落独立 run（build_flatten_run_for_element 对 ruby 自带 rt/rp
                     // 排除）。
-                    let gc_is_ruby = doc
+                    let gc_is_special_elem = doc
                         .get(gc)
                         .and_then(|n| match &n.kind {
-                            NodeKind::Element(e) => Some(e.local_name() == "ruby"),
+                            // R4308：ruby（rt/rp 注音语义）；R4311：svg（行盒贡献语义，
+                            // 见主 collect 门注释）——均 style 无关谓词，paint IFC 判定恒等。
+                            NodeKind::Element(e) => {
+                                Some(matches!(e.local_name(), "ruby" | "svg"))
+                            }
                             _ => None,
                         })
                         .unwrap_or(false);
@@ -1187,7 +1196,7 @@ impl InlineFormattingContext {
                             )
                         })
                         .unwrap_or_else(|| self.vertical_walk_nodes.contains(&gc));
-                    if gc_is_ruby || gc_has_bidi_controls || gc_declares_vertical_wm {
+                    if gc_is_special_elem || gc_has_bidi_controls || gc_declares_vertical_wm {
                         if let Some(item) = self.build_flatten_run_for_element(doc, gc, styles) {
                             items.push(item);
                         }
