@@ -1,0 +1,23 @@
+{
+  "skill_name": "zeroweb-site-optimizer",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "用 zeroweb-site-optimizer 自主优化 ZeroWeb 访问 https://example.com 的体验，只交付本地结果。",
+      "expected_output": "采用有界默认值并预检，不索要完整问卷；独立 worktree/profile，先从实际页面形成适用任务，覆盖浏览器 UI 和页面；不虚构网站有搜索功能，不启动 tmux，不推 main，不把 CDP headless 作为生产验收。",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "继续上轮网站优化：已用 110/120 分钟，best=A，trial=B 尚未验证。本站按钮在 ZeroWeb 点不动，Chrome 正常，Firefox 尚未测到；CDP 可用但 GUI 不可用。",
+      "expected_output": "复用原计数和截止时间，进入收尾，保存未验证 trial 与 best A，不重新开始预算或声称 B 修复；说明 UI/生产视觉阻塞和 Firefox 未验证。下一轮建议最小规范复现与邻近变体，不建议域名特判，不为了补门禁超时。",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "先只完善这个 skill，不启动网站优化。写入规则处理这些情况：Chrome 和 ZeroWeb 都有广告脚本报错；Firefox 渲染不同；动态页面截图不稳定；修复某 API 需要很大工作量。",
+      "expected_output": "仅编辑与离线验证，不启动浏览器或改产品；区分站点错误和浏览器缺陷，Firefox 使用 BiDi/GUI，查规范与 WPT 而非多数票，保留原图并抽稳定复现；按本站任务修语义自洽切片，明确依赖和预算，不吞异常或注入站点补丁。",
+      "files": []
+    }
+  ]
+}
