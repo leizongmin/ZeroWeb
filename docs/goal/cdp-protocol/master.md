@@ -2,13 +2,14 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-14（S276：静默监测轮——tip 与 S275 提交一致（217c2f96c），
+**最后更新**: 2026-09-14（S277：静默监测轮——tip 与 S276 提交一致（8f363d409），
 双层锚点零漂移（自有面维持 apps/browser README +1 已归因基线，全树锚点零外部
 变化），门结论引用 S268 活跑（同轮三调序列收口 PASS 33 绿 deterministic YES
-EXIT=0 ZERO_DRIFT=YES，05:15 落盘），引用计数 8/10 下次活跑至迟 S278；绿步维持
-33；解冻条件①观察面不变（crates/ 自 8fb39cd46 零新增，渲染流子帧能力未落树），
-②DC-2 无新拍板；净窗延续（负载 0.35 零验证腿，rally 双流主进程 + cron 主进程
-在窗均非验证面）；零 zombie 零遗留端口）
+EXIT=0 ZERO_DRIFT=YES，05:15 落盘），引用计数 9/10 **S278 为活跑最后期限——届时
+必须执行 cdp-e2e 门活跑刷新（引用计数 10/10 触发，S218/S238/S255/S268 先例）**；
+绿步维持 33；解冻条件①观察面不变（crates/ 自 8fb39cd46 零新增，渲染流子帧能力
+未落树），②DC-2 无新拍板；净窗延续（负载 0.20 零验证腿，rally 双流主进程 +
+cron 主进程在窗均非验证面）；零 zombie 零遗留端口）
 
 ---
 
@@ -39,6 +40,26 @@ EXIT=0 ZERO_DRIFT=YES，05:15 落盘），引用计数 8/10 下次活跑至迟 S
 
 ## 已完成切片
 
+- **S277（2026-09-14）静默监测轮 — 同 tip 复核（无代码变更，绿步维持 33）**：
+  pull 零新提交（tip = 8f363d409，即 S276 提交本身）——双层锚点口径复核通过：
+  本流自有面锚点增量零漂移（硬核对 `git diff 765429dda..HEAD -- apps/browser
+  tests/playwright-matrix scripts/test-guard.rs Makefile` 维持仅命中 apps/browser/
+  README.md +1 行 = S255 已归因的 52695a7c1 漂移基线，其后零新增漂移）；全树
+  锚点复核（基 8f363d409=S276 tip，仅 docs/goal/cdp-protocol/master.md 本流
+  控制面）零外部变化——维持归因态零新增不可归因文件。门结论引用 S268 活跑
+  （负载窗口内同轮三调序列收口 PASS 33 绿 deterministic 双跑 YES EXIT=0
+  ZERO_DRIFT=YES，steps/determinism-report 05:15 落盘），引用计数 9/10，
+  **S278 为活跑最后期限——届时必须执行 cdp-e2e 门活跑刷新（引用计数 10/10
+  触发，S218/S238/S255/S268 先例；执行前先复核并行流是否含 make cdp-e2e 腿
+  的验收链在窗，端口竞争亚型按 S198 口径避让）**。双解冻条件：① 观察面不变
+  ——crates/ 自 8fb39cd46 零新增提交，渲染流子帧文档加载 + JS realm 能力未落
+  树（frames.click+evaluate 解挂前提未到）；② docs/goal 自 S276 零非本流提交，
+  DC-2 口径无新拍板记录。机器卫生复核：零 zombie、9222/45029/34293/96xx 全
+  空闲、本流零遗留进程。**并行流观察**：净窗延续（负载 0.20，零验证腿在窗
+  ——无 test-guard/cargo/cdp-e2e/playwright 持久进程），延续在窗仅 rally 双流
+  主进程（本流 cdp-protocol + 渲染流 ZeroWeb-2）+ rally cron 主进程（均非验证
+  面非本流自有面）。S78 故障窗口后持续零复现，监测态维持；S168 形态累计两例
+  非聚集记账维持。goal 自有面零新缺口、无扩展面（S40-S276 重审结论延续）。
 - **S276（2026-09-14）静默监测轮 — 同 tip 复核（无代码变更，绿步维持 33）**：
   pull 零新提交（tip = 217c2f96c，即 S275 提交本身）——双层锚点口径复核通过：
   本流自有面锚点增量零漂移（硬核对 `git diff 765429dda..HEAD -- apps/browser
