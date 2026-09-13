@@ -2,13 +2,15 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-14（S258：静默监测轮 + 树变化刷新轮——监测段同 tip 复核
-097de29c7 双层锚点零漂移后，推送前 pull rebase 拉入渲染流 R4323-F（8fb39cd46，
-crates/engine paint 两文件）触发 S245 先例「tracked 树变化时门 + make test 双刷
-新」：cdp-e2e 门活跑 PASS 33 绿 deterministic YES ZERO_DRIFT=True + make test
-19,280P/0F 双证据同轮新鲜落盘，引用计数归零 **下次活跑至迟 S268**；绿步维持
-33；解冻条件①消耗（R4323-F 已落 main 并经组合态刷新覆盖，挂账 frames.click+
-evaluate 维持——该修复零子帧文档加载/JS realm 相关性）；零 zombie 零遗留端口）
+**最后更新**: 2026-09-14（S259：静默监测轮——tip 与 S258 补记提交一致（595718c8e），
+双层锚点零漂移（自有面维持 apps/browser README +1 已归因基线；全树锚点零外部
+变化）；S258 推送后入树两笔提交均零 crates/ 零编译面（c2f15cd76 rendering-compat
+docs +2、b1fca5eb9 CI perf 基线数据面）不影响双刷新证据有效性；门结论引用 S258
+双刷新（PASS 33 绿 ZERO_DRIFT=YES + make test 19,280P/0F），引用计数 1/10
+**下次活跑至迟 S268**；绿步维持 33；解冻条件①观察面=渲染流子帧文档加载+JS
+realm 能力（8fb39cd46 后零新增 crates/ 提交）；**siteopt 流 gate4 验收链在窗
+（make cdp-e2e 腿 04:57 起运行，调试端口 9341 非 9222 族，S198 不触发，后续活跑
+前须避让复核）**；零 zombie 零遗留端口）
 
 ---
 
@@ -39,6 +41,33 @@ evaluate 维持——该修复零子帧文档加载/JS realm 相关性）；零 
 
 ## 已完成切片
 
+- **S259（2026-09-14）静默监测轮 — 同 tip 复核（无代码变更，绿步维持 33）**：
+  pull 零新提交（tip = 595718c8e，即 S258 补记提交本身）——双层锚点口径复核通过：
+  本流自有面锚点增量零漂移（硬核对 `git diff 765429dda..HEAD -- apps/browser
+  tests/playwright-matrix scripts/test-guard.rs Makefile` 维持仅命中 apps/browser/
+  README.md +1 行 = S255 已归因的 52695a7c1 漂移基线，其后零新增漂移）；全树
+  锚点 numstat 复核（基 595718c8e=S258 补记 tip）零外部变化。**S258 推送后入树
+  两笔提交归因**（上轮 rebase 拉入、本轮首核）：c2f15cd76（渲染流 R4324-P——
+  css-display 簇 56 fail 全量归因，rendering-compat.md +2 纯 docs）+
+  b1fca5eb9（chore(perf) CI 性能基线/趋势更新——.github benchmark 数据 JSON +
+  docs/perf/trends CSV，数据面）——**均零 crates/ 零编译面，S258 双刷新证据
+  （门 + make test）对当前组合树有效性维持**。门结论引用 **S258 双刷新**
+  （cdp-e2e 门活跑 PASS 33 绿 deterministic 双跑 YES ZERO_DRIFT=YES + make test
+  19,280P/0F，steps/determinism-report 04:32 落盘），引用计数 1/10，**下次活跑
+  至迟 S268**。双解冻条件：① **已消耗转观察面**——crates/ 自 65d2c2851 =
+  930cdd684（R4322-F）+ 4a879d408（fmt）+ 52695a7c1（README 文档行）+
+  8fb39cd46（R4323-F，S258 组合态刷新已覆盖），8fb39cd46 后零新增 crates/
+  提交；观察面为渲染流子帧文档加载 + JS realm 能力（frames.click+evaluate
+  解挂前提，落树则按 S218/S245 先例评估组合态刷新与挂账解挂）；② docs/goal
+  自 S258 补记零非本流提交，DC-2 口径无新拍板记录。机器卫生复核：零 zombie、
+  9222/45029/34293/96xx 全空闲、本流零遗留进程。**并行流观察**：**siteopt 流
+  gate4 验收链在窗**（ZeroWeb-3-wt-baidu，bash 链 04:46 起：make test 腿已收尾
+  → make cdp-e2e 腿 04:57 起运行中，verify-deterministic 活跃；调试端口 9341
+  + 持续进程 9333，**均非 9222 族——S198 端口竞争亚型不触发**；**后续轮次若
+  需活跑须先复核该 gate4 cdp-e2e 腿是否收尾，按 S198 口径避让**）+ rally 双流
+  主进程（本流 + rendering-compat）零活动验证腿；rally query CI 守护腿本轮
+  不在窗。S78 故障窗口后持续零复现，监测态维持。goal 自有面零新缺口、无扩展
+  面（S40-S258 重审结论延续）。
 - **S258（2026-09-14）静默监测轮 + 树变化刷新轮 — R4323-F 入树触发门 + make test
   双刷新（无本流代码变更，绿步维持 33）**：
   **监测段**：pull 零新提交（tip = 097de29c7，即 S257 提交本身）——双层锚点口径
