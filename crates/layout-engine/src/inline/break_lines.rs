@@ -133,12 +133,22 @@ impl InlineFormattingContext {
                         if run.margin_left > 0.0 {
                             current_x += run.margin_left;
                         }
+                        // R4299（CSS 2.1 §8.4）：空 inline 的水平 padding 同样参与 inline 轴
+                        // 推进——旧实现只推进 margin，`<span class=spacer>` 的 padding-left
+                        // 不推后续内容（word-spacing-characters-001 control 条短、r4134 outer
+                        // 并集宽丢 spacer 贡献实证）。fragment x 记推进前位（border-box 左缘，
+                        // 与非空 run「先推进后落词」的 x=content 缘口径不同，保持既有空 inline
+                        // 同步路径 `child.x = fragment.x` 语义不变）；padding_right 在 fragment
+                        // 落点后推进。
+                        if run.padding_left > 0.0 {
+                            current_x += run.padding_left;
+                        }
                         // 为纯空 inline 元素保留一个零宽 fragment。
                         // 这样 layout/paint 后处理仍可感知其几何，写回真实的 inline box 尺寸，
                         // 并在需要时绘制 padding/border/background。
                         current_line.runs.push(TextFragment {
                             ws_override: run.ws_override,
-                            x: current_x,
+                            x: current_x - run.padding_left,
                             y: 0.0,
                             width: 0.0,
                             height: run.line_height,
@@ -157,6 +167,10 @@ impl InlineFormattingContext {
                             margin_bottom: 0.0,
                             baseline: run.font_size,
                         });
+                        // R4299：padding_right 推进（§8.4，同 padding_left）
+                        if run.padding_right > 0.0 {
+                            current_x += run.padding_right;
+                        }
                         if run.margin_right > 0.0 {
                             current_x += run.margin_right;
                         }
