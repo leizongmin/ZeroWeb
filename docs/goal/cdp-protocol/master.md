@@ -42,6 +42,15 @@
   零非本流提交，DC-2 口径无新拍板记录。机器卫生复核：零遗留端口、零 zombie、零
   遗留浏览器进程。S78 故障窗口后持续零复现，监测态维持。goal 自有面零新缺口、
   无扩展面（S40-S98 重审结论延续）。
+  **push 窗口扰动归因（rule 10）+ 新 tip 组合态门**：推送时 rebase 拉入 PR #29
+  合并（e6d04381e，siteopt 流 fix(browser) headless 截图 PaintFonts 接线——session.rs
+  +30 / domains/page.rs ±5 / tests.rs +56 / paint-convert fonts.rs +9，**触本流声明面
+  apps/browser/src/headless**，§9 碰头记档：改动在截图渲染路径、与 CDP 域语义正交，
+  本流无在途变更，已合入消化）。PR 自带全套验证（新单测 + cdp-e2e 33 绿声明 +
+  clippy + make test）→ S23/S53 先例免重复全量，仅补本流自有门：新 tip（765429dda）
+  cdp-e2e **PASS 33 绿 deterministic 双跑 YES**（活跑，引用计数归零），绿步集与
+  S39/S79/S98 基线零漂移（screenshot 3 步均在列）——截图域变更零回归。归因：字体
+  接线非子帧文档加载工作，双解冻条件不变；DC-2 口径无新拍板。
 - **S98（2026-09-14）静默监测轮 — 门禁活跑新鲜度补充（无代码变更，绿步维持 33）**：
   pull 零新提交（tip = df5c94d94，即 S97 提交本身）——tracked 树与 S79 门禁验证态
   逐字节一致（硬核对 `git diff cba929666..HEAD -- ':!docs' ':!.claude'` 为空）。
