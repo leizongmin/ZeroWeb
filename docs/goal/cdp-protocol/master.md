@@ -2,7 +2,7 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-13（S28：evidence 复现链闭合——S17 捕获探针入库 + 当前 tip 组合态捕获复核零未登记漂移；门 PASS 32 绿）
+**最后更新**: 2026-09-13（S29：控制面一致性收口——README 过时项修正（ws 版本/步骤清单/结构节）+ 账本版本头 v0.5；绿步维持 32）
 
 ---
 
@@ -33,6 +33,16 @@
 
 ## 已完成切片
 
+- **S29（2026-09-13）控制面一致性收口 — README 过时项修正 + 账本版本头（纯 docs 切片，绿步维持 32）**：
+  pull 零新提交（tip = 359679334，即 S28 门禁验证时点——门免复跑）；双解冻条件不变
+  （零上游提交，渲染流域无新工作）。**README 三处过时修正**
+  （tests/playwright-matrix/README.md 于 S8 前夜落地，此后未随切片更新）：① `ws` 版本
+  8.18.3→**8.21.0**（lockfile 事实核对）；② 全核心流清单补 console 采集 + S25 raw-CDP
+  4 步；③ 结构节补 S28 入库的 probe-s17-capture.mjs。**账本版本头 v0.4→v0.5**（S25
+  补测行/审计节 + S28 复核节此前未随版本行体现）。其余控制面核对一致无需改动：
+  expected-green.json 32 步、Makefile cdp-e2e 入口、goal 入口文档（按设计不变）。
+  **验证**：docs-only 豁免路径（git diff --check + pre-commit guard PASS）；无 Rust/
+  门禁面变化，S28 时点门 PASS 32 绿维持。
 - **S28（2026-09-13）evidence 复现链闭合 — S17 捕获探针入库 + 组合态捕获复核（测试资产小切片，绿步维持 32）**：
   **缺口**：已入库 evidence（`zeroweb-capture-2026-09-13-summary.json`）的复现命令引用
   未入库脚本 `probe-s17-capture.mjs`（账本 L201 自注「不入 git」）——复现链断裂，「evidence

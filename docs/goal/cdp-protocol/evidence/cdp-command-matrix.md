@@ -1,6 +1,7 @@
 # CDP 命令矩阵账本（DC-1 控制件）
 
-**版本**: v0.4（S17 漂移刷新——S12-S17 落地面三态/口径逐行核对，ground truth=
+**版本**: v0.5（S25 补测行/审计节 + S28 组合态复核与复现链闭合；v0.4 S17 漂移刷新——
+S12-S17 落地面三态/口径逐行核对，ground truth=
 `apps/browser/src/headless/domains.rs` dispatch 表；v0.3 S9、v0.2 S4、v0.1 M1 前置初稿）
 **日期**: 2026-09-13
 **捕获客户端**: playwright-core **1.63.0**（pin，见 `tests/playwright-matrix/package.json` + lockfile）

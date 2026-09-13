@@ -6,7 +6,7 @@ CDP 协议 goal（`docs/goal/cdp-protocol.md`）的 Playwright 测试工程。No
 ## Pin
 
 - `playwright-core` **1.63.0**（lockfile 固定；对应 Chromium 缓存 revision 1243）
-- `ws` 8.18.3（捕获代理用）
+- `ws` 8.21.0（捕获代理用）
 
 安装：`npm install`（缓存命中时不下载浏览器；勿提交 `node_modules/`，已 gitignore）。
 
@@ -46,8 +46,12 @@ CDP_ENDPOINT_URL=http://127.0.0.1:9222 npm run capture:chromium
   会改写发现响应里的 `webSocketDebuggerUrl` 指向自身（客户端按响应体地址建 WS 连接，
   不改写则流量绕过代理）。
 - `scripts/capture-core-flow.mjs` — 全核心流：navigate / evaluate(5 形态) / fill /
-  keyboard / click(3 形态) / boundingBox / network 事件 / cookies / dialog(3 种) /
-  frames / emulateMedia / screenshot(3 形态) / setContent / viewport 断言 / 多页生命周期。
+  keyboard / click(3 形态) / boundingBox / console 采集 / network 事件 / cookies /
+  dialog(3 种) / frames / emulateMedia / screenshot(3 形态) / setContent / viewport 断言 /
+  多页生命周期 / raw-CDP 面（`target.getTargets`、`target.attachDetach`、
+  `runtime.releaseObjectGroup`、`emulation.userAgentOverride`——S25 DC-1 缺口补测步）。
   每步独立 try/catch，失败不阻断后续步骤。
+- `scripts/probe-s17-capture.mjs` — 捕获复核（S28 入库）：经捕获代理对 ZeroWeb 重跑
+  全核心流 → 与 Chromium 基线 summary 做命令面比对（evidence 复现链，见账本 S28 节）。
 - `scripts/build-matrix.mjs` — JSONL → 按域明细 + 机器可读汇总（命令计数、参数键、
   结果样例、错误样例、事件计数）。
