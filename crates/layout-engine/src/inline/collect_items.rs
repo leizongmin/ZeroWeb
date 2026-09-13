@@ -795,24 +795,6 @@ impl InlineFormattingContext {
             }
         }
 
-        if std::env::var("ZW_ITEMS_DEBUG").is_ok() {
-            for (idx, it) in items.iter().enumerate() {
-                match it {
-                    InlineItem::Text(r) => eprintln!(
-                        "[items] {:2} Text nid={:?} ws={:?} pl={} text={:?}",
-                        idx,
-                        r.node_id,
-                        r.ws_override.as_ref().map(|w| (w.preserve, w.no_wrap)),
-                        r.padding_left,
-                        r.text.chars().take(40).collect::<String>()
-                    ),
-                    InlineItem::InlineBlock(b) => {
-                        eprintln!("[items] {:2} IB nid={:?}", idx, b.node_id)
-                    }
-                    _ => eprintln!("[items] {:2} other", idx),
-                }
-            }
-        }
         items
     }
 
@@ -1076,13 +1058,19 @@ impl InlineFormattingContext {
                             .is_none_or(|t| t.chars().all(|c| c.is_whitespace()));
                         if gc_text_empty {
                             let child_style0 = styles.get(&gc);
+                            // R4300e：paint IFC（空 styles）经 overrides 恢复 frame——walk 的
+                            // frame 判定若在 paint IFC 恒 0，spacer 零宽 run 在 paint 侧被丢
+                            // → paint/layout IFC 分段分歧 → 行断/绘制错位（quotes-001 行 3
+                            // 9324px 实证：layout 恒等而 paint 分歧）。padding/margin 走
+                            // overrides（R3837 同源），垂直 metrics paint IFC 无源可依记 0
+                            //（垂直 frame 只影响行盒高，不影响 inline 轴推进分段）。
                             let frame_sum = {
                                 let (pt, pb, bt, bb) = Self::extract_inline_box_metrics(child_style0);
                                 let m =
                                     |v: &LengthValue, st: &ComputedStyle| Self::resolve_inline_margin(v, st);
                                 let pd =
                                     |v: &LengthValue, st: &ComputedStyle| Self::resolve_inline_padding(v, st);
-                                child_style0
+                                let from_style = child_style0
                                     .map(|st| {
                                         m(&st.margin_left, st)
                                             + m(&st.margin_right, st)
@@ -1093,7 +1081,14 @@ impl InlineFormattingContext {
                                             + bt
                                             + bb
                                     })
+                                    .unwrap_or(0.0);
+                                let from_overrides = self
+                                    .padding_overrides
+                                    .get(&gc)
+                                    .map(|(pl, pr)| pl + pr)
                                     .unwrap_or(0.0)
+                                    + self.margin_overrides.get(&gc).map(|(ml, mr)| ml + mr).unwrap_or(0.0);
+                                from_style.max(from_overrides)
                             };
                             if frame_sum > 0.0 {
                                 flush_pending(&mut text_pending, items, !emitted_text_run, false);
