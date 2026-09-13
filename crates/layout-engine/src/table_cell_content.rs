@@ -55,6 +55,154 @@ pub(crate) fn clamp_cell_subtree_to_content_width(
     }
 }
 
+/// R4298（CSS2 §17.5.2 列压缩的组成步骤）：列宽被压缩后（`table::compute_column_widths_inner`
+/// 收缩臂 / R4227 约束臂），cell content 仍是压缩前宽度的 taffy 布局——包裹性内容（文本）
+/// 须按最终列宽重排：①把 cell 子树中 width:auto 的 block 宽度 clamp 到 cell content width
+/// （含 wrapping 内容——R767 的「跳过避 clip」以不重排为前提，此处紧随重测高度，clip 消除）；
+/// ②经 `measure_text_content` 按新宽重测各 block 与 cell 的内容高并增高（paint 侧 IFC 以
+/// box content_width 重排文本，宽/高就位后文字即按列宽换行）。
+/// img_intrinsic_sizes 以空表传入（table 调用链不穿 engine 侧 intrinsic 表；仅影响压缩表内
+/// img 的固有比解析，属性/CSS 尺寸路径不受影响）。
+/// 须在 `position_cells` 之前调用（行高取 cell 高）。multicol-basic ref 页：
+/// width:360 表 3×120 列压缩后，td 文本仍按 280 宽换 3 行溢出窄列，重测后按 120 宽换行。
+pub(crate) fn remeasure_cells_at_compressed_widths(
+    table_box: &mut LayoutBox,
+    doc: &Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    inline_fonts: crate::inline_finalization::InlineFontContext<'_>,
+) {
+    fn walk(
+        box_node: &mut LayoutBox,
+        doc: &Document,
+        styles: &HashMap<NodeId, ComputedStyle>,
+        inline_fonts: crate::inline_finalization::InlineFontContext<'_>,
+    ) {
+        let is_cell = box_node
+            .node_id
+            .and_then(|id| styles.get(&id))
+            .is_some_and(|s| matches!(s.display, DisplayValue::TableCell));
+        if is_cell {
+            let cw = box_node.content_width;
+            if cw > 0.5 {
+                // ① 强制 clamp：width:auto 的 block 子（含 wrapping 内容）收到 cell 内容宽。
+                // 显式 width 的 block 不 clamp（尊重作者宽度，同 R767 口径）。
+                for child in box_node.children.iter_mut() {
+                    clamp_cell_subtree_to_content_width_forced(child, cw, styles);
+                }
+                // ② 重测：直接 block 子先按自身新宽增高，cell 再整体重测增高。
+                let vertical_ext =
+                    box_node.padding_top + box_node.padding_bottom + box_node.border_top + box_node.border_bottom;
+                for child in box_node.children.iter_mut() {
+                    let Some(cid) = child.node_id else { continue };
+                    let Some(cs) = styles.get(&cid) else { continue };
+                    if !matches!(
+                        cs.display,
+                        DisplayValue::Block
+                            | DisplayValue::ListItem
+                            | DisplayValue::FlowRoot
+                            | DisplayValue::Flow
+                            | DisplayValue::Inline
+                    ) {
+                        continue;
+                    }
+                    let inner_w = child.content_width;
+                    if inner_w <= 0.5 {
+                        continue;
+                    }
+                    let measured = crate::inline_finalization::measure_text_content(
+                        doc,
+                        styles,
+                        cid,
+                        taffy::geometry::Size {
+                            width: Some(inner_w),
+                            height: None,
+                        },
+                        taffy::geometry::Size {
+                            width: taffy::style::AvailableSpace::Definite(inner_w),
+                            height: taffy::style::AvailableSpace::MaxContent,
+                        },
+                        &HashMap::new(),
+                        inline_fonts,
+                    );
+                    let vext = child.padding_top + child.padding_bottom + child.border_top + child.border_bottom;
+                    let new_h = measured.height + vext;
+                    if new_h > child.height + 0.5 {
+                        child.height = new_h;
+                        child.content_height = measured.height;
+                    }
+                }
+                let Some(cell_id) = box_node.node_id else { return };
+                let measured = crate::inline_finalization::measure_text_content(
+                    doc,
+                    styles,
+                    cell_id,
+                    taffy::geometry::Size {
+                        width: Some(cw),
+                        height: None,
+                    },
+                    taffy::geometry::Size {
+                        width: taffy::style::AvailableSpace::Definite(cw),
+                        height: taffy::style::AvailableSpace::MaxContent,
+                    },
+                    &HashMap::new(),
+                    inline_fonts,
+                );
+                let new_h = measured.height + vertical_ext;
+                if new_h > box_node.height + 0.5 {
+                    box_node.height = new_h;
+                    box_node.content_height = measured.height;
+                }
+            }
+            return;
+        }
+        for child in &mut box_node.children {
+            walk(child, doc, styles, inline_fonts);
+        }
+    }
+    walk(table_box, doc, styles, inline_fonts);
+}
+
+/// `clamp_cell_subtree_to_content_width` 的强制变体：wrapping 内容（max-content 超宽）也
+/// clamp（R4298 列压缩重排路径——紧随 measure 增高，无 clip 风险）。
+pub(crate) fn clamp_cell_subtree_to_content_width_forced(
+    box_node: &mut LayoutBox,
+    cell_content_width: f32,
+    styles: &HashMap<NodeId, ComputedStyle>,
+) {
+    let style = box_node.node_id.and_then(|id| styles.get(&id));
+    // R4298：display:inline 一并纳入——Phase A 把 inline 子 block 化建盒（converter
+    // `DisplayValue::Inline => taffy Block`），其 LayoutBox 同样被 taffy 以初始宽布局
+    // （multicol-basic ref 页 `.multicol-basic-ref-item{display:inline}` div 280 宽实证），
+    // 压缩重排路径同样需要 clamp。inline 的 CSS width 不适用（CSS2 §10.3.1 width
+    // applies to non-replaced inline ⇒ no）——width 声明按 auto 处理（multicol-basic
+    // ref 页 div width:120px 声明仍被 taffy 布局为 280 实证）；替换元素除外（width 适用）。
+    let width_ignored = style.is_some_and(|s| {
+        matches!(
+            s.display,
+            DisplayValue::Block
+                | DisplayValue::ListItem
+                | DisplayValue::FlowRoot
+                | DisplayValue::Flow
+                | DisplayValue::Flex
+                | DisplayValue::Grid
+                | DisplayValue::Inline
+        ) && (matches!(s.width, LengthValue::Auto) || matches!(s.display, DisplayValue::Inline))
+    });
+    let is_block_auto = width_ignored && !box_node.is_replaced;
+    if is_block_auto && box_node.width > cell_content_width + 0.5 {
+        box_node.width = cell_content_width;
+        box_node.content_width = (cell_content_width
+            - box_node.border_left
+            - box_node.border_right
+            - box_node.padding_left
+            - box_node.padding_right)
+            .max(0.0);
+    }
+    for child in &mut box_node.children {
+        clamp_cell_subtree_to_content_width_forced(child, cell_content_width, styles);
+    }
+}
+
 /// 遍历 box 子树，对每个 table-cell，clamp 其 content 子树到 cell content width。
 pub(crate) fn constrain_table_cell_content_widths(
     box_node: &mut LayoutBox,

@@ -340,7 +340,8 @@ fn layout_table_inner(
     }
 
     // 2. 计算列宽
-    let col_widths = compute_column_widths_inner(table_box, &grid, styles, doc, inline_fonts, width_constraint);
+    let (col_widths, cols_auto_shrunk) =
+        compute_column_widths_inner(table_box, &grid, styles, doc, inline_fonts, width_constraint);
 
     // 3. 定位单元格
     // α-4b-1：vertical-rl/lr 表走转置路径（行沿 x、cell 沿 y），
@@ -352,6 +353,26 @@ fn layout_table_inner(
         position_cells_vertical(table_box, &grid, &col_widths, spacing_x, spacing_y, styles, doc);
     } else {
         position_cells(table_box, &grid, &col_widths, spacing_x, spacing_y, styles);
+    }
+
+    // R4298：列压缩（R4298 收缩臂 / R4227 约束臂）后，cell content 仍是压缩前宽度的
+    // taffy 布局——包裹性内容（文本）须按最终列宽重排：clamp 子树宽 + 重测内容高
+    // （§17.5.2 列压缩语义的组成步骤，否则文字按旧宽换行溢出窄列，multicol-basic
+    // ref 页 280 宽文本挤 120 列实证）。须在**首趟 position_cells 之后**（cell 宽已被
+    // 置为列宽）并**再跑一趟 position_cells**（行高取自增高后的 cell/子树内容底，
+    // 后继行 y、表高随之修正）。
+    // img_intrinsic_sizes 以空表传入（engine 侧 intrinsic 表不穿 table 调用链；仅影响
+    // 压缩表内 img 的固有比解析，R4149-R4151 域的属性/CSS 尺寸路径不受影响）。
+    if cols_auto_shrunk {
+        crate::table_cell_content::remeasure_cells_at_compressed_widths(table_box, doc, styles, inline_fonts);
+        if matches!(
+            table_box.writing_mode,
+            WritingModeValue::VerticalRl | WritingModeValue::VerticalLr
+        ) {
+            position_cells_vertical(table_box, &grid, &col_widths, spacing_x, spacing_y, styles, doc);
+        } else {
+            position_cells(table_box, &grid, &col_widths, spacing_x, spacing_y, styles);
+        }
     }
 
     // R767: 列定尺寸后，cell content（width:auto block 子树）仍为 taffy 初始（body 宽）
@@ -648,12 +669,12 @@ fn compute_column_widths_inner(
     doc: &zero_dom::Document,
     inline_fonts: crate::inline_finalization::InlineFontContext<'_>,
     width_constraint: Option<f32>,
-) -> Vec<f32> {
+) -> (Vec<f32>, bool) {
     let available_width = table_box.content_width;
     let col_count = grid.col_count;
 
     if col_count == 0 {
-        return Vec::new();
+        return (Vec::new(), false);
     }
 
     // border-collapse 模式标志（cell-width-as-content 与 fixed 空列裁剪共用）。
@@ -1017,9 +1038,41 @@ fn compute_column_widths_inner(
     // 仅当 fixed 布局被上面收缩到 width（fixed_capped）时跳过填满扩展——否则会把
     // 收缩后的列再撑回内容宽；未收缩的 fixed 表（内容 fits width）仍正常扩展填满。
 
+    // R4298（CSS2 §17.5.2）：列宽总和超出列可用宽时**按比例压缩**——表格指定宽/包含块
+    // 约束优先于内容 max-content（§17.5.2「the table may not be wider than its containing
+    // block」收缩语义；fixed 布局已有上方 fixed_capped 收缩臂，auto 布局此前缺失 →
+    // 表格溢出包含块：multicol-basic ref 页 width:360 表实测 840（3×280）实证）。
+    // 比例压缩、无 per-column min-content floor——列宽本身已是测量端换行后的内容宽，
+    // 不可断行内容（长词）由 cell overflow 呈现（与 fixed_capped 臂同口径）。
+    // kill-switch `ZW_TABLE_AUTO_SHRINK=0`（LazyLock 构造期单读，R3858 教训）。
+    // R4227 的 BFC 避让约束臂（width_constraint）语义相同，保持其独立（约束值不同源）。
+    static AUTO_SHRINK_ON: std::sync::LazyLock<bool> =
+        std::sync::LazyLock::new(|| std::env::var("ZW_TABLE_AUTO_SHRINK").as_deref() != Ok("0"));
+    // R4298 收窄：仅**显式 width 且非浮动**表参与压缩——①auto/匿名表（taffy shrink-to-fit
+    // 已定宽）的列总和超 available 常伴随 cell content 未完整重排的残差
+    // （table-anonymous-objects 簇 1.6% ×70 实证），待 cell 重排机制完备后再放开；
+    // ②float 表按 §10.3.5 shrink-to-fit 可宽于指定宽（floated-table-wider-than-specified
+    // 0→5.22 实证），不压缩。
+    let table_is_floated = table_style.is_some_and(|s| !matches!(s.float, FloatValue::None));
+    let shrink_eligible = has_explicit_width && !table_is_floated;
+    let mut auto_shrunk = false;
+    if !fixed_capped && shrink_eligible && *AUTO_SHRINK_ON {
+        let total: f32 = col_max_widths.iter().sum();
+        // col_available < 1 为上游 sizing 退化（contain:inline-size + width:fit-content 表
+        // taffy content_width=0，contain-inline-size-table 实证）——压缩到 ~0 违背 CSS 意图
+        // （该表经「列和 = 表宽」shrink-to-sum 路径取 100 正常渲染），跳过。
+        if total > col_available + 0.5 && total > 0.0 && col_available >= 1.0 {
+            let ratio = col_available / total;
+            for w in &mut col_max_widths {
+                *w *= ratio;
+            }
+            auto_shrunk = true;
+        }
+    }
+
     // R4243：填满扩展基准 = col_available（§17.5.2 列可用宽 = 表 content − border-spacing）。
     // spacing 0（collapse/未声明）时 col_available == available_width，零行为变化。
-    if has_explicit_width && !fixed_capped && total_width < col_available && total_width > 0.0 {
+    if has_explicit_width && !fixed_capped && !auto_shrunk && total_width < col_available && total_width > 0.0 {
         // R364：显式 width 列冻结（保持其宽），仅 auto 列吸收剩余空间。CSS Tables auto 布局：
         // 显式 width 单元格的列不增长，剩余空间分给 auto 列（按其当前宽度比例）。全部列均显式
         // width 时回退按比例扩展（避免剩余空间留白）。
@@ -1106,7 +1159,7 @@ fn compute_column_widths_inner(
         }
     }
 
-    col_max_widths
+    (col_max_widths, auto_shrunk)
 }
 
 /// R1390：table-cell 建立 BFC（CSS §9.4.1），其高度须包含浮动子（§10.6.7：

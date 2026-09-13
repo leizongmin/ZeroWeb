@@ -878,7 +878,8 @@ fn test_table_min_width_relative_length_expands_auto_columns() {
     };
 
     let grid = build_grid(&table_box, &doc, &styles);
-    let col_widths = compute_column_widths_inner(&table_box, &grid, &styles, &doc, Default::default(), None);
+    let (col_widths, _auto_shrunk) =
+        compute_column_widths_inner(&table_box, &grid, &styles, &doc, Default::default(), None);
 
     assert_eq!(col_widths.len(), 1);
     assert!(
@@ -886,6 +887,83 @@ fn test_table_min_width_relative_length_expands_auto_columns() {
         "table min-width:10em at 20px should expand auto column to 200, got {}",
         col_widths[0]
     );
+}
+
+/// R4298（CSS2 §17.5.2）：显式 width 表的列宽总和超出可用宽时按比例压缩
+/// （auto 布局此前缺失压缩臂，表格溢出包含块）。3×280 列 / width:360 表 → 各 120；
+/// auto_shrunk 标志驱动 cell content 压缩后重排（table_cell_content 重测）。
+#[test]
+fn test_r4298_explicit_width_table_shrinks_overflowing_columns() {
+    use zero_css_parser::values::LengthValue;
+
+    let mut doc = Document::new();
+    let root = doc.root();
+    let table_id = doc.create_element("table");
+    let cell1 = doc.create_element("td");
+    let cell2 = doc.create_element("td");
+    let cell3 = doc.create_element("td");
+    let _ = doc.append_child(root, table_id);
+    for c in [&cell1, &cell2, &cell3] {
+        let _ = doc.append_child(table_id, *c);
+    }
+
+    let mut styles = HashMap::new();
+    let mut table_style = ComputedStyle::default();
+    table_style.display = DisplayValue::Table;
+    // 显式 width:360（content_width 由调用方置 360）
+    table_style.width = LengthValue::Px(360.0);
+    styles.insert(table_id, table_style);
+    let mut content_ids = Vec::new();
+    for c in [&cell1, &cell2, &cell3] {
+        let mut cs = ComputedStyle::default();
+        cs.display = DisplayValue::TableCell;
+        styles.insert(*c, cs);
+        // cell 内容块（显式 width:280）——intrinsic 取子显式宽 280
+        //（夹具重点是压缩数学；intrinsic 测量路径由真实 corpus 覆盖）
+        let content_id = doc.create_element("div");
+        let _ = doc.append_child(*c, content_id);
+        let mut bs = ComputedStyle::default();
+        bs.display = DisplayValue::Block;
+        bs.width = LengthValue::Px(280.0);
+        styles.insert(content_id, bs);
+        content_ids.push(content_id);
+    }
+
+    // 每格内容 280 宽（测量端换行后的内容宽），总和 840 > 360。
+    // intrinsic 取自 cell **content**（子树 max-content），故子盒承载 280 宽。
+    let make_cell = |id: zero_dom::NodeId, content_id: zero_dom::NodeId| LayoutBox {
+        node_id: Some(id),
+        width: 280.0,
+        content_width: 280.0,
+        height: 60.0,
+        children: vec![LayoutBox {
+            node_id: Some(content_id),
+            width: 280.0,
+            content_width: 280.0,
+            height: 60.0,
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    let [c1, c2, c3] = [&cell1, &cell2, &cell3];
+    let [k1, k2, k3] = [&content_ids[0], &content_ids[1], &content_ids[2]];
+    let table_box = LayoutBox {
+        node_id: Some(table_id),
+        content_width: 360.0,
+        width: 360.0,
+        children: vec![make_cell(*c1, *k1), make_cell(*c2, *k2), make_cell(*c3, *k3)],
+        ..Default::default()
+    };
+
+    let grid = build_grid(&table_box, &doc, &styles);
+    let (col_widths, auto_shrunk) =
+        compute_column_widths_inner(&table_box, &grid, &styles, &doc, Default::default(), None);
+
+    assert!(auto_shrunk, "840 > 360 应触发压缩");
+    assert_eq!(col_widths.len(), 3);
+    for (i, w) in col_widths.iter().enumerate() {
+        assert!((w - 120.0).abs() < 1.0, "列 {} 应压缩到 120（360/3），实际 {}", i, w);
+    }
 }
 
 /// `<col>`/`<colgroup>` 的 background-color 应被收集为列背景（CSS Tables §17.5.3）。
@@ -1017,7 +1095,8 @@ fn test_fixed_layout_caps_columns_at_explicit_width_when_content_wider() {
     };
 
     let grid = build_grid(&table_box, &doc, &styles);
-    let col_widths = compute_column_widths_inner(&table_box, &grid, &styles, &doc, Default::default(), None);
+    let (col_widths, _auto_shrunk) =
+        compute_column_widths_inner(&table_box, &grid, &styles, &doc, Default::default(), None);
 
     // 修复前：内容 200px 撑宽列到 ~200；修复后：fixed + width:100px 收缩列到 ~100
     let total: f32 = col_widths.iter().sum();
@@ -1076,7 +1155,8 @@ fn test_r364_explicit_width_column_frozen_during_expansion() {
     };
 
     let grid = build_grid(&table_box, &doc, &styles);
-    let col_widths = compute_column_widths_inner(&table_box, &grid, &styles, &doc, Default::default(), None);
+    let (col_widths, _auto_shrunk) =
+        compute_column_widths_inner(&table_box, &grid, &styles, &doc, Default::default(), None);
     assert_eq!(col_widths.len(), 2, "应有 2 列");
     // 显式 20px 列冻结（不吸收剩余空间），保持 ~20 而非被比例撑大
     assert!(
@@ -1139,7 +1219,8 @@ fn test_explicit_cell_width_relative_length_freezes_column() {
     };
 
     let grid = build_grid(&table_box, &doc, &styles);
-    let col_widths = compute_column_widths_inner(&table_box, &grid, &styles, &doc, Default::default(), None);
+    let (col_widths, _auto_shrunk) =
+        compute_column_widths_inner(&table_box, &grid, &styles, &doc, Default::default(), None);
 
     assert_eq!(col_widths.len(), 2);
     assert!(
@@ -1190,7 +1271,8 @@ fn test_r364b_explicit_width_floored_at_min_content() {
     };
 
     let grid = build_grid(&table_box, &doc, &styles);
-    let col_widths = compute_column_widths_inner(&table_box, &grid, &styles, &doc, Default::default(), None);
+    let (col_widths, _auto_shrunk) =
+        compute_column_widths_inner(&table_box, &grid, &styles, &doc, Default::default(), None);
     // 列宽应 floor 到 min-content（~9.6），远大于显式 3px（修复前会返回 3）
     assert!(
         col_widths[0] >= 8.0,
