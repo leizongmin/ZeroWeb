@@ -754,8 +754,9 @@ fn disclosure_symbol(open: bool, style: Option<&ComputedStyle>) -> &'static str 
 
 /// R2392/R2394：按 `@counter-style` 的 system 算法生成计数器表示（marker body，不含 prefix/suffix）。
 /// CSS Counter Styles 3 §3.1.4。`None` = 该值无法表示（超出 range / 系统不支持）→ 调用方走 fallback。
-/// R2394 注：additive 应用经 A/B 量证为 net-negative（driving WPT 全 font-wall dice/
-/// triangle 字形 + system-additive ref 依赖 document.write JS），故仍 defer；extends 只解析到
+/// R4321 注：additive 算法已落地（§3.1.6 贪婪扣减）——R2394 的 defer 裁决前提之一
+///（system-additive ref 依赖 document.write 而缺失 write 行）已由 reftest harness
+/// write 兜底消除，全量 corpus A/B 重新量证；extends 只解析到
 /// 已注册 counter-style / built-in 系统并保留当前 rule affix。
 #[cfg(test)]
 fn counter_style_body(rule: &zero_css_parser::ast::CounterStyleRule, value: i64) -> Option<String> {
@@ -795,7 +796,25 @@ fn counter_style_body_with_registry(
         return None;
     }
 
-    let is_negative = value < 0 && !matches!(rule.system, CounterSystem::Cyclic);
+    // CSS Counter Styles 3 §3.1.4/§3.1.5：negative 描述符仅在系统自身算法能表示该值时
+    // 应用。symbolic/alphabetic 隐式值域 [1, ∞)——负值/0 落在值域外 → 直接 fallback
+    // （旧实现取绝对值再包 negative 括号，产出 "(⁑)" 类非法表示；WPT system-symbolic
+    // -2/-1 行「-⁑/-*」vs 期望「-2/-1」实证）。fixed 隐式值域 [first, first+len-1]：
+    // 值域外的值（含 first ≥ 1 时的负值/0）→ fallback；值域内的值按索引直接表示、
+    // 不经 negative 包裹（fixed 以显式整数起点直接索引，自身可表示负值）。
+    let fixed_first = match rule.system {
+        CounterSystem::Fixed(first) => Some(first.unwrap_or(1) as i64),
+        _ => None,
+    };
+    let symbol_count = rule.symbols.len();
+    if let Some(first) = fixed_first {
+        if symbol_count == 0 || value < first || (value - first) as usize >= symbol_count {
+            return None;
+        }
+    } else if matches!(rule.system, CounterSystem::Symbolic | CounterSystem::Alphabetic) && value < 1 {
+        return None;
+    }
+    let is_negative = value < 0 && fixed_first.is_none() && !matches!(rule.system, CounterSystem::Cyclic);
     let body_value = if is_negative { value.checked_abs()? } else { value };
     let body = counter_style_raw_body(rule, body_value, registry, style, 0)?;
     let (negative_prefix, negative_suffix): (&str, &str) = if is_negative {
@@ -959,8 +978,59 @@ fn counter_style_raw_body(
                     text: format_builtin_list_style(value, &lst),
                 })
             }),
-        // additive / most extends：应用 defer（R2394 A/B 量证 net-negative，见函数注释）→ None（fallback）。
-        CounterSystem::Additive => None,
+        // R4321：additive 算法落地（CSS Counter Styles 3 §3.1.6）——additive-symbols
+        // 已按 weight 降序存储，贪婪取最大可行 weight 直至余量归零；余量卡死（如
+        // weights {3,2} 的值 4：3+1 无 weight-1）→ None（fallback，chromium 一致，
+        // WPT system-additive style c 值 4 ref「4.」实证）。weight-0 符号仅表示 value 0
+        //（WPT style b 的 0 → \2637；主循环必须跳过 w=0 防死循环）。value < 0 不可表示
+        //（负值由外层 negative 包裹臂取 abs 后进入本臂）。
+        // 旧 defer（R2394 A/B net-negative）的前提之一——system-additive ref 依赖
+        // document.write 而缺失 write 行——已由 R4321 reftest harness write 兜底消除，
+        // A/B 重新量证（本轮全量 corpus A/B）。
+        CounterSystem::Additive => {
+            let table = &rule.additive_symbols;
+            if table.is_empty() {
+                return None;
+            }
+            if value == 0 {
+                return table
+                    .iter()
+                    .rev()
+                    .find(|(w, _)| *w == 0)
+                    .map(|(_, sym)| CounterRepresentation {
+                        text: sym.clone(),
+                        symbol_count: 1,
+                    });
+            }
+            if value < 0 {
+                return None;
+            }
+            let mut rest = value;
+            let mut text = String::new();
+            let mut count = 0usize;
+            for (weight, sym) in table {
+                let w = *weight as i64;
+                if w <= 0 {
+                    continue;
+                }
+                while rest >= w {
+                    text.push_str(sym);
+                    count += 1;
+                    rest -= w;
+                    // 防御性上限：合法表示长度受 value/最小 weight 约束，超限视为病态。
+                    if count > 128 {
+                        return None;
+                    }
+                }
+            }
+            if rest != 0 {
+                return None;
+            }
+            Some(CounterRepresentation {
+                text,
+                symbol_count: count,
+            })
+        }
         _ => None,
     }
 }
@@ -2039,6 +2109,121 @@ mod tests {
         // range 外走 decimal fallback（armenian-008：0→"0", 10000→"10000"）
         assert_eq!(to_armenian(0), "0");
         assert_eq!(to_armenian(10000), "10000");
+    }
+
+    /// R4321：symbolic/alphabetic 隐式值域 [1, ∞)（CSS Counter Styles 3 §3.1.4）——
+    /// 负值/0 走 fallback（调用方落 decimal），不经 negative 描述符包裹。
+    /// driving：WPT counter-style-at-rule/system-symbolic（start=-2 的 ol，
+    /// -2/-1 行期望「-2/-1」，旧实现产出「-⁑/-*」）。
+    #[test]
+    fn symbolic_alphabetic_negative_falls_back_to_decimal() {
+        let mk_rule = |css: &str| {
+            let sheet = zero_css_parser::Parser::parse_stylesheet(css);
+            sheet
+                .rules
+                .iter()
+                .find_map(|r| match r {
+                    zero_css_parser::ast::Rule::CounterStyle(cs) => Some(cs.clone()),
+                    _ => None,
+                })
+                .expect("counter-style rule")
+        };
+        // system 缺省 = symbolic；suffix '' 与 WPT 用例一致。
+        let rule = mk_rule("@counter-style a { symbols: '*' '\\2051' '\\2020' '\\2021'; suffix: ''; }");
+        // 值域内：symbolic 重复算法不变。
+        assert_eq!(counter_style_body(&rule, 1).as_deref(), Some("*"));
+        assert_eq!(counter_style_body(&rule, 5).as_deref(), Some("**"));
+        // 负值/0 → None（fallback），不得产出「(⁑)」类 negative 包裹表示。
+        assert!(counter_style_body(&rule, -2).is_none());
+        assert!(counter_style_body(&rule, -1).is_none());
+        assert!(counter_style_body(&rule, 0).is_none());
+        // marker 全文 = fallback decimal + suffix。
+        assert_eq!(counter_style_marker_text(&rule, -2, None, None), "-2");
+        assert_eq!(counter_style_marker_text(&rule, -1, None, None), "-1");
+        // alphabetic 同轨（隐式值域 [1, ∞)）。
+        let alpha = mk_rule("@counter-style b { system: alphabetic; symbols: a b c; }");
+        assert_eq!(counter_style_body(&alpha, 3).as_deref(), Some("c"));
+        assert!(counter_style_body(&alpha, -1).is_none());
+        assert!(counter_style_body(&alpha, 0).is_none());
+    }
+
+    /// R4321：fixed 隐式值域 [first, first+len-1]（CSS Counter Styles 3 §3.1.4）——
+    /// 值域内直接按索引表示（first 为负/零时负值本身可表示，不经 negative 包裹）；
+    /// 值域外（含 first ≥ 1 时的负值）fallback。
+    #[test]
+    fn fixed_system_implicit_range_gates_negative() {
+        let mk_rule = |css: &str| {
+            let sheet = zero_css_parser::Parser::parse_stylesheet(css);
+            sheet
+                .rules
+                .iter()
+                .find_map(|r| match r {
+                    zero_css_parser::ast::Rule::CounterStyle(cs) => Some(cs.clone()),
+                    _ => None,
+                })
+                .expect("counter-style rule")
+        };
+        // fixed [4]（WPT fallbacks-in-shadow-dom 的 bar/baz 形态）：1-3 越界 fallback。
+        let fixed4 = mk_rule("@counter-style bar { system: fixed 4; symbols: d e f; }");
+        assert!(counter_style_body(&fixed4, 1).is_none());
+        assert!(counter_style_body(&fixed4, 3).is_none());
+        assert_eq!(counter_style_body(&fixed4, 4).as_deref(), Some("d"));
+        assert!(counter_style_body(&fixed4, 7).is_none());
+        // fixed 缺省 first=1：值 1-3 直接表示，0/负值 fallback。
+        let fixed1 = mk_rule("@counter-style c { system: fixed; symbols: x y z; }");
+        assert_eq!(counter_style_body(&fixed1, 1).as_deref(), Some("x"));
+        assert!(counter_style_body(&fixed1, 0).is_none());
+        assert!(counter_style_body(&fixed1, -2).is_none());
+        // first 为负：负值落在值域内 → 直接索引表示、无 negative 括号。
+        let fixed_neg = mk_rule("@counter-style d { system: fixed -2; symbols: p q r; }");
+        assert_eq!(counter_style_body(&fixed_neg, -2).as_deref(), Some("p"));
+        assert_eq!(counter_style_body(&fixed_neg, 0).as_deref(), Some("r"));
+        assert!(counter_style_body(&fixed_neg, -3).is_none());
+        assert!(counter_style_body(&fixed_neg, 1).is_none());
+    }
+
+    /// R4321：additive 算法（CSS Counter Styles 3 §3.1.6）——贪婪扣减。ground-truth
+    /// 对齐 WPT system-additive ref：dice（ↀ U+2680…）1-13 与 upper-roman 族。
+    #[test]
+    fn additive_system_greedy_composition() {
+        let mk_rule = |css: &str| {
+            let sheet = zero_css_parser::Parser::parse_stylesheet(css);
+            sheet
+                .rules
+                .iter()
+                .find_map(|r| match r {
+                    zero_css_parser::ast::Rule::CounterStyle(cs) => Some(cs.clone()),
+                    _ => None,
+                })
+                .expect("counter-style rule")
+        };
+        // WPT system-additive 的 style a（dice face-6..1 权重 6..1）。
+        let dice = mk_rule(
+            "@counter-style a { system: additive; additive-symbols: 6 \\2685, 5 \\2684, 4 \\2683, 3 \\2682, 2 \\2681, 1 \\2680; suffix: \"\"; }",
+        );
+        assert_eq!(counter_style_body(&dice, 1).as_deref(), Some("\u{2680}"));
+        assert_eq!(counter_style_body(&dice, 5).as_deref(), Some("\u{2684}"));
+        assert_eq!(counter_style_body(&dice, 6).as_deref(), Some("\u{2685}"));
+        assert_eq!(counter_style_body(&dice, 7).as_deref(), Some("\u{2685}\u{2680}"));
+        assert_eq!(counter_style_body(&dice, 10).as_deref(), Some("\u{2685}\u{2683}"));
+        assert_eq!(
+            counter_style_body(&dice, 360).as_deref(),
+            Some("\u{2685}".repeat(60).as_str())
+        );
+        // 0 无 weight-0 符号 → fallback。
+        assert!(counter_style_body(&dice, 0).is_none());
+        // 贪婪卡死 → fallback（WPT style c：weights {3,2}，值 4 = 3+1 无 weight-1 →
+        // chromium ref「4.」；值 5 = 3+2 → "ab"）。
+        let coarse = mk_rule("@counter-style c { system: additive; additive-symbols: 3 \"a\", 2 \"b\"; }");
+        assert_eq!(counter_style_body(&coarse, 2).as_deref(), Some("b"));
+        assert_eq!(counter_style_body(&coarse, 3).as_deref(), Some("a"));
+        assert!(counter_style_body(&coarse, 1).is_none());
+        assert!(counter_style_body(&coarse, 4).is_none());
+        assert_eq!(counter_style_body(&coarse, 5).as_deref(), Some("ab"));
+        // weight-0 符号表示 0（WPT style b：0 → \2637）。
+        let zero = mk_rule("@counter-style b { system: additive; additive-symbols: 7 \\2630, 0 \\2637; }");
+        assert_eq!(counter_style_body(&zero, 0).as_deref(), Some("\u{2637}"));
+        assert_eq!(counter_style_body(&zero, 7).as_deref(), Some("\u{2630}"));
     }
 
     /// R2448：lower-armenian = to_armenian + to_lowercase（ground-truth 对齐 lower-armenian-111/114）。

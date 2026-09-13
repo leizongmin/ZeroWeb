@@ -439,3 +439,5 @@ css/filter-effects/filter-invalid.html css/filter-effects/filter-invalid-ref.htm
 css/filter-effects/backdrop-filter-invalid.html css/filter-effects/filter-invalid-ref.html == 2026-09-12 2026-09-13 R4280 SVG presentation CSS 注入——fill 属性（V1 色值）+ 缺失几何 attr 注入（width/height authored 优先）
 css/filter-effects/backdrop-filter-containing-block.html css/filter-effects/backdrop-filter-containing-block-ref.html == 2026-09-13 R4295 filter/backdrop-filter/transform/perspective/will-change 建立 abspos/fixed 后代包含块
 css/CSS2/linebox/border-padding-bleed-001.xht css/CSS2/linebox/border-padding-bleed-001-ref.xht == 2026-09-13 R4297 inline 行位同步（层②）——border-box 几何重写 + 缺失量 bleed 口径
+css/css-counter-styles/counter-style-at-rule/system-symbolic.html css/css-counter-styles/counter-style-at-rule/system-symbolic-ref.html == 2026-09-14 R4321 fix: symbolic/fixed 隐式值域负值 fallback + reftest harness document.write 无 close 兜底（ref 页 write 行落地）
+css/css-counter-styles/counter-style-at-rule/system-additive.html css/css-counter-styles/counter-style-at-rule/system-additive-ref.html == 2026-09-14 R4321 fix: additive system §3.1.6 贪婪算法落地（含 weight-0 符号表 0）+ harness document.write 兜底

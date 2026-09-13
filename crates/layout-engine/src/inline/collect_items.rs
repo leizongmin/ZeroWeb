@@ -65,6 +65,17 @@ impl InlineFormattingContext {
         style.aspect_ratio.filter(|r| r.is_finite() && *r > 0.0)
     }
 
+    /// R4321：paint Path B（IFC 重跑，`styles` 空表）的 HTML UA 隐藏元素兜底——
+    /// `ua_default_display` 静态 display:none 集在无 styles 时仍须跳过（script 源文本
+    /// 泄漏防护，见 collect 主路径 Element 分支注释）。rt/rtc 与 option/optgroup 走
+    /// `ua_default_display` 的 env 条件臂/抑制臂，不属于本兜底域（ruby/select 有专门
+    /// 收集语义，Path B 行为保持不变）。
+    fn ua_hidden_without_styles(local_name: &str) -> bool {
+        !matches!(local_name, "rt" | "rtc" | "option" | "optgroup")
+            && zero_style_system::ua_default_display(local_name)
+                .is_some_and(|d| matches!(d, DisplayValue::None))
+    }
+
     /// 收集容器中所有行内级内容（文本节点 + inline 元素 + `<br>` 元素），
     /// 从 ComputedStyle 中读取 font-size 和 line-height。
     fn collect_inline_items(
@@ -263,9 +274,19 @@ impl InlineFormattingContext {
                         // 的文本/空盒曾作为父 IFC 文本 run 参与行盒测量，产生幻影行把
                         // body 整体推下 ~2 行）。必须先于 br/wbr 判定（display:none 的 br
                         // 同样不产生强制换行，CSS2 §14.1 命名实例 br{display:none}）。
+                        // R4321：paint Path B（IFC 重跑，`styles` 空表——painter/text.rs
+                        // `ctx.layout(doc, node_id, &HashMap::new())`）下上方判定恒 false，
+                        // HTML UA 隐藏元素（script/style/head/title/...，静态 display:none
+                        // 集）的源文本经 text_content 扁平化泄入父 IFC——WPT
+                        // counter-style-at-rule/system-symbolic ref 页 div 内 `<script>` +
+                        // 可见文本（".&nbsp;"）时脚本源码整行渲染实证。styles 空时按 UA 默认
+                        // display 兜底；rt/rtc（ZW_RUBY_RT_NONE env 臂）与 option/optgroup
+                        // （select 抑制臂）不纳入——ruby/select 有专门收集语义，Path B 行为
+                        // 保持不变。
                         if styles
                             .get(&child_id)
                             .is_some_and(|s| matches!(s.display, DisplayValue::None))
+                            || (styles.is_empty() && Self::ua_hidden_without_styles(elem_data.local_name()))
                         {
                             continue;
                         }
@@ -1094,13 +1115,19 @@ impl InlineFormattingContext {
                 NodeKind::Text(text_data) => {
                     text_pending.push_str(&text_data.content);
                 }
-                NodeKind::Element(_) => {
+                NodeKind::Element(elem_data) => {
                     // R109 split 容器成员表：元素子不在成员表时跳过（文本子随外层扁平化，
                     // 不受成员表约束）。
                     if let Some(ids) = &self.fragment_node_ids {
                         if !ids.contains(&gc) {
                             continue;
                         }
+                    }
+                    // R4321：UA 隐藏元素兜底与主路径同源（见主路径 Element 分支注释）——
+                    // walk 递归经 text_content 折回同样会把 Path B 下无 styles 的
+                    // script/style 等源文本吸收进 pending。
+                    if styles.is_empty() && Self::ua_hidden_without_styles(elem_data.local_name()) {
+                        continue;
                     }
                     let gc_has_element_children = doc.child_nodes(gc).iter().any(|&gk| {
                         doc.get(gk).is_some_and(|n| matches!(&n.kind, NodeKind::Element(_)))
