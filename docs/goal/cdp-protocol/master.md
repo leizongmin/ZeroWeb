@@ -2,10 +2,10 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-14（S194：静默监测轮——tip 与 S193 逐字节一致，本流自有面
+**最后更新**: 2026-09-14（S195：静默监测轮——tip 与 S194 逐字节一致，本流自有面
 零漂移复核通过，锚点 diff 维持已归因态零新增，S188 活跑门结论引用（bench CPU 竞争
-负载窗内 PASS 33 绿零漂移），引用计数 6/10 下次活跑至迟 S198；绿步维持 33；并行流
-siteopt headless 延续、make test 换代 xvfb 包裹腿、零 zombie 零遗留端口）
+负载窗内 PASS 33 绿零漂移），引用计数 7/10 下次活跑至迟 S198；绿步维持 33；并行流
+siteopt headless 延续、make test 换代 quickjs 特性腿、零 zombie 零遗留端口）
 
 ---
 
@@ -36,6 +36,26 @@ siteopt headless 延续、make test 换代 xvfb 包裹腿、零 zombie 零遗留
 
 ## 已完成切片
 
+- **S195（2026-09-14）静默监测轮 — 同 tip 复核（无代码变更，绿步维持 33）**：
+  pull 零新提交（tip = 8e1ef9028，即 S194 提交本身）——双层锚点口径复核通过：本流
+  自有面与 S99 门禁验证态逐字节一致（diff 空）；全树锚点 diff 维持 S150 已归因态
+  （numstat 复核 4 文件 +314/-19，全部为 R4321-F 渲染流共享面）零新增。R4321-F 之后
+  crates/ 零新提交——渲染流无后续子帧/realm 工作，frames.click+evaluate 挂账解冻
+  条件实质判定不变。门结论引用 S188 活跑（bench CPU 竞争负载窗内 PASS 33 绿
+  deterministic 双跑 YES，第八个负载下样本、CPU 竞争亚型第二样本，首调红形态零再现），
+  引用计数 7/10，下次活跑至迟 S198——若逢并行流负载窗口优先窗口内执行。双解冻条件
+  不变：① 上游自 S194 零新提交（渲染流域 crates 零新工作，零子帧文档加载工作）；
+  ② docs/goal 自 S194 零非本流提交，DC-2 口径无新拍板记录。机器卫生复核：零 zombie、
+  本流自有面零遗留端口（9222/45029/34293/96xx 全空闲）。**并行流观察（双负载窗延续，
+  make test 腿再轮换）**：siteopt headless 维持同进程（PID 3501658 / port 9333，
+  etime ~4.4 分钟，不触碰）；ZeroWeb-2 make test 同父 make（3482499，etime ~9.3
+  分钟）下腿再轮换——S194 记档的 xvfb 包裹 zero-browser 腿（3579749）已收尾退出，
+  新腿 test-guard 3589045 包裹 `cargo test --no-default-features --features quickjs
+  -p zero-script-sandbox -p zero-webview -p zero-webview-demo -p zero-integration-tests
+  -p zero-wpt-runner`（quickjs 特性门腿，同 S189 观察 clippy quickjs 同族），当前
+  编译段（cargo test --no-run，etime ~13 秒）——负载窗实质延续（不触碰）。S78 故障
+  窗口后持续零复现，监测态维持。goal 自有面零新缺口、无扩展面（S40-S194 重审结论
+  延续）。
 - **S194（2026-09-14）静默监测轮 — 同 tip 复核（无代码变更，绿步维持 33）**：
   pull 零新提交（tip = 6a894cc12，即 S193 提交本身）——双层锚点口径复核通过：本流
   自有面与 S99 门禁验证态逐字节一致（diff 空）；全树锚点 diff 维持 S150 已归因态
