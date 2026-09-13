@@ -1,6 +1,8 @@
 # GitHub PR 前后截图交付
 
-获准交付优化成果到 GitHub 时读取；仅讨论或编辑 skill 不启动网站优化。
+启动合约包含 GitHub 交付时，在前置能力预检和最终交付时读取；仅讨论或编辑 skill
+不启动网站优化。先按 [启动授权](intake.md) 收齐权限与工具缺口处理策略，交付阶段
+复用原授权，不重新询问 commit/push/PR/脱敏截图许可。
 参考 ZeroSeed 的原生附件流程，使用 ZeroWeb 既有 GUI/CDP 与生产帧证据，不引入
 REPL/tmux、另一套截图采集器或新的视觉阈值。
 
