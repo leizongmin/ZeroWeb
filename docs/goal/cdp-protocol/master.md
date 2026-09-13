@@ -2,7 +2,7 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-13（S73：静默轮——tip 与 S72 逐字节一致，S53 组合态门结论全量引用；绿步维持 33）
+**最后更新**: 2026-09-13（S73：静默轮——tip 与 S72 逐字节一致，S53 组合态门结论全量引用；绿步维持 33；push 窗口拉入渲染流 R4315-N 纯 docs 记账已归因）
 
 ---
 
@@ -40,6 +40,12 @@
   免复跑（cdp-e2e 门 PASS 33 绿 deterministic YES）。双解冻条件不变：① 渲染流/
   用户 PR 零新提交（活跃面维持 paint/字体域，零子帧文档加载工作）；② DC-2
   口径无新拍板记录。goal 自有面零新缺口、无扩展面（S40-S72 重审结论延续）。
+  **push 窗口扰动归因（rule 10）**：推送时 pull --rebase 拉入渲染流 a2439e0e0
+  （R4315-N rendering-compat 记账，单文件 docs/goal/rendering-compat.md +2 行，
+  0 net code）——门禁图外路径（零编译面，make test / cdp-e2e 零消费 docs/goal/
+  记账行），免复跑判定成立（新组合态非 docs 树与 S53 锚点仍逐字节一致），S53
+  门结论延续；该提交不触子帧工作与 DC-2 口径，双解冻条件不变。S73 以 cb39f954f
+  推出（rebase 后新 hash）。
 - **S72（2026-09-13）静默轮 — 同 tip 复核（无代码变更，绿步维持 33）**：
   pull 零新提交（tip = 3a752f100，即 S71 提交本身）——tracked 树硬核对：
   `git diff 8e2265a11..HEAD -- ':!docs' ':!.claude'` 为空（S53 扰动三门禁验证树
