@@ -2,17 +2,17 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-14（S328：静默监测轮——同 tip 复核（567a0e2d6，即
-S327 提交本身），双层锚点零漂移（自有面维持 apps/browser README +1 已归因
+**最后更新**: 2026-09-14（S329：静默监测轮——同 tip 复核（e5bc759f0，即
+S328 提交本身），双层锚点零漂移（自有面维持 apps/browser README +1 已归因
 基线；全树锚点排除本流 docs 后 tracked 代码树对 S317 双腿刷新覆盖树
-736f16525 零变化——S327 活跑 10:10 已直接覆盖该树证据新鲜），门结论引用
-S327 活跑（门 PASS 33 绿 deterministic YES EXIT=0 ZERO_DRIFT=YES 10:10 +
-ZW_IPC_VALIDATE 静默），引用计数 2/10 下次活跑至迟 S337；绿步维持 33；
+736f16525 零变化——S327 活跑 10:10 直接覆盖），门结论引用 S327 活跑
+（门 PASS 33 绿 deterministic YES EXIT=0 ZERO_DRIFT=YES 10:10 +
+ZW_IPC_VALIDATE 静默），引用计数 3/10 下次活跑至迟 S337；绿步维持 33；
 解冻条件①观察面不变（crates/ 自 8fb39cd46 维持九枚均非渲染流子帧能力，
 frames.click+evaluate 维持挂起），②DC-2 无新拍板；机器卫生全净含
-zw-loop/zw-hunt 检查模式；同窗并行流活动延续已归因（ZeroWeb-2 cargo
-test + ZeroWeb-3-wt-baidu 9333 browser，均非本流竞争腿，负载 3.55）；S78
-家族维持 S320 收窄定性；零 zombie 零遗留端口）
+zw-loop/zw-hunt 检查模式；同窗并行流活动延续已归因（ZeroWeb-2 测试腿
+收尾中、ZeroWeb-3-wt-baidu 9333 browser，均非本流竞争腿，负载 2.93）；
+S78 家族维持 S320 收窄定性；零 zombie 零遗留端口）
 
 ---
 
@@ -43,6 +43,23 @@ test + ZeroWeb-3-wt-baidu 9333 browser，均非本流竞争腿，负载 3.55）�
 
 ## 已完成切片
 
+- **S329（2026-09-14）静默监测轮 — 同 tip 复核（无代码变更，绿步维持 33）**：
+  pull 零新提交（tip = e5bc759f0，即 S328 提交本身）——双层锚点口径复核
+  通过：自有面锚点增量零漂移（硬核对维持仅 apps/browser/README.md +1 行 =
+  S255 已归因的 52695a7c1 漂移基线，对 765429dda 基点实测恰 +1 行）；全树
+  锚点复核（排除本流 docs 后 tracked 代码树对 736f16525 = S317 双腿刷新
+  覆盖树零变化——S327 活跑 10:10 直接覆盖，证据新鲜可引用）零外部变化。
+  双解冻条件实质判定不变：① crates/ 自 8fb39cd46 维持九枚，均非渲染流
+  子帧文档加载 + JS realm 能力，frames.click+evaluate 维持挂起；②
+  docs/goal 自 S328 零非本流提交，DC-2 口径无新拍板记录。门结论引用
+  S327 活跑（门 PASS 33 绿 deterministic 双跑 YES EXIT=0 ZERO_DRIFT=YES
+  10:10 落盘 + ZW_IPC_VALIDATE 校验器在位静默），引用计数 2/10→**3/10**，
+  下次活跑至迟 S337。机器卫生复核：零 zombie、9222/45029/34293/19222
+  全空闲、`pgrep -af 'zw-loop|zw-hunt'` 零孤儿 hunt 遗留；同窗并行流
+  活动延续已归因（ZeroWeb-2 测试腿收尾中 cargo/rustc 0 + make/test-guard
+  残留、ZeroWeb-3-wt-baidu clone zero-browser 9333 延续，均非本流
+  cdp-e2e 竞争腿；负载 2.93——本轮零活跑需求不受影响）。goal 自有面零新
+  缺口、无扩展面（S40-S328 重审结论延续）。
 - **S328（2026-09-14）静默监测轮 — 同 tip 复核（无代码变更，绿步维持 33）**：
   pull 零新提交（tip = 567a0e2d6，即 S327 提交本身）——双层锚点口径复核
   通过：自有面锚点增量零漂移（硬核对维持仅 apps/browser/README.md +1 行 =
