@@ -201,6 +201,8 @@ impl super::Painter {
                 None
             };
 
+        // R4353：本元素脚本化滚动偏移 → local 层背景相位。
+        let layer_scroll = box_node.node_id.and_then(|id| self.scroll_offsets.get(&id)).copied();
         self.paint_bg_image_in_origin(
             origin_x,
             origin_y,
@@ -217,6 +219,7 @@ impl super::Painter {
             false,
             // R4350：无 fixed 层时全层元素盒（含 Fixed 的批次由 fixed 入口处理）。
             None,
+            layer_scroll,
         );
     }
 
@@ -290,6 +293,7 @@ impl super::Painter {
             None,
             false,
             Some((clip_x, clip_y, clip_w, clip_h)),
+            None,
         );
     }
 
@@ -323,6 +327,9 @@ impl super::Painter {
         // R4350：逐层 attachment——Some = 元素 origin 盒（scroll/local 层用）；
         // origin_* 参数此时 = fixed 层定位区（视口）。None = 全层用 origin_*（不分）。
         element_origin: Option<(f32, f32, f32, f32)>,
+        // R4353：本元素脚本化滚动偏移（scrollTop/scrollLeft）——local 层背景随内容
+        // 滚动：origin 平移 -offset（local = 附着于内容，滚动后相位上移）。
+        layer_scroll: Option<(f32, f32)>,
     ) {
         use zero_render_foundation::image_cache::ImageKey;
         use zero_render_foundation::primitive::ImagePrimitive;
@@ -352,6 +359,12 @@ impl super::Painter {
             // R4350：逐层 attachment（css-backgrounds-3 §3.1）——element_origin = Some 时
             // fixed 层用 origin_*（调用方传视口）、scroll/local 层用 eo（调用方传
             // 元素/根 padding 盒）；None = 全层 origin_*（不分层路径）。
+            let is_local = matches!(
+                style
+                    .background_attachment
+                    .get(layer_idx % style.background_attachment.len()),
+                Some(BackgroundAttachmentComputedValue::Local)
+            );
             let (origin_x, origin_y, origin_w, origin_h) = match element_origin {
                 Some((eo_x, eo_y, eo_w, eo_h)) => {
                     if matches!(
@@ -366,6 +379,16 @@ impl super::Painter {
                     }
                 }
                 None => (origin_x, origin_y, origin_w, origin_h),
+            };
+            // R4353：local 层背景随内容滚动——origin 平移 -滚动偏移（scroll 层不动）。
+            let (origin_x, origin_y, origin_w, origin_h) = if is_local {
+                if let Some((sx, sy)) = layer_scroll {
+                    (origin_x - sx, origin_y - sy, origin_w, origin_h)
+                } else {
+                    (origin_x, origin_y, origin_w, origin_h)
+                }
+            } else {
+                (origin_x, origin_y, origin_w, origin_h)
             };
 
             // R4351：固有维回退逐层解析——img_w/img_h 的 positioning-area 回退必须用

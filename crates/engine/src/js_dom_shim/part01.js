@@ -546,6 +546,19 @@
   // 负值 clamp 0（spec scroll 不可负）。导航经 __zw_reset_form_state 重置。
   var _scrollOffsets = {};
   var _winScroll = { top: 0, left: 0 };
+  // R4353：滚动偏移导出（reftest harness 消费）——sel-based 条目（'@handle' 键 =
+  // detached createElement 元素无文档选择器，跳过；零偏移条目跳过）。返回 JSON 数组
+  // [{sel, top, left}]，随渲染参数回流（照 R4241 focus_selector 模式）。
+  globalThis.__zw_dump_scroll_offsets = function () {
+    var out = [];
+    for (var k in _scrollOffsets) {
+      var v = _scrollOffsets[k];
+      if (!v || k.charAt(0) === '@') continue;
+      if (!v.top && !v.left) continue;
+      out.push({ selector: k, scroll_top: v.top, scroll_left: v.left });
+    }
+    return out;
+  };
   // reflected 字符串/数值属性（title/lang/dir/tabindex）per-element-key 缓存。同 _inputValues/_classCache
   // 动机——`__zw_set_attr` 仅入队 mutation（异步 apply），同步 set→get 往返须客户端缓存（get 优先读缓存）。
   // 值结构：{ title?: string, lang?: string, dir?: string, tabindex?: number }。

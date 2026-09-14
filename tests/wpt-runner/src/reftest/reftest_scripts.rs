@@ -11,20 +11,30 @@ use zero_engine::{
     DomMutation, apply_mutations_to_html, extract_page_scripts, generate_js_dom_shim, register_dom_callbacks,
 };
 
-/// 返回 (JS 后最终 HTML, 页面最终焦点 selector)。焦点 selector 取 FocusChanged 记录的
-/// **最后一条**（spec 焦点转移语义：最后一次 focus/blur 胜出），供渲染管线
-/// `set_focused_selector` 注入 `:focus`/`:focus-within` 样式判定（R4241——serialize→re-parse
+/// R4353：脚本化滚动偏移记录（`element.scrollTop/scrollLeft = n`，shim `_scrollOffsets`
+/// 经 `__zw_dump_scroll_offsets` 导出）——随渲染参数回流，paint 期应用逐元素滚动
+///（内容 origin 平移 + local 背景相位；照 R4241 focus_selector 回流模式）。
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct ScrollOffsetRecord {
+    pub selector: String,
+    pub scroll_left: f32,
+    pub scroll_top: f32,
+}
+
+/// 返回 (JS 后最终 HTML, 页面最终焦点 selector, 脚本化滚动偏移表)。焦点 selector 取
+/// FocusChanged 记录的**最后一条**（spec 焦点转移语义：最后一次 focus/blur 胜出），供渲染
+/// 管线 `set_focused_selector` 注入 `:focus`/`:focus-within` 样式判定（R4241——serialize→re-parse
 /// 边界不携带焦点，须显式跨接）。
 pub(super) fn apply_scripted_dom_mutations(
     html: &str,
     base_dir: Option<&Path>,
     wpt_root: Option<&Path>,
     canvas_registry: &std::sync::Arc<std::sync::Mutex<zero_engine::js_dom_bridge::CanvasRegistry>>,
-) -> (String, Option<String>) {
+) -> (String, Option<String>, Vec<ScrollOffsetRecord>) {
     let scripts = extract_page_scripts(html);
     let onload_handlers = extract_onload_handlers(html);
     if scripts.is_empty() && onload_handlers.is_empty() {
-        return (html.to_string(), None);
+        return (html.to_string(), None, Vec::new());
     }
 
     use std::sync::Arc;
@@ -40,13 +50,13 @@ pub(super) fn apply_scripted_dom_mutations(
     #[cfg(feature = "v8")]
     let mut sandbox: Box<dyn zero_script_sandbox::Sandbox> = match zero_script_sandbox::V8Sandbox::with_config(config) {
         Ok(s) => Box::new(s),
-        Err(_) => return (html.to_string(), None),
+        Err(_) => return (html.to_string(), None, Vec::new()),
     };
     #[cfg(feature = "quickjs")]
     let mut sandbox: Box<dyn zero_script_sandbox::Sandbox> =
         match zero_script_sandbox::QuickJSSandbox::with_config(config) {
             Ok(s) => Box::new(s),
-            Err(_) => return (html.to_string(), None),
+            Err(_) => return (html.to_string(), None, Vec::new()),
         };
 
     let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(Vec::new()));
@@ -59,7 +69,7 @@ pub(super) fn apply_scripted_dom_mutations(
 
     if let Err(e) = sandbox.execute(generate_js_dom_shim()) {
         eprintln!("  [reftest JS] DOM shim init warning: {e}");
-        return (html.to_string(), None);
+        return (html.to_string(), None, Vec::new());
     }
     // reftest harness 自有更完整的 <body>/<frameset>/<html> onload 处理（下方直接执行 handler 体 + 派发
     // 'load'）；禁用 R2946 body→window 反射以避免双 fire（重复 mutation 致 apply_mutations_to_html 失败）。
@@ -229,7 +239,24 @@ pub(super) fn apply_scripted_dom_mutations(
     // R4344：脚本阶段结束——清 live 查询文档（防跨 case 泄漏；渲染管线走 apply 后
     // 的 html 字符串，不消费 live 文档）。
     zero_engine::publish_live_query_doc(None);
-    (current, focus_selector)
+    // R4353：脚本化滚动偏移导出（scrollTop/scrollLeft setter 落 shim `_scrollOffsets`）。
+    let scroll_raw =
+        sandbox.execute_json("(typeof __zw_dump_scroll_offsets === 'function') ? __zw_dump_scroll_offsets() : '[]'");
+    if std::env::var("REFTEST_DEBUG").is_ok() {
+        eprintln!(
+            "  [reftest JS] scroll raw: {:?}",
+            scroll_raw.as_ref().ok().map(|v| &v.value)
+        );
+    }
+    let scroll_offsets: Vec<ScrollOffsetRecord> = scroll_raw
+        .ok()
+        .and_then(|r| serde_json::from_str::<Vec<ScrollOffsetRecord>>(&r.value).ok())
+        .unwrap_or_default();
+    if std::env::var("REFTEST_DEBUG").is_ok() {
+        eprintln!("  [reftest JS] scroll offsets: {scroll_offsets:?}");
+    }
+
+    (current, focus_selector, scroll_offsets)
 }
 
 /// R4344：解析期 `appendChild` 位置锚定——把单个内联脚本执行期间（`range`）记录的

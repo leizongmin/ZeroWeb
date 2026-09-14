@@ -1498,6 +1498,11 @@ impl WebView {
         self.pipeline.set_focused_selector(selector);
     }
 
+    /// R4353：脚本化滚动偏移（reftest harness scrollTop/scrollLeft 记录回流）。
+    pub fn set_scroll_offsets(&mut self, offsets: Vec<(String, f32, f32)>) {
+        self.pipeline.set_scroll_offsets(offsets);
+    }
+
     /// 从当前 live Document 查询 selector 对应的 opaque node handle。
     pub fn page_node_handle_for_selector(&self, selector: &str) -> Option<u64> {
         self.pipeline.page_node_handle_for_selector(selector)

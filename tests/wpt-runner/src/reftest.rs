@@ -622,7 +622,7 @@ fn render_with_layout_inner(
     // 执行页面 <script>（含 DOM 变更），把 JS 后的最终 HTML 用于后续渲染。
     // R4241：最终焦点 selector 一并取出——serialize→re-parse 边界不携带焦点，
     // 经 pipeline.set_focused_selector 注入 `:focus`/`:focus-within` 样式判定。
-    let (mutated_html, focus_selector) =
+    let (mutated_html, focus_selector, scroll_offsets) =
         apply_scripted_dom_mutations(html, base_dir, config.wpt_root.as_deref(), &canvas_registry);
     let _zw_t1 = std::time::Instant::now();
     let media_ctx = zero_css_parser::media_query::MediaContext::with_type(
@@ -657,6 +657,13 @@ fn render_with_layout_inner(
     pipeline.set_skip_indicators(true);
     // R4241：页面脚本 focus()/blur() 的最终焦点注入样式判定（:focus/:focus-within）。
     pipeline.set_focused_selector(focus_selector.as_deref());
+    // R4353：脚本化滚动偏移回流（scrollTop/scrollLeft → paint 期内容平移 + local 背景相位）。
+    pipeline.set_scroll_offsets(
+        scroll_offsets
+            .iter()
+            .map(|r| (r.selector.clone(), r.scroll_left, r.scroll_top))
+            .collect(),
+    );
     // R1991：@media print/screen 级联按渲染媒体类型过滤（DC-12）。默认 Screen = 零变更；
     // `--media print` 经 config.media_type 传入使 @media print 生效（量真实 WPT yield）。
     pipeline.set_media_type(config.media_type);
@@ -954,7 +961,7 @@ pub fn render_via_webview_to_framebuffer_with_base(
         let reg = canvas_registry.lock().unwrap_or_else(|e| e.into_inner());
         *reg.font_loader.lock().unwrap_or_else(|e| e.into_inner()) = create_font_loader();
     }
-    let (mutated_html, focus_selector) =
+    let (mutated_html, focus_selector, scroll_offsets) =
         apply_scripted_dom_mutations(html, base_dir, config.wpt_root.as_deref(), &canvas_registry);
     let media_ctx = zero_css_parser::media_query::MediaContext::with_type(
         config.viewport_width as f64,
@@ -993,6 +1000,13 @@ pub fn render_via_webview_to_framebuffer_with_base(
     webview.set_image_natural_sizes(image_natural_sizes);
     // R4241：与 engine-direct 路径同口径——页面脚本最终焦点注入样式判定。
     webview.set_focused_selector(focus_selector.as_deref());
+    // R4353：脚本化滚动偏移回流（webview 路径）。
+    webview.set_scroll_offsets(
+        scroll_offsets
+            .iter()
+            .map(|r| (r.selector.clone(), r.scroll_left, r.scroll_top))
+            .collect(),
+    );
     let result = webview.load_html(
         html,
         if combined_css.is_empty() {

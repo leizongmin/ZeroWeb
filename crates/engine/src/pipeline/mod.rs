@@ -159,6 +159,9 @@ pub struct RenderPipeline {
     pub(crate) form_control_compositions: HashMap<NodeId, (String, usize, usize)>,
     /// 宿主维护的页面焦点所有者 selector。
     focused_selector: Option<String>,
+    /// R4353：脚本化滚动偏移（selector 未解析态）——paint 期解析 NodeId 并应用
+    /// 内容 origin 平移 + local 背景相位。
+    scroll_offsets: Vec<(String, f32, f32)>,
     /// 是否跳过属性指示器（用于 reftest 精确像素对比）。
     pub(crate) skip_indicators: bool,
     /// 图像固有尺寸缓存（image_key hash → (width, height)）。
@@ -319,6 +322,12 @@ impl RenderPipeline {
         self.focused_selector = selector.map(str::to_string);
     }
 
+    /// R4353：脚本化滚动偏移（reftest harness 自 scrollTop/scrollLeft 记录回流）。
+    /// paint 期经 doc 解析 selector → NodeId，应用内容 origin 平移 + local 背景相位。
+    pub fn set_scroll_offsets(&mut self, offsets: Vec<(String, f32, f32)>) {
+        self.scroll_offsets = offsets;
+    }
+
     /// 返回当前宿主焦点 selector。
     pub fn focused_selector(&self) -> Option<&str> {
         self.focused_selector.as_deref()
@@ -369,6 +378,7 @@ impl RenderPipeline {
             persistent_handle_nodes: HashMap::new(),
             form_control_compositions: HashMap::new(),
             focused_selector: None,
+            scroll_offsets: Vec::new(),
             cached_layout: None,
             cached_doc: None,
             cached_css_text: None,
@@ -1126,6 +1136,7 @@ impl RenderPipeline {
                 .and_then(|selector| doc.query_selector(doc.root(), selector)),
         );
         painter.set_font_resolver(self.font_resolver.clone());
+        painter.set_scroll_offsets(self.scroll_offsets.clone());
         painter.set_document_url(self.document_url.as_deref());
         painter.set_canvas_registry(self.canvas_registry.clone());
         painter.register_counter_styles(&flatten_conditional_rules(&stylesheets, &self.media_context()));
@@ -1356,6 +1367,7 @@ impl RenderPipeline {
                 .and_then(|selector| doc.query_selector(doc.root(), selector)),
         );
         painter.set_font_resolver(self.font_resolver.clone());
+        painter.set_scroll_offsets(self.scroll_offsets.clone());
         painter.set_document_url(self.document_url.as_deref());
         painter.set_canvas_registry(self.canvas_registry.clone());
         painter.register_counter_styles(&flatten_conditional_rules(&stylesheets, &self.media_context()));
@@ -1472,6 +1484,7 @@ impl RenderPipeline {
         let mut painter = Painter::new();
         painter.skip_indicators = self.skip_indicators;
         painter.set_font_resolver(self.font_resolver.clone());
+        painter.set_scroll_offsets(self.scroll_offsets.clone());
         painter.set_document_url(self.document_url.as_deref());
         painter.viewport_w = self.viewport_width;
         painter.viewport_h = self.viewport_height;
@@ -1571,6 +1584,7 @@ impl RenderPipeline {
                 .and_then(|selector| doc.query_selector(doc.root(), selector)),
         );
         painter.set_font_resolver(self.font_resolver.clone());
+        painter.set_scroll_offsets(self.scroll_offsets.clone());
         painter.set_document_url(self.document_url.as_deref());
         painter.viewport_w = self.viewport_width;
         painter.viewport_h = self.viewport_height;
@@ -1893,6 +1907,7 @@ impl RenderPipeline {
                 .and_then(|selector| doc.query_selector(doc.root(), selector)),
         );
         painter.set_font_resolver(self.font_resolver.clone());
+        painter.set_scroll_offsets(self.scroll_offsets.clone());
         painter.set_document_url(self.document_url.as_deref());
         painter.viewport_w = self.viewport_width;
         painter.viewport_h = self.viewport_height;
@@ -2013,6 +2028,7 @@ impl RenderPipeline {
                 .and_then(|selector| doc.query_selector(doc.root(), selector)),
         );
         painter.set_font_resolver(self.font_resolver.clone());
+        painter.set_scroll_offsets(self.scroll_offsets.clone());
         painter.set_document_url(self.document_url.as_deref());
         painter.viewport_w = self.viewport_width;
         painter.viewport_h = self.viewport_height;
@@ -2094,6 +2110,7 @@ impl RenderPipeline {
                 .and_then(|selector| doc.query_selector(doc.root(), selector)),
         );
         painter.set_font_resolver(self.font_resolver.clone());
+        painter.set_scroll_offsets(self.scroll_offsets.clone());
         painter.set_document_url(self.document_url.as_deref());
         painter.viewport_w = self.viewport_width;
         painter.viewport_h = self.viewport_height;

@@ -165,6 +165,9 @@ pub struct Painter {
     ///（css-counter-styles css3-counter-styles-024 等：`1AAA` 重叠）。由
     /// `paint_list_marker` 填充，`paint_text` 首片段消费（remove = 只首行缩进一次）。
     pub(crate) list_inside_marker_advance: HashMap<NodeId, f32>,
+    /// R4353：脚本化滚动偏移（selector 字符串未解析态 + paint 期解析后的 NodeId 态）。
+    pub(crate) pending_scroll_offsets: Vec<(String, f32, f32)>,
+    pub(crate) scroll_offsets: HashMap<NodeId, (f32, f32)>,
 }
 
 fn is_positioned_child(box_node: &LayoutBox) -> bool {
@@ -574,6 +577,8 @@ impl Painter {
             counter_styles: HashMap::new(),
             transform_depth: 0,
             list_inside_marker_advance: HashMap::new(),
+            pending_scroll_offsets: Vec::new(),
+            scroll_offsets: HashMap::new(),
         }
     }
 
@@ -847,6 +852,12 @@ impl Painter {
     }
 
     /// 设置本帧的页面焦点所有者。
+    /// R4353：脚本化滚动偏移（selector 未解析态——paint 期经 doc 解析为 NodeId）。
+    pub fn set_scroll_offsets(&mut self, offsets: Vec<(String, f32, f32)>) {
+        self.pending_scroll_offsets = offsets;
+    }
+
+    /// R4241 谱系：宿主焦点 NodeId 注入（:focus/:focus-within 样式判定消费）。
     pub fn set_focused_node(&mut self, node: Option<NodeId>) {
         self.focused_node = node;
     }
@@ -885,6 +896,21 @@ impl Painter {
     /// 遍历 LayoutBox 树，为每个有样式的节点生成背景和边框填充图元。
     /// 传入 `doc` 以启用行内格式化上下文的文本换行布局。
     pub fn paint(&mut self, layout: &LayoutBox, styles: &HashMap<NodeId, ComputedStyle>, doc: Option<&Document>) {
+        // R4353：滚动偏移 selector → NodeId 解析（paint 期一次；doc 缺失则保持空 map）。
+        self.scroll_offsets = self
+            .pending_scroll_offsets
+            .iter()
+            .filter(|(sel, _, _)| {
+                // 根元素滚动（documentElement/body.scrollTop）= 视口滚动——canvas
+                // 渲染无视口滚动概念，跳过（应用会整体平移页面）。
+                let lower = sel.to_ascii_lowercase();
+                lower != "html" && lower != "body"
+            })
+            .filter_map(|(sel, x, y)| {
+                doc.and_then(|d| d.query_selector(d.root(), zero_dom::trim_ascii_ws(sel)))
+                    .map(|id| (id, (*x, *y)))
+            })
+            .collect();
         let (layout_width, layout_height) = layout_canvas_extent(layout, 0.0, 0.0);
         let canvas_width = self.viewport_w.max(layout_width);
         let canvas_height = self.viewport_h.max(layout_height);
@@ -1047,6 +1073,7 @@ impl Painter {
                     None,
                     true,
                     Some((anchor_x, anchor_y, origin_w.max(0.0), origin_h.max(0.0))),
+                    None,
                 );
             }
         }
@@ -2330,6 +2357,31 @@ impl Painter {
         // 6. 递归绘制子节点（子节点偏移 = 父 padding + border，扣除 scroll）
         // visibility: hidden 不阻止子节点绘制，子节点可以覆盖为 visible
         let (child_offset_x, child_offset_y) = child_content_origin(box_node, abs_x, abs_y);
+        // R4353：脚本化滚动（scrollTop/scrollLeft）——hidden 容器同为程序化可滚动容器
+        //（css-overflow-3：hidden = clip + programmatic scroll）。内容 origin 平移偏移量。
+        let (child_offset_x, child_offset_y) = box_node
+            .node_id
+            .and_then(|id| self.scroll_offsets.get(&id))
+            .copied()
+            .filter(|_| {
+                // 仅滚动容器应用（css-overflow-3 §2.2：hidden/scroll/auto = scroll
+                // container；visible/clip 非滚动容器——scrollTop 恒 0 不平移，
+                // overflow-clip-cant-scroll 锚定）。
+                matches!(box_node.overflow_x, OverflowClip::Hidden | OverflowClip::Scroll)
+                    || matches!(box_node.overflow_y, OverflowClip::Hidden | OverflowClip::Scroll)
+            })
+            .map(|(sx, sy)| {
+                // spec：scrollTop 钳到可滚动溢出范围（scrollHeight − clientHeight）——
+                // 脚本超设（scrollTo(50,250) 超出实际溢出）不得过冲。
+                let child_extent_w = box_node.children.iter().map(|c| c.x + c.width).fold(0.0f32, f32::max);
+                let child_extent_h = box_node.children.iter().map(|c| c.y + c.height).fold(0.0f32, f32::max);
+                let client_w = (box_node.width - box_node.border_left - box_node.border_right).max(0.0);
+                let client_h = (box_node.height - box_node.border_top - box_node.border_bottom).max(0.0);
+                let max_sx = (child_extent_w - client_w).max(0.0);
+                let max_sy = (child_extent_h - client_h).max(0.0);
+                (child_offset_x - sx.min(max_sx), child_offset_y - sy.min(max_sy))
+            })
+            .unwrap_or((child_offset_x, child_offset_y));
 
         // 5b. CSS 计数器处理（在子节点绘制前，按 reset → set → increment 顺序）。
         // 记录本元素 reset 的计数器名 → 子树绘制结束后弹出其作用域（CSS2 §12.4.1），
@@ -3269,7 +3321,7 @@ impl Painter {
                     .any(|a| matches!(a, zero_style_system::BackgroundAttachmentComputedValue::Fixed))
             {
                 self.paint_bg_image_in_origin(
-                    rect_x, content_y, *w, h, rect_x, content_y, *w, h, style, 0.0, 0.0, None, false, None,
+                    rect_x, content_y, *w, h, rect_x, content_y, *w, h, style, 0.0, 0.0, None, false, None, None,
                 );
             }
         }
