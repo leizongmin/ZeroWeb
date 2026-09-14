@@ -2,17 +2,20 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-14（S335：静默监测轮——同 tip 复核（cd6e8d040，即
-S334 提交本身），双层锚点零漂移（自有面维持 apps/browser README +1 已归因
-基线；全树锚点排除本流 docs 后 tracked 代码树对 S317 双腿刷新覆盖树
-736f16525 零变化——S327 活跑 10:10 直接覆盖），门结论引用 S327 活跑
-（门 PASS 33 绿 deterministic YES EXIT=0 ZERO_DRIFT=YES 10:10 +
-ZW_IPC_VALIDATE 静默），引用计数 9/10 下次活跑至迟 S337；绿步维持 33；
-解冻条件①观察面不变（crates/ 自 8fb39cd46 维持九枚均非渲染流子帧能力，
-frames.click+evaluate 维持挂起），②DC-2 无新拍板；机器卫生全净含
-zw-loop/zw-hunt 检查模式；同窗并行流活动延续已归因（ZeroWeb-2 make test
-延续、ZeroWeb-3-wt-baidu 9333 browser + test-guard/make 双腿，均非本流
-竞争腿，负载 5.48）；S78 家族维持 S320 收窄定性；零 zombie 零遗留端口）
+**最后更新**: 2026-09-14（S336：期限活跑轮（引用计数 10/10 到期，S299/S309
+先例：9/10 次轮即期限轮）——同 tip 复核（9933cb3b7，即 S335 提交本身）+
+双层锚点零漂移，cdp-e2e 门首调即收口 PASS 33 绿 deterministic 双跑 YES
+EXIT=0 ZERO_DRIFT=YES（expected_green 33 对称差 none、regressions 空）
+10:27 落盘，ZW_IPC_VALIDATE 校验器在位静默（malformed frame buffer/
+ipc reader terminated 零命中），唯一红=预期挂账 frames.click+evaluate
+同形态，首调红形态连续第十四次零再现；引用计数重计 1/10 下次活跑至迟
+S346；绿步维持 33；解冻条件①观察面不变（crates/ 自 8fb39cd46 维持九枚
+均非渲染流子帧能力，frames.click+evaluate 维持挂起）②DC-2 无新拍板；
+机器卫生全净含 zw-loop/zw-hunt 检查模式；同窗并行流活动延续已归因
+（ZeroWeb-2 make test 延续、ZeroWeb-3-wt-baidu 9333 browser + test-guard
+腿，均非本流竞争腿；负载 5.72 负载窗口照跑记账，第十五个负载下样本）；
+活跑腿全收尾零 zombie 零遗留端口（瞬时 zombie 已被收割归零）；S78 家族
+维持 S320 收窄定性）
 
 ---
 
@@ -43,6 +46,30 @@ zw-loop/zw-hunt 检查模式；同窗并行流活动延续已归因（ZeroWeb-2 
 
 ## 已完成切片
 
+- **S336（2026-09-14）期限活跑轮 — 引用计数 10/10 到期实际活跑（绿步维持 33）**：
+  pull 零新提交（tip = 9933cb3b7，即 S335 提交本身），双层锚点零漂移
+  （自有面 apps/browser/README.md 对 765429dda 恰 +1 已归因基线；全树排除
+  本流 docs 后 tracked 代码树对 736f16525 零变化——活跑直接覆盖当前树）。
+  前置复核通过：9222 端口族空闲、零并行 cdp-e2e 腿（端口竞争亚型不触发）、
+  零 zombie、零孤儿 hunt 遗留，负载 5.72 负载窗口按口径照跑记账（第十五个
+  负载下样本）。cdp-e2e 门**首调即收口**：EXIT=0、PASS 33 绿、deterministic
+  双跑 YES、ZERO_DRIFT=YES（机械 diff：green_steps==expected_green 33 步
+  对称差 none、regressions 空）、steps/determinism-report 10:27 同轮新鲜
+  落盘；ZW_IPC_VALIDATE 校验器在位静默（捕获网零侵扰，malformed frame
+  buffer / ipc reader terminated 零命中）；唯一红=预期挂账
+  frames.click+evaluate 同形态（flow exited 1 含期望失败步骤），首调红
+  形态连续第十四次零再现（累计两例非聚集记账维持）；zero-engine
+  dead_code warning 既有形态维持（match_media_to_json bins-only 条件
+  dead，S300 四点归因）。引用计数重计 **1/10**，下次活跑至迟 S346。
+  双解冻条件实质判定不变：① crates/ 自 8fb39cd46 维持九枚，均非渲染流
+  子帧文档加载 + JS realm 能力，frames.click+evaluate 维持挂起；②
+  docs/goal 自 S335 零非本流提交，DC-2 口径无新拍板记录。同窗并行流活动
+  延续已归因（ZeroWeb-2 clone make test 延续，ZeroWeb-3-wt-baidu clone
+  zero-browser 9333 + test-guard 腿延续，均非本流 cdp-e2e 竞争腿）。活跑
+  腿全收尾：9222 零监听、本流 browser/worker 零遗留、瞬时 zombie 已被
+  收割归零（外部 zeroseed chrome /tmp/zsu-bn-0914 10:01 启动早于本流
+  活跑，非本流清理面）。goal 自有面零新缺口、无扩展面（S40-S335 重审
+  结论延续）。
 - **S335（2026-09-14）静默监测轮 — 同 tip 复核（无代码变更，绿步维持 33）**：
   pull 零新提交（tip = cd6e8d040，即 S334 提交本身）——双层锚点口径复核
   通过：自有面锚点增量零漂移（硬核对维持仅 apps/browser/README.md +1 行 =
@@ -5057,8 +5084,10 @@ zw-loop/zw-hunt 检查模式；同窗并行流活动延续已归因（ZeroWeb-2 
    首调即收口，S299 先例：9/10 次轮即期限轮）；S314 已执行（R4330-F 入树
    触发的树变化刷新轮，门 + make test 双刷新，S245/S258/S289/S290 先例）；
    S317 已执行（R4331 入树触发的树变化刷新轮，门 + make test 双刷新，
-   make test 两调收口 run1 webview timer 单例瞬态红归因 flake 家族），
-   下次活跑至迟 S327；
+   make test 两调收口 run1 webview timer 单例瞬态红归因 flake 家族）；
+   S327 已执行（期限轮净窗首调即收口）；S336 已执行（期限轮负载窗口内
+   首调即收口，ZW_IPC_VALIDATE 静默，第十五个负载下样本），
+   下次活跑至迟 S346；
    若活跑时逢并行流负载窗口则
    优先窗口内执行，负载下样本对 #0 更有价值（负载窗口口径含并行流 browser 进程型与
    编译测试负载型两亚型，净窗亚型 S208 起并行记录；**端口竞争亚型口径 S198 新增**：
