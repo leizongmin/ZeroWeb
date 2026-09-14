@@ -2,37 +2,60 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-15（S630：静默监测轮——同 tip 复核
-（pull 零新提交，tip = ad3e817ed 即 S629 提交本身；S629
-门腿活跑后零代码变更（dc7ade785..HEAD 排除本流 docs
-diff 空——Rust/Cargo/Makefile 面），树不变口径 = 门单腿
-引用 S629/S628/S627/S626/S625 门腿活跑 + S624 双腿活跑
-（免 make test 腿，S336 先例）。门腿 make cdp-e2e
-ZW_IPC_VALIDATE=1 在位 06:19:51 启动 06:20:24 落盘首调即
+**最后更新**: 2026-09-15（S631：树变化刷新轮——兄弟流
+R4361（f85a7a01e，ruby 002 残差像素分解：paint 趟基线缺
+rt ascent 根因修复 偏移 14px→4px）入树触发，触 layout-
+engine Rust 面 inline/collect_items.rs 4/1 + rendering-
+compat.md 1/0；入树发生于 S630 收口后 push 序列（S630
+push 时 pull --rebase 自动并入，S630 内容零丢失），S630
+门腿证据基树未含其 → S342/S456/S622/S624 连续刷新轮
+先例，门 + make test 双腿刷新。**门腿** make cdp-e2e
+ZW_IPC_VALIDATE=1 在位 06:22:40 启动 06:23:19 落盘首调即
 **PASS 33 绿 deterministic 双跑 YES EXIT=0**，
 expected_green 33 对称差 none、regressions 空、校验器在位
-静默（zero-engine dead_code warning 既有形态维持，
-S300/S309 记档），绿步集机械 diff 基线零漂移。双层锚点
-——自有面对 765429dda 维持 **4 files +137/-17** 精确
-一致；全树排除本流 docs 对 18d462de6 维持 **59 files
-+4450/-239**（S624 新基线）与上轮逐项一致零新增。
-crates/ 观察面 raw 维持 **32**（S624 新基线），子帧能力
-关键词 grep 非测试代码零命中维持（dom/engine/webview
-三处 tests 路径 7 文件既有形态），实质判定不变
-frames.click+evaluate 维持挂起。**引用计数 5/10→6/10**
-（S624 新周期；8/10 次轮即期限轮口径下至迟 S632 达
-8/10、S633 = 期限轮活跑；树代码变化提前触发双腿刷新）。
-机器卫生：启动前零 zombie、端口族全空闲、负载 6.41
-负载窗（top 217% /proc cwd 实测 ZeroWeb-cronjob 外部
-clone——cronjob 编译测试负载亚型 S218/S228/S238 先例，
-非兄弟流非本树，零污染零端口竞争面）；门腿后零
-zombie、端口族零残留、零树污染。控制面零外来提交（近
-20 提交触本流控制面全为本流 S5xx/S6xx）。解冻条件实质
-判定不变：① 观察面 raw 32 维持（新基线），子帧三件套
-iframe.contentDocument null 现状不变，frames.click+
-evaluate 维持挂起；② 本流控制面 docs/goal/cdp-protocol/
-零外来提交，DC-2 口径无新拍板记录。goal 自有面零新
-缺口、无扩展面（S40-S629 重审结论延续））
+静默，绿步集机械 diff 基线零漂移，R4361 组合态门禁首次
+覆盖。**测试腿** make test 一调 06:23:28 setsid 脱离启动
+~06:33 收口——run1 单例瞬态红：zero_integration_tests
+network_loading::stale_etag_revalidation_is_coalesced
+（127.0.0.1 测试服务连接抖动，已知 flake 家族）——四点
+归因跨流记档（①隔离复跑 1/0 恒过 0.00s 经 test-guard；
+②变更域零关联——R4361 触 layout-engine ruby 面 net/
+loader 零关联；③形态签名与兄弟流账本 R3561-F/R3692-F
+两例 + 本流账本 L14146 既有记档一致——localhost 测试
+服务并行负载下偶发；④非本流因果——本流零代码变更，
+负载窗 ZeroWeb-cronjob clone 编译测试在窗），S290/S317/
+S391 flake 家族先例口径不单方修；二调 06:39:35 setsid
+启动 ~06:49 收口 **67 组 19,290P/0F EXIT=0**（R4361 组合
+态首次全量覆盖，计数与 S624 持平零新增用例，二调全绿
+零失败）。双层锚点——自有面对 765429dda 维持
+**4 files +137/-17** 精确一致（R4361 未触自有面）；全树
+排除本流 docs 对 18d462de6 刷新为 **59 files +4454/-239**
+（= S624 基线 59 files +4450/-239 加 R4361——collect_items.rs
+与 rendering-compat.md 均为既有集合累计更新 4/1 与 1/0
+零新入集文件，净 +4 与自身 delta 精确一致零意外新增，
+后续轮次以此为新基线）。crates/ 观察面 raw 32→**33**
+（R4361 单提交贡献，ruby rt ascent 修复非子帧能力信号
+——R4357/R4358/R4359/R4360 同型先例），子帧能力关键词
+grep 非测试代码零命中维持（dom/engine/webview 三处
+tests 路径 7 文件既有形态），实质判定不变
+frames.click+evaluate 维持挂起。**引用计数新周期起算**
+（S631 双腿活跑为周期锚点，S632 起 0/10→1/10；8/10 次
+轮即期限轮口径下至迟 S638 达 8/10、S639 = 期限轮活跑；
+原 S632/S633 期限计划因刷新轮作废并入新周期；树代码
+变化提前触发双腿刷新）。机器卫生：启动前零 zombie、
+端口族全空闲、负载 2.01（top 99.8% /proc cwd 实测
+ZeroWeb-cronjob 外部 clone——cronjob 编译测试负载亚型
+S218/S228/S238/S628/S630 同型先例，非兄弟流非本树，
+零污染零端口竞争面）；双腿后零 zombie、端口族零残留、
+零树污染（out/ 报告为忽略产物）。控制面零外来提交
+（近 20 提交触本流控制面全为本流 S5xx/S6xx；f85a7a01e
+触 docs/goal/rendering-compat 属兄弟流自家控制面非本流
+写入）。解冻条件实质判定不变：① 观察面 raw 33 维持
+（新基线），子帧三件套 iframe.contentDocument null
+现状不变，frames.click+evaluate 维持挂起；② 本流控制
+面 docs/goal/cdp-protocol/ 零外来提交，DC-2 口径无新
+拍板记录。goal 自有面零新缺口、无扩展面（S40-S630 重
+审结论延续））
 
 ---
 
@@ -63,6 +86,69 @@ evaluate 维持挂起；② 本流控制面 docs/goal/cdp-protocol/
 
 ## 已完成切片
 
+- **S631（2026-09-15）树变化刷新轮 — 兄弟流 R4361
+  （f85a7a01e，ruby 002 残差像素分解：paint 趟基线缺 rt
+  ascent 根因修复 偏移 14px→4px）入树触发；入树发生于
+  S630 收口后 push 序列，S630 门腿证据基树未含其 →
+  S342/S456/S622/S624 连续刷新轮先例，门 + make test 双腿
+  刷新**：pull 后 R4361 触 layout-engine Rust 面
+  inline/collect_items.rs 4/1 + rendering-compat.md 1/0
+  ——树代码变化提前触发双腿刷新。**门腿**：make cdp-e2e
+  ZW_IPC_VALIDATE=1 在位 06:22:40 启动 06:23:19 落盘首调
+  即 PASS 33 绿 deterministic 双跑 YES EXIT=0，expected_green
+  33 对称差 none、regressions 空，校验器在位静默（zero-
+  engine dead_code warning 既有形态维持，S300/S309 记档），
+  绿步集机械 diff 基线零漂移（R4361 组合态门禁首次覆盖）；
+  首调红形态连续第四十五次零再现（累计两例非聚集维持）。
+  **测试腿**：make test 一调 06:23:28 setsid 脱离启动
+  ~06:33 收口——run1 单例瞬态红：zero_integration_tests
+  network_loading::stale_etag_revalidation_is_coalesced
+  （127.0.0.1:44867 测试服务连接抖动，已知 flake 家族）
+  ——四点归因跨流记档：①隔离复跑 1/0 恒过 0.00s（经
+  test-guard）；②变更域零关联——R4361 触 layout-engine
+  ruby 面，net/loader/测试服务器面零变更；③形态签名与
+  兄弟流账本 R3561-F/R3692-F 两例先例 + 本流账本 L14146
+  既有记档一致（localhost 测试服务并行负载下偶发）；
+  ④非本流因果——本流本轮零代码变更（S630 docs-only），
+  失败发生于负载窗（ZeroWeb-cronjob clone 编译测试 99.8%
+  CPU 在窗）——S290/S317/S391 flake 家族先例口径，跨流
+  记档不单方修；二调 06:39:35 setsid 启动 ~06:49 收口
+  67 组 **19,290P/0F EXIT=0**（R4361 组合态首次全量覆盖，
+  计数与 S624 持平零新增用例，二调全绿零失败）。双层
+  锚点——自有面对 765429dda 维持 **4 files +137/-17**
+  精确一致（Makefile 1/1 + apps/browser/README.md 1/0 +
+  headless/mod.rs 25/0 + headless/session.rs 110/16，
+  R4361 未触自有面）；全树排除本流 docs 对 18d462de6
+  刷新为 **59 files +4454/-239**（= S624 基线 59 files
+  +4450/-239 加 R4361——collect_items.rs 与 rendering-
+  compat.md 均为既有集合累计更新 4/1 与 1/0，零新入集
+  文件，净 +4 与自身 delta 精确一致零意外新增，后续轮次
+  以此为新基线）。crates/ 观察面 raw 32→**33**（R4361
+  单提交贡献，ruby rt ascent 修复非子帧能力信号——
+  R4357/R4358/R4359/R4360 同型先例），子帧能力关键词
+  grep（Rust 面 tests 排除口径）非测试代码零命中实测
+  复核（命中面为 dom/engine/webview 三处 tests 路径
+  7 文件测试代码维持既有形态），实质判定不变
+  frames.click+evaluate 维持挂起。**引用计数新周期起算**
+  （S631 双腿活跑为周期锚点，S632 起 0/10→1/10；8/10 次
+  轮即期限轮口径下至迟 S638 达 8/10、S639 = 期限轮活跑
+  ——S553/S562/S571/S583/S592/S597/S606/S608/S614/S622/
+  S624/S631 先例族；原 S632/S633 期限计划因刷新轮作废
+  并入新周期；树代码变化提前触发双腿刷新）。机器卫生：
+  启动前零 zombie、9222/45029/34293/19222 端口族全空闲、
+  负载 2.01（top 99.8% /proc cwd 实测 ZeroWeb-cronjob
+  外部 clone——cronjob 编译测试负载亚型 S218/S228/S238/
+  S628/S630 同型先例，非兄弟流非本树，零污染零端口竞争
+  面）；双腿后零 zombie、端口族零残留、零树污染（out/
+  报告为忽略产物）。控制面零外来提交（近 20 提交触本流
+  控制面全为本流 S5xx/S6xx；f85a7a01e 触 docs/goal/
+  rendering-compat 属兄弟流自家控制面非本流写入）。解冻
+  条件实质判定不变：① 观察面 raw 33 维持（新基线），
+  子帧三件套 iframe.contentDocument null 现状不变，
+  frames.click+evaluate 维持挂起；② 本流控制面
+  docs/goal/cdp-protocol/ 零外来提交，DC-2 口径无新拍板
+  记录。goal 自有面零新缺口、无扩展面（S40-S630 重审
+  结论延续）。
 - **S630（2026-09-15）静默监测轮 — 同 tip 复核（pull 零新提交，
   tip = ad3e817ed 即 S629 提交本身；S629 门腿活跑后零代码
   变更，绿步维持 33）**：双层锚点复核通过：自有面锚点对
