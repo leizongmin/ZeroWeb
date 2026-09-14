@@ -2,11 +2,11 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-14（S522：静默监测轮——同 tip 复核
-（pull 零新提交，tip = eb4893fdf 即 S521 提交本身，无代码
+**最后更新**: 2026-09-15（S523：静默监测轮——同 tip 复核
+（pull 零新提交，tip = 28d2fd1dc 即 S522 提交本身，无代码
 变更绿步维持 33）。双层锚点零漂移——自有面对 765429dda 维持
 **4 files +137/-17** 精确一致；全树排除本流 docs 后对
-18d462de6 维持 **32 files +2147/-138** 与 S521 逐项一致零
+18d462de6 维持 **32 files +2147/-138** 与 S522 逐项一致零
 新增，代码树自 S518 双腿后零变更，S518 双腿活跑 23:38/23:48
 直接覆盖当前代码树证据新鲜。crates/ 观察面 raw 计数实测
 维持 **24**（git log 默认口径 8fb39cd46..HEAD 限 crates/
@@ -15,18 +15,22 @@
 口径免 make test 腿（S336 先例），门结论引用 S518 树变化
 刷新轮双腿活跑（PASS 33 绿 deterministic 双跑 YES EXIT=0
 23:38 落盘 + ZW_IPC_VALIDATE=1 在位静默 + make test
-19,290P/0F），**引用计数 4/10→5/10**（8/10 次轮即期限轮
+19,290P/0F），**引用计数 5/10→6/10**（8/10 次轮即期限轮
 口径下至迟 S526 期限轮活跑；树变化提前触发）。机器卫生
 复核：零 zombie、9222/45029/34293/19222 端口族全空闲、零
-竞争本流腿（窗内唯一 chromium 进程归因外部项目 zeroseed-ux
-playwright daemon，remote-debugging-pipe 不触本流端口族，
-0% CPU 空闲非竞争）、控制面零外来提交；负载 2.97→1.04 轻
-负载窗（兄弟流与 cronjob 腿均出窗，净窗形态）——本轮静默
+竞争本流腿（窗内 chromium 全族归因外部项目 zeroseed-ux
+playwright daemon 单家族树，remote-debugging-pipe 不触本流
+端口族，0% CPU 空闲非竞争）、控制面零外来提交；负载
+1.04→2.59 抬升窗——**窗内兄弟流活跃腿已归因**（rendering
+流 attachment-local reftest-oracle + zero-wpt-runner
+release 编译，位于 ZeroWeb-2 兄弟 clone，双 clone 隔离
+实测确认本树零污染；其 crate 编辑面在 engine shim/
+reftest_scripts，与本流 apps/browser 零重叠），本轮静默
 零活跑需求负载窗记账。解冻条件实质判定不变：① 观察面
 raw 24 维持，子帧三件套 iframe.contentDocument null 现状
 不变，frames.click+evaluate 维持挂起；② 本流控制面
 docs/goal/cdp-protocol/ 零外来提交，DC-2 口径无新拍板
-记录。goal 自有面零新缺口、无扩展面（S40-S521 重审结论
+记录。goal 自有面零新缺口、无扩展面（S40-S522 重审结论
 延续））
 
 ---
@@ -58,6 +62,46 @@ docs/goal/cdp-protocol/ 零外来提交，DC-2 口径无新拍板
 
 ## 已完成切片
 
+- **S523（2026-09-15）静默监测轮 — 同 tip 复核（pull 零新提交，
+  tip = 28d2fd1dc 即 S522 提交本身；无代码变更，绿步维持 33）**：
+  双层锚点复核通过：自有面锚点四枚归因口径精确一致（对 765429dda
+  硬核对 numstat 4 files +137/-17 = Makefile 1/1 +
+  apps/browser/README.md 1/0 + headless/mod.rs 25/0 +
+  headless/session.rs 110/16，零新增漂移）；全树锚点复核
+  （排除本流 docs 后 tracked 代码树对 18d462de6 维持 **32
+  files +2147/-138** 与 S522 逐项一致零新增，代码树自 S518
+  双腿后零变更，S518 双腿活跑 23:38/23:48 直接覆盖当前代码
+  树证据新鲜）。crates/ 观察面 raw 计数实测维持 **24**（git
+  log 默认口径 8fb39cd46..HEAD 限 crates/ 面），子帧能力
+  关键词 grep（contentDocument/content_document/subframe/
+  sub_frame）非测试代码零命中实测复核（命中面为 dom/engine/
+  webview 三处 tests 路径下测试代码维持既有形态），实质判定
+  不变 frames.click+evaluate 维持挂起。树不变按门单腿口径免
+  make test 腿（S336 先例）。门结论引用 S518 树变化刷新轮
+  双腿活跑（门首调 PASS 33 绿 deterministic 双跑 YES EXIT=0
+  expected_green 33 对称差 none regressions 空 23:38 落盘 +
+  ZW_IPC_VALIDATE 校验器在位静默 + make test 一调收口
+  19,290P/0F），**引用计数 5/10→6/10**（8/10 次轮即期限轮
+  口径下至迟 S526 期限轮活跑；树变化提前触发）。机器卫生
+  复核：零 zombie、9222/45029/34293/19222 端口族全空闲、零
+  竞争本流腿（窗内 chromium 10 进程全族归因外部项目
+  zeroseed-ux-mobile-round2 playwright daemon 单家族树
+  PID 3961376——remote-debugging-pipe 不触本流 9222 端口族、
+  0% CPU 空闲非竞争）；负载 1.04→2.59 抬升窗——**窗内兄弟
+  流活跃腿已归因**（rendering 流 attachment-local
+  reftest-oracle 双案 + zero-wpt-runner release 编译，
+  /proc cwd 实测确认位于 ZeroWeb-2 兄弟 clone，双 clone
+  隔离零污染本树；其编辑面 engine shim js_dom_shim/
+  reftest_scripts 与本流 apps/browser 面零重叠，预期近期
+  有代码提交入树→下轮 pull 或触发树变化刷新轮 S245→S518
+  先例）；控制面零外来提交（最近 15 提交全为本流
+  S513-S522 + 兄弟流 R4352/R4351/R4350/R4349/R4332-F 与
+  perf/chore 不触控制面）。本轮静默零活跑需求负载窗记账。
+  解冻条件实质判定不变：① 观察面 raw 24 维持，子帧三件套
+  iframe.contentDocument null 现状不变，frames.click+evaluate
+  维持挂起；② 本流控制面 docs/goal/cdp-protocol/ 零外来
+  提交，DC-2 口径无新拍板记录。goal 自有面零新缺口、无扩展
+  面（S40-S522 重审结论延续）。
 - **S522（2026-09-14）静默监测轮 — 同 tip 复核（pull 零新提交，
   tip = eb4893fdf 即 S521 提交本身；无代码变更，绿步维持 33）**：
   双层锚点复核通过：自有面锚点四枚归因口径精确一致（对 765429dda
