@@ -2,17 +2,17 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-14（S331：静默监测轮——同 tip 复核（98333cb22，即
-S330 提交本身），双层锚点零漂移（自有面维持 apps/browser README +1 已归因
+**最后更新**: 2026-09-14（S332：静默监测轮——同 tip 复核（a46dc01fc，即
+S331 提交本身），双层锚点零漂移（自有面维持 apps/browser README +1 已归因
 基线；全树锚点排除本流 docs 后 tracked 代码树对 S317 双腿刷新覆盖树
 736f16525 零变化——S327 活跑 10:10 直接覆盖），门结论引用 S327 活跑
 （门 PASS 33 绿 deterministic YES EXIT=0 ZERO_DRIFT=YES 10:10 +
-ZW_IPC_VALIDATE 静默），引用计数 5/10 下次活跑至迟 S337；绿步维持 33；
+ZW_IPC_VALIDATE 静默），引用计数 6/10 下次活跑至迟 S337；绿步维持 33；
 解冻条件①观察面不变（crates/ 自 8fb39cd46 维持九枚均非渲染流子帧能力，
 frames.click+evaluate 维持挂起），②DC-2 无新拍板；机器卫生全净含
 zw-loop/zw-hunt 检查模式；同窗并行流活动延续已归因（ZeroWeb-2 make test
-延续、ZeroWeb-3-wt-baidu 9333 browser + test-guard 腿，均非本流竞争腿，
-负载 5.54）；S78 家族维持 S320 收窄定性；零 zombie 零遗留端口）
+延续、ZeroWeb-3-wt-baidu 9333 browser + test-guard/make 腿，均非本流
+竞争腿，负载 4.05）；S78 家族维持 S320 收窄定性；零 zombie 零遗留端口）
 
 ---
 
@@ -43,6 +43,23 @@ zw-loop/zw-hunt 检查模式；同窗并行流活动延续已归因（ZeroWeb-2 
 
 ## 已完成切片
 
+- **S332（2026-09-14）静默监测轮 — 同 tip 复核（无代码变更，绿步维持 33）**：
+  pull 零新提交（tip = a46dc01fc，即 S331 提交本身）——双层锚点口径复核
+  通过：自有面锚点增量零漂移（硬核对维持仅 apps/browser/README.md +1 行 =
+  S255 已归因的 52695a7c1 漂移基线，对 765429dda 基点实测恰 +1 行）；全树
+  锚点复核（排除本流 docs 后 tracked 代码树对 736f16525 = S317 双腿刷新
+  覆盖树零变化——S327 活跑 10:10 直接覆盖，证据新鲜可引用）零外部变化。
+  双解冻条件实质判定不变：① crates/ 自 8fb39cd46 维持九枚，均非渲染流
+  子帧文档加载 + JS realm 能力，frames.click+evaluate 维持挂起；②
+  docs/goal 自 S331 零非本流提交，DC-2 口径无新拍板记录。门结论引用
+  S327 活跑（门 PASS 33 绿 deterministic 双跑 YES EXIT=0 ZERO_DRIFT=YES
+  10:10 落盘 + ZW_IPC_VALIDATE 校验器在位静默），引用计数 5/10→**6/10**，
+  下次活跑至迟 S337。机器卫生复核：零 zombie（stat 精确判定）、9222
+  端口族空闲、`pgrep -af 'zw-loop|zw-hunt'` 零孤儿 hunt 遗留；同窗并行流
+  活动延续已归因（ZeroWeb-2 clone make test 延续，ZeroWeb-3-wt-baidu
+  clone zero-browser 9333 + test-guard/make 腿延续，均非本流 cdp-e2e
+  竞争腿；负载 4.05——本轮零活跑需求不受影响）。goal 自有面零新缺口、
+  无扩展面（S40-S331 重审结论延续）。
 - **S331（2026-09-14）静默监测轮 — 同 tip 复核（无代码变更，绿步维持 33）**：
   pull 零新提交（tip = 98333cb22，即 S330 提交本身）——双层锚点口径复核
   通过：自有面锚点增量零漂移（硬核对维持仅 apps/browser/README.md +1 行 =
