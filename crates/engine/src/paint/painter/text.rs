@@ -1482,6 +1482,13 @@ impl super::Painter {
                                 {
                                     let rt_fs = fragment.font_size * 0.5;
                                     let rt_y = frag_base_y - fragment.font_size;
+                                    // R4363 临时诊断：ruby overlay 落位追踪（ZW_DEBUG_IFC=1）。
+                                    if std::env::var("ZW_DEBUG_IFC").as_deref() == Ok("1") {
+                                        eprintln!(
+                                            "[ruby-overlay] frag_base_y={} frag.y={} frag.height={} rt_y={} fs={}",
+                                            frag_base_y, fragment.y, fragment.height, rt_y, fragment.font_size
+                                        );
+                                    }
                                     let mut seg_x = frag_base_x;
                                     for (base, annot) in segs {
                                         let seg_w: f32 = base
@@ -1820,6 +1827,13 @@ impl super::Painter {
                             {
                                 let rt_fs = $frag_fs * 0.5;
                                 let rt_y = frag_base_y - $frag_fs;
+                                // R4363 临时诊断：ruby overlay 落位追踪（ZW_DEBUG_IFC=1）。
+                                if std::env::var("ZW_DEBUG_IFC").as_deref() == Ok("1") {
+                                    eprintln!(
+                                        "[ruby-overlay-B] frag_base_y={} frag.y={} frag.height={} rt_y={} fs={}",
+                                        frag_base_y, $frag_y, 0.0, rt_y, $frag_fs
+                                    );
+                                }
                                 let mut seg_x = frag_base_x;
                                 for (base, annot) in segs {
                                     let seg_w: f32 = base
