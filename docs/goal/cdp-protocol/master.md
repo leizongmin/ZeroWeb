@@ -2,35 +2,36 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-15（S571：期限轮活跑——引用计数 8/10
-到期（S553/S562 先例族；pull 零新提交，tip = 805de3873 即
-S570 提交本身；代码树自 S527 双腿后零变更，活跑直接覆盖
-当前树）。预检全净（零 zombie、9222/45029/34293/19222
-端口族全空闲零竞争）后门腿活跑 setsid 脱离+轮询收口——
-make cdp-e2e（ZW_IPC_VALIDATE=1 在位）02:09:52 启动
-02:10:29 落盘，**首调即 PASS 33 绿 deterministic 双跑 YES
-EXIT=0**：run1/run2 同态 exit1（含期望失败步骤），
-expected_green 33 对称差 none（observations 为脚本硬编码
-always-ok 观测性步骤、verify L100 显式排除于 green 集外，
-对称差复核口径与 S562 一致），唯一失败步骤
-frames.click+evaluate（期望失败家族、挂起维持），
-steps/determinism-report 02:10:29 同轮新鲜落盘，
-ZW_IPC_VALIDATE 校验器在位静默，#0 复现监测零命中（首调
-即绿红形态零再现延续），zero-engine dead_code warning
-（match_media_to_json）既有形态维持。**负载窗亚型**——兄弟
-流 ZeroWeb-2 make test 序列接续推进（窗内 zero_protocol
-测试腿起步 + cargo test --workspace --exclude 排除口径 +
-clippy 双腿，/proc cwd 实测归因，双 clone 隔离零污染本树），
-负载 2.23→1.60 回落窗，9222 端口族活跑前后全空闲零竞争；
-**活跑后本树零残留**。树不变按 S476/S514 期限轮口径门单腿
-免 make test 腿，引用 S527 双腿活跑 19,290P/0F EXIT=0 直接
-覆盖当前树。**引用计数归零重计（8/10→0/10），下轮起门
-结论锚点切换 S571 门活跑**（S572 起 1/10，树变化仍提前
-触发）。双层锚点与观察面引用 S570 同树实测（自有面对
-765429dda 维持 4 files +137/-17；全树排除本流 docs 后对
-18d462de6 维持 36 files +2317/-149；crates/ raw 25；子帧
-关键词 tests 排除口径零命中；frames.click+evaluate 维持
-挂起）。解冻条件①②不变，DC-2 无新拍板。）
+**最后更新**: 2026-09-15（S572：静默监测轮——同 tip 复核
+（pull 零新提交，tip = 89d65d85b 即 S571 提交本身，无代码
+变更绿步维持 33）。双层锚点零漂移——自有面对 765429dda 维持
+**4 files +137/-17** 精确一致；全树排除本流 docs 后对
+18d462de6 维持 **36 files +2317/-149**（S527 刷新后新基线）
+与上轮逐项一致零新增，S571 期限轮门活跑 02:10 直接覆盖
+当前代码树证据新鲜。crates/ 观察面 raw 计数实测维持 **25**，
+子帧能力关键词 grep（Rust 面 tests 排除口径）非测试代码零
+命中实测复核（命中面为 dom/engine/webview 三处 tests 路径
+7 文件测试代码维持既有形态），实质判定不变
+frames.click+evaluate 维持挂起。树不变按门单腿口径免
+make test 腿（S336 先例），门结论引用 S571 期限轮门活跑
+（首调 PASS 33 绿 deterministic 双跑 YES EXIT=0
+expected_green 33 对称差 none + ZW_IPC_VALIDATE=1 负载窗
+在位静默；make test 腿引用 S527 双腿活跑 19,290P/0F
+EXIT=0），**引用计数 0/10→1/10**（S571 新周期起；8/10 次
+轮即期限轮口径；树变化提前触发）。机器卫生复核：零 zombie、
+9222/45029/34293/19222 端口族全空闲、零端口竞争面、控制面
+零外来提交；负载 3.88→3.22 轮内回落窗已归因——兄弟流
+ZeroWeb-2 make test 序列 release 编译腿（父链
+make→test-guard→cargo→5× rustc，out-dir 全部
+ZeroWeb-2 clone release deps，zero_engine/page_runtime/
+webview/renderer/browser 五 crate 并行，峰值 571%），轮内
+收尾出窗回落惯性，双 clone 隔离，本树零活跃腿——本轮静默
+零活跑需求抬升窗记账。解冻条件实质判定不变：①观察面
+raw 25 维持，子帧三件套 iframe.contentDocument null 现状
+不变，frames.click+evaluate 维持挂起；② 本流控制面
+docs/goal/cdp-protocol/ 零外来提交，DC-2 口径无新拍板
+记录。goal 自有面零新缺口、无扩展面（S40-S571 重审结论
+延续））
 
 ---
 
@@ -61,6 +62,43 @@ clippy 双腿，/proc cwd 实测归因，双 clone 隔离零污染本树），
 
 ## 已完成切片
 
+- **S572（2026-09-15）静默监测轮 — 同 tip 复核（pull 零新提交，
+  tip = 89d65d85b 即 S571 提交本身；无代码变更，绿步维持 33）**：
+  双层锚点复核通过：自有面锚点对 765429dda 维持 **4 files
+  +137/-17** 精确一致（Makefile 1/1 + apps/browser/README.md
+  1/0 + headless/mod.rs 25/0 + headless/session.rs 110/16，
+  零新增漂移）；全树锚点复核（排除本流 docs 后 tracked 代码
+  树对 18d462de6 维持 **36 files +2317/-149**——S527 刷新后
+  新基线——与上轮逐项一致零新增，S571 期限轮门活跑 02:10
+  直接覆盖当前代码树证据新鲜）。crates/ 观察面 raw 计数实测
+  维持 **25**（git log 默认口径 8fb39cd46..HEAD 限 crates/
+  面），子帧能力关键词 grep（contentDocument/content_document/
+  subframe/sub_frame，Rust 面 tests 排除口径）非测试代码零
+  命中实测复核（命中面为 dom/engine/webview 三处 tests 路径
+  7 文件测试代码维持既有形态），实质判定不变
+  frames.click+evaluate 维持挂起。树不变按门单腿口径免
+  make test 腿（S336 先例）。门结论引用 S571 期限轮门活跑
+  （首调 PASS 33 绿 deterministic 双跑 YES EXIT=0
+  expected_green 33 对称差 none regressions 空 +
+  ZW_IPC_VALIDATE 校验器负载窗在位静默；make test 腿引用
+  S527 双腿活跑 19,290P/0F EXIT=0），**引用计数 0/10→1/10**
+  （S571 新周期起；8/10 次轮即期限轮口径；树变化提前触发）。
+  机器卫生复核：零 zombie、9222/45029/34293/19222 端口族
+  全空闲、零端口竞争面；负载 3.88→3.22 轮内回落窗**已
+  归因**——top CPU 兄弟流 ZeroWeb-2 make test 序列 release
+  编译腿（父链 make→test-guard→cargo→5× rustc，out-dir
+  全部 ZeroWeb-2 clone release deps，zero_engine/
+  zero_page_runtime/zero_webview/zero_renderer/zero_browser
+  五 crate 并行编译峰值 571%，窗内实测后轮内收尾出窗，双
+  clone 隔离零污染本树），本树零活跃腿（cwd=本 clone 活跃
+  编译/测试进程扫描零命中）——本轮静默零活跑需求抬升窗
+  记账。控制面零外来提交（近 20 提交触本流控制面全为本流
+  S5xx）。解冻条件实质判定不变：① 观察面 raw 25 维持，子帧
+  三件套 iframe.contentDocument null 现状不变，
+  frames.click+evaluate 维持挂起；② 本流控制面
+  docs/goal/cdp-protocol/ 零外来提交，DC-2 口径无新拍板
+  记录。goal 自有面零新缺口、无扩展面（S40-S571 重审结论
+  延续）。
 - **S571（2026-09-15）期限轮活跑 — 引用计数 8/10 到期（S553/S562
   先例族；pull 零新提交，tip = 805de3873 即 S570 提交本身；
   代码树自 S527 双腿后零变更，活跑直接覆盖当前树）**：
