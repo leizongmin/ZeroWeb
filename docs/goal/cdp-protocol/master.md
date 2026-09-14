@@ -2,12 +2,14 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-14（S313：静默监测轮——同 tip 复核（2bd16443b，即 S312
-提交本身），双层锚点零漂移（自有面维持 apps/browser README +1 已归因基线，
-全树锚点 afdd423df..HEAD 零非 docs 变化），门结论引用 S309 活跑（净窗首调
-即收口 PASS 33 绿 deterministic 双跑 YES EXIT=0 ZERO_DRIFT=YES 07:48 落盘），
-引用计数 5/10 下次活跑至迟 S319；绿步维持 33；解冻条件①观察面不变，②DC-2
-无新拍板；净窗维持（负载 1.90 零编译测试腿）；零 zombie 零遗留端口）
+**最后更新**: 2026-09-14（S314：树变化刷新轮——渲染流 R4330-F（run-in 分裂
+边框载荷 + margin 折入 + Path B 描边，layout-engine + engine paint painter）
+入树触发（S245/S258/S289/S290 先例：门 + make test 双刷新），cdp-e2e 门
+首调即收口 PASS 33 绿 deterministic 双跑 YES EXIT=0 ZERO_DRIFT=YES 07:56
+落盘；make test 一调收口 19,281P/0F（R4330-F 组合态首次全量覆盖，零失败）；
+绿步维持 33；引用计数清零重计 1/10 下次活跑至迟 S324；解冻条件①观察面
+不变（R4330-F 非渲染流子帧文档加载 + JS realm 能力，frames.click+evaluate
+维持挂起），②DC-2 无新拍板；零 zombie 零遗留端口）
 
 ---
 
@@ -38,6 +40,31 @@
 
 ## 已完成切片
 
+- **S314（2026-09-14）树变化刷新轮 — 渲染流 R4330-F 入树触发（S245/S258/
+  S289/S290 先例：门 + make test 双刷新，绿步维持 33）**：
+  S313 push 步 rebase 时发现渲染流代码提交 4d6f3ff00 入基——**归因**：R4330-F
+  run-in 分裂边框载荷 + margin 折入推进 + Path B 描边（crates/layout-engine
+  4 文件 + crates/engine/src/paint/painter/text.rs + rendering-compat docs，
+  渲染流自有工作面，与 9b4488d3a/afdd423df 同族 paint painter 路径；本流
+  docs-only 提交 rebase 干净零冲突、无碰头信号）。**动因**：tracked 代码树
+  相对 S309 活跑基树变化（layout/engine 代码面），S309 门结论对新树失效，
+  按树变化刷新轮口径双腿刷新。S198 前置复核通过（9222/45029/34293/19222
+  全空闲、零竞争 cdp-e2e 腿）。**腿一 cdp-e2e 门：首调即 PASS 33 绿、
+  deterministic 双跑 YES、EXIT=0、绿步集机械 diff 基线零漂移
+  （ZERO_DRIFT=YES，expected_green 33 对称差 none、regressions 空、双 run
+  明细逐项一致——33 ok + 唯一挂账 frames.click+evaluate 双跑同形态）**，
+  steps/determinism-report 07:56 同轮落盘新鲜；R4330-F 对门禁绿态零影响；
+  首调红形态连续第十一次零再现（S168 形态累计两例非聚集维持）。**腿二
+  make test：一调收口 19,281P/0F**（test-guard 包裹全量，零 FAILED、67 组
+  result 全 ok；R4330-F 组合态首次全量覆盖；计数与 S289/S290 时点持平，
+  R4330-F 零新增用例；R4330-F 自述其验证腿 send-keys Timeout flake 家族
+  在本轮零再现）。**引用计数清零重计 1/10，下次活跑至迟 S324**。双解冻
+  条件实质判定不变：① crates/ 自 8fb39cd46 现为 9b4488d3a + afdd423df +
+  4d6f3ff00 三枚，均非渲染流子帧文档加载 + JS realm 能力（子帧三件套
+  iframe.contentDocument null 现状不变），frames.click+evaluate 维持挂起；
+  ② DC-2 口径无新拍板记录。机器卫生复核：两腿全部收尾——端口族全释放、
+  零 zombie、本流零遗留进程。goal 自有面零新缺口、无扩展面（S40-S313 重审
+  结论延续）。
 - **S313（2026-09-14）静默监测轮 — 同 tip 复核（无代码变更，绿步维持 33）**：
   pull 零新提交（tip = 2bd16443b，即 S312 提交本身）——双层锚点口径复核通过：
   自有面锚点增量零漂移（硬核对维持仅 apps/browser/README.md +1 行 = S255 已
@@ -4582,7 +4609,9 @@
    （9b4488d3a 入树触发的树变化刷新轮，负载窗内双腿刷新，S245/S258 先例）；
    S290 已执行（afdd423df 入树触发的树变化刷新轮，净窗门首调收口 + make test
    两调收口）；S300 已执行（期限轮净窗首调即收口）；S309 已执行（期限轮净窗
-   首调即收口，S299 先例：9/10 次轮即期限轮），下次活跑至迟 S319；
+   首调即收口，S299 先例：9/10 次轮即期限轮）；S314 已执行（R4330-F 入树
+   触发的树变化刷新轮，门 + make test 双刷新，S245/S258/S289/S290 先例），
+   下次活跑至迟 S324；
    若活跑时逢并行流负载窗口则
    优先窗口内执行，负载下样本对 #0 更有价值（负载窗口口径含并行流 browser 进程型与
    编译测试负载型两亚型，净窗亚型 S208 起并行记录；**端口竞争亚型口径 S198 新增**：
@@ -4638,6 +4667,9 @@
   **S290 时点 19,281P/0F EXIT=0**（run2 复跑收口，run1 单例瞬态红已机械归因
   ——webview sw L1139 无轮询首断言 flake 家族第三漏改点，跨流记档不单方修；
   R4321-F+R4322-F+R4325-F+R4328-F 组合态首次全量覆盖）；
+  **S314 时点 19,281P/0F EXIT=0**（一调收口零失败，R4330-F 组合态首次全量
+  覆盖——R4330-F 零新增用例计数持平，渲染流 run-in 边框修复对全量绿态零
+  影响）；
   禁止裸跑 cargo test，经 test-guard。注：make test
   的 workspace 腿 exclude zero-renderer——renderer lib 单测不在全量门内，跨流红灯
   （form fixture×2）经显式 `-p zero-renderer --lib` 跟踪）
@@ -4692,7 +4724,13 @@
   对称差 none、regressions 空，双 run 明细逐项一致），07:48 落盘；净窗亚型
   （负载 0.35 回落、零编译测试腿、零端口竞争）；首调红形态连续第十次零再现
   （累计两例非聚集维持）；zero-engine dead_code warning 既有形态维持
-  （match_media_to_json bins-only 条件 dead）
+  （match_media_to_json bins-only 条件 dead）。**S314 注记**：R4330-F 入树
+  触发的树变化刷新轮（S245/S258/S289/S290 先例，门 + make test 双刷新）——
+  门净窗首调即 PASS 33 绿 deterministic 双跑 YES EXIT=0，绿步集机械 diff
+  基线零漂移（ZERO_DRIFT=YES，expected_green 33 对称差 none、regressions
+  空、双 run 明细逐项一致），07:56 落盘；make test 一调收口 19,281P/0F
+  （R4330-F 组合态首次全量覆盖，零新增用例计数持平）；首调红形态连续第十
+  一次零再现（累计两例非聚集维持）
 - CDP 现状：`Page.navigate` / `Runtime.evaluate` / `Target.getTargets` 3 命令 +
   `/json/version` + `/json` 发现（headless.rs L782-796/L571/L1159）——历史基线，现行面
   见缺口清单 P3/P4 与切片记录
