@@ -2,22 +2,24 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-14（S384：树变化刷新轮——兄弟流 R4336
-（974169c2d，fix(layout) run-in 幻影高度钳零，basic-009 3.77%→
-0.00%）入树触发连续第二轮刷新（R4336 在 S383 收口后 push 序列的
-rebase 中拉入，S342/S383 同款形态；同批 R4337 docs-only 不入刷新
-触发面 S349 先例）。R4336 属渲染流域 crates/layout-engine（本流零
-重叠），非子帧能力（子帧关键词零命中）——解冻条件①实质判定不变
-frames.click+evaluate 维持挂起，crates/ 观察面 raw 15→**16**。
-**门 + make test 双刷新**：门首调即 PASS 33 绿 deterministic 双跑
-YES EXIT=0，绿步集机械 diff 基线零漂移（expected_green 33 对称差
-none、regressions 空）14:21 落盘 + ZW_IPC_VALIDATE 在位静默，唯一
-红=预期挂账 frames.click+evaluate 同形态首调红连续第廿三次零再现；
-make test 19,288P/0F 一调收口（R4336 组合态首次全量覆盖，计数与
-S341/S342/S383 持平零新增用例；首次启动因前轮会话清理 SIGTERM 波
-及非测试失败，setsid 脱离后重跑一调收口）。**引用计数归零（本轮
-门活跑新鲜落盘），下次活跑至迟 S394**。机器卫生零 zombie、端口族
-全释放、门腿零遗留。DC-2 无新拍板）
+**最后更新**: 2026-09-14（S385：静默监测轮——pull 零新提交（tip =
+9892b876b 即 S384 提交本身），无代码变更绿步维持 33。双层锚点零
+漂移：自有面按 S351 修正后四枚归因口径精确一致（对 765429dda 硬
+核对 4 files +137/-17 = Makefile 1/1 + apps/browser/README.md 1/0 +
+headless/mod.rs 25/0 + headless/session.rs 110/16，零新增漂移）；
+全树排除本流 docs 后 tracked 代码树对 18d462de6 的 4 files（3 个
+layout-engine 文件 = R4335/R4336 变更 + rendering-compat.md 兄弟流
+控制面）**全部为 S384 双腿刷新已覆盖变更**（S384 提交后 git log
+-- crates/ 零新提交，HEAD 树与 S384 门覆盖树一致），S384 活跑
+14:21 直接覆盖当前树证据新鲜。门结论引用 S384 活跑（PASS 33 绿
+deterministic 双跑 YES EXIT=0 ZERO_DRIFT=YES 14:21 落盘 + make
+test 19,288P/0F + ZW_IPC_VALIDATE 在位静默），**引用计数 0/10→
+1/10，下次活跑至迟 S394**。crates/ 观察面 raw 计数实测维持 16，
+实质判定不变 frames.click+evaluate 维持挂起。机器卫生：零 zombie、
+端口族全空闲、9333 维持缺席、零竞争腿零孤儿 hunt；**负载 0.18 深
+净窗**（零并行腿在窗）——本轮静默零活跑需求。解冻条件①②实质
+判定不变（观察面 raw 16 维持；本流控制面零外来提交，DC-2 无新
+拍板）。goal 自有面零新缺口、无扩展面（S40-S384 重审结论延续））
 
 ---
 
@@ -48,6 +50,33 @@ S341/S342/S383 持平零新增用例；首次启动因前轮会话清理 SIGTERM
 
 ## 已完成切片
 
+- **S385（2026-09-14）静默监测轮 — 同 tip 复核（pull 零新提交，tip =
+  9892b876b 即 S384 提交本身；无代码变更，绿步维持 33）**：双层锚点
+  口径复核通过：自有面锚点按 S351 修正后四枚归因口径精确一致（对
+  765429dda 硬核对 numstat 4 files +137/-17 = Makefile 1/1 +
+  apps/browser/README.md 1/0 + headless/mod.rs 25/0 +
+  headless/session.rs 110/16，零新增漂移）；全树锚点复核（排除本流
+  docs 后 tracked 代码树对 18d462de6 = 4 files（layout-engine 三文件
+  R4335/R4336 + rendering-compat.md 兄弟流控制面 R4334/R4337）——
+  **经 git log 9892b876b..HEAD -- crates/ 零新提交 + HEAD vs S383
+  提交仅本流 master.md 自身变化双重复核，全部为 S384 双腿刷新已
+  覆盖变更，S384 活跑 14:21 直接覆盖当前树证据新鲜可引用**）零新增
+  外部变化。crates/ 观察面 raw 计数实测维持 **16**（git log
+  8fb39cd46..HEAD -- crates/ 默认口径），子帧能力关键词 grep 命中均
+  为既有测试文件与无关面（engine/dom/webview 非测试代码
+  contentDocument/content_document 零命中实测复核），实质判定不变：
+  均非渲染流子帧文档加载 + JS realm 能力（子帧三件套
+  iframe.contentDocument null 现状不变），frames.click+evaluate
+  维持挂起。门结论引用 S384 活跑（门 PASS 33 绿 deterministic 双跑
+  YES EXIT=0 ZERO_DRIFT=YES 14:21 落盘 + make test 19,288P/0F +
+  ZW_IPC_VALIDATE 校验器在位静默），引用计数 0/10→**1/10**，下次
+  活跑至迟 S394。机器卫生复核：零 zombie（stat 精确判定）、
+  9222/45029/34293/19222/9333 端口族全空闲、零竞争 cdp-e2e 腿、
+  零孤儿 hunt 遗留；**负载 0.18 深净窗**（1min 均值，零并行腿在窗，
+  上轮 zeroseed 编译腿已收窗）——本轮静默零活跑需求。双解冻条件
+  实质判定不变：① 观察面 raw 16 维持；② 本流控制面零外来提交，
+  DC-2 无新拍板。goal 自有面零新缺口、无扩展面（S40-S384 重审结论
+  延续）。
 - **S384（2026-09-14）树变化刷新轮 — 兄弟流 R4336 入树触发（连续
   第二轮刷新，S342/S383 同款形态）**：S383 push 序列的 rebase 拉入
   974169c2d（fix(layout) R4336 run-in 幻影高度钳零，basic-009
