@@ -2,24 +2,22 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-14（S342：树变化刷新轮——渲染流 R4333/R4333b 入树触发
-（30f6ad6d3 + 82c1fcc15，均仅触 crates/layout-engine/src/
-inline_finalization.rs +17/-7，**在 S341 双腿活跑收口后经 push 序列入树**，
-S341 门 11:26 证据未覆盖当前树，按 S245→S341 先例双腿刷新）；pull 零新
-提交（tip = 18d462de6 即 S341 提交本身）；前置复核通过（端口族全空闲、
-零竞争 cdp-e2e 腿、零 zombie；同窗并行流他 clone workspace test/clippy
-腿 + ZeroWeb-2 集成测试腿 + release build 均非端口竞争面，负载 9.62→2.06
-负载窗口照跑记账第十八个负载下样本）；腿一 cdp-e2e 门首调即收口 PASS 33
-绿 deterministic 双跑 YES EXIT=0 ZERO_DRIFT=YES 11:52 落盘 +
-ZW_IPC_VALIDATE 在位静默，腿二 make test 一调收口 19,288P/0F 67 组 ok
-（R4333/R4333b 组合态首次全量覆盖，计数与 S341 持平零新增用例）；引用
-计数重计 1/10 下次活跑至迟 S352；解冻条件①不变（crates/ 自 8fb39cd46
-现十三枚 +R4333/R4333b 均**非**渲染流子帧文档加载+JS realm 能力——
-inline_finalization 回填门控属布局面，子帧三件套 iframe.contentDocument
-null 现状不变，frames.click+evaluate 维持挂起）②不变（本流控制面
-docs/goal/cdp-protocol/ 零外来提交，兄弟流 rendering-compat.md 自有面
-追加不构成 DC-2 拍板）；首调红形态连续第十七次零再现；两腿全收尾端口族
-释放零 zombie 零遗留进程）
+**最后更新**: 2026-09-14（S343：静默监测轮——同 tip 复核（pull 零新提交，
+tip = 4a6c55ac5 即 S342 提交本身），双层锚点口径复核通过：自有面锚点
+增量零漂移（硬核对维持仅 apps/browser/README.md +1 行 = S255 已归因的
+52695a7c1 漂移基线）；全树锚点复核（排除本流 docs 后 tracked 代码树对
+18d462de6 = S342 双腿刷新覆盖树零变化——S342 活跑 11:52 直接覆盖当前树，
+证据新鲜可引用）零外部变化。**crates/ 观察面计数勘误**：本轮实测 raw
+计数 14（含 2 枚 merge 条目 + 本流 S315 证据提交 fe36e6fe1）——S341/S342
+的「十一/十三枚」为链式推导漂移 1（S340 时点 ten 为其实测准确值），本轮
+起以 raw 实测为准记账；实质判定不变：14 枚均**非**渲染流子帧文档加载 +
+JS realm 能力，frames.click+evaluate 维持挂起。门结论引用 S342 活跑
+（门 PASS 33 绿 deterministic 双跑 YES EXIT=0 ZERO_DRIFT=YES 11:52 落盘
++ ZW_IPC_VALIDATE 校验器在位静默），引用计数 1/10→**2/10**，下次活跑
+至迟 S352。机器卫生复核：零 zombie（stat 精确判定）、9222 端口族空闲、
+9333 长驻实例维持缺席、`pgrep -af 'zw-loop|zw-hunt'` 零孤儿 hunt 遗留、
+零竞争 cdp-e2e 腿；负载 0.77 净窗——本轮静默零活跑需求。goal 自有面
+零新缺口、无扩展面（S40-S342 重审结论延续））
 
 ---
 
@@ -50,6 +48,30 @@ docs/goal/cdp-protocol/ 零外来提交，兄弟流 rendering-compat.md 自有�
 
 ## 已完成切片
 
+- **S343（2026-09-14）静默监测轮 — 同 tip 复核（pull 零新提交，tip =
+  4a6c55ac5 即 S342 提交本身；无代码变更，绿步维持 33）**：双层锚点口径
+  复核通过：自有面锚点增量零漂移（硬核对维持仅 apps/browser/README.md
+  +1 行 = S255 已归因的 52695a7c1 漂移基线，对 765429dda 基点实测恰
+  +1 行）；全树锚点复核（排除本流 docs 后 tracked 代码树对 18d462de6 =
+  S342 双腿刷新覆盖树零变化——S342 活跑 11:52 直接覆盖当前树，证据新鲜
+  可引用）零外部变化。**crates/ 观察面计数勘误**：本轮实测 raw 计数
+  **14**（git log 默认口径，含 2 枚 merge 条目 22002af69/7bed4635c +
+  本流 S315 证据提交 fe36e6fe1）——S341/S342 记账的「十一/十三枚」为
+  链式推导漂移 1（S340 时点 ten 与其实测一致；S341 起的 +1/+2 推导未
+  计 merge 条目口径差），本轮起以 raw 实测为准记账，后续轮次引用
+  「crates/ 自 8fb39cd46 raw 计数」口径。实质判定不变：14 枚均非渲染流
+  子帧文档加载 + JS realm 能力（layout/paint 修复族 + protocol 诊断网 +
+  script-sandbox pageerror 面 + engine query 预算，子帧三件套
+  iframe.contentDocument null 现状不变），frames.click+evaluate 维持
+  挂起。门结论引用 S342 活跑（门 PASS 33 绿 deterministic 双跑 YES
+  EXIT=0 ZERO_DRIFT=YES 11:52 落盘 + ZW_IPC_VALIDATE 校验器在位静默），
+  引用计数 1/10→**2/10**，下次活跑至迟 S352。机器卫生复核：零 zombie
+  （stat 精确判定）、9222 端口族空闲、9333 长驻实例维持缺席、零竞争
+  cdp-e2e 腿、`pgrep -af 'zw-loop|zw-hunt'` 零孤儿 hunt 遗留；负载 0.77
+  净窗——本轮静默零活跑需求、无端口竞争。双解冻条件实质判定不变：
+  ① 观察面计数勘误如上，substance 零变化；② 本流控制面
+  docs/goal/cdp-protocol/ 零外来提交，DC-2 口径无新拍板记录。goal
+  自有面零新缺口、无扩展面（S40-S342 重审结论延续）。
 - **S342（2026-09-14）树变化刷新轮 — 渲染流 R4333/R4333b 入树触发（S245/
   S258/S289/S290/S314/S317/S340/S341 先例：门 + make test 双腿刷新，绿步
   维持 33）**：pull 零新提交（tip = 18d462de6 即 S341 提交本身）。**触发
@@ -5256,7 +5278,8 @@ docs/goal/cdp-protocol/ 零外来提交，兄弟流 rendering-compat.md 自有�
    （R4332 入树触发的树变化刷新轮，gate6 避让兑现后双腿刷新）；S341 已
    执行（edc625e5d 入树触发的树变化刷新轮，负载窗内双腿刷新，
    S245/S258/S289/S290/S314/S317/S340 先例）；S342 已执行（R4333/R4333b
-   入树触发的树变化刷新轮，负载窗内双腿刷新，S245→S341 先例延续），
+   入树触发的树变化刷新轮，负载窗内双腿刷新，S245→S341 先例延续）；
+   S343 已执行（静默监测，crates/ 观察面计数勘误 raw=14 起以实测为准），
    下次活跑至迟 S352；
    若活跑时逢并行流负载窗口则
    优先窗口内执行，负载下样本对 #0 更有价值（负载窗口口径含并行流 browser 进程型与
