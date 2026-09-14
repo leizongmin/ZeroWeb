@@ -247,6 +247,10 @@ pub struct InlineFormattingContext {
     /// **inline 子内容**前置到条目序列开头（run-in 自身 inline 语义透传：文本/子
     /// inline 均按其自身样式渲染）。None = 无 run-in 并入。
     pub run_in_prepended: Option<NodeId>,
+    /// R4339：run-in 前缀模式下布局期已分类的块级子 dom id 集（painter 从
+    /// LayoutBox.children 的 is_block_level 子注入）——paint Path B 空 styles
+    /// 无法重判块级性（页样式可把 div 转 inline），由布局侧供真值。
+    pub block_child_nodes: Option<std::collections::HashSet<zero_dom::NodeId>>,
     /// R4330：并入 run-in 的分裂边框载荷（collect 后处理折入前/末 run 水平 margin
     /// 完成推进 + paint 侧绘条几何）。
     pub run_in_border: Option<crate::types::RunInBorder>,
@@ -350,6 +354,7 @@ impl InlineFormattingContext {
             padding_overrides: NodeIdMap::default(),
             fragment_node_ids: None,
             run_in_prepended: None,
+            block_child_nodes: None,
             run_in_border: None,
             font_metric_provider: None,
             advance_source: None,
@@ -380,6 +385,11 @@ impl InlineFormattingContext {
     /// R3991：注册并入本容器首行的 run-in 元素（collect 前置收集其 inline 内容）。
     pub fn set_run_in_prepended(&mut self, run_in_id: NodeId) {
         self.run_in_prepended = Some(run_in_id);
+    }
+
+    /// R4339：注入布局期分类的块级子集（paint Path B 块级判定真值源）。
+    pub fn set_block_child_nodes(&mut self, ids: std::collections::HashSet<zero_dom::NodeId>) {
+        self.block_child_nodes = Some(ids);
     }
 
     /// 设置文本对齐方式。

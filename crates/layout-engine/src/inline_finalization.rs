@@ -1521,8 +1521,11 @@ fn backfill_run_in_boxes(
     let mut min_y = f32::MAX;
     let mut max_x = f32::MIN;
     let mut max_y = f32::MIN;
+    // R4339：含 run-in 片段的行盒底（行级 y+height，非字形 bbox——字形高 < 行高）。
+    let mut max_line_bottom = f32::MIN;
     let mut found = false;
     for line in &inline_ctx.lines {
+        let mut line_has_run_in = false;
         for frag in &line.runs {
             // 片段 node_id = run-in 元素自身（扁平收集）或其文本子/inline 后代——
             // 两者都在 run-in 子树内（is_descendant），均计入 bbox。
@@ -1540,12 +1543,16 @@ fn backfill_run_in_boxes(
                 });
             if in_run_in {
                 found = true;
+                line_has_run_in = true;
                 let fx = frag.x;
                 let fy = line.y + frag.y;
                 min_x = min_x.min(fx);
                 min_y = min_y.min(fy);
                 max_x = max_x.max(fx + frag.width);
                 max_y = max_y.max(fy + frag.height);
+            }
+            if line_has_run_in {
+                max_line_bottom = max_line_bottom.max(line.y + line.height);
             }
         }
     }
@@ -1564,6 +1571,30 @@ fn backfill_run_in_boxes(
     if root.height <= 0.5 && ifc_bottom > root.height {
         root.content_height = ifc_bottom;
         root.height = ifc_bottom;
+    } else if root.height > 0.5
+        && max_line_bottom > 0.5
+        && !root.children.is_empty()
+        && root.node_id.is_some_and(|id| !crate::inline_content::has_inline_content(doc, styles, id))
+        // 幂等守卫：补偿后块子 y ≥ 前缀行底，二次进入不再叠加（cached remeasure
+        // 路径可能对同一 LayoutBox 树重入 compute_final）。
+        && root.children.iter().filter(|c| !c.is_absolute && !c.is_fixed).any(|c| c.y < max_line_bottom)
+    {
+        // R4339：有块级子的合并目标——taffy 对容器直属文本结构性盲区（容器挂 taffy
+        // 子时 measure 永不触发，R4336 同律第三形态），run-in 前缀行未参与 taffy
+        // 堆叠 → 目标盒少一行、块子与 run-in 行重叠（run-in-basic-005：target h=41
+        // 只含块子 37+边框 4，代理行叠在 y=10 与块子同位；ref = [run-in 行][块子] 两段
+        // 堆叠）。补偿 = 增高一行 + in-flow 子整体下移前缀行高（run-in 行占首行）。
+        // 行高取 run-in 片段 bbox 底 max_y 而非 ifc_bottom——后者含块子边界产生的
+        // 空行伪影（basic-005 实测 ifc_bottom=37.2=2 行，真前缀行仅 18.624）。
+        // 仅限无自身 inline 内容的目标（has_inline_content=false）——目标自带 inline
+        // 内容时 IFC 含非前缀行，bbox 底非纯前缀行高，不适用。
+        root.content_height += max_line_bottom;
+        root.height += max_line_bottom;
+        for child in &mut root.children {
+            if !child.is_absolute && !child.is_fixed {
+                child.y += max_line_bottom;
+            }
+        }
     }
     root.children.push(LayoutBox {
         node_id: Some(run_in_id),

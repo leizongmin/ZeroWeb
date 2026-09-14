@@ -1122,6 +1122,19 @@ impl super::Painter {
                 if let Some(run_in_id) = box_node.run_in_prepended {
                     ctx.set_run_in_prepended(run_in_id);
                     ctx.set_run_in_border(box_node.run_in_border);
+                    // R4339：注入布局期分类的块级子集——Path B 空 styles 无法重判
+                    // 块级性（页样式可把 div 转 inline），布局盒 children 的
+                    // is_block_level 子为真值源（run-in-basic-005：无注入时块子
+                    // text_content 扁平拼入前缀流 → "Run-inheaderStart..." 连排）。
+                    let block_ids: std::collections::HashSet<zero_dom::NodeId> = box_node
+                        .children
+                        .iter()
+                        .filter(|c| c.is_block_level)
+                        .filter_map(|c| c.node_id)
+                        .collect();
+                    if !block_ids.is_empty() {
+                        ctx.set_block_child_nodes(block_ids);
+                    }
                 }
                 ctx.layout(doc, node_id, &HashMap::new());
                 if std::env::var("ZW_PROBE_4328").is_ok() {

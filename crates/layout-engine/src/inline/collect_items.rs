@@ -336,25 +336,38 @@ impl InlineFormattingContext {
                         // preserve 模式下空 run 被 split_into_words_with_ws 兜底成幻影空格词
                         // （1 字宽推进）→ 后继文本右移（table-anonymous-objects-214 的
                         // X 字形偏移 1ch 根因）。发 BlockBreak 使其脱离 IFC、后继文本独立成行。
-                        let is_block_level = style.is_some_and(|s| {
-                            matches!(
-                                s.display,
-                                DisplayValue::Block
-                                    | DisplayValue::Flex
-                                    | DisplayValue::Grid
-                                    | DisplayValue::Table
-                                    | DisplayValue::ListItem
-                                    | DisplayValue::FlowRoot
-                                    | DisplayValue::TableCell
-                                    | DisplayValue::TableRow
-                                    | DisplayValue::TableRowGroup
-                                    | DisplayValue::TableHeaderGroup
-                                    | DisplayValue::TableFooterGroup
-                                    | DisplayValue::TableColumn
-                                    | DisplayValue::TableColumnGroup
-                                    | DisplayValue::TableCaption
-                            )
-                        });
+                        // R4339：paint Path B（styles 空）的块级判定——空表下
+                        // `style.is_some_and` 恒 false，run-in 前缀模式容器的前缀流会把
+                        // 块级子的 text_content 扁平拼入（run-in-basic-005：
+                        // "Run-inheaderStart of block..." 连排）。布局期盒已分类：
+                        // painter 注入 `block_child_nodes`（box_node.children 中
+                        // is_block_level 子的 dom id 集），此处查集发 BlockBreak。
+                        // UA 默认 display 兜底不可用——页样式可把 div 转 inline
+                        //（run-in-contains-block-005 的 #r），空表无法区分。
+                        let is_block_level = style
+                            .map(|s| {
+                                matches!(
+                                    s.display,
+                                    DisplayValue::Block
+                                        | DisplayValue::Flex
+                                        | DisplayValue::Grid
+                                        | DisplayValue::Table
+                                        | DisplayValue::ListItem
+                                        | DisplayValue::FlowRoot
+                                        | DisplayValue::TableCell
+                                        | DisplayValue::TableRow
+                                        | DisplayValue::TableRowGroup
+                                        | DisplayValue::TableHeaderGroup
+                                        | DisplayValue::TableFooterGroup
+                                        | DisplayValue::TableColumn
+                                        | DisplayValue::TableColumnGroup
+                                        | DisplayValue::TableCaption
+                                )
+                            })
+                            .unwrap_or_else(|| {
+                                styles.is_empty()
+                                    && self.block_child_nodes.as_ref().is_some_and(|ids| ids.contains(&child_id))
+                            });
                         if is_block_level {
                             // R57（M3）：in-flow block 子 → BlockBreak（无 R1286 空行 strut——
                             // block 前被折叠的空白行不应获得 line-height，canvas-grid 22px 偏移
