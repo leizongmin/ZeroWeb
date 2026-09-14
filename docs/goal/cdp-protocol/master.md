@@ -2,17 +2,19 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-14（S326：静默监测轮——同 tip 复核（0ebb844cb，即
-S325 提交本身），双层锚点零漂移（自有面维持 apps/browser README +1 已归因
-基线；全树锚点排除本流 docs 后 tracked 代码树对 S317 双腿刷新覆盖树
-736f16525 零变化），门结论引用 S317 活跑（门 PASS 33 绿 deterministic YES
-ZERO_DRIFT 09:11 + make test 19,287P/0F 两调收口），引用计数 9/10 维持、
-下次活跑 S327 期限轮（10/10 到期须实际活跑）；绿步维持 33；解冻条件①
-观察面不变（crates/ 自 8fb39cd46 维持九枚均非渲染流子帧能力，
-frames.click+evaluate 维持挂起），②DC-2 无新拍板；机器卫生全净含
-zw-loop/zw-hunt 检查模式；编译测试腿基本出窗（cargo/rustc 0、make 1
-残留，负载 1min 3.02 / 5min 4.59 / 15min 5.37 回落——S327 活跑窗口干净）；
-S78 家族维持 S320 收窄定性；零 zombie 零遗留端口）
+**最后更新**: 2026-09-14（S327：期限活跑轮——引用计数 10/10 到期实际活跑
+（pull 零新提交 tip=4fe786ea9，树对 S317 双腿刷新覆盖树 736f16525 零
+变化），S198 前置复核通过（本流端口族全空闲；同窗 zero-browser 9333 属
+第三 clone ZeroWeb-3-wt-baidu、ZeroWeb-2 全量 cargo test 均非本流竞争
+腿；负载 4.90 按负载窗口口径照跑记账），**cdp-e2e 门首调即收口 PASS 33
+绿 deterministic 双跑 YES EXIT=0 ZERO_DRIFT=YES（green_steps ==
+expected_green 对称差 none、regressions 空）10:10 同轮落盘新鲜**，唯一红
+= 预期挂账 frames.click+evaluate 同形态（locator.click Timeout），首次
+红形态连续第十三次零再现；ZW_IPC_VALIDATE 校验器在位静默（捕获网零侵扰
+验证，零 corruption 标记）；**引用计数重计 1/10 下次活跑至迟 S337**；绿
+步维持 33；解冻条件①观察面不变（crates/ 自 8fb39cd46 维持九枚均非渲染
+流子帧能力，frames.click+evaluate 维持挂起），②DC-2 无新拍板；活跑腿
+全收尾零 zombie 零遗留端口）
 
 ---
 
@@ -43,6 +45,30 @@ S78 家族维持 S320 收窄定性；零 zombie 零遗留端口）
 
 ## 已完成切片
 
+- **S327（2026-09-14）期限活跑轮 — 引用计数 10/10 到期实际活跑（S309 先例，
+  绿步维持 33）**：
+  pull 零新提交（tip = 4fe786ea9，即 S326 提交本身；树对 S317 双腿刷新
+  覆盖树 736f16525 零变化——本轮活跑即是对该树的直接再覆盖）。**S198
+  前置复核通过**：9222/45029/34293/19222 全空闲；同窗发现两枚非本流活动
+  并归因——zero-browser --remote-debugging-port=9333 属第三 clone
+  ZeroWeb-3-wt-baidu（其他流 siteopt 工作，端口族不相交、非 cdp-e2e 腿）、
+  ZeroWeb-2 clone 全量 cargo test（test-guard 包裹）进行中——均非本流
+  竞争腿，负载 1min 4.90 按负载窗口口径照跑记账。**腿一 cdp-e2e 门：
+  首调即 PASS 33 绿、deterministic 双跑 YES、EXIT=0、ZERO_DRIFT=YES**
+  （determinism-report green_steps == expected_green 对称差 none、
+  regressions 空）10:10 同轮落盘新鲜；唯一红 = 预期挂账
+  frames.click+evaluate 双跑同形态（locator.click Timeout 10000ms——
+  挂子帧文档加载 + JS realm 能力，非回归）；首调红形态连续第十三次零
+  再现（S168 形态累计两例非聚集维持）。**ZW_IPC_VALIDATE 校验器在位
+  静默**（门自 S316 起常驻捕获网零侵扰验证，本轮零 corruption 标记零
+  malformed frame 输出）。**引用计数重计 1/10，下次活跑至迟 S337**。
+  双解冻条件实质判定不变：① crates/ 自 8fb39cd46 维持九枚（R4325-F/
+  R4328-F/R4330-F/PR30 含 7228ffeea+11da119cf/R4331/本流 S315+S316 诊断
+  面），均非渲染流子帧文档加载 + JS realm 能力，frames.click+evaluate
+  维持挂起；② docs/goal 自 S326 零非本流提交，DC-2 口径无新拍板记录。
+  机器卫生：活跑腿全收尾——本流零遗留 browser/renderer 进程（同窗
+  9333 browser 属 ZeroWeb-3 非本轮产物）、端口族全释放、零 zombie、
+  负载回落 2.78。goal 自有面零新缺口、无扩展面（S40-S326 重审结论延续）。
 - **S326（2026-09-14）静默监测轮 — 同 tip 复核（无代码变更，绿步维持 33）**：
   pull 零新提交（tip = 0ebb844cb，即 S325 提交本身）——双层锚点口径复核
   通过：自有面锚点增量零漂移（硬核对维持仅 apps/browser/README.md +1 行 =
