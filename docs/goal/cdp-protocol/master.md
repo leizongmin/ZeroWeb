@@ -2,17 +2,19 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-14（**S315：门红归因轮——cdp-e2e 门确定性 RED（33→21
-绿，12 步回归）**。动因：渲染流 PR30（7bed4635c siteopt/baidu-round2）入树
-后首跑即红，双跑同形态 + 手工复现 3/3 同步失败于 network.events 步——机械
-归因成立（07:56 门在 merge 第一父树 PASS 33 绿，唯一 delta = PR30 diff）。
-**S79 诊断网抓获 victim 帧**：renderer→browser FetchRequest 线帧 ≠ 任何合法
-序列化（variant 4 字节丢失 + 字节移位，/tmp/zw-probe 基准对照 79B 实证）=
-**renderer 侧 IPC 流损坏（S78/#0 家族）确定性复现**——PR30 proxy_fetch 移交
-worker 线程的时序变化暴露写侧窗口（P7 时序暴露者，损坏机制在 renderer 写路径
-= 本流工作面）。#0 项从「复现监测」升级「确定性复现 + victim 帧取证在案」
-（evidence/s315-renderer-ipc-corruption/）。门红挂账待根因修复（S316 起）；
-S309 门结论对当前树失效；引用计数冻结。零 zombie 零遗留端口）
+**最后更新**: 2026-09-14（S316：流损坏根因排查轮①——**门已回绿**：当前树
+（PR30 组合态）cdp-e2e 门 PASS 33 绿 deterministic 双跑 YES（校验器在位
+静默），S315 门红定性**降级修正**：非确定性回归，实为 S78/#0 家族「负载
+触发间歇」——晨窗 3/3 高频复现（siteopt merge + 编译风暴并行负载期），
+平静态 0/18+（8 全帧追踪 + 6 头部追踪带载 + 4 无追踪 + 门双跑）。
+**首轮取证成果**：全帧追踪绿跑 multiset 对照 453W=453R 零 chimera 零丢失
+（管道字节忠实，原子帧写完好到达）+ renderer 写侧拓扑测绘（三线程写：
+compositor-publish 444 / runtime 7 / js-worker 2，per-instance SharedWriter
++ 共享 fd mutex，flush=单次原子 write_all）。**常驻第一现场捕获网部署**：
+ZW_IPC_VALIDATE=1 已入 make cdp-e2e（flush 前帧走查校验，破损即打印
+tid+hex 定位组装线程）；ZW_IPC_TRACE 双侧逐帧 hex 追踪器（env 门控）——
+下次自然复现即抓组装现场。#0 维持开放；引用计数重计 1/10 下次活跑至迟
+S326。零 zombie 零遗留端口）
 
 ---
 
@@ -43,6 +45,32 @@ S309 门结论对当前树失效；引用计数冻结。零 zombie 零遗留端�
 
 ## 已完成切片
 
+- **S316（2026-09-14）流损坏根因排查轮① — 门回绿 + 第一现场捕获网部署
+  （S315「确定性复现」定性降级修正）**：
+  双侧插桩排查执行与关键发现：① **管道字节忠实性证明**——双侧逐帧 hex 追踪
+  （ZW_IPC_TRACE env 门控，transport.rs 单次 write_all 原子行写）绿跑 multiset
+  对照：renderer 写集 453 帧 = browser 读集 453 帧、零 chimera 零丢失——原子
+  帧写完好到达，损坏必发生在帧组装点（SharedWriter::frame 缓冲）或
+  partial-write 残留重试路径，fd 级交错被证伪（帧 ≤ PIPE_BUF + fd mutex 下
+  单 flush 单 write_all 原子）。② **renderer 写侧拓扑测绘**——三线程写同一
+  stdout fd：zero-compositor-publish 444 帧 / renderer-runtime-1 7 帧 /
+  renderer-js-1 2 帧，各持 per-instance SharedWriter（独立 frame 缓冲）+ 共享
+  fd mutex。③ **复现表征修正（诚实性）**——晨窗 3/3 复现发生在 siteopt
+  merge + 编译风暴并行负载期；本轮平静态 0/18+（全帧追踪×8 + 头部追踪带载×6
+  + 无追踪×4 + 门双跑）——S315「确定性复现」定性**降级为「负载窗口高频复现」**
+  ＝ S78 家族「负载触发」定性维持，PR30 proxy_fetch worker 线程化改为该窗口
+  内的暴露者候选（时序贡献候选，非确定性因果）。④ **门回绿**——当前树
+  cdp-e2e 门 PASS 33 绿 deterministic 双跑 YES（校验器在位静默，EXIT=0），
+  绿步集机械 diff 基线零漂移；S315 门红态解除；**引用计数重计 1/10，下次
+  活跑至迟 S326**。⑤ **常驻第一现场捕获网部署（本流诊断面，随切片入库）**——
+  ZW_IPC_VALIDATE=1 已入 make cdp-e2e 入口（renderer SharedWriter::flush 前
+  帧走查校验：[4B len][payload] 逐一走查恰好耗尽，破损即 eprintln tid+hex
+  ——损坏若在组装点形成必被就地抓获）；ZW_IPC_TRACE 双侧逐帧 hex 追踪器
+  （头部 48B 截断降开销，OnceLock 缓存句柄）env 门控生产零开销。**#0 维持
+  开放**：下次负载窗口内自然复现即出组装现场（tid 定位线程 + hex 定位字节
+  形态）→ 最小修复 → 门 + make test 双腿刷新。fmt clean、clippy
+  -p zero-protocol / -p zero-renderer(quickjs) all-targets -D warnings 全过。
+  机器卫生：零 zombie、端口族全空闲、hunt 负载循环全收尾零遗留。
 - **S315（2026-09-14）门红归因轮 — PR30 入树触发 renderer IPC 流损坏确定性
   复现（victim 帧取证在案，门 RED 挂账根因修复）**：
   S314 push 步 rebase 发现第二枚入树提交 7bed4635c（PR #30 siteopt/baidu-
@@ -4584,14 +4612,15 @@ S309 门结论对当前树失效；引用计数冻结。零 zombie 零遗留端�
 
 ## 下一步计划
 
-0. **renderer IPC 流损坏——确定性复现已捕获，根因修复升为最优先（S315 升级）**：
-   S78 故障自 22:32 起未再复现 → **S315 确定性复现**（PR30 proxy_fetch worker 线程化
-   时序暴露，network.events 步 3/3 同步红）；victim 帧 hex 取证 + /tmp/zw-probe 基准
-   序列化对照已归档（evidence/s315-renderer-ipc-corruption/）——线帧 variant 4 字节
-   丢失 + 字节移位 = 写侧流损坏实锤，序列化对称性排除。修复责任在本流（renderer 写
-   路径），主要怀疑面 = SharedWriter partial-write 残留 + 跨实例重试（R3254-L2 注记
-   形态吻合）。S316 起以确定性复现为资产做根因定位（双侧序列插桩 → 定位插入/丢失点
-   → 修复 → 门 + make test 双腿刷新）。修复落地前门维持 RED。
+0. **renderer IPC 流损坏（S78/#0 家族，负载触发间歇）——第一现场捕获网已常驻（S316）**：
+   晨窗 3/3 高频复现（S315，victim 帧 + 基准序列化对照已归档
+   evidence/s315-renderer-ipc-corruption/）→ 平静态 0/18+（S316），定性 =
+   负载窗口触发的写侧组装损坏（fd 级交错已证伪，管道字节忠实性 multiset 证明在案）。
+   **常驻捕获网**：ZW_IPC_VALIDATE=1 已入 make cdp-e2e（flush 前帧走查，破损即打印
+   tid+hex）+ ZW_IPC_TRACE 双侧逐帧追踪器（env 门控）——下次负载窗口内自然复现即出
+   组装现场（tid 定位线程）→ 最小修复（SharedWriter partial-write 残留 +
+   R3254-L2 重试路径为主要怀疑面）→ 门 + make test 双腿刷新。门当前绿态不受本项
+   挂账影响（捕获网零侵扰：门 PASS 33 绿校验器静默）。
 1. **M5 收口评估（绿步 33/34，余 1 步）**：`frames.access` 已解（S39 子帧元数据探测，
    本流单方落地）；余 `frames.click+evaluate` 真挂子帧文档加载 + JS realm + child
    quads（S18 三件套论证对其成立）——渲染流域真协调。DC-2 口径决策：等子帧能力解冻后

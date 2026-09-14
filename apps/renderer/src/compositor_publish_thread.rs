@@ -64,6 +64,34 @@ impl Write for SharedWriter {
     }
 
     fn flush(&mut self) -> io::Result<()> {
+        // S316 诊断（env ZW_IPC_VALIDATE=1 门控）：flush 前校验缓冲是完整帧序列
+        // （[4B len][payload] 逐一走查、恰好耗尽）。若在组装点（fd 写出之前）就已
+        // 破损，此处即抓到流损坏的第一现场——区分「写侧组装破损」vs「fd 级交错」。
+        if std::env::var("ZW_IPC_VALIDATE").as_deref() == Ok("1") && !self.frame.is_empty() {
+            let mut pos = 0usize;
+            let mut ok = true;
+            while pos < self.frame.len() {
+                if pos + 4 > self.frame.len() {
+                    ok = false;
+                    break;
+                }
+                let n = u32::from_le_bytes(self.frame[pos..pos + 4].try_into().unwrap()) as usize;
+                pos += 4 + n;
+                if pos > self.frame.len() {
+                    ok = false;
+                    break;
+                }
+            }
+            if !ok {
+                let hex: Vec<String> = self.frame.iter().map(|b| format!("{b:02x}")).collect();
+                eprintln!(
+                    "[renderer-ipc-validate] malformed frame buffer: tid={} len={} hex={}",
+                    std::thread::current().name().unwrap_or("?"),
+                    self.frame.len(),
+                    hex.join("")
+                );
+            }
+        }
         // R3254-L2：失败路径也清空本帧缓冲——否则吞错后重试会从头重复写入残留字节
         // （IPC 流损坏）。清空即丢弃本帧（写失败通常意味着连接损坏，调用方应退出/回退）。
         let result = (|| {

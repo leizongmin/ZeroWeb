@@ -54,6 +54,7 @@ impl<R: Read, W: Write> PipeTransport<R, W> {
         self.writer
             .flush()
             .map_err(|e| ProtocolError::Channel(format!("flush 失败: {e}")))?;
+        trace_frame("W", data);
         Ok(())
     }
 
@@ -69,8 +70,43 @@ impl<R: Read, W: Write> PipeTransport<R, W> {
         self.reader
             .read_exact(&mut data)
             .map_err(|e| ProtocolError::Channel(format!("读取帧体失败: {e}")))?;
+        trace_frame("R", &data);
         Ok(data)
     }
+}
+
+/// S316 诊断：双侧逐帧 hex 序列插桩（env `ZW_IPC_TRACE=<file>` 门控，生产零开销）。
+/// W = send_frame 写出（写侧视角），R = recv_frame 收到（读侧视角）——对照两序列
+/// 定位流插入/丢失点（S315 victim 帧取证的后继，#0 家族确定性复现排查）。
+/// 整行先组串再单次 write_all（O_APPEND）——防多进程/多线程 fmt 分片写交错污染日志。
+fn trace_frame(dir: &str, data: &[u8]) {
+    use std::io::Write as _;
+    use std::sync::OnceLock;
+    static TRACE_FILE: OnceLock<Option<std::fs::File>> = OnceLock::new();
+    let file = TRACE_FILE.get_or_init(|| {
+        let path = std::env::var("ZW_IPC_TRACE").ok()?;
+        std::fs::OpenOptions::new().create(true).append(true).open(path).ok()
+    });
+    let Some(file) = file else { return };
+    let mut file = file; // &mut via &Option<File> -> need clone-free: use reborrow trick below
+    let mut line = format!(
+        "{} {} tid={} len={}",
+        dir,
+        std::process::id(),
+        std::thread::current().name().unwrap_or("?"),
+        data.len()
+    );
+    // 只记录首 48 字节（id/variant/长度前缀区——S315 victim 签名所在），降低追踪开销
+    // 以免完全压制竞态窗口（S316 实测全帧 hex 追踪下 0/11 复现）。
+    let head = data.len().min(48);
+    for b in &data[..head] {
+        line.push_str(&format!("{b:02x}"));
+    }
+    if head < data.len() {
+        line.push('\u{2026}');
+    }
+    line.push('\n');
+    let _ = file.write_all(line.as_bytes());
 }
 
 /// 判断通道错误消息是否表示 IPC 对端已断开（管道关闭 / Broken pipe）。

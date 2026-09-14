@@ -1476,4 +1476,4 @@ endif
 # 前置：node >= 20 + tests/playwright-matrix/node_modules（npm install）。
 cdp-e2e: target-disk-guard target/test-guard
 	cargo build -p zero-browser --bin zero-browser
-	cd tests/playwright-matrix && ZERO_NOPROXY=1 ../../target/test-guard --time-limit 600 --per-proc-mem 4 --total-mem 8 -- node scripts/verify-deterministic.mjs
+	cd tests/playwright-matrix && ZERO_NOPROXY=1 ZW_IPC_VALIDATE=1 ../../target/test-guard --time-limit 600 --per-proc-mem 4 --total-mem 8 -- node scripts/verify-deterministic.mjs
