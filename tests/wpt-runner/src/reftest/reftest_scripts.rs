@@ -53,6 +53,9 @@ pub(super) fn apply_scripted_dom_mutations(
     let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(html.to_string()));
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new(String::from("about:blank")));
     register_dom_callbacks(&mut *sandbox, &mutations, &dom_html, &page_url, canvas_registry, None);
+    // R4344：清除潜在跨 case 泄漏的 live 查询文档（本函数末尾同样清）——live 文档
+    // 生命周期严格限于本 case 的脚本阶段。
+    zero_engine::publish_live_query_doc(None);
 
     if let Err(e) = sandbox.execute(generate_js_dom_shim()) {
         eprintln!("  [reftest JS] DOM shim init warning: {e}");
@@ -69,6 +72,9 @@ pub(super) fn apply_scripted_dom_mutations(
     // system-symbolic / system-additive 等）此前缓冲永不落地 → ref 页缺失 write 行。
     let scripts_indexed = zero_engine::extract_page_scripts_indexed(html);
     let mut doc_write_hits: Vec<(usize, String)> = Vec::new();
+    // R4344：累计的结构性 delta（锚定重写后）——live 视图刷新时按文档序整批重放。
+    let mut applied_deltas: Vec<Vec<DomMutation>> = Vec::new();
+    let mut prev_cnt = 0usize;
     for (exec_pos, script) in scripts.iter().enumerate() {
         let code: Option<String> = match script {
             PageScript::Inline(c) | PageScript::InlineModule(c) => Some(c.clone()),
@@ -102,6 +108,61 @@ pub(super) fn apply_scripted_dom_mutations(
         if let Err(e) = sandbox.execute(&full) {
             eprintln!("  [reftest JS] Script execution warning: {e}");
         }
+        // R4344：解析期位置锚定 + live 视图增量刷新。本脚本执行后新增的 mutation 属于
+        // 该脚本——先把其中解析期 appendChild 重写为脚本解析位置锚定（文本子 →
+        // InsertAdjacentText@script.afterend），再把累计的结构性 delta 在**树级**
+        // 重放并发布 live 查询文档（R102 `publish_live_query_doc`）+ 换代 pending
+        // 状态（`__zw_reset_pending_state`，R358 快照换代钩子）。
+        //
+        // 为何走树级 live 文档而非改写 dom_html 字符串：字符串快照的
+        // parse→serialize 往返会把**相邻文本节点合并**（序列化无节点边界标记）——
+        // basic-004 门卫断言的「两个独立追加文本节点」边界被合并后 previousSibling
+        // 链仍断在 SCRIPT 上。树级发布保留节点边界；锚定重放保证追加节点落在解析
+        // 位置（脚本之后、解析器后续输出之前），与真浏览器 DOM 序一致。任一 delta
+        // 重放失败 → 回退整批（保留旧视图 = 旧行为兜底，不发布新文档）。
+        let cur_cnt = mutations.lock().unwrap_or_else(|e| e.into_inner()).len();
+        if cur_cnt > prev_cnt {
+            let script_ord = scripts_indexed.get(exec_pos).map(|(_, ord)| *ord);
+            let structural = {
+                let mut rec = mutations.lock().unwrap_or_else(|e| e.into_inner());
+                anchor_parse_phase_appends(html, &mut rec, prev_cnt..cur_cnt, script_ord);
+                rec[prev_cnt..cur_cnt].iter().any(is_structural_mutation)
+            };
+            if structural {
+                let delta: Vec<DomMutation> =
+                    mutations.lock().unwrap_or_else(|e| e.into_inner())[prev_cnt..cur_cnt].to_vec();
+                applied_deltas.push(delta);
+                // 树级重放：每次从原始 html 重 parse，按文档序重放全部累计 delta——
+                // 节点边界在树内保持分离（无序列化往返）。
+                let mut doc = zero_dom::parse_html(html);
+                let mut chain_err: Option<String> = None;
+                for d in &applied_deltas {
+                    if let Err(e) = zero_engine::apply_dom_mutations(&mut doc, d) {
+                        chain_err = Some(e);
+                        break;
+                    }
+                }
+                match chain_err {
+                    None => {
+                        zero_engine::publish_live_query_doc(Some(std::rc::Rc::new(std::cell::RefCell::new(doc))));
+                        let _ = sandbox
+                            .execute("if (typeof __zw_reset_pending_state === 'function') __zw_reset_pending_state();");
+                        if std::env::var("REFTEST_DEBUG").is_ok() {
+                            eprintln!(
+                                "  [reftest JS] live doc refreshed (+{} mutation(s), {} delta batch(es))",
+                                cur_cnt - prev_cnt,
+                                applied_deltas.len(),
+                            );
+                        }
+                    }
+                    Some(e) => {
+                        applied_deltas.pop();
+                        eprintln!("  [reftest JS] live doc refresh warning: {e}");
+                    }
+                }
+            }
+            prev_cnt = cur_cnt;
+        }
         // 本脚本的全序号：extract_page_scripts 与 extract_page_scripts_indexed 对同一
         // html 的过滤序一致，按执行位次对位取全序号（含非 JS type 的 script）。
         if let (Some(&ord), Some(buf)) = (
@@ -121,6 +182,9 @@ pub(super) fn apply_scripted_dom_mutations(
         }
     }
     // (b) 派发 window 'load' 事件，触发 `addEventListener('load', …)` 监听器（best-effort）。
+    // 注：`window.onload = fn` 直写全局属性**无需**再显式调用——R2932 通用 on* IDL
+    // accessor（shim part06）把它注册为 window 'load' listener，本派发即触发。再显式
+    // 调用 = 双 fire（R4340 A/B 净 −11 的伪影源头：block-between-002 实测 12 条 = 2×6 条记录）。
     let _ = sandbox.execute(
         "if (typeof __zw_dispatch_event === 'function') { try { __zw_dispatch_event('html','load',null); } catch(_e){} }",
     );
@@ -162,7 +226,147 @@ pub(super) fn apply_scripted_dom_mutations(
     if !doc_write_hits.is_empty() {
         current = apply_document_write_flushes(current, &doc_write_hits);
     }
+    // R4344：脚本阶段结束——清 live 查询文档（防跨 case 泄漏；渲染管线走 apply 后
+    // 的 html 字符串，不消费 live 文档）。
+    zero_engine::publish_live_query_doc(None);
     (current, focus_selector)
+}
+
+/// R4344：解析期 `appendChild` 位置锚定——把单个内联脚本执行期间（`range`）记录的
+/// `AppendChild { parent_selector, child_handle }` 重写为脚本解析位置插入：
+/// - 文本子（同 range 内 `CreateTextNode` 配对）→ `InsertAdjacentText { script,
+///   "afterend", text }`——真浏览器 DOM 序为 `[.., script, 追加文本.., 解析器后续
+///   输出..]`（basic-004 门卫断言 previousSibling 链跨越「 intervening 空白文本」，
+///   锚必须是紧贴脚本之后的**任意**节点位置，next-element-sibling 不够）；
+/// - 其余（元素子）→ `InsertBefore { ref_selector = 下一个元素兄弟 }`（渲染等价
+///   保守路径）。
+///
+/// 依据（解析流语义）：内联脚本执行时脚本之后的静态内容尚未解析——脚本此刻的
+/// `appendChild` 落在**当前解析位置**，解析器后续输出排在其后。harness 两段式模型
+/// （快照 → 记录 → 末尾统一 apply）把 append 固定在父容器**末尾**，与真浏览器
+/// DOM 序分歧。与 R4321 document.write flush 的「插入于脚本自身位置」同原则。
+///
+/// 守卫（逐条独立判定，不满足保留原 AppendChild 旧行为）：
+/// ① 仅解析期调用（onload handler 的 append 由调用方以不调本函数区分——其发生在
+///   整树解析后，父容器末尾即真位置）；
+/// ② 仅 parent 为脚本元素**祖先**的 append——追加到文档中已完整解析的其他容器
+///   （如 getElementById 命中的先前兄弟容器），容器末尾就是 spec 位置，不锚定；
+/// ③ 脚本元素可定位且唯一选择器可计算（同 doc-write flush 口径）。
+///
+/// 顺序保持：`afterend` 连续插入逐条紧贴脚本之后 → 后者先插入会排前面，故同一
+/// range 内的文本重写按**逆序**赋位，保持原 append 先后序。
+fn anchor_parse_phase_appends(
+    html: &str,
+    recorded: &mut [DomMutation],
+    range: std::ops::Range<usize>,
+    script_ord: Option<usize>,
+) {
+    let Some(ord) = script_ord else { return };
+    let doc = zero_dom::parse_html(html);
+    let Some(&script_id) = doc.get_elements_by_tag_name("script").get(ord) else {
+        return;
+    };
+    let Some(script_sel) = zero_engine::unique_selector_for_node(&doc, script_id) else {
+        return;
+    };
+    let root = doc.root();
+    // 同 range 的 CreateTextNode 配对表（handle → 文本内容）。
+    let text_of: std::collections::HashMap<String, String> = recorded
+        .get(range.clone())
+        .unwrap_or(&[])
+        .iter()
+        .filter_map(|m| match m {
+            DomMutation::CreateTextNode { handle, text } => Some((handle.clone(), text.clone())),
+            _ => None,
+        })
+        .collect();
+    // 先收集重写决策（index → 新记录），文本路径逆序赋位。
+    let mut text_slots: Vec<(usize, DomMutation)> = Vec::new();
+    for i in range.clone() {
+        let Some(m) = recorded.get(i) else { break };
+        let DomMutation::AppendChild {
+            parent_selector,
+            child_handle,
+        } = m
+        else {
+            continue;
+        };
+        // 守卫②：parent 须是脚本元素的祖先（含直父）——沿 parent 链上行判定。
+        let parent_hit = doc
+            .query_selector(root, zero_dom::trim_ascii_ws(parent_selector))
+            .is_some_and(|p| {
+                let mut anc = doc.parent_node(script_id);
+                while let Some(a) = anc {
+                    if a == p {
+                        return true;
+                    }
+                    anc = doc.parent_node(a);
+                }
+                false
+            });
+        if !parent_hit {
+            continue;
+        }
+        if let Some(text) = text_of.get(child_handle) {
+            text_slots.push((
+                i,
+                DomMutation::InsertAdjacentText {
+                    selector: script_sel.clone(),
+                    position: "afterend".into(),
+                    text: text.clone(),
+                },
+            ));
+            continue;
+        }
+        // 元素子：下一个**元素**兄弟（跳过文本/注释）为锚。
+        let mut sib = doc.next_sibling(script_id);
+        let anchor = loop {
+            match sib {
+                Some(s) => {
+                    if matches!(doc.get(s).map(|n| &n.kind), Some(zero_dom::NodeKind::Element(_))) {
+                        break Some(s);
+                    }
+                    sib = doc.next_sibling(s);
+                }
+                None => break None,
+            }
+        };
+        let Some(anchor_id) = anchor else { continue };
+        let Some(ref_selector) = zero_engine::unique_selector_for_node(&doc, anchor_id) else {
+            continue;
+        };
+        text_slots.push((
+            i,
+            DomMutation::InsertBefore {
+                parent_selector: parent_selector.clone(),
+                child_handle: child_handle.clone(),
+                ref_selector,
+            },
+        ));
+    }
+    // 文本重写逆序赋位（afterend 连续插入的序补偿）；元素路径无序敏感，统一处理无碍。
+    for ((slot, _), (_, m)) in text_slots.iter().zip(text_slots.iter().rev()) {
+        recorded[*slot] = m.clone();
+    }
+}
+
+/// R4344：结构性 mutation 判定——解析期视图增量刷新的门（仅结构性变更值得
+/// 重建视图；属性/表单类 delta 维持旧自洽面，缩小行为变更半径）。
+fn is_structural_mutation(m: &DomMutation) -> bool {
+    matches!(
+        m,
+        DomMutation::AppendChild { .. }
+            | DomMutation::AppendChildByHandle { .. }
+            | DomMutation::InsertBefore { .. }
+            | DomMutation::InsertBeforeByHandle { .. }
+            | DomMutation::InsertBeforeByHandleHandle { .. }
+            | DomMutation::InsertAdjacentHtml { .. }
+            | DomMutation::InsertAdjacentText { .. }
+            | DomMutation::InsertAdjacentElement { .. }
+            | DomMutation::Remove { .. }
+            | DomMutation::SetInnerHtml { .. }
+            | DomMutation::SetOuterHtml { .. }
+    )
 }
 
 /// R4321：读 shim `document.write` 写缓冲（`js_dom_shim/part06.js`：write() 只缓冲、
