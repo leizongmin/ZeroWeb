@@ -2,32 +2,35 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-15（S570：静默监测轮——同 tip 复核
-（pull 零新提交，tip = 34d9fc378 即 S569 提交本身，无代码
-变更绿步维持 33）。双层锚点零漂移——自有面对 765429dda 维持
-**4 files +137/-17** 精确一致；全树排除本流 docs 后对
-18d462de6 维持 **36 files +2317/-149**（S527 刷新后新基线）
-与上轮逐项一致零新增，S562 期限轮门活跑 01:53 直接覆盖
-当前代码树证据新鲜。crates/ 观察面 raw 计数实测维持 **25**，
-子帧能力关键词 grep（Rust 面 tests 排除口径）非测试代码零
-命中实测复核，实质判定不变 frames.click+evaluate 维持挂起。
-树不变按门单腿口径免 make test 腿（S336 先例），门结论引用
-S562 期限轮门活跑（首调 PASS 33 绿 deterministic 双跑
-YES EXIT=0 expected_green 33 对称差 none + ZW_IPC_VALIDATE=1
-负载窗在位静默；make test 腿引用 S527 双腿活跑 19,290P/0F
-EXIT=0），**引用计数 7/10→8/10 已达阈值**（8/10 次轮即
-期限轮口径下 **S571 = 期限轮活跑**，S553/S562 先例族；树
-变化提前触发）。机器卫生复核：零 zombie、9222/45029/
-34293/19222 端口族全空闲、零端口竞争面、控制面零外来提交；
-负载 2.55→1.80 回落窗已归因——top CPU 兄弟流 ZeroWeb-2
-zero_integration_tests 腿 142%（同 PID 2147020 延续 S569
-152% 回落，/proc cwd 实测双 clone 隔离），本树零活跃腿
-——本轮静默零活跑需求回落窗记账。解冻条件实质判定不变：
-①观察面 raw 25 维持，子帧三件套 iframe.contentDocument
-null 现状不变，frames.click+evaluate 维持挂起；② 本流
-控制面 docs/goal/cdp-protocol/ 零外来提交，DC-2 口径无新
-拍板记录。goal 自有面零新缺口、无扩展面（S40-S569 重审
-结论延续））
+**最后更新**: 2026-09-15（S571：期限轮活跑——引用计数 8/10
+到期（S553/S562 先例族；pull 零新提交，tip = 805de3873 即
+S570 提交本身；代码树自 S527 双腿后零变更，活跑直接覆盖
+当前树）。预检全净（零 zombie、9222/45029/34293/19222
+端口族全空闲零竞争）后门腿活跑 setsid 脱离+轮询收口——
+make cdp-e2e（ZW_IPC_VALIDATE=1 在位）02:09:52 启动
+02:10:29 落盘，**首调即 PASS 33 绿 deterministic 双跑 YES
+EXIT=0**：run1/run2 同态 exit1（含期望失败步骤），
+expected_green 33 对称差 none（observations 为脚本硬编码
+always-ok 观测性步骤、verify L100 显式排除于 green 集外，
+对称差复核口径与 S562 一致），唯一失败步骤
+frames.click+evaluate（期望失败家族、挂起维持），
+steps/determinism-report 02:10:29 同轮新鲜落盘，
+ZW_IPC_VALIDATE 校验器在位静默，#0 复现监测零命中（首调
+即绿红形态零再现延续），zero-engine dead_code warning
+（match_media_to_json）既有形态维持。**负载窗亚型**——兄弟
+流 ZeroWeb-2 make test 序列接续推进（窗内 zero_protocol
+测试腿起步 + cargo test --workspace --exclude 排除口径 +
+clippy 双腿，/proc cwd 实测归因，双 clone 隔离零污染本树），
+负载 2.23→1.60 回落窗，9222 端口族活跑前后全空闲零竞争；
+**活跑后本树零残留**。树不变按 S476/S514 期限轮口径门单腿
+免 make test 腿，引用 S527 双腿活跑 19,290P/0F EXIT=0 直接
+覆盖当前树。**引用计数归零重计（8/10→0/10），下轮起门
+结论锚点切换 S571 门活跑**（S572 起 1/10，树变化仍提前
+触发）。双层锚点与观察面引用 S570 同树实测（自有面对
+765429dda 维持 4 files +137/-17；全树排除本流 docs 后对
+18d462de6 维持 36 files +2317/-149；crates/ raw 25；子帧
+关键词 tests 排除口径零命中；frames.click+evaluate 维持
+挂起）。解冻条件①②不变，DC-2 无新拍板。）
 
 ---
 
@@ -58,6 +61,35 @@ null 现状不变，frames.click+evaluate 维持挂起；② 本流
 
 ## 已完成切片
 
+- **S571（2026-09-15）期限轮活跑 — 引用计数 8/10 到期（S553/S562
+  先例族；pull 零新提交，tip = 805de3873 即 S570 提交本身；
+  代码树自 S527 双腿后零变更，活跑直接覆盖当前树）**：
+  预检全净（零 zombie、9222/45029/34293/19222 端口族全
+  空闲零竞争）后门腿活跑 setsid 脱离+轮询收口——make
+  cdp-e2e（ZW_IPC_VALIDATE=1 在位）02:09:52 启动 02:10:29
+  落盘，**首调即 PASS 33 绿 deterministic 双跑 YES EXIT=0**：
+  run1/run2 同态 exit1（含期望失败步骤），expected_green 33
+  对称差 none（observations 为脚本硬编码 always-ok 观测性
+  步骤、verify L100 显式排除于 green 集外，本轮对称差复核
+  口径与 S562 一致），唯一失败步骤 frames.click+evaluate
+  （期望失败家族、挂起维持），steps/determinism-report
+  02:10:29 同轮新鲜落盘，ZW_IPC_VALIDATE 校验器在位静默，
+  #0 复现监测零命中（首调即绿红形态零再现延续），zero-engine
+  dead_code warning（match_media_to_json）既有形态维持。
+  **负载窗亚型**——兄弟流 ZeroWeb-2 make test 序列接续推进
+  （窗内 zero_protocol 测试腿起步 + cargo test --workspace
+  --exclude 排除口径 + clippy 双腿，/proc cwd 实测归因，
+  双 clone 隔离零污染本树），负载 2.23→1.60 回落窗，9222
+  端口族活跑前后全空闲零竞争；**活跑后本树零残留**。树不变
+  按 S476/S514 期限轮口径门单腿免 make test 腿，引用 S527
+  双腿活跑 19,290P/0F EXIT=0 直接覆盖当前树。**引用计数
+  归零重计（8/10→0/10），下轮起门结论锚点切换 S571 门
+  活跑**（S572 起 1/10，树变化仍提前触发）。双层锚点与
+  观察面引用 S570 同树实测（自有面对 765429dda 维持 4 files
+  +137/-17；全树排除本流 docs 后对 18d462de6 维持 36 files
+  +2317/-149；crates/ raw 25；子帧关键词 tests 排除口径
+  零命中；frames.click+evaluate 维持挂起）。解冻条件①②
+  不变，DC-2 无新拍板。
 - **S570（2026-09-15）静默监测轮 — 同 tip 复核（pull 零新提交，
   tip = 34d9fc378 即 S569 提交本身；无代码变更，绿步维持 33）**：
   双层锚点复核通过：自有面锚点对 765429dda 维持 **4 files
