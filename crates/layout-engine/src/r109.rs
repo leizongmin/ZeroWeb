@@ -34,6 +34,14 @@ pub(crate) fn shrink_r109_anon_blocks(
         && matches!(box_node.writing_mode, WritingModeValue::HorizontalTb)
         && !box_node.is_absolute
         && !box_node.is_fixed
+        // R4338：block-mixed 宿主的匿名块片段**不收缩**——§9.2.1.1 匿名块盒是块容器
+        // 的块级子（满宽语义），文本贴宽收缩只适用于 split inline 的片段（其 inline
+        // border/background 须落在文本宽）。block-mixed 片段 dom_id = 宿主容器
+        //（taffy_to_dom 映射），is_r109_block_mixed 由此为 true；split inline 片段的
+        // dom_id = inline 元素自身，该标志为 false（run-in-contains-block-001：片段被
+        // 缩到 107.2 后 R3770 片段 remeasure 以缩宽跑 IFC 折 2 行 → 父盒 19→37.2，
+        // 后继整体下移 18.6px = 3.95% 签名）。
+        && !box_node.is_r109_block_mixed
     {
         // 1. fragment border 边选择（先于收缩，使 frame 用开放后的 border）。
         if box_node.r109_first_fragment {
