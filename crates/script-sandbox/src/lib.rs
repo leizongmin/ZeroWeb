@@ -168,6 +168,12 @@ pub trait Sandbox {
     fn resolve_async_callback(&mut self, _id: &str, _result: &str) {}
     /// 设置脚本执行超时（毫秒），0 表示无超时。
     fn set_timeout_ms(&mut self, timeout_ms: u64);
+    /// R-baidu2/P3 slice-2：取走自上次调用以来收集的未捕获异常报告
+    /// （`(text, line_number, column_number)`；V8 = isolate message listener +
+    /// promise-reject 回调；QuickJS 默认不支持，返回空）。无收集时返回空。
+    fn take_uncaught_reports(&mut self) -> Vec<(String, u32, u32)> {
+        Vec::new()
+    }
     /// 重置上下文（清空 JS 状态）。
     fn reset_context(&mut self);
     /// 返回沙箱配置的引用。
