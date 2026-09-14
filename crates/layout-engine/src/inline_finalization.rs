@@ -1562,9 +1562,8 @@ fn backfill_run_in_boxes(
     // run-in-block-between-001 的基线自洽形态——A/B 实证取整反致 1.08→1.73%）。
     let ifc_bottom = inline_ctx.lines.last().map(|l| l.y + l.height).unwrap_or(0.0);
     if root.height <= 0.5 && ifc_bottom > root.height {
-        let rounded = ifc_bottom.round();
-        root.content_height = rounded;
-        root.height = rounded;
+        root.content_height = ifc_bottom;
+        root.height = ifc_bottom;
     }
     root.children.push(LayoutBox {
         node_id: Some(run_in_id),
@@ -1783,7 +1782,12 @@ pub(crate) fn measure_text_content(
         };
     }
 
-    if !has_inline_content(doc, styles, dom_id) {
+    // R4333：并入 run-in 前缀的容器**视作有 inline 内容**——空块合并目标（run-in-block-between-001）
+    // 此前在此早退，R4332 的前缀注入（下方 set_run_in_prepended）永不执行 → taffy 测高 0，
+    // 只能靠 backfill_run_in_boxes 事后回写未取整行高；而後继块的 taffy 高度已按「前块高 0」
+    // 的错误相位网格取整，回写把亚像素错相位固化进流内（ref 页普通块 19/18 vs test 18.6/19 的
+    // 1.08% 恒等族签名）。放行后测量 IFC 含前缀行，taffy 对整页一次性取整，相位一致。
+    if !has_inline_content(doc, styles, dom_id) && run_in_prepended.is_none() {
         // 无行内内容的叶节点（如空的 flex/grid 子元素）：
         // 尺寸来自 known_dimensions（taffy 已知的尺寸），
         // 回退到 CSS computed style 的显式 width/height。
