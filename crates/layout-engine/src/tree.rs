@@ -3727,6 +3727,11 @@ fn build_subtree(
     if run_in_merged {
         taffy_style.border = taffy::geometry::Rect::zero();
         taffy_style.padding = taffy::geometry::Rect::zero();
+        // R4336：并入态 run-in 自盒高度显式钳 0——R4331 清零 border/padding 后 taffy
+        // 对该 leaf 仍可能给出幻影高度（run-in-basic-009：measure 返 0、leaf 数学为 0，
+        // taffy final h=15，后继块整体下移 15px）。显式 Definite(0) 在尺寸解析源头钳制，
+        // 绕过任何缓存/拉伸路径。
+        taffy_style.size.height = taffy::style::Dimension::length(0.0);
     }
     let taffy_id = if child_taffy_ids.is_empty() {
         ctx.taffy.new_leaf_with_context(taffy_style, dom_id).unwrap()
