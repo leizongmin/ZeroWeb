@@ -2,37 +2,37 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-15（S591：静默监测轮——同 tip 复核
-（pull 零新提交，tip = 299a7f7bf 即 S590 提交本身，无代码
-变更绿步维持 33）。双层锚点零漂移——自有面对 765429dda 维持
-**4 files +137/-17** 精确一致；全树排除本流 docs 后对
-18d462de6 维持 **37 files +2530/-164**（S575 刷新后新基线）
-与上轮逐项一致零新增，S583 门活跑 02:56 直接覆盖当前代码
-树证据新鲜（树不变按 S476/S514 期限轮口径 make test 引用
-S575 双腿）。crates/ 观察面 raw 计数实测维持 **26**，子帧
-能力关键词 grep（Rust 面 tests 排除口径）非测试代码零命中
-实测复核（命中面为 dom/engine/webview 三处 tests 路径
-7 文件测试代码维持既有形态），实质判定不变
-frames.click+evaluate 维持挂起。树不变按门单腿口径免
-make test 腿（S336 先例），门结论引用 S583 门活跑（首调
-make cdp-e2e PASS 33 绿 deterministic 双跑 YES EXIT=0
-expected_green 33 对称差 none + ZW_IPC_VALIDATE=1 在位
-静默）+ 测试腿引用 S575 双腿 make test 67 组 19,290P/0F
-EXIT=0，**引用计数 7/10→8/10 已达阈值**（S583 新周期；
-8/10 次轮即期限轮口径下 **S592 = 期限轮活跑**——
-S553/S562/S571/S583 先例族，门单腿活跑刷新证据新鲜度；
-树变化提前触发双腿刷新）。机器卫生复核：零
-zombie、9222/45029/34293/19222 端口族全空闲、零端口竞争
-面、控制面零外来提交；负载 1.66→2.34 抬升窗已归因——兄弟流
-前序 zero_integration_tests 腿（S590 窗内 138%）轮内
-收尾出窗，top CPU >50% 阈值扫空零活跃编译/测试腿
-（余量 agent 腿 4% 级与桌面基建 selkies），loadavg 惯性
-余波（S578 先例口径），本树零活跃腿。解冻条件
-实质判定不变：①观察面 raw 26 维持，子帧三件套
-iframe.contentDocument null 现状不变，frames.click+evaluate
-维持挂起；② 本流控制面 docs/goal/cdp-protocol/ 零外来
-提交，DC-2 口径无新拍板记录。goal 自有面零新缺口、无扩展
-面（S40-S590 重审结论延续））
+**最后更新**: 2026-09-15（S592：期限轮活跑——引用计数 8/10
+到期（S553/S562/S571/S583 先例族；pull 零新提交，tip =
+9c2a2f3a9 即 S591 提交本身，代码树自 S583 门活跑后零
+变更——双层锚点复核自有面对 765429dda 维持 **4 files
++137/-17** 精确一致、全树排除本流 docs 对 18d462de6 维持
+**37 files +2530/-164** 逐项一致零新增，活跑直接覆盖当前
+树）。预检全净（9222/45029/34293/19222 端口族全空闲零
+S198 端口竞争、零 zombie）后门腿活跑 setsid 脱离 + 轮询
+收口：make cdp-e2e（ZW_IPC_VALIDATE=1 在位）03:10:09
+启动 03:10:42 落盘，**首调即 PASS 33 绿**（run 1/run 2
+均含期望失败步骤 exit 1，deterministic: YES）EXIT=0，
+expected_green 33 对称差 none（机械复核 33=33 双向零差）、
+steps-report 同轮新鲜落盘、唯一失败 frames.click+evaluate
+期望失败家族挂起维持、ZW_IPC_VALIDATE 校验器在位静默、
+zero-engine dead_code warning（match_media_to_json）既有
+形态维持。树不变按 S476/S514 期限轮口径门单腿免
+make test 腿（S336 先例），引用 S575 双腿活跑（测试腿
+make test 67 组 19,290P/0F EXIT=0）。**引用计数归零重计
+8/10→0/10**，下轮起门结论锚点切换 S592 门活跑、S593 起
+1/10（树变化提前触发双腿刷新）。负载窗已归因——兄弟流
+ZeroWeb-2 make test 序列（zero_integration_tests 205%
+PID 2585431 + test-guard 腿 PID 2571864/2571865，
+/proc cwd 实测全链路 ZeroWeb-2 clone）双 clone 隔离零
+污染本树，本树零活跃腿，负载 5.69（轮初）→2.04（活跑后
+出窗回落）。活跑后机器卫生零 zombie、9222/45029/34293/
+19222 端口族零残留、零遗留进程。解冻条件实质判定不变：
+① 观察面 raw 26 维持，子帧三件套 iframe.contentDocument
+null 现状不变，frames.click+evaluate 维持挂起；② 本流
+控制面 docs/goal/cdp-protocol/ 零外来提交，DC-2 口径无
+新拍板记录。goal 自有面零新缺口、无扩展面（S40-S591
+重审结论延续））
 
 ---
 
@@ -63,6 +63,44 @@ iframe.contentDocument null 现状不变，frames.click+evaluate
 
 ## 已完成切片
 
+- **S592（2026-09-15）期限轮活跑 — 引用计数 8/10 到期（S553/S562/S571/S583
+  先例族；pull 零新提交，tip = 9c2a2f3a9 即 S591 提交本身；
+  代码树自 S583 门活跑后零变更，活跑直接覆盖当前树）**：
+  双层锚点活跑前复核通过——自有面对 765429dda 维持 **4 files
+  +137/-17** 精确一致（Makefile 1/1 + apps/browser/README.md
+  1/0 + headless/mod.rs 25/0 + headless/session.rs 110/16）、
+  全树排除本流 docs 对 18d462de6 维持 **37 files +2530/-164**
+  （S575 刷新后新基线）逐项一致零新增。预检全净
+  （9222/45029/34293/19222 端口族全空闲零 S198 端口竞争、
+  零 zombie）后门腿活跑 setsid 脱离 + 轮询收口：
+  make cdp-e2e（ZW_IPC_VALIDATE=1 在位）03:10:09 启动
+  03:10:42 落盘，**首调即 PASS 33 绿**（run 1/run 2 均含
+  期望失败步骤 exit 1，deterministic: YES）EXIT=0，
+  expected_green 33 对称差 none（机械复核本轮 green steps
+  集合与基线集合双向零差 33=33）、steps-report 同轮新鲜
+  落盘（tests/playwright-matrix/out/steps-report.json 03:10
+  窗写入）、唯一失败 frames.click+evaluate 期望失败家族
+  挂起维持、ZW_IPC_VALIDATE 校验器在位静默（validate/
+  violation/mismatch 扫描零命中，首调即绿形态零再现）、
+  zero-engine dead_code warning（match_media_to_json）既有
+  形态维持。**负载窗亚型**：兄弟流 ZeroWeb-2 make test 序列
+  （zero_integration_tests 205% PID 2585431 + test-guard 腿
+  PID 2571864/2571865，/proc cwd 实测全链路 ZeroWeb-2
+  clone）同窗——双 clone
+  隔离零污染本树，本树零活跃腿（cwd=本 clone 活跃编译/
+  测试腿扫描零命中，仅本轮自身 rally/agent 腿），负载
+  5.69（轮初）→2.04（活跑后出窗回落）。树不变按
+  S476/S514 期限轮口径门单腿免 make test 腿（S336 先例），
+  引用 S575 双腿活跑（测试腿 make test 67 组 19,290P/0F
+  EXIT=0）。**引用计数归零重计 8/10→0/10**，下轮起门结论
+  锚点切换 S592 门活跑、S593 起 1/10（树变化提前触发双腿
+  刷新）。活跑后机器卫生零 zombie、端口族零残留、零遗留
+  进程。解冻条件实质判定不变：① 观察面 raw 26 维持（本轮
+  复测一致），子帧三件套 iframe.contentDocument null 现状
+  不变，frames.click+evaluate 维持挂起；② 本流控制面
+  docs/goal/cdp-protocol/ 零外来提交（近 20 提交触本流
+  控制面全为本流 S5xx），DC-2 口径无新拍板记录。goal 自有
+  面零新缺口、无扩展面（S40-S591 重审结论延续）。
 - **S591（2026-09-15）静默监测轮 — 同 tip 复核（pull 零新提交，
   tip = 299a7f7bf 即 S590 提交本身；无代码变更，绿步维持 33）**：
   双层锚点复核通过：自有面锚点对 765429dda 维持 **4 files
