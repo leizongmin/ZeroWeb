@@ -2,31 +2,30 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-14（S505：静默监测轮——同 tip 复核
-（pull 零新提交，tip = 6edfa81b9 即 S504 提交本身，无代码
-变更绿步维持 33）。双层锚点零漂移——自有面对 765429dda 维持
-**4 files +137/-17** 精确一致；全树排除本流 docs 后对
-18d462de6 维持 **12 files +366/-27** 与 S504 逐项一致零新增，
-代码树自 S482 双腿后零变更，S499 门活跑 21:34 直接覆盖当前树
-证据新鲜。crates/ 观察面 raw 计数实测维持 **20**
-（git log 默认口径 8fb39cd46..HEAD 限 crates/ 面），子帧能力
-关键词 grep 非测试代码零命中实测复核，实质判定不变
-frames.click+evaluate 维持挂起。树不变按门单腿口径免
-make test 腿（S336 先例），门结论引用 S499 期限轮活跑（PASS
-33 绿 deterministic 双跑 YES EXIT=0 ZERO_DRIFT=YES 21:34
-落盘 + ZW_IPC_VALIDATE=1 在位静默 + clippy all-targets 零
-命中），**引用计数 6/10→7/10，下次活跑至迟 S509**（树变化
-或 9/10 到期即提前触发）。机器卫生复核：零 zombie、
-9222/45029/34293/19222 端口族全空闲、零竞争本流腿、控制面
-零外来提交；负载 5.24 负载窗（归因 ZeroWeb-cronjob clone
-编译+基准双腿并窗——cargo 编译腿 cwd 实证 + layout_bench
-基准腿 98% CPU，S228/S504 cronjob 腿先例族非端口竞争面）
-——本轮静默零活跑需求负载窗记账。解冻条件实质判定不变：
-① 观察面 raw 20 维持，子帧三件套 iframe.contentDocument
-null 现状不变，frames.click+evaluate 维持挂起；② 本流
-控制面 docs/goal/cdp-protocol/ 零外来提交，DC-2 口径无新
-拍板记录。goal 自有面零新缺口、无扩展面（S40-S504 重审
-结论延续））
+**最后更新**: 2026-09-14（S506：树变化刷新轮——兄弟流渲染
+R4349（bd742255e，background 简写多层）入树，3 files
++299/-4，crates/style-system 属渲染流专属 crate 与本流零
+重叠（S245/S258/S289/S290/S314/S317/S340/S341/S342/S383/
+S384/S456 先例族）。双层锚点——自有面对 765429dda 维持
+**4 files +137/-17** 零漂移；全树锚点刷新至 **14 files
++665/-31**（12 项原维持 + style-system background.rs
+238/4 + shorthand/tests/basic.rs 59/0，rendering-compat.md
+30→32）。crates/ 观察面 raw **20→21**（R4349 入树），子帧
+关键词非测试代码零命中不变，frames.click+evaluate 维持
+挂起。**双腿活跑首调即收口**：门 PASS 33 绿 deterministic
+双跑 YES EXIT=0 绿步集机械 diff 基线零漂移 21:53 落盘
+ZW_IPC_VALIDATE 在位静默（#0 监测零命中）+ make test 一调
+收口 **19,290P/0F** EXIT=0 零 panic（19,288→19,290 +2 =
+R4349 shorthand 新增用例，组合态首次全量覆盖，渲染流
+style-system 修复对门禁绿态零影响）。**引用计数重计 1/10，
+下次活跑至迟 S516**（树变化或 9/10 到期即提前触发）。机器
+卫生零 zombie、9222 端口族门跑窗全空闲零竞争（cronjob clone
+测试腿与 make test 腿并窗属编译测试负载面非端口竞争面）、
+控制面零外来提交。解冻条件实质判定不变：① 观察面 raw 21
+（R4349 归因记账），子帧三件套 iframe.contentDocument null
+现状不变；② 本流控制面 docs/goal/cdp-protocol/ 零外来提交，
+DC-2 口径无新拍板记录。goal 自有面零新缺口、无扩展面
+（S40-S505 重审结论延续））
 
 ---
 
@@ -57,6 +56,46 @@ null 现状不变，frames.click+evaluate 维持挂起；② 本流
 
 ## 已完成切片
 
+- **S506（2026-09-14）树变化刷新轮 — 兄弟流 R4349 入树
+  （pull 带入 bd742255e，3 files +299/-4；绿步维持 33）**：
+  归因：渲染流 R4349（background 简写多层 <bg-layer># 落地，
+  corpus 14828→14831 净+3）触达 crates/style-system/
+  shorthand/background.rs（+242）+ shorthand/tests/basic.rs
+  （+59）+ rendering-compat.md（+2）——style-system 属渲染流
+  专属 crate，与本流自有面零重叠（S245/S258/S289/S290/S314/
+  S317/S340/S341/S342/S383/S384/S456 树变化刷新轮先例族）。
+  双层锚点复核：自有面对 765429dda 维持 **4 files +137/-17**
+  零漂移（Makefile 1/1 + apps/browser/README.md 1/0 +
+  headless/mod.rs 25/0 + headless/session.rs 110/16）；
+  全树锚点刷新至 **14 files +665/-31**（S495-S505 十一轮
+  维持的 12 项逐项原值 + background.rs 238/4 +
+  shorthand/tests/basic.rs 59/0，rendering-compat.md 30/0
+  →32/0）。crates/ 观察面 raw **20→21**（R4349 入树，实测
+  记账），子帧能力关键词 grep（contentDocument/
+  content_document/subframe/sub_frame）非测试代码零命中
+  实测复核（命中面全为 engine js_dom_bridge_tests 测试代码
+  维持既有形态），实质判定不变 frames.click+evaluate 维持
+  挂起。**双腿活跑首调即收口（S245/S289/S290/S314/S341/
+  S342 先例口径）**：门 make cdp-e2e 负载净窗（21:52 开跑
+  时负载 2.29 端口族全空闲）首调 PASS 33 绿 deterministic
+  双跑 YES EXIT=0（双 run exited 1 含期望失败步骤），绿步集
+  机械 diff 基线零漂移（expected 33 对称差 none），determinism
+  -report + steps-report 21:53 同轮新鲜落盘，ZW_IPC_VALIDATE=1
+  在位静默（#0 复现监测零命中）；make test 一调收口
+  **19,290P/0F** EXIT=0 零 panic 零失败（19,288→19,290 +2 =
+  R4349 shorthand 新增用例，R4349 组合态首次全量覆盖，渲染流
+  style-system 修复对门禁绿态与全仓绿态零影响）。**引用计数
+  重计 1/10，下次活跑至迟 S516**（树变化或 9/10 到期即提前
+  触发）。机器卫生复核：零 zombie、9222/45029/34293/19222
+  端口族门跑窗全空闲零竞争本流腿、控制面零外来提交（最近 15
+  提交全为本流 S491-S505）；make test 腿与 ZeroWeb-cronjob
+  clone 测试腿并窗（cwd 实证，S496 编译测试负载先例族非端口
+  竞争面）。解冻条件实质判定不变：① 观察面 raw 21（R4349
+  归因记账），子帧三件套 iframe.contentDocument null 现状
+  不变，frames.click+evaluate 维持挂起；② 本流控制面
+  docs/goal/cdp-protocol/ 零外来提交，DC-2 口径无新拍板
+  记录。goal 自有面零新缺口、无扩展面（S40-S505 重审结论
+  延续）。
 - **S505（2026-09-14）静默监测轮 — 同 tip 复核（pull 零新提交，
   tip = 6edfa81b9 即 S504 提交本身；无代码变更，绿步维持 33）**：
   双层锚点复核通过：自有面锚点四枚归因口径精确一致（对 765429dda
