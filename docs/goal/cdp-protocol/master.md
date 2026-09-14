@@ -2,19 +2,17 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-14（S320：遗留清理 + RED 取证排除轮——pull 零新提交
-（tip=65ccb68bf 即 S319 提交本身），双层锚点零漂移（口径同 S319：自有面
-apps/browser README 对 765429dda 恰 +1 已归因基线；全树 tracked 代码树对
-S317 双腿刷新覆盖树 736f16525 零变化）。**发现并清理 S316 会话延伸 hunt
-孤儿**（3 busy-loop，08:50:20 起 56 分钟，PPID=1——S316「全收尾零遗留」
-与 S317/S318/S319「零遗留进程」记账修正，检查模式加入 zw-loop/zw-hunt
-匹配）；**该 hunt 09:01 RED（GREEN≠33）从未记档，本轮取证双证据排除
-#0 损坏家族**（trace multiset 866W=866R 零 chimera + stderr 0 字节零
-corruption 标记），定性 S78 家族 GREEN≠33 负载触发新观测（traced+3
-busy-loop 触发；S316 平静态 0/18+ / loop3 0/6 / loop4 0/4 不触发），
-#0 维持开放零组装现场；附带数据点：S317 门 + make test 在孤儿载荷下绿跑。
-证据归档 evidence/s320-hunt-red-capture/。门结论引用 S317 活跑，引用计数
-4/10 下次活跑至迟 S327；绿步维持 33；解冻条件①②实质不变）
+**最后更新**: 2026-09-14（S321：静默监测轮——同 tip 复核（5c994a9de，即
+S320 提交本身），双层锚点零漂移（自有面维持 apps/browser README +1 已归因
+基线；全树锚点 tracked 代码树对 S317 双腿刷新覆盖树 736f16525 零变化），
+门结论引用 S317 活跑（门 PASS 33 绿 deterministic YES ZERO_DRIFT 09:11 +
+make test 19,287P/0F 两调收口——S320 记账该证据系孤儿载荷下绿跑），引用
+计数 5/10 下次活跑至迟 S327；绿步维持 33；解冻条件①观察面不变（crates/
+自 8fb39cd46 维持九枚均非渲染流子帧能力，frames.click+evaluate 维持挂起），
+②DC-2 无新拍板；机器卫生全净含 S320 新增 zw-loop/zw-hunt 检查模式
+（零孤儿 hunt 遗留）；零编译测试腿（负载 5.78 为并行流 agent 常驻腿）；
+S78 家族维持 S320 定性（traced+3 busy-loop 触发、常规门载荷不触发）；
+零 zombie 零遗留端口）
 
 ---
 
@@ -45,6 +43,26 @@ busy-loop 触发；S316 平静态 0/18+ / loop3 0/6 / loop4 0/4 不触发），
 
 ## 已完成切片
 
+- **S321（2026-09-14）静默监测轮 — 同 tip 复核（无代码变更，绿步维持 33）**：
+  pull 零新提交（tip = 5c994a9de，即 S320 提交本身）——双层锚点口径复核
+  通过：自有面锚点增量零漂移（硬核对维持仅 apps/browser/README.md +1 行 =
+  S255 已归因的 52695a7c1 漂移基线，对 765429dda 基点实测恰 +1 行）；全树
+  锚点复核（tracked 代码树对 736f16525 = S317 双腿刷新覆盖树零变化，
+  736f16525..HEAD 仅本流 S320 docs 面增量——S317 门 + make test 证据直接
+  覆盖当前树）零外部变化。双解冻条件实质判定不变：① crates/ 自 8fb39cd46
+  维持九枚（R4325-F/R4328-F/R4330-F/PR30 含 7228ffeea+11da119cf/R4331/
+  本流 S315+S316 诊断面），均非渲染流子帧文档加载 + JS realm 能力，
+  frames.click+evaluate 维持挂起；② docs/goal 自 S320 零非本流提交
+  （pull 零新提交），DC-2 口径无新拍板记录。门结论引用 S317 活跑（门
+  PASS 33 绿 deterministic 双跑 YES ZERO_DRIFT=YES 09:11 + make test 两调
+  收口 19,287P/0F——S320 记账该证据系孤儿 3 busy-loop 载荷下绿跑，S78
+  家族维持 traced+busy-loop 组合触发、常规门载荷不触发的收窄定性），引用
+  计数 4/10→**5/10**，下次活跑至迟 S327。机器卫生复核（含 S320 新增
+  模式）：零 zombie、9222/45029/34293/19222 全空闲、`pgrep -af
+  'zw-loop|zw-hunt'` 零孤儿 hunt 遗留、零编译测试腿（cargo/rustc/make
+  全 0；负载 1min 5.78 / 5min 5.13 / 15min 6.15 为并行流 agent 常驻腿，
+  本轮零活跑需求不受影响）。goal 自有面零新缺口、无扩展面（S40-S320
+  重审结论延续）。
 - **S320（2026-09-14）遗留清理 + RED 取证排除轮 — 静默监测轮升级（无代码
   变更，绿步维持 33）**：
   pull 零新提交（tip = 65ccb68bf，即 S319 提交本身）——双层锚点口径复核
