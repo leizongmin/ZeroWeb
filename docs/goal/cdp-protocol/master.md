@@ -2,25 +2,26 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-14（S411：静默监测轮——pull 零新提交（tip =
-b01c2b765 即 S410 提交本身），无代码变更绿步维持 33。双层锚点零
-漂移：自有面按 S351 修正后四枚归因口径精确一致（对 765429dda 硬
-核对 4 files +137/-17 = Makefile 1/1 + apps/browser/README.md 1/0 +
-headless/mod.rs 25/0 + headless/session.rs 110/16，零新增漂移）；
-全树排除本流 docs 后 tracked 代码树对 18d462de6 维持 5 files +36/-2
-基线（layout-engine 四文件 R4335/R4336/R4338 + rendering-compat.md
-兄弟流控制面）与 S406 活跑复核后状态逐项一致零新增，S406 门活跑
-16:10 直接覆盖当前树证据新鲜。门结论引用 S406 活跑（门 PASS 33 绿
-deterministic 双跑 YES EXIT=0 ZERO_DRIFT=YES 16:10:20 落盘 + make
-test S391 19,288P/0F 组合态结论延续 + ZW_IPC_VALIDATE 在位静默），
-**引用计数 4/10→5/10，下次活跑至迟 S416**。crates/ 观察面 raw 计数
-实测维持 17，非测试代码子帧能力关键词零命中实测复核，实质判定不变
-frames.click+evaluate 维持挂起。机器卫生：零 zombie、端口族全
-空闲、9333 维持缺席、零竞争腿零孤儿 hunt；**负载 1.10 归因 agent
-面**（claude/codex 会话 + Xvfb/selkies 桌面族，零兄弟流验证腿在窗，
-S351 先例净窗口径）——本轮静默零活跑需求。解冻条件①②实质判定
-不变（观察面 raw 17 维持；本流控制面零外来提交，DC-2 无新拍板）。
-goal 自有面零新缺口、无扩展面（S40-S410 重审结论延续））
+**最后更新**: 2026-09-14（S412：树变化刷新轮——兄弟流 R4339
+（271d89f5c）入树触发双腿刷新（S245→S342→S383/S384/S391 先例）。
+R4339 = 渲染流 inline 合并目标块子堆叠补偿 + Path B 块级判定注入
+（layout-engine inline 族三文件 + engine/paint/painter/text.rs +13）
++ rendering-compat.md +2——本流工作面零重叠、非子帧能力（关键词
+grep 零命中）。双层锚点：自有面对 765429dda 维持 4 files +137/-17
+零新增漂移；全树排除本流 docs 后对 18d462de6 扩至 **8 files
++124/-21** 新基线（layout-engine 六文件 R4335/R4336/R4338/R4339 +
+engine/paint/painter/text.rs + rendering-compat.md）。crates/ 观察
+面 raw **17→18**（+1 = R4339）。**腿一 cdp-e2e 门首调即收口 ~50s：
+PASS 33 绿 deterministic 双跑 YES EXIT=0 ZERO_DRIFT=YES**（16:20:49
+落盘，R4339 组合态首次活跑覆盖，ZW_IPC_VALIDATE 静默，首调红连续
+第廿七次零再现）；**腿二 make test 一调收口 19,288P/0F EXIT=0**
+（67 组 result 全 ok，计数与 S341-S391 基线持平，R4339 组合态首次
+全量覆盖）。**引用计数归零（双腿新鲜落盘），下次活跑至迟 S422**
+（恢复 +10 口径）。机器卫生（双腿后）：零 zombie、端口族全释放、
+零遗留腿；负载 2.53 为 make test 自腿衰减尾。解冻条件①实质判定
+不变（raw 18，R4339 非子帧文档加载 + JS realm，frames.click+
+evaluate 维持挂起）；②不变（本流控制面零外来提交，DC-2 无新拍
+板）。goal 自有面零新缺口、无扩展面（S40-S411 重审结论延续））
 
 ---
 
@@ -51,6 +52,45 @@ goal 自有面零新缺口、无扩展面（S40-S410 重审结论延续））
 
 ## 已完成切片
 
+- **S412（2026-09-14）树变化刷新轮 — 兄弟流 R4339（271d89f5c）入树
+  触发双腿刷新（S245→S342→S383/S384/S391 先例；本轮引用计数 5/10，
+  刷新动因为树变化非期限轮）**：pull 拉入单枚兄弟流提交 R4339
+  「合并目标块子堆叠补偿 + Path B 块级判定注入通道——basic-005
+  收敛」= layout-engine inline 族三文件
+  （collect_items.rs 51±/mod.rs +10/inline_finalization.rs +31）+
+  engine/paint/painter/text.rs +13 + rendering-compat.md +2（5 files
+  +88/-19）——渲染流自有工作面，本流零重叠；**非子帧能力**（子帧
+  关键词 grep 零命中，R4339 属 inline 堆叠补偿/paint 文本面，
+  frames.click+evaluate 维持挂起）。**双层锚点复核**：自有面对
+  765429dda 维持 4 files +137/-17 零新增漂移；全树锚点（排除本流
+  docs 后对 18d462de6）扩至 **8 files +124/-21 新基线** =
+  layout-engine 六文件（postprocess 7/1 R4335、tree 5/0 R4336、
+  r109 8/0 R4338、collect_items 32/19 + inline/mod 10/0 +
+  inline_finalization 37/1 R4339 累计）+ engine/paint/painter/
+  text.rs 13/0 + rendering-compat.md 12/0 兄弟流控制面。crates/
+  观察面 raw **17→18**（+1 = R4339）。**门前置复核 PASS**（端口族
+  全空闲、零竞争腿、零 zombie、负载 0.32 净窗）。**腿一 cdp-e2e
+  门（setsid 脱离启动 + GATE_EXIT 标记完成检测）首调即收口 ~50s**：
+  **PASS 33 绿 deterministic 双跑 YES EXIT=0 ZERO_DRIFT=YES**（机械
+  diff：green 33 vs expected-green 33 对称差 none、regressions 空、
+  run1/run2 各 33 ok + frames.click+evaluate 预期失败项一致），
+  steps-report/determinism-report 16:20:49 同轮新鲜落盘；
+  ZW_IPC_VALIDATE 校验器在位静默（零命中）；唯一红 = 预期挂账
+  同形态，首调红形态连续第廿七次零再现（S168 形态累计两例非聚集
+  维持）；R4339 组合态首次活跑覆盖（门禁绿态不受渲染流 inline
+  修复影响）。**腿二 make test（setsid 脱离启动 + TEST_EXIT 标记
+  完成检测）一调收口**：**19,288P/0F EXIT=0**，67 组 result 全 ok，
+  零 FAILED 零 panic 零 warning——R4339 组合态首次全量覆盖，计数
+  与 S341-S391 基线持平（19,288，R4339 零新增 cargo test 用例）。
+  **引用计数归零（双腿新鲜落盘），下次活跑至迟 S422**（恢复 +10
+  口径）。机器卫生复核（双腿后）：零 zombie、9222/45029/34293/
+  19222 全释放、门腿零遗留进程；负载 2.53 为 make test 自腿衰减
+  尾（5min 均值 4.01 反映编译测试负载本身，无并行兄弟流腿）。双
+  解冻条件实质判定不变：① 观察面 raw 18，R4339 非渲染流子帧文档
+  加载 + JS realm 能力（子帧三件套 iframe.contentDocument null
+  现状不变），frames.click+evaluate 维持挂起；② 本流控制面
+  docs/goal/cdp-protocol/ 零外来提交，DC-2 口径无新拍板记录。goal
+  自有面零新缺口、无扩展面（S40-S411 重审结论延续）。
 - **S411（2026-09-14）静默监测轮 — 同 tip 复核（pull 零新提交，tip =
   b01c2b765 即 S410 提交本身；无代码变更，绿步维持 33）**：双层锚点
   口径复核通过：自有面锚点按 S351 修正后四枚归因口径精确一致（对
