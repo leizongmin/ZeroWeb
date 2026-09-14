@@ -793,6 +793,18 @@ fn js_worker_main(
                         });
                     }
                 }
+                // R-baidu2/P3 slice-2：排空未捕获异常报告（promise-reject 回调收集）。
+                for (text, line, column) in sandbox.take_uncaught_reports() {
+                    let source = page_url.lock().map(|g| g.clone()).unwrap_or_default();
+                    if let Ok(mut q) = script_errors_for_worker.lock() {
+                        q.push(zero_protocol::message::ScriptErrorParams {
+                            text,
+                            source,
+                            line_number: line,
+                            column_number: column,
+                        });
+                    }
+                }
                 let _ = reply.send(result);
             }
             JsWorkerCommand::ExecuteModule {

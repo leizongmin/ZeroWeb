@@ -133,8 +133,30 @@ pub fn ensure_v8_initialized() {
     });
 }
 
-/// 超时看门狗消息（seq 协议）：execute 装载（Arm，携带截止时长与 isolate 句柄）、
-/// guard Drop 撤除（Disarm，仅当 seq 匹配）、沙箱销毁停线程（Stop）。
+/// R-baidu2/P3 slice-2：未捕获异常报告收集（isolate message listener +
+/// promise-reject 回调写入；`take_uncaught_reports` 在 JS 执行线程排空）。
+pub type UncaughtReport = (String, u32, u32);
+
+thread_local! {
+    static UNCAUGHT_REPORTS: std::cell::RefCell<Vec<UncaughtReport>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// promise-reject 回调入口（值传参，V8 要求）。
+unsafe extern "C" fn promise_reject_callback_entry(msg: v8::PromiseRejectMessage) {
+    promise_reject_callback(&msg);
+}
+
+/// promise-reject 回调：`PromiseRejectWithNoHandler`（未处理 rejection）。
+/// v8-150 的 PromiseRejectMessage 无 NewCallbackScope 之外的 scope 构造路径，
+/// rejection 原因文本提取需 isolate slot 体系——本切片仅上报事件级信息
+/// （pageerror 可触发），原因文本提取挂后续切片。
+fn promise_reject_callback(msg: &v8::PromiseRejectMessage) {
+    if msg.get_event() != v8::PromiseRejectEvent::PromiseRejectWithNoHandler {
+        return;
+    }
+    UNCAUGHT_REPORTS.with(|q| q.borrow_mut().push(("unhandled promise rejection".to_string(), 0, 0)));
+}
+
 enum WatchdogMsg {
     Arm {
         seq: u64,
@@ -255,7 +277,10 @@ impl V8Sandbox {
             create_params = create_params.heap_limits(initial, max);
         }
 
-        let isolate = v8::Isolate::new(create_params);
+        let mut isolate = v8::Isolate::new(create_params);
+        // R-baidu2/P3 slice-2：未捕获 promise rejection 收集（thread_local，
+        // 回调与排空同在 JS 执行线程）。
+        isolate.set_promise_reject_callback(promise_reject_callback_entry);
 
         // SEC-13 持久看门狗（2026-08-10）：每 sandbox 一个常驻线程（execute 侧按
         // 当前 timeout_ms Arm），避免每次 execute spawn+join 的线程 churn。
@@ -682,6 +707,12 @@ impl crate::Sandbox for V8Sandbox {
     fn reset_context(&mut self) {
         V8Sandbox::reset_context(self)
     }
+    /// R-baidu2/P3 slice-2：取走未捕获异常报告（message listener + promise-reject
+    /// 回调经 isolate slot 收集）。
+    fn take_uncaught_reports(&mut self) -> Vec<(String, u32, u32)> {
+        UNCAUGHT_REPORTS.with(|q| std::mem::take(&mut *q.borrow_mut()))
+    }
+
     fn config(&self) -> &SandboxConfig {
         &self.config
     }
@@ -714,6 +745,24 @@ mod tests {
     use super::*;
 
     // ── 创建与初始化 ──
+
+    #[test]
+    fn test_unhandled_promise_rejection_collected() {
+        // R-baidu2/P3 slice-2：未处理 rejection 经 promise-reject 回调收集
+        // （事件级信息；原因文本提取挂后续切片）。
+        use crate::Sandbox;
+        let mut sandbox = V8Sandbox::new().unwrap();
+        let r = sandbox
+            .execute("Promise.reject(new Error('boom')); 42")
+            .expect("execute should succeed (rejection is async-surface)");
+        assert!(r.value.contains("42"), "tail expression: {:?}", r.value);
+        let reports = sandbox.take_uncaught_reports();
+        assert_eq!(reports.len(), 1, "one unhandled rejection: {:?}", reports);
+        assert_eq!(reports[0].0, "unhandled promise rejection");
+        assert_eq!(reports[0].1, 0);
+        // 排空后为空（幂等）。
+        assert!(sandbox.take_uncaught_reports().is_empty());
+    }
 
     #[test]
     fn test_sandbox_new() {
