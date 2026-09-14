@@ -2,17 +2,17 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-14（S325：静默监测轮——同 tip 复核（abc0f5321，即
-S324 提交本身），双层锚点零漂移（自有面维持 apps/browser README +1 已归因
+**最后更新**: 2026-09-14（S326：静默监测轮——同 tip 复核（0ebb844cb，即
+S325 提交本身），双层锚点零漂移（自有面维持 apps/browser README +1 已归因
 基线；全树锚点排除本流 docs 后 tracked 代码树对 S317 双腿刷新覆盖树
 736f16525 零变化），门结论引用 S317 活跑（门 PASS 33 绿 deterministic YES
-ZERO_DRIFT 09:11 + make test 19,287P/0F 两调收口），引用计数 9/10 下次
-活跑至迟 S327 期限轮；绿步维持 33；解冻条件①观察面不变（crates/ 自
-8fb39cd46 维持九枚均非渲染流子帧能力，frames.click+evaluate 维持挂起），
-②DC-2 无新拍板；机器卫生全净含 zw-loop/zw-hunt 检查模式；编译测试腿
-回落（cargo/rustc 0、make 1 残留，负载 1min 6.29 / 5min 5.41 / 15min
-5.68 回落中——S327 期限活跑窗口趋净）；S78 家族维持 S320 收窄定性；
-零 zombie 零遗留端口）
+ZERO_DRIFT 09:11 + make test 19,287P/0F 两调收口），引用计数 9/10 维持、
+下次活跑 S327 期限轮（10/10 到期须实际活跑）；绿步维持 33；解冻条件①
+观察面不变（crates/ 自 8fb39cd46 维持九枚均非渲染流子帧能力，
+frames.click+evaluate 维持挂起），②DC-2 无新拍板；机器卫生全净含
+zw-loop/zw-hunt 检查模式；编译测试腿基本出窗（cargo/rustc 0、make 1
+残留，负载 1min 3.02 / 5min 4.59 / 15min 5.37 回落——S327 活跑窗口干净）；
+S78 家族维持 S320 收窄定性；零 zombie 零遗留端口）
 
 ---
 
@@ -43,6 +43,22 @@ ZERO_DRIFT 09:11 + make test 19,287P/0F 两调收口），引用计数 9/10 下�
 
 ## 已完成切片
 
+- **S326（2026-09-14）静默监测轮 — 同 tip 复核（无代码变更，绿步维持 33）**：
+  pull 零新提交（tip = 0ebb844cb，即 S325 提交本身）——双层锚点口径复核
+  通过：自有面锚点增量零漂移（硬核对维持仅 apps/browser/README.md +1 行 =
+  S255 已归因的 52695a7c1 漂移基线，对 765429dda 基点实测恰 +1 行）；全树
+  锚点复核（排除本流 docs 后 tracked 代码树对 736f16525 = S317 双腿刷新
+  覆盖树零变化）零外部变化。双解冻条件实质判定不变：① crates/ 自
+  8fb39cd46 维持九枚，均非渲染流子帧文档加载 + JS realm 能力，
+  frames.click+evaluate 维持挂起；② docs/goal 自 S325 零非本流提交，
+  DC-2 口径无新拍板记录。门结论引用 S317 活跑（门 PASS 33 绿
+  deterministic 双跑 YES ZERO_DRIFT=YES 09:11 + make test 两调收口
+  19,287P/0F），引用计数 **9/10 维持**，下次活跑 **S327（期限轮，引用计数
+  10/10 到期须实际活跑 cdp-e2e 门刷新）**。机器卫生复核：零 zombie、
+  9222/45029/34293/19222 全空闲、`pgrep -af 'zw-loop|zw-hunt'` 零孤儿
+  hunt 遗留；编译测试腿基本出窗（cargo/rustc 0、make 1 残留；负载 1min
+  3.02 / 5min 4.59 / 15min 5.37 回落——S327 期限活跑窗口干净）。goal
+  自有面零新缺口、无扩展面（S40-S325 重审结论延续）。
 - **S325（2026-09-14）静默监测轮 — 同 tip 复核（无代码变更，绿步维持 33）**：
   pull 零新提交（tip = abc0f5321，即 S324 提交本身）——双层锚点口径复核
   通过：自有面锚点增量零漂移（硬核对维持仅 apps/browser/README.md +1 行 =
