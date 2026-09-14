@@ -340,41 +340,6 @@ impl super::Painter {
         // R3760：no-ratio 图像改带真实固有维 `(Option<w>, Option<h>)`——§3.9 逐维解析：
         // 有固有维的维度 auto 取固有维（如 `width="8px"` SVG auto = 8×定位区高），
         // 双缺失维才整体 = positioning area（R3759 行为）；单维混合型不再全图拉伸。
-        let default_intrinsic = (origin_w, origin_h);
-        let first_url_hash = style.background_image.iter().find_map(|layer| match layer {
-            BackgroundImageComputedValue::Url(url) => Some(image_resource_key(url, self.document_url.as_deref())),
-            _ => None,
-        });
-        let bg_no_ratio = first_url_hash.and_then(|h| self.image_no_ratio_keys.get(&h).copied());
-        let bg_ratio = first_url_hash.and_then(|h| self.image_ratio_keys.get(&h).copied());
-        let (img_w, img_h) = if let Some((w_opt, h_opt)) = bg_no_ratio {
-            // css-backgrounds-3 §3.9：无固有尺寸无宽高比——真实固有维逐维生效，
-            // 缺失维取 positioning area 对应维（伪固有尺寸，无比例语义）。
-            (w_opt.unwrap_or(origin_w), h_opt.unwrap_or(origin_h))
-        } else if let Some(ratio) = bg_ratio {
-            // ratio-only：以 viewBox 宽高比按定位区 contain-fit 的尺寸作伪固有尺寸，
-            // 使 Auto（双 auto）解析为 contain-fit、Cover/Contain 同比缩放正确。
-            let w = origin_w.min(origin_h * ratio);
-            (w, w / ratio)
-        } else {
-            first_url_hash
-                .and_then(|h| self.get_image_size(h))
-                .unwrap_or(default_intrinsic)
-        };
-        // R3760：图像固有宽高比信号（None = 无比例）。no-ratio 图像的 pixmap 伪尺寸
-        // （768×256 等）不得参与比例推导——`auto auto` 的另一维 / 单值语法的等比维
-        // 须按 §3.9 走 positioning area 回退。ratio-only 图像用 viewBox 比；双绝对图
-        // 像用 pixmap 比（真固有尺寸）。
-        let img_ratio = if bg_no_ratio.is_some() {
-            None
-        } else if let Some(ratio) = bg_ratio {
-            Some(ratio)
-        } else if img_w > 0.0 && img_h > 0.0 {
-            Some(img_w / img_h)
-        } else {
-            None
-        };
-
         // CSS 规范：多图层逆序渲染（最后一层在最底，第一层在最上）。
         // R2311：background-position/size/repeat 均为多层 `<...>#`，按图层 cyclic 取值
         //（`longhands[layer_idx % longhands.len()]`）。单值 longhand（len=1）→ 所有层取 [0]
@@ -401,6 +366,41 @@ impl super::Painter {
                     }
                 }
                 None => (origin_x, origin_y, origin_w, origin_h),
+            };
+
+            // R4351：固有维回退逐层解析——img_w/img_h 的 positioning-area 回退必须用
+            // **本层** origin（fixed 层 = 视口、scroll/local 层 = 元素/根盒）。旧实现
+            // 在函数顶一次性取 origin_*（canvas 调用 = 视口），逐层 origin 切换后渐变
+            // 层 auto 尺寸错用视口维（background-margin-root 渐变 600 应 300）。
+            let (img_w, img_h, img_ratio, bg_no_ratio) = match layer {
+                BackgroundImageComputedValue::Url(url) => {
+                    let key = image_resource_key(url, self.document_url.as_deref());
+                    let bg_no_ratio = self.image_no_ratio_keys.get(&key).copied();
+                    let bg_ratio = self.image_ratio_keys.get(&key).copied();
+                    if let Some((w_opt, h_opt)) = bg_no_ratio {
+                        // §3.9：无固有尺寸无宽高比——缺失维取本层定位区维。
+                        (w_opt.unwrap_or(origin_w), h_opt.unwrap_or(origin_h), None, bg_no_ratio)
+                    } else if let Some(ratio) = bg_ratio {
+                        // ratio-only：按定位区 contain-fit 的伪固有尺寸。
+                        let w = origin_w.min(origin_h * ratio);
+                        (w, w / ratio, Some(ratio), None)
+                    } else {
+                        let (iw, ih) = self.get_image_size(key).unwrap_or((origin_w, origin_h));
+                        let ratio = if iw > 0.0 && ih > 0.0 { Some(iw / ih) } else { None };
+                        (iw, ih, ratio, None)
+                    }
+                }
+                // 渐变/纯色层无固有维——img = 本层 positioning area、ratio = 定位区
+                // 宽高比（旧 default_intrinsic 行为逐位保留——Percent 尺寸的等比维
+                // 语义依赖此 ratio，测试 test_gradient_with_position_and_size 锚定）。
+                _ => {
+                    let ratio = if origin_w > 0.0 && origin_h > 0.0 {
+                        Some(origin_w / origin_h)
+                    } else {
+                        None
+                    };
+                    (origin_w, origin_h, ratio, None)
+                }
             };
 
             // size/position 相对 positioning area（origin）解析（fixed 时 origin=视口）。

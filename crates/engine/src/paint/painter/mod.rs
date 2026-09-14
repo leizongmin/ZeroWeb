@@ -1026,26 +1026,27 @@ impl Painter {
                         resolve_color_current(&ps.background_color, &ps.color),
                     );
                 }
-                // R4350 slice 2 注：逐层 attachment 的画布重锚定（fixed=视口 /
-                // scroll=根盒）实测破坏单层 margin 族 5 案（anchor 承载的相位被
-                // element_origin 复制后渐变 extent 漂移）→ 画布路径维持旧锚定语义，
-                // element_origin=None（全层 origin_*）。混合 attachment 的根传播页
-                //（margin-root-002）留 slice 3（per-layer anchor 模型）。
+                // R4351（slice 3）：逐层 attachment——fixed 层定位区 = 视口（origin_*，
+                // anchor 归零 → 视口锚定相位 0 不随根 margin 漂移）；scroll/local 层定位区
+                // = 根 padding 盒（element_origin，相位 = 根相对——与旧 origin(0,0,根盒)
+                // +anchor 数学等价：positioned = 50+0+0 ≡ 0+0+50，extent 同为根盒）。
+                // R4350 实验的 5 案回归系当时 shadow 语义反转（scroll 层误取 origin_*=
+                // 视口 800×600）所致，非本模型缺陷——shadow 修正后重推。
                 self.paint_bg_image_in_origin(
                     0.0,
                     0.0,
-                    origin_w.max(0.0),
-                    origin_h.max(0.0),
+                    self.viewport_w,
+                    self.viewport_h,
                     paint_x,
                     0.0,
                     paint_w.max(0.0),
                     canvas_height,
                     ps,
-                    anchor_x,
-                    anchor_y,
+                    0.0,
+                    0.0,
                     None,
                     true,
-                    None,
+                    Some((anchor_x, anchor_y, origin_w.max(0.0), origin_h.max(0.0))),
                 );
             }
         }
