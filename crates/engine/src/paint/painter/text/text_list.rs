@@ -2000,8 +2000,14 @@ impl super::super::Painter {
             .sum();
         // chromium inside counter marker 与内容间的间隔 = 计数器样式 suffix 的尾随
         // 空格（predefined suffix = ". "，WPT ref "X. X"）。本块只处理 counter 类
-        // marker（String/Custom 已在入口排除），间隔恒补。
-        advance += self.measure_char_cached(default_font_id.0, ' ', font_size, false);
+        // marker（String/Custom 已在入口排除）。假名/CJK 系 suffix = "、" 无尾随
+        // 空格（css-counter-styles-3 §6.1/§6.2：hiragana/katakana/cjk-earthly-branch/
+        // cjk-heavenly-stem suffix "、"；WPT ref `<bdi>あ、</bdi>あ、` 内容紧贴）——
+        // R4345：旧无条件补空格被 IFC per-CJK-char 伪空间掩蔽，cjk_contiguous
+        // default-on 后暴露为 counter-styles inside 6 案近阈滑落（内容右移 0.25em）。
+        if counter_suffix(&style.list_style_type) != "、" {
+            advance += self.measure_char_cached(default_font_id.0, ' ', font_size, false);
+        }
         self.list_inside_marker_advance.insert(node_id, advance);
         advance
     }
