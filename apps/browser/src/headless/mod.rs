@@ -352,6 +352,8 @@ impl HeadlessServer {
         ws: &mut tungstenite::WebSocket<std::net::TcpStream>,
     ) {
         let mut events: Vec<ServerEvent> = Vec::new();
+        #[cfg(not(test))]
+        session.drain_fetch_completions();
         while let Some(message) = session.try_recv_renderer() {
             let _ = session.handle_renderer_message(message);
         }
@@ -382,6 +384,29 @@ impl HeadlessServer {
                         .duration_since(std::time::UNIX_EPOCH)
                         .unwrap_or_default()
                         .as_millis() as u64,
+                }),
+                session_id: page_session.clone(),
+            });
+        }
+        for err in session.pending_script_errors.drain(..) {
+            events.push(ServerEvent {
+                method: "Runtime.exceptionThrown".into(),
+                params: serde_json::json!({
+                    "timestamp": std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_millis() as u64,
+                    "exceptionDetails": {
+                        "text": err.text,
+                        "url": err.source,
+                        "lineNumber": err.line_number,
+                        "columnNumber": err.column_number,
+                        "exception": {
+                            "type": "object",
+                            "subtype": "error",
+                            "description": err.text,
+                        },
+                    },
                 }),
                 session_id: page_session.clone(),
             });

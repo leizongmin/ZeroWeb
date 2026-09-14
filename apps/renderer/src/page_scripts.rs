@@ -231,6 +231,16 @@ pub fn dispatch_animation_events(js_worker: &RendererJsWorker, events: &[zero_en
 /// R2940 mirror：未捕获脚本错误经 worker 报告进 shim——`window.onerror`（legacy 5-arg）+ window 'error' 事件，
 /// 使 Sentry / analytics / GA 等错误上报库 hook 触发。best-effort。
 fn report_uncaught_error(js_worker: &RendererJsWorker, source: &str, message: &str) {
+    // R-baidu2/P3：推入脚本错误队列（runtime drain 后经 IPC `ScriptError`
+    // → headless `Runtime.exceptionThrown`）。classic 页面脚本被 shim 顶层
+    // try-catch 包裹（防 Isolate 中毒），错误经 sentinel 读出后在此变 Err——
+    // js_worker Execute 汇点的钩子看不到这类错误，故必须在此推入。
+    js_worker.push_script_error(zero_protocol::message::ScriptErrorParams {
+        text: message.to_string(),
+        source: source.to_string(),
+        line_number: 0,
+        column_number: 0,
+    });
     let report = script_report_error(message, source, 0, 0);
     if let Err(e) = js_worker.execute_script_direct(&report) {
         warn!("report uncaught script error: {e}");

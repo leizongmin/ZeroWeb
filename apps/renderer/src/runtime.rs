@@ -2326,6 +2326,16 @@ impl RendererRuntime {
         }
     }
 
+    /// R-baidu2/P3：drain 未捕获脚本错误 → browser/headless IPC
+    /// （`Runtime.exceptionThrown` 事件源）。
+    fn tick_script_error_drain(&mut self) {
+        for params in self.js_worker.take_script_errors() {
+            if let Err(e) = self.send_regular(IpcMessageKind::ScriptError(params)) {
+                tracing::debug!("forward script error: {e}");
+            }
+        }
+    }
+
     /// S16：drain worker document.write 落定信号 → browser/headless IPC（
     /// `DocumentWriteSettled`，headless 重发 `Page.loadEventFired` 族）。
     fn tick_document_write_drain(&mut self) {
@@ -2515,6 +2525,8 @@ impl RendererRuntime {
         match msg.kind {
             // console 输出是 renderer → browser 单向事件，本进程不消费。
             IpcMessageKind::ConsoleLog(_) => Ok(()),
+            // ScriptError 仅 renderer → browser 单向（browser 不下发）。
+            IpcMessageKind::ScriptError(_) => Ok(()),
             // fetch 观测是 renderer → browser 单向事件，本进程不消费。
             IpcMessageKind::FetchObserved(_) => Ok(()),
             // document.write 落定是 renderer → browser 单向事件，本进程不消费。
@@ -2669,6 +2681,8 @@ impl RendererRuntime {
             // S11（cdp-protocol value-only console 面）：drain page console 输出（任意脚本
             // 执行均可产生，故每轮检查）→ browser/headless（`Runtime.consoleAPICalled`）。
             self.tick_console_log_drain();
+            // R-baidu2/P3：未捕获脚本错误同点 drain（→ `Runtime.exceptionThrown`）。
+            self.tick_script_error_drain();
             // S16：document.write 落定信号同点 drain（→ `Page.loadEventFired` 族重发）。
             self.tick_document_write_drain();
 
