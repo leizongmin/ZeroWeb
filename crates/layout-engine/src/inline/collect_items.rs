@@ -1163,6 +1163,17 @@ impl InlineFormattingContext {
                     if styles.is_empty() && Self::ua_hidden_without_styles(elem_data.local_name()) {
                         continue;
                     }
+                    // R4331（CSS2 §9.2.1 / HTML br 元素）：`<br>` 强制换行条目与主
+                    // collect 路径同语义（本文件主循环 Element 分支 br 臂）——walk 扁平化
+                    // 此前把 br 落「空文本 + 零 frame」臂 continue 吞掉：inline 元素包裹的
+                    // `<br>`（`<span>a<br/>b</span>`）整条丢失强制断行，段落行结构整体
+                    // 漂移（run-in-breaking-001 ref 页 span 包裹 br 实证）。按 local_name
+                    // 判定（style 无关谓词，paint IFC 与 layout IFC 判定恒同）。
+                    if elem_data.local_name() == "br" {
+                        flush_pending(&mut text_pending, items, !emitted_text_run, false);
+                        items.push(InlineItem::Br);
+                        continue;
+                    }
                     let gc_has_element_children = doc.child_nodes(gc).iter().any(|&gk| {
                         doc.get(gk).is_some_and(|n| matches!(&n.kind, NodeKind::Element(_)))
                     });

@@ -2920,6 +2920,10 @@ fn build_subtree(
     // shadow 树中的 <slot> 元素替换为已分配的 light DOM 节点（或回退内容）。
     let mut child_taffy_ids: Vec<taffy::NodeId> = Vec::new();
 
+    // R4331：并入态 run-in 旗标（合并分派臂内置位）——建 taffy 节点前清零自身
+    // border/padding（见节点创建处注释）。
+    let mut run_in_merged = false;
+
     // R2251 content-visibility:hidden（CSS Containment Module Level 2；kill-switch
     // `ZW_CONTENT_VISIBILITY`，default-on；`=0` 关闭回旧「不解析」等价行为）。
     // 元素自身盒（背景/边框）仍经 paint_node 绘制，但其整个子树被跳过：不收集任何
@@ -3002,6 +3006,7 @@ fn build_subtree(
         {
             ctx.r109.run_in_prepended.insert(following, dom_id);
             children_dom.clear();
+            run_in_merged = true;
         }
 
         // 检测是否为 flex/grid 容器 — 在这些容器中，文本节点成为匿名 flex/grid 项
@@ -3714,6 +3719,15 @@ fn build_subtree(
     }
 
     // 创建 taffy 节点
+    // R4331（CSS Display 3 §2.3 run-in box）：并入态 run-in 自身 border/padding 不占
+    // 流位——run-in 并入后继块后自身不生成块盒，边框载荷移入后继块首行 inline 片段
+    //（R4330 载荷已折入 IFC 前缀 run）。此前 children_dom.clear() 只清内容，leaf 仍按
+    // computed border 撑出空边框盒高度（run-in-breaking-001：5px border → 10px 空盒把
+    // 后继块整体推下 10px，ref 侧无此盒）。
+    if run_in_merged {
+        taffy_style.border = taffy::geometry::Rect::zero();
+        taffy_style.padding = taffy::geometry::Rect::zero();
+    }
     let taffy_id = if child_taffy_ids.is_empty() {
         ctx.taffy.new_leaf_with_context(taffy_style, dom_id).unwrap()
     } else {
