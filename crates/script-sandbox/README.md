@@ -10,6 +10,7 @@
 
 - **`Sandbox` trait 抽象** — `V8Sandbox` 与 `QuickJSSandbox` 都实现 `Sandbox`，调用方以 `Box<dyn Sandbox>` 持有引擎无关的沙箱实例（cfg 选 V8/QuickJS，默认 `v8`）
 - **脚本执行** — `execute`（返回字符串结果）与 `execute_json`（`JSON.stringify` 包装）；支持编译/运行时错误与超时（`set_timeout_ms`）
+- **未捕获异常收集** — `take_uncaught_reports` 取走自上次调用以来的未捕获异常报告（`(text, line, column)`；V8 经 isolate message listener + promise-reject 回调覆盖未处理 Promise rejection，QuickJS 返回空）
 - **宿主回调** — `register_callback` 把 Rust 闭包挂为 JS 全局函数 `name(...)`，参数/返回经字符串桥；`resolve_async_callback` 支持 P1b 异步回调 resolve（V8 后端）
 - **持久化 Context** — `SandboxConfig::persistent_context` 复用 V8 全局 Context，`reset_context` 清空 JS 状态
 - **Dedicated Worker** — 独立线程 V8 持久上下文 + postMessage/onmessage 通道（`worker.rs` / `quickjs_worker.rs`）
