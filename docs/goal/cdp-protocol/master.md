@@ -2,37 +2,32 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-14（S518：树变化刷新轮——S517 收口后
-push 序列入树三提交（S342 先例「入树发生于上轮收口后 push
-序列 → 连续刷新轮」）pull 零新提交 tip = 2223958e3 即 S517
-提交本身：R4350 909708e42（engine js_dom_bridge/computed_style
-+ paint effects/mod + style-system matcher/property/shorthand
-背景附件多图层 Vec 化）+ R4351 4854fd584（engine paint
-effects/mod canvas 传播逐层 origin）+ dcabe11b1（docs/perf
-基线 chore 非代码）——渲染流域专属 crate 组合态与本流零
-重叠。双层锚点——自有面对 765429dda 维持 **4 files +137/-17**
-零漂移；全树锚点刷新至 **32 files +2145/-138**（R4350/R4351
-engine+style-system 组合态 + perf docs 全量入面）。crates/
-观察面 raw **22→24**（R4350/R4351 归因记账），子帧关键词非
-测试代码零命中，frames.click+evaluate 维持挂起。**双腿活跑
-收口**：门首调即收口 make cdp-e2e PASS 33 绿 deterministic
-双跑 YES EXIT=0，expected_green 33 对称差 none、regressions
-空，23:38 落盘，ZW_IPC_VALIDATE=1 在位静默（#0 复现监测零
-命中），首调红形态零再现延续；make test 一调收口 **19,290P/
-0F**（67 组 result 全 ok，计数与 S506/S517 基线持平，
-R4350/R4351 组合态首次全量覆盖，渲染流 canvas/background
-修复对门禁绿态与全仓绿态零影响；setsid 脱离启动 23:39 起跑
-~9.5 分钟收口，S384 先例延续）。**引用计数重计 1/10**（8/10
-次轮即期限轮口径下至迟 S526 期限轮活跑；树变化提前触发）。
-机器卫生复核：零 zombie、9222/45029/34293/19222 端口族全
-空闲、零竞争本流腿、控制面零外来提交；负载活跑期间窗
-（收口时点 3.61 归因本轮自身 make test 尾段 + 兄弟流余量，
-启动时点 0.30 深净窗）。解冻条件实质判定不变：① 观察面
-raw 24 维持（R4350/R4351 归因），子帧三件套
+**最后更新**: 2026-09-14（S519：静默监测轮——同 tip 复核
+（pull 零新提交，tip = 714feb97f 即 S518 提交本身，无代码
+变更绿步维持 33）。双层锚点零漂移——自有面对 765429dda 维持
+**4 files +137/-17** 精确一致；全树排除本流 docs 后对
+18d462de6 维持 **32 files +2147/-138**——与 S518 刷新基线
+32 files +2145/-138 相比仅 +2 归因 R4352 e66a27851 docs-only
+（rendering-compat.md 36/0→38/0，文件数 32 维持，代码树零
+变更，S349 docs-only 不入刷新面先例），其余逐项与 S518 一致
+零新增，S518 双腿活跑 23:38/23:48 直接覆盖当前代码树证据
+新鲜。crates/ 观察面 raw 计数实测维持 **24**（git log 默认
+口径 8fb39cd46..HEAD 限 crates/ 面，R4352 不触 crates），
+子帧能力关键词 grep 非测试代码零命中实测复核，实质判定
+不变 frames.click+evaluate 维持挂起。树不变按门单腿口径免
+make test 腿（S336 先例），门结论引用 S518 树变化刷新轮
+双腿活跑（PASS 33 绿 deterministic 双跑 YES EXIT=0 23:38
+落盘 + ZW_IPC_VALIDATE=1 在位静默 + make test 19,290P/0F），
+**引用计数 1/10→2/10**（8/10 次轮即期限轮口径下至迟 S526
+期限轮活跑；树变化提前触发）。机器卫生复核：零 zombie、
+9222/45029/34293/19222 端口族全空闲、零竞争本流腿、控制面
+零外来提交；负载 1.21→2.10 回落窗（兄弟流与 cronjob 腿均
+出窗，净窗形态）——本轮静默零活跑需求负载窗记账。解冻
+条件实质判定不变：① 观察面 raw 24 维持，子帧三件套
 iframe.contentDocument null 现状不变，frames.click+evaluate
 维持挂起；② 本流控制面 docs/goal/cdp-protocol/ 零外来提交，
 DC-2 口径无新拍板记录。goal 自有面零新缺口、无扩展面
-（S40-S517 重审结论延续））
+（S40-S518 重审结论延续））
 
 ---
 
@@ -63,6 +58,39 @@ DC-2 口径无新拍板记录。goal 自有面零新缺口、无扩展面
 
 ## 已完成切片
 
+- **S519（2026-09-14）静默监测轮 — 同 tip 复核（pull 零新提交，
+  tip = 714feb97f 即 S518 提交本身；无代码变更，绿步维持 33）**：
+  双层锚点复核通过：自有面锚点四枚归因口径精确一致（对 765429dda
+  硬核对 numstat 4 files +137/-17 = Makefile 1/1 +
+  apps/browser/README.md 1/0 + headless/mod.rs 25/0 +
+  headless/session.rs 110/16，零新增漂移）；全树锚点复核
+  （排除本流 docs 后 tracked 代码树对 18d462de6 维持 **32
+  files +2147/-138**——与 S518 刷新基线 32 files +2145/-138
+  相比仅 +2 归因 R4352 e66a27851 docs-only（rendering-compat.md
+  36/0→38/0，文件数 32 维持，代码树零变更，S349 docs-only
+  不入刷新面先例），其余逐项与 S518 一致零新增，S518 双腿
+  活跑 23:38/23:48 直接覆盖当前代码树证据新鲜）。crates/
+  观察面 raw 计数实测维持 **24**（R4352 不触 crates），子帧
+  能力关键词 grep（contentDocument/content_document/subframe/
+  sub_frame）非测试代码零命中实测复核（命中面为 dom/engine/
+  webview 三处 tests 路径下测试代码维持既有形态），实质判定
+  不变 frames.click+evaluate 维持挂起。树不变按门单腿口径免
+  make test 腿（S336 先例）。门结论引用 S518 树变化刷新轮
+  双腿活跑（门首调 PASS 33 绿 deterministic 双跑 YES EXIT=0
+  expected_green 33 对称差 none regressions 空 23:38 落盘 +
+  ZW_IPC_VALIDATE 校验器在位静默 + make test 一调收口
+  19,290P/0F），**引用计数 1/10→2/10**（8/10 次轮即期限轮
+  口径下至迟 S526 期限轮活跑；树变化提前触发）。机器卫生
+  复核：零 zombie、9222/45029/34293/19222 端口族全空闲、零
+  竞争本流腿、控制面零外来提交（最近 15 提交全为本流
+  S504-S518 + 兄弟流 R4349/R4332-F/R4350/R4351/R4352 不触
+  控制面）；负载 1.21→2.10 回落窗（兄弟流与 cronjob 腿均
+  出窗，净窗形态）——本轮静默零活跑需求负载窗记账。解冻
+  条件实质判定不变：① 观察面 raw 24 维持，子帧三件套
+  iframe.contentDocument null 现状不变，frames.click+evaluate
+  维持挂起；② 本流控制面 docs/goal/cdp-protocol/ 零外来
+  提交，DC-2 口径无新拍板记录。goal 自有面零新缺口、无扩展
+  面（S40-S518 重审结论延续）。
 - **S518（2026-09-14）树变化刷新轮 — S517 收口后 push 序列
   入树三提交（S342 先例「入树发生于上轮收口后 push 序列 →
   连续刷新轮」；pull 零新提交 tip = 2223958e3 即 S517 提交
