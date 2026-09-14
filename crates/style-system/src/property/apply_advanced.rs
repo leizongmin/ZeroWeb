@@ -1842,20 +1842,28 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
             }
         }
         "background-attachment" => {
-            if let Some(v) = values::parse_background_attachment(value) {
-                style.background_attachment = match v {
-                    zero_css_parser::values::BackgroundAttachmentValue::Scroll => {
-                        BackgroundAttachmentComputedValue::Scroll
+            // R4350：多图层逗号列表（css-backgrounds-3 §3.1），单值 → 单元素 Vec。
+            let parts: Vec<&str> = crate::shorthand::background::split_bg_layer_list(value);
+            let mut parsed = Vec::with_capacity(parts.len());
+            for part in &parts {
+                match values::parse_background_attachment(part) {
+                    Some(zero_css_parser::values::BackgroundAttachmentValue::Scroll) => {
+                        parsed.push(BackgroundAttachmentComputedValue::Scroll)
                     }
-                    zero_css_parser::values::BackgroundAttachmentValue::Fixed => {
-                        BackgroundAttachmentComputedValue::Fixed
+                    Some(zero_css_parser::values::BackgroundAttachmentValue::Fixed) => {
+                        parsed.push(BackgroundAttachmentComputedValue::Fixed)
                     }
-                    zero_css_parser::values::BackgroundAttachmentValue::Local => {
-                        BackgroundAttachmentComputedValue::Local
+                    Some(zero_css_parser::values::BackgroundAttachmentValue::Local) => {
+                        parsed.push(BackgroundAttachmentComputedValue::Local)
                     }
-                };
-                return true;
+                    None => return false,
+                }
             }
+            if parsed.is_empty() {
+                return false;
+            }
+            style.background_attachment = parsed;
+            return true;
         }
         "background-clip" => {
             if let Some(v) = values::parse_background_clip(value) {

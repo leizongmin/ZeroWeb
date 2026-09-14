@@ -551,8 +551,8 @@ pub struct ComputedStyle {
     pub background_repeat: Vec<BackgroundRepeatComputedValue>,
     /// background-size 属性。
     pub background_size: Vec<BackgroundSizeComputedValue>,
-    /// background-attachment 属性。
-    pub background_attachment: BackgroundAttachmentComputedValue,
+    /// background-attachment 属性（R4350：多图层逐层，CSS Backgrounds §3.1）。
+    pub background_attachment: Vec<BackgroundAttachmentComputedValue>,
     /// background-clip 属性。
     pub background_clip: BackgroundClipComputedValue,
     /// background-origin 属性。

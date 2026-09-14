@@ -909,8 +909,8 @@ fn r4350_background_shorthand_multi_layer() {
     assert_eq!(map2.get("background-repeat"), Some(&"no-repeat, repeat"));
     assert_eq!(map2.get("background-position"), Some(&"center, 0% 0%"));
     assert_eq!(map2.get("background-size"), Some(&"50% auto, auto"));
-    // attachment 单值存储（slice 2）→ 首层 scroll。
-    assert_eq!(map2.get("background-attachment"), Some(&"scroll"));
+    // R4350 slice 2：attachment Vec 存储 → 逐层连接。
+    assert_eq!(map2.get("background-attachment"), Some(&"scroll, fixed"));
     // color 仅末层：末层无 color → transparent。
     assert_eq!(map2.get("background-color"), Some(&"transparent"));
 }

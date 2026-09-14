@@ -9,7 +9,7 @@ use crate::computed::contains_var_function;
 
 /// 匹配声明类型：(属性名, 属性值, 是否 important, 特异性)
 type MatchingDecl = (String, String, bool, (u32, u32, u32));
-mod background;
+pub(crate) mod background;
 use background::expand_background;
 mod transition;
 use transition::{expand_animation, expand_transition};

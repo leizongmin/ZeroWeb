@@ -22,7 +22,7 @@ pub(super) fn expand_background(value: &str, important: bool, specificity: (u32,
 }
 
 /// R4350：顶层逗号拆层（括号/引号感知）。至少返回 1 段。
-fn split_bg_layer_list(value: &str) -> Vec<&str> {
+pub(crate) fn split_bg_layer_list(value: &str) -> Vec<&str> {
     let mut segments = Vec::new();
     let mut start = 0;
     let mut depth = 0i32;
@@ -195,16 +195,17 @@ fn expand_background_layers(segments: &[&str], important: bool, specificity: (u3
             }
         })
         .unwrap_or_else(|| "transparent".to_string());
+    // R4350 slice 2：attachment 已 Vec 存储 → 逐层连接（原 slice 1 取首层）。
+    let attachments: Vec<String> = layers
+        .iter()
+        .map(|(_, s)| with_default(&s.attachment, "scroll"))
+        .collect();
     let result = vec![
         mk("background-color", &color),
         mk("background-image", &images.join(", ")),
         mk("background-repeat", &repeats.join(", ")),
         mk("background-position", &positions.join(", ")),
-        // attachment/clip/origin：单值存储（slice 2）——首层。
-        mk(
-            "background-attachment",
-            with_default(&first.attachment, "scroll").as_str(),
-        ),
+        mk("background-attachment", &attachments.join(", ")),
         mk(
             "background-clip",
             first
@@ -456,7 +457,9 @@ fn background_longhands_are_valid(decls: &[MatchingDecl]) -> bool {
         "background-position" => split_bg_layer_list(value)
             .iter()
             .all(|p| zero_css_parser::values::parse_background_position(p).is_some()),
-        "background-attachment" => zero_css_parser::values::parse_background_attachment(value).is_some(),
+        "background-attachment" => split_bg_layer_list(value)
+            .iter()
+            .all(|p| zero_css_parser::values::parse_background_attachment(p).is_some()),
         "background-clip" => zero_css_parser::values::parse_background_clip(value).is_some(),
         "background-origin" => zero_css_parser::values::parse_background_origin(value).is_some(),
         "background-size" => split_bg_layer_list(value)

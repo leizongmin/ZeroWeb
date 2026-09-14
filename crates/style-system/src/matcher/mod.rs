@@ -1773,7 +1773,10 @@ fn is_property_supported(property: &str, value: &str) -> bool {
         "background-repeat" => parse_background_repeat_list(trimmed).is_some(),
         "background-position" => parse_background_position_list(trimmed).is_some(),
         "background-size" => parse_background_size_list(trimmed).is_some(),
-        "background-attachment" => parse_background_attachment(trimmed).is_some(),
+        // R4350：多图层逗号列表（与 repeat/position/size list 解析同型）。
+        "background-attachment" => crate::shorthand::background::split_bg_layer_list(trimmed)
+            .iter()
+            .all(|p| parse_background_attachment(p).is_some()),
         "background-clip" => parse_background_clip(trimmed).is_some(),
         "background-origin" => parse_background_origin(trimmed).is_some(),
         "scroll-snap-type" => parse_scroll_snap_type(trimmed).is_some(),

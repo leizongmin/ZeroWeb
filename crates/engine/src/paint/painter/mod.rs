@@ -1026,6 +1026,11 @@ impl Painter {
                         resolve_color_current(&ps.background_color, &ps.color),
                     );
                 }
+                // R4350 slice 2 注：逐层 attachment 的画布重锚定（fixed=视口 /
+                // scroll=根盒）实测破坏单层 margin 族 5 案（anchor 承载的相位被
+                // element_origin 复制后渐变 extent 漂移）→ 画布路径维持旧锚定语义，
+                // element_origin=None（全层 origin_*）。混合 attachment 的根传播页
+                //（margin-root-002）留 slice 3（per-layer anchor 模型）。
                 self.paint_bg_image_in_origin(
                     0.0,
                     0.0,
@@ -1040,6 +1045,7 @@ impl Painter {
                     anchor_y,
                     None,
                     true,
+                    None,
                 );
             }
         }
@@ -1717,7 +1723,11 @@ impl Painter {
                 // R4143：table-internal 同样两相位绘制（见上方 BeforeBackground 注）。
                 self.paint_box_shadow(box_node, abs_x, abs_y, style, ShadowPhase::AfterBackground);
                 // R2063：attachment:fixed → 视口锚定平铺、裁剪到元素盒；否则元素盒锚定。
-                if matches!(style.background_attachment, BackgroundAttachmentComputedValue::Fixed) {
+                if style
+                    .background_attachment
+                    .iter()
+                    .any(|a| matches!(a, BackgroundAttachmentComputedValue::Fixed))
+                {
                     self.paint_background_image_fixed(box_node, abs_x, abs_y, style);
                 } else {
                     self.paint_background_image(box_node, abs_x, abs_y, style);
@@ -2176,7 +2186,11 @@ impl Painter {
                 // 1b. 背景图片（行组/行仍可渲染背景图片）
                 if !skip_split_inline_deco && !skip_contents_deco {
                     // R2063：attachment:fixed → 视口锚定平铺、裁剪到元素盒；否则元素盒锚定。
-                    if matches!(style.background_attachment, BackgroundAttachmentComputedValue::Fixed) {
+                    if style
+                        .background_attachment
+                        .iter()
+                        .any(|a| matches!(a, BackgroundAttachmentComputedValue::Fixed))
+                    {
                         self.paint_background_image_fixed(box_node, abs_x, abs_y, style);
                     } else {
                         self.paint_background_image(box_node, abs_x, abs_y, style);
@@ -2874,7 +2888,10 @@ impl Painter {
             // CSS background-attachment: fixed — 固定背景指示器
             if let Some(node_id) = box_node.node_id
                 && let Some(style) = styles.get(&node_id)
-                && matches!(style.background_attachment, BackgroundAttachmentComputedValue::Fixed)
+                && style
+                    .background_attachment
+                    .iter()
+                    .any(|a| matches!(a, BackgroundAttachmentComputedValue::Fixed))
             {
                 self.paint_background_attachment_indicator(box_node, abs_x, abs_y, style);
             }
@@ -3245,13 +3262,13 @@ impl Painter {
             // attachment:fixed 须 viewport-anchored（col rect 锚定 = scroll 语义会错位）→ 跳过
             // （col fixed-image 极罕见；跳过回到无 col-image 行为，零回归）。
             if !style.background_image.is_empty()
-                && !matches!(
-                    style.background_attachment,
-                    zero_style_system::BackgroundAttachmentComputedValue::Fixed
-                )
+                && !style
+                    .background_attachment
+                    .iter()
+                    .any(|a| matches!(a, zero_style_system::BackgroundAttachmentComputedValue::Fixed))
             {
                 self.paint_bg_image_in_origin(
-                    rect_x, content_y, *w, h, rect_x, content_y, *w, h, style, 0.0, 0.0, None, false,
+                    rect_x, content_y, *w, h, rect_x, content_y, *w, h, style, 0.0, 0.0, None, false, None,
                 );
             }
         }

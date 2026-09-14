@@ -3120,15 +3120,17 @@ fn background_repeat_to_css(layers: &[BackgroundRepeatComputedValue]) -> String 
         .join(", ")
 }
 
-/// background-attachment：CSS Backgrounds `<attachment>` 单值序列化。
-/// Scroll/Fixed/Local → scroll/fixed/local。ZeroWeb 存单值（非多层 Vec），与解析侧一致。
-fn background_attachment_to_css(a: &BackgroundAttachmentComputedValue) -> String {
-    match a {
-        BackgroundAttachmentComputedValue::Scroll => "scroll",
-        BackgroundAttachmentComputedValue::Fixed => "fixed",
-        BackgroundAttachmentComputedValue::Local => "local",
-    }
-    .to_string()
+/// background-attachment：CSS Backgrounds `<attachment>#` 序列化。
+/// Scroll/Fixed/Local → scroll/fixed/local；R4350 多图层 Vec 逗号连接。
+fn background_attachment_to_css(a: &[BackgroundAttachmentComputedValue]) -> String {
+    a.iter()
+        .map(|v| match v {
+            BackgroundAttachmentComputedValue::Scroll => "scroll",
+            BackgroundAttachmentComputedValue::Fixed => "fixed",
+            BackgroundAttachmentComputedValue::Local => "local",
+        })
+        .collect::<Vec<&str>>()
+        .join(", ")
 }
 
 /// background-clip：CSS Backgrounds `<visual-box>` 单值序列化。

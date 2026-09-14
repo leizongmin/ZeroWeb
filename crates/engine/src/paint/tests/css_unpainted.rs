@@ -179,7 +179,7 @@ fn test_background_attachment_fixed_generates_pin() {
 
     let mut styles = HashMap::new();
     let mut style = ComputedStyle::default();
-    style.background_attachment = BackgroundAttachmentComputedValue::Fixed;
+    style.background_attachment = vec![BackgroundAttachmentComputedValue::Fixed];
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
@@ -202,7 +202,7 @@ fn test_background_attachment_local_no_indicator() {
 
     let mut styles = HashMap::new();
     let mut style = ComputedStyle::default();
-    style.background_attachment = BackgroundAttachmentComputedValue::Local;
+    style.background_attachment = vec![BackgroundAttachmentComputedValue::Local];
     styles.insert(elem, style);
 
     let mut painter = Painter::new();

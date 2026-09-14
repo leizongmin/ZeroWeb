@@ -215,6 +215,8 @@ impl super::Painter {
             0.0,
             border_area_ring,
             false,
+            // R4350：无 fixed 层时全层元素盒（含 Fixed 的批次由 fixed 入口处理）。
+            None,
         );
     }
 
@@ -271,7 +273,8 @@ impl super::Painter {
                 box_node.content_height,
             ),
         };
-        // positioning area（origin）= 视口（初始包含块）。
+        // positioning area（origin）= 视口（初始包含块）——fixed 层；scroll/local 层
+        // （R4350 逐层 attachment）= 元素 background-origin 盒（= clip 盒坐标）。
         self.paint_bg_image_in_origin(
             0.0,
             0.0,
@@ -286,6 +289,7 @@ impl super::Painter {
             0.0,
             None,
             false,
+            Some((clip_x, clip_y, clip_w, clip_h)),
         );
     }
 
@@ -316,6 +320,9 @@ impl super::Painter {
         anchor_y: f32,
         border_area_ring: Option<Vec<Rect>>,
         canvas_propagation: bool,
+        // R4350：逐层 attachment——Some = 元素 origin 盒（scroll/local 层用）；
+        // origin_* 参数此时 = fixed 层定位区（视口）。None = 全层用 origin_*（不分）。
+        element_origin: Option<(f32, f32, f32, f32)>,
     ) {
         use zero_render_foundation::image_cache::ImageKey;
         use zero_render_foundation::primitive::ImagePrimitive;
@@ -377,6 +384,24 @@ impl super::Painter {
             let size = &style.background_size[layer_idx % style.background_size.len()];
             let position = &style.background_position[layer_idx % style.background_position.len()];
             let repeat = &style.background_repeat[layer_idx % style.background_repeat.len()];
+            // R4350：逐层 attachment（css-backgrounds-3 §3.1）——element_origin = Some 时
+            // fixed 层用 origin_*（调用方传视口）、scroll/local 层用 eo（调用方传
+            // 元素/根 padding 盒）；None = 全层 origin_*（不分层路径）。
+            let (origin_x, origin_y, origin_w, origin_h) = match element_origin {
+                Some((eo_x, eo_y, eo_w, eo_h)) => {
+                    if matches!(
+                        style
+                            .background_attachment
+                            .get(layer_idx % style.background_attachment.len()),
+                        Some(BackgroundAttachmentComputedValue::Fixed)
+                    ) {
+                        (origin_x, origin_y, origin_w, origin_h)
+                    } else {
+                        (eo_x, eo_y, eo_w, eo_h)
+                    }
+                }
+                None => (origin_x, origin_y, origin_w, origin_h),
+            };
 
             // size/position 相对 positioning area（origin）解析（fixed 时 origin=视口）。
             // R3760：no-ratio 图像的 contain/cover 语义在 resolve_background_size 内处理
@@ -1347,7 +1372,11 @@ impl super::Painter {
         abs_y: f32,
         style: &ComputedStyle,
     ) {
-        if !matches!(style.background_attachment, BackgroundAttachmentComputedValue::Fixed) {
+        if !style
+            .background_attachment
+            .iter()
+            .any(|a| matches!(a, BackgroundAttachmentComputedValue::Fixed))
+        {
             return;
         }
 

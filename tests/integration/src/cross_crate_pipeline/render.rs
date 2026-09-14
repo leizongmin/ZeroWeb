@@ -1388,7 +1388,7 @@ fn test_background_attachment_fixed_pipeline() {
     let div_style = styles.get(&div).expect("div 应有计算样式");
     assert_eq!(
         div_style.background_attachment,
-        zero_style_system::BackgroundAttachmentComputedValue::Fixed,
+        vec![zero_style_system::BackgroundAttachmentComputedValue::Fixed],
         "background-attachment 应为 Fixed"
     );
 }

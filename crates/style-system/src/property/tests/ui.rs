@@ -74,21 +74,30 @@ fn test_background_size_initial_value() {
 fn test_apply_property_background_attachment_scroll() {
     let mut style = ComputedStyle::default();
     assert!(apply_property_value(&mut style, "background-attachment", "scroll"));
-    assert_eq!(style.background_attachment, BackgroundAttachmentComputedValue::Scroll);
+    assert_eq!(
+        style.background_attachment,
+        vec![BackgroundAttachmentComputedValue::Scroll]
+    );
 }
 
 #[test]
 fn test_apply_property_background_attachment_fixed() {
     let mut style = ComputedStyle::default();
     assert!(apply_property_value(&mut style, "background-attachment", "fixed"));
-    assert_eq!(style.background_attachment, BackgroundAttachmentComputedValue::Fixed);
+    assert_eq!(
+        style.background_attachment,
+        vec![BackgroundAttachmentComputedValue::Fixed]
+    );
 }
 
 #[test]
 fn test_apply_property_background_attachment_local() {
     let mut style = ComputedStyle::default();
     assert!(apply_property_value(&mut style, "background-attachment", "local"));
-    assert_eq!(style.background_attachment, BackgroundAttachmentComputedValue::Local);
+    assert_eq!(
+        style.background_attachment,
+        vec![BackgroundAttachmentComputedValue::Local]
+    );
 }
 
 #[test]
@@ -112,9 +121,12 @@ fn test_background_attachment_in_known_properties() {
 fn test_background_attachment_initial_value() {
     assert!(PropertyRegistry::initial_value("background-attachment").is_some());
     let mut style = ComputedStyle::default();
-    style.background_attachment = BackgroundAttachmentComputedValue::Fixed;
+    style.background_attachment = vec![BackgroundAttachmentComputedValue::Fixed];
     assert!(apply_initial_value(&mut style, "background-attachment"));
-    assert_eq!(style.background_attachment, BackgroundAttachmentComputedValue::Scroll);
+    assert_eq!(
+        style.background_attachment,
+        vec![BackgroundAttachmentComputedValue::Scroll]
+    );
 }
 
 // ── background-clip ──
