@@ -2,24 +2,22 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-14（S368：静默监测轮——pull 零新提交（tip =
-e40b9b6d6 即 S367 提交本身），无代码变更绿步维持 33。双层锚点零漂移：
-自有面按 S351 修正后四枚归因口径精确一致（对 765429dda 硬核对
-4 files +137/-17，零新增漂移）；全树排除本流 docs 后 tracked 代码树对
-18d462de6 零变化（docs/goal 唯一非本流条目 c7490b81d 兄弟流
-rendering-compat 自有控制面 S349 已裁定不入刷新触发面），S360 活跑
-12:46 直接覆盖当前树证据新鲜。门结论引用 S360 活跑（PASS 33 绿
-deterministic 双跑 YES EXIT=0 ZERO_DRIFT=YES 12:46 落盘 +
-ZW_IPC_VALIDATE 在位静默），**引用计数 8/10→9/10——按 S299/S309
-先例 9/10 次轮即期限轮，S369 = 期限轮活跑**（本轮前置复核已代查：
-9222 端口族空闲、零竞争 cdp-e2e 腿、零 zombie，端口竞争亚型不触发，
-净窗/负载窗均可）。crates/ 观察面 raw 计数实测维持 14，实质判定不变
-frames.click+evaluate 维持挂起。机器卫生：零 zombie、端口族全空闲、
-9333 维持缺席、零竞争腿零孤儿 hunt；兄弟流验证腿在窗已归因（腿形
-再切换为 render-foundation GPU adapter 探测链，非端口竞争面，负载
-3.03 归因之）——本轮静默零活跑需求。解冻条件①②实质判定不变（观察
-面 raw 14 维持；本流控制面零外来提交，DC-2 无新拍板）。goal 自有面
-零新缺口、无扩展面（S40-S367 重审结论延续））
+**最后更新**: 2026-09-14（S369：活跑最后期限轮——引用计数 9/10→
+10/10 触发 cdp-e2e 门活跑刷新（无代码变更，绿步维持 33）。pull 零新
+提交（tip = 5cadffac7 即 S368 提交本身）；全树排除本流 docs 后
+tracked 代码树对 18d462de6 零变化，树不变按门单腿口径活跑（S336
+先例，免 make test 复跑）。**活跑一调即收口：门 PASS 33 绿
+deterministic 双跑 YES EXIT=0 ZERO_DRIFT=YES**（机械 diff：green 33
+vs expected-green 基线 33 对称差 none、regressions 空、双 run 明细
+逐项一致）13:04 同轮新鲜落盘 + ZW_IPC_VALIDATE 在位静默；**引用
+计数归零（刷新即新鲜门证据），下次活跑至迟 S379**。负载窗执行：兄弟
+流 quickjs feature 测试链在窗（script-sandbox/webview/webview-demo/
+integration-tests/wpt-runner 腿，非端口竞争面非 cdp-e2e 竞争腿，负载
+2.64 归因之）——照跑记账**第二十个负载下样本**。crates/ 观察面 raw
+计数实测维持 14，实质判定不变 frames.click+evaluate 维持挂起。机器
+卫生（门后）：零 zombie、端口族全释放、门腿零遗留。解冻条件①②实质
+判定不变（观察面 raw 14 维持；本流控制面零外来提交，DC-2 无新拍板）。
+goal 自有面零新缺口、无扩展面（S40-S368 重审结论延续））
 
 ---
 
@@ -50,6 +48,40 @@ frames.click+evaluate 维持挂起。机器卫生：零 zombie、端口族全空
 
 ## 已完成切片
 
+- **S369（2026-09-14）活跑最后期限轮 — 引用计数 10/10 触发 cdp-e2e
+  门活跑刷新（无代码变更，绿步维持 33）**：pull 零新提交（tip =
+  5cadffac7，即 S368 提交本身）——全树锚点复核通过（排除本流 docs 后
+  tracked 代码树对 18d462de6 零变化，树不变按门单腿口径活跑，S336
+  先例免 make test 腿）；自有面锚点按 S351 修正后四枚归因口径精确
+  一致（4 files +137/-17，零新增漂移）。**活跑动因**：引用计数
+  9/10→10/10 最后期限（S352 先例链：S360 活跑新鲜计 1/10，
+  S361-S368 八轮引用 + 本轮计 10；S299/S309/S360 先例）。**S198
+  前置复核 PASS**（9222/45029/34293/19222 端口族全空闲、9333 长驻
+  实例维持缺席、零竞争 cdp-e2e 腿、零 zombie、零孤儿 hunt）；**负载
+  窗执行**：兄弟流 quickjs feature 测试链在窗（test-guard 包裹
+  script-sandbox/webview/webview-demo/integration-tests/wpt-runner
+  腿，他 clone rally 流验证链，非 9222 端口竞争面非 cdp-e2e 竞争腿），
+  负载 2.64 归因之——照跑记账**第二十个负载下样本**。**活跑结果
+  （单次调用首调即收口）**：**PASS 33 绿 deterministic 双跑 YES
+  EXIT=0 ZERO_DRIFT=YES**（机械 diff：green 33 vs expected-green
+  基线 33 对称差 none、regressions 空、expected_green 镜像一致），
+  steps-report/determinism-report 13:04:31 同轮新鲜落盘
+  （deterministic true、runs 2、run1/run2 各 33 ok + frames.click+
+  evaluate 预期失败项一致）；ZW_IPC_VALIDATE 校验器在位静默
+  （malformed frame buffer / ipc reader terminated 零命中，捕获网零
+  侵扰）；唯一红 = 预期挂账 frames.click+evaluate 同形态（flow
+  exited 1 含期望失败步骤），首调红形态连续第二十次零再现（S168
+  形态累计两例非聚集记账维持）；zero-engine dead_code warning 既有
+  形态维持（match_media_to_json bins-only 条件 dead，S300 四点归
+  因）。**观测记档**：门前置 cargo build 0.18s no-op 缓存温。机器
+  卫生复核（门后）：零 zombie、9222/45029/34293/19222 全释放、门腿
+  零遗留进程。**引用计数归零（本轮活跑新鲜落盘），下次活跑至迟
+  S379**。双解冻条件实质判定不变：① crates/ 自 8fb39cd46 raw 计数
+  维持 **14**（子帧能力关键词 grep 零命中实测复核），均非渲染流子帧
+  文档加载 + JS realm 能力（子帧三件套 iframe.contentDocument null
+  现状不变），frames.click+evaluate 维持挂起；② 本流控制面零外来
+  提交（pull 零新提交），DC-2 无新拍板记录。goal 自有面零新缺口、
+  无扩展面（S40-S368 重审结论延续）。
 - **S368（2026-09-14）静默监测轮 — 同 tip 复核（pull 零新提交，tip =
   e40b9b6d6 即 S367 提交本身；无代码变更，绿步维持 33）**：双层锚点
   口径复核通过：自有面锚点按 S351 修正后四枚归因口径精确一致（对
