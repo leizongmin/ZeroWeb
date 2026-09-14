@@ -2,23 +2,21 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-14（S382：静默监测轮——pull 零新提交（tip =
-eb0e38799 即 S381 提交本身），无代码变更绿步维持 33。双层锚点零漂移：
-自有面按 S351 修正后四枚归因口径精确一致（对 765429dda 硬核对
-4 files +137/-17 = Makefile 1/1 + apps/browser/README.md 1/0 +
-headless/mod.rs 25/0 + headless/session.rs 110/16，零新增漂移）；
-全树排除本流 docs 后 tracked 代码树对 18d462de6 零变化（docs/goal
-唯一非本流条目 c7490b81d 兄弟流 rendering-compat 自有控制面 S349
-已裁定不入刷新触发面），S378 活跑 13:17 直接覆盖当前树证据新鲜。
-门结论引用 S378 活跑（PASS 33 绿 deterministic 双跑 YES EXIT=0
-ZERO_DRIFT=YES 13:17 落盘 + ZW_IPC_VALIDATE 在位静默），**引用计数
-4/10→5/10，下次活跑至迟 S388**。crates/ 观察面 raw 计数实测维持 14，
-实质判定不变 frames.click+evaluate 维持挂起。机器卫生：零 zombie、
-端口族全空闲、9333 维持缺席、零竞争腿零孤儿 hunt；上轮外部项目测试
-腿已收窗，**负载 1.74 净窗**（1min 均值，零并行腿在窗）——本轮静默
-零活跑需求。解冻条件①②实质判定不变（观察面 raw 14 维持；本流控制
-面零外来提交，DC-2 无新拍板）。goal 自有面零新缺口、无扩展面
-（S40-S381 重审结论延续））
+**最后更新**: 2026-09-14（S383：树变化刷新轮——兄弟流 R4335
+（9a5a14b7c，fix(layout) 匿名块补偿链欠计门 +0.5→+1.0）入树触发，
+特殊点：入树发生于 S382 引用轮收口后的 push 序列（S382 证据基树未
+含其），S342 先例形态故连续轮即双腿刷新。R4335 属渲染流域
+crates/layout-engine（本流零重叠），非子帧能力（子帧关键词零命中）
+——解冻条件①实质判定不变 frames.click+evaluate 维持挂起，crates/
+观察面 raw 14→**15**。**门 + make test 双刷新**（S245/S258/S289/
+S290/S314/S317/S340/S341/S342 先例）：门首调即 PASS 33 绿
+deterministic 双跑 YES EXIT=0，绿步集机械 diff 基线零漂移
+（expected_green 33 对称差 none、regressions 空）13:28 落盘 +
+ZW_IPC_VALIDATE 在位静默，唯一红=预期挂账 frames.click+evaluate
+同形态首调红连续第廿二次零再现；make test 19,288P/0F 一调收口
+（R4335 组合态首次全量覆盖，计数与 S341/S342 持平零新增用例）。
+**引用计数归零（本轮活跑新鲜落盘），下次活跑至迟 S393**。机器卫生
+零 zombie、端口族全释放、门腿零遗留。DC-2 无新拍板）
 
 ---
 
@@ -49,6 +47,38 @@ ZERO_DRIFT=YES 13:17 落盘 + ZW_IPC_VALIDATE 在位静默），**引用计数
 
 ## 已完成切片
 
+- **S383（2026-09-14）树变化刷新轮 — 兄弟流 R4335 入树触发
+  （S245/S258/S289/S290/S314/S317/S340/S341/S342 先例，门 + make
+  test 双刷新）**：pull 拉入 9a5a14b7c（fix(layout) R4335 匿名块
+  补偿链欠计门 +0.5→+1.0，text-between 族收敛）；**特殊点：入树
+  发生于 S382 引用轮收口后的 push 序列**（S382 复核时点 pull 零新
+  提交记账属实，push 时 9a5a14b7c 才上远端），S342 先例形态——连续
+  轮即刷新。归因：R4335 属渲染流域 crates/layout-engine（本流零
+  重叠无碰撞），非子帧能力（iframe/contentDocument/realm/subframe
+  关键词零命中实测复核）——解冻条件①实质判定不变，
+  frames.click+evaluate 维持挂起；crates/ 观察面 raw 14→**15**
+  （git log 8fb39cd46..HEAD -- crates/ 实测）。**门前置复核 PASS**
+  （9222 端口族全空闲、零竞争 cdp-e2e 腿、零 zombie、负载 1.74
+  净窗——上轮 zeroseed 测试腿已收窗）。**门腿（首调即收口）**：
+  PASS 33 绿 deterministic 双跑 YES EXIT=0（green 33 vs 基线 33
+  对称差 none、regressions 空、双 run 明细逐项一致），steps-report/
+  determinism-report 13:28 同轮新鲜落盘；ZW_IPC_VALIDATE 校验器在
+  位静默（捕获网零侵扰）；唯一红 = 预期挂账 frames.click+evaluate
+  同形态，首调红形态连续第廿二次零再现（S168 形态累计两例非聚集
+  记账维持）；门前置 cargo build 5.43s 增量编译（R4335 触发
+  layout-engine→engine→browser 链），zero-engine dead_code warning
+  既有形态维持（match_media_to_json bins-only 条件 dead，S300 四点
+  归因）。**make test 腿（一调收口）**：19,288P/0F EXIT=0，67 组
+  result 全 ok（R4335 组合态首次全量覆盖——计数与 S341/S342 时点
+  持平零新增用例，渲染流匿名块补偿门修复对全量绿态零影响）；执行
+  注记：首轮因执行环境工具超时 SIGTERM 中断（非测试失败，test-guard
+  包裹下进程树受控终止无系统影响），第二轮后台完整重跑一调收口。
+  **引用计数归零（本轮门活跑新鲜落盘），下次活跑至迟 S393**。机器
+  卫生复核（门后）：零 zombie、9222/45029/34293/19222 端口族全
+  释放、门腿零遗留进程、负载 2.12 回落。双解冻条件实质判定不变：
+  ① 观察面 raw 15 维持（R4335 已计入，非子帧能力）；② 本流控制面
+  零外来提交，DC-2 无新拍板。goal 自有面零新缺口、无扩展面
+  （S40-S382 重审结论延续）。
 - **S382（2026-09-14）静默监测轮 — 同 tip 复核（pull 零新提交，tip =
   eb0e38799 即 S381 提交本身；无代码变更，绿步维持 33）**：双层锚点
   口径复核通过：自有面锚点按 S351 修正后四枚归因口径精确一致（对
@@ -6235,6 +6265,9 @@ ZERO_DRIFT=YES 13:17 落盘 + ZW_IPC_VALIDATE 在位静默），**引用计数
   **S342 时点 19,288P/0F EXIT=0**（一调收口零失败，R4333/R4333b 组合态
   首次全量覆盖——计数与 S341 持平，渲染流 inline_finalization 回填门控
   对全量绿态零影响）；
+  **S383 时点 19,288P/0F EXIT=0**（一调收口零失败，R4335 组合态
+  首次全量覆盖——计数与 S341/S342 持平，渲染流匿名块补偿门修复对
+  全量绿态零影响；首轮执行环境超时中断注记见 S383 切片）；
   禁止裸跑 cargo test，经 test-guard。注：make test
   的 workspace 腿 exclude zero-renderer——renderer lib 单测不在全量门内，跨流红灯
   （form fixture×2）经显式 `-p zero-renderer --lib` 跟踪）
@@ -6320,7 +6353,15 @@ ZERO_DRIFT=YES 13:17 落盘 + ZW_IPC_VALIDATE 在位静默），**引用计数
   绿步集机械 diff 基线零漂移（ZERO_DRIFT=YES，expected_green 33 对称差
   none、regressions 空），13:17 落盘；负载窗亚型（兄弟流编译腿
   cargo build --release 在窗，负载 7.41，非端口竞争面）；ZW_IPC_VALIDATE
-  在位静默；首调红形态连续第廿一次零再现（累计两例非聚集维持）
+  在位静默；首调红形态连续第廿一次零再现（累计两例非聚集维持）。
+  **S383 注记**：R4335 入树触发的树变化刷新轮（S245→S342 先例延续，
+  门 + make test 双刷新；特殊点：入树发生于 S382 收口后的 push 序列，
+  S342 先例形态）——门负载净窗内首调即 PASS 33 绿 deterministic 双跑
+  YES EXIT=0，绿步集机械 diff 基线零漂移（ZERO_DRIFT=YES，
+  expected_green 33 对称差 none、regressions 空），13:28 落盘，
+  ZW_IPC_VALIDATE 在位静默；make test 一调收口 19,288P/0F（R4335
+  组合态首次全量覆盖，计数持平零新增用例）；首调红形态连续第廿二次
+  零再现（累计两例非聚集维持）
 - CDP 现状：`Page.navigate` / `Runtime.evaluate` / `Target.getTargets` 3 命令 +
   `/json/version` + `/json` 发现（headless.rs L782-796/L571/L1159）——历史基线，现行面
   见缺口清单 P3/P4 与切片记录
