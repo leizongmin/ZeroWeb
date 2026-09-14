@@ -2,19 +2,17 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-14（S327：期限活跑轮——引用计数 10/10 到期实际活跑
-（pull 零新提交 tip=4fe786ea9，树对 S317 双腿刷新覆盖树 736f16525 零
-变化），S198 前置复核通过（本流端口族全空闲；同窗 zero-browser 9333 属
-第三 clone ZeroWeb-3-wt-baidu、ZeroWeb-2 全量 cargo test 均非本流竞争
-腿；负载 4.90 按负载窗口口径照跑记账），**cdp-e2e 门首调即收口 PASS 33
-绿 deterministic 双跑 YES EXIT=0 ZERO_DRIFT=YES（green_steps ==
-expected_green 对称差 none、regressions 空）10:10 同轮落盘新鲜**，唯一红
-= 预期挂账 frames.click+evaluate 同形态（locator.click Timeout），首次
-红形态连续第十三次零再现；ZW_IPC_VALIDATE 校验器在位静默（捕获网零侵扰
-验证，零 corruption 标记）；**引用计数重计 1/10 下次活跑至迟 S337**；绿
-步维持 33；解冻条件①观察面不变（crates/ 自 8fb39cd46 维持九枚均非渲染
-流子帧能力，frames.click+evaluate 维持挂起），②DC-2 无新拍板；活跑腿
-全收尾零 zombie 零遗留端口）
+**最后更新**: 2026-09-14（S328：静默监测轮——同 tip 复核（567a0e2d6，即
+S327 提交本身），双层锚点零漂移（自有面维持 apps/browser README +1 已归因
+基线；全树锚点排除本流 docs 后 tracked 代码树对 S317 双腿刷新覆盖树
+736f16525 零变化——S327 活跑 10:10 已直接覆盖该树证据新鲜），门结论引用
+S327 活跑（门 PASS 33 绿 deterministic YES EXIT=0 ZERO_DRIFT=YES 10:10 +
+ZW_IPC_VALIDATE 静默），引用计数 2/10 下次活跑至迟 S337；绿步维持 33；
+解冻条件①观察面不变（crates/ 自 8fb39cd46 维持九枚均非渲染流子帧能力，
+frames.click+evaluate 维持挂起），②DC-2 无新拍板；机器卫生全净含
+zw-loop/zw-hunt 检查模式；同窗并行流活动延续已归因（ZeroWeb-2 cargo
+test + ZeroWeb-3-wt-baidu 9333 browser，均非本流竞争腿，负载 3.55）；S78
+家族维持 S320 收窄定性；零 zombie 零遗留端口）
 
 ---
 
@@ -45,6 +43,25 @@ expected_green 对称差 none、regressions 空）10:10 同轮落盘新鲜**，�
 
 ## 已完成切片
 
+- **S328（2026-09-14）静默监测轮 — 同 tip 复核（无代码变更，绿步维持 33）**：
+  pull 零新提交（tip = 567a0e2d6，即 S327 提交本身）——双层锚点口径复核
+  通过：自有面锚点增量零漂移（硬核对维持仅 apps/browser/README.md +1 行 =
+  S255 已归因的 52695a7c1 漂移基线，对 765429dda 基点实测恰 +1 行）；全树
+  锚点复核（排除本流 docs 后 tracked 代码树对 736f16525 = S317 双腿刷新
+  覆盖树零变化——S327 活跑 10:10 已直接覆盖该树，证据新鲜可引用）零外部
+  变化。双解冻条件实质判定不变：① crates/ 自 8fb39cd46 维持九枚（R4325-F/
+  R4328-F/R4330-F/PR30 含 7228ffeea+11da119cf/R4331/本流 S315+S316 诊断
+  面），均非渲染流子帧文档加载 + JS realm 能力，frames.click+evaluate
+  维持挂起；② docs/goal 自 S327 零非本流提交，DC-2 口径无新拍板记录。
+  门结论引用 S327 活跑（门 PASS 33 绿 deterministic 双跑 YES EXIT=0
+  ZERO_DRIFT=YES 10:10 落盘 + ZW_IPC_VALIDATE 校验器在位静默），引用计数
+  1/10→**2/10**，下次活跑至迟 S337。机器卫生复核：零 zombie、
+  9222/45029/34293/19222 全空闲、`pgrep -af 'zw-loop|zw-hunt'` 零孤儿
+  hunt 遗留；同窗并行流活动延续已归因（ZeroWeb-2 clone cargo test
+  test-guard 包裹进行中 + ZeroWeb-3-wt-baidu clone zero-browser 9333，
+  端口族不相交、均非本流 cdp-e2e 竞争腿；cargo 1 + rustc 1 + make 1，
+  负载 3.55——本轮零活跑需求不受影响）。goal 自有面零新缺口、无扩展面
+  （S40-S327 重审结论延续）。
 - **S327（2026-09-14）期限活跑轮 — 引用计数 10/10 到期实际活跑（S309 先例，
   绿步维持 33）**：
   pull 零新提交（tip = 4fe786ea9，即 S326 提交本身；树对 S317 双腿刷新
