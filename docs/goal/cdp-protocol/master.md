@@ -2,20 +2,20 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-14（S336：期限活跑轮（引用计数 10/10 到期，S299/S309
-先例：9/10 次轮即期限轮）——同 tip 复核（9933cb3b7，即 S335 提交本身）+
-双层锚点零漂移，cdp-e2e 门首调即收口 PASS 33 绿 deterministic 双跑 YES
-EXIT=0 ZERO_DRIFT=YES（expected_green 33 对称差 none、regressions 空）
-10:27 落盘，ZW_IPC_VALIDATE 校验器在位静默（malformed frame buffer/
-ipc reader terminated 零命中），唯一红=预期挂账 frames.click+evaluate
-同形态，首调红形态连续第十四次零再现；引用计数重计 1/10 下次活跑至迟
-S346；绿步维持 33；解冻条件①观察面不变（crates/ 自 8fb39cd46 维持九枚
-均非渲染流子帧能力，frames.click+evaluate 维持挂起）②DC-2 无新拍板；
-机器卫生全净含 zw-loop/zw-hunt 检查模式；同窗并行流活动延续已归因
-（ZeroWeb-2 make test 延续、ZeroWeb-3-wt-baidu 9333 browser + test-guard
-腿，均非本流竞争腿；负载 5.72 负载窗口照跑记账，第十五个负载下样本）；
-活跑腿全收尾零 zombie 零遗留端口（瞬时 zombie 已被收割归零）；S78 家族
-维持 S320 收窄定性）
+**最后更新**: 2026-09-14（S337：静默监测轮——同 tip 复核（b803c07c2，即
+S336 提交本身），双层锚点零漂移（自有面维持 apps/browser README +1 已归因
+基线；全树锚点排除本流 docs 后 tracked 代码树对 S317 双腿刷新覆盖树
+736f16525 零变化——S336 活跑 10:27 直接覆盖当前树），门结论引用 S336
+活跑（门 PASS 33 绿 deterministic YES EXIT=0 ZERO_DRIFT=YES 10:27 +
+ZW_IPC_VALIDATE 静默），引用计数 2/10 下次活跑至迟 S346；绿步维持 33；
+解冻条件①观察面不变（crates/ 自 8fb39cd46 维持九枚均非渲染流子帧能力，
+frames.click+evaluate 维持挂起），②DC-2 无新拍板；机器卫生全净含
+zw-loop/zw-hunt 检查模式；**并行 cdp-e2e 腿入窗记账（S198 端口竞争亚型
+观察态）**：ZeroWeb-3-wt-baidu site-optimizer gate6 验收链（gate6.done
+未落地）顺序含 make test 腿（进行中，负载 11.71 峰值）+ make cdp-e2e
+腿（未启动，9222 仍空闲）——本轮零活跑需求无实际竞争，但**后续任何
+本流活跑（树变化刷新轮或引用期限轮）在 gate6.done 落地前必须等待避让**；
+S78 家族维持 S320 收窄定性；零 zombie 零遗留端口）
 
 ---
 
@@ -46,6 +46,27 @@ S346；绿步维持 33；解冻条件①观察面不变（crates/ 自 8fb39cd46 
 
 ## 已完成切片
 
+- **S337（2026-09-14）静默监测轮 — 同 tip 复核（无代码变更，绿步维持 33）**：
+  pull 零新提交（tip = b803c07c2，即 S336 提交本身）——双层锚点口径复核
+  通过：自有面锚点增量零漂移（硬核对维持仅 apps/browser/README.md +1 行 =
+  S255 已归因的 52695a7c1 漂移基线，对 765429dda 基点实测恰 +1 行）；全树
+  锚点复核（排除本流 docs 后 tracked 代码树对 736f16525 = S317 双腿刷新
+  覆盖树零变化——S336 活跑 10:27 直接覆盖当前树，证据新鲜可引用）零外部
+  变化。双解冻条件实质判定不变：① crates/ 自 8fb39cd46 维持九枚，均非
+  渲染流子帧文档加载 + JS realm 能力，frames.click+evaluate 维持挂起；
+  ② docs/goal 自 S336 零非本流提交，DC-2 口径无新拍板记录。门结论引用
+  S336 活跑（门 PASS 33 绿 deterministic 双跑 YES EXIT=0 ZERO_DRIFT=YES
+  10:27 落盘 + ZW_IPC_VALIDATE 校验器在位静默），引用计数 1/10→**2/10**，
+  下次活跑至迟 S346。机器卫生复核：零 zombie（stat 精确判定）、9222
+  端口族空闲、`pgrep -af 'zw-loop|zw-hunt'` 零孤儿 hunt 遗留。
+  **并行 cdp-e2e 腿入窗记账（S198 端口竞争亚型观察态）**：ZeroWeb-3-wt-baidu
+  clone site-optimizer gate6 验收链（bash 2291122 → gate6.done 未落地）
+  顺序两腿——make test 腿进行中（test-guard 24G total-mem，1min 负载
+  11.71 峰值）+ make cdp-e2e 腿排在其后（未启动，9222 当前仍空闲）。
+  本轮静默零活跑需求、无实际端口竞争；但**后续任何本流活跑（树变化
+  刷新轮或引用期限轮）在 gate6.done 落地、9222 释放前必须等待避让**
+  （S198 先例口径：避免两流门禁双输假失败）。goal 自有面零新缺口、
+  无扩展面（S40-S336 重审结论延续）。
 - **S336（2026-09-14）期限活跑轮 — 引用计数 10/10 到期实际活跑（绿步维持 33）**：
   pull 零新提交（tip = 9933cb3b7，即 S335 提交本身），双层锚点零漂移
   （自有面 apps/browser/README.md 对 765429dda 恰 +1 已归因基线；全树排除
