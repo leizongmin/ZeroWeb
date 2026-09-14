@@ -2,19 +2,17 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-14（S316：流损坏根因排查轮①——**门已回绿**：当前树
-（PR30 组合态）cdp-e2e 门 PASS 33 绿 deterministic 双跑 YES（校验器在位
-静默），S315 门红定性**降级修正**：非确定性回归，实为 S78/#0 家族「负载
-触发间歇」——晨窗 3/3 高频复现（siteopt merge + 编译风暴并行负载期），
-平静态 0/18+（8 全帧追踪 + 6 头部追踪带载 + 4 无追踪 + 门双跑）。
-**首轮取证成果**：全帧追踪绿跑 multiset 对照 453W=453R 零 chimera 零丢失
-（管道字节忠实，原子帧写完好到达）+ renderer 写侧拓扑测绘（三线程写：
-compositor-publish 444 / runtime 7 / js-worker 2，per-instance SharedWriter
-+ 共享 fd mutex，flush=单次原子 write_all）。**常驻第一现场捕获网部署**：
-ZW_IPC_VALIDATE=1 已入 make cdp-e2e（flush 前帧走查校验，破损即打印
-tid+hex 定位组装线程）；ZW_IPC_TRACE 双侧逐帧 hex 追踪器（env 门控）——
-下次自然复现即抓组装现场。#0 维持开放；引用计数重计 1/10 下次活跑至迟
-S326。零 zombie 零遗留端口）
+**最后更新**: 2026-09-14（S317：树变化刷新轮——渲染流 R4331（23a20a84f，
+inline walk 吞 br 修复 + run-in 自盒零占位，layout-engine 4 文件）入树触发
+（S245/S258/S289/S290/S314 先例：门 + make test 双腿刷新），cdp-e2e 门首调
+即收口 PASS 33 绿 deterministic 双跑 YES EXIT=0（expected_green 33 对称差
+none、regressions 空）09:11 落盘，ZW_IPC_VALIDATE 校验器在位静默；make test
+两调收口 19,287P/0F（run1 webview integration.rs:454 setInterval 首拍单例
+瞬态红——「无轮询首断言」flake 家族新成员候选第 4 例，run2 全绿含该测试
+双腿 ok，机械归因四点非基线回归非 R4331 因果，跨流记档待 zero-web 流修）；
+绿步维持 33；计数漂移 19,281→19,287（+6 = R4331 新增用例）；引用计数重计
+1/10 下次活跑至迟 S327；解冻条件①观察面不变（R4331 非渲染流子帧能力），
+②DC-2 无新拍板；零 zombie 零遗留端口）
 
 ---
 
@@ -45,6 +43,31 @@ S326。零 zombie 零遗留端口）
 
 ## 已完成切片
 
+- **S317（2026-09-14）树变化刷新轮 — 渲染流 R4331 入树触发（S245/S258/
+  S289/S290/S314 先例：门 + make test 双腿刷新，绿步维持 33）**：
+  pull 零新提交（tip = 736f16525 即 S316 提交本身）——**动因核对**：S316
+  push 步 rebase 带入的渲染流代码提交 23a20a84f（R4331 inline walk 吞 br
+  修复 + run-in 自盒零占位，layout-engine 4 文件 +102 行含 76 行新测试）
+  未经本流门跑覆盖（S316 门在其入树前运行），按树变化口径双腿刷新。
+  **归因**：R4331 渲染流自有工作面（layout-engine），rebase 零冲突无碰头；
+  非渲染流子帧文档加载 + JS realm 能力，解冻条件①不变。**腿一 cdp-e2e 门**：
+  首调即 PASS 33 绿、deterministic 双跑 YES、EXIT=0、ZERO_DRIFT=YES
+  （expected_green 33 对称差 none、regressions 空）09:11 同轮落盘新鲜，
+  ZW_IPC_VALIDATE 校验器在位静默（门自 S316 起常驻捕获网零侵扰验证），
+  首调红形态连续第十二次零再现（S168 形态累计两例非聚集维持）。
+  **腿二 make test 两调收口**：run1 于 webview integration 腿单例瞬态红——
+  `test_webview_set_interval_calls_fn`（crates/webview/src/tests/
+  integration.rs:454，断言 setInterval 首拍即执行 left=0 right=1，test-guard
+  包裹正常停止后续腿）；**机械归因四点**：① run2 全量 19,287P/0F 且该测试
+  两腿均 ok（隔离态可过）；② 形态 = 「无轮询首断言」anti-pattern，与已记档
+  webview sw L1139 flake 家族（第 3 漏改点）同族——新成员候选第 4 例，
+  zero-web 流工作面（crates/webview），跨流记档不单方修（S290 先例）；
+  ③ 本流 S316 诊断变更全部 env 门控（make test 不设 env，零行为路径）；
+  ④ R4331 纯 layout 面、其自有 make test 绿态在案，无 timer 语义面。
+  非基线回归非 R4331 因果。**计数漂移**：19,281→19,287（+6 = R4331 新增
+  用例，R4330-F 后首次全量覆盖）。**引用计数重计 1/10，下次活跑至迟
+  S327**。机器卫生：两腿全收尾、零 zombie、端口族全空闲、零遗留进程。
+  goal 自有面零新缺口、无扩展面（S40-S316 重审结论延续）。
 - **S316（2026-09-14）流损坏根因排查轮① — 门回绿 + 第一现场捕获网部署
   （S315「确定性复现」定性降级修正）**：
   双侧插桩排查执行与关键发现：① **管道字节忠实性证明**——双侧逐帧 hex 追踪
@@ -4677,8 +4700,10 @@ S326。零 zombie 零遗留端口）
    S290 已执行（afdd423df 入树触发的树变化刷新轮，净窗门首调收口 + make test
    两调收口）；S300 已执行（期限轮净窗首调即收口）；S309 已执行（期限轮净窗
    首调即收口，S299 先例：9/10 次轮即期限轮）；S314 已执行（R4330-F 入树
-   触发的树变化刷新轮，门 + make test 双刷新，S245/S258/S289/S290 先例），
-   下次活跑至迟 S324；
+   触发的树变化刷新轮，门 + make test 双刷新，S245/S258/S289/S290 先例）；
+   S317 已执行（R4331 入树触发的树变化刷新轮，门 + make test 双刷新，
+   make test 两调收口 run1 webview timer 单例瞬态红归因 flake 家族），
+   下次活跑至迟 S327；
    若活跑时逢并行流负载窗口则
    优先窗口内执行，负载下样本对 #0 更有价值（负载窗口口径含并行流 browser 进程型与
    编译测试负载型两亚型，净窗亚型 S208 起并行记录；**端口竞争亚型口径 S198 新增**：
@@ -4737,6 +4762,10 @@ S326。零 zombie 零遗留端口）
   **S314 时点 19,281P/0F EXIT=0**（一调收口零失败，R4330-F 组合态首次全量
   覆盖——R4330-F 零新增用例计数持平，渲染流 run-in 边框修复对全量绿态零
   影响）；
+  **S317 时点 19,287P/0F EXIT=0**（两调收口：run1 webview
+  integration.rs:454 setInterval 首拍单例瞬态红——「无轮询首断言」flake
+  家族新成员候选第 4 例跨流记档，run2 全绿含该测试两腿 ok；19,281→19,287
+  +6 = R4331 新增用例，R4331 组合态首次全量覆盖）；
   禁止裸跑 cargo test，经 test-guard。注：make test
   的 workspace 腿 exclude zero-renderer——renderer lib 单测不在全量门内，跨流红灯
   （form fixture×2）经显式 `-p zero-renderer --lib` 跟踪）
@@ -4783,7 +4812,11 @@ S326。零 zombie 零遗留端口）
   PASS 33 绿 deterministic 双跑 YES EXIT=0，绿步集机械 diff 基线零漂移
   （ZERO_DRIFT=YES，expected_green 33 对称差 none、regressions 空），07:31
   落盘；净窗亚型（负载 1.39、零并行腿、零端口竞争）；首调红形态连续第九次
-  零再现（累计两例非聚集维持）；编译腿 zero-engine dead_code warning 记档为
+  零再现（累计两例非聚集维持）。**S317 注记**：R4331 入树触发的树变化
+  刷新轮——门首调即 PASS 33 绿 deterministic 双跑 YES EXIT=0
+  （expected_green 33 对称差 none、regressions 空）09:11 落盘，
+  ZW_IPC_VALIDATE 校验器在位静默（捕获网零侵扰验证）；首调红形态连续
+  第十二次零再现；编译腿 zero-engine dead_code warning 记档为
   既有形态（bins-only 条件 dead，clippy all-targets 零命中门零回归，见 S300
   切片四点归因）。**S309 注记**：期限轮净窗活跑（引用计数 10/10 到期，S299
   先例：9/10 次轮即期限轮）——首调即 PASS 33 绿 deterministic 双跑 YES
