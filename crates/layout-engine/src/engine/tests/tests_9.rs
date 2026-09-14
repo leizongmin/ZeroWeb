@@ -513,6 +513,7 @@ fn test_measure_text_content_no_text() {
         },
         &HashMap::new(),
         InlineFontContext::default(),
+        None,
     );
     assert_eq!(size.width, 0.0, "无文本节点宽度应为 0");
     assert_eq!(size.height, 0.0, "无文本节点高度应为 0");
@@ -559,6 +560,7 @@ fn test_measure_text_content_min_content_is_widest_word() {
         },
         &HashMap::new(),
         InlineFontContext::default(),
+        None,
     );
     // MinContent ≈ 最宽词 "YYYY"(40px)，远小于整行 max-content(~70px)。
     assert!(
@@ -577,6 +579,7 @@ fn test_measure_text_content_min_content_is_widest_word() {
         },
         &HashMap::new(),
         InlineFontContext::default(),
+        None,
     );
     // MaxContent ≈ 整行 "XX YYYY"(~70px)。
     assert!(
@@ -635,6 +638,7 @@ fn test_r3787_float_subtree_measure_for_exclusion_backfill() {
         },
         &HashMap::new(),
         InlineFontContext::default(),
+        None,
     );
     assert!(
         size.height > 0.0,
@@ -695,6 +699,7 @@ fn test_r1578_measure_uses_img_intrinsic_for_auto_width_img() {
         avail,
         &intrinsic,
         InlineFontContext::default(),
+        None,
     )
     .height;
     // OFF：不推导 → img 不收集（w=0）→ `<a>` 塌缩
@@ -709,6 +714,7 @@ fn test_r1578_measure_uses_img_intrinsic_for_auto_width_img() {
         avail,
         &intrinsic,
         InlineFontContext::default(),
+        None,
     )
     .height;
 
@@ -756,6 +762,7 @@ fn test_leaf_measure_nonahem_lineheight_no_overshoot() {
         avail,
         &HashMap::new(),
         InlineFontContext::default(),
+        None,
     )
     .height;
     assert!(
@@ -773,6 +780,7 @@ fn test_leaf_measure_nonahem_lineheight_no_overshoot() {
             avail,
             &HashMap::new(),
             InlineFontContext::default(),
+            None,
         )
         .height;
         let expected = fs * 1.164;

@@ -954,12 +954,26 @@ impl InlineFormattingContext {
         let word_spacing = style
             .map(|s| Self::resolve_word_spacing(&s.word_spacing, font_size))
             .unwrap_or_else(|| self.word_spacing_overrides.get(&child_id).copied().unwrap_or(0.0));
+        // R4332：水平边框占行内空间（单 run 既首且末，双边框都折入 margin）。
+        // bidi 控制符臂同 walk 位（见彼处注释）；零边框短路同 walk 位。
+        let adv0 = Self::inline_horizontal_border_advance(style);
+        let (border_adv_l, border_adv_r) = if adv0 == (0.0, 0.0) {
+            adv0
+        } else if Self::inline_horizontal_border_advance_has_bidi_controls(
+            doc.text_content(child_id).unwrap_or_default().as_str(),
+        ) {
+            (0.0, 0.0)
+        } else {
+            adv0
+        };
         let margin_left = style
             .map(|s| Self::resolve_inline_margin(&s.margin_left, s))
-            .unwrap_or_else(|| self.margin_overrides.get(&child_id).map(|(ml, _)| *ml).unwrap_or(0.0));
+            .unwrap_or_else(|| self.margin_overrides.get(&child_id).map(|(ml, _)| *ml).unwrap_or(0.0))
+            + if std::env::var("R4332_FOLD_OFF").is_ok() { 0.0 } else { border_adv_l };
         let margin_right = style
             .map(|s| Self::resolve_inline_margin(&s.margin_right, s))
-            .unwrap_or_else(|| self.margin_overrides.get(&child_id).map(|(_, mr)| *mr).unwrap_or(0.0));
+            .unwrap_or_else(|| self.margin_overrides.get(&child_id).map(|(_, mr)| *mr).unwrap_or(0.0))
+            + if std::env::var("R4332_FOLD_OFF").is_ok() { 0.0 } else { border_adv_r };
         let padding_left = style
             .map(|s| Self::resolve_inline_padding(&s.padding_left, s))
             .unwrap_or_else(|| self.padding_overrides.get(&child_id).map(|(pl, _)| *pl).unwrap_or(0.0));
@@ -1086,12 +1100,31 @@ impl InlineFormattingContext {
             .map(|s| s.font_family.iter().any(|f| f.trim_matches('"').eq_ignore_ascii_case("Ahem")))
             .unwrap_or_else(|| self.is_ahem_overrides.get(&elem_id).copied().unwrap_or(false));
         let (padding_top, padding_bottom, border_top, border_bottom) = Self::extract_inline_box_metrics(style);
+        // R4332：水平边框占行内空间——首 run 左边框、末 run 右边框折入 margin
+        //（margin 参与 break_lines 推进；paint 侧 R1442 竖边锚 frag_x - pad - bl
+        //  在含推进的 frag.x 下仍正确：边框区 = [x-pad-bl, x-pad]）。
+        // 子树含 bidi 控制符时不折入——css-writing-modes §bidi-box-model 的逻辑侧
+        // 映射（拆分片段物理左右边随重排翻转）未实现，物理折入破坏既有一致形态
+        //（bidi-003/005/006 RLO/PDF 族）。零边框（绝大多数 inline）短路不扫文本
+        //（text_content O(子树)，避免无谓扫描）。
+        let adv0 = Self::inline_horizontal_border_advance(style);
+        let (border_adv_l, border_adv_r) = if adv0 == (0.0, 0.0) {
+            adv0
+        } else if Self::inline_horizontal_border_advance_has_bidi_controls(
+            &doc.text_content(elem_id).unwrap_or_default(),
+        ) {
+            (0.0, 0.0)
+        } else {
+            adv0
+        };
         let margin_left = style
             .map(|s| Self::resolve_inline_margin(&s.margin_left, s))
-            .unwrap_or_else(|| self.margin_overrides.get(&elem_id).map(|(ml, _)| *ml).unwrap_or(0.0));
+            .unwrap_or_else(|| self.margin_overrides.get(&elem_id).map(|(ml, _)| *ml).unwrap_or(0.0))
+            + if std::env::var("R4332_FOLD_OFF").is_ok() { 0.0 } else { border_adv_l };
         let margin_right = style
             .map(|s| Self::resolve_inline_margin(&s.margin_right, s))
-            .unwrap_or_else(|| self.margin_overrides.get(&elem_id).map(|(_, mr)| *mr).unwrap_or(0.0));
+            .unwrap_or_else(|| self.margin_overrides.get(&elem_id).map(|(_, mr)| *mr).unwrap_or(0.0))
+            + if std::env::var("R4332_FOLD_OFF").is_ok() { 0.0 } else { border_adv_r };
         let padding_left = style
             .map(|s| Self::resolve_inline_padding(&s.padding_left, s))
             .unwrap_or_else(|| self.padding_overrides.get(&elem_id).map(|(pl, _)| *pl).unwrap_or(0.0));
@@ -1169,8 +1202,12 @@ impl InlineFormattingContext {
                     // `<br>`（`<span>a<br/>b</span>`）整条丢失强制断行，段落行结构整体
                     // 漂移（run-in-breaking-001 ref 页 span 包裹 br 实证）。按 local_name
                     // 判定（style 无关谓词，paint IFC 与 layout IFC 判定恒同）。
+                    // R4332：br 后置 emitted_text_run = true——br 前若已有文本 emit，br 后
+                    // 的文本 run 不得再带首 run frame（margin/padding 左值；chromium 首片段
+                    // 语义），否则 br 两侧文本都收左推进（ref 页 "header" 多缩进 border 宽实证）。
                     if elem_data.local_name() == "br" {
                         flush_pending(&mut text_pending, items, !emitted_text_run, false);
+                        emitted_text_run = true;
                         items.push(InlineItem::Br);
                         continue;
                     }

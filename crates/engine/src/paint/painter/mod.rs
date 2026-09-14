@@ -1684,6 +1684,28 @@ impl Painter {
                     // 同口径，两路恰一者生效。
                     && box_node.content_height > inline_fs_px * 1.5
                     && doc.is_some_and(|d| text::has_direct_paintable_text(d, node_id, Some(styles)));
+                // R4332：多行 inline 的 box-level **边框**抑制（union 矩形跨行整框 →
+                // paint_text R1442 块逐片段描绘）。门 = bg 门去 bg 色条件，与 paint_node 同款。
+                let skip_inline_box_border = !is_replaced_elem
+                    && matches!(style.display, DisplayValue::Inline)
+                    && matches!(
+                        style.box_decoration_break,
+                        zero_style_system::property::types::BoxDecorationBreakValue::Slice
+                    )
+                    && !box_node.is_absolute
+                    && !box_node.is_fixed
+                    // R4332：多行判据 = content_height > 1.5×**最大 run 行高**（非 1.5×fs）——
+                    // line-height 撑大的单行 span（bidi-003 line-height:3em）不算多行，
+                    // 保留 box-level border-box 绘制；真跨行（行高之和 > 1.5 行）才抑制。
+                    && box_node.content_height
+                        > inline_fs_px.max(
+                            box_node
+                                .text_node_line_heights
+                                .values()
+                                .copied()
+                                .fold(0.0_f32, f32::max),
+                        ) * 1.5
+                    && doc.is_some_and(|d| text::has_direct_paintable_text(d, node_id, Some(styles)));
                 // R4248（CSS Borders 4 §corner-shaping）：corner-shape 装饰裁剪窗——
                 // 背景/边框/outline 图元绘制后统一裁到形角多边形。窗口准备走
                 // #[inline(never)] 助手（paint 递归帧敏感，深嵌套页栈溢出史）。
@@ -1709,6 +1731,9 @@ impl Painter {
                     || box_node.border_bottom > 0.0
                     || box_node.border_left > 0.0)
                     && !is_collapsed_table
+                    // R4332：多行 inline（skip_inline_box_border）改由 paint_text
+                    // per-fragment 描绘（union 矩形跨行整框与 chromium per-fragment 语义相悖）。
+                    && !skip_inline_box_border
                 {
                     let fieldset_legend = doc.and_then(|doc| {
                         let node = doc.get(node_id)?;
@@ -2109,6 +2134,30 @@ impl Painter {
                     // （同轮改存 content 域）联动，两路恰一者生效。
                     && box_node.content_height > inline_fs_px * 1.5
                     && doc.is_some_and(|d| text::has_direct_paintable_text(d, node_id, Some(styles)));
+                // R4332：多行 inline 的 box-level **边框**抑制——union 矩形（跨行片段的
+                // 陈旧单矩形）画出一个环绕所有行的整框（左/右竖边贯穿全部行），与
+                // chromium per-fragment 语义（左竖边仅首片段、右竖边仅末片段）相悖；
+                // 改由 paint_text R1442 块逐片段描绘。门 = bg 门去 bg 色条件（有边框即抑制）。
+                let skip_inline_box_border = !is_replaced_elem2
+                    && matches!(style.display, DisplayValue::Inline)
+                    && matches!(
+                        style.box_decoration_break,
+                        zero_style_system::property::types::BoxDecorationBreakValue::Slice
+                    )
+                    && !box_node.is_absolute
+                    && !box_node.is_fixed
+                    // R4332：多行判据 = content_height > 1.5×**最大 run 行高**（非 1.5×fs）——
+                    // line-height 撑大的单行 span（bidi-003 line-height:3em）不算多行，
+                    // 保留 box-level border-box 绘制；真跨行（行高之和 > 1.5 行）才抑制。
+                    && box_node.content_height
+                        > inline_fs_px.max(
+                            box_node
+                                .text_node_line_heights
+                                .values()
+                                .copied()
+                                .fold(0.0_f32, f32::max),
+                        ) * 1.5
+                    && doc.is_some_and(|d| text::has_direct_paintable_text(d, node_id, Some(styles)));
                 if style.background_color != ColorValue::Transparent
                     && !skip_split_inline_deco
                     && !skip_inline_box_bg
@@ -2135,7 +2184,9 @@ impl Painter {
                 }
 
                 // 2. 边框填充（zero_box_model 已归零，但保留防护检查）
+                // R4332：多行 inline（skip_inline_box_border）改由 paint_text per-fragment 描绘。
                 if !skip_split_inline_deco
+                    && !skip_inline_box_border
                     && (box_node.border_top > 0.0
                         || box_node.border_right > 0.0
                         || box_node.border_bottom > 0.0

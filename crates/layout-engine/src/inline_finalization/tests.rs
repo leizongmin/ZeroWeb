@@ -160,6 +160,7 @@ fn r3625_empty_leaf_measure_resolves_residual_explicit_size() {
         },
         &HashMap::new(),
         Default::default(),
+        None,
     );
 
     assert!(

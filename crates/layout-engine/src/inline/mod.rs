@@ -940,6 +940,39 @@ impl InlineFormattingContext {
         }
     }
 
+    /// R4332（CSS2.1 §8.5.3）：inline 元素**水平边框**的行内空间推进量 (左, 右)。
+    ///
+    /// inline 盒首片段的 border-left / 末片段的 border-right 占据行内轴空间
+    ///（chromium 同——边框把文本向内推）；此前只有 margin/padding 参与推进，
+    /// 边框悬在片段外缘画进邻接空间（多行 span 左竖边画进父 padding 实证）。
+    /// border-style none/hidden → 0（同 converter 边框口径）；非 Px 计算值 → 0
+    ///（与 paint px_of 同口径）。
+    fn inline_horizontal_border_advance_has_bidi_controls(text: &str) -> bool {
+        text.chars()
+            .any(|c| ('\u{202A}'..='\u{202E}').contains(&c) || ('\u{2066}'..='\u{2069}').contains(&c))
+    }
+
+    fn inline_horizontal_border_advance(style: Option<&zero_style_system::ComputedStyle>) -> (f32, f32) {
+        use zero_css_parser::values::LengthValue;
+        use zero_style_system::property::types::BorderStyleValue;
+        let advance = |w: &LengthValue, st: &BorderStyleValue| -> f32 {
+            match st {
+                BorderStyleValue::None | BorderStyleValue::Hidden => 0.0,
+                _ => match w {
+                    LengthValue::Px(v) => *v as f32,
+                    _ => 0.0,
+                },
+            }
+        };
+        match style {
+            Some(s) => (
+                advance(&s.border_left_width, &s.border_left_style),
+                advance(&s.border_right_width, &s.border_right_style),
+            ),
+            None => (0.0, 0.0),
+        }
+    }
+
     /// 对文档中指定节点的行内子内容执行布局。
     ///
     /// 收集文本节点和 inline 元素，从 ComputedStyle 读取 font-size 和 line-height，

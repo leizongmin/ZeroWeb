@@ -42,6 +42,8 @@ pub(crate) fn downloaded_text_border_width(
         },
         &HashMap::new(),
         fonts,
+        // R4332：intrinsic 纯文本叶盒非 run-in 后继块，无前缀可并入。
+        None,
     );
     Some(measured.width + node.padding_left + node.padding_right + node.border_left + node.border_right)
 }

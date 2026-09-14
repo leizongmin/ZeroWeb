@@ -886,6 +886,10 @@ impl super::Painter {
             struct PaintFragment {
                 x: f32,
                 y: f32,
+                // R4332：片段所属行盒顶（container-rel = line.y，horizontal）。多行 inline
+                // 盒装饰（R1442 横条/竖边）的行锚；vertical 模式 line.y 是列 x，不适用
+                //（R1442 块本就 !is_vertical 门控，恒 0 不消费）。
+                line_top_rel: f32,
                 // R817 Phase 2：片段基线绝对 y（container-rel = line.y + line.baseline_y）。
                 // 供 is_ahem glyph 定位用（见 stored 渲染循环），paint 非存储路径不读。
                 baseline_y_abs: f32,
@@ -917,6 +921,8 @@ impl super::Painter {
                         line.fragments.iter().filter_map(move |f| {
                             f.node_id.map(|nid| PaintFragment {
                                 x: f.x,
+                                // R4332：行盒顶（horizontal = line.y；vertical 是列 x 不适用）。
+                                line_top_rel: if is_vertical { 0.0 } else { line_y },
                                 // R1456：垂直模式下 line.y 是**列 x 坐标**（inline/mod.rs:1551
                                 // vertical_rtl 轴交换把列 x 存进 col.y/line.y），已在 f.x（= run.x
                                 // = 列 x）中体现，**不可**再加到片段 y（深度）。旧行为 line_y+f.y
@@ -1143,9 +1149,17 @@ impl super::Painter {
             //（layout 算对多行 h，paint 把多行画在同一 y）——用户可见的"文字堆叠看不清"。
             // 同源 -11 是「test/ref 同错用例的诚实化暴露」（DC-14 视角为进步），非真退步；
             // product-smoke（真实网站）维度此修复为正收益。故统一对所有 Path B 应用 with_line_y。
+            let mut frag_line_tops: Vec<f32> = Vec::new();
             let fragments: Vec<zero_layout_engine::TextFragment> = if use_stored {
                 Vec::new()
             } else {
+                // R4332：片段 → 所属行盒顶（line.y）平行表——all_fragments_with_line_y
+                // 按行序扁平化（行内 run 数展开即得逐片段 line.y）。多行 inline 盒装饰
+                //（R1442 横条 + R4330 载荷描边）以行盒顶为锚，旧锚 = 片段基线
+                //（frag.y + v_offset，R3856 契约）落字高中部。
+                for line in &inline_ctx.lines {
+                    frag_line_tops.extend(std::iter::repeat_n(line.y, line.runs.len()));
+                }
                 inline_ctx.all_fragments_with_line_y()
             };
 
@@ -1545,13 +1559,25 @@ impl super::Painter {
                         .filter(|s| s.background_color != ColorValue::Transparent)
                         .map(|s| color_value_to_render(&s.background_color));
                     macro_rules! render_fragment {
-                        ($frag_x:expr, $frag_y:expr, $frag_width:expr, $baseline_offset:expr, $frag_fs:expr, $frag_text:expr, $frag_nid:expr, $is_ahem:expr, $frag_source:expr, $frag_ls:expr) => {{
+                        ($frag_x:expr, $frag_y:expr, $frag_line_top:expr, $frag_edge:expr, $frag_width:expr, $baseline_offset:expr, $frag_fs:expr, $frag_text:expr, $frag_nid:expr, $is_ahem:expr, $frag_source:expr, $frag_ls:expr) => {{
                             // R4233：per-fragment letter-spacing（镜像 R4133 per-fragment
                             // word-spacing）——片段所属 run 声明的 ls 与容器盒不同时
                             //（span{letter-spacing} / 容器内 normal 重置），glyph advance、
                             // text_width、ruby 段宽须用片段值；容器值仅作 fallback 语义保留
                             //（shaped-eligibility gate 仍读容器值，见下）。
                             let frag_letter_spacing: f32 = $frag_ls;
+                            // R4332：片段在其 owner 片段序列中的首/末位（调用点按 owner
+                            // 预计算——macro_rules! 卫生宏体不可见调用点局部，故作参数传入）。
+                            let (r4332_is_first, r4332_is_last, r4332_is_multi_line) = $frag_edge;
+                            // R4332：owner 解析（竖边判定与 per-fragment color 同源）。
+                            let r4332_owner = if doc
+                                .get($frag_nid)
+                                .is_some_and(|n| matches!(n.kind, NodeKind::Text(_)))
+                            {
+                                doc.parent_node($frag_nid).unwrap_or($frag_nid)
+                            } else {
+                                $frag_nid
+                            };
                             // CSS 2.1 §9.2.1.1: an inline-block is an atomic inline-level box.
                             // Its parent IFC emits an empty placeholder solely for positioning; the
                             // inline-block's own box must still paint its text.
@@ -1575,14 +1601,8 @@ impl super::Painter {
                             // R335 实证 per-fragment color 作用于 abspos 文本会使绿色 X 更显眼地绘在
                             // 错误的 paint-IFC（正常流）位置 → abs-pos-non-replaced-vrl/vlr 4 case 回归。
                             // abspos 文本位置修复需 Phase A（R336 double-path），guard 维持当前行为。
-                            let owner_id = if doc
-                                .get($frag_nid)
-                                .is_some_and(|n| matches!(n.kind, NodeKind::Text(_)))
-                            {
-                                doc.parent_node($frag_nid).unwrap_or($frag_nid)
-                            } else {
-                                $frag_nid
-                            };
+                            // R4332：owner 解析上移至宏首（竖边首/末判定同源），此处直接复用。
+                            let owner_id = r4332_owner;
                             // R3871：荷兰语 ij/IJ 双字母组语境——沿 owner 祖先链找最近 lang 属性，
                             // nl 前缀（nl / nl-NL / nl-SR…）即启用（与 style-system effective_lang
                             // 同语义）。doc 在此已为 &Document（paint_text 的 if-let 解包）。
@@ -1877,21 +1897,77 @@ impl super::Painter {
                                 };
                                 let pad_top = px_of(&owner_style.padding_top);
                                 let pad_bot = px_of(&owner_style.padding_bottom);
+                                let pad_left = px_of(&owner_style.padding_left);
+                                let pad_right = px_of(&owner_style.padding_right);
+                                // R4332：竖边宽（css-break 3 §5.2 slice——左竖边仅首片段、
+                                // 右竖边仅末片段；style None → 宽 0，同 bt/bb 口径）。
+                                let bl_w = if matches!(
+                                    owner_style.border_left_style,
+                                    zero_style_system::property::types::BorderStyleValue::None
+                                ) {
+                                    0.0
+                                } else {
+                                    px_of(&owner_style.border_left_width)
+                                };
+                                let br_w = if matches!(
+                                    owner_style.border_right_style,
+                                    zero_style_system::property::types::BorderStyleValue::None
+                                ) {
+                                    0.0
+                                } else {
+                                    px_of(&owner_style.border_right_width)
+                                };
+                                // 首/末片段外沿水平扩展（横条含角 + 竖边贴片段外缘）：
+                                // pad 垂直边随首/末片段（collect 侧 pad 只折入首/末 run，同口径）。
+                                let lead_ext = if r4332_is_first { pad_left + bl_w } else { 0.0 };
+                                let trail_ext = if r4332_is_last { pad_right + br_w } else { 0.0 };
                                 let has_bg = owner_style.background_color != ColorValue::Transparent;
                                 let has_bleed = pad_top > 0.0 || pad_bot > 0.0 || bt_w > 0.0 || bb_w > 0.0;
+                                // R4332：仅**真多片段**（跨行）owner 走 per-fragment 边框——
+                                // 单片段 owner（含 line-height 撑大 content_height 的单行 span，
+                                // bidi-003 的 line-height:3em 形态）保留 box-level border-box
+                                // 绘制（R4297 口径：content_height 非行数代理，1.5×fs 门会误触发）。
+                                // bg 臂维持基线行为（has_bg 即绘，门不变）。
+                                // box-decoration-break: clone（css-break 3 §5.3 每片段整盒）
+                                // 未实现——clone owner 保留 box-level 绘制（基线口径），不走 slice。
+                                // background-image 与 per-fragment 边框的合成（background-clip:
+                                // border-area 等 css-backgrounds-4 语义）未实现——带 bg-image 的
+                                // owner 保留 box-level 绘制（基线口径，clip-border-area-box-
+                                // decoration-break）。
+                                let r4332_multi_fragment = r4332_is_multi_line
+                                    && matches!(
+                                        owner_style.box_decoration_break,
+                                        zero_style_system::property::types::BoxDecorationBreakValue::Slice
+                                    )
+                                    && owner_style.background_image.is_empty();
+                                // R4332 双轨：**多片段**（真跨行）owner 走 chromium slice 语义
+                                //（行盒顶锚 + 横条含角 + 首/末竖边）；**单片段** owner（含
+                                // line-height 撑大 content_height 的单行形态）维持基线绘制口径
+                                //（基线锚横条 + 无竖边——基线双自洽形态，bidi-003 族实证，
+                                // 单边改动即翻红）。
+                                let legacy_line_top = content_y + $frag_y + $baseline_offset + ty;
                                 if has_bg || has_bleed {
                                     let line_h = box_node
                                         .text_node_line_heights
                                         .get(&$frag_nid)
                                         .copied()
                                         .unwrap_or($frag_fs * 1.164);
-                                    let line_top = content_y + $frag_y + $baseline_offset + ty;
+                                    // 行盒顶锚（content_y + line.y + ty）——旧公式传片段基线
+                                    //（frag.y + v_offset = GlyphPrimitive 基线坐标，R3856 契约）
+                                    // 当 line_top，横条落 [基线-bt_w, 基线] = 字高中部；多片段
+                                    // 语义 = 边框/背景贴片段所在行盒外沿（chromium 同）。
+                                    let line_top = content_y + $frag_line_top + ty;
                                     let bleed_top = pad_top + bt_w;
                                     let bleed_bot = pad_bot + bb_w;
-                                    // bg（has_bg 时）：has_bleed 外延对齐 line box 边，否则 R639 旧位（frag.y）。
+                                    // bg（has_bg 时）：has_bleed 外延对齐 line box 边（多片段）/
+                                    // 基线锚（单片段基线口径），否则 R639 旧位（frag.y）。
                                     if has_bg {
                                         let (bg_y, bg_h) = if has_bleed {
-                                            (line_top - bleed_top, line_h + bleed_top + bleed_bot)
+                                            (
+                                                if r4332_multi_fragment { line_top } else { legacy_line_top }
+                                                    - bleed_top,
+                                                line_h + bleed_top + bleed_bot,
+                                            )
                                         } else {
                                             (content_y + $frag_y + ty, line_h)
                                         };
@@ -1900,15 +1976,19 @@ impl super::Painter {
                                             color_value_to_render(&owner_style.background_color),
                                         );
                                     }
-                                    // per-fragment border-top/bottom（外延到 line box 之外覆盖邻接行）。
+                                    // 横条：多片段 = 行盒顶锚 + 含角；单片段 = 基线锚旧几何。
+                                    let (strip_top, strip_x, strip_w) = if r4332_multi_fragment {
+                                        (line_top - pad_top - bt_w, frag_base_x - lead_ext, text_width + lead_ext + trail_ext)
+                                    } else {
+                                        (legacy_line_top - bt_w, frag_base_x, text_width)
+                                    };
                                     if bt_w > 0.0 {
                                         let c = if matches!(owner_style.border_top_color, ColorValue::CurrentColor) {
                                             frag_color
                                         } else {
                                             color_value_to_render(&owner_style.border_top_color)
                                         };
-                                        self.primitives
-                                            .add_fill(Rect::new(frag_base_x, line_top - bt_w, text_width, bt_w), c);
+                                        self.primitives.add_fill(Rect::new(strip_x, strip_top, strip_w, bt_w), c);
                                     }
                                     if bb_w > 0.0 {
                                         let c = if matches!(owner_style.border_bottom_color, ColorValue::CurrentColor) {
@@ -1916,10 +1996,54 @@ impl super::Painter {
                                         } else {
                                             color_value_to_render(&owner_style.border_bottom_color)
                                         };
-                                        self.primitives.add_fill(
-                                            Rect::new(frag_base_x, line_top + line_h + pad_bot, text_width, bb_w),
-                                            c,
-                                        );
+                                        let strip_y = if r4332_multi_fragment {
+                                            line_top + line_h + pad_bot
+                                        } else {
+                                            legacy_line_top + line_h + pad_bot
+                                        };
+                                        self.primitives.add_fill(Rect::new(strip_x, strip_y, strip_w, bb_w), c);
+                                    }
+                                    // 竖边：仅多片段——左竖边仅首片段、右竖边仅末片段；纵跨 =
+                                    // 行盒高 + 垂直 pad + 顶/底边框（与横条锚同域，覆盖邻接行）。
+                                    if r4332_multi_fragment {
+                                        if bl_w > 0.0 && r4332_is_first {
+                                            let c = if matches!(
+                                                owner_style.border_left_color,
+                                                ColorValue::CurrentColor
+                                            ) {
+                                                frag_color
+                                            } else {
+                                                color_value_to_render(&owner_style.border_left_color)
+                                            };
+                                            self.primitives.add_fill(
+                                                Rect::new(
+                                                    frag_base_x - pad_left - bl_w,
+                                                    line_top - pad_top - bt_w,
+                                                    bl_w,
+                                                    line_h + pad_top + pad_bot + bt_w + bb_w,
+                                                ),
+                                                c,
+                                            );
+                                        }
+                                        if br_w > 0.0 && r4332_is_last {
+                                            let c = if matches!(
+                                                owner_style.border_right_color,
+                                                ColorValue::CurrentColor
+                                            ) {
+                                                frag_color
+                                            } else {
+                                                color_value_to_render(&owner_style.border_right_color)
+                                            };
+                                            self.primitives.add_fill(
+                                                Rect::new(
+                                                    frag_base_x + text_width + pad_right,
+                                                    line_top - pad_top - bt_w,
+                                                    br_w,
+                                                    line_h + pad_top + pad_bot + bt_w + bb_w,
+                                                ),
+                                                c,
+                                            );
+                                        }
                                     }
                                 }
                             }
@@ -2171,7 +2295,12 @@ impl super::Painter {
                     }
 
                     if use_stored {
-                        for frag in &stored_fragments {
+                        // R4332：owner 片段序首/末旗标（宏参数传入，见宏首注释）。
+                        let r4332_edges = owner_fragment_edge_flags(
+                            stored_fragments.iter().map(|f| (f.node_id, f.line_top_rel)),
+                            doc,
+                        );
+                        for (frag_ei, frag) in stored_fragments.iter().enumerate() {
                             // R817 linebox 度量统一 Phase 2 → R3856 基线契约统一：GlyphPrimitive.y
                             // 即基线（raster 侧 y_offset = bitmap_top − height 自行放置位图，
                             // Ahem 方块由 rasterize_ahem_glyph 放到 [baseline−0.8em, baseline+0.2em]，
@@ -2193,6 +2322,8 @@ impl super::Painter {
                             render_fragment!(
                                 frag.x,
                                 frag.y,
+                                frag.line_top_rel,
+                                r4332_edges[frag_ei],
                                 frag.width,
                                 v_offset,
                                 frag.font_size,
@@ -2204,7 +2335,15 @@ impl super::Painter {
                             );
                         }
                     } else {
-                        for fragment in fragments.iter() {
+                        // R4332：owner 片段序首/末旗标（宏参数传入，见宏首注释）。
+                        let r4332_edges = owner_fragment_edge_flags(
+                            fragments
+                                .iter()
+                                .enumerate()
+                                .map(|(gi, f)| (f.node_id, frag_line_tops.get(gi).copied().unwrap_or(0.0))),
+                            doc,
+                        );
+                        for (frag_gi, fragment) in fragments.iter().enumerate() {
                             // IFC 片段（空 styles）：frag.y 基于 16px 默认值，
                             // 使用存储的 font_size（来自 layout IFC）计算基线偏移。
                             // 如果无存储值，回退到 16px 默认值（保持原有行为）。
@@ -2222,6 +2361,8 @@ impl super::Painter {
                             render_fragment!(
                                 fragment.x,
                                 fragment.y,
+                                frag_line_tops.get(frag_gi).copied().unwrap_or(0.0),
+                                r4332_edges[frag_gi],
                                 fragment.width,
                                 baseline_offset,
                                 stored_fs.unwrap_or(fragment.font_size),
@@ -2235,52 +2376,72 @@ impl super::Painter {
                     }
                 } // end non-multicol else block
 
-                // R4330：run-in 分裂边框描绘（Path B）——前置内容首片段（左竖+顶横）
-                // 与末片段（右竖+底横）绘边条。片段识别 = node_id 的父为 run-in 源元素；
-                // 阅读序首个/末个分别承载横边（顶/底），竖边占片段外缘。
+                // R4330/R4332：run-in 分裂边框描绘（Path B）——前置内容按 css-break 3 §5.2
+                // slice 语义逐片段描绘：每个片段顶/底横条（行盒顶锚，R1442 同款几何）、
+                // 首片段左竖边、末片段右竖边——与 ref 页等价形态（多行 inline span）的
+                // per-fragment 描绘同一几何，test/ref 双页像素收敛（run-in-breaking-001/002）。
+                // 片段识别 = node_id 的父为 run-in 源元素。
                 if !use_stored
+                    && !is_vertical
                     && let Some(rb) = &box_node.run_in_border
                     && let Some(run_in_id) = box_node.run_in_prepended
                 {
-                    let ri_frags: Vec<&zero_layout_engine::TextFragment> = fragments
+                    let bc = zero_render_foundation::color::Color {
+                        r: (rb.color >> 24) as u8,
+                        g: (rb.color >> 16) as u8,
+                        b: (rb.color >> 8) as u8,
+                        a: rb.color as u8,
+                    };
+                    let ri_indices: Vec<usize> = fragments
                         .iter()
-                        .filter(|f| doc.parent_node(f.node_id) == Some(run_in_id))
+                        .enumerate()
+                        .filter(|(_, f)| doc.parent_node(f.node_id) == Some(run_in_id))
+                        .map(|(gi, _)| gi)
                         .collect();
-                    if let (Some(first), Some(last)) = (ri_frags.first(), ri_frags.last()) {
-                        let bc = zero_render_foundation::color::Color {
-                            r: (rb.color >> 24) as u8,
-                            g: (rb.color >> 16) as u8,
-                            b: (rb.color >> 8) as u8,
-                            a: rb.color as u8,
-                        };
-                        // 首片段：左竖（margin 空间 [fx-bl, fx]）+ 顶横（含左右边宽）
-                        let fx = content_x + first.x;
-                        let fy = content_y + first.y;
-                        if rb.left > 0.0 {
-                            self.primitives
-                                .add_fill(Rect::new(fx - rb.left, fy, rb.left, first.height), bc);
-                        }
+                    let ri_total = ri_indices.len();
+                    for (pos, gi) in ri_indices.iter().enumerate() {
+                        let f = &fragments[*gi];
+                        let fx = content_x + f.x;
+                        let line_h = box_node
+                            .text_node_line_heights
+                            .get(&f.node_id)
+                            .copied()
+                            .unwrap_or(f.font_size * 1.164);
+                        // 行盒顶锚（R4332 同款）：content_y + line.y + ty（frag_line_tops
+                        // 与 fragments 平行，Path B 非 stored 恒已构建）。
+                        let line_top = content_y + frag_line_tops.get(*gi).copied().unwrap_or(0.0) + ty;
+                        let is_first = pos == 0;
+                        let is_last = pos + 1 == ri_total;
+                        let lead_ext = if is_first { rb.left } else { 0.0 };
+                        let trail_ext = if is_last { rb.right } else { 0.0 };
+                        // 顶/底横条（含角：首片段左伸 rb.left、末片段右伸 rb.right；无 pad）。
                         if rb.top > 0.0 {
                             self.primitives.add_fill(
-                                Rect::new(fx - rb.left, fy, first.width + rb.left + rb.right, rb.top),
+                                Rect::new(fx - lead_ext, line_top - rb.top, f.width + lead_ext + trail_ext, rb.top),
                                 bc,
                             );
-                        }
-                        // 末片段：右竖（margin 空间 [lx+w, lx+w+br]）+ 底横
-                        let lx = content_x + last.x;
-                        let ly = content_y + last.y;
-                        if rb.right > 0.0 {
-                            self.primitives
-                                .add_fill(Rect::new(lx + last.width, ly, rb.right, last.height), bc);
                         }
                         if rb.bottom > 0.0 {
                             self.primitives.add_fill(
                                 Rect::new(
-                                    lx - rb.right,
-                                    ly + last.height - rb.bottom,
-                                    last.width + rb.left + rb.right,
+                                    fx - lead_ext,
+                                    line_top + line_h,
+                                    f.width + lead_ext + trail_ext,
                                     rb.bottom,
                                 ),
+                                bc,
+                            );
+                        }
+                        // 竖边：左仅首片段、右仅末片段；纵跨 = 行盒高 + 顶/底边框。
+                        if rb.left > 0.0 && is_first {
+                            self.primitives.add_fill(
+                                Rect::new(fx - rb.left, line_top - rb.top, rb.left, line_h + rb.top + rb.bottom),
+                                bc,
+                            );
+                        }
+                        if rb.right > 0.0 && is_last {
+                            self.primitives.add_fill(
+                                Rect::new(fx + f.width, line_top - rb.top, rb.right, line_h + rb.top + rb.bottom),
                                 bc,
                             );
                         }
@@ -2629,6 +2790,49 @@ pub(super) fn mark_inline_wrapper_chain_painted(
         painted.insert(id);
         stack.extend(doc.child_nodes(id));
     }
+}
+
+/// R4332（css-break 3 §5.2 / CSS2.1 §8.5.3）：按 inline owner 计算各片段的（首, 末）旗标。
+///
+/// owner 解析与 render_fragment 宏同源（文本节点取其父元素，元素片段取自身），
+/// 返回 Vec 与片段序列平行。跨行 inline 盒的左竖边仅画在首片段、右竖边仅画在
+/// 末片段；macro_rules! 卫生宏体不可见调用点局部变量，故在调用点预计算后作为
+/// 宏参数传入。
+fn owner_fragment_edge_flags(frags: impl Iterator<Item = (NodeId, f32)>, doc: &Document) -> Vec<(bool, bool, bool)> {
+    let owners: Vec<(NodeId, f32)> = frags
+        .map(|(nid, line_top)| {
+            let owner = if doc.get(nid).is_some_and(|n| matches!(n.kind, NodeKind::Text(_))) {
+                doc.parent_node(nid).unwrap_or(nid)
+            } else {
+                nid
+            };
+            (owner, line_top)
+        })
+        .collect();
+    let mut counts: HashMap<NodeId, usize> = HashMap::new();
+    let mut lo: HashMap<NodeId, f32> = HashMap::new();
+    let mut hi: HashMap<NodeId, f32> = HashMap::new();
+    for (o, lt) in &owners {
+        *counts.entry(*o).or_insert(0) += 1;
+        let e = lo.entry(*o).or_insert(*lt);
+        *e = e.min(*lt);
+        let e = hi.entry(*o).or_insert(*lt);
+        *e = e.max(*lt);
+    }
+    let mut seen: HashMap<NodeId, usize> = HashMap::new();
+    owners
+        .iter()
+        .map(|(o, _)| {
+            let idx = seen.entry(*o).and_modify(|c| *c += 1).or_insert(0);
+            (
+                *idx == 0,
+                *idx + 1 == counts[o],
+                // R4332：跨行判据 = owner 片段线顶跨 ≥2 行（词级多片段单行不算，
+                // split_into_words 每词一片段）。
+                hi[o] - lo[o] > 0.5,
+            )
+        })
+        .collect()
 }
 
 /// 将数字转换为罗马数字字符串（1-based）。

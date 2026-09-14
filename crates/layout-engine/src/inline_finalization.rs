@@ -1573,6 +1573,7 @@ fn backfill_run_in_boxes(
     paint_skip.insert(run_in_id);
 }
 
+#[allow(clippy::too_many_arguments)] // R4332：run_in_prepended 为可选语义注入，不宜并包
 pub(crate) fn measure_text_content(
     doc: &Document,
     styles: &HashMap<NodeId, ComputedStyle>,
@@ -1581,6 +1582,9 @@ pub(crate) fn measure_text_content(
     available_space: Size<AvailableSpace>,
     img_intrinsic_sizes: &HashMap<NodeId, (f32, f32)>,
     inline_fonts: InlineFontContext<'_>,
+    // R4332：本容器首行并入的 run-in 元素（r109.run_in_prepended 注册表查询结果）——
+    // 测量 IFC 须前置收集其 inline 内容（否则后继块少算一行，见 IFC 构造处注释）。
+    run_in_prepended: Option<NodeId>,
 ) -> Size<f32> {
     let font_metric_provider = inline_fonts.metric_provider;
     let advance_source = inline_fonts.advance_source;
@@ -1921,6 +1925,12 @@ pub(crate) fn measure_text_content(
         .with_break_word(break_word)
         .with_inline_block_sizes(ib_sizes)
         .with_img_intrinsic_sizes(img_intrinsic_sizes.clone());
+    // R4332：并入 run-in 前缀参与测量——taffy 测量 IFC 此前不含 run-in 前缀内容，
+    // 后继块内容高少算一行（run-in-breaking-001：5 行文本测成 4 行 ch=74，ref 93.1，
+    // 底边框切进末行文字）。与 inline_finalization 主路径（1286）同源注入。
+    if let Some(run_in_id) = run_in_prepended {
+        inline_ctx.set_run_in_prepended(run_in_id);
+    }
     inline_ctx = configure_inline_fonts(inline_ctx, inline_fonts, false);
     inline_ctx.layout(doc, dom_id, styles);
 
@@ -2025,6 +2035,10 @@ pub(crate) fn remeasure_text_with_float_exclusions(
                 .with_preserve_whitespace(resolve_preserve_for_ifc_measure(styles.get(&dom_id)))
                 .with_break_at_newline(resolve_break_at_newline_for_ifc_measure(styles.get(&dom_id)));
             ctx = configure_inline_fonts(ctx, inline_fonts, false);
+            // R4332：并入 run-in 前缀参与重测（与 measure 路径同源，行形状一致）。
+            if let Some(run_in_id) = box_node.run_in_prepended {
+                ctx.set_run_in_prepended(run_in_id);
+            }
             ctx.layout(doc, dom_id, styles);
             let anchor_y_map = ctx.float_anchor_ys.clone();
             anchor_ctx = Some(ctx);
@@ -2083,6 +2097,8 @@ pub(crate) fn remeasure_text_with_float_exclusions(
                         },
                         img_intrinsic_sizes,
                         inline_fonts,
+                        // R4332：float 子非 run-in 后继块，无前缀可并入。
+                        None,
                     );
                     if m.height > height {
                         height = m.height;
@@ -2147,6 +2163,10 @@ pub(crate) fn remeasure_text_with_float_exclusions(
                 .with_inline_block_sizes(ib_sizes)
                 .with_img_intrinsic_sizes(img_intrinsic_sizes.clone());
             inline_ctx = configure_inline_fonts(inline_ctx, inline_fonts, false);
+            // R4332：并入 run-in 前缀参与重测（与 measure 路径同源，行形状一致）。
+            if let Some(run_in_id) = box_node.run_in_prepended {
+                inline_ctx.set_run_in_prepended(run_in_id);
+            }
             inline_ctx.layout(doc, dom_id, styles);
 
             // 存储 IFC 片段中各文本节点的 font_size，供 paint 系统计算基线偏移
@@ -2513,6 +2533,10 @@ pub(crate) fn remeasure_inline_only_containers(
             .with_break_at_newline(resolve_break_at_newline_for_ifc_measure(styles.get(&dom_id)));
         inline_ctx.set_fragment_node_ids(frag_ids);
         inline_ctx = configure_inline_fonts(inline_ctx, inline_fonts, false);
+        // R4332：并入 run-in 前缀参与重测（与 measure 路径同源，行形状一致）。
+        if let Some(run_in_id) = box_node.run_in_prepended {
+            inline_ctx.set_run_in_prepended(run_in_id);
+        }
         inline_ctx.layout(doc, dom_id, styles);
         let frag_h = inline_ctx.total_height();
         if frag_h > box_node.content_height + 0.5 {
@@ -2594,6 +2618,10 @@ pub(crate) fn remeasure_inline_only_containers(
             .with_inline_block_sizes(ib_sizes)
             .with_img_intrinsic_sizes(img_intrinsic_sizes.clone());
         inline_ctx = configure_inline_fonts(inline_ctx, inline_fonts, false);
+        // R4332：并入 run-in 前缀参与重测（与 measure 路径同源，行形状一致）。
+        if let Some(run_in_id) = box_node.run_in_prepended {
+            inline_ctx.set_run_in_prepended(run_in_id);
+        }
         inline_ctx.layout(doc, dom_id, styles);
 
         // 存储 IFC 片段中各文本节点的 font_size，供 paint 系统计算基线偏移
@@ -2849,6 +2877,8 @@ pub(crate) fn remeasure_multicol_text_blocks(
             },
             img_intrinsic_sizes,
             inline_fonts,
+            // R4332：multicol 内直排文本非 run-in 后继块，无前缀可并入。
+            None,
         );
         if measured.height > box_node.content_height + 0.5 {
             let delta = measured.height - box_node.content_height;

@@ -470,6 +470,8 @@ impl LayoutEngine {
                     available_space,
                     &intrinsic_for_r695,
                     inline_fonts,
+                    // R4332：并入 run-in 前缀参与测量（后继块内容高含前缀首行）。
+                    r109.run_in_prepended.get(&dom_id).copied(),
                 )
             },
         );
@@ -716,6 +718,8 @@ impl LayoutEngine {
                         available_space,
                         &intrinsic_for_r695,
                         inline_fonts,
+                        // R4332：并入 run-in 前缀参与测量（后继块内容高含前缀首行）。
+                        r109.run_in_prepended.get(&dom_id).copied(),
                     )
                 },
             );
@@ -1337,6 +1341,8 @@ impl LayoutEngine {
                     available_space,
                     img_intrinsic_sizes,
                     inline_fonts,
+                    // R4332：并入 run-in 前缀参与测量（后继块内容高含前缀首行）。
+                    cached.r109.run_in_prepended.get(&dom_id).copied(),
                 )
             },
         );

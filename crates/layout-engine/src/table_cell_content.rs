@@ -123,6 +123,8 @@ pub(crate) fn remeasure_cells_at_compressed_widths(
                         },
                         &HashMap::new(),
                         inline_fonts,
+                        // R4332：table cell 内容非 run-in 后继块，无前缀可并入。
+                        None,
                     );
                     let vext = child.padding_top + child.padding_bottom + child.border_top + child.border_bottom;
                     let new_h = measured.height + vext;
@@ -146,6 +148,8 @@ pub(crate) fn remeasure_cells_at_compressed_widths(
                     },
                     &HashMap::new(),
                     inline_fonts,
+                    // R4332：table cell 内容非 run-in 后继块，无前缀可并入。
+                    None,
                 );
                 let new_h = measured.height + vertical_ext;
                 if new_h > box_node.height + 0.5 {
