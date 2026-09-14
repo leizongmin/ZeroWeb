@@ -2,14 +2,17 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-14（S314：树变化刷新轮——渲染流 R4330-F（run-in 分裂
-边框载荷 + margin 折入 + Path B 描边，layout-engine + engine paint painter）
-入树触发（S245/S258/S289/S290 先例：门 + make test 双刷新），cdp-e2e 门
-首调即收口 PASS 33 绿 deterministic 双跑 YES EXIT=0 ZERO_DRIFT=YES 07:56
-落盘；make test 一调收口 19,281P/0F（R4330-F 组合态首次全量覆盖，零失败）；
-绿步维持 33；引用计数清零重计 1/10 下次活跑至迟 S324；解冻条件①观察面
-不变（R4330-F 非渲染流子帧文档加载 + JS realm 能力，frames.click+evaluate
-维持挂起），②DC-2 无新拍板；零 zombie 零遗留端口）
+**最后更新**: 2026-09-14（**S315：门红归因轮——cdp-e2e 门确定性 RED（33→21
+绿，12 步回归）**。动因：渲染流 PR30（7bed4635c siteopt/baidu-round2）入树
+后首跑即红，双跑同形态 + 手工复现 3/3 同步失败于 network.events 步——机械
+归因成立（07:56 门在 merge 第一父树 PASS 33 绿，唯一 delta = PR30 diff）。
+**S79 诊断网抓获 victim 帧**：renderer→browser FetchRequest 线帧 ≠ 任何合法
+序列化（variant 4 字节丢失 + 字节移位，/tmp/zw-probe 基准对照 79B 实证）=
+**renderer 侧 IPC 流损坏（S78/#0 家族）确定性复现**——PR30 proxy_fetch 移交
+worker 线程的时序变化暴露写侧窗口（P7 时序暴露者，损坏机制在 renderer 写路径
+= 本流工作面）。#0 项从「复现监测」升级「确定性复现 + victim 帧取证在案」
+（evidence/s315-renderer-ipc-corruption/）。门红挂账待根因修复（S316 起）；
+S309 门结论对当前树失效；引用计数冻结。零 zombie 零遗留端口）
 
 ---
 
@@ -40,6 +43,39 @@
 
 ## 已完成切片
 
+- **S315（2026-09-14）门红归因轮 — PR30 入树触发 renderer IPC 流损坏确定性
+  复现（victim 帧取证在案，门 RED 挂账根因修复）**：
+  S314 push 步 rebase 发现第二枚入树提交 7bed4635c（PR #30 siteopt/baidu-
+  round2：headless proxy_fetch 移交 worker 线程 P7 + Runtime.exceptionThrown
+  P3 + engine reparse 预算 + renderer ScriptError 管道）——该 PR 触碰本流
+  自有面（apps/browser headless），按树变化口径加跑门刷新。**门红**：
+  cdp-e2e 双跑均 21 绿 12 回归（REGRESSIONS = dialog.accept /
+  dialog.confirm+prompt / emulation.media / emulation.userAgentOverride /
+  network.events / page.second.lifecycle / page.setContent /
+  runtime.releaseObjectGroup / screenshot.element / screenshot.fullPage /
+  target.attachDetach / viewport.verified；挂账步 frames.click+evaluate 双跑
+  同形态不属回归），EXIT=1。**机械归因四点**：① 07:56 门在同代码树（merge
+  第一父 = ab80e0e01+R4330-F）PASS 33 绿，唯一 delta = PR30 diff；② 双跑
+  deterministic YES 同失败集 + 手工复现 3/3 同步失败于 network.events 步
+  （#btn-fetch 点击后 fetch 走新异步代理路径，下一点击即 Broken pipe）；
+  ③ 错误形态 = browser 侧 reader `Deserialization error: io error:` 终止 +
+  renderer 进程死亡（后续写 EPIPE os error 32）；④ transport.rs S79 诊断网
+  升级 hex 转储后抓获 victim 帧。**victim 帧取证**：renderer→browser
+  FetchRequest 线帧（len=81）经 /tmp/zw-probe 独立 crate 基准序列化对照
+  （合法帧 79B，variant=FetchRequest=19 实测）——线帧丢失 variant 4 字节
+  （`19 00 00 00`）、request_id 第 6 字节 00→01、尾部多零字节 = **帧中途
+  字节插入/丢失，序列化对称性排除，renderer 写侧流损坏实锤**（S78/#0 家族
+  首次确定性复现 + victim 帧在案）。PR30 角色定性：proxy_fetch worker 线程
+  化（P7）改变会话响应时序 = **暴露者**；损坏机制在 renderer 写路径（本流
+  工作面）= **修复责任在本流**（S316 起，SharedWriter partial-write 残留 +
+  重试路径为主要怀疑面，R3254-L2 注记吻合）。**处置**：门维持 RED 挂账根因
+  修复，S309 门结论对当前树失效，引用计数冻结（修复落地后双腿刷新重计）；
+  #0 项升级「确定性复现已捕获」；hex 诊断增强（transport.rs 2 行，本流 S79
+  诊断网面）随本切片入库；取证归档
+  evidence/s315-renderer-ipc-corruption/（hexdump log + 基准对照 + 复现命令）。
+  飞书通知已发（§7）。make test 腿本轮未重跑（S314 时点 19,281P/0F 为 PR30
+  入树前基线；S316 修复后双腿一并刷新）。机器卫生：零 zombie、端口族全
+  空闲、本流零遗留进程。
 - **S314（2026-09-14）树变化刷新轮 — 渲染流 R4330-F 入树触发（S245/S258/
   S289/S290 先例：门 + make test 双刷新，绿步维持 33）**：
   S313 push 步 rebase 时发现渲染流代码提交 4d6f3ff00 入基——**归因**：R4330-F
@@ -4548,12 +4584,14 @@
 
 ## 下一步计划
 
-0. **renderer IPC 流损坏监测（S79 调整：从「根因修复」降为「复现监测 + 机械归因」）**：
-   S78 故障自 22:32 起未再复现；S79 双侧插桩证实管线字节级干净、写路径审计无撕裂位。
-   常驻诊断网（stderr_tail + reader 死因 + 帧转储）已落地——后续轮次遇 cdp-e2e 门红或
-   `-32000 Channel error` 时，按「浏览器 stderr 三段日志 + renderer stderr_tail」机械
-   归因，勿在无失败基线下做对照实验（S78 教训）。若复现：先抓 victim 帧字节与双侧
-   序列，再定位插入/丢失点；若长期不复现，此项随 M5 定稿按「环境事件已闭合」记账。
+0. **renderer IPC 流损坏——确定性复现已捕获，根因修复升为最优先（S315 升级）**：
+   S78 故障自 22:32 起未再复现 → **S315 确定性复现**（PR30 proxy_fetch worker 线程化
+   时序暴露，network.events 步 3/3 同步红）；victim 帧 hex 取证 + /tmp/zw-probe 基准
+   序列化对照已归档（evidence/s315-renderer-ipc-corruption/）——线帧 variant 4 字节
+   丢失 + 字节移位 = 写侧流损坏实锤，序列化对称性排除。修复责任在本流（renderer 写
+   路径），主要怀疑面 = SharedWriter partial-write 残留 + 跨实例重试（R3254-L2 注记
+   形态吻合）。S316 起以确定性复现为资产做根因定位（双侧序列插桩 → 定位插入/丢失点
+   → 修复 → 门 + make test 双腿刷新）。修复落地前门维持 RED。
 1. **M5 收口评估（绿步 33/34，余 1 步）**：`frames.access` 已解（S39 子帧元数据探测，
    本流单方落地）；余 `frames.click+evaluate` 真挂子帧文档加载 + JS realm + child
    quads（S18 三件套论证对其成立）——渲染流域真协调。DC-2 口径决策：等子帧能力解冻后

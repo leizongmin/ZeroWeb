@@ -1,0 +1,2 @@
+[zero-protocol/ipc] frame deserialize failed: Deserialization error: io error: ; len=81 hex=25000000000000003f0000000001000000000000001f00000000000000687474703a2f2f3132372e302e302e313a33343633312f6170692f64617461030000000000000047455400000000000000000000
+[zero-protocol/renderer-1] ipc reader terminated: Deserialization error: io error: 

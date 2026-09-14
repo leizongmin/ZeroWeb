@@ -1,0 +1,2 @@
+[zero-protocol/ipc] frame deserialize failed: Deserialization error: io error: ; len=81 text="%\0\0\0\0\0\0\0?\0\0\0\0\u{1}\0\0\0\0\0\0\0\u{1f}\0\0\0\0\0\0\0http://127.0.0.1:38661/api/data\u{3}\0\0\0\0\0\0\0GET\0\0\0\0\0\0\0\0\0\0"
+[zero-protocol/renderer-1] ipc reader terminated: Deserialization error: io error: 

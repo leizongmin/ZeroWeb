@@ -104,10 +104,11 @@ impl<R: Read, W: Write> IpcChannel for PipeTransport<R, W> {
             // S78 诊断：帧完整但载荷反序列化失败 = 流内混入异质字节（stdout 污染，
             // S12 同病）。转储帧头文本定位污染源（cap 256B 防大帧刷屏）。
             let cap = data.len().min(256);
+            let hex: Vec<String> = data[..cap].iter().map(|b| format!("{b:02x}")).collect();
             eprintln!(
-                "[zero-protocol/ipc] frame deserialize failed: {e}; len={} text={:?}",
+                "[zero-protocol/ipc] frame deserialize failed: {e}; len={} hex={}",
                 data.len(),
-                String::from_utf8_lossy(&data[..cap])
+                hex.join("")
             );
             e
         })
