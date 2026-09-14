@@ -2,43 +2,41 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-15（S608：树变化触发双腿刷新轮——
-兄弟渲染流 R4357（e75b3762c，layout-engine inline
-collect_items + intrinsic_sizing ruby-overhang slice B，
-2 code files +200 + rendering-compat.md 1/0）在 S606 门
-活跑后、S607 push 序列中入树（S342 先例形态），S606 门
-活跑不再覆盖当前树，S245→S342→S597 先例族 pull 零新
-提交直接双腿刷新。预检全净——端口族全空闲零 S198 竞争、
-零 zombie、负载 0.34 深净窗——后双腿活跑 setsid 脱离+
-轮询收口：门腿 make cdp-e2e（ZW_IPC_VALIDATE=1 在位）
-04:02:30 启动 04:03:08 落盘，首调即 PASS 33 绿，run1/
-run2 均含期望失败步骤 exit 1，deterministic YES，EXIT=0，
-expected_green 33 对称差 none、regressions 空，机械复核
-33=33 双向零差，唯一失败 frames.click+evaluate 期望失败
-家族挂起维持，校验器在位静默（#0 复现监测零命中）；测试
-腿 make test（test-guard 包裹）04:03 接续启动 04:13 收口，
-67 组全 ok **19,290P/0F** EXIT=0，与 S597/S575 基线逐项
-一致，R4357 对本流测试计数零漂移（R4357 提交说明自带
-make test EXIT=0 0F + fmt/clippy clean + product-smoke
-20.00% + bench-gate PASS——归因纪律佐证兄弟流自带门禁）。
-**引用计数归零重计（S607 的 1/10 连同 S606 周期一并作
-废→0/10）**，下轮起门结论锚点切换 S608 双腿活跑，S609
-起 1/10，树变化再次提前触发双腿刷新。**双层锚点新基线
-（S608 刷新）**：自有面对 765429dda 维持 **4 files
-+137/-17** 精确一致（R4357 未触 apps/browser/Makefile）；
-全树排除本流 docs 对 18d462de6 刷新为 **41 files
-+4248/-224**（= S597 基线 +4047/-224 加 R4357 三文件
-+201，后续轮次以此为新基线）。crates/ 观察面 raw 刷新为
-**28**（R4357 单提交贡献，兄弟流自身活动非子帧能力信号
-——R4357 触 layout-engine ruby-overhang 悬挂模型，非
-engine 子帧文档加载/JS realm 面），子帧关键词非测试代码
-零命中复核维持（dom/engine/webview 三处 tests 路径 7
-文件既有形态），frames.click+evaluate 维持挂起。活跑后
-机器卫生零 zombie、端口族零残留、零遗留进程、负载
-1.57 净窗，双腿零树污染（tracked 树零变更）。控制面零
-外来提交（e75b3762c 触兄弟流自家控制面 rendering-compat，
-本流 docs/goal/cdp-protocol/ 近 20 提交全为本流）。解冻
-条件①②不变 DC-2 无新拍板）
+**最后更新**: 2026-09-15（S609：静默监测轮——同 tip 复核
+（pull 零新提交，tip = f4ad2ad84 即 S608 提交本身，无新
+代码变更绿步维持 33；R4357 e75b3762c 后代码面零 delta
+实测复核，S608 双腿活跑 04:03/04:13 直接覆盖当前代码树
+证据新鲜）。双层锚点零漂移——自有面对 765429dda 维持
+**4 files +137/-17** 精确一致（Makefile 1/1 +
+apps/browser/README.md 1/0 + headless/mod.rs 25/0 +
+headless/session.rs 110/16）；全树排除本流 docs 对
+18d462de6 维持 **41 files +4248/-224**（S608 刷新新基线
+= S597 基线加 R4357 三文件 +201）与上轮逐项一致零新增。
+crates/ 观察面 raw 计数实测维持 **28**（S608 新基线），
+子帧能力关键词 grep（Rust 面 tests 排除口径）非测试代码
+零命中实测复核（命中面为 dom/engine/webview 三处 tests
+路径 7 文件测试代码维持既有形态），实质判定不变
+frames.click+evaluate 维持挂起。树不变按门单腿口径免
+make test 腿（S336 先例），门结论引用 S608 双腿活跑
+（门腿 make cdp-e2e ZW_IPC_VALIDATE=1 在位 04:02:30 启动
+04:03:08 落盘首调即 PASS 33 绿 deterministic 双跑 YES
+EXIT=0 expected_green 33 对称差 none + 校验器在位静默 +
+测试腿 make test 04:13 收口 67 组 19,290P/0F EXIT=0），
+**引用计数 0/10→1/10**（S608 新周期；8/10 次轮即期限轮
+口径下至迟 S616 达 8/10、S617 = 期限轮活跑——S553/
+S562/S571/S583/S592/S597/S606/S608 先例族；树代码变化
+提前触发双腿刷新）。机器卫生复核：零 zombie、
+9222/45029/34293/19222 端口族全空闲、零端口竞争面；负载
+1.57→0.34 深净窗——top CPU>50% 扫空零活跃编译/测试腿
+（兄弟流 make test/bench 序列轮内出窗），余量本轮自身
+rally/agent 腿 3.8% 级与桌面基建，本树零活跃腿——本轮
+静默零活跑需求深净窗记账。控制面零外来提交（近 20 提交
+触本流控制面全为本流 S5xx/S6xx）。解冻条件实质判定
+不变：① 观察面 raw 28 维持（新基线），子帧三件套
+iframe.contentDocument null 现状不变，frames.click+evaluate
+维持挂起；② 本流控制面 docs/goal/cdp-protocol/ 零外来
+提交，DC-2 口径无新拍板记录。goal 自有面零新缺口、无
+扩展面（S40-S608 重审结论延续））
 
 ---
 
@@ -69,6 +67,43 @@ engine 子帧文档加载/JS realm 面），子帧关键词非测试代码
 
 ## 已完成切片
 
+- **S609（2026-09-15）静默监测轮 — 同 tip 复核（pull 零新提交，
+  tip = f4ad2ad84 即 S608 提交本身；无新代码变更，绿步维持
+  33）**：双层锚点复核通过：自有面锚点对 765429dda 维持
+  **4 files +137/-17** 精确一致（Makefile 1/1 +
+  apps/browser/README.md 1/0 + headless/mod.rs 25/0 +
+  headless/session.rs 110/16，零新增漂移）；全树锚点复核
+  （排除本流 docs 后 tracked 代码树对 18d462de6 维持
+  **41 files +4248/-224**——S608 刷新新基线 = S597 基线
+  加 R4357 三文件 +201——与上轮逐项一致零新增；R4357
+  e75b3762c 后代码面零 delta 实测复核，S608 双腿活跑
+  04:03/04:13 直接覆盖当前代码树证据新鲜）。crates/
+  观察面 raw 计数实测维持 **28**（S608 新基线），子帧能力
+  关键词 grep（Rust 面 tests 排除口径）非测试代码零命中
+  实测复核（命中面为 dom/engine/webview 三处 tests 路径
+  7 文件测试代码维持既有形态），实质判定不变
+  frames.click+evaluate 维持挂起。树不变按门单腿口径免
+  make test 腿（S336 先例）。门结论引用 S608 双腿活跑
+  （门腿 make cdp-e2e ZW_IPC_VALIDATE=1 在位 04:02:30
+  启动 04:03:08 落盘首调即 PASS 33 绿 deterministic 双跑
+  YES EXIT=0 expected_green 33 对称差 none + 校验器在位
+  静默 + 测试腿 make test 04:13 收口 67 组 19,290P/0F
+  EXIT=0），**引用计数 0/10→1/10**（S608 新周期；8/10
+  次轮即期限轮口径下至迟 S616 达 8/10、S617 = 期限轮
+  活跑——S553/S562/S571/S583/S592/S597/S606/S608 先例
+  族；树代码变化提前触发双腿刷新）。机器卫生复核：零
+  zombie、9222/45029/34293/19222 端口族全空闲、零端口
+  竞争面；负载 1.57→0.34 深净窗——top CPU>50% 扫空零
+  活跃编译/测试腿（兄弟流 make test/bench 序列轮内出窗），
+  余量本轮自身 rally/agent 腿 3.8% 级与桌面基建，本树零
+  活跃腿——本轮静默零活跑需求深净窗记账。控制面零外来
+  提交（近 20 提交触本流控制面全为本流 S5xx/S6xx）。解冻
+  条件实质判定不变：① 观察面 raw 28 维持（新基线），子帧
+  三件套 iframe.contentDocument null 现状不变，
+  frames.click+evaluate 维持挂起；② 本流控制面
+  docs/goal/cdp-protocol/ 零外来提交，DC-2 口径无新拍板
+  记录。goal 自有面零新缺口、无扩展面（S40-S608 重审
+  结论延续）。
 - **S608（2026-09-15）树变化触发双腿刷新轮 — 兄弟渲染流
   R4357（e75b3762c，layout-engine inline collect_items +
   intrinsic_sizing ruby-overhang slice B，2 code files
