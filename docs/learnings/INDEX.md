@@ -136,8 +136,9 @@
 - 2026-08-05 [回调闭包 Send+Sync 约束：不能缓存 Document](patterns/2026-08/2026-08-05-callback-closure-send-sync-no-document.md) — zero-engine（js_dom_bridge.rs）, zero-script-sandbox（register_callback）, zero-dom（Document）
 - 2026-07-20 [经验：reftest 布局诊断必须用 empirical ZW-output 验证，不能只靠 code-trace](patterns/2026-07/2026-07-20-reftest-layout-diagnosis-empirical-verification.md) — tests/wpt-runner（reftest harness）, crates/layout-engine（multicol 等）
 
-## Performance — 性能优化经验（40）
+## Performance — 性能优化经验（41）
 
+- 2026-09-14 [热路径遗留 env 探针——R4332_FOLD_OFF 逐 item `std::env::var` 致 wide_tree 微基准 +67%](performance/2026-09/2026-09-14-env-var-kill-switch-hot-path-regression.md) — zero-layout-engine
 - 2026-09-14 [CPU 频率窗效应——bench-gate 微基准跨窗漂移可达 2-3×（compositing_layer_analysis 误判归因）](performance/2026-09/2026-09-14-cpu-freq-window-bench-drift.md) — zero-engine,perf-gate
 - 2026-09-13 [绑核后退出成功，不代表相对性能预算已通过](performance/2026-09/2026-09-13-affinity-available-parallelism-budget-gate.md) — wpt-runner,benchmark
 - 2026-09-10 [布局 pass 探针归因两坑：分段标记间隙误归因 + kill-switch env::var 提升反变慢](performance/2026-09/2026-09-10-layout-pass-profile-env-hoist-net-negative.md) — layout-engine
@@ -179,8 +180,9 @@
 - 2026-08-07 [WPT reftest @font-face loader 缓存：键必须等于构造函数输入（+Arc 共享解析结果）](performance/2026-08/2026-08-07-wpt-reftest-font-face-cache.md) — tests/wpt-runner/src/reftest.rs（FRESH_LOADER_CACHE）, crates/render-foundation/src/font/loader.rs（FontLoader::duplicate, fonts: HashMap<u32, Arc<fontdue::Font>>）
 - 2026-08-07 [CJK 字形栅格化重尾优化：FreeType face 缓存 + 采样哈希](performance/2026-08/2026-08-07-cjk-raster-face-cache.md)
 
-## Platform — 平台与环境相关经验（15）
+## Platform — 平台与环境相关经验（16）
 
+- 2026-09-14 [renderer 死锁诊断：ptrace 受限 + test-guard 禁 core 下的取证方法，与 baidu 主循环冻结的根因链](platform/2026-09/2026-09-14-renderer-wedge-diagnosis-core-dump.md) — apps/renderer, apps/browser, crates/engine, crates/paint-convert
 - 2026-09-05 [HarmonyOS ELF 签名工具可能重写可加载段](platform/2026-09/2026-09-05-harmonyos-elf-signer-segment-rewrite.md) — release, npm-cli, harmonyos
 - 2026-08-18 [git worktree 共享 CARGO_TARGET_DIR 导致构建指纹污染](platform/2026-08/2026-08-18-worktree-shared-target-dir-fingerprint-collision.md) — 工具链 / cargo / git worktree / 性能 A/B 验证
 - 2026-08-16 [Windows 同排标签栏与 Snap Layout](platform/2026-08/2026-08-16-windows-native-titlebar-tabs.md) — apps/browser, Win32 non-client hit test
