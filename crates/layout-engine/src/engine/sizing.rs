@@ -271,7 +271,18 @@ impl LayoutEngine {
                         style.max_size.width = taffy::style::Dimension::length(intrinsic);
                     }
                 } else {
-                    style.size.width = taffy::style::Dimension::length(width);
+                    // R4360（css-sizing-3 §5.1 max-content）：block_max_content_width 返回
+                    // **border-box** 宽（尾部 frame 相加见其尾式），taffy size.width 为
+                    // content-box 语义（converter convert_box_sizing 直传，默认 content-box）
+                    // ——原样写入致 border/padding 双计（实测 font:20px 4 字 + 5px border 盒
+                    // 100 应 90；latin aaaa 64 应 54，恒 +2×frame）。border-box 节点原值写入。
+                    let frame = b.padding_left + b.padding_right + b.border_left + b.border_right;
+                    let content_width = if matches!(style.box_sizing, taffy::style::BoxSizing::BorderBox) {
+                        width
+                    } else {
+                        (width - frame).max(0.0)
+                    };
+                    style.size.width = taffy::style::Dimension::length(content_width);
                 }
                 let _ = taffy_tree.set_style(taffy_id, style);
                 let _ = taffy_tree.mark_dirty(taffy_id);

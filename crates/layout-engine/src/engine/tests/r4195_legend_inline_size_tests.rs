@@ -79,7 +79,8 @@ fn r4195_plain_legend_unaffected() {
     let result = engine.compute(&doc, &styles);
     let (w, _h) = find_box(&result.root, legend).expect("legend box");
     assert!(
-        w > 600.0,
-        "R4195: 无 containment 的 legend 照常 shrink-to-fit 内容（500+frame），实际 {w}"
+        (w - 600.0).abs() < 0.5,
+        "R4195: 无 containment 的 legend 照常 shrink-to-fit 内容（500 内容 + 100 frame = 600；\
+         R4360 修复 border 双计后恰为 600），实际 {w}"
     );
 }
