@@ -2,11 +2,11 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-14（S484：静默监测轮——同 tip 复核
-（pull 零新提交，tip = 9b1f721e5 即 S483 提交本身；无代码变更，
+**最后更新**: 2026-09-14（S485：静默监测轮——同 tip 复核
+（pull 零新提交，tip = 5db842acc 即 S484 提交本身；无代码变更，
 绿步维持 33）。双层锚点复核通过：自有面对 765429dda 维持
 **4 files +137/-17** 精确一致；全树排除本流 docs 后对 18d462de6
-维持 **12 files +364/-27** 与 S483 逐项一致零新增（S482 基线
+维持 **12 files +364/-27** 与 S484 逐项一致零新增（S482 基线
 +362/-27 代码面 + R4347 rendering-compat.md 纯 docs 28/0），
 代码树自 S482 双腿后零变更，S482 门活跑 20:52 直接覆盖当前树
 证据新鲜。crates/ 观察面 raw 维持 **20**，子帧关键词非测试代码
@@ -14,9 +14,9 @@
 树不变按门单腿口径免 make test 腿（S336 先例）。门结论引用
 S482 双腿活跑（PASS 33 绿 deterministic 双跑 YES EXIT=0
 ZERO_DRIFT=YES 20:52 落盘 + ZW_IPC_VALIDATE=1 在位静默），
-**引用计数 2/10→3/10，下次活跑至迟 S492**（树变化或 9/10 到期
+**引用计数 3/10→4/10，下次活跑至迟 S492**（树变化或 9/10 到期
 即提前触发）。机器卫生零 zombie 端口族全空闲零竞争 cdp-e2e 腿
-控制面零外来提交——负载 0.74 深净窗，本轮静默零活跑需求净窗
+控制面零外来提交——负载 0.28 深净窗，本轮静默零活跑需求净窗
 记账。解冻条件①②实质判定不变 DC-2 无新拍板）
 
 ---
@@ -48,6 +48,34 @@ ZERO_DRIFT=YES 20:52 落盘 + ZW_IPC_VALIDATE=1 在位静默），
 
 ## 已完成切片
 
+- **S485（2026-09-14）静默监测轮 — 同 tip 复核（pull 零新提交，
+  tip = 5db842acc 即 S484 提交本身；无代码变更，绿步维持 33）**：
+  双层锚点复核通过：自有面锚点四枚归因口径精确一致（对 765429dda
+  硬核对 numstat 4 files +137/-17 = Makefile 1/1 +
+  apps/browser/README.md 1/0 + headless/mod.rs 25/0 +
+  headless/session.rs 110/16，零新增漂移）；全树锚点复核（排除
+  本流 docs 后 tracked 代码树对 18d462de6 维持 **12 files
+  +364/-27** 与 S484 逐项一致零新增——engine/paint text.rs
+  13/0 + text_list.rs 8/2 + layout-engine 八文件 +
+  reftest_scripts.rs 204/0 + rendering-compat.md 28/0 全维持，
+  代码树自 S482 双腿后零变更，S482 门活跑 20:52 直接覆盖当前树
+  证据新鲜）。crates/ 观察面 raw 计数实测维持 **20**
+  （8fb39cd46..HEAD 限 crates/ 面），子帧能力关键词 grep
+  （contentDocument/content_document/subframe/sub_frame）非测试
+  代码零命中实测复核（命中面全为 dom/engine/webview 测试代码
+  维持既有形态），实质判定不变 frames.click+evaluate 维持挂起。
+  树不变按门单腿口径免 make test 腿（S336 先例）。门结论引用
+  S482 双腿活跑（门首调 PASS 33 绿 deterministic 双跑 YES
+  EXIT=0 ZERO_DRIFT=YES 20:52 落盘 + ZW_IPC_VALIDATE 校验器在位
+  静默），**引用计数 3/10→4/10，下次活跑至迟 S492**（树变化或
+  9/10 到期即提前触发）。机器卫生复核：零 zombie、
+  9222/45029/34293/19222 端口族全空闲、零竞争 cdp-e2e 腿、控制
+  面零外来提交；负载 0.28 深净窗——本轮静默零活跑需求净窗记账。
+  解冻条件实质判定不变：① 观察面 raw 20 维持，子帧三件套
+  iframe.contentDocument null 现状不变，frames.click+evaluate
+  维持挂起；② 本流控制面 docs/goal/cdp-protocol/ 零外来提交，
+  DC-2 口径无新拍板记录。goal 自有面零新缺口、无扩展面
+  （S40-S484 重审结论延续）。
 - **S484（2026-09-14）静默监测轮 — 同 tip 复核（pull 零新提交，
   tip = 9b1f721e5 即 S483 提交本身；无代码变更，绿步维持 33）**：
   双层锚点复核通过：自有面锚点四枚归因口径精确一致（对 765429dda
