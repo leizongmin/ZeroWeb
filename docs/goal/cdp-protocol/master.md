@@ -2,23 +2,24 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-14（S390：静默监测轮——pull 零新提交（tip =
-3a466a221 即 S389 提交本身），无代码变更绿步维持 33。双层锚点零
-漂移：自有面按 S351 修正后四枚归因口径精确一致（对 765429dda 硬
-核对 4 files +137/-17 = Makefile 1/1 + apps/browser/README.md 1/0 +
-headless/mod.rs 25/0 + headless/session.rs 110/16，零新增漂移）；
-全树排除本流 docs 后 tracked 代码树对 18d462de6 维持 4 files +26/-2
-基线（layout-engine 三文件 R4335/R4336 + rendering-compat.md 兄弟
-流控制面）与 S385-S389 记录逐项一致零新增，S384 活跑 14:21 直接
-覆盖当前树证据新鲜。门结论引用 S384 活跑（PASS 33 绿 deterministic
-双跑 YES EXIT=0 ZERO_DRIFT=YES 14:21 落盘 + make test 19,288P/0F +
-ZW_IPC_VALIDATE 在位静默），**引用计数 5/10→6/10，下次活跑至迟
-S394**。crates/ 观察面 raw 计数实测维持 16，实质判定不变
-frames.click+evaluate 维持挂起。机器卫生：零 zombie、端口族全空闲、
-9333 维持缺席、零竞争腿零孤儿 hunt；**负载 0.89 净窗**（零并行腿
-在窗）——本轮静默零活跑需求。解冻条件①②实质判定不变（观察面
-raw 16 维持；本流控制面零外来提交，DC-2 无新拍板）。goal 自有面
-零新缺口、无扩展面（S40-S389 重审结论延续））
+**最后更新**: 2026-09-14（S391：树变化刷新轮——兄弟流 R4338
+（45912e631，fix(layout) shrink_r109_anon_blocks 域收窄，r109.rs
++8）入树触发（同批 rendering-compat.md +2 docs-only 不入刷新触发
+面 S349 先例）。R4338 属渲染流域 crates/layout-engine（本流零
+重叠），非子帧能力（子帧关键词零命中）——解冻条件①实质判定不变
+frames.click+evaluate 维持挂起，crates/ 观察面 raw 16→**17**。
+**门 + make test 双刷新**：门首调即 PASS 33 绿 deterministic 双跑
+YES EXIT=0，绿步集机械 diff 基线零漂移（expected_green 33 对称差
+none、regressions 空）15:00 落盘 + ZW_IPC_VALIDATE 在位静默，唯一
+红=预期挂账 frames.click+evaluate 同形态首调红连续第廿四次零再现；
+make test 两调收口——run1 testharness 3 例 send-keys Timeout 红
+（send-keys Timeout flake 家族 R4330-F 同族新样本：隔离复跑 4/0
+恒过 + R4338 变更域 r109.rs 布局收缩与键盘事件派发零关联 + Timeout
+形态签名 + 本流零代码变更四点归因），run2 全绿 **19,288P/0F**（3
+例全 ok，R4338 组合态首次全量覆盖，计数与 S341/S342/S383/S384
+持平零新增用例）。**引用计数归零（本轮门活跑新鲜落盘），下次活跑
+至迟 S396**。机器卫生零 zombie、端口族全释放、门腿零遗留。DC-2
+无新拍板）
 
 ---
 
@@ -49,6 +50,42 @@ raw 16 维持；本流控制面零外来提交，DC-2 无新拍板）。goal 自
 
 ## 已完成切片
 
+- **S391（2026-09-14）树变化刷新轮 — 兄弟流 R4338 入树触发
+  （S245/S258/S289/S290/S314/S317/S340/S341/S342/S383/S384 先例，
+  门 + make test 双刷新）**：pull 拉入 45912e631（fix(layout)
+  R4338 shrink_r109_anon_blocks 域收窄，crates/layout-engine/
+  r109.rs +8，contains-* 族收敛）+ rendering-compat.md +2
+  （docs-only 兄弟流控制面，不入刷新触发面 S349 先例）。归因：
+  R4338 属渲染流域（本流零重叠无碰撞），非子帧能力（iframe/
+  contentDocument/realm/subframe 关键词零命中实测复核）——解冻
+  条件①实质判定不变，frames.click+evaluate 维持挂起；crates/
+  观察面 raw 16→**17**（git log 8fb39cd46..HEAD -- crates/ 实测）。
+  **门前置复核 PASS**（9222 端口族全空闲、零竞争 cdp-e2e 腿、零
+  zombie、负载 0.39 净窗）。**门腿（首调即收口）**：PASS 33 绿
+  deterministic 双跑 YES EXIT=0（green 33 vs 基线 33 对称差 none、
+  regressions 空、双 run 明细逐项一致），steps-report/
+  determinism-report 15:00 同轮新鲜落盘；ZW_IPC_VALIDATE 校验器在
+  位静默（捕获网零侵扰）；唯一红 = 预期挂账 frames.click+evaluate
+  同形态，首调红形态连续第廿四次零再现（S168 形态累计两例非聚集
+  记账维持）。**make test 腿（两调收口）**：run1 于 testharness 腿
+  出现 3 例 send-keys Timeout 红
+  （send_keys_dispatches_key_event_sequence_…/
+  send_keys_space_activates_button_on_keyup_r3254_k4/
+  runs_supported_html_interaction_subtests，签名 = local-space-
+  button-keyup.html completion callback not called Timeout）——
+  **send-keys Timeout flake 家族（R4330-F 同族）新样本，四点机械
+  归因**：①隔离复跑（test-guard 包裹 bin 定向）4/0 恒过；②
+  R4338 变更域 r109.rs 匿名块收缩与键盘事件派发域零关联；③Timeout
+  形态与家族签名一致（S317「隔离复跑恒过」先例收口路径）；④本流
+  S382-S390 零代码变更非本流因果——非基线回归非 R4338 因果，跨流
+  记档不单方修；run2 全绿 **19,288P/0F** EXIT=0，67 组 result 全
+  ok，原 3 例全 ok（R4338 组合态首次全量覆盖，计数与
+  S341/S342/S383/S384 持平零新增用例）。**引用计数归零（本轮门活
+  跑新鲜落盘），下次活跑至迟 S396**。机器卫生复核（门后）：零
+  zombie、9222/45029/34293/19222 端口族全释放、门腿零遗留进程。
+  双解冻条件实质判定不变：① 观察面 raw 17 维持（R4338 已计入，
+  非子帧能力）；② 本流控制面零外来提交，DC-2 无新拍板。goal 自有
+  面零新缺口、无扩展面（S40-S390 重审结论延续）。
 - **S390（2026-09-14）静默监测轮 — 同 tip 复核（pull 零新提交，tip =
   3a466a221 即 S389 提交本身；无代码变更，绿步维持 33）**：双层锚点
   口径复核通过：自有面锚点按 S351 修正后四枚归因口径精确一致（对
@@ -6450,6 +6487,11 @@ raw 16 维持；本流控制面零外来提交，DC-2 无新拍板）。goal 自
   **S384 时点 19,288P/0F EXIT=0**（一调收口零失败，R4336 组合态
   首次全量覆盖——计数与 S341/S342/S383 持平，渲染流 run-in 钳零
   修复对全量绿态零影响；setsid 脱离启动注记见 S384 切片）；
+  **S391 时点 19,288P/0F EXIT=0**（两调收口：run1 testharness 3 例
+  send-keys Timeout 红——send-keys Timeout flake 家族 R4330-F 同族
+  新样本，隔离复跑 4/0 恒过 + 变更域零关联 + 形态签名 + 非本流因果
+  四点归因跨流记档；run2 全绿含 3 例全 ok，R4338 组合态首次全量
+  覆盖计数持平）；
   禁止裸跑 cargo test，经 test-guard。注：make test
   的 workspace 腿 exclude zero-renderer——renderer lib 单测不在全量门内，跨流红灯
   （form fixture×2）经显式 `-p zero-renderer --lib` 跟踪）
