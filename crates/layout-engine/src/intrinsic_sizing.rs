@@ -487,9 +487,24 @@ pub(crate) fn block_max_content_width(
                 inline_sum += (contribution + ml + mr).max(0.0);
                 continue;
             }
-            // inline-level 子：用 outer_w（已布局宽度）求和。inline-flex/inline-grid 的
-            // intrinsic 测量由 shrink_inline_blocks_to_content（R180/R1017）路径处理，此处不重复。
-            inline_sum += (child.width + ml + mr).max(0.0);
+            // R4355（css-sizing-3 §max-content；ruby-overhang-spaces-002 取证）：intrinsic
+            // 测量趟裸文本不生成 LayoutBox、纯 inline 子在 taffy 前宽为 0——旧实现对
+            // 「文本 + <span>/<ruby> + 文本」容器 max-content 塌缩（实测 text+ruby+text
+            // div 测 20px 应 ~100px，整行逐字竖排坍塌）。纯 inline（span/ruby/em 等）改为
+            // 仅计 frame（padding/border + margin），其文本经循环后 dom_inline_text_max_width
+            // 统一计入 DOM 直读（ruby 的 base 文本收进父 IFC、LayoutBox 树仅空 anon 盒，
+            // 只有 DOM 直读可见；rt/rp display:none 子树在 walk 中跳过，rt 宽度绝不计入）。
+            // 原子/盒模型 inline（inline-block 族/replaced）维持既有 child.width 口径
+            //（replaced 的 attr/AR 宽第一趟已解析进 child.width；DOM 递归对无文本原子盒
+            // 测 0 会塌——intrinsic-percent-replaced-001/012/013/dynamic-004 实证回退）。
+            let is_plain_inline = std::env::var("ZW_INLINE_DOM_INTRINSIC").as_deref() != Ok("0")
+                && child_style.is_some_and(|s| matches!(s.display, DisplayValue::Inline));
+            if is_plain_inline {
+                let frame = child.padding_left + child.padding_right + child.border_left + child.border_right;
+                inline_sum += (frame + ml + mr).max(0.0);
+            } else {
+                inline_sum += (child.width + ml + mr).max(0.0);
+            }
             continue;
         }
         let is_spanner = child_style.is_some_and(|s| matches!(s.column_span, ColumnSpanComputedValue::All));
@@ -534,6 +549,12 @@ pub(crate) fn block_max_content_width(
         } else {
             nonspanner_block_max = nonspanner_block_max.max(with_margins);
         }
+    }
+
+    // R4355：裸文本与纯 inline 后代（span/ruby 等）的文本固有宽（见 inline 分支注）。
+    // 杀开关 `ZW_INLINE_DOM_INTRINSIC=0` 整体回退（含 inline 分支的 DOM 递归）。
+    if std::env::var("ZW_INLINE_DOM_INTRINSIC").as_deref() != Ok("0") {
+        inline_sum += dom_inline_text_max_width(box_node, doc, styles);
     }
 
     let children_inner = inline_sum.max(block_max);
@@ -662,6 +683,54 @@ pub(crate) fn text_content_max_width(node_id: NodeId, doc: &Document, styles: &H
 /// 单长行（text-group-align ref 页 `.group{inline-size:min-content}` 全文本测 262px、
 /// 应最宽行 122px → 组盒溢出容器、margin-inline:auto 居中失效）。`styles` 供元素子查
 /// 自身 white-space 覆盖（None = 沿用继承值，fragment 语境无样式表可用）。
+/// 文本内容按 white-space 规则累入 segments（collapse 模式单段累加；保留换行/ pre-line
+/// 模式按 `\n` 切段）。text_max_width_walk 与 dom_inline_text_walk 共用。
+fn accumulate_text_width(
+    content: &str,
+    white_space: &WhiteSpaceValue,
+    font_size: f32,
+    is_ahem: bool,
+    segments: &mut Vec<f32>,
+) {
+    let preserve_spaces = matches!(
+        white_space,
+        WhiteSpaceValue::Pre | WhiteSpaceValue::PreWrap | WhiteSpaceValue::BreakSpaces
+    );
+    let forced_newline = preserve_spaces || matches!(white_space, WhiteSpaceValue::PreLine);
+    if !forced_newline {
+        let collapsed = crate::inline::collapse_whitespace(content);
+        if !collapsed.is_empty() {
+            let w: f32 = collapsed
+                .chars()
+                .map(|ch| crate::inline::estimate_char_width(ch, font_size, is_ahem))
+                .sum();
+            *segments.last_mut().expect("segments 非空") += w;
+        }
+    } else {
+        for (i, line) in content.split('\n').enumerate() {
+            if i > 0 {
+                segments.push(0.0);
+            }
+            if line.is_empty() {
+                continue;
+            }
+            let measured = if preserve_spaces {
+                line.to_string()
+            } else {
+                crate::inline::collapse_whitespace(line)
+            };
+            if measured.is_empty() {
+                continue;
+            }
+            let w: f32 = measured
+                .chars()
+                .map(|ch| crate::inline::estimate_char_width(ch, font_size, is_ahem))
+                .sum();
+            *segments.last_mut().expect("segments 非空") += w;
+        }
+    }
+}
+
 fn text_max_width_walk(
     node_id: NodeId,
     doc: &Document,
@@ -674,43 +743,7 @@ fn text_max_width_walk(
     let Some(node) = doc.get(node_id) else { return };
     match &node.kind {
         zero_dom::NodeKind::Text(t) => {
-            let preserve_spaces = matches!(
-                white_space,
-                WhiteSpaceValue::Pre | WhiteSpaceValue::PreWrap | WhiteSpaceValue::BreakSpaces
-            );
-            let forced_newline = preserve_spaces || matches!(white_space, WhiteSpaceValue::PreLine);
-            if !forced_newline {
-                let collapsed = crate::inline::collapse_whitespace(&t.content);
-                if !collapsed.is_empty() {
-                    let w: f32 = collapsed
-                        .chars()
-                        .map(|ch| crate::inline::estimate_char_width(ch, font_size, is_ahem))
-                        .sum();
-                    *segments.last_mut().expect("segments 非空") += w;
-                }
-            } else {
-                for (i, line) in t.content.split('\n').enumerate() {
-                    if i > 0 {
-                        segments.push(0.0);
-                    }
-                    if line.is_empty() {
-                        continue;
-                    }
-                    let measured = if preserve_spaces {
-                        line.to_string()
-                    } else {
-                        crate::inline::collapse_whitespace(line)
-                    };
-                    if measured.is_empty() {
-                        continue;
-                    }
-                    let w: f32 = measured
-                        .chars()
-                        .map(|ch| crate::inline::estimate_char_width(ch, font_size, is_ahem))
-                        .sum();
-                    *segments.last_mut().expect("segments 非空") += w;
-                }
-            }
+            accumulate_text_width(&t.content, white_space, font_size, is_ahem, segments);
         }
         zero_dom::NodeKind::Element(e) if e.local_name().eq_ignore_ascii_case("br") => {
             segments.push(0.0);
@@ -725,6 +758,179 @@ fn text_max_width_walk(
             }
         }
         _ => {}
+    }
+}
+
+/// R4355（css-sizing-3 §max-content；ruby-overhang-spaces-002 取证）：混合 inline 内容
+/// 容器的「文本部分」max-content 宽。intrinsic 测量趟 inline 子尚未布局（child.width=0；
+/// taffy 之后的调用点读到拉伸伪影宽），且裸文本片段不生成 LayoutBox——旧实现对
+/// 「文本 + <span>/<ruby> + 文本」容器测得 ~0（实测 div w=20 应 ~100px，整行逐字
+/// 竖排坍塌）。DOM 直读容器子树文本：
+/// - display:none 子树跳过（**rt/rp**——ruby base 文本收进父 IFC 参与<Ruby>行宽，rt
+///   文本绝不计入；annotation 宽度参与行预算 = 后续 slice）；
+/// - 块级后代停止（其文本由 block 分支的子 intrinsic 负责，不属本 inline 流）；
+/// - replaced / inline-block 族停止（其贡献由调用方 inline 分支的 LayoutBox 递归计，
+///   避免文本双计；原子盒无文本）；
+/// - 其余 inline 元素（span/ruby/em 等）递归；br 切段取最宽段（R1747 同语义）。
+///
+/// 字体度量取容器自身（嵌套异字体后代近似，R4043 已把该域排除出 stored IFC）。
+fn dom_inline_text_max_width(box_node: &LayoutBox, doc: &Document, styles: &HashMap<NodeId, ComputedStyle>) -> f32 {
+    let Some(id) = box_node.node_id else { return 0.0 };
+    let Some(style) = styles.get(&id) else { return 0.0 };
+    let (font_size, _line_height) = crate::inline::resolve_font_metrics(Some(style));
+    let is_ahem = style
+        .font_family
+        .iter()
+        .any(|f| f.trim_matches('"').eq_ignore_ascii_case("Ahem"));
+    let white_space = style.white_space.clone();
+    let mut segments: Vec<f32> = vec![0.0];
+    let mut state = DomWalkState {
+        pending_space: false,
+        line_has_content: false,
+        font_size,
+        is_ahem,
+    };
+    dom_inline_text_walk(id, doc, styles, &white_space, &mut segments, &mut state);
+    segments.into_iter().fold(0.0f32, f32::max)
+}
+
+/// R4355：跨节点空白折叠状态——CSS 白空格折叠跨 inline 盒边界连续（源内连续空白串
+/// 折叠为一个空格；行首/行尾空白丢弃）。`pending_space` = 已见待定空白（尚不计宽）；
+/// `line_has_content` = 本段已见非空白内容或原子盒（决定 pending 空白是否为行首丢弃）。
+struct DomWalkState {
+    pending_space: bool,
+    line_has_content: bool,
+    font_size: f32,
+    is_ahem: bool,
+}
+
+impl DomWalkState {
+    fn flush_space(&mut self, segments: &mut [f32]) {
+        if self.pending_space && self.line_has_content {
+            *segments.last_mut().expect("segments 非空") +=
+                crate::inline::estimate_char_width(' ', self.font_size, self.is_ahem);
+        }
+        self.pending_space = false;
+    }
+}
+
+fn dom_inline_text_walk(
+    node_id: NodeId,
+    doc: &Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    white_space: &WhiteSpaceValue,
+    segments: &mut Vec<f32>,
+    state: &mut DomWalkState,
+) {
+    for child in doc.child_nodes(node_id) {
+        let Some(node) = doc.get(child) else { continue };
+        match &node.kind {
+            zero_dom::NodeKind::Text(t) => {
+                let preserve_spaces = matches!(
+                    white_space,
+                    WhiteSpaceValue::Pre | WhiteSpaceValue::PreWrap | WhiteSpaceValue::BreakSpaces
+                );
+                if preserve_spaces {
+                    // 保留换行模式：逐字计宽（pre 系空白保留）；\n 切段由 accumulate 处理。
+                    // 这里与折叠语义不同源，直接复用 accumulate 的 pre 臂（无跨节点折叠）。
+                    let mut tmp: Vec<f32> = vec![0.0];
+                    accumulate_text_width(&t.content, white_space, state.font_size, state.is_ahem, &mut tmp);
+                    *segments.last_mut().expect("segments 非空") += tmp.into_iter().fold(0.0f32, f32::max);
+                    state.line_has_content = true;
+                    continue;
+                }
+                let collapsed = crate::inline::collapse_whitespace(&t.content);
+                if collapsed.is_empty() {
+                    if t.content.chars().any(char::is_whitespace) {
+                        state.pending_space = true;
+                    }
+                } else {
+                    state.flush_space(segments);
+                    let w: f32 = collapsed
+                        .chars()
+                        .map(|ch| crate::inline::estimate_char_width(ch, state.font_size, state.is_ahem))
+                        .sum();
+                    *segments.last_mut().expect("segments 非空") += w;
+                    state.line_has_content = true;
+                }
+            }
+            zero_dom::NodeKind::Element(e) if e.local_name().eq_ignore_ascii_case("br") => {
+                // 强制换行：行尾待定空白丢弃（CSS：行尾空白不渲染），开新段。
+                state.pending_space = false;
+                state.line_has_content = false;
+                segments.push(0.0);
+            }
+            zero_dom::NodeKind::Element(e) => {
+                let Some(cs) = styles.get(&child) else { continue };
+                use zero_style_system::property::types::DisplayValue as DV;
+                // display:none：rt/rp（ruby annotation 不计宽）、script/template 等——对
+                // 白空格折叠透明（两侧空白串仍折叠为基准流内一个空格）。
+                if matches!(cs.display, DV::None) {
+                    continue;
+                }
+                // 块级后代：停止（不属本 inline 流）；其后空白为下一行行首（丢弃）。
+                if matches!(
+                    cs.display,
+                    DV::Block
+                        | DV::FlowRoot
+                        | DV::ListItem
+                        | DV::Table
+                        | DV::TableRow
+                        | DV::TableRowGroup
+                        | DV::TableHeaderGroup
+                        | DV::TableFooterGroup
+                        | DV::TableCell
+                        | DV::TableCaption
+                        | DV::TableColumn
+                        | DV::TableColumnGroup
+                        | DV::Flex
+                        | DV::Grid
+                ) {
+                    state.pending_space = false;
+                    state.line_has_content = false;
+                    continue;
+                }
+                // 原子 inline（盒模型/replaced 族）：调用方 LayoutBox 分支负责宽度，跳过
+                // 文本；其与前后 inline 内容之间的折叠空格照常渲染。
+                if matches!(
+                    cs.display,
+                    DV::InlineBlock | DV::InlineFlex | DV::InlineGrid | DV::InlineTable
+                ) {
+                    state.flush_space(segments);
+                    state.line_has_content = true;
+                    continue;
+                }
+                let tag_lower = e.local_name().to_ascii_lowercase();
+                if matches!(
+                    tag_lower.as_str(),
+                    "img"
+                        | "video"
+                        | "audio"
+                        | "canvas"
+                        | "iframe"
+                        | "embed"
+                        | "object"
+                        | "svg"
+                        | "input"
+                        | "button"
+                        | "select"
+                        | "textarea"
+                        | "keygen"
+                        | "progress"
+                        | "meter"
+                ) {
+                    state.flush_space(segments);
+                    state.line_has_content = true;
+                    continue;
+                }
+                let child_ws = styles
+                    .get(&child)
+                    .map(|s| s.white_space.clone())
+                    .unwrap_or_else(|| white_space.clone());
+                dom_inline_text_walk(child, doc, styles, &child_ws, segments, state);
+            }
+            _ => {}
+        }
     }
 }
 

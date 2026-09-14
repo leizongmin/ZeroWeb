@@ -861,10 +861,7 @@ fn test_block_width_min_content_sized_to_intrinsic() {
 #[test]
 fn test_r3925_fit_content_arg_is_upper_bound_not_fixed() {
     let html = r#"<html><body style="margin:0">
-          <div id="t" style="width:fit-content(200px);height:40px;background:green">
-            <div style="display:inline-block;width:50px;height:30px"></div>
-            <div style="display:inline-block;width:50px;height:30px"></div>
-          </div>
+          <div id="t" style="width:fit-content(200px);height:40px;background:green"><div style="display:inline-block;width:50px;height:30px"></div><div style="display:inline-block;width:50px;height:30px"></div></div>
         </body></html>"#;
     let doc = zero_dom::parse_html(html);
     let mut sys = StyleSystem::new();
