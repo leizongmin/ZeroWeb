@@ -2,18 +2,19 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-14（S339：静默监测轮——同 tip 复核（d6ff072fe，即
-S338 提交本身），双层锚点零漂移（自有面维持 apps/browser README +1 已归因
-基线；全树锚点排除本流 docs 后 tracked 代码树对 S317 双腿刷新覆盖树
-736f16525 零变化——S336 活跑 10:27 直接覆盖当前树），门结论引用 S336
-活跑（门 PASS 33 绿 deterministic YES EXIT=0 ZERO_DRIFT=YES 10:27 +
-ZW_IPC_VALIDATE 静默），引用计数 4/10 下次活跑至迟 S346；绿步维持 33；
-解冻条件①观察面不变（crates/ 自 8fb39cd46 维持九枚均非渲染流子帧能力，
-frames.click+evaluate 维持挂起），②DC-2 无新拍板；机器卫生全净含
-zw-loop/zw-hunt 检查模式；gate6 避让窗延续（gate6.done 未落地，make test
-腿延续 + gate6 node 腿在窗已归因，make cdp-e2e 腿未启动 9222 仍空闲——
-本轮零活跑需求无实际竞争，后续任何本流活跑在 gate6.done 落地前必须等待
-避让）；S78 家族维持 S320 收窄定性；零 zombie 零遗留端口）
+**最后更新**: 2026-09-14（S340：树变化刷新轮——渲染流 R4332 入树触发
+（2cbc3539c，paint painter text.rs + layout-engine inline 族 +431/-55，
+S336 门 10:27 在其入树前运行未经覆盖，按 S314/S317 先例双腿刷新）；
+**gate6 避让兑现**：S339 记账的 ZeroWeb-3-wt-baidu gate6 验收链在窗，
+本轮等待 gate6.done 10:38:30 落地后按 S198 口径前置复核（端口族全空闲
+零竞争腿零 zombie）通过后活跑（负载 5.83 负载窗口照跑记账第十六个负载
+下样本）；腿一 cdp-e2e 门首调即收口 PASS 33 绿 deterministic 双跑 YES
+EXIT=0 ZERO_DRIFT=YES 10:40 落盘 + ZW_IPC_VALIDATE 在位静默，腿二
+make test 一调收口 19,287P/0F（R4332 组合态首次全量覆盖，零新增用例）；
+引用计数重计 1/10 下次活跑至迟 S350；解冻条件①不变（crates/ 现十枚均
+非子帧文档加载+JS realm 能力，frames.click+evaluate 维持挂起）②不变
+（docs/goal 自 S339 零非本流提交）；首调红形态连续第十五次零再现；
+两腿全收尾零 zombie 零遗留端口）
 
 ---
 
@@ -44,6 +45,42 @@ zw-loop/zw-hunt 检查模式；gate6 避让窗延续（gate6.done 未落地，ma
 
 ## 已完成切片
 
+- **S340（2026-09-14）树变化刷新轮 — 渲染流 R4332 入树触发（S245/S258/S289/
+  S290/S314/S317 先例：门 + make test 双腿刷新，绿步维持 33）**：
+  pull 带入渲染流代码提交 2cbc3539c（R4332 多行 inline 边框 slice 语义 +
+  run-in 前缀测量注入：paint painter text.rs 双轨重构 + render_fragment 宏
+  line_top/edge 参数 + paint mod 多行 box-level 边框抑制 + layout-engine 8
+  文件，10 文件 +431/-55 含新增用例行）——S336 门 10:27 在其入树前运行未经
+  覆盖，tracked 代码树相对 S336 活跑基树变化，按树变化刷新轮口径双腿刷新。
+  **归因**：R4332 渲染流自有工作面（layout-engine / engine paint painter
+  路径），本流 docs-only 提交链 rebase 干净零冲突无碰头信号；非渲染流子帧
+  文档加载 + JS realm 能力，解冻条件①不变。
+  **gate6 避让兑现（S198 口径首次实际等待）**：S339 记账的 ZeroWeb-3-wt-
+  baidu clone site-optimizer gate6 验收链（bash 2291122，10:27 起）在窗，
+  本轮轮询等待 gate6.done 于 10:38:30 落地（其 make test 腿 10:37 收口，
+  cdp-e2e 腿 PASS 33 绿 deterministic YES——该 clone 树佐证样本非本流账面；
+  其 make test 腿单二进制 715P/1F ERROR 101 属该 clone 自有验收面，跨流
+  记档不单方修，webview timer flake 家族「无轮询首断言」形态候选在案）。
+  落地后 S198 前置复核通过：9222/45029/34293/19222 端口族全空闲、零竞争
+  cdp-e2e 腿、零 zombie；负载 5.83 负载窗口按口径照跑记账（第十六个负载下
+  样本）。**腿一 cdp-e2e 门：首调即收口** PASS 33 绿、deterministic 双跑
+  YES、EXIT=0、ZERO_DRIFT=YES（机械 diff：expected_green 33 对称差 none、
+  regressions 空），steps/determinism-report 10:40 同轮落盘新鲜；ZW_IPC_
+  VALIDATE 校验器在位静默（malformed frame buffer / ipc reader terminated
+  零命中，捕获网零侵扰）；唯一红=预期挂账 frames.click+evaluate 同形态
+  （flow exited 1 含期望失败步骤），首调红形态连续第十五次零再现（S168
+  形态累计两例非聚集记账维持）；zero-engine dead_code warning 既有形态
+  维持（match_media_to_json bins-only 条件 dead，S300 四点归因）。R4332
+  对门禁绿态零影响。**腿二 make test：一调收口 19,287P/0F**（test-guard
+  包裹全量，零 FAILED、67 组 result 全 ok；R4332 组合态首次全量覆盖；计数
+  与 S317 时点持平——R4332 零新增用例，其 tests 行均为既有用例修改）。
+  **引用计数重计 1/10，下次活跑至迟 S350**。双解冻条件实质判定不变：
+  ① crates/ 自 8fb39cd46 现十枚（+R4332），均非渲染流子帧文档加载 + JS
+  realm 能力（子帧三件套 iframe.contentDocument null 现状不变），
+  frames.click+evaluate 维持挂起；② docs/goal 自 S339 零非本流提交，DC-2
+  口径无新拍板记录。机器卫生：两腿全收尾——端口族全释放、零 zombie、零
+  遗留进程（ZeroWeb-3 clone 9333 zero-browser 长驻实例维持已归因非本流
+  竞争面）。goal 自有面零新缺口、无扩展面（S40-S339 重审结论延续）。
 - **S339（2026-09-14）静默监测轮 — 同 tip 复核（无代码变更，绿步维持 33）**：
   pull 零新提交（tip = d6ff072fe，即 S338 提交本身）——双层锚点口径复核
   通过：自有面锚点增量零漂移（硬核对维持仅 apps/browser/README.md +1 行 =
