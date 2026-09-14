@@ -2,8 +2,8 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-14（S392：静默监测轮——pull 零新提交（tip =
-a62fb7252 即 S391 提交本身），无代码变更绿步维持 33。双层锚点零
+**最后更新**: 2026-09-14（S393：静默监测轮——pull 零新提交（tip =
+9d646bc38 即 S392 提交本身），无代码变更绿步维持 33。双层锚点零
 漂移：自有面按 S351 修正后四枚归因口径精确一致（对 765429dda 硬
 核对 4 files +137/-17 = Makefile 1/1 + apps/browser/README.md 1/0 +
 headless/mod.rs 25/0 + headless/session.rs 110/16，零新增漂移）；
@@ -13,12 +13,13 @@ headless/mod.rs 25/0 + headless/session.rs 110/16，零新增漂移）；
 test 双腿 15:00 直接覆盖当前树证据新鲜。门结论引用 S391 活跑（门
 PASS 33 绿 deterministic 双跑 YES EXIT=0 ZERO_DRIFT=YES 15:00 落盘
 + make test 19,288P/0F + ZW_IPC_VALIDATE 在位静默），**引用计数
-0/10→1/10，下次活跑至迟 S396**。crates/ 观察面 raw 计数实测维持
+1/10→2/10，下次活跑至迟 S396**。crates/ 观察面 raw 计数实测维持
 17，实质判定不变 frames.click+evaluate 维持挂起。机器卫生：零
 zombie、端口族全空闲、9333 维持缺席、零竞争腿零孤儿 hunt；**负载
-0.52 净窗**（零并行腿在窗）——本轮静默零活跑需求。解冻条件①②
-实质判定不变（观察面 raw 17 维持；本流控制面零外来提交，DC-2 无
-新拍板）。goal 自有面零新缺口、无扩展面（S40-S391 重审结论延续））
+0.65 净窗**（外部项目 zeroseed-ux chromium 进程在窗属非端口竞争
+面）——本轮静默零活跑需求。解冻条件①②实质判定不变（观察面
+raw 17 维持；本流控制面零外来提交，DC-2 无新拍板）。goal 自有面
+零新缺口、无扩展面（S40-S392 重审结论延续））
 
 ---
 
@@ -49,6 +50,35 @@ zombie、端口族全空闲、9333 维持缺席、零竞争腿零孤儿 hunt；*
 
 ## 已完成切片
 
+- **S393（2026-09-14）静默监测轮 — 同 tip 复核（pull 零新提交，tip =
+  9d646bc38 即 S392 提交本身；无代码变更，绿步维持 33）**：双层锚点
+  口径复核通过：自有面锚点按 S351 修正后四枚归因口径精确一致（对
+  765429dda 硬核对 numstat 4 files +137/-17 = Makefile 1/1 +
+  apps/browser/README.md 1/0 + headless/mod.rs 25/0 +
+  headless/session.rs 110/16，零新增漂移）；全树锚点复核（排除本流
+  docs 后 tracked 代码树对 18d462de6 维持 5 files +36/-2 基线 =
+  layout-engine 四文件 postprocess.rs 7/1 + inline_finalization.rs
+  6/1 + r109.rs 8/0 + tree.rs 5/0（R4335/R4336/R4338）+
+  rendering-compat.md 10/0 兄弟流控制面，与 S391 树变化刷新后状态
+  逐项一致零新增——S391 门 + make test 双腿 15:00 直接覆盖当前树
+  证据新鲜可引用）零外部变化。crates/ 观察面 raw 计数实测维持
+  **17**（新入提交均为渲染流 R43xx 布局修复 + 跨流共享面 edc625e5d
+  script-sandbox / 7228ffeea zero-web exceptionThrown / S316 本流
+  捕获网），子帧能力关键词 grep（contentDocument/content_document）
+  非测试代码零命中实测复核，命中均为既有测试文件与无关面，实质
+  判定不变：均非渲染流子帧文档加载 + JS realm 能力（子帧三件套
+  iframe.contentDocument null 现状不变），frames.click+evaluate
+  维持挂起。门结论引用 S391 活跑（门 PASS 33 绿 deterministic 双跑
+  YES EXIT=0 ZERO_DRIFT=YES 15:00 落盘 + make test 19,288P/0F +
+  ZW_IPC_VALIDATE 校验器在位静默），引用计数 1/10→**2/10**，下次
+  活跑至迟 S396。机器卫生复核：零 zombie（stat 精确判定）、
+  9222/45029/34293/19222/9333 端口族全空闲（9333 长驻实例维持
+  缺席）、零竞争 cdp-e2e 腿、零孤儿 hunt 遗留；**负载 0.65 净窗**
+  （1min 均值，零编译测试腿在窗；外部项目 zeroseed-ux chromium
+  进程在窗属非端口竞争面——remote-debugging-pipe 非端口族）——
+  本轮静默零活跑需求。双解冻条件实质判定不变：① 观察面 raw 17
+  维持；② 本流控制面零外来提交，DC-2 无新拍板。goal 自有面零新
+  缺口、无扩展面（S40-S392 重审结论延续）。
 - **S392（2026-09-14）静默监测轮 — 同 tip 复核（pull 零新提交，tip =
   a62fb7252 即 S391 提交本身；无代码变更，绿步维持 33）**：双层锚点
   口径复核通过：自有面锚点按 S351 修正后四枚归因口径精确一致（对
