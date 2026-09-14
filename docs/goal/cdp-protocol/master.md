@@ -2,34 +2,37 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-14（S517：树变化刷新轮——兄弟流渲染
-R4332-F d3e2981b2 入树（单提交：layout-engine collect_items.rs
-4/4 热路径 R4332_FOLD_OFF env 探针移除 + learning 文档 35/0，
-渲染流域专属 crate 与本流零重叠，S245→S506→S456 先例族），
-pull 后 tip = d3e2981b2。双层锚点——自有面对 765429dda 维持
-**4 files +137/-17** 零漂移；全树锚点刷新至 **15 files
-+704/-35**（13 项原值维持 + collect_items.rs 32/19→36/23
-R4332-F 归因精确一致 + 新增 learning 文档 35/0）。crates/
-观察面 raw **21→22**（R4332-F 归因记账），子帧关键词非测试
-代码零命中，frames.click+evaluate 维持挂起。**双腿活跑
+**最后更新**: 2026-09-14（S518：树变化刷新轮——S517 收口后
+push 序列入树三提交（S342 先例「入树发生于上轮收口后 push
+序列 → 连续刷新轮」）pull 零新提交 tip = 2223958e3 即 S517
+提交本身：R4350 909708e42（engine js_dom_bridge/computed_style
++ paint effects/mod + style-system matcher/property/shorthand
+背景附件多图层 Vec 化）+ R4351 4854fd584（engine paint
+effects/mod canvas 传播逐层 origin）+ dcabe11b1（docs/perf
+基线 chore 非代码）——渲染流域专属 crate 组合态与本流零
+重叠。双层锚点——自有面对 765429dda 维持 **4 files +137/-17**
+零漂移；全树锚点刷新至 **32 files +2145/-138**（R4350/R4351
+engine+style-system 组合态 + perf docs 全量入面）。crates/
+观察面 raw **22→24**（R4350/R4351 归因记账），子帧关键词非
+测试代码零命中，frames.click+evaluate 维持挂起。**双腿活跑
 收口**：门首调即收口 make cdp-e2e PASS 33 绿 deterministic
 双跑 YES EXIT=0，expected_green 33 对称差 none、regressions
-空，22:36 落盘，ZW_IPC_VALIDATE=1 在位静默（#0 复现监测零
+空，23:38 落盘，ZW_IPC_VALIDATE=1 在位静默（#0 复现监测零
 命中），首调红形态零再现延续；make test 一调收口 **19,290P/
-0F EXIT 收口**（67 组 result 全 ok，计数与 S506 基线持平，
-R4332-F 组合态首次全量覆盖，渲染流 layout-engine 修复对
-门禁绿态与全仓绿态零影响；前两次启动因前台工具墙钟 10min
-SIGTERM 无效收口注记，第三次 setsid 脱离启动收口，S383/
-S384 先例）。**引用计数重计 1/10**（8/10 次轮即期限轮口径
-下至迟 S525 期限轮活跑；树变化提前触发）。机器卫生复核：
-零 zombie、9222/45029/34293/19222 端口族全空闲、零竞争
-本流腿、控制面零外来提交；负载收口时点 0.45 净窗（活跑启动
-时点 1.53 净窗，本轮双腿零负载窗记账）。解冻条件实质判定
-不变：① 观察面 raw 22 维持（R4332-F 归因），子帧三件套
+0F**（67 组 result 全 ok，计数与 S506/S517 基线持平，
+R4350/R4351 组合态首次全量覆盖，渲染流 canvas/background
+修复对门禁绿态与全仓绿态零影响；setsid 脱离启动 23:39 起跑
+~9.5 分钟收口，S384 先例延续）。**引用计数重计 1/10**（8/10
+次轮即期限轮口径下至迟 S526 期限轮活跑；树变化提前触发）。
+机器卫生复核：零 zombie、9222/45029/34293/19222 端口族全
+空闲、零竞争本流腿、控制面零外来提交；负载活跑期间窗
+（收口时点 3.61 归因本轮自身 make test 尾段 + 兄弟流余量，
+启动时点 0.30 深净窗）。解冻条件实质判定不变：① 观察面
+raw 24 维持（R4350/R4351 归因），子帧三件套
 iframe.contentDocument null 现状不变，frames.click+evaluate
 维持挂起；② 本流控制面 docs/goal/cdp-protocol/ 零外来提交，
 DC-2 口径无新拍板记录。goal 自有面零新缺口、无扩展面
-（S40-S516 重审结论延续））
+（S40-S517 重审结论延续））
 
 ---
 
@@ -60,6 +63,45 @@ DC-2 口径无新拍板记录。goal 自有面零新缺口、无扩展面
 
 ## 已完成切片
 
+- **S518（2026-09-14）树变化刷新轮 — S517 收口后 push 序列
+  入树三提交（S342 先例「入树发生于上轮收口后 push 序列 →
+  连续刷新轮」；pull 零新提交 tip = 2223958e3 即 S517 提交
+  本身）**：归因——R4350 909708e42（engine js_dom_bridge/
+  computed_style.rs 11/9 + paint effects.rs 31/2 + mod.rs
+  25/8 + paint tests + style-system matcher/property/
+  shorthand/background.rs 10/7 等，background-attachment
+  多图层 Vec 化 + 逐层 origin 切换）+ R4351 4854fd584
+  （engine paint effects.rs 35/35 + mod.rs 11/10，canvas
+  传播逐层 origin + 逐层固有维）+ dcabe11b1（docs/perf
+  基线 chore 非代码）——渲染流域专属 crate 组合态与本流
+  零重叠。双层锚点：自有面对 765429dda 维持 **4 files
+  +137/-17** 零漂移；全树锚点刷新至 **32 files +2145/-138**
+  （R4350/R4351 engine+style-system 组合态 + perf docs 全量
+  入面，13 项原值维持 + 新增项全数归因三提交）。crates/
+  观察面 raw **22→24**（R4350/R4351 归因记账），子帧能力
+  关键词 grep 非测试代码零命中（命中面为 dom/engine/webview
+  三处 tests 路径下测试代码维持既有形态），实质判定不变
+  frames.click+evaluate 维持挂起。**双腿活跑收口**：门首调
+  即收口（make cdp-e2e，test-guard 包裹）PASS 33 绿
+  deterministic 双跑 YES EXIT=0——expected_green 33 对称差
+  none、regressions 空，23:38 同轮新鲜落盘，
+  ZW_IPC_VALIDATE=1 在位静默（#0 复现监测零命中），首调红
+  形态零再现延续；make test 一调收口 **19,290P/0F**（67 组
+  result 全 ok，计数与 S506/S517 基线持平，R4350/R4351
+  组合态首次全量覆盖，渲染流 canvas/background 修复对门禁
+  绿态与全仓绿态零影响；setsid 脱离启动 23:39 起跑 ~9.5
+  分钟收口，S384 先例延续）。**引用计数重计 1/10**（8/10
+  次轮即期限轮口径下至迟 S526 期限轮活跑；树变化提前触发）。
+  机器卫生复核：零 zombie、9222/45029/34293/19222 端口族
+  全空闲（活跑前确认零端口竞争）、零竞争本流腿、控制面零
+  外来提交；负载活跑期间窗（启动时点 0.30 深净窗、收口
+  时点 3.61 归因本轮自身 make test 尾段 + 兄弟流余量）。
+  解冻条件实质判定不变：① 观察面 raw 24 维持（R4350/R4351
+  归因），子帧三件套 iframe.contentDocument null 现状不变，
+  frames.click+evaluate 维持挂起；② 本流控制面
+  docs/goal/cdp-protocol/ 零外来提交，DC-2 口径无新拍板
+  记录。goal 自有面零新缺口、无扩展面（S40-S517 重审结论
+  延续）。
 - **S517（2026-09-14）树变化刷新轮 — 兄弟流渲染 R4332-F
   d3e2981b2 入树（单提交：layout-engine collect_items.rs 4/4
   热路径 R4332_FOLD_OFF env 探针移除（wide_tree 基准 +67%
