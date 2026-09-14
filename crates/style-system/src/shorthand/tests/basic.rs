@@ -871,3 +871,62 @@ fn r3753_background_size_side_math_value() {
 fn r3753_background_rejects_unclosed_math() {
     assert!(expand_one("background", "red min(0%, 100% no-repeat", false, (0, 0, 1)).is_empty());
 }
+
+#[test]
+/// R4350：background 简写多层（`<bg-layer>#`）展开——逐层分类 + 逐 longhand 逗号连接。
+/// color 仅末层；单层路径不受影响。driving：background-attachment-margin-root-001
+/// （html 双渐变层 + `background-attachment: scroll, fixed`）此前整条简写被丢弃 → 白底。
+fn r4350_background_shorthand_multi_layer() {
+    let result = expand_one(
+        "background",
+        "linear-gradient(rgba(0,255,0,0.5), rgba(0,0,255,0.5)), linear-gradient(rgba(0,0,0,1), rgba(0,0,0,1))",
+        false,
+        (0, 0, 1),
+    );
+    assert!(!result.is_empty(), "多层简写不得整条丢弃");
+    let map: std::collections::HashMap<&str, &str> =
+        result.iter().map(|(p, v, _, _)| (p.as_str(), v.as_str())).collect();
+    let image = map.get("background-image").copied().unwrap_or_default();
+    assert!(
+        image.contains("linear-gradient") && image.contains(", "),
+        "image 应含两层: {image:?}"
+    );
+    assert_eq!(map.get("background-color"), Some(&"transparent"));
+    // 层内 position/size/attachment 缺省 → 逐层默认值连接。
+    assert_eq!(map.get("background-repeat"), Some(&"repeat, repeat"));
+    assert_eq!(map.get("background-size"), Some(&"auto, auto"));
+
+    // 逐层 slot 连接：attachment/size 逐层。
+    let result2 = expand_one(
+        "background",
+        "url(\"a.png\") scroll center / 50% auto no-repeat, url(\"b.png\") fixed",
+        false,
+        (0, 0, 1),
+    );
+    assert!(!result2.is_empty());
+    let map2: std::collections::HashMap<&str, &str> =
+        result2.iter().map(|(p, v, _, _)| (p.as_str(), v.as_str())).collect();
+    assert_eq!(map2.get("background-repeat"), Some(&"no-repeat, repeat"));
+    assert_eq!(map2.get("background-position"), Some(&"center, 0% 0%"));
+    assert_eq!(map2.get("background-size"), Some(&"50% auto, auto"));
+    // attachment 单值存储（slice 2）→ 首层 scroll。
+    assert_eq!(map2.get("background-attachment"), Some(&"scroll"));
+    // color 仅末层：末层无 color → transparent。
+    assert_eq!(map2.get("background-color"), Some(&"transparent"));
+}
+
+#[test]
+/// R4350：多层简写末层 color 提取（spec：color 仅末层）。
+fn r4350_background_shorthand_multi_layer_last_color() {
+    let result = expand_one(
+        "background",
+        "url(\"a.png\") no-repeat, red url(\"b.png\")",
+        false,
+        (0, 0, 1),
+    );
+    assert!(!result.is_empty());
+    let map: std::collections::HashMap<&str, &str> =
+        result.iter().map(|(p, v, _, _)| (p.as_str(), v.as_str())).collect();
+    assert_eq!(map.get("background-color"), Some(&"red"));
+    assert_eq!(map.get("background-repeat"), Some(&"no-repeat, repeat"));
+}
