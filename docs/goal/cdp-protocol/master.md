@@ -2,31 +2,33 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-14（S498：静默监测轮——同 tip 复核（pull
-零新提交，tip = 541a05a8a 即 S497 提交本身，无代码变更绿步维持
-33）。双层锚点零漂移——自有面对 765429dda 维持 **4 files
-+137/-17** 精确一致；全树排除本流 docs 后对 18d462de6 维持
-**12 files +366/-27** 与 S497 逐项一致零新增（S482 基线
-+362/-27 代码面 + R4347/R4348 rendering-compat.md 纯 docs
-30/0），代码树自 S482 双腿后零变更，S491 门活跑 21:18 直接
-覆盖当前树证据新鲜。crates/ 观察面 raw 计数实测维持 **20**
+**最后更新**: 2026-09-14（S499：期限轮活跑——引用计数 8/10
+到期（S299/S309/S351/S452/S475/S491 先例；pull 零新提交 tip
+= b823b59d6 即 S498 提交本身，树不变绿步维持 33）。双层锚点
+零漂移——自有面对 765429dda 维持 **4 files +137/-17** 精确
+一致；全树排除本流 docs 后对 18d462de6 维持 **12 files
++366/-27** 与 S498 逐项一致零新增（S482 基线 +362/-27 代码面
++ R4347/R4348 rendering-compat.md 纯 docs 30/0），代码树自
+S482 双腿后零变更。crates/ 观察面 raw 计数实测维持 **20**
 （git log 默认口径 8fb39cd46..HEAD 限 crates/ 面），子帧能力
-关键词 grep（contentDocument/content_document/subframe/
-sub_frame）非测试代码零命中实测复核，实质判定不变 frames.
-click+evaluate 维持挂起。树不变按门单腿口径免 make test 腿
-（S336 先例），门结论引用 S491 期限轮活跑（PASS 33 绿
-deterministic 双跑 YES EXIT=0 ZERO_DRIFT=YES 21:18 落盘 +
-ZW_IPC_VALIDATE=1 在位静默 + clippy all-targets 零命中），
-**引用计数 7/10→8/10，下轮 S499 即期限轮活跑**（S299/S309/
-S351/S452/S475/S491 先例 9/10 次轮即期限轮，树变化亦提前
-触发）。机器卫生复核：零 zombie、9222/45029/34293/19222
-端口族全空闲、零竞争本流腿、控制面零外来提交；负载 1.42
-负载窗持续回落（S497 回落形态延续，非端口竞争面）——本轮
-静默零活跑需求负载窗记账。解冻条件实质判定不变：① 观察面
-raw 20 维持，子帧三件套 iframe.contentDocument null 现状
-不变，frames.click+evaluate 维持挂起；② 本流控制面
-docs/goal/cdp-protocol/ 零外来提交，DC-2 口径无新拍板记录。
-goal 自有面零新缺口、无扩展面（S40-S497 重审结论延续））
+关键词 grep 非测试代码零命中实测复核，实质判定不变 frames.
+click+evaluate 维持挂起。**门活跑首调即收口**：PASS 33 绿
+deterministic 双跑 YES EXIT=0（双 run exited 1 含期望失败
+步骤），ZERO_DRIFT=YES 机械复核（green 33 = expected 33、
+对称差 none、regressions 空），determinism-report +
+steps-report 21:34 同轮新鲜落盘 + ZW_IPC_VALIDATE=1 在位
+静默；首调红形态连续第卅八次零再现（累计两例非聚集维持）。
+树不变按 S476 期限轮口径免 make test 腿，make test 结论引用
+S482 双腿活跑 19,288P/0F 67 组 ok 直接覆盖当前树；**clippy
+all-targets 期限轮复核零命中**（guarded-clippy EXIT=0 零
+诊断，dead_code warning 既有形态仅门构建面 bins-only 不入
+clippy）。**引用计数重计 1/10，下次活跑至迟 S509**（树变化
+或 9/10 到期即提前触发）。机器卫生零 zombie（一枚瞬态子进程
+复测归零，属兄弟流测试腿短命子进程非遗留）端口族全空闲零
+竞争 cdp-e2e 腿控制面零外来提交——负载 2.24 负载窗（归因
+兄弟流 ZeroWeb-2 zero_style_system 测试腿 683% CPU 在窗，
+S496/S452 先例族非端口竞争面）期限轮照跑。解冻条件①②实质
+判定不变 DC-2 无新拍板）
 
 ---
 
@@ -57,6 +59,46 @@ goal 自有面零新缺口、无扩展面（S40-S497 重审结论延续））
 
 ## 已完成切片
 
+- **S499（2026-09-14）期限轮活跑 — 引用计数 8/10 到期
+  （S299/S309/S351/S452/S475/S491 先例；pull 零新提交，tip =
+  b823b59d6 即 S498 提交本身，树不变绿步维持 33）**：
+  前置复核——双层锚点零漂移：自有面对 765429dda 维持四枚归因
+  口径精确一致 **4 files +137/-17**（Makefile 1/1 +
+  apps/browser/README.md 1/0 + headless/mod.rs 25/0 +
+  headless/session.rs 110/16，零新增漂移）；全树锚点复核（排除
+  本流 docs 后 tracked 代码树对 18d462de6 维持 **12 files
+  +366/-27** 与 S498 逐项一致零新增——engine/paint text.rs
+  13/0 + text_list.rs 8/2 + layout-engine 八文件 +
+  reftest_scripts.rs 204/0 + rendering-compat.md 30/0 全维持，
+  代码树自 S482 双腿后零变更）。crates/ 观察面 raw 计数实测
+  维持 **20**（git log 默认口径 8fb39cd46..HEAD 限 crates/
+  面），子帧能力关键词 grep（contentDocument/content_document/
+  subframe/sub_frame）非测试代码零命中实测复核（命中面全为
+  dom/engine/webview 测试代码维持既有形态），实质判定不变
+  frames.click+evaluate 维持挂起。机器卫生：零 zombie（开跑
+  前一枚瞬态子进程复测归零，属兄弟流测试腿短命子进程非遗留）、
+  9222/45029/34293/19222 端口族全空闲、零竞争 cdp-e2e 腿、
+  控制面零外来提交；负载 2.24 负载窗（归因兄弟流 ZeroWeb-2
+  zero_style_system 测试腿 683% CPU 在窗，S496/S452 先例族非
+  端口竞争面）期限轮照跑。
+  **门活跑首调即收口**：PASS 33 绿 deterministic 双跑 YES
+  EXIT=0（双 run exited 1 含期望失败步骤），绿步集机械 diff
+  基线零漂移（ZERO_DRIFT=YES 机械复核：green 33 = expected
+  33、对称差 none、regressions 空），determinism-report +
+  steps-report 21:34 同轮新鲜落盘，ZW_IPC_VALIDATE=1 在位
+  静默（负载窗内 #0 复现监测零命中）；首调红形态连续第卅八次
+  零再现（累计两例非聚集维持）；zero-engine dead_code warning
+  既有形态维持（match_media_to_json bins-only 条件 dead，门
+  构建面复现）。树不变按 S476 期限轮口径免 make test 腿
+  （S336 先例），make test 结论引用 S482 双腿活跑 19,288P/0F
+  EXIT=0 67 组 ok 直接覆盖当前树。**clippy all-targets 期限轮
+  复核零命中**（make guarded-clippy EXIT=0 零诊断零回归）。
+  **引用计数重计 1/10，下次活跑至迟 S509**（树变化或 9/10
+  到期即提前触发）。解冻条件实质判定不变：① 观察面 raw 20
+  维持，子帧三件套 iframe.contentDocument null 现状不变，
+  frames.click+evaluate 维持挂起；② 本流控制面
+  docs/goal/cdp-protocol/ 零外来提交，DC-2 口径无新拍板记录。
+  goal 自有面零新缺口、无扩展面（S40-S498 重审结论延续）。
 - **S498（2026-09-14）静默监测轮 — 同 tip 复核（pull 零新提交，
   tip = 541a05a8a 即 S497 提交本身；无代码变更，绿步维持 33）**：
   双层锚点复核通过：自有面锚点四枚归因口径精确一致（对 765429dda
