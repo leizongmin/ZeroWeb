@@ -1053,10 +1053,13 @@ impl InlineFormattingContext {
         // （ZW_RUBY_OVERHANG_MODEL=1，layout 趟计算、replay 趟经 margin_overrides 同款
         // 存储回放需另行接线——rt ascent 走 TextRun/TextFragment 直传，无需 override）。
         let ruby_rt_ascent = if elem_data.local_name() == "ruby"
-            && style.is_some()
             && std::env::var("ZW_RUBY_OVERHANG_MODEL").as_deref() == Ok("1")
             && !ruby_annotation_width_text(doc, child_id).is_empty()
         {
+            // 注意：此处**不得** gate 在 style.is_some()——override-replay 趟（styles 空）
+            // 须同样产出，否则 paint IFC 的行基线缺 rt ascent（行高 34.9 但基线停在 16，
+            // base/rt 整体上浮 ~14px，R4361 实证）。rt ascent 是 doc+env 的纯函数（与
+            // margin pads 不同），跨趟幂等，无双计风险。
             font_size * 0.5 * crate::inline::text_metrics::NORMAL_LINE_HEIGHT_RATIO
         } else {
             0.0
