@@ -2,36 +2,36 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-15（S582：静默监测轮——同 tip 复核
-（pull 零新提交，tip = aef261432 即 S581 提交本身，无代码
-变更绿步维持 33）。双层锚点零漂移——自有面对 765429dda 维持
-**4 files +137/-17** 精确一致；全树排除本流 docs 后对
-18d462de6 维持 **37 files +2530/-164**（S575 刷新后新基线）
-与上轮逐项一致零新增，S575 双腿活跑 02:24/02:34 直接覆盖
-当前代码树证据新鲜。crates/ 观察面 raw 计数实测维持 **26**，
-子帧能力关键词 grep（Rust 面 tests 排除口径）非测试代码零
-命中实测复核（命中面为 dom/engine/webview 三处 tests 路径
-7 文件测试代码维持既有形态 + tests/wpt-runner testharness.rs
-测试基建面），实质判定不变
-frames.click+evaluate 维持挂起。树不变按门单腿口径免
-make test 腿（S336 先例），门结论引用 S575 双腿活跑（门腿
-make cdp-e2e 首调 PASS 33 绿 deterministic 双跑 YES EXIT=0
-expected_green 33 对称差 none + ZW_IPC_VALIDATE=1 在位
-静默 + 测试腿 make test 67 组 19,290P/0F EXIT=0），
-**引用计数 7/10→8/10 已达阈值**（S575 新周期；8/10 次轮
-即期限轮口径下 **S583 = 期限轮活跑**——S553/S562/S571
-先例族，门单腿活跑刷新证据新鲜度；树变化提前触发双腿
-刷新）。机器卫生复核：零 zombie、9222/45029/34293/19222
-端口族全空闲、零端口竞争面、控制面零外来提交；负载
-1.99→0.64 深净窗——top CPU >50% 阈值扫空零活跃编译/测试
-腿（余量为桌面基建 selkies/Xvfb 与 agent 腿 1-2% 级），
-15min 段 2.51 为兄弟流前序测试窗惯性余波（S580/S581 已
-归因同源），本树零活跃腿。解冻条件
+**最后更新**: 2026-09-15（S583：期限轮活跑——引用计数 8/10
+到期（S553/S562/S571 先例族），pull 零新提交 tip = df57c8c4f
+即 S582 提交本身，代码树自 S575 双腿后零变更活跑直接覆盖
+当前树。预检全净（端口族全空闲零 S198 竞争、零 zombie）
+后门腿活跑 setsid 脱离 + 轮询收口：make cdp-e2e
+ZW_IPC_VALIDATE=1 在位 02:55:44 启动 02:56:23 落盘，**首调
+即 PASS 33 绿** deterministic 双跑 YES EXIT=0，expected_green
+33 对称差 none（机械复核 steps 与基线集合双向零差）、
+steps-report 同轮新鲜落盘、唯一失败 frames.click+evaluate
+期望失败家族挂起维持、校验器在位静默 #0 复现监测零命中、
+zero-engine dead_code warning 既有形态维持；**负载窗亚型**——
+兄弟流 ZeroWeb-2 make test 序列（test-guard compile-first →
+cargo test --workspace，rustc zero_webview 瞬时 70% 轮内
+出窗）+ 外部项目 zeroseed ux-mobile playwright browser
+进程族（0% 级闲置）双亚型并窗，/proc cwd 实测双 clone
+隔离零污染本树，负载 2.86→5.91（活跑窗内）→2.60 回落，
+本树零活跃腿。树不变按 S476/S514 期限轮口径门单腿免
+make test 腿，引用 S575 双腿活跑（67 组 19,290P/0F
+EXIT=0）；**引用计数归零重计 8/10→0/10**，下轮起门结论
+锚点切换 S583 门活跑，S584 起 1/10（树变化提前触发双腿
+刷新）。双层锚点与观察面引用 S582 同树实测（自有面
+765429dda 4 files +137/-17、全树排除本流 docs 对 18d462de6
+37 files +2530/-164、crates/ raw 26 本轮复测一致、子帧
+关键词零命中、frames.click+evaluate 维持挂起）。活跑后
+机器卫生零 zombie、端口族零残留、零遗留进程。解冻条件
 实质判定不变：①观察面 raw 26 维持，子帧三件套
 iframe.contentDocument null 现状不变，frames.click+evaluate
 维持挂起；② 本流控制面 docs/goal/cdp-protocol/ 零外来
 提交，DC-2 口径无新拍板记录。goal 自有面零新缺口、无扩展
-面（S40-S581 重审结论延续））
+面（S40-S582 重审结论延续））
 
 ---
 
@@ -62,6 +62,42 @@ iframe.contentDocument null 现状不变，frames.click+evaluate
 
 ## 已完成切片
 
+- **S583（2026-09-15）期限轮活跑 — 引用计数 8/10 到期（S553/S562/S571
+  先例族；pull 零新提交，tip = df57c8c4f 即 S582 提交本身；
+  代码树自 S575 双腿后零变更，活跑直接覆盖当前树）**：
+  预检全净（9222/45029/34293/19222 端口族全空闲零 S198
+  端口竞争、零 zombie）后门腿活跑 setsid 脱离 + 轮询收口：
+  make cdp-e2e（ZW_IPC_VALIDATE=1 在位）02:55:44 启动
+  02:56:23 落盘，**首调即 PASS 33 绿**（run 1/run 2 均含
+  期望失败步骤 exit 1，deterministic: YES）EXIT=0，
+  expected_green 33 对称差 none（机械复核本轮 green steps
+  集合与基线集合双向零差）、steps-report 同轮新鲜落盘
+  （out/steps-report.json 02:56 写入）、唯一失败
+  frames.click+evaluate 期望失败家族挂起维持、ZW_IPC_VALIDATE
+  校验器在位静默（#0 复现监测零命中，首调即绿形态零再现）、
+  zero-engine dead_code warning（match_media_to_json）既有
+  形态维持。**负载窗亚型**：兄弟流 ZeroWeb-2 make test 序列
+  （test-guard compile-first → cargo test --workspace 执行
+  阶段，rustc zero_webview 瞬时 70% 轮内出窗）+ 外部项目
+  zeroseed ux-mobile playwright browser 进程族（0% 级闲置）
+  双亚型并窗——/proc cwd 实测 make test 全链路
+  ZeroWeb-2 clone，双 clone 隔离零污染本树，本树零活跃腿
+  （仅本轮自身 rally/agent 腿），负载 2.86→5.91（活跑窗内）
+  →2.60 出窗回落。树不变按 S476/S514 期限轮口径门单腿免
+  make test 腿，引用 S575 双腿活跑（测试腿 make test 67 组
+  19,290P/0F EXIT=0）。**引用计数归零重计 8/10→0/10**，
+  下轮起门结论锚点切换 S583 门活跑、S584 起 1/10（树变化
+  提前触发双腿刷新）。双层锚点与观察面引用 S582 同树实测：
+  自有面对 765429dda 维持 4 files +137/-17、全树排除本流
+  docs 对 18d462de6 维持 37 files +2530/-164、crates/ 观察
+  面 raw 26 本轮复测一致、子帧关键词非测试代码零命中、
+  frames.click+evaluate 维持挂起。活跑后机器卫生零 zombie、
+  端口族零残留、零遗留进程。解冻条件实质判定不变：① 观察
+  面 raw 26 维持，子帧三件套 iframe.contentDocument null
+  现状不变，frames.click+evaluate 维持挂起；② 本流控制面
+  docs/goal/cdp-protocol/ 零外来提交，DC-2 口径无新拍板
+  记录。goal 自有面零新缺口、无扩展面（S40-S582 重审结论
+  延续）。
 - **S582（2026-09-15）静默监测轮 — 同 tip 复核（pull 零新提交，
   tip = aef261432 即 S581 提交本身；无代码变更，绿步维持 33）**：
   双层锚点复核通过：自有面锚点对 765429dda 维持 **4 files
