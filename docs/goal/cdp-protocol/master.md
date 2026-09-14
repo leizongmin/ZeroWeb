@@ -2,17 +2,13 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-14（S317：树变化刷新轮——渲染流 R4331（23a20a84f，
-inline walk 吞 br 修复 + run-in 自盒零占位，layout-engine 4 文件）入树触发
-（S245/S258/S289/S290/S314 先例：门 + make test 双腿刷新），cdp-e2e 门首调
-即收口 PASS 33 绿 deterministic 双跑 YES EXIT=0（expected_green 33 对称差
-none、regressions 空）09:11 落盘，ZW_IPC_VALIDATE 校验器在位静默；make test
-两调收口 19,287P/0F（run1 webview integration.rs:454 setInterval 首拍单例
-瞬态红——「无轮询首断言」flake 家族新成员候选第 4 例，run2 全绿含该测试
-双腿 ok，机械归因四点非基线回归非 R4331 因果，跨流记档待 zero-web 流修）；
-绿步维持 33；计数漂移 19,281→19,287（+6 = R4331 新增用例）；引用计数重计
-1/10 下次活跑至迟 S327；解冻条件①观察面不变（R4331 非渲染流子帧能力），
-②DC-2 无新拍板；零 zombie 零遗留端口）
+**最后更新**: 2026-09-14（S318：静默监测轮——同 tip 复核（ebcd08c95，即
+S317 提交本身），双层锚点零漂移（自有面维持 apps/browser README +1 已归因
+基线；全树锚点 tracked 代码树对 S317 双腿刷新覆盖树 736f16525 零变化），
+门结论引用 S317 活跑（门 PASS 33 绿 deterministic YES ZERO_DRIFT 09:11 +
+make test 19,287P/0F 两调收口），引用计数 2/10 下次活跑至迟 S327；绿步维持
+33；解冻条件①观察面不变，②DC-2 无新拍板；负载 8.37 为并行流 agent 常驻
+腿波动（零编译测试腿）；零 zombie 零遗留端口）
 
 ---
 
@@ -43,6 +39,28 @@ none、regressions 空）09:11 落盘，ZW_IPC_VALIDATE 校验器在位静默；
 
 ## 已完成切片
 
+- **S318（2026-09-14）静默监测轮 — 同 tip 复核（无代码变更，绿步维持 33）**：
+  pull 零新提交（tip = ebcd08c95，即 S317 提交本身）——双层锚点口径复核通过：
+  自有面锚点增量零漂移（硬核对维持仅 apps/browser/README.md +1 行 = S255 已
+  归因的 52695a7c1 漂移基线，对 765429dda 基点实测恰 +1 行，对 HEAD 与
+  8fb39cd46 双点 diff 均零变化）；全树锚点复核（基 ebcd08c95=S317 tip，树零
+  变化；tracked 代码树对 736f16525 = S317 双腿刷新覆盖树零变化——S317 门 +
+  make test 证据直接覆盖当前树）零外部变化。双解冻条件实质判定不变：
+  ① crates/ 自 8fb39cd46 = 9b4488d3a + afdd423df + 4d6f3ff00 + 7bed4635c +
+  23a20a84f 五枚（R4325-F/R4328-F/R4330-F/PR30/R4331），均非渲染流子帧文档
+  加载 + JS realm 能力（S317 门 PASS 33 绿 ZERO_DRIFT=YES 结论新鲜可引用，
+  本轮免复跑）；② docs/goal 自 S317 零非本流提交，DC-2 口径无新拍板记录。
+  门结论引用 S317 活跑（门 PASS 33 绿 deterministic 双跑 YES ZERO_DRIFT=YES
+  09:11 + make test 两调收口 19,287P/0F），引用计数 2/10，下次活跑至迟
+  S327。机器卫生复核：零 zombie、9222/45029/34293/19222 全空闲、本流零
+  遗留进程；负载 1min 4.53 / 5min 8.37 / 15min 7.64 为并行流 agent 常驻腿
+  波动（零 cargo/rustc/make 编译测试腿在窗）——本轮零活跑需求不受影响，
+  S327 期限活跑若逢编译测试腿在窗按负载窗口口径执行。S78 零复现维持
+  （ZW_IPC_VALIDATE 捕获网门内常驻、本轮零运行故零捕获）、S168 形态累计
+  两例非聚集记账维持；webview timer flake 家族维持 4 例候选跨流记档
+  （S317 新增 integration.rs:454）待 zero-web 流修复；zero-engine
+  dead_code warning 既有形态记档维持（bins-only 条件 dead，门零回归）。
+  goal 自有面零新缺口、无扩展面（S40-S317 重审结论延续）。
 - **S317（2026-09-14）树变化刷新轮 — 渲染流 R4331 入树触发（S245/S258/
   S289/S290/S314 先例：门 + make test 双腿刷新，绿步维持 33）**：
   pull 零新提交（tip = 736f16525 即 S316 提交本身）——**动因核对**：S316
