@@ -2,30 +2,27 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-15（S525：静默监测轮——同 tip 复核
-（pull 零新提交，tip = 27f1babef 即 S524 提交本身，兄弟流
-attachment-local 工作仍未推送，无代码变更绿步维持 33）。
-双层锚点零漂移——自有面对 765429dda 维持 **4 files
-+137/-17** 精确一致；全树排除本流 docs 后对 18d462de6 维持
-**32 files +2147/-138** 与 S524 逐项一致零新增，代码树自
-S518 双腿后零变更，S518 双腿活跑 23:38/23:48 直接覆盖当前
-代码树证据新鲜。crates/ 观察面 raw 计数实测维持 **24**，
-子帧能力关键词 grep 非测试代码零命中实测复核，实质判定
-不变 frames.click+evaluate 维持挂起。树不变按门单腿口径免
-make test 腿（S336 先例），门结论引用 S518 树变化刷新轮
-双腿活跑（PASS 33 绿 deterministic 双跑 YES EXIT=0
-23:38 落盘 + ZW_IPC_VALIDATE=1 在位静默 + make test
-19,290P/0F），**引用计数 7/10→8/10**（8/10 已达——次轮
-S526 = 期限轮，必须双腿活跑刷新证据；树变化提前触发）。
-机器卫生复核：零 zombie、9222/45029/34293/19222 端口族全
-空闲、零竞争本流腿、控制面零外来提交；负载 2.87→2.20 回
-落窗（兄弟流 reftest-upstream 腿已出窗，窗内零活跃腿，
-净窗形态）——本轮静默零活跑需求负载窗记账。解冻条件实质
-判定不变：① 观察面 raw 24 维持，子帧三件套
+**最后更新**: 2026-09-15（S526：期限轮活跑——引用计数 8/10
+到期（S299/S309/S351/S452/S466 先例），pull 零新提交
+（tip = b27ce00b9 即 S525 提交本身，兄弟流 attachment-local
+工作仍未推送），预检全净后双腿活跑：**门腿** make cdp-e2e
+（setsid 脱离 + 轮询收口，00:06:36-00:07:12）首调即 PASS
+33 绿 deterministic 双跑 YES EXIT=0——run1/run2 同态 exit 1
+（含期望失败步骤 frames.click+evaluate 挂起项），绿步集 33
+与 expected_green 基线逐一吻合零漂移，ZW_IPC_VALIDATE=1 在
+位静默（负载窗内 #0 复现监测零命中）；**测试腿** make test
+（00:07:20-00:18:37）一调收口 67 组 **19,290P/0F EXIT=0**
+（与 S518 基线计数持平零新增，首调红形态零再现）。引用计数
+8/10 到期归零重计（下轮起引用 S526 活跑，0/10 起算；树变化
+仍提前触发刷新轮）。机器卫生：零 zombie、端口族全空闲、
+零兄弟流腿零 cronjob（净窗形态，负载 2.20→2.56 中低窗，
+chromium 维持 zeroseed daemon 归因）；窗内观察 cargo dev
+一条 zero-engine dead_code warning（js_dom_bridge.rs
+match_media_to_json，组合态既有非本流面，记账不修）。解冻
+条件实质判定不变：① 观察面 raw 24 维持，子帧三件套
 iframe.contentDocument null 现状不变，frames.click+evaluate
-维持挂起；② 本流控制面 docs/goal/cdp-protocol/ 零外来
-提交，DC-2 口径无新拍板记录。goal 自有面零新缺口、无扩展
-面（S40-S524 重审结论延续））
+维持挂起；② 本流控制面零外来提交，DC-2 口径无新拍板。
+goal 自有面零新缺口、无扩展面（S40-S525 重审结论延续））
 
 ---
 
@@ -56,6 +53,37 @@ iframe.contentDocument null 现状不变，frames.click+evaluate
 
 ## 已完成切片
 
+- **S526（2026-09-15）期限轮活跑 — 引用计数 8/10 到期
+  （S299/S309/S351/S452/S466 先例；pull 零新提交，tip =
+  b27ce00b9 即 S525 提交本身，兄弟流 attachment-local 工作
+  仍未推送，代码树自 S518 后零变更——活跑直接覆盖当前树）**：
+  预检全净（9222/45029/34293/19222 端口族全空闲、零兄弟流
+  腿零 cronjob、零 zombie、本树 tracked 干净、负载 2.20 净
+  窗）后双腿顺序活跑（长腿 setsid 脱离 + 轮询收口）：
+  **门腿** make cdp-e2e（ZW_IPC_VALIDATE=1 显式在位，
+  00:06:36-00:07:12）**首调即 PASS 33 绿 deterministic 双跑
+  YES EXIT=0**——run1/run2 同态 exit 1（含期望失败步骤
+  frames.click+evaluate 挂起项，非门禁面），绿步集 33
+  （click.button…viewport.verified 含 frames.access）与
+  expected_green 基线逐一吻合零漂移，ZW_IPC_VALIDATE 校验器
+  在位静默（本负载窗 #0 复现监测零命中，负载下样本 +1）；
+  **测试腿** make test（00:07:20-00:18:37）**一调收口 67 组
+  19,290P/0F EXIT=0**（与 S518 基线计数持平零新增零失败，
+  首调红形态零再现）。**引用计数 8/10 到期归零重计**（下轮
+  起引用 S526 双腿活跑为门结论锚点，0/10 起算；树变化仍
+  提前触发刷新轮）。机器卫生复核：零 zombie、端口族全空闲、
+  零竞争腿；负载 2.20→2.56 中低负载净窗（chromium 维持
+  zeroseed-ux daemon 家族归因 0% CPU 非竞争）。窗内观察记账：
+  cargo dev 腿打印 zero-engine 一条 dead_code warning
+  （js_dom_bridge.rs:3420 match_media_to_json never used）——
+  组合态既有（代码树自 S518 零变更，S518 同树已存在），非
+  本流工作面（本流面=apps/browser CDP），clippy -D warnings
+  归属面归流处理，本流不单方修。解冻条件实质判定不变：
+  ① 观察面 raw 24 维持，子帧三件套 iframe.contentDocument
+  null 现状不变，frames.click+evaluate 维持挂起；② 本流
+  控制面 docs/goal/cdp-protocol/ 零外来提交，DC-2 口径无
+  新拍板记录。goal 自有面零新缺口、无扩展面（S40-S525 重审
+  结论延续）。
 - **S525（2026-09-15）静默监测轮 — 同 tip 复核（pull 零新提交，
   tip = 27f1babef 即 S524 提交本身；兄弟流 attachment-local
   工作仍未推送，无代码变更，绿步维持 33）**：双层锚点复核
