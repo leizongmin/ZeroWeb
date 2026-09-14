@@ -64,9 +64,11 @@ fn test_r1214_cjk_per_char_contiguous_when_ahem() {
     // 真实空格分隔的两个 CJK 词：第一个词末尾加空格
     let words4 = ctx.split_into_words("水 水", true);
     assert_eq!(words4, vec!["水 ".to_string(), "水".to_string()]);
-    // 普通字体默认保留旧 advance；连续模式仍可通过纯 helper 独立验证。
+    // R4345：普通字体同样连续（cjk_contiguous default-on）——advance 同源
+    //（ZRG-2026-08-15）后旧「layout/paint 未同源」隔离前提失效；per-CJK-char
+    // 词尾空格是断行不需要的 0.25em/字虚增（line-break 族 8 字即断根因）。
     let words5 = ctx.split_into_words("4水水", false);
-    assert_eq!(words5, vec!["4 ".to_string(), "水 ".to_string(), "水".to_string()]);
+    assert_eq!(words5, vec!["4".to_string(), "水".to_string(), "水".to_string()]);
     let words6 = ctx.collapse_split_words_with_mode("姓名 ", true);
     assert_eq!(words6, vec!["姓".to_string(), "名 ".to_string()]);
 }

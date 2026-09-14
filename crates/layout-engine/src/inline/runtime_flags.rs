@@ -47,9 +47,15 @@ pub(super) fn prewrap_hang() -> bool {
     selected(*VALUE, || default_on("ZW_PREWRAP_HANG"))
 }
 
+/// R4345：CJK 逐字符断词**连续模式** default-on——per-CJK-char 词不再追加尾部空格
+/// （旧 opt-in 模式下每 CJK 字符隐含 0.25em 词间 advance（16px 字号 = 4px），虚增行宽
+/// 致 line-break 族 18 案在 10.2em 容器 8 字即断，chromium 10 字收敛——css-text-3
+/// 「CJK 字符间无词间距」语义）。旧 blocker（park 时「全局启用 welcome +6.7pp」）
+/// 已失效：ZRG-2026-08-15 advance 同源（generic→hmtx / 显式 face→shaping）后
+/// welcome 20.30%→20.00% 反而改善。`ZW_CJK_CONTIGUOUS=0` 回退旧尾空格模式。
 pub(super) fn cjk_contiguous() -> bool {
-    static VALUE: LazyLock<bool> = LazyLock::new(|| opt_in("ZW_CJK_CONTIGUOUS"));
-    selected(*VALUE, || opt_in("ZW_CJK_CONTIGUOUS"))
+    static VALUE: LazyLock<bool> = LazyLock::new(|| default_on("ZW_CJK_CONTIGUOUS"));
+    selected(*VALUE, || default_on("ZW_CJK_CONTIGUOUS"))
 }
 
 pub(super) fn bidi_fragment_source() -> bool {
