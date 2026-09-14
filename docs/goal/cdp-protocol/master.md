@@ -2,23 +2,22 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-14（S360：活跑最后期限轮——引用计数 9/10→10/10
-触发 cdp-e2e 门活跑刷新（无代码变更，绿步维持 33）。pull 零新提交
-（tip = 658204383 即 S359 提交本身）；全树排除本流 docs 后 tracked 代码
-树对 18d462de6 零变化，树不变按门单腿口径活跑（S336 先例，免 make
-test 复跑）。**活跑一调即收口：门 PASS 33 绿 deterministic 双跑 YES
-EXIT=0 ZERO_DRIFT=YES**（机械 diff：green 33 vs expected-green 基线 33
-对称差 none、regressions 空）12:46 同轮新鲜落盘 + ZW_IPC_VALIDATE 在位
-静默；**引用计数归零（刷新即新鲜门证据），下次活跑至迟 S370**。负载窗
-执行：兄弟流 reftest-upstream 链全程在窗（reftest→release build→
-workspace test+clippy 腿接续，均非端口竞争面非 cdp-e2e 竞争腿，负载
-6.88 归因之）——照跑记账**第十九个负载下样本**。本轮工具面插曲：门
-前置复核发现 1 例瞬时 defunct（[zero-wpt-runner]，兄弟流 reftest 腿
-回收中状态，stat 精确判定非本流腿、数秒内自愈归零非真 zombie 遗留）。
-crates/ 观察面 raw 计数维持 14，实质判定不变 frames.click+evaluate
-维持挂起。机器卫生（门后）：零 zombie、端口族全释放、门腿零遗留。
-解冻条件②不变（pull 零新提交，DC-2 无新拍板）。goal 自有面零新缺口、
-无扩展面（S40-S359 重审结论延续））
+**最后更新**: 2026-09-14（S361：静默监测轮——pull 零新提交（tip =
+9bc6ec3c1 即 S360 提交本身），无代码变更绿步维持 33。双层锚点零漂移：
+自有面按 S351 修正后四枚归因口径精确一致（对 765429dda 硬核对
+4 files +137/-17，零新增漂移）；全树排除本流 docs 后 tracked 代码树对
+18d462de6 零变化（docs/goal 唯一非本流条目 c7490b81d 兄弟流
+rendering-compat 自有控制面 S349 已裁定不入刷新触发面），S360 活跑
+12:46 直接覆盖当前树证据新鲜。门结论引用 S360 活跑（PASS 33 绿
+deterministic 双跑 YES EXIT=0 ZERO_DRIFT=YES 12:46 落盘 +
+ZW_IPC_VALIDATE 在位静默），**引用计数 1/10→2/10，下次活跑至迟
+S370**。crates/ 观察面 raw 计数维持 14，实质判定不变
+frames.click+evaluate 维持挂起。机器卫生：零 zombie、端口族全空闲、
+9333 维持缺席、零竞争腿零孤儿 hunt、零编译测试腿在窗（1min 负载
+0.52 深净窗，5/15min 残留 4.58/4.33 为 S360 窗兄弟流 reftest-upstream
+链收尾衰减 + agent 面归因）——本轮静默零活跑需求。解冻条件①②实质
+判定不变（观察面 raw 14 维持；本流控制面零外来提交，DC-2 无新拍板）。
+goal 自有面零新缺口、无扩展面（S40-S360 重审结论延续））
 
 ---
 
@@ -49,6 +48,27 @@ crates/ 观察面 raw 计数维持 14，实质判定不变 frames.click+evaluate
 
 ## 已完成切片
 
+- **S361（2026-09-14）静默监测轮 — 同 tip 复核（pull 零新提交，tip =
+  9bc6ec3c1 即 S360 提交本身；无代码变更，绿步维持 33）**：双层锚点
+  口径复核通过：自有面锚点按 S351 修正后四枚归因口径精确一致（对
+  765429dda 硬核对 4 files +137/-17 = apps/browser/README.md +1 +
+  00a5932c6 + 7228ffeea + 736f16525，零新增漂移）；全树锚点复核
+  （排除本流 docs 后 tracked 代码树对 18d462de6 零变化——S360 活跑
+  12:46 直接覆盖当前树，证据新鲜可引用；docs/goal 唯一非本流条目
+  c7490b81d 属兄弟流 rendering-compat 自有控制面，S349 已裁定不入
+  刷新触发面）零外部变化。crates/ 观察面 raw 计数维持 **14**，实质
+  判定不变：均非渲染流子帧文档加载 + JS realm 能力（子帧三件套
+  iframe.contentDocument null 现状不变），frames.click+evaluate 维持
+  挂起。门结论引用 S360 活跑（门 PASS 33 绿 deterministic 双跑 YES
+  EXIT=0 ZERO_DRIFT=YES 12:46 落盘 + ZW_IPC_VALIDATE 校验器在位
+  静默），引用计数 1/10→**2/10**（S360 活跑新鲜轮计 1/10），下次
+  活跑至迟 S370。机器卫生复核：零 zombie、9222/45029/34293/19222
+  端口族空闲、9333 长驻实例维持缺席、零竞争 cdp-e2e 腿、零孤儿 hunt
+  遗留、零编译测试腿在窗（1min 负载 0.52 深净窗，5/15min 残留
+  4.58/4.33 为 S360 窗兄弟流 reftest-upstream 链收尾衰减 + agent 面
+  归因）——本轮静默零活跑需求。双解冻条件实质判定不变：① 观察面
+  raw 14 维持；② 本流控制面零外来提交，DC-2 无新拍板。goal 自有面
+  零新缺口、无扩展面（S40-S360 重审结论延续）。
 - **S360（2026-09-14）活跑最后期限轮 — 引用计数 10/10 触发 cdp-e2e 门活跑刷新
   （无代码变更，绿步维持 33）**：
   pull 零新提交（tip = 658204383，即 S359 提交本身）——全树锚点复核
