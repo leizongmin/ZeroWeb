@@ -2,44 +2,46 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-15（S634：树变化刷新轮——兄弟流
-R4362（2fe773f97，ruby slice B 收官）入树触发，触
-crates/layout-engine/src/inline/mod.rs 7/0 +
-docs/goal/rendering-compat.md 1/0；入树发生于 S633 收口
-push 序列（S633 pull 时点 tip 尚为 eb0ee1105，push 时
-rebase 拉入），S633 门腿证据基树未含其 → S342/S456/
-S622/S624/S631 连续刷新轮先例，门 + make test 双腿刷新。
-门腿 make cdp-e2e ZW_IPC_VALIDATE=1 在位 07:12 启动
-07:12:19 落盘首调即 **PASS 33 绿 deterministic 双跑 YES
-EXIT=0**，expected_green 33 对称差 none、regressions 空、
-校验器在位静默（zero-engine dead_code warning 既有形态
-维持，S300/S309 记档），绿步集机械 diff 基线零漂移，
-R4362 组合态门禁首次覆盖（layout-engine→page-runtime→
-browser 链重编译）。测试腿 make test setsid 07:12:31
-启动 ~07:23 收口一调收口 **67 组 19,290P/0F EXIT=0**
-（计数与 S624/S631 持平零新增用例），R4362 组合态首次
-全量覆盖。双层锚点——自有面对 765429dda 维持
+**最后更新**: 2026-09-15（S635：树变化刷新轮——兄弟流
+R4363（2d23cf25d，ruby 002 残差像素分解（二））入树触发，
+触 crates/engine/src/paint/painter/text.rs 14/0 +
+docs/goal/rendering-compat.md 1/0；入树发生于 S634 收口
+push 序列（S634 pull 时点 tip 尚为 1295c7802，push 时
+rebase 拉入），S634 门腿与测试腿证据基树均未含其 →
+S342/S383/S631/S634 连续刷新轮先例，门 + make test 双腿
+刷新。门腿 make cdp-e2e ZW_IPC_VALIDATE=1 在位 07:27:26
+启动 07:28:04 落盘首调即 **PASS 33 绿 deterministic 双跑
+YES EXIT=0**，expected_green 33 对称差 none、regressions
+空、校验器在位静默（zero-engine dead_code warning 既有
+形态维持，S300/S309 记档），绿步集机械 diff 基线零漂移，
+R4363 组合态门禁首次覆盖（engine→browser 链重编译）。
+测试腿 make test setsid 07:28:12 启动 ~07:42 收口一调
+收口 **67 组 19,290P/0F EXIT=0**（计数与 S634/S624/S631
+持平零新增用例），R4363 组合态首次全量覆盖（compositor
+沙箱测试 evil.so LD_PRELOAD ld.so 注记为防御验证 fixture
+预期输出非异常）。双层锚点——自有面对 765429dda 维持
 **4 files +137/-17** 精确一致；全树排除本流 docs 对
-18d462de6 刷新为 **59 files +4462/-239**（S631 基线加
-R4362 inline/mod.rs 与 rendering-compat.md 既有集合累计
-更新，净 +8 与自身 delta 精确一致零意外新增零新入集
-文件），后续轮次以此为新基线。crates/ 观察面 raw
-33→**34**（R4362 单提交贡献，R4357-R4361 同型先例，
-ruby 面非子帧能力信号），子帧能力关键词 grep 非测试
-代码零命中维持（dom/engine/webview 三处 tests 路径
-7 文件既有形态），实质判定不变 frames.click+evaluate
-维持挂起。**引用计数新周期起算**（S634 双腿活跑为周期
-锚点，S635 起 0/10→1/10；8/10 次轮即期限轮口径；树
-代码变化提前触发双腿刷新）。机器卫生：启动前零 zombie、
-端口族全空闲、负载 0.88 深净窗（零 >50% 进程）；双腿
-后零 zombie、端口族零残留、零树污染，负载 0.58。控制
-面零外来提交（本轮 pull 零新提交，近 20 提交触本流控制
-面全为本流 S5xx/S6xx）。解冻条件实质判定不变：① 观察
-面 raw 34 维持（新基线），子帧三件套
+18d462de6 刷新为 **59 files +4477/-239**（S634 基线加
+R4363 text.rs 与 rendering-compat.md 既有集合累计更新，
+净 +15 与自身 delta 精确一致零意外新增零新入集文件），
+后续轮次以此为新基线。crates/ 观察面 raw 34→**35**
+（R4363 单提交贡献，R4357-R4362 同型先例，ruby paint
+注记面非子帧能力信号），子帧能力关键词 grep 非测试代码
+零命中维持（dom/engine/webview 三处 tests 路径 7 文件
+既有形态），实质判定不变 frames.click+evaluate 维持
+挂起。**引用计数新周期起算**（S635 双腿活跑为周期锚点，
+S636 起 0/10→1/10；8/10 次轮即期限轮口径；树代码变化
+提前触发双腿刷新）。机器卫生：启动前零 zombie、端口族
+全空闲、负载 0.73 深净窗（零 >50% 进程）；双腿后零
+zombie、端口族零残留、零树污染，负载 1.67。控制面零
+外来提交（本轮 pull 零新提交）。解冻条件实质判定不变：
+① 观察面 raw 35 维持（新基线），子帧三件套
 iframe.contentDocument null 现状不变，frames.click+
-evaluate 维持挂起；② 本流控制面 docs/goal/cdp-protocol/
-零外来提交，DC-2 口径无新拍板记录。goal 自有面零新
-缺口、无扩展面（S40-S633 重审结论延续））
+evaluate 维持挂起（R4363 触 crates/engine 共享面但仅
+paint 渲染域、本流零 Rust 面写入零碰头）；② 本流控制
+面 docs/goal/cdp-protocol/ 零外来提交，DC-2 口径无新
+拍板记录。goal 自有面零新缺口、无扩展面（S40-S634 重审
+结论延续））
 
 ---
 
@@ -70,6 +72,62 @@ evaluate 维持挂起；② 本流控制面 docs/goal/cdp-protocol/
 
 ## 已完成切片
 
+- **S635（2026-09-15）树变化刷新轮 — 兄弟流 R4363（2d23cf25d，
+  ruby 002 残差像素分解（二）：−4px 归因 latin p 行高 + 模型
+  ~1px 验收，0 net code）入树触发（连续第二轮刷新，S342/S383/
+  S631/S634 先例）；触 crates/engine/src/paint/painter/text.rs
+  14/0 + docs/goal/rendering-compat.md 1/0；入树发生于 S634
+  收口 push 序列（S634 pull 时点 tip 尚为 1295c7802，push 时
+  rebase 拉入），S634 门腿与测试腿证据基树均未含其，故连续
+  轮即双腿刷新**：本轮开工 pull 零新提交（tip = a2091b5e6 即
+  S634 提交本身，R4363 已在 S634 push 序列入树）。**门腿**：
+  make cdp-e2e ZW_IPC_VALIDATE=1 在位 07:27:26 启动 07:28:04
+  落盘首调即 **PASS 33 绿 deterministic 双跑 YES EXIT=0**，
+  expected_green 33 对称差 none、regressions 空，run_details
+  双 run 实质逐项一致（差异仅 run 序号字段），校验器在位
+  静默（zero-engine dead_code warning 既有形态维持，
+  S300/S309 记档），绿步集机械 diff 基线零漂移；R4363 组合态
+  门禁首次覆盖（engine→browser 链重编译）；首调红形态连续
+  第四十九次零再现（累计两例非聚集维持）。**测试腿**：
+  make test setsid 07:28:12 脱离启动 ~07:42 收口**一调收口
+  67 组 19,290P/0F EXIT=0**（计数与 S634/S624/S631 持平零
+  新增用例——R4363 零自带用例，paint 注记面对全量绿态零
+  影响），R4363 组合态首次全量覆盖；compositor 沙箱测试
+  evil.so LD_PRELOAD ld.so 报错行归因为防御验证 fixture
+  预期输出（sandbox.rs:110 故意注入敌意 preload 断言剥离，
+  "ignored" 即防御生效）非 flake 非事件既有形态。双层锚点
+  ——自有面锚点对 765429dda 维持 **4 files +137/-17** 精确
+  一致（Makefile 1/1 + apps/browser/README.md 1/0 +
+  headless/mod.rs 25/0 + headless/session.rs 110/16，零新增
+  漂移）；全树锚点复核（排除本流 docs 后 tracked 代码树对
+  18d462de6 刷新为 **59 files +4477/-239** = S634 基线
+  59 files +4462/-239 加 R4363 text.rs +14 与
+  rendering-compat.md +1 既有集合累计更新，净 +15 与自身
+  delta 精确一致零意外新增零新入集文件，后续轮次以此为新
+  基线）。crates/ 观察面 raw 34→**35**（git log
+  8fb39cd46..HEAD -- crates/ 实测，R4363 单提交贡献，
+  R4357-R4362 同型先例，ruby paint 注记面非子帧能力信号），
+  子帧能力关键词 grep（contentDocument/content_document，
+  Rust 面 tests 排除口径）非测试代码零命中实测复核（命中面
+  为 dom/engine/webview 三处 tests 路径 7 文件测试代码维持
+  既有形态），实质判定不变 frames.click+evaluate 维持挂起。
+  **引用计数新周期起算**（S635 双腿活跑为周期锚点，S636 起
+  0/10→1/10；8/10 次轮即期限轮口径下至迟 S642 达 8/10、
+  S643 = 期限轮活跑——S553/S562/S571/S583/S592/S597/S606/
+  S608/S614/S622/S624/S631 先例族；树代码变化提前触发双腿
+  刷新）。机器卫生复核：启动前零 zombie、
+  9222/45029/34293/19222 端口族全空闲、负载 0.73 深净窗
+  （零 >50% CPU 进程、零并行腿、零端口竞争，S300/S309/
+  S378 净窗先例）；双腿后零 zombie、端口族零残留、零树
+  污染（out/ 报告与 /tmp 腿日志为忽略产物），负载 1.67。
+  控制面零外来提交（本轮 pull 零新提交）。解冻条件实质
+  判定不变：① 观察面 raw 35 维持（新基线），子帧三件套
+  iframe.contentDocument null 现状不变，frames.click+
+  evaluate 维持挂起（R4363 触 crates/engine 共享面但仅
+  paint 渲染域、本流零 Rust 面写入零碰头）；② 本流控制面
+  docs/goal/cdp-protocol/ 零外来提交，DC-2 口径无新拍板
+  记录。goal 自有面零新缺口、无扩展面（S40-S634 重审结论
+  延续）。
 - **S634（2026-09-15）树变化刷新轮 — 兄弟流 R4362（2fe773f97，
   ruby slice B 收官：−4.6px 归因证伪 + 像素对齐确认）入树触发；
   触 crates/layout-engine/src/inline/mod.rs 7/0 +
