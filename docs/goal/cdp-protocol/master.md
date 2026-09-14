@@ -2,14 +2,19 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-14（S319：静默监测轮——同 tip 复核（677c4f46d，即
-S318 提交本身），双层锚点零漂移（自有面维持 apps/browser README +1 已归因
-基线；全树锚点 tracked 代码树对 S317 双腿刷新覆盖树 736f16525 零变化），
-门结论引用 S317 活跑（门 PASS 33 绿 deterministic YES ZERO_DRIFT 09:11 +
-make test 19,287P/0F 两调收口），引用计数 3/10 下次活跑至迟 S327；绿步维持
-33；解冻条件①观察面不变，②DC-2 无新拍板；编译测试腿在窗（2 进程，负载
-7.77——本轮零活跑需求不受影响，S327 期限活跑若仍在窗按负载窗口口径执行）；
-零 zombie 零遗留端口）
+**最后更新**: 2026-09-14（S320：遗留清理 + RED 取证排除轮——pull 零新提交
+（tip=65ccb68bf 即 S319 提交本身），双层锚点零漂移（口径同 S319：自有面
+apps/browser README 对 765429dda 恰 +1 已归因基线；全树 tracked 代码树对
+S317 双腿刷新覆盖树 736f16525 零变化）。**发现并清理 S316 会话延伸 hunt
+孤儿**（3 busy-loop，08:50:20 起 56 分钟，PPID=1——S316「全收尾零遗留」
+与 S317/S318/S319「零遗留进程」记账修正，检查模式加入 zw-loop/zw-hunt
+匹配）；**该 hunt 09:01 RED（GREEN≠33）从未记档，本轮取证双证据排除
+#0 损坏家族**（trace multiset 866W=866R 零 chimera + stderr 0 字节零
+corruption 标记），定性 S78 家族 GREEN≠33 负载触发新观测（traced+3
+busy-loop 触发；S316 平静态 0/18+ / loop3 0/6 / loop4 0/4 不触发），
+#0 维持开放零组装现场；附带数据点：S317 门 + make test 在孤儿载荷下绿跑。
+证据归档 evidence/s320-hunt-red-capture/。门结论引用 S317 活跑，引用计数
+4/10 下次活跑至迟 S327；绿步维持 33；解冻条件①②实质不变）
 
 ---
 
@@ -40,6 +45,50 @@ make test 19,287P/0F 两调收口），引用计数 3/10 下次活跑至迟 S327
 
 ## 已完成切片
 
+- **S320（2026-09-14）遗留清理 + RED 取证排除轮 — 静默监测轮升级（无代码
+  变更，绿步维持 33）**：
+  pull 零新提交（tip = 65ccb68bf，即 S319 提交本身）——双层锚点口径复核
+  通过：自有面锚点增量零漂移（硬核对维持仅 apps/browser/README.md +1 行 =
+  S255 已归因的 52695a7c1 漂移基线，对 765429dda 基点实测恰 +1 行，对 HEAD
+  与 8fb39cd46 双点 diff 均零变化）；全树锚点复核（tracked 代码树对
+  736f16525 = S317 双腿刷新覆盖树零变化——S317 门 + make test 证据直接
+  覆盖当前树）零外部变化。**① hunt 孤儿发现与清理**：机器卫生复核发现
+  3 个孤儿 busy-loop（/bin/bash /tmp/zw-loop2.sh 子壳，08:50:20 启动、各
+  ~99% CPU 已跑 56 分钟、PPID=1、cwd = 本流 tests/playwright-matrix）=
+  S316 会话延伸负载 hunt 遗留（loop2 08:50 → RED 09:01 → loop3 09:02 →
+  loop4 09:04 → 会话收尾主脚本死亡未清理载荷）——**记账修正**：S316
+  「hunt 负载循环全收尾零遗留」与 S317/S318/S319 三轮「零遗留进程」均与
+  事实不符（孤儿当时在跑；既有检查模式 zero-browser/renderer/compositor
+  进程名匹配覆盖不到 bash hunt 脚本）；09:51 kill 三孤儿 pgrep 清零，后续
+  卫生检查加入 `pgrep -af 'zw-loop|zw-hunt'` 模式。**② RED 取证排除（从未
+  记档的 09:01 捕获，本轮首次记档）**：loop2 hunt 于 09:01 触发 RED
+  （GREEN≠33 形态）并落盘双侧逐帧 trace 212,946B——multiset 分析
+  **866 W = 866 R、零 chimera、零 written-not-read、零不可解析行** +
+  stderr 捕获 **0 字节**（无 Deserialization error / ipc reader terminated
+  / malformed frame buffer / ZW_IPC_VALIDATE 告警）——双证据**排除 #0
+  损坏家族**，RED 定性为 S78 家族 GREEN≠33 负载触发形态新观测：traced +
+  3 busy-loop 组合触发，S316 平静态（0/18+）、loop3 无载荷 traced（0/6）、
+  loop4 无 trace 仅校验器（0/4）均不触发；具体失败步不可恢复
+  （out/steps-report.json 已被 S317 门等后续运行覆盖）；「≥2 并发 hunt
+  实例共写共享 out/ 与 /tmp trace 文件致 GREEN 判定不可靠」与文件时间线
+  相容但串行实例亦可解释——无法证实亦无法排除，不作唯一归因；方法论教训
+  记档：hunt 必须**串行单实例**，需并发/带载时每实例独立 out/ 与 trace
+  路径。**#0 维持开放**（本轮零组装现场产出）；**附带稳健性数据点**：
+  S317 门（09:11）与 make test 两腿（09:20/09:34）在孤儿 3 busy-loop
+  载荷下绿跑——门 + 全量测试对该载荷稳健，间接收窄 S78 家族触发条件
+  （hunt 式 traced browser 会话载荷 > 常规门载荷）。证据归档
+  evidence/s320-hunt-red-capture/（loop2/3/4 脚本 + RED 与 loop3 trace +
+  README 时间线/归因/教训）。双解冻条件实质判定不变：① crates/ 自
+  8fb39cd46 九枚（R4325-F/R4328-F/R4330-F/PR30 含 7228ffeea+11da119cf/
+  R4331/本流 S315+S316 诊断面）均非渲染流子帧文档加载 + JS realm 能力，
+  frames.click+evaluate 维持挂起；② docs/goal 自 S319 零非本流提交（pull
+  零新提交），DC-2 口径无新拍板记录。门结论引用 S317 活跑（门 PASS 33 绿
+  deterministic 双跑 YES ZERO_DRIFT=YES 09:11 + make test 两调收口
+  19,287P/0F），引用计数 3/10→**4/10**，下次活跑至迟 S327。机器卫生复核：
+  孤儿清理后零 zombie、9222/45029/34293/19222 全空闲、零编译测试腿
+  （pgrep cargo/rustc = 0；负载 1min 4.83 / 5min 7.05 / 15min 7.29 含孤儿
+  载荷贡献，清理后回落）。goal 自有面零新缺口、无扩展面（S40-S319 重审
+  结论延续）。
 - **S319（2026-09-14）静默监测轮 — 同 tip 复核（无代码变更，绿步维持 33）**：
   pull 零新提交（tip = 677c4f46d，即 S318 提交本身）——双层锚点口径复核通过：
   自有面锚点增量零漂移（硬核对维持仅 apps/browser/README.md +1 行 = S255 已
