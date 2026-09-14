@@ -997,7 +997,11 @@ impl InlineFormattingContext {
             + border_adv_r;
         // R4357（css-ruby-1 §ruby-overhang）：rt 注释行宽参与——extra 对折进 ruby run
         // 左右 margin（模型见 ruby_overhang_pads）。水平书写限定。
+        // **仅 layout 趟（styles 在场）计算**：pads 经 inline_element_margins 存储后由
+        // override-replay 趟（styles 空的 with_margin_overrides / paint Path B）原样回放，
+        // 此处再加即双计（layout 20 → replay 40 实证——R4357 卡点根因）。
         let (margin_left, margin_right) = if elem_data.local_name() == "ruby"
+            && style.is_some()
             && !style.is_some_and(|s| {
                 matches!(
                     s.writing_mode,
@@ -1633,15 +1637,15 @@ fn ruby_hang_extent(ch: Option<char>, font_size: f32, leading: bool) -> f32 {
     if c == '\u{3000}' {
         return font_size;
     }
-    // 收窄标点（字形居左、右半空白）——作 ruby 前邻字符时右半空白朝向 ruby。
+    // 收窄标点（字形居左、右半空白；U+3001..U+301F CJK 符号 + 全角形式 U+FF01..）——
+    // 作 ruby 前邻字符时右半空白朝向 ruby。含 WPT ruby-overhang-spaces-002 全对集
+    // （）」』】〗〕〉》〙〛〞〟］｝｠）。
     const CLOSING: [char; 20] = [
-        '）', '】', '〉', '》', '」', '』', '〕', '〗', '〛', '｝', '｠', '］', '、', '。', '！', '？', '：', '；', '＂', '＇',
+        '）', '】', '〉', '》', '」', '』', '〕', '〗', '〙', '〛', '〞', '〟', '｝', '｠', '］', '、', '。', '！', '？', '：',
     ];
     // 开括标点（字形居右、左半空白）——作 ruby 后邻字符时左半空白朝向 ruby。
-    const OPENING: [char; 13] = [
-        '（', '【', '〈', '《', '「', '『', '〔', '〖', '〘', '〚', '｛', '｟', '［',
-    ];
-    if !leading && CLOSING.contains(&c) {
+    const OPENING: [char; 15] = ['（', '【', '〈', '《', '「', '『', '〔', '〖', '〘', '〚', '〝', '｛', '｟', '［', '＄'];
+    if !leading && (CLOSING.contains(&c) || matches!(c, '；' | '，' | '．' | '＇')) {
         return font_size * 0.5;
     }
     if leading && OPENING.contains(&c) {

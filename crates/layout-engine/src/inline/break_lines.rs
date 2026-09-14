@@ -203,6 +203,13 @@ impl InlineFormattingContext {
                     if run.margin_left > 0.0 {
                         current_x += run.margin_left;
                     }
+                    // R4357 临时诊断：ruby 悬挂模型 margin 落点追踪（ZW_DEBUG_IFC=1）。
+                    if debug_ifc && run.margin_left > 0.0 {
+                        eprintln!(
+                            "[ifc-ruby] run text={:?} ml={} mr={} base_start_x={}",
+                            run.text, run.margin_left, run.margin_right, current_x
+                        );
+                    }
                     // R3837：inline 水平 padding 参与 inline 轴推进（CSS2.1 §8.4）——
                     // 旧实现只建模垂直 padding，水平 padding 静默丢失（bidi-box-model-028/033：
                     // span padding-left:2em 的 40px 未推进后续内容）。行内所有词共享同一
