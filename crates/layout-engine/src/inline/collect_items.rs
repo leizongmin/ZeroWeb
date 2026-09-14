@@ -982,11 +982,11 @@ impl InlineFormattingContext {
         let margin_left = style
             .map(|s| Self::resolve_inline_margin(&s.margin_left, s))
             .unwrap_or_else(|| self.margin_overrides.get(&child_id).map(|(ml, _)| *ml).unwrap_or(0.0))
-            + if std::env::var("R4332_FOLD_OFF").is_ok() { 0.0 } else { border_adv_l };
+            + border_adv_l;
         let margin_right = style
             .map(|s| Self::resolve_inline_margin(&s.margin_right, s))
             .unwrap_or_else(|| self.margin_overrides.get(&child_id).map(|(_, mr)| *mr).unwrap_or(0.0))
-            + if std::env::var("R4332_FOLD_OFF").is_ok() { 0.0 } else { border_adv_r };
+            + border_adv_r;
         let padding_left = style
             .map(|s| Self::resolve_inline_padding(&s.padding_left, s))
             .unwrap_or_else(|| self.padding_overrides.get(&child_id).map(|(pl, _)| *pl).unwrap_or(0.0));
@@ -1133,11 +1133,11 @@ impl InlineFormattingContext {
         let margin_left = style
             .map(|s| Self::resolve_inline_margin(&s.margin_left, s))
             .unwrap_or_else(|| self.margin_overrides.get(&elem_id).map(|(ml, _)| *ml).unwrap_or(0.0))
-            + if std::env::var("R4332_FOLD_OFF").is_ok() { 0.0 } else { border_adv_l };
+            + border_adv_l;
         let margin_right = style
             .map(|s| Self::resolve_inline_margin(&s.margin_right, s))
             .unwrap_or_else(|| self.margin_overrides.get(&elem_id).map(|(_, mr)| *mr).unwrap_or(0.0))
-            + if std::env::var("R4332_FOLD_OFF").is_ok() { 0.0 } else { border_adv_r };
+            + border_adv_r;
         let padding_left = style
             .map(|s| Self::resolve_inline_padding(&s.padding_left, s))
             .unwrap_or_else(|| self.padding_overrides.get(&elem_id).map(|(pl, _)| *pl).unwrap_or(0.0));
