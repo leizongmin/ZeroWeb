@@ -148,6 +148,7 @@ impl InlineFormattingContext {
                         // 并在需要时绘制 padding/border/background。
                         current_line.runs.push(TextFragment {
                             ws_override: run.ws_override,
+                            ruby_rt_ascent: 0.0,
                             x: current_x - run.padding_left,
                             y: 0.0,
                             width: 0.0,
@@ -256,6 +257,7 @@ impl InlineFormattingContext {
                             }
                             current_line.runs.push(crate::inline::TextFragment {
                                 ws_override: run.ws_override,
+                                ruby_rt_ascent: 0.0,
                                 x: current_x,
                                 y: 0.0,
                                 width: tab_advance,
@@ -495,6 +497,7 @@ impl InlineFormattingContext {
 
                                 current_line.runs.push(TextFragment {
                                     ws_override: run.ws_override,
+                                    ruby_rt_ascent: run.ruby_rt_ascent,
                                     x: partial_x,
                                     y: 0.0,
                                     width: ch_width,
@@ -526,6 +529,7 @@ impl InlineFormattingContext {
                             // 尾部空格作为词间距离添加到 current_x
                             current_line.runs.push(TextFragment {
                                 ws_override: run.ws_override,
+                                ruby_rt_ascent: run.ruby_rt_ascent,
                                 x: current_x,
                                 y: 0.0,
                                 width: word_width,
@@ -548,7 +552,9 @@ impl InlineFormattingContext {
 
                             current_x += word_width + trailing_space_width;
                             // 行盒高度需容纳 inline 元素的完整盒体（含 padding+border）
-                            current_line.height = current_line.height.max(run.box_height());
+                            // R4359（css-ruby-1）：ruby 注音行高（rt 0.5em 行盒）参与行盒高度
+                            // ——chromium 行距 35 = base 23.3 + rt 11.7 实证（model gate 内非零）。
+                            current_line.height = current_line.height.max(run.box_height() + run.ruby_rt_ascent);
                         }
                     }
 
@@ -647,6 +653,7 @@ impl InlineFormattingContext {
                     current_x += m_left;
                     current_line.runs.push(TextFragment {
                         ws_override: None,
+                        ruby_rt_ascent: 0.0,
                         x: current_x,
                         y: 0.0,
                         width: box_width,
@@ -945,6 +952,7 @@ impl InlineFormattingContext {
 
                     current_column.runs.push(TextFragment {
                         ws_override: None,
+                        ruby_rt_ascent: 0.0,
                         x: 0.0,
                         y: partial_depth,
                         width: run.line_height,
@@ -982,6 +990,7 @@ impl InlineFormattingContext {
                     }
                     current_column.runs.push(TextFragment {
                         ws_override: None,
+                        ruby_rt_ascent: 0.0,
                         x: 0.0,
                         y: segment_depth,
                         width: segment.run.line_height,

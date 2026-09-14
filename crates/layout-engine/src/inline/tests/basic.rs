@@ -144,6 +144,7 @@ fn test_r1215_text_autospace_normal_applies_gaps() {
         bidi_override: None,
         is_plaintext_bidi: false,
         ws_override: None,
+        ruby_rt_ascent: 0.0,
     }];
     ctx.break_into_lines(runs);
     let frags = ctx.all_fragments();
@@ -183,6 +184,7 @@ fn test_r1215_text_autospace_no_autospace_no_gap() {
         bidi_override: None,
         is_plaintext_bidi: false,
         ws_override: None,
+        ruby_rt_ascent: 0.0,
     }];
     ctx.break_into_lines(runs);
     let frags = ctx.all_fragments();
@@ -226,6 +228,7 @@ fn test_empty_text_no_lines() {
         bidi_override: None,
         is_plaintext_bidi: false,
         ws_override: None,
+        ruby_rt_ascent: 0.0,
     }];
     ctx.break_into_lines(runs);
     let fragments: Vec<_> = ctx.all_fragments();
@@ -261,6 +264,7 @@ fn test_r1086_word_spacing_applied_to_position() {
         bidi_override: None,
         is_plaintext_bidi: false,
         ws_override: None,
+        ruby_rt_ascent: 0.0,
     }];
     ctx.break_into_lines(runs);
     assert_eq!(ctx.lines.len(), 1, "应在单行");
@@ -299,6 +303,7 @@ fn test_single_line() {
         bidi_override: None,
         is_plaintext_bidi: false,
         ws_override: None,
+        ruby_rt_ascent: 0.0,
     }];
     ctx.break_into_lines(runs);
     assert_eq!(ctx.lines.len(), 1, "短文本应在单行中");
@@ -333,6 +338,7 @@ fn test_line_breaking() {
         bidi_override: None,
         is_plaintext_bidi: false,
         ws_override: None,
+        ruby_rt_ascent: 0.0,
     }];
     ctx.break_into_lines(runs);
     assert!(ctx.lines.len() > 1, "长文本应产生多行，实际 {} 行", ctx.lines.len());
@@ -364,6 +370,7 @@ fn test_line_y_positions() {
         bidi_override: None,
         is_plaintext_bidi: false,
         ws_override: None,
+        ruby_rt_ascent: 0.0,
     }];
     ctx.break_into_lines(runs);
     for i in 1..ctx.lines.len() {
@@ -401,6 +408,7 @@ fn test_total_height() {
         bidi_override: None,
         is_plaintext_bidi: false,
         ws_override: None,
+        ruby_rt_ascent: 0.0,
     }];
     ctx.break_into_lines(runs);
     let expected = ctx.lines.len() as f32 * 24.0;
@@ -438,6 +446,7 @@ fn test_all_fragments() {
         bidi_override: None,
         is_plaintext_bidi: false,
         ws_override: None,
+        ruby_rt_ascent: 0.0,
     }];
     ctx.break_into_lines(runs);
     let fragments = ctx.all_fragments();
@@ -470,6 +479,7 @@ fn test_fragment_x_positions() {
         bidi_override: None,
         is_plaintext_bidi: false,
         ws_override: None,
+        ruby_rt_ascent: 0.0,
     }];
     ctx.break_into_lines(runs);
     for line in &ctx.lines {
@@ -509,6 +519,7 @@ fn test_multiple_runs_same_line() {
             bidi_override: None,
             is_plaintext_bidi: false,
             ws_override: None,
+            ruby_rt_ascent: 0.0,
         },
         TextRun {
             text: "World".to_string(),
@@ -532,6 +543,7 @@ fn test_multiple_runs_same_line() {
             bidi_override: None,
             is_plaintext_bidi: false,
             ws_override: None,
+            ruby_rt_ascent: 0.0,
         },
     ];
     ctx.break_into_lines(runs);
@@ -626,6 +638,7 @@ fn test_very_long_single_word_overflow() {
         bidi_override: None,
         is_plaintext_bidi: false,
         ws_override: None,
+        ruby_rt_ascent: 0.0,
     }];
     ctx.break_into_lines(runs);
 
@@ -699,6 +712,7 @@ fn test_line_height_calculation() {
         bidi_override: None,
         is_plaintext_bidi: false,
         ws_override: None,
+        ruby_rt_ascent: 0.0,
     }];
     ctx24.break_into_lines(runs_24);
 
@@ -726,6 +740,7 @@ fn test_line_height_calculation() {
         bidi_override: None,
         is_plaintext_bidi: false,
         ws_override: None,
+        ruby_rt_ascent: 0.0,
     }];
     ctx32.break_into_lines(runs_32);
 
@@ -767,6 +782,7 @@ fn test_line_height_accumulation() {
         bidi_override: None,
         is_plaintext_bidi: false,
         ws_override: None,
+        ruby_rt_ascent: 0.0,
     }];
     ctx.break_into_lines(runs);
 
@@ -821,6 +837,7 @@ fn test_multiple_font_sizes_same_line() {
             bidi_override: None,
             is_plaintext_bidi: false,
             ws_override: None,
+            ruby_rt_ascent: 0.0,
         },
         TextRun {
             text: "Large".to_string(),
@@ -844,6 +861,7 @@ fn test_multiple_font_sizes_same_line() {
             bidi_override: None,
             is_plaintext_bidi: false,
             ws_override: None,
+            ruby_rt_ascent: 0.0,
         },
         TextRun {
             text: "Medium".to_string(),
@@ -867,6 +885,7 @@ fn test_multiple_font_sizes_same_line() {
             bidi_override: None,
             is_plaintext_bidi: false,
             ws_override: None,
+            ruby_rt_ascent: 0.0,
         },
     ];
     ctx.break_into_lines(runs);
@@ -920,6 +939,7 @@ fn test_font_size_affects_width() {
             bidi_override: None,
             is_plaintext_bidi: false,
             ws_override: None,
+            ruby_rt_ascent: 0.0,
         },
         TextRun {
             text: "Word".to_string(),
@@ -943,6 +963,7 @@ fn test_font_size_affects_width() {
             bidi_override: None,
             is_plaintext_bidi: false,
             ws_override: None,
+            ruby_rt_ascent: 0.0,
         },
     ];
     ctx.break_into_lines(runs);
@@ -982,6 +1003,7 @@ fn test_multiple_runs_wrap_across_lines() {
             bidi_override: None,
             is_plaintext_bidi: false,
             ws_override: None,
+            ruby_rt_ascent: 0.0,
         },
         TextRun {
             text: "gamma delta".to_string(),
@@ -1005,6 +1027,7 @@ fn test_multiple_runs_wrap_across_lines() {
             bidi_override: None,
             is_plaintext_bidi: false,
             ws_override: None,
+            ruby_rt_ascent: 0.0,
         },
     ];
     ctx.break_into_lines(runs);
@@ -1054,6 +1077,7 @@ fn test_fragment_node_ids_preserved() {
             bidi_override: None,
             is_plaintext_bidi: false,
             ws_override: None,
+            ruby_rt_ascent: 0.0,
         },
         TextRun {
             text: "Second".to_string(),
@@ -1077,6 +1101,7 @@ fn test_fragment_node_ids_preserved() {
             bidi_override: None,
             is_plaintext_bidi: false,
             ws_override: None,
+            ruby_rt_ascent: 0.0,
         },
     ];
     ctx.break_into_lines(runs);
@@ -1115,6 +1140,7 @@ fn test_zero_container_width() {
         bidi_override: None,
         is_plaintext_bidi: false,
         ws_override: None,
+        ruby_rt_ascent: 0.0,
     }];
     ctx.break_into_lines(runs);
 
@@ -1487,6 +1513,7 @@ fn test_mixed_inline_block_content_boundary() {
             bidi_override: None,
             is_plaintext_bidi: false,
             ws_override: None,
+            ruby_rt_ascent: 0.0,
         },
         TextRun {
             text: "delta epsilon".to_string(),
@@ -1510,6 +1537,7 @@ fn test_mixed_inline_block_content_boundary() {
             bidi_override: None,
             is_plaintext_bidi: false,
             ws_override: None,
+            ruby_rt_ascent: 0.0,
         },
     ];
     ctx.break_into_lines(runs);
@@ -1560,6 +1588,7 @@ fn test_text_with_explicit_line_breaks() {
         bidi_override: None,
         is_plaintext_bidi: false,
         ws_override: None,
+        ruby_rt_ascent: 0.0,
     }];
     ctx.break_into_lines(runs);
 
@@ -1603,6 +1632,7 @@ fn test_whitespace_nowrap_behavior() {
         bidi_override: None,
         is_plaintext_bidi: false,
         ws_override: None,
+        ruby_rt_ascent: 0.0,
     }];
     ctx.break_into_lines(runs);
 
@@ -1652,6 +1682,7 @@ fn test_very_long_word_without_break_opportunity() {
         bidi_override: None,
         is_plaintext_bidi: false,
         ws_override: None,
+        ruby_rt_ascent: 0.0,
     }];
     ctx.break_into_lines(runs);
 
@@ -1695,6 +1726,7 @@ fn test_vertical_align_top_in_line() {
         bidi_override: None,
         is_plaintext_bidi: false,
         ws_override: None,
+        ruby_rt_ascent: 0.0,
     }];
     ctx.break_into_lines(runs);
 
@@ -1734,6 +1766,7 @@ fn test_vertical_align_bottom_in_line() {
         bidi_override: None,
         is_plaintext_bidi: false,
         ws_override: None,
+        ruby_rt_ascent: 0.0,
     }];
     ctx.break_into_lines(runs);
 

@@ -110,6 +110,10 @@ pub struct TextRun {
     /// 等价）。生产路径（collect_items）恒 Some——修复「white-space 声明在 inline 包裹层
     /// 被忽略」（014 类：span 上的 pre 丢失，5 行折叠 1 行，根因 = IFC 容器级标志近似）。
     pub ws_override: Option<RunWhiteSpace>,
+    /// R4357/R4359（css-ruby-1）：ruby 注音行高额外上升量（0.5em 注音行盒高）——
+    /// 参与行盒 ascent/height（chromium 行距 35 = base 23.3 + rt 11.7 实证）。
+    /// 非 ruby run 恒 0。
+    pub ruby_rt_ascent: f32,
 }
 
 /// R3778：单个文本 run 的有效 white-space 三标志（CSS Text 3 §4.1 白空格处理维度的
@@ -158,6 +162,7 @@ impl TextRun {
             bidi_override: None,
             is_plaintext_bidi: false,
             ws_override: None,
+            ruby_rt_ascent: 0.0,
         }
     }
 
@@ -332,6 +337,10 @@ pub struct TextFragment {
     /// 重跑 IFC（空 styles）时经 `text_node_ws_overrides` 恢复，使行断与 layout 一致。
     /// `None` = 沿用容器级标志。
     pub ws_override: Option<RunWhiteSpace>,
+    /// R4357/R4359（css-ruby-1）：ruby 注音行高额外上升量（0.5em 注音行盒高）——
+    /// 参与行盒 ascent/height（chromium 行距 35 = base 23.3 + rt 11.7 实证）。
+    /// 非 ruby run 恒 0。
+    pub ruby_rt_ascent: f32,
     /// 片段在行盒中的 x 坐标。
     pub x: f32,
     /// 片段在行盒中的 y 坐标（相对于行盒顶部）。

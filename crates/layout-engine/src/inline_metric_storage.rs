@@ -192,6 +192,7 @@ mod tests {
     fn fragment(node_id: NodeId, font_size: f32, height: f32) -> TextFragment {
         TextFragment {
             ws_override: None,
+            ruby_rt_ascent: 0.0,
             x: 0.0,
             y: 0.0,
             width: 10.0,

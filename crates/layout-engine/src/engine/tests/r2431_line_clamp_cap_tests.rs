@@ -36,6 +36,7 @@ fn ctx_with_lines(n_runs: usize) -> InlineFormattingContext {
             bidi_override: None,
             is_plaintext_bidi: false,
             ws_override: None,
+            ruby_rt_ascent: 0.0,
         })
         .collect();
     ctx.break_into_lines(runs);

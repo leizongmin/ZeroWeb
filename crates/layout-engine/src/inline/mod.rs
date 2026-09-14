@@ -1717,6 +1717,7 @@ impl InlineFormattingContext {
 
                     current_column.runs.push(TextFragment {
                         ws_override: None,
+                        ruby_rt_ascent: 0.0,
                         x: 0.0,
                         y: current_depth,
                         width: box_col_width,
@@ -1944,7 +1945,11 @@ impl InlineFormattingContext {
                         // 文本运行：ascent = font_size × 字体真实 ascent ratio（R990：Ahem 0.8 / 非-Ahem 0.928；
                         // R1004：优先取 ascent_ratio_overrides 真实 per-font ratio，空 map 回退 R990 常数）。
                         let run_ratio = ascent_ratio_lookup(&self.ascent_ratio_overrides, run.node_id, run.is_ahem);
-                        max_ascent = max_ascent.max(run.font_size * run_ratio);
+                        // R4359（css-ruby-1）：ruby 注音行高叠加——rt（0.5em）行盒位于 base
+                        // 行盒上方，行盒 ascent = base ascent + rt 行高（行距 35 = 23.3 + 11.7
+                        // chromium 实证）；base 基线随行顶下移，rt overlay（base 基线 − 1em）
+                        // 落位自动正确。
+                        max_ascent = max_ascent.max(run.font_size * run_ratio + run.ruby_rt_ascent);
                     } else {
                         // 原子行内级盒（font_size==0 标识）：
                         // 使用 baseline 字段决定 ascent（inline-block: baseline = height 底边；
@@ -2311,6 +2316,7 @@ impl InlineFormattingContext {
                 let vert_y = self.vertical;
                 line.runs.iter().map(move |run| TextFragment {
                     ws_override: run.ws_override,
+                    ruby_rt_ascent: run.ruby_rt_ascent,
                     x: run.x,
                     y: if vert_y { run.y } else { run.y + line_y },
                     width: run.width,

@@ -30,6 +30,7 @@ fn test_text_indent_first_line_offset() {
         bidi_override: None,
         is_plaintext_bidi: false,
         ws_override: None,
+        ruby_rt_ascent: 0.0,
     }];
     ctx.break_into_lines(runs);
 
@@ -70,6 +71,7 @@ fn test_text_indent_only_first_line() {
         bidi_override: None,
         is_plaintext_bidi: false,
         ws_override: None,
+        ruby_rt_ascent: 0.0,
     }];
     ctx.break_into_lines(runs);
 
@@ -116,6 +118,7 @@ fn test_text_indent_zero_no_offset() {
         bidi_override: None,
         is_plaintext_bidi: false,
         ws_override: None,
+        ruby_rt_ascent: 0.0,
     }];
     ctx.break_into_lines(runs);
 
@@ -153,6 +156,7 @@ fn test_text_indent_negative() {
         bidi_override: None,
         is_plaintext_bidi: false,
         ws_override: None,
+        ruby_rt_ascent: 0.0,
     }];
     ctx.break_into_lines(runs);
 
@@ -195,6 +199,7 @@ fn test_text_indent_with_text_align_center() {
         bidi_override: None,
         is_plaintext_bidi: false,
         ws_override: None,
+        ruby_rt_ascent: 0.0,
     }];
     ctx.break_into_lines(runs);
 

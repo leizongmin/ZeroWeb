@@ -264,6 +264,7 @@ impl InlineFormattingContext {
                                             || parent_id.is_some_and(|id| self.plaintext_bidi_overrides.contains(&id))
                                     }),
                                 ws_override: run_ws,
+                                ruby_rt_ascent: 0.0,
                             }));
                         }
                     }
@@ -1047,9 +1048,23 @@ impl InlineFormattingContext {
             .map(|s| s.font_family.iter().any(|f| f.trim_matches('"').eq_ignore_ascii_case("Ahem")))
             .unwrap_or_else(|| self.is_ahem_overrides.get(&child_id).copied().unwrap_or(false));
         let (padding_top, padding_bottom, border_top, border_bottom) = Self::extract_inline_box_metrics(style);
+        // R4359（css-ruby-1）：ruby 注音行高——rt（0.5em）的行盒高度参与所在行的
+        // ascent/height（chromium 行距 35 = base 23.3 + rt 11.7 实证）。与 pads 同门
+        // （ZW_RUBY_OVERHANG_MODEL=1，layout 趟计算、replay 趟经 margin_overrides 同款
+        // 存储回放需另行接线——rt ascent 走 TextRun/TextFragment 直传，无需 override）。
+        let ruby_rt_ascent = if elem_data.local_name() == "ruby"
+            && style.is_some()
+            && std::env::var("ZW_RUBY_OVERHANG_MODEL").as_deref() == Ok("1")
+            && !ruby_annotation_width_text(doc, child_id).is_empty()
+        {
+            font_size * 0.5 * crate::inline::text_metrics::NORMAL_LINE_HEIGHT_RATIO
+        } else {
+            0.0
+        };
         if !trimmed.is_empty() {
             Some(InlineItem::Text(TextRun {
                 ws_override: run_ws,
+                ruby_rt_ascent,
                 text: trimmed,
                 node_id: child_id,
                 font_size,
@@ -1090,6 +1105,7 @@ impl InlineFormattingContext {
             // CSS 规范：空 inline 元素仍需通过 line-height + padding + border 影响行盒高度
             Some(InlineItem::Text(TextRun {
                 ws_override: style.map(|s| Self::run_white_space(&s.white_space)),
+                ruby_rt_ascent: 0.0,
                 text: String::new(),
                 node_id: child_id,
                 font_size,
@@ -1209,6 +1225,7 @@ impl InlineFormattingContext {
             }
             items.push(InlineItem::Text(TextRun {
                 ws_override: run_ws,
+                ruby_rt_ascent: 0.0,
                 text: trimmed,
                 node_id: elem_id,
                 font_size,
