@@ -1949,6 +1949,13 @@ impl InlineFormattingContext {
                         // 行盒上方，行盒 ascent = base ascent + rt 行高（行距 35 = 23.3 + 11.7
                         // chromium 实证）；base 基线随行顶下移，rt overlay（base 基线 − 1em）
                         // 落位自动正确。
+                        // R4362 临时诊断：ruby rt ascent 行定位追踪（ZW_DEBUG_IFC=1）。
+                        if run.ruby_rt_ascent > 0.0 && std::env::var("ZW_DEBUG_IFC").as_deref() == Ok("1") {
+                            eprintln!(
+                                "[ifc-ruby-ascent] node={:?} fs={} ratio={} rt_ascent={} max_ascent={}",
+                                run.node_id, run.font_size, run_ratio, run.ruby_rt_ascent, max_ascent
+                            );
+                        }
                         max_ascent = max_ascent.max(run.font_size * run_ratio + run.ruby_rt_ascent);
                     } else {
                         // 原子行内级盒（font_size==0 标识）：
