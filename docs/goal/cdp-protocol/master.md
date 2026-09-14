@@ -2,33 +2,50 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-15（S574：静默监测轮——同 tip 复核
-（pull 零新提交，tip = e76b0f3b2 即 S573 提交本身，无代码
-变更绿步维持 33）。双层锚点零漂移——自有面对 765429dda 维持
-**4 files +137/-17** 精确一致；全树排除本流 docs 后对
-18d462de6 维持 **36 files +2317/-149**（S527 刷新后新基线）
-与上轮逐项一致零新增，S571 期限轮门活跑 02:10 直接覆盖
-当前代码树证据新鲜。crates/ 观察面 raw 计数实测维持 **25**，
-子帧能力关键词 grep（Rust 面 tests 排除口径）非测试代码零
-命中实测复核（命中面为 dom/engine/webview 三处 tests 路径
-7 文件测试代码维持既有形态），实质判定不变
-frames.click+evaluate 维持挂起。树不变按门单腿口径免
-make test 腿（S336 先例），门结论引用 S571 期限轮门活跑
-（首调 PASS 33 绿 deterministic 双跑 YES EXIT=0
-expected_green 33 对称差 none + ZW_IPC_VALIDATE=1 负载窗
-在位静默；make test 腿引用 S527 双腿活跑 19,290P/0F
-EXIT=0），**引用计数 2/10→3/10**（S571 新周期；8/10 次
-轮即期限轮口径；树变化提前触发）。机器卫生复核：零 zombie、
-9222/45029/34293/19222 端口族全空闲、零端口竞争面、控制面
-零外来提交；负载 1.75→0.74 深净窗（top CPU >50% 扫空、
-cargo/rustc/bench 进程扫空），本树零活跃腿（cwd=本 clone
-活跃编译/测试腿扫描零命中）——本轮静默零活跑需求深净窗
-记账。解冻条件实质判定不变：①观察面 raw 25 维持，子帧
-三件套 iframe.contentDocument null 现状不变，
-frames.click+evaluate 维持挂起；② 本流控制面
-docs/goal/cdp-protocol/ 零外来提交，DC-2 口径无新拍板
-记录。goal 自有面零新缺口、无扩展面（S40-S573 重审结论
-延续））
+**最后更新**: 2026-09-15（S575：树变化刷新轮——兄弟流
+rendering R4354（f297564a8，background 简写 `<box>` 解析
+恢复 + local 背景滚动，5 代码文件 +214/-16 入树：
+engine paint/painter effects/mod + paint/tests/
+background_repeat + style-system shorthand/background +
+tests/shorthand_coverage + rendering-compat.md）触发
+（S245/S258/S289/S290/S314/S317/S340/S341/S342/S527 先例
+族）。归因：ZeroWeb-2 兄弟 clone 推送（本轮开局 pull 零新
+提交按静默监测口径复核中，push 遭 non-fast-forward 揭示
+兄弟流入树，pull --rebase 落位后转刷新轮口径）；与本流
+apps/browser/Makefile 自有面零重叠。预检全净（零 zombie、
+9222/45029/34293/19222 端口族全空闲、负载 0.26 深净窗、
+零兄弟编译腿）后双腿顺序活跑（setsid 脱离 + 轮询收口）：
+**门腿** make cdp-e2e（ZW_IPC_VALIDATE=1 在位）
+02:23:54-02:24:37 **首调即 PASS 33 绿 deterministic 双跑
+YES EXIT=0**——run1/run2 同态 exit1（含期望失败步骤），
+expected_green 33 对称差 none、regressions 空，steps/
+determinism-report 02:24:34 同轮新鲜落盘，校验器在位静默
+（#0 复现监测零命中），zero-engine dead_code warning
+（match_media_to_json）既有形态维持——R4354 组合态（style-
+system shorthand + engine paint）首次门覆盖零回归；
+**测试腿** make test 02:25:18-02:34:13 **一调收口 67 组
+19,290P/0F EXIT=0**（与 S527 双腿基线计数持平，兄弟流
+R4354 提交自报同值 19,290P/0F 双源一致；R4354 组合态首次
+全量覆盖零回归）。**引用计数归零重计（活跑），下轮起门
+结论锚点切换 S575 双腿活跑**（S576 起 1/10，树变化仍提前
+触发）。双层锚点刷新：自有面对 765429dda 维持 **4 files
++137/-17** 精确一致（R4354 零重叠佐证）；全树排除本流
+docs 后对 18d462de6 **36→37 files +2317→+2530/-149→-164**
+（shorthand_coverage.rs 首次入集 +1；文件级逐项对账零
+异常——五既有文件精确相加，唯一 (1,1) 折叠 = painter/
+mod.rs R4353/R4354 同文件 hunk 叠写，65e226bf4..HEAD 直接
+diff 与 R4354 numstat 6 files +214/-16 精确一致）。
+crates/ 观察面 raw **25→26**（R4354 入计），子帧能力关键
+词 grep 非测试代码零命中维持（R4354 为 background 简写
+解析不涉子帧），实质判定不变 frames.click+evaluate 维持
+挂起。机器卫生：活跑后零 zombie、端口族零残留、零遗留
+进程、负载 3.05→0.45 出窗，本树 tracked 干净。解冻条件
+实质判定不变：① 观察面 raw 26（R4354 入计），子帧三件套
+iframe.contentDocument null 现状不变，frames.click+evaluate
+维持挂起；② 本流控制面 docs/goal/cdp-protocol/ 零外来
+提交（R4354 触 rendering-compat.md 非本流控制面），DC-2
+口径无新拍板记录。goal 自有面零新缺口、无扩展面（S40-S574
+重审结论延续）。）
 
 ---
 
@@ -59,6 +76,63 @@ docs/goal/cdp-protocol/ 零外来提交，DC-2 口径无新拍板
 
 ## 已完成切片
 
+- **S575（2026-09-15）树变化刷新轮 — 兄弟流 rendering R4354
+  （f297564a8，background 简写 `<box>` 解析恢复 + local 背景
+  滚动，5 代码文件 +214/-16 入树）触发（S245/S258/S289/
+  S290/S314/S317/S340/S341/S342/S527 先例族）**：归因：
+  ZeroWeb-2 兄弟 clone 推送（本轮开局 pull 零新提交、按
+  静默监测口径复核中，push 遭 non-fast-forward 揭示兄弟流
+  入树，pull --rebase 落位后转刷新轮口径）；触面 engine
+  paint/painter effects/mod + paint/tests/background_repeat +
+  style-system shorthand/background + tests/shorthand_coverage
+  + rendering-compat.md——与本流 apps/browser/Makefile 面零
+  重叠。预检全净（零 zombie、9222/45029/34293/19222 端口族
+  全空闲、负载 0.26 深净窗、零兄弟编译腿）后双腿顺序活跑
+  （setsid 脱离 + 轮询收口）：**门腿** make cdp-e2e
+  （ZW_IPC_VALIDATE=1 在位）02:23:54-02:24:37 **首调即
+  PASS 33 绿 deterministic 双跑 YES EXIT=0**——run1/run2
+  同态 exit 1（含期望失败步骤 frames.click+evaluate 挂起
+  项），绿步集 33 与 expected_green 基线对称差 none、
+  regressions 空，steps/determinism-report 02:24:34 同轮
+  新鲜落盘，ZW_IPC_VALIDATE 校验器在位静默（#0 复现监测
+  零命中），zero-engine dead_code warning
+  （match_media_to_json）既有形态维持——R4354 组合态
+  （style-system shorthand + engine paint）首次门覆盖零
+  回归；**测试腿** make test 02:25:18-02:34:13 **一调收口
+  67 组 19,290P/0F EXIT=0**（与 S527 双腿基线计数持平，
+  兄弟流 R4354 提交自报同值 19,290P/0F 双源一致；R4354
+  组合态首次全量覆盖零回归，首调红形态零再现）。**引用
+  计数归零重计（活跑），下轮起门结论锚点切换 S575 双腿
+  活跑**（S576 起 1/10，树变化仍提前触发）。双层锚点刷新：
+  自有面对 765429dda 维持 **4 files +137/-17** 精确一致
+  （Makefile 1/1 + apps/browser/README.md 1/0 +
+  headless/mod.rs 25/0 + headless/session.rs 110/16，
+  R4354 零重叠佐证）；全树锚点（排除本流 docs 后 tracked
+  代码树）对 18d462de6 **36→37 files +2317→+2530/-149→
+  -164**——shorthand_coverage.rs 首次入集 +1；文件级逐项
+  对账零异常：五既有文件（effects.rs 89/37→187/37、
+  painter/mod.rs 82/12→159/17、background_repeat.rs 12/0→
+  18/0、shorthand/background.rs 242/5→251/8、rendering-
+  compat.md 40/0→41/0）精确相加，唯一 (1,1) 折叠 = painter/
+  mod.rs R4353/R4354 同文件 hunk 叠写（R4353 所加行被
+  R4354 重写，累计口径少计一次），65e226bf4..HEAD 直接
+  diff 与 R4354 numstat（6 files +214/-16）精确一致。
+  crates/ 观察面 raw **25→26**（R4354 入计，git log 默认
+  口径 8fb39cd46..HEAD 限 crates/ 面），子帧能力关键词
+  grep（contentDocument/content_document/subframe/sub_frame，
+  Rust 面 tests 排除口径）非测试代码零命中实测复核（命中
+  面为 dom/engine/webview 三处 tests 路径 7 文件测试代码
+  维持既有形态；R4354 为 background 简写解析不涉子帧），
+  实质判定不变 frames.click+evaluate 维持挂起。机器卫生：
+  活跑后零 zombie、9222/45029/34293/19222 端口族零残留、
+  零遗留进程（活跑后本树零残留），负载 3.05→0.45 出窗，
+  本树 tracked 干净。解冻条件实质判定不变：① 观察面
+  raw 26（R4354 入计），子帧三件套 iframe.contentDocument
+  null 现状不变，frames.click+evaluate 维持挂起；② 本流
+  控制面 docs/goal/cdp-protocol/ 零外来提交（R4354 触
+  rendering-compat.md 非本流控制面），DC-2 口径无新拍板
+  记录。goal 自有面零新缺口、无扩展面（S40-S574 重审结论
+  延续）。
 - **S574（2026-09-15）静默监测轮 — 同 tip 复核（pull 零新提交，
   tip = e76b0f3b2 即 S573 提交本身；无代码变更，绿步维持 33）**：
   双层锚点复核通过：自有面锚点对 765429dda 维持 **4 files
