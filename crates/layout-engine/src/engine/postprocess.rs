@@ -1349,12 +1349,18 @@ pub(super) fn backfill_r109_anon_block_heights(
         .is_some_and(|s| matches!(s.height, LengthValue::Auto));
     let mut grew: f32 = 0.0;
     // ① 匿名块盒：从 inline_layout 回填自身 content_height（仅增大）。
+    // R4335：欠计门 +0.5 → +1.0——taffy 对盒边按绝对位置网格取整（CSS §9.4.1 对齐
+    // 像素网格；taffy round_layout），单文本节点的 anon 块 measure 与 stored IFC 同源
+    // 同值（如 18.624），网格取整后 taffy 高与未取整内容差恒 <1px（|round(x+δ)−round(x)−δ|
+    // <1）；而 R935 真欠计（ctx_node = 首文本节点，sibling 片段整行丢失）差 ≥ 1 行盒。
+    // 旧 +0.5 门放进纯取整噪声（run-in-text-between-001：taffy 18 @流顶 26.624 → 回写
+    // 未取整 18.624，后继块整体 +0.624 亚像素错相位 → 1.08% 恒等族签名）。
     if box_node.fragment_node_ids.is_some()
         && let Some(lines) = &box_node.inline_layout
         && !lines.is_empty()
     {
         let content_h = lines.iter().map(|l| l.y + l.height).fold(0.0f32, f32::max);
-        if content_h > box_node.content_height + 0.5 {
+        if content_h > box_node.content_height + 1.0 {
             grew = content_h - box_node.content_height;
             box_node.content_height = content_h;
             box_node.height += grew;

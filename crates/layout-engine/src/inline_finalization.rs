@@ -2549,7 +2549,12 @@ pub(crate) fn remeasure_inline_only_containers(
         }
         inline_ctx.layout(doc, dom_id, styles);
         let frag_h = inline_ctx.total_height();
-        if frag_h > box_node.content_height + 0.5 {
+        // R4335：欠计门 +0.5 → +1.0——taffy round_layout 对盒边网格取整后本盒高为整数
+        //（text-between-001 匿名片段 taffy final h=18 @流顶 26.624），fragment-scoped IFC
+        // 未取整 total（18.624）与整数高的差恒 <1px（纯取整噪声，非 R3770 真欠计——真欠计
+        // = 整行盒丢失 ≥1 行）。旧 +0.5 门放进噪声 → 盒高 18.624 覆盖 18，后继块整体
+        // +0.624 亚像素错相位（1.08% 恒等族签名，与 backfill_r109_anon_block_heights 同族）。
+        if frag_h > box_node.content_height + 1.0 {
             let delta = frag_h - box_node.content_height;
             box_node.content_height = frag_h;
             box_node.height += delta;
