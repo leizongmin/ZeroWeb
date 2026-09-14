@@ -2,20 +2,18 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-14（S337：静默监测轮——同 tip 复核（b803c07c2，即
-S336 提交本身），双层锚点零漂移（自有面维持 apps/browser README +1 已归因
+**最后更新**: 2026-09-14（S338：静默监测轮——同 tip 复核（135ef4a39，即
+S337 提交本身），双层锚点零漂移（自有面维持 apps/browser README +1 已归因
 基线；全树锚点排除本流 docs 后 tracked 代码树对 S317 双腿刷新覆盖树
 736f16525 零变化——S336 活跑 10:27 直接覆盖当前树），门结论引用 S336
 活跑（门 PASS 33 绿 deterministic YES EXIT=0 ZERO_DRIFT=YES 10:27 +
-ZW_IPC_VALIDATE 静默），引用计数 2/10 下次活跑至迟 S346；绿步维持 33；
+ZW_IPC_VALIDATE 静默），引用计数 3/10 下次活跑至迟 S346；绿步维持 33；
 解冻条件①观察面不变（crates/ 自 8fb39cd46 维持九枚均非渲染流子帧能力，
 frames.click+evaluate 维持挂起），②DC-2 无新拍板；机器卫生全净含
-zw-loop/zw-hunt 检查模式；**并行 cdp-e2e 腿入窗记账（S198 端口竞争亚型
-观察态）**：ZeroWeb-3-wt-baidu site-optimizer gate6 验收链（gate6.done
-未落地）顺序含 make test 腿（进行中，负载 11.71 峰值）+ make cdp-e2e
-腿（未启动，9222 仍空闲）——本轮零活跑需求无实际竞争，但**后续任何
-本流活跑（树变化刷新轮或引用期限轮）在 gate6.done 落地前必须等待避让**；
-S78 家族维持 S320 收窄定性；零 zombie 零遗留端口）
+zw-loop/zw-hunt 检查模式；gate6 避让窗延续（S198 端口竞争亚型观察态：
+gate6.done 未落地，make test 腿延续，make cdp-e2e 腿未启动 9222 仍空闲
+——本轮零活跑需求无实际竞争，后续任何本流活跑在 gate6.done 落地前必须
+等待避让）；S78 家族维持 S320 收窄定性；零 zombie 零遗留端口）
 
 ---
 
@@ -46,6 +44,25 @@ S78 家族维持 S320 收窄定性；零 zombie 零遗留端口）
 
 ## 已完成切片
 
+- **S338（2026-09-14）静默监测轮 — 同 tip 复核（无代码变更，绿步维持 33）**：
+  pull 零新提交（tip = 135ef4a39，即 S337 提交本身）——双层锚点口径复核
+  通过：自有面锚点增量零漂移（硬核对维持仅 apps/browser/README.md +1 行 =
+  S255 已归因的 52695a7c1 漂移基线，对 765429dda 基点实测恰 +1 行）；全树
+  锚点复核（排除本流 docs 后 tracked 代码树对 736f16525 = S317 双腿刷新
+  覆盖树零变化——S336 活跑 10:27 直接覆盖当前树，证据新鲜可引用）零外部
+  变化。双解冻条件实质判定不变：① crates/ 自 8fb39cd46 维持九枚，均非
+  渲染流子帧文档加载 + JS realm 能力，frames.click+evaluate 维持挂起；
+  ② docs/goal 自 S337 零非本流提交，DC-2 口径无新拍板记录。门结论引用
+  S336 活跑（门 PASS 33 绿 deterministic 双跑 YES EXIT=0 ZERO_DRIFT=YES
+  10:27 落盘 + ZW_IPC_VALIDATE 校验器在位静默），引用计数 2/10→**3/10**，
+  下次活跑至迟 S346。机器卫生复核：零 zombie（stat 精确判定）、9222
+  端口族空闲、`pgrep -af 'zw-loop|zw-hunt'` 零孤儿 hunt 遗留。gate6
+  避让窗延续（S198 端口竞争亚型观察态）：gate6.done 未落地，ZeroWeb-3-
+  wt-baidu clone site-optimizer gate6 验收链 make test 腿延续（负载
+  7.32 回落），make cdp-e2e 腿未启动、9222 仍空闲——本轮静默零活跑
+  需求、无实际端口竞争；后续任何本流活跑（树变化刷新轮或引用期限轮）
+  在 gate6.done 落地、9222 释放前必须等待避让（S198 先例口径）。goal
+  自有面零新缺口、无扩展面（S40-S337 重审结论延续）。
 - **S337（2026-09-14）静默监测轮 — 同 tip 复核（无代码变更，绿步维持 33）**：
   pull 零新提交（tip = b803c07c2，即 S336 提交本身）——双层锚点口径复核
   通过：自有面锚点增量零漂移（硬核对维持仅 apps/browser/README.md +1 行 =
