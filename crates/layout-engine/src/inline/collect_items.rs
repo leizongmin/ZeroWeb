@@ -923,6 +923,14 @@ impl InlineFormattingContext {
     }
 
     /// R4300：inline 元素扁平化 run 构造（主 collect 路径与 `collect_flat_inline_children`
+    /// R4357（css-ruby-1 §ruby-overhang；chromium probe 模型 15 数据点全拟合）：ruby 注音
+    /// 行宽参与——rt 注释宽（0.5em 字号）计入行盒，可悬挂部分吸收到邻字符空白半侧：
+    /// `box_w = max(base_w, rt_w − hang_l − hang_r)`，extra = box_w − base_w 对折进 run
+    /// 左右 margin（base 字形居中于盒，与 ruby-align:center 一致；rt paint 层 R1689
+    /// overlay 本就按 base 段居中，无需改动）。hang = ruby 紧邻字符朝向 ruby 的空白半侧：
+    /// 收窄标点）】〉》」』等（字形居左、右半空白）作左邻 → 0.5em；开括标点（【〈「等
+    /// （字形居右、左半空白）作右邻 → 0.5em；全角空白 U+3000 → 1em；其余 0。
+    /// 水平书写模式限定（vertical 系独立域）；kill-switch `ZW_RUBY_OVERHANG_MODEL=0`。
     /// walk 共用）。text_content（ruby 按 R1022 排除 rt/rp）折叠后：
     /// 非空 → 文本 run（node_id = 元素自身，归因契约：R4297 sync / R2197 orphan /
     /// R638 inline_heights 按元素 id 查）；空 → 零宽 run（line-height + padding + border
@@ -987,6 +995,44 @@ impl InlineFormattingContext {
             .map(|s| Self::resolve_inline_margin(&s.margin_right, s))
             .unwrap_or_else(|| self.margin_overrides.get(&child_id).map(|(_, mr)| *mr).unwrap_or(0.0))
             + border_adv_r;
+        // R4357（css-ruby-1 §ruby-overhang）：rt 注释行宽参与——extra 对折进 ruby run
+        // 左右 margin（模型见 ruby_overhang_pads）。水平书写限定。
+        let (margin_left, margin_right) = if elem_data.local_name() == "ruby"
+            && !style.is_some_and(|s| {
+                matches!(
+                    s.writing_mode,
+                    zero_style_system::WritingModeValue::VerticalRl | zero_style_system::WritingModeValue::VerticalLr
+                )
+            }) {
+            let annot = ruby_annotation_width_text(doc, child_id);
+            let base_w: f32 = trimmed
+                .chars()
+                .map(|c| {
+                    crate::inline::estimate_char_width(
+                        c,
+                        font_size,
+                        style.is_some_and(|s| {
+                            s.font_family.iter().any(|f| f.trim_matches('"').eq_ignore_ascii_case("Ahem"))
+                        }),
+                    )
+                })
+                .sum::<f32>()
+                + letter_spacing * trimmed.chars().count() as f32;
+            let (pl, pr) = ruby_overhang_pads(
+                doc,
+                child_id,
+                base_w,
+                &annot,
+                font_size,
+                letter_spacing,
+                style.is_some_and(|s| {
+                    s.font_family.iter().any(|f| f.trim_matches('"').eq_ignore_ascii_case("Ahem"))
+                }),
+            );
+            (margin_left + pl, margin_right + pr)
+        } else {
+            (margin_left, margin_right)
+        };
         let padding_left = style
             .map(|s| Self::resolve_inline_padding(&s.padding_left, s))
             .unwrap_or_else(|| self.padding_overrides.get(&child_id).map(|(pl, _)| *pl).unwrap_or(0.0));
@@ -1470,4 +1516,136 @@ impl InlineFormattingContext {
         style.filter(|s| matches!(s.unicode_bidi, zero_style_system::UnicodeBidiValue::BidiOverride))
             .map(|s| matches!(s.direction, zero_style_system::DirectionValue::Rtl))
     }
+}
+
+/// R4357（css-ruby-1 §ruby-overhang；chromium probe 模型 15 数据点全拟合）：ruby 注音
+/// 行宽参与——rt 注释宽（0.5em 字号）计入行盒，可悬挂部分吸收到邻字符空白半侧：
+/// `box_w = max(base_w, rt_w − hang_l − hang_r)`，extra = box_w − base_w 对折进 ruby run
+/// 左右 margin（base 字形居中于盒，与 ruby-align:center 一致；rt paint 层 R1689 overlay
+/// 本就按 base 段居中，无需改动）。hang = ruby 紧邻字符朝向 ruby 的空白半侧：收窄标点
+/// ）】等（字形居左、右半空白）作左邻 → 0.5em；开括标点（【等（字形居右、左半空白）
+/// 作右邻 → 0.5em；全角空白 U+3000 → 1em；其余 0。水平书写限定；
+/// kill-switch `ZW_RUBY_OVERHANG_MODEL=0`。collect（run margin）与 intrinsic
+/// （dom_inline_text_max_width）双消费——两侧必须同口径，否则 max-content 与行宽分裂。
+pub(crate) fn ruby_overhang_pads(
+    doc: &Document,
+    ruby_id: NodeId,
+    base_w: f32,
+    annot_text: &str,
+    font_size: f32,
+    letter_spacing: f32,
+    is_ahem: bool,
+) -> (f32, f32) {
+    // opt-in 实验模型（ZW_RUBY_OVERHANG_MODEL=1）：默认关。默认开时 family 净回退
+    // （spaces-002 5.18% vs 基线 4.37%）——margin 途径与 run advance/paint overlay 坐标
+    // 契约存在未解交互（frag_base_x 未含 margin、taffy inline 盒宽拉伸），需先厘清
+    // inline advance 管线再翻默认。
+    if std::env::var("ZW_RUBY_OVERHANG_MODEL").as_deref() != Ok("1") || annot_text.is_empty() {
+        return (0.0, 0.0);
+    }
+    let rt_w: f32 = annot_text
+        .chars()
+        .map(|c| crate::inline::estimate_char_width(c, font_size * 0.5, is_ahem))
+        .sum::<f32>()
+        + letter_spacing * annot_text.chars().count() as f32;
+    // 紧邻字符（DOM 兄弟文本的贴ruby端字符；折叠后取非空白端）。
+    let prev_ch = adjacent_text_char(doc, ruby_id, false);
+    let next_ch = adjacent_text_char(doc, ruby_id, true);
+    let hang_l = ruby_hang_extent(prev_ch, font_size, false);
+    let hang_r = ruby_hang_extent(next_ch, font_size, true);
+    let extra = (rt_w - hang_l - hang_r - base_w).max(0.0);
+    let half = (extra / 2.0).floor();
+    (half, extra - half)
+}
+
+/// ruby 紧邻方向的贴端字符（prev=false 取前兄弟末字符、true 取后兄弟首字符）；
+/// 跨元素兄弟递归取端字符（折叠后空白跳过）。
+/// ruby 紧邻方向的贴端字符（prev=false 取前兄弟末字符、true 取后兄弟首字符）；
+/// 跨元素兄弟递归取端字符（折叠后空白跳过）。
+fn adjacent_text_char(doc: &Document, ruby_id: NodeId, forward: bool) -> Option<char> {
+    let mut cur = if forward { doc.next_sibling(ruby_id) } else { doc.previous_sibling(ruby_id) };
+    while let Some(sid) = cur {
+        if let Some(node) = doc.get(sid) {
+            match &node.kind {
+                zero_dom::NodeKind::Text(t) => {
+                    let collapsed = crate::inline::collapse_whitespace(&t.content);
+                    let ch = if forward {
+                        collapsed.chars().find(|c| !c.is_whitespace())
+                    } else {
+                        collapsed.chars().rev().find(|c| !c.is_whitespace())
+                    };
+                    if ch.is_some() {
+                        return ch;
+                    }
+                }
+                zero_dom::NodeKind::Element(e) => {
+                    // display:none 兄弟（rt/rp 不该出现在这里，防御性跳过）与 br 停止。
+                    if e.local_name().eq_ignore_ascii_case("br") {
+                        return None;
+                    }
+                    let text = doc.text_content(sid).unwrap_or_default();
+                    let collapsed = crate::inline::collapse_whitespace(&text);
+                    let ch = if forward {
+                        collapsed.chars().find(|c| !c.is_whitespace())
+                    } else {
+                        collapsed.chars().rev().find(|c| !c.is_whitespace())
+                    };
+                    if ch.is_some() {
+                        return ch;
+                    }
+                }
+                _ => {}
+            }
+        }
+        cur = if forward { doc.next_sibling(sid) } else { doc.previous_sibling(sid) };
+    }
+    None
+}
+
+/// ruby 的 rt 注释文本（全部 rt 拼接；多段 ruby 近似为单段——家族案均单段，
+/// 多段逐段 box 模型独立子问题）。空白剔除与 paint 侧 ruby_annotation_segments 同口径。
+/// ruby 的 rt 注释文本（全部 rt 拼接；多段 ruby 近似为单段——家族案均单段，
+/// 多段逐段 box 模型独立子问题）。空白剔除与 paint 侧 ruby_annotation_segments 同口径。
+pub(crate) fn ruby_annotation_width_text(doc: &Document, ruby_id: NodeId) -> String {
+    let mut out = String::new();
+    for child_id in doc.child_nodes(ruby_id) {
+        if let Some(node) = doc.get(child_id)
+            && let NodeKind::Element(elem) = &node.kind
+            && elem.local_name().eq_ignore_ascii_case("rt")
+        {
+            let annot: String = doc
+                .text_content(child_id)
+                .unwrap_or_default()
+                .chars()
+                .filter(|c| !c.is_whitespace())
+                .collect();
+            out.push_str(&annot);
+        }
+    }
+    out
+}
+
+/// 朝向 ruby 的空白半侧额度（em 由 font_size 表达）。
+/// 朝向 ruby 的空白半侧额度（em 由 font_size 表达）。
+fn ruby_hang_extent(ch: Option<char>, font_size: f32, leading: bool) -> f32 {
+    let Some(c) = ch else { return 0.0 };
+    // 全角空白（U+3000 ideographic space）：两侧全额 1em。
+    if c == '\u{3000}' {
+        return font_size;
+    }
+    // 收窄标点（字形居左、右半空白）——作 ruby 前邻字符时右半空白朝向 ruby。
+    const CLOSING: [char; 20] = [
+        '）', '】', '〉', '》', '」', '』', '〕', '〗', '〛', '｝', '｠', '］', '、', '。', '！', '？', '：', '；', '＂', '＇',
+    ];
+    // 开括标点（字形居右、左半空白）——作 ruby 后邻字符时左半空白朝向 ruby。
+    const OPENING: [char; 13] = [
+        '（', '【', '〈', '《', '「', '『', '〔', '〖', '〘', '〚', '｛', '｟', '［',
+    ];
+    if !leading && CLOSING.contains(&c) {
+        return font_size * 0.5;
+    }
+    if leading && OPENING.contains(&c) {
+        return font_size * 0.5;
+    }
+    0.0
 }

@@ -927,6 +927,28 @@ fn dom_inline_text_walk(
                     .get(&child)
                     .map(|s| s.white_space.clone())
                     .unwrap_or_else(|| white_space.clone());
+                // R4357：ruby 注释行宽参与——max-content 侧与 collect run margin 同模型，
+                // extra（box − base）计入段宽（两侧不同步则 intrinsic 与行宽分裂，
+                // ruby-overhang-spaces-002 的 width:max-content 容器即此形态）。
+                if e.local_name().eq_ignore_ascii_case("ruby") {
+                    let annot = crate::inline::ruby_annotation_width_text(doc, child);
+                    if !annot.is_empty() && std::env::var("ZW_RUBY_OVERHANG_MODEL").as_deref() == Ok("1") {
+                        let rs = styles.get(&child);
+                        let (ruby_fs, _) = crate::inline::resolve_font_metrics(rs);
+                        let ruby_ahem = rs.is_some_and(|s| {
+                            s.font_family
+                                .iter()
+                                .any(|f| f.trim_matches('"').eq_ignore_ascii_case("Ahem"))
+                        });
+                        let start_w = *segments.last().expect("segments 非空");
+                        dom_inline_text_walk(child, doc, styles, &child_ws, segments, state);
+                        let base_w = *segments.last().expect("segments 非空") - start_w;
+                        let (pl, pr) =
+                            crate::inline::ruby_overhang_pads(doc, child, base_w, &annot, ruby_fs, 0.0, ruby_ahem);
+                        *segments.last_mut().expect("segments 非空") += pl + pr;
+                        continue;
+                    }
+                }
                 dom_inline_text_walk(child, doc, styles, &child_ws, segments, state);
             }
             _ => {}
