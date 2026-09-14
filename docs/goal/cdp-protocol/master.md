@@ -2,34 +2,38 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-14（S451：静默监测轮——pull 零新提交（tip =
-ceb92bef4 即 S450 提交本身），无代码变更绿步维持 33。双层锚点零
-漂移：自有面按 S351 修正后四枚归因口径精确一致（对 765429dda 硬
-核对 4 files +137/-17 = Makefile 1/1 + apps/browser/README.md 1/0 +
-headless/mod.rs 25/0 + headless/session.rs 110/16，零新增漂移）；
-全树排除本流 docs 后 tracked 代码树对 18d462de6 维持 **8 files
-+132/-21** 基线与 S450 逐项一致零新增（layout-engine 六文件 +
-engine/paint/painter/text.rs 13/0 + rendering-compat.md 20/0 全维持，
-代码树自 S412 双腿后零变更，S442 门活跑 19:01 直接覆盖当前树证据
-新鲜）。门结论引用 S442 期限轮活跑（门 PASS 33 绿 deterministic
-双跑 YES EXIT=0 ZERO_DRIFT=YES 19:01 落盘 + ZW_IPC_VALIDATE
-校验器在位静默 + make test 19,288P/0F EXIT=0 组合态延续），**引用
-计数 8/10→9/10——按 S299/S309/S350/S405/S421/S441 先例 9/10 次轮
-即期限轮，S452 = 期限轮活跑**（树不变则门单腿口径免 make test 腿；
-活跑前核对负载窗与端口竞争）。crates/ 观察面 raw 计数实测维持
-**18**，子帧能力关键词 grep（contentDocument/content_document/
-subframe/sub_frame）非测试代码零命中实测复核，实质判定不变
-frames.click+evaluate 维持挂起。机器卫生复核：零 zombie、
-9222/45029/34293/19222 端口族全空闲、9333 长驻实例维持缺席、零
-竞争 cdp-e2e 腿、零孤儿 hunt 遗留；**负载 5.54 负载窗——兄弟流
-编译测试负载亚型**（ZeroWeb-2 clone 渲染流 make test 双腿在窗
-elapsed ~35s + zero_engine 测试进程，cwd 实证归因 ZeroWeb-2，非
-端口竞争面非本流腿）——观察记账，本轮静默零活跑需求。解冻条件
-实质判定不变：① 观察面 raw 18 维持，子帧三件套
-iframe.contentDocument null 现状不变，frames.click+evaluate 维持
-挂起；② 本流控制面 docs/goal/cdp-protocol/ 零外来提交，DC-2
-口径无新拍板记录。goal 自有面零新缺口、无扩展面（S40-S450 重审
-结论延续））
+**最后更新**: 2026-09-14（S452：期限轮活跑——引用计数 9/10 到期触发
+cdp-e2e 门活跑刷新（pull 零新提交，tip = 747412699 即 S451 提交本身，
+无代码变更绿步维持 33）。双层锚点零漂移：自有面四枚归因口径精确一致
+（对 765429dda 硬核对 numstat 4 files +137/-17 = Makefile 1/1 +
+apps/browser/README.md 1/0 + headless/mod.rs 25/0 +
+headless/session.rs 110/16）；全树排除本流 docs 后 tracked 代码树对
+18d462de6 维持 **8 files +132/-21** 基线逐项一致零新增（layout-engine
+六文件 + engine/paint/painter/text.rs 13/0 + rendering-compat.md 20/0
+全维持，代码树自 S412 双腿后零变更，本轮门活跑 19:18 直接覆盖当前树
+证据新鲜）。**门前置复核 PASS**（9222/45029/34293/19222 端口族全
+空闲、零竞争 cdp-e2e 腿、零 zombie、零孤儿 hunt；负载窗——兄弟流
+ZeroWeb-2 编译测试双腿在窗 /proc cwd 实证归因，按「编译测试负载窗内
+优先执行服务 #0 复现监测」口径照跑）。**活跑结果（单次调用首调即
+收口 ~30s，setsid 脱离启动 + test-guard 包裹；GATE_EXIT 标记轮询）**：
+**PASS 33 绿 deterministic 双跑 YES EXIT=0 ZERO_DRIFT=YES**（机械
+diff：green 33 vs expected-green 基线 33 对称差 none、regressions 空；
+run1/run2 明细逐项一致 + frames.click+evaluate 预期失败项一致），
+steps-report/determinism-report 19:18:40 同轮新鲜落盘（deterministic
+true、runs 2）；ZW_IPC_VALIDATE 校验器在位静默（malformed frame
+buffer / ipc reader terminated 零命中，捕获网零侵扰，负载窗内 #0 复现
+监测零命中）；唯一红 = 预期挂账 frames.click+evaluate 同形态，首调红
+形态连续第卅一次零再现（S168 形态累计两例非聚集记账维持）；
+**第廿二个负载下样本**（兄弟流编译测试负载亚型，负载 2.00 净收，
+编译缓存全热 0.18s Finished）；zero-engine dead_code warning 既有形态
+维持。**引用计数归零（本轮活跑新鲜落盘），下次活跑至迟 S462**（恢复
++10 口径）。crates/ 观察面 raw 计数实测维持 **18**，子帧能力关键词
+grep 非测试代码零命中实测复核，frames.click+evaluate 维持挂起。
+机器卫生复核（门后）：零 zombie、端口族全释放、门腿零遗留进程。
+解冻条件实质判定不变：① 观察面 raw 18 维持，子帧三件套
+iframe.contentDocument null 现状不变，frames.click+evaluate 维持挂起；
+② 本流控制面 docs/goal/cdp-protocol/ 零外来提交，DC-2 口径无新拍板
+记录。goal 自有面零新缺口、无扩展面（S40-S451 重审结论延续））
 
 ---
 
@@ -60,6 +64,52 @@ iframe.contentDocument null 现状不变，frames.click+evaluate 维持
 
 ## 已完成切片
 
+- **S452（2026-09-14）活跑期限轮 — 引用计数 9/10 到期触发 cdp-e2e 门
+  活跑刷新（pull 零新提交，tip = 747412699 即 S451 提交本身；无代码
+  变更，绿步维持 33）**：双层锚点复核通过：自有面锚点按 S351 修正后
+  四枚归因口径精确一致（对 765429dda 硬核对 numstat 4 files +137/-17
+  = Makefile 1/1 + apps/browser/README.md 1/0 + headless/mod.rs
+  25/0 + headless/session.rs 110/16，零新增漂移）；全树锚点复核
+  （排除本流 docs 后 tracked 代码树对 18d462de6 维持 8 files
+  +132/-21 基线 = layout-engine 六文件 R4335/R4336/R4338/R4339 +
+  engine/paint/painter/text.rs 13/0 + rendering-compat.md 20/0 兄弟
+  流控制面，与 S442-S451 逐项一致零新增——代码树自 S412 双腿后零
+  变更，本轮门活跑直接覆盖当前树证据新鲜）。crates/ 观察面 raw 计数
+  实测维持 **18**（git log 默认口径 8fb39cd46..HEAD），子帧能力
+  关键词 grep（contentDocument/content_document/subframe/sub_frame）
+  非测试代码零命中实测复核，实质判定不变 frames.click+evaluate 维持
+  挂起。树不变按门单腿口径免 make test 腿（S336/S422/S442 先例，
+  S412 组合态 19,288P/0F 结论对当前树延续可引用）。**门前置复核
+  PASS**（9222/45029/34293/19222 端口族全空闲、零竞争 cdp-e2e 腿、
+  零 zombie、零孤儿 hunt；**负载窗——兄弟流编译测试负载亚型**：
+  ZeroWeb-2 clone 渲染流 make test 双腿 + clippy 腿在窗，/proc cwd
+  实证归因 ZeroWeb-2，非端口竞争面非本流腿，按「编译测试负载窗内
+  优先执行服务 #0 复现监测」口径照跑）。**活跑动因**：引用计数 9/10
+  到期期限轮（S299/S309/S351/S396/S406/S422/S432/S442 先例：9/10
+  次轮即期限轮）。**活跑结果（单次调用首调即收口 ~30s，setsid 脱离
+  启动 + test-guard 包裹 600s 墙钟；完成检测 GATE_EXIT 标记轮询，
+  零 pgrep 自匹配零假超时）**：**PASS 33 绿 deterministic 双跑 YES
+  EXIT=0 ZERO_DRIFT=YES**（机械 diff：green 33 vs expected-green
+  基线 33 对称差 none、regressions 空、expected_green 镜像一致；
+  run1/run2 各 33 ok + frames.click+evaluate 预期失败项一致），
+  steps-report/determinism-report 19:18:40 同轮新鲜落盘
+  （deterministic true、runs 2）；ZW_IPC_VALIDATE 校验器在位静默
+  （malformed frame buffer / ipc reader terminated 零命中，捕获网
+  零侵扰——负载窗内 #0 复现监测零命中）；唯一红 = 预期挂账
+  frames.click+evaluate 同形态（flow exited 1 含期望失败步骤），首调
+  红形态连续第卅一次零再现（S168 形态累计两例非聚集记账维持）；
+  **第廿二个负载下样本**（兄弟流编译测试负载亚型，负载 2.00 净收，
+  编译缓存全热 0.18s Finished）；zero-engine dead_code warning 既有
+  形态维持（match_media_to_json bins-only 条件 dead，S300/S317 四点
+  归因，clippy all-targets 零命中门零回归）。机器卫生复核（门后）：
+  零 zombie、9222/45029/34293/19222 全释放、门腿零遗留进程、负载
+  2.00。**引用计数归零（本轮活跑新鲜落盘），下次活跑至迟 S462**
+  （恢复 +10 口径）。双解冻条件实质判定不变：① 观察面 raw 18 维持，
+  均非渲染流子帧文档加载 + JS realm 能力（子帧三件套
+  iframe.contentDocument null 现状不变），frames.click+evaluate
+  维持挂起；② 本流控制面 docs/goal/cdp-protocol/ 零外来提交（pull
+  零新提交），DC-2 口径无新拍板记录。goal 自有面零新缺口、无扩展
+  面（S40-S451 重审结论延续）。
 - **S451（2026-09-14）静默监测轮 — 同 tip 复核（pull 零新提交，tip =
   ceb92bef4 即 S450 提交本身；无代码变更，绿步维持 33）**：双层锚点
   口径复核通过：自有面锚点按 S351 修正后四枚归因口径精确一致（对
@@ -8375,7 +8425,14 @@ iframe.contentDocument null 现状不变，frames.click+evaluate 维持
   对称差 none、regressions 空），14:21 落盘，ZW_IPC_VALIDATE 在位
   静默；make test 一调收口 19,288P/0F（R4336 组合态首次全量覆盖，
   计数持平零新增用例）；首调红形态连续第廿三次零再现（累计两例
-  非聚集维持）
+  非聚集维持）。**S452 注记**：期限轮活跑（引用计数 9/10 到期，
+  S299/S309/S351/S396/S406/S422/S432/S442 先例，树不变门单腿口径
+  免 make test）——首调即 PASS 33 绿 deterministic 双跑 YES EXIT=0，
+  绿步集机械 diff 基线零漂移（ZERO_DRIFT=YES，expected_green 33
+  对称差 none、regressions 空），19:18 落盘；负载窗亚型（兄弟流
+  ZeroWeb-2 编译测试双腿在窗，第廿二个负载下样本，非端口竞争面）；
+  ZW_IPC_VALIDATE 在位静默（负载窗内 #0 复现监测零命中）；首调红
+  形态连续第卅一次零再现（累计两例非聚集维持）
 - CDP 现状：`Page.navigate` / `Runtime.evaluate` / `Target.getTargets` 3 命令 +
   `/json/version` + `/json` 发现（headless.rs L782-796/L571/L1159）——历史基线，现行面
   见缺口清单 P3/P4 与切片记录
