@@ -203,6 +203,23 @@ impl super::Painter {
 
         // R4353：本元素脚本化滚动偏移 → local 层背景相位。
         let layer_scroll = box_node.node_id.and_then(|id| self.scroll_offsets.get(&id)).copied();
+        // R4354：local 层 painting area = union(静态 clip, 扩展段) ∩ padding 盒窗口
+        //（scrolled contents clip——image-1 oracle 虚线缝隙全白实证：border-box clip 亦被
+        // 裁进 padding 盒；语义详见 paint_background 同注）。仅 local 层消费。
+        let local_paint_area = self
+            .local_scrolled_paint_extension(box_node, abs_x, abs_y, clip_x, clip_y, clip_w, clip_h)
+            .map(|(lx, ly, lw, lh)| {
+                let ux = clip_x.min(lx);
+                let uy = clip_y.min(ly);
+                let ur = (clip_x + clip_w).max(lx + lw);
+                let ub = (clip_y + clip_h).max(ly + lh);
+                let (px0, py0) = (abs_x + box_node.border_left, abs_y + box_node.border_top);
+                let px1 = px0 + (box_node.width - box_node.border_left - box_node.border_right).max(0.0);
+                let py1 = py0 + (box_node.height - box_node.border_top - box_node.border_bottom).max(0.0);
+                let cx = ux.max(px0);
+                let cy = uy.max(py0);
+                (cx, cy, (ur.min(px1) - cx).max(0.0), (ub.min(py1) - cy).max(0.0))
+            });
         self.paint_bg_image_in_origin(
             origin_x,
             origin_y,
@@ -220,6 +237,7 @@ impl super::Painter {
             // R4350：无 fixed 层时全层元素盒（含 Fixed 的批次由 fixed 入口处理）。
             None,
             layer_scroll,
+            local_paint_area,
         );
     }
 
@@ -294,7 +312,73 @@ impl super::Painter {
             false,
             Some((clip_x, clip_y, clip_w, clip_h)),
             None,
+            None,
         );
+    }
+
+    /// R4354（css-backgrounds-3 §3.1 attachment:local；chromium 自建 probe 像素实证）：
+    /// local 层 painting area 扩展段——背景（color 与 image 同规）附着于内容随滚动移动，
+    /// 滚动后内容外露区必须有背景覆盖。chromium 实测绘制区域 = union(静态 clip 盒,
+    /// (clip 盒平移 −scroll 后向溢出方向延长至可滚动内容范围) ∩ padding 盒窗口)。
+    /// 未滚动但有可滚动溢出时同样扩展（probe1 v2：offset 全 0 仍延长至窗口底）。
+    /// 本函数返回「扩展段」（平移+延长后 ∩ padding 盒），调用方与静态 clip 取并集——
+    /// clip=border-box 时并集恒为原盒（scroll 只改相位不改绘制区，image-4 形态）。
+    /// 门：滚动容器（hidden/scroll，与子内容平移门同口径）+ 实际存在可滚动溢出。
+    pub(crate) fn local_scrolled_paint_extension(
+        &self,
+        box_node: &LayoutBox,
+        abs_x: f32,
+        abs_y: f32,
+        clip_x: f32,
+        clip_y: f32,
+        clip_w: f32,
+        clip_h: f32,
+    ) -> Option<(f32, f32, f32, f32)> {
+        if !(matches!(
+            box_node.overflow_x,
+            zero_layout_engine::OverflowClip::Hidden | zero_layout_engine::OverflowClip::Scroll
+        ) || matches!(
+            box_node.overflow_y,
+            zero_layout_engine::OverflowClip::Hidden | zero_layout_engine::OverflowClip::Scroll
+        )) {
+            return None;
+        }
+        // 可滚动内容范围（content 相对口径，与子内容平移钳位同源的 extent）。
+        // 门 = 滚动容器（contents clip 恒在，与是否实际溢出无关——local-hidden：空内容
+        // overflow:hidden 盒的 local 背景同样被裁进 padding 盒，ref 页 lightblue 内缩
+        // 10px 圆角 30 = outer 40 − border 10 即此规则）。
+        let child_ex_w = box_node.children.iter().map(|c| c.x + c.width).fold(0.0f32, f32::max);
+        let child_ex_h = box_node.children.iter().map(|c| c.y + c.height).fold(0.0f32, f32::max);
+        let scroll_w = (child_ex_w - box_node.border_left - box_node.padding_left).max(box_node.content_width);
+        let scroll_h = (child_ex_h - box_node.border_top - box_node.padding_top).max(box_node.content_height);
+        // 脚本化滚动偏移（有则平移；钳位口径与 paint_node 子内容平移一致——超设不过冲）。
+        let (sx, sy) = box_node
+            .node_id
+            .and_then(|id| self.scroll_offsets.get(&id))
+            .copied()
+            .unwrap_or((0.0, 0.0));
+        let client_w = (box_node.width - box_node.border_left - box_node.border_right).max(0.0);
+        let client_h = (box_node.height - box_node.border_top - box_node.border_bottom).max(0.0);
+        let max_sx = (child_ex_w - client_w).max(0.0);
+        let max_sy = (child_ex_h - client_h).max(0.0);
+        let (sx, sy) = (sx.min(max_sx), sy.min(max_sy));
+        // padding 盒窗口（扩展段不得越出元素可视区；border 区由静态 clip 盒负责）。
+        let win_x = abs_x + box_node.border_left;
+        let win_y = abs_y + box_node.border_top;
+        // clip 盒平移 −scroll 并沿滚动方向延长至滚动内容范围（延长量按 content 盒差）。
+        let ext_x = clip_x - sx;
+        let ext_y = clip_y - sy;
+        let ext_w = clip_w + sx + (scroll_w - box_node.content_width).max(0.0);
+        let ext_h = clip_h + sy + (scroll_h - box_node.content_height).max(0.0);
+        let ix = ext_x.max(win_x);
+        let iy = ext_y.max(win_y);
+        let ir = (ext_x + ext_w).min(win_x + client_w);
+        let ib = (ext_y + ext_h).min(win_y + client_h);
+        if ir > ix && ib > iy {
+            Some((ix, iy, ir - ix, ib - iy))
+        } else {
+            None
+        }
     }
 
     /// 在指定矩形内绘制 background-image（含多图层逆序、size/position/repeat 解析、
@@ -330,6 +414,9 @@ impl super::Painter {
         // R4353：本元素脚本化滚动偏移（scrollTop/scrollLeft）——local 层背景随内容
         // 滚动：origin 平移 -offset（local = 附着于内容，滚动后相位上移）。
         layer_scroll: Option<(f32, f32)>,
+        // R4354：local 层 painting area 扩展段（local_scrolled_paint_extension 产物）——
+        // 仅 local 层消费（与静态 clip 并集）；scroll/fixed 层恒静态盒。
+        local_paint_area: Option<(f32, f32, f32, f32)>,
     ) {
         use zero_render_foundation::image_cache::ImageKey;
         use zero_render_foundation::primitive::ImagePrimitive;
@@ -389,6 +476,17 @@ impl super::Painter {
                 }
             } else {
                 (origin_x, origin_y, origin_w, origin_h)
+            };
+            // R4354：local 层 painting area（union(静态 clip, 扩展段) ∩ padding 盒，
+            // chromium probe/oracle 实证语义见 paint_background 同注）；scroll/fixed 层
+            // 维持静态 clip。
+            let (clip_x, clip_y, clip_w, clip_h) = if is_local {
+                match local_paint_area {
+                    Some(area) if area.2 > 0.0 && area.3 > 0.0 => area,
+                    _ => (clip_x, clip_y, clip_w, clip_h),
+                }
+            } else {
+                (clip_x, clip_y, clip_w, clip_h)
             };
 
             // R4351：固有维回退逐层解析——img_w/img_h 的 positioning-area 回退必须用

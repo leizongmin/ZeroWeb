@@ -416,22 +416,37 @@ fn test_bg_shorthand_url_internal_slash_not_separator() {
 }
 
 #[test]
-fn test_bg_shorthand_box_dropped_but_size_parsed() {
-    // R2481：`<box>` 累积设 origin/clip 经 A/B 证 net −3（attachment-local false-pass unmasks，
-    // host-layer JS-scroll deferred），故**保持 drop**（origin=padding-box、clip=border-box 默认）；
-    // 但 `/size` 仍正确解析（box token 不干扰 size 分类）。
+fn test_bg_shorthand_box_sets_origin_clip_and_size_parsed() {
+    // R4354：`<box>` 累积设 origin/clip 恢复（R2479/R2481 drop 的两个前提——attachment-local
+    // 双侧同 drop 自洽 false-pass、脚本化滚动缺位——均已被 R4353 滚动状态管线化解；
+    // driving：attachment-local-clipping-image-3）。CSS Backgrounds §3.10/§3.11：单 box 值
+    // = origin+clip 同值、双值 = 首 origin 次 clip。`/size` 解析不受 box token 干扰。
     assert_eq!(
         bg_longhand("url(x) content-box / contain", "background-size"),
         Some("contain".to_string())
     );
-    // box 被 drop → origin/clip 保持默认（非 content-box）
+    // 单 box 值 → origin 与 clip 同为 content-box
     assert_eq!(
         bg_longhand("url(x) content-box / contain", "background-origin"),
-        Some("padding-box".to_string())
+        Some("content-box".to_string())
     );
     assert_eq!(
         bg_longhand("url(x) content-box / contain", "background-clip"),
-        Some("border-box".to_string())
+        Some("content-box".to_string())
+    );
+    // 双 box 值 → 首 origin 次 clip
+    assert_eq!(
+        bg_longhand("url(x) content-box padding-box", "background-origin"),
+        Some("content-box".to_string())
+    );
+    assert_eq!(
+        bg_longhand("url(x) content-box padding-box", "background-clip"),
+        Some("padding-box".to_string())
+    );
+    // 第三个 box 值非法 → 整条放弃
+    assert_eq!(
+        bg_longhand("url(x) content-box padding-box border-box", "background-origin"),
+        None
     );
 }
 

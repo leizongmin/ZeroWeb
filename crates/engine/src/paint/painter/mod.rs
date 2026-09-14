@@ -1074,6 +1074,7 @@ impl Painter {
                     true,
                     Some((anchor_x, anchor_y, origin_w.max(0.0), origin_h.max(0.0))),
                     None,
+                    None,
                 );
             }
         }
@@ -3321,7 +3322,7 @@ impl Painter {
                     .any(|a| matches!(a, zero_style_system::BackgroundAttachmentComputedValue::Fixed))
             {
                 self.paint_bg_image_in_origin(
-                    rect_x, content_y, *w, h, rect_x, content_y, *w, h, style, 0.0, 0.0, None, false, None, None,
+                    rect_x, content_y, *w, h, rect_x, content_y, *w, h, style, 0.0, 0.0, None, false, None, None, None,
                 );
             }
         }
@@ -3363,7 +3364,7 @@ impl Painter {
         } else {
             (0.0, 0.0)
         };
-        let (clip_x, mut clip_y, clip_w, mut clip_h) = match style.background_clip {
+        let (mut clip_x, mut clip_y, mut clip_w, mut clip_h) = match style.background_clip {
             // R3908：border-area 的背景**色**按 border-box 绘制（环带裁剪只作用于背景
             // 图像——chromium bg-color 仍铺满 painting area，border 绘其上遮盖 padding 区）。
             BackgroundClipComputedValue::BorderBox | BackgroundClipComputedValue::BorderArea => (
@@ -3421,6 +3422,75 @@ impl Painter {
             }
         }
 
+        // R4354（css-backgrounds-3 §3.1 attachment:local；chromium probe/oracle 像素实证）：
+        // local 背景（color 与 image 同规）属滚动容器的 scrolled contents——绘制区域被
+        // contents clip（padding 盒；rounded 盒取内圆角曲线）裁剪，且滚动外露区须有背景
+        //（扩展段 union）。probe/oracle 实证三形态：
+        // ① image-1 oracle 虚线 border 缝隙全白——clip=border-box 亦被裁到 padding 盒；
+        // ② color-4 oracle 圆 d=280 = rounded padding box（内半径 = outer − border）——
+        //    clip=border-box 的 local 背景圆收进 padding 曲线；
+        // ③ color-6/chromium = content 圆 d=200（content-edge 半径 = outer − border − padding），
+        //    滚动扩展段不出 rounded 曲线（circle ⊆ 静态盒，扩展部分全被曲线裁掉）。
+        // 门 = 任意图层 local + 滚动容器 + 实际可滚动溢出（helper）；scroll attachment 的
+        // 背景恒静态盒（probe2 v1 vs v2 对照）。无圆角时 = union(clip, 扩展段) ∩ padding 盒。
+        let mut radii_override: Option<super::helpers::BorderRadiusSpec> = None;
+        if style
+            .background_attachment
+            .iter()
+            .any(|a| matches!(a, BackgroundAttachmentComputedValue::Local))
+            && let Some((lx, ly, lw, lh)) =
+                self.local_scrolled_paint_extension(box_node, abs_x, abs_y, clip_x, clip_y, clip_w, clip_h)
+        {
+            if radii.is_zero() {
+                // 无圆角：union(静态 clip, 扩展段) 再整体裁进 padding 盒窗口。
+                let ux = clip_x.min(lx);
+                let uy = clip_y.min(ly);
+                let ur = (clip_x + clip_w).max(lx + lw);
+                let ub = (clip_y + clip_h).max(ly + lh);
+                let (px0, py0) = (abs_x + box_node.border_left, abs_y + box_node.border_top);
+                let px1 = px0 + (box_node.width - box_node.border_left - box_node.border_right).max(0.0);
+                let py1 = py0 + (box_node.height - box_node.border_top - box_node.border_bottom).max(0.0);
+                clip_x = ux.max(px0);
+                clip_y = uy.max(py0);
+                clip_w = (ur.min(px1) - clip_x).max(0.0);
+                clip_h = (ub.min(py1) - clip_y).max(0.0);
+            } else {
+                // 有圆角：rounded contents-clip 曲线内的绘制——扩展段不出曲线，矩形取
+                // padding/content 盒，半径按越过的边宽递减（css-backgrounds-3 §5.5）。
+                let inner = |r: f32, cut: f32| (r - cut).max(0.0);
+                let clamp_half = |r: f32, w: f32, h: f32| r.min((w.min(h) / 2.0).max(0.0));
+                match style.background_clip {
+                    BackgroundClipComputedValue::ContentBox | BackgroundClipComputedValue::Text => {
+                        let w = box_node.content_width;
+                        let h = box_node.content_height;
+                        let cut = box_node.border_left.max(box_node.border_top)
+                            + box_node.padding_left.max(box_node.padding_top);
+                        radii_override = Some(super::helpers::BorderRadiusSpec {
+                            top_left: clamp_half(inner(radii.top_left, cut), w, h),
+                            top_right: clamp_half(inner(radii.top_right, cut), w, h),
+                            bottom_right: clamp_half(inner(radii.bottom_right, cut), w, h),
+                            bottom_left: clamp_half(inner(radii.bottom_left, cut), w, h),
+                        });
+                    }
+                    _ => {
+                        let w = (box_node.width - box_node.border_left - box_node.border_right).max(0.0);
+                        let h = (box_node.height - box_node.border_top - box_node.border_bottom).max(0.0);
+                        let cut = box_node.border_left.max(box_node.border_top);
+                        radii_override = Some(super::helpers::BorderRadiusSpec {
+                            top_left: clamp_half(inner(radii.top_left, cut), w, h),
+                            top_right: clamp_half(inner(radii.top_right, cut), w, h),
+                            bottom_right: clamp_half(inner(radii.bottom_right, cut), w, h),
+                            bottom_left: clamp_half(inner(radii.bottom_left, cut), w, h),
+                        });
+                        clip_x = abs_x + box_node.border_left;
+                        clip_y = abs_y + box_node.border_top;
+                        clip_w = w;
+                        clip_h = h;
+                    }
+                }
+            }
+        }
+
         // R1359：nested-spanner wrapper 按列区域涂 bg（排除列间隙 + 末列末段 section）。
         // PIL 实证（004a）：wrapper bg 整宽涂覆盖 16px gap（应露 article green）+ 末列 section c
         // （block3 overflow 应露 article green）。改为逐列 fill：col0..col_{n-2} 全高，末列 capped_h−c。
@@ -3452,13 +3522,15 @@ impl Painter {
         } else {
             // 圆角矩形：通过 add_rounded_rect 记录 DrawOp（draw_order 是默认渲染路径，
             // 直接 push 到 rounded_rects 会绕过 DrawOp 记录导致圆角背景被丢弃）。
+            // R4354：local + 滚动容器时取 contents-clip 内半径（radii_override）。
+            let r = radii_override.unwrap_or(radii);
             self.primitives.add_rounded_rect(RoundedRectPrimitive {
                 rect: Rect::new(clip_x, clip_y, clip_w, clip_h),
                 color: resolve_color_current(&style.background_color, &style.color),
-                top_left_radius: radii.top_left,
-                top_right_radius: radii.top_right,
-                bottom_right_radius: radii.bottom_right,
-                bottom_left_radius: radii.bottom_left,
+                top_left_radius: r.top_left,
+                top_right_radius: r.top_right,
+                bottom_right_radius: r.bottom_right,
+                bottom_left_radius: r.bottom_left,
             });
         }
     }

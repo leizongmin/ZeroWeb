@@ -534,10 +534,16 @@ fn classify_bg_token(token: &str, slots: &mut BgSlots, size_side: bool) -> bool 
         slots.attachment = token.to_string();
         return true;
     }
-    // box 值（origin/clip）— R2479/R2481 A/B 证「累积 box 设 origin/clip」net −3（attachment-local
-    // false-pass unmasks，host-layer JS-scroll deferred），故**保持 drop**（origin=padding-box、
-    // clip=border-box 默认）。slots.boxes 留空 → vec 取默认。box parse 单修无 reftest ROI（paint 层）。
+    // box 值（origin/clip）— R4354：恢复累积（CSS Backgrounds §3.10/§3.11：1 值 = origin+clip
+    // 同值、2 值 = 首个 origin 次个 clip；第 3 值非法）。R2479/R2481 曾 A/B net −3 而 drop——
+    // 两个前提（attachment-local 页面靠双侧同 drop 自洽 false-pass、脚本化滚动缺位）均已被
+    // R4353 滚动状态管线化解：scrollTop/scrollLeft 回流 + local 层背景相位使 local 族双页
+    // 真收敛（driving：attachment-local-clipping-image-3，背景 clip=content-box 环带）。
     if matches!(token, "border-box" | "padding-box" | "content-box") {
+        if slots.boxes.len() >= 2 {
+            return false;
+        }
+        slots.boxes.push(token.to_string());
         return true;
     }
     // size 关键字 contain/cover → background-size（改前误落 bg_color）
