@@ -2,32 +2,31 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-14（S502：静默监测轮——同 tip 复核
-（pull 零新提交，tip = e2cc71402 即 S501 提交本身，无代码
+**最后更新**: 2026-09-14（S503：静默监测轮——同 tip 复核
+（pull 零新提交，tip = 31c6d4142 即 S502 提交本身，无代码
 变更绿步维持 33）。双层锚点零漂移——自有面对 765429dda 维持
 **4 files +137/-17** 精确一致；全树排除本流 docs 后对
-18d462de6 维持 **12 files +366/-27** 与 S501 逐项一致零新增
-（R4339/R4345/R4346 渲染流提交 16:18-20:47 落地面 = 锚点
-diff 组成部分，S482 双腿 20:52 已覆盖，祖先关系与触达文件
-逐项核对自洽），代码树自 S482 双腿后零变更，S499 门活跑 21:34
-直接覆盖当前树证据新鲜。crates/ 观察面 raw 计数实测维持
-**20**（git log 默认口径 8fb39cd46..HEAD 限 crates/ 面），
-子帧能力关键词 grep 非测试代码零命中实测复核，实质判定不变
+18d462de6 维持 **12 files +366/-27** 与 S502 逐项一致零新增，
+代码树自 S482 双腿后零变更，S499 门活跑 21:34 直接覆盖当前树
+证据新鲜。crates/ 观察面 raw 计数实测维持 **20**
+（git log 默认口径 8fb39cd46..HEAD 限 crates/ 面），子帧能力
+关键词 grep 非测试代码零命中实测复核，实质判定不变
 frames.click+evaluate 维持挂起。树不变按门单腿口径免
 make test 腿（S336 先例），门结论引用 S499 期限轮活跑（PASS
 33 绿 deterministic 双跑 YES EXIT=0 ZERO_DRIFT=YES 21:34
 落盘 + ZW_IPC_VALIDATE=1 在位静默 + clippy all-targets 零
-命中），**引用计数 3/10→4/10，下次活跑至迟 S509**（树变化
+命中），**引用计数 4/10→5/10，下次活跑至迟 S509**（树变化
 或 9/10 到期即提前触发）。机器卫生复核：零 zombie、
 9222/45029/34293/19222 端口族全空闲、零竞争本流腿、控制面
-零外来提交；负载 4.18 负载窗（归因兄弟流 ZeroWeb-2
-zero_integration_tests 测试腿 171% CPU 在窗，S496/S466 兄弟
-流腿先例族非端口竞争面）——本轮静默零活跑需求负载窗记账。
-解冻条件实质判定不变：① 观察面 raw 20 维持，子帧三件套
+零外来提交；负载 2.42→3.66 负载窗（归因兄弟流 ZeroWeb-2
+测试双腿在窗——zero_webview 测试二进制 384% CPU 短命出窗后
+zero_browser 测试腿 66% 接续，S466/S496/S502 兄弟流测试腿
+先例族非端口竞争面）——本轮静默零活跑需求负载窗记账。解冻
+条件实质判定不变：① 观察面 raw 20 维持，子帧三件套
 iframe.contentDocument null 现状不变，frames.click+evaluate
 维持挂起；② 本流控制面 docs/goal/cdp-protocol/ 零外来提交，
 DC-2 口径无新拍板记录。goal 自有面零新缺口、无扩展面
-（S40-S501 重审结论延续））
+（S40-S502 重审结论延续））
 
 ---
 
@@ -58,6 +57,39 @@ DC-2 口径无新拍板记录。goal 自有面零新缺口、无扩展面
 
 ## 已完成切片
 
+- **S503（2026-09-14）静默监测轮 — 同 tip 复核（pull 零新提交，
+  tip = 31c6d4142 即 S502 提交本身；无代码变更，绿步维持 33）**：
+  双层锚点复核通过：自有面锚点四枚归因口径精确一致（对 765429dda
+  硬核对 numstat 4 files +137/-17 = Makefile 1/1 +
+  apps/browser/README.md 1/0 + headless/mod.rs 25/0 +
+  headless/session.rs 110/16，零新增漂移）；全树锚点复核（排除
+  本流 docs 后 tracked 代码树对 18d462de6 维持 **12 files
+  +366/-27** 与 S502 逐项一致零新增——engine/paint text.rs
+  13/0 + text_list.rs 8/2 + layout-engine 八文件 +
+  reftest_scripts.rs 204/0 + rendering-compat.md 30/0 全维持，
+  代码树自 S482 双腿后零变更，S499 门活跑 21:34 直接覆盖当前树
+  证据新鲜）。crates/ 观察面 raw 计数实测维持 **20**
+  （git log 默认口径 8fb39cd46..HEAD 限 crates/ 面），子帧能力
+  关键词 grep（contentDocument/content_document/subframe/
+  sub_frame）非测试代码零命中实测复核（命中面全为 engine
+  js_dom_bridge_tests 测试代码维持既有形态），实质判定不变
+  frames.click+evaluate 维持挂起。树不变按门单腿口径免
+  make test 腿（S336 先例）。门结论引用 S499 期限轮活跑（门首调
+  PASS 33 绿 deterministic 双跑 YES EXIT=0 ZERO_DRIFT=YES 21:34
+  落盘 + ZW_IPC_VALIDATE 校验器在位静默 + clippy all-targets 零
+  命中 guarded-clippy EXIT=0），**引用计数 4/10→5/10，下次活跑
+  至迟 S509**（树变化或 9/10 到期即提前触发）。机器卫生复核：
+  零 zombie、9222/45029/34293/19222 端口族全空闲、零竞争本流腿、
+  控制面零外来提交（最近 15 提交全为本流 S488-S502）；负载
+  2.42→3.66 负载窗（归因兄弟流 ZeroWeb-2 测试双腿在窗——
+  zero_webview 测试二进制 384% CPU 短命出窗后 zero_browser
+  测试腿 66% 接续，exe 路径 ZeroWeb-2 clone 实证，S466/S496/
+  S502 兄弟流测试腿先例族非端口竞争面）——本轮静默零活跑需求
+  负载窗记账。解冻条件实质判定不变：① 观察面 raw 20 维持，
+  子帧三件套 iframe.contentDocument null 现状不变，
+  frames.click+evaluate 维持挂起；② 本流控制面
+  docs/goal/cdp-protocol/ 零外来提交，DC-2 口径无新拍板记录。
+  goal 自有面零新缺口、无扩展面（S40-S502 重审结论延续）。
 - **S502（2026-09-14）静默监测轮 — 同 tip 复核（pull 零新提交，
   tip = e2cc71402 即 S501 提交本身；无代码变更，绿步维持 33）**：
   双层锚点复核通过：自有面锚点四枚归因口径精确一致（对 765429dda
