@@ -1555,10 +1555,16 @@ fn backfill_run_in_boxes(
     // R3992：并入目标是空块（无文本/inline 子）时，taffy 测得容器高 0——run-in 内容
     // 成为该块首行后块高须包含行盒（CSS2.1 §9.2.4），否则后继块上移与 run-in 行重叠
     //（run-in-block-between-001）。仅增高不缩减（taffy 对非空容器的高度已含行盒）。
+    // R4333：**仅空容器**（taffy 高 ≈0）回写——非空容器的 taffy 高度已按绝对边
+    // 取整含行盒（R4332 起 measure IFC 亦含前缀行），按未取整 ifc_bottom 回写会把
+    // 小数高度重新引入流内（run-in-clear-001：合并块 27+18.624 = 45.62 → 无 AA
+    // 边框画 3 行 vs ref 2 行 → 1.08% 恒等族根因）。空容器回写维持原值（未取整，
+    // run-in-block-between-001 的基线自洽形态——A/B 实证取整反致 1.08→1.73%）。
     let ifc_bottom = inline_ctx.lines.last().map(|l| l.y + l.height).unwrap_or(0.0);
-    if ifc_bottom > root.height + 0.5 {
-        root.content_height = ifc_bottom;
-        root.height = ifc_bottom;
+    if root.height <= 0.5 && ifc_bottom > root.height {
+        let rounded = ifc_bottom.round();
+        root.content_height = rounded;
+        root.height = rounded;
     }
     root.children.push(LayoutBox {
         node_id: Some(run_in_id),
