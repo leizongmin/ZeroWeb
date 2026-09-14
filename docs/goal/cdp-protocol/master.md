@@ -2,19 +2,22 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-14（S340：树变化刷新轮——渲染流 R4332 入树触发
-（2cbc3539c，paint painter text.rs + layout-engine inline 族 +431/-55，
-S336 门 10:27 在其入树前运行未经覆盖，按 S314/S317 先例双腿刷新）；
-**gate6 避让兑现**：S339 记账的 ZeroWeb-3-wt-baidu gate6 验收链在窗，
-本轮等待 gate6.done 10:38:30 落地后按 S198 口径前置复核（端口族全空闲
-零竞争腿零 zombie）通过后活跑（负载 5.83 负载窗口照跑记账第十六个负载
-下样本）；腿一 cdp-e2e 门首调即收口 PASS 33 绿 deterministic 双跑 YES
-EXIT=0 ZERO_DRIFT=YES 10:40 落盘 + ZW_IPC_VALIDATE 在位静默，腿二
-make test 一调收口 19,287P/0F（R4332 组合态首次全量覆盖，零新增用例）；
-引用计数重计 1/10 下次活跑至迟 S350；解冻条件①不变（crates/ 现十枚均
-非子帧文档加载+JS realm 能力，frames.click+evaluate 维持挂起）②不变
-（docs/goal 自 S339 零非本流提交）；首调红形态连续第十五次零再现；
-两腿全收尾零 zombie 零遗留端口）
+**最后更新**: 2026-09-14（S341：树变化刷新轮——zero-web 流 edc625e5d 入树触发
+（script-sandbox P3 slice-2 unhandled promise rejections + apps/renderer
+js_worker 12 行 + script-sandbox 61 行，S340 门 10:40 在其入树前运行未经
+覆盖，按 S245/S258/S289/S290/S314/S317/S340 先例双腿刷新）；前置复核通过
+（端口族 9222/45029/34293/19222 全空闲、零竞争 cdp-e2e 腿、零 zombie、
+9333 长驻实例已消失；同窗并行流 reftest-upstream 腿 + workspace
+cargo test/clippy 腿均非端口竞争面，负载 8.66→9.97 负载窗口照跑记账第
+十七个负载下样本）；腿一 cdp-e2e 门首调即收口 PASS 33 绿 deterministic
+双跑 YES EXIT=0 ZERO_DRIFT=YES 11:26 落盘 + ZW_IPC_VALIDATE 在位静默，
+腿二 make test 一调收口 19,288P/0F 67 组 ok（edc625e5d 组合态首次全量
+覆盖，+1 跨流计数漂移零失败）；引用计数重计 1/10 下次活跑至迟 S351；
+解冻条件①不变（crates/ 现十一枚 +edc625e5d 均**非**渲染流子帧文档加载
++JS realm 能力——script-sandbox rejection 收集属 pageerror 面，子帧三
+件套 iframe.contentDocument null 现状不变，frames.click+evaluate 维持
+挂起）②不变（docs/goal 自 S340 零非本流提交）；首调红形态连续第十六次
+零再现；两腿全收尾端口族释放零 zombie 零遗留进程）
 
 ---
 
@@ -45,6 +48,41 @@ make test 一调收口 19,287P/0F（R4332 组合态首次全量覆盖，零新�
 
 ## 已完成切片
 
+- **S341（2026-09-14）树变化刷新轮 — zero-web 流 edc625e5d 入树触发（S245/
+  S258/S289/S290/S314/S317/S340 先例：门 + make test 双腿刷新，绿步维持 33）**：
+  pull 带入三提交：22002af69（merge PR#32 siteopt/baidu-round3）、3e41f1fae
+  （merge PR#31 dependabot setup-java-6，.github 面不入门禁图）、edc625e5d
+  （zero-web 流 script-sandbox P3 slice-2：V8 isolate 挂 promise-reject 回调
+  收集 unhandled rejections，thread_local 队列 + `take_uncaught_reports`
+  trait 汇点经 js_worker Execute 排空汇入 ScriptError 管线 →
+  `Runtime.exceptionThrown`，4 文件 +72/-5）——S340 门 10:40 在其入树前
+  运行未经覆盖，tracked 代码树相对 S340 活跑基树变化，按树变化刷新轮口径
+  双腿刷新。**归因**：edc625e5d 属 zero-web 流自有工作面（script-sandbox
+  + apps/renderer js_worker，run-rules §9 零重叠），本流 docs-only 提交链
+  rebase 干净零冲突无碰头信号；其事件面（exceptionThrown 扩展）为 CDP 邻接
+  面但门 e2e 步骤无该断言，expected-green 基线零变化门禁绿态不受影响。
+  **前置复核（S198 口径）**：9222/45029/34293/19222 端口族全空闲、零竞争
+  cdp-e2e 腿、零 zombie；ZeroWeb-3 clone 9333 zero-browser 长驻实例已消失
+  （S340 时点在案，本轮实测不在）；同窗并行流活动已归因（reftest-upstream
+  腿 + workspace cargo test/clippy 腿，均非端口竞争面）；负载 8.66→9.97
+  负载窗口按口径照跑记账（第十七个负载下样本）。**腿一 cdp-e2e 门：首调即
+  收口** PASS 33 绿、deterministic 双跑 YES、EXIT=0、ZERO_DRIFT=YES（机械
+  diff：expected_green 33 对称差 none、regressions 空）11:26 落盘；
+  ZW_IPC_VALIDATE 校验器在位静默（malformed frame buffer / ipc reader
+  terminated 零命中，捕获网零侵扰）；唯一红=预期挂账 frames.click+evaluate
+  同形态（flow exited 1 含期望失败步骤），首调红形态连续第十六次零再现
+  （S168 形态累计两例非聚集记账维持）；zero-engine dead_code warning 既有
+  形态维持（match_media_to_json bins-only 条件 dead，S300 四点归因）。
+  **腿二 make test：一调收口 19,288P/0F**（test-guard 包裹三腿全跑零
+  FAILED、67 组 result 全 ok；edc625e5d 组合态首次全量覆盖；19,287→19,288
+  +1 = 跨流测试计数漂移零失败——script-sandbox slice-2 自带用例计入）。
+  **引用计数重计 1/10，下次活跑至迟 S351**。双解冻条件实质判定不变：
+  ① crates/ 自 8fb39cd46 现十一枚（+edc625e5d），均非渲染流子帧文档加载 +
+  JS realm 能力（script-sandbox rejection 收集属 pageerror 事件级面，
+  子帧三件套 iframe.contentDocument null 现状不变），frames.click+evaluate
+  维持挂起；② docs/goal 自 S340 零非本流提交，DC-2 口径无新拍板记录。
+  机器卫生：两腿全收尾——端口族全释放、零 zombie、零遗留进程。goal 自有面
+  零新缺口、无扩展面（S40-S340 重审结论延续）。
 - **S340（2026-09-14）树变化刷新轮 — 渲染流 R4332 入树触发（S245/S258/S289/
   S290/S314/S317 先例：门 + make test 双腿刷新，绿步维持 33）**：
   pull 带入渲染流代码提交 2cbc3539c（R4332 多行 inline 边框 slice 语义 +
@@ -5180,8 +5218,10 @@ make test 一调收口 19,287P/0F（R4332 组合态首次全量覆盖，零新�
    S317 已执行（R4331 入树触发的树变化刷新轮，门 + make test 双刷新，
    make test 两调收口 run1 webview timer 单例瞬态红归因 flake 家族）；
    S327 已执行（期限轮净窗首调即收口）；S336 已执行（期限轮负载窗口内
-   首调即收口，ZW_IPC_VALIDATE 静默，第十五个负载下样本），
-   下次活跑至迟 S346；
+   首调即收口，ZW_IPC_VALIDATE 静默，第十五个负载下样本）；S340 已执行
+   （R4332 入树触发的树变化刷新轮，gate6 避让兑现后双腿刷新）；S341 已
+   执行（edc625e5d 入树触发的树变化刷新轮，负载窗内双腿刷新，
+   S245/S258/S289/S290/S314/S317/S340 先例），下次活跑至迟 S351；
    若活跑时逢并行流负载窗口则
    优先窗口内执行，负载下样本对 #0 更有价值（负载窗口口径含并行流 browser 进程型与
    编译测试负载型两亚型，净窗亚型 S208 起并行记录；**端口竞争亚型口径 S198 新增**：
@@ -5244,6 +5284,9 @@ make test 一调收口 19,287P/0F（R4332 组合态首次全量覆盖，零新�
   integration.rs:454 setInterval 首拍单例瞬态红——「无轮询首断言」flake
   家族新成员候选第 4 例跨流记档，run2 全绿含该测试两腿 ok；19,281→19,287
   +6 = R4331 新增用例，R4331 组合态首次全量覆盖）；
+  **S341 时点 19,288P/0F EXIT=0**（一调收口零失败，edc625e5d 组合态首次
+  全量覆盖——19,287→19,288 +1 跨流计数漂移 = script-sandbox P3 slice-2
+  自带用例，zero-web 流 rejection 收集入树后全量绿态零回归）；
   禁止裸跑 cargo test，经 test-guard。注：make test
   的 workspace 腿 exclude zero-renderer——renderer lib 单测不在全量门内，跨流红灯
   （form fixture×2）经显式 `-p zero-renderer --lib` 跟踪）
@@ -5308,7 +5351,14 @@ make test 一调收口 19,287P/0F（R4332 组合态首次全量覆盖，零新�
   基线零漂移（ZERO_DRIFT=YES，expected_green 33 对称差 none、regressions
   空、双 run 明细逐项一致），07:56 落盘；make test 一调收口 19,281P/0F
   （R4330-F 组合态首次全量覆盖，零新增用例计数持平）；首调红形态连续第十
-  一次零再现（累计两例非聚集维持）
+  一次零再现（累计两例非聚集维持）。**S341 注记**：zero-web 流 edc625e5d
+  入树触发的树变化刷新轮（S245/S258/S289/S290/S314/S317/S340 先例，门 +
+  make test 双刷新）——门负载窗内首调即 PASS 33 绿 deterministic 双跑
+  YES EXIT=0，绿步集机械 diff 基线零漂移（ZERO_DRIFT=YES，expected_green
+  33 对称差 none、regressions 空），11:26 落盘，ZW_IPC_VALIDATE 在位
+  静默；make test 一调收口 19,288P/0F（edc625e5d 组合态首次全量覆盖，
+  +1 跨流计数漂移零失败）；第十七个负载下样本，首调红形态连续第十六次
+  零再现（累计两例非聚集维持）
 - CDP 现状：`Page.navigate` / `Runtime.evaluate` / `Target.getTargets` 3 命令 +
   `/json/version` + `/json` 发现（headless.rs L782-796/L571/L1159）——历史基线，现行面
   见缺口清单 P3/P4 与切片记录
