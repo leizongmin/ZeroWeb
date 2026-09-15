@@ -2,35 +2,36 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-15（S693：静默监测引用轮——同 tip 复核 pull 零新提交
-tip=9d08a3b7d 即 S692 提交本身；S692 门腿复跑后零代码变更（9d08a3b7d..HEAD
+**最后更新**: 2026-09-15（S694：静默监测引用轮——同 tip 复核 pull 零新提交
+tip=db264d234 即 S693 提交本身；S693 门腿复跑后零代码变更（db264d234..HEAD
 排除本流 docs diff 空——HEAD 即该提交），树不变口径 = 门单腿引用 S690
-双腿活跑 + S691-S693 门腿复跑（免 make test 腿，S336 先例），引用计数
-2/10→3/10（S690 双腿新周期锚点；下轮 S694=4/10，8/10 或 9/10 次轮即期限
+双腿活跑 + S691-S694 门腿复跑（免 make test 腿，S336 先例），引用计数
+3/10→4/10（S690 双腿新周期锚点；下轮 S695=5/10，8/10 或 9/10 次轮即期限
 轮口径至迟 S699/S700 期限轮活跑，树代码变化提前触发双腿刷新）。**门腿**
-make cdp-e2e ZW_IPC_VALIDATE=1 在位 13:31:17 启动 13:31:49 落盘首调即
+make cdp-e2e ZW_IPC_VALIDATE=1 在位 13:34:17 启动 13:34:50 落盘首调即
 **PASS 33 绿 deterministic 双跑 YES EXIT=0**，expected_green 33 对称差
 none（绿步集与基线逐项一致零漂移）、regressions 空、无 fatal，校验器在位
-静默（编译全缓存零重编 Finished 0.16s）；首调红形态**连续第一百零七次
+静默（编译全缓存零重编 Finished 0.15s）；首调红形态**连续第一百零八次
 零再现**（累计两例非聚集维持）。**dead_code warning 形态本轮为 replay
 相位**（编译全缓存下重放在位，js_dom_bridge.rs:3420）——两相位口径维持
-（S683/S684/S685/S690 全新编译在位 + S686-S689/S691-S693 缓存 replay
+（S683/S684/S685/S690 全新编译在位 + S686-S689/S691-S694 缓存 replay
 在位均确定性），clippy -p zero-engine --lib -- -D warnings 维持 PASS
 （S683 实测）DC-4 不可退让面零暴露，归因 engine crate zero-web 流域，
-本流不碰 engine 记账不修。本轮属净窗活跑（负载 0.28 top 零编译测试腿仅
-agent 进程——净窗亚型 S208 起并行记录，与负载下样本证据互补服务 #0）。
-双层锚点零漂移——自有面对 765429dda 维持 **4 files +137/-17** 精确一致；
-全树排除本流 docs 对 18d462de6 维持 **65 files +4861/-296** 与上轮逐项
-一致零新增（R4373 新基线）；crates/ 观察面 raw 维持 **42**（R4373 基线）。
-子帧关键词非测试代码零命中维持；crates/ 口径 7 测试文件既有形态维持，
-实质判定不变 frames.click+evaluate 维持挂起。机器卫生：启动前零 zombie、
-端口族全 free、净窗 0.28；门腿后零 zombie、端口族零残留、零树污染
-（tracked clean，out/ 报告为忽略产物），负载 0.61 净窗维持。控制面零
-外来提交（本轮 pull 零新提交）。解冻条件实质判定不变：① 观察面 raw 42
-维持（R4373 基线），子帧三件套 iframe.contentDocument null 现状不变，
-frames.click+evaluate 维持挂起；② 本流控制面 docs/goal/cdp-protocol/
-零外来提交，DC-2 口径无新拍板记录。goal 自有面零新缺口、无扩展面
-（S40-S692 重审结论延续））
+本流不碰 engine 记账不修。本轮属净窗活跑（负载 0.58 top 零编译测试腿仅
+agent 进程——净窗亚型 S208 起并行记录，与负载下样本证据互补服务 #0；
+门后窗尾观测负载 2.04 = 瞬态 rustc zero_wpt_runner 腿 319% CPU 已退出，
+cwd/out-dir 取证未及按 S689 记档口径记账，回落净窗）。双层锚点零漂移——
+自有面对 765429dda 维持 **4 files +137/-17** 精确一致；全树排除本流 docs
+对 18d462de6 维持 **65 files +4861/-296** 与上轮逐项一致零新增（R4373 新
+基线）；crates/ 观察面 raw 维持 **42**（R4373 基线）。子帧关键词非测试
+代码零命中维持；crates/ 口径 7 测试文件既有形态维持，实质判定不变
+frames.click+evaluate 维持挂起。机器卫生：启动前零 zombie、端口族全
+free、净窗 0.58；门腿后零 zombie、端口族零残留、零树污染（tracked
+clean，out/ 报告为忽略产物）。控制面零外来提交（本轮 pull 零新提交）。
+解冻条件实质判定不变：① 观察面 raw 42 维持（R4373 基线），子帧三件套
+iframe.contentDocument null 现状不变，frames.click+evaluate 维持挂起；
+② 本流控制面 docs/goal/cdp-protocol/ 零外来提交，DC-2 口径无新拍板
+记录。goal 自有面零新缺口、无扩展面（S40-S693 重审结论延续））
 
 ---
 
