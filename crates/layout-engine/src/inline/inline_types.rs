@@ -127,6 +127,10 @@ pub struct RunWhiteSpace {
     pub break_at_newline: bool,
     /// no_wrap：禁止软换行（pre/nowrap）。
     pub no_wrap: bool,
+    /// R4370（css-text-3 §5 phase-2）：pre-wrap 行尾保留空格 **hang**——空格词触线时
+    /// 不换行、原位放置（advance 越出行盒）。仅 PreWrap（break-spaces 的空格为真实
+    /// advance 逐格换行；pre 为 no_wrap 不可达；normal 不 preserve）。
+    pub hang_trailing: bool,
 }
 
 impl TextRun {

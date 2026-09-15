@@ -430,7 +430,18 @@ impl InlineFormattingContext {
                         }
 
                         // 检查当前行是否放得下（含前导 word-spacing gap）
-                        if !run_no_wrap
+                        // R4370（css-text-3 §5 phase-2）：pre-wrap 行尾保留空格 hang——
+                        // 空格词触线时不换行、原位放置（advance 越出行盒 = hang，
+                        // 背景/墨迹由 paint 正常绘制；trailing-ideographic-space-* 族：
+                        // chromium 实证空间序列停留首行悬挂，其余内容换行）。空格词 =
+                        // 纯空白片段（ASCII " " 独立片段 / U+3000 per-char 分词片段）。
+                        // 仅 PreWrap（break-spaces 空格为真实 advance 逐格换行，语义不同）。
+                        let hang_trailing_space = run_preserve
+                            && !content_word.is_empty()
+                            && content_word.chars().all(char::is_whitespace)
+                            && run.ws_override.is_some_and(|ws| ws.hang_trailing);
+                        if !hang_trailing_space
+                            && !run_no_wrap
                             && current_x + lead_gap + word_width > left_offset + avail_width
                             && !current_line.runs.is_empty()
                         {

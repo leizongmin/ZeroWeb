@@ -569,6 +569,7 @@ fn r3786_newline_after_block_break_no_ghost_line() {
             preserve: true,
             break_at_newline: true,
             no_wrap: false,
+            hang_trailing: false,
         }),
         ..TextRun::simple("Line 3".to_string(), NodeId::default(), 16.0, 32.0, VA::Baseline)
     };
@@ -578,6 +579,7 @@ fn r3786_newline_after_block_break_no_ghost_line() {
             preserve: true,
             break_at_newline: true,
             no_wrap: false,
+            hang_trailing: false,
         }),
         ..TextRun::simple("\nLine 4".to_string(), NodeId::default(), 16.0, 32.0, VA::Baseline)
     };
@@ -611,6 +613,7 @@ fn r3786_consecutive_newlines_still_produce_empty_line() {
             preserve: true,
             break_at_newline: true,
             no_wrap: false,
+            hang_trailing: false,
         }),
         ..TextRun::simple("A\n\nB".to_string(), NodeId::default(), 16.0, 32.0, VA::Baseline)
     };
@@ -630,6 +633,7 @@ fn r3786_newline_after_block_break_in_flow_block() {
             preserve: true,
             break_at_newline: true,
             no_wrap: false,
+            hang_trailing: false,
         }),
         ..TextRun::simple("Line 3".to_string(), NodeId::default(), 16.0, 32.0, VA::Baseline)
     };
@@ -638,6 +642,7 @@ fn r3786_newline_after_block_break_in_flow_block() {
             preserve: true,
             break_at_newline: true,
             no_wrap: false,
+            hang_trailing: false,
         }),
         ..TextRun::simple("\nLine 4".to_string(), NodeId::default(), 16.0, 32.0, VA::Baseline)
     };
