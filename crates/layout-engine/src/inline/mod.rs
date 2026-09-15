@@ -566,14 +566,12 @@ impl InlineFormattingContext {
     fn font_id_for_style(&self, style: Option<&zero_style_system::ComputedStyle>) -> Option<u32> {
         let s = style?;
         if s.font_family.is_empty() {
-            // ZRG-2026-08-15 修复 A：默认样式（空 family）回退 generic sans-serif
-            // 或 id 0——与 paint 的 resolve_font_id 空 family 回退语义一致，否则
-            // 这些 run 的 font_id=None 永远走 estimate（hmtx 布局不生效）。
-            return self
-                .font_resolver
-                .as_ref()
-                .and_then(|resolver| resolver.get("sans-serif").copied())
-                .or(Some(0));
+            // ZRG-2026-08-15 修复 A：默认样式（空 family）回退 generic 或 id 0——与
+            // paint 的 resolve_font_id 空 family 回退语义一致，否则这些 run 的
+            // font_id=None 永远走 estimate（hmtx 布局不生效）。R4365：initial 语义
+            // = serif 优先（chromium initial = Times New Roman → fontconfig
+            // Liberation Serif），与 font_resolution / text_shaping 两处臂同改。
+            return self.initial_font_id();
         }
         s.font_family
             .iter()
@@ -630,14 +628,25 @@ impl InlineFormattingContext {
             .or_else(|| style.and_then(|style| self.font_id_for_style(Some(style))))
             .or_else(|| override_node.and_then(|node| self.font_id_overrides.get(&node).copied()))
             // ZRG-2026-08-15 修复 A：paint Path B（空 styles + 无覆盖）的 run 回退
-            // generic sans-serif / id 0——与 paint 的 resolve_font_id 空 family 语义
-            // 一致，使这些 run 走 hmtx 布局而非 estimate。
-            .or_else(|| {
-                self.font_resolver
-                    .as_ref()
-                    .and_then(|resolver| resolver.get("sans-serif").copied())
-                    .or(Some(0))
+            // generic / id 0——与 paint 的 resolve_font_id 空 family 语义一致，使这些
+            // run 走 hmtx 布局而非 estimate。R4365：initial 语义 serif 优先。
+            .or_else(|| self.initial_font_id())
+    }
+
+    /// R4365：空 font-family（UA initial）的字体解析——serif 优先（chromium initial
+    /// = Times New Roman → fontconfig Liberation Serif），与 layout font_resolution /
+    /// paint text_shaping 两处空 family 臂同语义。serif 缺 face 回落 sans-serif，再
+    /// 无 resolver 时 id 0。
+    fn initial_font_id(&self) -> Option<u32> {
+        self.font_resolver
+            .as_ref()
+            .and_then(|resolver| {
+                resolver
+                    .get("serif")
+                    .copied()
+                    .or_else(|| resolver.get("sans-serif").copied())
             })
+            .or(Some(0))
     }
 
     /// 测量整段文本的 advance 宽度（C3 advance plumbing，R2 dormant）。
