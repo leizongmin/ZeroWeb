@@ -2,28 +2,28 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-15（S672：静默监测轮——同 tip 复核
-（pull 零新提交，tip = 7a1f1160e 即 S671 提交本身；S671
-门腿复跑后零代码变更（7a1f1160e..HEAD 排除本流 docs
-diff 空——Rust/Cargo/Makefile 面实测复核），树不变口径 =
-门单腿引用 S669 双腿活跑 + S670-S671 门腿复跑（免
+**最后更新**: 2026-09-15（S673：静默监测轮——同 tip 复核
+（pull 零新提交，tip = 49cba7966 即 S672 提交本身；S672
+门腿复跑后零代码变更（49cba7966..HEAD 排除本流 docs
+diff 空实测复核——HEAD 即该提交），树不变口径 =
+门单腿引用 S669 双腿活跑 + S670-S672 门腿复跑（免
 make test 腿，S336 先例）。门腿 make cdp-e2e
-ZW_IPC_VALIDATE=1 在位 10:38:45 启动 10:39:18 落盘首调即
+ZW_IPC_VALIDATE=1 在位 10:43:27 启动 10:43:59 落盘首调即
 **PASS 33 绿 deterministic 双跑 YES EXIT=0**，
 expected_green 33 对称差 none、regressions 空、run_details
 双 run 实质逐项一致（差异仅 run 序号字段）、无 fatal，
-校验器在位静默（编译全缓存零重编、dead_code warning 未
-现——warning 既有形态维持记档），绿步集机械 diff 基线
-零漂移，首调红形态连续第八十六次零再现（累计两例非
-聚集维持）。本轮属兄弟流编译测试负载窗内活跑（**第三
-十二个负载下样本**，兄弟 clone ZeroWeb-2 的
-zero_integration_tests 腿 222% CPU（10:38:12 新 hash 二
-进制起——兄弟流重编译后新测试腿）经 test-guard 包裹，
-cwd/exe 实测 = ZeroWeb-2 target/debug，双 clone 隔离零
-污染本树，非端口竞争面 9222 族全 free，负载窗口内执行
-——负载下样本对 #0 更有价值 S218/S228/S238/S662-S671
-先例）。双层锚点零漂移——自有面对 765429dda 维持
-**4 files +137/-17** 精确一致（Makefile 1/1 +
+校验器在位静默（dead_code warning match_media_to_json
+现一次——bins-only 条件 dead 既有形态维持记档），绿步集
+机械 diff 基线零漂移，首调红形态连续第八十七次零再现
+（累计两例非聚集维持）。本轮属兄弟流编译 bench 负载窗内
+活跑（**第三十三个负载下样本**，兄弟 clone ZeroWeb-2 的
+rustc zero_layout_engine release bench 编译腿 521% CPU +
+cargo bench -p zero-layout-engine --bench layout_bench
+在窗，cmdline 取证 = ZeroWeb-2 target/release，双 clone
+隔离零污染本树，非端口竞争面 9222 族全 free，负载窗口内
+执行——负载下样本对 #0 更有价值 S218/S228/S238/
+S662-S672 先例）。双层锚点零漂移——自有面对 765429dda
+维持 **4 files +137/-17** 精确一致（Makefile 1/1 +
 apps/browser/README.md 1/0 + headless/mod.rs 25/0 +
 headless/session.rs 110/16 口径）；全树排除本流 docs 对
 18d462de6 维持 R4367 新基线 **62 files +4646/-261** 与
@@ -31,20 +31,20 @@ headless/session.rs 110/16 口径）；全树排除本流 docs 对
 （R4367 新基线），子帧能力关键词 grep 非测试代码零命中
 维持（dom/engine/webview 三处 tests 路径 7 文件既有
 形态），实质判定不变 frames.click+evaluate 维持挂起。
-**引用计数 2/10→3/10**（S669 新周期锚点；下轮 S673 =
-4/10，8/10 次轮即期限轮口径下至迟 S678 期限轮活跑，
+**引用计数 3/10→4/10**（S669 新周期锚点；下轮 S674 =
+5/10，8/10 次轮即期限轮口径下至迟 S678 期限轮活跑，
 树代码变化提前触发双腿刷新）。机器卫生：启动前零
-zombie、端口族全空闲、负载 1.75 兄弟流编译测试负载窗
-延续；门腿后零 zombie、端口族零残留、零树污染（out/
-报告为忽略产物），负载 2.74 兄弟流腿延续窗，窗尾残留
-2 进程实测 = 兄弟 clone ZeroWeb-2 test-guard 包装腿
-（cwd 取证，0% CPU）。控制面零外来提交（本轮 pull 零
-新提交）。解冻条件实质判定不变：① 观察面 raw 38 维持
-（R4367 新基线），子帧三件套 iframe.contentDocument
-null 现状不变，frames.click+evaluate 维持挂起；② 本流
-控制面 docs/goal/cdp-protocol/ 零外来提交，DC-2 口径
-无新拍板记录。goal 自有面零新缺口、无扩展面（S40-S671
-重审结论延续））
+zombie、端口族全空闲、负载 3.90 兄弟流编译 bench 负载窗；
+门腿后零 zombie、端口族零残留、零树污染（out/
+报告为忽略产物），负载 0.42 窗尾回落（兄弟流腿收窗），
+窗尾残留 1 进程实测 = 外部项目 /tmp/zeroseed-*
+cliDaemon（cmdline 取证，0% CPU，非本门产物）。控制面
+零外来提交（本轮 pull 零新提交）。解冻条件实质判定
+不变：① 观察面 raw 38 维持（R4367 新基线），子帧三件套
+iframe.contentDocument null 现状不变，frames.click+
+evaluate 维持挂起；② 本流控制面 docs/goal/cdp-protocol/
+零外来提交，DC-2 口径无新拍板记录。goal 自有面零新缺口、
+无扩展面（S40-S672 重审结论延续））
 
 ---
 
