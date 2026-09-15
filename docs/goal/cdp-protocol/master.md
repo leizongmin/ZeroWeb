@@ -2,68 +2,69 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-16（S875：**树变化刷新轮**（R4392 paint
-侧代码腿 644b01876 入树触发的双腿刷新，S874 轮后插记预
-告兑现，S245→S829→S835→S843→S848→S856→S865 先例链；引
-用计数以 S875 双腿为新周期锚点 0/10）——同 tip 复核
-pull 零新提交（已经是最新的）tip=e95f286e7 即 S874 轮后
-插记提交本身，R4392 在树核验 IN_TREE。**门腿** make
-cdp-e2e ZW_IPC_VALIDATE=1 在位 07:08:42 启动 07:09:21 落
-盘（wall ~39s）**首调即 PASS 33 绿 deterministic 双跑
-YES EXIT=0**（R4392 组合态首次门覆盖，单次触发即收口
+**最后更新**: 2026-09-16（S876：**树变化刷新轮**（R4393
+layout 腿代码提交 f63495759 入树触发的双腿刷新，S875 轮
+后插记预告兑现，S245→S829→S835→S843→S848→S856→S865 先
+例链；引用计数以 S876 双腿为新周期锚点 0/10）——同 tip
+复核 pull 零新提交（已经是最新的）tip=26e49bbe4 即 S875
+轮后插记提交本身，R4393 在树核验 IN_TREE。**门腿** make
+cdp-e2e ZW_IPC_VALIDATE=1 在位 07:23:20 启动 07:23:56 落
+盘（wall ~36s）**首调即 PASS 33 绿 deterministic 双跑
+YES EXIT=0**（R4393 组合态首次门覆盖，单次触发即收口
 S790 先例勿二调），expected_green 33 对称差 none
 （green==expected 逐项一致零漂移）、regressions 空、无
 fatal，run_details 双 run ok 集各 33 逐项一致（差异仅 run
 序号字段；failed 面=frames.click+evaluate 既有挂起项维
 持），ZW_IPC_VALIDATE 捕获网在位静默（#0 复现监测零命
 中，capture jsonl 面最近落盘为往轮 09-12/09-13 时点本轮
-零写入）；首调红形态**连续第二百八十九次零再现**（累计两
-例非聚集维持）。**make test 腿 07:09:38 启动 ~07:19 前收
+零写入）；首调红形态**连续第二百九十次零再现**（累计两
+例非聚集维持）。**make test 腿 07:24:04 启动 ~07:33 前收
 口一调即 19,307P/0F EXIT=0 干净退出**（67 组 result 全
-ok 与 S874/S865 参考基线**精确同值**；R4392 组合态首次
-全量覆盖，零新增单测计数持平；test profile 重编译链
-engine→page-runtime→webview→renderer 实测在窗）。
-**dead_code warning 本轮为编译相位**（R4392 触发 dev 链
-重编译 3 Compiling 行——zero-engine→page-runtime→
-zero-browser，Finished 6.55s；真编译重发非 replay，
+ok 与参考基线**精确同值**；R4393 组合态首次全量覆盖，
+零新增单测计数持平；test profile 重编译链 layout-engine
+→engine→page-runtime→webview→renderer 实测在窗）。
+**dead_code warning 本轮为编译相位**（R4393 触发 dev 链
+重编译 4 Compiling 行——zero-layout-engine→zero-engine→
+zero-page-runtime→zero-browser；真编译重发非 replay，
 warning 面实测仍为 js_dom_bridge.rs:3420
 match_media_to_json 单例——**跨相位一致**两相位口径维
-持），clippy -p zero-engine --lib -- -D warnings 维持
-PASS（本轮真编译相位 re-Checking 1.14s 实测零 warning
-EXIT=0）DC-4 不可退让面零暴露，R4392 paint 腿零新增
-warning 面归渲染流域，本流不碰 engine 记账不修。本轮属
-**低负载净窗亚型活跑**（窗前 2.27 窗后 2.94 零>50% CPU
-sibling 重腿在窗，非端口竞争面 9222/45029/34293/19222
-四端口族窗前窗后全程 free 门后零本门残留）；机器卫生照
-S842 瞬时 zombie 先例口径 zombie 双复测（t0 与 t+5s 口
-径）均零。三层锚点零漂移——自有面对 765429dda 维持
-**4 files +137/-17** 精确一致（Makefile 1/1 +
-apps/browser/README.md 1/0 + headless/mod.rs 25/0 +
-headless/session.rs 110/16 口径本轮逐文件实测复核 零新
-增漂移）；全树排除本流 docs 对 18d462de6 维持 **92 files
-+9713/-621**（R4392 折入后新面值，S874 轮后插记记账与
-本轮实测一致）；crates/ 观察面 raw 维持 **56**（git log
-8fb39cd46..HEAD -- crates/ 口径，+1=R4392 代码腿）。子帧
-关键词非测试代码零命中维持（8 文件全数测试路径既有形态
-维持），实质判定不变 frames.click+evaluate 维持挂起。机
-器卫生：启停零 zombie（双复测口径）、端口族全 free、零
-树污染（tracked clean，out/ 报告为忽略产物；未跟踪探针
-21 个既有形态 S27 口径不入门禁图，门后零本门残留）。控
-制面零外来提交（本轮执行段 pull 零新提交）。解冻条件实
-质判定不变：① 观察面 crates/ raw 56 维持（R4392 折入后
-新基线顺延），子帧三件套 iframe.contentDocument null 现
-状不变，frames.click+evaluate 维持挂起；② 本流控制面
+持，R4393 layout 腿零新增 warning 面），clippy -p
+zero-engine --lib -- -D warnings 维持 PASS（本轮真编译
+相位 re-Checking 1.52s 实测零 warning EXIT=0）DC-4 不可
+退让面零暴露，R4393 归渲染流域 layout 腿本流不碰 engine
+记账不修。本轮属**深净窗亚型活跑**（窗前 0.63 窗后
+2.41 零>50% CPU sibling 重腿在窗，非端口竞争面
+9222/45029/34293/19222 四端口族窗前窗后全程 free 门后零
+本门残留）；机器卫生照 S842 瞬时 zombie 先例口径 zombie
+双复测（t0 与 t+5s 口径）均零。三层锚点零漂移——自有面
+对 765429dda 维持 **4 files +137/-17** 精确一致（Makefile
+1/1 + apps/browser/README.md 1/0 + headless/mod.rs 25/0
++ headless/session.rs 110/16 口径本轮逐文件实测复核 零
+新增漂移）；全树排除本流 docs 对 18d462de6 维持 **92
+files +9715/-621**（R4393 折入后新面值，S875 轮后插记记
+账与本轮实测一致）；crates/ 观察面 raw 维持 **57**（git
+log 8fb39cd46..HEAD -- crates/ 口径，+1=R4393 代码腿）。
+子帧关键词非测试代码零命中维持（8 文件全数测试路径既有
+形态维持），实质判定不变 frames.click+evaluate 维持挂
+起。机器卫生：启停零 zombie（双复测口径）、端口族全
+free、零树污染（tracked clean，out/ 报告为忽略产物；未
+跟踪探针 21 个既有形态 S27 口径不入门禁图，门后零本门
+残留）。控制面零外来提交（本轮执行段 pull 零新提交）。
+解冻条件实质判定不变：① 观察面 crates/ raw 57 维持
+（R4393 折入后新基线顺延），子帧三件套
+iframe.contentDocument null 现状不变，frames.click+
+evaluate 维持挂起；② 本流控制面
 docs/goal/cdp-protocol/ 零外来提交，DC-2 口径无新拍板记
-录。goal 自有面零新缺口、无扩展面（S40-S874 重审结论延
-续）。**make test 全量参考基线 19,307P/0F 维持（S875 双
-腿刷新 R4392 组合态实测复证同值）——引用计数以 S875 双
-腿为新周期锚点 0/10，下轮 S876 = 1/10 静默监测引用轮
-（周期锚点=S875 双腿：门腿 07:09:21 落盘 + make test 腿
-~07:19 前收口），若 S876 前树代码变化则提前触发双腿刷
+录。goal 自有面零新缺口、无扩展面（S40-S875 重审结论延
+续）。**make test 全量参考基线 19,307P/0F 维持（S876 双
+腿刷新 R4393 组合态实测复证同值）——引用计数以 S876 双
+腿为新周期锚点 0/10，下轮 S877 = 1/10 静默监测引用轮
+（周期锚点=S876 双腿：门腿 07:23:56 落盘 + make test 腿
+~07:33 前收口），若 S877 前树代码变化则提前触发双腿刷
 新（S245→S829→S835→S843→S848→S856→S865 先例链），否则
 按引用轮口径门单腿复跑免 make test 腿（S336 先例），至
-迟 S883=8/10 到期即次轮期限轮活跑（双腿活跑口径=门 +
-make test，S773/S782/S865/S874/S875 先例）**）
+迟 S884=8/10 到期即次轮期限轮活跑（双腿活跑口径=门 +
+make test，S773/S782/S865/S874/S875/S876 先例）**）
 
 ---
 
@@ -17728,6 +17729,27 @@ make test，S773/S782/S865/S874/S875 先例）**）
    S876 双腿刷新实测复证（R4393 零新增单测计数预期持平，
    以实测为准）；解冻条件①观察面以 S876 刷新后实测为准
    顺延，②照旧（本流控制面零外来提交）。
+
+
+   **S876 已执行（2026-09-16）树变化刷新轮（R4393 layout
+   腿代码提交 f63495759 入树触发的双腿刷新，S875 轮后插
+   记预告兑现，同 tip 复核 pull 零新提交 tip=26e49bbe4 即
+   S875 轮后插记提交本身（R4393 在树 IN_TREE 实测核验），
+   双腿刷新口径=门 + make test S245→S829→S835→S843→
+   S848→S856→S865 先例链：门 PASS 33 绿深净窗亚型活跑
+   （窗前 0.63 窗后 2.41 零>50% CPU sibling 重腿在窗 非
+   端口竞争面）首调即收口 07:23:56 落盘——R4393 组合态首
+   次门覆盖 + make test 一调 19,307P/0F EXIT=0 干净退出
+   （67 组 result 全 ok 与参考基线精确同值，R4393 组合态
+   首次全量覆盖零新增单测计数持平），引用计数以 S876 双
+   腿为新周期锚点 0/10）**——下轮 **S877 = 1/10 静默监测
+   引用轮**（周期锚点=S876 双腿：门腿 07:23:56 落盘 +
+   make test 腿 ~07:33 前收口），若 S877 前树代码变化则
+   提前触发双腿刷新（S245→S829→S835→S843→S848→S856→
+   S865 先例链），否则按引用轮口径门单腿复跑免 make
+   test 腿（S336 先例），至迟 S884=8/10 到期即次轮期限轮
+   活跑（双腿活跑口径=门 + make test，S773/S782/S865/
+   S874/S875/S876 先例）；
 
 
    若活跑时逢并行流负载窗口则
