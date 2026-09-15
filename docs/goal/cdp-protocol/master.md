@@ -16373,6 +16373,23 @@ crates/ 口径 7 测试文件既有形态维持，实质判定不变 frames.clic
    全树排除本流 docs 对 18d462de6 63 files +4738/-288 → 预期 63 files
    +4762/-295（R4372 三文件均在原集内零净增文件，+24/-7 以实测为准），
    crates/ raw 40→41 递增（**S685 实测：63 files +4758/-291、crates/ raw 41——零净增文件符合预期，行数偏差 = R4372 re-land 改写 R4370 行累积 diff 非面值加总，见 S685 header**）。
+   **S715 轮后插记（2026-09-15 推送序列 pull --rebase 实测）**：兄弟流 R4374
+   （fix layout CJK 回退链垂直度量域，crates/engine paint/painter/text.rs +
+   crates/layout-engine inline 面 17 文件 + render-foundation font/loader.rs +
+   rendering-compat.md + wpt-runner main/runner_text_metrics.rs，21 files
+   +611/-20，a7d580fb1，commit 时点 14:41:38）于 S715 门腿（14:40:50-14:41:22）
+   落盘**之后**经 push 前 pull 入树——S715 门覆盖不含该树态，**S716 = 树变化
+   刷新轮（门 + make test 双腿刷新，S245→S342→S684→S685 先例链）**，引用计数
+   以 S716 双腿为新周期锚点 0/10（S715 header 内「下轮 S716=8/10 期限轮」
+   预告被本插记取代——双腿刷新恰好与期限轮腿集重合，先例 S683→S684 同构）；
+   S716 锚点预期——全树排除本流 docs 对 18d462de6 65 files +4861/-296 →
+   预期 **69 files**（R4374 净增 4 文件：inline/font_metrics.rs、types/mod.rs、
+   wpt-runner main.rs、runner_text_metrics.rs，其余 17 文件均在原集内；行数
+   +611/-20 为面值，原集内 17 文件行数非加总漂移以实测为准逐项记账），crates/
+   raw 42→43 递增；R4374 触及 crates/engine（paint/painter/text.rs +3）——
+   engine 属共享面（run-rules §9），系兄弟流经 main 提交非本流触碰，本流
+   不碰 engine 口径不变；dead_code warning 观察面 js_dom_bridge.rs:3420
+   非本次触碰文件，两相位口径照常观察。
 
 **待用户决策清单**：
 - **DC-2 收口口径（2026-09-13 新入，S39 后语境收窄维持）**：余 1 步（frames.click+evaluate）
