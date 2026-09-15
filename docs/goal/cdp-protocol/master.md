@@ -17264,6 +17264,22 @@ test 腿 ~03:34 收口），下轮 S836=1/10（至迟 S842=8/10 次
    不受影响（data-only 零测试面）；解冻条件①观察面 crates/
    raw 53 维持，①其余口径与②照旧。
 
+   **S835 轮后插记之二（2026-09-16 插记推送序列 pull --rebase
+   实测）**：兄弟流 d8121d510（docs(zero-web) CI-GUARD
+   第二十八轮 ledger 落账，docs/goal/zero-web/master.md 单文件
+   +1，**docs-only 零代码面**）于本插记推送时点经 pull
+   --rebase 入树（我方插记提交 rebase 后 977e175e1，push
+   d8121d510..977e175e1 fast-forward）——**docs-only 归因不
+   入刷新面（S683 先例口径），S836 维持引用轮口径不变**，仅
+   记锚点面值漂移：全树排除本流 docs 对 18d462de6 由 89
+   files +9511/-595 微漂为 **89 files +9512/-595**（本插记时
+   点实测——zero-web master.md 在原集内零净增文件，+1 行），
+   crates/ raw 维持 **53**、自有面 765429dda 维持 4 files
+   +137/-17；下轮门单腿活跑时锚点复核以 **89 files
+   +9512/-595** 与 crates/ raw 53 为基线（取代上一插记
+   +9511 值），引用计数 1/10 顺延、make test 参考基线
+   19,307P/0F 不变，①②照旧。
+
 **待用户决策清单**：
 - **DC-2 收口口径（2026-09-13 新入，S39 后语境收窄维持）**：余 1 步（frames.click+evaluate）
   真挂子帧文档加载 + JS realm + child quads——S18 探针实证：`iframe.contentDocument`
