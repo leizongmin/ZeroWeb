@@ -809,6 +809,24 @@ impl super::Painter {
                 container_width
             };
 
+            // R4392 临时探针（ZW_DEBUG_MEASURE=1）：paint_text 分发记账。
+            if std::env::var("ZW_DEBUG_MEASURE").as_deref() == Ok("1")
+                && let Some(id) = box_node.node_id
+                && let Some(node) = doc.get(id)
+                && let zero_dom::NodeKind::Element(e) = &node.kind
+            {
+                let ln = e.local_name();
+                if ln == "div" || ln == "ruby" || ln == "aside" {
+                    eprintln!(
+                        "[paint_text] {ln} dom={id:?} stored={} w={:.2} ifc_w={:.2} children={}",
+                        box_node.inline_layout.is_some(),
+                        box_node.width,
+                        ifc_width,
+                        box_node.children.len()
+                    );
+                }
+            }
+
             // R2577：word-break: break-word（CSS Text 3 legacy）≡ overflow-wrap: break-word。
             let break_word = matches!(
                 style.overflow_wrap,
@@ -2949,12 +2967,17 @@ pub(super) fn has_direct_paintable_text(
         // 吞嵌套 br，line-break-* control 段 + outline-004 载体）；③inline 子树含与子自身
         // 字体度量不同的后代（outline-022 `#target{font-size:80px}`——扁平化字体错误）。
         // 须与 layout 侧 compute_final_inline_layouts 的守卫同步（两端一致才走 use_stored）。
+        // R4392：**ruby 项移除（paint 侧）**——旧排除使「inline-block 含 ruby、无直接文本子」
+        // 的容器 paint_text 早退（has_direct_paintable_text=false），Path B 不运行 → ruby
+        // base 文本零绘制（ruby-intrinsic-isize-001 行 1 空盒）。R4389 已为 ruby flatten run
+        // 填充 font_id（真实 serif hmtx），Path B 收集+断行语义与 layout 同源。layout 侧
+        // compute_final 的 ruby 排除保留（ruby 子树仍不产 stored IFC → inline_layout=None →
+        // 本侧恒走 Path B，两端 use_stored 语义仍一致）。
         let inline_child_has_deep_path = child_ids.iter().any(|c| {
             styles.get(c).is_some_and(|s| {
                 is_inline_display(&s.display)
                     && (subtree_has_block_elem(doc, styles, *c)
                         || InlineFormattingContext::inline_elem_has_nested_br(doc, *c)
-                        || InlineFormattingContext::subtree_has_ruby_elements(doc, *c)
                         || subtree_font_differs_from(doc, styles, *c, s))
             })
         });
