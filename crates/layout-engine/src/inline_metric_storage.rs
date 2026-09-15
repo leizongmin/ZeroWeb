@@ -156,6 +156,12 @@ fn store_font_sizes_from_ifc_mode(
                 .map(|style| style.text_transform)
                 .unwrap_or(zero_style_system::TextTransformValue::None);
             box_node.text_node_text_transform.insert(frag.node_id, transform);
+        } else if let Some(style) = styles.get(&frag.node_id) {
+            // R4382：扁平化 run（node_id = inline 元素自身，span 文本 / walk flush）——
+            // transform 存元素 id；paint Path B re-key 时元素键直通（不再映射到父）。
+            box_node
+                .text_node_text_transform
+                .insert(frag.node_id, style.text_transform);
         }
         box_node
             .inline_element_metrics

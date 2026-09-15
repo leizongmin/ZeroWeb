@@ -989,6 +989,15 @@ impl InlineFormattingContext {
             doc.text_content(child_id).unwrap_or_default()
         };
         let trimmed = if run_preserves { text } else { collapse_whitespace(&text) };
+        // R4382（CSS Text 3 §3.1）：扁平化 run 的 text-transform——layout 趟读元素自身
+        // computed（含继承）；paint Path B（空 styles）经 text_transform_overrides
+        //（inline_metric_storage 对元素归因 run 按元素 id 存储）。driving:
+        // text-transform-bicameral-003/004/007（`.test span { text-transform }` 全簇
+        // 不生效——span 文本走 flatten run，此前从未应用 transform）。
+        let text_transform = style
+            .map(|s| s.text_transform)
+            .unwrap_or_else(|| self.text_transform_overrides.get(&child_id).copied().unwrap_or(TextTransformValue::None));
+        let trimmed = text_transform.apply(&trimmed);
         let (font_size, line_height) = if style.is_some() {
             // U1b：layout IFC（有真实 styles）首消费 font_metric_provider
             // （per-font line-height）。provider 缺省时等价于 resolve_font_metrics。
@@ -1284,6 +1293,18 @@ impl InlineFormattingContext {
             if trimmed.is_empty() {
                 return;
             }
+            // R4382（CSS Text 3 §3.1）：walk 路径的 run 归因 inline 元素自身——
+            // text-transform 同扁平化 run 语义（layout 读元素 computed；Path B 读
+            // text_transform_overrides 元素键）。
+            let text_transform = style
+                .map(|s| s.text_transform)
+                .unwrap_or_else(|| {
+                    self.text_transform_overrides
+                        .get(&elem_id)
+                        .copied()
+                        .unwrap_or(TextTransformValue::None)
+                });
+            let trimmed = text_transform.apply(&trimmed);
             // R4374：回退链垂直度量（同主路径——layout 趟按 line-height 语义归一，
             // Path B 经 overrides 复用；门禁关闭或未注册回调时恒 0）。
             let flat_font_id =

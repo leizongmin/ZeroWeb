@@ -1019,14 +1019,19 @@ impl super::Painter {
                 // R1012：text-transform 覆盖（re-key 文本节点 → 父元素），让 paint Path B
                 // 空 styles IFC 也能在 collect_inline_items 期应用 transform，使行断用
                 // 转换后文本宽度（与 layout IFC / chromium 一致）。None 不插入（保持默认）。
+                // R4382：扁平化 run 的 transform 按元素 id 存储——元素键直通不 re-key。
                 let parent_text_transforms: NodeIdMap<TextTransformValue> = box_node
                     .text_node_text_transform
                     .iter()
                     .filter_map(|(&tn, &tt)| {
-                        if !is_text(tn) || matches!(tt, TextTransformValue::None) {
+                        if matches!(tt, TextTransformValue::None) {
                             return None;
                         }
-                        doc.parent_node(tn).map(|pid| (pid, tt))
+                        if is_text(tn) {
+                            doc.parent_node(tn).map(|pid| (pid, tt))
+                        } else {
+                            Some((tn, tt))
+                        }
                     })
                     .collect();
 

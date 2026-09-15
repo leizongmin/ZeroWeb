@@ -2404,6 +2404,69 @@ fn test_r1012_text_transform_applied_via_override_map() {
     );
 }
 
+/// R4382：扁平化 run（span 文本，`build_flatten_run_for_element` 路径）的
+/// text-transform——`.test span { text-transform:uppercase }` 型声明此前从未在
+/// flatten run 上生效（span 文本按元素归因收集，transform 仅在文本节点分支应用）。
+/// driving: WPT text-transform-bicameral-003/004/007 全簇。
+#[test]
+fn test_r4382_text_transform_applies_to_flatten_run() {
+    use std::collections::HashMap;
+    use zero_dom::parse_html;
+    use zero_style_system::{ComputedStyle, TextTransformValue};
+
+    let doc = parse_html("<p><span>hello</span></p>");
+    let html = doc.first_child(doc.root()).unwrap();
+    let body = doc.last_child(html).unwrap();
+    let p = doc.first_child(body).unwrap();
+    let span = doc.first_child(p).unwrap();
+
+    let mut style = ComputedStyle::default();
+    style.text_transform = TextTransformValue::Uppercase;
+    let mut styles = HashMap::new();
+    styles.insert(p, ComputedStyle::default());
+    styles.insert(span, style);
+
+    let mut ctx = InlineFormattingContext::new(800.0);
+    ctx.layout(&doc, p, &styles);
+
+    let all_text: String = ctx.all_fragments().iter().map(|f| f.text.clone()).collect();
+    assert_eq!(
+        all_text, "HELLO",
+        "span 扁平化 run 应应用元素自身 text-transform（实测 {all_text}）"
+    );
+}
+
+/// R4382：walk 路径（inline 元素含元素子，flush run 归因元素 id）的 text-transform。
+#[test]
+fn test_r4382_text_transform_applies_to_walk_flush_run() {
+    use std::collections::HashMap;
+    use zero_dom::parse_html;
+    use zero_style_system::{ComputedStyle, TextTransformValue};
+
+    // span 含 b 元素子 → 走 collect_flat_inline_children walk（flush run 归因 span）。
+    let doc = parse_html("<p><span>he <b>w</b> ld</span></p>");
+    let html = doc.first_child(doc.root()).unwrap();
+    let body = doc.last_child(html).unwrap();
+    let p = doc.first_child(body).unwrap();
+    let span = doc.first_child(p).unwrap();
+
+    let mut style = ComputedStyle::default();
+    style.text_transform = TextTransformValue::Uppercase;
+    let mut styles = HashMap::new();
+    styles.insert(p, ComputedStyle::default());
+    styles.insert(span, style);
+
+    let mut ctx = InlineFormattingContext::new(800.0);
+    ctx.layout(&doc, p, &styles);
+
+    let all_text: String = ctx.all_fragments().iter().map(|f| f.text.clone()).collect();
+    // 注：flush 边界空格折叠（walk 路径既有语义）——本测试只断言 transform 生效。
+    assert_eq!(
+        all_text, "HEWLD",
+        "walk flush run 应应用元素自身 text-transform（实测 {all_text}）"
+    );
+}
+
 /// R1012：默认（空 override map + 无 style text-transform）= None = 原文，零回归。
 #[test]
 fn test_r1012_text_transform_default_is_noop() {
