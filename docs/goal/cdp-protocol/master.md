@@ -2,52 +2,52 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-15（S733：静默监测引用轮（引用计数 0/10→1/10，
+**最后更新**: 2026-09-15（S734：静默监测引用轮（引用计数 1/10→2/10，
 S732 期限轮活跑为新周期锚点）——同 tip 复核 pull 零新提交
-tip=22c7b9356 即 S732 提交本身，S732 门腿活跑后零代码变更，tracked
-代码树与 S732 活跑覆盖树态一致，树不变口径=门单腿引用 S732 期限轮
-活跑 + S733 门腿复跑（免 make test 腿，S336 先例；下轮 S734=2/10，
-新周期 8/10 次轮即期限轮口径下至迟 S740 期限轮活跑，树代码变化提前
-触发双腿刷新）。**门腿** make cdp-e2e ZW_IPC_VALIDATE=1 在位
-18:02:58 启动 18:03:30 落盘（wall 32s）首调即 **PASS 33 绿
-deterministic 双跑 YES EXIT=0**，expected_green 33 对称差 none（绿步
-集与基线逐项一致零漂移）、regressions 空、无 fatal，run_details 双
-run 实质逐项一致（failed 均仅 frames.click+evaluate 期望挂起步），
-ZW_IPC_VALIDATE 捕获网在位静默（#0 负载窗内复现监测零命中，本轮窗
-口验证输出零 malformed 行；捕获网在位直证=compositor_publish_thread.rs:67
-env 门控 + Makefile:1479 注入 renderer 子进程）；首调红形态**连续第
-一百四十七次零再现**（累计两例非聚集维持）。**dead_code warning 形
-态本轮为 replay 相位**（门腿 Finished 0.20s 零 Compiling 行；门后
-no-op 编译相位复核直证 Finished 0.18s 零 Compiling 行、warning 缓存
-重放在位 js_dom_bridge.rs:3420）——两相位口径维持（S683/S684/S685/
-S690/S716/S717/S724 全新编译在位 + S686-S689/S691-S715/S718-S733 缓
-存 replay 在位均确定性），clippy -p zero-engine --lib -- -D warnings
-维持 PASS（本轮实测 Finished 0.20s 零 warning）DC-4 不可退让面零暴
-露，归因 engine crate zero-web 流域，本流不碰 engine 记账不修。本轮
-属**负载窗口内活跑**（开工兄弟流测试腿轮换在窗——zero_script_san
-bench 588% CPU 出窗后接 zero_webview 测试腿 268% CPU，门后切换
-zero_integration_tests 283% CPU 延续（hash 279ef72cd6bb61fb 与 S732
-窗相同），逐腿轮换跨窗延续，cwd/exe 实测 = ZeroWeb-2 target/debug
-cmdline 直证同源归因，双 clone 隔离零污染本树，非端口竞争面 9222 族
-全 free，负载窗内优先执行——负载下样本对 #0 更有价值 S218/S228/
-S238/S662-S732 先例；负载 2.45→4.64 上行窗延续非本门产物，门后残留
-node 4 进程实测 = 双流 rally 父 + cronjob clone + 外部 zeroseed 工
-具（cmdline 取证 0% CPU），零本门残留）。双层锚点零漂移——自
-有面对 765429dda 维持 **4 files +137/-17** 精确一致（Makefile 1/1 +
-apps/browser/README.md 1/0 + headless/mod.rs 25/0 +
-headless/session.rs 110/16）；全树排除本流 docs 对 18d462de6 维持
-**80 files +5800/-453** 与上轮逐项一致零新增（S729 刷新基线）；
-crates/ 观察面 raw 维持 **45**（S724 基线）。子帧关键词非测试代码
-零命中维持；crates/ 口径 7 测试文件既有形态维持，实质判定不变
-frames.click+evaluate 维持挂起。机器卫生：启动前零 zombie、端口族
-全 free、负载 2.45 兄弟流测试窗；门腿后零 zombie、端口族零残留、
-零树污染（tracked clean，out/ 报告为忽略产物；窗尾兄弟流测试腿延续
-在窗非本门产物）。控制面零外来提交（本轮 pull 零新提交）。解冻条
-件实质判定不变：① 观察面 raw 45 维持（S724 基线），子帧三件套
-iframe.contentDocument null 现状不变，frames.click+evaluate 维持挂
-起；② 本流控制面 docs/goal/cdp-protocol/ 零外来提交，DC-2 口径无
-新拍板记录。goal 自有面零新缺口、无扩展面（S40-S732 重审结论延
-续））
+tip=85b883d94 即 S733 提交本身，S733 门腿复跑后零代码变更，tracked
+代码树与 S733 门腿覆盖树态（=S732 活跑覆盖树态）一致，树不变口径=
+门单腿引用 S732 期限轮活跑 + S733-S734 门腿复跑（免 make test 腿，
+S336 先例；下轮 S735=3/10，新周期 8/10 次轮即期限轮口径下至迟 S740
+期限轮活跑，树代码变化提前触发双腿刷新）。**门腿** make cdp-e2e
+ZW_IPC_VALIDATE=1 在位 18:09:07 启动 18:09:40 落盘（wall 33s）首调
+即 **PASS 33 绿 deterministic 双跑 YES EXIT=0**，expected_green 33
+对称差 none（绿步集与基线逐项一致零漂移）、regressions 空、无
+fatal，run_details 双 run 实质逐项一致（failed 均仅
+frames.click+evaluate 期望挂起步），ZW_IPC_VALIDATE 捕获网在位静默
+（#0 负载窗内复现监测零命中，本轮窗口验证输出零 malformed 行；捕获
+网在位直证=compositor_publish_thread.rs:67 env 门控 + Makefile:1479
+注入 renderer 子进程）；首调红形态**连续第一百四十八次零再现**（累
+计两例非聚集维持）。**dead_code warning 形态本轮为 replay 相位**
+（门腿 Finished 0.22s 零 Compiling 行；门后 no-op 编译相位复核直证
+Finished 0.18s 零 Compiling 行、warning 缓存重放在位
+js_dom_bridge.rs:3420）——两相位口径维持（S683/S684/S685/S690/S716/
+S717/S724 全新编译在位 + S686-S689/S691-S715/S718-S734 缓存 replay
+在位均确定性），clippy -p zero-engine --lib -- -D warnings 维持
+PASS（本轮实测 Finished 0.20s 零 warning）DC-4 不可退让面零暴露，
+归因 engine crate zero-web 流域，本流不碰 engine 记账不修。本轮属
+**负载窗口内活跑**（开工兄弟流 zero_integration_tests 测试腿 138%
+CPU 在窗——hash 279ef72cd6bb61fb 与 S732/S733 窗相同，cwd/exe 实测
+= ZeroWeb-2 target/debug cmdline 直证同源归因，双 clone 隔离零污染
+本树，非端口竞争面 9222 族全 free，负载窗内优先执行——负载下样本
+对 #0 更有价值 S218/S228/S238/S662-S733 先例；门后同流切换
+zero_browser 测试腿 47% CPU（--test-threads=1，xvfb-run 父进程
+18:10:27 起——本门 18:09:40 落盘之后，ZeroWeb-2 cmdline 直证兄弟流
+make test 腿非本门残留），负载 2.00→3.22 上行窗延续非本门产物，门
+后零本门残留）。双层锚点零漂移——自有面对 765429dda 维持
+**4 files +137/-17** 精确一致（Makefile 1/1 + apps/browser/README.md
+1/0 + headless/mod.rs 25/0 + headless/session.rs 110/16）；全树排
+除本流 docs 对 18d462de6 维持 **80 files +5800/-453** 与上轮逐项一
+致零新增（S729 刷新基线）；crates/ 观察面 raw 维持 **45**（S724 基
+线）。子帧关键词非测试代码零命中维持；crates/ 口径 7 测试文件既有
+形态维持，实质判定不变 frames.click+evaluate 维持挂起。机器卫生：
+启动前零 zombie、端口族全 free、负载 2.00 兄弟流测试窗；门腿后零
+zombie、端口族零残留、零树污染（tracked clean，out/ 报告为忽略产物；
+窗尾兄弟流 zero_browser 测试腿延续在窗非本门产物）。控制面零外来
+提交（本轮 pull 零新提交）。解冻条件实质判定不变：① 观察面 raw 45
+维持（S724 基线），子帧三件套 iframe.contentDocument null 现状不变，
+frames.click+evaluate 维持挂起；② 本流控制面
+docs/goal/cdp-protocol/ 零外来提交，DC-2 口径无新拍板记录。goal 自
+有面零新缺口、无扩展面（S40-S733 重审结论延续））
 
 ---
 
