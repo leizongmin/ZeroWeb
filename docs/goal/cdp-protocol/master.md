@@ -2,52 +2,43 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-15（S684：树变化刷新轮——S683 推送序列 pull --rebase 拉入
-兄弟流 R4370（fix layout，crates/layout-engine inline 面 4 files +27/-6 +
-rendering-compat.md 1/1，069d5105f）于 S683 门腿落盘**之后**入树，S683 门覆盖
-不含该树态 → 门 + make test 双腿刷新（S245/S258/S289/S290/S314/S317/S340/
-S341/S342 先例），引用计数以本轮双腿为新周期锚点 0/10，下轮 S685=1/10；pull
-同步入 R4371（d38169538，rendering-compat.md docs-only +1）不入刷新面。**门腿**
-make cdp-e2e ZW_IPC_VALIDATE=1 在位 11:50:04 启动 11:50:45 落盘首调即 **PASS 33
-绿 deterministic 双跑 YES EXIT=0**，expected_green 33 对称差 none（绿步集与基线
-逐项一致零漂移）、regressions 空、无 fatal，校验器在位静默；R4370 触发
-layout-engine/engine/page-runtime/zero-browser 重编译 Finished 8.84s；首调红
-形态连续第九十八次零再现（累计两例非聚集维持）。**dead_code warning 形态跨
-重编译延续实证**：本轮 zero-engine 全新编译（非 replay）match_media_to_json
-never used（js_dom_bridge.rs:3420）仍在编译期在位——S683 记档的「构建缓存相位
-形态」升级为跨重编译确定性形态，clippy -p zero-engine --lib -- -D warnings
-维持 PASS（S683 实测）DC-4 不可退让面零暴露，归因 engine crate zero-web 流域
-（workspace feature unification），本流不碰 engine 记账不修。**测试腿 make
-test 两调收口**：首跑 11:51:01 前台启动被执行包装器 10min 墙钟上限 SIGTERM
-杀死（工具包装上限非腿失败不计腿次，本流进程组全清零 zombie，当时残留清单
-全为兄弟 clone ZeroWeb-2 编译腿 cmdline 取证非本门产物），改 setsid 后台落盘
-12:01:23 启动 run1 ~12:10 收口——**run1 单例瞬态红**：
-zero_integration_tests network_loading::stale_etag_revalidation_is_coalesced
-（127.0.0.1:40479 测试服务连接抖动 panic，S631 同测试同形态已知 flake 家族 +
-S12 记账「并行负载下偶发 1 失败、隔离与整包重跑均绿」；四点归因：①变更域零
-关联——git show 069d5105f 核对 net/loader/测试服务器面零命中，R4370 =
-layout-engine inline 面；②负载窗相关——兄弟流 ZeroWeb-2 编译腿 117%/91%/50%
-CPU 在窗 load 2.87-4.22；③形态签名与 S631 先例一致；④孤立复跑恒过 S631 实证
-在案）跨流记档；**二调 12:11:27 setsid 启动 ~12:33 收口 67 组 19,290P/0F**
-零 FAILED 无 make 错误行——与 S631 双腿基线 19,290P/0F 精确一致跨流计数
-持平，flake 归因收口（S631/S317/S290 两调收口先例）。**锚点刷新**：自有面
-对 765429dda 维持 **4 files +137/-17** 零漂移（Makefile 1/1 + README 1/0 +
-headless/mod.rs 25/0 + headless/session.rs 110/16）；全树排除本流 docs 对
-18d462de6 刷新至 **63 files +4738/-288** 逐项记账——62→63 净增 1 文件（R4370
-五文件中四 layout-engine inline 文件与 rendering-compat.md 均已在原 62 集
-内故合并入既有条目，仅 1 文件新入集）+28 = R4370 +27 + R4371 rendering-compat
-+1、-6 = R4370（**S683 补记「预期 ~67 files +4737/-288」基于五文件全新增假设
-作废，以本轮实测为准**）；crates/ 观察面 raw **39→40**（R4370 入账）。子帧
-关键词非测试代码零命中维持（R4370 触碰的 layout-engine inline 文件零命中
+**最后更新**: 2026-09-15（S685：树变化刷新轮——S684 推送序列 pull --rebase 拉入
+兄弟流 R4372（fix layout R4347 park re-land，crates/layout-engine inline 面
+break_lines.rs + inline_types.rs + rendering-compat.md，96def002d，commit 时点
+12:24:02，晚于 S684 门腿 11:50 且不在测试腿 run2 树内）→ R4372 树态 S684 双腿
+均未覆盖 → 门 + make test 双腿刷新（S245→S342→S684 先例链），引用计数以本轮
+双腿为新周期锚点 0/10，下轮 S686=1/10；本轮 pull 零新提交 tip=5a71f551f 即
+S684 补记本身。**门腿** make cdp-e2e ZW_IPC_VALIDATE=1 在位 12:37:41 启动
+12:38:20 落盘首调即 **PASS 33 绿 deterministic 双跑 YES EXIT=0**，expected_green
+33 对称差 none（绿步集与基线逐项一致零漂移）、regressions 空、无 fatal，校验器
+在位静默；R4372 触发 layout-engine/engine/page-runtime/zero-browser 重编译
+Finished 5.59s；首调红形态连续第九十九次零再现（累计两例非聚集维持）。
+**dead_code warning 形态第三轮延续**：本轮 zero-engine 全新编译 match_media_to_json
+never used（js_dom_bridge.rs:3420）仍在编译期在位——S683/S684/S685 三轮连续
+（S683 首记档 S684 跨重编译实证本轮再证），clippy -p zero-engine --lib
+-- -D warnings 维持 PASS（S683 实测）DC-4 不可退让面零暴露，归因 engine crate
+zero-web 流域（workspace feature unification），本流不碰 engine 记账不修。
+**测试腿 make test 一调收口**：12:38:39 setsid 后台落盘启动（S684 前台被执行
+包装器 10min 墙钟上限杀死先例直接规避）~12:53 收口 **67 组 19,290P/0F** 零
+FAILED 无 make 错误行——与 S631/S684 双腿基线精确一致跨流计数持平；本轮
+run1 即净无瞬态红（S684 run1 network_loading 单例瞬态红本轮零再现，flake
+家族归因维持单轮偶发记账）。**锚点刷新**：自有面对 765429dda 维持 **4 files
++137/-17** 零漂移（Makefile 1/1 + README 1/0 + headless/mod.rs 25/0 +
+headless/session.rs 110/16）；全树排除本流 docs 对 18d462de6 刷新至 **63 files
++4758/-291** 逐项记账——零净增文件符合 S684 补记预期（R4372 三文件均在原
+集内）；行数 +20/-3 非 R4372 提交面值 +24/-7——park re-land 改写 R4370 部分
+行、对基点的累积 diff 非逐提交面值加总（**S684 补记「预期 +4762/-295」面值
+加总假设作废，以实测为准**）；crates/ 观察面 raw **40→41**（R4372 入账）。子帧
+关键词非测试代码零命中维持（R4372 触碰的 layout-engine inline 文件零命中
 实测）；crates/ 口径 7 测试文件既有形态维持，实质判定不变 frames.click+
-evaluate 维持挂起。机器卫生：启动前零 zombie、端口族全 free、净窗 0.05
-（兄弟腿收尾后回落）；门腿窗兄弟流编译腿入窗（负载下样本价值）；双腿后
-零 zombie、端口族零残留、零树污染（tracked clean，out/ 报告为忽略产物），
-负载 0.38 净窗。控制面零外来提交（本轮 pull 仅 R4371 rendering-compat）。
-解冻条件实质判定不变：① 观察面 raw 40（R4370 新账），子帧三件套
-iframe.contentDocument null 现状不变（R4370 触碰文件零命中实测），frames.
+evaluate 维持挂起。机器卫生：启动前零 zombie、端口族全 free、滞后瞬态回落
+窗（1min 均值 2.64 top 零编译测试腿仅 agent 进程，15min 均值 2.39 兄弟流腿
+收尾衰减尾）；双腿后零 zombie、端口族零残留、零树污染（tracked clean，out/
+报告为忽略产物），负载 1.34 回落中。控制面零外来提交（本轮 pull 零新提交）。
+解冻条件实质判定不变：① 观察面 raw 41（R4372 新账），子帧三件套
+iframe.contentDocument null 现状不变（R4372 触碰文件零命中实测），frames.
 click+evaluate 维持挂起；② 本流控制面 docs/goal/cdp-protocol/ 零外来提交，
-DC-2 口径无新拍板记录。goal 自有面零新缺口、无扩展面（S40-S683 重审结论
+DC-2 口径无新拍板记录。goal 自有面零新缺口、无扩展面（S40-S684 重审结论
 延续））
 
 ---
@@ -16382,7 +16373,7 @@ DC-2 口径无新拍板记录。goal 自有面零新缺口、无扩展面（S40-
    0/10（S684 header 内下轮 S685=1/10 预告被本插记取代）；S685 锚点预期——
    全树排除本流 docs 对 18d462de6 63 files +4738/-288 → 预期 63 files
    +4762/-295（R4372 三文件均在原集内零净增文件，+24/-7 以实测为准），
-   crates/ raw 40→41 递增。
+   crates/ raw 40→41 递增（**S685 实测：63 files +4758/-291、crates/ raw 41——零净增文件符合预期，行数偏差 = R4372 re-land 改写 R4370 行累积 diff 非面值加总，见 S685 header**）。
 
 **待用户决策清单**：
 - **DC-2 收口口径（2026-09-13 新入，S39 后语境收窄维持）**：余 1 步（frames.click+evaluate）
