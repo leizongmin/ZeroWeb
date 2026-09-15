@@ -17478,6 +17478,26 @@ null 现状不变，frames.click+evaluate 维持挂起；② 本流控
    make test，S773/S782/S865 先例）；
 
 
+   **S865 轮后插记（2026-09-16 推送序列 pull --rebase 实测）**：
+   兄弟流 R4390/R4391 两提交（437198978 + b53056ba6，均
+   **docs-only**：docs/goal/rendering-compat.md 合计 +2，
+   零 Rust/Cargo/Makefile 面）于 S865 双腿收口（门腿
+   05:58:40 落盘 + make test 腿 06:10:54 前收口）**之后**
+   经 push 前 pull --rebase 入树（我方 S865 提交 rebase 后
+   c25f87106，push b53056ba6..c25f87106 fast-forward）——
+   **docs-only 归因不入刷新面（S349/S846/S848/S853/S854
+   先例：tracked 代码树 Rust/Cargo/Makefile 面与 S865 双腿
+   覆盖树态一致，树不变口径维持，S866 维持引用轮口径=门单
+   腿复跑免 make test 腿 S336 先例）**；锚点面值漂移实测
+   记账：全树排除本流 docs 对 18d462de6 92 files
+   +9684/-620 → **+9686/-620**（+2 = R4390/R4391 折入累计
+   diff 归因，零净增文件，本插记时点实测），crates/ raw 维
+   持 **55**、自有面对 765429dda 维持 4 files +137/-17 均
+   不变（实测复核）；S865 header 内下轮预告（S866=1/10，
+   周期锚点=S865 双腿）维持不变；make test 全量参考基线
+   19,307P/0F 不受影响（docs-only 零测试面），①②照旧。
+
+
    若活跑时逢并行流负载窗口则
    优先窗口内执行，负载下样本对 #0 更有价值（负载窗口口径含并行流 browser 进程型与
    编译测试负载型两亚型，净窗亚型 S208 起并行记录；**端口竞争亚型口径 S198 新增**：
