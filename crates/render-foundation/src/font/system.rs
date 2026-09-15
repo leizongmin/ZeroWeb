@@ -26,6 +26,24 @@ pub fn load_platform_fonts() -> PlatformFonts {
 
     let _ = load_first(&mut loader, bold_font_paths(), 0, "bold");
 
+    // R4377：generic 族 face 与 reftest harness 对齐（R1259 serif / R1263 sans / R4373 mono
+    // 谱系——chromium fontconfig 默认：serif/initial = Times New Roman → Liberation Serif、
+    // sans-serif = Arial → Liberation Sans、monospace = Noto Sans Mono CJK SC）。生产侧此前
+    // 不载这些 face：`font-family: serif/monospace` 经 build_font_resolver 的通用族名匹配
+    // 全部落 default（NotoSans）——与 chromium 渲染分歧（monospace 文本宽 ~20% 等）。
+    // 仅加载为 family 成员（family_map 供名匹配），**不进 fallback chain**（缺字回退行为
+    // 零变化）；加载顺序在 primary/bold 之后、CJK chain 之前（各进程同序 → font_id 一致）。
+    for path in generic_family_font_paths() {
+        match std::fs::read(path) {
+            Ok(data) => {
+                if let Err(error) = loader.load_font(&data) {
+                    tracing::debug!(path, %error, "Failed to load generic family font");
+                }
+            }
+            Err(error) => tracing::debug!(path, %error, "Generic family font not found"),
+        }
+    }
+
     let mut fallback_ids = Vec::new();
     for (path, face_index) in fallback_font_candidates() {
         let Ok(data) = std::fs::read(&path) else {
@@ -43,6 +61,14 @@ pub fn load_platform_fonts() -> PlatformFonts {
             }
             Ok(_) => {}
             Err(error) => tracing::debug!(path = %path.display(), %error, "Failed to load fallback font"),
+        }
+        // R4373 谱系：monospace 通用族 face——NotoSansCJK ttc face 7 = "Noto Sans Mono CJK SC"
+        // （fc-match monospace 别名真身，ch = 0.5em）。face 7 存在性随字体配置而异：失败
+        // 静默跳过，mono_names 兜底照旧（与 reftest harness 同款）。
+        if path.extension().and_then(|e| e.to_str()) == Some("ttc")
+            && let Err(error) = loader.load_font_at_index(&data, 7)
+        {
+            tracing::debug!(path = %path.display(), %error, "No monospace face in ttc");
         }
     }
     loader.set_fallback_chain(fallback_ids);
@@ -175,6 +201,33 @@ fn platform_fallback_font_paths() -> &'static [&'static str] {
     }
 }
 
+/// R4377：generic 族 face（serif / sans-serif 及各自 bold）——`build_font_resolver`
+/// 按 nameID1 族名匹配（`serif_names`/`sans_names` 优先序），缺 face 则通用族落
+/// default。清单与 reftest harness（reftest_fonts.rs）chromium 对齐口径一致。
+/// macOS/Windows 待各自字体清单核对后补（Linux 先行，与 harness Bold 加载同范围）。
+fn generic_family_font_paths() -> &'static [&'static str] {
+    #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+    {
+        &[
+            "/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf",
+            "/usr/share/fonts/truetype/liberation/LiberationSerif-Bold.ttf",
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+        ]
+    }
+    #[cfg(target_os = "macos")]
+    {
+        &[
+            "/System/Library/Fonts/Supplemental/Times New Roman.ttf",
+            "/System/Library/Fonts/Supplemental/Arial.ttf",
+        ]
+    }
+    #[cfg(target_os = "windows")]
+    {
+        &["C:\\Windows\\Fonts\\times.ttf", "C:\\Windows\\Fonts\\arial.ttf"]
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -211,5 +264,46 @@ mod tests {
             0,
             "startup metadata must not eagerly parse CJK or Emoji glyph geometry"
         );
+    }
+
+    /// R4377：generic 族解析与 chromium 对齐（R1259 serif / R1263 sans / R4373 mono 谱系）
+    /// ——生产 `load_platform_fonts` 载入 Liberation Serif/Sans 后，`build_font_resolver`
+    /// 的 serif/sans-serif/monospace 键应命中对应 face（与 reftest harness 同口径）。
+    /// 字体缺失环境（CI 最小容器）静默跳过对应断言。
+    #[test]
+    fn r4377_platform_generic_families_resolve_like_harness() {
+        let platform = load_platform_fonts();
+        let resolver = platform.loader.build_font_resolver();
+        let family_of = |key: &str| -> Option<String> {
+            let id = resolver.get(key).copied()?;
+            let data = platform.loader.get_font_data(id)?;
+            use crate::font::loader::parse_font_family_name_at;
+            parse_font_family_name_at(data, platform.loader.face_index(id))
+        };
+        if std::path::Path::new("/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf").exists() {
+            assert_eq!(
+                family_of("serif").as_deref(),
+                Some("Liberation Serif"),
+                "serif generic must resolve to Liberation Serif (chromium Times New Roman alias), got {:?}",
+                family_of("serif")
+            );
+        }
+        if std::path::Path::new("/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf").exists() {
+            assert_eq!(
+                family_of("sans-serif").as_deref(),
+                Some("Liberation Sans"),
+                "sans-serif generic must resolve to Liberation Sans (chromium Arial alias), got {:?}",
+                family_of("sans-serif")
+            );
+        }
+        let cjk_ttc = std::path::Path::new("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc");
+        if cjk_ttc.exists() {
+            assert_eq!(
+                family_of("monospace").as_deref(),
+                Some("Noto Sans Mono CJK SC"),
+                "monospace generic must resolve to ttc face 7 (fc-match monospace true face), got {:?}",
+                family_of("monospace")
+            );
+        }
     }
 }

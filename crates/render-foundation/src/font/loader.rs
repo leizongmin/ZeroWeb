@@ -875,7 +875,7 @@ impl Default for FontLoader {
 /// 系列 .ttc）每 face 独立 name 表，旧实现把 collection 头当 sfnt 读致族名
 /// 解析恒 None（face 不入 family_map → 通用族别名映射 miss，如 monospace →
 /// "Noto Sans Mono CJK SC"）。`face_index` 越界回落 face 0。
-fn parse_font_family_name_at(data: &[u8], face_index: u32) -> Option<String> {
+pub(crate) fn parse_font_family_name_at(data: &[u8], face_index: u32) -> Option<String> {
     // R4373：TTC 规范特性——collection 内各 face 的表 offset 为**文件绝对**（非
     // face 相对），故 name 表切片须回到原始全文件数据；face 目录本身 face 相对。
     let full = data;
