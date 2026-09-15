@@ -472,9 +472,10 @@ fn box_content_max_width_inner(box_node: &LayoutBox, doc: &Document, styles: &Ha
         // 此前丢失（ruby-intrinsic-isize-002 1.23→0.14 翻绿实证）。与 R4355 的整子树
         // walk 不同：**跳过已入 box_children 的元素子树**（其文本已经 R1479 计入——
         // 整树 walk 双计，line-break 族 −16 实证），仅累计裸文本段之和。
-        // **opt-in（`ZW_MIXED_BARE_TEXT=1`）**：默认关——shrink-to-fit 全域放开后
-        // float/margin-collapse 族 −17 实证（corpus 净 −7），待行内交错和Walk重构后
-        // 再定默认。
+        // **opt-in（`ZW_MIXED_BARE_TEXT=1`）**：默认关。R4393 ruby 门收窄试验（仅子树含
+        // ruby 的容器放开）实测 ruby-intrinsic-isize-002 翻绿 0.00% 但 **nested-ruby/
+        // improper-annotation 族 −3（7.5% 大幅劣化）**——walker 对嵌套 ruby/注音包含
+        // 形态不健全，待行内交错 walk 重构 + walker 加固后重估默认。
         let dom_text = if std::env::var("ZW_MIXED_BARE_TEXT").as_deref() == Ok("1") {
             dom_bare_text_sum_width(box_node, doc, styles)
         } else {
