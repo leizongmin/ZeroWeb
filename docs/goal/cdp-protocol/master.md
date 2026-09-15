@@ -2,51 +2,52 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-15（S771：静默监测引用轮（引用计数
-5/10→6/10，S765 双腿为新周期锚点）——同 tip 复核 pull 零新
-提交 tip=c7d201182 即 S770 提交本身，S770 提交 docs-only
-（master.md 1 file），S765 双腿收口后零代码变更，tracked
-代码树与 S765 双腿覆盖树态（=R4379+a68dddff8 组合态）一致，
-树不变口径=门单腿引用 S765 双腿活跑 + S771 门腿复跑（免
-make test 腿，S336 先例；**引用计数 6/10，下轮 S772=7/10**，
-新周期 8/10 次轮即期限轮口径下至迟 S772 后即期限轮窗，树代
-码变化提前触发双腿刷新。**门腿** make cdp-e2e ZW_IPC_VALIDATE=1
-在位 20:54:56 启动 20:55:28 落盘（wall 32s）深净窗首调即
-**PASS 33 绿 deterministic 双跑 YES EXIT=0**，expected_green
-33 对称差 none（绿步集与基线机械 diff 逐项一致零漂移）、
-regressions 空、无 fatal，run_details 双 run 逐项一致（ok 33
-步逐项相同，failed 均仅 frames.click+evaluate 期望挂起步），
-ZW_IPC_VALIDATE 捕获网在位静默（#0 复现监测零命中，本轮窗
-口验证输出零 malformed 行；捕获网在位直证=compositor_publish
-_thread.rs:67 env 门控 + Makefile:1479 注入 renderer 子进程）；
-首调红形态**连续第一百八十五次零再现**（累计两例非聚集维
-持）。**dead_code warning 形态本轮为 replay 相位**（门腿零
-Compiling 行、Finished 0.19s；warning 缓存重放在位
-js_dom_bridge.rs:3420 match_media_to_json）——两相位口径维持
-（S683/S684/S685/S690/S716/S717/S724/S752/S761/S765 全新编译
-在位 + S686-S689/S691-S715/S718-S764/S766-S771 缓存 replay
-在位均确定性），clippy -p zero-engine --lib -- -D warnings
-维持 PASS（本轮实测 Finished 0.18s 零 warning）DC-4 不可退
-让面零暴露，归因 engine crate zero-web 流域，本流不碰
-engine 记账不修。本轮属**净窗活跑**（负载 0.39→0.17 零兄
-弟流腿零端口竞争 净窗亚型 S208/S742/S752/S761/S765-S770 先
-例口径 门腿窗内零本流并行腿 门后零本门残留）。双层锚点零
-漂移——自有面对 765429dda 维持 **4 files +137/-17** 精确一
-致（Makefile 1/1 + apps/browser/README.md 1/0 +
-headless/mod.rs 25/0 + headless/session.rs 110/16）；全树排
-除本流 docs 对 18d462de6 维持 **82 files +6027/-460** 与
-S765 刷新基线逐项一致（含 a68dddff8 docs-only 入集漂移面值
-非代码）；crates/ 观察面 raw 维持 **48**（S765 刷新基线）。
-子帧关键词非测试代码零命中维持；crates/ 口径 7 测试文件既
-有形态维持，实质判定不变 frames.click+evaluate 维持挂起。
-机器卫生：启停零 zombie、端口族全 free、负载 0.39→0.17、
-零树污染（tracked clean，out/ 报告为忽略产物，门后零本门
-残留）。控制面零外来提交（本轮 pull 零新提交）。解冻条件
-实质判定不变：① 观察面 crates/ raw 48 维持（S765 刷新基
-线），子帧三件套 iframe.contentDocument null 现状不变，
-frames.click+evaluate 维持挂起；② 本流控制面
-docs/goal/cdp-protocol/ 零外来提交，DC-2 口径无新拍板记录。
-goal 自有面零新缺口、无扩展面（S40-S770 重审结论延续））
+**最后更新**: 2026-09-15（S772：静默监测引用轮（引用计数
+6/10→7/10，S765 双腿为新周期锚点，已入期限轮窗）——同 tip
+复核 pull 零新提交 tip=c8311d4f9 即 S771 提交本身，S771 提
+交 docs-only（master.md 1 file），S765 双腿收口后零代码变更，
+tracked 代码树与 S765 双腿覆盖树态（=R4379+a68dddff8 组合态）
+一致，树不变口径=门单腿引用 S765 双腿活跑 + S772 门腿复跑
+（免 make test 腿，S336 先例；**引用计数 7/10，下轮 S773=8/10
+即期限轮前夜——至迟 S773 期限轮活跑（门 + make test 双腿刷
+新），树代码变化提前触发双腿刷新**。**门腿** make cdp-e2e
+ZW_IPC_VALIDATE=1 在位 20:58:15 启动 20:58:47 落盘（wall
+32s）深净窗首调即 **PASS 33 绿 deterministic 双跑 YES
+EXIT=0**，expected_green 33 对称差 none（绿步集与基线机械
+diff 逐项一致零漂移）、regressions 空、无 fatal，run_details
+双 run 逐项一致（ok 33 步逐项相同，failed 均仅
+frames.click+evaluate 期望挂起步），ZW_IPC_VALIDATE 捕获网
+在位静默（#0 复现监测零命中，本轮窗口验证输出零 malformed
+行；捕获网在位直证=compositor_publish_thread.rs:67 env 门控
++ Makefile:1479 注入 renderer 子进程）；首调红形态**连续第
+一百八十六次零再现**（累计两例非聚集维持）。**dead_code
+warning 形态本轮为 replay 相位**（门腿零 Compiling 行、
+Finished 0.19s；warning 缓存重放在位 js_dom_bridge.rs:3420
+match_media_to_json）——两相位口径维持（S683/S684/S685/S690/
+S716/S717/S724/S752/S761/S765 全新编译在位 + S686-S689/
+S691-S715/S718-S764/S766-S772 缓存 replay 在位均确定性），
+clippy -p zero-engine --lib -- -D warnings 维持 PASS（本轮实
+测 Finished 0.18s 零 warning）DC-4 不可退让面零暴露，归因
+engine crate zero-web 流域，本流不碰 engine 记账不修。本轮
+属**净窗活跑**（负载 0.30→0.27 零兄弟流腿零端口竞争 净窗亚
+型 S208/S742/S752/S761/S765-S771 先例口径 门腿窗内零本流并
+行腿 门后零本门残留）。双层锚点零漂移——自有面对 765429dda
+维持 **4 files +137/-17** 精确一致（Makefile 1/1 +
+apps/browser/README.md 1/0 + headless/mod.rs 25/0 +
+headless/session.rs 110/16）；全树排除本流 docs 对 18d462de6
+维持 **82 files +6027/-460** 与 S765 刷新基线逐项一致（含
+a68dddff8 docs-only 入集漂移面值非代码）；crates/ 观察面
+raw 维持 **48**（S765 刷新基线）。子帧关键词非测试代码零命
+中维持；crates/ 口径 7 测试文件既有形态维持，实质判定不变
+frames.click+evaluate 维持挂起。机器卫生：启停零 zombie、
+端口族全 free、负载 0.30→0.27、零树污染（tracked clean，
+out/ 报告为忽略产物，门后零本门残留）。控制面零外来提交
+（本轮 pull 零新提交）。解冻条件实质判定不变：① 观察面
+crates/ raw 48 维持（S765 刷新基线），子帧三件套
+iframe.contentDocument null 现状不变，frames.click+evaluate
+维持挂起；② 本流控制面 docs/goal/cdp-protocol/ 零外来提交，
+DC-2 口径无新拍板记录。goal 自有面零新缺口、无扩展面
+（S40-S771 重审结论延续））
 ---
 
 ## 当前状态
