@@ -707,7 +707,16 @@ struct CounterRepresentation {
 }
 
 fn text_marker_baseline_offset(style: &ComputedStyle, font_size: f32) -> f32 {
-    let line_height = match &style.line_height {
+    let line_height = marker_line_height(style, font_size);
+    let ascent_ratio = if is_ahem_marker_font(style) { 0.8 } else { 0.928 };
+    // https://www.w3.org/TR/CSS22/visudet.html#line-height
+    // Match inline layout's strut baseline: half-leading + font ascent.
+    (line_height - font_size).max(0.0) / 2.0 + font_size * ascent_ratio
+}
+
+/// marker 的 resolved line-height（px）——strut 镜像与 R4375 基线同步共用。
+fn marker_line_height(style: &ComputedStyle, font_size: f32) -> f32 {
+    match &style.line_height {
         LineHeightValue::Normal => {
             let ratio = if is_ahem_marker_font(style) { 1.0 } else { 1.164 };
             font_size * ratio
@@ -716,11 +725,7 @@ fn text_marker_baseline_offset(style: &ComputedStyle, font_size: f32) -> f32 {
         LineHeightValue::Length(length) => {
             zero_style_system::computed::resolve_length(length, font_size as f64, None, None) as f32
         }
-    };
-    let ascent_ratio = if is_ahem_marker_font(style) { 0.8 } else { 0.928 };
-    // https://www.w3.org/TR/CSS22/visudet.html#line-height
-    // Match inline layout's strut baseline: half-leading + font ascent.
-    (line_height - font_size).max(0.0) / 2.0 + font_size * ascent_ratio
+    }
 }
 
 fn is_ahem_marker_font(style: &ComputedStyle) -> bool {
@@ -1336,7 +1341,39 @@ impl super::super::Painter {
             zero_css_parser::values::ListStylePositionValue::Inside => marker_x,
         };
         let text_marker_font_size = font_size;
-        let text_marker_baseline_y = marker_y + text_marker_baseline_offset(style, text_marker_font_size);
+        // R4375：marker 基线与行内文本同步——li 行文本回退链垂直度量撑开行盒基线时
+        // （`ZW_FALLBACK_LINE_METRICS`，IFC apply_vertical_alignment 的 max(strut, glyph
+        // ascent) 同式），marker 若仍走 strut 镜像公式即与行内文本错位（CJK counter-styles
+        // 族 marker 残留旧基线 vs 文本 +4px 根因）。行文本度量取 li 直接文本子（与行内
+        // 首行同字形域）；旗标关/无文本/无回调 = 旧行为。
+        let strut_baseline_offset = text_marker_baseline_offset(style, text_marker_font_size);
+        let li_text: String = doc
+            .child_nodes(node_id)
+            .iter()
+            .filter_map(|&cid| doc.get(cid))
+            .filter_map(|n| match &n.kind {
+                NodeKind::Text(t) => Some(t.content.clone()),
+                _ => None,
+            })
+            .collect();
+        let glyph_baseline = if li_text.is_empty() {
+            None
+        } else {
+            zero_layout_engine::fallback_line_metrics_for_paint(
+                Some(default_font_id.0),
+                &li_text,
+                text_marker_font_size,
+            )
+            .map(|(ga, gd)| {
+                zero_layout_engine::glyph_baseline_contribution(
+                    ga,
+                    gd,
+                    marker_line_height(style, text_marker_font_size),
+                    matches!(style.line_height, LineHeightValue::Normal),
+                )
+            })
+        };
+        let text_marker_baseline_y = marker_y + strut_baseline_offset.max(glyph_baseline.unwrap_or(0.0));
 
         // R4323：提前测量 inside marker 步进宽度（原尾部块提升为 helper）。LTR 行为
         // 不变（paint_text 于本函数完成后消费 map）；RTL（水平书写模式）inside 的

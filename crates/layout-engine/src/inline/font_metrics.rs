@@ -359,6 +359,25 @@ pub(crate) fn fallback_line_metrics_for_layout(font_id: Option<u32>, text: &str,
     FALLBACK_LINE_METRICS_FN.get()?(font_id, text, font_size)
 }
 
+/// R4375：paint 侧消费入口（含旗标门禁）——list marker 等行外装饰文本与行内文本
+/// 基线同步（`text_list::paint_list_marker`）。旗标关闭或宿主未注册返回 `None`。
+pub fn fallback_line_metrics_for_paint(font_id: Option<u32>, text: &str, font_size: f32) -> Option<(f32, f32)> {
+    if !super::runtime_flags::fallback_line_metrics() {
+        return None;
+    }
+    fallback_line_metrics_for_layout(font_id, text, font_size)
+}
+
+/// R4375：行盒**基线**贡献（ascent 分量）pub 包装，paint 侧消费同式。
+pub fn glyph_baseline_contribution(
+    glyph_ascent: f32,
+    glyph_descent: f32,
+    line_height: f32,
+    line_height_is_normal: bool,
+) -> f32 {
+    glyph_verticals_contribution(glyph_ascent, glyph_descent, line_height, line_height_is_normal).0
+}
+
 /// R4374：原始字体度量 `(ascent, |descent|)` → 行盒贡献，按 line-height 语义二分
 /// （CSS2 §10.8.1 leading 模型）：
 /// - `normal`：used line-height = 字体自身 ascent+descent——行盒按字形字体度量**撑开**，
