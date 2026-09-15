@@ -307,9 +307,9 @@
     },
     {
       "id": "mb/zero-protocol/ipc_roundtrip_10000",
-      "p95": 888809.2352941176,
+      "p95": 883886.2443181818,
       "tier": "budget",
-      "tightened_at": "2026-09-07T14:04:35Z"
+      "tightened_at": "2026-09-15T19:27:17Z"
     },
     {
       "id": "mb/zero-protocol/ipc_serialize_10000",
@@ -367,21 +367,21 @@
     },
     {
       "id": "mb/zero-script-sandbox/es_module_simple_export",
-      "p95": 286868.2636363636,
+      "p95": 284639.3125,
       "tier": "budget",
-      "tightened_at": "2026-09-14T15:01:45Z"
+      "tightened_at": "2026-09-15T19:27:17Z"
     },
     {
       "id": "mb/zero-script-sandbox/es_module_with_import",
-      "p95": 295576.85714285716,
+      "p95": 294809.795,
       "tier": "budget",
-      "tightened_at": "2026-09-07T14:04:35Z"
+      "tightened_at": "2026-09-15T19:27:17Z"
     },
     {
       "id": "mb/zero-script-sandbox/execute_json_object",
-      "p95": 277558.41,
+      "p95": 275005.66,
       "tier": "budget",
-      "tightened_at": "2026-09-12T19:26:31Z"
+      "tightened_at": "2026-09-15T19:27:17Z"
     },
     {
       "id": "mb/zero-script-sandbox/execute_loop_1k",
@@ -391,21 +391,21 @@
     },
     {
       "id": "mb/zero-script-sandbox/execute_simple_expression",
-      "p95": 269534.81636363635,
+      "p95": 269464.14,
       "tier": "budget",
-      "tightened_at": "2026-09-07T14:04:35Z"
+      "tightened_at": "2026-09-15T19:27:17Z"
     },
     {
       "id": "mb/zero-script-sandbox/execute_string_ops",
-      "p95": 273147.44528301887,
+      "p95": 269795.02777777775,
       "tier": "budget",
-      "tightened_at": "2026-09-08T19:26:30Z"
+      "tightened_at": "2026-09-15T19:27:17Z"
     },
     {
       "id": "mb/zero-script-sandbox/sandbox_creation",
-      "p95": 1575908.5333333334,
+      "p95": 1563929.6,
       "tier": "budget",
-      "tightened_at": "2026-09-07T14:04:35Z"
+      "tightened_at": "2026-09-15T19:27:17Z"
     },
     {
       "id": "mb/zero-script-sandbox/sandbox_with_config",
@@ -451,15 +451,15 @@
     },
     {
       "id": "mb/zero-storage/indexeddb_write_100",
-      "p95": 45563.073043184886,
+      "p95": 45231.49333333333,
       "tier": "budget",
-      "tightened_at": "2026-09-12T19:26:31Z"
+      "tightened_at": "2026-09-15T19:27:17Z"
     },
     {
       "id": "mb/zero-storage/local_storage_read_1000",
-      "p95": 66907.05736434109,
+      "p95": 66797.59720930233,
       "tier": "budget",
-      "tightened_at": "2026-09-09T19:26:36Z"
+      "tightened_at": "2026-09-15T19:27:17Z"
     },
     {
       "id": "mb/zero-storage/local_storage_write_1000",
@@ -523,9 +523,9 @@
     },
     {
       "id": "mb/zero-wasm-sandbox/wasm_factorial_100_calls",
-      "p95": 66368.53796728973,
+      "p95": 66310.21141975309,
       "tier": "budget",
-      "tightened_at": "2026-09-12T06:20:32Z"
+      "tightened_at": "2026-09-15T19:27:17Z"
     },
     {
       "id": "mb/zero-wasm-sandbox/wasm_module_compile",
@@ -613,9 +613,9 @@
     },
     {
       "id": "page/medium/parse_ms",
-      "p95": 9.906275,
+      "p95": 9.792627999999999,
       "tier": "budget",
-      "tightened_at": "2026-09-07T14:04:35Z"
+      "tightened_at": "2026-09-15T19:27:17Z"
     },
     {
       "id": "page/medium/style_ms",
@@ -644,9 +644,9 @@
     },
     {
       "id": "page/morning/parse_ms",
-      "p95": 0.464099,
+      "p95": 0.457181,
       "tier": "budget",
-      "tightened_at": "2026-09-09T13:26:19Z"
+      "tightened_at": "2026-09-15T19:27:17Z"
     },
     {
       "id": "page/morning/style_ms",
