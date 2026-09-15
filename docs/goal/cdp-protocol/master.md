@@ -2,51 +2,49 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-15（S740：期限轮活跑（引用计数 8/10 到期
-——S732 双腿锚点起 S733-S739 七轮引用后第 8 轮即期限轮，
-S299/S309/S351/S452/S732 先例：树不变口径下期限轮=门单腿活跑刷新
-证据新鲜度，免 make test 腿 S336 先例）——同 tip 复核 pull 零新提
-交 tip=5b89567ed 即 S739 提交本身，S739 门腿复跑后零代码变更，
-tracked 代码树与 S739 门腿覆盖树态（=S732 双腿覆盖树态）一致；
-**本轮活跑即新周期锚点**，引用计数 0/10（下轮 S741=1/10；树代码变
-化提前触发双腿刷新，docs/data-only 不入刷新面 S349 先例）。**门
-腿** make cdp-e2e ZW_IPC_VALIDATE=1 在位 18:27:36 启动 18:28:09 落
-盘（wall 33s）首调即 **PASS 33 绿 deterministic 双跑 YES EXIT=0**，
-expected_green 33 对称差 none（绿步集与基线逐项一致零漂移）、
-regressions 空、无 fatal，run_details 双 run 实质逐项一致（failed
-均仅 frames.click+evaluate 期望挂起步），ZW_IPC_VALIDATE 捕获网在
-位静默（#0 负载窗内复现监测零命中，本轮窗口验证输出零 malformed
-行；捕获网在位直证=compositor_publish_thread.rs:67 env 门控 +
-Makefile:1479 注入 renderer 子进程）；首调红形态**连续第一百五十
-四次零再现**（累计两例非聚集维持）。**dead_code warning 形态本轮
-为 replay 相位**（门腿 Finished 0.22s 零 Compiling 行；门后 no-op
-编译相位复核直证 Finished 0.16s 零 Compiling 行、warning 缓存重放
-在位 js_dom_bridge.rs:3420）——两相位口径维持（S683/S684/S685/S690/
-S716/S717/S724 全新编译在位 + S686-S689/S691-S715/S718-S740 缓存
-replay 在位均确定性），clippy -p zero-engine --lib -- -D warnings
-维持 PASS（本轮实测 Finished 0.21s 零 warning）DC-4 不可退让面零暴
-露，归因 engine crate zero-web 流域，本流不碰 engine 记账不修。本
-轮属**负载窗口内活跑**（开工兄弟流 product-smoke 腿 zero-browser
-30.4% CPU 在窗——target/release --smoke-capture 旗标 cwd/exe 实测
-= ZeroWeb-2 cmdline 直证同源归因，双 clone 隔离零污染本树，非端口
-竞争面 9222 族全 free，负载窗内优先执行——负载下样本对 #0 更有价
-值 S218/S228/S238/S662-S739 先例；门后同腿 30.6% 延续在窗，负载
-3.23→2.84 回落窗延续非本门产物，门后零本门残留）。双层锚点零漂移
-——自有面对 765429dda 维持 **4 files +137/-17** 精确一致（Makefile
-1/1 + apps/browser/README.md 1/0 + headless/mod.rs 25/0 +
+**最后更新**: 2026-09-15（S741：静默监测引用轮（引用计数
+0/10→1/10，S740 期限轮活跑为新周期锚点）——同 tip 复核 pull 零新
+提交 tip=80d5a3563 即 S740 提交本身，S740 门腿活跑后零代码变更，
+tracked 代码树与 S740 活跑覆盖树态一致，树不变口径=门单腿引用
+S740 期限轮活跑 + S741 门腿复跑（免 make test 腿，S336 先例；下轮
+S742=2/10，新周期 8/10 次轮即期限轮口径下至迟 S748 期限轮活跑，树
+代码变化提前触发双腿刷新）。**门腿** make cdp-e2e ZW_IPC_VALIDATE=1
+在位 18:30:17 启动 18:30:51 落盘（wall 34s）首调即 **PASS 33 绿
+deterministic 双跑 YES EXIT=0**，expected_green 33 对称差 none（绿步
+集与基线逐项一致零漂移）、regressions 空、无 fatal，run_details 双
+run 实质逐项一致（failed 均仅 frames.click+evaluate 期望挂起步），
+ZW_IPC_VALIDATE 捕获网在位静默（#0 复现监测零命中，本轮窗口验证输
+出零 malformed 行；捕获网在位直证=compositor_publish_thread.rs:67
+env 门控 + Makefile:1479 注入 renderer 子进程）；首调红形态**连续
+第一百五十五次零再现**（累计两例非聚集维持）。**dead_code warning
+形态本轮为 replay 相位**（门腿 Finished 0.18s 零 Compiling 行；门后
+no-op 编译相位复核直证 Finished 0.16s 零 Compiling 行、warning 缓存
+重放在位 js_dom_bridge.rs:3420）——两相位口径维持（S683/S684/S685/
+S690/S716/S717/S724 全新编译在位 + S686-S689/S691-S715/S718-S741 缓
+存 replay 在位均确定性），clippy -p zero-engine --lib -- -D warnings
+维持 PASS（本轮实测 Finished 0.18s 零 warning）DC-4 不可退让面零暴
+露，归因 engine crate zero-web 流域，本流不碰 engine 记账不修。本轮
+窗口亚型 = **净窗开工 + 窗尾兄弟流编译波切入**（开工负载 3.02 零
+>50% CPU 进程零并行腿零端口竞争——净窗亚型 S208/S729/S730/S731/S739
+先例口径；门腿落盘后兄弟流 make test 编译波回窗——rustc
+zero_layout_engine 374% + zero_engine 338% + 第三 rustc 97% 并窗
+（cwd=ZeroWeb-2 cmdline 直证编译腿非本门产物），负载 3.02→4.11 上
+行窗非本门产物，门后零本门残留）。双层锚点零漂移——自有面对
+765429dda 维持 **4 files +137/-17** 精确一致（Makefile 1/1 +
+apps/browser/README.md 1/0 + headless/mod.rs 25/0 +
 headless/session.rs 110/16）；全树排除本流 docs 对 18d462de6 维持
 **80 files +5800/-453** 与上轮逐项一致零新增（S729 刷新基线）；
 crates/ 观察面 raw 维持 **45**（S724 基线）。子帧关键词非测试代码
 零命中维持；crates/ 口径 7 测试文件既有形态维持，实质判定不变
 frames.click+evaluate 维持挂起。机器卫生：启动前零 zombie、端口族
-全 free、负载 3.23 兄弟流 smoke 腿窗；门腿后零 zombie、端口族零残
-留、零树污染（tracked clean，out/ 报告为忽略产物；窗尾兄弟流
-smoke 腿延续在窗非本门产物）。控制面零外来提交（本轮 pull 零新提
-交）。解冻条件实质判定不变：① 观察面 raw 45 维持（S724 基线），
-子帧三件套 iframe.contentDocument null 现状不变，
-frames.click+evaluate 维持挂起；② 本流控制面
-docs/goal/cdp-protocol/ 零外来提交，DC-2 口径无新拍板记录。goal 自
-有面零新缺口、无扩展面（S40-S739 重审结论延续））
+全 free、负载 3.02 净窗；门腿后零 zombie、端口族零残留、零树污染
+（tracked clean，out/ 报告为忽略产物；窗尾兄弟流编译腿延续在窗非
+本门产物）。控制面零外来提交（本轮 pull 零新提交）。解冻条件实质
+判定不变：① 观察面 raw 45 维持（S724 基线），子帧三件套
+iframe.contentDocument null 现状不变，frames.click+evaluate 维持挂
+起；② 本流控制面 docs/goal/cdp-protocol/ 零外来提交，DC-2 口径无
+新拍板记录。goal 自有面零新缺口、无扩展面（S40-S740 重审结论延
+续））
 
 ---
 
