@@ -135,6 +135,84 @@ fn test_parse_text_transform() {
     assert_eq!(parse_text_transform("capitalize"), Some(TextTransformValue::Capitalize));
 }
 
+/// R4381（CSS Text 3 §3.1 多值组合）：`<transform-case> || full-width || full-size-kana`。
+#[test]
+fn test_parse_text_transform_combined() {
+    // 驱动案五种组合（text-transform-multiple-001）。
+    assert_eq!(
+        parse_text_transform("uppercase full-width"),
+        Some(TextTransformValue::Combined {
+            case: Some(CaseTransform::Uppercase),
+            full_width: true,
+            full_size_kana: false,
+        })
+    );
+    assert_eq!(
+        parse_text_transform("lowercase full-width"),
+        Some(TextTransformValue::Combined {
+            case: Some(CaseTransform::Lowercase),
+            full_width: true,
+            full_size_kana: false,
+        })
+    );
+    assert_eq!(
+        parse_text_transform("full-width full-size-kana lowercase"),
+        Some(TextTransformValue::Combined {
+            case: Some(CaseTransform::Lowercase),
+            full_width: true,
+            full_size_kana: true,
+        })
+    );
+    // 关键字顺序无关（|| 组合器）；大小写不敏感；多余空白折叠。
+    assert_eq!(
+        parse_text_transform("FULL-WIDTH  uppercase"),
+        parse_text_transform("uppercase full-width")
+    );
+    // 单关键字仍落单值变体（旧行为字节不变）。
+    assert_eq!(parse_text_transform("full-width"), Some(TextTransformValue::FullWidth));
+    // 非法组合：重复 case、none 混搭、未知关键字。
+    assert!(parse_text_transform("uppercase lowercase").is_none());
+    assert!(parse_text_transform("none full-width").is_none());
+    assert!(parse_text_transform("uppercase bogus").is_none());
+    assert!(parse_text_transform("").is_none());
+}
+
+/// R4381：组合值 apply 流水线 + full-width 空格映射 + 小書き仮名补全。
+#[test]
+fn test_text_transform_combined_apply() {
+    // case + full-width（multiple-001 第一对：transformed 行必须与字面全角行一致）。
+    let t = parse_text_transform("uppercase full-width").unwrap();
+    assert_eq!(t.apply("HELLO world"), "ＨＥＬＬＯ　ＷＯＲＬＤ");
+    // lowercase + full-width。
+    let t = parse_text_transform("lowercase full-width").unwrap();
+    assert_eq!(t.apply("HELLO"), "ｈｅｌｌｏ");
+    // capitalize + full-width：词首大写其余小写。
+    let t = parse_text_transform("capitalize full-width").unwrap();
+    assert_eq!(t.apply("transformed world"), "Ｔｒａｎｓｆｏｒｍｅｄ　Ｗｏｒｌｄ");
+    // full-width：U+0020 → U+3000 表意空格（spec + fullwidth-009 assert）。
+    assert_eq!(TextTransformValue::FullWidth.apply("A B"), "Ａ\u{3000}Ｂ");
+    // full-size-kana：ゕゖ 与小書き拡張补全（multiple-001 kana 行）。
+    assert_eq!(
+        TextTransformValue::FullSizeKana.apply("ゕゖㇰヶㇱㇲッㇳㇴ"),
+        "かけクケシスツトヌ"
+    );
+    // 组合：full-width full-size-kana lowercase（multiple-001 第五对）。
+    let t = parse_text_transform("full-width full-size-kana lowercase").unwrap();
+    assert_eq!(
+        t.apply("Hiragana: ぁぃぅぇぉゕゖっゃゅょゎ"),
+        "ｈｉｒａｇａｎａ：\u{3000}あいうえおかけつやゆよわ"
+    );
+}
+
+/// R4381：组合值 CSS 序列化按文法序连接。
+#[test]
+fn test_text_transform_combined_css_string() {
+    let t = parse_text_transform("full-width full-size-kana lowercase").unwrap();
+    assert_eq!(t.to_css_string(), "lowercase full-width full-size-kana");
+    assert_eq!(TextTransformValue::None.to_css_string(), "none");
+    assert_eq!(TextTransformValue::FullWidth.to_css_string(), "full-width");
+}
+
 #[test]
 fn test_parse_white_space() {
     assert_eq!(parse_white_space("nowrap"), Some(WhiteSpaceValue::Nowrap));

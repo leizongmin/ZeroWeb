@@ -217,6 +217,17 @@ pub enum TextDecorationThicknessValue {
     Length(LengthValue),
 }
 
+/// CSS text-transform 的大小写变换分量（CSS Text 3 §3.1 `<transform-case>`）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CaseTransform {
+    /// capitalize。
+    Capitalize,
+    /// uppercase。
+    Uppercase,
+    /// lowercase。
+    Lowercase,
+}
+
 /// CSS text-transform 值。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TextTransformValue {
@@ -228,10 +239,24 @@ pub enum TextTransformValue {
     Lowercase,
     /// capitalize。
     Capitalize,
-    /// full-width（CSS Text 3 §3.1：ASCII 可打印字符 U+0021–U+007E → 全角 U+FF01–U+FF5E）。
+    /// full-width（CSS Text 3 §3.1：ASCII 可打印字符 U+0021–U+007E → 全角 U+FF01–U+FF5E，
+    /// U+0020 空格 → 表意空格 U+3000）。
     FullWidth,
     /// full-size-kana（CSS Text 3 §3.1：小書き仮名 → 普通仮名）。
     FullSizeKana,
+    /// R4381（CSS Text 3 §3.1：`<transform-case> || full-width || full-size-kana`）：
+    /// 多值组合声明（如 `uppercase full-width`）。单关键字声明仍落上述单值变体
+    /// （既有行为字节不变）；组件变换对字符作用域正交（case 只动 Latin、full-width
+    /// 只动 ASCII 可打印+空格、full-size-kana 只动小書き仮名），apply 按
+    /// case → full-width → full-size-kana 流水线序执行。
+    Combined {
+        /// 大小写变换分量（最多一个）。
+        case: Option<CaseTransform>,
+        /// full-width 分量。
+        full_width: bool,
+        /// full-size-kana 分量。
+        full_size_kana: bool,
+    },
 }
 
 impl TextTransformValue {
@@ -265,59 +290,168 @@ impl TextTransformValue {
                 }
                 result
             }
-            // CSS Text 3 §3.1：full-width 把 ASCII 可打印字符（U+0021–U+007E）映射到
-            // 全角形式（U+FF01–U+FF5E，偏移 +0xFEE0）；空格（U+0020）与非 ASCII 不变。
-            // driving: WPT css-text text-transform-fullwidth-001/009。
-            TextTransformValue::FullWidth => text
-                .chars()
-                .map(|c| {
-                    let u = c as u32;
-                    if (0x21..=0x7E).contains(&u) {
-                        char::from_u32(u + 0xFEE0).unwrap_or(c)
-                    } else {
-                        c
+            TextTransformValue::FullWidth => apply_full_width(text),
+            TextTransformValue::FullSizeKana => apply_full_size_kana(text),
+            // R4381：组合值流水线（case → full-width → full-size-kana）。三组件作用域
+            // 正交（case 只动 Latin、full-width 只动 U+0021–U+007E 与空格、kana 只动
+            // 小書き仮名），序不影响结果；按规范文法序执行。driving: WPT
+            // text-transform-multiple-001（`uppercase full-width` 等五组合）。
+            TextTransformValue::Combined {
+                case,
+                full_width,
+                full_size_kana,
+            } => {
+                let mut text = text.to_string();
+                match case {
+                    Some(CaseTransform::Uppercase) => text = text.to_uppercase(),
+                    Some(CaseTransform::Lowercase) => text = text.to_lowercase(),
+                    Some(CaseTransform::Capitalize) => {
+                        let mut result = String::with_capacity(text.len());
+                        let mut prev_is_boundary = true;
+                        for ch in text.chars() {
+                            if prev_is_boundary && ch.is_alphabetic() {
+                                for c in ch.to_uppercase() {
+                                    result.push(c);
+                                }
+                            } else {
+                                result.push(ch);
+                            }
+                            prev_is_boundary = !ch.is_alphanumeric();
+                        }
+                        text = result;
                     }
-                })
-                .collect(),
-            // CSS Text 3 §3.1：full-size-kana 把小書き仮名（清音/濁音/半濁音/拗音の小書き）
-            // 映射到普通仮名（ Hiragana + Katakana 小書き → 同音の普通形）。driving: WPT
-            // css-text text-transform-full-size-kana-005。
-            TextTransformValue::FullSizeKana => {
-                text.chars()
-                    .map(|c| {
-                        let m = match c {
-                            // Hiragana 小書き → 普通
-                            '\u{3041}' => Some('\u{3042}'), // ぁ→あ
-                            '\u{3043}' => Some('\u{3044}'), // ぃ→い
-                            '\u{3045}' => Some('\u{3046}'), // ぅ→う
-                            '\u{3047}' => Some('\u{3048}'), // ぇ→え
-                            '\u{3049}' => Some('\u{304A}'), // ぉ→お
-                            '\u{3063}' => Some('\u{3064}'), // っ→つ
-                            '\u{3083}' => Some('\u{3084}'), // ゃ→や
-                            '\u{3085}' => Some('\u{3086}'), // ゅ→ゆ
-                            '\u{3087}' => Some('\u{3088}'), // ょ→よ
-                            '\u{308E}' => Some('\u{308F}'), // ゎ→わ
-                            // Katakana 小書き → 普通
-                            '\u{30A1}' => Some('\u{30A2}'), // ァ→ア
-                            '\u{30A3}' => Some('\u{30A4}'), // ィ→イ
-                            '\u{30A5}' => Some('\u{30A6}'), // ゥ→ウ
-                            '\u{30A7}' => Some('\u{30A8}'), // ェ→エ
-                            '\u{30A9}' => Some('\u{30AA}'), // ォ→オ
-                            '\u{30C3}' => Some('\u{30C4}'), // ッ→ツ
-                            '\u{30E3}' => Some('\u{30E4}'), // ャ→ヤ
-                            '\u{30E5}' => Some('\u{30E6}'), // ュ→ユ
-                            '\u{30E7}' => Some('\u{30E8}'), // ョ→ヨ
-                            '\u{30EE}' => Some('\u{30EF}'), // ヮ→ワ
-                            '\u{30F5}' => Some('\u{30AB}'), // ヵ→カ
-                            '\u{30F6}' => Some('\u{30B1}'), // ヶ→ケ
-                            _ => None,
-                        };
-                        m.unwrap_or(c)
-                    })
-                    .collect()
+                    None => {}
+                }
+                if *full_width {
+                    text = apply_full_width(&text);
+                }
+                if *full_size_kana {
+                    text = apply_full_size_kana(&text);
+                }
+                text
             }
         }
     }
+
+    /// R4381：是否为「无变换」值（`none`）。组合值任一分量存在即非 none。
+    pub fn is_none(&self) -> bool {
+        matches!(self, TextTransformValue::None)
+    }
+
+    /// R4381：CSS 序列化（getComputedStyle 语义）：组合值按文法序
+    /// `<transform-case>`、`full-width`、`full-size-kana` 以空格连接；
+    /// 单值原样；`none` → "none"。
+    pub fn to_css_string(&self) -> String {
+        match self {
+            TextTransformValue::None => "none".to_string(),
+            TextTransformValue::Uppercase => "uppercase".to_string(),
+            TextTransformValue::Lowercase => "lowercase".to_string(),
+            TextTransformValue::Capitalize => "capitalize".to_string(),
+            TextTransformValue::FullWidth => "full-width".to_string(),
+            TextTransformValue::FullSizeKana => "full-size-kana".to_string(),
+            TextTransformValue::Combined {
+                case,
+                full_width,
+                full_size_kana,
+            } => {
+                let mut parts: Vec<&str> = Vec::new();
+                match case {
+                    Some(CaseTransform::Uppercase) => parts.push("uppercase"),
+                    Some(CaseTransform::Lowercase) => parts.push("lowercase"),
+                    Some(CaseTransform::Capitalize) => parts.push("capitalize"),
+                    None => {}
+                }
+                if *full_width {
+                    parts.push("full-width");
+                }
+                if *full_size_kana {
+                    parts.push("full-size-kana");
+                }
+                if parts.is_empty() {
+                    "none".to_string()
+                } else {
+                    parts.join(" ")
+                }
+            }
+        }
+    }
+}
+
+/// CSS Text 3 §3.1 full-width：ASCII 可打印字符（U+0021–U+007E）映射到全角形式
+/// （U+FF01–U+FF5E，偏移 +0xFEE0）；U+0020 空格 → 表意空格 U+3000（WPT
+/// text-transform-fullwidth-009 assert 明言此映射）；其余字符不变。
+/// driving: WPT css-text text-transform-fullwidth-001/009、multiple-001。
+fn apply_full_width(text: &str) -> String {
+    text.chars()
+        .map(|c| {
+            let u = c as u32;
+            if (0x21..=0x7E).contains(&u) {
+                char::from_u32(u + 0xFEE0).unwrap_or(c)
+            } else if u == 0x20 {
+                '\u{3000}'
+            } else {
+                c
+            }
+        })
+        .collect()
+}
+
+/// CSS Text 3 §3.1 full-size-kana：小書き仮名（清音/濁音/半濁音/拗音の小書き）映射到
+/// 普通仮名（ Hiragana + Katakana 小書き → 同音の普通形）。R4381 补齐 U+3095/3096
+/// （ゕゖ）与 U+31F0–U+31FF 小書き拡張（ㇰ–ㇿ）。driving: WPT full-size-kana-005、
+/// multiple-001。
+fn apply_full_size_kana(text: &str) -> String {
+    text.chars()
+        .map(|c| {
+            let m = match c {
+                // Hiragana 小書き → 普通
+                '\u{3041}' => Some('\u{3042}'), // ぁ→あ
+                '\u{3043}' => Some('\u{3044}'), // ぃ→い
+                '\u{3045}' => Some('\u{3046}'), // ぅ→う
+                '\u{3047}' => Some('\u{3048}'), // ぇ→え
+                '\u{3049}' => Some('\u{304A}'), // ぉ→お
+                '\u{3063}' => Some('\u{3064}'), // っ→つ
+                '\u{3083}' => Some('\u{3084}'), // ゃ→や
+                '\u{3085}' => Some('\u{3086}'), // ゅ→ゆ
+                '\u{3087}' => Some('\u{3088}'), // ょ→よ
+                '\u{308E}' => Some('\u{308F}'), // ゎ→わ
+                '\u{3095}' => Some('\u{304B}'), // ゕ→か
+                '\u{3096}' => Some('\u{3051}'), // ゖ→け
+                // Katakana 小書き → 普通
+                '\u{30A1}' => Some('\u{30A2}'), // ァ→ア
+                '\u{30A3}' => Some('\u{30A4}'), // ィ→イ
+                '\u{30A5}' => Some('\u{30A6}'), // ゥ→ウ
+                '\u{30A7}' => Some('\u{30A8}'), // ェ→エ
+                '\u{30A9}' => Some('\u{30AA}'), // ォ→オ
+                '\u{30C3}' => Some('\u{30C4}'), // ッ→ツ
+                '\u{30E3}' => Some('\u{30E4}'), // ャ→ヤ
+                '\u{30E5}' => Some('\u{30E6}'), // ュ→ユ
+                '\u{30E7}' => Some('\u{30E8}'), // ョ→ヨ
+                '\u{30EE}' => Some('\u{30EF}'), // ヮ→ワ
+                '\u{30F5}' => Some('\u{30AB}'), // ヵ→カ
+                '\u{30F6}' => Some('\u{30B1}'), // ヶ→ケ
+                // Katakana 小書き拡張（Unicode Katakana Phonetic Extensions）
+                '\u{31F0}' => Some('\u{30AF}'), // ㇰ→ク
+                '\u{31F1}' => Some('\u{30B7}'), // ㇱ→シ
+                '\u{31F2}' => Some('\u{30B9}'), // ㇲ→ス
+                '\u{31F3}' => Some('\u{30C8}'), // ㇳ→ト
+                '\u{31F4}' => Some('\u{30CC}'), // ㇴ→ヌ
+                '\u{31F5}' => Some('\u{30CF}'), // ㇵ→ハ
+                '\u{31F6}' => Some('\u{30D2}'), // ㇶ→ヒ
+                '\u{31F7}' => Some('\u{30D5}'), // ㇷ→フ
+                '\u{31F8}' => Some('\u{30D8}'), // ㇸ→ヘ
+                '\u{31F9}' => Some('\u{30DB}'), // ㇹ→ホ
+                '\u{31FA}' => Some('\u{30E0}'), // ㇺ→ム
+                '\u{31FB}' => Some('\u{30E9}'), // ㇻ→ラ
+                '\u{31FC}' => Some('\u{30EA}'), // ㇼ→リ
+                '\u{31FD}' => Some('\u{30EB}'), // ㇽ→ル
+                '\u{31FE}' => Some('\u{30EC}'), // ㇾ→レ
+                '\u{31FF}' => Some('\u{30ED}'), // ㇿ→ロ
+                _ => None,
+            };
+            m.unwrap_or(c)
+        })
+        .collect()
 }
 
 /// word-separator 字符判定（CSS Text 3 §8.1 word-spacing）。

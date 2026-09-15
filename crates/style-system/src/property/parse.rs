@@ -666,16 +666,90 @@ pub fn parse_text_decoration_line(value: &str) -> Option<TextDecorationLineValue
 }
 
 /// 解析 CSS text-transform 值。
+///
+/// R4381（CSS Text 3 §3.1：`none | [ <transform-case> || full-width || full-size-kana ]`）：
+/// 支持多关键字空格组合（如 `uppercase full-width`、`full-width full-size-kana lowercase`）
+/// ——组合落 `TextTransformValue::Combined`；单关键字维持单值变体（既有行为字节不变）。
+/// 非法组合（重复 case 关键字、重复 full-width 等）与含 `none` 的多值声明按 CSS 无效
+/// 声明处理返回 None。
 pub fn parse_text_transform(value: &str) -> Option<TextTransformValue> {
-    match value.trim().to_ascii_lowercase().as_str() {
-        "none" => Some(TextTransformValue::None),
-        "uppercase" => Some(TextTransformValue::Uppercase),
-        "lowercase" => Some(TextTransformValue::Lowercase),
-        "capitalize" => Some(TextTransformValue::Capitalize),
-        "full-width" => Some(TextTransformValue::FullWidth),
-        "full-size-kana" => Some(TextTransformValue::FullSizeKana),
-        _ => None,
+    let mut case: Option<TextTransformValue> = None;
+    let mut full_width = false;
+    let mut full_size_kana = false;
+    let mut seen = 0usize;
+    for keyword in value.split_whitespace() {
+        seen += 1;
+        match keyword.to_ascii_lowercase().as_str() {
+            "none" => {
+                // none 不可与其他关键字组合；单独出现即 none。
+                return if seen == 1 && value.split_whitespace().count() == 1 {
+                    Some(TextTransformValue::None)
+                } else {
+                    None
+                };
+            }
+            "uppercase" => {
+                if case.is_some() {
+                    return None;
+                }
+                case = Some(TextTransformValue::Uppercase);
+            }
+            "lowercase" => {
+                if case.is_some() {
+                    return None;
+                }
+                case = Some(TextTransformValue::Lowercase);
+            }
+            "capitalize" => {
+                if case.is_some() {
+                    return None;
+                }
+                case = Some(TextTransformValue::Capitalize);
+            }
+            "full-width" => {
+                if full_width {
+                    return None;
+                }
+                full_width = true;
+            }
+            "full-size-kana" => {
+                if full_size_kana {
+                    return None;
+                }
+                full_size_kana = true;
+            }
+            _ => return None,
+        }
     }
+    if seen == 0 {
+        return None;
+    }
+    if seen == 1 {
+        // 单关键字 → 单值变体（与 R4381 前逐字节一致）。
+        return match case {
+            Some(v) => Some(v),
+            None => {
+                if full_width {
+                    Some(TextTransformValue::FullWidth)
+                } else if full_size_kana {
+                    Some(TextTransformValue::FullSizeKana)
+                } else {
+                    None
+                }
+            }
+        };
+    }
+    let case = case.map(|v| match v {
+        TextTransformValue::Uppercase => CaseTransform::Uppercase,
+        TextTransformValue::Lowercase => CaseTransform::Lowercase,
+        TextTransformValue::Capitalize => CaseTransform::Capitalize,
+        _ => unreachable!("case 只可能是大小写三分量"),
+    });
+    Some(TextTransformValue::Combined {
+        case,
+        full_width,
+        full_size_kana,
+    })
 }
 
 /// 解析 CSS white-space 值。

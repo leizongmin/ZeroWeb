@@ -1528,15 +1528,8 @@ fn cursor_str(c: &CursorValue) -> String {
 }
 
 fn text_transform_str(t: &TextTransformValue) -> String {
-    match t {
-        TextTransformValue::None => "none",
-        TextTransformValue::Uppercase => "uppercase",
-        TextTransformValue::Lowercase => "lowercase",
-        TextTransformValue::Capitalize => "capitalize",
-        TextTransformValue::FullWidth => "full-width",
-        TextTransformValue::FullSizeKana => "full-size-kana",
-    }
-    .to_string()
+    // R4381：序列化收敛到 style-system `to_css_string`（组合值按文法序连接）。
+    t.to_css_string()
 }
 
 /// `text-decoration-line`：多 flag 组合（CSS Text Decoration §3.1）。规范序

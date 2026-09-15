@@ -2198,23 +2198,24 @@ mod tests {
     #[test]
     fn test_r2327_text_transform_full_width() {
         // CSS Text 3 §3.1：ASCII 可打印 U+0021–U+007E → 全角 U+FF01–U+FF5E（+0xFEE0）；
-        // 空格（U+0020）与非 ASCII 不变。driving: css-text text-transform-fullwidth-001/009。
+        // U+0020 → 表意空格 U+3000（R4381，spec + fullwidth-009 assert）；非 ASCII 不变。
+        // driving: css-text text-transform-fullwidth-001/009。
         assert_eq!(
             apply_text_transform("Hello!", &TextTransformValue::FullWidth),
             "\u{FF28}\u{FF45}\u{FF4C}\u{FF4C}\u{FF4F}\u{FF01}", // Ｈｅｌｌｏ！
             "ASCII letters + punct -> fullwidth"
         );
-        // 数字与符号（空格不转换）
+        // 数字与符号（空格转表意空格）
         assert_eq!(
             apply_text_transform("A1 #", &TextTransformValue::FullWidth),
-            "\u{FF21}\u{FF11} \u{FF03}", // Ａ１ ＃（空格保留，# → U+FF03）
-            "digits/symbols -> fullwidth, space preserved"
+            "\u{FF21}\u{FF11}\u{3000}\u{FF03}", // Ａ１　＃（空格 → U+3000，# → U+FF03）
+            "digits/symbols -> fullwidth, space -> ideographic space"
         );
-        // 空格（U+0020）保留不转换，两侧字母转全角
+        // 空格（U+0020）→ 表意空格（U+3000），两侧字母转全角
         let r = apply_text_transform("A B", &TextTransformValue::FullWidth);
         assert_eq!(
-            r, "\u{FF21} \u{FF22}",
-            "space U+0020 preserved (ASCII), letters fullwidth'd"
+            r, "\u{FF21}\u{3000}\u{FF22}",
+            "space U+0020 -> ideographic U+3000, letters fullwidth'd"
         );
         // 非 ASCII（中文）不变
         assert_eq!(apply_text_transform("中文", &TextTransformValue::FullWidth), "中文");
