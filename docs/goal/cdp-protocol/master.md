@@ -17241,6 +17241,29 @@ test 腿 ~03:34 收口），下轮 S836=1/10（至迟 S842=8/10 次
    面 crates/ raw 由 52 入树刷新为 53（兄弟流提交非本流动作），
    ①其余口径与②照旧。
 
+   **S835 轮后插记（2026-09-16 推送序列 pull --rebase 实测）**：
+   兄弟流 b2fe55ac1（chore(perf) 更新 CI 性能基线/趋势
+   benchmarks dispatch——.github 两 benchmark JSON + docs/perf/
+   trends/benchmark-trend.csv，3 files +1276/-24，**data-only
+   非代码零 .rs/Cargo/Makefile 面**）于 S835 双腿收口（门腿
+   03:21:52 落盘、make test 腿 ~03:34 收口）之后经 push 前
+   pull --rebase 入树（我方 S835 提交 rebase 后 87283c198，
+   push b2fe55ac1..87283c198 fast-forward）——**data-only 归因
+   不入刷新面（S683 先例 docs/data-only 口径），S836 维持引用
+   轮口径（门单腿复跑免 make test 腿 S336 先例）**，仅记锚点
+   面值漂移：全树排除本流 docs 对 18d462de6 由 88 files
+   +8237/-573 入树刷新为 **89 files +9511/-595**（本插记时点
+   实测——data-only 三文件均在 docs/perf 与 .github 面，代码
+   面零变化），crates/ raw 维持 **53**（实测复核），自有面
+   765429dda 维持 4 files +137/-17（实测复核）；S835 双腿覆盖
+   树态（=R4384 组合态代码树）实质不变——tracked 代码树
+   （Rust/Cargo/Makefile 面）与 S835 双腿覆盖态一致，引用计
+   数维持 S835 双腿新周期锚点顺延（下轮 S836=1/10），下轮门
+   单腿活跑时锚点复核以本插记刷新值 89 files +9511/-595 与
+   crates/ raw 53 为基线；make test 全量参考基线 19,307P/0F
+   不受影响（data-only 零测试面）；解冻条件①观察面 crates/
+   raw 53 维持，①其余口径与②照旧。
+
 **待用户决策清单**：
 - **DC-2 收口口径（2026-09-13 新入，S39 后语境收窄维持）**：余 1 步（frames.click+evaluate）
   真挂子帧文档加载 + JS realm + child quads——S18 探针实证：`iframe.contentDocument`
