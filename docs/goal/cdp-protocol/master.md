@@ -16372,6 +16372,17 @@ DC-2 口径无新拍板记录。goal 自有面零新缺口、无扩展面（S40-
    S684 双腿为新周期锚点 0/10（S683 header 内「下轮 S684=1/10」预告被本插记
    取代）；S684 锚点刷新口径——全树排除本流 docs 对 18d462de6 预期 62→67
    files +4737/-288 逐项记账，crates/ raw 预期 39→40 递增（**S684 实测：63 files +4738/-288、crates/ raw 40——净增 1 文件非 5，逐项记账见 S684 header**）。
+   **S684 轮后插记（2026-09-15 推送序列 pull --rebase 实测）**：兄弟流 R4372
+   （fix layout R4347 park re-land，crates/layout-engine inline 面
+   break_lines.rs + inline_types.rs + rendering-compat.md，96def002d，
+   commit 时点 12:24:02）于 S684 门腿（11:50）之后、测试腿 run2 树外
+   （run2 12:11-12:33 收口时 R4372 尚未入我方树）经 push 前 pull 入树——
+   **R4372 树态双腿均未覆盖 → S685 = 树变化刷新轮（门 + make test 双腿
+   刷新，S245→S342→S684 先例链）**，引用计数以 S685 双腿为新周期锚点
+   0/10（S684 header 内下轮 S685=1/10 预告被本插记取代）；S685 锚点预期——
+   全树排除本流 docs 对 18d462de6 63 files +4738/-288 → 预期 63 files
+   +4762/-295（R4372 三文件均在原集内零净增文件，+24/-7 以实测为准），
+   crates/ raw 40→41 递增。
 
 **待用户决策清单**：
 - **DC-2 收口口径（2026-09-13 新入，S39 后语境收窄维持）**：余 1 步（frames.click+evaluate）
