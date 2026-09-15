@@ -8,7 +8,9 @@
 //! 对「叶 block 显式 width」回退到自身显式宽度（R138 的函数对此返回 0，会漏测
 //! `<div style="width:30px">` 这类叶盒），故 grid item 的固有宽度才能正确测量。
 
+use std::cell::RefCell;
 use std::collections::HashMap;
+use std::rc::Rc;
 
 use zero_css_parser::values::{BoxSizingValue, DisplayValue, FlexDirectionValue, LengthValue, VisibilityValue};
 use zero_dom::{Document, NodeId};
@@ -16,6 +18,58 @@ use zero_style_system::ComputedStyle;
 use zero_style_system::property::types::{ColumnSpanComputedValue, FlexBasisValue, WhiteSpaceValue};
 
 use crate::types::LayoutBox;
+
+// R4367：intrinsic 文本测量的真实 advance 源（线程本地，随布局线程注入）。
+//
+// 历史：`accumulate_text_width` / `DomWalkState` 恒走 `estimate_char_width`
+// 启发式（0.55em/字母，sans 谱系标定）——R4365/R4366 把 layout/paint advance 源
+// 统一到真实 serif hmtx 后，intrinsic 路径成为最后一处 estimate 分裂点
+//（flexbox_flex-0-0-0 实证：同词 flex min-content=23.0（hmtx）vs inline-block
+// shrink-to-fit=26.4（=3×0.55em 纯估计））。`LayoutEngine::set_advance_source`
+// /`set_font_resolver` 发布线程本地；未发布（单测/无 pipeline 语境）回落估计。
+// 杀开关 `ZW_INTRINSIC_REAL_ADVANCE=0`。
+thread_local! {
+    static INTRINSIC_ADVANCE: RefCell<Option<crate::inline::AdvanceSourceHandle>> = const { RefCell::new(None) };
+    static INTRINSIC_RESOLVER: RefCell<Option<Rc<HashMap<String, u32>>>> = const { RefCell::new(None) };
+}
+
+/// 布局线程注入 intrinsic 测量用的 advance 源与 resolver（幂等，同值覆盖）。
+pub fn publish_intrinsic_font_context(advance: crate::inline::AdvanceSourceHandle, resolver: Rc<HashMap<String, u32>>) {
+    if std::env::var("ZW_INTRINSIC_REAL_ADVANCE").as_deref() == Ok("0") {
+        return;
+    }
+    INTRINSIC_ADVANCE.with(|cell| *cell.borrow_mut() = Some(advance));
+    INTRINSIC_RESOLVER.with(|cell| *cell.borrow_mut() = Some(resolver));
+}
+
+/// intrinsic 文本测量：真实 advance 源优先，未注入回落 estimate。
+fn measure_intrinsic_char(ch: char, font_id: Option<u32>, font_size: f32, is_ahem: bool) -> f32 {
+    INTRINSIC_ADVANCE.with(|cell| {
+        cell.borrow().as_ref().map_or_else(
+            || crate::inline::estimate_char_width(ch, font_size, is_ahem),
+            |handle| handle.0.measure(ch, font_id, font_size, is_ahem),
+        )
+    })
+}
+
+/// 按元素 computed style 解析 intrinsic 测量 font_id（走 font_resolution 同一
+/// 语义——含 R4365 空 family serif initial 臂）；无全局 resolver 时 None = estimate。
+fn intrinsic_font_id(style: Option<&ComputedStyle>) -> Option<u32> {
+    let style = style?;
+    INTRINSIC_RESOLVER.with(|cell| {
+        let resolver = cell.borrow();
+        let resolver = resolver.as_ref()?;
+        crate::font_resolution::resolve_font_ids_for_style(
+            resolver,
+            &style.font_family,
+            &style.font_weight,
+            &style.font_style,
+            style.font_stretch,
+        )
+        .first()
+        .copied()
+    })
+}
 
 pub(crate) fn resolve_intrinsic_real_length(value: &LengthValue, style: &ComputedStyle) -> Option<f32> {
     match value {
@@ -660,6 +714,7 @@ pub(crate) fn text_content_max_width(node_id: NodeId, doc: &Document, styles: &H
         .get(&node_id)
         .map(|s| s.white_space.clone())
         .unwrap_or(WhiteSpaceValue::Normal);
+    let font_id = intrinsic_font_id(styles.get(&node_id));
     let mut segments: Vec<f32> = vec![0.0];
     text_max_width_walk(
         node_id,
@@ -668,6 +723,7 @@ pub(crate) fn text_content_max_width(node_id: NodeId, doc: &Document, styles: &H
         is_ahem,
         &white_space,
         Some(styles),
+        font_id,
         &mut segments,
     );
     segments.into_iter().fold(0.0f32, f32::max)
@@ -690,6 +746,7 @@ fn accumulate_text_width(
     white_space: &WhiteSpaceValue,
     font_size: f32,
     is_ahem: bool,
+    font_id: Option<u32>,
     segments: &mut Vec<f32>,
 ) {
     let preserve_spaces = matches!(
@@ -702,7 +759,7 @@ fn accumulate_text_width(
         if !collapsed.is_empty() {
             let w: f32 = collapsed
                 .chars()
-                .map(|ch| crate::inline::estimate_char_width(ch, font_size, is_ahem))
+                .map(|ch| measure_intrinsic_char(ch, font_id, font_size, is_ahem))
                 .sum();
             *segments.last_mut().expect("segments 非空") += w;
         }
@@ -724,13 +781,14 @@ fn accumulate_text_width(
             }
             let w: f32 = measured
                 .chars()
-                .map(|ch| crate::inline::estimate_char_width(ch, font_size, is_ahem))
+                .map(|ch| measure_intrinsic_char(ch, font_id, font_size, is_ahem))
                 .sum();
             *segments.last_mut().expect("segments 非空") += w;
         }
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn text_max_width_walk(
     node_id: NodeId,
     doc: &Document,
@@ -738,12 +796,13 @@ fn text_max_width_walk(
     is_ahem: bool,
     white_space: &WhiteSpaceValue,
     styles: Option<&HashMap<NodeId, ComputedStyle>>,
+    font_id: Option<u32>,
     segments: &mut Vec<f32>,
 ) {
     let Some(node) = doc.get(node_id) else { return };
     match &node.kind {
         zero_dom::NodeKind::Text(t) => {
-            accumulate_text_width(&t.content, white_space, font_size, is_ahem, segments);
+            accumulate_text_width(&t.content, white_space, font_size, is_ahem, font_id, segments);
         }
         zero_dom::NodeKind::Element(e) if e.local_name().eq_ignore_ascii_case("br") => {
             segments.push(0.0);
@@ -754,7 +813,22 @@ fn text_max_width_walk(
                     .and_then(|m| m.get(&child))
                     .map(|s| s.white_space.clone())
                     .unwrap_or_else(|| white_space.clone());
-                text_max_width_walk(child, doc, font_size, is_ahem, &child_ws, styles, segments);
+                // R4043 近似沿用：嵌套异字体后代按容器 font_id 计（本域已排除出
+                // stored IFC；原子后代宽由调用方 LayoutBox 分支负责）。
+                let child_font_id = styles
+                    .and_then(|m| m.get(&child))
+                    .and_then(|cs| intrinsic_font_id(Some(cs)))
+                    .or(font_id);
+                text_max_width_walk(
+                    child,
+                    doc,
+                    font_size,
+                    is_ahem,
+                    &child_ws,
+                    styles,
+                    child_font_id,
+                    segments,
+                );
             }
         }
         _ => {}
@@ -783,12 +857,14 @@ fn dom_inline_text_max_width(box_node: &LayoutBox, doc: &Document, styles: &Hash
         .iter()
         .any(|f| f.trim_matches('"').eq_ignore_ascii_case("Ahem"));
     let white_space = style.white_space.clone();
+    let font_id = intrinsic_font_id(Some(style));
     let mut segments: Vec<f32> = vec![0.0];
     let mut state = DomWalkState {
         pending_space: false,
         line_has_content: false,
         font_size,
         is_ahem,
+        font_id,
     };
     dom_inline_text_walk(id, doc, styles, &white_space, &mut segments, &mut state);
     segments.into_iter().fold(0.0f32, f32::max)
@@ -802,13 +878,14 @@ struct DomWalkState {
     line_has_content: bool,
     font_size: f32,
     is_ahem: bool,
+    font_id: Option<u32>,
 }
 
 impl DomWalkState {
     fn flush_space(&mut self, segments: &mut [f32]) {
         if self.pending_space && self.line_has_content {
             *segments.last_mut().expect("segments 非空") +=
-                crate::inline::estimate_char_width(' ', self.font_size, self.is_ahem);
+                measure_intrinsic_char(' ', self.font_id, self.font_size, self.is_ahem);
         }
         self.pending_space = false;
     }
@@ -834,7 +911,14 @@ fn dom_inline_text_walk(
                     // 保留换行模式：逐字计宽（pre 系空白保留）；\n 切段由 accumulate 处理。
                     // 这里与折叠语义不同源，直接复用 accumulate 的 pre 臂（无跨节点折叠）。
                     let mut tmp: Vec<f32> = vec![0.0];
-                    accumulate_text_width(&t.content, white_space, state.font_size, state.is_ahem, &mut tmp);
+                    accumulate_text_width(
+                        &t.content,
+                        white_space,
+                        state.font_size,
+                        state.is_ahem,
+                        state.font_id,
+                        &mut tmp,
+                    );
                     *segments.last_mut().expect("segments 非空") += tmp.into_iter().fold(0.0f32, f32::max);
                     state.line_has_content = true;
                     continue;
@@ -848,7 +932,7 @@ fn dom_inline_text_walk(
                     state.flush_space(segments);
                     let w: f32 = collapsed
                         .chars()
-                        .map(|ch| crate::inline::estimate_char_width(ch, state.font_size, state.is_ahem))
+                        .map(|ch| measure_intrinsic_char(ch, state.font_id, state.font_size, state.is_ahem))
                         .sum();
                     *segments.last_mut().expect("segments 非空") += w;
                     state.line_has_content = true;
@@ -980,9 +1064,21 @@ pub(crate) fn fragment_inline_max_width(
     // R4223：保留换行模式同样按 \n 切段（white-space 取 split inline 自身，片段内无样式表
     // 可查嵌套覆盖——传 None 沿用继承值）。
     let white_space = inline_style.white_space.clone();
+    // R4367：片段语境无样式表可用（styles=None），font_id 走 inline_style 自身
+    //（容器近似同 dom_inline_text_max_width 的 R4043 注记）。
+    let font_id = intrinsic_font_id(Some(inline_style));
     let mut segments: Vec<f32> = vec![0.0];
     for nid in fragment_node_ids {
-        text_max_width_walk(*nid, doc, font_size, is_ahem, &white_space, None, &mut segments);
+        text_max_width_walk(
+            *nid,
+            doc,
+            font_size,
+            is_ahem,
+            &white_space,
+            None,
+            font_id,
+            &mut segments,
+        );
     }
     segments.into_iter().fold(0.0f32, f32::max)
 }

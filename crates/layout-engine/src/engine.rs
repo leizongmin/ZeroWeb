@@ -342,13 +342,25 @@ impl LayoutEngine {
     /// 注入文本 advance 提供者。
     ///
     /// 提供者沿 measure 与 stored IFC 双路径下传；未调用时继续使用启发式宽度。
+    /// R4367：同步发布到 intrinsic 测量的线程本地（`publish_intrinsic_font_context`），
+    /// 使 shrink-to-fit / flex / 表格 intrinsic 文本宽与 IFC measure 同源（真实 hmtx）。
     pub fn set_advance_source(&mut self, source: std::rc::Rc<dyn crate::inline::AdvanceSource>) {
-        self.advance_source = Some(crate::inline::AdvanceSourceHandle(source));
+        let handle = crate::inline::AdvanceSourceHandle(source);
+        if let Some(resolver) = self.font_resolver.clone() {
+            crate::intrinsic_sizing::publish_intrinsic_font_context(handle.clone(), resolver);
+        }
+        self.advance_source = Some(handle);
     }
 
     /// 注入 CSS font-family 到字体 ID 的解析表。
     pub fn set_font_resolver(&mut self, resolver: HashMap<String, u32>) {
-        self.font_resolver = Some(std::rc::Rc::new(resolver));
+        let rc = std::rc::Rc::new(resolver);
+        // pipeline 先调 set_font_resolver 后调 set_advance_source；此处先发布 resolver，
+        // advance 侧到齐后一并生效（publish 幂等）。
+        if let Some(handle) = self.advance_source.as_ref() {
+            crate::intrinsic_sizing::publish_intrinsic_font_context(handle.clone(), rc.clone());
+        }
+        self.font_resolver = Some(rc);
     }
 
     /// pass 级一次收集全文档 font overrides（所有 IFC 共享）。
