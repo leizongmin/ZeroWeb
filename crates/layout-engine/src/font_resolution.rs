@@ -33,8 +33,9 @@ fn is_generic_family_name(name: &str) -> bool {
 /// Resolves one available face per CSS family while preserving declaration order.
 ///
 /// Weight and style variants use the same fallback order as the painter. If no
-/// declared family resolves, use the available `sans-serif` face before the
-/// final no-font sentinel.
+/// declared family resolves, use the available `serif` face（chromium initial =
+/// Times New Roman → fontconfig Liberation Serif，R4365）before the `sans-serif`
+/// face and the final no-font sentinel.
 pub fn resolve_font_ids_for_style(
     resolver: &HashMap<String, u32>,
     font_family: &[String],
@@ -63,9 +64,17 @@ pub fn resolve_font_ids_for_style(
         }
     }
     if ids.is_empty() {
+        // R4365：空 font-family（UA initial）→ serif（chromium initial = Times New
+        // Roman → fontconfig Liberation Serif）。R1259 已把 Liberation Serif 装为
+        // FontId(0)，但本臂旧直接跳 sans-serif（→Liberation Sans），initial 文本
+        // 全走 sans（oracle 页首税中位 0.66%/页，R4364 定量）。带 bold/italic 变体，
+        // serif 缺 face 时回落 sans-serif。
         ids.push(
-            resolve_font_face(resolver, "sans-serif", want_bold, want_italic, font_stretch)
+            resolve_font_face(resolver, "serif", want_bold, want_italic, font_stretch)
                 .map(|face| face.0)
+                .or_else(|| {
+                    resolve_font_face(resolver, "sans-serif", want_bold, want_italic, font_stretch).map(|face| face.0)
+                })
                 .unwrap_or(0),
         );
     }

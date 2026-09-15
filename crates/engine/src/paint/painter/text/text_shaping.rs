@@ -97,6 +97,23 @@ impl super::super::Painter {
         want_italic: bool,
         font_stretch: f32,
     ) -> (FontId, bool) {
+        // R4365：空 font-family（UA initial）→ serif（chromium initial = Times New
+        // Roman → fontconfig Liberation Serif；layout 侧 resolve_font_ids_for_style
+        // 同步改）。旧穿透臂直接跳 sans-serif（→Liberation Sans），与 R1259 把
+        // Liberation Serif 装为 FontId(0) 的 initial-font 意图相悖（R4364 定量：
+        // oracle 页首税中位 0.66%/页）。
+        if font_family.is_empty()
+            && let Some(resolved) = zero_render_foundation::font::resolve_font_face(
+                &self.font_resolver_lower,
+                "serif",
+                want_bold,
+                want_italic,
+                font_stretch,
+            )
+        {
+            return (FontId(resolved.0), resolved.1);
+        }
+        // serif face 缺失时继续走下方 sans-serif 臂（浏览器 platform 集可能无 serif）。
         const GENERIC_FAMILIES: &[&str] = &[
             "serif",
             "sans-serif",
