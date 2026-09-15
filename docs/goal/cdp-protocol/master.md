@@ -35,12 +35,24 @@ top CPU 均 <4%（claude/htop 自有面零归因必要）零端口竞争
 headless/session.rs 110/16）；全树排除本流 docs 对
 18d462de6 维持 **83 files +7290/-470** 与 S782 轮后插记新
 面值逐项一致；crates/ 观察面 raw 维持 **48**（git log
-8fb39cd46..HEAD -- crates/ 口径）。子帧关键词非测试代码零
+8fb39cd46..HEAD -- crates/ 口径）。**S785 轮后插记（2026-09-15
+推送序列 pull --rebase 实测）**：兄弟流 GB-20260915 待决策
+巡检提交（2ae954d53，rendering-compat master.md +1，commit
+时点 22:20:15 早于本轮门腿窗起点 22:20:19 但于本轮执行段
+pull 零新提交、经 push 前 pull 方入我方树）——**docs-only
+零 Rust/Cargo/Makefile 面**（S349/S782 轮后插记先例 docs-
+only 归因不入刷新面），tracked **代码**树与本轮门覆盖树态
+（=S782 双腿覆盖树态=R4379+a68dddff8 组合态）一致不变，
+本轮门覆盖结论维持有效；全树锚点面值记账刷新 **83 files
++7290/-470→+7291/-470**（入集漂移面值非代码，下轮 S786 锚
+点核对以此为新面值）；crates/ raw 维持 48、自有面 4 files
++137/-17 不变。子帧关键词非测试代码零
 命中维持（crates/ 口径 7 测试文件既有形态维持），实质判定
 不变 frames.click+evaluate 维持挂起。机器卫生：启停零
 zombie、端口族全 free、零树污染（tracked clean，out/ 报告
 为忽略产物，门后零本门残留）。控制面零外来提交（本轮执行
-段 pull 零新提交）。解冻条件实质判定不变：① 观察面
+段 pull 零新提交；push 序列 pull 拉入兄弟流 docs-only 一提
+交见上插记）。解冻条件实质判定不变：① 观察面
 crates/ raw 48 维持（S765 刷新基线），子帧三件套
 iframe.contentDocument null 现状不变，frames.click+evaluate
 维持挂起；② 本流控制面 docs/goal/cdp-protocol/ 零外来提
@@ -16443,7 +16455,15 @@ iframe.contentDocument null 现状不变，frames.click+evaluate
    S782 双腿），若 S786 前树代码变化则提前触发双腿刷新
    （S245→S765 先例链），否则按引用轮口径门单腿复跑免
    make test 腿（S336 先例），至迟 S790=8/10 次轮即期限轮
-   窗、S791 期限轮活跑；
+   窗、S791 期限轮活跑；**S785 轮后插记（2026-09-15 推送序
+   列 pull --rebase 实测）**：兄弟流 2ae954d53（rendering-
+   compat 巡检 docs-only）于 push 前 pull 入树，不入刷新面
+   ——S786 维持引用轮口径=门单腿复跑免 make test 腿（S336
+   先例），引用计数 4/10（周期锚点维持 S782 双腿）；全树锚
+   点核对以 **83 files +7291/-470** 为新面值（含本轮入集漂
+   移 docs-only 面值非代码）；若 S786 前树代码变化则提前触
+   发双腿刷新，至迟 S790=8/10 次轮即期限轮窗、S791 期限轮
+   活跑；
    若活跑时逢并行流负载窗口则
    优先窗口内执行，负载下样本对 #0 更有价值（负载窗口口径含并行流 browser 进程型与
    编译测试负载型两亚型，净窗亚型 S208 起并行记录；**端口竞争亚型口径 S198 新增**：
