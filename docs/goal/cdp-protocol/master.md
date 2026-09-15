@@ -16400,6 +16400,23 @@ docs/goal/cdp-protocol/ 零外来提交，DC-2 口径无新拍板记录。goal �
    engine 属共享面（run-rules §9），系兄弟流经 main 提交非本流触碰，本流
    不碰 engine 口径不变；dead_code warning 观察面 js_dom_bridge.rs:3420
    非本次触碰文件，两相位口径照常观察。
+   **S716 轮后插记（2026-09-15 推送序列 pull --rebase 实测）**：兄弟流
+   R4375（fix paint marker 基线同步，crates/engine paint/painter/text/
+   text_list.rs + crates/layout-engine inline/font_metrics.rs +
+   rendering-compat.md，3 files +64/-7，3d658a6c6，commit 时点 15:09:38）
+   于 S716 双腿收口（门腿 14:47:05 落盘、make test 腿 15:00:04 收口——
+   engine 产物 mtime 14:59:59 与日志末次写入直证）**之后**经 push 前
+   pull 入树——S716 双腿覆盖不含该树态，**S717 = 树变化刷新轮（门 +
+   make test 双腿刷新，S245→S342→S684→S685→S716 先例链）**，引用计数
+   以 S717 双腿为新周期锚点 0/10（S716 header 内「下轮 S717=1/10」预告
+   被本插记取代）；S717 锚点预期——全树排除本流 docs 对 18d462de6
+   69 files 维持（R4375 三文件均在原集内零净增），行数 +64/-7 面值非
+   加总漂移以实测为准逐项记账；crates/ raw 43→**44** 递增；R4375 触及
+   crates/engine（paint/painter/text/text_list.rs）属共享面（run-rules
+   §9）系兄弟流经 main 提交非本流触碰，本流不碰 engine 口径不变；
+   dead_code warning 观察面 js_dom_bridge.rs:3420 非本次触碰文件，两相位
+   口径照常观察；R4375 涉 marker 基线与 product-smoke flag-on 面，均属
+   渲染流域口径非本流验收面。
 
 **待用户决策清单**：
 - **DC-2 收口口径（2026-09-13 新入，S39 后语境收窄维持）**：余 1 步（frames.click+evaluate）
