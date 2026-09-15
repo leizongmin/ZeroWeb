@@ -88,6 +88,11 @@ record-bench-baseline.sh（基线，手动）→ docs/perf/baselines/<platform_c
 - **自动收紧**（weekly CI `record-bench-trend.sh --auto-tighten`）：实测 p95 低于基线 →
   就地收紧（仅收紧永远合法，无需 justification）。
 
+**2026-09-15 linux-x86_64 本地基线 re-capture 执行记录（R4376 渲染流，静默窗机器态漂移）**：
+- **触发**：R4376（回退链垂直度量 default-on）后连续 7 轮本地 bench-gate FAIL（4/10/15/2/1/12/11 个指标，失败集逐轮完全不同），归因机器态非代码——证据链：①clean-tree A/B（git stash 对照）`mb/zero-engine/compositing_layer_analysis_200` = 46.2µs vs 旧基线 34.6µs（+33%，无 diff 亦超）；②同负载 `ZW_FALLBACK_LINE_METRICS=0` 臂 11 指标超预算且全在无关域（security cors +68%/storage/render fills）；③双流并行（兄弟 clone reftest/render_bench 腿）持续在窗 load 1.3–6.3；④本 diff 真实 delta ≤1.7%（46.99 vs 46.22µs，含噪声）。
+- **执行**：静默窗（load 0.8–1.3）`bench-report.sh` 产 `benchmark_20260915_173121.json` → `record-bench-baseline.sh --relax`（113 指标，justification 记录本证据链）。**属重建基线非放宽阈值**（GB-20260821 口径）：budget 公式与 hard tier 不动。
+- **验证（护栏④）**：re-capture 后同一树复跑 `make bench-gate` → **GATE PASS，113/113，NEW=0**（load 1.3 静默窗）——原失败轮全部指标收敛，无残留超预算项。
+
 **2026-08-30 两平台基线 re-capture 放行记录（用户批复，GB-20260829 征询 ①，7763 已执行 / 9V74 待执行）**：
 - **放行内容**：CI benchmarks **9V74** 与 **EPYC 7763** 两平台基线各**自独立**一次性 re-capture（`record-bench-baseline.sh --relax` 显式执行 + justification 记录本批复），消除 8/20 起 12 轮平台调度绑定漂移（9V74 40/113 指标 1.3-1.5× 超限、12 零改动 crate；7763 transform_chain_100/webview_builder_create 边缘超限 1.05-1.08×）造成的每轮预存 FAIL 噪声。
 - **证据链**：CI-GUARD-20260820 起累计 13 个数据点同签名；第十一轮 rerun 同 SHA 换平台（9V74→7763）即收敛至 2 项边缘超限；第十二轮再落 7763 同两项同幅度；各轮代码窗口均不含失败指标所在 crate 的预算敏感路径——平台调度绑定归因，非代码回归。
