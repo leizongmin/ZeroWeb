@@ -2,41 +2,42 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-15（S688：静默监测引用轮——同 tip 复核 pull 零新提交
-tip=f69e96056 即 S687 提交本身；S687 门腿复跑后零代码变更（f69e96056 为
-docs-only 控制面提交），树不变口径 = 门单腿引用 S685 双腿活跑 +
-S686/S687/S688 门腿复跑（免 make test 腿，S336 先例），引用计数 3/10→4/10
-（S685 双腿新周期锚点；下轮 S689=4/10，8/10 或 9/10 次轮即期限轮口径至迟
-S694/S695 期限轮活跑，树代码变化提前触发双腿刷新）。**门腿** make cdp-e2e
-ZW_IPC_VALIDATE=1 在位 13:02:21 启动 13:02:54 落盘首调即 **PASS 33 绿
+**最后更新**: 2026-09-15（S689：静默监测引用轮——同 tip 复核 pull 零新提交
+tip=163ed888f 即 S688 提交本身；S688 门腿复跑后零代码变更（163ed888f 为
+docs-only 控制面提交），树不变口径 = 门单腿引用 S685 双腿活跑 + S686-S689
+门腿复跑（免 make test 腿，S336 先例），引用计数 4/10→5/10（S685 双腿新
+周期锚点；下轮 S690=5/10，8/10 或 9/10 次轮即期限轮口径至迟 S694/S695
+期限轮活跑，树代码变化提前触发双腿刷新）。**门腿** make cdp-e2e
+ZW_IPC_VALIDATE=1 在位 13:04:48 启动 13:05:22 落盘首调即 **PASS 33 绿
 deterministic 双跑 YES EXIT=0**，expected_green 33 对称差 none（绿步集与
 基线逐项一致零漂移）、regressions 空、无 fatal，校验器在位静默（编译全
-缓存零重编 Finished 0.18s）；首调红形态**连续第一百零二次零再现**（累计
+缓存零重编 Finished 0.26s）；首调红形态**连续第一百零三次零再现**（累计
 两例非聚集维持）。**dead_code warning 形态本轮为 replay 相位**（编译全
 缓存下重放在位，js_dom_bridge.rs:3420）——两相位口径维持（S683/S684/S685
-全新编译在位 + S686/S687/S688 缓存 replay 在位均确定性），clippy -p
+全新编译在位 + S686-S689 缓存 replay 在位均确定性），clippy -p
 zero-engine --lib -- -D warnings 维持 PASS（S683 实测）DC-4 不可退让面零
 暴露，归因 engine crate zero-web 流域（workspace feature unification），
-本流不碰 engine 记账不修。本轮属兄弟流测试负载窗高峰内活跑（**第四十个
-负载下样本**——兄弟 clone ZeroWeb-2 zero_integration_tests 腿 247% CPU
-峰值在窗（新二进制 hash = S686/S687 窗 test+clippy 腿新鲜测试产物），负载
-6.73 兄弟流测试负载窗，cmdline + /proc cwd 双取证 ZeroWeb-2 路径，双 clone
-隔离零污染本树，非端口竞争面 9222 族全 free——负载下样本对 #0 更有价值
-S218/S228/S238/S662-S687 先例）。双层锚点零漂移——自有面对 765429dda
-维持 **4 files +137/-17** 精确一致；全树排除本流 docs 对 18d462de6 维持
-**63 files +4758/-291** 与上轮逐项一致零新增；crates/ 观察面 raw 维持
-**41**（R4372 基线）。子帧关键词非测试代码零命中维持；crates/ 口径 7 测试
-文件既有形态维持，实质判定不变 frames.click+evaluate 维持挂起。机器卫生：
-启动前零 zombie、端口族全 free、负载 6.73 兄弟流测试负载窗高峰；门腿后零
-zombie、端口族零残留、零树污染（tracked clean，out/ 报告为忽略产物）——
-门后残留清单全为兄弟 clone test+clippy 并行腿（新 pids = 腿内新 worker，
-/proc cwd 取证 ZeroWeb-2 路径），复扫唯一「本树」命中 = 本轮 pgrep -f 自
-匹配包装 shell 伪影（检查时点已自然退出，S686/S687 同型记档），负载 4.89
-兄弟腿延续窗。控制面零外来提交（本轮 pull 零新提交）。解冻条件实质判定
-不变：① 观察面 raw 41 维持（R4372 基线），子帧三件套 iframe.contentDocument
-null 现状不变，frames.click+evaluate 维持挂起；② 本流控制面
-docs/goal/cdp-protocol/ 零外来提交，DC-2 口径无新拍板记录。goal 自有面零
-新缺口、无扩展面（S40-S687 重审结论延续））
+本流不碰 engine 记账不修。本轮属兄弟流编译负载窗内活跑（**第四十一个
+负载下样本**——兄弟 clone rustc ×2 326%/236% CPU 峰值在窗，负载 4.90，
+cmdline 取证；本树 tracked 零污染、门禁零锁等待（34s 与历轮一致）双 clone
+隔离口径维持，非端口竞争面 9222 族全 free——负载下样本对 #0 更有价值
+S218/S228/S238/S662-S688 先例）。**残留归因新形态观察记档**：门后窗尾一
+rustc 进程（--crate-name zero_p* 326% CPU）/proc cwd 实测指向本树——检查
+时点已自然退出无法取 cmdline out-dir；本树门禁未受扰（零锁等待零污染零
+zombie）、本树常驻 rally 驱动面 agent 会话（cmdline claude -p --resume，
+历轮在账）为其合理来源候选，属瞬态观察非干扰证据，后续轮次再现时按
+cmdline out-dir 取证升级核档。双层锚点零漂移——自有面对 765429dda 维持
+**4 files +137/-17** 精确一致；全树排除本流 docs 对 18d462de6 维持 **63
+files +4758/-291** 与上轮逐项一致零新增；crates/ 观察面 raw 维持 **41**
+（R4372 基线）。子帧关键词非测试代码零命中维持；crates/ 口径 7 测试文件
+既有形态维持，实质判定不变 frames.click+evaluate 维持挂起。机器卫生：
+启动前零 zombie、端口族全 free、负载 4.90 兄弟流编译负载窗；门腿后零
+zombie、端口族零残留、零树污染（tracked clean，out/ 报告为忽略产物），
+负载 2.70 回落中。控制面零外来提交（本轮 pull 零新提交）。解冻条件实质
+判定不变：① 观察面 raw 41 维持（R4372 基线），子帧三件套
+iframe.contentDocument null 现状不变，frames.click+evaluate 维持挂起；
+② 本流控制面 docs/goal/cdp-protocol/ 零外来提交，DC-2 口径无新拍板记录。
+goal 自有面零新缺口、无扩展面（S40-S688 重审结论延续））
 
 ---
 
