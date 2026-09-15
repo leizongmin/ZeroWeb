@@ -436,10 +436,20 @@ impl InlineFormattingContext {
                         // chromium 实证空间序列停留首行悬挂，其余内容换行）。空格词 =
                         // 纯空白片段（ASCII " " 独立片段 / U+3000 per-char 分词片段）。
                         // 仅 PreWrap（break-spaces 空格为真实 advance 逐格换行，语义不同）。
-                        let hang_trailing_space = run_preserve
-                            && !content_word.is_empty()
-                            && content_word.chars().all(char::is_whitespace)
-                            && run.ws_override.is_some_and(|ws| ws.hang_trailing);
+                        // R4372：normal 模式 U+3000 词同样行尾 hang——U+3000 非 document
+                        // white space 不可折叠（is_collapsible_ws 排除），phase-2 不 trim
+                        // → 悬挂（trailing-ideographic-space-017..025 族；R4347 park 复评
+                        // 落地，−7 墙经 ruby-overhang 模型 + 度量同源四幕后新鲜 A/B 核对）。
+                        // 仅 normal（!run_preserve）：break-spaces 的 U+3000 为真实 advance
+                        // 逐格换行（hang 臂首版误罩致 007/015 翻红，实证后收窄）。
+                        let is_ws_word = !content_word.is_empty()
+                            && content_word.chars().all(char::is_whitespace);
+                        let is_ideographic_space_word = !content_word.is_empty()
+                            && content_word.chars().all(|c| c == '\u{3000}');
+                        let hang_trailing_space = (run_preserve
+                            && is_ws_word
+                            && run.ws_override.is_some_and(|ws| ws.hang_trailing))
+                            || (is_ideographic_space_word && !run_preserve);
                         if !hang_trailing_space
                             && !run_no_wrap
                             && current_x + lead_gap + word_width > left_offset + avail_width

@@ -434,10 +434,15 @@ pub(crate) fn is_collapsible_ws(ch: char) -> bool {
     // 原字符进入字形循环，由 R644 的 Cc 可见占位框渲染（WPT control-chars-00B/C/085
     // mismatch 族：旧实现把 VT 折叠成空格 → test 与空白 ref 恒等 → mismatch 恒 fail）。
     // U+00A0 保留既有 non-break 语义（R1985）。
+    // R4372（css-text-3 §3 + R4347 park 复评落地）：U+3000（ideographic space）非
+    // document white space——不可折叠（chromium 实证 normal 模式下保留 advance 并在
+    // 行尾悬挂，trailing-ideographic-space-017..025 族；WPT 断言「preserved」）。
+    // narrow 集合 = SPACE/TAB/LF/CR（R4347 当年 −7 墙经 ruby-overhang 模型 + 度量
+    // 同源四幕后新鲜 A/B 复核，见 evidence/r4371-park-reeval）。
     if is_cc_control_visible(ch) {
         return false;
     }
-    ch.is_whitespace() && ch != '\u{00A0}'
+    ch.is_whitespace() && ch != '\u{00A0}' && ch != '\u{3000}'
 }
 
 /// 须渲染为可见占位（不可折叠、不可丢弃）的 Cc 控制字符——与 R644 的
@@ -497,8 +502,9 @@ mod tests {
         for ch in ['\u{000B}', '\u{000C}', '\u{0085}', '\u{0001}'] {
             assert!(!is_collapsible_ws(ch), "{:?} must not be collapsible", ch);
         }
-        // 其他 Unicode 空白（U+3000 等）按既有行为仍可折叠（WPT 实证：窄集合回归 css-text）。
-        assert!(is_collapsible_ws('\u{3000}'), "U+3000 keeps broad-whitespace behavior");
+        // R4372：U+3000 不再可折叠（css-text-3：非 document white space；chromium
+        // normal 模式保留 advance + 行尾悬挂实证）。
+        assert!(!is_collapsible_ws('\u{3000}'), "U+3000 must not be collapsible (R4372)");
     }
 
     #[test]
