@@ -17248,7 +17248,17 @@ S245→S829→S835→S843→S848 先例链）**）
    并行流含 make cdp-e2e 腿
    的验收链在窗时属机器级 9222 端口族竞争——等待其 gate2.done 类收尾标记落地、端口
    释放后再活跑，避免两流门禁双输假失败）。
-   余项按窗口逐个解冻。**S683 轮后插记（2026-09-15 推送序列 pull --rebase 实测）**：
+   余项按窗口逐个解冻。**S848 轮后插记（2026-09-16 推送序列 pull --rebase 实测）**：
+   兄弟流 R4386（2cc778281，**docs-only**：docs/goal/rendering-compat.md +2/-1
+   段级 shaped intrinsic probe 定谳回撤记账，零 Rust/Cargo/Makefile 面）于 S848
+   双腿收口（门腿 04:28:58 + make test 腿 04:38:48）**之后**经 push 前 pull
+   入树——S848 双腿覆盖不含该提交，但 docs-only 归因不入刷新面（S349/S846 先
+   例：tracked 代码树 Rust/Cargo/Makefile 面与 S848 双腿覆盖树态一致，树不变
+   口径维持）；锚点面值漂移实测记账：全树排除本流 docs 对 18d462de6 91 files
+   +9538/-613 → **+9539/-613**（+1 = 2cc778281 折入累计 diff 归因，零净增文件），
+   crates/ raw 维持 54、自有面对 765429dda 维持 4 files +137/-17 均不变；
+   S848 header 内下轮预告（S849=1/10，周期锚点 S848 双腿）维持不变。
+   **S683 轮后插记（2026-09-15 推送序列 pull --rebase 实测）**：
    兄弟流 R4370（fix layout，crates/layout-engine inline 面 4 files +27/-6 +
    rendering-compat.md 1 file，069d5105f）于本轮门腿落盘**之后**经 push 前 pull
    入树——S683 门覆盖不含该树态，**S684 = 树变化刷新轮（门 + make test 双腿
