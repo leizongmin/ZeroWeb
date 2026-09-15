@@ -2,64 +2,53 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-15（S788：**树变化刷新轮**（R4381 组合
-态双腿刷新，S245→S342→S684→S685→S716→S717→S723→S724→S752→
-S761→S786 先例链兑现——S787 轮后插记判定——同 tip 复核
-pull 零新提交（已经是最新的）tip=835d7fdf2 即 S787 轮后插
-记提交本身，树态=R4381 组合态，**双腿活跑口径=门腿复跑 +
-make test 腿刷新，引用计数以 S788 双腿为新周期锚点 0/10**）。
-**门腿** make cdp-e2e ZW_IPC_VALIDATE=1 在位 ~23:05:2x 启动
-23:06:06 落盘（wall ~40s 含 R4381 缓存失效后增量编译）首调
-即 **PASS 33 绿 deterministic 双跑 YES EXIT=0**，
-expected_green 33 对称差 none（绿步集与基线机械 diff 逐项
-一致零漂移）、regressions 空、无 fatal，run_details 双 run
-逐项一致，ZW_IPC_VALIDATE 捕获网在位静默（#0 复现监测零命
-中）；首调红形态**连续第二百零二次零再现**（累计两例非聚
-集维持）。**dead_code warning 本轮为全新编译相位**（R4381
-触 engine/style-system 缓存失效——捕获窗含 Compiling
-zero-page-runtime/zero-browser 行，Finished 12.60s；warning
-js_dom_bridge.rs:3420 match_media_to_json（本体非 R4381 触
-碰文件）全新编译下确定性再现，S683-S765 先例口径记账），
-clippy -p zero-engine --lib -- -D warnings 维持 PASS（本轮
-实测 Finished 4.03s 零 warning）+ make test 目标内嵌
-quickjs 面 clippy --all-targets -D warnings 扫描腿随腿收口
-零告警——DC-4 不可退让面零暴露，归因 engine crate zero-web
-流域，本流不碰 engine 记账不修。**make test 腿一调收口**
-（nohup 后台 + 轮询包裹，S786 run1 工具墙钟中断先例吸
-收）：23:06:18 启动 ~23:24:4x 收口 **19,300P/0F EXIT=0 干
-净退出**——与 R4381 组合态参考基线（兄弟流自带记账
-19,300P = 19,297 + 3 property/tests/core.rs 新增落账）精确
-一致，零 FAILED 行零 make error 行。**本轮属混合窗形态活
-跑**（门腿净窗——兄弟 clone 腿族未入窗（负载 0.07 深净
-段）；make test 腿尾段负载窗——兄弟 clone ZeroWeb-2 make
-test 腿族 lstart 23:21:35（sh wrapper + test-guard）入窗、
-integration 腿 23:21:51 起 140% CPU 在窗，run 收口后仍持续
-（后检仅兄弟族余）；负载 0.07→1.56；零端口竞争 9222 族全
+**最后更新**: 2026-09-15（S789：**静默监测引用轮**（引用计数
+1/10，S788 双腿为新周期锚点）——同 tip 复核 pull 零新提交
+（已经是最新的）tip=3f829004e 即 S788 提交本身，S788 提交
+docs-only（master.md 1 file），tracked 代码树与 S788 双腿
+覆盖树态（=R4381 组合态）一致，**树不变口径=门单腿复跑免
+make test 腿（S336 先例），引用计数 1/10**。**门腿** make
+cdp-e2e ZW_IPC_VALIDATE=1 在位 ~23:28:24 启动 23:29:06 落
+盘（wall ~40s）**负载窗内首调即 PASS 33 绿 deterministic
+双跑 YES EXIT=0**，expected_green 33 对称差 none（绿步集与
+基线机械 diff 逐项一致零漂移）、regressions 空、无 fatal，
+run_details 双 run 逐项一致，ZW_IPC_VALIDATE 捕获网在位静
+默（#0 复现监测零命中）；首调红形态**连续第二百零三次零
+再现**（累计两例非聚集维持）。**dead_code warning 本轮为
+缓存 replay 相位**（门腿捕获窗含 warning 行（
+js_dom_bridge.rs:3420 match_media_to_json）但 Finished
+0.16s 零 Compiling 行——编译全缓存态（R4381 增量编译后缓
+存已暖）；两相位口径维持），clippy -p zero-engine --lib --
+-D warnings 维持 PASS（本轮实测 Finished 0.19s 零
+warning）DC-4 不可退让面零暴露，归因 engine crate zero-web
+流域，本流不碰 engine 记账不修。本轮属**负载窗内亚型活
+跑**（兄弟 clone ZeroWeb-2 zero_integration_tests 腿 642%
+CPU lstart 23:28:22 于门腿窗起点在窗、全程延续（cwd 直证
+ZeroWeb-2），负载 2.60→1.72 回落段；零端口竞争 9222 族全
 程 free；另有 9月14 lstart 外来 chromium 族 0% CPU 在册
 （remote-debugging-pipe 非 9222 端口族，非本门产物零干
-扰）；门后/run 后零本门残留（cwd 直证仅兄弟族在册）；
-S777/S779/S781-S783 负载窗 + S208/S742/S752/S761/S765-S787
-净窗双先例口径分腿记账）。锚点维持 S787 插记刷新基线——
-自有面对 765429dda 维持 **4 files +137/-17** 精确一致
-（Makefile 1/1 + apps/browser/README.md 1/0 +
-headless/mod.rs 25/0 + headless/session.rs 110/16）；全树
-排除本流 docs 对 18d462de6 维持 **88 files +7867/-556** 与
-S787 插记实测逐项一致；crates/ 观察面 raw 维持 **50**（
-git log 8fb39cd46..HEAD -- crates/ 口径）。子帧关键词非测
-试代码零命中维持（crates/ 口径 7 测试文件既有形态维持），
-实质判定不变 frames.click+evaluate 维持挂起。机器卫生：启
-停零 zombie、端口族全 free、零树污染（tracked clean，out/
-报告为忽略产物，门后/run 后零本门残留）。控制面零外来提
-交（本轮执行段 pull 零新提交）。解冻条件实质判定不变：
-① 观察面 crates/ raw 50 维持（S787 插记刷新基线），子帧
-三件套 iframe.contentDocument null 现状不变，
-frames.click+evaluate 维持挂起；② 本流控制面 docs/goal/
-cdp-protocol/ 零外来提交，DC-2 口径无新拍板记录。goal 自
-有面零新缺口、无扩展面（S40-S787 重审结论延续）。**make
-test 全量参考基线 19,300P/0F（S788 腿收口 R4381 组合态实
-测精确一致）——引用计数以 S788 双腿为新周期锚点 0/10，下
-轮 S789=1/10，至迟 S796=8/10 次轮即期限轮窗、S797 期限轮
-活跑；树代码变化提前触发双腿刷新（S245→S765 先例链）**）
+扰）；门后零本门残留（门进程族零遗留）；S777/S779/S781-
+S783/S788 负载窗先例口径）。双层锚点零漂移——自有面对
+765429dda 维持 **4 files +137/-17** 精确一致（Makefile 1/1
++ apps/browser/README.md 1/0 + headless/mod.rs 25/0 +
+headless/session.rs 110/16）；全树排除本流 docs 对
+18d462de6 维持 **88 files +7867/-556** 与 S787 插记刷新基
+线逐项一致；crates/ 观察面 raw 维持 **50**（git log
+8fb39cd46..HEAD -- crates/ 口径）。子帧关键词非测试代码零
+命中维持（crates/ 口径 7 测试文件既有形态维持），实质判
+定不变 frames.click+evaluate 维持挂起。机器卫生：启停零
+zombie、端口族全 free、零树污染（tracked clean，out/ 报告
+为忽略产物，门后零本门残留）。控制面零外来提交（本轮执行
+段 pull 零新提交）。解冻条件实质判定不变：① 观察面
+crates/ raw 50 维持（S787 插记刷新基线），子帧三件套
+iframe.contentDocument null 现状不变，frames.click+evaluate
+维持挂起；② 本流控制面 docs/goal/cdp-protocol/ 零外来提
+交，DC-2 口径无新拍板记录。goal 自有面零新缺口、无扩展面
+（S40-S788 重审结论延续）。**make test 全量参考基线
+19,300P/0F（S788 腿收口 R4381 组合态）维持——引用计数下
+轮 S790=2/10（周期锚点维持 S788 双腿），至迟 S796=8/10 次
+轮即期限轮窗、S797 期限轮活跑；树代码变化提前触发双腿刷
+新（S245→S765 先例链）**）
 
 ---
 
@@ -16513,6 +16502,16 @@ test 全量参考基线 19,300P/0F（S788 腿收口 R4381 组合态实
    若 S789 前树代码变化则提前触发双腿刷新（S245→S765 先例
    链），否则按引用轮口径门单腿复跑免 make test 腿（S336
    先例），至迟 S796=8/10 次轮即期限轮窗、S797 期限轮活跑；
+   **S789 已执行（2026-09-15）静默监测引用轮（同 tip 复核
+   pull 零新提交 tip=3f829004e 即 S788 提交本身，树不变口
+   径=门单腿复跑免 make test 腿 S336 先例，门 PASS 33 绿负
+   载窗内（兄弟 zero_integration_tests 腿 642% CPU 在窗）
+   首调即收口 23:29:06 落盘，引用计数 1/10）**——下轮
+   **S790 = 2/10**（周期锚点维持 S788 双腿：门腿 23:06:06
+   落盘 + make test 腿 ~23:24:4x 收口），若 S790 前树代码
+   变化则提前触发双腿刷新（S245→S765 先例链），否则按引用
+   轮口径门单腿复跑免 make test 腿（S336 先例），至迟
+   S796=8/10 次轮即期限轮窗、S797 期限轮活跑；
    若活跑时逢并行流负载窗口则
    优先窗口内执行，负载下样本对 #0 更有价值（负载窗口口径含并行流 browser 进程型与
    编译测试负载型两亚型，净窗亚型 S208 起并行记录；**端口竞争亚型口径 S198 新增**：
