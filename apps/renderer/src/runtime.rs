@@ -28,7 +28,7 @@ use std::time::{Duration, Instant};
 use std::io;
 use zero_engine::{
     DomEventDetail, MediaType, PrefersColorSchemeValue, query_text_from_html, selector_from_element_hit,
-    set_char_measure_fn, set_hmtx_measure_fn, set_text_shape_fn,
+    set_char_measure_fn, set_fallback_line_metrics_fn, set_hmtx_measure_fn, set_text_shape_fn,
 };
 use zero_protocol::IpcChannel;
 use zero_protocol::message::{
@@ -287,6 +287,8 @@ impl RendererRuntime {
         set_char_measure_fn(text_metrics::measure_char);
         set_text_shape_fn(text_metrics::shape_text);
         set_hmtx_measure_fn(text_metrics::measure_text_hmtx);
+        // R4376：回退链垂直度量回调（消费门禁 ZW_FALLBACK_LINE_METRICS，默认 on）。
+        set_fallback_line_metrics_fn(text_metrics::fallback_line_metrics);
         let js_worker =
             RendererJsWorker::spawn_with_handlers(renderer_id, indexed_db_handler, Some(service_worker_client));
         // S11：宿主媒体上下文与 js_worker 共享 cell（SetColorScheme/SetMediaType 更新，

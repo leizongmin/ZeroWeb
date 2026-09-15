@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use zero_browser_shell::TabId;
 use zero_engine::PrefersColorSchemeValue;
-use zero_engine::{set_char_measure_fn, set_text_shape_fn};
+use zero_engine::{set_char_measure_fn, set_fallback_line_metrics_fn, set_text_shape_fn};
 use zero_protocol::message::{ImeEventParams, ImeEventType};
 use zero_render_foundation::font::loader::FontLoader;
 use zero_webview::{AsyncPageLoad, InProcessFetchHost, PageLoadStage, WebView, WebViewBuilder, WebViewConfig};
@@ -240,6 +240,8 @@ fn tab_worker_main(
     set_char_measure_fn(text_metrics::measure_char);
     set_text_shape_fn(text_metrics::shape_text);
     zero_engine::set_hmtx_measure_fn(text_metrics::measure_text_hmtx);
+    // R4376：回退链垂直度量回调（消费门禁 ZW_FALLBACK_LINE_METRICS，默认 on）。
+    set_fallback_line_metrics_fn(text_metrics::fallback_line_metrics);
     let mut font_loader = FontLoader::new();
     let font_id = load_system_fonts_worker(&mut font_loader);
 

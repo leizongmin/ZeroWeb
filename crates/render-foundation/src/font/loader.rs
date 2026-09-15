@@ -5,6 +5,7 @@ use hashbrown::{HashMap, HashSet};
 use shaping::ShapeCache;
 use std::sync::{Arc, OnceLock};
 
+mod fallback_metrics;
 mod hmtx;
 mod metrics;
 mod release;
@@ -51,6 +52,12 @@ pub struct FontLoader {
     shape_cache: ShapeCache,
     /// 有界 hmtx 批量测量缓存（ZRG-2026-08-15 修复 A）。
     hmtx_cache: hmtx::HmtxCache,
+    /// R4374/R4376：回退链垂直度量缓存——per-font `(font_id, size_bits)` →
+    /// `line_metrics_full` 三元组 + `(primary_id, char)` → 实际使用字体。per-char
+    /// `font_has_glyph`（Face+cmap 解析）在 CJK 长文逐 run 调用下开销放大
+    /// （bench-gate page/medium/layout_ms ×2 实证）。失效点与 shape/hmtx 缓存同门
+    /// （字体卸载/unicode-range 重注册/set_fallback_chain 后重查）。
+    fallback_metrics_cache: fallback_metrics::FallbackMetricsCache,
 }
 
 impl FontLoader {
@@ -73,6 +80,7 @@ impl FontLoader {
             ahem_font_id: None,
             shape_cache: Arc::new(std::sync::Mutex::new(HashMap::new())),
             hmtx_cache: hmtx::HmtxCache::default(),
+            fallback_metrics_cache: fallback_metrics::FallbackMetricsCache::default(),
         }
     }
 
@@ -98,6 +106,7 @@ impl FontLoader {
             ahem_font_id: self.ahem_font_id,
             shape_cache: self.shape_cache.clone(),
             hmtx_cache: hmtx::HmtxCache::default(),
+            fallback_metrics_cache: fallback_metrics::FallbackMetricsCache::default(),
         }
     }
 
@@ -120,6 +129,7 @@ impl FontLoader {
     /// 设置回退字体链（按优先级排序）
     pub fn set_fallback_chain(&mut self, ids: Vec<u32>) {
         self.fallback_chain = ids;
+        self.clear_fallback_metrics_cache();
         self.shape_cache.lock().expect("shape cache poisoned").clear();
         self.clear_hmtx_cache();
     }
@@ -702,14 +712,13 @@ impl FontLoader {
     /// 时撑开行盒（16px CJK 行距 24px vs 主字体 strut 19px，tis-004 oracle 帧实测）。
     /// ZW 旧行盒只用主字体 strut 度量 → CJK 行偏矮。消费门禁 `ZW_FALLBACK_LINE_METRICS`。
     pub fn fallback_text_line_metrics(&self, primary_id: Option<u32>, text: &str, size: f32) -> Option<(f32, f32)> {
-        let chain = self.lookup_chain(primary_id.unwrap_or(0));
-        let mut max = (0.0_f32, 0.0_f32);
-        let mut found = false;
-        // 收集实际使用字体 id 去重后再查度量——同一回退字体的 line_metrics_full
-        // （Face 重解析）逐字符调用在 CJK 长文下开销放大。
+        let primary = primary_id.unwrap_or(0);
+        // 收集实际使用字体 id 去重后再查度量——per-font 度量与 per-char 链解析均经
+        // fallback_metrics 缓存（Face+cmap 重解析在 CJK 长文逐 run 调用下开销放大，
+        // bench-gate page/medium/layout_ms ×2 实证）。
         let mut used: Vec<u32> = Vec::new();
         for ch in text.chars() {
-            if let Some(font_id) = self.resolve_font_for_code_point_in_chain(&chain, ch)
+            if let Some(font_id) = self.fallback_metrics_char_font(primary, ch)
                 && !used.contains(&font_id)
             {
                 used.push(font_id);
@@ -718,8 +727,10 @@ impl FontLoader {
         // 「真回退」窄化实验（R4374 A/B）已证伪回退：oracle +7/+10 vs 全量 +12/+13
         // （hyphens +5 等真收益被误杀），corpus 仅 +1 回收——按 chromium 实际使用
         // 字体度量全量语义保留。
+        let mut max = (0.0_f32, 0.0_f32);
+        let mut found = false;
         for font_id in used {
-            if let Some((ascent, descent, _)) = self.line_metrics_full(font_id, size) {
+            if let Some((ascent, descent, _)) = self.fallback_metrics_per_font(font_id, size) {
                 max.0 = max.0.max(ascent);
                 max.1 = max.1.max(-descent);
                 found = true;

@@ -92,6 +92,9 @@ pub use timer_bridge::*;
 /// 渲染媒体类型（DC-12 @media print/screen；R1992 webview 生产接线）。
 pub use zero_css_parser::media_query::MediaType;
 pub use zero_css_parser::media_query::PrefersColorSchemeValue;
+/// R4376：回退链垂直度量回调注册（browser/runner 宿主各注册一次；消费门禁
+/// `ZW_FALLBACK_LINE_METRICS`）。
+pub use zero_layout_engine::set_fallback_line_metrics_fn;
 pub use zero_render_foundation::display_list::DisplayList;
 // event-loop-spec M2 MO-S1：webview 排空 `pending_mutations` 时判别 record 类型与解析
 // added/removed 节点身份（webview 不直接依赖 zero-dom，经此 re-export 引用）。

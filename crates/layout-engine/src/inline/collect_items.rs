@@ -85,6 +85,9 @@ impl InlineFormattingContext {
         styles: &HashMap<NodeId, ComputedStyle>,
     ) -> Vec<InlineItem> {
         let mut items = Vec::new();
+        // R4376：旗标每次 collect 读一次（非每 run——wide_tree 500 run 页 0.25% bench
+        // 成本实证，hoist 后每容器一次）。
+        let glyph_verticals_enabled = runtime_flags::fallback_line_metrics();
         // R109 §9.2.1.1：匿名块盒片段只收集该片段的 inline 内容（fragment_node_ids），
         // 而非 container 的全部 DOM 子节点。None = 正常遍历 container 子节点。
         // R3991：run-in 并入——先收集 run-in 元素的 inline 内容（其文本/子 inline
@@ -237,6 +240,7 @@ impl InlineFormattingContext {
                             {
                                 Some(&(ga, gd)) => (ga, gd),
                                 None => Self::run_glyph_verticals(
+                                    glyph_verticals_enabled,
                                     run_font_id,
                                     &text,
                                     font_size,
@@ -965,6 +969,8 @@ impl InlineFormattingContext {
         let NodeKind::Element(elem_data) = &doc.get(child_id)?.kind else {
             return None;
         };
+        // R4376：旗标每次 collect 读一次（同 collect_inline_items hoist 口径）。
+        let glyph_verticals_enabled = runtime_flags::fallback_line_metrics();
         let style = styles.get(&child_id);
         let run_ws = style
             .map(|s| Self::run_white_space(&s.white_space))
@@ -1098,6 +1104,7 @@ impl InlineFormattingContext {
             let (glyph_ascent, glyph_descent) = match self.glyph_verticals_overrides.get(&child_id) {
                 Some(&(ga, gd)) => (ga, gd),
                 None => Self::run_glyph_verticals(
+                    glyph_verticals_enabled,
                     run_font_id,
                     &trimmed,
                     font_size,
@@ -1252,6 +1259,8 @@ impl InlineFormattingContext {
             .map(|s| Self::resolve_inline_padding(&s.padding_right, s))
             .unwrap_or_else(|| self.padding_overrides.get(&elem_id).map(|(pr, _)| *pr).unwrap_or(0.0));
 
+        // R4376：旗标每次 collect 读一次（同 collect_inline_items hoist 口径）。
+        let glyph_verticals_enabled = runtime_flags::fallback_line_metrics();
         // 依次收集子节点。
         let children = doc.child_nodes(elem_id);
         let mut text_pending = String::new();
@@ -1271,6 +1280,7 @@ impl InlineFormattingContext {
             let (glyph_ascent, glyph_descent) = match self.glyph_verticals_overrides.get(&elem_id) {
                 Some(&(ga, gd)) => (ga, gd),
                 None => Self::run_glyph_verticals(
+                    glyph_verticals_enabled,
                     flat_font_id,
                     &trimmed,
                     font_size,
@@ -1611,6 +1621,7 @@ impl InlineFormattingContext {
     /// - 显式（Length/Number）：行盒高度 = line-height **不撑开**，大度量只把基线
     ///   在盒内下移——贡献 = `L/2 ± (a−d)/2`（leading 对半分布于字体盒两侧）。
     fn run_glyph_verticals(
+        fallback_enabled: bool,
         font_id: Option<u32>,
         text: &str,
         font_size: f32,
@@ -1618,7 +1629,7 @@ impl InlineFormattingContext {
         line_height: f32,
         line_height_is_normal: bool,
     ) -> (f32, f32) {
-        if !runtime_flags::fallback_line_metrics() || is_ahem || text.is_empty() {
+        if !fallback_enabled || is_ahem || text.is_empty() {
             return (0.0, 0.0);
         }
         let Some((ga, gd)) = crate::inline::font_metrics::fallback_line_metrics_for_layout(font_id, text, font_size)

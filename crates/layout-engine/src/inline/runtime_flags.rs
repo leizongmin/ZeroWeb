@@ -98,14 +98,15 @@ pub(super) fn shaped_fallback() -> bool {
     residual_selected(*VALUE, || opt_in("ZW_SHAPED_FALLBACK"))
 }
 
-/// R4374：CJK 回退字体垂直度量参与行盒——run 各字符实际使用字体（per-char 回退链）
-/// 的 ascent/descent max 撑开行盒（chromium CSS2 §10.8.1 各 inline box 按自身字体
-/// 度量分布；NotoSansCJK hhea 1.448em > 主字体 strut 1.164em）。**opt-in 默认关**
-/// （`ZW_FALLBACK_LINE_METRICS=1` 激活）——行距杠杆全 CJK 文本域生效，A/B 裁决后
-/// 再定默认。
+/// R4374/R4376：CJK 回退字体垂直度量参与行盒——run 各字符实际使用字体（per-char
+/// 回退链）的 ascent/descent max 撑开行盒（chromium CSS2 §10.8.1 各 inline box 按
+/// 自身字体度量分布；NotoSansCJK hhea 1.448em > 主字体 strut 1.164em）。
+/// **R4376 默认 on**：oracle +12/+13 且 0 目录下滑、product-smoke welcome
+/// 19.95%→15.40%、corpus −6（−9/+3，counter-styles 墙 20 案已由 R4375 marker 基线
+/// 同步收复）；`ZW_FALLBACK_LINE_METRICS=0` 回退旧行为。
 pub(super) fn fallback_line_metrics() -> bool {
-    static VALUE: LazyLock<bool> = LazyLock::new(|| opt_in("ZW_FALLBACK_LINE_METRICS"));
-    residual_selected(*VALUE, || opt_in("ZW_FALLBACK_LINE_METRICS"))
+    static VALUE: LazyLock<bool> = LazyLock::new(|| default_on("ZW_FALLBACK_LINE_METRICS"));
+    residual_selected(*VALUE, || default_on("ZW_FALLBACK_LINE_METRICS"))
 }
 
 fn default_on(name: &str) -> bool {

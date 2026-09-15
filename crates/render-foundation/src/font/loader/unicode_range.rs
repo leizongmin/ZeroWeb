@@ -10,6 +10,7 @@ impl FontLoader {
         }
         self.shape_cache.lock().expect("shape cache poisoned").clear();
         self.clear_hmtx_cache();
+        self.clear_fallback_metrics_cache();
     }
 
     pub(super) fn font_allows_code_point(&self, font_id: u32, code_point: char) -> bool {

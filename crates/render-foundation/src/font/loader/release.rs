@@ -25,6 +25,7 @@ impl FontLoader {
         }
         self.shape_cache.lock().expect("shape cache poisoned").clear();
         self.clear_hmtx_cache();
+        self.clear_fallback_metrics_cache();
     }
 }
 
