@@ -16435,6 +16435,33 @@ iframe.contentDocument null 现状不变，frames.click+evaluate 维持
    test 腿参考基线 19,295P/0F（S717 时点，R4375 组合态），R4376 十二
    文件零测试文件新增，计数以实测为准。
 
+   **S751 轮后插记（2026-09-15 推送序列 pull --rebase 实测）**：兄
+   弟流 R4377（fix(fonts) 浏览器侧字体栈与 reftest harness/chromium
+   对齐，crates/render-foundation font/system.rs +94 新增代码 +
+   font/loader.rs +2、apps/browser/src/tests.rs 字体栈单测 +13、
+   docs/goal/rendering-compat.md +1，4 files +103/-7，f028e7b29，
+   commit 时点 19:03:51；随行 53ec41085 docs 提交 19:04:26）于本轮
+   门腿（19:03:32-19:04:05，gate log mtime 19:04:04 直证）覆盖树态
+   （=1a971aa4f）之外、我方 S751 提交（f18178378，19:05:21）经
+   push 前 pull --rebase 入树——S751 门覆盖不含该树态，**S752 =
+   树变化刷新轮（门 + make test 双腿刷新，S245→S342→S684→S685→
+   S716→S717→S723→S724 先例链）**，引用计数以 S752 双腿为新周期
+   锚点 0/10（S751 header 内「下轮 S752=4/10」预告被本插记取代）；
+   S752 锚点预期——全树排除本流 docs 对 18d462de6 80 files
+   +5800/-453 → 预期 80 files 维持（R4377 四文件中
+   render-foundation font/system.rs、font/loader.rs、
+   rendering-compat.md 均在原集内，apps/browser/src/tests.rs 在集
+   与否以实测为准，零净增文件预期，行数 +103/-7 面值非加总漂移以
+   实测为准逐项记账），crates/ raw 45→**46** 递增（f028e7b29 触及
+   crates/render-foundation 计 1 提交）；R4377 触及 apps/browser
+   （src/tests.rs）——apps/browser 属共享活跃并行流面（goal 依赖
+   约束条款），系兄弟流经 main 提交非本流触碰，本流 headless 面
+   零变化自有锚点 765429dda 口径不变；R4377 自带记账 make test
+   19,296P/0F（+1 单测 r4377 三通用族断言）、bench-gate GATE PASS
+   113/113——S752 make test 腿参考基线以 19,296P 记（R4377 组合
+   态），实测为准；dead_code warning 观察面 js_dom_bridge.rs:3420
+   非本次触碰文件（R4377 未触 engine），两相位口径照常观察。
+
 **待用户决策清单**：
 - **DC-2 收口口径（2026-09-13 新入，S39 后语境收窄维持）**：余 1 步（frames.click+evaluate）
   真挂子帧文档加载 + JS realm + child quads——S18 探针实证：`iframe.contentDocument`
