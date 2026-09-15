@@ -2,41 +2,34 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-15（S690：树变化刷新轮——开工 pull 拉入兄弟流 R4373
-（fix fonts monospace 通用族解析对齐 ttcf 感知 parse_font_family_name_at，
-crates/render-foundation/src/font/loader.rs 98 行级改动 +
-tests/wpt-runner/src/reftest/reftest_fonts.rs +9 + rendering-compat.md 1/1，
-0a1e16c79）→ 树代码变化触发门 + make test 双腿刷新（S245→S342→S684→S685
-先例链），引用计数以本轮双腿为新周期锚点 0/10，下轮 S691=1/10。**门腿**
-make cdp-e2e ZW_IPC_VALIDATE=1 在位 13:07:51 启动 13:08:33 落盘首调即
-**PASS 33 绿 deterministic 双跑 YES EXIT=0**，expected_green 33 对称差
-none（绿步集与基线逐项一致零漂移）、regressions 空、无 fatal，校验器在位
-静默；R4373 触发 render-foundation/canvas/layout-engine/paint-convert/
-engine/page-runtime/zero-browser 七 crate 重编译 Finished 9.83s；首调红
-形态**连续第一百零四次零再现**（累计两例非聚集维持）。**dead_code warning
-形态全新编译相位**（本轮 zero-engine 全新编译 match_media_to_json never
-used js_dom_bridge.rs:3420 编译期在位）——两相位口径维持（S683/S684/S685/
-S690 全新编译 + S686-S689 缓存 replay 均确定性），clippy -p zero-engine
+**最后更新**: 2026-09-15（S691：静默监测引用轮——同 tip 复核 pull 零新提交
+tip=00e74ba06 即 S690 提交本身；S690 双腿复跑后零代码变更（00e74ba06 为
+docs-only 控制面提交），树不变口径 = 门单腿引用 S690 双腿活跑（免 make
+test 腿，S336 先例），引用计数 0/10→1/10（S690 双腿新周期锚点；下轮
+S692=1/10→2/10，8/10 或 9/10 次轮即期限轮口径至迟 S699/S700 期限轮活跑，
+树代码变化提前触发双腿刷新）。**门腿** make cdp-e2e ZW_IPC_VALIDATE=1
+在位 13:24:59 启动 13:25:32 落盘首调即 **PASS 33 绿 deterministic 双跑
+YES EXIT=0**，expected_green 33 对称差 none（绿步集与基线逐项一致零漂移）、
+regressions 空、无 fatal，校验器在位静默（编译全缓存零重编 Finished
+0.17s）；首调红形态**连续第一百零五次零再现**（累计两例非聚集维持）。
+**dead_code warning 形态本轮为 replay 相位**（编译全缓存下重放在位，
+js_dom_bridge.rs:3420）——两相位口径维持（S683/S684/S685/S690 全新编译
+在位 + S686-S689/S691 缓存 replay 在位均确定性），clippy -p zero-engine
 --lib -- -D warnings 维持 PASS（S683 实测）DC-4 不可退让面零暴露，归因
-engine crate zero-web 流域，本流不碰 engine 记账不修。**测试腿 make test
-一调收口**：13:08:42 setsid 后台落盘启动 ~13:22 收口 **67 组 19,292P/0F**
-零 FAILED 无 make 错误行——较 S685/S689 基线 19,290P **+2 = R4373 新增
-用例**（reftest_fonts.rs +9 入账），R4373 组合态首次全量覆盖；run1 即净
-无瞬态红（network_loading flake 家族零再现）。**锚点刷新**：自有面对
-765429dda 维持 **4 files +137/-17** 零漂移；全树排除本流 docs 对
-18d462de6 刷新至 **65 files +4861/-296** 逐项记账（63→65 +2 文件 =
-R4373 loader.rs + reftest_fonts.rs 新入集，rendering-compat.md 已在集内
-合并；行数 +103/-5 与 R4373 提交面值精确一致）；crates/ 观察面 raw
-**41→42**（R4373 入账）。子帧关键词非测试代码零命中维持（R4373 触碰的
-font/loader.rs 零命中实测）；crates/ 口径 7 测试文件既有形态维持，实质
-判定不变 frames.click+evaluate 维持挂起。机器卫生：启动前零 zombie、
-端口族全 free、近净窗 0.81（兄弟流编译腿收尾后回落）；双腿后零 zombie、
-端口族零残留、零树污染（tracked clean，out/ 报告为忽略产物），负载 0.40
-净窗。控制面零外来提交（本轮 pull 仅 R4373 本体）。解冻条件实质判定不变：
-① 观察面 raw 42（R4373 新账），子帧三件套 iframe.contentDocument null
-现状不变（R4373 触碰文件零命中实测），frames.click+evaluate 维持挂起；
+engine crate zero-web 流域，本流不碰 engine 记账不修。本轮属净窗活跑
+（负载 0.10 top 零编译测试腿仅 agent 进程——净窗亚型 S208 起并行记录，
+与负载下样本证据互补服务 #0）。双层锚点零漂移——自有面对 765429dda 维持
+**4 files +137/-17** 精确一致；全树排除本流 docs 对 18d462de6 维持 **65
+files +4861/-296** 与上轮逐项一致零新增（R4373 新基线）；crates/ 观察面
+raw 维持 **42**（R4373 基线）。子帧关键词非测试代码零命中维持；crates/
+口径 7 测试文件既有形态维持，实质判定不变 frames.click+evaluate 维持
+挂起。机器卫生：启动前零 zombie、端口族全 free、净窗 0.10；门腿后零
+zombie、端口族零残留、零树污染（tracked clean，out/ 报告为忽略产物），
+负载 0.32 净窗维持。控制面零外来提交（本轮 pull 零新提交）。解冻条件
+实质判定不变：① 观察面 raw 42 维持（R4373 基线），子帧三件套
+iframe.contentDocument null 现状不变，frames.click+evaluate 维持挂起；
 ② 本流控制面 docs/goal/cdp-protocol/ 零外来提交，DC-2 口径无新拍板记录。
-goal 自有面零新缺口、无扩展面（S40-S689 重审结论延续））
+goal 自有面零新缺口、无扩展面（S40-S690 重审结论延续））
 
 ---
 
