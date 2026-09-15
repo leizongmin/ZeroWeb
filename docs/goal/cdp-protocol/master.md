@@ -48,7 +48,37 @@ cdp-protocol/ 零外来提交，DC-2 口径无新拍板记录。goal 自
 test 全量参考基线 19,297P/0F（S786 双腿收口 R4380 组合态）
 维持——引用计数下轮 S788=2/10（周期锚点维持 S786 双腿），
 至迟 S794=8/10 次轮即期限轮窗、S795 期限轮活跑；树代码变
-化提前触发双腿刷新（S245→S765 先例链）**）
+化提前触发双腿刷新（S245→S765 先例链）**）。**S787 轮后
+插记（2026-09-15 推送序列 pull --rebase 实测）**：兄弟流
+R4381 代码提交 f1c23b0dc（fix(text) text-transform 多值组
+合解析，5 files +354/-74：crates/engine
+js_dom_bridge/computed_style.rs +11 + paint/helpers.rs +15 +
+crates/style-system property/parse.rs +90/property/tests/
+core.rs +78 新文件/property/types.rs +234 改写）+ 随行
+docs 36b98377d（rendering-compat.md +1）于 S787 提交 push
+前 pull 入树——S787 门覆盖不含该树态（R4381 组合态），
+**S788 = 树变化刷新轮（门 + make test 双腿刷新，S245→S342→
+S684→S685→S716→S717→S723→S724→S752→S761→S786 先例链）**，
+引用计数以 S788 双腿为新周期锚点 0/10（S787 header 内
+「S788=2/10 引用轮」预告被本插记取代）；S788 锚点实测（本
+插记时点）——全树排除本流 docs 对 18d462de6 **88 files
++7867/-556**（84→88：R4381 净增 4 文件入集，五文件中
+property/tests/core.rs 等四文件首次触碰；行数 +7867=
++7512+354+1/-556=-482+74 面值逐项一致），crates/ raw **50**
+（49→50 递增）；R4381 触及 crates/engine（computed_style.rs
++ helpers.rs）属共享面（run-rules §9）系兄弟流经 main 提
+交非本流触碰，本流不碰 engine 口径不变；dead_code warning
+观察面 js_dom_bridge.rs:3420（match_media_to_json 本体）非
+本次触碰文件（computed_style.rs 为 js_dom_bridge/ 子模块不
+同文件），两相位口径照常观察——R4381 触 engine/style-system
+缓存失效，S788 门腿预期全新编译相位（warning 确定性再现记
+账口径）；R4381 自带记账 make test **19,300P/0F**（较
+19,297 +3 = property/tests/core.rs 新增测试落账）、corpus
+14885、product-smoke 15.40% 同值、bench 定向 GATE PASS 40
+指标——S788 make test 腿参考基线以 19,300P 记（R4381 组合
+态），实测为准；crates/style-system 属渲染流域 crate 本流
+零触碰工作面不重叠维持。make test 全量参考基线更新为
+**19,300P/0F（R4381 组合态，S788 双腿收口实测为准）**）
 
 ---
 
@@ -16480,7 +16510,17 @@ test 全量参考基线 19,297P/0F（S786 双腿收口 R4380 组合态）
    make test run2 22:56:28 收口），若 S788 前树代码变化则
    提前触发双腿刷新（S245→S765 先例链），否则按引用轮口径
    门单腿复跑免 make test 腿（S336 先例），至迟 S794=8/10
-   次轮即期限轮窗、S795 期限轮活跑；
+   次轮即期限轮窗、S795 期限轮活跑；**S787 轮后插记（2026-
+   09-15 推送序列 pull --rebase 实测）**：兄弟流 R4381 代码
+   提交 f1c23b0dc（5 files +354/-74）+ 随行 docs 36b98377d
+   于 push 前 pull 入树——S787 门覆盖不含该树态，**S788 =
+   树变化刷新轮（门 + make test 双腿刷新，S245→S786 先例
+   链），引用计数以 S788 双腿为新周期锚点 0/10**（前预告
+   「S788=2/10 引用轮」被本插记取代）；S788 锚点口径——全
+   树排除本流 docs 对 18d462de6 以 **88 files +7867/-556**
+   为新面值、crates/ raw **50**、make test 参考基线
+   19,300P/0F（R4381 组合态）实测为准；若 S788 前树再变化
+   则以最新树态覆盖刷新；
    若活跑时逢并行流负载窗口则
    优先窗口内执行，负载下样本对 #0 更有价值（负载窗口口径含并行流 browser 进程型与
    编译测试负载型两亚型，净窗亚型 S208 起并行记录；**端口竞争亚型口径 S198 新增**：
