@@ -714,6 +714,52 @@ fn text_marker_baseline_offset(style: &ComputedStyle, font_size: f32) -> f32 {
     (line_height - font_size).max(0.0) / 2.0 + font_size * ascent_ratio
 }
 
+/// R4384：marker strut 镜像与 layout/paint-IFC strut 同源。
+///
+/// layout `apply_vertical_alignment` strut = `(max run line-height − dominant run
+/// font-size)/2 + dominant font-size × dominant per-font ascent ratio`（R1004
+/// `text_node_ascent_ratios` 覆盖优先、R990 0.8/0.928 常数回退）。旧镜像用 li 字号 +
+/// `marker_line_height`（normal → 1.164·fs 常数）+ 0.928 常数 ratio——R4384 默认字体
+/// 主字体锚定（`downloaded_line_metrics` 空 family → 主字体度量，normal 行高与
+/// ascent ratio 同步真实化）后，镜像与行内文本基线错位 ~0.1-0.2em（counter-styles
+/// 族 marker vs ref 纯文本行全量翻红实证）。镜像改读 `inline_metric_storage` 存进
+/// box_node 的片段映射：dominant run = 最大字号片段（font_size==0 的原子盒排除，
+/// 同 layout strut 门）、strut_lh = max 文本片段行高、ratio = 覆盖优先。片段映射空
+/// （无行内文本）回退 [`text_marker_baseline_offset`]。
+fn text_marker_strut_baseline_offset(box_node: &LayoutBox, style: &ComputedStyle, font_size: f32) -> f32 {
+    let mut dominant: Option<(NodeId, f32)> = None;
+    for (id, (fs, _)) in box_node.inline_element_metrics.iter() {
+        if *fs <= 0.0 {
+            continue;
+        }
+        if dominant.is_none_or(|(_, dfs)| *fs > dfs) {
+            dominant = Some((*id, *fs));
+        }
+    }
+    let Some((dominant_node, dominant_fs)) = dominant else {
+        return text_marker_baseline_offset(style, font_size);
+    };
+    let strut_lh = box_node
+        .inline_element_metrics
+        .iter()
+        .filter(|(_, (fs, _))| *fs > 0.0)
+        .filter_map(|(id, _)| box_node.text_node_line_heights.get(id))
+        .copied()
+        .fold(0.0_f32, f32::max);
+    let strut_lh = if strut_lh > 0.0 {
+        strut_lh
+    } else {
+        marker_line_height(style, dominant_fs)
+    };
+    let ratio = box_node
+        .text_node_ascent_ratios
+        .get(&dominant_node)
+        .copied()
+        .filter(|r| *r > 0.0)
+        .unwrap_or(if is_ahem_marker_font(style) { 0.8 } else { 0.928 });
+    (strut_lh - dominant_fs).max(0.0) / 2.0 + dominant_fs * ratio
+}
+
 /// marker 的 resolved line-height（px）——strut 镜像与 R4375 基线同步共用。
 fn marker_line_height(style: &ComputedStyle, font_size: f32) -> f32 {
     match &style.line_height {
@@ -1346,7 +1392,7 @@ impl super::super::Painter {
         // ascent) 同式），marker 若仍走 strut 镜像公式即与行内文本错位（CJK counter-styles
         // 族 marker 残留旧基线 vs 文本 +4px 根因）。行文本度量取 li 直接文本子（与行内
         // 首行同字形域）；旗标关/无文本/无回调 = 旧行为。
-        let strut_baseline_offset = text_marker_baseline_offset(style, text_marker_font_size);
+        let strut_baseline_offset = text_marker_strut_baseline_offset(box_node, style, text_marker_font_size);
         let li_text: String = doc
             .child_nodes(node_id)
             .iter()
@@ -2111,6 +2157,8 @@ mod tests {
     use super::counter_style_marker_text;
     use super::counter_suffix;
     use super::list_item_counter;
+    use super::text_marker_baseline_offset;
+    use super::text_marker_strut_baseline_offset;
     use super::to_arabic_indic;
     use super::to_armenian;
     use super::to_cjk_decimal;
@@ -2120,6 +2168,7 @@ mod tests {
     use super::to_hebrew;
     use super::to_symbol_cycle;
     use zero_dom::parse_html;
+    use zero_layout_engine::LayoutBox;
     use zero_style_system::{ComputedStyle, DirectionValue, WritingModeValue};
 
     /// R4154：extends 目标为预定义样式（注册表外）→ 按内置表示生成
@@ -2679,6 +2728,109 @@ mod tests {
         assert_eq!(
             counter_suffix(&zero_css_parser::values::ListStyleTypeValue::Decimal),
             "."
+        );
+    }
+
+    // ── R4384：marker strut 镜像与 layout strut 同源 ────────────────────────
+
+    /// 解析一段 HTML，收集全部文本节点 id（供 box_node 片段映射作键）。
+    fn text_node_ids(html: &str) -> Vec<zero_dom::NodeId> {
+        let doc = parse_html(html);
+        let mut ids = Vec::new();
+        let mut stack = vec![doc.root()];
+        while let Some(id) = stack.pop() {
+            for child in doc.child_nodes(id) {
+                if doc
+                    .get(child)
+                    .is_some_and(|n| matches!(n.kind, zero_dom::NodeKind::Text(_)))
+                {
+                    ids.push(child);
+                }
+                stack.push(child);
+            }
+        }
+        ids
+    }
+
+    /// 片段映射空（无行内文本，如纯图像 li）→ 回退旧 strut 镜像，逐字节等价。
+    #[test]
+    fn marker_strut_offset_falls_back_without_fragments() {
+        let style = ComputedStyle::default();
+        let box_node = LayoutBox::default();
+        assert_eq!(
+            text_marker_strut_baseline_offset(&box_node, &style, 25.0),
+            text_marker_baseline_offset(&style, 25.0)
+        );
+    }
+
+    /// 有覆盖（R1004 overrides）时镜像 = layout strut 同式：
+    /// `(max 片段行高 − dominant 字号)/2 + dominant 字号 × 覆盖 ratio`，
+    /// 而非旧镜像的常数 1.164/0.928——R4384 默认字体主字体锚定落地后两者必须一致，
+    /// 否则 counter-styles 族 marker 与行内文本基线错位（本轮 A/B1 实测 −12 案）。
+    #[test]
+    fn marker_strut_offset_mirrors_layout_strut_with_overrides() {
+        let ids = text_node_ids("<div><span>aa</span>b</div>");
+        assert!(ids.len() >= 1, "test html must contain text nodes");
+        let run = ids[0];
+        let mut box_node = LayoutBox::default();
+        // dominant（唯一）run：fs=25、行高 30（如 @font-face per-font normal 或显式值）、
+        // 覆盖 ratio 0.891（真实主字体 per-em ascent）。
+        box_node.inline_element_metrics.insert(run, (25.0, 30.0));
+        box_node.text_node_line_heights.insert(run, 30.0);
+        box_node.text_node_ascent_ratios.insert(run, 0.891);
+
+        let style = ComputedStyle::default();
+        let mirror = text_marker_strut_baseline_offset(&box_node, &style, 25.0);
+        assert!(
+            (mirror - (30.0 - 25.0) / 2.0 - 25.0 * 0.891).abs() < 1e-4,
+            "mirror must equal layout strut formula, got {mirror}"
+        );
+        // 与旧常数镜像可区分（1.164/0.928 常数下 = 25.25）。
+        assert!(
+            (mirror - text_marker_baseline_offset(&style, 25.0)).abs() > 0.1,
+            "override path must differ from constant mirror, got {mirror}"
+        );
+    }
+
+    /// 多 run：dominant = 最大字号片段（原子盒 font_size==0 排除，同 layout strut 门）；
+    /// ratio 按 dominant run 的覆盖取；strut_lh = max 文本片段行高。
+    #[test]
+    fn marker_strut_offset_selects_dominant_run() {
+        let ids = text_node_ids("<div><span>aa</span><span>bbb</span></div>");
+        assert!(ids.len() >= 2, "test html must contain two text nodes");
+        let (small, big) = (ids[0], ids[1]);
+        let mut box_node = LayoutBox::default();
+        box_node.inline_element_metrics.insert(small, (16.0, 100.0));
+        box_node.text_node_line_heights.insert(small, 100.0);
+        box_node.text_node_ascent_ratios.insert(small, 0.5);
+        // dominant：fs 更大但行高更小（strut_lh 仍取 max = 100）。
+        box_node.inline_element_metrics.insert(big, (25.0, 30.0));
+        box_node.text_node_line_heights.insert(big, 30.0);
+        box_node.text_node_ascent_ratios.insert(big, 0.891);
+
+        let style = ComputedStyle::default();
+        let mirror = text_marker_strut_baseline_offset(&box_node, &style, 25.0);
+        assert!(
+            (mirror - (100.0 - 25.0) / 2.0 - 25.0 * 0.891).abs() < 1e-4,
+            "dominant fs picks its ratio, strut_lh stays max across runs, got {mirror}"
+        );
+    }
+
+    /// 有片段无覆盖（声明系统字体 run）→ ratio 回退常数 0.928（同 layout
+    /// `ascent_ratio_lookup` 的 R990 回退），但 strut_lh 仍用片段行高。
+    #[test]
+    fn marker_strut_offset_falls_back_ratio_with_fragments() {
+        let ids = text_node_ids("<div>text</div>");
+        let run = ids[0];
+        let mut box_node = LayoutBox::default();
+        box_node.inline_element_metrics.insert(run, (20.0, 23.28));
+        box_node.text_node_line_heights.insert(run, 23.28);
+
+        let style = ComputedStyle::default();
+        let mirror = text_marker_strut_baseline_offset(&box_node, &style, 20.0);
+        assert!(
+            (mirror - (23.28 - 20.0) / 2.0 - 20.0 * 0.928).abs() < 1e-4,
+            "no-override fragments must use constant ratio with real strut_lh, got {mirror}"
         );
     }
 }
