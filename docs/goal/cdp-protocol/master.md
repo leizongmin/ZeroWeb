@@ -2,13 +2,13 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-16（S832：**静默监测引用轮**（引用计
-数 3/10，新周期锚点维持 S829 双腿）——同 tip 复核 pull 零
-新提交（已经是最新的）tip=d8ce04a75 即 S831 提交本身，
-S831 提交 docs-only，tracked 代码树=S829 双腿覆盖树态
+**最后更新**: 2026-09-16（S833：**静默监测引用轮**（引用计
+数 4/10，新周期锚点维持 S829 双腿）——同 tip 复核 pull 零
+新提交（已经是最新的）tip=8fcdd058a 即 S832 提交本身，
+S832 提交 docs-only，tracked 代码树=S829 双腿覆盖树态
 （=R4383 组合态），树不变口径=门单腿复跑免 make test 腿
 （S336 先例）。**门腿** make cdp-e2e ZW_IPC_VALIDATE=1 在
-位 03:06:31 启动 03:07:04 落盘（wall ~33s）**负载窗首调即
+位 03:10:52 启动 03:11:25 落盘（wall ~33s）**负载窗首调即
 PASS 33 绿 deterministic 双跑 YES EXIT=0**（单次触发即收
 口），expected_green 33 对称差 none（绿步集与基线机械 diff
 逐项一致零漂移）、regressions 空、无 fatal，run_details 双
@@ -16,7 +16,7 @@ run ok 集逐项一致（差异仅 run 序号字段；failed 面=
 frames.click+evaluate 既有挂起项维持），ZW_IPC_VALIDATE 捕
 获网在位静默（#0 复现监测零命中，capture jsonl 面最近落盘
 为往轮 09-12/09-13 时点本轮零写入）；首调红形态**连续第二
-百四十六次零再现**（累计两例非聚集维持）。**dead_code
+百四十七次零再现**（累计两例非聚集维持）。**dead_code
 warning 本轮为缓存 replay 相位**（捕获窗零 Compiling 行、
 clippy Finished 0.19s 印证编译全缓存态；两相位口径维持，
 warning 面维持 js_dom_bridge.rs:3420 match_media_to_json），
@@ -24,36 +24,38 @@ clippy -p zero-engine --lib -- -D warnings 维持 PASS（本轮
 实测零 warning）DC-4 不可退让面零暴露，归因 engine crate
 zero-web 流域，本流不碰 engine 记账不修。本轮属**负载窗亚
 型活跑（编译测试负载型）——兄弟流 ZeroWeb-2
-zero_integration_tests 腿全程在窗**（同 pid 3486322 lstart
-03:03:08 门腿前后 140%→139% CPU 全程在窗，二进制路径
+zero_integration_tests 腿在窗**（pid 3576228 lstart
+03:09:34 门腿起步前实测 157% CPU，二进制路径
 ZeroWeb-2/target/debug 双 clone 隔离零污染本树，S672/S452/
-S466/S831 先例口径——**第二十五个负载下样本**（S831 第二十
-四个连续样本），负载下样本对 #0 更有价值；负载
-1.74→2.16 负载窗；非端口竞争面 9222/45029/34293/19222 四
-端口族全程 free；门后零本门残留（9月14 lstart 外来
+S466/S831/S832 先例口径——**第二十六个负载下样本**（S832 第
+二十五个连续样本），负载下样本对 #0 更有价值；负载
+1.44→4.67 负载窗（门后新现兄弟 product-smoke release 腿
+cargo run --release zero-wpt-runner 路径直证 ZeroWeb-2 非
+本门产物）；非端口竞争面 9222/45029/34293/19222 四端口族
+全程 free；门后零本门残留（9月14 lstart 外来
 chromium/zeroseed 族 0% CPU 在册维持，remote-debugging-pipe
 非 9222 端口族，非本门产物零干扰））。三层锚点零漂移——
 自有面对 765429dda 维持 **4 files +137/-17** 精确一致
 （Makefile 1/1 + apps/browser/README.md 1/0 +
-headless/mod.rs 25/0 + headless/session.rs 110/16）；全树
-排除本流 docs 对 18d462de6 维持 **88 files +8084/-573** 与
-S805 插记刷新基线逐项一致；crates/ 观察面 raw 维持 **52**
-（git log 8fb39cd46..HEAD -- crates/ 口径）。子帧关键词非
-测试代码零命中维持（crates/+apps/ 口径 7 测试文件既有形
-态维持），实质判定不变 frames.click+evaluate 维持挂起。机
-器卫生：启停零 zombie、端口族全 free、零树污染（tracked
-clean，out/ 报告为忽略产物，门后零本门残留）。控制面零外
-来提交（本轮执行段 pull 零新提交）。解冻条件实质判定不
-变：① 观察面 crates/ raw 52 维持（S805 插记刷新基线），
-子帧三件套 iframe.contentDocument null 现状不变，
-frames.click+evaluate 维持挂起；② 本流控制面
-docs/goal/cdp-protocol/ 零外来提交，DC-2 口径无新拍板记
-录。goal 自有面零新缺口、无扩展面（S40-S831 重审结论延
-续）。**make test 全量参考基线 19,303P/0F（S829 腿复证，
-S805 腿收口 R4383 组合态复证，S813/S821 期限轮双腿复证）
-维持——引用计数 3/10（新周期锚点维持 S829 双腿：门腿
+headless/mod.rs 25/0 + headless/session.rs 110/16，零
+新增漂移）；全树排除本流 docs 对 18d462de6 维持 **88 files
++8084/-573** 与 S805 插记刷新基线逐项一致；crates/ 观察面
+raw 维持 **52**（git log 8fb39cd46..HEAD -- crates/ 口
+径）。子帧关键词非测试代码零命中维持（crates/+apps/ 口径
+7 测试文件既有形态维持），实质判定不变 frames.click+
+evaluate 维持挂起。机器卫生：启停零 zombie、端口族全
+free、零树污染（tracked clean，out/ 报告为忽略产物，门后
+零本门残留）。控制面零外来提交（本轮执行段 pull 零新提
+交）。解冻条件实质判定不变：① 观察面 crates/ raw 52 维持
+（S805 插记刷新基线），子帧三件套 iframe.contentDocument
+null 现状不变，frames.click+evaluate 维持挂起；② 本流控
+制面 docs/goal/cdp-protocol/ 零外来提交，DC-2 口径无新拍
+板记录。goal 自有面零新缺口、无扩展面（S40-S832 重审结论
+延续）。**make test 全量参考基线 19,303P/0F（S829 腿复
+证，S805 腿收口 R4383 组合态复证，S813/S821 期限轮双腿复
+证）维持——引用计数 4/10（新周期锚点维持 S829 双腿：门腿
 02:48:05 落盘 + make test 腿 02:56:27 收口），下轮
-S833=4/10（至迟 S836=8/10 次轮即期限轮窗、S837 期限轮活
+S834=5/10（至迟 S836=8/10 次轮即期限轮窗、S837 期限轮活
 跑；树代码变化提前触发双腿刷新 S245→S829 先例链）**）
 
 ---
@@ -17029,6 +17031,19 @@ S833=4/10（至迟 S836=8/10 次轮即期限轮窗、S837 期限轮活
    双腿：门腿 02:48:05 落盘 + make test 腿 02:56:27 收
    口），若 S833 前树代码变化则提前触发双腿刷新
    （S245→S829 先例链），否则按引用轮口径门单腿复跑免
+   make test 腿（S336 先例），至迟 S836=8/10 次轮即期限轮
+   窗、S837 期限轮活跑；
+   **S833 已执行（2026-09-16）静默监测引用轮（同 tip 复核
+   pull 零新提交 tip=8fcdd058a 即 S832 提交本身（S832 提交
+   docs-only 树不变实测复核），树不变口径=门单腿复跑免
+   make test 腿 S336 先例，门 PASS 33 绿负载窗亚型活跑
+   （兄弟流 ZeroWeb-2 zero_integration_tests 腿 pid
+   3576228 lstart 03:09:34 在窗 157% CPU，负载
+   1.44→4.67，第二十六个负载下样本）首调即收口 03:11:25
+   落盘，引用计数 4/10）**——下轮 **S834 = 5/10**（周期锚
+   点维持 S829 双腿：门腿 02:48:05 落盘 + make test 腿
+   02:56:27 收口），若 S834 前树代码变化则提前触发双腿刷
+   新（S245→S829 先例链），否则按引用轮口径门单腿复跑免
    make test 腿（S336 先例），至迟 S836=8/10 次轮即期限轮
    窗、S837 期限轮活跑；
 
