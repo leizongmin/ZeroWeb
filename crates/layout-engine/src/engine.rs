@@ -2283,6 +2283,7 @@ impl LayoutEngine {
             margin_left_auto,
             margin_right_auto,
             children: children_boxes,
+            inline_block_baseline: None,
             is_absolute,
             is_scroll_marker_group,
             is_scroll_marker: false,

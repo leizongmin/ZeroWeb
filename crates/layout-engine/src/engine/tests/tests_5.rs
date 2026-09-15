@@ -1861,19 +1861,73 @@ fn test_empty_inline_block_baseline_uses_bottom_margin_edge() {
 }
 
 /// CSS §10.8.1：overflow != visible 的 inline-block 基线 = 底 margin edge（即便有 in-flow 行盒）。
-/// 给 inline-block 追加文本子节点（非空）后，overflow:hidden 应触发 margin-edge 基线，
-/// 比 overflow:visible（border-edge 基线）上移约 margin-bottom 量。
+/// R4380 后 overflow:visible（有 in-flow 行盒）的基线 = 内部最后行盒基线（探针）——
+/// 该基线是盒内文本行几何，与 margin-bottom 无关；而 overflow:hidden 仍走 margin-edge
+/// 基线，margin-bottom 增大使其上移约 margin-bottom 量。两臂分别回归守护。
 #[test]
 fn test_overflow_hidden_inline_block_baseline_uses_bottom_margin_edge() {
-    let y_visible = inline_block_baseline_y(80.0, false, true);
-    let y_hidden = inline_block_baseline_y(80.0, true, true);
-    let shift = y_visible - y_hidden;
+    // visible：内部行盒基线与 margin 无关。
+    let y_visible_0 = inline_block_baseline_y(0.0, false, true);
+    let y_visible_80 = inline_block_baseline_y(80.0, false, true);
+    assert!(
+        (y_visible_0 - y_visible_80).abs() < 1.0,
+        "overflow:visible inline-block 基线 = 内部行盒基线，不应随 margin-bottom 移动（y0={} y80={}）",
+        y_visible_0,
+        y_visible_80
+    );
+    // hidden：margin-edge 基线，mb=80 上移约 80。
+    let y_hidden_0 = inline_block_baseline_y(0.0, true, true);
+    let y_hidden_80 = inline_block_baseline_y(80.0, true, true);
+    let shift = y_hidden_0 - y_hidden_80;
     assert!(
         (shift - 80.0).abs() < 8.0,
-        "overflow:hidden inline-block 应比 overflow:visible 上移约 80px（margin-edge 基线），实际位移 {}（visible={} hidden={}）",
+        "overflow:hidden inline-block 的 margin-bottom 应使其上移约 80px（margin-edge 基线），实际位移 {}（y0={} y80={}）",
         shift,
-        y_visible,
-        y_hidden
+        y_hidden_0,
+        y_hidden_80
+    );
+}
+
+/// R4380（CSS §10.8.1 inline-block 基线 = 内部最后行盒基线）：两个字体相同、内容行相同、
+/// 仅高度不同的 inline-block 同行 baseline 对齐时，二者**盒顶 y 相等**（基线距各自盒顶
+/// 等距 → y = line_baseline − baseline 相等）。旧「基线 = 盒高（底边）」模型下盒顶错开
+/// 高度差（40px）。chromium 直接 probe（content-height-004 谱）：同 strut 字体的不同高
+/// inline-block 全部顶对齐、内部 span 统一锚同一基线。
+#[test]
+fn test_inline_block_baseline_aligns_by_inner_line_baseline() {
+    let (mut doc, body) = make_doc_with_body();
+    let wrapper = doc.create_element("div");
+    doc.append_child(body, wrapper).unwrap();
+    let t1 = doc.create_text_node("Xg");
+    doc.append_child(wrapper, t1).unwrap();
+
+    let mut styles = HashMap::new();
+    let mut w = ComputedStyle::default();
+    w.display = DisplayValue::Block;
+    w.font_size = LengthValue::Px(50.0);
+    styles.insert(wrapper, w);
+
+    // 两个 inline-block：相同文本子（同内部行盒），仅高度不同。
+    let mut ys = [0.0f32; 2];
+    for (i, height) in [60.0f64, 20.0].into_iter().enumerate() {
+        let ib = doc.create_element("span");
+        doc.append_child(wrapper, ib).unwrap();
+        let txt = doc.create_text_node("g");
+        doc.append_child(ib, txt).unwrap();
+        let mut s = ComputedStyle::default();
+        s.display = DisplayValue::InlineBlock;
+        s.width = LengthValue::Px(30.0);
+        s.height = LengthValue::Px(height);
+        styles.insert(ib, s);
+        let mut engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+        ys[i] = find_child_by_node_id(&result.root, ib).expect("inline-block 应找到").y;
+    }
+    assert!(
+        (ys[0] - ys[1]).abs() < 1.0,
+        "同内部行盒、不同高度的 inline-block 应顶对齐（基线传播），实际 y60={} y20={}",
+        ys[0],
+        ys[1]
     );
 }
 

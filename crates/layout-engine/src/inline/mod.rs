@@ -1882,7 +1882,9 @@ impl InlineFormattingContext {
                 return false;
             }
             for run in &line.runs {
-                let Some(&(width, height)) = sizes.get(&run.node_id) else {
+                // 只校验宽（尺寸一致性）；高度允许更新（子盒自身 remeasure 后 refinements
+                // 在下方 update 段回写，R4380 起不再因 final 高小于 run 高而拒绝）。
+                let Some(&(width, _)) = sizes.get(&run.node_id) else {
                     continue;
                 };
                 let Some(style) = styles.get(&run.node_id) else {
@@ -1891,7 +1893,6 @@ impl InlineFormattingContext {
                 if run.font_size != 0.0
                     || !matches!(style.display, DisplayValue::InlineBlock)
                     || (run.width - width).abs() > 0.01
-                    || height + 0.01 < run.height
                 {
                     return false;
                 }
@@ -1914,6 +1915,10 @@ impl InlineFormattingContext {
                 run.height = height;
                 run.baseline = if no_line_boxes || clips {
                     height + Self::resolve_inline_margin(&style.margin_bottom, style)
+                } else if let Some(&b) = self.baseline_overrides.get(&run.node_id) {
+                    // R4380（CSS2 §10.8.1）：探针写入的 inline-block 最后行盒基线
+                    // 优先于底边回退——刷新高度不得把基线对齐打回底边对齐。
+                    b
                 } else {
                     height
                 };
@@ -1986,7 +1991,21 @@ impl InlineFormattingContext {
                 // R1004：优先取 ascent_ratio_overrides 真实 per-font ratio（dormant，
                 // 空 map 回退 R990 常数）。用自由函数 + 字段访问绕开 &mut self.lines 借用冲突。
                 let dominant_ratio = ascent_ratio_lookup(&self.ascent_ratio_overrides, dominant_node, dominant_is_ahem);
-                (line_height - dominant_fs).max(0.0) / 2.0 + dominant_fs * dominant_ratio
+                // R4380（CSS2 §10.8.1 strut）：strut 的 half-leading 用 **strut 字体自身
+                // 的行高**（行内文本 run 的 line-height max），而非已终算的行盒高。
+                // R4374 glyph verticals / 原子盒高度会把 line.height 撑到大于 strut 字体
+                // 行高，旧式 `(line_height − fs)/2 + ascent` 把 strut ascent 随之放大、
+                // 基线下移（content-height-004：同 strut 字体的四个 inline-block 内部行
+                // 基线 53.6/62.1/63.7 发散，chromium 全部 = strut ascent 52.4）。无文本
+                // run（height 全 0）回退旧行高——原子盒行行为不变。
+                let strut_lh = line
+                    .runs
+                    .iter()
+                    .filter(|r| r.font_size > 0.0)
+                    .map(|r| r.height)
+                    .fold(0.0f32, f32::max);
+                let strut_lh = if strut_lh > 0.0 { strut_lh } else { line_height };
+                (strut_lh - dominant_fs).max(0.0) / 2.0 + dominant_fs * dominant_ratio
             } else {
                 self.container_font_size * 0.8
             };

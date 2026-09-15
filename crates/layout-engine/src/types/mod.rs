@@ -456,6 +456,14 @@ pub struct LayoutBox {
     /// 用于 `adjust_inline_block_positions` 中计算 inline-flex/inline-grid
     /// 容器在父 IFC 中的基线位置，替代 font_size 近似。
     pub taffy_baseline: Option<f32>,
+    /// R4380（CSS2 §10.8.1 inline-block 基线）：本盒（display:inline-block）内部
+    /// **最后行盒基线**（相对自身 border-box 顶），由 `remeasure_inline_only_containers`
+    /// 探针写入。父容器 IFC（含 `adjust_inline_block_positions` 的定位 IFC）据此把
+    /// `InlineBlockBox.baseline` 从「盒高（底边）」修正为最后行盒基线——原子 inline
+    /// 盒按基线对齐而非底边对齐。
+    /// overflow 非 visible / 无行盒 / 垂直书写模式 = `None`（基线 = 底 margin edge，
+    /// collect 既有 fallback 语义不变）。
+    pub inline_block_baseline: Option<f32>,
     /// R109 §9.2.1.1 匿名块盒的片段文本节点覆盖。
     ///
     /// 当此 LayoutBox 是 inline 元素被 block 子元素拆分后的一个匿名块盒时，
@@ -647,6 +655,7 @@ impl Default for LayoutBox {
             inline_element_margins: NodeIdMap::default(),
             inline_element_paddings: None,
             taffy_baseline: None,
+            inline_block_baseline: None,
             fragment_node_ids: None,
             is_r109_split: false,
             is_r109_block_mixed: false,

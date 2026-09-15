@@ -319,6 +319,18 @@ pub(super) fn adjust_inline_block_positions(
             }
         })
         .collect();
+    // R4380（CSS2 §10.8.1 inline-block 基线）：inline-block 子的最后行盒基线已由
+    // `remeasure_inline_only_containers` 探针写入 `inline_block_baseline`——本定位 IFC
+    // （taffy 高度取整致 6.5 reuse 拒路时由本 pass 接管 inline-block 定位）同样按
+    // 基线对齐原子盒，而非底边。None（overflow 裁剪/无行盒/垂直模式）= 旧行为。
+    let baseline_overrides: HashMap<NodeId, f32> = baseline_overrides
+        .into_iter()
+        .chain(ib_indices.iter().filter_map(|&idx| {
+            let child = &root.children[idx];
+            let node_id = child.node_id?;
+            child.inline_block_baseline.filter(|&b| b > 0.0).map(|b| (node_id, b))
+        }))
+        .collect();
     // 运行 InlineFormattingContext 获取行内布局坐标
     let container_width = root.content_width;
     let is_vertical = root.writing_mode.is_vertical_block_flow();

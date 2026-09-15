@@ -2393,6 +2393,111 @@ fn resolve_relative_px_inset(box_node: &LayoutBox, styles: &HashMap<NodeId, Comp
 ///
 /// 典型场景：`<div><span style="line-height:5"></span></div>`
 /// 空 span 的 line-height 应贡献到行盒高度，但 taffy 无法处理此情况。
+/// R4380（CSS2 §10.8.1 inline-block 基线）：对本容器的 inline-block 子逐盒探针
+/// 「最后行盒基线」（相对其 border-box 顶），写入子盒 `inline_block_baseline`
+/// 供父 IFC `baseline_overrides` 与 `adjust_inline_block_positions` 定位 IFC 消费。
+///
+/// collect 期 inline-block 的 `InlineBlockBox.baseline` 旧回退 = 盒高（底边）——本 pass
+/// 递归到子盒**晚于**父 IFC 收集，子盒自身行盒基线不可达（adjust_inline_block_positions
+/// 同款时序缺口，flex/grid 已有 taffy_baseline 通道、inline-block 无）。探针按子盒自身
+/// 内容宽跑一次 measure IFC（与 6.5 自身 pass 同配置），取最后行 `y + baseline_y`
+/// 加 border/padding 顶偏移。spec 口径：
+/// - 有 in-flow 行盒 → 基线 = 最后行盒基线（本探针）；
+/// - overflow 非 visible / 无行盒 → 基线 = 底 margin edge（字段保持 None，走 collect
+///   既有 fallback，语义不变）。
+///
+/// 垂直书写模式跳过（行盒 y 是列轴坐标，基线语义不同，同 R4379 守卫）。
+fn probe_inline_block_baselines(
+    box_node: &mut LayoutBox,
+    ib_sizes: &HashMap<NodeId, (f32, f32)>,
+    doc: &Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    img_intrinsic_sizes: &HashMap<NodeId, (f32, f32)>,
+    inline_fonts: InlineFontContext<'_>,
+) -> HashMap<NodeId, f32> {
+    let mut overrides: HashMap<NodeId, f32> = HashMap::new();
+    if ib_sizes.is_empty() || !matches!(box_node.writing_mode, WritingModeValue::HorizontalTb) {
+        return overrides;
+    }
+    for child in box_node.children.iter_mut() {
+        let Some(child_id) = child.node_id else {
+            continue;
+        };
+        let Some(style) = styles.get(&child_id) else {
+            continue;
+        };
+        if !matches!(style.display, DisplayValue::InlineBlock) {
+            continue;
+        }
+        // overflow 裁剪盒基线 = 底 margin edge（collect fallback 同语义），不探针。
+        if !matches!(
+            style.overflow_x,
+            zero_style_system::property::types::OverflowValue::Visible
+        ) || !matches!(
+            style.overflow_y,
+            zero_style_system::property::types::OverflowValue::Visible
+        ) {
+            continue;
+        }
+        // CSS Containment 1 §3：layout/paint containment 元素**无基线**——
+        // vertical-align 语境按底 margin edge 对齐（contain-layout-baseline-001）。
+        if style.contain.has_layout() || style.contain.has_paint() {
+            continue;
+        }
+        // 无行内内容的 inline-block 无行盒 → 底边基线（None = 旧行为）。
+        if !has_inline_content(doc, styles, child_id) {
+            continue;
+        }
+        // 探针 IFC：与子盒自身 6.5 pass 同配置（内容宽 / white-space / 字体上下文），
+        // 行断与行盒几何一致，基线方可互换。
+        let nested_ib_sizes: HashMap<NodeId, (f32, f32)> = child
+            .children
+            .iter()
+            .filter(|c| {
+                c.node_id.is_some_and(|id| {
+                    styles
+                        .get(&id)
+                        .is_some_and(|s| matches!(s.display, DisplayValue::InlineBlock))
+                })
+            })
+            .filter_map(|c| {
+                let node_id = c.node_id?;
+                Some((node_id, (c.width, c.height)))
+            })
+            .collect();
+        let content_width = child.content_width;
+        let pad_border_top = child.padding_top + child.border_top;
+        let run_in_prepended = child.run_in_prepended;
+        let mut ctx = InlineFormattingContext::new(content_width)
+            .with_no_wrap(resolve_no_wrap_for_ifc_measure(Some(style)))
+            .with_preserve_whitespace(resolve_preserve_for_ifc_measure(Some(style)))
+            .with_break_at_newline(resolve_break_at_newline_for_ifc_measure(Some(style)))
+            .with_break_word(
+                matches!(
+                    style.overflow_wrap,
+                    zero_style_system::property::types::OverflowWrapValue::BreakWord
+                        | zero_style_system::property::types::OverflowWrapValue::Anywhere
+                ) || matches!(style.word_break, zero_style_system::WordBreakValue::BreakWord),
+            )
+            .with_inline_block_sizes(nested_ib_sizes)
+            .with_img_intrinsic_sizes(img_intrinsic_sizes.clone());
+        ctx = configure_inline_fonts(ctx, inline_fonts, false);
+        if let Some(run_in_id) = run_in_prepended {
+            ctx.set_run_in_prepended(run_in_id);
+        }
+        ctx.layout(doc, child_id, styles);
+        let Some(last) = ctx.lines.last() else {
+            continue;
+        };
+        let baseline = pad_border_top + last.y + last.baseline_y;
+        if baseline.is_finite() && baseline > 0.0 {
+            child.inline_block_baseline = Some(baseline);
+            overrides.insert(child_id, baseline);
+        }
+    }
+    overrides
+}
+
 pub(crate) fn remeasure_inline_only_containers(
     box_node: &mut LayoutBox,
     doc: &Document,
@@ -2690,7 +2795,15 @@ pub(crate) fn remeasure_inline_only_containers(
             .with_no_wrap(no_wrap)
             .with_preserve_whitespace(preserve)
             .with_break_at_newline(break_at_newline)
-            .with_inline_block_sizes(ib_sizes)
+            .with_inline_block_sizes(ib_sizes.clone())
+            .with_baseline_overrides(probe_inline_block_baselines(
+                box_node,
+                &ib_sizes,
+                doc,
+                styles,
+                img_intrinsic_sizes,
+                inline_fonts,
+            ))
             .with_img_intrinsic_sizes(img_intrinsic_sizes.clone());
         inline_ctx = configure_inline_fonts(inline_ctx, inline_fonts, false);
         // R4332：并入 run-in 前缀参与重测（与 measure 路径同源，行形状一致）。
