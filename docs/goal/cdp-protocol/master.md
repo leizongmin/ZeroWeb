@@ -2,55 +2,54 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-16（S815：**静默监测引用轮**（引用计
-数 2/10，周期锚点维持 S813 双腿）——同 tip 复核 pull 零新
-提交（已经是最新的）tip=4d98525e2 即 S814 提交本身，S814
+**最后更新**: 2026-09-16（S816：**静默监测引用轮**（引用计
+数 3/10，周期锚点维持 S813 双腿）——同 tip 复核 pull 零新
+提交（已经是最新的）tip=9e7b29323 即 S815 提交本身，S815
 提交 docs-only，tracked 代码树=S813 双腿覆盖树态（=R4383
 组合态），树不变口径=门单腿复跑免 make test 腿（S336 先
 例）。**门腿** make cdp-e2e ZW_IPC_VALIDATE=1 在位
-01:59:20 启动 01:59:53 落盘（wall ~32s）**净窗首调即
+02:02:55 启动 02:03:27 落盘（wall ~32s）**深净窗首调即
 PASS 33 绿 deterministic 双跑 YES EXIT=0**（单次触发即收
 口），expected_green 33 对称差 none（绿步集与基线机械 diff
 逐项一致零漂移）、regressions 空、无 fatal，run_details 双
 run ok 集逐项一致（差异仅 run 序号字段；failed 面=
 frames.click+evaluate 既有挂起项维持），ZW_IPC_VALIDATE 捕
 获网在位静默（#0 复现监测零命中）；首调红形态**连续第二百
-二十九次零再现**（累计两例非聚集维持）。**dead_code
-warning 本轮为缓存 replay 相位**（zero-engine rlib mtime
-9月14 印证零重编、clippy Finished 0.19s 全缓存态；两相位
-口径维持，warning 面维持 js_dom_bridge.rs:3420
-match_media_to_json），clippy -p zero-engine --lib --
--D warnings 维持 PASS（本轮实测零 warning）DC-4 不可退让
-面零暴露，归因 engine crate zero-web 流域，本流不碰
-engine 记账不修。本轮属**净窗亚型活跑**（门腿窗内零 >50%
-CPU 进程，负载 1.26→1.18 兄弟 ZeroWeb-2 make test 编译测
-试负载窗已自行收口，S208/S288/S300/S309/S378/S793/
-S805-S814 净窗先例口径；零端口竞争 9222/45029/34293/19222
-四端口族全程 free；门后零本门残留（门进程族零遗留）；另有
-9月14 lstart 外来 chromium/zeroseed 族 0% CPU 在册（非
-9222 端口族，非本门产物零干扰））。三层锚点零漂移——自
-有面对 765429dda 维持 **4 files +137/-17** 精确一致
-（Makefile 1/1 + apps/browser/README.md 1/0 +
-headless/mod.rs 25/0 + headless/session.rs 110/16）；全树
-排除本流 docs 对 18d462de6 维持 **88 files +8084/-573** 与
-S805 插记刷新基线逐项一致；crates/ 观察面 raw 维持 **52**
-（git log 8fb39cd46..HEAD -- crates/ 口径）。子帧关键词非
-测试代码零命中维持（crates/ 口径 7 测试文件既有形态维
-持），实质判定不变 frames.click+evaluate 维持挂起。机器卫
-生：启停零 zombie、端口族全 free、零树污染（tracked
-clean，out/ 报告为忽略产物，门后零本门残留）。控制面零外
-来提交（本轮执行段 pull 零新提交）。解冻条件实质判定不
-变：① 观察面 crates/ raw 52 维持（S805 插记刷新基线），
-子帧三件套 iframe.contentDocument null 现状不变，
-frames.click+evaluate 维持挂起；② 本流控制面
-docs/goal/cdp-protocol/ 零外来提交，DC-2 口径无新拍板记
-录。goal 自有面零新缺口、无扩展面（S40-S814 重审结论延
-续）。**make test 全量参考基线 19,303P/0F（S805 腿收口
-R4383 组合态复证，S813 期限轮双腿复证）维持——引用计数
-2/10（周期锚点维持 S813 双腿：门腿 01:34:07 落盘 + make
-test 腿 01:45:28 收口），下轮 S816=3/10（至迟 S820=8/10
-次轮即期限轮窗、S821 期限轮活跑；树代码变化提前触发双腿
-刷新 S245→S813 先例链）**）
+三十次零再现**（累计两例非聚集维持）。**dead_code warning
+本轮为缓存 replay 相位**（捕获窗零 Compiling 行、clippy
+Finished 0.18s 印证编译全缓存态；两相位口径维持，warning
+面维持 js_dom_bridge.rs:3420 match_media_to_json），clippy
+-p zero-engine --lib -- -D warnings 维持 PASS（本轮实测零
+warning）DC-4 不可退让面零暴露，归因 engine crate zero-web
+流域，本流不碰 engine 记账不修。本轮属**净窗亚型活跑**
+（门腿窗内零 >50% CPU 进程，负载 0.36→0.29 深净窗，兄
+弟流编译测试负载窗已自行收口，S208/S288/S300/S309/S378/
+S793/S805-S815 净窗先例口径；零端口竞争
+9222/45029/34293/19222 四端口族全程 free；门后零本门残留
+（门进程族零遗留）；另有 9月14 lstart 外来 chromium/
+zeroseed 族 0% CPU 在册（非 9222 端口族，非本门产物零干
+扰））。三层锚点零漂移——自有面对 765429dda 维持 **4
+files +137/-17** 精确一致（Makefile 1/1 +
+apps/browser/README.md 1/0 + headless/mod.rs 25/0 +
+headless/session.rs 110/16）；全树排除本流 docs 对
+18d462de6 维持 **88 files +8084/-573** 与 S805 插记刷新基
+线逐项一致；crates/ 观察面 raw 维持 **52**（git log
+8fb39cd46..HEAD -- crates/ 口径）。子帧关键词非测试代码零
+命中维持（crates/ 口径 7 测试文件既有形态维持），实质判
+定不变 frames.click+evaluate 维持挂起。机器卫生：启停零
+zombie、端口族全 free、零树污染（tracked clean，out/ 报告
+为忽略产物，门后零本门残留）。控制面零外来提交（本轮执行
+段 pull 零新提交）。解冻条件实质判定不变：① 观察面
+crates/ raw 52 维持（S805 插记刷新基线），子帧三件套
+iframe.contentDocument null 现状不变，frames.click+evaluate
+维持挂起；② 本流控制面 docs/goal/cdp-protocol/ 零外来提
+交，DC-2 口径无新拍板记录。goal 自有面零新缺口、无扩展面
+（S40-S815 重审结论延续）。**make test 全量参考基线
+19,303P/0F（S805 腿收口 R4383 组合态复证，S813 期限轮双
+腿复证）维持——引用计数 3/10（周期锚点维持 S813 双腿：门
+腿 01:34:07 落盘 + make test 腿 01:45:28 收口），下轮
+S817=4/10（至迟 S820=8/10 次轮即期限轮窗、S821 期限轮活
+跑；树代码变化提前触发双腿刷新 S245→S813 先例链）**）
 
 ---
 
@@ -16818,6 +16817,17 @@ test 腿 01:45:28 收口），下轮 S816=3/10（至迟 S820=8/10
    发双腿刷新（S245→S813 先例链），否则按引用轮口径门单
    腿复跑免 make test 腿（S336 先例），至迟 S820=8/10 次
    轮即期限轮窗、S821 期限轮活跑；
+   **S816 已执行（2026-09-16）静默监测引用轮（同 tip 复核
+   pull 零新提交 tip=9e7b29323 即 S815 提交本身（S815 提交
+   docs-only 树不变实测复核），树不变口径=门单腿复跑免
+   make test 腿 S336 先例，门 PASS 33 绿深净窗（负载
+   0.36→0.29）首调即收口 02:03:27 落盘，引用计数 3/10）**
+   ——下轮 **S817 = 4/10**（周期锚点维持 S813 双腿：门腿
+   01:34:07 落盘 + make test 腿 01:45:28 收口），若 S817
+   前树代码变化则提前触发双腿刷新（S245→S813 先例链），
+   否则按引用轮口径门单腿复跑免 make test 腿（S336 先
+   例），至迟 S820=8/10 次轮即期限轮窗、S821 期限轮活
+   跑；
    若活跑时逢并行流负载窗口则
    优先窗口内执行，负载下样本对 #0 更有价值（负载窗口口径含并行流 browser 进程型与
    编译测试负载型两亚型，净窗亚型 S208 起并行记录；**端口竞争亚型口径 S198 新增**：
