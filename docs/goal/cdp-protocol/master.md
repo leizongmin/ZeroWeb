@@ -16466,6 +16466,32 @@ iframe.contentDocument null 现状不变，frames.click+evaluate 维持
    态），实测为准；dead_code warning 观察面 js_dom_bridge.rs:3420
    非本次触碰文件（R4377 未触 engine），两相位口径照常观察。
 
+   **S760 轮后插记（2026-09-15 推送序列 pull --rebase 实测）**：
+   兄弟流 R4378（fix(fonts) 残余墙归因+两修：回退链垂直度量按有
+   序 CSS face 列表解析 + @font-face size-adjust 缩放，8 files
+   +143/-50，7a5816bef，commit 时点 19:50:04；随行 1e014afd0/
+   99fab17cd 两 docs-only 提交 19:50:47/19:55:35）于 S760 门腿
+   （19:47:07-19:47:40）与 make test 腿（19:47:54-19:56:56 收口）
+   覆盖树态（=4037b6599）之外经 push 前 pull --rebase 入树（我方
+   S760 提交 rebase 后 c19296f22 19:58:50，push 99fab17cd..
+   c19296f22 fast-forward）——**S760 双腿覆盖不含该树态，S761 =
+   树变化刷新轮（门 + make test 双腿刷新，S245→S342→S684→S685→
+   S716→S717→S723→S724→S752 先例链）**，引用计数以 S761 双腿为
+   新周期锚点 0/10（S760 header 内「下轮 S761=1/10」预告被本插
+   记取代）；S761 锚点预期——全树排除本流 docs 对 18d462de6
+   82 files +5902/-459 → 预期 82 files 维持（R4378 八文件均在原
+   集内零净增文件，+143/-50 面值非加总漂移以实测为准——本插记
+   时点实测已刷新为 82 files +5996/-459），crates/ raw 46→**47**
+   递增（7a5816bef 触 crates/ 计 1 提交，本插记时点实测 47）；
+   R4378 触及 crates/engine（paint/painter/text/text_list.rs）
+   属共享面（run-rules §9），系兄弟流经 main 提交非本流触碰，
+   本流不碰 engine 口径不变；R4378 触及 apps/browser
+   （src/text_metrics.rs）非本流 headless 面，自有锚点 765429dda
+   口径不变；R4378 自带记账 make test 19,296P/0F、bench/
+   product-smoke 全绿——S761 make test 腿参考基线以 19,296P 记
+   （R4378 组合态），实测为准；dead_code warning 观察面
+   js_dom_bridge.rs:3420 非本次触碰文件，两相位口径照常观察。
+
 **待用户决策清单**：
 - **DC-2 收口口径（2026-09-13 新入，S39 后语境收窄维持）**：余 1 步（frames.click+evaluate）
   真挂子帧文档加载 + JS realm + child quads——S18 探针实证：`iframe.contentDocument`
