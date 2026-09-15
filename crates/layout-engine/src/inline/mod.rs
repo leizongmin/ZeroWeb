@@ -146,6 +146,11 @@ pub struct InlineFormattingContext {
     /// 从 LayoutBox.text_node_ws_overrides 注入；layout IFC 有真实 styles 不消费）。
     /// 缺省空 map = 沿用容器级标志（旧行为）。
     pub ws_overrides: NodeIdMap<RunWhiteSpace>,
+    /// R4374：逐文本节点的回退链垂直度量覆盖 `(glyph_ascent, glyph_descent)`
+    /// （paint Path B 空 styles 重跑 IFC 时，从 LayoutBox.text_node_glyph_verticals
+    /// 注入——layout 趟已按 line-height normal/explicit 归一为最终行盒贡献，Path B
+    /// 直接复用，无需再判 normal 语义）。缺省空 map = 回退即时计算（gate 关恒 0）。
+    pub glyph_verticals_overrides: NodeIdMap<(f32, f32)>,
     /// R3784：float 子的行内流锚 y（key = float 元素 NodeId，value = 该 float 在源序中
     /// 出现处的行盒累计 y）。`break_items_into_lines` 消费 `FloatAnchor` 条目时写入。
     /// remeasure 用它把 float 子从 taffy block 堆叠位搬到行内流锚位（CSS §9.5.1：
@@ -335,6 +340,7 @@ impl InlineFormattingContext {
             inline_block_sizes: HashMap::new(),
             img_intrinsic_sizes: HashMap::new(),
             ws_overrides: NodeIdMap::default(),
+            glyph_verticals_overrides: NodeIdMap::default(),
             float_anchor_ys: NodeIdMap::default(),
             float_anchor_line_idxs: NodeIdMap::default(),
             default_font_metrics: None,
@@ -473,6 +479,12 @@ impl InlineFormattingContext {
     /// R3778：设置逐文本节点的有效 white-space 覆盖（paint Path B 恢复行断用）。
     pub fn with_ws_overrides(mut self, overrides: NodeIdMap<RunWhiteSpace>) -> Self {
         self.ws_overrides = overrides;
+        self
+    }
+
+    /// R4374：设置逐文本节点的回退链垂直度量覆盖（paint Path B 恢复行盒基线用）。
+    pub fn with_glyph_verticals_overrides(mut self, overrides: NodeIdMap<(f32, f32)>) -> Self {
+        self.glyph_verticals_overrides = overrides;
         self
     }
 
@@ -1759,6 +1771,8 @@ impl InlineFormattingContext {
                     current_column.runs.push(TextFragment {
                         ws_override: None,
                         ruby_rt_ascent: 0.0,
+                        glyph_ascent: 0.0,
+                        glyph_descent: 0.0,
                         x: 0.0,
                         y: current_depth,
                         width: box_col_width,
@@ -1977,6 +1991,10 @@ impl InlineFormattingContext {
                 self.container_font_size * 0.8
             };
             let mut max_ascent = strut_ascent;
+            // R4374：回退链垂直度量 max descent——行内任一 run 的实际使用字体
+            // descent 大于行盒 descent 时行盒向下扩（chromium CSS2 §10.8.1 各 inline
+            // box 度量 max 语义；gate 关闭恒 0 = 旧行为）。
+            let mut max_glyph_descent = 0.0_f32;
             for run in &line.runs {
                 if matches!(
                     run.vertical_align,
@@ -1998,6 +2016,11 @@ impl InlineFormattingContext {
                             );
                         }
                         max_ascent = max_ascent.max(run.font_size * run_ratio + run.ruby_rt_ascent);
+                        // R4374：run 回退链实际使用字体的 ascent/descent max 参与
+                        // 行盒基线/底部（CJK 回退字体 NotoSansCJK hhea ascent 1.16em
+                        // 高于 strut 比例 0.928em → 基线下移、行盒下扩）。
+                        max_ascent = max_ascent.max(run.glyph_ascent);
+                        max_glyph_descent = max_glyph_descent.max(run.glyph_descent);
                     } else {
                         // 原子行内级盒（font_size==0 标识）：
                         // 使用 baseline 字段决定 ascent（inline-block: baseline = height 底边；
@@ -2015,7 +2038,7 @@ impl InlineFormattingContext {
             // ascent=同，descent=行高-ascent（含 half-leading）。Phase 1 仅存储，不改变 run.y 计算。
             line.baseline_y = baseline_y;
             line.ascent = max_ascent;
-            line.descent = (line_height - max_ascent).max(0.0);
+            line.descent = (line_height - max_ascent).max(max_glyph_descent);
 
             for run in &mut line.runs {
                 run.y = match run.vertical_align {
@@ -2365,6 +2388,8 @@ impl InlineFormattingContext {
                 line.runs.iter().map(move |run| TextFragment {
                     ws_override: run.ws_override,
                     ruby_rt_ascent: run.ruby_rt_ascent,
+                    glyph_ascent: run.glyph_ascent,
+                    glyph_descent: run.glyph_descent,
                     x: run.x,
                     y: if vert_y { run.y } else { run.y + line_y },
                     width: run.width,

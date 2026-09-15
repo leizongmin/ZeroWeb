@@ -222,6 +222,31 @@ impl InlineFormattingContext {
                                         .and_then(|pid| self.is_ahem_overrides.get(&pid).copied())
                                         .unwrap_or(false)
                                 });
+                            // R4374：回退链垂直度量（glyph_ascent/glyph_descent）——layout 趟按
+                            // line-height 语义归一为最终行盒贡献；paint Path B（styles 空）经
+                            // glyph_verticals_overrides 复用 layout 趟结果（不用再判 normal）。
+                            let run_font_id = self.shaping_font_id_for_style(
+                                Some(child_id),
+                                style,
+                                is_ahem_font,
+                                letter_spacing,
+                                word_spacing,
+                                false,
+                            );
+                            let (glyph_ascent, glyph_descent) = match self.glyph_verticals_overrides.get(&child_id)
+                            {
+                                Some(&(ga, gd)) => (ga, gd),
+                                None => Self::run_glyph_verticals(
+                                    run_font_id,
+                                    &text,
+                                    font_size,
+                                    is_ahem_font,
+                                    line_height,
+                                    style.is_some_and(|s| {
+                                        matches!(s.line_height, zero_style_system::LineHeightValue::Normal)
+                                    }),
+                                ),
+                            };
                             items.push(InlineItem::Text(TextRun {
                                 text,
                                 node_id: child_id,
@@ -239,14 +264,7 @@ impl InlineFormattingContext {
                                 border_top: 0.0,
                                 border_bottom: 0.0,
                                 is_ahem_font,
-                                font_id: self.shaping_font_id_for_style(
-                                    Some(child_id),
-                                    style,
-                                    is_ahem_font,
-                                    letter_spacing,
-                                    word_spacing,
-                                    false,
-                                ),
+                                font_id: run_font_id,
                                 is_rtl: style.is_some_and(|s| {
                                     matches!(s.direction, zero_style_system::DirectionValue::Rtl)
                                 }),
@@ -265,6 +283,8 @@ impl InlineFormattingContext {
                                     }),
                                 ws_override: run_ws,
                                 ruby_rt_ascent: 0.0,
+                                glyph_ascent,
+                                glyph_descent,
                             }));
                         }
                     }
@@ -1065,6 +1085,27 @@ impl InlineFormattingContext {
             0.0
         };
         if !trimmed.is_empty() {
+            // R4374：回退链垂直度量（同文本节点路径——layout 趟按 line-height 语义归一，
+            // Path B 经 overrides 复用；门禁关闭或未注册回调时恒 0）。
+            let run_font_id = self.shaping_font_id_for_style(
+                Some(child_id),
+                style,
+                is_ahem_font,
+                letter_spacing,
+                word_spacing,
+                elem_data.local_name() == "ruby",
+            );
+            let (glyph_ascent, glyph_descent) = match self.glyph_verticals_overrides.get(&child_id) {
+                Some(&(ga, gd)) => (ga, gd),
+                None => Self::run_glyph_verticals(
+                    run_font_id,
+                    &trimmed,
+                    font_size,
+                    is_ahem_font,
+                    line_height,
+                    style.is_some_and(|s| matches!(s.line_height, zero_style_system::LineHeightValue::Normal)),
+                ),
+            };
             Some(InlineItem::Text(TextRun {
                 ws_override: run_ws,
                 ruby_rt_ascent,
@@ -1084,14 +1125,7 @@ impl InlineFormattingContext {
                 border_top,
                 border_bottom,
                 is_ahem_font,
-                font_id: self.shaping_font_id_for_style(
-                    Some(child_id),
-                    style,
-                    is_ahem_font,
-                    letter_spacing,
-                    word_spacing,
-                    elem_data.local_name() == "ruby",
-                ),
+                font_id: run_font_id,
                 is_rtl: style.is_some_and(|s| {
                     matches!(s.direction, zero_style_system::DirectionValue::Rtl)
                 }),
@@ -1103,12 +1137,16 @@ impl InlineFormattingContext {
                     .unwrap_or_else(|| {
                         self.plaintext_bidi_override || self.plaintext_bidi_overrides.contains(&child_id)
                     }),
+                glyph_ascent,
+                glyph_descent,
             }))
         } else {
             // CSS 规范：空 inline 元素仍需通过 line-height + padding + border 影响行盒高度
             Some(InlineItem::Text(TextRun {
                 ws_override: style.map(|s| Self::run_white_space(&s.white_space)),
                 ruby_rt_ascent: 0.0,
+                glyph_ascent: 0.0,
+                glyph_descent: 0.0,
                 text: String::new(),
                 node_id: child_id,
                 font_size,
@@ -1226,6 +1264,21 @@ impl InlineFormattingContext {
             if trimmed.is_empty() {
                 return;
             }
+            // R4374：回退链垂直度量（同主路径——layout 趟按 line-height 语义归一，
+            // Path B 经 overrides 复用；门禁关闭或未注册回调时恒 0）。
+            let flat_font_id =
+                self.shaping_font_id_for_style(Some(elem_id), style, is_ahem_font, letter_spacing, word_spacing, false);
+            let (glyph_ascent, glyph_descent) = match self.glyph_verticals_overrides.get(&elem_id) {
+                Some(&(ga, gd)) => (ga, gd),
+                None => Self::run_glyph_verticals(
+                    flat_font_id,
+                    &trimmed,
+                    font_size,
+                    is_ahem_font,
+                    line_height,
+                    style.is_some_and(|s| matches!(s.line_height, zero_style_system::LineHeightValue::Normal)),
+                ),
+            };
             items.push(InlineItem::Text(TextRun {
                 ws_override: run_ws,
                 ruby_rt_ascent: 0.0,
@@ -1247,7 +1300,7 @@ impl InlineFormattingContext {
                 border_top,
                 border_bottom,
                 is_ahem_font,
-                font_id: self.shaping_font_id_for_style(Some(elem_id), style, is_ahem_font, letter_spacing, word_spacing, false),
+                font_id: flat_font_id,
                 is_rtl: style.is_some_and(|s| matches!(s.direction, zero_style_system::DirectionValue::Rtl)),
                 bidi_override: Self::element_bidi_override(style),
                 is_plaintext_bidi: style
@@ -1255,6 +1308,8 @@ impl InlineFormattingContext {
                     .unwrap_or_else(|| {
                         self.plaintext_bidi_override || self.plaintext_bidi_overrides.contains(&elem_id)
                     }),
+                glyph_ascent,
+                glyph_descent,
             }));
             *text_pending = String::new();
         };
@@ -1539,6 +1594,38 @@ impl InlineFormattingContext {
     fn element_bidi_override(style: Option<&ComputedStyle>) -> Option<bool> {
         style.filter(|s| matches!(s.unicode_bidi, zero_style_system::UnicodeBidiValue::BidiOverride))
             .map(|s| matches!(s.direction, zero_style_system::DirectionValue::Rtl))
+    }
+
+    /// R4374：run 回退链垂直度量 `(glyph_ascent, glyph_descent)`（行盒贡献幅长 px）。
+    ///
+    /// 门禁 [`runtime_flags::fallback_line_metrics`]（opt-in `ZW_FALLBACK_LINE_METRICS=1`）
+    /// 与宿主注册的全局回调（`FontLoader::fallback_text_line_metrics`，按 run 字体链取
+    /// 实际使用字体的行度量 max）须同时满足，任一不满足返回 (0.0, 0.0) = 旧行为。
+    /// Ahem run 跳过（Ahem 是测试字体，1.0em 方盒度量恒定，回退链语义无意义——
+    /// strut 模型已特判）。
+    ///
+    /// 行盒贡献按 line-height 语义二分（CSS2 §10.8.1 leading 模型）：
+    /// - `normal`：used line-height = 字体自身 ascent+descent（+gap）——行盒按字形
+    ///   字体度量**撑开**（CJK 回退字体 1.448em > 主字体 strut 1.164em），贡献 =
+    ///   原始 (ascent, descent)。
+    /// - 显式（Length/Number）：行盒高度 = line-height **不撑开**，大度量只把基线
+    ///   在盒内下移——贡献 = `L/2 ± (a−d)/2`（leading 对半分布于字体盒两侧）。
+    fn run_glyph_verticals(
+        font_id: Option<u32>,
+        text: &str,
+        font_size: f32,
+        is_ahem: bool,
+        line_height: f32,
+        line_height_is_normal: bool,
+    ) -> (f32, f32) {
+        if !runtime_flags::fallback_line_metrics() || is_ahem || text.is_empty() {
+            return (0.0, 0.0);
+        }
+        let Some((ga, gd)) = crate::inline::font_metrics::fallback_line_metrics_for_layout(font_id, text, font_size)
+        else {
+            return (0.0, 0.0);
+        };
+        crate::inline::font_metrics::glyph_verticals_contribution(ga, gd, line_height, line_height_is_normal)
     }
 }
 

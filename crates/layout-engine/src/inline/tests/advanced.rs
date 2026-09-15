@@ -29,6 +29,8 @@ fn test_vertical_align_middle_in_line() {
         is_plaintext_bidi: false,
         ws_override: None,
         ruby_rt_ascent: 0.0,
+        glyph_ascent: 0.0,
+        glyph_descent: 0.0,
     }];
     ctx.break_into_lines(runs);
 
@@ -78,6 +80,8 @@ fn test_vertical_align_sub_in_line() {
         is_plaintext_bidi: false,
         ws_override: None,
         ruby_rt_ascent: 0.0,
+        glyph_ascent: 0.0,
+        glyph_descent: 0.0,
     }];
     ctx.break_into_lines(runs);
 
@@ -128,6 +132,8 @@ fn test_vertical_align_super_in_line() {
         is_plaintext_bidi: false,
         ws_override: None,
         ruby_rt_ascent: 0.0,
+        glyph_ascent: 0.0,
+        glyph_descent: 0.0,
     }];
     ctx.break_into_lines(runs);
 
@@ -174,6 +180,8 @@ fn test_vertical_align_text_top_same_as_top() {
         is_plaintext_bidi: false,
         ws_override: None,
         ruby_rt_ascent: 0.0,
+        glyph_ascent: 0.0,
+        glyph_descent: 0.0,
     }];
     ctx_text_top.break_into_lines(runs_text_top);
 
@@ -201,6 +209,8 @@ fn test_vertical_align_text_top_same_as_top() {
         is_plaintext_bidi: false,
         ws_override: None,
         ruby_rt_ascent: 0.0,
+        glyph_ascent: 0.0,
+        glyph_descent: 0.0,
     }];
     ctx_top.break_into_lines(runs_top);
 
@@ -243,6 +253,8 @@ fn test_vertical_align_text_bottom_same_as_bottom() {
         is_plaintext_bidi: false,
         ws_override: None,
         ruby_rt_ascent: 0.0,
+        glyph_ascent: 0.0,
+        glyph_descent: 0.0,
     }];
     ctx_text_bottom.break_into_lines(runs_text_bottom);
 
@@ -270,6 +282,8 @@ fn test_vertical_align_text_bottom_same_as_bottom() {
         is_plaintext_bidi: false,
         ws_override: None,
         ruby_rt_ascent: 0.0,
+        glyph_ascent: 0.0,
+        glyph_descent: 0.0,
     }];
     ctx_bottom.break_into_lines(runs_bottom);
 
@@ -369,6 +383,8 @@ fn test_break_into_lines_called_twice_resets_state() {
         is_plaintext_bidi: false,
         ws_override: None,
         ruby_rt_ascent: 0.0,
+        glyph_ascent: 0.0,
+        glyph_descent: 0.0,
     }];
     ctx.break_into_lines(first_runs);
     let first_line_count = ctx.lines.len();
@@ -399,6 +415,8 @@ fn test_break_into_lines_called_twice_resets_state() {
         is_plaintext_bidi: false,
         ws_override: None,
         ruby_rt_ascent: 0.0,
+        glyph_ascent: 0.0,
+        glyph_descent: 0.0,
     }];
     ctx.break_into_lines(second_runs);
 
@@ -446,6 +464,8 @@ fn test_zero_font_size_no_panic() {
         is_plaintext_bidi: false,
         ws_override: None,
         ruby_rt_ascent: 0.0,
+        glyph_ascent: 0.0,
+        glyph_descent: 0.0,
     }];
     // 不应 panic
     ctx.break_into_lines(runs);
@@ -487,6 +507,8 @@ fn test_zero_line_height_no_panic() {
         is_plaintext_bidi: false,
         ws_override: None,
         ruby_rt_ascent: 0.0,
+        glyph_ascent: 0.0,
+        glyph_descent: 0.0,
     }];
     // 不应 panic
     ctx.break_into_lines(runs);
@@ -538,6 +560,8 @@ fn test_mixed_font_sizes_on_same_line() {
             is_plaintext_bidi: false,
             ws_override: None,
             ruby_rt_ascent: 0.0,
+            glyph_ascent: 0.0,
+            glyph_descent: 0.0,
         },
         TextRun {
             text: "Large".to_string(),
@@ -562,6 +586,8 @@ fn test_mixed_font_sizes_on_same_line() {
             is_plaintext_bidi: false,
             ws_override: None,
             ruby_rt_ascent: 0.0,
+            glyph_ascent: 0.0,
+            glyph_descent: 0.0,
         },
     ];
     ctx.break_into_lines(runs);
@@ -634,6 +660,8 @@ fn test_single_word_exceeds_container_width() {
         is_plaintext_bidi: false,
         ws_override: None,
         ruby_rt_ascent: 0.0,
+        glyph_ascent: 0.0,
+        glyph_descent: 0.0,
     }];
     ctx.break_into_lines(runs);
 
@@ -689,6 +717,8 @@ fn test_empty_container_width_first_word_still_placed() {
         is_plaintext_bidi: false,
         ws_override: None,
         ruby_rt_ascent: 0.0,
+        glyph_ascent: 0.0,
+        glyph_descent: 0.0,
     }];
     // 不应 panic
     ctx.break_into_lines(runs);
@@ -744,6 +774,8 @@ fn test_multiple_lines_line_height_max_per_line() {
             is_plaintext_bidi: false,
             ws_override: None,
             ruby_rt_ascent: 0.0,
+            glyph_ascent: 0.0,
+            glyph_descent: 0.0,
         },
         TextRun {
             text: "Big".to_string(),
@@ -768,6 +800,8 @@ fn test_multiple_lines_line_height_max_per_line() {
             is_plaintext_bidi: false,
             ws_override: None,
             ruby_rt_ascent: 0.0,
+            glyph_ascent: 0.0,
+            glyph_descent: 0.0,
         },
         TextRun {
             text: "Med".to_string(),
@@ -792,6 +826,8 @@ fn test_multiple_lines_line_height_max_per_line() {
             is_plaintext_bidi: false,
             ws_override: None,
             ruby_rt_ascent: 0.0,
+            glyph_ascent: 0.0,
+            glyph_descent: 0.0,
         },
     ];
     ctx.break_into_lines(runs);
@@ -842,6 +878,8 @@ fn test_whitespace_only_text_no_lines() {
         is_plaintext_bidi: false,
         ws_override: None,
         ruby_rt_ascent: 0.0,
+        glyph_ascent: 0.0,
+        glyph_descent: 0.0,
     }];
     ctx.break_into_lines(runs);
 
@@ -901,6 +939,8 @@ fn test_inline_block_on_same_line() {
             is_plaintext_bidi: false,
             ws_override: None,
             ruby_rt_ascent: 0.0,
+            glyph_ascent: 0.0,
+            glyph_descent: 0.0,
         }),
         InlineItem::InlineBlock(InlineBlockBox {
             width: 50.0,
@@ -936,6 +976,8 @@ fn test_inline_block_on_same_line() {
             is_plaintext_bidi: false,
             ws_override: None,
             ruby_rt_ascent: 0.0,
+            glyph_ascent: 0.0,
+            glyph_descent: 0.0,
         }),
     ];
     ctx.break_items_into_lines(items);
@@ -1016,6 +1058,8 @@ fn test_inline_block_wraps_to_next_line() {
             is_plaintext_bidi: false,
             ws_override: None,
             ruby_rt_ascent: 0.0,
+            glyph_ascent: 0.0,
+            glyph_descent: 0.0,
         }),
         InlineItem::InlineBlock(InlineBlockBox {
             width: 50.0,
@@ -1083,6 +1127,8 @@ fn test_inline_block_height_contributes_to_line() {
             is_plaintext_bidi: false,
             ws_override: None,
             ruby_rt_ascent: 0.0,
+            glyph_ascent: 0.0,
+            glyph_descent: 0.0,
         }),
         InlineItem::InlineBlock(InlineBlockBox {
             width: 40.0,
@@ -1256,6 +1302,8 @@ fn test_mixed_ascii_cjk_line_breaking() {
         is_plaintext_bidi: false,
         ws_override: None,
         ruby_rt_ascent: 0.0,
+        glyph_ascent: 0.0,
+        glyph_descent: 0.0,
     }];
     ctx_ascii.break_into_lines(runs_ascii);
 
@@ -1284,6 +1332,8 @@ fn test_mixed_ascii_cjk_line_breaking() {
         is_plaintext_bidi: false,
         ws_override: None,
         ruby_rt_ascent: 0.0,
+        glyph_ascent: 0.0,
+        glyph_descent: 0.0,
     }];
     ctx_mixed.break_into_lines(runs_mixed);
 
@@ -1385,6 +1435,8 @@ fn test_br_forces_line_break() {
             is_plaintext_bidi: false,
             ws_override: None,
             ruby_rt_ascent: 0.0,
+            glyph_ascent: 0.0,
+            glyph_descent: 0.0,
         }),
         InlineItem::Br,
         InlineItem::Text(TextRun {
@@ -1410,6 +1462,8 @@ fn test_br_forces_line_break() {
             is_plaintext_bidi: false,
             ws_override: None,
             ruby_rt_ascent: 0.0,
+            glyph_ascent: 0.0,
+            glyph_descent: 0.0,
         }),
     ];
     ctx.break_items_into_lines(items);
@@ -1477,6 +1531,8 @@ fn test_br_at_start_of_line() {
             is_plaintext_bidi: false,
             ws_override: None,
             ruby_rt_ascent: 0.0,
+            glyph_ascent: 0.0,
+            glyph_descent: 0.0,
         }),
     ];
     ctx.break_items_into_lines(items);
@@ -1534,6 +1590,8 @@ fn test_br_at_end_of_line() {
             is_plaintext_bidi: false,
             ws_override: None,
             ruby_rt_ascent: 0.0,
+            glyph_ascent: 0.0,
+            glyph_descent: 0.0,
         }),
         InlineItem::Br,
     ];
@@ -1630,6 +1688,8 @@ fn test_br_with_inline_blocks() {
             is_plaintext_bidi: false,
             ws_override: None,
             ruby_rt_ascent: 0.0,
+            glyph_ascent: 0.0,
+            glyph_descent: 0.0,
         }),
         InlineItem::InlineBlock(InlineBlockBox {
             width: 50.0,
@@ -1666,6 +1726,8 @@ fn test_br_with_inline_blocks() {
             is_plaintext_bidi: false,
             ws_override: None,
             ruby_rt_ascent: 0.0,
+            glyph_ascent: 0.0,
+            glyph_descent: 0.0,
         }),
     ];
     ctx.break_items_into_lines(items);
@@ -1857,6 +1919,8 @@ fn test_text_align_last_none_justify_falls_back_to_left() {
         is_plaintext_bidi: false,
         ws_override: None,
         ruby_rt_ascent: 0.0,
+        glyph_ascent: 0.0,
+        glyph_descent: 0.0,
     }];
     ctx.break_into_lines(runs);
 
@@ -1905,6 +1969,8 @@ fn test_text_align_last_center_on_last_line() {
         is_plaintext_bidi: false,
         ws_override: None,
         ruby_rt_ascent: 0.0,
+        glyph_ascent: 0.0,
+        glyph_descent: 0.0,
     }];
     ctx.break_into_lines(runs);
 
@@ -1959,6 +2025,8 @@ fn test_text_align_last_right_on_last_line() {
         is_plaintext_bidi: false,
         ws_override: None,
         ruby_rt_ascent: 0.0,
+        glyph_ascent: 0.0,
+        glyph_descent: 0.0,
     }];
     ctx.break_into_lines(runs);
 
@@ -2007,6 +2075,8 @@ fn test_text_align_last_justify_on_last_line() {
         is_plaintext_bidi: false,
         ws_override: None,
         ruby_rt_ascent: 0.0,
+        glyph_ascent: 0.0,
+        glyph_descent: 0.0,
     }];
     ctx.break_into_lines(runs);
 
@@ -2060,6 +2130,8 @@ fn test_text_align_last_single_line_treated_as_last() {
         is_plaintext_bidi: false,
         ws_override: None,
         ruby_rt_ascent: 0.0,
+        glyph_ascent: 0.0,
+        glyph_descent: 0.0,
     }];
     ctx.break_into_lines(runs);
 
@@ -2103,6 +2175,8 @@ fn test_text_align_left_no_align_last_no_offset() {
         is_plaintext_bidi: false,
         ws_override: None,
         ruby_rt_ascent: 0.0,
+        glyph_ascent: 0.0,
+        glyph_descent: 0.0,
     }];
     ctx.break_into_lines(runs);
 

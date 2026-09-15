@@ -1065,6 +1065,9 @@ impl super::Painter {
                     // 容器级标志近似下丢失（line-clamp-014 类），layout 期按文本节点存储，
                     // 此处恢复使 paint IFC 行断与 layout 一致。
                     .with_ws_overrides(box_node.text_node_ws_overrides.clone())
+                    // R4374：回退链垂直度量恢复（layout 期按文本节点/owner 存储）——
+                    // paint Path B 行盒基线与 layout 一致。
+                    .with_glyph_verticals_overrides(box_node.text_node_glyph_verticals.clone())
                     .with_break_word(break_word)
                     .with_no_wrap(no_wrap)
                     .with_preserve_whitespace(preserve_whitespace)

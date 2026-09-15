@@ -114,6 +114,16 @@ pub struct TextRun {
     /// 参与行盒 ascent/height（chromium 行距 35 = base 23.3 + rt 11.7 实证）。
     /// 非 ruby run 恒 0。
     pub ruby_rt_ascent: f32,
+    /// R4374：该 run 文本回退链**实际使用字体**的行度量幅长（px，均 ≥ 0）——
+    /// `glyph_ascent` = 基线到行盒顶最大距离、`glyph_descent` = 基线到行盒底最大
+    /// 距离（字体 descent 负值取绝对值）。collect 期经全局回调
+    /// `fallback_line_metrics_for_layout` 按 (font_id, text, size) 计算（跨
+    /// layout/replay 趟幂等，与 ruby_rt_ascent 同款不需 override 存储），
+    /// 参与行盒 ascent/descent/height（CSS2 §10.8.1）。`ZW_FALLBACK_LINE_METRICS`
+    /// 门禁关闭或宿主未注册回调时恒 0。
+    pub glyph_ascent: f32,
+    /// 见 [`TextRun::glyph_ascent`]。
+    pub glyph_descent: f32,
 }
 
 /// R3778：单个文本 run 的有效 white-space 三标志（CSS Text 3 §4.1 白空格处理维度的
@@ -167,6 +177,8 @@ impl TextRun {
             is_plaintext_bidi: false,
             ws_override: None,
             ruby_rt_ascent: 0.0,
+            glyph_ascent: 0.0,
+            glyph_descent: 0.0,
         }
     }
 
@@ -345,6 +357,14 @@ pub struct TextFragment {
     /// 参与行盒 ascent/height（chromium 行距 35 = base 23.3 + rt 11.7 实证）。
     /// 非 ruby run 恒 0。
     pub ruby_rt_ascent: f32,
+    /// R4374：该片段文本回退链**实际使用字体**的行度量幅长（px，均 ≥ 0）。
+    /// `glyph_ascent` = 基线到行盒顶最大距离；`glyph_descent` = 基线到行盒底最大
+    /// 距离（字体 descent 负值取绝对值）。参与行盒 ascent/descent/height
+    /// （CSS2 §10.8.1 各 inline box 按自身字体度量分布；`ZW_FALLBACK_LINE_METRICS`
+    /// 门禁，关闭时恒 0）。与 [`TextRun::glyph_ascent`] 同源。
+    pub glyph_ascent: f32,
+    /// 见 [`TextFragment::glyph_ascent`]。
+    pub glyph_descent: f32,
     /// 片段在行盒中的 x 坐标。
     pub x: f32,
     /// 片段在行盒中的 y 坐标（相对于行盒顶部）。

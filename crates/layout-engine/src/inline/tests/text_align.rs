@@ -44,6 +44,8 @@ fn test_text_align_center() {
         is_plaintext_bidi: false,
         ws_override: None,
         ruby_rt_ascent: 0.0,
+        glyph_ascent: 0.0,
+        glyph_descent: 0.0,
     }];
     ctx.break_into_lines(runs);
 
@@ -87,6 +89,8 @@ fn test_text_align_right() {
         is_plaintext_bidi: false,
         ws_override: None,
         ruby_rt_ascent: 0.0,
+        glyph_ascent: 0.0,
+        glyph_descent: 0.0,
     }];
     ctx.break_into_lines(runs);
 
@@ -128,6 +132,8 @@ fn test_text_align_left_no_offset() {
         is_plaintext_bidi: false,
         ws_override: None,
         ruby_rt_ascent: 0.0,
+        glyph_ascent: 0.0,
+        glyph_descent: 0.0,
     }];
     ctx.break_into_lines(runs);
 
@@ -168,6 +174,8 @@ fn test_text_align_justify_distributes_space() {
         is_plaintext_bidi: false,
         ws_override: None,
         ruby_rt_ascent: 0.0,
+        glyph_ascent: 0.0,
+        glyph_descent: 0.0,
     }];
     ctx.break_into_lines(runs);
 
@@ -215,6 +223,8 @@ fn test_text_align_justify_last_line_not_stretched() {
         is_plaintext_bidi: false,
         ws_override: None,
         ruby_rt_ascent: 0.0,
+        glyph_ascent: 0.0,
+        glyph_descent: 0.0,
     }];
     ctx.break_into_lines(runs);
 
@@ -258,6 +268,8 @@ fn test_text_align_center_multiline() {
         is_plaintext_bidi: false,
         ws_override: None,
         ruby_rt_ascent: 0.0,
+        glyph_ascent: 0.0,
+        glyph_descent: 0.0,
     }];
     ctx.break_into_lines(runs);
 
@@ -305,6 +317,8 @@ fn test_text_align_right_multiline() {
         is_plaintext_bidi: false,
         ws_override: None,
         ruby_rt_ascent: 0.0,
+        glyph_ascent: 0.0,
+        glyph_descent: 0.0,
     }];
     ctx.break_into_lines(runs);
 
@@ -349,6 +363,8 @@ fn test_text_align_justify_single_fragment_line() {
         is_plaintext_bidi: false,
         ws_override: None,
         ruby_rt_ascent: 0.0,
+        glyph_ascent: 0.0,
+        glyph_descent: 0.0,
     }];
     ctx.break_into_lines(runs);
     // 不应 panic
@@ -382,6 +398,8 @@ fn test_text_align_does_not_affect_total_height() {
         is_plaintext_bidi: false,
         ws_override: None,
         ruby_rt_ascent: 0.0,
+        glyph_ascent: 0.0,
+        glyph_descent: 0.0,
     }];
 
     let mut ctx_left = InlineFormattingContext::new(100.0).with_text_align(TextAlign::Left);
@@ -428,6 +446,8 @@ fn test_text_align_does_not_change_line_count() {
         is_plaintext_bidi: false,
         ws_override: None,
         ruby_rt_ascent: 0.0,
+        glyph_ascent: 0.0,
+        glyph_descent: 0.0,
     }];
 
     let mut ctx_left = InlineFormattingContext::new(100.0).with_text_align(TextAlign::Left);
@@ -475,6 +495,8 @@ fn group_align_runs() -> Vec<TextRun> {
         is_plaintext_bidi: false,
         ws_override: None,
         ruby_rt_ascent: 0.0,
+        glyph_ascent: 0.0,
+        glyph_descent: 0.0,
     }]
 }
 

@@ -338,6 +338,47 @@ impl FontMetricProvider for FontMetricMap {
     }
 }
 
+/// R4374：run 文本回退链垂直度量全局回调（进程级注册一次，镜像 zero-engine
+/// `set_hmtx_measure_fn` 模式——宿主持有 `FontLoader`，IFC 无生命周期参数可存）。
+///
+/// 签名 `fn(font_id, text, font_size) -> Option<(ascent, |descent|)>`：按回退链
+/// 解析 run 各字符实际使用字体并取行度量 max（`FontLoader::fallback_text_line_metrics`）。
+/// 宿主未注册或无字体上下文时返回 `None`（IFC 零行为）。消费门禁
+/// `ZW_FALLBACK_LINE_METRICS=1`（默认关，A/B 后裁决默认）。
+pub type FallbackLineMetricsFn = fn(Option<u32>, &str, f32) -> Option<(f32, f32)>;
+
+static FALLBACK_LINE_METRICS_FN: std::sync::OnceLock<FallbackLineMetricsFn> = std::sync::OnceLock::new();
+
+/// 宿主启动时注册回退链垂直度量回调（runner / browser 各注册一次）。
+pub fn set_fallback_line_metrics_fn(f: FallbackLineMetricsFn) {
+    let _ = FALLBACK_LINE_METRICS_FN.set(f);
+}
+
+/// IFC 消费入口：宿主已注册时按 run 字体链取实际使用字体的行度量 max。
+pub(crate) fn fallback_line_metrics_for_layout(font_id: Option<u32>, text: &str, font_size: f32) -> Option<(f32, f32)> {
+    FALLBACK_LINE_METRICS_FN.get()?(font_id, text, font_size)
+}
+
+/// R4374：原始字体度量 `(ascent, |descent|)` → 行盒贡献，按 line-height 语义二分
+/// （CSS2 §10.8.1 leading 模型）：
+/// - `normal`：used line-height = 字体自身 ascent+descent——行盒按字形字体度量**撑开**，
+///   贡献 = 原始度量。
+/// - 显式（Length/Number）：行盒高度 = line-height **不撑开**，大度量只把基线在盒内
+///   下移——贡献 = `L/2 ± (a−d)/2`（leading 对半分布于字体盒两侧）。
+pub(crate) fn glyph_verticals_contribution(
+    glyph_ascent: f32,
+    glyph_descent: f32,
+    line_height: f32,
+    line_height_is_normal: bool,
+) -> (f32, f32) {
+    if line_height_is_normal {
+        (glyph_ascent, glyph_descent)
+    } else {
+        let half_delta = (glyph_ascent - glyph_descent) / 2.0;
+        (line_height / 2.0 + half_delta, line_height / 2.0 - half_delta)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -778,6 +819,30 @@ mod tests {
         assert!(
             (lh - 40.0).abs() < 1e-3,
             "Ahem per-font line-height = 1.0·fs = 40, got {lh}"
+        );
+    }
+
+    /// R4374：normal line-height——行盒按字形字体度量撑开，贡献 = 原始度量。
+    #[test]
+    fn glyph_verticals_normal_grows_box() {
+        let (a, d) = super::glyph_verticals_contribution(18.56, 4.61, 18.62, true);
+        assert!(
+            (a - 18.56).abs() < 1e-4 && (d - 4.61).abs() < 1e-4,
+            "normal 贡献=原始度量, got ({a}, {d})"
+        );
+    }
+
+    /// R4374：显式 line-height——行盒高度不撑开，大度量只把基线在盒内下移
+    /// （贡献 = L/2 ± (a−d)/2；和恒等于 line-height）。
+    #[test]
+    fn glyph_verticals_explicit_keeps_line_height() {
+        // mono 20px/1：a=23.17 d=4.61 → A=19.28 D=0.72，和=20=line-height
+        let (a, d) = super::glyph_verticals_contribution(23.17, 4.61, 20.0, false);
+        assert!((a - 19.28).abs() < 1e-2, "explicit A = L/2+(a-d)/2, got {a}");
+        assert!(
+            (a + d - 20.0).abs() < 1e-4,
+            "explicit A+D 恒等 line-height, got {}",
+            a + d
         );
     }
 }

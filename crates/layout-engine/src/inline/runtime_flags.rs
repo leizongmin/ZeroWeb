@@ -98,6 +98,16 @@ pub(super) fn shaped_fallback() -> bool {
     residual_selected(*VALUE, || opt_in("ZW_SHAPED_FALLBACK"))
 }
 
+/// R4374：CJK 回退字体垂直度量参与行盒——run 各字符实际使用字体（per-char 回退链）
+/// 的 ascent/descent max 撑开行盒（chromium CSS2 §10.8.1 各 inline box 按自身字体
+/// 度量分布；NotoSansCJK hhea 1.448em > 主字体 strut 1.164em）。**opt-in 默认关**
+/// （`ZW_FALLBACK_LINE_METRICS=1` 激活）——行距杠杆全 CJK 文本域生效，A/B 裁决后
+/// 再定默认。
+pub(super) fn fallback_line_metrics() -> bool {
+    static VALUE: LazyLock<bool> = LazyLock::new(|| opt_in("ZW_FALLBACK_LINE_METRICS"));
+    residual_selected(*VALUE, || opt_in("ZW_FALLBACK_LINE_METRICS"))
+}
+
 fn default_on(name: &str) -> bool {
     std::env::var(name).as_deref() != Ok("0")
 }

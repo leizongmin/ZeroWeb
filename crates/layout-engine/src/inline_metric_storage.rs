@@ -85,6 +85,19 @@ fn store_font_sizes_from_ifc_mode(
                 box_node.text_node_ws_overrides.insert(owner, ws);
             }
         }
+        // R4374：回退链垂直度量存储（layout 趟最终行盒贡献）供 paint Path B 复用。
+        // 双键同 white-space（文本节点 id + owner 元素 id——Path B 的扁平化分支按
+        // 元素 id 查）。
+        if frag.glyph_ascent != 0.0 || frag.glyph_descent != 0.0 {
+            box_node
+                .text_node_glyph_verticals
+                .insert(frag.node_id, (frag.glyph_ascent, frag.glyph_descent));
+            if let Some(owner) = font_owner {
+                box_node
+                    .text_node_glyph_verticals
+                    .insert(owner, (frag.glyph_ascent, frag.glyph_descent));
+            }
+        }
         box_node
             .text_node_letter_spacing
             .insert(frag.node_id, frag.letter_spacing);
@@ -193,6 +206,8 @@ mod tests {
         TextFragment {
             ws_override: None,
             ruby_rt_ascent: 0.0,
+            glyph_ascent: 0.0,
+            glyph_descent: 0.0,
             x: 0.0,
             y: 0.0,
             width: 10.0,

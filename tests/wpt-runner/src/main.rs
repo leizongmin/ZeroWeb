@@ -131,6 +131,8 @@ fn main() {
     zero_engine::set_char_measure_fn(runner_text_metrics::measure_char);
     zero_engine::set_hmtx_measure_fn(runner_text_metrics::measure_text_hmtx);
     zero_engine::set_text_shape_fn(runner_text_metrics::shape_text);
+    // R4374：回退链垂直度量回调（消费门禁 ZW_FALLBACK_LINE_METRICS=1，默认关）。
+    zero_layout_engine::set_fallback_line_metrics_fn(runner_text_metrics::fallback_line_metrics);
 
     if args.len() < 2 {
         print_usage();

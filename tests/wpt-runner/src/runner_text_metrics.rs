@@ -46,6 +46,16 @@ pub fn measure_text_hmtx(font_ids: &[u32], text: &str, font_size: f32) -> Option
     })
 }
 
+/// R4374：run 回退链垂直度量（布局 IFC 行盒撑开，`ZW_FALLBACK_LINE_METRICS=1`）。
+/// 按字体链解析 run 各字符实际使用字体并取行度量 max。无字体上下文返回 None。
+pub fn fallback_line_metrics(font_id: Option<u32>, text: &str, font_size: f32) -> Option<(f32, f32)> {
+    MEASURE_CTX.with(|cell| {
+        let loader = cell.get()?;
+        // SAFETY: 指针仅在 `with_measure_ctx` 闭包执行期间有效。
+        unsafe { &*loader }.fallback_text_line_metrics(font_id, text, font_size)
+    })
+}
+
 /// 在当前 WPT 字体上下文中按指定 face 整形文本。
 pub fn shape_text(
     font_ids: &[u32],

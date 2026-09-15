@@ -689,6 +689,45 @@ impl FontLoader {
         ))
     }
 
+    /// run 文本 per-char 回退链**实际使用字体**的行度量 max（px）。
+    ///
+    /// 逐字符沿 `lookup_chain` 解析实际字体（与 advance/光栅化同源判定，见
+    /// [`Self::resolve_font_for_code_point_in_chain`]），取各字体
+    /// [`Self::line_metrics_full`] 的 ascent/descent 最大值，返回
+    /// `(ascent, |descent|)`（均为正值幅长）。空文本/无可用字体返回 `None`。
+    ///
+    /// 语义（R4374）：CSS2 §10.8.1 行盒 leading 按 inline box 各自字体度量分布——
+    /// chromium 行盒 ascent/descent 取行内字形实际使用的各字体的度量 max，CJK 回退
+    /// 字体（NotoSansCJK hhea ascent+descent ≈ 1.448em）高于主字体（DejaVu 1.164em）
+    /// 时撑开行盒（16px CJK 行距 24px vs 主字体 strut 19px，tis-004 oracle 帧实测）。
+    /// ZW 旧行盒只用主字体 strut 度量 → CJK 行偏矮。消费门禁 `ZW_FALLBACK_LINE_METRICS`。
+    pub fn fallback_text_line_metrics(&self, primary_id: Option<u32>, text: &str, size: f32) -> Option<(f32, f32)> {
+        let chain = self.lookup_chain(primary_id.unwrap_or(0));
+        let mut max = (0.0_f32, 0.0_f32);
+        let mut found = false;
+        // 收集实际使用字体 id 去重后再查度量——同一回退字体的 line_metrics_full
+        // （Face 重解析）逐字符调用在 CJK 长文下开销放大。
+        let mut used: Vec<u32> = Vec::new();
+        for ch in text.chars() {
+            if let Some(font_id) = self.resolve_font_for_code_point_in_chain(&chain, ch)
+                && !used.contains(&font_id)
+            {
+                used.push(font_id);
+            }
+        }
+        // 「真回退」窄化实验（R4374 A/B）已证伪回退：oracle +7/+10 vs 全量 +12/+13
+        // （hyphens +5 等真收益被误杀），corpus 仅 +1 回收——按 chromium 实际使用
+        // 字体度量全量语义保留。
+        for font_id in used {
+            if let Some((ascent, descent, _)) = self.line_metrics_full(font_id, size) {
+                max.0 = max.0.max(ascent);
+                max.1 = max.1.max(-descent);
+                found = true;
+            }
+        }
+        found.then_some(max)
+    }
+
     /// 测量字符 advance 宽度（含回退）
     pub fn measure_advance(&self, primary_id: u32, code_point: char, size: f32) -> f32 {
         if self.font_allows_code_point(primary_id, code_point)
@@ -1482,6 +1521,60 @@ mod tests {
 
         // line_gap 有限（不同字体可能为 0，但不应为 NaN）。
         assert!(line_gap.is_finite(), "line_gap should be finite, got {line_gap}");
+    }
+
+    /// R4374：`fallback_text_line_metrics` 按 per-char 回退链取实际使用字体度量 max。
+    ///
+    /// 主字体 DejaVu Sans（a+d≈1.164em）+ 回退 NotoSansCJK（a+d≈1.448em）：
+    /// - CJK 文本（主字体缺字形）→ 回退字体度量撑开（ascent > 1.0·size）；
+    /// - Latin 文本（主字体全覆盖）→ 主字体自身度量（unrestricted 语义，与 chromium
+    ///   「行内字形实际使用字体」一致；strut 侧由 `ZW_FALLBACK_LINE_METRICS` 消费门
+    ///   与 R834 谱系打包处理）；
+    /// - 空文本 → None。
+    #[test]
+    fn r4374_fallback_text_line_metrics_uses_fallback_font() {
+        let Some(dejavu) = std::fs::read("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf").ok() else {
+            eprintln!("r4374: DejaVuSans not found, skip");
+            return;
+        };
+        let Some(notocjk) = std::fs::read("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc").ok() else {
+            eprintln!("r4374: NotoSansCJK not found, skip");
+            return;
+        };
+        let mut loader = FontLoader::new();
+        let primary = loader.load_font(&dejavu).expect("load DejaVuSans");
+        let cjk = loader.load_font(&notocjk).expect("load NotoSansCJK");
+        loader.set_fallback_chain(vec![cjk]);
+
+        let size = 16.0_f32;
+        // CJK：主字体缺 あ 字形 → 实际使用 NotoSansCJK（ascent≈1.16em > DejaVu 0.928em）
+        let (a_cjk, d_cjk) = loader
+            .fallback_text_line_metrics(Some(primary), "\u{3042}", size)
+            .expect("CJK char must resolve via fallback chain");
+        assert!(
+            a_cjk > size,
+            "fallback (NotoSansCJK) ascent should exceed 1.0em (18.56 @16px), got {a_cjk}"
+        );
+        assert!(d_cjk > 0.0, "descent magnitude should be positive, got {d_cjk}");
+        // 与 CJK 字体自身 line_metrics_full 同源
+        let (a_ref, d_ref, _) = loader.line_metrics_full(cjk, size).expect("cjk metrics");
+        assert!(
+            (a_cjk - a_ref).abs() < 1e-4,
+            "max ascent should equal fallback font ascent"
+        );
+
+        // Latin：主字体全覆盖 → 主字体自身度量（unrestricted）
+        let (a_lat, _) = loader
+            .fallback_text_line_metrics(Some(primary), "abc", size)
+            .expect("latin text resolves to primary");
+        let (a_pri, _, _) = loader.line_metrics_full(primary, size).expect("primary metrics");
+        assert!(
+            (a_lat - a_pri).abs() < 1e-4,
+            "latin max ascent should equal primary ascent"
+        );
+
+        // 空文本 → None
+        assert!(loader.fallback_text_line_metrics(Some(primary), "", size).is_none());
     }
 
     /// 测试不同大小的光栅化产生不同尺寸的 glyph

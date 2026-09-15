@@ -372,6 +372,11 @@ pub struct LayoutBox {
     /// paint 系统重跑 IFC（空 styles）时无法感知 inline 包裹层声明的 white-space
     ///（容器级标志近似使其丢失），使用此映射恢复 run 级标志（line-clamp-014 类）。
     pub text_node_ws_overrides: NodeIdMap<crate::inline::RunWhiteSpace>,
+    /// R4374：文本节点的回退链垂直度量映射 `(glyph_ascent, glyph_descent)`
+    /// （来自 layout IFC 最终行盒贡献，已按 line-height normal/explicit 归一）。
+    /// paint 系统重跑 IFC（空 styles）时经 `glyph_verticals_overrides` 复用，
+    /// 无需再判 line-height 语义。
+    pub text_node_glyph_verticals: NodeIdMap<(f32, f32)>,
     /// 文本节点的 letter-spacing 映射（来自 layout engine 的 IFC 运行）。
     ///
     /// paint 系统在运行空 styles IFC 时无法获取 letter-spacing（无 style 信息），
@@ -626,6 +631,7 @@ impl Default for LayoutBox {
             text_node_font_sizes: NodeIdMap::default(),
             text_node_is_ahem: NodeIdMap::default(),
             text_node_ws_overrides: NodeIdMap::default(),
+            text_node_glyph_verticals: NodeIdMap::default(),
             text_node_letter_spacing: NodeIdMap::default(),
             text_node_word_spacing: NodeIdMap::default(),
             text_node_line_heights: NodeIdMap::default(),
