@@ -16414,6 +16414,27 @@ iframe.contentDocument null 现状不变，frames.click+evaluate 维持挂
    dead_code warning 观察面 js_dom_bridge.rs:3420 非本次触碰文件，两相位
    口径照常观察；R4375 涉 marker 基线与 product-smoke flag-on 面，均属
    渲染流域口径非本流验收面。
+   **S723 轮后插记（2026-09-15 推送序列 pull --rebase 实测）**：兄弟流
+   R4376（perf(fonts) 回退链垂直度量 default-on + 生产接线，apps/browser
+   app.rs/tab_worker.rs/text_metrics.rs + apps/renderer runtime.rs/
+   text_metrics.rs + crates/engine lib.rs + crates/layout-engine inline
+   collect_items.rs/runtime_flags.rs + crates/render-foundation font/
+   loader.rs 及 loader/ 三子文件（fallback_metrics.rs 为新文件），12
+   files +146/-18，8f8cab305，commit 时点 16:48:26）于 S723 门腿
+   （16:47:11-16:47:45）落盘**之后**经 push 前 pull 入树——S723 门覆盖
+   不含该树态，**S724 = 树变化刷新轮（门 + make test 双腿刷新，
+   S245→S342→S684→S685→S716→S717 先例链）**，引用计数以 S724 双腿为
+   新周期锚点 0/10（S723 header 内「下轮 S724=7/10」预告被本插记取代
+   ——双腿刷新先于引用到期，先例 S683→S684/S716→S717 同构）；S724
+   锚点预期——全树排除本流 docs 对 18d462de6 69 files +5535/-322 →
+   预期 **70 files**（R4376 净增 1 新文件 fallback_metrics.rs，其余 11
+   文件在原 69 集内与否以实测为准逐项记账，行数 +146/-18 面值非加总
+   漂移），crates/ raw 44→**45** 递增；R4376 触及 crates/engine
+   （lib.rs +3）——engine 属共享面（run-rules §9），系兄弟流经 main
+   提交非本流触碰，本流不碰 engine 口径不变；dead_code warning 观察
+   面 js_dom_bridge.rs:3420 非本次触碰文件，两相位口径照常观察；make
+   test 腿参考基线 19,295P/0F（S717 时点，R4375 组合态），R4376 十二
+   文件零测试文件新增，计数以实测为准。
 
 **待用户决策清单**：
 - **DC-2 收口口径（2026-09-13 新入，S39 后语境收窄维持）**：余 1 步（frames.click+evaluate）
