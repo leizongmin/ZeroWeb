@@ -120,6 +120,15 @@ fn build_base_font_loader() -> FontLoader {
             if let Ok(id) = loader.load_font_at_index(&data, cjk_face_index) {
                 fallback_ids.push(id);
             }
+            // R4373：monospace 通用族 face——NotoSansCJK-Regular.ttc face 7 =
+            // "Noto Sans Mono CJK SC"（fc-match monospace 别名真身，ch = 0.5em；
+            // chromium fixed 字体 = fontconfig monospace）。旧 mono 解析落 DejaVu
+            // Sans Mono（0.602em）致 monospace 文本比 chromium 宽 ~20%
+            //（ws-break-spaces-applies-to-001 实测 4ch 盒 76px vs chromium 63px）。
+            // face 7 存在性随字体配置而异：失败静默跳过，mono_names 兜底照旧。
+            if path.extension().and_then(|e| e.to_str()) == Some("ttc") {
+                let _ = loader.load_font_at_index(&data, 7);
+            }
             if let Some(directory) = cjk_font_dir.as_ref() {
                 let bold = directory.join("NotoSansCJK-Bold.ttc");
                 if let Ok(data) = std::fs::read(bold) {

@@ -166,7 +166,8 @@ impl FontLoader {
 
         // 从字体字节中提取字体族名称（fontdue 不暴露 name 表）。
         // WOFF 解码后的 sfnt 含 name 表，解析路径与裸 sfnt 一致。
-        if let Some(name) = parse_font_family_name(bytes) {
+        // R4373：ttcf collection face 感知——每 face 独立 name 表。
+        if let Some(name) = parse_font_family_name_at(bytes, face_index) {
             // 检测 Ahem 测试字体
             if name.eq_ignore_ascii_case("Ahem") {
                 self.ahem_font_id = Some(id);
@@ -302,7 +303,18 @@ impl FontLoader {
             "Georgia",
             "Noto Serif",
         ];
-        let mono_names = ["DejaVu Sans Mono", "Liberation Mono", "Courier New", "monospace"];
+        // R4373：monospace → "Noto Sans Mono CJK SC" 优先——chromium 的 fixed 字体 =
+        // fontconfig monospace 别名（fc-match monospace → NotoSansMonoCJK，ch = 0.5em），
+        // 旧序 DejaVu Sans Mono（ch = 0.602em）致 monospace 文本比 chromium 宽 ~20%
+        //（ws-break-spaces-applies-to-001 实测：4ch 盒 chromium 63px vs ZW 76px）。
+        // R1263 sans-serif 同理先例。face 在 NotoSansCJK-Regular.ttc 内（CJK 回退已加载）。
+        let mono_names = [
+            "Noto Sans Mono CJK SC",
+            "DejaVu Sans Mono",
+            "Liberation Mono",
+            "Courier New",
+            "monospace",
+        ];
 
         // sans-serif
         let sans_id = self.resolve_generic_family(&sans_names).unwrap_or(default_id);
@@ -331,6 +343,17 @@ impl FontLoader {
         resolver.insert("monospace".to_string(), mono_id);
 
         // cursive / fantasy / system-ui → 暂映射到 sans-serif
+        if std::env::var("ZW_RESOLVER_TRACE").is_ok() {
+            eprintln!(
+                "[ZW_RESOLVER] monospace_id={mono_id} serif_id={serif_id} sans_id={sans_id} mono_cjk_in_map={} mono_cjk_keys={:?}",
+                self.family_map.contains_key("Noto Sans Mono CJK SC"),
+                self.family_map
+                    .keys()
+                    .filter(|k| k.contains("Mono"))
+                    .collect::<Vec<_>>()
+            );
+        }
+        resolver.insert("cursive".to_string(), sans_id);
         resolver.insert("cursive".to_string(), sans_id);
         resolver.insert("fantasy".to_string(), sans_id);
         resolver.insert("system-ui".to_string(), sans_id);
@@ -798,7 +821,26 @@ impl Default for FontLoader {
 /// 解析 `name` 表（nameID=1）获取 Font Family Name。
 /// 优先使用 Windows 平台（platformID=3, encodingID=1, UTF-16BE），
 /// 回退到 Macintosh 平台（platformID=1, encodingID=0, ASCII）。
-fn parse_font_family_name(data: &[u8]) -> Option<String> {
+/// R4373：ttcf（font collection）感知的 name 表解析——SuperOTC（NotoSansCJK
+/// 系列 .ttc）每 face 独立 name 表，旧实现把 collection 头当 sfnt 读致族名
+/// 解析恒 None（face 不入 family_map → 通用族别名映射 miss，如 monospace →
+/// "Noto Sans Mono CJK SC"）。`face_index` 越界回落 face 0。
+fn parse_font_family_name_at(data: &[u8], face_index: u32) -> Option<String> {
+    // R4373：TTC 规范特性——collection 内各 face 的表 offset 为**文件绝对**（非
+    // face 相对），故 name 表切片须回到原始全文件数据；face 目录本身 face 相对。
+    let full = data;
+    let mut data = data;
+    // ttcf 头：tag(4) version(4) numFonts(4) offsets[numFonts](4 each)
+    if data.len() >= 12 && &data[0..4] == b"ttcf" {
+        let num_fonts = u32_from_be(data, 8)? as usize;
+        if num_fonts == 0 {
+            return None;
+        }
+        let index = face_index as usize;
+        let pick = if index < num_fonts { index } else { 0 };
+        let face_offset = u32_from_be(data, 12 + pick * 4)? as usize;
+        data = data.get(face_offset..)?;
+    }
     // OpenType 文件头：offset table
     // 0-3: sfVersion (0x00010000 = TrueType, 'OTTO' = CFF)
     // 4-5: numTables
@@ -830,10 +872,10 @@ fn parse_font_family_name(data: &[u8]) -> Option<String> {
 
     let name_off = name_offset?;
     let name_len = name_length?;
-    if name_off + name_len > data.len() {
+    if name_off + name_len > full.len() {
         return None;
     }
-    let table = &data[name_off..name_off + name_len];
+    let table = &full[name_off..name_off + name_len];
     if table.len() < 6 {
         return None;
     }
@@ -2246,5 +2288,51 @@ mod cjk_raster_probe {
             ok,
             50 * chars.len()
         );
+    }
+}
+
+#[cfg(test)]
+mod r4373_tests {
+    use super::*;
+
+    #[test]
+    fn ttcf_family_name_resolves_per_face() {
+        let data = std::fs::read("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc");
+        let Ok(data) = data else {
+            return; // 无该字体环境跳过
+        };
+        assert_eq!(
+            parse_font_family_name_at(&data, 7).as_deref(),
+            Some("Noto Sans Mono CJK SC")
+        );
+        assert_eq!(parse_font_family_name_at(&data, 0).as_deref(), Some("Noto Sans CJK JP"));
+    }
+}
+
+#[cfg(test)]
+mod r4373_debug {
+    use super::*;
+
+    #[test]
+    fn debug_ttcf_offsets() {
+        let data = std::fs::read("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc").expect("ttc");
+        assert_eq!(&data[0..4], b"ttcf");
+        let num = u32_from_be(&data, 8).expect("num") as usize;
+        println!("numFonts={num}");
+        let off = u32_from_be(&data, 12 + 7 * 4).expect("off7") as usize;
+        println!("face7 offset={off} sfnt tag={:?}", &data[off..off + 4]);
+        let nt = u16_from_be(&data, off + 4).expect("numtab") as usize;
+        println!("face7 numTables={nt}");
+        for t in 0..nt {
+            let rec = off + 12 + t * 16;
+            let tag = &data[rec..rec + 4];
+            if tag == b"name" {
+                let no = u32_from_be(&data, rec + 8).expect("nameoff") as usize;
+                let nl = u32_from_be(&data, rec + 12).expect("namelen") as usize;
+                println!("name table off-in-face={no} len={nl}");
+                let parsed = parse_font_family_name_at(&data, 7);
+                println!("parsed family: {parsed:?}");
+            }
+        }
     }
 }
