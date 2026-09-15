@@ -17429,6 +17429,40 @@ docs/goal/cdp-protocol/ 零外来提交，DC-2 口径无新拍板记
    代码变化则提前触发双腿刷新（S245→S829→S835→S843→
    S848→S856 先例链）；
 
+
+   **S864 轮后插记（2026-09-16 推送序列 pull --rebase 实测）**：
+   兄弟流 R4389 两提交于 S864 门腿（05:51:09-05:51:42 落盘）
+   **之后**经 push 前 pull --rebase 入树（我方 S864 提交
+   rebase 后 c1117a5b3，push 389e520c3..c1117a5b3
+   fast-forward）——① 134ff7efb（fix(layout) ruby
+   intrinsic-isize 族第五站点双修，crates/layout-engine 3
+   files +143/-8：float_positioning.rs 43/-8 族 + inline/
+   collect_items.rs +7 + intrinsic_sizing.rs +101）+
+   ② 389e520c3（docs-only 随行记账 rendering-compat.md
+   +2/-1）——**S864 门覆盖不含该树态，S865 = 树变化刷新轮
+   （与期限轮活跑合并执行：门 + make test 双腿，S245→S829
+   →S835→S843→S848→S856 先例链；S864 header 内「下轮
+   S865=期限轮活跑」预告本即双腿口径，树变化提前触发与到
+   期轮合并，引用计数以 S865 双腿为新周期锚点 0/10）**；
+   S865 锚点预期——全树排除本流 docs 对 18d462de6 91 files
+   +9541/-613 → **92 files +9684/-620**（+1 净增文件 =
+   R4389 layout-engine 文件入集，行数含 R4389 对既有集内
+   文件改写非面值加总，本插记时点实测），crates/ raw 54→
+   **55** 递增（134ff7efb 触 crates/ 计 1 提交，本插记时点
+   实测）；自有面 765429dda 维持 4 files +137/-17（R4389
+   未触 apps/browser headless 面，本插记时点实测复核）；
+   R4389 触及 crates/layout-engine 属渲染流域专属 crate
+   （run-rules §9 零重叠面），系兄弟流经 main 提交非本流
+   触碰；dead_code warning 观察面 js_dom_bridge.rs:3420 非
+   本次触碰文件，两相位口径照常观察；R4389 自带记账 make
+   test 19,307P/0F EXIT=0、reftest 687/687、product-smoke
+   15.40% 精确同值 + legacy 0 struct FAIL、bench-gate 定向
+   zero-engine+layout-engine GATE PASS 32 指标——S865 make
+   test 腿参考基线以 19,307P 记（R4389 组合态），实测为准；
+   解冻条件①观察面 crates/ raw 由 54 入树刷新为 55（兄弟
+   流提交非本流动作），①其余口径与②照旧。
+
+
    若活跑时逢并行流负载窗口则
    优先窗口内执行，负载下样本对 #0 更有价值（负载窗口口径含并行流 browser 进程型与
    编译测试负载型两亚型，净窗亚型 S208 起并行记录；**端口竞争亚型口径 S198 新增**：
