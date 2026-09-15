@@ -675,8 +675,10 @@ pub(crate) fn sync_inline_child_boxes_from_ifc(
 
     struct FragAgg {
         line_y: f32,
+        line_baseline_y: f32,
         first_x: f32,
         first_y: f32,
+        first_h: f32,
         first_w: f32,
         first_ml: f32,
         first_pl: f32,
@@ -694,8 +696,10 @@ pub(crate) fn sync_inline_child_boxes_from_ifc(
             let y = if vertical { run.y } else { run.y + line.y };
             let a = aggs.entry(run.node_id).or_insert(FragAgg {
                 line_y: line.y,
+                line_baseline_y: line.baseline_y,
                 first_x: run.x,
                 first_y: y,
+                first_h: run.height,
                 first_w: run.width,
                 first_ml: run.margin_left,
                 first_pl: run.padding_left,
@@ -736,7 +740,32 @@ pub(crate) fn sync_inline_child_boxes_from_ifc(
             if !child.is_replaced && frag_pos_on && pure_inline_container && !vertical && !child.is_relative {
                 let metrics = extract_inline_visual_metrics(style);
                 child.x = agg.min_x - agg.first_ml - agg.first_pl - metrics.border_left;
-                child.y = agg.line_y - metrics.padding_top - metrics.border_top;
+                // R4379：单片段 inline 的盒垂直锚 = **primary 字体 content area 锚行基线**
+                // （CSS2 §10.6.2：content area 由元素自身字体定义，与行内字形是否回退无关；
+                // chromium 直接 probe 实证：多 @font-face + unicode-range 行（Revalia 43px +
+                // AD 深 descent 69px 行盒）中四个 span 背景盒全部统一 [baseline−A_p−hl, +D_p+hl]，
+                // hl = (L − (A_p+D_p))/2 半 leading）。旧 `y = line.y`（行盒顶）在行盒被回退
+                // 度量撑开（R4374）后随 max-ascent 漂移、各 span 错位成多边形
+                //（content-height-004）。多片段（跨行）仍走 union + R639/R4332 per-fragment
+                // 行盒顶锚路径（chromium slice 语义）。provider 缺失/无度量回退旧行为。
+                let content_anchored = (agg.count == 1)
+                    .then(|| {
+                        let handle = inline_ctx.font_metric_provider.as_ref()?;
+                        let (font_size, _) = crate::inline::resolve_font_metrics_with_provider(
+                            Some(style),
+                            inline_ctx.font_metric_provider.as_ref(),
+                        );
+                        let m = handle.line_metrics(&style.font_family, font_size)?;
+                        let a = m.ascent;
+                        let d = -m.descent;
+                        let half_leading = (agg.first_h - (a + d)) / 2.0;
+                        Some(agg.line_y + agg.line_baseline_y - a + half_leading)
+                    })
+                    .flatten();
+                child.y = match content_anchored {
+                    Some(top) => top - metrics.padding_top - metrics.border_top,
+                    None => agg.line_y - metrics.padding_top - metrics.border_top,
+                };
                 child.height = (agg.max_y - agg.min_y).max(0.0)
                     + metrics.padding_top
                     + metrics.padding_bottom
