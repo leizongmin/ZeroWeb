@@ -46,6 +46,12 @@ pub fn resolve_font_ids_for_style(
     let want_bold = matches!(font_weight, FontWeightValue::Bold | FontWeightValue::Bolder)
         || matches!(font_weight, FontWeightValue::Absolute(weight) if *weight >= 600);
     let want_italic = matches!(font_style, FontStyleValue::Italic | FontStyleValue::Oblique(_));
+    if std::env::var("ZW_FONT_RESOLVE_TRACE").is_ok() {
+        eprintln!(
+            "[ZW_FONT_RESOLVE_TRACE] families={:?} want_bold={want_bold} want_italic={want_italic}",
+            font_family
+        );
+    }
     // https://drafts.csswg.org/css-fonts-4/#family-name-value
     let mut ids = Vec::new();
     for family in font_family {
@@ -77,6 +83,9 @@ pub fn resolve_font_ids_for_style(
                 })
                 .unwrap_or(0),
         );
+    }
+    if std::env::var("ZW_FONT_RESOLVE_TRACE").is_ok() {
+        eprintln!("[ZW_FONT_RESOLVE_TRACE]   -> ids={:?}", ids);
     }
     ids
 }

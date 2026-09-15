@@ -559,38 +559,70 @@ impl InlineFormattingContext {
 
     /// C3 advance（R223 font_id gap）：解析 ComputedStyle 的 font-family → font_id。
     ///
-    /// TextRun 构造处调用以 populate `run.font_id`（当前恒 `None`，致 `advance_of`
-    /// 即使注入 `AdvanceSource` 也收到 `None` 回退 estimate）。**dormant**：IFC 的
-    /// `font_metric_provider` 默认 `None` → 返回 `None` = 现行为零回归；provider
-    /// 注入后（U1b-wiring 激活）经 `FontMetricProvider::font_id_of` 真实解析。
+    /// TextRun 构造处调用以 populate `run.font_id`。**R4368：weight-aware**——旧实现
+    /// 忽略 font-weight（`<strong>` run 恒解析 regular face），致
+    /// `advance_run_width` 的 `font_ids_overrides.first() == run.font_id` 守卫失配
+    ///（overrides 侧 weight-aware=bold，font_id 侧=regular）→ 粗体文本按 regular
+    /// 度量排版而 paint 绘 bold 字形（词位逐词漂移 + 词间空格被 bold 墨宽吞掉）。
+    /// 改经 `resolve_font_face` 携 want_bold/want_italic（与 font_resolution /
+    /// paint text_shaping 同语义）；@font-face 自定义族仍走 provider 兜底。
     fn font_id_for_style(&self, style: Option<&zero_style_system::ComputedStyle>) -> Option<u32> {
+        use zero_css_parser::values::FontWeightValue;
         let s = style?;
-        if s.font_family.is_empty() {
-            // ZRG-2026-08-15 修复 A：默认样式（空 family）回退 generic 或 id 0——与
-            // paint 的 resolve_font_id 空 family 回退语义一致，否则这些 run 的
-            // font_id=None 永远走 estimate（hmtx 布局不生效）。R4365：initial 语义
-            // = serif 优先（chromium initial = Times New Roman → fontconfig
-            // Liberation Serif），与 font_resolution / text_shaping 两处臂同改。
-            return self.initial_font_id();
+        let want_bold = matches!(s.font_weight, FontWeightValue::Bold | FontWeightValue::Bolder)
+            || matches!(s.font_weight, FontWeightValue::Absolute(weight) if weight >= 600);
+        let want_italic = matches!(
+            s.font_style,
+            zero_css_parser::values::types::FontStyleValue::Italic
+                | zero_css_parser::values::types::FontStyleValue::Oblique(_)
+        );
+        // 具名族（R3249：quoted generic 是自定义字体名不在此匹配）→ weight-aware face。
+        for family in &s.font_family {
+            let is_quoted = family.starts_with('"') || family.starts_with('\'');
+            let bare = family.trim_matches('"').trim_matches('\'');
+            if is_quoted
+                && ["serif", "sans-serif", "monospace", "cursive", "fantasy", "system-ui"]
+                    .iter()
+                    .any(|g| g.eq_ignore_ascii_case(bare))
+            {
+                continue;
+            }
+            if let Some(resolver) = self.font_resolver.as_ref() {
+                if let Some((id, _)) = zero_render_foundation::font::resolve_font_face(
+                    resolver,
+                    bare,
+                    want_bold,
+                    want_italic,
+                    s.font_stretch,
+                ) {
+                    return Some(id);
+                }
+            }
         }
-        s.font_family
-            .iter()
-            .find_map(|family| {
-                let bare = family.trim_matches('"').trim_matches('\'');
-                self.font_resolver.as_ref().and_then(|resolver| {
-                    resolver.get(bare).copied().or_else(|| {
-                        resolver
-                            .iter()
-                            .find(|(name, _)| name.eq_ignore_ascii_case(bare))
-                            .map(|(_, id)| *id)
-                    })
-                })
-            })
-            .or_else(|| {
-                self.font_metric_provider
-                    .as_ref()
-                    .and_then(|provider| provider.font_id_of(&s.font_family))
-            })
+        // @font-face 自定义族：resolver 无键时经 provider 真实解析。
+        if !s.font_family.is_empty() {
+            return self
+                .font_metric_provider
+                .as_ref()
+                .and_then(|provider| provider.font_id_of(&s.font_family));
+        }
+        // 空 family = UA initial：weight-aware serif 优先（chromium initial = Times
+        // New Roman → fontconfig Liberation Serif；R4365 语义 + R4368 补 weight）。
+        match self.font_resolver.as_ref() {
+            Some(resolver) => Some(
+                zero_render_foundation::font::resolve_font_face(
+                    resolver,
+                    "serif",
+                    want_bold,
+                    want_italic,
+                    s.font_stretch,
+                )
+                .map(|(id, _)| id)
+                .or_else(|| resolver.get("sans-serif").copied())
+                .unwrap_or(0),
+            ),
+            None => Some(0),
+        }
     }
 
     /// 返回允许受限 shaping 的 run 字体 ID；不满足边界时保留旧 estimate 路径。
