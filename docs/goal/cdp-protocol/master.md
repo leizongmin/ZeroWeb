@@ -39,8 +39,18 @@ zombie、端口族全空闲、负载 3.90 兄弟流编译 bench 负载窗；
 报告为忽略产物），负载 0.42 窗尾回落（兄弟流腿收窗），
 窗尾残留 1 进程实测 = 外部项目 /tmp/zeroseed-*
 cliDaemon（cmdline 取证，0% CPU，非本门产物）。控制面
-零外来提交（本轮 pull 零新提交）。解冻条件实质判定
-不变：① 观察面 raw 38 维持（R4367 新基线），子帧三件套
+零外来提交（本轮 pull 零新提交）。
+**S673 收口后 push 序列预记账**：push 前 pull --rebase 拉入
+兄弟流代码提交 R4368（285dcd6ca，crates/layout-engine
+font_resolution.rs + inline/mod.rs 2 files +70/-29 非 docs，
+font_id_for_style weight-aware 化 run.font_id 守卫失配收口）
+——本流门证据基树未含其（S673 门跑于 49cba7966 树），按
+S342/S456/S622/S669 先例 **S674 = 树变化刷新轮**：门 +
+make test 双腿刷新，引用计数以 S674 双腿为新周期锚点 0/10
+（S675=1/10）；全树排除本流 docs 锚点对 18d462de6 与
+crates/ raw 计数自 R4368 起逐项重算记账。解冻条件实质判定
+不变：① 观察面 raw 38 维持（R4367 新基线，R4368 入树后
+下轮重算），子帧三件套
 iframe.contentDocument null 现状不变，frames.click+
 evaluate 维持挂起；② 本流控制面 docs/goal/cdp-protocol/
 零外来提交，DC-2 口径无新拍板记录。goal 自有面零新缺口、
