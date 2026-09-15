@@ -1359,19 +1359,15 @@ impl super::super::Painter {
         let glyph_baseline = if li_text.is_empty() {
             None
         } else {
-            zero_layout_engine::fallback_line_metrics_for_paint(
-                Some(default_font_id.0),
-                &li_text,
-                text_marker_font_size,
-            )
-            .map(|(ga, gd)| {
-                zero_layout_engine::glyph_baseline_contribution(
-                    ga,
-                    gd,
-                    marker_line_height(style, text_marker_font_size),
-                    matches!(style.line_height, LineHeightValue::Normal),
-                )
-            })
+            zero_layout_engine::fallback_line_metrics_for_paint(&[default_font_id.0], &li_text, text_marker_font_size)
+                .map(|(ga, gd)| {
+                    zero_layout_engine::glyph_baseline_contribution(
+                        ga,
+                        gd,
+                        marker_line_height(style, text_marker_font_size),
+                        matches!(style.line_height, LineHeightValue::Normal),
+                    )
+                })
         };
         let text_marker_baseline_y = marker_y + strut_baseline_offset.max(glyph_baseline.unwrap_or(0.0));
 

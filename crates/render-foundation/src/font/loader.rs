@@ -712,13 +712,42 @@ impl FontLoader {
     /// 时撑开行盒（16px CJK 行距 24px vs 主字体 strut 19px，tis-004 oracle 帧实测）。
     /// ZW 旧行盒只用主字体 strut 度量 → CJK 行偏矮。消费门禁 `ZW_FALLBACK_LINE_METRICS`。
     pub fn fallback_text_line_metrics(&self, primary_id: Option<u32>, text: &str, size: f32) -> Option<(f32, f32)> {
-        let primary = primary_id.unwrap_or(0);
+        let font_ids: Vec<u32> = primary_id.into_iter().collect();
+        self.fallback_text_line_metrics_with_font_ids(&font_ids, text, size)
+    }
+
+    /// R4378：同 [`Self::fallback_text_line_metrics`]，但链头为**有序 CSS face 列表**
+    /// （元素 `font-family` 解析序，与 advance 路径 `measure_text_with_fonts` 同源），
+    /// global fallback chain 追加其后。
+    ///
+    /// 多 `@font-face` + unicode-range 页面（content-height-004 谱）垂直度量必须按
+    /// CSS 序解析：`high-a-only, deep-b-only` 的 'b' 应落到 deep-b-only（元素声明的
+    /// 第二 face），而非 global chain 的 DejaVu/CJK——错链解析会引入错误的（偏大）
+    /// 度量撑开行盒（content-height-004 oracle 翻红实证）。
+    pub fn fallback_text_line_metrics_with_font_ids(
+        &self,
+        font_ids: &[u32],
+        text: &str,
+        size: f32,
+    ) -> Option<(f32, f32)> {
+        // 链 = 有序 CSS face 列表 + global fallback（去重）。
+        let mut chain: Vec<u32> = font_ids.to_vec();
+        for &id in &self.fallback_chain {
+            if !chain.contains(&id) {
+                chain.push(id);
+            }
+        }
+        if chain.is_empty() && self.fonts.contains_key(&0) {
+            chain.push(0);
+        }
         // 收集实际使用字体 id 去重后再查度量——per-font 度量与 per-char 链解析均经
         // fallback_metrics 缓存（Face+cmap 重解析在 CJK 长文逐 run 调用下开销放大，
-        // bench-gate page/medium/layout_ms ×2 实证）。
+        // bench-gate page/medium/layout_ms ×2 实证）。链 Arc 化供缓存键复用（同页
+        // 同族列表的 run 共享）。
+        let chain: std::sync::Arc<[u32]> = chain.into();
         let mut used: Vec<u32> = Vec::new();
         for ch in text.chars() {
-            if let Some(font_id) = self.fallback_metrics_char_font(primary, ch)
+            if let Some(font_id) = self.fallback_metrics_char_font(&chain, ch)
                 && !used.contains(&font_id)
             {
                 used.push(font_id);

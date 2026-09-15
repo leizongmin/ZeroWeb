@@ -236,12 +236,19 @@ impl InlineFormattingContext {
                                 word_spacing,
                                 false,
                             );
+                            // R4378：垂直度量按有序 CSS face 列表解析（多 @font-face +
+                            // unicode-range 页面按 font-family 序落 face；Path B 经
+                            // font_ids_overrides 复用 layout 序）。
+                            let run_font_ids = self
+                                .ordered_font_ids_for_style(style)
+                                .or_else(|| self.font_ids_overrides.get(&child_id).cloned())
+                                .unwrap_or_else(|| run_font_id.into_iter().collect());
                             let (glyph_ascent, glyph_descent) = match self.glyph_verticals_overrides.get(&child_id)
                             {
                                 Some(&(ga, gd)) => (ga, gd),
                                 None => Self::run_glyph_verticals(
                                     glyph_verticals_enabled,
-                                    run_font_id,
+                                    &run_font_ids,
                                     &text,
                                     font_size,
                                     is_ahem_font,
@@ -1101,11 +1108,15 @@ impl InlineFormattingContext {
                 word_spacing,
                 elem_data.local_name() == "ruby",
             );
+            let run_font_ids = self
+                .ordered_font_ids_for_style(style)
+                .or_else(|| self.font_ids_overrides.get(&child_id).cloned())
+                .unwrap_or_else(|| run_font_id.into_iter().collect());
             let (glyph_ascent, glyph_descent) = match self.glyph_verticals_overrides.get(&child_id) {
                 Some(&(ga, gd)) => (ga, gd),
                 None => Self::run_glyph_verticals(
                     glyph_verticals_enabled,
-                    run_font_id,
+                    &run_font_ids,
                     &trimmed,
                     font_size,
                     is_ahem_font,
@@ -1277,11 +1288,15 @@ impl InlineFormattingContext {
             // Path B 经 overrides 复用；门禁关闭或未注册回调时恒 0）。
             let flat_font_id =
                 self.shaping_font_id_for_style(Some(elem_id), style, is_ahem_font, letter_spacing, word_spacing, false);
+            let flat_font_ids = self
+                .ordered_font_ids_for_style(style)
+                .or_else(|| self.font_ids_overrides.get(&elem_id).cloned())
+                .unwrap_or_else(|| flat_font_id.into_iter().collect());
             let (glyph_ascent, glyph_descent) = match self.glyph_verticals_overrides.get(&elem_id) {
                 Some(&(ga, gd)) => (ga, gd),
                 None => Self::run_glyph_verticals(
                     glyph_verticals_enabled,
-                    flat_font_id,
+                    &flat_font_ids,
                     &trimmed,
                     font_size,
                     is_ahem_font,
@@ -1622,7 +1637,7 @@ impl InlineFormattingContext {
     ///   在盒内下移——贡献 = `L/2 ± (a−d)/2`（leading 对半分布于字体盒两侧）。
     fn run_glyph_verticals(
         fallback_enabled: bool,
-        font_id: Option<u32>,
+        font_ids: &[u32],
         text: &str,
         font_size: f32,
         is_ahem: bool,
@@ -1632,11 +1647,51 @@ impl InlineFormattingContext {
         if !fallback_enabled || is_ahem || text.is_empty() {
             return (0.0, 0.0);
         }
-        let Some((ga, gd)) = crate::inline::font_metrics::fallback_line_metrics_for_layout(font_id, text, font_size)
+        let Some((ga, gd)) = crate::inline::font_metrics::fallback_line_metrics_for_layout(font_ids, text, font_size)
         else {
             return (0.0, 0.0);
         };
         crate::inline::font_metrics::glyph_verticals_contribution(ga, gd, line_height, line_height_is_normal)
+    }
+
+    /// R4378：run 的**有序 CSS face 列表**——元素 `font-family` 逐族 weight-aware 解析
+    /// （`font_id_for_style` 同款单族匹配判定，收集**全部**命中族）。多 `@font-face` +
+    /// unicode-range 页面的垂直度量必须按 CSS 序落 face：`high-a-only, deep-b-only` 的
+    /// 'b' 应落 deep-b-only（元素声明的第二 face），而非 global fallback chain 的
+    /// DejaVu/CJK——错链解析会引入错误（偏大）度量撑开行盒（content-height-004 翻红
+    /// 实证）。无 style（paint Path B）由调用方经 `font_ids_overrides` 取有序表。
+    fn ordered_font_ids_for_style(&self, style: Option<&ComputedStyle>) -> Option<Vec<u32>> {
+        use zero_css_parser::values::FontWeightValue;
+        let s = style?;
+        let want_bold = matches!(s.font_weight, FontWeightValue::Bold | FontWeightValue::Bolder)
+            || matches!(s.font_weight, FontWeightValue::Absolute(weight) if weight >= 600);
+        let want_italic = matches!(
+            s.font_style,
+            zero_style_system::values::types::FontStyleValue::Italic
+                | zero_style_system::values::types::FontStyleValue::Oblique(_)
+        );
+        let mut ids: Vec<u32> = Vec::new();
+        for family in &s.font_family {
+            let is_quoted = family.starts_with('"') || family.starts_with('\'');
+            let bare = family.trim_matches('"').trim_matches('\'');
+            if is_quoted
+                && ["serif", "sans-serif", "monospace", "cursive", "fantasy", "system-ui"]
+                    .iter()
+                    .any(|g| g.eq_ignore_ascii_case(bare))
+            {
+                continue;
+            }
+            let Some(resolver) = self.font_resolver.as_ref() else {
+                continue;
+            };
+            if let Some((id, _)) =
+                zero_render_foundation::font::resolve_font_face(resolver, bare, want_bold, want_italic, s.font_stretch)
+                && !ids.contains(&id)
+            {
+                ids.push(id);
+            }
+        }
+        (!ids.is_empty()).then_some(ids)
     }
 }
 

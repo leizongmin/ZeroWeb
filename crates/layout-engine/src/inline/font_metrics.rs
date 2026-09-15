@@ -341,11 +341,12 @@ impl FontMetricProvider for FontMetricMap {
 /// R4374：run 文本回退链垂直度量全局回调（进程级注册一次，镜像 zero-engine
 /// `set_hmtx_measure_fn` 模式——宿主持有 `FontLoader`，IFC 无生命周期参数可存）。
 ///
-/// 签名 `fn(font_id, text, font_size) -> Option<(ascent, |descent|)>`：按回退链
-/// 解析 run 各字符实际使用字体并取行度量 max（`FontLoader::fallback_text_line_metrics`）。
-/// 宿主未注册或无字体上下文时返回 `None`（IFC 零行为）。消费门禁
-/// `ZW_FALLBACK_LINE_METRICS=1`（默认关，A/B 后裁决默认）。
-pub type FallbackLineMetricsFn = fn(Option<u32>, &str, f32) -> Option<(f32, f32)>;
+/// 签名 `fn(font_ids, text, font_size) -> Option<(ascent, |descent|)>`：`font_ids`
+/// 为 run 的**有序 CSS face 列表**（元素 font-family 解析序，global fallback chain
+/// 由 `FontLoader` 内部追加），按序解析各字符实际使用字体并取行度量 max
+/// （`FontLoader::fallback_text_line_metrics_with_font_ids`）。宿主未注册或无字体
+/// 上下文时返回 `None`（IFC 零行为）。消费门禁 `ZW_FALLBACK_LINE_METRICS`（默认 on）。
+pub type FallbackLineMetricsFn = fn(&[u32], &str, f32) -> Option<(f32, f32)>;
 
 static FALLBACK_LINE_METRICS_FN: std::sync::OnceLock<FallbackLineMetricsFn> = std::sync::OnceLock::new();
 
@@ -354,18 +355,18 @@ pub fn set_fallback_line_metrics_fn(f: FallbackLineMetricsFn) {
     let _ = FALLBACK_LINE_METRICS_FN.set(f);
 }
 
-/// IFC 消费入口：宿主已注册时按 run 字体链取实际使用字体的行度量 max。
-pub(crate) fn fallback_line_metrics_for_layout(font_id: Option<u32>, text: &str, font_size: f32) -> Option<(f32, f32)> {
-    FALLBACK_LINE_METRICS_FN.get()?(font_id, text, font_size)
+/// IFC 消费入口：宿主已注册时按 run 有序 face 列表取实际使用字体的行度量 max。
+pub(crate) fn fallback_line_metrics_for_layout(font_ids: &[u32], text: &str, font_size: f32) -> Option<(f32, f32)> {
+    FALLBACK_LINE_METRICS_FN.get()?(font_ids, text, font_size)
 }
 
 /// R4375：paint 侧消费入口（含旗标门禁）——list marker 等行外装饰文本与行内文本
 /// 基线同步（`text_list::paint_list_marker`）。旗标关闭或宿主未注册返回 `None`。
-pub fn fallback_line_metrics_for_paint(font_id: Option<u32>, text: &str, font_size: f32) -> Option<(f32, f32)> {
+pub fn fallback_line_metrics_for_paint(font_ids: &[u32], text: &str, font_size: f32) -> Option<(f32, f32)> {
     if !super::runtime_flags::fallback_line_metrics() {
         return None;
     }
-    fallback_line_metrics_for_layout(font_id, text, font_size)
+    fallback_line_metrics_for_layout(font_ids, text, font_size)
 }
 
 /// R4375：行盒**基线**贡献（ascent 分量）pub 包装，paint 侧消费同式。
