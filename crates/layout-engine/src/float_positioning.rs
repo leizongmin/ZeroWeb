@@ -454,9 +454,18 @@ pub(crate) fn shrink_inline_blocks_to_content(
                     _ => false,
                 })
             });
-        let width_auto = box_node
-            .node_id
-            .is_some_and(|id| styles.get(&id).is_some_and(|s| matches!(s.width, LengthValue::Auto)));
+        // R4389：content 关键字（min/max/fit-content）与 auto 同为 content-based 收缩语境
+        //（css-sizing-3 §4）——converter 把关键字映射 length(0)，taffy 无从测内容 →
+        // inline-block 塌到 frame（ruby-intrinsic-isize-001：min/max-content div w=2.0
+        // 纯边框，ruby 内容 63.1 全溢出）。
+        let width_auto = box_node.node_id.is_some_and(|id| {
+            styles.get(&id).is_some_and(|s| {
+                matches!(
+                    s.width,
+                    LengthValue::Auto | LengthValue::MinContent | LengthValue::MaxContent | LengthValue::FitContent(_)
+                )
+            })
+        });
         if is_shrinkable && width_auto {
             // 内容最大宽度（max-content）。R1017：InlineFlex/InlineGrid 当 box_content_max_width
             // 测得 0（aspect-ratio 空 item 等 box_content 无法度量）时，fallback 到专用 flex_intrinsic
@@ -494,7 +503,33 @@ pub(crate) fn shrink_inline_blocks_to_content(
             // 应 8/68）。仅 frame==0 且内容==0 的纯空盒维持原状（避免空 span 塌缩面）。
             if content_max_w > 0.0 || frame > 0.0 {
                 let shrink_border_box = content_max_w + frame;
-                if shrink_border_box + 0.5 < box_node.width {
+                // R4389：content 关键字（Min/Max/FitContent）= **定值语义**（converter length(0)
+                // 伪影须双向修正——taffy 已塌到 frame 时无「收缩」可言，等值/放大同样写入）；
+                // Auto 保持既有单向收缩（防拉伸伪影回写）。
+                // 带 definite min/max-width 约束的元素不双向写（R4234 同款排除——
+                // 恢复声明宽会打掉钳制：intrinsic-size-min-content-box-sizing
+                // min-width:200 + width:min-content，taffy 已按 200 sizing）。
+                let width_keyword = box_node.node_id.and_then(|id| styles.get(&id)).is_some_and(|s| {
+                    matches!(
+                        s.width,
+                        LengthValue::MinContent | LengthValue::MaxContent | LengthValue::FitContent(_)
+                    )
+                });
+                let has_w_constraint = box_node.node_id.and_then(|id| styles.get(&id)).is_some_and(|s| {
+                    crate::intrinsic_sizing::resolve_intrinsic_real_length(&s.min_width, s).is_some()
+                        || crate::intrinsic_sizing::resolve_intrinsic_real_length(&s.max_width, s).is_some()
+                });
+                let should_write = if width_keyword && has_w_constraint {
+                    // R4389：约束关键字盒完全跳过——taffy 已按 definite min/max sizing
+                    //（intrinsic-size-min-content-box-sizing：min-width:200 → 当前 200，
+                    // max-content 目标 22 写入即打掉钳制，双向/单向皆害）。
+                    false
+                } else if width_keyword {
+                    (shrink_border_box - box_node.width).abs() > 0.5
+                } else {
+                    shrink_border_box + 0.5 < box_node.width
+                };
+                if should_write {
                     box_node.width = shrink_border_box;
                     box_node.content_width = content_max_w;
                     // 父 gate：仅 inline-block 族（§10.3.9-11 真 shrink-to-fit 容器）同步子宽。

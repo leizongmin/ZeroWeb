@@ -17,6 +17,7 @@ use zero_dom::{Document, NodeId};
 use zero_style_system::ComputedStyle;
 use zero_style_system::property::types::{ColumnSpanComputedValue, FlexBasisValue, WhiteSpaceValue};
 
+use crate::node_id_map::NodeIdSet;
 use crate::types::LayoutBox;
 
 // R4367：intrinsic 文本测量的真实 advance 源（线程本地，随布局线程注入）。
@@ -48,6 +49,22 @@ fn measure_intrinsic_char(ch: char, font_id: Option<u32>, font_size: f32, is_ahe
         cell.borrow().as_ref().map_or_else(
             || crate::inline::estimate_char_width(ch, font_size, is_ahem),
             |handle| handle.0.measure(ch, font_id, font_size, is_ahem),
+        )
+    })
+}
+
+/// R4387：intrinsic **段级**文本测量（词/段为单位）——真实 advance 源的整段路径优先
+/// （generic 字体 hmtx 批量与逐字符同值；author face 整段 shaping 同渲染 run 口径），
+/// 未注入回落逐字符 estimate（与 `AdvanceSource::measure_text` trait 默认同构）。
+fn measure_intrinsic_text(text: &str, font_id: Option<u32>, font_size: f32, is_ahem: bool) -> f32 {
+    INTRINSIC_ADVANCE.with(|cell| {
+        cell.borrow().as_ref().map_or_else(
+            || {
+                text.chars()
+                    .map(|ch| crate::inline::estimate_char_width(ch, font_size, is_ahem))
+                    .sum()
+            },
+            |handle| handle.0.measure_text(text, font_id, font_size, is_ahem),
         )
     })
 }
@@ -449,14 +466,92 @@ fn box_content_max_width_inner(box_node: &LayoutBox, doc: &Document, styles: &Ha
             .node_id
             .map_or(0.0, |id| text_content_max_width(id, doc, styles));
         own_explicit.max(text_w)
-    } else if children_inner < own_explicit {
-        own_explicit
     } else {
-        children_inner
+        // R4389：混合内容（裸文本 + inline 元素子）的**裸文本段**贡献——子循环只累计
+        // 元素子（R1479 递归/outer_w），div「XYZ <ruby>..</ruby> XYZ」型两侧 XYZ 裸文本
+        // 此前丢失（ruby-intrinsic-isize-002 1.23→0.14 翻绿实证）。与 R4355 的整子树
+        // walk 不同：**跳过已入 box_children 的元素子树**（其文本已经 R1479 计入——
+        // 整树 walk 双计，line-break 族 −16 实证），仅累计裸文本段之和。
+        // **opt-in（`ZW_MIXED_BARE_TEXT=1`）**：默认关——shrink-to-fit 全域放开后
+        // float/margin-collapse 族 −17 实证（corpus 净 −7），待行内交错和Walk重构后
+        // 再定默认。
+        let dom_text = if std::env::var("ZW_MIXED_BARE_TEXT").as_deref() == Ok("1") {
+            dom_bare_text_sum_width(box_node, doc, styles)
+        } else {
+            0.0
+        };
+        children_inner.max(own_explicit) + dom_text
     }
     .max(own_ar);
 
     inner + box_node.padding_left + box_node.padding_right + box_node.border_left + box_node.border_right
+}
+
+/// R4389：混合内容容器的**裸文本段**宽度之和——`box_node` 直接文本子（折叠整段计宽，
+/// 段间补单空格宽）+ 非盒元素子（R2160 跳过的 inline，递归其子树文本）。**跳过已入
+/// box_children 的元素子树**（R1479/outer_w 已计入，整树 walk 双计 → line-break 族
+/// −16 实证）。裸文本与元素子同行粘连（max-content 无视断点全行累加），返回值直接
+/// 加进 `children_inner`。
+fn dom_bare_text_sum_width(box_node: &LayoutBox, doc: &Document, styles: &HashMap<NodeId, ComputedStyle>) -> f32 {
+    let Some(id) = box_node.node_id else { return 0.0 };
+    let Some(style) = styles.get(&id) else { return 0.0 };
+    let (font_size, _line_height) = crate::inline::resolve_font_metrics(Some(style));
+    let is_ahem = style
+        .font_family
+        .iter()
+        .any(|f| f.trim_matches('"').eq_ignore_ascii_case("Ahem"));
+    let font_id = intrinsic_font_id(Some(style));
+    let boxed: NodeIdSet = box_node.children.iter().filter_map(|c| c.node_id).collect();
+    let mut total = 0.0f32;
+    // 段间空格宽（相邻裸文本段/元素子之间的折叠单空格）。
+    let space_w = measure_intrinsic_char(' ', font_id, font_size, is_ahem);
+    let mut prev_bare = false;
+    let mut stack: Vec<(NodeId, bool)> = vec![(id, true)];
+    while let Some((nid, is_top)) = stack.pop() {
+        for child in doc.child_nodes(nid) {
+            let Some(node) = doc.get(child) else { continue };
+            match &node.kind {
+                zero_dom::NodeKind::Text(t) => {
+                    let collapsed = crate::inline::collapse_whitespace(&t.content);
+                    if collapsed.is_empty() {
+                        continue;
+                    }
+                    if prev_bare {
+                        total += space_w;
+                    }
+                    total += measure_intrinsic_text(&collapsed, font_id, font_size, is_ahem);
+                    prev_bare = true;
+                }
+                zero_dom::NodeKind::Element(e) => {
+                    if boxed.contains(&child) {
+                        // 已由 box_children 循环计入（R1479/outer_w）——只重置粘连态。
+                        prev_bare = false;
+                        continue;
+                    }
+                    let Some(cs) = styles.get(&child) else { continue };
+                    use zero_css_parser::values::DisplayValue as DV;
+                    if matches!(cs.display, DV::None) {
+                        continue;
+                    }
+                    let ln = e.local_name();
+                    if is_top && ln == "br" {
+                        prev_bare = false;
+                        continue;
+                    }
+                    // 非盒元素子（R2160 跳过的 inline 等）——其文本未入任何循环，递归计。
+                    if prev_bare {
+                        total += space_w;
+                    }
+                    stack.push((child, false));
+                    // 占位：递归子节点的 prev_bare 状态由子层自身维护（简化：入栈前
+                    // 重置，段间空格已补）。
+                    prev_bare = false;
+                }
+                _ => {}
+            }
+        }
+    }
+    total
 }
 
 /// R1018：block-level 容器的 max-content 宽度，对 flex/grid **子容器**分发到专用 intrinsic 函数。

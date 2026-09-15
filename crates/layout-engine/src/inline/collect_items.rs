@@ -1115,7 +1115,12 @@ impl InlineFormattingContext {
                 is_ahem_font,
                 letter_spacing,
                 word_spacing,
-                elem_data.local_name() == "ruby",
+                // R4389：ruby run 不再豁免 shaping font_id——旧 dodge（R3213 shaping 时代）
+                // 使 ruby run advance 落 estimate 0.55em，与 intrinsic walk 的真实 serif
+                // hmtx 分裂（ruby-intrinsic-isize-001：render ABC=26.4 vs intrinsic 32.9，
+                // chromium serif ≈ 32.9 = intrinsic 一侧）。generic id 走 hmtx 批量
+                // （ZRG 修复 A 语义），旧 shaping 风险不适用。
+                false,
             );
             let run_font_ids = self
                 .ordered_font_ids_for_style(style)
