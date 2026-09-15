@@ -1931,6 +1931,66 @@ fn test_inline_block_baseline_aligns_by_inner_line_baseline() {
     );
 }
 
+/// R4383（CSS2 §10.6.2）：单片段 inline 盒 content area = **字体 A+D**，与
+/// line-height 无关——两个除 line-height 外全同的 span 盒高等距（chromium
+/// content-height-001/002/003 模型：span 背景盒 = 字体 content area 锚行基线，
+/// 半 leading 属行盒不属 inline 盒）。R4379 版的 hl=(L−(A+D))/2 项已去。
+#[test]
+fn test_span_content_area_independent_of_line_height() {
+    use std::collections::HashMap;
+    use std::rc::Rc;
+    use zero_render_foundation::font::FontLoader;
+
+    for (i, line_height) in [LengthValue::Px(200.0), LengthValue::Px(30.0)].into_iter().enumerate() {
+        let (mut doc, body) = make_doc_with_body();
+        let ib = doc.create_element("div");
+        doc.append_child(body, ib).unwrap();
+        let span = doc.create_element("span");
+        doc.append_child(ib, span).unwrap();
+        let txt = doc.create_text_node("g");
+        doc.append_child(span, txt).unwrap();
+
+        let mut s = ComputedStyle::default();
+        s.display = DisplayValue::InlineBlock;
+        s.line_height = zero_style_system::LineHeightValue::Length(line_height.clone());
+        let mut span_style = ComputedStyle::default();
+        span_style.line_height = zero_style_system::LineHeightValue::Length(line_height);
+        let mut styles = HashMap::new();
+        styles.insert(ib, s);
+        styles.insert(span, span_style);
+
+        let mut engine = LayoutEngine::new(800.0, 600.0);
+        // provider（line_metrics enabled）不可缺——content_anchored 仅在有度量时生效。
+        let mut fonts = FontLoader::new();
+        fonts
+            .load_font(include_bytes!("../../../../../tests/wpt-runner/fonts/Ahem.ttf"))
+            .unwrap();
+        engine.set_font_metric_provider(Rc::new(crate::FontMetricMap::new(fonts.build_line_metric_map(), true)));
+        let result = engine.compute(&doc, &styles);
+        let h = find_child_by_node_id(&result.root, span)
+            .expect("span 应找到")
+            .content_height;
+        if i == 0 {
+            // 首臂仅存高度，第二臂比较。
+            SPAN_CONTENT_HEIGHT.with(|c| c.set(h));
+        } else {
+            let prev = SPAN_CONTENT_HEIGHT.with(|c| c.get());
+            assert!(
+                (h - prev).abs() < 0.5,
+                "span content area 应与 line-height 无关（L=200: {prev} vs L=30: {h}）"
+            );
+            assert!(
+                h > 10.0 && h < 40.0,
+                "span content area 应为字体 A+D 量级（非行盒高 L=200/30），实际 {h}"
+            );
+        }
+    }
+}
+
+thread_local! {
+    static SPAN_CONTENT_HEIGHT: std::cell::Cell<f32> = const { std::cell::Cell::new(0.0) };
+}
+
 /// 辅助：构造 body > div(wrapper, font-size 200px) > [text "Xg", span(inline-flex), text "Xg"]，
 /// 返回该 inline-flex 在布局树中的 y（相对 wrapper 内容盒）。大字号文本主导行盒基线
 ///（ascent ≈ 160 > ib_baseline），使 inline-flex 的 y = baseline − ib_baseline，

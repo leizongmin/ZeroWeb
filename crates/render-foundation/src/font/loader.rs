@@ -704,7 +704,10 @@ impl FontLoader {
     /// 逐字符沿 `lookup_chain` 解析实际字体（与 advance/光栅化同源判定，见
     /// [`Self::resolve_font_for_code_point_in_chain`]），取各字体
     /// [`Self::line_metrics_full`] 的 ascent/descent 最大值，返回
-    /// `(ascent, |descent|)`（均为正值幅长）。空文本/无可用字体返回 `None`。
+    /// `(ascent, descent)`。R4383 起 descent 为**符号化**值
+    /// （Skia/FreeType 语义 `D = −descender_raw`）：常规字体（hhea descender 负）
+    /// 为正幅长；非规范正值 descender 字体（如 Revalia）为负——行盒 = ascent +
+    /// descent 随 Skia 语义收缩。空文本/无可用字体返回 `None`。
     ///
     /// 语义（R4374）：CSS2 §10.8.1 行盒 leading 按 inline box 各自字体度量分布——
     /// chromium 行盒 ascent/descent 取行内字形实际使用的各字体的度量 max，CJK 回退
@@ -756,7 +759,14 @@ impl FontLoader {
         // 「真回退」窄化实验（R4374 A/B）已证伪回退：oracle +7/+10 vs 全量 +12/+13
         // （hyphens +5 等真收益被误杀），corpus 仅 +1 回收——按 chromium 实际使用
         // 字体度量全量语义保留。
-        let mut max = (0.0_f32, 0.0_f32);
+        // R4383（符号化 descent，Skia/FreeType 语义 D = −descender_raw 可负）：
+        // 旧 `max(0, −descent)` 起始 0 把**非规范正值 descender 字体**（Revalia hhea
+        // descender = +382）的 descent 钳 0 → 纯该字体行盒 = ascent only（52.39）
+        // vs chromium = ascent + D_signed = 43.07（content-height-004 probe 定谳）。
+        // 改按「used 字体集内取 max、不钳非负」——常规字体（descender 负）−descent
+        // 为正、逐字节不变；仅正值 descender 字体行盒按 Skia 语义收缩。驱动:
+        // WPT CSS2/visudet content-height-001/002/003。
+        let mut max = (0.0_f32, f32::NEG_INFINITY);
         let mut found = false;
         for font_id in used {
             if let Some((ascent, descent, _)) = self.fallback_metrics_per_font(font_id, size) {

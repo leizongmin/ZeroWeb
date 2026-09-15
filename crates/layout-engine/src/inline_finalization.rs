@@ -678,7 +678,6 @@ pub(crate) fn sync_inline_child_boxes_from_ifc(
         line_baseline_y: f32,
         first_x: f32,
         first_y: f32,
-        first_h: f32,
         first_w: f32,
         first_ml: f32,
         first_pl: f32,
@@ -699,7 +698,6 @@ pub(crate) fn sync_inline_child_boxes_from_ifc(
                 line_baseline_y: line.baseline_y,
                 first_x: run.x,
                 first_y: y,
-                first_h: run.height,
                 first_w: run.width,
                 first_ml: run.margin_left,
                 first_pl: run.padding_left,
@@ -740,14 +738,18 @@ pub(crate) fn sync_inline_child_boxes_from_ifc(
             if !child.is_replaced && frag_pos_on && pure_inline_container && !vertical && !child.is_relative {
                 let metrics = extract_inline_visual_metrics(style);
                 child.x = agg.min_x - agg.first_ml - agg.first_pl - metrics.border_left;
-                // R4379：单片段 inline 的盒垂直锚 = **primary 字体 content area 锚行基线**
-                // （CSS2 §10.6.2：content area 由元素自身字体定义，与行内字形是否回退无关；
-                // chromium 直接 probe 实证：多 @font-face + unicode-range 行（Revalia 43px +
-                // AD 深 descent 69px 行盒）中四个 span 背景盒全部统一 [baseline−A_p−hl, +D_p+hl]，
-                // hl = (L − (A_p+D_p))/2 半 leading）。旧 `y = line.y`（行盒顶）在行盒被回退
-                // 度量撑开（R4374）后随 max-ascent 漂移、各 span 错位成多边形
-                //（content-height-004）。多片段（跨行）仍走 union + R639/R4332 per-fragment
-                // 行盒顶锚路径（chromium slice 语义）。provider 缺失/无度量回退旧行为。
+                // R4379/R4383：单片段 inline 的盒垂直锚 = **primary 字体 content area 锚行基线**
+                // （CSS2 §10.6.2：inline 非替换盒的 content area = 元素自身字体的
+                // A+D——**与 line-height 无关**，半 leading 属行盒不属 inline 盒）。
+                // R4379 版多加了 hl = (L−(A_p+D_p))/2 半 leading 项——在 004（normal
+                // line-height = 字体自身 A+D，hl=0）上与 chromium probe 不可区分，
+                // 但 content-height-001（line-height 200/30/normal 三行同 span）上
+                // 盒随 L 膨胀/收缩成多边形（chromium 三 span 统一 [B−A_p, B+D_p]）。
+                // R4383 去掉 hl：盒 = [baseline−A_p, baseline+D_p]。旧 `y = line.y`
+                //（行盒顶）在行盒被回退度量撑开（R4374）后随 max-ascent 漂移、各
+                // span 错位成多边形。多片段（跨行）仍走 union + R639/R4332
+                // per-fragment 行盒顶锚路径（chromium slice 语义）。provider 缺失/
+                // 无度量回退旧行为。
                 let content_anchored = (agg.count == 1)
                     .then(|| {
                         let handle = inline_ctx.font_metric_provider.as_ref()?;
@@ -758,21 +760,35 @@ pub(crate) fn sync_inline_child_boxes_from_ifc(
                         let m = handle.line_metrics(&style.font_family, font_size)?;
                         let a = m.ascent;
                         let d = -m.descent;
-                        let half_leading = (agg.first_h - (a + d)) / 2.0;
-                        Some(agg.line_y + agg.line_baseline_y - a + half_leading)
+                        Some((agg.line_y + agg.line_baseline_y - a, a + d))
                     })
                     .flatten();
                 child.y = match content_anchored {
-                    Some(top) => top - metrics.padding_top - metrics.border_top,
+                    Some((top, _)) => top - metrics.padding_top - metrics.border_top,
                     None => agg.line_y - metrics.padding_top - metrics.border_top,
                 };
-                child.height = (agg.max_y - agg.min_y).max(0.0)
-                    + metrics.padding_top
-                    + metrics.padding_bottom
-                    + metrics.border_top
-                    + metrics.border_bottom;
+                child.height = match content_anchored {
+                    // R4383：单片段 content area = 字体 A+D（与 line-height 无关，同上）。
+                    Some((_, content)) => {
+                        content
+                            + metrics.padding_top
+                            + metrics.padding_bottom
+                            + metrics.border_top
+                            + metrics.border_bottom
+                    }
+                    None => {
+                        (agg.max_y - agg.min_y).max(0.0)
+                            + metrics.padding_top
+                            + metrics.padding_bottom
+                            + metrics.border_top
+                            + metrics.border_bottom
+                    }
+                };
                 child.content_y = metrics.border_top + metrics.padding_top;
-                child.content_height = (agg.max_y - agg.min_y).max(0.0);
+                child.content_height = match content_anchored {
+                    Some((_, content)) => content,
+                    None => (agg.max_y - agg.min_y).max(0.0),
+                };
                 let union_width = (agg.max_x - agg.min_x).max(0.0)
                     + metrics.padding_left
                     + metrics.padding_right

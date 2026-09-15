@@ -239,20 +239,32 @@ impl FontMetricMap {
     }
 }
 
+impl FontMetricMap {
+    /// family 列表解析（精确 + 大小写不敏感）；空/未解析时回退**主字体**
+    /// （font_id 最小 = 加载序首位，R4377 primary→bold→generic→CJK）——UA 默认
+    /// 字体文本的 inline 盒 content area 同样锚主字体度量（content-height-001：
+    /// 页面无 font-family 声明，computed font_family 为空表）。
+    fn resolve_family_metrics<'a>(
+        family: &[String],
+        map: &'a FontFamilyMetricMap,
+    ) -> Option<&'a zero_render_foundation::font::FontFamilyMetrics> {
+        family
+            .iter()
+            .find_map(|fam| {
+                let bare = fam.trim_matches('"').trim_matches('\'');
+                map.get(bare)
+                    .or_else(|| map.iter().find(|(k, _)| k.eq_ignore_ascii_case(bare)).map(|(_, v)| v))
+            })
+            .or_else(|| map.values().min_by_key(|m| m.font_id))
+    }
+}
+
 impl FontMetricProvider for FontMetricMap {
     fn line_metrics(&self, font_family: &[String], size: f32) -> Option<LineMetrics> {
         if !self.line_metrics_enabled {
             return self.downloaded_line_metrics(font_family, size);
         }
-        let metrics = font_family.iter().find_map(|fam| {
-            let bare = fam.trim_matches('"').trim_matches('\'');
-            self.map.get(bare).or_else(|| {
-                self.map
-                    .iter()
-                    .find(|(k, _)| k.eq_ignore_ascii_case(bare))
-                    .map(|(_, v)| v)
-            })
-        })?;
+        let metrics = Self::resolve_family_metrics(font_family, &self.map)?;
         Some(LineMetrics {
             ascent: metrics.ascent * size,
             descent: metrics.descent * size,
@@ -263,6 +275,11 @@ impl FontMetricProvider for FontMetricMap {
     fn downloaded_line_metrics(&self, font_family: &[String], size: f32) -> Option<LineMetrics> {
         // https://drafts.csswg.org/css-fonts-4/#first-available-font
         // 首个已匹配 family 为系统字体时不能跳过它去取后面的 webfont。
+        // R4383 A/B 证伪「空 family → 主字体度量」扩到 dormant 路径：默认字体 span
+        // 的 content area 锚定与 counter-styles marker 基线同步（R4375）/行盒顶锚
+        // 既有形态耦合，全量 −35（counter-styles/ruby/flexbox 族）——回退，保留
+        // enabled 分支的回退（content-height-001 残余挂账，须与 marker 基线同步
+        // 打包推进）。
         let metrics = font_family.iter().find_map(|family| {
             let bare = family.trim_matches(['\'', '"']);
             self.map.get(bare).or_else(|| {
