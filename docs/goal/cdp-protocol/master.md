@@ -17308,7 +17308,23 @@ make test 腿 04:38:48 收口），下轮 S855=7/10（至迟 S855=
    并行流含 make cdp-e2e 腿
    的验收链在窗时属机器级 9222 端口族竞争——等待其 gate2.done 类收尾标记落地、端口
    释放后再活跑，避免两流门禁双输假失败）。
-   余项按窗口逐个解冻。**S853 轮后插记（2026-09-16 推送序
+   余项按窗口逐个解冻。**S854 轮后插记（2026-09-16 推送序
+   列 pull --rebase 实测）**：兄弟流 R4388（c1dcf1adb，
+   **docs-only**：docs/goal/rendering-compat.md +2/-1 ruby
+   intrinsic-isize 第三层定谳记账，零 Rust/Cargo/Makefile
+   面）于 S854 门腿（05:06:39-05:07:11 落盘）**之后**经
+   push 前 pull 入树（我方 S854 提交 rebase 后 f3c9ab87e，
+   push c1dcf1adb..f3c9ab87e fast-forward）——docs-only 归
+   因不入刷新面（S349/S846/S848/S853 先例：tracked 代码树
+   Rust/Cargo/Makefile 面与 S854 门覆盖树态一致，树不变口
+   径维持，S855 维持引用轮口径=门单腿复跑免 make test 腿
+   S336 先例）；锚点面值漂移实测记账：全树排除本流 docs 对
+   18d462de6 91 files +9540/-613 → **+9541/-613**（+1 =
+   c1dcf1adb 折入累计 diff 归因，零净增文件，本插记时点实
+   测），crates/ raw 维持 **54**、自有面对 765429dda 维持
+   4 files +137/-17 均不变（实测复核）；S854 header 内下轮
+   预告（S855=7/10，周期锚点 S848 双腿）维持不变。
+   **S853 轮后插记（2026-09-16 推送序
    列 pull --rebase 实测）**：兄弟流 R4387（2f328740b，
    **docs-only**：docs/goal/rendering-compat.md +2/-1 ruby
    intrinsic-isize 族双层缺陷定位记账，零 Rust/Cargo/Makefile
