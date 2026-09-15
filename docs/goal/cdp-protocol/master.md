@@ -17187,6 +17187,35 @@ S835=6/10（至迟 S836=8/10 次轮即期限轮窗、S837 期限轮活
    （R4378 组合态），实测为准；dead_code warning 观察面
    js_dom_bridge.rs:3420 非本次触碰文件，两相位口径照常观察。
 
+   **S834 轮后插记（2026-09-16 推送序列 pull --rebase 实测）**：
+   兄弟流 R4384（fix(paint) list marker strut 镜像与 layout strut
+   同源化，crates/engine paint/painter/text/text_list.rs 单文件
+   +153/-1，223cb10bb；随行 ce6e22e16 docs-only 提交
+   rendering-compat.md +1）于 S834 门腿（03:16:24-03:16:56 落盘）
+   **之后**经 push 前 pull --rebase 入树（我方 S834 提交 rebase 后
+   2ff17e46b，push ce6e22e16..2ff17e46b fast-forward）——
+   **S834 门覆盖不含该树态，S835 = 树变化刷新轮（门 + make test
+   双腿刷新，S245→S342→S684→S685→S716→S717→S723→S724→S752→S761
+   先例链）**，引用计数以 S835 双腿为新周期锚点 0/10（S834
+   header 内「下轮 S835=6/10」预告被本插记取代）；S835 锚点
+   预期——全树排除本流 docs 对 18d462de6 **88 files 维持**
+   （R4384 单文件 text_list.rs 在原集内零净增，+153/-1 面值
+   漂移非加总，本插记时点实测已刷新为 88 files +8237/-573），
+   crates/ raw 52→**53** 递增（223cb10bb 触 crates/ 计 1 提交，
+   本插记时点实测 53）；自有面 765429dda 维持 4 files +137/-17
+   （R4384 未触 apps/browser headless 面，本插记时点实测复核）；
+   R4384 触及 crates/engine（paint/painter/text/text_list.rs）
+   属共享面（run-rules §9），系兄弟流经 main 提交非本流触碰，
+   本流不碰 engine 口径不变；dead_code warning 观察面
+   js_dom_bridge.rs:3420 非本次触碰文件，两相位口径照常观察；
+   R4384 自带记账 make test 19,307P/0F（+4 单测，text_list.rs
+   strut 镜像族）EXIT=0、reftest 687/687、product-smoke welcome
+   15.40% 精确同值 + legacy 42 fixture 0 struct FAIL、bench-gate
+   定向 zero-engine GATE PASS 26 指标——S835 make test 腿参考
+   基线以 19,307P 记（R4384 组合态），实测为准；解冻条件①观察
+   面 crates/ raw 由 52 入树刷新为 53（兄弟流提交非本流动作），
+   ①其余口径与②照旧。
+
 **待用户决策清单**：
 - **DC-2 收口口径（2026-09-13 新入，S39 后语境收窄维持）**：余 1 步（frames.click+evaluate）
   真挂子帧文档加载 + JS realm + child quads——S18 探针实证：`iframe.contentDocument`
