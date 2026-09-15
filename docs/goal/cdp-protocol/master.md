@@ -55,15 +55,26 @@ free；S777/S779/S781 负载窗先例口径 门腿窗内零本流并行腿
 门后零本门残留）。双层锚点零漂移——自有面对 765429dda 维持
 **4 files +137/-17** 精确一致（Makefile 1/1 +
 apps/browser/README.md 1/0 + headless/mod.rs 25/0 +
-headless/session.rs 110/16）；全树排除本流 docs 对 18d462de6
-维持 **82 files +6027/-460** 与 S765 刷新基线逐项一致（含
-a68dddff8 docs-only 入集漂移面值非代码）；crates/ 观察面
+headless/session.rs 110/16）；全树排除本流 docs 对 18d462de6 双腿收口时点维持
+**82 files +6027/-460** 与 S765 刷新基线逐项一致（含
+a68dddff8 docs-only 入集漂移面值非代码）——**S782 轮后插记
+（2026-09-15 推送序列 pull --rebase 实测）**：兄弟流
+CI-GUARD-20260915 第二十七轮（362c4a686，zero-web master.md
++1）+ CI perf 基线 auto-tighten（107dc560e，perf json/trend
+csv）两提交于本轮双腿收口（run2 22:00:35）**之后**经 push
+前 pull 入树——两提交均 **docs/data-only**（零 Rust/Cargo/
+Makefile 面 diff 实测复核，S349 c7490b81d 先例 docs-only 归
+因不入刷新面），tracked **代码**树与 S782 双腿覆盖树态
+（=R4379+a68dddff8 组合态）一致不变；全树锚点面值记账刷新
+**82→83 files +6027/-470→+7290/-470**（入集漂移面值非代
+码，下轮 S783 锚点核对以此为新面值）；crates/ 观察面
 raw 维持 **48**（S765 刷新基线）。子帧关键词非测试代码零命
 中维持；crates/ 口径 7 测试文件既有形态维持，实质判定不变
 frames.click+evaluate 维持挂起。机器卫生：启停零 zombie、
 端口族全 free、零树污染（tracked clean，out/ 报告为忽略产
-物，门后零本门残留）。控制面零外来提交（本轮 pull 零新提
-交）。解冻条件实质判定不变：① 观察面 crates/ raw 48 维持
+物，门后零本门残留）。控制面零外来提交（本轮执行段 pull 零
+新提交；push 序列 pull 拉入兄弟流 docs/data-only 两提交见上
+插记）。解冻条件实质判定不变：① 观察面 crates/ raw 48 维持
 （S765 刷新基线），子帧三件套 iframe.contentDocument null
 现状不变，frames.click+evaluate 维持挂起；② 本流控制面
 docs/goal/cdp-protocol/ 零外来提交，DC-2 口径无新拍板记录。
@@ -16427,12 +16438,17 @@ goal 自有面零新缺口、无扩展面（S40-S781 重审结论延续）。
    例瞬态红 webview timer flake 家族四点归因闭合+隔离复跑
    4/4 恒过、run2 19,296P/0F 全绿含该测试在腿 ok），引用计数
    以 S782 双腿为新周期锚点 0/10，make test 全量参考基线
-   19,296P/0F 维持）**——下轮 S783 = 1/10（新周期锚点 S782
-   双腿：门腿 21:40:31 落盘 + make test run2 22:00:35 收
-   口）；若 S783 前树代码变化则提前触发双腿刷新（S245→S765
-   先例链），否则按引用轮口径门单腿复跑免 make test 腿
-   （S336 先例），至迟 S790=8/10 次轮即期限轮窗、S791 期限
-   轮活跑；
+   19,296P/0F 维持）**——**S782 轮后插记（2026-09-15 推送序列 pull --rebase 实
+   测）**：兄弟流两提交（362c4a686 CI-GUARD docs + 107dc560e
+   perf 基线 data）于双腿收口后经 push 前 pull 入树——均
+   docs/data-only 零代码面（S349 先例不入刷新面），S783 维
+   持引用轮口径；下轮 S783 = 1/10（新周期锚点 S782 双腿：门
+   腿 21:40:31 落盘 + make test run2 22:00:35 收口），全树
+   锚点核对以 **83 files +7290/-470** 为新面值（含本轮入集
+   漂移 docs/data-only 面值非代码）；若 S783 前树代码变化则
+   提前触发双腿刷新（S245→S765 先例链），否则按引用轮口径门
+   单腿复跑免 make test 腿（S336 先例），至迟 S790=8/10 次
+   轮即期限轮窗、S791 期限轮活跑；
    若活跑时逢并行流负载窗口则
    优先窗口内执行，负载下样本对 #0 更有价值（负载窗口口径含并行流 browser 进程型与
    编译测试负载型两亚型，净窗亚型 S208 起并行记录；**端口竞争亚型口径 S198 新增**：
