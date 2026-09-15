@@ -221,7 +221,7 @@ impl ShapedAdvanceSource {
 
     /// generic/系统字体 run 的 hmtx 测量（`ZW_HMTX_LAYOUT` 默认开；`"0"` 回退
     /// estimate——与 R3424-F 之前语义一致）。
-    fn measure_generic_hmtx(&self, font_ids: &[u32], text: &str, font_size: f32, is_ahem: bool) -> Option<f32> {
+    fn measure_hmtx(&self, font_ids: &[u32], text: &str, font_size: f32, is_ahem: bool) -> Option<f32> {
         if is_ahem {
             return None;
         }
@@ -237,10 +237,16 @@ impl AdvanceSource for ShapedAdvanceSource {
         // ZRG-2026-08-15 修复 A：单字符测量（悬挂标点/空格/tab 等换行与对齐宽度）
         // 与 measure_text 同源（generic 字体走 hmtx）——否则行断/对齐与布局宽度
         // 不一致（hanging-punctuation 等 reftest 回归）。
+        // R4385：author face（@font-face/webfont，font_id 不在 generic 集）单字符
+        // 同样走真实 hmtx——旧落 estimate（0.55em 启发式）与 measure_text* 的
+        // shaping 真 hmtx 分裂：intrinsic 逐字符累加路径（shrink_inline_blocks_to_content
+        // → text_content_max_width → measure_intrinsic_char）在 @font-face 页测出
+        // 估计宽，同一文本的渲染 run 用真实 hmtx → inline-block shrink-to-fit /
+        // float / fit-content 宽度与内容错位（content-height-004 探针实证：div 收缩
+        // 55.0 = 2×0.55em vs span run 82.12 = 2×41.06）。单字符无 kerning 上下文，
+        // hmtx advance = 隔离字符真实宽；宿主未注册 hmtx 时回 estimate（同原兜底）。
         if let Some(id) = font_id
-            && self.generic_font_ids.contains(&id)
-            && let Some(hmtx) =
-                self.measure_generic_hmtx(std::slice::from_ref(&id), &ch.to_string(), font_size, is_ahem)
+            && let Some(hmtx) = self.measure_hmtx(std::slice::from_ref(&id), &ch.to_string(), font_size, is_ahem)
         {
             return hmtx;
         }
@@ -288,7 +294,7 @@ impl AdvanceSource for ShapedAdvanceSource {
         //（阿拉伯/印度系等）回退 shaping（量少，perf 可接受）——hmtx 无连字/变体语义。
         if font_ids.iter().all(|id| self.generic_font_ids.contains(id)) && !is_complex_shaping_text(text) {
             return self
-                .measure_generic_hmtx(font_ids, text, font_size, is_ahem)
+                .measure_hmtx(font_ids, text, font_size, is_ahem)
                 .unwrap_or(estimated);
         }
         let variation_input = if font_variations_enabled() {
