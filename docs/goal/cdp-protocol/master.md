@@ -38,7 +38,12 @@ match_media_to_json 现一次——bins-only 条件 dead 既有
 启动前零 zombie、端口族全空闲、负载 0.37 净窗；双腿后
 零 zombie、端口族零残留、零树污染（out/ 报告与
 /tmp/maketest-s674.log 为忽略/仓外产物），零残留进程。
-控制面零外来提交（本轮 pull 零新提交）。解冻条件实质
+控制面零外来提交（本轮 pull 零新提交）。
+**S674 收口后 push 序列预记账**：push 前 pull --rebase 拉入
+兄弟流 R4369（cfaff03ac，rendering-compat docs-only，非
+docs diff 空实测复核）——按 S349 先例 docs-only 不入刷新
+面，S674 双腿证据基树（代码面）不受其影响，S675 维持
+静默监测轮口径（引用计数 0/10→1/10）。解冻条件实质
 判定不变：① 观察面 raw 39（R4368 新基线），子帧三件套
 iframe.contentDocument null 现状不变，frames.click+
 evaluate 维持挂起；② 本流控制面 docs/goal/cdp-protocol/
