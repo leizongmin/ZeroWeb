@@ -46,7 +46,28 @@ only 归因不入刷新面），tracked **代码**树与本轮门覆盖树态
 本轮门覆盖结论维持有效；全树锚点面值记账刷新 **83 files
 +7290/-470→+7291/-470**（入集漂移面值非代码，下轮 S786 锚
 点核对以此为新面值）；crates/ raw 维持 48、自有面 4 files
-+137/-17 不变。子帧关键词非测试代码零
++137/-17 不变。**S785 轮后插记之二（2026-09-15 第二次推送序
+列 pull --rebase 实测）**：插记提交（96446440d）push 前再
+pull 拉入兄弟流两提交——**R4380 代码提交 b74a12a47
+（fix(layout) inline-block 基线传播 + strut 半 leading 去
+耦合，crates/layout-engine 6 文件 +220/-12：engine.rs +1/
+engine/postprocess.rs +12/engine/tests/tests_5.rs +70/
+inline/mod.rs +25/inline_finalization.rs +115/types/mod.rs
++9）+ 随行 docs 23cc16927（rendering-compat.md +1）**——
+S785 门覆盖不含该树态（R4380 组合态），**S786 = 树变化刷
+新轮（门 + make test 双腿刷新，S245→S342→S684→S685→S716→
+S717→S723→S724→S752→S761 先例链）**，引用计数以 S786 双腿
+为新周期锚点 0/10（前插记「S786 维持引用轮口径 4/10」预
+告被本插记取代）；S786 锚点预期——crates/ raw 48→**49** 递
+增（b74a12a47 触 crates/ 计 1 提交），全树锚点面值 83
+files +7291/-470 → 行数漂移以实测为准逐项记账（R4380 六文
+件均在原集内零净增文件预期），crates/layout-engine 属渲染
+流域 crate 本流零触碰工作面不重叠维持；R4380 自带记账
+make test 19,296P/0F、content-height-004 2.94→0.10 strict
+翻绿、product-smoke 15.40% 同值、bench 定向 GATE PASS 32
+指标——S786 make test 腿参考基线以 19,296P 记（R4380 组合
+态），实测为准；dead_code warning 观察面 js_dom_bridge.rs:
+3420 非本次触碰文件，两相位口径照常观察。子帧关键词非测试代码零
 命中维持（crates/ 口径 7 测试文件既有形态维持），实质判定
 不变 frames.click+evaluate 维持挂起。机器卫生：启停零
 zombie、端口族全 free、零树污染（tracked clean，out/ 报告
@@ -16463,7 +16484,15 @@ iframe.contentDocument null 现状不变，frames.click+evaluate
    点核对以 **83 files +7291/-470** 为新面值（含本轮入集漂
    移 docs-only 面值非代码）；若 S786 前树代码变化则提前触
    发双腿刷新，至迟 S790=8/10 次轮即期限轮窗、S791 期限轮
-   活跑；
+   活跑；**S785 轮后插记之二（2026-09-15 第二次推送序列
+   pull --rebase 实测）**：兄弟流 R4380 代码提交 b74a12a47
+   （crates/layout-engine 6 files +220/-12）+ 随行 docs
+   23cc16927 于插记提交 push 前 pull 入树——S785 门覆盖不含
+   该树态，**S786 = 树变化刷新轮（门 + make test 双腿刷新，
+   S245→S761 先例链），引用计数以 S786 双腿为新周期锚点
+   0/10**（前插记「S786 引用轮 4/10」预告被本插记取代）；
+   S786 锚点预期 crates/ raw 48→49 递增、全树行数漂移以实
+   测为准；若 S786 前树再变化则以最新树态覆盖刷新；
    若活跑时逢并行流负载窗口则
    优先窗口内执行，负载下样本对 #0 更有价值（负载窗口口径含并行流 browser 进程型与
    编译测试负载型两亚型，净窗亚型 S208 起并行记录；**端口竞争亚型口径 S198 新增**：
