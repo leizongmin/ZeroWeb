@@ -991,17 +991,12 @@ impl InlineFormattingContext {
             .map(|s| Self::run_white_space(&s.white_space))
             .or_else(|| self.ws_overrides.get(&child_id).copied());
         let run_preserves = run_ws.map_or(self.preserve_whitespace, |ws| ws.preserve);
-        let text = if elem_data.local_name() == "ruby" {
-            // R4395（css-ruby-1 §ruby-text-container）：rtc 是注音容器（span-all
-            // annotation），其文本不属 ruby base——旧表只排 rt/rp，rtc 文本被并进
-            // base run 以全尺寸 base 字形渲染（nested-ruby-pairing-001 ref 页
-            // "Southeast" 入 base 流、PNG 双重绘制实证；chromium 语义 = 注音行）。
-            // paint overlay 侧 rtc 仍按 R1689 simple-ruby scope 跳过（span-all 注音
-            // 行绘制为后续 slice）。
-            Self::collect_text_excluding(doc, child_id, &["rt", "rp", "rtc"])
-        } else {
-            doc.text_content(child_id).unwrap_or_default()
-        };
+        // R4402：注音排除泛化到任意元素的扁平化收集——rt/rp/rtc 是 display:none 域的
+        // 注音文本（R4395：rtc 为 span-all 注音容器），不参与任何行宽。旧实现只对
+        // local_name=="ruby" 走排除表，其余元素（rbc/rb 基容器、包裹 span）走
+        // doc.text_content 把 rt 注音并进 run 文本（improperly-contained-annotation：
+        // rbc flatten run="BA" 宽 55.6 vs ruby 26.7，6.5 remeasure 母子宽倒挂实证）。
+        let text = Self::collect_text_excluding(doc, child_id, &["rt", "rp", "rtc"]);
         let trimmed = if run_preserves {
             text
         } else if run_ws.is_some_and(|ws| ws.break_at_newline) {
@@ -1917,6 +1912,29 @@ mod r4395_rtc_annotation_tests {
         let doc = zero_dom::parse_html(r#"<html><body><ruby><rb>東</rb><rb>南</rb></ruby></body></html>"#);
         let ruby = doc.get_elements_by_tag_name("ruby")[0];
         assert_eq!(ruby_annotation_width_text(&doc, ruby), "");
+    }
+
+    /// R4402：注音排除泛化到**任意**元素的扁平化收集——rbc/rb/包裹 span 等非 ruby
+    /// 元素的 doc.text_content 同样会吞并 rt/rp/rtc 注音文本
+    ///（improperly-contained-annotation：rbc flatten run="BA" 55.6 vs ruby 26.7，
+    /// 6.5 remeasure 母子宽倒挂实证）。collect 主路径（build_flatten_run_for_element）
+    /// 现对所有元素走同一排除表。
+    #[test]
+    fn flatten_annotation_exclusion_applies_to_non_ruby_elements() {
+        // rbc 基容器形态：rt 注音不进收集文本。
+        let doc = zero_dom::parse_html(
+            r#"<html><body><rbc>B<rt>A</rt></rbc></body></html>"#,
+        );
+        let rbc = doc.get_elements_by_tag_name("rbc")[0];
+        let text = InlineFormattingContext::collect_text_excluding(&doc, rbc, &["rt", "rp", "rtc"]);
+        assert_eq!(text, "B", "rbc 收集 = base 文本，rt 排除");
+        // 包裹 span 形态：嵌套 ruby 的注音同样排除。
+        let doc = zero_dom::parse_html(
+            r#"<html><body><span>x<ruby>y<rt>z</rt></ruby></span></body></html>"#,
+        );
+        let span = doc.get_elements_by_tag_name("span")[0];
+        let text = InlineFormattingContext::collect_text_excluding(&doc, span, &["rt", "rp", "rtc"]);
+        assert_eq!(text, "xy", "span 收集排除嵌套 rt");
     }
 
     /// ruby base run 文本排除 rtc 子树（Nested-ruby-pairing-001 ref 页语义：
