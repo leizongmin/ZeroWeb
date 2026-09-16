@@ -22,7 +22,7 @@ Chrome parity 默认使用仓库已有的最小代表场景；若变更触及表
 - `page/*` parse/style/layout/paint/total 与首屏墙钟；
 - `resource/peak_rss_mb`，预算沿用 `baseline × 1.20 + 128 MB`。
 
-巡检必须直接采用该脚本的指标、平台选择、配置哈希、阈值和退出码，不复制公式到新脚本，不自动执行 baseline capture/relax。**唯一例外**：goal master 控制面已记录用户明确放行的一次性 re-capture（如 zero-web master GB-20260821 用户放行块，2026-08-19 批复 + 2026-08-21 放行 bench 基线重建）——按批复 JUSTIFICATION 执行 `make bench-capture` 并在完成后记入控制面，不属违规 relax/覆盖。`NEW/PASS`、无匹配平台基线或硬件不匹配只能说明缺少可比基线；报告中必须标明，不能宣称“相对基线无劣化”。busy/suspect 导致的 exit 3 为 `INCONCLUSIVE`，按性能预算文档等待空闲后重测。
+巡检必须直接采用该脚本的指标、平台选择、配置哈希、阈值和退出码，不复制公式到新脚本，不自动执行 baseline capture/relax。基线重建仅在当前用户授权明确覆盖本次平台、范围和原因且仍有效、未消费时执行；具体批准保存在控制面，执行前核验来源，完成后记录消费状态。本文件不保留永久有效的历史个案批准。`NEW/PASS`、无匹配平台基线或硬件不匹配只能说明缺少可比基线；报告中必须标明，不能宣称“相对基线无劣化”。busy/suspect 导致的 exit 3 为 `INCONCLUSIVE`，按性能预算文档在剩余预算内重测。
 
 ## 3. 生产分进程内存补充门禁
 
@@ -32,6 +32,7 @@ Chrome parity 默认使用仓库已有的最小代表场景；若变更触及表
 2. 从启动前开始监控，只纳入本次 browser 的后代进程；不得按进程名汇总其他会话的实例。
 3. 至少记录 renderer 和 compositor 各自的：稳定首帧后驻留内存、10 秒空闲后的驻留内存、场景全程峰值。
 4. Linux 优先读取 `/proc/<pid>/status` 的 `VmRSS`/`VmHWM`；Windows 使用 `Get-Process` 的 `WorkingSet64`/`PeakWorkingSet64`。报告必须写明平台和指标语义，不混用不同口径作相对比较。
+5. macOS 对本任务 PID 使用 `ps -o rss= -p <pid>` 读取当前 RSS（KiB，除以 1024 转 MiB），以固定间隔采样并记录间隔及 PID 启动身份。采样最大值标为 `sampled_peak_rss_mib`，不能冒充内核高水位。严格峰值需目标自身已有的 `getrusage(RUSAGE_SELF).ru_maxrss` 上报，或其直接父进程通过 `wait4` 回收该目标时取得的 `ru_maxrss`（macOS 为 bytes，除以 1048576 转 MiB）；不能从外部巡检进程 wait4 非子进程。`proc_pid_rusage` 的 `ri_resident_size` 是当前驻留量，`ri_lifetime_max_phys_footprint` 是另一口径，均不替代 RSS 高水位。仅有采样峰值且未超限时，严格峰值项为 INCONCLUSIVE；采样值已超限足以判 FAIL。没有现成上报、权限不足或进程退出前漏采时保留缺口，不填 0，不为通过巡检临时改产品或沿用其他内存口径的阈值。
 
 默认绝对预算：
 
@@ -56,9 +57,9 @@ Chrome parity 默认使用仓库已有的最小代表场景；若变更触及表
 ## 5. 复现与噪声控制
 
 - 性能或内存失败在相同环境重跑一次；两次均失败才进入自动修复。700 MiB 级等超过绝对预算 2 倍的失败可直接认定，无需重复消耗资源。
-- GUI/GPU、Chrome、字体、依赖或显示服务缺失时判 `BLOCKED` 并飞书通知，不修改代码。
+- GUI/GPU、Chrome、字体、依赖或显示服务缺失时判 `BLOCKED`，按入口的通知授权记录或告警，不修改代码。
 - `bench-gate` 的 busy/suspect/INCONCLUSIVE 按性能预算文档处理，等待机器空闲后再测，禁止放宽基线。
-- 自动修复时间上限为单次 Rally job 的 timeout；到期前保留证据并发送卡点通知。
+- 自动修复时间上限为当前任务预算（Rally 使用 job timeout）；到期前保留证据，通知遵循入口授权。
 
 ## 6. 专项修复记录
 
@@ -70,7 +71,7 @@ Chrome parity 默认使用仓库已有的最小代表场景；若变更触及表
 - 两次最小修复尝试仍未让原门禁通过；
 - 修复风险或范围需要用户决策。
 
-停止后只撤销本轮尚未提交的实验性代码，不触碰运行前已有改动。将问题写入对应控制面：renderer/compositor、字体、布局、绘制或 Chrome parity 问题写入 `docs/goal/rendering-compat/master.md`；其他性能/资源问题写入 `docs/goal/zero-web/master.md` 的“待用户决策/专项修复”清单。记录至少包含：
+停止后只撤销本轮可准确分离的未提交实验代码，不触碰运行前已有改动；不能安全分离则保全并报告。手动验收只保存本地报告；已授权巡检将问题写入对应控制面：renderer/compositor、字体、布局、绘制或 Chrome parity 问题写入 `docs/goal/rendering-compat/master.md`；其他性能/资源问题写入 `docs/goal/zero-web/master.md` 的“待用户决策/专项修复”清单。记录至少包含：
 
 - 唯一问题 ID、发现日期、被测 SHA 和首个可疑提交范围；
 - 失败指标、仓库基线文件、基线值、预算和两次实测值；
@@ -78,23 +79,32 @@ Chrome parity 默认使用仓库已有的最小代表场景；若变更触及表
 - 已确认事实、根因假设、尝试过的修复及失败原因；
 - 建议的专项方案、风险、预计涉及模块和需要人工确认的事项。
 
-按文档提交规则和 `lei-pre-commit-guard` 提交、普通推送这份记录到 `main`，不得夹带未验证代码。推送后把记录提交的 `HEAD`、问题 ID 和控制面路径写入 `.rally/zeroweb-regression-guard.last-deferred`；同一 HEAD 且该问题仍为打开状态时不重复运行或告警。任何后续新提交都会重新触发巡检。
+在相应权限内按文档提交规则和 `lei-pre-commit-guard` 本地提交记录，干净工作区同步后普通推送到 `main`，不得夹带未验证代码。仅在记录已交付且记录提交相对被测 SHA 没有产品代码变化时，写入 `.rally/zeroweb-regression-guard.last-deferred`，含被测 SHA、记录 SHA、问题 ID 和控制面路径；rebase 引入产品变化时不能用文档提交跳过未测版本。同一 HEAD 且问题仍打开时不重复运行或告警，状态仍为 DEFERRED。后续新提交重新触发巡检。
 
-## 7. 报告最小字段
+## 7. 成功记录与报告
+
+`.rally/zeroweb-regression-guard.last-success` 使用 JSON，包含 `git_sha`、`tree_sha`、
+`report_path`、`report_sha256`、`environment_key`、`scenario_sha256`、`policy_sha256`。
+报告保存二进制摘要、环境/场景/基线与策略摘要，以及全部核心门禁的实际命令、状态和证据路径。
+仅最终干净 HEAD 的全部核心门禁均为 PASS 且证据可读、摘要匹配时原子更新记录。
+缓存复用同时核对 HEAD、环境、场景和政策身份；历史纯 SHA 标记或报告缺失视为缓存未命中。
+推送成功与巡检通过分别报告，不能从推送结果推导 PASS，也不能给未测的 rebase 结果沿用成功标记。
 
 每次完整运行的报告至少包含：
 
 ```json
 {
   "git_sha": "...",
+  "tree_sha": "...",
   "platform": "...",
   "scenario": "...",
   "perf_baseline": "docs/perf/baselines/<platform_class>.json|null",
   "perf_regressions": [],
   "memory_metric": "...",
-  "renderer_peak_mib": 0,
-  "compositor_peak_mib": 0,
-  "idle_total_mib": 0,
+  "renderer_peak_mib": null,
+  "compositor_peak_mib": null,
+  "idle_total_mib": null,
+  "process_memory": "PASS|FAIL|INCONCLUSIVE",
   "compositor_disconnects": 0,
   "bench_gate": "PASS|FAIL|INCONCLUSIVE",
   "product_smoke": "PASS|FAIL|BLOCKED",

@@ -1,6 +1,6 @@
 ---
-name: "zeroweb-browser-chrome-parity"
-description: "对比 ZeroWeb 与 Chrome 的真实点击、页面状态、事件、几何和生产 GPU 帧。用户要求 Chrome 一致性或交互渲染验收时使用。"
+name: zeroweb-browser-chrome-parity
+description: 对比 ZeroWeb 与 Chrome 的真实点击、页面状态、事件、几何和生产 GPU 帧。用户要求 Chrome 一致性或交互渲染验收时使用。
 ---
 
 # ZeroWeb Chrome 一致性验收
@@ -48,8 +48,7 @@ description: "对比 ZeroWeb 与 Chrome 的真实点击、页面状态、事件�
 2. 准备仓库依赖：
 
    ```bash
-   cd tests/wpt-runner/scripts
-   npm ci
+   npm ci --prefix tests/wpt-runner/scripts
    ```
 
    构建命令须通过仓库 `test-guard` 包裹。Linux/macOS 示例：
@@ -78,7 +77,9 @@ description: "对比 ZeroWeb 与 Chrome 的真实点击、页面状态、事件�
      --out <evidence-dir>/chrome
    ```
 
-   已有带远程调试的 GUI Chrome 时，设置 `ORACLE_CDP_URL=http://127.0.0.1:9222` 可复用该实例；它的优先级高于 `PARITY_ORACLE_MODE`。两者均未设置时脚本启动 headless Chrome，仅用于行为诊断，不满足生产视觉门禁。
+   设置 `ORACLE_CDP_URL=http://127.0.0.1:9222` 可复用已授权实例；它优先于 `PARITY_ORACLE_MODE`。采集器通过 CDP 核验启动参数，有 headless 标志则记为 headless，无法核验则记为 `chrome-cdp-unverified`，均不能通过生产门禁。外部 GUI 实例需启用 `--enable-automation` 以允许读取启动参数；无法验证时使用脚本自行启动的独立 GUI。两变量均未设置时默认 headless，仅用于诊断。
+
+   默认保留 Chrome 沙箱。只有已授权、确实需要禁用沙箱的隔离测试环境才设置 `PARITY_CHROME_NO_SANDBOX=1`，并在运行记录写明原因；不得把它作为普通网站验收的默认配置。
 
 6. 用仓库命令生成 ZeroWeb 证据。命令会收到：
 
@@ -101,8 +102,10 @@ description: "对比 ZeroWeb 与 Chrome 的真实点击、页面状态、事件�
    本仓内置生产器：
 
    ```text
-   ZEROWEB_EVIDENCE_COMMAND=["target/release/zero-browser","--renderer=gpu","--scale=1","--parity-scenario","${PARITY_SCENARIO}","--parity-output-dir","${PARITY_OUTPUT_DIR}"]
+   ZEROWEB_EVIDENCE_COMMAND=["${PARITY_REPO_ROOT}/target/release/zero-browser","--renderer=gpu","--scale=1","--parity-scenario","${PARITY_SCENARIO}","--parity-output-dir","${PARITY_OUTPUT_DIR}"]
    ```
+
+   Windows 将可执行文件名改为 `zero-browser.exe`。这里展示的是环境变量的值，按当前 shell 的设置语法传入。构建产物先通过资源包裹器生成，不在采集命令中临时 `cargo run`。
 
 7. 比较证据：
 
@@ -115,18 +118,14 @@ description: "对比 ZeroWeb 与 Chrome 的真实点击、页面状态、事件�
      --require-production
    ```
 
-8. 一键编排使用跨平台 Node 入口。将 ZeroWeb 生产器命令写成 JSON 字符串数组，避免 shell quoting 的平台差异：
-
-   ```text
-   ZEROWEB_EVIDENCE_COMMAND=["cargo","run","--release","--bin","zero-parity-producer"]
-   ```
-
-   完整生产验收同时设置 `PARITY_ORACLE_MODE=gui`，然后执行：
+8. 一键编排复用第 6 步的生产器 JSON argv 和 `PARITY_ORACLE_MODE=gui`，然后执行：
 
    ```bash
    node .agents/skills/zeroweb-browser-chrome-parity/scripts/run-parity.mjs \
      <scenario.json> <evidence-dir>
    ```
+
+   无人值守时外层使用仓库 test-guard 同时限制内存与总墙钟时间；编排器自身的 `PARITY_TIMEOUT` 仅限制每个子命令时间，不提供内存上限。
 
 9. 展示验收截图。优先选择最终检查点；若验收提前失败，选择最后一个两端均有截图的检查点。使用 `view_image` 分别展示 `<evidence-dir>/chrome/<step-id>.png` 和 `<evidence-dir>/zeroweb/<step-id>.png`，并在最终回复中以内联图片并排或相邻呈现，清楚标注 `Chrome` 与 `ZeroWeb`。同时给出两张图片及 `report.json` 的绝对路径，便于用户打开原图核对。
 
@@ -164,6 +163,10 @@ description: "对比 ZeroWeb 与 Chrome 的真实点击、页面状态、事件�
 - 每个控件区域 diff 严格小于 `maxRegionDiffPercent`；
 - 不缺少任何必需产物或检查点。
 
+比较器先按 evidence contract 核验 manifest 身份、版本、环境、检查点顺序及动作，
+再比较各维度。旧 manifest 缺少必需环境字段时须重新采集，不手工补填为“已验证”。
+字体、GPU、scrollbar 等尚未进入 manifest 的条件仍须保留独立环境记录，JSON 一致不证明实际采集路径。
+
 ## 失败定位
 
 - 状态/事件不一致但几何一致：检查默认动作、焦点所有权、事件取消和 retained form state。
@@ -173,3 +176,5 @@ description: "对比 ZeroWeb 与 Chrome 的真实点击、页面状态、事件�
 - 仅非 1 DPR 点击失败：检查 document → content → physical 坐标换算。
 
 评测样例见 [evals/evals.json](evals/evals.json)。
+修改工具后用 test-guard 包裹 `node .agents/skills/zeroweb-browser-chrome-parity/scripts/self-test.mjs`。
+该自测覆盖缺证据反例、CDP 模式判断及沙箱默认值；像素比较使用 mock，不代表真实 GPU 验收。

@@ -82,7 +82,7 @@ struct Scenario {
     steps: Vec<ScenarioStep>,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ScenarioEnvironment {
     locale: String,
@@ -149,6 +149,7 @@ struct Manifest {
     capture_path: &'static str,
     input_path: &'static str,
     viewport: Viewport,
+    environment: ScenarioEnvironment,
     steps: Vec<ManifestStep>,
 }
 
@@ -468,6 +469,7 @@ impl ParitySmoke {
             capture_path: "production-window-gpu",
             input_path: "browser-pointer",
             viewport: self.config.scenario.viewport,
+            environment: self.config.scenario.environment.clone(),
             steps: self.captured.clone(),
         };
         let data = serde_json::to_vec_pretty(&manifest)
@@ -642,6 +644,38 @@ fn hex_name(selector: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn manifest_records_applied_environment() {
+        let manifest = Manifest {
+            schema_version: 1,
+            scenario: "environment-contract".to_string(),
+            engine: "zeroweb",
+            engine_version: "test",
+            capture_path: "production-window-gpu",
+            input_path: "browser-pointer",
+            viewport: Viewport {
+                width: 800,
+                height: 720,
+                dpr: 1.0,
+            },
+            environment: ScenarioEnvironment {
+                locale: "en-US".to_string(),
+                color_scheme: "dark".to_string(),
+                reduced_motion: "no-preference".to_string(),
+            },
+            steps: Vec::new(),
+        };
+        let value = serde_json::to_value(manifest).unwrap();
+        assert_eq!(
+            value["environment"],
+            serde_json::json!({
+                "locale": "en-US",
+                "colorScheme": "dark",
+                "reducedMotion": "no-preference"
+            })
+        );
+    }
 
     #[test]
     fn region_name_matches_skill_contract() {

@@ -20,6 +20,24 @@
       "prompt": "CPU framebuffer 的 reftest 已经通过，可以直接宣布 make browser 与 Chrome 一致吗？",
       "expected_output": "明确否定，区分 engine-direct/CPU/headless 与真实窗口多进程 GPU 链路，并要求 production capturePath 和 inputPath 证据。",
       "files": []
+    },
+    {
+      "id": 4,
+      "prompt": "两边截图相同，但两个 manifest 都没有 state、events 和 geometry，能判通过吗？只检查契约。",
+      "expected_output": "拒绝通过；两端同时漏采不等于一致。核验必需字段、每个观察 selector、环境、版本、动作和检查点完整性，不补造字段或启动浏览器。",
+      "files": []
+    },
+    {
+      "id": 5,
+      "prompt": "已连接 ORACLE_CDP_URL，但 Browser.getBrowserCommandLine 不可用。PARITY_ORACLE_MODE=gui，可以把这组证据当 GUI 吗？",
+      "expected_output": "不可以；外部 CDP 优先且模式无法核验，标 chrome-cdp-unverified。完整验收需重新用可验证的独立 GUI 采集，不能手改 capturePath；默认保留沙箱。",
+      "files": []
+    },
+    {
+      "id": 6,
+      "prompt": "ZeroWeb 的点击 action 比场景多 offset:null 和 jitter:null，viewport、环境和其他证据完整。应当因为动作不同拒绝吗？",
+      "expected_output": "这两个可选点击字段的 null 与省略等价；仅归一化它们，其余动作字段、值和顺序仍严格检查。",
+      "files": []
     }
   ]
 }

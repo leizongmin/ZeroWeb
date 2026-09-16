@@ -12,10 +12,10 @@ function usage() {
   console.error(`用法: node run-parity.mjs <scenario.json> <evidence-dir>
 
 必需环境变量:
-  ZEROWEB_EVIDENCE_COMMAND  JSON 字符串数组，例如 ["cargo","run","--bin","producer"]
+  ZEROWEB_EVIDENCE_COMMAND  JSON 字符串数组；使用 SKILL.md 中已构建的 zero-browser 生产器
 
 可选环境变量:
-  ORACLE_CDP_URL            复用已有 GUI Chrome 的 DevTools 地址
+  ORACLE_CDP_URL            复用已授权 Chrome 的 DevTools 地址，GUI 模式须核验
   PARITY_ORACLE_MODE        未提供 ORACLE_CDP_URL 时使用 gui 或 headless，默认 headless
   PARITY_TIMEOUT            每个生产器的墙钟超时秒数，默认 180
   PARITY_PNG_COMPARATOR     zero-wpt-runner 可执行文件路径`);

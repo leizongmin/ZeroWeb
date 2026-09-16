@@ -114,6 +114,37 @@ async function resolveChromeExecutable() {
   return executable;
 }
 
+/** 复用 CDP 时仅凭完整启动参数确认模式；端点可连通不代表存在 GUI。 */
+export async function detectCapturePath(browser) {
+  let session;
+  try {
+    if (/HeadlessChrome\//i.test(await browser.version())) return 'chrome-headless';
+    session = await browser.target().createCDPSession();
+    const { arguments: args } = await session.send('Browser.getBrowserCommandLine');
+    if (!Array.isArray(args) || !args.length || args.some((arg) => typeof arg !== 'string')) {
+      return 'chrome-cdp-unverified';
+    }
+    if (args.some((arg) => /^--headless(?:=|$)/.test(arg))) return 'chrome-headless';
+    return args.includes('--enable-automation') ? 'chrome-cdp-gui' : 'chrome-cdp-unverified';
+  } catch {
+    return 'chrome-cdp-unverified';
+  } finally {
+    if (session) await session.detach().catch(() => {});
+  }
+}
+
+/** 保留默认沙箱；只有获授权的隔离运行才显式选择禁用。 */
+export function chromeLaunchArgs(locale, environment = process.env) {
+  const noSandbox = environment.PARITY_CHROME_NO_SANDBOX || '0';
+  if (!['0', '1'].includes(noSandbox)) throw new Error('PARITY_CHROME_NO_SANDBOX must be 0 or 1');
+  return [
+    ...(noSandbox === '1' ? ['--no-sandbox'] : []),
+    '--disable-lcd-text',
+    '--hide-scrollbars',
+    `--lang=${locale}`,
+  ];
+}
+
 async function connectBrowser(puppeteer, locale) {
   const cdpUrl = process.env.ORACLE_CDP_URL;
   if (cdpUrl) {
@@ -122,7 +153,7 @@ async function connectBrowser(puppeteer, locale) {
       return response.json();
     });
     const browser = await puppeteer.connect({ browserWSEndpoint: version.webSocketDebuggerUrl });
-    return { browser, capturePath: 'chrome-cdp-gui', close: () => browser.disconnect() };
+    return { browser, capturePath: await detectCapturePath(browser), close: () => browser.disconnect() };
   }
 
   const oracleMode = process.env.PARITY_ORACLE_MODE || 'headless';
@@ -133,12 +164,7 @@ async function connectBrowser(puppeteer, locale) {
   const browser = await puppeteer.launch({
     executablePath,
     headless: oracleMode === 'headless' ? 'new' : false,
-    args: [
-      '--no-sandbox',
-      '--disable-lcd-text',
-      '--hide-scrollbars',
-      `--lang=${locale}`,
-    ],
+    args: chromeLaunchArgs(locale),
   });
   return {
     browser,
@@ -379,6 +405,11 @@ async function main() {
       capturePath: connection.capturePath,
       inputPath: 'browser-pointer',
       viewport: scenario.viewport,
+      environment: {
+        locale: scenario.environment.locale,
+        colorScheme: scenario.environment.colorScheme,
+        reducedMotion: scenario.environment.reducedMotion,
+      },
       steps,
     };
     await writeFile(resolve(output, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);

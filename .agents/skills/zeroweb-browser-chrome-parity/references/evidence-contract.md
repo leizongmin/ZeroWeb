@@ -67,11 +67,17 @@ Chrome 端支持以下动作：
   "capturePath": "chrome-cdp-gui",
   "inputPath": "browser-pointer",
   "viewport": { "width": 800, "height": 720, "dpr": 1 },
+  "environment": {
+    "locale": "en-US",
+    "colorScheme": "light",
+    "reducedMotion": "no-preference"
+  },
   "steps": [
     {
       "id": "initial",
       "action": { "type": "snapshot" },
       "screenshot": "initial.png",
+      "regions": { "#name": "initial.name.png", "#note": "initial.note.png" },
       "state": {},
       "events": [],
       "geometry": {
@@ -80,6 +86,12 @@ Chrome 端支持以下动作：
           "y": 201,
           "width": 193,
           "height": 40
+        },
+        "#note": {
+          "x": 118,
+          "y": 251,
+          "width": 193,
+          "height": 80
         }
       }
     }
@@ -88,6 +100,19 @@ Chrome 端支持以下动作：
 ```
 
 文件路径相对于 manifest 所在目录。证据生产器可以增加字段，但不得改变必需字段的语义。
+
+比较器在数值比较前检查以下契约，失败时退出非零，不允许以两端同时缺失作为相等：
+
+- `engine` 与输入侧一致，`scenario` 与场景一致，`engineVersion`、`capturePath`、`inputPath` 非空；
+- viewport 的 width/height/DPR、environment 的 locale/colorScheme/reducedMotion 与场景一致；
+- Chrome 版本满足场景指定的 `chromeVersionPattern`（若有）；
+- 检查点数量、顺序、ID 和动作与场景逐项一致；重复、缺失和额外检查点均拒绝；
+- `state` 必须存在，显式 JSON null 合法；`events` 必须是数组，每项含字符串 type/target 与布尔 defaultPrevented；
+- 每个观察 selector 都有有限数值几何和区域图引用，且全帧图引用存在；实际图片文件在比较时检查。
+
+Rust 点击动作的可选 `offset`/`jitter` 为 null 时等价于省略，不对其他字段做宽松转换。
+生产器记录实际应用的环境；旧证据缺字段须重采。manifest 是生产器声明，不是独立路径证明；
+字体、GPU、scrollbar 等未编码条件仍由采集记录与实际窗口证据核对。
 
 ## 事件归一化
 
@@ -191,12 +216,16 @@ ZeroBrowser 真实窗口
 一键编排器读取 `ZEROWEB_EVIDENCE_COMMAND`，其值必须是 JSON 字符串数组：
 
 ```json
-["cargo", "run", "--release", "--bin", "zero-parity-producer"]
+["${PARITY_REPO_ROOT}/target/release/zero-browser", "--renderer=gpu", "--scale=1", "--parity-scenario", "${PARITY_SCENARIO}", "--parity-output-dir", "${PARITY_OUTPUT_DIR}"]
 ```
 
 禁止传 shell 命令字符串。JSON argv 不依赖 Bash、PowerShell 或 CMD quoting，可在 Windows、Linux、macOS 使用。
 
-Chrome Oracle 未提供 `ORACLE_CDP_URL` 时，`PARITY_ORACLE_MODE=gui` 会通过 Puppeteer 启动独立的可见浏览器实例，适用于三平台生产验收。默认值 `headless` 只用于行为诊断。`ORACLE_CDP_URL` 始终优先，用于复用已开启远程调试的 GUI 浏览器。
+Windows 使用 `zero-browser.exe`；先构建冻结产物，再运行采集。外层 test-guard 同时包裹内存与总墙钟预算，编排器超时不能替代内存限制。
+
+Chrome Oracle 未提供 `ORACLE_CDP_URL` 时，`PARITY_ORACLE_MODE=gui` 通过 Puppeteer 启动独立 GUI。默认 `headless` 只用于诊断。`ORACLE_CDP_URL` 优先，但连接成功不会直接得到 GUI 标记：采集器检查浏览器版本及 `Browser.getBrowserCommandLine`；含 headless 标志判为 `chrome-headless`，有完整且含 `--enable-automation` 的非 headless 参数才判 `chrome-cdp-gui`，其余为 `chrome-cdp-unverified`。unverified 和 headless 均不满足生产门禁。无法读取参数时改用独立 GUI 采集，不通过修改 manifest 绕过。
+
+默认启用 Chrome 沙箱；`PARITY_CHROME_NO_SANDBOX=1` 仅供已授权的隔离测试环境，运行记录须保留原因。
 
 参数中的 `${PARITY_SCENARIO}`、`${PARITY_OUTPUT_DIR}` 和 `${PARITY_REPO_ROOT}` 会在启动前替换为绝对路径。
 

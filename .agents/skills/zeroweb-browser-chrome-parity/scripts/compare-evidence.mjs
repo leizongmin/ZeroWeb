@@ -53,11 +53,66 @@ async function loadManifest(directory) {
   return { path, directory: resolve(directory), manifest };
 }
 
+/** 按场景校验完整证据，避免两端同时漏采时被相等比较放行。 */
+export function validateManifest(manifest, scenario, engine) {
+  const requireValue = (condition, message) => {
+    if (!condition) throw new Error(`${engine}: ${message}`);
+  };
+  const record = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
+  const text = (value) => typeof value === 'string' && value.trim().length > 0;
+  requireValue(record(manifest) && manifest.schemaVersion === 1, 'invalid manifest schema');
+  requireValue(manifest.engine === engine && manifest.scenario === scenario.name, 'manifest identity mismatch');
+  requireValue(text(manifest.engineVersion), 'missing engineVersion');
+  requireValue(text(manifest.capturePath) && text(manifest.inputPath), 'missing capture/input path');
+  requireValue(record(manifest.viewport) && ['width', 'height', 'dpr'].every(
+    (key) => manifest.viewport[key] === scenario.viewport[key],
+  ), 'viewport or DPR mismatch');
+  requireValue(record(manifest.environment) && ['locale', 'colorScheme', 'reducedMotion'].every(
+    (key) => manifest.environment[key] === scenario.environment[key],
+  ), 'missing or mismatched environment');
+  if (engine === 'chrome' && scenario.environment.chromeVersionPattern) {
+    requireValue(new RegExp(scenario.environment.chromeVersionPattern).test(manifest.engineVersion),
+      'Chrome version mismatch');
+  }
+  requireValue(Array.isArray(manifest.steps) && manifest.steps.length === scenario.steps.length,
+    'checkpoint coverage mismatch');
+  const ids = new Set();
+  for (const [index, step] of manifest.steps.entries()) {
+    const expected = scenario.steps[index];
+    requireValue(record(step) && step.id === expected.id && !ids.has(step.id),
+      'duplicate, unexpected or out-of-order checkpoint');
+    ids.add(step.id);
+    // Rust Option<Point> 序列化为 null；仅将这两个可选字段归一化为省略。
+    const action = { ...step.action };
+    if (action.type === 'click') {
+      for (const key of ['offset', 'jitter']) if (action[key] === null) delete action[key];
+    }
+    const expectedAction = { ...expected.action };
+    if (expectedAction.type === 'click') {
+      for (const key of ['offset', 'jitter']) if (expectedAction[key] === null) delete expectedAction[key];
+    }
+    requireValue(equalJson(action, expectedAction), `${step.id}: action mismatch`);
+    requireValue(Object.hasOwn(step, 'state'), `${step.id}: missing state`);
+    requireValue(Array.isArray(step.events) && step.events.every((event) =>
+      record(event) && text(event.type) && typeof event.target === 'string'
+      && typeof event.defaultPrevented === 'boolean'), `${step.id}: missing or malformed events`);
+    requireValue(text(step.screenshot), `${step.id}: missing screenshot`);
+    requireValue(record(step.geometry) && record(step.regions), `${step.id}: missing geometry or regions`);
+    for (const selector of scenario.observe.selectors) {
+      const rect = step.geometry[selector];
+      requireValue(record(rect) && ['x', 'y', 'width', 'height'].every(
+        (key) => typeof rect[key] === 'number' && Number.isFinite(rect[key]),
+      ) && rect.width >= 0 && rect.height >= 0, `${step.id}: missing or invalid geometry for ${selector}`);
+      requireValue(text(step.regions[selector]), `${step.id}: missing region for ${selector}`);
+    }
+  }
+}
+
 function canonicalEvents(events) {
-  return (events || []).map((event) => ({
+  return events.map((event) => ({
     type: event.type,
     target: event.target,
-    defaultPrevented: Boolean(event.defaultPrevented),
+    defaultPrevented: event.defaultPrevented,
   }));
 }
 
@@ -141,12 +196,12 @@ async function main() {
   const scenario = await loadScenario(cli.scenario);
   const chrome = await loadManifest(cli.chrome);
   const zeroweb = await loadManifest(cli.zeroweb);
-  if (chrome.manifest.scenario !== scenario.name || zeroweb.manifest.scenario !== scenario.name) {
-    throw new Error('manifest scenario does not match the requested scenario');
-  }
+  validateManifest(chrome.manifest, scenario, 'chrome');
+  validateManifest(zeroweb.manifest, scenario, 'zeroweb');
 
   const production = {
-    chrome: chrome.manifest.capturePath === 'chrome-cdp-gui',
+    chrome: chrome.manifest.capturePath === 'chrome-cdp-gui'
+      && chrome.manifest.inputPath === 'browser-pointer',
     zeroweb: zeroweb.manifest.capturePath === 'production-window-gpu'
       && zeroweb.manifest.inputPath === 'browser-pointer',
   };

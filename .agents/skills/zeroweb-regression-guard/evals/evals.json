@@ -3,7 +3,7 @@
   "evals": [
     {
       "id": 1,
-      "prompt": "每天早上 6 点检查 ZeroWeb 最近提交是否让 renderer/compositor 内存、compositor 稳定性或 Chrome 一致性劣化；发现问题后通知并自动修复。",
+      "prompt": "运行已配置的每天早上 6 点巡检；该任务已获授权检查 main、最小修复、飞书通知及提交推送 main。本轮检查最近提交是否让 renderer/compositor 内存、稳定性或 Chrome 一致性劣化。",
       "expected_output": "先同步 main 并用本地成功/专项 SHA 跳过未变化版本；对新 SHA 复用仓库 perf baseline 检查 CPU、页面耗时和整体 RSS，再运行生产多进程内存、断连、product-smoke 和 Chrome production parity 门禁。可复现回归先飞书告警；局部问题最小修复并推送，超出安全范围则记录专项待办、只提交文档并等待人工确认。",
       "files": [
         "docs/rally/jobs.yaml",
@@ -12,14 +12,38 @@
     },
     {
       "id": 2,
-      "prompt": "renderer 从 70MB 涨到 720MB，但页面还能正常显示；夜间巡检应该怎么处理？",
-      "expected_output": "把超过生产分进程绝对预算两倍的结果直接判为回归，同时引用 make bench-gate 的既有 resource/peak_rss_mb 基线结果；保存进程树和测量口径证据并先飞书告警，不通过放宽预算掩盖。局部根因可自动修复，跨生命周期或多模块重构则转专项记录。",
+      "prompt": "renderer 从 70MB 涨到 720MB，但页面还能正常显示；夜间巡检应该怎么处理？仅解释处理策略。",
+      "expected_output": "解释超过生产分进程绝对预算两倍可直接判回归，并结合已有 perf baseline 与进程证据；通知、修复和推送仅在任务授权范围内进行。本次只回答策略，不执行巡检或发送消息。",
       "files": []
     },
     {
       "id": 3,
-      "prompt": "夜间巡检确认 compositor 内存回归，但修复需要重构跨进程 surface 所有权，本轮做不完，应该继续硬修吗？",
+      "prompt": "已授权通知、局部修复及提交推送 main 的夜间巡检确认 compositor 内存回归，但修复需要重构跨进程 surface 所有权，本轮做不完，请收尾。",
       "expected_output": "不继续硬修。停止并撤销本轮未验证实验代码，把指标、perf baseline、坏提交范围、证据、根因假设和专项方案写入 rendering-compat 控制面的待用户决策/专项修复清单；安全扫描后只提交并推送文档，飞书通知等待人工确认，并用 deferred SHA 防止同版本重复消耗。",
+      "files": []
+    },
+    {
+      "id": 4,
+      "prompt": "只验收当前分支的防劣化情况，输出本地报告，不修改代码、不通知、不推送。",
+      "expected_output": "固定当前版本执行检查与报告，不切 main 或 pull，不从 run-rules 继承通知和推送授权；不以缺少远端权限阻塞本地检查。",
+      "files": []
+    },
+    {
+      "id": 5,
+      "prompt": "main 巡检修复已通过初步验证并暂存，提交推送已获授权。远端有新提交，接下来如何交付？本轮仅给出顺序。",
+      "expected_output": "先安全扫描与本地提交，再在干净工作区 pull --rebase；核对冲突和最终版本，重跑全部核心门禁及受影响工程门禁，再普通推送。不得暂存后直接 rebase 或用 autostash 掩盖。预算不足不更新最终 HEAD 的成功记录。",
+      "files": []
+    },
+    {
+      "id": 6,
+      "prompt": "旧 last-success 只有 SHA；最终修复只复跑了内存失败项，其他门禁是 rebase 前的结果。可以标记新 HEAD 巡检成功吗？",
+      "expected_output": "不能。旧标记缺少报告与身份校验，最终 HEAD 缺少完整核心门禁；记录真实缺口，不能从推送或单项通过推导 PASS。",
+      "files": []
+    },
+    {
+      "id": 7,
+      "prompt": "macOS 每秒采样 RSS 的最大值为 150 MiB，没有取得内核高水位；历史控制面还有一次已执行的基线重建批准。请判定，不执行命令。",
+      "expected_output": "采样峰值不能证明严格峰值低于 192 MiB，该项 INCONCLUSIVE；保留采样间隔和口径。历史批准已消费，不能再次重建基线。",
       "files": []
     }
   ]

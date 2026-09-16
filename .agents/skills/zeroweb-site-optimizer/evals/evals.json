@@ -3,8 +3,8 @@
   "evals": [
     {
       "id": 1,
-      "prompt": "用 zeroweb-site-optimizer 自主优化 ZeroWeb 访问 https://example.com 的体验，只交付本地结果。",
-      "expected_output": "采用有界默认值并预检，不索要完整问卷；独立 worktree/profile，先从实际页面形成适用任务，覆盖浏览器 UI 和页面；不虚构网站有搜索功能，不启动 tmux，不推 main，不把 CDP headless 作为生产验收。",
+      "prompt": "用 zeroweb-site-optimizer 自主探索并修复 ZeroWeb 访问 https://example.com 的体验。我批准公开只读探索、独立 worktree/profile、本地修改和完整验证，按推荐 120 分钟及候选上限执行；仅使用已有工具，能力缺失保留本地证据，预算不足收尾。不提交、不推送、不创建 PR。",
+      "expected_output": "复用明确的本地运行授权并直接预检，不重复确认或索要远端权限；独立 worktree/profile，先从实际页面形成适用任务，覆盖浏览器 UI 和页面；不虚构网站有搜索功能，不启动 tmux，不提交推送，不把 headless 作为生产验收。",
       "files": []
     },
     {
@@ -83,6 +83,28 @@
         "没有开始新产品修改或完整重跑",
         "保留未探索任务，不删失败或未知项",
         "使用实测验证成本并明确预算停止"
+      ]
+    },
+    {
+      "id": 10,
+      "prompt": "https://example.com 在 ZeroWeb 中有些问题，先给我看看能怎么优化，暂时没决定是否允许改代码。",
+      "expected_output": "根据本地已有信息给出具体范围、推荐预算和交付方案，仅澄清是否启动修改等必要缺项；不建立运行 worktree/profile，不启动产品、修改代码或远端操作。",
+      "files": [],
+      "expectations": [
+        "未把方案讨论当作启动或代码修改授权",
+        "没有要求用户填写 selector 或完整技术问卷",
+        "提供具体可审阅的推荐方案"
+      ]
+    },
+    {
+      "id": 11,
+      "prompt": "请在 https://example.com 自主探索并修复兼容性问题，做本地验证，只要本地结果。预算采用 skill 推荐值，不做远端操作。",
+      "expected_output": "请求已授权本地探索、修复与验证，直接采用推荐默认值预检；不把未授权的 PR、通知或工具安装作为必须补齐的权限，不重复问是否开始。",
+      "files": [],
+      "expectations": [
+        "直接执行已授权本地预检",
+        "不索取可选远端权限",
+        "记录实际授权来源与默认预算"
       ]
     }
   ]

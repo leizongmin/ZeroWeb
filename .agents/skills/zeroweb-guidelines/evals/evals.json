@@ -1,0 +1,29 @@
+{
+  "skill_name": "zeroweb-guidelines",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "微基准绑核后 cpu_cores 变成 1，而 bench-gate 的基线为 16；退出码仍是 0。如何判断？仅审阅结果。",
+      "expected_output": "区分配对诊断和正式基线门禁，核对实际比较状态；不可比时记录 INCONCLUSIVE，不修改核心数、阈值或基线，不因为准则写了配对就要求正式门禁也绑核。",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "Send + Sync 回调想捕获 Arc<Mutex<Cache>>，Cache 是已满足 Send 的复合类型，可以因为它不是纯值而拒绝吗？如果换成 Document 呢？",
+      "expected_output": "按实际 trait 和所有权判断；符合约束的复合类型可以使用。Mutex 不会让非 Send 的 Document 自动变成 Send，优先缓存计算结果；不把 Cell 一概说成非 Send。",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "准备给输入队列做 latest-wins，丢掉中间点击事件，只保留最后一个；这样符合准则吗？",
+      "expected_output": "拒绝将完整可替代快照的优化套用于点击事件；点击和增量消息有独立语义，必须保留。只在中间状态无副作用且最终快照足够时合并。",
+      "files": []
+    },
+    {
+      "id": 4,
+      "prompt": "JS shim 与 native DOM 截图相同，但 change 事件不同，可以只靠像素断言通过吗？",
+      "expected_output": "不能；视觉与 DOM/API 可观察行为分别验证，事件差异仍失败，截图不能替代语义断言。",
+      "files": []
+    }
+  ]
+}
