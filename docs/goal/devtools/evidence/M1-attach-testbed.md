@@ -1,7 +1,42 @@
-# M1 — frontend 附接 ZeroWeb：S1 路由 + S2 试验台 + S3 账本 + S3a 最小域集
+# M1 — frontend 附接 ZeroWeb：S1 路由 + S2 试验台 + S3 账本 + S3a 最小域集 + S1.5 并发
 
-**日期**: 2026-09-16（M1 首轮 + S3a 轮，M0 收口后）
+**日期**: 2026-09-16（M1 多轮推进，M0 收口后）
 **上游状态**: cdp-protocol goal Done（M5 守成态，`make cdp-e2e` 33 绿 = 本 goal 防回归门）
+
+---
+
+## 0-b. M1-S1.5 ✅ 单线程多路复用 + M2-N1 ✅ Network 面板渲染（2026-09-16）
+
+**S3a 轮遗留的「&panel=network 不渲染」定谳并修复**——根因三层：
+
+1. **串行 accept 循环饿死 lazy import**：frontend 面板模块经 `import()` 动态导入，
+   该 HTTP 请求发生在 WS 建立之后——旧单连接串行模型下它永远排在长活 WS 后面
+   （accept 不回来），模块 import 永不 resolve → 面板空白、零报错。
+   **修复 = S1.5 并发连接**。设计取舍：thread-per-connection 因 `HeadlessSession`
+   内含 `Rc`（zero-dom Document / shell 表）非 `Send` 而不可行（跨线程需深改
+   zero-dom/shell，属共享面）；落地为**单线程 socket 多路复用**——listener 与全部
+   连接非阻塞，主循环 3ms tick 轮询推进连接状态机
+   （`ConnState`/`Phase::Peek→Phase::Ws`），`HeadlessSession` 保持主线程独占（零锁、
+   命令语义天然串行）。连接形态（page-direct）从全局 AtomicBool 改为随连接状态机
+   传递（`handle_message_with_events_mode` → `dispatch_with_events_for`/`dispatch`
+   增 `page_direct` 参数）。
+2. **`Page.getNavigationHistory` 字段名错**：CDP 契约是 `currentIndex` 非 `index`——
+   字段名错导致 frontend `ScreencastView.requestNavigationHistory` 读
+   `entries[undefined].url` 崩溃（pageerror 栈已存 §0）。
+3. **`Network.emulateNetworkConditionsByRule` 缺 `ruleIds`**：frontend 读
+   `response.ruleIds.length` —— 空 ack 改为 `{ruleIds: []}`。
+
+另修 `Page.startScreencast`/`Page.stopScreencast`/`Page.screencastFrameAck`/
+`Overlay.setShowContainerQueryOverlays` ack 族（ScreencastView 初始化链）。
+
+**验收（attach-zeroweb-probe.mjs 13/13 全绿，exit=0）**：
+- `frontend-network-panel` ✅ —— Network 面板全 UI 渲染（录制条/过滤器/瀑布图，
+  `attach-zeroweb-network.png`）；M2-N1「面板渲染排查」就此清账。
+- Elements 活 DOM + Console REPL 双绿保持。
+- 请求行诊断项：面板开着时经面板自带 "Reload page" 触发导航，请求行仍空——
+  **Network 域事件多客户端路由**（事件被任一连接的 drain tick 排空，未保证路由到
+  面板所在连接）= 新记账，归 M2（cdp-e2e network.events 单客户端语义未受影响，
+  33 绿实测）。
 
 ---
 
@@ -125,10 +160,9 @@ DevTools frontend 是 **DOM-nodeId 树流**（enable → getDocument 建树 → 
 ## 5. 下一切片建议（按序）
 
 1. ~~M1-S3a 最小域集~~ ✅（见 §0）
-2. **M1-S1.5 并发连接**：transport 线程化（HeadlessSession 共享化边界先探），
-   解锁 Console/Network 多步流与多客户端（附接试验台的两次 goto 竞态即源于此）。
-3. **M2-N1 Network 面板渲染排查**：ScreencastView 在 inspector 入口的实例化链 +
-   sdk.js:36029 Promise.all 崩溃定位（见 §0 遗留）；Network 域事件流在
-   Network.enable 后由 REPL fetch 触发即有数据（管线已在，单连接下触发时序受限）。
+2. ~~M1-S1.5 并发连接~~ ✅（见 §0-b，单线程多路复用形态）
+3. ~~M2-N1 Network 面板渲染排查~~ ✅（见 §0-b——根因即 S1.5 缺位 + 两处返回形状）
 4. **M1-S3b CSS.getMatchedStylesForNode**：样式侧栏数据源（style-system 消费面；
    现状 = Elements 树可选中，样式栏 "No matching selector or style"）。
+5. **M2 Network 域事件多客户端路由**：事件 drain 归属保证（面板所在连接优先），
+   解锁 Network 请求行/详情演示流。

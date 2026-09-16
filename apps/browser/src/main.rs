@@ -435,7 +435,11 @@ fn run_headless(cli: CliArgs) {
         cli.viewport_height
     );
 
-    let mut server = headless::HeadlessServer::new(port, cli.viewport_width, cli.viewport_height);
+    let server = std::sync::Arc::new(headless::HeadlessServer::new(
+        port,
+        cli.viewport_width,
+        cli.viewport_height,
+    ));
     let actual_addr = server.addr();
 
     println!("ZeroWeb headless server: ws://{}", actual_addr);

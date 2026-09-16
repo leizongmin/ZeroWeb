@@ -40,12 +40,50 @@ use protocol::{ClientRequest, ProtocolError, ServerEvent, ServerResponse};
 pub use security::HeadlessSecurityConfig;
 use session::HeadlessSession;
 
+// ── 连接多路复用状态（M1-S1.5 单线程复用模型）──
+
+/// 单条连接的多路复用状态机。
+struct ConnState {
+    stream: std::net::TcpStream,
+    peer: SocketAddr,
+    alive: bool,
+    phase: Phase,
+}
+
+impl ConnState {
+    fn new(stream: std::net::TcpStream, peer: SocketAddr) -> Self {
+        Self {
+            stream,
+            peer,
+            alive: true,
+            phase: Phase::Peek {
+                deadline: std::time::Instant::now() + std::time::Duration::from_secs(5),
+            },
+        }
+    }
+}
+
+/// 连接阶段：请求头探测（阻塞窗口）→ WS 会话（非阻塞消息循环）。
+/// HTTP GET 在 Peek 阶段同步服务完即关（快进快出，与旧行为一致）。
+#[allow(clippy::large_enum_variant)]
+enum Phase {
+    Peek {
+        deadline: std::time::Instant,
+    },
+    Ws {
+        ws: tungstenite::WebSocket<std::net::TcpStream>,
+        page_direct: bool,
+        authenticated: bool,
+        idle_since: std::time::Instant,
+    },
+}
+
 // ── 协议服务器 ──
 
 /// 无头协议服务器。
 pub struct HeadlessServer {
-    /// 监听地址。
-    addr: SocketAddr,
+    /// 监听地址（绑定后回填实际端口；Arc<Self> 跨线程共享 → 互斥内可变）。
+    addr: std::sync::Mutex<SocketAddr>,
     /// 会话 ID 生成器。
     pub(super) next_session_id: Arc<AtomicU64>,
     /// 视口（宽,高，CSS px）——headless 启动参数初始化，
@@ -62,9 +100,6 @@ pub struct HeadlessServer {
     /// devtools-frontend bundle 目录（`ZW_DEVTOOLS_FRONTEND_DIR`；None = 不 serve，
     /// devtoolsFrontendUrl 维持 `devtools://` 形态）。
     devtools_frontend_dir: Option<std::path::PathBuf>,
-    /// 当前连接是否 page-direct（`/devtools/page/<id>` per-page ws；单连接串行模型下
-    /// 即"当前在服务的连接"形态，供 Target.getTargetInfo 无参查询分类）。
-    page_direct_connection: std::sync::atomic::AtomicBool,
 }
 
 impl HeadlessServer {
@@ -72,25 +107,14 @@ impl HeadlessServer {
     pub fn new(port: u16, viewport_width: f32, viewport_height: f32) -> Self {
         let addr = SocketAddr::from(([127, 0, 0, 1], port));
         Self {
-            addr,
+            addr: std::sync::Mutex::new(addr),
             next_session_id: Arc::new(AtomicU64::new(1)),
             viewport: std::sync::Mutex::new((viewport_width, viewport_height)),
             security: HeadlessSecurityConfig::default(),
             attached_sessions: std::sync::Mutex::new(std::collections::HashMap::new()),
             auto_attach: std::sync::atomic::AtomicBool::new(false),
             devtools_frontend_dir: zero_runtime_config::optional_path("ZW_DEVTOOLS_FRONTEND_DIR"),
-            page_direct_connection: std::sync::atomic::AtomicBool::new(false),
         }
-    }
-
-    /// page-direct 连接形态查询/登记（Target.getTargetInfo 无参分类用）。
-    pub(super) fn set_page_direct_connection(&self, enabled: bool) {
-        self.page_direct_connection
-            .store(enabled, std::sync::atomic::Ordering::SeqCst);
-    }
-
-    pub(super) fn page_direct_connection(&self) -> bool {
-        self.page_direct_connection.load(std::sync::atomic::Ordering::SeqCst)
     }
 
     /// devtools frontend bundle 是否已 provision（决定 `/json` 的
@@ -181,206 +205,220 @@ impl HeadlessServer {
 
     /// 返回实际监听地址（绑定后才知道端口 0 时的实际端口）。
     pub fn addr(&self) -> SocketAddr {
-        self.addr
+        *self.addr.lock().unwrap_or_else(|e| e.into_inner())
     }
 
     /// 启动无头协议服务器，阻塞运行直到进程终止。
     ///
     /// 支持 HTTP 发现请求（/json/version、/json）和 WebSocket 协议连接。
-    pub fn run(&mut self) -> Result<(), String> {
+    /// 连接模型（devtools goal M1-S1.5）：**单线程 socket 多路复用**——DevTools
+    /// frontend 在 WS 建立后还会经同一端口 lazy-load 面板模块（`import()` 动态导入），
+    /// 单连接串行 accept 循环会让该 HTTP 请求在 backlog 饿死（实测：Network 面板空白）。
+    /// 全部连接非阻塞 + 轮询推进（3ms tick），`HeadlessSession` 保持主线程独占
+    ///（其内部含 `Rc` 非 `Send`，不跨线程；命令语义天然串行，零锁）。
+    pub fn run(self: Arc<Self>) -> Result<(), String> {
+        let bind_addr = *self.addr.lock().unwrap_or_else(|e| e.into_inner());
         let listener =
-            std::net::TcpListener::bind(self.addr).map_err(|e| format!("Failed to bind {}: {}", self.addr, e))?;
+            std::net::TcpListener::bind(bind_addr).map_err(|e| format!("Failed to bind {}: {}", bind_addr, e))?;
+        listener
+            .set_nonblocking(true)
+            .map_err(|e| format!("Failed to set listener nonblocking: {e}"))?;
 
-        self.addr = listener
+        let actual = listener
             .local_addr()
             .map_err(|e| format!("Failed to get local addr: {e}"))?;
+        *self.addr.lock().unwrap_or_else(|e| e.into_inner()) = actual;
 
-        tracing::info!("Headless protocol server listening on ws://{}", self.addr);
+        tracing::info!("Headless protocol server listening on ws://{}", actual);
 
         // CDP 语义：target 生命周期跨客户端连接持续（同一 renderer 服务所有连接，
         // HTTP 发现枚举与 WS 会话共享同一浏览器状态）。
         let (viewport_width, viewport_height) = self.viewport_size();
         let mut session = HeadlessSession::new(viewport_width, viewport_height);
 
-        // 连接接受循环：支持 HTTP 发现 + WebSocket 协议
+        let mut conns: Vec<ConnState> = Vec::new();
         loop {
-            let (stream, peer) = listener.accept().map_err(|e| format!("Accept failed: {e}"))?;
-            tracing::info!("Connection from {peer}");
+            // 1. 接受新连接（非阻塞，一次收干）
+            while let Ok((stream, peer)) = listener.accept() {
+                tracing::info!("Connection from {peer}");
+                let _ = stream.set_nonblocking(false);
+                let _ = stream.set_nodelay(true);
+                conns.push(ConnState::new(stream, peer));
+            }
 
-            // peek 前几个字节判断是 HTTP 还是 WebSocket
-            let mut buf = [0u8; 4096];
-            stream.set_read_timeout(Some(std::time::Duration::from_secs(5))).ok();
-            let n = match stream.peek(&mut buf) {
-                Ok(n) if n > 0 => n,
-                Ok(_) => continue,
-                Err(e) => {
-                    tracing::warn!("Peek failed for {peer}: {e}");
-                    continue;
+            // 2. 推进每条连接一步
+            for conn in &mut conns {
+                self.advance_connection(conn, &mut session);
+            }
+            conns.retain(|conn| conn.alive);
+
+            std::thread::sleep(std::time::Duration::from_millis(3));
+        }
+    }
+
+    /// 推进单条连接一个非阻塞步骤。
+    fn advance_connection(&self, conn: &mut ConnState, session: &mut HeadlessSession) {
+        match &mut conn.phase {
+            // ── 阻塞窗口收满请求头（5s 超时）→ 分类 ──
+            Phase::Peek { deadline } => {
+                let mut buf = [0u8; 4096];
+                match conn.stream.peek(&mut buf) {
+                    Ok(0) => {
+                        conn.alive = false;
+                    }
+                    Ok(n) => {
+                        let data = &buf[..n];
+                        if Self::is_http_get_request(data) {
+                            conn.alive = false;
+                            let origin = Self::extract_origin_header(data);
+                            if !self.security.verify_origin(origin.as_deref()) {
+                                tracing::warn!("HTTP request from disallowed origin: {origin:?} from {}", conn.peer);
+                                return;
+                            }
+                            self.handle_http_discovery(&conn.stream, session);
+                        } else if Self::is_ws_upgrade(data) {
+                            let origin = Self::extract_origin_header(data);
+                            if !self.security.verify_origin(origin.as_deref()) {
+                                tracing::warn!("WebSocket from disallowed origin: {origin:?} from {}", conn.peer);
+                                conn.alive = false;
+                                return;
+                            }
+                            let page_direct = discovery::extract_request_path(data)
+                                .is_some_and(|p| p.starts_with(devtools_serve::PAGE_WS_PREFIX));
+                            if page_direct {
+                                tracing::info!("DevTools frontend page-direct connection from {}", conn.peer);
+                            }
+                            match accept(conn.stream.try_clone().expect("peek stream clone")) {
+                                Ok(ws) => {
+                                    conn.stream.set_nonblocking(true).ok();
+                                    conn.phase = Phase::Ws {
+                                        ws,
+                                        page_direct,
+                                        authenticated: self.security.auth_token.is_none(),
+                                        idle_since: std::time::Instant::now(),
+                                    };
+                                }
+                                Err(e) => {
+                                    tracing::error!("WebSocket handshake failed: {e}");
+                                    conn.alive = false;
+                                }
+                            }
+                        } else if std::time::Instant::now() > *deadline {
+                            // 非 HTTP 非 WS 流量：等满 5s 再丢弃（保持旧超时语义）
+                            tracing::warn!("Unrecognized connection from {}", conn.peer);
+                            conn.alive = false;
+                        }
+                    }
+                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                        if std::time::Instant::now() > *deadline {
+                            tracing::warn!("Peek timed out for {}", conn.peer);
+                            conn.alive = false;
+                        }
+                    }
+                    Err(e) => {
+                        tracing::warn!("Peek failed for {}: {e}", conn.peer);
+                        conn.alive = false;
+                    }
                 }
-            };
-            let peeked = &buf[..n];
-
-            // 检测是否是普通 HTTP GET 请求（非 WebSocket 升级）
-            if Self::is_http_get_request(peeked) {
-                // Origin 检查（HTTP 发现请求）
-                let origin = Self::extract_origin_header(peeked);
-                if !self.security.verify_origin(origin.as_deref()) {
-                    tracing::warn!("HTTP request from disallowed origin: {origin:?} from {peer}");
-                    continue;
-                }
-                self.handle_http_discovery(&stream, &session);
-                continue;
             }
-
-            // Origin 检查（WebSocket 升级请求）
-            let origin = Self::extract_origin_header(peeked);
-            if !self.security.verify_origin(origin.as_deref()) {
-                tracing::warn!("WebSocket from disallowed origin: {origin:?} from {peer}");
-                continue;
-            }
-
-            // WebSocket 连接。peek 阶段的 5s read timeout 是为 HTTP 探测设的；WS 会话用
-            // **短轮询 read timeout**（120ms）——超时即 drain renderer 通道（fetch 代理/
-            // console 转发是 renderer → session 单向消息，CDP 空闲期 session 无人消费会
-            // 饿死 renderer 侧 fetch 的阻塞等待——S12 network.events 实测根因）。长空闲
-            // 由下方 IDLE_DEADLINE（600s 无任何消息）兜底断开，语义与旧 600s read timeout
-            // 一致；idle 计时在每次真实消息（含 Ping）到达时重置——DevTools frontend UI
-            // 交互间隔可远超 600s，不重置会杀掉长活调试会话（devtools goal M1-S1）。
-            const WS_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(120);
-            const WS_IDLE_DEADLINE: std::time::Duration = std::time::Duration::from_secs(600);
-            stream.set_read_timeout(Some(WS_POLL_INTERVAL)).ok();
-            let mut idle_since = std::time::Instant::now();
-            // 升级请求路径路由（devtools goal M1-S1）：`/devtools/page/<targetId>` =
-            // DevTools frontend 页面直连（flat page 域协议）；其余 = 既有浏览器级入口。
-            // 当前单会话模型下两类连接共用同一 HeadlessSession（flat 命令本就路由到
-            // 全局会话），page-direct 仅作连接形态登记与日志，不做 target 级隔离。
-            let ws_page_direct =
-                discovery::extract_request_path(peeked).is_some_and(|p| p.starts_with(devtools_serve::PAGE_WS_PREFIX));
-            self.set_page_direct_connection(ws_page_direct);
-            if ws_page_direct {
-                tracing::info!("DevTools frontend page-direct connection from {peer}");
-            }
-            let mut ws = accept(stream).map_err(|e| format!("WebSocket handshake failed: {e}"))?;
-
-            // 认证状态：首个有效请求完成认证
-            let mut authenticated = self.security.auth_token.is_none();
-
-            // WebSocket 消息循环
-            loop {
-                let msg = match ws.read() {
+            // ── WS 会话：非阻塞读 → 命令处理 → 应答 ──
+            Phase::Ws {
+                ws,
+                page_direct,
+                authenticated,
+                idle_since,
+            } => {
+                match ws.read() {
                     Ok(Message::Text(text)) => {
-                        // 真实消息到达 = 连接活跃：重置 idle 计时（M1-S1，见上方注记）
-                        idle_since = std::time::Instant::now();
-                        text
+                        *idle_since = std::time::Instant::now();
+                        if !*authenticated && !self.authenticate_first_message(&text) {
+                            *authenticated = self.security.auth_token.is_none();
+                            if !*authenticated {
+                                let err = ServerResponse {
+                                    id: 0,
+                                    result: None,
+                                    error: Some(ProtocolError {
+                                        code: -32001,
+                                        message: "Authentication required".into(),
+                                    }),
+                                    session_id: None,
+                                };
+                                if let Ok(json) = serde_json::to_string(&err) {
+                                    let _ = ws.write(Message::Text(json.into()));
+                                    let _ = ws.flush();
+                                }
+                                return;
+                            }
+                        }
+                        let (response, events) = self.handle_message_with_events_mode(session, &text, *page_direct);
+                        for event in events {
+                            if let Ok(event_json) = serde_json::to_string(&event)
+                                && let Err(e) = ws.write(Message::Text(event_json.into()))
+                            {
+                                tracing::error!("Event push error: {e}");
+                                conn.alive = false;
+                                return;
+                            }
+                        }
+                        let response_json = serde_json::to_string(&response).unwrap_or_else(|e| {
+                            format!("{{\"id\":0,\"error\":{{\"code\":-32700,\"message\":\"JSON serialize: {e}\"}}}}")
+                        });
+                        if let Err(e) = ws.write(Message::Text(response_json.into())) {
+                            tracing::error!("WebSocket write error: {e}");
+                            conn.alive = false;
+                            return;
+                        }
+                        // tungstenite write() 对可入缓冲的小消息不保证落盘（should_flush=false），
+                        // 命令响应必须显式 flush，否则客户端收不到任何回包。
+                        if let Err(e) = ws.flush() {
+                            tracing::error!("WebSocket flush error: {e}");
+                            conn.alive = false;
+                        }
                     }
                     Ok(Message::Close(_)) => {
                         tracing::info!("Client disconnected");
-                        break;
+                        conn.alive = false;
                     }
                     Ok(Message::Ping(data)) => {
-                        idle_since = std::time::Instant::now();
+                        *idle_since = std::time::Instant::now();
                         let _ = ws.write(Message::Pong(data));
                         // tungstenite write() 对可入缓冲的小消息不保证落盘，必须显式 flush
                         let _ = ws.flush();
-                        continue;
                     }
-                    Ok(_) => continue,
+                    Ok(_) => {}
                     Err(tungstenite::Error::Io(ref e))
                         if e.kind() == std::io::ErrorKind::WouldBlock || e.kind() == std::io::ErrorKind::TimedOut =>
                     {
                         // 轮询超时：drain renderer 通道（fetch 代理/console 转发），并把
-                        // 产生的事件即时推给客户端（页面 session 盖章——单会话模型取首个
-                        // 已附接 session）。
-                        tracing::info!("[S13] idle drain tick");
-                        self.drain_renderer_channel(&mut session, &mut ws);
-                        if idle_since.elapsed() > WS_IDLE_DEADLINE {
-                            tracing::info!("WebSocket idle deadline ({}s)", WS_IDLE_DEADLINE.as_secs());
-                            break;
+                        // 产生的事件即时推给客户端（S12 network.events 实测根因）。
+                        self.drain_renderer_channel(session, ws);
+                        if idle_since.elapsed() > Self::WS_IDLE_DEADLINE {
+                            tracing::info!("WebSocket idle deadline ({}s)", Self::WS_IDLE_DEADLINE.as_secs());
+                            conn.alive = false;
                         }
-                        continue;
                     }
                     Err(e) => {
                         tracing::error!("WebSocket read error: {e}");
-                        break;
+                        conn.alive = false;
                     }
-                };
-
-                // 认证检查（Phase 5）
-                if !authenticated {
-                    // 尝试从首个请求中提取 token
-                    if let Ok(req) = serde_json::from_str::<ClientRequest>(&msg) {
-                        let token = req.params.get("token").and_then(|v| v.as_str());
-                        if self.security.verify_token(token) {
-                            authenticated = true;
-                            tracing::info!("Client authenticated");
-                        } else {
-                            tracing::warn!("Authentication failed from {peer}");
-                            let err = ServerResponse {
-                                id: req.id,
-                                result: None,
-                                error: Some(ProtocolError {
-                                    code: -32001,
-                                    message: "Authentication required: invalid or missing token".into(),
-                                }),
-                                session_id: None,
-                            };
-                            if let Ok(json) = serde_json::to_string(&err) {
-                                let _ = ws.write(Message::Text(json.into()));
-                                let _ = ws.flush();
-                            }
-                            continue;
-                        }
-                    } else {
-                        let err = ServerResponse {
-                            id: 0,
-                            result: None,
-                            error: Some(ProtocolError {
-                                code: -32001,
-                                message: "Authentication required".into(),
-                            }),
-                            session_id: None,
-                        };
-                        if let Ok(json) = serde_json::to_string(&err) {
-                            let _ = ws.write(Message::Text(json.into()));
-                            let _ = ws.flush();
-                        }
-                        continue;
-                    }
-                }
-
-                let (response, events) = self.handle_message_with_events(&mut session, &msg);
-
-                // 先推送事件通知
-                for event in events {
-                    if let Ok(event_json) = serde_json::to_string(&event)
-                        && let Err(e) = ws.write(Message::Text(event_json.into()))
-                    {
-                        tracing::error!("Event push error: {e}");
-                        break;
-                    }
-                }
-
-                // 再推送命令响应
-                let response_json = serde_json::to_string(&response).unwrap_or_else(|e| {
-                    format!("{{\"id\":0,\"error\":{{\"code\":-32700,\"message\":\"JSON serialize: {e}\"}}}}")
-                });
-
-                if let Err(e) = ws.write(Message::Text(response_json.into())) {
-                    tracing::error!("WebSocket write error: {e}");
-                    break;
-                }
-
-                // tungstenite write() 对可入缓冲的小消息不保证落盘（should_flush=false），
-                // 命令响应必须显式 flush，否则客户端收不到任何回包。
-                if let Err(e) = ws.flush() {
-                    tracing::error!("WebSocket flush error: {e}");
-                    break;
                 }
             }
-
-            tracing::info!("Headless session ended");
         }
     }
+
+    /// 首个消息 token 认证（Phase 5 语义保持）。
+    fn authenticate_first_message(&self, raw: &str) -> bool {
+        match serde_json::from_str::<ClientRequest>(raw) {
+            Ok(req) => {
+                let token = req.params.get("token").and_then(|v| v.as_str());
+                self.security.verify_token(token)
+            }
+            Err(_) => false,
+        }
+    }
+
+    /// WS idle 兜底断开阈值（与旧 600s read timeout 语义一致）。
+    const WS_IDLE_DEADLINE: std::time::Duration = std::time::Duration::from_secs(600);
 
     /// S12：CDP 空闲期 drain renderer 通道——fetch 代理（`FetchRequest`/`FetchResponse`）
     /// 与 console 转发（`ConsoleLog`）是 renderer → session 单向消息；CDP 命令间歇期
@@ -474,14 +512,25 @@ impl HeadlessServer {
         response
     }
 
-    /// 处理单条客户端消息，返回响应和事件通知列表。
-    ///
-    /// CDP 扁平协议会话路由：请求携带 `sessionId` 时须为已附接会话（否则 `-32001`），
-    /// 响应原样回显该 `sessionId`；缺省 = 浏览器级命令，路由到全局会话。
+    /// 处理单条客户端消息，返回响应和事件通知列表（浏览器级连接形态）。
     fn handle_message_with_events(
         &self,
         session: &mut HeadlessSession,
         raw: &str,
+    ) -> (ServerResponse, Vec<ServerEvent>) {
+        self.handle_message_with_events_mode(session, raw, false)
+    }
+
+    /// 处理单条客户端消息（带连接形态）：`page_direct` = per-page ws 直连
+    /// （DevTools frontend；Target.getTargetInfo 无参查询据此返回页面而非 browser）。
+    ///
+    /// CDP 扁平协议会话路由：请求携带 `sessionId` 时须为已附接会话（否则 `-32001`），
+    /// 响应原样回显该 `sessionId`；缺省 = 浏览器级命令，路由到全局会话。
+    fn handle_message_with_events_mode(
+        &self,
+        session: &mut HeadlessSession,
+        raw: &str,
+        page_direct: bool,
     ) -> (ServerResponse, Vec<ServerEvent>) {
         let req: ClientRequest = match serde_json::from_str(raw) {
             Ok(r) => r,
@@ -520,7 +569,7 @@ impl HeadlessServer {
             }
         }
         let (result, mut events) =
-            self.dispatch_with_events_for(session, req.session_id.as_deref(), &req.method, req.params);
+            self.dispatch_with_events_for(session, req.session_id.as_deref(), &req.method, req.params, page_direct);
 
         // 事件路由：session 级事件盖章请求的 sessionId（客户端据此投递到 child
         // session——不带会被当作浏览器级事件丢弃）；Target 域的宣告事件本身是

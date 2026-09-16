@@ -7,7 +7,7 @@ use serde_json::Value;
 #[test]
 fn test_server_new() {
     let server = HeadlessServer::new(0, 800.0, 600.0);
-    assert!(server.addr.port() == 0);
+    assert!(server.addr().port() == 0);
 }
 
 #[test]
@@ -1754,7 +1754,7 @@ fn test_server_with_security_config() {
 #[test]
 fn test_server_binds_to_localhost_only() {
     let server = HeadlessServer::new(0, 800.0, 600.0);
-    assert_eq!(server.addr.ip(), std::net::IpAddr::from([127, 0, 0, 1]));
+    assert_eq!(server.addr().ip(), std::net::IpAddr::from([127, 0, 0, 1]));
 }
 #[test]
 fn test_frame_probe_tolerates_script_failure() {

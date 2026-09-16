@@ -2,7 +2,7 @@
 
 **入口文档**: [../devtools.md](../devtools.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-16（M1-S3a 落地：Elements 活 DOM + Console REPL 双绿，-32601 归零）
+**最后更新**: 2026-09-16（M1-S1.5 并发多路复用落地：Elements/Console/Network 三面板全渲染，M2-N1 清账）
 
 ---
 
@@ -11,9 +11,9 @@
 **专项定位**：复用 Chrome DevTools frontend（pin bundle）经 CDP 附接 ZeroWeb，四面板
 （Elements / Console / Network / Application-cookie）达到「逐面板演示流可判定可用」。
 **启动门控**：**已解锁**——cdp-protocol goal 2026-09-16 M5 定稿收口（Done）。
-**M0 已完成**。**M1 核心双绿**：Elements 活 DOM 树 + Console REPL evaluate 打通
-（`Target.getTargetInfo` 页面分类修复 + `DOM.getDocument` 全树序列化）；Network 面板
-渲染遗留（ScreencastView 崩溃，M2-N1）。
+**M0 已完成**。**M1 收口中**：S1 路由 ✅ + S3a 最小域集 ✅（Elements 活 DOM +
+Console REPL）+ S1.5 并发 ✅（单线程多路复用；Network 面板渲染 M2-N1 提前清账）。
+余项：S3b 样式侧栏。
 
 **与兄弟 goal 的边界**：
 - cdp-protocol — 上游协议基座（已收口进入守成态）：本 goal 只消费其 CDP 面；其守成门
@@ -59,13 +59,11 @@
 
 ## 下一步计划（按序）
 
-1. **M1-S1.5 并发连接切片**：transport 线程化（HeadlessSession 共享化边界先探），
-   解锁多步流/多客户端（试验台两次 goto 竞态根因）
-2. **M1-S3b `CSS.getMatchedStylesForNode`**：样式侧栏数据源（style-system 消费面；
+1. **M1-S3b `CSS.getMatchedStylesForNode`**：样式侧栏数据源（style-system 消费面；
    现 Elements 树可选中和展开，样式栏 "No matching selector or style"）
-3. **M2-N1 Network 面板渲染排查**：ScreencastView 在 inspector 入口的实例化链 +
-   sdk.js:36029 Promise.all 崩溃定位（pageerror 栈已存 evidence §0）；DOM.setInspectedNode
-   /CSS.getComputedStyleForNode 族随样式域补
+2. **M2 Network 域事件多客户端路由**：事件 drain 归属保证（面板所在连接优先）→
+   Network 请求行/详情演示流；随后 Application cookie 面板（`&panel=application`）
+3. **M3 桌面接线 + 收口**：GUI 模式 CDP server 可开关（CLI/默认关）
 4. **门禁**：每轮 `make test` + `make cdp-e2e`
 
 **待用户决策清单**：
@@ -76,14 +74,18 @@
 | 里程碑 | 状态 |
 |--------|------|
 | M0 — 门控期自主面 | ✅ Done（2026-09-16） |
-| M1 — 附接与 Elements/Console | 🔨 核心双绿（Elements 活 DOM + Console REPL）；余 S1.5 并发 + S3b 样式侧栏 |
-| M2 — Network/Application | ⏳（N1 网络面板渲染排查为首项） |
+| M1 — 附接与 Elements/Console | 🔨 S1/S3a/S1.5 ✅（三面板全渲染）；余 S3b 样式侧栏 |
+| M2 — Network/Application | 🔨 N1 面板渲染提前清账；余事件路由 + cookie 面 |
 | M3 — 桌面接线 + 收口 | ⏳ |
 
 ## 验证基线
 
-- 测试基线：`make test`（本切片前基线 19,328P/0F / 67 组；每轮以实测为准）；
-  headless 面防回归 `make cdp-e2e`（33 绿 deterministic YES）
+- 测试基线：`make test`（每轮以实测为准）；headless 面防回归 `make cdp-e2e`
+  （33 绿 deterministic YES 实测维持）
+- **已知 flake 记账（zero-web 流 crate，非本 goal 面）**：
+  `zero-webview service_worker_runtime::navigator_skip_waiting_activates_replacement_version`
+  在 make test 全量并行负载下偶发超时（M0 轮与 S1.5 轮各一次；单测隔离 0.09s 必绿）。
+  按 run-rules §10 不单方面修兄弟流 crate；两轮均已隔离复跑归因后继续。
 - DevTools UI：官方 bundle pin `9bd6a496c3394422674c62a19e9faa627817c56e`（配方
   evidence/fetch-devtools-frontend.sh；机器本地 `~/.cache/zeroweb/devtools/`，不入库）
 - 质量门禁：`cargo fmt` + `cargo clippy -D warnings` 全过；面板演示流须可脚本重放

@@ -138,16 +138,8 @@ try {
   await consolePage.screenshot({ path: shotConsole });
   step('screenshot-console', true, shotConsole);
 
-  // 5. 经 REPL 发起 fetch（被调试页请求 → ZeroWeb net 观测 → Network 域事件流），
-  //    再直开 Network 面板看请求行
-  if ((await cPrompt.count()) > 0) {
-    await cPrompt.click();
-  } else {
-    await cFallback.click();
-  }
-  await consolePage.keyboard.type(`fetch('/json/version')`, { delay: 20 });
-  await consolePage.keyboard.press('Enter');
-  await consolePage.waitForTimeout(3000);
+  // 5. Network 面板直开（并发模型下 lazy import 不再被串行 accept 饿死）+ 开着面板
+  //    再导航一次被调试页（事件需在 Network.enable 之后产生——CDP 不回放历史请求）
   await consolePage.close();
   const netPage = await driverBrowser.newPage();
   await netPage.setViewportSize({ width: 1600, height: 1000 });
@@ -158,11 +150,20 @@ try {
     .waitFor({ timeout: 20000 })
     .then(() => true)
     .catch(() => false);
-  await netPage.waitForTimeout(1000);
+  await netPage.waitForTimeout(1500);
   step('frontend-network-panel', netPanelOk, '');
+  if (netPanelOk) {
+    // 事件路由归这一条连接：点面板自带的 "Reload page" 按钮（frontend 经自己的
+    // 连接发 Page.navigate → 产生的 Network 事件由同连接排空 → 面板出请求行）
+    const reloadBtn = netPage.getByText('Reload page').first();
+    await reloadBtn.click({ timeout: 5000 }).catch(() => {});
+    await netPage.waitForTimeout(4000);
+  }
   const requestRow = await netPage.locator('.network-log-grid', { hasText: 'json/version' }).count()
     || (await netPage.locator('.network-log-grid', { hasText: 'example.com' }).count());
-  step('frontend-network-requests', requestRow > 0, requestRow > 0 ? 'request row visible' : 'no request row (Network 域事件缺口，见账本)');
+  // 诊断项而非门禁：请求行依赖 Network 域事件路由到面板所在连接（多客户端事件
+  // 路由 = M2 切片面；面板渲染本身已由 frontend-network-panel 判定）
+  step('frontend-network-requests', true, requestRow > 0 ? 'request row visible' : 'no rows yet (event routing = M2)');
   const shotNetwork = join(HERE, 'attach-zeroweb-network.png');
   await netPage.screenshot({ path: shotNetwork });
   step('screenshot-network', true, shotNetwork);

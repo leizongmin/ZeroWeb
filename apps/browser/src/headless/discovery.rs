@@ -39,6 +39,11 @@ impl HeadlessServer {
         s.starts_with("GET ") && !s.contains("Upgrade: websocket")
     }
 
+    /// 判断是否为 WebSocket 升级请求（多路复用分类用）。
+    pub(super) fn is_ws_upgrade(data: &[u8]) -> bool {
+        String::from_utf8_lossy(data).contains("Upgrade: websocket")
+    }
+
     /// 从 HTTP 请求头中提取 Origin 值。
     pub(super) fn extract_origin_header(data: &[u8]) -> Option<String> {
         let s = String::from_utf8_lossy(data);
@@ -54,10 +59,10 @@ impl HeadlessServer {
     }
 
     /// 处理 HTTP 发现请求（CDP 风格的 /json 端点）。
-    pub(super) fn handle_http_discovery(&self, stream: &std::net::TcpStream, session: &HeadlessSession) {
+    pub(super) fn handle_http_discovery(&self, stream: &std::net::TcpStream, session: &mut HeadlessSession) {
         use std::io::{Read, Write};
 
-        let addr = self.addr;
+        let addr = *self.addr.lock().unwrap_or_else(|e| e.into_inner());
         let mut read_buf = [0u8; 4096];
         let raw_path = if let Ok(mut readable) = stream.try_clone() {
             let n = readable.read(&mut read_buf).unwrap_or(0);

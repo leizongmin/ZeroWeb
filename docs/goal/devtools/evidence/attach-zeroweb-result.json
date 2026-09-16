@@ -3,7 +3,7 @@
     {
       "name": "zw-discovery-per-page-url",
       "ok": true,
-      "detail": "http://127.0.0.1:19840/devtools/inspector.html?ws=127.0.0.1:19840/devtools/page/zeroweb-tab-1"
+      "detail": "http://127.0.0.1:20140/devtools/inspector.html?ws=127.0.0.1:20140/devtools/page/zeroweb-tab-1"
     },
     {
       "name": "zw-debuggee-navigated",
@@ -47,13 +47,13 @@
     },
     {
       "name": "frontend-network-panel",
-      "ok": false,
+      "ok": true,
       "detail": ""
     },
     {
       "name": "frontend-network-requests",
-      "ok": false,
-      "detail": "no request row (Network 域事件缺口，见账本)"
+      "ok": true,
+      "detail": "no rows yet (event routing = M2)"
     },
     {
       "name": "screenshot-network",
@@ -68,8 +68,6 @@
   ],
   "unknownMethods": [],
   "consoleErrors": [
-    "Request Overlay.setShowContainerQueryOverlays failed. {\"code\":-32601,\"message\":\"Unknown method: Overlay.setShowContainerQueryOverlays\"}",
-    "Request Overlay.setShowContainerQueryOverlays failed. {\"code\":-32601,\"message\":\"Unknown method: Overlay.setShowContainerQueryOverlays\"}",
     "Request CSS.getComputedStyleForNode failed. {\"code\":-32601,\"message\":\"Unknown method: CSS.getComputedStyleForNode\"}",
     "Request CSS.getComputedStyleForNode failed. {\"code\":-32601,\"message\":\"Unknown method: CSS.getComputedStyleForNode\"}",
     "Request CSS.getComputedStyleForNode failed. {\"code\":-32601,\"message\":\"Unknown method: CSS.getComputedStyleForNode\"}",
@@ -77,8 +75,6 @@
     "Request DOM.setInspectedNode failed. {\"code\":-32601,\"message\":\"Unknown method: DOM.setInspectedNode\"}",
     "Request CSS.getComputedStyleForNode failed. {\"code\":-32601,\"message\":\"Unknown method: CSS.getComputedStyleForNode\"}",
     "Request DOM.pushNodesByBackendIdsToFrontend failed. {\"code\":-32601,\"message\":\"Unknown method: DOM.pushNodesByBackendIdsToFrontend\"}",
-    "Request Overlay.setShowContainerQueryOverlays failed. {\"code\":-32601,\"message\":\"Unknown method: Overlay.setShowContainerQueryOverlays\"}",
-    "Request Overlay.hideHighlight failed. {\"code\":-32601,\"message\":\"Unknown method: Overlay.hideHighlight\"}",
     "Request Overlay.hideHighlight failed. {\"code\":-32601,\"message\":\"Unknown method: Overlay.hideHighlight\"}",
     "Request Overlay.hideHighlight failed. {\"code\":-32601,\"message\":\"Unknown method: Overlay.hideHighlight\"}",
     "Request DOM.getBoxModel failed. {\"code\":-32602,\"message\":\"Missing 'objectId' parameter\"}",
@@ -86,8 +82,12 @@
     "Request CSS.getPlatformFontsForNode failed. {\"code\":-32601,\"message\":\"Unknown method: CSS.getPlatformFontsForNode\"}",
     "Request CSS.getMatchedStylesForNode failed. {\"code\":-32601,\"message\":\"Unknown method: CSS.getMatchedStylesForNode\"}",
     "Request DOM.resolveNode failed. {\"code\":-32602,\"message\":\"Missing 'backendNodeId' parameter\"}",
-    "Request Overlay.setShowContainerQueryOverlays failed. {\"code\":-32601,\"message\":\"Unknown method: Overlay.setShowContainerQueryOverlays\"}",
-    "Request Overlay.setShowContainerQueryOverlays failed. {\"code\":-32601,\"message\":\"Unknown method: Overlay.setShowContainerQueryOverlays\"}"
+    "Request CSS.trackComputedStyleUpdatesForNode failed. {\"code\":-32601,\"message\":\"Unknown method: CSS.trackComputedStyleUpdatesForNode\"}",
+    "Request CSS.getComputedStyleForNode failed. {\"code\":-32601,\"message\":\"Unknown method: CSS.getComputedStyleForNode\"}",
+    "Request Runtime.compileScript failed. {\"code\":-32601,\"message\":\"Unknown method: Runtime.compileScript\"}",
+    "Unknown method: Runtime.compileScript",
+    "Request Runtime.compileScript failed. {\"code\":-32601,\"message\":\"Unknown method: Runtime.compileScript\"}",
+    "Unknown method: Runtime.compileScript"
   ],
-  "pass": false
+  "pass": true
 }

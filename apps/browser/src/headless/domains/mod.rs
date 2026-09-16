@@ -29,12 +29,23 @@ use crate::headless::protocol::{ProtocolError, ServerEvent};
 use crate::headless::session::HeadlessSession;
 
 impl HeadlessServer {
-    /// 命令路由。
+    /// 命令路由（浏览器级连接形态——测试与既有调用入口）。
     pub(super) fn dispatch(
         &self,
         session: &mut HeadlessSession,
         method: &str,
         params: Value,
+    ) -> Result<Value, ProtocolError> {
+        self.dispatch_mode(session, method, params, false)
+    }
+
+    /// 命令路由（带连接形态）。
+    pub(super) fn dispatch_mode(
+        &self,
+        session: &mut HeadlessSession,
+        method: &str,
+        params: Value,
+        page_direct: bool,
     ) -> Result<Value, ProtocolError> {
         match method {
             // ── 会话管理 ──
@@ -79,7 +90,7 @@ impl HeadlessServer {
             })),
             // 连接握手即发（Playwright connectOverCDP）；下载能力未实现，stub 接受
             "Browser.setDownloadBehavior" => Ok(serde_json::json!({})),
-            "Target.getTargetInfo" => self.cmd_target_get_target_info(session, params),
+            "Target.getTargetInfo" => self.cmd_target_get_target_info(session, params, page_direct),
             "Runtime.callFunctionOn" => self.cmd_runtime_call_function_on(session, params),
             // objectId 桥配对命令（M4+）：释放 renderer 保留句柄
             "Runtime.releaseObject" => self.cmd_runtime_release_object(session, params),
@@ -171,7 +182,6 @@ impl HeadlessServer {
             | "Runtime.terminateExecution"
             | "Network.setAttachDebugStack"
             | "Network.setBlockedURLs"
-            | "Network.emulateNetworkConditionsByRule"
             | "Network.overrideNetworkState"
             | "Network.setCacheDisabled"
             | "Network.setBypassServiceWorker"
@@ -186,6 +196,10 @@ impl HeadlessServer {
             | "Page.setAdBlockingEnabled"
             | "Page.setBypassCSP"
             | "Page.setWebLifecycleState"
+            | "Page.startScreencast"
+            | "Page.stopScreencast"
+            | "Page.screencastFrameAck"
+            | "Overlay.setShowContainerQueryOverlays"
             | "CSS.trackComputedStyleUpdates"
             | "CSS.takeComputedStyleUpdates"
             | "Target.setDiscoverTargets"
@@ -193,15 +207,18 @@ impl HeadlessServer {
             | "Target.addTargetToTarget"
             | "Emulation.setCPUThrottlingRate"
             | "Performance.enable" => Ok(serde_json::json!({})),
-            // 带返回形状的 frontend 初始化命令（面板初始化路径依赖返回值继续）
+            // 带返回形状的 frontend 初始化命令（面板初始化路径依赖返回值继续；
+            // 字段名对齐 CDP 契约——getNavigationHistory 是 currentIndex 非 index、
+            // emulateNetworkConditionsByRule 必须回 ruleIds 数组，形状缺字段会在
+            // frontend 初始化链抛 TypeError 中断面板实例化，实测见 M2-N1）
             "Runtime.getIsolateId" => Ok(serde_json::json!({ "id": "zw-isolate" })),
             "Storage.getStorageKey" => Ok(serde_json::json!({ "storageKey": "zeroweb-active-tab" })),
+            "Network.emulateNetworkConditionsByRule" => Ok(serde_json::json!({ "ruleIds": [] })),
             "Page.getNavigationHistory" => Ok(serde_json::json!({
-                "index": 0,
+                "currentIndex": 0,
                 "entries": [{
                     "id": 1,
                     "url": session.shell.tabs().next().and_then(|t| t.url().map(str::to_string)).unwrap_or_else(|| "about:blank".into()),
-                    "userVerifier": "",
                     "title": session.shell.tabs().next().and_then(|t| t.title().map(str::to_string)).unwrap_or_default(),
                 }],
             })),
@@ -220,19 +237,21 @@ impl HeadlessServer {
         method: &str,
         params: Value,
     ) -> (Result<Value, ProtocolError>, Vec<ServerEvent>) {
-        self.dispatch_with_events_for(session, None, method, params)
+        self.dispatch_with_events_for(session, None, method, params, false)
     }
 
     /// 带事件生成的命令路由，感知请求的 CDP 会话层级。
     ///
     /// `cdp_session` = `None` 为浏览器级命令；`Some(sid)` 为附接目标上的命令
     ///（如 Target.setAutoAttach 会话级语义只挂子 target，ZeroWeb 无子 target → 无事件）。
+    /// `page_direct` = per-page ws 直连形态（DevTools frontend；getTargetInfo 无参分类）。
     pub(super) fn dispatch_with_events_for(
         &self,
         session: &mut HeadlessSession,
         cdp_session: Option<&str>,
         method: &str,
         params: Value,
+        page_direct: bool,
     ) -> (Result<Value, ProtocolError>, Vec<ServerEvent>) {
         let mut events = Vec::new();
 
@@ -370,7 +389,7 @@ impl HeadlessServer {
             // PW CRPage 初始化需要 frame 树确定主 frame id（后续 frameNavigated 同 id 对齐）
             "Page.getFrameTree" => (self.cmd_page_get_frame_tree(session, cdp_session), events),
             // 默认：无事件
-            _ => (self.dispatch(session, method, params), events),
+            _ => (self.dispatch_mode(session, method, params, page_direct), events),
         }
     }
 }

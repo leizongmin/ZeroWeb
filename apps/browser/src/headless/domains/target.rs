@@ -190,6 +190,7 @@ impl HeadlessServer {
         &self,
         session: &mut HeadlessSession,
         params: Value,
+        page_direct: bool,
     ) -> Result<Value, ProtocolError> {
         if let Some(target_id) = params.get("targetId").and_then(|v| v.as_str()) {
             let want = Self::parse_target_id(target_id);
@@ -207,7 +208,7 @@ impl HeadlessServer {
         // 占位；page-direct 连接（DevTools frontend per-page ws，devtools goal M1-S1）→
         // 活跃页 targetInfo——frontend 按它分类连接形态，误报 browser 会装载
         // ScreencastView（浏览器调试 UI）并因缺 screencast 域崩溃、面板全部停摆。
-        if self.page_direct_connection() {
+        if page_direct {
             if let Some(tab) = session.shell.tabs().next() {
                 return Ok(serde_json::json!({ "targetInfo": Self::target_info_json(tab) }));
             }
