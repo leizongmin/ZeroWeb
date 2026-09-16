@@ -501,7 +501,26 @@ pub(crate) fn shrink_inline_blocks_to_content(
             // 「只有边框/padding 的 inline-block」保持 taffy 拉伸宽，边框画在拉伸盒右缘
             //（padding-right-applies-to-012：blue/orange 竖条渲染在容器右缘 722/782，
             // 应 8/68）。仅 frame==0 且内容==0 的纯空盒维持原状（避免空 span 塌缩面）。
-            if content_max_w > 0.0 || frame > 0.0 {
+            // R4406：carve-out 收窄（仅实验态 ZW_MIXED_BARE_TEXT=1 生效，默认臂逐字节
+            // 不变）——DOM **非空**（有非空白文本/元素子，R1298 empty_inline 同款判据取反）
+            // 而测得 intrinsic 0 的盒仍写 shrink（目标 = frame = 0）：零宽内容（ZWSP 等）
+            // 的真值就是宽 0，保持 taffy 拉伸 = 满宽 bg 带伪影（improperly-contained-annotation
+            // flag-on：REF 页内层 ruby 内容仅 ZWSP + display:none rt，测 0 → 跳写 → 盒宽
+            // 保持拉伸 784，lightblue 带画满页宽 7.51% 实证；TEST 页无内层 ruby 对称无损）。
+            // 真空盒（纯空白文本/无子）维持原状——whitespace-only span 的 bg 面与空 span
+            // 塌缩面都不在本 slice。
+            let dom_nonempty = box_node.node_id.is_some_and(|id| {
+                std::env::var("ZW_MIXED_BARE_TEXT").as_deref() == Ok("1")
+                    && doc.child_nodes(id).iter().any(|&gc| match doc.get(gc) {
+                        Some(n) => match &n.kind {
+                            zero_dom::NodeKind::Text(t) => !t.content.trim().is_empty(),
+                            zero_dom::NodeKind::Element(_) => true,
+                            _ => false,
+                        },
+                        None => false,
+                    })
+            });
+            if content_max_w > 0.0 || frame > 0.0 || dom_nonempty {
                 let shrink_border_box = content_max_w + frame;
                 // R4389：content 关键字（Min/Max/FitContent）= **定值语义**（converter length(0)
                 // 伪影须双向修正——taffy 已塌到 frame 时无「收缩」可言，等值/放大同样写入）；
