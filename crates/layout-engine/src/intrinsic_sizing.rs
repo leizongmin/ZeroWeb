@@ -486,7 +486,12 @@ fn box_content_max_width_inner(box_node: &LayoutBox, doc: &Document, styles: &Ha
         // 此前丢失（ruby-intrinsic-isize-002 1.23→0.14 翻绿实证）。与 R4355 的整子树
         // walk 不同：**跳过已入 box_children 的元素子树**（其文本已经 R1479 计入——
         // 整树 walk 双计，line-break 族 −16 实证），仅累计裸文本段之和。
-        // **opt-in（`ZW_MIXED_BARE_TEXT=1`）**：默认关。R4395 交错 walk 切换：flag-on 时
+        // **opt-in（`ZW_MIXED_BARE_TEXT=1`）**：默认关。R4401 门收窄重估（R4393 重入条件
+        // 清偿后实测）：三态门（未设=ruby 容器自动开放）在加固后的交错 walk 上实测
+        // corpus 14893 净 −1（isize-002 +1 / improper-annotation −1 / intra-base −1）——
+        // 劣化面已不在 walker（=R4033 纯空盒再拉伸 + ruby IFC narrow-width 分化两个深
+        // ruby 域），门收窄继续挂账至该两案清偿。
+        // R4395 交错 walk 切换：flag-on 时
         // 改用 R4355 `dom_inline_text_max_width`（ruby base 经 ruby 分支递归计入、rt/rp/
         // rtc display:none 任意深度跳过、br 分段取最宽段、R4357 注音 extra opt-in 参与；
         // 与上方 Inline 子 frame-only 臂配对=block_max_content_width 同款分工）——R4389
