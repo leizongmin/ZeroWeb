@@ -1793,11 +1793,16 @@ pub(crate) fn ruby_overhang_pads(
         .map(|c| crate::inline::estimate_char_width(c, font_size * 0.5, is_ahem))
         .sum::<f32>()
         + letter_spacing * annot_text.chars().count() as f32;
-    // 紧邻字符（DOM 兄弟文本的贴ruby端字符；折叠后取非空白端）。
-    let prev_ch = adjacent_text_char(doc, ruby_id, false);
-    let next_ch = adjacent_text_char(doc, ruby_id, true);
-    let hang_l = ruby_hang_extent(prev_ch, font_size, false);
-    let hang_r = ruby_hang_extent(next_ch, font_size, true);
+    // R4411：悬挂容量优先取**边界空白串**（css-ruby #ruby-overhang spaces——注音可悬挂
+    // 于相邻空白字符的空白部分；ruby-overhang-spaces-003/006/009/014/015/016 邻接均为
+    // U+0020/U+3000/thin spaces 串）。旧 adjacent_text_char 显式跳过空白 → 空白邻接时
+    // 容量恒 0（extra 全额入 margin → 行宽膨胀翻红）。空白串容量 = 折叠后各空白字符
+    // advance 之和（U+3000 = 1em，其余走 estimate_char_width 与 IFC 行宽同源）；
+    // 边界无空白时回落旧标点半空白逻辑（15 数据点拟合域不变）。
+    let hang_l = ruby_hang_capacity(doc, ruby_id, false, font_size)
+        .unwrap_or_else(|| ruby_hang_extent(adjacent_text_char(doc, ruby_id, false), font_size, false));
+    let hang_r = ruby_hang_capacity(doc, ruby_id, true, font_size)
+        .unwrap_or_else(|| ruby_hang_extent(adjacent_text_char(doc, ruby_id, true), font_size, true));
     let extra = (rt_w - hang_l - hang_r - base_w).max(0.0);
     let half = (extra / 2.0).floor();
     (half, extra - half)
@@ -1896,6 +1901,51 @@ fn ruby_hang_extent(ch: Option<char>, font_size: f32, leading: bool) -> f32 {
         return font_size * 0.5;
     }
     0.0
+}
+
+
+/// R4411：ruby 边界空白串的悬挂容量——前/后兄弟文本贴 ruby 端的折叠空白 run
+/// 各字符 advance 之和。无空白（首字符即非空白 / 无兄弟文本）→ None（调用方回落
+/// 标点半空白逻辑）。css-ruby-1 §ruby-overhang：注音可悬挂于空白字符的空白部分
+/// ——整段空白均为可用容量（006/014 双/三连 U+3000 实证）。
+fn ruby_hang_capacity(doc: &Document, ruby_id: NodeId, forward: bool, font_size: f32) -> Option<f32> {
+    let mut cur = if forward { doc.next_sibling(ruby_id) } else { doc.previous_sibling(ruby_id) };
+    while let Some(sid) = cur {
+        if let Some(node) = doc.get(sid) {
+            match &node.kind {
+                zero_dom::NodeKind::Text(t) => {
+                    let collapsed = crate::inline::collapse_whitespace(&t.content);
+                    let run: String = if forward {
+                        collapsed.chars().take_while(|c| c.is_whitespace()).collect()
+                    } else {
+                        collapsed.chars().rev().take_while(|c| c.is_whitespace()).collect()
+                    };
+                    if !run.is_empty() {
+                        let cap: f32 = run
+                            .chars()
+                            .map(|c| {
+                                if c == '\u{3000}' {
+                                    font_size
+                                } else {
+                                    crate::inline::estimate_char_width(c, font_size, false)
+                                }
+                            })
+                            .sum();
+                        return Some(cap);
+                    }
+                    return None;
+                }
+                // br 停止（行界）；其他元素子树无裸空白边界（跨元素空白已折叠跳过域）。
+                zero_dom::NodeKind::Element(e) if e.local_name().eq_ignore_ascii_case("br") => {
+                    return None;
+                }
+                zero_dom::NodeKind::Element(_) => {}
+                _ => {}
+            }
+        }
+        cur = if forward { doc.next_sibling(sid) } else { doc.previous_sibling(sid) };
+    }
+    None
 }
 
 #[cfg(test)]
