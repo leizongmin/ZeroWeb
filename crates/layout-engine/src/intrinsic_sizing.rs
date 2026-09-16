@@ -488,11 +488,25 @@ fn box_content_max_width_inner(box_node: &LayoutBox, doc: &Document, styles: &Ha
     inner + box_node.padding_left + box_node.padding_right + box_node.border_left + box_node.border_right
 }
 
-/// R4389：混合内容容器的**裸文本段**宽度之和——`box_node` 直接文本子（折叠整段计宽，
-/// 段间补单空格宽）+ 非盒元素子（R2160 跳过的 inline，递归其子树文本）。**跳过已入
-/// box_children 的元素子树**（R1479/outer_w 已计入，整树 walk 双计 → line-break 族
-/// −16 实证）。裸文本与元素子同行粘连（max-content 无视断点全行累加），返回值直接
-/// 加进 `children_inner`。
+/// R4389：混合内容容器的**裸文本段**宽度之和——`box_node` 直接文本子 + 非盒元素子
+/// （R2160 跳过的 inline，递归其子树文本）。**跳过已入 box_children 的元素子树**
+/// （R1479/outer_w 已计入，整树 walk 双计 → line-break 族 −16 实证）。裸文本与元素子
+/// 同行粘连（max-content 无视断点全行累加），返回值直接加进 `children_inner`。
+///
+/// R4394：重写为**递归 walk + 连续空白折叠态**（与 `dom_inline_text_walk` 的
+/// `DomWalkState` 同构）。旧栈式 DFS 把入栈子树延迟到当前层剩余兄弟之后处理（LIFO
+/// 逆序），跨层 `prev_bare` 归层错位；逐段独立 collapse 使段内空白与段间 `space_w`
+/// 双计、容器首空白误计宽——intra-base-white-space-001 test 页 323.3 vs ref 页 263.3
+/// （60px 字体 Δ+60 = 一个多余空格宽）、ruby 嵌套/注音非直接子形态（R4393 门收窄
+/// 试验 −3 劣化面）同根因。新语义：
+/// - 空白只入 `pending_space` 记账，与后续内容相接时**至多计一个**空格宽（折叠跨
+///   文本段/inline 元素边界连续，CSS white-space 处理对 inline 盒透明）；
+/// - 非空文本剥首尾空白后计宽，边缘空白转入 pending 态（容器首无前置内容时 pending
+///   不计宽——行首空白丢弃）；
+/// - boxed 元素子跳过（宽度归 children 循环），其前 pending 空格照常渲染计宽；
+/// - display:none（rt/rp/script 等）对空白折叠透明跳过——注音文本在**任意嵌套深度**
+///   都不计入（rt 直接子/rbc·rtc 包裹形态一致，R4393 试验缺口）；
+/// - br 丢 pending（行尾空白不渲染）。
 fn dom_bare_text_sum_width(box_node: &LayoutBox, doc: &Document, styles: &HashMap<NodeId, ComputedStyle>) -> f32 {
     let Some(id) = box_node.node_id else { return 0.0 };
     let Some(style) = styles.get(&id) else { return 0.0 };
@@ -503,56 +517,93 @@ fn dom_bare_text_sum_width(box_node: &LayoutBox, doc: &Document, styles: &HashMa
         .any(|f| f.trim_matches('"').eq_ignore_ascii_case("Ahem"));
     let font_id = intrinsic_font_id(Some(style));
     let boxed: NodeIdSet = box_node.children.iter().filter_map(|c| c.node_id).collect();
-    let mut total = 0.0f32;
-    // 段间空格宽（相邻裸文本段/元素子之间的折叠单空格）。
-    let space_w = measure_intrinsic_char(' ', font_id, font_size, is_ahem);
-    let mut prev_bare = false;
-    let mut stack: Vec<(NodeId, bool)> = vec![(id, true)];
-    while let Some((nid, is_top)) = stack.pop() {
-        for child in doc.child_nodes(nid) {
-            let Some(node) = doc.get(child) else { continue };
-            match &node.kind {
-                zero_dom::NodeKind::Text(t) => {
-                    let collapsed = crate::inline::collapse_whitespace(&t.content);
-                    if collapsed.is_empty() {
-                        continue;
+    let mut state = BareWalkState {
+        space_w: measure_intrinsic_char(' ', font_id, font_size, is_ahem),
+        font_id,
+        font_size,
+        is_ahem,
+        pending_space: false,
+        seen_content: false,
+        total: 0.0,
+    };
+    walk_bare_text(id, true, doc, styles, &boxed, &mut state);
+    state.total
+}
+
+/// R4394：裸文本 walk 的连续空白折叠态——`pending_space` = 已见待定空白（尚不计宽，
+/// 与后续内容相接时计一个空格宽）；`seen_content` = 本容器前缀已见内容（行首 pending
+/// 丢弃的判据）；`total` = 累计裸文本宽；字体域随容器（嵌套异字体后代近似，同
+/// `dom_inline_text_max_width` 口径）。
+struct BareWalkState {
+    space_w: f32,
+    font_id: Option<u32>,
+    font_size: f32,
+    is_ahem: bool,
+    pending_space: bool,
+    seen_content: bool,
+    total: f32,
+}
+
+fn walk_bare_text(
+    node_id: NodeId,
+    is_top: bool,
+    doc: &Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    boxed: &NodeIdSet,
+    state: &mut BareWalkState,
+) {
+    for child in doc.child_nodes(node_id) {
+        let Some(node) = doc.get(child) else { continue };
+        match &node.kind {
+            zero_dom::NodeKind::Text(t) => {
+                let collapsed = crate::inline::collapse_whitespace(&t.content);
+                let trimmed = collapsed.trim_matches(' ');
+                let leading = collapsed.starts_with(' ');
+                let trailing = collapsed.ends_with(' ');
+                if trimmed.is_empty() {
+                    // 纯空白段：只记 pending 态（后续内容相接时折叠为一个空格宽）。
+                    if !collapsed.is_empty() {
+                        state.pending_space = true;
                     }
-                    if prev_bare {
-                        total += space_w;
-                    }
-                    total += measure_intrinsic_text(&collapsed, font_id, font_size, is_ahem);
-                    prev_bare = true;
+                    continue;
                 }
-                zero_dom::NodeKind::Element(e) => {
-                    if boxed.contains(&child) {
-                        // 已由 box_children 循环计入（R1479/outer_w）——只重置粘连态。
-                        prev_bare = false;
-                        continue;
-                    }
-                    let Some(cs) = styles.get(&child) else { continue };
-                    use zero_css_parser::values::DisplayValue as DV;
-                    if matches!(cs.display, DV::None) {
-                        continue;
-                    }
-                    let ln = e.local_name();
-                    if is_top && ln == "br" {
-                        prev_bare = false;
-                        continue;
-                    }
-                    // 非盒元素子（R2160 跳过的 inline 等）——其文本未入任何循环，递归计。
-                    if prev_bare {
-                        total += space_w;
-                    }
-                    stack.push((child, false));
-                    // 占位：递归子节点的 prev_bare 状态由子层自身维护（简化：入栈前
-                    // 重置，段间空格已补）。
-                    prev_bare = false;
+                if (state.pending_space || leading) && state.seen_content {
+                    state.total += state.space_w;
                 }
-                _ => {}
+                state.pending_space = false;
+                state.total += measure_intrinsic_text(trimmed, state.font_id, state.font_size, state.is_ahem);
+                state.seen_content = true;
+                if trailing {
+                    state.pending_space = true;
+                }
             }
+            zero_dom::NodeKind::Element(e) => {
+                if boxed.contains(&child) {
+                    // 已由 box_children 循环计入（R1479/outer_w）——其前折叠空格照常
+                    // 渲染（消费 pending），盒后空白由后续文本的 leading 态接管。
+                    if state.pending_space && state.seen_content {
+                        state.total += state.space_w;
+                    }
+                    state.pending_space = false;
+                    state.seen_content = true;
+                    continue;
+                }
+                let Some(cs) = styles.get(&child) else { continue };
+                use zero_css_parser::values::DisplayValue as DV;
+                if matches!(cs.display, DV::None) {
+                    // rt/rp/script 等：对空白折叠透明（注音文本任意嵌套深度不计宽）。
+                    continue;
+                }
+                if is_top && e.local_name() == "br" {
+                    state.pending_space = false;
+                    continue;
+                }
+                // 非盒元素子（R2160 跳过的 inline 等）——空白态穿透，递归其子树。
+                walk_bare_text(child, false, doc, styles, boxed, state);
+            }
+            _ => {}
         }
     }
-    total
 }
 
 /// R1018：block-level 容器的 max-content 宽度，对 flex/grid **子容器**分发到专用 intrinsic 函数。
@@ -2412,6 +2463,138 @@ AAAA</div></body></html>"#,
             (div.content_height - 20.0).abs() < 1.0,
             "layout-time balance height: expected ~20 (1 line/col), got {}",
             div.content_height
+        );
+    }
+
+    // ── R4394：bare-text walker 连续空白折叠态（ZW_MIXED_BARE_TEXT opt-in 域）──
+    //
+    // 直接调 `dom_bare_text_sum_width`（不经 env 门）断言空白态机契约。
+
+    /// 布局 `html` 并返回 `target_id` 元素上的 bare-text walk 总宽 + 同源度量环境
+    /// （供期望值计算复用同一次 parse/compute，Node/字体上下文一致）。
+    /// `clear_children=true` 时清空 LayoutBox 子树（boxed 集空 → 全部元素子走非盒
+    /// 递归），使态机断言与盒构建器的 boxing 决策解耦。
+    fn walk_fixture(
+        html: &str,
+        target_id: &str,
+        clear_children: bool,
+    ) -> (f32, zero_dom::Document, HashMap<NodeId, ComputedStyle>, NodeId) {
+        let doc = zero_dom::parse_html(html);
+        let mut sys = zero_style_system::StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[]);
+        let mut engine = crate::engine::LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+        fn find<'a>(id: &str, doc: &zero_dom::Document, b: &'a LayoutBox) -> Option<&'a LayoutBox> {
+            if let Some(nid) = b.node_id
+                && let Some(n) = doc.get(nid)
+                && let NodeKind::Element(e) = &n.kind
+                && e.get_attribute("id").as_deref() == Some(id)
+            {
+                return Some(b);
+            }
+            b.children.iter().find_map(|c| find(id, doc, c))
+        }
+        let found = find(target_id, &doc, &result.root).expect("target box");
+        let node_id = found.node_id.expect("target node id");
+        let total = if clear_children {
+            let mut shell = found.clone();
+            shell.children.clear();
+            dom_bare_text_sum_width(&shell, &doc, &styles)
+        } else {
+            dom_bare_text_sum_width(found, &doc, &styles)
+        };
+        (total, doc, styles, node_id)
+    }
+
+    /// 目标容器同源字体参数下的段级文本测量期望值。
+    fn expected_measure(
+        doc: &zero_dom::Document,
+        styles: &HashMap<NodeId, ComputedStyle>,
+        id: NodeId,
+        text: &str,
+    ) -> f32 {
+        let _ = doc;
+        let style = styles.get(&id).expect("target style");
+        let (font_size, _line_height) = crate::inline::resolve_font_metrics(Some(style));
+        let is_ahem = style
+            .font_family
+            .iter()
+            .any(|f| f.trim_matches('"').eq_ignore_ascii_case("Ahem"));
+        let font_id = intrinsic_font_id(Some(style));
+        measure_intrinsic_text(text, font_id, font_size, is_ahem)
+    }
+
+    fn assert_walk_eq(html: &str, target_id: &str, expected_text: &str, clear_children: bool) {
+        let (total, doc, styles, node_id) = walk_fixture(html, target_id, clear_children);
+        let expected = expected_measure(&doc, &styles, node_id, expected_text);
+        assert!(
+            (total - expected).abs() < 0.51,
+            "bare-text walk {target_id}: got {total}, expected {expected} (=w({expected_text:?})); html: {}",
+            html.trim()
+        );
+    }
+
+    /// 容器首空白（行首）不计宽——`<div>  <em>ab</em> cd</div>` ≡ `ab cd`。
+    #[test]
+    fn r4394_bare_text_leading_whitespace_free() {
+        assert_walk_eq(
+            r#"<html><body><div id="t">  <em>ab</em> cd</div></body></html>"#,
+            "t",
+            "ab cd",
+            true,
+        );
+    }
+
+    /// 跨段空白串折叠为**一个**空格宽——`a      b`（6 空格）≡ `a b`。
+    #[test]
+    fn r4394_bare_text_whitespace_runs_collapse_to_one_space() {
+        assert_walk_eq(
+            r#"<html><body><div id="t"><em>a</em>      <em>b</em></div></body></html>"#,
+            "t",
+            "a b",
+            true,
+        );
+    }
+
+    /// 注音（rt/rp，display:none）在**任意嵌套深度**透明跳过且不扰空白折叠——
+    /// `a<rt>x</rt>b` + `<rp>(</rp>` + ` c` ≡ `ab c`（intra-base-white-space /
+    /// improperly-contained-annotation 形态的态机契约）。
+    #[test]
+    fn r4394_bare_text_rt_rp_excluded_at_any_depth() {
+        assert_walk_eq(
+            r#"<html><body><div id="t"><em>a<rt>x</rt>b</em><rp>(</rp> c</div></body></html>"#,
+            "t",
+            "ab c",
+            true,
+        );
+    }
+
+    /// 段尾空白不计宽（无后续内容即行尾丢弃）——`<em>ab</em>   ` ≡ `ab`。
+    #[test]
+    fn r4394_bare_text_trailing_whitespace_free() {
+        assert_walk_eq(
+            r#"<html><body><div id="t"><em>ab</em>   </div></body></html>"#,
+            "t",
+            "ab",
+            true,
+        );
+    }
+
+    /// boxed 元素子（box_children 已计，R1479/outer_w）不入 walk 计宽（无双计），
+    /// 其两侧折叠空格各计一次——`XYZ <span>ABC</span> XYZ` ≡ `XYZ` + 2sp + `XYZ`。
+    #[test]
+    fn r4394_bare_text_boxed_child_excluded_boundary_spaces_once() {
+        let html = r#"<html><body><div id="t">XYZ <span>ABC</span> XYZ</div></body></html>"#;
+        let (total, doc, styles, node_id) = walk_fixture(html, "t", false);
+        let xyz = expected_measure(&doc, &styles, node_id, "XYZ");
+        let abc = expected_measure(&doc, &styles, node_id, "ABC");
+        let space = expected_measure(&doc, &styles, node_id, " ");
+        // span 的 ABC 不计入（walk 总宽不含它），两侧空格各一次。
+        let expected = 2.0 * xyz + 2.0 * space;
+        assert!(
+            (total - expected).abs() < 0.51,
+            "boxed-skip walk: got {total}, expected {expected} (=2·XYZ+2·sp, ABC={abc} excluded)"
         );
     }
 }
