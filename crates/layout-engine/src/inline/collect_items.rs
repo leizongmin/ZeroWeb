@@ -1084,6 +1084,11 @@ impl InlineFormattingContext {
                 )
             }) {
             let annot = ruby_annotation_width_text(doc, child_id);
+            // R4415：base_w 契约 = **完整折叠 base 宽**（collapsed 文本含前后边缘空格
+            // advance；变量名 trimmed 系历史遗留）——其 advance 落在 run region 内，
+            // pads 分母必须含之，否则 region = 空格 + base + pads 超出 rt_w
+            //（overhang-spaces-015 ref 页形态：region 65 vs test 60，双页右边框错位
+            // 5px）。intrinsic walk 侧同口径（R4415 ruby 臂边缘空格 flush 双前置）。
             let base_w: f32 = trimmed
                 .chars()
                 .map(|c| {
@@ -1796,6 +1801,13 @@ pub(crate) fn ruby_overhang_pads(
     if std::env::var("ZW_RUBY_OVERHANG_MODEL").as_deref() != Ok("1") || annot_text.is_empty() {
         return (0.0, 0.0);
     }
+    // R4415：嵌套 ruby 卫兵——css-ruby #nested-pairing 下外层 ruby 的 base 序列含内层
+    // ruby（自身已按各自 rt 配对展开），外层 annotation 的单段 extra 模型不再成立
+    //（nested-ruby-pairing-001：東南+内层 ruby 配 とう/なん/Southeast，外层 pads 1/2.6
+    // 把 base 推离 ref 位）。含嵌套 ruby 子树时整层跳过 pads（各自内层已建模）。
+    if has_nested_ruby_descendant(doc, ruby_id) {
+        return (0.0, 0.0);
+    }
     let rt_w: f32 = annot_text
         .chars()
         .map(|c| crate::inline::estimate_char_width(c, font_size * 0.5, is_ahem))
@@ -1813,6 +1825,14 @@ pub(crate) fn ruby_overhang_pads(
         .unwrap_or_else(|| ruby_hang_extent(adjacent_text_char(doc, ruby_id, true), font_size, true));
     let extra = (rt_w - hang_l - hang_r - base_w).max(0.0);
     let half = (extra / 2.0).floor();
+    // R4415 临时诊断（ZW_DEBUG_IFC=1）。
+    if std::env::var("ZW_DEBUG_IFC").as_deref() == Ok("1") {
+        eprintln!(
+            "[pads] base_w={} rt_w={} hang_l={} hang_r={} extra={} -> ({}, {})",
+            base_w, rt_w, hang_l, hang_r, extra, half,
+            extra - half
+        );
+    }
     (half, extra - half)
 }
 
@@ -1911,6 +1931,24 @@ fn ruby_hang_extent(ch: Option<char>, font_size: f32, leading: bool) -> f32 {
     0.0
 }
 
+
+/// R4415：ruby 子树是否嵌套内层 ruby（css-ruby #nested-pairing 判据）。
+/// 递归元素子树；rt/rp/rtc 的 display:none 子树同样检查（防御性，注音内嵌 ruby
+/// 语境 pads 亦不成立）。
+fn has_nested_ruby_descendant(doc: &Document, ruby_id: NodeId) -> bool {
+    fn walk(doc: &Document, node_id: NodeId) -> bool {
+        for child_id in doc.child_nodes(node_id) {
+            let Some(node) = doc.get(child_id) else { continue };
+            if let zero_dom::NodeKind::Element(e) = &node.kind {
+                if e.local_name().eq_ignore_ascii_case("ruby") || walk(doc, child_id) {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+    walk(doc, ruby_id)
+}
 
 /// R4411：ruby 边界空白串的悬挂容量——前/后兄弟文本贴 ruby 端的折叠空白 run
 /// 各字符 advance 之和。无空白（首字符即非空白 / 无兄弟文本）→ None（调用方回落

@@ -1160,8 +1160,19 @@ fn dom_inline_text_walk(
                                 .iter()
                                 .any(|f| f.trim_matches('"').eq_ignore_ascii_case("Ahem"))
                         });
+                        // R4415：ruby 前邻折叠空格先于 start_w 冲账——旧序下 pending_space
+                        // 在 base 段 walk 的 flush_space 里入账，base_w 被空格宽污染
+                        //（overhang-spaces-015 实证 25 vs collect trimmed 20，pads 12/13 vs
+                        // 15/15 → max-content 95 < 行宽 100，尾部 あ 折行）。
+                        state.flush_space(segments);
                         let start_w = *segments.last().expect("segments 非空");
                         dom_inline_text_walk(child, doc, styles, &child_ws, segments, state);
+                        // R4415：base 内尾随空格在 pads 前入账——base_w = 完整折叠 base 宽
+                        //（含前后边缘空格 advance，与 collect 侧 collapsed 口径同源）。
+                        // ref 页形态（空格在 base 内）旧序把尾随空格漏到 pads 之后
+                        //（base_w 25 vs 30，pads 35 vs 30），test/ref 双页 region 差 5px
+                        //（60 vs 65）。空格已在段内（region 和不变），仅 pads 分母修正。
+                        state.flush_space(segments);
                         let base_w = *segments.last().expect("segments 非空") - start_w;
                         let (pl, pr) =
                             crate::inline::ruby_overhang_pads(doc, child, base_w, &annot, ruby_fs, 0.0, ruby_ahem);
