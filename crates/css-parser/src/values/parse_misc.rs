@@ -682,6 +682,19 @@ pub fn parse_text_emphasis_style(value: &str) -> Option<TextEmphasisStyleValue> 
 
 /// 解析 CSS text-emphasis-position 值（CSS Text Decoration 3 §3.2）。
 /// `[ over | under ] && [ right | left ]`，各可缺省（默认 over right）。
+/// 解析 CSS ruby-position 值（CSS Ruby 1 §ruby-position）。
+/// over/right（水平同义）→ Over；under → Under；inter-character → InterCharacter
+///（当前按 over 近似消费）。
+pub fn parse_ruby_position(value: &str) -> Option<RubyPositionValue> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "over" | "right" => Some(RubyPositionValue::Over),
+        "under" => Some(RubyPositionValue::Under),
+        "inter-character" => Some(RubyPositionValue::InterCharacter),
+        _ => None,
+    }
+}
+
+/// 解析 CSS text-emphasis-position 值（CSS Text Decoration 3 §3.2）。
 pub fn parse_text_emphasis_position(value: &str) -> Option<TextEmphasisPositionValue> {
     let mut over: Option<bool> = None;
     let mut right: Option<bool> = None;

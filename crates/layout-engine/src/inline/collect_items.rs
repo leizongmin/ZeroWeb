@@ -1126,6 +1126,10 @@ impl InlineFormattingContext {
         // ascent/height（chromium 行距 35 = base 23.3 + rt 11.7 实证）。与 pads 同门
         // （ZW_RUBY_OVERHANG_MODEL=1，layout 趟计算、replay 趟经 margin_overrides 同款
         // 存储回放需另行接线——rt ascent 走 TextRun/TextFragment 直传，无需 override）。
+        // R4412：**符号语义**——正值 = rt 在 base 上方（over，行 ascent 叠加）；负值 =
+        // rt 在 base 下方（under，行 descent 侧扩展，消费点 mod.rs 行装配 + break_lines
+        // 高度取 abs）。under 判据读 ruby 自身 computed ruby_position（继承）；Path B
+        // （styles 空）读不到声明按 over 近似——under 页 paint 线内注音位为后续 slice。
         let ruby_rt_ascent = if elem_data.local_name() == "ruby"
             && std::env::var("ZW_RUBY_OVERHANG_MODEL").as_deref() == Ok("1")
             && !ruby_annotation_width_text(doc, child_id).is_empty()
@@ -1134,7 +1138,11 @@ impl InlineFormattingContext {
             // 须同样产出，否则 paint IFC 的行基线缺 rt ascent（行高 34.9 但基线停在 16，
             // base/rt 整体上浮 ~14px，R4361 实证）。rt ascent 是 doc+env 的纯函数（与
             // margin pads 不同），跨趟幂等，无双计风险。
-            font_size * 0.5 * crate::inline::text_metrics::NORMAL_LINE_HEIGHT_RATIO
+            let h = font_size * 0.5 * crate::inline::text_metrics::NORMAL_LINE_HEIGHT_RATIO;
+            match style.map(|st| st.ruby_position) {
+                Some(zero_css_parser::values::RubyPositionValue::Under) => -h,
+                _ => h,
+            }
         } else {
             0.0
         };

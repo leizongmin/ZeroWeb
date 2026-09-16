@@ -10,8 +10,8 @@ pub use zero_css_parser::values::{
     FontSynthesisValue, FontVariantAlternates, FontVariantAlternatesValue, FontVariantLigaturesValue,
     FontVariationSetting, FontVariationSettingsValue, FontWeightValue, LengthValue, ObjectFitValue,
     OverflowClipMarginBox, OverflowClipMarginValue, OverflowValue, PolygonFillRule, PositionValue, QuotesValue,
-    ScrollSnapAlignValue, ScrollSnapAxis, ScrollSnapStopValue, ScrollSnapTypeValue, TextEmphasisPositionValue,
-    TextEmphasisStyleValue, VerticalAlignValue, VisibilityValue,
+    RubyPositionValue, ScrollSnapAlignValue, ScrollSnapAxis, ScrollSnapStopValue, ScrollSnapTypeValue,
+    TextEmphasisPositionValue, TextEmphasisStyleValue, VerticalAlignValue, VisibilityValue,
 };
 
 /// CSS border-style 值。
@@ -1646,6 +1646,8 @@ pub enum PropertyValue {
     TextEmphasisStyle(TextEmphasisStyleValue),
     /// text-emphasis-position 值（§3.2）。
     TextEmphasisPosition(TextEmphasisPositionValue),
+    /// ruby-position 值（CSS Ruby 1 §ruby-position）。
+    RubyPosition(RubyPositionValue),
     /// text-emphasis-color 值（CSS Text Decoration 3 §3.3，继承）。R2523。
     TextEmphasisColor(ColorValue),
     /// text-transform 值。

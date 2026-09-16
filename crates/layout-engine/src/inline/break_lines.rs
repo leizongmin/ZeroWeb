@@ -652,7 +652,7 @@ impl InlineFormattingContext {
                             // R4374：回退链垂直度量同门（glyph_ascent+glyph_descent，gate 关恒 0）。
                             current_line.height = current_line
                                 .height
-                                .max(run.box_height() + run.ruby_rt_ascent)
+                                .max(run.box_height() + run.ruby_rt_ascent.abs())
                                 .max(run.glyph_ascent + run.glyph_descent);
                         }
                     }

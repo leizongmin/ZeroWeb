@@ -699,6 +699,21 @@ pub enum TextEmphasisStyleValue {
     Char(char),
 }
 
+/// CSS ruby-position 值（CSS Ruby 1 §ruby-position）。
+/// 水平书写模式：over/right = 注音在 base 上方，under = 下方；inter-character =
+/// 叠于 base 字间（当前按 over 近似处理，罕见域挂账）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RubyPositionValue {
+    /// over（默认）——注音在 base 上方。
+    Over,
+    /// under——注音在 base 下方。
+    Under,
+    /// inter-character——叠于 base 字间（当前按 over 近似）。
+    InterCharacter,
+    /// right——垂直书写语义，水平按 over 处理。
+    Right,
+}
+
 /// CSS text-emphasis-position 值（CSS Text Decoration 3 §3.2）。
 /// 水平书写模式：over = 文本上方，under = 下方；left/right 仅垂直模式有视觉差异。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

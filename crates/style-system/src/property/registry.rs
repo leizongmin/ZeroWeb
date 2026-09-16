@@ -105,6 +105,8 @@ impl PropertyRegistry {
             // CSS Text Decoration 3 §3.1/§3.2：emphasis-style 与 position 均继承。
             "text-emphasis-style" => Some(TextEmphasisStyle(TextEmphasisStyleValue::None)),
             "text-emphasis-position" => Some(TextEmphasisPosition(TextEmphasisPositionValue::OverRight)),
+            // CSS Ruby 1 §ruby-position：继承，默认 over。
+            "ruby-position" => Some(RubyPosition(RubyPositionValue::Over)),
             // CSS Text Decoration 3 §3.3：text-emphasis-color 继承，默认 currentColor。R2523。
             "text-emphasis-color" => Some(TextEmphasisColor(ColorValue::CurrentColor)),
             "text-transform" => Some(TextTransform(TextTransformValue::None)),
@@ -410,6 +412,7 @@ impl PropertyRegistry {
                 | "text-emphasis-color"
                 | "text-emphasis-style"
                 | "text-emphasis-position"
+                | "ruby-position"
                 | "accent-color"
                 | "caret-color"
                 | "text-wrap"
@@ -498,6 +501,7 @@ impl PropertyRegistry {
             "text-emphasis-style",
             "text-emphasis-position",
             "text-emphasis-color",
+            "ruby-position",
             "transform-box",
             "stroke-width",
             "text-transform",

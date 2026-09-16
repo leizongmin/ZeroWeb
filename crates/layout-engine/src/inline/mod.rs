@@ -2034,7 +2034,14 @@ impl InlineFormattingContext {
                                 run.node_id, run.font_size, run_ratio, run.ruby_rt_ascent, max_ascent
                             );
                         }
-                        max_ascent = max_ascent.max(run.font_size * run_ratio + run.ruby_rt_ascent);
+                        // R4412：符号语义分向——正（over）叠 ascent（行顶上扩），负
+                        //（under）扩 descent 侧（基线下方）；base ascent 恒参与。
+                        max_ascent = max_ascent
+                            .max(run.font_size * run_ratio + run.ruby_rt_ascent.max(0.0))
+                            .max(run.font_size * run_ratio);
+                        if run.ruby_rt_ascent < 0.0 {
+                            max_glyph_descent = max_glyph_descent.max(-run.ruby_rt_ascent);
+                        }
                         // R4374：run 回退链实际使用字体的 ascent/descent max 参与
                         // 行盒基线/底部（CJK 回退字体 NotoSansCJK hhea ascent 1.16em
                         // 高于 strut 比例 0.928em → 基线下移、行盒下扩）。

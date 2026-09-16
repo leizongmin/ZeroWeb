@@ -84,6 +84,10 @@ pub fn inherit_property(parent: &ComputedStyle, child: &mut ComputedStyle, prope
             child.text_emphasis_position = parent.text_emphasis_position;
             true
         }
+        "ruby-position" => {
+            child.ruby_position = parent.ruby_position;
+            true
+        }
         "text-emphasis-color" => {
             child.text_emphasis_color = parent.text_emphasis_color.clone();
             true
@@ -845,6 +849,10 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
         }
         "text-emphasis-position" => {
             style.text_emphasis_position = default_style.text_emphasis_position;
+            true
+        }
+        "ruby-position" => {
+            style.ruby_position = default_style.ruby_position;
             true
         }
         "text-emphasis-color" => {

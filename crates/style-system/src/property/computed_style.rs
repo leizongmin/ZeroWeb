@@ -164,6 +164,8 @@ pub struct ComputedStyle {
     pub text_emphasis_style: TextEmphasisStyleValue,
     /// text-emphasis-position 属性（§3.2，继承）。默认 OverRight。
     pub text_emphasis_position: TextEmphasisPositionValue,
+    /// ruby-position 属性（CSS Ruby 1 §ruby-position）。
+    pub ruby_position: RubyPositionValue,
     /// text-emphasis-color 属性（CSS Text Decoration 3 §3.3，继承）。R2523。
     /// 默认 CurrentColor（标记随文字色）。
     pub text_emphasis_color: ColorValue,
