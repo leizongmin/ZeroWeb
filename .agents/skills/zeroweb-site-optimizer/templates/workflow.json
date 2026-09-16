@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "run_id": "example-run",
+  "revision": 1,
+  "contract_ref": null,
+  "checkpoint_ref": null,
+  "verification_mode": "independent",
+  "goals": [
+    {
+      "id": "primary-journey",
+      "description": "替换为授权范围内的必需用户任务",
+      "verification": "替换为可观察的终态及验证方法"
+    }
+  ],
+  "tasks": [
+    {
+      "id": "discover-primary-journey",
+      "goal_ids": ["primary-journey"],
+      "depends_on": [],
+      "description": "探索主任务，建立对照和最小复现",
+      "status": "pending",
+      "pause_reason": null,
+      "evidence": null
+    }
+  ],
+  "operations": [],
+  "final_acceptance": null,
+  "stop_reason": null
+}

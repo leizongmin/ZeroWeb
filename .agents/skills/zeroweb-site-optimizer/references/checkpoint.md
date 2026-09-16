@@ -7,7 +7,9 @@
 
 复制 [模板](../templates/checkpoint.json) 到运行目录的 `checkpoint.json`，替换示例
 身份和时间。JSON 写到同目录临时文件，解析并校验后原子 rename；保留前一份检查点。
-单个 Agent 写入，证据文件使用唯一名称。`run.md` 保留覆盖图、问题池和决策历史。
+单个 Agent 写入，证据文件使用唯一名称。`workflow.json` 引用本次不可变快照，
+管理冻结目标与任务；`run.md` 展示覆盖图、问题池和决策历史，不另维护消费数字。
+整体完成与相邻状态检查遵循 [目标契约](workflow.md)。
 
 ### 预算记账
 
@@ -30,7 +32,20 @@ accept/reject/inconclusive 都计数。初次等待必要授权不计入尚未�
   `live_verified: false`。回答“正在跑”前另查拥有的工具任务；失联写 unknown。
 - `budget` 保存累计候选/探索计数；验证成本未知用 null。收尾预留为
   `max(1200, validation_estimate_seconds + handoff_seconds)` 秒，未知或预算不足时
-  `can_start_candidate` 为 false。此值只判预算，不授予修改权限或解除 GUI 等阻塞。
+  `can_start_candidate` 为 false。下一完整步骤的成本存 next_step_estimate_seconds，
+  必须满足剩余时间至少为下一步骤加收尾预留；它包含该步实际执行/验证，预留覆盖
+  后续必要收尾，已完成且有效的检查不重复计费。每步开始前重估，不能只检查“还有20分钟”。
+  candidate_limit / exploration_period_limit 为 null 表示没有独立次数上限；
+  数值表示用户或原合约指定上限。旧运行保持旧上限，不能迁移时自动清除。
+  此值只判预算，不授予修改权限或解除 GUI 等阻塞。
+- 可选 `resources` 为词元或费用信封数组，每项 unit（如 tokens 或 USD）唯一，
+  字段为 limit、used、reserved、next_step_estimate、handoff_reserve；单位由合约冻结。
+  前三者为上限、实际累计、未决调用预留，后两者为下一步和最终收尾估计。
+  所有值为非负数，used/next_step_estimate 可为 null 表示未知，不能视为零。
+  used + reserved + next_step_estimate + handoff_reserve 不得超过 limit。
+  子任务、研究、重试、review 和清理均在同一信封；一次消费只对账一次。
+  用量来源/调用 ID/预留释放凭据保存在原始 receipt，总控核对后更新；结构检查不证明
+  实际费用准确。无费用/词元限制时 resources=[]，不声称已核验未设置的额度。
 - `versions` 的 original/best/trial 为对应构建 manifest 的 SHA-256（未建立时 null）。
   manifest 记录源码 SHA、脏树 patch 摘要、features/构建参数与二进制摘要；复用现有
   版本清单。候选 manifest 引用见下文；门禁尚未通过不能更新 best。
@@ -45,6 +60,9 @@ node .agents/skills/zeroweb-site-optimizer/scripts/verify-run.mjs \
 退出码：0 = 所列门禁全通过且无豁免；1 = 未就绪或带豁免待人工核对；2 = 格式、身份
 或证据损坏。0 仅表示记录的门禁一致，不证明真实采集、网站全覆盖、PR 授权或后台存活。
 初始模板没有证据，预期退出 1。旧 Markdown 检查点可按事实迁移，不能补造漏采证据。
+旧 JSON 缺少 next_step_estimate_seconds 时按未知处理，先估算再恢复；
+缺少 resources 表示旧记录未声明该类限制，须回查原合约，有上限时先补齐账本。
+新目标完成必须另跑 verify-workflow，verify-run 的 ready 仍只表示候选门禁就绪。
 
 ## 必需门禁与原始证据
 

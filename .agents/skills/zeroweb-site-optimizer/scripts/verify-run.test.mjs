@@ -17,6 +17,7 @@ async function fixture(t) {
   state.activity = { state: 'running', executor: { kind: 'host_task', ref: 'synthetic-task' },
     checked_at: state.updated_at };
   state.budget.validation_estimate_seconds = 900;
+  state.budget.next_step_estimate_seconds = 300;
   async function save(name, value) {
     const data = JSON.stringify(value);
     await writeFile(path.join(root, name), data);
@@ -170,6 +171,7 @@ test('empty initial plan and exhausted counters cannot authorize work', async t 
   const f = await fixture(t);
   f.state.required_gates = [];
   f.state.budget.candidates_used = 5;
+  f.state.budget.candidate_limit = 5;
   const result = await f.check();
   assert.equal(result.delivery_verdict, 'not_ready');
   assert.equal(result.can_start_candidate, false);

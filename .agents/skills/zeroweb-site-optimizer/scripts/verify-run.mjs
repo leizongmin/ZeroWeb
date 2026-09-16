@@ -19,12 +19,14 @@ function uniqueIds(items) {
   requireValue(Array.isArray(items) && items.every(item => item && nonempty(item.id))
     && new Set(items.map(item => item.id)).size === items.length, 'Invalid or duplicate IDs');
 }
-async function readJson(file) {
+/** 有界读取结构化证据；供候选与目标检查器共用。 */
+export async function readJson(file) {
   const info = await stat(file);
   requireValue(info.isFile() && info.size <= 2 * 1024 * 1024, 'Invalid JSON file size or type');
   return JSON.parse(await readFile(file, 'utf8'));
 }
-async function evidence(root, ref) {
+/** 校验运行目录内证据的真实路径、文件类型与内容身份。 */
+export async function evidence(root, ref) {
   requireValue(ref && nonempty(ref.path) && digest(ref.sha256), 'Invalid evidence reference');
   requireValue(!path.isAbsolute(ref.path) && !ref.path.includes('\\')
     && !ref.path.split('/').includes('..'), 'Evidence path must stay inside the run directory');
@@ -64,14 +66,37 @@ export async function verifyRun(checkpointPath, now = Date.now()) {
   requireValue(activity.state !== 'running'
     || (activity.executor !== null && activity.checked_at !== null), 'Running requires a checked executor');
   const budget = state.budget;
-  requireValue(budget && ['handoff_seconds', 'candidates_used', 'candidate_limit',
-    'exploration_periods_used', 'exploration_period_limit'].every(key =>
+  requireValue(budget && ['handoff_seconds', 'candidates_used',
+    'exploration_periods_used'].every(key =>
     Number.isSafeInteger(budget[key]) && budget[key] >= 0), 'Invalid budget counters');
+  requireValue(['candidate_limit', 'exploration_period_limit'].every(key =>
+    budget[key] === null || (Number.isSafeInteger(budget[key]) && budget[key] >= 0)),
+  'Invalid budget limits');
   const estimate = budget.validation_estimate_seconds;
   requireValue(estimate === null || (Number.isSafeInteger(estimate) && estimate >= 0),
     'Invalid validation estimate');
+  const stepEstimate = budget.next_step_estimate_seconds ?? null;
+  requireValue(stepEstimate === null || (Number.isSafeInteger(stepEstimate) && stepEstimate >= 0),
+    'Invalid next step estimate');
+  const resources = budget.resources ?? [];
+  requireValue(Array.isArray(resources) && new Set(resources.map(item => item?.unit)).size === resources.length,
+    'Invalid resource budgets');
+  for (const resource of resources) {
+    requireValue(resource && nonempty(resource.unit)
+      && ['limit', 'reserved', 'handoff_reserve'].every(key =>
+        Number.isFinite(resource[key]) && resource[key] >= 0)
+      && ['used', 'next_step_estimate'].every(key => resource[key] === null
+        || (Number.isFinite(resource[key]) && resource[key] >= 0)), 'Invalid resource budget');
+  }
   const reserve = estimate === null ? null : Math.max(1200, estimate + budget.handoff_seconds);
   const remaining = Math.max(0, Math.floor((deadline - now) / 1000));
+  const budgetKnown = reserve !== null && stepEstimate !== null
+    && resources.every(item => item.used !== null && item.next_step_estimate !== null);
+  const iterationAvailable = (budget.candidate_limit === null || budget.candidates_used < budget.candidate_limit)
+    && (budget.exploration_period_limit === null || budget.exploration_periods_used < budget.exploration_period_limit);
+  const budgetAvailable = budgetKnown && remaining >= reserve + stepEstimate
+    && resources.every(item =>
+      item.used + item.reserved + item.next_step_estimate + item.handoff_reserve <= item.limit);
   requireValue(state.versions && ['original', 'best', 'trial'].every(key =>
     state.versions[key] === null || digest(state.versions[key])), 'Invalid version identity');
   const subject = state.candidate_manifest?.sha256 ?? null;
@@ -130,9 +155,8 @@ export async function verifyRun(checkpointPath, now = Date.now()) {
   return {
     schema_version: 1, run_id: state.run_id, activity_record: activity, live_verified: false,
     remaining_seconds: remaining, reserve_seconds: reserve,
-    can_start_candidate: activity.state === 'running' && reserve !== null && remaining > reserve
-      && budget.candidates_used < budget.candidate_limit
-      && budget.exploration_periods_used < budget.exploration_period_limit,
+    budget_known: budgetKnown, budget_available: budgetAvailable, iteration_available: iterationAvailable,
+    can_start_candidate: activity.state === 'running' && budgetAvailable && iterationAvailable,
     target_verdict: targetVerdict, delivery_verdict: deliveryVerdict, gates,
   };
 }

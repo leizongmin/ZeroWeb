@@ -9,11 +9,13 @@
   "next_action": "Estimate validation cost and freeze the required checks before starting a candidate.",
   "budget": {
     "validation_estimate_seconds": null,
+    "next_step_estimate_seconds": null,
     "handoff_seconds": 300,
     "candidates_used": 0,
-    "candidate_limit": 5,
+    "candidate_limit": null,
     "exploration_periods_used": 0,
-    "exploration_period_limit": 20
+    "exploration_period_limit": null,
+    "resources": []
   },
   "versions": { "original": null, "best": null, "trial": null },
   "candidate_manifest": null,
