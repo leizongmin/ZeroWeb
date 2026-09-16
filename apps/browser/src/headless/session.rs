@@ -301,11 +301,18 @@ impl HeadlessSession {
                 if self.network_enabled {
                     let frame_id = self.active_frame_id().unwrap_or_default();
                     let request_id = format!("zw-net-{}", params.seq);
+                    let document_url = self
+                        .shell
+                        .active_tab()
+                        .and_then(|tab| tab.url().map(str::to_string))
+                        .unwrap_or_default();
+                    // CDP timestamp 契约 = 秒（浮点，单调基任意）；毫秒值会被
+                    // frontend 瀑布图/时序计算读歪（M2-N4 事件形状对齐）。
                     let now = || {
                         std::time::SystemTime::now()
                             .duration_since(std::time::UNIX_EPOCH)
                             .unwrap_or_default()
-                            .as_millis() as u64
+                            .as_secs_f64()
                     };
                     match params.phase {
                         0 => self.pending_network_events.push((
@@ -313,14 +320,19 @@ impl HeadlessSession {
                             serde_json::json!({
                                 "requestId": request_id,
                                 "frameId": frame_id,
+                                "documentURL": document_url,
                                 "request": {
                                     "url": params.url,
                                     "method": params.method,
-                                    "headers": {},
+                                    "headers": { "Accept": "*/*" },
+                                    "mixedContentType": "none",
+                                    "initialPriority": "High",
+                                    "referrerPolicy": "strict-origin-when-cross-origin",
                                 },
                                 "timestamp": now(),
-                                "wallTime": now() as f64 / 1000.0,
+                                "wallTime": now(),
                                 "initiator": { "type": "other" },
+                                "type": "Fetch",
                             }),
                         )),
                         1 => self.pending_network_events.push((
@@ -328,13 +340,14 @@ impl HeadlessSession {
                             serde_json::json!({
                                 "requestId": request_id,
                                 "frameId": frame_id,
-                                "type": "XHR",
+                                "type": "Fetch",
                                 "response": {
                                     "url": params.url,
                                     "status": params.status,
                                     "statusText": if params.status == 200 { "OK" } else { "" },
                                     "headers": {},
                                     "mimeType": "application/json",
+                                    "charset": "",
                                     "connectionReused": false,
                                     "connectionId": 0,
                                     "remoteIPAddress": "",
@@ -342,7 +355,7 @@ impl HeadlessSession {
                                     "fromDiskCache": false,
                                     "fromServiceWorker": false,
                                     "fromPrefetchCache": false,
-                                    "encodedDataLength": -1,
+                                    "encodedDataLength": 0,
                                     "protocol": "http/1.1",
                                 },
                                 "timestamp": now(),
@@ -448,21 +461,34 @@ impl HeadlessSession {
                 .iter()
                 .map(|(k, v)| (k.clone(), serde_json::Value::String(v.clone())))
                 .collect();
+            // 事件形状对齐 Chrome 实捕获（M2-N4）：documentURL/wallTime/type 必带
+            let document_url = self
+                .shell
+                .active_tab()
+                .and_then(|tab| tab.url().map(str::to_string))
+                .unwrap_or_default();
+            let wall_time = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs_f64();
             self.pending_network_events.push((
                 "Network.requestWillBeSent".to_string(),
                 serde_json::json!({
                     "requestId": net_request_id,
                     "frameId": frame_id,
+                    "documentURL": document_url,
                     "request": {
                         "url": params.url,
                         "method": params.method,
                         "headers": request_headers,
+                        "mixedContentType": "none",
+                        "initialPriority": "High",
+                        "referrerPolicy": "strict-origin-when-cross-origin",
                     },
-                    "timestamp": std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap_or_default()
-                        .as_millis() as f64,
+                    "timestamp": wall_time,
+                    "wallTime": wall_time,
                     "initiator": { "type": "other" },
+                    "type": "Document",
                 }),
             ));
         }
@@ -594,7 +620,7 @@ impl HeadlessSession {
                             "timestamp": std::time::SystemTime::now()
                                 .duration_since(std::time::UNIX_EPOCH)
                                 .unwrap_or_default()
-                                .as_millis() as u64,
+                                .as_secs_f64(),
                             "dataLength": response.body.len(),
                             "encodedDataLength": response.body.len(),
                         }),

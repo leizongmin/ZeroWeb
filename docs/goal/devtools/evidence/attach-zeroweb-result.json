@@ -3,7 +3,7 @@
     {
       "name": "zw-discovery-per-page-url",
       "ok": true,
-      "detail": "http://127.0.0.1:20600/devtools/inspector.html?ws=127.0.0.1:20600/devtools/page/zeroweb-tab-1"
+      "detail": "http://127.0.0.1:21000/devtools/inspector.html?ws=127.0.0.1:21000/devtools/page/zeroweb-tab-1"
     },
     {
       "name": "zw-debuggee-navigated",
@@ -53,7 +53,7 @@
     {
       "name": "frontend-network-requests",
       "ok": true,
-      "detail": "no rows yet (event routing = M2)"
+      "detail": "panel counter: 1 requests"
     },
     {
       "name": "screenshot-network",

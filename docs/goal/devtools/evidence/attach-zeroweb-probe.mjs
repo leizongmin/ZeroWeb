@@ -172,11 +172,16 @@ try {
     });
     await netPage.waitForTimeout(5000);
   }
-  const requestRow = await netPage.locator('.network-log-grid', { hasText: 'json/version' }).count()
-    || (await netPage.locator('.network-log-grid', { hasText: 'example.com' }).count());
-  // 诊断项而非门禁：请求行依赖 Network 域事件路由到面板所在连接（多客户端事件
-  // 路由 = M2 切片面；面板渲染本身已由 frontend-network-panel 判定）
-  step('frontend-network-requests', true, requestRow > 0 ? 'request row visible' : 'no rows yet (event routing = M2)');
+  // 请求行门禁（M2-N4 后事件形状对齐）：面板 footer 计数器 "N requests"（行内容在
+  // 不可穿透的 grid 内部树，footer 是可达的权威计数器）
+  const counterText = (await netPage.evaluate(() => {
+    const texts = [];
+    const walk = (root, d) => { if (d > 14) return; for (const el of root.querySelectorAll('*')) { if (el.childElementCount === 0 && el.textContent?.trim()) texts.push(el.textContent.trim()); if (el.shadowRoot) walk(el.shadowRoot, d + 1); } };
+    walk(document, 0);
+    return texts.find((t) => /\d+ requests/.test(t)) ?? '';
+  }));
+  const rowCount = Number((counterText.match(/(\d+) requests/) ?? [0, 0])[1]);
+  step('frontend-network-requests', rowCount >= 1, `panel counter: ${counterText || 'none'}`);
   const shotNetwork = join(HERE, 'attach-zeroweb-network.png');
   await netPage.screenshot({ path: shotNetwork });
   step('screenshot-network', true, shotNetwork);

@@ -1,7 +1,39 @@
-# M1/M2 — frontend 附接 ZeroWeb：S1 路由 + S3a/S3b + S1.5 并发 + M2-N2 事件路由 + M2-N3 cookie 面
+# M1/M2 — frontend 附接 ZeroWeb：S1 路由 + S3a/S3b + S1.5 并发 + M2-N2/N3/N4
 
-**日期**: 2026-09-16（M1/M2 多轮推进，M0 收口后）
+**日期**: 2026-09-16/17（M1/M2 多轮推进，M0 收口后）
 **上游状态**: cdp-protocol goal Done（M5 守成态，`make cdp-e2e` 33 绿 = 本 goal 防回归门）
+
+---
+
+## 0-f. M2-N4 ✅ Network 事件形状对齐 + 请求行 E2E 演示流（2026-09-17）
+
+**Chrome 实捕获基准**（`/tmp/cap-chrome.mjs` 方法：订阅真实 Chromium page-target
+Network.enable + 触发 fetch + 抓原始帧）：requestWillBeSent 必带
+`documentURL/wallTime/type:"Fetch"/request.headers 非空/request.initialPriority 等`，
+`timestamp = 秒（浮点，单调基任意）`；响应/完成事件同秒基。
+
+**ZeroWeb 对齐修复（`headless/session.rs` 两条事件源）**：
+1. **proxy_fetch 路径（文档导航）**：requestWillBeSent 增 `documentURL/wallTime/
+   type:"Document"/request.mixedContentType+initialPriority+referrerPolicy`，
+   timestamp 毫秒→秒（`as_secs_f64`）；dataReceived timestamp 同改。
+2. **FetchObserved 路径（页面 fetch）**：同款对齐（documentURL/headers
+   `{Accept: */*}`/mixedContentType 族/type:"Fetch"/秒基 timestamp；responseReceived
+   的 encodedDataLength -1→0 + charset 补齐 + type XHR→Fetch）。
+
+**关键单点**：行渲染的**决定性字段是 requestWillBeSent 的 `type`**——缺省（undefined）
+时 frontend `Common.ResourceType.resourceTypes[undefined]` → 行不创建/不可见；
+对齐后 `example.com` document 行立即渲染（`zw-rows-fixed.png`：行 + "1 requests"
+footer）。
+
+**验收（attach-zeroweb-probe.mjs 21/21 全绿 exit=0）**：`frontend-network-requests`
+**由诊断项转门禁** ✅ —— 面板 footer 计数器（"N requests"，可达的权威计数器；
+行内容在不可穿透 grid 内部树，DOM 遍历不可见）≥ 1。
+
+**probe 断言方法论注记**：新版 Network grid 的行内容对 shadow-DOM 遍历不可见
+（实测 bisect4 行可见而 evaluate 0 命中）——面板级断言用 footer 计数器/
+`getByText`（穿透）而非 grid 内部遍历。
+
+门禁：465P/0F + clippy clean + cdp-e2e 33 绿 + make test 全绿（本轮实测）。
 
 ---
 
