@@ -530,6 +530,42 @@ fn test_discovery_path_trailing_slash() {
 }
 
 #[test]
+fn test_ws_upgrade_path_extraction() {
+    use super::discovery::extract_request_path;
+    // 标准 WS 升级请求行
+    assert_eq!(
+        extract_request_path(b"GET /devtools/page/zeroweb-tab-1 HTTP/1.1\r\nHost: x\r\nUpgrade: websocket\r\n\r\n")
+            .as_deref(),
+        Some("/devtools/page/zeroweb-tab-1")
+    );
+    // query 不参与路由判定
+    assert_eq!(
+        extract_request_path(b"GET /devtools/page/zeroweb-tab-2?token=abc HTTP/1.1\r\n\r\n").as_deref(),
+        Some("/devtools/page/zeroweb-tab-2")
+    );
+    // 浏览器级入口（Playwright connectOverCDP 直连根路径）
+    assert_eq!(
+        extract_request_path(b"GET / HTTP/1.1\r\nUpgrade: websocket\r\n\r\n").as_deref(),
+        Some("/")
+    );
+    assert_eq!(extract_request_path(b"garbage"), None);
+}
+
+#[test]
+fn test_per_tab_devtools_frontend_url() {
+    use super::discovery::per_tab_frontend_url;
+    use std::net::SocketAddr;
+    let addr: SocketAddr = "127.0.0.1:9222".parse().unwrap();
+    let url = per_tab_frontend_url(addr, "zeroweb-tab-3");
+    assert!(
+        url.starts_with("/devtools/inspector.html?ws=127.0.0.1:9222/devtools/page/zeroweb-tab-3"),
+        "{url}"
+    );
+    // ws 参数落在 127.0.0.1（frontend CSP connect-src 只放行 ws://127.0.0.1:*）
+    assert!(url.contains("ws=127.0.0.1:"), "{url}");
+}
+
+#[test]
 fn test_session_id_echoed_in_response() {
     let server = HeadlessServer::new(0, 800.0, 600.0);
     let mut session = HeadlessSession::new(800.0, 600.0);
@@ -566,7 +602,7 @@ fn test_json_targets_enumerates_real_tabs() {
     let targets: Vec<serde_json::Value> = serde_json::from_str(&super::discovery::http_targets_json(
         &session,
         server.addr(),
-        &server.devtools_frontend_url(server.addr()),
+        server.devtools_serve_enabled(),
     ))
     .unwrap();
     assert_eq!(targets.len(), before + 1, "one entry per tab");

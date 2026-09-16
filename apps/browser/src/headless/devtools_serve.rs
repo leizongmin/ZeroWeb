@@ -15,6 +15,10 @@ use std::path::{Component, Path, PathBuf};
 /// serve 前缀（发现面把该前缀路由进本模块）。
 pub(super) const SERVE_PREFIX: &str = "/devtools";
 
+/// DevTools frontend 页面直连 WS 路径前缀（Chrome 同款形态
+/// `ws=<host:port>/devtools/page/<targetId>`；该 socket 上说非包裹的 page 域协议）。
+pub(super) const PAGE_WS_PREFIX: &str = "/devtools/page/";
+
 /// bundle 未配置或路径未命中时的提示（点开 devtoolsFrontendUrl 前需先 provision）。
 const BUNDLE_NOT_CONFIGURED: &str = "devtools frontend bundle not provisioned: set ZW_DEVTOOLS_FRONTEND_DIR to a devtools-frontend build output directory";
 

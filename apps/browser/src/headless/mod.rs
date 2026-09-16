@@ -40,8 +40,6 @@ use protocol::{ClientRequest, ProtocolError, ServerEvent, ServerResponse};
 pub use security::HeadlessSecurityConfig;
 use session::HeadlessSession;
 
-use devtools_serve::SERVE_PREFIX;
-
 // ── 协议服务器 ──
 
 /// 无头协议服务器。
@@ -81,14 +79,10 @@ impl HeadlessServer {
         }
     }
 
-    /// devtoolsFrontendUrl — bundle 已配置时指向本地 serve 的 frontend（相对 URL，
-    /// 与 Chrome 的 `/devtools/inspector.html` 形态一致）；否则维持 `devtools://`
-    /// 内嵌形态（Chromium 才能解析，供外部工具占位）。
-    pub(super) fn devtools_frontend_url(&self, addr: SocketAddr) -> String {
-        match &self.devtools_frontend_dir {
-            Some(_) => format!("{SERVE_PREFIX}/inspector.html?ws={addr}"),
-            None => format!("devtools://devtools/bundled/inspector.html?ws={addr}"),
-        }
+    /// devtools frontend bundle 是否已 provision（决定 `/json` 的
+    /// devtoolsFrontendUrl 形态与 `/devtools/` serve 面是否可用）。
+    pub(super) fn devtools_serve_enabled(&self) -> bool {
+        self.devtools_frontend_dir.is_some()
     }
 
     /// 分配新的 CDP sessionId（不透明字符串，客户端按原样回传）。
@@ -236,11 +230,21 @@ impl HeadlessServer {
             // console 转发是 renderer → session 单向消息，CDP 空闲期 session 无人消费会
             // 饿死 renderer 侧 fetch 的阻塞等待——S12 network.events 实测根因）。长空闲
             // 由下方 IDLE_DEADLINE（600s 无任何消息）兜底断开，语义与旧 600s read timeout
-            // 一致。
+            // 一致；idle 计时在每次真实消息（含 Ping）到达时重置——DevTools frontend UI
+            // 交互间隔可远超 600s，不重置会杀掉长活调试会话（devtools goal M1-S1）。
             const WS_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(120);
             const WS_IDLE_DEADLINE: std::time::Duration = std::time::Duration::from_secs(600);
             stream.set_read_timeout(Some(WS_POLL_INTERVAL)).ok();
-            let idle_since = std::time::Instant::now();
+            let mut idle_since = std::time::Instant::now();
+            // 升级请求路径路由（devtools goal M1-S1）：`/devtools/page/<targetId>` =
+            // DevTools frontend 页面直连（flat page 域协议）；其余 = 既有浏览器级入口。
+            // 当前单会话模型下两类连接共用同一 HeadlessSession（flat 命令本就路由到
+            // 全局会话），page-direct 仅作连接形态登记与日志，不做 target 级隔离。
+            let ws_page_direct =
+                discovery::extract_request_path(peeked).is_some_and(|p| p.starts_with(devtools_serve::PAGE_WS_PREFIX));
+            if ws_page_direct {
+                tracing::info!("DevTools frontend page-direct connection from {peer}");
+            }
             let mut ws = accept(stream).map_err(|e| format!("WebSocket handshake failed: {e}"))?;
 
             // 认证状态：首个有效请求完成认证
@@ -249,12 +253,17 @@ impl HeadlessServer {
             // WebSocket 消息循环
             loop {
                 let msg = match ws.read() {
-                    Ok(Message::Text(text)) => text,
+                    Ok(Message::Text(text)) => {
+                        // 真实消息到达 = 连接活跃：重置 idle 计时（M1-S1，见上方注记）
+                        idle_since = std::time::Instant::now();
+                        text
+                    }
                     Ok(Message::Close(_)) => {
                         tracing::info!("Client disconnected");
                         break;
                     }
                     Ok(Message::Ping(data)) => {
+                        idle_since = std::time::Instant::now();
                         let _ = ws.write(Message::Pong(data));
                         // tungstenite write() 对可入缓冲的小消息不保证落盘，必须显式 flush
                         let _ = ws.flush();

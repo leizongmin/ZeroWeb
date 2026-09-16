@@ -12,6 +12,26 @@ pub(super) fn normalize_discovery_path(path: &str) -> &str {
     path.trim_end_matches('/')
 }
 
+/// 从 HTTP/WS 升级请求字节中提取请求行路径（不含 query；解析不出返回 `None`）。
+/// WS 升级不走 `handle_http_discovery`（那里只认 GET 非升级），路由判定需要原始路径。
+pub(super) fn extract_request_path(data: &[u8]) -> Option<String> {
+    let s = String::from_utf8_lossy(data);
+    let raw = s.lines().next()?.split_whitespace().nth(1)?.to_string();
+    let path = raw.split(['?', '#']).next().unwrap_or("");
+    Some(path.to_string())
+}
+
+/// DevTools frontend 每标签页入口 URL（bundle 已配置时）。
+///
+/// ws 参数指向 per-page 路径（Chrome 同款），frontend 据此建立页面直连 socket。
+pub(super) fn per_tab_frontend_url(addr: SocketAddr, target_id: &str) -> String {
+    format!(
+        "{}/inspector.html?ws={addr}{}{target_id}",
+        devtools_serve::SERVE_PREFIX,
+        devtools_serve::PAGE_WS_PREFIX
+    )
+}
+
 impl HeadlessServer {
     /// 判断是否为普通 HTTP GET 请求（非 WebSocket 升级）。
     pub(super) fn is_http_get_request(data: &[u8]) -> bool {
@@ -67,7 +87,7 @@ impl HeadlessServer {
             "/json" | "/json/list" => (
                 "200 OK",
                 "application/json",
-                http_targets_json(session, addr, &self.devtools_frontend_url(addr)),
+                http_targets_json(session, addr, self.devtools_serve_enabled()),
             ),
             _ => ("404 Not Found", "text/plain", "Not Found".to_string()),
         };
@@ -102,16 +122,23 @@ impl HeadlessServer {
 ///
 /// url/title 取自 shell 模型（`BrowserShell::tabs()`），id 与 TabId 一一对应
 /// （`zeroweb-tab-<n>`），供后续 Target 域把 targetId 映射回标签页。
-/// `devtools_frontend_url` 来自服务器配置（bundle 已 provision 时为本地 serve URL）。
-pub(super) fn http_targets_json(session: &HeadlessSession, addr: SocketAddr, devtools_frontend_url: &str) -> String {
+/// `devtools_serve_enabled` = bundle 已配置：devtoolsFrontendUrl 指向本地 serve 的
+/// frontend 并携带 per-page ws 路径；未配置时维持 `devtools://` 占位形态。
+pub(super) fn http_targets_json(session: &HeadlessSession, addr: SocketAddr, devtools_serve_enabled: bool) -> String {
     let targets: Vec<serde_json::Value> = session
         .shell
         .tabs()
         .map(|tab| {
+            let id = format!("zeroweb-tab-{}", tab.id().0);
+            let devtools_frontend_url = if devtools_serve_enabled {
+                per_tab_frontend_url(addr, &id)
+            } else {
+                format!("devtools://devtools/bundled/inspector.html?ws={addr}")
+            };
             serde_json::json!({
                 "description": "",
                 "devtoolsFrontendUrl": devtools_frontend_url,
-                "id": format!("zeroweb-tab-{}", tab.id().0),
+                "id": id,
                 "title": tab.title().unwrap_or("ZeroWeb"),
                 "type": "page",
                 "url": tab.url().unwrap_or("about:blank"),
