@@ -984,7 +984,13 @@ impl InlineFormattingContext {
             .or_else(|| self.ws_overrides.get(&child_id).copied());
         let run_preserves = run_ws.map_or(self.preserve_whitespace, |ws| ws.preserve);
         let text = if elem_data.local_name() == "ruby" {
-            Self::collect_text_excluding(doc, child_id, &["rt", "rp"])
+            // R4395（css-ruby-1 §ruby-text-container）：rtc 是注音容器（span-all
+            // annotation），其文本不属 ruby base——旧表只排 rt/rp，rtc 文本被并进
+            // base run 以全尺寸 base 字形渲染（nested-ruby-pairing-001 ref 页
+            // "Southeast" 入 base 流、PNG 双重绘制实证；chromium 语义 = 注音行）。
+            // paint overlay 侧 rtc 仍按 R1689 simple-ruby scope 跳过（span-all 注音
+            // 行绘制为后续 slice）。
+            Self::collect_text_excluding(doc, child_id, &["rt", "rp", "rtc"])
         } else {
             doc.text_content(child_id).unwrap_or_default()
         };
@@ -1814,7 +1820,10 @@ pub(crate) fn ruby_annotation_width_text(doc: &Document, ruby_id: NodeId) -> Str
     for child_id in doc.child_nodes(ruby_id) {
         if let Some(node) = doc.get(child_id)
             && let NodeKind::Element(elem) = &node.kind
-            && elem.local_name().eq_ignore_ascii_case("rt")
+            // R4395：rtc（注音容器）文本并入注音宽——消费方（R4357 overhang pads /
+            // R4359 rt ascent / intrinsic walk ruby 臂）均 opt-in 门（base 排除在
+            // collect 主路径已同步，注音宽与 base 口径一致）。
+            && (elem.local_name().eq_ignore_ascii_case("rt") || elem.local_name().eq_ignore_ascii_case("rtc"))
         {
             let annot: String = doc
                 .text_content(child_id)
@@ -1851,4 +1860,51 @@ fn ruby_hang_extent(ch: Option<char>, font_size: f32, leading: bool) -> f32 {
         return font_size * 0.5;
     }
     0.0
+}
+
+#[cfg(test)]
+mod r4395_rtc_annotation_tests {
+    use super::*;
+
+    /// R4395（css-ruby-1 §ruby-text-container）：rtc 是注音容器——
+    /// `ruby_annotation_width_text` 并入 rtc 文本（与 rt 同口径）。
+    #[test]
+    fn rtc_text_joins_annotation_width_text() {
+        let doc = zero_dom::parse_html(
+            r#"<html><body><ruby><rb>東</rb><rt>とう</rt><rtc>Southeast</rtc></ruby></body></html>"#,
+        );
+        let ruby = doc.get_elements_by_tag_name("ruby")[0];
+        let annot = ruby_annotation_width_text(&doc, ruby);
+        assert_eq!(annot, "とうSoutheast", "rt + rtc 文本均为注音（base 排除口径一致）");
+    }
+
+    /// 纯 rt ruby 注音宽不受 rtc 扩展影响（回归守护）。
+    #[test]
+    fn rt_only_annotation_width_unchanged() {
+        let doc = zero_dom::parse_html(r#"<html><body><ruby>漢<rt>かん</rt></ruby></body></html>"#);
+        let ruby = doc.get_elements_by_tag_name("ruby")[0];
+        assert_eq!(ruby_annotation_width_text(&doc, ruby), "かん");
+    }
+
+    /// 无注音 ruby → 空串（R4357 pads / R4359 ascent 消费方的 empty 判据不变）。
+    #[test]
+    fn annotation_width_empty_without_rt_or_rtc() {
+        let doc = zero_dom::parse_html(r#"<html><body><ruby><rb>東</rb><rb>南</rb></ruby></body></html>"#);
+        let ruby = doc.get_elements_by_tag_name("ruby")[0];
+        assert_eq!(ruby_annotation_width_text(&doc, ruby), "");
+    }
+
+    /// ruby base run 文本排除 rtc 子树（Nested-ruby-pairing-001 ref 页语义：
+    /// "Southeast" 不再并入 base 流以全尺寸字形渲染）。
+    #[test]
+    fn ruby_base_run_excludes_rtc_subtree() {
+        let doc = zero_dom::parse_html(
+            r#"<html><body><ruby><rb>東</rb><rb>南</rb><rt>とう</rt><rtc lang=en>Southeast</rtc></ruby></body></html>"#,
+        );
+        let ruby = doc.get_elements_by_tag_name("ruby")[0];
+        // InlineFormattingContext::collect_text_excluding 为 base run 收集入口
+        //（collect 主路径同参调用 &["rt", "rp", "rtc"]）。
+        let base = InlineFormattingContext::collect_text_excluding(&doc, ruby, &["rt", "rp", "rtc"]);
+        assert_eq!(base, "東南", "base = rb 文本，rt/rtc 子树排除");
+    }
 }
