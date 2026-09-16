@@ -6,18 +6,28 @@
 use zero_dom::{Document, NodeId, NodeKind};
 
 /// R1689：收集 `<ruby>` 的 per-segment annotation —— 按 DOM 序遍历 ruby 直接子，每个 `<rt>`
-/// 配对其**前**累积的 base 文本段，返回 `[(base_segment, annotation)]`。
+/// 配对其**前**累积的 base 文本段，返回 `[(base_segment, annotation, block_axis_spacing)]`。
 ///
-/// 匹配 CSS Ruby 语义：`<ruby>漢<rt>かん</rt>字<rt>じ</rt></ruby>` → [("漢","かん"),("字","じ")]，
+/// 匹配 CSS Ruby 语义：`<ruby>漢<rt>かん</rt>字<rt>じ</rt></ruby>` → [("漢","かann"..) ...]，
 /// 每个 annotation 居中于对应 base segment（非整 base 扁平化）。whole-word ruby
 /// `<ruby>漢字<rt>かんじ</rt></ruby>` → 单 segment [("漢字","かんじ")]。owner 非 ruby 或
 /// 无 rt 时返回 None（paint 走普通文本路径）。base/annotation 去空白字符。
-pub(super) fn ruby_annotation_segments(doc: &Document, owner_id: NodeId) -> Option<Vec<(String, String)>> {
+///
+/// R4409：第三元 = 配对 rt 的**块轴间距**（padding-bottom + border-bottom + margin-bottom，
+/// 水平书写；css-ruby-1 #interlinear-block——rt 盒轴 spacing 把注音行推离 base，驱动
+/// interlinear-block-margin-box mismatch 哨兵：旧实现忽略之使 test 与无 spacing ref 逐像素
+/// 同像）。零间距（常规 ruby）= 0，overlay 落位逐字节不变。styles 缺失（Path B 无表，此
+/// 函数仅 layout 趟消费）或字段非 px 时按 resolve_length 解析、缺失臂取 0。
+pub(super) fn ruby_annotation_segments(
+    doc: &Document,
+    owner_id: NodeId,
+    styles: Option<&std::collections::HashMap<NodeId, zero_style_system::ComputedStyle>>,
+) -> Option<Vec<(String, String, f32)>> {
     let owner = doc.get(owner_id)?;
     if !matches!(&owner.kind, NodeKind::Element(e) if e.local_name().eq_ignore_ascii_case("ruby")) {
         return None;
     }
-    let mut segs: Vec<(String, String)> = Vec::new();
+    let mut segs: Vec<(String, String, f32)> = Vec::new();
     let mut base_buf = String::new();
     for child_id in doc.child_nodes(owner_id) {
         let Some(node) = doc.get(child_id) else {
@@ -38,7 +48,8 @@ pub(super) fn ruby_annotation_segments(doc: &Document, owner_id: NodeId) -> Opti
                         .chars()
                         .filter(|c| !c.is_whitespace())
                         .collect();
-                    segs.push((base, annot));
+                    let spacing = rt_block_axis_spacing(doc, child_id, styles);
+                    segs.push((base, annot, spacing));
                 } else if name.eq_ignore_ascii_case("rp") {
                     // rp 已 display:none（R1676），无绘制语义，跳过。
                 } else if name.eq_ignore_ascii_case("rtc") {
@@ -64,7 +75,8 @@ pub(super) fn ruby_annotation_segments(doc: &Document, owner_id: NodeId) -> Opti
                                 .chars()
                                 .filter(|c| !c.is_whitespace())
                                 .collect();
-                            segs.push((base, annot));
+                            let spacing = rt_block_axis_spacing(doc, rt_id, styles);
+                            segs.push((base, annot, spacing));
                         }
                     }
                 } else {
@@ -82,6 +94,41 @@ pub(super) fn ruby_annotation_segments(doc: &Document, owner_id: NodeId) -> Opti
     if segs.is_empty() { None } else { Some(segs) }
 }
 
+/// R4409：配对 rt 的块轴间距（水平书写：rt 盒底侧朝向 base，padding/border/margin-bottom
+/// 把注音行推离 base）。css-ruby-1 #interlinear-block；驱动 interlinear-block-margin-box
+/// （mismatch：test 与无 spacing ref 须异像）。缺 styles / 非 rt 元素 / 字段缺失均取 0。
+fn rt_block_axis_spacing(
+    doc: &Document,
+    rt_id: NodeId,
+    styles: Option<&std::collections::HashMap<NodeId, zero_style_system::ComputedStyle>>,
+) -> f32 {
+    let Some(map) = styles else { return 0.0 };
+    let Some(style) = map.get(&rt_id) else { return 0.0 };
+    let is_rt = doc
+        .get(rt_id)
+        .is_some_and(|n| matches!(&n.kind, NodeKind::Element(e) if e.local_name().eq_ignore_ascii_case("rt")));
+    if !is_rt {
+        return 0.0;
+    }
+    let px = |lv: &zero_css_parser::values::LengthValue| -> f32 {
+        match lv {
+            zero_css_parser::values::LengthValue::Px(v) => *v as f32,
+            other => {
+                let fs = zero_style_system::computed::resolve_length(&style.font_size, 16.0, None, None);
+                zero_style_system::computed::resolve_length(other, fs, None, None) as f32
+            }
+        }
+    };
+    let auto0 = |lv: &zero_css_parser::values::LengthValue| -> f32 {
+        if matches!(lv, zero_css_parser::values::LengthValue::Auto) {
+            0.0
+        } else {
+            px(lv)
+        }
+    };
+    px(&style.padding_bottom) + px(&style.border_bottom_width) + auto0(&style.margin_bottom)
+}
+
 #[cfg(test)]
 mod r1689_ruby_segment_tests {
     use super::ruby_annotation_segments;
@@ -96,10 +143,10 @@ mod r1689_ruby_segment_tests {
     fn per_kanji_ruby_segments_pair_rt_with_preceding_base() {
         let doc = first_ruby_owner("<body><ruby>漢<rt>かん</rt>字<rt>じ</rt></ruby></body>");
         let ruby = doc.get_elements_by_tag_name("ruby")[0];
-        let segs = ruby_annotation_segments(&doc, ruby).expect("ruby has segments");
+        let segs = ruby_annotation_segments(&doc, ruby, None).expect("ruby has segments");
         assert_eq!(segs.len(), 2, "per-kanji ruby → 2 segments");
-        assert_eq!(segs[0], ("漢".to_string(), "かん".to_string()));
-        assert_eq!(segs[1], ("字".to_string(), "じ".to_string()));
+        assert_eq!(segs[0], ("漢".to_string(), "かん".to_string(), 0.0));
+        assert_eq!(segs[1], ("字".to_string(), "じ".to_string(), 0.0));
     }
 
     /// whole-word ruby → 单 segment，整 base 配整 annotation。
@@ -107,9 +154,9 @@ mod r1689_ruby_segment_tests {
     fn whole_word_ruby_single_segment() {
         let doc = first_ruby_owner("<body><ruby>漢字<rt>かんじ</rt></ruby></body>");
         let ruby = doc.get_elements_by_tag_name("ruby")[0];
-        let segs = ruby_annotation_segments(&doc, ruby).expect("ruby has segment");
+        let segs = ruby_annotation_segments(&doc, ruby, None).expect("ruby has segment");
         assert_eq!(segs.len(), 1);
-        assert_eq!(segs[0], ("漢字".to_string(), "かんじ".to_string()));
+        assert_eq!(segs[0], ("漢字".to_string(), "かんじ".to_string(), 0.0));
     }
 
     /// 非 ruby owner → None（paint 走普通文本路径）。
@@ -117,7 +164,7 @@ mod r1689_ruby_segment_tests {
     fn non_ruby_owner_returns_none() {
         let doc = first_ruby_owner("<body><p>text</p></body>");
         let p = doc.get_elements_by_tag_name("p")[0];
-        assert!(ruby_annotation_segments(&doc, p).is_none());
+        assert!(ruby_annotation_segments(&doc, p, None).is_none());
     }
 
     /// rp（display:none）不参与分段（括号 fallback 不算 annotation）。
@@ -125,7 +172,7 @@ mod r1689_ruby_segment_tests {
     fn rp_excluded_from_segments() {
         let doc = first_ruby_owner("<body><ruby>漢<rt>kan</rt><rp>(</rp><rt>字</rt><rp>)</rp></ruby></body>");
         let ruby = doc.get_elements_by_tag_name("ruby")[0];
-        let segs = ruby_annotation_segments(&doc, ruby).expect("segments");
+        let segs = ruby_annotation_segments(&doc, ruby, None).expect("segments");
         // 两个 rt → 2 segments；rp 文本不计入。
         assert_eq!(segs.len(), 2);
         assert_eq!(segs[0].1, "kan");
@@ -143,10 +190,10 @@ mod r1689_ruby_segment_tests {
             "<body><ruby><rbc><rb>新</rb><rb>幹</rb><rb>線</rb></rbc><rtc><rt>しん</rt><rt>かん</rt><rt>せん</rt></rtc></ruby></body>",
         );
         let ruby = doc.get_elements_by_tag_name("ruby")[0];
-        let segs = ruby_annotation_segments(&doc, ruby).expect("rtc rt pairs");
+        let segs = ruby_annotation_segments(&doc, ruby, None).expect("rtc rt pairs");
         assert_eq!(segs.len(), 3, "rtc 内 3 个 rt → 3 segments");
-        assert_eq!(segs[0], ("新幹線".to_string(), "しん".to_string()));
-        assert_eq!(segs[1], (String::new(), "かん".to_string()));
-        assert_eq!(segs[2], (String::new(), "せん".to_string()));
+        assert_eq!(segs[0], ("新幹線".to_string(), "しん".to_string(), 0.0));
+        assert_eq!(segs[1], (String::new(), "かん".to_string(), 0.0));
+        assert_eq!(segs[2], (String::new(), "せん".to_string(), 0.0));
     }
 }

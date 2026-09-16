@@ -1345,7 +1345,9 @@ impl super::Painter {
                                     .unwrap_or(true);
                                 // R1689：ruby per-segment annotation —— owner 为 <ruby> 时，
                                 // 每个 rt 配对其前 base 段，annotation 居中于对应 base segment。
-                                let ruby_segs: Option<Vec<(String, String)>> = ruby_annotation_segments(doc, owner_id);
+                                // R4409：第三元 = 配对 rt 块轴间距（css-ruby #interlinear-block；零间距页逐字节不变）。
+                                let ruby_segs: Option<Vec<(String, String, f32)>> =
+                                    ruby_annotation_segments(doc, owner_id, styles);
 
                                 let frag_base_x = content_x + fragment.x + col_x_offset + tx;
                                 // 行盒顶部 = (line.y - col_start_y)；基线偏移 v_offset。
@@ -1507,16 +1509,18 @@ impl super::Painter {
                                     && !segs.is_empty()
                                 {
                                     let rt_fs = fragment.font_size * 0.5;
-                                    let rt_y = frag_base_y - fragment.font_size;
+                                    let rt_y0 = frag_base_y - fragment.font_size;
                                     // R4363 临时诊断：ruby overlay 落位追踪（ZW_DEBUG_IFC=1）。
                                     if std::env::var("ZW_DEBUG_IFC").as_deref() == Ok("1") {
                                         eprintln!(
                                             "[ruby-overlay] frag_base_y={} frag.y={} frag.height={} rt_y={} fs={}",
-                                            frag_base_y, fragment.y, fragment.height, rt_y, fragment.font_size
+                                            frag_base_y, fragment.y, fragment.height, rt_y0, fragment.font_size
                                         );
                                     }
                                     let mut seg_x = frag_base_x;
-                                    for (base, annot) in segs {
+                                    for (base, annot, rt_spacing) in segs {
+                                        // R4409：per-seg 块轴间距——rt 盒 spacing 把注音推离 base。
+                                        let rt_y = rt_y0 - rt_spacing;
                                         let seg_w: f32 = base
                                             .chars()
                                             .map(|c| {
@@ -1761,7 +1765,9 @@ impl super::Painter {
                                 ))
                                 .unwrap_or(true);
                             // R1689：ruby per-segment annotation（替代 R1022 逐字符 + R1688 整 base 居中）。
-                            let ruby_segs: Option<Vec<(String, String)>> = ruby_annotation_segments(doc, owner_id);
+                            // R4409：第三元 = 配对 rt 块轴间距（css-ruby #interlinear-block；零间距页逐字节不变）。
+                            let ruby_segs: Option<Vec<(String, String, f32)>> =
+                                ruby_annotation_segments(doc, owner_id, styles);
 
                             // R4133：per-fragment word-spacing——同 multicol 路径。片段 owner
                             // 声明的 ws 在容器 paint style（ws=0）下丢失；nbsp 等 word-separator
@@ -1856,16 +1862,18 @@ impl super::Painter {
                                 && !segs.is_empty()
                             {
                                 let rt_fs = $frag_fs * 0.5;
-                                let rt_y = frag_base_y - $frag_fs;
+                                let rt_y0 = frag_base_y - $frag_fs;
                                 // R4363 临时诊断：ruby overlay 落位追踪（ZW_DEBUG_IFC=1）。
                                 if std::env::var("ZW_DEBUG_IFC").as_deref() == Ok("1") {
                                     eprintln!(
                                         "[ruby-overlay-B] frag_base_y={} frag.y={} frag.height={} rt_y={} fs={}",
-                                        frag_base_y, $frag_y, 0.0, rt_y, $frag_fs
+                                        frag_base_y, $frag_y, 0.0, rt_y0, $frag_fs
                                     );
                                 }
                                 let mut seg_x = frag_base_x;
-                                for (base, annot) in segs {
+                                for (base, annot, rt_spacing) in segs {
+                                    // R4409：per-seg 块轴间距——rt 盒 spacing 把注音推离 base。
+                                    let rt_y = rt_y0 - rt_spacing;
                                     let seg_w: f32 = base
                                         .chars()
                                         .map(|c| self.measure_char_cached(frag_font_id.0, c, $frag_fs, $is_ahem))
