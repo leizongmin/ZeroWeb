@@ -332,9 +332,17 @@ pub(super) fn adjust_inline_block_positions(
         }))
         .collect();
     // 运行 InlineFormattingContext 获取行内布局坐标
-    let container_width = root.content_width;
+    // R1099 同款 WM 感知（R4426）：vertical 下 IFC 的 max_depth = container_width 是
+    // **inline 深度**（物理高度 content_height），水平 block 尺寸 content_width 是块轴
+    // 跨度——旧恒取 content_width 致 vrl 容器 max_depth 虚大（240 vs 80），多列塌缩单列
+    //（box-offsets-rel-pos-vrl-002：3 img 全落同列，relative 偏移再叠加 → 三盒同点位）。
     let is_vertical = root.writing_mode.is_vertical_block_flow();
     let is_vertical_rtl = root.writing_mode.is_block_flow_rl();
+    let container_width = if is_vertical {
+        root.content_height
+    } else {
+        root.content_width
+    };
     let container_text_align = resolve_text_align(styles.get(&container_node_id));
     // white-space: nowrap/pre 禁止换行——inline-block 超出容器宽度时应溢出而非换行。
     // 此前未把容器的 white_space 传给 IFC（no_wrap 恒 false），致 nowrap 容器内的
@@ -367,6 +375,15 @@ pub(super) fn adjust_inline_block_positions(
     let mut inline_ctx = crate::inline::InlineFormattingContext::new(container_width)
         .with_vertical(is_vertical)
         .with_vertical_rtl(is_vertical_rtl)
+        // R1122：vertical_rtl 列 x 从 block 轴右端递减——block_extent 须为物理块轴跨度
+        //（content_width）。旧缺省 = container_width（修复后 = content_height，inline
+        // 深度）→ 列 x 从错误起点递减，vrl 原子盒整列出视口（box-offsets-rel-pos-vrl-002
+        // div3 列 x=894 > 800，绿块整缺）。
+        .with_block_extent(if is_vertical {
+            root.content_width
+        } else {
+            container_width
+        })
         .with_text_align(container_text_align)
         .with_inline_block_sizes(ib_sizes)
         .with_baseline_overrides(baseline_overrides)
