@@ -2,43 +2,27 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-16（S896：**M5 定稿轮——分支 B 机械清单执行完毕，goal 收口
-Done**（2026-09-16 用户批复「DC-2 口径 = 分支 B（挂账+口径剔除定稿，goal 先行
-DONE）」入树兑现，批复提交 5af87ab69 docs-only 于 S895 门腿前经 push 前 pull 入
-树，docs-only 归因不入刷新面 S349/S846/S848/S853/S854/S865 先例）。**机械清单五
-步全落**：① 矩阵账本「ZeroWeb 侧实测捕获」节口径注记 + 文末「M5 定稿口径」节
-（挂账清单终稿：frames.click+evaluate 挂账剔除 / handleJavaScriptDialog 有因挂起 /
-getFrameOwner 有因挂起 / setFontFamilies -32601 / Tracing-Profiler-Debugger 不实
-现）；② 本里程碑状态表 M3/M5 → ✅（口径挂账注记）+ 缺口清单 P3 → ✅（挂账口
-径）+ 当前状态节 Goal 状态行 Done；③ goal 入口文档 DC-2 行挂账口径注记（判定语
-义原文未动）+ 状态行 Active → Done；④ expected-green 基线维持 **33** 不动定稿
-（frames.access 在列；frames.click+evaluate 继续跑、不门禁——现状即口径）；⑤ CI
-集成评估结论记账：技术可行非阻塞（S8 记账三要素在位：node 20.19 + lockfile 离线
-可复现 + chromium 缓存命中；接入三步 = npm ci + cargo build -p zero-browser +
-make cdp-e2e），未纳入 CI 归因 = 本 goal 无自有 CI 管线诉求、防回归已由 rally 每
-轮门承担。**批复三条件逐项满足**：条件① 剔除注记点名阻塞方（子帧能力冻结·渲染
-流域）与挂账去处、未表述为已完成/放弃；条件② 挂账条目登记至「子帧解冻清单」
-（本文件新建节）+ rendering-compat master.md 待用户决策清单（GB-20260916 落账条
-目，跨流写入经批复授权），解冻后一轮回填 34/34 并撤剔除；条件③ 本批复替代分支
-A 已生效。**收口判定依据**：DC-1 ✅（矩阵三态全登记 + S25 实现态 e2e 全覆盖 +
-S17/S28 实测零漂移 + 终稿节落定）；DC-2 ✅（分支 B 口径：门 PASS 33 绿
-deterministic 双跑 YES——S893/S894/S895 连续活跑，S895 门腿 10:19:18 落盘为本定
-稿树态最近门证据；S21 生命周期实证：重复连接循环无状态残留 + 异常断开 ×3 服务
-器存活）；DC-3 ✅（S8 盘点：-32601/-32700/-32602/loopback/token-origin + 100MB
-payload 16MB 帧上限干净拒绝服务器存活）；DC-4 ✅（make test 19,317P/0F 参考基线
-S890 双腿落定 + clippy 零 warning 每轮 PASS + fmt 干净 + make cdp-e2e 入口
-test-guard 包裹 + CI 可行性结论记账 + headless 既有自动化面零回归）。树不变口径
-维持：本定稿全 docs（master.md + 入口文档 + 矩阵账本 + rendering-compat GB 落账
-四文件），tracked 代码树与 S890 双腿覆盖树态（=R4396 组合态）一致，免门/测试腿
-复跑（S349/S846/S848/S853/S854/S865 先例，门证据引用 S895 门腿 10:19:18 落
-盘）；三层锚点照 S895 实测维持零漂移（自有面 4 files +137/-17、全树 92 files
-+9845/-622、crates/ raw 60、子帧关键词 8 文件全测试路径）。**收口后控制面进入守
-成态**：cdp-e2e 门每轮防回归（基线 33 定稿）+ 引用计数协议维持（周期锚点维持
-S890 双腿，S896 时点引用计数顺延——**下轮预告被 S896 轮后插记取代：S897 = 树变
-化刷新轮**（R4397 代码腿入树触发，双腿刷新口径=门 + make test，S245→S829→
-S835→S843→S848→S856→S865→S890 先例链；至迟 S898/S899 期限轮口径以刷新后新周
-期锚点重计）；唯一未清偿义务 =
-frames.click+evaluate 回填（挂子帧能力解冻，见子帧解冻清单，不阻收口））
+**最后更新**: 2026-09-16（S897：**树变化刷新轮——兄弟流 R4397 layout 腿代码提交
+637a4a104 入树触发，双腿刷新口径=门 + make test（S245→S829→S835→S843→S848→
+S856→S865→S890 先例链，S896 轮后插记预告兑现）**。门腿 **PASS 33 绿首调即收
+口**（10:39:12 启动 10:39:50 落盘，重编相位 layout-engine→engine→page-runtime→
+browser 链=R4397 组合态首次门覆盖；expected_green 33 对称差 none、regressions
+空、deterministic 双跑 YES、ZW_IPC_VALIDATE 在位静默 capture jsonl 面零写入 #0
+复现监测零命中）+ make test **一调收口 19,317P/0F EXIT=0**（67 组 result 全 ok，
+10:40:30-10:50:09，R4397 组合态首次全量覆盖，计数与 S890 基线持平 = R4397 零新
+增单测 + 兄弟提交自述同值实测复证）；dead_code warning（match_media_to_json
+js_dom_bridge.rs:3420）bins-only 条件 dead 既有形态维持记档 clippy 门零回归。引
+用计数以 **S897 双腿为新周期锚点 0/10**。三层锚点实测与插记预期精确一致：自有
+面对 765429dda 维持 **4 files +137/-17**（Makefile 2/1 + apps/browser/README.md
+1/0 + headless/mod.rs 25/0 + headless/session.rs 126/16 逐项实测）；全树排除本
+流 docs 对 18d462de6（排除 docs/goal/cdp-protocol/ 目录、入口文档在集内口径）
+**94 files +9914/-628**（+2 files = R4397 折入累计 diff 归因）；crates/ raw
+**61**（60→61，+1 = R4397 代码腿入 crates/）；子帧关键词 8 文件全测试路径维持
+（非测试代码零命中，frames.click+evaluate 挂起维持，解冻条件①观察面 61 口径维
+持）。R4397 系渲染流域 layout 腿提交本流不碰（run-rules §9），不触 headless/CDP
+面，M5 定稿收口判定（DC-1~4 依据）不因刷新动摇——**goal Done 维持，守成态证据
+经 S897 双腿刷新延续**；唯一未清偿义务 = frames.click+evaluate 回填（挂子帧能
+力解冻，见子帧解冻清单，不阻收口））
 
 ---
 
@@ -18201,6 +18185,34 @@ frames.click+evaluate 回填（挂子帧能力解冻，见子帧解冻清单，�
    口径=门 + make test，S773/S782/S865/S874/S875/S876/
    S884/S885/S886/S890 先例）；
 
+   **S897 已执行（2026-09-16）树变化刷新轮（兄弟流 R4397
+   layout 腿代码提交 637a4a104 入树触发（S896 轮后插记预
+   告兑现），同 tip 复核 pull 零新提交 tip=7da6043d6 即
+   S896 轮后插记提交本身（R4397 在树 IN_TREE 实测核
+   验），双腿刷新口径=门 + make test：门 PASS 33 绿兄弟
+   流编译负载窗亚型活跑（窗前 sibling ZeroWeb-2 release
+   rustc wpt-runner 腿 99% CPU pid 2918993 第六十二个负
+   载下样本 非端口竞争面）首调即收口 10:39:12 启动
+   10:39:50 落盘——R4397 组合态首次门覆盖（重编相位
+   layout-engine→engine→page-runtime→browser 链）+
+   make test 一调收口 19,317P/0F EXIT=0（67 组 result 全
+   ok，10:40:30-10:50:09，R4397 组合态首次全量覆盖，计数
+   与 S890 基线持平 = R4397 零新增单测 + 兄弟自述同值实
+   测复证），引用计数以 S897 双腿为新周期锚点 0/10；三
+   层锚点实测与插记预期精确一致（自有面 4 files +137/-17
+   维持 / 全树排除本流 docs 94 files +9914/-628 = 插记预
+   期精确复现 / crates/ raw 61 / 子帧关键词 8 文件全测试
+   路径）；zombie 双复测均零 端口族全 free 本门零残留
+   tracked 树 clean）**——下轮 **S898 = 1/10 静默监测引
+   用轮**（周期锚点=S897 双腿：门腿 10:39:50 落盘 +
+   make test 腿 10:50:09 收口），若 S898 前树代码变化则
+   提前触发双腿刷新（S245→S829→S835→S843→S848→S856→
+   S865→S890 先例链），否则按引用轮口径门单腿复跑免
+   make test 腿（S336 先例），至迟 S905=8/10 到期即次轮
+   期限轮活跑（双腿活跑口径=门 + make test，S773/S782/
+   S865/S874/S875/S876/S884/S885/S886/S890/S897 先
+   例）；
+
 
    若活跑时逢并行流负载窗口则
    优先窗口内执行，负载下样本对 #0 更有价值（负载窗口口径含并行流 browser 进程型与
@@ -18539,6 +18551,10 @@ evaluate 入门禁）+ 本清单销账 + 矩阵账本/入口文档挂账注记�
   19,295P/0F EXIT=0**（两调收口：run1 network_loading 单例瞬态红四点
   归因跨流记档（flake 家族候选第 5 例），run2 全绿含该测试在腿 ok
   ——R4376 组合态首次全量覆盖，计数与 S717 参考基线一致零回归）；
+  **S890 时点 19,317P/0F EXIT=0**（R4396 组合态参考基线，双腿刷新轮实测，
+  67 组 result 全 ok）；**S897 时点 19,317P/0F EXIT=0**（R4397 组合态，
+  一调收口——计数与 S890 持平 = R4397 零新增单测 + 兄弟自述同值实测
+  复证，R4397 组合态首次全量覆盖）；
   禁止裸跑 cargo test，经 test-guard。注：make test
   的 workspace 腿 exclude zero-renderer——renderer lib 单测不在全量门内，跨流红灯
   （form fixture×2）经显式 `-p zero-renderer --lib` 跟踪）
@@ -18686,7 +18702,16 @@ evaluate 入门禁）+ 本清单销账 + 矩阵账本/入口文档挂账注记�
   stale_etag_revalidation_is_coalesced 四点归因=负载窗资源瞬态
   flake 家族候选第 5 例跨流记档，隔离复跑 4/4 恒过；run2 全绿含该
   测试在腿 ok，计数与 S717 基线一致，R4376 组合态首次全量覆盖零回
-  归）；首调红形态连续第一百三十八次零再现（累计两例非聚集维持）
+  归）；首调红形态连续第一百三十八次零再现（累计两例非聚集维持）。
+  **S897 注记**：兄弟流 R4397（637a4a104）入树触发的树变化刷新轮
+  （S245→S829→S835→S843→S848→S856→S865→S890 先例链，S896 轮后插记
+  预告兑现）——门兄弟流编译负载窗亚型首调即 PASS 33 绿 deterministic
+  双跑 YES EXIT=0，绿步集机械 diff 基线零漂移（expected_green 33 对称
+  差 none、regressions 空），10:39:50 落盘，ZW_IPC_VALIDATE 在位静默
+  （capture jsonl 面零写入）；make test 一调收口 19,317P/0F（R4397
+  组合态首次全量覆盖，计数与 S890 持平零新增用例，兄弟自述同值实测复
+  证）；第六十二个负载下样本，首调红形态连续第三百一十次零再现（累计
+  两例非聚集维持）
 - CDP 现状：`Page.navigate` / `Runtime.evaluate` / `Target.getTargets` 3 命令 +
   `/json/version` + `/json` 发现（headless.rs L782-796/L571/L1159）——历史基线，现行面
   见缺口清单 P3/P4 与切片记录
