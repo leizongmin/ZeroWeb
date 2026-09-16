@@ -2,8 +2,7 @@
 
 **版本**: v1.0
 **日期**: 2026-09-12
-**状态**: Active（启动门控——cdp-protocol goal 达 M3（DOM/CSS 域就位）后解锁主线开发；
-门控期间不停摆——转零碰撞面自主推进：bundle 获取/pin/许可核查、serve 骨架、面板可用度评估）
+**状态**: Done（2026-09-17 DC-1~3 判定满足——bundle pin/serve 骨架 + 四面板演示流全绿 + GUI 模式 CDP 可开关，转守成态（守成门 = make cdp-e2e + make test）；GUI 标签页桥接 / matched rules / overlay 高亮等碰头协调项挂账，见 [master.md](devtools/master.md)）
 **执行模式**: 面板可用性驱动（每面板一条可演示调试流为验收）；协议域缺口回流 cdp-protocol
 goal 或碰头协调
 **父目标**: `docs/goal/zero-web.md`（M11 浏览器应用调试能力 + M10 自动化基础延伸）
