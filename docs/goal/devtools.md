@@ -27,7 +27,9 @@ goal 或碰头协调
 > - **frontend 供给面**：devtools-frontend 仓库提供可自托管的 bundled 前端（`front_end/`
 >   构建产物或 release 附属 bundle）；Chromium 系浏览器经 `devtools://` 内嵌同源。
 >   本仓需要：bundle 获取与版本 pin、静态 serve（复用 net/hyper 服务面或 headless.rs
->   既有 HTTP 面扩展）、许可核查（Apache-2.0 系，非 MPL——入库前记账）。
+>   既有 HTTP 面扩展）、许可核查（2026-09-16 实测 **BSD-3-Clause**，立项时预期
+>   「Apache-2.0 系」修正记账，见 evidence/M0-bundle-provision.md §1.3——同为宽松许可，
+>   「非 MPL」实质关切不受影响）。
 > - **面板依赖的 CDP 域**：Elements→DOM+CSS+Overlay（高亮）；Console→Runtime+
 >   Log+consoleAPICalled；Network→Network 域事件流（请求事件总线）；Application→
 >   Storage/Network.getCookies（cookie jar 暴露）。域缺口以 cdp-protocol 账本为准回流。

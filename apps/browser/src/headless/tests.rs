@@ -563,8 +563,12 @@ fn test_json_targets_enumerates_real_tabs() {
     session.shell.new_tab(None);
     session.shell.navigate("https://example.com/page");
 
-    let targets: Vec<serde_json::Value> =
-        serde_json::from_str(&super::discovery::http_targets_json(&session, server.addr())).unwrap();
+    let targets: Vec<serde_json::Value> = serde_json::from_str(&super::discovery::http_targets_json(
+        &session,
+        server.addr(),
+        &server.devtools_frontend_url(server.addr()),
+    ))
+    .unwrap();
     assert_eq!(targets.len(), before + 1, "one entry per tab");
     assert!(targets.iter().all(|t| t["type"] == "page"));
     assert!(
@@ -574,6 +578,13 @@ fn test_json_targets_enumerates_real_tabs() {
     let ids: Vec<&str> = targets.iter().map(|t| t["id"].as_str().unwrap()).collect();
     assert!(ids.iter().all(|id| id.starts_with("zeroweb-tab-")));
     assert!(!ids.contains(&"zeroweb-main"), "static placeholder id retired");
+    // bundle 未配置（测试进程无 ZW_DEVTOOLS_FRONTEND_DIR）→ devtools:// 占位形态
+    assert!(targets.iter().all(|t| {
+        t["devtoolsFrontendUrl"]
+            .as_str()
+            .unwrap()
+            .starts_with("devtools://devtools/bundled/")
+    }));
 }
 
 // ── M4：Storage cookie 域 / UA override / Network 门控 ──

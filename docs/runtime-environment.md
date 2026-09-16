@@ -39,6 +39,7 @@ switch there before consuming it in an application or library crate.
 | `ZW_COMPOSITOR_SANDBOX` | `0`/`false` disables | enabled | Enable compositor environment sanitization. |
 | `ZW_COMPOSITOR_SECCOMP` | `0`/`false` disables | enabled | Enable compositor seccomp filtering on Linux. |
 | `ZW_COMPOSITOR_LANDLOCK` | `0`/`false` disables | enabled | Enable compositor Landlock on Linux. |
+| `ZW_DEVTOOLS_FRONTEND_DIR` | directory path | unset | Serve a devtools-frontend bundle over `/devtools/` on the CDP HTTP endpoint and point `devtoolsFrontendUrl` at it. |
 
 ## Compatibility and test switches
 

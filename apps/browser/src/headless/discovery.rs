@@ -3,6 +3,7 @@
 use std::net::SocketAddr;
 
 use super::HeadlessServer;
+use super::devtools_serve;
 use super::session::HeadlessSession;
 
 /// 归一化发现路径 — 容忍尾斜杠（Playwright connectOverCDP 实际请求
@@ -54,9 +55,20 @@ impl HeadlessServer {
         };
         let path = normalize_discovery_path(&raw_path);
 
+        // devtools goal M0-P2：`/devtools/...` 前缀 → bundle 静态 serve（含 query 串，
+        // frontend 入口 URL 携带 `?ws=` 参数）。
+        if raw_path.starts_with(devtools_serve::SERVE_PREFIX) {
+            devtools_serve::handle_request(self.devtools_frontend_dir.as_deref(), stream, &raw_path);
+            return;
+        }
+
         let (status, content_type, body) = match path {
             "/json/version" => ("200 OK", "application/json", Self::http_version_json(addr)),
-            "/json" | "/json/list" => ("200 OK", "application/json", http_targets_json(session, addr)),
+            "/json" | "/json/list" => (
+                "200 OK",
+                "application/json",
+                http_targets_json(session, addr, &self.devtools_frontend_url(addr)),
+            ),
             _ => ("404 Not Found", "text/plain", "Not Found".to_string()),
         };
 
@@ -90,14 +102,15 @@ impl HeadlessServer {
 ///
 /// url/title 取自 shell 模型（`BrowserShell::tabs()`），id 与 TabId 一一对应
 /// （`zeroweb-tab-<n>`），供后续 Target 域把 targetId 映射回标签页。
-pub(super) fn http_targets_json(session: &HeadlessSession, addr: SocketAddr) -> String {
+/// `devtools_frontend_url` 来自服务器配置（bundle 已 provision 时为本地 serve URL）。
+pub(super) fn http_targets_json(session: &HeadlessSession, addr: SocketAddr, devtools_frontend_url: &str) -> String {
     let targets: Vec<serde_json::Value> = session
         .shell
         .tabs()
         .map(|tab| {
             serde_json::json!({
                 "description": "",
-                "devtoolsFrontendUrl": format!("devtools://devtools/bundled/inspector.html?ws={addr}"),
+                "devtoolsFrontendUrl": devtools_frontend_url,
                 "id": format!("zeroweb-tab-{}", tab.id().0),
                 "title": tab.title().unwrap_or("ZeroWeb"),
                 "type": "page",

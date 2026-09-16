@@ -22,6 +22,7 @@ use tungstenite::Message;
 use tungstenite::accept;
 
 mod client;
+mod devtools_serve;
 mod discovery;
 mod domains;
 mod protocol;
@@ -38,6 +39,8 @@ pub use client::{DomSnapshotStats, HeadlessClient};
 use protocol::{ClientRequest, ProtocolError, ServerEvent, ServerResponse};
 pub use security::HeadlessSecurityConfig;
 use session::HeadlessSession;
+
+use devtools_serve::SERVE_PREFIX;
 
 // ── 协议服务器 ──
 
@@ -58,6 +61,9 @@ pub struct HeadlessServer {
     attached_sessions: std::sync::Mutex<std::collections::HashMap<String, String>>,
     /// Target.setAutoAttach 的 autoAttach 开关（开启后新 target 自动附接）。
     auto_attach: std::sync::atomic::AtomicBool,
+    /// devtools-frontend bundle 目录（`ZW_DEVTOOLS_FRONTEND_DIR`；None = 不 serve，
+    /// devtoolsFrontendUrl 维持 `devtools://` 形态）。
+    devtools_frontend_dir: Option<std::path::PathBuf>,
 }
 
 impl HeadlessServer {
@@ -71,6 +77,17 @@ impl HeadlessServer {
             security: HeadlessSecurityConfig::default(),
             attached_sessions: std::sync::Mutex::new(std::collections::HashMap::new()),
             auto_attach: std::sync::atomic::AtomicBool::new(false),
+            devtools_frontend_dir: zero_runtime_config::optional_path("ZW_DEVTOOLS_FRONTEND_DIR"),
+        }
+    }
+
+    /// devtoolsFrontendUrl — bundle 已配置时指向本地 serve 的 frontend（相对 URL，
+    /// 与 Chrome 的 `/devtools/inspector.html` 形态一致）；否则维持 `devtools://`
+    /// 内嵌形态（Chromium 才能解析，供外部工具占位）。
+    pub(super) fn devtools_frontend_url(&self, addr: SocketAddr) -> String {
+        match &self.devtools_frontend_dir {
+            Some(_) => format!("{SERVE_PREFIX}/inspector.html?ws={addr}"),
+            None => format!("devtools://devtools/bundled/inspector.html?ws={addr}"),
         }
     }
 

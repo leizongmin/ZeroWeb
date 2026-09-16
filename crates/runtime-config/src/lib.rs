@@ -168,6 +168,11 @@ pub const ENVIRONMENT_VARIABLES: &[EnvironmentVariable] = &[
         default: "enabled",
         description: "compositor Landlock 沙箱",
     },
+    EnvironmentVariable {
+        name: "ZW_DEVTOOLS_FRONTEND_DIR",
+        default: "unset (devtools serve disabled)",
+        description: "devtools-frontend bundle 目录；设置后 CDP 服务器经 /devtools/ 静态提供 frontend 并把 /json 的 devtoolsFrontendUrl 指向它",
+    },
 ];
 
 /// `1` 或不区分大小写的 `true` 才表示启用。
