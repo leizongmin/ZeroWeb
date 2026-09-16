@@ -3,7 +3,7 @@
     {
       "name": "zw-discovery-per-page-url",
       "ok": true,
-      "detail": "http://127.0.0.1:20180/devtools/inspector.html?ws=127.0.0.1:20180/devtools/page/zeroweb-tab-1"
+      "detail": "http://127.0.0.1:20320/devtools/inspector.html?ws=127.0.0.1:20320/devtools/page/zeroweb-tab-1"
     },
     {
       "name": "zw-debuggee-navigated",
@@ -91,6 +91,10 @@
     "Request DOM.resolveNode failed. {\"code\":-32602,\"message\":\"Missing 'backendNodeId' parameter\"}",
     "Request CSS.trackComputedStyleUpdatesForNode failed. {\"code\":-32601,\"message\":\"Unknown method: CSS.trackComputedStyleUpdatesForNode\"}",
     "Request CSS.getEnvironmentVariables failed. {\"code\":-32601,\"message\":\"Unknown method: CSS.getEnvironmentVariables\"}",
+    "Request Runtime.compileScript failed. {\"code\":-32601,\"message\":\"Unknown method: Runtime.compileScript\"}",
+    "Unknown method: Runtime.compileScript",
+    "Request Runtime.compileScript failed. {\"code\":-32601,\"message\":\"Unknown method: Runtime.compileScript\"}",
+    "Unknown method: Runtime.compileScript",
     "Request Runtime.compileScript failed. {\"code\":-32601,\"message\":\"Unknown method: Runtime.compileScript\"}",
     "Unknown method: Runtime.compileScript",
     "Request Runtime.compileScript failed. {\"code\":-32601,\"message\":\"Unknown method: Runtime.compileScript\"}",

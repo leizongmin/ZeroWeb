@@ -1,7 +1,27 @@
-# M1 — frontend 附接 ZeroWeb：S1 路由 + S3a 最小域集 + S1.5 并发 + S3b 样式侧栏
+# M1 — frontend 附接 ZeroWeb：S1 路由 + S3a/S3b + S1.5 并发 + M2-N2 事件路由
 
-**日期**: 2026-09-16（M1 多轮推进，M0 收口后）
+**日期**: 2026-09-16（M1/M2 多轮推进，M0 收口后）
 **上游状态**: cdp-protocol goal Done（M5 守成态，`make cdp-e2e` 33 绿 = 本 goal 防回归门）
+
+---
+
+## 0-d. M2-N2 ✅ Network 域事件多客户端路由（订阅制广播，2026-09-16）
+
+**机制**：连接状态机增 `wants_network` 订阅态（Text 消息解析 method 嗅探
+`Network.enable`/`Network.disable` 更新）；Network 域事件不写本连接，汇入主循环
+staged 列表，tick 末**广播到所有已订阅连接**（`drain_renderer_channel` 重构为
+`drain_renderer_events` 返回事件，调用方分流）。Console/Runtime 事件保持既有
+"本连接排空即得"语义（单 frontend 页场景不变）。
+
+**验收（双客户端协议级实测）**：ws1（page-direct，Network.enable）+ ws2（浏览器级
+Page.navigate 触发导航）→ ws1 收到完整事件序列
+`requestWillBeSent → responseReceived → dataReceived → loadingFinished`。
+门禁：465P/0F + clippy clean + cdp-e2e 33 绿（network.events 单客户端语义保持）。
+
+**记账（请求行 E2E 演示流）**：面板行级断言暂为诊断项——REPL 驱动 `location.href`
+的打字流可靠性待稳（REPL 焦点/时序），且 demo 需被调试页停在真实 http 页
+（about:blank reload 无网络请求，语义正确）。数据面已通（协议级实测），
+演示流脚本化随 M2 收口。
 
 ---
 

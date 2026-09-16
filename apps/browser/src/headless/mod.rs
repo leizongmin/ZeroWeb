@@ -75,6 +75,8 @@ enum Phase {
         page_direct: bool,
         authenticated: bool,
         idle_since: std::time::Instant,
+        /// 该连接已发 `Network.enable`（Network 域事件路由归属，M2-N2）。
+        wants_network: bool,
     },
 }
 
@@ -250,9 +252,24 @@ impl HeadlessServer {
                 conns.push(ConnState::new(stream, peer));
             }
 
-            // 2. 推进每条连接一步
+            // 2. 推进每条连接一步；Network 域事件广播到所有已 Network.enable 的连接
+            let mut network_events: Vec<ServerEvent> = Vec::new();
             for conn in &mut conns {
-                self.advance_connection(conn, &mut session);
+                self.advance_connection(conn, &mut session, &mut network_events);
+            }
+            if !network_events.is_empty() {
+                for event in network_events.drain(..) {
+                    if let Ok(event_json) = serde_json::to_string(&event) {
+                        for conn in &mut conns {
+                            if let Phase::Ws { ws, wants_network, .. } = &mut conn.phase {
+                                if *wants_network {
+                                    let _ = ws.write(Message::Text(event_json.clone().into()));
+                                    let _ = ws.flush();
+                                }
+                            }
+                        }
+                    }
+                }
             }
             conns.retain(|conn| conn.alive);
 
@@ -260,8 +277,15 @@ impl HeadlessServer {
         }
     }
 
-    /// 推进单条连接一个非阻塞步骤。
-    fn advance_connection(&self, conn: &mut ConnState, session: &mut HeadlessSession) {
+    /// 推进单条连接一个非阻塞步骤。Network 域事件不直接写本连接，而是汇入
+    /// `network_events` 由主循环广播到所有已 `Network.enable` 的连接（M2-N2：
+    /// 事件归属按订阅，不按 drain 先后）。
+    fn advance_connection(
+        &self,
+        conn: &mut ConnState,
+        session: &mut HeadlessSession,
+        network_events: &mut Vec<ServerEvent>,
+    ) {
         match &mut conn.phase {
             // ── 阻塞窗口收满请求头（5s 超时）→ 分类 ──
             Phase::Peek { deadline } => {
@@ -300,6 +324,7 @@ impl HeadlessServer {
                                         page_direct,
                                         authenticated: self.security.auth_token.is_none(),
                                         idle_since: std::time::Instant::now(),
+                                        wants_network: false,
                                     };
                                 }
                                 Err(e) => {
@@ -331,10 +356,19 @@ impl HeadlessServer {
                 page_direct,
                 authenticated,
                 idle_since,
+                wants_network,
             } => {
                 match ws.read() {
                     Ok(Message::Text(text)) => {
                         *idle_since = std::time::Instant::now();
+                        // Network 域事件订阅登记（M2-N2）：按命令面更新连接订阅态
+                        if let Ok(req) = serde_json::from_str::<ClientRequest>(&text) {
+                            match req.method.as_str() {
+                                "Network.enable" => *wants_network = true,
+                                "Network.disable" => *wants_network = false,
+                                _ => {}
+                            }
+                        }
                         if !*authenticated && !self.authenticate_first_message(&text) {
                             *authenticated = self.security.auth_token.is_none();
                             if !*authenticated {
@@ -356,6 +390,11 @@ impl HeadlessServer {
                         }
                         let (response, events) = self.handle_message_with_events_mode(session, &text, *page_direct);
                         for event in events {
+                            // Network 域事件 → 主循环广播（订阅制）；其余 → 本连接
+                            if event.method.starts_with("Network.") {
+                                network_events.push(event);
+                                continue;
+                            }
                             if let Ok(event_json) = serde_json::to_string(&event)
                                 && let Err(e) = ws.write(Message::Text(event_json.into()))
                             {
@@ -393,9 +432,18 @@ impl HeadlessServer {
                     Err(tungstenite::Error::Io(ref e))
                         if e.kind() == std::io::ErrorKind::WouldBlock || e.kind() == std::io::ErrorKind::TimedOut =>
                     {
-                        // 轮询超时：drain renderer 通道（fetch 代理/console 转发），并把
-                        // 产生的事件即时推给客户端（S12 network.events 实测根因）。
-                        self.drain_renderer_channel(session, ws);
+                        // 轮询超时：drain renderer 通道（fetch 代理/console 转发）。Network
+                        // 域事件广播（订阅制），其余即时推给本连接（S12 实测根因）。
+                        for event in self.drain_renderer_events(session) {
+                            if event.method.starts_with("Network.") {
+                                network_events.push(event);
+                                continue;
+                            }
+                            if let Ok(event_json) = serde_json::to_string(&event) {
+                                let _ = ws.write(Message::Text(event_json.into()));
+                                let _ = ws.flush();
+                            }
+                        }
                         if idle_since.elapsed() > Self::WS_IDLE_DEADLINE {
                             tracing::info!("WebSocket idle deadline ({}s)", Self::WS_IDLE_DEADLINE.as_secs());
                             conn.alive = false;
@@ -429,11 +477,7 @@ impl HeadlessServer {
     /// session 无人消费，renderer 侧 `ipc_fetch` 阻塞等待会饿死（network.events 实测：
     /// 点击 handler 的 fetch 挂起 → PW click 10s 超时）。返回本函数起始时刻（供空闲
     /// deadline 记账——真实消息处理会重置调用方的 idle_since）。
-    fn drain_renderer_channel(
-        &self,
-        session: &mut HeadlessSession,
-        ws: &mut tungstenite::WebSocket<std::net::TcpStream>,
-    ) {
+    fn drain_renderer_events(&self, session: &mut HeadlessSession) -> Vec<ServerEvent> {
         let mut events: Vec<ServerEvent> = Vec::new();
         #[cfg(not(test))]
         session.drain_fetch_completions();
@@ -501,12 +545,7 @@ impl HeadlessServer {
                 session_id: page_session.clone(),
             });
         }
-        for event in events {
-            if let Ok(event_json) = serde_json::to_string(&event) {
-                let _ = ws.write(Message::Text(event_json.into()));
-                let _ = ws.flush();
-            }
-        }
+        events
     }
 
     /// 处理单条客户端消息（向后兼容，不含事件）。

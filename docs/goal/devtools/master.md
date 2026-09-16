@@ -2,7 +2,7 @@
 
 **入口文档**: [../devtools.md](../devtools.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-16（M1-S3b 样式侧栏落地：Computed 侧栏全链路，M1 切片面收口）
+**最后更新**: 2026-09-16（M2-N2 事件路由落地：Network 域事件订阅制广播，双客户端协议级实测通过）
 
 ---
 
@@ -11,9 +11,10 @@
 **专项定位**：复用 Chrome DevTools frontend（pin bundle）经 CDP 附接 ZeroWeb，四面板
 （Elements / Console / Network / Application-cookie）达到「逐面板演示流可判定可用」。
 **启动门控**：**已解锁**——cdp-protocol goal 2026-09-16 M5 定稿收口（Done）。
-**M0 已完成**。**M1 切片面收口**：S1 路由 ✅ + S3a 最小域集 ✅（Elements 活 DOM +
-Console REPL）+ S1.5 并发 ✅（Network 面板渲染 M2-N1 提前清账）+ S3b 样式侧栏 ✅
-（Computed 全链路 + Styles inline 起步）。余项全部在 M2/M3 面（事件路由/cookie/GUI）。
+**M0 已完成**。**M1 切片面收口**（S1 ✅ S3a ✅ S1.5 ✅ S3b ✅）。**M2-N2 已落地**：
+Network 域事件订阅制广播（连接 `wants_network` 订阅态 + tick 末广播；双客户端协议级
+实测 ws1 订阅收全 requestWillBeSent→loadingFinished 序列）。余项：S3b Styles matched
+rules（碰头协调）、请求行 E2E 演示流脚本化、Application cookie 面板、M3 GUI 接线。
 
 **与兄弟 goal 的边界**：
 - cdp-protocol — 上游协议基座（已收口进入守成态）：本 goal 只消费其 CDP 面；其守成门
@@ -31,7 +32,7 @@ Console REPL）+ S1.5 并发 ✅（Network 面板渲染 M2-N1 提前清账）+ S
 | P2 | serve 骨架 + `/json` devtoolsFrontendUrl 注入 | ✅ M0（e6364b8f0） |
 | P3 | 对 Chromium 空跑的面板可用度基线 | ✅ M0（probe 全绿 + 判据四条） |
 | P4 | Elements/Console 演示流 | ✅ M1——Elements 活 DOM 树 + Console REPL + Computed 侧栏（盒模型+计算值）+ Styles（inline 起步，matched rules 记账碰头项） |
-| P5 | Network/Application 演示流 | ⏳ M2（NetworkLogView 渲染遗留 = M2-N1 首项） |
+| P5 | Network/Application 演示流 | 🔨 M2——N1 面板渲染 ✅ + N2 事件路由 ✅；余请求行演示流脚本化 + cookie 面 |
 | P6 | 桌面 GUI 模式 CDP server 接线 | ⏳ M3 |
 
 ## 已完成切片
@@ -58,16 +59,15 @@ Console REPL）+ S1.5 并发 ✅（Network 面板渲染 M2-N1 提前清账）+ S
 ## 结构性限制记账
 
 - ~~单连接串行 accept 循环~~ ✅ 已解（M1-S1.5 单线程 socket 多路复用；frontend lazy
-  import 与多客户端并存不再饿死）。**余下多客户端语义**：session 级事件（Network 域
-  事件流）的 drain 归属不保证路由到"面板所在连接"（任一连接的 tick 均可排空）——
-  归 M2-N2。
+  import 与多客户端并存不再饿死）。~~Network 域事件 drain 归属~~ ✅ 已解（M2-N2 订阅制
+  广播；双客户端协议级实测收全事件序列）。
 
 ## 下一步计划（按序）
 
-1. **M2-N2 Network 域事件多客户端路由**：事件 drain 归属保证（面板所在连接优先）→
-   Network 请求行/详情演示流
-2. **M2-N3 Application cookie 面板**：`&panel=application` + Storage/Cookie 域消费
-   （DC-2 cookie 判据）
+1. **M2-N3 Application cookie 面板**：`&panel=application` + Storage/Cookie 域消费
+   （DC-2 cookie 判据：cookie jar 在面板可见 + 编辑回写生效）
+2. **Network 请求行 E2E 演示流脚本化**：REPL 驱动流稳态化（焦点/时序）或面板
+   自身 Reload 流固定到真实 http 页（about:blank reload 无请求为正确语义）
 3. **M3 桌面接线 + 收口**：GUI 模式 CDP server 可开关（CLI/默认关）+ 全 DC 判定 +
    挂账（灰置面板/域清单）
 4. **碰头协调项（非本 goal 单方面可解）**：Styles 侧栏 matched rules（style-system
@@ -83,7 +83,7 @@ Console REPL）+ S1.5 并发 ✅（Network 面板渲染 M2-N1 提前清账）+ S
 |--------|------|
 | M0 — 门控期自主面 | ✅ Done（2026-09-16） |
 | M1 — 附接与 Elements/Console | ✅ Done（2026-09-16：S1+S3a+S1.5+S3b 全落地，三面板渲染+样式侧栏） |
-| M2 — Network/Application | 🔨 N1 面板渲染提前清账；余事件路由 + cookie 面 |
+| M2 — Network/Application | 🔨 N1 面板渲染 ✅ + N2 事件路由 ✅；余请求行演示流脚本化 + cookie 面 |
 | M3 — 桌面接线 + 收口 | ⏳ |
 
 ## 验证基线

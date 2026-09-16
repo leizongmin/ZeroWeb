@@ -138,9 +138,9 @@ try {
   await consolePage.screenshot({ path: shotConsole });
   step('screenshot-console', true, shotConsole);
 
-  // 5. Network 面板直开（并发模型下 lazy import 不再被串行 accept 饿死）+ 开着面板
-  //    再导航一次被调试页（事件需在 Network.enable 之后产生——CDP 不回放历史请求）
-  await consolePage.close();
+  // 5. Network 面板直开（并发模型下 lazy import 不再被串行 accept 饿死）。
+  //    请求行素材 = Console 页 REPL 驱动 `location.href`（S1.5 并发：Console 页与
+  //    Network 页两条 frontend 连接并存；事件按订阅广播到 Network 页连接，M2-N2）
   const netPage = await driverBrowser.newPage();
   await netPage.setViewportSize({ width: 1600, height: 1000 });
   await netPage.goto(`${entryBase}?ws=127.0.0.1:${PORT}/devtools/page/${discovery[0].id}&panel=network`, { waitUntil: 'domcontentloaded', timeout: 30000 });
@@ -153,11 +153,16 @@ try {
   await netPage.waitForTimeout(1500);
   step('frontend-network-panel', netPanelOk, '');
   if (netPanelOk) {
-    // 事件路由归这一条连接：点面板自带的 "Reload page" 按钮（frontend 经自己的
-    // 连接发 Page.navigate → 产生的 Network 事件由同连接排空 → 面板出请求行）
-    const reloadBtn = netPage.getByText('Reload page').first();
-    await reloadBtn.click({ timeout: 5000 }).catch(() => {});
-    await netPage.waitForTimeout(4000);
+    // S1.5 并发 + M2-N2 事件广播：Console 页 REPL 驱动被调试页跳转（Network.enable
+    // 之后产生的事件才会被 CDP 记录——不回放历史请求）
+    if ((await cPrompt.count()) > 0) {
+      await cPrompt.click();
+    } else {
+      await cFallback.click();
+    }
+    await consolePage.keyboard.type(`location.href='https://example.com/'`, { delay: 15 });
+    await consolePage.keyboard.press('Enter');
+    await netPage.waitForTimeout(5000);
   }
   const requestRow = await netPage.locator('.network-log-grid', { hasText: 'json/version' }).count()
     || (await netPage.locator('.network-log-grid', { hasText: 'example.com' }).count());
