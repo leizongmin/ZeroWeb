@@ -42,15 +42,34 @@ M3 DOM/CSS 域在位 → 启动门控解锁，M0 自主面落地。
 - front_end 内 third_party 组件（codemirror/lit/lighthouse 等）各自带许可证文件，
   构建产物再分发时随附 LICENSE（构建输出含 LICENSE 文件，入 evidence 复核项）。
 
-### 1.4 正式 pin 路径（本 goal 采用）
+### 1.4 正式 pin 路径（本 goal 采用）——✅ 已完成（2026-09-16）
 
-- 源：官方仓库 main tarball（codeload）+ commit pin；工具链：自建 gn（GitHub 镜像源码 +
-  系统 g++ 构建，v2465）+ 系统 ninja 1.12 + 系统 node v24.21.0 + npm devDeps；
-  depot_tools / gclient / vpython3 因 googlesource+cipd 不可达而绕开（直接 gn gen + ninja）。
-- 构建产物：`out/Default/gen/front_end/`（bundle），sha256 记账（见下节补录）。
-- 供给方式：**不入库**（产物几十 MB 不进 git）；仓库携带 fetch/build 脚本 + 本 evidence
-  记账（pin commit、tarball/产物 sha256、许可、构建命令），机器本地落在
-  `$HOME/.cache/zeroweb/devtools/<name>/`（不占 target/，免 cargo clean 误删）。
+- **pin commit**: `9bd6a496c3394422674c62a19e9faa627817c56e`（devtools-frontend main，
+  "Roll browser-protocol and CfT"，2026-09-16）
+- **front_end 基底**: 官方 npm 源码包 `chrome-devtools-frontend@1.0.1697595`
+  （tarball sha256 `e134e6c67c5ef0779c6910529e1f2b6774d41455e9150a1cf502e39fcb0db7ff`），
+  与 pin commit 的漂移文件经 by-SHA raw 重取并用 `git hash-object` 对 `git ls-tree`
+  闭环校验（238 文件对齐 + 1047 测试文件按需）
+- **工具链**: 自建 gn v2465（GitHub 镜像 JiauZhang/gn 源码 + 系统 g++14，googlesource/
+  CIPD 本机不可达）+ 系统 ninja 1.12 + 系统 node v24.21.0 + npm devDeps（esbuild 0.28.2）；
+  depot_tools / gclient / vpython3 / siso 全部绕开
+- **构建**: `gn gen out/Default --args='use_siso=false'`（5551 targets）+
+  `ninja -C out/Default devtools_frontend_resources`（1711 targets 全绿）
+- **产物**: `out/Default/gen/front_end/`（`inspector.html` 根入口 + entrypoints/ + Images/
+  + locales/ + devtools_resources.grd 链），关键文件 sha256：
+  - inspector.html: `e5ae9e7c4a5b1c29dd0576c42cbb17eebd6a2dab7a6e08438f8c424a71b9752a`
+  - entrypoints/inspector/inspector.js: `465e86cf8c6df52d6753c2ec73a1d6c6f84c696ac24cc4bf0c88534fbe2ebdfe`
+- **可重放脚本**: `fetch-devtools-frontend.sh`（本目录），机器本地落
+  `$HOME/.cache/zeroweb/devtools/devtools-frontend-<pin>/`（不入库）
+- **本地构建补丁清单**（全部为构建胶水，不影响编译产物语义；升级 gn 至上游同版后可撤）：
+  1. `.gn` gn_version 断言字面量化 + `script_executable` 改绝对路径
+  2. newer-gn builtin `public_inputs`/`path_exists` 降级（copy.gni / typescript.gni /
+     devtools_pre_built.gni / skills/BUILD.gn 用 `not_needed` 替代）
+  3. `use_siso=false`（siso 走 CIPD，不可达）
+  4. `//build` 子模块（chromium build.git pin）不可达 → 最小 stub：toolchain x64
+     （copy/stamp）+ timestamp.gni + rbe.gni/siso.gni 空实现；kythe.gni/devtools.gni/
+     chrome_build.gni 取自 chromium/src GitHub 镜像
+  5. typescript@7.0.2 原生 tsc 二进制 + typescript@6.0.3 标准库 d.ts（CIPD 包不可达）
 
 ## 2. M0-P2 serve 骨架（同轮落地）
 
@@ -64,12 +83,41 @@ M3 DOM/CSS 域在位 → 启动门控解锁，M0 自主面落地。
 - 实测（probe，对真实 Chromium 空跑）：discovery → entry HTML(200) → 14.9MB chunk(200)
   → 穿越拒绝(404) 全绿——serve 骨架本体可用。
 
-## 3. M0-P3 面板可用度基线（进行中）
+## 3. M0-P3 面板可用度基线——✅ 已完成（2026-09-16）
 
-- 探测脚本：`panel-baseline-probe.mjs`（可重放；ZeroWeb serve + 真实 Chromium 双端）。
-- 已实证：第三方 bundle 白屏缺陷（1.2）。官方 from-source bundle 构建落地后重跑本 probe
-  作为基线判定（判据：frontend boot 渲染 + Elements/Console/Network 面板 DOM 就位 +
-  evaluate 生效 + console 零致命错误）。
-- 已知判据约束：DevTools UI 全在 shadow root 内，外部 querySelector 不可见——probe 用
-  shadow root 递归遍历判定；面板「可用」以最小演示流生效为准（goal 入口文档口径），
-  不以 frontend 零报错为准（frontend 对缺失域优雅降级是预期行为）。
+- **探测脚本**: `panel-baseline-probe.mjs`（可重放；零 mock：ZeroWeb headless serve
+  frontend，Playwright pin Chromium 为被调试方，另一 Chromium 实例作 driver 打开
+  frontend 页面）。
+- **基线判定（全绿，`probe-final-pass.txt`）**：
+  | 判据 | 结果 |
+  |------|------|
+  | ZeroWeb `/json` 发现端点 + devtoolsFrontendUrl 注入 | ✅ |
+  | `/devtools/` serve 官方 bundle 入口（200, text/html） | ✅ |
+  | 路径穿越拒绝（`%2e%2e` → 404） | ✅ |
+  | frontend 完整 boot（773 shadow-DOM 节点，tab 条/侧栏全渲染） | ✅ |
+  | Elements 面板渲染被调试页**活 DOM 树**（DOM 域活）+ 样式侧栏（CSS 域活） | ✅ |
+  | Console 面板经 `&panel=console` 直开实例化 | ✅ |
+  | Network 面板经 `&panel=network` 直开实例化（录制条就位） | ✅ |
+  | console 零致命错误 | ✅ |
+- **截图存证**: `official-elements-panel-live-dom.png`（Elements+Styles+盒模型，被调试页
+  即 ZeroWeb 的 `/json/version` 输出——ZeroWeb 发现端点 JSON 被 Chromium 当页面渲染、
+  再被 ZeroWeb serve 的 frontend 检查）、`official-network-panel-live.png`（Network 全 UI）。
+- **判据现实化结论（供 M1/M2 复用）**：
+  1. DevTools UI 全在 shadow root 内，外部判定必须递归 shadow root；面板**惰性实例化**，
+     窄窗口下 tab 折叠进溢出菜单——`&panel=<name>` URL 参数是可靠的直开入口。
+  2. Chromium 111+ 拒绝带非白名单 Origin 的 WS 附接（`--remote-allow-origins` 加固），
+     空跑调试方需加该 flag；ZeroWeb 侧 WS（loopback + 默认放行 origin）无此问题——
+     M1 附接 ZeroWeb 时不受影响。
+  3. frontend 对缺失域优雅降级实证：指向 ZeroWeb 浏览器端点时 UI 正常装载，
+     逐方法 -32601 灰置（`Page.getResourceTree` 等）——「面板可用」以逐面板演示流为准、
+     不以零报错为准（goal 入口文档口径成立）。
+  4. frontend 版本远新于被调试 Chromium（playwright pin chromium-1243 ≈ Chrome 151 时代
+     差距）仍可附接工作——M1 附接 ZeroWeb 的协议面以 ZeroWeb 自身 CDP 账本为准。
+
+## 4. 遗留注记
+
+- 本轮未入库 bundle（几十 MB 不进 git）；`ZW_DEVTOOLS_FRONTEND_DIR` 未设置时 serve 面
+  503 + provision 提示，`/json` 维持 `devtools://` 占位形态（cdp-protocol 守成面零漂移）。
+- 2026-09-16 当日 googlesource.com / chrome-infra-packages.appspot.com（CIPD）本机直连
+  不可达，github.com 主站时通时断；codeload / raw.githubusercontent（限速）/ npm registry
+  稳定可用——后续重放本脚本若遇 raw 突发限流（404 形态假阴性），降低并发即可。

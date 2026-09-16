@@ -1,0 +1,11 @@
+[ok] zw-discovery — "/devtools/inspector.html?ws=127.0.0.1:19500"
+[ok] zw-serve-entry — 200 text/html; charset=utf-8 990B
+[ok] zw-serve-traversal-blocked — 404
+[ok] chromium-target — http://127.0.0.1:19500/json/version
+[ok] frontend-boot — []
+[ok] frontend-elements — domNodeCount=773
+[ok] frontend-console — via &panel=console
+[ok] frontend-network — via &panel=network
+[ok] frontend-elements-tree-content — {"hasHtml":true,"tabs":[]}
+[ok] frontend-console-no-fatal — []
+[ok] screenshot — /lzcapp/document/work/ZeroWeb/docs/goal/devtools/evidence/panel-baseline-1789558527028.png

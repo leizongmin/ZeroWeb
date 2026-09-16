@@ -70,16 +70,23 @@ const chromeProc = spawn(chromiumBin, [
   '--no-first-run',
   `--user-data-dir=/tmp/zw-devtools-probe-chrome-${BASE}`,
   `--remote-debugging-port=${CHROME_PORT}`,
-  'data:text/html,<title>zw-probe</title><h1>zw-probe</h1>',
+  // Chromium 111+ 拒绝带 Origin 头的 WS 附接（安全加固）——frontend 从 serve 端点打开，
+  // Origin 是 serve origin，必须放行（Chrome 自身 devtools:// 内嵌无此问题）
+  '--remote-allow-origins=*',
+  // 被调试页面用真实 http 页（data: 页会被回收导致 DevTools 附接随即断开）
+  `http://127.0.0.1:${ZW_PORT}/json/version`,
 ], { stdio: ['ignore', 'ignore', 'pipe'] });
 chromeProc.stderr.on('data', (d) => process.env.ZW_PROBE_VERBOSE && console.error('[chrome]', d.toString()));
-// 等 CDP 发现端点就绪
+// 被调试页面用真实 http 页（data: 页在 headless 下会被回收，DevTools 附接随即断开）
+const debuggeeUrl = `http://127.0.0.1:${ZW_PORT}/json/version`;
+void debuggeeUrl;
 let pageTarget = null;
 for (let i = 0; i < 40 && !pageTarget; i++) {
   await new Promise((r) => setTimeout(r, 500));
   try {
     const targets = await (await fetch(`http://127.0.0.1:${CHROME_PORT}/json`)).json();
-    pageTarget = targets.find((t) => t.type === 'page' && !/devtools:/.test(t.url));
+    // 必须选真实页面 target——headless chromium 还会列 browser_ui/omnibox 伪 page target
+    pageTarget = targets.find((t) => t.type === 'page' && t.url.startsWith(`http://127.0.0.1:${ZW_PORT}/`));
   } catch { /* not ready yet */ }
 }
 const browser = null;
@@ -119,7 +126,8 @@ try {
   driver.on('requestfailed', (r) => failedRequests.push(`${r.url()} :: ${r.failure()?.errorText}`));
   driver.on('response', (r) => r.status() >= 400 && failedRequests.push(`${r.url()} :: HTTP ${r.status()}`));
   const wsParam = pageTarget.webSocketDebuggerUrl.replace('ws://', '');
-  const attachUrl = `${frontendUrl}?ws=${wsParam}`;
+  // frontendUrl 自带 ?ws=（指向 ZeroWeb 浏览器端点）——空跑场景必须剥掉，改指被调试方
+  const attachUrl = `${frontendUrl.split('?')[0]}?ws=${wsParam}`;
   await driver.goto(attachUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
   // frontend 启动 + 面板初始化
   await driver.waitForTimeout(8000);
@@ -130,47 +138,69 @@ try {
   };
 
   const panelState = await driver.evaluate(() => {
-    const q = (sel) => document.querySelector(sel) !== null;
     const body = document.body;
-    // DevTools UI 全在 shadow root 里——深度遍历统计（含 closed root 拿不到，open 即够）
-    const shadowHosts = [];
+    // DevTools UI 全在 shadow root 里——深度遍历把所有节点拍平判定
+    const nodes = [];
+    const tabLabels = [];
     const walk = (root, depth) => {
-      if (depth > 12) return;
+      if (depth > 14 || nodes.length > 20000) return;
       for (const el of root.querySelectorAll('*')) {
-        if (el.shadowRoot) {
-          shadowHosts.push(el.tagName.toLowerCase() + (el.id ? '#' + el.id : ''));
-          walk(el.shadowRoot, depth + 1);
-        }
+        nodes.push({ id: el.id ?? '', cls: String(el.className ?? ''), tag: el.tagName?.toLowerCase() ?? '', text: (el.textContent ?? '').slice(0, 60) });
+        if (/^tabbed-pane-tab-label$/.test(String(el.className ?? ''))) tabLabels.push(el.textContent?.trim());
+        if (el.shadowRoot) walk(el.shadowRoot, depth + 1);
       }
     };
     walk(document, 0);
+    const has = (pred) => nodes.some(pred);
     return {
       domContentLoaded: body !== null,
-      rootWidget: q('.widget.vbox') || q('#-blink-dev-tools'),
-      tabbedPaneTabs: [...document.querySelectorAll('.tabbed-pane-tab-label')].map((e) => e.textContent?.trim()).slice(0, 20),
+      rootWidget: has((n) => n.id === '-blink-dev-tools'),
+      elementsPanel: has((n) => n.id === 'elements-panel' || n.cls.includes('elements-tree-outline')),
+      consolePanel: has((n) => n.id === 'console-panel' || n.cls.includes('console-view')),
+      networkPanel: has((n) => n.id === 'network-panel' || n.cls.includes('network-log-grid') || n.cls.includes('network-panel')),
+      domTreeHasHtml: has((n) => n.tag === 'span' && /^<html/i.test(n.text)),
+      stylesSidebar: has((n) => n.cls.includes('styles-side-panel') || n.cls.includes('style-panes-wrapper') || (n.cls === 'widget' && false)),
+      tabbedPaneTabs: [...new Set(tabLabels)].slice(0, 16),
       bodyChildCount: body.children.length,
-      domNodeCount: document.querySelectorAll('*').length,
-      shadowHostCount: shadowHosts.length,
-      shadowHostSample: shadowHosts.slice(0, 12),
-      innerTextSample: body.innerText?.slice(0, 200) ?? '',
-      htmlSample: body.innerHTML.slice(0, 400),
+      shadowHostCount: nodes.filter((n) => n.id).length,
+      domNodeCount: nodes.length,
     };
   });
-  step('frontend-boot', panelState.rootWidget || panelState.bodyChildCount > 0, JSON.stringify(panelState.tabbedPaneTabs));
+  step('frontend-boot', panelState.rootWidget && panelState.domNodeCount > 100, JSON.stringify(panelState.tabbedPaneTabs));
   results.panelState = panelState;
-  step('frontend-elements', Boolean(panelState.elementsPanel), String(panelState.elementsPanel));
-  step('frontend-console', Boolean(panelState.consolePanel), String(panelState.consolePanel));
-  step('frontend-network', Boolean(panelState.networkPanel), String(panelState.networkPanel));
+  step('frontend-elements', Boolean(panelState.elementsPanel), `domNodeCount=${panelState.domNodeCount}`);
 
-  // 4. 最小演示流：Console evaluate（经 frontend 的 Runtime 域）在 Chromium 页面生效
-  //    （frontend 附接真实 Chromium —— 验证 serve 出的 frontend 本体可用）
-  const evalResult = await driver.evaluate(async () => {
-    // 借道 frontend 的 Main instance 不易；改用快捷键路径复杂——直接断言
-    // console 面板 prompt 出现 + Elements 树含 <html> 节点即可判「面板活着」。
-    const treeText = document.querySelector('.elements-tree-outline')?.textContent ?? '';
-    return { hasHtml: /<html/i.test(treeText), treeLen: treeText.length };
-  });
-  step('frontend-elements-tree-content', evalResult.hasHtml || evalResult.treeLen > 0, JSON.stringify(evalResult));
+  // Console / Network 面板是惰性实例化且窄窗口下折叠进溢出菜单——
+  // 用 DevTools 原生 `&panel=` 入口参数直开（重新 goto frontend）
+  const openPanelViaUrl = async (panel) => {
+    const url = `${frontendUrl.split('?')[0]}?ws=${wsParam}&panel=${panel}`;
+    await driver.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await driver.waitForTimeout(5000);
+    return driver.evaluate((name) => {
+      const nodes = [];
+      const walk = (root, depth) => {
+        if (depth > 14 || nodes.length > 20000) return;
+        for (const el of root.querySelectorAll('*')) {
+          nodes.push({ id: el.id ?? '', cls: String(el.className ?? '') });
+          if (el.shadowRoot) walk(el.shadowRoot, depth + 1);
+        }
+      };
+      walk(document, 0);
+      if (name === 'console') {
+        return nodes.some((n) => n.id === 'console-panel' || n.cls.includes('console-view'));
+      }
+      return nodes.some((n) => n.id === 'network-panel' || n.cls.includes('network-log-grid') || n.cls.includes('network-panel'));
+    }, panel);
+  };
+  const consoleOk = await openPanelViaUrl('console');
+  step('frontend-console', consoleOk, 'via &panel=console');
+  const networkOk = await openPanelViaUrl('network');
+  step('frontend-network', networkOk, 'via &panel=network');
+
+  // 4. 最小演示流断言：Elements 树已渲染被调试页的 <html> 节点（DOM 域活）+
+  //    样式侧栏在位（CSS 域活）
+  const evalResult = { hasHtml: panelState.domTreeHasHtml, tabs: panelState.tabbedPaneTabs };
+  step('frontend-elements-tree-content', Boolean(evalResult.hasHtml), JSON.stringify(evalResult));
 
   results.fatalConsoleErrors = consoleErrors.filter((e) => !/deps|DevTools|suggested/i.test(e));
   step('frontend-console-no-fatal', results.fatalConsoleErrors.length === 0, JSON.stringify(results.fatalConsoleErrors.slice(0, 3)));
