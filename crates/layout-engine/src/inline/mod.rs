@@ -2014,6 +2014,8 @@ impl InlineFormattingContext {
             // descent 大于行盒 descent 时行盒向下扩（chromium CSS2 §10.8.1 各 inline
             // box 度量 max 语义；gate 关闭恒 0 = 旧行为）。
             let mut max_glyph_descent = 0.0_f32;
+            // R4413：under rt（ruby-position:under，符号负值）要求的基线下方堆叠量。
+            let mut under_need = 0.0_f32;
             for run in &line.runs {
                 if matches!(
                     run.vertical_align,
@@ -2041,6 +2043,10 @@ impl InlineFormattingContext {
                             .max(run.font_size * run_ratio);
                         if run.ruby_rt_ascent < 0.0 {
                             max_glyph_descent = max_glyph_descent.max(-run.ruby_rt_ascent);
+                            // R4413：under rt 要求行堆叠高度容纳「基线下方 = base descent
+                            // + rt 行盒」——line.height 的 strut 基线不生长会令后续行/元素
+                            // 高度吞掉注音区（line-clamp-027/028 的 sizing 缺口）。
+                            under_need = under_need.max(-run.ruby_rt_ascent);
                         }
                         // R4374：run 回退链实际使用字体的 ascent/descent max 参与
                         // 行盒基线/底部（CJK 回退字体 NotoSansCJK hhea ascent 1.16em
@@ -2065,6 +2071,11 @@ impl InlineFormattingContext {
             line.baseline_y = baseline_y;
             line.ascent = max_ascent;
             line.descent = (line_height - max_ascent).max(max_glyph_descent);
+            // R4413：under rt 行（under_need>0）的堆叠高度须容纳「基线 + descent 侧注音」
+            // ——普通行 under_need=0 恒不生长（strut 语义不变）。
+            if under_need > 0.0 {
+                line.height = line.height.max(baseline_y + line.descent);
+            }
 
             for run in &mut line.runs {
                 run.y = match run.vertical_align {
