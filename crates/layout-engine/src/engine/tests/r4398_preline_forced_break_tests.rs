@@ -55,4 +55,12 @@ fn r4398_preline_forced_break_strips_trailing_collapsible_space() {
         "行 1 = 8×25 = 200px（断点前可折叠空格剥除），got {line1_w}"
     );
     assert!((line2_w - 200.0).abs() < 1.0, "行 2 = 200px，got {line2_w}");
+    // R4399：强制断行标记零宽 fragment（携带 ws_override）入行——inline_metric_storage
+    // 据此按文本节点/owner 存 RunWhiteSpace，paint Path B 重收集恢复 pre-line 断行
+    // identity（Path B 的 ws_overrides 对 marker 词永不命中的缺口）。
+    let marker = ctx.lines[0]
+        .runs
+        .iter()
+        .find(|f| f.text.is_empty() && f.width == 0.0 && f.ws_override.is_some());
+    assert!(marker.is_some(), "行 1 应含零宽 ws_override 标记 fragment");
 }

@@ -330,6 +330,42 @@ impl InlineFormattingContext {
                                 continue;
                             }
                             last_push_was_block_break = false;
+                            // R4399：强制断行标记零宽 fragment——携带 run 的 ws_override 供
+                            // inline_metric_storage 按（文本节点 id + owner 元素 id）存储，
+                            // paint Path B 重收集据此恢复 pre-line 断行 identity。marker 词
+                            // 零宽不产 fragment 时 Path B 的 ws_overrides 永不命中（非 Ahem
+                            // 容器无 stored IFC 可走），paint 仍按折叠文本渲染不断行
+                            //（pre-line-with-space-and-newline 8.07% 残差根因）。空文本零宽
+                            // 对几何/paint 无扰（不更新行高，draw 空串 no-op）。
+                            if let Some(ws) = run.ws_override
+                                && !ws.preserve
+                                && ws.break_at_newline
+                            {
+                                current_line.runs.push(TextFragment {
+                                    ws_override: Some(ws),
+                                    ruby_rt_ascent: 0.0,
+                                    glyph_ascent: 0.0,
+                                    glyph_descent: 0.0,
+                                    x: current_x,
+                                    y: 0.0,
+                                    width: 0.0,
+                                    height: 0.0,
+                                    text: String::new(),
+                                    source: None,
+                                    node_id: run.node_id,
+                                    font_size: run.font_size,
+                                    vertical_align: run.vertical_align.clone(),
+                                    is_ahem: run.is_ahem_font,
+                                    letter_spacing: 0.0,
+                                    margin_left: 0.0,
+                                    margin_right: 0.0,
+                                    padding_left: 0.0,
+                                    padding_right: 0.0,
+                                    margin_top: 0.0,
+                                    margin_bottom: 0.0,
+                                    baseline: run.font_size,
+                                });
+                            }
                             let est_height = if current_line.height > 0.0 {
                                 current_line.height
                             } else {
