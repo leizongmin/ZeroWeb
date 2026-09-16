@@ -265,3 +265,31 @@ automation 错误译为 `exceptionDetails`（200 形响应），断言须查 `ex
 | G4 | 无请求事件总线（net 生命周期无观测点） | 🔶 雏形已建（S7 proxy_fetch 生命周期 + S14 renderer FetchObserved 观测管线 + S17 dataReceived）；分块流式观测点待 net 窗口流式化（P6） |
 | G5 | console 走 `__zw_console_log` 扁平字符串宿主回调 | consoleAPICalled remoteObject 形态（P5） |
 | G6 | `headless.rs` 2256 行超 2000 上限 | ✅ 已解（S2 拆分 9 模块） |
+
+---
+
+## M5 定稿口径（2026-09-16，分支 B——挂账剔除定稿，用户批复落账）
+
+**批复**：2026-09-16 用户批复「DC-2 口径 = 分支 B（挂账 + 口径剔除定稿，goal 先行
+DONE），按 M5 定稿预案机械执行，附三条件」（入树提交 5af87ab69）。
+
+**绿步基线定稿**：expected-green **33** 步（`frames.access` 在列；全量 35 步面 =
+33 基线绿 + 基线外 1 步 + `frames.click+evaluate` 挂账剔除）。`frames.click+evaluate`
+**继续跑、不门禁**——挂账非豁免：阻塞方 = 渲染流域子帧能力冻结（子帧文档加载 +
+JS realm + child quads 三件套），解冻后一轮回填 34/34 并撤剔除（去处：master.md
+子帧解冻清单 + rendering-compat master.md 待用户决策清单 GB-20260916 落账条目）。
+
+**挂账清单终稿（不实现域 + 有因挂起项，随本节定稿）**：
+
+| 项 | 态 | 归因 |
+|----|----|------|
+| `frames.click+evaluate` | 挂账剔除（继续跑不门禁） | 引擎子帧能力三件套未落地（渲染流域专属 crate 面），非本流单方可解；解冻回填 |
+| `Page.handleJavaScriptDialog` | 有因挂起（绿步经语义挂账路径） | 引擎无阻塞对话框语义（shim alert no-op、confirm/prompt 立即返回，无 `javascriptDialogOpening` 事件源）——S10 现状澄清，等引擎对话框语义立项 |
+| `DOM.getFrameOwner` | 有因挂起 | frames 挂起下游（PW 未走到）；随子帧能力解冻一并复核 |
+| `Page.setFontFamilies` | 不实现（-32601 容忍） | PW 容忍路径（S4 实测），devtools 面需求时再评估 |
+| Tracing / Profiler / Debugger 断点深域 | 不实现（-32601） | goal 排除项（入口文档排除清单），等点名 |
+
+**实测复核账（定稿依据）**：S17 真实客户端捕获 35 方法零漂移；S25 DC-1 覆盖审计
+缺口 4 项补齐（实现态命令 e2e 全覆盖）；S28 复现链闭合零未登记漂移；门禁
+`make cdp-e2e` 自 S8 起每轮防回归（S893/S894/S895 连续 PASS 33 绿 deterministic
+双跑 YES，首调红形态连续三百余次零再现）。

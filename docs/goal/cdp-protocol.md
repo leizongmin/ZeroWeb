@@ -2,7 +2,7 @@
 
 **版本**: v1.0
 **日期**: 2026-09-12
-**状态**: Active
+**状态**: Done（2026-09-16 M5 分支 B 定稿收口——DC-2 口径经用户批复「挂账剔除定稿，goal 先行 DONE」；运行时控制面见 [cdp-protocol/master.md](cdp-protocol/master.md)）
 **执行模式**: WPT/webdriver-goal 同款「协议逐域收敛 + 真实客户端 E2E 账本」模式；遇深结构
 （多进程 Target 路由重构、V8 对象句柄桥）→ 记「待用户决策」→ 跳过 → 继续其他域
 **父目标**: `docs/goal/zero-web.md`（M10 WebView API 与自动化基础延伸 + M11/M14 自动化验收基建）
@@ -123,6 +123,7 @@
       console 消息采集 / network 事件 / dialog / frames（同进程 iframe）/ viewport
       emulation / evaluate
 - [ ] 全套用例对 ZeroWeb CDP 端点全绿（双跑 deterministic）
+      **（✅ 2026-09-16 M5 分支 B 口径注记**：绿步 33/34 定稿——`frames.click+evaluate` 挂账剔除：随引擎子帧能力（阻塞方=渲染流域子帧能力冻结），M5 定稿时点不阻收口；解冻后一轮回填 34/34 并撤剔除，见 master.md「子帧解冻清单」与 rendering-compat master.md GB-20260916 落账条目。判定语义原文未动，仅注记。**）**
 - [ ] 连接生命周期健壮：connect → 操作 → close 无进程/句柄泄漏（重复连接、异常断开）
 
 ### DC-3: 协议健壮性

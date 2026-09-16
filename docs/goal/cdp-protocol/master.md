@@ -2,71 +2,41 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-16（S895：**静默监测引用轮**（引用计
-数 5/10，周期锚点=S890 双腿：门腿 09:40:50 落盘 +
-make test 腿 ~09:56 前收口）——同 tip 复核 pull 零新提
-交（已经是最新的）tip=590309f55 即 S894 提交本身，
-tracked 代码树=S890 双腿覆盖树态（=R4396 组合态），树不
-变口径=门单腿复跑免 make test 腿（S336 先例）。**门腿**
-make cdp-e2e ZW_IPC_VALIDATE=1 在位 10:18:45 启动
-10:19:18 落盘（wall ~33s）**首调即 PASS 33 绿
-deterministic 双跑 YES EXIT=0**（单次触发即收口，S790
-先例勿二调），expected_green 33 对称差 none
-（green==expected 逐项一致零漂移——green_steps 与
-expected-green.json 的 expected_green 字段逐项一致；
-门禁脚本 L106 baseline.expected_green 字段口径在位），
-regressions 空、无 fatal（fatal 文件面 0），run_details
-双 run ok 集各 33 逐项一致（差异仅 run 序号字段；
-steps-report 35 步面 34 ok + frames.click+evaluate 挂起
-维持），ZW_IPC_VALIDATE 捕获网在位静默（#0 复现监测零
-命中，capture jsonl 面最近落盘为往轮 09-12/09-13 时点
-本轮零写入）；首调红形态**连续第三百零九次零再现**（累
-计两例非聚集维持）。本轮校验取证注记：临时对拍脚本首查
-误将 expected-green.json dict 顶层键（description/
-expected_green）当集合产生假不对称，复查以
-baseline.expected_green 字段口径三方对拍
-（green_steps/报告内 expected_green/文件字段）全数一
-致=假警报排除，门禁脚本自身口径在位非回归。**dead_code
-warning 本轮为缓存 replay 相位**（捕获窗零 Compiling
-行、clippy Finished 0.18s 印证编译全缓存态；两相位口径
-维持，warning 面维持 js_dom_bridge.rs:3420
-match_media_to_json），clippy -p zero-engine --lib --
--D warnings 维持 PASS（本轮实测零 warning EXIT=0）DC-4
-不可退让面零暴露，归因 engine crate zero-web 流域，本
-流不碰 engine 记账不修。本轮属**兄弟流测试腿负载窗亚型
-活跑**（窗前 sibling ZeroWeb-2 zero_integration_tests
-腿 137% CPU pid 2717627 同 pid 延续在窗 第六十一个负载
-下样本；窗后 259% 新 pid 2831792 接棒（10:20:19 起）
-兄弟腿连跑 负载 1.94→2.22 非端口竞争面
-9222/45029/34293/19222 四端口族窗前窗后全程 free 门后
-零本门残留 残留 grep 零命中）。机器卫生：zombie 双复测
-均零（t0=0、t+5s=0）机器卫生维持；三层锚点零漂移——自
-有面对 765429dda 维持 **4 files +137/-17** 精确一致
-（Makefile 1/1 + apps/browser/README.md 1/0 +
-headless/mod.rs 25/0 + headless/session.rs 110/16 本轮
-实测复核 零新增漂移）；全树排除本流 docs 对 18d462de6
-维持 **92 files +9845/-622**（R4396 折入后新面值维
-持）；crates/ 观察面 raw 维持 **60**（git log
-8fb39cd46..HEAD -- crates/ 口径）。子帧关键词非测试代码
-零命中维持（8 文件全数测试路径既有形态维持），实质判定
-不变 frames.click+evaluate 维持挂起。零树污染（tracked
-clean，out/ 报告为忽略产物；未跟踪探针 21 个既有形态
-S27 口径不入门禁图）。控制面零外来提交（本轮执行段
-pull 零新提交）。解冻条件实质判定不变：① 观察面
-crates/ raw 60 维持（R4396 折入后新基线 S890 刷新落定
-顺延），子帧三件套 iframe.contentDocument null 现状不
-变，frames.click+evaluate 维持挂起；② 本流控制面
-docs/goal/cdp-protocol/ 零外来提交，DC-2 口径无新拍板
-记录。goal 自有面零新缺口、无扩展面（S40-S894 重审结论
-延续）。**make test 全量参考基线 19,317P/0F 维持（S890
-双腿刷新 R4396 组合态实测落定）——引用计数 5/10（周期
-锚点=S890 双腿），下轮 S896 = 6/10 静默监测引用轮（周
-期锚点维持 S890 双腿），若 S896 前树代码变化则提前触发
-双腿刷新（S245→S829→S835→S843→S848→S856→S865 先例
-链），否则按引用轮口径门单腿复跑免 make test 腿（S336
-先例），至迟 S898=8/10 到期即次轮期限轮活跑（双腿活跑
-口径=门 + make test，S773/S782/S865/S874/S875/S876/
-S884/S885/S886/S890 先例）**）
+**最后更新**: 2026-09-16（S896：**M5 定稿轮——分支 B 机械清单执行完毕，goal 收口
+Done**（2026-09-16 用户批复「DC-2 口径 = 分支 B（挂账+口径剔除定稿，goal 先行
+DONE）」入树兑现，批复提交 5af87ab69 docs-only 于 S895 门腿前经 push 前 pull 入
+树，docs-only 归因不入刷新面 S349/S846/S848/S853/S854/S865 先例）。**机械清单五
+步全落**：① 矩阵账本「ZeroWeb 侧实测捕获」节口径注记 + 文末「M5 定稿口径」节
+（挂账清单终稿：frames.click+evaluate 挂账剔除 / handleJavaScriptDialog 有因挂起 /
+getFrameOwner 有因挂起 / setFontFamilies -32601 / Tracing-Profiler-Debugger 不实
+现）；② 本里程碑状态表 M3/M5 → ✅（口径挂账注记）+ 缺口清单 P3 → ✅（挂账口
+径）+ 当前状态节 Goal 状态行 Done；③ goal 入口文档 DC-2 行挂账口径注记（判定语
+义原文未动）+ 状态行 Active → Done；④ expected-green 基线维持 **33** 不动定稿
+（frames.access 在列；frames.click+evaluate 继续跑、不门禁——现状即口径）；⑤ CI
+集成评估结论记账：技术可行非阻塞（S8 记账三要素在位：node 20.19 + lockfile 离线
+可复现 + chromium 缓存命中；接入三步 = npm ci + cargo build -p zero-browser +
+make cdp-e2e），未纳入 CI 归因 = 本 goal 无自有 CI 管线诉求、防回归已由 rally 每
+轮门承担。**批复三条件逐项满足**：条件① 剔除注记点名阻塞方（子帧能力冻结·渲染
+流域）与挂账去处、未表述为已完成/放弃；条件② 挂账条目登记至「子帧解冻清单」
+（本文件新建节）+ rendering-compat master.md 待用户决策清单（GB-20260916 落账条
+目，跨流写入经批复授权），解冻后一轮回填 34/34 并撤剔除；条件③ 本批复替代分支
+A 已生效。**收口判定依据**：DC-1 ✅（矩阵三态全登记 + S25 实现态 e2e 全覆盖 +
+S17/S28 实测零漂移 + 终稿节落定）；DC-2 ✅（分支 B 口径：门 PASS 33 绿
+deterministic 双跑 YES——S893/S894/S895 连续活跑，S895 门腿 10:19:18 落盘为本定
+稿树态最近门证据；S21 生命周期实证：重复连接循环无状态残留 + 异常断开 ×3 服务
+器存活）；DC-3 ✅（S8 盘点：-32601/-32700/-32602/loopback/token-origin + 100MB
+payload 16MB 帧上限干净拒绝服务器存活）；DC-4 ✅（make test 19,317P/0F 参考基线
+S890 双腿落定 + clippy 零 warning 每轮 PASS + fmt 干净 + make cdp-e2e 入口
+test-guard 包裹 + CI 可行性结论记账 + headless 既有自动化面零回归）。树不变口径
+维持：本定稿全 docs（master.md + 入口文档 + 矩阵账本 + rendering-compat GB 落账
+四文件），tracked 代码树与 S890 双腿覆盖树态（=R4396 组合态）一致，免门/测试腿
+复跑（S349/S846/S848/S853/S854/S865 先例，门证据引用 S895 门腿 10:19:18 落
+盘）；三层锚点照 S895 实测维持零漂移（自有面 4 files +137/-17、全树 92 files
++9845/-622、crates/ raw 60、子帧关键词 8 文件全测试路径）。**收口后控制面进入守
+成态**：cdp-e2e 门每轮防回归（基线 33 定稿）+ 引用计数协议维持（周期锚点维持
+S890 双腿，S896 时点引用计数顺延——下轮 S897 = 7/10 静默监测引用轮，树代码变
+化提前触发双腿刷新，至迟 S898=8/10 到期即次轮期限轮活跑）；唯一未清偿义务 =
+frames.click+evaluate 回填（挂子帧能力解冻，见子帧解冻清单，不阻收口））
 
 ---
 
@@ -75,6 +45,8 @@ S884/S885/S886/S890 先例）**）
 **专项定位**：把 `apps/browser/src/headless.rs` 的 CDP 雏形（3 命令）收敛到 Playwright
 （pin 版本）`connectOverCDP` 可用——命令矩阵账本为验收标尺，Playwright E2E 全绿收口。
 本 goal 是 devtools goal（Chrome DevTools frontend 复用）的协议基座（下游门控）。
+
+**Goal 状态**：**Done（2026-09-16 M5 分支 B 定稿收口，用户批复「goal 先行 DONE」）**——DC-1~4 逐项判定见下方里程碑状态与验证基线；收口后本控制面进入守成态（cdp-e2e 门每轮防回归 + 引用计数协议维持），frames.click+evaluate 回填义务见子帧解冻清单。
 
 **与兄弟 goal 的边界**：
 - android-browser — `apps/browser` 共享活跃并行流，碰前 `git log --since="14 days ago"`
@@ -88,7 +60,7 @@ S884/S885/S886/S890 先例）**）
 |---|------|------|
 | P1 | Playwright 命令矩阵账本（pin 版空跑导出命令全集 + 三态登记） | ✅ 初稿落地（evidence/cdp-command-matrix.md；随域更新三态） |
 | P2 | headless.rs 职责拆分（2256 行超 2000 上限；transport/discovery/domains/session） | ✅ M1 切片 1（headless/ 9 模块，纯搬移零语义变化，make test 19,170P/0F 与基线一致） |
-| P3 | Target/Runtime/Page/Input/DOM/CSS/Network/Emulation 域实现 | 🚧 S39 后余 1 步：frames.access 翻绿（子帧元数据探测，纯 headless 面）；唯余 frames.click+evaluate（挂子帧文档加载+JS realm——engine 子帧能力，渲染流域协调） |
+| P3 | Target/Runtime/Page/Input/DOM/CSS/Network/Emulation 域实现 | ✅ 定稿口径（2026-09-16 M5 分支 B，用户批复）：全域实现态绿；唯余 frames.click+evaluate 挂账（子帧文档加载+JS realm——engine 子帧能力，阻塞方=渲染流域子帧能力冻结，见子帧解冻清单；解冻后回填 34/34 并撤剔除，不阻收口） |
 | P4 | Node/Playwright 测试链（pin + E2E 用例集 + make 入口） | ✅ S8：`make cdp-e2e`（test-guard 包裹，deterministic 双跑 + expected-green 回归门）；用例集=34 步全核心流 + DC-1 缺口补测（S25）；**S78 门禁诚实性修复**（verify 容忍码 2→1 + capture-core-flow 致命路径兜底落 fatal 报告——此前崩溃+陈旧报告叠加可成假绿） |
 | P5 | console 对象化（V8 侧结构化序列化，替换扁平字符串） | ✅ S11 value-only 面落地（consoleAPICalled 绿——shim 逐参值序列化 + `__zw_console_log` 三参 + headless 转事件，PW 消费面 msg.type()/text() 全通）；完整对象句柄化（remoteObject preview/objectId）挂账随 devtools 面需求 |
 | P6 | net 请求事件总线（Network 域 + devtools Network 面板共用脊柱） | 🔶 雏形已建（S7 proxy_fetch 三事件 + S14 renderer FetchObserved + S17 dataReceived 双路径）；分块流式观测点待 net 窗口流式化——**net 近 14 天无外部流占用，窗口已开**（2026-09-12 实测） |
@@ -16320,6 +16292,20 @@ S884/S885/S886/S890 先例）**）
      ✅（口径挂账注记）；③ goal 入口文档 DC-2 行加挂账口径注记（不改判定语义原文，仅
      注记）；④ expected-green 基线维持 28 不动（frames 步骤继续跑、不门禁）；⑤ CI 集成
      评估出结论记账。四步全 docs，一个提交。
+   **▶ M5 定稿执行记录（2026-09-16，分支 B 机械清单执行完毕，S896 实质工作轮）**：
+   用户批复（5af87ab69 入树，对话「其他按照你的建议来」）落地——① 矩阵账本
+   「ZeroWeb 侧实测捕获」节口径注记 + 文末「M5 定稿口径」节（挂账清单终稿）落定；
+   ② 本里程碑状态表 M3/M5 → ✅（口径挂账注记）；③ goal 入口文档 DC-2 行挂账口径
+   注记（判定语义原文未动）+ 状态行 Active → Done；④ expected-green 基线维持 33
+   不动（frames.access 在列；frames.click+evaluate 继续跑、不门禁——现状即口径）；
+   ⑤ CI 集成评估结论记账：技术可行非阻塞（node 20.19 在位 + lockfile 离线可复现 +
+   chromium 缓存命中，接入三步 = `npm ci` + `cargo build -p zero-browser` +
+   `make cdp-e2e`）；未纳入 CI 归因 = 本 goal 无自有 CI 管线诉求，防回归已由 rally
+   每轮门承担；后续如需 CI 化按 S8 记账三步接入。批复条件①②③逐项满足：条件①
+   剔除注记点名阻塞方（子帧能力冻结·渲染流域）与挂账去处、未表述为已完成/放弃；
+   条件② 挂账条目登记至子帧解冻清单（本文件）+ rendering-compat master.md 待用户
+   决策清单（GB-20260916 落账条目），解冻后一轮回填 34/34 并撤剔除；条件③ 本批复
+   替代分支 A 已生效。**goal 就此收口（Done）**。
 3. **持续推进**：每轮 pull → cdp-e2e 门防回归（基线 **33** 步；**免复跑条件**：pull 后
    HEAD 未变且 tracked 树无变更——S26 验证过的 tip 可引用其结论，S27 复核未跟踪探针
    不入门禁图；**S78 补强：verify 已门禁化 fatal 报告检查 + 容忍码收紧，PASS 即含
@@ -18471,9 +18457,27 @@ S884/S885/S886/S890 先例）**）
 |--------|------|
 | M1 — 传输/发现/Target 基座 + Playwright 首连 | ✅ S9 收口：连接面 + evaluate 全族（literal/function/withArgs/object/async）+ releaseObject(Group) 全通 |
 | M2 — Page/Input 域 → 点击/填充/键盘/导航流 | ✅ S16 收口：goto/title/fill/click 全族/dialog/键盘 type+press（Ctrl+A 全选）/导航事件族全绿 |
-| M3 — DOM/CSS/Emulation → locator 流 | 🚧 S39：locator.boundingBox/viewport/媒体/截图 clip+element+fullPage/frames.access 绿；iframe 内容面维持挂起（frames.click+evaluate） |
+| M3 — DOM/CSS/Emulation → locator 流 | ✅ S39 收口（M5 分支 B 口径注记）：locator.boundingBox/viewport/媒体/截图 clip+element+fullPage/frames.access 绿；iframe 内容面 frames.click+evaluate 挂账（随引擎子帧能力，见子帧解冻清单，不阻收口） |
 | M4 — Network/cookies/console 对象化（cookie 落点=Storage 域） | ✅ S17 收口：cookie 域 + UA override + Network 事件族（含 dataReceived，S17）+ consoleAPICalled（value-only）绿；分块流式观测记账 |
-| M5 — 矩阵收口 | 🚧 绿步 33/34（expected-green 基线同步扩至 33，S39）；余 1 步挂子帧文档+realm（DC-2 口径待决策） |
+| M5 — 矩阵收口 | ✅ 2026-09-16 分支 B 定稿（用户批复「选分支 B（挂账+口径剔除定稿，goal 先行 DONE）」）：绿步 33（expected-green 基线 33 定稿）；frames.click+evaluate 挂账剔除（DC-2 口径注记见下 + 子帧解冻清单）；挂账清单终稿 + CI 集成评估结论记账同轮落定 |
+
+## 子帧解冻清单（frames.click+evaluate 挂账，M5 分支 B 定稿）
+
+**挂账条目**：`frames.click+evaluate`（Playwright 同进程 iframe 点击 + evaluate 全流，
+全量 35 步面唯一非绿步）——真挂**引擎子帧能力三件套**（子帧文档加载 + JS realm +
+child quads，S18 三件套论证对其成立）：iframe.contentDocument 现状 null（引擎不加载
+子帧文档）；子帧渲染面属 layout-engine/paint（渲染流域专属 crate），本流不可单方解
+（frames.access 元数据面已于 S39 本流单方解）。
+
+**阻塞方**：子帧能力冻结·渲染流域（2026-09-16 用户批复点名；rendering-compat
+master.md 待用户决策清单 GB-20260916 落账条目同步登记）。
+
+**解冻与回填口径（批复条件②）**：渲染流域子帧能力（子帧文档加载/渲染/JS realm）
+落地后，本流一轮回填 34/34 并撤剔除——expected-green 基线 33→34（frames.click+
+evaluate 入门禁）+ 本清单销账 + 矩阵账本/入口文档挂账注记撤除。挂账表述非「已完成/
+放弃」（批复条件①），goal DONE 不豁免本条回填义务（批复条件③：本批复替代分支 A，
+无需再候）。
+
 
 ## 验证基线
 
