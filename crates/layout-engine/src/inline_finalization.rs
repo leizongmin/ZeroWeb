@@ -1347,6 +1347,16 @@ pub(crate) fn compute_final_inline_layouts(
     // paint 看到的行数 ≤ n，旧 `line_ys.len() > max` 判定无法独立触发 ellipsis。
     // 须在 store-gate return 之前设（非 stored 容器也走此，non-stored paint 路径冗余读之）。
     root.line_clamp_clamped = inline_ctx.clamped;
+    // R4417：cap 值存盒——paint Path B（空 styles 重跑 IFC，ruby 页等非 stored 容器）
+    // 无行数语义（resolve_line_clamp 对 Auto 恒 None，paint 自身 style 亦不可用），
+    // exceeded 截断与省略号须从盒读 cap（auto-with-ruby-005：Path B 6 行全绘、
+    // Line 6 未钳制渲染于盒下方）。仅真截断时存，cross-block（postprocess R3768）
+    // 语义不受扰（彼处后写为权威）。
+    if inline_ctx.clamped
+        && let Some(cap) = inline_ctx.line_clamp
+    {
+        root.line_clamp_cap = Some(cap);
+    }
     // R632：存 font_size/line_height/is_ahem/letter_spacing overrides 供 paint Path B 重跑 IFC 用。
     // compute_final 此前不存（仅 remeasure 路径 line 801/935 存），致走 Path B 的容器（非 pure-Ahem，
     // 含 wrap/auto-wrap 多行块）paint IFC override 全空 → line_height fallback 19.2 (16×1.2) 而非

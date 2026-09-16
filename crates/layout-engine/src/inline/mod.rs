@@ -1105,16 +1105,36 @@ impl InlineFormattingContext {
     /// apply_line_clamp_cap 的 prefix 边界同口径（累计底 ≤ 约束的行保留）。
     fn auto_clamp_keep_count(&self, style: &ComputedStyle) -> Option<usize> {
         let constraint = line_clamp_auto_constraint_px(style)? as f32;
+        // R4417：注音可溢入的安放空间 = 盒的 padding-bottom（css-overflow-4 auto +
+        // css-ruby under 对立对：005 padding .75lh=24 ≥ 扩展 9.3 → 行按 strut 计入、
+        // 注音溢入 padding；004 无 padding → 扩展无处安放 → clamp 在该行之前）。
+        let padding_bottom = Self::resolve_inline_padding(&style.padding_bottom, style);
         let mut acc = 0.0_f32;
         let mut count = 0_usize;
         for l in &self.lines {
-            let h = if l.y.is_nan() { 0.0 } else { l.height };
-            if acc + h <= constraint + 0.5 {
-                acc += h;
-                count += 1;
-            } else {
+            // under rt 的行堆叠扩展量（R4413 生长）从约束累计中扣除——行高本身保留
+            // 扩展（027/028 sizing 域与后续行真实堆叠位不回归）。扩展量从 runs 现场
+            // 推导（负 ruby_rt_ascent 的最大幅值）。
+            let under_ext = l
+                .runs
+                .iter()
+                .map(|r| -r.ruby_rt_ascent.min(0.0))
+                .fold(0.0_f32, f32::max);
+            let strut_h = (l.height - under_ext).max(0.0);
+            let h = if l.y.is_nan() { 0.0 } else { strut_h };
+            if acc + h > constraint + 0.5 {
                 break;
             }
+            // strut 入约束后，under 扩展须能溢入「约束余量 + padding-bottom」，
+            // 否则该行不 fit（css-overflow-4：clamp point set before that line）。
+            if under_ext > 0.0 {
+                let slack = (constraint - acc - h).max(0.0);
+                if under_ext > slack + padding_bottom + 0.5 {
+                    break;
+                }
+            }
+            acc += if l.y.is_nan() { 0.0 } else { l.height };
+            count += 1;
         }
         Some(count)
     }
@@ -1127,7 +1147,9 @@ impl InlineFormattingContext {
     /// `y+height ≤ n·lh` 判（clamp 边界 = n 行高，auto-015：被 float 推过边界的行为
     /// 隐藏）。边界处的行（底 == n·lh）保留（css-overflow-4 auto-016 语义对立面——
     /// 015 的推压行走 px 判据，普通行不影响）。
-    pub(crate) fn apply_line_clamp_cap(&mut self, n: usize) {
+    /// R4417：paint Path B（zero-engine）按盒存 cap 补行级 clamp（空 styles 重跑无
+    /// 行数语义）——跨 crate 消费公开。
+    pub fn apply_line_clamp_cap(&mut self, n: usize) {
         // R4414：gap 检测与边界改**累计行高前缀和**——旧 `y == i·首行高` 隐含行高均匀
         // 假设，ruby 行（OVERHANG gate 下 rt ascent 膨胀）的非均匀高被误判为 float 推压
         // gap，px-extent 边界切在 ruby 行中间（line-clamp-027/028 kept=2 实证）。前缀和

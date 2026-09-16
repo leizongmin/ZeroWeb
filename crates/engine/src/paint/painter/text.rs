@@ -1163,6 +1163,13 @@ impl super::Painter {
                     }
                 }
                 ctx.layout(doc, node_id, &HashMap::new());
+                // R4417：Path B（空 styles 重跑）无行数语义（resolve_line_clamp 对
+                // line-clamp:Auto 恒 None，paint 侧 style 亦不可用）——按盒存 cap 补
+                // 行级 clamp，先于 fragment 展开（Line 6 片段不再产出、不产 ghost
+                // glyph）。cap 由 layout 期写入（compute_final，clamped 时同镜像）。
+                if let Some(cap) = box_node.line_clamp_cap {
+                    ctx.apply_line_clamp_cap(cap);
+                }
                 if std::env::var("ZW_PROBE_4328").is_ok() {
                     let n: usize = ctx.lines.iter().map(|l| l.runs.len()).sum();
                     let first = ctx
@@ -2606,11 +2613,38 @@ impl super::Painter {
                     let fragment_glyphs = &glyphs[glyphs_before_fragments..];
 
                     // 收集唯一的行 Y 坐标（用于计算总行数）
-                    let mut line_ys: Vec<f32> = fragment_glyphs
-                        .iter()
-                        .filter(|g| g.font_size > 0.0)
-                        .map(|g| g.y)
-                        .collect();
+                    // R4417：Path B（非 stored）按 IFC 行盒分带归并行 y——glyph-y 去重会
+                    // 把 under rt 注音字形行误计为独立行（line-clamp-auto-with-ruby-003：
+                    // cutoff 落在 base 行，"Line 5" 全行被零掉、仅剩 rt + 省略号）。带代表
+                    // y = 带内首个可见字形 y（与 glyph-y 域一致，末行 ellipsis 定位/裁让
+                    // 逻辑不变）。带映射为空（glyph 全在带外：abspos/valign 偏移等）回退
+                    // glyph-y 去重；stored 路径 inline_ctx 空，恒回退（原行为）。
+                    let glyph_line_ys = || {
+                        let mut ys: Vec<f32> = fragment_glyphs
+                            .iter()
+                            .filter(|g| g.font_size > 0.0)
+                            .map(|g| g.y)
+                            .collect();
+                        ys.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+                        ys.dedup_by(|a, b| (*a - *b).abs() < 0.5);
+                        ys
+                    };
+                    let mut line_ys: Vec<f32> = if !use_stored && !inline_ctx.lines.is_empty() {
+                        let banded: Vec<f32> = inline_ctx
+                            .lines
+                            .iter()
+                            .filter_map(|l| {
+                                fragment_glyphs
+                                    .iter()
+                                    .filter(|g| g.font_size > 0.0 && g.y >= l.y - 0.5 && g.y <= l.y + l.height + 0.5)
+                                    .map(|g| g.y)
+                                    .next()
+                            })
+                            .collect();
+                        if banded.is_empty() { glyph_line_ys() } else { banded }
+                    } else {
+                        glyph_line_ys()
+                    };
                     line_ys.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
                     line_ys.dedup_by(|a, b| (*a - *b).abs() < 0.5);
 
