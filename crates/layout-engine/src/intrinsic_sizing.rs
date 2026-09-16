@@ -12,7 +12,9 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use zero_css_parser::values::{BoxSizingValue, DisplayValue, FlexDirectionValue, LengthValue, VisibilityValue};
+use zero_css_parser::values::{
+    BoxSizingValue, ClearValue, DisplayValue, FlexDirectionValue, FloatValue, LengthValue, VisibilityValue,
+};
 use zero_dom::{Document, NodeId};
 use zero_style_system::ComputedStyle;
 use zero_style_system::property::types::{ColumnSpanComputedValue, FlexBasisValue, WhiteSpaceValue};
@@ -240,6 +242,11 @@ fn resolve_kw_real_length(value: &LengthValue, style: &zero_style_system::Comput
 fn box_content_max_width_inner(box_node: &LayoutBox, doc: &Document, styles: &HashMap<NodeId, ComputedStyle>) -> f32 {
     let mut inline_sum = 0.0f32;
     let mut block_max = 0.0f32;
+    // R4397：float 子横向叠加 + clear 强制换行（同 block_max_content_width loop 头注
+    // ——max-content 语境 float 与 inline 内容同行并排；fit-content-contribution-001
+    // float 行 0.000 精确实证）。
+    let mut float_row = 0.0f32;
+    let mut float_max = 0.0f32;
     let mut has_in_flow_child = false;
 
     for child in &box_node.children {
@@ -373,12 +380,21 @@ fn box_content_max_width_inner(box_node: &LayoutBox, doc: &Document, styles: &Ha
             } else {
                 inline_sum += outer_w.max(0.0);
             }
+        } else if !matches!(child.float, FloatValue::None) {
+            // R4397：float 子横向叠加 + clear 换行（见 loop 头注）。
+            if !matches!(child.clear, ClearValue::None) {
+                float_max = float_max.max(float_row);
+                float_row = 0.0;
+            }
+            float_row += (box_content_max_width(child, doc, styles) + ml + mr).max(0.0);
         } else {
             block_max = block_max.max(box_content_max_width(child, doc, styles));
         }
     }
 
-    let children_inner = inline_sum.max(block_max);
+    // R4397：float 行与 block 行正交取 max。
+    let float_contribution = float_max.max(float_row);
+    let children_inner = inline_sum.max(block_max).max(float_contribution + inline_sum);
     // 叶盒回退：无有效子元素贡献时，用自身显式 Px width（content-box 语义）。
     // 显式 width 的叶盒（如 `<div style="width:50px">`）其 max-content 即该宽度。
     let own_style = box_node.node_id.and_then(|id| styles.get(&id));
@@ -540,6 +556,16 @@ pub(crate) fn block_max_content_width(
     //（含 spanner）保留供非 multicol `children_inner`（spanner 对普通 block 容器即普通子）。
     let mut nonspanner_block_max = 0.0f32;
     let mut spanner_max = 0.0f32;
+    // R4397（css-sizing-3 §max-content；outline-028 取证）：float 子横向叠加不进
+    // block_max（max 语义）——max-content 语境下 float 与后续 inline 内容**同行并排**，
+    // 容器宽 = float 外宽和 + inline 内容宽（与 block 子「各自成行取 max」正交）。
+    // 旧实现 float 落 block 分支与 inline 取 max → outline-028 的 max-content 容器
+    // 25 测 15（float 15 吞掉 span 10），outline 不含 span 盒 1.656% 实证。
+    // clear 强制换行：cleared float 开新行（bidi-breaking-001 的 .set{clear:both}
+    // 堆叠行形态实证——无 clear 行模型时行内求和把堆叠宽误加），float 贡献 =
+    // 各行和的最大值。
+    let mut float_row = 0.0f32;
+    let mut float_max = 0.0f32;
     let mut has_in_flow_child = false;
 
     for child in &box_node.children {
@@ -633,6 +659,16 @@ pub(crate) fn block_max_content_width(
             })
             .unwrap_or_else(|| box_content_max_width(child, doc, styles));
         let with_margins = child_intrinsic + ml + mr;
+        // R4397：float 子横向叠加 + clear 换行（见 loop 头注）；与 spanner 记账正交
+        //（column-span:all float 非常规形态，不参与 spanner_max）。
+        if !matches!(child.float, FloatValue::None) {
+            if !matches!(child.clear, ClearValue::None) {
+                float_max = float_max.max(float_row);
+                float_row = 0.0;
+            }
+            float_row += with_margins.max(0.0);
+            continue;
+        }
         block_max = block_max.max(with_margins);
         if is_spanner {
             spanner_max = spanner_max.max(with_margins);
@@ -647,7 +683,9 @@ pub(crate) fn block_max_content_width(
         inline_sum += dom_inline_text_max_width(box_node, doc, styles);
     }
 
-    let children_inner = inline_sum.max(block_max);
+    // R4397：float 行（float 外宽和 + inline 内容同行并排）与 block 行（max）正交取 max。
+    let float_contribution = float_max.max(float_row);
+    let children_inner = inline_sum.max(block_max).max(float_contribution + inline_sum);
 
     // leaf 回退同 box_content_max_width：显式 Px width 或文本内容宽。
     // R4008：自身 contain:size + content-based width 关键字 → CIS 替代（同 box_content_max_width）。
@@ -927,6 +965,37 @@ impl DomWalkState {
     }
 }
 
+/// R4395：折叠语境（non-preserve）的文本段 walk——连续空白折叠态语义：
+/// - 纯空白段只记 pending（与后续内容相接时计一个空格宽）——旧实现 collapsed=" "
+///   非空 → 无条件逐字计宽，行首/行尾空白误计（R4394 bare walker 同缺陷前科，
+///   intra-base-white-space 族）；
+/// - 非空文本剥首尾空白计宽，边缘空白转 pending（行首无前置内容不计宽）。
+fn walk_collapsible_text(content: &str, segments: &mut [f32], state: &mut DomWalkState) {
+    let collapsed = crate::inline::collapse_whitespace(content);
+    let trimmed = collapsed.trim_matches(' ');
+    let leading = collapsed.starts_with(' ');
+    let trailing = collapsed.ends_with(' ');
+    if trimmed.is_empty() {
+        if !collapsed.is_empty() || content.chars().any(char::is_whitespace) {
+            state.pending_space = true;
+        }
+        return;
+    }
+    if leading {
+        state.pending_space = true;
+    }
+    state.flush_space(segments);
+    let w: f32 = trimmed
+        .chars()
+        .map(|ch| measure_intrinsic_char(ch, state.font_id, state.font_size, state.is_ahem))
+        .sum();
+    *segments.last_mut().expect("segments 非空") += w;
+    state.line_has_content = true;
+    if trailing {
+        state.pending_space = true;
+    }
+}
+
 fn dom_inline_text_walk(
     node_id: NodeId,
     doc: &Document,
@@ -959,32 +1028,20 @@ fn dom_inline_text_walk(
                     state.line_has_content = true;
                     continue;
                 }
-                let collapsed = crate::inline::collapse_whitespace(&t.content);
-                let trimmed = collapsed.trim_matches(' ');
-                let leading = collapsed.starts_with(' ');
-                let trailing = collapsed.ends_with(' ');
-                if trimmed.is_empty() {
-                    // R4395：纯空白段只记 pending（与后续内容相接时计一个空格宽）——
-                    // 旧实现 collapsed=" " 非空 → 无条件逐字计宽，行首/行尾空白误计
-                    // （R4394 bare walker 同缺陷前科，intra-base-white-space 族）。
-                    if !collapsed.is_empty() || t.content.chars().any(char::is_whitespace) {
-                        state.pending_space = true;
+                // R4397（css-text-3 §white-space-phase-1）：pre-line 保留 \n 为强制换行——
+                // 按 \n 切段（段前 pending 随行尾丢弃——「collapsible spaces immediately
+                // preceding a sequent break are removed」），段内空白照常折叠。
+                if matches!(white_space, WhiteSpaceValue::PreLine) && t.content.contains('\n') {
+                    for part in t.content.split('\n') {
+                        walk_collapsible_text(part, segments, state);
+                        // \n 强制断：行尾 pending 丢弃，开新段。
+                        state.pending_space = false;
+                        state.line_has_content = false;
+                        segments.push(0.0);
                     }
-                } else {
-                    if leading {
-                        state.pending_space = true;
-                    }
-                    state.flush_space(segments);
-                    let w: f32 = trimmed
-                        .chars()
-                        .map(|ch| measure_intrinsic_char(ch, state.font_id, state.font_size, state.is_ahem))
-                        .sum();
-                    *segments.last_mut().expect("segments 非空") += w;
-                    state.line_has_content = true;
-                    if trailing {
-                        state.pending_space = true;
-                    }
+                    continue;
                 }
+                walk_collapsible_text(&t.content, segments, state);
             }
             zero_dom::NodeKind::Element(e) if e.local_name().eq_ignore_ascii_case("br") => {
                 // 强制换行：行尾待定空白丢弃（CSS：行尾空白不渲染），开新段。
