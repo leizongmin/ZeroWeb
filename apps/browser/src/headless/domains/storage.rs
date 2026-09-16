@@ -93,6 +93,56 @@ impl HeadlessServer {
         serde_json::json!({})
     }
 
+    /// Network.getCookies — DevTools frontend CookiesModel 数据源（Application 面板
+    /// Cookies 视图按页面 URL 拉取；devtools goal M2-N3）。`urls` 非空时按 host 后缀
+    /// 匹配过滤，缺省全量。
+    ///
+    /// https://chromedevtools.github.io/devtools-protocol/tot/Network/#method-getCookies
+    pub(super) fn cmd_network_get_cookies(&self, session: &mut HeadlessSession, params: &Value) -> Value {
+        let urls: Vec<String> = params
+            .get("urls")
+            .and_then(|v| v.as_array())
+            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
+            .unwrap_or_default();
+        let cookies: Vec<Value> = session
+            .cookie_store
+            .all()
+            .iter()
+            .filter(|c| {
+                urls.is_empty()
+                    || urls.iter().any(|url| {
+                        let host = zero_net::parse_url(url).ok().and_then(|p| p.host).unwrap_or_default();
+                        let domain = c.domain.clone().unwrap_or_default();
+                        !host.is_empty()
+                            && !domain.is_empty()
+                            && (host == domain || host.ends_with(&format!(".{domain}")))
+                    })
+            })
+            .map(|c| Self::cookie_to_cdp(c))
+            .collect();
+        serde_json::json!({ "cookies": cookies })
+    }
+
+    /// Network.setCookie — 单 cookie 写入（frontend Cookies 视图编辑回写，M2-N3）。
+    ///
+    /// https://chromedevtools.github.io/devtools-protocol/tot/Network/#method-setCookie
+    pub(super) fn cmd_network_set_cookie(
+        &self,
+        session: &mut HeadlessSession,
+        params: Value,
+    ) -> Result<Value, ProtocolError> {
+        self.cmd_storage_set_cookies(session, serde_json::json!({ "cookies": [params] }))?;
+        Ok(serde_json::json!({ "success": true }))
+    }
+
+    /// Network.clearBrowserCookies — 清空 jar（frontend Cookies 视图删除入口）。
+    ///
+    /// https://chromedevtools.github.io/devtools-protocol/tot/Network/#method-clearBrowserCookies
+    pub(super) fn cmd_network_clear_browser_cookies(&self, session: &mut HeadlessSession) -> Value {
+        session.cookie_store.clear();
+        serde_json::json!({})
+    }
+
     /// Cookie struct → CDP cookie 描述形状。
     pub(super) fn cookie_to_cdp(cookie: &zero_net::cookie::Cookie) -> Value {
         let expires = cookie

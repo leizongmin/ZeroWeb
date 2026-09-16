@@ -1,7 +1,34 @@
-# M1 — frontend 附接 ZeroWeb：S1 路由 + S3a/S3b + S1.5 并发 + M2-N2 事件路由
+# M1/M2 — frontend 附接 ZeroWeb：S1 路由 + S3a/S3b + S1.5 并发 + M2-N2 事件路由 + M2-N3 cookie 面
 
 **日期**: 2026-09-16（M1/M2 多轮推进，M0 收口后）
 **上游状态**: cdp-protocol goal Done（M5 守成态，`make cdp-e2e` 33 绿 = 本 goal 防回归门）
+
+---
+
+## 0-e. M2-N3 ✅ Application cookie 面板（DC-2 cookie 判据全通，2026-09-16）
+
+**新增（消费侧，`domains/storage.rs` + 路由）**：`Network.getCookies`（urls host
+后缀过滤）/ `Network.setCookie`（单 cookie 写入，复用 Storage.setCookies 管道）/
+`Network.clearBrowserCookies`（清空 jar）——与 Storage 域同 jar；Application 面板的
+CookiesModel 走 Network 域三件。
+
+**验收（attach-zeroweb-probe.mjs 全绿 exit=0，截图存证）**：
+- 种 cookie（Storage.setCookies）→ 被调试页停到 example.com →
+  `&panel=resources` 打开 Application 面板 → Cookies 树展开出
+  **`https://example.com`** origin → 点击 → **cookie 表渲染
+  `zw_devtools_probe` 行**（`attach-zeroweb-application.png`）。
+- **编辑回写**：`Network.setCookie` 改值 → `Network.getCookies` 反映
+  `edited-v2`（协议级断言）。
+
+**面板 ID 注记**：Application 面板的注册 id 是 **`resources`**（历史名）——
+`&panel=application` 不存在该面板（静默回落 Elements）。
+
+**附带发现与修复（transport 反压，M2-N3 轮实测根因）**：probe 未排空 ZeroWeb 的
+stdout 管道——周期性 tracing（120ms/连接的 idle tick）填满 64KB 管道缓冲后**阻塞
+整个服务进程**（mux 循环冻住 → 新连接饿死，隔离复测不现因复测脚本已重定向 stdout）。
+双层修复：①probe 持续排空双管道（嵌入方契约注记）；②`[S13] idle drain tick`
+降级 `trace!`（info 级周期刷日志本就是噪音）。probe stdout 排空后 application 腿
+立即恢复可达。
 
 ---
 

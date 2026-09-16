@@ -247,15 +247,31 @@ impl HeadlessServer {
             // 1. 接受新连接（非阻塞，一次收干）
             while let Ok((stream, peer)) = listener.accept() {
                 tracing::info!("Connection from {peer}");
-                let _ = stream.set_nonblocking(false);
+                // 非阻塞 accept 起步：Peek 阶段不得阻塞复用循环（Chromium 预连接
+                // 常常静默挂着——阻塞 peek 会冻住整个 mux，实测饿死后续加载）
+                let _ = stream.set_nonblocking(true);
                 let _ = stream.set_nodelay(true);
                 conns.push(ConnState::new(stream, peer));
             }
 
             // 2. 推进每条连接一步；Network 域事件广播到所有已 Network.enable 的连接
             let mut network_events: Vec<ServerEvent> = Vec::new();
+            let tick_start = std::time::Instant::now();
             for conn in &mut conns {
+                let step_start = std::time::Instant::now();
                 self.advance_connection(conn, &mut session, &mut network_events);
+                let cost = step_start.elapsed();
+                if cost > std::time::Duration::from_millis(50) {
+                    eprintln!("[mux-debug] slow conn step {}ms peer {}", cost.as_millis(), conn.peer);
+                }
+            }
+            let tick_cost = tick_start.elapsed();
+            if tick_cost > std::time::Duration::from_millis(100) {
+                eprintln!(
+                    "[mux-debug] slow tick {}ms conns={}",
+                    tick_cost.as_millis(),
+                    conns.len()
+                );
             }
             if !network_events.is_empty() {
                 for event in network_events.drain(..) {
@@ -297,6 +313,8 @@ impl HeadlessServer {
                     Ok(n) => {
                         let data = &buf[..n];
                         if Self::is_http_get_request(data) {
+                            // HTTP 快进快出：请求头已在内核缓冲，回阻塞模式同步读完
+                            let _ = conn.stream.set_nonblocking(false);
                             conn.alive = false;
                             let origin = Self::extract_origin_header(data);
                             if !self.security.verify_origin(origin.as_deref()) {
@@ -316,6 +334,7 @@ impl HeadlessServer {
                             if page_direct {
                                 tracing::info!("DevTools frontend page-direct connection from {}", conn.peer);
                             }
+                            let _ = conn.stream.set_nonblocking(false);
                             match accept(conn.stream.try_clone().expect("peek stream clone")) {
                                 Ok(ws) => {
                                     conn.stream.set_nonblocking(true).ok();

@@ -3,7 +3,7 @@
     {
       "name": "zw-discovery-per-page-url",
       "ok": true,
-      "detail": "http://127.0.0.1:20320/devtools/inspector.html?ws=127.0.0.1:20320/devtools/page/zeroweb-tab-1"
+      "detail": "http://127.0.0.1:20580/devtools/inspector.html?ws=127.0.0.1:20580/devtools/page/zeroweb-tab-1"
     },
     {
       "name": "zw-debuggee-navigated",
@@ -79,6 +79,31 @@
       "name": "cdp-css-matched-styles-shape",
       "ok": true,
       "detail": "inlineProps=0"
+    },
+    {
+      "name": "cookie-seeded-and-navigated",
+      "ok": true,
+      "detail": "zw_devtools_probe=seed-v1 @ example.com"
+    },
+    {
+      "name": "frontend-application-panel",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "frontend-cookie-visible",
+      "ok": true,
+      "detail": "panel text contains zw_devtools_probe"
+    },
+    {
+      "name": "screenshot-application",
+      "ok": true,
+      "detail": "/lzcapp/document/work/ZeroWeb/docs/goal/devtools/evidence/attach-zeroweb-application.png"
+    },
+    {
+      "name": "cookie-edit-writeback",
+      "ok": true,
+      "detail": "jar value=edited-v2"
     }
   ],
   "unknownMethods": [],

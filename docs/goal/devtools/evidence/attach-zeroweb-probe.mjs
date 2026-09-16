@@ -44,6 +44,9 @@ const zw = spawn(ZW_BIN, ['--headless', `--remote-debugging-port=${PORT}`], {
   env: { ...process.env, ZW_DEVTOOLS_FRONTEND_DIR: BUNDLE },
   stdio: ['ignore', 'pipe', 'pipe'],
 });
+// 必须持续排空双管道：ZeroWeb 的 stdout/stderr（tracing 周期日志）填满 64KB 管道
+// 缓冲后会阻塞整个服务进程（mux 循环冻住 → 新连接饿死，实测 &panel=application 超时）
+zw.stdout.on('data', (d) => process.env.ZW_PROBE_VERBOSE && console.error('[zw]', d.toString().trim()));
 zw.stderr.on('data', (d) => process.env.ZW_PROBE_VERBOSE && console.error('[zw]', d.toString().trim()));
 await new Promise((r) => setTimeout(r, 2500));
 
@@ -178,20 +181,20 @@ try {
   step('gap-ledger-collected', true, `${results.unknownMethods.length} unknown methods: ${results.unknownMethods.join(', ') || 'none'}`);
 
   // 6. CSS 域（M1-S3b）：S1.5 并发下 probe 直连第二个 WS 客户端验证数据面
-  await new Promise((resolveCss) => {
+  const cssResult = await new Promise((resolveCss) => {
+    const out = { computed: false, matched: false };
     const ws = new WebSocket(`ws://127.0.0.1:${PORT}/devtools/page/${discovery[0].id}`);
     let step2 = 0;
-    let bodyNodeId = null;
     const done = () => {
       ws.close();
-      resolveCss();
+      resolveCss(out);
     };
     ws.on('open', () => ws.send(JSON.stringify({ id: 1, method: 'DOM.getDocument', params: { depth: -1 } })));
     ws.on('message', (m) => {
       const msg = JSON.parse(m.toString());
       if (msg.id === 1) {
         const find = (n) => (n.nodeName === 'BODY' ? n : (n.children ?? []).map(find).find(Boolean));
-        bodyNodeId = find(msg.result?.root)?.nodeId;
+        const bodyNodeId = find(msg.result?.root)?.nodeId;
         step('cdp-body-node-resolved', Boolean(bodyNodeId), `nodeId=${bodyNodeId}`);
         step2 = 2;
         ws.send(JSON.stringify({ id: 2, method: 'CSS.getComputedStyle', params: { nodeId: bodyNodeId } }));
@@ -199,20 +202,102 @@ try {
       } else if (msg.id === 2) {
         const cs = msg.result?.computedStyle;
         const display = Array.isArray(cs) ? cs.find((p) => p.name === 'display') : null;
-        step('cdp-css-computed-style', Array.isArray(cs) && display?.value === 'block', `${cs?.length ?? 'ERR'} props, display=${display?.value ?? '??'}`);
+        out.computed = Array.isArray(cs) && display?.value === 'block';
+        step('cdp-css-computed-style', out.computed, `${cs?.length ?? 'ERR'} props, display=${display?.value ?? '??'}`);
         if (step2 === 2) { step2 = 3; } else { done(); }
       } else if (msg.id === 3) {
         const r = msg.result;
-        const shaped = r && Array.isArray(r.matchedCSSRules) && r.inlineStyle && Array.isArray(r.inlineStyle.cssProperties);
-        step('cdp-css-matched-styles-shape', Boolean(shaped), `inlineProps=${r?.inlineStyle?.cssProperties?.length ?? 'ERR'}`);
+        out.matched = Boolean(r && Array.isArray(r.matchedCSSRules) && r.inlineStyle && Array.isArray(r.inlineStyle.cssProperties));
+        step('cdp-css-matched-styles-shape', out.matched, `inlineProps=${r?.inlineStyle?.cssProperties?.length ?? 'ERR'}`);
         if (step2 === 3) { done(); } else { step2 = 3; }
       }
     });
     ws.on('error', (e) => {
       step('cdp-css-domain', false, e.message);
-      resolveCss();
+      resolveCss(out);
     });
   });
+
+  // 7. Application cookie 面板（M2-N3，DC-2 cookie 判据）：种 cookie → 被调试页停到
+  //    同源 → Application 面板 Cookies 视图可见 → Network.setCookie 编辑回写生效
+  const cookieName = 'zw_devtools_probe';
+  const cookieSet = await new Promise((resolveCookie) => {
+    const ws = new WebSocket(`ws://127.0.0.1:${PORT}/`);
+    let phase = 0;
+    ws.on('open', () => ws.send(JSON.stringify({
+      id: 1,
+      method: 'Storage.setCookies',
+      params: { cookies: [{ name: cookieName, value: 'seed-v1', url: 'https://example.com/' }] },
+    })));
+    ws.on('message', (m) => {
+      const msg = JSON.parse(m.toString());
+      if (msg.id === 1 && phase === 0) {
+        phase = 2;
+        ws.send(JSON.stringify({ id: 2, method: 'Page.navigate', params: { url: 'https://example.com/' } }));
+      } else if (msg.id === 2) {
+        resolveCookie(!msg.error);
+        ws.close();
+      }
+    });
+    ws.on('error', () => resolveCookie(false));
+  });
+  step('cookie-seeded-and-navigated', cookieSet, `${cookieName}=seed-v1 @ example.com`);
+  await new Promise((r) => setTimeout(r, 2000));
+
+  // 长活多页面会话的 goto 稳定性未稳（S1.5b 记账）：application 腿收掉前序面板页，
+  // 单连接形态打开（与 M0 以来各腿一致的可重放形态）
+  await netPage.close().catch(() => {});
+  await consolePage.close().catch(() => {});
+  await driver.close().catch(() => {});
+  const appPage = await driverBrowser.newPage();
+  await appPage.setViewportSize({ width: 1600, height: 1000 });
+  await appPage.goto(`${entryBase}?ws=127.0.0.1:${PORT}/devtools/page/${discovery[0].id}&panel=resources`, { waitUntil: 'domcontentloaded', timeout: 30000 });
+  const appOk = await appPage.locator('#app-panel, .application-panel, [aria-label="Application"]')
+    .first()
+    .waitFor({ timeout: 20000 })
+    .then(() => true)
+    .catch(() => false);
+  await appPage.waitForTimeout(3000);
+  step('frontend-application-panel', appOk, '');
+  // Cookies 视图需树导航：选中 Cookies → ArrowRight 展开 → 点 example.com 子节点
+  await appPage.getByText('Cookies', { exact: true }).first().click({ timeout: 5000 }).catch(() => {});
+  await appPage.waitForTimeout(800);
+  await appPage.keyboard.press('ArrowRight');
+  await appPage.waitForTimeout(1200);
+  const originNode = appPage.getByText('https://example.com', { exact: true }).first();
+  await originNode.click({ timeout: 5000 }).catch(() => {});
+  await appPage.waitForTimeout(2500);
+  const cookieVisible = (await appPage.getByText(cookieName).count()) > 0;
+  step('frontend-cookie-visible', cookieVisible, `panel text contains ${cookieName}`);
+  const shotApp = join(HERE, 'attach-zeroweb-application.png');
+  await appPage.screenshot({ path: shotApp });
+  step('screenshot-application', true, shotApp);
+
+  // 编辑回写：Network.setCookie 改值 → getCookies 反映新值（协议级）
+  const writeBack = await new Promise((resolveWb) => {
+    const ws = new WebSocket(`ws://127.0.0.1:${PORT}/`);
+    let v = { ok: false, value: null };
+    let phase = 0;
+    ws.on('open', () => ws.send(JSON.stringify({
+      id: 1,
+      method: 'Network.setCookie',
+      params: { name: cookieName, value: 'edited-v2', url: 'https://example.com/' },
+    })));
+    ws.on('message', (m) => {
+      const msg = JSON.parse(m.toString());
+      if (msg.id === 1 && phase === 0) {
+        phase = 2;
+        ws.send(JSON.stringify({ id: 2, method: 'Network.getCookies', params: { urls: ['https://example.com/'] } }));
+      } else if (msg.id === 2) {
+        const found = (msg.result?.cookies ?? []).find((c) => c.name === cookieName);
+        v = { ok: found?.value === 'edited-v2', value: found?.value ?? null };
+        resolveWb(v);
+        ws.close();
+      }
+    });
+    ws.on('error', () => resolveWb(v));
+  });
+  step('cookie-edit-writeback', writeBack.ok, `jar value=${writeBack.value}`);
 
   results.pass = results.steps.every((s) => s.ok);
   writeFileSync(join(HERE, 'attach-zeroweb-result.json'), JSON.stringify(results, null, 2));

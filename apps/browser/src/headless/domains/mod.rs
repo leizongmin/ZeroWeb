@@ -150,6 +150,11 @@ impl HeadlessServer {
             "Storage.getCookies" => Ok(self.cmd_storage_get_cookies(session)),
             "Storage.setCookies" => self.cmd_storage_set_cookies(session, params),
             "Storage.clearCookies" => Ok(self.cmd_storage_clear_cookies(session)),
+            // Network 域 cookie 面（devtools goal M2-N3）：Application 面板 CookiesModel
+            // 走 Network.getCookies/setCookie/clearBrowserCookies（与 Storage 同 jar）
+            "Network.getCookies" => Ok(self.cmd_network_get_cookies(session, &params)),
+            "Network.setCookie" => self.cmd_network_set_cookie(session, params),
+            "Network.clearBrowserCookies" => Ok(self.cmd_network_clear_browser_cookies(session)),
             // Emulation UA override（M4）：proxy_fetch 注入 User-Agent
             "Emulation.setUserAgentOverride" => self.cmd_emulation_set_user_agent_override(session, params),
             // Network 域（M4）：enable/disable 门控（事件在 proxy_fetch 生命周期产出）
