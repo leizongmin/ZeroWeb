@@ -5,8 +5,9 @@
 > 布局契约：`<分类>/<YYYY-MM>/<YYYY-MM-DD>-<topic>.md`，日期以 frontmatter 为准。
 > 方法论蒸馏层见 `.agents/skills/zeroweb-guidelines/SKILL.md`。
 
-## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（110）
+## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（111）
 
+- 2026-09-16 [双端同时漏采导致一致性比较假通过](bugs/2026-09/2026-09-16-parity-missing-evidence-false-pass.md) — browser,chrome-parity
 - 2026-09-14 [S11 style-key 缓存的不可键父链继承态碰撞（dir=rtl 泄漏实证）](bugs/2026-09/2026-09-14-style-key-cache-inherited-state-collision.md) — zero-style-system
 - 2026-09-13 [Playwright session.send() 对桥 miss 不 throw——CDP 自动化错误走 exceptionDetails 而非协议错误](bugs/2026-09/2026-09-13-pw-cdp-session-send-exceptiondetails-not-throw.md) — apps/browser,tests/playwright-matrix
 - 2026-09-13 [修正字体 URL 后丢字：资源与度量必须穿过整条生产链路](bugs/2026-09/2026-09-13-downloaded-fonts-compositor-resource-gap.md) — webview,renderer,compositor,protocol,render-foundation,layout-engine,engine
