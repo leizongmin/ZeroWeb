@@ -2634,11 +2634,17 @@ impl super::Painter {
                             .lines
                             .iter()
                             .filter_map(|l| {
+                                // R4418：带代表 y 取带内 **最大** glyph y——under rt 的注音
+                                // 字形（over 近似绘于 base 上方）在 primitives 数组里先于
+                                // base 文本时 .next() 会选中注音行，clamp 省略号落到注音行
+                                //（auto-with-ruby-003：省略号在 'x' 旁而非 "Line 5" 后）。
+                                // max-y = base 文本行（与 ellipsis 末行文本尾定位语义一致；
+                                // paint under 位真实现后 rt 在 base 下方，届时改取 base 行）。
                                 fragment_glyphs
                                     .iter()
                                     .filter(|g| g.font_size > 0.0 && g.y >= l.y - 0.5 && g.y <= l.y + l.height + 0.5)
                                     .map(|g| g.y)
-                                    .next()
+                                    .max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
                             })
                             .collect();
                         if banded.is_empty() { glyph_line_ys() } else { banded }
