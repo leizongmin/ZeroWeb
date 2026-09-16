@@ -280,7 +280,9 @@ fn r3770c_inline_child_growth_does_not_shift_siblings() {
     let result = engine.compute(&doc, &styles);
     fn ruby_ys(b: &LayoutBox, out: &mut Vec<f32>) {
         for c in &b.children {
-            if c.node_id.is_some() && c.height == 32.0 && c.width >= 800.0 {
+            // R4422 flip：OVERHANG 模型默认开后 rt ascent 参与行盒（32 → 32+0.5em×ratio
+            // ≈ 41.3），本测试不变量为「同行 ruby 盒 y 一致」而非行高恒 32——放宽为下界。
+            if c.node_id.is_some() && c.height >= 32.0 && c.width >= 800.0 {
                 out.push(c.y);
             }
             ruby_ys(c, out);

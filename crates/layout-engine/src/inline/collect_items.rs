@@ -1149,7 +1149,7 @@ impl InlineFormattingContext {
         // 高度取 abs）。under 判据读 ruby 自身 computed ruby_position（继承）；Path B
         // （styles 空）读不到声明按 over 近似——under 页 paint 线内注音位为后续 slice。
         let ruby_rt_ascent = if elem_data.local_name() == "ruby"
-            && std::env::var("ZW_RUBY_OVERHANG_MODEL").as_deref() == Ok("1")
+            && std::env::var("ZW_RUBY_OVERHANG_MODEL").as_deref() != Ok("0")
             && !ruby_annotation_width_text(doc, child_id).is_empty()
         {
             // 注意：此处**不得** gate 在 style.is_some()——override-replay 趟（styles 空）
@@ -1809,11 +1809,10 @@ pub(crate) fn ruby_overhang_pads(
     is_ahem: bool,
     tab: Option<(f32, f32)>,
 ) -> (f32, f32) {
-    // opt-in 实验模型（ZW_RUBY_OVERHANG_MODEL=1）：默认关。默认开时 family 净回退
-    // （spaces-002 5.18% vs 基线 4.37%）——margin 途径与 run advance/paint overlay 坐标
-    // 契约存在未解交互（frag_base_x 未含 margin、taffy inline 盒宽拉伸），需先厘清
-    // inline advance 管线再翻默认。
-    if std::env::var("ZW_RUBY_OVERHANG_MODEL").as_deref() != Ok("1") || annot_text.is_empty() {
+    // R4422 flip：模型默认**开**（ZW_RUBY_OVERHANG_MODEL=0 为杀开关）——R4357 时代的
+    // 默认开净回退卡点（margin/paint overlay 坐标契约、max-content 与行宽分裂）已经
+    // R4358-R4422 七轮清算（独有红清零、零新翻红 bar 达成），按 roadmap flip 实测。
+    if std::env::var("ZW_RUBY_OVERHANG_MODEL").as_deref() == Ok("0") || annot_text.is_empty() {
         return (0.0, 0.0);
     }
     // R4415：嵌套 ruby 卫兵——css-ruby #nested-pairing 下外层 ruby 的 base 序列含内层
@@ -2086,7 +2085,10 @@ mod r4395_rtc_annotation_tests {
         );
         let ruby = doc.get_elements_by_tag_name("ruby")[0];
         let annot = ruby_annotation_width_text(&doc, ruby);
-        assert_eq!(annot, "とうSoutheast", "rt + rtc 文本均为注音（base 排除口径一致）");
+        // R4422 行感知模型：行 0（とう）与行 1（Southeast）取**最宽行**——双行注音
+        // （nested-pairing ref 形态）行宽与 paint span-all 行同源，拼接口径废（行宽
+        // 多出 とう 段 → pads 分母分裂 → 折行差）。Southeast（9 字符）> とう（2）。
+        assert_eq!(annot, "Southeast", "行 max 模型：最宽注音行");
     }
 
     /// 纯 rt ruby 注音宽不受 rtc 扩展影响（回归守护）。

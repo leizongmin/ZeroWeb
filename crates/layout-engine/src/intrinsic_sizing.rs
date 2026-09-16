@@ -1198,7 +1198,7 @@ fn dom_inline_text_walk(
                 // ruby-overhang-spaces-002 的 width:max-content 容器即此形态）。
                 if e.local_name().eq_ignore_ascii_case("ruby") {
                     let annot = crate::inline::ruby_annotation_width_text(doc, child);
-                    if !annot.is_empty() && std::env::var("ZW_RUBY_OVERHANG_MODEL").as_deref() == Ok("1") {
+                    if !annot.is_empty() && std::env::var("ZW_RUBY_OVERHANG_MODEL").as_deref() != Ok("0") {
                         let rs = styles.get(&child);
                         let (ruby_fs, _) = crate::inline::resolve_font_metrics(rs);
                         let ruby_ahem = rs.is_some_and(|s| {

@@ -41,9 +41,8 @@ pub(super) fn ruby_annotation_segments(
     // 嵌套 ruby 判定：直接子含 ruby 元素 → 本层直接子 rt/rtc 全部升为 span-all 行
     //（行 0 让位给内层 ruby 的配对）。
     let has_nested_ruby = doc.child_nodes(owner_id).iter().any(|c| {
-        doc.get(*c).is_some_and(|n| {
-            matches!(n.kind, NodeKind::Element(ref e) if e.local_name().eq_ignore_ascii_case("ruby"))
-        })
+        doc.get(*c)
+            .is_some_and(|n| matches!(n.kind, NodeKind::Element(ref e) if e.local_name().eq_ignore_ascii_case("ruby")))
     });
     let mut segs: Vec<(String, String, f32)> = Vec::new();
     let mut span_all: Option<String> = None;
@@ -86,9 +85,9 @@ pub(super) fn ruby_annotation_segments(
                     // R4422：rtc **直接文本**（无 rt 子）= span-all 本体（nested-pairing
                     // ref 形态 <rtc lang=en>Southeast</rtc>）。
                     let has_rt_child = doc.child_nodes(child_id).iter().any(|c| {
-                        doc.get(*c).is_some_and(|n| {
-                            matches!(n.kind, NodeKind::Element(ref e) if e.local_name().eq_ignore_ascii_case("rt"))
-                        })
+                        doc.get(*c).is_some_and(
+                            |n| matches!(n.kind, NodeKind::Element(ref e) if e.local_name().eq_ignore_ascii_case("rt")),
+                        )
                     });
                     if has_rt_child {
                         for &rt_id in doc.child_nodes(child_id).iter() {
@@ -204,9 +203,9 @@ mod r1689_ruby_segment_tests {
         let doc = first_ruby_owner("<body><ruby>漢<rt>かん</rt>字<rt>じ</rt></ruby></body>");
         let ruby = doc.get_elements_by_tag_name("ruby")[0];
         let segs = ruby_annotation_segments(&doc, ruby, None).expect("ruby has segments");
-        assert_eq!(segs.len(), 2, "per-kanji ruby → 2 segments");
-        assert_eq!(segs[0], ("漢".to_string(), "かん".to_string(), 0.0));
-        assert_eq!(segs[1], ("字".to_string(), "じ".to_string(), 0.0));
+        assert_eq!(segs.segs.len(), 2, "per-kanji ruby → 2 segments");
+        assert_eq!(segs.segs[0], ("漢".to_string(), "かん".to_string(), 0.0));
+        assert_eq!(segs.segs[1], ("字".to_string(), "じ".to_string(), 0.0));
     }
 
     /// whole-word ruby → 单 segment，整 base 配整 annotation。
@@ -215,8 +214,32 @@ mod r1689_ruby_segment_tests {
         let doc = first_ruby_owner("<body><ruby>漢字<rt>かんじ</rt></ruby></body>");
         let ruby = doc.get_elements_by_tag_name("ruby")[0];
         let segs = ruby_annotation_segments(&doc, ruby, None).expect("ruby has segment");
-        assert_eq!(segs.len(), 1);
-        assert_eq!(segs[0], ("漢字".to_string(), "かんじ".to_string(), 0.0));
+        assert_eq!(segs.segs.len(), 1);
+        assert_eq!(segs.segs[0], ("漢字".to_string(), "かんじ".to_string(), 0.0));
+    }
+
+    /// R4422：嵌套 ruby——内层 rt 对 = 行 0，外层直接子 rt = span_all。
+    #[test]
+    fn nested_ruby_inner_pairs_row0_outer_rt_span_all() {
+        let doc =
+            first_ruby_owner("<body><ruby><ruby>東<rt>とう</rt>南<rt>なん</rt></ruby><rt>Southeast</rt></ruby></body>");
+        let ruby = doc.get_elements_by_tag_name("ruby")[0];
+        let out = ruby_annotation_segments(&doc, ruby, None).expect("nested segments");
+        assert_eq!(out.segs.len(), 2);
+        assert_eq!(out.segs[0], ("東".to_string(), "とう".to_string(), 0.0));
+        assert_eq!(out.segs[1], ("南".to_string(), "なん".to_string(), 0.0));
+        assert_eq!(out.span_all.as_deref(), Some("Southeast"));
+    }
+
+    /// R4422：rtc 直接文本（无 rt 子）= span_all。
+    #[test]
+    fn rtc_direct_text_is_span_all() {
+        let doc = first_ruby_owner("<body><ruby><rb>東</rb><rt>とう</rt><rtc>Southeast</rtc></ruby></body>");
+        let ruby = doc.get_elements_by_tag_name("ruby")[0];
+        let out = ruby_annotation_segments(&doc, ruby, None).expect("rtc segments");
+        assert_eq!(out.segs.len(), 1);
+        assert_eq!(out.segs[0].1, "とう");
+        assert_eq!(out.span_all.as_deref(), Some("Southeast"));
     }
 
     /// 非 ruby owner → None（paint 走普通文本路径）。
@@ -234,9 +257,9 @@ mod r1689_ruby_segment_tests {
         let ruby = doc.get_elements_by_tag_name("ruby")[0];
         let segs = ruby_annotation_segments(&doc, ruby, None).expect("segments");
         // 两个 rt → 2 segments；rp 文本不计入。
-        assert_eq!(segs.len(), 2);
-        assert_eq!(segs[0].1, "kan");
-        assert_eq!(segs[1].1, "字");
+        assert_eq!(segs.segs.len(), 2);
+        assert_eq!(segs.segs[0].1, "kan");
+        assert_eq!(segs.segs[1].1, "字");
     }
 
     /// R4405：complex ruby（<rbc> bases + <rtc> annotations）——rtc 内 rt 与直接子 rt
@@ -251,9 +274,9 @@ mod r1689_ruby_segment_tests {
         );
         let ruby = doc.get_elements_by_tag_name("ruby")[0];
         let segs = ruby_annotation_segments(&doc, ruby, None).expect("rtc rt pairs");
-        assert_eq!(segs.len(), 3, "rtc 内 3 个 rt → 3 segments");
-        assert_eq!(segs[0], ("新幹線".to_string(), "しん".to_string(), 0.0));
-        assert_eq!(segs[1], (String::new(), "かん".to_string(), 0.0));
-        assert_eq!(segs[2], (String::new(), "せん".to_string(), 0.0));
+        assert_eq!(segs.segs.len(), 3, "rtc 内 3 个 rt → 3 segments");
+        assert_eq!(segs.segs[0], ("新幹線".to_string(), "しん".to_string(), 0.0));
+        assert_eq!(segs.segs[1], (String::new(), "かん".to_string(), 0.0));
+        assert_eq!(segs.segs[2], (String::new(), "せん".to_string(), 0.0));
     }
 }

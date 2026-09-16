@@ -34,7 +34,7 @@ mod text_shaping;
 
 use text_multicol::compute_multicol_info_for_paint;
 use text_multicol::multicol_balance_target_height;
-use text_ruby::{ruby_annotation_segments, RubyAnnotationSegs};
+use text_ruby::{RubyAnnotationSegs, ruby_annotation_segments};
 use text_shaping::{
     FragmentPaintWidths, collect_atomic_inline_sizes, configure_paint_ifc_advance as with_shaped_layout,
     fragment_advance_trace, fragment_font_size_adjustment, fragment_glyphs, glyph_sources, is_cc_control_char,
@@ -1580,7 +1580,9 @@ impl super::Painter {
                                         let span_y = rt_y0 - 2.0 * rt_fs;
                                         let span_w: f32 = span_text
                                             .chars()
-                                            .map(|c| self.measure_char_cached(default_font_id.0, c, rt_fs, frag_is_ahem))
+                                            .map(|c| {
+                                                self.measure_char_cached(default_font_id.0, c, rt_fs, frag_is_ahem)
+                                            })
                                             .sum();
                                         let mut sx = frag_base_x + (seg_x - frag_base_x - span_w) / 2.0;
                                         for sc in span_text.chars() {
@@ -1960,7 +1962,7 @@ impl super::Painter {
                                             font_glyph_index: None,
                                             source: None,
                                             font_id: frag_font_id,
-                                            font_variation_id: font_variation_id,
+                                            font_variation_id,
                                             bitmap_width: None,
                                             bitmap_height: None,
                                             rotation,

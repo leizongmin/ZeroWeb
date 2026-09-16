@@ -3680,7 +3680,7 @@ fn build_subtree(
                         // 无盒，float 从未渲染（ruby-float-handling-001）。OVERHANG gate
                         // scoped；hoisted 子树由 build_subtree 正常构建，float 定位/排除
                         // 复用既有 box-float 管线（float_positioning + IFC exclusions）。
-                        if std::env::var("ZW_RUBY_OVERHANG_MODEL").as_deref() == Ok("1")
+                        if std::env::var("ZW_RUBY_OVERHANG_MODEL").as_deref() != Ok("0")
                             && doc.get(child_dom).is_some_and(|n| {
                                 matches!(n.kind, NodeKind::Element(ref e) if e.local_name().eq_ignore_ascii_case("ruby"))
                             })
