@@ -2,42 +2,51 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-16（S894：**静默监测引用轮**（引用计
-数 4/10，周期锚点=S890 双腿：门腿 09:40:50 落盘 +
+**最后更新**: 2026-09-16（S895：**静默监测引用轮**（引用计
+数 5/10，周期锚点=S890 双腿：门腿 09:40:50 落盘 +
 make test 腿 ~09:56 前收口）——同 tip 复核 pull 零新提
-交（已经是最新的）tip=0b178f956 即 S893 提交本身，
+交（已经是最新的）tip=590309f55 即 S894 提交本身，
 tracked 代码树=S890 双腿覆盖树态（=R4396 组合态），树不
 变口径=门单腿复跑免 make test 腿（S336 先例）。**门腿**
-make cdp-e2e ZW_IPC_VALIDATE=1 在位 10:15:29 启动
-10:16:02 落盘（wall ~33s）**首调即 PASS 33 绿
+make cdp-e2e ZW_IPC_VALIDATE=1 在位 10:18:45 启动
+10:19:18 落盘（wall ~33s）**首调即 PASS 33 绿
 deterministic 双跑 YES EXIT=0**（单次触发即收口，S790
 先例勿二调），expected_green 33 对称差 none
-（green==expected 逐项一致零漂移）、regressions 空、无
-fatal（fatal 文件面 0），run_details 双 run ok 集各 33
-逐项一致（差异仅 run 序号字段；steps-report 35 步面
-34 ok + frames.click+evaluate 挂起维持），ZW_IPC_VALIDATE
-捕获网在位静默（#0 复现监测零命中，capture jsonl 面最近
-落盘为往轮 09-12/09-13 时点本轮零写入）；首调红形态**连
-续第三百零八次零再现**（累计两例非聚集维持）。**dead_code
-warning 本轮为缓存 replay 相位**（捕获窗零 Compiling 行、
-clippy Finished 0.21s 印证编译全缓存态；两相位口径维持，
-warning 面维持 js_dom_bridge.rs:3420 match_media_to_json），
-clippy -p zero-engine --lib -- -D warnings 维持 PASS（本
-轮实测零 warning EXIT=0）DC-4 不可退让面零暴露，归因
-engine crate zero-web 流域，本流不碰 engine 记账不修。本
-轮属**兄弟流测试腿负载窗亚型活跑**（窗前 sibling
-ZeroWeb-2 zero_integration_tests 腿 144% CPU pid 2717627
-lstart 10:13:29 新 pid 第六十个负载下样本；窗后 140% 同
-pid 延续在窗 负载 2.57→2.41 非端口竞争面
-9222/45029/34293/19222 四端口族窗前窗后全程 free 门后零
-本门残留 残留 grep 零命中）。机器卫生：zombie 双复测均
-零（t0=0、t+5s=0）机器卫生维持；三层锚点零漂移——自有
-面对 765429dda 维持 **4 files +137/-17** 精确一致
+（green==expected 逐项一致零漂移——green_steps 与
+expected-green.json 的 expected_green 字段逐项一致；
+门禁脚本 L106 baseline.expected_green 字段口径在位），
+regressions 空、无 fatal（fatal 文件面 0），run_details
+双 run ok 集各 33 逐项一致（差异仅 run 序号字段；
+steps-report 35 步面 34 ok + frames.click+evaluate 挂起
+维持），ZW_IPC_VALIDATE 捕获网在位静默（#0 复现监测零
+命中，capture jsonl 面最近落盘为往轮 09-12/09-13 时点
+本轮零写入）；首调红形态**连续第三百零九次零再现**（累
+计两例非聚集维持）。本轮校验取证注记：临时对拍脚本首查
+误将 expected-green.json dict 顶层键（description/
+expected_green）当集合产生假不对称，复查以
+baseline.expected_green 字段口径三方对拍
+（green_steps/报告内 expected_green/文件字段）全数一
+致=假警报排除，门禁脚本自身口径在位非回归。**dead_code
+warning 本轮为缓存 replay 相位**（捕获窗零 Compiling
+行、clippy Finished 0.18s 印证编译全缓存态；两相位口径
+维持，warning 面维持 js_dom_bridge.rs:3420
+match_media_to_json），clippy -p zero-engine --lib --
+-D warnings 维持 PASS（本轮实测零 warning EXIT=0）DC-4
+不可退让面零暴露，归因 engine crate zero-web 流域，本
+流不碰 engine 记账不修。本轮属**兄弟流测试腿负载窗亚型
+活跑**（窗前 sibling ZeroWeb-2 zero_integration_tests
+腿 137% CPU pid 2717627 同 pid 延续在窗 第六十一个负载
+下样本；窗后 259% 新 pid 2831792 接棒（10:20:19 起）
+兄弟腿连跑 负载 1.94→2.22 非端口竞争面
+9222/45029/34293/19222 四端口族窗前窗后全程 free 门后
+零本门残留 残留 grep 零命中）。机器卫生：zombie 双复测
+均零（t0=0、t+5s=0）机器卫生维持；三层锚点零漂移——自
+有面对 765429dda 维持 **4 files +137/-17** 精确一致
 （Makefile 1/1 + apps/browser/README.md 1/0 +
-headless/mod.rs 25/0 + headless/session.rs 110/16 本轮实
-测复核 零新增漂移）；全树排除本流 docs 对 18d462de6 维
-持 **92 files +9845/-622**（R4396 折入后新面值维持）；
-crates/ 观察面 raw 维持 **60**（git log
+headless/mod.rs 25/0 + headless/session.rs 110/16 本轮
+实测复核 零新增漂移）；全树排除本流 docs 对 18d462de6
+维持 **92 files +9845/-622**（R4396 折入后新面值维
+持）；crates/ 观察面 raw 维持 **60**（git log
 8fb39cd46..HEAD -- crates/ 口径）。子帧关键词非测试代码
 零命中维持（8 文件全数测试路径既有形态维持），实质判定
 不变 frames.click+evaluate 维持挂起。零树污染（tracked
@@ -48,11 +57,11 @@ crates/ raw 60 维持（R4396 折入后新基线 S890 刷新落定
 顺延），子帧三件套 iframe.contentDocument null 现状不
 变，frames.click+evaluate 维持挂起；② 本流控制面
 docs/goal/cdp-protocol/ 零外来提交，DC-2 口径无新拍板
-记录。goal 自有面零新缺口、无扩展面（S40-S893 重审结论
+记录。goal 自有面零新缺口、无扩展面（S40-S894 重审结论
 延续）。**make test 全量参考基线 19,317P/0F 维持（S890
-双腿刷新 R4396 组合态实测落定）——引用计数 4/10（周期
-锚点=S890 双腿），下轮 S895 = 5/10 静默监测引用轮（周
-期锚点维持 S890 双腿），若 S895 前树代码变化则提前触发
+双腿刷新 R4396 组合态实测落定）——引用计数 5/10（周期
+锚点=S890 双腿），下轮 S896 = 6/10 静默监测引用轮（周
+期锚点维持 S890 双腿），若 S896 前树代码变化则提前触发
 双腿刷新（S245→S829→S835→S843→S848→S856→S865 先例
 链），否则按引用轮口径门单腿复跑免 make test 腿（S336
 先例），至迟 S898=8/10 到期即次轮期限轮活跑（双腿活跑
@@ -18166,6 +18175,26 @@ S884/S885/S886/S890 先例）**）
    腿（S336 先例），至迟 S898=8/10 到期即次轮期限轮活跑
    （双腿活跑口径=门 + make test，S773/S782/S865/S874/
    S875/S876/S884/S885/S886/S890 先例）；
+
+   **S895 已执行（2026-09-16）静默监测引用轮（引用计数
+   5/10，同 tip 复核 pull 零新提交 tip=590309f55 即 S894
+   提交本身（树不变实测复核），树不变口径=门单腿复跑免
+   make test 腿 S336 先例，门 PASS 33 绿兄弟流测试腿负载
+   窗亚型活跑（窗前 sibling zero_integration_tests 腿
+   137% pid 2717627 同 pid 延续在窗 第六十一个负载下样本
+   窗后 259% 新 pid 2831792 接棒 非端口竞争面）首调即收
+   口 10:19:18 落盘（wall ~33s），引用计数 5/10；本轮校
+   验取证注记=临时对拍脚本 dict 键假不对称假警报排除
+   （三方对拍 baseline.expected_green 字段口径全数一致
+   门禁脚本 L106 口径在位非回归）；zombie 双复测均零 残
+   留 grep 零命中）**——下轮 **S896 = 6/10**（周期锚点
+   维持 S890 双腿：门腿 09:40:50 落盘 + make test 腿
+   ~09:56 前收口），若 S896 前树代码变化则提前触发双腿
+   刷新（S245→S829→S835→S843→S848→S856→S865 先例链），
+   否则按引用轮口径门单腿复跑免 make test 腿（S336 先
+   例），至迟 S898=8/10 到期即次轮期限轮活跑（双腿活跑
+   口径=门 + make test，S773/S782/S865/S874/S875/S876/
+   S884/S885/S886/S890 先例）；
 
 
    若活跑时逢并行流负载窗口则
