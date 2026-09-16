@@ -1165,7 +1165,14 @@ fn shift_siblings_after_ifc_grow_inner(
     // 表布局定位，非垂直块流，「prev.bottom > next.y」对同行异列项误判重叠（welcome div.cards
     // grid 2×2 同行 card 误触 +184px over-shift）。匿名/无 style 容器按 block-flow 处理。
     // 排除 multicol 容器自身（self_is_multicol）及任何 multicol 后代（inside_multicol）。
+    // R4427（writing-modes §7.1）：排除 **vertical** 容器——vertical 下块级 in-flow 兄弟
+    // 沿物理 x 排列且**共享 y=0**，「prev.bottom > next.y」重叠模型把每个后继兄弟误判
+    // 为重叠并逐个下推（cumulative_shift 对角化：box-offsets-rel-pos-vrl-002 div1/2/3
+    // y=0→262→342→422 实证；R4425 会话一纯块探针红蓝 div 对角同源）。vertical 的块轴
+    // 位移（前驱 block-size 增长推挤后继 x）由 apply_vertical_block_flow 系 pass 负责，
+    // 本 pass 的 y 模型不适用。
     let shift_active = !children_inside_multicol
+        && !box_node.writing_mode.is_vertical_block_flow()
         && box_node
             .node_id
             .and_then(|id| styles.get(&id))
