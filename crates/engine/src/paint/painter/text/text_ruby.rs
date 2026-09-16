@@ -18,16 +18,35 @@ use zero_dom::{Document, NodeId, NodeKind};
 /// interlinear-block-margin-box mismatch 哨兵：旧实现忽略之使 test 与无 spacing ref 逐像素
 /// 同像）。零间距（常规 ruby）= 0，overlay 落位逐字节不变。styles 缺失（Path B 无表，此
 /// 函数仅 layout 趟消费）或字段非 px 时按 resolve_length 解析、缺失臂取 0。
+/// R4422（css-ruby-1 #nested-pairing）：注音分段结果——`segs` = 行 0（最内层 per-base
+/// 配对），`span_all` = 行 1（跨全部 base 的外层注音，css-ruby span-all semantics）。
+/// 嵌套 ruby（test 形态）：内层 ruby 的 rt 对 = 行 0，外层直接子 rt = span_all；
+/// rtc 形态（ref）：直接子 rt = 行 0，rtc 直接文本 = span_all。双形态产出**同一**
+/// 分段结构（nested-ruby-pairing-001 的 test/ref 页收敛判据）。
+#[derive(Debug, Clone, PartialEq)]
+pub(super) struct RubyAnnotationSegs {
+    pub segs: Vec<(String, String, f32)>,
+    pub span_all: Option<String>,
+}
+
 pub(super) fn ruby_annotation_segments(
     doc: &Document,
     owner_id: NodeId,
     styles: Option<&std::collections::HashMap<NodeId, zero_style_system::ComputedStyle>>,
-) -> Option<Vec<(String, String, f32)>> {
+) -> Option<RubyAnnotationSegs> {
     let owner = doc.get(owner_id)?;
     if !matches!(&owner.kind, NodeKind::Element(e) if e.local_name().eq_ignore_ascii_case("ruby")) {
         return None;
     }
+    // 嵌套 ruby 判定：直接子含 ruby 元素 → 本层直接子 rt/rtc 全部升为 span-all 行
+    //（行 0 让位给内层 ruby 的配对）。
+    let has_nested_ruby = doc.child_nodes(owner_id).iter().any(|c| {
+        doc.get(*c).is_some_and(|n| {
+            matches!(n.kind, NodeKind::Element(ref e) if e.local_name().eq_ignore_ascii_case("ruby"))
+        })
+    });
     let mut segs: Vec<(String, String, f32)> = Vec::new();
+    let mut span_all: Option<String> = None;
     let mut base_buf = String::new();
     for child_id in doc.child_nodes(owner_id) {
         let Some(node) = doc.get(child_id) else {
@@ -44,12 +63,18 @@ pub(super) fn ruby_annotation_segments(
                         .chars()
                         .filter(|c| !c.is_whitespace())
                         .collect();
-                    let base: String = std::mem::take(&mut base_buf)
-                        .chars()
-                        .filter(|c| !c.is_whitespace())
-                        .collect();
                     let spacing = rt_block_axis_spacing(doc, child_id, styles);
-                    segs.push((base, annot, spacing));
+                    if has_nested_ruby {
+                        // R4422：嵌套语境下外层直接子 rt = span-all（css-ruby #nested-pairing
+                        // ——内层 ruby 的 base 序列展开为外层 base，外层注音跨全部 base）。
+                        span_all = Some(annot);
+                    } else {
+                        let base: String = std::mem::take(&mut base_buf)
+                            .chars()
+                            .filter(|c| !c.is_whitespace())
+                            .collect();
+                        segs.push((base, annot, spacing));
+                    }
                 } else if name.eq_ignore_ascii_case("rp") {
                     // rp 已 display:none（R1676），无绘制语义，跳过。
                 } else if name.eq_ignore_ascii_case("rtc") {
@@ -58,26 +83,57 @@ pub(super) fn ruby_annotation_segments(
                     // <rtc> annotations）的注音信息丢失：Path B flatten 排除 rtc/rt 文本后
                     // 注音无处绘制，页面与「无注音裸文本」逐像素相同（ruby-reflow-001-
                     // opaqueruby mismatch ref 误匹配翻红实证）。下降一层按 rt 直接子同款配对。
-                    for &rt_id in doc.child_nodes(child_id).iter() {
-                        let Some(rt) = doc.get(rt_id) else {
-                            continue;
-                        };
-                        if let NodeKind::Element(rt_elem) = &rt.kind
-                            && rt_elem.local_name().eq_ignore_ascii_case("rt")
-                        {
-                            let annot: String = doc
-                                .text_content(rt_id)
-                                .unwrap_or_default()
-                                .chars()
-                                .filter(|c| !c.is_whitespace())
-                                .collect();
-                            let base: String = std::mem::take(&mut base_buf)
-                                .chars()
-                                .filter(|c| !c.is_whitespace())
-                                .collect();
-                            let spacing = rt_block_axis_spacing(doc, rt_id, styles);
-                            segs.push((base, annot, spacing));
+                    // R4422：rtc **直接文本**（无 rt 子）= span-all 本体（nested-pairing
+                    // ref 形态 <rtc lang=en>Southeast</rtc>）。
+                    let has_rt_child = doc.child_nodes(child_id).iter().any(|c| {
+                        doc.get(*c).is_some_and(|n| {
+                            matches!(n.kind, NodeKind::Element(ref e) if e.local_name().eq_ignore_ascii_case("rt"))
+                        })
+                    });
+                    if has_rt_child {
+                        for &rt_id in doc.child_nodes(child_id).iter() {
+                            let Some(rt) = doc.get(rt_id) else {
+                                continue;
+                            };
+                            if let NodeKind::Element(rt_elem) = &rt.kind
+                                && rt_elem.local_name().eq_ignore_ascii_case("rt")
+                            {
+                                let annot: String = doc
+                                    .text_content(rt_id)
+                                    .unwrap_or_default()
+                                    .chars()
+                                    .filter(|c| !c.is_whitespace())
+                                    .collect();
+                                let base: String = std::mem::take(&mut base_buf)
+                                    .chars()
+                                    .filter(|c| !c.is_whitespace())
+                                    .collect();
+                                let spacing = rt_block_axis_spacing(doc, rt_id, styles);
+                                segs.push((base, annot, spacing));
+                            }
                         }
+                    } else {
+                        let annot: String = doc
+                            .text_content(child_id)
+                            .unwrap_or_default()
+                            .chars()
+                            .filter(|c| !c.is_whitespace())
+                            .collect();
+                        if !annot.is_empty() {
+                            span_all = Some(annot);
+                        }
+                    }
+                } else if name.eq_ignore_ascii_case("ruby") {
+                    // R4422：嵌套 ruby——其配对（内层 rt 对）提升为本层行 0；其文本照常
+                    // 累积进外层 base 段（外层 span-all 的 base = 全部 base）。
+                    if let Some(inner) = ruby_annotation_segments(doc, child_id, styles) {
+                        segs.extend(inner.segs);
+                        if span_all.is_none() {
+                            span_all = inner.span_all;
+                        }
+                    }
+                    if let Some(t) = doc.text_content(child_id) {
+                        base_buf.push_str(&t);
                     }
                 } else {
                     // 嵌套元素（含嵌套 ruby）的文本累积进当前 base 段。
@@ -91,7 +147,11 @@ pub(super) fn ruby_annotation_segments(
         }
     }
     // 尾部 base（无后续 rt）无 annotation，丢弃（chromium 亦不标注）。
-    if segs.is_empty() { None } else { Some(segs) }
+    if segs.is_empty() && span_all.is_none() {
+        None
+    } else {
+        Some(RubyAnnotationSegs { segs, span_all })
+    }
 }
 
 /// R4409：配对 rt 的块轴间距（水平书写：rt 盒底侧朝向 base，padding/border/margin-bottom

@@ -34,7 +34,7 @@ mod text_shaping;
 
 use text_multicol::compute_multicol_info_for_paint;
 use text_multicol::multicol_balance_target_height;
-use text_ruby::ruby_annotation_segments;
+use text_ruby::{ruby_annotation_segments, RubyAnnotationSegs};
 use text_shaping::{
     FragmentPaintWidths, collect_atomic_inline_sizes, configure_paint_ifc_advance as with_shaped_layout,
     fragment_advance_trace, fragment_font_size_adjustment, fragment_glyphs, glyph_sources, is_cc_control_char,
@@ -1353,7 +1353,7 @@ impl super::Painter {
                                 // R1689：ruby per-segment annotation —— owner 为 <ruby> 时，
                                 // 每个 rt 配对其前 base 段，annotation 居中于对应 base segment。
                                 // R4409：第三元 = 配对 rt 块轴间距（css-ruby #interlinear-block；零间距页逐字节不变）。
-                                let ruby_segs: Option<Vec<(String, String, f32)>> =
+                                let ruby_segs: Option<RubyAnnotationSegs> =
                                     ruby_annotation_segments(doc, owner_id, styles);
 
                                 let frag_base_x = content_x + fragment.x + col_x_offset + tx;
@@ -1512,7 +1512,7 @@ impl super::Painter {
                                 // R1689：ruby per-segment annotation —— 每个 rt 居中于其前 base 段
                                 //（替代 R1688 整 base 扁平化居中，解 per-kanji Japanese ruby）。
                                 // seg_x_start 按各 base 段字符宽累积，annotation 居中于 [start, start+seg_w]。
-                                if let Some(segs) = ruby_segs.as_ref()
+                                if let Some(RubyAnnotationSegs { segs, span_all }) = ruby_segs.as_ref()
                                     && !segs.is_empty()
                                 {
                                     let rt_fs = fragment.font_size * 0.5;
@@ -1573,6 +1573,34 @@ impl super::Painter {
                                             }
                                         }
                                         seg_x += seg_w;
+                                    }
+                                    // R4422（css-ruby-1 #nested-pairing）：span-all 注音行——行 0 上方一个 rt 行高
+                                    //（rt_fs = 0.5em），跨全部 base 居中（nested/rtc 双形态同一落位）。
+                                    if let Some(span_text) = &span_all {
+                                        let span_y = rt_y0 - 2.0 * rt_fs;
+                                        let span_w: f32 = span_text
+                                            .chars()
+                                            .map(|c| self.measure_char_cached(default_font_id.0, c, rt_fs, frag_is_ahem))
+                                            .sum();
+                                        let mut sx = frag_base_x + (seg_x - frag_base_x - span_w) / 2.0;
+                                        for sc in span_text.chars() {
+                                            self.primitives.add_glyph(GlyphPrimitive {
+                                                x: sx,
+                                                y: span_y,
+                                                font_size: rt_fs,
+                                                color: frag_color,
+                                                glyph_id: sc as u32,
+                                                font_glyph_index: None,
+                                                source: None,
+                                                font_id: default_font_id,
+                                                font_variation_id: owner_font_variation_id,
+                                                bitmap_width: None,
+                                                bitmap_height: None,
+                                                rotation,
+                                                synthetic_italic: false,
+                                            });
+                                            sx += self.measure_char_cached(default_font_id.0, sc, rt_fs, frag_is_ahem);
+                                        }
                                     }
                                 }
                                 self.paint_text_decoration_from_style(
@@ -1773,7 +1801,7 @@ impl super::Painter {
                                 .unwrap_or(true);
                             // R1689：ruby per-segment annotation（替代 R1022 逐字符 + R1688 整 base 居中）。
                             // R4409：第三元 = 配对 rt 块轴间距（css-ruby #interlinear-block；零间距页逐字节不变）。
-                            let ruby_segs: Option<Vec<(String, String, f32)>> =
+                            let ruby_segs: Option<RubyAnnotationSegs> =
                                 ruby_annotation_segments(doc, owner_id, styles);
 
                             // R4133：per-fragment word-spacing——同 multicol 路径。片段 owner
@@ -1865,7 +1893,7 @@ impl super::Painter {
                             // 注音按 fragment 数重复绘制（ruby-bidi-004 三份 "123" 实证）。
                             if !char_advance_is_y
                                 && r4332_is_first
-                                && let Some(segs) = ruby_segs.as_ref()
+                                && let Some(RubyAnnotationSegs { segs, span_all }) = ruby_segs.as_ref()
                                 && !segs.is_empty()
                             {
                                 let rt_fs = $frag_fs * 0.5;
@@ -1912,6 +1940,34 @@ impl super::Painter {
                                         }
                                     }
                                     seg_x += seg_w;
+                                }
+                                // R4422（css-ruby-1 #nested-pairing）：span-all 注音行——行 0 上方一个 rt 行高
+                                //（rt_fs = 0.5em），跨全部 base 居中（nested/rtc 双形态同一落位）。
+                                if let Some(span_text) = &span_all {
+                                    let span_y = rt_y0 - 2.0 * rt_fs;
+                                    let span_w: f32 = span_text
+                                        .chars()
+                                        .map(|c| self.measure_char_cached(frag_font_id.0, c, rt_fs, $is_ahem))
+                                        .sum();
+                                    let mut sx = frag_base_x + (seg_x - frag_base_x - span_w) / 2.0;
+                                    for sc in span_text.chars() {
+                                        self.primitives.add_glyph(GlyphPrimitive {
+                                            x: sx,
+                                            y: span_y,
+                                            font_size: rt_fs,
+                                            color: frag_color,
+                                            glyph_id: sc as u32,
+                                            font_glyph_index: None,
+                                            source: None,
+                                            font_id: frag_font_id,
+                                            font_variation_id: font_variation_id,
+                                            bitmap_width: None,
+                                            bitmap_height: None,
+                                            rotation,
+                                            synthetic_italic: false,
+                                        });
+                                        sx += self.measure_char_cached(frag_font_id.0, sc, rt_fs, $is_ahem);
+                                    }
                                 }
                             }
 
@@ -2136,7 +2192,7 @@ impl super::Painter {
                                 && word_spacing == 0.0
                                 && active_text_shadows.is_empty()
                                 && emphasis_mark.is_none()
-                                && ruby_segs.as_ref().is_none_or(Vec::is_empty)
+                                && ruby_segs.as_ref().is_none_or(|r| r.segs.is_empty() && r.span_all.is_none())
                                 && !frag_synthetic_italic
                                 && !style.text_decoration_line.has_any()
                                 && owner_style_opt.is_none_or(|owner| {

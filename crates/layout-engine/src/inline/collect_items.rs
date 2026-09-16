@@ -1903,25 +1903,72 @@ fn adjacent_text_char(doc: &Document, ruby_id: NodeId, forward: bool) -> Option<
 /// ruby 的 rt 注释文本（全部 rt 拼接；多段 ruby 近似为单段——家族案均单段，
 /// 多段逐段 box 模型独立子问题）。空白剔除与 paint 侧 ruby_annotation_segments 同口径。
 pub(crate) fn ruby_annotation_width_text(doc: &Document, ruby_id: NodeId) -> String {
-    let mut out = String::new();
+    // R4422（css-ruby-1 #nested-pairing）：注音宽 = **最宽注音行**的文本（行 0 =
+    // 最内层 per-base 注音拼接，行 1 = span-all 外层注音），非全量拼接——嵌套/rtc
+    // 双形态（nested-pairing test 页 vs ref 页）的行结构同构后行宽必须同值，否则
+    // pads 分母分裂 → 折行差（ref 页行宽多出 "とうなん" 段 → 角 折行）。普通单 rt
+    // （行 1 缺席）与 rbc/rtc complex（行 0 = rtc 内 rt 拼接）口径不变。
+    // 消费方（R4357 overhang pads / R4359 rt ascent / intrinsic walk ruby 臂）均
+    // opt-in 门（base 排除在 collect 主路径已同步，注音宽与 base 口径一致）。
+    let stripped = |id: NodeId| -> String {
+        doc.text_content(id)
+            .unwrap_or_default()
+            .chars()
+            .filter(|c| !c.is_whitespace())
+            .collect()
+    };
+    let has_nested_ruby = doc.child_nodes(ruby_id).iter().any(|c| {
+        doc.get(*c).is_some_and(|n| {
+            matches!(n.kind, NodeKind::Element(ref e) if e.local_name().eq_ignore_ascii_case("ruby"))
+        })
+    });
+    let mut row0 = String::new();
+    let mut row1 = String::new();
     for child_id in doc.child_nodes(ruby_id) {
-        if let Some(node) = doc.get(child_id)
-            && let NodeKind::Element(elem) = &node.kind
-            // R4395：rtc（注音容器）文本并入注音宽——消费方（R4357 overhang pads /
-            // R4359 rt ascent / intrinsic walk ruby 臂）均 opt-in 门（base 排除在
-            // collect 主路径已同步，注音宽与 base 口径一致）。
-            && (elem.local_name().eq_ignore_ascii_case("rt") || elem.local_name().eq_ignore_ascii_case("rtc"))
-        {
-            let annot: String = doc
-                .text_content(child_id)
-                .unwrap_or_default()
-                .chars()
-                .filter(|c| !c.is_whitespace())
-                .collect();
-            out.push_str(&annot);
+        let Some(node) = doc.get(child_id) else { continue };
+        if let NodeKind::Element(elem) = &node.kind {
+            let name = elem.local_name();
+            if name.eq_ignore_ascii_case("rt") {
+                if has_nested_ruby {
+                    row1 = stripped(child_id);
+                } else {
+                    row0.push_str(&stripped(child_id));
+                }
+            } else if name.eq_ignore_ascii_case("rtc") {
+                let has_rt_child = doc.child_nodes(child_id).iter().any(|c| {
+                    doc.get(*c).is_some_and(|n| {
+                        matches!(n.kind, NodeKind::Element(ref e) if e.local_name().eq_ignore_ascii_case("rt"))
+                    })
+                });
+                if has_rt_child {
+                    for &rt_id in doc.child_nodes(child_id).iter() {
+                        if doc.get(rt_id).is_some_and(|n| {
+                            matches!(n.kind, NodeKind::Element(ref e) if e.local_name().eq_ignore_ascii_case("rt"))
+                        }) {
+                            row0.push_str(&stripped(rt_id));
+                        }
+                    }
+                } else {
+                    row1 = stripped(child_id);
+                }
+            } else if name.eq_ignore_ascii_case("ruby") {
+                // 嵌套 ruby：其 rt 文本 = 行 0（内层配对），与 paint 侧分段同分类。
+                for &nid in doc.child_nodes(child_id).iter() {
+                    if doc.get(nid).is_some_and(|n| {
+                        matches!(n.kind, NodeKind::Element(ref e) if e.local_name().eq_ignore_ascii_case("rt"))
+                    }) {
+                        row0.push_str(&stripped(nid));
+                    }
+                }
+            }
         }
     }
-    out
+    // 取估算宽更宽的行（rt fs = 0.5em 语义与 pads 同源；行内同 fs 下字符数等价）。
+    if row1.chars().count() > row0.chars().count() {
+        row1
+    } else {
+        row0
+    }
 }
 
 /// 朝向 ruby 的空白半侧额度（em 由 font_size 表达）。
