@@ -446,3 +446,4 @@ css/css-text/text-group-align/text-group-align-right.html css/css-text/text-grou
 css/css-ruby/intra-base-white-space-001.html css/css-ruby/reference/intra-base-white-space-001-ref.html == 2026-09-16 R4405 Path B ruby 容器扁平化 + has_block_elem display:none 排除（REF 页 base 文本零绘制修复）
 css/css-ruby/ruby-reflow-001-opaqueruby.html css/css-ruby/ruby-reflow-001-noruby.html == 2026-09-16 R4405 rtc 内 rt 配对（complex ruby 注音不再丢失，mismatch ref 防误匹配）
 css/css-ruby/improperly-contained-annotation-001.html css/css-ruby/reference/improperly-contained-annotation-001-ref.html == 2026-09-16 R4406 R4033 纯空盒 carve-out 收窄（flag-on：ZWSP 内容 ruby 测 0 不再保持拉伸满宽，7.51→0.02；default 臂不变）
+css/CSS2/margin-padding-clear/margin-collapse-101.xht css/CSS2/margin-padding-clear/margin-collapse-101-ref.xht == 2026-09-16 R4407 flag-on anon 文本盒/walk 双计修复（margin-collapse-101/105 flag-on 2.53→0.00；default 臂逐字节不变）

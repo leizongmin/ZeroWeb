@@ -248,12 +248,23 @@ fn box_content_max_width_inner(box_node: &LayoutBox, doc: &Document, styles: &Ha
     let mut float_row = 0.0f32;
     let mut float_max = 0.0f32;
     let mut has_in_flow_child = false;
+    // R4407：ZW_MIXED_BARE_TEXT 实验态旗标 hoist（循环内每子一次 env::var → 每容器一次）。
+    let mixed_walk_on = std::env::var("ZW_MIXED_BARE_TEXT").as_deref() == Ok("1");
 
     for child in &box_node.children {
         if child.is_absolute || child.is_fixed {
             continue;
         }
         has_in_flow_child = true;
+        // R4407：匿名文本盒（块容器直接文本的第一趟产物，node_id=文本节点）贡献 0——
+        // 其文本由本轮 dom_inline_text_max_width DOM walk 统一计入。旧路径 anon 盒经
+        // box_content_max_width(child)（node_id=文本节点 → text_content_max_width）与
+        // walk **双计同一文本**（margin-collapse-101/105 flag-on：div.b 内 [anon "B"]
+        // 33.3 + walk 33.3 = 66.7，td 链测得 2× 文本宽、列宽翻倍实证）；default 臂
+        //（walk 不运行）维持 anon 盒计宽不变。
+        if mixed_walk_on && child.is_anonymous_text_item {
+            continue;
+        }
         // R4136：固有测量中 Calc(P%±Npx) margin 只取 px 部分（% → 0）；普通 margin 照用。
         let (ml, mr) = intrinsic_margin_contribution(child, styles);
         let is_inline_level = child
@@ -504,12 +515,25 @@ fn box_content_max_width_inner(box_node: &LayoutBox, doc: &Document, styles: &Ha
         // normal-014 族 p.test{width:10.2em} + span 文本：无守卫时 163+224 双计，
         // wrapper shrink 被 walk 文本撑爆实证）。bare walker 时代靠 boxed-skip 免疫
         // （span 文本不经 walker），交错 walk 计全部文本后须显式守卫。
-        let dom_text = if std::env::var("ZW_MIXED_BARE_TEXT").as_deref() == Ok("1") && own_explicit <= 0.5 {
+        let dom_text = if mixed_walk_on && own_explicit <= 0.5 {
             dom_inline_text_max_width(box_node, doc, styles)
         } else {
             0.0
         };
-        children_inner.max(own_explicit) + dom_text
+        // R4407：行感知合成——dom_text 是本容器 **inline 行**的文本宽（walk 分段取 max），
+        // 与 block_max（块级子各自成行）是**不同行**，取 max 而非相加；与 inline_sum
+        //（inline 子 frame/原子盒外宽）同行相加 ✓。dom_text==0（flag-off / 定值盒守卫）
+        // 时回落 children_inner 逐字节不变。旧 `children_inner.max(own_explicit) + dom_text`
+        // 在含块级子的容器上把块行宽与文本行宽跨行相加（margin-collapse-101/105：td 链
+        // 66.7 = 2×33.3 实证）。
+        if dom_text > 0.0 {
+            block_max
+                .max(inline_sum + dom_text)
+                .max(float_contribution + inline_sum)
+                .max(own_explicit)
+        } else {
+            children_inner.max(own_explicit)
+        }
     }
     .max(own_ar);
 
