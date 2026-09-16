@@ -2531,7 +2531,11 @@ pub(crate) fn remeasure_inline_only_containers(
     img_intrinsic_sizes: &HashMap<NodeId, (f32, f32)>,
     positioned_inline_blocks: &mut NodeIdSet,
     inline_fonts: InlineFontContext<'_>,
+    parent_wm: &WritingModeValue,
 ) {
+    // R4428 flip：default-on（A/B 净 +5 零新翻红）；`=0` kill-switch 回退。
+    let viv_remeasure = std::env::var("ZW_VIV_SIZING").as_deref() != Ok("0");
+    let own_wm = box_node.writing_mode.clone();
     let mut position_reuse: Option<(NodeId, InlineFormattingContext)> = None;
     // flex/grid 容器不走 IFC 重算——它们的子元素是 flex/grid item，
     // 尺寸由 taffy 决定，不应被 IFC 片段覆盖。
@@ -2569,6 +2573,7 @@ pub(crate) fn remeasure_inline_only_containers(
                     img_intrinsic_sizes,
                     positioned_inline_blocks,
                     inline_fonts,
+                    &own_wm,
                 );
             }
             return;
@@ -2783,6 +2788,22 @@ pub(crate) fn remeasure_inline_only_containers(
             WritingModeValue::VerticalRl | WritingModeValue::VerticalLr
         );
         let is_vertical_rtl = matches!(box_node.writing_mode, WritingModeValue::VerticalRl);
+        // R4428 viv 臂：vertical-in-vertical 容器的 IFC max_depth = **行内可用深度**
+        //（= content_height；R1099 store 路径同语义），旧恒取 content_width（块轴跨度）
+        // 致多列误包裹/塌缩。仅 viv（vertical 父）放开——horizontal 父 vertical 容器
+        // 维持旧值（corpus 现状通过，A/B 隔离回归面）。float 子树排除（§9.5 float 流
+        // 依赖 taffy 原始几何；ortho-floats/clearance 翻红实证）。
+        fn remeasure_subtree_has_float(b: &LayoutBox) -> bool {
+            if b.float != FloatValue::None {
+                return true;
+            }
+            b.children.iter().any(remeasure_subtree_has_float)
+        }
+        let viv = viv_remeasure
+            && is_vertical
+            && parent_wm.is_vertical_block_flow()
+            && !remeasure_subtree_has_float(box_node);
+        let container_width = if viv { box_node.content_height } else { container_width };
         let text_align = resolve_text_align(styles.get(&dom_id));
         let text_align_last = resolve_text_align_last(styles.get(&dom_id));
         let no_wrap = resolve_no_wrap_for_ifc_measure(styles.get(&dom_id));
@@ -2842,7 +2863,17 @@ pub(crate) fn remeasure_inline_only_containers(
         store_font_sizes_from_ifc(&inline_ctx, box_node, doc, styles);
         sync_inline_child_boxes_from_ifc(box_node, &inline_ctx, styles);
 
-        let full_height = inline_ctx.total_height();
+        // R4428 viv：vertical 的物理高（行内轴 extent）= **最深列深**（max run.y+run.height）；
+        // total_height()（Σ line.height = Σ 列宽）是**块轴**跨度，属物理宽。
+        let full_height = if viv {
+            inline_ctx
+                .all_fragments()
+                .iter()
+                .map(|f| f.y + f.height)
+                .fold(0.0_f32, f32::max)
+        } else {
+            inline_ctx.total_height()
+        };
         let balance_geometry = crate::multicol::balance_column_geometry(style, container_width);
         // OPTIMIZATION: retain this IFC until child sizes finalize, then reuse it for positions.
         static REUSE_INLINE_BLOCK_POSITIONS: std::sync::LazyLock<bool> =
@@ -2910,6 +2941,17 @@ pub(crate) fn remeasure_inline_only_containers(
                 }
             }
         }
+        // R4428 viv：物理宽（块轴 extent）= Σ 列宽（vertical 下 total_height() = Σ line.height）。
+        // CSS width auto 时随行内 extent 一并落定（旧值 = taffy 交换帧逻辑高 = Σ 子高，转置）。
+        if viv && matches!(style.width, LengthValue::Auto) {
+            let block_extent = inline_ctx.total_height();
+            let frame_w = box_node.border_left + box_node.border_right + box_node.padding_left + box_node.padding_right;
+            let new_width = (block_extent + frame_w).max(0.0);
+            if (new_width - box_node.width).abs() > 0.5 {
+                box_node.width = new_width;
+                box_node.content_width = block_extent.max(0.0);
+            }
+        }
         if *REUSE_INLINE_BLOCK_POSITIONS && has_inline_blocks && balance_geometry.is_none() {
             position_reuse = Some((dom_id, inline_ctx));
         }
@@ -2927,6 +2969,7 @@ pub(crate) fn remeasure_inline_only_containers(
             img_intrinsic_sizes,
             positioned_inline_blocks,
             inline_fonts,
+            &own_wm,
         );
         let height_delta = box_node.children[idx].height - old_height;
         let content_height_delta = box_node.children[idx].content_height - old_content_height;
