@@ -64,3 +64,46 @@ fn r4398_preline_forced_break_strips_trailing_collapsible_space() {
         .find(|f| f.text.is_empty() && f.width == 0.0 && f.ws_override.is_some());
     assert!(marker.is_some(), "行 1 应含零宽 ws_override 标记 fragment");
 }
+
+/// R4400：separated 形态（`<i> </i><i>\n</i>`）——空格 run 的兜底词 "  " 经尾部空格
+/// 剥离后 content_word=""，marker 判据用原词（split 的空串）后不再误判 → 空白 run 只
+/// 贡献 advance，断行仅由真正的 `\n` marker 触发（2 行而非 3 行）。
+#[test]
+fn r4400_preline_separated_whitespace_run_no_spurious_break() {
+    let mut ctx = InlineFormattingContext::new(800.0);
+    let ws = RunWhiteSpace {
+        preserve: false,
+        break_at_newline: true,
+        no_wrap: false,
+        hang_trailing: false,
+    };
+    let mk = |text: &str| TextRun {
+        text: text.to_string(),
+        node_id: NodeId::default(),
+        font_size: 25.0,
+        line_height: 25.0,
+        vertical_align: VA::Baseline,
+        letter_spacing: 0.0,
+        word_spacing: 0.0,
+        margin_left: 0.0,
+        margin_right: 0.0,
+        padding_left: 0.0,
+        padding_right: 0.0,
+        padding_top: 0.0,
+        padding_bottom: 0.0,
+        border_top: 0.0,
+        border_bottom: 0.0,
+        is_ahem_font: true,
+        font_id: None,
+        is_rtl: false,
+        bidi_override: None,
+        is_plaintext_bidi: false,
+        ws_override: (!text.is_empty()).then_some(ws),
+        ruby_rt_ascent: 0.0,
+        glyph_ascent: 0.0,
+        glyph_descent: 0.0,
+    };
+    let runs = vec![mk("XXXXXXXX"), mk(" "), mk("\n"), mk("XXXXXXXX")];
+    ctx.break_into_lines(runs);
+    assert_eq!(ctx.lines.len(), 2, "separated 形态：空白 run 不得误判为 marker（2 行）");
+}

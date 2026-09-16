@@ -238,6 +238,12 @@ impl InlineFormattingContext {
                         } else {
                             (word.as_str(), 0.0f32)
                         };
+                        // R4400：强制断行标记判据用**原词**（split 为每个 `\n` 推入空串）——
+                        // 纯空白词（如 whitespace-only run 的兜底词 "  "）经尾部空格剥离后
+                        // content_word 也为空串，旧判据 `content_word.is_empty()` 把它误判为
+                        // marker → 空白 run 后多推一个空行（pre-line-with-space separated
+                        // 形态 `<i> </i><i>\n</i>` 3 行实证，应 2 行）。
+                        let is_forced_break_marker = (run_preserve || run_break_at_newline) && word.is_empty();
 
                         // R1447：制表符（preserve 模式保留为 "\t" 片段）按 tab stop 推进
                         //（CSS Text 3 §4.1.3）——下一个 tab_size 倍数，非固定 tab_size 空格。
@@ -301,7 +307,7 @@ impl InlineFormattingContext {
                         // 推入空字符串作为强制换行标记——此处消费它：把当前行推入结果并开始新行（同 <br>）。
                         // 旧实现在此只对空词 continue，静默丢弃标记 → 多行 <pre> 塌缩为一行。
                         // pre-line（break_at_newline）：空白序列折叠但 `\n` 仍强制断行（CSS Text 3 §4.2）。
-                        if (run_preserve || run_break_at_newline) && content_word.is_empty() {
+                        if is_forced_break_marker {
                             last_was_collapsible_ws = false;
                             // R4398（css-text-3 §white-space-phase-1）：强制断行消费点剥除
                             // 行尾可折叠空格 fragment——「collapsible spaces immediately
