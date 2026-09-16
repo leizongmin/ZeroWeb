@@ -2,7 +2,7 @@
 
 **入口文档**: [../devtools.md](../devtools.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-17（M3 GUI 接线落地 + 全 DC 收口判定完成——goal Done，守成态）
+**最后更新**: 2026-09-17（守成验证轮：cdp-e2e 33 绿 + make test 全绿复测，基线无漂移）
 
 ---
 
@@ -105,6 +105,19 @@ Sources/Performance/Security 等（frontend 显示但域不实现，符合 goal 
 
 - 测试基线：`make test`（每轮以实测为准）；headless 面防回归 `make cdp-e2e`
   （33 绿 deterministic YES 实测维持）
+- **2026-09-17 守成验证轮**：c782afbe6 上复测——`make cdp-e2e` 33 绿 deterministic
+  YES；`make test` 全绿（0F）。另记共享面观察：`cargo build -p zero-browser`
+  （default 无 v8/script-runtime）下 zero-engine `match_media_to_json` 报 dead_code
+  warning——workspace 根对该依赖 `default-features = false`，单包 build 时 callbacks
+  注册块被 cfg 掉所致；workspace 统一 feature 图（renderer/webview-demo 开 v8）不出现，
+  clippy/CI 门不受影响（`cargo clippy -p zero-engine --lib` 实测干净）。engine 属
+  兄弟流共享面，按 run-rules §9/§10 不单方面修，记账待归属流收敛。
+  **运维观察**：`make cdp-e2e` 的 verify-deterministic.mjs 退出时不 reap 其 spawn 的
+  zero-browser --headless + Playwright Chromium 进程树，每轮各漏一对（本轮清理前本树
+  累计 7 对 + 4 棵 Chromium 树，全部为本树测试遗留、已清）；长期守成轮次会持续累积，
+  待 cdp-protocol 流收敛（属 tests/playwright-matrix 面，不单方面修）。注意本树存在
+  符号链接别名入口（`$HOME/work/<repo>` 形式），进程 cwd/exe 归属判断须以
+  `readlink -f` 解析为准（勿按 argv 路径二分）。
 - **挂账清单（灰置/碰头）**：①GUI 标签页桥接（深结构，用户点名）；②Styles
   matched rules（engine 协议面）；③overlay 高亮渲染；④灰置面板（预期形态）：
   Sources/Performance/Security/Profiler 等 frontend 显示但域不实现
