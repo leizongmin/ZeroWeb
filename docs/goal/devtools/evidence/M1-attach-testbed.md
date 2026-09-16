@@ -1,11 +1,52 @@
-# M1 — frontend 附接 ZeroWeb：S1 路由切片 + S2 附接试验台 + S3 域缺口账本
+# M1 — frontend 附接 ZeroWeb：S1 路由 + S2 试验台 + S3 账本 + S3a 最小域集
 
-**日期**: 2026-09-16（M1 首轮，M0 收口后）
+**日期**: 2026-09-16（M1 首轮 + S3a 轮，M0 收口后）
 **上游状态**: cdp-protocol goal Done（M5 守成态，`make cdp-e2e` 33 绿 = 本 goal 防回归门）
 
 ---
 
-## 1. M1-S1 ✅ per-page WS 路径路由（本切片落地）
+## 0. M1-S3a ✅ 最小域集（Elements 活 DOM + Console REPL 双绿，2026-09-16）
+
+S3 账本定谳的核心缺口按消费侧实现（`headless/domains/`）：
+
+1. **`DOM.getDocument`**：renderer 页面上下文 JS 探测（`EvaluateRetaining` +
+   return_by_value，零 protocol-crate 改动）把 shim DOM 序列化为紧凑 JSON →
+   headless 侧 `convert_cdp_node` 转 CDP Node 形状（nodeId 顺序分配，doctype/元素/
+   文本/注释 + depth 截断桩语义）。**这是 frontend Elements 面板唯一数据源**。
+2. **`DOM.enable` / `DOM.requestChildNodes` / `CSS.enable` / `Overlay.enable`** ack。
+3. **`Page.getResourceTree`**：复用 getFrameTree 树形 + resources 空表。
+4. **enable 型 no-op ack 族扩面**（frontend 初始化二波：Overlay.setShow*Overlays、
+   Debugger.set*、DOMDebugger.set*、Network.set*、Page.set* 等 40+ 方法）+
+   带返回形状三件：`Runtime.getIsolateId`、`Storage.getStorageKey`、
+   `Page.getNavigationHistory`（index/entries）。
+5. **`Target.getTargetInfo` 无参分类修复**：page-direct 连接（`/devtools/page/<id>`）
+   返回活跃页 `type:"page"` targetInfo（此前恒返 browser 占位——frontend 据此误判
+   连接形态装载 ScreencastView 浏览器调试 UI）。`page_direct_connection` 形态登记
+   随 accept 循环维护（单连接串行模型下 = 当前连接形态）。
+
+**验收（attach-zeroweb-probe.mjs 实测，截图存证）**：
+- `frontend-elements-live-dom` ✅ —— Elements 面板渲染被调试页活 DOM 树
+  （`<!DOCTYPE html><HTML lang=…><HEAD>…<BODY>…` + 面包屑 + `$0` 选中态），
+  截图 `attach-zeroweb-elements.png`。
+- **`frontend-console-repl-evaluate` ✅** —— Console 面板 REPL 键入 `1+1` →
+  `Runtime.evaluate` → ZeroWeb V8 → 回显表达式 + 结果 `2`（DC-2 Console 判据的
+  最小演示流打通），截图 `attach-zeroweb-console.png`。
+- frontend 初始化 -32601 归零（账本 §3 清单全部消解）。
+
+**遗留（M2 面）**：`&panel=network` 的 NetworkLogView 在 ZeroWeb 附接下不渲染——
+frontend 未捕获异常（pageerror）定位：`ScreencastView.requestNavigationHistory`
+（panels/screencast/screencast.js:3893，读 `entries[i].url` undefined）+
+`sdk.js:36029` Promise.all 链 `reading 'length'`。ScreencastView 为何在 inspector
+入口被实例化待查（`new ScreencastView` 仅 ScreencastApp；疑似共享 bundle 初始化链）。
+Elements/Console 两面板不受影响。
+
+单测 +1（getDocument 探测 JSON → CDP Node 转换：doctype/属性/文本递归 id/depth 桩）。
+门禁：`cargo test -p zero-browser` 464P/0F、clippy -D warnings clean、
+`make cdp-e2e` 33 绿（守成面零漂移）、`make test` 全绿。
+
+---
+
+## 1. M1-S1 ✅ per-page WS 路径路由（前一轮落地）
 
 Chrome 形态 `devtoolsFrontendUrl` 携带 per-page ws 路径，frontend 在该 socket 上说
 **非包裹的 page 域协议**。本轮 headless transport 面三件：
@@ -83,9 +124,11 @@ DevTools frontend 是 **DOM-nodeId 树流**（enable → getDocument 建树 → 
 
 ## 5. 下一切片建议（按序）
 
-1. **M1-S3a 最小域集**：`DOM.enable`/`DOM.getDocument`（zero-dom 全树序列化，
-   nodeId 分配器）+ `Page.getResourceTree` + `CSS.enable`/`Overlay.enable`/§3 no-op
-   族 ack → Elements 树渲染被调试页活 DOM（单连接流即可闭环验证）。
+1. ~~M1-S3a 最小域集~~ ✅（见 §0）
 2. **M1-S1.5 并发连接**：transport 线程化（HeadlessSession 共享化边界先探），
-   解锁 Console/Network 演示流与多客户端。
-3. **M1-S3b CSS.getMatchedStylesForNode**：样式侧栏数据源（style-system 消费面）。
+   解锁 Console/Network 多步流与多客户端（附接试验台的两次 goto 竞态即源于此）。
+3. **M2-N1 Network 面板渲染排查**：ScreencastView 在 inspector 入口的实例化链 +
+   sdk.js:36029 Promise.all 崩溃定位（见 §0 遗留）；Network 域事件流在
+   Network.enable 后由 REPL fetch 触发即有数据（管线已在，单连接下触发时序受限）。
+4. **M1-S3b CSS.getMatchedStylesForNode**：样式侧栏数据源（style-system 消费面；
+   现状 = Elements 树可选中，样式栏 "No matching selector or style"）。

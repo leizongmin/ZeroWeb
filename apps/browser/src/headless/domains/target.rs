@@ -203,7 +203,15 @@ impl HeadlessServer {
                 message: format!("Target not found: {target_id}"),
             });
         }
-        // 浏览器级 target（连接握手时 Playwright 查询）
+        // 无 targetId：浏览器级连接（Playwright connectOverCDP 握手查询）→ browser
+        // 占位；page-direct 连接（DevTools frontend per-page ws，devtools goal M1-S1）→
+        // 活跃页 targetInfo——frontend 按它分类连接形态，误报 browser 会装载
+        // ScreencastView（浏览器调试 UI）并因缺 screencast 域崩溃、面板全部停摆。
+        if self.page_direct_connection() {
+            if let Some(tab) = session.shell.tabs().next() {
+                return Ok(serde_json::json!({ "targetInfo": Self::target_info_json(tab) }));
+            }
+        }
         Ok(serde_json::json!({
             "targetInfo": {
                 "targetId": "zeroweb-browser",

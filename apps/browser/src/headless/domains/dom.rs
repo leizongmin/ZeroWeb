@@ -183,6 +183,52 @@ impl HeadlessServer {
         }
     }
 
+    /// DOM.getDocument — 全树序列化（DevTools frontend Elements 面板唯一数据源，
+    /// devtools goal M1-S3a；cdp-protocol 矩阵面的 Playwright 流不用此方法）。
+    ///
+    /// 实现：renderer 页面上下文 JS 探测（EvaluateRetaining，return_by_value）把 shim
+    /// DOM 拍平为紧凑 JSON，headless 侧转换为 CDP Node 形状并顺序分配 `nodeId`。
+    /// nodeId/backendNodeId 为本次调用内的独立空间（与 objectId 句柄注册表无关联——
+    /// frontend 以 nodeId 引用节点时暂无 DOM.getNode 面，S3b 随样式域补）。
+    ///
+    /// https://chromedevtools.github.io/devtools-protocol/tot/DOM/#method-getDocument
+    pub(super) fn cmd_dom_get_document(
+        &self,
+        session: &mut HeadlessSession,
+        params: &Value,
+    ) -> Result<Value, ProtocolError> {
+        let depth = params.get("depth").and_then(|v| v.as_i64()).unwrap_or(-1);
+        let script = format!(
+            "(function() {{\n function ser(n, d) {{\n  var t = n.nodeType;\n  var o = {{t: t, n: n.nodeName || ''}};\n  if (t === 3 || t === 8) o.v = n.nodeValue || '';\n  if (t === 1) {{\n   var a = [];\n   try {{ var at = n.attributes; for (var i = 0; i < at.length; i++) {{ a.push(at[i].name, at[i].value); }} }} catch (e) {{}}\n   o.a = a;\n  }}\n  var c = [];\n  var kids = n.childNodes || [];\n  for (var j = 0; j < kids.length; j++) {{\n   var k = kids[j];\n   var kt = k.nodeType;\n   if (kt !== 1 && kt !== 3 && kt !== 8 && kt !== 10) continue;\n   if ({depth} >= 0 && d >= {depth}) {{ c.push({{t: kt, n: k.nodeName || ''}}); continue; }}\n   c.push(ser(k, d + 1));\n  }}\n  o.c = c;\n  o.cc = c.length;\n  if (t === 9) o.u = n.documentURI || '';\n  return o;\n }}\n return JSON.stringify(ser(document, 0));\n}})()"
+        );
+        let json = match session.automation_request(AutomationOperation::EvaluateRetaining {
+            script,
+            group: None,
+            return_by_value: true,
+        }) {
+            Ok(AutomationResult::Value(AutomationValue::String(s))) => s,
+            Ok(other) => {
+                return Err(ProtocolError {
+                    code: -32000,
+                    message: format!("DOM serialization returned non-string: {other:?}"),
+                });
+            }
+            Err(e) => {
+                return Err(ProtocolError {
+                    code: -32000,
+                    message: format!("DOM serialization failed: {e}"),
+                });
+            }
+        };
+        let raw: Value = serde_json::from_str(&json).map_err(|e| ProtocolError {
+            code: -32000,
+            message: format!("DOM probe JSON invalid: {e}"),
+        })?;
+        let mut next_id = 1u64;
+        let root = convert_cdp_node(&raw, &mut next_id);
+        Ok(serde_json::json!({ "root": root }))
+    }
+
     /// DOM 域 objectId 面（M4+）：经 objectId 桥对保留元素求值——geometry/身份探测
     /// 复用既有 CallFunctionOnHandle 原语，页面侧 rect 来自 shim `getBoundingClientRect`
     ///（RectBridge 真实布局矩形）。
@@ -225,4 +271,65 @@ impl HeadlessServer {
             }),
         }
     }
+}
+
+/// 探测 JSON → CDP Node 形状递归转换（`nodeId` 顺序分配）。
+///
+/// 探测节点字段：`t`=nodeType、`n`=nodeName、`v`=nodeValue、`a`=attributes flat 数组、
+/// `c`=children、`cc`=childNodeCount、`u`=documentURL。`c` 缺省（depth 截断的桩节点
+/// 在探测侧即无 `c`/`cc`）→ 不输出 `children`，仅 `childNodeCount: 0` 之外的场景由
+/// 探测侧 `cc` 兜底。
+pub(crate) fn convert_cdp_node(raw: &Value, next_id: &mut u64) -> Value {
+    let id = *next_id;
+    *next_id += 1;
+    let node_type = raw.get("t").and_then(|v| v.as_i64()).unwrap_or(1);
+    let node_name = raw.get("n").and_then(|v| v.as_str()).unwrap_or("");
+    let mut node = serde_json::Map::new();
+    node.insert("nodeId".into(), serde_json::json!(id));
+    node.insert("backendNodeId".into(), serde_json::json!(id));
+    node.insert("nodeType".into(), serde_json::json!(node_type));
+    match node_type {
+        // 文档节点
+        9 => {
+            node.insert("nodeName".into(), serde_json::json!("#document"));
+            node.insert("nodeValue".into(), serde_json::json!(""));
+            let url = raw.get("u").and_then(|v| v.as_str()).unwrap_or("");
+            node.insert("documentURL".into(), serde_json::json!(url));
+            node.insert("baseURL".into(), serde_json::json!(url));
+            node.insert("xmlVersion".into(), serde_json::json!(""));
+        }
+        // 文档类型节点（nodeName = doctype 名）
+        10 => {
+            node.insert("nodeName".into(), serde_json::json!(node_name));
+            node.insert("publicId".into(), serde_json::json!(""));
+            node.insert("systemId".into(), serde_json::json!(""));
+        }
+        // 文本 / 注释
+        3 | 8 => {
+            node.insert("nodeName".into(), serde_json::json!(node_name));
+            node.insert(
+                "nodeValue".into(),
+                serde_json::json!(raw.get("v").cloned().unwrap_or_default()),
+            );
+        }
+        // 元素（含 depth 截断桩：无 `a`/`c`）
+        _ => {
+            node.insert("nodeName".into(), serde_json::json!(node_name));
+            node.insert("nodeValue".into(), serde_json::json!(""));
+            if let Some(attrs) = raw.get("a") {
+                node.insert("attributes".into(), attrs.clone());
+            }
+        }
+    }
+    let children: Vec<Value> = raw
+        .get("c")
+        .and_then(|v| v.as_array())
+        .map(|arr| arr.iter().map(|child| convert_cdp_node(child, next_id)).collect())
+        .unwrap_or_default();
+    let child_count = raw.get("cc").and_then(|v| v.as_i64()).unwrap_or(children.len() as i64);
+    node.insert("childNodeCount".into(), serde_json::json!(child_count));
+    if !children.is_empty() {
+        node.insert("children".into(), serde_json::json!(children));
+    }
+    Value::Object(node)
 }

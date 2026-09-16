@@ -1,0 +1,93 @@
+{
+  "steps": [
+    {
+      "name": "zw-discovery-per-page-url",
+      "ok": true,
+      "detail": "http://127.0.0.1:19840/devtools/inspector.html?ws=127.0.0.1:19840/devtools/page/zeroweb-tab-1"
+    },
+    {
+      "name": "zw-debuggee-navigated",
+      "ok": true,
+      "detail": "{\"frameId\":\"zeroweb-tab-2\",\"loaderId\":\"zw-loader-1\"}"
+    },
+    {
+      "name": "frontend-boot",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "frontend-elements-panel",
+      "ok": true,
+      "detail": "tree=1"
+    },
+    {
+      "name": "frontend-elements-live-dom",
+      "ok": true,
+      "detail": "treeLen=112"
+    },
+    {
+      "name": "screenshot-elements",
+      "ok": true,
+      "detail": "/lzcapp/document/work/ZeroWeb/docs/goal/devtools/evidence/attach-zeroweb-elements.png"
+    },
+    {
+      "name": "frontend-console-panel",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "frontend-console-repl-evaluate",
+      "ok": true,
+      "detail": "echo=1 result2=1"
+    },
+    {
+      "name": "screenshot-console",
+      "ok": true,
+      "detail": "/lzcapp/document/work/ZeroWeb/docs/goal/devtools/evidence/attach-zeroweb-console.png"
+    },
+    {
+      "name": "frontend-network-panel",
+      "ok": false,
+      "detail": ""
+    },
+    {
+      "name": "frontend-network-requests",
+      "ok": false,
+      "detail": "no request row (Network 域事件缺口，见账本)"
+    },
+    {
+      "name": "screenshot-network",
+      "ok": true,
+      "detail": "/lzcapp/document/work/ZeroWeb/docs/goal/devtools/evidence/attach-zeroweb-network.png"
+    },
+    {
+      "name": "gap-ledger-collected",
+      "ok": true,
+      "detail": "0 unknown methods: none"
+    }
+  ],
+  "unknownMethods": [],
+  "consoleErrors": [
+    "Request Overlay.setShowContainerQueryOverlays failed. {\"code\":-32601,\"message\":\"Unknown method: Overlay.setShowContainerQueryOverlays\"}",
+    "Request Overlay.setShowContainerQueryOverlays failed. {\"code\":-32601,\"message\":\"Unknown method: Overlay.setShowContainerQueryOverlays\"}",
+    "Request CSS.getComputedStyleForNode failed. {\"code\":-32601,\"message\":\"Unknown method: CSS.getComputedStyleForNode\"}",
+    "Request CSS.getComputedStyleForNode failed. {\"code\":-32601,\"message\":\"Unknown method: CSS.getComputedStyleForNode\"}",
+    "Request CSS.getComputedStyleForNode failed. {\"code\":-32601,\"message\":\"Unknown method: CSS.getComputedStyleForNode\"}",
+    "Request CSS.getComputedStyleForNode failed. {\"code\":-32601,\"message\":\"Unknown method: CSS.getComputedStyleForNode\"}",
+    "Request DOM.setInspectedNode failed. {\"code\":-32601,\"message\":\"Unknown method: DOM.setInspectedNode\"}",
+    "Request CSS.getComputedStyleForNode failed. {\"code\":-32601,\"message\":\"Unknown method: CSS.getComputedStyleForNode\"}",
+    "Request DOM.pushNodesByBackendIdsToFrontend failed. {\"code\":-32601,\"message\":\"Unknown method: DOM.pushNodesByBackendIdsToFrontend\"}",
+    "Request Overlay.setShowContainerQueryOverlays failed. {\"code\":-32601,\"message\":\"Unknown method: Overlay.setShowContainerQueryOverlays\"}",
+    "Request Overlay.hideHighlight failed. {\"code\":-32601,\"message\":\"Unknown method: Overlay.hideHighlight\"}",
+    "Request Overlay.hideHighlight failed. {\"code\":-32601,\"message\":\"Unknown method: Overlay.hideHighlight\"}",
+    "Request Overlay.hideHighlight failed. {\"code\":-32601,\"message\":\"Unknown method: Overlay.hideHighlight\"}",
+    "Request DOM.getBoxModel failed. {\"code\":-32602,\"message\":\"Missing 'objectId' parameter\"}",
+    "Request CSS.getInlineStylesForNode failed. {\"code\":-32601,\"message\":\"Unknown method: CSS.getInlineStylesForNode\"}",
+    "Request CSS.getPlatformFontsForNode failed. {\"code\":-32601,\"message\":\"Unknown method: CSS.getPlatformFontsForNode\"}",
+    "Request CSS.getMatchedStylesForNode failed. {\"code\":-32601,\"message\":\"Unknown method: CSS.getMatchedStylesForNode\"}",
+    "Request DOM.resolveNode failed. {\"code\":-32602,\"message\":\"Missing 'backendNodeId' parameter\"}",
+    "Request Overlay.setShowContainerQueryOverlays failed. {\"code\":-32601,\"message\":\"Unknown method: Overlay.setShowContainerQueryOverlays\"}",
+    "Request Overlay.setShowContainerQueryOverlays failed. {\"code\":-32601,\"message\":\"Unknown method: Overlay.setShowContainerQueryOverlays\"}"
+  ],
+  "pass": false
+}

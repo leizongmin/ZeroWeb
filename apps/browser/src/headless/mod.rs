@@ -62,6 +62,9 @@ pub struct HeadlessServer {
     /// devtools-frontend bundle 目录（`ZW_DEVTOOLS_FRONTEND_DIR`；None = 不 serve，
     /// devtoolsFrontendUrl 维持 `devtools://` 形态）。
     devtools_frontend_dir: Option<std::path::PathBuf>,
+    /// 当前连接是否 page-direct（`/devtools/page/<id>` per-page ws；单连接串行模型下
+    /// 即"当前在服务的连接"形态，供 Target.getTargetInfo 无参查询分类）。
+    page_direct_connection: std::sync::atomic::AtomicBool,
 }
 
 impl HeadlessServer {
@@ -76,7 +79,18 @@ impl HeadlessServer {
             attached_sessions: std::sync::Mutex::new(std::collections::HashMap::new()),
             auto_attach: std::sync::atomic::AtomicBool::new(false),
             devtools_frontend_dir: zero_runtime_config::optional_path("ZW_DEVTOOLS_FRONTEND_DIR"),
+            page_direct_connection: std::sync::atomic::AtomicBool::new(false),
         }
+    }
+
+    /// page-direct 连接形态查询/登记（Target.getTargetInfo 无参分类用）。
+    pub(super) fn set_page_direct_connection(&self, enabled: bool) {
+        self.page_direct_connection
+            .store(enabled, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    pub(super) fn page_direct_connection(&self) -> bool {
+        self.page_direct_connection.load(std::sync::atomic::Ordering::SeqCst)
     }
 
     /// devtools frontend bundle 是否已 provision（决定 `/json` 的
@@ -242,6 +256,7 @@ impl HeadlessServer {
             // 全局会话），page-direct 仅作连接形态登记与日志，不做 target 级隔离。
             let ws_page_direct =
                 discovery::extract_request_path(peeked).is_some_and(|p| p.starts_with(devtools_serve::PAGE_WS_PREFIX));
+            self.set_page_direct_connection(ws_page_direct);
             if ws_page_direct {
                 tracing::info!("DevTools frontend page-direct connection from {peer}");
             }

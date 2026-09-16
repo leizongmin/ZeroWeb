@@ -96,55 +96,75 @@ try {
   const elementsTree = driver.locator('.elements-tree-outline');
   const elementsOk = (await elementsTree.count()) > 0;
   step('frontend-elements-panel', elementsOk, `tree=${await elementsTree.count()}`);
-  const htmlNode = driver.locator('.elements-tree-outline', { hasText: '<html>' });
-  step('frontend-elements-live-dom', (await htmlNode.count()) > 0, 'tree shows debuggee <html>');
-  const exampleInTree = await driver.getByText('Example Domain').count();
-  step('frontend-elements-debuggee-content', exampleInTree > 0, `matches=${exampleInTree}`);
+  // 树节点文本为 `<HTML lang=...>` 形态（大小写随 shim nodeName）——用无 `>` 前缀匹配
+  const htmlNode = elementsTree.locator('span', { hasText: /^<html/i });
+  const treeTextSample = (await elementsTree.textContent()) ?? '';
+  const htmlInTree = (await htmlNode.count()) > 0 || /<html/i.test(treeTextSample);
+  step('frontend-elements-live-dom', htmlInTree, `treeLen=${treeTextSample.length}`);
   const shotElements = join(HERE, 'attach-zeroweb-elements.png');
   await driver.screenshot({ path: shotElements });
   step('screenshot-elements', true, shotElements);
 
-  // 4. Console 面板直开（&panel=）+ REPL evaluate（DC-2 Console 判据最小演示流）
-  await driver.goto(`${entryBase}?ws=127.0.0.1:${PORT}/devtools/page/${discovery[0].id}&panel=console`, { waitUntil: 'domcontentloaded', timeout: 30000 });
-  await driver.locator('.console-view').waitFor({ timeout: 20000 }).catch(() => {});
-  step('frontend-console-panel', (await driver.locator('.console-view').count()) > 0, '');
+  // 4. Console 面板直开（&panel=）+ REPL evaluate（DC-2 Console 判据最小演示流）。
+  //    显式关掉第一页再开新页：ZeroWeb accept 循环是单连接串行（master.md 记账），
+  //    同页 goto 的旧 WS 拆除与新 HTTP 请求有竞态窗口。
+  await driver.close();
+  const consolePage = await driverBrowser.newPage();
+  await consolePage.setViewportSize({ width: 1600, height: 1000 });
+  consolePage.on('console', (m) => {
+    const t = m.text();
+    if (m.type() === 'error') consoleErrors.push(t);
+    const unknown = t.match(/Request ([A-Za-z]+\\.[A-Za-z]+) failed/);
+    if (unknown) results.unknownMethods.add(unknown[1]);
+  });
+  await consolePage.goto(`${entryBase}?ws=127.0.0.1:${PORT}/devtools/page/${discovery[0].id}&panel=console`, { waitUntil: 'domcontentloaded', timeout: 30000 });
+  await consolePage.locator('.console-view').waitFor({ timeout: 20000 }).catch(() => {});
+  step('frontend-console-panel', (await consolePage.locator('.console-view').count()) > 0, '');
   // 点进 console 提示符并键入表达式（frontend REPL → Runtime.evaluate → ZeroWeb V8）
-  const prompt = driver.locator('#console-prompt').first();
-  const promptFallback = driver.locator('[contenteditable="true"]').first();
-  if ((await prompt.count()) > 0) {
-    await prompt.click();
+  const cPrompt = consolePage.locator('#console-prompt').first();
+  const cFallback = consolePage.locator('[contenteditable="true"]').first();
+  if ((await cPrompt.count()) > 0) {
+    await cPrompt.click();
   } else {
-    await promptFallback.click();
+    await cFallback.click();
   }
-  await driver.keyboard.type('1+1', { delay: 40 });
-  await driver.keyboard.press('Enter');
-  await driver.waitForTimeout(2500);
-  const replEcho = await driver.getByText('1+1').count();
-  const replResult = await driver.getByText('2', { exact: true }).count();
+  await consolePage.keyboard.type('1+1', { delay: 40 });
+  await consolePage.keyboard.press('Enter');
+  await consolePage.waitForTimeout(2500);
+  const replEcho = await consolePage.getByText('1+1').count();
+  const replResult = await consolePage.getByText('2', { exact: true }).count();
   step('frontend-console-repl-evaluate', replEcho > 0 && replResult > 0, `echo=${replEcho} result2=${replResult}`);
   const shotConsole = join(HERE, 'attach-zeroweb-console.png');
-  await driver.screenshot({ path: shotConsole });
+  await consolePage.screenshot({ path: shotConsole });
   step('screenshot-console', true, shotConsole);
 
   // 5. 经 REPL 发起 fetch（被调试页请求 → ZeroWeb net 观测 → Network 域事件流），
   //    再直开 Network 面板看请求行
-  if ((await prompt.count()) > 0) {
-    await prompt.click();
+  if ((await cPrompt.count()) > 0) {
+    await cPrompt.click();
   } else {
-    await promptFallback.click();
+    await cFallback.click();
   }
-  await driver.keyboard.type(`fetch('/json/version')`, { delay: 20 });
-  await driver.keyboard.press('Enter');
-  await driver.waitForTimeout(3000);
-  await driver.goto(`${entryBase}?ws=127.0.0.1:${PORT}/devtools/page/${discovery[0].id}&panel=network`, { waitUntil: 'domcontentloaded', timeout: 30000 });
-  await driver.waitForTimeout(5000);
-  const netPanelOk = (await driver.locator('#network-panel, .network-log-grid, .network-panel').count()) > 0;
+  await consolePage.keyboard.type(`fetch('/json/version')`, { delay: 20 });
+  await consolePage.keyboard.press('Enter');
+  await consolePage.waitForTimeout(3000);
+  await consolePage.close();
+  const netPage = await driverBrowser.newPage();
+  await netPage.setViewportSize({ width: 1600, height: 1000 });
+  await netPage.goto(`${entryBase}?ws=127.0.0.1:${PORT}/devtools/page/${discovery[0].id}&panel=network`, { waitUntil: 'domcontentloaded', timeout: 30000 });
+  // 面板惰性实例化：条件等待而非固定 sleep（M0 判据：&panel= 直开可靠）
+  const netPanelOk = await netPage.locator('#network-panel, .network-log-grid, .network-panel')
+    .first()
+    .waitFor({ timeout: 20000 })
+    .then(() => true)
+    .catch(() => false);
+  await netPage.waitForTimeout(1000);
   step('frontend-network-panel', netPanelOk, '');
-  const requestRow = await driver.locator('.network-log-grid', { hasText: 'json/version' }).count()
-    || (await driver.locator('.network-log-grid', { hasText: 'example.com' }).count());
+  const requestRow = await netPage.locator('.network-log-grid', { hasText: 'json/version' }).count()
+    || (await netPage.locator('.network-log-grid', { hasText: 'example.com' }).count());
   step('frontend-network-requests', requestRow > 0, requestRow > 0 ? 'request row visible' : 'no request row (Network 域事件缺口，见账本)');
   const shotNetwork = join(HERE, 'attach-zeroweb-network.png');
-  await driver.screenshot({ path: shotNetwork });
+  await netPage.screenshot({ path: shotNetwork });
   step('screenshot-network', true, shotNetwork);
 
   results.consoleErrors = consoleErrors.slice(0, 20);

@@ -15,6 +15,8 @@ mod storage;
 mod target;
 // tests.rs 既有 `use super::domains::{object_id_string, parse_object_id}` 路径保持可用（S32）
 #[cfg(test)]
+pub(super) use dom::convert_cdp_node;
+#[cfg(test)]
 pub(super) use remote_object::{object_id_string, parse_object_id};
 
 // tests.rs 既有 `use super::domains::{object_id_string, parse_object_id}` 路径保持可用
@@ -89,6 +91,21 @@ impl HeadlessServer {
             "DOM.describeNode" => self.cmd_dom_describe_node(session, params),
             // adopt 流程另一半：backendNodeId → objectId（utility → main world 重析）
             "DOM.resolveNode" => self.cmd_dom_resolve_node(session, params),
+            // DOM 域 DevTools frontend 面（devtools goal M1-S3a）：getDocument 全树
+            // 序列化是 Elements 面板唯一数据源；enable/requestChildNodes 只需 ack
+            //（getDocument 恒返全树，子树展开无增流）
+            "DOM.enable" => Ok(serde_json::json!({})),
+            "DOM.getDocument" => self.cmd_dom_get_document(session, &params),
+            "DOM.requestChildNodes" => Ok(serde_json::json!({})),
+            // Page.getResourceTree：frontend frame 树枚举（复用 getFrameTree 树形 +
+            // resources 空表；S3a 面板资源清单无消费面）
+            "Page.getResourceTree" => {
+                let mut tree = self.cmd_page_get_frame_tree(session, None)?;
+                if let Some(frame_tree) = tree.get_mut("frameTree") {
+                    frame_tree["resources"] = serde_json::json!([]);
+                }
+                Ok(tree)
+            }
             "Runtime.runIfWaitingForDebugger" => Ok(serde_json::json!({})),
             // Playwright page 初始化命令族：stub 接受解附接摩擦，实义语义随 M2
             "Log.enable" => Ok(serde_json::json!({})),
@@ -122,6 +139,72 @@ impl HeadlessServer {
                 session.network_enabled = false;
                 Ok(serde_json::json!({}))
             }
+            // DevTools frontend 初始化命令族（devtools goal M1-S3a，evidence/M1-attach-testbed.md
+            // §3 账本 enable 型）：frontend 只需 ack 才继续初始化流；无事件源/无状态语义，
+            // 实义随各面板消费面落地再补
+            "CSS.enable"
+            | "Overlay.enable"
+            | "Profiler.enable"
+            | "Debugger.enable"
+            | "Debugger.setPauseOnExceptions"
+            | "Debugger.setAsyncCallStackDepth"
+            | "Debugger.setBlackboxPatterns"
+            | "Debugger.setVariableValue"
+            | "Log.startViolationsReport"
+            | "Overlay.setShowViewportSizeOnResize"
+            | "Overlay.setShowGridOverlays"
+            | "Overlay.setShowFlexOverlays"
+            | "Overlay.setShowScrollSnapOverlays"
+            | "Overlay.setShowHingeOverlay"
+            | "Overlay.setShowContainerOverlays"
+            | "Overlay.setShowIsolatedElements"
+            | "Emulation.setEmulatedVisionDeficiency"
+            | "Emulation.setAutoDarkModeOverride"
+            | "Accessibility.enable"
+            | "Animation.enable"
+            | "Autofill.enable"
+            | "Autofill.setAddresses"
+            | "Audits.enable"
+            | "ServiceWorker.enable"
+            | "Inspector.enable"
+            | "Runtime.addBinding"
+            | "Runtime.terminateExecution"
+            | "Network.setAttachDebugStack"
+            | "Network.setBlockedURLs"
+            | "Network.emulateNetworkConditionsByRule"
+            | "Network.overrideNetworkState"
+            | "Network.setCacheDisabled"
+            | "Network.setBypassServiceWorker"
+            | "Network.setUserAgentOverride"
+            | "Network.setExtraHTTPHeaders"
+            | "Network.setRequestInterception"
+            | "DOMDebugger.setBreakOnCSPViolation"
+            | "DOMDebugger.setEventListenerBreakpoint"
+            | "DOMDebugger.removeEventListenerBreakpoint"
+            | "DOMDebugger.setDOMBreakpoint"
+            | "DOMDebugger.setXHRBreakpoint"
+            | "Page.setAdBlockingEnabled"
+            | "Page.setBypassCSP"
+            | "Page.setWebLifecycleState"
+            | "CSS.trackComputedStyleUpdates"
+            | "CSS.takeComputedStyleUpdates"
+            | "Target.setDiscoverTargets"
+            | "Target.setRemoteLocations"
+            | "Target.addTargetToTarget"
+            | "Emulation.setCPUThrottlingRate"
+            | "Performance.enable" => Ok(serde_json::json!({})),
+            // 带返回形状的 frontend 初始化命令（面板初始化路径依赖返回值继续）
+            "Runtime.getIsolateId" => Ok(serde_json::json!({ "id": "zw-isolate" })),
+            "Storage.getStorageKey" => Ok(serde_json::json!({ "storageKey": "zeroweb-active-tab" })),
+            "Page.getNavigationHistory" => Ok(serde_json::json!({
+                "index": 0,
+                "entries": [{
+                    "id": 1,
+                    "url": session.shell.tabs().next().and_then(|t| t.url().map(str::to_string)).unwrap_or_else(|| "about:blank".into()),
+                    "userVerifier": "",
+                    "title": session.shell.tabs().next().and_then(|t| t.title().map(str::to_string)).unwrap_or_default(),
+                }],
+            })),
             // ── 未知命令 ──
             _ => Err(ProtocolError {
                 code: -32601,

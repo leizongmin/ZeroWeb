@@ -566,6 +566,44 @@ fn test_per_tab_devtools_frontend_url() {
 }
 
 #[test]
+fn test_dom_get_document_probe_conversion() {
+    use super::domains::convert_cdp_node;
+    // 探测 JSON：#document → doctype + html（含属性、文本子节点）
+    let probe: Value = serde_json::json!({
+        "t": 9, "n": "#document", "u": "https://example.com/", "cc": 2,
+        "c": [
+            { "t": 10, "n": "html" },
+            { "t": 1, "n": "HTML", "a": ["lang", "en"], "cc": 1,
+              "c": [ { "t": 3, "n": "#text", "v": "hello" } ] },
+        ],
+    });
+    let mut next = 1;
+    let root = convert_cdp_node(&probe, &mut next);
+    assert_eq!(root["nodeId"], 1);
+    assert_eq!(root["backendNodeId"], 1);
+    assert_eq!(root["nodeType"], 9);
+    assert_eq!(root["documentURL"], "https://example.com/");
+    assert_eq!(root["childNodeCount"], 2);
+    let children = root["children"].as_array().unwrap();
+    assert_eq!(children.len(), 2);
+    // doctype：nodeType 10 + doctype 名 nodeName
+    assert_eq!(children[0]["nodeType"], 10);
+    assert_eq!(children[0]["nodeName"], "html");
+    // 元素：属性 flat 数组原样 + 文本子节点递归分配 id
+    assert_eq!(children[1]["nodeName"], "HTML");
+    assert_eq!(children[1]["attributes"], serde_json::json!(["lang", "en"]));
+    assert_eq!(children[1]["children"][0]["nodeType"], 3);
+    assert_eq!(children[1]["children"][0]["nodeValue"], "hello");
+    assert_eq!(children[1]["children"][0]["nodeId"], 4);
+    // depth 截断桩（无 c/cc）：无 children 字段，childNodeCount 兜底 0
+    let stub: Value = serde_json::json!({ "t": 1, "n": "DIV" });
+    let mut next = 100;
+    let stub_node = convert_cdp_node(&stub, &mut next);
+    assert!(stub_node.get("children").is_none());
+    assert_eq!(stub_node["childNodeCount"], 0);
+}
+
+#[test]
 fn test_session_id_echoed_in_response() {
     let server = HeadlessServer::new(0, 800.0, 600.0);
     let mut session = HeadlessSession::new(800.0, 600.0);
