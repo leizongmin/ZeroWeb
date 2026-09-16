@@ -1086,7 +1086,7 @@ impl InlineFormattingContext {
         {
             let n = match &style.line_clamp {
                 zero_style_system::property::types::LineClampComputedValue::Count(n) => Some(*n as usize),
-                zero_style_system::property::types::LineClampComputedValue::Auto => self.auto_clamp_line_count(style),
+                zero_style_system::property::types::LineClampComputedValue::Auto => self.auto_clamp_keep_count(style),
                 _ => None,
             };
             if let Some(n) = n {
@@ -1099,8 +1099,24 @@ impl InlineFormattingContext {
     }
 
     /// R3766/R3768：`line-clamp: auto` 截断行数（独立 fn，供 postprocess 跨块 clamp 共用）。
-    fn auto_clamp_line_count(&self, style: &ComputedStyle) -> Option<usize> {
-        line_clamp_auto_max_lines(style)
+    /// R4414：auto clamp 的**累计行高计数**——逐行累计 line.height ≤ 约束 px 的行数。
+    /// 旧 `floor(约束 / 均匀 lh)` 在非均匀行高（ruby 行 rt 膨胀，OVERHANG gate）下计数
+    /// 失准（auto-with-ruby-001/004：注音行使 uniform-lh 边界错切）。与
+    /// apply_line_clamp_cap 的 prefix 边界同口径（累计底 ≤ 约束的行保留）。
+    fn auto_clamp_keep_count(&self, style: &ComputedStyle) -> Option<usize> {
+        let constraint = line_clamp_auto_constraint_px(style)? as f32;
+        let mut acc = 0.0_f32;
+        let mut count = 0_usize;
+        for l in &self.lines {
+            let h = if l.y.is_nan() { 0.0 } else { l.height };
+            if acc + h <= constraint + 0.5 {
+                acc += h;
+                count += 1;
+            } else {
+                break;
+            }
+        }
+        Some(count)
     }
 
     /// R2431 line-clamp：把 `self.lines` 夹到 `n` 行并置 `clamped`（n>0 且行数>n 时截断）。
@@ -1112,14 +1128,24 @@ impl InlineFormattingContext {
     /// 隐藏）。边界处的行（底 == n·lh）保留（css-overflow-4 auto-016 语义对立面——
     /// 015 的推压行走 px 判据，普通行不影响）。
     pub(crate) fn apply_line_clamp_cap(&mut self, n: usize) {
-        // R3766b：n=0 也截断（`line-clamp: auto` + `max-height: 0` / <1lh → 0 行可见，
-        // css-overflow-4 auto-011/037：内容盒 intrinsic size = 0）。旧行为 n>0 才截断。
-        let boundary = n as f32 * self.used_line_height();
+        // R4414：gap 检测与边界改**累计行高前缀和**——旧 `y == i·首行高` 隐含行高均匀
+        // 假设，ruby 行（OVERHANG gate 下 rt ascent 膨胀）的非均匀高被误判为 float 推压
+        // gap，px-extent 边界切在 ruby 行中间（line-clamp-027/028 kept=2 实证）。前缀和
+        // gap_i = y_i − Σ_{j<i} h_j 保留 float 推压检测（真实推压 = y 超出前缀累计），
+        // 边界 = 前 n 行累计底（css-overflow-4：sizing as if no content after clamp——
+        // 第 n 行自身高度计入）。float 域 auto-015 语义不变（推压过边界的行仍隐藏）。
+        let mut prefix: Vec<f32> = Vec::with_capacity(self.lines.len());
+        let mut total = 0.0_f32;
+        for l in &self.lines {
+            prefix.push(total);
+            total += if l.y.is_nan() { 0.0 } else { l.height };
+        }
+        let boundary = prefix.get(n).copied().unwrap_or(total);
         let has_gaps = self
             .lines
             .iter()
             .enumerate()
-            .any(|(i, l)| !l.y.is_nan() && (l.y - i as f32 * self.used_line_height()).abs() > 0.5);
+            .any(|(i, l)| !l.y.is_nan() && (l.y - prefix[i]).abs() > 0.5);
         if has_gaps {
             // px-extent：保留底 ≤ 边界的行
             let kept = self
@@ -1135,12 +1161,15 @@ impl InlineFormattingContext {
             self.lines.truncate(n);
             self.clamped = true;
         }
-    }
-
-    /// 行高（clamp px-extent 判据用）：取首行高（行高一致的 pre/normal 文本）；
-    /// 无行时 0（cap 0 边界 0，全裁）。
-    fn used_line_height(&self) -> f32 {
-        self.lines.first().map(|l| l.height).unwrap_or(0.0)
+        // R4414 临时诊断：clamp cap 后行高序列（ZW_CLAMP_PROBE=1）。
+        if std::env::var("ZW_CLAMP_PROBE").as_deref() == Ok("1") {
+            let hs: Vec<f32> = self.lines.iter().map(|l| l.height).collect();
+            eprintln!(
+                "[clamp-cap] n={n} kept={} heights={:?} total={total:.3}",
+                self.lines.len(),
+                hs
+            );
+        }
     }
 
     /// 递归收集 `id` 子树的所有文本，跳过 `local_name` 在 `exclude` 中的元素子树。
