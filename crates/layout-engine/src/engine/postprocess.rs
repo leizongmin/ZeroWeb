@@ -519,13 +519,27 @@ pub(super) fn fix_vertical_mode_abs_pos(root: &mut LayoutBox, doc: &Document, st
             });
 
             if all_inset_auto {
-                // IFC 提供的静态位置比 taffy 的水平模型更准确
-                // 始终使用 IFC 位置（仅在有差异时更新）
-                let dx = (child.x - fragment.x).abs();
+                // IFC 提供的静态位置比 taffy 的水平模型更准确。
+                // 轴分工（R4425）：all_inset_auto 只保证 **top/bottom 均 auto**——
+                //   - 物理 y = inline 轴：top/bottom auto → 静态位置是正确解，覆盖；
+                //   - 物理 x = block 轴：仅 left/right **也**均 auto 时才用静态位置。
+                //     任一 non-auto 时 taffy 的 inset 方程解（§7.1 交换后 taffy.top/bottom
+                //     承载 CSS left/right）已是正确物理位，覆盖会把它打回静态列
+                //     （vlr-155/163/203/211/219/227 簇：right:1em 被静态列 80 覆盖，
+                //     正确解 160；R4425 探针实证 after-extract x=160 → 本 pass 改 80）。
                 let dy = (child.y - fragment.y).abs();
-                if dx > 0.01 || dy > 0.01 {
-                    child.x = fragment.x;
+                if dy > 0.01 {
                     child.y = fragment.y;
+                }
+                let left_right_auto = style.is_some_and(|s| {
+                    matches!(s.left, zero_css_parser::values::LengthValue::Auto)
+                        && matches!(s.right, zero_css_parser::values::LengthValue::Auto)
+                });
+                if left_right_auto {
+                    let dx = (child.x - fragment.x).abs();
+                    if dx > 0.01 {
+                        child.x = fragment.x;
+                    }
                 }
 
                 // CSS §10.3.7 + writing-modes §7.1：vertical-rl 下 abspos 的物理
