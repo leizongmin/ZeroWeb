@@ -2207,6 +2207,52 @@ fn axis_margin(st: &ComputedStyle, row: bool, start: bool) -> f32 {
     }
 }
 
+/// R4421（css-ruby-1 #formatting-context）：ruby 结构内 rt/rtc 子树中的 float 元素
+/// 收集——按规范它们脱离 ruby 结构、以 ruby 的兄弟身份参与父格式化上下文。ZW 现状：
+/// rt display:none 子树整体无盒（build_subtree 早退臂），float 从未渲染。
+/// OVERHANG gate（`ZW_RUBY_OVERHANG_MODEL=1`）scoped。
+fn rt_float_descendants(doc: &Document, styles: &HashMap<NodeId, ComputedStyle>, ruby_id: NodeId) -> Vec<NodeId> {
+    fn walk_annotation(
+        doc: &Document,
+        styles: &HashMap<NodeId, ComputedStyle>,
+        node: NodeId,
+        out: &mut Vec<NodeId>,
+        top: bool,
+    ) {
+        for child in doc.child_nodes(node) {
+            let Some(cs) = styles.get(&child) else { continue };
+            // 注音容器内层（嵌套 rt/rtc）继续下探；float 元素即候选（其自身子树由
+            // build_subtree 正常构建）。
+            if !matches!(cs.float, FloatValue::None) {
+                out.push(child);
+                continue;
+            }
+            let is_container = doc.get(child).is_some_and(|n| {
+                matches!(n.kind, NodeKind::Element(ref e) if {
+                    let ln = e.local_name();
+                    top && (ln.eq_ignore_ascii_case("rt") || ln.eq_ignore_ascii_case("rtc"))
+                })
+            });
+            if is_container || !top {
+                walk_annotation(doc, styles, child, out, false);
+            }
+        }
+    }
+    let mut out = Vec::new();
+    for child in doc.child_nodes(ruby_id) {
+        let is_annot = doc.get(child).is_some_and(|n| {
+            matches!(n.kind, NodeKind::Element(ref e) if {
+                let ln = e.local_name();
+                ln.eq_ignore_ascii_case("rt") || ln.eq_ignore_ascii_case("rtc")
+            })
+        });
+        if is_annot {
+            walk_annotation(doc, styles, child, &mut out, true);
+        }
+    }
+    out
+}
+
 #[allow(clippy::too_many_arguments)]
 fn build_subtree(
     ctx: &mut BuildContext,
@@ -3628,6 +3674,31 @@ fn build_subtree(
                             ctx.taffy_to_dom.insert(anon_taffy, child_dom);
                             child_taffy_ids.push(anon_taffy);
                             continue;
+                        }
+                        // R4421（css-ruby-1 #formatting-context）：ruby 的 rt/rtc 子树内
+                        // float 元素按 ruby 前兄弟 hoist——rt display:none 子树原本整体
+                        // 无盒，float 从未渲染（ruby-float-handling-001）。OVERHANG gate
+                        // scoped；hoisted 子树由 build_subtree 正常构建，float 定位/排除
+                        // 复用既有 box-float 管线（float_positioning + IFC exclusions）。
+                        if std::env::var("ZW_RUBY_OVERHANG_MODEL").as_deref() == Ok("1")
+                            && doc.get(child_dom).is_some_and(|n| {
+                                matches!(n.kind, NodeKind::Element(ref e) if e.local_name().eq_ignore_ascii_case("ruby"))
+                            })
+                        {
+                            for fdom in rt_float_descendants(doc, styles, child_dom) {
+                                let f_taffy = build_subtree(
+                                    ctx,
+                                    doc,
+                                    styles,
+                                    fdom,
+                                    grid_areas.as_ref(),
+                                    false,
+                                    own_writing_mode.clone(),
+                                    viewport_w,
+                                    viewport_h,
+                                );
+                                child_taffy_ids.push(f_taffy);
+                            }
                         }
                         let child_taffy = build_subtree(
                             ctx,
