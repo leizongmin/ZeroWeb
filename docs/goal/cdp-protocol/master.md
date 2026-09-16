@@ -18418,7 +18418,7 @@ S884/S885/S886/S890 先例）**）
   为 null（引擎不加载子帧文档）；且子帧**渲染面**属 layout-engine/paint——渲染流域专属
   crate，本流不可单方解（frames.access 元数据面已于 S39 本流单方解）。「等子帧能力后
   34/34 收口」vs「挂账剔除先定稿」。口径不清则 M5 无法判定完成（**M5 定稿预案见下，
-  口径一决机械执行**）。
+  口径一决机械执行**）。**✅ 2026-09-16 用户批复：选分支 B（挂账+口径剔除定稿，goal 先行 DONE），按 M5 定稿预案机械执行清单执行，附三条件：① 剔除注记点名阻塞方（子帧能力冻结·渲染流域）与挂账去处，不得表述为已完成/放弃；② 挂账条目登记至子帧解冻清单 + GB 待决策清单（rendering-compat master.md），子帧能力解冻后一轮回填 34/34 并撤剔除；③ 本批复即替代分支 A，无需再候。**
 - ~~dialog 事件源~~ **绿步已过、语义挂账（S10 现状澄清 2026-09-13）**：dialog.accept/
   dialog.confirm+prompt 绿因**引擎无阻塞对话框语义**——shim alert no-op、confirm/prompt
   立即返回（无 javascriptDialogOpening 事件、无挂起）、`Page.handleJavaScriptDialog` 为

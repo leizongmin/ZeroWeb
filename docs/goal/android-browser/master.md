@@ -67,7 +67,7 @@ chaos 断连恢复 CI 稳定绿；剩余为真机/renderer 门控项待设备，
 |----|------|------|
 | android-browser-spec-rfc.md 批准 | ✅ 已批准（2026-09-12） | transport adapter、FR-006/007/009 解锁，按路线 M2→M4 排期 |
 | 真机验收设备 | ⬜ 等设备 | 同父目标 P3 GPU 物理机门控模式；chrome 级冒烟已不阻塞（CI 模拟器） |
-| 本机模拟器 KVM 授权 | ⬜ 等用户一次性授权（已征询；**非阻塞**） | CI 模拟器已覆盖 chrome 级验收，本机授权仅影响本地模拟器调试便利性。WSL2 `/dev/kvm` 存在但用户不在 kvm 组且 sudo 需密码（详情 evidence/emulator-feasibility.md）。**GB-20260912 巡检飞书征询 msg `om_x100b6561b60c38a0c27902f51665a6e`（2026-09-12）** |
+| 本机模拟器 KVM 授权 | ✅ 已授权（2026-09-16 用户批复） | 本机模拟器调试解锁。CI 模拟器已覆盖 chrome 级验收；WSL2 `/dev/kvm` 环境前提详见 evidence/emulator-feasibility.md（如本机直跑仍遇 kvm 组/sudo 配置门槛，用户侧一次性处理）。**GB-20260912 巡检飞书征询 msg `om_x100b6561b60c38a0c27902f51665a6e`（2026-09-12）→ ✅ 2026-09-16 批复授权** |
 
 ## 验证基线
 
