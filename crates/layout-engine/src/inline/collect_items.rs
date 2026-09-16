@@ -1112,6 +1112,19 @@ impl InlineFormattingContext {
                 style.is_some_and(|s| {
                     s.font_family.iter().any(|f| f.trim_matches('"').eq_ignore_ascii_case("Ahem"))
                 }),
+                // R4416：preserve 语境容量走原始空白串（tab 名义 unit 与行内 stop 推进
+                // 同量级——tab-size 长度形 max(px, space)、数字形 n×space，与
+                // break_lines tab_unit 公式同源）；折叠/回放趟 None = collapse 语义。
+                // replay 趟（style 空）经 margin_overrides 原样回放，不重算。
+                run_preserves.then(|| {
+                    let space = crate::inline::estimate_char_width(' ', font_size, false);
+                    let unit = if self.tab_size_is_length {
+                        self.tab_size.max(space)
+                    } else {
+                        self.tab_size.max(1.0) * space
+                    };
+                    (unit, space)
+                }),
             );
             (margin_left + pl, margin_right + pr)
         } else {
@@ -1785,6 +1798,7 @@ impl InlineFormattingContext {
 /// 作右邻 → 0.5em；全角空白 U+3000 → 1em；其余 0。水平书写限定；
 /// kill-switch `ZW_RUBY_OVERHANG_MODEL=0`。collect（run margin）与 intrinsic
 /// （dom_inline_text_max_width）双消费——两侧必须同口径，否则 max-content 与行宽分裂。
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn ruby_overhang_pads(
     doc: &Document,
     ruby_id: NodeId,
@@ -1793,6 +1807,7 @@ pub(crate) fn ruby_overhang_pads(
     font_size: f32,
     letter_spacing: f32,
     is_ahem: bool,
+    tab: Option<(f32, f32)>,
 ) -> (f32, f32) {
     // opt-in 实验模型（ZW_RUBY_OVERHANG_MODEL=1）：默认关。默认开时 family 净回退
     // （spaces-002 5.18% vs 基线 4.37%）——margin 途径与 run advance/paint overlay 坐标
@@ -1819,9 +1834,12 @@ pub(crate) fn ruby_overhang_pads(
     // 容量恒 0（extra 全额入 margin → 行宽膨胀翻红）。空白串容量 = 折叠后各空白字符
     // advance 之和（U+3000 = 1em，其余走 estimate_char_width 与 IFC 行宽同源）；
     // 边界无空白时回落旧标点半空白逻辑（15 数据点拟合域不变）。
-    let hang_l = ruby_hang_capacity(doc, ruby_id, false, font_size)
+    // R4416：preserve 语境（pre/pre-wrap/break-spaces）容量走**原始**空白串——tab 按
+    // 名义 unit 计（行内按 stop 推进，stop 对齐页同量；折叠语义会把 tab 串塌成单空格
+    // 5px，与行内 40px 分裂 → pads 55/55 过冲，overhang-spaces-006 region 210≠140）。
+    let hang_l = ruby_hang_capacity(doc, ruby_id, false, font_size, tab)
         .unwrap_or_else(|| ruby_hang_extent(adjacent_text_char(doc, ruby_id, false), font_size, false));
-    let hang_r = ruby_hang_capacity(doc, ruby_id, true, font_size)
+    let hang_r = ruby_hang_capacity(doc, ruby_id, true, font_size, tab)
         .unwrap_or_else(|| ruby_hang_extent(adjacent_text_char(doc, ruby_id, true), font_size, true));
     let extra = (rt_w - hang_l - hang_r - base_w).max(0.0);
     let half = (extra / 2.0).floor();
@@ -1954,27 +1972,41 @@ fn has_nested_ruby_descendant(doc: &Document, ruby_id: NodeId) -> bool {
 /// 各字符 advance 之和。无空白（首字符即非空白 / 无兄弟文本）→ None（调用方回落
 /// 标点半空白逻辑）。css-ruby-1 §ruby-overhang：注音可悬挂于空白字符的空白部分
 /// ——整段空白均为可用容量（006/014 双/三连 U+3000 实证）。
-fn ruby_hang_capacity(doc: &Document, ruby_id: NodeId, forward: bool, font_size: f32) -> Option<f32> {
+fn ruby_hang_capacity(
+    doc: &Document,
+    ruby_id: NodeId,
+    forward: bool,
+    font_size: f32,
+    tab: Option<(f32, f32)>,
+) -> Option<f32> {
     let mut cur = if forward { doc.next_sibling(ruby_id) } else { doc.previous_sibling(ruby_id) };
     while let Some(sid) = cur {
         if let Some(node) = doc.get(sid) {
             match &node.kind {
                 zero_dom::NodeKind::Text(t) => {
-                    let collapsed = crate::inline::collapse_whitespace(&t.content);
-                    let run: String = if forward {
-                        collapsed.chars().take_while(|c| c.is_whitespace()).collect()
+                    // R4416：preserve 语境用原始文本（空白串不折叠，tab 计入容量）。
+                    let source = if tab.is_some() {
+                        t.content.clone()
                     } else {
-                        collapsed.chars().rev().take_while(|c| c.is_whitespace()).collect()
+                        crate::inline::collapse_whitespace(&t.content)
+                    };
+                    let run: String = if forward {
+                        source.chars().take_while(|c| c.is_whitespace()).collect()
+                    } else {
+                        source.chars().rev().take_while(|c| c.is_whitespace()).collect()
                     };
                     if !run.is_empty() {
+                        // (unit, space)：preserve 臂 tab 计名义 unit、其余空白计空格
+                        // advance；折叠臂保持 estimate 同源（None → unit/space 恒 0，
+                        // 分支不达）。
+                        let (tab_unit, tab_space) = tab.unwrap_or((0.0, 0.0));
                         let cap: f32 = run
                             .chars()
-                            .map(|c| {
-                                if c == '\u{3000}' {
-                                    font_size
-                                } else {
-                                    crate::inline::estimate_char_width(c, font_size, false)
-                                }
+                            .map(|c| match c {
+                                '\u{3000}' => font_size,
+                                '\t' => tab_unit,
+                                _ if tab.is_some() => tab_space,
+                                _ => crate::inline::estimate_char_width(c, font_size, false),
                             })
                             .sum();
                         return Some(cap);

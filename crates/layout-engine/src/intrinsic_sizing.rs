@@ -820,6 +820,7 @@ pub(crate) fn text_content_max_width(node_id: NodeId, doc: &Document, styles: &H
         .map(|s| s.white_space.clone())
         .unwrap_or(WhiteSpaceValue::Normal);
     let font_id = intrinsic_font_id(styles.get(&node_id));
+    let tab = intrinsic_tab_metrics(styles.get(&node_id), font_size, is_ahem, font_id);
     let mut segments: Vec<f32> = vec![0.0];
     text_max_width_walk(
         node_id,
@@ -829,9 +830,34 @@ pub(crate) fn text_content_max_width(node_id: NodeId, doc: &Document, styles: &H
         &white_space,
         Some(styles),
         font_id,
+        tab,
         &mut segments,
     );
     segments.into_iter().fold(0.0f32, f32::max)
+}
+
+/// R4416（CSS Text 3 §4.1.3）：tab 度量对 (unit, space_advance)——unit = 下一 tab stop
+/// 的名义距离（Number(n) = n×space，Length = max(px, space)），与行内 break_lines 的
+/// tab_unit 公式同源（相同 max 钳制）；preserve 臂 intrinsic 测量与 ruby 悬挂容量共用。
+/// 旧实现 preserve 文本的 '\t' 走字体 hmtx advance（DejaVu ≈ 0.5em），与行内 stop
+/// 推进分裂（tab-size:1ic 行内 20 vs intrinsic 10，overhang-spaces-006 三套度量分裂）。
+fn intrinsic_tab_metrics(
+    style: Option<&ComputedStyle>,
+    font_size: f32,
+    is_ahem: bool,
+    font_id: Option<u32>,
+) -> (f32, f32) {
+    let space = measure_intrinsic_char(' ', font_id, font_size, is_ahem);
+    let unit = match style.map(|s| &s.tab_size) {
+        Some(zero_style_system::TabSizeValue::Number(n)) => (*n as f32).max(1.0) * space,
+        Some(zero_style_system::TabSizeValue::Length(v)) => {
+            resolve_intrinsic_real_length(v, style.expect("Length 臂 style 在场"))
+                .unwrap_or(8.0 * space)
+                .max(space)
+        }
+        None => 8.0 * space,
+    };
+    (unit, space)
 }
 
 /// R1747：测量 `node_id` 自身（文本节点直接量；元素递归子树），把文本字符宽累入当前段，
@@ -852,6 +878,7 @@ fn accumulate_text_width(
     font_size: f32,
     is_ahem: bool,
     font_id: Option<u32>,
+    tab: (f32, f32),
     segments: &mut Vec<f32>,
 ) {
     let preserve_spaces = matches!(
@@ -884,11 +911,19 @@ fn accumulate_text_width(
             if measured.is_empty() {
                 continue;
             }
-            let w: f32 = measured
-                .chars()
-                .map(|ch| measure_intrinsic_char(ch, font_id, font_size, is_ahem))
-                .sum();
-            *segments.last_mut().expect("segments 非空") += w;
+            // R4416：preserve 臂 '\t' 按 tab stop 推进（CSS Text 3 §4.1.3——下一
+            // tab_size 倍数、最小一个空格 advance；段宽即行内位置，与 break_lines
+            // 同公式）。折叠臂不经过此处（\t 已折叠为空格）。
+            let mut pos = *segments.last_mut().expect("segments 非空");
+            for ch in measured.chars() {
+                let w = if ch == '\t' && tab.0 > 0.0 {
+                    (tab.0 - pos % tab.0).max(tab.1)
+                } else {
+                    measure_intrinsic_char(ch, font_id, font_size, is_ahem)
+                };
+                pos += w;
+            }
+            *segments.last_mut().expect("segments 非空") = pos;
         }
     }
 }
@@ -902,28 +937,30 @@ fn text_max_width_walk(
     white_space: &WhiteSpaceValue,
     styles: Option<&HashMap<NodeId, ComputedStyle>>,
     font_id: Option<u32>,
+    tab: (f32, f32),
     segments: &mut Vec<f32>,
 ) {
     let Some(node) = doc.get(node_id) else { return };
     match &node.kind {
         zero_dom::NodeKind::Text(t) => {
-            accumulate_text_width(&t.content, white_space, font_size, is_ahem, font_id, segments);
+            accumulate_text_width(&t.content, white_space, font_size, is_ahem, font_id, tab, segments);
         }
         zero_dom::NodeKind::Element(e) if e.local_name().eq_ignore_ascii_case("br") => {
             segments.push(0.0);
         }
         zero_dom::NodeKind::Element(_) => {
             for child in doc.child_nodes(node_id) {
-                let child_ws = styles
-                    .and_then(|m| m.get(&child))
+                let child_style = styles.and_then(|m| m.get(&child));
+                let child_ws = child_style
                     .map(|s| s.white_space.clone())
                     .unwrap_or_else(|| white_space.clone());
+                // R4416：tab 度量随 white_space 同点解析（子样式覆盖，否则继承）。
+                let child_tab = child_style
+                    .map(|cs| intrinsic_tab_metrics(Some(cs), font_size, is_ahem, font_id))
+                    .unwrap_or(tab);
                 // R4043 近似沿用：嵌套异字体后代按容器 font_id 计（本域已排除出
                 // stored IFC；原子后代宽由调用方 LayoutBox 分支负责）。
-                let child_font_id = styles
-                    .and_then(|m| m.get(&child))
-                    .and_then(|cs| intrinsic_font_id(Some(cs)))
-                    .or(font_id);
+                let child_font_id = child_style.and_then(|cs| intrinsic_font_id(Some(cs))).or(font_id);
                 text_max_width_walk(
                     child,
                     doc,
@@ -932,6 +969,7 @@ fn text_max_width_walk(
                     &child_ws,
                     styles,
                     child_font_id,
+                    child_tab,
                     segments,
                 );
             }
@@ -963,6 +1001,7 @@ fn dom_inline_text_max_width(box_node: &LayoutBox, doc: &Document, styles: &Hash
         .any(|f| f.trim_matches('"').eq_ignore_ascii_case("Ahem"));
     let white_space = style.white_space.clone();
     let font_id = intrinsic_font_id(Some(style));
+    let tab = intrinsic_tab_metrics(Some(style), font_size, is_ahem, font_id);
     let mut segments: Vec<f32> = vec![0.0];
     let mut state = DomWalkState {
         pending_space: false,
@@ -971,7 +1010,7 @@ fn dom_inline_text_max_width(box_node: &LayoutBox, doc: &Document, styles: &Hash
         is_ahem,
         font_id,
     };
-    dom_inline_text_walk(id, doc, styles, &white_space, &mut segments, &mut state);
+    dom_inline_text_walk(id, doc, styles, &white_space, tab, &mut segments, &mut state);
     segments.into_iter().fold(0.0f32, f32::max)
 }
 
@@ -1032,6 +1071,7 @@ fn dom_inline_text_walk(
     doc: &Document,
     styles: &HashMap<NodeId, ComputedStyle>,
     white_space: &WhiteSpaceValue,
+    tab: (f32, f32),
     segments: &mut Vec<f32>,
     state: &mut DomWalkState,
 ) {
@@ -1053,6 +1093,7 @@ fn dom_inline_text_walk(
                         state.font_size,
                         state.is_ahem,
                         state.font_id,
+                        tab,
                         &mut tmp,
                     );
                     *segments.last_mut().expect("segments 非空") += tmp.into_iter().fold(0.0f32, f32::max);
@@ -1147,6 +1188,11 @@ fn dom_inline_text_walk(
                     .get(&child)
                     .map(|s| s.white_space.clone())
                     .unwrap_or_else(|| white_space.clone());
+                // R4416：tab 度量随 white_space 同点解析（子样式覆盖，否则继承）。
+                let child_tab = styles
+                    .get(&child)
+                    .map(|s| intrinsic_tab_metrics(Some(s), state.font_size, state.is_ahem, state.font_id))
+                    .unwrap_or(tab);
                 // R4357：ruby 注释行宽参与——max-content 侧与 collect run margin 同模型，
                 // extra（box − base）计入段宽（两侧不同步则 intrinsic 与行宽分裂，
                 // ruby-overhang-spaces-002 的 width:max-content 容器即此形态）。
@@ -1166,7 +1212,7 @@ fn dom_inline_text_walk(
                         // 15/15 → max-content 95 < 行宽 100，尾部 あ 折行）。
                         state.flush_space(segments);
                         let start_w = *segments.last().expect("segments 非空");
-                        dom_inline_text_walk(child, doc, styles, &child_ws, segments, state);
+                        dom_inline_text_walk(child, doc, styles, &child_ws, child_tab, segments, state);
                         // R4415：base 内尾随空格在 pads 前入账——base_w = 完整折叠 base 宽
                         //（含前后边缘空格 advance，与 collect 侧 collapsed 口径同源）。
                         // ref 页形态（空格在 base 内）旧序把尾随空格漏到 pads 之后
@@ -1174,13 +1220,27 @@ fn dom_inline_text_walk(
                         //（60 vs 65）。空格已在段内（region 和不变），仅 pads 分母修正。
                         state.flush_space(segments);
                         let base_w = *segments.last().expect("segments 非空") - start_w;
-                        let (pl, pr) =
-                            crate::inline::ruby_overhang_pads(doc, child, base_w, &annot, ruby_fs, 0.0, ruby_ahem);
+                        // R4416：preserve 语境 capacity 走原始空白串（tab 按名义 unit，
+                        // 与行内 stop 推进同量级；折叠语境 None = collapse 语义不变）。
+                        let preserve = matches!(
+                            child_ws,
+                            WhiteSpaceValue::Pre | WhiteSpaceValue::PreWrap | WhiteSpaceValue::BreakSpaces
+                        );
+                        let (pl, pr) = crate::inline::ruby_overhang_pads(
+                            doc,
+                            child,
+                            base_w,
+                            &annot,
+                            ruby_fs,
+                            0.0,
+                            ruby_ahem,
+                            preserve.then_some(child_tab),
+                        );
                         *segments.last_mut().expect("segments 非空") += pl + pr;
                         continue;
                     }
                 }
-                dom_inline_text_walk(child, doc, styles, &child_ws, segments, state);
+                dom_inline_text_walk(child, doc, styles, &child_ws, child_tab, segments, state);
             }
             _ => {}
         }
@@ -1214,6 +1274,7 @@ pub(crate) fn fragment_inline_max_width(
     // R4367：片段语境无样式表可用（styles=None），font_id 走 inline_style 自身
     //（容器近似同 dom_inline_text_max_width 的 R4043 注记）。
     let font_id = intrinsic_font_id(Some(inline_style));
+    let tab = intrinsic_tab_metrics(Some(inline_style), font_size, is_ahem, font_id);
     let mut segments: Vec<f32> = vec![0.0];
     for nid in fragment_node_ids {
         text_max_width_walk(
@@ -1224,6 +1285,7 @@ pub(crate) fn fragment_inline_max_width(
             &white_space,
             None,
             font_id,
+            tab,
             &mut segments,
         );
     }
