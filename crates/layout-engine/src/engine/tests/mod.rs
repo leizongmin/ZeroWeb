@@ -331,15 +331,15 @@ fn r57_grid_span_max_content_width() {
     let mut spans = Vec::new();
     find_spans(&result.root, &doc, &mut spans);
     assert!(!spans.is_empty(), "grid span 盒应存在");
-    for w in &spans {
-        // max-content = max(div 文本宽, canvas 固有 80)——**非求和**（IFC 水平
-        // 排列语义 128=80+48 是错）。div 文本「source-over」13px ≈ 94.4（字体
-        // 度量差 vs Chromium ~75 属 rendering-compat 域——列宽差来源）。
-        assert!(
-            *w >= 80.0 && *w < 160.0,
-            "span max-content 宽 = max(div 文本, canvas 80)（实测 {w} ∈ [80,160)）——求和语义回归"
-        );
-    }
+    // R4408 开门注：交错 walk default-on 下 span 被 R109 block-in-inline 分裂为
+    // [div fragment][canvas fragment]，各 fragment 分别量自身内容（div 文本 ≈76.8 /
+    // canvas 80）——per-fragment 宽即正确语义；span 的 max-content = 跨 fragment 取 max。
+    // 旧断言逐 fragment ≥80 对分裂结构过严（canvas 不在 div fragment 内）。
+    let max_span_w = spans.iter().cloned().fold(0.0f32, f32::max);
+    assert!(
+        (80.0..160.0).contains(&max_span_w),
+        "span max-content 宽 = max(div 文本, canvas 80)（跨 fragment max 实测 {max_span_w} ∈ [80,160)）——求和语义回归"
+    );
 }
 
 // ── R3912：taffy aspect_ratio border-box 语义 × content-box 盒修正 ──

@@ -1030,13 +1030,25 @@ fn resolve_abspos_against_nested_cb_inner_m(
         return;
     }
     let box_is_positioned = box_node.is_abspos_cb;
+    // R4408：**inline CB** 直接子重解析臂（实验态 ZW_MIXED_BARE_TEXT=1 同门，随门开走
+    // default）——taffy 对 abs 子的 CB 解析发生在**第一趟**，而 inline CB 盒（span[relative]
+    // 等）在 taffy 后还会收缩（R372/IFC shrink 仅作用于 inline 族；块级盒 taffy 宽即终值
+    // 无过期问题），直接子的 taffy 值基于过期拉伸宽（slice-inline-fragmentation-002：
+    // span[relative] 176，其 abs div taffy 按 784 stretch = 789 实证）。
+    // 首轮无差别重解析实测 −20（34 案翻红）：块级 CB 的 taffy 基与 walk CB 基在 margin
+    // 链/盒形上并不重合，重算反而打掉正确值——收窄为仅 inline CB（过期域恰为 inline 族），
+    // 块级 CB 维持旧跳过。重解析公式从 cb+insets 重算。
+    let direct_cb_reresolve = std::env::var("ZW_MIXED_BARE_TEXT").as_deref() != Ok("0")
+        && box_node
+            .node_id
+            .and_then(|nid| styles.get(&nid))
+            .is_some_and(|s| matches!(s.display, zero_css_parser::values::DisplayValue::Inline));
     for child in &mut box_node.children {
-        // 仅当本盒非 positioned（存在 static 中间层）且已有 positioned 祖先 CB 时重解析；
-        // 本盒即 CB（直接子场景）时 taffy 已按正确基解析，跳过。
-        // R3902：box_is_positioned 实为 is_abspos_cb——contain:layout/paint 盒同样是 CB，
-        // 其间层不再被视为「static 中间层」。
+        // 仅当已有 positioned 祖先 CB 时重解析；default 下本盒即 CB（直接子场景）维持
+        // 旧跳过（taffy 基解析）。R3902：box_is_positioned 实为 is_abspos_cb——
+        // contain:layout/paint 盒同样是 CB，其间层不再被视为「static 中间层」。
         if let Some((cb_origin_x, cb_origin_y, cb_width, cb_height)) = cb
-            && !box_is_positioned
+            && (direct_cb_reresolve || !box_is_positioned)
             && child.is_absolute
             && let Some(style) = child.node_id.and_then(|nid| styles.get(&nid))
         {

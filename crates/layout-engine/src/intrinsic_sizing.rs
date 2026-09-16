@@ -248,8 +248,10 @@ fn box_content_max_width_inner(box_node: &LayoutBox, doc: &Document, styles: &Ha
     let mut float_row = 0.0f32;
     let mut float_max = 0.0f32;
     let mut has_in_flow_child = false;
-    // R4407：ZW_MIXED_BARE_TEXT 实验态旗标 hoist（循环内每子一次 env::var → 每容器一次）。
-    let mixed_walk_on = std::env::var("ZW_MIXED_BARE_TEXT").as_deref() == Ok("1");
+    // R4407：ZW_MIXED_BARE_TEXT 旗标 hoist（循环内每子一次 env::var → 每容器一次）。
+    // R4408 开门：交错 walk 升 default-on（第七次实测 flag-on 14914 vs default 14900 =
+    // 净 +14 零损失，达零新翻红 bar）；`ZW_MIXED_BARE_TEXT=0` 回退旧行为（opt-out）。
+    let mixed_walk_on = std::env::var("ZW_MIXED_BARE_TEXT").as_deref() != Ok("0");
 
     for child in &box_node.children {
         if child.is_absolute || child.is_fixed {
@@ -327,19 +329,19 @@ fn box_content_max_width_inner(box_node: &LayoutBox, doc: &Document, styles: &Ha
                 inline_sum +=
                     (child.padding_left + child.padding_right + child.border_left + child.border_right + ml + mr)
                         .max(0.0);
-            } else if std::env::var("ZW_MIXED_BARE_TEXT").as_deref() == Ok("1")
+            } else if std::env::var("ZW_MIXED_BARE_TEXT").as_deref() != Ok("0")
                 && child
                     .node_id
                     .and_then(|cid| styles.get(&cid))
                     .is_some_and(|s| matches!(s.display, DisplayValue::Inline))
             {
-                // R4395（ZW_MIXED_BARE_TEXT 交错 walk 配对臂，opt-in）：display:Inline 子仅计
-                // frame（padding/border + margin）——其文本由本轮末尾的 `dom_inline_text_max_width`
+                // R4395（ZW_MIXED_BARE_TEXT 交错 walk 配对臂；R4408 升 default-on）：display:Inline
+                // 子仅计 frame（padding/border + margin）——其文本由本轮末尾的 `dom_inline_text_max_width`
                 // DOM 直读统一计入（R4355 同款配对：block_max_content_width 的 is_plain_inline
                 // 臂 + 末尾 walk，双计免疫由「loop 计 frame、walk 计文本」的分工保证）。
                 // ruby run margin/emoji padding 等盒模型经 frame+ml+mr 入账（ruby-intrinsic-isize-003
-                // 的 ruby margin/padding/border 参与面）。默认臂（flag off）走下方 R1479
-                // content-width 递归不变。
+                // 的 ruby margin/padding/border 参与面）。`ZW_MIXED_BARE_TEXT=0` opt-out 走下方
+                // R1479 content-width 递归。
                 let frame = child.padding_left + child.padding_right + child.border_left + child.border_right;
                 inline_sum += (frame + ml + mr).max(0.0);
             } else if std::env::var("ZW_INLINE_INTRINSIC_CONTENT").as_deref() != Ok("0")
@@ -2355,9 +2357,12 @@ AAAA</div></body></html>"#,
         }
         let target = find("t", &doc, &result.root).expect("inline-block target found");
         let w = box_content_max_width(target, &doc, &styles);
+        // R4408 开门注：交错 walk default-on 后，两原子盒之间的折叠空格计入 max-content
+        //（70 + 空格 ≈4 + 70 = 144）——CSS max-content 语义（行内内容含原子间折叠空格，
+        // chromium 同值），旧 R1479 臂丢空格测 140。
         assert!(
-            (w - 140.0).abs() < 1.0,
-            "R1298 guard: empty inline-block[70px] children must contribute; expected ~140, got {w}"
+            (140.0..150.0).contains(&w),
+            "R1298 guard: empty inline-block[70px] children must contribute; expected ~140+collapsed space, got {w}"
         );
     }
 
