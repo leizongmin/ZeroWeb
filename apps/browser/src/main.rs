@@ -313,7 +313,8 @@ Options:
   --renderer=<mode>              Choose rendering backend ({})
   --scale=<factor>               Override window scale factor (e.g. --scale=2 for HiDPI)
   --headless                     Run without a window (remote debugging mode)
-  --remote-debugging-port=<port> WebSocket port for remote debugging (default: 9222)
+  --remote-debugging-port=<port> CDP endpoint (headless: on by default at 9222;
+                                 GUI: opt-in switch, auxiliary session, loopback only)
   --viewport-width=<px>          Headless/GUI smoke page viewport width (default: 800)
   --viewport-height=<px>         Headless/GUI smoke page viewport height (default: 600)
   --wpt-parity                   Match WPT/product-smoke: CPU renderer and 1.0 scale (make browser-cpu default)
@@ -736,6 +737,29 @@ fn main() {
     if cli.headless {
         run_headless(cli);
         return;
+    }
+
+    // M3（devtools goal DC-3）：GUI 模式 CDP server 可开关——CLI 显式传
+    // `--remote-debugging-port` 才开启（默认关）。会话形态 = 独立 headless 会话
+    //（自带 renderer 子进程，附接流程与 `--headless` 完全一致）；GUI 标签页桥接
+    // 属深结构碰头协调项（挂账 docs/goal/devtools/master.md）。端口仅绑 loopback。
+    if cli.remote_debugging_port > 0 {
+        let cdp_server = Arc::new(headless::HeadlessServer::new(
+            cli.remote_debugging_port,
+            cli.viewport_width,
+            cli.viewport_height,
+        ));
+        println!(
+            "ZeroWeb CDP server (GUI mode, auxiliary session): ws://{}",
+            cdp_server.addr()
+        );
+        if let Err(e) = std::thread::Builder::new().name("cdp-server".into()).spawn(move || {
+            if let Err(e) = cdp_server.run() {
+                tracing::error!("CDP server error: {e}");
+            }
+        }) {
+            tracing::error!("Failed to spawn CDP server thread: {e}");
+        }
     }
 
     if let Some(scale) = cli.scale_override {

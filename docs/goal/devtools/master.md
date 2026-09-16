@@ -2,7 +2,7 @@
 
 **入口文档**: [../devtools.md](../devtools.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-17（M2-N4 事件形状对齐 + 请求行 E2E 演示流门禁全绿——probe 21/21）
+**最后更新**: 2026-09-17（M3 GUI 接线落地 + 全 DC 收口判定完成——goal Done，守成态）
 
 ---
 
@@ -11,15 +11,15 @@
 **专项定位**：复用 Chrome DevTools frontend（pin bundle）经 CDP 附接 ZeroWeb，四面板
 （Elements / Console / Network / Application-cookie）达到「逐面板演示流可判定可用」。
 **启动门控**：**已解锁**——cdp-protocol goal 2026-09-16 M5 定稿收口（Done）。
-**M0 已完成**。**M1 切片面收口**（S1 ✅ S3a ✅ S1.5 ✅ S3b ✅）。**M2 双清账**：
-N1 面板渲染 ✅ + N2 事件路由 ✅（订阅制广播）+ **N3 cookie 面板 ✅**（Application
-面板 Cookies 视图渲染 cookie 行 + Network.setCookie 编辑回写生效——DC-2 cookie
-判据全通）。**transport 反压教训入账**：嵌入方必须排空 ZeroWeb stdout 管道（周期
-tracing 填满 64KB 缓冲会阻塞整个服务进程，probe 已修 + idle tick 日志降 trace）。
-**M2-N4 已落地**：Network 事件形状对齐 Chrome 实捕获（timestamp 毫秒→秒 +
-documentURL/wallTime/type 必带；**requestWillBeSent 的 `type` 是行渲染决定性字段**），
-请求行 E2E 演示流全绿（probe footer 计数器门禁）。余项：S3b Styles matched rules
-（碰头协调）、M3 GUI 接线 + 全 DC 收口判定。
+**goal 状态：Done（2026-09-17 M3 收口，转守成态）**。全 DC 判定：
+- **DC-1 ✅** bundle pin + BSD-3 许可 + serve 骨架（M0）；
+- **DC-2 ✅** 四面板演示流全绿（Elements 树+Computed/Console REPL/Network 请求行/
+  Application cookie 可见+回写；probe 21/21 门禁化）；
+- **DC-3 ✅** GUI 模式 CDP 可开关（CLI 显式/默认关，本机 X 实测 /json 服务）+
+  make test/clippy/fmt 全绿 + 生产路径零回归（GUI 路径仅 additive 线程派生）。
+**守成门**：`make cdp-e2e`（33 绿）。**挂账（碰头协调/用户点名）**：GUI 标签页桥接
+（深结构）、Styles matched rules（engine 侧协议面）、overlay 高亮渲染；灰置面板：
+Sources/Performance/Security 等（frontend 显示但域不实现，符合 goal 预期形态）。
 
 **与兄弟 goal 的边界**：
 - cdp-protocol — 上游协议基座（已收口进入守成态）：本 goal 只消费其 CDP 面；其守成门
@@ -37,8 +37,8 @@ documentURL/wallTime/type 必带；**requestWillBeSent 的 `type` 是行渲染�
 | P2 | serve 骨架 + `/json` devtoolsFrontendUrl 注入 | ✅ M0（e6364b8f0） |
 | P3 | 对 Chromium 空跑的面板可用度基线 | ✅ M0（probe 全绿 + 判据四条） |
 | P4 | Elements/Console 演示流 | ✅ M1——Elements 活 DOM 树 + Console REPL + Computed 侧栏（盒模型+计算值）+ Styles（inline 起步，matched rules 记账碰头项） |
-| P5 | Network/Application 演示流 | 🔨 M2——N1 渲染 ✅ + N2 事件路由 ✅ + N3 cookie 面板 ✅ + N4 请求行演示流 ✅（DC-2 Network 判据全通） |
-| P6 | 桌面 GUI 模式 CDP server 接线 | ⏳ M3 |
+| P5 | Network/Application 演示流 | ✅ M2——N1 渲染 + N2 事件路由 + N3 cookie 面板 + N4 请求行演示流全落地（DC-2 判据全通，probe 21/21 门禁化） |
+| P6 | 桌面 GUI 模式 CDP server 接线 | ✅ M3——CLI 显式开关（默认关）+ 独立辅助会话形态（GUI 标签页桥接挂账） |
 
 ## 已完成切片
 
@@ -48,6 +48,10 @@ documentURL/wallTime/type 必带；**requestWillBeSent 的 `type` 是行渲染�
 - **2026-09-16 M1-S2/S3 附接试验台 + 域缺口账本**：`attach-zeroweb-probe.mjs` 可重放；
   frontend console -32601 全清单 39 条去重族 + 结构判断（Playwright 形状 vs
   DOM-nodeId 树流）。
+- **2026-09-17 M3 GUI 模式 CDP 接线**：main.rs GUI 路径 `--remote-debugging-port`
+  显式开关（默认关）→ 后台线程 HeadlessServer（mux 全量复用，loopback）。**验收**：
+  本机 X display GUI 运行中 /json/version + /json 服务实测（附接流程与 headless 全同）。
+  GUI 标签页桥接挂账（深结构）。门禁：465P/0F + clippy clean + cdp-e2e 33 绿 + make test 全绿。
 - **2026-09-17 M2-N4 Network 事件形状对齐**：Chrome 实捕获基准（订阅 page-target
   抓原始帧）→ ZeroWeb 两条事件源（proxy_fetch 导航路径 + FetchObserved 页面 fetch
   路径）全对齐（秒基 timestamp/documentURL/wallTime/type/headers/initialPriority 族）；
@@ -78,16 +82,15 @@ documentURL/wallTime/type 必带；**requestWillBeSent 的 `type` 是行渲染�
   import 与多客户端并存不再饿死）。~~Network 域事件 drain 归属~~ ✅ 已解（M2-N2 订阅制
   广播；双客户端协议级实测收全事件序列）。
 
-## 下一步计划（按序）
+## 下一步计划（守成态）
 
-1. **M3 桌面接线 + 收口**：GUI 模式 CDP server 可开关（CLI/默认关）+ 全 DC 判定 +
-   挂账（灰置面板/域清单：Sources/Performance/Security 等未实现域面板）
-3. **碰头协调项（非本 goal 单方面可解）**：Styles 侧栏 matched rules（style-system
-   匹配结果协议暴露，engine 侧新面）；overlay 高亮渲染
-4. **门禁**：每轮 `make test` + `make cdp-e2e`
+1. **守成门**：每轮 `make cdp-e2e`（33 绿）+ `make test`；本 goal 文件面改动先
+   pull-rebase
+2. **碰头协调项（用户点名后启）**：GUI 标签页桥接（深结构）；Styles matched rules
+   （engine 侧协议面）；overlay 高亮渲染
 
 **待用户决策清单**：
-- （暂无）
+- （暂无；碰头协调项均已在挂账区记账，待用户点名）
 
 ## 里程碑状态
 
@@ -96,16 +99,22 @@ documentURL/wallTime/type 必带；**requestWillBeSent 的 `type` 是行渲染�
 | M0 — 门控期自主面 | ✅ Done（2026-09-16） |
 | M1 — 附接与 Elements/Console | ✅ Done（2026-09-16：S1+S3a+S1.5+S3b 全落地，三面板渲染+样式侧栏） |
 | M2 — Network/Application | ✅ Done（2026-09-17：N1 渲染 + N2 事件路由 + N3 cookie 面板 + N4 请求行演示流全落地，DC-2 判据全通） |
-| M3 — 桌面接线 + 收口 | ⏳ |
+| M3 — 桌面接线 + 收口 | ✅ Done（2026-09-17：GUI 开关 + 全 DC 判定 + 挂账清单） |
 
-## 验证基线
+## 验证基线（守成态）
 
 - 测试基线：`make test`（每轮以实测为准）；headless 面防回归 `make cdp-e2e`
   （33 绿 deterministic YES 实测维持）
+- **挂账清单（灰置/碰头）**：①GUI 标签页桥接（深结构，用户点名）；②Styles
+  matched rules（engine 协议面）；③overlay 高亮渲染；④灰置面板（预期形态）：
+  Sources/Performance/Security/Profiler 等 frontend 显示但域不实现
 - **已知 flake 记账（zero-web 流 crate，非本 goal 面）**：
   `zero-webview service_worker_runtime::navigator_skip_waiting_activates_replacement_version`
   在 make test 全量并行负载下偶发超时（M0 轮与 S1.5 轮各一次；单测隔离 0.09s 必绿）。
   按 run-rules §10 不单方面修兄弟流 crate；两轮均已隔离复跑归因后继续。
+  同族：`zero-integration-tests network_loading::stale_etag_revalidation_is_coalesced`
+  （M3 轮一次；隔离 6/6 必绿 0.11s）——全量并行负载时序敏感型 flake 家族，记账待
+  兄弟流收敛。
 - DevTools UI：官方 bundle pin `9bd6a496c3394422674c62a19e9faa627817c56e`（配方
   evidence/fetch-devtools-frontend.sh；机器本地 `~/.cache/zeroweb/devtools/`，不入库）
 - 质量门禁：`cargo fmt` + `cargo clippy -D warnings` 全过；面板演示流须可脚本重放
