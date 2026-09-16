@@ -1847,7 +1847,11 @@ impl super::Painter {
                             }
                             // R1689：ruby per-segment annotation —— 每个 rt 居中于其前 base 段
                             //（替代 R1688 整 base 扁平化居中，解 per-kanji Japanese ruby）。水平 only。
+                            // R4405：仅 owner **首片段**触发——Path B flatten run 经断行/分词
+                            // 拆成多 fragment 时，每 fragment 都携带完整 ruby_segs，无守卫则
+                            // 注音按 fragment 数重复绘制（ruby-bidi-004 三份 "123" 实证）。
                             if !char_advance_is_y
+                                && r4332_is_first
                                 && let Some(segs) = ruby_segs.as_ref()
                                 && !segs.is_empty()
                             {
@@ -2948,16 +2952,24 @@ pub(super) fn has_direct_paintable_text(
         // float，并经 painted_inline_nodes 自动抑制 inline 子 Path B（避免双绘）。
         // kill-switch `ZW_FLOAT_INLINE_PAINT=0` 回退旧行为（default-on，全 dir A/B net 0 零回归）。
         let float_not_block = std::env::var("ZW_FLOAT_INLINE_PAINT").as_deref() != Ok("0");
+        // R4405：display:none 直接子不参与 in-flow 内容（CSS2 §9.3 display:none 不生成盒），
+        // 不得计为块级子——否则「全 rb 包裹 base 的 ruby」（rt/rp/rbc 为 display:none 直接子）
+        // predicate=false → paint_text 早退 → Path B 不运行 → base 文本零绘制（intra-base
+        // REF 页空绘，R4403 定谳）。两臂同修：同一判据在 if/else 两臂的副本必须同步
+        //（R4404 域认知：修一处不动另一处 = 假修复）。
+        let not_none = |dd: &DisplayValue| !matches!(dd, DisplayValue::None);
         let has_block_elem = if float_not_block {
             child_ids.iter().any(|c| {
                 styles.get(c).is_some_and(|s| {
-                    !is_inline_display(&s.display) && matches!(s.float, zero_css_parser::values::FloatValue::None)
+                    !is_inline_display(&s.display)
+                        && not_none(&s.display)
+                        && matches!(s.float, zero_css_parser::values::FloatValue::None)
                 })
             })
         } else {
             child_displays
                 .iter()
-                .any(|d| d.is_some_and(|dd| !is_inline_display(dd)))
+                .any(|d| d.is_some_and(|dd| !is_inline_display(dd) && not_none(dd)))
         };
         // R207 曾要求 inline-level 子元素为**叶文本容器**（无元素子节点）——过宽守卫把
         // 「inline 子含纯 inline 后代」（嵌套 <q> 独子、<div><span>a <span>b</span> c</span></div>）

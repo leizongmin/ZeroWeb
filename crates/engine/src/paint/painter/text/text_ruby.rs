@@ -39,8 +39,34 @@ pub(super) fn ruby_annotation_segments(doc: &Document, owner_id: NodeId) -> Opti
                         .filter(|c| !c.is_whitespace())
                         .collect();
                     segs.push((base, annot));
-                } else if name.eq_ignore_ascii_case("rp") || name.eq_ignore_ascii_case("rtc") {
-                    // rp 已 display:none（R1676）；rtc 多 annotation 超出 simple ruby scope，跳过。
+                } else if name.eq_ignore_ascii_case("rp") {
+                    // rp 已 display:none（R1676），无绘制语义，跳过。
+                } else if name.eq_ignore_ascii_case("rtc") {
+                    // R4405：rtc（span-all 注音容器，css-ruby-1 §ruby-box-model）内的 rt 与
+                    // 直接子 rt 同语义——旧实现整树跳过使 complex ruby（<rbc> bases +
+                    // <rtc> annotations）的注音信息丢失：Path B flatten 排除 rtc/rt 文本后
+                    // 注音无处绘制，页面与「无注音裸文本」逐像素相同（ruby-reflow-001-
+                    // opaqueruby mismatch ref 误匹配翻红实证）。下降一层按 rt 直接子同款配对。
+                    for &rt_id in doc.child_nodes(child_id).iter() {
+                        let Some(rt) = doc.get(rt_id) else {
+                            continue;
+                        };
+                        if let NodeKind::Element(rt_elem) = &rt.kind
+                            && rt_elem.local_name().eq_ignore_ascii_case("rt")
+                        {
+                            let annot: String = doc
+                                .text_content(rt_id)
+                                .unwrap_or_default()
+                                .chars()
+                                .filter(|c| !c.is_whitespace())
+                                .collect();
+                            let base: String = std::mem::take(&mut base_buf)
+                                .chars()
+                                .filter(|c| !c.is_whitespace())
+                                .collect();
+                            segs.push((base, annot));
+                        }
+                    }
                 } else {
                     // 嵌套元素（含嵌套 ruby）的文本累积进当前 base 段。
                     if let Some(t) = doc.text_content(child_id) {
@@ -104,5 +130,23 @@ mod r1689_ruby_segment_tests {
         assert_eq!(segs.len(), 2);
         assert_eq!(segs[0].1, "kan");
         assert_eq!(segs[1].1, "字");
+    }
+
+    /// R4405：complex ruby（<rbc> bases + <rtc> annotations）——rtc 内 rt 与直接子 rt
+    /// 同款配对。旧实现整树跳过 rtc 使注音信息丢失（ruby-reflow-001-opaqueruby：Path B
+    /// flatten 排除 rtc 文本后注音无处绘制，页面与 mismatch ref 逐像素相同翻红）。
+    /// 注意：base 侧沿用 R1689 累积模型（rbc 整体文本 = 一个 base 段），per-rb unit
+    /// 级配对（css-ruby unit pairing）为后续精化，不在本 slice。
+    #[test]
+    fn rtc_nested_rt_pairs_with_preceding_base() {
+        let doc = first_ruby_owner(
+            "<body><ruby><rbc><rb>新</rb><rb>幹</rb><rb>線</rb></rbc><rtc><rt>しん</rt><rt>かん</rt><rt>せん</rt></rtc></ruby></body>",
+        );
+        let ruby = doc.get_elements_by_tag_name("ruby")[0];
+        let segs = ruby_annotation_segments(&doc, ruby).expect("rtc rt pairs");
+        assert_eq!(segs.len(), 3, "rtc 内 3 个 rt → 3 segments");
+        assert_eq!(segs[0], ("新幹線".to_string(), "しん".to_string()));
+        assert_eq!(segs[1], (String::new(), "かん".to_string()));
+        assert_eq!(segs[2], (String::new(), "せん".to_string()));
     }
 }

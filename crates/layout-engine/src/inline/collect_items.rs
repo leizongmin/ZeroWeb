@@ -85,6 +85,22 @@ impl InlineFormattingContext {
         styles: &HashMap<NodeId, ComputedStyle>,
     ) -> Vec<InlineItem> {
         let mut items = Vec::new();
+        // R4405：Path B（paint 重建 IFC，空 styles）以 **ruby 元素自身**为容器时，按
+        // R1022 的 ruby-as-child 同款语义整段扁平化（base 文本一条 run、rt/rp/rtc 注音
+        // 由 collect_text_excluding 排除、注音绘制走 R1689 overlay）。旧实现遍历 ruby
+        // 的子节点逐个收集——Path B 无 styles 无法识别 display:none（rt/rtc/rp 的 UA
+        // display 仅 layout 趟可见），注音文本落成 fs=16 常规 run 绘在 base 基线上
+        //（intra-base REF 页 vs TEST 页注音不对称、ruby-bidi rider 三案 Path B 接管后
+        // 阈值骑线翻红实证）。layout 趟永不以 ruby 为 IFC 容器（ruby inline 参与**父级**
+        // IFC；compute_final 的 ruby 排除使 ruby 子树无 stored IFC，R4392 注释），此臂
+        // 仅 paint Path B 触发，layout 行为零变化。
+        if doc.get(container).is_some_and(|n| {
+            matches!(&n.kind, NodeKind::Element(e) if e.local_name().eq_ignore_ascii_case("ruby"))
+        }) && let Some(item) = self.build_flatten_run_for_element(doc, container, styles)
+        {
+            items.push(item);
+            return items;
+        }
         // R4376：旗标每次 collect 读一次（非每 run——wide_tree 500 run 页 0.25% bench
         // 成本实证，hoist 后每容器一次）。
         let glyph_verticals_enabled = runtime_flags::fallback_line_metrics();

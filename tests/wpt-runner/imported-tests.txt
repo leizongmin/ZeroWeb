@@ -443,3 +443,5 @@ css/css-counter-styles/counter-style-at-rule/system-symbolic.html css/css-counte
 css/css-counter-styles/counter-style-at-rule/system-additive.html css/css-counter-styles/counter-style-at-rule/system-additive-ref.html == 2026-09-14 R4321 fix: additive system §3.1.6 贪婪算法落地（含 weight-0 符号表 0）+ harness document.write 兜底
 css/css-text/text-group-align/text-group-align-center.html css/css-text/text-group-align/text-group-align-center-ref.html == 2026-09-14 R4322 fix: S11 style-key 缓存不可键父链碰撞（attr-chain 指纹修复）+ text-group-align Path B 组对齐注入
 css/css-text/text-group-align/text-group-align-right.html css/css-text/text-group-align/text-group-align-right-ref.html == 2026-09-14 R4322 fix: 同上
+css/css-ruby/intra-base-white-space-001.html css/css-ruby/reference/intra-base-white-space-001-ref.html == 2026-09-16 R4405 Path B ruby 容器扁平化 + has_block_elem display:none 排除（REF 页 base 文本零绘制修复）
+css/css-ruby/ruby-reflow-001-opaqueruby.html css/css-ruby/ruby-reflow-001-noruby.html == 2026-09-16 R4405 rtc 内 rt 配对（complex ruby 注音不再丢失，mismatch ref 防误匹配）

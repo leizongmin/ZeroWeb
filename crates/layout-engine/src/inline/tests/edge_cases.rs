@@ -2601,3 +2601,34 @@ fn test_r4034_collapsible_ws_only_line_still_collapses() {
         assert!(line.height <= 0.01, "纯可折叠空白行盒应塌 0 高，实际 {}", line.height);
     }
 }
+
+/// R4405：Path B（空 styles）以 ruby 元素自身为 IFC 容器时，按 R1022 ruby-as-child
+/// 同款语义整段扁平化——base 文本一条 run、rt 注音不落常规 run（注音绘制走 paint 侧
+/// R1689 overlay）。旧实现遍历 ruby 子节点逐个收集，Path B 无 styles 识别不了
+/// display:none（rt/rtc/rp 的 UA display 仅 layout 趟可见），注音文本落成 fs=16
+/// 常规 run 绘在 base 基线上（intra-base REF/TEST 注音不对称 + rider 三案 Path B
+/// 接管后阈值骑线实证）。driving: WPT intra-base-white-space-001 / ruby-reflow-001。
+#[test]
+fn test_r4405_pathb_ruby_container_flattens_excluding_rt() {
+    use std::collections::HashMap;
+    use zero_dom::parse_html;
+
+    // ruby 直接子：rb 包裹 base + rt 注音（Path B 空 styles，UA display 不可见）。
+    let doc = parse_html("<ruby><rb>b</rb><rb>c</rb><rt>a</rt><rt></rt></ruby>");
+    let html = doc.first_child(doc.root()).unwrap();
+    let body = doc.last_child(html).unwrap();
+    let ruby = doc.first_child(body).unwrap();
+
+    let mut ctx = InlineFormattingContext::new(800.0);
+    ctx.layout(&doc, ruby, &HashMap::new());
+
+    let frags = ctx.all_fragments();
+    let all_text: String = frags.iter().map(|f| f.text.clone()).collect();
+    assert_eq!(
+        all_text, "bc",
+        "ruby 容器 IFC 应只含 base 文本（rt 注音排除，实测 {all_text:?}）"
+    );
+    assert_eq!(frags.len(), 1, "整段扁平化为单 run（实测 {} fragments)", frags.len());
+    // run owner = ruby 元素自身（paint 侧 overlay 据此配对注音）。
+    assert_eq!(frags[0].node_id, ruby, "flatten run 应归因 ruby 元素");
+}
