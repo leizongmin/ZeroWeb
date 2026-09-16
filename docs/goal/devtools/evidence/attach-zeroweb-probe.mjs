@@ -172,6 +172,43 @@ try {
   results.unknownMethods = [...results.unknownMethods];
   step('gap-ledger-collected', true, `${results.unknownMethods.length} unknown methods: ${results.unknownMethods.join(', ') || 'none'}`);
 
+  // 6. CSS 域（M1-S3b）：S1.5 并发下 probe 直连第二个 WS 客户端验证数据面
+  await new Promise((resolveCss) => {
+    const ws = new WebSocket(`ws://127.0.0.1:${PORT}/devtools/page/${discovery[0].id}`);
+    let step2 = 0;
+    let bodyNodeId = null;
+    const done = () => {
+      ws.close();
+      resolveCss();
+    };
+    ws.on('open', () => ws.send(JSON.stringify({ id: 1, method: 'DOM.getDocument', params: { depth: -1 } })));
+    ws.on('message', (m) => {
+      const msg = JSON.parse(m.toString());
+      if (msg.id === 1) {
+        const find = (n) => (n.nodeName === 'BODY' ? n : (n.children ?? []).map(find).find(Boolean));
+        bodyNodeId = find(msg.result?.root)?.nodeId;
+        step('cdp-body-node-resolved', Boolean(bodyNodeId), `nodeId=${bodyNodeId}`);
+        step2 = 2;
+        ws.send(JSON.stringify({ id: 2, method: 'CSS.getComputedStyle', params: { nodeId: bodyNodeId } }));
+        ws.send(JSON.stringify({ id: 3, method: 'CSS.getMatchedStylesForNode', params: { nodeId: bodyNodeId } }));
+      } else if (msg.id === 2) {
+        const cs = msg.result?.computedStyle;
+        const display = Array.isArray(cs) ? cs.find((p) => p.name === 'display') : null;
+        step('cdp-css-computed-style', Array.isArray(cs) && display?.value === 'block', `${cs?.length ?? 'ERR'} props, display=${display?.value ?? '??'}`);
+        if (step2 === 2) { step2 = 3; } else { done(); }
+      } else if (msg.id === 3) {
+        const r = msg.result;
+        const shaped = r && Array.isArray(r.matchedCSSRules) && r.inlineStyle && Array.isArray(r.inlineStyle.cssProperties);
+        step('cdp-css-matched-styles-shape', Boolean(shaped), `inlineProps=${r?.inlineStyle?.cssProperties?.length ?? 'ERR'}`);
+        if (step2 === 3) { done(); } else { step2 = 3; }
+      }
+    });
+    ws.on('error', (e) => {
+      step('cdp-css-domain', false, e.message);
+      resolveCss();
+    });
+  });
+
   results.pass = results.steps.every((s) => s.ok);
   writeFileSync(join(HERE, 'attach-zeroweb-result.json'), JSON.stringify(results, null, 2));
   console.log(JSON.stringify({ pass: results.pass, unknownMethods: results.unknownMethods }, null, 2));

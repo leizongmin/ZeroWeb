@@ -100,6 +100,9 @@ pub struct HeadlessServer {
     /// devtools-frontend bundle 目录（`ZW_DEVTOOLS_FRONTEND_DIR`；None = 不 serve，
     /// devtoolsFrontendUrl 维持 `devtools://` 形态）。
     devtools_frontend_dir: Option<std::path::PathBuf>,
+    /// DevTools 面板 nodeId → shim `__zwSelector` 映射（`DOM.getDocument` 时重建；
+    /// CSS.getComputedStyle/getMatchedStylesForNode 按 nodeId 解析节点用）。
+    pub(super) devtools_node_selectors: std::sync::Mutex<std::collections::HashMap<u64, String>>,
 }
 
 impl HeadlessServer {
@@ -114,6 +117,7 @@ impl HeadlessServer {
             attached_sessions: std::sync::Mutex::new(std::collections::HashMap::new()),
             auto_attach: std::sync::atomic::AtomicBool::new(false),
             devtools_frontend_dir: zero_runtime_config::optional_path("ZW_DEVTOOLS_FRONTEND_DIR"),
+            devtools_node_selectors: std::sync::Mutex::new(std::collections::HashMap::new()),
         }
     }
 

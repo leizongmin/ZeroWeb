@@ -188,8 +188,10 @@ impl HeadlessServer {
     ///
     /// 实现：renderer 页面上下文 JS 探测（EvaluateRetaining，return_by_value）把 shim
     /// DOM 拍平为紧凑 JSON，headless 侧转换为 CDP Node 形状并顺序分配 `nodeId`。
-    /// nodeId/backendNodeId 为本次调用内的独立空间（与 objectId 句柄注册表无关联——
-    /// frontend 以 nodeId 引用节点时暂无 DOM.getNode 面，S3b 随样式域补）。
+    /// nodeId/backendNodeId 为本次调用内的独立空间（与 objectId 句柄注册表无关联）。
+    /// 元素节点的 shim `__zwSelector` 随树捕获（`q` 字段）→ `devtools_node_selectors`
+    /// 注册表（nodeId → selector），供 CSS.getComputedStyle/getMatchedStylesForNode
+    /// 按 nodeId 解析节点（M1-S3b）。
     ///
     /// https://chromedevtools.github.io/devtools-protocol/tot/DOM/#method-getDocument
     pub(super) fn cmd_dom_get_document(
@@ -199,7 +201,7 @@ impl HeadlessServer {
     ) -> Result<Value, ProtocolError> {
         let depth = params.get("depth").and_then(|v| v.as_i64()).unwrap_or(-1);
         let script = format!(
-            "(function() {{\n function ser(n, d) {{\n  var t = n.nodeType;\n  var o = {{t: t, n: n.nodeName || ''}};\n  if (t === 3 || t === 8) o.v = n.nodeValue || '';\n  if (t === 1) {{\n   var a = [];\n   try {{ var at = n.attributes; for (var i = 0; i < at.length; i++) {{ a.push(at[i].name, at[i].value); }} }} catch (e) {{}}\n   o.a = a;\n  }}\n  var c = [];\n  var kids = n.childNodes || [];\n  for (var j = 0; j < kids.length; j++) {{\n   var k = kids[j];\n   var kt = k.nodeType;\n   if (kt !== 1 && kt !== 3 && kt !== 8 && kt !== 10) continue;\n   if ({depth} >= 0 && d >= {depth}) {{ c.push({{t: kt, n: k.nodeName || ''}}); continue; }}\n   c.push(ser(k, d + 1));\n  }}\n  o.c = c;\n  o.cc = c.length;\n  if (t === 9) o.u = n.documentURI || '';\n  return o;\n }}\n return JSON.stringify(ser(document, 0));\n}})()"
+            "(function() {{\n function ser(n, d) {{\n  var t = n.nodeType;\n  var o = {{t: t, n: n.nodeName || ''}};\n  if (t === 3 || t === 8) o.v = n.nodeValue || '';\n  if (t === 1) {{\n   var a = [];\n   try {{ var at = n.attributes; for (var i = 0; i < at.length; i++) {{ a.push(at[i].name, at[i].value); }} }} catch (e) {{}}\n   o.a = a;\n   try {{ if (n.__zwSelector) o.q = n.__zwSelector; }} catch (e) {{}}\n  }}\n  var c = [];\n  var kids = n.childNodes || [];\n  for (var j = 0; j < kids.length; j++) {{\n   var k = kids[j];\n   var kt = k.nodeType;\n   if (kt !== 1 && kt !== 3 && kt !== 8 && kt !== 10) continue;\n   if ({depth} >= 0 && d >= {depth}) {{ c.push({{t: kt, n: k.nodeName || ''}}); continue; }}\n   c.push(ser(k, d + 1));\n  }}\n  o.c = c;\n  o.cc = c.length;\n  if (t === 9) o.u = n.documentURI || '';\n  return o;\n }}\n return JSON.stringify(ser(document, 0));\n}})()"
         );
         let json = match session.automation_request(AutomationOperation::EvaluateRetaining {
             script,
@@ -225,8 +227,23 @@ impl HeadlessServer {
             message: format!("DOM probe JSON invalid: {e}"),
         })?;
         let mut next_id = 1u64;
-        let root = convert_cdp_node(&raw, &mut next_id);
+        let mut selectors = std::collections::HashMap::new();
+        let root = convert_cdp_node(&raw, &mut next_id, &mut selectors);
+        *self.devtools_node_selectors.lock().unwrap_or_else(|e| e.into_inner()) = selectors;
         Ok(serde_json::json!({ "root": root }))
+    }
+
+    /// 按 CDP nodeId 解析 shim `__zwSelector`（`DOM.getDocument` 注册表）。
+    pub(super) fn selector_for_devtools_node(&self, node_id: u64) -> Result<String, ProtocolError> {
+        self.devtools_node_selectors
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(&node_id)
+            .cloned()
+            .ok_or_else(|| ProtocolError {
+                code: -32602,
+                message: format!("No node with given id: {node_id}"),
+            })
     }
 
     /// DOM 域 objectId 面（M4+）：经 objectId 桥对保留元素求值——geometry/身份探测
@@ -276,10 +293,14 @@ impl HeadlessServer {
 /// 探测 JSON → CDP Node 形状递归转换（`nodeId` 顺序分配）。
 ///
 /// 探测节点字段：`t`=nodeType、`n`=nodeName、`v`=nodeValue、`a`=attributes flat 数组、
-/// `c`=children、`cc`=childNodeCount、`u`=documentURL。`c` 缺省（depth 截断的桩节点
-/// 在探测侧即无 `c`/`cc`）→ 不输出 `children`，仅 `childNodeCount: 0` 之外的场景由
-/// 探测侧 `cc` 兜底。
-pub(crate) fn convert_cdp_node(raw: &Value, next_id: &mut u64) -> Value {
+/// `c`=children、`cc`=childNodeCount、`u`=documentURL、`q`=shim `__zwSelector`（元素，
+/// 记入 `selectors` 注册表）。`c` 缺省（depth 截断的桩节点在探测侧即无 `c`/`cc`）→
+/// 不输出 `children`，仅 `childNodeCount: 0` 之外的场景由探测侧 `cc` 兜底。
+pub(crate) fn convert_cdp_node(
+    raw: &Value,
+    next_id: &mut u64,
+    selectors: &mut std::collections::HashMap<u64, String>,
+) -> Value {
     let id = *next_id;
     *next_id += 1;
     let node_type = raw.get("t").and_then(|v| v.as_i64()).unwrap_or(1);
@@ -319,12 +340,21 @@ pub(crate) fn convert_cdp_node(raw: &Value, next_id: &mut u64) -> Value {
             if let Some(attrs) = raw.get("a") {
                 node.insert("attributes".into(), attrs.clone());
             }
+            if let Some(selector) = raw.get("q").and_then(|v| v.as_str()) {
+                if !selector.is_empty() {
+                    selectors.insert(id, selector.to_string());
+                }
+            }
         }
     }
     let children: Vec<Value> = raw
         .get("c")
         .and_then(|v| v.as_array())
-        .map(|arr| arr.iter().map(|child| convert_cdp_node(child, next_id)).collect())
+        .map(|arr| {
+            arr.iter()
+                .map(|child| convert_cdp_node(child, next_id, selectors))
+                .collect()
+        })
         .unwrap_or_default();
     let child_count = raw.get("cc").and_then(|v| v.as_i64()).unwrap_or(children.len() as i64);
     node.insert("childNodeCount".into(), serde_json::json!(child_count));

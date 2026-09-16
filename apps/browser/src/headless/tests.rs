@@ -573,12 +573,18 @@ fn test_dom_get_document_probe_conversion() {
         "t": 9, "n": "#document", "u": "https://example.com/", "cc": 2,
         "c": [
             { "t": 10, "n": "html" },
-            { "t": 1, "n": "HTML", "a": ["lang", "en"], "cc": 1,
-              "c": [ { "t": 3, "n": "#text", "v": "hello" } ] },
+            { "t": 1, "n": "HTML", "a": ["lang", "en"], "cc": 1, "q": "html",
+              "c": [ { "t": 1, "n": "DIV", "a": ["id", "x"], "cc": 0, "q": "body > div#x" } ] },
         ],
     });
     let mut next = 1;
-    let root = convert_cdp_node(&probe, &mut next);
+    let mut selectors = std::collections::HashMap::new();
+    let root = convert_cdp_node(&probe, &mut next, &mut selectors);
+    // 元素 __zwSelector 捕获入注册表（S3b CSS 域 nodeId 解析依赖）：
+    // document=1, doctype=2, HTML=3, DIV=4
+    assert_eq!(selectors.get(&3).map(String::as_str), Some("html"));
+    assert_eq!(selectors.get(&4).map(String::as_str), Some("body > div#x"));
+    assert!(!selectors.contains_key(&2), "doctype 非 element 不入表");
     assert_eq!(root["nodeId"], 1);
     assert_eq!(root["backendNodeId"], 1);
     assert_eq!(root["nodeType"], 9);
@@ -589,16 +595,18 @@ fn test_dom_get_document_probe_conversion() {
     // doctype：nodeType 10 + doctype 名 nodeName
     assert_eq!(children[0]["nodeType"], 10);
     assert_eq!(children[0]["nodeName"], "html");
-    // 元素：属性 flat 数组原样 + 文本子节点递归分配 id
+    // 元素：属性 flat 数组原样 + 子元素递归分配 id
     assert_eq!(children[1]["nodeName"], "HTML");
     assert_eq!(children[1]["attributes"], serde_json::json!(["lang", "en"]));
-    assert_eq!(children[1]["children"][0]["nodeType"], 3);
-    assert_eq!(children[1]["children"][0]["nodeValue"], "hello");
+    assert_eq!(children[1]["children"][0]["nodeType"], 1);
+    assert_eq!(children[1]["children"][0]["nodeName"], "DIV");
     assert_eq!(children[1]["children"][0]["nodeId"], 4);
     // depth 截断桩（无 c/cc）：无 children 字段，childNodeCount 兜底 0
     let stub: Value = serde_json::json!({ "t": 1, "n": "DIV" });
     let mut next = 100;
-    let stub_node = convert_cdp_node(&stub, &mut next);
+    let mut stub_selectors = std::collections::HashMap::new();
+    let stub_node = convert_cdp_node(&stub, &mut next, &mut stub_selectors);
+    assert!(stub_selectors.is_empty(), "depth 截断桩无 q 不入表");
     assert!(stub_node.get("children").is_none());
     assert_eq!(stub_node["childNodeCount"], 0);
 }

@@ -1,7 +1,41 @@
-# M1 — frontend 附接 ZeroWeb：S1 路由 + S2 试验台 + S3 账本 + S3a 最小域集 + S1.5 并发
+# M1 — frontend 附接 ZeroWeb：S1 路由 + S3a 最小域集 + S1.5 并发 + S3b 样式侧栏
 
 **日期**: 2026-09-16（M1 多轮推进，M0 收口后）
 **上游状态**: cdp-protocol goal Done（M5 守成态，`make cdp-e2e` 33 绿 = 本 goal 防回归门）
+
+---
+
+## 0-c. M1-S3b ✅ 样式侧栏数据面（Computed 侧栏全链路打通，2026-09-16）
+
+**消费侧实现（零 engine/style-system 改动，`headless/domains/css.rs` 新模块）**：
+
+1. **nodeId → 节点解析**：`DOM.getDocument` 探测随树捕获元素 shim `__zwSelector`
+   （`q` 字段）→ `devtools_node_selectors` 注册表（nodeId → selector）；CSS 域按
+   nodeId 反查（`selector_for_devtools_node`，无记录 → `-32602 No node with given id`）。
+2. **`CSS.getComputedStyle`**（+ 旧名 `getComputedStyleForNode` 兼容臂）：renderer
+   JS 探测按固定属性清单（15 项：display/position/visibility/opacity/颜色族等）
+   逐项调用既有 host 回调 `__zw_get_computed_style(sel, prop)`（style-system 计算值桥，
+   per-snapshot 缓存），空值滤除 → `computedStyle: [{name, value}]`。
+3. **`CSS.getMatchedStylesForNode`**：`inlineStyle`（元素 `style` 属性解析）+
+   `matchedCSSRules: []`——规则级内省无 IPC 消费面（style-system 匹配结果未暴露过
+   协议，记账；Styles 侧栏现阶段呈现 inline style，Computed 侧栏为真实计算值）。
+4. 节点选中链路 ack：`DOM.setInspectedNode`/`DOM.highlightNode`/`Overlay.hideHighlight`。
+
+**验收（attach-zeroweb-probe.mjs 15/15 全绿 exit=0 + frontend UI 实测）**：
+- `cdp-css-computed-style` ✅ 15 props 真实计算值（`display=block`、
+  `background-color=rgb(238,238,238)`——example.com 样式表经 ZeroWeb 引擎级联生效）。
+- `cdp-css-matched-styles-shape` ✅ CDP 形状完整（inlineStyle.cssProperties + 空表族）。
+- **frontend UI 实测**：Elements 树点选 BODY → Computed 子标签 → 盒模型图（margin/
+  border/padding/content 尺寸）+ `display: block` 计算值渲染
+  （`attach-zeroweb-computed-sidebar.png`）——数据链路 = ZeroWeb 引擎 → style-system →
+  host 桥 → shim → CDP → frontend UI 全通。
+- S1.5 并发再证：probe 的 CSS 验证 WS 客户端与 frontend 面板连接并存互不阻塞。
+
+**记账（余项）**：Styles 侧栏 matched rules 需 style-system 匹配结果的协议暴露
+（engine 侧新面，碰头协调）；overlay 高亮渲染（Overlay.enable 已 ack，无高亮绘制）。
+
+门禁：`cargo test -p zero-browser` 465P/0F（+2：inline 解析/转换注册表）、
+clippy -D warnings clean、`make cdp-e2e` 33 绿、`make test` 全绿。
 
 ---
 
@@ -162,7 +196,8 @@ DevTools frontend 是 **DOM-nodeId 树流**（enable → getDocument 建树 → 
 1. ~~M1-S3a 最小域集~~ ✅（见 §0）
 2. ~~M1-S1.5 并发连接~~ ✅（见 §0-b，单线程多路复用形态）
 3. ~~M2-N1 Network 面板渲染排查~~ ✅（见 §0-b——根因即 S1.5 缺位 + 两处返回形状）
-4. **M1-S3b CSS.getMatchedStylesForNode**：样式侧栏数据源（style-system 消费面；
-   现状 = Elements 树可选中，样式栏 "No matching selector or style"）。
+4. ~~M1-S3b 样式侧栏数据面~~ ✅（见 §0-c——Computed 全链路；Styles=inline 起步）
 5. **M2 Network 域事件多客户端路由**：事件 drain 归属保证（面板所在连接优先），
-   解锁 Network 请求行/详情演示流。
+   解锁 Network 请求行/详情演示流；随后 Application cookie 面板（`&panel=application`）。
+6. **Styles 侧栏 matched rules**（碰头协调项）：style-system 匹配结果的协议暴露
+   （engine 侧新面，非本 goal 单方消费可及）；overlay 高亮渲染同记。

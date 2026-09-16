@@ -2,7 +2,7 @@
 
 **入口文档**: [../devtools.md](../devtools.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-16（M1-S1.5 并发多路复用落地：Elements/Console/Network 三面板全渲染，M2-N1 清账）
+**最后更新**: 2026-09-16（M1-S3b 样式侧栏落地：Computed 侧栏全链路，M1 切片面收口）
 
 ---
 
@@ -11,9 +11,9 @@
 **专项定位**：复用 Chrome DevTools frontend（pin bundle）经 CDP 附接 ZeroWeb，四面板
 （Elements / Console / Network / Application-cookie）达到「逐面板演示流可判定可用」。
 **启动门控**：**已解锁**——cdp-protocol goal 2026-09-16 M5 定稿收口（Done）。
-**M0 已完成**。**M1 收口中**：S1 路由 ✅ + S3a 最小域集 ✅（Elements 活 DOM +
-Console REPL）+ S1.5 并发 ✅（单线程多路复用；Network 面板渲染 M2-N1 提前清账）。
-余项：S3b 样式侧栏。
+**M0 已完成**。**M1 切片面收口**：S1 路由 ✅ + S3a 最小域集 ✅（Elements 活 DOM +
+Console REPL）+ S1.5 并发 ✅（Network 面板渲染 M2-N1 提前清账）+ S3b 样式侧栏 ✅
+（Computed 全链路 + Styles inline 起步）。余项全部在 M2/M3 面（事件路由/cookie/GUI）。
 
 **与兄弟 goal 的边界**：
 - cdp-protocol — 上游协议基座（已收口进入守成态）：本 goal 只消费其 CDP 面；其守成门
@@ -30,7 +30,7 @@ Console REPL）+ S1.5 并发 ✅（单线程多路复用；Network 面板渲染 
 | P1 | devtools-frontend bundle 获取/版本 pin/许可核查 | ✅ M0——pin `9bd6a496c3394422674c62a19e9faa627817c56e`；许可 BSD-3-Clause；可重放脚本 + 机器本地 cache |
 | P2 | serve 骨架 + `/json` devtoolsFrontendUrl 注入 | ✅ M0（e6364b8f0） |
 | P3 | 对 Chromium 空跑的面板可用度基线 | ✅ M0（probe 全绿 + 判据四条） |
-| P4 | Elements/Console 演示流 | 🔨 M1 核心双绿——Elements 活 DOM 树 ✅ + Console REPL evaluate ✅（S3a 域集落地）；样式侧栏（S3b CSS.getMatchedStylesForNode）⏳ |
+| P4 | Elements/Console 演示流 | ✅ M1——Elements 活 DOM 树 + Console REPL + Computed 侧栏（盒模型+计算值）+ Styles（inline 起步，matched rules 记账碰头项） |
 | P5 | Network/Application 演示流 | ⏳ M2（NetworkLogView 渲染遗留 = M2-N1 首项） |
 | P6 | 桌面 GUI 模式 CDP server 接线 | ⏳ M3 |
 
@@ -42,6 +42,11 @@ Console REPL）+ S1.5 并发 ✅（单线程多路复用；Network 面板渲染 
 - **2026-09-16 M1-S2/S3 附接试验台 + 域缺口账本**：`attach-zeroweb-probe.mjs` 可重放；
   frontend console -32601 全清单 39 条去重族 + 结构判断（Playwright 形状 vs
   DOM-nodeId 树流）。
+- **2026-09-16 M1-S3b 样式侧栏数据面**：`domains/css.rs` 新模块——nodeId→`__zwSelector`
+  注册表（getDocument 随树捕获）+ `CSS.getComputedStyle`（host 计算值桥消费，15 属性
+  清单）+ `CSS.getMatchedStylesForNode`（inline 起步 + 规则内省记账）。**验收**：probe
+  15/15 全绿；frontend UI 实测 Computed 侧栏盒模型+计算值渲染
+  （attach-zeroweb-computed-sidebar.png）。单测 +2。门禁全绿。
 - **2026-09-16 M1-S3a 最小域集**：`DOM.getDocument`（renderer JS 探测序列化 →
   `convert_cdp_node` CDP 形状，零 protocol-crate 改动）+ `Page.getResourceTree` +
   `Target.getTargetInfo` 无参页面分类修复（误报 browser → frontend 装载 ScreencastView
@@ -52,19 +57,22 @@ Console REPL）+ S1.5 并发 ✅（单线程多路复用；Network 面板渲染 
 
 ## 结构性限制记账
 
-- **单连接串行 accept 循环**（headless transport，本 goal 工作面）：一次只服务一个
-  连接，第二 WS 客户端在 backlog 饿死（attach 试验台实测）。M1 Elements 单连接流
-  可先行；Console/Network 多步流与多客户端场景需 **并发连接切片**（thread-per-connection
-  + HeadlessSession 共享化边界），排 M1-S1.5。
+- ~~单连接串行 accept 循环~~ ✅ 已解（M1-S1.5 单线程 socket 多路复用；frontend lazy
+  import 与多客户端并存不再饿死）。**余下多客户端语义**：session 级事件（Network 域
+  事件流）的 drain 归属不保证路由到"面板所在连接"（任一连接的 tick 均可排空）——
+  归 M2-N2。
 
 ## 下一步计划（按序）
 
-1. **M1-S3b `CSS.getMatchedStylesForNode`**：样式侧栏数据源（style-system 消费面；
-   现 Elements 树可选中和展开，样式栏 "No matching selector or style"）
-2. **M2 Network 域事件多客户端路由**：事件 drain 归属保证（面板所在连接优先）→
-   Network 请求行/详情演示流；随后 Application cookie 面板（`&panel=application`）
-3. **M3 桌面接线 + 收口**：GUI 模式 CDP server 可开关（CLI/默认关）
-4. **门禁**：每轮 `make test` + `make cdp-e2e`
+1. **M2-N2 Network 域事件多客户端路由**：事件 drain 归属保证（面板所在连接优先）→
+   Network 请求行/详情演示流
+2. **M2-N3 Application cookie 面板**：`&panel=application` + Storage/Cookie 域消费
+   （DC-2 cookie 判据）
+3. **M3 桌面接线 + 收口**：GUI 模式 CDP server 可开关（CLI/默认关）+ 全 DC 判定 +
+   挂账（灰置面板/域清单）
+4. **碰头协调项（非本 goal 单方面可解）**：Styles 侧栏 matched rules（style-system
+   匹配结果协议暴露，engine 侧新面）；overlay 高亮渲染
+5. **门禁**：每轮 `make test` + `make cdp-e2e`
 
 **待用户决策清单**：
 - （暂无）
@@ -74,7 +82,7 @@ Console REPL）+ S1.5 并发 ✅（单线程多路复用；Network 面板渲染 
 | 里程碑 | 状态 |
 |--------|------|
 | M0 — 门控期自主面 | ✅ Done（2026-09-16） |
-| M1 — 附接与 Elements/Console | 🔨 S1/S3a/S1.5 ✅（三面板全渲染）；余 S3b 样式侧栏 |
+| M1 — 附接与 Elements/Console | ✅ Done（2026-09-16：S1+S3a+S1.5+S3b 全落地，三面板渲染+样式侧栏） |
 | M2 — Network/Application | 🔨 N1 面板渲染提前清账；余事件路由 + cookie 面 |
 | M3 — 桌面接线 + 收口 | ⏳ |
 

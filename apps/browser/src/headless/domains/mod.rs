@@ -5,6 +5,7 @@
 //! `remote_object`。均为 S2→S25 落地代码的纯搬移，零语义变化。
 
 mod bidi;
+mod css;
 mod dom;
 mod emulation;
 mod input;
@@ -108,6 +109,16 @@ impl HeadlessServer {
             "DOM.enable" => Ok(serde_json::json!({})),
             "DOM.getDocument" => self.cmd_dom_get_document(session, &params),
             "DOM.requestChildNodes" => Ok(serde_json::json!({})),
+            // CSS 域 DevTools frontend 面（devtools goal M1-S3b）：Computed 侧栏 =
+            // getComputedStyle（style-system 计算值桥消费）；Styles 侧栏 =
+            // getMatchedStylesForNode（规则内省无 IPC 面，inline style 起步）
+            "CSS.getComputedStyle" | "CSS.getComputedStyleForNode" => self.cmd_css_get_computed_style(session, &params),
+            "CSS.getMatchedStylesForNode" => self.cmd_css_get_matched_styles(session, &params),
+            // 节点选中链路 ack（frontend 选中 Elements 树节点即发）
+            "DOM.setInspectedNode"
+            | "DOM.highlightNode"
+            | "Overlay.hideHighlight"
+            | "Overlay.nodeHighlightRequested" => Ok(serde_json::json!({})),
             // Page.getResourceTree：frontend frame 树枚举（复用 getFrameTree 树形 +
             // resources 空表；S3a 面板资源清单无消费面）
             "Page.getResourceTree" => {
