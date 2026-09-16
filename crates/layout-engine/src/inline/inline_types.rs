@@ -420,13 +420,37 @@ pub struct TextFragment {
 ///
 /// 行首/行尾空格的剥离由 IFC 的 `break_items_into_lines` 在行级别处理。
 pub(crate) fn collapse_whitespace(text: &str) -> String {
-    if text.is_empty() {
-        return String::new();
-    }
     let mut result = String::with_capacity(text.len());
     let mut last_was_space = false;
     for ch in text.chars() {
         if is_collapsible_ws(ch) {
+            if !last_was_space {
+                result.push(' ');
+                last_was_space = true;
+            }
+        } else {
+            result.push(ch);
+            last_was_space = false;
+        }
+    }
+    result
+}
+
+/// R4398（css-text-3 §4.1.2 + §white-space-phase-1）：pre-line 语境的**换行保留式**
+/// 白空格折叠——连续可折叠空白折叠为单个空格，但 `\n` 原样保留（强制断行 identity，
+/// 供 `split_into_words_with_ws` 的 break_at_newline 分支切段产出空词标记）。
+/// `collapse_whitespace` 会把 `\n` 折叠为普通空格（有损）——pre-line run 的断行
+/// 标记在 collect 即丢失（pre-line-with-space-and-newline：run `" \n"` 折成 `" "`，
+/// marker 永不产出、两行并排一行实证）。段内折叠由 split 的 break_at_newline 分支
+/// 按段完成（对已折叠文本幂等）。
+pub(crate) fn collapse_whitespace_keep_newlines(text: &str) -> String {
+    let mut result = String::with_capacity(text.len());
+    let mut last_was_space = false;
+    for ch in text.chars() {
+        if ch == '\n' {
+            result.push('\n');
+            last_was_space = false;
+        } else if is_collapsible_ws(ch) {
             if !last_was_space {
                 result.push(' ');
                 last_was_space = true;
@@ -535,6 +559,21 @@ mod tests {
         assert_eq!(collapse_whitespace("a  \u{00A0}  b"), "a \u{00A0} b");
         // 连续 nbsp 全保留（非折叠）。
         assert_eq!(collapse_whitespace("\u{00A0}\u{00A0}"), "\u{00A0}\u{00A0}");
+    }
+
+    #[test]
+    fn collapse_whitespace_keep_newlines_preserves_break_identity() {
+        // R4398：pre-line 的 `\n` 强制断行 identity 保留（collapse 有损版本把 `\n`
+        // 折叠为普通空格，marker 永不产出）。
+        assert_eq!(collapse_whitespace_keep_newlines(" \n"), " \n");
+        assert_eq!(collapse_whitespace_keep_newlines("a\n\nb"), "a\n\nb");
+        // 段内空白照常折叠（与 collapse_whitespace 语义一致）。
+        assert_eq!(collapse_whitespace_keep_newlines("a  b"), "a b");
+        assert_eq!(collapse_whitespace_keep_newlines("a \n\n  b"), "a \n\n b");
+        // 交叉验证：无 `\n` 时与 collapse_whitespace 逐字节一致。
+        for s in ["", " ", "a b  c", "\u{00A0}x"] {
+            assert_eq!(collapse_whitespace_keep_newlines(s), collapse_whitespace(s));
+        }
     }
 
     #[test]

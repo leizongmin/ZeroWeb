@@ -303,6 +303,23 @@ impl InlineFormattingContext {
                         // pre-line（break_at_newline）：空白序列折叠但 `\n` 仍强制断行（CSS Text 3 §4.2）。
                         if (run_preserve || run_break_at_newline) && content_word.is_empty() {
                             last_was_collapsible_ws = false;
+                            // R4398（css-text-3 §white-space-phase-1）：强制断行消费点剥除
+                            // 行尾可折叠空格 fragment——「collapsible spaces immediately
+                            // preceding a sequent break are removed」。pre-line 的 ` \n`
+                            // 空格词此前整词入行（25px Ahem 实证）→ 行宽 225 vs 200、span
+                            // 红底外泄（pre-line-with-space-and-newline 8.07%）。preserve
+                            // 语境（pre/pre-wrap）空格非可折叠，不剥（pre-wrap 行尾空格
+                            // 走既有 hang 语义）。normal 模式行尾空格已由 phase-2 trim，
+                            // 此处只补强制断行这一缺口。
+                            if !run_preserve {
+                                while let Some(last) = current_line.runs.last() {
+                                    if last.text.is_empty() || !last.text.chars().all(char::is_whitespace) {
+                                        break;
+                                    }
+                                    current_x = (current_x - last.width).max(0.0);
+                                    current_line.runs.pop();
+                                }
+                            }
                             // R3786：块断行（FloatAnchor/BlockBreak）刚开启的新行上，紧随的
                             // `\n` 不再推空行盒（CSS2 §9.2.1.1 / CSS Text §5.2：块边界已提供
                             // 断行机会，断行机会不重复；007：`Line 3<float>\n` 的 float 闭标签

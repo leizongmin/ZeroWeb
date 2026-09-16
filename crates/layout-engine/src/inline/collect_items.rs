@@ -154,6 +154,14 @@ impl InlineFormattingContext {
                         let run_preserves = run_ws.map_or(self.preserve_whitespace, |ws| ws.preserve);
                         let text = if run_preserves {
                             text_data.content.clone()
+                        } else if run_ws.is_some_and(|ws| ws.break_at_newline) {
+                            // R4398（css-text-3 §white-space-phase-1）：pre-line 的 `\n` 是
+                            // 强制断行 identity——collapse 有损（\n→空格）使断行标记在
+                            // collect 即丢失（pre-line-with-space-and-newline：run " \n"
+                            // 折成 " "，marker 永不产出、两行并排一行 PNG 实证）。换行
+                            // 保留式折叠；段内折叠由 break_lines 的 break_at_newline
+                            // 分支按段完成（对已折叠文本幂等）。
+                            crate::inline::collapse_whitespace_keep_newlines(&text_data.content)
                         } else {
                             collapse_whitespace(&text_data.content)
                         };
@@ -994,7 +1002,14 @@ impl InlineFormattingContext {
         } else {
             doc.text_content(child_id).unwrap_or_default()
         };
-        let trimmed = if run_preserves { text } else { collapse_whitespace(&text) };
+        let trimmed = if run_preserves {
+            text
+        } else if run_ws.is_some_and(|ws| ws.break_at_newline) {
+            // R4398：pre-line `\n` 断行 identity 保留（同 walk flush 站注）。
+            crate::inline::collapse_whitespace_keep_newlines(&text)
+        } else {
+            collapse_whitespace(&text)
+        };
         // R4382（CSS Text 3 §3.1）：扁平化 run 的 text-transform——layout 趟读元素自身
         // computed（含继承）；paint Path B（空 styles）经 text_transform_overrides
         //（inline_metric_storage 对元素归因 run 按元素 id 存储）。driving:
@@ -1300,7 +1315,17 @@ impl InlineFormattingContext {
             if text_pending.is_empty() {
                 return;
             }
-            let trimmed = if run_preserves { std::mem::take(text_pending) } else { collapse_whitespace(text_pending) };
+            let trimmed = if run_preserves {
+                std::mem::take(text_pending)
+            } else if run_ws.is_some_and(|ws| ws.break_at_newline) {
+                // R4398（css-text-3 §white-space-phase-1）：pre-line 的 `\n` 强制断行
+                // identity 保留到 break_lines（collapse 有损，`\n`→空格使 marker 永不
+                // 产出——pre-line-with-space-and-newline 两行并排一行实证）；段内折叠
+                // 由 split 的 break_at_newline 分支按段完成（幂等）。
+                crate::inline::collapse_whitespace_keep_newlines(&std::mem::take(text_pending))
+            } else {
+                collapse_whitespace(text_pending)
+            };
             if trimmed.is_empty() {
                 return;
             }

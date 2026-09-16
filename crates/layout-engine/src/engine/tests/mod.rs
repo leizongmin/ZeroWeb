@@ -666,3 +666,4 @@ mod r4185_flex_line_clamp_tests;
 mod r4193_inline_size_containment_tests;
 mod r4195_legend_inline_size_tests;
 mod r4331_br_in_inline_walk_tests;
+mod r4398_preline_forced_break_tests;

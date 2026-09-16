@@ -17,6 +17,7 @@ mod matcher_coverage3;
 mod matcher_coverage4;
 mod matcher_coverage5;
 mod matcher_extra;
+mod r4398_probe_ws;
 mod registered_property;
 mod review_r3345;
 mod root_font_units;
