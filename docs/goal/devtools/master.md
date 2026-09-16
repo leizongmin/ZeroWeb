@@ -72,8 +72,9 @@ tracing 填满 64KB 缓冲会阻塞整个服务进程，probe 已修 + idle tick
 
 ## 下一步计划（按序）
 
-1. **Network 请求行 E2E 演示流脚本化**：REPL 驱动流稳态化（焦点/时序）或面板
-   自身 Reload 流固定到真实 http 页（about:blank reload 无请求为正确语义）
+1. **M2-N4 Network 事件形状对齐**：请求行渲染缺口已二分定位（frontend+serve 全
+   功能实证，network-rows-bisect.png；残余=ZeroWeb 事件形状）——捕获 Chrome 真实
+   requestWillBeSent 族序列逐字段对齐（timestamp 量纲毫秒→秒等）→ 请求行 E2E 演示流
 2. **M3 桌面接线 + 收口**：GUI 模式 CDP server 可开关（CLI/默认关）+ 全 DC 判定 +
    挂账（灰置面板/域清单：Sources/Performance/Security 等未实现域面板）
 3. **碰头协调项（非本 goal 单方面可解）**：Styles 侧栏 matched rules（style-system

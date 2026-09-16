@@ -45,10 +45,13 @@ Page.navigate 触发导航）→ ws1 收到完整事件序列
 `requestWillBeSent → responseReceived → dataReceived → loadingFinished`。
 门禁：465P/0F + clippy clean + cdp-e2e 33 绿（network.events 单客户端语义保持）。
 
-**记账（请求行 E2E 演示流）**：面板行级断言暂为诊断项——REPL 驱动 `location.href`
-的打字流可靠性待稳（REPL 焦点/时序），且 demo 需被调试页停在真实 http 页
-（about:blank reload 无网络请求，语义正确）。数据面已通（协议级实测），
-演示流脚本化随 M2 收口。
+**记账（请求行 E2E 演示流 → M2-N4）**：行级断言暂为诊断项。**根因已二分定位**
+（2026-09-17 干净二分）：frontend + ZeroWeb serve 全功能——被调试方为真实 Chromium
+（带 `--remote-allow-origins=*`）+ 自 fetch 页 + `&panel=network` 时 **frontend 正常
+渲染 5 条请求行**（`network-rows-bisect.png`：ping 行/200/5 requests 1.4kB）。
+残余缺口 = ZeroWeb 自产 Network 事件的形状细节（对比方向：事件 `timestamp` 量纲
+（现毫秒，CDP 契约为秒）、requestWillBeSent payload 与 Chrome 实捕获的逐字段 diff）。
+下一切片 = 捕获 Chrome 真实事件序列逐字段对齐。
 
 ---
 

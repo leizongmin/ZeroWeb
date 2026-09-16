@@ -156,15 +156,20 @@ try {
   await netPage.waitForTimeout(1500);
   step('frontend-network-panel', netPanelOk, '');
   if (netPanelOk) {
-    // S1.5 并发 + M2-N2 事件广播：Console 页 REPL 驱动被调试页跳转（Network.enable
-    // 之后产生的事件才会被 CDP 记录——不回放历史请求）
-    if ((await cPrompt.count()) > 0) {
-      await cPrompt.click();
-    } else {
-      await cFallback.click();
-    }
-    await consolePage.keyboard.type(`location.href='https://example.com/'`, { delay: 15 });
-    await consolePage.keyboard.press('Enter');
+    // M2-N2 订阅制广播：面板连接已 Network.enable（wants_network）——raw WS 第二
+    // 客户端再导航被调试页，requestWillBeSent 族事件广播到面板连接 → 请求行出现
+    //（事件需在 Network.enable 之后产生——CDP 不回放历史请求）
+    await new Promise((resolveNav) => {
+      const ws2 = new WebSocket(`ws://127.0.0.1:${PORT}/`);
+      ws2.on('open', () => ws2.send(JSON.stringify({ id: 1, method: 'Page.navigate', params: { url: `${DEBUGGEE_URL}?reload=1` } })));
+      ws2.on('message', (m) => {
+        if (JSON.parse(m.toString()).id === 1) {
+          ws2.close();
+          resolveNav();
+        }
+      });
+      ws2.on('error', () => resolveNav());
+    });
     await netPage.waitForTimeout(5000);
   }
   const requestRow = await netPage.locator('.network-log-grid', { hasText: 'json/version' }).count()
