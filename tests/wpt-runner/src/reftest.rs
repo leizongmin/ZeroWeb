@@ -821,6 +821,22 @@ fn render_with_layout_inner(
         eprintln!("  images: {}", result.primitives().images.len());
         eprintln!("  rounded_rects: {}", result.primitives().rounded_rects.len());
         eprintln!("  glyphs: {}", result.primitives().glyphs.len());
+        // R4439 临时探针（ZW_DEBUG_GLYPHS=1）：字形坐标分布（前 40 个非零字号）。
+        if std::env::var("ZW_DEBUG_GLYPHS").as_deref() == Ok("1") {
+            for (i, g) in result
+                .primitives()
+                .glyphs
+                .iter()
+                .filter(|g| g.font_size > 0.0)
+                .enumerate()
+                .take(40)
+            {
+                eprintln!(
+                    "  glyph[{}]: ({:.1},{:.1}) fs={:.0} rot={:.2}",
+                    i, g.x, g.y, g.font_size, g.rotation
+                );
+            }
+        }
         eprintln!("  gradients: {}", result.primitives().gradients.len());
         eprintln!("  strokes: {}", result.primitives().strokes.len());
         for (i, fill) in result.primitives().fills.iter().enumerate().take(20) {

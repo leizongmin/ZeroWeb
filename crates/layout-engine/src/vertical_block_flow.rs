@@ -361,8 +361,22 @@ pub fn vertical_block_child_indices_ex(
     if !is_vertical || (!matches!(parent_wm, WritingModeValue::HorizontalTb) && !viv) {
         return None;
     }
-    if b.is_absolute || b.is_fixed {
+    if b.is_fixed {
         return None;
+    }
+    // R4439：vertical abs-pos 容器子流放臂——taffy 绝对定位路径不经 §7.1 轴交换语义，
+    // 容器块级子沿物理 x 左起堆叠（LTR 非 RTL）、子物理高滞留容器泄漏宽、容器宽不收缩
+    //（block-flow-direction-vrl-009：容器 784/子 h=784/ch=744/LTR 序 vs chromium 期望
+    // 右起 RTL + 容器 ~340 实证）。gate 收窄：CSS width Auto（shrink-to-fit 语义，
+    // apply_inner 宽改写才合法）+ ZW_ABSPOS_VFLOW 未关；fixed 维持排除（viewport 定位域）。
+    if b.is_absolute {
+        let width_auto = b
+            .node_id
+            .and_then(|id| styles.get(&id))
+            .is_some_and(|s| matches!(s.width, LengthValue::Auto));
+        if std::env::var("ZW_ABSPOS_VFLOW").as_deref() == Ok("0") || !width_auto {
+            return None;
+        }
     }
     let container_is_table = b.node_id.and_then(|id| styles.get(&id)).is_some_and(|s| {
         matches!(
@@ -468,6 +482,29 @@ fn apply_inner(b: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>, paren
     let Some(block_indices) = vertical_block_child_indices_ex(b, styles, parent_wm, viv) else {
         return;
     };
+
+    // R4439：abs-pos 容器子内联填充——taffy 绝对定位路径下子物理 height（行内 extent）
+    // 滞留容器泄漏宽（vrl-009 子 h=784/ch=744 vs 容器 content_height=180 实证）。
+    // CSS §7.1：块级子的行内尺寸填充包含块行内尺寸——content_height := 容器
+    // content_height − 子自身 frame。存 IFC 由 paint 侧 width_matches 失配自动失效重跑
+    //（子 ifc_width = 新 content_height，旧存档宽度失配走 Path B）。
+    if b.is_absolute {
+        // fill 参照 = definite inline-size（content_height>0）；auto-height 容器
+        // content_height=0 时子保持 taffy 高（shrink-to-fit 语义）。
+        let fill_h = b.content_height;
+        for &i in &block_indices {
+            if fill_h <= 0.5 {
+                break;
+            }
+            let c = &mut b.children[i];
+            let frame_h = c.border_top + c.border_bottom + c.padding_top + c.padding_bottom;
+            let new_ch = (fill_h - frame_h).max(0.0);
+            if (c.content_height - new_ch).abs() > 0.5 {
+                c.content_height = new_ch;
+                c.height = new_ch + frame_h;
+            }
+        }
+    }
 
     // 各子 outer (width, height) = border-box + margin（DOM 序）。
     let outer_sizes: Vec<(f32, f32)> = block_indices
@@ -785,11 +822,45 @@ mod tests {
     /// gate：abspos 容器不触发（vrl-009 回归实证，§10.3.7 shrink-to-fit 自有尺寸）。
     #[test]
     fn test_apply_inner_skips_abspos_container() {
+        // R4439 订正：width Auto 的 vertical abs-pos 容器**不再跳过**——taffy 绝对定位
+        // 路径不经 §7.1 轴交换，块级子须 RTL 重排 + 子高钳容器 content_height +
+        // 容器宽收缩（block-flow-direction-vrl-009 驱动）。
         let (mut container, styles) = build_v2v3_tree(WritingModeValue::VerticalRl);
         container.is_absolute = true;
+        container.content_height = 150.0;
         apply_inner(&mut container, &styles, &WritingModeValue::HorizontalTb, false);
-        assert_eq!(container.children[1].x, 50.0, "abspos 容器不应被改");
-        assert_eq!(container.width, 800.0, "abspos 容器 width 不变");
+        // B1（DOM 首）右起：B1.x > B2.x（RTL），容器宽 = Σ 子宽 + frame = 104。
+        assert!(
+            container.children[0].x > container.children[1].x,
+            "abspos 容器块级子应 RTL 重排（B1.x {} 应 > B2.x {}）",
+            container.children[0].x,
+            container.children[1].x
+        );
+        assert!(
+            (container.width - 104.0).abs() < 0.5,
+            "abspos 容器 width 应收缩到 Σ 子宽 + frame = 104，got {}",
+            container.width
+        );
+        assert!(
+            (container.children[0].height - 150.0).abs() < 0.5,
+            "子物理高应钳到容器 content_height=150，got {}",
+            container.children[0].height
+        );
+    }
+
+    /// R4439 gate 负例：definite width 的 abs-pos 容器维持跳过（宽改写仅 Auto 语义合法）。
+    #[test]
+    fn test_apply_inner_skips_abspos_definite_width() {
+        let (mut container, mut styles) = build_v2v3_tree(WritingModeValue::VerticalRl);
+        if let Some(id) = container.node_id {
+            if let Some(s) = styles.get_mut(&id) {
+                s.width = LengthValue::Px(400.0);
+            }
+        }
+        container.is_absolute = true;
+        apply_inner(&mut container, &styles, &WritingModeValue::HorizontalTb, false);
+        assert_eq!(container.children[1].x, 50.0, "definite-width abspos 容器不应被改");
+        assert_eq!(container.width, 800.0, "definite-width abspos 容器 width 不变");
     }
 
     /// gate：table-cell 容器不触发（vlr-018 回归实证，table 布局自有算法）。

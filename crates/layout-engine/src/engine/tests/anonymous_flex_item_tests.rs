@@ -921,3 +921,48 @@ fn test_r4437_orthogonal_measure_returns_column_flow_extent() {
         size.width
     );
 }
+
+/// R4439：vertical abs-pos 容器子流放臂——taffy 绝对定位路径不经 §7.1 轴交换语义：
+/// 块级子应 RTL（vrl 右起）重排、子物理高（行内 extent）钳到容器 content_height、
+/// 容器 width 收缩到 Σ 子宽。block-flow-direction-vrl-009（44.42%→5.78%）驱动。
+#[test]
+fn test_r4439_vertical_abspos_container_rtl_restack() {
+    let html = r#"<html><body style="margin:0">
+      <div id="a" style="position:absolute;writing-mode:vertical-rl;height:180px">
+        <div id="c1">AAAAAA</div>
+        <div id="c2">BBBBBB</div>
+      </div>
+    </body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    fn find<'a>(id: &str, doc: &Document, b: &'a LayoutBox) -> Option<&'a LayoutBox> {
+        if let Some(nid) = b.node_id
+            && let Some(n) = doc.get(nid)
+            && let zero_dom::NodeKind::Element(elem) = &n.kind
+            && elem.get_attribute("id").as_deref() == Some(id)
+        {
+            return Some(b);
+        }
+        b.children.iter().find_map(|c| find(id, doc, c))
+    }
+    let a = find("a", &doc, &result.root).expect("abs-pos container #a");
+    let c1 = find("c1", &doc, &result.root).expect("child #c1");
+    let c2 = find("c2", &doc, &result.root).expect("child #c2");
+    assert!(
+        a.width < 784.0,
+        "容器 width 应收缩到 Σ 子宽（非 taffy 拉伸 784），got {}",
+        a.width
+    );
+    assert!((a.height - 180.0).abs() < 1.0, "definite height 保留，got {}", a.height);
+    assert!(c1.x > c2.x, "vrl 块级子应右起 RTL（c1.x {} 应 > c2.x {}）", c1.x, c2.x);
+    assert!(
+        (c1.height - 180.0).abs() < 1.0 && (c2.height - 180.0).abs() < 1.0,
+        "子物理高应钳到容器 content_height 180（非容器泄漏宽），got c1={} c2={}",
+        c1.height,
+        c2.height
+    );
+}
