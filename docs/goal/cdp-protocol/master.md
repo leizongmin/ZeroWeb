@@ -2,48 +2,44 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-18（S1039：**静默监测引用轮 — 引用计数
-0/10→1/10（周期锚点 = S1038 双腿：门腿 04:27:20 落盘 + make
+**最后更新**: 2026-09-18（S1040：**静默监测引用轮 — 引用计数
+1/10→2/10（周期锚点 = S1038 双腿：门腿 04:27:20 落盘 + make
 test 腿 04:37:18 收口），同 tip 复核 pull 零新提交 tip =
-0b814aa93 即 S1038 轮后插记提交本身（S1038 双腿收口后零代码变
-更 0b814aa93..HEAD 排除本流 docs diff 空——git log 零提交 + git
-diff 零输出实测复核），树不变口径 = 门单腿复跑免 make test 腿
-（S336 先例），绿步维持 33**。
-门腿 **PASS 33 绿负载窗活跑首调即收口**（起手负载 1.85 兄弟流
-ZeroWeb-2 测试腿在窗——zero_integration_tests 774% CPU ps 取证
-test-guard/cargo test quickjs 腿，双 clone 隔离零污染非端口竞争
-面 S987 先例；04:42:02 启动 04:42:32 落盘 wall ~30s——E2E 双跑
-未受竞争显著影响维持 ~30s 量级 EXIT=0；编译全缓存 replay 相位
-零 Compiling 行零锁等待；expected_green 33 对称差 none、
+438923ab6 即 S1039 提交本身（S1039 门单腿复跑后零代码变更
+0b814aa93..HEAD 排除本流 docs diff 空——git log 唯一本流 docs
+提交 438923ab6 自身 + git diff 零输出实测复核），树不变口径 =
+门单腿复跑免 make test 腿（S336 先例），绿步维持 33**。
+门腿 **PASS 33 绿低负载窗活跑首调即收口**（起手负载 1.21 兄弟
+流重负载已出窗——ps 取证零兄弟编译/测试进程；04:46:45 启动
+04:47:15 落盘 wall ~30s EXIT=0；编译全缓存 replay 相位零
+Compiling 行零锁等待；expected_green 33 对称差 none、
 regressions 空、deterministic 双跑 YES（双 run 33 ok 集机械一
-致，双 run 唯一 failed 同 = 挂账 frames.click+evaluate）；双
-run 均 flow exited 1 正常态——**S1038 verify 修复后 exited
-null 零再现（第 2 个正常轮）**；ZW_IPC_VALIDATE=1 在位静默
-capture jsonl 面零写入（五 jsonl mtime 09-12/09-13 全不变实测
-复核）；dead_code warning 维持同形一枚（match_media_to_json，
-crates/engine/src/js_dom_bridge.rs——cargo cache warning
-replay 既有形态 S1028→S1038 同形，兄弟流域 face 本流不碰，
-run-rules §9，维持记档））。
-**引用计数 0/10→1/10**（S1038 新周期锚点；下轮 S1040 = 2/10，
+致，绿集对 S1039 逐项 diff 实测机械一致，双 run 唯一 failed
+同 = 挂账 frames.click+evaluate）；双 run 均 flow exited 1
+正常态——**exited null 零再现（第 3 个正常态门轮）**；
+ZW_IPC_VALIDATE=1 在位静默 capture jsonl 面零写入（五 jsonl
+mtime 09-12/09-13 全不变实测复核）；dead_code warning 维持同形
+一枚（match_media_to_json，crates/engine/src/js_dom_bridge.rs
+——cargo cache warning replay 既有形态 S1028→S1039 同形，兄弟
+流域 face 本流不碰，run-rules §9，维持记档））。
+**引用计数 1/10→2/10**（S1038 新周期锚点；下轮 S1041 = 3/10，
 树代码变化提前触发双腿刷新，至迟 S1048 = 10/10 饱和次轮到期即
 期限轮活跑）。
 锚点面四点：自有面对 S897 tip 7da6043d6 维持 **10 files
-+1187/-182**；crates/ raw **119** 维持；子帧关键词 **7 文件**
-crates/ 零命中维持（Rust 面 .rs 口径实测；frames.click+evaluate
-挂起维持，解冻条件①观察面 119 口径）；全树排除本流 docs 对
-18d462de6 实测 **182 files +19773/-1229**（较 S1030 基线 181
-files +19768/-1228 漂移 +1 file +5/-1——分解自洽：+1 file = 我
-方 S1038 修复 tests/playwright-matrix/scripts/
-verify-deterministic.mjs 入集（该口径不含 docs 排除，tests/ 面
-变更计入）+4/-1，余 +1/-0 = 兄弟流 6ff755713 docs 净增量折入
-（43 files docs 面累计 diff 集内）——非兄弟 crates 代码面漂移，
-crates/ raw 119 维持佐证，预期漂移记档）。
-本轮门兄弟流测试腿负载窗活跑（第三十四个负载下样本），窗尾残
++1187/-182**；crates/ raw **119** 维持（e67967632..TIP --
+crates/ log 口径实测）；子帧关键词 **7 文件** crates/ 零命中维
+持（Rust 面 .rs 口径实测，命中面全测试代码路径复核：crates/dom/
+src/tests/ + crates/engine/src/js_dom_bridge_tests/ +
+crates/webview/src/tests/，非测试代码零命中；frames.click+
+evaluate 挂起维持，解冻条件①观察面 119 口径）；全树排除本流
+docs（docs/goal/cdp-protocol/ 目录口径）对 18d462de6 实测
+**182 files +19773/-1229 维持**（与 S1039 实测精确一致零漂移）。
+本轮门低负载窗活跑（非负载下样本——兄弟流测试腿出窗），窗尾残
 留复测均零（本树零 zero 二进制进程 / 端口族全 free / capture
-jsonl mtime 不变），门后 load 2.27 兄弟测试腿延续。
-首调红形态连续第 37 轮零再现（累计三例非聚集维持）。
+jsonl mtime 不变），门后 load 0.56。
+首调红形态连续第 38 轮零再现（累计三例非聚集维持）。
 M5 定稿收口判定（DC-1~4 依据）不因复验动摇——**goal Done 维持，守成态
-证据经 S1039 门单腿刷新延续**；唯一未清偿义务 = frames.click+evaluate 回填
+证据经 S1040 门单腿刷新延续**；唯一未清偿义务 = frames.click+evaluate 回填
 （挂子帧能力解冻，见子帧解冻清单，不阻收口））
 
 ---
@@ -19048,6 +19044,50 @@ M5 定稿收口判定（DC-1~4 依据）不因复验动摇——**goal Done 维�
    **S1039 = 1/10 静默监测引用轮维持**（S1038 条目预告不变），期限轮预
    告 S1048 维持；M5 定稿收口判定（DC-1~4 依据）不因本插记动摇，守成态
    证据经 S1038 双腿刷新延续。
+
+   **S1040 已执行（2026-09-18）静默监测引用轮（引用计数 1/10→2/10，
+   周期锚点=S1038 双腿（门腿 04:27:20 落盘 + make test 腿
+   04:37:18 收口），同 tip 复核 pull 零新提交 tip=438923ab6 即
+   S1039 提交本身（S1039 门单腿复跑后零代码变更 0b814aa93..HEAD
+   排除本流 docs diff 空——git log 唯一本流 docs 提交 438923ab6
+   自身 + git diff 零输出实测复核），树不变口径=门单腿复跑免
+   make test 腿 S336 先例，绿步维持 33）——门 PASS 33 绿低负载
+   窗活跑首调即收口（起手负载 1.21 兄弟流重负载已出窗 ps 取证
+   零兄弟编译/测试进程 非负载下样本）04:46:45 启动 04:47:15 落
+   盘 wall ~30s EXIT=0 编译全缓存 replay 相位零 Compiling 行零
+   锁等待 expected_green 33 对称差 none regressions 空
+   deterministic 双跑 YES（双 run 33 ok 集机械一致 本轮绿集对
+   S1039 绿集逐项 diff 实测机械一致 双 run 唯一 failed 同=挂账
+   frames.click+evaluate）双 run 均 flow exited 1 正常态——
+   exited null 零再现（第 3 个正常态门轮）ZW_IPC_VALIDATE=1 在
+   位静默（renderer-ipc-validate 零行实测复核）capture jsonl
+   面零写入 #0 复现监测零命中维持（五 jsonl mtime 09-12
+   22:48/22:51/22:52/23:00 + 09-13 06:24 全不变实测复核）
+   steps-report 新鲜落盘 dead_code warning 维持同形一枚
+   （match_media_to_json crates/engine/src/js_dom_bridge.rs
+   cargo cache warning replay 既有形态 S1028→S1039 同形维持记
+   档）首调红形态连续第 38 轮零再现（累计三例非聚集维持）；锚
+   点面四点：自有面对 S897 tip 7da6043d6 维持 10 files
+   +1187/-182（apps/browser/src/headless/ 口径实测复核）/
+   crates/ raw 119 维持（e67967632..TIP -- crates/ log 口径实
+   测 =119 括注基名滞后注记延续）/ 子帧关键词 7 文件 crates/
+   零命中（Rust 面 .rs 口径实测 命中面全测试代码路径复核
+   crates/dom/src/tests/ + crates/engine/src/js_dom_bridge_
+   tests/ + crates/webview/src/tests/ 非测试代码零命中）解冻条
+   件①观察面 119 口径 frames.click+evaluate 挂起维持 / 全树排
+   除本流 docs（docs/goal/cdp-protocol/ 目录口径）对 18d462de6
+   实测 182 files +19773/-1229 维持（与 S1039 实测精确一致零漂
+   移）；门尾树态不变（tip=438923ab6 即 S1039 提交本身 tracked
+   clean）本树 zombie 复测零 端口族全 free 本门零残留 控制面零
+   外来提交 本轮门低负载窗活跑（非负载下样本 兄弟流测试腿出窗
+   起手 load 1.21 门后 0.56）**——下轮 **S1041 = 3/10**（周期
+   锚点=S1038 双腿），若 S1041 前树代码变化则提前触发双腿刷新
+   （S245→S992→S1003→S1010→S1020→S1024→S1029→S1030→S1038 先
+   例链），否则按引用轮口径门单腿复跑免 make test 腿（S336 先
+   例），至迟 S1048=10/10 饱和次轮到期即期限轮活跑（双腿活跑
+   口径=门 + make test，S932/S933/S989/S992/S1003/S1010/S1020/
+   S1024/S1029/S1030/S1038 先例：/10 周期饱和即次轮期限轮，新
+   周期期限条款依原设计恢复）；
 
    **S1039 已执行（2026-09-18）静默监测引用轮（引用计数 0/10→1/10，
    周期锚点=S1038 双腿（门腿 04:27:20 落盘 + make test 腿
