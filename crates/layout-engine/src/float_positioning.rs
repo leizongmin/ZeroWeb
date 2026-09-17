@@ -586,7 +586,44 @@ pub(crate) fn shrink_inline_blocks_to_content(
                 Some(s) if matches!(s.width, LengthValue::Auto)
             )
             && !has_w_constraint
-            && box_node.children.is_empty()
+            // R4469：放开到「流内子全 inline 级且含原子子」容器——taffy 交换帧对含原子子
+            // 的 inline 内容容器块轴给 Σ 子物理宽（inline-table-alignment-002 rl-mixed 450
+            // = 表 300 + span 150），应 = Σ 列宽（IFC 域，单列 = max 列宽 300）。块级子在
+            // 场仍排除（块子沿块轴堆叠，Σ 子宽语义成立，R4194 域）。inline 级按 style
+            // display 判（extract 的 LayoutBox.is_block_level 含 Table/InlineTable，不可用）。
+            // 纯文本容器（无原子子）维持原 R4445 域（definite height 限定）——font-size-
+            // adjust-ic-height auto 高容器 probe 列宽与 size-adjusted 渲染度量分歧（144.8
+            // vs 200）回写翻红实证。
+            && (box_node.children.is_empty()
+                || ({
+                    let in_flow: Vec<&LayoutBox> = box_node
+                        .children
+                        .iter()
+                        .filter(|c| !c.is_absolute && !c.is_fixed)
+                        .collect();
+                    in_flow.iter().all(|c| {
+                        c.node_id.and_then(|cid| styles.get(&cid)).is_some_and(|s| {
+                            matches!(
+                                s.display,
+                                DisplayValue::Inline
+                                    | DisplayValue::InlineBlock
+                                    | DisplayValue::InlineTable
+                                    | DisplayValue::InlineFlex
+                                    | DisplayValue::InlineGrid
+                            )
+                        })
+                    }) && in_flow.iter().any(|c| {
+                        c.node_id.and_then(|cid| styles.get(&cid)).is_some_and(|s| {
+                            matches!(
+                                s.display,
+                                DisplayValue::InlineBlock
+                                    | DisplayValue::InlineTable
+                                    | DisplayValue::InlineFlex
+                                    | DisplayValue::InlineGrid
+                            )
+                        })
+                    })
+                }))
             // float 容器排除：邻居 float 堆叠用改写前宽度定位（本 pass 晚于 float 流
             // 定位），content-based 回写引发重叠（line-box-vlr-008/slr-048 float:right
             // 容器 22.50→28.30pp 回归实证；x 平移补偿右缘无效——恶化源非自身锚定）。
@@ -595,23 +632,74 @@ pub(crate) fn shrink_inline_blocks_to_content(
             && matches!(box_node.float, FloatValue::None)
             && let Some(id) = box_node.node_id
             && let Some(cs) = styles.get(&id)
-            && let zero_css_parser::values::LengthValue::Px(h) = &cs.height
-            && h.is_finite()
-            && *h > 0.0
         {
-            let mut col_ctx = crate::inline::InlineFormattingContext::new(*h as f32)
-                .with_vertical(true)
-                .with_vertical_rtl(matches!(box_node.writing_mode, WritingModeValue::VerticalRl));
-            col_ctx = crate::inline_finalization::configure_inline_fonts(col_ctx, inline_fonts, false);
-            col_ctx.layout(doc, id, styles);
-            if !col_ctx.lines.is_empty() {
-                let block_extent = col_ctx.total_height();
-                let frame_w =
-                    box_node.padding_left + box_node.padding_right + box_node.border_left + box_node.border_right;
-                let border_box = block_extent + frame_w;
-                if (border_box - box_node.width).abs() > 0.5 {
-                    box_node.width = border_box;
-                    box_node.content_width = block_extent;
+            // 列断深度：definite CSS height 优先（原 R4445 域）；原子子容器 auto 高回落
+            // border-box−frame（R4437 同款，rl-mixed 450 junk 高可用——内容深度不超即不折
+            // 列）；纯文本 auto 高容器 None → 整臂跳过（原 R4445 语义，见上 gate 注）。
+            let has_atomic_child = box_node.children.iter().any(|c| {
+                !c.is_absolute
+                    && !c.is_fixed
+                    && c.node_id.and_then(|cid| styles.get(&cid)).is_some_and(|s| {
+                        matches!(
+                            s.display,
+                            DisplayValue::InlineBlock
+                                | DisplayValue::InlineTable
+                                | DisplayValue::InlineFlex
+                                | DisplayValue::InlineGrid
+                        )
+                    })
+            });
+            let frame_h = box_node.border_top + box_node.border_bottom + box_node.padding_top + box_node.padding_bottom;
+            let depth = match &cs.height {
+                zero_css_parser::values::LengthValue::Px(v) if v.is_finite() && *v > 0.0 => Some(*v as f32),
+                _ if has_atomic_child => {
+                    let fallback = box_node.height - frame_h;
+                    (fallback > 0.5).then_some(fallback)
+                }
+                _ => None,
+            };
+            if let Some(depth) = depth {
+                // R4469：原子 inline-level 子尺寸注入——无注入时 CSS auto 原子子在探针 IFC
+                // 降级为扁平文本（Σ 列宽虚增），与 compute_final 存储路径（R4468 注入）同源
+                // 对齐，列宽度量才一致。
+                let ib_sizes: HashMap<NodeId, (f32, f32)> = box_node
+                    .children
+                    .iter()
+                    .filter(|c| !c.is_absolute && !c.is_fixed)
+                    .filter_map(|c| {
+                        let node_id = c.node_id?;
+                        let is_atomic = styles.get(&node_id).is_some_and(|s| {
+                            matches!(
+                                s.display,
+                                DisplayValue::InlineBlock
+                                    | DisplayValue::InlineTable
+                                    | DisplayValue::InlineFlex
+                                    | DisplayValue::InlineGrid
+                            )
+                        });
+                        is_atomic.then_some((node_id, (c.width, c.height)))
+                    })
+                    .collect();
+                let mut col_ctx = crate::inline::InlineFormattingContext::new(depth)
+                    .with_vertical(true)
+                    .with_vertical_rtl(matches!(box_node.writing_mode, WritingModeValue::VerticalRl))
+                    .with_inline_block_sizes(ib_sizes)
+                    // R4469：块轴基线装配——Σ 列宽口径与 compute_final 存储路径一致（行
+                    // extent = max(ascent)+max(descent)）。
+                    .with_vertical_central_baselines(crate::inline_finalization::collect_vertical_central_baselines(
+                        box_node, styles,
+                    ));
+                col_ctx = crate::inline_finalization::configure_inline_fonts(col_ctx, inline_fonts, false);
+                col_ctx.layout(doc, id, styles);
+                if !col_ctx.lines.is_empty() {
+                    let block_extent = col_ctx.total_height();
+                    let frame_w =
+                        box_node.padding_left + box_node.padding_right + box_node.border_left + box_node.border_right;
+                    let border_box = block_extent + frame_w;
+                    if (border_box - box_node.width).abs() > 0.5 {
+                        box_node.width = border_box;
+                        box_node.content_width = block_extent;
+                    }
                 }
             }
         }

@@ -131,6 +131,17 @@ pub struct InlineFormattingContext {
     /// 当 CSS 属性 width/height 为 Auto 时，inline-block 的尺寸由其内容决定，
     /// IFC 无法自行测量，需要外部布局结果提供。
     pub inline_block_sizes: HashMap<NodeId, (f32, f32)>,
+    /// R4469：vertical 原子 inline-level 子的 central baseline 偏移表（key = 子 NodeId，
+    /// value = 自子盒 **block-start border 边**沿块轴到其中央基线的距离）。
+    ///
+    /// css-writing-modes-3 §4.2/§4.3：vertical-mixed 以 central baseline 为行内主导基线，
+    /// 行盒块轴装配 = 水平行盒基线装配的轴转置（行 ascent = max(子 ascent)，各子块轴位
+    /// = 行基线 ± 自身 ascent）。原子子的 central baseline 规则：inline-table = 首行
+    /// （CSS2 §17.5.2.2 表基线取首行）、inline-block = 末行盒（CSS2 §10.8.1）、其余
+    /// （replaced/flex/grid）= 盒中心。由 caller 从 LayoutBox 子树几何预算（IFC 内无子
+    /// 树信息），仅 vertical 路径注入；默认空 map = 全部按盒中心（旧行为 = 全员贴列起，
+    /// R4468 残差主源）。
+    pub vertical_central_baselines: HashMap<NodeId, f32>,
     /// `<img>` 替换元素的解码固有尺寸（intrinsic w/h，px），按 img NodeId 索引。
     ///
     /// **R1578 inline>inline-IMG 固有尺寸打通**：`collect_inline_items` img 分支在
@@ -338,6 +349,7 @@ impl InlineFormattingContext {
             vertical_rtl: false,
             block_extent: container_width,
             inline_block_sizes: HashMap::new(),
+            vertical_central_baselines: HashMap::new(),
             img_intrinsic_sizes: HashMap::new(),
             ws_overrides: NodeIdMap::default(),
             glyph_verticals_overrides: NodeIdMap::default(),
@@ -467,6 +479,12 @@ impl InlineFormattingContext {
     /// 设置 inline-block 元素的预计算尺寸（来自 LayoutBox / taffy 布局结果）。
     pub fn with_inline_block_sizes(mut self, sizes: HashMap<NodeId, (f32, f32)>) -> Self {
         self.inline_block_sizes = sizes;
+        self
+    }
+
+    /// R4469：设置 vertical 原子子 central baseline 偏移表（见字段文档）。
+    pub fn with_vertical_central_baselines(mut self, baselines: HashMap<NodeId, f32>) -> Self {
+        self.vertical_central_baselines = baselines;
         self
     }
 
@@ -1872,6 +1890,28 @@ impl InlineFormattingContext {
             self.lines.push(current_column);
         }
 
+        // R4469：行盒块轴基线装配（central baseline 主导，css-writing-modes-3 §4.2）——
+        // 水平行盒基线算法的轴转置：每 run 的 (ascent, descent) 在块轴上计，行 ascent =
+        // max(子 ascent)，行 extent = max(ascent) + max(descent)，各 run 块轴位 = 行基线
+        // ± 自身 ascent。run 基线：文本 run = 盒中心（width/2）；原子 run 查
+        // vertical_central_baselines（inline-table 首行 / inline-block 末行盒规则），miss
+        // 回退盒中心。旧行为 = 全员贴列起（列 x），为 R4468 后 alignment 带残差主源。
+        // 单一 extent 列（纯文本/单原子）数值等价旧列宽（零回归面）。
+        for col in &mut self.lines {
+            let mut max_ascent = 0.0_f32;
+            let mut max_descent = 0.0_f32;
+            for run in &col.runs {
+                let a = run_ascent_on_block_axis(run, &self.vertical_central_baselines);
+                max_ascent = max_ascent.max(a);
+                max_descent = max_descent.max(run.width - a);
+            }
+            if max_ascent + max_descent > col.height {
+                col.height = max_ascent + max_descent;
+            }
+            col.ascent = max_ascent;
+            col.descent = max_descent;
+        }
+
         // 计算每列的 x 坐标（沿 x 轴排列）
         // 垂直模式中 LineBox.y 表示 x 坐标，LineBox.height 表示列宽
         if self.vertical_rtl {
@@ -1895,9 +1935,12 @@ impl InlineFormattingContext {
                 x -= col.height; // col.height 在垂直模式表示列宽
                 col.y = x;
 
-                // 修正每个片段的 x 为列起始位置
+                // R4469：块轴基线装配——行基线 = 列 block-start 边（右缘）− 行 ascent；
+                // run 块轴位（物理 x）= 行基线 + 自身 ascent − 自身 extent。
+                let line_baseline = col.y + col.height - col.ascent;
                 for run in &mut col.runs {
-                    run.x = col.y;
+                    let ascent = run_ascent_on_block_axis(run, &self.vertical_central_baselines);
+                    run.x = line_baseline + ascent - run.width;
                 }
             }
         } else {
@@ -1907,9 +1950,12 @@ impl InlineFormattingContext {
                 col.y = x;
                 x += col.height; // col.height 在垂直模式表示列宽
 
-                // 修正每个片段的 x 为列起始位置
+                // R4469：块轴基线装配（vlr 镜像）——行基线 = 列 block-start 边（左缘）+
+                // 行 ascent；run 物理 x = 行基线 − 自身 ascent。
+                let line_baseline = col.y + col.ascent;
                 for run in &mut col.runs {
-                    run.x = col.y;
+                    let ascent = run_ascent_on_block_axis(run, &self.vertical_central_baselines);
+                    run.x = line_baseline - ascent;
                 }
             }
         }
@@ -2509,6 +2555,20 @@ impl InlineFormattingContext {
             })
             .collect()
     }
+}
+
+/// R4469：run 在块轴上的 ascent（自 run 的 block-start 边到其 central baseline）。
+/// 文本 run = 盒中心（width/2，含半 leading 对称分布）；原子 run（font_size=0 标记）查
+/// `vertical_central_baselines`（inline-table 首行 / inline-block 末行盒规则），miss 回退
+/// 盒中心。descent = width − ascent（调用侧推导）。
+fn run_ascent_on_block_axis(run: &TextFragment, baselines: &HashMap<NodeId, f32>) -> f32 {
+    if run.font_size == 0.0
+        && run.width > 0.0
+        && let Some(&b) = baselines.get(&run.node_id)
+    {
+        return b.clamp(0.0, run.width);
+    }
+    run.width / 2.0
 }
 
 fn plaintext_logical_text(runs: &[TextFragment]) -> String {

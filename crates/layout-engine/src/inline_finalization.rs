@@ -652,6 +652,73 @@ pub(crate) fn extract_inline_visual_metrics(style: &ComputedStyle) -> InlineVisu
 /// （相对 inset 已烘焙进盒位，覆写会丢弃）；④非替换元素——其 fragment 可能是 collect
 /// 扁平化的**子树文本**（如 `<svg><style>` 的 CSS 源码文本，css-e-notation 实证），
 /// 几何归 R4149-R4151/R4288-R4290 replaced 域；空文本原子 fragment 仍走既有全几何
+/// R4469：vertical 容器原子 inline-level 子的 central baseline 偏移表（注入
+/// `with_vertical_central_baselines`，语义见 IFC 字段文档）。
+///
+/// 偏移 = 自子盒 **block-start border 边**沿块轴到其中央基线：
+/// - inline-table：block-start frame + 首个块轴堆叠子的块轴 extent/2（CSS2 §17.5.2.2
+///   表基线 = 首行基线；vertical-rl 首行贴右缘，偏移自然落在右起）；
+/// - inline-block：块轴 extent − block-end frame − 末个块轴堆叠子 extent/2（CSS2
+///   §10.8.1 基线 = 末行盒基线）；
+/// - 其余（replaced/inline-flex/inline-grid）：extent/2（盒中心）。
+///
+/// 「块轴堆叠子」= 流内非 inline 级子（block 级 + table-internal；row 在 extract 的
+/// is_block_level 名单外，按 display 判）。无此类子（纯 inline 内容）回退盒中心。
+pub(crate) fn collect_vertical_central_baselines(
+    box_node: &LayoutBox,
+    styles: &HashMap<NodeId, ComputedStyle>,
+) -> HashMap<NodeId, f32> {
+    use zero_css_parser::values::DisplayValue;
+    let mut map: HashMap<NodeId, f32> = HashMap::new();
+    let vertical_rtl = matches!(box_node.writing_mode, WritingModeValue::VerticalRl);
+    for c in &box_node.children {
+        let Some(id) = c.node_id else { continue };
+        let Some(style) = styles.get(&id) else { continue };
+        if !matches!(
+            style.display,
+            DisplayValue::InlineBlock | DisplayValue::InlineTable | DisplayValue::InlineFlex | DisplayValue::InlineGrid
+        ) {
+            continue;
+        }
+        let (bs_frame, be_frame) = if vertical_rtl {
+            (c.border_right + c.padding_right, c.border_left + c.padding_left)
+        } else {
+            (c.border_left + c.padding_left, c.border_right + c.padding_right)
+        };
+        // 块轴堆叠子（流内非 inline 级），按 DOM 序——vrl 下首子贴 block-start。
+        let stacked: Vec<f32> = c
+            .children
+            .iter()
+            .filter(|g| {
+                if g.is_absolute || g.is_fixed || !matches!(g.float, FloatValue::None) {
+                    return false;
+                }
+                g.node_id
+                    .and_then(|gid| styles.get(&gid))
+                    .map(|s| {
+                        !matches!(
+                            s.display,
+                            DisplayValue::Inline
+                                | DisplayValue::InlineBlock
+                                | DisplayValue::InlineFlex
+                                | DisplayValue::InlineGrid
+                                | DisplayValue::InlineTable
+                        )
+                    })
+                    .unwrap_or(g.is_block_level)
+            })
+            .map(|g| g.width.max(0.0))
+            .collect();
+        let b = match style.display {
+            DisplayValue::InlineTable => bs_frame + stacked.first().copied().unwrap_or(c.width) / 2.0,
+            DisplayValue::InlineBlock => c.width - be_frame - stacked.last().copied().unwrap_or(c.width) / 2.0,
+            _ => c.width / 2.0,
+        };
+        map.insert(id, b.max(0.0).min(c.width.max(0.0)));
+    }
+    map
+}
+
 /// 重写路径（行为不变）。kill-switch `ZW_INLINE_FRAG_POS=0`（LazyLock 构造期单读，
 /// R3858 热路径零 env 查询教训）。
 ///
@@ -1326,6 +1393,12 @@ pub(crate) fn compute_final_inline_layouts(
                     is_atomic.then_some((node_id, (c.width, c.height)))
                 })
                 .collect()
+        } else {
+            HashMap::new()
+        })
+        // R4469：块轴 central baseline 偏移表（行盒基线装配，见 collect_ 文档）。
+        .with_vertical_central_baselines(if is_vertical {
+            collect_vertical_central_baselines(root, styles)
         } else {
             HashMap::new()
         })
@@ -2355,6 +2428,12 @@ pub(crate) fn remeasure_text_with_float_exclusions(
                 .with_text_align_last(text_align_last)
                 .with_no_wrap(no_wrap)
                 .with_inline_block_sizes(ib_sizes)
+                // R4469：块轴 central baseline 偏移表（与 compute_final 存储路径同源）。
+                .with_vertical_central_baselines(if is_vertical {
+                    collect_vertical_central_baselines(box_node, styles)
+                } else {
+                    HashMap::new()
+                })
                 .with_img_intrinsic_sizes(img_intrinsic_sizes.clone());
             inline_ctx = configure_inline_fonts(inline_ctx, inline_fonts, false);
             // R4332：并入 run-in 前缀参与重测（与 measure 路径同源，行形状一致）。
