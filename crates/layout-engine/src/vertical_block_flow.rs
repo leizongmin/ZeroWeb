@@ -279,6 +279,78 @@ fn apply_vertical_block_flow_sizing_inner(
         for child in &b.children {
             stack.push((child, own_wm.clone()));
         }
+        // R4446：正交子 inline-size fill（css-writing-modes-3 §7.3 orthogonal 'auto'
+        // sizing / CSS2.1 §10.2 行内轴类比）。orthogonal 流（容器 vertical + 父 htb）：
+        // 容器自身未交换帧进 taffy（taffy width = 物理宽 = 块轴），而子经
+        // apply_vertical_writing_mode 交换（taffy width = 物理高 = 行内轴）→ taffy 把子
+        // auto 行内尺寸拉到容器 taffy content width（块轴）而非容器 definite 行内尺寸
+        //（line-box-slr-060/vrl-019 li h=704 = 784−frame 实证，应 fill 140）。viv 域
+        //（父亦 vertical，容器已交换）拉伸轴天然正确，不在本臂。fill 后子行内尺寸
+        // definite → IFC 列断在正确行内尺寸上收口（R4445 收缩臂 auto-height fallback
+        // 随之接手块轴宽）。仅 auto 行内尺寸子（definite/percent 另有语义）。
+        if own_wm.is_vertical_block_flow()
+            && matches!(parent_wm, WritingModeValue::HorizontalTb)
+            && b.node_id.is_some_and(|id| {
+                styles.get(&id).is_some_and(|s| {
+                    // flex/grid 容器排除：item 走 align/flex 语义非块级 fill
+                    //（flexbox-writing-mode-014/015、overflow-auto-scrollbar-gutter-intrinsic-003
+                    // li-item fill 翻红实证）。
+                    !matches!(
+                        s.display,
+                        DisplayValue::Flex
+                            | DisplayValue::InlineFlex
+                            | DisplayValue::Grid
+                            | DisplayValue::InlineGrid
+                            // inline-block 容器排除：§10.3.9 shrink-to-fit 域归 R4437 臂
+                            //（shrink-only）自管，子 fill 与其单向收缩语义交叉——vrl-012 系
+                            // 4 对双胞胎 +1.7~2.3pp 恶化实证（fill spec 正确但暴露 list
+                            // padding 轴向残差，挂账 R4446 记档）。
+                            | DisplayValue::InlineBlock
+                    ) && !matches!(s.height, LengthValue::Auto)
+                })
+            })
+            // float 子树排除：float/clear 几何自洽（clearance-calculations-vrl-008 fill
+            // 翻红实证），同 viv_subtree_has_float 门形。
+            && !viv_subtree_has_float(b)
+        {
+            let inline_size = b.content_height;
+            if inline_size.is_finite() && inline_size > 0.5 {
+                for c in &b.children {
+                    let Some(cid) = c.node_id else { continue };
+                    let Some(Some(cs)) = styles.get(&cid).map(Some) else {
+                        continue;
+                    };
+                    if !matches!(cs.display, DisplayValue::Block | DisplayValue::ListItem)
+                        || !matches!(cs.height, LengthValue::Auto)
+                        || !c.writing_mode.is_vertical_block_flow()
+                        || c.is_absolute
+                        || c.is_fixed
+                        || !matches!(c.float, FloatValue::None)
+                    {
+                        continue;
+                    }
+                    let Some(&c_taffy) = dom_to_taffy.get(&cid) else {
+                        continue;
+                    };
+                    let Ok(mut c_style) = taffy_tree.style(c_taffy).cloned() else {
+                        continue;
+                    };
+                    if !c_style.size.width.is_auto() {
+                        continue;
+                    }
+                    // 交换帧：taffy 逻辑宽 = 物理高（行内轴）；margin-box fill。
+                    let fill = (inline_size - c.margin_top - c.margin_bottom).max(0.0);
+                    if (c.height - fill).abs() <= 0.5 {
+                        continue;
+                    }
+                    c_style.size.width = taffy::style::Dimension::length(fill);
+                    if taffy_tree.set_style(c_taffy, c_style).is_ok() {
+                        let _ = taffy_tree.mark_dirty(c_taffy);
+                        changed = true;
+                    }
+                }
+            }
+        }
         let Some(block_indices) = vertical_block_child_indices_ex(b, styles, &parent_wm, viv_enabled) else {
             continue;
         };

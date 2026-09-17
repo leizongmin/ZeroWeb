@@ -1311,6 +1311,11 @@ impl StyleSystem {
                 //（chromium UA `ul,menu,dir{list-style-type:disc}` / `ol{list-style-type:decimal}`）。
                 "ul" | "ol" => {
                     ua_decl_inputs.push(("margin".to_string(), "1em 0".to_string(), false, (0, 0, 0), None));
+                    // R4446 A/B 记档：chromium UA 为 logical `padding-inline-start: 40px`，但 ZW
+                    // 逻辑属性是 apply 期解析（胜者 map 迭代序敏感，writing-mode 置位时序不稳）——
+                    // 改 logical 后 slr-060 落物理 top 40（slr inline-start 应为 bottom）10.58%
+                    // 恶化实证。挂账：cascade 后置逻辑解析 + sideways_lr-aware inline 轴映射
+                    //（slr 行内反向，inline-start=物理 bottom），届时本处可切 logical。
                     ua_decl_inputs.push(("padding-left".to_string(), "40px".to_string(), false, (0, 0, 0), None));
                     let lst = if tag == "ul" { "disc" } else { "decimal" };
                     ua_decl_inputs.push(("list-style-type".to_string(), lst.to_string(), false, (0, 0, 0), None));
