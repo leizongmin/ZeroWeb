@@ -601,7 +601,7 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
                 if !border_width_length_is_valid(value, &v) {
                     return false;
                 }
-                let side = logical_border_physical_side(property, &style.writing_mode);
+                let side = logical_border_physical_side(property, &style.writing_mode, style.writing_mode_sideways_lr);
                 set_border_width_field(style, side, v);
                 return true;
             }
@@ -611,7 +611,7 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
         | "border-block-start-style"
         | "border-block-end-style" => {
             if let Some(v) = parse_border_style(value) {
-                let side = logical_border_physical_side(property, &style.writing_mode);
+                let side = logical_border_physical_side(property, &style.writing_mode, style.writing_mode_sideways_lr);
                 set_border_style_field(style, side, v);
                 return true;
             }
@@ -621,7 +621,7 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
         | "border-block-start-color"
         | "border-block-end-color" => {
             if let Some(v) = values::parse_color(value) {
-                let side = logical_border_physical_side(property, &style.writing_mode);
+                let side = logical_border_physical_side(property, &style.writing_mode, style.writing_mode_sideways_lr);
                 set_border_color_field(style, side, v);
                 return true;
             }
@@ -2199,17 +2199,21 @@ enum PhysicalSide {
 ///   horizontal-tb：inline-start=left, inline-end=right, block-start=top, block-end=bottom
 ///   vertical-rl：  inline-start=top,  inline-end=bottom, block-start=right, block-end=left
 ///   vertical-lr：  inline-start=top,  inline-end=bottom, block-start=left, block-end=right
-fn logical_physical_side(axis_inline: bool, start: bool, wm: &WritingModeValue) -> PhysicalSide {
+fn logical_physical_side(axis_inline: bool, start: bool, wm: &WritingModeValue, sideways_lr: bool) -> PhysicalSide {
     use PhysicalSide as P;
     use WritingModeValue as Wm;
     match (axis_inline, start) {
-        // inline 轴：horizontal-tb 水平（start=left/end=right），vertical 垂直（start=top/end=bottom）
+        // inline 轴：horizontal-tb 水平（start=left/end=right），vertical 垂直（start=top/end=bottom）。
+        // R4448：sideways-lr 行内反向（css-writing-modes-3 §sideways-lr，行内自下而上）——
+        // inline-start=物理 bottom / inline-end=物理 top（sideways-rl 文字自上而下不反向）。
         (true, true) => match wm {
             Wm::HorizontalTb => P::Left,
+            _ if sideways_lr => P::Bottom,
             _ => P::Top,
         },
         (true, false) => match wm {
             Wm::HorizontalTb => P::Right,
+            _ if sideways_lr => P::Top,
             _ => P::Bottom,
         },
         // block 轴：horizontal-tb 垂直（start=top/end=bottom）；
@@ -2230,8 +2234,13 @@ fn logical_physical_side(axis_inline: bool, start: bool, wm: &WritingModeValue) 
 /// 按 logical 属性名（如 `border-inline-start-width`）与元素 writing-mode 解析物理边。
 ///
 /// 属性名形如 `border-{axis}-{side}-{kind}`，axis ∈ {inline, block}，side ∈ {start, end}。
-fn logical_border_physical_side(property: &str, wm: &WritingModeValue) -> PhysicalSide {
-    logical_physical_side(property.contains("-inline-"), property.contains("-start-"), wm)
+fn logical_border_physical_side(property: &str, wm: &WritingModeValue, sideways_lr: bool) -> PhysicalSide {
+    logical_physical_side(
+        property.contains("-inline-"),
+        property.contains("-start-"),
+        wm,
+        sideways_lr,
+    )
 }
 
 fn set_border_width_field(style: &mut ComputedStyle, side: PhysicalSide, v: LengthValue) {
@@ -2269,7 +2278,7 @@ fn apply_logical_margin(style: &mut ComputedStyle, axis_inline: bool, start: boo
         if !margin_length_is_valid(value, &v) {
             return false;
         }
-        let side = logical_physical_side(axis_inline, start, &style.writing_mode);
+        let side = logical_physical_side(axis_inline, start, &style.writing_mode, style.writing_mode_sideways_lr);
         match side {
             PhysicalSide::Top => style.margin_top = v,
             PhysicalSide::Right => style.margin_right = v,
@@ -2287,7 +2296,7 @@ fn apply_logical_padding(style: &mut ComputedStyle, axis_inline: bool, start: bo
         if !padding_length_is_valid(value, &v) {
             return false;
         }
-        let side = logical_physical_side(axis_inline, start, &style.writing_mode);
+        let side = logical_physical_side(axis_inline, start, &style.writing_mode, style.writing_mode_sideways_lr);
         match side {
             PhysicalSide::Top => style.padding_top = v,
             PhysicalSide::Right => style.padding_right = v,
@@ -2305,7 +2314,7 @@ fn apply_logical_inset(style: &mut ComputedStyle, axis_inline: bool, start: bool
         if !positioned_offset_length_is_valid(value, &v) {
             return false;
         }
-        let side = logical_physical_side(axis_inline, start, &style.writing_mode);
+        let side = logical_physical_side(axis_inline, start, &style.writing_mode, style.writing_mode_sideways_lr);
         match side {
             PhysicalSide::Top => style.top = v,
             PhysicalSide::Right => style.right = v,

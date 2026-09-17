@@ -58,6 +58,12 @@ pub fn compute_inherited_style_with_quirks(
     }
 
     // 先处理所有级联属性
+    // R4448：逻辑属性（margin/padding/inset/border 的 -inline-/-block- 系列）延迟到
+    // 主循环 + 继承完成后应用——其物理映射依赖元素**最终** writing-mode/sideways 标记，
+    // apply 期即时解析受胜者 map 迭代序影响（writing-mode 声明与逻辑声明应用顺序不定，
+    // UA ul padding-inline-start 40px 在 slr 元素上错轴实证）。css-cascade：逻辑与物理
+    // 属性在 computed-value 时统一解析。
+    let mut deferred_logical: Vec<(&str, &str)> = Vec::new();
     for (property, value) in cascaded {
         let resolved = resolve_keyword(value, property, parent_style);
         match resolved {
@@ -111,6 +117,10 @@ pub fn compute_inherited_style_with_quirks(
                 }
             }
             KeywordResolution::Concrete(v) => {
+                if is_logical_property_name(property) {
+                    deferred_logical.push((property, v));
+                    continue;
+                }
                 apply_property_value_with_quirks(
                     &mut style,
                     property,
@@ -129,6 +139,18 @@ pub fn compute_inherited_style_with_quirks(
                 inherit_property(parent, &mut style, property);
             }
         }
+    }
+
+    // R4448：延迟逻辑属性应用（见主循环处注释）——writing-mode/sideways 标记此时已定态
+    //（显式声明主循环已应用、未声明则继承完成），物理映射不再依赖胜者 map 迭代序。
+    for (property, value) in deferred_logical {
+        apply_property_value_with_quirks(
+            &mut style,
+            property,
+            value,
+            quirks_mode == QuirksMode::Quirks,
+            prefers_dark,
+        );
     }
 
     // R3771：`-webkit-line-clamp` legacy 溯源（css-overflow-3：legacy 别名仅在
@@ -156,6 +178,38 @@ pub fn compute_inherited_style_with_quirks(
     }
 
     style
+}
+
+/// R4448：逻辑属性名判定（margin/padding/inset/border 的 -inline-/-block- 系列）。
+/// 这些属性的物理映射依赖元素最终 writing-mode/sideways 标记，须延迟到继承完成后应用。
+fn is_logical_property_name(property: &str) -> bool {
+    matches!(
+        property,
+        "margin-block-start"
+            | "margin-block-end"
+            | "margin-inline-start"
+            | "margin-inline-end"
+            | "padding-block-start"
+            | "padding-block-end"
+            | "padding-inline-start"
+            | "padding-inline-end"
+            | "inset-block-start"
+            | "inset-block-end"
+            | "inset-inline-start"
+            | "inset-inline-end"
+            | "border-block-start-width"
+            | "border-block-end-width"
+            | "border-inline-start-width"
+            | "border-inline-end-width"
+            | "border-block-start-style"
+            | "border-block-end-style"
+            | "border-inline-start-style"
+            | "border-inline-end-style"
+            | "border-block-start-color"
+            | "border-block-end-color"
+            | "border-inline-start-color"
+            | "border-inline-end-color"
+    )
 }
 
 fn resolve_relative_font_weight(weight: &FontWeightValue, parent_style: Option<&ComputedStyle>) -> FontWeightValue {

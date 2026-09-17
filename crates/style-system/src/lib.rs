@@ -1311,11 +1311,13 @@ impl StyleSystem {
                 //（chromium UA `ul,menu,dir{list-style-type:disc}` / `ol{list-style-type:decimal}`）。
                 "ul" | "ol" => {
                     ua_decl_inputs.push(("margin".to_string(), "1em 0".to_string(), false, (0, 0, 0), None));
-                    // R4446 A/B 记档：chromium UA 为 logical `padding-inline-start: 40px`，但 ZW
-                    // 逻辑属性是 apply 期解析（胜者 map 迭代序敏感，writing-mode 置位时序不稳）——
-                    // 改 logical 后 slr-060 落物理 top 40（slr inline-start 应为 bottom）10.58%
-                    // 恶化实证。挂账：cascade 后置逻辑解析 + sideways_lr-aware inline 轴映射
-                    //（slr 行内反向，inline-start=物理 bottom），届时本处可切 logical。
+                    // R4448 A/B 记档：chromium UA 为 logical `padding-inline-start: 40px`。ZW 已具备
+                    // 后置逻辑解析（inheritance.rs 延迟臂）+ sideways_lr-aware inline 轴映射，但
+                    // **cascade 别名消解缺失**：UA `padding-inline-start` 与 author 物理别名
+                    //（padding-bottom:0 等）是不同 key 双存活，延迟逻辑应用反向覆盖 author 声明
+                    //（marker-*/counter-styles 9 翻红 + slr-060 10.20 实证）。别名按 CascadeOrder
+                    // 消解落地后再切 logical（届时 line-box-slr-060 系 4 案 + inline-block 双胞胎
+                    // 8 案同收）。
                     ua_decl_inputs.push(("padding-left".to_string(), "40px".to_string(), false, (0, 0, 0), None));
                     let lst = if tag == "ul" { "disc" } else { "decimal" };
                     ua_decl_inputs.push(("list-style-type".to_string(), lst.to_string(), false, (0, 0, 0), None));
