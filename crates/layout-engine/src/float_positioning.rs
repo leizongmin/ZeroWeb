@@ -341,7 +341,12 @@ pub(crate) fn shrink_vertical_blocks_to_content(
                     (lo, hi)
                 })
                 .unwrap_or((0.0, f32::MAX));
-            let new_width = content_extent.max(min_w).min(max_w).min(box_node.width);
+            // R4450：content-based **双向**回写（原 `.min(box_node.width)` 单向收缩）——
+            // taffy 对正交 vertical 容器 auto 块轴给 fill/任意值时，content_extent（子
+            // margin-box 右缘，相对本 border-box）是确定性 content 尺寸， 小于 taffy 值
+            // 收缩、大于则须 grow 回（line-box-slr-060 ul：li x_local=40 + w=380 =
+            // 420 > taffy 400，被 min 挡住残 6.87% 实证）。min/max-width 钳制保留。
+            let new_width = content_extent.max(min_w).min(max_w);
             // R4195：table 有专属 vertical 路径（table_vertical.rs step 8 自管
             // table_block_extent + caption 逻辑 block 轴定位）——本收缩臂的宽度改写会被
             // step 8 覆盖，但**右锚平移改写子 x** 与 step 8 的 caption/行盒定位打架
@@ -359,7 +364,9 @@ pub(crate) fn shrink_vertical_blocks_to_content(
                         | DisplayValue::TableCaption
                 )
             });
-            if new_width + 0.5 < box_node.width && !is_table_container {
+            // R4450：双向门（原 `new_width + 0.5 < box_node.width` 单向）——grow 与 shrink
+            // 同走本臂；vrl 右锚平移对 grow 情形同样成立（新右缘右移，子须右移同量）。
+            if (new_width - box_node.width).abs() > 0.5 && !is_table_container {
                 let frame =
                     box_node.border_left + box_node.border_right + box_node.padding_left + box_node.padding_right;
                 // R4194（css-writing-modes-3 §7.1）：vertical-rl 的第一列贴**右**缘——
