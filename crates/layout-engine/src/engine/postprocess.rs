@@ -528,12 +528,42 @@ pub(super) fn fix_vertical_mode_abs_pos(root: &mut LayoutBox, doc: &Document, st
         };
 
         // 查找匹配的 fragment（node_id 一致）
-        if let Some(fragment) = fragments.iter().find(|f| f.node_id == child_node_id) {
+        let fragment_opt = fragments.iter().find(|f| f.node_id == child_node_id);
+        // R4430 Fix C：**空白** abs-pos 子（无内容 fragment）的静态位合成 = **IFC 尾游标**
+        //（CSS2 §10.3.7 静态位 ≈ 假想盒流位：紧随前驱 inline 内容续排——同列 x、末片段
+        // inline 终点 y；abs-pos-non-replaced-vrl-066..194 簇 8 案：`<span></span>` 零
+        // fragment → R1550/branch-1 无静态位可用，盒滞留 taffy 原点/静态 y=0）。
+        // 容器无任何 inline 片段时维持 no-op（taffy 原点即空容器静态位）。
+        let synth_pos = fragment_opt
+            .map(|f| (f.x, f.y))
+            .or_else(|| fragments.last().map(|last| (last.x, last.y + last.height)));
+        if let Some(fragment) = fragment_opt {
             let style = styles.get(&child_node_id);
             let all_inset_auto = style.is_some_and(|s| {
                 matches!(s.top, zero_css_parser::values::LengthValue::Auto)
                     && matches!(s.bottom, zero_css_parser::values::LengthValue::Auto)
             });
+
+            // R4430：vrl **over-constrained**（left/right/width 全非 auto/pct）——§7.1 交换
+            // 映射（right↔top、left↔bottom）下 §10.6.4 忽略 'bottom' = 忽略 **CSS left**
+            //（chromium 实测 vrl-218 x=CB_right−right−width；taffy 交换帧保留
+            // taffy.top=CSS left，方向反）。x := cb_w − right − width − margin_right
+            //（附加修正，不排斥下方 branch-1/R1550 的 y/height 逻辑）。
+            // vlr 映射（left↔top、right↔bottom）忽略 right = taffy 现行为，无需臂。
+            if is_vertical_rtl
+                && style.is_some_and(|s| {
+                    !matches!(s.left, zero_css_parser::values::LengthValue::Auto)
+                        && !matches!(s.right, zero_css_parser::values::LengthValue::Auto)
+                        && !matches!(s.width, zero_css_parser::values::LengthValue::Auto)
+                        && !matches!(s.width, zero_css_parser::values::LengthValue::Percentage(_))
+                })
+                && let Some(right_px) = style.and_then(|s| resolve_postprocess_real_length(&s.right, s))
+            {
+                let x = (container_width - right_px - child.width - child.margin_right).max(0.0);
+                if (child.x - x).abs() > 0.01 {
+                    child.x = x;
+                }
+            }
 
             if all_inset_auto {
                 // IFC 提供的静态位置比 taffy 的水平模型更准确。
@@ -611,6 +641,41 @@ pub(super) fn fix_vertical_mode_abs_pos(root: &mut LayoutBox, doc: &Document, st
                         }
                     }
                     store_abspos_child_font_metrics(child, doc, styles, child_node_id, fragment);
+                }
+            }
+        } else if let Some((sx, sy)) = synth_pos {
+            // R4430 Fix C：合成静态位按 R4425 轴分工镜像应用（无 fragment → 无内容
+            // 测量：height shrink 与 font-metrics 存储均不适用，维持 taffy 解）。
+            let style = styles.get(&child_node_id);
+            let all_inset_auto = style.is_some_and(|s| {
+                matches!(s.top, zero_css_parser::values::LengthValue::Auto)
+                    && matches!(s.bottom, zero_css_parser::values::LengthValue::Auto)
+            });
+            let left_right_auto = style.is_some_and(|s| {
+                matches!(s.left, zero_css_parser::values::LengthValue::Auto)
+                    && matches!(s.right, zero_css_parser::values::LengthValue::Auto)
+            });
+            if all_inset_auto {
+                // 物理 y（inline 轴）：top/bottom auto → 静态位覆盖。
+                if (child.y - sy).abs() > 0.01 {
+                    child.y = sy;
+                }
+                // direction:rtl CB 的 inline 静态位镜像（与 found-fragment 路径同式：
+                // rtl 在 vertical 模式反转 inline 基方向 → y 取镜像）。
+                let cb_direction_rtl = styles
+                    .get(&container_node_id)
+                    .is_some_and(|s| matches!(s.direction, zero_style_system::property::types::DirectionValue::Rtl));
+                if cb_direction_rtl {
+                    child.y = (container_width - child.y - child.height).max(0.0);
+                }
+                // 物理 x（block 轴）：仅 left/right 均 auto（R4425 轴分工）。
+                if left_right_auto && (child.x - sx).abs() > 0.01 {
+                    child.x = sx;
+                }
+            } else if left_right_auto {
+                // R1550 同型：top/bottom 非 auto（taffy inset 解已定位 y），block 轴取静态列。
+                if (child.x - sx).abs() > 0.01 {
+                    child.x = sx;
                 }
             }
         }
