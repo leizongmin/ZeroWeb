@@ -156,6 +156,83 @@ pub fn apply_vertical_block_flow(
     anchor_slr_root_children(root, icb_height);
     // R4459：vertical float（orthogonal，HorizontalTb 父）内在尺寸收缩 + 浮动缘重锚。
     fix_vertical_float_intrinsic(root, styles, &float_width_rewritten);
+    // R4460：vertical inline-block 的块级子行内尺寸泄漏修正。
+    // fast path：无 vertical 样式页整臂跳过（泄漏 walk 全树 + 每节点 2 次 style 查表；
+    // R4217 float 在场预扫描先例——bench-gate 实测 block_layout_1000_elements +36% 根因）。
+    if styles
+        .values()
+        .any(|s| !matches!(s.writing_mode, WritingModeValue::HorizontalTb))
+    {
+        fix_vertical_inline_block_child_leak(root, styles);
+    }
+}
+
+/// R4460：vertical inline-block 的块级子**行内尺寸泄漏**修正。
+///
+/// 病理（slr-054 实证）：sideways-lr inline-block（definite 物理高 = author `height:8em`
+/// = 160）的 display:block 子 span 物理高被 taffy 交换帧拉伸到 **420 = 容器物理宽**——
+/// 交换帧 inline-block 路径的子 stretch 轴错位（正确值 = 容器 content_height 160，
+/// CSS2 §10.6.2/§7.1 块级子行内尺寸填充包含块行内尺寸）。块容器（ul 等）子经 taffy
+/// stretch 正确填充（vrl-021 li h=140 ✓），泄漏仅现于 inline-block 容器路径。
+///
+/// 泄漏签名（三重 gate 防误伤）：容器 vertical **inline-block**、style height definite、
+/// 子 Auto 高、child.height ≈ **container.width** 且 > content_height →
+/// child.height = content_height − 子纵向 frame。`ZW_VIV_SIZING` 同族 kill-switch。
+fn fix_vertical_inline_block_child_leak(root: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) {
+    if std::env::var("ZW_VIV_SIZING").as_deref() == Ok("0") {
+        return;
+    }
+    fn walk(b: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) {
+        // 非 vertical 盒：先于 style 查表早退（wm 检查零查表开销）。
+        if !b.writing_mode.is_vertical_block_flow() {
+            for c in &mut b.children {
+                walk(c, styles);
+            }
+            return;
+        }
+        let is_inline_block = b
+            .node_id
+            .and_then(|id| styles.get(&id))
+            .is_some_and(|s| matches!(s.display, DisplayValue::InlineBlock));
+        let height_definite = b
+            .node_id
+            .and_then(|id| styles.get(&id))
+            .is_some_and(|s| !matches!(s.height, LengthValue::Auto));
+        if is_inline_block
+            && height_definite
+            && b.writing_mode.is_vertical_block_flow()
+            && b.width.is_finite()
+            && b.content_height.is_finite()
+            && b.content_height > 0.5
+        {
+            for c in &mut b.children {
+                let child_height_auto = c
+                    .node_id
+                    .is_some_and(|id| styles.get(&id).is_some_and(|s| matches!(s.height, LengthValue::Auto)));
+                let leaks = child_height_auto
+                    && !c.is_absolute
+                    && !c.is_fixed
+                    && matches!(c.float, FloatValue::None)
+                    && c.height.is_finite()
+                    && (c.height - b.width).abs() < 0.5
+                    && c.height > b.content_height + 0.5;
+                if leaks {
+                    // CSS2 §10.3.3 同构（转置）：行内尺寸填充 = 包含块行内 extent
+                    // − 子纵向 margin；content = border-box − 纵向 frame。
+                    let frame_v = c.border_top + c.border_bottom + c.padding_top + c.padding_bottom;
+                    let new_h = (b.content_height - c.margin_top - c.margin_bottom).max(0.0);
+                    if (c.height - new_h).abs() > 0.5 {
+                        c.height = new_h;
+                        c.content_height = (new_h - frame_v).max(0.0);
+                    }
+                }
+            }
+        }
+        for c in &mut b.children {
+            walk(c, styles);
+        }
+    }
+    walk(root, styles);
 }
 
 /// R4455：vrl **根盒**右缘就位。
