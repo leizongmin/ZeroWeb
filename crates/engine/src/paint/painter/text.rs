@@ -1103,21 +1103,16 @@ impl super::Painter {
                     .with_tab_size_is_length(tab_size.1)
                     .with_vertical(is_vertical)
                     .with_vertical_rtl(is_vertical_rtl)
-                    .with_block_extent(
-                        if is_vertical
-                            && styles.is_some_and(|s| {
-                                box_node.node_id.is_some_and(|id| {
-                                    s.get(&id).is_some_and(|st| {
-                                        matches!(st.display, zero_css_parser::values::DisplayValue::TableCaption)
-                                    })
-                                })
-                            })
-                        {
-                            box_node.content_width
-                        } else {
-                            container_width
-                        },
-                    )
+                    // R4434：vertical 的 block_extent 恒取 **content_width**（物理块轴
+                    // 跨度，R1122 语义）——旧非 caption 分支传 container_width（R1099 后
+                    // = content_height = 行内深度），RTL 列自 x=行内深度向左堆叠、越界列
+                    // 负 x 裁剪（line-box-direction-vrl-015：cell 内 25 列仅 ~7 列可见，
+                    // 字形饿死左带实证）。caption 臂语义并入恒等分支。
+                    .with_block_extent(if is_vertical {
+                        box_node.content_width
+                    } else {
+                        container_width
+                    })
                     .with_font_size_overrides(parent_font_sizes)
                     .with_is_ahem_overrides(parent_is_ahem)
                     .with_letter_spacing_overrides(parent_letter_spacing)
