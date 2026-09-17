@@ -205,11 +205,9 @@ pub(super) fn position_cells_vertical(
             let mut max_w = 0.0f32;
             if let Some(rb) = get_row_box(table_box, row) {
                 for cell in &row.cells {
-                    let cell_box = if let Some(rg_idx) = cell.parent_rg_idx {
-                        rb.children.get(rg_idx).and_then(|rg| rg.children.get(cell.child_index))
-                    } else {
-                        rb.children.get(cell.child_index)
-                    };
+                    // R4470：bare-row 匿名 cell = 行盒自身（含 rg 嵌套与默认路径统一走
+                    // get_cell_box 的 row_self_cell 通道）。
+                    let cell_box = crate::table_types::get_cell_box(rb, cell);
                     let Some(cb) = cell_box else { continue };
                     let w = grow_vrl_cell_block_extent(
                         cb,
@@ -324,6 +322,26 @@ pub(super) fn position_cells_vertical(
             } else {
                 (0.0, 0.0)
             };
+
+            if cell.row_self_cell {
+                // R4470：bare-row 匿名 cell = 行盒自身——几何已由上方行盒定位（x/width/
+                // height = 行块轴位/extent、y = 行 inline 位），不得被 cell 语义覆写
+                //（cell.x=0/y=cell_y 会把行盒拉回表 content 原点）。仅同步 content 域。
+                // cur_block 推进由行循环尾部统一处理，此处不再累加。
+                cell_box.content_width = (cell_box.width
+                    - cell_box.border_left
+                    - cell_box.border_right
+                    - cell_box.padding_left
+                    - cell_box.padding_right)
+                    .max(0.0);
+                cell_box.content_height = (cell_box.height
+                    - cell_box.border_top
+                    - cell_box.border_bottom
+                    - cell_box.padding_top
+                    - cell_box.padding_bottom)
+                    .max(0.0);
+                continue;
+            }
 
             cell_box.x = cell_rel_dx; // cell 沿 x 相对行起点（=0），行已定位
             cell_box.y = cell_y + cell_rel_dy;

@@ -1467,6 +1467,7 @@ fn test_r1131_grow_vrl_cell_block_extent() {
         col_start: 0,
         col_end: 1,
         parent_rg_idx: None,
+        row_self_cell: false,
     };
     let grid = TableGrid {
         rows: vec![],
@@ -1530,6 +1531,7 @@ fn r3628_grow_vrl_cell_block_extent_resolves_residual_font_size() {
         col_start: 0,
         col_end: 1,
         parent_rg_idx: None,
+        row_self_cell: false,
     };
     let grid = TableGrid {
         rows: vec![],
@@ -1640,6 +1642,7 @@ fn test_col_min_content_does_not_match_ahem_substring() {
                 col_start: 0,
                 col_end: 1,
                 parent_rg_idx: None,
+                row_self_cell: false,
             }],
             is_anonymous: true,
         }],
@@ -1696,6 +1699,7 @@ fn r3628_col_min_content_resolves_residual_font_size() {
                 col_start: 0,
                 col_end: 1,
                 parent_rg_idx: None,
+                row_self_cell: false,
             }],
             is_anonymous: true,
         }],

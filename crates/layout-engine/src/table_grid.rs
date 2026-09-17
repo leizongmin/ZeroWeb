@@ -8,7 +8,7 @@
 use std::collections::HashMap;
 
 use zero_css_parser::values::{DisplayValue, FloatValue};
-use zero_dom::NodeId;
+use zero_dom::{Document, NodeId};
 use zero_style_system::ComputedStyle;
 
 use crate::table_types::*;
@@ -151,6 +151,7 @@ pub(crate) fn build_grid(
                         col_start,
                         col_end,
                         parent_rg_idx: None,
+                        row_self_cell: false,
                     });
                     orphan_col_cursor = col_end;
                     if orphan_anonymous_cells.len() == 1 {
@@ -176,6 +177,7 @@ pub(crate) fn build_grid(
                                 col_start,
                                 col_end,
                                 parent_rg_idx: Some(*child_idx),
+                                row_self_cell: false,
                             });
                             orphan_col_cursor = col_end;
                             if orphan_anonymous_cells.len() == 1 {
@@ -196,6 +198,7 @@ pub(crate) fn build_grid(
                                     col_start,
                                     col_end,
                                     parent_rg_idx: Some(*child_idx),
+                                    row_self_cell: false,
                                 });
                                 orphan_col_cursor = col_end;
                                 if orphan_anonymous_cells.len() == 1 {
@@ -254,6 +257,30 @@ pub(crate) fn build_grid(
                         row_group_index: None,
                         is_anonymous: false,
                         ..row
+                    });
+                } else if table_box.writing_mode.is_vertical_block_flow() && row_has_in_flow_content(child, doc) {
+                    // R4470：bare-row 匿名 cell 生成（vertical 域，CSS Tables §3.1）——
+                    // 行无 cell 子（纯文本/inline 内容，如 inline-table-alignment-002 的
+                    // `<span style="display:table-row">F</span>`）时，旧逻辑整行不入 grid
+                    //（row.cells 空 → 跳过）→ layout_table 空表早退 → 行位滞留 taffy 交换
+                    // 帧 junk（首行不贴 block-start 右缘 + 次行溢出盒右缘 +120px）。合成
+                    // row-self 匿名 cell（几何 = 行盒自身，get_cell_box 直通行盒）→ 行参与
+                    // position_cells_vertical 块轴 rl 堆叠，表 extent = Σ 行块轴 extent。
+                    // 水平域维持 R978 现状（行内文本经 IFC 渲染，零回归面）。
+                    max_cols = max_cols.max(1);
+                    rows.push(TableRow {
+                        child_index: *child_idx,
+                        row_group_index: None,
+                        cells: vec![TableCell {
+                            child_index: 0,
+                            colspan: 1,
+                            rowspan: 1,
+                            col_start: 0,
+                            col_end: 1,
+                            parent_rg_idx: None,
+                            row_self_cell: true,
+                        }],
+                        is_anonymous: false,
                     });
                 }
             }
@@ -341,6 +368,7 @@ pub(crate) fn build_grid(
                                     col_start,
                                     col_end,
                                     parent_rg_idx: parent_rg,
+                                    row_self_cell: false,
                                 });
                                 col_cursor = col_end;
                                 if anonymous_row_group_idx.is_none() {
@@ -364,6 +392,7 @@ pub(crate) fn build_grid(
                             col_start,
                             col_end,
                             parent_rg_idx: None,
+                            row_self_cell: false,
                         });
                         col_cursor = col_end;
                         if anonymous_row_group_idx.is_none() {
@@ -406,6 +435,7 @@ pub(crate) fn build_grid(
                     col_start,
                     col_end,
                     parent_rg_idx: None,
+                    row_self_cell: false,
                 });
                 direct_col_cursor = col_end;
                 max_cols = max_cols.max(col_end);
@@ -464,6 +494,7 @@ pub(crate) fn build_grid(
                         col_start,
                         col_end,
                         parent_rg_idx: None,
+                        row_self_cell: false,
                     }],
                     is_anonymous: true,
                 });
@@ -744,4 +775,20 @@ pub(crate) fn collect_col_widths(
         }
     }
     col_widths
+}
+
+/// R4470：bare-row 内容判定——行盒的 DOM 子树含元素子或非空白文本（有可渲染内容，
+/// CSS Tables §3.1 应生成匿名 cell）。纯空白/空行不生成（旧塌缩语义不变）。
+fn row_has_in_flow_content(row_box: &LayoutBox, doc: &Document) -> bool {
+    let Some(row_id) = row_box.node_id else {
+        return !row_box.children.is_empty();
+    };
+    doc.child_nodes(row_id).iter().any(|&cid| match doc.get(cid) {
+        Some(node) => match &node.kind {
+            zero_dom::NodeKind::Element(_) => true,
+            zero_dom::NodeKind::Text(t) => !t.content.trim().is_empty(),
+            _ => false,
+        },
+        None => false,
+    })
 }

@@ -43,6 +43,10 @@ pub(crate) struct TableCell {
     /// Some(rg_idx) 表示单元格在 table_box.children[rg_idx].children[child_index] 中查找。
     /// 用于孤立行组（table_box 本身是行组）中混合嵌套行组和直接子单元格的匿名行。
     pub(crate) parent_rg_idx: Option<usize>,
+    /// R4470：bare-row 匿名 cell——行无 cell 子（纯文本/inline 内容，CSS Tables §3.1 应
+    /// 生成匿名 cell）时以**行盒自身**充当 cell（几何 = 行盒，get_cell_box 直通行盒）。
+    /// 仅 vertical 表 build_grid 生成（水平域维持 R978 现状零回归）。
+    pub(crate) row_self_cell: bool,
 }
 
 /// 一个表格行的信息。
@@ -203,6 +207,7 @@ pub(crate) fn build_row(child_idx: usize, row_box: &LayoutBox, doc: &zero_dom::D
             col_start,
             col_end,
             parent_rg_idx: None,
+            row_self_cell: false,
         });
         col_cursor = col_end;
     }
@@ -249,6 +254,10 @@ pub(crate) fn get_row_box<'a>(table_box: &'a LayoutBox, row: &TableRow) -> Optio
 /// - None: 直接在 row_box.children 中查找
 /// - Some(rg_idx): 在 row_box.children[rg_idx].children 中查找（嵌套行组场景）
 pub(crate) fn get_cell_box<'a>(row_box: &'a LayoutBox, cell: &TableCell) -> Option<&'a LayoutBox> {
+    // R4470：bare-row 匿名 cell = 行盒自身。
+    if cell.row_self_cell {
+        return Some(row_box);
+    }
     if let Some(rg_idx) = cell.parent_rg_idx {
         row_box
             .children
