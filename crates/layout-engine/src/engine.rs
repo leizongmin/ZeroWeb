@@ -1980,6 +1980,32 @@ impl LayoutEngine {
                     child.y -= content_y;
                 }
             }
+        } else if own_writing_mode.is_vertical_block_flow()
+            // R4473 收窄：float 容器（float 流定位/子位 rebake 自有约定）与 flex 容器
+            //（taffy flex 项定位走主/交叉轴解析，frame 归一口径未证）不在本臂——
+            // flexbox-overflow-padding-002（vertical flex +25px 帧误减 1.05% 翻红）与
+            // block-flow-direction-vlr-008（float 容器 5.17% 翻红）归因后排除。
+            && computed.is_some_and(|s| matches!(s.float, FloatValue::None))
+            && !matches!(
+                computed.map(|s| &s.display),
+                Some(DisplayValue::Flex | DisplayValue::InlineFlex)
+            )
+        {
+            // R4473：vertical 容器同一换算（轴交换版）——taffy location 同样 border-box
+            // 相对，vertical 父的子盒经 extract 轴交换（x=taffy.y / y=taffy.x）后仍携带
+            // 父 frame（taffy 轴 = 物理 y/x），paint/dump 累计再加父 frame → 帧双重计入
+            //（vrl-021：ul padding-top 1em 令 li rel y=+20 应 0，文本随盒 +20px，旧
+            // −0.8em 字形上移部分抵消掩盖，R4472 深度位修正后诚实暴露 5 案翻红）。
+            // 父 taffy frame 已随本盒 extract 交换为物理值：taffy border.left/padding.left
+            // = 物理 border_top/padding_top（换算 Y 分量），taffy border.top/padding.top
+            // = 物理 border_left/padding_left（换算 X 分量）。abspos/fixed 同水平臂跳过。
+            for child in &mut children_boxes {
+                if child.is_absolute || child.is_fixed {
+                    continue;
+                }
+                child.x -= border_left + padding_left;
+                child.y -= border_top + padding_top;
+            }
         }
 
         // R4263/R4264（CSS Overflow 5 §scroll-buttons + §scroll-marker-group）：合成伪盒
