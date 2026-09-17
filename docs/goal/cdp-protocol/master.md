@@ -18455,6 +18455,30 @@ test-guard 包裹窗内全程在跑，非 9222 族竞争；门腿与 make test �
    自有面 10 files +1187/-182 与 crates/ raw 93 实测复
    核维持不变，M5 定稿收口判定不因本插记动摇。
 
+   **S913 轮后插记（2026-09-17 推送序列 pull --rebase 实
+   测）**：兄弟流 R4436（fix writing-modes vertical orphan
+   caption 固有尺寸臂，crates/layout-engine/src/table.rs
+   +75 + crates/layout-engine/src/table/tests.rs +99 +
+   docs/goal/rendering-compat.md +1 +
+   tests/wpt-runner/imported-tests.txt +3 = 4 files +178，
+   96362db70）于 S913 双腿收口之后经 push 前 pull
+   --rebase 入树（本流提交被 rebase 顶到其上，远端 tip
+   412ed6193 → 本流推送落 324b332e6）——S913 双腿覆盖树
+   态 = 412ed6193 组合态，main tip 组合态已再度超出，
+   **S914 = 树变化刷新轮（门 + make test 双腿刷新，
+   S897→S898→S899→S905→S913 先例链）**，引用计数以
+   S914 双腿为新周期锚点 0/10（S913 记录内「下轮 S914
+   = 1/10 静默监测引用轮」预告被本插记取代）；S914 锚
+   点预期（本插记时点实测）——全树排除本流 docs 对
+   18d462de6 173 files +17000/-1176 → **174 files
+   +17178/-1176**（+178 行 = R4436 折入），crates/ raw 93
+   → **94**（+1 = R4436 代码腿入 crates/ 口径），自有面
+   对 S897 tip 7da6043d6 维持 10 files +1187/-182 不变
+   （R4436 不触 headless/CDP 面，实测复核）；R4436 系渲
+   染流域 writing-modes 腿代码提交本流不碰（run-rules
+   §9），M5 定稿收口判定（DC-1~4 依据）不因本插记动摇，
+   S914 刷新双腿全绿即守成态证据延续。
+
    **S913 已执行（2026-09-17）8/10 到期期限轮活跑（树不变
    口径双腿刷新，同 tip 复核 pull 零新提交 tip=412ed6193
    即 S912 提交本身（S912 门腿复跑后零代码变更 412ed6193
