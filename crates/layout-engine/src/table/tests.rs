@@ -1968,3 +1968,102 @@ fn test_merge_orphan_run_sets_content_width() {
         }
     }
 }
+
+/// R4436：vertical orphan caption 固有尺寸臂——caption-as-table retrofit（无父表的
+/// `display:table-caption` 直接跑 layout_table）在空 grid 下不再塌成边框壳：
+/// 块轴 extent（物理宽）= 列流 IFC 的 Σ 列宽、行内 extent = definite CSS height
+///（物理高）。line-box-direction-vrl-017/srl-057 15.72% 双红（caption 40×40/ch=0
+/// 文本全灭）驱动；ZW_VIV_SIZING 同族 kill-switch。
+#[test]
+fn test_r4436_vertical_orphan_caption_sized_to_column_flow() {
+    use zero_css_parser::values::LengthValue;
+
+    let mut doc = Document::new();
+    let root = doc.root();
+    let caption_id = doc.create_element("div");
+    let text_id = doc.create_text_node("AAAA BBBB CCCC");
+    let _ = doc.append_child(root, caption_id);
+    let _ = doc.append_child(caption_id, text_id);
+
+    let mut styles = HashMap::new();
+    let mut cs = ComputedStyle::default();
+    cs.display = DisplayValue::TableCaption;
+    cs.font_size = LengthValue::Px(20.0);
+    cs.height = LengthValue::Px(140.0);
+    styles.insert(caption_id, cs);
+
+    let mut caption_box = LayoutBox {
+        node_id: Some(caption_id),
+        writing_mode: WritingModeValue::VerticalRl,
+        width: 40.0,
+        height: 40.0,
+        border_left: 20.0,
+        border_right: 20.0,
+        border_top: 20.0,
+        border_bottom: 20.0,
+        ..Default::default()
+    };
+
+    layout_table(&mut caption_box, &doc, &styles, Default::default());
+
+    assert_eq!(
+        caption_box.content_height, 140.0,
+        "definite CSS height 应保留为行内 extent（旧路径被 shrink 清 0）"
+    );
+    assert!(
+        caption_box.content_width > 0.01,
+        "块轴 extent 应 = 列流 Σ 列宽（非边框壳 0），got {}",
+        caption_box.content_width
+    );
+    assert!(
+        (caption_box.width - (caption_box.content_width + 40.0)).abs() < 0.5,
+        "border-box 宽 = content_width + 40 边框，got {} vs content {}",
+        caption_box.width,
+        caption_box.content_width
+    );
+    assert!(
+        (caption_box.height - 180.0).abs() < 0.5,
+        "border-box 高 = 140 + 40 边框，got {}",
+        caption_box.height
+    );
+}
+
+/// R4436 gate 负例：horizontal-tb orphan caption 不触达新臂——维持既有空表收缩路径
+///（content 0；horizontal caption 的语料现状由真表路径承载，R4432 收窄教训同源）。
+#[test]
+fn test_r4436_horizontal_orphan_caption_keeps_legacy_shrink() {
+    use zero_css_parser::values::LengthValue;
+
+    let mut doc = Document::new();
+    let root = doc.root();
+    let caption_id = doc.create_element("div");
+    let text_id = doc.create_text_node("AAAA BBBB CCCC");
+    let _ = doc.append_child(root, caption_id);
+    let _ = doc.append_child(caption_id, text_id);
+
+    let mut styles = HashMap::new();
+    let mut cs = ComputedStyle::default();
+    cs.display = DisplayValue::TableCaption;
+    cs.font_size = LengthValue::Px(20.0);
+    cs.height = LengthValue::Px(140.0);
+    styles.insert(caption_id, cs);
+
+    let mut caption_box = LayoutBox {
+        node_id: Some(caption_id),
+        writing_mode: WritingModeValue::HorizontalTb,
+        width: 40.0,
+        height: 40.0,
+        border_left: 20.0,
+        border_right: 20.0,
+        border_top: 20.0,
+        border_bottom: 20.0,
+        ..Default::default()
+    };
+
+    layout_table(&mut caption_box, &doc, &styles, Default::default());
+
+    assert_eq!(
+        caption_box.content_width, 0.0,
+        "horizontal caption 走既有 shrink 路径（content 0 边框壳），不触达 R4436 臂"
+    );
+}

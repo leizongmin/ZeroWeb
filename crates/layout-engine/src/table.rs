@@ -330,6 +330,71 @@ pub(crate) fn layout_table_with_width_constraint(
     layout_table_inner(table_box, doc, styles, inline_fonts, width_constraint);
 }
 
+/// R4436：vertical orphan-caption 固有尺寸臂（空 grid 收缩路径前置）。
+///
+/// 竖排 `display:table-caption` 无父表时经 caption-as-table retrofit 进入
+/// [`layout_table_inner`]，`build_grid` 无 cell（caption 直接子是文本）→
+/// `shrink_empty_table_to_padding_border` 塌成边框壳（内容 0×0）。本臂按
+/// CSS Writing Modes §7.1 交换帧语义重定尺寸：
+/// - 行内 extent（物理高）= definite CSS `height`（Px）；auto 回落 border-box 减 frame。
+/// - 块轴 extent（物理宽）= 列流 IFC 的 Σ 列宽（`total_height()`，R4432 cell viv 臂
+///   同模型；空内容回落 strut 行高）。
+///
+/// 返回 true 表示已接管尺寸（调用方跳过空表收缩）。gate 收窄：仅 vertical WM +
+/// TableCaption + 无子盒（纯 inline 内容）+ ZW_VIV_SIZING 未关。
+fn size_vertical_orphan_caption(
+    table_box: &mut LayoutBox,
+    doc: &zero_dom::Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    inline_fonts: crate::inline_finalization::InlineFontContext<'_>,
+) -> bool {
+    if !table_box.writing_mode.is_vertical_block_flow()
+        || std::env::var("ZW_VIV_SIZING").as_deref() == Ok("0")
+        || !table_box.children.is_empty()
+    {
+        return false;
+    }
+    let Some(id) = table_box.node_id else {
+        return false;
+    };
+    let Some(cs) = styles.get(&id) else {
+        return false;
+    };
+    if !matches!(cs.display, DisplayValue::TableCaption) {
+        return false;
+    }
+    use zero_css_parser::values::LengthValue;
+    let frame_h = table_box.border_top + table_box.border_bottom + table_box.padding_top + table_box.padding_bottom;
+    let Some(depth) = (match &cs.height {
+        LengthValue::Px(v) if v.is_finite() && *v > 0.0 => Some(*v as f32),
+        _ => {
+            let fallback = table_box.height - frame_h;
+            (fallback > 0.5).then_some(fallback)
+        }
+    })
+    .filter(|d| *d > 0.5) else {
+        return false;
+    };
+    let frame_w = table_box.border_left + table_box.border_right + table_box.padding_left + table_box.padding_right;
+    let mut inline_ctx = crate::inline::InlineFormattingContext::new(depth)
+        .with_vertical(true)
+        .with_vertical_rtl(matches!(table_box.writing_mode, WritingModeValue::VerticalRl));
+    inline_ctx = crate::inline_finalization::configure_inline_fonts(inline_ctx, inline_fonts, false);
+    inline_ctx.layout(doc, id, styles);
+    // 物理宽（块轴）= Σ 列宽；空内容 caption 列宽取 strut 行高。
+    let block_extent = if inline_ctx.lines.is_empty() {
+        let (fs, lh) = crate::inline::resolve_font_metrics(Some(cs));
+        lh.max(fs)
+    } else {
+        inline_ctx.total_height()
+    };
+    table_box.content_width = block_extent;
+    table_box.width = block_extent + frame_w;
+    table_box.content_height = depth;
+    table_box.height = depth + frame_h;
+    true
+}
+
 fn layout_table_inner(
     table_box: &mut LayoutBox,
     doc: &zero_dom::Document,
@@ -348,6 +413,16 @@ fn layout_table_inner(
     let grid = build_grid(table_box, doc, styles);
 
     if grid.rows.is_empty() || grid.col_count == 0 {
+        // R4436：vertical orphan-caption 臂——caption-as-table retrofit（adjust_table_layout
+        // 的孤立 table-internal 分支对无父表的 caption 直接跑 layout_table）在空 grid 下
+        // 落入 shrink_empty_table_to_padding_border，塌成边框壳（w=40/ch=0，
+        // line-box-direction-vrl-017/srl-057 15.72% 双红实证）。竖排 caption 的块轴
+        // extent（物理宽）= 列流 IFC 的 Σ 列宽、行内 extent = definite CSS height
+        //（R4432 cell 固有宽 viv 臂同谱系，ZW_VIV_SIZING kill-switch 同族）。
+        // 仅纯 inline 内容（无子盒）触达；含 block 子的 caption 维持既有 shrink 路径。
+        if size_vertical_orphan_caption(table_box, doc, styles, inline_fonts) {
+            return;
+        }
         // 没有正规表格子元素（无 row/cell/row-group），但可能存在 block 级子元素。
         // CSS Tables §2.4：display:table 容器的 block 子元素应生成匿名 row+cell，
         // 使 table 收缩适应到 block 内容宽度（而非填满容器）。

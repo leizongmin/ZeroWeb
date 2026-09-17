@@ -469,3 +469,6 @@ css/css-writing-modes/abs-pos-non-replaced-vrl-226.xht css/css-writing-modes/abs
 css/css-writing-modes/line-box-direction-vlr-016.xht css/css-writing-modes/block-flow-direction-001-ref.xht == 2026-09-17 R4433: vertical IFC 列断点空格悬挂（Ahem 词尾空格不参与 fit 判定，CSS Text 3 §7.1 行尾空格移除）
 css/css-counter-styles/counter-style-at-rule/disclosure-styles.html css/css-counter-styles/counter-style-at-rule/disclosure-styles-ref.html == 2026-09-17 R4433: 同列断点空格悬挂臂收益
 css/css-writing-modes/block-flow-direction-vlr-023.xht css/css-writing-modes/block-flow-direction-001-ref.xht == 2026-09-17 R4433: vertical IFC 列断点空格悬挂（Ahem 词尾空格不参与 fit 判定，CSS Text 3 §7.1 行尾空格移除）
+css/css-writing-modes/line-box-direction-vrl-017.xht css/css-writing-modes/block-flow-direction-001-ref.xht == 2026-09-17 R4436 vertical orphan caption 固有尺寸臂（块轴 extent=Σ列宽、行内 extent=definite CSS height，CSS WM §7.1）
+css/css-writing-modes/line-box-direction-srl-057.xht css/css-writing-modes/block-flow-direction-001-ref.xht == 2026-09-17 R4436 同臂收益（sideways-rl 规范化为 vertical-rl 同路径）
+css/css-writing-modes/line-box-direction-vlr-018.xht css/css-writing-modes/block-flow-direction-001-ref.xht == 2026-09-17 R4436 同臂收益（vertical-lr caption）
