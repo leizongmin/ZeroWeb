@@ -18281,6 +18281,28 @@ frames.click+evaluate 回填（挂子帧能力解冻，见子帧解冻清单，�
    S773/S782/S865/S874/S875/S876/S884/S885/S886/S890/
    S897/S898 先例）；
 
+   **S898 轮后插记（2026-09-17 推送序列 pull --rebase 实
+   测）**：兄弟流 R4433（fix writing-modes，crates/
+   layout-engine vertical IFC 列断点空格悬挂 +25/-2 折入
+   docs/goal/rendering-compat.md + tests/wpt-runner/
+   imported-tests.txt，40564ac68）于 S898 双腿收口**之后**
+   经 push 前 pull --rebase 入树（S898 提交被 rebase 顶到
+   其上，远端 tip 40564ac68 → 本流推送落 a978d13eb）——
+   S898 双腿覆盖树态=R4432 组合态，main tip 组合态已再度
+   超出，**S899 = 树变化刷新轮（门 + make test 双腿刷新，
+   S890→S897→S898 先例链连刷）**，引用计数以 S899 双腿为
+   新周期锚点 0/10（S898 记录内「下轮 S899=1/10 静默监测
+   引用轮」预告被本插记取代）；S899 锚点预期（本插记时点
+   实测）——全树排除本流 docs 对 18d462de6 172 files
+   +16953/-1146 → 面 172 维持（R4433 三文件均已入累计
+   diff 集，+25/-2 行数折入，非面值加总以 S899 逐项实测
+   为准），crates/ raw 91 → **92**（+1 = R4433 代码腿入
+   crates/ 口径），自有面对 S897 tip 7da6043d6 维持
+   10 files +1187/-182 不变（R4433 不触 headless/CDP 面，
+   实测复核）；R4433 系渲染流域 writing-modes 腿代码提交
+   本流不碰（run-rules §9），M5 定稿收口判定（DC-1~4 依
+   据）不因本插记动摇，S899 刷新门 PASS 即守成态证据延续。
+
 
    若活跑时逢并行流负载窗口则
    优先窗口内执行，负载下样本对 #0 更有价值（负载窗口口径含并行流 browser 进程型与
