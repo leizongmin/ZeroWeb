@@ -2,29 +2,37 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-17（S913：**8/10 到期期限轮活跑 — 树不变口径双腿刷新
-（pull 零新提交，tip = 412ed6193 即 S912 提交本身；S912 门腿复跑后零代码变
-更（412ed6193..HEAD 零提交、tracked 树 clean 实测复核），同 tip 双腿活跑口
-径 = 门 + make test，S773/S782/S865/S874/S875/S876/S884/S885/S886/S890/
-S897/S898/S899/S905 先例，绿步维持 33）**。门腿 **PASS 33 绿首调即收口**
-（12:14:46 启动 12:15:16 落盘 wall ~30s，编译全缓存 replay 相位零 Compiling
-行；expected_green 33 对称差 none、deterministic 双跑 YES、ZW_IPC_VALIDATE
-在位静默 capture jsonl 面零写入 #0 复现监测零命中）+ **make test 腿一调收口
-19,335P/0F EXIT 口径全绿（67 组 result 全 ok，12:15:26-12:25:20 wall ~10
-min）** = R4434 组合态全量复验，计数与 S899/S905 基线精确一致（交错容忍口
-径），零 error 行、wgpu adapter 分支腿在跑、quickjs clippy 腿
-（-D warnings）零输出通过。**引用计数以 S913 双腿为新周期锚点 0/10**；下轮
-S914 = 1/10 静默监测引用轮（周期锚点 = S913 双腿：门腿 12:15:16 落盘 +
-make test 腿 12:25:20 收口），至迟 S921=8/10 到期即次轮期限轮活跑，树代码
+**最后更新**: 2026-09-17（S914：**树变化刷新轮（S913 轮后插记预告兑现 — 兄
+弟流 R4436 fix writing-modes vertical orphan caption 固有尺寸臂
+crates/layout-engine/src/table.rs +75 + table/tests.rs +99 = +178 行
+96362db70 入树触发，S897→S898→S899→S905→S913 先例链）— 同 tip 复核（pull
+零新提交，tip = 9419f8dd8 即 S913 轮后插记提交本身；S913 双腿复跑后零代码
+变更），双腿刷新口径 = 门 + make test，绿步维持 33）**。门腿 **PASS 33 绿**
+（R4436 组合态首次门覆盖：首调 12:54:19 启动，编译相位 layout-engine→
+engine→page-runtime→browser 链在位，工具墙钟 5 min 截断于 verify 相位
+（编译已完成、无红无报告落盘、端口族零残留——基建性截断非门红，如实记
+档）；复跑 13:00:00 启动 13:00:33 落盘 wall ~33s 编译全缓存零 Compiling，
+expected_green 33 对称差 none、deterministic 双跑 YES、ZW_IPC_VALIDATE 在位
+静默 capture jsonl 面零写入 #0 复现监测零命中）+ **make test 腿一调收口
+19,337P/0F 全绿（67 组 result 全 ok，13:00:55-13:11:16 wall ~10 min）** =
+R4436 组合态首次全量覆盖，计数较 19,335 基线 **+2 精确归因** = R4436
+table/tests.rs 两枚新单测
+（test_r4436_vertical_orphan_caption_sized_to_column_flow /
+test_r4436_horizontal_orphan_caption_keeps_legacy_shrink），零 error 行、
+wgpu adapter 分支腿在跑。**引用计数以 S914 双腿为新周期锚点 0/10**；下轮
+S915 = 1/10 静默监测引用轮（周期锚点 = S914 双腿：门腿 13:00:33 落盘 +
+make test 腿 13:11:16 收口），至迟 S922=8/10 到期即次轮期限轮活跑，树代码
 变化提前触发双腿刷新。锚点面四点实测维持：自有面对 S897 tip 7da6043d6
-**10 files +1187/-182**；全树排除本流 docs 对 18d462de6 **173 files
-+17000/-1176**；crates/ raw **93**；子帧关键词 **7 文件全测试路径**非测试代
-码零命中维持（frames.click+evaluate 挂起维持，解冻条件①观察面 93 口径）。
-本轮负载下窗口活跑（兄弟流 ZeroWeb-2 zero_integration_tests 腿 150% CPU
-test-guard 包裹窗内全程在跑，非 9222 族竞争；门腿与 make test 腿均负载下
-执行）。M5 定稿收口判定（DC-1~4 依据）不因复验动摇——**goal Done 维持，
-守成态证据经 S913 双腿刷新延续**；唯一未清偿义务 = frames.click+evaluate
-回填（挂子帧能力解冻，见子帧解冻清单，不阻收口））
+**10 files +1187/-182**（R4436 不触 headless/CDP 面）；全树排除本流 docs
+对 18d462de6 **174 files +17178/-1176**（S913 插记预期值精确兑现 = R4436
+折入）；crates/ raw **94**（+1 = R4436 代码腿入 crates/）；子帧关键词
+**7 文件全测试路径**非测试代码零命中维持（frames.click+evaluate 挂起维持，
+解冻条件①观察面 94 口径）。本轮净窗亚型活跑（起手负载 2.96 衰减 CPU
+98.2% idle，兄弟流编译腿窗内在跑 非 9222 族竞争）。R4436 系渲染流域
+writing-modes 腿代码提交本流不碰（run-rules §9）。M5 定稿收口判定（DC-1~4
+依据）不因刷新动摇——**goal Done 维持，守成态证据经 S914 双腿刷新延续**；
+唯一未清偿义务 = frames.click+evaluate 回填（挂子帧能力解冻，见子帧解冻清
+单，不阻收口））
 
 ---
 
@@ -18478,6 +18486,47 @@ test-guard 包裹窗内全程在跑，非 9222 族竞争；门腿与 make test �
    染流域 writing-modes 腿代码提交本流不碰（run-rules
    §9），M5 定稿收口判定（DC-1~4 依据）不因本插记动摇，
    S914 刷新双腿全绿即守成态证据延续。
+
+   **S914 已执行（2026-09-17）树变化刷新轮（S913 轮后插
+   记预告兑现 兄弟流 R4436 fix writing-modes vertical
+   orphan caption 固有尺寸臂 crates/layout-engine/src/
+   table.rs +75 + table/tests.rs +99 = +178 行 96362db70
+   入树触发 S897→S898→S899→S905→S913 先例链，同 tip 复
+   核 pull 零新提交 tip=9419f8dd8 即 S913 轮后插记提交本
+   身（S913 双腿复跑后零代码变更），双腿刷新口径=门 +
+   make test）——门 PASS 33 绿 R4436 组合态首次门覆盖
+   （首调 12:54:19 启动 编译相位 layout-engine→engine→
+   page-runtime→browser 链在位 工具墙钟 5 min 截断于
+   verify 相位 编译已完成 无红无报告落盘 端口族零残留
+   基建性截断非门红 如实记档；复跑 13:00:00 启动
+   13:00:33 落盘 wall ~33s 编译全缓存零 Compiling）
+   expected_green 33 对称差 none deterministic 双跑 YES
+   ZW_IPC_VALIDATE 在位静默 capture jsonl 面零写入 #0 复
+   现监测零命中 + make test 一调收口 19,337P/0F 全绿
+   （67 组 result 全 ok，13:00:55 启动 13:11:16 收口
+   wall ~10 min）R4436 组合态首次全量覆盖 计数较 19,335
+   基线 +2 精确归因=R4436 table/tests.rs 两枚新单测
+   （test_r4436_vertical_orphan_caption_sized_to_column_
+   flow / test_r4436_horizontal_orphan_caption_keeps_
+   legacy_shrink）零 error 行 wgpu adapter 分支腿在跑；
+   锚点面四点实测维持（自有面对 S897 tip 7da6043d6 10
+   files +1187/-182 R4436 不触 headless/CDP 面 / 全树
+   174 files +17178/-1176 S913 插记预期值精确兑现 /
+   crates/ raw 94 / 子帧关键词 7 文件全测试路径非测试代
+   码零命中 解冻条件①观察面 94 口径 frames.click+evaluate
+   挂起维持）；引用计数以 S914 双腿为新周期锚点 0/10（门
+   腿 13:00:33 落盘 + make test 腿 13:11:16 收口）；
+   zombie 双复测均零 端口族全 free 本双腿零残留 tracked
+   树 clean 控制面零外来提交；R4436 系渲染流域
+   writing-modes 腿代码提交本流不碰（run-rules §9）；
+   本轮净窗亚型活跑（起手负载 2.96 衰减 CPU 98.2% idle
+   兄弟流编译腿窗内在跑 非 9222 族竞争））**——下轮
+   **S915 = 1/10 静默监测引用轮**（周期锚点=S914 双腿），
+   若 S915 前树代码变化则提前触发双腿刷新（S245→S897→
+   S898→S899→S905→S913→S914 先例链），否则按引用轮口径
+   门单腿复跑免 make test 腿（S336 先例），至迟
+   S922=8/10 到期即次轮期限轮活跑（双腿活跑口径=门 +
+   make test，同本轮先例链）；
 
    **S913 已执行（2026-09-17）8/10 到期期限轮活跑（树不变
    口径双腿刷新，同 tip 复核 pull 零新提交 tip=412ed6193
