@@ -2,26 +2,29 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-17（S912：**静默监测引用轮 — 同 tip 复核（pull 零新提交，
-tip = 6d98f4d96 即 S911 提交本身；S911 门腿复跑后零代码变更（6d98f4d96..HEAD
-零提交、tracked 树 clean 实测复核），树不变口径 = 门单腿引用 S905 双腿活跑 +
-S906-S912 门腿复跑（免 make test 腿，S336 先例），绿步维持 33）**。门腿
-**PASS 33 绿首调即收口**（12:12:03 启动 12:12:34 落盘 wall ~31s，编译全缓存
-replay 相位零 Compiling 行=R4434 组合态复验；expected_green 33 对称差 none、
-deterministic 双跑 YES、ZW_IPC_VALIDATE 在位静默 capture jsonl 面零写入 #0 复
-现监测零命中；build replay 相位 dead_code warning 维持 S908-S911 同形一枚
-（match_media_to_json，crates/engine/src/js_dom_bridge.rs——零重编 cache
-replay 既有形态，兄弟流域 face 本流不碰，run-rules §9，维持记档））。
-**引用计数 6/10→7/10**（S905 双腿新周期锚点；下轮 **S913 = 8/10 期限轮活跑
-（双腿口径 = 门 + make test）**，树代码变化提前触发双腿刷新）。
-锚点面四点实测维持：自有面对 S897 tip 7da6043d6 **10 files +1187/-182**；全树
-排除本流 docs 对 18d462de6 **173 files +17000/-1176**；crates/ raw **93**；子
-帧关键词 **7 文件全测试路径**非测试代码零命中维持（frames.click+evaluate 挂起
-维持，解冻条件①观察面 93 口径）。本轮净窗执行（起手负载 3.00 衰减 CPU
-97.6% idle，兄弟流零编译测试腿在跑，非 9222 族竞争）。M5 定稿收口判定
-（DC-1~4 依据）不因复验动摇——**goal Done 维持，守成态证据经 S912 门腿复验
-延续**；唯一未清偿义务 = frames.click+evaluate 回填（挂子帧能力解冻，见子帧
-解冻清单，不阻收口））
+**最后更新**: 2026-09-17（S913：**8/10 到期期限轮活跑 — 树不变口径双腿刷新
+（pull 零新提交，tip = 412ed6193 即 S912 提交本身；S912 门腿复跑后零代码变
+更（412ed6193..HEAD 零提交、tracked 树 clean 实测复核），同 tip 双腿活跑口
+径 = 门 + make test，S773/S782/S865/S874/S875/S876/S884/S885/S886/S890/
+S897/S898/S899/S905 先例，绿步维持 33）**。门腿 **PASS 33 绿首调即收口**
+（12:14:46 启动 12:15:16 落盘 wall ~30s，编译全缓存 replay 相位零 Compiling
+行；expected_green 33 对称差 none、deterministic 双跑 YES、ZW_IPC_VALIDATE
+在位静默 capture jsonl 面零写入 #0 复现监测零命中）+ **make test 腿一调收口
+19,335P/0F EXIT 口径全绿（67 组 result 全 ok，12:15:26-12:25:20 wall ~10
+min）** = R4434 组合态全量复验，计数与 S899/S905 基线精确一致（交错容忍口
+径），零 error 行、wgpu adapter 分支腿在跑、quickjs clippy 腿
+（-D warnings）零输出通过。**引用计数以 S913 双腿为新周期锚点 0/10**；下轮
+S914 = 1/10 静默监测引用轮（周期锚点 = S913 双腿：门腿 12:15:16 落盘 +
+make test 腿 12:25:20 收口），至迟 S921=8/10 到期即次轮期限轮活跑，树代码
+变化提前触发双腿刷新。锚点面四点实测维持：自有面对 S897 tip 7da6043d6
+**10 files +1187/-182**；全树排除本流 docs 对 18d462de6 **173 files
++17000/-1176**；crates/ raw **93**；子帧关键词 **7 文件全测试路径**非测试代
+码零命中维持（frames.click+evaluate 挂起维持，解冻条件①观察面 93 口径）。
+本轮负载下窗口活跑（兄弟流 ZeroWeb-2 zero_integration_tests 腿 150% CPU
+test-guard 包裹窗内全程在跑，非 9222 族竞争；门腿与 make test 腿均负载下
+执行）。M5 定稿收口判定（DC-1~4 依据）不因复验动摇——**goal Done 维持，
+守成态证据经 S913 双腿刷新延续**；唯一未清偿义务 = frames.click+evaluate
+回填（挂子帧能力解冻，见子帧解冻清单，不阻收口））
 
 ---
 
@@ -18451,6 +18454,41 @@ replay 既有形态，兄弟流域 face 本流不碰，run-rules §9，维持记
    （+2 行 = R4435 两 docs 文件折入，S909 锚点预期值），
    自有面 10 files +1187/-182 与 crates/ raw 93 实测复
    核维持不变，M5 定稿收口判定不因本插记动摇。
+
+   **S913 已执行（2026-09-17）8/10 到期期限轮活跑（树不变
+   口径双腿刷新，同 tip 复核 pull 零新提交 tip=412ed6193
+   即 S912 提交本身（S912 门腿复跑后零代码变更 412ed6193
+   ..HEAD 零提交 tracked 树 clean 实测复核），双腿口径=门
+   + make test，S773/S782/S865/S874/S875/S876/S884/S885/
+   S886/S890/S897/S898/S899/S905 先例）——门 PASS 33 绿
+   负载下窗口活跑首调即收口（sibling ZeroWeb-2
+   zero_integration_tests 腿 150% CPU test-guard 包裹窗内
+   在跑 第七十个负载下样本 非 9222 族竞争）12:14:46 启动
+   12:15:16 落盘 wall ~30s 编译全缓存 replay 相位零
+   Compiling 行 expected_green 33 对称差 none deterministic
+   双跑 YES ZW_IPC_VALIDATE 在位静默 capture jsonl 面零写
+   入 #0 复现监测零命中 build replay 相位 dead_code
+   warning 维持 S908-S912 同形一枚（match_media_to_json
+   crates/engine/src/js_dom_bridge.rs cache replay 既有形
+   态 兄弟流域 face 本流不碰 run-rules §9 维持记档）+
+   make test 一调收口 19,335P/0F 全绿（67 组 result 全
+   ok，12:15:26 启动 12:25:20 收口 wall ~10 min）R4434 组
+   合态全量复验计数与 S899/S905 基线精确一致（交错容忍口
+   径）零 error 行 wgpu adapter 分支两腿在跑 quickjs
+   clippy 腿（-D warnings）零输出通过；锚点面四点实测维
+   持（自有面 10 files +1187/-182 / 全树 173 files
+   +17000/-1176 / crates/ raw 93 / 子帧关键词 7 文件全测
+   试路径非测试代码零命中 解冻条件①观察面 93 口径
+   frames.click+evaluate 挂起维持）；引用计数以 S913 双腿
+   为新周期锚点 0/10（门腿 12:15:16 落盘 + make test 腿
+   12:25:20 收口）；zombie 双复测均零 端口族全 free 本双
+   腿零残留 tracked 树 clean 控制面零外来提交）**——下轮
+   **S914 = 1/10 静默监测引用轮**（周期锚点=S913 双腿），
+   若 S914 前树代码变化则提前触发双腿刷新（S245→S897→
+   S898→S899→S905→S913 先例链），否则按引用轮口径门单腿
+   复跑免 make test 腿（S336 先例），至迟 S921=8/10 到期
+   即次轮期限轮活跑（双腿活跑口径=门 + make test，同本
+   轮先例链）；
 
    **S912 已执行（2026-09-17）静默监测引用轮（引用计数
    6/10→7/10，同 tip 复核 pull 零新提交 tip=6d98f4d96 即
