@@ -2,27 +2,31 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-17（S938：**静默监测引用轮 — 同 tip 复核（pull 零新提交，
-tip = d916b487f 即 S937 提交本身；S937 门腿复跑后零代码变更
-（d916b487f..HEAD 零提交、tracked 树 clean 实测复核），树不变口径 = 门单腿
-引用 S934 双腿活跑（免 make test 腿，S336 先例），绿步维持 33）**。门腿
-**PASS 33 绿首调即收口**（15:29:12 启动 15:29:41 落盘 wall ~29s，编译全缓存
-replay 相位零 Compiling 行=R4439 组合态复验；expected_green 33 对称差 none、
-deterministic 双跑 YES、ZW_IPC_VALIDATE 在位静默 capture jsonl 面零写入 #0 复
-现监测零命中；build replay 相位 dead_code warning 维持 S908-S937 同形一枚
-（match_media_to_json，crates/engine/src/js_dom_bridge.rs——零重编 cache
-replay 既有形态，兄弟流域 face 本流不碰，run-rules §9，维持记档））。
-**引用计数 3/10→4/10**（S934 双腿新周期锚点：门腿 14:52:11 落盘 + make test
-腿 15:13:24 收口；下轮 S939 = 5/10，树代码变化提前触发双腿刷新；至迟
-S945=10/10 饱和次轮到期即期限轮活跑）。
-锚点面四点实测维持：自有面对 S897 tip 7da6043d6 **10 files +1187/-182**；
-全树排除本流 docs 对 18d462de6 **175 files +17543/-1180**；crates/ raw
-**96**；子帧关键词 **7 文件全测试路径**非测试代码零命中维持（frames.click
-+evaluate 挂起维持，解冻条件①观察面 96 口径）。本轮深净窗执行（起手负载
-0.46 CPU 96.9% idle，兄弟流零编译测试腿）。
-M5 定稿收口判定（DC-1~4 依据）不因复验动摇——**goal Done 维持，守成态证据
-经 S938 门腿复验延续**；唯一未清偿义务 = frames.click+evaluate 回填（挂子帧
-能力解冻，见子帧解冻清单，不阻收口））
+**最后更新**: 2026-09-17（S939：**树变化刷新轮 — R4440 入树触发（S938 插记
+预告兑现），pull 零新提交（tip = 1f0861518 即 S938 插记提交本身），双腿
+刷新口径 = 门 + make test（S897→S898→S899→S905→S913→S914→S922→S933→S934
+先例链兑现），绿步维持 33**。门腿 **PASS 33 绿首调即收口**（15:39:38 启动
+15:40:18 落盘 wall ~40s，负载下样本活跑——兄弟 clone ZeroWeb-2
+zero_integration_tests 腿 160% CPU 经 test-guard 包裹并窗，双 clone 隔离零
+污染本树非 9222 族竞争；R4440 触发 layout-engine/engine/page-runtime/
+browser 四 crate 重编译 9.81s=树变化刷新轮预期形态；expected_green 33 对
+称差 none、deterministic 双跑 YES、ZW_IPC_VALIDATE 在位静默 capture jsonl
+面零写入 #0 复现监测零命中——负载窗下捕获网零侵扰验证兑现；build 相位
+dead_code warning 维持同形一枚 match_media_to_json，R4440 组合态维持记档）。
+make test 腿 **一调收口 19,341P/0F 全绿**（15:41:07 启动 15:53:51 收口
+wall ~12.7min，67 组 result 全 ok 零 FAILED/error 行，计数与 S922 基线精
+确持平=R4440 零新增单测面插记预期兑现，编译全缓存零重编）。
+**引用计数以 S939 双腿为新周期锚点 0/10**（门腿 15:40:18 落盘 + make test
+腿 15:53:51 收口；下轮 S940 = 1/10 静默监测引用轮，树代码变化提前触发双
+腿刷新）。
+锚点面四点实测兑现插记预期：自有面对 S897 tip 7da6043d6 **10 files
++1187/-182**（R4440 不触 headless/CDP 面）；全树排除本流 docs 对
+18d462de6 **175 files +17610/-1182**（R4440 七文件折入）；crates/ raw
+**97**（+1）；子帧关键词 **7 文件全测试路径**非测试代码零命中维持
+（frames.click+evaluate 挂起维持，解冻条件①观察面 97 口径）。
+M5 定稿收口判定（DC-1~4 依据）不因刷新动摇——**goal Done 维持，守成态
+证据经 S939 双腿刷新延续**；唯一未清偿义务 = frames.click+evaluate 回填
+（挂子帧能力解冻，见子帧解冻清单，不阻收口））
 
 ---
 
@@ -18509,6 +18513,40 @@ M5 定稿收口判定（DC-1~4 依据）不因复验动摇——**goal Done 维�
    （S336 先例），至迟 S943=10/10 饱和次轮到期即期限轮活
    跑（双腿活跑口径=门 + make test，S932/S933 先例：/10
    周期饱和即次轮期限轮，新周期期限条款依原设计恢复）；
+
+   **S939 已执行（2026-09-17）树变化刷新轮（R4440 入树
+   触发 S938 插记预告兑现，pull 零新提交 tip=1f0861518
+   即 S938 插记提交本身，双腿刷新口径=门 + make test
+   先例链兑现，绿步维持 33）——门 PASS 33 绿首调即收口
+   （15:39:38 启动 15:40:18 落盘 wall ~40s）负载下样本
+   活跑（起手负载 4.20 CPU 兄弟 clone ZeroWeb-2
+   zero_integration_tests 腿 160% CPU 经 test-guard 包裹
+   cwd 实测=ZeroWeb-2 双 clone 隔离零污染本树 非 9222 族
+   竞争 S218/S228 先例口径负载下样本在列）R4440 触发
+   layout-engine/engine/page-runtime/browser 四 crate 重
+   编译 9.81s=树变化刷新轮预期形态 expected_green 33 对
+   称差 none deterministic 双跑 YES（run_details 双 run
+   实质逐项一致）ZW_IPC_VALIDATE 在位静默 capture jsonl
+   面零写入 #0 复现监测零命中（负载窗下捕获网零侵扰验
+   证兑现）steps-report 新鲜落盘 build 相位 dead_code
+   warning 维持同形一枚（match_media_to_json
+   crates/engine/src/js_dom_bridge.rs R4440 组合态维持
+   记档）+ make test 一调收口 19,341P/0F 全绿（15:41:07
+   启动 15:53:51 收口 wall ~12.7min 67 组 result 全 ok
+   零 FAILED/error 行 计数与 S922 基线精确持平=插记预
+   期兑现 编译全缓存零重编）；锚点面四点实测兑现插记预
+   期（自有面 10 files +1187/-182 / 全树 175 files
+   +17610/-1182 / crates/ raw 97 / 子帧关键词 7 文件全
+   测试路径非测试代码零命中 解冻条件①观察面 97 口径
+   frames.click+evaluate 挂起维持）；zombie 双复测均零
+   端口族全 free 本双腿零残留 tracked 树 clean 控制面
+   零外来提交）**——下轮 **S940 = 1/10 静默监测引用
+   轮**（周期锚点=S939 双腿：门腿 15:40:18 落盘 + make
+   test 腿 15:53:51 收口），若 S940 前树代码变化则提前
+   触发双腿刷新（先例链），否则按引用轮口径门单腿复跑
+   免 make test 腿（S336 先例），至迟 S950=10/10 饱和次
+   轮到期即期限轮活跑（双腿活跑口径=门 + make test，
+   S939 本轮即新周期锚点 /10 周期饱和即次轮期限轮）；
 
    **S938 已执行（2026-09-17）静默监测引用轮（引用计数
    3/10→4/10，同 tip 复核 pull 零新提交 tip=d916b487f 即
