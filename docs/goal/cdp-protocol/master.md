@@ -22,8 +22,11 @@ ok，20:34:05 启动 20:44 收口 wall ~10min，零 FAILED/error 行，编译
 记档**——同 clone 并行会话 cargo 腿并窗所致，锁等待全部自行解除零
 死锁，双绿收口零影响）。
 **引用计数以 S980 双腿为新周期锚点 0/10**（门腿 20:33:44 落盘 +
-make test 腿 20:44 收口；下轮 S981 = 1/10，树代码变化提前触发双腿
-刷新，至迟 S990=10/10 饱和次轮到期即期限轮活跑）。
+make test 腿 20:44 收口；**S980 轮后插记取代引用轮预告——兄弟流
+R4448（c867ec95f，style-system 逻辑属性后置解析架构）于 S980 收口
+提交后 push 序列入树（crates/style-system 代码腿 3 文件），S981 =
+树变化刷新轮（双腿=门+make test，S342/S456/S622/S896/S978/S979
+插记先例链），引用计数以 S981 双腿为新周期锚点 0/10**）。
 锚点面四点实测 = S979 插记预期精确一致：全树排除本流 docs 对
 18d462de6 **177 files +17919/-1202**；自有面对 S897 tip 7da6043d6
 **10 files +1187/-182**；crates/ raw **104**（103 + R4447 入 crates/
@@ -18523,6 +18526,34 @@ M5 定稿收口判定（DC-1~4 依据）不因刷新动摇——**goal Done 维�
    （S336 先例），至迟 S943=10/10 饱和次轮到期即期限轮活
    跑（双腿活跑口径=门 + make test，S932/S933 先例：/10
    周期饱和即次轮期限轮，新周期期限条款依原设计恢复）；
+
+   **S980 轮后插记（2026-09-17 push 序列 pull --rebase 实测）**：
+   兄弟流 R4448（c867ec95f，feat(style-system) 逻辑属性后置解析架构 +
+   slr 行内轴映射，crates/style-system/src/inheritance.rs +54 +
+   crates/style-system/src/lib.rs +12/-x + crates/style-system/src/
+   property/apply_advanced.rs + docs/goal/rendering-compat.md +1，
+   4 files +81/-15）于 S980 收口提交（661e4e533，docs-only）之后经
+   push 前 pull 入树（本流 S980 收口提交 rebase 于其上，push 后
+   main tip = adb31e396）——S980 双腿覆盖树态 = 28adbcb3a（R4448
+   入树前），main tip 组合态超出 S980 双腿覆盖树态，**S981 = 树变
+   化刷新轮（门 + make test 双腿刷新，S342/S456/S622/S896/S978/S979
+   先例链），S980 条目内「下轮 S981 = 1/10 静默监测引用轮」预告被
+   本插记取代**，引用计数以 S981 双腿为新周期锚点 0/10；S981 锚点
+   预期（本插记时点实测）——全树排除本流 docs 对 18d462de6
+   177 files +17919/-1202 → **178 files +17995/-1202**（+1 file 净
+   增 = inheritance.rs 为 diff 新文件，lib.rs/apply_advanced.rs/
+   rendering-compat.md 已在 diff 内；行数非面值加总以 S981 逐项实
+   测为准），crates/ raw 104 → **107** 递增（+3 = R4448 代码腿入
+   crates/ 3 文件口径），自有面对 S897 tip 7da6043d6 维持
+   **10 files +1187/-182** 不变（实测复核），子帧关键词维持
+   **7 文件**（R4448 行零关键词命中实测复核）非测试代码零命中维持
+   （解冻条件①观察面 107 口径 frames.click+evaluate 挂起维持）；
+   R4448 系渲染流域 style-system 代码提交，本流不碰（run-rules §9
+   工作面不重叠维持）；兄弟提交自述 slr 行内轴映射 cascade 别名消
+   解缺口 A/B 定性（其树实测）——按归因纪律（run-rules §10）本流
+   双腿刷新以实测为准；R4448 不触 headless/CDP 面，M5 定稿收口判定
+   （DC-1~4 依据）不因本插记动摇，S981 刷新门 PASS 即守成态证据
+   延续。
 
    **S980 已执行（2026-09-17）树变化刷新轮（S979 轮后插记预告兑现——
    兄弟流 R4447（313966e72）于 S979 收口提交后 push 序列入树，同 tip
