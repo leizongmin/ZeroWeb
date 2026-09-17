@@ -401,6 +401,11 @@ pub(crate) fn shrink_vertical_blocks_to_content(
             // margin-box 右缘，相对本 border-box）是确定性 content 尺寸， 小于 taffy 值
             // 收缩、大于则须 grow 回（line-box-slr-060 ul：li x_local=40 + w=380 =
             // 420 > taffy 400，被 min 挡住残 6.87% 实证）。min/max-width 钳制保留。
+            // R4473 挂账：R4473 extract 帧归一后子坐标 = content-box 相对（旧 =
+            // border-box 相对），border-box 宽严格 = content_extent + frame——但本式
+            // 经 R4450-R4463 按 border-box 口径校准（slr-054/srl-052 float 列族 +frame
+            // 即 9.68/8.25 翻红实证，vrl-019/srl-059 +frame 仅 6.92→5.83 部分收敛），
+            // 口径并存需逐案再 deriv，专项 slice 处理。
             let new_width = content_extent.max(min_w).min(max_w);
             // R4195：table 有专属 vertical 路径（table_vertical.rs step 8 自管
             // table_block_extent + caption 逻辑 block 轴定位）——本收缩臂的宽度改写会被
