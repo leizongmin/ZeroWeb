@@ -2,34 +2,26 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-17（S898：**树变化刷新轮——双流代码腿入树触发（devtools
-下游 M0-M3 九代码提交 e6364b8f0→c782afbe6 + 渲染流 R4398-R4432 窗口；S245→
-S829→S835→S843→S848→S856→S865→S890→S897 先例链）**。门腿 **PASS 33 绿首调即
-收口**（10:34:44 启动 10:35:33 落盘，重编相位 layout-engine→engine→page-
-runtime→browser 链=R4432 组合态首次门覆盖；expected_green 33 对称差 none、
-regressions 空、deterministic 双跑 YES、ZW_IPC_VALIDATE 在位静默 capture jsonl
-面零写入 #0 复现监测零命中）+ make test **一调收口 19,335P/0F EXIT=0**（67 组
-result 全 ok，10:36:05-10:57 窗尾 ~8min 与兄弟 reftest 腿并窗；计数 19,317→
-19,335 +18 归因：devtools 切片自带单测 +16（其记账链 19,328→19,331→19,332→
-19,333）+ 渲染流 R4421-R4432 窗口 engine 测试面 +2（486490adc 19,333 基线后
-唯一测试面触达 = r3770_pre_text_with_oof_child_tests.rs +3/-1））；dead_code
-warning（match_media_to_json js_dom_bridge.rs:3420）bins-only 条件 dead 既有形
-态维持。引用计数以 **S898 双腿为新周期锚点 0/10**。锚点面刷新（**devtools 下游
-时代**）：devtools goal 已于 2026-09-17 收口 Done（1c605b9f0 登记；守成门 =
-make cdp-e2e + make test 与本流同门）——其九代码提交在 goal S896 收口（2026-09-16
-上午）之后入树，依赖约束「改 CDP 域须本 goal 已收口」满足合规，run-rules §9 共
-享面碰头以「下游消费 + 本流守成零改」形态兑现；自有面对 765429dda 旧锚点
-（4 files +137/-17）**退役**（face 转入 devtools 共管），新观察面对 S897 tip
-7da6043d6 = **10 files +1187/-182**（headless/devtools_serve.rs 新建 212 +
-domains/css.rs 163 + domains/dom.rs 137 + domains/mod.rs 126 + mod.rs 466 行
-域改 + session.rs 46 + tests.rs 101 + discovery.rs 57 + domains/storage.rs 50 +
-domains/target.rs 11）；全树排除本流 docs 对 18d462de6 **94 files +9914/-628 →
-172 files +16953/-1146**（+78 files = devtools 九代码腿 + 渲染流 R4398-R4432
-窗口折入累计 diff）；crates/ raw **61 → 91**（+30 = 窗口 crates/ 触达提交数）；
-子帧关键词 **7 文件全测试路径**维持（非测试代码零命中，frames.click+evaluate 挂
-起维持，解冻条件①观察面 91 口径）。M5 定稿收口判定（DC-1~4 依据）不因刷新动
-摇——**goal Done 维持，守成态证据经 S898 双腿刷新延续**；唯一未清偿义务 =
-frames.click+evaluate 回填（挂子帧能力解冻，见子帧解冻清单，不阻收口））
+**最后更新**: 2026-09-17（S899：**树变化刷新轮——S898 轮后插记预告兑现，兄弟流
+R4433（fix writing-modes，crates/layout-engine/inline/break_lines.rs +25/-2 三
+文件 40564ac68）于 S898 双腿收口后经 push 前 pull 入树触发双连刷新轮（S890→
+S897→S898→S899 先例链）**。pull 零新提交 tip=4be277369 即 S898 轮后插记提交本
+身（R4433 IN_TREE 实测核验）。门腿 **PASS 33 绿首调即收口**（~10:57:44 启动
+10:58:50 落盘，重编相位 layout-engine→engine→page-runtime→browser 链=R4433 组
+合态首次门覆盖；expected_green 33 对称差 none、regressions 空、deterministic 双
+跑 YES、ZW_IPC_VALIDATE 在位静默 capture jsonl 面零写入 #0 复现监测零命中）+
+make test **一调收口 19,335P/0F EXIT=0**（67 组 result 全 ok，10:59:02-11:09，
+R4433 组合态首次全量覆盖，计数与 S898 持平 = R4433 零新增单测）。引用计数以
+**S899 双腿为新周期锚点 0/10**。**S898 轮后插记锚点预期三点全数精确兑现**：
+全树排除本流 docs 对 18d462de6 面 **172 维持**（+16953/-1146 → +16978/-1148，
++25/-2 行数折入）；crates/ raw **91→92**（+1 = R4433 代码腿入 crates/）；自有
+面对 S897 tip 7da6043d6 维持 **10 files +1187/-182**（R4433 不触 headless/CDP
+面实测复核）。子帧关键词 **7 文件全测试路径**维持（非测试代码零命中，
+frames.click+evaluate 挂起维持，解冻条件①观察面 92 口径）。R4433 系渲染流域
+writing-modes 腿代码提交本流不碰（run-rules §9），M5 定稿收口判定（DC-1~4 依
+据）不因刷新动摇——**goal Done 维持，守成态证据经 S899 双腿刷新延续**；唯一
+未清偿义务 = frames.click+evaluate 回填（挂子帧能力解冻，见子帧解冻清单，不
+阻收口））
 
 ---
 
@@ -18303,6 +18295,49 @@ frames.click+evaluate 回填（挂子帧能力解冻，见子帧解冻清单，�
    本流不碰（run-rules §9），M5 定稿收口判定（DC-1~4 依
    据）不因本插记动摇，S899 刷新门 PASS 即守成态证据延续。
 
+   **S899 已执行（2026-09-17）树变化刷新轮（S898 轮后插记
+   预告兑现：兄弟流 R4433（fix writing-modes，
+   crates/layout-engine/inline/break_lines.rs +25/-2 三文
+   件 40564ac68）入树触发双连刷新轮 S890→S897→S898→S899
+   先例链，同 tip 复核 pull 零新提交 tip=4be277369 即
+   S898 轮后插记提交本身（R4433 IN_TREE 实测核验），双腿
+   刷新口径=门 + make test：门 PASS 33 绿首调即收口
+   ~10:57:44 启动 10:58:50 落盘——R4433 组合态首次门覆盖
+   （重编相位 layout-engine→engine→page-runtime→browser
+   链）expected_green 33 对称差 none deterministic 双跑
+   YES ZW_IPC_VALIDATE 在位静默 capture jsonl 面零写入 #0
+   复现监测零命中 + make test 一调收口 19,335P/0F EXIT=0
+   （67 组 result 全 ok，10:59:02-11:09，R4433 组合态首
+   次全量覆盖，计数与 S898 持平 = R4433 零新增单测），
+   引用计数以 S899 双腿为新周期锚点 0/10；S898 轮后插记
+   锚点预期三点全数精确兑现——全树排除本流 docs 对
+   18d462de6 面 172 维持（+16953/-1146→+16978/-1148，
+   +25/-2 行数折入），crates/ raw 91→92（+1 = R4433 代码
+   腿入 crates/），自有面对 S897 tip 7da6043d6 维持
+   10 files +1187/-182（R4433 不触 headless/CDP 面 实测
+   复核），子帧关键词 7 文件全测试路径非测试代码零命中
+   维持（解冻条件①观察面 92 口径，frames.click+evaluate
+   挂起维持）；本轮负载窗亚型=兄弟流测试腿双段并窗（门
+   腿与 make test 前段 sibling ZeroWeb-2
+   zero_integration_tests 腿 139% CPU pid 1641735 在窗
+   第六十四个负载下样本，make test 尾段 zero_media 腿
+   686% CPU pid 1770648 入窗同 clone——双 clone 隔离零污
+   染 非 9222 族竞争）；zombie 双复测均零 端口族全 free
+   本双腿零残留 tracked 树 clean 控制面零外来提交
+   （S897 后 docs/goal/cdp-protocol/ 仅 S897/S898/插记三
+   自有提交）；R4433 系渲染流域 writing-modes 腿代码提交
+   本流不碰（run-rules §9）；M5 定稿收口判定（DC-1~4 依
+   据）不因刷新动摇 goal Done 维持守成态证据经 S899 双腿
+   刷新延续 首调红形态连续第三百一十二次零再现（累计两
+   例非聚集维持））**——下轮 **S900 = 1/10 静默监测引用
+   轮**（周期锚点=S899 双腿：门腿 10:58:50 落盘 + make
+   test 腿 ~11:09 收口），若 S900 前树代码变化则提前触发
+   双腿刷新（S245→S890→S897→S898→S899 先例链），否则按
+   引用轮口径门单腿复跑免 make test 腿（S336 先例），至
+   迟 S907=8/10 到期即次轮期限轮活跑（双腿活跑口径=门 +
+   make test，S773/S782/S865/S874/S875/S876/S884/S885/
+   S886/S890/S897/S898/S899 先例）；
+
 
    若活跑时逢并行流负载窗口则
    优先窗口内执行，负载下样本对 #0 更有价值（负载窗口口径含并行流 browser 进程型与
@@ -18650,7 +18685,9 @@ evaluate 入门禁）+ 本清单销账 + 矩阵账本/入口文档挂账注记�
   +16（其记账链 19,328→19,331→19,332→19,333）+ 渲染流 R4421-R4432 窗口
   engine 测试面 +2（r3770_pre_text_with_oof_child_tests.rs +3/-1 为
   486490adc 19,333 基线后唯一测试面触达）；devtools+渲染双流组合态首次
-  全量覆盖）；
+  全量覆盖）；**S899 时点 19,335P/0F EXIT=0**（R4433 组合态，一调收口
+  67 组 result 全 ok——计数与 S898 持平 = R4433 零新增单测（reftest
+  import 面单测面），R4433 组合态首次全量覆盖）；
   禁止裸跑 cargo test，经 test-guard。注：make test
   的 workspace 腿 exclude zero-renderer——renderer lib 单测不在全量门内，跨流红灯
   （form fixture×2）经显式 `-p zero-renderer --lib` 跟踪）
