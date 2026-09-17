@@ -18540,6 +18540,38 @@ M5 定稿收口判定（DC-1~4 依据）不因复验动摇——**goal Done 维�
    + make test，S932/S933 先例：/10 周期饱和即次轮期限
    轮）；
 
+   **S938 轮后插记（2026-09-17 推送序列 pull --rebase 实
+   测）**：兄弟流 R4440（fix writing-modes vertical
+   line_height 槽转置修正 vrl-009/srl-049 双双翻绿收官，
+   crates/engine/src/paint/painter/text.rs +29 +
+   crates/layout-engine 四文件（postprocess +8/-1 /
+   break_lines +10 / inline/mod +9 /
+   inline_metric_storage +10/-1）+ docs/goal/
+   rendering-compat.md +1 + tests/wpt-runner/src/
+   reftest.rs +1/-1 = 7 files +68/-3，323cb449f）于
+   S938 门腿收口（15:29:41）后经 push 前 pull --rebase
+   入树（远端 tip 323cb449f → 本流推送落 9d11bb7ba）
+   ——S938 门腿覆盖树态 = d916b487f 组合态，main tip 组
+   合态已再度超出，**S939 = 树变化刷新轮（门 + make
+   test 双腿刷新，S897→S898→S899→S905→S913→S914→S922
+   →S933→S934 先例链）**，引用计数以 S939 双腿为新周期
+   锚点 0/10（S938 记录内「下轮 S939 = 5/10 静默监测引
+   用轮」预告被本插记取代）；S939 锚点预期（本插记时点
+   实测）——全树排除本流 docs 对 18d462de6 175 files
+   +17543/-1180 → **175 files +17610/-1182**（面 175 维
+   持，R4440 七文件均已入累计 diff 集 +68/-3 行数折入），
+   crates/ raw 96 → **97**（+1 = R4440 代码腿入 crates/
+   口径），自有面对 S897 tip 7da6043d6 维持 10 files
+   +1187/-182 不变（R4440 不触 headless/CDP 面，实测复
+   核），子帧关键词 7 文件全测试路径维持（R4440 不触子
+   帧面，实测复核）；make test 计数预期 19,341 持平
+   （R4440 零新增单测面，reftest.rs 单行修正系 runner
+   行为非用例计数，兄弟自述 vrl-009/srl-049 翻绿属
+   reftest 腿待本流双腿实测复证）；R4440 系渲染流域
+   writing-modes 腿代码提交本流不碰（run-rules §9），
+   M5 定稿收口判定（DC-1~4 依据）不因本插记动摇，S939
+   刷新双腿全绿即守成态证据延续。
+
    **S937 已执行（2026-09-17）静默监测引用轮（引用计数
    2/10→3/10，同 tip 复核 pull 零新提交 tip=b4cf78a1e 即
    S936 提交本身（S936 门腿复跑后零代码变更 b4cf78a1e
