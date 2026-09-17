@@ -221,19 +221,31 @@ pub(crate) fn shrink_pure_text_floats(
         if depth <= 0.0 {
             return;
         }
-        let line_height = crate::inline::resolve_font_metrics(Some(style)).1;
-        if line_height <= 0.0 {
-            return;
-        }
         // 列深（行内 extent）= definite author 高度用 content_height，auto 无约束（单列）。
         let col_depth = if !matches!(style.height, LengthValue::Auto) && box_node.content_height > 0.5 {
             box_node.content_height
         } else {
             depth
         };
-        let columns = (depth / col_depth).ceil().max(1.0);
+        // R4463：真实 vertical IFC 测量替代算术估列——R4462 的 ceil(文本深度/列深) 不做
+        // 列首空白折叠/列断尾随空白折叠，每列多计 → float 宽 +1 列/float
+        //（line-box-direction-slr-048 残 9.62% 实证：float 120 应 100）。IFC 行断与
+        // paint 同源（同 font resolver + 全局 measure 回调），lines.len() = 真实列数。
+        let mut ifc = crate::inline::InlineFormattingContext::new(col_depth)
+            .with_vertical(true)
+            .with_vertical_rtl(matches!(box_node.writing_mode, WritingModeValue::VerticalRl))
+            .with_no_wrap(false)
+            .with_preserve_whitespace(false);
+        if let Some(fr) = font_resolver {
+            ifc = ifc.with_font_resolver(fr.clone());
+        }
+        ifc.layout(doc, dom_id, styles);
+        let columns_width: f32 = ifc.lines.iter().map(|l| l.height).sum();
+        if columns_width <= 0.0 {
+            return;
+        }
         let frame_h = box_node.padding_left + box_node.padding_right + box_node.border_left + box_node.border_right;
-        let shrink_border_box = columns * line_height + frame_h;
+        let shrink_border_box = columns_width + frame_h;
         if shrink_border_box < box_node.width || box_node.width <= 0.5 {
             box_node.width = shrink_border_box;
             box_node.content_width = (shrink_border_box - frame_h).max(0.0);
