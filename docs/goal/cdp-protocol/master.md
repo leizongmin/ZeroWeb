@@ -2,29 +2,27 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-17（S949：**静默监测引用轮 — 同 tip 复核（pull 零新
-提交，tip = cb5d15601 即 S948 提交本身；S948 门腿复跑后零代码变更
-（cb5d15601..HEAD 零提交、tracked 树 clean 实测复核），树不变口径 = 门
+**最后更新**: 2026-09-17（S950：**静默监测引用轮 — 同 tip 复核（pull 零新
+提交，tip = 896b5e0bb 即 S949 提交本身；S949 门腿复跑后零代码变更
+（896b5e0bb..HEAD 零提交、tracked 树 clean 实测复核），树不变口径 = 门
 单腿引用 S942 双腿活跑（免 make test 腿，S336 先例），绿步维持 33）**。
-门腿 **PASS 33 绿首调即收口**（16:40:45 启动 16:41:20 落盘 wall ~35s，
-负载下样本（兄弟流编译腿在窗 cwd=ZeroWeb-2 cargo build
-zero-renderer/zero-compositor 双 clone 隔离零污染非 9222 族竞争面）；
+门腿 **PASS 33 绿首调即收口**（16:44:42 启动 16:45:12 落盘 wall ~30s，
 编译全缓存 replay 相位零 Compiling 行=R4441 组合态复验；expected_green 33
 对称差 none、deterministic 双跑 YES、ZW_IPC_VALIDATE 在位静默 capture
 jsonl 面零写入 #0 复现监测零命中（req/resp/fin 8/8/8 failedCount=0）；
-build replay 相位 dead_code warning 维持 S908-S948 同形一枚
+build replay 相位 dead_code warning 维持 S908-S949 同形一枚
 （match_media_to_json，crates/engine/src/js_dom_bridge.rs——R4441 组合态
 既有形态，兄弟流域 face 本流不碰，run-rules §9，维持记档））。
-**引用计数 6/10→7/10**（S942 双腿新周期锚点：门腿 16:07:37 落盘 + make
-test 腿 ~16:17:32 收口；下轮 S950 = 8/10，树代码变化提前触发双腿刷新；至
+**引用计数 7/10→8/10**（S942 双腿新周期锚点：门腿 16:07:37 落盘 + make
+test 腿 ~16:17:32 收口；下轮 S951 = 9/10，树代码变化提前触发双腿刷新；至
 迟 S953=10/10 饱和次轮到期即期限轮活跑）。
 锚点面四点实测维持：自有面对 S897 tip 7da6043d6 **10 files +1187/-182**；
 全树排除本流 docs 对 18d462de6 **175 files +17637/-1189**；crates/ raw
 **98**；子帧关键词 **7 文件全测试路径**非测试代码零命中维持（frames.click
-+evaluate 挂起维持，解冻条件①观察面 98 口径）。本轮负载窗执行（起手负载
-2.90 门期升至 ~4.9 兄弟流编译腿在窗）。
++evaluate 挂起维持，解冻条件①观察面 98 口径）。本轮轻净窗执行（起手负载
+1.64 前窗兄弟流编译腿已收口，仅 rally 调度器腿）。
 M5 定稿收口判定（DC-1~4 依据）不因复验动摇——**goal Done 维持，守成态
-证据经 S949 门腿复验延续**；唯一未清偿义务 = frames.click+evaluate 回填
+证据经 S950 门腿复验延续**；唯一未清偿义务 = frames.click+evaluate 回填
 （挂子帧能力解冻，见子帧解冻清单，不阻收口））
 
 ---
@@ -18512,6 +18510,37 @@ M5 定稿收口判定（DC-1~4 依据）不因复验动摇——**goal Done 维�
    （S336 先例），至迟 S943=10/10 饱和次轮到期即期限轮活
    跑（双腿活跑口径=门 + make test，S932/S933 先例：/10
    周期饱和即次轮期限轮，新周期期限条款依原设计恢复）；
+
+   **S950 已执行（2026-09-17）静默监测引用轮（引用计数
+   7/10→8/10，同 tip 复核 pull 零新提交 tip=896b5e0bb 即
+   S949 提交本身（S949 门腿复跑后零代码变更 896b5e0bb
+   ..HEAD 零提交 tracked 树 clean 实测复核），树不变口
+   径=门单腿复跑免 make test 腿 S336 先例，门 PASS 33 绿
+   轻净窗活跑（起手负载 1.64 前窗兄弟流编译腿已收口 仅
+   rally 调度器腿）首调即收口 16:44:42 启动 16:45:12 落
+   盘 wall ~30s 编译全缓存 replay 相位零 Compiling 行
+   （R4441 组合态复验）expected_green 33 对称差 none
+   deterministic 双跑 YES ZW_IPC_VALIDATE 在位静默
+   capture jsonl 面零写入 #0 复现监测零命中（req/resp/fin
+   8/8/8 failedCount=0）steps-report 新鲜落盘 build
+   replay 相位 dead_code warning 维持 S908-S949 同形一枚
+   （match_media_to_json crates/engine/src/js_dom_bridge.rs
+   R4441 组合态既有形态 兄弟流域 face 本流不碰 run-rules
+   §9 维持记档）首调红形态连续第三百六十一轮零再现（累
+   计两例非聚集维持）；锚点面四点实测维持（自有面对
+   S897 tip 7da6043d6 10 files +1187/-182 / 全树排除本
+   流 docs 对 18d462de6 175 files +17637/-1189 / crates/
+   raw 98 / 子帧关键词 7 文件全测试路径非测试代码零命中
+   解冻条件①观察面 98 口径 frames.click+evaluate 挂起
+   维持）；zombie 双复测均零 端口族全 free 本门零残留
+   tracked 树 clean 控制面零外来提交）**——下轮
+   **S951 = 9/10**（周期锚点维持 S942 双腿：门腿 16:07:37
+   落盘 + make test 腿 ~16:17:32 收口），若 S951 前树代
+   码变化则提前触发双腿刷新（先例链），否则按引用轮口
+   径门单腿复跑免 make test 腿（S336 先例），至迟
+   S953=10/10 饱和次轮到期即期限轮活跑（双腿活跑口径=门
+   + make test，S942 新周期锚点 /10 周期饱和即次轮期限
+   轮）；
 
    **S949 已执行（2026-09-17）静默监测引用轮（引用计数
    6/10→7/10，同 tip 复核 pull 零新提交 tip=cb5d15601 即
