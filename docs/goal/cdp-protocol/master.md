@@ -2,27 +2,34 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-16（S897：**树变化刷新轮——兄弟流 R4397 layout 腿代码提交
-637a4a104 入树触发，双腿刷新口径=门 + make test（S245→S829→S835→S843→S848→
-S856→S865→S890 先例链，S896 轮后插记预告兑现）**。门腿 **PASS 33 绿首调即收
-口**（10:39:12 启动 10:39:50 落盘，重编相位 layout-engine→engine→page-runtime→
-browser 链=R4397 组合态首次门覆盖；expected_green 33 对称差 none、regressions
-空、deterministic 双跑 YES、ZW_IPC_VALIDATE 在位静默 capture jsonl 面零写入 #0
-复现监测零命中）+ make test **一调收口 19,317P/0F EXIT=0**（67 组 result 全 ok，
-10:40:30-10:50:09，R4397 组合态首次全量覆盖，计数与 S890 基线持平 = R4397 零新
-增单测 + 兄弟提交自述同值实测复证）；dead_code warning（match_media_to_json
-js_dom_bridge.rs:3420）bins-only 条件 dead 既有形态维持记档 clippy 门零回归。引
-用计数以 **S897 双腿为新周期锚点 0/10**。三层锚点实测与插记预期精确一致：自有
-面对 765429dda 维持 **4 files +137/-17**（Makefile 2/1 + apps/browser/README.md
-1/0 + headless/mod.rs 25/0 + headless/session.rs 126/16 逐项实测）；全树排除本
-流 docs 对 18d462de6（排除 docs/goal/cdp-protocol/ 目录、入口文档在集内口径）
-**94 files +9914/-628**（+2 files = R4397 折入累计 diff 归因）；crates/ raw
-**61**（60→61，+1 = R4397 代码腿入 crates/）；子帧关键词 8 文件全测试路径维持
-（非测试代码零命中，frames.click+evaluate 挂起维持，解冻条件①观察面 61 口径维
-持）。R4397 系渲染流域 layout 腿提交本流不碰（run-rules §9），不触 headless/CDP
-面，M5 定稿收口判定（DC-1~4 依据）不因刷新动摇——**goal Done 维持，守成态证据
-经 S897 双腿刷新延续**；唯一未清偿义务 = frames.click+evaluate 回填（挂子帧能
-力解冻，见子帧解冻清单，不阻收口））
+**最后更新**: 2026-09-17（S898：**树变化刷新轮——双流代码腿入树触发（devtools
+下游 M0-M3 九代码提交 e6364b8f0→c782afbe6 + 渲染流 R4398-R4432 窗口；S245→
+S829→S835→S843→S848→S856→S865→S890→S897 先例链）**。门腿 **PASS 33 绿首调即
+收口**（10:34:44 启动 10:35:33 落盘，重编相位 layout-engine→engine→page-
+runtime→browser 链=R4432 组合态首次门覆盖；expected_green 33 对称差 none、
+regressions 空、deterministic 双跑 YES、ZW_IPC_VALIDATE 在位静默 capture jsonl
+面零写入 #0 复现监测零命中）+ make test **一调收口 19,335P/0F EXIT=0**（67 组
+result 全 ok，10:36:05-10:57 窗尾 ~8min 与兄弟 reftest 腿并窗；计数 19,317→
+19,335 +18 归因：devtools 切片自带单测 +16（其记账链 19,328→19,331→19,332→
+19,333）+ 渲染流 R4421-R4432 窗口 engine 测试面 +2（486490adc 19,333 基线后
+唯一测试面触达 = r3770_pre_text_with_oof_child_tests.rs +3/-1））；dead_code
+warning（match_media_to_json js_dom_bridge.rs:3420）bins-only 条件 dead 既有形
+态维持。引用计数以 **S898 双腿为新周期锚点 0/10**。锚点面刷新（**devtools 下游
+时代**）：devtools goal 已于 2026-09-17 收口 Done（1c605b9f0 登记；守成门 =
+make cdp-e2e + make test 与本流同门）——其九代码提交在 goal S896 收口（2026-09-16
+上午）之后入树，依赖约束「改 CDP 域须本 goal 已收口」满足合规，run-rules §9 共
+享面碰头以「下游消费 + 本流守成零改」形态兑现；自有面对 765429dda 旧锚点
+（4 files +137/-17）**退役**（face 转入 devtools 共管），新观察面对 S897 tip
+7da6043d6 = **10 files +1187/-182**（headless/devtools_serve.rs 新建 212 +
+domains/css.rs 163 + domains/dom.rs 137 + domains/mod.rs 126 + mod.rs 466 行
+域改 + session.rs 46 + tests.rs 101 + discovery.rs 57 + domains/storage.rs 50 +
+domains/target.rs 11）；全树排除本流 docs 对 18d462de6 **94 files +9914/-628 →
+172 files +16953/-1146**（+78 files = devtools 九代码腿 + 渲染流 R4398-R4432
+窗口折入累计 diff）；crates/ raw **61 → 91**（+30 = 窗口 crates/ 触达提交数）；
+子帧关键词 **7 文件全测试路径**维持（非测试代码零命中，frames.click+evaluate 挂
+起维持，解冻条件①观察面 91 口径）。M5 定稿收口判定（DC-1~4 依据）不因刷新动
+摇——**goal Done 维持，守成态证据经 S898 双腿刷新延续**；唯一未清偿义务 =
+frames.click+evaluate 回填（挂子帧能力解冻，见子帧解冻清单，不阻收口））
 
 ---
 
@@ -18213,6 +18220,67 @@ js_dom_bridge.rs:3420）bins-only 条件 dead 既有形态维持记档 clippy �
    S865/S874/S875/S876/S884/S885/S886/S890/S897 先
    例）；
 
+   **S898 已执行（2026-09-17）树变化刷新轮（双流代码腿入
+   树触发：① devtools 下游 M0-M3 九代码提交 e6364b8f0
+   （M0-P2 serve 骨架）→5c485bd21（M1-S1 per-page WS 路
+   由）→e33adbb69（M1-S3a DOM.getDocument 域）→
+   ba414e030（M1-S1.5 多路复用+M2-N1）→885a0562d
+   （M1-S3b CSS 域）→721d77a9c（M2-N2 Network 事件路由）
+   →9c1bc37e3（M2-N3 cookie 三件）→467bd2752（M2-N4 事件
+   形状对齐）→c782afbe6（M3 GUI 模式 CDP 可开关）；② 渲
+   染流 R4398-R4432 窗口（layout-engine writing-modes/
+   ruby 代码腿），S897 预告的 1/10 引用轮口径被树代码变
+   化提前取代（S245 先例链），pull 后 tip=82ea4fd53
+   （R4432）；双腿刷新口径=门 + make test：门 PASS 33 绿
+   净窗首调即收口 10:34:44 启动 10:35:33 落盘——R4432 组
+   合态首次门覆盖（重编相位 layout-engine→engine→page-
+   runtime→browser 链）+ make test 一调收口 19,335P/0F
+   EXIT=0（67 组 result 全 ok，10:36:05-10:57，devtools+
+   渲染双流组合态首次全量覆盖，计数 19,317→19,335 +18 =
+   devtools 切片自带单测 +16（其链 19,328→19,331→19,332→
+   19,333）+ 渲染流窗口 engine 测试面 +2（486490adc 后唯
+   一测试面触达 r3770_pre_text_with_oof_child_tests.rs
+   +3/-1）），引用计数以 S898 双腿为新周期锚点 0/10；
+   devtools 下游合规注记：九代码提交全部在 goal S896 收
+   口（2026-09-16 上午）之后入树（依赖约束「改 CDP 域须
+   本 goal 已收口」满足），devtools goal 已于 2026-09-17
+   收口 Done（1c605b9f0 登记，守成门=make cdp-e2e +
+   make test 与本流同门），期间每切片自述 make cdp-e2e
+   33 绿 deterministic YES（其树实测）与本轮实测互证；锚
+   点面刷新——自有面对 765429dda 旧锚点退役（face 转入
+   devtools 共管），新观察面对 S897 tip 7da6043d6 =
+   10 files +1187/-182（devtools_serve.rs 新建 212 +
+   domains/css.rs 163 + domains/dom.rs 137 + domains/
+   mod.rs 126 + mod.rs 466 行域改 + tests.rs 101 +
+   discovery.rs 57 + storage.rs 50 + session.rs 46 +
+   target.rs 11），全树排除本流 docs 对 18d462de6 =
+   172 files +16953/-1146（94→172，+78 files = devtools
+   九代码腿 + 渲染流窗口折入累计 diff），crates/ raw
+   61→91（+30 = 窗口 crates/ 触达提交数），子帧关键词
+   7 文件全测试路径维持（非测试代码零命中，解冻条件①观
+   察面 91 口径，frames.click+evaluate 挂起维持）；本轮
+   门腿净窗执行（起手负载 0.82，前窗兄弟编译腿已收口），
+   make test 腿净窗起跑窗尾兄弟流 reftest 腿族入窗
+   （ZeroWeb-2 reftest-upstream 707% CPU pid 1585651
+   lstart 10:49:50 与尾段 ~8min 并窗 第六十三个负载下样
+   本 双 clone 隔离零污染 非 9222 族竞争）；ZW_IPC_
+   VALIDATE 在位静默 capture jsonl 面零写入 #0 复现监测
+   零命中 dead_code warning（match_media_to_json
+   js_dom_bridge.rs:3420）既有形态维持；控制面零外来提交
+   （窗口内 docs/goal/cdp-protocol/ 仅 S897 自身提交）
+   zombie 双复测均零 端口族窗前窗后全 free 本双腿零残留
+   tracked 树 clean；M5 定稿收口判定（DC-1~4 依据）不因
+   刷新动摇 goal Done 维持守成态证据经 S898 双腿刷新延
+   续 首调红形态连续第三百一十一次零再现（累计两例非聚
+   集维持））**——下轮 **S899 = 1/10 静默监测引用轮**（周
+   期锚点=S898 双腿：门腿 10:35:33 落盘 + make test 腿
+   ~10:57 收口），若 S899 前树代码变化则提前触发双腿刷
+   新（S245→S890→S897→S898 先例链），否则按引用轮口径门
+   单腿复跑免 make test 腿（S336 先例），至迟 S906=8/10
+   到期即次轮期限轮活跑（双腿活跑口径=门 + make test，
+   S773/S782/S865/S874/S875/S876/S884/S885/S886/S890/
+   S897/S898 先例）；
+
 
    若活跑时逢并行流负载窗口则
    优先窗口内执行，负载下样本对 #0 更有价值（负载窗口口径含并行流 browser 进程型与
@@ -18555,6 +18623,12 @@ evaluate 入门禁）+ 本清单销账 + 矩阵账本/入口文档挂账注记�
   67 组 result 全 ok）；**S897 时点 19,317P/0F EXIT=0**（R4397 组合态，
   一调收口——计数与 S890 持平 = R4397 零新增单测 + 兄弟自述同值实测
   复证，R4397 组合态首次全量覆盖）；
+  **S898 时点 19,335P/0F EXIT=0**（树变化刷新轮双腿实测，一调收口 67 组
+  result 全 ok——19,317→19,335 +18 = devtools 下游 M0-M3 切片自带单测
+  +16（其记账链 19,328→19,331→19,332→19,333）+ 渲染流 R4421-R4432 窗口
+  engine 测试面 +2（r3770_pre_text_with_oof_child_tests.rs +3/-1 为
+  486490adc 19,333 基线后唯一测试面触达）；devtools+渲染双流组合态首次
+  全量覆盖）；
   禁止裸跑 cargo test，经 test-guard。注：make test
   的 workspace 腿 exclude zero-renderer——renderer lib 单测不在全量门内，跨流红灯
   （form fixture×2）经显式 `-p zero-renderer --lib` 跟踪）
