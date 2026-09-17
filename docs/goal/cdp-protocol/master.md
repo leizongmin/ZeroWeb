@@ -2,7 +2,62 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-18（S1064：**树变化刷新轮（S1063 轮后插
+**最后更新**: 2026-09-18（S1064 轮后插记：**兄弟流四连提交
+（f77dbba4a R4474 docs 注释腿 float_positioning.rs +5 +
+81bb81b0c R4475 fix layout-engine 5.5 shrink 坐标口径分裂
+float_positioning.rs +18/-7 代码腿 + 8aadc1a5f ZRG 巡检 docs
++2 + c6087292f rendering-compat docs +1）于 S1064 双腿收口
+（make test 腿 07:37）之后经 push 序列 pull --rebase 入树（我
+方 S1064 提交 rebase 于其上，push c6087292f..442047f3d
+fast-forward 零冲突）——main tip 组合态已再度超出 R4475 代码
+腿入树，S1065 = 树变化刷新轮（门 + make test 双腿刷新，make
+test 腿后台跑法，S898→S899→S1047→S1051→S1059→S1064 先例链连
+刷第 6 例）引用计数以 S1065 双腿为新周期锚点 0/10（S1064 记
+录内下轮 S1065=1/10 预告被本插记取代）**。
+S1065 锚点预期（本插记时点实测）：自有面对 S897 tip
+7da6043d6 维持 **10 files +1187/-182** 不变（R4474/R4475 不触
+headless/CDP 面 实测复核）；crates/ raw 124→**126**（+2 =
+R4474 注释腿 + R4475 代码腿入 crates/ 口径）；子帧关键词
+**7 文件** crates/ 零命中维持（解冻条件①观察面 126 口
+径——frames.click+evaluate 挂起维持）；全树排除本流 docs 对
+18d462de6 184 files +20385/-1239 → **184 files
++20406/-1240**（R4474/R4475 float_positioning.rs 折入 + 两
+docs，文件均已在累计 diff 集 零净增文件 实测复核）。
+R4474/R4475 系渲染流域 layout-engine 代码提交——layout-engine
+属渲染流自有域（run-rules §9）非共享面非本流触碰 本流不碰 口
+径不变。M5 定稿收口判定不因本插记动摇，S1065 刷新门 PASS 即
+守成态证据延续（唯一未清偿义务 = frames.click+evaluate 回
+填，挂子帧能力解冻，不阻收口）。
+---
+（S1064 本体：树变化刷新轮（S1063 轮后插记预告兑现：兄弟流
+R4473 代码腿入树触发 S898→S899→S1047→S1051→S1059 先例链连刷
+第 5 例），pull 零新提交 tip = d4f4b1199，双腿刷新口径 = 门
++ make test，引用计数以 S1064 双腿为新周期锚点 0/10（门腿
+07:16:49 落盘 + make test 腿 07:37 收口）。
+门腿 **PASS 33 绿低负载窗活跑首调即收口**（起手 load 0.99 净
+窗；07:16:14 启动 07:16:49 落盘 wall ~35s EXIT=0；R4473 组合
+态级联重编译 4 腿 layout-engine→engine→page-runtime→browser
+依赖链精确；expected_green 33 对称差 none、regressions 空、
+deterministic 双跑 YES（双 run 唯一 failed 同 = 挂账
+frames.click+evaluate）；双 run 均 flow exited 1 正常态；
+ZW_IPC_VALIDATE=1 在位静默 capture jsonl 面零写入；
+steps-report/determinism-report 新鲜落盘 07:16；dead_code
+warning 维持同形一枚）。
+make test 腿 **一调收口 19,341P/0F 全绿**（67 组 07:27:30 启
+动 07:37 收口 wall ~9.7min EXIT=0 零 FAILED/error 行；计数与
+基线精确持平零漂移 = R4473 零新增 cargo 测试实测复核；
+clippy quickjs 腿 -D warnings 过）。
+**执行注记**：make test 首次前台跑法被执行工具 10min 墙钟上
+限截断（杀树干净零孤儿）——改 nohup 后台跑法重跑收口，后续
+期限轮/刷新轮 make test 腿一律沿用后台跑法。
+锚点面四点（R4473 组合态实测，**与 S1063 轮后插记预期四点全
+数精确兑现**）：自有面 **10 files +1187/-182**；crates/ raw
+**124**；子帧关键词 **7 文件** crates/ 零命中维持；全树
+**184 files +20385/-1239**。
+本轮双腿低负载窗活跑；R4473 系渲染流自有域非共享面本流不碰。
+M5 定稿收口判定（DC-1~4 依据）不因刷新动摇——**goal Done 维持，守成态
+证据经 S1064 双腿刷新延续**；唯一未清偿义务 = frames.click+evaluate 回填
+（挂子帧能力解冻，见子帧解冻清单，不阻收口））
 记预告兑现：兄弟流 R4473 代码腿 cca06633a 入树触发
 S898→S899→S1047→S1051→S1059 先例链连刷第 5 例），pull 零新
 提交 tip = d4f4b1199 即本流 S1063 轮后插记提交本身（R4473 组
@@ -19101,6 +19156,33 @@ M5 定稿收口判定（DC-1~4 依据）不因复验动摇——**goal Done 维�
    间线注记：该兄弟 docs 提交 05:22:44 落于 S1046 首调红窗口内（纯
    docs 不参与门红归因），M5 定稿收口判定（DC-1~4 依据）不因本插记
    动摇，守成态证据经 S1046 门单腿刷新延续。
+
+   **S1064 轮后插记（2026-09-18 push 序列 pull --rebase 实
+   测）**：兄弟流四连提交（f77dbba4a R4474 docs 注释腿
+   crates/layout-engine/src/float_positioning.rs +5 +
+   81bb81b0c R4475 fix layout-engine 5.5 shrink 坐标口径分裂
+   float_positioning.rs +18/-7 代码腿 + 8aadc1a5f ZRG 巡检
+   docs/goal/zero-web/master.md +2 + c6087292f
+   docs/rendering-compat +1）于 S1064 双腿收口（make test 腿
+   07:37）之后经 push 序列 pull --rebase 入树（我方 S1064 提交
+   rebase 于其上，push c6087292f..442047f3d fast-forward 零冲
+   突 实测复核）——main tip 组合态已再度超出 R4475 代码腿入
+   树，**S1065 = 树变化刷新轮（门 + make test 双腿刷新，make
+   test 腿后台跑法，S898→S899→S1047→S1051→S1059→S1064 先例链
+   连刷第 6 例）引用计数以 S1065 双腿为新周期锚点 0/10**（
+   S1064 记录内下轮 S1065=1/10 预告被本插记取代）；S1065 锚点
+   预期（本插记时点实测）：自有面对 S897 tip 7da6043d6 维持
+   10 files +1187/-182 不变（R4474/R4475 不触 headless/CDP 面
+   实测复核）/ crates/ raw 124→126（+2 = R4474 注释腿 +
+   R4475 代码腿入 crates/ 口径）/ 子帧关键词 7 文件 crates/
+   零命中维持（解冻条件①观察面 126 口径 frames.click+evaluate
+   挂起维持）/ 全树排除本流 docs 对 18d462de6 184 files
+   +20385/-1239 → 184 files +20406/-1240（R4474/R4475
+   float_positioning.rs 折入 + 两 docs 文件均已在累计 diff 集
+   零净增文件 实测复核）；R4474/R4475 系渲染流域 layout-engine
+   代码提交——layout-engine 属渲染流自有域（run-rules §9）非
+   共享面非本流触碰 本流不碰 口径不变；M5 定稿收口判定不因本
+   插记动摇，S1065 刷新门 PASS 即守成态证据延续。
 
    **S1064 已执行（2026-09-18）树变化刷新轮（S1063 轮后插记预
    告兑现：兄弟流 R4473 代码腿 cca06633a 入树触发
