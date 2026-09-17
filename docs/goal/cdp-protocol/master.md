@@ -18437,6 +18437,21 @@ idle，兄弟流零编译测试腿在跑，非 9222 族竞争）。M5 定稿收�
    make test，S773/S782/S865/S874/S875/S876/S884/S885/
    S886/S890/S897/S898/S899/S905 先例）；
 
+   **S908 轮后插记（2026-09-17 推送序列 pull --rebase 实
+   测）**：兄弟流 R4435（docs-only，docs/goal/
+   rendering-compat.md + docs/goal/rendering-compat/
+   missing-asset-import-handoff.md 共 2 files +2 行，
+   d4016f695）于 S908 门腿收口之后经 push 前 pull
+   --rebase 入树（本流提交被 rebase 顶到其上，远端 tip
+   d5eb654e2 → 本流推送落 39bf2ffbb）——S908 门腿覆盖树
+   态 = d5eb654e2 组合态，入树腿零代码（docs-only 轮豁免
+   口径），**S909 维持静默监测引用轮口径不变**（引用计数
+   4/10，树代码零变化）；全树排除本流 docs 对 18d462de6
+   锚点 172 files +16998/-1176 → **173 files +17000/-1176**
+   （+2 行 = R4435 两 docs 文件折入，S909 锚点预期值），
+   自有面 10 files +1187/-182 与 crates/ raw 93 实测复
+   核维持不变，M5 定稿收口判定不因本插记动摇。
+
    **S908 已执行（2026-09-17）静默监测引用轮（引用计数
    2/10→3/10，同 tip 复核 pull 零新提交 tip=d5eb654e2 即
    S907 提交本身（S907 门腿复跑后零代码变更 d5eb654e2
