@@ -1302,6 +1302,33 @@ pub(crate) fn compute_final_inline_layouts(
         .with_line_height_overrides(parent_line_heights)
         .with_inline_element_metrics(root.inline_element_metrics.clone())
         .with_margin_overrides(root.inline_element_margins.clone())
+        // R4468：vertical 容器注入原子 inline-level 子的 LayoutBox 尺寸——无此注入时
+        // CSS auto 尺寸原子子（inline-table/inline-block）在 collect_items 落 0×0 降级
+        // 为扁平文本 run（行内内容被吞进容器 IFC：尾随空白推进虚增、行内 extent 失真、
+        // 列断错位，inline-table-alignment-002 "F "/"L " h=240 + O 挤次列实证）。水平
+        // 域不注入（保持既有行为零回归；原子子尺寸注入的水平域语义由 5.6/6.x/6.5 各
+        // pass 分管）。尺寸已由 5.4b 拉伸清除臂落定为内容 extent。
+        .with_inline_block_sizes(if is_vertical {
+            root.children
+                .iter()
+                .filter(|c| !c.is_absolute && !c.is_fixed)
+                .filter_map(|c| {
+                    let node_id = c.node_id?;
+                    let is_atomic = styles.get(&node_id).is_some_and(|s| {
+                        matches!(
+                            s.display,
+                            DisplayValue::InlineBlock
+                                | DisplayValue::InlineTable
+                                | DisplayValue::InlineFlex
+                                | DisplayValue::InlineGrid
+                        )
+                    });
+                    is_atomic.then_some((node_id, (c.width, c.height)))
+                })
+                .collect()
+        } else {
+            HashMap::new()
+        })
         .with_img_intrinsic_sizes(img_intrinsic_sizes.clone());
 
     // U1b-wiring 切片 A（dormant）：注入 font-metric provider 使 line-height:normal 走

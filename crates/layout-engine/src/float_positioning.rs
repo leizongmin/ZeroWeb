@@ -917,6 +917,222 @@ pub(crate) fn shrink_inline_blocks_to_content(
     }
 }
 
+/// R4468：vertical 容器 inline-level 子**行内 extent（物理高）拉伸清除**。
+///
+/// 病理（inline-table-alignment-002 实证）：vertical 容器的 inline-level 子（inline-table/
+/// inline-block/span）在 taffy 交换帧被按 block 子拉伸——taffy block 布局对 auto 宽
+///（= 交换帧子的物理行内 extent 槽，tree.rs apply_vertical_writing_mode 交换 +
+/// engine.rs extract_layout 交换还原）子施加 stretch fill（taffy compute/block.rs
+/// `width.unwrap_or(stretch_width)`），stretch 参照 = 容器 taffy inner width：
+/// - 顶层 vertical 容器（HorizontalTb 父，自身样式不交换）= 容器 pre-restack 物理宽
+///   （rl-mixed 784 = body 内容宽）；
+/// - 嵌套 vertical 容器（样式已交换）= 容器物理高（inline extent 槽，自自身拉伸值级联）。
+///
+/// 全子树行内 extent 滞留同一拉伸值（inline-table/row/span h=784，应 30-120），下游
+/// IFC 原子项/行盒 extent 以拉伸 LayoutBox 为测源（垃圾进垃圾出，R4467 定谳）。
+///
+/// 规范（css-writing-modes-3 §7.1 + CSS2 §10.3.9/§17.4）：inline-level 盒行内尺寸
+/// shrink-to-fit，**不**填充包含块行内尺寸（块级子仅在 definite 行内尺寸容器 fill，
+/// R4460/vrl-021 域）。本 pass 在 IFC 消费者（5.6 inline-block shrink / 6.x adjust /
+/// 6.5 remeasure / 12 compute_final）之前运行，从源头切断污染。
+///
+/// 泄漏签名（防误伤）：容器 vertical + 子 in-flow 非替换 + 子 CSS height Auto（definite
+/// 尊重声明）+ `child.height ≈ 泄漏参照`（taffy stretch 值，leak_ref 推导见 walk）。
+/// 目标类型二分：
+/// - **原子 inline-level / inline 叶**（InlineBlock/InlineTable/InlineFlex/InlineGrid/
+///   Inline）：行内 extent = 有流内块级子时 max(子 outer extent)（行/块沿块轴堆叠），
+///   否则纯文本叶 = 自身字体 strut（resolve_font_metrics CSS line-height）；
+/// - **原子容器（inline-table/inline-block）的块级子**（table-row / display:block span）：
+///   仅当容器 CSS 行内尺寸 Auto（definite 容器块级子 fill 语义正确，不触）且子为纯
+///   inline 内容（叶）→ strut extent。
+///
+/// 单向收缩（new < old，同 R4437「防拉伸伪影回写放大」）。`ZW_VIV_SIZING` 同族
+/// kill-switch。页级 fast path：无 vertical 样式整臂跳过（R4460 预扫描先例）。
+pub(crate) fn shrink_vertical_stretched_inline_extents(
+    root: &mut LayoutBox,
+    doc: &Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    inline_fonts: crate::inline_finalization::InlineFontContext<'_>,
+) {
+    if std::env::var("ZW_VIV_SIZING").as_deref() == Ok("0") {
+        return;
+    }
+    // 页级 fast path：无 vertical 书写模式的页整臂跳过。
+    if !styles.values().any(|s| s.writing_mode.is_vertical_block_flow()) {
+        return;
+    }
+    let provider = inline_fonts.metric_provider;
+    walk_stretched_inline_extents(
+        root,
+        &WritingModeValue::HorizontalTb,
+        0.0,
+        false,
+        false,
+        doc,
+        styles,
+        provider,
+    );
+}
+
+/// 泄漏参照（leak_ref）= 本盒子的 taffy inner width——子的物理行内 extent（taffy 宽槽）
+/// 被 stretch 到该值：
+/// - 顶层 vertical 盒（HorizontalTb 父，自身未交换）：taffy 宽 = 物理宽 → content_width；
+/// - 嵌套 vertical 盒（自身已交换）：taffy 宽 = 物理高 → height − 行内轴 frame
+///   （taffy 水平 frame 经交换 = CSS top/bottom padding+border）。
+fn inline_extent_leak_ref(b: &LayoutBox, parent_wm: &WritingModeValue) -> f32 {
+    if matches!(parent_wm, WritingModeValue::HorizontalTb) {
+        b.content_width
+    } else {
+        b.height - b.padding_top - b.padding_bottom - b.border_top - b.border_bottom
+    }
+}
+
+/// 纯 inline 内容盒的行内 extent（content 域）= 自身字体 strut（CSS line-height，
+/// 含 provider 真实度量；Ahem A+D=font-size 与 line-height:1 同值）。
+fn inline_content_strut_extent(
+    style: &ComputedStyle,
+    provider: Option<&crate::inline::FontMetricProviderHandle>,
+) -> f32 {
+    let (_, line_height) = crate::inline::resolve_font_metrics_with_provider(Some(style), provider);
+    line_height.max(0.0)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn walk_stretched_inline_extents(
+    b: &mut LayoutBox,
+    parent_wm: &WritingModeValue,
+    leak_ref: f32,
+    parent_is_atomic_inline: bool,
+    parent_inline_size_auto: bool,
+    doc: &Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    provider: Option<&crate::inline::FontMetricProviderHandle>,
+) {
+    let own_vertical = b.writing_mode.is_vertical_block_flow();
+    // 本盒子的子的泄漏参照（自本盒原始几何推导——本盒自身高度由父层在本 walk 返回后修复，
+    // 此刻仍为 taffy 原值）。
+    let child_ref = if own_vertical {
+        inline_extent_leak_ref(b, parent_wm)
+    } else {
+        0.0
+    };
+    let own_style = b.node_id.and_then(|id| styles.get(&id));
+    let own_is_atomic_inline = own_style.is_some_and(|s| {
+        matches!(
+            s.display,
+            DisplayValue::InlineBlock | DisplayValue::InlineTable | DisplayValue::InlineFlex | DisplayValue::InlineGrid
+        )
+    });
+    // vertical 盒的 CSS 行内尺寸 = height：definite 时块级子 fill 语义正确（R4460 域），
+    // 块级子臂不触；Auto 时 taffy stretch 参照级联自祖先泄漏值 = 垃圾。
+    let own_inline_size_auto = own_style.is_some_and(|s| matches!(s.height, LengthValue::Auto));
+    for c in &mut b.children {
+        walk_stretched_inline_extents(
+            c,
+            &b.writing_mode,
+            child_ref,
+            own_is_atomic_inline,
+            own_inline_size_auto,
+            doc,
+            styles,
+            provider,
+        );
+    }
+
+    // 修复本盒：仅 vertical 父下的目标类型（父 wm 已随递归传入）。
+    if !parent_wm.is_vertical_block_flow() || leak_ref <= 0.5 {
+        return;
+    }
+    let Some(id) = b.node_id else { return };
+    let Some(style) = styles.get(&id) else { return };
+    // 通用 gate：in-flow / 非替换 / CSS height Auto（definite 尊重声明）。
+    if b.is_absolute
+        || b.is_fixed
+        || !matches!(b.float, FloatValue::None)
+        || b.is_replaced
+        || !matches!(style.height, LengthValue::Auto)
+        || !b.height.is_finite()
+        || (b.height - leak_ref).abs() > 0.5
+    {
+        return;
+    }
+    let is_inline_leaf = matches!(style.display, DisplayValue::Inline)
+        && !doc.child_nodes(id).iter().any(|&c| {
+            doc.get(c)
+                .is_some_and(|n| matches!(n.kind, zero_dom::NodeKind::Element(_)))
+        });
+    // 原子容器的块级子（table-row 在 extract 的 is_block_level 名单外，按 display 判）。
+    // 容器 CSS 行内尺寸 definite 时块级子 fill 正确（R4460/slr-054 域）不触。
+    let is_atomic_container_child = parent_is_atomic_inline
+        && parent_inline_size_auto
+        && (b.is_block_level
+            || matches!(
+                style.display,
+                DisplayValue::TableRow
+                    | DisplayValue::TableRowGroup
+                    | DisplayValue::TableHeaderGroup
+                    | DisplayValue::TableFooterGroup
+                    | DisplayValue::TableCell
+                    | DisplayValue::TableCaption
+            ));
+    let extent = if !is_inline_leaf && !is_atomic_container_child {
+        let is_atomic = matches!(
+            style.display,
+            DisplayValue::InlineBlock | DisplayValue::InlineTable | DisplayValue::InlineFlex | DisplayValue::InlineGrid
+        );
+        if !is_atomic {
+            return;
+        }
+        // 原子容器：有沿块轴堆叠的流内子（block 级 / table-internal，行内 extent = 最高子，
+        // 子已自底向上修复）→ max(子 outer extent)；纯文本叶 → strut；其余（嵌套 inline
+        // 元素子）保守跳过。
+        let is_blockish = |c: &LayoutBox| -> bool {
+            c.node_id
+                .and_then(|cid| styles.get(&cid))
+                .map(|s| {
+                    !matches!(
+                        s.display,
+                        DisplayValue::Inline
+                            | DisplayValue::InlineBlock
+                            | DisplayValue::InlineFlex
+                            | DisplayValue::InlineGrid
+                            | DisplayValue::InlineTable
+                    )
+                })
+                .unwrap_or(c.is_block_level)
+        };
+        let max_block_child = b
+            .children
+            .iter()
+            .filter(|c| is_blockish(c) && !c.is_absolute && !c.is_fixed && matches!(c.float, FloatValue::None))
+            .map(|c| c.height + c.margin_top + c.margin_bottom)
+            .fold(0.0_f32, f32::max);
+        if max_block_child > 0.5 {
+            max_block_child
+        } else if doc.child_nodes(id).iter().any(|&c| {
+            doc.get(c)
+                .is_some_and(|n| matches!(n.kind, zero_dom::NodeKind::Element(_)))
+        }) {
+            return;
+        } else {
+            inline_content_strut_extent(style, provider)
+        }
+    } else {
+        // inline 叶（无元素子）/ 原子容器的纯 inline 内容块级子 → strut。
+        inline_content_strut_extent(style, provider)
+    };
+    if extent <= 0.5 {
+        return;
+    }
+    let frame_v = b.padding_top + b.padding_bottom + b.border_top + b.border_bottom;
+    let new_h = extent + frame_v;
+    // 单向收缩：仅在显著小于拉伸值时回写（防 extent 高估放大）。
+    if new_h + 0.5 < b.height {
+        b.height = new_h;
+        b.content_height = extent.max(0.0);
+    }
+}
+
 /// 标记孤立 table-internal 元素（CSS Tables §2.4）为匿名 table 根。
 ///
 /// 当 `display:table-row-group/table-row/table-cell/...` 出现在非 table 上下文中

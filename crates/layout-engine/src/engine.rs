@@ -914,6 +914,17 @@ impl LayoutEngine {
         // 剥离穿透 margin 并上移后续兄弟（margin-collapse-min-height-001/002 簇）。
         prevent_collapse_through_min_height(&mut root_box, styles);
 
+        // 5.4b 后处理（R4468）：vertical 容器 inline-level 子行内 extent 拉伸清除——
+        // taffy 交换帧把 inline-level 子的物理高（行内 extent 槽）stretch 到容器 pre-restack
+        // 物理宽。须先于 5.5（泄漏参照 = 5.5 收缩前的容器 content_width）与全部 IFC
+        // 消费者（5.6/6.x/6.5/12）运行，从源头切断「IFC 以拉伸 LayoutBox 为测源」污染。
+        crate::float_positioning::shrink_vertical_stretched_inline_extents(
+            &mut root_box,
+            doc,
+            styles,
+            self.inline_font_context(&font_overrides),
+        );
+
         // 5.5 后处理：垂直书写模式下 width:auto 块级元素收缩到内容块轴跨度
         shrink_vertical_blocks_to_content(&mut root_box, styles, &WritingModeValue::HorizontalTb);
 
