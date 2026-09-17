@@ -2,46 +2,48 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-18（S1038：**异常升级排查轮 — S1036 记账
-条款「再现即升级排查」兑现：run exited null 异常第 2 例现于本轮
-门首调（run 1，S1036 为 run 2——跨 run 位置跨轮次再现），升级
-排查定位根因 = tests/playwright-matrix/scripts/
-verify-deterministic.mjs 容忍分支对 status null 误放行
-（execFileSync 300s 超时 SIGTERM 杀死子进程时 err.status =
-null，原条件 err.status === undefined || err.status > 1 中
-null !== undefined 且 null > 1 为 false，被误判「含期望失败步
-骤」容忍打印；此时无法区分「收尾挂起被杀且报告已完整」与「中途
-卡死被杀 + 读到陈旧报告」——S78 同族诚实性缺口）**，最小诚实性
-修复 = status === null 加入不容忍分支（与 exit 2 同等致命，超
-时被杀步骤结果不可信直接 FAIL），修复后树代码变化（本流自有面
-tests/ 1 文件 +4/-1）触发双腿刷新（S245→S992→S1003→S1010→
-S1020→S1024→S1029→S1030 先例链）。
-门首调 PASS 33 绿（04:19:09 启动 04:24:25 落盘 wall ~5.3min 第
-二次离群，run 1 exited null 异常取证在案——run_details 双 run
-33 ok 集机械一致 failed 同=挂账，判定基础无损首调 PASS 有效）
-+ **修复后门复跑一调收口 PASS 33 绿**（04:26:49 启动 04:27:20
-落盘 wall ~31s EXIT=0，双 run 均 flow exited 1 正常态，编译全
-缓存 replay 零 Compiling、零锁等待；expected_green 33 对称差
-none、regressions 空、deterministic 双跑 YES；ZW_IPC_VALIDATE
-静默 capture jsonl 零写入；dead_code warning 维持同形一枚
-match_media_to_json crates/engine/src/js_dom_bridge.rs cargo
-cache warning replay 既有形态 S1028→S1037 同形维持记档）。
-make test 腿 **一调收口 19,341P/0F 全绿**（67 组 result 全 ok，
-04:27 起手 04:37:18 收口 wall ~9.9min EXIT=0 零 FAILED/error
-行；编译零 Compiling 行 = 全缓存 replay——verify 脚本 Node 面
-变更不触 Rust 编译，预期一致；零锁等待；计数与基线精确一致）。
-**引用计数以 S1038 双腿为新周期锚点 0/10**（门腿 04:27:20 落盘
-+ make test 腿 04:37:18 收口；下轮 S1039 = 1/10 静默监测引用
-轮，树代码变化提前触发双腿刷新）。
-锚点面四点实测维持 = S1030 基线精确一致：全树排除本流 docs 对
-18d462de6 **181 files +19768/-1228**；自有面对 S897 tip
-7da6043d6 **10 files +1187/-182**；crates/ raw **119** 维持；
-子帧关键词 **7 文件** crates/ 零命中维持（Rust 面 .rs 口径实
-测；frames.click+evaluate 挂起维持，解冻条件①观察面 119 口
-径）。
-首调红形态连续第 36 轮零再现（累计三例非聚集维持）。
+**最后更新**: 2026-09-18（S1039：**静默监测引用轮 — 引用计数
+0/10→1/10（周期锚点 = S1038 双腿：门腿 04:27:20 落盘 + make
+test 腿 04:37:18 收口），同 tip 复核 pull 零新提交 tip =
+0b814aa93 即 S1038 轮后插记提交本身（S1038 双腿收口后零代码变
+更 0b814aa93..HEAD 排除本流 docs diff 空——git log 零提交 + git
+diff 零输出实测复核），树不变口径 = 门单腿复跑免 make test 腿
+（S336 先例），绿步维持 33**。
+门腿 **PASS 33 绿负载窗活跑首调即收口**（起手负载 1.85 兄弟流
+ZeroWeb-2 测试腿在窗——zero_integration_tests 774% CPU ps 取证
+test-guard/cargo test quickjs 腿，双 clone 隔离零污染非端口竞争
+面 S987 先例；04:42:02 启动 04:42:32 落盘 wall ~30s——E2E 双跑
+未受竞争显著影响维持 ~30s 量级 EXIT=0；编译全缓存 replay 相位
+零 Compiling 行零锁等待；expected_green 33 对称差 none、
+regressions 空、deterministic 双跑 YES（双 run 33 ok 集机械一
+致，双 run 唯一 failed 同 = 挂账 frames.click+evaluate）；双
+run 均 flow exited 1 正常态——**S1038 verify 修复后 exited
+null 零再现（第 2 个正常轮）**；ZW_IPC_VALIDATE=1 在位静默
+capture jsonl 面零写入（五 jsonl mtime 09-12/09-13 全不变实测
+复核）；dead_code warning 维持同形一枚（match_media_to_json，
+crates/engine/src/js_dom_bridge.rs——cargo cache warning
+replay 既有形态 S1028→S1038 同形，兄弟流域 face 本流不碰，
+run-rules §9，维持记档））。
+**引用计数 0/10→1/10**（S1038 新周期锚点；下轮 S1040 = 2/10，
+树代码变化提前触发双腿刷新，至迟 S1048 = 10/10 饱和次轮到期即
+期限轮活跑）。
+锚点面四点：自有面对 S897 tip 7da6043d6 维持 **10 files
++1187/-182**；crates/ raw **119** 维持；子帧关键词 **7 文件**
+crates/ 零命中维持（Rust 面 .rs 口径实测；frames.click+evaluate
+挂起维持，解冻条件①观察面 119 口径）；全树排除本流 docs 对
+18d462de6 实测 **182 files +19773/-1229**（较 S1030 基线 181
+files +19768/-1228 漂移 +1 file +5/-1——分解自洽：+1 file = 我
+方 S1038 修复 tests/playwright-matrix/scripts/
+verify-deterministic.mjs 入集（该口径不含 docs 排除，tests/ 面
+变更计入）+4/-1，余 +1/-0 = 兄弟流 6ff755713 docs 净增量折入
+（43 files docs 面累计 diff 集内）——非兄弟 crates 代码面漂移，
+crates/ raw 119 维持佐证，预期漂移记档）。
+本轮门兄弟流测试腿负载窗活跑（第三十四个负载下样本），窗尾残
+留复测均零（本树零 zero 二进制进程 / 端口族全 free / capture
+jsonl mtime 不变），门后 load 2.27 兄弟测试腿延续。
+首调红形态连续第 37 轮零再现（累计三例非聚集维持）。
 M5 定稿收口判定（DC-1~4 依据）不因复验动摇——**goal Done 维持，守成态
-证据经 S1038 双腿刷新延续**；唯一未清偿义务 = frames.click+evaluate 回填
+证据经 S1039 门单腿刷新延续**；唯一未清偿义务 = frames.click+evaluate 回填
 （挂子帧能力解冻，见子帧解冻清单，不阻收口））
 
 ---
@@ -19046,6 +19048,54 @@ M5 定稿收口判定（DC-1~4 依据）不因复验动摇——**goal Done 维�
    **S1039 = 1/10 静默监测引用轮维持**（S1038 条目预告不变），期限轮预
    告 S1048 维持；M5 定稿收口判定（DC-1~4 依据）不因本插记动摇，守成态
    证据经 S1038 双腿刷新延续。
+
+   **S1039 已执行（2026-09-18）静默监测引用轮（引用计数 0/10→1/10，
+   周期锚点=S1038 双腿（门腿 04:27:20 落盘 + make test 腿
+   04:37:18 收口），同 tip 复核 pull 零新提交 tip=0b814aa93 即
+   S1038 轮后插记提交本身（S1038 双腿收口后零代码变更
+   0b814aa93..HEAD 排除本流 docs diff 空——git log 零提交 +
+   git diff 零输出实测复核），树不变口径=门单腿复跑免 make
+   test 腿 S336 先例，绿步维持 33）——门 PASS 33 绿负载窗活跑
+   首调即收口（起手负载 1.85 兄弟流 ZeroWeb-2 测试腿在窗
+   zero_integration_tests 774% CPU ps 取证 test-guard/cargo
+   test quickjs 腿 双 clone 隔离零污染非端口竞争面 S987 先例）
+   04:42:02 启动 04:42:32 落盘 wall ~30s EXIT=0 E2E 双跑未受竞
+   争显著影响维持 ~30s 量级 编译全缓存 replay 相位零 Compiling
+   行零锁等待 expected_green 33 对称差 none regressions 空
+   deterministic 双跑 YES（双 run 33 ok 集机械一致 双 run 唯一
+   failed 同=挂账 frames.click+evaluate）双 run 均 flow exited
+   1 正常态——S1038 verify 修复后 exited null 零再现（第 2 个
+   正常态门轮 单例修复有效性佐证）ZW_IPC_VALIDATE=1 在位静默
+   （renderer-ipc-validate 零行实测复核）capture jsonl 面零写
+   入 #0 复现监测零命中维持（五 jsonl mtime 09-12 22:48/22:51/
+   22:52/23:00 + 09-13 06:24 全不变实测复核）steps-report 新鲜
+   落盘 dead_code warning 维持同形一枚（match_media_to_json
+   crates/engine/src/js_dom_bridge.rs cargo cache warning
+   replay 既有形态 S1028→S1038 同形维持记档）首调红形态连续第
+   37 轮零再现（累计三例非聚集维持）；锚点面四点：自有面对
+   S897 tip 7da6043d6 维持 10 files +1187/-182（apps/browser/
+   src/headless/ 口径实测复核）/ crates/ raw 119 维持
+   （e67967632..TIP -- crates/ 口径实测 =119 括注基名滞后注记
+   延续）/ 子帧关键词 7 文件 crates/ 零命中（Rust 面 .rs 口径
+   实测）解冻条件①观察面 119 口径 frames.click+evaluate 挂起
+   维持 / 全树排除本流 docs 对 18d462de6 实测 182 files
+   +19773/-1229 较 S1030 基线 181 files +19768/-1228 漂移
+   +1 file +5/-1（分解自洽：+1 file = 我方 S1038 修复 tests/
+   playwright-matrix/scripts/verify-deterministic.mjs 入集
+   +4/-1 余 +1/-0 = 兄弟流 6ff755713 docs 净增量折入 43 files
+   docs 面累计 diff 集内 非兄弟 crates 代码面漂移 crates/ raw
+   119 维持佐证 预期漂移记档）；门尾树态不变（tip=0b814aa93
+   即 S1038 轮后插记提交本身 tracked clean）本树 zombie 复测零
+   端口族全 free 本门零残留 控制面零外来提交 本轮门兄弟流测试
+   腿负载窗活跑（第三十四个负载下样本 门后 load 2.27 兄弟测试
+   腿延续）**——下轮 **S1040 = 2/10**（周期锚点=S1038 双腿），
+   若 S1040 前树代码变化则提前触发双腿刷新
+   （S245→S992→S1003→S1010→S1020→S1024→S1029→S1030→S1038 先
+   例链），否则按引用轮口径门单腿复跑免 make test 腿（S336 先
+   例），至迟 S1048=10/10 饱和次轮到期即期限轮活跑（双腿活跑
+   口径=门 + make test，S932/S933/S989/S992/S1003/S1010/S1020/
+   S1024/S1029/S1030/S1038 先例：/10 周期饱和即次轮期限轮，新
+   周期期限条款依原设计恢复）；
 
    **S1028 已执行（2026-09-18）静默监测引用轮（引用计数 4/10→5/10，
    周期锚点=S1024 双腿（门腿 02:20:58 落盘 + make test 腿 02:31:31
