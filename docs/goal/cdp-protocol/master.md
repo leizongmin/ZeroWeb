@@ -2,14 +2,13 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-18（S1003：**期限轮活跑（10/10 饱和次轮到
-期，双腿活跑口径=门 + make test，S932/S933/S989/S992 先例，新周
-期期限条款依原设计恢复）— 同 tip 复核（pull 零新提交，tip =
-e430dc4b3 即 S1002 提交本身；S1002 门腿复跑后零代码变更
-（64b763bdd..HEAD 排除本流 docs 零 diff 实测复核），树不变双腿
-活跑直接覆盖当前树，绿步维持 33）**。
-门腿 **PASS 33 绿首调即收口**（00:20:42 启动 00:21:15 落盘
-wall ~33s EXIT=0，编译全缓存 replay 相位零 Compiling 行=R4455 组
+**最后更新**: 2026-09-18（S1004：**静默监测引用轮 — 同 tip 复核
+（pull 零新提交，tip = a3bfb9e8b 即 S1003 提交本身；S1003 门腿
+复跑后零代码变更（e430dc4b3..HEAD 排除本流 docs 零 diff 实测复
+核），树不变口径 = 门单腿引用 S1003 双腿活跑（免 make test 腿，
+S336 先例），绿步维持 33）**。
+门腿 **PASS 33 绿首调即收口**（00:35:02 启动 00:35:32 落盘
+wall ~30s EXIT=0，编译全缓存 replay 相位零 Compiling 行=R4455 组
 合态复验、窗内零锁等待；expected_green 33 对称差 none、
 deterministic 双跑 YES（run_details 双 run 实质逐项一致）、
 ZW_IPC_VALIDATE 在位静默（renderer-ipc-validate 零行实测复核）
@@ -18,27 +17,20 @@ capture jsonl 面零写入 #0 复现监测零命中维持（req/resp/fin
 一枚（match_media_to_json，crates/engine/src/js_dom_bridge.rs
 ——cargo 诊断 replay 既有形态，兄弟流域 face 本流不碰，run-rules
 §9，维持记档））。
-make test 腿 **一调收口 19,341P/0F 全绿**（67 组 result 全 ok
-00:21:34 启动 00:31:26 收口 wall ~9.9min EXIT=0 零 FAILED/error
-行 编译全缓存零重编 计数与 S992 基线精确持平零漂移；窗内
-package cache 锁等待 7 次记档（6 package cache + 1 build
-directory）——兄弟流 ZeroWeb-2 zero_integration_tests 腿 161%
-CPU 并窗所致 全部自行解除零死锁 与 S983/S989/S992 同亚型延续
-双绿收口零影响）。
-**引用计数以 S1003 双腿为新周期锚点 0/10**（门腿 00:21:15 落盘 +
-make test 腿 00:31:26 收口；下轮 S1004 = 1/10 静默监测引用轮，
-树代码变化提前触发双腿刷新；至迟 S1013=10/10 饱和次轮到期即期
-限轮活跑）。
+**引用计数 0/10→1/10**（S1003 双腿新周期锚点：门腿 00:21:15 落盘 +
+make test 腿 00:31:26 收口；下轮 S1005 = 2/10，树代码变化提前触发
+双腿刷新；至迟 S1013=10/10 饱和次轮到期即期限轮活跑）。
 锚点面四点实测维持：全树排除本流 docs 对 18d462de6
 **180 files +18149/-1219**；自有面对 S897 tip 7da6043d6
 **10 files +1187/-182**；crates/ raw **115** 维持（8fb39cd46..TIP
 -- crates/ 口径零新增提交实测复核）；子帧关键词 **7 文件** crates/
 零命中维持（frames.click+evaluate 挂起维持，解冻条件①观察面 115
-口径）。本轮轻净窗起步负载 1.26 门腿；make test 窗兄弟流测试腿
-入窗（起手 5.39）双 clone 隔离零污染。首调红形态新 streak 第 1
-轮零再现（累计三例非聚集维持）。
+口径）。本轮负载窗执行（起手负载 2.56 兄弟流 ZeroWeb-2
+zero_integration_tests 腿 139% CPU 在窗 双 clone 隔离零污染 非
+端口竞争面 门后 2.44 延续）。首调红形态连续第 2 轮零再现（累计
+三例非聚集维持）。
 M5 定稿收口判定（DC-1~4 依据）不因复验动摇——**goal Done 维持，守成态
-证据经 S1003 双腿复验延续**；唯一未清偿义务 = frames.click+evaluate 回填
+证据经 S1004 门腿复验延续**；唯一未清偿义务 = frames.click+evaluate 回填
 （挂子帧能力解冻，见子帧解冻清单，不阻收口））
 
 ---
@@ -18554,6 +18546,39 @@ M5 定稿收口判定（DC-1~4 依据）不因复验动摇——**goal Done 维�
    （先例链），否则按引用轮口径门单腿复跑免 make test 腿（S336 先
    例），至迟 S993=10/10 饱和次轮到期即期限轮活跑（双腿活跑口径=门
    + make test，S932/S933 先例：/10 周期饱和即次轮期限轮）；
+
+   **S1004 已执行（2026-09-18）静默监测引用轮（引用计数 0/10→1/10，
+   周期锚点=S1003 双腿（门腿 00:21:15 落盘 + make test 腿 00:31:26
+   收口），同 tip 复核 pull 零新提交 tip=a3bfb9e8b 即 S1003 提交本
+   身（S1003 门腿复跑后零代码变更 e430dc4b3..HEAD 排除本流 docs 零
+   diff 实测复核），树不变口径=门单腿引用 S1003 双腿活跑 19,341P/0F
+   EXIT=0 直接覆盖当前树（免 make test 腿 S336 先例），绿步维持
+   33）——门 PASS 33 绿负载窗活跑（起手负载 2.56 兄弟流 ZeroWeb-2
+   zero_integration_tests 腿 139% CPU 在窗 双 clone 隔离零污染 非
+   端口竞争面 门后 2.44 延续）首调即收口 00:35:02 启动 00:35:32
+   落盘 wall ~30s EXIT=0 编译全缓存 replay 相位零 Compiling 行
+   （R4455 组合态复验）窗内零锁等待 expected_green 33 对称差 none
+   regressions 空 deterministic 双跑 YES（run_details 双 run 实质
+   逐项一致）ZW_IPC_VALIDATE 在位静默（renderer-ipc-validate 零行
+   实测复核）capture jsonl 面零写入 #0 复现监测零命中维持
+   （req/resp/fin 8/8/8 failedCount=0 稳态签名沿用 capture 面三
+   jsonl mtime 22:48:45/23:00:14/06:24:26 全先于本轮窗实测复核）
+   steps-report 新鲜落盘 dead_code warning 维持同形一枚
+   （match_media_to_json crates/engine/src/js_dom_bridge.rs cargo
+   诊断 replay 既有形态维持记档）首调红形态连续第 2 轮零再现（累
+   计三例非聚集维持）；锚点面四点实测维持（全树排除本流 docs 对
+   18d462de6 180 files +18149/-1219 / 自有面对 S897 tip
+   7da6043d6 10 files +1187/-182 / crates/ raw 115 维持
+   （8fb39cd46..TIP -- crates/ 口径零新增提交实测复核）/ 子帧关键
+   词 7 文件 crates/ 零命中 解冻条件①观察面 115 口径
+   frames.click+evaluate 挂起维持）；门尾树态不变（tip=a3bfb9e8b
+   即 S1003 提交本身 tracked clean）zombie 双复测均零 端口族全
+   free 本门零残留 控制面零外来提交**——下轮 **S1005 = 2/10**（周
+   期锚点=S1003 双腿），若 S1005 前树代码变化则提前触发双腿刷新
+   （先例链），否则按引用轮口径门单腿复跑免 make test 腿（S336
+   先例），至迟 S1013=10/10 饱和次轮到期即期限轮活跑（双腿活跑口
+   径=门 + make test，S932/S933/S989/S992/S1003 先例：/10 周期饱
+   和即次轮期限轮，新周期期限条款依原设计恢复）；
 
    **S1003 已执行（2026-09-18）期限轮活跑（10/10 饱和次轮到期，
    双腿活跑口径=门 + make test，S932/S933/S989/S992 先例，新周期
