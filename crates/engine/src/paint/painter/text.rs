@@ -2327,7 +2327,16 @@ impl super::Painter {
                                                 - advance,
                                         )
                                     } else {
-                                        (frag_base_x, char_pos)
+                                        // R4472：CW 旋转字形的**深度位补偿**——raster
+                                        // glyph_top_left 对旋转位图仍按未旋转契约放位
+                                        //（start_y = anchor − y_offset − height，Ahem
+                                        // y_offset=−(h−ascent)=−0.2em·fs → 方块顶 =
+                                        // anchor − 0.8em）。vertical run 的 char_pos 是沿
+                                        // 行内轴（物理 y）的推进位 = 字形方块**应有顶**，
+                                        // 故 anchor += 0.8em·fs 使方块落 [char_pos, char_pos+fs]
+                                        //（inline-table-alignment-002：A 画 3 应 51、F/L 画
+                                        // 15 应 111，−0.8em 精确吻合像素实测）。
+                                        (frag_base_x, char_pos + $frag_fs * 0.8)
                                     }
                                 } else {
                                     (char_pos + glyph.x_offset, frag_base_y - glyph.y_offset)
@@ -2508,6 +2517,8 @@ impl super::Painter {
                             // 仅对**真正** Ahem 字形（is_ahem_font，来自 IFC run 实际字体）应用——
                             // 容器为 Ahem 但片段实为其它字体（font-051 的 serif span）时保留旧
                             // 容器级行为（is_ahem?0:font_size），避免按 ascent=font_size 错移。
+                            // R4472：vertical 的 v_offset 不进 frag_base_y（深度位直接锚，
+                            // 见发射处 char_pos + 0.8em 补偿），仅 R639 inline bg 沿用旧 0 口径。
                             let v_offset = if frag.is_ahem_font {
                                 frag.baseline_y_abs - frag.y
                             } else if frag.is_ahem {
