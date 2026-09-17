@@ -14,8 +14,11 @@ failedCount=0）；build replay 相位 dead_code warning 维持 S908-S981 同形
 一枚（match_media_to_json，crates/engine/src/js_dom_bridge.rs——R4448 组
 合态既有形态，兄弟流域 face 本流不碰，run-rules §9，维持记档））。
 **引用计数 0/10→1/10**（S981 双腿新周期锚点：门腿 21:03:43 落盘 +
-make test 腿 21:14 收口；下轮 S983 = 2/10，树代码变化提前触发双腿
-刷新；至迟 S991=10/10 饱和次轮到期即期限轮活跑）。
+make test 腿 21:14 收口；**S982 轮后插记取代引用轮预告——兄弟流
+R4449（16598e720，style-system cascade 别名消解 UA ul/ol 切 logical）
+于 S982 门腿收口后 push 序列入树（crates/style-system 代码腿 5 文件），
+S983 = 树变化刷新轮（双腿=门+make test，S342/S456/S622/S896/S978/
+S979/S980 插记先例链），引用计数以 S983 双腿为新周期锚点 0/10**）。
 锚点面四点实测维持：全树排除本流 docs 对 18d462de6
 **178 files +17995/-1202**；自有面对 S897 tip 7da6043d6
 **10 files +1187/-182**；crates/ raw **107**；子帧关键词 **7 文件**
@@ -18511,6 +18514,33 @@ M5 定稿收口判定（DC-1~4 依据）不因复验动摇——**goal Done 维�
    （S336 先例），至迟 S943=10/10 饱和次轮到期即期限轮活
    跑（双腿活跑口径=门 + make test，S932/S933 先例：/10
    周期饱和即次轮期限轮，新周期期限条款依原设计恢复）；
+
+   **S982 轮后插记（2026-09-17 push 序列 pull --rebase 实测）**：
+   兄弟流 R4449（16598e720，feat(style-system) cascade 别名消解 UA
+   ul/ol 切 logical，crates/style-system/src/cascade.rs +
+   inheritance.rs + lib.rs + property/apply_advanced.rs +
+   property/mod.rs 5 代码文件 + docs/goal/rendering-compat.md，
+   6 files +101/-12）于 S982 门腿收口（21:25:02 落盘）后的 push 序列
+   经 push 前 pull 入树（本流 S982 收口提交 rebase 于其上，push 后
+   main tip = aee3cc21e）——S982 门 PASS 覆盖树态 = 4a7ac169a
+   （R4449 入树前），main tip 组合态超出 S982 门覆盖树态，**S983 =
+   树变化刷新轮（门 + make test 双腿刷新，S342/S456/S622/S896/S978/
+   S979/S980 先例链），S982 条目内「下轮 S983 = 2/10 静默监测引用
+   轮」预告被本插记取代**，引用计数以 S983 双腿为新周期锚点 0/10；
+   S983 锚点预期（本插记时点实测）——全树排除本流 docs 对 18d462de6
+   178 files +17995/-1202 → **180 files +18089/-1217**（+2 file 净增
+   = cascade.rs/property/mod.rs 为 diff 新文件，inheritance.rs/
+   lib.rs/apply_advanced.rs/rendering-compat.md 已在 diff 内；行数
+   非面值加总以 S983 逐项实测为准），crates/ raw 107 → **112** 递增
+   （+5 = R4449 代码腿入 crates/ 5 文件口径），自有面对 S897 tip
+   7da6043d6 维持 **10 files +1187/-182** 不变（实测复核），子帧关
+   键词维持 **7 文件**（R4449 行零关键词命中实测复核）非测试代码零
+   命中维持（解冻条件①观察面 112 口径 frames.click+evaluate 挂起
+   维持）；R4449 系渲染流域 style-system 代码提交，本流不碰
+   （run-rules §9 工作面不重叠维持）；兄弟提交自述 +6 绿零新翻红
+   （其树实测）——按归因纪律（run-rules §10）本流双腿刷新以实测为
+   准；R4449 不触 headless/CDP 面，M5 定稿收口判定（DC-1~4 依据）
+   不因本插记动摇，S983 刷新门 PASS 即守成态证据延续。
 
    **S982 已执行（2026-09-17）静默监测引用轮（引用计数 0/10→1/10，
    周期锚点=S981 双腿（门腿 21:03:43 落盘 + make test 腿 21:14 收口），
