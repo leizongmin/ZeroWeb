@@ -18390,6 +18390,28 @@ deterministic 双跑 YES、ZW_IPC_VALIDATE 在位静默 capture jsonl 面零写�
    S874/S875/S876/S884/S885/S886/S890/S897/S898/S899 先
    例）；
 
+   **S904 轮后插记（2026-09-17 推送序列 pull --rebase 实
+   测）**：兄弟流 R4434（fix writing-modes，crates/engine
+   /src/paint/painter/text.rs + crates/layout-engine/src/
+   inline_finalization.rs +20/-28 折入 docs/goal/
+   rendering-compat.md，ce794cdc7）于 S904 门腿收口**之
+   后**经 push 前 pull --rebase 入树（S904 提交被 rebase
+   顶到其上，远端 tip ce794cdc7 → 本流推送落 fd934af20）
+   ——S904 门腿覆盖树态=R4433 组合态，main tip 组合态已
+   再度超出，**S905 = 树变化刷新轮（门 + make test 双腿
+   刷新，S897→S898→S899 先例链）**，引用计数以 S905 双腿
+   为新周期锚点 0/10（S904 记录内「下轮 S905=6/10 静默
+   监测引用轮」预告被本插记取代）；S905 锚点预期（本插
+   记时点实测）——全树排除本流 docs 对 18d462de6 172
+   files +16978/-1148 → 面 172 维持（+20/-28 行数折入，
+   R4434 两代码文件均已在累计 diff 集），crates/ raw 92
+   → **93**（+1 = R4434 代码腿入 crates/ 口径），自有面
+   对 S897 tip 7da6043d6 维持 10 files +1187/-182 不变
+   （R4434 不触 headless/CDP 面，实测复核）；R4434 系渲
+   染流域 writing-modes 腿代码提交本流不碰（run-rules
+   §9），M5 定稿收口判定（DC-1~4 依据）不因本插记动摇，
+   S905 刷新门 PASS 即守成态证据延续。
+
    **S904 已执行（2026-09-17）静默监测引用轮（引用计数
    4/10→5/10，同 tip 复核 pull 零新提交 tip=7922e1377 即
    S903 提交本身（S903 门腿复跑后零代码变更 7922e1377
