@@ -204,9 +204,40 @@ pub(crate) fn shrink_pure_text_floats(
         return;
     }
     // 仅水平书写模式：text_content_max_width 度量水平文本宽，垂直模式的 float 其 inline 轴
-    // 为垂直（block-size），物理 width 语义不同，由 shrink_vertical_blocks_to_content 独立处理。
-    // 不 gate 会致 hyphens-vertical-* 垂直 float 误收缩（±0.04pp 噪声 flip）。
+    // 为垂直（block-size），物理 width 语义不同——R4462：vertical 纯文本 float 的物理宽
+    // = **Σ 列宽**（ceil(文本深度/列深) × line-height）+ 横向 frame。旧路径依赖
+    // shrink_vertical_blocks_to_content 后置 pass 按 max 子盒 extent 测内容宽，纯文本
+    // float 无 LayoutBox 子 → content_extent=0 → float 宽塌缩 0（line-box-direction-slr-048
+    // 实证），且塌缩在 step 5 float 定位**之后**（定位用 taffy 胖宽 → 多 float 误纵向堆叠）。
+    // 本臂在定位前落定宽度（hyphens-vertical-* 域 depth=0 / 单列 no-op，零扰动）。
     if !matches!(box_node.writing_mode, WritingModeValue::HorizontalTb) {
+        let Some(dom_id) = box_node.node_id else {
+            return;
+        };
+        let Some(style) = styles.get(&dom_id) else {
+            return;
+        };
+        let depth = crate::intrinsic_sizing::text_content_max_width(dom_id, doc, styles);
+        if depth <= 0.0 {
+            return;
+        }
+        let line_height = crate::inline::resolve_font_metrics(Some(style)).1;
+        if line_height <= 0.0 {
+            return;
+        }
+        // 列深（行内 extent）= definite author 高度用 content_height，auto 无约束（单列）。
+        let col_depth = if !matches!(style.height, LengthValue::Auto) && box_node.content_height > 0.5 {
+            box_node.content_height
+        } else {
+            depth
+        };
+        let columns = (depth / col_depth).ceil().max(1.0);
+        let frame_h = box_node.padding_left + box_node.padding_right + box_node.border_left + box_node.border_right;
+        let shrink_border_box = columns * line_height + frame_h;
+        if shrink_border_box < box_node.width || box_node.width <= 0.5 {
+            box_node.width = shrink_border_box;
+            box_node.content_width = (shrink_border_box - frame_h).max(0.0);
+        }
         return;
     }
     // 已有 block 级 / replaced 子元素的 float 由 adjust_float_positions 收缩分支处理，
@@ -305,6 +336,18 @@ pub(crate) fn shrink_vertical_blocks_to_content(
     let parent_horizontal = matches!(parent_writing_mode, WritingModeValue::HorizontalTb);
 
     if own_vertical && parent_horizontal && box_node.is_block_level && !box_node.is_absolute && !box_node.is_fixed {
+        // R4462：纯文本 float（无流内子）跳过本收缩——内容块轴跨度 = Σ 列宽（IFC 域），
+        // 无 LayoutBox 子时 extent=0 会把宽度塌缩 0（line-box-direction-slr-048 float
+        // 实证）；其宽已由 shrink_pure_text_floats 的 R4462 前置臂（ceil(文本深度/列深)
+        // × line-height）在 float 定位前落定。非 float 空盒塌缩语义维持旧状（零风险面）。
+        let is_float = !matches!(box_node.float, FloatValue::None);
+        let has_in_flow_children = box_node.children.iter().any(|c| !c.is_absolute && !c.is_fixed);
+        if is_float && !has_in_flow_children {
+            for child in &mut box_node.children {
+                shrink_vertical_blocks_to_content(child, styles, &box_node.writing_mode);
+            }
+            return;
+        }
         // R4194（css-sizing-3 §fit-content）：bare fit-content 经 parser 映射 MaxContent
         //（R1018），converter 在 vertical + inline-size containment 下把 block 轴关键字
         // 映射 Auto（R4194 vertical_inline 臂）——taffy Auto block-size fill CB（800），
