@@ -18584,6 +18584,34 @@ M5 定稿收口判定（DC-1~4 依据）不因复验动摇——**goal Done 维�
    则提前触发双腿刷新（S245→S992→S1003→S1010 先例链），否则按引
    用轮口径门单腿复跑免 make test 腿（S336 先例）；
 
+   **S1019 轮后插记（2026-09-18 push 序列 pull --rebase 实测）**：兄弟流
+   R4459（5e0b03113，fix(layout-engine) orthogonal vertical float 双
+   臂——float 子树无约束测深 + 浮动缘重锚，slr-047/048、vlr-007/008
+   全绿零新翻红，crates/layout-engine engine.rs +
+   inline_finalization.rs + vertical_block_flow.rs 3 代码文件 +
+   docs/goal/rendering-compat.md 记档行，4 files +231/-14）于 S1019
+   门腿收口（01:40:09 落盘）后的 push 序列经 push 前 pull --rebase
+   入树（我方 S1019 记录提交 rebase 于其上，push 后 main tip =
+   dfdf2b975）——S1019 门 PASS 覆盖树态 = 96f1848fe（R4459 入树
+   前），main tip 组合态超出 S1019 门覆盖树态，**S1019 条目内「下轮
+   S1020 = 10/10 饱和（门单腿引用轮）」预告被本插记取代，S1020 =
+   树变化刷新轮（门 + make test 双腿刷新，S245→S992→S1003→S1010
+   先例链）**，引用计数以 S1020 双腿为新周期锚点 0/10；S1020 锚点
+   预期（本插记时点实测）——全树排除本流 docs 对 18d462de6 180
+   files +18148/-1219 → **180 files +18366/-1220**（file 数不变 =
+   R4459 三 crates 文件已在 diff 集，行数 = R4459 折入累计 diff），
+   crates/ raw 115 → **116** 递增（+1 = R4459 代码腿入 crates/ 口
+   径，e67967632..TIP 实测 =116，括注基名滞后注记延续），自有面对
+   S897 tip 7da6043d6 维持 **10 files +1187/-182** 不变（实测复
+   核），子帧关键词维持 **7 文件**（R4459 diff 零关键词命中实测复
+   核）非测试代码零命中维持（解冻条件①观察面 116 口径
+   frames.click+evaluate 挂起维持）；R4459 系渲染流域 layout-engine
+   代码提交，本流不碰（run-rules §9 工作面不重叠维持）；兄弟提交
+   自述 slr-047/048、vlr-007/008 全绿零新翻红（其树实测）——按归
+   因纪律（run-rules §10）本流双腿刷新以实测为准；R4459 不触
+   headless/CDP 面，M5 定稿收口判定（DC-1~4 依据）不因本插记动
+   摇，S1020 刷新双腿全绿即守成态证据延续。
+
    **S1018 已执行（2026-09-18）静默监测引用轮（引用计数 7/10→8/10，
    周期锚点=S1010 双腿（门腿 01:03:31 落盘 + make test 腿 01:13:05
    收口），同 tip 复核 pull 零新提交 tip=6d7f687d2 即 S1017 提交本
