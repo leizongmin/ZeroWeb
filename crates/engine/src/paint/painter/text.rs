@@ -1221,6 +1221,35 @@ impl super::Painter {
             if has_content {
                 let glyphs_before_fragments = self.primitives.glyphs.len();
 
+                // R4440 临时探针（ZW_DEBUG_GLYPHS=1）：vertical 盒 paint 装配参数。
+                if is_vertical && std::env::var("ZW_DEBUG_GLYPHS").as_deref() == Ok("1") {
+                    eprintln!(
+                        "[vpaint] box={:?} abs=({:.0},{:.0}) content=({:.0},{:.0}) cx={:.0} cy={:.0} use_stored={} tx={:.1} ty={:.1} w={:.0}",
+                        box_node.node_id,
+                        abs_x,
+                        abs_y,
+                        box_node.content_width,
+                        box_node.content_height,
+                        content_x,
+                        content_y,
+                        use_stored,
+                        tx,
+                        ty,
+                        box_node.width,
+                    );
+                    for (i, f) in fragments.iter().take(2).enumerate() {
+                        eprintln!(
+                            "[vpaint]   frag[{}] x={:.1} y={:.1} line_y={:.1} w={:.1} text={:?}",
+                            i,
+                            f.x,
+                            f.y,
+                            frag_line_tops.get(i).copied().unwrap_or(f32::NAN),
+                            f.width,
+                            f.text.chars().take(4).collect::<String>()
+                        );
+                    }
+                }
+
                 // writing-mode: vertical-rl/vertical-lr 时字符旋转 90°
                 let rotation = if is_vertical { std::f32::consts::FRAC_PI_2 } else { 0.0 };
 

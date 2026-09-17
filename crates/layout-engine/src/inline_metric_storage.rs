@@ -138,7 +138,16 @@ fn store_font_sizes_from_ifc_mode(
         {
             box_node.inline_block_child_nodes.insert(owner);
         }
-        box_node.text_node_line_heights.insert(frag.node_id, frag.height);
+        // R4440：vertical 帧的 fragment 宽高转置（width=列宽=line-height、height=行内
+        // advance）——存 line_height 槽须取 frag.width，否则 paint Path B 的
+        // line_height_overrides 读到 advance（80/140）→ vrl 列高=advance → 列 x =
+        // block_extent−advance 负值出盒（block-flow-direction-vrl-009 残差 0.78pp 实证）。
+        let line_height_metric = if box_node.writing_mode.is_vertical_block_flow() {
+            frag.width
+        } else {
+            frag.height
+        };
+        box_node.text_node_line_heights.insert(frag.node_id, line_height_metric);
         if let Some(ratio) = inline_ctx.ascent_ratio_overrides.get(&frag.node_id) {
             box_node.text_node_ascent_ratios.insert(frag.node_id, *ratio);
         } else {

@@ -1882,6 +1882,15 @@ impl InlineFormattingContext {
             // caption-side-vrl 文本完全不绘制（R1120）。block_extent 是真实 block 轴（x）跨度，
             // caption content_width=50 → col 0 → paint content_x+0 正确。
             let mut x = self.block_extent; // 从 block 轴右端开始
+            // R4440 临时探针（ZW_DEBUG_GLYPHS=1）：vrl 堆叠输入。
+            if std::env::var("ZW_DEBUG_GLYPHS").as_deref() == Ok("1") {
+                eprintln!(
+                    "[vstack] block_extent={:.1} lines={} heights={:?}",
+                    self.block_extent,
+                    self.lines.len(),
+                    self.lines.iter().map(|l| l.height).collect::<Vec<_>>()
+                );
+            }
             for col in &mut self.lines {
                 x -= col.height; // col.height 在垂直模式表示列宽
                 col.y = x;

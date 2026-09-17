@@ -829,7 +829,7 @@ fn render_with_layout_inner(
                 .iter()
                 .filter(|g| g.font_size > 0.0)
                 .enumerate()
-                .take(40)
+                .take(200)
             {
                 eprintln!(
                     "  glyph[{}]: ({:.1},{:.1}) fs={:.0} rot={:.2}",

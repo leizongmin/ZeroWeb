@@ -699,7 +699,14 @@ fn store_abspos_child_font_metrics(
             .is_some_and(|n| matches!(n.kind, zero_dom::NodeKind::Text(_)))
         {
             child.text_node_font_sizes.insert(tn, fragment.font_size);
-            child.text_node_line_heights.insert(tn, fragment.height);
+            // R4440：vertical 帧宽高转置——line_height 槽取 frag.width（列宽），同
+            // inline_metric_storage 同款修正（否则 paint 列高=advance，列 x 负值出盒）。
+            let line_height_metric = if child.writing_mode.is_vertical_block_flow() {
+                fragment.width
+            } else {
+                fragment.height
+            };
+            child.text_node_line_heights.insert(tn, line_height_metric);
             child.text_node_is_ahem.insert(tn, fragment.is_ahem);
             child.text_node_letter_spacing.insert(tn, fragment.letter_spacing);
             if let Some(cs) = styles.get(&child_node_id) {

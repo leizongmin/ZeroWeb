@@ -992,6 +992,16 @@ impl InlineFormattingContext {
             BidiFragmentCursor::with_direction(&combined, first.is_rtl, first.is_plaintext_bidi)
         };
         let words = self.split_into_words(source_cursor.visual_text(), first.is_ahem_font);
+        // R4440 临时探针（ZW_DEBUG_GLYPHS=1）：vertical run 度量溯源。
+        if std::env::var("ZW_DEBUG_GLYPHS").as_deref() == Ok("1") {
+            eprintln!(
+                "[vrun] lhs={:?} fs={:.1} ahem={} text={:?}",
+                runs.iter().map(|r| r.line_height).collect::<Vec<_>>(),
+                first.font_size,
+                first.is_ahem_font,
+                combined.chars().take(6).collect::<String>()
+            );
+        }
 
         // 空 inline 元素
         if words.is_empty() && combined.is_empty() {
