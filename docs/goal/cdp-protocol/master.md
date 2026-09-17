@@ -19089,6 +19089,18 @@ M5 定稿收口判定（DC-1~4 依据）不因复验动摇——**goal Done 维�
    S1024/S1029/S1030/S1038 先例：/10 周期饱和即次轮期限轮，新
    周期期限条款依原设计恢复）；
 
+   **S1040 轮后插记（2026-09-18 push 序列 pull --rebase 实测）**：兄弟流
+   fcca48f6f（rendering-compat R4468 vertical inline-level 子行内 extent
+   拉伸清除定谳与落地登记）于 S1040 门收口（04:47:15）后 push 序列经
+   push 前 pull --rebase 入树（我方 S1040 提交 rebase 于其上，push 后
+   main tip = 8229bc8db，rebase 零冲突）——兄弟提交 1 file +1/-0 纯
+   docs 面（docs/goal/rendering-compat.md），零代码零 crates/ 零 tests
+   零 Makefile（非 docs 面 name-only 实测零文件），**S1038 双腿 PASS
+   覆盖的代码树态不变**（代码面 diff 空实测复核），引用计数锚点维持
+   S1038 双腿，下轮 **S1041 = 3/10 静默监测引用轮维持**（S1040 条目预
+   告不变），期限轮预告 S1048 维持；M5 定稿收口判定（DC-1~4 依据）不
+   因本插记动摇，守成态证据经 S1040 门单腿刷新延续。
+
    **S1039 已执行（2026-09-18）静默监测引用轮（引用计数 0/10→1/10，
    周期锚点=S1038 双腿（门腿 04:27:20 落盘 + make test 腿
    04:37:18 收口），同 tip 复核 pull 零新提交 tip=0b814aa93 即
