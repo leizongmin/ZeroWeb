@@ -2,23 +2,29 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-17（S904：**静默监测引用轮 — 同 tip 复核（pull 零新提交，
-tip = 7922e1377 即 S903 提交本身；S903 门腿复跑后零代码变更（7922e1377..HEAD
-零提交、tracked 树 clean 实测复核），树不变口径 = 门单腿引用 S899 双腿活跑 +
-S900-S904 门腿复跑（免 make test 腿，S336 先例），绿步维持 33）**。门腿
-**PASS 33 绿首调即收口**（11:24:09 启动 11:24:39 落盘 wall ~30s，编译全缓存
-replay 相位零 Compiling 行=R4433 组合态复验；expected_green 33 对称差 none、
-deterministic 双跑 YES、ZW_IPC_VALIDATE 在位静默 capture jsonl 面零写入 #0 复
-现监测零命中）。**引用计数 4/10→5/10**（S899 双腿新周期锚点；下轮 S905 =
-6/10，至迟 S907=8/10 到期即次轮期限轮活跑，树代码变化提前触发双腿刷新）。
-锚点面四点实测维持：自有面对 S897 tip 7da6043d6 **10 files +1187/-182**；全树
-排除本流 docs 对 18d462de6 **172 files +16978/-1148**；crates/ raw **92**；子
-帧关键词 **7 文件全测试路径**非测试代码零命中维持（frames.click+evaluate 挂起
-维持，解冻条件①观察面 92 口径）。本轮净窗执行（起手负载 1.82 落至窗后 1.11，
-兄弟流编译腿窗前自行收口，非 9222 族竞争）。M5 定稿收口判定（DC-1~4 依据）不
-因复验动摇——**goal Done 维持，守成态证据经 S904 门腿复验延续**；唯一未清偿
-义务 = frames.click+evaluate 回填（挂子帧能力解冻，见子帧解冻清单，不阻收
-口））
+**最后更新**: 2026-09-17（S905：**树变化刷新轮——S904 轮后插记预告兑现，兄弟流
+R4434（fix writing-modes，crates/engine paint/painter/text.rs + crates/
+layout-engine inline_finalization.rs +20/-28，ce794cdc7）于 S904 门腿后入树触
+发（S897→S898→S899 先例链）**。pull 零新提交 tip=33283a2ef 即 S904 轮后插记
+提交本身（R4434 IN_TREE 实测核验）。门腿 **PASS 33 绿首调即收口**（~11:29:36
+启动 11:30:16 落盘，重编相位 layout-engine→engine→page-runtime→browser 链=
+R4434 组合态首次门覆盖；expected_green 33 对称差 none、deterministic 双跑
+YES、ZW_IPC_VALIDATE 在位静默 capture jsonl 面零写入 #0 复现监测零命中）+
+make test **一调收口 19,335P/0F EXIT=0**（67 组 result 全 ok，11:30:25-~11:40
+深净窗执行；计数与 S899 基线持平 = R4434 零新增单测——其 diff 零 test fn 触
+达实测核验；**取证注记**：初算 19,333 系日志解析假象——零 layout-engine 一条
+`test result:` 行与 `Checking` 编译行控制台输出交错同行致逐字段解析漏计 2，
+交错容忍重解析（按 `passed;` 前邻字段取值）实测 19,335 与 S899 基线精确一
+致，后续轮次计数一律用交错容忍口径）。引用计数以 **S905 双腿为新周期锚点
+0/10**。**S904 轮后插记锚点预期三点全数精确兑现**：全树排除本流 docs 对
+18d462de6 面 **172 维持**（+16998/-1176，+20/-28 行数折入）；crates/ raw
+**92→93**（+1 = R4434 代码腿入 crates/）；自有面对 S897 tip 7da6043d6 维持
+**10 files +1187/-182**（R4434 不触 headless/CDP 面实测复核）。子帧关键词
+**7 文件全测试路径**非测试代码零命中维持（frames.click+evaluate 挂起维持，解
+冻条件①观察面 93 口径）。R4434 系渲染流域 writing-modes 腿代码提交本流不碰
+（run-rules §9），M5 定稿收口判定（DC-1~4 依据）不因刷新动摇——**goal Done
+维持，守成态证据经 S905 双腿刷新延续**；唯一未清偿义务 = frames.click+
+evaluate 回填（挂子帧能力解冻，见子帧解冻清单，不阻收口））
 
 ---
 
@@ -18390,6 +18396,50 @@ deterministic 双跑 YES、ZW_IPC_VALIDATE 在位静默 capture jsonl 面零写�
    S874/S875/S876/S884/S885/S886/S890/S897/S898/S899 先
    例）；
 
+   **S905 已执行（2026-09-17）树变化刷新轮（S904 轮后插
+   记预告兑现：兄弟流 R4434（fix writing-modes，crates/
+   engine/src/paint/painter/text.rs + crates/layout-engine
+   /src/inline_finalization.rs +20/-28 ce794cdc7）入树触
+   发（S897→S898→S899 先例链），同 tip 复核 pull 零新提
+   交 tip=33283a2ef 即 S904 轮后插记提交本身（R4434
+   IN_TREE 实测核验），双腿刷新口径=门 + make test：门
+   PASS 33 绿首调即收口 ~11:29:36 启动 11:30:16 落盘——
+   R4434 组合态首次门覆盖（重编相位 layout-engine→
+   engine→page-runtime→browser 链）expected_green 33 对
+   称差 none deterministic 双跑 YES ZW_IPC_VALIDATE 在位
+   静默 capture jsonl 面零写入 #0 复现监测零命中 +
+   make test 一调收口 19,335P/0F EXIT=0（67 组 result 全
+   ok，11:30:25-~11:40 深净窗执行起手负载 0.33，R4434 组
+   合态首次全量覆盖，计数与 S899 基线持平 = R4434 零新
+   增单测其 diff 零 test fn 触达实测核验；取证注记=初算
+   19,333 系日志解析假象——zero-layout-engine 一条 test
+   result 行与 Checking 编译行控制台输出交错同行致逐字
+   段解析漏计 2，交错容忍重解析（按 passed; 前邻字段取
+   值）实测 19,335 与 S899 基线精确一致，后续轮次计数一
+   律用交错容忍口径），引用计数以 S905 双腿为新周期锚点
+   0/10；S904 轮后插记锚点预期三点全数精确兑现——全树
+   排除本流 docs 对 18d462de6 面 172 维持（+16998/-1176
+   +20/-28 行数折入），crates/ raw 92→93（+1 = R4434 代
+   码腿入 crates/），自有面对 S897 tip 7da6043d6 维持
+   10 files +1187/-182（R4434 不触 headless/CDP 面 实测
+   复核），子帧关键词 7 文件全测试路径非测试代码零命中
+   维持（解冻条件①观察面 93 口径 frames.click+evaluate
+   挂起维持）；本轮深净窗执行（起手负载 0.33 窗后 0.43
+   非 9222 族竞争）；zombie 双复测均零 端口族全 free 本
+   双腿零残留 tracked 树 clean 控制面零外来提交；R4434
+   系渲染流域 writing-modes 腿代码提交本流不碰（run-rules
+   §9）；M5 定稿收口判定（DC-1~4 依据）不因刷新动摇
+   goal Done 维持守成态证据经 S905 双腿刷新延续 首调红
+   形态连续第三百一十八次零再现（累计两例非聚集维
+   持））**——下轮 **S906 = 1/10 静默监测引用轮**（周期
+   锚点=S905 双腿：门腿 11:30:16 落盘 + make test 腿
+   ~11:40 收口），若 S906 前树代码变化则提前触发双腿刷
+   新（S245→S897→S898→S899→S905 先例链），否则按引用轮
+   口径门单腿复跑免 make test 腿（S336 先例），至迟
+   S913=8/10 到期即次轮期限轮活跑（双腿活跑口径=门 +
+   make test，S773/S782/S865/S874/S875/S876/S884/S885/
+   S886/S890/S897/S898/S899/S905 先例）；
+
    **S904 轮后插记（2026-09-17 推送序列 pull --rebase 实
    测）**：兄弟流 R4434（fix writing-modes，crates/engine
    /src/paint/painter/text.rs + crates/layout-engine/src/
@@ -18841,6 +18891,12 @@ evaluate 入门禁）+ 本清单销账 + 矩阵账本/入口文档挂账注记�
   全量覆盖）；**S899 时点 19,335P/0F EXIT=0**（R4433 组合态，一调收口
   67 组 result 全 ok——计数与 S898 持平 = R4433 零新增单测（reftest
   import 面单测面），R4433 组合态首次全量覆盖）；
+  **S905 时点 19,335P/0F EXIT=0**（R4434 组合态，一调收口 67 组
+  result 全 ok——计数与 S899 持平 = R4434 零新增单测（其 diff 零
+  test fn 触达实测核验），R4434 组合态首次全量覆盖；取证注记：
+  初算 19,333 系 test result 行与 Checking 编译行控制台输出交错
+  同行的解析假象，交错容忍重解析（按 passed; 前邻字段取值）实
+  测 19,335 精确一致，后续轮次计数一律用交错容忍口径）；
   禁止裸跑 cargo test，经 test-guard。注：make test
   的 workspace 腿 exclude zero-renderer——renderer lib 单测不在全量门内，跨流红灯
   （form fixture×2）经显式 `-p zero-renderer --lib` 跟踪）
