@@ -1017,8 +1017,27 @@ impl InlineFormattingContext {
                 word_height += first.word_spacing;
             }
 
-            // 检查当前列是否放得下（深度方向）
-            if !self.no_wrap && *current_depth + word_height > max_depth && !current_column.runs.is_empty() {
+            // R4433：列断点**空格悬挂**（CSS Text 3 §7.1 行尾空格移除）——Ahem 词带尾部
+            // 空格（word_spacing 载体，collapse_split_words cjk_contiguous 臂追加），
+            // fit 判定须用**去尾空格词体**高：词体放得下即不换列（尾空格悬挂行尾，
+            // 可越出 max_depth；下一词必然换列）。旧含空格全高判定提前换列
+            //（line-box-direction-vrl-015：25 列 vs chromium 21 列实证）。
+            let word_ends_with_space = word.ends_with(' ');
+            let body_height = if word_ends_with_space {
+                let space_w =
+                    self.advance_of(' ', first.font_id, first.font_size, first.is_ahem_font) + first.letter_spacing;
+                (word_height - space_w).max(0.0)
+            } else {
+                word_height
+            };
+
+            // 检查当前列是否放得下（深度方向；词体判定，空格悬挂）
+            let fit_height = if word_ends_with_space && body_height > 0.0 {
+                body_height
+            } else {
+                word_height
+            };
+            if !self.no_wrap && *current_depth + fit_height > max_depth && !current_column.runs.is_empty() {
                 self.push_vertical_column(current_column, current_depth);
             }
 
