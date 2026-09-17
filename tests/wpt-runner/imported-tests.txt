@@ -472,3 +472,6 @@ css/css-writing-modes/block-flow-direction-vlr-023.xht css/css-writing-modes/blo
 css/css-writing-modes/line-box-direction-vrl-017.xht css/css-writing-modes/block-flow-direction-001-ref.xht == 2026-09-17 R4436 vertical orphan caption 固有尺寸臂（块轴 extent=Σ列宽、行内 extent=definite CSS height，CSS WM §7.1）
 css/css-writing-modes/line-box-direction-srl-057.xht css/css-writing-modes/block-flow-direction-001-ref.xht == 2026-09-17 R4436 同臂收益（sideways-rl 规范化为 vertical-rl 同路径）
 css/css-writing-modes/line-box-direction-vlr-018.xht css/css-writing-modes/block-flow-direction-001-ref.xht == 2026-09-17 R4436 同臂收益（vertical-lr caption）
+css/css-overflow/text-overflow-scroll-vertical-rl-001.html css/css-overflow/reference/text-overflow-scroll-vertical-lr-001-ref.html == 2026-09-17 R4437 vertical inline-block shrink-to-fit（列流 Σ列宽收缩，CSS WM §7.1 交换帧）
+css/css-overflow/text-overflow-scroll-vertical-rl-rtl-001.html css/css-overflow/reference/text-overflow-scroll-vertical-lr-001-ref.html == 2026-09-17 R4437 同臂收益（rtl 变体）
+css/css-writing-modes/inline-block-alignment-slr-009.xht css/css-writing-modes/inline-block-alignment-slr-009-ref.xht == 2026-09-17 R4437 同臂收益（orthogonal inline-block 收缩域）

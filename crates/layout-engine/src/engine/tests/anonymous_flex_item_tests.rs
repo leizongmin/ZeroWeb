@@ -831,3 +831,93 @@ fn test_shift_siblings_after_ifc_grow_inline_block_sibling_shifts() {
         p.height
     );
 }
+
+/// R4437：vertical inline-block shrink-to-fit——旧 `shrink_inline_blocks_to_content`
+/// 入口 `own_horizontal` gate 把竖排 inline-block 排除在收缩外，taffy（InlineBlock→Block
+/// 映射）拉伸宽直通终局（text-overflow-scroll-vertical-rl-001 div 784 fill vs chromium
+/// 200）。收缩目标 = 列流 IFC Σ 列宽（块轴 extent），列断由 definite CSS height 驱动。
+#[test]
+fn test_r4437_vertical_inline_block_shrinks_to_column_flow() {
+    let html = r#"<html><body style="margin:0">
+      <div id="v" style="display:inline-block;writing-mode:vertical-rl;height:60px;font:20px/1 Ahem">AAAAAA BBB</div>
+    </body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    fn find<'a>(id: &str, doc: &Document, b: &'a LayoutBox) -> Option<&'a LayoutBox> {
+        if let Some(nid) = b.node_id
+            && let Some(n) = doc.get(nid)
+            && let zero_dom::NodeKind::Element(elem) = &n.kind
+            && elem.get_attribute("id").as_deref() == Some(id)
+        {
+            return Some(b);
+        }
+        b.children.iter().find_map(|c| find(id, doc, c))
+    }
+    let v = find("v", &doc, &result.root).expect("vertical inline-block #v");
+    assert!(
+        v.width < 800.0,
+        "vertical inline-block 应收缩到列流 Σ 列宽（旧路径 taffy 拉伸 784），got w={}",
+        v.width
+    );
+    // 列宽 = line-height 20px：宽度应为 20 的整数倍（1-3 列，视 estimate advance 而定）。
+    assert!(
+        v.width % 20.0 < 0.5,
+        "width 应为列宽（line-height 20px）的整数倍，got w={}",
+        v.width
+    );
+    assert_eq!(v.height, 60.0, "definite CSS height（行内 extent）应保持物理高");
+}
+
+/// R4437：orthogonal 自身竖排测量臂——measure_text_content 对「自身 vertical、父
+/// horizontal」的 inline-block 应走列流模型（块轴 extent = Σ 列宽），非水平单行
+/// advance。ZW_ORTHO_MEASURE=0 kill-switch（default-on）。
+#[test]
+fn test_r4437_orthogonal_measure_returns_column_flow_extent() {
+    use crate::inline_finalization::measure_text_content;
+    use taffy::AvailableSpace;
+    use taffy::geometry::Size;
+
+    let html = r#"<html><body>
+      <div id="v" style="display:inline-block;writing-mode:vertical-rl;height:60px;font:20px/1 Ahem">AAAAAA BBB</div>
+    </body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    fn find_id(id: &str, doc: &Document, node: zero_dom::NodeId) -> Option<zero_dom::NodeId> {
+        if let Some(n) = doc.get(node)
+            && let zero_dom::NodeKind::Element(e) = &n.kind
+            && e.get_attribute("id").as_deref() == Some(id)
+        {
+            return Some(node);
+        }
+        doc.child_nodes(node).iter().find_map(|&c| find_id(id, doc, c))
+    }
+    let v_id = find_id("v", &doc, doc.root()).expect("vertical inline-block #v");
+
+    let size = measure_text_content(
+        &doc,
+        &styles,
+        v_id,
+        Size {
+            width: None,
+            height: Some(60.0),
+        },
+        Size {
+            width: AvailableSpace::MaxContent,
+            height: AvailableSpace::Definite(60.0),
+        },
+        &Default::default(),
+        Default::default(),
+        None,
+    );
+    assert!(
+        size.width % 20.0 < 0.5 && size.width >= 20.0,
+        "块轴 extent 应 = Σ 列宽（20px 列宽整数倍），got {}",
+        size.width
+    );
+}

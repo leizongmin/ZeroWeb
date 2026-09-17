@@ -2110,6 +2110,56 @@ pub(crate) fn measure_text_content(
             height: known_dimensions.height.unwrap_or_else(|| inline_ctx.total_height()),
         };
     }
+    // R4437：orthogonal 自身竖排固有块轴臂——自身 vertical 而父 horizontal（正交；
+    // viv 已由上方臂处理）时，测量走水平 advance 模型（measured_width = 全文本单行
+    // advance），父流消费的物理宽（块轴 extent）即错：竖排 inline-block shrink-to-fit
+    // 被 clamp 到可用宽（text-overflow-scroll-vertical-rl-001 div 784 fill vs chromium
+    // 200 实证）。语义（CSS Writing Modes §7.1 交换帧）：列断由**definite 行内尺寸**
+    //（known height / CSS height Px）驱动，块轴 extent = 列流 IFC Σ 列宽；行内
+    // extent（物理高，auto 时）= 最深列深（单列 = 全文本 inline 长度）。auto 高走
+    // INFINITY 深度（单列，max-content 语义）。**InlineBlock 收窄**（块级正交子宽度
+    // = fill 语义不变；float 正交域后续轮 A/B）；ZW_ORTHO_MEASURE=0 kill-switch。
+    if own_vertical
+        && !is_vertical
+        && std::env::var("ZW_ORTHO_MEASURE").as_deref() != Ok("0")
+        && styles
+            .get(&dom_id)
+            .is_some_and(|s| matches!(s.display, DisplayValue::InlineBlock))
+    {
+        let css_height = styles.get(&dom_id).and_then(|s| match &s.height {
+            zero_css_parser::values::LengthValue::Px(v) if v.is_finite() && *v > 0.0 => Some(*v as f32),
+            _ => None,
+        });
+        let depth = known_dimensions.height.or(css_height).unwrap_or(f32::INFINITY);
+        let mut col_ctx = crate::inline::InlineFormattingContext::new(depth)
+            .with_vertical(true)
+            .with_vertical_rtl(
+                styles
+                    .get(&dom_id)
+                    .is_some_and(|s| matches!(s.writing_mode, WritingModeValue::VerticalRl)),
+            );
+        col_ctx = configure_inline_fonts(col_ctx, inline_fonts, false);
+        col_ctx.layout(doc, dom_id, styles);
+        let block_extent = if col_ctx.lines.is_empty() {
+            let (fs, lh) = crate::inline::resolve_font_metrics(styles.get(&dom_id));
+            lh.max(fs)
+        } else {
+            col_ctx.total_height()
+        };
+        let inline_extent = col_ctx
+            .all_fragments()
+            .iter()
+            .map(|f| f.y + f.height)
+            .fold(0.0_f32, f32::max);
+        return Size {
+            width: known_dimensions.width.unwrap_or(block_extent),
+            height: known_dimensions.height.unwrap_or(if inline_extent > 0.0 {
+                inline_extent
+            } else {
+                balanced_height
+            }),
+        };
+    }
     Size {
         width: known_dimensions.width.unwrap_or(measured_width),
         height: known_dimensions.height.unwrap_or(balanced_height),

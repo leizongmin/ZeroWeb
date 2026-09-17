@@ -403,7 +403,90 @@ pub(crate) fn shrink_inline_blocks_to_content(
     inline_fonts: crate::inline_finalization::InlineFontContext<'_>,
 ) {
     let own_horizontal = matches!(box_node.writing_mode, WritingModeValue::HorizontalTb);
-    if own_horizontal && !box_node.is_absolute && !box_node.is_fixed {
+    if !own_horizontal
+        && !box_node.is_absolute
+        && !box_node.is_fixed
+        && box_node.writing_mode.is_vertical_block_flow()
+        && std::env::var("ZW_ORTHO_SHRINK").as_deref() != Ok("0")
+    {
+        // R4437：vertical inline-block shrink-to-fit——旧入口 `own_horizontal` gate 把
+        // 竖排 inline-block 全排除在本 pass 外，taffy（InlineBlock→Block 映射）拉伸宽
+        // 直通终局（text-overflow-scroll-vertical-rl-001 div w=784 fill vs chromium
+        // 200 实证）。收缩目标 = **列流 IFC Σ 列宽**（块轴 extent，R4432 cell /
+        // R4436 caption 同模型）：列断由 definite 行内尺寸（CSS height Px，auto 回落
+        // border-box−frame，再 fallback 单列）驱动。ZW_ORTHO_SHRINK=0 kill-switch。
+        let is_shrinkable = box_node.node_id.is_some_and(|id| {
+            styles.get(&id).is_some_and(|s| {
+                matches!(s.display, DisplayValue::InlineBlock)
+                    // R57/R4290 同款：replaced 元素 width:auto 固有尺寸走属性/缺省尺寸路径，
+                    // 不得按内容列流收缩（intrinsic-percent-replaced-029 / flexbox-vert-lr-with-img）。
+                    && !box_node.node_id.is_some_and(|id2| {
+                        doc.get(id2).is_some_and(|n| {
+                            matches!(
+                                &n.kind,
+                                zero_dom::NodeKind::Element(e) if matches!(
+                                    e.local_name(),
+                                    "canvas" | "video" | "audio" | "iframe" | "embed" | "object" | "applet" | "img" | "svg"
+                                )
+                            )
+                        })
+                    })
+                    // R4034b 同语义：contain:size → 元素按 CIS/0 sized，内容不参与
+                    //（contain-intrinsic-size-017）。
+                    && !s.contain.has_size()
+            })
+        });
+        let width_auto = box_node.node_id.is_some_and(|id| {
+            styles.get(&id).is_some_and(|s| {
+                matches!(
+                    s.width,
+                    LengthValue::Auto | LengthValue::MinContent | LengthValue::MaxContent | LengthValue::FitContent(_)
+                )
+            })
+        });
+        // definite min/max-width 约束盒跳过（R4234/R4389 同款：恢复声明宽会打掉钳制）。
+        let has_w_constraint = box_node.node_id.is_some_and(|id| {
+            styles.get(&id).is_some_and(|s| {
+                crate::intrinsic_sizing::resolve_intrinsic_real_length(&s.min_width, s).is_some()
+                    || crate::intrinsic_sizing::resolve_intrinsic_real_length(&s.max_width, s).is_some()
+            })
+        });
+        if is_shrinkable
+            && width_auto
+            && !has_w_constraint
+            && let Some(id) = box_node.node_id
+            && let Some(cs) = styles.get(&id)
+        {
+            use zero_css_parser::values::LengthValue;
+            let frame_h = box_node.border_top + box_node.border_bottom + box_node.padding_top + box_node.padding_bottom;
+            let depth = match &cs.height {
+                LengthValue::Px(v) if v.is_finite() && *v > 0.0 => Some(*v as f32),
+                _ => {
+                    let fallback = box_node.height - frame_h;
+                    (fallback > 0.5).then_some(fallback)
+                }
+            };
+            let depth = depth.unwrap_or(f32::INFINITY);
+            let mut col_ctx = crate::inline::InlineFormattingContext::new(depth)
+                .with_vertical(true)
+                .with_vertical_rtl(matches!(box_node.writing_mode, WritingModeValue::VerticalRl));
+            col_ctx = crate::inline_finalization::configure_inline_fonts(col_ctx, inline_fonts, false);
+            col_ctx.layout(doc, id, styles);
+            let block_extent = if col_ctx.lines.is_empty() {
+                let (fs, lh) = crate::inline::resolve_font_metrics(Some(cs));
+                lh.max(fs)
+            } else {
+                col_ctx.total_height()
+            };
+            let frame_w = box_node.padding_left + box_node.padding_right + box_node.border_left + box_node.border_right;
+            // Auto 单向收缩语义与 horizontal 臂一致（防拉伸伪影回写放大）。
+            let shrink_border_box = block_extent + frame_w;
+            if shrink_border_box + 0.5 < box_node.width {
+                box_node.width = shrink_border_box;
+                box_node.content_width = block_extent;
+            }
+        }
+    } else if own_horizontal && !box_node.is_absolute && !box_node.is_fixed {
         // R372：除 inline-block 外，**带非默认 background 的 inline 元素**（如 morning.work
         // `.item-tag` 徽章 span：display:inline + background-color + padding）也应 shrink-to-fit。
         // ZeroWeb 把 inline 映射为 Block 拉到满宽（满宽色条），此处按 intrinsic 内容宽收缩
