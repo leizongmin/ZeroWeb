@@ -396,14 +396,16 @@ pub fn vertical_block_child_indices_ex(
     if container_is_table {
         // R1844：vertical-RL/sideways-RL table-cell BFC 允许 native RL block flow
         //（block-flow-direction-vrl-017 / -srl-057 等 RL table-cell 需 RL 子排列；旧 blanket
-        // 排除致其子保 LR）。vertical-LR table-cell 仍排除（gate #3 measured vlr-018/020
-        // +5.83pp 回归——table step-8 与本 pass 在 LR 方向冲突）。RL-only 窄放宽：避开 LR 回归。
-        // A/B（writing-modes）：vrl-017/srl-057 各 −7.48pp，vlr-018/020 不变，0 回归。
-        let is_vrl_table_cell = b.writing_mode == WritingModeValue::VerticalRl
+        // 排除致其子保 LR）。
+        // R4441：**LR 排除解除**——R1844 时代 gate #3 measured vlr-018/020 +5.83pp 回归
+        //（table step-8 与本 pass LR 冲突），R4436/R4439/R4440 落地后前提已变：全量 A/B
+        // **净零翻转零回归**，vlr-018/slr-058 各 −15pp 亚阈改善（25.27%/26.43%，仍红 =
+        // table-cell LR 域其余残差）。vertical table-cell（RL+LR）统一放行。
+        let is_vertical_table_cell = b.writing_mode.is_vertical_block_flow()
             && b.node_id
                 .and_then(|id| styles.get(&id))
                 .is_some_and(|s| matches!(s.display, DisplayValue::TableCell));
-        if !is_vrl_table_cell {
+        if !is_vertical_table_cell {
             return None;
         }
     }
@@ -866,15 +868,31 @@ mod tests {
     /// gate：table-cell 容器不触发（vlr-018 回归实证，table 布局自有算法）。
     #[test]
     fn test_apply_inner_skips_table_cell_container() {
+        // R4441 订正：vertical table-cell（RL/LR）**不再排除**——R1844 时代的 LR 排除
+        //（vlr-018/020 +5.83pp 回归）经 R4436/R4439/R4440 后前提失效，全量 A/B 净零翻转
+        // 零回归且 vlr-018/slr-058 各 −15pp。断言 vlr table-cell 现走 restack（宽收缩）。
         let (mut container, mut styles) = build_v2v3_tree(WritingModeValue::VerticalLr);
-        // 把容器样式改为 table-cell。
         if let Some(id) = container.node_id {
             if let Some(s) = styles.get_mut(&id) {
                 s.display = DisplayValue::TableCell;
             }
         }
         apply_inner(&mut container, &styles, &WritingModeValue::HorizontalTb, false);
-        assert_eq!(container.width, 800.0, "table-cell 容器 width 不变");
+        assert!(
+            (container.width - 104.0).abs() < 0.5,
+            "vertical table-cell 容器应 restack 收缩到 Σ 子宽 + frame = 104，got {}",
+            container.width
+        );
+
+        // gate 负例：horizontal-tb table-cell 仍排除（非竖排帧）。
+        let (mut h_container, mut h_styles) = build_v2v3_tree(WritingModeValue::HorizontalTb);
+        if let Some(id) = h_container.node_id {
+            if let Some(s) = h_styles.get_mut(&id) {
+                s.display = DisplayValue::TableCell;
+            }
+        }
+        apply_inner(&mut h_container, &h_styles, &WritingModeValue::HorizontalTb, false);
+        assert_eq!(h_container.width, 800.0, "horizontal table-cell 容器 width 不变");
     }
 
     /// gate：任一 block 子带 Percentage margin → 跳过整个容器（percent-margin-vrl-004/006 回归）。
