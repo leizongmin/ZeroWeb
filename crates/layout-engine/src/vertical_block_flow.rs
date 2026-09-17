@@ -153,8 +153,15 @@ pub fn apply_vertical_block_flow(
 ///
 /// §7.1：vertical-rl 块流起于 block-start = **右缘**。根盒（html）auto 块轴尺寸
 /// shrink-wrap 后 ZW 贴 x=0（视口左缘），chromium 贴右（vrl-021 ref 蓝盒 x≈372..792，
-/// ZW x=8..428 实证——ul 列右到左排布已对，错在整盒位置）。根盒平移至 ICB 右缘 +
-/// 全子树同量平移（LayoutBox 绝对坐标）。`ZW_VIV_SIZING` 同族 kill-switch。
+/// ZW x=8..428 实证——ul 列右到左排布已对，错在整盒位置）。根盒平移至 ICB 右缘。
+/// `ZW_VIV_SIZING` 同族 kill-switch。
+///
+/// R4458 定谳修正：**只平移根盒自身，不平移子树**。LayoutBox.x 是相对父 content
+/// 原点的坐标（paint walk / dump walk 均按 `abs = parent_abs + padding + border + b.x`
+/// 累加），根盒右移后子的绝对位置随根自动右移；R4455 的全子树 translate_x 把根偏移
+/// 重复计入每层子盒（vrl-002 div b.x 380→744、paint abs 752→1480 出视口，整页白屏），
+/// R4455 的「+9 绿 / 8 案 28→15.75 收敛」实为**白屏页 diff 数值靠近**的假象（test 页
+/// 内容全出视口 → diff = ref 内容像素占比），非几何正确。
 fn anchor_vrl_root_box(root: &mut LayoutBox, icb_width: f32) {
     if std::env::var("ZW_VIV_SIZING").as_deref() == Ok("0") {
         return;
@@ -167,15 +174,6 @@ fn anchor_vrl_root_box(root: &mut LayoutBox, icb_width: f32) {
         return;
     }
     root.x += delta;
-    fn translate_x(b: &mut LayoutBox, delta: f32) {
-        b.x += delta;
-        for c in &mut b.children {
-            translate_x(c, delta);
-        }
-    }
-    for c in &mut root.children {
-        translate_x(c, delta);
-    }
 }
 
 /// R4444：sideways-lr **根盒**子块底边（行内起点）锚定。
