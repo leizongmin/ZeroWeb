@@ -19110,6 +19110,35 @@ M5 定稿收口判定（DC-1~4 依据）不因复验动摇——**goal Done 维�
    S1030/S1038/S1041/S1047 先例：/10 周期饱和即次轮期限轮，新周
    期期限条款依原设计恢复）；
 
+   **S1050 轮后插记（2026-09-18 推送序列 pull --rebase 实测）**：
+   兄弟流三连提交 f5d511698（fix layout-engine R4470 vertical 表
+   bare-row 匿名 cell 生成 CSS Tables §3.1，crates/layout-engine
+   4 files +84/-6 **代码腿**）+ 8f4670d65（docs R4470
+   rendering-compat.md +1）+ bdf166ebb（docs R4471
+   rendering-compat.md +1）于 S1050 门腿收口（05:57:37）**之后**
+   经 push 前 pull --rebase 入树（我方 S1050 提交 rebase 后
+   9324ae95a，push bdf166ebb..9324ae95a fast-forward 零冲突）
+   ——S1050 门覆盖树态 = R4469 组合态（a528a8d5e 树 = S1047 双腿
+   锚点代码树 实测核验），main tip 组合态已再度超出（R4470 代码
+   腿入树），**S1051 = 树变化刷新轮（门 + make test 双腿刷新，
+   S898→S899→S1047 先例链连刷）**，引用计数以 S1051 双腿为新周
+   期锚点 0/10（S1050 记录内「下轮 S1051=4/10 静默监测引用轮」
+   预告被本插记取代）；S1051 锚点预期（本插记时点实测）——全树
+   排除本流 docs 对 18d462de6 182 files +20260/-1233 → **184
+   files +20346/-1239**（折入分解自洽：R4470 代码腿 4 files
+   +84/-6 + 兄弟两 docs 提交 rendering-compat.md +2，净增 2 文件
+   = R4470 触达面 crates/layout-engine/src/table_grid.rs +
+   table/table_vertical.rs 新入累计 diff 集 实测复核，行数非面值
+   加总以 S1051 逐项实测为准），crates/ raw 121 → **122**（+1 =
+   R4470 代码腿入 crates/ 口径 e67967632..TIP -- crates/ log 口
+   径实测），自有面对 S897 tip 7da6043d6 维持 10 files +1187/-182
+   不变（R4470 不触 headless/CDP 面 实测复核），子帧关键词 7 文
+   件全测试路径非测试代码零命中维持（解冻条件①观察面 122 口径，
+   frames.click+evaluate 挂起维持）；R4470 系渲染流域
+   layout-engine 代码提交本流不碰（run-rules §9）；M5 定稿收口
+   判定（DC-1~4 依据）不因本插记动摇，S1051 刷新门 PASS 即守成
+   态证据延续。
+
    **S1049 已执行（2026-09-18）静默监测引用轮（引用计数 1/10→2/10，
    周期锚点=S1047 双腿（门腿 05:30:49 落盘 + make test 腿
    05:40:37 收口），同 tip 复核 pull 零新提交 tip=49a4d43ba 即
