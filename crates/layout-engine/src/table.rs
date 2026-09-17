@@ -115,7 +115,24 @@ fn adjust_table_layout_inner(
                     }
                 }
                 let run_len = idx - run_start;
-                if run_len >= 2 {
+                // R4432：单孤儿 **table-cell** 亦走匿名 table 包装——build_grid 对
+                // cell-as-table 的 retrofit 路径 rows=0（cell 直接子是文本，orphan
+                // 收集无 Element 子可收）→ shrink_table_to_block_content 早退，cell
+                // 塌边框壳（line-box-direction-vrl-015：40×40/ch=0 实证）。包装后
+                // anon root 进入 build_grid 的 **direct_cells 累加器**（真表容器
+                // 语境，R3817 gate 放行）→ 1×1 grid → 列宽经 cell_used_width →
+                // compute_cell_intrinsic_width viv 臂接通。row/row-group 单孤儿
+                // retrofit 路径正常，维持旧分支（A/B 隔离回归面）。
+                // R4432 收窄：仅 **vertical** 单孤儿 cell 包装（writing-modes 域）——
+                // horizontal 单 cell 的 legacy block-shrink 路径承载着 corpus 现状
+                // （首版全放开 A/B 净 −8：clear/dynamic-cell/percent-cell/ui-outline
+                // 等 11 案翻红），隔离回归面。
+                let single_is_cell = run_len == 1
+                    && get_display(&root.children[run_start], styles)
+                        .as_ref()
+                        .is_some_and(is_table_cell)
+                    && root.children[run_start].writing_mode.is_vertical_block_flow();
+                if run_len >= 2 || single_is_cell {
                     let merged_idx = merge_orphan_table_run(root, run_start, run_len, doc, styles, inline_fonts);
                     for child in &mut root.children[merged_idx].children {
                         adjust_table_layout_inner(child, doc, styles, true, inline_fonts);

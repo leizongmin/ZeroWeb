@@ -56,7 +56,7 @@ impl<'a> FinalInlineContext<'a> {
     }
 }
 
-fn configure_inline_fonts(
+pub(crate) fn configure_inline_fonts(
     mut context: InlineFormattingContext,
     inline_fonts: InlineFontContext<'_>,
     allow_vertical_advance: bool,

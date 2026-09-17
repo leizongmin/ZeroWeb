@@ -316,6 +316,50 @@ pub(crate) fn compute_cell_intrinsic_width_impl(
     inline_fonts: crate::inline_finalization::InlineFontContext<'_>,
     for_explicit_floor: bool,
 ) -> f32 {
+    // R4432：vertical-cell 固有宽 viv 臂——vertical 表链内 cell 的「宽度」（块轴
+    // extent）= **列流 IFC 的 Σ 列宽**，非水平文本 advance。max_depth = cell 的
+    // definite 行内尺寸（CSS height，物理高；auto 回落当前 border-box 减 frame）。
+    // 旧水平模型（文本 advance/box_content_max_width）对 vertical-cell 全错
+    //（line-box-direction-vrl-015：cell 塌 40×40 内容 0 实证）。
+    // ZW_VIV_SIZING kill-switch 同族（R4428 flip default-on）。
+    if cell_box.writing_mode.is_vertical_block_flow()
+        && std::env::var("ZW_VIV_SIZING").as_deref() != Ok("0")
+        && !cell_box.is_absolute
+        && !cell_box.is_fixed
+        && let Some(id) = cell_box.node_id
+        && let Some(cs) = styles.get(&id)
+    {
+        use zero_css_parser::values::LengthValue;
+        let frame_h = cell_box.border_top + cell_box.border_bottom + cell_box.padding_top + cell_box.padding_bottom;
+        let depth = match &cs.height {
+            LengthValue::Px(v) if v.is_finite() && *v > 0.0 => *v as f32,
+            _ => (cell_box.height - frame_h).max(0.0),
+        };
+        if depth > 0.5
+            && let Some(dom_id) = cell_box.node_id
+        {
+            let mut inline_ctx = crate::inline::InlineFormattingContext::new(depth)
+                .with_vertical(true)
+                .with_vertical_rtl(matches!(
+                    cell_box.writing_mode,
+                    zero_style_system::WritingModeValue::VerticalRl
+                ));
+            inline_ctx = crate::inline_finalization::configure_inline_fonts(inline_ctx, inline_fonts, false);
+            inline_ctx.layout(doc, dom_id, styles);
+            // 物理宽（块轴）= Σ 列宽；列数 ≥1 时至少一列宽（空内容 cell 列宽取 strut）。
+            let block_extent = if inline_ctx.lines.is_empty() {
+                let (fs, lh) = crate::inline::resolve_font_metrics(Some(cs));
+                lh.max(fs)
+            } else {
+                inline_ctx.total_height()
+            };
+            return block_extent
+                + cell_box.padding_left
+                + cell_box.padding_right
+                + cell_box.border_left
+                + cell_box.border_right;
+        }
+    }
     let padding = cell_box.padding_left + cell_box.padding_right;
     let is_zero_width = cell_box.width < 2.0;
 
