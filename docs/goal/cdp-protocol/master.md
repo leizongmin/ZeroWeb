@@ -2,43 +2,40 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-17（S980：**树变化刷新轮（S979 轮后插记预告兑现——
-兄弟流 R4447（313966e72，writing-modes fill 臂放开 flex 容器 + htb
-item）于 S979 收口提交后 push 序列入树；同 tip 复核 pull 零新提交
-tip = 28adbcb3a 即 S979 插记提交本身，R4447 为插记后唯一代码变更源），
-双腿刷新口径 = 门 + make test（S342/S456/S622/S896/S978 先例链）**。
-门腿 **PASS 33 绿首调即收口**（20:33:08 启动 20:33:43 落盘 wall ~36s，
-EXIT=0；R4447 组合态首次门覆盖编译 4 腿 = layout-engine→engine→
-page-runtime→zero-browser 依赖序下游重编译（style-system R4447 零触
-达缓存 replay），窗内零锁等待；expected_green 33 对称差 none、
-regressions 空、deterministic 双跑 YES、ZW_IPC_VALIDATE 在位静默
-capture jsonl 面零写入 #0 复现监测零命中（req/resp/fin 8/8/8
+**最后更新**: 2026-09-17（S981：**树变化刷新轮（S980 轮后插记预告兑现——
+兄弟流 R4448（c867ec95f，style-system 逻辑属性后置解析架构 + slr 行
+内轴映射）于 S980 收口提交后 push 序列入树；同 tip 复核 pull 零新提
+交 tip = 5e9f9df1b 即 S980 插记提交本身，R4448 为插记后唯一代码变更
+源），双腿刷新口径 = 门 + make test（S342/S456/S622/S896/S978/S979
+先例链）**。
+门腿 **PASS 33 绿首调即收口**（20:58:14 启动 21:03:42 落盘 wall
+~5.5min，EXIT=0；R4448 组合态首次门覆盖编译 5 腿 = style-system→
+layout-engine→engine→page-runtime→zero-browser 依赖序全链重编译
+——style-system 触达致 dev profile 上游链重建，wall 显著长于引用轮
+replay 相位属刷新轮正常形态，窗内零锁等待；expected_green 33 对称差
+none、regressions 空、deterministic 双跑 YES、ZW_IPC_VALIDATE 在位
+静默 capture jsonl 面零写入 #0 复现监测零命中（req/resp/fin 8/8/8
 failedCount=0）steps-report 新鲜落盘；dead_code warning 维持同形一枚
-（match_media_to_json，zero-engine lib——R4447 组合态重编译后既有形
+（match_media_to_json，zero-engine lib——R4448 组合态重编译后既有形
 态维持））+ **make test 一调收口 19,341P/0F 全绿**（67 组 result 全
-ok，20:34:05 启动 20:44 收口 wall ~10min，零 FAILED/error 行，编译
-33 腿 = R4447 组合态 test profile 重编译；计数与 S979 精确持平零漂
-移 = R4447 零新增测试注记实测复核；**窗内 package cache 锁等待 7 次
-记档**——同 clone 并行会话 cargo 腿并窗所致，锁等待全部自行解除零
-死锁，双绿收口零影响）。
-**引用计数以 S980 双腿为新周期锚点 0/10**（门腿 20:33:44 落盘 +
-make test 腿 20:44 收口；**S980 轮后插记取代引用轮预告——兄弟流
-R4448（c867ec95f，style-system 逻辑属性后置解析架构）于 S980 收口
-提交后 push 序列入树（crates/style-system 代码腿 3 文件），S981 =
-树变化刷新轮（双腿=门+make test，S342/S456/S622/S896/S978/S979
-插记先例链），引用计数以 S981 双腿为新周期锚点 0/10**）。
-锚点面四点实测 = S979 插记预期精确一致：全树排除本流 docs 对
-18d462de6 **177 files +17919/-1202**；自有面对 S897 tip 7da6043d6
-**10 files +1187/-182**；crates/ raw **104**（103 + R4447 入 crates/
-1 文件）；子帧关键词 **7 文件**crates/ 零命中维持（frames.click+
-evaluate 挂起维持，解冻条件①观察面 104 口径）。本轮同 clone 并行
-会话负载窗执行（起手负载 7.02——本 clone 内另一 rally 会话
-（claude --resume 4d54b7ae ppid 取证）zero-wpt-runner reftest-upstream
-腿 747% CPU + clippy-driver 三腿在窗，S341 负载 8.66→9.97 照跑先例，
-非 ZeroWeb-2 双 clone 形态而系同 clone 并行会话亚型注记，门后 3.72
-回落、make test 腿后 0.36 回落）。
+ok，21:04:07 启动 21:14 收口 wall ~10min，零 FAILED/error 行，编译
+35 腿 = R4448 组合态 test profile 重编译；计数与 S980 精确持平零漂
+移 = R4448 零新增测试注记实测复核；窗内 package cache 锁等待 7 次
+记档——兄弟 clone ZeroWeb-2 测试腿 + ZeroWeb-cronjob 会话 cargo 腿
+并窗所致，全部自行解除零死锁，与 S980 同亚型延续，双绿收口零影响）。
+**引用计数以 S981 双腿为新周期锚点 0/10**（门腿 21:03:43 落盘 +
+make test 腿 21:14 收口；下轮 S982 = 1/10，树代码变化提前触发双腿
+刷新，至迟 S991=10/10 饱和次轮到期即期限轮活跑）。
+锚点面四点实测 = S980 插记预期精确一致：全树排除本流 docs 对
+18d462de6 **178 files +17995/-1202**；自有面对 S897 tip 7da6043d6
+**10 files +1187/-182**；crates/ raw **107**（104 + R4448 入 crates/
+3 文件）；子帧关键词 **7 文件**crates/ 零命中维持（frames.click+
+evaluate 挂起维持，解冻条件①观察面 107 口径）。本轮深净窗起步活跑
+（起手负载 0.11 零并行编译腿），make test 腿窗口兄弟 clone
+ZeroWeb-2 测试腿 + ZeroWeb-cronjob 会话并窗（尾点负载 2.98，双 clone
++ cronjob 三源隔离零污染）。
 M5 定稿收口判定（DC-1~4 依据）不因刷新动摇——**goal Done 维持，守成
-态证据经 S980 双腿复验延续**；唯一未清偿义务 = frames.click+evaluate
+态证据经 S981 双腿复验延续**；唯一未清偿义务 = frames.click+evaluate
 回填（挂子帧能力解冻，见子帧解冻清单，不阻收口））
 
 ---
@@ -18526,6 +18523,42 @@ M5 定稿收口判定（DC-1~4 依据）不因刷新动摇——**goal Done 维�
    （S336 先例），至迟 S943=10/10 饱和次轮到期即期限轮活
    跑（双腿活跑口径=门 + make test，S932/S933 先例：/10
    周期饱和即次轮期限轮，新周期期限条款依原设计恢复）；
+
+   **S981 已执行（2026-09-17）树变化刷新轮（S980 轮后插记预告兑现——
+   兄弟流 R4448（c867ec95f）于 S980 收口提交后 push 序列入树，同 tip
+   复核 pull 零新提交 tip=5e9f9df1b 即 S980 插记提交本身（S980 收口
+   提交全 docs，R4448 为插记后唯一代码变更源），双腿刷新口径=门 +
+   make test S342/S456/S622/S896/S978/S979 先例链）——门 PASS 33 绿
+   深净窗起步活跑（起手负载 0.11 零并行编译腿）首调即收口 20:58:14
+   启动 21:03:42 落盘 wall ~5.5min EXIT=0 R4448 组合态首次门覆盖编
+   译 5 腿（style-system→layout-engine→engine→page-runtime→
+   zero-browser 依赖序全链重编译 style-system 触达致 dev profile 上
+   游链重建 wall 显著长于引用轮 replay 相位属刷新轮正常形态）窗内零
+   锁等待 expected_green 33 对称差 none regressions 空 deterministic
+   双跑 YES ZW_IPC_VALIDATE 在位静默 capture jsonl 面零写入 #0 复现
+   监测零命中（req/resp/fin 8/8/8 failedCount=0）steps-report 新鲜
+   落盘 dead_code warning 维持同形一枚（match_media_to_json
+   zero-engine lib R4448 组合态重编译后既有形态维持记档）首调红形态
+   连续第三百八十八轮零再现（累计两例非聚集维持）+ make test 一调收
+   口 19,341P/0F 全绿（67 组 result 全 ok，21:04:07 启动 21:14 收口
+   wall ~10min，零 FAILED/error 行，编译 35 腿 = R4448 组合态 test
+   profile 重编译；计数与 S980 精确持平零漂移 = R4448 零新增测试注
+   记实测复核；窗内 package cache 锁等待 7 次记档——兄弟 clone
+   ZeroWeb-2 测试腿 + ZeroWeb-cronjob 会话 cargo 腿并窗所致 全部自
+   行解除零死锁 与 S980 同亚型延续 双绿收口零影响）；锚点面四点实
+   测 = S980 插记预期精确一致（全树排除本流 docs 对 18d462de6
+   178 files +17995/-1202 / 自有面对 S897 tip 7da6043d6 10 files
+   +1187/-182 / crates/ raw 107 = 104 + R4448 入 crates/ 3 文件 /
+   子帧关键词 7 文件 crates/ 零命中 解冻条件①观察面 107 口径
+   frames.click+evaluate 挂起维持）；引用计数以 S981 双腿为新周期
+   锚点 0/10（门腿 21:03:43 落盘 + make test 腿 21:14 收口）；zombie
+   双复测均零 端口族全 free 本双腿零残留 tracked 树 clean 控制面零
+   外来提交）**——下轮
+   **S982 = 1/10 静默监测引用轮**（周期锚点=S981 双腿），若 S982 前
+   树代码变化则提前触发双腿刷新（S245→S981 先例链），否则按引用轮
+   口径门单腿复跑免 make test 腿（S336 先例），至迟 S991=10/10 饱和
+   次轮到期即期限轮活跑（双腿活跑口径=门 + make test，S932/S933 先
+   例：/10 周期饱和即次轮期限轮，新周期期限条款依原设计恢复）；
 
    **S980 轮后插记（2026-09-17 push 序列 pull --rebase 实测）**：
    兄弟流 R4448（c867ec95f，feat(style-system) 逻辑属性后置解析架构 +
