@@ -1311,14 +1311,19 @@ impl StyleSystem {
                 //（chromium UA `ul,menu,dir{list-style-type:disc}` / `ol{list-style-type:decimal}`）。
                 "ul" | "ol" => {
                     ua_decl_inputs.push(("margin".to_string(), "1em 0".to_string(), false, (0, 0, 0), None));
-                    // R4448 A/B 记档：chromium UA 为 logical `padding-inline-start: 40px`。ZW 已具备
-                    // 后置逻辑解析（inheritance.rs 延迟臂）+ sideways_lr-aware inline 轴映射，但
-                    // **cascade 别名消解缺失**：UA `padding-inline-start` 与 author 物理别名
-                    //（padding-bottom:0 等）是不同 key 双存活，延迟逻辑应用反向覆盖 author 声明
-                    //（marker-*/counter-styles 9 翻红 + slr-060 10.20 实证）。别名按 CascadeOrder
-                    // 消解落地后再切 logical（届时 line-box-slr-060 系 4 案 + inline-block 双胞胎
-                    // 8 案同收）。
-                    ua_decl_inputs.push(("padding-left".to_string(), "40px".to_string(), false, (0, 0, 0), None));
+                    // R4449：logical `padding-inline-start: 40px`（chromium UA html.css 同款）——
+                    // R4448 后置逻辑解析 + slr 行内轴映射 + R4449 别名消解（按 CascadeOrder 与
+                    // author 物理别名择一，author `padding-bottom: 0` 胜 UA 时逻辑声明淘汰）
+                    // 三件齐备后落地。vlr/slr 流物理落 bottom/……随 wm 正确映射，line-box-
+                    // slr-060 系不再错位 40px（物理 padding-left 时代残差 7.82% 实证）。
+                    // htb/ltr 下 inline-start ≡ left 等价。
+                    ua_decl_inputs.push((
+                        "padding-inline-start".to_string(),
+                        "40px".to_string(),
+                        false,
+                        (0, 0, 0),
+                        None,
+                    ));
                     let lst = if tag == "ul" { "disc" } else { "decimal" };
                     ua_decl_inputs.push(("list-style-type".to_string(), lst.to_string(), false, (0, 0, 0), None));
                 }
@@ -1735,7 +1740,10 @@ impl StyleSystem {
 
         // 3. 运行级联算法（apply-on-dummy 合法性探测：非法值声明按未声明处理，
         //    较低优先级合法声明可胜出；driving：keywords-000 `background:"red"`）
-        let cascaded = cascade::cascade(declarations, quirks_mode == QuirksMode::Quirks);
+        // R4449：级联同时产出各属性胜者 CascadeOrder 旁表——供 compute 延迟臂做
+        // logical/physical 别名消解（键名经 resolve_var/expand_pending_shorthands 变换
+        // 后保持稳定，旁表按键名对齐）。
+        let (cascaded, cascade_orders) = cascade::cascade_with_orders(declarations, quirks_mode == QuirksMode::Quirks);
 
         // 4. 收集自定义属性（继承父元素 + 当前元素自身声明覆盖）
         // CSS 自定义属性是继承属性：`:root { --x }` 定义的变量需对后代可见。
@@ -1753,6 +1761,7 @@ impl StyleSystem {
         let style = inheritance::compute_inherited_style_with_quirks(
             parent_style,
             &resolved_cascaded,
+            &cascade_orders,
             quirks_mode,
             prefers_dark,
         );

@@ -8,6 +8,8 @@ use std::collections::HashMap;
 use zero_css_parser::values::FontWeightValue;
 use zero_dom::QuirksMode;
 
+use crate::cascade::CascadeOrder;
+use crate::property::apply_advanced::logical_alias_physical_slot;
 use crate::property::{
     ComputedStyle, PropertyRegistry, apply_initial_value, apply_property_value_with_quirks, inherit_property,
 };
@@ -27,7 +29,7 @@ pub fn compute_inherited_style(
     parent_style: Option<&ComputedStyle>,
     cascaded: &HashMap<String, String>,
 ) -> ComputedStyle {
-    compute_inherited_style_with_quirks(parent_style, cascaded, QuirksMode::NoQuirks, false)
+    compute_inherited_style_with_quirks(parent_style, cascaded, &HashMap::new(), QuirksMode::NoQuirks, false)
 }
 
 /// 为元素计算继承样式（支持 quirks mode）。
@@ -37,6 +39,7 @@ pub fn compute_inherited_style(
 pub fn compute_inherited_style_with_quirks(
     parent_style: Option<&ComputedStyle>,
     cascaded: &HashMap<String, String>,
+    cascade_orders: &HashMap<String, CascadeOrder>,
     quirks_mode: QuirksMode,
     prefers_dark: bool,
 ) -> ComputedStyle {
@@ -143,7 +146,19 @@ pub fn compute_inherited_style_with_quirks(
 
     // R4448：延迟逻辑属性应用（见主循环处注释）——writing-mode/sideways 标记此时已定态
     //（显式声明主循环已应用、未声明则继承完成），物理映射不再依赖胜者 map 迭代序。
+    // R4449：overlapping aliases 消解（css-cascade）——逻辑属性按**最终** writing-mode
+    // 映射物理槽位，与该槽位的物理别名胜者按 CascadeOrder 择一：物理别名胜出时逻辑声明
+    // 被级联淘汰（如 author `padding-bottom: 0` 压 UA `padding-inline-start: 40px`）；
+    // 无物理别名共存（或逻辑更晚）时逻辑正常应用。R4448 A/B 实证缺此消解时 UA logical
+    // 反向覆盖 author 物理声明（marker-*/counter-styles −9 翻红 + slr-060 ul h=220）。
     for (property, value) in deferred_logical {
+        if let Some(physical_slot) = logical_alias_physical_slot(property, &style)
+            && let Some(phys_order) = cascade_orders.get(&physical_slot)
+            && let Some(logical_order) = cascade_orders.get(property)
+            && phys_order > logical_order
+        {
+            continue;
+        }
         apply_property_value_with_quirks(
             &mut style,
             property,

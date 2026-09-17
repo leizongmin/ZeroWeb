@@ -328,7 +328,25 @@ fn is_legacy_webkit_box_value(value: &str) -> bool {
 ///
 /// 返回一个 HashMap，键为属性名，值为胜出的声明值。
 // https://drafts.csswg.org/css-cascade-4/#cascading
+/// 级联算法（R4449：同时返回各属性胜者的 CascadeOrder 旁表——供 compute 逻辑/物理
+/// 别名消解（css-cascade overlapping aliases）：逻辑属性按元素最终 writing-mode 映射
+/// 物理槽位，与该槽位物理别名胜者按级联序择一）。
+pub fn cascade_with_orders<'a>(
+    declarations: Vec<CascadedDeclaration<'a>>,
+    quirks: bool,
+) -> (HashMap<String, String>, HashMap<String, CascadeOrder>) {
+    cascade_impl(declarations, quirks)
+}
+
+/// 兼容入口（不消费 order 旁表的既有调用/测试）。
 pub fn cascade<'a>(declarations: Vec<CascadedDeclaration<'a>>, quirks: bool) -> HashMap<String, String> {
+    cascade_impl(declarations, quirks).0
+}
+
+fn cascade_impl<'a>(
+    declarations: Vec<CascadedDeclaration<'a>>,
+    quirks: bool,
+) -> (HashMap<String, String>, HashMap<String, CascadeOrder>) {
     // R3771/R3773：`-webkit-line-clamp` 适用性门控（css-overflow-3：仅 display:-webkit-box
     // / -webkit-inline-box **且 -webkit-box-orient:vertical** 上下文生效——webkit-002：缺
     // orient 声明按默认 horizontal → clamp 不适用（ref 为不 clamp 全 5 行）；webkit-015：
@@ -560,6 +578,7 @@ pub fn cascade<'a>(declarations: Vec<CascadedDeclaration<'a>>, quirks: bool) -> 
     // R3771：`-webkit-line-clamp` 未出现在级联时（绝大多数元素），零额外开销。
 
     let mut result = HashMap::new();
+    let mut winner_orders: HashMap<String, CascadeOrder> = HashMap::new();
 
     // kill-switch `ZW_REVERT_LAYER=0`（default-on）：进程运行中 env 不变，读一次。
     let revert_layer_active = std::env::var("ZW_REVERT_LAYER").as_deref() != Ok("0");
@@ -611,6 +630,7 @@ pub fn cascade<'a>(declarations: Vec<CascadedDeclaration<'a>>, quirks: bool) -> 
         if !saw_revert_layer {
             if let Some(b) = best {
                 result.insert(property.to_string(), b.value.to_string());
+                winner_orders.insert(property.to_string(), b.order.clone());
             }
             continue;
         }
@@ -659,6 +679,7 @@ pub fn cascade<'a>(declarations: Vec<CascadedDeclaration<'a>>, quirks: bool) -> 
         }
         if let Some(w) = winner.or(first_valid) {
             result.insert(property.to_string(), w.value.to_string());
+            winner_orders.insert(property.to_string(), w.order.clone());
         }
     }
 
@@ -668,7 +689,7 @@ pub fn cascade<'a>(declarations: Vec<CascadedDeclaration<'a>>, quirks: bool) -> 
         result.insert("-webkit-line-clamp-origin".to_string(), "true".to_string());
     }
 
-    result
+    (result, winner_orders)
 }
 
 /// 值是否为 `revert-layer` 关键字（R2388 tier 回退触发条件）。

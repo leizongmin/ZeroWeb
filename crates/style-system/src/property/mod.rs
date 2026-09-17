@@ -4,7 +4,7 @@
 //! 以及 `PropertyRegistry` 用于查询初始值和继承性。
 
 pub mod apply;
-mod apply_advanced;
+pub(crate) mod apply_advanced;
 mod computed_style;
 mod default_impl;
 pub mod inherit;

@@ -2189,6 +2189,49 @@ enum PhysicalSide {
     Left,
 }
 
+/// R4449：逻辑属性 → 物理别名属性名（按元素最终 writing-mode/sideways 标记解析）。
+///
+/// css-cascade overlapping aliases：逻辑声明与映射到的物理槽位别名是同一 computed
+/// 槽位的竞争声明，须按 CascadeOrder 择一。返回 None = 非逻辑属性（或 border 家族
+/// 以外的三段名无法静态映射）。
+pub(crate) fn logical_alias_physical_slot(property: &str, style: &ComputedStyle) -> Option<String> {
+    let side_str = |axis_inline: bool, start: bool| -> &'static str {
+        match logical_physical_side(axis_inline, start, &style.writing_mode, style.writing_mode_sideways_lr) {
+            PhysicalSide::Top => "top",
+            PhysicalSide::Right => "right",
+            PhysicalSide::Bottom => "bottom",
+            PhysicalSide::Left => "left",
+        }
+    };
+    Some(match property {
+        "margin-block-start" => format!("margin-{}", side_str(false, true)),
+        "margin-block-end" => format!("margin-{}", side_str(false, false)),
+        "margin-inline-start" => format!("margin-{}", side_str(true, true)),
+        "margin-inline-end" => format!("margin-{}", side_str(true, false)),
+        "padding-block-start" => format!("padding-{}", side_str(false, true)),
+        "padding-block-end" => format!("padding-{}", side_str(false, false)),
+        "padding-inline-start" => format!("padding-{}", side_str(true, true)),
+        "padding-inline-end" => format!("padding-{}", side_str(true, false)),
+        "inset-block-start" => side_str(false, true).to_string(),
+        "inset-block-end" => side_str(false, false).to_string(),
+        "inset-inline-start" => side_str(true, true).to_string(),
+        "inset-inline-end" => side_str(true, false).to_string(),
+        "border-block-start-width" => format!("border-{}-width", side_str(false, true)),
+        "border-block-end-width" => format!("border-{}-width", side_str(false, false)),
+        "border-inline-start-width" => format!("border-{}-width", side_str(true, true)),
+        "border-inline-end-width" => format!("border-{}-width", side_str(true, false)),
+        "border-block-start-style" => format!("border-{}-style", side_str(false, true)),
+        "border-block-end-style" => format!("border-{}-style", side_str(false, false)),
+        "border-inline-start-style" => format!("border-{}-style", side_str(true, true)),
+        "border-inline-end-style" => format!("border-{}-style", side_str(true, false)),
+        "border-block-start-color" => format!("border-{}-color", side_str(false, true)),
+        "border-block-end-color" => format!("border-{}-color", side_str(false, false)),
+        "border-inline-start-color" => format!("border-{}-color", side_str(true, true)),
+        "border-inline-end-color" => format!("border-{}-color", side_str(true, false)),
+        _ => return None,
+    })
+}
+
 /// 按 logical 轴 + 起/止 + 元素 writing-mode 解析物理边。
 ///
 /// - `axis_inline=true` 表示 inline 轴（inline-start/inline-end），`false` 表示 block 轴。
