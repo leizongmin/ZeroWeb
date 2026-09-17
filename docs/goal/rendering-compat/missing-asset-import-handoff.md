@@ -93,3 +93,4 @@ file "$DST/<rel>"   # 须为 PNG image / ASCII text(CSS) / SVG，非 HTML 404 �
 - R594：stall #1（abandoned，repo-root css/ staging 删除）。
 - R596：mechanism proof（资产落 wpt-data 即生效）+ stall #2（仅落 css/support/ 2 文件即停）。
 - 当前（R597）：stall #3 持续，本 turnkey handoff 产出以消除摩擦。
+- R4435（2026-09-17）：**swatch-fuchsia.png 导入实证**——driving = inline-block-alignment-006/srl-008（R4434 后 ref 全空白假绿 4.77%→6.15% 越线暴露）。上游 fetch 15×15 PNG 落 `css/css-writing-modes/support/`，两案 diff 6.15→12.35%（红状态不变、更远离阈值）；blast radius 复核 = 全库另 3 引用案 fixed-table-layout-021/022/023 导入前后 diff 逐字节同值。⚠️ oracle 重抓未做（oracle-shots 旧抓取仍缺图，重抓受影响 case 前 oracle 口径不变）。
