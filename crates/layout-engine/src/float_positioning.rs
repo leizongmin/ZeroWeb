@@ -404,8 +404,6 @@ pub(crate) fn shrink_inline_blocks_to_content(
 ) {
     let own_horizontal = matches!(box_node.writing_mode, WritingModeValue::HorizontalTb);
     if !own_horizontal
-        && !box_node.is_absolute
-        && !box_node.is_fixed
         && box_node.writing_mode.is_vertical_block_flow()
         && std::env::var("ZW_ORTHO_SHRINK").as_deref() != Ok("0")
     {
@@ -415,9 +413,11 @@ pub(crate) fn shrink_inline_blocks_to_content(
         // 200 实证）。收缩目标 = **列流 IFC Σ 列宽**（块轴 extent，R4432 cell /
         // R4436 caption 同模型）：列断由 definite 行内尺寸（CSS height Px，auto 回落
         // border-box−frame，再 fallback 单列）驱动。ZW_ORTHO_SHRINK=0 kill-switch。
-        let is_shrinkable = box_node.node_id.is_some_and(|id| {
-            styles.get(&id).is_some_and(|s| {
-                matches!(s.display, DisplayValue::InlineBlock)
+        let is_shrinkable = !box_node.is_absolute
+            && !box_node.is_fixed
+            && box_node.node_id.is_some_and(|id| {
+                styles.get(&id).is_some_and(|s| {
+                    matches!(s.display, DisplayValue::InlineBlock)
                     // R57/R4290 同款：replaced 元素 width:auto 固有尺寸走属性/缺省尺寸路径，
                     // 不得按内容列流收缩（intrinsic-percent-replaced-029 / flexbox-vert-lr-with-img）。
                     && !box_node.node_id.is_some_and(|id2| {
@@ -484,6 +484,73 @@ pub(crate) fn shrink_inline_blocks_to_content(
             if shrink_border_box + 0.5 < box_node.width {
                 box_node.width = shrink_border_box;
                 box_node.content_width = block_extent;
+            }
+        }
+        // R4445：vertical block 容器纯 IFC 文本臂（css-writing-modes-3 §7.3 orthogonal
+        // 'auto' sizing）。5.5 shrink_vertical_blocks 的 child-box 度量对纯 IFC 内容恒 0
+        //（content_extent=0 → new_width=0 → w 塌 0：line-box-direction vrl-002/vlr-003/
+        // slr-043 div w=0.0 vs chromium 420 实证，vrl/vlr/srl/slr 24 案同源带）。
+        // 块轴尺寸 = Σ 列宽（definite 行内尺寸驱动列断，R4432 cell / R4436 caption /
+        // R4437 inline-block 同模型）；回写 content-based 双向（block-size:auto =
+        // fit-content 语义，须能从 5.5 塌 0 grow 回）——与 inline-block 臂的单向收缩
+        //（防拉伸伪影）有意分叉。仅 definite CSS height（auto 高容器行内尺寸未定，
+        // 列断深度不可信，如 line-box-slr-060 li h=704 fill 病理，另账）；无 line box
+        //（真空 div，5.5 塌 0+frame ≈ chromium 无行盒块轴 0）不补偿不回写。
+        let is_block_ifc = box_node.node_id.is_some_and(|id| {
+            styles.get(&id).is_some_and(|s| {
+                matches!(s.display, DisplayValue::Block | DisplayValue::ListItem)
+                    && !box_node.node_id.is_some_and(|id2| {
+                        doc.get(id2).is_some_and(|n| {
+                            matches!(
+                                &n.kind,
+                                zero_dom::NodeKind::Element(e) if matches!(
+                                    e.local_name(),
+                                    "canvas" | "video" | "audio" | "iframe" | "embed" | "object" | "applet" | "img" | "svg"
+                                )
+                            )
+                        })
+                    })
+                    && !s.contain.has_size()
+            })
+        });
+        if is_block_ifc
+            // 纯 Auto 限定（≠ inline-block 臂的 Auto|Min/Max/FitContent 宽集）：converter 对
+            // vertical 元素按逻辑轴存储（s.width=inline-size、s.height=block-size），显式
+            // inline-size 关键字（max-content 等）落 s.width——transform-3d-scales-different-
+            // x-y-dynamic-001 .test（inline-size:max-content）被本臂改写后 dynamic 捕获相位
+            // diff +10.06pp 实证；本臂语义 = auto block-size 收缩，显式 inline-size 另账。
+            && matches!(
+                box_node.node_id.and_then(|id| styles.get(&id)),
+                Some(s) if matches!(s.width, LengthValue::Auto)
+            )
+            && !has_w_constraint
+            && box_node.children.is_empty()
+            // float 容器排除：邻居 float 堆叠用改写前宽度定位（本 pass 晚于 float 流
+            // 定位），content-based 回写引发重叠（line-box-vlr-008/slr-048 float:right
+            // 容器 22.50→28.30pp 回归实证；x 平移补偿右缘无效——恶化源非自身锚定）。
+            // float 自身 shrink-to-fit（§10.3.5）本应同式度量，需 float 感知回写时序，
+            // 另账 slice（line-box-vrl-005/srl-045 float:left 容器待收）。
+            && matches!(box_node.float, FloatValue::None)
+            && let Some(id) = box_node.node_id
+            && let Some(cs) = styles.get(&id)
+            && let zero_css_parser::values::LengthValue::Px(h) = &cs.height
+            && h.is_finite()
+            && *h > 0.0
+        {
+            let mut col_ctx = crate::inline::InlineFormattingContext::new(*h as f32)
+                .with_vertical(true)
+                .with_vertical_rtl(matches!(box_node.writing_mode, WritingModeValue::VerticalRl));
+            col_ctx = crate::inline_finalization::configure_inline_fonts(col_ctx, inline_fonts, false);
+            col_ctx.layout(doc, id, styles);
+            if !col_ctx.lines.is_empty() {
+                let block_extent = col_ctx.total_height();
+                let frame_w =
+                    box_node.padding_left + box_node.padding_right + box_node.border_left + box_node.border_right;
+                let border_box = block_extent + frame_w;
+                if (border_box - box_node.width).abs() > 0.5 {
+                    box_node.width = border_box;
+                    box_node.content_width = block_extent;
+                }
             }
         }
     } else if own_horizontal && !box_node.is_absolute && !box_node.is_fixed {
