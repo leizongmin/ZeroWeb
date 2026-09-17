@@ -14,8 +14,11 @@ failedCount=0）；build replay 相位 dead_code warning 维持 S908-S977 同形
 一枚（match_media_to_json，crates/engine/src/js_dom_bridge.rs——R4441 组
 合态既有形态，兄弟流域 face 本流不碰，run-rules §9，维持记档））。
 **引用计数 8/10→9/10**（S969 双腿新周期锚点：门腿 19:00:59 落盘 +
-make test 腿 19:11:10 收口；下轮 S979 = 10/10 饱和到期即期限轮活跑
-（双腿=门+make test，S932/S933 先例），树代码变化提前触发双腿刷新）。
+make test 腿 19:11:10 收口；**S978 轮后插记取代期限轮预告——兄弟流
+R4446（4fd19365e，feat writing-modes 正交子 inline-size fill 臂）于
+S978 门腿收口后 push 序列入树（crates/layout-engine + crates/style-
+system 代码腿），S979 = 树变化刷新轮（双腿=门+make test，S342/S456/
+S622/S896 插记先例），引用计数以 S979 双腿为新周期锚点 0/10**）。
 锚点面四点实测维持：自有面对 S897 tip 7da6043d6 **10 files +1187/-182**；
 全树排除本流 docs 对 18d462de6 **176 files +17842/-1202**；crates/ raw
 **101**；子帧关键词 **7 文件全测试路径**非测试代码零命中维持（frames.click
@@ -18513,6 +18516,31 @@ M5 定稿收口判定（DC-1~4 依据）不因复验动摇——**goal Done 维�
    （S336 先例），至迟 S943=10/10 饱和次轮到期即期限轮活
    跑（双腿活跑口径=门 + make test，S932/S933 先例：/10
    周期饱和即次轮期限轮，新周期期限条款依原设计恢复）；
+
+   **S978 轮后插记（2026-09-17 push 序列 pull --rebase 实测）**：
+   兄弟流 R4446（4fd19365e，feat(writing-modes) 正交子 inline-size fill
+   臂，crates/layout-engine/src/vertical_block_flow.rs +72 +
+   crates/style-system/src/lib.rs +5 + docs/goal/rendering-compat.md +1，
+   3 files +78 零删除）于 S978 门腿收口（19:43:24 落盘）后的 push 序列经
+   push 前 pull 入树（本流 S978 收口提交 rebase 于其上，push 后 main
+   tip = 1b6c0b0c6）——S978 门 PASS 覆盖树态 = e58a1f5ec（R4446 入树
+   前），main tip 组合态超出 S978 门覆盖树态，**S979 = 树变化刷新轮
+   （门 + make test 双腿刷新，S342/S456/S622/S896 先例链），S978 条目
+   内「下轮 S979 = 10/10 饱和到期即期限轮活跑」预告被本插记取代**，
+   引用计数以 S979 双腿为新周期锚点 0/10；S979 锚点预期（本插记时点
+   实测）——全树排除本流 docs 对 18d462de6 176 files +17842/-1202 →
+   **177 files +17920/-1202**（+1 file 净增 = R4446 折入累计 diff 归因：
+   layout-engine/style-system 两 crates 路径已在 diff 内、
+   rendering-compat.md 为 diff 新文件；+78 行精确一致），crates/ raw
+   101 → **103** 递增（+2 = R4446 代码腿入 crates/ 2 文件口径），自有
+   面对S897 tip 7da6043d6 维持 **10 files +1187/-182** 不变（实测复核），
+   子帧关键词维持 **7 文件**（R4446 行零关键词命中实测复核）非测试代码
+   零命中维持（解冻条件①观察面 103 口径 frames.click+evaluate 挂起
+   维持）；R4446 系渲染流域 writing-modes 代码提交，本流不碰（run-rules
+   §9 工作面不重叠维持）；兄弟提交自述 14 案改善 7-25pp 跌出高带、
+   3 unmask 翻红记档（其树实测）——按归因纪律（run-rules §10）本流
+   双腿刷新以实测为准；R4446 不触 headless/CDP 面，M5 定稿收口判定
+   （DC-1~4 依据）不因本插记动摇，S979 刷新门 PASS 即守成态证据延续。
 
    **S978 已执行（2026-09-17）静默监测引用轮（引用计数
    8/10→9/10，周期锚点=S969 双腿（门腿 19:00:59 落盘 +
