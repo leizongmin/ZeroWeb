@@ -128,7 +128,12 @@ pub fn compute_vertical_block_flow(
 /// writing-modes reftest-oracle A/B 实测 **net +1**（91/784 vs 90/784，chr<1%）+ 14 大改善
 ///（block-flow/line-box-direction-vrl/vlr 簇 −62~−66pp）/ 0 大回归 + Σ z_vs_chr −422pp；
 /// V2/V3 ground truth 像素级匹配 chromium。kill-switch 留作回退兜底。
-pub fn apply_vertical_block_flow(root: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>, icb_height: f32) {
+pub fn apply_vertical_block_flow(
+    root: &mut LayoutBox,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    icb_height: f32,
+    icb_width: f32,
+) {
     if std::env::var("ZW_VERTICAL_BLOCK_FLOW").as_deref() == Ok("0") {
         return;
     }
@@ -140,7 +145,37 @@ pub fn apply_vertical_block_flow(root: &mut LayoutBox, styles: &HashMap<NodeId, 
     let viv = std::env::var("ZW_VIV_SIZING").as_deref() != Ok("0") && !viv_subtree_has_float(root);
     apply_inner(root, styles, &WritingModeValue::HorizontalTb, viv);
     anchor_vrl_root_children(root, styles);
+    anchor_vrl_root_box(root, icb_width);
     anchor_slr_root_children(root, icb_height);
+}
+
+/// R4455：vrl **根盒**右缘就位。
+///
+/// §7.1：vertical-rl 块流起于 block-start = **右缘**。根盒（html）auto 块轴尺寸
+/// shrink-wrap 后 ZW 贴 x=0（视口左缘），chromium 贴右（vrl-021 ref 蓝盒 x≈372..792，
+/// ZW x=8..428 实证——ul 列右到左排布已对，错在整盒位置）。根盒平移至 ICB 右缘 +
+/// 全子树同量平移（LayoutBox 绝对坐标）。`ZW_VIV_SIZING` 同族 kill-switch。
+fn anchor_vrl_root_box(root: &mut LayoutBox, icb_width: f32) {
+    if std::env::var("ZW_VIV_SIZING").as_deref() == Ok("0") {
+        return;
+    }
+    if root.writing_mode != WritingModeValue::VerticalRl {
+        return;
+    }
+    let delta = icb_width - root.width;
+    if delta <= 0.5 || root.x > 0.5 {
+        return;
+    }
+    root.x += delta;
+    fn translate_x(b: &mut LayoutBox, delta: f32) {
+        b.x += delta;
+        for c in &mut b.children {
+            translate_x(c, delta);
+        }
+    }
+    for c in &mut root.children {
+        translate_x(c, delta);
+    }
 }
 
 /// R4444：sideways-lr **根盒**子块底边（行内起点）锚定。
