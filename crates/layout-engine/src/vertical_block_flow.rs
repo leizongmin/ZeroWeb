@@ -292,20 +292,16 @@ fn apply_vertical_block_flow_sizing_inner(
             && matches!(parent_wm, WritingModeValue::HorizontalTb)
             && b.node_id.is_some_and(|id| {
                 styles.get(&id).is_some_and(|s| {
-                    // flex/grid 容器排除：item 走 align/flex 语义非块级 fill
-                    //（flexbox-writing-mode-014/015、overflow-auto-scrollbar-gutter-intrinsic-003
-                    // li-item fill 翻红实证）。
+                    // R4447：flex 容器放开——item 交叉轴 stretch（align-items:stretch 默认）
+                    // 与块级 fill 同值同轴（flexbox-writing-mode-014/015 test 页 item 472 未
+                    // 收缩 vs ref 122 实证）。grid 仍排除（item stretch 语义另一套，无 corpus
+                    // 驱动）；inline-block 容器排除：§10.3.9 shrink-to-fit 域归 R4437 臂
+                    //（shrink-only）自管，子 fill 与其单向收缩语义交叉——vrl-012 系
+                    // 4 对双胞胎 +1.7~2.3pp 恶化实证（fill spec 正确但暴露 list
+                    // padding 轴向残差，挂账 R4446 记档）。
                     !matches!(
                         s.display,
-                        DisplayValue::Flex
-                            | DisplayValue::InlineFlex
-                            | DisplayValue::Grid
-                            | DisplayValue::InlineGrid
-                            // inline-block 容器排除：§10.3.9 shrink-to-fit 域归 R4437 臂
-                            //（shrink-only）自管，子 fill 与其单向收缩语义交叉——vrl-012 系
-                            // 4 对双胞胎 +1.7~2.3pp 恶化实证（fill spec 正确但暴露 list
-                            // padding 轴向残差，挂账 R4446 记档）。
-                            | DisplayValue::InlineBlock
+                        DisplayValue::Grid | DisplayValue::InlineGrid | DisplayValue::InlineBlock
                     ) && !matches!(s.height, LengthValue::Auto)
                 })
             })
@@ -320,9 +316,11 @@ fn apply_vertical_block_flow_sizing_inner(
                     let Some(Some(cs)) = styles.get(&cid).map(Some) else {
                         continue;
                     };
+                    // R4447：不限子自身 wm——正交 flex 容器的 htb item 同样吃 cross stretch
+                    //（hl/hr span 472→122；子样式已在父 vertical 交换帧内，taffy 逻辑宽 =
+                    // 物理高对两类子一致）。
                     if !matches!(cs.display, DisplayValue::Block | DisplayValue::ListItem)
                         || !matches!(cs.height, LengthValue::Auto)
-                        || !c.writing_mode.is_vertical_block_flow()
                         || c.is_absolute
                         || c.is_fixed
                         || !matches!(c.float, FloatValue::None)
