@@ -1200,7 +1200,7 @@ impl LayoutEngine {
         //（避 R1542 高度传播 net-negative 墙；height 传播由 step 3.x layout-time
         // apply_vertical_block_flow_sizing 经 taffy 重跑解，env ZW_VERTICAL_BLOCK_FLOW_LAYOUT）。
         // env ZW_VERTICAL_BLOCK_FLOW default-on（`=0` kill-switch）。
-        crate::vertical_block_flow::apply_vertical_block_flow(&mut root_box, styles);
+        crate::vertical_block_flow::apply_vertical_block_flow(&mut root_box, styles, self.viewport_height);
 
         // 12.8 R1972 vertical child inline-fill（experimental，env ZW_VERTICAL_CHILD_FILL=1 开启，
         // default-off）：vertical 容器（definite inline-size）的 inf 子物理 height→填满容器

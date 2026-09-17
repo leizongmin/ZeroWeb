@@ -128,7 +128,7 @@ pub fn compute_vertical_block_flow(
 /// writing-modes reftest-oracle A/B 实测 **net +1**（91/784 vs 90/784，chr<1%）+ 14 大改善
 ///（block-flow/line-box-direction-vrl/vlr 簇 −62~−66pp）/ 0 大回归 + Σ z_vs_chr −422pp；
 /// V2/V3 ground truth 像素级匹配 chromium。kill-switch 留作回退兜底。
-pub fn apply_vertical_block_flow(root: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) {
+pub fn apply_vertical_block_flow(root: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>, icb_height: f32) {
     if std::env::var("ZW_VERTICAL_BLOCK_FLOW").as_deref() == Ok("0") {
         return;
     }
@@ -140,6 +140,38 @@ pub fn apply_vertical_block_flow(root: &mut LayoutBox, styles: &HashMap<NodeId, 
     let viv = std::env::var("ZW_VIV_SIZING").as_deref() != Ok("0") && !viv_subtree_has_float(root);
     apply_inner(root, styles, &WritingModeValue::HorizontalTb, viv);
     anchor_vrl_root_children(root, styles);
+    anchor_slr_root_children(root, icb_height);
+}
+
+/// R4444：sideways-lr **根盒**子块底边（行内起点）锚定。
+///
+/// spec（css-writing-modes-3 §sideways-lr）：行内方向自下而上——根容器的块级子的
+/// 行内起点 = **盒底边**（非 vlr 的顶边）。chromium 实证：slr-043 的子列渲染于
+/// ICB 底部区（ref = `position:absolute; bottom:8px` 左下角版本，图案 y=412..592），
+/// ZW 顶部锚定（y=8）= 整案错位（slr-043 31.50% 残差主源；R4443 字形取向层已清
+/// 图案倒置）。
+///
+/// 锚定式：child.y = ICB 高 − child.margin_bottom − child.height（各子独立底对齐，
+/// 底缘共享 ICB 底边）。仅根层（深层 sideways-lr 容器 auto 高 shrink-wrap，底/顶锚
+/// 等价 no-op）；RL 根不适用（vrl 行内起点 = 顶边）。`ZW_VIV_SIZING` 同族 kill-switch。
+fn anchor_slr_root_children(root: &mut LayoutBox, icb_height: f32) {
+    if std::env::var("ZW_VIV_SIZING").as_deref() == Ok("0") {
+        return;
+    }
+    if root.writing_mode != WritingModeValue::VerticalLr || !root.writing_mode_sideways_lr {
+        return;
+    }
+    for c in &mut root.children {
+        if c.is_absolute || c.is_fixed || !matches!(c.float, FloatValue::None) {
+            continue;
+        }
+        let h = c.height;
+        let mb = c.margin_bottom;
+        let new_y = (icb_height - mb - h).max(0.0);
+        if (c.y - new_y).abs() > 0.5 {
+            c.y = new_y;
+        }
+    }
 }
 
 /// R4429：vertical-rl **根盒**子块起始（右缘）锚定。
