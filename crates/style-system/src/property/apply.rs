@@ -804,6 +804,8 @@ pub fn apply_property_value_with_quirks(
         "writing-mode" => {
             if let Some(v) = parse_writing_mode(value) {
                 style.writing_mode = v;
+                // R4443：sideways-lr 旁路标记（声明值区分，供 paint 字形取向/行内方向）。
+                style.writing_mode_sideways_lr = value.trim().eq_ignore_ascii_case("sideways-lr");
                 return true;
             }
         }

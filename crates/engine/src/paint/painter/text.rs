@@ -20,6 +20,12 @@ use zero_style_system::{
     ComputedStyle, TabSizeValue, TextEmphasisPositionValue, TextEmphasisStyleValue, TextOverflowValue,
     TextTransformValue, WhiteSpaceValue,
 };
+/// R4443：ZW_DEBUG_GLYPHS 探针开关（OnceLock 缓存，热路径零 env::var 开销——
+/// block_layout_1000_elements bench +39% 实证 env::var 逐次调用开销）。
+fn glyph_probe_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| std::env::var("ZW_DEBUG_GLYPHS").as_deref() == Ok("1"))
+}
 
 use super::super::color::{color_value_to_render, resolve_color_current};
 use super::super::helpers::PrimitiveCounts;
@@ -1222,9 +1228,9 @@ impl super::Painter {
                 let glyphs_before_fragments = self.primitives.glyphs.len();
 
                 // R4440 临时探针（ZW_DEBUG_GLYPHS=1）：vertical 盒 paint 装配参数。
-                if is_vertical && std::env::var("ZW_DEBUG_GLYPHS").as_deref() == Ok("1") {
+                if is_vertical && glyph_probe_enabled() {
                     eprintln!(
-                        "[vpaint] box={:?} abs=({:.0},{:.0}) content=({:.0},{:.0}) cx={:.0} cy={:.0} use_stored={} tx={:.1} ty={:.1} w={:.0}",
+                        "[vpaint] box={:?} abs=({:.0},{:.0}) content=({:.0},{:.0}) cx={:.0} cy={:.0} use_stored={} tx={:.1} ty={:.1} w={:.0} slr={}",
                         box_node.node_id,
                         abs_x,
                         abs_y,
@@ -1236,6 +1242,7 @@ impl super::Painter {
                         tx,
                         ty,
                         box_node.width,
+                        box_node.writing_mode_sideways_lr,
                     );
                     for (i, f) in fragments.iter().take(2).enumerate() {
                         eprintln!(
@@ -1251,7 +1258,18 @@ impl super::Painter {
                 }
 
                 // writing-mode: vertical-rl/vertical-lr 时字符旋转 90°
-                let rotation = if is_vertical { std::f32::consts::FRAC_PI_2 } else { 0.0 };
+                // R4443：sideways-lr（旁路标记）字形 −90° CCW + 列内自下而上推进
+                //（spec css-writing-modes-3 §sideways-lr；R1785 规范化仅保块流方向）。
+                let sideways_lr = box_node.writing_mode_sideways_lr;
+                let rotation = if is_vertical {
+                    if sideways_lr {
+                        -std::f32::consts::FRAC_PI_2
+                    } else {
+                        std::f32::consts::FRAC_PI_2
+                    }
+                } else {
+                    0.0
+                };
 
                 if let Some(ref mc) = multicol_info {
                     // 多列布局：遍历行（带 line.y），将行分配到各列
@@ -2277,8 +2295,40 @@ impl super::Painter {
                                 let ch = glyph.code_point;
                                 let glyph_font_id = glyph.font_id.unwrap_or(frag_font_id);
                                 let glyph_font_size = glyph.font_size.unwrap_or($frag_fs);
+                                // R4443 临时探针。
+                                if char_advance_is_y && glyph_probe_enabled() {
+                                    eprintln!(
+                                        "[vemit] rot={:.2} slr={} adv={:.1} cy={:.1}",
+                                        rotation,
+                                        sideways_lr,
+                                        glyph.advance_x.unwrap_or(0.0),
+                                        content_y
+                                    );
+                                }
+                                // R4443：sideways-lr 行内方向自下而上——先取本字符 advance
+                                //（与下方 cursor 推进同式），列内 y 镜像到盒 content 底边锚。
+                                let advance = glyph
+                                    .advance_x
+                                    .unwrap_or_else(|| {
+                                        self.measure_char_cached(frag_font_id.0, ch, $frag_fs, $is_ahem)
+                                    })
+                                    + frag_letter_spacing
+                                    + if zero_style_system::is_word_separator(ch) {
+                                        frag_word_spacing
+                                    } else {
+                                        0.0
+                                    };
                                 let (glyph_x, glyph_y) = if char_advance_is_y {
-                                    (frag_base_x, char_pos)
+                                    if sideways_lr {
+                                        (
+                                            frag_base_x,
+                                            content_y + box_node.content_height
+                                                - (char_pos - content_y)
+                                                - advance,
+                                        )
+                                    } else {
+                                        (frag_base_x, char_pos)
+                                    }
                                 } else {
                                     (char_pos + glyph.x_offset, frag_base_y - glyph.y_offset)
                                 };
@@ -2377,15 +2427,7 @@ impl super::Painter {
                                     );
                                 }
 
-                                let advance = glyph
-                                    .advance_x
-                                    .unwrap_or_else(|| self.measure_char_cached(frag_font_id.0, ch, $frag_fs, $is_ahem))
-                                    + frag_letter_spacing
-                                    + if zero_style_system::is_word_separator(ch) {
-                                        frag_word_spacing
-                                    } else {
-                                        0.0
-                                    };
+                                // R4443：advance 已在字形定位处预计算（sideways-lr 镜像需要）。
                                 char_pos += advance;
 
                                 // R1021：text-emphasis 标记（水平书写模式；垂直暂不支持）。

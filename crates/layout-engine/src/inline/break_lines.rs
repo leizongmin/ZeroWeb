@@ -993,7 +993,9 @@ impl InlineFormattingContext {
         };
         let words = self.split_into_words(source_cursor.visual_text(), first.is_ahem_font);
         // R4440 临时探针（ZW_DEBUG_GLYPHS=1）：vertical run 度量溯源。
-        if std::env::var("ZW_DEBUG_GLYPHS").as_deref() == Ok("1") {
+        // R4443：OnceLock 缓存开关读取——env::var 在热路径逐次调用有全局锁开销
+        //（block_layout_1000_elements bench +39% 实证）。
+        if glyph_probe_enabled() {
             eprintln!(
                 "[vrun] lhs={:?} fs={:.1} ahem={} text={:?}",
                 runs.iter().map(|r| r.line_height).collect::<Vec<_>>(),
@@ -1163,6 +1165,12 @@ impl InlineFormattingContext {
         self.lines.push(std::mem::replace(current_column, empty_inline_line_box()));
         *current_depth = 0.0;
     }
+}
+
+/// R4443：ZW_DEBUG_GLYPHS 探针开关（OnceLock 缓存，热路径零 env::var 开销）。
+pub(crate) fn glyph_probe_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| std::env::var("ZW_DEBUG_GLYPHS").as_deref() == Ok("1"))
 }
 
 fn vertical_text_group_end(items: &[InlineItem], start: usize) -> usize {

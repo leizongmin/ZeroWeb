@@ -2323,6 +2323,7 @@ impl LayoutEngine {
             collapsed_border_style_overrides: [const { None }; 4],
             collapsed_border_outer_edge: [false; 4],
             writing_mode: own_writing_mode.clone(),
+            writing_mode_sideways_lr: computed.is_some_and(|s| s.writing_mode_sideways_lr),
             is_anonymous_text_item,
             css_order: computed.as_ref().map(|s| s.order).unwrap_or(0),
             column_span_offsets: Vec::new(),

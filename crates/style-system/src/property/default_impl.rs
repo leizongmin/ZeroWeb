@@ -19,6 +19,7 @@ impl Default for ComputedStyle {
             list_style_position: zero_css_parser::values::ListStylePositionValue::Outside,
             list_style_image: ListStyleImageComputedValue::None,
             writing_mode: WritingModeValue::HorizontalTb,
+            writing_mode_sideways_lr: false,
             width: auto_length.clone(),
             height: auto_length.clone(),
             // CSS 规范：min-width/min-height 的 initial value 是 `auto`（非 0）。

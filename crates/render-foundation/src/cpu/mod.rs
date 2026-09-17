@@ -1042,6 +1042,8 @@ fn blit_glyph_bitmap(
 
     // 判断是否为 ~90° 旋转（容差 ±0.1 弧度）
     let is_rotated_90 = (rotation - std::f32::consts::FRAC_PI_2).abs() < 0.1;
+    // R4443：−90°（逆时针，sideways-lr 字形取向）。
+    let is_rotated_90_ccw = (rotation + std::f32::consts::FRAC_PI_2).abs() < 0.1;
 
     if is_rotated_90 {
         // 顺时针旋转 90°：原始 (col, row) → 旋转后 (row, width - 1 - col)
@@ -1053,6 +1055,29 @@ fn blit_glyph_bitmap(
                 // 顺时针 90° 旋转后的坐标
                 let rotated_col = row;
                 let rotated_row = bmp_w - 1 - col;
+
+                let px = start_x + rotated_col;
+                let py = start_y + rotated_row;
+                if px < 0 || py < 0 || px >= fb.width as i32 || py >= fb.height as i32 {
+                    continue;
+                }
+
+                let alpha = bitmap.data[row as usize * bitmap.width as usize + col as usize];
+                if alpha == 0 {
+                    continue;
+                }
+                blend_pixel(fb, px as u32, py as u32, color, alpha);
+            }
+        }
+    } else if is_rotated_90_ccw {
+        // R4443：逆时针旋转 90°（sideways-lr 字形取向）：原始 (col, row) → (h-1-row, col)
+        // 旋转后位图尺寸：width × height → height × width（脚印与 CW 相同，朝向镜像）。
+        let bmp_w = bitmap.width as i32;
+        let bmp_h = bitmap.height as i32;
+        for row in 0..bmp_h {
+            for col in 0..bmp_w {
+                let rotated_col = bmp_h - 1 - row;
+                let rotated_row = col;
 
                 let px = start_x + rotated_col;
                 let py = start_y + rotated_row;

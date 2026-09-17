@@ -292,6 +292,8 @@ pub struct LayoutBox {
     pub collapsed_border_outer_edge: [bool; 4],
     /// 元素的 writing-mode（用于 paint 阶段旋转文字和后处理轴交换）。
     pub writing_mode: WritingModeValue,
+    /// R4443：声明值为 `sideways-lr` 的旁路标记（paint 字形 −90° CCW + 列内自下而上）。
+    pub writing_mode_sideways_lr: bool,
     /// 是否为匿名文本项（flex/grid 容器中的文本节点包装）。
     ///
     /// CSS Flexbox §4 规定，flex 容器中的连续文本内容生成匿名 flex item。
@@ -559,6 +561,7 @@ impl Default for LayoutBox {
     fn default() -> Self {
         Self {
             node_id: None,
+            writing_mode_sideways_lr: false,
             x: 0.0,
             y: 0.0,
             width: 0.0,

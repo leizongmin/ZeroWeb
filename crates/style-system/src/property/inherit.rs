@@ -373,6 +373,8 @@ pub fn inherit_property(parent: &ComputedStyle, child: &mut ComputedStyle, prope
         }
         "writing-mode" => {
             child.writing_mode = parent.writing_mode.clone();
+            // R4443：sideways-lr 旁路标记随 writing-mode 继承。
+            child.writing_mode_sideways_lr = parent.writing_mode_sideways_lr;
             true
         }
         // 盒模型尺寸（非继承属性，但 `inherit` 关键字显式要求从父元素复制计算值）。
@@ -1196,6 +1198,8 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
         // Writing Mode
         "writing-mode" => {
             style.writing_mode = default_style.writing_mode;
+            // R4443：initial 复位同步旁路标记（default false）。
+            style.writing_mode_sideways_lr = default_style.writing_mode_sideways_lr;
             true
         }
         // Counters / Content / Quotes

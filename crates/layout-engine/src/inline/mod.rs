@@ -1883,7 +1883,7 @@ impl InlineFormattingContext {
             // caption content_width=50 → col 0 → paint content_x+0 正确。
             let mut x = self.block_extent; // 从 block 轴右端开始
             // R4440 临时探针（ZW_DEBUG_GLYPHS=1）：vrl 堆叠输入。
-            if std::env::var("ZW_DEBUG_GLYPHS").as_deref() == Ok("1") {
+            if glyph_probe_enabled() {
                 eprintln!(
                     "[vstack] block_extent={:.1} lines={} heights={:?}",
                     self.block_extent,

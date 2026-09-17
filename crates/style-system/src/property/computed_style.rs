@@ -24,6 +24,10 @@ pub struct ComputedStyle {
     pub list_style_image: ListStyleImageComputedValue,
     /// writing-mode 属性。
     pub writing_mode: WritingModeValue,
+    /// R4443：声明值为 `sideways-lr` 的旁路标记（R1785 将其规范化为 VerticalLr——块流
+    /// 方向等价；本标记保留字形取向/行内方向的区分，供 paint 旋转 −90° CCW + 列内
+    /// 自下而上推进消费）。随 writing-mode 继承。
+    pub writing_mode_sideways_lr: bool,
     /// width 属性。
     pub width: LengthValue,
     /// height 属性。
