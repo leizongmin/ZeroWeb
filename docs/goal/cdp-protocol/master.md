@@ -18626,6 +18626,40 @@ M5 定稿收口判定（DC-1~4 依据）不因复验动摇——**goal Done 维�
    S1029 先例：/10 周期饱和即次轮期限轮，新周期期限条款依原设计
    恢复）；
 
+   **S1029 轮后插记（2026-09-18 push 序列 pull --rebase 实测）**：兄弟流
+   R4463（7cf6962e0，fix(layout-engine) vertical 纯文本 float 列宽
+   IFC 测量转正——line-box-direction ≥10% 簇 8 案全绿零翻红 corpus
+   破 15007，crates/layout-engine/src/float_positioning.rs 1 代码文
+   件 +18/-6 + docs/goal/rendering-compat.md 记档行，2 files
+   +19/-6）及其随行 docs 腿族（R4464-R4467 rendering-compat 记档 +
+   zero-web/master.md 2 行 + 406b5f4b2 chore(perf) CI 性能基线/趋势
+   + 9344ac3d1 docs(goal) CI-GUARD-20260918 第三十二轮——区间
+   64203f79c..9344ac3d1 共 7 提交 6 files +1285/-14）于 S1029 双腿
+   收口（make test 腿 03:30:34）后的 push 序列经 push 前
+   pull --rebase 入树（我方 S1029 记录提交 rebase 于其上，push 后
+   main tip = 41c67f6e4）——S1029 双腿 PASS 覆盖树态 = 64203f79c
+   （R4463 入树前），main tip 组合态超出 S1029 双腿覆盖树态，**S1029
+   条目内「下轮 S1030 = 1/10（门单腿引用轮）」预告被本插记取代，
+   S1030 = 树变化刷新轮（门 + make test 双腿刷新，S245→S992→
+   S1003→S1010→S1020→S1024→S1029 先例链）**，引用计数以 S1030 双
+   腿为新周期锚点 0/10（S1029 锚点即告作废）；S1030 锚点预期（本
+   插记时点实测）——全树排除本流 docs 对 18d462de6 180 files
+   +18491/-1222 → **181 files +19768/-1228**（**file 数 +1** =
+   docs/perf/trends/2026-09-17-192745-*.json perf 趋势新档入集（非
+   crates 代码面，CI-GUARD/benchmarks 腿随行资产），行数 = R4463
+   + docs 腿族折入累计 diff），crates/ raw 118 → **119** 递增（+1
+   = R4463 代码腿入 crates/ 口径，e67967632..TIP 实测 =119，括注
+   基名滞后注记延续），自有面对 S897 tip 7da6043d6 维持
+   **10 files +1187/-182** 不变（实测复核），子帧关键词维持
+   **7 文件**（R4463 diff 零关键词命中实测复核）非测试代码零命中
+   维持（解冻条件①观察面 119 口径 frames.click+evaluate 挂起维
+   持）；R4463 系渲染流域 layout-engine 代码提交，本流不碰
+   （run-rules §9 工作面不重叠维持）；兄弟提交自述 ≥10% 簇 8 案
+   全绿零新翻红（其树实测）——按归因纪律（run-rules §10）本流双
+   腿刷新以实测为准；R4463 不触 headless/CDP 面，M5 定稿收口判定
+   （DC-1~4 依据）不因本插记动摇，S1030 刷新双腿全绿即守成态证据
+   延续。
+
    **S1028 已执行（2026-09-18）静默监测引用轮（引用计数 4/10→5/10，
    周期锚点=S1024 双腿（门腿 02:20:58 落盘 + make test 腿 02:31:31
    收口），同 tip 复核 pull 零新提交 tip=7227a94ad 即 S1027 提交本
