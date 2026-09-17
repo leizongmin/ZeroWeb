@@ -16,8 +16,12 @@ expected_green 33 对称差 none、deterministic 双跑 YES、ZW_IPC_VALIDATE
 crates/engine/src/js_dom_bridge.rs——cargo 诊断 replay 既有形态，兄
 弟流域 face 本流不碰，run-rules §9，维持记档））。
 **引用计数 1/10→2/10**（S989 双腿新周期锚点：门腿 22:16:16 落盘 +
-make test 腿 22:26:49 收口；下轮 S992 = 3/10，树代码变化提前触发双
-腿刷新；至迟 S999=10/10 饱和次轮到期即期限轮活跑）。
+make test 腿 22:26:49 收口）。（S991 轮后插记：兄弟流 R4455
+（6564acb83 feat(writing-modes) layout-engine engine.rs +
+vertical_block_flow.rs 2 代码文件）于 S991 门腿收口后 push 序列入
+树——**S992 = 树变化刷新轮（门 + make test 双腿刷新）**，S991 条
+目内「S992 = 3/10 引用轮」预告被本插记取代，引用计数以 S992 双腿
+为新周期锚点 0/10；至迟饱和次轮到期即期限轮活跑条款随新周期恢复）。
 锚点面四点实测维持：全树排除本流 docs 对 18d462de6
 **180 files +18106/-1219**；自有面对 S897 tip 7da6043d6
 **10 files +1187/-182**；crates/ raw **113**
@@ -18542,6 +18546,32 @@ M5 定稿收口判定（DC-1~4 依据）不因复验动摇——**goal Done 维�
    （先例链），否则按引用轮口径门单腿复跑免 make test 腿（S336 先
    例），至迟 S993=10/10 饱和次轮到期即期限轮活跑（双腿活跑口径=门
    + make test，S932/S933 先例：/10 周期饱和即次轮期限轮）；
+
+   **S991 轮后插记（2026-09-17 push 序列 pull --rebase 实测）**：兄弟流
+   R4455（6564acb83，feat(writing-modes) vrl 根盒右缘就位 深层 vrl
+   列化首 slice +9 绿零真翻红，crates/layout-engine/src/engine.rs +
+   crates/layout-engine/src/vertical_block_flow.rs 2 代码文件 +
+   docs/goal/rendering-compat.md，3 files +43/-2）于 S991 门腿收口
+   （23:03:35 落盘）后的 push 序列经 push 前 pull 入树（本流 S991
+   收口提交 rebase 于其上，push 后 main tip = 3aae6f3fe）——S991 门
+   PASS 覆盖树态 = c4c9033c9（R4455 入树前），main tip 组合态超出
+   S991 门覆盖树态，**S991 条目内「下轮 S992 = 3/10 静默监测引用
+   轮」预告被本插记取代，S992 = 树变化刷新轮（门 + make test 双腿
+   刷新，S342/S456/S622/S896/S978/S979/S980/S983/S989 先例链）**，
+   引用计数以 S992 双腿为新周期锚点 0/10；
+   S992 锚点预期（本插记时点实测）——全树排除本流 docs 对 18d462de6
+   180 files +18106/-1219 → **180 files +18147/-1219**（file 数不变 =
+   engine.rs/vertical_block_flow.rs 已在 diff 内，行数 = R4455 折入
+   累计 diff），crates/ raw 113 → **115** 递增（+2 = R4455 代码腿入
+   crates/ 2 文件口径），自有面对 S897 tip 7da6043d6 维持 **10 files
+   +1187/-182** 不变（实测复核），子帧关键词维持 **7 文件**（R4455
+   行零关键词命中实测复核）非测试代码零命中维持（解冻条件①观察面
+   115 口径 frames.click+evaluate 挂起维持）；R4455 系渲染流域
+   layout-engine 代码提交，本流不碰（run-rules §9 工作面不重叠维
+   持）；兄弟提交自述 +9 绿零真翻红（其树实测）——按归因纪律
+   （run-rules §10）本流双腿刷新以实测为准；R4455 不触 headless/CDP
+   面，M5 定稿收口判定（DC-1~4 依据）不因本插记动摇，S992 刷新双
+   腿全绿即守成态证据延续。
 
    **S991 已执行（2026-09-17）静默监测引用轮（引用计数 1/10→2/10，
    周期锚点=S989 双腿（门腿 22:16:16 落盘 + make test 腿 22:26:49
