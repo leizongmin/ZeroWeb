@@ -941,6 +941,7 @@ impl LayoutEngine {
             &mut positioned_inline_blocks,
             inline_fonts,
             &WritingModeValue::HorizontalTb,
+            false,
         );
 
         // 7. 后处理：CSS margin 折叠 — taffy 0.7 已内置块级 margin 折叠（CollapsibleMarginSet）

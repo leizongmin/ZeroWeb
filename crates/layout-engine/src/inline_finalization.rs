@@ -2595,6 +2595,7 @@ fn probe_inline_block_baselines(
     overrides
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn remeasure_inline_only_containers(
     box_node: &mut LayoutBox,
     doc: &Document,
@@ -2603,6 +2604,7 @@ pub(crate) fn remeasure_inline_only_containers(
     positioned_inline_blocks: &mut NodeIdSet,
     inline_fonts: InlineFontContext<'_>,
     parent_wm: &WritingModeValue,
+    inside_float_subtree: bool,
 ) {
     // R4428 flip：default-on（A/B 净 +5 零新翻红）；`=0` kill-switch 回退。
     let viv_remeasure = std::env::var("ZW_VIV_SIZING").as_deref() != Ok("0");
@@ -2637,6 +2639,7 @@ pub(crate) fn remeasure_inline_only_containers(
         if !is_table_without_internals {
             // 仍然递归处理子容器
             for child in &mut box_node.children {
+                let child_in_float = inside_float_subtree || !matches!(child.float, FloatValue::None);
                 remeasure_inline_only_containers(
                     child,
                     doc,
@@ -2645,6 +2648,7 @@ pub(crate) fn remeasure_inline_only_containers(
                     positioned_inline_blocks,
                     inline_fonts,
                     &own_wm,
+                    child_in_float,
                 );
             }
             return;
@@ -2848,7 +2852,14 @@ pub(crate) fn remeasure_inline_only_containers(
         //（contain-animation-001：taffy 0 高触发 needs_dom_text_remeasure → nbsp
         // 行高 116 回填 → 216 高红底露出）。
         && !style_has_size_containment
-        && (has_inline_children || needs_dom_text_remeasure)
+        && (has_inline_children
+            || needs_dom_text_remeasure
+            // R4459：float 子树内的 vertical 纯文本盒——taffy 交换帧对 auto 行内尺寸
+            //（物理高）只给单行行高（slr-047/vlr-007 float 的文本子 h=20，应 = 最深
+            // 列深 140），无 inline LayoutBox 子时旧 gate 不触及。
+            || (inside_float_subtree
+                && has_dom_text
+                && box_node.writing_mode.is_vertical_block_flow()))
         && let Some(dom_id) = box_node.node_id
         && let Some(style) = styles.get(&dom_id)
         && matches!(style.height, LengthValue::Auto)
@@ -2874,7 +2885,18 @@ pub(crate) fn remeasure_inline_only_containers(
             && is_vertical
             && parent_wm.is_vertical_block_flow()
             && !remeasure_subtree_has_float(box_node);
-        let container_width = if viv { box_node.content_height } else { container_width };
+        let container_width = if viv {
+            // R4459：float 子树 = shrink-wrap 语境（OOF 盒不被父行内尺寸 stretch 填充，
+            // content_height 是 taffy 单行行高垃圾）——无约束测深：物理高 = 最深列深，
+            // 物理宽由下方 R4428 Σ 列宽臂落定（slr-047/vlr-007：子 20→140 / 宽 60→20）。
+            if inside_float_subtree {
+                1.0e6
+            } else {
+                box_node.content_height
+            }
+        } else {
+            container_width
+        };
         let text_align = resolve_text_align(styles.get(&dom_id));
         let text_align_last = resolve_text_align_last(styles.get(&dom_id));
         let no_wrap = resolve_no_wrap_for_ifc_measure(styles.get(&dom_id));
@@ -3033,6 +3055,8 @@ pub(crate) fn remeasure_inline_only_containers(
     while idx < box_node.children.len() {
         let old_height = box_node.children[idx].height;
         let old_content_height = box_node.children[idx].content_height;
+        // R4459：float 子（及其子树）进入 shrink-wrap 语境——其盒不被父行内尺寸 stretch 填充。
+        let child_in_float = inside_float_subtree || !matches!(box_node.children[idx].float, FloatValue::None);
         remeasure_inline_only_containers(
             &mut box_node.children[idx],
             doc,
@@ -3041,6 +3065,7 @@ pub(crate) fn remeasure_inline_only_containers(
             positioned_inline_blocks,
             inline_fonts,
             &own_wm,
+            child_in_float,
         );
         let height_delta = box_node.children[idx].height - old_height;
         let content_height_delta = box_node.children[idx].content_height - old_content_height;

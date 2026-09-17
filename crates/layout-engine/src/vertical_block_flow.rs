@@ -143,10 +143,19 @@ pub fn apply_vertical_block_flow(
     // 打架（ortho-htb-alongside-vrl-floats-002/014、clearance-calculations-vrl-008 翻红实证）。
     // R4428 flip：default-on（A/B 净 +5 零新翻红）；`=0` kill-switch 回退。
     let viv = std::env::var("ZW_VIV_SIZING").as_deref() != Ok("0") && !viv_subtree_has_float(root);
-    apply_inner(root, styles, &WritingModeValue::HorizontalTb, viv);
+    let mut float_width_rewritten: Vec<NodeId> = Vec::new();
+    apply_inner(
+        root,
+        styles,
+        &WritingModeValue::HorizontalTb,
+        viv,
+        &mut float_width_rewritten,
+    );
     anchor_vrl_root_children(root, styles);
     anchor_vrl_root_box(root, icb_width);
     anchor_slr_root_children(root, icb_height);
+    // R4459：vertical float（orthogonal，HorizontalTb 父）内在尺寸收缩 + 浮动缘重锚。
+    fix_vertical_float_intrinsic(root, styles, &float_width_rewritten);
 }
 
 /// R4455：vrl **根盒**右缘就位。
@@ -608,12 +617,18 @@ fn viv_subtree_has_float(b: &LayoutBox) -> bool {
     b.children.iter().any(viv_subtree_has_float)
 }
 
-fn apply_inner(b: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>, parent_wm: &WritingModeValue, viv: bool) {
+fn apply_inner(
+    b: &mut LayoutBox,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    parent_wm: &WritingModeValue,
+    viv: bool,
+    float_width_rewritten: &mut Vec<NodeId>,
+) {
     // 先递归子（用本盒 wm 作子父 wm），再处理本盒——自底向上。
     let own_wm = b.writing_mode.clone();
     for child in &mut b.children {
         let child_viv = viv && !viv_subtree_has_float(child);
-        apply_inner(child, styles, &own_wm, child_viv);
+        apply_inner(child, styles, &own_wm, child_viv, float_width_rewritten);
     }
 
     let Some(block_indices) = vertical_block_child_indices_ex(b, styles, parent_wm, viv) else {
@@ -690,6 +705,127 @@ fn apply_inner(b: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>, paren
     if (new_width - b.width).abs() > 0.5 {
         b.width = new_width;
         b.content_width = layout.content_width.max(0.0);
+        // R4459：float 盒宽度被 restack 改写后，step 5 float 定位用的旧宽已失效
+        //（slr-047：定位宽 20 → x=772，Σ 新宽 840 → 内容几乎全出视口）——记入
+        // 改写集，供 fix_vertical_float_intrinsic 重锚浮动缘。
+        if b.float != FloatValue::None
+            && let Some(id) = b.node_id
+        {
+            float_width_rewritten.push(id);
+        }
+    }
+}
+
+/// R4459：vertical float（orthogonal：HorizontalTb 父）的内在尺寸收缩 + 浮动缘重锚。
+///
+/// 病理（slr-047/vlr-007/slr-048/054/vlr-008 实证）：sideways-lr / vertical-lr float
+/// 的 auto 行内尺寸（物理高）被 taffy 交换帧测成单行行高（20，应 = 最深列深 140 + frame），
+/// 子盒物理宽欠收缩（60/40，应 20/40）→ restack Σ 出超宽 float，且 step 5 float 定位
+/// 用的是改写前的旧宽 → x=772 内容出视口（近白屏）。
+///
+/// 修复（仅触及 restack 改写过宽度的 float，绿色零接触）：
+/// ①物理高 = max 块级 in-flow 子 outer 高 + 纵向 frame（§9.5 float shrink-to-fit）；
+/// ②浮动缘重锚（CSS2 §9.5.1 规则 2/4/5）：float:right 的 margin box 右缘贴
+/// min(包含块右缘, y 带重叠的**先前** float 兄弟 margin box 左缘)——多 float 逐个
+/// 向左堆叠（slr-048 三 float P/A/S 并排）；float:left 对称贴左缘。
+/// 子盒高/宽由 remeasure_inline_only_containers 的 R4459 float 子树臂先行落定。
+/// `ZW_VIV_SIZING` 同族 kill-switch。
+fn fix_vertical_float_intrinsic(root: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>, rewritten: &[NodeId]) {
+    if std::env::var("ZW_VIV_SIZING").as_deref() == Ok("0") || rewritten.is_empty() {
+        return;
+    }
+    walk_vertical_float(root, styles, rewritten, 0.0, 0.0, &WritingModeValue::HorizontalTb);
+}
+
+/// 已放置 float 的 margin box 矩形（绝对系）：(left, right, top, bottom)。
+type PlacedFloatRect = (f32, f32, f32, f32);
+
+fn walk_vertical_float(
+    b: &mut LayoutBox,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    rewritten: &[NodeId],
+    parent_content_x: f32,
+    parent_content_y: f32,
+    parent_wm: &WritingModeValue,
+) {
+    let height_auto = b
+        .node_id
+        .is_some_and(|id| styles.get(&id).is_some_and(|s| matches!(s.height, LengthValue::Auto)));
+    if matches!(parent_wm, WritingModeValue::HorizontalTb)
+        && !matches!(b.float, FloatValue::None)
+        && !b.is_absolute
+        && !b.is_fixed
+        && b.writing_mode.is_vertical_block_flow()
+        && height_auto
+        && b.node_id.is_some_and(|id| rewritten.contains(&id))
+    {
+        // ①物理高 = max 块级 in-flow 子 outer 高 + 纵向 frame。
+        let frame_v = b.border_top + b.border_bottom + b.padding_top + b.padding_bottom;
+        let max_child = b
+            .children
+            .iter()
+            .filter(|c| c.is_block_level && !c.is_absolute && !c.is_fixed && matches!(c.float, FloatValue::None))
+            .map(|c| c.height + c.margin_top + c.margin_bottom)
+            .fold(0.0_f32, f32::max);
+        let new_h = max_child + frame_v;
+        if new_h > b.height + 0.5 {
+            b.content_height = (new_h - frame_v).max(0.0);
+            b.height = new_h;
+        }
+    }
+    // 递归子：同父 float 兄弟按 DOM 序堆叠（placed 逐个累积），每个 BFC 重置。
+    let content_x = parent_content_x + b.x + b.padding_left + b.border_left;
+    let content_y = parent_content_y + b.y + b.padding_top + b.border_top;
+    let own_wm = b.writing_mode.clone();
+    let mut placed: Vec<PlacedFloatRect> = Vec::new();
+    for c in &mut b.children {
+        let is_float = !matches!(c.float, FloatValue::None) && !c.is_absolute && !c.is_fixed;
+        let height_auto = c
+            .node_id
+            .is_some_and(|id| styles.get(&id).is_some_and(|s| matches!(s.height, LengthValue::Auto)));
+        if is_float
+            && matches!(b.writing_mode, WritingModeValue::HorizontalTb)
+            && c.writing_mode.is_vertical_block_flow()
+            && height_auto
+            && c.node_id.is_some_and(|id| rewritten.contains(&id))
+        {
+            // ②浮动缘重锚（margin box 贴缘；y 带重叠的先前 float 阻挡同向贴缘）。
+            let top = content_y + c.y + c.margin_top;
+            let bottom = top + c.height + c.margin_top + c.margin_bottom;
+            let y_overlaps = |r: &PlacedFloatRect| top < r.3 && bottom > r.2;
+            let cb_right = content_x + b.content_width;
+            let cb_left = content_x;
+            let new_x = match c.float {
+                FloatValue::Right => {
+                    let limit = placed
+                        .iter()
+                        .filter(|r| y_overlaps(r))
+                        .map(|r| r.0)
+                        .fold(cb_right, f32::min);
+                    limit - c.margin_right - c.width - content_x
+                }
+                FloatValue::Left => {
+                    let limit = placed
+                        .iter()
+                        .filter(|r| y_overlaps(r))
+                        .map(|r| r.1)
+                        .fold(cb_left, f32::max);
+                    limit + c.margin_left - content_x
+                }
+                _ => c.x,
+            };
+            if (new_x - c.x).abs() > 0.5 {
+                c.x = new_x;
+            }
+        }
+        if is_float {
+            let left = content_x + c.x - c.margin_left;
+            let right = left + c.width + c.margin_left + c.margin_right;
+            let top = content_y + c.y + c.margin_top;
+            let bottom = top + c.height + c.margin_top + c.margin_bottom;
+            placed.push((left, right, top, bottom));
+        }
+        walk_vertical_float(c, styles, rewritten, content_x, content_y, &own_wm);
     }
 }
 
@@ -907,7 +1043,13 @@ mod tests {
     #[test]
     fn test_apply_inner_v2_vertical_rl() {
         let (mut container, styles) = build_v2v3_tree(WritingModeValue::VerticalRl);
-        apply_inner(&mut container, &styles, &WritingModeValue::HorizontalTb, false);
+        apply_inner(
+            &mut container,
+            &styles,
+            &WritingModeValue::HorizontalTb,
+            false,
+            &mut Vec::new(),
+        );
         let b1 = &container.children[0];
         let b2 = &container.children[1];
         assert!((b1.x - 50.0).abs() < 0.5, "B1.x 右侧应≈50，实 {}", b1.x);
@@ -929,7 +1071,13 @@ mod tests {
     #[test]
     fn test_apply_inner_v3_vertical_lr() {
         let (mut container, styles) = build_v2v3_tree(WritingModeValue::VerticalLr);
-        apply_inner(&mut container, &styles, &WritingModeValue::HorizontalTb, false);
+        apply_inner(
+            &mut container,
+            &styles,
+            &WritingModeValue::HorizontalTb,
+            false,
+            &mut Vec::new(),
+        );
         let b1 = &container.children[0];
         let b2 = &container.children[1];
         assert!(b1.x.abs() < 0.5, "B1.x 左侧应≈0，实 {}", b1.x);
@@ -942,7 +1090,13 @@ mod tests {
     fn test_apply_inner_skips_horizontal_container() {
         let (mut container, styles) = build_v2v3_tree(WritingModeValue::HorizontalTb);
         // build 用 HorizontalTb 时容器非 vertical，apply_inner 应早返回不改 B2 对角初值。
-        apply_inner(&mut container, &styles, &WritingModeValue::HorizontalTb, false);
+        apply_inner(
+            &mut container,
+            &styles,
+            &WritingModeValue::HorizontalTb,
+            false,
+            &mut Vec::new(),
+        );
         assert_eq!(container.children[1].x, 50.0, "HorizontalTb 容器不应被改");
         assert_eq!(container.width, 800.0, "HorizontalTb 容器 width 不变");
     }
@@ -952,7 +1106,13 @@ mod tests {
     fn test_apply_inner_skips_single_block_child() {
         let (mut container, styles) = build_v2v3_tree(WritingModeValue::VerticalRl);
         container.children.truncate(1); // 仅留 B1
-        apply_inner(&mut container, &styles, &WritingModeValue::HorizontalTb, false);
+        apply_inner(
+            &mut container,
+            &styles,
+            &WritingModeValue::HorizontalTb,
+            false,
+            &mut Vec::new(),
+        );
         assert_eq!(container.width, 800.0, "单子容器不应触发 width 修正");
     }
 
@@ -965,7 +1125,13 @@ mod tests {
         let (mut container, styles) = build_v2v3_tree(WritingModeValue::VerticalRl);
         container.is_absolute = true;
         container.content_height = 150.0;
-        apply_inner(&mut container, &styles, &WritingModeValue::HorizontalTb, false);
+        apply_inner(
+            &mut container,
+            &styles,
+            &WritingModeValue::HorizontalTb,
+            false,
+            &mut Vec::new(),
+        );
         // B1（DOM 首）右起：B1.x > B2.x（RTL），容器宽 = Σ 子宽 + frame = 104。
         assert!(
             container.children[0].x > container.children[1].x,
@@ -995,7 +1161,13 @@ mod tests {
             }
         }
         container.is_absolute = true;
-        apply_inner(&mut container, &styles, &WritingModeValue::HorizontalTb, false);
+        apply_inner(
+            &mut container,
+            &styles,
+            &WritingModeValue::HorizontalTb,
+            false,
+            &mut Vec::new(),
+        );
         assert_eq!(container.children[1].x, 50.0, "definite-width abspos 容器不应被改");
         assert_eq!(container.width, 800.0, "definite-width abspos 容器 width 不变");
     }
@@ -1012,7 +1184,13 @@ mod tests {
                 s.display = DisplayValue::TableCell;
             }
         }
-        apply_inner(&mut container, &styles, &WritingModeValue::HorizontalTb, false);
+        apply_inner(
+            &mut container,
+            &styles,
+            &WritingModeValue::HorizontalTb,
+            false,
+            &mut Vec::new(),
+        );
         assert!(
             (container.width - 104.0).abs() < 0.5,
             "vertical table-cell 容器应 restack 收缩到 Σ 子宽 + frame = 104，got {}",
@@ -1026,7 +1204,13 @@ mod tests {
                 s.display = DisplayValue::TableCell;
             }
         }
-        apply_inner(&mut h_container, &h_styles, &WritingModeValue::HorizontalTb, false);
+        apply_inner(
+            &mut h_container,
+            &h_styles,
+            &WritingModeValue::HorizontalTb,
+            false,
+            &mut Vec::new(),
+        );
         assert_eq!(h_container.width, 800.0, "horizontal table-cell 容器 width 不变");
     }
 
@@ -1040,7 +1224,13 @@ mod tests {
                 s.margin_top = LengthValue::Percentage(12.5);
             }
         }
-        apply_inner(&mut container, &styles, &WritingModeValue::HorizontalTb, false);
+        apply_inner(
+            &mut container,
+            &styles,
+            &WritingModeValue::HorizontalTb,
+            false,
+            &mut Vec::new(),
+        );
         // 容器未被重定位（B2 保留错误的「对角」初值 x=50，width 不变）。
         assert_eq!(container.children[1].x, 50.0, "percent-margin 容器不应被重定位");
         assert_eq!(container.width, 800.0, "percent-margin 容器 width 不变");
