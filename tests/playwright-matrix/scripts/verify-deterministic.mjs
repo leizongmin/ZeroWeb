@@ -88,7 +88,10 @@ async function runOnce(index) {
       // 期望失败步骤（挂账项）使流程退出 1——以 steps-report 为准。exit 2 = 致命
       // 崩溃（如 page.new 失败，S78），绝不容忍：崩溃时 capture-core-flow 会写
       // `fatal` 报告，若照旧放行会与上一轮的陈旧 steps-report 叠加成假绿。
-      if (err.status === undefined || err.status > 1) throw err
+      // status null = 子进程被信号杀死（execFileSync 超时 SIGTERM）——此时无法
+      // 区分「收尾挂起被杀且报告已完整」与「中途卡死被杀 + 读到陈旧报告」
+      // （S1036/S1038 exited null 同族，S1038 修复），与 exit 2 同等不容忍。
+      if (err.status === undefined || err.status === null || err.status > 1) throw err
       console.log(`  run ${index}: flow exited ${err.status}（含期望失败步骤）`)
     }
   } finally {
