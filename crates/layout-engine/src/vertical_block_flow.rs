@@ -139,6 +139,53 @@ pub fn apply_vertical_block_flow(root: &mut LayoutBox, styles: &HashMap<NodeId, 
     // R4428 flip：default-on（A/B 净 +5 零新翻红）；`=0` kill-switch 回退。
     let viv = std::env::var("ZW_VIV_SIZING").as_deref() != Ok("0") && !viv_subtree_has_float(root);
     apply_inner(root, styles, &WritingModeValue::HorizontalTb, viv);
+    anchor_vrl_root_children(root, styles);
+}
+
+/// R4429：vertical-rl **根盒**子块起始（右缘）锚定。
+///
+/// §7.1：vrl 块流自包含块右缘（block-start）起向左排列。taffy 交换帧输出
+/// `物理 x = 逻辑 y`（左缘起排），html（根、父=视口 HorizontalTb、不交换）的子
+/// body 收缩后贴**左**缘——chromium 贴右（vrl-002：body x=8 vs 306 实证）。
+/// 本 pass 对 vrl 根盒的 block-level in-flow 子组做右缘重锚（组内相对序不变）。
+/// vlr 根锚定左缘 = 现状，不适用。仅根层（深层容器 extent=Σ 已在 apply_inner
+/// 收缩，锚定 no-op）。
+fn anchor_vrl_root_children(root: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) {
+    if std::env::var("ZW_VIV_SIZING").as_deref() == Ok("0") {
+        return;
+    }
+    if root.writing_mode != WritingModeValue::VerticalRl {
+        return;
+    }
+    use zero_css_parser::values::DisplayValue;
+    let block_children: Vec<usize> = root
+        .children
+        .iter()
+        .enumerate()
+        .filter(|(_, c)| {
+            !c.is_absolute
+                && !c.is_fixed
+                && matches!(c.float, FloatValue::None)
+                && c.node_id
+                    .and_then(|id| styles.get(&id))
+                    .is_some_and(|s| matches!(s.display, DisplayValue::Block))
+        })
+        .map(|(i, _)| i)
+        .collect();
+    if block_children.is_empty() {
+        return;
+    }
+    // 组右缘起排：child.x = cursor − mr − w（cursor 自容器 content 右缘递减）。
+    let mut cursor = root.content_width;
+    for &i in &block_children {
+        let (w, ml, mr) = {
+            let c = &root.children[i];
+            (c.width, c.margin_left, c.margin_right)
+        };
+        cursor -= mr;
+        root.children[i].x = (cursor - w).max(0.0);
+        cursor -= w + ml;
+    }
 }
 
 /// R1544 Phase 2 layout-time 两阶段 content-size 传播：第一趟 taffy 布局后，对 vertical
