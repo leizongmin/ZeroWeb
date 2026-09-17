@@ -18511,6 +18511,44 @@ M5 定稿收口判定（DC-1~4 依据）不因复验动摇——**goal Done 维�
    跑（双腿活跑口径=门 + make test，S932/S933 先例：/10
    周期饱和即次轮期限轮，新周期期限条款依原设计恢复）；
 
+   **S958 轮后插记（2026-09-17 推送序列 pull --rebase 实
+   测）**：兄弟流 R4443（618de26c7，feat(writing-modes)
+   sideways-lr 字形取向 −90° CCW + 列内自下而上 slr 族
+   +5 绿净 +4，**含代码腿**：crates/engine/src/paint/
+   painter/text.rs +68 + crates/layout-engine 4 文件
+   （engine.rs/break_lines.rs/inline/mod.rs/types/
+   mod.rs）+ crates/render-foundation/src/cpu/mod.rs
+   +25 + crates/style-system 4 文件（apply/computed_
+   style/default_impl/inherit）= 10 代码文件 +105/-15 +
+   docs/goal/rendering-compat.md +1 记账）于 S958 门腿
+   收口（17:19:45 落盘）之后经 push 前 pull --rebase 入
+   树（本流 S958 提交 a7f04ce8a rebase 后落 7d9be62d8，
+   push 618de26c7..7d9be62d8 fast-forward）——Rust 面代
+   码提交 → tracked 代码树与 S958 门腿覆盖树态
+   （8da9c002a 组合态）不再一致，树变化刷新轮触发
+   （S874/S875/S913 插记先例：入树发生于上轮收口后
+   push 序列），S958 条目内下轮预告（S959=6/10 引用轮
+   门单腿）被本插记取代：下轮 **S959 = 树变化刷新轮**
+   （双腿刷新口径=门 + make test，S245→S897→S898→
+   S899→S905→S913→S914→S922→S933 先例链），引用计数以
+   S959 双腿为新周期锚点 0/10；锚点面值漂移实测记账：
+   全树排除本流 docs 对 18d462de6 175 files +17637/-1189
+   → **176 files +17739/-1200**（Δ+1 file +102/-11 =
+   R4443 +106/-15 毛量折入累计 diff 归因 文件数净增
+   1），crates/ 观察面 raw 98 → **99**（+1 = R4443 代码
+   腿入 crates/ 口径），自有面对 S897 tip 7da6043d6 维
+   持 10 files +1187/-182 不变（实测复核 R4443 不触
+   headless/CDP 面），子帧关键词 7 文件全测试路径非测
+   试代码零命中维持；R4443 归渲染流域 writing-modes 腿
+   （paint/layout/render-foundation/style-system 跨
+   crate），本流不碰（run-rules §9），M5 定稿收口判定
+   （DC-1~4 依据）不因本插记动摇，S959 刷新双腿全绿即
+   守成态证据延续；make test 全量参考基线 19,341P/0F
+   （S953 实测）待 S959 双腿刷新实测复证（R4443 slr 族
+   +5 绿净 +4 或带测试腿增量，以实测为准）；解冻条件①
+   观察面以 S959 刷新后实测为准顺延（子帧口径 99 待实
+   测），②照旧（本流控制面零外来提交）。
+
    **S958 已执行（2026-09-17）静默监测引用轮（引用计数
    4/10→5/10，周期锚点维持 S953 双腿（门腿 16:53:56 落
    盘 + make test 腿 ~17:04:05 收口），同 tip 复核 pull 零
