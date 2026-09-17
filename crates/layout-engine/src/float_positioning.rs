@@ -401,12 +401,16 @@ pub(crate) fn shrink_vertical_blocks_to_content(
             // margin-box 右缘，相对本 border-box）是确定性 content 尺寸， 小于 taffy 值
             // 收缩、大于则须 grow 回（line-box-slr-060 ul：li x_local=40 + w=380 =
             // 420 > taffy 400，被 min 挡住残 6.87% 实证）。min/max-width 钳制保留。
-            // R4473 挂账：R4473 extract 帧归一后子坐标 = content-box 相对（旧 =
-            // border-box 相对），border-box 宽严格 = content_extent + frame——但本式
-            // 经 R4450-R4463 按 border-box 口径校准（slr-054/srl-052 float 列族 +frame
-            // 即 9.68/8.25 翻红实证，vrl-019/srl-059 +frame 仅 6.92→5.83 部分收敛），
-            // 口径并存需逐案再 deriv，专项 slice 处理。
-            let new_width = content_extent.max(min_w).min(max_w);
+            // R4475：坐标口径分裂 deriv（R4474 实验：+frame 对 vrl-019/srl-059 6.92→
+            // 5.83 部分收敛，而 slr-054/srl-052 float 列族 9.68/8.25 翻红）——
+            // R4473 extract 帧归一**仅施于非 float 容器**：其子坐标 = content-box 相对，
+            // border-box 宽 = content_extent + frame；float 容器（R4473 排除臂）子坐标
+            // 仍 border-box 相对，frame 已含于 content_extent（旧口径）。
+            let container_is_float = !matches!(box_node.float, FloatValue::None);
+            let frame_bb =
+                box_node.border_left + box_node.border_right + box_node.padding_left + box_node.padding_right;
+            let frame_delta = if container_is_float { 0.0 } else { frame_bb };
+            let new_width = (content_extent + frame_delta).max(min_w).min(max_w);
             // R4195：table 有专属 vertical 路径（table_vertical.rs step 8 自管
             // table_block_extent + caption 逻辑 block 轴定位）——本收缩臂的宽度改写会被
             // step 8 覆盖，但**右锚平移改写子 x** 与 step 8 的 caption/行盒定位打架
@@ -433,10 +437,17 @@ pub(crate) fn shrink_vertical_blocks_to_content(
                 // taffy 按收缩前 fill-CB 宽把子放在 content 起点（x=frame 侧），收缩后
                 // 须把子重锚到新 content 右缘：右锚平移量 = (新宽 content 右缘) −
                 // (子当前右缘)，先取新宽再平移（新右缘基于 new_width）。
+                // R4475：锚坐标系随子坐标口径分裂——非 float 容器子 = content-box 相对，
+                // 新 content 右缘（content 系）= new_width − frame_bb；float 容器子 =
+                // border-box 相对，旧式 new_width − border_right。
                 box_node.width = new_width;
                 box_node.content_width = (new_width - frame).max(0.0);
                 if box_node.writing_mode == WritingModeValue::VerticalRl {
-                    let new_right_edge = new_width - box_node.border_right;
+                    let new_right_edge = if container_is_float {
+                        new_width - box_node.border_right
+                    } else {
+                        new_width - frame_bb
+                    };
                     for child in box_node.children.iter_mut() {
                         if child.is_absolute || child.is_fixed {
                             continue;
