@@ -2089,6 +2089,31 @@ pub(crate) fn measure_text_content(
         h
     };
 
+    // R4431：viv（vertical 父 + 自身 vertical → taffy 交换帧）测量转置。交换帧下
+    // logical w ↔ 物理 h（行内轴）、logical h ↔ 物理 w（块轴）：
+    //   - logical width  = 行内 extent = **最深列深**（max run.y+run.height；旧给块轴
+    //     extent=measured_width，table-cell 内容贡献转置 → 塌 0/窄列）；
+    //   - logical height = 块轴 extent = Σ 列宽（= total_height()，vertical 下
+    //     line.height 即列宽）。
+    // 仅 viv（自身亦 vertical）放开；orthogonal（htb 子于 vrl 父）IFC 帧语义未接，
+    // 维持现状。**default-off**（ZW_VIV_MEASURE=1 开）：A/B 净 0（vlr-010 绿 ↔
+    // overflow-auto-scrollbar-gutter-intrinsic-003 红）——转置是交换帧正确语义，
+    // 但 vertical-table-text slice 未完（cell 固有宽链仍水平模型），作为 slice
+    // 基础设施门控待该 slice 收口时 flip。
+    let own_vertical = styles
+        .get(&dom_id)
+        .is_some_and(|s| s.writing_mode.is_vertical_block_flow());
+    if std::env::var("ZW_VIV_MEASURE").as_deref() == Ok("1") && is_vertical && own_vertical {
+        let inline_extent = inline_ctx
+            .all_fragments()
+            .iter()
+            .map(|f| f.y + f.height)
+            .fold(0.0_f32, f32::max);
+        return Size {
+            width: known_dimensions.width.unwrap_or(inline_extent),
+            height: known_dimensions.height.unwrap_or_else(|| inline_ctx.total_height()),
+        };
+    }
     Size {
         width: known_dimensions.width.unwrap_or(measured_width),
         height: known_dimensions.height.unwrap_or(balanced_height),
