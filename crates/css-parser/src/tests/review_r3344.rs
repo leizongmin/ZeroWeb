@@ -72,7 +72,7 @@ fn test_scientific_notation_e_without_digit_r3344() {
     // 为 1，不被吞成 0**（修复前 num_str="1e+" parse 失败 → Number(0.0)，数据丢失）。
     let toks: Vec<Token> = Tokenizer::new("1e+").collect_tokens();
     let first_val = match toks.first() {
-        Some(Token::Number(n)) => *n,
+        Some(Token::Number(n, _)) => *n,
         Some(Token::Dimension(n, _)) => *n,
         other => panic!("1e+ 首须为 Number 或 Dimension(1)，实际 {:?}", other),
     };
@@ -88,7 +88,7 @@ fn test_scientific_notation_e_minus_without_digit_r3344() {
     // `1e-x`：符号后非 digit → 数字值保留为 1。
     let toks: Vec<Token> = Tokenizer::new("1e-x").collect_tokens();
     let first_val = match toks.first() {
-        Some(Token::Number(n)) => *n,
+        Some(Token::Number(n, _)) => *n,
         Some(Token::Dimension(n, _)) => *n,
         other => panic!("1e-x 首须为 Number 或 Dimension(1)，实际 {:?}", other),
     };
@@ -100,7 +100,7 @@ fn test_scientific_notation_bare_e_r3344() {
     // `1e`（EOF）：`e` 后无字符 → 数字值保留为 1。
     let toks: Vec<Token> = Tokenizer::new("1e").collect_tokens();
     let first_val = match toks.first() {
-        Some(Token::Number(n)) => *n,
+        Some(Token::Number(n, _)) => *n,
         Some(Token::Dimension(n, _)) => *n,
         other => panic!("1e 首须为 Number 或 Dimension(1)，实际 {:?}", other),
     };
@@ -113,7 +113,7 @@ fn test_scientific_notation_digit_after_e_preserved_r3344() {
     // 修复不得破坏「e 后有 digit 时正常消费」。
     let toks: Vec<Token> = Tokenizer::new("1e5x").collect_tokens();
     let first_val = match toks.first() {
-        Some(Token::Number(n)) => *n,
+        Some(Token::Number(n, _)) => *n,
         Some(Token::Dimension(n, _)) => *n,
         other => panic!("1e5x 首须为 Number 或 Dimension(100000)，实际 {:?}", other),
     };
@@ -129,19 +129,19 @@ fn test_scientific_notation_valid_still_works_r3344() {
     // 合法科学计数法不得被破坏。
     let toks: Vec<Token> = Tokenizer::new("1e3").collect_tokens();
     assert!(
-        matches!(toks.first(), Some(Token::Number(n)) if (*n - 1000.0).abs() < 1e-9),
+        matches!(toks.first(), Some(Token::Number(n, _)) if (*n - 1000.0).abs() < 1e-9),
         "1e3 须为 Number(1000)，实际 {:?}",
         toks
     );
     let toks: Vec<Token> = Tokenizer::new("1.5e+2").collect_tokens();
     assert!(
-        matches!(toks.first(), Some(Token::Number(n)) if (*n - 150.0).abs() < 1e-9),
+        matches!(toks.first(), Some(Token::Number(n, _)) if (*n - 150.0).abs() < 1e-9),
         "1.5e+2 须为 Number(150)，实际 {:?}",
         toks
     );
     let toks: Vec<Token> = Tokenizer::new("2E-1").collect_tokens();
     assert!(
-        matches!(toks.first(), Some(Token::Number(n)) if (*n - 0.2).abs() < 1e-9),
+        matches!(toks.first(), Some(Token::Number(n, _)) if (*n - 0.2).abs() < 1e-9),
         "2E-1 须为 Number(0.2)，实际 {:?}",
         toks
     );

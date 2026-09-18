@@ -77,7 +77,7 @@ fn test_assign_children_balanced_sequential() {
     // child3: col1=200 >= 166.67 → col2=[3]
     // child4: col2=100 < 166.67 → col2=[3,4]
     let children = vec![(0, 100.0), (1, 100.0), (2, 100.0), (3, 100.0), (4, 100.0)];
-    let cols = assign_children_to_columns_balanced(&children, 3, &[false; 5], &[false; 5], &[]);
+    let cols = assign_children_to_columns_balanced(&children, 3, &[false; 5], &[false; 5], &[], 0.0);
     assert_eq!(cols.len(), 3);
     assert_eq!(cols[0].len(), 2); // [0, 1]
     assert_eq!(cols[1].len(), 2); // [2, 3]
@@ -94,7 +94,7 @@ fn test_assign_children_balanced_uneven() {
     // Wait: child1(100): col0=200 < 250, so it's added to col0! col0=[0,1], height=300
     // child2(200): 300 >= 250 → col1=[2], height=200
     let children = vec![(0, 200.0), (1, 100.0), (2, 200.0)];
-    let cols = assign_children_to_columns_balanced(&children, 2, &[false; 5], &[false; 5], &[]);
+    let cols = assign_children_to_columns_balanced(&children, 2, &[false; 5], &[false; 5], &[], 0.0);
     assert_eq!(cols.len(), 2);
     assert_eq!(cols[0].len(), 2); // [0, 1]
     assert_eq!(cols[1].len(), 1); // [2]
@@ -110,7 +110,7 @@ fn test_assign_children_balanced_equal() {
     // child2(100): 200 >= 200 → col1=[2], h=100
     // child3(100): 100 < 200 → col1=[2,3], h=200
     let children = vec![(0, 100.0), (1, 100.0), (2, 100.0), (3, 100.0)];
-    let cols = assign_children_to_columns_balanced(&children, 2, &[false; 5], &[false; 5], &[]);
+    let cols = assign_children_to_columns_balanced(&children, 2, &[false; 5], &[false; 5], &[], 0.0);
     assert_eq!(cols.len(), 2);
     assert_eq!(cols[0].len(), 2); // [0, 1]
     assert_eq!(cols[1].len(), 2); // [2, 3]
@@ -121,7 +121,7 @@ fn test_assign_children_balanced_equal() {
 #[test]
 fn test_assign_children_balanced_explicit_height_breaks() {
     let children = vec![(0, 200.0)];
-    let cols = assign_children_to_columns_balanced(&children, 2, &[false; 1], &[false; 1], &[true]);
+    let cols = assign_children_to_columns_balanced(&children, 2, &[false; 1], &[false; 1], &[true], 0.0);
     assert_eq!(cols.len(), 2);
     assert_eq!(cols[0].len(), 1);
     assert_eq!(cols[0][0].fragment_y_offset, 0.0);
@@ -135,11 +135,35 @@ fn test_assign_children_balanced_explicit_height_breaks() {
 #[test]
 fn test_assign_children_balanced_auto_height_no_break() {
     let children = vec![(0, 200.0)];
-    let cols = assign_children_to_columns_balanced(&children, 2, &[false; 1], &[false; 1], &[false]);
+    let cols = assign_children_to_columns_balanced(&children, 2, &[false; 1], &[false; 1], &[false], 0.0);
     assert_eq!(cols.len(), 2);
     assert_eq!(cols[0].len(), 1); // 整体留 col0
     assert!((cols[0][0].visual_height - 200.0).abs() < 0.01);
     assert_eq!(cols[1].len(), 0); // col1 空，未拆分
+}
+
+/// R4509：平衡列高不可分约束下限——100px 不可分子（break-inside:avoid /
+/// contain:size monolithic，height 信息在 layout_multicol 处折算成 min_target），
+/// 4 列 target 由 25 抬到 100 → 子整体留 col0 不拆（balance-break-avoidance-000）。
+#[test]
+fn test_assign_children_balanced_unbreakable_floor() {
+    let children = vec![(0, 100.0)];
+    // min_target=100（下限 = 最高不可分子）→ target=max(25,100)=100 → 不拆
+    let cols = assign_children_to_columns_balanced(&children, 4, &[false; 1], &[false; 1], &[true], 100.0);
+    assert_eq!(cols[0].len(), 1);
+    assert!((cols[0][0].visual_height - 100.0).abs() < 0.01);
+    assert!(cols[1].is_empty() && cols[2].is_empty() && cols[3].is_empty());
+}
+
+/// R4509：avoid 粘连 run——break-after:avoid 禁断两子间列断点，run 和 100 抬高
+/// target（=100）→ 两子同列（balance-break-avoidance-001）。
+#[test]
+fn test_assign_children_balanced_avoid_glued_run() {
+    let children = vec![(0, 50.0), (1, 50.0)];
+    // min_target=100（run {0,1} 不可分）→ child0 col0(50)，child1 50<100 → 同列
+    let cols = assign_children_to_columns_balanced(&children, 4, &[false; 2], &[false; 2], &[true, true], 100.0);
+    assert_eq!(cols[0].len(), 2);
+    assert!(cols[1].is_empty() && cols[2].is_empty() && cols[3].is_empty());
 }
 
 /// 自动高度的 balance 多列没有固定列高，内容不得生成容器右侧的溢出列。
@@ -168,7 +192,7 @@ fn test_auto_height_balanced_multicol_does_not_create_overflow_columns() {
     };
     let info = compute_column_info(styles.get(&container_id).unwrap(), container.content_width).unwrap();
 
-    layout_multicol(&mut container, &info, &styles);
+    layout_multicol(&mut container, &info, &styles, false);
 
     assert!(
         container
@@ -206,7 +230,7 @@ fn test_auto_height_balanced_multicol_uses_tallest_column_height() {
     };
     let info = compute_column_info(styles.get(&container_id).unwrap(), container.content_width).unwrap();
 
-    layout_multicol(&mut container, &info, &styles);
+    layout_multicol(&mut container, &info, &styles, false);
 
     assert!(
         (container.content_height - 200.0).abs() < 0.01,
@@ -348,7 +372,7 @@ fn test_assign_children_multirow_oversized_breaks_across_rows() {
 fn test_break_before_column_forces_new_column_balanced() {
     let children = vec![(0, 100.0), (1, 100.0), (2, 100.0)];
     // 全部 forced break（模拟 `div > div { break-before: column }`）
-    let cols = assign_children_to_columns_balanced(&children, 3, &[true, true, true], &[false; 3], &[]);
+    let cols = assign_children_to_columns_balanced(&children, 3, &[true, true, true], &[false; 3], &[], 0.0);
     assert_eq!(cols.len(), 3);
     // 首个子元素 break 在空 col0 上 no-op → col0=[0]；col1=[1]；col2=[2]。
     assert_eq!(cols[0].len(), 1);
@@ -377,7 +401,7 @@ fn test_break_before_column_forces_new_column_breaking() {
 fn test_break_before_column_first_child_is_noop() {
     let children = vec![(0, 100.0), (1, 100.0)];
     // 仅首个 forced break → no-op（col0 空，不创建前导空列），child0 仍落 col0。
-    let cols = assign_children_to_columns_balanced(&children, 2, &[true, false], &[false; 2], &[]);
+    let cols = assign_children_to_columns_balanced(&children, 2, &[true, false], &[false; 2], &[], 0.0);
     assert_eq!(cols.len(), 2);
     assert!(
         cols[0].iter().any(|f| f.child_idx == 0),
@@ -395,7 +419,7 @@ fn test_break_before_column_first_child_is_noop() {
 fn test_break_after_column_forces_new_column_balanced() {
     let children = vec![(0, 100.0), (1, 100.0), (2, 100.0)];
     // 全部 break-after（模拟 `div > div { break-after: column }`）
-    let cols = assign_children_to_columns_balanced(&children, 3, &[false; 3], &[true, true, true], &[]);
+    let cols = assign_children_to_columns_balanced(&children, 3, &[false; 3], &[true, true, true], &[], 0.0);
     assert_eq!(cols.len(), 3);
     assert_eq!(cols[0].len(), 1);
     assert_eq!(cols[1].len(), 1);
@@ -427,7 +451,7 @@ fn test_break_after_column_last_child_in_last_col_is_noop() {
     let children = vec![(0, 100.0), (1, 100.0)];
     // 仅末子 break-after → child0 落 col0 后 break-after 推进 col1；child1 落 col1（末列），
     // 其 break-after 因 current_col+1 >= col_count no-op，不创建尾随空列。
-    let cols = assign_children_to_columns_balanced(&children, 2, &[false; 2], &[false, true], &[]);
+    let cols = assign_children_to_columns_balanced(&children, 2, &[false; 2], &[false, true], &[], 0.0);
     assert_eq!(cols.len(), 2);
     assert!(cols[0].iter().any(|f| f.child_idx == 0));
     assert!(cols[1].iter().any(|f| f.child_idx == 1));

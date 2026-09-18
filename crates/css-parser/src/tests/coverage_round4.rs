@@ -982,13 +982,13 @@ fn test_tokenize_simple_ident() {
 #[test]
 fn test_tokenize_number() {
     let tokens: Vec<_> = Tokenizer::new("42").collect_tokens();
-    assert!(matches!(&tokens[0], Token::Number(n) if (*n - 42.0).abs() < f64::EPSILON));
+    assert!(matches!(&tokens[0], Token::Number(n, _) if (*n - 42.0).abs() < f64::EPSILON));
 }
 
 #[test]
 fn test_tokenize_float() {
     let tokens: Vec<_> = Tokenizer::new("3.14").collect_tokens();
-    assert!(matches!(&tokens[0], Token::Number(n) if (*n - 3.14).abs() < 0.001));
+    assert!(matches!(&tokens[0], Token::Number(n, _) if (*n - 3.14).abs() < 0.001));
 }
 
 #[test]

@@ -43,14 +43,14 @@ fn test_tokenize_string_single() {
 #[test]
 fn test_tokenize_number() {
     let tokens: Vec<_> = Tokenizer::new("42").collect_tokens();
-    assert!(matches!(&tokens[0], Token::Number(n) if *n == 42.0));
+    assert!(matches!(&tokens[0], Token::Number(n, _) if *n == 42.0));
 }
 
 #[test]
 fn test_tokenize_number_decimal() {
     let tokens: Vec<_> = Tokenizer::new("3.14").collect_tokens();
     let expected = 314.0_f64 / 100.0;
-    assert!(matches!(&tokens[0], Token::Number(n) if (n - expected).abs() < 0.001));
+    assert!(matches!(&tokens[0], Token::Number(n, _) if (n - expected).abs() < 0.001));
 }
 
 #[test]
@@ -403,7 +403,7 @@ fn test_parse_at_layer() {
 #[test]
 fn test_tokenize_zero() {
     let tokens: Vec<_> = Tokenizer::new("0").collect_tokens();
-    assert!(matches!(&tokens[0], Token::Number(0.0)));
+    assert!(matches!(&tokens[0], Token::Number(0.0, _)));
 }
 
 #[test]
@@ -509,7 +509,7 @@ fn test_tokenize_complex_selector() {
 fn test_tokenize_dot_before_digit_still_number() {
     // ".5" → Number(0.5)
     let tokens: Vec<_> = Tokenizer::new(".5").collect_tokens();
-    assert!(matches!(&tokens[0], Token::Number(n) if (n - 0.5).abs() < 0.001));
+    assert!(matches!(&tokens[0], Token::Number(n, _) if (n - 0.5).abs() < 0.001));
 }
 
 #[test]
@@ -930,15 +930,15 @@ fn test_tokenize_unicode_range() {
 fn test_tokenize_scientific_numbers() {
     // 基本科学计数法
     let tokens: Vec<_> = Tokenizer::new("1e5").collect_tokens();
-    assert!(matches!(tokens[0], Token::Number(n) if n == 100000.0));
+    assert!(matches!(tokens[0], Token::Number(n, _) if n == 100000.0));
 
     // 带小数点的科学计数法
     let tokens: Vec<_> = Tokenizer::new("2.5e-3").collect_tokens();
-    assert!(matches!(tokens[0], Token::Number(n) if (n - 0.0025).abs() < f64::EPSILON));
+    assert!(matches!(tokens[0], Token::Number(n, _) if (n - 0.0025).abs() < f64::EPSILON));
 
     // 大写 E 的科学计数法
     let tokens: Vec<_> = Tokenizer::new("1E5").collect_tokens();
-    assert!(matches!(tokens[0], Token::Number(n) if n == 100000.0));
+    assert!(matches!(tokens[0], Token::Number(n, _) if n == 100000.0));
 
     // 科学计数法带单位
     let tokens: Vec<_> = Tokenizer::new("1.5e2px").collect_tokens();
@@ -951,12 +951,12 @@ fn test_tokenize_negative_numbers() {
     // 负整数 - tokenizer produces Number(-42.0)
     let tokens: Vec<_> = Tokenizer::new("-42").collect_tokens();
     assert_eq!(tokens.len(), 1);
-    assert!(matches!(&tokens[0], Token::Number(n) if *n == -42.0));
+    assert!(matches!(&tokens[0], Token::Number(n, _) if *n == -42.0));
 
     // 负小数 - tokenizer produces Number(-3.14)
     let tokens: Vec<_> = Tokenizer::new("-3.14").collect_tokens();
     assert_eq!(tokens.len(), 1);
-    assert!(matches!(&tokens[0], Token::Number(n) if (n + 3.14).abs() < f64::EPSILON));
+    assert!(matches!(&tokens[0], Token::Number(n, _) if (n + 3.14).abs() < f64::EPSILON));
 
     // 负维度 - tokenizer produces Dimension(-10.0, "px")
     let tokens: Vec<_> = Tokenizer::new("-10px").collect_tokens();

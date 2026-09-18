@@ -1527,7 +1527,7 @@ impl<'a> Parser<'a> {
                     _ => return None,
                 }
             }
-            Token::Number(v) => {
+            Token::Number(v, _) => {
                 // 纯整数 B（无 n）。`An` 形式由 tokenizer 合成 Dimension，不会落此。
                 self.advance();
                 return self.finish_an_plus_b(0, v as i32);
@@ -1584,7 +1584,7 @@ impl<'a> Parser<'a> {
                 self.pos = saved; // 回退空白，让上层 of 检测定位
                 Some(NthPattern { a, b: 0 })
             }
-            Token::Number(v) => {
+            Token::Number(v, _) => {
                 let b = v as i32;
                 self.advance();
                 self.finish_an_plus_b(a, b)
@@ -1597,7 +1597,7 @@ impl<'a> Parser<'a> {
                 self.advance();
                 self.skip_whitespace();
                 match self.peek() {
-                    Token::Number(v) => {
+                    Token::Number(v, _) => {
                         let b = if neg { -(*v as i32) } else { *v as i32 };
                         self.advance();
                         self.finish_an_plus_b(a, b)
@@ -1847,7 +1847,7 @@ impl<'a> Parser<'a> {
                             val.push('.');
                             self.advance();
                         }
-                        Token::Number(n) => {
+                        Token::Number(n, _) => {
                             val.push_str(&n.to_string());
                             self.advance();
                         }
@@ -1856,7 +1856,7 @@ impl<'a> Parser<'a> {
                 }
                 val
             }
-            Token::Number(n) => {
+            Token::Number(n, _) => {
                 self.advance();
                 // 可能后面跟着标识符（如数字+单位）
                 let mut val = n.to_string();

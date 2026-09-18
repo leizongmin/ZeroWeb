@@ -31,7 +31,8 @@ use zero_dom::NodeId;
 use zero_style_system::ComputedStyle;
 use zero_style_system::WritingModeValue;
 use zero_style_system::property::types::{
-    BreakValue, ColumnCountComputedValue, ColumnFillComputedValue, ColumnSpanComputedValue, ColumnWidthComputedValue,
+    BreakInsideValue, BreakValue, ColumnCountComputedValue, ColumnFillComputedValue, ColumnSpanComputedValue,
+    ColumnWidthComputedValue,
 };
 
 use crate::types::{LayoutBox, OverflowClip};
@@ -58,17 +59,25 @@ struct ColumnFragment {
 /// 遍历所有设置了 `column-count` 或 `column-width` 的容器，
 /// 将其子元素按多列规则重新定位。
 pub fn adjust_multicol_layout(root: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) {
+    adjust_multicol_layout_rec(root, styles, false);
+}
+
+/// `nested_in_multicol`：祖先链上已有 multicol 容器（R4509 不可分下限的软约束
+/// gate——嵌套上下文回避下限，见 layout_multicol 平衡分支）。
+fn adjust_multicol_layout_rec(root: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>, nested_in_multicol: bool) {
+    let mut self_is_multicol = false;
     if let Some(style) = root.node_id.and_then(|id| styles.get(&id)) {
         let col_info = compute_column_info(style, root.content_width);
         if let Some(info) = col_info {
             root.column_gap = info.gap;
-            layout_multicol(root, &info, styles);
+            layout_multicol(root, &info, styles, nested_in_multicol);
+            self_is_multicol = true;
         }
     }
 
     // 递归处理子节点
     for child in &mut root.children {
-        adjust_multicol_layout(child, styles);
+        adjust_multicol_layout_rec(child, styles, nested_in_multicol || self_is_multicol);
     }
 }
 
@@ -846,7 +855,12 @@ fn try_layout_single_child_block_frag(
 /// 2. 将子元素分配到各列（考虑 column breaking）
 /// 3. 定位每个子元素的 x/y 坐标
 /// 4. 对超出列高的子元素进行 clip 处理
-fn layout_multicol(container: &mut LayoutBox, info: &ColumnInfo, styles: &HashMap<NodeId, ComputedStyle>) {
+fn layout_multicol(
+    container: &mut LayoutBox,
+    info: &ColumnInfo,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    nested_in_multicol: bool,
+) {
     if container.children.is_empty() || info.count == 0 {
         return;
     }
@@ -1064,6 +1078,51 @@ fn layout_multicol(container: &mut LayoutBox, info: &ColumnInfo, styles: &HashMa
         if overflow_inline {
             assign_children_to_columns_multirow(&child_info, info.count, col_height)
         } else {
+            // R4509（css-multicol §3.3 balancing + css-break §2 break points）：平衡列高的
+            // **不可分约束下限**。列高不得小于任一不可跨列拆分的序列高度：
+            // ① 不可分子自身——break-inside:avoid/avoid-column 禁断元素内断点；
+            //    contain:size 元素 monolithic（CSS Containment：size containment 对
+            //    fragmentation 单块化，fill-balance-033/036/037 monolithic float 实证）。
+            // ② avoid 粘连 run（≥2 子）——相邻子边界被 break-after/before:avoid(-column)
+            //    禁断，两子必须落入同列（balance-break-avoidance-001 实证）。单个可分
+            //    子不是约束（本就可跨列拆，R1037）——不参与下限（spanner-in-child-
+            //    after-parallel-flow-001 的 180px float 若计入会把 target 抬到 180）。
+            // target = max(total/N, 下限) 后，不可分子高度 ≤ target，数学上永不落入
+            // R1037 breaking 路径（`child_height > target` 不成立）→ 无需额外 gate。
+            // https://drafts.csswg.org/css-break-3/#break-between
+            // https://drafts.csswg.org/css-multicol/#column-height
+            let child_style = |idx: usize| container.children[idx].node_id.and_then(|id| styles.get(&id));
+            let avoids_column_break =
+                |s: &ComputedStyle| matches!(s.break_inside, BreakInsideValue::Avoid | BreakInsideValue::AvoidColumn);
+            let mut min_balanced = 0.0f32;
+            // 嵌套 multicol（祖先亦 multicol）不下限：avoid 是软约束（css-break §2），
+            // 嵌套 fragmentation 里外层 fragmentainer 可能无法满足 → 强抬 target 会
+            // 级联放大 region（nested-030：inner 400px avoid 子强不拆 → 外层 overflow
+            // 列错位 2.10）。非嵌套时软约束可满足，下限即 chromium 平衡语义。
+            if !nested_in_multicol {
+                for &(idx, h) in &child_info {
+                    if child_style(idx).is_some_and(|s| avoids_column_break(s) || s.contain.has_size()) {
+                        min_balanced = min_balanced.max(h);
+                    }
+                }
+            }
+            let glued = |a: usize, b: usize| -> bool {
+                let avoid_after = child_style(a)
+                    .is_some_and(|s| matches!(s.break_after, BreakValue::Avoid | BreakValue::AvoidColumn));
+                let avoid_before = child_style(b)
+                    .is_some_and(|s| matches!(s.break_before, BreakValue::Avoid | BreakValue::AvoidColumn));
+                avoid_after || avoid_before
+            };
+            let mut run_sum = 0.0f32;
+            for k in 0..child_info.len() {
+                let glued_to_prev = k > 0 && glued(child_info[k - 1].0, child_info[k].0);
+                if glued_to_prev {
+                    run_sum += child_info[k].1;
+                    min_balanced = min_balanced.max(run_sum);
+                } else {
+                    run_sum = child_info[k].1;
+                }
+            }
             let explicit_for_break: &[bool] = if container.content_height > 0.0 {
                 &explicit_height
             } else {
@@ -1075,6 +1134,7 @@ fn layout_multicol(container: &mut LayoutBox, info: &ColumnInfo, styles: &HashMa
                 &forced_breaks,
                 &forced_breaks_after,
                 explicit_for_break,
+                min_balanced,
             )
         }
     };
@@ -1096,6 +1156,12 @@ fn layout_multicol(container: &mut LayoutBox, info: &ColumnInfo, styles: &HashMa
     // region_height > 0.5 守卫：纯文本子容器（text-child）的位置通路不产生列几何
     //（region=0，高度归 R1433 measure-time balance）——对称写回不得把 content 清零
     //（columns:2 text 页 20→0 实证）。
+    // R4509 记档（gap-large-002 同域挂账）：容器宿有 inline 流（span + 匿名文本）时，
+    // region 只覆盖块级子的列几何，匿名文本的平衡行分布归 paint 侧 IFC 重跑（R1423
+    // use_stored=false）——对称写回收缩会欠计 inline 贡献（taffy/R1433 已含 80 正确高，
+    // 收缩到块级 region 40 后行盒溢出边框）。需 inline-flow region 模型（后续 slice），
+    // 本轮不全块级守卫：同一守卫会抑制 text+span 容器（gap-002 族）的合法收缩，
+    // A/B 实证 −16 回退 R4508 增益，弃用。
     if !container_explicit
         && !info.sequential_fill
         && region_height > 0.5
@@ -1464,7 +1530,7 @@ fn layout_multicol_with_spanners_inner(
                     Vec::new()
                 };
             (
-                assign_children_to_columns_balanced(&region_child_info, col_count, &[], &[], &region_explicit),
+                assign_children_to_columns_balanced(&region_child_info, col_count, &[], &[], &region_explicit, 0.0),
                 0.0,
             )
         };
@@ -1630,14 +1696,15 @@ fn assign_children_to_columns_balanced(
     forced_breaks: &[bool],
     forced_breaks_after: &[bool],
     explicit_height: &[bool],
+    min_target: f32,
 ) -> Vec<Vec<ColumnFragment>> {
     if children.is_empty() || col_count == 0 {
         return vec![Vec::new(); col_count.max(1)];
     }
 
-    // 计算总高度和目标列高
+    // 计算总高度和目标列高（R4509：不可分约束下限，见 layout_multicol 调用处）
     let total_height: f32 = children.iter().map(|&(_, h)| h).sum();
-    let target_height = total_height / col_count as f32;
+    let target_height = (total_height / col_count as f32).max(min_target);
 
     let mut columns: Vec<Vec<ColumnFragment>> = vec![Vec::new(); col_count];
     let mut current_col = 0usize;

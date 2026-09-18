@@ -282,37 +282,37 @@ fn test_url_single_quoted() {
 #[test]
 fn test_number_scientific() {
     let toks = tokens("1e2");
-    assert!(matches!(&toks[0], Token::Number(n) if (*n - 100.0).abs() < 0.01));
+    assert!(matches!(&toks[0], Token::Number(n, _) if (*n - 100.0).abs() < 0.01));
 }
 
 #[test]
 fn test_number_negative_scientific() {
     let toks = tokens("1e-2");
-    assert!(matches!(&toks[0], Token::Number(n) if (*n - 0.01).abs() < 0.001));
+    assert!(matches!(&toks[0], Token::Number(n, _) if (*n - 0.01).abs() < 0.001));
 }
 
 #[test]
 fn test_number_positive_scientific() {
     let toks = tokens("1e+3");
-    assert!(matches!(&toks[0], Token::Number(n) if (*n - 1000.0).abs() < 0.01));
+    assert!(matches!(&toks[0], Token::Number(n, _) if (*n - 1000.0).abs() < 0.01));
 }
 
 #[test]
 fn test_number_decimal() {
     let toks = tokens("3.14");
-    assert!(matches!(&toks[0], Token::Number(n) if (*n - 3.14).abs() < 0.001));
+    assert!(matches!(&toks[0], Token::Number(n, _) if (*n - 3.14).abs() < 0.001));
 }
 
 #[test]
 fn test_number_negative() {
     let toks = tokens("-42");
-    assert!(matches!(&toks[0], Token::Number(n) if *n == -42.0));
+    assert!(matches!(&toks[0], Token::Number(n, _) if *n == -42.0));
 }
 
 #[test]
 fn test_number_zero() {
     let toks = tokens("0");
-    assert!(matches!(&toks[0], Token::Number(n) if *n == 0.0));
+    assert!(matches!(&toks[0], Token::Number(n, _) if *n == 0.0));
 }
 
 #[test]
@@ -454,7 +454,7 @@ fn test_escape_trigger() {
 fn test_number_trigger() {
     let toks = tokens("123.45");
     assert_eq!(toks.len(), 1);
-    if let Token::Number(n) = &toks[0] {
+    if let Token::Number(n, _) = &toks[0] {
         assert!((n - 123.45).abs() < 0.001);
     }
 }

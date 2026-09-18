@@ -22,8 +22,11 @@ pub enum Token {
     String(String),
     /// URL（如 `url(image.png)`）。
     Url(String),
-    /// 数字。
-    Number(f64),
+    /// 数字。第二分量 = integer 书写形式旗标（CSS Syntax §4.2.1：number token 带
+    /// integer/number 类型旗标——`2` 为 integer，`2.0`/`2e0` 为 number）。
+    /// `<integer>` 属性（column-count/z-index/orphans…）只接受 integer token，
+    /// Display 对 number 书写的整值回读为 `2.0` 以便消费方拒绝。
+    Number(f64, bool),
     /// 百分比（如 `50%`）。
     Percentage(f64),
     /// 带单位数字（如 `10px`、`1.5em`）。
@@ -85,7 +88,15 @@ impl fmt::Display for Token {
                 write!(f, "url(\"{}\")", escape_css_string_for_url(s))
             }
             Token::Url(s) => write!(f, "url({})", s),
-            Token::Number(n) => write!(f, "{}", n),
+            Token::Number(n, is_integer) => {
+                if *is_integer || !n.is_finite() || n.fract() != 0.0 {
+                    write!(f, "{}", n)
+                } else {
+                    // number 书写的整值（`2.0`）保留 number 语义串化，防 `<integer>`
+                    // 消费方（parse_column_count 等 u32 parse）误接受。
+                    write!(f, "{:?}", n)
+                }
+            }
             Token::Percentage(n) => write!(f, "{}%", n),
             Token::Dimension(n, u) => write!(f, "{}{}", n, u),
             Token::Function(s) => write!(f, "{}(", s),
@@ -578,9 +589,11 @@ impl<'a> Tokenizer<'a> {
         out
     }
 
-    /// 消耗数字。
-    fn consume_number(&mut self) -> f64 {
+    /// 消耗数字。返回 (值, integer 书写形式旗标)——出现 `.` 或指数即为 number 形式
+    ///（CSS Syntax §4.2.1 number token 类型旗标，`<integer>` 属性据此拒绝 `2.0`）。
+    fn consume_number(&mut self) -> (f64, bool) {
         let mut num_str = String::new();
+        let mut is_integer = true;
 
         // 可选符号
         if self.peek() == Some('+') || self.peek() == Some('-') {
@@ -601,6 +614,7 @@ impl<'a> Tokenizer<'a> {
             && let Some(next) = self.peek_at(1)
             && Self::is_digit(next)
         {
+            is_integer = false;
             num_str.push(self.consume().unwrap()); // .
             while let Some(c) = self.peek() {
                 if Self::is_digit(c) {
@@ -623,6 +637,7 @@ impl<'a> Tokenizer<'a> {
             && (Self::is_digit(after_e)
                 || ((after_e == '+' || after_e == '-') && self.peek_at(2).is_some_and(Self::is_digit)))
         {
+            is_integer = false;
             num_str.push(self.consume().unwrap()); // e/E
             if self.peek() == Some('+') || self.peek() == Some('-') {
                 num_str.push(self.consume().unwrap());
@@ -636,7 +651,7 @@ impl<'a> Tokenizer<'a> {
             }
         }
 
-        num_str.parse().unwrap_or(0.0)
+        (num_str.parse().unwrap_or(0.0), is_integer)
     }
 
     /// 消耗字符串字面量。
@@ -1024,7 +1039,7 @@ impl<'a> Iterator for Tokenizer<'a> {
 
                 if is_number {
                     self.pos -= self.last_char_len; // 回退，让 consume_number 处理符号
-                    let number = self.consume_number();
+                    let (number, is_integer) = self.consume_number();
 
                     if self.consume_if('%') {
                         Token::Percentage(number)
@@ -1034,7 +1049,7 @@ impl<'a> Iterator for Tokenizer<'a> {
                         let unit = self.consume_ident();
                         Token::Dimension(number, unit)
                     } else {
-                        Token::Number(number)
+                        Token::Number(number, is_integer)
                     }
                 } else if sign == '-'
                     && let Some(next) = self.peek()
@@ -1179,7 +1194,7 @@ impl<'a> Iterator for Tokenizer<'a> {
 impl<'a> Tokenizer<'a> {
     /// 消耗数字并检查后缀（百分比、单位）。
     fn consume_number_and_suffix(&mut self) -> Token {
-        let number = self.consume_number();
+        let (number, is_integer) = self.consume_number();
 
         // 检查百分比
         if self.consume_if('%') {
@@ -1201,6 +1216,6 @@ impl<'a> Tokenizer<'a> {
             }
         }
 
-        Token::Number(number)
+        Token::Number(number, is_integer)
     }
 }

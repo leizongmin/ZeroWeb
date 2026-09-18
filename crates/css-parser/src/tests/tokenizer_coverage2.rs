@@ -36,7 +36,7 @@ fn test_dash_followed_by_non_ident() {
     // `-3` is a Number (-3.0), not ident
     let toks = tokens("-3");
     match &toks[0] {
-        Token::Number(n) => assert_eq!(*n, -3.0),
+        Token::Number(n, _) => assert_eq!(*n, -3.0),
         other => panic!("Expected Number(-3.0), got {:?}", other),
     }
 }

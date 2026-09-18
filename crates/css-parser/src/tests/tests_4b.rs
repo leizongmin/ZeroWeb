@@ -79,7 +79,7 @@ fn test_tokenizer_single_char_errors() {
 fn test_tokenizer_number_followed_by_illegal_char() {
     let tokenizer = crate::Tokenizer::new("123!");
     let tokens: Vec<_> = tokenizer.collect_tokens();
-    assert!(matches!(tokens[0], Token::Number(123.0)));
+    assert!(matches!(tokens[0], Token::Number(123.0, _)));
     assert!(matches!(tokens[1], Token::Delim('!')));
 }
 

@@ -200,21 +200,21 @@ fn test_tokenizer_scientific_notation() {
     // 科学计数法 `1e2` = 100.0
     let tokens: Vec<_> = Tokenizer::new("1e2").collect_tokens();
     assert_eq!(tokens.len(), 1);
-    assert_eq!(tokens[0], Token::Number(100.0));
+    assert_eq!(tokens[0], Token::Number(100.0, false)); // `1e2` 指数书写 = number 形式
 }
 
 #[test]
 fn test_tokenizer_scientific_notation_uppercase() {
     let tokens: Vec<_> = Tokenizer::new("3E+5").collect_tokens();
     assert_eq!(tokens.len(), 1);
-    assert_eq!(tokens[0], Token::Number(300000.0));
+    assert_eq!(tokens[0], Token::Number(300000.0, false)); // `3E+5` 指数书写 = number 形式
 }
 
 #[test]
 fn test_tokenizer_scientific_notation_negative_exp() {
     let tokens: Vec<_> = Tokenizer::new("5e-2").collect_tokens();
     assert_eq!(tokens.len(), 1);
-    assert!(matches!(&tokens[0], Token::Number(n) if (*n - 0.05).abs() < 0.001));
+    assert!(matches!(&tokens[0], Token::Number(n, _) if (*n - 0.05).abs() < 0.001));
 }
 
 #[test]
@@ -230,7 +230,7 @@ fn test_tokenizer_plus_dot_number() {
     // `+.5` → 数字 0.5
     let tokens: Vec<_> = Tokenizer::new("+.5").collect_tokens();
     assert_eq!(tokens.len(), 1);
-    assert_eq!(tokens[0], Token::Number(0.5));
+    assert_eq!(tokens[0], Token::Number(0.5, false));
 }
 
 #[test]
@@ -238,7 +238,7 @@ fn test_tokenizer_minus_dot_number() {
     // `-.5` → 数字 -0.5
     let tokens: Vec<_> = Tokenizer::new("-.5").collect_tokens();
     assert_eq!(tokens.len(), 1);
-    assert_eq!(tokens[0], Token::Number(-0.5));
+    assert_eq!(tokens[0], Token::Number(-0.5, false));
 }
 
 #[test]
@@ -270,7 +270,7 @@ fn test_tokenizer_dot_number() {
     // `.5` → 数字 0.5
     let tokens: Vec<_> = Tokenizer::new(".5").collect_tokens();
     assert_eq!(tokens.len(), 1);
-    assert_eq!(tokens[0], Token::Number(0.5));
+    assert_eq!(tokens[0], Token::Number(0.5, false));
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -513,7 +513,7 @@ fn test_token_display_all_variants() {
     assert_eq!(Token::Hash("fff".into()).to_string(), "#fff");
     assert_eq!(Token::String("hello".into()).to_string(), "\"hello\"");
     assert_eq!(Token::Url("a.png".into()).to_string(), "url(a.png)");
-    assert_eq!(Token::Number(42.0).to_string(), "42");
+    assert_eq!(Token::Number(42.0, true).to_string(), "42");
     assert_eq!(Token::Percentage(50.0).to_string(), "50%");
     assert_eq!(Token::Dimension(10.0, "px".into()).to_string(), "10px");
     assert_eq!(Token::Function("rgb".into()).to_string(), "rgb(");

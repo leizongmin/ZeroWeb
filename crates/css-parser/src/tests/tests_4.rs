@@ -65,6 +65,36 @@ fn test_parse_column_count() {
 }
 
 #[test]
+/// R4509（CSS Syntax §4.2.1）：number token 带 integer/number 书写旗标。
+/// `2` 串化为 "2"；`2.0` 须保留 number 语义串化为 "2.0"——否则串化丢失 `.0` 后
+/// `<integer>` 属性（column-count 等）把非法 `2.0` 误当 `2` 接受
+///（multicol-count-non-integer-003 实证）。
+fn test_number_token_integer_flag_serialization() {
+    let int_tokens: Vec<_> = Tokenizer::new("2").collect_tokens();
+    assert!(
+        matches!(&int_tokens[0], Token::Number(n, true) if *n == 2.0),
+        "整数书写应带 integer 旗标"
+    );
+    let real_tokens: Vec<_> = Tokenizer::new("2.0").collect_tokens();
+    assert!(
+        matches!(&real_tokens[0], Token::Number(n, false) if *n == 2.0),
+        "小数点书写为 number 形式"
+    );
+    let exp_tokens: Vec<_> = Tokenizer::new("2e0").collect_tokens();
+    assert!(
+        matches!(&exp_tokens[0], Token::Number(_, false)),
+        "指数书写为 number 形式"
+    );
+    // 串化回读：integer 形式 "2"，number 形式整值 "2.0"（parse_column_count u32 拒绝）
+    assert_eq!(int_tokens[0].to_string(), "2");
+    assert_eq!(real_tokens[0].to_string(), "2.0");
+    assert_eq!(parse_column_count(&real_tokens[0].to_string()), None);
+    // 非整值 number 串化不变
+    let frac_tokens: Vec<_> = Tokenizer::new("2.5").collect_tokens();
+    assert_eq!(frac_tokens[0].to_string(), "2.5");
+}
+
+#[test]
 /// 测试 parse_column_width 正常值和 auto。
 fn test_parse_column_width() {
     assert_eq!(parse_column_width("auto"), Some(ColumnWidthValue::Auto));

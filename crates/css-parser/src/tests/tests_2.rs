@@ -226,7 +226,7 @@ fn test_tokenize_font_shorthand_slash() {
     assert!(tokens.len() >= 3);
     assert!(matches!(&tokens[0], Token::Dimension(n, u) if *n == 12.0 && u == "px"));
     assert_eq!(tokens[1], Token::Delim('/'));
-    assert!(matches!(&tokens[2], Token::Number(n) if (*n - 1.5).abs() < 0.001));
+    assert!(matches!(&tokens[2], Token::Number(n, _) if (*n - 1.5).abs() < 0.001));
 }
 
 #[test]
@@ -1387,10 +1387,10 @@ fn test_tokenize_escaped_character_in_ident() {
 /// 测试科学计数法数字
 fn test_tokenize_scientific_notation() {
     let tokens: Vec<_> = Tokenizer::new("1e2").collect_tokens();
-    assert!(matches!(&tokens[0], Token::Number(n) if (*n - 100.0).abs() < 0.001));
+    assert!(matches!(&tokens[0], Token::Number(n, _) if (*n - 100.0).abs() < 0.001));
 
     let tokens: Vec<_> = Tokenizer::new("3.5e-1").collect_tokens();
-    assert!(matches!(&tokens[0], Token::Number(n) if (*n - 0.35).abs() < 0.001));
+    assert!(matches!(&tokens[0], Token::Number(n, _) if (*n - 0.35).abs() < 0.001));
 }
 
 #[test]
