@@ -2,31 +2,33 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-18（S1079：**静默监测引用轮（引用计数
-3/10→4/10，周期锚点 = S1075 双腿（门腿 09:21:36 落盘 + make
+**最后更新**: 2026-09-18（S1080：**静默监测引用轮（引用计数
+4/10→5/10，周期锚点 = S1075 双腿（门腿 09:21:36 落盘 + make
 test 腿 09:31:27 收口）），同 tip 复核 pull 零新提交 tip =
-4b50b995f 即本流 S1078 提交本身（S1078 后零代码变更
-5dbc95bdc..HEAD 排除本流 docs diff 全空实测复核），树不变口
+a3e4c4c01 即本流 S1079 提交本身（S1079 后零代码变更
+4b50b995f..HEAD 排除本流 docs diff 全空实测复核），树不变口
 径 = 门单腿复跑免 make test 腿（S336 先例），绿步维持 33**。
-门腿 **PASS 33 绿全程最净窗活跑首调即收口**（起手 load 0.35
-门后 0.38 近零负载窗；09:50:14 启动 09:50:43 落盘 wall ~29s
-EXIT=0；编译全缓存零 Compiling 行 replay；expected_green 33
-对称差 none、regressions 空、deterministic 双跑 YES（双 run
-33 ok 集机械一致，双 run 唯一 failed 同 = 挂账
-frames.click+evaluate）；双 run 均 flow exited 1 正常态；
-ZW_IPC_VALIDATE=1 在位静默 capture jsonl 面零写入（五 jsonl
-mtime 09-12/09-13 全不变实测复核）；steps-report/
-determinism-report 新鲜落盘 09:50；dead_code warning 维持同
+门腿 **PASS 33 绿近零负载窗活跑首调即收口**（起手 load 0.45
+门后 1min 均值 2.01 = 门收口后兄弟流 ZeroWeb-2 zero-browser
+测试腿编译 10:00:38 入窗，与门执行窗零并窗；09:59:09 启动
+09:59:39 落盘 wall ~30s EXIT=0；编译全缓存零 Compiling 行
+replay；expected_green 33 对称差 none、regressions 空、
+deterministic 双跑 YES（双 run 33 ok 集机械一致，双 run 唯一
+failed 同 = 挂账 frames.click+evaluate）；双 run 均 flow
+exited 1 正常态；ZW_IPC_VALIDATE=1 在位静默 capture jsonl 面
+零写入（五 jsonl mtime 09-12/09-13 全不变实测复核，跑前跑后
+md5 同值 d316baca 本轮自测组合基线）；steps-report/
+determinism-report 新鲜落盘 09:59；dead_code warning 维持同
 形一枚（match_media_to_json，crates/engine/src/
 js_dom_bridge.rs——cargo cache warning replay 既有形态维持
-记档）；首调红形态连续零再现计数第 2 轮（S1078 重计起算），
+记档）；首调红形态连续零再现计数第 3 轮（S1078 重计起算），
 exited null 零再现维持）。
 锚点面四点实测维持（代码面对 S1075 锚定态零漂移）：自有面对
 S897 tip 7da6043d6 维持 **10 files +1187/-182**；crates/
 raw **127** 维持；子帧关键词 **7 文件** crates/ 零命中维持
 （解冻条件①观察面 127 口径）；全树排除本流 docs 对
 18d462de6 实测 **184 files +20428/-1240** 维持。
-门尾树态（tip=4b50b995f tracked clean）zombie 复测零（前后
+门尾树态（tip=a3e4c4c01 tracked clean）zombie 复测零（前后
 零）、四端口族全 free（前后零监听）、控制面零外来提交。
 M5 定稿收口判定（DC-1~4 依据）不因复验动摇——**goal Done 维持，守成态
 证据经 S1079 门单腿刷新延续**；唯一未清偿义务 = frames.click+evaluate 回填
@@ -19057,6 +19059,47 @@ M5 定稿收口判定（DC-1~4 依据）不因复验动摇——**goal Done 维�
 
 
 
+
+   **S1080 已执行（2026-09-18）静默监测引用轮（引用计数 4/10→
+   5/10，周期锚点=S1075 双腿（门腿 09:21:36 落盘 + make test 腿
+   09:31:27 收口），同 tip 复核 pull 零新提交 tip=a3e4c4c01 即
+   S1079 提交本身（S1079 门单腿复跑后零代码变更
+   4b50b995f..HEAD 排除本流 docs diff 全空实测复核），树不变
+   口径=门单腿复跑免 make test 腿 S336 先例 绿步维持 33）**：
+   门腿复跑在位 09:59:09 启动 09:59:39 落盘首调即 **PASS 33 绿
+   deterministic 双跑 YES EXIT=0**（wall ~30s 编译全缓存零
+   Compiling 行 replay——代码树对 S1075 锚定态零变更佐证；
+   expected_green 33 对称差 none、regressions 空，run_details
+   双 run 实质逐项一致（双 run 各 33 ok 集机械一致，唯一
+   failed 同=挂账 frames.click+evaluate），双 run 均 flow
+   exited 1 正常态；ZW_IPC_VALIDATE=1 在位静默 capture jsonl
+   面零写入 #0 复现监测零命中维持（五 jsonl mtime 09-12/09-13
+   全不变实测复核 跑前跑后 md5 同值 d316baca 本轮自测组合基线
+   ——记录链 cf9e15a1 组合口径不可复现 自测口径重锚）；steps-
+   report/determinism-report 新鲜落盘 09:59；dead_code warning
+   维持同形一枚（match_media_to_json crates/engine/src/
+   js_dom_bridge.rs cargo cache warning replay 既有形态维持记
+   档）；首调红形态连续零再现计数第 3 轮（S1078 重计起算），
+   exited null 零再现维持（5 例计数不变）；锚点面四点实测维
+   持（代码面对 S1075 锚定态零漂移 含修复折入面）：自有面对
+   S897 tip 7da6043d6 **10 files +1187/-182** 维持 / crates/
+   raw **127** 维持 / 子帧关键词 **7 文件** crates/ 零命中维
+   持（解冻条件①观察面 127 口径 frames.click+evaluate 挂起维
+   持）/ 全树排除本流 docs 对 18d462de6 **184 files
+   +20428/-1240** 维持；门尾树态（tip=a3e4c4c01 tracked
+   clean）zombie 复测零（前后零）四端口族全 free（前后零监
+   听）本门零残留 控制面零外来提交 本轮门属近零负载窗活跑
+   （起手 load 0.45 门后 1min 均值 2.01 = 门收口后兄弟流
+   ZeroWeb-2 zero-browser 测试腿编译 10:00:38 入窗（rustc
+   119% CPU cwd 实测 ZeroWeb-2）与门执行窗零并窗）；下轮
+   **S1081 = 6/10 静默监测引用轮**（周期锚点=S1075 双腿），若
+   S1081 前树代码变化则提前触发双腿刷新（S245→…→S1075 先例
+   链，make test 腿后台跑法），否则按引用轮口径门单腿复跑免
+   make test 腿（S336 先例），至迟 S1085=10/10 饱和、次轮
+   S1086 期限轮活跑（双腿活跑口径=门 + make test 后台跑法）；
+   M5 定稿收口判定不因复验动摇 goal Done 维持守成态证据经
+   S1080 门单腿刷新延续 唯一未清偿义务=frames.click+evaluate
+   回填（挂子帧能力解冻 不阻收口）。
 
    **S1079 已执行（2026-09-18）静默监测引用轮（引用计数 3/10→
    4/10，周期锚点=S1075 双腿（门腿 09:21:36 落盘 + make test 腿
