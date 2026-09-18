@@ -91,7 +91,17 @@ async function runOnce(index) {
       // status null = 子进程被信号杀死（execFileSync 超时 SIGTERM）——此时无法
       // 区分「收尾挂起被杀且报告已完整」与「中途卡死被杀 + 读到陈旧报告」
       // （S1036/S1038 exited null 同族，S1038 修复），与 exit 2 同等不容忍。
-      if (err.status === undefined || err.status === null || err.status > 1) throw err
+      if (err.status === undefined || err.status === null || err.status > 1) {
+        // S1075 取证增强：capture-core-flow 每步打 `  ok  <name>` 行，被杀前
+        // stdout 尾部即最后进度（step 粒度心跳）；不 dump 则被 Node 默认错误
+        // 打印截断（1236 字节只显 ~90），红例卡挂相位无法归因。仅落日志，
+        // 判定语义不变（照旧 throw）。
+        const tail = err.stdout ? err.stdout.toString().slice(-800) : '(no stdout)'
+        console.log(
+          `  run ${index}: killed (status ${err.status}, signal ${err.signal}), stdout tail:\n${tail}`
+        )
+        throw err
+      }
       console.log(`  run ${index}: flow exited ${err.status}（含期望失败步骤）`)
     }
   } finally {
