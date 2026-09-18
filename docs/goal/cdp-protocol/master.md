@@ -2,42 +2,43 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-18（S1115：**树变化刷新轮（双腿活跑口
-径 = 门 + make test 后台跑法，S245/…/S1088/S1099/S1109/
-S1114 先例链），pull 带新提交 tip = f6f8843e3——兄弟流
-ZeroWeb-2 R4489（fix(layout-engine) 块容器混合谓词漏 inline
-元素子，7 files +315/-18：layout-engine 4 文件 + engine/
-painter/text.rs + rendering-compat.md 1 行 + learning 新档）
-于 S1114 收口后 push 序列入树，代码面 diff 8 行非空实测复
-核 → 双腿照跑**；门腿首调即 **PASS 33 绿 deterministic 双跑
-YES EXIT=0**（14:33:56 启动 14:34:40 落盘 wall ~44s——
-R4489 触发 layout-engine/engine 部分重编译 4 Compiling 行
-零瞬态；expected_green 33 对称差 none、regressions 空，双
-run 各 33 ok 集机械一致，唯一 failed 同 = 挂账 frames.click
-+evaluate；ZW_IPC_VALIDATE 静默 capture jsonl 面 45d01d66
-全不变；steps-report/determinism-report 新鲜落盘 14:34；
-看门狗零触发——S1114 守卫后首轮即净形态样本；dead_code
-warning 同形一枚）。
-**make test 腿一调收口**：14:34:51 启动 14:45:12 收口 wall
-~10.4min **19,344P/0F 67 组 result 全 ok 零 FAILED/error 行
-clippy quickjs 腿 -D warnings 过 GPU adapter 腿在位**——
-**19,342P→19,344P +2P 系 R4489 随行 2 个 #[test] 折入（跨流
-计数漂移 归因实测 = R4489 diff 恰含 2 处 +#[test]，非本流
-回归）**。锚点面四点（对 18d462de6/S897 口径，R4489 折入新
-基线）：① 10 files +1187/-182 维持 / ② crates/ raw **130**
-（129+1 = R4489 布局腿入集）/ ③ 子帧关键词 **7 文件** 非测
-试代码零命中维持 / ④ **187 files +21074/-1335**（185 files
-+20759/-1317 → +2 files +315/-18 = R4489）。**引用计数以
-S1115 双腿为新周期锚点归零重计**（门腿 14:34:40 落盘 +
-make test 腿 14:45:12 收口，S1116 起 2/10）。门尾树态
-（tip=f6f8843e3 tracked clean）zombie 零 四端口族全 free
-控制面零外来提交。本轮双腿净窗活跑（起手 load 0.65 窗内零
-重型兄弟腿——R4489 提交腿已收束）。下轮 **S1116 = 2/10 静
-默监测引用轮（周期锚点 = S1115 双腿）**，树再变化则提前双
-腿刷新，否则门单腿复跑免 make test 腿（S336 先例），至迟
-S1123=10/10 饱和、次轮 S1124 期限轮活跑。
+**最后更新**: 2026-09-18（S1116：**静默监测引用轮（引用计数
+2/10，周期锚点 = S1115 双腿：门腿 14:34:40 落盘 + make test
+腿 14:45:12 收口），pull 零新提交 tip = 71c354149 即 S1115 提
+交本身（树不变口径 = 门单腿复跑免 make test 腿 S336 先例）**
+——**门腿首调红：家族事件第 10 次（看门狗时代新形态 = 多步
+连锁）**：14:48:34 启动 14:53:50 收口 EXIT=2 wall ~5m16s
+——run 1 正常（33 ok + 挂账 frames FAIL）；run 2 **多步连
+锁**：2× 看门狗 60s 具名 FAIL（emulation.media、viewport.
+verified，steps-report/日志在案）+ ≥5× Playwright 10s 超时
+级联（screenshot×3、page.setContent 及 tail 之外续有）→
+run 2 总耗时超 execFileSync 300s 背板 → SIGTERM status null
+→ S1038 拒读崩溃 EXIT=2（单步守卫已按设计工作——每步具名
+可归因流程继续；**多步连锁下单步 60s 守卫不足以避免背板触
+发，crash 形态在多步连锁变体下再现 = 新缺口面记档**）；报
+告面 run2 零写入（determinism-report 维持 14:34 = S1115 态
+拒读正确）；capture jsonl 面零写入 45d01d66 全程不变非
+#0；零残留 zombie 0 端口族全 free；**负载窗归因**：兄弟流
+ZeroWeb-2 活跃窗（轮起手 rustc zero_webview release 438%
+CPU → 红窗内兄弟 make test 腿 zero_integration 142%，load
+1.96-3.74，cwd 取证双 clone 隔离）。**复跑绿收口**：
+14:55:09 启动 14:55:39 收口 wall ~30s 首调即 **PASS 33 绿
+deterministic 双跑 YES EXIT=0**（残留负载 1.96 仍绿 → 非确
+定性 race/starvation 定性维持；expected_green 33 对称差
+none、regressions 空，双 run 各 33 ok 集机械一致，唯一
+failed 同 = 挂账 frames.click+evaluate）。锚点面四点维持：
+① 10 files +1187/-182 / ② crates/ raw 130 / ③ 子帧关键词
+7 文件非测试代码零命中 / ④ 187 files +21074/-1335。门尾树
+态（tip=71c354149 tracked clean）控制面零外来提交。看门狗
+FAIL 观察面事件计数：第 2 次（S1114 第 1 次 + S1116 第 2
+次）；下轮 **S1117 = 3/10 静默监测引用轮 + 多步连锁背板余
+量加固候选记档（再现即切片：execFileSync 300s → ~450s 使
+看门狗化 run 走完进 deterministic 对比，判定语义不变；树变
+化切片照 S1114 双腿刷新先例）**，树再变化则提前双腿刷新，
+否则门单腿复跑免 make test 腿（S336 先例），至迟 S1123=10/
+10 饱和、次轮 S1124 期限轮活跑。
 M5 定稿收口判定（DC-1~4 依据）不因复验与执行态瞬态动摇——**goal Done 维
-持，守成态证据经 S1115 双腿刷新延续**；唯一未清偿义务 = frames.click+
+持，守成态证据经 S1116 门复跑绿刷新延续**；唯一未清偿义务 = frames.click+
 evaluate 回填（挂子帧能力解冻，见子帧解冻清单，不阻收口））
 
 ---
@@ -19594,6 +19595,63 @@ evaluate 回填（挂子帧能力解冻，见子帧解冻清单，不阻收口�
    稿收口判定不因复验与执行态瞬态动摇 goal Done 维持守成
    态证据经 S1115 双腿刷新延续 唯一未清偿义务=frames.click
    +evaluate 回填（挂子帧能力解冻 不阻收口）。
+
+   **S1116 已执行（2026-09-18）静默监测引用轮（引用计数
+   2/10，周期锚点=S1115 双腿（门腿 14:34:40 落盘 + make
+   test 腿 14:45:12 收口），同 tip 复核 pull 零新提交
+   tip=71c354149 即 S1115 提交本身（71c354149..HEAD 排除本
+   流 docs diff 空 0 行实测复核），树不变口径=门单腿复跑免
+   make test 腿 S336 先例）——门腿首调红：家族事件第 10 次
+   （看门狗时代新形态 = 多步连锁）+ 当轮升级排查 + 复跑绿
+   收口**：①首调 14:48:34 启动 14:53:50 收口 EXIT=2 wall
+   ~5m16s——run 1 正常（33 ok + 挂账 frames FAIL 正常绿形
+   态）；run 2 **多步连锁**：frames.access ok 后 **emulation
+   .media 看门狗 60s 具名 FAIL** → screenshot.viewport/
+   screenshot.fullPage/screenshot.element/page.setContent
+   四步 Playwright 10s 超时级联 → **viewport.verified 看门
+   狗 60s 具名 FAIL**（全具名在案 stdout tail/steps-report
+   ——单步守卫按设计工作：每步可归因流程继续）→ tail 之
+   外续有连锁 → run 2 总耗时超 execFileSync 300s 背板 →
+   SIGTERM status null → S1038 拒读崩溃 EXIT=2（**多步连
+   锁下单步 60s 守卫不足以避免背板触发——crash 形态在多步
+   连锁变体下再现 新缺口面记档**）；报告面 run2 零写入
+   （determinism-report 维持 14:34 = S1115 态 拒读防假绿正
+   确兑现 run1 steps-report 14:48 在盘）；capture jsonl 面
+   零写入 #0 复现监测零命中 45d01d66 双跑前后全不变——非
+   #0 IPC 损坏；零进程残留 zombie 前后 0 四端口族全 free；
+   **负载窗归因**：兄弟流 ZeroWeb-2 活跃窗（轮起手 rustc
+   zero_webview release 438% CPU → 红窗内兄弟 make test 腿
+   zero_integration 142%，load 1.96-3.74，cwd/exe 取证双
+   clone 隔离零污染本树 非端口竞争面）；②**复跑绿收口**：
+   14:55:09 启动 14:55:39 收口 wall ~30s 首调即 **PASS 33
+   绿 deterministic 双跑 YES EXIT=0**（残留负载 1.96 仍绿
+   → 负载相关性非确定性 race/starvation 定性维持；expected
+   _green 33 对称差 none、regressions 空，双 run 各 33 ok
+   集机械一致，唯一 failed 同=挂账 frames.click+evaluate，
+   双 run 均 flow exited 1 正常态；编译全缓存零 Compiling
+   行；steps-report/determinism-report 新鲜落盘 14:55）；
+   看门狗 FAIL 观察面事件计数第 2 次（S1114 第 1 次 +
+   S1116 第 2 次——S1114 起算新观察面）；锚点面四点实测维
+   持（代码树对 S1115 锚定态零漂移）：自有面对 S897 tip
+   7da6043d6 **10 files +1187/-182** 维持 / crates/ raw
+   **130** 维持 / 子帧关键词 **7 文件** crates/ 零命中维持
+   （非测试代码零命中 解冻条件①观察面 130 口径 frames.
+   click+evaluate 挂起维持）/ 全树排除本流 docs 对
+   18d462de6 **187 files +21074/-1335** 维持（= S1115 双腿
+   新基线精确一致零漂移）；门尾树态（tip=71c354149 tracked
+   clean）本两跑零残留 控制面零外来提交；下轮 **S1117 =
+   3/10 静默监测引用轮 + 多步连锁背板余量加固候选记档**
+   （候选内容：verify-deterministic.mjs execFileSync 300s
+   → ~450s，使看门狗化 run 走完进 deterministic 对比产出
+   完整报告面，判定语义不变=回归仍红；**再现即切片**——
+   多步连锁形态再现一次即按 S1114 先例落地切片 + 双腿刷
+   新），若 S1117 前树代码变化则提前触发双腿刷新（S245→…
+   →S1114→S1115 先例链，make test 腿后台跑法），否则按引
+   用轮口径门单腿复跑免 make test 腿（S336 先例），至迟
+   S1123=10/10 饱和、次轮 S1124 期限轮活跑；M5 定稿收口判
+   定不因复验与执行态瞬态动摇 goal Done 维持守成态证据经
+   S1116 门复跑绿刷新延续 唯一未清偿义务=frames.click+
+   evaluate 回填（挂子帧能力解冻 不阻收口）。
 
    **S1106 轮后插记（2026-09-18 push 序列 pull --rebase 实测）**：
    兄弟流 fb5133ff7（rendering-compat R4488 登记腿）于 S1106 门
