@@ -56,27 +56,17 @@ pub(crate) fn is_out_of_flow(style: &ComputedStyle) -> bool {
 
 /// 判断元素是否为替换元素（CSS2 §3.1 置换元素 + 表单控件）。
 ///
-/// R4489：替换元素即便计算为 `display:inline`（`<svg>` 无 UA display 规则时的计算
-/// 值；img/canvas 等同域）也不计入 R109 块容器混合谓词——其盒依赖独立 taffy 子树，
-/// 入 Inline 片段会被扁平化收集丢盒（aspect-ratio replaced-element-007/015/016、
-/// svg-intrinsic-size-007 实证）。与 engine.rs extract 侧 `is_replaced` 同表。
+/// R4489：tree.rs atomic_children 片段臂用——替换元素即便计算为 `display:inline`
+///（`<svg>` 无 UA display 规则时的计算值）也须建独立 taffy 子树（原子行内级盒）。
+/// R4490：八类 replaced 表复用 [`crate::tree::is_replaced_element_tag`]
+///（img/video/iframe/embed/object/svg/canvas/applet，与 engine.rs 构盒 is_replaced
+/// 同源），此处仅追加表单控件边界形态（计算 display:inline 的 input 等）。
 pub(crate) fn is_replaced_element(id: &NodeId, doc: &Document) -> bool {
+    if crate::tree::is_replaced_element_tag(doc, *id) {
+        return true;
+    }
     doc.get(*id).is_some_and(|n| match &n.kind {
-        NodeKind::Element(elem) => matches!(
-            elem.local_name(),
-            "img"
-                | "video"
-                | "iframe"
-                | "embed"
-                | "object"
-                | "svg"
-                | "canvas"
-                | "applet"
-                | "input"
-                | "select"
-                | "textarea"
-                | "button"
-        ),
+        NodeKind::Element(elem) => matches!(elem.local_name(), "input" | "select" | "textarea" | "button"),
         _ => false,
     })
 }
@@ -178,12 +168,13 @@ pub(crate) fn block_container_has_mixed_content(
     }
     // 第二遍（仅 block+element 混排容器）：inline-level 元素也是 inline 内容
     //（§9.2.1.1 runs of inline-level boxes）。安全判据与 R2160 Phase A 同源
-    //（childless 纯文本 inline）：只有这类元素作为片段项被 IFC 扁平化收集是安全的；
-    // 原子行内级（img/svg/canvas/inline-block）与含 Element 子的 inline 保留独立
-    // taffy 子树旧路径（transform-box svg 族 / inline-replaced-width 族 A/B 实证：
-    // 入片段丢原子盒/嵌套结构 → 净回归）。替换元素即便计算为 display:inline（svg 无
-    // UA display 规则时）也豁免——其盒依赖独立 taffy 子树（replaced-element-007/015/
-    // 016、svg-intrinsic-size-007）。
+    //（childless 纯文本 inline）。R4490：替换元素**不再豁免**——svg（无 UA display
+    // 规则时计算 display:inline）等 childless replaced 计入后，片段路径全链已兜住：
+    // tree.rs atomic_children（R4489 ⑤）为其建独立 taffy 子树、IFC collect R3987
+    // replaced-inline 原子盒臂参与行排、R4489 ③片段级 IFC 测量同源
+    //（replaced-element-007/015/016、svg-intrinsic-size-007 拆分路径 0.00% A/B 实证，
+    // corpus 净 +16/−0 与豁免态逐案零差异）。含 Element 子的 inline（img 后代/嵌套
+    // 结构）仍不入（phasea 资格判定排除，保留独立 taffy 子树旧路径）。
     for &child in &children {
         let Some(style) = styles.get(&child) else {
             continue;
@@ -192,7 +183,6 @@ pub(crate) fn block_container_has_mixed_content(
         // 此处补齐与第一遍口径一致）。
         if matches!(style.display, DisplayValue::Inline)
             && !is_out_of_flow(style)
-            && !is_replaced_element(&child, doc)
             && crate::tree::phasea_multi_inline_eligible(doc, styles, child)
         {
             return true;

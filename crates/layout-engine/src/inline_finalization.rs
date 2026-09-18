@@ -1582,6 +1582,15 @@ fn backfill_phasea_orphan_boxes(
     if !gate_on {
         return;
     }
+    // R4490：R109 拆分/块混排宿主跳过——其 eligible inline 子是 **R109 片段项**（由匿名
+    // 块片段盒的片段 IFC 渲染 + sync_inline_child_boxes_from_ifc 在片段盒内建正确行位
+    // 盒），不是 Phase A 跳 taffy 的 orphan。旧路径仍按宿主 IFC 扫描——该 IFC 把全部
+    // inline 行吸收在容器顶（忽略 block 子中断），扫出的 bbox 是 stale 几何（R4489
+    // layout dump 实证：容器级代理盒 y 50.6..110.6 与片段盒内正确行盒并存重复）。
+    // 跳过后 hit-test/struct 走片段盒内的正确盒，不再有错置几何副本。
+    if root.is_r109_split || root.is_r109_block_mixed {
+        return;
+    }
     // orphan 候选 = 容器的 eligible childless inline 子（与 tree.rs skip 集合一致）。
     let orphan_ids: Vec<NodeId> = doc
         .child_nodes(container_id)
