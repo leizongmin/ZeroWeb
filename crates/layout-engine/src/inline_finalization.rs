@@ -3474,6 +3474,53 @@ pub(crate) fn remeasure_multicol_text_blocks(
     remeasure_inner(box_node, doc, styles, img_intrinsic_sizes, inline_fonts, false)
 }
 
+/// R4510：multicol 容器宿有 inline 流（非块级 in-flow 子）时的 **inline 平衡行分布高**。
+///
+/// CSS Multicol §3.3：容器高 = 平衡列高。宿有 inline 流的容器（匿名文本 + inline 子
+/// 如 span），`layout_multicol` 的 region 只覆盖块级子的列几何；匿名文本的平衡行分布
+/// 归 paint 侧 IFC 重跑（R1423 use_stored=false），其高度贡献 region 欠计——对称写回
+/// （R4508）据此收缩会把行盒挤出容器（gap-large-002：taffy 80 收缩到块级 region 40）。
+///
+/// 本 helper 以**列宽**跑容器 IFC（R1433 col_ctx / R4499 区域平衡同式构造），返回
+/// ceil(行数/列数) × 平均行高，供对称写回取 `effective_region = max(region, 本值)`：
+/// inline 贡献参与高度合成，块级 region 的合法收缩（gap-002：taffy 60 → region 40）
+/// 不受抑制。
+///
+/// Gate：水平书写模式（vertical IFC 帧语义未接，同 R4437 域）；存在非块级 in-flow 子；
+/// 列宽 IFC 产出行。
+pub(crate) fn multicol_inline_flow_balanced_height(
+    container: &LayoutBox,
+    info: &crate::multicol::ColumnInfo,
+    doc: &Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    inline_fonts: InlineFontContext<'_>,
+) -> Option<f32> {
+    let dom_id = container.node_id?;
+    let style = styles.get(&dom_id)?;
+    if !matches!(style.writing_mode, WritingModeValue::HorizontalTb) {
+        return None;
+    }
+    let has_inline_child = container
+        .children
+        .iter()
+        .any(|c| !c.is_absolute && !c.is_fixed && !c.is_block_level);
+    if !has_inline_child || info.column_width <= 0.0 {
+        return None;
+    }
+    let mut inline_ctx = InlineFormattingContext::new(info.column_width)
+        .with_no_wrap(resolve_no_wrap_for_ifc_measure(Some(style)))
+        .with_preserve_whitespace(resolve_preserve_for_ifc_measure(Some(style)))
+        .with_break_at_newline(resolve_break_at_newline_for_ifc_measure(Some(style)));
+    inline_ctx = configure_inline_fonts(inline_ctx, inline_fonts, false);
+    inline_ctx.layout(doc, dom_id, styles);
+    let num_lines = inline_ctx.lines.len();
+    if num_lines == 0 {
+        return None;
+    }
+    let total = inline_ctx.total_height();
+    Some((num_lines.div_ceil(info.count) as f32) * (total / num_lines as f32))
+}
+
 /// R4499：multicol spanner 区域 inline 片段的**列平衡高度重写**。
 ///
 /// CSS Multicol §6.1：spanner 把 multicol 内容分成多个独立平衡的列区域。区域的纯

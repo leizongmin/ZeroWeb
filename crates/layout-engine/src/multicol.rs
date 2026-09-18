@@ -58,26 +58,46 @@ struct ColumnFragment {
 ///
 /// 遍历所有设置了 `column-count` 或 `column-width` 的容器，
 /// 将其子元素按多列规则重新定位。
-pub fn adjust_multicol_layout(root: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) {
-    adjust_multicol_layout_rec(root, styles, false);
+pub(crate) fn adjust_multicol_layout(
+    root: &mut LayoutBox,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    doc: &zero_dom::Document,
+    inline_fonts: crate::inline_finalization::InlineFontContext<'_>,
+) {
+    adjust_multicol_layout_rec(root, styles, false, doc, inline_fonts);
 }
 
 /// `nested_in_multicol`：祖先链上已有 multicol 容器（R4509 不可分下限的软约束
 /// gate——嵌套上下文回避下限，见 layout_multicol 平衡分支）。
-fn adjust_multicol_layout_rec(root: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>, nested_in_multicol: bool) {
+fn adjust_multicol_layout_rec(
+    root: &mut LayoutBox,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    nested_in_multicol: bool,
+    doc: &zero_dom::Document,
+    inline_fonts: crate::inline_finalization::InlineFontContext<'_>,
+) {
     let mut self_is_multicol = false;
     if let Some(style) = root.node_id.and_then(|id| styles.get(&id)) {
         let col_info = compute_column_info(style, root.content_width);
         if let Some(info) = col_info {
             root.column_gap = info.gap;
-            layout_multicol(root, &info, styles, nested_in_multicol);
+            // R4510：宿有 inline 流的容器的 inline 平衡行分布高（None = gate 不命中），
+            // 供对称写回 effective_region = max(region, inline 平衡高) 合成。
+            let inline_balanced = crate::inline_finalization::multicol_inline_flow_balanced_height(
+                root,
+                &info,
+                doc,
+                styles,
+                inline_fonts,
+            );
+            layout_multicol(root, &info, styles, nested_in_multicol, inline_balanced);
             self_is_multicol = true;
         }
     }
 
     // 递归处理子节点
     for child in &mut root.children {
-        adjust_multicol_layout_rec(child, styles, nested_in_multicol || self_is_multicol);
+        adjust_multicol_layout_rec(child, styles, nested_in_multicol || self_is_multicol, doc, inline_fonts);
     }
 }
 
@@ -860,6 +880,7 @@ fn layout_multicol(
     info: &ColumnInfo,
     styles: &HashMap<NodeId, ComputedStyle>,
     nested_in_multicol: bool,
+    inline_balanced: Option<f32>,
 ) {
     if container.children.is_empty() || info.count == 0 {
         return;
@@ -1159,16 +1180,20 @@ fn layout_multicol(
     // R4509 记档（gap-large-002 同域挂账）：容器宿有 inline 流（span + 匿名文本）时，
     // region 只覆盖块级子的列几何，匿名文本的平衡行分布归 paint 侧 IFC 重跑（R1423
     // use_stored=false）——对称写回收缩会欠计 inline 贡献（taffy/R1433 已含 80 正确高，
-    // 收缩到块级 region 40 后行盒溢出边框）。需 inline-flow region 模型（后续 slice），
-    // 本轮不全块级守卫：同一守卫会抑制 text+span 容器（gap-002 族）的合法收缩，
-    // A/B 实证 −16 回退 R4508 增益，弃用。
+    // 收缩到块级 region 40 后行盒溢出边框）。
+    // R4510 inline-flow region 模型落地：宿有 inline 流的容器，写回前以
+    // `effective_region = max(region_height, inline 平衡行分布高)` 合成——inline 贡献
+    // 参与（gap-large-002：max(40, 80) = 80，抑制有害收缩），块级 region 的合法收缩
+    // 不受抑制（gap-002：inline 平衡 = 40 = region，60 → 40 收缩保持）。无 inline 流
+    // （inline_balanced = None）时行为同 R4508。
+    let effective_region = inline_balanced.map_or(region_height, |ib| region_height.max(ib));
     if !container_explicit
         && !info.sequential_fill
-        && region_height > 0.5
-        && (region_height - container.content_height).abs() > 0.5
+        && effective_region > 0.5
+        && (effective_region - container.content_height).abs() > 0.5
     {
-        let delta = region_height - container.content_height;
-        container.content_height = region_height;
+        let delta = effective_region - container.content_height;
+        container.content_height = effective_region;
         container.height += delta;
     }
     // R1820：auto-height column-fill:auto 容器高度重算。主路径此前丢弃 region_height（let _），

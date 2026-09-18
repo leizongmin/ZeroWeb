@@ -192,7 +192,7 @@ fn test_auto_height_balanced_multicol_does_not_create_overflow_columns() {
     };
     let info = compute_column_info(styles.get(&container_id).unwrap(), container.content_width).unwrap();
 
-    layout_multicol(&mut container, &info, &styles, false);
+    layout_multicol(&mut container, &info, &styles, false, None);
 
     assert!(
         container
@@ -230,7 +230,7 @@ fn test_auto_height_balanced_multicol_uses_tallest_column_height() {
     };
     let info = compute_column_info(styles.get(&container_id).unwrap(), container.content_width).unwrap();
 
-    layout_multicol(&mut container, &info, &styles, false);
+    layout_multicol(&mut container, &info, &styles, false, None);
 
     assert!(
         (container.content_height - 200.0).abs() < 0.01,
