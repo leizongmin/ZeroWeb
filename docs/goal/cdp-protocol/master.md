@@ -30,6 +30,29 @@ raw **127** 维持；子帧关键词 **7 文件** crates/ 零命中维持
 18d462de6 实测 **184 files +20428/-1240** 维持。
 门尾树态（tip=de70d9c55 tracked clean）zombie 复测零（前后
 零）、四端口族全 free（前后零监听）、控制面零外来提交。
+**轮后插记（2026-09-18 push 序列 pull --rebase 实测）**：兄
+弟流两连提交（3f238f34e R4479 fix layout-engine 列宽测量深
+度 thread，4 crates 文件 +178/-77 代码腿 + 4aefd463c
+docs/rendering-compat +1 登记）于 S1087 门收口（10:45:20）
+之后经 push 序列 pull --rebase 入树（我方 S1087 提交 rebase
+于其上，push 4aefd463c..b5d3e92fd fast-forward 零冲突 实测
+复核）——main tip 组合态已超出 S1087 门证据锚定态
+（de70d9c55），**S1088 = 树变化刷新轮（门 + make test 双腿
+刷新，make test 腿后台跑法，S245→…→S1086 先例链）**引用计
+数以 S1088 双腿为新周期锚点归零重计（S1087 记录内下轮
+S1088=2/10 预告被本插记取代）；S1088 锚点预期（本插记时点
+实测）：自有面对 S897 tip 7da6043d6 维持 10 files
++1187/-182 不变 / crates/ raw 127→**128**（+1 = R4479 代码
+腿入 crates/ 口径）/ 子帧关键词 7 文件 crates/ 零命中维持
+（解冻条件①观察面 128 口径）/ 全树排除本流 docs 对
+18d462de6 184 files +20428/-1240 → **184 files
++20599/-1309**（R4479 4 crates +178/-77 折入 +
+rendering-compat docs +1 均已在累计 diff 集 零净增文件
+table_types.rs R4478 后同文件再改实测复核）；R4479 系渲染
+流域 layout-engine 代码提交——layout-engine 属渲染流自有域
+（run-rules §9）非共享面非本流触碰 本流不碰 口径不变；M5 定
+稿收口判定不因本插记动摇，S1088 刷新门 PASS 即守成态证据延
+续。
 M5 定稿收口判定（DC-1~4 依据）不因复验动摇——**goal Done 维持，守成态
 证据经 S1079 门单腿刷新延续**；唯一未清偿义务 = frames.click+evaluate 回填
 （挂子帧能力解冻，见子帧解冻清单，不阻收口））
@@ -19059,6 +19082,34 @@ M5 定稿收口判定（DC-1~4 依据）不因复验动摇——**goal Done 维�
 
 
 
+
+   **S1087 轮后插记（2026-09-18 push 序列 pull --rebase 实
+   测）**：兄弟流两连提交（3f238f34e R4479 fix layout-engine
+   列宽测量深度 thread（vertical 表 cell intrinsic 以 target/
+   列数为 IFC 深度）4 crates 文件 +178/-77 代码腿 +
+   4aefd463c docs/rendering-compat +1 登记）于 S1087 门收口
+   （10:45:20）之后经 push 序列 pull --rebase 入树（我方
+   S1087 提交 rebase 于其上，push 4aefd463c..b5d3e92fd
+   fast-forward 零冲突 实测复核）——main tip 组合态已超出
+   S1087 门证据锚定态（de70d9c55，R4479 组合态 IN_TREE 实测
+   核验），**S1088 = 树变化刷新轮（门 + make test 双腿刷新，
+   make test 腿后台跑法，S245→S898→S1047→S1051→S1059→S1064→
+   S1065→S1069→S1088 先例链连刷）引用计数以 S1088 双腿为新周
+   期锚点归零重计**（S1087 记录内下轮 S1088=2/10 预告被本插
+   记取代）；S1088 锚点预期（本插记时点实测）：自有面对 S897
+   tip 7da6043d6 维持 **10 files +1187/-182** 不变（R4479 不
+   触 headless/CDP 面 实测复核）/ crates/ raw 127→**128**（+1
+   = R4479 代码腿入 crates/ 口径）/ 子帧关键词 **7 文件**
+   crates/ 零命中维持（非测试代码零命中 解冻条件①观察面 128
+   口径 frames.click+evaluate 挂起维持）/ 全树排除本流 docs
+   对 18d462de6 **184 files +20428/-1240 → 184 files
+   +20599/-1309**（R4479 4 crates +178/-77 折入 +
+   rendering-compat docs +1 均已在累计 diff 集 零净增文件
+   table_types.rs R4478 后同文件再改实测复核）；R4479 系渲染
+   流域 layout-engine 代码提交——layout-engine 属渲染流自有
+   域（run-rules §9）非共享面非本流触碰 本流不碰 口径不变；
+   M5 定稿收口判定不因本插记动摇，S1088 刷新门 PASS 即守成态
+   证据延续。
 
    **S1087 已执行（2026-09-18）静默监测引用轮（引用计数新周期
    0/10→1/10，周期锚点=S1086 双腿（门腿 10:19:31 落盘 + make
