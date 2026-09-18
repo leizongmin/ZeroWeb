@@ -81,7 +81,12 @@ async function runOnce(index) {
       execFileSync('node', [path.join(SCRIPT_DIR, 'capture-core-flow.mjs')], {
         cwd: MATRIX_DIR,
         env: { ...process.env, CDP_ENDPOINT_URL: `http://127.0.0.1:${port}` },
-        timeout: 300_000,
+        // S1120 加固（S1116 多步连锁候选兑现）：单步 60s 看门狗（S1114）下，多步
+        // 连锁挂起（run 2 ≥5 步级联超时）总耗时可超 300s 背板 → SIGTERM status
+        // null 拒读，红例只剩 stdout tail 可归因。放宽到 450s 使看门狗化 run 走完
+        // 进 deterministic 对比、产出完整报告面；判定语义不变——真回归仍红
+        // （deterministic NO / expected-green 回退），仍超 450s 才走 status null 拒读。
+        timeout: 450_000,
         stdio: 'pipe',
       })
     } catch (err) {
