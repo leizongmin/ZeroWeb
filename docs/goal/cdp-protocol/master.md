@@ -24865,6 +24865,43 @@ EXIT=0**（wall ~29s 编译全缓存零 Compiling 行 replay）；锚点四点
    新延续 唯一未清偿义务 = frames.click+evaluate 回填（挂子帧能
    力解冻 不阻收口）。
 
+
+   **S1218 轮后插记（2026-09-19 push 序列 pull --rebase 实测）**：
+   兄弟流 a3b6fbe3e（rendering-compat **R4505** 004a 诊断深化 P 轮
+   0 net code）于 S1218 双腿收口（make test 腿 02:52:58）之后经
+   push 序列 pull --rebase 入树（兄弟提交落窗与我方 push 序列并
+   窗；我方 S1218 提交 c7579c249 后 rebase 于其上 = d5c84d9b6，
+   push a3b6fbe3e..d5c84d9b6 fast-forward 零冲突 实测复核）——兄
+   弟提交 **1 file +1/-0 自身口径**（docs/goal/rendering-compat.md
+   1 行记档折入），**零代码面（纯 docs）实测复核**（b5d5c7b90..
+   a3b6fbe3e 排除 docs diff 空）→ **S1218 双腿 PASS 覆盖的代码树
+   态 = b5d5c7b90（R4504 组合态），新组合树态 = d5c84d9b6 代码树
+   零变更（纯 docs 折入）——S1218 双腿对代码树的覆盖维持有效，
+   R4505 零代码面不触发双腿刷新**（刷新触发 = 代码面入树 S1150
+   插记 R4494 纯 docs 同款口径）；IN_TREE 实测核验（git
+   merge-base --is-ancestor PASS）；工作面归属 = 渲染流域 docs 专
+   属面 零碰撞（run-rules §9/§10 归因纪律记档）。锚点面漂移记档
+   （新组合树态 d5c84d9b6 对基线口径实测）：④ 全树排除本流 docs
+   **192 files +23763/-1345 → 192 files +23764/-1345**（192 files
+   维持 = rendering-compat.md 既有文件折入零净增文件；行数折入 +1
+   与自身口径 +1 精确闭合零工件）；① 自有面 **10 files
+   +1187/-182** 维持 / ② crates/ raw **140** 维持（R4505 零
+   crates/ 提交）/ ③ 子帧关键词 **7 文件** 命中清单 md5 74f58fcf
+   逐项一致维持（非测试代码零命中 解冻条件①观察面 140 口径
+   frames.click+evaluate 挂起维持）。下轮 **S1219 = 1/10 静默监测
+   引用轮（新周期锚点 = S1218 双腿：门腿 02:43:14 落盘 + make
+   test 腿 02:52:58 收口）树不变口径 = 门单腿复跑免 make test 腿
+   （S336 先例）**；S1219 门单腿活跑时锚点复核以本插记刷新值
+   **④ 192 files +23764/-1345** 为基线（取代 S1217 插记
+   +23763/-1345 值），树代码再变化则提前双腿刷新（S245→…→
+   S1210→S1218 先例链 make test 腿后台跑法），至迟 S1228 = 10/10
+   到期期限轮活跑；send-keys Timeout flake 家族观察延续（第 4 例
+   后若再现同族红例同口径四点归因）+ 看门狗/多步连锁瞬态红家族观
+   察延续（S1211 第 5/4 例后若再现同族红例同口径四点归因）；M5 定
+   稿收口判定不因本插记动摇 goal Done 维持守成态证据经 S1219 门
+   单腿刷新延续 唯一未清偿义务 = frames.click+evaluate 回填（挂
+   子帧能力解冻 不阻收口）。
+
    **S1217 轮后插记（2026-09-19 push 序列 pull --rebase 实测）**：
    兄弟流 30c04d94f（rendering-compat **R4504** nested-001/002 翻
    绿 3.33→0.00：nested spanner 扁平化 pre-step R1341 泛化）于
