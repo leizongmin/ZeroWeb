@@ -2,37 +2,42 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-18（S1130：**静默监测引用轮（引用计数
-10/10 周期饱和轮，周期锚点 = S1120 双腿：门腿 15:42:15 落盘
-+ make test 腿 15:55:15 收口）**，pull 零新提交 tip =
-34bf7d2a9 即 S1129 提交本身（34bf7d2a9..HEAD 零新提交实测
-复核），树不变口径 = 门单腿复跑免 make test 腿（S336 先例）
-绿步维持 33——门腿复跑在位 16:33:14 启动 16:33:43 落盘首调
-即 **PASS 33 绿 deterministic 双跑 YES EXIT=0**（wall ~29s
-编译全缓存零 Compiling 行 replay 代码树对 S1120 锚定态零变
-更佐证；expected_green 33 对称差 none、regressions 空，
-run_details 双 run 实质逐项一致（双 run 各 33 ok 集机械一
-致，唯一 failed 同 = 挂账 frames.click+evaluate）；双 run
-均 flow exited 1 正常态；steps-report/determinism-report
-新鲜落盘 16:33；**多步连锁 450s 新背板零再现维持（累计
+**最后更新**: 2026-09-18（S1131：**期限轮活跑（引用计数
+10/10 周期饱和触发双腿刷新，双腿活跑口径=门 + make test
+后台跑法 S299/S309/S360/S1115/S1099 先例链，新周期锚点 =
+S1131 双腿：门腿 16:40:05 落盘 + make test 腿 16:48:44 收
+口）**，pull 零新提交 tip = 7aa868da2 即 S1130 提交本身
+（34bf7d2a9..HEAD 仅 1 提交 = 本流 S1130 docs 提交本身 零
+新兄弟/代码提交实测复核）——**门腿** 16:39:36 启动
+16:40:05 落盘首调即 **PASS 33 绿 deterministic 双跑 YES
+EXIT=0**（wall ~29s 编译全缓存零 Compiling 行 replay；expe
+cted_green 33 对称差 none、regressions 空，run_details 双
+run 实质逐项一致（双 run 各 33 ok 集机械一致，唯一 failed
+同 = 挂账 frames.click+evaluate）；双 run 均 flow exited 1
+正常态；ZW_IPC_VALIDATE=1 在位静默 capture jsonl 面零写入
+#0 复现监测零命中维持（五 jsonl mtime 09-12/09-13 全不变
+跑前跑后 md5 组合同值 45d01d66）；steps-report/
+determinism-report 新鲜落盘 16:40）；**make test 腿一调收
+口** 16:40:19 启动 16:48:44 收口 wall ~8.5min **19,344P/0F
+67 组 result 全 ok**（零 FAILED/error 行 编译全缓存零
+Compiling 行 replay 与 S1115/S1120 双腿基线 19,344P 精确
+一致零新增用例）；**多步连锁 450s 新背板零再现维持（累计
 3 例）**；**看门狗 FAIL 观察面事件零再现维持（累计 4 次 =
-S1114+S1116+S1120×2）**；**红形态连续零再现计数第 10 轮
-（S1120 红例起算）**；ZW_IPC_VALIDATE=1 在位静默 capture
-jsonl 面零写入 #0 复现监测零命中维持（五 jsonl mtime
-09-12/09-13 全不变 跑前跑后 md5 组合同值 45d01d66））。锚
-点面四点实测维持（代码树对 S1120 锚定态零漂移）：自有面对
-S897 tip 7da6043d6 **10 files +1187/-182** 维持 / crates/
-raw **131** 维持（e67967632..TIP 口径）/ 子帧关键词 **7 文
-件** 非测试代码零命中维持（解冻条件①观察面 131 口径
-frames.click+evaluate 挂起维持）/ 全树排除本流 docs 对
-18d462de6 **187 files +21080/-1336** 维持（= S1120 双腿新
-基线精确一致零漂移）。门尾树态（tip=34bf7d2a9 tracked
-clean）zombie 复测零（前后零 STAT 列口径）、四端口族全
-free（前后零监听）、本门零残留、控制面零外来提交。本轮门
-深净窗活跑（起手 load 0.13 门后 0.37 wall ~29s 门窗内零重
-型兄弟腿）。
+S1114+S1116+S1120×2）**；**红形态连续零再现计数第 11 轮
+（S1120 红例起算）**。锚点面四点实测维持（代码树对 S1120
+锚定态零漂移）：自有面对 S897 tip 7da6043d6 **10 files
++1187/-182** 维持 / crates/ raw **131** 维持（e67967632..TIP
+口径）/ 子帧关键词 **7 文件** 非测试代码零命中维持（解冻条
+件①观察面 131 口径 frames.click+evaluate 挂起维持）/ 全树
+排除本流 docs 对 18d462de6 **187 files +21080/-1336** 维持
+（= S1120 双腿新基线精确一致零漂移）。门尾树态（tip=7aa868
+da2 tracked clean）zombie 复测零（前后零 STAT 列口径）、四
+端口族全 free（前后零监听）、本双腿零残留（ps 取证零
+rustc/test-guard/cargo）、控制面零外来提交。本轮双腿净窗活
+跑（起手 load 0.30 门后 0.38 窗尾 1.97 系双腿收束余波 ps
+取证零重型兄弟进程）。
 M5 定稿收口判定（DC-1~4 依据）不因复验与执行态瞬态动摇——**goal Done 维
-持，守成态证据经 S1130 门单腿刷新延续**；唯一未清偿义务 = frames.click+
+持，守成态证据经 S1131 双腿刷新延续**；唯一未清偿义务 = frames.click+
 evaluate 回填（挂子帧能力解冻，见子帧解冻清单，不阻收口））
 
 ---
@@ -20348,6 +20353,52 @@ evaluate 回填（挂子帧能力解冻，见子帧解冻清单，不阻收口�
    门单腿刷新延续 唯一未清偿义务=frames.click+evaluate 回填
    （挂子帧能力解冻 不阻收口）。
 
+   **S1131 已执行（2026-09-18）期限轮活跑（引用计数 10/10
+   周期饱和触发双腿刷新，双腿活跑口径=门 + make test 后台
+   跑法 S299/S309/S360/S1115/S1099 先例链，同 tip 复核 pull
+   零新提交 tip=7aa868da2 即 S1130 提交本身（34bf7d2a9..HEAD
+   仅 1 提交 = 本流 S1130 docs 提交本身 零新兄弟/代码提交实
+   测复核））**：**门腿** 16:39:36 启动 16:40:05 落盘首调即
+   **PASS 33 绿 deterministic 双跑 YES EXIT=0**（wall ~29s
+   编译全缓存零 Compiling 行 replay——代码树对 S1120 锚定态
+   零变更佐证；expected_green 33 对称差 none、regressions
+   空，run_details 双 run 实质逐项一致（双 run 各 33 ok 集
+   机械一致，唯一 failed 同=挂账 frames.click+evaluate），双
+   run 均 flow exited 1 正常态；ZW_IPC_VALIDATE=1 在位静默
+   capture jsonl 面零写入 #0 复现监测零命中维持（五 jsonl
+   mtime 09-12/09-13 全不变 跑前跑后 md5 组合同值 45d01d66）；
+   steps-report/determinism-report 新鲜落盘 16:40）；**make
+   test 腿一调收口**：16:40:19 启动 16:48:44 收口 wall
+   ~8.5min **19,344P/0F 67 组 result 全 ok**（零 FAILED/error
+   行 编译全缓存零 Compiling 行 replay 与 S1115/S1120 双腿
+   基线 19,344P 精确一致零新增用例）；**多步连锁 450s 新背
+   板零再现维持（形态累计 3 例）**；**看门狗 FAIL 观察面事
+   件零再现维持（累计 4 次 = S1114+S1116+S1120×2）**；红形
+   态连续零再现计数第 11 轮（S1120 红例起算）；锚点面四点
+   实测维持（代码树对 S1120 锚定态零漂移）：自有面对 S897
+   tip 7da6043d6 **10 files +1187/-182** 维持 / crates/ raw
+   **131** 维持（e67967632..TIP 口径 = S1120 轮后插记基线精
+   确一致）/ 子帧关键词 **7 文件** 非测试代码零命中维持（解
+   冻条件①观察面 131 口径 frames.click+evaluate 挂起维
+   持）/ 全树排除本流 docs 对 18d462de6 **187 files
+   +21080/-1336** 维持（= S1120 双腿新基线精确一致零漂
+   移）；**引用计数以 S1131 双腿为新周期锚点归零重计**（门
+   腿 16:40:05 落盘 + make test 腿 16:48:44 收口，S1132 起
+   1/10）；门尾树态（tip=7aa868da2 tracked clean）zombie 复
+   测零（前后零 STAT 列口径）四端口族全 free（前后零监听）
+   本双腿零残留（ps 取证零 rustc/test-guard/cargo）控制面零
+   外来提交 本轮双腿净窗活跑（起手 load 0.30 门后 0.38 窗尾
+   1.97 系双腿收束余波 ps 取证零重型兄弟进程）；下轮
+   **S1132 = 1/10 静默监测引用轮（新周期锚点 = S1131 双腿）**
+   ，若 S1132 前树代码变化则提前触发双腿刷新（S245→…→
+   S1120→S1131 先例链，make test 腿后台跑法），否则按引用
+   轮口径门单腿复跑免 make test 腿（S336 先例），至迟
+   S1140=10/10 饱和、次轮 S1141 期限轮活跑（双腿活跑口径=
+   门 + make test 后台跑法）；M5 定稿收口判定不因复验与执
+   行态瞬态动摇 goal Done 维持守成态证据经 S1131 双腿刷新
+   延续 唯一未清偿义务=frames.click+evaluate 回填（挂子帧
+   能力解冻 不阻收口）。
+
    **S1106 轮后插记（2026-09-18 push 序列 pull --rebase 实测）**：
    兄弟流 fb5133ff7（rendering-compat R4488 登记腿）于 S1106 门
    收口（12:56:44）之后经 push 序列 pull --rebase 入树（我方
@@ -28947,7 +28998,18 @@ evaluate 入门禁）+ 本清单销账 + 矩阵账本/入口文档挂账注记�
   编译全缓存零 Compiling 行 replay）；多步连锁 450s 新背板零
   再现维持、看门狗 FAIL 事件零再现维持；锚点四点 = S1120 双
   腿基线精确一致零漂移；次轮 S1131 = 期限轮活跑（双腿活跑口
-  径=门 + make test 后台跑法 S299/S309/S360 先例）
+  径=门 + make test 后台跑法 S299/S309/S360 先例）。**S1131
+  注记**：期限轮活跑（引用计数 10/10 周期饱和触发双腿刷新，
+  双腿活跑口径=门 + make test 后台跑法，新周期锚点 = S1131
+  双腿）——pull 零新提交（tip=7aa868da2 即 S1130 提交本
+  身），门腿首调即 **PASS 33 绿 deterministic 双跑 YES
+  EXIT=0**（16:40 落盘，编译全缓存零 Compiling 行 replay）
+  + make test 腿一调收口 **19,344P/0F 67 组 result 全 ok**
+  （16:48 收口 wall ~8.5min 编译全缓存零 Compiling 行，计数
+  与 S1115/S1120 双腿基线精确一致）；多步连锁 450s 新背板
+  零再现维持、看门狗 FAIL 事件零再现维持；锚点四点 = S1120
+  双腿基线精确一致零漂移；引用计数归零重计，次轮 S1132 =
+  1/10 静默监测引用轮（周期锚点 = S1131 双腿）
 - CDP 现状：`Page.navigate` / `Runtime.evaluate` / `Target.getTargets` 3 命令 +
   `/json/version` + `/json` 发现（headless.rs L782-796/L571/L1159）——历史基线，现行面
   见缺口清单 P3/P4 与切片记录
