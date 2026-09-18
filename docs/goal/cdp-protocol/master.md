@@ -23344,6 +23344,48 @@ pull 零新提交 tip = 523e41570 即 S1188 提交本身，门单腿复跑
    务=frames.click+evaluate 回填（挂子帧能力解冻 不阻收
    口）。
 
+   **S1190 轮后插记（2026-09-18 push 序列 pull --rebase 实测）**：
+   兄弟流 4986043ab（rendering-compat **R4499** multicol-span-all
+   slice 第一轮：spanner 区域 inline_finalization 腿）于 S1190 双腿
+   收口（make test 腿 23:14）之后经 push 序列 pull --rebase 入树
+   （兄弟提交落 23:20:09 与我方 push 序列并窗；我方 S1190 提交
+   58b55071d rebase 于其上 = a97f087f0，push 4986043ab..a97f087f0
+   fast-forward 零冲突 实测复核）——兄弟代码提交 **9 files +331/-2
+   自身口径**（crates/layout-engine 7 files：r4499_spanner_region_
+   diag.rs 新建 127 + inline_finalization.rs +144 折 + multicol.rs
+   +26 + engine.rs +8 + engine/tests/mod.rs +2 + types/mod.rs +7 +
+   painter 面 crates/engine/src/paint/painter/text.rs +15 折；docs/
+   goal/rendering-compat.md 1 行 + tests/wpt-runner/imported-
+   resources.txt +3 折入），**代码面非空 实测复核** → **S1190 双腿
+   PASS 覆盖的代码树态 = 0d59e310a，新组合树态 = a97f087f0 未被
+   双腿覆盖**；IN_TREE 实测核验（git merge-base --is-ancestor
+   PASS）；工作面归属 = 渲染流域 crates/layout-engine + engine/
+   paint 专属面 零碰撞（run-rules §9/§10 归因纪律记档）。锚点面
+   漂移记档（新组合树态 a97f087f0 对基线口径实测）：② crates/ raw
+   **135 → 136**（R4499 布局腿入集 e67967632..TIP 口径）/ ④ 全树
+   排除本流 docs **189 files +23058/-1341 → 192 files +23389/-1343**
+   （192 = 189 + 3 净增文件精确闭合 = R4499 9 files 中 6 files 既
+   有折入 + 3 files 新入集（r4499_spanner_region_diag.rs 新建/
+   multicol.rs/imported-resources.txt）；行数折入 +331/-2 与自身
+   口径 +331/-2 精确闭合 非树不一致）；① 自有面 **10 files
+   +1187/-182** 维持（headless/ + devtools_serve.rs 口径实测复
+   核）/ ③ 子帧关键词 **7 文件** 命中清单 md5 74f58fcf 逐项一致
+   维持（非测试代码零命中 解冻条件①观察面 136 口径
+   frames.click+evaluate 挂起维持）；make test 全量参考基线
+   19,344P/0F 预期 +1（R4499 自带 r4499_spanner_region_diag.rs
+   测试面 1 用例 经 engine/tests/mod.rs 注册）以 S1191 双腿实测为
+   准。下轮 **S1191 = 树变化刷新轮（双腿活跑口径 = 门 + make
+   test 后台跑法，S1151/S1181 先例链）**——R4499 代码面入树提前
+   触发双腿刷新（S245→…→S1150→S1151→S1160→S1170→S1180→S1190
+   先例链），S1191 双腿绿收口后以 S1191 双腿为新周期锚点归零重
+   计（若 S1191 前树再变化则口径不变照跑）；S1191 门单腿活跑时
+   锚点复核以本插记刷新值 ② crates/ raw **136** 与 ④ **192 files
+   +23389/-1343** 为基线（取代 S1180 插记 135/189 值）；
+   send-keys Timeout flake 家族观察延续（第 4 例后若再现同族红例
+   同口径四点归因）；M5 定稿收口判定不因本插记动摇 goal Done
+   维持守成态证据经 S1191 双腿刷新延续 唯一未清偿义务=
+   frames.click+evaluate 回填（挂子帧能力解冻 不阻收口）。
+
    **S1150 轮后插记（2026-09-18 push 序列 pull --rebase 实测）**：
    兄弟流 4bd4bff44（rendering-compat **R4493** fix(layout-engine)
    R4446 fill 臂 InlineBlock 容器解禁 line-box/block-flow-direction
