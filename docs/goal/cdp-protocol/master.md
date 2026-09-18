@@ -21330,6 +21330,38 @@ evaluate 回填（挂子帧能力解冻，见子帧解冻清单，不阻收口�
    守成态证据经 S1150 双腿刷新延续 唯一未清偿义务=frames.
    click+evaluate 回填（挂子帧能力解冻 不阻收口）。
 
+   **S1150 轮后插记（2026-09-18 push 序列 pull --rebase 实测）**：
+   兄弟流 4bd4bff44（rendering-compat **R4493** fix(layout-engine)
+   R4446 fill 臂 InlineBlock 容器解禁 line-box/block-flow-direction
+   八案翻绿）+ 50d04a2de（**R4494** margin-collapse 簇归因 P 轮
+   纯 docs）于 S1150 双腿收口（make test 腿 19:14:30）之后经
+   push 序列 pull --rebase 入树（我方 S1150 提交 06108f9bb
+   rebase 于其上 = 91fe81be3，push 50d04a2de..91fe81be3
+   fast-forward 零冲突 实测复核）——兄弟代码提交 **1 file
+   +9/-8 自身口径**（crates/layout-engine/vertical_block_flow.rs
+   1 file 非空；R4494 纯 docs 1 file 折入），**代码面非空**
+   实测复核 → **S1150 双腿 PASS 覆盖的代码树态 = c64f812c3，
+   新组合树态 = 91fe81be3 未被双腿覆盖**；两枚 IN_TREE 实测
+   核验（git merge-base --is-ancestor 双 PASS）；工作面归属 =
+   渲染流域 crates/layout-engine 专属面 零碰撞（run-rules
+   §9/§10 归因纪律记档）。锚点面漂移记档（新组合树态
+   91fe81be3 对 18d462de6/TIP 口径实测）：② crates/ raw
+   **133 → 134**（R4493 布局腿入集 e67967632..TIP 口径）/
+   ④ 全树排除本流 docs **187 files +21146/-1338 → 187 files
+   +21149/-1338**（187 files 维持 = R4493 单文件既有文件折
+   入零净增文件；行数折入 +3/0 与自身口径 +9/-8 存在跨范围
+   hunk 对齐差 系 diff 工件 非树不一致）；① 自有面 **10
+   files +1187/-182** 维持（headless/ 口径实测复核）/ ③ 子
+   帧关键词 **7 文件** 命中清单 md5 74f58fcf 逐项一致维持
+   （非测试代码零命中）。下轮 **S1151 = 树变化刷新轮（双腿
+   活跑口径 = 门 + make test 后台跑法，S1115/S1132/S1140
+   先例链）**——R4493 代码面入树提前触发双腿刷新（S245→…→
+   S1140→S1150 先例链），S1151 双腿绿收口后以 S1151 双腿为
+   新周期锚点归零重计（若 S1151 前树再变化则口径不变照跑）；
+   send-keys Timeout flake 家族观察延续（第 4 例后若再现同
+   族红例同口径四点归因）；M5 定稿收口判定不因本插记动摇
+   goal Done 维持守成态证据经 S1151 双腿刷新延续。
+
    **S1131 轮后插记（2026-09-18 push 序列 pull --rebase 实测）**：
    兄弟流 1c4541d9f（rendering-compat **R4491** fix(layout-engine)
    slr-054 orthogonal inline-block 收缩臂三缺陷链修复）于 S1131
