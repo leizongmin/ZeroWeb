@@ -479,6 +479,7 @@ pub(crate) fn shrink_inline_blocks_to_content(
     doc: &zero_dom::Document,
     styles: &HashMap<NodeId, ComputedStyle>,
     inline_fonts: crate::inline_finalization::InlineFontContext<'_>,
+    parent_wm: &WritingModeValue,
 ) {
     let own_horizontal = matches!(box_node.writing_mode, WritingModeValue::HorizontalTb);
     if !own_horizontal
@@ -550,16 +551,58 @@ pub(crate) fn shrink_inline_blocks_to_content(
                 .with_vertical_rtl(matches!(box_node.writing_mode, WritingModeValue::VerticalRl));
             col_ctx = crate::inline_finalization::configure_inline_fonts(col_ctx, inline_fonts, false);
             col_ctx.layout(doc, id, styles);
-            let block_extent = if col_ctx.lines.is_empty() {
+            // R4491：**orthogonal 限定**——列流 IFC 空（子全为 block-level 盒的竖排
+            // inline-block：inline 内容为 0，"列" 即块级子自身，如 line-box-direction-
+            // slr-054 的 span 块列）时回落**流内子块轴 extent 和**（CSS2 §10.6.3 auto
+            // block-size 旋转类比：vertical 容器物理宽 = Σ 流内子 margin-box 块轴
+            // extent；taffy 对 orthogonal 子给出的正是 Σ 子 border-box 宽初值）。旧回落
+            // 单行字宽把 taffy 已正确的 120（Σ span 列宽）收缩成 20 → 父 IFC 原子步进
+            // 同缩 → 兄弟盒横向重叠。viv（父亦 vertical）不适用（行内尺寸语义经交换帧
+            // 天然正确，子列和回落会误改几何：inline-block-alignment-slr-009 A/B 实证）。
+            let orthogonal = matches!(parent_wm, WritingModeValue::HorizontalTb);
+            let children_block_extent: f32 = if orthogonal {
+                box_node
+                    .children
+                    .iter()
+                    .filter(|c| {
+                        !c.is_absolute && !c.is_fixed && matches!(c.float, zero_css_parser::values::FloatValue::None)
+                    })
+                    .map(|c| c.margin_left + c.width + c.margin_right)
+                    .sum()
+            } else {
+                0.0
+            };
+            // R4491：total_height 退化（=0：竖排 IFC 对块级子的行高语义未接——slr-054
+            // 探针实锤 lines=4 block_ext=0）时才以 Σ 子列宽替代；有效行测量（真 inline
+            // 内容，inline-block-alignment-002..007 族）仍单信 total_height（max 会被子
+            // 和覆盖正确行测 → 12.38% 回归实证）。
+            let col_total = col_ctx.total_height();
+            let block_extent = if col_total > 0.5 {
+                col_total
+            } else if children_block_extent > 0.5 {
+                children_block_extent
+            } else if col_ctx.lines.is_empty() {
                 let (fs, lh) = crate::inline::resolve_font_metrics(Some(cs));
                 lh.max(fs)
             } else {
-                col_ctx.total_height()
+                col_total
             };
             let frame_w = box_node.padding_left + box_node.padding_right + box_node.border_left + box_node.border_right;
             // Auto 单向收缩语义与 horizontal 臂一致（防拉伸伪影回写放大）。
+            // R4491：**orthogonal**（父 horizontal-tb）臂改**双向**回写（R4445 block-ifc 臂
+            // 同款 fit-content 论证：block-size:auto = fit-content）——taffy 对 orthogonal
+            // inline-block 给 inline-axis 初值（行高/内容列和，缺 block 轴 frame），
+            // shrink-only 时 140 content+frame 被「140 < 120 不动」守卫挡住 → 父 IFC 原子
+            // 步进缺 frame → 兄弟盒重叠（slr-054 实证步进 120 应 140）。拉伸伪影方向不受
+            // 影响（784 → content+frame 仍收缩）。viv（父亦 vertical）维持 shrink-only
+            //（taffy 交换帧轴语义天然正确，grow 误伤 inline-block-alignment-slr-009 实证）。
             let shrink_border_box = block_extent + frame_w;
-            if shrink_border_box + 0.5 < box_node.width {
+            let should_write = if orthogonal {
+                (shrink_border_box - box_node.width).abs() > 0.5
+            } else {
+                shrink_border_box + 0.5 < box_node.width
+            };
+            if should_write {
                 box_node.width = shrink_border_box;
                 box_node.content_width = block_extent;
             }
@@ -1016,8 +1059,9 @@ pub(crate) fn shrink_inline_blocks_to_content(
         }
     }
 
+    let own_wm = box_node.writing_mode.clone();
     for child in &mut box_node.children {
-        shrink_inline_blocks_to_content(child, doc, styles, inline_fonts);
+        shrink_inline_blocks_to_content(child, doc, styles, inline_fonts, &own_wm);
     }
 }
 
