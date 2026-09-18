@@ -2,35 +2,51 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-18（S1077：**静默监测引用轮（引用计数
-1/10→2/10，周期锚点 = S1075 双腿（门腿 09:21:36 落盘 + make
+**最后更新**: 2026-09-18（S1078：**静默监测引用轮（引用计数
+2/10→3/10，周期锚点 = S1075 双腿（门腿 09:21:36 落盘 + make
 test 腿 09:31:27 收口）），同 tip 复核 pull 零新提交 tip =
-7676dddd4 即本流 S1076 提交本身（S1076 后零代码变更
-622864fa1..HEAD 排除本流 docs diff 全空实测复核），树不变口
-径 = 门单腿复跑免 make test 腿（S336 先例），绿步维持 33**。
-门腿 **PASS 33 绿低负载近净窗活跑首调即收口**（起手 load
-1.24 门后 2.42；09:39:29 启动 09:40:00 落盘 wall ~31s
-EXIT=0；编译全缓存零 Compiling 行 replay；expected_green 33
-对称差 none、regressions 空、deterministic 双跑 YES（双 run
-33 ok 集机械一致，双 run 唯一 failed 同 = 挂账
-frames.click+evaluate）；双 run 均 flow exited 1 正常态；
-ZW_IPC_VALIDATE=1 在位静默 capture jsonl 面零写入（五 jsonl
-mtime 09-12/09-13 全不变实测复核）；steps-report/
-determinism-report 新鲜落盘 09:40；dead_code warning 维持同
-形一枚（match_media_to_json，crates/engine/src/
-js_dom_bridge.rs——cargo cache warning replay 既有形态维持
-记档）；首调红形态连续零再现计数第 3 轮（S1075 重计起算），
-exited null 零再现维持）。
-锚点面四点实测维持（代码面对 S1075 锚定态零漂移，含修复折
-入面新锚定口径）：自有面对 S897 tip 7da6043d6 维持 **10
-files +1187/-182**；crates/ raw **127** 维持；子帧关键词
-**7 文件** crates/ 零命中维持（解冻条件①观察面 127 口
-径）；全树排除本流 docs 对 18d462de6 实测 **184 files
+5dbc95bdc 即本流 S1077 提交本身（S1077 后零代码变更
+7676dddd4..HEAD 排除本流 docs diff 全空实测复核），树不变口
+径 = 门单腿复跑免 make test 腿（S336 先例）**。
+本轮**首调红形态再现（exited null 家族第 5 例 + S1075 取证
+增强修复首次生效 = 卡挂相位首次精确归因）复跑一调收口 PASS
+33 绿**：首调 09:41:46 启动 09:46:47 收口 EXIT=2 wall ~5min
+离群（起手 load 2.48 运行中兄弟流重型腿入窗 门后 6.29）；run
+1 卡挂被杀（300s ETIMEDOUT→SIGTERM→status null→S1038 不容
+忍分支诚实 FAIL）；S1075 取证增强首次兑现红例相位归因：
+flow 走完 30/33 绿步 + 挂账 FAIL frames.click+evaluate 后于
+**尾段三步（target.attachDetach /
+runtime.releaseObjectGroup / emulation.userAgentOverride）或
+browser.close 收尾段**卡挂 ~270s 直至被杀——家族 5 例卡挂相
+位一致性佐证（S1071/S1075 红例 stdout 均 1236 字节与本例尾
+段同构）；steps-report/determinism-report 维持 S1077 09:40
+陈旧（verify 于 run 1 抛出未写）。
+复跑 09:47:42 启动 09:48:12 落盘 wall ~30s EXIT=0 **PASS 33
+绿 deterministic 双跑 YES**（双 run 均 flow exited 1 正常
+态；expected_green 33 对称差 none、regressions 空、双 run 33
+ok 集机械一致，唯一 failed 同 = 挂账 frames.click+evaluate；
+编译全缓存零 Compiling 行 replay——代码树零变更佐证；尾段
+load 1.74 近净窗；ZW_IPC_VALIDATE=1 在位静默 capture jsonl
+面零写入（五 jsonl mtime 09-12/09-13 全不变实测复核 含红轮
+与复跑轮）；steps-report/determinism-report 新鲜落盘 09:48；
+dead_code warning 维持同形一枚（match_media_to_json，
+crates/engine/src/js_dom_bridge.rs——cargo cache warning
+replay 既有形态维持记档））。
+红形态计数重计（S1075 先例 S1078 重计起算）；exited null 家
+族 5 例 5/5 负载窗内聚集倾向彻底确认，相位归因闭环（尾段收
+尾段卡挂，环境性非代码回归维持：树零变更+编译全缓存+同期 35
+绿轮零再现+S1075 修复自带相位取证每例可归因无需再升级）。
+锚点面四点实测维持（代码面对 S1075 锚定态零漂移）：自有面对
+S897 tip 7da6043d6 维持 **10 files +1187/-182**；crates/
+raw **127** 维持；子帧关键词 **7 文件** crates/ 零命中维持；
+全树排除本流 docs 对 18d462de6 实测 **184 files
 +20428/-1240** 维持。
-门尾树态（tip=7676dddd4 tracked clean）zombie 复测零（前后
-零）、四端口族全 free（前后零监听）、控制面零外来提交。
+门尾树态（tip=5dbc95bdc tracked clean）zombie 复测零（红轮
+后与复跑后均零）、四端口族全 free（前后零监听）、控制面零外
+来提交；本轮门属兄弟流负载窗活跑（第卅七个负载下样本，负载
+下绿色佐证环境归因闭环）。
 M5 定稿收口判定（DC-1~4 依据）不因复验动摇——**goal Done 维持，守成态
-证据经 S1077 门单腿刷新延续**；唯一未清偿义务 = frames.click+evaluate 回填
+证据经 S1078 门单腿刷新（复跑）延续**；唯一未清偿义务 = frames.click+evaluate 回填
 （挂子帧能力解冻，见子帧解冻清单，不阻收口））
 
 ---
@@ -19056,6 +19072,70 @@ M5 定稿收口判定（DC-1~4 依据）不因复验动摇——**goal Done 维�
 
 
 
+
+
+   **S1078 已执行（2026-09-18）静默监测引用轮（引用计数 2/10→
+   3/10，周期锚点=S1075 双腿（门腿 09:21:36 落盘 + make test 腿
+   09:31:27 收口），同 tip 复核 pull 零新提交 tip=5dbc95bdc 即
+   S1077 提交本身（S1077 门单腿复跑后零代码变更
+   7676dddd4..HEAD 排除本流 docs diff 全空实测复核），树不变
+   口径=门单腿复跑免 make test 腿 S336 先例）——**本轮首调红形
+   态再现（exited null 家族第 5 例 + S1075 取证增强修复首次生
+   效=卡挂相位首次精确归因），复跑一调收口 PASS 33 绿**：首调
+   09:41:46 启动 09:46:47 收口 EXIT=2 wall ~5min 离群（起手
+   load 2.48 运行中兄弟流重型腿入窗 门后 load 6.29 衰减中）；
+   run 1 卡挂被杀（execFileSync 300s 超时 ETIMEDOUT→SIGTERM→
+   err.status=null→S1038 不容忍分支诚实 FAIL）；**S1075 取证
+   增强首次兑现红例相位归因**（stdout 尾部 800 字节 dump 落日
+   志）：flow 走完 30/33 绿步（evaluate→fill→keyboard→click→
+   locator→network.events(1006ms)→cookies→dialogs→frames.
+   access→emulation→screenshots→setContent→viewport→page.
+   second.lifecycle→target.getTargets 全 ok）+ 挂账 FAIL
+   frames.click+evaluate（locator.click Timeout 10000ms 既有
+   形态）后于**尾段三步（target.attachDetach /
+   runtime.releaseObjectGroup / emulation.userAgentOverride）
+   或 browser.close 收尾段**卡挂 ~270s 直至 300s 被杀——家族
+   5 例卡挂相位一致性佐证（S1071/S1075 红例 stdout 均 1236 字
+   节 ≈ 连接+版本+~30 步骤行 与本例尾段同构）；取证
+   steps-report/determinism-report 维持 S1077 09:40 陈旧
+   （verify 于 run 1 抛出未写 诚实红形态落盘证据链在案）
+   zombie 零 端口族全 free（红轮后即清）；复跑 09:47:42 启动
+   09:48:12 落盘 wall ~30s EXIT=0 **PASS 33 绿 deterministic
+   双跑 YES**（双 run 均 flow exited 1 正常态 expected_green
+   33 对称差 none regressions 空 run_details 双 run 33 ok 集
+   机械一致 唯一 failed 同=挂账 frames.click+evaluate 编译全
+   缓存零 Compiling 行 replay——代码树对 S1075 锚定态零变更佐
+   证 尾段 load 1.74 近净窗 起手 3.17 衰减）；ZW_IPC_
+   VALIDATE=1 在位静默 capture jsonl 面零写入 #0 复现监测零
+   命中维持（五 jsonl mtime 09-12/09-13 全不变实测复核 跑前
+   跑后 md5 同值 cf9e15a1 含红轮与复跑轮）；steps-report/
+   determinism-report 新鲜落盘 09:48；dead_code warning 维持
+   同形一枚（match_media_to_json crates/engine/src/
+   js_dom_bridge.rs cargo cache warning replay 既有形态维持记
+   档）；红形态计数重计（S1075 先例 S1078 重计起算 首调红形
+   态再现=红例本身 S1079=第 2 轮）；exited null 家族 5 例
+   （S1036 run 2 / S1038 run 1 / S1071 run 2 / S1075 run 1 /
+   S1078 run 1）5/5 负载窗内聚集倾向彻底确认 相位归因闭环
+   （尾段收尾段卡挂 环境性非代码回归维持：树零变更+编译全缓
+   存+同期 35 绿轮零再现+S1075 修复自带相位取证每例可归因
+   无需再升级）；锚点面四点实测维持（代码面对 S1075 锚定态零
+   漂移 含修复折入面）：自有面对 S897 tip 7da6043d6 **10
+   files +1187/-182** 维持 / crates/ raw **127** 维持 / 子帧
+   关键词 **7 文件** crates/ 零命中维持（解冻条件①观察面 127
+   口径 frames.click+evaluate 挂起维持）/ 全树排除本流 docs
+   对 18d462de6 **184 files +20428/-1240** 维持；门尾树态
+   （tip=5dbc95bdc tracked clean）zombie 复测零（红轮后与复跑
+   后均零）四端口族全 free（前后零监听）本门零残留 控制面零
+   外来提交 本轮门属兄弟流负载窗活跑（第卅七个负载下样本 红例
+   窗 load 6.29 复跑窗 1.74 负载下绿色佐证环境归因闭环）——
+   下轮 **S1079 = 4/10 静默监测引用轮**（周期锚点=S1075 双
+   腿），若 S1079 前树代码变化则提前触发双腿刷新（S245→…→
+   S1075 先例链，make test 腿后台跑法），否则按引用轮口径门
+   单腿复跑免 make test 腿（S336 先例），至迟 S1085=10/10 饱
+   和、次轮 S1086 期限轮活跑（双腿活跑口径=门 + make test 后
+   台跑法）；M5 定稿收口判定不因复验动摇 goal Done 维持守成
+   态证据经 S1078 门单腿刷新（复跑）延续 唯一未清偿义务=
+   frames.click+evaluate 回填（挂子帧能力解冻 不阻收口）。
 
    **S1077 已执行（2026-09-18）静默监测引用轮（引用计数 1/10→
    2/10，周期锚点=S1075 双腿（门腿 09:21:36 落盘 + make test 腿
