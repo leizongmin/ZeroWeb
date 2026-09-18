@@ -24211,6 +24211,47 @@ S1200 插记刷新基线精确一致（① 10 files +1187/-182 / ② 137 / ③
    成态证据经 S1206 门单腿刷新延续 唯一未清偿义务=
    frames.click+evaluate 回填（挂子帧能力解冻 不阻收口）。
 
+   **S1206 轮后插记（2026-09-19 push 序列 pull --rebase 实测）**：
+   兄弟流 a96d0109d（rendering-compat **R4501** span-all 族残
+   案归因二连修：spanner margin-bottom 非 trim 路径推进 + 区
+   域平衡片段豁免自身 overflow 裁剪）于 S1206 门收口（01:02:03）
+   之后经 push 序列 pull --rebase 入树（兄弟提交 01:01:23 落
+   窗与我方 push 序列并窗；我方 S1206 提交 3b00379c8 后 rebase
+   于其上 = 6ee9315f9，push a96d0109d..6ee9315f9 fast-forward
+   零冲突 实测复核）——兄弟代码提交 **3 files +17/-1 自身口
+   径**（crates/engine/src/paint/painter/mod.rs +7 + crates/
+   layout-engine/src/multicol.rs +10 代码面 / docs/goal/
+   rendering-compat.md +1 折入），**代码面非空（crates/
+   layout-engine 1 file + engine/paint 1 file）实测复核** →
+   **S1206 门 PASS 覆盖的代码树态 = 3b00379c8，新组合树态 =
+   6ee9315f9 未被门覆盖**；IN_TREE 实测核验（git merge-base
+   --is-ancestor PASS）；工作面归属 = 渲染流域 crates/
+   layout-engine + engine/paint 专属面（S1190/R4499 插记同口
+   径）零碰撞（run-rules §9/§10 归因纪律记档）。锚点面漂移记
+   档（新组合树态 6ee9315f9 对基线口径实测）：② crates/ raw
+   **137 → 138**（R4501 布局腿入集 e67967632..TIP 口径）/ ④
+   全树排除本流 docs **192 files +23450/-1344 → 192 files
+   +23467/-1345**（192 files 维持 = R4501 三文件均既有文件折
+   入零净增文件；行数折入 +17/-1 与自身口径 +17/-1 精确闭合
+   零工件）；① 自有面 **10 files +1187/-182** 维持（headless/
+   + devtools_serve.rs 口径实测复核）/ ③ 子帧关键词 **7 文
+   件** 命中清单 md5 74f58fcf 逐项一致维持（非测试代码零命中
+   解冻条件①观察面 138 口径 frames.click+evaluate 挂起维
+   持）；兄弟提交自述 make test **19,345P/0F** 全绿与本流基线
+   同值 = 零新增用例，make test 全量参考基线 19,345P/0F 维持
+   以 S1207 双腿实测为准。下轮 **S1207 = 树变化刷新轮（双腿
+   活跑口径 = 门 + make test 后台跑法，S1151/S1191/S1201 先
+   例链）**——R4501 代码面入树提前触发双腿刷新（S245→…→
+   S1190→S1191→S1200→S1201 先例链），S1207 双腿绿收口后以
+   S1207 双腿为新周期锚点归零重计（若 S1207 前树再变化则口
+   径不变照跑）；S1207 门单腿活跑时锚点复核以本插记刷新值 ②
+   crates/ raw **138** 与 ④ **192 files +23467/-1345** 为基线
+   （取代 S1200 插记 137/+23450/-1344 值）；send-keys Timeout
+   flake 家族观察延续（第 4 例后若再现同族红例同口径四点归
+   因）；M5 定稿收口判定不因本插记动摇 goal Done 维持守成态
+   证据经 S1207 双腿刷新延续 唯一未清偿义务=frames.click+
+   evaluate 回填（挂子帧能力解冻 不阻收口）。
+
    **S1150 轮后插记（2026-09-18 push 序列 pull --rebase 实测）**：
    兄弟流 4bd4bff44（rendering-compat **R4493** fix(layout-engine)
    R4446 fill 臂 InlineBlock 容器解禁 line-box/block-flow-direction
