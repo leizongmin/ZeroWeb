@@ -24947,6 +24947,29 @@ S1230 首调红后零再现第 5 轮；本轮负载窗升窗活跑（3.31→4.12
 
 
 
+   **S1236 轮后插记（2026-09-19 push 序列 pull --rebase 实测，
+   S898/S1190/S1230 插记先例）**：兄弟流文档维护第十五轮
+   411701741（**纯 docs 提交零代码**——13 文件全 .md：AGENTS/
+   CHANGELOG/README/ROADMAP + apps×2 README + crates/media 与
+   crates/page-runtime README + docs/goal/rendering-compat 与
+   zero-web master.md + docs/specs/runtime-unification + tests
+   ×2 README，+25/-22）于 S1236 复跑收口之后、本流 push 序列
+   pull --rebase 入树（S1236 提交被 rebase 顶到其上，2e8e81990
+   → 482413049 推远）——S1236 门复跑绿覆盖树态 = 023301dbf 组
+   合态，main tip 组合态已超出；**代码树（Rust 面）零变更 →
+   S1237 维持门单腿口径免 make test 腿（S1230 插记 docs 变更
+   先例：基线插记刷新 + 引用轮单腿延续）**，引用计数维持 S1230
+   周期锚点 7/10；S1237 锚点预期（本插记时点 482413049 实
+   测）：①自有面对 S897 tip 7da6043d6 **10 files +1187/-182**
+   维持 / crates/ raw **142→143**（+1 = 411701741 触达
+   crates/*/README.md 折入 e67967632..TIP 计数口径）/ 子帧关键
+   词 **7 文件** md5 74f58fcf 维持（.rs 面零变更）/ 全树排除本
+   流 docs 对 18d462de6 **192 files +23804/-1346 → 200 files
+   +23824/-1363**（411701741 折入累计 diff 集）；S1237 轮按上
+   述插记刷新基线逐项复核（② 143 / ④ 200 files +23824/-1363
+   首轮按新基线 PASS 口径同 S1231 轮 ④ 复核），锚点面基线刷新
+   为插记值（下轮插记后即新基线）。
+
    **S1235 已执行（2026-09-19）静默监测引用轮（引用计数 5/10，周
    期锚点 = S1230 双腿（门腿复跑绿 04:08:53 落盘 + make test 腿
    04:18:03 收口），同 tip 复核 pull 零新提交 tip = 64a8c14cb 即
