@@ -21893,6 +21893,32 @@ evaluate 回填（挂子帧能力解冻，见子帧解冻清单，不阻收口�
    续 唯一未清偿义务=frames.click+evaluate 回填（挂子帧能
    力解冻 不阻收口）。
 
+   **S1162 轮后插记（2026-09-18 push 序列 pull --rebase 实
+   测）**：兄弟流 948ac9c47（rendering-compat **R4498**
+   spanner 区域列分割实现蓝图定谳，**纯 docs 面**
+   docs/goal/rendering-compat.md 1 file +1/-1，零
+   Rust/Cargo/Makefile 面实测复核）于 S1162 门腿落盘
+   （20:52:39）之后经 push 序列 pull --rebase 入树（我方
+   S1162 提交 rebase 后 84001bfc3，push 948ac9c47..84001bfc3
+   fast-forward 零冲突 实测复核）——docs-only 归因不入刷新
+   面（S349/S846/S848/S853/S854/S835 及 S1160 插记 R4496/
+   R4497 同款先例），S1163 维持引用轮口径（门单腿复跑免
+   make test 腿 S336 先例）；锚点面四点实测维持（新树态
+   84001bfc3 对 S1160 锚定态零漂移 全部 = S1160 插记终态基
+   线精确一致 本插记时点实测复核）：④ 全树排除本流 docs
+   对 18d462de6 **187 files +21209/-1341** 维持（R4498
+   +1/-1 行改写折入净零 零净增文件，R4497 轮末插记同款）/
+   ② crates/ raw **135** 维持 / ① 自有面 **10 files
+   +1187/-182** 维持 / ③ 子帧关键词 **7 文件** md5 74f58fcf
+   维持；S1162 门腿 PASS 覆盖的代码树态 = f5636df62（S1161
+   提交组合态）实质不变——tracked 代码树（Rust/Cargo/
+   Makefile 面）与 S1162 门腿覆盖态一致，引用计数维持
+   S1160 双腿周期锚点顺延（下轮 S1163 = 3/10）；make test
+   全量参考基线 19,344P/0F 不受影响（docs-only 零测试面）；
+   M5 定稿收口判定不因本插记动摇 goal Done 维持守成态证据
+   经 S1163 门单腿刷新延续 唯一未清偿义务=frames.click+
+   evaluate 回填（挂子帧能力解冻 不阻收口）。
+
    **S1150 轮后插记（2026-09-18 push 序列 pull --rebase 实测）**：
    兄弟流 4bd4bff44（rendering-compat **R4493** fix(layout-engine)
    R4446 fill 臂 InlineBlock 容器解禁 line-box/block-flow-direction
