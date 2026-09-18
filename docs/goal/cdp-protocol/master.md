@@ -24404,6 +24404,46 @@ S1206 插记刷新基线精确一致（① 10 files +1187/-182 / ② 138 / ③
    S1209 门单腿刷新延续 唯一未清偿义务=frames.click+evaluate
    回填（挂子帧能力解冻 不阻收口）。
 
+   **S1209 轮后插记（2026-09-19 push 序列 pull --rebase 实测）**：
+   兄弟流 94dce9ad6（rendering-compat **R4502** span-all-003
+   翻绿 5.25→0.00：multicol 祖先链高回收 R4500 延续腿）于
+   S1209 门收口（01:29:01）之后经 push 序列 pull --rebase 入
+   树（兄弟提交落窗与我方 push 序列并窗；我方 S1209 提交
+   e4b17f943 后 rebase 于其上 = c48d824e6，push
+   94dce9ad6..c48d824e6 fast-forward 零冲突 实测复核）——兄
+   弟代码提交 **3 files +69/-0 自身口径**（crates/layout-
+   engine/src/engine.rs +4 + crates/layout-engine/src/
+   multicol.rs +64 代码面 / docs/goal/rendering-compat.md +1
+   折入），**代码面非空（crates/layout-engine 2 files）实测
+   复核** → **S1209 门 PASS 覆盖的代码树态 = e4b17f943，新组
+   合树态 = c48d824e6 未被门覆盖**；IN_TREE 实测核验（git
+   merge-base --is-ancestor PASS）；工作面归属 = 渲染流域
+   crates/layout-engine 专属面 零碰撞（run-rules §9/§10 归因
+   纪律记档）。锚点面漂移记档（新组合树态 c48d824e6 对基线口
+   径实测）：② crates/ raw **138 → 139**（R4502 布局腿入集
+   e67967632..TIP 口径）/ ④ 全树排除本流 docs **192 files
+   +23467/-1345 → 192 files +23536/-1345**（192 files 维持 =
+   R4502 三文件均既有文件折入零净增文件；行数折入 +69/-0 与
+   自身口径 +69/-0 精确闭合零工件）；① 自有面 **10 files
+   +1187/-182** 维持（headless/ + devtools_serve.rs 口径实测
+   复核）/ ③ 子帧关键词 **7 文件** 命中清单 md5 74f58fcf 逐
+   项一致维持（非测试代码零命中 解冻条件①观察面 139 口径
+   frames.click+evaluate 挂起维持）；兄弟提交自述 make test
+   **19,345P/0F** 全绿与本流基线同值 = 零新增用例，make test
+   全量参考基线 19,345P/0F 维持以 S1210 双腿实测为准。下轮
+   **S1210 = 树变化刷新轮（双腿活跑口径 = 门 + make test 后
+   台跑法，S1151/S1191/S1201/S1207 先例链）**——R4502 代码面
+   入树提前触发双腿刷新（S245→…→S1190→S1191→S1200→S1201→
+   S1207 先例链），S1210 双腿绿收口后以 S1210 双腿为新周期锚
+   点归零重计（若 S1210 前树再变化则口径不变照跑）；S1210 门
+   单腿活跑时锚点复核以本插记刷新值 ② crates/ raw **139** 与
+   ④ **192 files +23536/-1345** 为基线（取代 S1206 插记
+   138/+23467/-1345 值）；send-keys Timeout flake 家族观察延
+   续（第 4 例后若再现同族红例同口径四点归因）；M5 定稿收口
+   判定不因本插记动摇 goal Done 维持守成态证据经 S1210 双腿
+   刷新延续 唯一未清偿义务=frames.click+evaluate 回填（挂子
+   帧能力解冻 不阻收口）。
+
    **S1150 轮后插记（2026-09-18 push 序列 pull --rebase 实测）**：
    兄弟流 4bd4bff44（rendering-compat **R4493** fix(layout-engine)
    R4446 fill 臂 InlineBlock 容器解禁 line-box/block-flow-direction
