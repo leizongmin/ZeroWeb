@@ -557,10 +557,18 @@ pub(crate) fn shrink_inline_blocks_to_content(
             // block-size 旋转类比：vertical 容器物理宽 = Σ 流内子 margin-box 块轴
             // extent；taffy 对 orthogonal 子给出的正是 Σ 子 border-box 宽初值）。旧回落
             // 单行字宽把 taffy 已正确的 120（Σ span 列宽）收缩成 20 → 父 IFC 原子步进
-            // 同缩 → 兄弟盒横向重叠。viv（父亦 vertical）不适用（行内尺寸语义经交换帧
-            // 天然正确，子列和回落会误改几何：inline-block-alignment-slr-009 A/B 实证）。
+            // 同缩 → 兄弟盒横向重叠。
+            // R4492：Σ 参与**扩展到 viv**（父亦 vertical）但**排除 sideways-lr**：
+            // inline-block-alignment 家族全谱 A/B 实证——vrl（002/004/006）、vlr
+            //（003/005/007）、sideways-rl（srl-008）七案由 viv Σ（.max 修正 under-measure
+            // 的列流行测）翻绿 0.00-2.66%，唯独 sideways-lr（slr-009）翻红 6.06%——
+            // slr 域列流/字形测量未接（R4443 谱系），其列宽参与信不过，域修复前排除。
             let orthogonal = matches!(parent_wm, WritingModeValue::HorizontalTb);
-            let children_block_extent: f32 = if orthogonal {
+            let viv_sigma_eligible = !orthogonal
+                && !(box_node.writing_mode_sideways_lr
+                    && matches!(box_node.writing_mode, WritingModeValue::VerticalLr));
+            let sigma_eligible = orthogonal || viv_sigma_eligible;
+            let children_block_extent: f32 = if sigma_eligible {
                 box_node
                     .children
                     .iter()
@@ -573,12 +581,16 @@ pub(crate) fn shrink_inline_blocks_to_content(
                 0.0
             };
             // R4491：total_height 退化（=0：竖排 IFC 对块级子的行高语义未接——slr-054
-            // 探针实锤 lines=4 block_ext=0）时才以 Σ 子列宽替代；有效行测量（真 inline
-            // 内容，inline-block-alignment-002..007 族）仍单信 total_height（max 会被子
-            // 和覆盖正确行测 → 12.38% 回归实证）。
+            // 探针实锤 lines=4 block_ext=0）时以 Σ 子列宽替代；R4492：Σ 合格盒（见上）
+            // 非空行臂取 max（viv 行测 under-measure 修正，alignment 七案收割）；
+            // slr 域单信 total_height（A/B：max 误伤 6.06%）。
             let col_total = col_ctx.total_height();
             let block_extent = if col_total > 0.5 {
-                col_total
+                if sigma_eligible {
+                    col_total.max(children_block_extent)
+                } else {
+                    col_total
+                }
             } else if children_block_extent > 0.5 {
                 children_block_extent
             } else if col_ctx.lines.is_empty() {
