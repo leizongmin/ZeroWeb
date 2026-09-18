@@ -22300,6 +22300,37 @@ evaluate 回填（挂子帧能力解冻，见子帧解冻清单，不阻收口�
    偿义务=frames.click+evaluate 回填（挂子帧能力解冻 不阻
    收口）。
 
+   **S1170 轮后插记（2026-09-18 push 序列 pull --rebase 实测）**：
+   兄弟流/watchdog 面两提交于 S1170 双腿收口（make test 腿
+   21:30:11）之后经 push 序列 pull --rebase 入树：181612ac7
+   （chore(perf) bot 基线折入：docs/perf/baselines +
+   docs/perf/trends 三文件 +1846/-0，其中新增 perf JSON
+   基线 2 文件 + trend CSV 既有文件折入）+ 647c3c4fb
+   （docs(goal) CI-GUARD 第三十三轮：docs/goal/zero-web/
+   master.md 1 file +2/-0）——**两枚均 docs/perf 面 零
+   Rust/Cargo/Makefile 触碰 实测复核 → docs-only 归因不入
+   刷新面（S349/S846/S848/S853/S854/S835 先例链）**，两枚
+   IN_TREE 实测核验（git merge-base --is-ancestor 双
+   PASS），我方 S1170 提交 rebase 于其上（7aed8de4a →
+   480a56d4b），push 647c3c4fb..480a56d4b fast-forward 零
+   冲突实测复核——**S1170 双腿 PASS 覆盖的代码树态 =
+   624aef3d0 实质不变**（tracked 代码树 Rust/Cargo/Makefile
+   面与双腿覆盖态一致），引用计数维持 S1170 双腿新周期锚点
+   顺延（下轮 S1171 = 1/10）。锚点面漂移记档（新组合树态
+   480a56d4b 对 18d462de6/TIP 口径实测）：④ 全树排除本流
+   docs **187 files +21209/-1341 → 189 files +23057/-1341**
+   （+2 files = perf JSON 基线 2 新文件入集；行数折入
+   +1848 与 181612ac7 +1846 + 647c3c4fb +2 精确闭合）、②
+   crates/ raw 维持 **135**（实测复核）、① 自有面 **10 files
+   +1187/-182** 维持（实测复核）、③ 子帧关键词 **7 文件**
+   md5 74f58fcf 维持（docs 腿零 Rust 面 不变佐证）；下轮
+   S1171 门单腿活跑时锚点复核以本插记刷新值 **189 files
+   +23057/-1341** 与 crates/ raw **135** 为基线（取代
+   S1170 header 内 187 files +21209/-1341 值）；make test
+   全量参考基线 19,344P/0F 不受影响（docs-only 零测试
+   面）；M5 定稿收口判定不因本插记动摇 goal Done 维持守成
+   态证据经 S1171 门单腿刷新延续。
+
    **S1150 轮后插记（2026-09-18 push 序列 pull --rebase 实测）**：
    兄弟流 4bd4bff44（rendering-compat **R4493** fix(layout-engine)
    R4446 fill 臂 InlineBlock 容器解禁 line-box/block-flow-direction
