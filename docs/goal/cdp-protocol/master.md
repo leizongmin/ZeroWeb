@@ -19933,6 +19933,29 @@ evaluate 回填（挂子帧能力解冻，见子帧解冻清单，不阻收口�
    偿义务=frames.click+evaluate 回填（挂子帧能力解冻 不阻
    收口）。
 
+   **S1120 轮后插记（2026-09-18 push 序列 pull --rebase 实
+   测）**：兄弟流 46f735a20（rendering-compat R4490 轮末插
+   记二 slr-054 根因精化，docs/goal/rendering-compat.md 单
+   文件 +1/-1 行改写 **docs-only 零代码面**）于 S1120 双腿
+   收口（make test 腿 15:55:15）之后经 push 序列 pull
+   --rebase 入树（我方 S1120 提交 rebase 于其上 push
+   46f735a20..e5f036742 fast-forward 零冲突 实测复核）——
+   **docs-only 归因不入刷新面（S683/S835 先例口径），S1121
+   维持引用轮口径（门单腿复跑免 make test 腿 S336 先例）**
+   ，仅记锚点面值复核：rendering-compat.md 在 ④ 集内 +1/-1
+   行改写零净漂移，④ 精确维持 **187 files +21080/-1336**
+   （本插记时点实测）；① 10 files +1187/-182 / ② crates/
+   raw 131 / ③ 子帧关键词 7 文件零命中 全维持（实测复
+   核）；S1120 双腿覆盖树态代码面实质不变，引用计数维持
+   S1120 双腿新周期锚点顺延（下轮 S1121 = 1/10），下轮门
+   单腿活跑锚点复核以 ④ = 187 files +21080/-1336 为基
+   线；make test 全量参考基线 19,344P/0F 不受影响
+   （docs-only 零测试面）；门尾树态（tip=e5f036742 tracked
+   clean）zombie 复测零 四端口族全 free 控制面零外来提交
+   （本插记时点实测）；多步连锁 450s 新背板观察条款与看
+   门狗 FAIL 观察条款延续；M5 定稿收口判定不因本插记动摇
+   goal Done 维持守成态证据经 S1120 双腿刷新延续。
+
    **S1106 轮后插记（2026-09-18 push 序列 pull --rebase 实测）**：
    兄弟流 fb5133ff7（rendering-compat R4488 登记腿）于 S1106 门
    收口（12:56:44）之后经 push 序列 pull --rebase 入树（我方
