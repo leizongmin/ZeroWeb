@@ -8,7 +8,7 @@
 
 ## 主要功能
 
-- **容器解析与视频解码** — `VideoDecoder::open_media` 按容器/编码嗅探自路由（webm：V_VP9 → `rusty_vp9`、V_AV1 → `decode-av1` feature 的 `Av1Decoder`；mp4：avcC + 长度前缀 NALU 转 Annex-B 喂 `decode-h264` feature 的 OpenH264），另有 `open_webm` / `open_webm_vp9` 显式入口；`next_frame()` 逐帧产出 `DecodedVideoFrame`（pts_ms + RGBA），支持 `duration_ms()` 与 `seek_to_ms()`（mp4 前向回退 precise-seek：重建解码器前向解码至目标 PTS）
+- **容器解析与视频解码** — `VideoTrackDecoder::open_media` 按容器/编码嗅探自路由（webm：V_VP9 → `rusty_vp9`、V_AV1 → `decode-av1` feature 的 `Av1Decoder`；mp4：avcC + 长度前缀 NALU 转 Annex-B 喂 `decode-h264` feature 的 OpenH264），另有 `VideoDecoder` 的 `open_webm` / `open_webm_vp9` 显式入口；`next_frame()` 逐帧产出 `DecodedVideoFrame`（pts_ms + RGBA），支持 `duration_ms()` 与 `seek_to_ms()`（mp4 前向回退 precise-seek：重建解码器前向解码至目标 PTS）
 - **YUV→RGBA 转换** — I420 平面转换（VP9/AV1/H.264 共用单点实现，`ColorSpace` / `ColorMatrix` BT.601/709 矩阵选择）
 - **播放驱动** — `VideoPlayer`（实现 `VideoClock` trait）：play/pause/ended + currentTime 真值推进，`tick(now_ms)` / `sync_to_media_time` 按单调时钟产出应展示帧（落后多帧时快进到最新可展示帧）；调用方注入时钟保证可测试性，生产侧挂 rAF event loop（renderer 播放泵）
 - **音频解码** — `AudioDecoder`（symphonia：mp3 + ogg/vorbis + mp4/AAC LC → f32 交错 PCM）、`open_ogg_opus`（RFC 7845 容器 + 纯 Rust RFC 6716/8251 位流解码）、`open_webm_audio_track` / `open_webm_opus_audio_track`（webm 音轨重封装 OGG 页流后同源解码）；mp4 伴生 AAC 轨经 registry 播放懒建（webm 双形态失败后试 mp4 probe，`WebmAudioTrackKind::Mp4Aac` 同输出契约）
@@ -20,10 +20,10 @@
 ## 使用示例
 
 ```rust
-use zero_media::{VideoDecoder, VideoPlayer, AudioDecoder, Mixer, NullSink};
+use zero_media::{VideoTrackDecoder, VideoPlayer, AudioDecoder, Mixer, NullSink};
 
 // 视频解码：按容器/编码嗅探自路由（webm-VP9/AV1、mp4-H.264），逐帧产出 RGBA
-let mut decoder = VideoDecoder::open_media(&media_bytes)?;
+let mut decoder = VideoTrackDecoder::open_media(&media_bytes)?;
 if let Some(duration) = decoder.duration_ms() {
     println!("时长 {} ms", duration);
 }
@@ -32,7 +32,7 @@ while let Some(frame) = decoder.next_frame()? {
 }
 
 // 播放驱动：调用方注入单调毫秒时钟（生产侧挂 rAF event loop）
-let mut player = VideoPlayer::new(VideoDecoder::open_media(&media_bytes)?);
+let mut player = VideoPlayer::new(VideoTrackDecoder::open_media(&media_bytes)?);
 player.play(now_ms);
 if let Some(frame) = player.tick(now_ms + 16)? {
     // 到达展示时间的帧

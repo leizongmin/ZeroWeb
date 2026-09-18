@@ -4,7 +4,7 @@
 
 ## 概述
 
-`ZeroWeb WebDriver` (`zero-webdriver`) 是 ZeroWeb 的 WebDriver 服务（W3C WebDriver 协议），提供浏览器自动化测试的 HTTP 接口。从 M0 骨架的 9 endpoint 扩齐到 34 endpoint（webdriver goal DC-1~4 ✅，2026-09-08 收口归档，见 `docs/goal/archive/webdriver/`；screenshot 续作 webdriver-screenshot goal，2026-09-09 收口归档，见 `docs/goal/archive/webdriver-screenshot/`），覆盖 session 管理、导航、超时、元素查找与状态、脚本执行、页面源码、窗口族与视口截图。每个 session 持有独立 `zero-renderer` 子进程，页面操作经 automation IPC 在 live document 上执行。HTTP 服务保持零依赖、单线程、loopback-only，从 `--port` 参数指定的本机端口提供服务。CI 以 v8/quickjs 双 feature 矩阵接线；10 个 HTTP 全链路集成测试（真实 TCP + 真实 renderer 子进程）+ 单元测试全绿。
+`ZeroWeb WebDriver` (`zero-webdriver`) 是 ZeroWeb 的 WebDriver 服务（W3C WebDriver 协议），提供浏览器自动化测试的 HTTP 接口。从 M0 骨架的 9 endpoint 扩齐到 34 endpoint（webdriver goal DC-1~4 ✅，2026-09-08 收口归档，见 `docs/goal/archive/webdriver/`；screenshot 续作 webdriver-screenshot goal，2026-09-09 收口归档，见 `docs/goal/archive/webdriver-screenshot/`），覆盖 session 管理、导航、超时、元素查找与状态、脚本执行、页面源码、窗口族与视口截图。每个 session 持有独立 `zero-renderer` 子进程，页面操作经 automation IPC 在 live document 上执行。HTTP 服务保持零依赖、单线程、loopback-only，从 `--port` 参数指定的本机端口提供服务。CI 以 v8/quickjs 双 feature 矩阵接线；11 个 HTTP 全链路集成测试（真实 TCP + 真实 renderer 子进程）+ 单元测试全绿。
 
 协议参考：https://w3c.github.io/webdriver/#protocol
 

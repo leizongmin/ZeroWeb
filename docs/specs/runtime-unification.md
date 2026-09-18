@@ -58,7 +58,7 @@
 ## 5. 决策记录
 
 - **WPT 纳入统一**：用户在 `/loop` 中明确要求 WPT/TabWorker/renderer 全部调用同一套逻辑，覆盖此前"保留 WPT engine-direct 门"的建议。执行时带守卫（见 T6）：保留一个纯内联 html+css 的确定性 reftest 基线，避免 async/脚本/字体方差放大 DC-14 假通过。
-- **TextMeasureContext 暂不并入**：字体度量（`crates/engine/text_metrics.rs`、`layout-engine/inline/text_metrics.rs`）是独立基础设施（R223/R225/R227 谱系），不与运行时统一绑死，另案。
+- **TextMeasureContext 暂不并入**：字体度量（`crates/engine/src/text_metrics.rs`、`crates/layout-engine/src/inline/text_metrics.rs`）是独立基础设施（R223/R225/R227 谱系），不与运行时统一绑死，另案。
 - **先删后建**：T2 是删除平行副本而非新建抽象；新 crate 只在 trait 确需跨 crate 共享家时才建（T1 评估）。
 
 ## 6. 约束
@@ -105,11 +105,11 @@ WebView API 已就绪：renderer 所需 ~15 个 pipeline 访问器中 WebView �
 - **B3-5 viewport/color-scheme**：`handle_set_viewport` → `wv.resize` + republish；`handle_set_color_scheme` → `wv.set_prefers_color_scheme` + republish。
 - **B3-6 删平行副本**：`apps/renderer/src/async_load.rs`（`RendererPageLoad`）、`page_scripts.rs`、`text_metrics.rs`、`paint_export.rs` 大部；移除 `self.pipeline` 字段。renderer 完全经 WebView → **三路径共享同一 loader（统一达成）**。
 
-**验证缺口（须补才能消回归风险）**：renderer 是多进程子进程，session 内只能 `cargo build`/`test`/clippy + `runtime_conformance`（只测 engine-direct≡WebView，不测 IPC 子进程）。B3 后须加 **headless multiprocess smoke**（spawn `zero-renderer` + 喂 HTML + 抓 `ViewPainted` 帧端到端比对）——`tests/integration/multi_process.rs` 或可扩展。无此 smoke，生产 renderer 回归无法捕捉。
+**验证缺口（须补才能消回归风险）**：renderer 是多进程子进程，session 内只能 `cargo build`/`test`/clippy + `runtime_conformance`（只测 engine-direct≡WebView，不测 IPC 子进程）。B3 后须加 **headless multiprocess smoke**（spawn `zero-renderer` + 喂 HTML + 抓 `ViewPainted` 帧端到端比对）——`tests/integration/src/multi_process.rs` 或可扩展。无此 smoke，生产 renderer 回归无法捕捉。
 
 **执行建议**：greenlight 后在**干净 worktree** 集中重写 → 全量 `cargo test --workspace` + headless smoke 通过 → 再合入 `feat/runtime-unification`。
 
-**进度（R10）**：B3-2 load 机制已 in-process 验证（`tests/integration/b3_load_mechanism`，commit `242ce907`，2 用例过：自包含 HTML drain 完成渲染 + 外链 CSS 经 `BlockingFetchHost` 抓取应用后渲染）。**lib 层 load 路径有回归门**。剩余风险集中在 renderer 的 WIRING（`run_staged_load`/publish/脚本/viewport 的 main.rs 胶水 + split-borrow）——renderer 是 bin，wiring 无单测覆盖；要安全做 B3，须先把 `RendererRuntime` 的 IPC plumbing 泛化（构造时接收 transport 对而非硬编码 stdin/stdout）使其 in-process 可测，或补子进程 smoke。这是 B3 重写前的前置。
+**进度（R10）**：B3-2 load 机制已 in-process 验证（`tests/integration/src/b3_load_mechanism.rs`，commit `242ce907`，2 用例过：自包含 HTML drain 完成渲染 + 外链 CSS 经 `BlockingFetchHost` 抓取应用后渲染）。**lib 层 load 路径有回归门**。剩余风险集中在 renderer 的 WIRING（`run_staged_load`/publish/脚本/viewport 的 main.rs 胶水 + split-borrow）——renderer 是 bin，wiring 无单测覆盖；要安全做 B3，须先把 `RendererRuntime` 的 IPC plumbing 泛化（构造时接收 transport 对而非硬编码 stdin/stdout）使其 in-process 可测，或补子进程 smoke。这是 B3 重写前的前置。
 - **2026-06-27 R14 全部任务完成（T4/T5/T6 收尾）**：
   - **T6**（`1ebd667a`）：wpt-runner 新增 `render_test_html_via_runtime`（经 WebView 共享运行时渲染）+ `runtime_path_tests` 实证 ≡ engine-direct；reftest 确定性门保留 engine-direct。三路径现在都能调用共享页面运行时。
   - **T5**（`4d554265`）：zero-page-runtime 新增 `FrameModel { viewport, document_height, primitives, hit_test }` 统一帧契约；renderer `publish_render_with_layout` 改收 `&FrameModel`（去 `too_many_arguments`）。

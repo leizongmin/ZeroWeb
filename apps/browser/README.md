@@ -40,7 +40,7 @@ zero-browser
 ├── paint_ipc.rs         — compositor 绘制帧导入与呈现（经 `zero-paint-convert` 转换为渲染图元）
 ├── process_backend.rs   — renderer/image-decoder 子进程管理
 ├── fetch_proxy.rs       — 页面网络请求代理（renderer IPC → 浏览器网络栈）
-├── headless.rs          — headless 调试模式（renderer IPC 驱动）
+├── headless/            — headless 调试模式（session/discovery/protocol/security + CDP devtools 服务与 domains，renderer IPC 驱动）
 ├── tab_manager.rs       — 标签页状态管理
 ├── tab_snapshot.rs      — 页面快照/元数据（标题、favicon、缩略图）
 ├── favicon_fetch.rs     — favicon 抓取

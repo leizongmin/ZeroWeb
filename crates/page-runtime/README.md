@@ -21,6 +21,7 @@
 - **`html_actions`** — `HtmlActionPlan` / `HtmlUserAction` / `PageEffect` 等 HTML 用户动作的计划、执行与副作用（导航 / 聚焦 / 表单提交）
 - **`cache_storage_host`** — Cache API 宿主桥接契约（SW / 页面两侧共用的 `caches` 存储 host 面）
 - **`indexed_db_host`** — IndexedDB 宿主桥接契约（factory schema / 事务 wire / cursor stepping）
+- **`opfs_host`** — `__zw_opfs` wire 请求 dispatch（`opfs_handler`，基于 zero-storage opfs 模块：文件/目录/流式写，路径段数组 + JSON wire 契约）
 - **`service_worker_manager` / `service_worker_registration`** — Service Worker 管理器与注册表投影（claim / controller / update）
 
 ## 使用示例

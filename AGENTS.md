@@ -98,7 +98,7 @@
 - 不要将本机目录结构、用户名、主机名写入代码或配置中。
 - 日志和错误消息中若需引用路径，使用相对于项目根目录的路径。
 
-原因：硬编码绝对路径在其他机器/环境中会失效，且可能泄漏用户名、目录结构等敏感信息到公开仓库。（本仓曾因硬编码私有代理和绝对路径触发 SL-008/SL-010 修复，见 commit `58e74ac8`。）
+原因：硬编码绝对路径在其他机器/环境中会失效，且可能泄漏用户名、目录结构等敏感信息到公开仓库。（本仓曾因硬编码私有代理和绝对路径触发 SL-008/SL-010 修复，见 commit `1bb7c6ca6`。）
 
 ### 准则让步
 
@@ -141,7 +141,7 @@ ZeroWeb — 用 Rust 构建的跨平台浏览器。两个交付物：
 - 语言：Rust
 - 格式化工具：`rustfmt`（`cargo fmt`）
 - 代码检查：`clippy`（`cargo clippy --workspace --all-targets -- -D warnings`，CI 强制）
-- CI：GitHub Actions — 在 ubuntu/macos/windows 上运行 cargo check、clippy（deny warnings）、test、build
+- CI：GitHub Actions — 在 ubuntu/macos/windows 上运行 cargo check、clippy（deny warnings）、test、build（macos-x86_64 仅 check/clippy/build，跳过测试执行）
 - 文档注释：公共 API 必须有 `///` 文档注释
 - 日志：使用 `tracing` crate，不使用 `println!`
 - **规范驱动注释（第三轮调研建议 #2，2026-08-07）**：实现 web 规范行为（HTML/CSS/DOM/JS API 语义）处，必须添加对应规范链接注释（如 `// https://html.spec.whatwg.org/#xxx`、`// https://drafts.csswg.org/css-xxx/`）；规范算法的未实现步骤标 `// FIXME:`；优化路径标 `// OPTIMIZATION:` 并说明理由。依据：Ladybird 全库 4,750 处 spec 链接注释是 90%+ WPT 的代码层基石（调研报告 §6.3 质量文化注记），规范链接同时是 AI 生成代码时的锚点
