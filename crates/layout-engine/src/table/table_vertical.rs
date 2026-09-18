@@ -154,6 +154,12 @@ pub(super) fn position_cells_vertical(
             let mut max_w = 0.0f32;
             if let Some(rb) = get_row_box(table_box, row) {
                 for cell in &row.cells {
+                    // R4480：rowspan cell 整体跳过——其内容块轴 extent 跨行（span 合成），
+                    // 不得计入单行行厚；taffy junk 宽（grow 对 rowspan 恒回 cb.width）也
+                    // 不得污染 max（vrl-006 row3 实证）。
+                    if cell.rowspan > 1 {
+                        continue;
+                    }
                     // R4470：bare-row 匿名 cell = 行盒自身（含 rg 嵌套与默认路径统一走
                     // get_cell_box 的 row_self_cell 通道）。
                     let cell_box = crate::table_types::get_cell_box(rb, cell);
@@ -192,6 +198,20 @@ pub(super) fn position_cells_vertical(
 
     // 行沿 x 迭代：vertical-rl 从右到左（首行最右），vertical-lr 从左到右（首行最左）。
     let mut cur_block = perim_block; // vertical-lr 起始
+    // R4480：预计算每行 x 位（相对 table content box）——rowspan cell 跨行 x span
+    // 需引用后继行位（主循环逐行推进时后行位尚未算出）。
+    let row_x_list: Vec<f32> = {
+        let mut xs = Vec::with_capacity(grid.rows.len());
+        let mut cur = perim_block;
+        for (row_idx, _row) in grid.rows.iter().enumerate() {
+            let sz = row_block_sizes[row_idx];
+            xs.push(if is_rl { table_block_extent - cur - sz } else { cur });
+            if !grid.collapsed_rows.get(row_idx).copied().unwrap_or(false) {
+                cur += sz + spacing_y;
+            }
+        }
+        xs
+    };
     // R4479：行组盒转置 span 收集（rg_idx in table_box.children → (min row_x, max 右缘)）。
     let mut group_spans: HashMap<usize, (f32, f32)> = HashMap::new();
     for (row_idx, row) in grid.rows.iter().enumerate() {
@@ -235,7 +255,22 @@ pub(super) fn position_cells_vertical(
 
         // cell 沿 y 迭代：起始 y = 上周界，每个 cell 后 += col_width + cell_gap。
         let mut cell_y = perim_inline;
+        let mut prev_col_end = 0usize;
         for cell in &row.cells {
+            // R4480：被上游行 rowspan cell 占用的列槽不落本行 cell——y 游标补推被占
+            // 列宽 + 列间 gap（vrl-006 row4 col2 实证：占位列不补推则 cell 落 col1 位）。
+            // 折叠列不推（与 cell 推进口径对称）。
+            for (col, &w) in final_col_widths
+                .iter()
+                .enumerate()
+                .take(cell.col_start.min(final_col_widths.len()))
+                .skip(prev_col_end)
+            {
+                if !grid.collapsed_cols.get(col).copied().unwrap_or(false) {
+                    cell_y += w + spacing_x;
+                }
+            }
+            prev_col_end = cell.col_end;
             let cell_box = if let Some(rg_idx) = cell.parent_rg_idx {
                 get_row_box_mut(table_box, row)
                     .and_then(|rb| rb.children.get_mut(rg_idx))
@@ -303,6 +338,25 @@ pub(super) fn position_cells_vertical(
             cell_box.y = cell_y + cell_rel_dy;
             cell_box.width = row_block_size; // cell 铺满列 x 宽
             cell_box.height = cell_h; // cell 沿 y 高 = 列宽
+
+            // R4480：rowspan cell 块轴（x）跨行延展——x span = 跨的各行位区间（含行间
+            // gap），width = 区间右缘 − 左缘，x 相对宿主行盒（行 x 已含行位）。CSS Tables
+            // §17.5.1：spanning cell 拉伸覆盖跨行轨道（轨道厚由本行其余 cell 决定，
+            // spanning cell 内容不反噬单行——上方 row_block_sizes 已跳过）。坐标换算：
+            // cell abs x = row.x + cell.x = (row_x+rel_dx) + (span_left − row_x) = span_left+rel_dx。
+            if cell.rowspan > 1 {
+                let last = (row_idx + cell.rowspan).min(grid.rows.len());
+                let mut span_left = f32::MAX;
+                let mut span_right = f32::MIN;
+                for i in row_idx..last {
+                    span_left = span_left.min(row_x_list[i]);
+                    span_right = span_right.max(row_x_list[i] + row_block_sizes[i]);
+                }
+                if span_right > span_left {
+                    cell_box.x = span_left - row_x_list[row_idx] + cell_rel_dx;
+                    cell_box.width = span_right - span_left;
+                }
+            }
 
             // 同步 content_width/height（paint 用）。
             cell_box.content_width = (cell_box.width

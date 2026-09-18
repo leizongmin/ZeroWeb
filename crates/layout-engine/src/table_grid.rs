@@ -45,6 +45,32 @@ fn is_table_internal_display(d: &DisplayValue) -> bool {
     )
 }
 
+/// R4480：rowspan 网格占位——本行落位后的簿记。覆盖中的列剩余行数 −1（清 0 移除），
+/// 本行新 rowspan>1 cell 以 (col_start, rowspan−1) 入账（CSS Tables §17.5.1 网格模型：
+/// spanning cell 在其覆盖的后继行继续占位）。vertical-gated（horizontal 维持现状零回归）。
+fn update_rowspan_occupancy(occupied: &mut Vec<(usize, usize)>, row: &TableRow, vertical: bool) {
+    if !vertical {
+        return;
+    }
+    for e in occupied.iter_mut() {
+        e.1 = e.1.saturating_sub(1);
+    }
+    occupied.retain(|(_, r)| *r > 0);
+    for c in &row.cells {
+        if c.rowspan > 1 {
+            occupied.push((c.col_start, c.rowspan - 1));
+        }
+    }
+}
+
+/// R4480：当前行须跳过的被占列集（剩余覆盖行数 > 0 的列）。
+fn blocked_cols_of(occupied: &[(usize, usize)], vertical: bool) -> Vec<usize> {
+    if !vertical {
+        return Vec::new();
+    }
+    occupied.iter().filter(|(_, r)| *r > 0).map(|(c, _)| *c).collect()
+}
+
 pub(crate) fn build_grid(
     table_box: &LayoutBox,
     doc: &zero_dom::Document,
@@ -52,6 +78,9 @@ pub(crate) fn build_grid(
 ) -> TableGrid {
     let mut rows = Vec::new();
     let mut max_cols = 0usize;
+    // R4480：rowspan 网格占位簿记（vertical 域）——(col, 剩余覆盖行数)。
+    let rowspan_vertical = table_box.writing_mode.is_vertical_block_flow();
+    let mut rowspan_occupied: Vec<(usize, usize)> = Vec::new();
 
     // 检测孤立行组模式：table_box 本身是行组（无外层 table 容器）
     // 此时 table_box.children 中的嵌套行组和直接子单元格需要特殊处理
@@ -250,8 +279,10 @@ pub(crate) fn build_grid(
         match child_display {
             Some(d) if is_table_row(d) => {
                 // 直接子元素是 table-row
-                let row = build_row(*child_idx, child, doc);
+                let blocked = blocked_cols_of(&rowspan_occupied, rowspan_vertical);
+                let row = build_row(*child_idx, child, doc, &blocked);
                 max_cols = max_cols.max(row.cells.last().map(|c| c.col_end).unwrap_or(0));
+                update_rowspan_occupancy(&mut rowspan_occupied, &row, rowspan_vertical);
                 if !row.cells.is_empty() {
                     rows.push(TableRow {
                         row_group_index: None,
@@ -313,8 +344,10 @@ pub(crate) fn build_grid(
                             });
                             col_cursor = 0;
                         }
-                        let row = build_row(rg_child_idx, rg_child, doc);
+                        let blocked = blocked_cols_of(&rowspan_occupied, rowspan_vertical);
+                        let row = build_row(rg_child_idx, rg_child, doc, &blocked);
                         max_cols = max_cols.max(row.cells.last().map(|c| c.col_end).unwrap_or(0));
+                        update_rowspan_occupancy(&mut rowspan_occupied, &row, rowspan_vertical);
                         if !row.cells.is_empty() {
                             rows.push(TableRow {
                                 row_group_index: Some(*child_idx),
@@ -344,8 +377,10 @@ pub(crate) fn build_grid(
                         for (nested_idx, nested_child) in rg_child.children.iter().enumerate() {
                             let nested_display = get_display(nested_child, styles);
                             if nested_display.as_ref().is_some_and(is_table_row) {
-                                let row = build_row(nested_idx, nested_child, doc);
+                                let blocked = blocked_cols_of(&rowspan_occupied, rowspan_vertical);
+                                let row = build_row(nested_idx, nested_child, doc, &blocked);
                                 max_cols = max_cols.max(row.cells.last().map(|c| c.col_end).unwrap_or(0));
+                                update_rowspan_occupancy(&mut rowspan_occupied, &row, rowspan_vertical);
                                 if !row.cells.is_empty() {
                                     rows.push(TableRow {
                                         row_group_index: Some(*child_idx),

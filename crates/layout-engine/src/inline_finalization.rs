@@ -1172,7 +1172,15 @@ pub(crate) fn compute_final_inline_layouts(
         .child_nodes(node_id)
         .iter()
         .any(|c| doc.get(*c).is_some_and(|n| matches!(n.kind, NodeKind::Text(_))));
-    if !root.is_block_level && !is_table_internal_with_text && !is_flex_grid_item {
+    // R4480：vertical table-cell 例外——cell 不在 is_block_level 集内（engine 盒构建期
+    // 列表无 TableCell，且彼时 WM 传播未达 cell），本早退跳过 cell 内容 IFC → 无 stored
+    // 行盒 → paint Path B（空 styles 重跑）的 vertical wrap 分裂与 layout IFC 不一致
+    //（row-progression 全族 4.3-5.0% 残差、vrl-006 5.02% 超阈实证；stored 后 9 案 0.00%）。
+    // gate 于 LayoutBox.writing_mode（此处已传播为 vertical）——horizontal cell 存储 臂有
+    // table-anonymous-objects 族翻红（Path A/B 分歧域，后续轮 A/B），WM 收窄零损失。
+    let is_vertical_table_cell =
+        matches!(style.display, DisplayValue::TableCell) && root.writing_mode.is_vertical_block_flow();
+    if !root.is_block_level && !is_table_internal_with_text && !is_flex_grid_item && !is_vertical_table_cell {
         return;
     }
 

@@ -183,7 +183,16 @@ pub(crate) fn get_span(box_node: &LayoutBox, doc: &zero_dom::Document) -> usize 
 }
 
 /// 从一个 table-row 子元素构建 TableRow。
-pub(crate) fn build_row(child_idx: usize, row_box: &LayoutBox, doc: &zero_dom::Document) -> TableRow {
+///
+/// `blocked_cols`（R4480）：被上游行 rowspan cell 占用的列集——本行 cell 分配
+/// col_start 时越过（CSS Tables §17.5.1 网格模型：spanning cell 在其覆盖的
+/// 后继行占位）。horizontal 域传 `&[]`（占位臂 vertical-gated，零回归面）。
+pub(crate) fn build_row(
+    child_idx: usize,
+    row_box: &LayoutBox,
+    doc: &zero_dom::Document,
+    blocked_cols: &[usize],
+) -> TableRow {
     let mut cells = Vec::new();
     let mut col_cursor = 0usize;
 
@@ -198,6 +207,9 @@ pub(crate) fn build_row(child_idx: usize, row_box: &LayoutBox, doc: &zero_dom::D
         }
         let colspan = get_colspan(cell_child, doc);
         let rowspan = get_rowspan(cell_child, doc);
+        while blocked_cols.contains(&col_cursor) {
+            col_cursor += 1;
+        }
         let col_start = col_cursor;
         let col_end = col_start + colspan;
         cells.push(TableCell {
@@ -933,7 +945,7 @@ mod tests {
             ],
             ..LayoutBox::default()
         };
-        let row = build_row(0, &row_box, &doc);
+        let row = build_row(0, &row_box, &doc, &[]);
         // 仅第 1 个（in-flow）子被收集为 cell；floated 与 abspos 被跳过
         assert_eq!(row.cells.len(), 1);
         assert_eq!(row.cells[0].child_index, 0);
@@ -952,9 +964,31 @@ mod tests {
             ],
             ..LayoutBox::default()
         };
-        let row = build_row(0, &row_box, &doc);
+        let row = build_row(0, &row_box, &doc, &[]);
         assert_eq!(row.cells.len(), 3);
         // col_end 累计：每个 colspan=1 → 1,2,3
         assert_eq!(row.cells[2].col_end, 3);
+    }
+
+    /// R4480：rowspan 占位列跳过——上游行的 rowspan>1 cell 占用的列，后续行分配
+    /// col_start 时须越过（CSS Tables §17.5.1 网格模型）。vrl-006：row3 中列
+    /// rowspan=2 → row4 的第 2 个 cell 应落 col2（旧式落 col1 与占位冲突）。
+    #[test]
+    fn build_row_skips_rowspan_occupied_columns() {
+        let doc = zero_dom::Document::new();
+        let row_box = LayoutBox {
+            children: vec![
+                LayoutBox { ..LayoutBox::default() },
+                LayoutBox { ..LayoutBox::default() },
+            ],
+            ..LayoutBox::default()
+        };
+        // col1 被 rowspan=2 cell 占用（还剩 1 行）
+        let row = build_row(0, &row_box, &doc, &[1]);
+        assert_eq!(row.cells.len(), 2);
+        assert_eq!(row.cells[0].col_start, 0);
+        // 第 2 个 cell 越过被占的 col1 → col2
+        assert_eq!(row.cells[1].col_start, 2);
+        assert_eq!(row.cells[1].col_end, 3);
     }
 }
