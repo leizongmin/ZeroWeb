@@ -19791,6 +19791,30 @@ evaluate 回填（挂子帧能力解冻，见子帧解冻清单，不阻收口�
    态证据经 S1119 门单腿刷新延续 唯一未清偿义务=frames.
    click+evaluate 回填（挂子帧能力解冻 不阻收口）。
 
+   **S1119 轮后插记（2026-09-18 push 序列 pull --rebase 实测）**：
+   兄弟流 08124d32f（rendering-compat R4490，fix(layout-engine)
+   谓词 replaced 豁免解除 + Phase A stale 代理盒收口，3 files
+   +26/-26 = layout-engine 2 文件 + rendering-compat.md 1 行）
+   于 S1119 门收口（15:06:42）之后经 push 序列 pull --rebase 入
+   树（我方 S1119 提交 rebase 于其上，push 08124d32f..7054bd89a
+   fast-forward 零冲突 实测复核）——R4490 系渲染流 **代码提交**
+   （layout-engine 专属面 非本流触碰 零碰撞），**S1119 门 PASS
+   覆盖的树态 = 4cb98c140（R4490 入树前），main tip 组合态
+   （7054bd89a）超出 S1119 门覆盖树态**，**S1119 条目内「下轮
+   S1120 = 6/10 引用轮」预告被本插记取代，S1120 = 树变化刷新
+   轮（门 + make test 双腿刷新，S245→…→S1114→S1115 先例链，
+   make test 腿后台跑法）**，引用计数以 S1120 双腿为新锚归零重
+   计（S1119 单腿锚点即告作废）；S1120 锚点预期（本插记时点实
+   测）：自有面对 S897 tip 7da6043d6 **10 files +1187/-182** 维
+   持 / crates/ raw **131**（130+1 = R4490 入集）/ 子帧关键词
+   **7 文件** 非测试代码零命中维持 / 全树排除本流 docs 对
+   18d462de6 **187 files +21074/-1335** 维持（R4490 3 files 全
+   部已在 diff 集；行数合计净零漂移 = inline_block_split.rs 重
+   写相抵 + inline_finalization.rs +9 numstat sum 实测复核 分
+   解自洽）；多步连锁背板候选与看门狗观察条款延续；M5 定稿收
+   口判定不因本插记动摇 goal Done 维持守成态证据经 S1120 双
+   腿刷新延续。
+
    **S1106 轮后插记（2026-09-18 push 序列 pull --rebase 实测）**：
    兄弟流 fb5133ff7（rendering-compat R4488 登记腿）于 S1106 门
    收口（12:56:44）之后经 push 序列 pull --rebase 入树（我方
