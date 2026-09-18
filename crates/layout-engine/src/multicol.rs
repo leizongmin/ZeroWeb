@@ -101,6 +101,65 @@ fn adjust_multicol_layout_rec(
     }
 }
 
+/// R4511：multicol 容器收缩后的**兄弟重排**。
+///
+/// R4508 对称写回把 auto-height balance 容器高收缩到平衡区域高，但 taffy 时代的后续
+/// 兄弟 y 仍按旧堆叠高（step 9 前定位）——ref 页（article 200→100 收缩）spanner 兄弟
+/// 滞留 208 应 108，页尾幻影 100/段。既有 `shift_siblings_after_ifc_grow` 是**增长**
+/// 下推（prev.bottom > next.y 重叠模型），无收缩上拉；R4502 resync 只回收祖先高度。
+///
+/// 自包含 **gap 模型**（不记录写回 delta——measure/final 多 pass 下陈旧 delta 误移，
+/// multicol-reduce-000 2.82% 实证）：对每个父，若某 in-flow 子的前一个 in-flow 兄弟是
+/// multicol 容器（`is_multicol`），且 next.y 超出「prev 盒底 + 折叠 margin」的末解释
+/// 间隙 >1px，则把 next 上拉到期望位。explicit-height multicol 容器盒底含全部预算高、
+/// 无间隙自然不触发；clearance/relative 兄弟（合法间隙）跳过。
+pub(crate) fn restack_siblings_after_multicol_shrink(
+    box_node: &mut LayoutBox,
+    styles: &HashMap<NodeId, ComputedStyle>,
+) {
+    for child in &mut box_node.children {
+        restack_siblings_after_multicol_shrink(child, styles);
+    }
+
+    // prev = 前一个 in-flow 兄弟的 (盒底 y, margin_bottom, 是否 multicol)。
+    // chain_active：开拉后逐兄弟传播——multicol 收缩使其后**所有**兄弟滞留（不止直接
+    // 后继），链在校直余量 ≤1px（margin 可解释/已就位）处自然中断不了（拉的条件是
+    // excess > 1，margin 合法间隙 excess≈0 不拉也不破链）。
+    let mut prev: Option<(f32, f32, bool)> = None;
+    let mut chain_active = false;
+    for i in 0..box_node.children.len() {
+        let (in_flow, is_block, not_relative) = {
+            let c = &box_node.children[i];
+            (
+                !c.is_absolute
+                    && !c.is_fixed
+                    && c.float == zero_css_parser::values::FloatValue::None
+                    && !c.clearance_active,
+                c.is_block_level,
+                !c.node_id
+                    .and_then(|id| styles.get(&id))
+                    .is_some_and(|s| matches!(s.position, zero_css_parser::values::PositionValue::Relative)),
+            )
+        };
+        if !in_flow {
+            continue;
+        }
+        let (next_y, next_mt) = (box_node.children[i].y, box_node.children[i].margin_top);
+        if let Some((prev_bottom, prev_mb, prev_is_multicol)) = prev {
+            if (prev_is_multicol || chain_active) && is_block && not_relative {
+                let expected = prev_bottom + prev_mb.max(next_mt);
+                let excess = next_y - expected;
+                if excess > 1.0 {
+                    box_node.children[i].y = expected;
+                    chain_active = true;
+                }
+            }
+        }
+        let c = &box_node.children[i];
+        prev = Some((c.y + c.height, c.margin_bottom, c.is_multicol));
+    }
+}
+
 /// R4502：multicol 容器高重写后，其 **auto-height 祖先链**按 §10.6.3 回收。
 ///
 /// spanner 路径把 multicol 容器高重写为平衡后的 y_base（可增可缩），但祖先

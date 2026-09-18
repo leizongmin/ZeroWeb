@@ -1011,6 +1011,9 @@ impl LayoutEngine {
         let _region_balanced =
             crate::inline_finalization::balance_multicol_spanner_regions(&mut root_box, doc, styles, inline_fonts);
         crate::multicol::adjust_multicol_layout(&mut root_box, styles, doc, inline_fonts);
+        // R4511：multicol 收缩后的兄弟重排（taffy 兄弟位按旧堆叠高滞留，004a-ref
+        // spanner 208 应 108）——须在 resync 前跑（祖先高回收以重排后的子底为准）。
+        crate::multicol::restack_siblings_after_multicol_shrink(&mut root_box, styles);
         // R4502：multicol 容器高重写（spanner 平衡 y_base 写回）后，其 auto-height
         // 祖先链按 max in-flow 子底回收 taffy 旧高（div 平衡前 240 → 平衡后 180，
         // body 幻影 60px；multicol-span-all-003 底部黑带 60px 实证）。
@@ -1176,6 +1179,7 @@ impl LayoutEngine {
         let inline_fonts = self.inline_font_context(&font_overrides);
         if remeasure_multicol_text_blocks(&mut root_box, doc, styles, &intrinsic_for_r695, inline_fonts) {
             crate::multicol::adjust_multicol_layout(&mut root_box, styles, doc, inline_fonts);
+            crate::multicol::restack_siblings_after_multicol_shrink(&mut root_box, styles);
         }
 
         // 12.1 后处理（R109 §9.2.1.1 匿名块盒高度回填，env R109_BACKFILL 默认开）：
@@ -1441,6 +1445,7 @@ impl LayoutEngine {
         // margin 折叠由 taffy 0.7 内置处理
         crate::table::adjust_table_layout_with_fonts(&mut root_box, doc, styles, inline_fonts);
         crate::multicol::adjust_multicol_layout(&mut root_box, styles, doc, inline_fonts);
+        crate::multicol::restack_siblings_after_multicol_shrink(&mut root_box, styles);
         sort_children_by_css_order(&mut root_box, styles);
         // taffy 已在 layout.location 中包含 position:relative 的 inset 偏移，无需额外后处理
 
