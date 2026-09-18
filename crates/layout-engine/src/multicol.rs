@@ -1088,7 +1088,19 @@ fn layout_multicol(container: &mut LayoutBox, info: &ColumnInfo, styles: &HashMa
     // `column-fill: balance` 的 height:auto 容器高是最高列的高度，而非 taffy
     // 在分列前测得的单列高度。若不回写，文字虽被正确分列，父块仍会过早结束。
     // https://drafts.csswg.org/css-multicol/#column-height
-    if !container_explicit && !info.sequential_fill && region_height > container.content_height + 0.5 {
+    // R4508（CSS Multicol §3.3 balancing）：auto-height balance 容器高 = **平衡区域高**
+    //（可增可缩）。旧实现仅增长——taffy 对块级子容器按堆叠和测高（R1433 text-only gate
+    // 外），平衡后区域高小于堆叠高时容器保持虚高，容器 bg/后继流位下移（mock 页
+    // article 200 vs 平衡 100 的 100px green 幻影实证）。对称写回后容器高 = max 列高
+    //（CSS：multicol auto 高 = 列平衡高）。
+    // region_height > 0.5 守卫：纯文本子容器（text-child）的位置通路不产生列几何
+    //（region=0，高度归 R1433 measure-time balance）——对称写回不得把 content 清零
+    //（columns:2 text 页 20→0 实证）。
+    if !container_explicit
+        && !info.sequential_fill
+        && region_height > 0.5
+        && (region_height - container.content_height).abs() > 0.5
+    {
         let delta = region_height - container.content_height;
         container.content_height = region_height;
         container.height += delta;
