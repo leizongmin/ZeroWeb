@@ -16,6 +16,7 @@ pub(crate) use crate::inline_metric_storage::store_font_sizes_from_ifc;
 use crate::types::LayoutBox;
 use crate::{NodeIdMap, NodeIdSet};
 use zero_style_system::WritingModeValue;
+use zero_style_system::property::types::ColumnSpanComputedValue;
 
 /// 行内布局使用的字体相关依赖。
 #[derive(Clone, Copy, Default)]
@@ -2961,6 +2962,10 @@ pub(crate) fn remeasure_inline_only_containers(
         && !has_floats
         && !(box_node.is_replaced && (box_node.is_absolute || box_node.is_fixed))
         && box_node.inline_layout.is_none()
+        // R4499：spanner 区域平衡片段的高是「平衡列高」，非单列 IFC 堆叠高——
+        // 本重测（仅增大）会把平衡高重新撑回单列高（span-all-001 区域 40→160），
+        // 交 balance_multicol_spanner_regions 重写，此处跳过。
+        && !box_node.is_multicol_region_fragment
         && let Some(dom_id) = box_node.node_id
         && let Some(style) = styles.get(&dom_id)
         && matches!(style.height, LengthValue::Auto)
@@ -3386,6 +3391,13 @@ pub(crate) fn remeasure_multicol_text_blocks(
         if !inside_multicol || !has_direct_text(doc, node_id) || !matches!(style.height, LengthValue::Auto) {
             return changed;
         }
+        // R4499：spanner 区域平衡片段不走本重测——本函数按宿主 DOM 全量 IFC 测
+        // （非 fragment-scoped），对区域片段测出跨区域混串高（span-all-001：区域 1
+        // 片段被测成全 16 词 320px），且其高语义是「平衡列高」非「单列堆叠高」，
+        // 由 balance_multicol_spanner_regions 重写，此处不得再动。
+        if box_node.is_multicol_region_fragment {
+            return changed;
+        }
 
         let measured = measure_text_content(
             doc,
@@ -3414,6 +3426,138 @@ pub(crate) fn remeasure_multicol_text_blocks(
     }
 
     remeasure_inner(box_node, doc, styles, img_intrinsic_sizes, inline_fonts, false)
+}
+
+/// R4499：multicol spanner 区域 inline 片段的**列平衡高度重写**。
+///
+/// CSS Multicol §6.1：spanner 把 multicol 内容分成多个独立平衡的列区域。区域的纯
+/// inline 内容（匿名块片段盒）须按容器列数平衡——行数 N 在列宽下折行后按
+/// ceil(N/列数) 行/列分摊，区域高 = ceil(N/C) × 平均行高（与 paint 侧
+/// `multicol_balance_target_height` 同式）。当前引擎把区域 inline 内容整体堆在
+/// 单个列宽片段里（单列纵向生长），容器高膨胀（span-all-001：区域 320 vs 应 40）。
+///
+/// 本 pass 对每个 spanner 容器的非 spanner in-flow 子中满足 gate 的匿名块片段，
+/// 以**列宽**跑 fragment-scoped IFC（与 taffy 侧 try_measure_fragment_segment /
+/// compute_final R3770 重测 / paint Path B 同源），平衡高重写片段高（可增可缩），
+/// 并置 `is_multicol_region_fragment` 旗标供 paint 消费。
+///
+/// Gate（紧，blast radius 限 span-all inline 区域簇）：
+/// - 容器为 balance 模式（!sequential_fill）且列数 ≥ 2；
+/// - 子盒为 fragment_node_ids 匿名块片段（纯 inline 内容），无 R109 split 包装；
+/// - 子树无 float（float 环绕改变折行，平衡行数失真，同 R3770 豁免）；
+/// - 水平书写模式（vertical 区域列模型未接）。
+///
+/// 返回是否有任何重写发生（engine 据此决定是否重跑 multicol 定位）。
+pub(crate) fn balance_multicol_spanner_regions(
+    box_node: &mut LayoutBox,
+    doc: &Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    inline_fonts: InlineFontContext<'_>,
+) -> bool {
+    // 先递归子树（嵌套 multicol / 深层容器同规则）。
+    let mut changed = false;
+    for child in &mut box_node.children {
+        changed |= balance_multicol_spanner_regions(child, doc, styles, inline_fonts);
+    }
+
+    let Some(container_id) = box_node.node_id else {
+        return changed;
+    };
+    let Some(container_style) = styles.get(&container_id) else {
+        return changed;
+    };
+    let Some(info) = crate::multicol::compute_column_info(container_style, box_node.content_width) else {
+        return changed;
+    };
+    if info.count < 2 || info.sequential_fill {
+        return changed;
+    }
+    // 直接子含 spanner 才是 spanner 分段容器（否则走常规列分配路径，不归本 pass）。
+    let has_spanner_child = box_node.children.iter().any(|c| {
+        !c.is_absolute
+            && !c.is_fixed
+            && c.node_id
+                .and_then(|id| styles.get(&id))
+                .is_some_and(|s| matches!(s.column_span, ColumnSpanComputedValue::All))
+    });
+    if !has_spanner_child {
+        return changed;
+    }
+
+    for child in &mut box_node.children {
+        if child.is_absolute || child.is_fixed {
+            continue;
+        }
+        let is_spanner = child
+            .node_id
+            .and_then(|id| styles.get(&id))
+            .is_some_and(|s| matches!(s.column_span, ColumnSpanComputedValue::All));
+        if is_spanner {
+            continue;
+        }
+        // gate：纯 inline 匿名块片段 + 无 R109 split 包装 + 水平书写。
+        if child.fragment_node_ids.is_none() || child.is_r109_split {
+            continue;
+        }
+        if child
+            .children
+            .iter()
+            .any(|c| !c.is_absolute && !c.is_fixed && c.is_block_level)
+        {
+            continue;
+        }
+        if child.writing_mode.is_vertical_block_flow() {
+            continue;
+        }
+        if subtree_has_float(child) {
+            continue;
+        }
+        let Some(dom_id) = child.node_id else {
+            continue;
+        };
+        let Some(style) = styles.get(&dom_id) else {
+            continue;
+        };
+        if !matches!(style.height, LengthValue::Auto) {
+            continue;
+        }
+
+        // fragment-scoped IFC @ 列宽 → 行数 N + 总高（R3770 同款构造）。
+        let frag_ids = child.fragment_node_ids.clone().unwrap_or_default();
+        if frag_ids.is_empty() {
+            continue;
+        }
+        let mut inline_ctx = InlineFormattingContext::new(info.column_width)
+            .with_no_wrap(resolve_no_wrap_for_ifc_measure(styles.get(&dom_id)))
+            .with_preserve_whitespace(resolve_preserve_for_ifc_measure(styles.get(&dom_id)))
+            .with_break_at_newline(resolve_break_at_newline_for_ifc_measure(styles.get(&dom_id)));
+        inline_ctx.set_fragment_node_ids(frag_ids);
+        inline_ctx = configure_inline_fonts(inline_ctx, inline_fonts, false);
+        inline_ctx.layout(doc, dom_id, styles);
+        let num_lines = inline_ctx.lines.len();
+        if num_lines == 0 || info.column_width <= 0.0 {
+            continue;
+        }
+        let total = inline_ctx.total_height();
+        // 平衡高 = ceil(N/C) × 平均行高（paint multicol_balance_target_height 同式，
+        // front-loaded 匹配 chromium LayoutNG balancing）。
+        let balanced = (num_lines.div_ceil(info.count) as f32) * (total / num_lines as f32);
+        if (balanced - child.content_height).abs() <= 0.5 {
+            // 高度已一致（幂等重入）；仍置旗标（paint 需要它）。
+            child.is_multicol_region_fragment = true;
+            continue;
+        }
+        child.content_height = balanced;
+        child.height = balanced;
+        child.is_multicol_region_fragment = true;
+        changed = true;
+    }
+    changed
+}
+
+/// 子树是否含 float（平衡 gate 用，同 remeasure 的 float 豁免语义）。
+fn subtree_has_float(box_node: &LayoutBox) -> bool {
+    box_node.float != FloatValue::None || box_node.children.iter().any(subtree_has_float)
 }
 
 #[cfg(test)]

@@ -227,6 +227,12 @@ pub struct LayoutBox {
     /// 精确 gate（仅 R1341 wrapper），排除普通 multicol breaking 子路径（避 deep-nesting
     /// regression，R1351 remove-transform-descendant 用 any_child_has_cso 误触）。
     pub is_nested_spanner_wrapper: bool,
+    /// R4499：本盒是否为 **multicol spanner 区域 inline 片段**——spanner 分段后某区域的
+    /// 纯 inline 匿名块片段（fragment_node_ids），其内容已由 layout 侧按容器列数平衡重写
+    /// 高度（ceil(行数/列数) × 平均行高）。paint paint_text 据此以「盒宽即列宽」构造
+    /// MulticolInfo（col_count/gap 取自宿主 style），把行分配到容器各列（box 宽已是列宽，
+    /// 直接 compute_column_info(style, content_width) 会得到退化的 0 列宽）。
+    pub is_multicol_region_fragment: bool,
     /// R1359：nested-spanner wrapper 的**按列背景区域**（非空时 paint_background 按此分段涂 bg
     /// 而非整宽单 rect）。每元组 `(x_offset, width, height)`——box-content 系内该列的 bg 区域。
     /// 关键：末列 height = effective − last_section_squeeze（block3 overflow 致末列容器只覆盖到
@@ -662,6 +668,7 @@ impl Default for LayoutBox {
             fragment_node_ids: None,
             is_r109_split: false,
             is_r109_block_mixed: false,
+            is_multicol_region_fragment: false,
             r109_first_fragment: false,
             r109_last_fragment: false,
             run_in_prepended: None,

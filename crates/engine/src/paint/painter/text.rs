@@ -809,7 +809,20 @@ impl super::Painter {
             // （常见于嵌套 multicol / column-breaking 测试）涉及 column breaking，
             // 当前简单均衡分配会回归这类用例，回退到单块渲染。
             let height_auto = matches!(style.height, LengthValue::Auto);
-            let multicol_info = if !has_in_flow_children && is_balance_mode && height_auto {
+            let multicol_info = if box_node.is_multicol_region_fragment {
+                // R4499：multicol spanner 区域平衡 inline 片段——盒宽已是容器列宽，
+                // 列几何不能再按盒宽求（compute_column_info(style, 列宽) 得退化 0 列宽）。
+                // 列数/gap 取自宿主 style（本盒 style 即宿主 style），列宽 = 盒内容宽；
+                // 下方多列分支按容器列数把行分配到各列（x = col_idx×(col_w+gap)）。
+                if is_balance_mode {
+                    compute_multicol_info_for_paint(style, container_width).map(|mut mc| {
+                        mc.col_width = container_width;
+                        mc
+                    })
+                } else {
+                    None
+                }
+            } else if !has_in_flow_children && is_balance_mode && height_auto {
                 compute_multicol_info_for_paint(style, container_width)
             } else {
                 None

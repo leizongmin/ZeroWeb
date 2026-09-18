@@ -1192,6 +1192,14 @@ fn layout_multicol_with_spanners(
         }
         // 定位该区域子元素（列内 y 从 y_base 起），返回该区域高度。
         let region_height = position_multicol_children(container, &assignments, info, y_base, row_height);
+        // R4499：区域平衡 inline 片段自绘容器列组（paint_text 多列分支按 4 列分配行），
+        // 不再是容器的单列片段——清 cso 使 paint 走常规子盒路径（cso 非空的子盒被
+        // paint_as_multicol 循环按单列 slice 裁剪，会切掉片段自绘的列 1..N）。
+        for &i in region_children {
+            if container.children[i].is_multicol_region_fragment {
+                container.children[i].column_span_offsets.clear();
+            }
+        }
         y_base += region_height;
         // 区域末子的 mb 成为新的 pending（region_height 已含它——从累计中扣除，
         // 改由 pending 语义与下一元素的 mt 合并）。
@@ -1245,6 +1253,24 @@ fn layout_multicol_with_spanners(
         && y_base > 0.0
         && y_base < container.content_height - 0.5
         && any_split
+        && container
+            .node_id
+            .and_then(|id| styles.get(&id))
+            .is_some_and(|st| !is_explicit_height(st))
+    {
+        let frame = container.height - container.content_height;
+        container.content_height = y_base;
+        container.height = y_base + frame;
+    }
+    // R4499：区域平衡 inline 片段容器的容器高写回。taffy/remeasure 链给容器的仍是
+    // 未平衡内容堆叠高（区域单列纵向生长残值），平衡后真实内容高 = y_base；不写回
+    // 会在内容下方露出容器背景（span-all-001：残高 660 vs 应 100 的黄色大带）。
+    // 与 R4267 不同点：无需真分片 gate——平衡重写本身就是内容高度语义变更；
+    // 可增可缩（平衡可能比 taffy 堆叠值更高：窄列宽折行数 > 全宽行数）。
+    if !trim_active
+        && y_base > 0.0
+        && container.children.iter().any(|c| c.is_multicol_region_fragment)
+        && (y_base - container.content_height).abs() > 0.5
         && container
             .node_id
             .and_then(|id| styles.get(&id))

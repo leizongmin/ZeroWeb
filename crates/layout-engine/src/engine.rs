@@ -516,7 +516,7 @@ impl LayoutEngine {
             },
         );
 
-        // 3. 提取 LayoutBox 树（根元素使用 HorizontalTb 作为父级 writing mode）
+        // 3. 提取 LayoutBox 树（根元素使用 HorizontalTb 作为父级 writing mode）（根元素使用 HorizontalTb 作为父级 writing mode）
         let mut root_box = Self::extract_layout(
             &taffy_tree,
             root_id,
@@ -1005,6 +1005,11 @@ impl LayoutEngine {
         crate::table_float_fix::fix_table_among_floats(&mut root_box, doc, styles, inline_fonts);
 
         // 9. 后处理：对 column-count/column-width 容器执行多列布局
+        // R4499：先重写 spanner 区域 inline 片段的平衡列高（ceil(行数/列数) × 平均行高
+        // + is_multicol_region_fragment 旗标），multicol 定位、spanner y 与容器高写回
+        // 都消费平衡后的区域高。
+        let _region_balanced =
+            crate::inline_finalization::balance_multicol_spanner_regions(&mut root_box, doc, styles, inline_fonts);
         crate::multicol::adjust_multicol_layout(&mut root_box, styles);
 
         // 10. 后处理：对包含 inline-block 子元素的容器，重新定位 inline-block 元素
@@ -2388,6 +2393,7 @@ impl LayoutEngine {
             is_table_caption,
             multicol_overflow_column_count: None,
             is_nested_spanner_wrapper: false,
+            is_multicol_region_fragment: false,
             nested_spanner_col_bg: Vec::new(),
             is_layout_container,
             had_clearance: false,

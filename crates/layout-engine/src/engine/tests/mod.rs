@@ -206,6 +206,8 @@ mod r4134_empty_inline_frame_intrinsic_tests;
 mod r4140_inline_first_mt_unhoist_tests;
 mod r4149_width_keyword_clamp_tests;
 mod r4176_negative_margin_float_tests;
+#[allow(dead_code)]
+mod r4499_spanner_region_diag;
 mod r717_flex_ratio_img_tests;
 mod table_layout_tests;
 mod tests_1;
