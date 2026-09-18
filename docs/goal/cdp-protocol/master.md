@@ -2,36 +2,35 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-18（S1072：**静默监测引用轮（引用计数
-2/10→3/10，周期锚点 = S1069 双腿（门腿 08:27:39 落盘 + make
+**最后更新**: 2026-09-18（S1073：**静默监测引用轮（引用计数
+3/10→4/10，周期锚点 = S1069 双腿（门腿 08:27:39 落盘 + make
 test 腿 ≤08:37 收口）），同 tip 复核 pull 零新提交 tip =
-e13d395d3 即本流 S1071 提交本身（S1071 后零代码变更
-dbbfd9888..HEAD 排除本流 docs diff 全空实测复核），树不变口
+57541e6d0 即本流 S1072 提交本身（S1072 后零代码变更
+e13d395d3..HEAD 排除本流 docs diff 全空实测复核），树不变口
 径 = 门单腿复跑免 make test 腿（S336 先例），绿步维持 33**。
-门腿 **PASS 33 绿兄弟流负载窗活跑首调即收口**（起手 load
-4.97；09:04:01 启动 09:04:32 落盘 wall ~31s EXIT=0；编译全
-缓存零 Compiling 行 replay；expected_green 33 对称差 none、
-regressions 空、deterministic 双跑 YES（双 run 33 ok 集机械
-一致，双 run 唯一 failed 同 = 挂账 frames.click+evaluate）；
-双 run 均 flow exited 1 正常态；ZW_IPC_VALIDATE=1 在位静默
-capture jsonl 面零写入（五 jsonl mtime 09-12/09-13 全不变实
-测复核）；steps-report/determinism-report 新鲜落盘 09:04；
-dead_code warning 维持同形一枚（match_media_to_json，
-crates/engine/src/js_dom_bridge.rs——cargo cache warning
-replay 既有形态维持记档）；首调红形态连续零再现计数第 2 轮
-（S1071 重计起算），exited null 零再现维持）。
-本轮门属兄弟流负载窗活跑（起手 4.97 门后 4.40 衰减）——
-S1071 首调红 + 复跑绿同族负载窗对照组：本轮同窗零卡挂，佐
-证 S1071 红例环境归因（第卅四个负载下样本）。
+门腿 **PASS 33 绿首调即收口**（09:06:28 启动 09:06:58 落盘
+wall ~30s EXIT=0；编译全缓存零 Compiling 行 replay；
+expected_green 33 对称差 none、regressions 空、deterministic
+双跑 YES（双 run 33 ok 集机械一致，双 run 唯一 failed 同 =
+挂账 frames.click+evaluate）；双 run 均 flow exited 1 正常
+态；ZW_IPC_VALIDATE=1 在位静默 capture jsonl 面零写入（五
+jsonl mtime 09-12/09-13 全不变实测复核）；steps-report/
+determinism-report 新鲜落盘 09:06；dead_code warning 维持同
+形一枚（match_media_to_json，crates/engine/src/
+js_dom_bridge.rs——cargo cache warning replay 既有形态维持
+记档）；首调红形态连续零再现计数第 3 轮（S1071 重计起算），
+exited null 零再现维持）。
+本轮门属兄弟流负载窗活跑（起手 load 4.99 门后 2.67 衰减，
+第卅五个负载下样本，S1071/S1072 同族窗第三样本首调即绿）。
 锚点面四点实测维持（代码面对 S1069 锚定态零漂移）：自有面对
-S897 tip 7da6043d6 维持 **10 files +1187/-182**；crates/ raw
-**127** 维持；子帧关键词 **7 文件** crates/ 零命中维持（解
-冻条件①观察面 127 口径）；全树排除本流 docs 对 18d462de6
-实测 **184 files +20418/-1240** 维持。
-门尾树态（tip=e13d395d3 tracked clean）zombie 复测零（前后
+S897 tip 7da6043d6 维持 **10 files +1187/-182**；crates/
+raw **127** 维持；子帧关键词 **7 文件** crates/ 零命中维持
+（解冻条件①观察面 127 口径）；全树排除本流 docs 对
+18d462de6 实测 **184 files +20418/-1240** 维持。
+门尾树态（tip=57541e6d0 tracked clean）zombie 复测零（前后
 零）、四端口族全 free（前后零监听）、控制面零外来提交。
 M5 定稿收口判定（DC-1~4 依据）不因复验动摇——**goal Done 维持，守成态
-证据经 S1072 门单腿刷新延续**；唯一未清偿义务 = frames.click+evaluate 回填
+证据经 S1073 门单腿刷新延续**；唯一未清偿义务 = frames.click+evaluate 回填
 （挂子帧能力解冻，见子帧解冻清单，不阻收口））
 
 ---
@@ -19052,6 +19051,46 @@ M5 定稿收口判定（DC-1~4 依据）不因复验动摇——**goal Done 维�
 
 
 
+
+
+   **S1073 已执行（2026-09-18）静默监测引用轮（引用计数 3/10→
+   4/10，周期锚点=S1069 双腿（门腿 08:27:39 落盘 + make test 腿
+   ≤08:37 收口），同 tip 复核 pull 零新提交 tip=57541e6d0 即
+   S1072 提交本身（S1072 门单腿复跑后零代码变更
+   e13d395d3..HEAD 排除本流 docs diff 全空实测复核），树不变
+   口径=门单腿复跑免 make test 腿 S336 先例 绿步维持 33）**：
+   门腿复跑在位 09:06:28 启动 09:06:58 落盘首调即 **PASS 33 绿
+   deterministic 双跑 YES EXIT=0**（wall ~30s 编译全缓存零
+   Compiling 行 replay——代码树对 S1072 锚定态零变更佐证；
+   expected_green 33 对称差 none、regressions 空，run_details
+   双 run 实质逐项一致（双 run 各 33 ok 集机械一致，唯一
+   failed 同=挂账 frames.click+evaluate），双 run 均 flow
+   exited 1 正常态；ZW_IPC_VALIDATE=1 在位静默 capture jsonl
+   面零写入 #0 复现监测零命中维持（五 jsonl mtime 09-12/09-13
+   全不变实测复核 跑前跑后 md5 同值 cf9e15a1）；steps-report/
+   determinism-report 新鲜落盘 09:06；dead_code warning 维持
+   同形一枚（match_media_to_json crates/engine/src/
+   js_dom_bridge.rs cargo cache warning replay 既有形态维持记
+   档）；首调红形态连续零再现计数第 3 轮（S1071 重计起算），
+   exited null 零再现维持（3 例计数不变）；锚点面四点实测维
+   持（代码面对 S1069 锚定态零漂移）：自有面对 S897 tip
+   7da6043d6 **10 files +1187/-182** 维持 / crates/ raw
+   **127** 维持 / 子帧关键词 **7 文件** crates/ 零命中维持
+   （解冻条件①观察面 127 口径 frames.click+evaluate 挂起维
+   持）/ 全树排除本流 docs 对 18d462de6 **184 files
+   +20418/-1240** 维持；门尾树态（tip=57541e6d0 tracked
+   clean）zombie 复测零（前后零）四端口族全 free（前后零监
+   听）本门零残留 控制面零外来提交 本轮门属兄弟流负载窗活跑
+   （起手 load 4.99/5min 3.77 门后 2.67 衰减 第卅五个负载下
+   样本 S1071/S1072 同族窗第三样本 本轮首调即绿 环境归因对照
+   面延续）；下轮 **S1074 = 5/10 静默监测引用轮**（周期锚点=
+   S1069 双腿），若 S1074 前树代码变化则提前触发双腿刷新
+   （S245→…→S1069 先例链，make test 腿后台跑法），否则按引
+   用轮口径门单腿复跑免 make test 腿（S336 先例），至迟
+   S1079=10/10 饱和、次轮 S1080 期限轮活跑（双腿活跑口径=门
+   + make test 后台跑法）；M5 定稿收口判定不因复验动摇 goal
+   Done 维持守成态证据经 S1073 门单腿刷新延续 唯一未清偿义务=
+   frames.click+evaluate 回填（挂子帧能力解冻 不阻收口）。
 
    **S1072 已执行（2026-09-18）静默监测引用轮（引用计数 2/10→
    3/10，周期锚点=S1069 双腿（门腿 08:27:39 落盘 + make test 腿
