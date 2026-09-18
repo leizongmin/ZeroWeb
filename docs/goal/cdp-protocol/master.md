@@ -22759,7 +22759,6 @@ pull 零新提交 tip = 0accd8370 即 S1178 提交本身，门单腿复跑
    经 S1179 门单腿刷新延续 唯一未清偿义务=frames.click+
    evaluate 回填（挂子帧能力解冻 不阻收口）。
 
-
    **S1180 已执行（2026-09-18）引用计数 10/10 到期期限轮活
    跑（双腿活跑口径=门 + make test 后台跑法 S1149→S1150 先
    例 9/10 次轮即期限轮兑现 S1115/S1132/S1140/S1150/S1170
@@ -22825,6 +22824,33 @@ pull 零新提交 tip = 0accd8370 即 S1178 提交本身，门单腿复跑
    判定不因复验与执行态瞬态动摇 goal Done 维持守成态证据
    经 S1180 双腿刷新延续 唯一未清偿义务=frames.click+
    evaluate 回填（挂子帧能力解冻 不阻收口）。
+
+   **S1180 轮后插记（2026-09-18 push 序列 pull --rebase 实测）**：
+   兄弟流 b6479ac38（docs(rendering-compat) GB-20260918 待决策巡检：
+   docs/goal/rendering-compat/master.md 单文件 +1/-0，**docs-only 零
+   Rust/Cargo/Makefile 触碰 实测复核**）于 S1180 双腿收口（make test
+   腿 22:20:30）之后经 push 序列 pull --rebase 入树（兄弟提交落
+   22:18:30 与我方 make test 腿并窗、入树时点在双腿收口后；我方
+   S1180 提交 3acc044ae rebase 于其上 = 511a064f3，push
+   b6479ac38..511a064f3 fast-forward 零冲突 实测复核）——**docs-only
+   归因不入刷新面（S349/S846/S848/S853/S854/S835/S1170 插记先例
+   链）**，IN_TREE 实测核验（git merge-base --is-ancestor PASS），
+   **S1180 双腿 PASS 覆盖的代码树态 = 7590e5519 实质不变**（tracked
+   代码树 Rust/Cargo/Makefile 面与双腿覆盖态一致），引用计数维持
+   S1180 双腿新周期锚点顺延（下轮 S1181 = 1/10）。锚点面漂移记档
+   （新组合树态 511a064f3 对 18d462de6/TIP 口径实测）：④ 全树排除
+   本流 docs **189 files +23057/-1341 → 189 files +23058/-1341**
+   （189 files 维持 = 单文件既有文件折入零净增文件；行数折入 +1 与
+   b6479ac38 +1 精确闭合）、① 自有面对 S897 tip 7da6043d6
+   **10 files +1187/-182** 维持（实测复核）、② crates/ raw **135**
+   维持（e67967632..TIP 口径实测复核）、③ 子帧关键词 **7 文件** md5
+   74f58fcf 维持（docs 腿零 Rust 面 不变佐证）；下轮 S1181 门单腿
+   活跑时锚点复核以本插记刷新值 **189 files +23058/-1341** 与
+   crates/ raw **135** 为基线（取代 S1180 header 内 189 files
+   +23057/-1341 值）；make test 全量参考基线 19,344P/0F 不受影响
+   （docs-only 零测试面）；M5 定稿收口判定不因本插记动摇 goal Done
+   维持守成态证据经 S1181 门单腿刷新延续。
+
    **S1150 轮后插记（2026-09-18 push 序列 pull --rebase 实测）**：
    兄弟流 4bd4bff44（rendering-compat **R4493** fix(layout-engine)
    R4446 fill 臂 InlineBlock 容器解禁 line-box/block-flow-direction
