@@ -961,6 +961,11 @@ fn layout_multicol(container: &mut LayoutBox, info: &ColumnInfo, styles: &HashMa
             .node_id
             .and_then(|id| styles.get(&id))
             .is_some_and(|st| st.margin_trim.block_start || st.margin_trim.block_end);
+        // R4504：nested spanner wrapper 与直接 spanner 混排时，扁平化 wrapper 后跑
+        // spanner 路径（chromium nested spanner 语义；nested-001/002 尾区同池错配修复）。
+        if try_flatten_nested_spanner_wrappers(container, info, styles, trim_active) {
+            return;
+        }
         layout_multicol_with_spanners(container, info, styles, trim_active);
         return;
     }
@@ -1115,11 +1120,224 @@ fn layout_multicol(container: &mut LayoutBox, info: &ColumnInfo, styles: &HashMa
 /// 限制（R1028 初版）：每段区域用 balanced 分配（多数 span-all 测试用 column-fill:balance
 /// 默认）。`column-fill:auto` + spanner 的 sequential row-fill 是更复杂的 multi-column
 /// row 模型，暂不支持。
+/// R4504：wrapper 有效 margin 是否恰为其首/末 in-flow 子 margin 的穿透值。
+/// （穿透 = wrapper 无 border/padding 时首子 mt 穿透为 wrapper 有效 mt；两侧一致才可
+/// 无损扁平化。）
+fn wrapper_margins_collapse_through(wrapper: &LayoutBox) -> bool {
+    let first = wrapper.children.iter().find(|c| !c.is_absolute && !c.is_fixed);
+    let last = wrapper.children.iter().rev().find(|c| !c.is_absolute && !c.is_fixed);
+    // 精确相等（wrapper.mt < 0.5 的放宽逃逸会放过「wrapper 自有 0 margin + 子有 margin
+    // = 无穿透」形态——span-all-004 wrapper m(0,0)/子 m(20,20) 实证 0.00→5.00）。
+    let mt_ok = match first {
+        Some(c) => (wrapper.margin_top - c.margin_top).abs() < 0.5,
+        None => true,
+    };
+    let mb_ok = match last {
+        Some(c) => (wrapper.margin_bottom - c.margin_bottom).abs() < 0.5,
+        None => true,
+    };
+    mt_ok && mb_ok
+}
+
+/// R4504：嵌套 spanner wrapper 的**任意位置扁平化**（R1341 synthetic 泛化）。
+///
+/// chromium（Blink）允许 nested `column-span:all` 生效（其父块被前后分片）——
+/// multicol-span-all-margin-nested-001/002：div#child 内 h4#nested 跨列，div#child
+/// 前后分片（ref mock：40/20/20/40/20/20/40）。ZW 旧路径（R1341）仅支持 wrapper 为
+/// 容器**唯一** in-flow 子的形态；wrapper 与直接 spanner/其他子混排时（nested-001：
+/// [navy, h4#first(spanner), div#child{h4#nested}, navy]），div#child 落入区域后与
+/// 尾区 navy 片段同池均衡 → 尾区错位丢失（R4503 归因）。
+///
+/// 本 pre-step 在 spanner 路径入口：发现「含直接 spanner 子」的 gate 通过 wrapper
+/// （block 级、非 R109 拆分、无 border/padding/margin、无 transform、无 abspos 后代）
+/// 时，构建**扁平化 synthetic**（wrapper 子提升为容器子，spanner 宽 = 容器内容宽），
+/// 跑常规 spanner 路径，再按映射回填（wrapper 子带 wrapper 内容原点偏移补偿，同
+/// R1341 dx/dy 约定——回填后坐标为 wrapper 父内容系，paint 经 wrapper.abs 恢复一致）。
+/// wrapper 盒自身重定位到其扁平子 spanner 范围（h=spanner 高），供祖先 max-bottom。
+///
+/// kill-switch 复用 `ZW_MULTICOL_NESTED_SPANNER=0`（与 R1341 同门）。
+fn try_flatten_nested_spanner_wrappers(
+    container: &mut LayoutBox,
+    info: &ColumnInfo,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    trim_active: bool,
+) -> bool {
+    if std::env::var("ZW_MULTICOL_NESTED_SPANNER").as_deref() == Ok("0") {
+        return false;
+    }
+    if info.count < 2 || info.sequential_fill {
+        return false;
+    }
+    // 找 gate 通过的 wrapper（非 spanner in-flow 子中，含直接 spanner 子者）。
+    let is_spanner_box = |b: &LayoutBox| {
+        b.node_id
+            .and_then(|id| styles.get(&id))
+            .is_some_and(|st| matches!(st.column_span, ColumnSpanComputedValue::All))
+    };
+    let mut wrapper_indices: Vec<usize> = Vec::new();
+    for (i, c) in container.children.iter().enumerate() {
+        if c.is_absolute || c.is_fixed || is_spanner_box(c) {
+            continue;
+        }
+        // margin gate 不设：wrapper 的有效 margin 多为**子 margin 穿透折叠值**
+        // （nested-001：div#child margin:0 但有效 m=20/20 = h4#nested 的 mt/mb 穿透），
+        // 扁平化后提升子自带同值 margin，语义自然成立；wrapper 自有独立 margin 的形态
+        // 本 slice 不覆盖（合成中丢失，见 fn 文档 slice-1 限制）。
+        let gated = c.is_block_level
+            && !c.is_r109_split
+            && c.border_top < 1.0
+            && c.border_bottom < 1.0
+            && c.border_left < 1.0
+            && c.border_right < 1.0
+            && c.padding_top < 1.0
+            && c.padding_bottom < 1.0
+            && c.node_id
+                .and_then(|id| styles.get(&id))
+                .is_some_and(|st| matches!(st.transform, zero_css_parser::values::TransformValue::None))
+            && !has_abspos_descendant(c)
+            && has_direct_spanner_child(c, styles)
+            // R4504：margin 穿透一致性 gate——wrapper 的有效 mt/mb 须恰为**子 margin 穿透**
+            // （wrapper.mt == 首个 in-flow 子的 mt，或 wrapper 无 mt；mb 同理对末子）。
+            // 该形态下扁平化后提升子自带同值 margin、语义无损。不满足者（wrapper 自有
+            // 独立 margin，扁平化会丢失/错位）本 slice 不覆盖——span-all-004/margin-001
+            // 的 wrapper 属此类（0.00→5.00 / →3.50 实证），gate 外保持旧路径。
+            && wrapper_margins_collapse_through(c);
+        if gated {
+            wrapper_indices.push(i);
+        }
+    }
+    if wrapper_indices.is_empty() {
+        return false;
+    }
+
+    // 构建扁平化 synthetic + 映射。
+    // 映射项：Direct(真实子 idx) | WrapperChild(wrapper idx, wrapper 内子 idx)。
+    enum BackfillTarget {
+        Direct(usize),
+        WrapperChild(usize, usize),
+    }
+    let mut mapping: Vec<(BackfillTarget, LayoutBox)> = Vec::new();
+    let article_cw = container.content_width;
+    for (i, c) in container.children.iter().enumerate() {
+        if c.is_absolute || c.is_fixed {
+            continue;
+        }
+        if wrapper_indices.contains(&i) {
+            for (j, wc) in c.children.iter().enumerate() {
+                if wc.is_absolute || wc.is_fixed {
+                    continue;
+                }
+                let mut clone = wc.clone();
+                if is_spanner_box(&clone) {
+                    clone.width = article_cw;
+                }
+                mapping.push((BackfillTarget::WrapperChild(i, j), clone));
+            }
+        } else {
+            mapping.push((BackfillTarget::Direct(i), c.clone()));
+        }
+    }
+    if mapping.is_empty() {
+        return false;
+    }
+
+    let mut synth = container.clone();
+    synth.children = mapping.iter().map(|(_, c)| c.clone()).collect();
+    // R4504：synthetic 走 sum 模式（wrapper 阻断折叠——spanner 间隙 = mb+mt 相加）。
+    layout_multicol_with_spanners_inner(&mut synth, info, styles, trim_active, true);
+
+    // 容器高写回（spanner 路径在 synth 上写 trim/flagged 高，镜像回真实容器）。
+    container.content_height = synth.content_height;
+    container.height = synth.height;
+
+    // 回填（映射序 ≠ 容器子序——wrapper 扁平化展开，须按 target 寻址真实盒）。
+    let wrapper_origin = |container: &LayoutBox, wi: usize| -> (f32, f32) {
+        let w = &container.children[wi];
+        (w.x + w.content_x, w.y + w.content_y)
+    };
+    for (mi, (target, _pre_state)) in mapping.iter().enumerate() {
+        let synth_child = &synth.children[mi];
+        let (sx, sy, sw) = (synth_child.x, synth_child.y, synth_child.width);
+        let synth_cso_empty = synth_child.column_span_offsets.is_empty();
+        let frag_flag = synth_child.is_multicol_region_fragment;
+        match target {
+            BackfillTarget::Direct(i) => {
+                let r = &mut container.children[*i];
+                r.x = sx;
+                r.y = sy;
+                r.width = sw;
+                // content 域同步镜像（R4504）：position_multicol_children 的列宽约束同时
+                // 改写 width/content_width——只回填 width 会留旧 content_width（= 容器全宽
+                // 160），paint Path B IFC 按它重跑 → 列宽错（nested-001 navy 行 stride 60）。
+                r.content_width = synth_child.content_width;
+                r.is_multicol_region_fragment = frag_flag;
+                if synth_cso_empty {
+                    r.column_span_offsets.clear();
+                } else {
+                    r.column_span_offsets = synth_child.column_span_offsets.clone();
+                }
+            }
+            BackfillTarget::WrapperChild(wi, ci) => {
+                let (dx, dy) = wrapper_origin(container, *wi);
+                let r = &mut container.children[*wi].children[*ci];
+                r.x = sx - dx;
+                r.y = sy - dy;
+                if is_spanner_box(r) {
+                    // spanner 全宽 + 清 cso（同 spanner 路径 line-597 语义）。
+                    r.width = sw;
+                    r.content_width = synth_child.content_width;
+                    r.column_span_offsets.clear();
+                } else if !synth_cso_empty {
+                    // 非-spanner 带分片：cso 平移到 wrapper 父内容系（R1341/R1352 同款）。
+                    r.column_span_offsets = synth_child
+                        .column_span_offsets
+                        .iter()
+                        .map(|&(fx, fy, cx, cw, ct, ch)| (fx - dx, fy - dy, cx - dx, cw, ct - dy, ch))
+                        .collect();
+                }
+            }
+        }
+        let _ = mi;
+    }
+    // wrapper 盒重定位到其扁平子的 spanner 范围（paint bg/border 为空——no_box gate；
+    // 高度供祖先 max-bottom/容器高一致性）。
+    for &wi in &wrapper_indices {
+        // wrapper 无 bg/border（no_box gate），仅把高度对齐其 spanner 子范围（保持 box
+        // 存在供流几何/祖先 max-bottom）；位置不动（其子已按 wrapper 父内容系回填，
+        // paint 经 wrapper.abs 恢复绝对位——R1341 同款约定）。
+        let spanner_extent: f32 = container.children[wi]
+            .children
+            .iter()
+            .filter(|c| is_spanner_box(c))
+            .map(|c| c.y + c.height)
+            .fold(0.0_f32, f32::max);
+        if spanner_extent > 0.0 {
+            container.children[wi].height = spanner_extent;
+            container.children[wi].content_height = spanner_extent;
+        }
+    }
+    true
+}
+
+#[allow(clippy::too_many_arguments)]
 fn layout_multicol_with_spanners(
     container: &mut LayoutBox,
     info: &ColumnInfo,
     styles: &HashMap<NodeId, ComputedStyle>,
     trim_active: bool,
+) {
+    layout_multicol_with_spanners_inner(container, info, styles, trim_active, false)
+}
+
+/// `spanner_margins_sum`：R4504 扁平化 synthetic 专用——wrapper 扁平化后 spanner 间的
+/// margin 为「spanner mb + 提升 spanner mt」非折叠**相加**（div#child 阻断折叠，ref 实证
+/// 40px = 20+20）；真实容器的相邻 spanner margin 仍按折叠（max，margin-001 ref 实证 20px）。
+fn layout_multicol_with_spanners_inner(
+    container: &mut LayoutBox,
+    info: &ColumnInfo,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    trim_active: bool,
+    spanner_margins_sum: bool,
 ) {
     let col_count = info.count;
     if col_count == 0 {
@@ -1303,6 +1521,13 @@ fn layout_multicol_with_spanners(
             // 路径维持 max-合并模型不动——R4250 相加/max 分界对 8 案 load-bearing）。
             if !trim_active && spanner.margin_bottom > 0.0 {
                 y_base += spanner.margin_bottom;
+            }
+            // R4504：synthetic（扁平化）容器——mb 已即时计入 y_base，pending 清零，使下一
+            // spanner 的 mt 完整相加（div#child 阻断折叠：ref 实证 spanner 间隙 40px =
+            // 20+20 非折叠）。真实容器保持 pending = mb 折叠语义（下一 spanner
+            // `adj_top - pending_mb` = max 近似：margin-001 相邻 spanner 间隙 20px 实证）。
+            if spanner_margins_sum && !trim_active {
+                pending_mb = 0.0;
             }
         }
     }
