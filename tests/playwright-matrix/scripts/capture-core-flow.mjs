@@ -27,14 +27,26 @@ const PLAYWRIGHT_DEFAULT_TIMEOUT_MS = 10_000
 // ── 步骤记录 ──
 
 const steps = []
+// S1114 加固（exited null 家族 S1036/S1038/S1111/S1113）：raw CDP send /
+// Playwright 内部等待无超时面在 CPU 负载窗可无限挂起，历史上吞掉
+// execFileSync 300s 背背板后才暴露（status null 不可判）。每步加 60s 看门
+// 狗（最大内部守卫 30s goto 的 2 倍余量），挂起转具名 FAIL 后流程继续——
+// 判定语义不变（真回归仍红），只把不可诊断挂起变成可归因步骤失败。
+const STEP_WATCHDOG_MS = 60_000
 async function step(name, fn) {
   const t0 = Date.now()
+  let watchdog
+  const timeout = new Promise((_, reject) => {
+    watchdog = setTimeout(() => reject(new Error(`timeout after ${STEP_WATCHDOG_MS}ms (watchdog)`)), STEP_WATCHDOG_MS)
+  })
   try {
-    const result = await fn()
+    const result = await Promise.race([fn(), timeout])
+    clearTimeout(watchdog)
     steps.push({ step: name, ok: true, ms: Date.now() - t0 })
     console.log(`  ok  ${name} (${Date.now() - t0}ms)`)
     return result
   } catch (err) {
+    clearTimeout(watchdog)
     steps.push({ step: name, ok: false, error: String(err?.message || err).slice(0, 500), ms: Date.now() - t0 })
     console.log(`  FAIL ${name}: ${String(err?.message || err).slice(0, 300)}`)
     return undefined
