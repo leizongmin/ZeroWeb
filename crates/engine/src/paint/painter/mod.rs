@@ -2541,6 +2541,28 @@ impl Painter {
                     continue;
                 }
 
+                // R4506：nested-spanner wrapper（R1341/R4504）自管内部列布局——其子树
+                // 横跨容器全宽（内部 spanner 全宽插入、块级子按列分片）。容器层若按自身
+                // cso 列分片窗口逐片段重绘整棵 wrapper 子树（004a：article cso=2 → 双绘
+                // + 列窗口切掉跨列内容），与 wrapper 内部 R1352 绘制叠加冲突。改单次
+                // 整体绘制（clip = 容器内容盒，由上层 overflow/容器裁剪兜底）。
+                if child.is_nested_spanner_wrapper {
+                    let counts_before_wrapper = PrimitiveCounts::snapshot(&self.primitives);
+                    self.paint_node(child, styles, content_x + child.x, content_y + child.y, doc, false);
+                    let full_clip = Rect::new(
+                        content_x,
+                        content_y,
+                        box_node.content_width,
+                        box_node.content_height.max(0.0) + 1000.0,
+                    );
+                    super::helpers::clip_all_primitives_to_rect(
+                        &mut self.primitives,
+                        &counts_before_wrapper,
+                        &full_clip,
+                    );
+                    continue;
+                }
+
                 let is_breaking = child.column_span_offsets.len() > 1;
 
                 for &(frag_x, frag_y, col_x, col_w, col_top, col_h) in &child.column_span_offsets {
