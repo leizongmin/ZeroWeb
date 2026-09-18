@@ -24791,6 +24791,45 @@ EXIT=0**（wall ~30s 编译全缓存零 Compiling 行 replay）；锚点四点
    守成态证据经 S1217 门单腿刷新延续 唯一未清偿义务 =
    frames.click+evaluate 回填（挂子帧能力解冻 不阻收口）。
 
+
+   **S1217 轮后插记（2026-09-19 push 序列 pull --rebase 实测）**：
+   兄弟流 30c04d94f（rendering-compat **R4504** nested-001/002 翻
+   绿 3.33→0.00：nested spanner 扁平化 pre-step R1341 泛化）于
+   S1217 门收口（02:37:03）之后经 push 序列 pull --rebase 入树
+   （兄弟提交落窗与我方 push 序列并窗；我方 S1217 提交 95e10d7c1
+   后 rebase 于其上 = bc5a94234，push 30c04d94f..bc5a94234
+   fast-forward 零冲突 实测复核）——兄弟代码提交 **2 files
+   +226/-0 自身口径**（crates/layout-engine/src/multicol.rs +225
+   代码面 / docs/goal/rendering-compat.md +1 折入），**代码面非空
+   （crates/layout-engine 1 file）实测复核** → **S1217 门 PASS 覆
+   盖的代码树态 = 18d266fe8，新组合树态 = bc5a94234 未被门覆
+   盖**；IN_TREE 实测核验（git merge-base --is-ancestor PASS）；
+   工作面归属 = 渲染流域 crates/layout-engine 专属面 零碰撞
+   （run-rules §9/§10 归因纪律记档）。锚点面漂移记档（新组合树态
+   bc5a94234 对基线口径实测）：② crates/ raw **139 → 140**（R4504
+   布局腿入集 e67967632..TIP 口径）/ ④ 全树排除本流 docs **192
+   files +23537/-1345 → 192 files +23763/-1345**（192 files 维持
+   = R4504 两文件均既有文件折入零净增文件；行数折入 +226 与自身
+   口径 +226 精确闭合零工件）；① 自有面 **10 files +1187/-182**
+   维持（headless/ + devtools_serve.rs 口径实测复核）/ ③ 子帧关
+   键词 **7 文件** 命中清单 md5 74f58fcf 逐项一致维持（非测试代码
+   零命中 解冻条件①观察面 140 口径 frames.click+evaluate 挂起维
+   持）；兄弟提交自述 make test **19,345P/0F** 全绿与本流基线同值
+   = 零新增用例，make test 全量参考基线 19,345P/0F 维持以 S1218
+   双腿实测为准。下轮 **S1218 = 树变化刷新轮（双腿活跑口径 = 门 +
+   make test 后台跑法，S1151/S1191/S1201/S1207/S1210 先例链）**
+   ——R4504 代码面入树提前触发双腿刷新（S245→…→S1207→S1210 先
+   例链），S1218 双腿绿收口后以 S1218 双腿为新周期锚点归零重计
+   （若 S1218 前树再变化则口径不变照跑）；S1218 门单腿活跑时锚点
+   复核以本插记刷新值 **② crates/ raw 140 与 ④ 192 files
+   +23763/-1345** 为基线（取代 S1210 插记 139/+23537/-1345 值）；
+   send-keys Timeout flake 家族观察延续（第 4 例后若再现同族红例
+   同口径四点归因）+ 看门狗/多步连锁瞬态红家族观察延续（S1211 第
+   5/4 例后若再现同族红例同口径四点归因）；M5 定稿收口判定不因本
+   插记动摇 goal Done 维持守成态证据经 S1218 双腿刷新延续 唯一未
+   清偿义务 = frames.click+evaluate 回填（挂子帧能力解冻 不阻收
+   口）。
+
    **S1210 轮后插记（2026-09-19 push 序列 pull --rebase 实测）**：
    兄弟流 895a9d1ff（rendering-compat **R4503** nested 簇归因勘察
    P 轮 0 net code）于 S1210 双腿收口（make test 腿 01:47:47）之后
