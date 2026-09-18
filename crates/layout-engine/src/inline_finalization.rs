@@ -3228,6 +3228,8 @@ pub(crate) fn remeasure_inline_only_containers(
 
     // 递归处理子容器，并在 inline-only 容器收缩后把后续普通流兄弟一并上移。
     let mut idx = 0usize;
+    // R4500：本趟子盒最大收缩量（<0 表示有子盒被 remeasure 收缩）。
+    let mut max_child_shrink = 0.0f32;
     while idx < box_node.children.len() {
         let old_height = box_node.children[idx].height;
         let old_content_height = box_node.children[idx].content_height;
@@ -3246,6 +3248,7 @@ pub(crate) fn remeasure_inline_only_containers(
         let height_delta = box_node.children[idx].height - old_height;
         let content_height_delta = box_node.children[idx].content_height - old_content_height;
         let shrink_delta = height_delta.min(content_height_delta);
+        max_child_shrink = max_child_shrink.min(shrink_delta);
         if shrink_delta < -0.01
             && matches!(box_node.children[idx].float, FloatValue::None)
             && !box_node.children[idx].is_absolute
@@ -3325,6 +3328,49 @@ pub(crate) fn remeasure_inline_only_containers(
             }
         }
         idx += 1;
+    }
+    // R4500（CSS2 §10.6.3）：子盒收缩回收。inline-only remeasure 已把收缩子盒的后续
+    // 兄弟上移（上方位移臂），但**本盒自身**的 content_height 仍是 taffy 堆叠残值
+    //（子盒收缩前流高之和）——taffy 把 inline 级子映射为 Block 纵叠测高，行盒几何
+    // 由本 remeasure 修正后，无人回收父容器高。按 max in-flow 子底收缩回收
+    //（仅收缩，增长面归 backfill ② grow 臂）。
+    // 实证：multicol-span-all-001-ref 的 inline-block 容器 content 340 vs 行真和
+    // 100（下方 240px 幻影带，span-all 族 ref 侧共同残差）。
+    // gate：①本趟确有子盒收缩；②**显著收缩**——回收目标比现高小 ≥10%（阈值挡小型
+    // 行度量级收缩：counter-styles 族 li 行高微缩后父容器本就该保持 taffy 值，全量
+    // 回收实测 −22 回归；幻影形态是整行堆叠级膨胀，远超该阈值）；③horizontal-tb；
+    // ④容器 height:auto；⑤无 float 子（float 高度语义归 R699 领域）。
+    // kill-switch `ZW_IFC_SHRINK_RECOVER=0` 回退（default-on）。
+    if std::env::var("ZW_IFC_SHRINK_RECOVER").as_deref() != Ok("0")
+        && max_child_shrink < -0.01
+        && matches!(box_node.writing_mode, WritingModeValue::HorizontalTb)
+        && box_node
+            .node_id
+            .and_then(|id| styles.get(&id))
+            .is_some_and(|s| matches!(s.height, LengthValue::Auto))
+        && box_node
+            .children
+            .iter()
+            .all(|c| c.is_absolute || c.is_fixed || matches!(c.float, FloatValue::None))
+    {
+        let mut max_bottom: Option<f32> = None;
+        for child in &box_node.children {
+            if child.is_absolute || child.is_fixed || !matches!(child.float, FloatValue::None) {
+                continue;
+            }
+            let bottom = child.y + child.height;
+            max_bottom = Some(match max_bottom {
+                Some(b) if b >= bottom => b,
+                _ => bottom,
+            });
+        }
+        if let Some(bottom) = max_bottom
+            && bottom < box_node.content_height * 0.9
+        {
+            let delta = box_node.content_height - bottom;
+            box_node.content_height = bottom;
+            box_node.height -= delta;
+        }
     }
     if let Some((dom_id, mut inline_ctx)) = position_reuse {
         let final_sizes: HashMap<NodeId, (f32, f32)> = box_node

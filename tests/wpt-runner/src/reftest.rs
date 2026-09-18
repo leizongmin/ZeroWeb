@@ -1049,6 +1049,16 @@ pub fn render_via_webview_to_framebuffer_with_base(
 }
 
 /// 合并传入 CSS 与 `base_dir` 下 `<link rel="stylesheet">` 外链（engine / WebView 共用）。
+/// R4500：layout-dump 诊断用的 pub 包装（与 reftest 渲染管线同源合并 <link> 样式表）。
+pub fn merge_page_css_pub(
+    html: &str,
+    css: &str,
+    base_dir: Option<&Path>,
+    media_ctx: Option<zero_css_parser::media_query::MediaContext>,
+) -> String {
+    merge_page_css(html, css, base_dir, media_ctx.as_ref())
+}
+
 fn merge_page_css(
     html: &str,
     css: &str,

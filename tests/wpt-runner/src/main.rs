@@ -2184,8 +2184,12 @@ fn cmd_layout_dump(options: &CliOptions, filter: Option<&str>) {
         // 只渲染 test 页；ref 页布局不在 dump 范围
         //（ZW_LAYOUT_DUMP_REF=1 时追加 dump ref 页，供 test/ref 双页布局差分——R3779b
         // floats-001 ghost-row 调试用，默认关闭不影响 golden 契约）。
+        // R4500：合并页面 <link> 样式表（与 reftest 渲染管线同源）——此前传空 css，
+        // 与真实 reftest 渲染的布局状态分歧，dump 诊断失真（counter-styles 幻影回收
+        // 回归勘察时 test 页 dump 无差而 reftest 翻红的根因）。
+        let page_css = crate::reftest::merge_page_css_pub(&case.test_html, "", base_dir, None);
         let (_, root, rendered_html) =
-            render_to_framebuffer_with_layout_with_base(&case.test_html, "", &config, base_dir);
+            render_to_framebuffer_with_layout_with_base(&case.test_html, &page_css, &config, base_dir);
 
         eprintln!("##### {} #####", case.id);
         dump_layout_tree(&root, &rendered_html);
