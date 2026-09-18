@@ -414,14 +414,15 @@ fn apply_vertical_block_flow_sizing_inner(
                     // R4447：flex 容器放开——item 交叉轴 stretch（align-items:stretch 默认）
                     // 与块级 fill 同值同轴（flexbox-writing-mode-014/015 test 页 item 472 未
                     // 收缩 vs ref 122 实证）。grid 仍排除（item stretch 语义另一套，无 corpus
-                    // 驱动）；inline-block 容器排除：§10.3.9 shrink-to-fit 域归 R4437 臂
-                    //（shrink-only）自管，子 fill 与其单向收缩语义交叉——vrl-012 系
-                    // 4 对双胞胎 +1.7~2.3pp 恶化实证（fill spec 正确但暴露 list
-                    // padding 轴向残差，挂账 R4446 记档）。
-                    !matches!(
-                        s.display,
-                        DisplayValue::Grid | DisplayValue::InlineGrid | DisplayValue::InlineBlock
-                    ) && !matches!(s.height, LengthValue::Auto)
+                    // 驱动）。R4493：**inline-block 容器放开**——R4446 时代排除系 vrl-012 系
+                    // 双胞胎 +1.7~2.3pp 恶化（fill 暴露 list padding 轴向残差，挂账记档）；
+                    // R4491 修 R4437 收缩臂三缺陷链后收缩语义自洽（Σ 子列宽 + frame 双向
+                    // 回写），slr-054 病理实证：子 span 行内 extent 被 taffy 拉到容器块轴宽
+                    // （avail 100 vs definite 行内尺寸 160，7 字文本裁成 100 → 末字形越盒
+                    // 顶），fill 后子行内尺寸 = 容器 definite 行内尺寸 → 文本完整落位。
+                    // definite CSS height 门维持（auto 高 shrink-to-fit 容器仍排除）。
+                    !matches!(s.display, DisplayValue::Grid | DisplayValue::InlineGrid)
+                        && !matches!(s.height, LengthValue::Auto)
                 })
             })
             // float 子树排除：float/clear 几何自洽（clearance-calculations-vrl-008 fill
