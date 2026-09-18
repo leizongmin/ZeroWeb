@@ -20399,6 +20399,34 @@ evaluate 回填（挂子帧能力解冻，见子帧解冻清单，不阻收口�
    延续 唯一未清偿义务=frames.click+evaluate 回填（挂子帧
    能力解冻 不阻收口）。
 
+   **S1131 轮后插记（2026-09-18 push 序列 pull --rebase 实测）**：
+   兄弟流 1c4541d9f（rendering-compat **R4491** fix(layout-engine)
+   slr-054 orthogonal inline-block 收缩臂三缺陷链修复）于 S1131
+   双腿收口（make test 腿 16:48:44）之后经 push 序列 pull
+   --rebase 入树（我方 S1131 提交 0adbd7c62 rebase 于其上，
+   push 1c4541d9f..2391d8648 fast-forward 零冲突 实测复核）
+   ——兄弟提交 **3 files +56/-5 自身口径**（crates/layout-engine/
+   engine.rs +8 / float_positioning.rs +52 折 / docs/goal/
+   rendering-compat.md 1 行），**代码面非空（crates/layout-engine
+   2 files）实测复核** → **S1131 双腿 PASS 覆盖的代码树态 =
+   7aa868da2，新组合树态 = 2391d8648 未被双腿覆盖**；工作面
+   归属 = 渲染流域 crates/layout-engine 专属面 零碰撞（run-rules
+   §9/§10 归因纪律记档）。锚点面漂移记档（对 18d462de6/TIP
+   口径实测）：② crates/ raw **131 → 132**（R4491 布局腿入集
+   e67967632..TIP 口径）/ ④ 全树排除本流 docs **187 files
+   +21080/-1336 → 187 files +21133/-1338**（187 files 维持 =
+   R4491 三文件均既有文件折入零净增文件；行数折入与自身口径
+   +56/-5 存在 -3/-3 跨范围 hunk 对齐差 系 diff 工件 非树不
+   一致）；① 自有面 **10 files +1187/-182** 维持（headless/
+   口径实测复核）/ ③ 子帧关键词 **7 文件** 测试路径清单逐项
+   一致维持（非测试代码零命中）。下轮 **S1132 = 树变化刷新轮
+   （双腿活跑口径=门 + make test 后台跑法，S1115 先例链）**
+   ——R4491 代码面入树提前触发双腿刷新（S245→…→S1120→S1131
+   先例链），S1132 双腿绿收口后以 S1132 双腿为新周期锚点归
+   零重计（若 S1132 前树再变化则口径不变照跑）；M5 定稿收口
+   判定不因本插记动摇 goal Done 维持守成态证据经 S1132 双腿
+   刷新延续。
+
    **S1106 轮后插记（2026-09-18 push 序列 pull --rebase 实测）**：
    兄弟流 fb5133ff7（rendering-compat R4488 登记腿）于 S1106 门
    收口（12:56:44）之后经 push 序列 pull --rebase 入树（我方
