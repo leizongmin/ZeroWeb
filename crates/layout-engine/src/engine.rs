@@ -1011,6 +1011,10 @@ impl LayoutEngine {
         let _region_balanced =
             crate::inline_finalization::balance_multicol_spanner_regions(&mut root_box, doc, styles, inline_fonts);
         crate::multicol::adjust_multicol_layout(&mut root_box, styles);
+        // R4502：multicol 容器高重写（spanner 平衡 y_base 写回）后，其 auto-height
+        // 祖先链按 max in-flow 子底回收 taffy 旧高（div 平衡前 240 → 平衡后 180，
+        // body 幻影 60px；multicol-span-all-003 底部黑带 60px 实证）。
+        crate::multicol::resync_multicol_ancestor_heights(&mut root_box, styles);
 
         // 10. 后处理：对包含 inline-block 子元素的容器，重新定位 inline-block 元素
         adjust_inline_block_positions(&mut root_box, doc, styles, &positioned_inline_blocks);

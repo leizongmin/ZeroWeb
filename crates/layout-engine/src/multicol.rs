@@ -72,6 +72,70 @@ pub fn adjust_multicol_layout(root: &mut LayoutBox, styles: &HashMap<NodeId, Com
     }
 }
 
+/// R4502：multicol 容器高重写后，其 **auto-height 祖先链**按 §10.6.3 回收。
+///
+/// spanner 路径把 multicol 容器高重写为平衡后的 y_base（可增可缩），但祖先
+/// （body/html 等普通块容器）仍持 taffy 平衡前测得的旧高——div 高 240（区域未平衡）
+/// 平衡后 180，body 幻影 60px（multicol-span-all-003：test 页底部黑带 60px vs ref）。
+/// R4500 的收缩回收挂在 compute_final remeasure 循环，只捕捉**该循环内**的子盒收缩；
+/// step 9 multicol 重写发生在其之前，祖先链不在回收射程。
+///
+/// 本 pass 对「子树含 multicol 容器」的 auto-height 块容器按 max in-flow 子底
+/// 重算（**仅收缩**——增长面归 backfill ②/既有 grow 位移链）。gate：
+/// horizontal-tb + height:auto + 无 float 子（float 语义归 R699 领域）+ 非 multicol
+/// 容器自身（其高已由 spanner 路径/列分配写回）。
+/// 返回值 = 子树是否含 multicol 容器（含自身）。
+pub fn resync_multicol_ancestor_heights(box_node: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) -> bool {
+    let mut sub = box_node.is_multicol;
+    for child in &mut box_node.children {
+        sub |= resync_multicol_ancestor_heights(child, styles);
+    }
+    // 自身是 multicol 容器 → 其高已由 spanner 路径/列分配写回，不在此重算；
+    // 仅「含 multicol 后代」的 auto-height 祖先按 max in-flow 子底回收。
+    if sub && !box_node.is_multicol {
+        let is_auto = box_node
+            .node_id
+            .and_then(|id| styles.get(&id))
+            .is_some_and(|st| matches!(st.height, zero_css_parser::values::LengthValue::Auto));
+        let horizontal = matches!(box_node.writing_mode, WritingModeValue::HorizontalTb);
+        let no_float_children = box_node
+            .children
+            .iter()
+            .all(|c| c.is_absolute || c.is_fixed || matches!(c.float, zero_css_parser::values::FloatValue::None));
+        // BFC 容器（button/fieldset 等）末子 margin-bottom 不折叠、计入内容高——
+        // max-border-box-bottom 公式会漏掉它造成过缩（button-002/003 0.03→1.70 实证），
+        // 整类跳过（其高度语义归 R699/BFC 领域）。
+        let is_bfc = crate::margin_collapse::establishes_bfc(box_node);
+        if is_auto && horizontal && no_float_children && !is_bfc {
+            let mut max_bottom: Option<f32> = None;
+            for child in &box_node.children {
+                if child.is_absolute
+                    || child.is_fixed
+                    || !matches!(child.float, zero_css_parser::values::FloatValue::None)
+                {
+                    continue;
+                }
+                let bottom = child.y + child.height;
+                max_bottom = Some(match max_bottom {
+                    Some(b) if b >= bottom => b,
+                    _ => bottom,
+                });
+            }
+            if let Some(bottom) = max_bottom {
+                // 仅收缩（增长面：spanner 平衡高于 taffy 值时祖先增长由 backfill ② /
+                // 既有 grow 位移链承接，此处不放大）+ 显著阈值 ≥10%（挡 button-002/003
+                // 的行度量级位移——R4250 load-bearing 族 0.03% 基线不可扰动）。
+                let delta = box_node.content_height - bottom;
+                if delta > 0.5 && bottom < box_node.content_height * 0.9 {
+                    box_node.content_height = bottom;
+                    box_node.height -= delta;
+                }
+            }
+        }
+    }
+    sub
+}
+
 /// 计算列高限制（用于 column breaking 判断）。
 ///
 /// R1820：forced-break overflow column + auto-height recompute kill-switch（LANDED default-on）。
