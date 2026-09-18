@@ -24857,6 +24857,45 @@ dead_code warning（match_media_to_json bin 视角 归因渲染流）；
 
 
 
+   **S1221 轮后插记（2026-09-19 push 序列 pull --rebase 实测）**：
+   兄弟流 3cd9bf0b0（rendering-compat **R4506** 004a 期望结构定谳
+   + 容器层单次绘制 neutral）于 S1221 门腿收口（03:09 落盘）之后
+   经 push 序列 pull --rebase 入树（兄弟提交落窗 03:10:34 与我方
+   push 序列并窗；我方 S1221 提交 4022da09f 后 rebase 于其上 =
+   471f41f6d，push 3cd9bf0b0..471f41f6d fast-forward 零冲突 实测
+   复核）——兄弟提交 **2 files +23/-0 自身口径**
+   （crates/engine/src/paint/painter/mod.rs +22 +
+   docs/goal/rendering-compat.md +1），**代码面入树实测复核**
+   （d3d2b7363..3cd9bf0b0 排除 docs diff = 1 file +22/-0 非空）→
+   **S1221 门腿 PASS 覆盖的代码树态 = d3d2b7363，新组合树态 =
+   471f41f6d 含 R4506 代码面——S1221 门腿对代码树的覆盖不外延，
+   R4506 代码面入树触发双腿刷新**（刷新触发 = 代码面入树
+   S1218/R4504 同款口径；刷新兑现 = 下轮 S1222 双腿活跑）；IN_TREE
+   实测核验（git merge-base --is-ancestor PASS）；工作面归属 =
+   渲染流域 paint 面（engine paint/painter）非本流工作面
+   （headless/）零文件碰撞（③ 命中清单不变佐证）run-rules §9/§10
+   归因纪律记档。锚点面漂移记档（新组合树态 471f41f6d 对基线口
+   径实测）：④ 全树排除本流 docs **192 files +23764/-1345 → 192
+   files +23787/-1345**（192 files 维持 = paint/painter/mod.rs 既
+   有文件折入零净增文件；行数折入 +23 与自身口径 crates +22 +
+   rendering-compat.md +1 精确闭合零工件）；① 自有面 **10 files
+   +1187/-182** 维持 / ② crates/ raw **140 → 141**（R4506 含 1 个
+   crates/ 提交）/ ③ 子帧关键词 **7 文件** 命中清单 md5 74f58fcf
+   逐项一致维持（非测试代码零命中 解冻条件①观察面 **141 口径**
+   frames.click+evaluate 挂起维持）。下轮 **S1222 = 树变化刷新轮
+   （R4506 兄弟代码腿入树提前触发（本插记预告兑现）双腿活跑口径
+   = 门 + make test 后台跑法 S1151/S1191/S1201/S1207/S1210/S1218
+   先例链）**；S1222 门腿预期重编相位（engine→page-runtime→
+   zero-browser 链，R4506 engine paint 改动触发）；S1222 双腿绿收
+   口后锚点四点按本插记刷新值为基线复核（② 141 / ④ 192 files
+   +23787/-1345）；send-keys Timeout flake 家族观察延续（第 4 例
+   后若再现同族红例同口径四点归因）+ 看门狗/多步连锁瞬态红家族
+   观察延续（S1211 第 5/4 例后若再现同族红例同口径四点归因）+
+   兄弟流 zero-engine dead_code warning 观察延续；M5 定稿收口判
+   定不因本插记动摇 goal Done 维持守成态证据经 S1222 双腿刷新延
+   续 唯一未清偿义务 = frames.click+evaluate 回填（挂子帧能力解
+   冻 不阻收口）。
+
    **S1221 已执行（2026-09-19）静默监测引用轮（引用计数 3/10，周
    期锚点 = S1218 双腿（门腿 02:43:14 落盘 + make test 腿 02:52:58
    收口），同 tip 复核 pull 零新提交 tip = d3d2b7363 即 S1220 提
