@@ -2,49 +2,44 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-18（S1065：**树变化刷新轮（S1064 轮后插
-记预告兑现：兄弟流 R4474/R4475 代码腿入树触发
-S898→S899→S1047→S1051→S1059→S1064 先例链连刷第 6 例），
-pull 零新提交 tip = 712121cb8 即本流 S1064 轮后插记提交本身
-（R4475 组合态 IN_TREE 实测核验），双腿刷新口径 = 门 + make
-test（make test 腿后台跑法，S1064 工具坑点记档沿用），引用计
-数以 S1065 双腿为新周期锚点 0/10（门腿 07:56:33 落盘 + make
-test 腿 ≤08:11 收口）**。
-门腿 **PASS 33 绿净窗活跑首调即收口**（起手 load 0.97 净
-窗；07:55:59 启动 07:56:33 落盘 wall ~34s EXIT=0；R4475 组合
-态级联重编译 4 腿 layout-engine→engine→page-runtime→browser
-依赖链精确（与 R4473 同链宽 4 腿，R4474 注释腿不扩链实测）；
-expected_green 33 对称差 none、regressions 空、deterministic
-双跑 YES（双 run 33 ok 集机械一致，双 run 唯一 failed 同 = 挂
-账 frames.click+evaluate）；双 run 均 flow exited 1 正常
+**最后更新**: 2026-09-18（S1066：**静默监测引用轮（引用计数
+0/10→1/10，周期锚点 = S1065 双腿：门腿 07:56:33 落盘 + make
+test 腿 ≤08:11 收口），同 tip 复核 pull 零新提交 tip =
+a2a99172e 即本流 S1065 轮后插记提交本身（S1065 双腿收口后零
+代码变更 194ffb3f7..HEAD 全空——S1065+插记两提交均本流 docs
+非代码面实测复核），树不变口径 = 门单腿复跑免 make test 腿
+（S336 先例），绿步维持 33**。
+门腿复跑在位 **08:15:03 启动 08:15:33 落盘首调即 PASS 33 绿
+deterministic 双跑 YES EXIT=0**（wall ~30s；编译全缓存零
+Compiling 行 replay——代码树对 S1065 锚定态零变更佐证；
+expected_green 33 对称差 none、regressions 空，run_details 双
+run 实质逐项一致（双 run 各 33 ok 集机械一致，唯一 failed 同 =
+挂账 frames.click+evaluate），双 run 均 flow exited 1 正常
 态；ZW_IPC_VALIDATE=1 在位静默 capture jsonl 面零写入（五
-jsonl mtime 09-12/09-13 全不变实测复核）；steps-report/
-determinism-report 新鲜落盘 07:56；dead_code warning 维持同形
-一枚（match_media_to_json，crates/engine/src/js_dom_bridge.rs
-——cargo cache warning replay 既有形态 S1028→S1064 同形，维
-持记档））。
-make test 腿 **一调收口 19,341P/0F 全绿**（67 组 07:56:49 启
-动 08:06:18 后 clippy quickjs 腿静默收口（ps 探测 08:06:18 在
-跑→08:11:02 已收口区间）EXIT=0 零 FAILED/error 行；编译 30
-腿 = R4475 组合态 test profile 级联重编译；计数与
-S992/S1003/S1038/S1041/S1047/S1051/S1059/S1064 基线精确持平
-零漂移 = R4474/R4475 零新增 cargo 测试实测复核；clippy
-quickjs 腿 -D warnings 过；后台跑法首例全程无截断）。
-锚点面四点（R4475 组合态实测，**与 S1064 轮后插记预期四点全
-数精确兑现**）：自有面对 S897 tip 7da6043d6 维持 **10 files
-+1187/-182**；crates/ raw **126**（+2 = R4474 注释腿 +
-R4475 代码腿入 crates/ 口径）；子帧关键词 **7 文件** crates/
-零命中维持（非测试代码零命中实测复核——frames.click+evaluate
-挂起维持，解冻条件①观察面 126 口径）；全树排除本流 docs 对
-18d462de6 实测 **184 files +20406/-1240**（与 S1064 插记实测
-精确一致零漂移）。
-本轮门腿净窗活跑（起手 load 0.97），make test 腿尾段兄弟流活
-动入窗（load 峰值 5.86/5min 4.80 负载下样本），zombie 复测
-零、端口族全 free / capture jsonl mtime 不变。
-R4474/R4475 系渲染流域 layout-engine 代码提交——layout-engine
-属渲染流自有域（run-rules §9）非共享面非本流触碰 口径不变。
-M5 定稿收口判定（DC-1~4 依据）不因刷新动摇——**goal Done 维持，守成态
-证据经 S1065 双腿刷新延续**；唯一未清偿义务 = frames.click+evaluate 回填
+jsonl mtime 09-12 22:48/22:51/22:52/23:00 + 09-13 06:24 全不
+变实测复核）；steps-report/determinism-report 新鲜落盘 08:15；
+dead_code warning 维持同形一枚（match_media_to_json，
+crates/engine/src/js_dom_bridge.rs——cargo cache warning
+replay 既有形态 S1028→S1065 同形，维持记档）；**首调红连续零
+再现计数第 6 轮**（S1059 重计起算），exited null 零再现维
+持）。
+锚点面四点实测维持（代码面对 S1065 锚定态零漂移）：自有面对
+S897 tip 7da6043d6 **10 files +1187/-182**；crates/ raw
+**126** 维持；子帧关键词 **7 文件** crates/ 零命中维持（非测
+试代码零命中实测复核——frames.click+evaluate 挂起维持，解冻
+条件①观察面 126 口径）；全树排除本流 docs 对 18d462de6 实测
+**184 files +20408/-1240**（较 S1065 双腿锚点态 +20406 增
++2 = R4476/R4477 rendering-compat docs 各 +1 折入——S1065
+轮后插记已记档的 docs-only 面，代码面零漂移实测复核）。
+门尾树态（tip = a2a99172e tracked clean）zombie 复测零（前后
+零）、四端口族全 free（前后零监听）、capture jsonl mtime 不
+变、控制面零外来提交。本轮门属兄弟流测试负载衰减窗内活跑（负
+载下样本：起手 load 2.13/5min 3.12，窗内兄弟 clone ZeroWeb-2
+zero_integration_tests 测试腿 139% CPU，双 clone 隔离零污染本
+树 非端口竞争面，门后 load 2.39 衰减延续——#0 复现监测零命中
+维持）。
+M5 定稿收口判定（DC-1~4 依据）不因复验动摇——**goal Done 维持，守成态
+证据经 S1066 门单腿刷新延续**；唯一未清偿义务 = frames.click+evaluate 回填
 （挂子帧能力解冻，见子帧解冻清单，不阻收口））
 记预告兑现：兄弟流 R4473 代码腿 cca06633a 入树触发
 S898→S899→S1047→S1051→S1059 先例链连刷第 5 例），pull 零新
@@ -19144,6 +19139,52 @@ M5 定稿收口判定（DC-1~4 依据）不因复验动摇——**goal Done 维�
    间线注记：该兄弟 docs 提交 05:22:44 落于 S1046 首调红窗口内（纯
    docs 不参与门红归因），M5 定稿收口判定（DC-1~4 依据）不因本插记
    动摇，守成态证据经 S1046 门单腿刷新延续。
+
+   **S1066 已执行（2026-09-18）静默监测引用轮（引用计数 0/10→
+   1/10，周期锚点=S1065 双腿（门腿 07:56:33 落盘 + make test 腿
+   ≤08:11 收口），同 tip 复核 pull 零新提交 tip=a2a99172e 即
+   S1065 轮后插记提交本身（S1065 双腿收口后零代码变更
+   194ffb3f7..HEAD 全空——S1065 记录+插记两提交均本流 docs 非
+   代码面 git diff 全空输出实测复核），树不变口径=门单腿复跑免
+   make test 腿 S336 先例 绿步维持 33）**：门腿复跑在位
+   08:15:03 启动 08:15:33 落盘首调即 **PASS 33 绿 deterministic
+   双跑 YES EXIT=0**（wall ~30s 编译全缓存零 Compiling 行
+   replay——代码树对 S1065 锚定态零变更佐证；expected_green 33
+   对称差 none、regressions 空，run_details 双 run 实质逐项一
+   致（双 run 各 33 ok 集机械一致，唯一 failed 同=挂账
+   frames.click+evaluate），双 run 均 flow exited 1 正常态；
+   ZW_IPC_VALIDATE=1 在位静默 capture jsonl 面零写入 #0 复现监
+   测零命中维持（五 jsonl mtime 09-12 22:48/22:51/22:52/23:00 +
+   09-13 06:24 全不变实测复核）；steps-report/determinism-report
+   新鲜落盘 08:15；dead_code warning 维持同形一枚
+   （match_media_to_json，crates/engine/src/js_dom_bridge.rs——
+   cargo cache warning replay 既有形态 S1028→S1065 同形维持记
+   档）；首调红形态连续零再现计数第 6 轮（S1059 重计起算），
+   exited null 零再现维持）；锚点面四点实测维持（代码面对
+   S1065 锚定态零漂移）：自有面对 S897 tip 7da6043d6
+   **10 files +1187/-182** / crates/ raw **126** 维持
+   （e67967632..TIP -- crates/ 口径实测）/ 子帧关键词 **7 文
+   件** crates/ 零命中维持（非测试代码零命中 解冻条件①观察面
+   126 口径 frames.click+evaluate 挂起维持）/ 全树排除本流
+   docs 对 18d462de6 实测 **184 files +20408/-1240**（较 S1065
+   双腿锚点态 +20406 增 +2 = R4476/R4477 rendering-compat docs
+   各 +1 折入——S1065 轮后插记已记档的 docs-only 面 代码面零
+   漂移实测复核）；门尾树态（tip=a2a99172e tracked clean）
+   zombie 复测零（前后零）四端口族全 free（前后零监听）本门零
+   残留 控制面零外来提交；本轮门属兄弟流测试负载衰减窗内活跑
+   （负载下样本：起手 load 2.13/5min 3.12，窗内兄弟 clone
+   ZeroWeb-2 zero_integration_tests 测试腿 139% CPU 经
+   test-guard 包裹 cwd/exe 实测=ZeroWeb-2 target/debug 双
+   clone 隔离零污染本树 非端口竞争面 门后 load 2.39 衰减延续
+   #0 复现监测零命中维持）**——下轮 **S1067 = 2/10 静默监测引
+   用轮**（周期锚点=S1065 双腿），若 S1067 前树代码变化则提前
+   触发双腿刷新（S245→…→S1065 先例链，make test 腿后台跑
+   法），否则按引用轮口径门单腿复跑免 make test 腿（S336 先
+   例），至迟 S1075=10/10 饱和、次轮 S1076 期限轮活跑（双腿活
+   跑口径=门 + make test 后台跑法，S932/S933/S989/S992/S1003/
+   S1010/S1020/S1024/S1029/S1030/S1038/S1041/S1047/S1051/
+   S1059/S1064/S1065 先例：/10 周期饱和即次轮期限轮，新周期期
+   限条款依原设计恢复）；
 
    **S1065 轮后插记（2026-09-18 push 序列 pull --rebase 实
    测）**：兄弟流两 docs 提交（5530fe621 R4476 row-progression
