@@ -23894,6 +23894,48 @@ pull 零新提交 tip = 7d3880a29 即 S1198 提交本身，门单腿复跑
    刷新延续 唯一未清偿义务=frames.click+evaluate 回填（挂子
    帧能力解冻 不阻收口）。
 
+   **S1200 轮后插记（2026-09-19 push 序列 pull --rebase 实测）**：
+   兄弟流 cd5b7982c（rendering-compat **R4500** span-all 族 ref
+   侧 inline-block 幻影高修复：remeasure 子盒收缩回收
+   span-all-001 翻绿）于 S1200 双腿收口（make test 腿 00:21:15）
+   之后经 push 序列 pull --rebase 入树（兄弟提交与 push 序列并
+   窗；我方 S1200 提交 f56dc5490 rebase 于其上 = b94a667dc，
+   push 将为 8b2999459..b94a667dc fast-forward 实测复核）——
+   兄弟代码提交 **5 files +62/-2 自身口径**（crates/layout-engine/
+   inline_finalization.rs +46 代码面 / tests/wpt-runner/src/
+   main.rs +6 + reftest.rs +10 代码面 / docs/goal/
+   rendering-compat.md +1 / imported-resources.txt -1 折入），
+   **代码面非空（crates/layout-engine 1 file + tests/wpt-runner
+   2 files）实测复核** → **S1200 双腿 PASS 覆盖的代码树态 =
+   8b2999459，新组合树态 = b94a667dc 未被双腿覆盖**；
+   IN_TREE 实测核验（git merge-base --is-ancestor PASS）；
+   工作面归属 = 渲染流域 crates/layout-engine + tests/wpt-runner
+   专属面 零碰撞（run-rules §9/§10 归因纪律记档）。锚点面漂
+   移记档（新组合树态 b94a667dc 对基线口径实测）：② crates/
+   raw **136 → 137**（R4500 布局腿入集 e67967632..TIP 口径）/
+   ④ 全树排除本流 docs **192 files +23389/-1343 → 192 files
+   +23450/-1344**（192 files 维持 = R4500 五文件均既有文件折
+   入零净增文件；行数折入 +61/-1 与自身口径 +62/-2 存在
+   -1/+1 跨范围 hunk 对齐差 系 diff 工件 非树不一致）；① 自有
+   面 **10 files +1187/-182** 维持（headless/ + devtools_serve.rs
+   口径实测复核）/ ③ 子帧关键词 **7 文件** 命中清单 md5
+   74f58fcf 逐项一致维持（非测试代码零命中 解冻条件①观察面
+   137 口径 frames.click+evaluate 挂起维持）；兄弟提交自述
+   make test **19,345P/0F** 全绿与本流 S1200 双腿基线同值 =
+   零新增用例，make test 全量参考基线 19,345P/0F 维持以
+   S1201 双腿实测为准。下轮 **S1201 = 树变化刷新轮（双腿活跑
+   口径 = 门 + make test 后台跑法，S1151/S1191 先例链）**——
+   R4500 代码面入树提前触发双腿刷新（S245→…→S1180→S1190→
+   S1191→S1200 先例链），S1201 双腿绿收口后以 S1201 双腿为新
+   周期锚点归零重计（若 S1201 前树再变化则口径不变照跑）；
+   S1201 门单腿活跑时锚点复核以本插记刷新值 ② crates/ raw
+   **137** 与 ④ **192 files +23450/-1344** 为基线（取代 S1190
+   插记 136/+23389/-1343 值）；send-keys Timeout flake 家族观
+   察延续（第 4 例后若再现同族红例同口径四点归因）；M5 定稿
+   收口判定不因本插记动摇 goal Done 维持守成态证据经 S1201
+   双腿刷新延续 唯一未清偿义务=frames.click+evaluate 回填（挂
+   子帧能力解冻 不阻收口）。
+
    **S1150 轮后插记（2026-09-18 push 序列 pull --rebase 实测）**：
    兄弟流 4bd4bff44（rendering-compat **R4493** fix(layout-engine)
    R4446 fill 臂 InlineBlock 容器解禁 line-box/block-flow-direction
