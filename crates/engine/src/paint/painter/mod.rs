@@ -2628,7 +2628,12 @@ impl Painter {
         }
 
         // 如果需要裁剪，将子节点产生的图元裁剪到 padding box 范围内（CSS §11.1.1，见 R793）
-        if needs_clip {
+        // R4501：multicol spanner 区域平衡片段**不建立自身裁剪**——片段盒宽 = 列宽（40px），
+        // 其 paint_text 多列分支把行绘制到容器各列 x（横跨容器全宽）；片段若继承宿主
+        // overflow:hidden 并按自身 40px 盒裁剪，列 1..N 全被切掉（multicol-span-all-002：
+        // 容器 overflow:hidden 时区域内容只剩 col 0）。语义：overflow 属主是宿主容器
+        // （其 padding-box 裁剪在上层 paint_node 已应用，仍覆盖区域全部列位）。
+        if needs_clip && !box_node.is_multicol_region_fragment {
             // R793：CSS §11.1.1 — overflow 裁剪到 **padding box**（内容 + padding，border 之内），
             // 非 content box。原实现按 content box 裁剪（起点加 padding、尺寸=content），致溢出内容
             // 落在 content 边与 padding 边之间的条带时被多裁（chromium 保留到 padding 边）。

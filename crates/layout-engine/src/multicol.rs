@@ -1230,6 +1230,16 @@ fn layout_multicol_with_spanners(
             pending_mb = spanner.margin_bottom;
             spanner.y = y_base;
             y_base += spanner.height;
+            // R4501（CSS Multicol §6.1 + CSS2 §8.3.1）：spanner 的 margin-bottom 须在其后
+            // 区域内容起始前保留。非 trim 路径旧实现把 spanner.mb 只记入 pending_mb，而
+            // pending_mb 的消费点（区域首子合并 / 末子记账）全部 trim_active-gated → 非
+            // trim 容器中它被静默丢弃，spanner 后区域内容紧贴 spanner 底（ref 有 1em 间隙：
+            // multicol-span-all-margin-bottom-001 引用页 spanner 下 20px 黄带，引擎内容
+            // 上移 20px 起始）。本行按非 trim 路径既有**相加**语义把 mb 推进 y_base（trim
+            // 路径维持 max-合并模型不动——R4250 相加/max 分界对 8 案 load-bearing）。
+            if !trim_active && spanner.margin_bottom > 0.0 {
+                y_base += spanner.margin_bottom;
+            }
         }
     }
     // R4250：末元素的 pending mb 计入容器高度（margin-trim block_end 已把它归零）。
