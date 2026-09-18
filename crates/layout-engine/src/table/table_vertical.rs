@@ -13,38 +13,7 @@ use zero_style_system::ComputedStyle;
 use crate::table_types::*;
 use crate::types::LayoutBox;
 
-use super::{get_row_box_mut, update_row_group_positions};
-
-fn resolve_vertical_table_extent_length(
-    value: &zero_css_parser::values::LengthValue,
-    font_size: &zero_css_parser::values::LengthValue,
-    table_width: f32,
-    table_height: f32,
-) -> Option<f32> {
-    use zero_css_parser::values::LengthValue;
-    match value {
-        LengthValue::Auto
-        | LengthValue::Percentage(_)
-        | LengthValue::MinContent
-        | LengthValue::MaxContent
-        | LengthValue::FitContent(_) => None,
-        other => {
-            let font_size_px = zero_style_system::computed::resolve_length(
-                font_size,
-                16.0,
-                Some(table_width as f64),
-                Some(table_height as f64),
-            );
-            let px = zero_style_system::computed::resolve_length(
-                other,
-                font_size_px,
-                Some(table_width as f64),
-                Some(table_height as f64),
-            );
-            px.is_finite().then_some(px as f32)
-        }
-    }
-}
+use super::get_row_box_mut;
 
 pub(super) fn position_cells_vertical(
     table_box: &mut LayoutBox,
@@ -87,29 +56,9 @@ pub(super) fn position_cells_vertical(
     // cell）。若 style.height > base_inline_extent，把超额均分到各列（cell y 高），
     // 使表填满指定高度（如 row-progression-vrl-002 height:7em=140px，base=60 → 各列+27px）。
     // 仅处理 Px（% 随 WM 语义复杂，defer）；min/max clamp 同 horizontal。
-    let target_inline: f32 = table_box
-        .node_id
-        .and_then(|id| styles.get(&id))
-        .and_then(|s| {
-            use zero_css_parser::values::LengthValue;
-            let h_px = resolve_vertical_table_extent_length(&s.height, &s.font_size, table_box.width, table_box.height);
-            let mn_px =
-                resolve_vertical_table_extent_length(&s.min_height, &s.font_size, table_box.width, table_box.height);
-            let mx_px = match &s.max_height {
-                LengthValue::Px(v) if *v == f64::INFINITY => None,
-                other => resolve_vertical_table_extent_length(other, &s.font_size, table_box.width, table_box.height),
-            };
-            let mut t = h_px;
-            if let Some(mx) = mx_px {
-                t = t.map(|v| v.min(mx));
-            }
-            if let Some(mn) = mn_px {
-                t = t.map(|v| v.max(mn));
-            }
-            // height:auto 时仅 min-height 作下限（同 horizontal apply_table_size_constraints）。
-            t.or(mn_px)
-        })
-        .unwrap_or(base_inline_extent);
+    // R4479：target 解析提升为共享 helper（vertical_table_inline_target），与
+    // compute_column_widths_inner 的列宽槽位深度同口径。
+    let target_inline: f32 = vertical_table_inline_target(table_box, styles).unwrap_or(base_inline_extent);
     let col_extra: f32 = if n_cols > 0 && target_inline > base_inline_extent {
         (target_inline - 2.0 * perim_inline - inline_gaps - col_widths.iter().sum::<f32>()) / n_cols as f32
     } else {
@@ -148,8 +97,11 @@ pub(super) fn position_cells_vertical(
     // 但**一致恶化 4 个 vlr 案**（+0.06~+0.37pp）——vlr 有 Path A/B 发散（R1119），其
     // compensating-error 被正确化 min-content floor 破坏。故 floor 仅 vrl 应用；vlr 保
     // 留旧比例缩放（col_widths×scale）。horizontal 不受影响（cap_fired 仅 vertical 触发）。
-    let scale_val = vrl_cap_scale.unwrap_or(1.0);
-    let final_col_widths: Vec<f32> = if cap_fired && is_rl {
+    // R4479 重估：彼时 col_widths 是 viv 臂 junk 值（单列测量 [40,40,40]），vlr cap 的
+    // 比例缩放基线即错；测量深度 thread 后 col_widths 为真实槽位测量值（[100,80,100] 级），
+    // min-content 分布基线随之转正——vlr/slr 亦纳入 R1146 分布（is_rl gate 移除），
+    // row-progression slr-023/029 5.09% 双案 + vlr 族实测见 R4479 记录。
+    let final_col_widths: Vec<f32> = if cap_fired {
         let min_content = compute_col_min_content(table_box, grid, n_cols, styles, doc);
         let min_sum: f32 = min_content.iter().sum();
         if col_sum <= avail_for_cols {
@@ -175,9 +127,6 @@ pub(super) fn position_cells_vertical(
             // avail < min_sum：每列取 min-content（内容溢出）。
             min_content
         }
-    } else if cap_fired {
-        // vlr：保留旧比例缩放（min-content floor 反致 vlr Path A/B 发散恶化）。
-        col_widths.iter().map(|w| w * scale_val).collect()
     } else {
         col_widths.to_vec()
     };
@@ -243,6 +192,8 @@ pub(super) fn position_cells_vertical(
 
     // 行沿 x 迭代：vertical-rl 从右到左（首行最右），vertical-lr 从左到右（首行最左）。
     let mut cur_block = perim_block; // vertical-lr 起始
+    // R4479：行组盒转置 span 收集（rg_idx in table_box.children → (min row_x, max 右缘)）。
+    let mut group_spans: HashMap<usize, (f32, f32)> = HashMap::new();
     for (row_idx, row) in grid.rows.iter().enumerate() {
         let row_collapsed = grid.collapsed_rows.get(row_idx).copied().unwrap_or(false);
         let row_block_size = row_block_sizes[row_idx];
@@ -257,6 +208,11 @@ pub(super) fn position_cells_vertical(
         };
 
         // 设置行盒：宽 = 该列 x 宽，高 = inline 跨度（行铺满表高）。
+        if let Some(rg_idx) = row.row_group_index {
+            let span = group_spans.entry(rg_idx).or_insert((f32::MAX, f32::MIN));
+            span.0 = span.0.min(row_x);
+            span.1 = span.1.max(row_x + row_block_size);
+        }
         let row_box = get_row_box_mut(table_box, row);
         if let Some(row_box) = row_box {
             // 行自身 relative inset（沿 x/y，vertical 下 inset 语义已由 converter 交换）。
@@ -419,8 +375,33 @@ pub(super) fn position_cells_vertical(
         + table_box.padding_top
         + table_box.padding_bottom;
 
-    // 行组位置更新（与 horizontal 路径对称）。
-    update_row_group_positions(table_box, grid, styles);
+    // 行组位置更新：vertical 路径走转置语义——update_row_group_positions 是
+    // horizontal-tb 语义（组盒沿 y 依行高堆叠），对 vertical 表会把组盒 y 置为水平
+    // 堆叠值 → 组内行 abs y 被污染（row-progression-vrl-008 thead/tfoot/tbody 四组
+    // tr y 28/208/88/148 junk 实证）。转置语义：组盒 x = 组内行的 x span（行位沿 x），
+    // y = 0（行 y 已以组为参照），height = inline 跨度（行铺满表高同款），width =
+    // 行 span。组内行 x 重相对化（行 x 原以表 content 原点计，组盒现占 min_x 起点）。
+    // R4479 slice 2。
+    for (rg_idx, (min_x, max_right)) in &group_spans {
+        let Some(group) = table_box.children.get_mut(*rg_idx) else {
+            continue;
+        };
+        let (g_rel_dx, g_rel_dy) = if group.is_relative {
+            (
+                resolve_length_inset(group, styles, true),
+                resolve_length_inset(group, styles, false),
+            )
+        } else {
+            (0.0, 0.0)
+        };
+        group.x = min_x + g_rel_dx;
+        group.y = g_rel_dy;
+        group.width = (max_right - min_x).max(0.0);
+        group.height = row_inline_extent;
+        for row_child in &mut group.children {
+            row_child.x -= *min_x;
+        }
+    }
 
     // 注：caption-side vertical 逻辑 block 轴定位已在本函数上方「α-4b-4」块实现（caption-at-right
     // 移到行右侧）。残余：caption-side-vrl-002/004 的 1.73% 非 caption 位（box 已在正确侧），

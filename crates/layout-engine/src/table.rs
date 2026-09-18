@@ -788,6 +788,10 @@ fn compute_column_widths_inner(
     } else {
         available_width
     };
+    // R4479：vertical 表列宽测量深度 thread——cell intrinsic 的 IFC wrap 深度 = 列宽
+    // 槽位（target_inline/列数），helper 与口径见 table_types::vertical_table_slot_depth。
+    let viv_slot_depth: Option<f32> =
+        vertical_table_slot_depth(table_box, styles, col_count, spacing_x, separated_spacing);
     // 收集每列的最大宽度（两遍算法）
     // CSS Tables §17.5.2.2：列宽首先由非跨列单元格决定（含显式 width），
     // 跨列单元格只把宽度分配给尚未被非跨列单元格约束的列，
@@ -823,7 +827,7 @@ fn compute_column_widths_inner(
             (_, Some(px)) => px < 2.0,
             (Some(_), None) => false,
         };
-        let intrinsic = compute_cell_intrinsic_width(cell_box, styles, doc, inline_fonts);
+        let intrinsic = compute_cell_intrinsic_width(cell_box, styles, doc, inline_fonts, viv_slot_depth);
         // auto 宽度的单元格：列宽只取内容固有宽度（intrinsic）。
         // taffy 把单元格当 block，cell_box.width = 行/表全宽，不能作为列宽下限
         //（否则每列都撑到全宽，列总和溢出表宽）。无论 table 本身 width 是否 auto，
@@ -855,7 +859,7 @@ fn compute_column_widths_inner(
             // R4028：floor 用旧 95% 启发式 intrinsic（for_explicit_floor）——DOM 度量
             // 计入溢出内容 max-content 会把指定宽列撑破（c5501 族 103→147 实证）。
             let floor_intrinsic = if std::env::var("ZW_CELL_INTRINSIC_DESTRETCH").as_deref() != Ok("0") {
-                compute_cell_intrinsic_width_impl(cell_box, styles, doc, inline_fonts, true)
+                compute_cell_intrinsic_width_impl(cell_box, styles, doc, inline_fonts, true, viv_slot_depth)
             } else {
                 intrinsic
             };

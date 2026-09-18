@@ -1329,7 +1329,7 @@ fn test_r702_cell_intrinsic_uses_max_content_not_whitespace_charcount() {
         ..Default::default()
     };
 
-    let intrinsic = compute_cell_intrinsic_width(&cell_box, &styles, &doc, Default::default());
+    let intrinsic = compute_cell_intrinsic_width(&cell_box, &styles, &doc, Default::default(), None);
     // 修复前 char_count = 6 chars × char_width(30) = 180；修复后 box_content_max_width ≈ 「A」宽
     assert!(
         intrinsic < 80.0,
@@ -1377,7 +1377,7 @@ fn table_cell_direct_text_intrinsic_uses_shaped_advance() {
         ..Default::default()
     };
 
-    let intrinsic = compute_cell_intrinsic_width(&cell_box, &styles, &doc, inline_fonts);
+    let intrinsic = compute_cell_intrinsic_width(&cell_box, &styles, &doc, inline_fonts, None);
     assert_eq!(intrinsic, 24.0);
 }
 
@@ -1425,7 +1425,7 @@ fn test_r2050_cell_intrinsic_explicit_child_includes_border() {
         ..Default::default()
     };
 
-    let intrinsic = compute_cell_intrinsic_width(&cell_box, &styles, &doc, Default::default());
+    let intrinsic = compute_cell_intrinsic_width(&cell_box, &styles, &doc, Default::default(), None);
     // 修复前 = 50 + 5(padding) = 55（漏 border）；修复后 = 50 + 5 + 4 = 59（border-box）。
     assert_eq!(
         intrinsic, 59.0,

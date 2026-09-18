@@ -306,24 +306,126 @@ fn calc_style_margin_px(own: Option<&ComputedStyle>, children: &[&ComputedStyle]
     own.map(style_px).unwrap_or(0.0) + children.iter().map(|c| style_px(c)).sum::<f32>()
 }
 
+/// vertical 表 extent length（height/min-height/max-height）解析：仅 definite
+/// length（Px/em/rem 等）生效；Auto/%/min-content/max-content/fit-content → None。
+/// 原 table/table_vertical.rs 私有 helper，R4479 提升为共享（列宽槽位深度与
+/// position_cells_vertical 的 target 口径必须同源）。
+pub(crate) fn resolve_vertical_table_extent_length(
+    value: &zero_css_parser::values::LengthValue,
+    font_size: &zero_css_parser::values::LengthValue,
+    table_width: f32,
+    table_height: f32,
+) -> Option<f32> {
+    use zero_css_parser::values::LengthValue;
+    match value {
+        LengthValue::Auto
+        | LengthValue::Percentage(_)
+        | LengthValue::MinContent
+        | LengthValue::MaxContent
+        | LengthValue::FitContent(_) => None,
+        other => {
+            let font_size_px = zero_style_system::computed::resolve_length(
+                font_size,
+                16.0,
+                Some(table_width as f64),
+                Some(table_height as f64),
+            );
+            let px = zero_style_system::computed::resolve_length(
+                other,
+                font_size_px,
+                Some(table_width as f64),
+                Some(table_height as f64),
+            );
+            px.is_finite().then_some(px as f32)
+        }
+    }
+}
+
+/// vertical 表 inline extent 目标值（CSS height + min/max clamp）解析。
+/// `None` = auto（无 definite inline 约束）。
+///
+/// position_cells_vertical（α-4b-4 row_extras / α-4b-6 cap）与
+/// `compute_column_widths_inner` 的列宽槽位深度（R4479 measurement depth thread）
+/// 共用同一 target 口径，避免两处漂移。
+pub(crate) fn vertical_table_inline_target(
+    table_box: &LayoutBox,
+    styles: &HashMap<NodeId, ComputedStyle>,
+) -> Option<f32> {
+    use zero_css_parser::values::LengthValue;
+    table_box.node_id.and_then(|id| styles.get(&id)).and_then(|s| {
+        let h_px = resolve_vertical_table_extent_length(&s.height, &s.font_size, table_box.width, table_box.height);
+        let mn_px =
+            resolve_vertical_table_extent_length(&s.min_height, &s.font_size, table_box.width, table_box.height);
+        let mx_px = match &s.max_height {
+            LengthValue::Px(v) if *v == f64::INFINITY => None,
+            other => resolve_vertical_table_extent_length(other, &s.font_size, table_box.width, table_box.height),
+        };
+        let mut t = h_px;
+        if let Some(mx) = mx_px {
+            t = t.map(|v| v.min(mx));
+        }
+        if let Some(mn) = mn_px {
+            t = t.map(|v| v.max(mn));
+        }
+        // height:auto 时仅 min-height 作下限（同 horizontal apply_table_size_constraints）。
+        t.or(mn_px)
+    })
+}
+
+/// R4479（CSS Writing Modes §7.1 + CSS Tables §17.5.2）：vertical 表列宽测量槽位深度
+/// = (target_inline − 周界 spacing − 列间 gap) / 列数。vertical 表的「列宽」是行内轴
+///（y）槽位，cell intrinsic 的 IFC wrap 深度应 = 列宽槽位，而非 taffy 交换帧 junk
+/// extent（R4478 探针定谳：测量时点 cell extent 随调用轮次漂移 744/40）。槽位口径与
+/// position_cells_vertical 的 avail_for_cols 同式。`None` = 非 vertical 表 / auto 表
+///（无 definite inline target）/ 槽位退化（≤0.5）——auto 表 viv 臂维持 R4478 INFINITY
+/// 回落；ZW_VIV_SIZING 关闭时 viv 臂整跳，本值自然失效。
+pub(crate) fn vertical_table_slot_depth(
+    table_box: &LayoutBox,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    col_count: usize,
+    spacing_x: f32,
+    separated: bool,
+) -> Option<f32> {
+    if !table_box.writing_mode.is_vertical_block_flow() {
+        return None;
+    }
+    vertical_table_inline_target(table_box, styles).and_then(|target| {
+        let gaps = if col_count > 1 {
+            (col_count - 1) as f32 * spacing_x
+        } else {
+            0.0
+        };
+        let perim = if separated { spacing_x } else { 0.0 };
+        let slot = (target - 2.0 * perim - gaps) / col_count as f32;
+        (slot > 0.5 && slot.is_finite()).then_some(slot)
+    })
+}
+
 pub(crate) fn compute_cell_intrinsic_width(
     cell_box: &LayoutBox,
     styles: &HashMap<NodeId, ComputedStyle>,
     doc: &zero_dom::Document,
     inline_fonts: crate::inline_finalization::InlineFontContext<'_>,
+    depth_override: Option<f32>,
 ) -> f32 {
-    compute_cell_intrinsic_width_impl(cell_box, styles, doc, inline_fonts, false)
+    compute_cell_intrinsic_width_impl(cell_box, styles, doc, inline_fonts, false, depth_override)
 }
 
 /// `for_explicit_floor=true`：作为显式 width cell 的 min-content 下限（R364b）调用。
 /// 该语境维持旧 95% 启发式——R4028 DOM 度量会计入溢出内容（Ahem 长行 max-content
 /// > 显式列宽），把「指定宽」列撑破（c5501 族：td.test width:10em 列 103 → 147）。
+///
+/// `depth_override`（R4479）：vertical 表列宽测量时由 `compute_column_widths_inner`
+/// thread 进来的列宽槽位深度（target_inline/列数）。仅替换 viv 臂的 auto 分支
+///（taffy junk extent/INFINITY 回落）；cell 显式 CSS height 仍优先——definite
+/// 行内尺寸是更强的约束（CSS Tables §17.5.2 列宽槽位语义）。
 pub(crate) fn compute_cell_intrinsic_width_impl(
     cell_box: &LayoutBox,
     styles: &HashMap<NodeId, ComputedStyle>,
     doc: &zero_dom::Document,
     inline_fonts: crate::inline_finalization::InlineFontContext<'_>,
     for_explicit_floor: bool,
+    depth_override: Option<f32>,
 ) -> f32 {
     // R4432：vertical-cell 固有宽 viv 臂——vertical 表链内 cell 的「宽度」（块轴
     // extent）= **列流 IFC 的 Σ 列宽**，非水平文本 advance。max_depth = cell 的
@@ -343,14 +445,23 @@ pub(crate) fn compute_cell_intrinsic_width_impl(
         let depth = match &cs.height {
             LengthValue::Px(v) if v.is_finite() && *v > 0.0 => *v as f32,
             _ => {
-                let fallback = cell_box.height - frame_h;
-                // R4478：taffy 交换帧对 vertical cell 行内 extent 的 junk 值（≤ frame →
-                // ≤0，row-progression-vrl-002：cell 40 − 边框 40 = 0）不得否决 viv 臂——
-                // 回落 INFINITY（max-content 单列测量，col 宽 = line 宽 + frame；行高
-                // 盈余由 position_cells_vertical α-4b-4 row_extras / R1146 cap 分配，
-                // wrap 增长由 R1131 grow 臂驱动——三段链在 cap 触发下自洽）。IFC 深度
-                // INFINITY = 不折列（R4437 IBC 臂同款先例）。
-                if fallback > 0.5 { fallback } else { f32::INFINITY }
+                if let Some(slot) = depth_override {
+                    // R4479：列宽测量深度 thread——vertical 表 cell intrinsic 的 IFC 深度
+                    // = 列宽槽位（target_inline/列数，CSS height/列宽槽位），取代 taffy
+                    // 交换帧 junk extent（R4478 探针定谳：测量时点 cell extent 随调用轮次
+                    // 漂移 744/40，非真实行内可用尺寸）。槽位深度下 IFC 按目标列宽 wrap，
+                    // col_widths 随之进入 R1146 cap 重分配域（Σ max-content > target）。
+                    slot
+                } else {
+                    let fallback = cell_box.height - frame_h;
+                    // R4478：taffy 交换帧对 vertical cell 行内 extent 的 junk 值（≤ frame →
+                    // ≤0，row-progression-vrl-002：cell 40 − 边框 40 = 0）不得否决 viv 臂——
+                    // 回落 INFINITY（max-content 单列测量，col 宽 = line 宽 + frame；行高
+                    // 盈余由 position_cells_vertical α-4b-4 row_extras / R1146 cap 分配，
+                    // wrap 增长由 R1131 grow 臂驱动——三段链在 cap 触发下自洽）。IFC 深度
+                    // INFINITY = 不折列（R4437 IBC 臂同款先例）。
+                    if fallback > 0.5 { fallback } else { f32::INFINITY }
+                }
             }
         };
         if depth > 0.5
@@ -790,7 +901,12 @@ pub(crate) fn grow_vrl_cell_block_extent(
             cols.max(1) as f32
         })
         .unwrap_or(1.0);
-    (n * fs).max(cb.width)
+    // R4479：cell 块轴 extent（x）= IFC wrap 块 extent（N × 行厚）+ 块轴 frame
+    //（vertical 下 padding/border 左右 = block 轴槽位）——旧式缺 frame，cap 触发行
+    // 厚只含字形（row-progression-vrl-002 td padding-left 1em：行 80 应 100，
+    // 表 360 应 420 实证）。
+    let block_frame = cb.padding_left + cb.padding_right + cb.border_left + cb.border_right;
+    (n * fs + block_frame).max(cb.width)
 }
 
 #[cfg(test)]
