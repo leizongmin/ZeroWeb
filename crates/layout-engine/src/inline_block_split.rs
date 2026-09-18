@@ -54,6 +54,33 @@ pub(crate) fn is_out_of_flow(style: &ComputedStyle) -> bool {
     matches!(style.position, PositionValue::Absolute | PositionValue::Fixed) || !matches!(style.float, FloatValue::None)
 }
 
+/// 判断元素是否为替换元素（CSS2 §3.1 置换元素 + 表单控件）。
+///
+/// R4489：替换元素即便计算为 `display:inline`（`<svg>` 无 UA display 规则时的计算
+/// 值；img/canvas 等同域）也不计入 R109 块容器混合谓词——其盒依赖独立 taffy 子树，
+/// 入 Inline 片段会被扁平化收集丢盒（aspect-ratio replaced-element-007/015/016、
+/// svg-intrinsic-size-007 实证）。与 engine.rs extract 侧 `is_replaced` 同表。
+pub(crate) fn is_replaced_element(id: &NodeId, doc: &Document) -> bool {
+    doc.get(*id).is_some_and(|n| match &n.kind {
+        NodeKind::Element(elem) => matches!(
+            elem.local_name(),
+            "img"
+                | "video"
+                | "iframe"
+                | "embed"
+                | "object"
+                | "svg"
+                | "canvas"
+                | "applet"
+                | "input"
+                | "select"
+                | "textarea"
+                | "button"
+        ),
+        _ => false,
+    })
+}
+
 /// 判断指定 DOM 元素是否为 inline 元素且含至少一个 in-flow block-level 子元素（R109 触发条件）。
 pub(crate) fn inline_has_block_child(
     doc: &Document,
@@ -73,11 +100,19 @@ pub(crate) fn inline_has_block_child(
     })
 }
 
-/// 判断 block 容器是否含混合内容（text + block-level 子元素混合，§9.2.1.1）。
+/// 判断 block 容器是否含混合内容（inline-level + block-level 盒混排，§9.2.1.1）。
 ///
-/// block 容器同时包含非空白文本节点和 in-flow block-level 子元素时，
-/// 文本节点应被匿名块盒包裹。仅文本节点算作 inline 内容（inline 元素
-/// 已有自己的 taffy 节点，不需要匿名块包裹）。
+/// block 容器同时包含 in-flow **inline-level 内容**（非空白文本节点 **或 inline-level
+/// 元素**）和 in-flow block-level 子元素时，连续的 inline-level 盒序列应被匿名块盒包裹
+///（https://www.w3.org/TR/CSS21/visuren.html#anonymous-block-level："When a block
+/// container box contains both block-level and inline-level boxes, anonymous block
+/// boxes are generated around the consecutive runs of inline-level boxes"）。
+///
+/// R4489 前仅文本节点算 inline 内容（inline 元素有自己的 taffy 节点）；R2160 Phase A
+/// default-on 后 childless plain inline 的 taffy 节点被跳过、文本流入容器 IFC——与
+/// block 子并存时两套几何互不感知（span 行在容器顶连续堆叠、block 子独立堆叠，重叠；
+/// insert-inline-in-blocks-n-inlines-* 9 案实证）。inline-level **元素**同样构成
+/// inline 内容，一并对齐 spec。kill-switch `ZW_R109_ELEM_MIXED=0` 回退旧口径。
 pub(crate) fn block_container_has_mixed_content(
     doc: &Document,
     styles: &HashMap<NodeId, ComputedStyle>,
@@ -101,10 +136,15 @@ pub(crate) fn block_container_has_mixed_content(
         return false;
     }
 
+    // R4489 kill-switch：=0 回退「仅文本子算 inline 内容」旧口径。
+    let inline_elements_count = std::env::var("ZW_R109_ELEM_MIXED").as_deref() != Ok("0");
+
     let children = doc.child_nodes(container_id);
+    // OPTIMIZATION：两遍扫描——第一遍仅廉价判定（text + block-level display，R4489 前
+    // 原口径成本）；无 block 子（纯 inline 容器 = 文档绝大多数）直接 false，不跑第二遍
+    // 的 inline 元素资格判定（phasea_multi_inline_eligible 含子遍历 + ooflow 后代深查）。
     let mut has_text = false;
     let mut has_block = false;
-
     for &child in &children {
         let Some(node) = doc.get(child) else {
             continue;
@@ -117,21 +157,44 @@ pub(crate) fn block_container_has_mixed_content(
                 let Some(style) = styles.get(&child) else {
                     continue;
                 };
-                if matches!(style.display, DisplayValue::None | DisplayValue::Contents) {
-                    continue;
-                }
-                if is_out_of_flow(style) {
+                if matches!(style.display, DisplayValue::None | DisplayValue::Contents) || is_out_of_flow(style) {
                     continue;
                 }
                 if is_block_level_display(&style.display) {
                     has_block = true;
                 }
-                // inline-level elements already have their own taffy nodes;
-                // only text nodes need anonymous block wrapping.
             }
             _ => {}
         }
-        if has_text && has_block {
+    }
+    if !has_block {
+        return false;
+    }
+    if has_text {
+        return true;
+    }
+    if !inline_elements_count {
+        return false;
+    }
+    // 第二遍（仅 block+element 混排容器）：inline-level 元素也是 inline 内容
+    //（§9.2.1.1 runs of inline-level boxes）。安全判据与 R2160 Phase A 同源
+    //（childless 纯文本 inline）：只有这类元素作为片段项被 IFC 扁平化收集是安全的；
+    // 原子行内级（img/svg/canvas/inline-block）与含 Element 子的 inline 保留独立
+    // taffy 子树旧路径（transform-box svg 族 / inline-replaced-width 族 A/B 实证：
+    // 入片段丢原子盒/嵌套结构 → 净回归）。替换元素即便计算为 display:inline（svg 无
+    // UA display 规则时）也豁免——其盒依赖独立 taffy 子树（replaced-element-007/015/
+    // 016、svg-intrinsic-size-007）。
+    for &child in &children {
+        let Some(style) = styles.get(&child) else {
+            continue;
+        };
+        // float≠none 的 inline 是 out-of-flow（§9.5），不计入（phasea 谓词不查 float，
+        // 此处补齐与第一遍口径一致）。
+        if matches!(style.display, DisplayValue::Inline)
+            && !is_out_of_flow(style)
+            && !is_replaced_element(&child, doc)
+            && crate::tree::phasea_multi_inline_eligible(doc, styles, child)
+        {
             return true;
         }
     }
@@ -238,7 +301,38 @@ pub(crate) fn compute_block_container_split(
     if !block_container_has_mixed_content(doc, styles, container_id) {
         return None;
     }
-    compute_child_split_impl(doc, styles, container_id)
+    let mut segments = compute_child_split_impl(doc, styles, container_id)?;
+    // R4489：纯 out-of-flow 元素片段 → Block 片段。compute_child_split_impl 把
+    // out-of-flow 子归入当前 inline 片段（split-INLINE 语义：随片段 IFC 保留）；块容器
+    // 拆分下这会为 abspos/float 子生成**占流行空间**的匿名块（line-height-applies-to-
+    // 008：div1 内 abspos div3 被包进 anon 块 → 容器 192→288）。转 Block 片段后经
+    // build_subtree 走 converter 的 abspos/float 定位路径，与未拆分时同构。
+    // 守卫：恰好一个 ooflow 元素、其余项全为空白文本（源码换行缩进会并入片段）；
+    // 混有非空白 inline 内容的多元素片段保守维持 Inline，最小行为变更半径。
+    for seg in &mut segments {
+        if let InlineBlockSegment::Inline { item_node_ids } = seg {
+            let mut ooflow_elem: Option<NodeId> = None;
+            let mut pure = true;
+            for &nid in item_node_ids.iter() {
+                match doc.get(nid).map(|n| &n.kind) {
+                    Some(NodeKind::Text(t)) if t.content.trim().is_empty() => {}
+                    Some(NodeKind::Element(_))
+                        if styles.get(&nid).is_some_and(is_out_of_flow) && ooflow_elem.is_none() =>
+                    {
+                        ooflow_elem = Some(nid);
+                    }
+                    _ => {
+                        pure = false;
+                        break;
+                    }
+                }
+            }
+            if pure && let Some(node_id) = ooflow_elem {
+                *seg = InlineBlockSegment::Block { node_id };
+            }
+        }
+    }
+    Some(segments)
 }
 
 /// R3847：block 流容器对 `display: contents` 子元素的「穿透（unbox）」判定——
@@ -523,6 +617,33 @@ mod tests {
     }
 
     #[test]
+    fn test_block_container_inline_element_and_block_mixed() {
+        // R4489：inline **元素**子 + block 子混排（无裸文本子）也是混合内容
+        //（§9.2.1.1 runs of inline-level boxes）——insert-inline-in-blocks-n-inlines-*
+        // 形态：span 元素子夹 block 子，文本子全为空白。
+        let html = r#"<html><body>
+          <div id="b"><span>a</span>
+          <span>b</span><div>block</div><span>c</span></div>
+        </body></html>"#;
+        assert!(
+            has_mixed(html, "b"),
+            "inline element + block children (whitespace text only) should detect mixed"
+        );
+        // 拆分应产出 2 个 Inline 片段（[span,span,ws] / [span]）+ 1 个 Block 片段。
+        let segs = split_block(html, "b").expect("mixed block should split");
+        let block_count = segs
+            .iter()
+            .filter(|s| matches!(s, InlineBlockSegment::Block { .. }))
+            .count();
+        let inline_count = segs
+            .iter()
+            .filter(|s| matches!(s, InlineBlockSegment::Inline { .. }))
+            .count();
+        assert_eq!(block_count, 1, "expected exactly 1 block segment");
+        assert_eq!(inline_count, 2, "expected exactly 2 inline segments");
+    }
+
+    #[test]
     fn test_block_container_mixed_splits_correctly() {
         // div.b 含 div.red (block) + "B" (text) → 应产出一个 Inline + 一个 Block 片段
         let html = r#"<html><body>
@@ -571,5 +692,27 @@ mod tests {
 
         // Non-whitespace text → verified via split_block test below
         // Element child → verified via split_block test below
+    }
+
+    #[test]
+    fn test_ooflow_only_segment_becomes_block_segment() {
+        // R4489：line-height-applies-to-008 形态——block 容器内 abspos 子位于末位，
+        // 纯 ooflow Inline 片段应转 Block 片段（不生成占流空间匿名块）。
+        // 含源码换行缩进空白（与页面真实形态一致，空白并入片段）。
+        let html = r#"<html><body>
+          <div id="b">
+            <div class="box">a</div>
+            <span style="line-height:1in">x</span>
+            <div class="box">c</div>
+            <div id="abs" style="position:absolute">z</div>
+          </div>
+        </body></html>"#;
+        let segs = split_block(html, "b").expect("should split");
+        let last = segs.last().unwrap();
+        assert!(
+            matches!(last, InlineBlockSegment::Block { .. }),
+            "pure-ooflow trailing segment should be Block, got {:?}",
+            segs
+        );
     }
 }

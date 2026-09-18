@@ -1768,6 +1768,54 @@ fn backfill_run_in_boxes(
     paint_skip.insert(run_in_id);
 }
 
+/// R4489：R109 匿名块片段叶的**片段级 IFC 测量**（taffy measure 闭包臂）。
+///
+/// 匿名块片段叶（`fragment_registry[taffy_node]` = 片段 DOM 节点集）此前按 ctx_node
+/// （片段首个文本节点）走 [`measure_text_content`] 的 Text-arm 快捷路径——单行高取
+/// `line_height` 常数比，与真实行盒（IFC 排版结果，paint/compute_final 重测消费的
+/// 同一语义）亚像素分歧（Times 16px：18.6 vs 18.0）。test 页 anon 片段 + ref 页普通
+/// 文本块的不对称页面上，0.6px/行错相位把后继块整体推移（run-in-*-between-003 族
+/// 1.01% 阈界破口；insert-block-n-inlines 族的 element-only 片段曾按宿主全文本测成
+/// 双行高，同域）。
+///
+/// 本函数按**片段 IFC**测量（与 compute_final R3770 重测同源）：Definite 宽返回
+/// `Some(行盒总高)`；intrinsic 查询（Min/MaxContent）返回 `None`（调用方走旧 Text-arm
+/// 快捷路径，intrinsic 面行为不变）。`host_id` = 片段宿主（R109 拆分/块混排容器，
+/// 调用方经 `split_parents ∪ block_mixed_parents` 解析），作片段 IFC 的样式继承
+/// 上下文（与 R3770 重测的 dom_id 同语义）。kill-switch `ZW_FRAGMENT_MEASURE=0`。
+pub(crate) fn try_measure_fragment_segment(
+    doc: &Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    host_id: NodeId,
+    item_node_ids: &[NodeId],
+    known_dimensions: Size<Option<f32>>,
+    available_space: Size<AvailableSpace>,
+    inline_fonts: InlineFontContext<'_>,
+) -> Option<Size<f32>> {
+    if std::env::var("ZW_FRAGMENT_MEASURE").as_deref() == Ok("0") {
+        return None;
+    }
+    // 仅 Definite 宽参与（intrinsic 测量维持旧快捷路径，避免 intrinsic 面行为变更）。
+    let width = known_dimensions.width.or(match available_space.width {
+        AvailableSpace::Definite(w) => Some(w),
+        _ => None,
+    })?;
+    if item_node_ids.is_empty() {
+        return None;
+    }
+    let mut inline_ctx = InlineFormattingContext::new(width)
+        .with_no_wrap(resolve_no_wrap_for_ifc_measure(styles.get(&host_id)))
+        .with_preserve_whitespace(resolve_preserve_for_ifc_measure(styles.get(&host_id)))
+        .with_break_at_newline(resolve_break_at_newline_for_ifc_measure(styles.get(&host_id)));
+    inline_ctx.set_fragment_node_ids(item_node_ids.to_vec());
+    inline_ctx = configure_inline_fonts(inline_ctx, inline_fonts, false);
+    inline_ctx.layout(doc, host_id, styles);
+    Some(Size {
+        width,
+        height: inline_ctx.total_height(),
+    })
+}
+
 #[allow(clippy::too_many_arguments)] // R4332：run_in_prepended 为可选语义注入，不宜并包
 pub(crate) fn measure_text_content(
     doc: &Document,

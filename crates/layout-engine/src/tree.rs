@@ -3199,10 +3199,22 @@ fn build_subtree(
                             }
                             // 取片段首个文本节点作为 measure context（单文本片段精确；
                             // 多节点片段仅按首节点近似尺寸，已知限制）。
+                            // R4489：片段项无直接 Text 子时（element-only 片段，如
+                            // insert-block-in-blocks-n-inlines-* 的 [span] 夹 block），回落
+                            // dom_id（宿主容器）会按**整容器**文本内容测高（单 span 片段
+                            // 实测 40px = 宿主 2 行），后续块整体下移一行。回落片段项的
+                            // **首个 Text 后代**（childless inline 的文本子，单行语义精确）。
                             let ctx_node = item_node_ids
                                 .iter()
                                 .copied()
                                 .find(|&nid| doc.get(nid).is_some_and(|n| matches!(n.kind, NodeKind::Text(_))))
+                                .or_else(|| {
+                                    item_node_ids.iter().copied().find_map(|item| {
+                                        doc.child_nodes(item).into_iter().find(|&gc| {
+                                            doc.get(gc).is_some_and(|g| matches!(g.kind, NodeKind::Text(_)))
+                                        })
+                                    })
+                                })
                                 .unwrap_or(dom_id);
                             // R57（M3）：片段内非纯 inline display 的元素（img/canvas/
                             // inline-block 等原子行内级）建独立 taffy 子树作为匿名块子盒
@@ -3217,9 +3229,14 @@ fn build_subtree(
                                 .filter(|&nid| {
                                     doc.get(nid).is_some_and(|n| {
                                         matches!(&n.kind, NodeKind::Element(_))
-                                            && styles
-                                                .get(&nid)
-                                                .is_some_and(|s| !matches!(s.display, DisplayValue::Inline))
+                                            && styles.get(&nid).is_some_and(|s| {
+                                                !matches!(s.display, DisplayValue::Inline)
+                                                    // R4489：替换元素即便计算 display:inline
+                                                    //（svg 无 UA display 规则）也须独立 taffy
+                                                    // 子树（原子行内级盒），否则入片段后无盒
+                                                    //（R4108 mixed span+svg 形态实证）。
+                                                    || crate::inline_block_split::is_replaced_element(&nid, doc)
+                                            })
                                     })
                                 })
                                 .map(|nid| {

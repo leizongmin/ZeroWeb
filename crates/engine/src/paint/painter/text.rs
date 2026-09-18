@@ -734,7 +734,14 @@ impl super::Painter {
             // 即便容器自身无直接文本子（run-in-block-between-001：run-in 并入**空块**，
             // run-in 文本由 IFC 前置收集提供，has_direct 早退会丢整行）。与 layout 侧
             // compute_final 的 has_text_children 放行同源。
-            if !has_direct_paintable_text(doc, node_id, styles) && box_node.run_in_prepended.is_none() {
+            // R4489：匿名块片段盒（fragment_node_ids）渲染的是**片段内容**——host 直子
+            // 文本判据不适用（片段可全为 inline 元素、host 直子仅空白文本：
+            // insert-inline-in-blocks-n-inlines-* 族的 Inline 片段 = [span, span]）。
+            // 片段仅在非空白时创建（is_whitespace_only_inline_segment 跳过），故放行。
+            if box_node.fragment_node_ids.is_none()
+                && !has_direct_paintable_text(doc, node_id, styles)
+                && box_node.run_in_prepended.is_none()
+            {
                 return;
             }
             // R4328：已并入后继块的 run-in 自盒抑制 DOM 文本绘制——其内容由后继块

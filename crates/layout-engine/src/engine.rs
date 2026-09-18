@@ -469,11 +469,39 @@ impl LayoutEngine {
         let _ = taffy_tree.compute_layout_with_measure(
             root_id,
             available_space,
-            |known_dimensions, available_space, _node_id, context, _style| {
+            |known_dimensions, available_space, node_id, context, _style| {
                 let dom_id = match context {
                     Some(id) => *id,
                     None => return Size::ZERO,
                 };
+                // R4489：R109 匿名块片段叶按**片段级 IFC**测量（与 compute_final R3770
+                // 重测/paint 同源，消除 Text-arm line_height 常数比与真实行盒的亚像素
+                // 分歧）。宿主 = context 上行最近的拆分/块混排容器；intrinsic 查询与
+                // kill-switch 由 try_measure_fragment_segment 内部回落 None 走旧路径。
+                if let Some(item_node_ids) = r109.fragment_registry.get(&node_id) {
+                    let mut host_id: Option<NodeId> = None;
+                    let mut cur = Some(dom_id);
+                    while let Some(id) = cur {
+                        if r109.split_parents.contains(&id) || r109.block_mixed_parents.contains(&id) {
+                            host_id = Some(id);
+                            break;
+                        }
+                        cur = doc.parent_node(id);
+                    }
+                    if let Some(host_id) = host_id
+                        && let Some(size) = crate::inline_finalization::try_measure_fragment_segment(
+                            doc,
+                            styles,
+                            host_id,
+                            item_node_ids,
+                            known_dimensions,
+                            available_space,
+                            inline_fonts,
+                        )
+                    {
+                        return size;
+                    }
+                }
                 measure_text_content(
                     doc,
                     styles,
