@@ -395,6 +395,26 @@ fn size_vertical_orphan_caption(
     true
 }
 
+/// R4495：嵌套表高度预 pass——后序递归，对子树内 Table/InlineTable 节点触发
+/// layout_table（自含子树：自身 grid/行高/格位仅依赖自身子树），使节点高度在其
+/// 父级（cell → 外层表行高）消费前已是修正值。见 layout_table_inner 调用点注释。
+fn fix_nested_table_heights(
+    box_node: &mut LayoutBox,
+    doc: &zero_dom::Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    inline_fonts: crate::inline_finalization::InlineFontContext<'_>,
+) {
+    // 只作用**后代**——box_node 自身是调用方 layout_table_inner 正在布局的表，
+    // 对其再入 layout_table 即无限自递归（首版 stack overflow 实证）。
+    for child in &mut box_node.children {
+        fix_nested_table_heights(child, doc, styles, inline_fonts);
+        let display = get_display(child, styles);
+        if matches!(display, Some(DisplayValue::Table) | Some(DisplayValue::InlineTable)) {
+            layout_table(child, doc, styles, inline_fonts);
+        }
+    }
+}
+
 fn layout_table_inner(
     table_box: &mut LayoutBox,
     doc: &zero_dom::Document,
@@ -434,6 +454,17 @@ fn layout_table_inner(
     // 2. 计算列宽
     let (col_widths, cols_auto_shrunk) =
         compute_column_widths_inner(table_box, &grid, styles, doc, inline_fonts, width_constraint);
+
+    // R4495：嵌套表高度预 pass——cell 子树内的 table-display 后代先完成自身
+    // layout_table（子树自含：自身 grid/行高/格位仅依赖自身子树），随后首趟
+    // position_cells 的行高计算（cell_float_aware_content_height 消费 cell 子盒高）
+    // 读到的是已修正的嵌套表高，而非 taffy 帧行/格堆叠伪高（margin-collapse-121
+    // control cell 内嵌表 taffy 高 192 = Σ 全部格子 64×3 vs 真值 128 → td 行高 198
+    // 双 cell 抬满、红底外露 64px）。R4494-B 教训吸收：**不做**全量先内后外（外层
+    // 表内部元素先走 adjust 递归被污染 −330）；本 pass 只沿子树递归、只对
+    // Table/InlineTable 节点触发 layout_table，外层表自身的行/格盒保持 taffy 原始
+    // 几何供本趟 layout 消费。嵌套表按当前盒宽布局（列压缩重测臂在其后另行处理）。
+    fix_nested_table_heights(table_box, doc, styles, inline_fonts);
 
     // 3. 定位单元格
     // α-4b-1：vertical-rl/lr 表走转置路径（行沿 x、cell 沿 y），
@@ -1505,9 +1536,32 @@ fn position_cells(
                     // R1390：须取 max(taffy 高, BFC 包含浮动后的内容高度)，否则
                     // 含浮动子的单元格（如 floats-wrap-bfc-001）行高不反映浮动，
                     // 导致 table 高度 < 单元格 BFC 高度（td 溢出不可见）。
-                    row_height = row_height
-                        .max(cell_box.height)
-                        .max(cell_float_aware_content_height(cell_box, styles));
+                    // R4495：**嵌套表 cell 例外**——cell 子树含 table-display 后代时
+                    // taffy cell 高 = taffy 帧行/格堆叠伪高（Σ 全部格子高：
+                    // margin-collapse-121 td.control 198 vs 真值 134，红底外露 64px），
+                    // 不可信；改用 float-aware 内容底 + 底框（border/padding bottom，
+                    // c.y 已含顶框）作 border-box 高。非嵌套表 cell 维持 taffy 主导
+                    //（R4494 教训：全局改 aware+底框尺度 −330 亚阈翻转）。
+                    let has_nested_table = {
+                        fn walk(b: &LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) -> bool {
+                            for c in &b.children {
+                                let is_table = c.node_id.and_then(|id| styles.get(&id)).is_some_and(|s| {
+                                    matches!(s.display, DisplayValue::Table | DisplayValue::InlineTable)
+                                });
+                                if is_table || walk(c, styles) {
+                                    return true;
+                                }
+                            }
+                            false
+                        }
+                        walk(cell_box, styles)
+                    };
+                    let aware = cell_float_aware_content_height(cell_box, styles);
+                    row_height = if has_nested_table {
+                        row_height.max(aware + cell_box.border_bottom + cell_box.padding_bottom)
+                    } else {
+                        row_height.max(cell_box.height).max(aware)
+                    };
                 }
             }
             // 空行（单元格无内容）高度为 0——chromium 对空 cell 渲染 0px
