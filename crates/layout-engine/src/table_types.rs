@@ -342,7 +342,16 @@ pub(crate) fn compute_cell_intrinsic_width_impl(
         let frame_h = cell_box.border_top + cell_box.border_bottom + cell_box.padding_top + cell_box.padding_bottom;
         let depth = match &cs.height {
             LengthValue::Px(v) if v.is_finite() && *v > 0.0 => *v as f32,
-            _ => (cell_box.height - frame_h).max(0.0),
+            _ => {
+                let fallback = cell_box.height - frame_h;
+                // R4478：taffy 交换帧对 vertical cell 行内 extent 的 junk 值（≤ frame →
+                // ≤0，row-progression-vrl-002：cell 40 − 边框 40 = 0）不得否决 viv 臂——
+                // 回落 INFINITY（max-content 单列测量，col 宽 = line 宽 + frame；行高
+                // 盈余由 position_cells_vertical α-4b-4 row_extras / R1146 cap 分配，
+                // wrap 增长由 R1131 grow 臂驱动——三段链在 cap 触发下自洽）。IFC 深度
+                // INFINITY = 不折列（R4437 IBC 臂同款先例）。
+                if fallback > 0.5 { fallback } else { f32::INFINITY }
+            }
         };
         if depth > 0.5
             && let Some(dom_id) = cell_box.node_id
