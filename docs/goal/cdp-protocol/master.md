@@ -2,39 +2,33 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-18（S1086：**期限轮活跑（双腿活跑口径
-= 门 + make test 后台跑法，S245→…→S1075 先例链；树不变仍按
-期限轮双腿执行），pull 零新提交 tip = ee261dfa9 即本流
-S1085 提交本身；引用计数以 S1086 双腿为新周期锚点归零重计
-——门腿 10:19:31 落盘 + make test 腿（二调）10:38:32 收口，
-S1087 起 1/10**。
-门腿 **PASS 33 绿最净窗活跑首调即收口**（起手 load 0.21；
-10:19:02 启动 10:19:31 落盘 wall ~29s EXIT=0；编译全缓存零
-Compiling 行 replay；expected_green 33 对称差 none、
-regressions 空、deterministic 双跑 YES（双 run 33 ok 集机械
-一致，双 run 唯一 failed 同 = 挂账 frames.click+evaluate）；
-双 run 均 flow exited 1 正常态；首调红形态连续零再现计数第
-9 轮（S1078 重计起算），exited null 零再现维持）。
-make test 腿**两调收口**：run1 于第 63 组
-network_loading::stale_etag_revalidation_is_coalesced 单例瞬
-态红（localhost 测试服务连接错误，S724 flake 家族新样本）
-四点归因闭环跨流记档 + 隔离复跑 4/0 恒过；run2（二调）
-**19,341P/0F 67 组 result 全 ok**（计数与 S1069 双腿基线精
-确持平零漂移，stale_etag 两腿均 ok，clippy quickjs 腿 -D
-warnings 过，后台跑法无截断）。
+**最后更新**: 2026-09-18（S1087：**静默监测引用轮（引用计数
+新周期 0/10→1/10，周期锚点 = S1086 双腿（门腿 10:19:31 落盘
++ make test 腿（二调）10:38:32 收口）），同 tip 复核 pull 零
+新提交 tip = de70d9c55 即本流 S1086 提交本身（S1086 后零代
+码变更 de70d9c55..HEAD 排除本流 docs diff 全空实测复核），树
+不变口径 = 门单腿复跑免 make test 腿（S336 先例），绿步维持
+33**。
+门腿 **PASS 33 绿近零负载窗活跑首调即收口**（起手 load 0.22
+门后 0.47 近零负载窗；10:44:51 启动 10:45:20 落盘 wall ~29s
+EXIT=0；编译全缓存零 Compiling 行 replay；expected_green 33
+对称差 none、regressions 空、deterministic 双跑 YES（双 run
+33 ok 集机械一致，双 run 唯一 failed 同 = 挂账
+frames.click+evaluate）；双 run 均 flow exited 1 正常态；
 ZW_IPC_VALIDATE=1 在位静默 capture jsonl 面零写入（五 jsonl
 mtime 09-12/09-13 全不变实测复核，跑前跑后 md5 同值
-d316baca 含双腿与隔离复跑全程）；steps-report/
-determinism-report 新鲜落盘 10:19；dead_code warning 维持同
+d316baca 本轮自测组合基线）；steps-report/
+determinism-report 新鲜落盘 10:45；dead_code warning 维持同
 形一枚（match_media_to_json，crates/engine/src/
 js_dom_bridge.rs——cargo cache warning replay 既有形态维持
-记档）。
+记档）；首调红形态连续零再现计数第 10 轮（S1078 重计起算），
+exited null 零再现维持）。
 锚点面四点实测维持（代码面对 S1075 锚定态零漂移）：自有面对
 S897 tip 7da6043d6 维持 **10 files +1187/-182**；crates/
 raw **127** 维持；子帧关键词 **7 文件** crates/ 零命中维持
 （解冻条件①观察面 127 口径）；全树排除本流 docs 对
 18d462de6 实测 **184 files +20428/-1240** 维持。
-门尾树态（tip=ee261dfa9 tracked clean）zombie 复测零（前后
+门尾树态（tip=de70d9c55 tracked clean）zombie 复测零（前后
 零）、四端口族全 free（前后零监听）、控制面零外来提交。
 M5 定稿收口判定（DC-1~4 依据）不因复验动摇——**goal Done 维持，守成态
 证据经 S1079 门单腿刷新延续**；唯一未清偿义务 = frames.click+evaluate 回填
@@ -19065,6 +19059,43 @@ M5 定稿收口判定（DC-1~4 依据）不因复验动摇——**goal Done 维�
 
 
 
+
+   **S1087 已执行（2026-09-18）静默监测引用轮（引用计数新周期
+   0/10→1/10，周期锚点=S1086 双腿（门腿 10:19:31 落盘 + make
+   test 腿（二调）10:38:32 收口），同 tip 复核 pull 零新提交
+   tip=de70d9c55 即 S1086 提交本身（S1086 期限轮双腿后零代码
+   变更 de70d9c55..HEAD 排除本流 docs diff 全空实测复核），树
+   不变口径=门单腿复跑免 make test 腿 S336 先例 绿步维持
+   33）**：门腿复跑在位 10:44:51 启动 10:45:20 落盘首调即
+   **PASS 33 绿 deterministic 双跑 YES EXIT=0**（wall ~29s 编
+   译全缓存零 Compiling 行 replay——代码树对 S1086 锚定态零变
+   更佐证；expected_green 33 对称差 none、regressions 空，
+   run_details 双 run 实质逐项一致（双 run 各 33 ok 集机械一
+   致，唯一 failed 同=挂账 frames.click+evaluate），双 run 均
+   flow exited 1 正常态；ZW_IPC_VALIDATE=1 在位静默 capture
+   jsonl 面零写入 #0 复现监测零命中维持（五 jsonl mtime
+   09-12/09-13 全不变实测复核 跑前跑后 md5 同值 d316baca 本轮
+   自测组合基线）；steps-report/determinism-report 新鲜落盘
+   10:45；dead_code warning 维持同形一枚（match_media_to_json
+   crates/engine/src/js_dom_bridge.rs cargo cache warning
+   replay 既有形态维持记档）；首调红形态连续零再现计数第 10 轮
+   （S1078 重计起算），exited null 零再现维持（5 例计数不变）；
+   锚点面四点实测维持（代码面对 S1075 锚定态零漂移 含修复折
+   入面）：自有面对 S897 tip 7da6043d6 **10 files +1187/-182**
+   维持 / crates/ raw **127** 维持 / 子帧关键词 **7 文件**
+   crates/ 零命中维持（解冻条件①观察面 127 口径 frames.click+
+   evaluate 挂起维持）/ 全树排除本流 docs 对 18d462de6
+   **184 files +20428/-1240** 维持；门尾树态（tip=de70d9c55
+   tracked clean）zombie 复测零（前后零）四端口族全 free（前
+   后零监听）本门零残留 控制面零外来提交 本轮门属近零负载窗
+   活跑（起手 load 0.22 门后 0.47 近零负载窗）；下轮 **S1088
+   = 2/10 静默监测引用轮**（周期锚点=S1086 双腿），若 S1088
+   前树代码变化则提前触发双腿刷新（S245→…→S1086 先例链，
+   make test 腿后台跑法），否则按引用轮口径门单腿复跑免
+   make test 腿（S336 先例），至迟 S1095=10/10 饱和、次轮
+   S1096 期限轮活跑；M5 定稿收口判定不因复验动摇 goal Done
+   维持守成态证据经 S1087 门单腿刷新延续 唯一未清偿义务=
+   frames.click+evaluate 回填（挂子帧能力解冻 不阻收口）。
 
    **S1086 已执行（2026-09-18）期限轮活跑（双腿活跑口径=门 +
    make test 后台跑法，S245→…→S1075 先例链；树不变仍按期限
