@@ -2,42 +2,56 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-18（S1068：**静默监测引用轮（引用计数
-3/10→4/10，周期锚点 = S1065 双腿：门腿 07:56:33 落盘 + make
-test 腿 ≤08:11 收口），同 tip 复核 pull 零新提交 tip =
-600627ec3 即 S1067 提交本身（S1067 门单腿复跑后零代码变更
-517dca510..HEAD 全空——四提交均本流 docs 非代码面实测复
-核），树不变口径 = 门单腿复跑免 make test 腿（S336 先例），
-绿步维持 33**。
-门腿复跑在位 **08:21:53 启动 08:22:23 落盘首调即 PASS 33 绿
-deterministic 双跑 YES EXIT=0**（wall ~30s；编译全缓存零
-Compiling 行 replay——代码树对 S1065 锚定态零变更佐证；
-expected_green 33 对称差 none、regressions 空，run_details 双
-run 实质逐项一致（双 run 各 33 ok 集机械一致，唯一 failed 同 =
-挂账 frames.click+evaluate），双 run 均 flow exited 1 正常
-态；ZW_IPC_VALIDATE=1 在位静默 capture jsonl 面零写入（五
-jsonl mtime 09-12 22:48/22:51/22:52/23:00 + 09-13 06:24 全不
-变实测复核）；steps-report/determinism-report 新鲜落盘 08:22；
-dead_code warning 维持同形一枚（match_media_to_json，
-crates/engine/src/js_dom_bridge.rs——cargo cache warning
-replay 既有形态 S1028→S1067 同形，维持记档）；**首调红连续零
-再现计数第 8 轮**（S1059 重计起算），exited null 零再现维
-持）。
-锚点面四点实测维持（代码面对 S1065 锚定态零漂移）：自有面对
-S897 tip 7da6043d6 **10 files +1187/-182**；crates/ raw
-**126** 维持；子帧关键词 **7 文件** crates/ 零命中维持（观察
-面 126 口径——frames.click+evaluate 挂起维持）；全树排除本流
-docs 对 18d462de6 实测 **184 files +20408/-1240**（与
-S1066/S1067 实测精确一致零漂移，含 R4476/R4477 docs +2 折入
-面）。
-门尾树态（tip = 600627ec3 tracked clean）zombie 复测零（前后
-零）、四端口族全 free（前后零监听）、capture jsonl mtime 不
-变、控制面零外来提交。本轮门属兄弟流负载衰减尾近净窗活跑（起
-手 load 4.62/5min 3.98 衰减尾，窗内零 300%+ 重型兄弟腿，门后
-load 2.42 衰减延续近净窗——#0 复现监测零命中维持）。
-M5 定稿收口判定（DC-1~4 依据）不因复验动摇——**goal Done 维持，守成态
-证据经 S1068 门单腿刷新延续**；唯一未清偿义务 = frames.click+evaluate 回填
-（挂子帧能力解冻，见子帧解冻清单，不阻收口））
+**最后更新**: 2026-09-18（S1068 轮后插记：**兄弟流两连提交
+（21a35cf47 R4478 fix layout-engine viv 臂 depth 回落 INFINITY
+护栏 crates/layout-engine/src/table_types.rs 1 file +10/-1 代
+码腿 + ea749a82b docs rendering-compat +1 登记）于 S1068 门收
+口（08:22:23）之后经 push 序列 pull --rebase 入树（我方 S1068
+提交 rebase 于其上，push ea749a82b..9bcba9d79 fast-forward 零
+冲突）——main tip 组合态已超出 R4478 代码腿入树，S1069 = 树变
+化刷新轮（门 + make test 双腿刷新，make test 腿后台跑法，
+S898→S899→S1047→S1051→S1059→S1064→S1065 先例链连刷第 7 例）
+引用计数以 S1069 双腿为新周期锚点 0/10（S1068 记录内下轮
+S1069=4/10 预告被本插记取代）**。
+S1069 锚点预期（本插记时点实测）：自有面对 S897 tip
+7da6043d6 维持 **10 files +1187/-182** 不变（R4478 不触
+headless/CDP 面 实测复核）；crates/ raw 126→**127**（+1 =
+R4478 代码腿入 crates/ 口径）；子帧关键词 **7 文件** crates/
+零命中维持（解冻条件①观察面 127 口径——frames.click+evaluate
+挂起维持）；全树排除本流 docs 对 18d462de6 184 files
++20408/-1240 → **184 files +20418/-1240**（+10 = R4478
+table_types.rs 净 +9 折入 + ea749a82b docs +1，文件均已在累计
+diff 集 零净增文件 实测复核）。
+R4478 系渲染流域 layout-engine 代码提交——layout-engine 属渲
+染流自有域（run-rules §9）非共享面非本流触碰 本流不碰 口径不
+变。M5 定稿收口判定不因本插记动摇，S1069 刷新门 PASS 即守成
+态证据延续（唯一未清偿义务 = frames.click+evaluate 回填，挂
+子帧能力解冻，不阻收口）。
+
+---
+
+（S1068 本体：静默监测引用轮（引用计数 2/10→3/10，周期锚点 =
+S1065 双腿），同 tip 复核 pull 零新提交 tip = 600627ec3 即
+S1067 提交本身，树不变口径 = 门单腿复跑免 make test 腿（S336
+先例），绿步维持 33。门腿复跑在位 **08:21:53 启动 08:22:23 落
+盘首调即 PASS 33 绿 deterministic 双跑 YES EXIT=0**（wall
+~30s 编译全缓存零 Compiling replay；expected_green 33 对称差
+none、regressions 空，双 run 各 33 ok 集机械一致，唯一 failed
+同 = 挂账 frames.click+evaluate，双 run 均 flow exited 1 正常
+态；ZW_IPC_VALIDATE=1 在位静默 capture jsonl 面零写入；
+steps-report/determinism-report 新鲜落盘 08:22；dead_code
+warning 维持同形一枚；**首调红连续零再现计数第 8 轮**，exited
+null 零再现维持）。锚点面四点实测维持：自有面 **10 files
++1187/-182**；crates/ raw **126**；子帧关键词 **7 文件** 零
+命中维持（观察面 126 口径）；全树 **184 files +20408/-1240**
+（与 S1066/S1067 精确一致零漂移）。门尾树态（tip =
+600627ec3 tracked clean）zombie 零、四端口族全 free、控制面
+零外来提交。兄弟流负载衰减尾近净窗活跑（起手 load 3.98 衰减
+尾，门后 2.42 近净窗）。维护注记：补插 S1067 执行记录块（
+S1067 轮因头部残留清理分神漏插记录区，本次回填）。M5 定稿收
+口判定（DC-1~4 依据）不因复验动摇——**goal Done 维持，守成态
+证据经 S1068 门单腿刷新延续**；唯一未清偿义务 =
+frames.click+evaluate 回填（挂子帧能力解冻，不阻收口））
 
 ---
 
@@ -19054,6 +19068,31 @@ M5 定稿收口判定（DC-1~4 依据）不因复验动摇——**goal Done 维�
    间线注记：该兄弟 docs 提交 05:22:44 落于 S1046 首调红窗口内（纯
    docs 不参与门红归因），M5 定稿收口判定（DC-1~4 依据）不因本插记
    动摇，守成态证据经 S1046 门单腿刷新延续。
+
+   **S1068 轮后插记（2026-09-18 push 序列 pull --rebase 实
+   测）**：兄弟流两连提交（21a35cf47 R4478 fix layout-engine
+   viv 臂 depth 回落 INFINITY 护栏 crates/layout-engine/src/
+   table_types.rs 1 file +10/-1 代码腿 + ea749a82b
+   docs/rendering-compat +1 登记）于 S1068 门收口（08:22:23）
+   之后经 push 序列 pull --rebase 入树（我方 S1068 提交 rebase
+   于其上，push ea749a82b..9bcba9d79 fast-forward 零冲突 实测
+   复核）——main tip 组合态已再度超出 R4478 代码腿入树，**S1069
+   = 树变化刷新轮（门 + make test 双腿刷新，make test 腿后台跑
+   法，S898→S899→S1047→S1051→S1059→S1064→S1065 先例链连刷第
+   7 例）引用计数以 S1069 双腿为新周期锚点 0/10**（S1068 记录
+   内下轮 S1069=4/10 预告被本插记取代）；S1069 锚点预期（本插
+   记时点实测）：自有面对 S897 tip 7da6043d6 维持 10 files
+   +1187/-182 不变（R4478 不触 headless/CDP 面 实测复核）/
+   crates/ raw 126→127（+1 = R4478 代码腿入 crates/ 口径）/
+   子帧关键词 7 文件 crates/ 零命中维持（解冻条件①观察面 127
+   口径 frames.click+evaluate 挂起维持）/ 全树排除本流 docs 对
+   18d462de6 184 files +20408/-1240 → 184 files
+   +20418/-1240（+10 = R4478 table_types.rs 净 +9 折入 +
+   ea749a82b docs +1 文件均已在累计 diff 集 零净增文件 实测复
+   核）；R4478 系渲染流域 layout-engine 代码提交——
+   layout-engine 属渲染流自有域（run-rules §9）非共享面非本流
+   触碰 本流不碰 口径不变；M5 定稿收口判定不因本插记动摇，
+   S1069 刷新门 PASS 即守成态证据延续。
 
    **S1068 已执行（2026-09-18）静默监测引用轮（引用计数 2/10→
    3/10，周期锚点=S1065 双腿（门腿 07:56:33 落盘 + make test 腿
