@@ -29936,6 +29936,56 @@ S1312 双腿）——同 tip 复核 pull 零新提交 tip = 0516a2df8
    偿义务 = frames.click+evaluate 回填（挂子帧能力解冻 不
    阻收口）。
 
+   **S1313 轮后插记（2026-09-19 push 序列 pull --rebase 实测，
+   S1304/S1308/S1311 插记先例 代码面变体）**：兄弟流 R4531
+   代码腿（37f2c1477 SVG path 域描边/填充 alpha 修复（
+   R4530 挂账收口）：corpus 1472 持平 91.12% fail-list diff
+   逐行为空零回归 crates/render-foundation cpu/stroke +
+   cpu/tests + rendering-compat evidence docs 4 files
+   +121/-6）于 S1313 记录提交 push 序列 pull --rebase 期间
+   入树（我方 S1313 提交被顶到其上 d5767bf97 基→
+   37f2c1477 基 f9bb3af1a 变基 a0dd906fe 推远 push
+   37f2c1477..a0dd906fe S1283 同秒插记/S1304 同形态先例）
+   ——**树代码面已变化（R4531 为代码腿非 docs-only 构成刷
+   新触发）→ S1314 = 树变化刷新轮 双腿刷新（S245→…→
+   S1305→S1309→S1312 先例链 make test 腿后台跑法 起跑前显
+   式 cd 仓库根 nohup sh -c echo TEST_EXIT 直写口径）
+   S1313 记录内「S1314 = 2/10 静默监测引用轮」预告被取
+   代**；S1313 门腿（首调红例 + 复跑收口）覆盖树态代码面 =
+   R4526 + R4528 + R4529 + R4530 组合态（R4531 入树前跑完
+   覆盖面不含 R4531）新组合态由 S1314 双腿刷新覆盖；引用计
+   数以 S1314 双腿刷新为新周期锚点归零重计（S1315 起 1/10
+   至迟 S1320 = 到期期限轮活跑 新周期锚点 S1314 + 6 轮）；
+   S1313 轮后插记时点锚点预期（a0dd906fe 实测）：①自有面
+   对 S897 tip 7da6043d6 **10 files +1187/-182 维持**（
+   R4531 零 apps/browser 提交 本流自有面零重叠实测复核）/
+   ②crates/ raw **164**（163 + R4531 一枚 crates 提交 实测
+   e67967632..TIP 口径）/ ③子帧关键词 **7 文件 md5
+   74f58fcf 维持** 非测试代码零命中（插记时点实测复核
+   R4531 零 contentDocument/content_document 命中（#[test]
+   2 处为测试用例行）解冻条件①不变 frames.click+evaluate
+   挂起维持）/ ④全树排除本流 docs 对 18d462de6 **236 files
+   +28333/-1575**（235→236 files 实测 = R4531 面净效应 插
+   记时点实测为准）；**S1314 刷新轮 make test 腿计数预期更
+   新 = 19,359 + 2 = 19,361P/0F**（R4531 新增 2 枚 #[test]
+   实测：path_fill_fully_transparent_paints_nothing /
+   path_fill_semi_transparent_blends_with_background
+   render-foundation cpu 面新用例 计数漂移 +2 归因 R4531
+   预期在案 非此漂移即归因 R4531 用例面再核）；红例观察双
+   族口径维持（① 门面 CDP 缺步/停滞族**家族第 8 例 S1313
+   run 1 停滞亚型首例在案**（spawnSync ETIMEDOUT SIGTERM
+   kill + 步级显式超时 FAIL 9 行）——S1314 刷新轮门腿即
+   家族第 8 例后首轮回绿复查窗口 若再现先归形态（缺步-静
+   默 / 停滞-显式超时）再归亚型再计数 + wall 伴生形态观察
+   （缺步第 6 例 ~35s / 缺步第 7 例 ~7min41s / 停滞第 8 例
+   ~7min33s）② make test 腿 stale_etag 家族累计 4 例在案
+   ——S1314 刷新轮 make test 腿即复查窗口）+ 跨流 L1139
+   flake 家族连续第二十轮活腿绿（S1314 刷新轮 make test 腿
+   即复查窗口第 21 轮）+ 门面 zero-engine dead_code warning
+   既有形态观察延续（S1313 复跑门面在案 1 枚）+ 外部
+   zeroseed defunct 僵尸观察撤档维持（撤档后零命中维持）+
+   form_input_perf 瞬态僵尸观察（S1313 未再现）。
+
    **S1304 轮后插记（2026-09-19 push 序列 pull --rebase 实测，
    S1298 插记先例 代码面变体）**：兄弟流 R4528 代码腿
    （927053a51 per-layer clip C 轮实施：style-system
