@@ -25176,6 +25176,33 @@ R4509 重编相位链精确一致 首调即绿）；make test 腿
    守成态证据经 S1242 双腿刷新延续 唯一未清偿义务 =
    frames.click+evaluate 回填（挂子帧能力解冻 不阻收口）。
 
+   **S1242 轮后插记（2026-09-19 push 序列 pull --rebase 实测，
+   S898/S1190/S1229/S1230/S1236/S1240/S1241 插记先例）**：兄弟
+   流 R4511 代码腿（rendering-compat multicol 收缩兄弟重排
+   restack，crates/layout-engine engine.rs + multicol.rs 3
+   files +65/-1 **零新增 #[test] 函数**）于 S1242 双腿收口（
+   make test 腿复跑 ~08:11）之后、本流 push 序列 pull --rebase
+   入树（S1242 提交被 rebase 顶到其上，0b938e33a → 80b6b8ec2
+   推远）——S1242 双腿覆盖树态 = bda720aac 组合态，main tip 组
+   合态已超出且为 **Rust 代码变更**（R4511 触达 layout-engine
+   渲染流域专属 crate 零本流工作面触达 run-rules §9）→
+   **S1243 = 树变化刷新轮（门 + make test 双腿刷新 S890→…→
+   S1240→S1241→S1242 先例链连刷 make test 腿后台跑法），引用
+   计数以 S1243 双腿为新周期锚点 0/10**（S1242 记录内「下轮
+   S1243 = 1/10 静默监测引用轮」预告被本插记取代）；S1243 锚
+   点预期（本插记时点 80b6b8ec2 实测）：①自有面对 S897 tip
+   7da6043d6 **10 files +1187/-182** 维持 / crates/ raw
+   **145→146**（+1 = R4511 触达 crates/ 折入 e67967632..TIP 计
+   数口径）/ 子帧关键词 **7 文件** md5 74f58fcf 维持（R4511 零
+   contentDocument 面触达实测复核）/ 全树排除本流 docs 对
+   18d462de6 **213 files +24162/-1439 → 213 files +24226/-
+   1439**（面值维持 213 折入 +64/-0 行差 R4511 触达文件均在既
+   有累计 diff 集内）；R4511 组合态首次门覆盖预期重编相位 =
+   layout-engine→engine→page-runtime→browser 链（与 R4510 同
+   款）+ make test 腿计数以 **19,348P/0F 为基线维持预期**（
+   R4511 零新增 #[test] 函数实测）+ 跨流 L1139 flake 家族观察
+   强化口径维持（若再现同口径机械归因 + 复跑收口）。
+
    **S1241 轮后插记（2026-09-19 push 序列 pull --rebase 实测，
    S898/S1190/S1229/S1230/S1236/S1240 插记先例）**：兄弟流
    R4510（rendering-compat 代码腿——inline-flow region 模型
