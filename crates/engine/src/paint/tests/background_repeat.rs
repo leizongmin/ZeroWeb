@@ -446,6 +446,7 @@ fn r1428_canvas_bg_image_anchor_shifts_gradient_position() {
         None,
         None,
         None,
+        None,
     );
     let g1 = &p1.primitives().gradients;
     assert!(g1.len() >= 1, "R1428: anchor 测试应生成 gradient primitive");
@@ -472,6 +473,7 @@ fn r1428_canvas_bg_image_anchor_shifts_gradient_position() {
         0.0,
         None,
         false,
+        None,
         None,
         None,
         None,
@@ -539,6 +541,7 @@ fn r2063_bg_attachment_fixed_positions_against_viewport() {
         None,
         None,
         None,
+        None,
     );
     let g = &painter.primitives().gradients;
     assert!(g.len() >= 1, "R2063: fixed bg 应生成 gradient primitive");
@@ -566,6 +569,7 @@ fn r2063_bg_attachment_fixed_positions_against_viewport() {
         0.0,
         None,
         false,
+        None,
         None,
         None,
         None,
@@ -619,6 +623,7 @@ fn test_background_clip_border_area_ring() {
         0.0,
         ring,
         false,
+        None,
         None,
         None,
         None,
@@ -688,11 +693,190 @@ fn test_background_clip_border_area_no_border_emits_nothing() {
         None,
         None,
         None,
+        None,
     );
     assert!(
         painter.primitives().images.is_empty(),
         "环带为空（空条带集）时 tile 全部不绘"
     );
+}
+
+/// R4529：border-area 环带 border-style 感知——double 边框的墨迹 = 外带 + 内带
+///（镜像 paint_border_edge：gap = max(t/3,1)、line_w = max((t−gap)/2,1)），中缝无墨迹
+/// 不绘背景图（clip-border-area-double：ref 双带间白隙）。300×150 盒 border 50 双线 →
+/// 8 条带，矩形即墨迹区间本身。
+#[test]
+fn test_r4529_double_border_area_ring_two_bands() {
+    use zero_style_system::BorderStyleValue;
+
+    let mut style = ComputedStyle::default();
+    for s in [
+        &mut style.border_top_style,
+        &mut style.border_right_style,
+        &mut style.border_bottom_style,
+        &mut style.border_left_style,
+    ] {
+        *s = BorderStyleValue::Double;
+    }
+
+    let mut layout = make_box(None, 0.0, 0.0, 300.0, 150.0);
+    layout.border_top = 50.0;
+    layout.border_right = 50.0;
+    layout.border_bottom = 50.0;
+    layout.border_left = 50.0;
+
+    let strips = crate::paint::painter::border_area_ring_strips(&style, &layout, 0.0, 0.0, 300.0, 150.0)
+        .expect("border-area 有边框 → Some(条带集)");
+    assert_eq!(strips.len(), 8, "double 墨迹 = 8 条带（4 侧 × 外/内带）");
+    let lw = 50.0 / 3.0;
+    // 条带序 = 侧序 × 侧内区间序（top-out/in、bottom-out/in、left-out/in、right-out/in）。
+    let expected = [
+        (0.0, 0.0, 300.0, lw),              // top 外带
+        (0.0, 2.0 * lw, 300.0, lw),         // top 内带
+        (0.0, 150.0 - lw, 300.0, lw),       // bottom 带一（外缘侧）
+        (0.0, 150.0 - 3.0 * lw, 300.0, lw), // bottom 带二（内缘侧）
+        (0.0, 50.0, lw, 50.0),              // left 外带（padding 盒竖向区间）
+        (2.0 * lw, 50.0, lw, 50.0),         // left 内带
+        (300.0 - lw, 50.0, lw, 50.0),       // right 外带
+        (300.0 - 3.0 * lw, 50.0, lw, 50.0), // right 内带
+    ];
+    for (strip, (ex, ey, ew, eh)) in strips.iter().zip(expected.iter()) {
+        assert!(
+            (strip.left() - ex).abs() < 0.01
+                && (strip.top() - ey).abs() < 0.01
+                && (strip.size.width - ew).abs() < 0.01
+                && (strip.size.height - eh).abs() < 0.01,
+            "条带几何不匹配：got ({}, {}, {}, {}) want ({}, {}, {}, {})",
+            strip.left(),
+            strip.top(),
+            strip.size.width,
+            strip.size.height,
+            ex,
+            ey,
+            ew,
+            eh
+        );
+    }
+}
+
+/// R4529：solid 边框的墨迹 = 整带——环带几何与 R3908 4 条带逐位一致（byte-identical
+/// 守卫：既有 border-area 绿基线不受墨迹化改动影响）。
+#[test]
+fn test_r4529_solid_border_area_ring_unchanged() {
+    use zero_style_system::BackgroundClipComputedValue;
+
+    let style = ComputedStyle::default();
+    let mut layout = make_box(None, 0.0, 0.0, 100.0, 100.0);
+    layout.border_top = 20.0;
+    layout.border_right = 20.0;
+    layout.border_bottom = 20.0;
+    layout.border_left = 20.0;
+
+    let strips = crate::paint::painter::border_area_ring_strips(&style, &layout, 0.0, 0.0, 100.0, 100.0).unwrap();
+    let got: Vec<(f32, f32, f32, f32)> = strips
+        .iter()
+        .map(|r| (r.left(), r.top(), r.size.width, r.size.height))
+        .collect();
+    let want = [
+        (0.0, 0.0, 100.0, 20.0),
+        (0.0, 80.0, 100.0, 20.0),
+        (0.0, 20.0, 20.0, 60.0),
+        (80.0, 20.0, 20.0, 60.0),
+    ];
+    assert_eq!(got, want, "solid 整带环带 = R3908 4 条带原几何");
+}
+
+/// R4529（slice-2）：逐层 painting area——多值 clip（`border-area, content-box`）时各层
+/// 按己值裁剪（css-backgrounds-3 §3.7 cyclic）：layer0 图元 clip 落在环带，layer1 图元
+/// clip 落在 content 盒；单值 clip 页全层同值 = 旧行为。
+#[test]
+fn test_r4529_per_layer_clip_rects() {
+    use zero_style_system::{
+        BackgroundClipComputedValue, BackgroundImageComputedValue, BackgroundPositionComputedValue,
+        BackgroundRepeatComputedValue,
+    };
+
+    let mut style = ComputedStyle::default();
+    style.background_image = vec![
+        BackgroundImageComputedValue::Url("a.png".to_string()),
+        BackgroundImageComputedValue::Url("b.png".to_string()),
+    ];
+    style.background_repeat = vec![BackgroundRepeatComputedValue::NoRepeat];
+    // tile 100×100 定位 (0,0)（origin=padding 盒 (20,20) + offset (−20,−20)）——覆盖整盒，
+    // 使 border-area 环带与 content 盒两类 clip 都被 tile 命中。
+    style.background_size = vec![
+        BackgroundSizeComputedValue::Length(100.0),
+        BackgroundSizeComputedValue::Length(100.0),
+    ];
+    style.background_position = vec![
+        BackgroundPositionComputedValue::TwoValue(
+            Box::new(BackgroundPositionComputedValue::Length(-20.0)),
+            Box::new(BackgroundPositionComputedValue::Length(-20.0)),
+        ),
+        BackgroundPositionComputedValue::TwoValue(
+            Box::new(BackgroundPositionComputedValue::Length(-20.0)),
+            Box::new(BackgroundPositionComputedValue::Length(-20.0)),
+        ),
+    ];
+    style.background_clip = vec![
+        BackgroundClipComputedValue::BorderArea,
+        BackgroundClipComputedValue::ContentBox,
+    ];
+    style.color = zero_css_parser::values::ColorValue::Rgba(0, 0, 0, 255);
+
+    // 100×100 盒、border 20、padding 10 → content 盒 = (30, 30, 40, 40)。
+    let mut layout = make_box(None, 0.0, 0.0, 100.0, 100.0);
+    layout.border_top = 20.0;
+    layout.border_right = 20.0;
+    layout.border_bottom = 20.0;
+    layout.border_left = 20.0;
+    layout.padding_left = 10.0;
+    layout.padding_right = 10.0;
+    layout.padding_top = 10.0;
+    layout.padding_bottom = 10.0;
+    layout.content_width = 40.0;
+    layout.content_height = 40.0;
+
+    let mut painter = Painter::new();
+    // 走完整 paint 入口（paint_background_image 对 tests 私有——端到端覆盖 caller
+    // 预计算 + 逐层消费两段）。
+    let mut styles = HashMap::new();
+    let doc_node = zero_dom::Document::new().create_element("div");
+    styles.insert(doc_node, style);
+    layout.node_id = Some(doc_node);
+    painter.paint(&layout, &styles, None);
+
+    let images = &painter.primitives().images;
+    // layer0（border-area）tile 覆盖整盒 → 4 条带各 1 枚；layer1（content-box）1 枚。
+    assert_eq!(images.len(), 5, "环带 4 枚 + content 1 枚");
+    let content = zero_render_foundation::geometry::Rect::new(30.0, 30.0, 40.0, 40.0);
+    let inner = zero_render_foundation::geometry::Rect::new(20.0, 20.0, 60.0, 60.0);
+    let mut ring_clips = 0;
+    let mut content_clips = 0;
+    for img in images {
+        let clip = img.clip.as_ref().expect("逐层图元必须携带 clip");
+        let within_content = clip.left() >= content.left() - 0.01
+            && clip.top() >= content.top() - 0.01
+            && clip.right() <= content.right() + 0.01
+            && clip.bottom() <= content.bottom() + 0.01;
+        let touches_ring = clip.left() < 20.0 - 0.01
+            || clip.top() < 20.0 - 0.01
+            || clip.right() > 80.0 + 0.01
+            || clip.bottom() > 80.0 + 0.01;
+        if within_content {
+            content_clips += 1;
+        } else if touches_ring {
+            // 环带层 clip 不得伸入 padding 区。
+            let overlap_inner = !(clip.right() <= inner.left()
+                || clip.left() >= inner.right()
+                || clip.bottom() <= inner.top()
+                || clip.top() >= inner.bottom());
+            assert!(!overlap_inner, "border-area 层 clip 不得伸入 padding 区");
+            ring_clips += 1;
+        }
+    }
+    assert_eq!(ring_clips, 4, "layer0（border-area）应恰有 4 枚环带条带图元");
+    assert_eq!(content_clips, 1, "layer1（content-box）应恰有 1 枚 content 图元");
 }
 
 /// R3923：repeat tile 网格相位锚定 background-position（CSS Backgrounds §3.4）。

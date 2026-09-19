@@ -29,6 +29,10 @@ use zero_style_system::{
 };
 
 use self::effects::ShadowPhase;
+// R4529：slice-2 逐层 painting area 载荷与 border-style 墨迹环带构造器——tests 模块
+// 直测条带几何用（effects 模块对 tests 私有；仅测试构建存在，避免未用 re-export）。
+#[cfg(test)]
+pub(crate) use self::effects::{LayerPaintAreas, border_area_ring_strips, clip_rect_for_layer};
 use super::color::resolve_color_current;
 use super::helpers::{PrimitiveCounts, apply_opacity_to_new_primitives, circle_to_polygon, ellipse_to_polygon};
 
@@ -1121,6 +1125,7 @@ impl Painter {
                     None,
                     true,
                     Some((anchor_x, anchor_y, origin_w.max(0.0), origin_h.max(0.0))),
+                    None,
                     None,
                     None,
                 );
@@ -3469,6 +3474,7 @@ impl Painter {
             {
                 self.paint_bg_image_in_origin(
                     rect_x, content_y, *w, h, rect_x, content_y, *w, h, style, 0.0, 0.0, None, false, None, None, None,
+                    None,
                 );
             }
         }

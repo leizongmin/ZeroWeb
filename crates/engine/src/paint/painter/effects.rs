@@ -18,10 +18,10 @@ use zero_render_foundation::primitive::{
 use zero_style_system::{
     AccentColorComputedValue, AppearanceComputedValue, BackgroundAttachmentComputedValue, BackgroundClipComputedValue,
     BackgroundImageComputedValue, BackgroundOriginComputedValue, BackgroundPositionComputedValue,
-    BackgroundRepeatComputedValue, BackgroundSizeComputedValue, BgSizeComponentComputed, CaretColorComputedValue,
-    ComputedStyle, FilterComputedValue, HyphensComputedValue, LineClampComputedValue, MixBlendModeComputedValue,
-    ResizeValue, ScrollbarGutterComputedValue, ScrollbarWidthComputedValue, TextDecorationStyleValue,
-    TextWrapComputedValue,
+    BackgroundRepeatComputedValue, BackgroundSizeComputedValue, BgSizeComponentComputed, BorderStyleValue,
+    CaretColorComputedValue, ComputedStyle, FilterComputedValue, HyphensComputedValue, LineClampComputedValue,
+    MixBlendModeComputedValue, ResizeValue, ScrollbarGutterComputedValue, ScrollbarWidthComputedValue,
+    TextDecorationStyleValue, TextWrapComputedValue,
 };
 
 use super::super::color::color_value_to_render;
@@ -35,6 +35,116 @@ pub(super) enum ShadowPhase {
     BeforeBackground,
     /// inset 阴影：背景之上、内容之下。
     AfterBackground,
+}
+
+/// R4529（slice-2，css-backgrounds-3 §3.7）：逐层 painting area + border-area 环带——
+/// caller（paint_background_image，持元素盒几何）按图层预计算后传入
+/// paint_bg_image_in_origin（该函数签名无元素盒几何，无法自算 padding/content 盒）。
+/// 单值 clip 页：clips[i] 全同 + rings 全 None = 旧行为。
+pub(crate) struct LayerPaintAreas {
+    /// 第 i 层 painting area（background-clip 盒绝对坐标）。
+    pub clips: Vec<(f32, f32, f32, f32)>,
+    /// 第 i 层 border-area 环带条带（非 border-area 层 = None；border-area 无边框 = Some(空)）。
+    pub rings: Vec<Option<Vec<Rect>>>,
+}
+
+/// R4529：第 `layer` 层的 painting area（background-clip 盒，css-backgrounds-3 §3.7；
+/// R2312/R3908 单层语义的逐层化——text 变体按既有简化当 content-box）。
+pub(crate) fn clip_rect_for_layer(
+    style: &ComputedStyle,
+    box_node: &LayoutBox,
+    abs_x: f32,
+    abs_y: f32,
+    layer: usize,
+) -> (f32, f32, f32, f32) {
+    match style.background_clip_for_layer(layer) {
+        BackgroundClipComputedValue::BorderBox | BackgroundClipComputedValue::BorderArea => {
+            (abs_x, abs_y, box_node.width, box_node.height)
+        }
+        BackgroundClipComputedValue::PaddingBox => (
+            abs_x + box_node.border_left,
+            abs_y + box_node.border_top,
+            box_node.width - box_node.border_left - box_node.border_right,
+            box_node.height - box_node.border_top - box_node.border_bottom,
+        ),
+        BackgroundClipComputedValue::ContentBox | BackgroundClipComputedValue::Text => (
+            abs_x + box_node.border_left + box_node.padding_left,
+            abs_y + box_node.border_top + box_node.padding_top,
+            box_node.content_width,
+            box_node.content_height,
+        ),
+    }
+}
+
+/// R4529：border-area 环带条带（css-backgrounds-4 §2.1，R3908 4 条带的 border-style
+/// 感知化）——环带 = 边框**墨迹**区域：solid/groove/ridge/inset/outset 铺满整带；
+/// double 按绘制几何拆双带（外带 + 内带，镜像 paint_border_edge 的 gap/line_w 口径，
+/// clip-border-area-double：ref 双带间白隙 = 墨迹外区域，背景图像须同白）；dotted/dashed
+/// 墨迹为 stroke pattern，矩形 clip 不可表达 → 近似整带（挂账）。
+/// 条带互不重叠：上下条带走全宽（含角区），左右条带走 padding 盒竖向区间——与
+/// paint_borders 的边框绘制几何一致。kill-switch `ZW_BORDER_AREA_INK=0`（回退全带环）。
+pub(crate) fn border_area_ring_strips(
+    style: &ComputedStyle,
+    box_node: &LayoutBox,
+    bx: f32,
+    by: f32,
+    bw: f32,
+    bh: f32,
+) -> Option<Vec<Rect>> {
+    let px = bx + box_node.border_left;
+    let py = by + box_node.border_top;
+    let pw = bw - box_node.border_left - box_node.border_right;
+    let ph = bh - box_node.border_top - box_node.border_bottom;
+    if !(pw > 0.0 && ph > 0.0 && (px > bx || py > by)) {
+        // 无边框 → 环带为空（空条带集 = 所有 tile 不绘；与 None=非 border-area
+        // 正常路径区分）。
+        return Some(Vec::new());
+    }
+    let ink_aware = std::env::var("ZW_BORDER_AREA_INK").as_deref() != Ok("0");
+    let mut strips = Vec::new();
+    for (a, b) in side_ink_intervals(box_node.border_top, &style.border_top_style, ink_aware) {
+        strips.push(Rect::new(bx, by + a, bw, b - a));
+    }
+    for (a, b) in side_ink_intervals(box_node.border_bottom, &style.border_bottom_style, ink_aware) {
+        strips.push(Rect::new(bx, by + bh - b, bw, b - a));
+    }
+    let inner_h = bh - box_node.border_top - box_node.border_bottom;
+    if inner_h > 0.0 {
+        let iy = by + box_node.border_top;
+        for (a, b) in side_ink_intervals(box_node.border_left, &style.border_left_style, ink_aware) {
+            strips.push(Rect::new(bx + a, iy, b - a, inner_h));
+        }
+        for (a, b) in side_ink_intervals(box_node.border_right, &style.border_right_style, ink_aware) {
+            strips.push(Rect::new(bx + bw - b, iy, b - a, inner_h));
+        }
+    }
+    Some(strips)
+}
+
+/// R4529：单侧边框墨迹沿厚度方向的区间集（外缘起算）。
+fn side_ink_intervals(t: f32, border_style: &BorderStyleValue, ink_aware: bool) -> Vec<(f32, f32)> {
+    if t <= 0.0 {
+        return Vec::new();
+    }
+    match border_style {
+        BorderStyleValue::Double if ink_aware => {
+            // 镜像 paint_border_edge：gap = max(t/3, 1)、line_w = max((t−gap)/2, 1)，
+            // 内带止于厚度内缘（2·line_w + gap = t，t<3 的钳位口径同样闭合）。
+            let gap = (t / 3.0).max(1.0);
+            let line_w = ((t - gap) / 2.0).max(1.0);
+            let mut v = Vec::with_capacity(2);
+            if line_w > 0.0 {
+                v.push((0.0, line_w.min(t)));
+            }
+            let inner_start = line_w + gap;
+            let inner_end = (inner_start + line_w).min(t);
+            if inner_end > inner_start {
+                v.push((inner_start, inner_end));
+            }
+            v
+        }
+        _ => vec![(0.0, t)],
+    }
 }
 
 impl super::Painter {
@@ -155,52 +265,28 @@ impl super::Painter {
         // 裁剪/平铺区域错误。text 变体按既有简化当 content-box（无 glyph-mask 能力）。
         // R3908：border-area（css-backgrounds-4 §2.1）——painting area = border-box；
         // 环带裁剪（border-box 减 padding-box）在 paint_bg_image_in_origin 的 tile 发射处
-        // 按 4 条带实施（border_area_ring = Some）。
-        let (clip_x, clip_y, clip_w, clip_h) = match style.background_clip_for_layer(0) {
-            BackgroundClipComputedValue::BorderBox | BackgroundClipComputedValue::BorderArea => {
-                (abs_x, abs_y, box_node.width, box_node.height)
-            }
-            BackgroundClipComputedValue::PaddingBox => (
-                abs_x + box_node.border_left,
-                abs_y + box_node.border_top,
-                box_node.width - box_node.border_left - box_node.border_right,
-                box_node.height - box_node.border_top - box_node.border_bottom,
-            ),
-            BackgroundClipComputedValue::ContentBox | BackgroundClipComputedValue::Text => (
-                abs_x + box_node.border_left + box_node.padding_left,
-                abs_y + box_node.border_top + box_node.padding_top,
-                box_node.content_width,
-                box_node.content_height,
-            ),
-        };
-
-        // R3908：border-area 环带 = border-box 减 padding-box（4 条带，互不重叠）。
-        let border_area_ring: Option<Vec<Rect>> = if matches!(
-            style.background_clip_for_layer(0),
-            BackgroundClipComputedValue::BorderArea
-        ) {
-            let bx = clip_x;
-            let by = clip_y;
-            let bw = clip_w;
-            let bh = clip_h;
-            let px = bx + box_node.border_left;
-            let py = by + box_node.border_top;
-            let pw = bw - box_node.border_left - box_node.border_right;
-            let ph = bh - box_node.border_top - box_node.border_bottom;
-            if pw > 0.0 && ph > 0.0 && (px > bx || py > by) {
-                Some(vec![
-                    Rect::new(bx, by, bw, py - by),
-                    Rect::new(bx, py + ph, bw, by + bh - py - ph),
-                    Rect::new(bx, py, px - bx, ph),
-                    Rect::new(px + pw, py, bx + bw - px - pw, ph),
-                ])
-            } else {
-                // 无边框 → 环带为空（空条带集 = 所有 tile 不绘；与 None=非 border-area
-                // 正常路径区分）。
-                Some(Vec::new())
-            }
-        } else {
-            None
+        // 按条带实施（rings = Some）。
+        // R4529（slice-2）：逐层 painting area + 环带按图层预计算（css-backgrounds-3 §3.7
+        // 多值 clip cyclic `i % len`；单值 clip 时 i%1=0 全层同值 = 旧行为 byte-identical）。
+        // clip rect 仍以 layer 0 值作标量基线（R4354 local 扩展段的 caller 计算基准）。
+        let (clip_x, clip_y, clip_w, clip_h) = clip_rect_for_layer(style, box_node, abs_x, abs_y, 0);
+        let layer_areas = LayerPaintAreas {
+            clips: (0..style.background_image.len())
+                .map(|i| clip_rect_for_layer(style, box_node, abs_x, abs_y, i))
+                .collect(),
+            rings: (0..style.background_image.len())
+                .map(|i| {
+                    if matches!(
+                        style.background_clip_for_layer(i),
+                        BackgroundClipComputedValue::BorderArea
+                    ) {
+                        let (bx, by, bw, bh) = clip_rect_for_layer(style, box_node, abs_x, abs_y, i);
+                        border_area_ring_strips(style, box_node, bx, by, bw, bh)
+                    } else {
+                        None
+                    }
+                })
+                .collect(),
         };
 
         // R4353：本元素脚本化滚动偏移 → local 层背景相位。
@@ -234,12 +320,14 @@ impl super::Painter {
             style,
             0.0,
             0.0,
-            border_area_ring,
+            // R4529（slice-2）：环带已并入 layer_areas（逐层 + border-style 墨迹带）。
+            None,
             false,
             // R4350：无 fixed 层时全层元素盒（含 Fixed 的批次由 fixed 入口处理）。
             None,
             layer_scroll,
             local_paint_area,
+            Some(&layer_areas),
         );
     }
 
@@ -298,6 +386,8 @@ impl super::Painter {
         };
         // positioning area（origin）= 视口（初始包含块）——fixed 层；scroll/local 层
         // （R4350 逐层 attachment）= 元素 background-origin 盒（= clip 盒坐标）。
+        // R4529：fixed 路径维持 R2063 painting area = 元素 origin 盒（全层同值，
+        // layer_areas=None 走标量回退——逐层 clip 只在常规路径接线，避免动 10 案绿基线）。
         self.paint_bg_image_in_origin(
             0.0,
             0.0,
@@ -313,6 +403,7 @@ impl super::Painter {
             None,
             false,
             Some((clip_x, clip_y, clip_w, clip_h)),
+            None,
             None,
             None,
         );
@@ -394,6 +485,10 @@ impl super::Painter {
     ///
     /// 元素背景由 `paint_background_image` 计算 origin/clip 后调用本函数；画布背景传播
     ///（CSS §14.2）直接以视口 (0,0,vw,vh) 同时作 origin+clip 调用本函数。
+    ///
+    /// R4529（slice-2）：`layer_areas` = caller 按图层预计算的逐层 painting area + 环带
+    ///（css-backgrounds-3 §3.7 多值 clip cyclic）。None（画布传播/col/fixed 等无元素盒
+    /// 几何路径）= 全层用标量 `clip_*` + `border_area_ring`（旧行为）。
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn paint_bg_image_in_origin(
         &mut self,
@@ -419,6 +514,8 @@ impl super::Painter {
         // R4354：local 层 painting area 扩展段（local_scrolled_paint_extension 产物）——
         // 仅 local 层消费（与静态 clip 并集）；scroll/fixed 层恒静态盒。
         local_paint_area: Option<(f32, f32, f32, f32)>,
+        // R4529：逐层 painting area + 环带（常规元素路径；标量 clip_* 作 local 层回退基线）。
+        layer_areas: Option<&LayerPaintAreas>,
     ) {
         use zero_render_foundation::image_cache::ImageKey;
         use zero_render_foundation::primitive::ImagePrimitive;
@@ -481,14 +578,19 @@ impl super::Painter {
             };
             // R4354：local 层 painting area（union(静态 clip, 扩展段) ∩ padding 盒，
             // chromium probe/oracle 实证语义见 paint_background 同注）；scroll/fixed 层
-            // 维持静态 clip。
+            // 维持静态 clip。R4529（slice-2）：非 local 层优先取 caller 预计算的逐层
+            // painting area（css-backgrounds-3 §3.7 多值 clip cyclic）；无逐层载荷时
+            // 用标量 clip_*（画布/col/fixed 路径，旧行为）。
             let (clip_x, clip_y, clip_w, clip_h) = if is_local {
                 match local_paint_area {
                     Some(area) if area.2 > 0.0 && area.3 > 0.0 => area,
                     _ => (clip_x, clip_y, clip_w, clip_h),
                 }
             } else {
-                (clip_x, clip_y, clip_w, clip_h)
+                match layer_areas.and_then(|la| la.clips.get(layer_idx)) {
+                    Some(&(cx, cy, cw, ch)) => (cx, cy, cw, ch),
+                    None => (clip_x, clip_y, clip_w, clip_h),
+                }
             };
 
             // R4351：固有维回退逐层解析——img_w/img_h 的 positioning-area 回退必须用
@@ -584,9 +686,13 @@ impl super::Painter {
                     );
 
                     // R3908：background-clip: border-area（css-backgrounds-4 §2.1）——背景
-                    // 仅绘制在边框环带。环带由调用方按 border-box 减 padding-box 预计算
-                    // （4 条带互不重叠，tile 逐带求交集发射无双绘）。
-                    let ring_strips = border_area_ring.as_deref();
+                    // 仅绘制在边框环带。R4529（slice-2）：环带优先取逐层载荷（含 border-style
+                    // 墨迹带——double 双带），回退调用方单环带参数（4 条带互不重叠，tile 逐带
+                    // 求交集发射无双绘）。
+                    let ring_strips = match layer_areas.and_then(|la| la.rings.get(layer_idx)) {
+                        Some(r) => r.as_deref(),
+                        None => border_area_ring.as_deref(),
+                    };
 
                     // R4247（CSS §3.4）：space 轴 tile 本体不缩放——resolve_repeat_params
                     // 返回的 tile_w/h 是含间隙步距（eff），绘制尺寸须用 sized。按轴判
