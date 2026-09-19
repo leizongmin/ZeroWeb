@@ -37,6 +37,8 @@ use zero_style_system::property::types::{
 
 use crate::types::{LayoutBox, OverflowClip};
 
+mod bordered_region_fragments;
+
 /// 列分配中的一个片段。
 ///
 /// 对于普通（未拆分的）子元素，一个子元素对应一个片段。
@@ -833,6 +835,20 @@ fn try_layout_nested_spanner(
             container.content_height = content_extent;
             container.height = content_extent;
         }
+    }
+
+    // R4519（R1473 step-2 slice ①）：bordered wrapper 区域×列 fragment 分段模型
+    //（RFC bordered-wrapper-multicol-fragmentation step-2 painter 面）。仅 bordered
+    // 臂（wrapper 带 border/padding）生效——无框 wrapper（004a/b）维持 R1359 strip
+    // 模型零交互。gate 不满足/kill-switch 时返回 false，上述行为原样保留。
+    if enable_painter_core && bordered_region_fragments::wrapper_has_box(&container.children[wrapper_idx]) {
+        let _ = bordered_region_fragments::apply_bordered_region_fragments(
+            container,
+            wrapper_idx,
+            &eff_indices,
+            info,
+            styles,
+        );
     }
 
     true

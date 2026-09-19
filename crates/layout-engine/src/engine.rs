@@ -2404,6 +2404,8 @@ impl LayoutEngine {
             is_nested_spanner_wrapper: false,
             is_multicol_region_fragment: false,
             nested_spanner_col_bg: Vec::new(),
+            nested_spanner_box_segs: Vec::new(),
+            nested_spanner_child_frags: Vec::new(),
             is_layout_container,
             had_clearance: false,
             clearance_active: false,

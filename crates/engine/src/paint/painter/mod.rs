@@ -15,7 +15,7 @@ use std::collections::{HashMap, HashSet};
 use zero_css_parser::values::{ColorValue, FloatValue, LengthValue, TransformValue, VisibilityValue};
 use zero_dom::{Document, NodeId, NodeKind};
 use zero_layout_engine::LayoutBox;
-use zero_layout_engine::types::OverflowClip;
+use zero_layout_engine::types::{NestedSpannerSegKind, OverflowClip};
 use zero_render_foundation::geometry::Rect;
 use zero_render_foundation::primitive::{RenderPrimitives, RoundedRectPrimitive};
 use zero_style_system::property::types::DisplayValue;
@@ -2197,10 +2197,20 @@ impl Painter {
                                 .fold(0.0_f32, f32::max),
                         ) * 1.5
                     && doc.is_some_and(|d| text::has_direct_paintable_text(d, node_id, Some(styles)));
+                // R4519（R1473 step-2 slice ①）：bordered nested-spanner wrapper 的区域×列
+                // fragment 分段装饰（layout 侧 apply_bordered_region_fragments 预计算）。
+                // 非空时取代整盒 bg/box-shadow/bg-image/border 绘制——按 spanner 区域
+                // 分片：首区域 top+left+right、末区域 left+right+bottom（spanner 相邻边
+                // skip，CSS Multicol §6.1 + css-break §4），段间透容器 bg。
+                let spanner_segs_active = !box_node.nested_spanner_box_segs.is_empty();
+                if spanner_segs_active {
+                    self.paint_nested_spanner_segments(box_node, abs_x, abs_y, style);
+                }
                 if style.background_color != ColorValue::Transparent
                     && !skip_split_inline_deco
                     && !skip_inline_box_bg
                     && !skip_contents_deco
+                    && !spanner_segs_active
                 {
                     self.paint_background(box_node, abs_x, abs_y, style, styles);
                 }
@@ -2208,12 +2218,12 @@ impl Painter {
                 // 1a-2. box-shadow inset 相位（R4137，CSS Backgrounds 附录 E：inset 阴影
                 // 绘于背景之上、内容之下——旧实现与 outset 同绘于背景前，不透明背景下
                 // inset 恒不可见，box-shadow-invalid-001 的 green inset 被红背景盖死）。
-                if !skip_split_inline_deco && !skip_contents_deco {
+                if !skip_split_inline_deco && !skip_contents_deco && !spanner_segs_active {
                     self.paint_box_shadow(box_node, abs_x, abs_y, style, ShadowPhase::AfterBackground);
                 }
 
                 // 1b. 背景图片（行组/行仍可渲染背景图片）
-                if !skip_split_inline_deco && !skip_contents_deco {
+                if !skip_split_inline_deco && !skip_contents_deco && !spanner_segs_active {
                     // R2063：attachment:fixed → 视口锚定平铺、裁剪到元素盒；否则元素盒锚定。
                     if style
                         .background_attachment
@@ -2230,6 +2240,7 @@ impl Painter {
                 // R4332：多行 inline（skip_inline_box_border）改由 paint_text per-fragment 描绘。
                 if !skip_split_inline_deco
                     && !skip_inline_box_border
+                    && !spanner_segs_active
                     && (box_node.border_top > 0.0
                         || box_node.border_right > 0.0
                         || box_node.border_bottom > 0.0
@@ -2512,7 +2523,28 @@ impl Painter {
         // 允许内容延伸到列间隙但不进入相邻列。
         // 对于 column breaking 的子元素（多个片段），每个片段额外裁剪到列高。
         // R1352：paint_as_multicol 覆盖 nested-spanner wrapper（is_nested_spanner_wrapper）。
-        if paint_as_multicol {
+        // R4519（R1473 step-2 slice ①）：bordered nested-spanner wrapper 的子元素改由
+        // layout 预计算的 fragment 表驱动（区域×列 cell 语义：逐条目 paint 位置 + cell
+        // 裁剪）——通用 cso 循环的 content-band 裁剪语义与区域 cell 模型不兼容
+        //（006：cell 含 margin/border 带，col 顶可在盒顶上方）。表空走原路径。
+        if !box_node.nested_spanner_child_frags.is_empty() {
+            for frag in &box_node.nested_spanner_child_frags {
+                let Some(child) = box_node.children.get(frag.child_idx) else {
+                    continue;
+                };
+                let counts_before_frag = PrimitiveCounts::snapshot(&self.primitives);
+                self.paint_node(
+                    child,
+                    styles,
+                    abs_x + frag.paint_x - child.x,
+                    abs_y + frag.paint_y - child.y,
+                    doc,
+                    false,
+                );
+                let clip_rect = Rect::new(abs_x + frag.clip_x, abs_y + frag.clip_y, frag.clip_w, frag.clip_h);
+                super::helpers::clip_all_primitives_to_rect(&mut self.primitives, &counts_before_frag, &clip_rect);
+            }
+        } else if paint_as_multicol {
             let content_x = abs_x + box_node.border_left + box_node.padding_left;
             let content_y = abs_y + box_node.border_top + box_node.padding_top;
 
@@ -3566,6 +3598,25 @@ impl Painter {
                 bottom_right_radius: r.bottom_right,
                 bottom_left_radius: r.bottom_left,
             });
+        }
+    }
+
+    /// R4519（R1473 step-2 slice ①，CSS Multicol §6.1 + css-break §4）：bordered
+    /// nested-spanner wrapper 的区域×列 fragment 分段装饰。layout 侧
+    /// `apply_bordered_region_fragments` 已按 cell 裁剪好每段可见矩形（wrapper
+    /// border-box 相对坐标），此处仅逐段解析对应侧颜色并发射 fill——首区域
+    /// top+left+right、末区域 left+right+bottom（spanner 相邻边 skip），段间透容器 bg。
+    fn paint_nested_spanner_segments(&mut self, box_node: &LayoutBox, abs_x: f32, abs_y: f32, style: &ComputedStyle) {
+        for seg in &box_node.nested_spanner_box_segs {
+            let color = match seg.kind {
+                NestedSpannerSegKind::Background => resolve_color_current(&style.background_color, &style.color),
+                NestedSpannerSegKind::BorderTop => resolve_color_current(&style.border_top_color, &style.color),
+                NestedSpannerSegKind::BorderRight => resolve_color_current(&style.border_right_color, &style.color),
+                NestedSpannerSegKind::BorderBottom => resolve_color_current(&style.border_bottom_color, &style.color),
+                NestedSpannerSegKind::BorderLeft => resolve_color_current(&style.border_left_color, &style.color),
+            };
+            self.primitives
+                .add_fill(Rect::new(abs_x + seg.x, abs_y + seg.y, seg.w, seg.h), color);
         }
     }
 

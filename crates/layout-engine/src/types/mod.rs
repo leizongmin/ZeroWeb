@@ -40,6 +40,60 @@ pub struct RunInBorder {
     pub color: u32,
 }
 
+/// R4519（R1473 step-2 slice ①）：bordered nested-spanner wrapper 分段装饰矩形的段类型。
+/// 对应 CSS 边框四侧之一或元素背景；painter 按类型从 ComputedStyle 解析填充色。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NestedSpannerSegKind {
+    /// 盒顶边框段（仅拥有盒顶边的首区域 fragment 发射）。
+    BorderTop,
+    /// 右侧竖边框段（每个列 fragment 都有）。
+    BorderRight,
+    /// 盒底边框段（仅拥有盒底边的末区域 fragment 发射）。
+    BorderBottom,
+    /// 左侧竖边框段（每个列 fragment 都有）。
+    BorderLeft,
+    /// 背景填充段（段盒 content 区 ∩ cell）。
+    Background,
+}
+
+/// R4519：一段已裁剪到所属 cell 的可见装饰矩形（边框段或背景段）。
+/// 坐标为 wrapper border-box 相对（painter 以 `abs + (x, y)` 直接发射 fill）。
+#[derive(Debug, Clone)]
+pub struct NestedSpannerSegRect {
+    /// 矩形左缘（wrapper border-box 相对 x）。
+    pub x: f32,
+    /// 矩形顶缘（wrapper border-box 相对 y）。
+    pub y: f32,
+    /// 矩形宽。
+    pub w: f32,
+    /// 矩形高。
+    pub h: f32,
+    /// 段类型（决定取哪一侧的 border 颜色或背景色）。
+    pub kind: NestedSpannerSegKind,
+}
+
+/// R4519：bordered nested-spanner wrapper 的子元素 fragment 绘制条目。
+/// `paint_x/paint_y` = 该 fragment 中子盒应处的绝对位置（wrapper border-box 相对）；
+/// `clip_*` = 子子树图元的裁剪矩形（同坐标系）。painter 逐条目 paint + clip，
+/// 取代按 cso 的通用列片段循环（cell 语义与通用 content-band 裁剪不同）。
+#[derive(Debug, Clone)]
+pub struct NestedSpannerChildFrag {
+    /// wrapper.children 中被绘制子盒的下标。
+    pub child_idx: usize,
+    /// 子盒绘制位置 x（wrapper border-box 相对）。
+    pub paint_x: f32,
+    /// 子盒绘制位置 y（wrapper border-box 相对）。
+    pub paint_y: f32,
+    /// 裁剪矩形左缘 x（wrapper border-box 相对）。
+    pub clip_x: f32,
+    /// 裁剪矩形顶缘 y（wrapper border-box 相对）。
+    pub clip_y: f32,
+    /// 裁剪矩形宽。
+    pub clip_w: f32,
+    /// 裁剪矩形高。
+    pub clip_h: f32,
+}
+
 /// 布局盒 — 一个元素在页面上的几何位置与绘制信息（含 R4330 run-in 分裂边框载荷）。
 #[derive(Debug, Clone)]
 pub struct LayoutBox {
@@ -241,6 +295,16 @@ pub struct LayoutBox {
     /// col1 section c + 16px gap = article green。ZW 原 bg 整宽 [8,408] 全涂致 gap + col1-c over-render。
     /// 空串 = 走普通整宽 bg（非 nested-spanner wrapper 或 1 列）。
     pub nested_spanner_col_bg: Vec<(f32, f32, f32)>,
+    /// R4519（R1473 step-2 slice ①，CSS Multicol §6.1 + css-break §4）：bordered
+    /// nested-spanner wrapper 的**区域×列 fragment 分段装饰**（非空时 painter 据此分段绘
+    /// 边框/背景并跳过该盒的普通 bg/border 绘制）。每条目为一段已裁剪到所属 cell 的
+    /// 可见矩形（wrapper border-box 相对坐标 + 段类型）。由 multicol 侧
+    /// `apply_bordered_region_fragments` 填充；无框 wrapper（004a/b strip 模型）恒为空。
+    pub nested_spanner_box_segs: Vec<NestedSpannerSegRect>,
+    /// R4519：bordered nested-spanner wrapper 的**子元素 fragment 绘制条目**（非空时
+    /// painter 逐条目在 `paint_x/paint_y` 绘子子树并裁剪到 clip 矩形，取代按 cso 的
+    /// 通用列片段循环）。坐标同为 wrapper border-box 相对。
+    pub nested_spanner_child_frags: Vec<NestedSpannerChildFrag>,
     /// 是否为布局容器（flex/grid/table）。
     /// 布局容器建立 BFC（CSS Flexbox §3, CSS Grid §3），
     /// 其子元素由各自的布局算法定位，不走 IFC。
@@ -624,6 +688,8 @@ impl Default for LayoutBox {
             multicol_overflow_column_count: None,
             is_nested_spanner_wrapper: false,
             nested_spanner_col_bg: Vec::new(),
+            nested_spanner_box_segs: Vec::new(),
+            nested_spanner_child_frags: Vec::new(),
             is_layout_container: false,
             had_clearance: false,
             has_size_containment: false,
