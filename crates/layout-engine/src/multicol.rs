@@ -1167,7 +1167,7 @@ fn layout_multicol(
             && !has_forced_break
             && !has_nested_multicol_seq
         {
-            assign_children_to_columns_multirow(&child_info, info.count, height_limit)
+            assign_children_to_columns_multirow(&child_info, info.count, height_limit, &[])
         } else {
             assign_children_to_columns_with_breaking(
                 &child_info,
@@ -1224,7 +1224,27 @@ fn layout_multicol(
         let overflow_inline =
             col_height > 0.0 && !has_monolithic_child && total_child_height > info.count as f32 * col_height + 1.0;
         if overflow_inline {
-            assign_children_to_columns_multirow(&child_info, info.count, col_height)
+            // R4522：嵌套 multicol 子（自身碎片化上下文）溢出行剪裁（children-height-007：
+            // chromium 无内联溢出列，与平铺子 R1075 模型分叉）。kill-switch
+            // `ZW_NESTED_MC_CLIP=0` 回退溢出列行为。
+            let nested_clip = std::env::var("ZW_NESTED_MC_CLIP").as_deref() != Ok("0");
+            let cap_nested: Vec<bool> = if nested_clip {
+                child_info
+                    .iter()
+                    .map(|&(idx, _)| {
+                        container.children[idx]
+                            .node_id
+                            .and_then(|id| styles.get(&id))
+                            .is_some_and(|s| {
+                                matches!(s.column_count, ColumnCountComputedValue::Number(_))
+                                    || matches!(s.column_width, ColumnWidthComputedValue::Length(_))
+                            })
+                    })
+                    .collect()
+            } else {
+                Vec::new()
+            };
+            assign_children_to_columns_multirow(&child_info, info.count, col_height, &cap_nested)
         } else {
             // R4509（css-multicol §3.3 balancing + css-break §2 break points）：平衡列高的
             // **不可分约束下限**。列高不得小于任一不可跨列拆分的序列高度：
@@ -1661,7 +1681,7 @@ fn layout_multicol_with_spanners_inner(
             // 4 列（2 in-article + 2 右溢出）匹配 chromium；旧 multi-row 把第 2 行放到容器下方再被
             // R1039 slice-clip 隐藏 → block2[100:200] 丢失（z_vs_chr 3.99%）。
             (
-                assign_children_to_columns_multirow(&region_child_info, col_count, region_available),
+                assign_children_to_columns_multirow(&region_child_info, col_count, region_available, &[]),
                 0.0,
             )
         } else if region_child_info.is_empty() {
@@ -2088,6 +2108,7 @@ fn assign_children_to_columns_multirow(
     children: &[(usize, f32)],
     col_count: usize,
     max_col_height: f32,
+    cap_nested: &[bool],
 ) -> Vec<Vec<ColumnFragment>> {
     if children.is_empty() || col_count == 0 || max_col_height <= 0.0 {
         return vec![Vec::new(); col_count.max(1)];
@@ -2105,7 +2126,12 @@ fn assign_children_to_columns_multirow(
         }};
     }
 
-    for &(child_idx, child_height) in children.iter() {
+    for (ci, &(child_idx, child_height)) in children.iter().enumerate() {
+        // R4522：嵌套 multicol 子（自身为碎片化上下文）在 definite-height balance 容器
+        // 溢出时，超出 col_count 的行片段**剪裁不渲染**（children-height-007：chromium
+        // 对嵌套 multicol 子无内联溢出列；与平铺子的 R1075 溢出列模型分叉）。cap 标志
+        // 由调用方按子样式判定。
+        let cap_at_count = cap_nested.get(ci).copied().unwrap_or(false);
         let available = max_col_height - current_col_height;
         if child_height <= available {
             columns[current_col].push(ColumnFragment {
@@ -2144,6 +2170,11 @@ fn assign_children_to_columns_multirow(
                 offset += max_col_height;
                 current_col_height = frag_height;
                 if frag_height >= max_col_height && offset < child_height {
+                    // cap：已占满最后一列（col_count−1）且仍有剩余行 → 剪裁，不再推进
+                    // 创建溢出列。
+                    if cap_at_count && current_col + 1 >= col_count {
+                        break;
+                    }
                     advance_col!();
                 }
             }

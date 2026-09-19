@@ -337,7 +337,7 @@ fn test_position_multicol_inline_overflow_row_height_zero() {
 #[test]
 fn test_assign_children_multirow_basic() {
     let children = vec![(0, 100.0), (1, 100.0), (2, 100.0), (3, 100.0), (4, 100.0)];
-    let cols = assign_children_to_columns_multirow(&children, 3, 100.0);
+    let cols = assign_children_to_columns_multirow(&children, 3, 100.0, &[]);
     assert_eq!(cols.len(), 5, "overflow creates 2 extra columns (row 1)");
     assert_eq!(cols[0].len(), 1);
     assert_eq!(cols[3][0].child_idx, 3); // row1 col0 = child 3
@@ -348,7 +348,7 @@ fn test_assign_children_multirow_basic() {
 #[test]
 fn test_assign_children_multirow_no_overflow_stays_single_row() {
     let children = vec![(0, 100.0), (1, 100.0), (2, 100.0), (3, 100.0)];
-    let cols = assign_children_to_columns_multirow(&children, 4, 100.0);
+    let cols = assign_children_to_columns_multirow(&children, 4, 100.0, &[]);
     assert_eq!(cols.len(), 4, "exact fit = single row");
 }
 
@@ -357,7 +357,7 @@ fn test_assign_children_multirow_no_overflow_stays_single_row() {
 #[test]
 fn test_assign_children_multirow_oversized_breaks_across_rows() {
     let children = vec![(0, 250.0)];
-    let cols = assign_children_to_columns_multirow(&children, 2, 100.0);
+    let cols = assign_children_to_columns_multirow(&children, 2, 100.0, &[]);
     assert_eq!(cols.len(), 3, "oversized child breaks across 2 cols + row1");
     assert_eq!(cols[0][0].fragment_y_offset, 0.0);
     assert_eq!(cols[0][0].visual_height, 100.0);
@@ -571,4 +571,43 @@ fn test_column_width_zero_clamps_used_to_one_px() {
         compute_column_info(&style_neg, 50.0).is_none(),
         "negative column-width is invalid → no multicol"
     );
+}
+
+/// R4522 回归：definite-height balance 容器中**嵌套 multicol 子**的溢出行剪裁
+/// （children-height-007：inner 290 border-box > 2×110 列高，chromium 无内联溢出列——
+/// 第 3 片 [220,290) 剪裁；与平铺子 R1075 溢出列模型分叉，由 cap_nested 标志区分）。
+#[test]
+fn multirow_cap_nested_clips_overflow_rows() {
+    // 单个嵌套子 290 高、列高 110、2 列：无 cap → 3 片（含溢出列）；cap → 2 片。
+    let children = vec![(0usize, 290.0f32)];
+    let uncapped = assign_children_to_columns_multirow(&children, 2, 110.0, &[]);
+    assert_eq!(uncapped.len(), 3, "无 cap 应产生溢出列（R1075 平铺子模型）");
+    assert_eq!(uncapped[2].len(), 1);
+    assert!((uncapped[2][0].visual_height - 70.0).abs() < 0.01);
+
+    let capped = assign_children_to_columns_multirow(&children, 2, 110.0, &[true]);
+    assert_eq!(capped.len(), 2, "cap 后不得创建溢出列");
+    assert_eq!(capped[0].len(), 1);
+    assert!((capped[0][0].fragment_y_offset - 0.0).abs() < 0.01);
+    assert!((capped[0][0].visual_height - 110.0).abs() < 0.01);
+    assert_eq!(capped[1].len(), 1);
+    assert!((capped[1][0].fragment_y_offset - 110.0).abs() < 0.01);
+    assert!((capped[1][0].visual_height - 110.0).abs() < 0.01);
+
+    // 混排：嵌套子（cap）+ 平铺子（不 cap）——平铺子保留溢出列语义。
+    let mixed = vec![(0usize, 290.0f32), (1usize, 250.0f32)];
+    let mixed_cols = assign_children_to_columns_multirow(&mixed, 2, 110.0, &[true, false]);
+    // 子 0 cap：col0 [0,110) + col1 [110,220)，子 1 从 col1 剩余空间续填并允许溢出列。
+    assert!(mixed_cols.iter().any(|col| col.iter().any(|f| f.child_idx == 0)));
+    assert!(mixed_cols.len() > 2, "平铺子 250 应仍可产生溢出列");
+}
+
+/// 平铺子（cap=false）在同样入参下维持 R1075 溢出列行为（002 谱系守卫）。
+#[test]
+fn multirow_plain_child_keeps_overflow_columns() {
+    let children = vec![(0usize, 290.0f32)];
+    let cols = assign_children_to_columns_multirow(&children, 2, 110.0, &[]);
+    assert!(cols.len() >= 3);
+    let total: f32 = cols.iter().flatten().map(|f| f.visual_height).sum();
+    assert!((total - 290.0).abs() < 0.01, "无 cap 时全部行渲染");
 }
