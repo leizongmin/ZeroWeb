@@ -30961,6 +30961,68 @@ S1320 双腿）——同 tip 复核 pull 零新提交 tip = f65da540d
    + R4529 + R4530 + R4531）唯一未清偿义务 =
    frames.click+evaluate 回填（挂子帧能力解冻 不阻收口）。
 
+   **S1322 轮后插记（2026-09-20 push 序列 pull --rebase 实测，
+   S1304/S1308/S1311/S1313 插记先例 代码面变体）**：兄弟流
+   R4534 代码腿（caa6f138f border-shape slice 1（R4533 蓝
+   图）：clips-background 1.27→0.86 + inner-outer 1.82→0.81
+   corpus 1471→1469 = 91.15% fail-list 唯一二案移除零新红
+   css-parser parse_extended_border 新档 +131 / values
+   types +51 + engine js_dom_bridge/computed_style +2 +
+   paint/helpers +318 + painter/border +24 +
+   effects_indicators +5 + painter/mod +21 + style-system
+   supports/apply_advanced/computed_style/default_impl/
+   inherit/registry/types 七面 +51 + rendering-compat.md +1
+   + evidence 账本新档 53 行 16 files +658/-3；engine
+   paint 面触碰 = R4528/R4530 同域兄弟流腿先例口径 记录
+   不升级 本流 apps/browser 零重叠实测复核维持）于 S1322
+   记录提交 push 序列 pull --rebase 期间入树（我方 S1322
+   提交被顶到其上 49422a8ca 基→caa6f138f 基 5898767e3 变
+   基推远 push caa6f138f..5898767e3 S1283 同秒插记/S1304/
+   S1311/S1313 同形态先例）——**树代码面已变化（R4534 为
+   代码腿非 docs-only 构成刷新触发）→ S1323 = 树变化刷新
+   轮 双腿刷新（S245→…→S1305→S1309→S1312→S1314→S1320 先
+   例链 make test 腿后台跑法 起跑前显式 cd 仓库根 nohup sh
+   -c echo TEST_EXIT 直写口径）S1322 记录内「S1323 = 3/10
+   静默监测引用轮」预告被取代**；S1322 门腿覆盖树态代码
+   面 = R4526 + R4528 + R4529 + R4530 + R4531 组合态（
+   R4534 入树前跑完 覆盖面不含 R4534）新组合态由 S1323 双
+   腿刷新覆盖；引用计数以 S1323 双腿刷新为新周期锚点归零
+   重计（S1324 起 1/10 至迟 S1329 = 到期期限轮活跑 新周期
+   锚点 S1323 + 6 轮）；S1322 轮后插记时点锚点预期（
+   5898767e3 实测）：①自有面对 S897 tip 7da6043d6 **10
+   files +1187/-182 维持**（R4534 零 apps/browser 提交 本
+   流自有面零重叠实测复核）/ ②crates/ raw **165**（164 +
+   R4534 一枚 crates 提交 实测 e67967632..TIP 口径）/ ③子
+   帧关键词 **7 文件 md5 74f58fcf 维持** 非测试代码零命中
+   （插记时点实测复核 R4534 零 contentDocument/
+   content_document 命中 其 #[test] 5 处为测试用例行）解冻
+   条件①观察面 165 口径 frames.click+evaluate 挂起维持 /
+   ④全树排除本流 docs 对 18d462de6 **243 files
+   +29103/-1578**（238→243 files 实测 = R4534 面 16 files
+   中 5 files 净新增入 +658/-3 行净效应 插记时点实测为
+   准）；**S1323 刷新轮 make test 腿计数预期更新 = 19,361 +
+   5 = 19,366P/0F**（R4534 新增 #[test] 5 处实测
+   fill_mode_two_polygons / stroke_mode_circle /
+   border_shape_circle_parses_and_applies /
+   border_shape_fill_mode_parses 等测试用例行 计数漂移 +5
+   归因 R4534 预期在案 非此漂移即归因 R4534 用例面再核）
+   + **S1323 双腿 Compiling 行非零预期**（R4534 触碰
+   css-parser/engine/style-system 面 workspace 增量重编在
+   预期 门腿 Compiling 面预期含 css-parser→style-system→
+   engine→zero-browser 依赖链 实测为准）；红例观察双族口
+   径维持（① 门面 CDP 缺步/停滞族**家族第 8 例 S1313
+   run 1 停滞亚型首例在案**——S1323 刷新轮门腿即家族第 8
+   例后第十轮回绿复查窗口 若再现先归形态（缺步-静默 / 停
+   滞-显式超时）再归亚型再计数 + wall 伴生形态观察（第九
+   轮回绿 ~30s 正常）② make test 腿 stale_etag 家族累计
+   4 例在案——S1323 刷新轮 make test 腿即复查窗口）+ 跨
+   流 L1139 flake 家族连续第二十二轮活腿绿（S1323 刷新轮
+   make test 腿即复查窗口第 23 轮）+ 门面 zero-engine
+   dead_code warning 既有形态观察延续（S1322 门面在案
+   1 枚）+ 外部 zeroseed defunct 僵尸观察撤档维持（S1314
+   一例瞬态新例取证后连续零命中）+ form_input_perf 瞬态
+   僵尸观察（S1322 未再现）。
+
    **S1304 轮后插记（2026-09-19 push 序列 pull --rebase 实测，
    S1298 插记先例 代码面变体）**：兄弟流 R4528 代码腿
    （927053a51 per-layer clip C 轮实施：style-system
