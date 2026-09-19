@@ -1852,6 +1852,22 @@ fn assign_children_to_columns_balanced(
         return vec![Vec::new(); col_count.max(1)];
     }
 
+    // R4514b：零预算区域（total≈0，如 004b-ref article3 的 container height:0）——
+    // chromium 语义：fragmentainer 无空间 → block 不可见。发 0 高片段，paint 按 cso
+    // slice 裁空；否则子盒以全高单片段落 col1（target=0 的退化 advance）泄漏渲染。
+    let total_probe: f32 = children.iter().map(|&(_, h)| h).sum();
+    if total_probe <= 0.5 {
+        let mut columns: Vec<Vec<ColumnFragment>> = vec![Vec::new(); col_count];
+        for &(child_idx, _) in children {
+            columns[0].push(ColumnFragment {
+                child_idx,
+                fragment_y_offset: 0.0,
+                visual_height: 0.0,
+            });
+        }
+        return columns;
+    }
+
     // 计算总高度和目标列高（R4509：不可分约束下限，见 layout_multicol 调用处）
     let total_height: f32 = children.iter().map(|&(_, h)| h).sum();
     let target_height = (total_height / col_count as f32).max(min_target);
