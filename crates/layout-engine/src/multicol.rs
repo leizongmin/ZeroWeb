@@ -117,6 +117,12 @@ pub(crate) fn restack_siblings_after_multicol_shrink(
     box_node: &mut LayoutBox,
     styles: &HashMap<NodeId, ComputedStyle>,
 ) {
+    // kill-switch（R4512）：ZW_MULTICOL_RESTACK=0 关。bench-gate block_layout +13% 疑似
+    // 回归经本开关反证为兄弟流 make test 负载窗污染（关后 3.65ms 更差，静窗复测 GATE
+    // PASS），开关保留作紧急回滚。
+    if std::env::var("ZW_MULTICOL_RESTACK").as_deref() == Ok("0") {
+        return;
+    }
     for child in &mut box_node.children {
         restack_siblings_after_multicol_shrink(child, styles);
     }
@@ -642,6 +648,59 @@ fn try_layout_nested_spanner(
 
     // 跑现有 spanner 布局（synthetic 上：区域分割 + 列平衡 + spanner 全宽插入）。
     layout_multicol_with_spanners(&mut synth, info, styles, false);
+
+    // R4512：末段内容按**剩余预算**裁剪（chromium "just enough" distribution 的渲染面）。
+    // R1357 已算 squeeze 值 c = min(last_balanced, max(0, wrapper显式高 − 前段平衡和 −
+    // spanner 高)) 只用于 wrapper 高 cap——末段 block 内容本身未裁：004a 的 block3 渲染
+    // 100/col（chromium 25/col = c 50 / 2 列）。此处对**最后一个 spanner 之后**的非
+    // spanner synth 子，把其列片段 visual_height clamp 到 c/N（c=0 → 末段不可见，
+    // 004b 同式）。盒高（child.height）不动——chromium 盒溢出、渲染被 fragmentainer 截。
+    // c 的输入（各子高）在 synth 布局前后不变（子高为真实 wrapper 子克隆）。
+    {
+        let wrapper_h = container.children[wrapper_idx].height;
+        let wrapper_definite = container.children[wrapper_idx]
+            .node_id
+            .and_then(|id| styles.get(&id))
+            .is_some_and(|s| matches!(s.height, LengthValue::Px(_)));
+        let is_span = |c: &LayoutBox| {
+            c.node_id
+                .and_then(|id| styles.get(&id))
+                .is_some_and(|st| matches!(st.column_span, ColumnSpanComputedValue::All))
+        };
+        let last_span = synth.children.iter().rposition(is_span);
+        let last_start = last_span.map_or(0, |p| p + 1);
+        let col_count = info.count as f32;
+        let mut section_content: Vec<f32> = vec![0.0];
+        let mut spans_total = 0.0f32;
+        for (k, &ci) in eff_indices.iter().enumerate() {
+            let child = &container.children[wrapper_idx].children[ci];
+            if is_span(child) {
+                spans_total += child.height;
+                if k + 1 < eff_indices.len() {
+                    section_content.push(0.0);
+                }
+            } else {
+                *section_content.last_mut().unwrap() += child.height;
+            }
+        }
+        let total_balanced: f32 = section_content.iter().map(|&h| h / col_count).sum();
+        let last_balanced = section_content.last().map(|&h| h / col_count).unwrap_or(0.0);
+        let c = last_balanced.min((wrapper_h - total_balanced - spans_total).max(0.0));
+        let per_col_cap = c / col_count;
+        if wrapper_definite {
+            for child in synth.children.iter_mut().skip(last_start) {
+                if is_span(child) {
+                    continue;
+                }
+                for entry in child.column_span_offsets.iter_mut() {
+                    let (_, _, _, _, _, ch) = *entry;
+                    if ch > per_col_cap {
+                        entry.5 = per_col_cap;
+                    }
+                }
+            }
+        }
+    }
 
     // 回填位置到真实 wrapper 子（补偿 wrapper 偏移 dx/dy）。
     let wrapper = &mut container.children[wrapper_idx];
