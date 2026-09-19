@@ -36,9 +36,9 @@
     },
     {
       "id": "mb/zero-browser-shell/download_manager_100",
-      "p95": 18499.25360824742,
+      "p95": 18357.388174807198,
       "tier": "budget",
-      "tightened_at": "2026-09-12T19:26:31Z"
+      "tightened_at": "2026-09-19T14:04:21Z"
     },
     {
       "id": "mb/zero-browser-shell/history_search_1k",
@@ -439,9 +439,9 @@
     },
     {
       "id": "mb/zero-security/origin_parse_1000",
-      "p95": 442684.95454545453,
+      "p95": 442196.17171717173,
       "tier": "budget",
-      "tightened_at": "2026-09-09T13:26:19Z"
+      "tightened_at": "2026-09-19T14:04:21Z"
     },
     {
       "id": "mb/zero-security/same_origin_check_1000",
@@ -582,9 +582,9 @@
     },
     {
       "id": "page/welcome/parse_ms",
-      "p95": 0.189333,
+      "p95": 0.188295,
       "tier": "budget",
-      "tightened_at": "2026-09-07T14:04:35Z"
+      "tightened_at": "2026-09-19T14:04:21Z"
     },
     {
       "id": "page/welcome/style_ms",
