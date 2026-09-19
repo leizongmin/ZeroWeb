@@ -647,60 +647,19 @@ fn try_layout_nested_spanner(
         .collect();
 
     // 跑现有 spanner 布局（synthetic 上：区域分割 + 列平衡 + spanner 全宽插入）。
-    layout_multicol_with_spanners(&mut synth, info, styles, false);
-
-    // R4512：末段内容按**剩余预算**裁剪（chromium "just enough" distribution 的渲染面）。
-    // R1357 已算 squeeze 值 c = min(last_balanced, max(0, wrapper显式高 − 前段平衡和 −
-    // spanner 高)) 只用于 wrapper 高 cap——末段 block 内容本身未裁：004a 的 block3 渲染
-    // 100/col（chromium 25/col = c 50 / 2 列）。此处对**最后一个 spanner 之后**的非
-    // spanner synth 子，把其列片段 visual_height clamp 到 c/N（c=0 → 末段不可见，
-    // 004b 同式）。盒高（child.height）不动——chromium 盒溢出、渲染被 fragmentainer 截。
-    // c 的输入（各子高）在 synth 布局前后不变（子高为真实 wrapper 子克隆）。
-    {
-        let wrapper_h = container.children[wrapper_idx].height;
-        let wrapper_definite = container.children[wrapper_idx]
-            .node_id
+    // R4514：预算 = wrapper 显式高（顺序预算裁段，见 inner 的 region 循环）。
+    let wrapper_budget = {
+        let w = &container.children[wrapper_idx];
+        if w.node_id
             .and_then(|id| styles.get(&id))
-            .is_some_and(|s| matches!(s.height, LengthValue::Px(_)));
-        let is_span = |c: &LayoutBox| {
-            c.node_id
-                .and_then(|id| styles.get(&id))
-                .is_some_and(|st| matches!(st.column_span, ColumnSpanComputedValue::All))
-        };
-        let last_span = synth.children.iter().rposition(is_span);
-        let last_start = last_span.map_or(0, |p| p + 1);
-        let col_count = info.count as f32;
-        let mut section_content: Vec<f32> = vec![0.0];
-        let mut spans_total = 0.0f32;
-        for (k, &ci) in eff_indices.iter().enumerate() {
-            let child = &container.children[wrapper_idx].children[ci];
-            if is_span(child) {
-                spans_total += child.height;
-                if k + 1 < eff_indices.len() {
-                    section_content.push(0.0);
-                }
-            } else {
-                *section_content.last_mut().unwrap() += child.height;
-            }
+            .is_some_and(|s| matches!(s.height, LengthValue::Px(_)))
+        {
+            Some(w.height)
+        } else {
+            None
         }
-        let total_balanced: f32 = section_content.iter().map(|&h| h / col_count).sum();
-        let last_balanced = section_content.last().map(|&h| h / col_count).unwrap_or(0.0);
-        let c = last_balanced.min((wrapper_h - total_balanced - spans_total).max(0.0));
-        let per_col_cap = c / col_count;
-        if wrapper_definite {
-            for child in synth.children.iter_mut().skip(last_start) {
-                if is_span(child) {
-                    continue;
-                }
-                for entry in child.column_span_offsets.iter_mut() {
-                    let (_, _, _, _, _, ch) = *entry;
-                    if ch > per_col_cap {
-                        entry.5 = per_col_cap;
-                    }
-                }
-            }
-        }
-    }
+    };
+    layout_multicol_with_spanners(&mut synth, info, styles, false, wrapper_budget);
 
     // 回填位置到真实 wrapper 子（补偿 wrapper 偏移 dx/dy）。
     let wrapper = &mut container.children[wrapper_idx];
@@ -1143,7 +1102,7 @@ fn layout_multicol(
         if try_flatten_nested_spanner_wrappers(container, info, styles, trim_active) {
             return;
         }
-        layout_multicol_with_spanners(container, info, styles, trim_active);
+        layout_multicol_with_spanners(container, info, styles, trim_active, None);
         return;
     }
 
@@ -1489,7 +1448,7 @@ fn try_flatten_nested_spanner_wrappers(
     let mut synth = container.clone();
     synth.children = mapping.iter().map(|(_, c)| c.clone()).collect();
     // R4504：synthetic 走 sum 模式（wrapper 阻断折叠——spanner 间隙 = mb+mt 相加）。
-    layout_multicol_with_spanners_inner(&mut synth, info, styles, trim_active, true);
+    layout_multicol_with_spanners_inner(&mut synth, info, styles, trim_active, true, None);
 
     // 容器高写回（spanner 路径在 synth 上写 trim/flagged 高，镜像回真实容器）。
     container.content_height = synth.content_height;
@@ -1570,8 +1529,9 @@ fn layout_multicol_with_spanners(
     info: &ColumnInfo,
     styles: &HashMap<NodeId, ComputedStyle>,
     trim_active: bool,
+    block_budget: Option<f32>,
 ) {
-    layout_multicol_with_spanners_inner(container, info, styles, trim_active, false)
+    layout_multicol_with_spanners_inner(container, info, styles, trim_active, false, block_budget)
 }
 
 /// `spanner_margins_sum`：R4504 扁平化 synthetic 专用——wrapper 扁平化后 spanner 间的
@@ -1583,6 +1543,7 @@ fn layout_multicol_with_spanners_inner(
     styles: &HashMap<NodeId, ComputedStyle>,
     trim_active: bool,
     spanner_margins_sum: bool,
+    block_budget: Option<f32>,
 ) {
     let col_count = info.count;
     if col_count == 0 {
@@ -1617,6 +1578,10 @@ fn layout_multicol_with_spanners_inner(
     let mut pending_mb = 0.0f32;
     // R4267：任一区域发生真分片（跨列延续片段）——容器高写回 gate 之一。
     let mut any_split = false;
+    // R4514：顺序预算——每区域 rendered = min(区域内容总量, 剩余)，剩余 −= rendered；
+    // 区域列片段 clamp 到 rendered/N（定位前 → region_height/spanner y 随链收紧）。
+    // spanner 列流外不占预算（004a/004b chromium 实测预算模型）。
+    let mut remaining_budget = block_budget;
     for (region_idx, region_children) in regions.iter().enumerate() {
         // 该区域子元素高度信息（break 标志暂不传递——spanner 区域内 break-before/after:column 罕见）。
         let region_child_info: Vec<(usize, f32)> = region_children
@@ -1660,7 +1625,7 @@ fn layout_multicol_with_spanners_inner(
             && total_region_height > col_count as f32 * region_available + 1.0
             && !has_nested_multicol;
 
-        let (assignments, row_height) = if use_multirow {
+        let (mut assignments, row_height) = if use_multirow {
             // R1074：overflow 列走 **inline 方向**（水平向右），非垂直 multi-row。
             // assign 仍以 region_available 作列高（max_col_height）把超高子元素拆成 50px 片段，
             // 但定位传 row_height=0.0 → position_multicol_children 把超出 col_count 的列放在
@@ -1701,6 +1666,24 @@ fn layout_multicol_with_spanners_inner(
                 0.0,
             )
         };
+
+        // R4514：区域内顺序预算 clamp（定位前——region_height 与 spanner y 由 clamp 后
+        // 片段推导）。multirow 分支（definite 溢出语义）不裁。
+        if let (Some(budget), false) = (remaining_budget, use_multirow) {
+            let content_total: f32 = region_child_info.iter().map(|&(_, h)| h).sum();
+            let rendered = content_total.min(budget);
+            let per_col_cap = rendered / col_count as f32;
+            if content_total > rendered {
+                for col in assignments.iter_mut() {
+                    for f in col.iter_mut() {
+                        if f.visual_height > per_col_cap {
+                            f.visual_height = per_col_cap;
+                        }
+                    }
+                }
+            }
+            remaining_budget = Some(budget - rendered);
+        }
 
         // R4250：区域首子的 margin_top 与 pending_mb 合并（取 max）——先把合并量推进
         // 到 y_base，再把首子 mt 置零（position 内部不再重复加）。空区域跳过。
