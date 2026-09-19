@@ -2,17 +2,17 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-20（S1354：**2/10 静默监测引用轮
+**最后更新**: 2026-09-20（S1355：**3/10 静默监测引用轮
 门腿首调即绿**（周期锚点 = S1352 双腿 门腿 05:37:13 落
-盘 + make test 腿 05:45:31 收口 + S1353 门腿 05:51:45 落
-盘在案；同 tip 复核 pull 零新提交 tip = d8d5baf94 即
-S1353 记录提交本身 origin/main == HEAD 实测复核 树代码
-面零变化）树不变口径 = 门单腿复跑免 make test 腿 S336
-先例；锚点面五点开工复测按 S1353 记录时点基线
-（d8d5baf94 实测）逐项复核全 PASS 零漂移（① 10 files
-+1187/-182 维持 apps/browser/src/headless 口径 / ②
-crates/ raw 169 维持 e67967632..TIP 口径 / ③ 子帧关键
-词 7 文件 md5 74f58fcf 维持 contentDocument/
+盘 + make test 腿 05:45:31 收口 + S1353 门腿 05:51:45 /
+S1354 门腿 06:01:25 落盘在案；同 tip 复核 pull 零新提交
+tip = d898e2170 即 S1354 记录提交本身 origin/main ==
+HEAD 实测复核 树代码面零变化）树不变口径 = 门单腿复跑
+免 make test 腿 S336 先例；锚点面五点开工复测按 S1354
+记录时点基线（d898e2170 实测）逐项复核全 PASS 零漂移
+（① 10 files +1187/-182 维持 apps/browser/src/headless
+口径 / ② crates/ raw 169 维持 e67967632..TIP 口径 / ③
+子帧关键词 7 文件 md5 74f58fcf 维持 contentDocument/
 content_document crates/ Rust 面 .rs 全量口径 非测试代
 码零命中（7 文件全测试路径 = dom tests 1 + engine
 js_dom_bridge_tests 5 + webview tests 1）解冻条件①观察
@@ -20,13 +20,13 @@ js_dom_bridge_tests 5 + webview tests 1）解冻条件①观察
 除本流 docs 对 18d462de6 253 files +30116/-1648 维持 /
 ⑤ make test 腿基线计数 19,371P/0F 67 组 S1352 双腿实
 测已锚定 下次活腿对齐此口径 本轮引用轮无活腿）；
-**门腿 06:00:55→06:01:25 首调即绿 EXIT=0**（PASS 33 绿
-deterministic 双跑 YES wall ~30s 正常量级 **0 Compiling
-= 全缓存零重编 树不变预言兑现** Finished 0.34s；green 33
+**门腿 06:09:24→06:09:55 首调即绿 EXIT=0**（PASS 33 绿
+deterministic 双跑 YES wall ~31s 正常量级 **0 Compiling
+= 全缓存零重编 树不变预言兑现** Finished 0.18s；green 33
 = expected 33 对称差 none regressions 空 双 run 各 flow
 exited 1 含期望失败步骤 failed 1 = frames.click+evaluate
 既有形态；S1313 红例 9 FAIL 步全在绿集；**门面 CDP 缺步/
-停滞族 S1314-S1354 连续四十一轮零再现维持**；S168 形态
+停滞族 S1314-S1355 连续四十二轮零再现维持**；S168 形态
 （run 2 单步瞬态）本轮未再现 家族累计 3 例间隔延续拉大
 单轮偶发记账维持；零 watchdog/FAIL/Timeout 形态行；
 zero-engine dead_code warning 既有形态在案 1 枚 2 行标准
@@ -34,63 +34,63 @@ zero-engine dead_code warning 既有形态在案 1 枚 2 行标准
 形态 形态定性收敛维持：当前树态门 dev profile 面真实再
 发射 S1344+S1347+S1350+S1352 四重真重编复证 与兄弟
 clippy -D 零告警并存不矛盾）不阻本门；target-disk-guard
-零再现 门日志零 guard 行）；**引用计数 2/10**（S1352 双
-腿新周期锚点 下轮 S1355 = 3/10 至迟 **S1358 = 到期期限
+零再现 门日志零 guard 行）；**引用计数 3/10**（S1352 双
+腿新周期锚点 下轮 S1356 = 4/10 至迟 **S1358 = 到期期限
 轮双腿活跑**（新周期锚点 S1352 + 6 轮 双腿活跑口径 = 门
-+ make test 后台跑法 树不变也双腿 距今 4 轮））；
++ make test 后台跑法 树不变也双腿 距今 3 轮））；
 **ZW_IPC_VALIDATE=1 在位静默 capture jsonl 面零写入 #0
 复现监测零命中维持**（五 jsonl mtime 09-12/09-13 全不变
 跑后组合 md5 同值 2c2cdb6d explicit 显式规范序口径
 zw-capture→zw-capture2→zw-capture3→raw-proxy→raw-proxy2
 顺序拼接实测复核）；steps-report/determinism-report = 门
-腿新鲜落盘 06:01；门尾树态（tip = d8d5baf94 tracked
+腿新鲜落盘 06:09；门尾树态（tip = d898e2170 tracked
 clean）922x 端口族全 free（前后零监听）**zombie 复测 =
 零命中**（defunct 零命中 zero-seed 撤档后连续零命中维持
 非异常；form_input_perf 瞬态未再现）本流门腿零残留（窗
-尾 3 进程 cwd 取证 = 兄弟 clone test+clippy 腿全外部源
-非本树 双 clone 隔离零污染本树 非端口竞争面
-S672/S1338-S1353 先例同型 路径相对表述口径）控制面零外
-来提交；盘量观察 = 起手 451G → 腿尾 448G（兄弟流并窗段
-涨落 非本流 本流 0 Compiling 零 guard 触发）。本轮负载
-窗 = 兄弟流 test+clippy 腿并窗段起手（05:57 实测 load
-1.99 五分钟均值 2.02）→ 腿尾（06:01 实测 load 1.81 五
-分钟均值 2.05 兄弟流并窗 非异常）。M5 定稿收口判定不因
-复验与执行态瞬态动摇——**goal Done 维持，守成态证据经
-S1354 门腿复跑延续（S1304 双腿 + S1305 双腿 + S1309 双
-腿 + S1312 双腿 + S1314 双腿 + S1320 双腿 + S1323 双腿 +
-S1329 双腿 + S1335 双腿 + S1341 双腿 + S1344 双腿 + S1347
-双腿 + S1350 双腿 + S1352 双腿 + S1353 门腿 + S1354 门腿
-+ S1306/S1307/S1308/S1310/S1311/S1313/S1315/S1316/S1317/
-S1318/S1319/S1321/S1322/S1324/S1325/S1326/S1327/S1328/
-S1330/S1331/S1332/S1333/S1334/S1336/S1337/S1338/S1339/
-S1340/S1342/S1343/S1345/S1346/S1348/S1349/S1351 门腿复
-跑；S1304-S1312 各双腿覆盖旧组合态 R4526 + R4528 + R4529
-+ R4530 S1314-S1320 双腿覆盖 R4526-R4531 组合态 S1323 双
-腿起覆盖 R4526-R4534 组合态 S1344 双腿起覆盖
-R4526-R4534+R4539 组合态 S1347 双腿起覆盖
-R4526-R4534+R4539+R4540 组合态 S1350 双腿起覆盖
+尾复核三瞬态 PID 系本流检查管线自身短暂匹配 复核即消散
+归零；余下窗尾进程 cwd 取证 = 兄弟 clone test 腿全外部
+源 非本树 双 clone 隔离零污染本树 非端口竞争面
+S672/S1338-S1354 先例同型 路径相对表述口径）控制面零外
+来提交；盘量观察 = 起手 448G → 腿尾 448G（持平 零
+guard 触发）。本轮负载窗 = 兄弟流 test 腿并窗段起手
+（06:09 实测 load 2.33 五分钟均值 2.69）→ 腿尾（06:10
+实测 load 2.21 五分钟均值 2.46 兄弟流并窗 非异常）。M5
+定稿收口判定不因复验与执行态瞬态动摇——**goal Done 维
+持，守成态证据经 S1355 门腿复跑延续（S1304 双腿 + S1305
+双腿 + S1309 双腿 + S1312 双腿 + S1314 双腿 + S1320 双
+腿 + S1323 双腿 + S1329 双腿 + S1335 双腿 + S1341 双腿 +
+S1344 双腿 + S1347 双腿 + S1350 双腿 + S1352 双腿 +
+S1353/S1354/S1355 门腿 + S1306/S1307/S1308/S1310/S1311/
+S1313/S1315/S1316/S1317/S1318/S1319/S1321/S1322/S1324/
+S1325/S1326/S1327/S1328/S1330/S1331/S1332/S1333/S1334/
+S1336/S1337/S1338/S1339/S1340/S1342/S1343/S1345/S1346/
+S1348/S1349/S1351 门腿复跑；S1304-S1312 各双腿覆盖旧组合
+态 R4526 + R4528 + R4529 + R4530 S1314-S1320 双腿覆盖
+R4526-R4531 组合态 S1323 双腿起覆盖 R4526-R4534 组合态
+S1344 双腿起覆盖 R4526-R4534+R4539 组合态 S1347 双腿起覆
+盖 R4526-R4534+R4539+R4540 组合态 S1350 双腿起覆盖
 R4526-R4534+R4539+R4540+R4541 组合态 S1352 双腿起覆盖
-R4526-R4534+R4539+R4540+R4541+R4542 新组合态 S1353/S1354
-门腿同新组合态延续覆盖）**；唯一未清偿义务 = frames.click+
-evaluate 回填（挂子帧能力解冻，见子帧解冻清单，不阻收
-口））
+R4526-R4534+R4539+R4540+R4541+R4542 新组合态
+S1353-S1355 门腿同新组合态延续覆盖）**；唯一未清偿义务 =
+frames.click+evaluate 回填（挂子帧能力解冻，见子帧解冻
+清单，不阻收口））
 
-**前轮终态**: S1353 = 1/10 静默监测引用轮门腿首调即绿
-（同 tip 复核 pull 零新提交 tip = f4c9ae548 即 S1352 记
+**前轮终态**: S1354 = 2/10 静默监测引用轮门腿首调即绿
+（同 tip 复核 pull 零新提交 tip = d8d5baf94 即 S1353 记
 录提交本身；树不变口径 = 门单腿复跑免 make test 腿 S336
-先例）；锚点五点按 S1352 记录时点基线全 PASS 零漂移；
-门腿 05:51:16→05:51:45 首调即绿 EXIT=0 PASS 33 绿
-deterministic YES wall ~29s 0 Compiling 全缓存 树不变预
-言兑现 Finished 0.16s；green 33 = expected 33 对称差
+先例）；锚点五点按 S1353 记录时点基线全 PASS 零漂移；
+门腿 06:00:55→06:01:25 首调即绿 EXIT=0 PASS 33 绿
+deterministic YES wall ~30s 0 Compiling 全缓存 树不变预
+言兑现 Finished 0.34s；green 33 = expected 33 对称差
 none regressions 空 双 run 各 flow exited 1 含期望失败
 步骤 frames.click+evaluate 既有形态 缺步/停滞族连续四
-十轮零再现 S168 形态未再现（家族累计 3 例）零 watchdog/
+十一轮零再现 S168 形态未再现（家族累计 3 例）零 watchdog/
 FAIL/Timeout 形态行 target-disk-guard 零再现 dead_code
 warning 1 枚 2 行缓存重放形态 jsonl md5 2c2cdb6d 恒值
-zombie/922x 零命中 窗尾 3 进程 cwd 取证 = 兄弟 clone 门
-腿全外部源 负载窗 = 兄弟流门腿并窗（05:51 load 0.39 →
-05:52 load 3.50 非异常）；S1353 记录提交 d8d5baf94 推远
-push 序列零新提交零插记场景
+zombie/922x 零命中 窗尾 3 进程 cwd 取证 = 兄弟 clone
+test+clippy 腿全外部源 负载窗 = 兄弟流 test+clippy 腿并
+窗（05:57 load 1.99 → 06:01 load 1.81 非异常）；S1354
+记录提交 d898e2170 推远 push 序列零新提交零插记场景
 ---
 
 ## 当前状态
