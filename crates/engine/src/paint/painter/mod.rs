@@ -16,6 +16,7 @@ use zero_css_parser::values::{ColorValue, FloatValue, LengthValue, TransformValu
 use zero_dom::{Document, NodeId, NodeKind};
 use zero_layout_engine::LayoutBox;
 use zero_layout_engine::types::{NestedSpannerSegKind, OverflowClip};
+use zero_render_foundation::color::Color;
 use zero_render_foundation::geometry::Rect;
 use zero_render_foundation::primitive::{RenderPrimitives, RoundedRectPrimitive};
 use zero_style_system::property::types::DisplayValue;
@@ -59,6 +60,10 @@ pub struct Painter {
     /// CSS2 §12.4.1：`counter-reset` 在元素上开启新作用域（push），子树结束后弹出（pop）；
     /// `counter(name)` 取最内层（末元素），`counters(name, sep)` 取全部作用域按 sep 拼接。
     pub(crate) counters: HashMap<String, Vec<i64>>,
+    /// R4525（css-backgrounds-4 §background-clip:text）：clip:text + 实底 bg 的「彩字」
+    /// v1 上下文栈——实底背景色下探为子树文本字形色（bg fill 抑制；canonical
+    /// `color: transparent` 模式与 chromium 逐像素等价；bg image 非空不触发）。
+    pub(crate) bg_clip_text_color: Vec<Color>,
     /// 是否跳过属性指示器（用于 reftest 精确对比）。
     ///
     /// 指示器是绘制在元素边角的调试标记（如 border-collapse 橙色双线），
@@ -550,6 +555,7 @@ impl Painter {
             inline_bleed_enabled: std::env::var("ZW_INLINE_BLEED").as_deref() == Ok("1"),
             paint_skip_nodes: HashSet::new(),
             counters: HashMap::new(),
+            bg_clip_text_color: Vec::new(),
             skip_indicators: false,
             image_sizes: HashMap::new(),
             image_no_ratio_keys: std::collections::HashMap::new(),
@@ -2046,6 +2052,18 @@ impl Painter {
         // 内容到 padding-box，盒子自身装饰不裁）。原快照取于 paint_text 之后致直属文本漏裁。
         let mut counts_before_children = PrimitiveCounts::snapshot(&self.primitives);
 
+        // R4525（css-backgrounds-4 §background-clip:text）：clip:text + 实底 bg 的「彩字」
+        // v1——背景色下探为子树文本字形色（本盒 bg fill 抑制；canonical
+        // `color: transparent` + clip:text 与 chromium 逐像素等价；bg image 非空不触发——
+        // 渐变/图片 clip 需 mask 管线）。push/pop 跨子树绘制，单一出口弹出。
+        // kill-switch `ZW_BG_CLIP_TEXT=0`。
+        let bg_clip_text_active = std::env::var("ZW_BG_CLIP_TEXT").as_deref() != Ok("0")
+            && box_node.node_id.and_then(|id| styles.get(&id)).is_some_and(|st| {
+                matches!(st.background_clip, BackgroundClipComputedValue::Text)
+                    && st.background_image.is_empty()
+                    && !matches!(st.background_color, ColorValue::Transparent)
+            });
+
         let is_hidden = if box_node.is_anonymous_text_item {
             // 匿名文本项（flex/grid 容器中的文本节点）
             if let Some(doc) = doc
@@ -2206,11 +2224,16 @@ impl Painter {
                 if spanner_segs_active {
                     self.paint_nested_spanner_segments(box_node, abs_x, abs_y, style);
                 }
+                // R4525：clip:text + 实底 bg → bg fill 抑制（bg 色改由子树字形承载，
+                // 见 bg_clip_text_color push）。
+                let bg_clip_text_solid = matches!(style.background_clip, BackgroundClipComputedValue::Text)
+                    && style.background_image.is_empty();
                 if style.background_color != ColorValue::Transparent
                     && !skip_split_inline_deco
                     && !skip_inline_box_bg
                     && !skip_contents_deco
                     && !spanner_segs_active
+                    && !bg_clip_text_solid
                 {
                     self.paint_background(box_node, abs_x, abs_y, style, styles);
                 }
@@ -2301,6 +2324,10 @@ impl Painter {
             // 此后（list marker/img/content/自身文本/列背景/子节点）纳入 overflow 裁剪范围。
             counts_before_children = PrimitiveCounts::snapshot(&self.primitives);
 
+            if bg_clip_text_active {
+                self.bg_clip_text_color
+                    .push(resolve_color_current(&style.background_color, &style.color));
+            }
             // 列表标记和文本始终绘制（不受 empty-cells 影响）
             if !hidden {
                 // 4. 列表标记绘制（bullets/numbers，位于文本之前）
@@ -3275,6 +3302,11 @@ impl Painter {
         // 该早返在 update_counters 之前故无作用域压栈）→ 所有压栈路径必经此处。
         if !counter_reset_names.is_empty() {
             self.pop_counter_scopes(&counter_reset_names);
+        }
+
+        // R4525：clip:text 彩字上下文随子树弹出（单一出口，同 counter 作用域）。
+        if bg_clip_text_active {
+            self.bg_clip_text_color.pop();
         }
 
         let _ = is_hidden; // visibility 在 if let 块内处理

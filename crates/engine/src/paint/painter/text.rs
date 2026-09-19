@@ -28,6 +28,17 @@ fn glyph_probe_enabled() -> bool {
 }
 
 use super::super::color::{color_value_to_render, resolve_color_current};
+
+/// R4525（css-backgrounds-4 §background-clip:text）：clip:text + 实底 bg（无 image）的
+/// 彩字样式判定——该元素的文本字形以其背景色绘制（canonical `color: transparent` 模式；
+/// bg image 非空不触发，需 mask 管线）。
+fn bg_clip_text_solid_style(st: &ComputedStyle) -> bool {
+    matches!(
+        st.background_clip,
+        zero_style_system::property::types::BackgroundClipComputedValue::Text
+    ) && st.background_image.is_empty()
+        && !matches!(st.background_color, ColorValue::Transparent)
+}
 use super::super::helpers::PrimitiveCounts;
 use super::super::helpers::apply_text_transform;
 use super::text_image::{compute_object_fit_rect, get_img_intrinsic_size};
@@ -1386,9 +1397,24 @@ impl super::Painter {
                                     &owner_style.unwrap_or(style).font_variation_settings,
                                 );
                                 let owner_font_variation_id = self.primitives.intern_font_variations(&owner_variations);
-                                let frag_color = owner_style
-                                    .filter(|s| s.color != ColorValue::CurrentColor)
-                                    .map(|s| color_value_to_render(&s.color))
+                                // R4525：clip:text 彩字上下文——子树字形以最近 clip:text
+                                // 实底 bg 色绘制（canonical color:transparent 模式）；owner
+                                // 自身 clip:text（inline span 字形由宿主块 IFC 承载时栈未及
+                                // push）按 owner 样式直接判定。
+                                let frag_color = self
+                                    .bg_clip_text_color
+                                    .last()
+                                    .copied()
+                                    .or_else(|| {
+                                        owner_style
+                                            .filter(|s| bg_clip_text_solid_style(s))
+                                            .map(|s| color_value_to_render(&s.background_color))
+                                    })
+                                    .or_else(|| {
+                                        owner_style
+                                            .filter(|s| s.color != ColorValue::CurrentColor)
+                                            .map(|s| color_value_to_render(&s.color))
+                                    })
                                     .unwrap_or(color);
                                 // R2523：text-emphasis-color（CSS Text Decoration 3 §3.3）。
                                 // 显式色覆盖 currentColor；默认 CurrentColor → 沿用 frag_color
@@ -1794,6 +1820,18 @@ impl super::Painter {
                                 })
                                 .map(|s| color_value_to_render(&s.color))
                                 .unwrap_or(color);
+                            // R4525：clip:text 彩字上下文（同 stored 路径；owner 自身
+                            // clip:text 时按 owner 样式判定）。
+                            let frag_color = self
+                                .bg_clip_text_color
+                                .last()
+                                .copied()
+                                .or_else(|| {
+                                    owner_style_opt
+                                        .filter(|s| bg_clip_text_solid_style(s))
+                                        .map(|s| color_value_to_render(&s.background_color))
+                                })
+                                .unwrap_or(frag_color);
 
                             // R1021：text-emphasis 取自片段 owner 样式（<span> 上设）。
                             let shaping_style = owner_style_opt.unwrap_or(style);
