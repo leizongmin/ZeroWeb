@@ -169,6 +169,30 @@ jsonl md5 2c2cdb6d 恒值 zombie/922x 零命中 盘量 447G→
    期锚点 = S1362 双腿）计划不变，锚点按本插记新 tip 基
    线（b86e55c0f 实测）复核；M5 定稿收口判定不因本插记动
    摇 goal Done 维持守成态证据经 S1362 双腿刷新延续。
+
+   **S1363 轮后插记（2026-09-20 push 序列 pull --rebase 实
+   测）**：兄弟流 R4546（**纯 docs 记档提交** 2301af353 全
+   目录守成巡检轮 ZRG 低频巡检 零代码变更 rendering-compat.md
+   +1 + evidence 新档 +33 = 2 files +34/-0）于 S1363 门腿
+   收口（07:20:09）之后经 push 序列 pull --rebase 入树（我
+   方 S1363 记录提交 rebase 于其上 = c57eb4b4a，push
+   2301af353..c57eb4b4a 零冲突 实测复核）——**代码面零变
+   化成立**（crates/ apps/ tests/ Makefile 面 diff 空 实
+   测复核 ② crates/ raw 171 维持）→ **纯 docs 折入不升刷
+   新轮（口径先例）**，S1363 门腿 PASS 覆盖的代码树态 =
+   e7547ecf3 维持有效；锚点面漂移记档（新 tip c57eb4b4a
+   实测）：④ 全树排除本流 docs **257 files +30443/-1648 →
+   258 files +30477/-1648**（+1 file = R4546 evidence 新
+   档 +34 全额净入账 插记时点实测为准）/ ① 10 files
+   +1187/-182 维持 / ② crates/ raw 171 维持 / ③ 子帧关键
+   词 7 文件 md5 74f58fcf 维持（R4546 纯 docs 零 Rust 面
+   变更）解冻条件①观察面 171 口径 frames.click+evaluate
+   挂起维持 / ⑤ make test 腿基线计数 19,376P/0F 68 组维
+   持（R4546 零测试面变更）。下轮 **S1364 = 2/10 静默监测
+   引用轮**（新周期锚点 = S1362 双腿）计划不变，锚点按本
+   插记新 tip 基线（c57eb4b4a 实测）复核；M5 定稿收口判
+   定不因本插记动摇 goal Done 维持守成态证据经 S1363 门腿
+   复跑延续。
 ---
 
 ## 当前状态
