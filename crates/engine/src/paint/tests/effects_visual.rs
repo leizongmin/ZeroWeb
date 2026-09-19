@@ -1256,3 +1256,74 @@ fn test_paint_font_variant_numeric_diagonal_fractions() {
 
     assert!(painter.primitives().fills.len() >= 2, "diagonal-fractions 应渲染指示器");
 }
+
+/// 测试 clip-path polygon 覆盖填充改写的 z 序：父背景 path_fill 须原位保留在
+/// 原 Fill op 位置（子树之下），不得追加到 draw_order 尾部盖死子层。
+/// driving: R4539 — 嵌套 clip 页（corner-shape ref 构型：父 clip 多边形 + 绿底子层）
+/// 父背景改写 path_fill 尾部追加 → 渲染序高于子图元 → 子层被父背景盖死（ref 全红）。
+#[test]
+fn test_paint_clip_path_polygon_rewrite_z_order_inplace() {
+    use zero_render_foundation::primitive::DrawOp;
+
+    let mut doc = zero_dom::Document::new();
+    let parent_elem = doc.create_element("div");
+    let child_elem = doc.create_element("div");
+    // 子盒与父盒同 rect（inset:0 形态）：两个填充都被父多边形完全覆盖 → 双改写。
+    let child = make_box(Some(child_elem), 0.0, 0.0, 100.0, 100.0);
+    let mut parent = make_box(Some(parent_elem), 0.0, 0.0, 100.0, 100.0);
+    parent.children = vec![child];
+
+    let mut styles = HashMap::new();
+    let mut parent_style = ComputedStyle::default();
+    parent_style.background_color = ColorValue::Rgba(255, 0, 0, 255);
+    parent_style.color = ColorValue::CurrentColor;
+    // 三角形（非轴对齐矩形）→ 触发 R4248 覆盖改写臂。
+    parent_style.clip_path = ClipPathComputedValue::Polygon {
+        fill_rule: zero_css_parser::values::PolygonFillRule::NonZero,
+        points: vec![
+            (LengthValue::Px(0.0), LengthValue::Px(0.0)),
+            (LengthValue::Px(100.0), LengthValue::Px(0.0)),
+            (LengthValue::Px(50.0), LengthValue::Px(100.0)),
+        ],
+    };
+    styles.insert(parent_elem, parent_style);
+    let mut child_style = ComputedStyle::default();
+    child_style.background_color = ColorValue::Rgba(0, 128, 0, 255);
+    child_style.color = ColorValue::CurrentColor;
+    styles.insert(child_elem, child_style);
+
+    let mut painter = Painter::new();
+    painter.paint(&parent, &styles, None);
+
+    let prims = painter.primitives();
+    // 5 ops = 2 个改写 PathFill + 3 条 clip-path 虚线轮廓指示器 stroke（既有行为）。
+    // 修复前：draw_order = [Fill(0), S×3, Fill(1), PathFill(0)红, PathFill(1)绿]（7 ops，
+    // 父背景 path_fill 渲染序最高盖死子层）。
+    assert_eq!(
+        prims.draw_order.len(),
+        5,
+        "改写应原位替换原 op，不得尾部追加（修复前 7 ops）"
+    );
+    assert!(
+        prims.draw_order.iter().all(|op| !matches!(op, DrawOp::Fill(_))),
+        "两个被覆盖填充的 Fill op 都应被 PathFill op 原位替换"
+    );
+    assert!(
+        matches!(prims.draw_order[0], DrawOp::PathFill(0)),
+        "op[0] 应为父背景 PathFill（原 Fill op 位置，z 序在子层之下）"
+    );
+    assert_eq!(
+        prims.path_fills[0].color,
+        Color::rgba(255, 0, 0, 255),
+        "path_fills[0] 应为父红背景色（z 序：红在下）"
+    );
+    assert!(
+        matches!(prims.draw_order[4], DrawOp::PathFill(1)),
+        "op 尾应为子层 PathFill（后绘居上，与 chromium 一致；修复前尾部是父背景之后追了子层）"
+    );
+    assert_eq!(
+        prims.path_fills[1].color,
+        Color::rgba(0, 128, 0, 255),
+        "path_fills[1] 应为子绿色（z 序：绿在上）"
+    );
+}

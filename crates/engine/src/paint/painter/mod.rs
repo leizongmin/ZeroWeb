@@ -18,7 +18,7 @@ use zero_layout_engine::LayoutBox;
 use zero_layout_engine::types::{NestedSpannerSegKind, OverflowClip};
 use zero_render_foundation::color::Color;
 use zero_render_foundation::geometry::Rect;
-use zero_render_foundation::primitive::{RenderPrimitives, RoundedRectPrimitive};
+use zero_render_foundation::primitive::{DrawOp, RenderPrimitives, RoundedRectPrimitive};
 use zero_style_system::property::types::DisplayValue;
 use zero_style_system::{
     AccentColorComputedValue, AppearanceComputedValue, BackgroundAttachmentComputedValue, BackgroundClipComputedValue,
@@ -2909,24 +2909,58 @@ impl Painter {
                                     && y <= r.bottom() + 0.5
                             })
                         };
-                        let mut rewritten: Vec<zero_render_foundation::color::Color> = Vec::new();
+                        let mut rewritten: Vec<(usize, zero_render_foundation::color::Color)> = Vec::new();
                         for i in counts_before.fills..self.primitives.fills.len() {
                             let rect = self.primitives.fills[i].rect;
                             if covered(&rect) {
-                                rewritten.push(self.primitives.fills[i].color);
+                                rewritten.push((i, self.primitives.fills[i].color));
                                 self.primitives.fills[i].rect = Rect::new(0.0, 0.0, 0.0, 0.0);
                             }
                         }
+                        let mut rewritten_rr: Vec<(usize, zero_render_foundation::color::Color)> = Vec::new();
                         for i in counts_before.rounded_rects..self.primitives.rounded_rects.len() {
                             let rect = self.primitives.rounded_rects[i].rect;
                             if covered(&rect) {
-                                rewritten.push(self.primitives.rounded_rects[i].color);
+                                rewritten_rr.push((i, self.primitives.rounded_rects[i].color));
                                 self.primitives.rounded_rects[i].rect = Rect::new(0.0, 0.0, 0.0, 0.0);
                             }
                         }
                         let verts: Vec<f32> = polygon.iter().flat_map(|&(x, y)| [x, y]).collect();
-                        for color in rewritten {
+                        // R4539：改写出的 path_fill 若按 add_path_fill 默认把 DrawOp 追加到
+                        // draw_order 尾部，渲染序将高于本次快照范围内的全部子树图元——嵌套
+                        // clip 页（corner-shape ref 构型：父 clip 多边形 + ::before 绿底 +
+                        // 子 clip 多边形）父背景 path_fill 盖死绿色子层（ref 全红根因）。
+                        // 这里把尾部追加的 PathFill op 移回被改写图元原 op 的位置：z 序随
+                        // op 位置保留（背景仍在子树之下）；被改写图元 rect 已清零且不再被
+                        // 任何 op 引用，其余 op 索引零位移（draw_order 重放不变式，R4537）。
+                        // 找不到原 op（防御）时保留尾部追加旧行为。kill-switch
+                        // `ZW_CLIP_REWRITE_INPLACE=0` 整体回退尾部追加。
+                        let clip_rewrite_inplace = std::env::var("ZW_CLIP_REWRITE_INPLACE").as_deref() != Ok("0");
+                        for (i, color) in rewritten {
                             self.primitives.add_path_fill(verts.clone(), color);
+                            if clip_rewrite_inplace
+                                && let Some(pos) = self
+                                    .primitives
+                                    .draw_order
+                                    .iter()
+                                    .position(|op| matches!(op, DrawOp::Fill(j) if *j == i))
+                                && let Some(tail) = self.primitives.draw_order.pop()
+                            {
+                                self.primitives.draw_order[pos] = tail;
+                            }
+                        }
+                        for (i, color) in rewritten_rr {
+                            self.primitives.add_path_fill(verts.clone(), color);
+                            if clip_rewrite_inplace
+                                && let Some(pos) = self
+                                    .primitives
+                                    .draw_order
+                                    .iter()
+                                    .position(|op| matches!(op, DrawOp::RoundedRect(j) if *j == i))
+                                && let Some(tail) = self.primitives.draw_order.pop()
+                            {
+                                self.primitives.draw_order[pos] = tail;
+                            }
                         }
                     }
                     // 轴对齐矩形走矩形交集裁剪（精确）；非轴对齐多边形在改写填充后，
