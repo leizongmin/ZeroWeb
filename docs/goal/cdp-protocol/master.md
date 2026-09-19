@@ -27387,6 +27387,51 @@ ec9b67e55 推远
    覆盖）唯一未清偿义务 = frames.click+evaluate 回填（挂子
    帧能力解冻 不阻收口）。
 
+   **S1273 轮后插记（2026-09-19 push 序列 pull --rebase 实测，
+   S898/S1190/S1229/S1230/S1236/S1240/S1241/S1242/S1243/
+   S1265 插记先例）**：兄弟流 R4520 代码腿（f83bcc166
+   ——R1473 step-2 slice② count==1 单列 spanner 区域分段，
+   crates/layout-engine multicol 面 2 files +392 内
+   multicol/bordered_region_fragments.rs +371 既有 R4519 新
+   模块扩展 渲染流域专属 crate 零本流工作面触达 run-rules
+   §9，随行 docs 腿 rendering-compat.md +1 + learnings 新档
+   40 行，commit 时点 15:21:34）于 S1273 门腿（15:21:00 落
+   盘）之后经 push 前 pull 入树（我方 S1273 提交被 rebase 顶
+   到其上，ec9b67e55 基 → f83bcc166 基，40a7314d4 推远 push
+   f83bcc166..40a7314d4 fast-forward）——S1273 门腿覆盖树态
+   = R4519 组合态，main tip 组合态已超出且为 **Rust 代码变
+   更** → **S1274 = 树变化刷新轮（门 + make test 双腿刷新
+   S890→…→S1244→S1256→S1262→S1266→S1272 先例链连刷 make
+   test 腿后台跑法），引用计数以 S1274 双腿为新周期锚点
+   0/10**（S1273 记录内「下轮 S1274 = 2/10 静默监测引用轮」
+   预告被本插记取代）；S1274 锚点预期（本插记时点
+   40a7314d4 实测）：①自有面对 S897 tip 7da6043d6 **10
+   files +1187/-182** 维持（R4520 零 headless/CDP 面触达实
+   测复核）/ crates/ raw **153→154**（+1 = R4520 折入
+   e67967632..TIP 计数口径实测）/ 子帧关键词 **7 文件** md5
+   74f58fcf 维持（R4520 零 contentDocument 面触达实测复核
+   Rust 面 .rs 口径 非测试代码零命中 解冻条件①观察面 154 口
+   径 frames.click+evaluate 挂起维持）/ 全树排除本流 docs 对
+   18d462de6 **215 files +25030/-1458 → 216 files +25457/
+   -1464**（净增 1 文件 = r4520 learnings 新档；bordered_
+   region_fragments.rs 系 R4519 已在集扩展非净增 行数 =
+   R4520 +427/-6 折入累计 diff 精确一致实测）；R4520 组合态
+   首次门覆盖预期重编相位 = layout-engine→engine→
+   page-runtime→browser 链（R4519 同款 multicol 面
+   css-parser 零重编）+ make test 腿计数以 **19,350P/0F 为
+   新基线预期**（R4520 +1 新增 #[test] 008 全几何断言 兄弟
+   自述同值实测复核，19,349→19,350）+ make test 腿 EXIT 判
+   定 echo TEST_EXIT 直写口径（S1272 转义笔误注记防复发）；
+   红例观察双族复查窗口 = S1274 双腿（① 门面 CDP 缺步族：
+   家族第 4 例 S1261 run 2 多步缺步亚变体在案 S1262-S1273
+   门腿连续十二轮零再现；② make test 腿 localhost 连接抖动
+   族：stale_etag 样本 S1254 轮 +1 在案 S1272 双腿零命中后
+   顺延）+ 跨流 L1139 flake 家族连续八轮活腿绿 S1274 双腿即
+   复查窗口 若再现同口径机械归因 + 复跑收口 跨流记档不单方
+   修维持；门面 zero-engine dead_code warning 既有形态观察
+   延续（S1273 门面在案 1 枚）+ 外部 zeroseed defunct 僵尸
+   存续观察维持（S1273 同例在案）。
+
    **S1243 轮后插记（2026-09-19 push 序列 pull --rebase 实测，
    S898/S1190/S1229/S1230/S1236/S1240/S1241/S1242 插记先例）**：
    兄弟流 R4513 代码腿（rendering-compat multicol bg strips 数
