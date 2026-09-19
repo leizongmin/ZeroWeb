@@ -18,7 +18,7 @@ use zero_layout_engine::LayoutBox;
 use zero_layout_engine::types::{NestedSpannerSegKind, OverflowClip};
 use zero_render_foundation::color::Color;
 use zero_render_foundation::geometry::Rect;
-use zero_render_foundation::primitive::{DrawOp, RenderPrimitives, RoundedRectPrimitive};
+use zero_render_foundation::primitive::{RenderPrimitives, RoundedRectPrimitive};
 use zero_style_system::property::types::DisplayValue;
 use zero_style_system::{
     AccentColorComputedValue, AppearanceComputedValue, BackgroundAttachmentComputedValue, BackgroundClipComputedValue,
@@ -2781,6 +2781,17 @@ impl Painter {
             // R2500：overflow:clip 轴额外按 overflow-clip-margin 扩展（CSS Overflow 3 §3）。
             let clip_rect = overflow_clip_rect(box_node, abs_x, abs_y);
             super::helpers::clip_all_primitives_to_rect(&mut self.primitives, &counts_before_children, &clip_rect);
+            // R4541（css-borders-4 §border-shape）：border-shape 声明时 overflow 内容
+            // 裁剪到形状内缘（fill mode = 内形状；stroke mode = 形状路径内缩半宽）——
+            // 子内容不得盖过边框或溢出形状（border-shape-overflow /
+            // border-shape-overflow-child-clip 构型）。覆盖填充改写 + v2 条带裁剪与
+            // clip-path polygon 臂共用同一入口。
+            if let Some(node_id) = box_node.node_id
+                && let Some(style) = styles.get(&node_id)
+                && let Some(polygon) = super::helpers::border_shape_overflow_polygon(style, box_node, abs_x, abs_y)
+            {
+                super::helpers::clip_with_polygon_rewrite(&mut self.primitives, &counts_before_children, &polygon);
+            }
         }
 
         // 非 positioned overflow 元素：abspos/fixed 子元素移到裁剪之后绘制，
@@ -2887,87 +2898,9 @@ impl Painter {
                             )
                         })
                         .collect();
-                    // 轴对齐矩形多边形：矩形交集裁剪即精确（既有语义，测试依赖）。
-                    let is_axis_aligned_rect = polygon.len() == 4 && {
-                        let xs: Vec<f32> = polygon.iter().map(|p| p.0).collect();
-                        let ys: Vec<f32> = polygon.iter().map(|p| p.1).collect();
-                        xs.iter().filter(|&&v| (v - xs[0]).abs() < 0.01).count() == 2
-                            && xs.iter().filter(|&&v| (v - xs[2]).abs() < 0.01).count() == 2
-                            && ys.iter().filter(|&&v| (v - ys[0]).abs() < 0.01).count() == 2
-                            && ys.iter().filter(|&&v| (v - ys[2]).abs() < 0.01).count() == 2
-                    };
-                    if polygon.len() >= 3 && !is_axis_aligned_rect {
-                        // R4248：矩形交集裁剪对多边形只会整块丢弃填充（ref 页全白的根因）。
-                        // 被多边形完全覆盖的填充/圆角图元改写为多边形 path_fill（顶点均落
-                        // 在图元 rect 内 ≡ polygon ⊆ rect，改写不越界）；其余图元保持旧
-                        // 交集裁剪行为。
-                        let covered = |r: &Rect| {
-                            polygon.iter().all(|&(x, y)| {
-                                x >= r.left() - 0.5
-                                    && x <= r.right() + 0.5
-                                    && y >= r.top() - 0.5
-                                    && y <= r.bottom() + 0.5
-                            })
-                        };
-                        let mut rewritten: Vec<(usize, zero_render_foundation::color::Color)> = Vec::new();
-                        for i in counts_before.fills..self.primitives.fills.len() {
-                            let rect = self.primitives.fills[i].rect;
-                            if covered(&rect) {
-                                rewritten.push((i, self.primitives.fills[i].color));
-                                self.primitives.fills[i].rect = Rect::new(0.0, 0.0, 0.0, 0.0);
-                            }
-                        }
-                        let mut rewritten_rr: Vec<(usize, zero_render_foundation::color::Color)> = Vec::new();
-                        for i in counts_before.rounded_rects..self.primitives.rounded_rects.len() {
-                            let rect = self.primitives.rounded_rects[i].rect;
-                            if covered(&rect) {
-                                rewritten_rr.push((i, self.primitives.rounded_rects[i].color));
-                                self.primitives.rounded_rects[i].rect = Rect::new(0.0, 0.0, 0.0, 0.0);
-                            }
-                        }
-                        let verts: Vec<f32> = polygon.iter().flat_map(|&(x, y)| [x, y]).collect();
-                        // R4539：改写出的 path_fill 若按 add_path_fill 默认把 DrawOp 追加到
-                        // draw_order 尾部，渲染序将高于本次快照范围内的全部子树图元——嵌套
-                        // clip 页（corner-shape ref 构型：父 clip 多边形 + ::before 绿底 +
-                        // 子 clip 多边形）父背景 path_fill 盖死绿色子层（ref 全红根因）。
-                        // 这里把尾部追加的 PathFill op 移回被改写图元原 op 的位置：z 序随
-                        // op 位置保留（背景仍在子树之下）；被改写图元 rect 已清零且不再被
-                        // 任何 op 引用，其余 op 索引零位移（draw_order 重放不变式，R4537）。
-                        // 找不到原 op（防御）时保留尾部追加旧行为。kill-switch
-                        // `ZW_CLIP_REWRITE_INPLACE=0` 整体回退尾部追加。
-                        let clip_rewrite_inplace = std::env::var("ZW_CLIP_REWRITE_INPLACE").as_deref() != Ok("0");
-                        for (i, color) in rewritten {
-                            self.primitives.add_path_fill(verts.clone(), color);
-                            if clip_rewrite_inplace
-                                && let Some(pos) = self
-                                    .primitives
-                                    .draw_order
-                                    .iter()
-                                    .position(|op| matches!(op, DrawOp::Fill(j) if *j == i))
-                                && let Some(tail) = self.primitives.draw_order.pop()
-                            {
-                                self.primitives.draw_order[pos] = tail;
-                            }
-                        }
-                        for (i, color) in rewritten_rr {
-                            self.primitives.add_path_fill(verts.clone(), color);
-                            if clip_rewrite_inplace
-                                && let Some(pos) = self
-                                    .primitives
-                                    .draw_order
-                                    .iter()
-                                    .position(|op| matches!(op, DrawOp::RoundedRect(j) if *j == i))
-                                && let Some(tail) = self.primitives.draw_order.pop()
-                            {
-                                self.primitives.draw_order[pos] = tail;
-                            }
-                        }
-                    }
-                    // 轴对齐矩形走矩形交集裁剪（精确）；非轴对齐多边形在改写填充后，
-                    // 剩余图元（image/gradient 等）仍按矩形交集裁剪。
-                    if polygon.len() >= 3 {
-                        super::helpers::clip_all_primitives_to_polygon(&mut self.primitives, &counts_before, &polygon);
-                    }
+                    // R4248/R4541：覆盖填充改写 + v2 条带裁剪统一入口（与 border-shape
+                    // overflow 裁剪共用，逻辑在 helpers::clip_with_polygon_rewrite）。
+                    super::helpers::clip_with_polygon_rewrite(&mut self.primitives, &counts_before, &polygon);
                 }
                 _ => {}
             }

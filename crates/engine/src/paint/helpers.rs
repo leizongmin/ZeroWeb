@@ -567,6 +567,81 @@ pub fn clip_fills(fills: &mut [zero_render_foundation::primitive::FillPrimitive]
     }
 }
 
+/// R4248/R4541：非轴对齐多边形裁剪统一入口（clip-path polygon 臂与 border-shape
+/// overflow 裁剪共用）——被多边形完全覆盖的填充/圆角矩形改写为多边形 path_fill
+/// （顶点均落在图元 rect 内 ≡ polygon ⊆ rect，改写不越界；R4539 起 op 原位替换保
+/// z 序），其余图元走 v2 条带裁剪。矩形多边形跳过改写：矩形交集裁剪即精确（既有
+/// 语义，测试依赖）。
+pub fn clip_with_polygon_rewrite(primitives: &mut RenderPrimitives, from: &PrimitiveCounts, polygon: &[(f32, f32)]) {
+    use zero_render_foundation::primitive::DrawOp;
+
+    if polygon.len() < 3 {
+        return;
+    }
+    let is_axis_aligned_rect = polygon.len() == 4 && {
+        let xs: Vec<f32> = polygon.iter().map(|p| p.0).collect();
+        let ys: Vec<f32> = polygon.iter().map(|p| p.1).collect();
+        xs.iter().filter(|&&v| (v - xs[0]).abs() < 0.01).count() == 2
+            && xs.iter().filter(|&&v| (v - xs[2]).abs() < 0.01).count() == 2
+            && ys.iter().filter(|&&v| (v - ys[0]).abs() < 0.01).count() == 2
+            && ys.iter().filter(|&&v| (v - ys[2]).abs() < 0.01).count() == 2
+    };
+    if is_axis_aligned_rect {
+        clip_all_primitives_to_polygon(primitives, from, polygon);
+        return;
+    }
+    // 被多边形完全覆盖的填充/圆角矩形改写为多边形 path_fill。kill-switch
+    // `ZW_CLIP_REWRITE_INPLACE=0` 回退尾部追加旧行为（z 序倒挂，R4539 修复前形态）。
+    let clip_rewrite_inplace = std::env::var("ZW_CLIP_REWRITE_INPLACE").as_deref() != Ok("0");
+    let covered = |r: &Rect| {
+        polygon
+            .iter()
+            .all(|&(x, y)| x >= r.left() - 0.5 && x <= r.right() + 0.5 && y >= r.top() - 0.5 && y <= r.bottom() + 0.5)
+    };
+    let mut rewritten: Vec<(usize, zero_render_foundation::color::Color)> = Vec::new();
+    for i in from.fills..primitives.fills.len() {
+        let rect = primitives.fills[i].rect;
+        if covered(&rect) {
+            rewritten.push((i, primitives.fills[i].color));
+            primitives.fills[i].rect = Rect::new(0.0, 0.0, 0.0, 0.0);
+        }
+    }
+    let mut rewritten_rr: Vec<(usize, zero_render_foundation::color::Color)> = Vec::new();
+    for i in from.rounded_rects..primitives.rounded_rects.len() {
+        let rect = primitives.rounded_rects[i].rect;
+        if covered(&rect) {
+            rewritten_rr.push((i, primitives.rounded_rects[i].color));
+            primitives.rounded_rects[i].rect = Rect::new(0.0, 0.0, 0.0, 0.0);
+        }
+    }
+    let verts: Vec<f32> = polygon.iter().flat_map(|&(x, y)| [x, y]).collect();
+    for (i, color) in rewritten {
+        primitives.add_path_fill(verts.clone(), color);
+        if clip_rewrite_inplace
+            && let Some(pos) = primitives
+                .draw_order
+                .iter()
+                .position(|op| matches!(op, DrawOp::Fill(j) if *j == i))
+            && let Some(tail) = primitives.draw_order.pop()
+        {
+            primitives.draw_order[pos] = tail;
+        }
+    }
+    for (i, color) in rewritten_rr {
+        primitives.add_path_fill(verts.clone(), color);
+        if clip_rewrite_inplace
+            && let Some(pos) = primitives
+                .draw_order
+                .iter()
+                .position(|op| matches!(op, DrawOp::RoundedRect(j) if *j == i))
+            && let Some(tail) = primitives.draw_order.pop()
+        {
+            primitives.draw_order[pos] = tail;
+        }
+    }
+    clip_all_primitives_to_polygon(primitives, from, polygon);
+}
+
 /// 将字形裁剪到指定区域内（原地修改）。
 ///
 /// 从 `start` 索引开始的所有字形，如果完全在裁剪区域外则标记为 glyph_id=0。
@@ -1633,22 +1708,12 @@ impl BorderShapePlan {
     }
 }
 
-/// 解析 border-shape 方案（kill-switch `ZW_BORDER_SHAPE=0` → None；none/解析失败
-/// → None = 常规边框）。形状顶点为绝对坐标。
-pub(crate) fn border_shape_plan(
-    style: &ComputedStyle,
+/// relevant side（§7.6：block-start→inline-start→block-end→inline-end 首个非 none
+/// 边；全 none 回落 top）——R4541 从 border_shape_plan 抽出供 overflow 裁剪共用。
+fn border_shape_relevant_side<'a>(
+    style: &'a ComputedStyle,
     box_node: &LayoutBox,
-    abs_x: f32,
-    abs_y: f32,
-) -> Option<BorderShapePlan> {
-    if std::env::var("ZW_BORDER_SHAPE").as_deref() == Ok("0") {
-        return None;
-    }
-    let border_shape = match &style.border_shape {
-        BorderShapeValue::None => return None,
-        v => v,
-    };
-    // relevant side（§7.6）
+) -> (f32, &'a zero_css_parser::values::ColorValue, &'a BorderStyleValue) {
     let sides = [
         (box_node.border_top, &style.border_top_color, &style.border_top_style),
         (box_node.border_left, &style.border_left_color, &style.border_left_style),
@@ -1668,7 +1733,64 @@ pub(crate) fn border_shape_plan(
         .find(|(_, _, s)| !matches!(s, BorderStyleValue::None | BorderStyleValue::Hidden))
         .copied()
         .unwrap_or((sides[0].0, sides[0].1, sides[0].2));
-    let (rel_width, rel_color) = (side.0, side.1);
+    (side.0, side.1, side.2)
+}
+
+/// R4541（css-borders-4 §border-shape）：border-shape 元素的 overflow 内容裁剪多边形
+///（子内容裁剪到形状内缘，不得盖过边框或溢出形状）。fill mode（双形状）= 内形状顶点；
+/// stroke mode（单形状）= 形状在引用盒各侧内缩 rel_width/2（描边居中于形状路径，
+/// 内缘 = 半宽内缩；width=0 ≡ 形状本身）。kill-switch `ZW_BORDER_SHAPE=0` → None。
+pub fn border_shape_overflow_polygon(
+    style: &ComputedStyle,
+    box_node: &LayoutBox,
+    abs_x: f32,
+    abs_y: f32,
+) -> Option<Vec<(f32, f32)>> {
+    if std::env::var("ZW_BORDER_SHAPE").as_deref() == Ok("0") {
+        return None;
+    }
+    let font_size = zero_style_system::computed::resolve_length(&style.font_size, 16.0, None, None) as f32;
+    let rel_width = border_shape_relevant_side(style, box_node).0;
+    match &style.border_shape {
+        BorderShapeValue::None => None,
+        BorderShapeValue::Stroke { shape, geometry_box } => {
+            let (bx, by, bw, bh) = border_shape_ref_box(*geometry_box, style, box_node, abs_x, abs_y, rel_width);
+            let inset = rel_width / 2.0;
+            let vertices = border_shape_vertices(
+                shape,
+                bx + inset,
+                by + inset,
+                (bw - 2.0 * inset).max(0.0),
+                (bh - 2.0 * inset).max(0.0),
+                font_size,
+            );
+            Some(vertices).filter(|v| v.len() >= 3)
+        }
+        BorderShapeValue::Fill { inner, inner_box, .. } => {
+            let (ix, iy, iw, ih) = border_shape_ref_box(*inner_box, style, box_node, abs_x, abs_y, rel_width);
+            let vertices = border_shape_vertices(inner, ix, iy, iw, ih, font_size);
+            Some(vertices).filter(|v| v.len() >= 3)
+        }
+    }
+}
+
+/// 解析 border-shape 方案（kill-switch `ZW_BORDER_SHAPE=0` → None；none/解析失败
+/// → None = 常规边框）。形状顶点为绝对坐标。
+pub(crate) fn border_shape_plan(
+    style: &ComputedStyle,
+    box_node: &LayoutBox,
+    abs_x: f32,
+    abs_y: f32,
+) -> Option<BorderShapePlan> {
+    if std::env::var("ZW_BORDER_SHAPE").as_deref() == Ok("0") {
+        return None;
+    }
+    let border_shape = match &style.border_shape {
+        BorderShapeValue::None => return None,
+        v => v,
+    };
+    // relevant side（§7.6）
+    let (rel_width, rel_color, _rel_style) = border_shape_relevant_side(style, box_node);
     let color = resolve_color_current(rel_color, &style.color);
     let font_size = zero_style_system::computed::resolve_length(&style.font_size, 16.0, None, None) as f32;
 
@@ -3288,5 +3410,71 @@ mod tests {
                 assert!(*j < p.fills.len(), "Fill op 索引 {} 越界", j);
             }
         }
+    }
+
+    /// R4541：border-shape overflow 裁剪多边形——stroke mode 半宽内缩与 fill mode 内形状。
+    #[test]
+    fn test_border_shape_overflow_polygon_inner_edge() {
+        use zero_css_parser::values::{BorderShapeGeometryBox, ClipPathRadius};
+        let mut style = ComputedStyle::default();
+        // stroke mode：diamond polygon(50% 0, 100% 50%, 50% 100%, 0 50%)。
+        style.border_shape = BorderShapeValue::Stroke {
+            shape: ClipPathValue::Polygon {
+                fill_rule: zero_css_parser::values::PolygonFillRule::NonZero,
+                points: vec![
+                    (LengthValue::Percentage(50.0), LengthValue::Percentage(0.0)),
+                    (LengthValue::Percentage(100.0), LengthValue::Percentage(50.0)),
+                    (LengthValue::Percentage(50.0), LengthValue::Percentage(100.0)),
+                    (LengthValue::Percentage(0.0), LengthValue::Percentage(50.0)),
+                ],
+            },
+            geometry_box: BorderShapeGeometryBox::HalfBorderBox,
+        };
+        // 100×100 盒 + 10px 边框：half-border box = [5,95]²，内缩半宽 5 → [10,90]²。
+        let box_node = LayoutBox {
+            width: 100.0,
+            height: 100.0,
+            border_top: 10.0,
+            border_left: 10.0,
+            border_bottom: 10.0,
+            border_right: 10.0,
+            ..Default::default()
+        };
+        let poly = border_shape_overflow_polygon(&style, &box_node, 0.0, 0.0).expect("stroke mode 应产出裁剪多边形");
+        assert_eq!(poly.len(), 4);
+        let xs: Vec<f32> = poly.iter().map(|p| p.0).collect();
+        let ys: Vec<f32> = poly.iter().map(|p| p.1).collect();
+        // 内缘 diamond 顶点：(50,10) (90,50) (50,90) (10,50)。
+        assert!(
+            (xs.iter().cloned().fold(f32::MIN, f32::max) - 90.0).abs() < 0.01,
+            "x 最大应内缩到 90：{xs:?}"
+        );
+        assert!(
+            (ys.iter().cloned().fold(f32::MIN, f32::max) - 90.0).abs() < 0.01,
+            "y 最大应内缩到 90：{ys:?}"
+        );
+        assert!(
+            (xs.iter().cloned().fold(f32::MAX, f32::min) - 10.0).abs() < 0.01,
+            "x 最小应内缩到 10：{xs:?}"
+        );
+
+        // fill mode：内形状顶点直接作为裁剪多边形。
+        style.border_shape = BorderShapeValue::Fill {
+            outer: ClipPathValue::None,
+            outer_box: BorderShapeGeometryBox::BorderBox,
+            inner: ClipPathValue::Circle {
+                radius: ClipPathRadius::Length(LengthValue::Px(30.0)),
+                position: None,
+            },
+            inner_box: BorderShapeGeometryBox::PaddingBox,
+        };
+        let poly = border_shape_overflow_polygon(&style, &box_node, 0.0, 0.0).expect("fill mode 应产出裁剪多边形");
+        assert!(poly.len() >= 3, "内形状（circle 64 段）应 ≥3 顶点：{}", poly.len());
+        let cx = 50.0_f32;
+        let r_max = poly
+            .iter()
+            .map(|(x, y)| ((x - cx).powi(2) + (y - cx).powi(2)).sqrt())
+            .fold(f32::MIN, f32::max);
+        assert!((r_max - 30.0).abs() < 1.0, "内形状半径应 ≈30（64 段逼近）：{r_max}");
     }
 }
