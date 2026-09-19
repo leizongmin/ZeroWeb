@@ -188,6 +188,41 @@ warning；S1364 记录提交 = fe5be1250 推远
    插记新 tip 基线（c57eb4b4a 实测）复核；M5 定稿收口判
    定不因本插记动摇 goal Done 维持守成态证据经 S1363 门腿
    复跑延续。
+   **S1365 轮后插记（2026-09-20 push 序列 pull --rebase 实
+   测）**：兄弟流 ZRG-2026-09-20-01（**纯 docs 记档提交**
+   c3acb538b page 级 layout 回归立案——ZRG-2026-09-09-01
+   TREND-WATCH 预言触发 bench-gate A/B 交错 4+4 腿 TIP vs
+   BASE@dc7ade785 归因 morning/layout 5.24× medium 1.27×
+   welcome 1.26-1.29× paint +10-11% = layout 阶段特异真实
+   回归立案 绝对预算 morning 未破线 medium 静默预计临界
+   嫌疑域未 bisect 定罪 分进程内存双 PASS 空闲总量第 5 轮
+   未闭合 处置零代码改动零阈值/基线触碰 已按 run-rules #7
+   飞书告警等人工确认 = rendering-compat/master.md +1 file
+   +2/-0）于 S1365 门腿收口（07:35:46）之后经 push 序列
+   pull --rebase 入树（S1365 记录提交 3f85ad182 push 首试
+   non-fast-forward 拒绝 rebase 于其上 = cff2bb85e，push
+   c3acb538b..cff2bb85e 零冲突 实测复核）——**代码面零变
+   化成立**（crates/ apps/ tests/ Makefile 面 diff 空 实测
+   复核 ② crates/ raw 171 维持）→ **纯 docs 折入不升刷新
+   轮（口径先例）**，S1365 门腿 PASS 覆盖的代码树态 =
+   fe5be1250 维持有效；锚点面漂移记档（新 tip cff2bb85e
+   实测）：④ 全树排除本流 docs **258 files +30477/-1648 →
+   258 files +30479/-1648**（+2 行同文件数 = ZRG 立案记档
+   rendering-compat/master.md 入既有变更集 全额净入账 插
+   记时点实测为准）/ ① 10 files +1187/-182 维持 / ②
+   crates/ raw 171 维持 / ③ 子帧关键词 7 文件 md5 74f58fcf
+   维持（纯 docs 零 Rust 面变更）解冻条件①观察面 171 口
+   径 frames.click+evaluate 挂起维持 / ⑤ make test 腿基线
+   计数 19,376P/0F 68 组维持（零测试面变更）。**观察注
+   记**：ZRG 立案 = 渲染流 layout 回归专项待用户授权排查
+   → 后续轮次兄弟流代码腿折入概率升高（to_vec 修复/基线
+   re-capture 通道）→ 树再变化则提前双腿刷新（S245→…→
+   S1352→S1358→S1362 先例链）；layout-engine 属渲染流工作
+   面 跨流不越界 run-rules §9/§10 归因纪律维持。下轮
+   **S1366 = 4/10 静默监测引用轮**（新周期锚点 = S1362 双
+   腿）计划不变，锚点按本插记新 tip 基线（cff2bb85e 实测）
+   复核；M5 定稿收口判定不因本插记动摇 goal Done 维持守成
+   态证据经 S1365 门腿复跑延续。
 ---
 
 ## 当前状态
