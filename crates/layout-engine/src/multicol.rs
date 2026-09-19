@@ -798,16 +798,40 @@ fn try_layout_nested_spanner(
         // 004b col1=200（=300−100），与 chromium oracle 逐像素一致（span1 绘于 bg 之上，故单
         // 矩形覆盖 region1+span1+region2 与 oracle 的非连续 pink 等效）。替旧 capped_h−c（004b
         // 误给 300 致末列 over-paint 50px = 1.51% 残余）。kill-switch ZW_R1535_LASTH_SPANS=0 回退。
+        // R4513：数据驱动化——R4512 c-clip 后各列内容 extent 变了（004a block3 裁到 25/col，
+        // 两列内容底 = 325 非旧公式 250/350），公式推导失配。改为逐列取该列 clamp 后片段的
+        // max(col_top+col_h)（列内容真实底，spanner 带自然被连续 strip 覆盖、spanner 绘于其上）。
+        // kill-switch ZW_R1535_LASTH_SPANS=0 回退旧公式（capped_h−spans_total）。
         let r1535 = std::env::var("ZW_R1535_LASTH_SPANS").as_deref() != Ok("0");
+        let mut col_extents = vec![0.0f32; n];
+        if r1535 {
+            let step = cw + gap;
+            for &ci in &eff_indices {
+                let child = &wrapper.children[ci];
+                for &(_, _, col_x, _, col_top, col_h) in &child.column_span_offsets {
+                    let col = ((col_x / step).round() as usize).min(n.saturating_sub(1));
+                    let bottom = col_top + col_h;
+                    if bottom > col_extents[col] {
+                        col_extents[col] = bottom;
+                    }
+                }
+            }
+        }
         let last_h = if r1535 {
-            (capped_h - spans_total).max(0.0)
+            col_extents[n - 1]
         } else {
             (capped_h - c).max(0.0)
         };
         let mut regions = Vec::with_capacity(n);
-        for i in 0..n {
+        for (i, extent) in col_extents.iter().enumerate() {
             let offset = i as f32 * (cw + gap);
-            let h = if i + 1 < n { capped_h } else { last_h };
+            let h = if i + 1 < n && r1535 {
+                *extent
+            } else if i + 1 < n {
+                capped_h
+            } else {
+                last_h
+            };
             regions.push((offset, cw, h));
         }
         wrapper.nested_spanner_col_bg = regions;
