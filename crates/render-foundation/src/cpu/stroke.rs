@@ -4,6 +4,19 @@ use crate::color::Color;
 use crate::primitive::{LineCap, LineStyle, PathFillPrimitive, PathStrokePrimitive, StrokePrimitive};
 use crate::surface::FrameBuffer;
 
+/// R4530：描边像素写入——不透明直写（旧行为），半透明经 blend_pixel 与背景合成。
+/// 旧 set_pixel 硬编码 alpha=255，rgba() 半透明虚线/点线被画成不透明色（CPU fill/
+/// rounded_rect 路径同族问题已修，stroke 为最后漏网点）。path_fill/path_stroke
+/// （SVG path 域）同型问题独立挂账，不在本修复面。
+#[inline]
+fn stroke_pixel(fb: &mut FrameBuffer, x: u32, y: u32, color: Color) {
+    if color.a == 255 {
+        fb.set_pixel(x, y, [color.r, color.g, color.b, 255]);
+    } else {
+        super::blend_pixel(fb, x, y, color, 255);
+    }
+}
+
 /// 渲染线段图元到帧缓冲。
 pub fn render_stroke(fb: &mut FrameBuffer, stroke: &StrokePrimitive, scale: f32) {
     let x1 = stroke.x1 * scale;
@@ -11,6 +24,14 @@ pub fn render_stroke(fb: &mut FrameBuffer, stroke: &StrokePrimitive, scale: f32)
     let x2 = stroke.x2 * scale;
     let y2 = stroke.y2 * scale;
     let half_w = stroke.width * scale * 0.5;
+
+    // R4530：全透明描边不绘制——`border: Npx dotted/dashed transparent`（border-area 族
+    // 多值背景测试的常用载体）经 color_value_to_render 得 rgba(0,0,0,0)，旧路径逐像素
+    // set_pixel 硬编码 alpha=255 → 画成不透明黑点/黑段，盖住背景（fill/rounded_rect
+    // 同族问题已分别修复，stroke 漏网）。
+    if stroke.color.a == 0 {
+        return;
+    }
 
     // R1909：防御非有限坐标（如 vertical-mode border 生成的 y2=inf）。
     // 非有限端点会使包围盒 clamp 异常，且 render_dotted_line 的 `while d <= total_len`
@@ -167,7 +188,7 @@ fn render_solid_line(
             };
 
             if dist <= half_w {
-                fb.set_pixel(x, y, [color.r, color.g, color.b, 255]);
+                stroke_pixel(fb, x, y, color);
             } else if cap != LineCap::Butt {
                 // 检查端点帽
                 let cap_extra = match cap {
@@ -186,7 +207,7 @@ fn render_solid_line(
                     // 检查是否在线段方向范围内
                     let proj = if len > 1e-10 { (px * dx + py * dy) / len_sq } else { 0.0 };
                     if (proj < 0.0 && d_start <= cap_r) || (proj > 1.0 && d_end <= cap_r) {
-                        fb.set_pixel(x, y, [color.r, color.g, color.b, 255]);
+                        stroke_pixel(fb, x, y, color);
                     }
                 }
             }
@@ -240,7 +261,7 @@ fn render_dashed_line(
             if proj >= 0.0 && proj <= total_len {
                 let pos_in_pattern = proj % pattern_len;
                 if pos_in_pattern <= dash_len {
-                    fb.set_pixel(x, y, [color.r, color.g, color.b, 255]);
+                    stroke_pixel(fb, x, y, color);
                 }
             }
         }
@@ -294,7 +315,7 @@ fn render_dotted_line(
                 let dx = fx - cx;
                 let dy = fy - cy;
                 if dx * dx + dy * dy <= dot_radius * dot_radius {
-                    fb.set_pixel(x, y, [color.r, color.g, color.b, 255]);
+                    stroke_pixel(fb, x, y, color);
                 }
             }
         }

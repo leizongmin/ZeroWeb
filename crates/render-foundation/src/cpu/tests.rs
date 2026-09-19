@@ -1055,6 +1055,90 @@ fn stroke_dotted_line_has_dots() {
     assert!(has_black, "dotted line should have dots");
 }
 
+/// R4530：全透明描边不绘制——`border: Npx dotted transparent` 场景（color a=0）旧路径
+/// set_pixel 硬编码 alpha=255 画成不透明黑点盖住背景；修复后跳过绘制，画布保持纯白。
+#[test]
+fn stroke_fully_transparent_paints_nothing() {
+    let mut primitives = RenderPrimitives::new();
+    primitives.strokes.push(StrokePrimitive {
+        x1: 0.0,
+        y1: 10.0,
+        x2: 50.0,
+        y2: 10.0,
+        width: 4.0,
+        color: Color::rgba(0, 0, 0, 0),
+        style: LineStyle::Dotted,
+        cap: LineCap::Round,
+    });
+
+    let font_loader = FontLoader::new();
+    let mut glyph_cache = GlyphCache::new(64);
+    let fb = render_full_scene(
+        50,
+        20,
+        1.0,
+        &primitives,
+        &font_loader,
+        &mut glyph_cache,
+        None,
+        &[],
+        &[],
+        &[],
+        &[],
+    );
+
+    for y in 0..20 {
+        for x in 0..50 {
+            assert_eq!(
+                fb.get_pixel(x, y),
+                [255, 255, 255, 255],
+                "transparent stroke must not paint ({x},{y})"
+            );
+        }
+    }
+}
+
+/// R4530：半透明描边与背景合成——rgba(255,0,0,128) 在白底上应为浅红（≈255,128,128），
+/// 旧路径 set_pixel alpha=255 画成纯红。
+#[test]
+fn stroke_semi_transparent_blends_with_background() {
+    let mut primitives = RenderPrimitives::new();
+    primitives.strokes.push(StrokePrimitive {
+        x1: 0.0,
+        y1: 10.0,
+        x2: 50.0,
+        y2: 10.0,
+        width: 4.0,
+        color: Color::rgba(255, 0, 0, 128),
+        style: LineStyle::Solid,
+        cap: LineCap::Butt,
+    });
+
+    let font_loader = FontLoader::new();
+    let mut glyph_cache = GlyphCache::new(64);
+    let fb = render_full_scene(
+        50,
+        20,
+        1.0,
+        &primitives,
+        &font_loader,
+        &mut glyph_cache,
+        None,
+        &[],
+        &[],
+        &[],
+        &[],
+    );
+
+    let p = fb.get_pixel(25, 10);
+    assert_eq!(p[0], 255, "red channel stays 255 over white");
+    assert!(
+        (i32::from(p[1]) - 128).abs() <= 1 && (i32::from(p[2]) - 128).abs() <= 1,
+        "half-red over white should blend to ~(255,128,128), got {:?}",
+        p
+    );
+}
+
 /// R1909 回归测试：退化（非有限坐标 / 零宽度）的点线/虚线不得使渲染卡死。
 ///
 /// 根因：`render_dotted_line` 的 `while d <= total_len`（d += dot_spacing）在

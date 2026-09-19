@@ -786,6 +786,96 @@ fn test_r4529_solid_border_area_ring_unchanged() {
     assert_eq!(got, want, "solid 整带环带 = R3908 4 条带原几何");
 }
 
+/// R4530：dashed 边框墨迹 = 逐 dash 沿边区间（dash=2t、gap=t，相位锚定线起点）——
+/// 条带按像素中心闭区间整数化（与 cpu render_image floor/ceil clip 窗口逐像素等价）。
+/// 300×150 盒 border 50：top/bottom 各 2 dash（[0,100]、[150,250]），left/right 各 1
+///（线长 50 < pattern）。
+#[test]
+fn test_r4530_dashed_border_area_ring_dash_intervals() {
+    use zero_style_system::BorderStyleValue;
+
+    let mut style = ComputedStyle::default();
+    for s in [
+        &mut style.border_top_style,
+        &mut style.border_right_style,
+        &mut style.border_bottom_style,
+        &mut style.border_left_style,
+    ] {
+        *s = BorderStyleValue::Dashed;
+    }
+    let mut layout = make_box(None, 0.0, 0.0, 300.0, 150.0);
+    layout.border_top = 50.0;
+    layout.border_right = 50.0;
+    layout.border_bottom = 50.0;
+    layout.border_left = 50.0;
+
+    let strips = crate::paint::painter::border_area_ring_strips(&style, &layout, 0.0, 0.0, 300.0, 150.0).unwrap();
+    let got: Vec<(f32, f32, f32, f32)> = strips
+        .iter()
+        .map(|r| (r.left(), r.top(), r.size.width, r.size.height))
+        .collect();
+    let want = [
+        (0.0, 0.0, 100.0, 50.0),     // top dash1
+        (150.0, 0.0, 100.0, 50.0),   // top dash2
+        (0.0, 100.0, 100.0, 50.0),   // bottom dash1
+        (150.0, 100.0, 100.0, 50.0), // bottom dash2
+        (0.0, 50.0, 50.0, 50.0),     // left（线长 50 ≤ dash 整段）
+        (250.0, 50.0, 50.0, 50.0),   // right
+    ];
+    assert_eq!(got, want, "dashed 墨迹 = 逐 dash 矩形（整数化像素区间）");
+}
+
+/// R4530：dotted 边框墨迹 = 逐 dot 逐行圆盘弦段（圆心距 2t、r=t/2，镜像
+/// render_dotted_line 的 dx²+dy²<=r² 像素中心判定）。100×100 盒 border 20：
+/// 上下各 3 dot × 20 行、左右各 2 dot × 20 行 = 200 条带；全部不得伸入 padding 盒，
+/// 且含 (30,9,20,1) 特征弦段（cx=40 dot、dy=−0.5 行）。
+#[test]
+fn test_r4530_dotted_border_area_ring_dot_rows() {
+    use zero_style_system::BorderStyleValue;
+
+    let mut style = ComputedStyle::default();
+    for s in [
+        &mut style.border_top_style,
+        &mut style.border_right_style,
+        &mut style.border_bottom_style,
+        &mut style.border_left_style,
+    ] {
+        *s = BorderStyleValue::Dotted;
+    }
+    let mut layout = make_box(None, 0.0, 0.0, 100.0, 100.0);
+    layout.border_top = 20.0;
+    layout.border_right = 20.0;
+    layout.border_bottom = 20.0;
+    layout.border_left = 20.0;
+
+    let strips = crate::paint::painter::border_area_ring_strips(&style, &layout, 0.0, 0.0, 100.0, 100.0).unwrap();
+    assert_eq!(strips.len(), 200, "上下 3 dot + 左右 2 dot × 每点 20 行");
+    let inner = zero_render_foundation::geometry::Rect::new(20.0, 20.0, 60.0, 60.0);
+    let mut spot = false;
+    for s in &strips {
+        let overlap = !(s.right() <= inner.left()
+            || s.left() >= inner.right()
+            || s.bottom() <= inner.top()
+            || s.top() >= inner.bottom());
+        assert!(
+            !overlap,
+            "dot 弦段不得伸入 padding 盒：({}, {}, {}, {})",
+            s.left(),
+            s.top(),
+            s.size.width,
+            s.size.height
+        );
+        if (s.left() - 30.0).abs() < 0.01
+            && (s.top() - 9.0).abs() < 0.01
+            && (s.size.width - 20.0).abs() < 0.01
+            && (s.size.height - 1.0).abs() < 0.01
+        {
+            spot = true;
+        }
+    }
+    assert!(spot, "应含 cx=40 dot 的 dy=−0.5 行弦段 (30,9,20,1)");
+}
+
 /// R4529（slice-2）：逐层 painting area——多值 clip（`border-area, content-box`）时各层
 /// 按己值裁剪（css-backgrounds-3 §3.7 cyclic）：layer0 图元 clip 落在环带，layer1 图元
 /// clip 落在 content 盒；单值 clip 页全层同值 = 旧行为。

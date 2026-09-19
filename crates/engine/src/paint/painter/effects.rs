@@ -79,8 +79,11 @@ pub(crate) fn clip_rect_for_layer(
 /// R4529：border-area 环带条带（css-backgrounds-4 §2.1，R3908 4 条带的 border-style
 /// 感知化）——环带 = 边框**墨迹**区域：solid/groove/ridge/inset/outset 铺满整带；
 /// double 按绘制几何拆双带（外带 + 内带，镜像 paint_border_edge 的 gap/line_w 口径，
-/// clip-border-area-double：ref 双带间白隙 = 墨迹外区域，背景图像须同白）；dotted/dashed
-/// 墨迹为 stroke pattern，矩形 clip 不可表达 → 近似整带（挂账）。
+/// clip-border-area-double：ref 双带间白隙 = 墨迹外区域，背景图像须同白）；
+/// R4530：dotted/dashed 墨迹 pattern 化——逐 dash 沿边区间 / 逐 dot 逐行圆盘弦段
+/// （镜像 cpu/stroke.rs 的 dash=2t/gap=t、dot 圆心距 2t、圆盘 r=t/2 像素判定），
+/// 背景图像逐像素复制边框墨迹（clip-border-area-multiple-backgrounds / -complex：
+/// ref 蓝点阵 = border-area 图像的可见形状）。
 /// 条带互不重叠：上下条带走全宽（含角区），左右条带走 padding 盒竖向区间——与
 /// paint_borders 的边框绘制几何一致。kill-switch `ZW_BORDER_AREA_INK=0`（回退全带环）。
 pub(crate) fn border_area_ring_strips(
@@ -101,24 +104,158 @@ pub(crate) fn border_area_ring_strips(
         return Some(Vec::new());
     }
     let ink_aware = std::env::var("ZW_BORDER_AREA_INK").as_deref() != Ok("0");
+    let (bt, br_, bb, bl) = (
+        box_node.border_top,
+        box_node.border_right,
+        box_node.border_bottom,
+        box_node.border_left,
+    );
+    let inner_h = bh - bt - bb;
     let mut strips = Vec::new();
-    for (a, b) in side_ink_intervals(box_node.border_top, &style.border_top_style, ink_aware) {
-        strips.push(Rect::new(bx, by + a, bw, b - a));
-    }
-    for (a, b) in side_ink_intervals(box_node.border_bottom, &style.border_bottom_style, ink_aware) {
-        strips.push(Rect::new(bx, by + bh - b, bw, b - a));
-    }
-    let inner_h = bh - box_node.border_top - box_node.border_bottom;
+    // 沿边起点/长度与 paint_borders 的 BorderEdgeSpec 一致（上下走全宽、左右走 padding
+    // 盒竖向区间；pattern 相位锚定线起点 proj=0，与 stroke 图元坐标同源）。
+    push_side_ink_strips(
+        &mut strips,
+        true,
+        false,
+        by,
+        by + bt,
+        bx,
+        bw,
+        bt,
+        &style.border_top_style,
+        ink_aware,
+    );
+    push_side_ink_strips(
+        &mut strips,
+        true,
+        true,
+        by + bh - bb,
+        by + bh,
+        bx,
+        bw,
+        bb,
+        &style.border_bottom_style,
+        ink_aware,
+    );
     if inner_h > 0.0 {
-        let iy = by + box_node.border_top;
-        for (a, b) in side_ink_intervals(box_node.border_left, &style.border_left_style, ink_aware) {
-            strips.push(Rect::new(bx + a, iy, b - a, inner_h));
-        }
-        for (a, b) in side_ink_intervals(box_node.border_right, &style.border_right_style, ink_aware) {
-            strips.push(Rect::new(bx + bw - b, iy, b - a, inner_h));
-        }
+        let iy = by + bt;
+        push_side_ink_strips(
+            &mut strips,
+            false,
+            false,
+            bx,
+            bx + bl,
+            iy,
+            inner_h,
+            bl,
+            &style.border_left_style,
+            ink_aware,
+        );
+        push_side_ink_strips(
+            &mut strips,
+            false,
+            true,
+            bx + bw - br_,
+            bx + bw,
+            iy,
+            inner_h,
+            br_,
+            &style.border_right_style,
+            ink_aware,
+        );
     }
     Some(strips)
+}
+
+/// R4530：单侧墨迹条带发射。`horizontal` 侧 band 轴 = y（[band_lo, band_hi] 厚度带）、
+/// along 轴 = x（自 edge_start 长 edge_len）；竖直侧互换。`anchor_hi` = 厚度区间自外缘
+///（band_hi）起算的侧（bottom/right，side_ink_intervals 口径）。solid 族/double 走厚度
+/// 区间（R4529 原几何，byte-identical）；dashed/dotted（ink_aware）走 along 轴 pattern
+/// 区间，条带矩形按像素中心闭区间整数化——cpu render_image 的 floor/ceil clip 窗口
+/// `[floor(x), ceil(x+w)−1)` 恰好重现 `[ceil(a−0.5), floor(b−0.5)]` 的像素集，
+/// 逐像素复制 stroke 墨迹（self-source reftest 同渲染器比对）。
+#[allow(clippy::too_many_arguments)]
+fn push_side_ink_strips(
+    strips: &mut Vec<Rect>,
+    horizontal: bool,
+    anchor_hi: bool,
+    band_lo: f32,
+    band_hi: f32,
+    edge_start: f32,
+    edge_len: f32,
+    t: f32,
+    border_style: &BorderStyleValue,
+    ink_aware: bool,
+) {
+    let emit = |strips: &mut Vec<Rect>, band: (f32, f32), along: (f32, f32)| {
+        let (x, y, w, h) = if horizontal {
+            (along.0, band.0, along.1 - along.0, band.1 - band.0)
+        } else {
+            (band.0, along.0, band.1 - band.0, along.1 - along.0)
+        };
+        if w > 0.0 && h > 0.0 {
+            strips.push(Rect::new(x, y, w, h));
+        }
+    };
+    match border_style {
+        BorderStyleValue::Dashed if ink_aware && t > 0.0 && edge_len > 0.0 => {
+            // cpu/stroke.rs render_dashed_line：dash=2×t、gap=1×t，proj 自线起点起
+            // `pos_in_pattern <= dash_len`；末 dash 截到线长（proj <= total_len）。
+            let dash = 2.0 * t;
+            let pattern = dash + t;
+            let band = snap_px(band_lo, band_hi);
+            let mut k = 0.0f32;
+            while k * pattern <= edge_len {
+                let a = (edge_start + k * pattern).max(edge_start);
+                let b = (edge_start + k * pattern + dash).min(edge_start + edge_len);
+                emit(strips, band, snap_px(a, b));
+                k += 1.0;
+            }
+        }
+        BorderStyleValue::Dotted if ink_aware && t > 0.0 && edge_len > 0.0 => {
+            // cpu/stroke.rs render_dotted_line：圆心自线起点每 2×t 一个（d += spacing
+            // 同累计口径），半径 t/2 圆盘逐行取弦段（dx²+dy² <= r² 像素中心判定）。
+            let spacing = 2.0 * t;
+            let r = t / 2.0;
+            let center = (band_lo + band_hi) / 2.0;
+            let mut d = 0.0f32;
+            while d <= edge_len {
+                let c = edge_start + d;
+                let row_lo = (center - r).floor();
+                let row_hi = (center + r).ceil();
+                let mut row = row_lo;
+                while row <= row_hi {
+                    let dy = row + 0.5 - center;
+                    let rem = r * r - dy * dy;
+                    if rem >= 0.0 {
+                        let s = rem.sqrt();
+                        emit(strips, (row, row + 1.0), snap_px(c - s, c + s));
+                    }
+                    row += 1.0;
+                }
+                d += spacing;
+            }
+        }
+        _ => {
+            // 整带/双带（R4529 厚度区间路径——solid 族整带 + double 双带；
+            // dotted/dashed 于 kill-switch 关闭时同此整带近似）。
+            for (a, b) in side_ink_intervals(t, border_style, ink_aware) {
+                let band = if anchor_hi {
+                    (band_hi - b, band_hi - a)
+                } else {
+                    (band_lo + a, band_lo + b)
+                };
+                emit(strips, band, (edge_start, edge_start + edge_len));
+            }
+        }
+    }
+}
+
+/// 像素中心闭区间 [a, b]（fx = x+0.5 ∈ [a,b] ⟺ x ∈ [ceil(a−0.5), floor(b−0.5)]）的
+/// 整数化像素矩形 [lo, hi)，供 emit 生成与 cpu clip 窗口逐像素等价的条带。
+fn snap_px(a: f32, b: f32) -> (f32, f32) {
+    ((a - 0.5).ceil(), (b - 0.5).floor() + 1.0)
 }
 
 /// R4529：单侧边框墨迹沿厚度方向的区间集（外缘起算）。
