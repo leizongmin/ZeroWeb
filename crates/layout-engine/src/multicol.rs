@@ -1162,12 +1162,33 @@ fn layout_multicol(
                         || matches!(s.column_width, ColumnWidthComputedValue::Length(_))
                 })
         });
+        // R4524：count==1 sequential + **嵌套 multicol 子** → cap 臂（子溢出行剪裁；
+        // chromium oracle 实测 004-ref：inner#2 落在 fragmentainer 端外不渲染）。
+        // 平铺子不 cap（column-height-011 实证：单列溢出照绘下延）；count≥2 维持
+        // R1035 排除（007-ref 自源配对实证）。kill-switch `ZW_NESTED_MC_CLIP=0`。
+        let nested_clip_seq = std::env::var("ZW_NESTED_MC_CLIP").as_deref() != Ok("0") && info.count == 1;
+        let cap_nested_seq: Vec<bool> = if nested_clip_seq {
+            child_info
+                .iter()
+                .map(|&(idx, _)| {
+                    container.children[idx]
+                        .node_id
+                        .and_then(|id| styles.get(&id))
+                        .is_some_and(|s| {
+                            matches!(s.column_count, ColumnCountComputedValue::Number(_))
+                                || matches!(s.column_width, ColumnWidthComputedValue::Length(_))
+                        })
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
         if total_child_height_seq > info.count as f32 * height_limit + 1.0
             && !has_monolithic_child_seq
             && !has_forced_break
-            && !has_nested_multicol_seq
+            && (info.count == 1 || !has_nested_multicol_seq)
         {
-            assign_children_to_columns_multirow(&child_info, info.count, height_limit, &[])
+            assign_children_to_columns_multirow(&child_info, info.count, height_limit, &cap_nested_seq)
         } else {
             assign_children_to_columns_with_breaking(
                 &child_info,
@@ -1221,14 +1242,8 @@ fn layout_multicol(
             let c = &container.children[idx];
             c.overflow_x != OverflowClip::Visible || c.overflow_y != OverflowClip::Visible
         });
-        // R4523：count==1 单列容器的溢出**不下探内联溢出列**（单列无「下一列」——
-        // chromium 把溢出内容沿块轴下延为可见溢出，rule-nested-balancing-004：inner 500
-        // 在 outer 300 下方 [308,508] 照绘；多列容器才走 R1075 溢出列模型）。balance
-        // 路径回退 balanced 分配（单子不拆 → 全高渲染）。
-        let overflow_inline = col_height > 0.0
-            && info.count > 1
-            && !has_monolithic_child
-            && total_child_height > info.count as f32 * col_height + 1.0;
+        let overflow_inline =
+            col_height > 0.0 && !has_monolithic_child && total_child_height > info.count as f32 * col_height + 1.0;
         if overflow_inline {
             // R4522：嵌套 multicol 子（自身碎片化上下文）溢出行剪裁（children-height-007：
             // chromium 无内联溢出列，与平铺子 R1075 模型分叉）。kill-switch
@@ -2147,6 +2162,16 @@ fn assign_children_to_columns_multirow(
             });
             current_col_height += child_height;
         } else if child_height <= max_col_height {
+            // cap：无列可推进 → 整子剪裁（零高片段 → painter 零高 clip 全裁子树图元；
+            // R4524：004-ref inner#2 整体落在 outer fragmentainer 之外，chromium 不渲染）。
+            if cap_at_count && current_col + 1 >= col_count {
+                columns[current_col].push(ColumnFragment {
+                    child_idx,
+                    fragment_y_offset: 0.0,
+                    visual_height: 0.0,
+                });
+                continue;
+            }
             advance_col!();
             columns[current_col].push(ColumnFragment {
                 child_idx,
