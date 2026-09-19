@@ -40,3 +40,4 @@
 2026-09-12,upstream,v1.10,16595,14644,88.2,failed=1951;skipped=0,03726aac6,R4264-F goal 侧全量实测（docs/goal/rendering-compat.md；语料快照 16595 文件与 CI 周跑 16814 漂移）
 2026-09-12,upstream,v1.10,16595,14682,88.5,failed=1913;skipped=0,6db3c1ec6,R4270-F goal 侧全量实测（docs/goal/rendering-compat.md；语料快照 16595 与 CI 周跑 16814 漂移）
 2026-09-12,upstream,v1.10,16058,14392,89.6,failed=1666;skipped=0,016e666,
+2026-09-19,upstream,v1.10,16058,14693,91.5,failed=1365;skipped=0,fceaf44,
