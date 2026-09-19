@@ -25202,6 +25202,17 @@ R4509 重编相位链精确一致 首调即绿）；make test 腿
    款）+ make test 腿计数以 **19,348P/0F 为基线维持预期**（
    R4511 零新增 #[test] 函数实测）+ 跨流 L1139 flake 家族观察
    强化口径维持（若再现同口径机械归因 + 复跑收口）。
+   **插记更正（同窗二连 push race 实测 08:15）**：R4512（
+   rendering-compat multicol squeeze c 值裁末段 block 内容
+   crates/layout-engine/multicol.rs +59 **零新增 #[test]**）于
+   本插记 push 序列再度入树（ba6a57886 → 本流 fd2a17fec 顶到
+   其上）——S1243 锚点预期以本更正值为准（fd2a17fec 时点实
+   测）：② crates/ raw **146→147**（+2 = R4511 + R4512 折
+   入）/ ④ **213 files +24226/-1439 → 213 files +24286/-
+   1439**（面值维持 213 +60/-0 行差折入）；① ③ 维持；重编相
+   位预期不变（layout-engine→engine→page-runtime→browser 链）
+   计数维持预期 19,348P/0F（R4511/R4512 均零新增 #[test] 实
+   测）。
 
    **S1241 轮后插记（2026-09-19 push 序列 pull --rebase 实测，
    S898/S1190/S1229/S1230/S1236/S1240 插记先例）**：兄弟流
