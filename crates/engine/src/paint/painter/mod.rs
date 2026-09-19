@@ -1053,10 +1053,49 @@ impl Painter {
                     }
                 }
                 if ps.background_color != ColorValue::Transparent {
-                    self.primitives.add_fill(
-                        Rect::new(paint_x, 0.0, paint_w.max(0.0), canvas_height),
-                        resolve_color_current(&ps.background_color, &ps.color),
-                    );
+                    // R4526（css-backgrounds-4 §background-clip:border-area 传播绘制）：
+                    // body 传播的 clip:border-area 背景绘制在 **body 的 border 环带**
+                    //（chromium oracle：004-ref 20px 绿环绘于 body border 位置，环外白；
+                    // 无 border 时 border-area ≡ 全盒 → 全画布照绘，即 propagated-to-root
+                    // 谱系）。环几何取 body 盒 border-box + 已解析 border 宽。
+                    let body_border_sum = prop_node
+                        .and_then(|pid| layout.children.iter().find(|c| c.node_id == Some(pid)))
+                        .map(|b| b.border_left + b.border_right + b.border_top + b.border_bottom)
+                        .unwrap_or(0.0);
+                    if matches!(ps.background_clip, BackgroundClipComputedValue::BorderArea)
+                        && body_border_sum > 0.5
+                        && let Some(prop_box) =
+                            prop_node.and_then(|pid| layout.children.iter().find(|c| c.node_id == Some(pid)))
+                    {
+                        let (bx, by) = (prop_box.x, prop_box.y);
+                        let (bw, bh) = (prop_box.width, prop_box.height);
+                        let (bt, br_, bb, bl) = (
+                            prop_box.border_top,
+                            prop_box.border_right,
+                            prop_box.border_bottom,
+                            prop_box.border_left,
+                        );
+                        let color = resolve_color_current(&ps.background_color, &ps.color);
+                        if bt > 0.0 {
+                            self.primitives.add_fill(Rect::new(bx, by, bw, bt), color);
+                        }
+                        if bb > 0.0 {
+                            self.primitives.add_fill(Rect::new(bx, by + bh - bb, bw, bb), color);
+                        }
+                        if bl > 0.0 && bh - bt - bb > 0.0 {
+                            self.primitives
+                                .add_fill(Rect::new(bx, by + bt, bl, bh - bt - bb), color);
+                        }
+                        if br_ > 0.0 && bh - bt - bb > 0.0 {
+                            self.primitives
+                                .add_fill(Rect::new(bx + bw - br_, by + bt, br_, bh - bt - bb), color);
+                        }
+                    } else {
+                        self.primitives.add_fill(
+                            Rect::new(paint_x, 0.0, paint_w.max(0.0), canvas_height),
+                            resolve_color_current(&ps.background_color, &ps.color),
+                        );
+                    }
                 }
                 // R4351（slice 3）：逐层 attachment——fixed 层定位区 = 视口（origin_*，
                 // anchor 归零 → 视口锚定相位 0 不随根 margin 漂移）；scroll/local 层定位区
@@ -3611,6 +3650,34 @@ impl Painter {
                 verts.into_iter().flat_map(|(x, y)| [x, y]).collect(),
                 resolve_color_current(&style.background_color, &style.color),
             );
+        } else if matches!(style.background_clip, BackgroundClipComputedValue::BorderArea)
+            && box_node.border_left + box_node.border_right + box_node.border_top + box_node.border_bottom > 0.5
+        {
+            // R4526（css-backgrounds-4 §2.1 border-area 实底色）：环带 = border-box 减
+            // padding-box（4 条带，与 R3908 图像路径同几何；环外（padding/content 区）
+            // 不涂背景色——clip-border-area-on-body-not-propagated：body 绿环 + 白底）。
+            // 无 border：border-area ≡ 全盒（propagated-to-root 谱系：无 border 传播页
+            // ref 全绿——走下方全盒臂同效，此条件仅为可读性）。
+            let bg = resolve_color_current(&style.background_color, &style.color);
+            let px = clip_x + box_node.border_left;
+            let py = clip_y + box_node.border_top;
+            let pw = clip_w - box_node.border_left - box_node.border_right;
+            let ph = clip_h - box_node.border_top - box_node.border_bottom;
+            if clip_w > 0.0 && py - clip_y > 0.5 {
+                self.primitives
+                    .add_fill(Rect::new(clip_x, clip_y, clip_w, py - clip_y), bg);
+            }
+            if clip_w > 0.0 && clip_y + clip_h - (py + ph) > 0.5 {
+                self.primitives
+                    .add_fill(Rect::new(clip_x, py + ph, clip_w, clip_y + clip_h - py - ph), bg);
+            }
+            if px - clip_x > 0.5 && ph > 0.0 {
+                self.primitives.add_fill(Rect::new(clip_x, py, px - clip_x, ph), bg);
+            }
+            if clip_x + clip_w - (px + pw) > 0.5 && ph > 0.0 {
+                self.primitives
+                    .add_fill(Rect::new(px + pw, py, clip_x + clip_w - px - pw, ph), bg);
+            }
         } else if radii.is_zero() {
             // 无圆角：简单矩形填充
             self.primitives.add_fill(
