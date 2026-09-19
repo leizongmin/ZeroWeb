@@ -792,6 +792,26 @@ fn test_paint_clip_rect_auto_sides_resolve_to_border_box() {
     assert_eq!(fills[0].rect.size.height, 35.0);
 }
 
+/// R4540 v2：可见裁剪面积 = 非 fill 矩形残留面积 + path_fill 多边形（鞋带公式）面积。
+fn visible_area(prims: &zero_render_foundation::primitive::RenderPrimitives) -> f32 {
+    let fill_area: f32 = prims.fills.iter().map(|f| f.rect.size.width * f.rect.size.height).sum();
+    let path_area: f32 = prims
+        .path_fills
+        .iter()
+        .map(|p| {
+            let pts: Vec<(f32, f32)> = p.vertices.chunks(2).map(|c| (c[0], c[1])).collect();
+            let mut a = 0.0;
+            for i in 0..pts.len() {
+                let (x1, y1) = pts[i];
+                let (x2, y2) = pts[(i + 1) % pts.len()];
+                a += x1 * y2 - x2 * y1;
+            }
+            (a / 2.0).abs()
+        })
+        .sum();
+    fill_area + path_area
+}
+
 /// 测试 clip-path: circle(<percentage>) 半径按 sqrt(w²+h²)/√2 解析（CSS basic-shape circle）。
 /// driving: R2366 — `circle(50%)` 此前 paint 用 length_to_f32 把百分比丢为 0 → 退化半径 0
 /// → 裁剪区域为零（元素被完全裁掉）；应 radius = 50%×sqrt(w²+h²)/√2。
@@ -816,12 +836,8 @@ fn test_paint_clip_path_circle_percentage_clips() {
 
     // circle(50%) → radius = 50%（100×100 上 sqrt(100²+100²)/√2=100，×0.5=50）→ 内切圆裁剪。
     // 修复前：radius=0 → 退化多边形 → fill 全部裁零（总面积 0）。
-    let total_area: f32 = painter
-        .primitives()
-        .fills
-        .iter()
-        .map(|f| f.rect.size.width * f.rect.size.height)
-        .sum();
+    // R4540 v2：裁剪产物 = 残留 fill + path_fill（覆盖改写多边形/条带）总面积。
+    let total_area: f32 = visible_area(painter.primitives());
     assert!(
         total_area > 1000.0,
         "circle(50%) 应产生非零裁剪区域（内切圆≈π·50²≈7854），修复前为 0"
@@ -858,12 +874,8 @@ fn test_paint_clip_path_polygon_percentage_clips() {
     painter.paint(&layout, &styles, None);
 
     // 左半裁剪 → 总面积 ≈ 50×50 = 2500。修复前：百分比丢为 0 → 退化 → 0。
-    let total_area: f32 = painter
-        .primitives()
-        .fills
-        .iter()
-        .map(|f| f.rect.size.width * f.rect.size.height)
-        .sum();
+    // R4540 v2：裁剪产物 = 残留 fill + path_fill（覆盖改写多边形/条带）总面积。
+    let total_area: f32 = visible_area(painter.primitives());
     assert!(
         (2000.0..=3000.0).contains(&total_area),
         "polygon 左半(50%) 应裁剪到约 2500px²（50×50），修复前为 0，得到 {total_area}"

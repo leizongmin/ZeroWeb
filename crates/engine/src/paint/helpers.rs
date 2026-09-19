@@ -615,15 +615,26 @@ pub fn clip_all_primitives_to_polygon(
     // 第一步：用包围盒裁剪所有图元
     clip_all_primitives_to_rect(primitives, from, &bbox);
 
-    // 第二步：对 fills 进行精确多边形裁剪
-    // 将每个 fill 矩形与多边形求交，生成多个子矩形
-    let mut new_fills = Vec::new();
-    let fills_to_clip: Vec<_> = primitives.fills.drain(from.fills..).collect();
-    for fill in fills_to_clip {
-        let clipped = clip_fill_to_polygon(&fill, polygon);
-        new_fills.extend(clipped);
+    // 第二步：对 fills 进行精确多边形裁剪。
+    // R4540 v2：旧法 drain/重灌 fills 向量使 from.fills 之后的全部 Fill op 索引失效
+    // （draw_order 重放时条带被丢弃不绘制，R4537 记档的「条带无 op」根因），且索引
+    // 位移令后续嵌套 clip 消费的快照失准（R4536 缺陷 C）。v2 改为原地条带化：原 fill
+    // 清零、条带以 path_fill 发射并把 op 登记/插入到原 Fill op 槽位——op 插入不携带
+    // 索引位移、fills 向量长度不变，任何时点的 PrimitiveCounts 快照与 op 索引永久
+    // 有效。kill-switch `ZW_CLIP_V2=0` 回退旧 drain/重灌行为。
+    let clip_v2 = std::env::var("ZW_CLIP_V2").as_deref() != Ok("0");
+    if clip_v2 {
+        clip_fills_to_polygon_inplace(primitives, from.fills, polygon, true);
+    } else {
+        // 将每个 fill 矩形与多边形求交，生成多个子矩形
+        let mut new_fills = Vec::new();
+        let fills_to_clip: Vec<_> = primitives.fills.drain(from.fills..).collect();
+        for fill in fills_to_clip {
+            let clipped = clip_fill_to_polygon(&fill, polygon, false);
+            new_fills.extend(clipped);
+        }
+        primitives.fills.extend(new_fills);
     }
-    primitives.fills.extend(new_fills);
 
     // 对 glyphs 进行精确裁剪（丢弃中心不在多边形内的字形）
     for g in primitives.glyphs.iter_mut().skip(from.glyphs) {
@@ -643,9 +654,14 @@ pub fn clip_all_primitives_to_polygon(
 ///
 /// 使用扫描线方法：对矩形的每行像素，计算与多边形边的交点，
 /// 生成裁剪后的子矩形片段。
+///
+/// R4540（R4536 缺陷 B 修正）：`midpoint=true` 时在条带**中点**采样（条带顶采样在
+/// 多边形顶点恰落在采样线上时按半开边规则漏计自该顶点起始的边——整数坐标测试页
+/// 常态——整带丢失）。中点与整数顶点天然错开，交点计数恒成对。
 fn clip_fill_to_polygon(
     fill: &zero_render_foundation::primitive::FillPrimitive,
     polygon: &[(f32, f32)],
+    midpoint: bool,
 ) -> Vec<zero_render_foundation::primitive::FillPrimitive> {
     use zero_render_foundation::primitive::FillPrimitive;
 
@@ -661,14 +677,15 @@ fn clip_fill_to_polygon(
     let mut y = r.top();
     while y < r.bottom() {
         let y_end = (y + step).min(r.bottom());
+        let y_sample = if midpoint { (y + y_end) * 0.5 } else { y };
         // 找到该行与多边形的所有交点
         let mut intersections = Vec::new();
         let n = polygon.len();
         for i in 0..n {
             let (x1, y1) = polygon[i];
             let (x2, y2) = polygon[(i + 1) % n];
-            if (y1 < y && y2 >= y) || (y2 < y && y1 >= y) {
-                let t = (y - y1) / (y2 - y1);
+            if (y1 < y_sample && y2 >= y_sample) || (y2 < y_sample && y1 >= y_sample) {
+                let t = (y_sample - y1) / (y2 - y1);
                 let ix = x1 + t * (x2 - x1);
                 intersections.push(ix);
             }
@@ -691,6 +708,68 @@ fn clip_fill_to_polygon(
         y = y_end;
     }
     result
+}
+
+/// R4540 v2：fills 多边形条带裁剪（原地条带化 + op 登记）。
+///
+/// 对 `[start..len)` 内每个 fill：
+/// - 0 条带（fill 在多边形外）→ fill 原地清零（`DrawOp::Fill(i)` 重放零矩形为 no-op）；
+/// - 条带与原 rect 完全一致（fill 含于多边形内部）→ 原样保留；
+/// - 其余（部分相交）→ fill 原地清零，逐条带 `add_path_fill` 发射，并把原 `Fill(i)`
+///   op 槽位替换为首个条带的 `PathFill` op、其余条带 op 依次插入其后——同一 fill 的
+///   条带互不重叠（内部序无关），相对其他图元的 z 序 = 原 op 槽位（保序）。
+///
+/// 不变性：`draw_order` 插入/替换 op 只改顺序表本身，任何 op 的索引载荷无需更新；
+/// fills 向量长度不变 → 既有 `PrimitiveCounts` 快照与全部 op 索引永久有效（嵌套
+/// clip 消费可安全叠加，R4536 缺陷 C 根除）。找不到原 op 槽位（防御）时只清零不发射。
+fn clip_fills_to_polygon_inplace(
+    primitives: &mut RenderPrimitives,
+    start: usize,
+    polygon: &[(f32, f32)],
+    midpoint: bool,
+) {
+    use zero_render_foundation::primitive::DrawOp;
+
+    for i in start..primitives.fills.len() {
+        let fill = primitives.fills[i].clone();
+        let strips = clip_fill_to_polygon(&fill, polygon, midpoint);
+        match strips.len() {
+            0 => primitives.fills[i].rect = Rect::new(0.0, 0.0, 0.0, 0.0),
+            1 if strips[0].rect == fill.rect => {}
+            _ => {
+                primitives.fills[i].rect = Rect::new(0.0, 0.0, 0.0, 0.0);
+                let Some(op_pos) = primitives
+                    .draw_order
+                    .iter()
+                    .position(|op| matches!(op, DrawOp::Fill(j) if *j == i))
+                else {
+                    continue;
+                };
+                for (k, strip) in strips.iter().enumerate() {
+                    let r = &strip.rect;
+                    let verts = vec![
+                        r.left(),
+                        r.top(),
+                        r.right(),
+                        r.top(),
+                        r.right(),
+                        r.bottom(),
+                        r.left(),
+                        r.bottom(),
+                    ];
+                    primitives.add_path_fill(verts, strip.color);
+                    // add_path_fill 必在尾部追加一个 PathFill op；移到目标槽位。
+                    let tail = primitives.draw_order.pop();
+                    let Some(tail) = tail else { break };
+                    if k == 0 {
+                        primitives.draw_order[op_pos] = tail;
+                    } else {
+                        primitives.draw_order.insert(op_pos + k, tail);
+                    }
+                }
+            }
+        }
+    }
 }
 
 /// 判断点是否在多边形内部（射线法）。
@@ -1838,7 +1917,9 @@ mod tests {
     };
     use zero_render_foundation::color::Color;
     use zero_render_foundation::geometry::Rect;
-    use zero_render_foundation::primitive::{FillPrimitive, FontId, GlyphPrimitive, GradientKind, RenderPrimitives};
+    use zero_render_foundation::primitive::{
+        DrawOp, FillPrimitive, FontId, GlyphPrimitive, GradientKind, RenderPrimitives,
+    };
     use zero_style_system::ComputedStyle;
 
     // ── apply_transform_offset ──────────────────────────────────────────
@@ -3112,5 +3193,100 @@ mod tests {
         let mut rx = ComputedStyle::default();
         rx.transform = TransformValue::List(vec![TransformFunction::RotateX(180.0)]);
         assert!(transform_shows_backface(&rx), "rotateX(180deg) 背面朝向观察者");
+    }
+
+    // ── R4540：v2 多边形条带裁剪（中点采样 + 原地 op 登记）────────────────
+
+    /// R4536 缺陷 B 修正：多边形顶点恰落在条带采样线上时，顶采样按半开边规则漏计
+    /// 自该顶点起始的边 → 整带丢失；中点采样与整数顶点天然错开。
+    #[test]
+    fn test_clip_fill_to_polygon_midpoint_sampling_keeps_vertex_row() {
+        let fill = FillPrimitive {
+            rect: Rect::new(0.0, 0.0, 8.0, 8.0),
+            color: Color::BLACK,
+        };
+        // 轴对齐矩形多边形 [0,8]×[2,6]：四顶点全落在整数采样线上。
+        let polygon = vec![(0.0_f32, 2.0_f32), (8.0, 2.0), (8.0, 6.0), (0.0, 6.0)];
+        let area = |strips: &[FillPrimitive]| {
+            strips
+                .iter()
+                .map(|s| s.rect.size.width * s.rect.size.height)
+                .sum::<f32>()
+        };
+        let top = clip_fill_to_polygon(&fill, &polygon, false);
+        let mid = clip_fill_to_polygon(&fill, &polygon, true);
+        // 顶采样缺陷形态：首行 [2,3) 采样线 y=2 与顶边顶点重合被漏计（条带整体下移一行：
+        // 起点 3.0），而底行 [6,7) 又被 y2>=y 半开规则多算——形状在顶点行扭曲。
+        assert!(
+            top.first().map(|s| s.rect.origin.y).unwrap_or(0.0) >= 3.0,
+            "顶采样基线：首条带应被推到 y=3（漏计顶点行），实际 {:?}",
+            top.first().map(|s| s.rect.origin.y)
+        );
+        // 中点采样：条带精确平铺 [2,6)，面积满覆盖 32。
+        assert!(
+            (area(&mid) - 32.0).abs() < 0.5,
+            "中点采样应满覆盖 32，实际 {}",
+            area(&mid)
+        );
+        assert_eq!(mid.first().map(|s| s.rect.origin.y), Some(2.0), "首条带应从 y=2 起");
+    }
+
+    /// R4540 v2：部分相交 fill 条带化后 op 原位登记——Fill op 被替换为条带 PathFill op，
+    /// fills 向量长度不变（零索引位移）。
+    #[test]
+    fn test_clip_fills_inplace_registers_strip_ops_without_index_shift() {
+        let mut p = RenderPrimitives::new();
+        // fill[0] 在多边形外（不动）、fill[1] 与多边形部分相交（条带化）、fill[2] 无关（不动）。
+        let from = PrimitiveCounts::snapshot(&p);
+        p.add_fill(Rect::new(0.0, 0.0, 2.0, 2.0), Color::BLACK);
+        p.add_fill(Rect::new(0.0, 0.0, 8.0, 8.0), Color::rgba(0, 128, 0, 255));
+        p.add_fill(Rect::new(20.0, 20.0, 2.0, 2.0), Color::BLACK);
+        // 矩形多边形 [0,8]×[2,6]：与 fill[1] 部分相交。
+        let polygon = vec![(0.0_f32, 2.0_f32), (8.0, 2.0), (8.0, 6.0), (0.0, 6.0)];
+        clip_fills_to_polygon_inplace(&mut p, from.fills, &polygon, true);
+        assert_eq!(p.fills.len(), 3);
+
+        // fills 向量长度不变（v2 核心不变式：零索引位移）。
+        assert_eq!(p.fills.len(), 3, "v2 不得增删 fills（旧 drain/重灌会位移索引）");
+        // fill[1] 清零（原 op 重放为 no-op），条带以 path_fill 承载。
+        assert_eq!(p.fills[1].rect.size.width, 0.0, "部分相交 fill 应清零");
+        assert!(
+            p.path_fills.len() >= 4,
+            "条带应以 path_fill 发射，实际 {}",
+            p.path_fills.len()
+        );
+        // op 登记：draw_order 中原 Fill(1) 槽位被首个条带 PathFill op 替换，其余条带 op
+        // 紧随其后插入。
+        let fill1_pos = p.draw_order.iter().position(|op| matches!(op, DrawOp::Fill(1)));
+        assert!(fill1_pos.is_none(), "Fill(1) op 应被替换，不得残留");
+        let strip_pos = p.draw_order.iter().position(|op| matches!(op, DrawOp::PathFill(_)));
+        assert!(strip_pos.is_some(), "条带 PathFill op 应在原 op 槽位附近");
+        // 条带 PathFill op 全部落在 Fill(1) 原 op 位（=1）与 Fill(2) op 位之前（z 序保序）。
+        let fill2_pos = p
+            .draw_order
+            .iter()
+            .position(|op| matches!(op, DrawOp::Fill(2)))
+            .expect("fill[2] 未被裁剪，op 应保留");
+        let strip_count = p
+            .draw_order
+            .iter()
+            .filter(|op| matches!(op, DrawOp::PathFill(_)))
+            .count();
+        assert!(strip_count >= 4);
+        let first_strip = p
+            .draw_order
+            .iter()
+            .position(|op| matches!(op, DrawOp::PathFill(_)))
+            .unwrap();
+        assert!(
+            first_strip > 0 && first_strip < fill2_pos,
+            "条带 op 应位于 fill[1] 原槽位（fill[0] 之后、fill[2] 之前）：first={first_strip} fill2={fill2_pos}"
+        );
+        // draw_order 全部 op 索引仍有效：Fill op 指向的 fill 存在。
+        for op in &p.draw_order {
+            if let DrawOp::Fill(j) = op {
+                assert!(*j < p.fills.len(), "Fill op 索引 {} 越界", j);
+            }
+        }
     }
 }
