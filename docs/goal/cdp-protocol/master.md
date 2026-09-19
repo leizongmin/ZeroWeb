@@ -2,32 +2,32 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-20（S1356：**4/10 静默监测引用轮
+**最后更新**: 2026-09-20（S1357：**5/10 静默监测引用轮
 门腿首调即绿**（周期锚点 = S1352 双腿 门腿 05:37:13 落
 盘 + make test 腿 05:45:31 收口 + S1353 门腿 05:51:45 /
-S1354 门腿 06:01:25 / S1355 门腿 06:09:55 落盘在案；同
-tip 复核 pull 零新提交 tip = 8ec50b0ff 即 S1355 记录提
-交本身 origin/main == HEAD 实测复核 树代码面零变化）树
-不变口径 = 门单腿复跑免 make test 腿 S336 先例；锚点面
-五点开工复测按 S1355 记录时点基线（8ec50b0ff 实测）逐
-项复核全 PASS 零漂移（① 10 files +1187/-182 维持
-apps/browser/src/headless 口径 / ② crates/ raw 169 维
-持 e67967632..TIP 口径 / ③ 子帧关键词 7 文件 md5
-74f58fcf 维持 contentDocument/content_document crates/
-Rust 面 .rs 全量口径 非测试代码零命中（7 文件全测试路
-径 = dom tests 1 + engine js_dom_bridge_tests 5 +
-webview tests 1）解冻条件①观察面 169 口径
-frames.click+evaluate 挂起维持 / ④ 全树排除本流 docs
-对 18d462de6 253 files +30116/-1648 维持 / ⑤ make test
-腿基线计数 19,371P/0F 67 组 S1352 双腿实测已锚定 下次
-活腿对齐此口径 本轮引用轮无活腿）；**门腿
-06:14:23→06:14:52 首调即绿 EXIT=0**（PASS 33 绿
-deterministic 双跑 YES wall ~29s 正常量级 **0 Compiling
-= 全缓存零重编 树不变预言兑现** Finished 0.17s；green 33
+S1354 门腿 06:01:25 / S1355 门腿 06:09:55 / S1356 门腿
+06:14:52 落盘在案；同 tip 复核 pull 零新提交 tip =
+65e7e8695 即 S1356 记录提交本身 origin/main == HEAD 实
+测复核 树代码面零变化）树不变口径 = 门单腿复跑免 make
+test 腿 S336 先例；锚点面五点开工复测按 S1356 记录时点
+基线（65e7e8695 实测）逐项复核全 PASS 零漂移（① 10
+files +1187/-182 维持 apps/browser/src/headless 口径 /
+② crates/ raw 169 维持 e67967632..TIP 口径 / ③ 子帧关
+键词 7 文件 md5 74f58fcf 维持 contentDocument/
+content_document crates/ Rust 面 .rs 全量口径 非测试代
+码零命中（7 文件全测试路径 = dom tests 1 + engine
+js_dom_bridge_tests 5 + webview tests 1）解冻条件①观察
+面 169 口径 frames.click+evaluate 挂起维持 / ④ 全树排
+除本流 docs 对 18d462de6 253 files +30116/-1648 维持 /
+⑤ make test 腿基线计数 19,371P/0F 67 组 S1352 双腿实
+测已锚定 下次活腿对齐此口径 本轮引用轮无活腿）；
+**门腿 06:18:47→06:19:19 首调即绿 EXIT=0**（PASS 33 绿
+deterministic 双跑 YES wall ~32s 正常量级 **0 Compiling
+= 全缓存零重编 树不变预言兑现** Finished 0.40s；green 33
 = expected 33 对称差 none regressions 空 双 run 各 flow
 exited 1 含期望失败步骤 failed 1 = frames.click+evaluate
 既有形态；S1313 红例 9 FAIL 步全在绿集；**门面 CDP 缺步/
-停滞族 S1314-S1356 连续四十三轮零再现维持**；S168 形态
+停滞族 S1314-S1357 连续四十四轮零再现维持**；S168 形态
 （run 2 单步瞬态）本轮未再现 家族累计 3 例间隔延续拉大
 单轮偶发记账维持；零 watchdog/FAIL/Timeout 形态行；
 zero-engine dead_code warning 既有形态在案 1 枚 2 行标准
@@ -35,63 +35,67 @@ zero-engine dead_code warning 既有形态在案 1 枚 2 行标准
 形态 形态定性收敛维持：当前树态门 dev profile 面真实再
 发射 S1344+S1347+S1350+S1352 四重真重编复证 与兄弟
 clippy -D 零告警并存不矛盾）不阻本门；target-disk-guard
-零再现 门日志零 guard 行）；**引用计数 4/10**（S1352 双
-腿新周期锚点 下轮 S1357 = 5/10 至迟 **S1358 = 到期期限
-轮双腿活跑**（新周期锚点 S1352 + 6 轮 双腿活跑口径 = 门
-+ make test 后台跑法 树不变也双腿 距今 2 轮））；
-**ZW_IPC_VALIDATE=1 在位静默 capture jsonl 面零写入 #0
-复现监测零命中维持**（五 jsonl mtime 09-12/09-13 全不变
-跑后组合 md5 同值 2c2cdb6d explicit 显式规范序口径
-zw-capture→zw-capture2→zw-capture3→raw-proxy→raw-proxy2
-顺序拼接实测复核）；steps-report/determinism-report = 门
-腿新鲜落盘 06:14；门尾树态（tip = 8ec50b0ff tracked
-clean）922x 端口族全 free（前后零监听）**zombie 复测 =
-零命中**（defunct 零命中 zero-seed 撤档后连续零命中维持
-非异常；form_input_perf 瞬态未再现）本流门腿零残留（窗
-尾复核 1 瞬态 PID 系本流检查管线自身短暂匹配 复核即消
-散归零；余下窗尾进程 cwd 取证 = 兄弟 clone cronjob 腿全
-外部源 非本树 双 clone 隔离零污染本树 非端口竞争面
-S672/S1338-S1355 先例同型 路径相对表述口径）控制面零外
-来提交；盘量观察 = 起手 449G → 腿尾 449G（持平 零
-guard 触发）。本轮负载窗 = 兄弟流并窗余量段起手（06:14
-实测 load 1.46 五分钟均值 2.36）→ 腿尾（06:15 实测
-load 0.60 五分钟均值 1.94 并窗余量回落 非异常）。M5 定
-稿收口判定不因复验与执行态瞬态动摇——**goal Done 维
-持，守成态证据经 S1356 门腿复跑延续（S1304 双腿 + S1305
-双腿 + S1309 双腿 + S1312 双腿 + S1314 双腿 + S1320 双
-腿 + S1323 双腿 + S1329 双腿 + S1335 双腿 + S1341 双腿 +
-S1344 双腿 + S1347 双腿 + S1350 双腿 + S1352 双腿 +
-S1353-S1356 门腿 + S1306/S1307/S1308/S1310/S1311/S1313/
-S1315/S1316/S1317/S1318/S1319/S1321/S1322/S1324/S1325/
-S1326/S1327/S1328/S1330/S1331/S1332/S1333/S1334/S1336/
-S1337/S1338/S1339/S1340/S1342/S1343/S1345/S1346/S1348/
-S1349/S1351 门腿复跑；S1304-S1312 各双腿覆盖旧组合态
-R4526 + R4528 + R4529 + R4530 S1314-S1320 双腿覆盖
-R4526-R4531 组合态 S1323 双腿起覆盖 R4526-R4534 组合态
-S1344 双腿起覆盖 R4526-R4534+R4539 组合态 S1347 双腿起覆
-盖 R4526-R4534+R4539+R4540 组合态 S1350 双腿起覆盖
+零再现 门日志零 guard 行）；**引用计数 5/10**（S1352 双
+腿新周期锚点 **下轮 S1358 = 到期期限轮双腿活跑**（新周
+期锚点 S1352 + 6 轮 双腿活跑口径 = 门 + make test 后台
+跑法 树不变也双腿 距今 1 轮）stale_etag 家族累计 5 例 +
+test-guard artifact 启动失败族 + 跨流 L1139 家族三项观
+察均在此双腿复查窗口）；**ZW_IPC_VALIDATE=1 在位静默
+capture jsonl 面零写入 #0 复现监测零命中维持**（五
+jsonl mtime 09-12/09-13 全不变 跑后组合 md5 同值
+2c2cdb6d explicit 显式规范序口径 zw-capture→zw-capture2
+→zw-capture3→raw-proxy→raw-proxy2 顺序拼接实测复核）；
+steps-report/determinism-report = 门腿新鲜落盘 06:19；门
+尾树态（tip = 65e7e8695 tracked clean）922x 端口族全
+free（前后零监听）**zombie 复测 = 零命中**（defunct 零
+命中 zero-seed 撤档后连续零命中维持 非异常；
+form_input_perf 瞬态未再现）本流门腿零残留（窗尾复核 2
+瞬态 PID 系本流检查管线自身短暂匹配 复核即消散归零；余
+下窗尾进程 cwd 取证 = 兄弟 clone cronjob bench-gate 腿
+全外部源 非本树 双 clone 隔离零污染本树 非端口竞争面
+S672/S1338-S1356 先例同型 路径相对表述口径）控制面零外
+来提交；盘量观察 = 起手 449G → 腿尾 447G（外部源兄弟流
+bench-gate 段涨落 非本流 本流 0 Compiling 零 guard 触
+发）。本轮负载窗 = 起手 06:18 实测 load 1.73 五分钟均值
+2.13 → 腿尾 06:19 实测 load 5.92（一分钟）五分钟均值
+3.27（兄弟流 cronjob bench-gate 重载腿并窗 外部源 非
+异常）。M5 定稿收口判定不因复验与执行态瞬态动摇——
+**goal Done 维持，守成态证据经 S1357 门腿复跑延续
+（S1304 双腿 + S1305 双腿 + S1309 双腿 + S1312 双腿 +
+S1314 双腿 + S1320 双腿 + S1323 双腿 + S1329 双腿 +
+S1335 双腿 + S1341 双腿 + S1344 双腿 + S1347 双腿 +
+S1350 双腿 + S1352 双腿 + S1353-S1357 门腿 +
+S1306/S1307/S1308/S1310/S1311/S1313/S1315/S1316/S1317/
+S1318/S1319/S1321/S1322/S1324/S1325/S1326/S1327/S1328/
+S1330/S1331/S1332/S1333/S1334/S1336/S1337/S1338/S1339/
+S1340/S1342/S1343/S1345/S1346/S1348/S1349/S1351 门腿复
+跑；S1304-S1312 各双腿覆盖旧组合态 R4526 + R4528 +
+R4529 + R4530 S1314-S1320 双腿覆盖 R4526-R4531 组合态
+S1323 双腿起覆盖 R4526-R4534 组合态 S1344 双腿起覆盖
+R4526-R4534+R4539 组合态 S1347 双腿起覆盖
+R4526-R4534+R4539+R4540 组合态 S1350 双腿起覆盖
 R4526-R4534+R4539+R4540+R4541 组合态 S1352 双腿起覆盖
 R4526-R4534+R4539+R4540+R4541+R4542 新组合态
-S1353-S1356 门腿同新组合态延续覆盖）**；唯一未清偿义务 =
+S1353-S1357 门腿同新组合态延续覆盖）**；唯一未清偿义务 =
 frames.click+evaluate 回填（挂子帧能力解冻，见子帧解冻
 清单，不阻收口））
 
-**前轮终态**: S1355 = 3/10 静默监测引用轮门腿首调即绿
-（同 tip 复核 pull 零新提交 tip = d898e2170 即 S1354 记
+**前轮终态**: S1356 = 4/10 静默监测引用轮门腿首调即绿
+（同 tip 复核 pull 零新提交 tip = 8ec50b0ff 即 S1355 记
 录提交本身；树不变口径 = 门单腿复跑免 make test 腿 S336
-先例）；锚点五点按 S1354 记录时点基线全 PASS 零漂移；
-门腿 06:09:24→06:09:55 首调即绿 EXIT=0 PASS 33 绿
-deterministic YES wall ~31s 0 Compiling 全缓存 树不变预
-言兑现 Finished 0.18s；green 33 = expected 33 对称差
+先例）；锚点五点按 S1355 记录时点基线全 PASS 零漂移；
+门腿 06:14:23→06:14:52 首调即绿 EXIT=0 PASS 33 绿
+deterministic YES wall ~29s 0 Compiling 全缓存 树不变预
+言兑现 Finished 0.17s；green 33 = expected 33 对称差
 none regressions 空 双 run 各 flow exited 1 含期望失败
 步骤 frames.click+evaluate 既有形态 缺步/停滞族连续四
-十二轮零再现 S168 形态未再现（家族累计 3 例）零 watchdog/
+十三轮零再现 S168 形态未再现（家族累计 3 例）零 watchdog/
 FAIL/Timeout 形态行 target-disk-guard 零再现 dead_code
 warning 1 枚 2 行缓存重放形态 jsonl md5 2c2cdb6d 恒值
-zombie/922x 零命中 本流门腿零残留（窗尾复核三瞬态 PID
-复核即消散）窗尾进程 cwd 取证 = 兄弟 clone test 腿全外
-部源 负载窗 = 兄弟流 test 腿并窗（06:09 load 2.33 →
-06:10 load 2.21 非异常）；S1355 记录提交 8ec50b0ff 推远
+zombie/922x 零命中 本流门腿零残留（窗尾复核 1 瞬态 PID
+复核即消散）窗尾进程 cwd 取证 = 兄弟 clone cronjob 腿全
+外部源 负载窗 = 兄弟流并窗余量段（06:14 load 1.46 →
+06:15 load 0.60 非异常）；S1356 记录提交 65e7e8695 推远
 push 序列零新提交零插记场景
 ---
 
