@@ -85,6 +85,257 @@ fn push_side(
     }
 }
 
+/// R4520（R1473 step-2 slice ②，CSS Multicol §6.1 + §column-fill）：**count==1 单列**
+/// 的 spanner 区域分段。单列多列容器（column-count:1 + column-fill:auto，
+/// children-height-005/008 谱系）里 spanner 把唯一子 wrapper 拆成多个区域实例：
+/// 边框在 spanner 相邻边 skip、背景按区域分段、显式高 wrapper 按「just enough」
+/// 预算分配（R4514 同律，无除列——cell = 区域总量）。
+///
+/// 与 count≥2 路径（[`apply_bordered_region_fragments`]）的区别：children **自然堆叠
+/// 已与区域 cell 对齐**（单列无须碎片化/重定位），不产 `NestedSpannerChildFrag`
+/// （子树走常规绘制路径）、不动 cso、不设 `is_nested_spanner_wrapper`——只发射
+/// 装饰段（背景恒发、边框按归属）+ 回写 wrapper/article 高度。
+///
+/// kill-switch：`ZW_COUNT1_REGION_SEGS=0`（回退单盒装饰绘制）。
+pub(super) fn apply_count1_region_segments(
+    container: &mut LayoutBox,
+    wrapper_idx: usize,
+    info: &ColumnInfo,
+    styles: &HashMap<NodeId, ComputedStyle>,
+) -> bool {
+    if std::env::var("ZW_COUNT1_REGION_SEGS").as_deref() == Ok("0") {
+        return false;
+    }
+    if info.count != 1 {
+        return false;
+    }
+    let wrapper = &container.children[wrapper_idx];
+    let Some(wid) = wrapper.node_id else {
+        return false;
+    };
+    let Some(ws) = styles.get(&wid) else {
+        return false;
+    };
+    // column-fill:auto 语义门（005/008 均为 fill:auto；balance + paged 分页域
+    // column-balancing-paged-001 回归实证——自然堆叠假设只在 fill:auto 成立）。
+    if !info.sequential_fill {
+        return false;
+    }
+    // wrapper 自身是嵌套 multicol → 其 spanner 属内层列组（paged-001 outer/inner 谱系），
+    // 非本分支的单列区域分段。
+    if matches!(
+        ws.column_count,
+        zero_style_system::property::types::ColumnCountComputedValue::Number(_)
+    ) || matches!(
+        ws.column_width,
+        zero_style_system::property::types::ColumnWidthComputedValue::Length(_)
+    ) {
+        return false;
+    }
+    if !border_radius_is_zero(ws) {
+        return false;
+    }
+    // 须有直接 spanner 子（区域边界；深层 spanner 域另案）。
+    let spanner_flags: Vec<bool> = wrapper
+        .children
+        .iter()
+        .map(|c| {
+            c.node_id
+                .and_then(|id| styles.get(&id))
+                .is_some_and(|s| matches!(s.column_span, ColumnSpanComputedValue::All))
+        })
+        .collect();
+    if !spanner_flags.iter().any(|&f| f) {
+        return false;
+    }
+
+    let mt = wrapper.margin_top;
+    let mb = wrapper.margin_bottom;
+    let bt = wrapper.border_top;
+    let bb = wrapper.border_bottom;
+    let pt = wrapper.padding_top;
+    let pb = wrapper.padding_bottom;
+
+    // 1. 区域划分 + 顺序预算（显式高 → R4514 just enough；auto 高 → 全量渲染）。
+    let mut regions: Vec<Vec<usize>> = vec![Vec::new()];
+    let mut spanner_heights: Vec<f32> = Vec::new();
+    for (i, c) in wrapper.children.iter().enumerate() {
+        if c.is_absolute || c.is_fixed {
+            continue;
+        }
+        if spanner_flags[i] {
+            spanner_heights.push(c.height);
+            regions.push(Vec::new());
+        } else {
+            regions.last_mut().unwrap().push(i);
+        }
+    }
+    let content_budget = match ws.height {
+        LengthValue::Px(css_h) => Some((css_h as f32 - pt - pb).max(0.0)),
+        _ => None,
+    };
+    let mut rendered: Vec<f32> = Vec::with_capacity(regions.len());
+    let mut remaining = content_budget;
+    for region in &regions {
+        let total: f32 = region
+            .iter()
+            .map(|&i| {
+                let c = &wrapper.children[i];
+                c.height + c.margin_top + c.margin_bottom
+            })
+            .sum();
+        let r = match remaining {
+            Some(budget) => {
+                let rendered = total.min(budget);
+                remaining = Some(budget - rendered);
+                rendered
+            }
+            None => total,
+        };
+        rendered.push(r);
+    }
+
+    // 2. 区域总量/cell（单列无除列）：首区域扛 mt+bt+pt，末区域扛 pb+bb+mb。
+    let last = regions.len() - 1;
+    let cells: Vec<f32> = (0..regions.len())
+        .map(|r| {
+            let mut t = rendered[r];
+            if r == 0 {
+                t += mt + bt + pt;
+            }
+            if r == last {
+                t += pb + bb + mb;
+            }
+            t
+        })
+        .collect();
+    let cell_tops: Vec<f32> = {
+        let mut tops = Vec::with_capacity(regions.len());
+        let mut acc = -mt;
+        for (r, &cell) in cells.iter().enumerate() {
+            tops.push(acc);
+            acc += cell + spanner_heights.get(r).copied().unwrap_or(0.0);
+        }
+        tops
+    };
+    let total_advance: f32 = cells.iter().sum::<f32>() + spanner_heights.iter().sum::<f32>();
+    if total_advance <= 0.5 {
+        return false;
+    }
+
+    // 3. 装饰段：段盒宽 = wrapper 全宽（单列无列宽约束、无 double-subtraction）。
+    let seg_w = wrapper.width;
+    if seg_w < 1.0 {
+        return false;
+    }
+    let bl = wrapper.border_left;
+    let br = wrapper.border_right;
+    let pl = wrapper.padding_left;
+    let pr = wrapper.padding_right;
+    let mut segs: Vec<NestedSpannerSegRect> = Vec::new();
+    for (r, region) in regions.iter().enumerate() {
+        let cell_y = cell_tops[r];
+        let cell_h = cells[r];
+        if cell_h < 0.5 {
+            continue;
+        }
+        let box_top = if r == 0 { cell_y + mt } else { cell_y };
+        let (r_bt, r_bb) = (if r == 0 { bt } else { 0.0 }, if r == last { bb } else { 0.0 });
+        let box_h = rendered[r] + r_bt + pt + pb + r_bb;
+        if r == 0 && bt > 0.5 {
+            push_side(
+                &mut segs,
+                NestedSpannerSegKind::BorderTop,
+                0.0,
+                box_top,
+                seg_w,
+                bt,
+                cell_y,
+                cell_h,
+            );
+        }
+        if r == last && bb > 0.5 {
+            push_side(
+                &mut segs,
+                NestedSpannerSegKind::BorderBottom,
+                0.0,
+                box_top + box_h - bb,
+                seg_w,
+                bb,
+                cell_y,
+                cell_h,
+            );
+        }
+        if bl > 0.5 {
+            push_side(
+                &mut segs,
+                NestedSpannerSegKind::BorderLeft,
+                0.0,
+                box_top,
+                bl,
+                box_h,
+                cell_y,
+                cell_h,
+            );
+        }
+        if br > 0.5 {
+            push_side(
+                &mut segs,
+                NestedSpannerSegKind::BorderRight,
+                seg_w - br,
+                box_top,
+                br,
+                box_h,
+                cell_y,
+                cell_h,
+            );
+        }
+        let bg_w = (seg_w - bl - br - pl - pr).max(0.0);
+        let bg_h = (box_h - r_bt - r_bb - pt - pb).max(0.0);
+        if bg_w > 0.5
+            && let Some((y, h)) = intersect_v(box_top + r_bt + pt, bg_h, cell_y, cell_h)
+        {
+            segs.push(NestedSpannerSegRect {
+                x: bl + pl,
+                y,
+                w: bg_w,
+                h,
+                kind: NestedSpannerSegKind::Background,
+            });
+        }
+        let _ = region;
+    }
+
+    // 3b. spanner 归位：跨 article 全宽（x = −(bl+pl) 回 wrapper content 帧、宽 =
+    // article content 宽）——column-span:all 语义跨多列容器列组，非 wrapper content
+    // 列帧（同 count≥2 路径的 spanner article 帧特例）。y 不动（自然堆叠即区域序）。
+    // 4. 高度回写：wrapper 盒 = 总 advance − mt（末区域 mb 折叠出容器）；article 高随动。
+    // （005：显式 250 → just enough 350；008：auto 440 → 原值。）
+    let wrapper = &mut container.children[wrapper_idx];
+    // 3b. spanner 归位：跨 article 全宽（x = −(bl+pl) 回 wrapper content 帧、宽 =
+    // article content 宽）——column-span:all 语义跨多列容器列组，非 wrapper content
+    // 列帧（同 count≥2 路径的 spanner article 帧特例）。y 不动（自然堆叠即区域序）。
+    let article_cw = container.content_width;
+    for (i, child) in wrapper.children.iter_mut().enumerate() {
+        if spanner_flags[i] {
+            child.x = -(bl + pl);
+            child.width = article_cw;
+            child.content_width = (article_cw - bl - br - pl - pr).max(0.0);
+        }
+    }
+    wrapper.nested_spanner_col_bg.clear();
+    wrapper.nested_spanner_box_segs = segs;
+    let new_h = (total_advance - mt).max(0.0);
+    wrapper.height = new_h;
+    wrapper.content_height = (new_h - bt - bb - pt - pb).max(0.0);
+    // article 内容高 = wrapper margin-box（cell 链顶起于 −mt、末区域含 mb）。
+    let new_article_ch = (total_advance - mt + mb).max(0.0);
+    let frame = container.height - container.content_height;
+    container.content_height = new_article_ch;
+    container.height = new_article_ch + frame;
+    true
+}
+
 /// 对 bordered nested-spanner wrapper 应用区域×列 fragment 分段模型。
 ///
 /// 调用点：`try_layout_nested_spanner` 末尾（R1357/R1359/R1360 之后——本函数对其
@@ -332,6 +583,17 @@ pub(super) fn apply_bordered_region_fragments(
     }
 
     let wrapper = &mut container.children[wrapper_idx];
+    // 3b. spanner 归位：跨 article 全宽（x = −(bl+pl) 回 wrapper content 帧、宽 =
+    // article content 宽）——column-span:all 语义跨多列容器列组，非 wrapper content
+    // 列帧（同 count≥2 路径的 spanner article 帧特例）。y 不动（自然堆叠即区域序）。
+    let article_cw = container.content_width;
+    for (i, child) in wrapper.children.iter_mut().enumerate() {
+        if spanner_flags[i] {
+            child.x = -(bl + pl);
+            child.width = article_cw;
+            child.content_width = (article_cw - bl - br - pl - pr).max(0.0);
+        }
+    }
     wrapper.nested_spanner_col_bg.clear();
     wrapper.nested_spanner_box_segs = segs;
     wrapper.nested_spanner_child_frags = frags;
@@ -496,5 +758,114 @@ mod tests {
         assert!(container.children[0].nested_spanner_col_bg.is_empty());
         // spanner 样式仍为 All（供 dispatch 复用），宽度保持全宽。
         let _ = ColumnWidthComputedValue::Auto;
+    }
+}
+
+#[cfg(test)]
+mod count1_tests {
+    use super::*;
+    use zero_css_parser::values::LengthValue;
+    use zero_style_system::property::types::ColumnSpanComputedValue;
+
+    /// R4520 回归：008 几何（article column-count:1 + fill:auto 200 宽 >
+    /// wrapper[border 20 + auto 高 + pink] > [block 100][spanner 50][block 100]
+    /// [spanner 50][block 100]）。断言：单列区域分段（无除列）、边框 spanner 相邻
+    /// 边 skip、背景按区域分段、wrapper auto 高不回写、spanner 跨 article 全宽。
+    #[test]
+    fn count1_region_segments_008_geometry() {
+        let mut doc = zero_dom::Document::new();
+        let wrapper_id = doc.create_element("div");
+        let spanner1_id = doc.create_element("div");
+        let spanner2_id = doc.create_element("div");
+
+        let mut wrapper_style = ComputedStyle::default();
+        wrapper_style.height = LengthValue::Auto;
+        let mut spanner_style = ComputedStyle::default();
+        spanner_style.column_span = ColumnSpanComputedValue::All;
+        let styles = HashMap::from([
+            (wrapper_id, wrapper_style),
+            (spanner1_id, spanner_style.clone()),
+            (spanner2_id, spanner_style),
+        ]);
+
+        let block = || LayoutBox {
+            width: 100.0,
+            content_width: 100.0,
+            height: 100.0,
+            content_height: 100.0,
+            ..Default::default()
+        };
+        let spanner = |id| LayoutBox {
+            node_id: Some(id),
+            width: 160.0,
+            content_width: 160.0,
+            height: 50.0,
+            content_height: 50.0,
+            ..Default::default()
+        };
+        let wrapper = LayoutBox {
+            node_id: Some(wrapper_id),
+            border_top: 20.0,
+            border_right: 20.0,
+            border_bottom: 20.0,
+            border_left: 20.0,
+            width: 200.0,
+            content_width: 160.0,
+            height: 440.0,
+            content_height: 400.0,
+            is_block_level: true,
+            children: vec![block(), spanner(spanner1_id), block(), spanner(spanner2_id), block()],
+            ..Default::default()
+        };
+        let mut container = LayoutBox {
+            content_width: 200.0,
+            content_height: 440.0,
+            height: 440.0,
+            is_multicol: true,
+            children: vec![wrapper],
+            ..Default::default()
+        };
+        let info = super::super::ColumnInfo {
+            count: 1,
+            column_width: 200.0,
+            gap: 16.0,
+            sequential_fill: true,
+        };
+
+        assert!(apply_count1_region_segments(&mut container, 0, &info, &styles));
+
+        let segs = &container.children[0].nested_spanner_box_segs;
+        let near = |a: f32, b: f32| (a - b).abs() < 0.01;
+        let find = |kind: NestedSpannerSegKind, y: f32| {
+            segs.iter()
+                .filter(|s| s.kind == kind && near(s.y, y))
+                .cloned()
+                .collect::<Vec<_>>()
+        };
+        // 边框按区域归属：top 只在 r0 [0,20]；bottom 只在 r2 [420,440]；左右竖边
+        // 三段 [0,120]/[170,270]/[320,440]，spanner 带 [120,170]/[270,320] skip。
+        assert_eq!(find(NestedSpannerSegKind::BorderTop, 0.0).len(), 1);
+        assert_eq!(find(NestedSpannerSegKind::BorderBottom, 420.0).len(), 1);
+        let lefts = find(NestedSpannerSegKind::BorderLeft, 0.0);
+        assert_eq!(lefts.len(), 1, "segs={:?}", segs);
+        assert!(near(lefts[0].h, 120.0));
+        assert!(find(NestedSpannerSegKind::BorderLeft, 170.0).len() == 1);
+        assert!(find(NestedSpannerSegKind::BorderLeft, 320.0).len() == 1);
+        assert!(
+            segs.iter()
+                .all(|s| near(s.x, 0.0) || near(s.x, 20.0) || near(s.x, 180.0))
+        );
+        // 背景段 = 各区域 content 带（r0 [20,120]、r1 [170,270]、r2 [320,420]）。
+        let bgs = find(NestedSpannerSegKind::Background, 20.0);
+        assert!(near(bgs[0].h, 100.0) && near(bgs[0].x, 20.0) && near(bgs[0].w, 160.0));
+        assert_eq!(find(NestedSpannerSegKind::Background, 170.0).len(), 1);
+        assert_eq!(find(NestedSpannerSegKind::Background, 320.0).len(), 1);
+        // auto 高：wrapper 盒高不回写（total_advance 440 = 原值）；无 child frags。
+        assert!(near(container.children[0].height, 440.0));
+        assert!(container.children[0].nested_spanner_child_frags.is_empty());
+        assert!(container.children[0].nested_spanner_col_bg.is_empty());
+        // spanner 跨 article 全宽：x = −bl = −20、宽 = article content 宽 200。
+        let s1 = &container.children[0].children[1];
+        assert!(near(s1.x, -20.0) && near(s1.width, 200.0));
     }
 }

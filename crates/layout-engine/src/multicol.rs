@@ -543,12 +543,6 @@ fn try_layout_nested_spanner(
     if std::env::var("ZW_MULTICOL_NESTED_SPANNER").as_deref() == Ok("0") {
         return false;
     }
-    // R1341 gate：fragmentation 仅 2+ 列（1 列无须碎片化；multicol-span-all-children-height-008
-    // column-count:1 回归）+ balance 模式（sequential fill + spanner 未支持，同 R1028/R1035
-    // balance-only；multicol-span-all-017/parallel-flow-after-spanner-001 回归）。
-    if info.count < 2 || info.sequential_fill {
-        return false;
-    }
     // gate：唯一 in-flow 直接子。
     let in_flow: Vec<usize> = container
         .children
@@ -561,6 +555,21 @@ fn try_layout_nested_spanner(
         return false;
     }
     let wrapper_idx = in_flow[0];
+    // R4520（R1473 step-2 slice ②）：count==1（column-fill:auto 单列）的 bordered/bg
+    // wrapper——spanner 把容器拆成多个区域实例，边框在 spanner 相邻边 skip、背景按
+    // 区域分段（children-height-005/008）。单列无须碎片化/重定位（children 自然堆叠
+    // 与区域 cell 天然对齐），只做装饰分段 + 「just enough」高度回写。R1341 旧注记的
+    // 008 回归属旧 synth 路径（重定位+balance），本分支不经 synth。
+    if info.count == 1 && bordered_region_fragments::apply_count1_region_segments(container, wrapper_idx, info, styles)
+    {
+        return true;
+    }
+    // R1341 gate：fragmentation 仅 2+ 列（1 列无须碎片化；multicol-span-all-children-height-008
+    // column-count:1 回归）+ balance 模式（sequential fill + spanner 未支持，同 R1028/R1035
+    // balance-only；multicol-span-all-017/parallel-flow-after-spanner-001 回归）。
+    if info.count < 2 || info.sequential_fill {
+        return false;
+    }
     // 收集 wrapper 信息（作用域隔离借用）：含嵌套 spanner？in-flow 子 idx？偏移？
     let nested: Option<(Vec<usize>, f32, f32)> = {
         let wrapper = &container.children[wrapper_idx];
