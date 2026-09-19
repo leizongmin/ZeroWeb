@@ -227,10 +227,19 @@ impl super::super::Painter {
         // 的列子元素被 position_multicol_children narrow 到 col_w 且 column_span_offsets 非空），
         // 把 rule 的 [0, content_h] Y 范围按 spanner Y 区间分段，每段独立绘制。
         // 非 spanner 容器 → spanner_ranges 空 → segments = [(0, content_h)] → 行为不变（零回归）。
+        // R4521：nested-spanner wrapper（is_nested_spanner_wrapper，R1341 synth 整体绘制）
+        // 不是 spanner——它恰好满宽，但其内部列把内容分布到容器各列，rule 不应在它处中断
+        //（children-height-007：外层 rule 被「满宽子 = spanner」误判整段切除）。
         let spanner_ranges: Vec<(f32, f32)> = box_node
             .children
             .iter()
-            .filter(|c| !c.is_absolute && !c.is_fixed && c.column_span_offsets.is_empty() && c.width >= content_w - 1.0)
+            .filter(|c| {
+                !c.is_absolute
+                    && !c.is_fixed
+                    && !c.is_nested_spanner_wrapper
+                    && c.column_span_offsets.is_empty()
+                    && c.width >= content_w - 1.0
+            })
             .map(|c| (c.y, c.y + c.height))
             .collect();
         let mut segments: Vec<(f32, f32)> = vec![(0.0, content_h)];
@@ -265,14 +274,25 @@ impl super::super::Painter {
             let col_right_start = i as f32 * (col_w + gap);
             let in_col = |x: f32, start: f32| x >= start - 0.5 && x < start + col_w + 0.5;
             let (has_left_content, has_right_content) = if !box_node.children.is_empty() {
+                // R4521：跨列 breaking 子（cso 多片段，如嵌套 multicol wrapper——其自身
+                // 布局把内容分布到容器各列）按其 cso 片段的 col_x 判定列位；主 x 只代表
+                // 首列。children-height-007：wrapper 单盒主 x=0 使 col1 侧误判空列跳线。
+                // nested-spanner wrapper（synth 整体绘制）同理视为每列有内容。
+                let col_has_content = |start: f32, c: &LayoutBox| {
+                    in_col(c.x, start)
+                        || c.is_nested_spanner_wrapper
+                        || c.column_span_offsets
+                            .iter()
+                            .any(|&(_, _, col_x, cw, _, _)| in_col(col_x, start) || in_col(col_x + cw - 1.0, start))
+                };
                 let l = box_node
                     .children
                     .iter()
-                    .any(|c| !c.is_absolute && !c.is_fixed && in_col(c.x, col_left_start));
+                    .any(|c| !c.is_absolute && !c.is_fixed && col_has_content(col_left_start, c));
                 let r = box_node
                     .children
                     .iter()
-                    .any(|c| !c.is_absolute && !c.is_fixed && in_col(c.x, col_right_start));
+                    .any(|c| !c.is_absolute && !c.is_fixed && col_has_content(col_right_start, c));
                 (l, r)
             } else if let Some(inline_layout) = &box_node.inline_layout {
                 let used = inline_multicol_used_columns(inline_layout, col_w, gap, actual_count as usize);
