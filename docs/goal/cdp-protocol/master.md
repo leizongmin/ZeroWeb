@@ -2,72 +2,77 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-19（S1309：**树变化刷新轮双腿刷新（
-S1308 轮后插记预告兑现：兄弟流 R4529 代码腿入树 → 门 +
-make test 双腿刷新 S245→…→S1298→S1304→S1305 先例链连刷
-同 tip 复核 pull 零新提交 tip = fceaf44f3 即 S1308 插记提
-交本身 origin/main == HEAD 实测复核）树态 = R4526 + R4528
-+ R4529 新组合态照跑双腿——双腿全绿一调收口 引用计数以
-S1309 双腿为新周期锚点归零重计**：锚点面四点开工复测按
-S1308 插记基线逐项复核全 PASS 零漂移（① 10 files
-+1187/-182 维持 / ② crates/ raw 162 维持 / ③ 7 文件
-74f58fcf 维持 非测试代码零命中 / ④ 229 files +26547/-1563
-维持）。**门腿 21:36:33→21:37:08 首调即 PASS 33 绿
-deterministic 双跑 YES EXIT=0**（wall ~35s；**Compiling 3
-行 = R4529 面 engine paint 兄弟流自有面增量重编预期兑
-现**；深净窗起手 load 0.26 首调即绿——**家族第 6 例（
-S1308 run 1 多步缺步 7 步）后首轮回绿复查窗口兑现** 红例
-7 步全在绿集；expected_green 33 对称差 none regressions
-空 双 run 各 33 ok 集机械一致（双 run failed 各 1 = 期望
-失败步骤 既有形态）emulation.userAgentOverride 双 run ok
-焦点步全保；零 watchdog/FAIL 形态行；zero-engine
-dead_code warning 既有形态在案 1 枚（2 行标准形态））；
-**make test 腿（后台跑法 nohup sh -c echo TEST_EXIT 直写
-口径 起跑前显式 cd 仓库根防 cwd 残留复发兑现）21:37:25 启
-动 21:48:46 收口 EXIT=0**（wall ~11min21s **Compiling 25
-行 = R4529 面 workspace 增量重编预期兑现**；**67 组
-result 全 ok 19,355P/0F = 插记预期精确兑现**——19,352 + 3
-漂移归因 R4529 三新用例实测全绿（test_r4529_double_border
-_area_ring_two_bands / test_r4529_per_layer_clip_rects /
-test_r4529_solid_border_area_ring_unchanged 全在跑零失
-败）；零 FAILED / 零 error[E] / 零 panicked / 零 make
-Error 逐项 grep 复核；编译告警行零 clippy quickjs 腿 -D
-warnings 过；GPU adapter 分支在案跑通 gpu=true 21 处 近轮
-既有形态；**stale_etag 两腿均 ok localhost 连接抖动族复查
-窗口零命中**（S1309 刷新轮复查兑现 家族累计 4 例后连续零
-再现）；**L1139 跨流 flake 家族连续第十九轮活腿绿**（
-S1309 刷新轮复查窗口第 19 轮兑现 零命中维持））；**引用
-计数以 S1309 双腿为新周期锚点归零重计**（门腿 21:37:08
-落盘 + make test 腿 21:48:46 收口，S1310 起 1/10，至迟
-**S1315 = 下轮到期期限轮活跑**（新周期锚点 S1309 + 6 轮
-双腿活跑口径 树不变也双腿））；**ZW_IPC_VALIDATE=1 在位静
+**最后更新**: 2026-09-19（S1310：**1/10 静默监测引用轮——
+门面 CDP 缺步族家族第 7 例红例在案 + 复跑一调收口**（周期
+锚点 = S1309 双腿 门腿 21:37:08 落盘 + make test 腿
+21:48:46 收口在案；S1309 轮后插记定谳 R4530 docs-only 不
+构成刷新触发 引用轮口径维持；同 tip 复核 pull 零新提交
+tip = 8b5d17b3e 即 S1309 插记提交本身 origin/main == HEAD
+实测复核 树代码面零变化）锚点面四点开工复测按插记时点基
+线逐项复核全 PASS 零漂移（① 10 files +1187/-182 维持 /
+② crates/ raw 162 维持 / ③ 7 文件 74f58fcf 维持 非测试代
+码零命中 / ④ 231 files +26559/-1563 维持）。**门腿首调
+21:59:37→22:07:18 GATE_EXIT=2 红例**（wall ~7min41s 异常
+延长伴生形态记档 0 Compiling = 全缓存零重编 树不变预言兑
+现）：green **23** 缺 10 步 deterministic **False**——**亚
+型 = run 1 多步缺步（10 步：S1308 第 6 例 7 步集 +
+screenshot.element + screenshot.fullPage + screenshot.
+viewport 共 10 步）家族第 7 例在案（与第 6 例 S1308 同亚
+型 run 1 多步缺步 缺步集 7→10 步超集再扩大）**；**run 2
+同腿干净 33 ok = 隔离态可过**（run 2 failed 仅期望失败步
+骤）；零 watchdog/FAIL 形态行 零 timeout/connection/crash
+标记 = 缺步族静默缺步既有形态；steps-report 留痕（末次
+run 2）全 ok 无失败步等待痕迹（唯一非 ok = 期望失败步骤
+frames.click+evaluate ms=10001 固有形态）——**wall 延长
+归因 run 1 缺步段内等待 非停滞死锁形态 EXIT 正常返
+回**。**四点归因**：① 同腿 run 2 全量 33 ok 且缺步 10 步
+在 run 2 全 ok（隔离态可过）② 形态 = CDP 缺步族静默缺步
+（与第 6 例同源 报告机械形态一致 缺步集扩大）③ 本流变更
+面零（树不变 R4526 + R4528 + R4529 pull 零新提交 同树
+S1309 双腿全绿在案）④ 兄弟流面零（R4530 docs-only 后零
+新提交 锚点四点零漂移）。**负载窗相关性**：轻载窗起手
+（21:59:28 实测 load 2.50）红例——「红例非负载单因素决
+定」归因基线再强化（深净窗红 0.94 + 载窗红 5.14 + 轻载窗
+红 2.50 与最高载窗 22.93 双腿绿 + 全窗型绿样本并存 负载
+三向均有红样本 高载窗绿样本在链 = 负载非单因素决定）。
+**复跑 22:08:03→22:08:32 一调收口 EXIT=0**（wall ~29s 正
+常量级 0 Compiling；首调即 **PASS 33 绿 deterministic 双
+跑 YES**——本轮红例 10 步全回绿集 双 run 各 33 ok 集机械
+一致 failed 各 1 = 期望失败步骤既有形态）；zero-engine
+dead_code warning 既有形态在案 1 枚（2 行标准形态）不阻本
+门；**引用计数 0/10→1/10**（S1309 新周期锚点 下轮
+**S1311 = 2/10**，至迟 **S1315 = 到期期限轮活跑**（新周
+期锚点 S1309 + 6 轮 双腿活跑口径 = 门 + make test 后台跑
+法 树不变也双腿 距今 1 轮））；**ZW_IPC_VALIDATE=1 在位静
 默 capture jsonl 面零写入 #0 复现监测零命中维持**（五
 jsonl mtime 09-12/09-13 全不变 跑前跑后组合 md5 同值
 2c2cdb6d explicit 显式规范序口径）；
-steps-report/determinism-report = 门腿新鲜落盘 21:37；门
-尾树态（tip = fceaf44f3 tracked clean）四端口族全 free 双
-腿零残留 控制面零外来提交 **zombie 复测 = 零命中**（
-zeroseed 撤档后维持零命中 非异常；form_input_perf 瞬态未
-再现）。本轮负载窗 = 深净窗起手→重编段→腿尾外部源回升段
-（gate 起手 21:36:33 实测 load 0.26 → make test 起手
-0.66 → 腿尾 21:52 4.10 外部源回升 非异常）。**R4529 覆盖
-口径**：S1309 双腿覆盖树态代码面 = R4526 + R4528 + R4529
-新组合态（R4529 代码面首次纳入门 + make test 双腿活跑覆
-盖 绿态实证在案）。M5 定稿收口判定不因复验与执行态瞬态
-（含本族红例瞬态）动摇——**goal Done 维持，守成态证据经
-S1309 双腿刷新延续（R4529 新组合态双腿覆盖）**；唯一未清
-偿义务 = frames.click+evaluate 回填（挂子帧能力解冻，见
-子帧解冻清单，不阻收口））
+steps-report/determinism-report = 复跑新鲜落盘 22:08（首
+调红例报告被复跑覆盖 红例形态以本轮记录为证）；门尾树态
+（tip = 8b5d17b3e tracked clean）四端口族全 free 门腿零残
+留 控制面零外来提交 **zombie 复测 = 零命中**（zeroseed 撤
+档后维持零命中 非异常；form_input_perf 瞬态未再现）。本
+轮负载窗 = 轻载窗起手→复跑腿尾深净段回落（gate 起手
+21:59:37 实测 load 2.50 → 复跑门尾 22:08:3x 1.12 非异
+常）。M5 定稿收口判定不因复验与执行态瞬态（含本族红例瞬
+态）动摇——**goal Done 维持，守成态证据经 S1310 引用轮延
+续（S1304 双腿 + S1305 双腿 + S1309 双腿 + S1306/S1307/
+S1308/S1310 门腿复跑 同一 R4526 + R4528 + R4529 组合态多
+重覆盖）**；唯一未清偿义务 = frames.click+evaluate 回填
+（挂子帧能力解冻，见子帧解冻清单，不阻收口））
 
-**前轮终态**: S1308 = 4/10 静默监测引用轮（周期锚点 =
-S1305 双腿）——同 tip 复核 pull 零新提交 tip = 17c391c43
-树代码面零变化；锚点四点全 PASS 零漂移；门腿首调 21:27:13
-GATE_EXIT=2 红例（家族第 6 例 run 1 多步缺步 7 步新亚型
-deterministic False 载窗 load 5.14）+ 复跑 21:28:02→
-21:28:31 一调收口 EXIT=0（PASS 33 绿 红例 7 步全回绿）；
-引用计数 3/10→4/10；S1308 记录提交 push 序列拉入兄弟流
-R4529 代码腿变基 351865687 推远 → 轮后插记定谳树代码面再
-变化 S1309 刷新轮取代引用轮预告，插记提交 fceaf44f3 推远
+**前轮终态**: S1309 = 树变化刷新轮双腿（新周期锚点 =
+S1309 双腿）——同 tip 复核 pull 零新提交 tip = fceaf44f3
+树态 = R4526 + R4528 + R4529 新组合态；锚点四点全 PASS 零
+漂移；门腿 21:36:33→21:37:08 首调即绿 Compiling 3 行（
+R4529 面增量重编兑现 深净窗 load 0.26 家族第 6 例后首轮
+回绿兑现）+ make test 腿 21:37:25→21:48:46 EXIT=0（
+19,355P/0F 67 组 = 插记预期精确兑现 +3 归因 R4529 三新用
+例 stale_etag 复查零命中 L1139 家族连续第十九轮活腿绿）；
+引用计数以 S1309 双腿为新周期锚点归零重计；S1309 记录提
+交 push 序列拉入兄弟流 R4530 docs-only 周更腿变基
+28da3360d 推远 → 轮后插记定谳 docs-only 不构成刷新触发
+S1310 引用轮维持，插记提交 8b5d17b3e 推远
 ---
 
 ## 当前状态
@@ -29412,6 +29417,114 @@ R4529 代码腿变基 351865687 推远 → 轮后插记定谳树代码面再
    枚）+ 外部 zeroseed defunct 僵尸观察撤档维持（撤档后零
    命中维持）+ form_input_perf 瞬态僵尸观察（S1309 未再
    现）。
+
+   **S1310 已执行（2026-09-19）1/10 静默监测引用轮——门面
+   CDP 缺步族家族第 7 例红例在案 + 复跑一调收口（周期锚点
+   = S1309 双腿 门腿 21:37:08 落盘 + make test 腿 21:48:46
+   收口在案；S1309 轮后插记定谳 R4530 docs-only 不构成刷
+   新触发 引用轮口径维持；同 tip 复核 pull 零新提交 tip =
+   8b5d17b3e 即 S1309 插记提交本身（origin/main == HEAD 实
+   测复核），树代码面零变化 8b5d17b3e..HEAD 排除 docs/ diff
+   空（S1309 记录提交 + 插记提交 docs-only 排除面））树不
+   变口径 = 门单腿复跑免 make test 腿 S336 先例**：锚点面
+   四点开工复测按 S1309 插记时点基线逐项复核全 PASS 零漂移
+   （自有面对 S897 tip 7da6043d6 **10 files +1187/-182** 维
+   持 apps/browser/src/headless 口径 / crates/ raw **162**
+   维持 e67967632..TIP 口径 / 子帧关键词 **7 文件** md5
+   74f58fcf 维持 crates/ Rust 面 .rs 全量口径 非测试代码零
+   命中 解冻条件①观察面 162 口径 frames.click+evaluate 挂
+   起维持 / 全树排除本流 docs 对 18d462de6 **231 files
+   +26559/-1563** 维持）。**门腿首调 21:59:37 启动 22:07:18
+   收口 GATE_EXIT=2 红例**（wall ~7min41s 异常延长伴生形态
+   记档；0 Compiling 行 = 全缓存零重编 树不变预言兑现）：
+   green **23** 缺 10 步 deterministic **False**——**亚型 =
+   run 1 多步缺步（10 步：S1308 第 6 例 7 步集
+   page.setContent + page.second.lifecycle +
+   target.getTargets + target.attachDetach +
+   runtime.releaseObjectGroup + emulation.userAgentOverride
+   + viewport.verified + screenshot.element +
+   screenshot.fullPage + screenshot.viewport）家族第 7 例
+   在案（与第 6 例 S1308 同亚型 run 1 多步缺步 缺步集
+   7→10 步超集再扩大）**；**run 2 同腿干净 33 ok = 隔离态
+   可过**（run 2 failed 仅 frames.click+evaluate 期望失败
+   步骤）；零 watchdog/FAIL 形态行 零 timeout/connection/
+   crash 标记逐项 grep 复核 = 缺步族静默缺步既有形态；
+   **wall 延长归因核验**：steps-report 留痕（末次 run 2）
+   全 ok 无失败步等待痕迹（唯一非 ok = 期望失败步骤
+   frames.click+evaluate ms=10001 固有形态 最慢步
+   network.events 969ms 正常量级）——wall 延长归因 run 1
+   缺步段内等待（报告仅留末次 run run 1 时序无留痕）非停
+   滞死锁形态 EXIT 正常返回 非异常。**四点归因**：① 同腿
+   run 2 全量 33 ok 且缺步 10 步在 run 2 全 ok（隔离态可
+   过）② 形态 = CDP 缺步族静默缺步（与第 6 例同源 报告机
+   械形态一致 缺步集扩大）③ 本流变更面零（树不变 R4526 +
+   R4528 + R4529 pull 零新提交 本流 docs-only 自 S897 同树
+   S1309 双腿全绿在案 红例非本流面因果）④ 兄弟流面零（
+   R4530 docs-only 后零新提交 锚点四点零漂移）。**负载窗
+   相关性**：轻载窗起手（21:59:28 实测 load 2.50）红例——
+   「红例非负载单因素决定」归因基线再强化（深净窗红 0.94 +
+   载窗红 5.14 + 轻载窗红 2.50 与最高载窗 22.93 双腿绿 +
+   全窗型绿样本并存 负载三向均有红样本 高载窗绿样本在链 =
+   负载非单因素决定）。**复跑 22:08:03 启动 22:08:32 收口
+   一调收口 EXIT=0**（wall ~29s 正常量级 0 Compiling 行 =
+   全缓存；首调即 **PASS 33 绿 deterministic 双跑 YES**——
+   本轮红例 10 步全回绿集 双 run 各 33 ok 集机械一致
+   failed 各 1 = 期望失败步骤既有形态；zero-engine
+   dead_code warning 既有形态在案 1 枚（2 行标准形态）
+   match_media_to_json cargo cache warning replay
+   S1220-S1309 记档同源 不阻本门）；**引用计数 0/10→1/10**
+   （S1309 新周期锚点 下轮 **S1311 = 2/10**，至迟 **S1315
+   = 到期期限轮活跑**（新周期锚点 S1309 + 6 轮 双腿活跑口
+   径 = 门 + make test 后台跑法 树不变也双腿 距今 1 轮）；
+   **ZW_IPC_VALIDATE=1 在位静默 capture jsonl 面零写入 #0
+   复现监测零命中维持**（五 jsonl mtime 09-12/09-13 全不变
+   首调/复跑前后组合 md5 同值 2c2cdb6d explicit 显式规范
+   序口径 zw-capture→zw-capture2→zw-capture3→raw-proxy→
+   raw-proxy2 顺序拼接实测复核）；
+   steps-report/determinism-report = 复跑新鲜落盘 22:08（
+   首调红例报告被复跑覆盖 红例形态以本轮记录为证）；
+   send-keys Timeout flake 家族观察延续门面零命中；门尾树
+   态（tip = 8b5d17b3e tracked clean）**zombie 复测 = 零命
+   中**（外部 zeroseed defunct 撤档后维持零命中 非异常；
+   form_input_perf 瞬态僵尸未再现）四端口族全 free（前后零
+   监听）门腿零残留 控制面零外来提交；本轮负载窗 = 轻载窗
+   起手→复跑腿尾深净段回落（gate 起手 21:59:37 实测 load
+   2.50 → 复跑门尾 22:08:3x 1.12 非异常）；下轮 **S1311 =
+   2/10 静默监测引用轮（周期锚点 = S1309 双腿 + S1310 复跑
+   22:08:32 收口在案）**树再变化则提前双腿刷新（S245→…→
+   S1304→S1305→S1309 先例链 make test 腿后台跑法 起跑前显
+   式 cd 仓库根防 cwd 残留复发）否则门单腿复跑免 make test
+   腿（S336 先例）+ **红例观察强化升级双族口径维持**（①
+   门面 CDP 缺步族：**家族第 7 例 run 1 多步缺步亚型第 2
+   例在案**（S1239/S1245 run 1 单步缺步 + S1253/S1261/
+   S1295 run 2 多步缺步 3 步集 + S1308 run 1 多步缺步 7 步
+   / 本轮 run 1 多步缺步 10 步超集缺步面再扩大）——若再现
+   先归亚型（run 1 单步缺步 / run 2 多步缺步 / run 1 多步
+   缺步 / run 2 停滞）再计数 四点归因 + 负载窗相关性核对
+   （深净窗红 0.94 + 载窗红 5.14 + 轻载窗红 2.50 + 高载窗
+   /全窗型绿样本在链）+ 复跑收口后台跑法 家族计数累计 +
+   **wall 伴生形态观察**（第 6 例 wall 正常 ~35s / 第 7 例
+   wall ~7min41s 延长 若再现核对 wall 形态并归亚型注记）；
+   ② make test 腿 localhost 连接抖动族：stale_etag 样本家
+   族累计 4 例在案（S724 候选第 5 例家族 + S1069 + S1254 +
+   S1285 run1 同签名样本链）若再现同口径隔离复跑 ×4 归因
+   + 二调收口后台跑法 家族计数累计——S1311 引用轮无 make
+   test 腿观察顺延）+ **make test 腿跨流 L1139 flake 家族
+   观察强化**（连续第十九轮活腿绿在案 S1310/S1311 引用轮无
+   make test 腿观察顺延 若再现同口径机械归因 + 复跑收口
+   跨流记档不单方修维持——修复面属 zero-web 流
+   crates/webview）+ 兄弟流 zero-engine dead_code warning
+   观察延续（本轮复跑门面在案 1 枚 既有形态维持 不阻本
+   门）+ **外部 zeroseed defunct 僵尸观察撤档维持**（撤档
+   后零命中维持 若再现按新例取证）+ form_input_perf 瞬态
+   僵尸观察（本轮未再现 若再现同口径取证归因 不计家族）+
+   make test 腿 EXIT 判定 echo TEST_EXIT 直写口径（S1272
+   转义笔误注记防复发）；M5 定稿收口判定不因复验与执行态
+   瞬态（含本族红例瞬态）动摇 goal Done 维持守成态证据经
+   S1310 引用轮延续（S1304 双腿 + S1305 双腿 + S1309 双腿
+   + S1306/S1307/S1308/S1310 门腿复跑 同一 R4526 + R4528 +
+   R4529 组合态多重覆盖）唯一未清偿义务 = frames.click+
+   evaluate 回填（挂子帧能力解冻 不阻收口）。
 
    **S1304 轮后插记（2026-09-19 push 序列 pull --rebase 实测，
    S1298 插记先例 代码面变体）**：兄弟流 R4528 代码腿
