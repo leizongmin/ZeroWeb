@@ -245,6 +245,64 @@ master.md +1 file +2/-0 零代码面 不升刷新轮）= cff2bb85e
    腿）计划不变，锚点按本插记新 tip 基线（cff2bb85e 实测）
    复核；M5 定稿收口判定不因本插记动摇 goal Done 维持守成
    态证据经 S1365 门腿复跑延续。
+   **S1366 轮后插记（2026-09-20 push 序列 pull --rebase 实
+   测）**：兄弟流 **R4547 代码腿**（295c9572f 2026-09-20
+   07:44:42 提交 corner-shape × overflow 内形状裁剪 bevel-
+   overflow 翻绿 0.00% + composite 同步 0.00% corpus 1452
+   （15142/16594=91.23%）kill-switch ZW_CORNER_SHAPE_
+   OVERFLOW=0 实测回退旧行为 自述全门禁 make test
+   19376P/0F fmt clippy 双 feature 组 -D make reftest 0
+   failed product-smoke welcome 15.40% 同值 struct PASS
+   bench-gate 定向 zero-engine GATE PASS 26 指标 = crates/
+   engine/src/paint/painter/mod.rs +21/-4 + rendering-
+   compat.md +1 + evidence 新档 +45 = 3 files +63/-4 零新
+   单测）+ **R4548 纯 docs**（963976cbd background-clip:
+   text mask 管线 RFC 级评估 rendering-compat.md +1 +
+   evidence 新档 +59 = 2 files +60/-0）于 S1366 复跑收口
+   腿（07:48:02）之后经 push 序列 pull --rebase 入树
+   （S1366 记录提交 9413ec9c1 push 序列 pull 实测 rebase
+   于其上 = 479a5a49d，push 963976cbd..479a5a49d 零冲突实
+   测复核）——**R4547 代码面非空成立**（crates/engine/src/
+   paint/painter/mod.rs 1 file 非空实测复核）→ **代码面变
+   化成立，S1366 首调红+复跑收口绿双腿 PASS 覆盖的代码树态
+   = 8a563f8df 面（pre-R4547），新组合树态 = 479a5a49d
+   （R4547+R4548 折入 + S1366 记录 docs）未被本流门腿覆
+   盖**；工作面归属 = 渲染流域 crates/engine paint 面 零碰
+   撞（本流面 = apps/browser/src/headless run-rules §9/§10
+   归因纪律记档）；**下轮 S1367 = 树变化刷新轮双腿活跑**
+   （S245→…→S1352→S1358→S1362→S1358 先例链兑现 叠加引用
+   计数 5/10 顺延——刷新双腿提前于 S1368 期限轮执行 刷新
+   缘由优先 口径同 S1358；门 + make test 腿后台跑法 nohup
+   sh -c『echo TEST_EXIT=$?』直写口径 起跑前显式 cd 仓库根
+   cd 单独成句勿与后台符 & 同链 S1335 防复发延续）；门腿
+   预期新树态编译面 = R4547 折入致 zero-engine lib 级联重
+   编（zero-engine → zero-page-runtime → zero-browser 级
+   联 R4544 形态同型 Compiling 行数以实测为准 非全缓存形态
+   在预期）；make test 腿预期 = R4547 零新单测 →
+   **19,376P/0F 68 组**（兄弟自述 19376P/0F 为参考 按
+   run-rules §10 以 S1367 双腿实测为准 若偏差先归因）+ mt
+   腿编译面 = zero-engine lib 全级联重编段在预期（S1362
+   33 Compiling 形态同型）；锚点面漂移记档（新 tip
+   479a5a49d 实测）：② crates/ raw **171 → 172**（R4547
+   代码腿入集 e67967632..TIP 口径）/ ④ 全树排除本流 docs
+   **258 files +30479/-1648 → 260 files +30598/-1648**（+2
+   files = R4547 evidence 新档 + R4548 RFC 评估新档
+   rendering-compat.md 入既有变更集 全额净入账 实测为准）/
+   ① 10 files +1187/-182 维持（R4547 零 apps/browser 提交
+   实测复核）/ ③ 子帧关键词 **7 文件 md5 74f58fcf** 维持
+   （R4547 触面 crates/engine/src/paint/painter/mod.rs 零
+   contentDocument|content_document 命中实测复核 解冻条件
+   ①观察面 **172 口径** frames.click+evaluate 挂起维持）/
+   ⑤ make test 腿基线计数 **19,376P/0F 68 组**（零新单测
+   R4547 自述参考 S1367 双腿实测复核）。S1368 期限轮预告
+   由刷新双腿取代（S1367 双腿收口后引用计数以 S1367 双腿
+   为新周期锚点归零重计 S1368 起 1/10）；红例观察三族口径
+   维持（缺步/停滞族 S1314-S1366 连续五十三轮零再现
+   S1367 门腿即复查窗口 / S168 形态累计 4 例 间隔收窄观察
+   强化中 / stale_etag 家族累计 5 例常规延续 + test-guard
+   artifact 启动失败族 + 跨流 L1139 家族均在 S1367 双腿复
+   查窗口）；M5 定稿收口判定不因本插记动摇 goal Done 维持
+   守成态证据经 S1367 刷新双腿延续。
 ---
 
 ## 当前状态
