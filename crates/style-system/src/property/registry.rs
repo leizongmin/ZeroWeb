@@ -354,6 +354,9 @@ impl PropertyRegistry {
             // Clip Path
             "clip-path" => Some(ClipPath(ClipPathComputedValue::None)),
 
+            // Border Shape（css-borders-4 §7，R4534）
+            "border-shape" => Some(BorderShape(zero_css_parser::values::BorderShapeValue::None)),
+
             // Clip (deprecated CSS2)
             "clip" => Some(Clip(ClipRectComputedValue::Auto)),
 
@@ -663,6 +666,7 @@ impl PropertyRegistry {
             "box-shadow",
             "clip-path",
             "clip",
+            "border-shape",
         ]
     }
 }

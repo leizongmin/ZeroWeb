@@ -1767,6 +1767,13 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
                 return true;
             }
         }
+        // R4534（css-borders-4 §7）：border-shape——形状化边框（stroke/fill 双模式）。
+        "border-shape" => {
+            if let Some(v) = zero_css_parser::values::parse_border_shape(value) {
+                style.border_shape = v;
+                return true;
+            }
+        }
         "background-repeat" => {
             // R2311：多层 `<repeat-style>#`，逐层映射，任一层失败则整条不应用。
             if let Some(list) = values::parse_background_repeat_list(value) {
@@ -2385,5 +2392,34 @@ fn map_bg_size_comp(c: zero_css_parser::values::BgSizeComponent) -> BgSizeCompon
         zero_css_parser::values::BgSizeComponent::Length(n) => BgSizeComponentComputed::Length(n),
         zero_css_parser::values::BgSizeComponent::Percent(n) => BgSizeComponentComputed::Percent(n),
         zero_css_parser::values::BgSizeComponent::Calc(expr) => BgSizeComponentComputed::Calc(*expr),
+    }
+}
+
+#[cfg(test)]
+mod r4534_border_shape_tests {
+    use super::*;
+
+    #[test]
+    fn border_shape_circle_parses_and_applies() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_advanced_property_value(&mut style, "border-shape", "circle()"));
+        assert!(matches!(
+            style.border_shape,
+            zero_css_parser::values::BorderShapeValue::Stroke { .. }
+        ));
+    }
+
+    #[test]
+    fn border_shape_fill_mode_parses() {
+        let mut style = ComputedStyle::default();
+        assert!(apply_advanced_property_value(
+            &mut style,
+            "border-shape",
+            "polygon(0 0, 100% 0, 100% 100%, 0 100%) margin-box polygon(0 0, 100% 0, 100% 100%, 0 100%) border-box"
+        ));
+        assert!(matches!(
+            style.border_shape,
+            zero_css_parser::values::BorderShapeValue::Fill { .. }
+        ));
     }
 }

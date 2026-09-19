@@ -2197,6 +2197,8 @@ fn clip_path_radius_to_css(r: &ClipPathRadius, font_size_px: f64) -> String {
         ClipPathRadius::Length(lv) => length_to_css(lv, font_size_px),
         ClipPathRadius::ClosestSide => "closest-side".to_string(),
         ClipPathRadius::FarthestSide => "farthest-side".to_string(),
+        ClipPathRadius::ClosestCorner => "closest-corner".to_string(),
+        ClipPathRadius::FarthestCorner => "farthest-corner".to_string(),
     }
 }
 

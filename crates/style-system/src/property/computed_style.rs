@@ -567,6 +567,10 @@ pub struct ComputedStyle {
     pub background_origin: BackgroundOriginComputedValue,
     /// corner-shape 属性（CSS Borders 4 §corner-shaping，R4248）。
     pub corner_shape: CornerShapeComputedValue,
+    /// border-shape 属性（CSS Borders 4 §7：`none | [ <basic-shape> <geometry-box>? ]{1,2}`，
+    /// R4534 slice 1）。none = 常规边框；活跃时 border-radius 视为 0、常规 4 边绘制
+    /// 抑制，边框改为形状描边（stroke mode）或内外形状间填充（fill mode）。
+    pub border_shape: BorderShapeComputedValue,
     /// border-image-source 属性。
     pub border_image_source: BorderImageSourceComputedValue,
     /// border-image-slice 属性。

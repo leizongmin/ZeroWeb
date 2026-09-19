@@ -155,6 +155,8 @@ pub(super) fn extended_visual_or_layout_property_supported(property: &str, value
         "will-change" => values::parse_will_change_list(value).is_some(),
         // https://drafts.fxtf.org/css-masking-1/#the-clip-path
         "clip-path" => values::parse_clip_path(value).is_some(),
+        // https://drafts.csswg.org/css-borders-4/#border-shape
+        "border-shape" => values::parse_border_shape(value).is_some(),
         // https://www.w3.org/TR/CSS22/visufx.html#clipping
         "clip" => values::parse_clip(value).is_some(),
         // https://drafts.csswg.org/css-ui-4/#outline-props

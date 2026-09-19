@@ -103,6 +103,30 @@ impl super::Painter {
     /// - Double：双线填充矩形（中间留空隙）
     /// - Groove/Ridge/Inset/Outset：3D 效果双色填充
     pub(super) fn paint_borders(&mut self, box_node: &LayoutBox, abs_x: f32, abs_y: f32, style: &ComputedStyle) {
+        // R4534（css-borders-4 §7.5.1）：border-shape 活跃时抑制常规 4 边绘制与形角
+        // 环带（border-radius 视为 0、corner-shape 隐式忽略），改发射形状描边
+        //（stroke mode，路径居中描边）或内外形状环带填充（fill mode，even-odd）。
+        if let Some(plan) = super::super::helpers::border_shape_plan(style, box_node, abs_x, abs_y) {
+            match plan {
+                crate::paint::helpers::BorderShapePlan::Stroke { vertices, width, color } => {
+                    if width > 0.0 {
+                        let flat: Vec<f32> = vertices.into_iter().flat_map(|(x, y)| [x, y]).collect();
+                        self.primitives.add_path_stroke(flat, color, width, true);
+                    }
+                }
+                crate::paint::helpers::BorderShapePlan::Fill {
+                    mut outer,
+                    inner,
+                    color,
+                } => {
+                    // even-odd：外+内顶点串联 → 扫描线仅填环带（render_path_fill 语义）。
+                    outer.extend(inner);
+                    let flat: Vec<f32> = outer.into_iter().flat_map(|(x, y)| [x, y]).collect();
+                    self.primitives.add_path_fill(flat, color);
+                }
+            }
+            return;
+        }
         let w = box_node.width;
         let h = box_node.height;
         if matches!(

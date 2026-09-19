@@ -614,6 +614,8 @@ impl super::Painter {
                 let r = match radius {
                     ClipPathRadius::Length(l) => length_to_f32(l),
                     ClipPathRadius::ClosestSide | ClipPathRadius::FarthestSide => w.min(h) / 2.0,
+                    // 指示器近似：corner 关键词同 min(w,h)/2（非渲染路径）。
+                    ClipPathRadius::ClosestCorner | ClipPathRadius::FarthestCorner => w.min(h) / 2.0,
                 };
                 let cx = position.as_ref().map(|(x, _)| length_to_f32(x)).unwrap_or(w / 2.0);
                 let cy = position.as_ref().map(|(_, y)| length_to_f32(y)).unwrap_or(h / 2.0);
@@ -638,10 +640,13 @@ impl super::Painter {
                 let rx_v = match rx {
                     ClipPathRadius::Length(l) => length_to_f32(l),
                     ClipPathRadius::ClosestSide | ClipPathRadius::FarthestSide => w / 2.0,
+                    // 指示器近似：corner 关键词同 w/2（非渲染路径）。
+                    ClipPathRadius::ClosestCorner | ClipPathRadius::FarthestCorner => w / 2.0,
                 };
                 let ry_v = match ry {
                     ClipPathRadius::Length(l) => length_to_f32(l),
                     ClipPathRadius::ClosestSide | ClipPathRadius::FarthestSide => h / 2.0,
+                    ClipPathRadius::ClosestCorner | ClipPathRadius::FarthestCorner => h / 2.0,
                 };
                 let cx = position.as_ref().map(|(x, _)| length_to_f32(x)).unwrap_or(w / 2.0);
                 let cy = position.as_ref().map(|(_, y)| length_to_f32(y)).unwrap_or(h / 2.0);

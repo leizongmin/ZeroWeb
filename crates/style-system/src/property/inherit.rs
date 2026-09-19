@@ -1512,6 +1512,10 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
             style.clip_path = default_style.clip_path;
             true
         }
+        "border-shape" => {
+            style.border_shape = default_style.border_shape;
+            true
+        }
         "clip" => {
             style.clip = default_style.clip;
             true

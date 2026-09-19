@@ -963,6 +963,57 @@ pub enum ClipPathRadius {
     ClosestSide,
     /// farthest-side — 最远边。
     FarthestSide,
+    /// closest-corner — 圆心到最近角的欧氏距离（css-shapes-1 radial-extent；
+    /// ellipse 逐轴关键词按 csswg#14010 双轴同值，R4534）。
+    ClosestCorner,
+    /// farthest-corner — 圆心到最远角的欧氏距离。
+    FarthestCorner,
+}
+
+/// border-shape geometry-box 关键词（css-borders-4 §7.3，引用 css-shapes-1
+/// <shape-box> | margin-box | half-border-box）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BorderShapeGeometryBox {
+    /// content-box。
+    ContentBox,
+    /// padding-box。
+    PaddingBox,
+    /// border-box。
+    BorderBox,
+    /// margin-box。
+    MarginBox,
+    /// half-border-box（border-box 各侧内缩半边框宽；stroke mode 默认）。
+    HalfBorderBox,
+}
+
+/// border-shape 属性值（css-borders-4 §7.1：`none | [ <basic-shape> <geometry-box>? ]{1,2}`）。
+///
+/// 复用 clip-path 的 <basic-shape> 解析（ClipPathValue）。stroke mode = 沿形状路径
+/// 居中描边（宽 = relevant side border-width，默认 half-border-box）；fill mode =
+/// 外/内路径之间面积填 relevant side border-color（外默认 border-box、内默认
+/// padding-box）。
+#[derive(Debug, Clone, PartialEq)]
+pub enum BorderShapeValue {
+    /// none（默认）——常规边框绘制。
+    None,
+    /// stroke mode：单形状 + geometry-box（默认 half-border-box）。
+    Stroke {
+        /// 基本形状。
+        shape: ClipPathValue,
+        /// geometry-box 引用盒。
+        geometry_box: BorderShapeGeometryBox,
+    },
+    /// fill mode：外形状 + 内形状（外默认 border-box、内默认 padding-box）。
+    Fill {
+        /// 外形状。
+        outer: ClipPathValue,
+        /// 外形状引用盒。
+        outer_box: BorderShapeGeometryBox,
+        /// 内形状。
+        inner: ClipPathValue,
+        /// 内形状引用盒。
+        inner_box: BorderShapeGeometryBox,
+    },
 }
 
 /// polygon() 填充规则。

@@ -1,16 +1,18 @@
 //! 辅助工具 — 变换偏移、裁剪、opacity 应用、渐变转换等。
 
 use zero_css_parser::values::{
-    ColorHueMethod, ColorInterpolation, ColorInterpolationSpace, ColorValue, GradientColorStop, GradientDirection,
-    GradientValue, LengthValue, RadialSize, TransformFunction, TransformValue, eval_calc,
+    BorderShapeGeometryBox, BorderShapeValue, ClipPathRadius, ClipPathValue, ColorHueMethod, ColorInterpolation,
+    ColorInterpolationSpace, ColorValue, GradientColorStop, GradientDirection, GradientValue, LengthValue, RadialSize,
+    TransformFunction, TransformValue, eval_calc,
 };
 use zero_layout_engine::LayoutBox;
+use zero_render_foundation::color::Color;
 use zero_render_foundation::geometry::Rect;
 use zero_render_foundation::primitive::{
     GradientColorSpace, GradientInterpolation, GradientKind, GradientPrimitive, GradientStop, HueMethod,
     RenderPrimitives, TransformPrimitive,
 };
-use zero_style_system::{ComputedStyle, TextTransformValue};
+use zero_style_system::{ComputedStyle, TextTransformValue, property::types::BorderStyleValue};
 
 use super::color::resolve_color_current;
 
@@ -1515,6 +1517,316 @@ pub fn inline_box_vertical_bleed(style: &ComputedStyle, box_node: &LayoutBox) ->
             box_node.border_bottom,
         );
     (top, bottom)
+}
+
+/// R4534（css-borders-4 §7）：border-shape 形状方案——形状 → 绝对坐标多边形 +
+/// relevant side 边框色/宽（§7.6：block-start→inline-start→block-end→inline-end
+/// 首个非 none 边；horizontal-tb LTR = top→left→bottom→right）。
+pub(crate) enum BorderShapePlan {
+    /// stroke mode：沿路径居中描边（宽 = relevant side border-width）。
+    Stroke {
+        /// 路径多边形顶点。
+        vertices: Vec<(f32, f32)>,
+        /// relevant side border-width。
+        width: f32,
+        /// relevant side border-color（currentColor 已解析）。
+        color: Color,
+    },
+    /// fill mode：外/内路径之间面积填充（even-odd：外+内顶点串联仅填环带）。
+    Fill {
+        /// 外路径顶点。
+        outer: Vec<(f32, f32)>,
+        /// 内路径顶点。
+        inner: Vec<(f32, f32)>,
+        /// relevant side border-color。
+        color: Color,
+    },
+}
+
+impl BorderShapePlan {
+    /// 背景色裁剪多边形（§7.5.3 背景裁剪至内形状；stroke mode = 路径多边形——
+    /// 超出内缘的带由居中描边覆盖，与 oracle 语义一致）。
+    pub(crate) fn background_vertices(&self) -> &[(f32, f32)] {
+        match self {
+            BorderShapePlan::Stroke { vertices, .. } => vertices,
+            BorderShapePlan::Fill { inner, .. } => inner,
+        }
+    }
+}
+
+/// 解析 border-shape 方案（kill-switch `ZW_BORDER_SHAPE=0` → None；none/解析失败
+/// → None = 常规边框）。形状顶点为绝对坐标。
+pub(crate) fn border_shape_plan(
+    style: &ComputedStyle,
+    box_node: &LayoutBox,
+    abs_x: f32,
+    abs_y: f32,
+) -> Option<BorderShapePlan> {
+    if std::env::var("ZW_BORDER_SHAPE").as_deref() == Ok("0") {
+        return None;
+    }
+    let border_shape = match &style.border_shape {
+        BorderShapeValue::None => return None,
+        v => v,
+    };
+    // relevant side（§7.6）
+    let sides = [
+        (box_node.border_top, &style.border_top_color, &style.border_top_style),
+        (box_node.border_left, &style.border_left_color, &style.border_left_style),
+        (
+            box_node.border_bottom,
+            &style.border_bottom_color,
+            &style.border_bottom_style,
+        ),
+        (
+            box_node.border_right,
+            &style.border_right_color,
+            &style.border_right_style,
+        ),
+    ];
+    let side = sides
+        .iter()
+        .find(|(_, _, s)| !matches!(s, BorderStyleValue::None | BorderStyleValue::Hidden))
+        .copied()
+        .unwrap_or((sides[0].0, sides[0].1, sides[0].2));
+    let (rel_width, rel_color) = (side.0, side.1);
+    let color = resolve_color_current(rel_color, &style.color);
+    let font_size = zero_style_system::computed::resolve_length(&style.font_size, 16.0, None, None) as f32;
+
+    match border_shape {
+        BorderShapeValue::None => unreachable!(),
+        BorderShapeValue::Stroke { shape, geometry_box } => {
+            let (bx, by, bw, bh) = border_shape_ref_box(*geometry_box, style, box_node, abs_x, abs_y, rel_width);
+            let vertices = border_shape_vertices(shape, bx, by, bw, bh, font_size);
+            Some(BorderShapePlan::Stroke {
+                vertices,
+                width: rel_width,
+                color,
+            })
+        }
+        BorderShapeValue::Fill {
+            outer,
+            outer_box,
+            inner,
+            inner_box,
+        } => {
+            let (ox, oy, ow, oh) = border_shape_ref_box(*outer_box, style, box_node, abs_x, abs_y, rel_width);
+            let outer_v = border_shape_vertices(outer, ox, oy, ow, oh, font_size);
+            let (ix, iy, iw, ih) = border_shape_ref_box(*inner_box, style, box_node, abs_x, abs_y, rel_width);
+            let inner_v = border_shape_vertices(inner, ix, iy, iw, ih, font_size);
+            Some(BorderShapePlan::Fill {
+                outer: outer_v,
+                inner: inner_v,
+                color,
+            })
+        }
+    }
+}
+
+/// geometry-box → 引用盒绝对矩形（§7.3；half-border-box = border-box 各侧内缩
+/// 半个 relevant side border-width）。
+fn border_shape_ref_box(
+    geometry_box: BorderShapeGeometryBox,
+    _style: &ComputedStyle,
+    box_node: &LayoutBox,
+    abs_x: f32,
+    abs_y: f32,
+    rel_width: f32,
+) -> (f32, f32, f32, f32) {
+    match geometry_box {
+        BorderShapeGeometryBox::ContentBox => (
+            abs_x + box_node.border_left + box_node.padding_left,
+            abs_y + box_node.border_top + box_node.padding_top,
+            box_node.content_width,
+            box_node.content_height,
+        ),
+        BorderShapeGeometryBox::PaddingBox => (
+            abs_x + box_node.border_left,
+            abs_y + box_node.border_top,
+            box_node.width - box_node.border_left - box_node.border_right,
+            box_node.height - box_node.border_top - box_node.border_bottom,
+        ),
+        BorderShapeGeometryBox::BorderBox => (abs_x, abs_y, box_node.width, box_node.height),
+        BorderShapeGeometryBox::MarginBox => (
+            abs_x - box_node.margin_left,
+            abs_y - box_node.margin_top,
+            box_node.width + box_node.margin_left + box_node.margin_right,
+            box_node.height + box_node.margin_top + box_node.margin_bottom,
+        ),
+        BorderShapeGeometryBox::HalfBorderBox => {
+            let inset = rel_width / 2.0;
+            (
+                abs_x + inset,
+                abs_y + inset,
+                (box_node.width - 2.0 * inset).max(0.0),
+                (box_node.height - 2.0 * inset).max(0.0),
+            )
+        }
+    }
+}
+
+/// basic-shape → 绝对坐标多边形顶点（css-shapes-1 解析语义；slice 1 忽略 inset()
+/// round 圆角）。circle/ellipse 64 段近似。
+fn border_shape_vertices(shape: &ClipPathValue, bx: f32, by: f32, bw: f32, bh: f32, font_size: f32) -> Vec<(f32, f32)> {
+    const SEGMENTS: usize = 64;
+    match shape {
+        ClipPathValue::None => Vec::new(),
+        ClipPathValue::Inset {
+            top,
+            right,
+            bottom,
+            left,
+            ..
+        } => {
+            let t = resolve_inset_length(top, bh, font_size);
+            let r = resolve_inset_length(right, bw, font_size);
+            let b = resolve_inset_length(bottom, bh, font_size);
+            let l = resolve_inset_length(left, bw, font_size);
+            vec![
+                (bx + l, by + t),
+                (bx + bw - r, by + t),
+                (bx + bw - r, by + bh - b),
+                (bx + l, by + bh - b),
+            ]
+        }
+        ClipPathValue::Circle { radius, position } => {
+            let (cx, cy) = match position {
+                Some((px, py)) => (
+                    bx + resolve_inset_length(px, bw, font_size),
+                    by + resolve_inset_length(py, bh, font_size),
+                ),
+                None => (bx + bw / 2.0, by + bh / 2.0),
+            };
+            let r = border_shape_circle_radius(radius, cx, cy, bx, by, bw, bh, font_size);
+            circle_to_polygon(cx, cy, r, SEGMENTS)
+        }
+        ClipPathValue::Ellipse { rx, ry, position } => {
+            let (cx, cy) = match position {
+                Some((px, py)) => (
+                    bx + resolve_inset_length(px, bw, font_size),
+                    by + resolve_inset_length(py, bh, font_size),
+                ),
+                None => (bx + bw / 2.0, by + bh / 2.0),
+            };
+            let (erx, ery) = border_shape_ellipse_radii(rx, ry, cx, cy, bx, by, bw, bh, font_size);
+            ellipse_to_polygon(cx, cy, erx, ery, SEGMENTS)
+        }
+        ClipPathValue::Polygon { points, .. } => points
+            .iter()
+            .map(|(x, y)| {
+                (
+                    bx + resolve_inset_length(x, bw, font_size),
+                    by + resolve_inset_length(y, bh, font_size),
+                )
+            })
+            .collect(),
+    }
+}
+
+/// circle() 半径解析（css-shapes-1：% 相对 sqrt(w²+h²)/√2；closest/farthest-side
+/// = 圆心到引用盒四边最近/最远距离）。
+fn border_shape_circle_radius(
+    radius: &ClipPathRadius,
+    cx: f32,
+    cy: f32,
+    bx: f32,
+    by: f32,
+    bw: f32,
+    bh: f32,
+    font_size: f32,
+) -> f32 {
+    match radius {
+        ClipPathRadius::Length(v) => {
+            resolve_inset_length(v, (bw * bw + bh * bh).sqrt() / std::f32::consts::SQRT_2, font_size)
+        }
+        ClipPathRadius::ClosestSide => (cx - bx).min(bx + bw - cx).min(cy - by).min(by + bh - cy),
+        ClipPathRadius::FarthestSide => (cx - bx).max(bx + bw - cx).max(cy - by).max(by + bh - cy),
+        // closest/farthest-corner = 圆心到角的欧氏距离（dx、dy 组合 4 个角）。
+        ClipPathRadius::ClosestCorner => {
+            let dxs = [(cx - bx), (bx + bw - cx)];
+            let dys = [(cy - by), (by + bh - cy)];
+            let mut best = f32::MAX;
+            for dx in dxs {
+                for dy in dys {
+                    best = best.min((dx * dx + dy * dy).sqrt());
+                }
+            }
+            best
+        }
+        ClipPathRadius::FarthestCorner => {
+            let dxs = [(cx - bx), (bx + bw - cx)];
+            let dys = [(cy - by), (by + bh - cy)];
+            let mut best = f32::MIN;
+            for dx in dxs {
+                for dy in dys {
+                    best = best.max((dx * dx + dy * dy).sqrt());
+                }
+            }
+            best
+        }
+    }
+}
+
+/// ellipse() 半径解析（% rx 相对引用盒宽、ry 相对高；closest/farthest-side 逐轴）。
+fn border_shape_ellipse_radii(
+    rx: &ClipPathRadius,
+    ry: &ClipPathRadius,
+    cx: f32,
+    cy: f32,
+    bx: f32,
+    by: f32,
+    bw: f32,
+    bh: f32,
+    font_size: f32,
+) -> (f32, f32) {
+    // *-corner 关键词双轴同值 = 圆心到最近/最远角的欧氏距离（csswg#14010 口径，
+    // border-shape-ellipse-corner-keywords ref 实证：hypot(60,80)=100 双轴同值）。
+    let corner = |closest: bool| -> f32 {
+        let dxs = [(cx - bx), (bx + bw - cx)];
+        let dys = [(cy - by), (by + bh - cy)];
+        let mut best = if closest { f32::MAX } else { f32::MIN };
+        for dx in dxs {
+            for dy in dys {
+                let d = (dx * dx + dy * dy).sqrt();
+                best = if closest { best.min(d) } else { best.max(d) };
+            }
+        }
+        best
+    };
+    if matches!(rx, ClipPathRadius::ClosestCorner | ClipPathRadius::FarthestCorner)
+        || matches!(ry, ClipPathRadius::ClosestCorner | ClipPathRadius::FarthestCorner)
+    {
+        let d = match rx {
+            ClipPathRadius::ClosestCorner => corner(true),
+            ClipPathRadius::FarthestCorner => corner(false),
+            _ => match ry {
+                ClipPathRadius::ClosestCorner => corner(true),
+                ClipPathRadius::FarthestCorner => corner(false),
+                _ => 0.0,
+            },
+        };
+        return (d, d);
+    }
+    let radii = |v: &ClipPathRadius, dim: f32, axis: u8| match v {
+        ClipPathRadius::Length(v) => resolve_inset_length(v, dim, font_size),
+        ClipPathRadius::ClosestSide => {
+            if axis == 0 {
+                (cx - bx).min(bx + bw - cx)
+            } else {
+                (cy - by).min(by + bh - cy)
+            }
+        }
+        ClipPathRadius::FarthestSide => {
+            if axis == 0 {
+                (cx - bx).max(bx + bw - cx)
+            } else {
+                (cy - by).max(by + bh - cy)
+            }
+        }
+        ClipPathRadius::ClosestCorner => corner(true),
+        ClipPathRadius::FarthestCorner => corner(false),
+    };
+    (radii(rx, bw, 0), radii(ry, bh, 1))
 }
 
 #[cfg(test)]

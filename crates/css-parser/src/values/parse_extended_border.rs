@@ -688,6 +688,104 @@ fn strip_basic_shape_prefix<'a>(input: &'a str, name: &str) -> Option<&'a str> {
     None
 }
 
+/// 解析 border-shape 属性值（css-borders-4 §7.1：
+/// `none | [ <basic-shape> <geometry-box>? ]{1,2}`）。
+///
+/// 复用 clip-path 的 <basic-shape> 解析（parse_clip_path）。扫描按 token 切分：
+/// 函数 token（配平括号）与独立关键词 token（geometry-box）——关键词与其形状函数
+/// 之间允许空白。任一段非法 → 整条声明丢弃（返回 None）。
+pub fn parse_border_shape(value: &str) -> Option<BorderShapeValue> {
+    let v = value.trim();
+    if v.eq_ignore_ascii_case("none") {
+        return Some(BorderShapeValue::None);
+    }
+
+    let bytes = v.as_bytes();
+    let mut segments: Vec<(ClipPathValue, Option<BorderShapeGeometryBox>)> = Vec::new();
+    let mut i = 0usize;
+    while i < bytes.len() {
+        if bytes[i].is_ascii_whitespace() {
+            i += 1;
+            continue;
+        }
+        // 函数 token：name( ... 配平 )
+        let start = i;
+        while i < bytes.len() && bytes[i] != b'(' && !bytes[i].is_ascii_whitespace() {
+            i += 1;
+        }
+        if i < bytes.len() && bytes[i] == b'(' {
+            let mut depth = 0usize;
+            let close = loop {
+                if i >= bytes.len() {
+                    return None;
+                }
+                if bytes[i] == b'(' {
+                    depth += 1;
+                } else if bytes[i] == b')' {
+                    depth -= 1;
+                    if depth == 0 {
+                        break i;
+                    }
+                }
+                i += 1;
+            };
+            // 越过函数 token（i 停在 ')' 上）
+            i = close + 1;
+            let fn_token = &v[start..=close];
+            let shape = parse_clip_path(fn_token)?;
+            if matches!(shape, ClipPathValue::None) {
+                return None; // 形状函数体非法 → 声明无效
+            }
+            if segments.len() >= 2 {
+                return None; // 超过两组
+            }
+            segments.push((shape, None));
+            continue;
+        }
+        // 关键词 token（geometry-box）：名称扫描已消费至 token 尾（非函数起点 token）。
+        let keyword = &v[start..i];
+        let geometry_box = parse_geometry_box(keyword)?;
+        let last = segments.last_mut()?;
+        if last.1.is_some() {
+            return None; // 一形状至多一个 geometry-box
+        }
+        last.1 = Some(geometry_box);
+    }
+
+    match segments.len() {
+        1 => {
+            let (shape, geometry_box) = segments.pop().unwrap();
+            Some(BorderShapeValue::Stroke {
+                shape,
+                geometry_box: geometry_box.unwrap_or(BorderShapeGeometryBox::HalfBorderBox),
+            })
+        }
+        2 => {
+            let (inner, inner_box) = segments.pop().unwrap();
+            let (outer, outer_box) = segments.pop().unwrap();
+            Some(BorderShapeValue::Fill {
+                outer,
+                outer_box: outer_box.unwrap_or(BorderShapeGeometryBox::BorderBox),
+                inner,
+                inner_box: inner_box.unwrap_or(BorderShapeGeometryBox::PaddingBox),
+            })
+        }
+        _ => None,
+    }
+}
+
+/// 解析 geometry-box 关键词。
+fn parse_geometry_box(value: &str) -> Option<BorderShapeGeometryBox> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "content-box" => Some(BorderShapeGeometryBox::ContentBox),
+        "padding-box" => Some(BorderShapeGeometryBox::PaddingBox),
+        "border-box" => Some(BorderShapeGeometryBox::BorderBox),
+        "margin-box" => Some(BorderShapeGeometryBox::MarginBox),
+        "half-border-box" => Some(BorderShapeGeometryBox::HalfBorderBox),
+        _ => None,
+    }
+}
+
 /// 解析 inset() 参数：top right bottom left [round <border-radius>]
 fn parse_clip_inset(rest: &str) -> Option<ClipPathValue> {
     let inner = rest.strip_suffix(')')?.trim();
@@ -878,6 +976,12 @@ fn parse_clip_radius(value: &str) -> Option<ClipPathRadius> {
     }
     if v.eq_ignore_ascii_case("farthest-side") {
         return Some(ClipPathRadius::FarthestSide);
+    }
+    if v.eq_ignore_ascii_case("closest-corner") {
+        return Some(ClipPathRadius::ClosestCorner);
+    }
+    if v.eq_ignore_ascii_case("farthest-corner") {
+        return Some(ClipPathRadius::FarthestCorner);
     }
     parse_clip_length(v, false).map(ClipPathRadius::Length)
 }
@@ -1078,4 +1182,31 @@ mod tests {
         assert!(parse_clip("rect(calc(1), auto, 10px, 0px)").is_none());
         assert!(parse_clip("rect(0px, auto, 10px, 0px,)").is_none());
     }
+}
+
+#[cfg(test)]
+mod r4534_border_shape_parse_tests {
+    use super::*;
+
+    #[test]
+    fn fill_mode_two_polygons() {
+        let v = parse_border_shape(
+            "polygon(0 0, 100% 0, 100% 100%, 0 100%) margin-box polygon(0 0, 100% 0, 100% 100%, 0 100%) border-box",
+        );
+        assert!(matches!(v, Some(BorderShapeValue::Fill { .. })), "got {:?}", v);
+    }
+
+    #[test]
+    fn stroke_mode_circle() {
+        let v = parse_border_shape("circle()");
+        assert!(matches!(v, Some(BorderShapeValue::Stroke { .. })), "got {:?}", v);
+    }
+}
+
+#[test]
+fn probe_debug_border_shape() {
+    let a = parse_clip_path("circle()");
+    eprintln!("parse_clip_path(circle()) = {:?}", a);
+    let v = parse_border_shape("circle()");
+    eprintln!("parse_border_shape(circle()) = {:?}", v);
 }

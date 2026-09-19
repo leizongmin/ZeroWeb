@@ -350,6 +350,7 @@ impl Default for ComputedStyle {
             corner_shape: zero_css_parser::values::CornerShapeValue::All(
                 zero_css_parser::values::CornerShapeKind::Round,
             ),
+            border_shape: zero_css_parser::values::BorderShapeValue::None,
             background_size: vec![BackgroundSizeComputedValue::Auto],
             background_attachment: vec![BackgroundAttachmentComputedValue::Scroll],
             background_clip: vec![BackgroundClipComputedValue::BorderBox],

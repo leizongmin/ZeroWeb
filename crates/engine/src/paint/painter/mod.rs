@@ -2837,6 +2837,14 @@ impl Painter {
                         }
                         zero_style_system::ClipPathRadius::ClosestSide => cx.min(w - cx).min(cy.min(h - cy)),
                         zero_style_system::ClipPathRadius::FarthestSide => cx.max(w - cx).max(cy.max(h - cy)),
+                        zero_style_system::ClipPathRadius::ClosestCorner => ((w - cx).hypot(h - cy))
+                            .max(cx.hypot(cy))
+                            .max(cx.hypot(h - cy))
+                            .max((w - cx).hypot(cy)),
+                        zero_style_system::ClipPathRadius::FarthestCorner => ((w - cx).hypot(h - cy))
+                            .max(cx.hypot(cy))
+                            .max(cx.hypot(h - cy))
+                            .max((w - cx).hypot(cy)),
                     };
                     let polygon = circle_to_polygon(abs_x + cx, abs_y + cy, r, 24);
                     super::helpers::clip_all_primitives_to_polygon(&mut self.primitives, &counts_before, &polygon);
@@ -3500,6 +3508,19 @@ impl Painter {
             .node_id
             .is_some_and(|id| self.canvas_propagated_node == Some(id))
         {
+            return;
+        }
+        // R4534（css-borders-4 §7.5.3）：border-shape 活跃时背景色裁剪至内形状
+        //（stroke mode = 路径多边形——超出内缘的带由居中描边覆盖，与 oracle 语义
+        // 一致；fill mode = 内形状多边形）。bg image 的形状裁剪挂账 slice 3
+        //（ImagePrimitive.clip 仅矩形），此时 image 照常规矩形发射。
+        if let Some(plan) = super::helpers::border_shape_plan(style, box_node, abs_x, abs_y)
+            && !matches!(style.background_color, ColorValue::Transparent)
+        {
+            let bg = resolve_color_current(&style.background_color, &style.color);
+            let verts = plan.background_vertices().to_vec();
+            self.primitives
+                .add_path_fill(verts.into_iter().flat_map(|(x, y)| [x, y]).collect(), bg);
             return;
         }
         // border-radius 百分比/含百分比 calc 需 border-box 尺寸解析（R2314）；

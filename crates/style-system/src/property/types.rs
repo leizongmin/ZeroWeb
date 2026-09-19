@@ -1860,6 +1860,8 @@ pub enum PropertyValue {
     BoxShadow(Vec<BoxShadowComputedValue>),
     /// clip-path 值。
     ClipPath(ClipPathComputedValue),
+    /// border-shape 值（css-borders-4 §7，R4534）。
+    BorderShape(BorderShapeComputedValue),
     /// clip 属性值（已弃用的 CSS2 裁剪属性）。
     Clip(ClipRectComputedValue),
     /// mask-image 值。
@@ -1995,6 +1997,8 @@ pub type ClipPathComputedValue = zero_css_parser::values::ClipPathValue;
 
 /// R4248（CSS Borders 4 §corner-shaping）：corner-shape 计算值。
 pub type CornerShapeComputedValue = zero_css_parser::values::CornerShapeValue;
+/// border-shape 计算值（css-borders-4 §7，R4534）。
+pub type BorderShapeComputedValue = zero_css_parser::values::BorderShapeValue;
 
 /// CSS clip 属性计算值。
 ///
