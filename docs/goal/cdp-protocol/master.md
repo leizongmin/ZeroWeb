@@ -25932,6 +25932,44 @@ EXIT=0 33 绿 deterministic YES）；make test 腿 10:45:00→
    务 = frames.click+evaluate 回填（挂子帧能力解冻 不阻收
    口）。
 
+   **S1254 轮后插记（2026-09-19 push 序列 pull --rebase 实测，
+   S898/S1190/S1229/S1230/S1236/S1240/S1241/S1242/S1243/S1252/
+   S1253 插记先例）**：兄弟流 R4515 代码腿（rendering-compat
+   paint 侧零空间 fragmentainer 裁剪——004b 翻绿，crates/
+   engine/src/paint/painter/mod.rs 1 code file +7/-0 **零新增
+   #[test] 函数**（grep 实测 0；兄弟流自述 make test
+   19,348P/0F 同值复证）+ 同序列 R4516 docs 腿
+   docs/goal/rendering-compat.md +1）于 S1254 双腿收口
+   （run2 make test 腿 11:40:19）之后、本流 push 序列
+   pull --rebase 入树（S1254 提交被 rebase 顶到其上，
+   545f0d68c → 132aa2b0d → 9a5ad877e → 本流 8e1da89e8 推远）
+   ——S1254 双腿覆盖树态 = R4514b 组合态（545f0d68c），main
+   tip 组合态已超出且为 **Rust 代码变更**（R4515 触达
+   crates/engine paint 面 渲染流域专属 crate 零本流工作面触
+   达 run-rules §9）→ **S1255 = 树变化刷新轮（门 + make test
+   双腿刷新 S890→…→S1244→S1250→S1253→S1254 先例链连刷
+   make test 腿后台跑法），引用计数以 S1255 双腿为新周期锚点
+   0/10**（S1254 记录内「下轮 S1255 = 1/10 静默监测引用轮」
+   预告被本插记取代）；S1255 锚点预期（本插记时点 8e1da89e8
+   实测）：①自有面对 S897 tip 7da6043d6 **10 files +1187/-
+   182** 维持 / crates/ raw **150→151**（+1 = R4515 折入
+   e67967632..TIP 计数口径 实测复核 151）/ 子帧关键词 **7 文
+   件** md5 74f58fcf 维持（R4515 零 contentDocument 面触达实
+   测复核）/ 全树排除本流 docs 对 18d462de6 **213 files
+   +24318/-1445 → 213 files +24327/-1445**（面值维持 213 折
+   入 +9 行差 = R4515 crates +7 + R4516 rendering-compat.md
+   docs +1+1 实测复核）；R4515 组合态首次门覆盖预期重编相位
+   = zero-engine→zero-page-runtime→zero-browser 链（R4515 触
+   达 crates/engine paint 面 layout-engine 零触达故预期 3
+   Compiling 行 css-parser 零重编维持）+ make test 腿计数以
+   **19,348P/0F 为基线维持预期**（R4515 零新增 #[test] 函数
+   实测）+ 跨流 L1139 flake 家族观察强化口径维持（连续三轮活
+   腿绿在案 S1255 make test 腿即本家族复查窗口 若再现同口径
+   机械归因 + 复跑收口）+ 红例观察强化双族口径维持（①门面
+   CDP 缺步族家族第 3 例 S1253 run 2 多步缺步亚变体在案 未再
+   现 ②make test 腿 localhost 连接抖动族 stale_etag 样本
+   S1254 轮 +1 在案——若再现先归亚型/家族再计数 四点归因 +
+   负载窗相关性核对 + 复跑收口后台跑法）。
 
    **S1243 轮后插记（2026-09-19 push 序列 pull --rebase 实测，
    S898/S1190/S1229/S1230/S1236/S1240/S1241/S1242 插记先例）**：
