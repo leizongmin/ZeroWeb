@@ -2575,6 +2575,13 @@ impl Painter {
                     //（span-all-children-height-002 block1 全 200px 覆盖 spanner）。
                     // col_top 是片段在列内的起始 y（容器内容相对），col_h 是 slice 高。
                     let clip_w = col_w + gap / 2.0;
+                    // R4515：零空间 fragmentainer（容器 content_height≈0，如 004b-ref
+                    // article3：container h:0 唯一子 → 全区域零预算）——子树不可见。
+                    // 仅容器整体零空间时跳过；有空间的 fragmentainer 里 0 高盒（如 012 的
+                    // h:0 div + 绿块）的 overflow 子树照常绘（chromium overflow:visible）。
+                    if !is_breaking && col_h < 0.5 && box_node.content_height < 0.5 {
+                        continue;
+                    }
                     let (clip_y, clip_h) = if is_breaking {
                         // R1039：breaking 片段裁到 slice [col_top, col_top+col_h] ∩ 容器
                         // [0, content_height]。col_top >= 容器高 = overflow row（multi-row 溢出
