@@ -135,28 +135,28 @@ fn test_background_attachment_initial_value() {
 fn test_apply_property_background_clip_border_box() {
     let mut style = ComputedStyle::default();
     assert!(apply_property_value(&mut style, "background-clip", "border-box"));
-    assert_eq!(style.background_clip, BackgroundClipComputedValue::BorderBox);
+    assert_eq!(style.background_clip, vec![BackgroundClipComputedValue::BorderBox]);
 }
 
 #[test]
 fn test_apply_property_background_clip_padding_box() {
     let mut style = ComputedStyle::default();
     assert!(apply_property_value(&mut style, "background-clip", "padding-box"));
-    assert_eq!(style.background_clip, BackgroundClipComputedValue::PaddingBox);
+    assert_eq!(style.background_clip, vec![BackgroundClipComputedValue::PaddingBox]);
 }
 
 #[test]
 fn test_apply_property_background_clip_content_box() {
     let mut style = ComputedStyle::default();
     assert!(apply_property_value(&mut style, "background-clip", "content-box"));
-    assert_eq!(style.background_clip, BackgroundClipComputedValue::ContentBox);
+    assert_eq!(style.background_clip, vec![BackgroundClipComputedValue::ContentBox]);
 }
 
 #[test]
 fn test_apply_property_background_clip_text() {
     let mut style = ComputedStyle::default();
     assert!(apply_property_value(&mut style, "background-clip", "text"));
-    assert_eq!(style.background_clip, BackgroundClipComputedValue::Text);
+    assert_eq!(style.background_clip, vec![BackgroundClipComputedValue::Text]);
 }
 
 #[test]
@@ -180,9 +180,9 @@ fn test_background_clip_in_known_properties() {
 fn test_background_clip_initial_value() {
     assert!(PropertyRegistry::initial_value("background-clip").is_some());
     let mut style = ComputedStyle::default();
-    style.background_clip = BackgroundClipComputedValue::Text;
+    style.background_clip = vec![BackgroundClipComputedValue::Text];
     assert!(apply_initial_value(&mut style, "background-clip"));
-    assert_eq!(style.background_clip, BackgroundClipComputedValue::BorderBox);
+    assert_eq!(style.background_clip, vec![BackgroundClipComputedValue::BorderBox]);
 }
 
 // ── background-origin ──

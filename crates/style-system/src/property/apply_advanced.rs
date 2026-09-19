@@ -1866,14 +1866,23 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
             return true;
         }
         "background-clip" => {
+            // R4528：逐层 clip——逗号列表全解析（单值页等价 vec![v]）；任一段非法整条
+            // 丢弃（与单值行为一致）。kill-switch `ZW_PER_LAYER_CLIP=0` 回退单值解析
+            //（多值声明丢弃旧行为）。
+            let per_layer_clip = std::env::var("ZW_PER_LAYER_CLIP").as_deref() != Ok("0");
+            let mapped = |v: zero_css_parser::values::BackgroundClipValue| match v {
+                zero_css_parser::values::BackgroundClipValue::BorderBox => BackgroundClipComputedValue::BorderBox,
+                zero_css_parser::values::BackgroundClipValue::PaddingBox => BackgroundClipComputedValue::PaddingBox,
+                zero_css_parser::values::BackgroundClipValue::ContentBox => BackgroundClipComputedValue::ContentBox,
+                zero_css_parser::values::BackgroundClipValue::Text => BackgroundClipComputedValue::Text,
+                zero_css_parser::values::BackgroundClipValue::BorderArea => BackgroundClipComputedValue::BorderArea,
+            };
             if let Some(v) = values::parse_background_clip(value) {
-                style.background_clip = match v {
-                    zero_css_parser::values::BackgroundClipValue::BorderBox => BackgroundClipComputedValue::BorderBox,
-                    zero_css_parser::values::BackgroundClipValue::PaddingBox => BackgroundClipComputedValue::PaddingBox,
-                    zero_css_parser::values::BackgroundClipValue::ContentBox => BackgroundClipComputedValue::ContentBox,
-                    zero_css_parser::values::BackgroundClipValue::Text => BackgroundClipComputedValue::Text,
-                    zero_css_parser::values::BackgroundClipValue::BorderArea => BackgroundClipComputedValue::BorderArea,
-                };
+                style.background_clip = vec![mapped(v)];
+                return true;
+            }
+            if per_layer_clip && let Some(layers) = values::parse_background_clip_layers(value) {
+                style.background_clip = layers.into_iter().map(mapped).collect();
                 return true;
             }
         }

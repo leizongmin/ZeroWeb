@@ -498,7 +498,7 @@ pub fn serialize_computed_property(style: &ComputedStyle, prop: &str) -> String 
         "background-repeat" => background_repeat_to_css(&style.background_repeat),
         // ── background-attachment / clip / origin（R2726）── CSS Backgrounds 单值 box-model 枚举。
         "background-attachment" => background_attachment_to_css(&style.background_attachment),
-        "background-clip" => background_clip_to_css(&style.background_clip),
+        "background-clip" => background_clip_list_to_css(&style.background_clip),
         "background-origin" => background_origin_to_css(&style.background_origin),
         // ── align-content / justify-items / justify-self（R2727）── CSS Box Alignment 单值枚举
         // （补齐 align-items/align-self/justify-content R2710 后的 alignment 簇缺口）。
@@ -2364,7 +2364,7 @@ fn background_shorthand_to_css(style: &ComputedStyle, element_color: &ColorValue
         if s.is_empty() { "auto".to_string() } else { s }
     };
     let origin = background_origin_to_css(&style.background_origin);
-    let clip = background_clip_to_css(&style.background_clip);
+    let clip = background_clip_list_to_css(&style.background_clip);
     format!("{color} {image} {repeat} {attachment} {position} / {size} {origin} {clip}")
 }
 
@@ -3137,6 +3137,11 @@ fn background_clip_to_css(c: &BackgroundClipComputedValue) -> String {
         BackgroundClipComputedValue::BorderArea => "border-area",
     }
     .to_string()
+}
+
+/// R4528：逐层 clip 序列化（逗号列表；单层 = 单值，序列化不变）。
+fn background_clip_list_to_css(clips: &[BackgroundClipComputedValue]) -> String {
+    clips.iter().map(background_clip_to_css).collect::<Vec<_>>().join(", ")
 }
 
 /// background-origin：CSS Backgrounds `<geometry-box>` 单值序列化。

@@ -228,7 +228,7 @@ fn test_background_clip_content_box() {
     let layout = make_box_with_padding(Some(nid), 0.0, 0.0, 200.0, 100.0, 10.0, 10.0, 5.0, 5.0, 180.0, 80.0);
     let mut style = ComputedStyle::default();
     style.background_color = ColorValue::Rgba(255, 0, 0, 255);
-    style.background_clip = BackgroundClipComputedValue::ContentBox;
+    style.background_clip = vec![BackgroundClipComputedValue::ContentBox];
     let mut styles = HashMap::new();
     styles.insert(nid, style);
     let mut painter = Painter::new();
@@ -250,7 +250,7 @@ fn test_background_clip_padding_box() {
     let layout = make_box_with_padding(Some(nid), 0.0, 0.0, 200.0, 100.0, 10.0, 10.0, 0.0, 0.0, 190.0, 90.0);
     let mut style = ComputedStyle::default();
     style.background_color = ColorValue::Rgba(255, 0, 0, 255);
-    style.background_clip = BackgroundClipComputedValue::PaddingBox;
+    style.background_clip = vec![BackgroundClipComputedValue::PaddingBox];
     let mut styles = HashMap::new();
     styles.insert(nid, style);
     let mut painter = Painter::new();
@@ -318,7 +318,7 @@ fn test_r2312_background_clip_applied_to_image() {
 
     let mut style = ComputedStyle::default();
     style.background_image = vec![BackgroundImageComputedValue::Url("img.png".to_string())];
-    style.background_clip = BackgroundClipComputedValue::ContentBox; // origin 仍默认 padding-box
+    style.background_clip = vec![BackgroundClipComputedValue::ContentBox]; // origin 仍默认 padding-box
     style.background_repeat = vec![BackgroundRepeatComputedValue::NoRepeat];
     let mut styles = HashMap::new();
     styles.insert(nid, style);

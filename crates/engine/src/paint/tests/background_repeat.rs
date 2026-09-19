@@ -591,7 +591,7 @@ fn test_background_clip_border_area_ring() {
         let mut style = ComputedStyle::default();
         style.background_image = vec![BackgroundImageComputedValue::Url("test.png".to_string())];
         style.background_repeat = vec![BackgroundRepeatComputedValue::NoRepeat];
-        style.background_clip = BackgroundClipComputedValue::BorderArea;
+        style.background_clip = vec![BackgroundClipComputedValue::BorderArea];
         style.color = zero_css_parser::values::ColorValue::Rgba(0, 0, 0, 255);
         style
     };
@@ -666,7 +666,7 @@ fn test_background_clip_border_area_no_border_emits_nothing() {
     let mut style = ComputedStyle::default();
     style.background_image = vec![BackgroundImageComputedValue::Url("test.png".to_string())];
     style.background_repeat = vec![BackgroundRepeatComputedValue::NoRepeat];
-    style.background_clip = BackgroundClipComputedValue::BorderArea;
+    style.background_clip = vec![BackgroundClipComputedValue::BorderArea];
     style.color = zero_css_parser::values::ColorValue::Rgba(0, 0, 0, 255);
 
     let mut painter = Painter::new();

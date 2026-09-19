@@ -33,11 +33,12 @@ use super::super::color::{color_value_to_render, resolve_color_current};
 /// 彩字样式判定——该元素的文本字形以其背景色绘制（canonical `color: transparent` 模式；
 /// bg image 非空不触发，需 mask 管线）。
 fn bg_clip_text_solid_style(st: &ComputedStyle) -> bool {
-    matches!(
-        st.background_clip,
-        zero_style_system::property::types::BackgroundClipComputedValue::Text
-    ) && st.background_image.is_empty()
+    st.background_image.is_empty()
         && !matches!(st.background_color, ColorValue::Transparent)
+        && st
+            .background_clip
+            .iter()
+            .any(|c| matches!(c, zero_style_system::property::types::BackgroundClipComputedValue::Text))
 }
 use super::super::helpers::PrimitiveCounts;
 use super::super::helpers::apply_text_transform;

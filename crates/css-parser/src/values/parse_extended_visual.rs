@@ -1355,6 +1355,16 @@ pub fn parse_background_clip(value: &str) -> Option<BackgroundClipValue> {
     }
 }
 
+/// R4528：解析 background-clip 逗号列表（逐层 clip；层图层数多于列表时 CSS 规则循环
+/// 补齐由消费方按 `i % len` 取）。任一段非法 → None（整条声明丢弃，与单值行为一致）。
+pub fn parse_background_clip_layers(value: &str) -> Option<Vec<BackgroundClipValue>> {
+    let parts: Vec<Option<BackgroundClipValue>> = value.split(',').map(parse_background_clip).collect();
+    if parts.iter().any(|p| p.is_none()) || parts.is_empty() {
+        return None;
+    }
+    Some(parts.into_iter().flatten().collect())
+}
+
 /// CSS background-origin 属性值。
 #[derive(Debug, Clone, PartialEq)]
 pub enum BackgroundOriginValue {

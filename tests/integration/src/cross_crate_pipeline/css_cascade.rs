@@ -239,7 +239,7 @@ fn test_background_clip_pipeline_integration() {
     let div_style = styles.get(&div).expect("div 应有计算样式");
     assert_eq!(
         div_style.background_clip,
-        zero_style_system::property::BackgroundClipComputedValue::ContentBox,
+        vec![zero_style_system::property::BackgroundClipComputedValue::ContentBox],
         "div 的 background-clip 应为 ContentBox"
     );
 }

@@ -1062,7 +1062,10 @@ impl Painter {
                         .and_then(|pid| layout.children.iter().find(|c| c.node_id == Some(pid)))
                         .map(|b| b.border_left + b.border_right + b.border_top + b.border_bottom)
                         .unwrap_or(0.0);
-                    if matches!(ps.background_clip, BackgroundClipComputedValue::BorderArea)
+                    if ps
+                        .background_clip
+                        .iter()
+                        .any(|c| matches!(c, BackgroundClipComputedValue::BorderArea))
                         && body_border_sum > 0.5
                         && let Some(prop_box) =
                             prop_node.and_then(|pid| layout.children.iter().find(|c| c.node_id == Some(pid)))
@@ -2098,9 +2101,12 @@ impl Painter {
         // kill-switch `ZW_BG_CLIP_TEXT=0`。
         let bg_clip_text_active = std::env::var("ZW_BG_CLIP_TEXT").as_deref() != Ok("0")
             && box_node.node_id.and_then(|id| styles.get(&id)).is_some_and(|st| {
-                matches!(st.background_clip, BackgroundClipComputedValue::Text)
-                    && st.background_image.is_empty()
+                st.background_image.is_empty()
                     && !matches!(st.background_color, ColorValue::Transparent)
+                    && st
+                        .background_clip
+                        .iter()
+                        .any(|c| matches!(c, BackgroundClipComputedValue::Text))
             });
 
         let is_hidden = if box_node.is_anonymous_text_item {
@@ -2265,8 +2271,11 @@ impl Painter {
                 }
                 // R4525：clip:text + 实底 bg → bg fill 抑制（bg 色改由子树字形承载，
                 // 见 bg_clip_text_color push）。
-                let bg_clip_text_solid = matches!(style.background_clip, BackgroundClipComputedValue::Text)
-                    && style.background_image.is_empty();
+                let bg_clip_text_solid = style.background_image.is_empty()
+                    && style
+                        .background_clip
+                        .iter()
+                        .any(|c| matches!(c, BackgroundClipComputedValue::Text));
                 if style.background_color != ColorValue::Transparent
                     && !skip_split_inline_deco
                     && !skip_inline_box_bg
@@ -3501,28 +3510,30 @@ impl Painter {
         } else {
             (0.0, 0.0)
         };
-        let (mut clip_x, mut clip_y, mut clip_w, mut clip_h) = match style.background_clip {
+        // R4528：背景**色**按最后一层 clip 绘制（css-backgrounds-3；单层页等价 vec[0]）。
+        let color_clip = style.background_clip.last();
+        let (mut clip_x, mut clip_y, mut clip_w, mut clip_h) = match color_clip {
             // R3908：border-area 的背景**色**按 border-box 绘制（环带裁剪只作用于背景
             // 图像——chromium bg-color 仍铺满 painting area，border 绘其上遮盖 padding 区）。
-            BackgroundClipComputedValue::BorderBox | BackgroundClipComputedValue::BorderArea => (
+            Some(BackgroundClipComputedValue::BorderBox | BackgroundClipComputedValue::BorderArea) => (
                 abs_x,
                 abs_y - bleed_top,
                 box_node.width,
                 box_node.height + bleed_top + bleed_bottom,
             ),
-            BackgroundClipComputedValue::PaddingBox => (
+            Some(BackgroundClipComputedValue::PaddingBox) => (
                 abs_x + box_node.border_left,
                 abs_y + box_node.border_top,
                 box_node.width - box_node.border_left - box_node.border_right,
                 box_node.height - box_node.border_top - box_node.border_bottom,
             ),
-            BackgroundClipComputedValue::ContentBox => (
+            Some(BackgroundClipComputedValue::ContentBox) => (
                 abs_x + box_node.border_left + box_node.padding_left,
                 abs_y + box_node.border_top + box_node.padding_top,
                 box_node.content_width,
                 box_node.content_height,
             ),
-            BackgroundClipComputedValue::Text => {
+            Some(BackgroundClipComputedValue::Text) | None => {
                 // background-clip: text — 暂按 content-box 处理
                 (
                     abs_x + box_node.border_left + box_node.padding_left,
@@ -3596,8 +3607,8 @@ impl Painter {
                 // padding/content 盒，半径按越过的边宽递减（css-backgrounds-3 §5.5）。
                 let inner = |r: f32, cut: f32| (r - cut).max(0.0);
                 let clamp_half = |r: f32, w: f32, h: f32| r.min((w.min(h) / 2.0).max(0.0));
-                match style.background_clip {
-                    BackgroundClipComputedValue::ContentBox | BackgroundClipComputedValue::Text => {
+                match color_clip {
+                    Some(BackgroundClipComputedValue::ContentBox | BackgroundClipComputedValue::Text) => {
                         let w = box_node.content_width;
                         let h = box_node.content_height;
                         let cut = box_node.border_left.max(box_node.border_top)
@@ -3650,7 +3661,7 @@ impl Painter {
                 verts.into_iter().flat_map(|(x, y)| [x, y]).collect(),
                 resolve_color_current(&style.background_color, &style.color),
             );
-        } else if matches!(style.background_clip, BackgroundClipComputedValue::BorderArea)
+        } else if matches!(color_clip, Some(BackgroundClipComputedValue::BorderArea))
             && box_node.border_left + box_node.border_right + box_node.border_top + box_node.border_bottom > 0.5
         {
             // R4526（css-backgrounds-4 §2.1 border-area 实底色）：环带 = border-box 减

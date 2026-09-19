@@ -156,7 +156,7 @@ impl super::Painter {
         // R3908：border-area（css-backgrounds-4 §2.1）——painting area = border-box；
         // 环带裁剪（border-box 减 padding-box）在 paint_bg_image_in_origin 的 tile 发射处
         // 按 4 条带实施（border_area_ring = Some）。
-        let (clip_x, clip_y, clip_w, clip_h) = match style.background_clip {
+        let (clip_x, clip_y, clip_w, clip_h) = match style.background_clip_for_layer(0) {
             BackgroundClipComputedValue::BorderBox | BackgroundClipComputedValue::BorderArea => {
                 (abs_x, abs_y, box_node.width, box_node.height)
             }
@@ -175,31 +175,33 @@ impl super::Painter {
         };
 
         // R3908：border-area 环带 = border-box 减 padding-box（4 条带，互不重叠）。
-        let border_area_ring: Option<Vec<Rect>> =
-            if matches!(style.background_clip, BackgroundClipComputedValue::BorderArea) {
-                let bx = clip_x;
-                let by = clip_y;
-                let bw = clip_w;
-                let bh = clip_h;
-                let px = bx + box_node.border_left;
-                let py = by + box_node.border_top;
-                let pw = bw - box_node.border_left - box_node.border_right;
-                let ph = bh - box_node.border_top - box_node.border_bottom;
-                if pw > 0.0 && ph > 0.0 && (px > bx || py > by) {
-                    Some(vec![
-                        Rect::new(bx, by, bw, py - by),
-                        Rect::new(bx, py + ph, bw, by + bh - py - ph),
-                        Rect::new(bx, py, px - bx, ph),
-                        Rect::new(px + pw, py, bx + bw - px - pw, ph),
-                    ])
-                } else {
-                    // 无边框 → 环带为空（空条带集 = 所有 tile 不绘；与 None=非 border-area
-                    // 正常路径区分）。
-                    Some(Vec::new())
-                }
+        let border_area_ring: Option<Vec<Rect>> = if matches!(
+            style.background_clip_for_layer(0),
+            BackgroundClipComputedValue::BorderArea
+        ) {
+            let bx = clip_x;
+            let by = clip_y;
+            let bw = clip_w;
+            let bh = clip_h;
+            let px = bx + box_node.border_left;
+            let py = by + box_node.border_top;
+            let pw = bw - box_node.border_left - box_node.border_right;
+            let ph = bh - box_node.border_top - box_node.border_bottom;
+            if pw > 0.0 && ph > 0.0 && (px > bx || py > by) {
+                Some(vec![
+                    Rect::new(bx, by, bw, py - by),
+                    Rect::new(bx, py + ph, bw, by + bh - py - ph),
+                    Rect::new(bx, py, px - bx, ph),
+                    Rect::new(px + pw, py, bx + bw - px - pw, ph),
+                ])
             } else {
-                None
-            };
+                // 无边框 → 环带为空（空条带集 = 所有 tile 不绘；与 None=非 border-area
+                // 正常路径区分）。
+                Some(Vec::new())
+            }
+        } else {
+            None
+        };
 
         // R4353：本元素脚本化滚动偏移 → local 层背景相位。
         let layer_scroll = box_node.node_id.and_then(|id| self.scroll_offsets.get(&id)).copied();
@@ -664,7 +666,10 @@ impl super::Painter {
                     // 例外：background-clip:text 的 ZW 实现为 content-box 单 prim 近似（无
                     // glyph-mask 能力），平铺会放大近似副作用（clip-text-background-table-cell
                     // 的 tr 行 painting area 为全宽 quirk）→ 非 canvas 时保持单 prim。
-                    let text_clip = matches!(style.background_clip, BackgroundClipComputedValue::Text);
+                    let text_clip = style
+                        .background_clip
+                        .iter()
+                        .any(|c| matches!(c, BackgroundClipComputedValue::Text));
                     let single_prim = text_clip && !canvas_propagation;
                     if single_prim {
                         if let Some(prim) =

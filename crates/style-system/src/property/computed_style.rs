@@ -560,7 +560,9 @@ pub struct ComputedStyle {
     /// background-attachment 属性（R4350：多图层逐层，CSS Backgrounds §3.1）。
     pub background_attachment: Vec<BackgroundAttachmentComputedValue>,
     /// background-clip 属性。
-    pub background_clip: BackgroundClipComputedValue,
+    /// R4528：逐层 background-clip（层数与 background_image 图层数按 `i % len` 对齐；
+    /// background-color 取末层 clip 绘制）。
+    pub background_clip: Vec<BackgroundClipComputedValue>,
     /// background-origin 属性。
     pub background_origin: BackgroundOriginComputedValue,
     /// corner-shape 属性（CSS Borders 4 §corner-shaping，R4248）。
@@ -614,6 +616,26 @@ pub struct ComputedStyle {
 }
 
 impl ComputedStyle {
+    /// R4528：第 `layer` 层的 background-clip（列表短于层数时按 CSS 规则 `i % len` 循环）。
+    pub fn background_clip_for_layer(&self, layer: usize) -> &BackgroundClipComputedValue {
+        match self.background_clip.len() {
+            0 => {
+                static DEFAULT: BackgroundClipComputedValue = BackgroundClipComputedValue::BorderBox;
+                &DEFAULT
+            }
+            n => &self.background_clip[layer % n],
+        }
+    }
+
+    /// R4525：任一层 clip:text 且实底 bg + 无 image（彩字 v1 触发判定，单层典型）。
+    pub fn bg_clip_text_solid(&self) -> bool {
+        self.background_image.is_empty()
+            && !matches!(self.background_color, ColorValue::Transparent)
+            && self
+                .background_clip
+                .iter()
+                .any(|c| matches!(c, BackgroundClipComputedValue::Text))
+    }
     /// R2251：`content-visibility: hidden` 是否产生「跳过内容」视觉效果（CSS Containment 2）。
     ///
     /// `content-visibility: hidden` 通过隐式 `contain: size layout paint` 起效，而 size
