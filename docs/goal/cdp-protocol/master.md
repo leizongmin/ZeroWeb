@@ -28229,6 +28229,55 @@ defunct 僵尸同族余 1 例存续维持**（pid 198071 同例 第 21 轮
    盖）唯一未清偿义务 = frames.click+evaluate 回填（挂子帧
    能力解冻 不阻收口）。
 
+   **S1294 轮后插记（2026-09-19 push 序列 pull --rebase 实测，
+   S898/S1190/S1229/S1230/S1236/S1240/S1241/S1242/S1243/
+   S1265/S1273/S1275/S1283/S1284/S1289 插记先例）**：兄弟流
+   R4525 代码腿（09bae6165 background-clip:text 实底彩字 v1，
+   crates/engine paint/painter 面 2 files mod.rs +32 +
+   text.rs +44/-3 面值 +76/-3 **零新增 #[test]** 函数实测复
+   核 零本流工作面触达，随行 docs 腿 rendering-compat.md +1
+   + evidence 新档 37 行 commit 时点 19:04:51）于 S1294 记录
+   提交 push 序列 pull --rebase 期间入树（我方 S1294 提交被
+   顶到其上 0f0176909 基→09bae6165 基 907697484 推远 push
+   09bae6165..907697484 S1283 同秒插记/S1243 同形态先例
+   commit 时点 19:05:10）——S1294 门腿覆盖树态 = R4524 组合
+   态（0f0176909）main tip 组合态已超出且为 Rust 代码变更 →
+   **S1295 = 树变化刷新轮（门 + make test 双腿刷新
+   S890→…→S1276→S1284→S1285→S1290 先例链连刷 make test 腿
+   后台跑法 起跑前显式 cd 仓库根防 cwd 残留复发）引用计数以
+   S1295 双腿为新周期锚点 0/10（S1294 记录内「下轮
+   S1295=6/10 引用轮」预告被本插记取代 到期期限轮预告顺延至
+   新周期锚点 S1295+6 轮=S1301）**；S1295 锚点预期（本插记
+   时点 907697484 实测）：①自有面对 S897 tip 7da6043d6
+   10 files +1187/-182 维持（R4525 零 headless/CDP 面触达实
+   测）/ ②crates/ raw 158→159（+1 R4525 折入
+   e67967632..TIP 口径实测）/ ③子帧关键词 7 文件 md5
+   74f58fcf 维持（R4525 零 contentDocument 面触达实测
+   paint/painter 双文件零命中 非测试代码零命中 解冻条件①观
+   察面 159 口径 frames.click+evaluate 挂起维持）/ ④全树排
+   除本流 docs 对 18d462de6 222 files +25771/-1476 → 223
+   files +25882/-1479（净增 1 文件 = r4525 evidence 新档首
+   入集 行数差实测 +111/+3 = R4525 面值直加——
+   rendering-compat.md 既有变更集内折入 非新文件）；R4525 组
+   合态首次门覆盖预期重编相位 = zero-engine→
+   zero-page-runtime→zero-browser 链（zero-layout-engine 零
+   重编 R4525 零 layout 面触达 css-parser 零重编）+ make
+   test 腿计数以 19,352P/0F 为基线维持预期（R4525 零新增
+   #[test] 兄弟自述同值 19,352P/0F 实测复核——兄弟自述含
+   product-smoke welcome 15.40% 同值 struct PASS + bench-gate
+   定向 zero-engine GATE PASS + kill-switch ZW_BG_CLIP_TEXT=0
+   属兄弟流自有验证面 非本流腿面）+ make test 腿 EXIT 判定
+   echo TEST_EXIT 直写口径（S1272 转义笔误注记防复发）+ 起
+   跑前显式 cd 仓库根防 cwd 残留复发（S1285 程序性注记）；红
+   例观察双族复查窗口 = S1295 双腿（① 门面 CDP 缺步族家族第
+   4 例在案 S1262-S1294 门腿连续三十三轮零再现 ② make test
+   腿 localhost 连接抖动族 stale_etag 家族累计 4 例在案 若
+   再现同口径隔离复跑 ×4 归因 + 二调收口后台跑法）+ 跨流
+   L1139 flake 家族连续第十四轮活腿绿 S1295 双腿即复查窗口
+  （第 15 轮）+ 门面 zero-engine dead_code warning 既有形态
+   观察延续（S1294 门面在案 1 枚）+ 外部 zeroseed defunct 僵
+   尸同族余 1 例存续观察维持（S1294 同例在案 第 21 轮）。
+
    **S1294 已执行（2026-09-19）5/10 静默监测引用轮（周期锚
    点 = S1290 双腿 门腿 18:29:34 落盘 + make test 腿
    18:38:49 收口 + S1291-S1293 门腿 18:53:18 收口在案；同 tip
