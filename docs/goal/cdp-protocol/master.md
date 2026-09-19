@@ -28334,6 +28334,40 @@ S1295 双腿 + S1296 门腿）——同 tip 复核 pull 零新提交 tip
    R4525 组合态多重覆盖）唯一未清偿义务 = frames.click+
    evaluate 回填（挂子帧能力解冻 不阻收口）。
 
+   **S1298 轮后插记（2026-09-19 push 序列 pull --rebase 实测，
+   S1294/S1297 插记先例 docs-only 变体）**：兄弟流 R4527 计
+   划腿（05b364f3b per-layer clip 计划定谳 P 轮，**零 crates
+   代码面** docs-only：rendering-compat.md +1 + evidence 新
+   档 38 行 2 files +39/-0 零 #[test] 零 contentDocument 实
+   测复核 commit 时点 19:47:50）于 S1298 记录提交 push 序列
+   pull --rebase 期间入树（我方 S1298 提交被顶到其上
+   76a71c9da 基→05b364f3b 基 47fcc1959 推远 push
+   05b364f3b..47fcc1959 S1283 同秒插记/S1243 同形态先例
+   commit 时点 20:00:23）——树代码面零变化（docs-only 排除
+   面）S1298 门腿覆盖树态代码面仍 = R4526 组合态 门覆盖维
+   持有效 → **S1299 = 1/10 静默监测引用轮维持（S1298 记录
+   内预告不被取代）**树不变口径 = 门单腿复跑免 make test 腿
+  （S336 先例）树代码再变化则提前双腿刷新；引用计数维持
+   S1298 新周期锚点 0/10（R4527 零代码面 docs-only 不构成
+   刷新触发 S1299 起 1/10 至迟 S1304 = 到期期限轮活跑）；
+   S1299 锚点预期（本插记时点 47fcc1959 实测）：①自有面对
+   S897 tip 7da6043d6 10 files +1187/-182 维持 / ②crates/
+   raw **160 维持**（R4527 零 crates 提交 实测）/ ③子帧关
+   键词 7 文件 md5 74f58fcf 维持 非测试代码零命中 解冻条件
+   ①观察面 160 口径 frames.click+evaluate 挂起维持 / ④全
+   树排除本流 docs 对 18d462de6 **224 files +25982/-1483 →
+   225 files +26021/-1483**（净增 1 文件 = r4527 evidence
+   新档首入集 行数差实测 +39/+0 = R4527 面值直加——
+   rendering-compat.md 既有变更集内折入 非新文件）；红例观
+   察双族口径维持（① 门面 CDP 缺步族家族第 5 例 S1295
+   run 2 多步缺步亚变体在案 S1296-S1298 门腿连续三轮零再
+   现 ② make test 腿 stale_etag 家族累计 4 例在案——S1299
+   引用轮无 make test 腿观察顺延）+ 跨流 L1139 flake 家族
+   连续第十六轮活腿绿（S1299 引用轮观察顺延）+ 门面
+   zero-engine dead_code warning 既有形态观察延续（S1298
+   门面在案 1 枚）+ 外部 zeroseed defunct 僵尸同族余 1 例
+   存续观察维持（S1298 同例在案 第 25 轮）。
+
    **S1298 已执行（2026-09-19）树变化刷新轮（S1297 轮后插
    记预告兑现：兄弟流 R4526 代码腿入树 → 门 + make test 双
    腿刷新 S890→…→S1290→S1295 先例链连刷 make test 腿后台
