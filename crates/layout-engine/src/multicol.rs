@@ -681,8 +681,14 @@ fn try_layout_nested_spanner(
             (s.x, s.y, s.width, is_spanner, s.column_span_offsets.clone())
         };
         let r = &mut wrapper.children[real_i];
-        r.x = sx - dx;
-        r.y = sy - dy;
+        // R4517：不再减 dx/dy——synthetic 布局须以 **wrapper content 帧**为列容器帧
+        // （chromium fragmented 列容器 = wrapper content box；探针实证 synth 以 article
+        // 帧布局致 006 块起于 article 顶 abs 8 应 wrapper content 顶 abs 44）。dx/dy=0 的
+        // 无框 wrapper（004a/b）零漂移。cso 同理保留 synth 帧值（painter 以 wrapper
+        // content 帧裁 slice，帧一致）。dx/dy 形参保留（flatten 路径姊妹实现仍用）。
+        let _ = (dx, dy);
+        r.x = sx;
+        r.y = sy;
         if is_spanner {
             // spanner 脱离列流：宽设为 article 全宽（synthetic 已算），清 column_span_offsets
             // 按 block 渲染（同 layout_multicol_with_spanners line 597）。
@@ -691,13 +697,8 @@ fn try_layout_nested_spanner(
         } else if enable_painter_core {
             // R1352 R1343：breaking 子（跨列拆分的 block）须把 synthetic 算出的
             // column_span_offsets 传播给真实 wrapper 子，否则 painter 只绘首片段（col0）。
-            // 坐标：wrapper 经 R1341 no_box gate（无 border/padding），synthetic 为 article
-            // clone；片段位置按 wrapper 偏移 (-dx/-dy) 平移到 wrapper-content 系（与
-            // r.x = sx - dx 同变换）；col_w/col_h 不变。
-            r.column_span_offsets = cso
-                .iter()
-                .map(|&(fx, fy, cx, cw, ct, ch)| (fx - dx, fy - dy, cx - dx, cw, ct - dy, ch))
-                .collect();
+            // R4517：cso 保留 synth 帧（wrapper content 帧，见上）——不再减 dx/dy。
+            r.column_span_offsets = cso;
         }
         // else（deep-nesting, !enable_painter_core）：保留 baseline——仅 x/y 回填，不动 cso。
     }
