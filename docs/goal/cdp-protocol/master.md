@@ -31223,6 +31223,65 @@ S1342 记录提交 6c509c9aa 推远 push 序列零新提交零插记场
    僵尸观察撤档维持 + form_input_perf 瞬态僵尸观察（S1335
    未再现）。
 
+   **S1343 轮后插记（2026-09-20 push 序列 pull --rebase 实测，
+   S897 代码腿插记先例）**：兄弟流 R4539 修复腿（71e15d60c
+   clip-path 覆盖改写 z 序修复原位 op 替换 corner-shape 凹
+   角簇 10 案翻绿 **代码腿**：crates/engine/src/paint/
+   painter/mod.rs +44/-3 + crates/engine/src/paint/tests/
+   effects_visual.rs +71 含 **1 新 #[test]**
+   test_paint_clip_path_polygon_rewrite_z_order_inplace +
+   rendering-compat.md + evidence 新档 71 行 4 files
+   +183/-6 自述 make test **19,367P/0F**（19,366+1 新单测）
+   fmt clippy 双 feature 组 -D make reftest 0 failed
+   product-smoke welcome 15.40% 同值 struct PASS bench-gate
+   定向 zero-engine GATE PASS commit 时点 03:40:03 本流
+   S1343 门腿落盘（03:34:10）后 push 序列前落远 零
+   contentDocument/content_document 实测复核）于 S1343 记录
+   提交 push 序列 pull --rebase 期间入树（我方 S1343 提交被
+   顶到其上 6c509c9aa 基→71e15d60c 基 16bd4ac9a 变基推远
+   push 71e15d60c..16bd4ac9a S897/R4397 代码腿插记同形态先
+   例）——**树代码面变化成立（R4539 为代码腿 crates/engine
+   2 files 触发刷新面）→ S1343 记录内「S1344 = 3/10 静默
+   监测引用轮」预告被本插记取代：S1344 = 树变化刷新轮（门 +
+   make test 双腿刷新 S245→…→S1323→S1341 先例链 make test
+   腿后台跑法 nohup sh -c『echo TEST_EXIT=$?』直写 起跑前
+   显式 cd 仓库根（本流仓库根相对表述） cd 单独成句勿与后
+   台符 & 同链）**；S1343 门腿覆盖树态 = R4526-R4534 组合态
+   维持有效（R4535-R4538 均零代码面），R4539 折入后新组合态
+   = R4526-R4534 + R4539（**本流双组合态覆盖更替：新组合态
+   尚无本流双腿覆盖 S1344 刷新即补齐**）；引用计数口径维持
+   （S1341 双腿新周期锚点 S1344 刷新轮双腿落盘后归零重计
+   至迟 S1350 = 到期期限轮双腿活跑 新周期锚点 = S1344 双腿
+   + 6 轮）；S1343 轮后插记时点锚点预期（16bd4ac9a 实测）：
+   ①自有面对 7da6043d6 **10 files +1187/-182 维持**（R4539
+   零 apps/browser 提交 本流自有面零重叠实测复核）/ ②
+   crates/ raw **165→166**（+1 = R4539 代码腿入 crates/ 口
+   径 e67967632..TIP 实测）/ ③子帧关键词 **7 文件 md5
+   74f58fcf 维持** 非测试代码零命中（插记时点实测复核
+   R4539 零 contentDocument/content_document 新 #[test] 不
+   触关键词 解冻条件①不变观察面 166 口径 frames.click+
+   evaluate 挂起维持）/ ④全树排除本流 docs 对 18d462de6
+   **249 files +29467/-1583**（247→249 files = R4539 面 2
+   code files 净新增入 +crates/engine 新单测 插记时点实测
+   为准）/ ⑤ make test 腿计数预期 = **19,366 + 1 = 19,367P/
+   0F**（R4539 新增 #[test] 1 处 实测 fill_mode_two_polygons
+   同期形态 插记时点以兄弟自述为准 S1344 双腿实测复核 按归
+   因纪律 run-rules §10 以实测为准）；红例观察三族口径维
+   持（① 门面 CDP 缺步/停滞族 S1314-S1343 连续三十轮零再
+   现——S1344 刷新轮门腿即复查窗口 若再现先归形态再归亚型
+   再计数 ② S168 形态独立族累计 3 例 S1343 未再现间隔延续
+   拉大 ③ stale_etag 家族累计 5 例——S1344 刷新轮 make
+   test 腿复查）+ 跨流 L1139 flake 家族连续第二十六轮活腿
+   绿（S1344 刷新轮活腿复归观察）+ 兄弟流 zero-engine
+   dead_code warning 观察延续（R4539 自述 clippy -D 零告警
+   本流门面 match_media_to_json 缓存告警重放形态是否消失/
+   维持随 S1344 门腿实测记档）+ target-disk-guard 触发观察
+   延续（S1324 首触发 52GB→33GB S1325-S1343 零再现 若再现
+   核对触发时点与清理量 记档不升级）+ 外部 zeroseed defunct
+   僵尸观察撤档维持 + form_input_perf 瞬态僵尸观察（S1343
+   未再现）。
+
+
    **S1334 轮后插记（2026-09-20 push 序列 pull --rebase 实测，
    S1298/S1329 插记先例 docs-only 变体）**：兄弟流 R4537
    计划腿（2665f9126 render_draw_order 重放机制纳入根因链
