@@ -26057,6 +26057,44 @@ R4516/R4517 docs 入树 → S1255 提前刷新轮取代 1/10 引用轮预
    务 = frames.click+evaluate 回填（挂子帧能力解冻 不阻收
    口）。
 
+   **S1255 轮后插记（2026-09-19 push 序列 pull --rebase 实测，
+   S898/S1190/S1229/S1230/S1236/S1240/S1241/S1242/S1243/S1252/
+   S1253/S1254 插记先例）**：兄弟流 R4517 代码腿（rendering-
+   compat R1473 step-2 第一面 synth 帧修正（wrapper content
+   帧），crates/layout-engine/src/multicol.rs 1 code file
+   +11/-9 **零新增 #[test] 函数**（grep 实测 0）+ 同序列
+   R4518 docs 腿 docs/goal/rendering-compat.md +1）于 S1255
+   双腿收口（make test 腿 12:14:28）之后、本流 push 序列
+   pull --rebase 入树（S1255 提交被 rebase 顶到其上，aa25b6703
+   → 6dede983f → 2402ebd2b → 本流 14e6eec89 推远）——S1255 双
+   腿覆盖树态 = R4515+R4516+R4517 前置 docs 组合态
+   （aa25b6703），main tip 组合态已超出且为 **Rust 代码变更**
+   （R4517 代码腿触达 layout-engine 渲染流域专属 crate 零本流
+   工作面触达 run-rules §9）→ **S1256 = 树变化刷新轮（门 +
+   make test 双腿刷新 S890→…→S1253→S1254→S1255 先例链连刷
+   make test 腿后台跑法），引用计数以 S1256 双腿为新周期锚点
+   0/10**（S1255 记录内「下轮 S1256 = 1/10 静默监测引用轮」
+   预告被本插记取代）；S1256 锚点预期（本插记时点 14e6eec89
+   实测）：①自有面对 S897 tip 7da6043d6 **10 files +1187/-
+   182** 维持 / crates/ raw **151→152**（+1 = R4517 代码腿折
+   入 e67967632..TIP 计数口径 实测复核 152）/ 子帧关键词 **7
+   文件** md5 74f58fcf 维持（R4517 零 contentDocument 面触达
+   实测复核）/ 全树排除本流 docs 对 18d462de6 **213 files
+   +24328/-1445 → 213 files +24340/-1454**（面值维持 213 折
+   入 +12/-9 行差 = R4517 code +11/-9 + R4518 docs +1/-0 实测
+   复核）；R4517 组合态首次门覆盖预期重编相位 =
+   zero-layout-engine→zero-engine→zero-page-runtime→
+   zero-browser 链（R4510-R4514 同款 multicol 面 css-parser
+   零重编维持）+ make test 腿计数以 **19,348P/0F 为基线维持预
+   期**（R4517 零新增 #[test] 函数实测）+ 跨流 L1139 flake 家
+   族观察强化口径维持（连续四轮活腿绿在案 S1256 make test 腿
+   即本家族复查窗口 若再现同口径机械归因 + 复跑收口）+ 红例
+   观察强化双族口径维持（①门面 CDP 缺步族家族第 3 例 S1253
+   run 2 多步缺步亚变体在案 S1254/S1255 连续首调即绿未再现
+   ②make test 腿 localhost 连接抖动族 stale_etag 样本 S1254
+   轮 +1 在案——若再现先归亚型/家族再计数 四点归因 + 负载窗
+   相关性核对 + 复跑收口后台跑法）。
+
    **S1243 轮后插记（2026-09-19 push 序列 pull --rebase 实测，
    S898/S1190/S1229/S1230/S1236/S1240/S1241/S1242 插记先例）**：
    兄弟流 R4513 代码腿（rendering-compat multicol bg strips 数
