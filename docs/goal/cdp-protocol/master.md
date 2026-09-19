@@ -28837,6 +28837,49 @@ S1303 记录提交 434ebc52d 推远 push 序列零新提交零插记场景
    未清偿义务 = frames.click+evaluate 回填（挂子帧能力解冻
    不阻收口）。
 
+   **S1304 轮后插记（2026-09-19 push 序列 pull --rebase 实测，
+   S1298 插记先例 代码面变体）**：兄弟流 R4528 代码腿
+   （927053a51 per-layer clip C 轮实施：style-system
+   apply_advanced/computed_style/default_impl + engine
+   paint/effects+mod+text+js_dom_bridge/computed_style +
+   css-parser parse_extended_visual + paint tests 2 档 +
+   rendering-compat docs 2 档 14 files +168/-66）于 S1304
+   记录提交 push 序列 pull --rebase 期间入树（我方 S1304
+   提交被顶到其上 434ebc52d 基→927053a51 基 c016e9242 变基
+   47d7425a5 推远 push 927053a51..47d7425a5 S1283 同秒插记/
+   S1243 同形态先例）——**树代码面已变化（R4528 为代码腿
+   非 docs-only 构成刷新触发 S1298 插记 docs-only 不触发先
+   例反差在案）→ S1305 = 树变化刷新轮 双腿刷新（S245→…→
+   S1290→S1295→S1298→S1304 先例链 make test 腿后台跑法 起
+   跑前显式 cd 仓库根 nohup sh -c echo TEST_EXIT 直写口
+   径）S1304 记录内「S1305 = 1/10 静默监测引用轮」预告被取
+   代**；S1304 门+make test 双腿覆盖树态代码面 = R4526 组合
+   态（R4528 入树前跑完 覆盖面不含 R4528）新组合态由
+   S1305 双腿刷新覆盖；引用计数以 S1305 双腿刷新为新周期锚
+   点归零重计（S1306 起 1/10 至迟 S1311 = 到期期限轮活跑
+   新周期锚点 S1305 + 6 轮）；S1304 轮后插记时点锚点预期
+   （47d7425a5 实测）：①自有面对 S897 tip 7da6043d6
+   **10 files +1187/-182 维持**（R4528 零 apps/browser 提
+   交 本流自有面零重叠实测复核）/ ②crates/ raw **161**
+   （160 + R4528 一枚 crates 提交 实测 e67967632..TIP 口
+   径）/ ③子帧关键词 **7 文件 md5 74f58fcf 维持** 非测试代
+   码零命中（插记时点实测复核 R4528 零 contentDocument/
+   content_document 零 #[test] 新增 解冻条件①不变
+   frames.click+evaluate 挂起维持）/ ④全树排除本流 docs 对
+   18d462de6 **228 files +26176/-1536**（R4528 面 14 files =
+   12 代码 + 2 rendering-compat docs 净效应 ④ 225→228 files
+   +26176/-1536 插记时点实测为准）；红例观
+   察双族口径维持（① 门面 CDP 缺步族家族第 5 例 S1295 run
+   2 多步缺步亚变体在案 S1296-S1304 连续九轮门腿零再现 ②
+   make test 腿 stale_etag 家族累计 4 例在案 S1304 期限轮
+   复查零命中——S1305 刷新轮 make test 腿即复查窗口）+
+   跨流 L1139 flake 家族连续第十七轮活腿绿（S1304 期限轮兑
+   现 S1305 刷新轮 make test 腿即复查窗口第 18 轮）+ 门面
+   zero-engine dead_code warning 既有形态观察延续（S1304
+   门面在案 1 枚）+ 外部 zeroseed defunct 僵尸同例存续观察
+   维持（S1304 同例在案 第 31 轮）+ form_input_perf 瞬态僵
+   尸观察（S1304 未再现）。
+
    **S1298 轮后插记（2026-09-19 push 序列 pull --rebase 实测，
    S1294/S1297 插记先例 docs-only 变体）**：兄弟流 R4527 计
    划腿（05b364f3b per-layer clip 计划定谳 P 轮，**零 crates
