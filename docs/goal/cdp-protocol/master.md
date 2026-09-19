@@ -162,6 +162,30 @@ d3f864681 推远 push 序列零新提交零插记场景
    test-guard artifact 启动失败族 + 跨流 L1139 家族均在
    S1358 双腿复查窗口）；M5 定稿收口判定不因本插记动摇
    goal Done 维持守成态证据经 S1358 双腿刷新延续。
+
+   **S1362 轮后插记（2026-09-20 push 序列 pull --rebase 实测）**：
+   兄弟流 R4545（**纯 docs/记档提交** 20d8e01ec 资产激活新
+   红二案归因——JS 动态重渲染域 reftest-wait/rAF 链归因记
+   档 rendering-compat.md +1 + evidence 新档 +33 = 2 files
+   +34/-0）于 S1362 双腿收口（mt 复跑 07:12:32）之后经
+   push 序列 pull --rebase 入树（我方 S1362 记录提交
+   rebase 于其上 = b86e55c0f，push 20d8e01ec..b86e55c0f
+   零冲突 实测复核）——**代码面零变化成立**（crates/ apps/
+   tests/ Makefile 面 diff 空 实测复核 ② crates/ raw 171
+   维持）→ **纯 docs 折入不升刷新轮（口径先例）**，S1362
+   双腿 PASS 覆盖的代码树态 = 99641e378（R4544）维持有效；
+   锚点面漂移记档（新 tip b86e55c0f 实测）：④ 全树排除本
+   流 docs **256 files +30409/-1648 → 257 files
+   +30443/-1648**（+1 file = R4545 evidence 新档 +34 全额
+   净入账 插记时点实测为准）/ ① 10 files +1187/-182 维持
+   / ② crates/ raw 171 维持 / ③ 子帧关键词 7 文件 md5
+   74f58fcf 维持（R4545 纯 docs 零 Rust 面变更）解冻条件①
+   观察面 171 口径 frames.click+evaluate 挂起维持 / ⑤
+   make test 腿基线计数 19,376P/0F 68 组维持（R4545 零测
+   试面变更）。下轮 **S1363 = 1/10 静默监测引用轮**（新周
+   期锚点 = S1362 双腿）计划不变，锚点按本插记新 tip 基
+   线（b86e55c0f 实测）复核；M5 定稿收口判定不因本插记动
+   摇 goal Done 维持守成态证据经 S1362 双腿刷新延续。
 ---
 
 ## 当前状态
