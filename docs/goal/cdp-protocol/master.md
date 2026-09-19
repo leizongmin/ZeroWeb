@@ -25969,7 +25969,18 @@ EXIT=0 33 绿 deterministic YES）；make test 腿 10:45:00→
    CDP 缺步族家族第 3 例 S1253 run 2 多步缺步亚变体在案 未再
    现 ②make test 腿 localhost 连接抖动族 stale_etag 样本
    S1254 轮 +1 在案——若再现先归亚型/家族再计数 四点归因 +
-   负载窗相关性核对 + 复跑收口后台跑法）。
+   负载窗相关性核对 + 复跑收口后台跑法）。**插记补记（同
+   push 序列二段 pull --rebase 实测）**：兄弟流 R4517 docs 腿
+   （rendering-compat R1473 step-2 前置探针定谳，
+   docs/goal/rendering-compat.md 1 file +1 **零代码**）随后入
+   树（本流插记提交被 rebase 顶到其上，8e1da89e8 →
+   52f476f55 → 本流 b6947fafd 推远）——**docs-only 零代码**
+   不改变 S1255 = 树变化刷新轮定谳（刷新触发方 = R4515 代码
+   腿维持）；锚点预期仅 ④ 行差更新：213 files +24318/-1445 →
+   **213 files +24328/-1445**（+10 行差 = R4515 crates +7 +
+   R4516 docs +1 + R4517 docs +1 实测复核），①②③ 维持
+   不变（本插记时点 b6947fafd 复测：10 files +1187/-182 /
+   crates/ raw 151 / 7 文件 md5 74f58fcf 全维持）。
 
    **S1243 轮后插记（2026-09-19 push 序列 pull --rebase 实测，
    S898/S1190/S1229/S1230/S1236/S1240/S1241/S1242 插记先例）**：
