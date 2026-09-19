@@ -34,3 +34,4 @@ css/css-backgrounds/animations/background-color-animation-three-keyframes2-ref.h
 css/css-conditional/at-supports-001-ref.html
 # R4499：css-multicol span-all 参照页（multicol-span-all-*-ref 7 案）navy 色块——wpt-data 初始抓取缺失，缺 → ref 页 navy 行不渲染（幻影黄带）
 css/css-multicol/support/swatch-navy.png
+images/green-256x256.png

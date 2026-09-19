@@ -700,6 +700,9 @@ pub fn clip_all_primitives_to_polygon(
     let clip_v2 = std::env::var("ZW_CLIP_V2").as_deref() != Ok("0");
     if clip_v2 {
         clip_fills_to_polygon_inplace(primitives, from.fills, polygon, true);
+        // R4542（css-borders-4 §border-shape）：replaced 元素（img 等）内容同样裁剪到
+        // 多边形内缘——条带以 clip 窗口承载（crop 语义，source 仍映射完整 rect 不重采样）。
+        clip_images_to_polygon_inplace(primitives, from.images, polygon, true);
     } else {
         // 将每个 fill 矩形与多边形求交，生成多个子矩形
         let mut new_fills = Vec::new();
@@ -834,6 +837,75 @@ fn clip_fills_to_polygon_inplace(
                     ];
                     primitives.add_path_fill(verts, strip.color);
                     // add_path_fill 必在尾部追加一个 PathFill op；移到目标槽位。
+                    let tail = primitives.draw_order.pop();
+                    let Some(tail) = tail else { break };
+                    if k == 0 {
+                        primitives.draw_order[op_pos] = tail;
+                    } else {
+                        primitives.draw_order.insert(op_pos + k, tail);
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// R4542：images 多边形条带裁剪（原地 + op 登记）——与 fills v2 同一不变式。
+///
+/// 对 `[start..len)` 内每个 image：以 rect 为几何做扫描线条带，
+/// - 0 条带（多边形外）→ rect 清零（`DrawOp::Image(i)` 重放为无绘制）；
+/// - 1 条带 = 原 rect（含于多边形）→ 原样保留；
+/// - 其余（部分相交）→ 原 image rect 清零，逐条带追加新 ImagePrimitive
+///   （rect = 原始 rect（source 映射保持不重采样）+ `clip = Some(条带 rect)` crop
+///   窗口），并把原 `Image(i)` op 槽位替换/插入为条带 op（z 序 = 原 op 槽位保序）。
+///
+/// images 向量只增不减，op 插入零索引位移（R4540 v2 不变式）。
+/// `source: Some`（border-image 9-slice）的图元跳过（条带会破坏 slice 映射），
+/// 仅保留包围盒裁剪旧行为。
+fn clip_images_to_polygon_inplace(
+    primitives: &mut RenderPrimitives,
+    start: usize,
+    polygon: &[(f32, f32)],
+    midpoint: bool,
+) {
+    use zero_render_foundation::primitive::{DrawOp, FillPrimitive};
+
+    for i in start..primitives.images.len() {
+        if primitives.images[i].source.is_some() {
+            continue;
+        }
+        let img = &primitives.images[i];
+        let probe = FillPrimitive {
+            rect: img.rect,
+            color: zero_render_foundation::color::Color::BLACK,
+        };
+        let strips = clip_fill_to_polygon(&probe, polygon, midpoint);
+        match strips.len() {
+            0 => primitives.images[i].rect = Rect::new(0.0, 0.0, 0.0, 0.0),
+            1 if strips[0].rect == img.rect => {}
+            _ => {
+                let img = &primitives.images[i];
+                let rect = img.rect;
+                let key = img.image_key.clone();
+                primitives.images[i].rect = Rect::new(0.0, 0.0, 0.0, 0.0);
+                let Some(op_pos) = primitives
+                    .draw_order
+                    .iter()
+                    .position(|op| matches!(op, DrawOp::Image(j) if *j == i))
+                else {
+                    continue;
+                };
+                for (k, strip) in strips.iter().enumerate() {
+                    let idx = primitives.images.len();
+                    primitives
+                        .images
+                        .push(zero_render_foundation::primitive::ImagePrimitive {
+                            rect,
+                            image_key: key.clone(),
+                            clip: Some(strip.rect),
+                            source: None,
+                        });
+                    primitives.draw_order.push(DrawOp::Image(idx));
                     let tail = primitives.draw_order.pop();
                     let Some(tail) = tail else { break };
                     if k == 0 {
@@ -3408,6 +3480,38 @@ mod tests {
         for op in &p.draw_order {
             if let DrawOp::Fill(j) = op {
                 assert!(*j < p.fills.len(), "Fill op 索引 {} 越界", j);
+            }
+        }
+    }
+
+    /// R4542：images 多边形条带裁剪——clip 窗口条带 + op 槽位登记（images 向量只增不减）。
+    #[test]
+    fn test_clip_images_inplace_registers_strip_ops_without_index_shift() {
+        use zero_render_foundation::image_cache::ImageKey;
+        use zero_render_foundation::primitive::{DrawOp, ImagePrimitive};
+        let mut p = RenderPrimitives::new();
+        p.add_image(ImagePrimitive {
+            rect: Rect::new(0.0, 0.0, 8.0, 8.0),
+            image_key: ImageKey(1),
+            clip: None,
+            source: None,
+        });
+        // 矩形多边形 [0,8]×[2,6]：与 image 部分相交。
+        let polygon = vec![(0.0_f32, 2.0_f32), (8.0, 2.0), (8.0, 6.0), (0.0, 6.0)];
+        clip_images_to_polygon_inplace(&mut p, 0, &polygon, true);
+        // 原 image 清零；条带以新 image（clip 窗口）追加在尾部（向量只增）。
+        assert_eq!(p.images[0].rect.size.width, 0.0, "部分相交 image 应清零");
+        assert!(p.images.len() >= 5, "条带 image 应追加：{}", p.images.len());
+        assert_eq!(p.images[1].rect, Rect::new(0.0, 0.0, 8.0, 8.0), "条带 rect 保持源映射");
+        assert!(p.images[1].clip.is_some(), "条带应以 clip 窗口承载");
+        // op 登记：原 Image(0) op 被替换为条带 op；全部 Image op 索引有效。
+        assert!(
+            !p.draw_order.iter().any(|op| matches!(op, DrawOp::Image(0))),
+            "Image(0) op 应被条带 op 替换"
+        );
+        for op in &p.draw_order {
+            if let DrawOp::Image(j) = op {
+                assert!(*j < p.images.len(), "Image op 索引 {} 越界", j);
             }
         }
     }
