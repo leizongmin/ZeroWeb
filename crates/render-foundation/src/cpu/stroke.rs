@@ -4,10 +4,10 @@ use crate::color::Color;
 use crate::primitive::{LineCap, LineStyle, PathFillPrimitive, PathStrokePrimitive, StrokePrimitive};
 use crate::surface::FrameBuffer;
 
-/// R4530：描边像素写入——不透明直写（旧行为），半透明经 blend_pixel 与背景合成。
-/// 旧 set_pixel 硬编码 alpha=255，rgba() 半透明虚线/点线被画成不透明色（CPU fill/
-/// rounded_rect 路径同族问题已修，stroke 为最后漏网点）。path_fill/path_stroke
-/// （SVG path 域）同型问题独立挂账，不在本修复面。
+/// R4530/R4531：描边/路径像素写入——不透明直写（旧行为），半透明经 blend_pixel 与
+/// 背景合成。旧 set_pixel 硬编码 alpha=255，rgba() 半透明描边/路径被画成不透明色
+///（CPU fill/rounded_rect 路径同族问题已修；R4530 覆盖 StrokePrimitive 四写入点，
+/// R4531 补齐 path_fill/path_thick_line 两处——SVG path 域收口）。
 #[inline]
 fn stroke_pixel(fb: &mut FrameBuffer, x: u32, y: u32, color: Color) {
     if color.a == 255 {
@@ -326,6 +326,10 @@ fn render_dotted_line(
 
 /// 渲染路径填充 — 使用扫描线算法填充多边形。
 pub fn render_path_fill(fb: &mut FrameBuffer, path: &PathFillPrimitive, scale: f32) {
+    // R4531：全透明路径填充不绘制（同 R4530 描边口径——旧路径画成不透明 rgb）。
+    if path.color.a == 0 {
+        return;
+    }
     let vertices = &path.vertices;
     if vertices.len() < 6 {
         return; // 至少需要 3 个顶点（6 个 f32）
@@ -387,7 +391,7 @@ pub fn render_path_fill(fb: &mut FrameBuffer, path: &PathFillPrimitive, scale: f
             let fill_right = intersections[idx + 1].ceil().min(right as f32) as u32;
 
             for x in fill_left..fill_right {
-                fb.set_pixel(x, y, [color.r, color.g, color.b, 255]);
+                stroke_pixel(fb, x, y, color);
             }
             idx += 2;
         }
@@ -396,6 +400,10 @@ pub fn render_path_fill(fb: &mut FrameBuffer, path: &PathFillPrimitive, scale: f
 
 /// 渲染路径描边。
 pub fn render_path_stroke(fb: &mut FrameBuffer, path: &PathStrokePrimitive, scale: f32) {
+    // R4531：全透明路径描边不绘制（同 R4530 描边口径）。
+    if path.color.a == 0 {
+        return;
+    }
     let vertices = &path.vertices;
     if vertices.len() < 4 {
         return; // 至少需要 2 个顶点（4 个 f32）
@@ -465,7 +473,7 @@ fn render_thick_line(fb: &mut FrameBuffer, x1: f32, y1: f32, x2: f32, y2: f32, h
             };
 
             if dist <= half_w {
-                fb.set_pixel(x, y, [color.r, color.g, color.b, 255]);
+                stroke_pixel(fb, x, y, color);
             }
         }
     }

@@ -1139,6 +1139,80 @@ fn stroke_semi_transparent_blends_with_background() {
     );
 }
 
+/// R4531：全透明路径填充不绘制——旧路径 set_pixel 硬编码 alpha=255 画成不透明 rgb
+///（transparent → 黑多边形）盖住背景；修复后跳过绘制，画布保持纯白。
+#[test]
+fn path_fill_fully_transparent_paints_nothing() {
+    let mut primitives = RenderPrimitives::new();
+    primitives.path_fills.push(PathFillPrimitive {
+        vertices: vec![5.0, 5.0, 45.0, 5.0, 45.0, 15.0, 5.0, 15.0],
+        color: Color::rgba(0, 0, 0, 0),
+    });
+
+    let font_loader = FontLoader::new();
+    let mut glyph_cache = GlyphCache::new(64);
+    let fb = render_full_scene(
+        50,
+        20,
+        1.0,
+        &primitives,
+        &font_loader,
+        &mut glyph_cache,
+        None,
+        &[],
+        &[],
+        &[],
+        &[],
+    );
+
+    for y in 0..20 {
+        for x in 0..50 {
+            assert_eq!(
+                fb.get_pixel(x, y),
+                [255, 255, 255, 255],
+                "transparent path fill must not paint ({x},{y})"
+            );
+        }
+    }
+}
+
+/// R4531：半透明路径填充与背景合成——rgba(0,0,255,128) 在白底多边形内应为浅蓝
+///（≈128,128,255），旧路径画成纯蓝。
+#[test]
+fn path_fill_semi_transparent_blends_with_background() {
+    let mut primitives = RenderPrimitives::new();
+    primitives.path_fills.push(PathFillPrimitive {
+        vertices: vec![10.0, 5.0, 40.0, 5.0, 40.0, 15.0, 10.0, 15.0],
+        color: Color::rgba(0, 0, 255, 128),
+    });
+
+    let font_loader = FontLoader::new();
+    let mut glyph_cache = GlyphCache::new(64);
+    let fb = render_full_scene(
+        50,
+        20,
+        1.0,
+        &primitives,
+        &font_loader,
+        &mut glyph_cache,
+        None,
+        &[],
+        &[],
+        &[],
+        &[],
+    );
+
+    let p = fb.get_pixel(25, 10);
+    assert_eq!(p[2], 255, "blue channel stays 255 over white");
+    assert!(
+        (i32::from(p[0]) - 128).abs() <= 1 && (i32::from(p[1]) - 128).abs() <= 1,
+        "half-blue over white should blend to ~(128,128,255), got {:?}",
+        p
+    );
+    // 多边形外仍为纯白（包围盒外区域不受影响）。
+    assert_eq!(fb.get_pixel(2, 2), [255, 255, 255, 255]);
+}
+
 /// R1909 回归测试：退化（非有限坐标 / 零宽度）的点线/虚线不得使渲染卡死。
 ///
 /// 根因：`render_dotted_line` 的 `while d <= total_len`（d += dot_spacing）在
