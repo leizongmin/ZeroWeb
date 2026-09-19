@@ -1311,6 +1311,30 @@ impl LayoutEngine {
                         }
                     }
                 }
+
+                // R4544（css-flexbox §9.4 + CSS2 §10.5）：flex/grid **item** 自身 height
+                // 为 definite 长度时，其内容高是子元素百分比高度的明确包含块——上方 gate
+                // 跳过的是 item 自身 %/stretch 解析语义（R691 独立域），不应阻断
+                // definite 高向子代的传播。旧实现 item definite 高不传播（my_definite
+                // 沿用容器 indefinite → None）→ 子 height:100% 被误 compute-to-auto 塌 0
+                //（border-shape-overflow-child-clip 构型：item h=100 definite、子 h=0）。
+                // 仅 definite 长度生效（%/auto/stretch 语义仍归上方各臂）；definite 传播
+                // 与 `other` 臂同构（box-sizing 折算内容高，不改写 taffy——taffy 第一趟
+                // 已按 definite 正确布局，见 R4543 taffy 层基线锚）。非 flex/grid item
+                // 路径（gate 未跳过）不入此臂，行为零变化。
+                // kill-switch `ZW_FLEX_ITEM_DEFINITE_CB=0`。
+                if parent_is_flex_grid
+                    && !grid_replaced_pct_indefinite
+                    && std::env::var("ZW_FLEX_ITEM_DEFINITE_CB").as_deref() != Ok("0")
+                    && let Some(v) = resolve_sizing_definite_real_length(&s.height, s)
+                {
+                    let pb = b.padding_top + b.padding_bottom + b.border_top + b.border_bottom;
+                    my_definite = Some(if matches!(s.box_sizing, BoxSizingValue::BorderBox) {
+                        (v - pb).max(0.0)
+                    } else {
+                        v
+                    });
+                }
             }
 
             // R4147（css-sizing-4 §4.2）：`aspect-ratio` + 单侧 definite width + height:auto
