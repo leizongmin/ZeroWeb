@@ -2,67 +2,75 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-20（S1346 轮后插记 — push 序列
-pull --rebase 实测 兄弟流文档维护腿折入（b44bcfd2a 文档
-维护第十六轮 corpus 口径刷新至 R4539/91.20% CHANGELOG.md
-+1 + README.md/ROADMAP.md/rendering-compat master.md/
-zero-web master.md 行内改写 5 files +6/-5 纯 .md docs/
-控制面 零 crates/ 零代码 零本流 docs 零 contentDocument
-实测复核 本流 S1346 记录提交 rebase 33e6b61d5→e98a6c2ee
-推远 origin/main == HEAD）——**树代码面零变化 → S1346
-记录内 S1347 = 3/10 静默监测引用轮预告维持有效（不升刷
-新轮 折入面 = docs/控制面 非代码腿 S1345 a9a258fc2 插记
-先例同型）**；S1346 门腿覆盖树态 = R4526-R4534+R4539 新
-组合态维持有效（S1346 门腿本体：04:19:05→04:19:35 首调
-即绿 EXIT=0 PASS 33 绿 deterministic 双跑 YES wall ~30s
-0 Compiling 全缓存 树不变预言兑现 缺步/停滞族连续三十
-三轮零再现 S168 形态未再现 jsonl md5 2c2cdb6d 恒值
-zombie/922x 零命中 引用计数 2/10 详见 S1346 记录提交）；
-引用计数口径维持（S1344 双腿新周期锚点 S1346 = 2/10 已记
-S1347 = 3/10 至迟 **S1350 = 到期期限轮双腿活跑** 新周期
-锚点 = S1344 双腿 +6 轮 双腿活跑口径 = 门 + make test
-后台跑法 树不变也双腿 距今 2 轮）；插记时点锚点预期
-（e98a6c2ee 实测）：① 10 files +1187/-182 维持
-apps/browser/src/headless 口径（b44bcfd2a 零 apps/browser
-提交）② crates/ raw 166 维持 e67967632..TIP 口径（零
-crates/ 新提交）③ 子帧关键词 7 文件 md5 74f58fcf 维持
-crates/ Rust 面 .rs 全量口径 非测试代码零命中（零
-contentDocument 新增 解冻条件①观察面 166 口径 frames.
-click+evaluate 挂起维持）④ 全树排除本流 docs 对
-18d462de6 249 files +29469→**+29470**/-1583（**+1 净入账
-归因 = b44bcfd2a CHANGELOG 新行 1/0 净扩展 逐文件 numstat
-实测：五文件全在既有变更集内 files 维持 249 README/
-ROADMAP/rendering-compat/zero-web 行内改写零净漂移
-（18d462de6..662461223 与 ..e98a6c2ee 逐文件 numstat 同
-值 3/3·3/3·14/2·28/2 实测复核）S1347 开工复测按此口径
-非代码漂移**）；红例观察三族口径维持（缺步/停滞族
-S1314-S1346 连续三十三轮零再现 S1347 门腿即复查窗口/
-S168 形态独立族累计 3 例 S1346 未再现/stale_etag 家族累
-计 5 例——S1347 引用轮无 make test 腿观察顺延 至迟
-S1350 期限轮双腿复查）+ 跨流 L1139 家族连续第二十七轮活
-腿绿 S1347 引用轮无 make test 腿观察顺延 + 兄弟流
-zero-engine dead_code warning 观察延续（S1344 真重编真实
-再发射新证 + S1345/S1346 缓存重放形态并存不矛盾）+
-target-disk-guard 触发观察延续（S1324 首触发 S1325-S1346
-零再现）+ 外部 zeroseed defunct 僵尸观察撤档维持 +
-form_input_perf 瞬态僵尸观察（S1346 未再现）；guard 记
-档：本插记相对表述口径维持（S1343 BLOCK 先例后零复发
-S1346 轮 guard 子代理扫描 PASS 0 critical 0 warning）+
-记档数字须实测有据（S1338 防复发注记维持）；M5 定稿收口
-判定不因复验与执行态瞬态及兄弟流控制面折入动摇 goal Done
-维持 唯一未清偿义务 = frames.click+evaluate 回填（挂子帧
-能力解冻 不阻收口））
+**最后更新**: 2026-09-20（S1346 二次轮后插记 — push 序列
+pull --rebase 实测 兄弟流 R4540 代码腿入树（fdf74759c
+clip 多边形条带 v2 机制 去 drain 化+中点采样+op 插入
+crates/engine/src/paint/helpers.rs +198/-11 + crates/
+engine/src/paint/tests/effects_visual.rs +24/-12 含 2 新
+#[test] + rendering-compat.md+evidence 新档 4 files
++267/-23 自述 make test 19,369P/0F（+2）fmt clippy 双
+feature 组 -D reftest 0 failed product-smoke 同值 struct
+PASS bench-gate 定向 PASS commit 时点 04:21:37 本流 S1346
+门腿落盘 04:19:35 后 push 序列前落远 零 contentDocument
+实测复核 本流 S1346 记录 + 一次插记提交 rebase
+33e6b61d5/2dda07afd→e98a6c2ee/92bc41277 推远 origin/main
+== HEAD）——**树代码面变化成立（代码腿 crates/engine
+2 files 触发刷新面）→ S1346 记录内 S1347 = 3/10 静默监
+测引用轮预告被本插记取代：S1347 = 树变化刷新轮（门 +
+make test 双腿刷新 S245→…→S1341→S1344 刷新先例链 make
+test 腿后台跑法 nohup sh -c『echo TEST_EXIT=$?』直写 起
+跑前显式 cd 仓库根（相对表述）cd 单独成句勿与后台符 &
+同链）**；S1346 门腿覆盖树态 = R4526-R4534+R4539 组合态
+维持有效（b44bcfd2a 零代码面）R4540 折入后新组合态 =
+R4526-R4534+R4539+R4540 新组合态尚无本流双腿覆盖 S1347
+刷新即补齐；引用计数口径（S1344 双腿锚点 S1347 刷新轮双
+腿落盘后归零重计 S1348 起 1/10 至迟 **S1353 = 到期期限
+轮双腿活跑** 新周期锚点 = S1347 双腿+6 轮）；插记时点锚
+点预期（92bc41277 实测）：① 10 files +1187/-182 维持
+（R4540 零 apps/browser 提交）② crates/ raw 166→**167**
+（+1 = R4540 代码腿入 crates/ 口径兑现）③ 子帧关键词
+7 文件 md5 74f58fcf 维持 crates/ Rust 面 .rs 全量口径
+**非测试代码零命中逐文件复核**（R4540 零 contentDocument
+新增不触关键词 解冻条件①观察面 167 口径 frames.click+
+evaluate 挂起维持）④ 全树排除本流 docs 对 18d462de6
+249→**250 files +29470→+29737/-1583→-1606**（250 files
+= R4540 面 evidence 新档 1 净新增入 code files 2 入既有
+变更集 +267/-23 = R4540 原始量全额净入账 插记时点实测为
+准）⑤ make test 腿计数预期 = 19,367+2 = **19,369P/0F
+67 组**（R4540 新增 #[test] 2 处 插记时点以兄弟自述为准
+S1347 双腿实测复核 按归因纪律 run-rules §10 以实测为准
+若偏差先归因）；红例观察三族口径维持（缺步/停滞族
+S1314-S1346 连续三十三轮零再现 S1347 刷新轮门腿即复查
+窗口/S168 形态独立族累计 3 例 S1346 未再现/stale_etag
+家族累计 5 例——S1347 刷新轮 make test 腿复查）+ 跨流
+L1139 家族连续第二十七轮活腿绿 S1347 刷新轮活腿复归观察
++ 兄弟流 zero-engine dead_code warning 观察延续（R4540
+自述 clippy -D 零告警 本流门面 match_media_to_json 缓存
+告警是否随重编译消失/维持随 S1347 门腿实测记档 S1344
+R4539 重编后仍再现先例在案）+ target-disk-guard 触发观
+察延续（S1324 首触发 S1325-S1346 零再现 S1347 刷新轮重
+编段增量盘量上升 若触发核对时点与清理量 记档不升级）+
+外部 zeroseed defunct 僵尸观察撤档维持 + form_input_perf
+瞬态僵尸观察（S1346 未再现）；guard 记档：本插记相对表
+述口径维持（S1343 BLOCK 先例后零复发 S1346 轮 guard 子代
+理扫描 PASS 0 critical 0 warning）+ 记档数字须实测有据
+（S1338 防复发注记维持）；M5 定稿收口判定不因复验与执行
+态瞬态及兄弟流新组合态折入动摇 goal Done 维持 唯一未清
+偿义务 = frames.click+evaluate 回填（挂子帧能力解冻 不
+阻收口））
 
-**前轮终态**: S1346 = 2/10 静默监测引用轮 门腿首调即绿
-（周期锚点 = S1344 双腿）——pull 零新提交 tip =
-662461223 即 S1345 轮后插记提交本身；锚点四点按 S1345 插
-记时点基线（含④+2 行口径）全 PASS 零漂移；门腿
-04:19:05→04:19:35 首调即绿 EXIT=0 PASS 33 绿
-deterministic YES 0 Compiling 全缓存 Finished 0.16s；缺
-步/停滞族连续三十三轮零再现维持；jsonl md5 2c2cdb6d 恒
-值；zombie/922x 零命中 窗尾零外部进程（兄弟流高载段已收
-口）；S1346 记录提交 push 序列实测拉入兄弟流 b44bcfd2a
-（零代码面）rebase 后 e98a6c2ee 推远 → 本插记兑现
+**前轮终态**: S1346 = 2/10 静默监测引用轮 门腿首调即绿 +
+轮后插记（b44bcfd2a 零代码面折入不升刷新轮先例）——
+pull 零新提交 tip = 662461223 即 S1345 轮后插记提交本
+身；锚点四点按 S1345 插记时点基线（含④+2 行口径）全
+PASS 零漂移；门腿 04:19:05→04:19:35 首调即绿 EXIT=0
+PASS 33 绿 deterministic YES 0 Compiling 全缓存 Finished
+0.16s；缺步/停滞族连续三十三轮零再现维持；jsonl md5
+2c2cdb6d 恒值 zombie/922x 零命中 窗尾零外部进程；记录提
+交 push 序列拉入 b44bcfd2a（零代码面 docs 维护）插记后
+e98a6c2ee 推远（④+1 净入账 CHANGELOG 新行归因入档）；
+一次插记提交 push 序列再拉入 R4540 代码腿 → 本二次插记
+兑现 S1347 = 树变化刷新轮双腿
 ---
 
 ## 当前状态
