@@ -28306,6 +28306,53 @@ test 腿 16:48:07→16:58:04 一调收口 EXIT=0 19,350P/0F 基线
    一未清偿义务 = frames.click+evaluate 回填（挂子帧能力解
    冻 不阻收口）。
 
+   **S1283 轮后插记（2026-09-19 push 序列 pull --rebase 实测，
+   S898/S1190/S1229/S1230/S1236/S1240/S1241/S1242/S1243/
+   S1265/S1273/S1275 插记先例）**：兄弟流 R4522 代码腿
+   （769b08686 ——definite-height balance 对嵌套 multicol 子
+   的溢出行剪裁，crates/layout-engine multicol 面 2 files 内
+   multicol.rs +39 + multicol/tests.rs +45（**+2 新增
+   #[test]**）零本流工作面触达 run-rules §9，随行 docs 腿
+   rendering-compat.md +1 + evidence 新档 44 行 + nested-
+   multicol-fragmentation-rfc.md 1/1，commit 时点 17:03:52）
+   于 S1283 门腿（17:03:53 启动）同秒并行入树（我方 S1283 提
+   交 push 序列 pull --rebase 被顶到其上，8c68a6c69 基 →
+   769b08686 基，0ff8dbec5 推远 push 769b08686..0ff8dbec5）
+   ——S1283 门腿覆盖树态 = R4521 组合态，main tip 组合态已
+   超出且为 **Rust 代码变更** → **S1284 = 树变化刷新轮（门 +
+   make test 双腿刷新 S890→…→S1266→S1272→S1274→S1276 先例
+   链连刷 make test 腿后台跑法），引用计数以 S1284 双腿为新
+   周期锚点 0/10**（S1283 记录内「下轮 S1284 = 2/10 静默监
+   测引用轮」预告被本插记取代）；S1284 锚点预期（本插记时点
+   0ff8dbec5 实测）：①自有面对 S897 tip 7da6043d6 **10
+   files +1187/-182** 维持（R4522 零 headless/CDP 面触达实
+   测复核）/ crates/ raw **155→156**（+1 = R4522 折入
+   e67967632..TIP 计数口径实测）/ 子帧关键词 **7 文件** md5
+   74f58fcf 维持（R4522 零 contentDocument 面触达实测复核
+   multicol 两文件零命中 非测试代码零命中 解冻条件①观察面
+   156 口径 frames.click+evaluate 挂起维持）/ 全树排除本流
+   docs 对 18d462de6 **218 files +25524/-1467 → 220 files
+   +25647/-1475**（净增 2 文件 = r4522 evidence 新档 + rfc
+   首入集（该档 18d462de6 起在树但至 R4521 与基线零差异
+   R4522 起 1/1 入集）；行数差 +123/-8 = R4522 折入累计
+   diff 精确一致实测）；R4522 组合态首次门覆盖预期重编相位
+   = zero-layout-engine→zero-engine→zero-page-runtime→
+   zero-browser 链（R4519/R4520 同款 multicol 面 css-parser
+   零重编）+ make test 腿计数以 **19,352P/0F 为新基线预
+   期**（R4522 +2 新增 #[test] 19,350→19,352 兄弟自述同值
+   19,352P/0F 实测复核）+ make test 腿 EXIT 判定 echo
+   TEST_EXIT 直写口径（S1272 转义笔误注记防复发）；红例观
+   察双族复查窗口 = S1284 双腿（① 门面 CDP 缺步族：家族第
+   4 例 S1261 run 2 多步缺步亚变体在案 S1262-S1283 门腿连
+   续二十二轮零再现；② make test 腿 localhost 连接抖动族：
+   stale_etag 样本 S1254 轮 +1 在案 S1272/S1274/S1276/S1282
+   双腿零命中后顺延）+ 跨流 L1139 flake 家族连续第十一轮活
+   腿绿 S1284 双腿即复查窗口（第 12 轮）若再现同口径机械归
+   因 + 复跑收口 跨流记档不单方修维持；门面 zero-engine
+   dead_code warning 既有形态观察延续（S1283 门面在案 1
+   枚）+ 外部 zeroseed defunct 僵尸同族 2 例存续观察维持
+   （S1283 同例在案）。
+
    **S1243 轮后插记（2026-09-19 push 序列 pull --rebase 实测，
    S898/S1190/S1229/S1230/S1236/S1240/S1241/S1242 插记先例）**：
    兄弟流 R4513 代码腿（rendering-compat multicol bg strips 数
