@@ -1221,8 +1221,14 @@ fn layout_multicol(
             let c = &container.children[idx];
             c.overflow_x != OverflowClip::Visible || c.overflow_y != OverflowClip::Visible
         });
-        let overflow_inline =
-            col_height > 0.0 && !has_monolithic_child && total_child_height > info.count as f32 * col_height + 1.0;
+        // R4523：count==1 单列容器的溢出**不下探内联溢出列**（单列无「下一列」——
+        // chromium 把溢出内容沿块轴下延为可见溢出，rule-nested-balancing-004：inner 500
+        // 在 outer 300 下方 [308,508] 照绘；多列容器才走 R1075 溢出列模型）。balance
+        // 路径回退 balanced 分配（单子不拆 → 全高渲染）。
+        let overflow_inline = col_height > 0.0
+            && info.count > 1
+            && !has_monolithic_child
+            && total_child_height > info.count as f32 * col_height + 1.0;
         if overflow_inline {
             // R4522：嵌套 multicol 子（自身碎片化上下文）溢出行剪裁（children-height-007：
             // chromium 无内联溢出列，与平铺子 R1075 模型分叉）。kill-switch
@@ -2156,10 +2162,19 @@ fn assign_children_to_columns_multirow(
                     fragment_y_offset: 0.0,
                     visual_height: available,
                 });
+                // cap：首片已占满最后一列（col_count−1）→ 剩余行剪裁，不创建溢出列
+                //（R4523：count:1 嵌套 multicol 子 500>300 整段截断）。
+                if cap_at_count && current_col + 1 >= col_count {
+                    continue;
+                }
                 advance_col!();
             }
             let mut offset = available;
             while offset < child_height && max_col_height > 0.0 {
+                // cap：游标已在 col_count 之外（不应发生，防御）→ 剪裁。
+                if cap_at_count && current_col >= col_count {
+                    break;
+                }
                 let remaining = child_height - offset;
                 let frag_height = remaining.min(max_col_height);
                 columns[current_col].push(ColumnFragment {
