@@ -2786,10 +2786,23 @@ impl Painter {
             // 子内容不得盖过边框或溢出形状（border-shape-overflow /
             // border-shape-overflow-child-clip 构型）。覆盖填充改写 + v2 条带裁剪与
             // clip-path polygon 臂共用同一入口。
-            if let Some(node_id) = box_node.node_id
-                && let Some(style) = styles.get(&node_id)
-                && let Some(polygon) = super::helpers::border_shape_overflow_polygon(style, box_node, abs_x, abs_y)
-            {
+            // R4547（css-borders-4 §corner-shaping）：corner-shape 非初始态时溢出内容
+            // 同样裁剪到形角化 border-box 轮廓（shaped_corner_polygon；scoop/负指数
+            // superellipse 返回 None 回退纯矩形，与 R4248 定界一致）。v2 条带使部分
+            // 相交子内容正确渲染（bevel-overflow 构型：corner-shape:bevel + overflow:clip
+            // + 溢出子层应裁成菱形；R4540 前 strips 不渲染故不可行）。
+            // kill-switch `ZW_CORNER_SHAPE_OVERFLOW=0`（回退纯矩形裁剪）。
+            let shaped_overflow = box_node.node_id.and_then(|node_id| {
+                styles.get(&node_id).and_then(|style| {
+                    super::helpers::border_shape_overflow_polygon(style, box_node, abs_x, abs_y).or_else(|| {
+                        if std::env::var("ZW_CORNER_SHAPE_OVERFLOW").as_deref() == Ok("0") {
+                            return None;
+                        }
+                        super::helpers::shaped_corner_polygon(style, box_node.width, box_node.height, abs_x, abs_y)
+                    })
+                })
+            });
+            if let Some(polygon) = shaped_overflow {
                 super::helpers::clip_with_polygon_rewrite(&mut self.primitives, &counts_before_children, &polygon);
             }
         }
