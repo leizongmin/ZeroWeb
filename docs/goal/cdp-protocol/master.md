@@ -31174,6 +31174,54 @@ c2bd012ad 推远 push 序列零新提交零插记场景
    组合态双腿覆盖）唯一未清偿义务 = frames.click+evaluate
    回填（挂子帧能力解冻 不阻收口）。
 
+   **S1334 轮后插记（2026-09-20 push 序列 pull --rebase 实测，
+   S1298/S1329 插记先例 docs-only 变体）**：兄弟流 R4537
+   计划腿（2665f9126 render_draw_order 重放机制纳入根因链
+   P 轮 **0 net code 实验未收敛回退** **docs-only**：
+   rendering-compat.md +1 + evidence 新档 42 行 2 files
+   +43/-0 零 crates 代码面 零 apps/browser 面 零
+   #[test] 零 contentDocument 实测复核 自述树态还原 R4535
+   commit 时点 02:02:59 本流 S1334 门腿落盘（02:00:14）后
+   push 序列前落远）于 S1334 记录提交 push 序列 pull
+   --rebase 期间入树（我方 S1334 提交被顶到其上 c2bd012ad
+   基→2665f9126 基 bd31554c9 变基推远 push 2665f9126..
+   bd31554c9 S1329/S1324/S1304/S1311/S1313 同形态先例）——
+   **树代码面零变化（R4537 为 docs-only 非代码腿不构成刷
+   新触发 S1298/S1324/S1329 插记 docs-only 不触发先例同
+   型）→ S1334 记录内「S1335 = 到期期限轮双腿活跑」预告
+   维持不被取代**（树再变化且为代码腿则提前双腿刷新）；
+   S1334 门腿覆盖树态代码面 = R4526-R4534 组合态维持
+   （R4535/R4536/R4537 均零代码面 覆盖面不变）引用计数口
+   径不变（S1329 双腿新周期锚点 S1335 = 到期期限轮双腿活
+   跑 树不变也双腿 次轮即到期兑现）；S1334 记录内「push
+   序列零新提交零插记场景」表述被本插记取代（该表述系记
+   录提交时点实测，push 序列 pull --rebase 实测非零——归
+   因时序差非门覆盖面变化）；S1334 轮后插记时点锚点预期
+   （bd31554c9 实测）：①自有面对 7da6043d6 **10 files
+   +1187/-182 维持**（R4537 零 apps/browser 提交 本流自
+   有面零重叠实测复核）/ ②crates/ raw **165 维持**（R4537
+   零 crates 提交 e67967632..TIP 口径实测）/ ③子帧关键词
+   **7 文件 md5 74f58fcf 维持** 非测试代码零命中（插记时
+   点实测复核 R4537 零 contentDocument/content_document
+   零 #[test] 解冻条件①不变观察面 165 口径 frames.click+
+   evaluate 挂起维持）/ ④全树排除本流 docs 对 18d462de6
+   **246 files +29242/-1578**（245→246 files = R4537 面
+   2 files docs-only +43/-0 行净效应 rendering-compat.md
+   原集内 +1 evidence 档新增 插记时点实测为准）；红例观
+   察双族口径维持（① 门面 CDP 缺步/停滞族家族第 8 例
+   S1313 run 1 停滞亚型首例在案 S1314-S1334 二十一轮回绿
+   连续兑现——S1335 期限轮双腿活跑即复查窗口 若再现先归
+   形态再归亚型再计数 ② make test 腿 stale_etag 家族累
+   计 4 例在案——S1334 引用轮无 make test 腿观察顺延
+   S1335 期限轮双腿活跑 make test 腿复查）+ 跨流 L1139
+   flake 家族连续第二十四轮活腿绿（S1335 期限轮活腿复归
+   观察）+ 兄弟流 zero-engine dead_code warning 既有形态
+   观察延续（缓存告警重放形态）+ target-disk-guard 触发
+   观察延续（S1324 首触发 52GB→33GB S1325-S1334 零再现
+   若再现核对触发时点与清理量 记档不升级）+ 外部 zeroseed
+   defunct 僵尸观察撤档维持 + form_input_perf 瞬态僵尸观
+   察（S1334 未再现）。
+
    **S1329 轮后插记（2026-09-20 push 序列 pull --rebase 实测，
    S1298 插记先例 docs-only 变体）**：兄弟流 R4536 计划腿
    （491c5616b corner-shape 红簇根因链全解码 P 轮 **0 net
