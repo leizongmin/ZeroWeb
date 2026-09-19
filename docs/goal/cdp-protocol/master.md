@@ -29376,6 +29376,43 @@ R4529 代码腿变基 351865687 推远 → 轮后插记定谳树代码面再
    态双腿覆盖）唯一未清偿义务 = frames.click+evaluate 回填
    （挂子帧能力解冻 不阻收口）。
 
+   **S1309 轮后插记（2026-09-19 push 序列 pull --rebase 实测，
+   S1298/S1308 插记先例 docs-only 变体）**：兄弟流 R4530
+   计划外周更腿（ef960b4c3 chore(wpt) 更新 WPT 趋势基线
+   weekly cron：rendering-compat evidence wpt-trends 2 档
+   +12/-0 **零 crates/apps 代码面** 零 #[test] 零
+   contentDocument 实测复核）于 S1309 记录提交 push 序列
+   pull --rebase 期间入树（我方 S1309 提交被顶到其上
+   fceaf44f3 基→ef960b4c3 基 a252e09f1 变基 28da3360d 推远
+   push ef960b4c3..28da3360d S1283 同秒插记/S1304 同形态先
+   例）——**树代码面零变化（docs-only 排除面）S1309 门 +
+   make test 双腿覆盖树态代码面仍 = R4526 + R4528 + R4529
+   组合态 双腿覆盖维持有效 → S1310 = 1/10 静默监测引用轮
+   维持（S1309 记录内预告不被取代）**树不变口径 = 门单腿复
+   跑免 make test 腿（S336 先例）树代码再变化则提前双腿刷
+   新；引用计数维持 S1309 新周期锚点 0/10（R4530 零代码面
+   docs-only 不构成刷新触发 S1310 起 1/10 至迟 S1315 = 到
+   期期限轮活跑）；S1309 轮后插记时点锚点预期（28da3360d
+   实测）：①自有面对 S897 tip 7da6043d6 **10 files
+   +1187/-182 维持**（R4530 零 apps/browser 提交 实测）/
+   ②crates/ raw **162 维持**（R4530 零 crates 提交 实测）/
+   ③子帧关键词 **7 文件 md5 74f58fcf 维持** 非测试代码零命
+   中（插记时点实测复核 解冻条件①不变 frames.click+
+   evaluate 挂起维持）/ ④全树排除本流 docs 对 18d462de6
+   **231 files +26559/-1563**（229→231 files 实测 = R4530
+   面 2 档 evidence docs 净增 行数差 +12/-0 = R4530 面值直
+   加）；红例观察双族口径维持（① 门面 CDP 缺步族家族第 6
+   例 S1308 run 1 多步缺步在案 S1309 刷新轮门腿首轮回绿兑
+   现——S1310 引用轮门腿即家族第 6 例后第二轮回绿复查窗口
+   若再现先归亚型再计数 ② make test 腿 stale_etag 家族累
+   计 4 例在案 S1309 刷新轮复查零命中——S1310 引用轮无
+   make test 腿观察顺延）+ 跨流 L1139 flake 家族连续第十九
+   轮活腿绿（S1310 引用轮观察顺延）+ 门面 zero-engine
+   dead_code warning 既有形态观察延续（S1309 门面在案 1
+   枚）+ 外部 zeroseed defunct 僵尸观察撤档维持（撤档后零
+   命中维持）+ form_input_perf 瞬态僵尸观察（S1309 未再
+   现）。
+
    **S1304 轮后插记（2026-09-19 push 序列 pull --rebase 实测，
    S1298 插记先例 代码面变体）**：兄弟流 R4528 代码腿
    （927053a51 per-layer clip C 轮实施：style-system
