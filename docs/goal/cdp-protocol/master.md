@@ -31176,6 +31176,49 @@ EXIT=0 wall ~10min14s 19,366P/0F = S1322 插记预期精确兑
    组合态双腿覆盖）唯一未清偿义务 = frames.click+evaluate
    回填（挂子帧能力解冻 不阻收口）。
 
+   **S1324 轮后插记（2026-09-20 push 序列 pull --rebase 实测，
+   S1298 插记先例 docs-only 变体）**：兄弟流 R4535 计划腿
+   （3d1b07527 border-shape slice 2 勘察 + corner-shape 凹角
+   几何解码 P 轮 **0 net code 实验未收敛回退** **docs-only**
+   ：rendering-compat.md +1 + evidence 新档 49 行 2 files
+   +50/-0 零 crates 代码面 零 apps/browser 面 零 #[test] 零
+   contentDocument 实测复核 commit 时点 01:02:45 本流 S1324
+   门腿活跑窗内（01:02:25→01:02:55）落远）于 S1324 记录提交
+   push 序列 pull --rebase 期间入树（我方 S1324 提交被顶到
+   其上 e897c2328 基→3d1b07527 基 ab130a7a9 变基推远 push
+   3d1b07527..59455ce8b S1283 同秒插记/S1304/S1311/S1313 同
+   形态先例）——**树代码面零变化（R4535 为 docs-only 非代码
+   腿不构成刷新触发 S1298 插记 docs-only 不触发先例同型）→
+   S1324 记录内「S1325 = 2/10 静默监测引用轮」预告维持不被
+   取代**（树再变化且为代码腿则提前双腿刷新）；S1324 门腿
+   覆盖树态代码面 = R4526 + R4528 + R4529 + R4530 + R4531 +
+   R4534 组合态维持（R4535 docs-only 零代码面 覆盖面不变）
+   引用计数口径不变（S1323 双腿新周期锚点 S1325 起 2/10 至
+   迟 S1329 = 到期期限轮双腿活跑 新周期锚点 S1323 + 6 轮）；
+   S1324 轮后插记时点锚点预期（59455ce8b 实测）：①自有面对
+   7da6043d6 **10 files +1187/-182 维持**（R4535 零 apps/
+   browser 提交 本流自有面零重叠实测复核）/ ②crates/ raw
+   **165 维持**（R4535 零 crates 提交 e67967632..TIP 口径实
+   测）/ ③子帧关键词 **7 文件 md5 74f58fcf 维持** 非测试代
+   码零命中（插记时点实测复核 R4535 零 contentDocument/
+   content_document 零 #[test] 解冻条件①不变观察面 165 口
+   径 frames.click+evaluate 挂起维持）/ ④全树排除本流 docs
+   对 18d462de6 **244 files +29153/-1578**（243→244 files
+   = R4535 面 2 files docs-only +50/-0 行净效应 插记时点实
+   测为准）；红例观察双族口径维持（① 门面 CDP 缺步/停滞族
+   家族第 8 例 S1313 run 1 停滞亚型首例在案 S1314-S1324 十
+   一轮回绿连续兑现——S1325 引用轮门腿即第十一轮回绿后复查
+   窗口 若再现先归形态再归亚型再计数 ② make test 腿
+   stale_etag 家族累计 4 例在案——S1325 引用轮无 make test
+   腿观察顺延）+ 跨流 L1139 flake 家族连续第二十三轮活腿绿
+   （S1325 引用轮无 make test 腿观察顺延）+ 兄弟流
+   zero-engine dead_code warning 既有形态观察延续（S1324 门
+   面在案 1 枚 缓存告警重放形态）+ target-disk-guard 触发观
+   察延续（S1324 首触发 52GB→33GB 删 incremental 18GB 对门
+   零影响 若再现核对触发时点与清理量 记档不升级）+ 外部
+   zeroseed defunct 僵尸观察撤档维持 + form_input_perf 瞬
+   态僵尸观察（S1324 未再现）。
+
    **S1304 轮后插记（2026-09-19 push 序列 pull --rebase 实测，
    S1298 插记先例 代码面变体）**：兄弟流 R4528 代码腿
    （927053a51 per-layer clip C 轮实施：style-system
