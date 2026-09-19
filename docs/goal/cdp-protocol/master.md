@@ -97,6 +97,56 @@ zombie/922x 零命中 本流门腿零残留（窗尾复核 1 瞬态 PID
 外部源 负载窗 = 兄弟流并窗余量段（06:14 load 1.46 →
 06:15 load 0.60 非异常）；S1356 记录提交 65e7e8695 推远
 push 序列零新提交零插记场景
+
+   **S1357 轮后插记（2026-09-20 push 序列 pull --rebase 实测）**：
+   兄弟流 R4543（代码腿+记档面 b5d496180 flex item 子元素百分比
+   高度塌 0 探针归因链逐层收窄 taffy 层排除→ZW tree.rs 集成面
+   定位 产出 r4543_flex_percent_height_baseline.rs **5 条**
+   taffy 层基线锚测试 crates/layout-engine/tests/ 新档 +165
+   + rendering-compat.md +1 + evidence 新档 +40 = 3 files
+   +206/-0 自述 make test 19,376P/0F（+5）fmt clippy 双
+   feature 组 -D make reftest 0 failed）于 S1357 门腿收口
+   （06:19:19）之后经 push 序列 pull --rebase 入树（我方
+   S1357 记录提交 rebase 于其上 = 2778e7360，push
+   b5d496180..2778e7360 零冲突 实测复核）——兄弟代码提交
+   **代码面非空** 实测复核（crates/layout-engine/tests/
+   r4543_flex_percent_height_baseline.rs 1 file 非空），
+   **代码面变化成立** → **S1357 门腿 PASS 覆盖的代码树态 =
+   65e7e8695，新组合树态 = 2778e7360（R4543 折入 + S1357
+   记录 docs）未被本流门腿覆盖**；工作面归属 = 渲染流域
+   crates/layout-engine 专属面 零碰撞（run-rules §9/§10
+   归因纪律记档）。锚点面漂移记档（新组合树态 2778e7360
+   实测）：② crates/ raw **169 → 170**（R4543 代码腿入集
+   e67967632..TIP 口径）/ ④ 全树排除本流 docs **253 files
+   +30116/-1648 → 255 files +30322/-1648**（+2 files =
+   R4543 测试新档 1 + evidence 新档 1 rendering-compat.md
+   入既有变更集 +206 全额净入账 实测为准）/ ① 自有面
+   **10 files +1187/-182** 维持（R4543 零 apps/browser 提
+   交）/ ③ 子帧关键词 **7 文件 md5 74f58fcf** 维持
+   （R4543 新档零 contentDocument|content_document 命中
+   实测复核 解冻条件①观察面 **170 口径** frames.click+
+   evaluate 挂起维持）/ ⑤ make test 腿计数预期 = **19,371
+   +5 = 19,376P/0F 68 组**（R4543 新增 5 条 #[test] 于新
+   测试二进制 r4543_flex_percent_height_baseline.rs → +1
+   组 插记时点以兄弟自述 19,376P/0F 为准 S1358 双腿实测复
+   核 按归因纪律 run-rules §10 以实测为准 若偏差先归因）。
+   S1357 记录内 S1358 = 到期期限轮双腿活跑预告**计划不变**
+   （新周期锚点 S1352+6 轮 双腿活跑口径 树不变也双腿）—
+   树代码面变化成立后 S1358 叠加**树变化刷新轮**属性
+   （S245→…→S1350→S1352 刷新先例链兑现）：**S1358 = 树变
+   化刷新轮 + 到期期限轮双腿**（门 + make test 后台跑法
+   覆盖 R4526-R4534+R4539+R4540+R4541+R4542+R4543 新组合
+   态）；门腿预期新树态编译面 = R4543 折入致 layout-engine
+   测试目标重编译（Compiling 行数以实测为准 非全缓存形态
+   S1132 R4491/S1344 R4539/S1347 R4540/S1350 R4541/S1352
+   R4542 先例同型 在预期）；S1358 双腿收口后引用计数以
+   S1358 双腿为新周期锚点归零重计（S1359 起 1/10 至迟
+   S1364 = 到期期限轮）；红例观察三族口径维持（缺步/停滞
+   族 S1314-S1357 连续四十四轮零再现 S1358 门腿即复查窗
+   口 / S168 形态累计 3 例 / stale_etag 家族累计 5 例 +
+   test-guard artifact 启动失败族 + 跨流 L1139 家族均在
+   S1358 双腿复查窗口）；M5 定稿收口判定不因本插记动摇
+   goal Done 维持守成态证据经 S1358 双腿刷新延续。
 ---
 
 ## 当前状态
