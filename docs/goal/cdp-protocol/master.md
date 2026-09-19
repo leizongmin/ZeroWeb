@@ -26770,6 +26770,50 @@ S1262 双腿）——pull 零新提交 tip = 9e032990e 即 S1263 记录提
    唯一未清偿义务 = frames.click+evaluate 回填（挂子帧能力解
    冻 不阻收口）。
 
+   **S1265 轮后插记（2026-09-19 push 序列 pull --rebase 实测，
+   S898/S1190/S1229/S1230/S1236/S1240/S1241/S1242/S1243 插记
+   先例）**：兄弟流 R4519 代码腿（3e02e3e7f——R1473 step-2
+   painter slice① bordered wrapper 区域×列 fragment 分段模
+   型，crates/layout-engine multicol 面 4 files +584/-3 内新
+   增 multicol/bordered_region_fragments.rs 500 行 +
+   crates/engine paint/painter/mod.rs +59/-1 渲染流域专属
+   crate 零本流工作面触达 run-rules §9，随行 docs 腿
+   rendering-compat.md +1 + learnings 新档 50 行，commit 时点
+   14:17:46）于 S1265 门腿（14:15:20 落盘）之后经 push 前
+   pull 入树（我方 S1265 提交被 rebase 顶到其上，37667bbb2 基
+   → 3e02e3e7f 基，cfae55e19 推远 push 3e02e3e7f..cfae55e19
+   fast-forward）——S1265 门腿覆盖树态 = R4517+R4518 组合态，
+   main tip 组合态已超出且为 **Rust 代码变更** → **S1266 =
+   树变化刷新轮（门 + make test 双腿刷新 S890→…→S1244→
+   S1256→S1262 先例链连刷 make test 腿后台跑法），引用计数以
+   S1266 双腿为新周期锚点 0/10**（S1265 记录内「下轮 S1266 =
+   4/10 静默监测引用轮」预告被本插记取代）；S1266 锚点预期
+   （本插记时点 cfae55e19 实测）：①自有面对 S897 tip
+   7da6043d6 **10 files +1187/-182** 维持（R4519 零
+   headless/CDP 面触达实测复核）/ crates/ raw **152→153**（+1
+   = R4519 折入 e67967632..TIP 计数口径实测）/ 子帧关键词
+   **7 文件** md5 74f58fcf 维持（R4519 零 contentDocument 面
+   触达实测复核 Rust 面 .rs 口径 非测试代码零命中 解冻条件①
+   观察面 153 口径 frames.click+evaluate 挂起维持）/ 全树排
+   除本流 docs 对 18d462de6 **213 files +24340/-1454 → 215
+   files +25030/-1458**（净增 2 文件 =
+   bordered_region_fragments.rs 新档 + learnings 新档 行数 =
+   R4519 +690/-4 折入累计 diff 精确一致实测）；R4519 组合态
+   首次门覆盖预期重编相位 = layout-engine→engine→
+   page-runtime→browser 链（R4510-R4517 同款 multicol/painter
+   面 css-parser 零重编）+ make test 腿计数以 **19,349P/0F 为
+   新基线预期**（R4519 +1 新增 #[test] 006 全几何断言 兄弟自
+   述同值实测复核，19,348→19,349）；红例观察双族复查窗口 =
+   S1266 双腿（① 门面 CDP 缺步族：家族第 4 例 S1261 run 2
+   多步缺步亚变体在案 S1262-S1265 门腿连续四轮零再现；②
+   make test 腿 localhost 连接抖动族：stale_etag 样本 S1254
+   轮 +1 在案）+ 跨流 L1139 flake 家族连续六轮活腿绿 S1266
+   双腿即复查窗口 若再现同口径机械归因 + 复跑收口 跨流记档
+   不单方修维持；兄弟流 bench-gate 自述 1 FAIL（tab_creation_
+   100 非触达 crate A/B 复跑归因宿主态）系兄弟流自有验收面
+   非本流门禁观察项；门面 zero-engine dead_code warning 既有
+   形态观察延续（S1265 门面在案 1 枚）。
+
    **S1243 轮后插记（2026-09-19 push 序列 pull --rebase 实测，
    S898/S1190/S1229/S1230/S1236/S1240/S1241/S1242 插记先例）**：
    兄弟流 R4513 代码腿（rendering-compat multicol bg strips 数
