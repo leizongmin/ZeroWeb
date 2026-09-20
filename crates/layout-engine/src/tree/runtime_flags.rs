@@ -7,6 +7,7 @@ pub(super) struct TreeRuntimeFlags {
     content_replace: bool,
     phasea_multi_inline: bool,
     br_inline_no_node: bool,
+    br_vert_last_child_skip: bool,
     inline_box_model_coherence: bool,
     run_in: bool,
     record_node_map: bool,
@@ -22,6 +23,7 @@ impl TreeRuntimeFlags {
             content_replace: enabled("ZW_CONTENT_REPLACE"),
             phasea_multi_inline: enabled("ZW_PHASEA_MULTI_INLINE"),
             br_inline_no_node: enabled("ZW_BR_INLINE_NO_NODE"),
+            br_vert_last_child_skip: enabled("ZW_BR_VERT_LAST_CHILD_SKIP"),
             inline_box_model_coherence: enabled("ZW_INLINE_BOX_MODEL_COHERENCE"),
             run_in: enabled("ZW_RUN_IN"),
             record_node_map: std::env::var("ZW_TREE_NODE_MAP_RECORD").as_deref() == Ok("1"),
@@ -50,6 +52,10 @@ impl TreeRuntimeFlags {
 
     pub(super) fn br_inline_no_node(self) -> bool {
         self.value("ZW_BR_INLINE_NO_NODE", self.br_inline_no_node)
+    }
+
+    pub(super) fn br_vert_last_child_skip(self) -> bool {
+        self.value("ZW_BR_VERT_LAST_CHILD_SKIP", self.br_vert_last_child_skip)
     }
 
     pub(super) fn inline_box_model_coherence(self) -> bool {

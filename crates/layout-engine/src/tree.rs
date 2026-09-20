@@ -3547,9 +3547,17 @@ fn build_subtree(
                             // 跳过无益反引发容器高度连锁重排（welcome p.tagline），故要求「有后续
                             // in-flow 兄弟」精确 gate。br-between-blocks（R1285 strut）仍建节点。
                             // kill-switch ZW_BR_INLINE_NO_NODE=0 关闭（重建 br 节点=旧行为）。
+                            // R4567：垂直父放开「末子 br」臂——非 HorizontalTb 容器中 br-as-node
+                            // 使纯 inline 父块成 new_with_children（taffy 按子 br=0 定尺寸且
+                            // **measure 回调永不触发**），块轴 extent 塌 0（vert-block-size-1-ref
+                            // 末子叶 6 案全塌 4px=仅边框实证）；水平父维持原 gate（末子 br 父块
+                            // 0 高由 compute_final/backfill 修复链兜底，welcome p.tagline 字节
+                            // 一致豁免维持）。kill-switch ZW_BR_VERT_LAST_CHILD_SKIP=0。
                             if ctx.flags.br_inline_no_node()
                                 && br_is_inline_only(doc, styles, child_dom)
-                                && br_parent_has_following_inflow_sibling(doc, styles, child_dom)
+                                && (br_parent_has_following_inflow_sibling(doc, styles, child_dom)
+                                    || (ctx.flags.br_vert_last_child_skip()
+                                        && !matches!(own_writing_mode, WritingModeValue::HorizontalTb)))
                             {
                                 continue;
                             }
@@ -3619,10 +3627,14 @@ fn build_subtree(
                                 .get(node_id)
                                 .is_some_and(|n| matches!(&n.kind, NodeKind::Element(_)));
                             if is_el {
-                                // br-inline gate：hoisted br 语义同直接 br（跳盒让 IFC 处理）
+                                // br-inline gate：hoisted br 语义同直接 br（跳盒让 IFC 处理）。
+                                // R4567：垂直父末子 br 放开同上（非 htb 容器 br-as-node 丢
+                                // measure 回调致父块塌 0）。
                                 if ctx.flags.br_inline_no_node()
                                     && br_is_inline_only(doc, styles, node_id)
-                                    && br_parent_has_following_inflow_sibling(doc, styles, node_id)
+                                    && (br_parent_has_following_inflow_sibling(doc, styles, node_id)
+                                        || (ctx.flags.br_vert_last_child_skip()
+                                            && !matches!(own_writing_mode, WritingModeValue::HorizontalTb)))
                                 {
                                     continue;
                                 }
