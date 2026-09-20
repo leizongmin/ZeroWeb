@@ -96,6 +96,40 @@ S1314-S1399 连续八十六轮零再现维持；负载窗兄弟流测试腿两�
 行先例）执行窗零争用；jsonl md5 2c2cdb6d 恒值 zombie 双复测零 922x
 全 free 盘量 449G 持平；push 序列零新兄弟提交 无插记；引用计数
 2/10（周期锚点 = S1397 双腿）→ S1400 = 3/10（兑现见本轮记录）
+   **S1400 轮后插记（2026-09-20 push 序列 pull --rebase 实测）**：兄弟流
+   **R4562 代码腿**（80b1b411a vert-1 inline 轴 re-flow 覆盖源定谳=同
+   槽 min/max 地板/帽冲突修正 两盒收敛 vert-1 6.66→6.10%
+   crates/layout-engine/src/engine/sizing.rs +20/-x + rendering-compat
+   .md +1 = 2 files +11/-10 自述 make test 19,376P/0F 68 组 零新单测）
+   于 S1400 门腿收口（21:34:57）之后经 push 序列 pull --rebase 入树
+   （我方 S1400 记录提交 rebase 于其上 = 2f25dfcfc，push
+   80b1b411a..2f25dfcfc 零冲突 实测复核）——兄弟代码提交**代码面非
+   空**实测复核（crates/layout-engine sizing.rs 非空 min/max 槽位修
+   正），**代码面变化成立** → **S1400 门腿 PASS 覆盖的代码树态 =
+   e11b2e921 组合态，新组合树态 = 2f25dfcfc（R4562 折入 + S1400 记录
+   docs）未被本流门腿覆盖**；工作面归属 = 渲染流域 crates/
+   layout-engine 专属面 零碰撞（run-rules §9/§10 归因纪律记档）。锚
+   点面漂移记档（新组合树态 2f25dfcfc 实测）：② crates/ raw **179 →
+   180**（R4562 代码腿入集 e67967632..TIP 口径实测）/ ④ 全树排除本流
+   docs 对 18d462de6 **265 files +31189/-1657 → 265 files
+   +31190/-1657**（面 265 维持 +1 全额净入账 = R4562 两文件面 实测为
+   准）/ ① 自有面 **10 files +1187/-182 维持**（R4562 零 apps/browser
+   提交实测复核）/ ③ 子帧关键词 **7 文件 md5 74f58fcf 维持**（R4562
+   零 contentDocument|content_document 命中实测复核 解冻条件①观察面
+   **180 口径** frames.click+evaluate 挂起维持）/ ⑤ make test 腿计数
+   预期 = **19,376P/0F 68 组持平**（R4562 零新 #[test] 兄弟自述同值
+   插记时点以兄弟自述为准 S1401 双腿实测复核 按归因纪律 run-rules §10
+   以实测为准 若偏差先归因）。S1400 记录内 S1401 = 4/10 静默监测引用
+   轮预告**被本插记取代** → **S1401 = 树变化刷新轮双腿活跑**（门 +
+   make test 后台跑法 覆盖 R4562 折入后新组合态 S245→…→S1393→S1395→
+   S1397 刷新先例链兑现）；门腿预期新树态编译面 = R4562 折入致
+   layout-engine lib 级联重编译（layout-engine → engine →
+   page-runtime → browser 4 Compiling S1393/S1397 R4557/R4560 先例同
+   型 Compiling 行数以实测为准）+ zero-engine dead_code warning 真重
+   编发射预期（第十四次数以实测为准）；mt 腿预期 = 19,376P/0F 68 组 +
+   33 Compiling 同型（S1393/S1397 mt 腿先例同型 Compiling 行数以实测
+   为准）；S1401 双腿收口后引用计数以 S1401 双腿为新周期锚点归零重计
+   （至迟 S1407 = S1401+6 口径期限轮）。
    **S1357 轮后插记（2026-09-20 push 序列 pull --rebase 实测）**：
    兄弟流 R4543（代码腿+记档面 b5d496180 flex item 子元素百分比
    高度塌 0 探针归因链逐层收窄 taffy 层排除→ZW tree.rs 集成面
