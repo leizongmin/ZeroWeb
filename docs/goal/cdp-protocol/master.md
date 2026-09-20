@@ -220,6 +220,46 @@ S1422 门腿（探针在位）+ S1423 门腿（探针在位）+ S1424 门腿（�
 frames.click+evaluate 回填（挂子帧能力解冻，见子帧解冻清单，不阻
 收口））
 
+   **S1428 轮后插记（2026-09-21 push 序列 pull --rebase 实测）**：兄弟流
+   **R4570 代码腿**（113701197 04:21:43 提交 canvas Path2D 绘制期 CTM
+   修复 render-corner-shape 翻绿 0.00% corpus 15170（91.42%）net crates/
+   canvas context_impl.rs + raster.rs + tests/basic.rs + path.rs +
+   crates/engine js_dom_bridge/canvas.rs + rendering-compat.md +
+   imported-resources.txt + imported-tests.txt = 8 files +135/-14 自述
+   全门禁绿）于我方 S1428 双腿收口（mt 腿 04:27:59）之后经 push 序列
+   pull --rebase 入树（我方 S1428 记录提交 rebase 于其上 = 53c7d1c91，
+   push 113701197..53c7d1c91 零冲突 实测复核）——兄弟代码提交**代码面
+   非空**实测复核（crates/canvas + crates/engine canvas 桥非空），**代
+   码面变化成立** → **S1428 双腿 PASS 覆盖的代码树态 = af0364b34 面
+   （pre-R4570），新组合树态 = 53c7d1c91（R4570 折入 + 本流 S1428 记
+   录 docs）未被本流双腿覆盖**；工作面归属 = 渲染流域 crates/canvas +
+   crates/engine canvas 桥（js_dom_bridge/canvas.rs 渲染域） 零碰撞
+   （run-rules §9/§10 归因纪律记档）。锚点面漂移记档（新组合树态
+   53c7d1c91 实测）：② crates/ raw **185 → 186**（R4570 代码腿入集
+   e67967632..TIP 口径实测）/ ④ 全树排除本流 docs 对 18d462de6 **266
+   files +31350/-1674 → 271 files +31486/-1688**（files 266→271 =
+   R4570 五触面文件新入集合集 insertions +136/-14 净入账 实测为
+   准）/ ① 自有面 **10 files +1187/-182 维持**（R4570 零
+   apps/browser 提交实测复核）/ ③ 子帧关键词 **7 文件 md5
+   74f58fcf7ce55de7e4ae81f073a6e671 维持**（R4570 触面零
+   contentDocument|content_document 新命中实测复核 解冻条件①观察面
+   **185 口径** frames.click+evaluate 挂起维持）/ ⑤ make test 腿计数
+   预期 = **19,377P 量级（R4570 含 1 处新增 #[test]（crates/canvas
+   tests/basic.rs）实测）68→69 组或 68 组+1P 以实测为准**（兄弟自述
+   为参考 S1429 双腿实测复核 按归因纪律 run-rules §10 以实测为准 若
+   偏差先归因）→ **S1429 = 树变化刷新轮双腿活跑**（S1428 记录内
+   S1429 = 1/10 静默监测引用轮预告**被本插记取代** S245→…→S1414→
+   S1418→S1422 刷新先例链兑现 门 + make test 后台跑法 echo TEST_EXIT
+   直写口径 覆盖 R4570 折入后新组合态）；门腿预期新树态编译面 =
+   R4570 折入致 zero-engine → zero-page-runtime → zero-browser 级联
+   重编（canvas 属 engine 依赖域 S1367/S1374/S1375/S1422 形态同型 3-5
+   Compiling 行数以实测为准）+ zero-engine dead_code warning 真重编发
+   射预期（第二十次数以实测为准）；mt 腿预期 = 19,377P 量级 + Compiling
+   29-33 带同型（行数以实测为准 若偏差先归因）；S1429 双腿收口后引用
+   计数以 S1429 双腿为新周期锚点归零重计（S1430 起 1/10 至迟 S1435 =
+   S1429+6 期限轮）。（本插记提交 guard 子代理扫描 PASS 0 critical 0
+   warning）
+
    **S1424 轮后插记（2026-09-21 push 序列 pull --rebase 实测）**：兄弟流
    **CI-GUARD docs 腿**（c8a8faa8d 03:34:48 提交 CI-GUARD-20260920 第三
    十八轮 9v74 三陈旧平台收官命中 + R4562-R4569 代码腿 CI 首验零漂移
