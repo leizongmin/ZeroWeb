@@ -102,6 +102,40 @@ expected 33 双 run 各 ok 33 + failed 1 期望失败步骤既有形态 wall
 测零 922x 全 free 盘量 450G（+4G 兄弟 release 构建 churn 方向）；push
 序列零新兄弟提交 无插记；引用计数 1/10（周期锚点 = S1401 双腿）→
 S1403 = 2/10（兑现见本轮记录）
+   **S1403 轮后插记二（同序列 push 二次实测）**：兄弟流 **R4564 代码腿**
+   （4497ff2b4 vert-1 覆写 fn 定谳 remeasure_inline_only_containers 非
+   浮点垂直臂 + fill 语义排除 gate 双重轴误测修复 corpus net −4 零新红
+   crates/layout-engine/src/inline_finalization.rs +19 +
+   rendering-compat.md +1 = 2 files +20/-0 自述 make test 19,376P/0F
+   68 组 零新单测）于 S1403 插记提交（3f6d30163）之后经 push 序列
+   pull --rebase 入树（我方 S1403 插记提交 rebase 于其上 = 45708dede，
+   push 4497ff2b4..45708dede 零冲突 实测复核）——兄弟代码提交**代码面
+   非空**实测复核（crates/layout-engine inline_finalization.rs 非空
+   fill 语义排除 gate），**代码面变化成立** → **S1403 门腿 PASS 覆盖
+   的代码树态 = 9a2a0a219 组合态（R4562 折入面），新组合树态 =
+   45708dede（R4564 折入 + GB docs + 本流两笔 docs）未被本流门腿覆盖**
+   （S1403 插记一内「S1404 = 3/10 计划不变」预告**被本插记取代**）；工
+   作面归属 = 渲染流域 crates/layout-engine 专属面 零碰撞（run-rules
+   §9/§10 归因纪律记档）。锚点面漂移记档（新组合树态 45708dede 实
+   测）：② crates/ raw **180 → 181**（R4564 代码腿入集 e67967632..TIP
+   口径实测）/ ④ 全树排除本流 docs 对 18d462de6 **265 files
+   +31195/-1657 → 265 files +31215/-1657**（面 265 维持 +20 全额净入
+   账 = R4564 两文件面 实测为准）/ ① 自有面 **10 files +1187/-182 维
+   持**（R4564 零 apps/browser 提交实测复核）/ ③ 子帧关键词 **7 文件
+   md5 74f58fcf 维持**（R4564 零 contentDocument|content_document 命
+   中实测复核 解冻条件①观察面 **181 口径** frames.click+evaluate 挂
+   起维持）/ ⑤ make test 腿计数预期 = **19,376P/0F 68 组持平**（R4564
+   零新 #[test] 兄弟自述同值 插记时点以兄弟自述为准 S1404 双腿实测复
+   核 按归因纪律 run-rules §10 以实测为准 若偏差先归因）→ **S1404 =
+   树变化刷新轮双腿活跑**（门 + make test 后台跑法 覆盖 R4564 折入后
+   新组合态 S245→…→S1397→S1401 刷新先例链兑现）；门腿预期新树态编
+   译面 = R4564 折入致 layout-engine lib 级联重编译（layout-engine →
+   engine → page-runtime → browser 4 Compiling S1393/S1397/S1401 先例
+   同型 Compiling 行数以实测为准）+ zero-engine dead_code warning 真
+   重编发射预期（第十五次数以实测为准）；mt 腿预期 = 19,376P/0F 68 组
+   + 33 Compiling 同型（S1393/S1397/S1401 mt 腿先例同型 Compiling 行
+   数以实测为准）；S1404 双腿收口后引用计数以 S1404 双腿为新周期锚点
+   归零重计（至迟 S1410 = S1404+6 口径期限轮）。
    **S1403 轮后插记（2026-09-20 push 序列 pull --rebase 实测）**：兄弟流
    一笔 **docs-only** 折入——GB-20260920 待决策巡检（b49468beb mask 管
    线 RFC v2 立项首判新征询 + ZRG layout 回归专项确认项并入征询
