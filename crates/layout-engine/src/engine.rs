@@ -623,10 +623,15 @@ impl LayoutEngine {
                 }
                 // R4557：块轴 content 关键字（height/min/max-height）——styles 扫描无
                 // LayoutBox 书写模式上下文，保守按 height 族关键字置位；pass 内按
-                // b.writing_mode 精筛（非水平盒跳过）。
+                // b.writing_mode 精筛。R4560 垂直臂：垂直盒的 CSS width 族（块轴本位）
+                // 同样置位（height 族检查 mode 无关，垂直 block-size 别名已覆盖）。
                 if matches!(s.height, LengthValue::MinContent | LengthValue::MaxContent)
                     || matches!(s.min_height, LengthValue::MinContent | LengthValue::MaxContent)
                     || matches!(s.max_height, LengthValue::MinContent | LengthValue::MaxContent)
+                    || (s.writing_mode.is_vertical_block_flow()
+                        && (matches!(s.width, LengthValue::MinContent | LengthValue::MaxContent)
+                            || matches!(s.min_width, LengthValue::MinContent | LengthValue::MaxContent)
+                            || matches!(s.max_width, LengthValue::MinContent | LengthValue::MaxContent)))
                 {
                     t.block_kw = true;
                 }

@@ -330,9 +330,15 @@ impl LayoutEngine {
             return false;
         }
         let mut changed = false;
-        let mut stack: Vec<&LayoutBox> = vec![root];
-        while let Some(b) = stack.pop() {
-            stack.extend(b.children.iter());
+        // 携带父链上下文：（盒，父是否垂直，父 content 内联尺寸）。垂直盒的换行深度 =
+        // 父 content 内联尺寸（block 子 inline extent = fill 语义）——盒自身 b.height 在
+        // 关键字塌缩级联下已被污染（vert-1 too-small.min-width h=238 实测）不可作深度。
+        let mut stack: Vec<(&LayoutBox, bool, f32)> = vec![(root, false, 0.0)];
+        while let Some((b, parent_vertical, parent_inline_depth)) = stack.pop() {
+            let child_vertical = !matches!(b.writing_mode, WritingModeValue::HorizontalTb);
+            for c in &b.children {
+                stack.push((c, child_vertical, b.content_height));
+            }
             let Some(id) = b.node_id else { continue };
             let Some(s) = styles.get(&id) else { continue };
             if b.is_replaced || b.is_absolute || b.is_fixed {
@@ -341,10 +347,15 @@ impl LayoutEngine {
             if s.contain.has_size() {
                 continue;
             }
-            // v1：水平书写模式（垂直模式 CSS width 族块轴镜像臂待后续轮次）。
-            if !matches!(b.writing_mode, WritingModeValue::HorizontalTb) {
+            // 垂直臂（R4560）：正交子（父水平子垂直）深度语义独立域跳过；InlineBlock
+            // 收窄（corpus A/B 定谳）：2a/2b 的关键字容器 = inline-block + vertical-align
+            // 交互域（列厚语义与行盒装配分歧，16.48/24.03 恶化实证）。被排除的垂直盒
+            // **整盒跳过**（含水平臂）——其 height 族 = block-size 别名非 CSS height，
+            // 水平臂定高语义误写（2b 23.79 残留实证）。
+            if child_vertical && !(parent_vertical && !matches!(s.display, DisplayValue::InlineBlock)) {
                 continue;
             }
+            let vertical = child_vertical;
             // 块流盒域：Block/InlineBlock/FlowRoot/ListItem（taffy Block 语义）；flex/grid/
             // table-internal 各有独立尺寸机制排除。
             if !matches!(
@@ -353,9 +364,26 @@ impl LayoutEngine {
             ) {
                 continue;
             }
-            let kw_h = content_kw(&s.height);
-            let kw_min = content_kw(&s.min_height);
-            let kw_max = content_kw(&s.max_height);
+            // 垂直臂（R4560）：块轴关键字源 = CSS width 族（块轴本位）+ height 族
+            //（block-size 别名经 wm-blind parse 落 height 槽——vert-1 的 block-size 组）。
+            // 两族的块轴语义都写 post-swap height 槽（= 物理宽）。
+            let (kw_h, kw_min, kw_max) = if vertical {
+                (
+                    content_kw(&s.height) || content_kw(&s.width),
+                    content_kw(&s.min_height) || content_kw(&s.min_width),
+                    content_kw(&s.max_height) || content_kw(&s.max_width),
+                )
+            } else {
+                (
+                    content_kw(&s.height),
+                    content_kw(&s.min_height),
+                    content_kw(&s.max_height),
+                )
+            };
+            // 塌缩伪影判据（垂直 height 族专属）：block-size 别名关键字经 converter 落
+            // post-swap width 槽（物理 inline 轴）length(0) → 物理高塌 4px，须还原 fill。
+            let inline_alias_polluted =
+                vertical && (content_kw(&s.height) || content_kw(&s.min_height) || content_kw(&s.max_height));
             if !kw_h && !kw_min && !kw_max {
                 continue;
             }
@@ -365,17 +393,40 @@ impl LayoutEngine {
             // measure 契约宽度为 content 坐标（taffy 传给闭包前已扣 frame）——b.width 是
             // border-box 物理，须扣 frame 后传（多传会把行宽放宽、行数变少，hori-1 实测
             // 120 传成 3 行应 4 行 45≠60）。
-            let content_w = (b.width - b.padding_left - b.padding_right - b.border_left - b.border_right).max(0.0);
-            let known = taffy::geometry::Size {
-                width: Some(content_w),
-                height: None,
+            // 垂直臂（R4560）：交换帧下闭包 width 轴 = 内联 extent（列深，构造参数，
+            // measure_text_content:2096 取 known/available width 槽），**height 轴 = 块轴
+            // extent**（total_height() = Σ 列宽 = 列数 × line-height，R4437 :2258 同源
+            // 语义）——R4559 首探误读 width 槽（= 自身 known 回显 120）即败因。深度 =
+            // 父 content 内联尺寸。
+            let (known, available) = if vertical {
+                let depth = parent_inline_depth.max(0.0);
+                (
+                    taffy::geometry::Size {
+                        width: Some(depth),
+                        height: None,
+                    },
+                    taffy::geometry::Size {
+                        width: AvailableSpace::Definite(depth),
+                        height: AvailableSpace::MaxContent,
+                    },
+                )
+            } else {
+                let content_w = (b.width - b.padding_left - b.padding_right - b.border_left - b.border_right).max(0.0);
+                (
+                    taffy::geometry::Size {
+                        width: Some(content_w),
+                        height: None,
+                    },
+                    taffy::geometry::Size {
+                        width: AvailableSpace::Definite(content_w),
+                        // taffy 0.12 无 Auto 档：高度不定 = MaxContent 约束（换行由定宽驱动，
+                        // 高度按内容自然延伸——与 ref 页 auto 高盒的 taffy 测量同语义）。
+                        height: AvailableSpace::MaxContent,
+                    },
+                )
             };
-            let available = taffy::geometry::Size {
-                width: AvailableSpace::Definite(content_w),
-                // taffy 0.12 无 Auto 档：高度不定 = MaxContent 约束（换行由定宽驱动，
-                // 高度按内容自然延伸——与 ref 页 auto 高盒的 taffy 测量同语义）。
-                height: AvailableSpace::MaxContent,
-            };
+            // 两模式块轴 extent 都在返回 .height：水平 = 内容高；垂直 = Σ 列宽
+            //（交换帧 height 轴 = 物理宽）。
             let measured_ifc = measure_text(id, known, available).height;
             let measured = if measured_ifc > 0.0 {
                 Some(measured_ifc)
@@ -397,7 +448,8 @@ impl LayoutEngine {
                         all_block = false;
                         break;
                     }
-                    sum += c.height;
+                    // 块轴 Σ：水平 = 子高；垂直 = 子宽（物理块轴）。
+                    sum += if vertical { c.width } else { c.height };
                 }
                 all_block.then_some(sum).filter(|v| *v > 0.0)
             };
@@ -408,13 +460,21 @@ impl LayoutEngine {
             if let Ok(mut style) = taffy_tree.style(taffy_id).cloned() {
                 // box_sizing 语义对齐：measure 闭包返回 content extent（taffy 契约）——
                 // content-box style 直写 measured；border-box style 的 size/min/max 以
-                // border-box 记账，须加 frame 才能表达同一内容高。
-                let frame = b.padding_top + b.padding_bottom + b.border_top + b.border_bottom;
+                // border-box 记账，须加 frame 才能表达同一内容高。frame 取块轴侧
+                //（水平 = 上下 frame；垂直 = 左右 frame——post-swap height 槽 = 物理宽）。
+                let frame = if vertical {
+                    b.padding_left + b.padding_right + b.border_left + b.border_right
+                } else {
+                    b.padding_top + b.padding_bottom + b.border_top + b.border_bottom
+                };
                 let target = if matches!(style.box_sizing, taffy::style::BoxSizing::BorderBox) {
                     measured + frame
                 } else {
                     measured
                 };
+                // 垂直盒经 apply_vertical_writing_mode 轴交换：CSS width 族（块轴本位）与
+                // block-size 别名（height 槽 wm-blind parse）的块轴语义都落在 post-swap
+                // height 槽（= 物理宽）——与水平臂同一写入位。
                 if kw_h {
                     style.size.height = taffy::style::Dimension::length(target);
                 }
@@ -423,6 +483,20 @@ impl LayoutEngine {
                 }
                 if kw_max {
                     style.max_size.height = taffy::style::Dimension::length(target);
+                }
+                // 垂直 height 族（block-size 别名）塌缩伪影清除：converter 的 length(0)
+                // 落 post-swap width 槽（物理 inline 轴）→ 物理高塌 4px。还原 = 显式 fill
+                //（= 父 content 内联尺寸，ref 页 auto 盒同值）——**不可用 auto**：交换帧
+                // taffy width 轴 auto 触发 R4468 型 cross-stretch（物理高 = 容器物理宽
+                // 196 实测），定长填充绕开 stretch 源。
+                if inline_alias_polluted && parent_inline_depth > 0.0 {
+                    let vframe = b.padding_top + b.padding_bottom + b.border_top + b.border_bottom;
+                    let h_target = if matches!(style.box_sizing, taffy::style::BoxSizing::BorderBox) {
+                        parent_inline_depth + vframe
+                    } else {
+                        parent_inline_depth
+                    };
+                    style.size.width = taffy::style::Dimension::length(h_target);
                 }
                 let _ = taffy_tree.set_style(taffy_id, style);
                 let _ = taffy_tree.mark_dirty(taffy_id);
