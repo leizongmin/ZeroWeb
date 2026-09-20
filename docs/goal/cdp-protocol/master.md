@@ -235,6 +235,45 @@ S1421 门腿（探针在位）+ S1422 门腿（探针在位）+ S1423 门腿（�
 覆盖；唯一未清偿义务 = frames.click+evaluate 回填（挂子帧能力解冻
 ，见子帧解冻清单，不阻收口））
 
+   **S1429 轮后插记（2026-09-21 push 序列 pull --rebase 实测）**：兄弟流
+   **R4571 代码腿**（bd7d9baac 04:44:32 提交 伪元素盒化 gate whitespace
+   盲区切片 corner-shape-inset-shadow 翻绿 0.00% crates/engine/src/
+   pipeline/mod.rs +51/-2 + rendering-compat.md +1 + imported-tests.txt
+   +1 = 3 files +53/-2 自述全门禁绿）于我方 S1429 双腿收口（mt 腿
+   04:52:34）之后经 push 序列 pull --rebase 入树（我方 S1429 记录提交
+   rebase 于其上 = bcecac24a，push bd7d9baac..bcecac24a 零冲突 实测复
+   核；R4571 提交时刻 04:44:32 落在我方 S1429 mt 腿执行窗内（04:42:4x
+   →04:52:34）但仅入远端 我方 mt 腿跑的树 = 9657e0492 本地态
+   pre-R4571 时序归因在案）——兄弟代码提交**代码面非空**实测复核
+   （crates/engine pipeline 非空），**代码面变化成立** → **S1429 双腿
+   PASS 覆盖的代码树态 = 9657e0492 面（pre-R4571），新组合树态 =
+   bcecac24a（R4571 折入 + 本流 S1429 记录 docs）未被本流双腿覆盖**
+   ；工作面归属 = 兄弟流 engine 域（run-rules §9 P1a/P1b 工作面）
+   pipeline 逻辑 零碰撞（§10 归因纪律记档）。锚点面漂移记档（新组合
+   树态 bcecac24a 实测）：② crates/ raw **186 → 187**（R4571 代码腿
+   入集 e67967632..TIP 口径实测）/ ④ 全树排除本流 docs 对 18d462de6
+   **271 files +31486/-1688 → 271 files +31537/-1690**（files 271 维
+   持 触面文件均在集合内 R4571 +51/-2 净入账 实测为准）/ ① 自有面
+   **10 files +1187/-182 维持**（R4571 零 apps/browser 提交实测复
+   核）/ ③ 子帧关键词 **7 文件 md5 74f58fcf7ce55de7e4ae81f073a6e671
+   维持**（R4571 触面 pipeline/mod.rs 零 contentDocument|
+   content_document 命中实测复核 解冻条件①观察面 **185 口径**
+   frames.click+evaluate 挂起维持）/ ⑤ make test 腿计数预期 =
+   **19,378P 量级（R4571 含 1 处新增 #[test] 实测 git show 口径）
+   68 组+1P 形态以实测为准**（兄弟自述为参考 S1430 双腿实测复核 按
+   归因纪律 run-rules §10 以实测为准 若偏差先归因）→ **S1430 = 树
+   变化刷新轮双腿活跑**（S1429 记录内 S1430 = 1/10 静默监测引用轮预
+   告**被本插记取代** S245→…→S1414→S1418→S1422→S1429 刷新先例链兑
+   现 门 + make test 后台跑法 echo TEST_EXIT 直写口径 覆盖 R4571 折
+   入后新组合态）；门腿预期新树态编译面 = R4571 折入致 zero-engine →
+   zero-page-runtime → zero-browser 级联重编（3 Compiling S1422 先例
+   同型 行数以实测为准）+ zero-engine dead_code warning 真重编发射预
+   期（第二十一次数以实测为准）；mt 腿预期 = 19,378P 量级 + 29-33
+   Compiling 带同型（行数以实测为准 若偏差先归因）；S1430 双腿收口后
+   引用计数以 S1430 双腿为新周期锚点归零重计（S1431 起 1/10 至迟
+   S1436 = S1430+6 期限轮）。（本插记提交 guard 子代理扫描 PASS 0
+   critical 0 warning）
+
    **S1428 轮后插记（2026-09-21 push 序列 pull --rebase 实测）**：兄弟流
    **R4570 代码腿**（113701197 04:21:43 提交 canvas Path2D 绘制期 CTM
    修复 render-corner-shape 翻绿 0.00% corpus 15170（91.42%）net crates/
