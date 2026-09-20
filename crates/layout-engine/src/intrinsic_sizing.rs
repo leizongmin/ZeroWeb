@@ -401,7 +401,25 @@ fn box_content_max_width_inner(box_node: &LayoutBox, doc: &Document, styles: &Ha
             }
             float_row += (box_content_max_width(child, doc, styles) + ml + mr).max(0.0);
         } else {
-            block_max = block_max.max(box_content_max_width(child, doc, styles));
+            // R4568（CSS2 §10.3.3 max-content）：definite CSS 宽**块级**子贡献 = 自身
+            // definite outer width，不深递归文本重测——正交垂直子（vert-block-size-1
+            // 容器 `width:200` definite）被按水平文本模型深测出 234（>200）污染 wrapper
+            // shrink-to-fit（238 vs chromium 204，wrapper2 x 偏移 10px 实证）。
+            // auto/percent 宽子维持深递归（taffy 拉伸伪影须按内容测，R1298 语境）；
+            // inline 级落块支仅 R109 split wrapper（R1165 契约 = 递归匿名子，不截断）。
+            // env ZW_IB_MAXW_DEFWIDTH=0 回退深递归（kill-switch，default-on）。
+            let definite_child_w = std::env::var("ZW_IB_MAXW_DEFWIDTH").as_deref() != Ok("0")
+                && !is_inline_level
+                && child
+                    .node_id
+                    .and_then(|cid| styles.get(&cid))
+                    .and_then(|cs| resolve_intrinsic_real_length(&cs.width, cs))
+                    .is_some();
+            if definite_child_w {
+                block_max = block_max.max(outer_w.max(0.0));
+            } else {
+                block_max = block_max.max(box_content_max_width(child, doc, styles));
+            }
         }
     }
 
@@ -2439,11 +2457,6 @@ AAAA</div></body></html>"#,
         );
     }
 
-    /// R1165：取一个有效 NodeId（经 Document）。
-    fn fresh_id_boxcw() -> zero_dom::NodeId {
-        zero_dom::Document::new().create_element("div")
-    }
-
     #[test]
     fn test_box_content_max_width_r109_split_wrapper_recurse_not_stretched() {
         // R1165：含 R109 拆分 inline 父盒（is_r109_split=true, display:Inline,
@@ -2454,10 +2467,14 @@ AAAA</div></body></html>"#,
         // 修后测 50（表 shrink-to-fit）。普通 inline（非 split）仍用拉伸宽（回归守卫）。
         use zero_css_parser::values::{DisplayValue, LengthValue};
         use zero_style_system::ComputedStyle;
-        let wrapper_id = fresh_id_boxcw();
-        let anon1_id = fresh_id_boxcw();
-        let blk_id = fresh_id_boxcw();
-        let anon2_id = fresh_id_boxcw();
+        // R4568：四节点须同源 Document（fresh_id_boxcw 每次新 Document 的 NodeId 会
+        // 数值碰撞——四 id 同值使 styles 键互相覆盖，split wrapper 的 Inline 样式被
+        // anon 的 Block/Px(50) 覆盖，gate 类改动下测的不是契约本身）。
+        let mut doc = zero_dom::Document::new();
+        let wrapper_id = doc.create_element("div");
+        let anon1_id = doc.create_element("div");
+        let blk_id = doc.create_element("div");
+        let anon2_id = doc.create_element("div");
 
         let mut wrapper = LayoutBox::default();
         wrapper.node_id = Some(wrapper_id);
@@ -2486,7 +2503,6 @@ AAAA</div></body></html>"#,
             s.width = LengthValue::Px(50.0); // 显式宽叶盒
             styles.insert(cid, s);
         }
-        let doc = zero_dom::Document::new();
 
         let w = box_content_max_width(&container, &doc, &styles);
         assert!(
