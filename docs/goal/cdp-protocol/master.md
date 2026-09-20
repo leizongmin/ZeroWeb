@@ -219,6 +219,29 @@ R4571 折入后新组合态首次双腿全量覆盖（3beceed0e = R4571 代码�
 探针在位延续覆盖；唯一未清偿义务 = frames.click+evaluate 回填（挂
 子帧能力解冻，见子帧解冻清单，不阻收口））
 
+   **S1432 轮后插记（2026-09-21 push 序列 pull --rebase 实测）**：兄弟流
+   **R4573 docs 腿**（5eda17d6a 05:26:07 提交 render-corner-shape
+   variant 域勘察 48 variant 覆盖盲区定量归档 docs/goal/
+   rendering-compat.md +1 = 1 file +1/-0）于我方 S1432 双腿收口（mt 腿
+   05:35:39）之后经 push 序列 pull --rebase 入树（我方 S1432 记录提交
+   rebase 于其上 = b20af14a1，push 5eda17d6a..b20af14a1 零冲突 实测复
+   核）——兄弟提交 **docs-only 代码面空**实测复核（零 crates/ 零
+   apps/ 触面），**代码面变化不成立** → **不触发双腿刷新**（代码腿折
+   入先例链口径 = 代码面非空 本例除外 S1424 轮 c8a8faa8d docs 腿先例
+   同型）；S1432 双腿 PASS 覆盖树态 = 6c6afac0a，新组合树态 =
+   b20af14a1 代码面与覆盖态零差（docs 腿零代码触面 ①10 files
+   +1187/-182 维持 + ② crates/ raw 188 维持 + ③ 7 文件 md5
+   74f58fcf7ce55de7e4ae81f073a6e671 维持 三锚新 HEAD 实测复核）。锚点
+   面漂移记档（新组合树态 b20af14a1 实测）：④ 全树排除本流 docs 对
+   18d462de6 **272 files +31595/-1693 → 272 files +31596/-1693**
+   （files 272 维持 R4573 +1 净入账 rendering-compat.md 已在集合内 实
+   测为准）→ S1433 开工复测按新基线 ④272 files +31596/-1693；工作面
+   归属 = 兄弟流 rendering-compat goal docs 面 零碰撞（run-rules §9/
+   §10 归因纪律记档）；S1433 = 1/10 静默监测引用轮预告维持（树不变门
+   单腿复跑免 make test S336 先例 避让窗纪律维持 至迟 S1438 =
+   S1432+6 到期期限轮双腿活跑 树不变也双腿）。（本插记提交 guard 子
+   代理扫描 PASS 0 critical 0 warning）
+
    **S1431 轮后插记（2026-09-21 push 序列 pull --rebase 实测）**：兄弟流
    **R4572 代码腿**（e650368c7 05:18:02 提交 out-of-flow 伪元素盒装饰
    gate 切片 positioned 真文本伪元素盒化 crates/engine/src/pipeline/
