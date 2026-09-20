@@ -166,6 +166,10 @@ pub struct RenderPipeline {
     pub(crate) skip_indicators: bool,
     /// 图像固有尺寸缓存（image_key hash → (width, height)）。
     pub(crate) image_sizes: HashMap<u64, (f32, f32)>,
+    /// R4553：图像纯色缓存（url_hash → RGBA，ImageData::solid_color）——clip:text url
+    /// 背景层恒色性判定（css-backgrounds-4 §background-clip:text）。宿主注入（image_sizes
+    /// 同款模式）；未注入 → url 层恒色性不可判 → 恒色染色禁用（现状行为）。
+    pub(crate) image_solid_colors: HashMap<u64, [u8; 4]>,
     /// R3906：图像自然位图尺寸（image_key hash → (width, height)），paint 层专用。
     pub(crate) image_natural_sizes: HashMap<u64, (f32, f32)>,
     /// 仅含宽高比、无确定固有尺寸的图像信号（image_key hash → ratio）。
@@ -385,6 +389,7 @@ impl RenderPipeline {
             cached_stylesheets: Vec::new(),
             skip_indicators: false,
             image_sizes: HashMap::new(),
+            image_solid_colors: HashMap::new(),
             image_natural_sizes: HashMap::new(),
             image_ratios: HashMap::new(),
             image_no_ratio: HashMap::new(),
@@ -431,6 +436,11 @@ impl RenderPipeline {
     /// 键为图像 URL 的 hash 值，值为 (width, height) 像素尺寸。
     pub fn set_image_sizes(&mut self, sizes: HashMap<u64, (f32, f32)>) {
         self.image_sizes = sizes;
+    }
+
+    /// R4553：注入图像纯色缓存（宿主从 ImageCache 提取，image_sizes 同款模式）。
+    pub fn set_image_solid_colors(&mut self, colors: HashMap<u64, [u8; 4]>) {
+        self.image_solid_colors = colors;
     }
 
     /// 设置 ratio-only 图像信号缓存（CSS §10.3.2，仅 SVG 出现）。
@@ -1125,6 +1135,7 @@ impl RenderPipeline {
         let mut painter = Painter::new();
         painter.skip_indicators = self.skip_indicators;
         painter.image_sizes.clone_from(&self.image_sizes);
+        painter.image_solid_colors.clone_from(&self.image_solid_colors);
         painter.image_natural_sizes.clone_from(&self.image_natural_sizes);
         painter.image_no_ratio_keys = self.image_no_ratio.clone();
         painter.image_ratio_keys = self.image_ratios.clone();
@@ -1356,6 +1367,7 @@ impl RenderPipeline {
         let mut painter = Painter::new();
         painter.skip_indicators = self.skip_indicators;
         painter.image_sizes.clone_from(&self.image_sizes);
+        painter.image_solid_colors.clone_from(&self.image_solid_colors);
         painter.image_natural_sizes.clone_from(&self.image_natural_sizes);
         painter.image_no_ratio_keys = self.image_no_ratio.clone();
         painter.image_ratio_keys = self.image_ratios.clone();
@@ -1573,6 +1585,7 @@ impl RenderPipeline {
         let mut painter = Painter::new();
         painter.skip_indicators = self.skip_indicators;
         painter.image_sizes.clone_from(&self.image_sizes);
+        painter.image_solid_colors.clone_from(&self.image_solid_colors);
         painter.image_natural_sizes.clone_from(&self.image_natural_sizes);
         painter.image_no_ratio_keys = self.image_no_ratio.clone();
         painter.image_ratio_keys = self.image_ratios.clone();
@@ -1896,6 +1909,7 @@ impl RenderPipeline {
         let mut painter = Painter::new();
         painter.skip_indicators = self.skip_indicators;
         painter.image_sizes.clone_from(&self.image_sizes);
+        painter.image_solid_colors.clone_from(&self.image_solid_colors);
         painter.image_natural_sizes.clone_from(&self.image_natural_sizes);
         painter.image_no_ratio_keys = self.image_no_ratio.clone();
         painter.image_ratio_keys = self.image_ratios.clone();
@@ -2017,6 +2031,7 @@ impl RenderPipeline {
         let mut painter = Painter::new();
         painter.skip_indicators = self.skip_indicators;
         painter.image_sizes.clone_from(&self.image_sizes);
+        painter.image_solid_colors.clone_from(&self.image_solid_colors);
         painter.image_natural_sizes.clone_from(&self.image_natural_sizes);
         painter.image_no_ratio_keys = self.image_no_ratio.clone();
         painter.image_ratio_keys = self.image_ratios.clone();
@@ -2099,6 +2114,7 @@ impl RenderPipeline {
         let mut painter = Painter::new();
         painter.skip_indicators = self.skip_indicators;
         painter.image_sizes.clone_from(&self.image_sizes);
+        painter.image_solid_colors.clone_from(&self.image_solid_colors);
         painter.image_natural_sizes.clone_from(&self.image_natural_sizes);
         painter.image_no_ratio_keys = self.image_no_ratio.clone();
         painter.image_ratio_keys = self.image_ratios.clone();

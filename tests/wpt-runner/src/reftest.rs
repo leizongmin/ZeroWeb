@@ -642,7 +642,7 @@ fn render_with_layout_inner(
     // 先构建图像缓存，提取固有尺寸供 paint 阶段使用
     // R4282：Arc<Mutex> 共享给 pipeline（filter url() isolate 离屏栅格化需要页面图像）。
     let image_cache = std::sync::Arc::new(std::sync::Mutex::new(build_image_cache(html, base_dir)));
-    let (image_sizes, image_ratios, image_no_ratio, image_natural_sizes) = {
+    let (image_sizes, image_ratios, image_no_ratio, image_natural_sizes, image_solid_colors) = {
         let mut guard = image_cache.lock().unwrap_or_else(|e| e.into_inner());
         extract_image_metrics(&mut guard, html)
     };
@@ -671,6 +671,8 @@ fn render_with_layout_inner(
     pipeline.set_image_ratios(image_ratios);
     pipeline.set_image_no_ratio(image_no_ratio);
     pipeline.set_image_natural_sizes(image_natural_sizes);
+    // R4553：纯色缓存注入（clip:text url 背景层恒色性判定）。
+    pipeline.set_image_solid_colors(image_solid_colors);
     // R4283：接通 R4282 的共享注入链——此前 shared_image_cache 无赋值点恒为 None，
     // isolate 离屏栅格化仍收不到页面图像（含 <img> 的 filter 子树为空）。
     pipeline.set_shared_image_cache(Some(image_cache.clone()));
@@ -992,7 +994,7 @@ pub fn render_via_webview_to_framebuffer_with_base(
 
     // R4282：Arc<Mutex> 共享给 pipeline（filter url() isolate 离屏栅格化需要页面图像）。
     let image_cache = std::sync::Arc::new(std::sync::Mutex::new(build_image_cache(html, base_dir)));
-    let (image_sizes, image_ratios, image_no_ratio, image_natural_sizes) = {
+    let (image_sizes, image_ratios, image_no_ratio, image_natural_sizes, _image_solid_colors) = {
         let mut guard = image_cache.lock().unwrap_or_else(|e| e.into_inner());
         extract_image_metrics(&mut guard, html)
     };

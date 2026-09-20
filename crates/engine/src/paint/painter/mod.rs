@@ -68,6 +68,10 @@ pub struct Painter {
     /// v1 上下文栈——实底背景色下探为子树文本字形色（bg fill 抑制；canonical
     /// `color: transparent` 模式与 chromium 逐像素等价；bg image 非空不触发）。
     pub(crate) bg_clip_text_color: Vec<Color>,
+    /// R4553：图像纯色缓存（url_hash → RGBA）。宿主从 ImageCache 预填（同 image_sizes
+    /// 模式，ImageData::solid_color）；clip:text url 背景层恒色性判定消费（css-backgrounds-4
+    /// §background-clip:text）。未填/未命中 → url 层恒色性不可判 → v1.5 禁用（现状）。
+    pub image_solid_colors: HashMap<u64, [u8; 4]>,
     /// 是否跳过属性指示器（用于 reftest 精确对比）。
     ///
     /// 指示器是绘制在元素边角的调试标记（如 border-collapse 橙色双线），
@@ -560,6 +564,7 @@ impl Painter {
             paint_skip_nodes: HashSet::new(),
             counters: HashMap::new(),
             bg_clip_text_color: Vec::new(),
+            image_solid_colors: HashMap::new(),
             skip_indicators: false,
             image_sizes: HashMap::new(),
             image_no_ratio_keys: std::collections::HashMap::new(),
@@ -2105,11 +2110,9 @@ impl Painter {
         // 渐变 / url 图片）→ 不激活，归真 mask 管线域。push/pop 跨子树绘制，单一出口
         // 弹出。kill-switch `ZW_BG_CLIP_TEXT=0`。
         let bg_clip_text_active = std::env::var("ZW_BG_CLIP_TEXT").as_deref() != Ok("0")
-            && box_node
-                .node_id
-                .and_then(|id| styles.get(&id))
-                .and_then(text::bg_clip_text_solid_color)
-                .is_some();
+            && box_node.node_id.and_then(|id| styles.get(&id)).is_some_and(|st| {
+                text::bg_clip_text_solid_color(st, &self.image_solid_colors, self.document_url.as_deref()).is_some()
+            });
 
         let is_hidden = if box_node.is_anonymous_text_item {
             // 匿名文本项（flex/grid 容器中的文本节点）
@@ -2273,7 +2276,9 @@ impl Painter {
                 }
                 // R4525/R4549：clip:text + 恒色 bg → bg fill 抑制（bg 色改由子树字形
                 // 承载，见 bg_clip_text_color push）。
-                let bg_clip_text_solid = text::bg_clip_text_solid_color(style).is_some();
+                let bg_clip_text_solid =
+                    text::bg_clip_text_solid_color(style, &self.image_solid_colors, self.document_url.as_deref())
+                        .is_some();
                 if style.background_color != ColorValue::Transparent
                     && !skip_split_inline_deco
                     && !skip_inline_box_bg
@@ -2375,7 +2380,9 @@ impl Painter {
             if bg_clip_text_active {
                 // R4549：push 恒色合成值（color + image 层叠）而非裸 bg color——
                 // gradient(green,green) 层在 red bg 上时字形应承载 green（顶层覆盖语义）。
-                if let Some(c) = text::bg_clip_text_solid_color(style) {
+                if let Some(c) =
+                    text::bg_clip_text_solid_color(style, &self.image_solid_colors, self.document_url.as_deref())
+                {
                     self.bg_clip_text_color.push(c);
                 }
             }

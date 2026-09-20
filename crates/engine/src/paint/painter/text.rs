@@ -29,17 +29,29 @@ fn glyph_probe_enabled() -> bool {
 
 use super::super::color::{color_value_to_render, resolve_color_current};
 
-/// R4525/R4549（css-backgrounds-4 §background-clip:text）：clip:text 的「恒色背景」提取。
+/// R4525/R4549/R4553（css-backgrounds-4 §background-clip:text）：clip:text 的「恒色背景」提取。
 ///
 /// 背景层（color + image 自下而上）合成结果为恒色 C 时，mask 管线的输出与「字形以
 /// `text OVER C` 预混合色染色」逐像素等价（OVER 结合律 + coverage 可分配，R4549 证据
-/// 文档推导）——无需离屏合成。任一层非恒色（多色渐变 / url 图片）→ None（engine 侧
-/// 无解码像素通路，url 层恒色性不可判），维持 bg 正常绘制，归真 mask 管线域。
+/// 文档推导）——无需离屏合成。任一层非恒色（多色渐变 / url 图片非纯色或非默认平铺）
+/// → None，维持 bg 正常绘制，归真 mask 管线域。
+///
+/// url 层（R4553）：`solid_colors`（宿主从 ImageCache 预填的纯色缓存，image_sizes 同款
+/// 模式）命中且该层 repeat/size/attachment 均默认时为恒色（纯色图平铺满 positioning
+/// area ≡ 恒色）；未命中（未解码/生产链未注入）→ 恒色性不可判 → 禁用，与未解码时
+/// chromium 不渲染该 bg 层的现状行为一致。
 ///
 /// C 的 alpha 为 0（bg 全透明）→ None：clip:text 无视觉贡献，不激活（激活反而会以
 /// 透明色覆盖字形原色）。
-pub(super) fn bg_clip_text_solid_color(st: &ComputedStyle) -> Option<Color> {
-    use zero_style_system::property::types::{BackgroundClipComputedValue, BackgroundImageComputedValue};
+pub(super) fn bg_clip_text_solid_color(
+    st: &ComputedStyle,
+    solid_colors: &HashMap<u64, [u8; 4]>,
+    document_url: Option<&str>,
+) -> Option<Color> {
+    use zero_style_system::property::types::{
+        BackgroundAttachmentComputedValue, BackgroundClipComputedValue, BackgroundImageComputedValue,
+        BackgroundRepeatComputedValue, BackgroundSizeComputedValue,
+    };
     if !st
         .background_clip
         .iter()
@@ -47,15 +59,37 @@ pub(super) fn bg_clip_text_solid_color(st: &ComputedStyle) -> Option<Color> {
     {
         return None;
     }
+    let layer_ctx = |i: usize| -> Option<(
+        &BackgroundRepeatComputedValue,
+        &BackgroundSizeComputedValue,
+        &BackgroundAttachmentComputedValue,
+    )> {
+        Some((
+            st.background_repeat.get(i)?,
+            st.background_size.get(i)?,
+            st.background_attachment.get(i)?,
+        ))
+    };
     let mut acc = resolve_color_current(&st.background_color, &st.color);
+    let mut layer_idx = 0usize;
     for layer in &st.background_image {
         let c = match layer {
             BackgroundImageComputedValue::None => continue,
             BackgroundImageComputedValue::Gradient(g) => gradient_solid_color(g, &st.color)?,
-            // url 层：engine 侧无解码像素，恒色性不可判 → 整体禁用（R4549 切片定界）。
-            BackgroundImageComputedValue::Url(_) => return None,
+            BackgroundImageComputedValue::Url(u) => {
+                // R4553 门：纯色缓存命中 + 该层平铺参数全默认（默认 repeat 平铺纯色图 ≡
+                // 恒色满铺；no-repeat/contain 等留空区露底色，非恒色）。
+                let (r, s, a) = layer_ctx(layer_idx)?;
+                let tiled = matches!(r, BackgroundRepeatComputedValue::Repeat)
+                    && matches!(s, BackgroundSizeComputedValue::Auto)
+                    && matches!(a, BackgroundAttachmentComputedValue::Scroll);
+                let key = super::super::helpers::image_resource_key(u, document_url);
+                let rgba = solid_colors.get(&key).filter(|_| tiled)?;
+                Color::rgba(rgba[0], rgba[1], rgba[2], rgba[3])
+            }
         };
         acc = color_over(c, acc);
+        layer_idx += 1;
     }
     (acc.a > 0).then_some(acc)
 }
@@ -85,11 +119,13 @@ pub(super) fn bg_clip_text_solid_color_ancestral(
     doc: &Document,
     start_id: NodeId,
     styles: &HashMap<NodeId, ComputedStyle>,
+    solid_colors: &HashMap<u64, [u8; 4]>,
+    document_url: Option<&str>,
 ) -> Option<Color> {
     let mut cur = Some(start_id);
     while let Some(id) = cur {
         if let Some(st) = styles.get(&id)
-            && let Some(c) = bg_clip_text_solid_color(st)
+            && let Some(c) = bg_clip_text_solid_color(st, solid_colors, document_url)
         {
             return Some(c);
         }
@@ -1481,13 +1517,27 @@ impl super::Painter {
                                 //（栈未及 push 的 inline 扁平化形态 + R4552 deferred SC
                                 // 延迟绘制后代，按静态祖先链判定）。
                                 let frag_color = match self.bg_clip_text_color.last().copied().or_else(|| {
-                                    owner_style.and_then(bg_clip_text_solid_color).or_else(|| {
-                                        if let Some(styles) = styles {
-                                            bg_clip_text_solid_color_ancestral(doc, owner_id, styles)
-                                        } else {
-                                            None
-                                        }
-                                    })
+                                    owner_style
+                                        .and_then(|s| {
+                                            bg_clip_text_solid_color(
+                                                s,
+                                                &self.image_solid_colors,
+                                                self.document_url.as_deref(),
+                                            )
+                                        })
+                                        .or_else(|| {
+                                            if let Some(styles) = styles {
+                                                bg_clip_text_solid_color_ancestral(
+                                                    doc,
+                                                    owner_id,
+                                                    styles,
+                                                    &self.image_solid_colors,
+                                                    self.document_url.as_deref(),
+                                                )
+                                            } else {
+                                                None
+                                            }
+                                        })
                                 }) {
                                     Some(clip_bg) => {
                                         let text_color = owner_style
@@ -1913,13 +1963,23 @@ impl super::Painter {
                                 .last()
                                 .copied()
                                 .or_else(|| {
-                                    owner_style_opt.and_then(bg_clip_text_solid_color).or_else(|| {
-                                        if let Some(styles) = styles {
-                                            bg_clip_text_solid_color_ancestral(doc, $frag_nid, styles)
-                                        } else {
-                                            None
-                                        }
-                                    })
+                                    owner_style_opt
+                                        .and_then(|s| {
+                                            bg_clip_text_solid_color(s, &self.image_solid_colors, self.document_url.as_deref())
+                                        })
+                                        .or_else(|| {
+                                            if let Some(styles) = styles {
+                                                bg_clip_text_solid_color_ancestral(
+                                                    doc,
+                                                    $frag_nid,
+                                                    styles,
+                                                    &self.image_solid_colors,
+                                                    self.document_url.as_deref(),
+                                                )
+                                            } else {
+                                                None
+                                            }
+                                        })
                                 })
                             {
                                 Some(clip_bg) => color_over(frag_color, clip_bg),
@@ -2248,7 +2308,12 @@ impl super::Painter {
                                 // 子树字形承载（R1442 per-fragment bg 站与 box-level 站同规；
                                 // linebreak 案实证首片段 bg 泄漏为实心条）。
                                 let has_bg = owner_style.background_color != ColorValue::Transparent
-                                    && bg_clip_text_solid_color(&owner_style).is_none();
+                                    && bg_clip_text_solid_color(
+                                        &owner_style,
+                                        &self.image_solid_colors,
+                                        self.document_url.as_deref(),
+                                    )
+                                    .is_none();
                                 let has_bleed = pad_top > 0.0 || pad_bot > 0.0 || bt_w > 0.0 || bb_w > 0.0;
                                 // R4332：仅**真多片段**（跨行）owner 走 per-fragment 边框——
                                 // 单片段 owner（含 line-height 撑大 content_height 的单行 span，
