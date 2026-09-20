@@ -2032,7 +2032,15 @@ pub(super) fn clamp_percentage_max_height(
     // 以「子 max bottom 相对 content origin」为内容高执行钳制——max 侧 cap、min 侧
     // floor（-2：height:0 + min-height:max-content → 100；3：height:200 + max-height:
     // max-content → 100）。abspos 分支已在此前处理（R2057）。
-    if let Some(style) = style.as_ref().filter(|_| !box_node.is_absolute) {
+    // R4566（css-sizing #sizing-values）：垂直盒跳过本臂——`min/max-block-size` 别名经
+    // wm-blind parse 落 min/max_height 槽，而块轴 sizing 属性的 content 关键字按规范
+    // 「表现为属性初始值」（≡ none/auto），对垂直盒物理高（行内轴）做关键字 cap/floor
+    // 是双重误映射（vert-block-size-small-or-larger-than-container-1 的
+    // max-block-size:max-content 盒 124→17 塌缩 + 父盒 delta 连锁 124→17 实证）。
+    // env ZW_VERT_MAXKW_NOCAP=0 回退旧行为（kill-switch，default-on）。
+    let vert_maxkw_nocap =
+        std::env::var("ZW_VERT_MAXKW_NOCAP").as_deref() != Ok("0") && box_node.writing_mode.is_vertical_block_flow();
+    if let Some(style) = style.as_ref().filter(|_| !box_node.is_absolute && !vert_maxkw_nocap) {
         let content_kw = |v: &LengthValue| {
             matches!(
                 v,

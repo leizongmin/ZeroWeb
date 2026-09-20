@@ -778,9 +778,18 @@ fn apply_inner(
 
     // 修正容器物理 width（block-size）= Σ 子宽 + frame。物理 width 在 HorizontalTb 块父
     // 中不传播，安全。仅在显著变化时写（避免 float 抖动 / 无意义覆盖）。
+    // R4566（CSS2 §10.3.3）：definite CSS width 容器不改写——taffy 对 definite 宽已
+    // 正确落位（vert-block-size-1 容器 width:200 taffy 204），Σ 子宽改写把蓝框压缩到
+    // 内容跨度（204→102，ref 蓝框 204 实证）。与 layout-time sizing 变体的 width_auto
+    // 门同构（apply_vertical_block_flow_sizing_inner「仅覆盖 Auto 维度」）。
+    // env ZW_VERT_DEF_WIDTH_KEEP=0 回退无条件改写（kill-switch，default-on）。
+    let width_definite_keep = std::env::var("ZW_VERT_DEF_WIDTH_KEEP").as_deref() != Ok("0")
+        && b.node_id
+            .and_then(|id| styles.get(&id))
+            .is_some_and(|s| !matches!(s.width, LengthValue::Auto));
     let frame_w = b.border_left + b.border_right + b.padding_left + b.padding_right;
     let new_width = layout.content_width + frame_w;
-    if (new_width - b.width).abs() > 0.5 {
+    if !width_definite_keep && (new_width - b.width).abs() > 0.5 {
         b.width = new_width;
         b.content_width = layout.content_width.max(0.0);
         // R4459：float 盒宽度被 restack 改写后，step 5 float 定位用的旧宽已失效

@@ -475,3 +475,5 @@ css/css-writing-modes/line-box-direction-vlr-018.xht css/css-writing-modes/block
 css/css-overflow/text-overflow-scroll-vertical-rl-001.html css/css-overflow/reference/text-overflow-scroll-vertical-lr-001-ref.html == 2026-09-17 R4437 vertical inline-block shrink-to-fit（列流 Σ列宽收缩，CSS WM §7.1 交换帧）
 css/css-overflow/text-overflow-scroll-vertical-rl-rtl-001.html css/css-overflow/reference/text-overflow-scroll-vertical-lr-001-ref.html == 2026-09-17 R4437 同臂收益（rtl 变体）
 css/css-writing-modes/inline-block-alignment-slr-009.xht css/css-writing-modes/inline-block-alignment-slr-009-ref.xht == 2026-09-17 R4437 同臂收益（orthogonal inline-block 收缩域）
+css/css-flexbox/flexbox-column-row-gap-002.html css/css-flexbox/flexbox-column-row-gap-002-ref.html == 2026-09-20 R4566 修复：apply_inner 容器宽改写增 definite-width 门（Σ子宽改写仅限 width:auto，CSS2 §10.3.3）
+css/css-multicol/multicol-under-vertical-rl-scroll.html css/css-multicol/multicol-under-vertical-rl-scroll-ref.html == 2026-09-20 R4566 同臂收益（垂直 definite-width 容器保 taffy 宽）
