@@ -183,6 +183,44 @@ R4568 折入后新组合态首次双腿全量覆盖（c528d5674 = R4568 代码�
 针在位延续覆盖；唯一未清偿义务 = frames.click+evaluate 回填（挂子
 帧能力解冻，见子帧解冻清单，不阻收口））
 
+   **S1421 轮后插记（2026-09-21 push 序列 pull --rebase 实测）**：兄弟流
+   **R4569 代码腿**（500b58d11 02:59:02 提交 corner-shape A 族 slice 评
+   估修正 + video poster 帧绘制 corpus 15169 零真新红 crates/engine
+   paint 面 text.rs +19/-1 + imported-tests.txt +2 + reftest
+   resources.rs +38 + rendering-compat.md +1 = 4 files +59/-1 自述全
+   门禁绿 零新 #[test]）于我方 S1421 门腿收口（02:52:57）之后经
+   push 序列 pull --rebase 入树（我方 S1421 记录提交 rebase 于其上 =
+   3168e49a8，push 500b58d11..3168e49a8 零冲突 实测复核）——兄弟代
+   码提交**代码面非空**实测复核（crates/engine text.rs 非空），**代
+   码面变化成立** → **S1421 门腿 PASS 覆盖的代码树态 = a38015e5d 面
+   （pre-R4569），新组合树态 = 3168e49a8（R4569 折入 + 本流 S1421
+   记录 docs）未被本流门腿覆盖**；工作面归属 = 渲染流域 crates/
+   engine paint 面 零碰撞（run-rules §9/§10 归因纪律记档）。锚点面
+   漂移记档（新组合树态 3168e49a8 实测）：② crates/ raw **184 →
+   185**（R4569 代码腿入集 e67967632..TIP 口径实测）/ ④ 全树排除本
+   流 docs 对 18d462de6 **266 files +31289/-1673 → 266 files
+   +31348/-1674**（面 266 维持 R4569 +59/-1 净入账 累计口径 实测为
+   准）/ ① 自有面 **10 files +1187/-182 维持**（R4569 零
+   apps/browser 提交实测复核）/ ③ 子帧关键词 **7 文件 md5
+   74f58fcf7ce55de7e4ae81f073a6e671 维持**（R4569 触面 text.rs 零
+   contentDocument|content_document 命中实测复核 解冻条件①观察面
+   **185 口径** frames.click+evaluate 挂起维持）/ ⑤ make test 腿计
+   数预期 = **19,376P/0F 68 组持平**（R4569 零新 #[test]
+   imported-tests.txt +2 为 reftest 账本非单测 兄弟自述为参考
+   S1422 双腿实测复核 按归因纪律 run-rules §10 以实测为准 若偏差先
+   归因）→ **S1422 = 树变化刷新轮双腿活跑**（S1421 记录内 S1422 =
+   4/10 静默监测引用轮预告**被本插记取代** S245→…→S1414→S1418 刷
+   新先例链兑现 门 + make test 后台跑法 echo TEST_EXIT 直写口径 覆
+   盖 R4569 折入后新组合态）；门腿预期新树态编译面 = R4569 折入致
+   zero-engine lib 级联重编（zero-engine → zero-page-runtime →
+   zero-browser 3 Compiling S1367/S1374/S1375 形态同型 R4569 触面
+   engine paint 域 非全缓存形态在预期 Compiling 行数以实测为准）+
+   zero-engine dead_code warning 真重编发射预期（第十九次数以实测为
+   准）；mt 腿预期 = **19,376P/0F 68 组**（零新单测）+ 29-33
+   Compiling 同型（S1367 29 Compiling/S1414 33 Compiling 先例同型
+   行数以实测为准）；S1422 双腿收口后引用计数以 S1422 双腿为新周期
+   锚点归零重计（S1423 起 1/10 至迟 S1428 = S1422+6 期限轮）。（本
+   插记提交 guard 子代理扫描 PASS 0 critical 0 warning）
    **S1417 轮后插记（2026-09-21 push 序列 pull --rebase 实测）**：兄弟流
    **R4568 代码腿**（9d44380ea 01:42:40 提交——恰在我方 S1417 门腿起跑
    （01:42:45）前 5 秒 wrapper shrink-to-fit 定谳（box_content_max_width
