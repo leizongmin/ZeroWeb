@@ -689,7 +689,24 @@ impl super::Painter {
         if elem.local_name() != "video" {
             return;
         }
-        let Some(src) = elem.get_attribute("src").filter(|s| !s.is_empty()) else {
+        // R4569（HTML §4.8.6 poster frame）：无可播帧（无 src / 首帧未解码）时回退
+        // poster 帧——poster 是静态图，img 同链路（ImageCache 由 runner 的 poster
+        // 收集注入，image_resource_key 同键）。poster 也缺失/未解码 → 占位行为不变。
+        // css-content-3 §3：`content: url()` 替换元素内容**整体替换**（R2439 img 同款）
+        // ——优先于 src/poster（element-replacement-on-replaced-element：video
+        // content:url(yellow) + poster=blue 应黄不应蓝）。
+        let src = match &style.content {
+            zero_style_system::property::types::ContentComputedValue::Url(u) => Some(u.clone()),
+            _ => None,
+        }
+        .or_else(|| {
+            elem.get_attribute("src").filter(|s| !s.is_empty()).and_then(|src| {
+                let hash = super::super::helpers::image_resource_key(&src, self.document_url.as_deref());
+                self.get_image_size(hash).map(|_| src)
+            })
+        })
+        .or_else(|| elem.get_attribute("poster").filter(|s| !s.is_empty()));
+        let Some(src) = src else {
             return;
         };
         let url_hash = super::super::helpers::image_resource_key(&src, self.document_url.as_deref());

@@ -129,6 +129,37 @@ fn extract_video_srcs(html: &str) -> Vec<String> {
     srcs
 }
 
+/// 从 HTML 中提取所有 `<video poster="...">` 的 URL（R4569，HTML §4.8.6 poster frame）。
+///
+/// poster 是静态图片（PNG/JPEG 等），与 img 同链路走文件解码（非 webm 首帧）——
+/// 收集进 build_image_cache 的 URL 集即可经既有 PNG/JPEG 路径解码入缓存；painter
+/// 端 `paint_video_element` 在无可播帧时以 poster 作回退内容（key = simple_hash(url)
+/// 与 `image_resource_key` 一致）。
+fn extract_video_posters(html: &str) -> Vec<String> {
+    let mut srcs = Vec::new();
+    let mut pos = 0;
+    while let Some(idx) = html[pos..].find("<video") {
+        let tag_start = pos + idx;
+        let Some(tag_end) = find_tag_end(&html[tag_start..]) else {
+            break;
+        };
+        let tag = &html[tag_start..tag_start + tag_end];
+        if let Some(p_start) = tag.find("poster=\"").or_else(|| tag.find("poster='")) {
+            // `poster="` = 8 字节，引号在 p_start+7，值起 p_start+8。
+            let quote = &tag[p_start + 7..p_start + 8];
+            let value_start = p_start + 8;
+            if let Some(value_end) = tag[value_start..].find(quote) {
+                let p_value = &tag[value_start..value_start + value_end];
+                if !p_value.is_empty() {
+                    srcs.push(p_value.to_string());
+                }
+            }
+        }
+        pos = tag_start + tag_end + 1;
+    }
+    srcs
+}
+
 /// 从 HTML 中提取所有 `<video src="...">` 的 URL（media-playback M1b）。
 ///
 /// R3995：`<object data=...>` / `<embed src=...>` 同为 replaced 资源元素（HTML §4.8
@@ -763,6 +794,10 @@ pub(super) fn build_image_cache(html: &str, base_dir: Option<&Path>) -> ImageCac
     all_urls.extend(extract_css_urls(html));
     // R3995：object/embed/applet 的 data=/src= 资源与 img 同链路解码进缓存。
     all_urls.extend(extract_replaced_resource_srcs(html));
+    // R4569：video poster 帧（HTML §4.8.6）——静态图与 img 同链路解码进缓存，
+    // paint_video_element 无可播帧时回退绘制。
+    let posters = extract_video_posters(html);
+    all_urls.extend(posters);
     all_urls.sort_unstable();
     all_urls.dedup();
 
@@ -978,6 +1013,9 @@ pub(super) fn extract_image_metrics(
     // media-playback M1b：video 首帧固有尺寸（解码已写入 ImageCache）进 sizes——
     // pipeline 据 (NodeId → size) 做 video replaced sizing。
     all_urls.extend(extract_video_srcs(html));
+    // R4569：video poster 帧固有尺寸——paint_video_element 回退臂 get_image_size
+    // 依赖本表（hash 键），缺席则 poster 不绘制。
+    all_urls.extend(extract_video_posters(html));
     // R3995：object/embed/applet 资源（data=/src=）进固有尺寸提取面。
     all_urls.extend(extract_replaced_resource_srcs(html));
     all_urls.sort_unstable();
