@@ -568,6 +568,7 @@ impl LayoutEngine {
             ar_source: bool,
             abspos: bool,
             vertical_wm: bool,
+            block_kw: bool,
         }
         let sizing_targets = SizingTargets {
             intrinsic_kw_or_auto_float: false,
@@ -576,6 +577,7 @@ impl LayoutEngine {
             ar_source: has_img_ratio_input,
             abspos: false,
             vertical_wm: false,
+            block_kw: false,
         };
         let sizing_targets = {
             let mut t = sizing_targets;
@@ -619,12 +621,22 @@ impl LayoutEngine {
                 if s.writing_mode != WritingModeValue::HorizontalTb {
                     t.vertical_wm = true;
                 }
+                // R4557：块轴 content 关键字（height/min/max-height）——styles 扫描无
+                // LayoutBox 书写模式上下文，保守按 height 族关键字置位；pass 内按
+                // b.writing_mode 精筛（非水平盒跳过）。
+                if matches!(s.height, LengthValue::MinContent | LengthValue::MaxContent)
+                    || matches!(s.min_height, LengthValue::MinContent | LengthValue::MaxContent)
+                    || matches!(s.max_height, LengthValue::MinContent | LengthValue::MaxContent)
+                {
+                    t.block_kw = true;
+                }
                 if t.intrinsic_kw_or_auto_float
                     && t.pct_height
                     && t.pct_box_side
                     && t.ar_source
                     && t.abspos
                     && t.vertical_wm
+                    && t.block_kw
                 {
                     break;
                 }
@@ -727,6 +739,32 @@ impl LayoutEngine {
         } else {
             false
         };
+        // R4557：块轴 content 关键字（height/min/max-height）内容高求解 pass——与宽轴
+        // intrinsic pass 同一 re-run 组（set_style+mark_dirty 后共用重跑）。measure 闭包
+        // 与重跑 measure 同源（同 fonts/intrinsics/run-in 注册表，测得值与 auto 高盒逐位
+        // 一致）。
+        let changed_block_kw = if sizing_targets.block_kw {
+            Self::apply_block_axis_content_sizing(
+                &mut taffy_tree,
+                &root_box,
+                &dom_to_taffy,
+                styles,
+                |dom_id, known, available| {
+                    measure_text_content(
+                        doc,
+                        styles,
+                        dom_id,
+                        known,
+                        available,
+                        &intrinsic_for_r695,
+                        inline_fonts,
+                        r109.run_in_prepended.get(&dom_id).copied(),
+                    )
+                },
+            )
+        } else {
+            false
+        };
         if changed_r695
             || changed_pct_padding
             || changed_ratio_img
@@ -735,6 +773,7 @@ impl LayoutEngine {
             || changed_vertical
             || changed_ar_container
             || changed_ar_flex_cross
+            || changed_block_kw
         {
             // 重跑 taffy 布局：set_style+mark_dirty 后需重新计算受影响子树。
             let available_space = taffy::geometry::Size {

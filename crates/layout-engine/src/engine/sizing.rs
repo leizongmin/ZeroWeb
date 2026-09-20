@@ -292,6 +292,146 @@ impl LayoutEngine {
         changed
     }
 
+    /// R4557：块轴 content 关键字尺寸（css-sizing-3 §5.1 sizing-values）。
+    ///
+    /// `height`/`min-height`/`max-height`（水平书写模式的块轴属性）的 `min-content`/
+    /// `max-content` 关键字是 content-based 尺寸——converter 把 height 关键字映射
+    /// `length(0)`（塌缩）、min_height 关键字映射 `length(0)`（无地板）、max_height
+    /// 关键字映射 `auto`（无 cap），taffy 无从按内容求解。本 pass 与
+    /// [`Self::apply_intrinsic_content_sizing`]（宽轴 R1015/R4149）镜像：按 taffy 同源
+    /// measure 闭包（`measure_text_content`——叶文本盒与含 inline 内容容器走同一 IFC，
+    /// 与 ref 页 auto 高盒逐位同源）测盒的内容块向 extent，写入 taffy 约束后由调用方
+    /// 统一重跑：
+    /// - `height:min-content|max-content` → `size.height = 测得内容高`（内容高语义）；
+    /// - `min-height:关键字` → `min_size.height = 测得值`（地板：max(specified, content)
+    ///   ——author 定高保留，vert-block-size too-small 10px 撑到内容高）；
+    /// - `max-height:关键字` → `max_size.height = 测得值`（cap：min(specified, content)
+    ///   ——too-big 120px 收到内容高）。
+    ///
+    /// 安全性：测得 ≤0（无内容）跳过维持 converter 旧行为（空盒 max-content=0 语义不变）；
+    /// 非 content 关键字盒零接触；`contain:size`（converter CIS 面）、替换元素、abspos、
+    /// flex/grid（R1018 已映射 Auto=content-based）、table-internal 各有独立尺寸机制均
+    /// 排除；非水平书写模式跳过（垂直模式 CSS width 族块轴镜像臂后续轮次 A/B）。
+    /// 快照语义注记：测得值为第一趟布局快照，dynamic 重排由 compute 全量路径重测覆盖；
+    /// incremental 路径不走本 pass（与宽轴 intrinsic pass 同限制）。
+    /// kill-switch `ZW_BLOCK_AXIS_CONTENT_KW=0`。
+    pub(super) fn apply_block_axis_content_sizing(
+        taffy_tree: &mut TaffyTree<NodeId>,
+        root: &LayoutBox,
+        dom_to_taffy: &HashMap<NodeId, taffy::NodeId>,
+        styles: &HashMap<NodeId, ComputedStyle>,
+        measure_text: impl Fn(
+            NodeId,
+            taffy::geometry::Size<Option<f32>>,
+            taffy::geometry::Size<AvailableSpace>,
+        ) -> taffy::geometry::Size<f32>,
+    ) -> bool {
+        if std::env::var("ZW_BLOCK_AXIS_CONTENT_KW").as_deref() == Ok("0") {
+            return false;
+        }
+        let mut changed = false;
+        let mut stack: Vec<&LayoutBox> = vec![root];
+        while let Some(b) = stack.pop() {
+            stack.extend(b.children.iter());
+            let Some(id) = b.node_id else { continue };
+            let Some(s) = styles.get(&id) else { continue };
+            if b.is_replaced || b.is_absolute || b.is_fixed {
+                continue;
+            }
+            if s.contain.has_size() {
+                continue;
+            }
+            // v1：水平书写模式（垂直模式 CSS width 族块轴镜像臂待后续轮次）。
+            if !matches!(b.writing_mode, WritingModeValue::HorizontalTb) {
+                continue;
+            }
+            // 块流盒域：Block/InlineBlock/FlowRoot/ListItem（taffy Block 语义）；flex/grid/
+            // table-internal 各有独立尺寸机制排除。
+            if !matches!(
+                s.display,
+                DisplayValue::Block | DisplayValue::InlineBlock | DisplayValue::FlowRoot | DisplayValue::ListItem
+            ) {
+                continue;
+            }
+            let kw_h = content_kw(&s.height);
+            let kw_min = content_kw(&s.min_height);
+            let kw_max = content_kw(&s.max_height);
+            if !kw_h && !kw_min && !kw_max {
+                continue;
+            }
+            // 内容块向 extent 测量：主臂 = taffy 同源 measure 闭包（ref 页 auto 高盒即走
+            // 此路径，测得值与收敛目标逐位一致）；无 inline 内容时退纯块级子 Σ 子高臂
+            // （margin 不计——collapse 语义独立子问题，目标形态 margin 均为 0）。
+            // measure 契约宽度为 content 坐标（taffy 传给闭包前已扣 frame）——b.width 是
+            // border-box 物理，须扣 frame 后传（多传会把行宽放宽、行数变少，hori-1 实测
+            // 120 传成 3 行应 4 行 45≠60）。
+            let content_w = (b.width - b.padding_left - b.padding_right - b.border_left - b.border_right).max(0.0);
+            let known = taffy::geometry::Size {
+                width: Some(content_w),
+                height: None,
+            };
+            let available = taffy::geometry::Size {
+                width: AvailableSpace::Definite(content_w),
+                // taffy 0.12 无 Auto 档：高度不定 = MaxContent 约束（换行由定宽驱动，
+                // 高度按内容自然延伸——与 ref 页 auto 高盒的 taffy 测量同语义）。
+                height: AvailableSpace::MaxContent,
+            };
+            let measured_ifc = measure_text(id, known, available).height;
+            let measured = if measured_ifc > 0.0 {
+                Some(measured_ifc)
+            } else {
+                let mut all_block = true;
+                let mut sum = 0.0f32;
+                for c in &b.children {
+                    if c.is_absolute || c.is_fixed {
+                        continue;
+                    }
+                    let Some(cs) = c.node_id.and_then(|cid| styles.get(&cid)) else {
+                        all_block = false;
+                        break;
+                    };
+                    if !matches!(
+                        cs.display,
+                        DisplayValue::Block | DisplayValue::FlowRoot | DisplayValue::ListItem
+                    ) {
+                        all_block = false;
+                        break;
+                    }
+                    sum += c.height;
+                }
+                all_block.then_some(sum).filter(|v| *v > 0.0)
+            };
+            let Some(measured) = measured else { continue };
+            let Some(&taffy_id) = dom_to_taffy.get(&id) else {
+                continue;
+            };
+            if let Ok(mut style) = taffy_tree.style(taffy_id).cloned() {
+                // box_sizing 语义对齐：measure 闭包返回 content extent（taffy 契约）——
+                // content-box style 直写 measured；border-box style 的 size/min/max 以
+                // border-box 记账，须加 frame 才能表达同一内容高。
+                let frame = b.padding_top + b.padding_bottom + b.border_top + b.border_bottom;
+                let target = if matches!(style.box_sizing, taffy::style::BoxSizing::BorderBox) {
+                    measured + frame
+                } else {
+                    measured
+                };
+                if kw_h {
+                    style.size.height = taffy::style::Dimension::length(target);
+                }
+                if kw_min {
+                    style.min_size.height = taffy::style::Dimension::length(target);
+                }
+                if kw_max {
+                    style.max_size.height = taffy::style::Dimension::length(target);
+                }
+                let _ = taffy_tree.set_style(taffy_id, style);
+                let _ = taffy_tree.mark_dirty(taffy_id);
+                changed = true;
+            }
+        }
+        changed
+    }
+
     /// R3929（CSS2 §10.3.7/§10.6.4）：abspos 元素 shrink-to-fit 尺寸。
     ///
     /// 宽：width:auto + 水平 inset 非双定（双定 = stretch，taffy 已解）→ 宽 = 内容
