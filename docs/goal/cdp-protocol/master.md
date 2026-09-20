@@ -103,6 +103,41 @@ worker 组 570 行全 ok）连续第三十八轮活腿绿；jsonl md5 2c2cdb6d
 恒值 zombie 三复测零 922x 全 free 盘量 446G 持平；负载窗低位起手
 0.81→mt 尾兄弟波再起 4.07 波间歇非异常；引用计数以 S1393 双腿为
 新周期锚点归零重计 → S1394 = 1/10（兑现见本轮记录）
+   **S1394 轮后插记（2026-09-20 push 序列 pull --rebase 实测）**：兄弟流
+   两笔折入——**R4558 代码腿**（bb01041c0 paint Path B 直系文本度量种子
+   hori-1 翻绿 0.00% + vars-font-shorthand-001 意外收割
+   crates/engine/src/paint/painter/text.rs +62/-3 + rendering-compat.md
+   +1 = 2 files +60/-3 自述 make test 19,376P/0F 68 组 零新单测
+   kill-switch ZW_PAINT_DIRECT_TEXT_SEED 门控）+ **R4559**（b293ad55c
+   垂直 width 族镜像臂勘察实验未收敛回退 测量 API 混轴定谳 P 轮 0 net
+   code docs-only rendering-compat.md +1）于 S1394 门腿收口（19:54:34）
+   之后经 push 序列 pull --rebase 入树（我方 S1394 记录提交 rebase 于其
+   上 = ef9ce680f，push b293ad55c..ef9ce680f 零冲突 实测复核）——
+   R4558 兄弟代码提交**代码面非空**实测复核（crates/engine text.rs 非
+   空文本度量播种实现），**代码面变化成立** → **S1394 门腿 PASS 覆盖
+   的代码树态 = 09d9c0eef 组合态，新组合树态 = ef9ce680f（R4558+R4559
+   折入 + S1394 记录 docs）未被本流门腿覆盖**；工作面归属 = 渲染流域
+   crates/engine paint 专属面 零碰撞（run-rules §9/§10 归因纪律记
+   档）。锚点面漂移记档（新组合树态 ef9ce680f 实测）：② crates/ raw
+   **177 → 178**（R4558 代码腿入集 e67967632..TIP 口径实测）/ ④ 全树
+   排除本流 docs 对 18d462de6 **265 files +31047/-1654 → 265 files
+   +31108/-1657**（面 265 维持 +61/-3 全额净入账 = R4558+R4559 两笔
+   合计 实测为准）/ ① 自有面 **10 files +1187/-182** 维持（R4558/
+   R4559 零 apps/browser 提交实测复核）/ ③ 子帧关键词 **7 文件 md5
+   74f58fcf** 维持（R4558 零 contentDocument|content_document 命中实
+   测复核 解冻条件①观察面 **178 口径** frames.click+evaluate 挂起维
+   持）/ ⑤ make test 腿计数预期 = **19,376P/0F 68 组持平**（R4558 零
+   新 #[test] 兄弟自述同值 插记时点以兄弟自述为准 S1395 双腿实测复核
+   按归因纪律 run-rules §10 以实测为准 若偏差先归因）。S1394 记录内
+   S1395 = 2/10 静默监测引用轮预告**被本插记取代** → **S1395 = 树变化
+   刷新轮双腿活跑**（门 + make test 后台跑法 覆盖 R4558/R4559 折入后
+   新组合态 S245→…→S1358→S1382→S1388→S1393 刷新先例链兑现）；门腿
+   预期新树态编译面 = R4558 折入致 zero-engine lib 级联重编译（zero-
+   engine → zero-page-runtime → zero-browser 3 Compiling S1382 R4553
+   先例同型 Compiling 行数以实测为准）+ zero-engine dead_code warning
+   真重编发射预期（第十二次数以实测为准）；S1395 双腿收口后引用计数
+   以 S1395 双腿为新周期锚点归零重计（至迟 S1401 = S1395+6 口径期限
+   轮）。
    **S1357 轮后插记（2026-09-20 push 序列 pull --rebase 实测）**：
    兄弟流 R4543（代码腿+记档面 b5d496180 flex item 子元素百分比
    高度塌 0 探针归因链逐层收窄 taffy 层排除→ZW tree.rs 集成面
