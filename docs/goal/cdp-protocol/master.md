@@ -230,6 +230,33 @@ R4574 折入后新组合态首次双腿全量覆盖 S1440 轮后插记 docs 腿�
 代码面零差覆盖延续；唯一未清偿义务 = frames.click+evaluate 回填
 （挂子帧能力解冻，见子帧解冻清单，不阻收口））
 
+   **S1444 轮后插记（2026-09-21 push 序列 pull --rebase 实测）**：兄弟流
+   两笔 **docs 腿**（①e29525ae8 R4577 box-shadow 墨迹随形角 slice 试
+   作回退轮 0 net code + ②d7ac204f0 R4578 圆角裁剪边体系勘察轮
+   P 轮 0 net code 合计 1 file +2/-0 docs-only 零代码面）于我方
+   S1444 记录提交 push 序列 pull --rebase 入树（我方记录 rebase 于
+   其上 = 7e59a9111 push d7ac204f0..7e59a9111 零冲突 实测复核）——
+   **docs-only 归因不入刷新面（S1424 c8a8faa8d/R1432 先例 R4573
+   5eda17d6a S1440 插记同口径），代码面与 S1444 门腿覆盖态零差 →
+   不触发双腿刷新，S1444 门腿 PASS 效力维持 引用计数 4/10 周期锚
+   点效力维持**（我方 S1444 门腿跑的树 = a75ead4a4 面 新组合树态 =
+   7e59a9111 代码面零差实测复核 工作面归属 = 兄弟流 rendering-compat
+   goal docs 面 零碰撞 run-rules §9/§10）。锚点面漂移记档（新组合
+   树态 7e59a9111 实测）：④ 全树排除本流 docs 对 18d462de6
+   **273 files +31795/-1724 → 273 files +31797/-1724**（files 273
+   维持 双 docs 腿 +2 净入账 实测为准）→ S1445 开工复测按新基线
+   ④273 files +31797/-1724 / ② crates/ raw **189 维持**（docs 腿零
+   crates 提交 e67967632..TIP 口径实测）/ ① 自有面 **10 files
+   +1187/-182 维持** / ③ 子帧关键词 **7 文件 md5 74f58fcf 维持**
+   （docs-only 零 Rust 面变更 观察面 185 口径挂起维持）/ ⑤ make
+   test 腿基线 **19,382P/0F 68 组维持**（docs-only 零测试面）。
+   S1445 = 5/10 静默监测引用轮预告维持（周期锚点 = S1440 双腿 树
+   不变门单腿复跑免 make test S336 先例 避让窗纪律维持 至迟 S1446
+   = S1440+6 到期期限轮双腿活跑 树不变也双腿 树再变化 = 兄弟流代
+   码腿折入则提前双腿刷新——兄弟流下轮方向 = R4579 协同落地轮
+   Slice A+B+C 一次合入 代码腿概率非零 本流只记账）。（本插记提交
+   guard 子代理扫描 PASS 0 critical 0 warning）
+
    **S1440 轮后插记（2026-09-21 push 序列 pull --rebase 实测）**：兄弟流
    两笔 **docs 腿**（①0377718bb ZRG-2026-09-21-01 巡检记录
    docs/goal/rendering-compat/master.md +1 + docs/goal/zero-web/
