@@ -2969,6 +2969,12 @@ pub(crate) fn remeasure_inline_only_containers(
         && let Some(dom_id) = box_node.node_id
         && let Some(style) = styles.get(&dom_id)
         && matches!(style.height, LengthValue::Auto)
+        // R4562/R4563（css-writing-modes）：垂直盒跳过本重测——IFC 以 content_width
+        // 为换行宽的水平构造（无 with_vertical），对垂直盒（换行深度 = content_height
+        // 内联轴、块轴 extent = Σ 列宽）是跨域误测：vert-1 too-small.min-width 盒
+        // fill 120 被水平 45px 包裹高 130 覆写（134/130 残差实证）。垂直盒物理高 =
+        // 内联 extent（fill/包含块语义），taffy 已解，不适用本水平重测。
+        && !style.writing_mode.is_vertical_block_flow()
         && box_node.fragment_node_ids.as_ref().is_some_and(|ids| {
             ids.iter().all(|&id| match doc.get(id).map(|n| &n.kind) {
                 Some(NodeKind::Text(_)) => true,
@@ -3036,6 +3042,19 @@ pub(crate) fn remeasure_inline_only_containers(
             || (inside_float_subtree
                 && has_dom_text
                 && box_node.writing_mode.is_vertical_block_flow()))
+        // R4562/R4563：非 float 垂直盒（VerticalRl/Lr——本分支 is_vertical 判定同源）
+        // 跳过本重测——本分支 IFC 以 content_width（块轴跨度）为换行深度且把
+        // total_height（Σ 列宽 = 块轴 extent）写回 content_height（内联轴），对垂直盒
+        // 是双轴跨域误测：vert-1 trio 盒 fill 120 被深度 45 的 9 列包裹高 130 覆写
+        // （134/130 残差实证）。垂直盒 inline extent = fill/包含块语义 taffy 已解
+        // （R4562 垂直臂），仅 R4459 float 臂（shrink-wrap 语境）保留。sideways-lr/rl
+        // 盒不在本分支 is_vertical 域（水平 IFC 旧路径 corpus 通过 slr-009 维持），
+        // 不在排除内。
+        && !(matches!(
+            box_node.writing_mode,
+            WritingModeValue::VerticalRl | WritingModeValue::VerticalLr
+        ) && !box_node.writing_mode_sideways_lr
+            && !inside_float_subtree)
         && let Some(dom_id) = box_node.node_id
         && let Some(style) = styles.get(&dom_id)
         && matches!(style.height, LengthValue::Auto)
