@@ -76,6 +76,28 @@ fn gradient_solid_color(g: &zero_css_parser::values::GradientValue, element_colo
         .then_some(first)
 }
 
+/// R4552（css-backgrounds-4 §background-clip:text）：沿 DOM 祖先链查最近 clip:text
+/// 恒色祖先。paint 栈（push/pop 时序）无法覆盖「延迟绘制后代」——SC 触发后代
+///（filter/transform/opacity 等）被 scope deferred 收集、在 clip:text 宿主 paint_node
+/// 出口 pop **之后** flush（SC-child 案实证），栈空时字形失去染色上下文；以静态祖先
+/// 链判定补栈盲区。start_id 可为文本节点（parent_node 上溯）。无命中 → None。
+pub(super) fn bg_clip_text_solid_color_ancestral(
+    doc: &Document,
+    start_id: NodeId,
+    styles: &HashMap<NodeId, ComputedStyle>,
+) -> Option<Color> {
+    let mut cur = Some(start_id);
+    while let Some(id) = cur {
+        if let Some(st) = styles.get(&id)
+            && let Some(c) = bg_clip_text_solid_color(st)
+        {
+            return Some(c);
+        }
+        cur = doc.parent_node(id);
+    }
+    None
+}
+
 /// src OVER dst 逐像素 alpha 合成（CSS Compositing §simple alpha compositing；
 /// 非预乘 u8 出入，f32 中间精度）。
 fn color_over(src: Color, dst: Color) -> Color {
@@ -1455,14 +1477,18 @@ impl super::Painter {
                                 // R4525/R4549：clip:text 彩字上下文——字形色 = text 色 OVER
                                 // bg 恒色（恒色 bg 的 mask 管线逐像素等价预混合；text 色透明
                                 // 时 = bg 恒色，与 R4525 v1 canonical 行为恒等）。C = 栈顶
-                                //（paint_node push）或 owner 自身 clip:text 恒色（inline span
-                                // 字形由宿主块 IFC 承载时栈未及 push，按 owner 样式判定）。
-                                let frag_color = match self
-                                    .bg_clip_text_color
-                                    .last()
-                                    .copied()
-                                    .or_else(|| owner_style.and_then(bg_clip_text_solid_color))
-                                {
+                                //（paint_node push）或 owner 自身/DOM 祖先链 clip:text 恒色
+                                //（栈未及 push 的 inline 扁平化形态 + R4552 deferred SC
+                                // 延迟绘制后代，按静态祖先链判定）。
+                                let frag_color = match self.bg_clip_text_color.last().copied().or_else(|| {
+                                    owner_style.and_then(bg_clip_text_solid_color).or_else(|| {
+                                        if let Some(styles) = styles {
+                                            bg_clip_text_solid_color_ancestral(doc, owner_id, styles)
+                                        } else {
+                                            None
+                                        }
+                                    })
+                                }) {
                                     Some(clip_bg) => {
                                         let text_color = owner_style
                                             .filter(|s| s.color != ColorValue::CurrentColor)
@@ -1880,13 +1906,21 @@ impl super::Painter {
                                 .map(|s| color_value_to_render(&s.color))
                                 .unwrap_or(color);
                             // R4525/R4549：clip:text 彩字上下文（同 stored 路径；owner 自身
-                            // clip:text 恒色时按 owner 样式判定）——字形色 = text 色 OVER
-                            // bg 恒色预混合。
+                            // /DOM 祖先链 clip:text 恒色时按静态链判定，覆盖 R4552 deferred
+                            // SC 延迟绘制后代）——字形色 = text 色 OVER bg 恒色预混合。
                             let frag_color = match self
                                 .bg_clip_text_color
                                 .last()
                                 .copied()
-                                .or_else(|| owner_style_opt.and_then(bg_clip_text_solid_color))
+                                .or_else(|| {
+                                    owner_style_opt.and_then(bg_clip_text_solid_color).or_else(|| {
+                                        if let Some(styles) = styles {
+                                            bg_clip_text_solid_color_ancestral(doc, $frag_nid, styles)
+                                        } else {
+                                            None
+                                        }
+                                    })
+                                })
                             {
                                 Some(clip_bg) => color_over(frag_color, clip_bg),
                                 None => frag_color,
