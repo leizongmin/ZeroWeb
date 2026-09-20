@@ -81,6 +81,37 @@ gone=true leftovers none 2-6ms 同值域维持）；S168 形态族第 6 例后�
 窗兄弟流测试腿活跃窗错峰避让至其收口后净窗再跑（S1389 截断教训执行先
 例）执行窗零争用；jsonl md5 2c2cdb6d 恒值 zombie 双复测零 922x 全 free
 盘量 448G；引用计数 3/10 → S1392 = 4/10（兑现见本轮记录）
+   **S1392 轮后插记（2026-09-20 push 序列 pull --rebase 实测）**：兄弟流
+   R4557（代码腿+记档面 d69032b24 块轴 content 关键字尺寸求解
+   crates/layout-engine/src/engine.rs +39 + engine/sizing.rs +140 +
+   rendering-compat.md +1 = 3 files +180/-0 自述 make test 19,376P/0F 68
+   组 零新单测 kill-switch ZW_BLOCK_AXIS_CONTENT_KW 门控实现）于 S1392 门
+   腿收口（19:06:08）之后经 push 序列 pull --rebase 入树（我方 S1392 记录
+   提交 rebase 于其上 = 0f7c0e0cb，push d69032b24..0f7c0e0cb 零冲突 实测
+   复核）——兄弟代码提交**代码面非空**实测复核（crates/layout-engine
+   两代码文件非空 sizing.rs 系 R4544 99641e378 已折入既有档 非新档），
+   **代码面变化成立** → **S1392 门腿 PASS 覆盖的代码树态 = 30e28848c 组合
+   态，新组合树态 = 0f7c0e0cb（R4557 折入 + S1392 记录 docs）未被本流门
+   腿覆盖**；工作面归属 = 渲染流域 crates/layout-engine 专属面 零碰撞
+   （run-rules §9/§10 归因纪律记档）。锚点面漂移记档（新组合树态
+   0f7c0e0cb 实测）：② crates/ raw **176 → 177**（R4557 代码腿入集
+   e67967632..TIP 口径实测）/ ④ 全树排除本流 docs 对 18d462de6 **265
+   files +30867/-1654 → 265 files +31047/-1654**（面 265 维持 +180 全额
+   净入账 = R4557 三路径均已在既有变更集 实测为准）/ ① 自有面 **10 files
+   +1187/-182** 维持（R4557 零 apps/browser 提交实测复核）/ ③ 子帧关键
+   词 **7 文件 md5 74f58fcf** 维持（R4557 零 contentDocument|
+   content_document 命中实测复核 解冻条件①观察面 **177 口径**
+   frames.click+evaluate 挂起维持）/ ⑤ make test 腿计数预期 = **19,376P/
+   0F 68 组持平**（R4557 零新 #[test] 兄弟自述同值 插记时点以兄弟自述为
+   准 S1393 双腿实测复核 按归因纪律 run-rules §10 以实测为准 若偏差先归
+   因）。S1392 记录内 S1393 = 5/10 静默监测引用轮预告**被本插记取代** →
+   **S1393 = 树变化刷新轮双腿活跑**（门 + make test 后台跑法 覆盖 R4557
+   折入后新组合态 S245→…→S1358→S1382→S1388 刷新先例链兑现）；门腿预期
+   新树态编译面 = R4557 折入致 layout-engine 级联重编译（Compiling 行数
+   以实测为准 非全缓存形态 S1382 R4553 先例同型 在预期）+ zero-engine
+   dead_code warning 真重编发射预期（第十一次数以实测为准）；S1393 双腿
+   收口后引用计数以 S1393 双腿为新周期锚点归零重计（至迟 S1399 = S1393+6
+   口径期限轮）。
    **S1357 轮后插记（2026-09-20 push 序列 pull --rebase 实测）**：
    兄弟流 R4543（代码腿+记档面 b5d496180 flex item 子元素百分比
    高度塌 0 探针归因链逐层收窄 taffy 层排除→ZW tree.rs 集成面
