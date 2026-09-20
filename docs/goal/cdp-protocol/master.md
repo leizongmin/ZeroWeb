@@ -380,6 +380,48 @@ EXIT=0 deterministic YES wall ~30s 0 Compiling——**首个 instrumented #0 绿
    rendering-compat.md +1 机械归因 实测为准）② 174 维持 ①③ 维持；
    我方插记提交 rebase 于其上 = 0eba98e80 push c8464c123..0eba98e80
    零冲突。
+   **S1377 轮后插记（2026-09-20 push 序列 pull --rebase 实测）**：兄弟流
+   **R4552 代码腿折入**（760ad8db8 clip:text 祖先链染色臂——SC-child 翻绿
+   0.00% + paint 双叉根因闭环 corpus 15148 91.31% clip-text 族净翻绿累计 7
+   案——crates/engine/src/paint/painter/text.rs +46/-11 +
+   rendering-compat.md +1 = 2 files +46/-11 代码面非空实测复核 零
+   apps/browser 零新单测 自述 make test 19,376P/0F TEST_EXIT=0 全门禁
+   PASS）于 S1377 门腿收口（10:06:12）之后经 push 序列 pull --rebase 入树
+   （我方 S1377 记录提交 rebase 于其上 = 530c90850，push
+   760ad8db8..530c90850 零冲突实测复核）——**代码面变化成立** →
+   **S1377 门腿 PASS 覆盖的代码树态 = 308e9ca1f 面（pre-R4552），新组合树
+   态 = 530c90850（R4552 折入 + S1377 记录 docs）未被本流门腿覆盖**；工作
+   面归属 = 渲染流域 crates/engine paint 面 零碰撞（run-rules §9/§10 归因
+   纪律记档）。锚点面漂移记档（新 tip 530c90850 实测）：② crates/ raw
+   **174 → 175**（R4552 代码腿入集 e67967632..TIP 提交计数口径）/ ④ 全树
+   排除本流 docs 对 18d462de6 **260 files +30692/-1650 → 260 files
+   +30727/-1650**（同文件数 painter text.rs 净 +34 入既有变更集 +
+   rendering-compat.md +1 实测为准）/ ① 10 files +1187/-182 维持（R4552
+   零 apps/browser 提交实测复核）/ ③ 子帧关键词 **7 文件 md5
+   74f58fcf7ce55de7e4ae81f073a6e671** 维持（R4552 触面 text.rs 零
+   contentDocument|content_document 命中实测复核 解冻条件①观察面
+   **175 口径** frames.click+evaluate 挂起维持）/ ⑤ make test 腿基线
+   **19,376P/0F 68 组**（R4552 零新单测兄弟自述参考 S1378 双腿实测为准
+   run-rules §10 若偏差先归因）；**下轮 S1378 = 树变化刷新轮双腿活跑 +
+   #0 深排查持续态**（二重身份合一 S1358 先例同型：刷新缘由 = R4552 代码
+   腿折入 painter text.rs；刷新双腿即满足期限轮义务 新周期锚点以 S1378 双
+   腿归零重计 S1384 = 次到期期限轮；双腿活跑口径 = 门 + make test 后台跑
+   法 nohup sh -c『echo TEST_EXIT=$?』直写 起跑前显式 cd 仓库根 cd 单独成
+   句勿与后台符 & 同链 双腿错峰：门腿先行收口后 mt 腿起跑）；门腿预期新
+   树态编译面 = R4552 折入致 zero-engine lib 级联重编（zero-engine →
+   zero-page-runtime → zero-browser R4549/R4550/S1375 门腿 3 Compiling 形
+   态同型 行数以实测为准 在预期）+ 兄弟流 dead_code warning
+   match_media_to_json **第九次真重编发射预期**；mt 腿预期 = 19,376P/0F
+   68 组 + 29 Compiling 同型在预期；探针常驻（每轮门腿 2 行 probe 行记档
+   转录 绿态基线 = 4ms/gone=true/none 两连样本在案）；红例观察三族口径维
+   持（缺步/停滞族 S1314-S1377 连续六十四轮零再现 S1378 门腿即复查窗口 /
+   S168 形态族第 6 例 #0 深排查在案 / stale_etag 5 例常规）+ 跨流 L1139
+   家族连续第三十四轮活腿绿 S1378 mt 腿即复查窗口 + test-guard artifact
+   启动失败族双腿窗观察（错峰口径延续）+ target-disk-guard/zeroseed/
+   form_input_perf 观察延续 + 每笔 commit 前 lei-pre-commit-guard（本插记
+   提交 guard 子代理扫描待执行后记档）+ 记档数字须实测有据；M5 定稿收口
+   判定不因本插记动摇 goal Done 维持守成态证据经 S1378 刷新双腿延续 唯一
+   未清偿义务 = frames.click+evaluate 回填（挂子帧能力解冻 不阻收口）
 ---
 
 ## 当前状态
