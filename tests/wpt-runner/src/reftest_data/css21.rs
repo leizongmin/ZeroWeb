@@ -564,6 +564,16 @@ const REFTESTS: &[InlineReftestDef] = &[
         ref_html: "<html><body><table style=\"height:50;background:red;\"><tr><td style=\"width:100;height:100;background:blue;\"></td></tr></table></body></html>",
         is_match: true,
     },
+    // R4572：out-of-flow（positioned）伪元素含真文本 + 盒装饰 → element 盒化路径（盒
+    // 背景/边框 + 文本子节点同绘，与真实子元素盒逐像素一致）。旧门对非空文本伪元素一律
+    // text-node 路径 → 只有字形，背景/边框/尺寸/定位全丢。static 行内域不触（R3928 窄门）。
+    InlineReftestDef {
+        id: "css21/pseudo-positioned-text-decoration",
+        category: ReftestCategory::Layout,
+        test_html: "<html><head><style>.h{width:100px;height:100px;position:relative;} .h::before{content:\"badge\";display:block;position:absolute;left:0;top:0;width:100%;height:100%;background:green;border:10px solid blue;box-sizing:border-box;}</style></head><body><div class=\"h\"></div></body></html>",
+        ref_html: "<html><head><style>.h{width:100px;height:100px;position:relative;} .h>div{position:absolute;left:0;top:0;width:100%;height:100%;background:green;border:10px solid blue;box-sizing:border-box;}</style></head><body><div class=\"h\"><div>badge</div></div></body></html>",
+        is_match: true,
+    },
 ];
 
 pub fn reftests() -> &'static [InlineReftestDef] {

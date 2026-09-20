@@ -2814,11 +2814,15 @@ pub(crate) fn inject_pseudo_text_nodes(
         // 不落 zw-pseudo 子节点（Chrome 同语义：空盒高度由装饰/样式决定）。
         // https://drafts.csswg.org/css-text-3/#white-space-processing
         let text_blank = text.trim().is_empty();
+        // R4572：out-of-flow（positioned/float）+ 有装饰（背景/边框）→ element 盒化（含
+        // 真文本子节点）。旧门对非空文本伪元素一律落 text-node 路径 → 盒装饰全丢（只有
+        // 字形）。与 R3928 净负先例（static 行内上下文伪元素块化改变宿主 IFC 布局，双页
+        // 自比对 −2）的本质区别：positioned/float 伪元素**脱离流内布局**，盒化不影响宿主
+        // 行内格式化上下文。static 域维持 R3928 root/body 窄门不动。
+        let out_of_flow = pseudo_style.position != PositionValue::Static || pseudo_style.float != FloatValue::None;
         let needs_box = std::env::var("ZW_PSEUDO_BOX").as_deref() != Ok("0")
-            && ((text_blank
-                && (pseudo_style.position != PositionValue::Static
-                    || pseudo_style.float != FloatValue::None
-                    || pseudo_style.display != DisplayValue::Inline))
+            && ((text_blank && (out_of_flow || pseudo_style.display != DisplayValue::Inline))
+                || (out_of_flow && has_decoration)
                 || (pseudo_style.display != DisplayValue::Inline && has_decoration && parent_is_root_or_body));
         let new_id = if needs_box {
             let el = doc.create_element("zw-pseudo");
@@ -3368,6 +3372,46 @@ mod pseudo_tests {
             .iter()
             .any(|c| matches!(doc.get(*c).map(|n| &n.kind), Some(zero_dom::NodeKind::Text(_))));
         assert!(!has_text_child, "whitespace content 不应落文本子节点");
+    }
+
+    /// R4572：out-of-flow（positioned）+ 有装饰（背景/边框）的**真文本**伪元素 → element
+    /// 盒化路径且携带文本子节点（盒装饰 + 字形同绘）。旧门非空文本一律 text-node 路径 →
+    /// 只有字形无盒装饰。与 R3928 净负先例的区别：positioned/float 脱离流内布局，盒化不
+    /// 影响宿主 IFC；static 域维持 root/body 窄门不动。
+    #[test]
+    fn inject_positioned_decorated_text_pseudo_as_element_node_r4572() {
+        use zero_css_parser::values::ColorValue;
+        use zero_css_parser::values::PositionValue;
+        let html = r#"<html><body><div>X</div></body></html>"#;
+        let mut doc = zero_dom::parse_html(html);
+        let div = find_element(&doc, doc.root(), "div").expect("div 存在");
+        let mut styles: HashMap<NodeId, ComputedStyle> = HashMap::new();
+        let mut div_style = ComputedStyle::default();
+        div_style.before_pseudo = Some(Box::new(ComputedStyle {
+            content: ContentComputedValue::String("badge".to_string()),
+            position: PositionValue::Absolute,
+            background_color: ColorValue::Rgba(0, 128, 0, 255),
+            ..ComputedStyle::default()
+        }));
+        styles.insert(div, div_style);
+
+        inject_pseudo_text_nodes(&mut doc, &mut styles, &[]);
+
+        let first_child = doc
+            .get(div)
+            .and_then(|n| n.children.first().copied())
+            .expect("有子节点");
+        // positioned + 装饰 + 真文本 = ELEMENT 节点（非 text）。
+        match &doc.get(first_child).unwrap().kind {
+            zero_dom::NodeKind::Element(_) => {}
+            other => panic!("R4572: positioned 装饰真文本伪元素应为 ELEMENT 节点，实际 {other:?}"),
+        }
+        // 真文本须携带为子节点（盒装饰与字形同绘）。
+        let has_text_child = doc
+            .child_nodes(first_child)
+            .iter()
+            .any(|c| matches!(doc.get(*c).map(|n| &n.kind), Some(zero_dom::NodeKind::Text(_))));
+        assert!(has_text_child, "真文本伪元素须落文本子节点");
     }
 
     /// `inject_pseudo_text_nodes`：::after 追加为末子节点；content:none 不注入。
