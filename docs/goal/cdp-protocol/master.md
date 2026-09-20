@@ -420,6 +420,52 @@ S1380 记录提交 = 215f22331 推远 零兄弟折入 → S1381 = 3/10 引用轮
    提交 guard 子代理扫描待执行后记档）+ 记档数字须实测有据；M5 定稿收口
    判定不因本插记动摇 goal Done 维持守成态证据经 S1378 刷新双腿延续 唯一
    未清偿义务 = frames.click+evaluate 回填（挂子帧能力解冻 不阻收口）
+   **S1381 轮后插记（2026-09-20 push 序列 pull --rebase 实测）**：兄弟流
+   **R4553 代码腿折入**（43f7f44b6 clip:text url 背景纯色通路——
+   multiline-background-image 翻绿 0.00% corpus 15149 clip-text 族 12→4
+   fail 净翻绿累计 8 案——crates/engine paint 面 painter/mod.rs +21/-X +
+   painter/text.rs +111/-X + pipeline/mod.rs +16 + pipeline_budget.rs +3 +
+   tests/wpt-runner harness reftest.rs + resources.rs（engine/paint+
+   pipeline+wpt-runner harness 3 crate）+ rendering-compat.md +1 = 7 files
+   +134/-33 代码面非空实测复核 零 apps/browser 零新单测 自述 make test
+   19,376P/0F 全门禁 PASS webview crate 零改动守工作面纪律）于 S1381 门腿
+   收口（10:34:32）之后经 push 序列 pull --rebase 入树（我方 S1381 记录提
+   交 rebase 于其上 = d60042cfc，push 43f7f44b6..d60042cfc 零冲突实测复
+   核）——**代码面变化成立** → **S1381 门腿 PASS 覆盖的代码树态 =
+   215f22331 面（pre-R4553），新组合树态 = d60042cfc（R4553 折入 + S1381
+   记录 docs）未被本流门腿覆盖**；工作面归属 = 渲染流域 crates/engine +
+   tests/wpt-runner 面 零碰撞（run-rules §9/§10 归因纪律记档 wpt-runner
+   harness 面属兄弟流 rendering-compat 资产化通道 非本流共享面碰头）。锚
+   点面漂移记档（新 tip d60042cfc 实测）：② crates/ raw **175 → 176**
+   （R4553 代码腿入集 e67967632..TIP 提交计数口径）/ ④ 全树排除本流 docs
+   对 18d462de6 **260 files +30727/-1650 → 262 files +30831/-1653**（R4553
+   全额净入账 +101 net 实测为准 +2 files = 4 新文件入集 3 既有文件行漂移
+   分解从略）/ ① 10 files +1187/-182 维持（R4553 零 apps/browser 提交实测
+   复核）/ ③ 子帧关键词 **7 文件 md5 74f58fcf7ce55de7e4ae81f073a6e671**
+   维持（R4553 触面零 contentDocument|content_document 命中实测复核 解冻
+   条件①观察面 **176 口径** frames.click+evaluate 挂起维持）/ ⑤ make test
+   腿基线 **19,376P/0F 68 组**（R4553 零新单测兄弟自述参考 S1382 双腿实测
+   为准 run-rules §10 若偏差先归因）；**下轮 S1382 = 树变化刷新轮双腿活跑
+   + #0 深排查持续态**（二重身份合一 S1358 先例同型：刷新缘由 = R4553 代
+   码腿折入；刷新双腿即满足期限轮义务 新周期锚点以 S1382 双腿归零重计
+   S1388 = 次到期期限轮；双腿活跑口径 = 门 + make test 后台跑法 nohup
+   sh -c『echo TEST_EXIT=$?』直写 起跑前显式 cd 仓库根 cd 单独成句勿与后
+   台符 & 同链 双腿错峰：门腿先行收口后 mt 腿起跑）；门腿预期新树态编译
+   面 = R4553 折入致 zero-engine lib 级联重编（zero-engine →
+   zero-page-runtime → zero-browser 3 Compiling 形态同型 行数以实测为准）
+   + 兄弟流 dead_code warning match_media_to_json **第十次真重编发射预
+   期**；mt 腿预期 = 19,376P/0F 68 组 + 29 Compiling 同型（R4553 另触
+   wpt-runner harness 编译段或 +1-2 Compiling 行 实测为准）；探针常驻（绿
+   态基线 = 4-6ms/gone=true/none 六连样本在案）；红例三族口径维持（缺步/
+   停滞族 S1314-S1381 连续六十八轮零再现 S1382 门腿即复查窗口 / S168 形态
+   族第 6 例 #0 深排查在案 / stale_etag 5 例常规）+ 跨流 L1139 家族连续第
+   三十五轮活腿绿 S1382 mt 腿即复查窗口 + test-guard artifact 启动失败族
+   双腿窗观察（错峰口径延续）+ target-disk-guard/zeroseed/form_input_perf
+   观察延续（盘量 449G 基线 -3G 清理方向漂移 S1381 记档）+ 每笔 commit 前
+   lei-pre-commit-guard（本插记提交 guard 子代理扫描 PASS 0 critical 0
+   warning）+ 记档数字须实测有据；M5 定稿收口判定不因本插记动摇 goal Done
+   维持守成态证据经 S1382 刷新双腿延续 唯一未清偿义务 = frames.click+
+   evaluate 回填（挂子帧能力解冻 不阻收口）
 ---
 
 ## 当前状态
