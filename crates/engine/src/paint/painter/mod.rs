@@ -3007,7 +3007,24 @@ impl Painter {
             && style.opacity < 1.0
         {
             let opacity = style.opacity as f32;
+            // R4550（css-backgrounds-4 §background-clip:text + csswg-drafts#9563）：
+            // clip:text 恒色上下文中的后代 SC（opacity 即建 SC）字形仍贡献字形 mask，
+            // 但 opacity 不得 dim 露出的背景——已染色 glyph 跳过 alpha 衰减（alpha 原值
+            // 备份回写）。opacity:0 的全透明 SC 仍正常衰减 = 不贡献 mask（spec 同款边
+            // 界）；非 glyph 图元（元素自身 bg/边框等）照常衰减。
+            let clip_text_glyph_exempt = !self.bg_clip_text_color.is_empty() && opacity > 0.0;
+            let glyph_alphas = clip_text_glyph_exempt.then(|| {
+                self.primitives.glyphs[counts_before.glyphs..]
+                    .iter()
+                    .map(|g| g.color.a)
+                    .collect::<Vec<u8>>()
+            });
             apply_opacity_to_new_primitives(&mut self.primitives, &counts_before, opacity);
+            if let Some(alphas) = glyph_alphas {
+                for (glyph, a) in self.primitives.glyphs[counts_before.glyphs..].iter_mut().zip(alphas) {
+                    glyph.color.a = a;
+                }
+            }
         }
 
         // CSS mask-image — 对元素及其子元素应用蒙版裁剪
