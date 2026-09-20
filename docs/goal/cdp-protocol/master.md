@@ -239,6 +239,54 @@ S1438 双腿 = S1432 双腿以来五连引用轮（S1433-S1437）后的到期期
 复证）；唯一未清偿义务 = frames.click+evaluate 回填（挂子帧能力解
 冻，见子帧解冻清单，不阻收口））
 
+   **S1439 轮后插记（2026-09-21 push 序列 pull --rebase 实测）**：兄弟流
+   **R4574 代码腿**（6b3449c6a 提交 border-radius 斜杠形式两轴存储
+   slice 1 crates/style-system 7 文件（computed.rs + apply.rs +
+   computed_style.rs + default_impl.rs + inherit.rs + shorthand/
+   mod.rs + shorthand/tests/basic.rs）+ rendering-compat.md +1 = 8
+   files +195/-31 自述全门禁绿 make test 19,382P/0F 68 组 EXIT=0（
+   基线 19,379+3 新增单测）+ reftest 688/688 + fmt/clippy 零告警）+
+   **R4575 docs 腿**（27b1f3ebe 06:40:53 提交 ry 消费路由/static 伪
+   元素盒化/DOMPoint stub 三方向勘察零语料止损 rendering-compat.md
+   +1 = 1 file +1/-0 docs-only 零代码面）于我方 S1439 记录提交
+   push 序列 pull --rebase 入树（我方 S1439 记录提交 rebase 于其上 =
+   829428d70，push 27b1f3ebe..829428d70 零冲突 实测复核；R4574 提交
+   时刻落在我方 S1439 门腿一调执行窗（06:33:21→06:40:53）尾段但仅
+   入兄弟 clone 远端 我方双腿跑的树 = 48dcb19c1 本地态 pre-R4574 时
+   序归因在案）——兄弟代码提交**代码面非空**实测复核（crates/
+   style-system 7 文件非空），**代码面变化成立** → **我方 S1439 门
+   腿二调 PASS 覆盖的代码树态 = 48dcb19c1 面（pre-R4574），新组合树
+   态 = 829428d70（R4574+R4575 折入 + 本流 S1439 记录 docs）未被本
+   流双腿覆盖**；工作面归属 = 兄弟流 zero-style-system 渲染域
+   （run-rules §9 渲染流域专属 crate 面）零碰撞（§10 归因纪律记
+   档）。锚点面漂移记档（新组合树态 829428d70 实测）：② crates/
+   raw **188 → 189**（R4574 代码腿入集 e67967632..TIP 口径实测）/
+   ④ 全树排除本流 docs 对 18d462de6 **272 files +31596/-1693 → 273
+   files +31792/-1724**（files 272→273 = R4574 七触面文件新入集合
+   集 +195/-31 毛量折入 实测为准）/ ① 自有面 **10 files +1187/-182
+   维持**（R4574 零 apps/browser 提交实测复核）/ ③ 子帧关键词
+   **7 文件 md5 74f58fcf7ce55de7e4ae81f073a6e671 维持**（R4574 触面
+   零 contentDocument|content_document 命中实测复核 非测试零命中
+   解冻条件①观察面 **185 口径** frames.click+evaluate 挂起维
+   持）/ ⑤ make test 腿计数预期 = **19,382P 量级（R4574 含 3 处新
+   增 #[test] git show 口径实测）68 组+3P 形态以实测为准**（兄弟自
+   述 19,382P/0F EXIT=0 为参考 S1438 双腿实测复核 按归因纪律
+   run-rules §10 以实测为准 若偏差先归因）→ **S1440 = 树变化刷新
+   轮双腿活跑**（S1439 记录内 S1440 = 2/10 静默监测引用轮预告**被
+   本插记取代** S245→…→S1418→S1422→S1429→S1430→S1432 刷新先例链
+   口径 门 + make test 后台跑法 echo TEST_EXIT 直写口径 覆盖
+   R4574 折入后新组合态）；门腿预期新树态编译面 = R4574 折入致
+   zero-style-system → zero-engine → zero-page-runtime →
+   zero-browser 级联重编译（4 Compiling 量级 S1418 layout-engine 级
+   联先例同型 Compiling 行数以实测为准）+ zero-engine dead_code
+   warning 真重编发射预期（第二十三次数以实测为准）；mt 腿预期 =
+   **19,382P 量级** + Compiling 带同型（行数以实测为准 若偏差先归
+   因）；S1440 双腿收口后引用计数以 S1440 双腿为新周期锚点归零重计
+   （S1441 起 1/10 至迟 S1446 = S1440+6 期限轮）。另注记：R4574 兄
+   弟自述 bench-gate 定向负载窗 FAIL（load 12.22 共租噪声）净窗
+   GATE PASS 与本流观察面无涉（兄弟流 perf-gate 面自账 本流零涉）。
+   （本插记提交 guard 子代理扫描 PASS 0 critical 0 warning）
+
    **S1432 轮后插记（2026-09-21 push 序列 pull --rebase 实测）**：兄弟流
    **R4573 docs 腿**（5eda17d6a 05:26:07 提交 render-corner-shape
    variant 域勘察 48 variant 覆盖盲区定量归档 docs/goal/
