@@ -217,6 +217,45 @@ S1422 门腿（探针在位）+ S1423 门腿（探针在位）+ S1424 门腿（�
 清偿义务 = frames.click+evaluate 回填（挂子帧能力解冻，见子帧解冻
 清单，不阻收口））
 
+   **S1431 轮后插记（2026-09-21 push 序列 pull --rebase 实测）**：兄弟流
+   **R4572 代码腿**（e650368c7 05:18:02 提交 out-of-flow 伪元素盒装饰
+   gate 切片 positioned 真文本伪元素盒化 crates/engine/src/pipeline/
+   mod.rs +52/-4 + rendering-compat.md +1 + reftest_data/css21.rs +10
+   = 3 files +59/-4 自述全门禁绿）于我方 S1431 门腿收口（05:18:39）
+   之后经 push 序列 pull --rebase 入树（我方 S1431 记录提交 rebase 于
+   其上 = 05dc7b9fa，push e650368c7..05dc7b9fa 零冲突 实测复核；
+   R4572 提交时刻 05:18:02 落在我方 S1431 门腿执行窗（05:18:09→
+   05:18:39）起点前 7 秒但仅入远端 我方门腿跑的树 = c0ee11e44 本地态
+   pre-R4572 时序归因在案）——兄弟代码提交**代码面非空**实测复核
+   （crates/engine pipeline + reftest_data 非空），**代码面变化成立**
+   → **S1431 门腿 PASS 覆盖的代码树态 = c0ee11e44 面（pre-R4572），新
+   组合树态 = 05dc7b9fa（R4572 折入 + 本流 S1431 记录 docs）未被本流
+   门腿覆盖**；工作面归属 = 兄弟流 engine 域（run-rules §9 P1a/P1b
+   工作面）pipeline 逻辑 零碰撞（§10 归因纪律记档）。锚点面漂移记档
+   （新组合树态 05dc7b9fa 实测）：② crates/ raw **187 → 188**（
+   R4572 代码腿入集 e67967632..TIP 口径实测）/ ④ 全树排除本流 docs
+   对 18d462de6 **271 files +31537/-1690 → 272 files +31595/-1693**
+   （files 271→272 = css21.rs 新入集 +58/-3 净入账 实测为准）/ ① 自
+   有面 **10 files +1187/-182 维持**（R4572 零 apps/browser 提交实测
+   复核）/ ③ 子帧关键词 **7 文件 md5 74f58fcf7ce55de7e4ae81f073a6e671
+   维持**（R4572 触面零 contentDocument|content_document 命中实测复
+   核 解冻条件①观察面 **185 口径** frames.click+evaluate 挂起维
+   持）/ ⑤ make test 腿计数预期 = **19,379P 量级（R4572 含 1 处新增
+   #[test] 实测 git show 口径）68 组+1P 形态以实测为准**（兄弟自述
+   为参考 S1432 双腿实测复核 按归因纪律 run-rules §10 以实测为准 若
+   偏差先归因）→ **S1432 = 树变化刷新轮双腿活跑**（S1431 记录内
+   S1432 = 2/10 静默监测引用轮预告**被本插记取代** S245→…→S1414→
+   S1418→S1422→S1429→S1430 刷新先例链兑现 门 + make test 后台跑法
+   echo TEST_EXIT 直写口径 覆盖 R4572 折入后新组合态）；门腿预期新树
+   态编译面 = R4572 折入致 zero-engine → zero-page-runtime →
+   zero-browser 级联重编（3 Compiling S1422/S1430 先例同型 行数以实
+   测为准）+ zero-engine dead_code warning 真重编发射预期（第二十二
+   次数以实测为准）；mt 腿预期 = 19,379P 量级 + 29-33 Compiling 带同
+   型（行数以实测为准 若偏差先归因）；S1432 双腿收口后引用计数以
+   S1432 双腿为新周期锚点归零重计（S1433 起 1/10 至迟 S1438 =
+   S1432+6 期限轮）。（本插记提交 guard 子代理扫描 PASS 0 critical 0
+   warning）
+
    **S1429 轮后插记（2026-09-21 push 序列 pull --rebase 实测）**：兄弟流
    **R4571 代码腿**（bd7d9baac 04:44:32 提交 伪元素盒化 gate whitespace
    盲区切片 corner-shape-inset-shadow 翻绿 0.00% crates/engine/src/
