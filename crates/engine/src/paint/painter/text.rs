@@ -27,6 +27,13 @@ fn glyph_probe_enabled() -> bool {
     *ENABLED.get_or_init(|| std::env::var("ZW_DEBUG_GLYPHS").as_deref() == Ok("1"))
 }
 
+/// R4558：直系文本度量种子（Path B override 缺失兜底）开关。default-on；
+/// `ZW_PAINT_DIRECT_TEXT_SEED=0` 关闭（回退无种子行为）。
+fn direct_text_seed_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| std::env::var("ZW_PAINT_DIRECT_TEXT_SEED").as_deref() != Ok("0"))
+}
+
 use super::super::color::{color_value_to_render, resolve_color_current};
 
 /// R4525/R4549/R4553（css-backgrounds-4 §background-clip:text）：clip:text 的「恒色背景」提取。
@@ -1133,10 +1140,31 @@ impl super::Painter {
                 // 结果随 HashMap 迭代顺序（每进程随机）变化 → 渲染非确定性（flaky reftest）。
                 // 过滤为纯文本节点后，同一父元素的文本节点继承一致的字号/行高，结果确定。
                 let is_text = |tn: zero_dom::NodeId| matches!(doc.get(tn).map(|n| &n.kind), Some(NodeKind::Text(_)));
-                let parent_font_sizes: NodeIdMap<f32> =
+                let mut parent_font_sizes: NodeIdMap<f32> =
                     build_text_parent_override_map(doc, &box_node.text_node_font_sizes);
+                // R4558：直系文本 font-size 兜底——盒无 stored per-fragment 键时（定高/
+                // content 关键字高度盒等非 stored 路径），重跑 IFC 的直系文本 run 查不到
+                // fs 覆盖会落 16px 默认，行断按错误字宽推进。以盒 id 播种兜底（R4233
+                // letter-spacing 同构先例）：paint_text 入口已保证 style.font_size 为 Px。
+                // 收窄（corpus A/B 定谳）：垂直书写模式（行高/字号的块轴语义经轴交换，
+                // 盒自身 style 不等于文本 run 度量，text-overflow-vertical 族 6 案翻红）
+                // 与 table-internal 盒（匿名盒样式继承与文本 run 实际归属分歧，
+                // table-anonymous-objects 族 12 案翻红）不播种。kill-switch
+                // `ZW_PAINT_DIRECT_TEXT_SEED=0`。
+                let direct_text_seed = direct_text_seed_enabled()
+                    && matches!(
+                        style.display,
+                        DisplayValue::Block
+                            | DisplayValue::InlineBlock
+                            | DisplayValue::FlowRoot
+                            | DisplayValue::ListItem
+                    )
+                    && !style.writing_mode.is_vertical_block_flow();
+                if direct_text_seed && let Some(nid) = box_node.node_id {
+                    parent_font_sizes.entry(nid).or_insert(font_size);
+                }
 
-                let parent_is_ahem: NodeIdMap<bool> = box_node
+                let mut parent_is_ahem: NodeIdMap<bool> = box_node
                     .text_node_is_ahem
                     .iter()
                     .filter_map(|(&tn, &is_ahem)| {
@@ -1152,6 +1180,16 @@ impl super::Painter {
                         }
                     })
                     .collect();
+                // R4558：直系文本 is_ahem 兜底（同 fs/lh 种子）——覆盖缺失时测宽按非
+                // Ahem 近似（~0.5em/char），Ahem 行断/行数全错（hori-1 关键字盒 4 行
+                // 误成 2 行实证）。Ahem 判定与 stored 路径同源（font_family 单值比对）。
+                if direct_text_seed && let Some(nid) = box_node.node_id {
+                    let is_ahem_box = style
+                        .font_family
+                        .iter()
+                        .any(|f| f.trim_matches('"').eq_ignore_ascii_case("Ahem"));
+                    parent_is_ahem.entry(nid).or_insert(is_ahem_box);
+                }
 
                 let mut parent_letter_spacing: NodeIdMap<f32> =
                     build_text_parent_override_map(doc, &box_node.text_node_letter_spacing);
@@ -1181,8 +1219,26 @@ impl super::Painter {
                     })
                     .collect();
 
-                let parent_line_heights: NodeIdMap<f32> =
+                let mut parent_line_heights: NodeIdMap<f32> =
                     build_text_parent_override_map(doc, &box_node.text_node_line_heights);
+                // R4558：直系文本 line-height 兜底（与上方 font-size 种子同构）——覆盖
+                // 缺失时重跑 IFC 退 19.2 (16×1.2) 默认（R632 记档的 Path B 弱点），行间距
+                // 度量错（hori-1 关键字盒 PNG 取证 4 行连块）。解析语义与 layout IFC
+                // `container_used_line_height_px` 同源（Number × fs / Length 直解析 /
+                // Normal × 1.164 近似常数）。
+                if direct_text_seed && let Some(nid) = box_node.node_id {
+                    use zero_style_system::property::types::LineHeightValue;
+                    let lh_px = match &style.line_height {
+                        LineHeightValue::Number(n) => font_size * *n as f32,
+                        LineHeightValue::Length(l) => {
+                            zero_style_system::computed::resolve_length(l, font_size as f64, None, None) as f32
+                        }
+                        LineHeightValue::Normal => font_size * 1.164,
+                    };
+                    if lh_px.is_finite() && lh_px > 0.0 {
+                        parent_line_heights.entry(nid).or_insert(lh_px);
+                    }
+                }
 
                 // R1012：text-transform 覆盖（re-key 文本节点 → 父元素），让 paint Path B
                 // 空 styles IFC 也能在 collect_inline_items 期应用 transform，使行断用
