@@ -107,6 +107,31 @@ jsonl md5 2c2cdb6d 恒值 zombie 双复测零 922x 全 free 盘量 449G；push
 vert-1 11.08→6.66% crates/layout-engine 3 files +102/-22）→ 插记补
 记 434d53e77 记档锚点漂移（②178→179 ④+31188/-1657 ①③维持）+
 S1397 = 树变化刷新轮双腿活跑取代原 2/10 引用轮预告（兑现见本轮记录）
+   **S1397 轮后插记（2026-09-20 push 序列 pull --rebase 实测）**：兄弟流
+   **R4561 docs-only**（daa65dce7 vert-1 物理高 re-flow 探针实验未收敛
+   回退 + corner-shape 余 5 fail 深域勘察三机制族定谳 rendering-compat
+   .md 1 file +1/-0 自述 P 轮 0 net code 树与 R4560 678994d23 精确一致）
+   于 S1397 双腿收口（mt 腿 21:06:15）之后经 push 序列 pull --rebase 入
+   树（我方 S1397 记录提交 rebase 于其上 = fca20f047，push
+   daa65dce7..fca20f047 零冲突 实测复核）——兄弟提交**代码面为空**实测
+   复核（零 crates 零 apps/browser 零测试面 #[test] 零命中），**刷新触
+   发不成立**，S1397 双腿已覆盖现组合态代码面（R4560 折入态）→ S1398 =
+   1/10 静默监测引用轮计划**不变**（周期锚点 = S1397 双腿 门腿
+   20:56:46 落盘 + mt 腿 21:06:15 收口在案）；锚点面微漂移记档（新组合
+   树态 fca20f047 实测）：④ 全树排除本流 docs 对 18d462de6 **265 files
+   +31188/-1657 → 265 files +31189/-1657**（面 265 维持 docs-only 净入
+   账 +1 实测为准）/ ② crates/ raw **179 维持**（R4561 零 crates 提交
+   实测复核）/ ① 自有面 **10 files +1187/-182 维持** / ③ 子帧关键词
+   **7 文件 md5 74f58fcf 维持**（R4561 零 contentDocument|
+   content_document 命中实测复核 解冻条件①观察面 **179 口径**
+   frames.click+evaluate 挂起维持）/ ⑤ make test 腿预期 **19,376P/0F
+   68 组持平**（R4561 零测试面兄弟自述同值 引用轮基线锚定 S1397 双腿
+   实测在案）。S1398 轮口径 = 树不变门单腿复跑免 make test 腿（S336
+   先例）；树再变化 = 兄弟流代码腿折入则提前双腿刷新（R4561 下轮方向
+   = ①extract/后处理链物理高覆盖源专轮探针 ②corner-shape A 族 slice
+   评估 R4542 谱系 ③inline-size/width 槽位歧义 parse 级逻辑属性方案
+   ④mask 管线待用户拍板 兄弟流后续代码腿概率非零 本流只记账）；至迟
+   S1403 = 到期期限轮双腿活跑（S1397+6 轮口径 树不变也双腿）。
    **S1357 轮后插记（2026-09-20 push 序列 pull --rebase 实测）**：
    兄弟流 R4543（代码腿+记档面 b5d496180 flex item 子元素百分比
    高度塌 0 探针归因链逐层收窄 taffy 层排除→ZW tree.rs 集成面
