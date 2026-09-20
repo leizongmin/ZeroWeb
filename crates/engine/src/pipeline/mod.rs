@@ -2806,15 +2806,23 @@ pub(crate) fn inject_pseudo_text_nodes(
             }
             _ => false,
         });
+        // R4571：whitespace-only content（如 content:" "）按 CSS Text 白空间处理折叠为无
+        // 内容——盒化判定与 content:"" 同型（块内可折叠空白无行盒）。旧门 `text.is_empty()`
+        // 把空格当真文本 → positioned/block 伪元素落 text-node 路径，盒装饰（背景/边框/
+        // 尺寸/定位）全丢（driving: corner-shape-inset-shadow ref 页 ::before/::after 均
+        // content:" "+display:block+position:absolute → ref 整页空白）。whitespace 文本
+        // 不落 zw-pseudo 子节点（Chrome 同语义：空盒高度由装饰/样式决定）。
+        // https://drafts.csswg.org/css-text-3/#white-space-processing
+        let text_blank = text.trim().is_empty();
         let needs_box = std::env::var("ZW_PSEUDO_BOX").as_deref() != Ok("0")
-            && ((text.is_empty()
+            && ((text_blank
                 && (pseudo_style.position != PositionValue::Static
                     || pseudo_style.float != FloatValue::None
                     || pseudo_style.display != DisplayValue::Inline))
                 || (pseudo_style.display != DisplayValue::Inline && has_decoration && parent_is_root_or_body));
         let new_id = if needs_box {
             let el = doc.create_element("zw-pseudo");
-            if !text.is_empty() {
+            if !text_blank {
                 let text_id = doc.create_text_node(&text);
                 let _ = doc.append_child(el, text_id);
             }
@@ -3321,6 +3329,45 @@ mod pseudo_tests {
             PositionValue::Absolute,
             "zw-pseudo 元素须携带 position:absolute"
         );
+    }
+
+    /// R4571：whitespace-only content（content:" "）+ positioned → 与 content:"" 同型
+    /// 盒化（zw-pseudo ELEMENT 节点），且不落文本子节点（CSS Text 白空间处理——块内
+    /// 可折叠空白折叠为无行盒，Chrome 同语义）。旧门 `text.is_empty()` 把空格当真文本
+    /// → 落 text-node 路径，盒装饰全丢（driving: corner-shape-inset-shadow ref 页
+    /// ::before/::after 均 content:" "+display:block+position:absolute → ref 整页空白）。
+    #[test]
+    fn inject_whitespace_positioned_pseudo_as_element_node_r4571() {
+        use zero_css_parser::values::PositionValue;
+        let html = r#"<html><body><div>X</div></body></html>"#;
+        let mut doc = zero_dom::parse_html(html);
+        let div = find_element(&doc, doc.root(), "div").expect("div 存在");
+        let mut styles: HashMap<NodeId, ComputedStyle> = HashMap::new();
+        let mut div_style = ComputedStyle::default();
+        div_style.before_pseudo = Some(Box::new(ComputedStyle {
+            content: ContentComputedValue::String(" ".to_string()),
+            position: PositionValue::Absolute,
+            ..ComputedStyle::default()
+        }));
+        styles.insert(div, div_style);
+
+        inject_pseudo_text_nodes(&mut doc, &mut styles, &[]);
+
+        let first_child = doc
+            .get(div)
+            .and_then(|n| n.children.first().copied())
+            .expect("有子节点");
+        // whitespace content + positioned = ELEMENT 节点（非 text）。
+        match &doc.get(first_child).unwrap().kind {
+            zero_dom::NodeKind::Element(_) => {}
+            other => panic!("R4571: whitespace positioned 伪元素应为 ELEMENT 节点，实际 {other:?}"),
+        }
+        // zw-pseudo 无文本子节点（whitespace 折叠，空盒由装饰/样式决定高度）。
+        let has_text_child = doc
+            .child_nodes(first_child)
+            .iter()
+            .any(|c| matches!(doc.get(*c).map(|n| &n.kind), Some(zero_dom::NodeKind::Text(_))));
+        assert!(!has_text_child, "whitespace content 不应落文本子节点");
     }
 
     /// `inject_pseudo_text_nodes`：::after 追加为末子节点；content:none 不注入。
