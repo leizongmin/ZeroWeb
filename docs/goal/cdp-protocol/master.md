@@ -111,6 +111,34 @@ min/max 地板/帽冲突修正 vert-1 6.66→6.10% crates/layout-engine
 sizing.rs 2 files +11/-10）→ 插记补记 af18f3bf0 记档锚点漂移（②
 179→180 ④+31190/-1657 ①③维持）+ S1401 = 树变化刷新轮双腿活跑取代
 原 4/10 引用轮预告（兑现见本轮记录）
+   **S1401 轮后插记（2026-09-20 push 序列 pull --rebase 实测）**：兄弟流
+   两笔 **docs-only** 折入——R4563（70efb1709 vert-1 尾残差探针 taffy
+   正确/后提取 IFC 阶段覆写定谳 rendering-compat.md 1 file +1/-0 自述
+   P 轮 0 net code 树与 R4562 80b1b411a 精确一致）+ CI-GUARD 第三十七
+   轮（a1bb4fc62 docs/goal/zero-web/master.md 1 file +2/-0 兄弟
+   zero-web 流自有控制面基准记录轮）于 S1401 双腿收口（mt 腿
+   21:53:05）之后经 push 序列 pull --rebase 入树（我方 S1401 记录提交
+   rebase 于其上 = 7ac8af14f，push 70efb1709..7ac8af14f 零冲突 实测复
+   核）——两笔**代码面均为空**实测复核（零 crates 零 apps/browser 零
+   测试面），**刷新触发不成立**，S1401 双腿已覆盖现组合态代码面
+   （R4562 折入态）→ S1402 = 1/10 静默监测引用轮计划**不变**（周期锚
+   点 = S1401 双腿 门腿 21:43:32 落盘 + mt 腿 21:53:05 收口在案）；
+   锚点面微漂移记档（新组合树态 7ac8af14f 实测）：④ 全树排除本流
+   docs 对 18d462de6 **265 files +31190/-1657 → 265 files
+   +31193/-1657**（面 265 维持 docs-only 净入账 +3 = R4563 +1 +
+   CI-GUARD +2 实测为准）/ ② crates/ raw **180 维持**（两笔零 crates
+   提交实测复核）/ ① 自有面 **10 files +1187/-182 维持** / ③ 子帧关
+   键词 **7 文件 md5 74f58fcf 维持**（零 contentDocument|
+   content_document 命中实测复核 解冻条件①观察面 **180 口径**
+   frames.click+evaluate 挂起维持）/ ⑤ make test 腿预期 **19,376P/0F
+   68 组持平**（零测试面 引用轮基线锚定 S1401 双腿实测在案）。S1402
+   轮口径 = 树不变门单腿复跑免 make test 腿（S336 先例）；树再变化 =
+   兄弟流代码腿折入则提前双腿刷新（R4563 下轮方向 = ①vert-1 尾残差
+   收口续 覆写 fn 二分定位+fill 语义优先 gate ②corner-shape A 族
+   slice 评估 R4542 谱系 ③inline-size/width 槽位歧义 parse 级逻辑属
+   性方案 ④mask 管线待用户拍板 兄弟流后续代码腿概率非零 本流只记
+   账）；至迟 S1407 = 到期期限轮双腿活跑（S1401+6 轮口径 树不变也双
+   腿）。
    **S1357 轮后插记（2026-09-20 push 序列 pull --rebase 实测）**：
    兄弟流 R4543（代码腿+记档面 b5d496180 flex item 子元素百分比
    高度塌 0 探针归因链逐层收窄 taffy 层排除→ZW tree.rs 集成面
