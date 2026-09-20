@@ -1196,7 +1196,15 @@ impl CanvasContext {
     }
 
     /// 将指定 Path2D 的命令扁平化为顶点列表（x, y 交替）。
+    ///
+    /// R4570：绘制期应用当前 CTM（Canvas 2D spec——Path2D 坐标为用户空间，绘制时
+    /// 经当前变换矩阵映射到设备空间，与 `move_to`/`line_to` 追加期即 transform_point
+    /// 的当前路径同一设备空间约定）。此前裸坐标直出，fill/stroke/clip(path) 在
+    /// translate/scale 后整体错位（render-corner-shape ref 页 translate(100,100)+
+    /// clip 路径 → clip 区域偏出画布 → 全空白）。
+    /// https://html.spec.whatwg.org/multipage/canvas.html#dom-context-2d-fill
     pub(crate) fn flatten_path_for(&self, path: &Path2D) -> Vec<f32> {
+        let path = &path.transformed(&self.transform);
         let mut vertices = Vec::new();
         let mut current_x = 0.0f32;
         let mut current_y = 0.0f32;

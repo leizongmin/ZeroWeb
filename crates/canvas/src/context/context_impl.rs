@@ -1039,7 +1039,10 @@ impl CanvasContext {
             let rect = Rect::new(min_x, min_y, max_x - min_x, max_y - min_y);
             self.primitives.add_clip(rect);
             // R56e：追加（相交语义，同 clip()）。
-            self.clip_paths.push(path.clone());
+            // R4570：存设备空间路径——clip_applies 以设备像素坐标做点测（同 clip()
+            // 存设备空间 current_path 的约定）；flatten_path_for 已按 CTM 映射顶点，
+            // 此处 path.clone() 裸坐标与点测空间不一致（translate 后 clip 全吞）。
+            self.clip_paths.push(path.transformed(&self.transform));
         }
     }
 
@@ -1476,28 +1479,25 @@ impl CanvasContext {
     }
 
     // ── Path2D 参数形式（R3306：ctx.fill(path)/stroke(path)/clip(path)，spec CanvasDrawingStyles）──
-    // 语义：fill(path) 用给定 Path2D 而非当前路径（current_path 不变）。实现：保存当前路径 → 替换 →
-    // 调裸方法 → 恢复（零侵入，复用既有光栅化）。Path2D 经 engine 路径注册表（path registry）按 id 引用。
+    // 语义：fill(path) 用给定 Path2D 而非当前路径（current_path 不变）。R4570：三个便捷
+    // 形式统一委托 `*_with_path`/`fill_path_with_rule`（flatten_path_for 绘制期应用 CTM）——
+    // 旧「swap current_path → 裸方法」实现把裸坐标 Path2D 经 flatten_path_opts 光栅化，
+    // 非恒等 CTM 下与设备空间约定错位（R3356 记录的 stroke 阴影孪生亦随委托消除）。
+    // Path2D 经 engine 路径注册表（path registry）按 id 引用。
 
     /// 用给定 `Path2D` 填充（替代当前路径，spec `ctx.fill(path)`）。当前路径不被修改。
     pub fn fill_path(&mut self, path: &Path2D) {
-        let saved = std::mem::replace(&mut self.current_path, path.clone());
-        self.fill();
-        self.current_path = saved;
+        self.fill_path_with_rule(path, super::raster::FillRule::NonZero);
     }
 
     /// 用给定 `Path2D` 描边（替代当前路径，spec `ctx.stroke(path)`）。当前路径不被修改。
     pub fn stroke_path(&mut self, path: &Path2D) {
-        let saved = std::mem::replace(&mut self.current_path, path.clone());
-        self.stroke();
-        self.current_path = saved;
+        self.stroke_with_path(path);
     }
 
     /// 用给定 `Path2D` 设置裁剪（替代当前路径，spec `ctx.clip(path)`）。当前路径不被修改。
     pub fn clip_path(&mut self, path: &Path2D) {
-        let saved = std::mem::replace(&mut self.current_path, path.clone());
-        self.clip();
-        self.current_path = saved;
+        self.clip_with_path(path);
     }
 
     // ── Composite operation ──

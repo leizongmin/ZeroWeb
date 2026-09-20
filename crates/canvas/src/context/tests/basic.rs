@@ -2,6 +2,7 @@
 
 use super::super::types::*;
 use crate::context::*;
+use crate::path::Path2D;
 use zero_render_foundation::color::Color;
 
 #[test]
@@ -1462,4 +1463,45 @@ fn test_is_point_in_path_move_to_only() {
     ctx.move_to(50.0, 50.0);
     // 只有 MoveTo，没有闭合区域
     assert!(!ctx.is_point_in_path(50.0, 50.0));
+}
+
+/// R4570：Path2D 绘制期 CTM 契约（Canvas 2D spec——fill/stroke/clip(path) 的路径
+/// 坐标为用户空间，绘制时经当前变换矩阵映射到设备空间）。
+/// https://html.spec.whatwg.org/multipage/canvas.html#dom-context-2d-fill
+///
+/// 旧实现 `flatten_path_for` 裸坐标直出：translate(50,50) 后 fill(path) 画在
+/// (0,0)-(100,100)（应 (50,50)-(150,150)）、clip(path) 区域偏移致交集为空全吞
+/// （driving: render-corner-shape ref 页 translate(100,100) + clip 路径 → 整页空白）。
+#[test]
+fn test_path2d_fill_clip_applies_ctm_r4570() {
+    let mut ctx = CanvasContext::new(200, 200);
+    ctx.translate(50.0, 50.0);
+
+    // ① fill(path)：光栅像素落设备空间 (50,50)-(150,150)，非裸坐标 (0,0)-(100,100)。
+    let mut path = Path2D::new();
+    path.rect(0.0, 0.0, 100.0, 100.0);
+    ctx.set_fill_style(CanvasStyle::Color(Color::rgba(255, 0, 0, 255)));
+    ctx.fill_path(&path);
+    let px = |x: usize, y: usize| -> [u8; 4] {
+        let idx = (y * 200 + x) * 4;
+        [
+            ctx.pixel_buffer[idx],
+            ctx.pixel_buffer[idx + 1],
+            ctx.pixel_buffer[idx + 2],
+            ctx.pixel_buffer[idx + 3],
+        ]
+    };
+    assert_eq!(px(75, 75)[3], 255, "translate 后 fill(path) 应覆盖设备 (75,75)");
+    assert_eq!(px(25, 25)[3], 0, "translate 后 fill(path) 不应覆盖裸坐标区 (25,25)");
+
+    // ② clip(path)：clip_applies 点测与设备空间一致（clip_paths 存设备空间路径）。
+    let mut clip_path = Path2D::new();
+    clip_path.rect(0.0, 0.0, 100.0, 100.0);
+    ctx.clip_with_path(&clip_path);
+    assert!(ctx.clip_applies(75.0, 75.0), "clip 区域应含设备 (75,75)");
+    assert!(!ctx.clip_applies(25.0, 25.0), "clip 区域不含裸坐标区 (25,25)");
+
+    // ③ isPointInPath(path, x, y)：点为设备空间、路径经 CTM 变换（spec 同语义）。
+    assert!(ctx.is_point_in_path_for_rule(&path, 75.0, 75.0, super::super::raster::FillRule::NonZero));
+    assert!(!ctx.is_point_in_path_for_rule(&path, 25.0, 25.0, super::super::raster::FillRule::NonZero));
 }

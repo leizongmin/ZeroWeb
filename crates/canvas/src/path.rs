@@ -147,6 +147,69 @@ impl Path2D {
         self.commands.extend_from_slice(&other.commands);
     }
 
+    /// 返回按仿射矩阵 `t` 变换后的路径副本（Canvas 2D 绘制期 CTM 语义）。
+    ///
+    /// https://html.spec.whatwg.org/multipage/canvas.html#dom-context-2d-fill —
+    /// Path2D 形式的 fill/stroke/clip 路径坐标为**用户空间**，绘制时须经当前
+    /// 变换矩阵映射到设备空间（与 `move_to`/`line_to` 追加期即应用 CTM 的当前路径
+    /// 同一设备空间约定）。点坐标逐点 `transform_point`；半径/半轴按矩阵有效缩放
+    /// 因子（|det|¹ᐟ²，非均匀时几何平均近似——同 `transform_scale_factor` 惯例）
+    /// 缩放；旋转角在均匀缩放/平移下不变（旋转+非均匀缩放的精确映射不在本近似内）。
+    pub fn transformed(&self, t: &crate::context::Transform2D) -> Path2D {
+        let scale = ((t.a * t.d - t.b * t.c).abs()).sqrt().max(1e-9);
+        let p = |x: f32, y: f32| -> (f32, f32) { t.transform_point(x, y) };
+        let commands = self
+            .commands
+            .iter()
+            .map(|cmd| match *cmd {
+                PathCommand::MoveTo(x, y) => {
+                    let (tx, ty) = p(x, y);
+                    PathCommand::MoveTo(tx, ty)
+                }
+                PathCommand::LineTo(x, y) => {
+                    let (tx, ty) = p(x, y);
+                    PathCommand::LineTo(tx, ty)
+                }
+                PathCommand::QuadraticCurveTo(cpx, cpy, x, y) => {
+                    let (tcx, tcy) = p(cpx, cpy);
+                    let (tx, ty) = p(x, y);
+                    PathCommand::QuadraticCurveTo(tcx, tcy, tx, ty)
+                }
+                PathCommand::BezierCurveTo(c1x, c1y, c2x, c2y, x, y) => {
+                    let (t1x, t1y) = p(c1x, c1y);
+                    let (t2x, t2y) = p(c2x, c2y);
+                    let (tx, ty) = p(x, y);
+                    PathCommand::BezierCurveTo(t1x, t1y, t2x, t2y, tx, ty)
+                }
+                PathCommand::Arc(cx, cy, radius, start, end, anticlockwise) => {
+                    let (tcx, tcy) = p(cx, cy);
+                    PathCommand::Arc(tcx, tcy, radius * scale, start, end, anticlockwise)
+                }
+                PathCommand::ArcTo(x1, y1, x2, y2, radius) => {
+                    let (t1x, t1y) = p(x1, y1);
+                    let (t2x, t2y) = p(x2, y2);
+                    PathCommand::ArcTo(t1x, t1y, t2x, t2y, radius * scale)
+                }
+                PathCommand::Ellipse(cx, cy, rx, ry, rotation, start, end) => {
+                    let (tcx, tcy) = p(cx, cy);
+                    PathCommand::Ellipse(tcx, tcy, rx * scale, ry * scale, rotation, start, end)
+                }
+                PathCommand::RoundRect(x, y, w, h, ref radii) => {
+                    let (tx, ty) = p(x, y);
+                    PathCommand::RoundRect(
+                        tx,
+                        ty,
+                        w * scale,
+                        h * scale,
+                        radii.iter().map(|(rx, ry)| (rx * scale, ry * scale)).collect(),
+                    )
+                }
+                PathCommand::ClosePath => PathCommand::ClosePath,
+            })
+            .collect();
+        Path2D { commands }
+    }
+
     /// 从 SVG path data 字符串解析（HTML Canvas `new Path2D(d)`，
     /// https://html.spec.whatwg.org/multipage/canvas.html#dom-path2d + SVG 2 §9.3 path data）。
     ///

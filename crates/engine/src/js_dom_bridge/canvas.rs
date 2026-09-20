@@ -1684,13 +1684,18 @@ pub fn canvas_context_op(reg: &mut CanvasRegistry, handle: &str, op: &str, args:
         }
         "strokePath" => {
             if let (Some(ctx), Some(path)) = (reg.contexts.get_mut(&hid()), reg.paths.get(&pid())) {
-                ctx.stroke_path(path);
+                // R4570：走 stroke_with_path（flatten_path_for，绘制期应用 CTM）——
+                // swap 形式 stroke_path 经 flatten_path_opt 在裸路径坐标上光栅化，
+                // translate/scale 下与 fill(path)/clip(path) 错位不一致。
+                ctx.stroke_with_path(path);
             }
             "ok".into()
         }
         "clipPath" => {
             if let (Some(ctx), Some(path)) = (reg.contexts.get_mut(&hid()), reg.paths.get(&pid())) {
-                ctx.clip_path(path);
+                // R4570：同 strokePath——clip_with_path（flatten_path_for + clip_paths
+                // 存设备空间路径），裸坐标 swap 形式在非恒等 CTM 下 clip 区域错位。
+                ctx.clip_with_path(path);
             }
             "ok".into()
         }
