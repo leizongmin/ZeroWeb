@@ -380,10 +380,6 @@ impl LayoutEngine {
                     content_kw(&s.max_height),
                 )
             };
-            // 塌缩伪影判据（垂直 height 族专属）：block-size 别名关键字经 converter 落
-            // post-swap width 槽（物理 inline 轴）length(0) → 物理高塌 4px，须还原 fill。
-            let inline_alias_polluted =
-                vertical && (content_kw(&s.height) || content_kw(&s.min_height) || content_kw(&s.max_height));
             if !kw_h && !kw_min && !kw_max {
                 continue;
             }
@@ -484,12 +480,14 @@ impl LayoutEngine {
                 if kw_max {
                     style.max_size.height = taffy::style::Dimension::length(target);
                 }
-                // 垂直 height 族（block-size 别名）塌缩伪影清除：converter 的 length(0)
-                // 落 post-swap width 槽（物理 inline 轴）→ 物理高塌 4px。还原 = 显式 fill
-                //（= 父 content 内联尺寸，ref 页 auto 盒同值）——**不可用 auto**：交换帧
-                // taffy width 轴 auto 触发 R4468 型 cross-stretch（物理高 = 容器物理宽
-                // 196 实测），定长填充绕开 stretch 源。
-                if inline_alias_polluted && parent_inline_depth > 0.0 {
+                // 垂直盒物理 inline 轴（post-swap width 槽 = 物理高）re-flow（R4562）：
+                // 第一趟塌缩级联把 inline extent 烘焙成显式尺寸，块轴修正后 re-flow。
+                // in-flow（float:None）块级子 inline extent = fill = 父 content 内联尺寸
+                // ——**不可用 auto**：交换帧 taffy width 轴 auto 触发 R4468 型 cross-stretch。
+                // 同槽显式 min/max 地板/帽（R4437 收缩臂 min 230 / cap 臂 max 4，塌缩态
+                // 烘焙）与本 fill 冲突——taffy clamp: width = max(120, min 230) = 238 /
+                // min(120, max 4) = 4 实测——kw 盒按修正后语义清除。
+                if vertical && parent_inline_depth > 0.0 && matches!(s.float, FloatValue::None) {
                     let vframe = b.padding_top + b.padding_bottom + b.border_top + b.border_bottom;
                     let h_target = if matches!(style.box_sizing, taffy::style::BoxSizing::BorderBox) {
                         parent_inline_depth + vframe
@@ -497,6 +495,8 @@ impl LayoutEngine {
                         parent_inline_depth
                     };
                     style.size.width = taffy::style::Dimension::length(h_target);
+                    style.min_size.width = taffy::style::Dimension::auto();
+                    style.max_size.width = taffy::style::Dimension::auto();
                 }
                 let _ = taffy_tree.set_style(taffy_id, style);
                 let _ = taffy_tree.mark_dirty(taffy_id);
