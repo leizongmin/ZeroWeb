@@ -168,6 +168,50 @@ R4552+R4553+R4556+R4557+R4558+R4559+R4560+R4562+R4564 组合态）
 S1383-S1407 门腿前序组合态探针在位延续覆盖）；唯一未清偿义务 =
 frames.click+evaluate 回填（挂子帧能力解冻，见子帧解冻清单，不阻收
 口））
+   **S1409 轮后插记（2026-09-20 push 序列 pull --rebase 实测）**：兄弟流
+   **R4566 代码腿**（8e3dbbfa2 23:42:36 提交 vert-1 尾容器坍塌单点定谳
+   （12.6 R4012 垂直关键字 cap wm-blind parse 臂）+ definite-width 门
+   （apply_inner 容器宽 Σ 收缩无 width_auto 门）corpus 15160
+   （15160/16594=91.36%）net −2 零真新红 翻绿×2 导入
+   imported-tests.txt +2 crates/layout-engine postprocess.rs +10/-1 +
+   vertical_block_flow.rs +11/-1 + rendering-compat.md +2/-1 = 4 files
+   +23/-3 自述 make test 19,376P/0F 68 组 EXIT=0 + make reftest
+   687/687 + fmt clean + clippy -D warnings + product-smoke welcome
+   15.40% 逐字节同值 struct PASS + product-smoke-legacy 42 fixtures
+   struct PASS + bench-gate 定向 GATE PASS 32 指标 NEW=0 零新 #[test]
+   = 5 files +25/-3 含 evidence 本地记档不入库）于我方 S1409 门腿收口
+   （23:43:28）之后经 push 序列 pull --rebase 入树（我方 S1409 记录提
+   交 rebase 于其上 = 5f546d910，push 8e3dbbfa2..5f546d910 零冲突 实
+   测复核）——兄弟代码提交**代码面非空**实测复核（crates/layout-engine
+   postprocess.rs + vertical_block_flow.rs 两文件非空），**代码面变化
+   成立** → **S1409 门腿 PASS 覆盖的代码树态 = afe1249b4 组合态
+   （R4564+R4565 面），新组合树态 = 5f546d910（R4566 折入 + 本流
+   S1409 记录 docs）未被本流门腿覆盖**；工作面归属 = 渲染流域
+   crates/layout-engine 专属面 零碰撞（run-rules §9/§10 归因纪律记
+   档）。锚点面漂移记档（新组合树态 5f546d910 实测）：② crates/ raw
+   **181 → 182**（R4566 代码腿入集 e67967632..TIP 口径实测）/ ④ 全树
+   排除本流 docs 对 18d462de6 **265 files +31216/-1657 → 265 files
+   +31238/-1659**（面 265 维持 R4566 +23/-3 净入账 累计口径 实测为
+   准）/ ① 自有面 **10 files +1187/-182 维持**（R4566 零 apps/browser
+   提交实测复核）/ ③ 子帧关键词 **7 文件 md5 74f58fcf 维持**（R4566
+   零 contentDocument|content_document 命中实测复核 解冻条件①观察面
+   **182 口径** frames.click+evaluate 挂起维持）/ ⑤ make test 腿计数
+   预期 = **19,376P/0F 68 组持平**（R4566 零新 #[test]
+   imported-tests.txt +2 为 reftest 账本非单测 兄弟自述同值 插记时点
+   以兄弟自述为准 S1410 双腿实测复核 按归因纪律 run-rules §10 以实
+   测为准 若偏差先归因）→ **S1410 = 6/10 到期期限轮双腿活跑**（
+   S1404+6 轮口径期限到期 口径已在 S1409 记录内预告）叠加**树变化刷
+   新轮**属性（S245→…→S1401→S1404 刷新先例链兑现 双缘由叠加口径不
+   变）：门 + make test 后台跑法 echo TEST_EXIT 直写口径 覆盖 R4566
+   折入后新组合态；门腿预期新树态编译面 = R4566 折入致 layout-engine
+   级联重编译（layout-engine → engine → page-runtime → browser
+   4 Compiling S1393/S1397/S1401/S1404 先例同型 Compiling 行数以实测
+   为准）+ zero-engine dead_code warning 真重编发射预期（第十六次数
+   以实测为准）；mt 腿预期 = **19,376P/0F 68 组**（兄弟自述同值）+
+   33 Compiling 同型（S1404 mt 腿先例同型 Compiling 行数以实测为准）；
+   S1410 双腿收口后引用计数以 S1410 双腿为新周期锚点归零重计（S1411
+   起 1/10 至迟 S1416 = S1410+6 期限轮）。
+
    **S1403 轮后插记二（同序列 push 二次实测）**：兄弟流 **R4564 代码腿**
    （4497ff2b4 vert-1 覆写 fn 定谳 remeasure_inline_only_containers 非
    浮点垂直臂 + fill 语义排除 gate 双重轴误测修复 corpus net −4 零新红
