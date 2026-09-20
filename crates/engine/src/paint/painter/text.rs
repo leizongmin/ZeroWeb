@@ -29,16 +29,70 @@ fn glyph_probe_enabled() -> bool {
 
 use super::super::color::{color_value_to_render, resolve_color_current};
 
-/// R4525（css-backgrounds-4 §background-clip:text）：clip:text + 实底 bg（无 image）的
-/// 彩字样式判定——该元素的文本字形以其背景色绘制（canonical `color: transparent` 模式；
-/// bg image 非空不触发，需 mask 管线）。
-fn bg_clip_text_solid_style(st: &ComputedStyle) -> bool {
-    st.background_image.is_empty()
-        && !matches!(st.background_color, ColorValue::Transparent)
-        && st
-            .background_clip
-            .iter()
-            .any(|c| matches!(c, zero_style_system::property::types::BackgroundClipComputedValue::Text))
+/// R4525/R4549（css-backgrounds-4 §background-clip:text）：clip:text 的「恒色背景」提取。
+///
+/// 背景层（color + image 自下而上）合成结果为恒色 C 时，mask 管线的输出与「字形以
+/// `text OVER C` 预混合色染色」逐像素等价（OVER 结合律 + coverage 可分配，R4549 证据
+/// 文档推导）——无需离屏合成。任一层非恒色（多色渐变 / url 图片）→ None（engine 侧
+/// 无解码像素通路，url 层恒色性不可判），维持 bg 正常绘制，归真 mask 管线域。
+///
+/// C 的 alpha 为 0（bg 全透明）→ None：clip:text 无视觉贡献，不激活（激活反而会以
+/// 透明色覆盖字形原色）。
+pub(super) fn bg_clip_text_solid_color(st: &ComputedStyle) -> Option<Color> {
+    use zero_style_system::property::types::{BackgroundClipComputedValue, BackgroundImageComputedValue};
+    if !st
+        .background_clip
+        .iter()
+        .any(|c| matches!(c, BackgroundClipComputedValue::Text))
+    {
+        return None;
+    }
+    let mut acc = resolve_color_current(&st.background_color, &st.color);
+    for layer in &st.background_image {
+        let c = match layer {
+            BackgroundImageComputedValue::None => continue,
+            BackgroundImageComputedValue::Gradient(g) => gradient_solid_color(g, &st.color)?,
+            // url 层：engine 侧无解码像素，恒色性不可判 → 整体禁用（R4549 切片定界）。
+            BackgroundImageComputedValue::Url(_) => return None,
+        };
+        acc = color_over(c, acc);
+    }
+    (acc.a > 0).then_some(acc)
+}
+
+/// 渐变层恒色提取：全部 stop 解析为同一 RGBA → 该色；否则 None。
+/// repeating 不改变恒色性（周期常数为同一色）；radial/conic 同判（全 stop 同色即恒色）。
+fn gradient_solid_color(g: &zero_css_parser::values::GradientValue, element_color: &ColorValue) -> Option<Color> {
+    use zero_css_parser::values::GradientValue;
+    let stops = match g {
+        GradientValue::Linear(l) => &l.stops,
+        GradientValue::Radial(r) => &r.stops,
+        GradientValue::Conic(c) => &c.stops,
+    };
+    let first = stops.first().map(|s| resolve_color_current(&s.color, element_color))?;
+    stops
+        .iter()
+        .all(|s| resolve_color_current(&s.color, element_color) == first)
+        .then_some(first)
+}
+
+/// src OVER dst 逐像素 alpha 合成（CSS Compositing §simple alpha compositing；
+/// 非预乘 u8 出入，f32 中间精度）。
+fn color_over(src: Color, dst: Color) -> Color {
+    let mix = |s: u8, d: u8, sa: f32, da: f32| -> u8 {
+        let out_a = sa + da * (1.0 - sa);
+        if out_a <= f32::EPSILON {
+            return 0;
+        }
+        ((s as f32 / 255.0 * sa + d as f32 / 255.0 * da * (1.0 - sa)) / out_a * 255.0).round() as u8
+    };
+    let (sa, da) = (src.a as f32 / 255.0, dst.a as f32 / 255.0);
+    Color::rgba(
+        mix(src.r, dst.r, sa, da),
+        mix(src.g, dst.g, sa, da),
+        mix(src.b, dst.b, sa, da),
+        ((sa + da * (1.0 - sa)) * 255.0).round() as u8,
+    )
 }
 use super::super::helpers::PrimitiveCounts;
 use super::super::helpers::apply_text_transform;
@@ -1398,25 +1452,29 @@ impl super::Painter {
                                     &owner_style.unwrap_or(style).font_variation_settings,
                                 );
                                 let owner_font_variation_id = self.primitives.intern_font_variations(&owner_variations);
-                                // R4525：clip:text 彩字上下文——子树字形以最近 clip:text
-                                // 实底 bg 色绘制（canonical color:transparent 模式）；owner
-                                // 自身 clip:text（inline span 字形由宿主块 IFC 承载时栈未及
-                                // push）按 owner 样式直接判定。
-                                let frag_color = self
+                                // R4525/R4549：clip:text 彩字上下文——字形色 = text 色 OVER
+                                // bg 恒色（恒色 bg 的 mask 管线逐像素等价预混合；text 色透明
+                                // 时 = bg 恒色，与 R4525 v1 canonical 行为恒等）。C = 栈顶
+                                //（paint_node push）或 owner 自身 clip:text 恒色（inline span
+                                // 字形由宿主块 IFC 承载时栈未及 push，按 owner 样式判定）。
+                                let frag_color = match self
                                     .bg_clip_text_color
                                     .last()
                                     .copied()
-                                    .or_else(|| {
-                                        owner_style
-                                            .filter(|s| bg_clip_text_solid_style(s))
-                                            .map(|s| color_value_to_render(&s.background_color))
-                                    })
-                                    .or_else(|| {
-                                        owner_style
+                                    .or_else(|| owner_style.and_then(bg_clip_text_solid_color))
+                                {
+                                    Some(clip_bg) => {
+                                        let text_color = owner_style
                                             .filter(|s| s.color != ColorValue::CurrentColor)
                                             .map(|s| color_value_to_render(&s.color))
-                                    })
-                                    .unwrap_or(color);
+                                            .unwrap_or(color);
+                                        color_over(text_color, clip_bg)
+                                    }
+                                    None => owner_style
+                                        .filter(|s| s.color != ColorValue::CurrentColor)
+                                        .map(|s| color_value_to_render(&s.color))
+                                        .unwrap_or(color),
+                                };
                                 // R2523：text-emphasis-color（CSS Text Decoration 3 §3.3）。
                                 // 显式色覆盖 currentColor；默认 CurrentColor → 沿用 frag_color
                                 //（标记随文字色，字节不变）。
@@ -1821,18 +1879,18 @@ impl super::Painter {
                                 })
                                 .map(|s| color_value_to_render(&s.color))
                                 .unwrap_or(color);
-                            // R4525：clip:text 彩字上下文（同 stored 路径；owner 自身
-                            // clip:text 时按 owner 样式判定）。
-                            let frag_color = self
+                            // R4525/R4549：clip:text 彩字上下文（同 stored 路径；owner 自身
+                            // clip:text 恒色时按 owner 样式判定）——字形色 = text 色 OVER
+                            // bg 恒色预混合。
+                            let frag_color = match self
                                 .bg_clip_text_color
                                 .last()
                                 .copied()
-                                .or_else(|| {
-                                    owner_style_opt
-                                        .filter(|s| bg_clip_text_solid_style(s))
-                                        .map(|s| color_value_to_render(&s.background_color))
-                                })
-                                .unwrap_or(frag_color);
+                                .or_else(|| owner_style_opt.and_then(bg_clip_text_solid_color))
+                            {
+                                Some(clip_bg) => color_over(frag_color, clip_bg),
+                                None => frag_color,
+                            };
 
                             // R1021：text-emphasis 取自片段 owner 样式（<span> 上设）。
                             let shaping_style = owner_style_opt.unwrap_or(style);
@@ -2152,7 +2210,11 @@ impl super::Painter {
                                 // pad 垂直边随首/末片段（collect 侧 pad 只折入首/末 run，同口径）。
                                 let lead_ext = if r4332_is_first { pad_left + bl_w } else { 0.0 };
                                 let trail_ext = if r4332_is_last { pad_right + br_w } else { 0.0 };
-                                let has_bg = owner_style.background_color != ColorValue::Transparent;
+                                // R4549：clip:text 恒色 owner 的 fragment bg 抑制——bg 改由
+                                // 子树字形承载（R1442 per-fragment bg 站与 box-level 站同规；
+                                // linebreak 案实证首片段 bg 泄漏为实心条）。
+                                let has_bg = owner_style.background_color != ColorValue::Transparent
+                                    && bg_clip_text_solid_color(&owner_style).is_none();
                                 let has_bleed = pad_top > 0.0 || pad_bot > 0.0 || bt_w > 0.0 || bb_w > 0.0;
                                 // R4332：仅**真多片段**（跨行）owner 走 per-fragment 边框——
                                 // 单片段 owner（含 line-height 撑大 content_height 的单行 span，

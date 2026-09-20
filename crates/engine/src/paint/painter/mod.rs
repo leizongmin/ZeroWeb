@@ -2099,20 +2099,17 @@ impl Painter {
         // 内容到 padding-box，盒子自身装饰不裁）。原快照取于 paint_text 之后致直属文本漏裁。
         let mut counts_before_children = PrimitiveCounts::snapshot(&self.primitives);
 
-        // R4525（css-backgrounds-4 §background-clip:text）：clip:text + 实底 bg 的「彩字」
-        // v1——背景色下探为子树文本字形色（本盒 bg fill 抑制；canonical
-        // `color: transparent` + clip:text 与 chromium 逐像素等价；bg image 非空不触发——
-        // 渐变/图片 clip 需 mask 管线）。push/pop 跨子树绘制，单一出口弹出。
-        // kill-switch `ZW_BG_CLIP_TEXT=0`。
+        // R4525/R4549（css-backgrounds-4 §background-clip:text）：clip:text + 恒色 bg 的
+        // 「彩字」等价染色——背景层（color+image）合成恒色 C 时字形以 `text OVER C`
+        // 预混合色承载（mask 管线逐像素等价，R4549 证据文档推导）；非恒色 bg（多色
+        // 渐变 / url 图片）→ 不激活，归真 mask 管线域。push/pop 跨子树绘制，单一出口
+        // 弹出。kill-switch `ZW_BG_CLIP_TEXT=0`。
         let bg_clip_text_active = std::env::var("ZW_BG_CLIP_TEXT").as_deref() != Ok("0")
-            && box_node.node_id.and_then(|id| styles.get(&id)).is_some_and(|st| {
-                st.background_image.is_empty()
-                    && !matches!(st.background_color, ColorValue::Transparent)
-                    && st
-                        .background_clip
-                        .iter()
-                        .any(|c| matches!(c, BackgroundClipComputedValue::Text))
-            });
+            && box_node
+                .node_id
+                .and_then(|id| styles.get(&id))
+                .and_then(text::bg_clip_text_solid_color)
+                .is_some();
 
         let is_hidden = if box_node.is_anonymous_text_item {
             // 匿名文本项（flex/grid 容器中的文本节点）
@@ -2274,13 +2271,9 @@ impl Painter {
                 if spanner_segs_active {
                     self.paint_nested_spanner_segments(box_node, abs_x, abs_y, style);
                 }
-                // R4525：clip:text + 实底 bg → bg fill 抑制（bg 色改由子树字形承载，
-                // 见 bg_clip_text_color push）。
-                let bg_clip_text_solid = style.background_image.is_empty()
-                    && style
-                        .background_clip
-                        .iter()
-                        .any(|c| matches!(c, BackgroundClipComputedValue::Text));
+                // R4525/R4549：clip:text + 恒色 bg → bg fill 抑制（bg 色改由子树字形
+                // 承载，见 bg_clip_text_color push）。
+                let bg_clip_text_solid = text::bg_clip_text_solid_color(style).is_some();
                 if style.background_color != ColorValue::Transparent
                     && !skip_split_inline_deco
                     && !skip_inline_box_bg
@@ -2299,7 +2292,9 @@ impl Painter {
                 }
 
                 // 1b. 背景图片（行组/行仍可渲染背景图片）
-                if !skip_split_inline_deco && !skip_contents_deco && !spanner_segs_active {
+                // R4549：clip:text 恒色激活时同步抑制（v1 激活必无 image 层故无需此门；
+                // 恒色 image 层的色已由字形承载，全盒 image 绘制会盖掉字形裁剪语义）。
+                if !skip_split_inline_deco && !skip_contents_deco && !spanner_segs_active && !bg_clip_text_solid {
                     // R2063：attachment:fixed → 视口锚定平铺、裁剪到元素盒；否则元素盒锚定。
                     if style
                         .background_attachment
@@ -2378,8 +2373,11 @@ impl Painter {
             counts_before_children = PrimitiveCounts::snapshot(&self.primitives);
 
             if bg_clip_text_active {
-                self.bg_clip_text_color
-                    .push(resolve_color_current(&style.background_color, &style.color));
+                // R4549：push 恒色合成值（color + image 层叠）而非裸 bg color——
+                // gradient(green,green) 层在 red bg 上时字形应承载 green（顶层覆盖语义）。
+                if let Some(c) = text::bg_clip_text_solid_color(style) {
+                    self.bg_clip_text_color.push(c);
+                }
             }
             // 列表标记和文本始终绘制（不受 empty-cells 影响）
             if !hidden {
