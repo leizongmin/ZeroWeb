@@ -110,7 +110,19 @@ async function runOnce(index) {
       console.log(`  run ${index}: flow exited ${err.status}（含期望失败步骤）`)
     }
   } finally {
+    // #0 深排查残留探针（S1375 立案）：terminate 耗时（接近 5s SIGKILL 背板 =
+    // 优雅退出受阻直接信号）+ spawn pid /proc 复核 + headless 实例残留扫描。
+    // 仅落 run log 供红例归因，判定语义不变。
+    const pid = proc.pid
+    const t0 = Date.now()
     await terminate(proc)
+    const teardownMs = Date.now() - t0
+    let leftover = 'none'
+    try {
+      leftover = execFileSync('pgrep', ['-a', '-f', 'remote-debugging-port'], { encoding: 'utf8' }).trim()
+    } catch { /* pgrep exit 1 = 无命中 */ }
+    const pidGone = !fs.existsSync(`/proc/${pid}`)
+    console.log(`  run ${index}: teardown ${teardownMs}ms, pid ${pid} gone=${pidGone}, headless leftovers: ${leftover}`)
   }
   const report = JSON.parse(fs.readFileSync(path.join(MATRIX_DIR, 'out', 'steps-report.json'), 'utf8'))
   // S78：致命报告（崩溃时 capture-core-flow 兜底落盘）显式 fail，防陈旧报告假绿。
