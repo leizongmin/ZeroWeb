@@ -378,6 +378,58 @@ rebase = 954c075e6 零冲突推远 → 代码面变化成立 S1373 门腿覆
    test-guard artifact 启动失败族双腿窗观察）；M5 定稿收
    口判定不因本插记动摇 goal Done 维持守成态证据经 S1374
    刷新+期限双腿延续。
+   **S1374 轮后插记（2026-09-20 push 序列 pull --rebase 实测）**：兄弟流
+   **R4550 代码腿折入**（dc9e8c057 clip:text × opacity SC 衰减豁免 + SC-child
+   直属行缺失深域定性——crates/engine/src/paint/painter/mod.rs +17 +
+   rendering-compat.md +1 = 2 files +18/-0 代码面非空实测复核；随后
+   8b88b2887 记档修正 rendering-compat.md 1 file +1/-1；两笔均零
+   apps/browser 零新单测 自述 make test 19,376P/0F）于 S1374 双腿收口
+   （mt 腿 09:10:35）之后经 push 序列 pull --rebase 入树（我方 S1374 记录
+   提交 rebase 于其上 = efaf2a6de，push 8b88b2887..efaf2a6de 零冲突实测
+   复核）——**代码面变化成立** → **S1374 双腿 PASS 覆盖的代码树态 =
+   7a9173aa9 面（pre-R4550），新组合树态 = efaf2a6de（R4550 折入 +
+   S1374 记录 docs）未被本流双腿覆盖**；工作面归属 = 渲染流域
+   crates/engine paint 面 零碰撞（run-rules §9/§10 归因纪律记档；兄弟
+   自述其 bench-gate 首跑+复跑 FAIL = 兄弟流 clone 测试共租负载窗噪声
+   签名同 ZRG-2026-09-20-01 形态空窗两连 PASS 定案——与本流 S168 形态
+   族第 5 例共租负载相关性旁证在案 记档供 #0 取证参照）。锚点面漂移记
+   档（新 tip efaf2a6de 实测）：② crates/ raw **173 → 174**（R4550 代
+   码腿入集 e67967632..TIP 提交计数口径）/ ④ 全树排除本流 docs 对
+   18d462de6 **260 files +30661/-1650 → 260 files +30679/-1650**（同
+   文件数 painter mod.rs +17 入既有变更集 + rendering-compat.md +1 全
+   额净入账 实测为准）/ ① 10 files +1187/-182 维持（R4550 零
+   apps/browser 提交实测复核）/ ③ 子帧关键词 **7 文件 md5
+   74f58fcf7ce55de7e4ae81f073a6e671** 维持（R4550 触面 painter mod.rs
+   零 contentDocument|content_document 命中实测复核 解冻条件①观察面
+   **174 口径** frames.click+evaluate 挂起维持）/ ⑤ make test 腿基线
+   计数 **19,376P/0F 68 组**（R4550 零新单测兄弟自述为参考 S1375 双腿
+   实测复核按 run-rules §10 若偏差先归因）。**下轮 S1375 = 树变化刷新
+   轮双腿活跑 + #0 升级后首复查窗**（二重身份合一：刷新缘由 = R4550
+   代码腿折入 crates/engine paint 单文件 +17；#0 首复查窗 = S168 形态
+   族第 5 例升级后首个活腿窗 负载下样本对 #0 更有价值 S218/S228 先例
+   口径 若再现同口径归因 + 复跑收口 + wall 伴生形态观察 若三例内再现
+   或聚簇再扩大即 #0 深排查 双跑进程/端口/临时态残留取证面；双腿活跑
+   口径 = 门 + make test 后台跑法 nohup sh -c『echo TEST_EXIT=$?』直
+   写 起跑前显式 cd 仓库根 cd 单独成句勿与后台符 & 同链 双腿错峰口
+   径：门腿先行收口后 mt 腿起跑）；门腿预期新树态编译面 = R4550 折入
+   致 zero-engine lib 级联重编（zero-engine → zero-page-runtime →
+   zero-browser S1367/S1374 门腿 3 Compiling 形态同型 行数以实测为准
+   在预期）；mt 腿预期 = 19,376P/0F 68 组 + zero-engine lib 全级联重
+   编段在预期（S1367 29 Compiling 同型 实测为准）；S1375 双腿收口后
+   引用计数以 S1375 双腿为新周期锚点归零重计（S1376 起 1/10 至迟
+   S1381 = 到期期限轮——S1380 期限预约被 S1375 刷新轮重置顺延）；
+   红例观察三族口径维持（①缺步/停滞族 S1314-S1374 连续六十一轮零再
+   现 S1375 门腿即复查窗口 ②S168 形态族第 5 例升级 #0 在案 见
+   evidence/s1374-s168-family-5th-red/ ③stale_etag 家族 5 例常规延续）
+   + 跨流 L1139 家族双腿复查窗（连续第三十三轮活腿绿在案 S1375 mt 腿
+   即复查窗口）+ test-guard artifact 启动失败族双腿窗观察（错峰口径
+   延续）+ 兄弟流 zero-engine dead_code warning 观察延续（第七次真重
+   编再发射实证后 R4550 再折入将第八次发射 形态定性收敛维持）+
+   target-disk-guard/zeroseed/form_input_perf 观察延续 + 每笔 git
+   commit 前先过 lei-pre-commit-guard（相对表述口径维持）+ 记档数字
+   须实测有据（S1338 防复发注记维持）；M5 定稿收口判定不因本插记动
+   摇 goal Done 维持守成态证据经 S1375 刷新双腿延续 唯一未清偿义务
+   = frames.click+evaluate 回填（挂子帧能力解冻 不阻收口）
 ---
 
 ## 当前状态
