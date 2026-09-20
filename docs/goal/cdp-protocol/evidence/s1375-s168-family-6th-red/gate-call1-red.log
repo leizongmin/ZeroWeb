@@ -1,0 +1,23 @@
+rustc -O scripts/test-guard.rs -o target/test-guard
+cargo build -p zero-browser --bin zero-browser
+   Compiling zero-engine v0.1.0 (<repo-root>/crates/engine)
+warning: function `match_media_to_json` is never used
+    --> crates/engine/src/js_dom_bridge.rs:3420:15
+     |
+3420 | pub(crate) fn match_media_to_json(query: &str, width: f64, height: f64) -> String {
+     |               ^^^^^^^^^^^^^^^^^^^
+     |
+     = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+   Compiling zero-page-runtime v0.1.0 (<repo-root>/crates/page-runtime)
+   Compiling zero-browser v0.1.0 (<repo-root>/apps/browser)
+warning: `zero-engine` (lib) generated 1 warning
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 7.58s
+cd tests/playwright-matrix && ZERO_NOPROXY=1 ZW_IPC_VALIDATE=1 ../../target/test-guard --time-limit 600 --per-proc-mem 4 --total-mem 8 -- node scripts/verify-deterministic.mjs
+run 1/2 ...
+  run 1: flow exited 1（含期望失败步骤）
+run 2/2 ...
+  run 2: flow exited 1（含期望失败步骤）
+deterministic: NO
+green steps (33): click.button, click.dblclick, click.withPosition, console.collect, context.default, cookies.roundtrip, dialog.accept, dialog.confirm+prompt, emulation.media, emulation.userAgentOverride, evaluate.async, evaluate.function, evaluate.literal, evaluate.object, evaluate.withArgs, fill.input, frames.access, keyboard.type+press, locator.boundingBox, network.events, page.goto, page.new, page.second.lifecycle, page.setContent, page.setViewportSize, page.title, runtime.releaseObjectGroup, screenshot.element, screenshot.fullPage, screenshot.viewport, target.attachDetach, target.getTargets, viewport.verified
+make: *** [Makefile:1479：cdp-e2e] 错误 1

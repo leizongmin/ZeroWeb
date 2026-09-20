@@ -1,0 +1,201 @@
+{
+  "browser": {
+    "endpoint": "http://127.0.0.1:41505",
+    "browserVersion": "26.9.13"
+  },
+  "playwright": "1.63.0",
+  "baseUrl": "http://127.0.0.1:44549",
+  "steps": [
+    {
+      "step": "context.default",
+      "ok": true,
+      "ms": 0
+    },
+    {
+      "step": "page.new",
+      "ok": true,
+      "ms": 43
+    },
+    {
+      "step": "page.setViewportSize",
+      "ok": true,
+      "ms": 6
+    },
+    {
+      "step": "page.goto",
+      "ok": true,
+      "ms": 105
+    },
+    {
+      "step": "page.title",
+      "ok": true,
+      "ms": 21
+    },
+    {
+      "step": "console.collect",
+      "ok": true,
+      "ms": 218
+    },
+    {
+      "step": "evaluate.literal",
+      "ok": true,
+      "ms": 9
+    },
+    {
+      "step": "evaluate.function",
+      "ok": true,
+      "ms": 8
+    },
+    {
+      "step": "evaluate.withArgs",
+      "ok": true,
+      "ms": 7
+    },
+    {
+      "step": "evaluate.object",
+      "ok": true,
+      "ms": 8
+    },
+    {
+      "step": "evaluate.async",
+      "ok": true,
+      "ms": 24
+    },
+    {
+      "step": "fill.input",
+      "ok": true,
+      "ms": 227
+    },
+    {
+      "step": "keyboard.type+press",
+      "ok": true,
+      "ms": 296
+    },
+    {
+      "step": "click.button",
+      "ok": true,
+      "ms": 332
+    },
+    {
+      "step": "click.dblclick",
+      "ok": true,
+      "ms": 207
+    },
+    {
+      "step": "click.withPosition",
+      "ok": true,
+      "ms": 227
+    },
+    {
+      "step": "locator.boundingBox",
+      "ok": true,
+      "ms": 120
+    },
+    {
+      "step": "network.events",
+      "ok": true,
+      "ms": 1221
+    },
+    {
+      "step": "cookies.roundtrip",
+      "ok": true,
+      "ms": 12
+    },
+    {
+      "step": "dialog.accept",
+      "ok": true,
+      "ms": 392
+    },
+    {
+      "step": "dialog.confirm+prompt",
+      "ok": true,
+      "ms": 665
+    },
+    {
+      "step": "frames.access",
+      "ok": true,
+      "ms": 0
+    },
+    {
+      "step": "frames.click+evaluate",
+      "ok": false,
+      "error": "locator.click: Timeout 10000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('#frame').contentFrame().locator('#frame-btn')\u001b[22m\n",
+      "ms": 10002
+    },
+    {
+      "step": "emulation.media",
+      "ok": true,
+      "ms": 71
+    },
+    {
+      "step": "screenshot.viewport",
+      "ok": true,
+      "ms": 192
+    },
+    {
+      "step": "screenshot.fullPage",
+      "ok": true,
+      "ms": 152
+    },
+    {
+      "step": "screenshot.element",
+      "ok": true,
+      "ms": 345
+    },
+    {
+      "step": "page.setContent",
+      "ok": true,
+      "ms": 63
+    },
+    {
+      "step": "viewport.verified",
+      "ok": true,
+      "ms": 17
+    },
+    {
+      "step": "page.second.lifecycle",
+      "ok": true,
+      "ms": 114
+    },
+    {
+      "step": "target.getTargets",
+      "ok": true,
+      "ms": 9
+    },
+    {
+      "step": "target.attachDetach",
+      "ok": true,
+      "ms": 130
+    },
+    {
+      "step": "runtime.releaseObjectGroup",
+      "ok": true,
+      "ms": 25
+    },
+    {
+      "step": "emulation.userAgentOverride",
+      "ok": false,
+      "error": "timeout after 60000ms (watchdog)",
+      "ms": 60002
+    },
+    {
+      "step": "observations",
+      "ok": true,
+      "consoleCount": 8,
+      "consoleTypes": [
+        "log",
+        "log",
+        "log",
+        "log",
+        "log",
+        "log",
+        "log",
+        "log"
+      ],
+      "requestCount": 4,
+      "responseCount": 4,
+      "finishedCount": 4,
+      "failedCount": 0
+    }
+  ]
+}
