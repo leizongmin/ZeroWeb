@@ -92,6 +92,12 @@ pub struct ComputedStyle {
     pub border_bottom_right_radius: LengthValue,
     /// border-bottom-left-radius 属性。
     pub border_bottom_left_radius: LengthValue,
+    // R4574：椭圆双轴垂直半径（CSS Backgrounds §5.5 长hand `<h> <v>` 双值 / 简写 `h / v`
+    // 斜杠形式）。角序 [tl, tr, br, bl]；`None`（缺省）= 全部随同角 rx（单值声明两轴
+    // 同值）。Box 堆装——ComputedStyle 为每节点一份（R3867 帧体量纪律），四字段直排
+    // +64B 曾致深嵌套页测试栈溢出（test_pipeline_deeply_nested_html）。
+    /// 四角垂直半径（border-radius 斜杠/双值声明）。
+    pub border_radius_y: Option<Box<[LengthValue; 4]>>,
 
     // ── Outline ──
     /// outline-width 属性。

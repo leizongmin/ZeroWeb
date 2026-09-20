@@ -696,20 +696,25 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
             style.border_left_style = default_style.border_left_style;
             true
         }
+        // R4574：四角 radius 声明同步其垂直轴槽位（border_radius_y 角序 [tl, tr, br, bl]）。
         "border-top-left-radius" => {
-            style.border_top_left_radius = default_style.border_top_left_radius;
+            style.border_top_left_radius = default_style.border_top_left_radius.clone();
+            inherit_radius_y_slot(style, &default_style, 0);
             true
         }
         "border-top-right-radius" => {
-            style.border_top_right_radius = default_style.border_top_right_radius;
+            style.border_top_right_radius = default_style.border_top_right_radius.clone();
+            inherit_radius_y_slot(style, &default_style, 1);
             true
         }
         "border-bottom-right-radius" => {
-            style.border_bottom_right_radius = default_style.border_bottom_right_radius;
+            style.border_bottom_right_radius = default_style.border_bottom_right_radius.clone();
+            inherit_radius_y_slot(style, &default_style, 2);
             true
         }
         "border-bottom-left-radius" => {
-            style.border_bottom_left_radius = default_style.border_bottom_left_radius;
+            style.border_bottom_left_radius = default_style.border_bottom_left_radius.clone();
+            inherit_radius_y_slot(style, &default_style, 3);
             true
         }
         // Outline
@@ -1549,5 +1554,29 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
             true
         }
         _ => false,
+    }
+}
+
+/// R4574：radius 垂直轴槽位同步（`apply_initial_value` 重置/初始语义，角序 [tl, tr, br, bl]）。
+/// 源 None（未声明）→ 该槽位回 Px(0) 哨兵（随 rx）；双侧皆 None 零分配。
+fn inherit_radius_y_slot(style: &mut ComputedStyle, source: &ComputedStyle, index: usize) {
+    let ry = source
+        .border_radius_y
+        .as_ref()
+        .and_then(|slot| slot.get(index).cloned());
+    match (ry, style.border_radius_y.as_mut()) {
+        (None, None) => {}
+        (ry, Some(slot)) => slot[index] = ry.unwrap_or(LengthValue::Px(0.0)),
+        (Some(ry), None) => {
+            let slot = style.border_radius_y.get_or_insert_with(|| {
+                Box::new([
+                    LengthValue::Px(0.0),
+                    LengthValue::Px(0.0),
+                    LengthValue::Px(0.0),
+                    LengthValue::Px(0.0),
+                ])
+            });
+            slot[index] = ry;
+        }
     }
 }

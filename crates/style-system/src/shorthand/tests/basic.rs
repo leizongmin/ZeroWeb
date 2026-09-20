@@ -930,3 +930,44 @@ fn r4350_background_shorthand_multi_layer_last_color() {
     assert_eq!(map.get("background-color"), Some(&"red"));
     assert_eq!(map.get("background-repeat"), Some(&"no-repeat, repeat"));
 }
+
+#[test]
+/// R4574：border-radius 斜杠形式（椭圆双轴，CSS Backgrounds §5.5）——`h / v` 两侧各自
+/// 1-4 值展开后逐角配对 `<h_i> <v_i>` 长hand 双值。旧实现含 '/' 整串必败零 longhand。
+fn r4574_border_radius_slash_form_expands() {
+    let result = expand_one("border-radius", "40px / 30px", false, (0, 0, 1));
+    assert_eq!(result.len(), 4, "斜杠形式展开 4 个长hand");
+    let map: std::collections::HashMap<&str, &str> =
+        result.iter().map(|(p, v, _, _)| (p.as_str(), v.as_str())).collect();
+    assert_eq!(map.get("border-top-left-radius"), Some(&"40px 30px"));
+    assert_eq!(map.get("border-top-right-radius"), Some(&"40px 30px"));
+    assert_eq!(map.get("border-bottom-right-radius"), Some(&"40px 30px"));
+    assert_eq!(map.get("border-bottom-left-radius"), Some(&"40px 30px"));
+}
+
+#[test]
+/// R4574：斜杠形式多值配对——h 4 值 × v 2 值按 CSS 背景简写规则角对齐
+///（tl/h0 bl/h2 ← v0、tr/h1 br/h3 ← v1）。
+fn r4574_border_radius_slash_multi_value_pairing() {
+    let result = expand_one("border-radius", "10px 20px 30px 40px / 5px 8px", false, (0, 0, 1));
+    assert_eq!(result.len(), 4);
+    let map: std::collections::HashMap<&str, &str> =
+        result.iter().map(|(p, v, _, _)| (p.as_str(), v.as_str())).collect();
+    assert_eq!(map.get("border-top-left-radius"), Some(&"10px 5px"));
+    assert_eq!(map.get("border-top-right-radius"), Some(&"20px 8px"));
+    assert_eq!(map.get("border-bottom-right-radius"), Some(&"30px 5px"));
+    assert_eq!(map.get("border-bottom-left-radius"), Some(&"40px 8px"));
+}
+
+#[test]
+/// R4574：calc 内部斜杠不构成简写分隔符（顶层切分括号感知）。
+fn r4574_border_radius_calc_slash_not_separator() {
+    let result = expand_one("border-radius", "calc(40px/2)", false, (0, 0, 1));
+    let map: std::collections::HashMap<&str, &str> =
+        result.iter().map(|(p, v, _, _)| (p.as_str(), v.as_str())).collect();
+    assert_eq!(
+        map.get("border-top-left-radius"),
+        Some(&"calc(40px/2)"),
+        "calc 内斜杠不切分，单值全角展开"
+    );
+}

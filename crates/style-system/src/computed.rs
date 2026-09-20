@@ -797,6 +797,11 @@ pub fn resolve_computed_style_with_container(
     resolve_field(&mut resolved.border_top_right_radius);
     resolve_field(&mut resolved.border_bottom_right_radius);
     resolve_field(&mut resolved.border_bottom_left_radius);
+    if let Some(slot) = resolved.border_radius_y.as_mut() {
+        for value in slot.iter_mut() {
+            resolve_field(value);
+        }
+    }
 
     resolve_field(&mut resolved.top);
     resolve_field(&mut resolved.right);

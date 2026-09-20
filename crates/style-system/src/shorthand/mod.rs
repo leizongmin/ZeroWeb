@@ -1459,21 +1459,64 @@ fn looks_like_color(s: &str) -> bool {
 /// https://drafts.csswg.org/css-backgrounds-3/#border-radius
 /// 支持 1-4 值模式，与 4 边简写相同。
 fn expand_border_radius(value: &str, important: bool, specificity: (u32, u32, u32)) -> Vec<MatchingDecl> {
-    // FIXME: slash-separated elliptical radii need two-axis storage before shorthand validation can cover them.
-    let Some((tl, tr, br, bl)) = (if matches_css_wide_keyword(value) || value.contains('/') {
-        parse_rect_values(value)
-    } else {
-        parse_rect_values_with(value, is_border_radius_rect_value)
-    }) else {
+    // R4574：斜杠形式 `<h-radii> / <v-radii>`（CSS Backgrounds §5.5 椭圆双轴）——两侧各自
+    // 按 1-4 值展开后逐角配对 `h_i v_i`（长hand 双值语义：第二值为垂直半径，见 apply.rs
+    // parse_radius_two_axis）。旧实现整串走 parse_rect_values（含 '/' 必败）→ 零 longhand
+    // → 直角方块；树内原 FIXME「slash-separated elliptical radii need two-axis storage」
+    // 由 ComputedStyle border_*_radius_y 四字段解除（消费侧 rx 通道即刻生效，ry 消费见
+    // paint 后续切片）。非斜杠路径不变。
+    if matches_css_wide_keyword(value) {
+        if let Some(rect) = parse_rect_values(value) {
+            let mk =
+                |prop: &str, val: &str| -> MatchingDecl { (prop.to_string(), val.to_string(), important, specificity) };
+            return vec![
+                mk("border-top-left-radius", rect.0),
+                mk("border-top-right-radius", rect.1),
+                mk("border-bottom-right-radius", rect.2),
+                mk("border-bottom-left-radius", rect.3),
+            ];
+        }
+        return vec![];
+    }
+    let mk = |prop: &str, val: &str| -> MatchingDecl { (prop.to_string(), val.to_string(), important, specificity) };
+    if let Some((h_str, v_str)) = split_top_level_slash(value) {
+        let (Some((htl, htr, hbr, hbl)), Some((vtl, vtr, vbr, vbl))) = (
+            parse_rect_values_with(h_str, is_border_radius_rect_value),
+            parse_rect_values_with(v_str, is_border_radius_rect_value),
+        ) else {
+            return vec![];
+        };
+        return vec![
+            mk("border-top-left-radius", &format!("{htl} {vtl}")),
+            mk("border-top-right-radius", &format!("{htr} {vtr}")),
+            mk("border-bottom-right-radius", &format!("{hbr} {vbr}")),
+            mk("border-bottom-left-radius", &format!("{hbl} {vbl}")),
+        ];
+    }
+    let Some((tl, tr, br, bl)) = parse_rect_values_with(value, is_border_radius_rect_value) else {
         return vec![];
     };
-    let mk = |prop: &str, val: &str| -> MatchingDecl { (prop.to_string(), val.to_string(), important, specificity) };
     vec![
         mk("border-top-left-radius", tl),
         mk("border-top-right-radius", tr),
         mk("border-bottom-right-radius", br),
         mk("border-bottom-left-radius", bl),
     ]
+}
+
+/// 顶层（括号外）斜杠切分——`<h-radii> / <v-radii>`（R4574）。斜杠在 calc() 内部
+/// （如 `calc(40px/2)`）不构成简写分隔符。
+fn split_top_level_slash(value: &str) -> Option<(&str, &str)> {
+    let mut depth = 0i32;
+    for (index, ch) in value.char_indices() {
+        match ch {
+            '(' => depth += 1,
+            ')' => depth -= 1,
+            '/' if depth == 0 => return Some((&value[..index], &value[index + 1..])),
+            _ => {}
+        }
+    }
+    None
 }
 
 /// 展开 flex 简写（CSS Flexbox §7.1）。

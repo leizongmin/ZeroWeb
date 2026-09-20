@@ -426,38 +426,30 @@ pub fn apply_property_value_with_quirks(
             }
         }
         "border-top-left-radius" => {
-            if let Some(v) = parse_length_fn(value) {
-                if !border_radius_length_is_valid(value, &v) {
-                    return false;
-                }
-                style.border_top_left_radius = v;
+            if let Some((rx, ry)) = parse_radius_two_axis(value, parse_length_fn) {
+                style.border_top_left_radius = rx;
+                set_radius_y_slot(style, 0, ry);
                 return true;
             }
         }
         "border-top-right-radius" => {
-            if let Some(v) = parse_length_fn(value) {
-                if !border_radius_length_is_valid(value, &v) {
-                    return false;
-                }
-                style.border_top_right_radius = v;
+            if let Some((rx, ry)) = parse_radius_two_axis(value, parse_length_fn) {
+                style.border_top_right_radius = rx;
+                set_radius_y_slot(style, 1, ry);
                 return true;
             }
         }
         "border-bottom-right-radius" => {
-            if let Some(v) = parse_length_fn(value) {
-                if !border_radius_length_is_valid(value, &v) {
-                    return false;
-                }
-                style.border_bottom_right_radius = v;
+            if let Some((rx, ry)) = parse_radius_two_axis(value, parse_length_fn) {
+                style.border_bottom_right_radius = rx;
+                set_radius_y_slot(style, 2, ry);
                 return true;
             }
         }
         "border-bottom-left-radius" => {
-            if let Some(v) = parse_length_fn(value) {
-                if !border_radius_length_is_valid(value, &v) {
-                    return false;
-                }
-                style.border_bottom_left_radius = v;
+            if let Some((rx, ry)) = parse_radius_two_axis(value, parse_length_fn) {
+                style.border_bottom_left_radius = rx;
+                set_radius_y_slot(style, 3, ry);
                 return true;
             }
         }
@@ -1312,6 +1304,52 @@ pub(crate) fn padding_length_is_valid(raw: &str, value: &LengthValue) -> bool {
 
 fn border_radius_length_is_valid(raw: &str, value: &LengthValue) -> bool {
     padding_length_is_valid(raw, value)
+}
+
+/// R4574：border-*-radius 长hand 双轴值——`<h-radius> [ <v-radius> ]?`（CSS Backgrounds
+/// §5.5 椭圆角；单值 = 两轴同值）。返 (rx, ry)；ry = None 哨兵表「未声明，消费侧随 rx」。
+/// https://drafts.csswg.org/css-backgrounds-3/#border-radius
+fn parse_radius_two_axis(
+    value: &str,
+    parse_length_fn: impl Fn(&str) -> Option<LengthValue>,
+) -> Option<(LengthValue, Option<LengthValue>)> {
+    let parts = crate::shorthand::split_top_level_whitespace(value)?;
+    let parse_axis = |raw: &str| -> Option<LengthValue> {
+        let v = parse_length_fn(raw)?;
+        border_radius_length_is_valid(raw, &v).then_some(v)
+    };
+    match parts.len() {
+        1 => {
+            let rx = parse_axis(parts[0])?;
+            Some((rx, None))
+        }
+        2 => {
+            let rx = parse_axis(parts[0])?;
+            let ry = parse_axis(parts[1])?;
+            Some((rx, Some(ry)))
+        }
+        _ => None,
+    }
+}
+
+/// R4574：写四角垂直轴槽位（角序 [tl, tr, br, bl]）。ry=None（单值声明）回 Px(0) 哨兵；
+/// 双侧皆缺省零分配（None 常态零开销——ComputedStyle 每节点一份，R3867 帧体量纪律）。
+fn set_radius_y_slot(style: &mut ComputedStyle, index: usize, ry: Option<LengthValue>) {
+    match (ry, style.border_radius_y.as_mut()) {
+        (None, None) => {}
+        (ry, Some(slot)) => slot[index] = ry.unwrap_or(LengthValue::Px(0.0)),
+        (Some(ry), None) => {
+            let slot = style.border_radius_y.get_or_insert_with(|| {
+                Box::new([
+                    LengthValue::Px(0.0),
+                    LengthValue::Px(0.0),
+                    LengthValue::Px(0.0),
+                    LengthValue::Px(0.0),
+                ])
+            });
+            slot[index] = ry;
+        }
+    }
 }
 
 fn font_size_length_is_valid(raw: &str, value: &LengthValue) -> bool {
