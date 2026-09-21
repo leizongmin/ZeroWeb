@@ -300,7 +300,17 @@ R4581 树变化刷新轮新组合态首次全量覆盖 mt 腿 29 Compiling 重�
    件 md5 74f58fcf 维持**（docs 腿零 Rust 面触达实测）⑤ make test
    腿基线 **19,394P/0F 68 组（197 ignored）维持**（docs-only 零测
    试面）。S1465 = 1/10 静默监测引用轮开工复测按插记新基线 ④279
-   files +32378/-1780 其余四锚维持。（本插记提交 guard 子代理扫描
+   files +32379/-1780 其余四锚维持。**同窗二次 fold-in 补记**：
+   b13290ed6 rendering-compat **R4584 守成巡检轮**（docs-only 1
+   file +1/-0 = docs/goal/rendering-compat.md 零代码面 自述六点门
+   禁全绿 make test 19,394P/0F 与 R4582 后基线精确一致）于本插记
+   提交 push 序列入树（我方插记提交 rebase 于其上 = a2e41aa15 push
+   b13290ed6..a2e41aa15 零冲突 实测复核）docs-only 零代码面 →
+   S1464 双腿覆盖延伸到新组合树 a2e41aa15 零补跑需求；新组合树态
+   实测 ④ 279 files +32379/-1780（files 279 持平 集内 +1 行 折入
+   精确闭合）② crates/ raw 191 维持 ① 10 files +1187/-182 维持 ③
+   7 文件 md5 74f58fcf 维持 ⑤ 19,394P/0F 68 组（197 ignored）维
+   持。（本插记提交 guard 子代理扫描
    PASS 0 critical 0 warning）
 
    **S1463 轮后插记（2026-09-21 push 序列 pull --rebase 实测）**：兄弟流
