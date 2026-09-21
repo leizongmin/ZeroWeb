@@ -2786,8 +2786,8 @@ pub(crate) fn inject_pseudo_text_nodes(
         // background-color-body-propagation-010 / -root-propagation-003：`body::before
         // { content: "…"; display: block; background-color: green }` 应渲染绿底文本带）。
         // 收窄门控（A/B 实证）：仅「块级 + 有装饰」（背景色非透明 / 背景图 / 边框）走
-        // element 路径——无装饰的块级伪元素保持旧文本路径（query-style-color 等 3 案
-        // 在无门控版本翻红：block 化改变行内上下文布局，装饰缺席时无收益）。
+        // element 路径——无装饰的块级伪元素保持旧文本路径（装饰缺席时盒化无收益；
+        // R4581 定谳：当时归因的「行内上下文布局发散」实为掩蔽 unmask，见下方第三臂）。
         let has_decoration = !matches!(
             pseudo_style.background_color,
             zero_css_parser::values::ColorValue::Transparent
@@ -2800,9 +2800,25 @@ pub(crate) fn inject_pseudo_text_nodes(
         //——本轮 driving 案正是 CSS Backgrounds §special-backgrounds 的 root/body 伪元素
         // 背景（canvas 传播交互域）。通用放开会改变 query-style-color（div::before）与
         // ruby-inlinize（ruby::before）的行内上下文布局，双页自比对发散（-2 实证）。
-        let parent_is_root_or_body = doc.get(parent).is_some_and(|n| match &n.kind {
+        // R4581（归因轮→通用化落地）：R3928 时 -2 的真因经定向探针定谳——两净负页均为
+        // **掩蔽 unmask** 而非盒化回归：① query-style-color 翻红 = `@container style()`
+        // 条件无 AST 变体（ContainerCondition 仅 Size/InlineSize）无法求值 → test 页 base
+        // red 残留 vs ref 硬编码绿；element 化把盒真画出后色彩分歧暴露（71.97% 纯色彩域，
+        // 双侧 grid 几何逐像素同构——R4575「grid track 重排」疑点证伪）。② ruby-inlinize-
+        // blocks-005 翻红 = css-ruby-1 §anon-gen-inlinize 未实现（Chrome 把 ruby 内块级盒
+        // inlinize 与 ref 的 inline-block 同形）+ **inline 宿主的 inline-level 伪元素盒在
+        // 下游被丢弃**（既有缺口：span/ruby 宿主 + inline-block 伪元素退 text-node，与
+        // R3928 无关）→ test（block 盒化生效断行）vs ref（inline-block 落 text-node 裸
+        // 字形）不对称。今日树无排除 probe A/B = +2 绿（before-as-flex-container /
+        // content-171）/ -2 红 = 实净 0；ruby 族宿主排除后 = +2/-1 净 +1。排除理由：
+        // inlinize 语义落地前 ruby 上下文内块级盒化语义错误（test 块盒 vs ref text-node
+        // 不对称），维持双侧 text-node 掩蔽 pass，随 ruby inlinize 专项重开。
+        let parent_is_ruby_family = doc.get(parent).is_some_and(|n| match &n.kind {
             zero_dom::NodeKind::Element(elem) => {
-                elem.local_name().eq_ignore_ascii_case("html") || elem.local_name().eq_ignore_ascii_case("body")
+                matches!(
+                    elem.local_name().to_ascii_lowercase().as_str(),
+                    "ruby" | "rb" | "rt" | "rbc" | "rtc"
+                )
             }
             _ => false,
         });
@@ -2816,14 +2832,14 @@ pub(crate) fn inject_pseudo_text_nodes(
         let text_blank = text.trim().is_empty();
         // R4572：out-of-flow（positioned/float）+ 有装饰（背景/边框）→ element 盒化（含
         // 真文本子节点）。旧门对非空文本伪元素一律落 text-node 路径 → 盒装饰全丢（只有
-        // 字形）。与 R3928 净负先例（static 行内上下文伪元素块化改变宿主 IFC 布局，双页
-        // 自比对 −2）的本质区别：positioned/float 伪元素**脱离流内布局**，盒化不影响宿主
-        // 行内格式化上下文。static 域维持 R3928 root/body 窄门不动。
+        // 字形）。与 R3928 净负先例（R4581 定谳 = 掩蔽 unmask 非盒化回归，见上方第三臂
+        // 注释）的本质区别：positioned/float 伪元素**脱离流内布局**，盒化不影响宿主
+        // 行内格式化上下文。static 域 R4581 起通用化（块级+装饰），ruby 族宿主排除。
         let out_of_flow = pseudo_style.position != PositionValue::Static || pseudo_style.float != FloatValue::None;
         let needs_box = std::env::var("ZW_PSEUDO_BOX").as_deref() != Ok("0")
             && ((text_blank && (out_of_flow || pseudo_style.display != DisplayValue::Inline))
                 || (out_of_flow && has_decoration)
-                || (pseudo_style.display != DisplayValue::Inline && has_decoration && parent_is_root_or_body));
+                || (pseudo_style.display != DisplayValue::Inline && has_decoration && !parent_is_ruby_family));
         let new_id = if needs_box {
             let el = doc.create_element("zw-pseudo");
             if !text_blank {
@@ -3412,6 +3428,73 @@ mod pseudo_tests {
             .iter()
             .any(|c| matches!(doc.get(*c).map(|n| &n.kind), Some(zero_dom::NodeKind::Text(_))));
         assert!(has_text_child, "真文本伪元素须落文本子节点");
+    }
+
+    /// R4581：块级+装饰伪元素 element 化**通用化**（去 R3928 root/body 收窄）——普通
+    /// div 宿主的 `display:block + background` 真文本伪元素走 ELEMENT 盒化路径且携带
+    /// 文本子节点。driving：css-pseudo before-as-flex-container / CSS2 content-171。
+    #[test]
+    fn inject_block_decorated_text_pseudo_generic_host_r4581() {
+        use zero_css_parser::values::{ColorValue, DisplayValue};
+        let html = r#"<html><body><div><span>x</span></div></body></html>"#;
+        let mut doc = zero_dom::parse_html(html);
+        let div = find_element(&doc, doc.root(), "div").expect("div 存在");
+        let mut styles: HashMap<NodeId, ComputedStyle> = HashMap::new();
+        let mut div_style = ComputedStyle::default();
+        div_style.before_pseudo = Some(Box::new(ComputedStyle {
+            content: ContentComputedValue::String("A B".to_string()),
+            display: DisplayValue::Block,
+            background_color: ColorValue::Rgba(0, 128, 0, 255),
+            ..ComputedStyle::default()
+        }));
+        styles.insert(div, div_style);
+
+        inject_pseudo_text_nodes(&mut doc, &mut styles, &[]);
+
+        let first_child = doc
+            .get(div)
+            .and_then(|n| n.children.first().copied())
+            .expect("有子节点");
+        match &doc.get(first_child).unwrap().kind {
+            zero_dom::NodeKind::Element(_) => {}
+            other => panic!("R4581: div 宿主块级装饰伪元素应为 ELEMENT 节点，实际 {other:?}"),
+        }
+        let has_text_child = doc
+            .child_nodes(first_child)
+            .iter()
+            .any(|c| matches!(doc.get(*c).map(|n| &n.kind), Some(zero_dom::NodeKind::Text(_))));
+        assert!(has_text_child, "真文本须携带为 zw-pseudo 子节点");
+    }
+
+    /// R4581：ruby 族宿主排除——`display:block + background` 伪元素在 ruby/rb/rbc 宿主
+    /// 维持 text-node 路径（css-ruby-1 §anon-gen-inlinize 未实现，ruby 上下文内块级盒化
+    /// 对 test/ref 双侧不对称翻红；排除后双侧同走 text-node 掩蔽 pass）。
+    #[test]
+    fn inject_block_decorated_pseudo_ruby_host_stays_text_r4581() {
+        use zero_css_parser::values::{ColorValue, DisplayValue};
+        let html = r#"<html><body><ruby>b</ruby></body></html>"#;
+        let mut doc = zero_dom::parse_html(html);
+        let ruby = find_element(&doc, doc.root(), "ruby").expect("ruby 存在");
+        let mut styles: HashMap<NodeId, ComputedStyle> = HashMap::new();
+        let mut ruby_style = ComputedStyle::default();
+        ruby_style.before_pseudo = Some(Box::new(ComputedStyle {
+            content: ContentComputedValue::String("a".to_string()),
+            display: DisplayValue::Block,
+            background_color: ColorValue::Rgba(255, 255, 0, 255),
+            ..ComputedStyle::default()
+        }));
+        styles.insert(ruby, ruby_style);
+
+        inject_pseudo_text_nodes(&mut doc, &mut styles, &[]);
+
+        let first_child = doc
+            .get(ruby)
+            .and_then(|n| n.children.first().copied())
+            .expect("有子节点");
+        match &doc.get(first_child).unwrap().kind {
+            zero_dom::NodeKind::Text(t) => assert_eq!(t.content, "a"),
+            other => panic!("R4581: ruby 宿主伪元素应维持 text-node 路径，实际 {other:?}"),
+        }
     }
 
     /// `inject_pseudo_text_nodes`：::after 追加为末子节点；content:none 不注入。

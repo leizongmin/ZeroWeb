@@ -574,6 +574,25 @@ const REFTESTS: &[InlineReftestDef] = &[
         ref_html: "<html><head><style>.h{width:100px;height:100px;position:relative;} .h>div{position:absolute;left:0;top:0;width:100%;height:100%;background:green;border:10px solid blue;box-sizing:border-box;}</style></head><body><div class=\"h\"><div>badge</div></div></body></html>",
         is_match: true,
     },
+    // R4581：块级+装饰伪元素 element 化通用化（去 R3928 root/body 收窄）——普通 div 宿主
+    // 的 `display:flex + background` 真文本伪元素走 element 盒化路径（镜像上游
+    // css/css-pseudo before-as-flex-container：::before 即 flex 容器，绿盒盖红底）。
+    InlineReftestDef {
+        id: "css21/pseudo-block-flex-container",
+        category: ReftestCategory::Layout,
+        test_html: "<html><head><style>.h{width:200px;height:100px;background:red;font:16px monospace;} .h::before{content:\"A B\";display:flex;justify-content:space-between;width:200px;height:100px;background:green;box-sizing:border-box;}</style></head><body><div class=\"h\"></div></body></html>",
+        ref_html: "<html><head><style>.h{width:200px;height:100px;background:red;font:16px monospace;} .h>div{display:flex;justify-content:space-between;width:200px;height:100px;background:green;box-sizing:border-box;}</style></head><body><div class=\"h\"><div>A B</div></div></body></html>",
+        is_match: true,
+    },
+    // R4581：`display:block + background + white-space:pre` 真文本伪元素块盒（镜像上游
+    // CSS2 generated-content content-171：\\A 换行两行白字绿带，vs 真实块级子元素同款）。
+    InlineReftestDef {
+        id: "css21/pseudo-block-pre-text-decoration",
+        category: ReftestCategory::Text,
+        test_html: "<html><head><style>.h{font:16px/16px monospace;background:red;width:15em;} .h::before{content:\"Line 1\\A Line 2\";white-space:pre;background:green;color:white;display:block;}</style></head><body><div class=\"h\"></div></body></html>",
+        ref_html: "<html><head><style>.h{font:16px/16px monospace;background:red;width:15em;} .h>div{white-space:pre;background:green;color:white;}</style></head><body><div class=\"h\"><div>Line 1\nLine 2</div></div></body></html>",
+        is_match: true,
+    },
 ];
 
 pub fn reftests() -> &'static [InlineReftestDef] {
