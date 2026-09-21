@@ -390,6 +390,26 @@ S1462 门腿（探针在位）+ S1463 门腿（探针在位）+ S1464 门腿（�
 
 
 
+   **S1585 轮后插记（2026-09-22 push 序列 pull --rebase 实
+   测）**：兄弟流一笔 **docs 腿**（cc6fb3615 rendering-compat
+   **R4608 守成巡检轮 零代码变更** docs-only **1 file +1/-0 =
+   docs/goal/rendering-compat.md** 零代码面）于我方 S1585 记
+   录提交 push 前 pull --rebase 窗入树（我方 S1585 记录提交
+   cdc6f8b91 rebase 于其上 = **935c2aebe** push
+   cc6fb3615..935c2aebe 零冲突 实测复核
+   HEAD==origin/main）docs-only 零代码面 → S1584 双腿覆盖延
+   伸到新组合树 935c2aebe 零补跑需求（代码腿先例不触发提前刷
+   新 **双腿周期锚点 = S1584 双腿维持**）；锚点面漂移记档（新
+   组合树态 935c2aebe 实测）④ **279 files +32410/-1780 →
+   279 files +32411/-1780**（files 279 持平 集内净 +1 行
+   折入精确闭合）② crates/ raw **191 维持**（零 crates 提交
+   实测复核）① 自有面 **10 files +1187/-182 维持**（零
+   apps/browser 触达实测复核）③ 子帧关键词 **7 文件 md5
+   74f58fcf 维持**（docs 腿零 Rust 面触达）；S1586 = 2/10 静
+   默监测引用轮（周期锚点 = S1584 双腿）开工复测按本插记新基
+   线 ④279 files +32411/-1780 其余四锚维持（本插记提交 guard
+   子代理扫描 PASS 0 critical 0 warning）。
+
    **S1581 轮后插记（2026-09-22 push 序列 pull --rebase 实
    测）**：兄弟流一笔 **docs 腿**（9eb660431 rendering-compat
    **R4607 守成巡检轮 零代码变更** docs-only **1 file +1/-0 =
