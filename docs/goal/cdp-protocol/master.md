@@ -374,6 +374,27 @@ Compiling 全缓存 19,394P/0F 68 组 ⑤ 基线 mt 腿活跑实测精确兑现
 
 
 
+   **S1595 轮后插记（2026-09-22 push 序列 pull --rebase 实
+   测）**：兄弟流一笔 **docs 腿**（875164c8c rendering-compat
+   **R4611 守成巡检轮 零代码变更** docs-only **1 file +1/-0 =
+   docs/goal/rendering-compat.md** 零代码面）于我方 S1595 记
+   录提交 push 前 pull --rebase 窗入树（我方 S1595 记录提交
+   58d8e9818 rebase 于其上 = **da53c23d5** push
+   875164c8c..da53c23d5 零冲突 实测复核 HEAD==origin/main）
+   docs-only 零代码面 → S1595 门腿覆盖延伸到新组合树
+   da53c23d5 零补跑需求（代码腿先例不触发提前刷新 **双腿周
+   期锚点 = S1590 双腿维持**）；锚点面漂移记档（新组合树态
+   da53c23d5 实测）④ **279 files +32414/-1780 → 279 files
+   +32415/-1780**（files 279 持平 集内净 +1 行折入精确闭合 =
+   R4611 +1/-0）② crates/ raw **191 维持**（零 crates 提交
+   实测复核）① 自有面 **10 files +1187/-182 维持**（零
+   apps/browser 触达实测复核）③ 子帧关键词 **7 文件 md5
+   74f58fcf 维持**（docs 腿零 Rust 面触达）；S1596 = 6/10 =
+   S1590+6 到期期限轮双腿活跑（周期锚点 = S1590 双腿 树不变
+   也双腿）开工复测按本插记新基线 ④279 files +32415/-1780
+   其余四锚维持（本插记提交 guard 子代理扫描 PASS 0 critical
+   0 warning）。
+
    **S1594 轮后插记（2026-09-22 push 序列 pull --rebase 实
    测）**：兄弟流两笔 **docs 腿**（49dc8f7d4 zero-web
    ZRG-2026-09-22-01 **docs-only 2 files +2/-1 零代码面** +
