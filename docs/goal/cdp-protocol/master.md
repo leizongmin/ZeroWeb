@@ -259,6 +259,27 @@ Compiling 全缓存 19,394P/0F 68 组 ⑤ 新基线 mt 腿实测精确兑现；
 回填（挂子帧能力解冻，见子帧解冻清单，不阻收口））
 
 
+   **S1485 轮后插记（2026-09-21 push 序列 pull --rebase 实测）**：兄弟流
+   一笔 **docs 腿**（66d3fde08 rendering-compat **R4589 守成巡检
+   轮**——R4581-R4588 八轮组合态零回归证据记账 git 实测 **1 file
+   +1/-0** = docs/goal/rendering-compat.md +1 docs-only 零代码面
+   自述六点门禁全绿）于我方 S1485 记录提交 push 前 pull --rebase
+   窗入树（我方 S1485 记录提交 rebase 于其上 = 7f8db3b5d push
+   66d3fde08..7f8db3b5d 零冲突 实测复核）——**docs-only 零代码面
+   → S1485 门腿覆盖延伸到新组合树 7f8db3b5d 零补跑需求**（树再变
+   化提前双腿刷新条件 = 代码面实质变化 代码腿先例不触发）；锚点
+   面漂移记档（新组合树态 7f8db3b5d 实测）：④ 全树排除
+   cdp-protocol 目录对 18d462de6 **279 files +32383/-1780 → 279
+   files +32384/-1780**（files 279 持平 = rendering-compat.md 既
+   有集内文件净 +1 行 折入精确闭合 实测为准）② crates/ raw **191
+   维持**（零 crates 提交实测复核）① 自有面 **10 files
+   +1187/-182 维持**（零 headless 触达）③ 子帧关键词 **7 文件
+   md5 74f58fcf 维持**（docs 腿零 Rust 面触达实测）⑤ make test
+   腿基线 **19,394P/0F 68 组（197 ignored）维持**（docs-only 零
+   测试面）。S1486 = 4/10 静默监测引用轮开工复测按插记新基线
+   ④279 files +32384/-1780 其余四锚维持。（本插记提交 guard 子
+   代理扫描 PASS 0 critical 0 warning）
+
    **S1482 轮后插记（2026-09-21 push 序列 pull --rebase 实测）**：兄弟流
    一笔 **docs 腿**（46fe72ca1 rendering-compat **R4588 守成巡检
    轮**——R4581-R4587 七轮组合态零回归证据记账 git 实测 **1 file
