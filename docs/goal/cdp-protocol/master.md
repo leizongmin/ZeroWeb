@@ -261,6 +261,45 @@ S1461 门腿（探针在位）+ **S1462 门腿（探针在位）**；S1459 双�
 R4581 树变化刷新轮新组合态首次全量覆盖 mt 腿 29 Compiling 重编链
 19,384P/0F 新基线精确兑现；唯一未清偿义务 = frames.click+evaluate
 回填（挂子帧能力解冻，见子帧解冻清单，不阻收口））
+   **S1463 轮后插记（2026-09-21 push 序列 pull --rebase 实测）**：兄弟流
+   一笔 **代码腿**（c39dc7cdf rendering-compat **R4582** @container
+   style() 廉价子切片——串等值 + not + 具名容器 + 嵌套接通 git 实测
+   **11 files +470/-51** = crates/css-parser 4 文件（ast.rs +15/
+   at_rules.rs +80/-36/helpers.rs +26/parser mod.rs +33）+
+   crates/style-system 5 文件（lib.rs +54/-14/matcher mod.rs +69/-1/
+   coverage_round3 +104/coverage_round11 css-parser +77/
+   coverage_round4 +1）+ tests/wpt-runner/src/reftest_data/css21.rs
+   +10 + docs/goal/rendering-compat.md +1；提交语自述 12 files
+   +599/-185 为自述口径 git numstat 实测 11 files +470/-51 为准
+   S1338 口径）于我方 S1463 门腿收口（10:55:18）之后经 push 序列
+   pull --rebase 入树（我方 S1463 记录提交 rebase 于其上 =
+   4a2c4ec1c，push c39dc7cdf..4a2c4ec1c 零冲突 实测复核）——**代
+   码面实质变化 → S1463 门腿对代码树的覆盖不延伸到新组合树（代码
+   腿折入 S1132/R4491 先例）→ 触发提前双腿刷新：S1464 = 树变化刷
+   新轮双腿活跑（门 + make test 后台跑法 echo TEST_EXIT 直写口
+   径）**（S1463 门腿 PASS 对旧树面 ed04ae7f9 效力维持 新组合树
+   4a2c4ec1c 由 S1464 双腿覆盖 工作面归属 = 兄弟流 rendering-
+   compat crates/css-parser + crates/style-system 渲染域 零本流碰
+   撞 run-rules §9/§10）。锚点面漂移记档（新组合树态 4a2c4ec1c 对
+   基线口径实测）：④ 全树排除本流 docs 对 18d462de6 **273 files
+   +31907/-1729 → 279 files +32377/-1780**（+6 files = R4582 新增
+   测试/源文件入集合集 行数折入 +470/-51 与 R4582 自身 numstat 精
+   确闭合 实测为准）→ S1464 开工复测按新基线 ④279 files
+   +32377/-1780 / ② crates/ raw **190→191**（+1 = R4582 crates/
+   提交 e67967632..TIP 口径实测）/ ① 自有面 **10 files
+   +1187/-182 维持**（R4582 零 headless 触达 实测复核）/ ③ 子帧关
+   键词 **7 文件 md5 74f58fcf 维持**（css-parser/style-system 变更
+   零 contentDocument/content_document 新命中实测复核 观察面 185
+   口径挂起维持）/ ⑤ make test 腿基线 **19,384P/0F 68 组 →
+   19,394P/0F 68 组**（+10 新单测 = 兄弟流 R4582 巡检实测
+   19,394P/0F EXIT=0 双流计数交叉印证 S1464 双腿 mt 腿活跑实测复
+   核）。S1464 = 树变化刷新轮双腿活跑预告（R4582 组合态首次全量
+   覆盖 门腿重编相位 = css-parser→style-system→engine 链预期 重
+   编/缓存形态如实记档 周期锚点以 S1464 双腿刷新归零重计 至迟
+   S1470 = S1464+6 到期期限轮双腿活跑 树不变也双腿 提前刷新取代
+   S1465 期限轮 S1459→S1464 树再变化先例链）。（本插记提交 guard
+   子代理扫描 PASS 0 critical 0 warning）
+
 
    **S1458 轮后插记（2026-09-21 push 序列 pull --rebase 实测）**：兄弟流
    一笔 **代码腿**（364ac1b70 rendering-compat **R4581** R3928 净负页
