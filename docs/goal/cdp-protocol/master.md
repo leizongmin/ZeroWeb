@@ -254,6 +254,39 @@ S1449 门腿（探针在位）+ S1450 门腿（探针在位）+ S1451 门腿（�
 偿义务 = frames.click+evaluate 回填（挂子帧能力解冻，见子帧解冻清
 单，不阻收口））
 
+   **S1458 轮后插记（2026-09-21 push 序列 pull --rebase 实测）**：兄弟流
+   一笔 **代码腿**（364ac1b70 rendering-compat **R4581** R3928 净负页
+   翻负真因专项——掩蔽 unmask 定谳 + 块级装饰伪元素 element 化通用化
+   落地 3 files +111/-8 = crates/engine/src/pipeline/mod.rs +91/-8 +
+   tests/wpt-runner/src/reftest_data/css21.rs +19/-0 +
+   docs/goal/rendering-compat.md +1/-0）于我方 S1458 双腿收口（mt 腿
+   09:52:58）之后经 push 序列 pull --rebase 入树（我方 S1458 记录提
+   交 rebase 于其上 = 6281deb3b，push 364ac1b70..6281deb3b 零冲突
+   实测复核）——**代码面实质变化 → S1458 双腿对代码树的覆盖不延伸
+   到新组合树（代码腿折入 S1132/R4491 先例）→ 触发提前双腿刷新：
+   S1459 = 树变化刷新轮双腿活跑（门 + make test 后台跑法 echo
+   TEST_EXIT 直写口径）**（S1458 双腿 PASS 对旧树面 6a66ce187 效力
+   维持 新组合树 6281deb3b 由 S1459 双腿覆盖归因 IN_TREE 实测核
+   验；工作面归属 = 兄弟流 rendering-compat crates/engine 渲染域
+   零本流碰撞 run-rules §9/§10）。锚点面漂移记档（新组合树态
+   6281deb3b 对基线口径实测）：④ 全树排除本流 docs 对 18d462de6
+   **273 files +31799/-1724 → 273 files +31907/-1729**（273 files
+   维持 三触面文件均在集合内 行数折入 +108/-5 与 R4581 自身口径
+   +111/-8 精确闭合 = mod.rs 3 行替换折算 88+1+19 净入账 实测为
+   准）→ S1459 开工复测按新基线 ④273 files +31907/-1729 / ②
+   crates/ raw **189→190**（+1 = R4581 crates/ 提交 e67967632..TIP
+   口径实测）/ ① 自有面 **10 files +1187/-182 维持**（R4581 零
+   headless 触达 实测复核）/ ③ 子帧关键词 **7 文件 md5 74f58fcf
+   维持**（pipeline/mod.rs contentDocument/content_document 零命
+   中实测复核 观察面 185 口径挂起维持）/ ⑤ make test 腿基线
+   **19,382P/0F 68 组 → 19,384P/0F 68 组**（+2 新单测 = 兄弟流
+   R4581 巡检实测 19,384P/0F EXIT=0 双流计数交叉印证 S1459 双腿
+   mt 腿活跑实测复核）。S1459 = 树变化刷新轮双腿活跑预告（新树态
+   首次全量覆盖 R4581 组合态 门腿重编相位 = engine 链预期 mt 腿重
+   编计数如实记档 周期锚点以 S1459 双腿刷新归零重计 至迟 S1465 =
+   S1459+6 到期期限轮双腿活跑 树不变也双腿）。（本插记提交 guard
+   子代理扫描 PASS 0 critical 0 warning）
+
    **S1452 轮后插记（2026-09-21 push 序列 pull --rebase 实测）**：兄弟流
    一笔 **docs 腿**（d815ecedd R4580 守成巡检轮 零代码变更 六点门禁
    全绿 1 file +1/-0 docs-only 零代码面）于我方 S1452 记录提交
