@@ -6,6 +6,8 @@
 /// 匹配声明结果类型：(属性名, 属性值, 是否important, 特异性, 层索引)
 type MatchingDecl = (String, String, bool, (u32, u32, u32), Option<usize>);
 
+use std::collections::HashMap;
+
 use zero_css_parser::ast::{
     AttrCaseModifier, AttributeMatcher, AttributeSelector, Combinator, CompoundSelector, PseudoClassSelector, Selector,
     SubclassSelector, TypeSelector,
@@ -934,13 +936,24 @@ pub struct ContainerContext {
     pub container_width: Option<f64>,
     /// 容器高度（px）。
     pub container_height: Option<f64>,
+    /// R4582：style query 具名容器表——链上 container-name 非空条目的
+    /// (name, 该容器 custom properties 快照)，**近端在后**。具名 style() 条件按名
+    /// 从近到远取第一个同名容器（css-contain-3：style query 不要求 container-type，
+    /// 具名即容器）。
+    pub style_named: Vec<(String, Option<std::sync::Arc<HashMap<String, String>>>)>,
+    /// R4582：链顶（最近容器，含 style-only 容器）custom properties 快照——
+    /// 无名 `style(...)` 条件的求值对象。
+    pub nearest_custom: Option<std::sync::Arc<HashMap<String, String>>>,
 }
 
-/// R4124：容器链条目——一个 container-type ≠ normal 祖先的查询可用信息。
+/// R4124：容器链条目——一个查询容器祖先的可用信息。
 ///
 /// `width`/`height` 为该容器的 content-box 尺寸（px）：静态可推（祖先显式 Px 宽减
 /// 自身 border/padding）时 Some；auto/百分比等不可静态解析的轴为 None（该轴条件
 /// unknown → false，规范行为）。`name` 为 container-name（无则 None）。
+/// R4582：`is_size` = container-type ≠ normal（尺寸查询/cq 单位容器）；仅
+/// container-name 的元素入链但 `is_size = false`（style query 容器，无尺寸遏制——
+/// 其尺寸轴对尺寸查询恒 unknown）。
 #[derive(Debug, Clone)]
 pub struct ContainerEntry {
     /// container-name（`container: name size` / `container-name`）。
@@ -949,6 +962,12 @@ pub struct ContainerEntry {
     pub width: Option<f64>,
     /// 容器 content-box 高（px）；不可静态解析为 None。
     pub height: Option<f64>,
+    /// container-type ≠ normal（尺寸容器）。
+    pub is_size: bool,
+    /// R4582：该容器的 custom properties 快照（压链时刻，含其自身声明——style query
+    /// 求值对象）。None = 压链处不可得（如伪元素 originating 入链路径），style 条件
+    /// unknown → false。
+    pub custom: Option<std::sync::Arc<HashMap<String, String>>>,
 }
 
 impl ContainerContext {
@@ -957,6 +976,8 @@ impl ContainerContext {
         Self {
             container_width: None,
             container_height: None,
+            style_named: Vec::new(),
+            nearest_custom: None,
         }
     }
 
@@ -965,6 +986,8 @@ impl ContainerContext {
         Self {
             container_width: Some(width),
             container_height: Some(height),
+            style_named: Vec::new(),
+            nearest_custom: None,
         }
     }
 }
@@ -978,6 +1001,12 @@ impl Default for ContainerContext {
 /// 解析长度字符串为像素值。
 ///
 /// 辅助函数，将 parse_length 结果提取为 f64 像素值。
+/// R4582：style query 串等值的空白折叠（token 序列比较，css-conditional-5：
+/// 非注册自定义属性按 token 流等值，连续空白视为单空格）。
+fn collapse_whitespace(s: &str) -> String {
+    s.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
 fn length_to_px(value_str: &str) -> Option<f64> {
     use zero_css_parser::values::parse_length;
     parse_length(value_str.trim()).map(|l| match l {
@@ -1018,9 +1047,48 @@ fn evaluate_container_condition(
     // R4126（css-conditional-5 §container-queries）：多条件逗号分隔 = OR——
     // `condition` 与 `extra_conditions` 任一为真即应用（任一段无法解析按 false 计）。
     let eval_one = |condition: &zero_css_parser::ast::ContainerCondition| -> bool {
+        // R4582（css-conditional-5 §container style queries）：style() 条件——廉价子
+        // 切片仅支持非注册自定义属性的串等值。求值语义：
+        //   - 具名查询（`@container --n style(...)`）：按名从近到远取链上第一个同名
+        //     容器的 custom 快照；无名查询取链顶。无匹配容器 → unknown → 不应用
+        //     （`not style(...)` 对 unknown 仍不应用——not unknown ≠ true，规范行为）。
+        //   - 非自定义属性（注册属性）：计算值等值（css-color-4 色等值等）未支持 →
+        //     unknown → false。
+        //   - `style(--p)` 无值 = 属性非 guaranteed-invalid 即真；`style(--p: v)` =
+        //     token 序列空白折叠串等值。
+        if let zero_css_parser::ast::ContainerCondition::Style {
+            property,
+            value,
+            negated,
+        } = condition
+        {
+            let custom = if let Some(rule_name) = &container_rule.name {
+                ctx.style_named
+                    .iter()
+                    .rev()
+                    .find(|(n, _)| n == rule_name)
+                    .and_then(|(_, c)| c.clone())
+            } else {
+                ctx.nearest_custom.clone()
+            };
+            let Some(custom) = custom else { return false };
+            if !property.starts_with("--") {
+                return false;
+            }
+            // 属性缺席（guaranteed-invalid）→ style 条件 **false**（非 unknown）——
+            // not 参与取反（driving: --foo 容器无 --bar 声明 → not style(--bar: baz)
+            // = true → 染 pink）。unknown 仅限无匹配容器 / 注册属性未支持。
+            let matched = custom.get(property.as_str()).is_some_and(|actual| match value {
+                Some(expected) => collapse_whitespace(actual) == expected.as_str(),
+                None => true,
+            });
+            return matched != *negated;
+        }
+
         let size_cond = match condition {
             zero_css_parser::ast::ContainerCondition::Size(s)
             | zero_css_parser::ast::ContainerCondition::InlineSize(s) => s,
+            zero_css_parser::ast::ContainerCondition::Style { .. } => unreachable!("已在上方处理"),
         };
 
         let feature = size_cond.feature.to_ascii_lowercase();

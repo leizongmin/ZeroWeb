@@ -912,69 +912,7 @@ impl<'a> Parser<'a> {
     ///
     /// 格式：`@container <name>? (<条件>) { <规则> }`
     pub(super) fn consume_container_rule(&mut self) -> Option<ContainerRule> {
-        self.skip_whitespace();
-
-        // 读取可选的容器名称（标识符，在括号之前）
-        // 名称是第一个标识符（如果后面跟着 '('），条件则以 '(' 开头
-        let name = if let Token::Ident(s) = self.peek().clone() {
-            // 保存位置，前进查看下一个非空白 token
-            let pos_before = self.pos;
-            self.advance();
-            self.skip_whitespace();
-            if matches!(self.peek(), Token::LParen) {
-                // ident 后面跟着 '(' → ident 是容器名称
-                Some(s)
-            } else {
-                // ident 后面不是 '(' → 回退，这不是名称
-                self.pos = pos_before;
-                None
-            }
-        } else {
-            None
-        };
-
-        self.skip_whitespace();
-
-        // 收集条件文本。两种形式：
-        //   (1) `(...)` 普通条件；
-        //   (2) `size(...)` / `inline-size(...)` 尺寸函数条件（CSS Contain 3）——tokenizer
-        //       把 `size(` 产成 `Function("size")`（ident 紧跟 `(`），Function token 已含 `(`，
-        //       须单独处理，否则 `size` 被跳过、条件丢失 `size(` 包装致 parse_container_condition
-        //       解析为裸 width 条件（driving: `@container size(width > 300px)`）。
-        // R4126（css-conditional-5 §container-queries）：条件可逗号分隔多段 = OR
-        //（`@container (width < 75px), (width > 150px)`，任一为真即应用）。旧实现只收
-        // 第一段，逗号后遇非 `{` 整条规则丢弃（multiple-conditions-001 全败根因）。
-        // 首段入 `condition`，后续段入 `extra_conditions`（求值端 OR）。
-        let parse_one_condition = |parser: &mut Self| -> Option<ContainerCondition> {
-            parser.skip_whitespace();
-            if matches!(parser.peek(), Token::LParen) {
-                parser.advance(); // (
-                let cond_text = parser.collect_paren_content()?;
-                parse_container_condition(cond_text.trim())
-            } else if let Token::Function(func) = parser.peek().clone() {
-                if !func.eq_ignore_ascii_case("size") && !func.eq_ignore_ascii_case("inline-size") {
-                    return None;
-                }
-                let func = func.to_ascii_lowercase();
-                parser.advance(); // Function token（已含 `(`）
-                let inner = parser.collect_paren_content()?;
-                parse_container_condition(&format!("{func}({inner})"))
-            } else {
-                None
-            }
-        };
-        let condition = parse_one_condition(self)?;
-
-        let mut extra_conditions = Vec::new();
-        loop {
-            self.skip_whitespace();
-            if matches!(self.peek(), Token::Comma) {
-                self.advance();
-                extra_conditions.push(parse_one_condition(self)?);
-            } else {
-                break;
-            }
-        }
+        let (name, condition, extra_conditions) = self.parse_container_prelude()?;
 
         self.skip_whitespace();
 
@@ -997,6 +935,112 @@ impl<'a> Parser<'a> {
             extra_conditions,
             rules,
         })
+    }
+
+    /// 解析 @container prelude：`<name>? <condition>[, <condition>]*`（停在 `{` 前）。
+    /// 顶层 `consume_container_rule` 与嵌套 @container（`build_parsed_at_rule` 的
+    /// prelude 重解析，R4582）共用。
+    ///
+    /// 条件形式：
+    ///   (1) `(...)` 普通条件；
+    ///   (2) `size(...)` / `inline-size(...)` 尺寸函数条件（CSS Contain 3）——tokenizer
+    ///       把 `size(` 产成 `Function("size")`（ident 紧跟 `(`），Function token 已含 `(`，
+    ///       须单独处理，否则 `size` 被跳过、条件丢失 `size(` 包装致 parse_container_condition
+    ///       解析为裸 width 条件（driving: `@container size(width > 300px)`）；
+    ///   (3) `style(...)` / `not style(...)`（css-conditional-5 §container style queries，
+    ///       R4582）——tokenizer 同理把 `style(` 产成 `Function("style")`。
+    /// R4126（css-conditional-5 §container-queries）：条件可逗号分隔多段 = OR
+    ///（`@container (width < 75px), (width > 150px)`，任一为真即应用）。旧实现只收
+    /// 第一段，逗号后遇非 `{` 整条规则丢弃（multiple-conditions-001 全败根因）。
+    /// 首段入 `condition`，后续段入 `extra_conditions`（求值端 OR）。
+    pub(super) fn parse_container_prelude(
+        &mut self,
+    ) -> Option<(Option<String>, ContainerCondition, Vec<ContainerCondition>)> {
+        self.skip_whitespace();
+
+        // 读取可选的容器名称（标识符，在条件之前）
+        // 名称后面跟条件起始 token：`(` / `not` / `style(`（R4582）；否则回退不是名称。
+        let name = if let Token::Ident(s) = self.peek().clone() {
+            // 保存位置，前进查看下一个非空白 token
+            let pos_before = self.pos;
+            self.advance();
+            self.skip_whitespace();
+            let next_is_condition_start = match self.peek() {
+                Token::LParen => true,
+                Token::Ident(n) => n.eq_ignore_ascii_case("not"),
+                Token::Function(f) => f.eq_ignore_ascii_case("style"),
+                _ => false,
+            };
+            if next_is_condition_start {
+                Some(s)
+            } else {
+                // 后面不是条件起始 → 回退，这不是名称
+                self.pos = pos_before;
+                None
+            }
+        } else {
+            None
+        };
+
+        self.skip_whitespace();
+
+        let parse_one_condition = |parser: &mut Self| -> Option<ContainerCondition> {
+            parser.skip_whitespace();
+            if matches!(parser.peek(), Token::LParen) {
+                parser.advance(); // (
+                let cond_text = parser.collect_paren_content()?;
+                parse_container_condition(cond_text.trim())
+            } else if let Token::Function(func) = parser.peek().clone() {
+                if func.eq_ignore_ascii_case("style") {
+                    parser.advance(); // Function token（已含 `(`）
+                    let inner = parser.collect_paren_content()?;
+                    return parse_style_condition(&inner);
+                }
+                if !func.eq_ignore_ascii_case("size") && !func.eq_ignore_ascii_case("inline-size") {
+                    return None;
+                }
+                let func = func.to_ascii_lowercase();
+                parser.advance(); // Function token（已含 `(`）
+                let inner = parser.collect_paren_content()?;
+                parse_container_condition(&format!("{func}({inner})"))
+            } else if let Token::Ident(word) = parser.peek().clone() {
+                // `not style(...)`：style-query 前缀否定（css-conditional-5）
+                if !word.eq_ignore_ascii_case("not") {
+                    return None;
+                }
+                parser.advance();
+                parser.skip_whitespace();
+                match parser.peek().clone() {
+                    Token::Function(f) if f.eq_ignore_ascii_case("style") => {
+                        parser.advance();
+                        let inner = parser.collect_paren_content()?;
+                        parse_style_condition(&inner).map(|mut c| {
+                            if let ContainerCondition::Style { ref mut negated, .. } = c {
+                                *negated = true;
+                            }
+                            c
+                        })
+                    }
+                    _ => None,
+                }
+            } else {
+                None
+            }
+        };
+        let condition = parse_one_condition(self)?;
+
+        let mut extra_conditions = Vec::new();
+        loop {
+            self.skip_whitespace();
+            if matches!(self.peek(), Token::Comma) {
+                self.advance();
+                extra_conditions.push(parse_one_condition(self)?);
+            } else {
+                break;
+            }
+        }
+
+        Some((name, condition, extra_conditions))
     }
 
     /// 收集已消耗 `(` 后的括号内容文本，直到匹配 `)`（嵌套 `()` 保留）。

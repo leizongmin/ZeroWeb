@@ -472,6 +472,7 @@ fn r4126_multi_condition_or_and_equality() {
         let size = match eq {
             zero_css_parser::ast::ContainerCondition::Size(s) => s,
             zero_css_parser::ast::ContainerCondition::InlineSize(s) => s,
+            zero_css_parser::ast::ContainerCondition::Style { .. } => panic!("应为尺寸条件段"),
         };
         assert_eq!(size.operator.as_deref(), Some("="), "等式运算符");
     } else {

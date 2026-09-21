@@ -16,6 +16,7 @@
 //! - values/types.rs：parse_min/parse_max/parse_clamp 残余输入、parse_calc_expr 中
 //!   clamp 缺少逗号、parse_min 失败返回 None
 
+use crate::ast::{ContainerCondition, Rule};
 use crate::parser::Parser;
 use crate::tokenizer::{Token, Tokenizer};
 use crate::values::{TransformValue, parse_calc, parse_transform};
@@ -726,4 +727,80 @@ fn test_parse_min_no_comma() {
 fn test_parse_max_no_comma() {
     let result = parse_calc("max(10px 20px)");
     assert!(result.is_none());
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// R4582 — @container style() 条件解析（not + 具名 + 自定义属性串等值）
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_container_style_condition_not_with_name() {
+    // driving: style-negation-with-container-name `@container --foo not style(--bar: baz)`
+    let css = "@container --foo not style(--bar: baz) { .a { color: red; } }";
+    let sheet = Parser::parse_stylesheet(css);
+    assert_eq!(sheet.rules.len(), 1);
+    match &sheet.rules[0] {
+        Rule::Container(cr) => {
+            assert_eq!(cr.name.as_deref(), Some("--foo"));
+            match &cr.condition {
+                ContainerCondition::Style {
+                    property,
+                    value,
+                    negated,
+                } => {
+                    assert_eq!(property, "--bar");
+                    assert_eq!(value.as_deref(), Some("baz"));
+                    assert!(*negated);
+                }
+                other => panic!("应为 Style 条件，实际 {other:?}"),
+            }
+        }
+        other => panic!("应为 Container 规则，实际 {other:?}"),
+    }
+}
+
+#[test]
+fn test_container_style_condition_plain_and_no_value() {
+    let css = "@container style(--x) { .a { color: red; } }";
+    let sheet = Parser::parse_stylesheet(css);
+    match &sheet.rules[0] {
+        Rule::Container(cr) => match &cr.condition {
+            ContainerCondition::Style {
+                property,
+                value,
+                negated,
+            } => {
+                assert_eq!(property, "--x");
+                assert!(value.is_none());
+                assert!(!*negated);
+            }
+            other => panic!("应为 Style 条件，实际 {other:?}"),
+        },
+        other => panic!("应为 Container 规则，实际 {other:?}"),
+    }
+}
+
+#[test]
+fn test_nested_container_rule_compiles() {
+    // R4582：嵌套 @container（CSS nesting）——旧实现落 GenericBlock 被求值端忽略。
+    // body 裸声明相对父选择器去糖（合成 & 规则 = 外层 .test）。
+    let css = ".test { color: green; @container --foo not style(--bar: baz) { color: pink; } }";
+    let sheet = Parser::parse_stylesheet(css);
+    let mut saw_container = false;
+    for rule in &sheet.rules {
+        if let Rule::Container(cr) = rule {
+            saw_container = true;
+            assert_eq!(cr.name.as_deref(), Some("--foo"));
+            assert!(matches!(cr.condition, ContainerCondition::Style { negated: true, .. }));
+            assert_eq!(cr.rules.len(), 1, "body 裸声明应合成一条 & 相对规则");
+            match &cr.rules[0] {
+                Rule::Style(st) => {
+                    // & 相对 .test 去糖 → .test（隐式后代前缀对单化合物 = 自身）
+                    assert!(!st.declarations.is_empty(), "合成规则应携带 color: pink");
+                }
+                other => panic!("嵌套 body 应编译为 Style 规则，实际 {other:?}"),
+            }
+        }
+    }
+    assert!(saw_container, "嵌套 @container 应编译为 Rule::Container");
 }

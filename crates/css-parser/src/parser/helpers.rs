@@ -28,6 +28,32 @@ pub(super) fn parse_container_condition(text: &str) -> Option<ContainerCondition
     Some(ContainerCondition::Size(parse_size_condition(text)?))
 }
 
+/// 解析 style-query 条件内容（`style(` 之内、`)` 之前的文本）。
+///
+/// 支持形式（css-conditional-5 §container style queries，R4582 廉价子切片）：
+///   - `--bar`（无值：属性已设置即真）
+///   - `--bar: baz`（值串等值：token 序列空白折叠比较）
+///   - 注册属性名（非 `--` 前缀）：AST 可表达，求值端恒 false（计算值等值 = 深域）。
+pub(super) fn parse_style_condition(inner: &str) -> Option<ContainerCondition> {
+    let inner = inner.trim();
+    let (property, value) = match inner.find(':') {
+        Some(idx) => {
+            let prop = inner[..idx].trim();
+            let val: String = inner[idx + 1..].split_whitespace().collect::<Vec<_>>().join(" ");
+            (prop, Some(val))
+        }
+        None => (inner, None),
+    };
+    if property.is_empty() {
+        return None;
+    }
+    Some(ContainerCondition::Style {
+        property: property.to_string(),
+        value,
+        negated: false,
+    })
+}
+
 fn strip_container_function_prefix<'a>(input: &'a str, name: &str) -> Option<&'a str> {
     // https://www.w3.org/TR/css-syntax-3/#function-token-diagram
     // CSS-defined function names are ASCII case-insensitive; whitespace before `(` is not a function token.

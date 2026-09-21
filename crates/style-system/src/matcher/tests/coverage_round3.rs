@@ -517,6 +517,7 @@ fn test_container_context_missing_axis() {
     let ctx = ContainerContext {
         container_width: None,
         container_height: Some(600.0),
+        ..ContainerContext::default()
     };
     assert!(!evaluate_container_condition(&rule, Some(&ctx)));
 }
@@ -1070,4 +1071,107 @@ fn test_is_element_with_text() {
 fn test_is_element_with_root() {
     let doc = Document::new();
     assert!(!is_element(&doc, doc.root()));
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// R4582 — @container style() 条件求值（串等值 + not + 具名容器）
+// ═══════════════════════════════════════════════════════════════════════
+
+fn style_condition_rule(name: Option<&str>, property: &str, value: Option<&str>, negated: bool) -> ContainerRule {
+    ContainerRule {
+        name: name.map(str::to_string),
+        condition: ContainerCondition::Style {
+            property: property.to_string(),
+            value: value.map(str::to_string),
+            negated,
+        },
+        extra_conditions: Vec::new(),
+        rules: vec![],
+    }
+}
+
+#[test]
+fn test_style_query_negation_with_container_name() {
+    // driving: style-negation-with-container-name——--foo 容器无 --bar 声明 →
+    // style(--bar: baz) false → not → true（.test 应染 pink）。
+    let rule = style_condition_rule(Some("--foo"), "--bar", Some("baz"), true);
+    let ctx = ContainerContext {
+        style_named: vec![("--foo".to_string(), Some(std::sync::Arc::new(HashMap::new())))],
+        nearest_custom: None,
+        ..ContainerContext::default()
+    };
+    assert!(evaluate_container_condition(&rule, Some(&ctx)));
+}
+
+#[test]
+fn test_style_query_named_match_value_equal() {
+    // --bar 容器有 --bar: baz → style(--bar: baz) true → not → false（黄不应用）。
+    let rule = style_condition_rule(Some("--bar"), "--bar", Some("baz"), true);
+    let mut custom = HashMap::new();
+    custom.insert("--bar".to_string(), "baz".to_string());
+    let ctx = ContainerContext {
+        style_named: vec![("--bar".to_string(), Some(std::sync::Arc::new(custom)))],
+        nearest_custom: None,
+        ..ContainerContext::default()
+    };
+    assert!(!evaluate_container_condition(&rule, Some(&ctx)));
+}
+
+#[test]
+fn test_style_query_unknown_container_stays_false_even_negated() {
+    // 规则名在链上无同名容器 → unknown → false（not unknown ≠ true）。
+    let rule = style_condition_rule(Some("--nope"), "--bar", Some("baz"), true);
+    let ctx = ContainerContext::default();
+    assert!(!evaluate_container_condition(&rule, Some(&ctx)));
+}
+
+#[test]
+fn test_style_query_no_value_means_set() {
+    // style(--x) 无值形式：属性存在即真；不存在即假。
+    let plain = style_condition_rule(None, "--x", None, false);
+    let mut custom = HashMap::new();
+    custom.insert("--x".to_string(), "anything".to_string());
+    let ctx_set = ContainerContext {
+        nearest_custom: Some(std::sync::Arc::new(custom)),
+        ..ContainerContext::default()
+    };
+    assert!(evaluate_container_condition(&plain, Some(&ctx_set)));
+    let ctx_empty = ContainerContext {
+        nearest_custom: Some(std::sync::Arc::new(HashMap::new())),
+        ..ContainerContext::default()
+    };
+    assert!(!evaluate_container_condition(&plain, Some(&ctx_empty)));
+}
+
+#[test]
+fn test_style_query_value_whitespace_collapsed() {
+    // 串等值按 token 序列空白折叠比较。
+    let rule = style_condition_rule(None, "--x", Some("1px 2px"), false);
+    let mut custom = HashMap::new();
+    custom.insert("--x".to_string(), "1px   2px".to_string());
+    let ctx = ContainerContext {
+        nearest_custom: Some(std::sync::Arc::new(custom)),
+        ..ContainerContext::default()
+    };
+    assert!(evaluate_container_condition(&rule, Some(&ctx)));
+}
+
+#[test]
+fn test_style_query_non_custom_property_unknown_false() {
+    // 注册属性（非 -- 前缀）计算值等值未支持 → unknown → false。
+    let rule = style_condition_rule(None, "width", Some("auto"), false);
+    let mut custom = HashMap::new();
+    custom.insert("width".to_string(), "auto".to_string());
+    let ctx = ContainerContext {
+        nearest_custom: Some(std::sync::Arc::new(custom)),
+        ..ContainerContext::default()
+    };
+    assert!(!evaluate_container_condition(&rule, Some(&ctx)));
+}
+
+#[test]
+fn test_style_query_no_container_context_false() {
+    // 链空（无任何容器）→ unknown → false（not 亦然）。
+    let rule = style_condition_rule(None, "--x", Some("y"), true);
+    assert!(!evaluate_container_condition(&rule, None));
 }

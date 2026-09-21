@@ -61,6 +61,10 @@ enum ParsedAtRule {
     },
     /// @layer：层名（可为空=匿名层）+ body tokens。
     Layer { name: String, body: Vec<Token> },
+    /// @container：已解析 prelude（ContainerRule.rules 空）+ 原始 body tokens
+    ///（R4582：嵌套 @container——`.a { @container ... {} }` CSS 嵌套语法——旧实现落
+    /// GenericBlock 被求值端忽略，整条规则无效）。body 在编译期相对父选择器去糖。
+    Container(crate::ast::ContainerRule, Vec<Token>),
     /// 语句式 @规则（无块，如嵌套 @import）：原样输出。
     Statement { name: String, prelude: String },
 }
@@ -663,6 +667,28 @@ impl<'a> Parser<'a> {
 
     /// 按名称把 (name, prelude, body tokens) 装配为对应 `ParsedAtRule` 变体。
     fn build_parsed_at_rule(name: &str, prelude: &str, body: Vec<Token>) -> ParsedAtRule {
+        // R4582：嵌套 @container（`.a { @container --n not style(--p: v) { ... } }`）——
+        // prelude 在子 Parser 上复用 parse_container_prelude 重解析为 ContainerRule，
+        // body 相对父选择器编译（裸声明 → 合成 `&` 规则 = 外层选择器，css-nesting 语义）。
+        // 旧实现落 GenericBlock 被求值端忽略（仅 name=media 处理）→ 嵌套 @container 整条
+        // 无效（driving: style-negation-with-container-name @container 嵌套于 .test 内）。
+        if name.eq_ignore_ascii_case("container") {
+            let mut toks: Vec<Token> = Tokenizer::new(prelude).map(|s| s.token).collect();
+            toks.push(Token::Eof);
+            let mut sub = Parser::new(&mut toks);
+            if let Some((cname, condition, extra_conditions)) = sub.parse_container_prelude() {
+                return ParsedAtRule::Container(
+                    ContainerRule {
+                        name: cname,
+                        condition,
+                        extra_conditions,
+                        rules: Vec::new(),
+                    },
+                    body,
+                );
+            }
+            // prelude 解析失败：维持旧形态（GenericBlock 被忽略 = 整条规则不应用）。
+        }
         if name.eq_ignore_ascii_case("supports") {
             if let Some(cond) = crate::supports_condition::parse_supports_condition(prelude) {
                 return ParsedAtRule::Supports { condition: cond, body };
@@ -739,6 +765,13 @@ impl<'a> Parser<'a> {
             ParsedAtRule::Layer { name, body } => {
                 let rules = Self::compile_at_body(body, parent);
                 Some(Rule::Layer(LayerRule { name, rules }))
+            }
+            // R4582：嵌套 @container——body 相对父选择器编译（裸声明 → 合成 `&` 规则
+            // = 外层选择器），与顶层 Rule::Container 求值端共用（matcher 按
+            // evaluate_container_condition 评估后 collect_from_rules 全量匹配）。
+            ParsedAtRule::Container(mut cr, body) => {
+                cr.rules = Self::compile_at_body(body, parent);
+                Some(Rule::Container(cr))
             }
         }
     }

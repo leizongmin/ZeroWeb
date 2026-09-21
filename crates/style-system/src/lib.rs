@@ -655,9 +655,14 @@ impl StyleSystem {
                 // max-width:300 按 c5 自身 300px 求值，ref 全 green）。元素自身样式的
                 // @container 不含自身（R4124 语义，已按父链顶算完），此处为伪元素
                 // 求值临时把自身入链，完毕弹出。
-                let self_is_container = !matches!(elem_style.container_type, property::types::ContainerType::Normal);
+                // R4582：style-only 容器（container-name 非空）同样为自身伪元素 style
+                // 查询入链；custom 快照在伪元素求值期不可得（elem 自身声明已并入
+                // saved_custom 之后的 map 状态不确定）→ None（style 条件 unknown →
+                // false，保守正确）。
+                let self_is_container = !matches!(elem_style.container_type, property::types::ContainerType::Normal)
+                    || elem_style.container_name.is_some();
                 if self_is_container {
-                    self.container_chain.push(container_entry_for(&elem_style));
+                    self.container_chain.push(container_entry_for(&elem_style, None));
                 }
                 let before = *self.compute_element_style_internal(
                     doc,
@@ -765,10 +770,7 @@ impl StyleSystem {
                         }
                         _ => None,
                     };
-                    let container_ctx = self.container_chain.last().map(|c| matcher::ContainerContext {
-                        container_width: c.width,
-                        container_height: c.height,
-                    });
+                    let container_ctx = container_context_from_chain(&self.container_chain);
                     !matcher::collect_pseudo_declarations_with_media(
                         doc,
                         node,
@@ -916,13 +918,21 @@ impl StyleSystem {
         // 条件 false，规范行为）；container-type: inline-size 的高度轴恒 None。
         // 本元素自身样式已在上方用**父链顶**计算完（规范：元素自身的 @container 规则
         // 查询祖先容器，不含自己），此处 push 不影响本元素。
+        // R4582（css-contain-3 §style queries）：style query 不要求 container-type——
+        // container-name 非空的元素也是（具名）style 查询容器，一并入链（is_size=false，
+        // 对尺寸查询恒 unknown 不改变既有尺寸语义）；custom 快照 = 本元素已解析的
+        // 自定义属性（含自身声明，与子元素继承同源 current_custom）。
         let pushed_container = is_element
             .then(|| {
                 let elem_style = delayed_style.as_deref().or_else(|| styles.get(&node))?;
-                if matches!(elem_style.container_type, property::types::ContainerType::Normal) {
+                let is_size = !matches!(elem_style.container_type, property::types::ContainerType::Normal);
+                if !is_size && elem_style.container_name.is_none() {
                     return None;
                 }
-                Some(container_entry_for(elem_style))
+                Some(container_entry_for(
+                    elem_style,
+                    Some(std::sync::Arc::new(current_custom.clone())),
+                ))
             })
             .flatten();
         if let Some(entry) = &pushed_container {
@@ -1077,10 +1087,9 @@ impl StyleSystem {
         // 容器页全错）。容器链由 compute_styles_recursive 自根向下维护（self.container_chain
         // push/pop），此处取链顶构造 ctx；某轴静态不可推时保持 None（该轴条件 unknown
         // → false）；链空（页无容器）时 @container 全不适用（无最近容器 → false）。
-        let container_ctx = self.container_chain.last().map(|c| matcher::ContainerContext {
-            container_width: c.width,
-            container_height: c.height,
-        });
+        // R4582：尺寸维度取链上最近 is_size 条目；style_named/nearest_custom 供
+        // style() 条件求值（css-contain-3 §style queries）。
+        let container_ctx = container_context_from_chain(&self.container_chain);
 
         // 1. 收集匹配的声明（带媒体查询和容器查询评估）
         //    pseudo=Some(name) 时收集该伪元素的声明（::before/::after 路由）。
@@ -1794,7 +1803,12 @@ impl StyleSystem {
                 root_ic_width: self.root_ic_width,
             },
             // R4125：cq 单位按容器链顶（最近查询容器）content 尺寸解析。
-            self.container_chain.last().map(|c| (c.width, c.height)),
+            // R4582：链含 style-only 容器后取最近 is_size 条目（cq 单位语义 = 尺寸容器）。
+            self.container_chain
+                .iter()
+                .rev()
+                .find(|e| e.is_size)
+                .map(|c| (c.width, c.height)),
         );
 
         // 7. Quirks mode 调整（复用步骤 1.7 已提取的 tag_name）
@@ -2533,7 +2547,10 @@ fn stylesheet_cache_safe(stylesheets: &[Stylesheet]) -> bool {
 /// content 尺寸静态推导：显式 Px 声明（Px 即 content，BorderBox 减可解析框），否则
 /// None（unknown 轴 → 条件 false，规范行为）；container-type: inline-size 的高度轴恒
 /// None。供 compute_styles_recursive 的子树入链与伪元素求值的自身入链共用。
-fn container_entry_for(style: &ComputedStyle) -> matcher::ContainerEntry {
+fn container_entry_for(
+    style: &ComputedStyle,
+    custom: Option<std::sync::Arc<HashMap<String, String>>>,
+) -> matcher::ContainerEntry {
     let resolve_axis = |v: &zero_css_parser::values::LengthValue| -> Option<f64> {
         match v {
             zero_css_parser::values::LengthValue::Px(p) if p.is_finite() => Some(*p),
@@ -2566,7 +2583,30 @@ fn container_entry_for(style: &ComputedStyle) -> matcher::ContainerEntry {
         name: style.container_name.clone(),
         width: w,
         height: h,
+        // R4582：container-type ≠ normal = 尺寸查询/cq 单位容器；仅 container-name
+        // 的 style-only 容器对尺寸查询恒 unknown（无尺寸遏制）。
+        is_size: !matches!(style.container_type, property::types::ContainerType::Normal),
+        custom,
     }
+}
+
+/// R4582：由容器链构造 ContainerContext——尺寸维度取链上**最近的 is_size 条目**
+/// （链含 style-only 容器后链顶未必是尺寸容器；与旧行为「链顶=尺寸容器」在纯尺寸链
+/// 下精确一致）；style_named 收集链上具名条目（近端在后）；nearest_custom 取链顶。
+pub(crate) fn container_context_from_chain(chain: &[matcher::ContainerEntry]) -> Option<matcher::ContainerContext> {
+    let top = chain.last()?;
+    let size_entry = chain.iter().rev().find(|e| e.is_size);
+    let style_named = chain
+        .iter()
+        .rev()
+        .filter_map(|e| e.name.as_ref().map(|n| (n.clone(), e.custom.clone())))
+        .collect();
+    Some(matcher::ContainerContext {
+        container_width: size_entry.and_then(|e| e.width),
+        container_height: size_entry.and_then(|e| e.height),
+        style_named,
+        nearest_custom: top.custom.clone(),
+    })
 }
 
 fn rules_cache_safe(rules: &[zero_css_parser::ast::Rule]) -> bool {

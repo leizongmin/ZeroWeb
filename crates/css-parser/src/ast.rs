@@ -529,6 +529,21 @@ pub enum ContainerCondition {
     Size(ContainerSizeCondition),
     /// 基于 inline-size 的查询：`inline-size(<条件>)`。
     InlineSize(ContainerSizeCondition),
+    /// 基于 style 的查询：`style(<property>)` / `style(<property>: <value>)`，可带
+    /// `not` 前缀（css-conditional-5 §container style queries）。
+    ///
+    /// R4582 廉价子切片：非注册自定义属性（`--*`）的**串等值**求值（token 序列
+    /// 空白折叠比较）。注册属性（@property syntax typed）的计算值等值（如
+    /// `<color>` 跨色彩空间等值需 css-color-4）未支持——求值端对非 `--` 属性恒
+    /// false（unknown → 不应用，规范行为）。
+    Style {
+        /// 被查询的属性名（`--bar` 或注册属性名）。
+        property: String,
+        /// 期望值（`style(--bar)` 无值形式 = 属性已设置即真）。
+        value: Option<String>,
+        /// `not style(...)` 前缀否定。
+        negated: bool,
+    },
 }
 
 /// 容器尺寸条件。

@@ -593,6 +593,16 @@ const REFTESTS: &[InlineReftestDef] = &[
         ref_html: "<html><head><style>.h{font:16px/16px monospace;background:red;width:15em;} .h>div{white-space:pre;background:green;color:white;}</style></head><body><div class=\"h\"><div>Line 1\nLine 2</div></div></body></html>",
         is_match: true,
     },
+    // R4582：@container style() 条件（css-conditional-5 §style queries，廉价子切片）——
+    // 嵌套 @container + `not style(--p: v)` 自定义属性串等值 + 具名容器匹配（镜像上游
+    // style-negation-with-container-name：容器无 --p 声明 → style false → not true → 染粉）。
+    InlineReftestDef {
+        id: "css21/container-style-query-negation",
+        category: ReftestCategory::Layout,
+        test_html: "<html><head><style>.q{container-name:--q} .t{background:lightgreen;width:200px;height:50px;@container --q not style(--p: v){background:pink}}</style></head><body><div class=\"q\"><div class=\"t\"></div></div></body></html>",
+        ref_html: "<html><head><style>.t{background:pink;width:200px;height:50px}</style></head><body><div class=\"q\"><div class=\"t\"></div></div></body></html>",
+        is_match: true,
+    },
 ];
 
 pub fn reftests() -> &'static [InlineReftestDef] {
