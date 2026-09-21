@@ -272,6 +272,28 @@ Compiling 全缓存 19,394P/0F 68 组 ⑤ 基线 mt 腿活跑实测精确兑现�
 唯一未清偿义务 = frames.click+evaluate
 回填（挂子帧能力解冻，见子帧解冻清单，不阻收口））
 
+   **S1514 轮后插记（2026-09-21 push 序列 pull --rebase 实
+   测）**：兄弟流一笔 **docs 腿**（788708819 rendering-compat
+   **R4595 守成巡检轮（零代码变更）** docs-only **1 file
+   +1/-0 = docs/goal/rendering-compat.md** 零代码面 自述六点
+   门禁全绿 make test 19,394P/0F 与本流 S1512 双腿 mt 腿实测
+   同值交叉印证 ⑥ bench-gate 定向首跑识别本流兄弟重腿在窗主动
+   中止候净窗复跑——兄弟腿 18:44 收口即本流 S1514 开工 load
+   1.00 衰减残余实测对应源）于我方 S1514 记录提交 push 前 pull
+   --rebase 窗入树（我方 S1514 记录提交 739dd0750 rebase 于
+   其上 = **f7798d0d8** push 788708819..f7798d0d8 零冲突 实测
+   复核 HEAD==origin/main）docs-only 零代码面 → S1512 双腿覆
+   盖延伸到新组合树 f7798d0d8 零补跑需求（代码腿先例不触发提
+   前刷新 **双腿周期锚点 = S1512 双腿维持**）；锚点面漂移记档
+   （新组合树态 f7798d0d8 实测）④ **279 files +32389/-1780 →
+   279 files +32390/-1780**（files 279 持平 集内净 +1 行
+   R4595 折入精确闭合）② crates/ raw **191 维持**（零 crates
+   提交实测复核）① 自有面 **10 files +1187/-182 维持**（零
+   apps/browser 触达实测复核）③ 子帧关键词 **7 文件 md5
+   74f58fcf 维持**（docs 腿零 Rust 面触达）；S1515 = 3/10 静
+   默监测引用轮开工复测按本插记新基线 ④279 files +32390/-1780
+   其余四锚维持（本插记提交 guard 子代理扫描 PASS 0 critical 0
+   warning）。
    **S1508 轮后插记（2026-09-21 push 序列 pull --rebase 实
    测）**：兄弟流一笔 **docs 腿**（53057a86a rendering-compat
    **R4594 守成巡检轮（零代码变更）** docs-only **1 file
