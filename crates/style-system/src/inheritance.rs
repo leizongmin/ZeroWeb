@@ -5,7 +5,7 @@
 
 use std::collections::HashMap;
 
-use zero_css_parser::values::FontWeightValue;
+use zero_css_parser::values::{FontWeightValue, LengthValue};
 use zero_dom::QuirksMode;
 
 use crate::cascade::CascadeOrder;
@@ -13,6 +13,18 @@ use crate::property::apply_advanced::logical_alias_physical_slot;
 use crate::property::{
     ComputedStyle, PropertyRegistry, apply_initial_value, apply_property_value_with_quirks, inherit_property,
 };
+
+/// R4643：父元素 font-size 的 Px 解析基准（Em/Percentage font-size 归一化用）。
+/// 父样式恒为归一化后形态（自根向下递归保证），非 Px 残留（如 Ex 系 metric 依赖单位）
+/// 按初始值回落，与 resolve_effect_length 既有口径一致。
+fn parent_font_size_px(parent_style: Option<&ComputedStyle>) -> f64 {
+    parent_style
+        .map(|p| match p.font_size {
+            LengthValue::Px(v) => v,
+            _ => crate::computed::ROOT_FONT_SIZE,
+        })
+        .unwrap_or(crate::computed::ROOT_FONT_SIZE)
+}
 
 /// 为元素计算继承样式。
 ///
@@ -93,6 +105,27 @@ pub fn compute_inherited_style_with_quirks(
                 }
             }
         }
+        // R4643（css-fonts-4 §font-size computed value）：font-size 计算值须为绝对长度——
+        // em/percentage/相对关键字（larger/smaller 解析为 Em(1.2)/Em(0.8333)）按**父元素**
+        // font-size 解析并归一化为 Px 存储。此前非 Px 值直存消费端（resolve_effect_length、
+        // engine paint resolve_length(…,16.0)）一律按常量 16 解析，父元素 font-size ≠ 16px
+        // 时全部 em/font 相对属性基准错误（003 同根：resolve_effect_length `_ => 16.0`
+        // 回落臂）。归一化后下游恒见 Px。
+        // 归一化范围限定 **Em/Percentage**（父值即可解析、无字体 metrics 依赖）；Ex/Rex/
+        // Cap/Rcap/Ch 系单位依赖字体 metrics，保持既有后置 metrics-aware 解析层（root_font_
+        // units 测试覆盖该层）；rem 根依赖面维持记档候选（跨 crate 签名变更另立项）。
+        // https://drafts.csswg.org/css-fonts-4/#font-size-prop
+        let normalized_px = match style.font_size {
+            LengthValue::Em(v) => Some(v * parent_font_size_px(parent_style)),
+            LengthValue::Percentage(v) => Some(v / 100.0 * parent_font_size_px(parent_style)),
+            _ => None,
+        };
+        if let Some(px) = normalized_px
+            && px.is_finite()
+            && px > 0.0
+        {
+            style.font_size = LengthValue::Px(px);
+        }
     }
     // R4448：逻辑属性（margin/padding/inset/border 的 -inline-/-block- 系列）延迟到
     // 主循环 + 继承完成后应用——其物理映射依赖元素**最终** writing-mode/sideways 标记，
@@ -101,6 +134,11 @@ pub fn compute_inherited_style_with_quirks(
     // 属性在 computed-value 时统一解析。
     let mut deferred_logical: Vec<(&str, &str)> = Vec::new();
     for (property, value) in cascaded {
+        // R4643：font-size 已由预应用 pass 全权处理（应用 + 归一化 Px），主循环跳过——
+        // 主循环重应用 raw 值会把归一化结果覆盖回 Em/百分比（1.5em 覆写回 Em 实证）。
+        if property == "font-size" {
+            continue;
+        }
         let resolved = resolve_keyword(value, property, parent_style);
         match resolved {
             KeywordResolution::Inherit => {
@@ -1124,5 +1162,63 @@ mod tests {
             assert_eq!(tshadow.offset_x, 50.0, "0.5em 须按 100px font-size 解析");
             assert_eq!(tshadow.offset_y, 25.0, "0.25em 须按 100px font-size 解析");
         }
+    }
+
+    /// R4643 回归锚（css-fonts-4 §font-size computed value）：font-size 计算值为绝对长度——
+    /// em/percentage/larger/smaller 按**父元素** font-size 解析并归一化为 Px 存储；
+    /// 此前非 Px 值直存，消费端（resolve_effect_length 等）一律按常量 16 解析，
+    /// 父元素 font-size ≠ 16px 时 em/font 相对属性基准错误。
+    #[test]
+    fn r4643_font_size_em_percentage_normalization() {
+        use crate::computed::ROOT_FONT_SIZE;
+
+        // 父 20px ≠ 默认 16px：em/percentage/larger 均须按父值解析。
+        let mut parent = ComputedStyle::default();
+        parent.font_size = LengthValue::Px(20.0);
+
+        let mut cascaded = HashMap::new();
+        cascaded.insert("font-size".to_string(), "1.5em".to_string());
+        cascaded.insert("box-shadow".to_string(), "0 -1em".to_string());
+        let style = compute_inherited_style(Some(&parent), &cascaded);
+        assert_eq!(
+            style.font_size,
+            LengthValue::Px(30.0),
+            "1.5em 须按父 20px 解析为 30px 并归一化 Px"
+        );
+        let shadow = style.box_shadow.first().expect("box-shadow 应解析出一条阴影");
+        assert_eq!(shadow.offset_y, -30.0, "-1em 须按归一化后 30px 解析（非 16px 回落）");
+
+        let mut cascaded_pct = HashMap::new();
+        cascaded_pct.insert("font-size".to_string(), "120%".to_string());
+        let style_pct = compute_inherited_style(Some(&parent), &cascaded_pct);
+        assert_eq!(
+            style_pct.font_size,
+            LengthValue::Px(24.0),
+            "120% 须按父 20px 解析为 24px"
+        );
+
+        let mut cascaded_larger = HashMap::new();
+        cascaded_larger.insert("font-size".to_string(), "larger".to_string());
+        let style_larger = compute_inherited_style(Some(&parent), &cascaded_larger);
+        assert_eq!(
+            style_larger.font_size,
+            LengthValue::Px(24.0),
+            "larger(1.2em) 须按父 20px 解析为 24px"
+        );
+
+        let mut cascaded_smaller = HashMap::new();
+        cascaded_smaller.insert("font-size".to_string(), "smaller".to_string());
+        let style_smaller = compute_inherited_style(Some(&parent), &cascaded_smaller);
+        assert_eq!(
+            style_smaller.font_size,
+            LengthValue::Px(0.8333 * 20.0),
+            "smaller(0.8333em) 须按父 20px 解析（≈16.67px）"
+        );
+
+        // 根元素（无父）em font-size 按 ROOT_FONT_SIZE 初始值解析。
+        let mut cascaded_root = HashMap::new();
+        cascaded_root.insert("font-size".to_string(), "1.5em".to_string());
+        let style_root = compute_inherited_style(None, &cascaded_root);
+        assert_eq!(style_root.font_size, LengthValue::Px(1.5 * ROOT_FONT_SIZE));
     }
 }
