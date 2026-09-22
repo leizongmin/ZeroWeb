@@ -2,6 +2,7 @@
 
 **入口文档**: [../cdp-protocol.md](../cdp-protocol.md)
 **创建日期**: 2026-09-12（goal 立项）
+**轮后插记之二（2026-09-22 S1615 轮收尾）**: 上笔插记 push 前再折入兄弟流一笔 docs 腿（184d622bc rendering-compat R4624 守成巡检轮 零代码变更 docs-only 1 file +1/-1 净 0 行 = docs/goal/rendering-compat.md 非测试/代码文件零触达实测复核）于我方 S1615 轮后插记提交 push 前 pull --rebase 窗入树（插记 rebase 于其上 = 92b01a455 push 184d622bc..92b01a455 零冲突 实测复核 HEAD==origin/main）docs-only 零代码面 → S1615 门腿覆盖延伸判断同形延伸到新组合树 92b01a455 零补跑需求（双腿周期锚点 = S1614 双腿维持）；锚点面复测（新组合树态 92b01a455 实测）④ 279 files +32423/-1780 维持 + ② 191 维持（①③ 与上笔插记同窗同值 docs-only 零 Rust/零 apps 触达维持）；S1616 开工复测按本插记之二新基线 ④279 files +32423/-1780 维持口径 其余四锚维持（本插记之二提交 guard 子代理扫描 PASS）；
 **轮后插记（2026-09-22 S1615 轮）**: 兄弟流一笔 docs 腿 push 序列折入（d5ac9b03f rendering-compat R4623 守成巡检轮 零代码变更 docs-only 1 file +1/-1 = docs/goal/rendering-compat.md 非测试/代码文件零触达实测复核）于我方 S1615 记录提交 push 前 pull --rebase 窗入树（我方 S1615 记录提交 rebase 于其上 = f9ee8c236 push d5ac9b03f..f9ee8c236 零冲突 实测复核 HEAD==origin/main）docs-only 零代码面 → S1615 门腿覆盖延伸到新组合树 f9ee8c236 零补跑需求（代码腿先例不触发提前刷新 双腿周期锚点 = S1614 双腿维持）；锚点面漂移记档（新组合树态 f9ee8c236 实测）④ 279 files +32423/-1780 **维持**（+1/-1 净 0 行精确闭合 = R4623 +1/-1）② crates/ raw **191 维持**（零 crates 提交实测复核）① 自有面 **10 files +1187/-182 维持**（零 apps/browser 触达实测复核）③ 子帧关键词 **7 文件 md5 74f58fcf 维持**（docs 腿零 Rust 面触达）；S1616 = 2/10 静默监测引用轮（周期锚点 = S1614 双腿）开工复测按本插记新基线 ④279 files +32423/-1780 维持口径 其余四锚维持（本插记提交 guard 子代理扫描 PASS）；
 **最后更新**: 2026-09-22（S1615：**1/10 静默监测引用轮（周期锚点 = S1614 双腿）+ #0 深排查持续态探针常驻** pull 零新提交（tip = 579514c36
 即本流 S1614 记录提交本身 origin/main == HEAD 实测复核
