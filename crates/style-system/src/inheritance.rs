@@ -61,6 +61,39 @@ pub fn compute_inherited_style_with_quirks(
     }
 
     // 先处理所有级联属性
+    // R4642（css-cascade computed values）：`font-size` 先行应用——所有 font 相对长度
+    //（em）在 apply 期急切解析时读取 `style.font_size`（如 box-shadow/text-shadow/
+    // border-image-outset 的 `resolve_effect_length`），而主循环按胜者 HashMap 迭代序
+    // 应用属性，font-size 与 em 属性的相对顺序随进程随机（box-shadow-overlapping-003
+    // 双相实证：同一 `box-shadow: 0em -1em` offset 在 -100/-16 间翻转）。规范要求 em 于
+    // computed value 时按元素自身最终 font-size 解析、与声明应用顺序无关：
+    // https://drafts.csswg.org/css-cascade-4/#computed
+    //（`font` 简写已在级联前展开为 longhands，故 font-size 单点预应用即覆盖依赖根。）
+    if let Some(fs) = cascaded.get("font-size") {
+        match resolve_keyword(fs, "font-size", parent_style) {
+            KeywordResolution::Concrete(v) => {
+                apply_property_value_with_quirks(
+                    &mut style,
+                    "font-size",
+                    v,
+                    quirks_mode == QuirksMode::Quirks,
+                    prefers_dark,
+                );
+            }
+            KeywordResolution::Initial => {
+                apply_initial_value(&mut style, "font-size");
+            }
+            // font-size 为继承属性：inherit/unset/revert/revert-layer 均回退父值或初始值
+            //（与主循环同语义；revert-layer 简化实现 ≈ unset，见主循环注）。
+            _ => {
+                if let Some(parent) = parent_style {
+                    inherit_property(parent, &mut style, "font-size");
+                } else {
+                    apply_initial_value(&mut style, "font-size");
+                }
+            }
+        }
+    }
     // R4448：逻辑属性（margin/padding/inset/border 的 -inline-/-block- 系列）延迟到
     // 主循环 + 继承完成后应用——其物理映射依赖元素**最终** writing-mode/sideways 标记，
     // apply 期即时解析受胜者 map 迭代序影响（writing-mode 声明与逻辑声明应用顺序不定，
@@ -1067,5 +1100,29 @@ mod tests {
         cascaded2.insert("line-clamp".to_string(), "3".to_string());
         let style2 = compute_inherited_style(None, &cascaded2);
         assert!(!style2.line_clamp_legacy_webkit, "无 origin 键 → legacy 标记不置位");
+    }
+
+    /// R4642 回归锚（css-cascade computed values）：em 长度按元素自身**最终** font-size
+    /// 解析、与胜者 HashMap 迭代序无关。主循环按随机序应用属性，box-shadow/text-shadow
+    /// 的 em 若在 font-size 应用前急切解析会误取初始 16px——上游 WPT
+    /// box-shadow-overlapping-003 渲染双相（offset -100/-16 翻转）根因。
+    /// https://drafts.csswg.org/css-cascade-4/#computed
+    #[test]
+    fn r4642_font_size_prepass_em_dependent_properties() {
+        // HashMap 迭代序每进程随机，多次重复构造以覆盖两种相对应用序。
+        for _ in 0..16 {
+            let mut cascaded = HashMap::new();
+            cascaded.insert("font-size".to_string(), "100px".to_string());
+            cascaded.insert("box-shadow".to_string(), "0em -1em".to_string());
+            cascaded.insert("text-shadow".to_string(), "0.5em 0.25em".to_string());
+            let style = compute_inherited_style(None, &cascaded);
+            assert_eq!(style.font_size, LengthValue::Px(100.0));
+            let shadow = style.box_shadow.first().expect("box-shadow 应解析出一条阴影");
+            assert_eq!(shadow.offset_x, 0.0, "0em 横向偏移须解析为 0");
+            assert_eq!(shadow.offset_y, -100.0, "-1em 须按 100px font-size 解析");
+            let tshadow = style.text_shadow.first().expect("text-shadow 应解析出一条阴影");
+            assert_eq!(tshadow.offset_x, 50.0, "0.5em 须按 100px font-size 解析");
+            assert_eq!(tshadow.offset_y, 25.0, "0.25em 须按 100px font-size 解析");
+        }
     }
 }
