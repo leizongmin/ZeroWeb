@@ -3115,24 +3115,92 @@ return _tplContent;
             if (typeof __zw_focus_changed === 'function') __zw_focus_changed('');
           };
         }
-        // R2938 `el.requestFullscreen()`——全屏请求（spec 返 Promise，headless 无真 OS 全屏）。grant/deny 二分：
-        // fullscreenEnabled=true（默认）→ 设 fullscreenElement + 派 fullscreenchange + resolve；=false →
-        // 派 fullscreenerror + reject TypeError（spec「fullscreen is unavailable」）。相同元素重复请求 → no-op
-        // resolve（不重复派 fullscreenchange，spec 一致）。`key/sel/handle` 为闭包捕获的本元素身份。
+        // R2938 + WAB2-M3-s1（web-api-batch2 goal M3 切片 1，2026-09-24）`el.requestFullscreen(options)`
+        // ——异步 step 化状态机（spec https://fullscreen.spec.whatwg.org/#dom-element-requestfullscreen）：
+        // ① options 成员读取（fullscreenOptions.screen/navigationUI getter 触发断言，options 案）；
+        // ② 调用时校验：fullscreenEnabled / ready check（connected——createElement 未挂载即拒，ready-check
+        //    案；命名空间——createElementNS 记录面 _nsHandles，仅 HTML ns 或 SVG 'svg'/MathML 'math' 放行，
+        //    namespaces 案 null/空/未知 ns 拒绝）→ 失败走 error 路径（异步派 fullscreenerror——target=元素，
+        //    detached 回落 document（and-remove 案 errorEventPromise 需 resolve）+ TypeError 拒绝，not-allowed
+        //    /onfullscreenerror 案）；
+        // ③ 激活门：'fullscreen' 权限 granted（__zwPermissionState，without-user-activation 案 sub2）→ 放行；
+        //    否则需瞬态激活（__zwUserActivate 注入）且**同步消费**（consume-user-activation 案 isActive
+        //    翻转断言）；无 → error 路径；
+        // ④ 同元素重复请求 → no-op resolve 不派事件（same-element 案）；
+        // ⑤ enter step（渲染机会近似 setTimeout 1ms）：重校验 connected（调用后移除 → error 路径，
+        //    and-remove/after-error 案）→ 设状态 + 派 fullscreenchange（target=元素，Event 真原型）→ resolve。
+        //    调用后 fullscreenElement 同步保持 null（document-fullscreen-element 案时序断言）。
         if (prop === 'requestFullscreen') {
-          return function() {
-            return new Promise(function (resolve, reject) {
-              if (!globalThis.document.fullscreenEnabled) {
-                _fireDocEvent('fullscreenerror');
-                reject(new TypeError('fullscreen is unavailable'));
-                return;
+          return function(options) {
+            // ① options 成员校验/读取（WebIDL 字典转换先于算法体，promise-returning → 异常走
+            // rejected promise）：非字典参数（string/number，options 案「non-dictionary」）→ TypeError；
+            // navigationUI 枚举 {hide,show,auto}（options 案「invalid navigationUI values」）→ 非法值
+            // TypeError；screen 成员读取（getter 触发观测面，tentative options 案）。
+            if (arguments.length >= 1 && options != null && typeof options !== 'object') {
+              return Promise.reject(new TypeError("Failed to execute 'requestFullscreen' on 'Element': The provided value is not of type 'FullscreenOptions'."));
+            }
+            if (options != null && typeof options === 'object') {
+              var navUi;
+              try { navUi = options.navigationUI; } catch (_eO1) { navUi = undefined; }
+              if (navUi != null && ['hide', 'show', 'auto'].indexOf(String(navUi)) < 0) {
+                return Promise.reject(new TypeError("Failed to read the 'navigationUI' property from 'FullscreenOptions': The provided value '" + navUi + "' is not a valid enum value of type 'FullscreenNavigationUI'."));
               }
-              if (_fsKey === key) { resolve(undefined); return; } // 已是全屏元素 → no-op
-              _fsKey = key;
-              _fsSel = sel;
-              _fsHandle = handle;
-              _fireDocEvent('fullscreenchange');
-              resolve(undefined);
+              try { void options.screen; } catch (_eO2) {}
+            }
+            var proxy = _makeProxy(sel, handle);
+            // ② ready check（调用时）：connected + 命名空间。
+            function _fsReadyOk() {
+              var connected = true;
+              try { connected = proxy.isConnected !== false; } catch (_eI) {}
+              if (!connected) return false;
+              // 命名空间：createElementNS 元素经 _nsHandles 印记精确判定（HTML ns 放行；SVG ns 仅
+              // localName 'svg'；MathML ns 仅 'math'——spec fullscreen element ready check）。无印记
+              // （parsed HTML 元素 / 旧路径）→ 默认放行（HTML 元素恒合法；parsed <svg>/<math> 同款放行）。
+              if (handle && typeof _nsHandles !== 'undefined' && _nsHandles[handle]) {
+                var ns = _nsHandles[handle].namespace;
+                if (ns === 'http://www.w3.org/1999/xhtml') return true;
+                var local = String(_nsHandles[handle].qualifiedName || '').split(':').pop().toLowerCase();
+                if (ns === 'http://www.w3.org/2000/svg' && local === 'svg') return true;
+                if (ns === 'http://www.w3.org/1998/Math/MathML' && local === 'math') return true;
+                return false;
+              }
+              return true;
+            }
+            // error 路径：异步派 fullscreenerror（元素优先，detached 回落 document）+ TypeError 拒绝。
+            // **次序**：reject 先入列（promise reaction jobs），事件派发经微任务随后——WPT timing 案
+            // 「promise executed before fullscreenerror handler」断言（catch 标志先于 error listener
+            // 置位；同步 reject+dispatch 同 task 时微任务 checkpoint 晚于两者 → 断言必败）。
+            function _fsFail(resolve, reject) {
+              _fsQueueStep(function () {
+                reject(new TypeError('fullscreen request failed'));
+                Promise.resolve().then(function () {
+                  _fireFsElementEvent('fullscreenerror', sel, handle);
+                });
+              });
+            }
+            return new Promise(function (resolve, reject) {
+              if (!globalThis.document.fullscreenEnabled) { _fsFail(resolve, reject); return; }
+              if (!_fsReadyOk()) { _fsFail(resolve, reject); return; }
+              // ③ 激活门：fullscreen 权限 granted → 免激活；否则需瞬态激活并同步消费。
+              var permGranted = false;
+              if (typeof globalThis.__zwPermissionState === 'function') {
+                try { permGranted = globalThis.__zwPermissionState('fullscreen') === 'granted'; } catch (_eP) {}
+              }
+              if (!permGranted) {
+                if (!_zwTransientActive) { _fsFail(resolve, reject); return; }
+                _zwTransientActive = false; // transient activation 消费（spec one-time）
+              }
+              // ④ 同元素重复请求 → no-op resolve，不派事件（spec「already the fullscreen element」）。
+              if (_fsKey === key) { resolve(undefined); return; }
+              // ⑤ enter step：重校验 connected（调用后移除）→ 设状态 + 派 change + resolve。
+              _fsQueueStep(function () {
+                if (!_fsReadyOk()) { _fsFail(resolve, reject); return; }
+                _fsKey = key;
+                _fsSel = sel;
+                _fsHandle = handle;
+                _fireFsElementEvent('fullscreenchange', sel, handle);
+                resolve(undefined);
+              });
             });
           };
         }

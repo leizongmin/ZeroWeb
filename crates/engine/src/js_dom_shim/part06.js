@@ -147,6 +147,60 @@
   var _plHandle = null;
   var _plKey = null; // _elKey(sel,handle) of 指针锁元素；同 _fsKey 语义
 
+  // WAB2-M3-s1（web-api-batch2 goal M3 切片 1，2026-09-24）：**瞬态激活面**（User
+  // Activation API + Fullscreen 激活门共享状态）。headless 无真用户输入 → 激活由
+  // `__zwUserActivate` 钩子注入（runner testdriver click/send_keys/Actions.send/bless
+  // 在命令签发时调用——「签发即授予」近似），requestFullscreen 消费（transient 一次性）。
+  // spec https://html.spec.whatwg.org/multipage/interaction.html#transient-activation。
+  // **诚实范围**：无 5s 窗口时钟（测试同步序列内窗口恒满足；窗口到期归后续激活专项）。
+  var _zwTransientActive = false;
+  var _zwActiveEver = false;
+  if (typeof globalThis.__zwUserActivate !== 'function') {
+    globalThis.__zwUserActivate = function () {
+      _zwTransientActive = true;
+      _zwActiveEver = true;
+    };
+  }
+
+  // WAB2-M3-s1：fullscreen steps 异步化——spec「run the fullscreen steps」在渲染机会
+  // （update the rendering）执行，非微任务/同步（WPT after-error 案：requestFullscreen 后
+  // step_timeout(0) 内移除元素 → step 见 disconnected → 拒绝；同步/微任务 step 会先跑而误进
+  // 全屏）。headless 无渲染阶段 → 以 setTimeout 1ms 定时任务近似（晚于用例的 0ms 定时器，
+  // 早于探针下一 tick）。fullscreenElement/事件派发时序断言（document-fullscreen-element /
+  // exit-fullscreen-twice「同步调用后状态未变」）均依赖此异步化。
+  function _fsQueueStep(fn) {
+    globalThis.setTimeout(function () {
+      try { fn(); } catch (_eFs) {}
+    }, 1);
+  }
+
+  // WAB2-M3-s1：fullscreen 事件派发——**target = 全屏元素**（enter：新全屏元素；exit/error：
+  // 原/请求元素——WPT document-exit-fullscreen/not-allowed 案 event.target === div 断言），
+  // bubbles + composed（document-exit-fullscreen 断言面）且 **Event 真原型**（instanceof Event
+  // 断言——此前 _makeEvent 裸对象致 onfullscreenchange 案 instanceof 失败）。经
+  // _dispatchWithBubble 冒泡到 document listener（fullScreenChange() helper 监听面）。
+  // 元素 detached（请求后移除——and-remove 案）→ 回落 document 派发（detached 树不冒泡到
+  // document，errorEventPromise 需 resolve）。
+  function _fireFsElementEvent(type, sel, handle) {
+    var ev;
+    try {
+      ev = new globalThis.Event(type, { bubbles: true, cancelable: false, composed: true });
+    } catch (_eC) {
+      ev = _makeEvent(type, { bubbles: true, cancelable: false });
+    }
+    try {
+      if (sel || handle) {
+        var connected = true;
+        try { connected = _makeProxy(sel, handle).isConnected !== false; } catch (_eI) {}
+        if (connected) {
+          _dispatchWithBubble(_elKey(sel, handle), sel, handle, ev);
+          return;
+        }
+      }
+      _dispatchToListeners(_elKey('html', null), ev, 'all', globalThis.document);
+    } catch (_eD) {}
+  }
+
   // R2938/R2939 文档级事件派发（fullscreenchange/fullscreenerror/pointerlockchange/pointerlockerror）。
   // spec：在 document 上派发，bubbles、非 cancelable。document/window listener 同存于 _elKey('html', null)
   //（document.addEventListener 转发 html proxy，window dispatchEvent/addEventListener 同 key），故一次
@@ -3761,11 +3815,25 @@
       return true;
     },
     exitFullscreen: function () {
-      return new Promise(function (resolve) {
-        if (!_fsKey) { resolve(undefined); return; } // 非全屏 → resolve，不派事件（spec）
-        _fsKey = null; _fsSel = null; _fsHandle = null;
-        _fireDocEvent('fullscreenchange');
-        resolve(undefined);
+      // WAB2-M3-s1：异步 step 化（spec「exit steps」在渲染机会执行）——调用后 fullscreenElement
+      // 同步保持（WPT exit-fullscreen-twice/document-fullscreen-element 断言），step 内清状态 +
+      // 派 change（target = 原全屏元素，document-exit-fullscreen 案）+ resolve。**双 exit 均
+      // resolve、仅单事件**（第二个 step 见已清状态 → 仅 resolve，exit-fullscreen-twice 案）。
+      // 非全屏（无挂起 step）→ TypeError 拒绝（WPT promises-reject 案「Not in fullscreen」；
+      // 此前 resolve 与上游案冲突）。
+      // https://fullscreen.spec.whatwg.org/#dom-document-exitfullscreen
+      return new Promise(function (resolve, reject) {
+        if (!_fsKey) {
+          reject(new TypeError('document.exitFullscreen(): The document is not fullscreen.'));
+          return;
+        }
+        _fsQueueStep(function () {
+          if (!_fsKey) { resolve(undefined); return; } // 双 exit 的第二个 → 已被前一 step 清除
+          var exSel = _fsSel, exHandle = _fsHandle;
+          _fsKey = null; _fsSel = null; _fsHandle = null;
+          _fireFsElementEvent('fullscreenchange', exSel, exHandle);
+          resolve(undefined);
+        });
       });
     },
     // pointerLock（R2939，镜像 R2938 Fullscreen）。headless 无真 OS 指针锁，但 pointerLockElement 反映

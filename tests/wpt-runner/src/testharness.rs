@@ -5175,11 +5175,15 @@ fn unsupported_testdriver_dependencies(source: &str) -> Vec<String> {
         // shim `__zwSetPermission` 钩子落权限注册表（navigator.permissions.query 如实返回 +
         // clipboard 四方法 denied 拒绝门），clipboard-apis permissions/svg 与 fullscreen
         // permission 三案解除整体 Unsupported。
+        // WAB2-M3-s1（2026-09-24）：bless 白名单——stub 授予瞬态激活（`__zwUserActivate`）+
+        // 执行回调，fullscreen bless 依赖案（after-error/options/same-element/display-contents/
+        // consume-user-activation）解除整体 Unsupported。
         if !name.is_empty()
             && name != "click"
             && name != "send_keys"
             && name != "Actions"
             && name != "set_permission"
+            && name != "bless"
             && !dependencies.contains(&name)
         {
             dependencies.push(name);
@@ -5687,8 +5691,17 @@ const TESTDRIVER_STUB: &str = r#"<script>
     else entry.reject(new Error(String(error)));
   };
   globalThis.test_driver = {
-    click: function(element) { return enqueue('click', element, null); },
-    send_keys: function(element, keys) { return enqueue('send_keys', element, keys); },
+    // WAB2-M3-s1（web-api-batch2 goal，2026-09-24）：click/send_keys 命令签发即授予瞬态激活
+    //（`__zwUserActivate`，「签发即授予」headless 近似——requestFullscreen 激活门 +
+    // navigator.userActivation 消费面）。trusted_request 案经此获得激活。
+    click: function(element) {
+      if (typeof globalThis.__zwUserActivate === 'function') globalThis.__zwUserActivate();
+      return enqueue('click', element, null);
+    },
+    send_keys: function(element, keys) {
+      if (typeof globalThis.__zwUserActivate === 'function') globalThis.__zwUserActivate();
+      return enqueue('send_keys', element, keys);
+    },
     // WAB2-M2-s3（web-api-batch2 goal，2026-09-24）：set_permission——页面侧权限状态注入，
     // 不经宿主命令队列（无 UI 提示语义）。转发 shim `__zwSetPermission` 钩子（clipboard
     // 块发布的权限注册表；navigator.permissions.query 与 clipboard 四方法 denied 门消费）。
@@ -5698,6 +5711,20 @@ const TESTDRIVER_STUB: &str = r#"<script>
         return Promise.reject(new Error('testdriver set_permission is not supported'));
       }
       return globalThis.__zwSetPermission(descriptor && descriptor.name, state);
+    },
+    // WAB2-M3-s1：bless——授予瞬态激活（fullscreen 激活门放行）+ 执行回调（上游用例
+    // `test_driver.bless("fullscreen", () => el.requestFullscreen())` 依赖回调执行且返回其
+    // promise——same-element 案 Promise.all 直接 await bless 结果）。无回调 → resolve。
+    bless: function(intent, callback) {
+      if (typeof globalThis.__zwUserActivate === 'function') globalThis.__zwUserActivate();
+      if (typeof callback === 'function') {
+        try {
+          return Promise.resolve(callback());
+        } catch (e) {
+          return Promise.reject(e);
+        }
+      }
+      return Promise.resolve();
     }
   };
   // R142：test_driver.Actions（指针动作链）——上游用 no-focus-events 等 case 经
@@ -5727,6 +5754,8 @@ const TESTDRIVER_STUB: &str = r#"<script>
     if (!element) {
       return Promise.reject(new Error('testdriver Actions has no pointer origin'));
     }
+    // WAB2-M3-s1：动作链发送同 click 授予瞬态激活（sendPasteShortcutKey 等 paste 链）。
+    if (typeof globalThis.__zwUserActivate === 'function') globalThis.__zwUserActivate();
     if (!this._steps.length) {
       return enqueue('click', element, null);
     }

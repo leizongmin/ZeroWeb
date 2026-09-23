@@ -1094,10 +1094,12 @@ fn test_modern_interaction_stubs_r2817() {
     );
 
     // element.requestFullscreen → Promise resolves + 设 fullscreenElement=body；exitFullscreen 清 + resolve。
-    // （R2817 时 fullscreenElement 恒 null；R2938 升级为 spec-alike 状态追踪，详见 test_fullscreen_api_r2938。）
+    // （R2817 时 fullscreenElement 恒 null；R2938 升级为 spec-alike 状态追踪；WAB2-M3-s1 增激活门
+    // ——先授瞬态激活，详见 test_fullscreen_api_r2938 / test_fullscreen_activation_and_steps_wab2m3s1。）
     sandbox
         .execute(
             "globalThis.__fs = false;\
+             globalThis.__zwUserActivate();\
              document.body.requestFullscreen().then(function(){ globalThis.__fs = true; });",
         )
         .unwrap();
@@ -1551,11 +1553,13 @@ fn test_clipboard_permission_denied_and_validation_wab2m2s3() {
 
 #[test]
 fn test_fullscreen_api_r2938() {
-    // R2938 Fullscreen API（spec-alike）：element.requestFullscreen() 返 Promise——grant 路径设 fullscreenElement +
-    // 派 fullscreenchange + resolve；deny 路径（fullscreenEnabled=false）派 fullscreenerror + reject TypeError。
-    // document.exitFullscreen() 清状态 + 派 fullscreenchange + resolve；非全屏态 resolve 不派事件。
-    // fullscreenElement/fullscreenEnabled 反映状态；fullscreenchange/fullscreenerror 经 document listener +
-    // document.onfullscreenchange/onfullscreenerror IDL handler 触发。headless 无真 OS 全屏，但语义可观察。
+    // R2938 + WAB2-M3-s1（web-api-batch2 goal M3 切片 1，2026-09-24）Fullscreen API：异步 step 化
+    // 状态机——grant 路径（激活授予后）requestFullscreen 经 enter step 设 fullscreenElement + 派
+    // fullscreenchange + resolve；调用后同步 fullscreenElement 保持 null（step 未跑）。deny 路径
+    //（fullscreenEnabled=false）异步派 fullscreenerror + reject TypeError；无激活无权限也走 error
+    // 路径（激活门）。exitFullscreen 清状态 + 派 fullscreenchange + resolve；**非全屏态 reject
+    // TypeError**（WPT promises-reject「Not in fullscreen」，旧 resolve 与上游案冲突已修正）。
+    // fullscreenchange/error 为 Event 真原型（instanceof）+ bubbles/composed + target=元素。
     // https://fullscreen.spec.whatwg.org/
     use std::sync::{Arc, Mutex};
     use zero_script_sandbox::{Sandbox, V8Sandbox};
@@ -1584,27 +1588,60 @@ fn test_fullscreen_api_r2938() {
         "fullscreenElement 初值 null"
     );
 
-    // grant 路径：requestFullscreen 设 fullscreenElement + 派 fullscreenchange（listener 内读 fullscreenElement）+ resolve。
+    // 激活门：无激活无权限 → fullscreenerror + TypeError 拒绝（WPT not-allowed/without-user-activation），
+    // 不设状态、不派 change。
     sandbox
         .execute(
-            "globalThis.__fc = 0; globalThis.__fe = 'x';\
-             document.addEventListener('fullscreenchange', function(){\
-               globalThis.__fc++;\
-               globalThis.__fe = document.fullscreenElement ? document.fullscreenElement.id : '(null)';\
-             });\
-             globalThis.__ok = false;\
-             document.getElementById('d').requestFullscreen().then(function(){ globalThis.__ok = true; });",
+            "globalThis.__gate = [];\
+             document.addEventListener('fullscreenerror', function(){ globalThis.__gate.push('error'); });\
+             document.getElementById('d').requestFullscreen().then(\
+               function(){ globalThis.__gate.push('resolved'); },\
+               function(e){ globalThis.__gate.push((e instanceof TypeError) ? 'TypeError' : 'other'); });",
         )
         .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__gate.join(',')").unwrap().value,
+        "TypeError,error",
+        "激活门：无激活 → TypeError 拒绝先入列 + fullscreenerror 微任务随后（WPT timing 案次序）"
+    );
+    assert_eq!(
+        sandbox.execute("String(document.fullscreenElement)").unwrap().value,
+        "null",
+        "激活门拒绝路径不设 fullscreenElement"
+    );
+
+    // grant 路径（激活授予）：调用后同步 fullscreenElement 保持 null（异步 step），step 内设状态 +
+    // 派 fullscreenchange（target=元素、Event 真原型、bubbles/composed）+ resolve。
+    sandbox
+        .execute(
+            "globalThis.__fc = 0; globalThis.__fev = null;\
+             document.addEventListener('fullscreenchange', function(ev){\
+               globalThis.__fc++;\
+               globalThis.__fev = { target: ev.target && ev.target.id, ioe: ev instanceof Event,\
+                                    bubbles: ev.bubbles, composed: ev.composed };\
+             });\
+             globalThis.__syncNull = 'unset';\
+             globalThis.__ok = false;\
+             globalThis.__zwUserActivate();\
+             var p = document.getElementById('d').requestFullscreen();\
+             globalThis.__syncNull = String(document.fullscreenElement);\
+             p.then(function(){ globalThis.__ok = true; });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__syncNull").unwrap().value,
+        "null",
+        "调用后同步 fullscreenElement 保持 null（step 异步）"
+    );
     assert_eq!(
         sandbox.execute("String(globalThis.__fc)").unwrap().value,
         "1",
         "requestFullscreen 派发一次 fullscreenchange"
     );
     assert_eq!(
-        sandbox.execute("String(globalThis.__fe)").unwrap().value,
-        "d",
-        "fullscreenchange handler 内 fullscreenElement === 全屏元素（id='d'）"
+        sandbox.execute("JSON.stringify(globalThis.__fev)").unwrap().value,
+        r#"{"target":"d","ioe":true,"bubbles":true,"composed":true}"#,
+        "fullscreenchange target=元素 + instanceof Event + bubbles/composed"
     );
     assert_eq!(
         sandbox.execute("String(globalThis.__ok)").unwrap().value,
@@ -1612,10 +1649,11 @@ fn test_fullscreen_api_r2938() {
         "requestFullscreen Promise resolves"
     );
 
-    // 相同元素重复 requestFullscreen → no-op（不重复派 fullscreenchange，仍 resolve）。
+    // 相同元素重复 requestFullscreen → no-op（不重复派 fullscreenchange，仍 resolve；重授激活）。
     sandbox
         .execute(
             "globalThis.__ok2 = false;\
+             globalThis.__zwUserActivate();\
              document.getElementById('d').requestFullscreen().then(function(){ globalThis.__ok2 = true; });",
         )
         .unwrap();
@@ -1630,7 +1668,7 @@ fn test_fullscreen_api_r2938() {
         "重复 requestFullscreen 仍 resolve"
     );
 
-    // exitFullscreen → 清状态 + 派 fullscreenchange + resolve。
+    // exitFullscreen → step 内清状态 + 派 fullscreenchange + resolve。
     sandbox
         .execute(
             "globalThis.__ef = false;\
@@ -1653,17 +1691,18 @@ fn test_fullscreen_api_r2938() {
         "exitFullscreen 后 fullscreenElement 复 null"
     );
 
-    // 非全屏态 exitFullscreen → resolve，不派事件（计数不变）。
+    // 非全屏态 exitFullscreen → TypeError 拒绝，不派事件（WPT promises-reject「Not in fullscreen」）。
     sandbox
         .execute(
             "globalThis.__ef2 = 'p';\
-             document.exitFullscreen().then(function(){ globalThis.__ef2 = 'resolved'; });",
+             document.exitFullscreen().then(function(){ globalThis.__ef2 = 'resolved'; },\
+               function(e){ globalThis.__ef2 = (e instanceof TypeError) ? 'TypeError' : 'other'; });",
         )
         .unwrap();
     assert_eq!(
         sandbox.execute("String(globalThis.__ef2)").unwrap().value,
-        "resolved",
-        "非全屏态 exitFullscreen 仍 resolve"
+        "TypeError",
+        "非全屏态 exitFullscreen 拒绝 TypeError"
     );
     assert_eq!(
         sandbox.execute("String(globalThis.__fc)").unwrap().value,
@@ -1671,11 +1710,12 @@ fn test_fullscreen_api_r2938() {
         "非全屏态 exitFullscreen 不派 fullscreenchange"
     );
 
-    // document.onfullscreenchange IDL handler：注册后由 fullscreenchange 触发。
+    // document.onfullscreenchange IDL handler：注册后由 fullscreenchange 触发（重授激活）。
     sandbox
         .execute(
             "globalThis.__ofc = 0;\
              document.onfullscreenchange = function(){ globalThis.__ofc++; };\
+             globalThis.__zwUserActivate();\
              document.body.requestFullscreen();",
         )
         .unwrap();
@@ -1717,6 +1757,139 @@ fn test_fullscreen_api_r2938() {
         sandbox.execute("String(document.fullscreenElement)").unwrap().value,
         "null",
         "deny 路径不设 fullscreenElement"
+    );
+}
+
+/// WAB2-M3-s1（web-api-batch2 goal M3 切片 1，2026-09-24）：fullscreen 激活消费 / 权限豁免 /
+/// ready check / 双 exit 单事件 / fullscreenOptions 成员读取 / PermissionStatus + userActivation 面。
+/// 镜像 WPT consume-user-activation、without-user-activation、promises-reject、
+/// exit-fullscreen-twice、permission.tentative、fullscreen-options 案核心断言。
+#[test]
+fn test_fullscreen_activation_and_steps_wab2m3s1() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id='a'></div><div id='b'></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // 激活消费（consume-user-activation 案）：bless 式授予 → isActive true → requestFullscreen
+    // 同步消费 → isActive false；首次 resolve、二次 TypeError 拒绝。
+    sandbox
+        .execute(
+            "globalThis.__c = [];\
+             globalThis.__zwUserActivate();\
+             globalThis.__c.push('after-bless:' + navigator.userActivation.isActive);\
+             var p1 = document.getElementById('a').requestFullscreen();\
+             globalThis.__c.push('after-req:' + navigator.userActivation.isActive);\
+             var p2 = document.getElementById('b').requestFullscreen();\
+             Promise.all([\
+               p1.then(function(){ globalThis.__c.push('p1:resolved'); },\
+                 function(e){ globalThis.__c.push('p1:' + e.name); }),\
+               p2.then(function(){ globalThis.__c.push('p2:resolved'); },\
+                 function(e){ globalThis.__c.push('p2:' + (e instanceof TypeError ? 'TypeError' : e.name)); })\
+             ]);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__c.join('|')").unwrap().value,
+        "after-bless:true|after-req:false|p1:resolved|p2:TypeError",
+        "激活授予 → 请求同步消费 → 首次 resolve 二次 TypeError（镜像 consume-user-activation）"
+    );
+
+    // 权限豁免（without-user-activation 案 sub2）：'fullscreen' granted → 无激活也 resolve（b→真
+    // 切换 enter，非同元素 no-op）；PermissionStatus instanceof + state 如实。hasBeenActive 粘性。
+    sandbox
+        .execute(
+            "globalThis.__w = [];\
+             globalThis.__zwSetPermission('fullscreen', 'granted');\
+             navigator.permissions.query({name:'fullscreen'}).then(function(s){\
+               globalThis.__w.push('ioe:' + (s instanceof PermissionStatus) + ':state:' + s.state);\
+             });\
+             globalThis.__w.push('ever:' + navigator.userActivation.hasBeenActive);\
+             document.getElementById('b').requestFullscreen().then(\
+               function(){ globalThis.__w.push('req:resolved'); },\
+               function(e){ globalThis.__w.push('req:' + e.name); });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__w.join('|')").unwrap().value,
+        "ever:true|ioe:true:state:granted|req:resolved",
+        "fullscreen 权限 granted 豁免激活门 + PermissionStatus 真原型（镜像 permission.tentative）"
+    );
+
+    // ready check（promises-reject 案）：detached 元素（createElement 未挂载）→ TypeError。
+    sandbox
+        .execute(
+            "globalThis.__r = [];\
+             var det = document.createElement('span');\
+             det.requestFullscreen().then(function(){ globalThis.__r.push('det:resolved'); },\
+               function(e){ globalThis.__r.push('det:' + (e instanceof TypeError ? 'TypeError' : e.name)); });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r.join('|')").unwrap().value,
+        "det:TypeError",
+        "detached 元素 requestFullscreen 拒绝 TypeError（镜像 promises-reject）"
+    );
+
+    // 双 exit 单事件（exit-fullscreen-twice 案）：切回 a（真 enter）→ enter 后注册单槽计数器 →
+    // 两次 exitFullscreen → 各自 resolve、change 仅一次、同步态在 step 前保持、终态 null。
+    sandbox
+        .execute(
+            "globalThis.__d = []; globalThis.__dc = 0;\
+             document.getElementById('a').requestFullscreen().then(function(){\
+               globalThis.__dc = 0;\
+               document.onfullscreenchange = function(){ globalThis.__dc++; };\
+               globalThis.__d.push('sync-keep:' + (document.fullscreenElement != null));\
+               var e1 = document.exitFullscreen();\
+               globalThis.__d.push('sync-after-exit1:' + (document.fullscreenElement != null));\
+               var e2 = document.exitFullscreen();\
+               return Promise.all([\
+                 e1.then(function(){ globalThis.__d.push('e1:resolved'); },\
+                   function(){ globalThis.__d.push('e1:rejected'); }),\
+                 e2.then(function(){ globalThis.__d.push('e2:resolved'); },\
+                   function(){ globalThis.__d.push('e2:rejected'); })\
+               ]).then(function(){\
+                 globalThis.__d.push('events:' + globalThis.__dc + ':final:' + String(document.fullscreenElement));\
+               });\
+             });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__d.join('|')").unwrap().value,
+        "sync-keep:true|sync-after-exit1:true|e1:resolved|e2:resolved|events:1:final:null",
+        "双 exit 均 resolve + 单 fullscreenchange + 同步态保持（镜像 exit-fullscreen-twice）"
+    );
+
+    // fullscreenOptions 成员读取（options 案）：screen/navigationUI getter 触发即记录。
+    sandbox
+        .execute(
+            "globalThis.__reads = [];\
+             var opts = {\
+               get screen() { globalThis.__reads.push('screen'); return undefined; },\
+               get navigationUI() { globalThis.__reads.push('nav'); return 'hide'; }\
+             };\
+             document.getElementById('a').requestFullscreen(opts).then(function(){\
+               globalThis.__reads.push('resolved');\
+               return document.exitFullscreen();\
+             });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__reads.join(',')").unwrap().value,
+        "nav,screen,resolved",
+        "fullscreenOptions.screen/navigationUI getter 调用时触发（镜像 fullscreen-options 案）"
     );
 }
 

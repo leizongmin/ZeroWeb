@@ -2,7 +2,7 @@
 
 **入口文档**: [../web-api-batch2.md](../web-api-batch2.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-24（M2-s3：denied 拒绝 + read(options) 校验 + 图片魔数 + set_permission 白名单，70.8%→83.3%）
+**最后更新**: 2026-09-24（M3-s1：fullscreen 异步状态机 + 激活面 + PermissionStatus，61.7%→86.0%）
 
 ---
 
@@ -22,9 +22,9 @@
 | # | 缺口 | 状态 |
 |---|------|------|
 | P1 | clipboard-apis / fullscreen 两 corpus fetch 脚本 + 导入 + 基线 | ✅ M1（2026-09-23） |
-| P2 | navigator.clipboard 四方法 + ClipboardItem/Clipboard 面 + ClipboardEvent + 内存后端 | 🔄 M2-s3（2026-09-24）70.8%→**83.3%**（denied ×2 + unsanitized ×5 + 图片魔数 + DataTransfer 'Files'）；余簇 = custom formats ×6（tentative）、svg 净化 ×1、内容规范化 ×1、DOMParser remove ×1、basics 停滞 ×1、infra ×2 |
-| P3 | 最小权限查询面（security-hardening DC-4 对齐点） | ✅ 最小面落地（2026-09-24 M2-s3）：状态注册表 + query 活状态 + 四方法 denied 门 + runner set_permission；完整语义层仍归 security-hardening DC-4 |
-| P4 | Fullscreen 事件/状态面 + viewport 联动 | ⏳ M3（92 真绿/149 = 61.7%【解锁效应】；主簇 = 事件 target/栈时序 + 真 Timeout ×8；新增候选 = PermissionStatus 类 + userActivation 面 + fullscreenOptions 成员） |
+| P2 | navigator.clipboard 四方法 + ClipboardItem/Clipboard 面 + ClipboardEvent + 内存后端 | 🔄 83.6%（M3-s1 复跑 61/73 零丢失）；余簇 = custom formats ×6（tentative）、svg 净化 ×1、内容规范化 ×1、DOMParser remove ×1、basics 停滞 ×1、infra ×2 |
+| P3 | 最小权限查询面（security-hardening DC-4 对齐点） | ✅ 最小面落地（M2-s3）：状态注册表 + query 活状态 + denied 门 + runner set_permission；M3-s1 增 PermissionStatus 真类 + fullscreen allowWithoutGesture；完整语义层仍归 security-hardening DC-4 |
+| P4 | Fullscreen 事件/状态面 + viewport 联动 | 🔄 M3-s1（2026-09-24）61.7%→**86.0%**（129/150，全绿案 5→34，零丢失 +37）——异步状态机 + 激活门/消费 + PermissionStatus + bless 白名单已落；余簇 = model/removal ×6（M3-s2 主对象：移除同步置 null + mutation hook）、Timeout ×5、window.event 持久性/ getElementById 等跨域记账 |
 | P5 | 平台剪贴板后端（host-runtime 能力评估）或差异记账 | ⏳ M4 挂账定稿 |
 
 ## 已完成切片
@@ -63,13 +63,29 @@
   `test_clipboard_permission_denied_and_validation_wab2m2s3`。
   evidence/2026-09-24-m2-s3-clipboard-apis.{md,json} +
   evidence/2026-09-24-m2-s3-fullscreen.{md,json}。
+- **M3 切片 1（2026-09-24）**：fullscreen 异步状态机——spec「run the fullscreen steps」
+  渲染机会执行（setTimeout 1ms 近似，晚于用例 0ms 定时器）替代 R2938 同步模型：
+  requestFullscreen WebIDL options 校验（非字典/枚举/screen getter）+ ready check
+  （connected + `_nsHandles` 命名空间：HTML/SVG svg/MathML math）+ 激活门（fullscreen 权限
+  granted 豁免，瞬态激活**同步消费**）+ 同元素 no-op + step 内重校验；exitFullscreen 异步
+  step 化 + 非全屏 TypeError 拒绝 + 双 exit 单事件；事件派发 `_fireFsElementEvent`
+  （target=全屏元素、bubbles/composed、`new Event` 真原型修 instanceof 断言根因、detached
+  回落 document、reject 先入列微任务派事件）。瞬态激活面：`__zwUserActivate` 钩子 +
+  navigator.userActivation（runner click/send_keys/Actions.send 命令签发即授予）；runner
+  `bless` 白名单 + stub（授予激活 + 执行回调返其 promise）；PermissionStatus 真类 +
+  query 升级（fullscreen allowWithoutGesture false→TypeError）。fullscreen 61.7%→**86.0%**
+  （129/150，全绿案 5→34，通过集零丢失 +37）；clipboard 复跑 61/73 零丢失。
+  单测 test_fullscreen_api_r2938（重写新语义）+ test_fullscreen_activation_and_steps_wab2m3s1。
+  evidence/2026-09-24-m3-s1-fullscreen.{md,json} +
+  evidence/2026-09-24-m3-s1-clipboard-apis.json。
 
 ## 下一步计划
 
-1. **M3**：fullscreenchange/error target 与栈时序簇 → promises 拒绝形态 → Timeout 8 案
-   甄别 → viewport 联动验证（消费 ④ viewport 桥）；顺带评估 PermissionStatus 类 +
-   navigator.userActivation 面 + fullscreenOptions 成员（M2-s3 解锁显形的 5 真子测）
-2. **M2 余簇（可选切片）**：write() custom formats 校验簇 ×6（tentative）
+1. **M3-s2**：model/removal 簇 ×6（remove-first/last/±sibling/parent/single + move-fullscreen-
+   element）——移除全屏元素 fullscreenElement **同步**置 null + change(target=document)，需
+   mutation hook 联动；顺带 shadowroot-fullscreen-element（shadowRoot.fullscreenElement 面）
+   与 move-to-inactive-document Timeout 甄别
+2. **M3 收口**：DC-3 viewport 联动验证（消费 ④ viewport 桥）+ fullscreen 余簇跨域记账定稿
 3. **M4**：DC 逐项判定 + 平台后端差异挂账定稿
 
 **跨域记账（回流不越界）**：
@@ -88,8 +104,8 @@
 | 里程碑 | 状态 |
 |--------|------|
 | M1 — WPT 导入与基线 | ✅ 2026-09-23 |
-| M2 — Clipboard 语义 + 后端 | ⏳ |
-| M3 — Fullscreen 语义 | ⏳ |
+| M2 — Clipboard 语义 + 后端 | 🔄 83.6%（余簇均记账/可选切片，M4 定稿） |
+| M3 — Fullscreen 语义 | 🔄 s1 86.0%（s2 = model/removal 簇 + viewport 联动收口） |
 | M4 — 收口 | ⏳ |
 
 ## 验证基线
@@ -97,11 +113,12 @@
 - 基线 evidence：`evidence/2026-09-23-m1-clipboard-apis-baseline.{md,json}`
   （33 案 / 15-71 = 21.1%）+ `evidence/2026-09-23-m1-fullscreen-baseline.{md,json}`
   （55 案 / 92-146 = 63.0%）；账本 `imported-testharness.txt` +88 行（WAB2-M1-baseline）
-- 最新 evidence：`evidence/2026-09-24-m2-s3-clipboard-apis.{md,json}`
-  （33 案 / 60-72 = 83.3%，全绿案 25）+ `evidence/2026-09-24-m2-s3-fullscreen.{md,json}`
-  （55 案 / 92-149 = 61.7%，解锁效应非回归）
+- 最新 evidence：`evidence/2026-09-24-m3-s1-fullscreen.{md,json}`
+  （55 案 / 129-150 = 86.0%，全绿案 34）+ `evidence/2026-09-24-m3-s1-clipboard-apis.json`
+  （33 案 / 61-73 = 83.6%）；此前 `evidence/2026-09-24-m2-s3-clipboard-apis.{md,json}` +
+  `evidence/2026-09-24-m2-s3-fullscreen.{md,json}`
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过；
-  engine 面 js_dom_bridge R2964/WAB2-M2/WAB2-M2-s2/WAB2-M2-s3/R2948 单测绿；全量
-  `make test` 门禁见 M2-s3 提交说明
+  engine 面 js_dom_bridge R2964/WAB2-M2/WAB2-M2-s2/WAB2-M2-s3/R2938（重写）/
+  WAB2-M3-s1/R2948 单测绿；全量 `make test` 门禁见 M3-s1 提交说明
 
 **碰撞管理**：碰 engine shim 面前与 security-hardening / cdp-protocol `git log` 互核。

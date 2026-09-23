@@ -2679,6 +2679,43 @@
     };
   }
 
+  // PermissionStatus（WAB2-M3-s1，2026-09-24）——permissions.query 返回类型（WPT permission 案
+  // `status instanceof PermissionStatus` 断言）。非法构造（spec [Exposed=(Window)] interface 无
+  // 构造器语义）；实例经 query 内 Object.create(prototype) 构造，name/state 只读 getter +
+  // onchange IDL 属性 + addEventListener/removeEventListener/dispatchEvent（change 事件 headless
+  // 无源，no-op 注册）。
+  // https://w3c.github.io/permissions/#dom-permissionstatus
+  if (typeof globalThis.PermissionStatus !== 'function') {
+    globalThis.PermissionStatus = function PermissionStatus() {
+      throw new TypeError("Illegal constructor");
+    };
+    Object.defineProperty(globalThis.PermissionStatus.prototype, 'name', {
+      configurable: true,
+      get: function () { return this._zwPermName; },
+    });
+    Object.defineProperty(globalThis.PermissionStatus.prototype, 'state', {
+      configurable: true,
+      get: function () { return this._zwPermState; },
+    });
+    Object.defineProperty(globalThis.PermissionStatus.prototype, 'onchange', {
+      configurable: true,
+      get: function () { return this._zwPermOnChange || null; },
+      set: function (v) { this._zwPermOnChange = v; },
+    });
+    globalThis.PermissionStatus.prototype.addEventListener = function (type, fn) {
+      if (typeof fn !== 'function') return;
+      var ls = this._zwPermListeners || (this._zwPermListeners = {});
+      (ls[type] || (ls[type] = [])).push(fn);
+    };
+    globalThis.PermissionStatus.prototype.removeEventListener = function (type, fn) {
+      var ls = this._zwPermListeners && this._zwPermListeners[type];
+      if (!ls) return;
+      var i = ls.indexOf(fn);
+      if (i >= 0) ls.splice(i, 1);
+    };
+    globalThis.PermissionStatus.prototype.dispatchEvent = function () { return false; };
+  }
+
   globalThis.navigator = {
     // https://html.spec.whatwg.org/multipage/system-state.html#dom-navigator-useragent
     userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) ZeroBrowser/__ZERO_BUILD_VERSION__ Chrome/120.0.0.0',
@@ -3530,22 +3567,48 @@
     sendBeacon: function(url, _data) {
       return url != null;
     },
-    // permissions（R2817 + WAB2-M2-s3）——权限查询（clipboard/geolocation 等 feature-detect 配对）。
-    // headless 默认 state 'prompt'（中性，既非 granted 非 denied）；clipboard-read/clipboard-write
-    // 状态经 __zwSetPermission（runner testdriver set_permission stub）注入后由 __zwPermissionState
-    // 如实返回（与 navigator.clipboard 四方法 denied 拒绝门共用注册表）。完整权限语义层归
-    // security-hardening DC-4 对齐。
+    // userActivation（WAB2-M3-s1，web-api-batch2 goal M3 切片 1，2026-09-24）——瞬态激活面
+    // （User Activation API；fullscreen requestFullscreen 激活门消费同源状态）。激活经
+    // __zwUserActivate 注入（runner testdriver click/send_keys/Actions.send/bless 命令签发时）。
+    // spec https://html.spec.whatwg.org/multipage/interaction.html#dom-navigator-useractivation。
+    // **诚实范围**：无 5s 窗口时钟（headless 同步测试序列内窗口恒满足）；hasBeenActive 粘性。
+    userActivation: {
+      get isActive() {
+        return _zwTransientActive === true;
+      },
+      get hasBeenActive() {
+        return _zwActiveEver === true;
+      },
+    },
+    // permissions（R2817 + WAB2-M2-s3 + WAB2-M3-s1）——权限查询（clipboard/geolocation 等
+    // feature-detect 配对）。headless 默认 state 'prompt'（中性，既非 granted 非 denied）；
+    // clipboard-read/clipboard-write/fullscreen 状态经 __zwSetPermission（runner testdriver
+    // set_permission stub）注入后由 __zwPermissionState 如实返回。WAB2-M3-s1：返回值升级为
+    // PermissionStatus 真实例（WPT permission 案 instanceof 断言）+ fullscreen 描述符的
+    // allowWithoutGesture 字典成员读取（getter 触发观测；false → TypeError——explainer 案
+    // 「allowWithoutGesture false is unsupported」）。完整权限语义层归 security-hardening DC-4。
     permissions: {
       query: function(desc) {
         var name = (desc && desc.name) || '';
+        // fullscreen explainer：allowWithoutGesture 成员读取（getter 触发）；false 不支持 → TypeError。
+        if (desc != null && typeof desc === 'object' && name === 'fullscreen') {
+          var awg;
+          try { awg = desc.allowWithoutGesture; } catch (_eA) { awg = undefined; }
+          if (awg === false) {
+            return Promise.reject(new TypeError('Querying "fullscreen" permission with "allowWithoutGesture" false is unsupported.'));
+          }
+        }
         var state = 'prompt';
         if (typeof globalThis.__zwPermissionState === 'function') {
           state = globalThis.__zwPermissionState(name);
         }
-        return Promise.resolve({
-          name: name, state: state, onchange: null,
-          addEventListener: function() {}, removeEventListener: function() {},
-        });
+        var status = Object.create(globalThis.PermissionStatus && globalThis.PermissionStatus.prototype
+          ? globalThis.PermissionStatus.prototype
+          : Object.prototype);
+        status._zwPermName = name;
+        status._zwPermState = state;
+        status._zwPermListeners = {};
+        return Promise.resolve(status);
       },
     },
     // geolocation（R2820）——地理位置 API（地图/天气/本地化 feature-detect 后调 getCurrentPosition）。
