@@ -2750,13 +2750,73 @@
     // globalThis.Clipboard 接口（instanceof 面）+ read/write 存取。spec
     // https://w3c.github.io/clipboard-apis/#async-clipboard-api。
     // **诚实范围**：① headless 内存后端（同页同进程语义）；OS 剪贴板后端挂 M4（host-runtime 能力评估）；
-    // ② 权限 denied 拒绝语义挂 P3（security-hardening DC-4 对齐）——当前 query 面 'prompt'、granted/denied
-    // 均放行；③ write 仅支持单项（>1 项 NotAllowedError，上游用例注释 "not implemented" 同款现状）；
-    // ④ read() 空store 返 []。
+    // ② 权限 denied 拒绝语义已落（WAB2-M2-s3）——denied → NotAllowedError 拒绝，'prompt' 按 WebKit
+    // 风格不拦截（headless 无权限提示 UI；user-activation.js 同款现状注释）；完整权限语义层仍归
+    // security-hardening DC-4 对齐；③ write 仅支持单项（>1 项 NotAllowedError，上游用例注释 "not
+    // implemented" 同款现状）；④ read() 空store 返 []。
     clipboard: (function () {
       var _current = null; // { blobs: {type: Blob}, types: [type…] }——最近一次 write/writeText 内容
       var _epoch = 0;      // store 代际——read() 返回项绑定当代，后续 write 令旧项 getType 失效（InvalidStateError）
       var _RE = globalThis.DOMException || Error;
+      // WAB2-M2-s3：权限状态注册表（name → 'prompt'|'granted'|'denied'，默认 'prompt'）。
+      // 注入经 __zwSetPermission（runner testdriver set_permission stub 调用），查询经
+      // __zwPermissionState（navigator.permissions.query 消费）——__zw 前缀内部钩子约定同
+      // __zwClipboardStoreWrite。spec read/write 步骤 "check clipboard read/write permission"：
+      // https://w3c.github.io/clipboard-apis/#dom-clipboard-read 与 #dom-clipboard-write。
+      var _permStates = {};
+      if (typeof globalThis.__zwSetPermission !== 'function') {
+        globalThis.__zwSetPermission = function (name, state) {
+          if (state !== 'granted' && state !== 'denied' && state !== 'prompt') {
+            return Promise.reject(new TypeError("Failed to set permission: unknown state '" + state + "'."));
+          }
+          _permStates[String(name)] = state;
+          return Promise.resolve();
+        };
+      }
+      if (typeof globalThis.__zwPermissionState !== 'function') {
+        globalThis.__zwPermissionState = function (name) {
+          return _permStates[String(name)] || 'prompt';
+        };
+      }
+      // denied → NotAllowedError（spec：权限检查未通过即 reject，promise-returning 不同步抛）。
+      function _permDenied(name) {
+        return _permStates[name] === 'denied';
+      }
+      // WAB2-M2-s3：read(options) 字典校验（WebIDL 转换先于算法体，promise-returning → 异常走
+      // rejected promise）。unsanitized 为 sequence<DOMString>：null/非序列 → TypeError；仅支持
+      // 单项 'text/html'（上游 unsanitized read-fail 案：多格式或其他格式 → NotAllowedError）；
+      // 空序列/缺省 → 常规读。当前 read 本就不改写内容，'text/html' 通道与常规读同载荷。
+      function _validateUnsanitized(options) {
+        if (options == null || typeof options !== 'object') return;
+        var u = options.unsanitized;
+        if (u === undefined) return;
+        if (u === null || typeof u !== 'object' || typeof u.length !== 'number') {
+          throw new TypeError("Failed to execute 'read' on 'Clipboard': Failed to read the 'unsanitized' property from 'ClipboardReadOptions': The provided value cannot be converted to a sequence.");
+        }
+        if (u.length === 0) return;
+        if (u.length !== 1 || String(u[0]) !== 'text/html') {
+          throw new _RE("Failed to execute 'read' on 'Clipboard': Unsupported unsanitized format.", 'NotAllowedError');
+        }
+      }
+      // WAB2-M2-s3：image/* 载荷校验（spec write 步骤 "parse the image"——无法解析 → DataError；
+      // 上游 malformed 案：文本冒充 image/png → DataError）。headless 无图片解码器 → 按类型魔数
+      // 甄别，未识别子类型不拦截（真 PNG 载荷 write/read-image 案不受影响）。
+      function _validateImageMagic(type, blob) {
+        var bytes = _zw_blobBytes(blob);
+        var head = '';
+        for (var i = 0; i < bytes.length && i < 12; i++) head += String.fromCharCode(bytes[i]);
+        var ok;
+        if (type === 'image/png') ok = head.indexOf('PNG') === 0;
+        else if (type === 'image/jpeg' || type === 'image/jpg') ok = head.indexOf('ÿØÿ') === 0;
+        else if (type === 'image/gif') ok = head.indexOf('GIF8') === 0;
+        else if (type === 'image/webp') ok = head.indexOf('RIFF') === 0 && head.indexOf('WEBP', 8) === 8;
+        else if (type === 'image/bmp' || type === 'image/x-ms-bmp') ok = head.indexOf('BM') === 0;
+        else if (type === 'image/svg+xml') ok = head.indexOf('<') === 0;
+        else return; // 未识别 image 子类型不校验
+        if (!ok) {
+          throw new _RE("Failed to execute 'write' on 'Clipboard': Malformed image data for type '" + type + "'.", 'DataError');
+        }
+      }
 
       // 值归一：Blob | DOMString | Promise<Blob|DOMString> → Promise<Blob>（DOMString→Blob(type)）。
       function _resolveValue(value, type) {
@@ -2816,14 +2876,26 @@
         globalThis.Clipboard = Clipboard;
       }
       Clipboard.prototype.read = function () {
-        if (_current === null) return Promise.resolve([]);
-        var blobs = {};
-        for (var k in _current.blobs) blobs[k] = _current.blobs[k];
-        var item = new ClipboardItem(blobs);
-        item._epoch = _epoch;
-        return Promise.resolve([item]);
+        try {
+          // WAB2-M2-s3：read(options) 字典校验先于权限门（WebIDL 转换先于算法体）。
+          _validateUnsanitized(arguments[0]);
+          if (_permDenied('clipboard-read')) {
+            return Promise.reject(new _RE("Failed to execute 'read' on 'Clipboard': Permission denied.", 'NotAllowedError'));
+          }
+          if (_current === null) return Promise.resolve([]);
+          var blobs = {};
+          for (var k in _current.blobs) blobs[k] = _current.blobs[k];
+          var item = new ClipboardItem(blobs);
+          item._epoch = _epoch;
+          return Promise.resolve([item]);
+        } catch (e) {
+          return Promise.reject(e);
+        }
       };
       Clipboard.prototype.readText = function () {
+        if (_permDenied('clipboard-read')) {
+          return Promise.reject(new _RE("Failed to execute 'readText' on 'Clipboard': Permission denied.", 'NotAllowedError'));
+        }
         if (_current === null || !_current.blobs['text/plain']) return Promise.resolve('');
         return Promise.resolve(_zw_utf8_decode(_zw_blobBytes(_current.blobs['text/plain'])));
       };
@@ -2840,6 +2912,10 @@
           if (data.length > 1) {
             return Promise.reject(new _RE('write only supports a single ClipboardItem', 'NotAllowedError'));
           }
+          // WAB2-M2-s3：denied → NotAllowedError（输入校验之后，权限门先于载荷解析）。
+          if (_permDenied('clipboard-write')) {
+            return Promise.reject(new _RE("Failed to execute 'write' on 'Clipboard': Permission denied.", 'NotAllowedError'));
+          }
           if (data.length === 0) return Promise.resolve(undefined);
           var input = data[0];
           var types = Object.keys(input._values);
@@ -2854,6 +2930,8 @@
                 if (!(blob instanceof Blob)) {
                   throw new TypeError('ClipboardItem value is not a Blob or DOMString.');
                 }
+                // WAB2-M2-s3：image/* 载荷魔数校验（throw 在 promise 链内 → DataError 拒绝）。
+                if (t.indexOf('image/') === 0) _validateImageMagic(t, blob);
                 return [t, blob];
               });
             })
@@ -2875,6 +2953,10 @@
       Clipboard.prototype.writeText = function (text) {
         if (arguments.length < 1) {
           return Promise.reject(new TypeError("Failed to execute 'writeText' on 'Clipboard': 1 argument required, but only 0 present."));
+        }
+        // WAB2-M2-s3：denied → NotAllowedError（上游 writeText-denied 案）。
+        if (_permDenied('clipboard-write')) {
+          return Promise.reject(new _RE("Failed to execute 'writeText' on 'Clipboard': Permission denied.", 'NotAllowedError'));
         }
         _current = { blobs: { 'text/plain': new Blob([String(text != null ? text : '')], { type: 'text/plain' }) }, types: ['text/plain'] };
         _epoch++;
@@ -3448,13 +3530,20 @@
     sendBeacon: function(url, _data) {
       return url != null;
     },
-    // permissions（R2817）——权限查询（clipboard/geolocation 等 feature-detect 配对）。headless → state 'prompt'
-    //（中性，既非 granted 非 denied）。
+    // permissions（R2817 + WAB2-M2-s3）——权限查询（clipboard/geolocation 等 feature-detect 配对）。
+    // headless 默认 state 'prompt'（中性，既非 granted 非 denied）；clipboard-read/clipboard-write
+    // 状态经 __zwSetPermission（runner testdriver set_permission stub）注入后由 __zwPermissionState
+    // 如实返回（与 navigator.clipboard 四方法 denied 拒绝门共用注册表）。完整权限语义层归
+    // security-hardening DC-4 对齐。
     permissions: {
       query: function(desc) {
         var name = (desc && desc.name) || '';
+        var state = 'prompt';
+        if (typeof globalThis.__zwPermissionState === 'function') {
+          state = globalThis.__zwPermissionState(name);
+        }
         return Promise.resolve({
-          name: name, state: 'prompt', onchange: null,
+          name: name, state: state, onchange: null,
           addEventListener: function() {}, removeEventListener: function() {},
         });
       },

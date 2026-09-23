@@ -11185,7 +11185,15 @@
   };
   DataTransfer.prototype.setDragImage = function (_img, _x, _y) { /* headless 无真拖拽图像，no-op */ };
   Object.defineProperty(DataTransfer.prototype, 'types', {
-    get: function () { return Object.keys(this._dt_data); },
+    get: function () {
+      // WAB2-M2-s3（web-api-batch2 goal）：含 file 项时追加 'Files'（spec DnD types getter：
+      // items 含 file 项 → types 追加 "Files"）。上游 dataTransfer-clearData 案：add(file) ×2
+      // → types.length 1；清空 string 项后 types[0] === 'Files'。
+      // https://html.spec.whatwg.org/multipage/dnd.html#dom-datatransfer-types
+      var keys = Object.keys(this._dt_data);
+      if (this._dt_files && this._dt_files.length > 0) keys.push('Files');
+      return keys;
+    },
   });
   Object.defineProperty(DataTransfer.prototype, 'files', {
     get: function () { return this._dt_files; },

@@ -1,0 +1,527 @@
+[
+  [
+    "clipboard-apis/async-clipboard-cached-getType-reject.tentative.https.html",
+    [
+      {
+        "name": "getType() rejects with InvalidStateError on cached ClipboardItem after clipboard.write()",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "clipboard-apis/async-clipboard-read-unsanitized-null.https.html",
+    [
+      {
+        "name": "unsanitized: null should reject with TypeError",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "clipboard-apis/async-clipboard-stale-getType-reject.tentative.https.html",
+    [
+      {
+        "name": "getType() rejects with InvalidStateError on stale ClipboardItem after clipboard.write()",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "clipboard-apis/async-custom-formats-write-fail.tentative.https.html",
+    [
+      {
+        "name": "navigator.clipboard.write() fails for more than 100 custom formats",
+        "status": "Fail",
+        "message": "assert_unreached: Should have rejected: undefined Reached unreachable code"
+      },
+      {
+        "name": "navigator.clipboard.write() fails for custom formats without web prefix",
+        "status": "Fail",
+        "message": "assert_unreached: Should have rejected: undefined Reached unreachable code"
+      },
+      {
+        "name": "new ClipboardItem() fails for custom formats with web prefix, but invalid MIME types",
+        "status": "Fail",
+        "message": "assert_throws_js: function \"() => {\n    const clipboardItemInput = new ClipboardItem(\n    {[format1]: blobInput1, [format2]: blobInput2});\n  }\" did not throw"
+      },
+      {
+        "name": "navigator.clipboard.write() fails for custom format with web prefix, but different Blob type",
+        "status": "Fail",
+        "message": "assert_unreached: Should have rejected: undefined Reached unreachable code"
+      },
+      {
+        "name": "navigator.clipboard.write() fails when standard format does not match the Blob type",
+        "status": "Fail",
+        "message": "assert_unreached: Should have rejected: undefined Reached unreachable code"
+      }
+    ]
+  ],
+  [
+    "clipboard-apis/async-custom-formats-write-read-web-prefix.tentative.https.html",
+    [
+      {
+        "name": "navigator.clipboard.write() for custom format and Blob type with web prefix",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "clipboard-apis/async-custom-formats-write-read-without-web-prefix.tentative.https.html",
+    [
+      {
+        "name": "navigator.clipboard.write() for custom format with web prefix, but Blob type without web prefix",
+        "status": "Fail",
+        "message": "assert_equals: expected \"web text/plain\" but got \"text/plain\""
+      }
+    ]
+  ],
+  [
+    "clipboard-apis/async-custom-formats-write-read.tentative.https.html",
+    [
+      {
+        "name": "Verify write and read clipboard given 2 platform-neutral custom format inputs",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "clipboard-apis/async-html-script-removal.https.html",
+    [
+      {
+        "name": "Verify write and read clipboard with scripts removed given text/html. The string \"<script>const a = 5;</script>\" has been removed.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "clipboard-apis/async-navigator-clipboard-basics.https.html",
+    [
+      {
+        "name": "navigator.clipboard exists",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "navigator.clipboard.write([text/plain ClipboardItem]) succeeds",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "navigator.clipboard.write([>1 ClipboardItems]) fails (not implemented)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "navigator.clipboard.write() fails (expect [ClipboardItem])",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "navigator.clipboard.write(null) fails (expect [ClipboardItem])",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "navigator.clipboard.write(DOMString) fails (expect [ClipboardItem])",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "navigator.clipboard.write(Blob) fails (expect [ClipboardItem])",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "navigator.clipboard.writeText(DOMString) succeeds",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "navigator.clipboard.writeText() fails (expect DOMString)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "navigator.clipboard.write({string : DOMString}) succeeds",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "navigator.clipboard.write({string : image/png Blob}) succeeds",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "clipboard-apis/async-navigator-clipboard-basics.https.html",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[200820, 7182, 1570, 4890], state={\"loaded\":true,\"pending\":6,\"phase\":4,\"tests\":17}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "clipboard-apis/async-navigator-clipboard-read-resource-load.https.html",
+    [
+      {
+        "name": "Async Clipboard.read() should not trigger resource loading",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "clipboard-apis/async-navigator-clipboard-read-sanitize.https.html",
+    [
+      {
+        "name": "Async Clipboard.read() should sanitize text/html",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "clipboard-apis/async-navigator-clipboard-write-domstring.https.html",
+    [
+      {
+        "name": "navigator.clipboard exists",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "navigator.clipboard.write(DOMString) succeeds",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "navigator.clipboard.write(Promise<DOMString>) succeeds",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "navigator.clipboard.write(Promise<DOMString>) with utf-16 string succeeds",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "navigator.clipboard.write(web_custom_format) succeeds",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "validate GetType(type) on a constructed ClipboardItem returns Blob",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "write non-Latin characters with DOMString and verify getType returns a Blob with the same string",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "write non-Latin characters with DOMString and verify readText returns the same string",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "clipboard-apis/async-promise-write-blobs-read-blobs.https.html",
+    [
+      {
+        "name": "Verify write and read clipboard (multiple types) with promise to Blobs",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "clipboard-apis/async-svg-read-write.tentative.https.html",
+    [
+      {
+        "name": "Verify read and write of some image/svg+xml content",
+        "status": "Fail",
+        "message": "assert_equals: expected \"<svg> <circle cx=\\\"50\\\" cy=\\\"50\\\" r=\\\"40\\\"> </circle> </svg>\" but got \"<svg> <circle cx=\\\"50\\\" cy=\\\"50\\\" r=\\\"40\\\"/> </svg>\""
+      }
+    ]
+  ],
+  [
+    "clipboard-apis/async-unsanitized-html-formats-write-read.tentative.https.html",
+    [
+      {
+        "name": "Verify write and read unsanitized content to the clipboard given text/html format as input",
+        "status": "Fail",
+        "message": "assert_equals: expected \"<head> </head> <body> <p style=\\\"color: blue; font-size: medium; font-style: normal; font-variant-ligatures: normal; font-variant-caps: normal; font-weight: 400; letter-spacing: normal; orphans: 2; text-align: start; text-indent: 0px; text-transform: none; widows: 2; word-spacing: 0px; -webkit-text-stroke-width: 0px; white-space: normal; text-decoration-thickness: initial; text-decoration-style: initial; text-decoration-color: initial;\\\">Hello World</p> </body>\" but got \"<head> <style>p {color:blue}</style> </head> <body> <p>Hello World</p> </body>\""
+      }
+    ]
+  ],
+  [
+    "clipboard-apis/async-unsanitized-plaintext-formats-write-read.tentative.https.html",
+    [
+      {
+        "name": "Verify write and read unsanitized content to the clipboard given standard and custom formats as input",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "clipboard-apis/async-unsanitized-standard-html-read-fail.tentative.https.html",
+    [
+      {
+        "name": "navigator.clipboard.read() fails for multiple unsanitized formats requested.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "navigator.clipboard.read() fails for unsanitized text/plain requested.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "navigator.clipboard.read() fails for unsanitized image/png requested.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "navigator.clipboard.read() fails for unsanitized image/svg+xml requested.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "clipboard-apis/async-write-blobs-read-blobs.https.html",
+    [
+      {
+        "name": "Verify write and read clipboard (multiple types)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "navigator.clipboard.read() does not crash if clipboard data has null values",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "clipboard-apis/async-write-html-read-html.https.html",
+    [
+      {
+        "name": "Verify read and write of some text/html content",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: headElement.remove is not a function\""
+      }
+    ]
+  ],
+  [
+    "clipboard-apis/async-write-image-read-image.https.html",
+    [
+      {
+        "name": "Verify write and read clipboard [image/png Blob]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Verify write error on malformed data [image/png ClipboardItem]",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "clipboard-apis/clipboard-copy-selection-line-break.https.html",
+    [
+      {
+        "name": "clipboard-apis/clipboard-copy-selection-line-break.https.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: external script /common/subset-tests.js: script fetch failed: common/subset-tests.js (No such file or directory (os error 2))"
+      }
+    ]
+  ],
+  [
+    "clipboard-apis/clipboard-events-synthetic.html",
+    [
+      {
+        "name": "Unspecified synthetic copy event should not be composed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Synthetic copy event can be explicitly composed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Synthetic copy event can be explicitly uncomposed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Unspecified synthetic cut event should not be composed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Synthetic cut event can be explicitly composed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Synthetic cut event can be explicitly uncomposed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Unspecified synthetic paste event should not be composed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Synthetic paste event can be explicitly composed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Synthetic paste event can be explicitly uncomposed.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "clipboard-apis/data-transfer-file-list-change-reference-updates.html",
+    [
+      {
+        "name": "expect changed contents",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "clipboard-apis/dataTransfer-clearData.html",
+    [
+      {
+        "name": "Clear data from dataTransfer",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "clipboard-apis/events/copy-event.html",
+    [
+      {
+        "name": "The copy event",
+        "status": "Fail",
+        "message": "assert_true: event.isTrusted expected true got false"
+      }
+    ]
+  ],
+  [
+    "clipboard-apis/permissions/readText-denied.https.html",
+    [
+      {
+        "name": "navigator.clipboard.readText() fails when permission denied",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "clipboard-apis/permissions/readText-granted.https.html",
+    [
+      {
+        "name": "navigator.clipboard.readText() succeeds when permission granted",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "clipboard-apis/permissions/writeText-denied.https.html",
+    [
+      {
+        "name": "navigator.clipboard.writeText() fails when permission denied",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "clipboard-apis/permissions/writeText-granted.https.html",
+    [
+      {
+        "name": "navigator.clipboard.writeText() succeeds when permission granted",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "clipboard-apis/text-write-read/async-write-read.https.html",
+    [
+      {
+        "name": "Verify write and read clipboard given text: Clipboard write ([text/plain ClipboardItem]) -> read ([text/plain ClipboardItem]) test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Verify write and read clipboard given text: non-Latin1 text encoding test データ",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "clipboard-apis/text-write-read/async-write-readText.https.html",
+    [
+      {
+        "name": "Verify write and read clipboard given text: Clipboard write ([text/plain ClipboardItem) -> read text test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Verify write and read clipboard given text: non-Latin1 text encoding test データ",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "clipboard-apis/text-write-read/async-writeText-read.https.html",
+    [
+      {
+        "name": "Verify write and read clipboard given text: Clipboard write text -> read ([text/plain ClipboardItem]) test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Verify write and read clipboard given text: non-Latin1 text encoding test データ",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "clipboard-apis/text-write-read/async-writeText-readText.https.html",
+    [
+      {
+        "name": "Verify write and read clipboard given text: Clipboard write text -> read text test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Verify write and read clipboard given text: non-Latin1 text encoding test データ",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ]
+]

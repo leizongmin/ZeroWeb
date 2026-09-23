@@ -1404,6 +1404,151 @@ fn test_clipboard_execcommand_copy_bridge_wab2m2s2() {
     );
 }
 
+/// WAB2-M2-s3（web-api-batch2 goal M2 切片 3，2026-09-24）：权限 denied 拒绝语义 +
+/// read(options) 字典校验 + image/* 载荷魔数校验 + DataTransfer types 'Files'。
+/// 镜像 WPT permissions/readText-denied、readText-granted、writeText-denied、
+/// read-unsanitized-null、unsanitized-standard-html-read-fail、write-image malformed、
+/// dataTransfer-clearData 案。
+#[test]
+fn test_clipboard_permission_denied_and_validation_wab2m2s3() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // 默认 'prompt'（中性放行）；query 面如实反映注入态。镜像 permissions/readText-granted
+    // （tryGrant → granted → readText 放行）路径。
+    assert_eq!(
+        sandbox
+            .execute(
+                "globalThis.__q=[];\
+                 navigator.permissions.query({name:'clipboard-read'}).then(function(s){\
+                   globalThis.__q.push('default:' + s.state);\
+                 });\
+                 globalThis.__zwSetPermission('clipboard-read', 'granted');\
+                 navigator.permissions.query({name:'clipboard-read'}).then(function(s){\
+                   globalThis.__q.push('after:' + s.state);\
+                 });\
+                 navigator.clipboard.readText().then(function(t){ globalThis.__q.push('readText:' + JSON.stringify(t)); });\
+                 void 0;",
+            )
+            .unwrap()
+            .value,
+        "undefined",
+        "setup execute settles"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__q.join('|')").unwrap().value,
+        "default:prompt|after:granted|readText:\"\"",
+        "WAB2-M2-s3 query 默认 prompt / 注入 granted 后如实返回且 readText 放行"
+    );
+
+    // denied → NotAllowedError 拒绝；read/write 门独立（deny read 不拦 write）。
+    // 镜像 permissions/readText-denied 与 writeText-denied（NotAllowedError）。
+    sandbox
+        .execute(
+            "globalThis.__r=[];\
+             globalThis.__zwSetPermission('clipboard-read', 'denied');\
+             navigator.clipboard.readText().then(function(){ globalThis.__r.push('rt:resolved'); },\
+               function(e){ globalThis.__r.push('rt:' + e.name); });\
+             navigator.clipboard.read().then(function(){ globalThis.__r.push('r:resolved'); },\
+               function(e){ globalThis.__r.push('r:' + e.name); });\
+             navigator.clipboard.writeText('denied write? no').then(function(){ globalThis.__r.push('wt:resolved'); },\
+               function(e){ globalThis.__r.push('wt:' + e.name); });\
+             globalThis.__zwSetPermission('clipboard-write', 'denied');\
+             navigator.clipboard.writeText('x').then(function(){ globalThis.__r.push('wt2:resolved'); },\
+               function(e){ globalThis.__r.push('wt2:' + e.name); });\
+             navigator.clipboard.write([]).then(function(){ globalThis.__r.push('w:resolved'); },\
+               function(e){ globalThis.__r.push('w:' + e.name); });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r.join('|')").unwrap().value,
+        "rt:NotAllowedError|r:NotAllowedError|wt:resolved|wt2:NotAllowedError|w:NotAllowedError",
+        "WAB2-M2-s3 denied → NotAllowedError（read/readText/write/writeText 门独立）"
+    );
+
+    // read(options) 字典校验：null/非序列 → TypeError；非单 'text/html' → NotAllowedError；
+    // ['text/html'] 与空数组放行（权限 granted 态下）。
+    sandbox
+        .execute(
+            "globalThis.__v=[];\
+             globalThis.__zwSetPermission('clipboard-read', 'granted');\
+             function attempt(label, opts) {\
+               navigator.clipboard.read(opts).then(function(){ globalThis.__v.push(label + ':resolved'); },\
+                 function(e){ globalThis.__v.push(label + ':' + (e.name || 'error')); });\
+             }\
+             attempt('null', {unsanitized: null});\
+             attempt('str', {unsanitized: 'text/plain'});\
+             attempt('plain', {unsanitized: ['text/plain']});\
+             attempt('multi', {unsanitized: ['text/html', 'text/plain']});\
+             attempt('svg', {unsanitized: ['image/svg+xml']});\
+             attempt('html', {unsanitized: ['text/html']});\
+             attempt('empty', {unsanitized: []});",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__v.join('|')").unwrap().value,
+        "null:TypeError|str:TypeError|plain:NotAllowedError|multi:NotAllowedError|svg:NotAllowedError|html:resolved|empty:resolved",
+        "WAB2-M2-s3 read(options) unsanitized 字典校验（镜像 unsanitized-null/-standard-read-fail 案）"
+    );
+
+    // image/* 载荷魔数校验：文本冒充 image/png → DataError；真 PNG 魔数字节放行。
+    // 镜像 async-write-image-read-image "Verify write error on malformed data"。
+    sandbox
+        .execute(
+            "globalThis.__i=[];\
+             globalThis.__zwSetPermission('clipboard-write', 'granted');\
+             navigator.clipboard.write([new ClipboardItem({'image/png': new Blob(['not a png'], {type:'image/png'})})])\
+               .then(function(){ globalThis.__i.push('bad:resolved'); },\
+                 function(e){ globalThis.__i.push('bad:' + e.name); });\
+             var pngBytes = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 0, 0]);\
+             navigator.clipboard.write([new ClipboardItem({'image/png': new Blob([pngBytes], {type:'image/png'})})])\
+               .then(function(){ globalThis.__i.push('good:resolved'); },\
+                 function(e){ globalThis.__i.push('good:' + e.name); });\
+             void 0;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__i.join('|')").unwrap().value,
+        "bad:DataError|good:resolved",
+        "WAB2-M2-s3 write() image 魔数校验（malformed → DataError，真 PNG 魔数放行）"
+    );
+
+    // DataTransfer types 'Files'：file 项非空 → 追加；clearData() 仅清 string 项；
+    // items.clear() 连带清 file 项。镜像 dataTransfer-clearData 案关键断言。
+    sandbox
+        .execute(
+            "var dt = new DataTransfer();\
+             var f1 = new File(['a'], '1.png', {type: 'image/png'});\
+             dt.items.add(f1);\
+             globalThis.__t = [];\
+             globalThis.__t.push('add:' + dt.types.join(',') + ':' + dt.items.length + ':' + dt.files.length);\
+             dt.setData('text/plain', 'hi');\
+             globalThis.__t.push('set:' + dt.types.length);\
+             dt.clearData();\
+             globalThis.__t.push('clear:' + dt.types.join(',') + ':files' + dt.files.length);\
+             dt.items.clear();\
+             globalThis.__t.push('itemsClear:' + dt.types.length + ':files' + dt.files.length);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__t.join('|')").unwrap().value,
+        "add:Files:1:1|set:2|clear:Files:files1|itemsClear:0:files0",
+        "WAB2-M2-s3 DataTransfer types 'Files'（file 项追加 + clearData 保 files + items.clear 全清）"
+    );
+}
+
 #[test]
 fn test_fullscreen_api_r2938() {
     // R2938 Fullscreen API（spec-alike）：element.requestFullscreen() 返 Promise——grant 路径设 fullscreenElement +

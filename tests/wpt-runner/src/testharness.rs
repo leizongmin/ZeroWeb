@@ -5171,10 +5171,15 @@ fn unsupported_testdriver_dependencies(source: &str) -> Vec<String> {
         let name_len = name.len();
         // R142：Actions（指针链 pointerMove/pointerDown/pointerUp/send）白名单——stub 已提供
         // 链式构造器（pointer 系列合成点击），不再整体 Unsupported。
+        // WAB2-M2-s3（web-api-batch2 goal，2026-09-24）：set_permission 白名单——stub 经
+        // shim `__zwSetPermission` 钩子落权限注册表（navigator.permissions.query 如实返回 +
+        // clipboard 四方法 denied 拒绝门），clipboard-apis permissions/svg 与 fullscreen
+        // permission 三案解除整体 Unsupported。
         if !name.is_empty()
             && name != "click"
             && name != "send_keys"
             && name != "Actions"
+            && name != "set_permission"
             && !dependencies.contains(&name)
         {
             dependencies.push(name);
@@ -5683,7 +5688,17 @@ const TESTDRIVER_STUB: &str = r#"<script>
   };
   globalThis.test_driver = {
     click: function(element) { return enqueue('click', element, null); },
-    send_keys: function(element, keys) { return enqueue('send_keys', element, keys); }
+    send_keys: function(element, keys) { return enqueue('send_keys', element, keys); },
+    // WAB2-M2-s3（web-api-batch2 goal，2026-09-24）：set_permission——页面侧权限状态注入，
+    // 不经宿主命令队列（无 UI 提示语义）。转发 shim `__zwSetPermission` 钩子（clipboard
+    // 块发布的权限注册表；navigator.permissions.query 与 clipboard 四方法 denied 门消费）。
+    // 钩子缺失（老宿主/精简 shim）→ 拒绝（调用方 user-activation.js trySetPermission 已捕获）。
+    set_permission: function(descriptor, state) {
+      if (typeof globalThis.__zwSetPermission !== 'function') {
+        return Promise.reject(new Error('testdriver set_permission is not supported'));
+      }
+      return globalThis.__zwSetPermission(descriptor && descriptor.name, state);
+    }
   };
   // R142：test_driver.Actions（指针动作链）——上游用 no-focus-events 等 case 经
   // pointerMove/pointerDown/pointerUp 合成一次指针点击。headless 无真指针，语义映射：
@@ -5987,7 +6002,9 @@ promise_test(async function() {
 
     #[test]
     fn unsupported_testdriver_command_is_explicit() {
-        let html = "test_driver.set_permission({name:'clipboard-read'}, 'granted')";
+        // WAB2-M2-s3：set_permission 已入白名单（stub + shim 权限注册表落地）——本断言
+        // 改用仍未支持的 set_context（越白名单整体 Unsupported 语义不变）。
+        let html = "test_driver.set_context('https://example.com')";
         let results = run_testharness_html(
             Path::new("/nonexistent-wpt-root-for-tests"),
             "unsupported.html",
@@ -5996,7 +6013,7 @@ promise_test(async function() {
             Duration::from_secs(1),
         );
         assert_eq!(results[0].status, HarnessStatus::Unsupported);
-        assert!(results[0].message.as_deref().unwrap().contains("set_permission"));
+        assert!(results[0].message.as_deref().unwrap().contains("set_context"));
     }
 
     #[test]
