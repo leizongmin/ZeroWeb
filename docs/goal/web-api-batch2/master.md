@@ -2,7 +2,7 @@
 
 **入口文档**: [../web-api-batch2.md](../web-api-batch2.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-24（M3-s2：节点移除全屏联动 + M3 域内收口，86.0%→88.0%）
+**最后更新**: 2026-09-24（M4：DC 逐项判定满足 + 平台差异挂账定稿，goal 收口）
 
 ---
 
@@ -10,6 +10,7 @@
 
 **专项定位**：M12 余面收编——Clipboard API + Fullscreen API 语义落地，WPT 两 corpus
 为验收标尺。DnD 排除挂账（宿主拖拽输入管线深依赖）。
+**状态：已收口（2026-09-24）**——终态 clipboard-apis 83.6% / fullscreen 88.0%，DC-1~4 全满足。
 
 **与兄弟 goal 的边界**：
 - security-hardening — 权限语义供数关系（本 goal 最小权限查询面，其 DC-4 落地时对齐）
@@ -93,42 +94,38 @@
 
 ## 下一步计划
 
-1. **M4**：DC 逐项判定收口——DC-1~DC-4 全项核验 + 平台差异挂账定稿（平台剪贴板后端 +
-   真窗口 OS 级全屏，host-runtime 能力评估；无能力则差异记账定稿）+ master.md 终稿自洽
-2. **可选切片（M4 前酌情）**：M2 custom formats 校验簇 ×6（tentative）；remove-last
-   栈模型（回退前一栈元素 + 异步全退）
+**Goal 已收口（2026-09-24 M4）**——DC-1~DC-4 逐项判定全部满足（见
+evidence/2026-09-24-m4-dc-verdict.md），无下一步计划。重入/后续挂账：
 
-**跨域记账（回流不越界）**：
-- `:fullscreen` 伪类/UA 渲染样式面 → rendering-compat 流域（rendering/ 9 案不导入 +
-  api 内伪类断言簇）
-- iframe 依赖面（fullscreen 25 案 + clipboard detached-iframe 6 案）→ 重入 = iframe
-  文档管道
-- runner infra：testdriver `bless`/`set_context` 越白名单（11 案 Unsupported）、
-  `/common/` 绝对路径 fetch（1 案）
+- 平台剪贴板桥（arboard 已在 browser 壳层 ↔ navigator.clipboard 内存 store 互通）→
+  webview/host-runtime 后续 goal，重入条件：桌面剪贴板互通需求点名
+- 真窗口 OS 级全屏桥（engine grant 路径 → winit set_fullscreen + viewport 回灌）→
+  host-runtime 流域，重入条件：视频/演示真全屏需求点名
+- 可选余簇（不阻 DC）：M2 custom formats ×6（tentative）、remove-last 栈模型
+
+**跨域记账（终态归属，回流不越界）**：
+- `:fullscreen` 伪类 / display:contents UA 面 / `::backdrop` → rendering-compat 流域
+- SVGElement instanceof / shadowRoot.getElementById → js-dom 流域
+- iframe 依赖面（cross-origin / navigate-iframe / allowfullscreen / detached-iframe）→
+  重入 = iframe 文档管道
+- runner infra：window.event 派发后持久性、`/common/` 绝对路径 fetch、basics 探针
+  ~11 周期停滞、copy-event isTrusted、remove-last 栈模型所需事件语义
 
 **待用户决策清单**：
-- （暂无）
-
-## 里程碑状态
-
-| 里程碑 | 状态 |
-|--------|------|
-| M1 — WPT 导入与基线 | ✅ 2026-09-23 |
-| M2 — Clipboard 语义 + 后端 | 🔄 83.6%（余簇均记账/可选切片，M4 定稿） |
-| M3 — Fullscreen 语义 | ✅ 2026-09-24（域内收敛 88.0%，viewport 联动 corpus 三案绿，余簇跨域记账定稿） |
-| M4 — 收口 | ⏳ |
+- （暂无——重入条件均为需求点名型，无当前阻塞）
 
 ## 验证基线
 
 - 基线 evidence：`evidence/2026-09-23-m1-clipboard-apis-baseline.{md,json}`
   （33 案 / 15-71 = 21.1%）+ `evidence/2026-09-23-m1-fullscreen-baseline.{md,json}`
   （55 案 / 92-146 = 63.0%）；账本 `imported-testharness.txt` +88 行（WAB2-M1-baseline）
-- 最新 evidence：`evidence/2026-09-24-m3-s2-fullscreen.{md,json}`
-  （55 案 / 132-150 = 88.0%，全绿案 37）；此前 `evidence/2026-09-24-m3-s1-fullscreen.{md,json}`
-  （86.0%）+ `evidence/2026-09-24-m3-s1-clipboard-apis.json`（33 案 / 61-73 = 83.6%）+
-  `evidence/2026-09-24-m2-s3-*`
-- 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过；
-  engine 面 js_dom_bridge R2964/WAB2-M2/WAB2-M2-s2/WAB2-M2-s3/R2938（重写）/
-  WAB2-M3-s1/WAB2-M3-s2/R2948 单测绿；全量 `make test` 门禁见 M3-s2 提交说明
+- 最新 evidence：`evidence/2026-09-24-m4-dc-verdict.md`（DC 逐项判定 + 平台挂账定稿）+
+  `evidence/2026-09-24-m3-s2-fullscreen.{md,json}`（55 案 / 132-150 = 88.0%，全绿案 37）；
+  此前 `evidence/2026-09-24-m3-s1-*`（86.0% + clipboard 83.6%）+ `evidence/2026-09-24-m2-s3-*`
+- 质量门禁（M4 终验，2026-09-24）：`cargo build --workspace` 通过 + `make test` 68 段
+  全绿（test-guard 包裹）+ `cargo clippy --workspace --all-targets -- -D warnings` 全过 +
+  `cargo fmt --all -- --check` 干净 + `make reftest` failed 0（零回归）+ `make bench-gate`
+  （定向 zero-engine）GATE PASS 26 指标全预算内；engine 面 js_dom_bridge R2964/WAB2-M2/
+  WAB2-M2-s2/WAB2-M2-s3/R2938（重写）/WAB2-M3-s1/WAB2-M3-s2/R2948 单测绿
 
 **碰撞管理**：碰 engine shim 面前与 security-hardening / cdp-protocol `git log` 互核。
