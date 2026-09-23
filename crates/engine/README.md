@@ -14,7 +14,7 @@
 - **合成层提升**（`promote_compositing_layers`）— 根据透明度、固定定位等条件将元素提升为独立合成层，优化渲染性能
 - **CSS 动画与过渡运行时**（`animation` / `transition`）— 关键帧插值与 AnimationClock、TransitionClock 样式变化过渡插值，与渲染管线集成
 - **资源预加载**（`preload`）— 解析 `<link rel="preload/prefetch">` 提示，按优先级调度资源预取
-- **DOM/JS 桥接**（`dom_bridge` / `dom_bindings` / `js_dom_bridge` / `quickjs_dom_bindings`）— 页面 JavaScript 与 DOM 的 polyfill 桥与 V8/QuickJS 原生绑定、MutationObserver、事件派发；`document.execCommand` 编辑命令实应用（bold/italic/underline/strikethrough/delete/insertHTML/insertParagraph）+ `queryCommandState/Supported/Enabled` 真实反射与 Selection/selectionchange 可观察面
+- **DOM/JS 桥接**（`dom_bridge` / `dom_bindings` / `js_dom_bridge` / `quickjs_dom_bindings`）— 页面 JavaScript 与 DOM 的 polyfill 桥与 V8/QuickJS 原生绑定、MutationObserver、事件派发；`document.execCommand` 编辑命令实应用（bold/italic/underline/strikethrough/delete/insertHTML/insertParagraph）+ `queryCommandState/Supported/Enabled` 真实反射与 Selection/selectionchange 可观察面；Clipboard API 与 Fullscreen API 已接通（`navigator.clipboard` 读写 / ClipboardItem 富 MIME / 权限 denied 拒绝语义、`requestFullscreen` / `exitFullscreen` 异步状态机 + fullscreenchange 事件 + 节点移除全屏联动）
 - **存储/网络/导航/定时器桥接**（`cache_storage_bridge` / `indexed_db_bridge` / `opfs_bridge` / `fetch_bridge` / `navigation_bridge` / `timer_bridge` / `font_load_bridge`）— 页面脚本对 Cache API、IndexedDB、OPFS、fetch、导航历史、setTimeout、字体加载的宿主桥
 - **命中测试**（`hit_test` / `element_from_point`）— 坐标到 DOM 节点/元素的命中判定
 - **SVG 绘制与滤镜**（`paint/svg_filter_chain` / `svg_filter_taint` / `svg_shape_disable`）— 内联 SVG paint 与 CSS filter url(#id) 引用 SVG filter 输出链（常量/非常量链 SourceGraphic 隔离两遍绘制）、feImage 引用内联、tainting 规则与零尺寸形状渲染禁用
