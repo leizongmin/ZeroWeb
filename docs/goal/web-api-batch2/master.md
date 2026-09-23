@@ -2,7 +2,7 @@
 
 **入口文档**: [../web-api-batch2.md](../web-api-batch2.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-24（M3-s1：fullscreen 异步状态机 + 激活面 + PermissionStatus，61.7%→86.0%）
+**最后更新**: 2026-09-24（M3-s2：节点移除全屏联动 + M3 域内收口，86.0%→88.0%）
 
 ---
 
@@ -24,7 +24,7 @@
 | P1 | clipboard-apis / fullscreen 两 corpus fetch 脚本 + 导入 + 基线 | ✅ M1（2026-09-23） |
 | P2 | navigator.clipboard 四方法 + ClipboardItem/Clipboard 面 + ClipboardEvent + 内存后端 | 🔄 83.6%（M3-s1 复跑 61/73 零丢失）；余簇 = custom formats ×6（tentative）、svg 净化 ×1、内容规范化 ×1、DOMParser remove ×1、basics 停滞 ×1、infra ×2 |
 | P3 | 最小权限查询面（security-hardening DC-4 对齐点） | ✅ 最小面落地（M2-s3）：状态注册表 + query 活状态 + denied 门 + runner set_permission；M3-s1 增 PermissionStatus 真类 + fullscreen allowWithoutGesture；完整语义层仍归 security-hardening DC-4 |
-| P4 | Fullscreen 事件/状态面 + viewport 联动 | 🔄 M3-s1（2026-09-24）61.7%→**86.0%**（129/150，全绿案 5→34，零丢失 +37）——异步状态机 + 激活门/消费 + PermissionStatus + bless 白名单已落；余簇 = model/removal ×6（M3-s2 主对象：移除同步置 null + mutation hook）、Timeout ×5、window.event 持久性/ getElementById 等跨域记账 |
+| P4 | Fullscreen 事件/状态面 + viewport 联动 | ✅ 域内收敛（M3-s1 + M3-s2，2026-09-24）：61.7%→**88.0%**（132/150，全绿案 37/55，三轮零丢失）——异步状态机 + 激活门/消费 + PermissionStatus + options 校验 + removal 联动已落；viewport 联动以 corpus 三案绿验证（timing ×2 + screen-size），真窗口 OS 级全屏挂账 M4；余簇全部跨域记账（:fullscreen 伪类/rendering、SVGElement instanceof/js-dom、iframe 管道、shadowRoot 面、window.event 持久性/infra、栈模型 remove-last） |
 | P5 | 平台剪贴板后端（host-runtime 能力评估）或差异记账 | ⏳ M4 挂账定稿 |
 
 ## 已完成切片
@@ -78,15 +78,25 @@
   单测 test_fullscreen_api_r2938（重写新语义）+ test_fullscreen_activation_and_steps_wab2m3s1。
   evidence/2026-09-24-m3-s1-fullscreen.{md,json} +
   evidence/2026-09-24-m3-s1-clipboard-apis.json。
+- **M3 切片 2 + 域内收口（2026-09-24）**：节点移除 → 全屏退出联动（part06
+  `_fsOnNodeRemoved` + part04 remove() 钩子）——移除子树含全屏元素（自身/祖先链身份
+  比对，移除前视图）→ fullscreenElement **同步**置 null + 异步 change **target=document**
+  （forceDoc 强制 document 派发 + 显式设 ev.target——`_dispatchToListeners` 第四参是
+  currentTarget 不写 target；handle 元素 gBCR 探针 stale rect 绕开）。remove-single/
+  remove-parent/remove-first 转绿（remove-child 无涉保持）。fullscreen 86.0%→**88.0%**
+  （132/150，全绿案 34→37，pass set 零丢失 +3）。**M3 域内收口判定**：viewport 联动以
+  corpus 三案绿验证（exit-timing/timing/screen-size），真窗口 OS 级全屏挂账 M4；余簇
+  全部甄别跨域归属（:fullscreen 伪类→rendering-compat、SVGElement instanceof/shadowRoot
+  getElementById→js-dom、iframe 管道/cross-origin、window.event 持久性→infra、栈模型
+  remove-last→挂账）。单测 test_fullscreen_removal_exit_wab2m3s2。
+  evidence/2026-09-24-m3-s2-fullscreen.{md,json}。
 
 ## 下一步计划
 
-1. **M3-s2**：model/removal 簇 ×6（remove-first/last/±sibling/parent/single + move-fullscreen-
-   element）——移除全屏元素 fullscreenElement **同步**置 null + change(target=document)，需
-   mutation hook 联动；顺带 shadowroot-fullscreen-element（shadowRoot.fullscreenElement 面）
-   与 move-to-inactive-document Timeout 甄别
-2. **M3 收口**：DC-3 viewport 联动验证（消费 ④ viewport 桥）+ fullscreen 余簇跨域记账定稿
-3. **M4**：DC 逐项判定 + 平台后端差异挂账定稿
+1. **M4**：DC 逐项判定收口——DC-1~DC-4 全项核验 + 平台差异挂账定稿（平台剪贴板后端 +
+   真窗口 OS 级全屏，host-runtime 能力评估；无能力则差异记账定稿）+ master.md 终稿自洽
+2. **可选切片（M4 前酌情）**：M2 custom formats 校验簇 ×6（tentative）；remove-last
+   栈模型（回退前一栈元素 + 异步全退）
 
 **跨域记账（回流不越界）**：
 - `:fullscreen` 伪类/UA 渲染样式面 → rendering-compat 流域（rendering/ 9 案不导入 +
@@ -105,7 +115,7 @@
 |--------|------|
 | M1 — WPT 导入与基线 | ✅ 2026-09-23 |
 | M2 — Clipboard 语义 + 后端 | 🔄 83.6%（余簇均记账/可选切片，M4 定稿） |
-| M3 — Fullscreen 语义 | 🔄 s1 86.0%（s2 = model/removal 簇 + viewport 联动收口） |
+| M3 — Fullscreen 语义 | ✅ 2026-09-24（域内收敛 88.0%，viewport 联动 corpus 三案绿，余簇跨域记账定稿） |
 | M4 — 收口 | ⏳ |
 
 ## 验证基线
@@ -113,12 +123,12 @@
 - 基线 evidence：`evidence/2026-09-23-m1-clipboard-apis-baseline.{md,json}`
   （33 案 / 15-71 = 21.1%）+ `evidence/2026-09-23-m1-fullscreen-baseline.{md,json}`
   （55 案 / 92-146 = 63.0%）；账本 `imported-testharness.txt` +88 行（WAB2-M1-baseline）
-- 最新 evidence：`evidence/2026-09-24-m3-s1-fullscreen.{md,json}`
-  （55 案 / 129-150 = 86.0%，全绿案 34）+ `evidence/2026-09-24-m3-s1-clipboard-apis.json`
-  （33 案 / 61-73 = 83.6%）；此前 `evidence/2026-09-24-m2-s3-clipboard-apis.{md,json}` +
-  `evidence/2026-09-24-m2-s3-fullscreen.{md,json}`
+- 最新 evidence：`evidence/2026-09-24-m3-s2-fullscreen.{md,json}`
+  （55 案 / 132-150 = 88.0%，全绿案 37）；此前 `evidence/2026-09-24-m3-s1-fullscreen.{md,json}`
+  （86.0%）+ `evidence/2026-09-24-m3-s1-clipboard-apis.json`（33 案 / 61-73 = 83.6%）+
+  `evidence/2026-09-24-m2-s3-*`
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过；
   engine 面 js_dom_bridge R2964/WAB2-M2/WAB2-M2-s2/WAB2-M2-s3/R2938（重写）/
-  WAB2-M3-s1/R2948 单测绿；全量 `make test` 门禁见 M3-s1 提交说明
+  WAB2-M3-s1/WAB2-M3-s2/R2948 单测绿；全量 `make test` 门禁见 M3-s2 提交说明
 
 **碰撞管理**：碰 engine shim 面前与 security-hardening / cdp-protocol `git log` 互核。

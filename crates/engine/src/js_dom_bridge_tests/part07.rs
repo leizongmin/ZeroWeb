@@ -1893,6 +1893,94 @@ fn test_fullscreen_activation_and_steps_wab2m3s1() {
     );
 }
 
+/// WAB2-M3-s2（web-api-batch2 goal M3 切片 2，2026-09-24）：节点移除对全屏状态联动——
+/// 移除全屏元素自身/其祖先 → fullscreenElement **同步**置 null + 异步 fullscreenchange
+///（detached → target=document）。镜像 WPT model/remove-single、remove-parent、remove-first。
+#[test]
+fn test_fullscreen_removal_exit_wab2m3s2() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id='outer'><div id='inner'></div></div><div id='other'></div></body></html>"
+            .to_string()),
+    );
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // 权限豁免态（省激活注入）；单槽事件计数 + target 记录。
+    sandbox
+        .execute(
+            "globalThis.__zwSetPermission('fullscreen', 'granted');\
+             globalThis.__log = [];\
+             document.onfullscreenchange = function(ev){\
+               globalThis.__log.push('change:' + (ev.target === document ? 'document' : 'element'));\
+             };",
+        )
+        .unwrap();
+
+    // ① remove-single：移除全屏元素自身 → 同步置 null + change（detached → document）。
+    sandbox
+        .execute(
+            "var el = document.createElement('div'); document.body.appendChild(el);\
+             el.requestFullscreen().then(function(){\
+               globalThis.__log.push('sync:' + String(document.fullscreenElement != null));\
+               el.remove();\
+               globalThis.__log.push('after-rm:' + String(document.fullscreenElement));\
+             });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__log.join('|')").unwrap().value,
+        "change:element|sync:true|after-rm:null|change:document",
+        "移除全屏元素自身：同步 null + change 回落 document（镜像 remove-single）"
+    );
+
+    // ② remove-parent：移除全屏元素的祖先 → 同步 null + change(document)。
+    sandbox
+        .execute(
+            "globalThis.__log = [];\
+             var par = document.createElement('div'); document.body.appendChild(par);\
+             var chi = document.createElement('div'); par.appendChild(chi);\
+             chi.requestFullscreen().then(function(){\
+               par.remove();\
+               globalThis.__log.push('after-parent-rm:' + String(document.fullscreenElement));\
+             });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__log.join('|')").unwrap().value,
+        "change:element|after-parent-rm:null|change:document",
+        "移除全屏元素祖先：同步 null + change 回落 document（镜像 remove-parent）"
+    );
+
+    // ③ 无涉移除（remove-child 语义）：全屏元素保持（镜像 remove-child 案「不应受影响」）。
+    sandbox
+        .execute(
+            "globalThis.__log = [];\
+             var keep = document.createElement('div'); document.body.appendChild(keep);\
+             var tmp = document.createElement('div'); document.body.appendChild(tmp);\
+             keep.requestFullscreen().then(function(){\
+               tmp.remove();\
+               globalThis.__log.push('kept:' + String(document.fullscreenElement === keep));\
+             });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__log.join('|')").unwrap().value,
+        "change:element|kept:true",
+        "无涉移除不影响全屏状态（镜像 remove-child）"
+    );
+}
+
 #[test]
 fn test_pointer_lock_api_r2939() {
     // R2939 Pointer Lock API（spec-alike，镜像 R2938 Fullscreen）：element.requestPointerLock() 返 Promise

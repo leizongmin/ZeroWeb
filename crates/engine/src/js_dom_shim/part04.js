@@ -6057,6 +6057,9 @@ return _tplContent;
             } catch (_e369rm) {}
             if (handle) __zw_remove_handle(handle);
             else { __zw_remove(sel); _zwMarkRemoved(sel); }
+            // WAB2-M3-s2：移除子树含全屏元素 → fullscreenElement 同步置 null + 异步 change
+            //（target=document）。见 part06 _fsOnNodeRemoved。
+            if (typeof _fsOnNodeRemoved === 'function') _fsOnNodeRemoved(sel, handle);
             // R140：live childNodes 同步（remove() 后父的旧引用反映）。
             try {
               if (globalThis._zwLiveNLSync) {

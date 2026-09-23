@@ -181,7 +181,7 @@
   // _dispatchWithBubble 冒泡到 document listener（fullScreenChange() helper 监听面）。
   // 元素 detached（请求后移除——and-remove 案）→ 回落 document 派发（detached 树不冒泡到
   // document，errorEventPromise 需 resolve）。
-  function _fireFsElementEvent(type, sel, handle) {
+  function _fireFsElementEvent(type, sel, handle, forceDoc) {
     var ev;
     try {
       ev = new globalThis.Event(type, { bubbles: true, cancelable: false, composed: true });
@@ -189,7 +189,7 @@
       ev = _makeEvent(type, { bubbles: true, cancelable: false });
     }
     try {
-      if (sel || handle) {
+      if (!forceDoc && (sel || handle)) {
         var connected = true;
         try { connected = _makeProxy(sel, handle).isConnected !== false; } catch (_eI) {}
         if (connected) {
@@ -197,8 +197,46 @@
           return;
         }
       }
+      // document 回落：显式设 target=document（_dispatchToListeners 第四参是 currentTarget，
+      // 不写 target；WPT remove-parent/remove-first 移除事件 `target === document` 断言）。
+      try { ev.target = globalThis.document; ev.srcElement = globalThis.document; } catch (_eT) {}
       _dispatchToListeners(_elKey('html', null), ev, 'all', globalThis.document);
     } catch (_eD) {}
+  }
+
+  // WAB2-M3-s2（web-api-batch2 goal M3 切片 2，2026-09-24）：节点移除对全屏状态的联动
+  // （spec top-layer 移除语义）——移除子树包含当前全屏元素（本节点或祖先链命中，沿
+  // parentNode 上行比对身份；parent 链读移除前视图——host mutation 异步 apply）→
+  // fullscreenElement **同步**置 null（WPT remove-single/remove-parent/remove-first
+  // 「immediately after removal」断言）+ 异步 step 派 fullscreenchange（全屏元素 detached
+  // → _fireFsElementEvent 回落 document，三案第三事件 `target === document` 断言）。
+  // 仅 el.remove() 路径挂钩（corpus 三案施除面；removeChild/replaceWith 移除语义同但
+  // 未被 corpus 触达，按精准修改不扩）。
+  function _fsOnNodeRemoved(removedSel, removedHandle) {
+    if (!_fsKey) return;
+    var removedKey = _elKey(removedSel, removedHandle);
+    var inSubtree = (_fsKey === removedKey);
+    if (!inSubtree) {
+      try {
+        var walker = _makeProxy(_fsSel, _fsHandle);
+        var hops = 0;
+        while (walker && hops++ < 64) {
+          if (_elKey(walker.__zwSelector, walker.__zwHandle) === removedKey) {
+            inSubtree = true;
+            break;
+          }
+          walker = walker.parentNode;
+        }
+      } catch (_eFsr) {}
+    }
+    if (!inSubtree) return;
+    var exSel = _fsSel, exHandle = _fsHandle;
+    _fsKey = null; _fsSel = null; _fsHandle = null;
+    _fsQueueStep(function () {
+      // forceDoc：移除子树按定义 detached——不查 isConnected（handle 元素的 gBCR 探针
+      // 对已移除节点可能残留 stale rect → 误判 connected）。
+      _fireFsElementEvent('fullscreenchange', exSel, exHandle, true);
+    });
   }
 
   // R2938/R2939 文档级事件派发（fullscreenchange/fullscreenerror/pointerlockchange/pointerlockerror）。

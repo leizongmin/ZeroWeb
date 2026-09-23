@@ -1,0 +1,1027 @@
+[
+  [
+    "fullscreen/api/document-exit-fullscreen-nested-shadow-dom.html",
+    [
+      {
+        "name": "Exiting fullscreen from a nested shadow root works correctly.",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: outer.shadowRoot.getElementById is not a function\""
+      }
+    ]
+  ],
+  [
+    "fullscreen/api/document-exit-fullscreen-nested.html",
+    [
+      {
+        "name": "Exit fullscreen for nested fullscreen",
+        "status": "Fail",
+        "message": "assert_equals: expected Element node <div><div></div></div> but got null"
+      }
+    ]
+  ],
+  [
+    "fullscreen/api/document-exit-fullscreen-timing.html",
+    [
+      {
+        "name": "Timing of fullscreenchange and resize events",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "fullscreen/api/document-exit-fullscreen-twice.html",
+    [
+      {
+        "name": "Document#exitFullscreen() called twice",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "fullscreen/api/document-exit-fullscreen.html",
+    [
+      {
+        "name": "Checks that the fullscreenchange event is fired when exiting fullscreen",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "fullscreen/api/document-fullscreen-element.html",
+    [
+      {
+        "name": "Document#fullscreenElement",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "fullscreen/api/document-fullscreen-enabled-setting-allowfullscreen.sub.html",
+    [
+      {
+        "name": "Document#fullscreenEnabled setting allowfullscreen after load and then navigating",
+        "status": "Fail",
+        "message": "assert_false: document.fullscreenEnabled in the iframe, before navigation expected false got null"
+      }
+    ]
+  ],
+  [
+    "fullscreen/api/document-onfullscreenchange.html",
+    [
+      {
+        "name": "Checks that the fullscreenchange event is fired when entering fullscreen",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "fullscreen/api/document-onfullscreenerror.html",
+    [
+      {
+        "name": "Checks that the fullscreenerror event is fired when entering fullscreen fails",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "fullscreen/api/element-ready-check-fullscreen-element-sibling.html",
+    [
+      {
+        "name": "Element ready check for sibling of fullscreen element",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "fullscreen/api/element-ready-check-not-in-document.html",
+    [
+      {
+        "name": "Element ready check for element not in a document",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "fullscreen/api/element-request-fullscreen-after-error.html",
+    [
+      {
+        "name": "requestFullscreen works even if previous requestFullscreen causes an error",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "fullscreen/api/element-request-fullscreen-and-move.html",
+    [
+      {
+        "name": "Element#requestFullscreen() followed by moving the element within the document",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "fullscreen/api/element-request-fullscreen-and-remove.html",
+    [
+      {
+        "name": "requestFullscreen() followed by removing the element",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "fullscreen/api/element-request-fullscreen-consume-user-activation.html",
+    [
+      {
+        "name": "Element#requestFullscreen() consumes user activation",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "fullscreen/api/element-request-fullscreen-cross-origin.sub.html",
+    [
+      {
+        "name": "fullscreen/api/element-request-fullscreen-cross-origin.sub.html",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[200820, 8550, 4284], state={\"loaded\":true,\"pending\":1,\"phase\":4,\"tests\":1}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "fullscreen/api/element-request-fullscreen-dialog.html",
+    [
+      {
+        "name": "Element#requestFullscreen() for dialog element",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "fullscreen/api/element-request-fullscreen-namespaces.html",
+    [
+      {
+        "name": "requestFullscreen() fails for an element in null namespace",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "requestFullscreen() fails for an element in https://unknown.namespace namespace",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "requestFullscreen() fails for an element in  namespace",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "requestFullscreen() succeed for an element in http://www.w3.org/1999/xhtml namespace",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "requestFullscreen() succeed for an element in http://www.w3.org/2000/svg namespace",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "requestFullscreen() succeed for an element in http://www.w3.org/1998/Math/MathML namespace",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "fullscreen/api/element-request-fullscreen-non-top.html",
+    [
+      {
+        "name": "\n    Element#requestFullscreen() for non-top element in fullscreen element stack\n",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "fullscreen/api/element-request-fullscreen-not-allowed.html",
+    [
+      {
+        "name": "requestFullscreen() when not allowed to request fullscreen",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "fullscreen/api/element-request-fullscreen-options.html",
+    [
+      {
+        "name": "requestFullscreen() with invalid navigationUI values",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "requestFullscreen() with non-dictionary argument",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "fullscreen/api/element-request-fullscreen-options.tentative.https.html",
+    [
+      {
+        "name": "fullscreenOptions.screen getter is invoked on requestFullscreen",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "fullscreen/api/element-request-fullscreen-same-element.html",
+    [
+      {
+        "name": "Element#requestFullscreen() on the current fullscreen element",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "fullscreen/api/element-request-fullscreen-screen-size.https.html",
+    [
+      {
+        "name": "Screen size is unchanged during element fullscreen",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Screen size is unchanged during tab-capture element fullscreen",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Cannot read properties of undefined (reading 'getDisplayMedia')\""
+      }
+    ]
+  ],
+  [
+    "fullscreen/api/element-request-fullscreen-svg-rect.html",
+    [
+      {
+        "name": "Element#requestFullscreen() for SVG rect element",
+        "status": "Fail",
+        "message": "assert_true: expected true got false"
+      }
+    ]
+  ],
+  [
+    "fullscreen/api/element-request-fullscreen-svg-svg.html",
+    [
+      {
+        "name": "Element#requestFullscreen() for SVG svg element",
+        "status": "Fail",
+        "message": "assert_true: expected true got false"
+      }
+    ]
+  ],
+  [
+    "fullscreen/api/element-request-fullscreen-svg-text.html",
+    [
+      {
+        "name": "Element#requestFullscreen() on SVG text element is denied",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "fullscreen/api/element-request-fullscreen-timing.html",
+    [
+      {
+        "name": "Timing of fullscreenerror event",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Timing of fullscreenchange and resize events",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "fullscreen/api/element-request-fullscreen-top.html",
+    [
+      {
+        "name": "\n    Element#requestFullscreen() for top element in fullscreen element stack\n",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "fullscreen/api/element-request-fullscreen-twice.html",
+    [
+      {
+        "name": "requestFullscreen() multiple times after going fullscreen",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "fullscreen/api/element-request-fullscreen-two-elements.html",
+    [
+      {
+        "name": "Element#requestFullscreen() on two elements in the same document",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "fullscreen/api/element-request-fullscreen-without-user-activation.tentative.https.html",
+    [
+      {
+        "name": "Element#requestFullscreen() rejects without user activation by default",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element#requestFullscreen() resolves without user activation with permission",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "fullscreen/api/element-request-fullscreen.html",
+    [
+      {
+        "name": "Element#requestFullscreen()",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Cannot read properties of undefined (reading 'target')\""
+      }
+    ]
+  ],
+  [
+    "fullscreen/api/fullscreen-display-contents.html",
+    [
+      {
+        "name": "\n        Test that display:contents on fullscreen elements acts like\n        display:block\n    ",
+        "status": "Fail",
+        "message": "assert_equals: fullscreen element should have display:block expected \"block\" but got \"contents\""
+      }
+    ]
+  ],
+  [
+    "fullscreen/api/fullscreen-reordering.html",
+    [
+      {
+        "name": "fullscreen/api/fullscreen-reordering.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: external script /common/top-layer.js: script fetch failed: common/top-layer.js (No such file or directory (os error 2))"
+      }
+    ]
+  ],
+  [
+    "fullscreen/api/historical.html",
+    [
+      {
+        "name": "<video> member must not be supported: onwebkitfullscreenchange",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Document member must not be supported: onwebkitfullscreenchange",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "<video> member must not be supported: onmozfullscreenchange",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Document member must not be supported: onmozfullscreenchange",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "<video> member must not be supported: onmsfullscreenchange",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Document member must not be supported: onmsfullscreenchange",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "<video> member must not be supported: onwebkitfullscreenerror",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Document member must not be supported: onwebkitfullscreenerror",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "<video> member must not be supported: onmozfullscreenerror",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Document member must not be supported: onmozfullscreenerror",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "<video> member must not be supported: onmsfullscreenerror",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Document member must not be supported: onmsfullscreenerror",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "<video> member must not be supported: webkitCurrentFullScreenElement (uppercase S)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Document member must not be supported: webkitCurrentFullScreenElement (uppercase S)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "<video> member must not be supported: mozCurrentFullScreenElement (uppercase S)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Document member must not be supported: mozCurrentFullScreenElement (uppercase S)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "<video> member must not be supported: msCurrentFullScreenElement (uppercase S)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Document member must not be supported: msCurrentFullScreenElement (uppercase S)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "<video> member must not be supported: webkitFullscreenElement",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Document member must not be supported: webkitFullscreenElement",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "<video> member must not be supported: mozFullscreenElement",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Document member must not be supported: mozFullscreenElement",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "<video> member must not be supported: msFullscreenElement",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Document member must not be supported: msFullscreenElement",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "<video> member must not be supported: webkitFullscreenEnabled",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Document member must not be supported: webkitFullscreenEnabled",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "<video> member must not be supported: mozFullscreenEnabled",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Document member must not be supported: mozFullscreenEnabled",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "<video> member must not be supported: msFullscreenEnabled",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Document member must not be supported: msFullscreenEnabled",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "<video> member must not be supported: webkitIsFullScreen (uppercase S)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Document member must not be supported: webkitIsFullScreen (uppercase S)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "<video> member must not be supported: mozIsFullScreen (uppercase S)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Document member must not be supported: mozIsFullScreen (uppercase S)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "<video> member must not be supported: msIsFullScreen (uppercase S)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Document member must not be supported: msIsFullScreen (uppercase S)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "<video> member must not be supported: webkitRequestFullScreen (uppercase S)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Document member must not be supported: webkitRequestFullScreen (uppercase S)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "<video> member must not be supported: mozRequestFullScreen (uppercase S)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Document member must not be supported: mozRequestFullScreen (uppercase S)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "<video> member must not be supported: msRequestFullScreen (uppercase S)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Document member must not be supported: msRequestFullScreen (uppercase S)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "<video> member must not be supported: webkitRequestFullscreen",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Document member must not be supported: webkitRequestFullscreen",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "<video> member must not be supported: mozRequestFullscreen",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Document member must not be supported: mozRequestFullscreen",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "<video> member must not be supported: msRequestFullscreen",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Document member must not be supported: msRequestFullscreen",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "<video> member must not be supported: webkitDisplayingFullscreen",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Document member must not be supported: webkitDisplayingFullscreen",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "<video> member must not be supported: mozDisplayingFullscreen",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Document member must not be supported: mozDisplayingFullscreen",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "<video> member must not be supported: msDisplayingFullscreen",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Document member must not be supported: msDisplayingFullscreen",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "<video> member must not be supported: webkitEnterFullScreen (uppercase S)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Document member must not be supported: webkitEnterFullScreen (uppercase S)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "<video> member must not be supported: mozEnterFullScreen (uppercase S)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Document member must not be supported: mozEnterFullScreen (uppercase S)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "<video> member must not be supported: msEnterFullScreen (uppercase S)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Document member must not be supported: msEnterFullScreen (uppercase S)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "<video> member must not be supported: webkitEnterFullscreen",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Document member must not be supported: webkitEnterFullscreen",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "<video> member must not be supported: mozEnterFullscreen",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Document member must not be supported: mozEnterFullscreen",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "<video> member must not be supported: msEnterFullscreen",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Document member must not be supported: msEnterFullscreen",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "<video> member must not be supported: webkitExitFullScreen (uppercase S)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Document member must not be supported: webkitExitFullScreen (uppercase S)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "<video> member must not be supported: mozExitFullScreen (uppercase S)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Document member must not be supported: mozExitFullScreen (uppercase S)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "<video> member must not be supported: msExitFullScreen (uppercase S)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Document member must not be supported: msExitFullScreen (uppercase S)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "<video> member must not be supported: webkitExitFullscreen",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Document member must not be supported: webkitExitFullscreen",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "<video> member must not be supported: mozExitFullscreen",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Document member must not be supported: mozExitFullscreen",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "<video> member must not be supported: msExitFullscreen",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Document member must not be supported: msExitFullscreen",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "<video> member must not be supported: webkitSupportsFullscreen",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Document member must not be supported: webkitSupportsFullscreen",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "<video> member must not be supported: mozSupportsFullscreen",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Document member must not be supported: mozSupportsFullscreen",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "<video> member must not be supported: msSupportsFullscreen",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Document member must not be supported: msSupportsFullscreen",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Window member must not be supported: fullScreen",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "fullscreen/api/navigate-iframe.sub.html",
+    [
+      {
+        "name": "fullscreen/api/navigate-iframe.sub.html",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[200820, 2454], state={\"loaded\":true,\"pending\":5,\"phase\":4,\"tests\":5}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "fullscreen/api/permission.tentative.https.html",
+    [
+      {
+        "name": "Querying \"fullscreen\" permission checks \"allowWithoutGesture\" option",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Set and query \"fullscreen\" permission with \"allowWithoutGesture\" true",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Querying \"fullscreen\" permission with \"allowWithoutGesture\" false is unsupported",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "fullscreen/api/promises-reject.html",
+    [
+      {
+        "name": "Rejects if the element is not connected",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "fullscreen/api/promises-resolve.html",
+    [
+      {
+        "name": "Promises#resolve",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "fullscreen/api/shadowroot-fullscreen-element.html",
+    [
+      {
+        "name": "shadowRoot.fullscreenElement works correctly",
+        "status": "Timeout",
+        "message": "Test timed out"
+      }
+    ]
+  ],
+  [
+    "fullscreen/model/move-fullscreen-element.html",
+    [
+      {
+        "name": "Moving the fullscreen element should not leave the fullscreen flag",
+        "status": "Fail",
+        "message": "assert_true: Element has fullscreen flag expected true got false"
+      }
+    ]
+  ],
+  [
+    "fullscreen/model/move-to-inactive-document.html",
+    [
+      {
+        "name": "fullscreen/model/move-to-inactive-document.html",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[200820, 8550, 2029, 861], state={\"loaded\":true,\"pending\":1,\"phase\":4,\"tests\":1}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "fullscreen/model/remove-child.html",
+    [
+      {
+        "name": "Remove the child of the fullscreen element",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "fullscreen/model/remove-first-sibling.html",
+    [
+      {
+        "name": "Remove the first of two sibling elements in the fullscreen stack",
+        "status": "Fail",
+        "message": "assert_true: a matches :fullscreen after first request expected true got false"
+      }
+    ]
+  ],
+  [
+    "fullscreen/model/remove-first.html",
+    [
+      {
+        "name": "Remove the first element on the fullscreen element stack",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "fullscreen/model/remove-last-sibling.html",
+    [
+      {
+        "name": "Remove the last of two sibling elements in the fullscreen stack",
+        "status": "Fail",
+        "message": "assert_true: a matches :fullscreen after first request expected true got false"
+      }
+    ]
+  ],
+  [
+    "fullscreen/model/remove-last.html",
+    [
+      {
+        "name": "Remove the last element on the fullscreen element stack",
+        "status": "Fail",
+        "message": "assert_equals: fullscreen element immediately after removal expected Element node <div id=\"first\">\n  \n</div> but got null"
+      }
+    ]
+  ],
+  [
+    "fullscreen/model/remove-parent.html",
+    [
+      {
+        "name": "Remove the parent of the fullscreen element",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "fullscreen/model/remove-single.html",
+    [
+      {
+        "name": "Remove the single element on the fullscreen element stack",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "fullscreen/crashtests/backdrop-list-item.html",
+    [
+      {
+        "name": "fullscreen/crashtests/backdrop-list-item.html",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "fullscreen/crashtests/chrome-1312699.html",
+    [
+      {
+        "name": "fullscreen/crashtests/chrome-1312699.html",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "fullscreen/crashtests/content-visibility-2-crash.html",
+    [
+      {
+        "name": "fullscreen/crashtests/content-visibility-2-crash.html",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "fullscreen/crashtests/content-visibility-crash.html",
+    [
+      {
+        "name": "fullscreen/crashtests/content-visibility-crash.html",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "fullscreen/crashtests/frameset-crash.html",
+    [
+      {
+        "name": "fullscreen/crashtests/frameset-crash.html",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[200820, 8550, 345], state={\"loaded\":true,\"pending\":0,\"phase\":4,\"tests\":0}, test_wait=true)"
+      }
+    ]
+  ]
+]
