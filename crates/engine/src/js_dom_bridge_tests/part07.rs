@@ -1213,14 +1213,132 @@ fn test_clipboard_write_read_round_trip_r2964() {
         )
         .unwrap();
     assert_eq!(sandbox.execute("String(globalThis.__r3)").unwrap().value, "42");
-    // read/write（ClipboardItem 富 MIME）仍 best-effort stub（不抛，read 返 []）。
+    // WAB2-M2（web-api-batch2 goal M2 切片 1）：read/write 富 MIME 真实化——read() 返
+    // [ClipboardItem]（前面 writeText('42') 已落 text/plain 单项）；write([]) 不抛且清写。
     sandbox
         .execute(
             "globalThis.__rw='X';\
-             Promise.all([navigator.clipboard.read(), navigator.clipboard.write([])]).then(function(r){ globalThis.__rw = String(r[0].length); });",
+             Promise.all([navigator.clipboard.read(), navigator.clipboard.write([])]).then(function(r){\
+               globalThis.__rw = String(r[0].length) + ':' + (r[0][0] instanceof ClipboardItem) + ':' + (r[0][0].types.join(',')); });",
         )
         .unwrap();
-    assert_eq!(sandbox.execute("String(globalThis.__rw)").unwrap().value, "0");
+    assert_eq!(
+        sandbox.execute("String(globalThis.__rw)").unwrap().value,
+        "1:true:text/plain",
+        "WAB2-M2 read() 返绑定代际的 ClipboardItem 单项"
+    );
+}
+
+/// WAB2-M2（web-api-batch2 goal M2 切片 1，2026-09-23）：ClipboardItem/Clipboard 富 MIME
+/// 面——接口 instanceof、write/read Blob 往返、输入校验（sequence 转换 TypeError、>1 项
+/// NotAllowedError、image/* 须 Blob、writeText 缺参 TypeError）、read 项 getType 代际失效。
+/// 镜像 WPT clipboard-apis 基线失败簇（basics/write-blobs/cached-getType-reject）。
+#[test]
+fn test_clipboard_item_rich_mime_wab2m2() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // 接口面：navigator.clipboard instanceof Clipboard + SameObject + ClipboardItem 全局。
+    assert_eq!(
+        sandbox
+            .execute("[navigator.clipboard instanceof Clipboard, navigator.clipboard === navigator.clipboard, typeof globalThis.ClipboardItem].join(',')")
+            .unwrap()
+            .value,
+        "true,true,function",
+        "WAB2-M2 Clipboard 接口 instanceof + SameObject + ClipboardItem 全局"
+    );
+    // write([Blob item]) → read()[0].getType 往返（Blob 字节 + type 保真）。
+    sandbox
+        .execute(
+            "new Blob(['hello'], {type: 'text/plain'});\
+             navigator.clipboard.write([new ClipboardItem({'text/plain': new Blob(['hello'], {type: 'text/plain'})})])\
+               .then(function(){ return navigator.clipboard.read(); })\
+               .then(function(items){\
+                 globalThis.__g = items.length + ':' + (items[0] instanceof ClipboardItem) + ':' + items[0].types.length;\
+                 return items[0].getType('text/plain');\
+               })\
+               .then(function(b){ globalThis.__g += ':' + b.type + ':' + b.size; });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__g)").unwrap().value,
+        "1:true:1:text/plain:5",
+        "WAB2-M2 write→read Blob 往返（types + getType 字节/type 保真）"
+    );
+    // 输入校验簇：write() / write(null) / write('str') / write(blob) / write([blob]) → TypeError；
+    // >1 项 → NotAllowedError；image/* DOMString → TypeError；writeText() 缺参 → TypeError。
+    sandbox
+        .execute(
+            "globalThis.__err=[];\
+             function probe(tag, p){ return p.then(function(){ globalThis.__err.push(tag+':resolved'); },\
+               function(e){ globalThis.__err.push(tag+':'+e.name); }); }\
+             var blob = new Blob(['x'], {type: 'text/plain'});\
+             Promise.all([\
+               probe('noarg', navigator.clipboard.write()),\
+               probe('null', navigator.clipboard.write(null)),\
+               probe('str', navigator.clipboard.write('Bad string')),\
+               probe('blob', navigator.clipboard.write(blob)),\
+               probe('arrblob', navigator.clipboard.write([blob])),\
+               probe('two', navigator.clipboard.write([new ClipboardItem({'text/plain': blob}), new ClipboardItem({'text/plain': blob})])),\
+               probe('imgstr', navigator.clipboard.write([new ClipboardItem({'image/png': 'not an image'})])),\
+               probe('wt-noarg', navigator.clipboard.writeText())\
+             ]);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__err.join('|')").unwrap().value,
+        "noarg:TypeError|null:TypeError|str:TypeError|blob:TypeError|arrblob:TypeError|two:NotAllowedError|imgstr:TypeError|wt-noarg:TypeError",
+        "WAB2-M2 输入校验（sequence TypeError / >1 项 NotAllowedError / image/* Blob / 缺参）"
+    );
+    // DOMString 与 Promise<DOMString> 值（write-domstring 上游案）+ read 项 getType 代际失效。
+    sandbox
+        .execute(
+            "globalThis.__d=[];\
+             var item = new ClipboardItem({'text/plain': Promise.resolve('promised text')});\
+             navigator.clipboard.write([new ClipboardItem({'text/plain': 'plain text', 'text/html': '<p>hi</p>'})])\
+               .then(function(){ return navigator.clipboard.write([item]); })\
+               .then(function(){\
+                 var stale = null;\
+                 return navigator.clipboard.read().then(function(items){\
+                   stale = items[0];\
+                   globalThis.__d.push('stale-types:' + stale.types.join(','));\
+                   return navigator.clipboard.writeText('newer');\
+                 }).then(function(){ return stale.getType('text/plain'); })\
+                   .then(function(){ globalThis.__d.push('stale:resolved'); },\
+                         function(e){ globalThis.__d.push('stale:' + e.name); });\
+               });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__d.join('|')").unwrap().value,
+        "stale-types:text/plain|stale:InvalidStateError",
+        "WAB2-M2 Promise 值写入 + read 项 getType 代际失效（InvalidStateError）"
+    );
+    // getType missing type → NotFoundError。
+    sandbox
+        .execute(
+            "globalThis.__nf='X'; navigator.clipboard.read().then(function(items){\
+               return items[0].getType('text/html'); }).then(function(){ globalThis.__nf='resolved'; },\
+             function(e){ globalThis.__nf=e.name; });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__nf)").unwrap().value,
+        "NotFoundError",
+        "WAB2-M2 getType missing type → NotFoundError"
+    );
 }
 
 #[test]

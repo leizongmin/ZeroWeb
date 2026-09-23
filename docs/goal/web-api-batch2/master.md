@@ -2,7 +2,7 @@
 
 **入口文档**: [../web-api-batch2.md](../web-api-batch2.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-23（M1 收口：两 corpus 导入 + 基线 + 基建修复）
+**最后更新**: 2026-09-23（M2-s1：ClipboardItem/Clipboard 富 MIME 面，21.1%→62.9%）
 
 ---
 
@@ -22,8 +22,8 @@
 | # | 缺口 | 状态 |
 |---|------|------|
 | P1 | clipboard-apis / fullscreen 两 corpus fetch 脚本 + 导入 + 基线 | ✅ M1（2026-09-23） |
-| P2 | navigator.clipboard 四方法 + ClipboardItem/Clipboard 面 + ClipboardEvent + 内存后端 | ⏳ M2（基线 21.1%，主簇 = ClipboardItem ×13 案 + Clipboard 接口 ×2 案） |
-| P3 | 最小权限查询面（security-hardening DC-4 对齐点） | ⏳ M2（基线已测出 denied 拒绝缺失 ×3 案） |
+| P2 | navigator.clipboard 四方法 + ClipboardItem/Clipboard 面 + ClipboardEvent + 内存后端 | 🔄 M2-s1（2026-09-23）21.1%→**62.9%**（富 MIME 面落地）；余簇 = execCommand copy 桥 ×2-3、fetch→Blob MIME ×3、denied 拒绝 ×2（P3）、杂项 |
+| P3 | 最小权限查询面（security-hardening DC-4 对齐点） | ⏳（denied 拒绝 ×2 案 + query 状态联动） |
 | P4 | Fullscreen 事件/状态面 + viewport 联动 | ⏳ M3（基线 63.0%，主簇 = 事件 target/栈时序） |
 | P5 | 平台剪贴板后端（host-runtime 能力评估）或差异记账 | ⏳ M4 挂账定稿 |
 
@@ -39,14 +39,22 @@
   R147/R198/R201 邻接回归全绿。
 - **立项基线事实修正**：引擎已有部分 fullscreen 语义（viewport 桥遗产）——fullscreen
   基线起点 63.0% 显著高于立项预期（立项记「无 requestFullscreen 面」）。
+- **M2 切片 1（2026-09-23）**：ClipboardItem/Clipboard 富 MIME 面——part02.js clipboard
+  块重写（ClipboardItem 全局类 + types/presentationStyle/getType 代际失效 + Clipboard
+  接口 instanceof + write 输入校验簇 + read/write 存取）。clipboard-apis 21.1%→62.9%
+  （44/70，全绿案 5→15）。evidence/2026-09-23-m2-s1-clipboard-apis.{md,json}。
 
 ## 下一步计划
 
-1. **M2**：ClipboardItem + Clipboard 接口面（主簇 15 案）→ blob 回读类型 → 权限
-   denied 拒绝语义（P3，security-hardening DC-4 对齐）→ 内存后端口径复核
-2. **M3**：fullscreenchange/error target 与栈时序簇 → promises 拒绝形态 → Timeout 8 案
+1. **M2-s2**：execCommand('copy') → 异步 store 桥（part06 oncopy clipboardData.setData
+   内容落 navigator store；read-sanitize/read-resource-load/write-html 三案）+ 本地文件
+   fetch→Blob 扩展名→MIME 映射（engine fetch_bridge；write-blobs/write-image 三案）+
+   basics Timeout 子测甄别
+2. **M2-s3/P3**：权限 denied 拒绝语义（query 状态联动 readText/writeText
+   NotAllowedError；security-hardening DC-4 对齐）+ DataTransfer clearData 顺带
+3. **M3**：fullscreenchange/error target 与栈时序簇 → promises 拒绝形态 → Timeout 8 案
    甄别 → viewport 联动验证（消费 ④ viewport 桥）
-3. **M4**：DC 逐项判定 + 平台后端差异挂账定稿
+4. **M4**：DC 逐项判定 + 平台后端差异挂账定稿
 
 **跨域记账（回流不越界）**：
 - `:fullscreen` 伪类/UA 渲染样式面 → rendering-compat 流域（rendering/ 9 案不导入 +

@@ -2743,18 +2743,144 @@
     mimeTypes: _emptyCollection(),
     javaEnabled: function() { return false; },
     taintEnabled: function() { return false; },
-    // clipboard（R2817 + R2964）——异步剪贴板 API（复制按钮 ubiquitous）。headless 无 OS 剪贴板 →
-    // **进程内 store**（IIFE 闭包 `_store`）：writeText/readText 真实往返（同页/同进程 write→read 通，
-    // 覆盖复制按钮 + 粘贴检查高频模式）。read/write（ClipboardItem 富 MIME）仍 best-effort stub
-    //（headless 无真 MIME 剪贴板，不抛）。spec：writeText 返 Promise<void>，readText 返 Promise<string>。
+    // clipboard（R2817 + R2964 + WAB2-M2）——异步剪贴板 API（复制按钮 ubiquitous）。headless 无 OS 剪贴板 →
+    // **进程内 store**（IIFE 闭包）。R2817/R2964：writeText/readText 真实往返（复制按钮 + 粘贴检查高频
+    // 模式）。WAB2-M2（web-api-batch2 goal M2 切片 1，2026-09-23）：富 MIME 面——globalThis.ClipboardItem
+    //（record<DOMString, (Blob|DOMString|Promise)> 值 + types/presentationStyle/getType + epoch 失效）+
+    // globalThis.Clipboard 接口（instanceof 面）+ read/write 存取。spec
+    // https://w3c.github.io/clipboard-apis/#async-clipboard-api。
+    // **诚实范围**：① headless 内存后端（同页同进程语义）；OS 剪贴板后端挂 M4（host-runtime 能力评估）；
+    // ② 权限 denied 拒绝语义挂 P3（security-hardening DC-4 对齐）——当前 query 面 'prompt'、granted/denied
+    // 均放行；③ write 仅支持单项（>1 项 NotAllowedError，上游用例注释 "not implemented" 同款现状）；
+    // ④ read() 空store 返 []。
     clipboard: (function () {
-      var _store = '';
-      return {
-        writeText: function (text) { _store = String(text != null ? text : ''); return Promise.resolve(undefined); },
-        readText: function () { return Promise.resolve(_store); },
-        read: function () { return Promise.resolve([]); },
-        write: function (_data) { return Promise.resolve(undefined); },
+      var _current = null; // { blobs: {type: Blob}, types: [type…] }——最近一次 write/writeText 内容
+      var _epoch = 0;      // store 代际——read() 返回项绑定当代，后续 write 令旧项 getType 失效（InvalidStateError）
+      var _RE = globalThis.DOMException || Error;
+
+      // 值归一：Blob | DOMString | Promise<Blob|DOMString> → Promise<Blob>（DOMString→Blob(type)）。
+      function _resolveValue(value, type) {
+        return Promise.resolve(value).then(function (resolved) {
+          if (typeof resolved === 'string') return new Blob([resolved], { type: type });
+          return resolved;
+        });
+      }
+
+      // globalThis.ClipboardItem（幂等守卫同 Blob 块）。值**存原始引用**（含未 settle 的 Promise），
+      // getType/write 时归一；_epoch -1 = 未绑定 store（write 输入原项），read() 返回项绑定当代。
+      var ClipboardItem = globalThis.ClipboardItem;
+      if (typeof ClipboardItem !== 'function') {
+        ClipboardItem = function ClipboardItem(options) {
+          if (options == null || typeof options !== 'object') {
+            throw new TypeError("Failed to construct 'ClipboardItem': The provided value is not of type 'record'.");
+          }
+          this._values = {};
+          var keys = Object.keys(options);
+          for (var i = 0; i < keys.length; i++) this._values[keys[i]] = options[keys[i]];
+          this._epoch = -1;
+        };
+        globalThis.ClipboardItem = ClipboardItem;
+      }
+      Object.defineProperty(ClipboardItem.prototype, 'types', {
+        get: function () { return Object.keys(this._values); },
+        configurable: true,
+      });
+      Object.defineProperty(ClipboardItem.prototype, 'presentationStyle', {
+        get: function () { return 'unspecified'; },
+        configurable: true,
+      });
+      // getType(type) → Promise<Blob>：missing → NotFoundError；read 项遇新 write（代际失配）→
+      // InvalidStateError（cached-getType-reject 上游案：缓存不绕过失效检查）。
+      ClipboardItem.prototype.getType = function (type) {
+        var self = this;
+        var t = String(type);
+        if (self._epoch >= 0 && self._epoch !== _epoch) {
+          return Promise.reject(new _RE("Failed to execute 'getType' on 'ClipboardItem': The item is stale.", 'InvalidStateError'));
+        }
+        if (self._values[t] === undefined) {
+          return Promise.reject(new _RE("Failed to execute 'getType' on 'ClipboardItem': The type was not found.", 'NotFoundError'));
+        }
+        return _resolveValue(self._values[t], t).then(function (blob) {
+          if (!(blob instanceof Blob)) {
+            throw new TypeError("Failed to execute 'getType' on 'ClipboardItem': The value is not a Blob.");
+          }
+          return blob;
+        });
       };
+
+      // globalThis.Clipboard 接口（幂等守卫）。promise-returning 操作：转换错误一律走
+      // rejected Promise（WebIDL promise-returning 不同步抛）。
+      var Clipboard = globalThis.Clipboard;
+      if (typeof Clipboard !== 'function') {
+        Clipboard = function Clipboard() {};
+        globalThis.Clipboard = Clipboard;
+      }
+      Clipboard.prototype.read = function () {
+        if (_current === null) return Promise.resolve([]);
+        var blobs = {};
+        for (var k in _current.blobs) blobs[k] = _current.blobs[k];
+        var item = new ClipboardItem(blobs);
+        item._epoch = _epoch;
+        return Promise.resolve([item]);
+      };
+      Clipboard.prototype.readText = function () {
+        if (_current === null || !_current.blobs['text/plain']) return Promise.resolve('');
+        return Promise.resolve(_zw_utf8_decode(_zw_blobBytes(_current.blobs['text/plain'])));
+      };
+      Clipboard.prototype.write = function (data) {
+        try {
+          if (data == null || typeof data !== 'object' || typeof data.length !== 'number') {
+            throw new TypeError("Failed to execute 'write' on 'Clipboard': The provided value cannot be converted to a sequence.");
+          }
+          for (var i = 0; i < data.length; i++) {
+            if (!(data[i] instanceof ClipboardItem)) {
+              throw new TypeError("Failed to execute 'write' on 'Clipboard': sequence element is not a ClipboardItem.");
+            }
+          }
+          if (data.length > 1) {
+            return Promise.reject(new _RE('write only supports a single ClipboardItem', 'NotAllowedError'));
+          }
+          if (data.length === 0) return Promise.resolve(undefined);
+          var input = data[0];
+          var types = Object.keys(input._values);
+          return Promise.all(
+            types.map(function (t) {
+              var raw = input._values[t];
+              // image/* 必须 Blob（DOMString 值上游案 "image/png DOMString fails" → TypeError）。
+              if (typeof raw === 'string' && t.indexOf('image/') === 0) {
+                throw new TypeError('ClipboardItem with type ' + t + ' requires a Blob value.');
+              }
+              return _resolveValue(raw, t).then(function (blob) {
+                if (!(blob instanceof Blob)) {
+                  throw new TypeError('ClipboardItem value is not a Blob or DOMString.');
+                }
+                return [t, blob];
+              });
+            })
+          ).then(function (pairs) {
+            var blobs = {};
+            var order = [];
+            for (var i = 0; i < pairs.length; i++) {
+              blobs[pairs[i][0]] = pairs[i][1];
+              order.push(pairs[i][0]);
+            }
+            _current = { blobs: blobs, types: order };
+            _epoch++;
+            return undefined;
+          });
+        } catch (e) {
+          return Promise.reject(e);
+        }
+      };
+      Clipboard.prototype.writeText = function (text) {
+        if (arguments.length < 1) {
+          return Promise.reject(new TypeError("Failed to execute 'writeText' on 'Clipboard': 1 argument required, but only 0 present."));
+        }
+        _current = { blobs: { 'text/plain': new Blob([String(text != null ? text : '')], { type: 'text/plain' }) }, types: ['text/plain'] };
+        _epoch++;
+        return Promise.resolve(undefined);
+      };
+      return new Clipboard();
     })(),
     // R3314：storage（Storage API + OPFS Origin Private File System）——Done Criteria §3 Tier 2 列项
     //（zero-web.md 行 80「IndexedDB + Cache API + OPFS」，OPFS 此前全缺）。estimate（配额查询，analytics 高频）+
