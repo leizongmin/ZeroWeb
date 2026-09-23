@@ -2880,6 +2880,26 @@
         _epoch++;
         return Promise.resolve(undefined);
       };
+      // WAB2-M2-s2：execCommand('copy'/'cut') defaultPrevented 桥（part06 调用）——
+      // spec copy 响应 "update the clipboard content"（handler 经 clipboardData.setData
+      // 提供的内容即剪贴板新内容）。内部钩子（__zw 前缀同 __zw_opfs 约定，非 web 面）。
+      // read-sanitize/read-resource-load 上游案：oncopy preventDefault + setData →
+      // navigator.clipboard.read() 取同内容。
+      if (typeof globalThis.__zwClipboardStoreWrite !== 'function') {
+        globalThis.__zwClipboardStoreWrite = function (typeToText) {
+          if (typeToText == null || typeof typeToText !== 'object') return;
+          var blobs = {};
+          var order = [];
+          for (var t in typeToText) {
+            if (!Object.prototype.hasOwnProperty.call(typeToText, t)) continue;
+            blobs[t] = new Blob([String(typeToText[t])], { type: t });
+            order.push(t);
+          }
+          if (order.length === 0) return;
+          _current = { blobs: blobs, types: order };
+          _epoch++;
+        };
+      }
       return new Clipboard();
     })(),
     // R3314：storage（Storage API + OPFS Origin Private File System）——Done Criteria §3 Tier 2 列项

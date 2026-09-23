@@ -11,6 +11,13 @@ use zero_webview::{WebView, WebViewConfig};
 
 const CASE_TIMEOUT: Duration = Duration::from_secs(10);
 
+/// web-api-batch2 两 corpus（clipboard-apis / fullscreen）单案时限。上游
+/// clipboard-apis basics 族单案串行 ~19 个 test_driver.click 激活周期（waitForUserActivation），
+/// runner 探针循环每周期 ~0.8s 摊销（每轮 media/observer/animation 泵 execute_script 群）
+/// → 10s 默认时限在 ~9 周期处伪超时（M2-s2 实测 b16 探针 9 绿 + 10s deadline 幂等复现）。
+/// 30s 覆盖 ~35 周期，非 Pass 判定语义不变。
+const CORPUS_CASE_TIMEOUT: Duration = Duration::from_secs(30);
+
 /// First supported upstream HTML interaction cases.
 pub const HTML_INTERACTION_CASES: &[&str] = &[
     "html/semantics/embedded-content/media-elements/networkState_initial.html",
@@ -2863,7 +2870,7 @@ fn run_corpus_subdirs(
             if case_skipped(&relative, &source) {
                 continue;
             }
-            let results = run_testharness_html(wpt_root, &relative, &source, &harness_source, CASE_TIMEOUT);
+            let results = run_testharness_html(wpt_root, &relative, &source, &harness_source, CORPUS_CASE_TIMEOUT);
             cases.push((relative, results));
         }
     }
@@ -4257,12 +4264,32 @@ fn wpt_pipe_status(query: &str) -> Option<u16> {
 }
 
 fn wpt_static_resource_headers(path: &str) -> Vec<(String, String)> {
+    // WAB2-M2-s2（web-api-batch2 goal，2026-09-23）：补图片/数据类静态资源 MIME——
+    // clipboard-apis write-blobs 族经 `fetch('resources/greenbox.png')` → blob.type 断言
+    // 'image/png'（Response.blob() 读 content-type 头 → Blob.type），缺映射时 blob.type=''
+    // → 3 案 4 subtest 红斑。表驱动照上游 wptserve mime.types 常用子集。
     let content_type = if path.ends_with(".html") {
         Some("text/html")
     } else if path.ends_with(".txt") {
         Some("text/plain")
     } else if path.ends_with(".js") {
         Some("application/javascript")
+    } else if path.ends_with(".css") {
+        Some("text/css")
+    } else if path.ends_with(".json") {
+        Some("application/json")
+    } else if path.ends_with(".png") {
+        Some("image/png")
+    } else if path.ends_with(".jpg") || path.ends_with(".jpeg") {
+        Some("image/jpeg")
+    } else if path.ends_with(".gif") {
+        Some("image/gif")
+    } else if path.ends_with(".webp") {
+        Some("image/webp")
+    } else if path.ends_with(".svg") {
+        Some("image/svg+xml")
+    } else if path.ends_with(".ico") {
+        Some("image/x-icon")
     } else {
         None
     };

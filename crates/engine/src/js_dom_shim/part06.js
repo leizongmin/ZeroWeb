@@ -2784,10 +2784,22 @@
       var cmd = String(commandId == null ? '' : commandId).toLowerCase();
       if (cmd === 'copy' || cmd === 'cut' || cmd === 'paste') {
         try {
-          var ev = new ClipboardEvent(cmd, { bubbles: true, cancelable: true });
+          // WAB2-M2-s2（web-api-batch2 goal，2026-09-23）：copy/cut 派发携带真 DataTransfer
+          // 作 clipboardData（spec copy 时浏览器提供承载当前剪贴板载荷的 DataTransfer；此前
+          // R2936 恒 null → handler 里 `ev.clipboardData.setData` TypeError）。defaultPrevented
+          // = handler 调 preventDefault + setData 定制载荷 → 按 spec "update the clipboard
+          // content" 桥接 navigator.clipboard 进程内 store（__zwClipboardStoreWrite，
+          // part02 WAB2-M2-s2 钩子）。paste / 未 preventDefault 不落 store（R2936 permissive
+          // 语义保持：headless 无真剪贴板写回路）。
+          var dt = (cmd !== 'paste' && typeof DataTransfer === 'function') ? new DataTransfer() : null;
+          var ev = new ClipboardEvent(cmd, { bubbles: true, cancelable: true, clipboardData: dt });
           var target = globalThis.document.activeElement || globalThis.document.body;
           if (target && typeof target.dispatchEvent === 'function') {
             target.dispatchEvent(ev);
+          }
+          if ((cmd === 'copy' || cmd === 'cut') && ev.defaultPrevented && dt !== null
+              && typeof globalThis.__zwClipboardStoreWrite === 'function') {
+            globalThis.__zwClipboardStoreWrite(dt._dt_data);
           }
         } catch (_e) {}
       } else if ((cmd === 'inserthtml' || cmd === 'inserttext')

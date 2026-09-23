@@ -1341,6 +1341,69 @@ fn test_clipboard_item_rich_mime_wab2m2() {
     );
 }
 
+/// WAB2-M2-s2（web-api-batch2 goal M2 切片 2，2026-09-23）：execCommand('copy')
+/// defaultPrevented → navigator.clipboard store 桥。镜像 WPT read-resource-load /
+/// read-sanitize 流：oncopy handler preventDefault + clipboardData.setData 定制载荷 →
+/// navigator.clipboard.read() 取同内容（spec copy "update the clipboard content"）。
+#[test]
+fn test_clipboard_execcommand_copy_bridge_wab2m2s2() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body><button id=\"b\"></button></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            "document.oncopy = function (ev) {\
+               ev.preventDefault();\
+               ev.clipboardData.setData('text/html', '<img src=invalid onerror=fail()>');\
+               ev.clipboardData.setData('text/plain', 'plain fallback');\
+             };\
+             document.execCommand('copy');\
+             globalThis.__r = 'pending';\
+             navigator.clipboard.read().then(function (items) {\
+               if (!items.length) { globalThis.__r = 'empty'; return null; }\
+               return items[0].getType('text/html');\
+             }).then(function (b) {\
+               if (!b) return;\
+               return b.text().then(function (t) {\
+                 globalThis.__r = t + '|' + b.type + '|' + (typeof globalThis.__failRegistry);\
+               });\
+             });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__r)").unwrap().value,
+        "<img src=invalid onerror=fail()>|text/html|undefined",
+        "WAB2-M2-s2 copy defaultPrevented 载荷经桥落 store（read/getType/text 往返）"
+    );
+    // 未 preventDefault：不落 store（R2936 permissive 语义保持——前一轮 copy 已清空判定）。
+    sandbox
+        .execute(
+            "document.oncopy = function (ev) { ev.clipboardData.setData('text/plain', 'should not land'); };\
+             navigator.clipboard.writeText('current');\
+             document.execCommand('copy');\
+             globalThis.__r2 = 'pending';\
+             navigator.clipboard.readText().then(function (t) { globalThis.__r2 = t; });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__r2)").unwrap().value,
+        "current",
+        "WAB2-M2-s2 未 preventDefault 不落 store"
+    );
+}
+
 #[test]
 fn test_fullscreen_api_r2938() {
     // R2938 Fullscreen API（spec-alike）：element.requestFullscreen() 返 Promise——grant 路径设 fullscreenElement +
