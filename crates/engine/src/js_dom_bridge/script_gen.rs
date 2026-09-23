@@ -586,6 +586,33 @@ pub fn script_run_classic_page(code: &str, script_index: usize) -> String {
                 }
                 return Some(format!("try{{globalThis.{name}={name};}}catch(_zw_ex){{}}"));
             }
+            // WAB2-M1（web-api-batch2 goal M1 基线，2026-09-23）：`async function NAME(` /
+            // `function* NAME` / `async function* NAME` 变体与 `function` 同款全局发布——
+            // strict eval 的 async/生成器函数声明同样困在独立变量环境。WPT clipboard-apis/
+            // resources/user-activation.js 顶层四个 helper 全 `async function` 形态 →
+            // web-api-batch2 M1 基线 clipboard 24 案 "ReferenceError: trySetPermission is
+            // not defined"（案未触 API 面先折在 helper 装配）。`async` 前缀剥离 + 可选
+            // `*`/空白容忍后与 function 分支共路；`functional(` 等伪前缀经「剥离后必须
+            // 出现过 `*` 或空白」守卫排除。
+            let function_decl = line.strip_prefix("async ").unwrap_or(line);
+            if let Some(rest) = function_decl.strip_prefix("function") {
+                let starred = rest.trim_start_matches('*');
+                let spaced = starred.strip_prefix(' ');
+                let had_star_or_space = starred.len() < rest.len() || spaced.is_some();
+                if !had_star_or_space {
+                    return None;
+                }
+                let rest = spaced.unwrap_or(starred);
+                let name: String = rest
+                    .chars()
+                    .take_while(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == '$')
+                    .collect();
+                let after = rest.get(name.len()..).unwrap_or_default();
+                if name.is_empty() || !after.trim_start().starts_with('(') {
+                    return None;
+                }
+                return Some(format!("try{{globalThis.{name}={name};}}catch(_zw_ex){{}}"));
+            }
             if var_stmt_open && is_strict {
                 // R201：多行 var 语句的**续行**（上行尾 `,`）——缩进裸声明符同属顶层
                 // 声明（dom/common.js 的 `var testDiv, paras,\n    foreignDoc, ...`

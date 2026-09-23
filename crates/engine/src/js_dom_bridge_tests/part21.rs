@@ -199,6 +199,53 @@ fn test_classic_script_strict_function_globals_r147() {
     assert_eq!(err, "", "R147 两段脚本均无抛错（sentinel 干净）");
 }
 
+/// WAB2-M1：strict classic 脚本顶层 `async function` / `function*` / `async function*`
+/// 声明与 R147 的 function 同款全局发布。strict 间接 eval 下三形态同样困在独立变量
+/// 环境——WPT clipboard-apis/resources/user-activation.js 顶层四个 helper 全
+/// `async function` 形态，web-api-batch2 M1 基线 clipboard 24 案
+/// "ReferenceError: trySetPermission is not defined"（案未触 API 面先折在 helper 装配）。
+#[test]
+fn test_classic_script_strict_async_generator_globals_wab2m1() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let _ = Arc::new(Mutex::new(()));
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    // 第一段：'use strict' + 四种行首声明形态（async function / async function* /
+    // function* / 缩进 async 不误发布——user-activation.js 全 async 形态 + IIFE 防御）。
+    let first = crate::js_dom_bridge::script_run_classic_page(
+        "'use strict';\nasync function topAsyncA() { return 1; }\nasync function* topAsyncGenB() { yield 2; }\nfunction* topGenC() { yield 3; }\n(function(){\n  async function innerAsync() {}\n  globalThis.__innerAsyncRef = typeof innerAsync;\n})();\n",
+        0,
+    );
+    // 第二段跨脚本消费探针。
+    let second = crate::js_dom_bridge::script_run_classic_page(
+        "globalThis.__probe = [typeof topAsyncA, typeof topAsyncGenB, typeof topGenC, globalThis.__innerAsyncRef].join(',');",
+        1,
+    );
+    sandbox.execute(&first).unwrap();
+    sandbox.execute(&second).unwrap();
+    let out = sandbox.execute("globalThis.__probe").unwrap().value;
+    assert_eq!(
+        out,
+        "function,function,function,function",
+        "WAB2-M1 strict classic 脚本顶层 async/generator 函数声明经全局发布跨脚本可见"
+    );
+    // 生成器可实际迭代（导出的是绑定本身，非值快照）。
+    sandbox
+        .execute("globalThis.__genVal = topGenC().next().value")
+        .unwrap();
+    let gen_val = sandbox.execute("globalThis.__genVal").unwrap().value;
+    assert_eq!(gen_val, "3", "WAB2-M1 导出生成器绑定可迭代");
+    let err = sandbox
+        .execute(&crate::js_dom_bridge::page_script_error_check())
+        .unwrap()
+        .value;
+    assert_eq!(err, "", "WAB2-M1 脚本无抛错（sentinel 干净）");
+}
+
 /// R198：strict classic 脚本顶层 `const` / `let` 声明与 R147 的 function 同款全局发布
 ///（WPT dom/nodes/support/NodeList-static-length-tampered.js 顶层
 /// `const indexOfNodeList = new Function(...)` 跨 `<script>` 不可见 → 后续脚本

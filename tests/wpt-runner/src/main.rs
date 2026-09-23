@@ -52,6 +52,10 @@ Commands:
                        (event-loop-spec goal M1 / DC-1)
   testharness-resize-observer  Run imported ResizeObserver testharness cases
                        (event-loop-spec goal M1 / DC-1)
+  testharness-clipboard-apis  Run imported Clipboard API testharness cases
+                       (web-api-batch2 goal M1 / DC-1)
+  testharness-fullscreen  Run imported Fullscreen testharness cases
+                       (web-api-batch2 goal M1 / DC-1)
   testharness-service-workers  Run pinned Service Worker M1 core testharness cases
   testharness-service-workers-fetch  Run pinned Service Worker M2 fetch testharness cases
   testharness-service-workers-cache-storage  Run pinned Service Worker CacheStorage testharness cases
@@ -254,6 +258,8 @@ fn main() {
         "testharness-web-components" => cmd_testharness_web_components(&options, filter.as_deref()),
         "testharness-intersection-observer" => cmd_testharness_intersection_observer(&options, filter.as_deref()),
         "testharness-resize-observer" => cmd_testharness_resize_observer(&options, filter.as_deref()),
+        "testharness-clipboard-apis" => cmd_testharness_clipboard_apis(&options, filter.as_deref()),
+        "testharness-fullscreen" => cmd_testharness_fullscreen(&options, filter.as_deref()),
         "testharness-service-workers" => cmd_testharness_service_workers(&options, filter.as_deref()),
         "testharness-service-workers-fetch" => cmd_testharness_service_workers_fetch(&options, filter.as_deref()),
         "testharness-service-workers-cache-storage" => {
@@ -982,6 +988,29 @@ fn cmd_testharness_intersection_observer(options: &CliOptions, filter: Option<&s
 fn cmd_testharness_resize_observer(options: &CliOptions, filter: Option<&str>) {
     run_observers_cmd(options, filter, |wpt_root, filter| {
         testharness::run_resize_observer_cases(wpt_root, filter)
+    });
+}
+
+/// `testharness-clipboard-apis` / `testharness-fullscreen` 子命令 — 跑导入的上游
+/// Clipboard API / Fullscreen testharness 用例（web-api-batch2 goal M1 / DC-1——两
+/// corpus window 可执行面基线）。
+///
+/// 用例由 `fetch-clipboard-apis-subset.sh` / `fetch-fullscreen-subset.sh` 按需拉到
+/// `wpt-data/`（gitignored），运行面按内容规则筛减（`clipboard_apis_case_skipped` /
+/// `fullscreen_case_skipped`：resources / manual / iframe 依赖 / rendering /
+/// permissions-policy / detached-iframe / DnD 挂账面）。退出码：有用例非 Pass 或
+/// 用例集为空 → 1（与 observers 命令一致）。基线首跑即便大量 Fail 也只用于记录
+/// 通过率（agent 经 `--format json` 捕获后写 evidence/），不作为 land 门禁。filter
+/// 按路径子串透传：make testharness-fullscreen FILTER=model。
+fn cmd_testharness_clipboard_apis(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness::run_clipboard_apis_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_fullscreen(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness::run_fullscreen_cases(wpt_root, filter)
     });
 }
 

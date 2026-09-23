@@ -2799,6 +2799,133 @@ fn run_observers_subdir(
     cases
 }
 
+/// Clipboard API goal（web-api-batch2 M1 / DC-1）pinned upstream subset directories.
+/// Cases are fetched by `fetch-clipboard-apis-subset.sh` into `wpt-data/`
+/// （gitignored）——top-level window 用例 + events/permissions/text-write-read 子目录。
+pub const CLIPBOARD_APIS_SUBDIRS: &[&str] = &[
+    "clipboard-apis",
+    "clipboard-apis/events",
+    "clipboard-apis/permissions",
+    "clipboard-apis/text-write-read",
+];
+
+/// Fullscreen goal（web-api-batch2 M1 / DC-1）pinned upstream subset directories.
+/// Cases are fetched by `fetch-fullscreen-subset.sh` into `wpt-data/`
+/// （gitignored）——api/ + model/ + crashtests/ 三目录（rendering/ 不拉取，
+/// `:fullscreen` 样式面跨域记账 rendering-compat 流域）。
+pub const FULLSCREEN_SUBDIRS: &[&str] = &["fullscreen/api", "fullscreen/model", "fullscreen/crashtests"];
+
+/// web-api-batch2 两 corpus 共用的多子目录扫描器（observers [`run_observers_subdir`]
+/// 同款形态：harness 内联 + 内容级 skip + CASE_TIMEOUT 单案执行）。
+fn run_corpus_subdirs(
+    wpt_root: &Path,
+    subdirs: &[&str],
+    filter: Option<&str>,
+    case_skipped: fn(&str, &str) -> bool,
+) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    let harness_source = match std::fs::read_to_string(wpt_root.join("resources/testharness.js")) {
+        Ok(source) => source,
+        Err(error) => {
+            return subdirs
+                .iter()
+                .map(|subdir| {
+                    (
+                        format!("{subdir}/"),
+                        vec![HarnessSubtestResult {
+                            name: "load testharness.js".into(),
+                            status: HarnessStatus::Fail,
+                            message: Some(error.to_string()),
+                        }],
+                    )
+                })
+                .collect();
+        }
+    };
+    // 拉取面均为 flat 布局（resources/ 等是子目录，skip 规则排除），无需递归。
+    let mut cases = Vec::new();
+    for subdir in subdirs {
+        let entries = match std::fs::read_dir(wpt_root.join(subdir)) {
+            Ok(entries) => entries,
+            Err(_) => continue,
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() || path.extension().is_none_or(|ext| ext != "html") {
+                continue;
+            }
+            let relative = format!("{subdir}/{}", entry.file_name().to_string_lossy());
+            if filter.is_some_and(|filter| !relative.contains(filter)) {
+                continue;
+            }
+            let Ok(source) = std::fs::read_to_string(&path) else {
+                continue;
+            };
+            if case_skipped(&relative, &source) {
+                continue;
+            }
+            let results = run_testharness_html(wpt_root, &relative, &source, &harness_source, CASE_TIMEOUT);
+            cases.push((relative, results));
+        }
+    }
+    cases
+}
+
+/// Run the pinned upstream Clipboard API window subset
+/// （web-api-batch2 goal M1 / DC-1）。filter 按路径子串过滤。
+pub fn run_clipboard_apis_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_corpus_subdirs(wpt_root, CLIPBOARD_APIS_SUBDIRS, filter, clipboard_apis_case_skipped)
+}
+
+/// Run the pinned upstream Fullscreen window subset
+/// （web-api-batch2 goal M1 / DC-1）。filter 按路径子串过滤。
+pub fn run_fullscreen_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_corpus_subdirs(wpt_root, FULLSCREEN_SUBDIRS, filter, fullscreen_case_skipped)
+}
+
+/// Clipboard API pinned subset 运行面筛减规则（fetch 脚本头注释同域，双保险）：
+/// - `*/resources/`（helper 资产，inline_local_scripts 消费）
+/// - `detached-iframe/`、`permissions-policy/`（fetch 侧不拉——iframe 面 /
+///   Permissions-Policy 头 infra；双保险防误放入扫描面）
+/// - `*-manual.html`（需真实用户手势/物理剪贴板交互）
+/// - `drag-multiple-urls.html`（DnD 挂账面，goal 排除）
+/// - source 含 `<iframe`——iframe 依赖面（按内容而非名字判定，observers 先例）
+fn clipboard_apis_case_skipped(relative: &str, source: &str) -> bool {
+    let name = relative.rsplit('/').next().unwrap_or(relative);
+    if name.ends_with("-manual.html") || name == "drag-multiple-urls.html" {
+        return true;
+    }
+    for skipped_dir in [
+        "clipboard-apis/resources",
+        "clipboard-apis/detached-iframe",
+        "clipboard-apis/permissions-policy",
+    ] {
+        if relative.starts_with(skipped_dir) {
+            return true;
+        }
+    }
+    source.contains("<iframe")
+}
+
+/// Fullscreen pinned subset 运行面筛减规则（fetch 脚本头注释同域，双保险）：
+/// - `fullscreen/rendering/`（`:fullscreen` 伪类/UA 样式面——rendering-compat 流域
+///   跨域记账，fetch 侧不拉取，双保险）
+/// - `fullscreen/api/resources/`（iframe 内嵌 helper 页，不按案跑）
+/// - `*-manual.html`（当前无此类案，规则同域防新增）
+/// - source 含 `<iframe`——fullscreen 的 nested/allowfullscreen/cross-origin 深依赖
+///   iframe 语义，runner 无 iframe 文档管道（跨域记账，重入条件 = iframe 管道）
+fn fullscreen_case_skipped(relative: &str, source: &str) -> bool {
+    let name = relative.rsplit('/').next().unwrap_or(relative);
+    if name.ends_with("-manual.html") {
+        return true;
+    }
+    for skipped_dir in ["fullscreen/rendering", "fullscreen/api/resources"] {
+        if relative.starts_with(skipped_dir) {
+            return true;
+        }
+    }
+    source.contains("<iframe")
+}
+
 /// Run the fixed Service Worker M1 core testharness corpus.
 pub fn run_service_worker_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
     run_service_worker_case_set(wpt_root, filter, SERVICE_WORKER_CORE_CASES)
