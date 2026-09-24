@@ -22,7 +22,7 @@ fn check_script_inline_nonce_sh1_m2s1() {
     assert!(ctx.has_document_csp());
     // 无 nonce 内联 → 阻止，effectiveDirective/blockedURI 如实。
     let v = ctx.check_script(None, None, None).expect("inline must be blocked");
-    assert_eq!(v.effective_directive, "script-src");
+    assert_eq!(v.effective_directive, "script-src-elem");
     assert_eq!(v.blocked_uri, "inline");
     assert_eq!(v.original_policy, "script-src 'nonce-abc'");
     // 匹配 nonce 内联 → 放行。
@@ -78,7 +78,7 @@ fn check_script_multiple_policies_union_sh1_m2s1() {
     let v = ctx
         .check_script(None, None, Some("https://evil.test/x.js"))
         .expect("first policy must block external");
-    assert_eq!(v.effective_directive, "script-src");
+    assert_eq!(v.effective_directive, "script-src-elem");
     assert_eq!(v.original_policy, "script-src 'unsafe-inline' 'self'");
     // 内联：政策 1 放行（unsafe-inline）、政策 2 阻止（default-src 'self' 无
     // unsafe-inline/nonce）→ 阻止，effectiveDirective 落 default-src。
@@ -183,7 +183,7 @@ fn check_style_style_src_sh1_m2s3() {
     ctx.set_document_csp(&["style-src 'nonce-ok'".to_string()]);
     // 无 nonce 内联 → 阻止，effectiveDirective 如实。
     let v = ctx.check_style(None, None, None).expect("inline must be blocked");
-    assert_eq!(v.effective_directive, "style-src");
+    assert_eq!(v.effective_directive, "style-src-elem");
     assert_eq!(v.blocked_uri, "inline");
     // nonce 匹配内联 → 放行；内容 hash 匹配亦放行。
     assert!(ctx.check_style(Some("ok"), None, None).is_none());

@@ -3305,10 +3305,34 @@ fn wpt_data_script_fetcher(wpt_root: &std::path::Path) -> Option<zero_webview::S
         let full = root.join(clean);
         std::fs::read_to_string(&full)
             .map(|source| {
-                source
+                let mut out = source
                     .replace("{{host}}", "wpt.test")
                     .replace("{{domains[www1]}}", "www1.wpt.test")
-                    .replace("{{ports[https][0]}}", "443")
+                    .replace("{{ports[https][0]}}", "443");
+                // security-hardening M2-s4：`{{GET[name]}}` 模板替换（WPT .sub.js 服务端
+                // 模板面——上游由 .py handler 按请求查询串注入；stylenonce/logTest/
+                // alertAssert 族依赖）。查询参数取自 script src 的 query（`?logs=[]`），
+                // 值做最小百分号解码（[ ]）；无匹配占位符 → 空串（上游缺参语义）。
+                let query = src.split('?').nth(1).unwrap_or("");
+                for pair in query.split('&') {
+                    if pair.is_empty() {
+                        continue;
+                    }
+                    let (key, value) = pair.split_once('=').unwrap_or((pair, ""));
+                    let decoded = value
+                        .replace("%5B", "[")
+                        .replace("%5D", "]")
+                        .replace("%20", " ")
+                        .replace("%22", "\"")
+                        .replace("%27", "'");
+                    out = out.replace(&format!("{{{{GET[{key}]}}}}"), &decoded);
+                }
+                // 残留 `{{GET[...]}}`（查询未提供）→ 空串。
+                while let Some(start) = out.find("{{GET[") {
+                    let Some(end) = out[start..].find("}}") else { break };
+                    out.replace_range(start..start + end + 2, "");
+                }
+                out
             })
             .map_err(|e| format!("script fetch failed: {clean} ({e})"))
     }))

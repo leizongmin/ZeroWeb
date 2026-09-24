@@ -48,7 +48,10 @@ document.addEventListener('securitypolicyviolation', function(e) {
         vio.contains(r#""b":"inline""#),
         "violation blockedURI 必须为 inline: {vio}"
     );
-    assert!(vio.contains(r#""d":"script-src""#), "effectiveDirective: {vio}");
+    assert!(
+        vio.contains(r#""d":"script-src-elem""#),
+        "元素面口径（script-blocked 族 corpus 断言）: {vio}"
+    );
     // M2-s2 源位置：被阻止内联脚本内容起点的 1-based 行列（第 14 行 `<script>` 8
     // 字符 → 内容起点 col 9；blockeduri-inline 15:9 同口径）。
     assert!(
@@ -190,9 +193,35 @@ document.addEventListener('securitypolicyviolation', function(e) {
     );
     let vio = wv.execute_script("JSON.stringify(globalThis.__vio)").unwrap();
     assert!(
-        vio.contains(r#""d":"style-src""#),
-        "effectiveDirective 如实（政策指令名）: {vio}"
+        vio.contains(r#""d":"style-src-elem""#),
+        "元素面口径（style-blocked 族 corpus 断言）: {vio}"
     );
     assert!(vio.contains(r#""b":"inline""#), "blockedURI=inline: {vio}");
     assert!(vio.contains(r#""t":"STYLE""#), "target 为被阻止 style 元素: {vio}");
+}
+
+#[test]
+fn csp_link_violation_dump_tmp() {
+    let mut wv = WebView::new(WebViewConfig {
+        csp_enforcement: true,
+        ..WebViewConfig::default()
+    });
+    wv.prepare_document_state("https://wpt.test/csp/case.html");
+    let html = r#"<html><head>
+<meta http-equiv="Content-Security-Policy" content="style-src 'none'">
+<script>
+globalThis.__ev = null;
+window.addEventListener('securitypolicyviolation', function(e) {
+  globalThis.__ev = {
+    ed: e.effectiveDirective, vd: e.violatedDirective, b: e.blockedURI,
+    t: e.target === document ? 'document' : (e.target && e.target.tagName)
+  };
+});
+</script>
+<link rel="stylesheet" href="resources/blue.css">
+</head><body></body></html>"#;
+    let _ = wv.fetch_page_images(html, "https://wpt.test/csp/case.html");
+    wv.load_html(html, None);
+    wv.run_page_scripts().expect("run page scripts");
+    println!("EVDUMP: {:?}", wv.execute_script("JSON.stringify(globalThis.__ev)"));
 }

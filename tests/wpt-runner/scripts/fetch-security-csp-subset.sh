@@ -69,6 +69,7 @@ git -C "${TMP}/wpt" sparse-checkout set --no-cone \
   "content-security-policy/child-src/**" \
   "content-security-policy/gen/top.meta/**" \
   "content-security-policy/resources/**" \
+  "content-security-policy/support/**" \
   "mixed-content/blob.https.sub.html" \
   "mixed-content/imageset.https.sub.html" \
   "mixed-content/resources/**" \

@@ -2,7 +2,7 @@
 
 **入口文档**: [../security-hardening.md](../security-hardening.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-25（R4：M2-s3 style 检查点 — inline `<style>` + 外链 stylesheet + hash 三算法/大小写不敏感匹配补全；全绿 37 持平零丢失 / subtests 21.4%）
+**最后更新**: 2026-09-25（R5：M2-s4 元素面指令口径 + GET 模板面 — 全绿 37→62 零丢失 / subtests 27.9%）
 
 ---
 
@@ -56,7 +56,7 @@
 |---|------|------|
 | P1 | zero-security CSP 现状盘点 | ✅ R1（见上「基线事实」） |
 | P2 | content-security-policy / mixed-content / secure-contexts 三 corpus 导入 + 基线 | ✅ R1（415+2+4 案执行；CSP subtests 16.3% 基线见 evidence/） |
-| P3 | CSP 主要指令引擎完整化 + report-only + 违规报告 | 🔄 M2-s1/s2/s3 ✅（骨架 + 源位置 + 元素站 target + img 检查点 + style 检查点 + hash 三算法匹配；余 = style 阻止族翻绿/attr 面/运行时 img/eval，见 evidence/2026-09-25-m2-s3-csp-extensions.md 缺口表） |
+| P3 | CSP 主要指令引擎完整化 + report-only + 违规报告 | 🔄 M2-s1→s4 ✅（骨架 + 源位置 + 元素站 target + img/style 检查点 + hash 三算法 + 元素面口径 + GET 模板面；全绿 62/415、subtests 27.9%；余 = 外链 css 应用链/attr 面/运行时 img/eval/connect 阻止族，见 evidence/2026-09-25-m2-s4-csp-extensions.md 缺口表） |
 | P4 | Mixed Content 分级阻止 + HSTS 接线 | ⏳ M3（mixed_content/checkpoint 接入子资源面；HSTS register 接 net 响应） |
 | P5 | Permissions API headless 语义层 + 事件 | ⏳ M4（navigator.permissions JS 面挂 PermissionManager） |
 | P6 | kill-switch + A/B + default-on 决策 | ⏳ M5 |
@@ -77,6 +77,12 @@
     subtests 91/557 = 16.3%；mixed-content 2 案、secure-contexts 4 案 0 绿）。口径
     注记：无强制下「allowed」案天然绿，M2 接线后 blocked/allowed 双向受检——
     blocked 案全红（Timeout × 134 大半）才是真实缺口面。
+- **R5（2026-09-25）M2-s4 元素面口径 + GET 模板面**（evidence/2026-09-25-m2-s4-csp-extensions.md）：
+  - 元素面指令口径（style-src/script-src 显式时上报 X-elem——Chromium 对齐，corpus
+    实参交换形断言元素面；无案断言裸指令名零回退）。
+  - **`{{GET[name]}}` 模板替换**（runner script fetcher）+ corpus 级 support/ 目录
+    补拉——logTest/alertAssert/checkReport 全族 support 脚本解锁，**+25 全绿主杠杆**。
+  - corpus：全绿 37→62（**+25 零丢失**）、subtests 118→159（21.4%→27.9%）。
 - **R4（2026-09-25）M2-s3 style 检查点**（evidence/2026-09-25-m2-s3-csp-extensions.md）：
   - inline `<style>` 检查点（`extract_style_elements_csp` 原文扫描 + 等长空白原地
     清空——元素保留 target 可达）+ 外链 stylesheet 检查点（skip fetch + link error）
@@ -109,12 +115,13 @@
 
 ## 下一步计划
 
-1. **M2-s4（style 阻止族翻绿 + attr 面）**：①style 阻止的 error 事件语义 +
-   violation 字段断言对齐（style-blocked/stylenonce-blocked/error-event 族）；②
-   script-src-attr（onclick 等内联事件处理器——targeting block2/4 面）；③style 属性
-   面（style-src-attr——style system 侧）。④@import 面视 CSSOM import 管道进度。
-2. **M2-s5**：运行时 img src-set 钩子 + eval 检查点 + report-only 政策面走 console
-   报告（与 cdp-protocol 消费侧协调）+ corpus 第二批目录扩批。
+1. **M2-s5（应用链 + attr 面）**：①外链 stylesheet allowed.css 应用链排查
+   （stylenonce-blocked 期望 green 实得黑——runner/pipeline 面，与 CSP 无关）；
+   ②script-src-attr（onclick 内联事件处理器——shim 处理器调用检查点）；
+   ③connect-src 阻止族（fetch 桥检查点——allowed 族已绿、blocked 族待接）。
+2. **M2-s6**：运行时 img src-set 钩子 + eval 检查点（is_eval_allowed 钩 sandbox 面）
+   + report-only 政策面走 console 报告（与 cdp-protocol 消费侧协调）+ corpus 第二批
+   目录扩批（inheritance/navigation/sandbox/unsafe-eval/wasm-unsafe-eval）。
 3. **M3**：Mixed Content 子资源接入 + HSTS net 响应注册（`register_hsts` 挂头解析）。
 4. **M4**：navigator.permissions JS 面（query/state/request headless 语义 + change
    事件），为 web-api-batch2 Clipboard 供数。
@@ -138,7 +145,7 @@
 | 里程碑 | 状态 |
 |--------|------|
 | M1 — 勘察 + WPT 导入与基线 | ✅ R1（2026-09-24，基线 16.3%） |
-| M2 — CSP 指令引擎完整化（接线） | 🔄 s1-s3 ✅（37/415 持平零丢失，subtests 21.4%；style 阻止族翻绿 + attr/运行时 img/eval 面 = s4/s5） |
+| M2 — CSP 指令引擎完整化（接线） | 🔄 s1-s4 ✅（62/415 全绿零丢失，subtests 27.9%；外链 css 应用链 + attr/运行时 img/eval/connect 阻止族 = s5/s6） |
 | M3 — Mixed Content + HSTS | ⏳ |
 | M4 — Permissions 语义层 | ⏳ |
 | M5 — 收口 | ⏳ |

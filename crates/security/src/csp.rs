@@ -907,15 +907,15 @@ impl ContentSecurityPolicy {
         self.directives.iter().any(|d| d.name == "upgrade-insecure-requests")
     }
 
-    /// 返回 style 元素检查实际生效的指令名（security-hardening M2-s3）。
+    /// 返回 style 元素检查实际生效的指令名（security-hardening M2-s3/s4）。
     ///
-    /// 与 [`Self::is_style_element_allowed`] 的回退顺序一致（style-src-elem →
-    /// style-src → default-src），供违规事件的 `effectiveDirective` 字段如实上报。
+    /// **元素面口径**（Chromium 对齐，style-blocked 族 corpus 断言
+    /// `violatedDirective === "style-src-elem"`）：显式 style-src-elem / style-src
+    /// 均上报 "style-src-elem"（元素/外链 stylesheet 加载面），仅 default-src 回退
+    /// 时上报 "default-src"。
     pub fn effective_style_directive(&self) -> &'static str {
-        if self.find_directive("style-src-elem").is_some() {
+        if self.find_directive("style-src-elem").is_some() || self.find_directive("style-src").is_some() {
             "style-src-elem"
-        } else if self.find_directive("style-src").is_some() {
-            "style-src"
         } else {
             "default-src"
         }
@@ -933,16 +933,15 @@ impl ContentSecurityPolicy {
         }
     }
 
-    /// 返回 script 元素检查实际生效的指令名（security-hardening M2-s1）。
+    /// 返回 script 元素检查实际生效的指令名（security-hardening M2-s1/s4）。
     ///
-    /// 与 [`Self::is_script_element_allowed`] 的回退顺序一致
-    ///（script-src-elem → script-src → default-src），供违规事件的
-    /// `effectiveDirective` 字段如实上报。
+    /// **元素面口径**（同 [`Self::effective_style_directive`]——script-blocked 族
+    /// corpus 断言 `violatedDirective === "script-src-elem"`）：显式 script-src-elem /
+    /// script-src 均上报 "script-src-elem"（元素/内联加载面），仅 default-src 回退
+    /// 时上报 "default-src"。
     pub fn effective_script_directive(&self) -> &'static str {
-        if self.find_directive("script-src-elem").is_some() {
+        if self.find_directive("script-src-elem").is_some() || self.find_directive("script-src").is_some() {
             "script-src-elem"
-        } else if self.find_directive("script-src").is_some() {
-            "script-src"
         } else {
             "default-src"
         }
