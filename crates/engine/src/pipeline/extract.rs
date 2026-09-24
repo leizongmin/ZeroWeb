@@ -666,9 +666,83 @@ fn strip_script_cdata(code: &str) -> &str {
     s
 }
 
+/// 提取文档级 CSP 政策源（security-hardening M2-s1）：`<meta
+/// http-equiv="content-security-policy" content="...">` 的 content 值，文档序。
+///
+/// spec CSP3 §meta-element（https://www.w3.org/TR/CSP3/#delivery-html-meta-element）：
+/// 仅 `<head>` 内的 meta 生效（body 内忽略）；http-equiv 匹配大小写不敏感；同一文档
+/// 多个 meta → 多政策并集（任一阻止即阻止）。`Content-Security-Policy-Report-Only`
+/// 由调用方单独区分（本函数只返回 enforce 面）。空 content 忽略（无政策语义）。
+pub fn extract_meta_csp_policies(html: &str) -> Vec<String> {
+    let doc = zero_dom::parse_html(html);
+    let head_ids: Vec<zero_dom::NodeId> = doc.get_elements_by_tag_name("head");
+    let mut policies = Vec::new();
+    for meta_id in doc.get_elements_by_tag_name("meta") {
+        let http_equiv = doc.get_attribute(meta_id, "http-equiv").unwrap_or_default();
+        if !http_equiv.trim().eq_ignore_ascii_case("content-security-policy") {
+            continue;
+        }
+        // head 祖先检查（spec：body 内 meta 不适用）。head_ids 非空且 meta 在其子树内。
+        let in_head = head_ids.iter().any(|head_id| {
+            let mut cur = Some(meta_id);
+            while let Some(id) = cur {
+                if *head_id == id {
+                    return true;
+                }
+                cur = doc.parent_node(id);
+            }
+            false
+        });
+        if !in_head {
+            continue;
+        }
+        if let Some(content) = doc.get_attribute(meta_id, "content") {
+            let content = content.trim();
+            if !content.is_empty() {
+                policies.push(content.to_string());
+            }
+        }
+    }
+    policies
+}
+
+/// 单个 `<script>` 元素的 CSP 检查点输入面（security-hardening M2-s1）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScriptElementCsp {
+    /// `nonce` 属性值（缺失/空 → None）。
+    pub nonce: Option<String>,
+    /// `data-zw-harness` 标记（runner 注入/内联的基础设施脚本——harness、testdriver
+    /// stub、inline_local_scripts 产物）。上游这些脚本为同源外链（天然过 'self'），
+    /// 本地无网络投递才内联——属投递形态差异而非页面内容，CSP 检查点豁免。
+    pub zw_harness: bool,
+}
+
+/// 提取每个 `<script>` 元素的 CSP 检查点输入（nonce + harness 标记）。
+///
+/// 返回向量按**全部** `<script>` 元素（含非 JS 类型——与
+/// [`extract_page_scripts_indexed`] 的 `this_idx` 序号口径一致）文档序对齐：第 n 项
+/// 即第 n 个 script 元素。宿主 CSP 检查点据此以 O(1) 取当前脚本元素的检查输入，
+/// 无需改 [`extract_page_scripts`] 返回形状。
+pub fn extract_script_csp_info(html: &str) -> Vec<ScriptElementCsp> {
+    let doc = zero_dom::parse_html(html);
+    doc.get_elements_by_tag_name("script")
+        .into_iter()
+        .map(|script_id| ScriptElementCsp {
+            nonce: doc
+                .get_attribute(script_id, "nonce")
+                .map(|n| n.trim().to_string())
+                .filter(|n| !n.is_empty()),
+            zw_harness: doc.get_attribute(script_id, "data-zw-harness").is_some(),
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{MediaResourceElementKind, PageScript, extract_media_resources, extract_page_scripts_indexed};
+    use super::{
+        MediaResourceElementKind, PageScript, extract_media_resources, extract_meta_csp_policies,
+        extract_page_scripts_indexed, extract_script_csp_info,
+    };
 
     #[test]
     fn media_resource_extraction_respects_owner_and_direct_src() {
@@ -710,5 +784,70 @@ mod tests {
         // （旧断言基于 parser 内联占位——template 内 script 误占 index 0。spec：
         // contents 非文档树后代，真实浏览器 gEBTN 亦不含，两者一致。）
         assert_eq!(scripts[0].1, 0, "template scripts are not in the document tree");
+    }
+
+    /// meta CSP 政策提取（security-hardening M2-s1）：head 内生效、body 内忽略、
+    /// http-equiv 大小写不敏感、多 meta 多政策、空 content 忽略。
+    #[test]
+    fn extract_meta_csp_policies_head_scoped_sh1_m2s1() {
+        let html = "<html><head>\
+            <meta http-equiv=\"Content-Security-Policy\" content=\"script-src 'self'\">\
+            <meta HTTP-EQUIV=\"content-security-policy\" content=\"img-src 'none'\">\
+            <meta http-equiv=\"x-other\" content=\"ignored\">\
+            <meta http-equiv=\"content-security-policy\" content=\"\">\
+            </head><body>\
+            <meta http-equiv=\"content-security-policy\" content=\"default-src 'none'\">\
+            </body></html>";
+        assert_eq!(
+            extract_meta_csp_policies(html),
+            vec!["script-src 'self'", "img-src 'none'"],
+            "head 内两个政策按文档序提取；body 内 / 非 CSP / 空 content 忽略"
+        );
+    }
+
+    /// script CSP 输入提取序号对齐（security-hardening M2-s1）：全量 script 元素口径
+    /// 与 extract_page_scripts_indexed 的 this_idx 一致（含非 JS type）；harness 标记
+    /// 按属性判定。
+    #[test]
+    fn extract_script_csp_info_aligns_with_script_ordinal_sh1_m2s1() {
+        let html = "<html><head>\
+            <script nonce=\"abc\" src=\"/resources/testharness.js\"></script>\
+            <script type=\"application/json\">{\"x\":1}</script>\
+            </head><body>\
+            <script data-zw-harness>alert(1)</script>\
+            <script src=\"x.js\"></script>\
+            </body></html>";
+        let infos = extract_script_csp_info(html);
+        assert_eq!(
+            infos,
+            vec![
+                super::ScriptElementCsp {
+                    nonce: Some("abc".to_string()),
+                    zw_harness: false
+                },
+                super::ScriptElementCsp {
+                    nonce: None,
+                    zw_harness: false
+                },
+                super::ScriptElementCsp {
+                    nonce: None,
+                    zw_harness: true
+                },
+                super::ScriptElementCsp {
+                    nonce: None,
+                    zw_harness: false
+                },
+            ],
+            "nonce + harness 标记按全量 script 文档序对齐（含非 JS type 占位）"
+        );
+        let scripts = extract_page_scripts_indexed(html);
+        // 页面脚本序列 3 条（JSON type 过滤，占位 1 号），this_idx 与 info 向量对位。
+        assert_eq!(scripts.len(), 3);
+        assert_eq!(scripts[0].1, 0);
+        assert_eq!(infos[scripts[0].1].nonce.as_deref(), Some("abc"));
+        assert_eq!(scripts[1].1, 2);
+        assert!(infos[scripts[1].1].zw_harness);
+        assert_eq!(scripts[2].1, 3);
+        assert!(!infos[scripts[2].1].zw_harness);
     }
 }

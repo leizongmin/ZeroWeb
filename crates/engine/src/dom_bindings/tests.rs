@@ -2385,3 +2385,39 @@ fn native_aria_role_idl_reflection_r36() {
         "aria setter null → content 属性 \"null\"（非 LegacyNullToEmptyString）"
     );
 }
+
+/// SecurityPolicyViolationEvent 构造器（security-hardening M2-s1，spec CSP3
+/// securitypolicyviolationevent-interface）：type 必需（TypeError）+ 全字段可选缺省 +
+/// instanceof Event。WPT content-security-policy/securitypolicyviolation/
+/// constructor-required-fields 验收面对齐。
+#[test]
+fn native_securitypolicyviolation_event_constructor_sh1_m2s1() {
+    let html = r#"<div id="a"></div>"#;
+    // type 必需：无参 → TypeError；undefined 同。
+    assert_eq!(
+        run_script(
+            html,
+            r#"(()=>{try{new SecurityPolicyViolationEvent();return 'no-throw'}catch(e){return 'TypeError:'+(''+e).slice(0,40)}})()"#
+        ),
+        "TypeError:TypeError: Failed to construct 'Security",
+        "无参构造 → TypeError"
+    );
+    // 全字段 init dict：构造成功 + instanceof Event + 字段原值。
+    assert_eq!(
+        run_script(
+            html,
+            r#"(()=>{const e=new SecurityPolicyViolationEvent('securitypolicyviolation',{documentURI:'http://x/',blockedURI:'inline',effectiveDirective:'script-src-elem',originalPolicy:"script-src 'nonce-a'",lineNumber:7,columnNumber:9,statusCode:200});return (e instanceof Event)+'/'+e.type+'/'+e.blockedURI+'/'+e.effectiveDirective+'/'+e.lineNumber;})()"#
+        ),
+        "true/securitypolicyviolation/inline/script-src-elem/7",
+        "全字段 init dict 构造 + instanceof Event"
+    );
+    // 缺省值：字符串 ""、disposition "enforce"、数值 0（spec 全成员可选）。
+    assert_eq!(
+        run_script(
+            html,
+            r#"(()=>{const e=new SecurityPolicyViolationEvent('securitypolicyviolation');return e.documentURI+'/'+e.violatedDirective+'/'+e.disposition+'/'+e.statusCode+'/'+e.lineNumber+'/'+e.columnNumber+'/'+e.sample;})()"#
+        ),
+        "//enforce/0/0/0/",
+        "全可选缺省：字符串 \"\" + disposition \"enforce\" + 数值 0"
+    );
+}

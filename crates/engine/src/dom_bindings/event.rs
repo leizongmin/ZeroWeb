@@ -74,6 +74,12 @@ pub(super) fn build_and_register(scope: &mut v8::PinScope, global: v8::Local<v8:
     let kb_tmpl = v8::FunctionTemplate::builder(native_keyboard_event_constructor_invoke).build(scope);
     kb_tmpl.inherit(event_tmpl);
     register_ctor(scope, global, "KeyboardEvent", kb_tmpl);
+    // SecurityPolicyViolationEvent extends Event（security-hardening M2-s1：CSP 违规
+    // 事件构造面——WPT content-security-policy/securitypolicyviolation/
+    // constructor-required-fields 验收）。
+    let spv_tmpl = v8::FunctionTemplate::builder(native_securitypolicyviolation_event_constructor_invoke).build(scope);
+    spv_tmpl.inherit(event_tmpl);
+    register_ctor(scope, global, "SecurityPolicyViolationEvent", spv_tmpl);
     // R3141 createEvent 工厂（legacy 事件创建：document.createEvent(type) → new Ctor() + initEvent）。
     let ce = v8::FunctionTemplate::builder(native_create_event_invoke).build(scope);
     if let (Some(f), Some(key)) = (
@@ -387,6 +393,80 @@ fn native_keyboard_event_constructor_invoke(
     // which（R25）：KeyboardEvent.which legacy 属性。缺省回退 keyCode（spec：which = keyCode 兼容）。
     let which = init_int(scope, &args, 1, "which", key_code);
     set_int(scope, this, "which", which);
+}
+
+/// `new SecurityPolicyViolationEvent(type, initDict?)` 构造器（spec CSP3
+/// `securitypolicyviolationevent-interface`，
+/// https://www.w3.org/TR/CSP3/#securitypolicyviolationevent-interface）：type 必需
+///（无参 / undefined → TypeError）；init dict 全字段可选——字符串成员缺省 ""，
+/// statusCode/lineNumber/columnNumber 缺省 0，disposition 缺省 "enforce"。
+/// WPT constructor-required-fields（content-security-policy/securitypolicyviolation/）
+/// 为验收面（全部成员「不必需」断言 + 缺省值断言）。
+fn native_securitypolicyviolation_event_constructor_invoke(
+    scope: &mut v8::PinScope,
+    args: v8::FunctionCallbackArguments,
+    _rv: v8::ReturnValue<v8::Value>,
+) {
+    // type 必需（spec init dict required member）：无参或 undefined → TypeError。
+    if args.length() < 1 || args.get(0).is_undefined() {
+        if let Some(m) = v8::String::new(
+            scope,
+            "Failed to construct 'SecurityPolicyViolationEvent': 1 argument required, but only 0 present.",
+        ) {
+            scope.throw_exception(v8::Exception::type_error(scope, m));
+        }
+        return;
+    }
+    let this = args.this();
+    let event_type = string_arg(scope, &args, 0);
+    let bubbles = init_bool(scope, &args, 1, "bubbles");
+    let cancelable = init_bool(scope, &args, 1, "cancelable");
+    set_event_init(scope, this, &event_type, bubbles, cancelable);
+    // 字符串成员（缺省 ""）。init_string 对 absent/undefined 走 to_string 落 "undefined"
+    // 字面——本接口缺省语义为 ""，故显式 undefined/null 判定回落缺省（同
+    // native_custom_event_constructor_invoke 的 detail 判定形态）。
+    for name in [
+        "documentURI",
+        "referrer",
+        "blockedURI",
+        "violatedDirective",
+        "effectiveDirective",
+        "originalPolicy",
+        "sourceFile",
+        "sample",
+    ] {
+        let val = match v8::Local::<v8::Object>::try_from(args.get(1)) {
+            Ok(opts) => v8::String::new(scope, name)
+                .and_then(|k| opts.get(scope, k.into()))
+                .filter(|v| !v.is_null() && !v.is_undefined())
+                .and_then(|v| v.to_string(scope).map(|s| s.to_rust_string_lossy(scope)))
+                .unwrap_or_default(),
+            Err(_) => String::new(),
+        };
+        if let (Some(k), Some(v)) = (v8::String::new(scope, name), v8::String::new(scope, &val)) {
+            let _ = this.set(scope, k.into(), v.into());
+        }
+    }
+    // disposition（缺省 "enforce"；同上 undefined 判定）。
+    let disposition = match v8::Local::<v8::Object>::try_from(args.get(1)) {
+        Ok(opts) => v8::String::new(scope, "disposition")
+            .and_then(|k| opts.get(scope, k.into()))
+            .filter(|v| !v.is_null() && !v.is_undefined())
+            .and_then(|v| v.to_string(scope).map(|s| s.to_rust_string_lossy(scope)))
+            .unwrap_or_else(|| "enforce".to_string()),
+        Err(_) => "enforce".to_string(),
+    };
+    if let (Some(k), Some(v)) = (
+        v8::String::new(scope, "disposition"),
+        v8::String::new(scope, &disposition),
+    ) {
+        let _ = this.set(scope, k.into(), v.into());
+    }
+    // 数值成员（缺省 0）。
+    for name in ["statusCode", "lineNumber", "columnNumber"] {
+        let val = init_int(scope, &args, 1, name, 0);
+        set_int(scope, this, name, val);
+    }
 }
 
 /// `event.preventDefault()` 原型方法（spec `dom-event-prevent-default`）：仅当 `cancelable` 时设

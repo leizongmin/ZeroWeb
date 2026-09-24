@@ -3,6 +3,7 @@
 //! 在资源加载前统一执行 HSTS 升级、混合内容阻止和 CSP 检查。
 //! WebView 和引擎通过 `SecurityContext` 做出安全的资源加载决策。
 
+use crate::csp::ContentSecurityPolicy;
 use crate::hsts::HstsStore;
 use crate::mixed_content::{MixedContentStatus, check_mixed_content, is_mixed_content, upgrade_to_https};
 use crate::origin::Origin;
@@ -41,6 +42,23 @@ pub struct SecurityContext {
     hsts_store: HstsStore,
     /// 当前页面源。
     page_origin: Option<Origin>,
+    /// 文档级 CSP 政策集（security-hardening M2-s1）——meta 装配面（响应头装配后续
+    /// 切片接入）。每个条目 = (解析政策, 原始政策串)；多政策并集：任一阻止即阻止
+    ///（spec CSP3 §multiple-policies）。
+    enforced_csp: Vec<(ContentSecurityPolicy, String)>,
+}
+
+/// CSP 违规描述（security-hardening M2-s1）：script 检查点阻止时的最小上报面，
+/// 供宿主构造 `SecurityPolicyViolationEvent`（effectiveDirective/blockedURI/
+/// originalPolicy 为 WPT securitypolicyviolation corpus 主断言字段）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CspViolation {
+    /// 实际生效的指令名（如 "script-src" / "default-src"）。
+    pub effective_directive: String,
+    /// 被阻止的资源 URL；内联脚本为 "inline"。
+    pub blocked_uri: String,
+    /// 被违反的原始政策串。
+    pub original_policy: String,
 }
 
 impl SecurityContext {
@@ -49,9 +67,69 @@ impl SecurityContext {
         let mut ctx = Self {
             hsts_store: HstsStore::new(),
             page_origin: None,
+            enforced_csp: Vec::new(),
         };
         ctx.load_preload_list();
         ctx
+    }
+
+    /// 装配文档级 CSP 政策集（security-hardening M2-s1）。
+    ///
+    /// 整组替换（导航/文档换代语义——meta 装配按文档重建）。`policy_strings` 为
+    /// 原始政策串（meta content 值），解析失败的串跳过（spec：无效政策仅忽略该条）。
+    pub fn set_document_csp(&mut self, policy_strings: &[String]) {
+        self.enforced_csp = policy_strings
+            .iter()
+            .map(|s| (ContentSecurityPolicy::parse(s), s.clone()))
+            .collect();
+    }
+
+    /// 清空文档级 CSP（导航到无政策文档时调用）。
+    pub fn clear_document_csp(&mut self) {
+        self.enforced_csp.clear();
+    }
+
+    /// 当前是否持有文档级 CSP 政策。
+    pub fn has_document_csp(&self) -> bool {
+        !self.enforced_csp.is_empty()
+    }
+
+    /// script 元素检查点（security-hardening M2-s1）。
+    ///
+    /// 多政策并集语义：任一政策阻止即返回该政策的 [`CspViolation`]；全部放行返回
+    /// `None`。无文档级 CSP → 放行。
+    ///
+    /// - `nonce`：script 元素 nonce 属性值（不含 'nonce-' 前缀）；nonce 有效即放行
+    ///   （spec：source list 中出现 nonce 源时，携带匹配 nonce 的元素不受 list 限制）。
+    /// - `inline_hash`：内联脚本内容的 hash 源值（[`script_hash_sha256_base64`] 产出，
+    ///   不含 'sha256-' 前缀）；外链脚本传 `None`。hash 匹配即放行（spec
+    ///   §source-list-hash-matching）。
+    /// - `resolved_url`：外链脚本解析后的绝对 URL；内联脚本传 `None`。
+    pub fn check_script(
+        &self,
+        nonce: Option<&str>,
+        inline_hash: Option<&str>,
+        resolved_url: Option<&str>,
+    ) -> Option<CspViolation> {
+        for (policy, original) in &self.enforced_csp {
+            let allowed = match resolved_url {
+                Some(url) => {
+                    // 外链：nonce 匹配不受源清单限制，否则走 script-src-elem URL 源匹配。
+                    nonce.is_some_and(|n| policy.is_inline_script_allowed(Some(n), None))
+                        || policy.is_script_element_allowed(url, self.page_origin.as_ref())
+                }
+                // 内联：nonce/hash/unsafe-inline 任一命中即放行（spec inline 判定）。
+                None => policy.is_inline_script_allowed(nonce, inline_hash),
+            };
+            if !allowed {
+                return Some(CspViolation {
+                    effective_directive: policy.effective_script_directive().to_string(),
+                    blocked_uri: resolved_url.unwrap_or("inline").to_string(),
+                    original_policy: original.clone(),
+                });
+            }
+        }
+        None
     }
 
     /// 设置当前页面源（用于混合内容检测和 CSP）。

@@ -10,6 +10,7 @@ url = { workspace = true }
 thiserror = { workspace = true }
 serde = { workspace = true }
 zero-psl = { workspace = true }
+sha2 = { workspace = true }
 
 [dev-dependencies]
 criterion = { workspace = true }

@@ -4435,6 +4435,10 @@ fn run_testharness_html_inner(
         // 二次方累积（非固定 per-op 成本，放宽超时无解）；同轮已在 shim 侧加跨树根守卫
         // 修复，90s 对修复后的单用例余量充足。
         script_timeout_ms: 90_000,
+        // security-hardening M2-s1：runner 侧开启 CSP 强制（生产 default off = kill-switch；
+        // runner 是 WPT 标尺的实验臂——meta CSP 装配 + script 检查点 + violation 事件经
+        // 此生效）。make test 全量门禁走生产默认（off），零 delta 由工作区测试守。
+        csp_enforcement: true,
         // R34xx：headless 图片源——wpt.test/images/* 映射到本地 wpt-data 目录
         //（testharness 无网络；G5 DOM img 源解锁依赖图片加载）。
         // js-dom goal：dom 用例同样需要本地 .js 内联 + 图片资源，两条路径统一走 wpt_root。
@@ -4916,6 +4920,29 @@ fn map_harness_results(results: Vec<RawHarnessResult>) -> Vec<HarnessSubtestResu
         .collect()
 }
 
+/// security-hardening M2-s1：从用例 meta CSP 政策串取首个 `'nonce-<v>'` 源，生成
+/// HTML nonce 属性串（供 runner 注入的 harness/testdriver/内联 extra 脚本戳记——
+/// CSP 强制下无 nonce 的注入脚本被 script 检查点阻止 → harness 自身死亡 → 用例全
+/// Timeout；harness 装配层适配，非 API 面）。无 meta CSP / 无 nonce 源 → 空串
+///（零戳记零影响）。属性值剥除 HTML 敏感字符（nonce 语义为 base64 串，防御性清洗）。
+fn harness_nonce_attr(case_source: &str) -> String {
+    let policies = zero_engine::extract_meta_csp_policies(case_source);
+    let Some(policy) = policies.first() else {
+        return String::new();
+    };
+    let marker = "'nonce-";
+    let Some(start) = policy.find(marker) else {
+        return String::new();
+    };
+    let rest = &policy[start + marker.len()..];
+    let end = rest.find('\'').unwrap_or(rest.len());
+    let nonce = rest[..end].replace(['"', '<', '>', '&', '\''], "");
+    if nonce.is_empty() {
+        return String::new();
+    }
+    format!(" nonce=\"{nonce}\"")
+}
+
 fn prepare_harness_html(
     source: &str,
     harness_source: &str,
@@ -4938,6 +4965,8 @@ add_completion_callback(function() {
   globalThis.__zw_harness_complete = true;
 });
 "#;
+    // security-hardening M2-s1：注入脚本 nonce 戳记（见 [`harness_nonce_attr`]）。
+    let csp_nonce_attr = harness_nonce_attr(source);
     let cache_abort_fixture = if case_path.contains("cache-abort") {
         CACHE_ABORT_FETCH_FIXTURE
     } else {
@@ -4990,7 +5019,9 @@ add_completion_callback(function() {
           if (fn) { delete globalThis.__zw_pending[fired[d].id]; try { fn(); } catch (_e) {} }\n\
         }\n\
       };\n";
-    let harness = format!("<script>\n{timer_stub}{harness_source}\n{reporter}\n{cache_abort_fixture}\n</script>");
+    let harness = format!(
+        "<script{csp_nonce_attr} data-zw-harness>\n{timer_stub}{harness_source}\n{reporter}\n{cache_abort_fixture}\n</script>"
+    );
     // R130（js-dom M4）：crash 类用例（*-crash.html）不引 testharness.js——纯脚本页
     // 断言「不崩溃」。上游跑法是浏览器不崩即 PASS；本 runner 的 completion 探针依赖
     // harness 全局（test/completion callback），无 harness 时永远 Timeout 伪失败。
@@ -5004,12 +5035,20 @@ add_completion_callback(function() {
         inject_harness_script_before_page_scripts(source, &harness)
     };
     html = replace_script_source(&html, "/resources/testharnessreport.js", "");
-    html = replace_script_source(&html, "/resources/testdriver.js", TESTDRIVER_STUB);
+    html = replace_script_source(
+        &html,
+        "/resources/testdriver.js",
+        &TESTDRIVER_STUB.replacen("<script>", &format!("<script{csp_nonce_attr} data-zw-harness>"), 1),
+    );
     html = replace_script_source(&html, "/resources/testdriver-vendor.js", "");
     html = replace_script_source(&html, "/resources/testdriver-actions.js", "");
     // canvas-tests.js 等用例框架脚本：与 testharness.js 同款内联（外部脚本提取器不加载 src）。
     for (script_src, inline_source) in inline_extras {
-        html = replace_script_source(&html, script_src, &format!("<script>{inline_source}</script>"));
+        html = replace_script_source(
+            &html,
+            script_src,
+            &format!("<script{csp_nonce_attr} data-zw-harness>{inline_source}</script>"),
+        );
     }
     // js-dom goal：用例引用的本地 .js 测试体（如 <script src="attributes.js">、
     // <script src="Document-createProcessingInstruction.js">）——extract_page_scripts 不加载外部 src，
@@ -5188,7 +5227,7 @@ fn inline_local_scripts(html: &str, wpt_root: &Path, case_path: &str) -> String 
         match resolved {
             Some((combined, content)) => {
                 output.push_str(&remaining[..start]);
-                output.push_str("<script data-inline=\"");
+                output.push_str("<script data-zw-harness data-inline=\"");
                 output.push_str(&combined);
                 output.push_str("\">");
                 output.push_str(&content);

@@ -459,6 +459,38 @@ pub fn script_dispatch_script_event(abs_src: &str, ty: &str) -> String {
     format!("__zw_dispatch_script_event('{esc_url}', '{esc_ty}')")
 }
 
+/// 构造「派发 `securitypolicyviolation` 事件」的 shim 脚本（security-hardening M2-s1，
+/// spec CSP3 §report-the-violation——被 CSP 阻止的脚本在其执行点派发违规事件）。
+///
+/// 调 shim 全局 `__zw_dispatch_securitypolicyviolation`（part06.js：`_makeEvent` 事件 +
+/// 字段自有属性 + document 站 `_dispatchWithBubble`，AT_TARGET tgt='doc' + bubble 上行
+/// window——document/window watcher 双达；native 构造实例过不了 shim 站内检查，实测
+/// R2-s1 探针，故事件形态走 shim 侧）。lineNumber/columnNumber 本切片未定位
+///（FIXME M2-s2：extract 侧携带源位置），置 0。字段经 [`escape_js_string`] 安全嵌入。
+pub fn script_dispatch_securitypolicyviolation(
+    script_ordinal: usize,
+    document_uri: &str,
+    effective_directive: &str,
+    original_policy: &str,
+    blocked_uri: &str,
+) -> String {
+    let _ = script_ordinal; // M2-s2：元素站定位（targeting corpus 语义）启用
+    let esc_doc_uri = escape_js_string(document_uri);
+    let esc_directive = escape_js_string(effective_directive);
+    let esc_policy = escape_js_string(original_policy);
+    let esc_blocked = escape_js_string(blocked_uri);
+    format!(
+        "(function(){{try{{\
+if(typeof __zw_dispatch_securitypolicyviolation!=='function')return;\
+__zw_dispatch_securitypolicyviolation({{\
+documentURI:'{esc_doc_uri}',\
+effectiveDirective:'{esc_directive}',\
+originalPolicy:'{esc_policy}',\
+blockedURI:'{esc_blocked}'}});\
+}}catch(_eSpv){{}}}})()"
+    )
+}
+
 /// 顶层 try-catch 包装捕获的页面脚本错误所写入的 sentinel 全局名。包装器在成功时将其留为
 /// `undefined`，抛错时设为错误消息字符串。调用方经 [`page_script_error_check`] 读取。
 pub const PAGE_SCRIPT_ERROR_GLOBAL: &str = "__zw_pgerr__";

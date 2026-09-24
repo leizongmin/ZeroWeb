@@ -9,9 +9,10 @@ use std::sync::mpsc;
 use zero_engine::{
     BudgetAdvance, BudgetedRenderSession, DomMutation, MediaType, PipelineTimings, PrefersColorSchemeValue,
     RenderPipeline, RenderResult, extract_css_image_urls, extract_html_style_text, extract_img_srcs,
-    extract_page_scripts_indexed, extract_stylesheet_hrefs, generate_js_dom_shim, image_resource_key,
-    page_script_error_check, register_dom_callbacks, resolve_document_url, script_clear_current_script,
-    script_dispatch_dom_event, script_run_classic_page, script_set_current_script,
+    extract_meta_csp_policies, extract_page_scripts_indexed, extract_script_csp_info, extract_stylesheet_hrefs,
+    generate_js_dom_shim, image_resource_key, page_script_error_check, register_dom_callbacks, resolve_document_url,
+    script_clear_current_script, script_dispatch_dom_event, script_dispatch_securitypolicyviolation,
+    script_run_classic_page, script_set_current_script,
 };
 // R3150（闭合 R3121 latent）：script_dispatch_native_event 唯一用法（dispatch_event native_dom 分支）
 // 受 `#[cfg(feature = "v8")]` 门控——quickjs feature 下 unused import。独立 gated import 消 latent warning。
@@ -213,6 +214,13 @@ pub struct WebViewConfig {
     /// 的 `indexOf` while 自旋）不再卡死整个 runner/测试套件，而是返回
     /// `ScriptError::Timeout`。仅测试/headless 宿主应设置（真实浏览器语义不截断）。
     pub script_timeout_ms: u64,
+    /// 文档级 CSP 强制开关（security-hardening M2-s1，default **off** = kill-switch）。
+    ///
+    /// 开启后：load 文档装配 `<meta http-equiv="content-security-policy">` 政策集，
+    /// 页面脚本执行前经 `SecurityContext::check_script` 检查（inline nonce / 外链
+    /// URL 源匹配），被阻止的脚本跳过执行并派发 `SecurityPolicyViolationEvent`。
+    /// 默认关闭 → 生产加载行为零变更（M5 A/B 零回归后再定 default-on）。
+    pub csp_enforcement: bool,
 }
 
 impl Default for WebViewConfig {
@@ -226,6 +234,8 @@ impl Default for WebViewConfig {
             devtools: false,
             http_timeout_secs: None,
             script_timeout_ms: 0,
+            // security-hardening M2-s1：CSP 强制 default off（kill-switch，生产零变更）。
+            csp_enforcement: false,
             external_script: None,
             script_source_fetcher: None,
             service_worker_script_fetcher: None,
@@ -2419,6 +2429,19 @@ impl WebView {
             return Ok(self.cached_html.clone());
         }
         let html = self.cached_html.clone();
+        // security-hardening M2-s1：文档 CSP 装配（kill-switch `csp_enforcement`，
+        // default off → 生产零变更）。装配按文档执行序派生（cached_html 纯函数），
+        // 与下方逐脚本 nonce 取值同源同序（extract 家族同一枚举口径）。
+        // FIXME(M2-s2): meta 政策的 spec「插入点」语义（meta 前的脚本不受约束）在
+        // 「全解析后统一执行脚本」的管线形态下不可分——全文档生效近似。
+        let script_csp_info = if self.config.csp_enforcement {
+            let policies = extract_meta_csp_policies(&html);
+            self.security_context.set_document_csp(&policies);
+            extract_script_csp_info(&html)
+        } else {
+            Vec::new()
+        };
+        let csp_active = self.config.csp_enforcement && self.security_context.has_document_csp();
         let scripts = extract_page_scripts_indexed(&html);
         if scripts.is_empty() {
             self.page_scripts_initialized = true;
@@ -2861,7 +2884,55 @@ impl WebView {
         self.ensure_js_shim()?;
         for (script, script_index) in scripts {
             self.drain_async_navigation_callbacks_until_idle(std::time::Duration::from_millis(50));
+            // security-hardening M2-s1：CSP script 检查点（decision 先于 sandbox 借用
+            // 计算，避免双重 self 借用）。被阻止的脚本跳过执行，并在其 script 元素上
+            // 派发 securitypolicyviolation（元素缺失回落 document）。
+            // security-hardening M2-s1：CSP script 检查点（decision 先于 sandbox 借用
+            // 计算，避免双重 self 借用）。被阻止的脚本跳过执行，并在其 script 元素上
+            // 派发 securitypolicyviolation。runner 基础设施脚本（data-zw-harness——
+            // 投递形态差异，非页面内容）豁免检查、照常执行。
+            let csp_violation = if csp_active && !script_csp_info.get(script_index).is_some_and(|i| i.zw_harness) {
+                let info = script_csp_info.get(script_index);
+                let nonce = info.and_then(|i| i.nonce.as_deref());
+                let external_src = match &script {
+                    zero_engine::pipeline::PageScript::External(src)
+                    | zero_engine::pipeline::PageScript::ExternalModule(src) => Some(src.as_str()),
+                    _ => None,
+                };
+                match external_src {
+                    Some(src) => {
+                        let base = self.current_url.as_deref().unwrap_or("about:blank");
+                        let abs = resolve_document_url(base, src);
+                        self.security_context.check_script(nonce, None, Some(&abs))
+                    }
+                    None => {
+                        // 内联 hash（spec §source-list-hash-matching：对 trim 后内容计算，
+                        // 与 extract 侧的 trim 口径一致）。
+                        let code = match &script {
+                            zero_engine::pipeline::PageScript::Inline(c)
+                            | zero_engine::pipeline::PageScript::InlineModule(c) => Some(c.trim()),
+                            _ => None,
+                        };
+                        let hash = code.map(zero_security::csp::script_hash_sha256_base64);
+                        self.security_context.check_script(nonce, hash.as_deref(), None)
+                    }
+                }
+            } else {
+                None
+            };
             let sandbox = self.js_sandbox.as_mut().expect("js sandbox");
+            if let Some(violation) = csp_violation {
+                let document_uri = self.current_url.clone().unwrap_or_else(|| "about:blank".to_string());
+                let snippet = script_dispatch_securitypolicyviolation(
+                    script_index,
+                    &document_uri,
+                    &violation.effective_directive,
+                    &violation.original_policy,
+                    &violation.blocked_uri,
+                );
+                let _ = sandbox.execute(&snippet);
+                continue;
+            }
             let (code, is_module) = match script {
                 zero_engine::pipeline::PageScript::Inline(c) => (c, false),
                 // R3083：`<script type="module">` 经 compile_module_script 转 import/export 为经典可执行

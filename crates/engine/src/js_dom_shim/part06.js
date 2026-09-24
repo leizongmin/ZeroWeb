@@ -11549,6 +11549,34 @@
     try { ev._zwUaDispatch = false; } catch (_e312ua) {}
     return ok ? 'ok' : 'prevented';
   };
+  // security-hardening M2-s1（spec CSP3 §report-the-violation）：宿主 CSP 检查点派发
+  // securitypolicyviolation——shim `_makeEvent` 事件 + 违规字段以自有属性附于事件
+  //（assert_equals 直接属性读取面；native SecurityPolicyViolationEvent 构造实例过不了
+  // shim 站内检查——实测 R2-s1 探针，doc/window 站均 miss，故走 shim 事件形态）。
+  // 派发走 document 站（R3082 同款：AT_TARGET tgt='doc' 槽位 + bubble 上行 window），
+  // document/window watcher 双达。lineNumber/columnNumber/位置定位 M2-s2（extract 侧
+  // 携带源位置）。`f` = {documentURI, effectiveDirective, originalPolicy, blockedURI}。
+  globalThis.__zw_dispatch_securitypolicyviolation = function (f) {
+    try {
+      var ev = _makeEvent('securitypolicyviolation', { bubbles: true, cancelable: false });
+      f = f || {};
+      ev.documentURI = f.documentURI || '';
+      ev.referrer = f.referrer || '';
+      ev.effectiveDirective = f.effectiveDirective || '';
+      ev.violatedDirective = f.violatedDirective || f.effectiveDirective || '';
+      ev.originalPolicy = f.originalPolicy || '';
+      ev.blockedURI = f.blockedURI || '';
+      ev.sourceFile = f.sourceFile || f.documentURI || '';
+      ev.sample = '';
+      ev.disposition = 'enforce';
+      ev.statusCode = 0;
+      ev.lineNumber = 0;
+      ev.columnNumber = 0;
+      return _dispatchWithBubble(_elKey('html', null), 'html', null, ev, 'doc') ? 'ok' : 'prevented';
+    } catch (_eSpv) {
+      return 'error';
+    }
+  };
   // M3 扩批（2026-09-02，fixture-mounted 播放切片）：time-marches-on 钩子——宿主播放泵
   // 每 tick 调用，按**真值媒体时钟**推进全部 TextTrack 的 cue 调度（spec
   // https://html.spec.whatwg.org/multipage/media.html#time-marches-on）：

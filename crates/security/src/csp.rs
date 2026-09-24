@@ -8,6 +8,39 @@ use crate::origin::Origin;
 /// 参数：(url, directive, blocked_uri)
 type CspReportCallback = dyn Fn(&str, &str, &str);
 
+/// 计算内联脚本/样式内容的 CSP hash 源值（security-hardening M2-s1）。
+///
+/// sha256 → 标准 base64（RFC 4648 §4 含 padding），**不含** `'sha256-'` 前缀——与
+/// [`ContentSecurityPolicy::is_inline_script_allowed`] 的 `hash` 参数口径一致（该处
+/// 自行拼 `'sha256-<v>'` 比对）。spec CSP3 §source-list-hash-matching：hash 对脚本
+/// 内容的 UTF-8 编码字节计算（不含标签本身、不含首尾空白——调用方传已 trim 的内容）。
+pub fn script_hash_sha256_base64(content: &str) -> String {
+    use sha2::{Digest, Sha256};
+    let digest = Sha256::digest(content.as_bytes());
+    // 标准 base64 编码（sha2 侧无 base64 依赖，本 crate 内联 RFC 4648 §4 编码器）。
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(digest.len().div_ceil(3) * 4);
+    for chunk in digest.chunks(3) {
+        let b0 = chunk[0] as u32;
+        let b1 = *chunk.get(1).unwrap_or(&0) as u32;
+        let b2 = *chunk.get(2).unwrap_or(&0) as u32;
+        let n = (b0 << 16) | (b1 << 8) | b2;
+        out.push(ALPHABET[(n >> 18) as usize & 63] as char);
+        out.push(ALPHABET[(n >> 12) as usize & 63] as char);
+        out.push(if chunk.len() > 1 {
+            ALPHABET[(n >> 6) as usize & 63] as char
+        } else {
+            '='
+        });
+        out.push(if chunk.len() > 2 {
+            ALPHABET[n as usize & 63] as char
+        } else {
+            '='
+        });
+    }
+    out
+}
+
 /// CSP 指令。
 #[derive(Debug, Clone)]
 pub struct CspDirective {
@@ -839,6 +872,21 @@ impl ContentSecurityPolicy {
     /// 启用时，浏览器自动将 HTTP 请求升级为 HTTPS。
     pub fn has_upgrade_insecure_requests(&self) -> bool {
         self.directives.iter().any(|d| d.name == "upgrade-insecure-requests")
+    }
+
+    /// 返回 script 元素检查实际生效的指令名（security-hardening M2-s1）。
+    ///
+    /// 与 [`Self::is_script_element_allowed`] 的回退顺序一致
+    ///（script-src-elem → script-src → default-src），供违规事件的
+    /// `effectiveDirective` 字段如实上报。
+    pub fn effective_script_directive(&self) -> &'static str {
+        if self.find_directive("script-src-elem").is_some() {
+            "script-src-elem"
+        } else if self.find_directive("script-src").is_some() {
+            "script-src"
+        } else {
+            "default-src"
+        }
     }
 
     /// 获取 report-uri 指令值（CSP 违规报告地址）。

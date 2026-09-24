@@ -53,6 +53,9 @@ pub fn is_cross_origin_isolated(coop: CoopPolicy, coep: CoepPolicy) -> bool {
 }
 
 #[cfg(test)]
+mod context_csp_tests;
+
+#[cfg(test)]
 mod csp_tests;
 
 #[cfg(test)]

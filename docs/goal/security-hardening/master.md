@@ -2,7 +2,7 @@
 
 **入口文档**: [../security-hardening.md](../security-hardening.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-24（R1：M1 勘察修正基线事实 + 三 corpus 导入 + 首跑基线）
+**最后更新**: 2026-09-24（R2：M2-s1 CSP 接线骨架 — 全绿 30→33 零丢失 / subtests 16.3%→19.6%）
 
 ---
 
@@ -56,7 +56,7 @@
 |---|------|------|
 | P1 | zero-security CSP 现状盘点 | ✅ R1（见上「基线事实」） |
 | P2 | content-security-policy / mixed-content / secure-contexts 三 corpus 导入 + 基线 | ✅ R1（415+2+4 案执行；CSP subtests 16.3% 基线见 evidence/） |
-| P3 | CSP 主要指令引擎完整化 + report-only + 违规报告 | ⏳ M2（= 接线：meta/头解析进引擎 + 子资源检查点 + violation 事件派发；kill-switch + A/B） |
+| P3 | CSP 主要指令引擎完整化 + report-only + 违规报告 | 🔄 M2-s1 ✅（接线骨架：meta 装配 + script 检查点 + violation 事件 + SPV 构造器；M2-s2+ = 源位置/img/style/eval 检查点，见 evidence/2026-09-24-m2-s1-csp-wiring.md 缺口表） |
 | P4 | Mixed Content 分级阻止 + HSTS 接线 | ⏳ M3（mixed_content/checkpoint 接入子资源面；HSTS register 接 net 响应） |
 | P5 | Permissions API headless 语义层 + 事件 | ⏳ M4（navigator.permissions JS 面挂 PermissionManager） |
 | P6 | kill-switch + A/B + default-on 决策 | ⏳ M5 |
@@ -77,21 +77,41 @@
     subtests 91/557 = 16.3%；mixed-content 2 案、secure-contexts 4 案 0 绿）。口径
     注记：无强制下「allowed」案天然绿，M2 接线后 blocked/allowed 双向受检——
     blocked 案全红（Timeout × 134 大半）才是真实缺口面。
+- **R2（2026-09-24）M2-s1 接线骨架**（evidence/2026-09-24-m2-s1-csp-wiring.md）：
+  - SecurityPolicyViolationEvent 构造器（engine dom_bindings；constructor-required-
+    fields 14/14 全绿）；meta CSP 装配 + script 检查点（kill-switch
+    `WebViewConfig::csp_enforcement` default off）+ violation 事件 document 站派发
+    （shim `__zw_dispatch_securitypolicyviolation`）。
+  - zero-security：SecurityContext 文档级 CSP 装配 + `check_script`（nonce/hash/URL
+    三路）+ `script_hash_sha256_base64`（sha2 workspace 依赖接入本 crate）。
+  - runner：实验臂开关 + 注入脚本 nonce 戳记 + `data-zw-harness` 豁免。
+  - corpus：全绿 30→33（**+3 零丢失**）、subtests 91→109（16.3%→19.6%）；中途
+    「−4 假回退」两轮探针闭环归因（hash 缺位 + harness 被拦）修复后归零。
 
 ## 下一步计划
 
-1. **M2（接线主战场）**：CSP 消费侧接入——①导航/文档 CSP 源装配（响应头 +
-   `<meta http-equiv>`）+ kill-switch（`ZW_CSP_ENFORCE` 类 env，default-off）；
-   ②子资源检查点（engine/webview 资源加载决策处调 `check_subresource_url`）；
-   ③`SecurityPolicyViolationEvent` 派发（blockedURI/sourceFile/lineNumber/column-
-   Number/_effectiveDirective 语义对 securitypolicyviolation corpus）；
-   ④report-only 面走 console 报告（与 cdp-protocol 消费侧协调）。
-2. **M2 扩批**：CSP corpus 第二批目录（inheritance/navigation/sandbox/unsafe-eval/
-   wasm-unsafe-eval/inside-worker 视 worker 面进度）。
+1. **M2-s2（检查点扩面）**：①img/style 检查点（extract 侧 src 面已齐——img 走
+   fetch_page_images/fetch_image_subresources + __zw_get_image_wire 运行时路径，
+   style 走外链 stylesheet + inline style 面）；②violation 源位置定位（extract 侧
+   携带 line/col，blockeduri-inline `expected 15 but got 0`）；③元素站 target
+   （targeting.html——shim script 元素 listener-store key 定位）。
+2. **M2-s3**：eval 检查点（is_eval_allowed 钩 sandbox eval 面）+ report-only 政策
+   面走 console 报告（与 cdp-protocol 消费侧协调）+ CSP corpus 第二批目录扩批
+   （inheritance/navigation/sandbox/unsafe-eval/wasm-unsafe-eval 视面进度）。
 3. **M3**：Mixed Content 子资源接入 + HSTS net 响应注册（`register_hsts` 挂头解析）。
 4. **M4**：navigator.permissions JS 面（query/state/request headless 语义 + change
    事件），为 web-api-batch2 Clipboard 供数。
-5. **M5**：A/B 零回归 + default-on 决策 + DC 逐项判定。
+5. **M5**：A/B 零回归 + default-on 决策（env 开关暴露 + 全量 A/B）+ DC 逐项判定。
+
+**R2 实操记录（探针闭环，防复踩）**：
+- document 级事件派发路径：shim doc 槽位独立于 EventTarget 链；native
+  `__zw_native_get_document()` 返原始 id（无 dispatchEvent）；window 站经
+  `__zw_dispatch_event('html',…)` 可达。violation 派发最终走专用 shim 全局
+  `__zw_dispatch_securitypolicyviolation`（document 站 `_dispatchWithBubble`）。
+- shim `init_string` 型 helper 对 absent/undefined 成员走 to_string 落 "undefined"
+  字面——全字段可选缺省语义须显式 undefined 判定（SPV 构造器已按此写）。
+- runner 注入/内联脚本在 no-nonce CSP 下会杀 harness——`data-zw-harness` 标记 +
+  webview 检查点豁免（投递形态差异非页面内容）。
 
 **待用户决策清单**：
 - （暂无）
@@ -101,7 +121,7 @@
 | 里程碑 | 状态 |
 |--------|------|
 | M1 — 勘察 + WPT 导入与基线 | ✅ R1（2026-09-24，基线 16.3%） |
-| M2 — CSP 指令引擎完整化（接线） | ⏳ |
+| M2 — CSP 指令引擎完整化（接线） | 🔄 s1 ✅（33/415 全绿零丢失，subtests 19.6%）；s2+ = 源位置 / img/style/connect 检查点 / 元素站 target / eval |
 | M3 — Mixed Content + HSTS | ⏳ |
 | M4 — Permissions 语义层 | ⏳ |
 | M5 — 收口 | ⏳ |
