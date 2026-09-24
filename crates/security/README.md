@@ -10,7 +10,7 @@
 
 - **同源策略（Same-Origin Policy）** — 基于 scheme + host + port 的源解析与同源判断，支持默认端口归一化和安全上下文检测
 - **CORS（跨源资源共享）** — 可配置的 CORS 策略检查，支持通配符源、白名单源、允许方法/请求头过滤、凭证模式、简单请求与 preflight 判断
-- **CSP（内容安全策略）** — 从 HTTP 头解析 CSP 指令，检查资源加载权限，支持 `default-src` 回退、`'self'`、`'none'`、`*` 通配符、`*.domain` 通配域名、精确 URL 匹配、内联脚本/样式控制、nonce/hash、`upgrade-insecure-requests`、`strict-dynamic`、`report-only`
+- **CSP（内容安全策略）** — 从 HTTP 头解析 CSP 指令，检查资源加载权限，支持 `default-src` 回退、`'self'`、`'none'`、`*` 通配符、`*.domain` 通配域名、精确 URL 匹配、内联脚本/样式控制、nonce/hash、`upgrade-insecure-requests`、`strict-dynamic`、`report-only`；security-hardening goal M2 起支撑运行时强制接线——`has_directive` 查询与 `effective_script/style/image_directive` 检查指令解析（script/style/img 检查点、connect-src 阻止族），页面侧违规经 `SecurityPolicyViolationEvent`（CSP3）事件上报（构造器在 `zero-engine`）
 - **iframe 沙箱** — `sandbox` 属性 token 解析（ASCII 大小写不敏感）与导航/弹窗/表单/脚本能力限制
 - **站点隔离** — `SiteIsolationManager`：site-per-process 模型，基于 PSL 的真实 eTLD+1 进程边界判定，跨站 DOM 访问阻止
 - **COOP / COEP** — 跨源开放者策略与跨源嵌入者策略的响应头解析与检查
