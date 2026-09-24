@@ -874,6 +874,18 @@ impl ContentSecurityPolicy {
         self.directives.iter().any(|d| d.name == "upgrade-insecure-requests")
     }
 
+    /// 返回 image 检查实际生效的指令名（security-hardening M2-s2）。
+    ///
+    /// 与 [`Self::is_image_allowed`] 的回退顺序一致（img-src → default-src），供违规
+    /// 事件的 `effectiveDirective` 字段如实上报。
+    pub fn effective_image_directive(&self) -> &'static str {
+        if self.find_directive("img-src").is_some() {
+            "img-src"
+        } else {
+            "default-src"
+        }
+    }
+
     /// 返回 script 元素检查实际生效的指令名（security-hardening M2-s1）。
     ///
     /// 与 [`Self::is_script_element_allowed`] 的回退顺序一致

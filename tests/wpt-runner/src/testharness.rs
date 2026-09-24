@@ -4439,6 +4439,10 @@ fn run_testharness_html_inner(
         // runner 是 WPT 标尺的实验臂——meta CSP 装配 + script 检查点 + violation 事件经
         // 此生效）。make test 全量门禁走生产默认（off），零 delta 由工作区测试守。
         csp_enforcement: true,
+        // M2-s2：violation 源位置表从**原始 case 源**预计算（harness 内联扭曲装配后
+        // 文档行号——blockeduri-inline 期望 15:9 口径），ordinal 与全量 script 序对齐
+        //（harness/testdriver/inline extras 均与原标签 1:1 换）。
+        csp_script_positions: Some(csp_script_positions_prepared(source)),
         // R34xx：headless 图片源——wpt.test/images/* 映射到本地 wpt-data 目录
         //（testharness 无网络；G5 DOM img 源解锁依赖图片加载）。
         // js-dom goal：dom 用例同样需要本地 .js 内联 + 图片资源，两条路径统一走 wpt_root。
@@ -4941,6 +4945,39 @@ fn harness_nonce_attr(case_source: &str) -> String {
         return String::new();
     }
     format!(" nonce=\"{nonce}\"")
+}
+
+/// M2-s2：CSP violation 源位置表（**prepared ordinal 空间**）。
+///
+/// prepare_harness_html 会把若干外链脚本**整标签移除**（testharnessreport /
+/// testdriver-vendor / testdriver-actions → 空串替换），其后脚本在装配后文档的
+/// script 序号前移——gate 的 script_index 与 shim getElementsByTagName 序号都在
+/// prepared 空间，位置表必须同空间。本函数从原始 case 源提取位置，再按「被移除
+/// 标签剔除」重映射（扫描口径与 [`zero_engine::extract_script_source_positions`]
+/// 一致：逐 `<script` 开标签、无 `>` 即止）。
+fn csp_script_positions_prepared(source: &str) -> Vec<(u32, u32)> {
+    const REMOVED_SRC_MARKERS: [&str; 3] = [
+        "/resources/testharnessreport.js",
+        "/resources/testdriver-vendor.js",
+        "/resources/testdriver-actions.js",
+    ];
+    let positions = zero_engine::extract_script_source_positions(source);
+    let mut out = Vec::with_capacity(positions.len());
+    let mut rest = source;
+    let mut original_idx = 0usize;
+    while let Some(start) = rest.find("<script") {
+        let Some(gt) = rest[start..].find('>') else {
+            break;
+        };
+        let open_tag = &rest[start..=start + gt];
+        let is_removed = REMOVED_SRC_MARKERS.iter().any(|m| open_tag.contains(m));
+        if !is_removed && let Some(p) = positions.get(original_idx) {
+            out.push(*p);
+        }
+        original_idx += 1;
+        rest = &rest[start + gt + 1..];
+    }
+    out
 }
 
 fn prepare_harness_html(

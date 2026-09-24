@@ -2,7 +2,7 @@
 
 **入口文档**: [../security-hardening.md](../security-hardening.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-24（R2：M2-s1 CSP 接线骨架 — 全绿 30→33 零丢失 / subtests 16.3%→19.6%）
+**最后更新**: 2026-09-24（R3：M2-s2 检查点扩面 — 源位置定位 + 元素站 target + markup img 检查点；全绿 33→37 零丢失 / subtests 20.6%）
 
 ---
 
@@ -56,7 +56,7 @@
 |---|------|------|
 | P1 | zero-security CSP 现状盘点 | ✅ R1（见上「基线事实」） |
 | P2 | content-security-policy / mixed-content / secure-contexts 三 corpus 导入 + 基线 | ✅ R1（415+2+4 案执行；CSP subtests 16.3% 基线见 evidence/） |
-| P3 | CSP 主要指令引擎完整化 + report-only + 违规报告 | 🔄 M2-s1 ✅（接线骨架：meta 装配 + script 检查点 + violation 事件 + SPV 构造器；M2-s2+ = 源位置/img/style/eval 检查点，见 evidence/2026-09-24-m2-s1-csp-wiring.md 缺口表） |
+| P3 | CSP 主要指令引擎完整化 + report-only + 违规报告 | 🔄 M2-s1/s2 ✅（骨架 + 源位置 + 元素站 target + markup img 检查点；余 = style/attr/运行时 img/eval 检查点，见 evidence/2026-09-24-m2-s2-csp-extensions.md 缺口表） |
 | P4 | Mixed Content 分级阻止 + HSTS 接线 | ⏳ M3（mixed_content/checkpoint 接入子资源面；HSTS register 接 net 响应） |
 | P5 | Permissions API headless 语义层 + 事件 | ⏳ M4（navigator.permissions JS 面挂 PermissionManager） |
 | P6 | kill-switch + A/B + default-on 决策 | ⏳ M5 |
@@ -77,6 +77,15 @@
     subtests 91/557 = 16.3%；mixed-content 2 案、secure-contexts 4 案 0 绿）。口径
     注记：无强制下「allowed」案天然绿，M2 接线后 blocked/allowed 双向受检——
     blocked 案全红（Timeout × 134 大半）才是真实缺口面。
+- **R3（2026-09-24）M2-s2 检查点扩面**（evidence/2026-09-24-m2-s2-csp-extensions.md）：
+  - 源位置定位（`extract_script_source_positions` + runner 原始源预计算经
+    `csp_script_positions` 覆盖 + prepared ordinal 重映射——blockeduri-inline 15:9
+    精确命中全绿）；元素站 target 派发（`__zwSelector`/`__zwHandle` listener-store
+    key + receiverProxy identity 保持）；markup img 检查点（`check_image` + fetch 侧
+    装配前移/阻止不 fetch/页面脚本后派发 error——img-src 3 案翻绿）。
+  - corpus：全绿 33→37（**+4 零丢失**）、subtests 109→115（19.6%→20.6%）。
+  - 探针记档：runner harness 内联扭曲行号（5267→5→15:9 三段收敛）；error 派发须在
+    页面脚本后 + `page_scripts_initialized` 置位后早退分支前（无变更页面同达）。
 - **R2（2026-09-24）M2-s1 接线骨架**（evidence/2026-09-24-m2-s1-csp-wiring.md）：
   - SecurityPolicyViolationEvent 构造器（engine dom_bindings；constructor-required-
     fields 14/14 全绿）；meta CSP 装配 + script 检查点（kill-switch
@@ -90,14 +99,14 @@
 
 ## 下一步计划
 
-1. **M2-s2（检查点扩面）**：①img/style 检查点（extract 侧 src 面已齐——img 走
-   fetch_page_images/fetch_image_subresources + __zw_get_image_wire 运行时路径，
-   style 走外链 stylesheet + inline style 面）；②violation 源位置定位（extract 侧
-   携带 line/col，blockeduri-inline `expected 15 but got 0`）；③元素站 target
-   （targeting.html——shim script 元素 listener-store key 定位）。
-2. **M2-s3**：eval 检查点（is_eval_allowed 钩 sandbox eval 面）+ report-only 政策
-   面走 console 报告（与 cdp-protocol 消费侧协调）+ CSP corpus 第二批目录扩批
-   （inheritance/navigation/sandbox/unsafe-eval/wasm-unsafe-eval 视面进度）。
+1. **M2-s3（检查点继续扩面）**：①style 检查点（inline `<style>`/style 属性/外链
+   stylesheet——style-src 面最大红案簇）；②script-src-attr（onclick 等内联事件
+   处理器——targeting block2/4 面）；③运行时 img src-set 钩子（createElement('img')
+   族——securitypolicyviolation img 4 案，shim 属性写管道）；④eval 检查点
+   （is_eval_allowed 钩 sandbox eval 面）。
+2. **M2-s4**：report-only 政策面走 console 报告（与 cdp-protocol 消费侧协调）+
+   CSP corpus 第二批目录扩批（inheritance/navigation/sandbox/unsafe-eval/
+   wasm-unsafe-eval 视面进度）。
 3. **M3**：Mixed Content 子资源接入 + HSTS net 响应注册（`register_hsts` 挂头解析）。
 4. **M4**：navigator.permissions JS 面（query/state/request headless 语义 + change
    事件），为 web-api-batch2 Clipboard 供数。
@@ -121,7 +130,7 @@
 | 里程碑 | 状态 |
 |--------|------|
 | M1 — 勘察 + WPT 导入与基线 | ✅ R1（2026-09-24，基线 16.3%） |
-| M2 — CSP 指令引擎完整化（接线） | 🔄 s1 ✅（33/415 全绿零丢失，subtests 19.6%）；s2+ = 源位置 / img/style/connect 检查点 / 元素站 target / eval |
+| M2 — CSP 指令引擎完整化（接线） | 🔄 s1 ✅ s2 ✅（37/415 全绿零丢失，subtests 20.6%）；s3+ = style/attr 检查点 / 运行时 img / eval / connect 面 |
 | M3 — Mixed Content + HSTS | ⏳ |
 | M4 — Permissions 语义层 | ⏳ |
 | M5 — 收口 | ⏳ |

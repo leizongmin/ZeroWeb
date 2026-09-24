@@ -737,11 +737,44 @@ pub fn extract_script_csp_info(html: &str) -> Vec<ScriptElementCsp> {
         .collect()
 }
 
+/// 提取每个 `<script>` 元素**内容起始位置**的 1-based 行/列号（security-hardening
+/// M2-s2）——CSP 违规事件 `lineNumber`/`columnNumber` 源（spec CSP3
+/// §securitypolicyviolationevent：被阻止的内联脚本位置 = 内容首字符在文档源的行列）。
+///
+/// 朴素原文扫描：按文档序找第 n 个 `<script` 开标签的 `>` 后首字符（内容起点），
+/// 换算 1-based 行/列。**序号口径 = 原文 `<script` 出现序**，与
+/// [`extract_page_scripts_indexed`] 的 DOM 全量 script 序号对齐（同一解析器同一文档
+/// 序；分歧仅在 template 内容含脚本等 DOM/原文计数不一致形态——FIXME：遇到时改用
+/// DOM 源偏移）。向量含全部 `<script` 出现（含非 JS），与 this_idx 口径一致。
+pub fn extract_script_source_positions(html: &str) -> Vec<(u32, u32)> {
+    let mut positions = Vec::new();
+    let mut rest = html;
+    let mut offset = 0;
+    while let Some(start) = rest.find("<script") {
+        let abs_start = offset + start;
+        // 内容起点 = 开标签 `>` 后首字符（引号内 '>' 的病态形态可忽略——属性含 '>'
+        // 时开标签扫描止于第一个 '>'，与 html5ever 行为分歧仅在病态源）。
+        let Some(rel_gt) = rest[start..].find('>') else {
+            break;
+        };
+        let content_abs = abs_start + rel_gt + 1;
+        // 1-based 行 = 前缀 '\n' 计数 + 1；1-based 列 = 行内偏移 + 1。
+        let prefix = &html[..content_abs];
+        let line = prefix.bytes().filter(|b| *b == b'\n').count() as u32 + 1;
+        let line_start = prefix.rfind('\n').map(|i| i + 1).unwrap_or(0);
+        let column = (content_abs - line_start) as u32 + 1;
+        positions.push((line, column));
+        offset = content_abs;
+        rest = &html[content_abs..];
+    }
+    positions
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
         MediaResourceElementKind, PageScript, extract_media_resources, extract_meta_csp_policies,
-        extract_page_scripts_indexed, extract_script_csp_info,
+        extract_page_scripts_indexed, extract_script_csp_info, extract_script_source_positions,
     };
 
     #[test]
@@ -784,6 +817,23 @@ mod tests {
         // （旧断言基于 parser 内联占位——template 内 script 误占 index 0。spec：
         // contents 非文档树后代，真实浏览器 gEBTN 亦不含，两者一致。）
         assert_eq!(scripts[0].1, 0, "template scripts are not in the document tree");
+    }
+
+    /// script 内容起始行列提取（security-hardening M2-s2）：1-based 行列 + 全量
+    /// script 序号口径。blockeduri-inline 期望形态：`<script>` 开标签同行内容起点
+    /// = line 15 / column 9。
+    #[test]
+    fn extract_script_source_positions_one_based_sh1_m2s2() {
+        let html = "<!doctype html>\n<meta http-equiv=\"x\">\n<script nonce=\"a\" src=\"t.js\"></script>\n<script>alert(1)</script>\n";
+        // script#0：`<script nonce="a" src="t.js">` 共 38 字符，内容起点在其后同行。
+        let positions = extract_script_source_positions(html);
+        assert_eq!(positions.len(), 2);
+        assert_eq!(positions[0], (3, 30), "内容起点 = 开标签 > 后首字符（1-based）");
+        assert_eq!(
+            positions[1],
+            (4, 9),
+            "<script> 8 字符 → 内容起点列 9（blockeduri-inline 形态）"
+        );
     }
 
     /// meta CSP 政策提取（security-hardening M2-s1）：head 内生效、body 内忽略、

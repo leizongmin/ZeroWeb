@@ -132,6 +132,23 @@ impl SecurityContext {
         None
     }
 
+    /// image 检查点（security-hardening M2-s2）。
+    ///
+    /// 多政策并集语义同 [`Self::check_script`]：任一政策阻止即返回该政策的
+    /// [`CspViolation`]。`resolved_url` 为解析后的绝对 URL（data: URI 原样）。
+    pub fn check_image(&self, resolved_url: &str) -> Option<CspViolation> {
+        for (policy, original) in &self.enforced_csp {
+            if !policy.is_image_allowed(resolved_url, self.page_origin.as_ref()) {
+                return Some(CspViolation {
+                    effective_directive: policy.effective_image_directive().to_string(),
+                    blocked_uri: resolved_url.to_string(),
+                    original_policy: original.clone(),
+                });
+            }
+        }
+        None
+    }
+
     /// 设置当前页面源（用于混合内容检测和 CSP）。
     pub fn set_page_origin(&mut self, url: &str) {
         self.page_origin = Origin::parse(url).ok();

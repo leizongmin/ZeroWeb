@@ -22,6 +22,7 @@ globalThis.__vio = [];
 document.addEventListener('securitypolicyviolation', function(e) {
   globalThis.__vio.push({
     b: e.blockedURI, d: e.effectiveDirective, p: e.originalPolicy,
+    ln: e.lineNumber, col: e.columnNumber,
     t: e.target === document ? 'document' : (e.target && e.target.tagName)
   });
 });
@@ -48,10 +49,18 @@ document.addEventListener('securitypolicyviolation', function(e) {
         "violation blockedURI 必须为 inline: {vio}"
     );
     assert!(vio.contains(r#""d":"script-src""#), "effectiveDirective: {vio}");
+    // M2-s2 源位置：被阻止内联脚本内容起点的 1-based 行列（第 14 行 `<script>` 8
+    // 字符 → 内容起点 col 9；blockeduri-inline 15:9 同口径）。
+    assert!(
+        vio.contains(r#""ln":14"#) && vio.contains(r#""col":9"#),
+        "lineNumber/columnNumber 为内容起点 1-based 行列: {vio}"
+    );
     assert!(vio.contains("'nonce-ok'"), "originalPolicy 为原始政策串: {vio}");
-    // FIXME(M2-s2)：target 定位到被阻止 script 元素（targeting corpus 语义）——s1 为
-    // document 站派发（shim doc 槽位，native 构造实例过不了站内检查）。
-    assert!(vio.contains(r#""t":"document""#), "s1 target 为 document 站: {vio}");
+    // M2-s2 元素站 target（targeting corpus 语义）：target = 被阻止 script 元素。
+    assert!(
+        vio.contains(r#""t":"SCRIPT""#),
+        "target 为被阻止 script 元素（元素站派发）: {vio}"
+    );
 }
 
 /// default（kill-switch off）零变更：同页全部脚本照常执行、无 violation。
@@ -102,5 +111,40 @@ document.addEventListener('securitypolicyviolation', function(e) {
     assert!(
         vio.contains("https://evil.test/evil.js"),
         "异源外链阻止 + blockedURI 为绝对 URL: {vio}"
+    );
+}
+
+/// markup img CSP 检查点（security-hardening M2-s2）：`img-src 'none'` 下 markup img
+/// 不 fetch/不 load + onerror 派发（run_page_scripts 起点）。img-src-none-blocks
+/// corpus 形态。
+#[test]
+fn csp_img_gate_blocks_markup_img_and_fires_error_sh1_m2s2() {
+    let mut wv = WebView::new(WebViewConfig {
+        csp_enforcement: true,
+        ..WebViewConfig::default()
+    });
+    wv.prepare_document_state("https://wpt.test/csp/case.html");
+    let html = r#"<html><head>
+<meta http-equiv="Content-Security-Policy" content="img-src 'none'">
+</head><body>
+<img src="/content-security-policy/support/fail.png"
+     onload="globalThis.__loaded = 1;"
+     onerror="globalThis.__errored = 1;">
+<script>globalThis.__setup = 1;</script>
+</body></html>"#;
+    // runner 调用序：fetch_page_images（img 抓取 + CSP 阻止队列入队）→ load_html →
+    // run_page_scripts（shim 就绪后派发 error）。
+    let _external_css = wv.fetch_page_images(html, "https://wpt.test/csp/case.html");
+    wv.load_html(html, None);
+    wv.run_page_scripts().expect("run page scripts");
+    assert_eq!(
+        wv.execute_script("String(globalThis.__loaded)").unwrap(),
+        "undefined",
+        "被 CSP 阻止的 markup img 不得 load"
+    );
+    assert_eq!(
+        wv.execute_script("String(globalThis.__errored)").unwrap(),
+        "1",
+        "被阻止 markup img 派发 error（onerror）"
     );
 }

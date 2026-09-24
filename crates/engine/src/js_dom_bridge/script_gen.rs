@@ -473,8 +473,9 @@ pub fn script_dispatch_securitypolicyviolation(
     effective_directive: &str,
     original_policy: &str,
     blocked_uri: &str,
+    line: u32,
+    column: u32,
 ) -> String {
-    let _ = script_ordinal; // M2-s2：元素站定位（targeting corpus 语义）启用
     let esc_doc_uri = escape_js_string(document_uri);
     let esc_directive = escape_js_string(effective_directive);
     let esc_policy = escape_js_string(original_policy);
@@ -483,10 +484,12 @@ pub fn script_dispatch_securitypolicyviolation(
         "(function(){{try{{\
 if(typeof __zw_dispatch_securitypolicyviolation!=='function')return;\
 __zw_dispatch_securitypolicyviolation({{\
+scriptOrdinal:{script_ordinal},\
 documentURI:'{esc_doc_uri}',\
 effectiveDirective:'{esc_directive}',\
 originalPolicy:'{esc_policy}',\
-blockedURI:'{esc_blocked}'}});\
+blockedURI:'{esc_blocked}',\
+lineNumber:{line},columnNumber:{column}}});\
 }}catch(_eSpv){{}}}})()"
     )
 }

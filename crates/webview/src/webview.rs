@@ -9,10 +9,11 @@ use std::sync::mpsc;
 use zero_engine::{
     BudgetAdvance, BudgetedRenderSession, DomMutation, MediaType, PipelineTimings, PrefersColorSchemeValue,
     RenderPipeline, RenderResult, extract_css_image_urls, extract_html_style_text, extract_img_srcs,
-    extract_meta_csp_policies, extract_page_scripts_indexed, extract_script_csp_info, extract_stylesheet_hrefs,
-    generate_js_dom_shim, image_resource_key, page_script_error_check, register_dom_callbacks, resolve_document_url,
-    script_clear_current_script, script_dispatch_dom_event, script_dispatch_securitypolicyviolation,
-    script_run_classic_page, script_set_current_script,
+    extract_meta_csp_policies, extract_page_scripts_indexed, extract_script_csp_info, extract_script_source_positions,
+    extract_stylesheet_hrefs, generate_js_dom_shim, image_resource_key, page_script_error_check,
+    register_dom_callbacks, resolve_document_url, script_clear_current_script, script_dispatch_dom_event,
+    script_dispatch_img_event, script_dispatch_securitypolicyviolation, script_run_classic_page,
+    script_set_current_script,
 };
 // R3150（闭合 R3121 latent）：script_dispatch_native_event 唯一用法（dispatch_event native_dom 分支）
 // 受 `#[cfg(feature = "v8")]` 门控——quickjs feature 下 unused import。独立 gated import 消 latent warning。
@@ -221,6 +222,13 @@ pub struct WebViewConfig {
     /// URL 源匹配），被阻止的脚本跳过执行并派发 `SecurityPolicyViolationEvent`。
     /// 默认关闭 → 生产加载行为零变更（M5 A/B 零回归后再定 default-on）。
     pub csp_enforcement: bool,
+    /// script 内容位置表（security-hardening M2-s2，runner 专用覆盖面）。
+    ///
+    /// CSP 违规 lineNumber/columnNumber 的源——正常（生产/无注入）路径 gate 从
+    /// cached_html 自算（装配后文档即投递文档）；WPT runner 因 harness 内联扭曲了
+    /// 行号，从**原始 case 源**预计算后经此传入（ordinal 对齐全量 script 序）。
+    /// `None`（默认）→ 自算。
+    pub csp_script_positions: Option<Vec<(u32, u32)>>,
 }
 
 impl Default for WebViewConfig {
@@ -236,6 +244,7 @@ impl Default for WebViewConfig {
             script_timeout_ms: 0,
             // security-hardening M2-s1：CSP 强制 default off（kill-switch，生产零变更）。
             csp_enforcement: false,
+            csp_script_positions: None,
             external_script: None,
             script_source_fetcher: None,
             service_worker_script_fetcher: None,
@@ -424,6 +433,10 @@ pub struct WebView {
     focus_owner: Option<zero_page_runtime::PageNodeRef>,
     /// 当前文档页面脚本是否已经执行。
     page_scripts_initialized: bool,
+    /// security-hardening M2-s2：被 CSP 阻止的 markup img 绝对 URL 队列——fetch 阶段
+    /// （load_html）sandbox 未装且页面 listener 未注册，error 事件延后到
+    /// run_page_scripts 起点（shim 就绪后）统一派发。
+    pending_csp_img_blocks: Vec<String>,
     /// 来源页 URL（导航前的 current_url；`document.referrer` 读，sync 到 pipeline）。
     referrer: Option<String>,
     /// 页面标题。
@@ -586,6 +599,7 @@ impl WebView {
             document_generation: 0,
             focus_owner: None,
             page_scripts_initialized: false,
+            pending_csp_img_blocks: Vec::new(),
             referrer: None,
             title: None,
             loading: false,
@@ -732,6 +746,15 @@ impl WebView {
     /// 与 `<img>` 子资源——load_html 本身只渲染不抓图（图片抓取在导航路径）；
     /// 嵌入者可用本方法补抓。返回外链 CSS。
     pub fn fetch_page_images(&mut self, html: &str, page_url: &str) -> String {
+        // security-hardening M2-s2：CSP 装配先于子资源抓取（img 检查点在 fetch 侧
+        // 需要政策集；run_page_scripts 侧对同一 html 幂等重装，结果一致）。
+        if self.config.csp_enforcement {
+            let policies = extract_meta_csp_policies(html);
+            self.security_context.set_document_csp(&policies);
+        }
+        // 本轮子资源抓取的 CSP 阻止队列重建（调用序在 load_html 之前——队列随本轮
+        // fetch 结果重建，load_html 不再清）。
+        self.pending_csp_img_blocks.clear();
         let external_css = self.prepare_page_subresources(html, page_url);
         self.cached_css = external_css.clone();
         external_css
@@ -970,6 +993,25 @@ impl WebView {
         }
         let base = url::Url::parse(base_url).ok();
         for src in &all_urls {
+            // security-hardening M2-s2：markup img CSP 检查点（img-src/default-src 源
+            // 匹配，data: URI 原样受检）。被阻止 src 不 fetch/不入缓存；error 事件在
+            // run_page_scripts 起点统一派发（此时 sandbox/shim 就绪）。fetch 阶段页面
+            // listener 未注册——violation 事件面挂账 M2-s3（运行时 img src-set 钩子）。
+            if self.config.csp_enforcement && self.security_context.has_document_csp() {
+                let check_url = if src.starts_with("data:") {
+                    (*src).clone()
+                } else {
+                    base.as_ref()
+                        .and_then(|b| b.join(src).ok())
+                        .map(|u| u.to_string())
+                        .unwrap_or_else(|| (*src).clone())
+                };
+
+                if self.security_context.check_image(&check_url).is_some() {
+                    self.pending_csp_img_blocks.push(check_url);
+                    continue;
+                }
+            }
             // R1987：data: URI（PNG/JPEG/WebP/SVG，base64 或 url-encoded）→ decode_data_uri 直接
             // 解码（in-scope img 子资源，goal line 118 SVG-as-img；render-foundation 共用按 magic
             // 分派）。data: 非相对，key = image_resource_key(src)（与 painter 查找一致：data: 经
@@ -2434,16 +2476,25 @@ impl WebView {
         // 与下方逐脚本 nonce 取值同源同序（extract 家族同一枚举口径）。
         // FIXME(M2-s2): meta 政策的 spec「插入点」语义（meta 前的脚本不受约束）在
         // 「全解析后统一执行脚本」的管线形态下不可分——全文档生效近似。
-        let script_csp_info = if self.config.csp_enforcement {
+        let (script_csp_info, script_positions) = if self.config.csp_enforcement {
             let policies = extract_meta_csp_policies(&html);
             self.security_context.set_document_csp(&policies);
-            extract_script_csp_info(&html)
+            // 位置表：runner 覆盖面优先（harness 内联扭曲行号——见 config 字段注记），
+            // 否则从 cached_html 自算（装配后文档即投递文档）。
+            let positions = self
+                .config
+                .csp_script_positions
+                .clone()
+                .unwrap_or_else(|| extract_script_source_positions(&html));
+            (extract_script_csp_info(&html), positions)
         } else {
-            Vec::new()
+            (Vec::new(), Vec::new())
         };
         let csp_active = self.config.csp_enforcement && self.security_context.has_document_csp();
         let scripts = extract_page_scripts_indexed(&html);
-        if scripts.is_empty() {
+        // M2-s2：无脚页面若仍有被 CSP 阻止的 img 待派发 error，不早退（下方派发点
+        // 需 sandbox/shim 就绪；有脚页面照常走全量装配）。
+        if scripts.is_empty() && !(self.config.csp_enforcement && !self.pending_csp_img_blocks.is_empty()) {
             self.page_scripts_initialized = true;
             return Ok(html);
         }
@@ -2923,12 +2974,15 @@ impl WebView {
             let sandbox = self.js_sandbox.as_mut().expect("js sandbox");
             if let Some(violation) = csp_violation {
                 let document_uri = self.current_url.clone().unwrap_or_else(|| "about:blank".to_string());
+                let (line, column) = script_positions.get(script_index).copied().unwrap_or((0, 0));
                 let snippet = script_dispatch_securitypolicyviolation(
                     script_index,
                     &document_uri,
                     &violation.effective_directive,
                     &violation.original_policy,
                     &violation.blocked_uri,
+                    line,
+                    column,
                 );
                 let _ = sandbox.execute(&snippet);
                 continue;
@@ -3053,6 +3107,20 @@ impl WebView {
             self.drain_async_navigation_callbacks_until_idle(std::time::Duration::from_millis(50));
         }
         self.page_scripts_initialized = true;
+        // security-hardening M2-s2：被 CSP 阻止的 markup img 在**页面脚本之后**统一
+        // 派发 error（onerror 语义）——上游 error 于文档序内触发，页面此前注册的
+        // 测试句柄（如 img-src-none-blocks 的 t1.step）须已就位；fetch 阶段 sandbox
+        // 未装，故延后至此。
+        let csp_img_blocks = std::mem::take(&mut self.pending_csp_img_blocks);
+        if !csp_img_blocks.is_empty() {
+            let sandbox = self
+                .js_sandbox
+                .as_mut()
+                .ok_or_else(|| WebViewError::Script("no js sandbox".to_string()))?;
+            for url in &csp_img_blocks {
+                let _ = sandbox.execute(&script_dispatch_img_event(url, "error"));
+            }
+        }
         let pending = {
             let guard = self.shared_mutations.lock().unwrap_or_else(|e| e.into_inner());
             guard.len() > self.applied_mutations

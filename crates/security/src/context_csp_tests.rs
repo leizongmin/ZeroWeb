@@ -149,3 +149,27 @@ fn script_hash_sha256_base64_vectors_sh1_m2s1() {
         "n4bQgYhMfWWaL+qgxVrQFaO/TxsrC4Is0V1sFbDwCgg="
     );
 }
+
+/// image 检查点（security-hardening M2-s2）：img-src 'none' 全阻止 + 'self' 源匹配 +
+/// effectiveDirective 如实（img-src-none-blocks corpus 形态）。
+#[test]
+fn check_image_img_src_sh1_m2s2() {
+    let mut ctx = SecurityContext::new();
+    ctx.set_page_origin("https://wpt.test/csp/case.html");
+    ctx.set_document_csp(&["img-src 'none'".to_string()]);
+    let v = ctx
+        .check_image("https://wpt.test/csp/support/fail.png")
+        .expect("img-src 'none' must block");
+    assert_eq!(v.effective_directive, "img-src");
+    assert_eq!(v.blocked_uri, "https://wpt.test/csp/support/fail.png");
+    assert_eq!(v.original_policy, "img-src 'none'");
+    // 'self' 政策：同源放行、异源阻止。
+    ctx.clear_document_csp();
+    ctx.set_document_csp(&["img-src 'self'".to_string()]);
+    assert!(ctx.check_image("https://wpt.test/a.png").is_none());
+    assert!(ctx.check_image("https://evil.test/a.png").is_some());
+    // 无 img-src 无 default-src → 放行。
+    ctx.clear_document_csp();
+    ctx.set_document_csp(&["script-src 'self'".to_string()]);
+    assert!(ctx.check_image("https://evil.test/a.png").is_none());
+}
