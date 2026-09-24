@@ -200,28 +200,56 @@ document.addEventListener('securitypolicyviolation', function(e) {
     assert!(vio.contains(r#""t":"STYLE""#), "target 为被阻止 style 元素: {vio}");
 }
 
+/// connect-src 检查点（security-hardening M2-s5）：`connect-src 'none'` 下 fetch
+/// 被阻止（reject 面）+ violation document 站派发（effectiveDirective=connect-src）。
 #[test]
-fn csp_link_violation_dump_tmp() {
+fn csp_connect_gate_blocks_fetch_sh1_m2s5() {
     let mut wv = WebView::new(WebViewConfig {
         csp_enforcement: true,
+        fetch_handler: Some(std::sync::Arc::new(|_req: &zero_engine::fetch_bridge::FetchRequest| {
+            Ok(zero_engine::fetch_bridge::FetchResponse {
+                status: 200,
+                status_text: "OK".into(),
+                headers: vec![("content-type".into(), "text/plain".into())],
+                body: "ok".into(),
+                body_bytes: None,
+            })
+        })),
         ..WebViewConfig::default()
     });
     wv.prepare_document_state("https://wpt.test/csp/case.html");
     let html = r#"<html><head>
-<meta http-equiv="Content-Security-Policy" content="style-src 'none'">
+<meta http-equiv="Content-Security-Policy" content="connect-src 'none'">
+</head><body>
 <script>
-globalThis.__ev = null;
-window.addEventListener('securitypolicyviolation', function(e) {
-  globalThis.__ev = {
-    ed: e.effectiveDirective, vd: e.violatedDirective, b: e.blockedURI,
-    t: e.target === document ? 'document' : (e.target && e.target.tagName)
-  };
+globalThis.__vio = [];
+document.addEventListener('securitypolicyviolation', function(e) {
+  globalThis.__vio.push({ d: e.effectiveDirective, b: e.blockedURI });
 });
+globalThis.__fetchOutcome = 'pending';
+fetch('/content-security-policy/support/fail.txt')
+  .then(function(res) { globalThis.__fetchOutcome = 'resolved:ok=' + res.ok + ':status=' + res.status; })
+  .catch(function() { globalThis.__fetchOutcome = 'rejected'; });
 </script>
-<link rel="stylesheet" href="resources/blue.css">
-</head><body></body></html>"#;
+</body></html>"#;
     let _ = wv.fetch_page_images(html, "https://wpt.test/csp/case.html");
     wv.load_html(html, None);
     wv.run_page_scripts().expect("run page scripts");
-    println!("EVDUMP: {:?}", wv.execute_script("JSON.stringify(globalThis.__ev)"));
+    // fetch promise reject（异步面经 probe tick 排空）。
+    for _ in 0..10 {
+        let _ = wv.execute_script("0;");
+    }
+    // shim 契约：host 错误 wire → resolve(ok:false) Response（网络错误语义走 XHR
+    // error 面——connect-src-blocked corpus 的 XHR 族依赖）。
+    assert_eq!(
+        wv.execute_script("String(globalThis.__fetchOutcome)").unwrap(),
+        "resolved:ok=false:status=0",
+        "被 connect-src 阻止的 fetch 返回 ok:false（网络错误语义）"
+    );
+    let vio = wv.execute_script("JSON.stringify(globalThis.__vio)").unwrap();
+    assert!(vio.contains(r#""d":"connect-src""#), "effectiveDirective: {vio}");
+    assert!(
+        vio.contains("https://wpt.test/content-security-policy/support/fail.txt"),
+        "blockedURI 为绝对 URL: {vio}"
+    );
 }

@@ -216,6 +216,32 @@ impl SecurityContext {
         None
     }
 
+    /// connect-src 检查点（security-hardening M2-s5）——fetch/XHR/beacon/eventsource
+    /// 统一桥（shim fetch → `__zw_fetch`）。
+    ///
+    /// 指令口径：显式 connect-src 上报 "connect-src"（connect 面无 -elem 子分——
+    /// corpus 断言裸 connect-src），仅 default-src 回退时上报 "default-src"。
+    pub fn check_connect(&self, resolved_url: &str) -> Option<CspViolation> {
+        for (policy, original) in &self.enforced_csp {
+            // 无 connect-src 且无 default-src → 无政策约束放行。
+            if !policy.has_directive("connect-src") && !policy.has_directive("default-src") {
+                continue;
+            }
+            if !policy.is_connect_allowed(resolved_url, self.page_origin.as_ref()) {
+                return Some(CspViolation {
+                    effective_directive: if policy.has_directive("connect-src") {
+                        "connect-src".to_string()
+                    } else {
+                        "default-src".to_string()
+                    },
+                    blocked_uri: resolved_url.to_string(),
+                    original_policy: original.clone(),
+                });
+            }
+        }
+        None
+    }
+
     /// 设置当前页面源（用于混合内容检测和 CSP）。
     pub fn set_page_origin(&mut self, url: &str) {
         self.page_origin = Origin::parse(url).ok();

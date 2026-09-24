@@ -455,6 +455,9 @@ pub struct WebView {
     /// stylesheet）violation 队列——元素站派发需 shim 就绪 + 页面 listener 注册，
     /// 延后到 run_page_scripts 页面脚本之后统一派发。
     pending_csp_style_violations: Vec<PendingCspStyleViolation>,
+    /// security-hardening M2-s5：connect 面被阻止 violation 共享队列（Arc——`__zw_fetch`
+    /// 回调为 'static 闭包，运行期推入；run 尾统一元素站/document 站派发）。
+    pending_csp_connect_violations: std::sync::Arc<std::sync::Mutex<Vec<PendingCspStyleViolation>>>,
     /// 来源页 URL（导航前的 current_url；`document.referrer` 读，sync 到 pipeline）。
     referrer: Option<String>,
     /// 页面标题。
@@ -619,6 +622,7 @@ impl WebView {
             page_scripts_initialized: false,
             pending_csp_img_blocks: Vec::new(),
             pending_csp_style_violations: Vec::new(),
+            pending_csp_connect_violations: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
             referrer: None,
             title: None,
             loading: false,
@@ -2752,6 +2756,11 @@ impl WebView {
                     "0".to_string()
                 }),
             );
+            // security-hardening M2-s5：connect 检查快照（'static 回调捕获——SecurityContext
+            // 克隆随文档代际更新；is_navigation 判定在闭包内需 String 形）。
+            let connect_csp_ctx = self.config.csp_enforcement.then(|| self.security_context.clone());
+            let connect_csp_active = connect_csp_ctx.is_some();
+            let connect_violations = std::sync::Arc::clone(&self.pending_csp_connect_violations);
             sandbox.register_callback(
                 "__zw_fetch",
                 Box::new(move |args: &[String]| -> String {
@@ -2789,6 +2798,29 @@ impl WebView {
                     let is_navigation = fetch_id.starts_with("r115iframe:");
                     let is_reload_navigation = is_navigation && args.get(7).is_some_and(|value| value == "1");
                     let is_history_navigation = is_navigation && args.get(8).is_some_and(|value| value == "1");
+                    // security-hardening M2-s5：connect-src 检查点（fetch/XHR/beacon/
+                    // eventsource 统一桥）。导航面（r115iframe:）不受 connect-src 约束
+                    //（frame-src/navigation 面）。被阻止 → __zw_fetch_error（fetch
+                    // promise reject / XHR error 语义）+ violation 入共享队列（run 尾
+                    // document 站派发——回调为同步原生栈，不能重入执行 JS）。
+                    if connect_csp_active && !is_navigation {
+                        let abs = zero_engine::resolve_document_url(&page_url, &url);
+                        if let Some(ctx) = connect_csp_ctx.as_ref()
+                            && let Some(violation) = ctx.check_connect(&abs)
+                        {
+                            if let Ok(mut queue) = connect_violations.lock() {
+                                queue.push(PendingCspStyleViolation {
+                                    effective_directive: violation.effective_directive,
+                                    blocked_uri: violation.blocked_uri,
+                                    original_policy: violation.original_policy,
+                                    target_tag: "",
+                                    target_ordinal: usize::MAX,
+                                    link_error: None,
+                                });
+                            }
+                            return "__zw_fetch_error:csp-connect-src-blocked".to_string();
+                        }
+                    }
                     let resulting_client_id = is_navigation
                         .then(|| args.get(10).filter(|value| !value.is_empty()).cloned())
                         .flatten();
@@ -3211,9 +3243,20 @@ impl WebView {
                 let _ = sandbox.execute(&script_dispatch_img_event(url, "error"));
             }
         }
-        // security-hardening M2-s3：style 面 CSP violation（元素站）+ link error 事件
-        // 统一派发——页面脚本已执行（listener/测试句柄就位）。
-        let style_violations = std::mem::take(&mut self.pending_csp_style_violations);
+        // security-hardening M2-s3/s5：style 面（元素站）+ connect 面（document 站）
+        // CSP violation + link error 事件统一派发——页面脚本已执行（listener/测试句柄
+        // 就位）。
+        let connect_violations = std::mem::take(
+            &mut *self
+                .pending_csp_connect_violations
+                .lock()
+                .unwrap_or_else(|e| e.into_inner()),
+        );
+        let style_violations = {
+            let mut v = std::mem::take(&mut self.pending_csp_style_violations);
+            v.extend(connect_violations);
+            v
+        };
         if !style_violations.is_empty() {
             let sandbox = self
                 .js_sandbox

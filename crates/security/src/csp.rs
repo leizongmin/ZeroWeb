@@ -907,6 +907,11 @@ impl ContentSecurityPolicy {
         self.directives.iter().any(|d| d.name == "upgrade-insecure-requests")
     }
 
+    /// 指令存在性查询（pub 只读面——宿主 connect 面的显式/回退判定用）。
+    pub fn has_directive(&self, name: &str) -> bool {
+        self.find_directive(name).is_some()
+    }
+
     /// 返回 style 元素检查实际生效的指令名（security-hardening M2-s3/s4）。
     ///
     /// **元素面口径**（Chromium 对齐，style-blocked 族 corpus 断言
