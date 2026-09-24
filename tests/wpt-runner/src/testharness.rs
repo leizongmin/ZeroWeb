@@ -2933,6 +2933,88 @@ fn fullscreen_case_skipped(relative: &str, source: &str) -> bool {
     source.contains("<iframe")
 }
 
+/// Security-hardening goal（docs/goal/security-hardening.md M1 / DC-1）pinned upstream
+/// subset directories. Cases are fetched by `fetch-security-csp-subset.sh` into
+/// `wpt-data/`（gitignored）——CSP 覆盖范围指令目录 + securitypolicyviolation/generic/
+/// meta/gen top.meta 面（M2+ 扩批目录见 fetch 脚本头注释）。
+pub const CSP_CORPUS_SUBDIRS: &[&str] = &[
+    "content-security-policy/securitypolicyviolation",
+    "content-security-policy/generic",
+    "content-security-policy/meta",
+    "content-security-policy/default-src",
+    "content-security-policy/script-src",
+    "content-security-policy/style-src",
+    "content-security-policy/img-src",
+    "content-security-policy/connect-src",
+    "content-security-policy/frame-src",
+    "content-security-policy/font-src",
+    "content-security-policy/media-src",
+    "content-security-policy/object-src",
+    "content-security-policy/base-uri",
+    "content-security-policy/form-action",
+    "content-security-policy/frame-ancestors",
+    "content-security-policy/blob",
+    "content-security-policy/child-src",
+    "content-security-policy/gen/top.meta/script-src-self",
+    "content-security-policy/gen/top.meta/script-src-wildcard",
+    "content-security-policy/gen/top.meta/worker-src-none",
+    "content-security-policy/gen/top.meta/worker-src-self",
+    "content-security-policy/gen/top.meta/worker-src-wildcard",
+];
+
+/// Mixed Content goal（security-hardening M1 / DC-1）pinned upstream subset.
+/// 顶层可执行面（blob.https.sub.html / imageset.https.sub.html）；gen/ 为
+/// window.js/iframe 包装形态不拉取（fetch 脚本头注释同域）。
+pub const MIXED_CONTENT_SUBDIRS: &[&str] = &["mixed-content"];
+
+/// Secure Contexts goal（security-hardening M1 / DC-1）pinned upstream subset.
+pub const SECURE_CONTEXTS_SUBDIRS: &[&str] = &["secure-contexts"];
+
+/// Security 三 corpus 共用运行面筛减规则（fetch 脚本头注释同域，双保险）：
+/// - `*(-ref|-notref).html`（reftest 参照页，observers 先例）
+/// - `*-manual.html`（需真实用户交互，clipboard/fullscreen 先例）
+/// - source 含 `<iframe`——iframe 依赖面（按内容而非名字判定，observers 先例；
+///   frame-ancestors / form-action 深依赖 iframe 语义，runner 无 iframe 文档管道）
+/// - source 含 `new Worker(` / `SharedWorker(` / `navigator.serviceWorker`——worker
+///   执行面（inside-worker / secure-contexts worker 族，runner 无 worker 文档管道）
+fn security_case_skipped(relative: &str, source: &str) -> bool {
+    let name = relative.rsplit('/').next().unwrap_or(relative);
+    if name.ends_with("-ref.html")
+        || name.ends_with("-notref.html")
+        || name.ends_with("-manual.html")
+        // secure-contexts 的 iframe 内嵌 helper 页（仅作为上游 iframe 用例的载荷，
+        // 独立执行必 Fail——resources/ 同类，observers 先例）
+        || name.starts_with("postMessage-helper")
+    {
+        return true;
+    }
+    source.contains("<iframe")
+        || source.contains("new Worker(")
+        || source.contains("SharedWorker(")
+        || source.contains("navigator.serviceWorker")
+}
+
+/// Run the pinned upstream Content-Security-Policy window subset
+/// （security-hardening goal M1 / DC-1）。filter 按路径子串过滤。
+pub fn run_content_security_policy_cases(
+    wpt_root: &Path,
+    filter: Option<&str>,
+) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_corpus_subdirs(wpt_root, CSP_CORPUS_SUBDIRS, filter, security_case_skipped)
+}
+
+/// Run the pinned upstream Mixed Content window subset
+/// （security-hardening goal M1 / DC-1）。filter 按路径子串过滤。
+pub fn run_mixed_content_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_corpus_subdirs(wpt_root, MIXED_CONTENT_SUBDIRS, filter, security_case_skipped)
+}
+
+/// Run the pinned upstream Secure Contexts window subset
+/// （security-hardening goal M1 / DC-1）。filter 按路径子串过滤。
+pub fn run_secure_contexts_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_corpus_subdirs(wpt_root, SECURE_CONTEXTS_SUBDIRS, filter, security_case_skipped)
+}
+
 /// Run the fixed Service Worker M1 core testharness corpus.
 pub fn run_service_worker_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
     run_service_worker_case_set(wpt_root, filter, SERVICE_WORKER_CORE_CASES)

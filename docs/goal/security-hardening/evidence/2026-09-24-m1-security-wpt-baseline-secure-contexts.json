@@ -1,0 +1,42 @@
+[
+  [
+    "secure-contexts/basic-popup-and-iframe-tests.html",
+    [
+      {
+        "name": "secure-contexts/basic-popup-and-iframe-tests.html",
+        "status": "Timeout",
+        "message": "testharness completed without reporting registered tests (state={\"loaded\":true,\"pending\":0,\"phase\":4,\"tests\":0})"
+      }
+    ]
+  ],
+  [
+    "secure-contexts/basic-popup-and-iframe-tests.https.html",
+    [
+      {
+        "name": "secure-contexts/basic-popup-and-iframe-tests.https.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: page script: Invalid or unexpected token"
+      }
+    ]
+  ],
+  [
+    "secure-contexts/shared-worker-insecure-first.https.html",
+    [
+      {
+        "name": "secure-contexts/shared-worker-insecure-first.https.html",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[200820, 914, 4066], state={\"loaded\":true,\"pending\":4,\"phase\":4,\"tests\":4}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "secure-contexts/shared-worker-secure-first.https.html",
+    [
+      {
+        "name": "secure-contexts/shared-worker-secure-first.https.html",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[200820, 914, 3942], state={\"loaded\":true,\"pending\":4,\"phase\":4,\"tests\":4}, test_wait=false)"
+      }
+    ]
+  ]
+]

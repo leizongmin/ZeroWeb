@@ -56,6 +56,12 @@ Commands:
                        (web-api-batch2 goal M1 / DC-1)
   testharness-fullscreen  Run imported Fullscreen testharness cases
                        (web-api-batch2 goal M1 / DC-1)
+  testharness-csp  Run imported Content-Security-Policy testharness cases
+                       (security-hardening goal M1 / DC-1)
+  testharness-mixed-content  Run imported Mixed Content testharness cases
+                       (security-hardening goal M1 / DC-1)
+  testharness-secure-contexts  Run imported Secure Contexts testharness cases
+                       (security-hardening goal M1 / DC-1)
   testharness-service-workers  Run pinned Service Worker M1 core testharness cases
   testharness-service-workers-fetch  Run pinned Service Worker M2 fetch testharness cases
   testharness-service-workers-cache-storage  Run pinned Service Worker CacheStorage testharness cases
@@ -260,6 +266,9 @@ fn main() {
         "testharness-resize-observer" => cmd_testharness_resize_observer(&options, filter.as_deref()),
         "testharness-clipboard-apis" => cmd_testharness_clipboard_apis(&options, filter.as_deref()),
         "testharness-fullscreen" => cmd_testharness_fullscreen(&options, filter.as_deref()),
+        "testharness-csp" => cmd_testharness_content_security_policy(&options, filter.as_deref()),
+        "testharness-mixed-content" => cmd_testharness_mixed_content(&options, filter.as_deref()),
+        "testharness-secure-contexts" => cmd_testharness_secure_contexts(&options, filter.as_deref()),
         "testharness-service-workers" => cmd_testharness_service_workers(&options, filter.as_deref()),
         "testharness-service-workers-fetch" => cmd_testharness_service_workers_fetch(&options, filter.as_deref()),
         "testharness-service-workers-cache-storage" => {
@@ -1011,6 +1020,33 @@ fn cmd_testharness_clipboard_apis(options: &CliOptions, filter: Option<&str>) {
 fn cmd_testharness_fullscreen(options: &CliOptions, filter: Option<&str>) {
     run_observers_cmd(options, filter, |wpt_root, filter| {
         testharness::run_fullscreen_cases(wpt_root, filter)
+    });
+}
+
+/// `testharness-csp` / `testharness-mixed-content` / `testharness-secure-contexts`
+/// 子命令 — 跑导入的上游 CSP / Mixed Content / Secure Contexts testharness 用例
+/// （security-hardening goal M1 / DC-1——三 corpus window 可执行面基线）。
+///
+/// 用例由 `fetch-security-csp-subset.sh` 按需拉到 `wpt-data/`（gitignored），运行面
+/// 按内容规则筛减（`security_case_skipped`：ref 页 / manual / iframe 依赖 / worker
+/// 面）。退出码：有用例非 Pass 或用例集为空 → 1（与 observers 命令一致）。基线首跑
+/// 即便大量 Fail 也只用于记录通过率（agent 经 `--format json` 捕获后写 evidence/），
+/// 不作为 land 门禁。filter 按路径子串透传：make testharness-csp FILTER=script-src。
+fn cmd_testharness_content_security_policy(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness::run_content_security_policy_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_mixed_content(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness::run_mixed_content_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_secure_contexts(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness::run_secure_contexts_cases(wpt_root, filter)
     });
 }
 
