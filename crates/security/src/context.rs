@@ -263,6 +263,34 @@ impl SecurityContext {
         None
     }
 
+    /// script 属性面检查点（security-hardening M2-s7）——onclick 等内联事件处理器
+    ///（shim 处理器求值统一桥，eval/Function 包装的 attr 放行语义）。
+    ///
+    /// `handler_code` 为处理器内容**原文**（spec：hash 对属性值逐字节计算，不 trim）。
+    /// unsafe-hashes / unsafe-inline / nonce 语义经 [`ContentSecurityPolicy::
+    /// is_script_attr_allowed`]。指令面：显式 script-src-attr / script-src 上报
+    /// "script-src-attr"，仅 default-src 回退时上报 "default-src"。
+    pub fn check_script_attr(&self, handler_code: &str) -> Option<CspViolation> {
+        let hash = crate::csp::script_hash_sha256_base64(handler_code);
+        for (policy, original) in &self.enforced_csp {
+            // 无 script-src-attr 且无 script-src 且无 default-src → 无政策约束放行。
+            if !policy.has_directive("script-src-attr")
+                && !policy.has_directive("script-src")
+                && !policy.has_directive("default-src")
+            {
+                continue;
+            }
+            if !policy.is_script_attr_allowed(None, Some(&hash)) {
+                return Some(CspViolation {
+                    effective_directive: policy.effective_script_attr_directive().to_string(),
+                    blocked_uri: "inline".to_string(),
+                    original_policy: original.clone(),
+                });
+            }
+        }
+        None
+    }
+
     /// 设置当前页面源（用于混合内容检测和 CSP）。
     pub fn set_page_origin(&mut self, url: &str) {
         self.page_origin = Origin::parse(url).ok();

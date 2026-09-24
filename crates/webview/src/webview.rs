@@ -3213,7 +3213,7 @@ impl WebView {
                 let _ = sandbox.execute(
                     "globalThis.__zwRealEval=globalThis.eval;globalThis.__zwRealFunction=globalThis.Function;\
 globalThis.eval=function(code){if(typeof __zwCspEvalBlocked==='function'&&__zwCspEvalBlocked()==='1'){throw new EvalError('EvalError: call to eval() blocked by CSP');}return globalThis.__zwRealEval.apply(this,arguments);};\
-globalThis.Function=new Proxy(globalThis.Function,{construct:function(t,args){if(typeof __zwCspEvalBlocked==='function'&&__zwCspEvalBlocked()==='1'){throw new EvalError('EvalError: call to Function() blocked by CSP');}return Reflect.construct(t,args);},apply:function(t,thisArg,args){if(typeof __zwCspEvalBlocked==='function'&&__zwCspEvalBlocked()==='1'){throw new EvalError('EvalError: call to Function() blocked by CSP');}return Reflect.apply(t,thisArg,args);}});",
+globalThis.Function=new Proxy(globalThis.Function,{construct:function(t,args){if(typeof __zwCspEvalBlocked==='function'&&__zwCspEvalBlocked()==='1'){if(globalThis.__zwAttrClear===true){return Reflect.construct(globalThis.__zwRealFunction||t,args);}throw new EvalError('EvalError: call to Function() blocked by CSP');}return Reflect.construct(t,args);},apply:function(t,thisArg,args){if(typeof __zwCspEvalBlocked==='function'&&__zwCspEvalBlocked()==='1'){if(globalThis.__zwAttrClear===true){return Reflect.apply(globalThis.__zwRealFunction||t,thisArg,args);}throw new EvalError('EvalError: call to Function() blocked by CSP');}return Reflect.apply(t,thisArg,args);}});",
                 );
                 // 原生违例回调（包装内每次 eval/Function 尝试触发）。
                 let eval_violations = std::sync::Arc::clone(&self.pending_csp_connect_violations);
@@ -3232,6 +3232,34 @@ globalThis.Function=new Proxy(globalThis.Function,{construct:function(t,args){if
                             });
                         }
                         "1".to_string()
+                    }),
+                );
+                // security-hardening M2-s7：script-src-attr 面——new Function 构造的处理器
+                // 内容 hash 经 is_script_attr_allowed 判定（unsafe-hashes 语义）；允许 →
+                // 走真实 Function（shim 处理器求值桥），阻止 → violation（script-src-attr）
+                // + EvalError。
+                let attr_violations = std::sync::Arc::clone(&self.pending_csp_connect_violations);
+                let attr_ctx = self.security_context.clone();
+                sandbox.register_callback(
+                    "__zwCspAttrAllowed",
+                    Box::new(move |args: &[String]| -> String {
+                        let code = args.first().map(String::as_str).unwrap_or("");
+                        match attr_ctx.check_script_attr(code) {
+                            None => "1".to_string(),
+                            Some(violation) => {
+                                if let Ok(mut queue) = attr_violations.lock() {
+                                    queue.push(PendingCspStyleViolation {
+                                        effective_directive: violation.effective_directive,
+                                        blocked_uri: violation.blocked_uri,
+                                        original_policy: violation.original_policy,
+                                        target_tag: "",
+                                        target_ordinal: usize::MAX,
+                                        link_error: None,
+                                    });
+                                }
+                                "0".to_string()
+                            }
+                        }
                     }),
                 );
             }

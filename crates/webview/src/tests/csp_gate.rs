@@ -341,3 +341,47 @@ return out.join('|');
         .unwrap();
     println!("EVALPROBE: {out}");
 }
+
+/// script-src-attr 检查点（security-hardening M2-s7）：unsafe-hashes + hash 匹配的
+/// onclick 处理器放行执行；不匹配处理器被阻止（script-src-attr violation）。
+/// script-src-event-handler-on-inline-script corpus 形态。
+#[test]
+fn csp_attr_gate_hash_allows_and_blocks_sh1_m2s7() {
+    let hash = "KMqmvVOJ9XW5OiOAYYYPPTFk+Zj/3KrlSEyqWgqibwU=";
+    let mut wv = WebView::new(WebViewConfig {
+        csp_enforcement: true,
+        ..WebViewConfig::default()
+    });
+    wv.prepare_document_state("https://wpt.test/csp/case.html");
+    let html = format!(
+        r#"<html><head>
+<meta http-equiv="Content-Security-Policy" content="script-src 'nonce-dummy' 'unsafe-hashes' 'sha256-{hash}'">
+</head><body>
+<script nonce="dummy">
+globalThis.__vio = [];
+document.addEventListener('securitypolicyviolation', function(e) {{
+  globalThis.__vio.push({{ d: e.effectiveDirective }});
+}});
+window.eventHandlerExecuted = false;
+var ok = document.createElement('div');
+ok.setAttribute('onclick', 'window.eventHandlerExecuted = true');
+ok.dispatchEvent(new Event('click'));
+var bad = document.createElement('div');
+bad.setAttribute('onclick', 'window.eventHandlerExecuted = "evil"');
+bad.dispatchEvent(new Event('click'));
+</script>
+</body></html>"#
+    );
+    wv.load_html(&html, None);
+    wv.run_page_scripts().expect("run page scripts");
+    assert_eq!(
+        wv.execute_script("String(window.eventHandlerExecuted)").unwrap(),
+        "true",
+        "hash 匹配处理器放行执行"
+    );
+    let vio = wv.execute_script("JSON.stringify(globalThis.__vio)").unwrap();
+    assert!(
+        vio.contains(r#""d":"script-src-attr""#),
+        "不匹配处理器阻止 + script-src-attr 口径: {vio}"
+    );
+}

@@ -5706,8 +5706,25 @@
     if (!_onHandlers[key]) _onHandlers[key] = {};
     if (!code) { _onHandlers[key][type] = false; return; } // 查无 → 缓存 false（getter 返 null）
     var fn = null;
-    try { fn = new Function('event', 'with(document) { with(this) { ' + code + ' } }'); }
-    catch (_e) { _onHandlers[key][type] = false; return; } // 编译失败（语法错）→ 视为无 handler
+    // security-hardening M2-s7：script-src-attr 检查点——处理器编译前按内容 hash 判定
+    //（unsafe-hashes 语义；`__zwCspAttrAllowed` 回调入队 violation）；阻止 → 缓存
+    // false（视为无 handler——dispatchEvent/click 均不触发）。回调未注册（CSP 关）→
+    // 恒放行零变更。编译窗 `__zwAttrClear` 标记放行通道（Function Proxy 对标记窗口内
+    // 构造走 attr 语义——shim 编译壳 with(document){with(this){...}} 不改变 hash 判定
+    // 基准：此处以**未包装的属性原文**判）。
+    if (typeof __zwCspAttrAllowed === 'function' && __zwCspAttrAllowed(code) !== '1') {
+      _onHandlers[key][type] = false;
+      return;
+    }
+    try {
+      globalThis.__zwAttrClear = true;
+      fn = new Function('event', 'with(document) { with(this) { ' + code + ' } }');
+      globalThis.__zwAttrClear = false;
+    } catch (_e) {
+      globalThis.__zwAttrClear = false;
+      _onHandlers[key][type] = false;
+      return;
+    } // 编译失败（语法错）→ 视为无 handler
     _onHandlers[key][type] = fn;
     if (!_listenerStore[key]) _listenerStore[key] = {};
     if (!_listenerStore[key][type]) _listenerStore[key][type] = [];
@@ -8407,12 +8424,23 @@
         }
       }
       // R155：inline onclick 在 pre-click activation 后执行（spec listener 序）。
+      // security-hardening M2-s7：script-src-attr 检查点——`__zwCspAttrAllowed(code)`
+      // 原生回调按处理器内容 hash 判定（unsafe-hashes 语义）；阻止 → 处理器静默跳过
+      //（violation 由回调入队）+ `__zwAttrClear` 标记放行通道（Function Proxy 对标记
+      // 窗口内的构造走 attr 语义，页面自发 new Function 不受影响——eval 面归
+      // __zwCspEvalBlocked）。回调未注册（CSP 关）→ 恒放行，零变更。
       var inlineCode = node.getAttribute && node.getAttribute('onclick');
       if (inlineCode) {
-        try {
-          var fn152 = new Function('event', 'with(document) { with(this) { ' + inlineCode + ' } }');
-          try { fn152.call(node, ev); } catch (_e152i) {}
-        } catch (_e152c) {}
+        var _zwAttrOk = (typeof __zwCspAttrAllowed !== 'function')
+          || __zwCspAttrAllowed(inlineCode) === '1';
+        if (_zwAttrOk) {
+          try {
+            globalThis.__zwAttrClear = true;
+            var fn152 = new Function('event', 'with(document) { with(this) { ' + inlineCode + ' } }');
+            try { fn152.call(node, ev); } catch (_e152i) {}
+            globalThis.__zwAttrClear = false;
+          } catch (_e152c) { globalThis.__zwAttrClear = false; }
+        }
       }
       // click 派发（本地 listener + 上行 parentNode 链由 dispatchEvent 处理）。
       var notPrevented = node.dispatchEvent(ev);

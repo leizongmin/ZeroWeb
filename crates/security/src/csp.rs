@@ -912,6 +912,19 @@ impl ContentSecurityPolicy {
         self.find_directive(name).is_some()
     }
 
+    /// 返回 script 属性面（onclick 等内联事件处理器）检查实际生效的指令名
+    ///（security-hardening M2-s7）。
+    ///
+    /// 元素面口径同 [`Self::effective_script_directive`]：显式 script-src-attr /
+    /// script-src 均上报 "script-src-attr"，仅 default-src 回退时上报 "default-src"。
+    pub fn effective_script_attr_directive(&self) -> &'static str {
+        if self.find_directive("script-src-attr").is_some() || self.find_directive("script-src").is_some() {
+            "script-src-attr"
+        } else {
+            "default-src"
+        }
+    }
+
     /// 返回 style 元素检查实际生效的指令名（security-hardening M2-s3/s4）。
     ///
     /// **元素面口径**（Chromium 对齐，style-blocked 族 corpus 断言
