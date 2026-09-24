@@ -770,11 +770,98 @@ pub fn extract_script_source_positions(html: &str) -> Vec<(u32, u32)> {
     positions
 }
 
+/// 单个 `<style>` 元素的 CSP 检查点输入面（security-hardening M2-s3）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StyleElementCsp {
+    /// `nonce` 属性值（缺失/空 → None）。
+    pub nonce: Option<String>,
+    /// 内容原始文本（未 trim——hash 由调用方对 trim 后内容计算）。
+    pub content: String,
+    /// 内容起始字节偏移（原文）。
+    pub content_start: usize,
+    /// 内容结束字节偏移（原文， exclusive——`</style` 之前）。
+    pub content_end: usize,
+}
+
+/// 从开标签文本提取属性值（security-hardening M2-s3 专用——`nonce="v"` / `nonce='v'`
+/// / `nonce=v` / 裸 `nonce`；大小写不敏感匹配名）。
+fn attr_from_open_tag(open_tag: &str, name: &str) -> Option<String> {
+    let lower = open_tag.to_ascii_lowercase();
+    let needle = name.to_ascii_lowercase();
+    let mut search_from = 0;
+    while let Some(pos) = lower[search_from..].find(&needle) {
+        let abs = search_from + pos;
+        let after_lower = &lower[abs + needle.len()..];
+        // 属性名边界：后随空白 / =（排除前缀撞名，如 `data-nonce`）。
+        let prev_ok = abs == 0
+            || open_tag[..abs]
+                .chars()
+                .next_back()
+                .is_some_and(|c| c.is_ascii_whitespace());
+        if !prev_ok {
+            search_from = abs + needle.len();
+            continue;
+        }
+        if let Some(rest) = after_lower.trim_start().strip_prefix('=') {
+            let val_raw = rest.trim_start();
+            let (quote, val) = match val_raw.chars().next()? {
+                '"' => ('"', &val_raw[1..]),
+                '\'' => ('\'', &val_raw[1..]),
+                _ => ('\0', val_raw),
+            };
+            let end = if quote == '\0' {
+                val.find(|c: char| c.is_ascii_whitespace() || c == '>')
+                    .unwrap_or(val.len())
+            } else {
+                val.find(quote).unwrap_or(val.len())
+            };
+            return Some(val[..end].trim().to_string());
+        }
+        // 裸属性（无值）——nonce 无值视作缺失。
+        return None;
+    }
+    None
+}
+
+/// 提取每个 `<style>` 元素的 CSP 检查点输入（security-hardening M2-s3）。
+///
+/// 原文扫描（`<style` … `</style`），向量按文档序对齐全量 `<style>` 元素序——
+/// 宿主据此检查 nonce/hash 并对被阻止元素**原地清空内容**（span 置空白，元素保留
+/// ——DOM 中元素必须存在：targeting corpus 断言 violation target 为该 style 元素）。
+pub fn extract_style_elements_csp(html: &str) -> Vec<StyleElementCsp> {
+    let mut infos = Vec::new();
+    // ASCII 小写镜像（等字节长）——大小写不敏感扫描 `<style` / `</style`（HTML 标签
+    // 名大小写不敏感；原文切片仍取自 html）。
+    let lower_all = html.to_ascii_lowercase();
+    let mut cursor = 0;
+    while let Some(start) = lower_all[cursor..].find("<style") {
+        let abs_start = cursor + start;
+        let Some(rel_gt) = lower_all[abs_start..].find('>') else {
+            break;
+        };
+        let open_tag = &html[abs_start..=abs_start + rel_gt];
+        let content_abs_start = abs_start + rel_gt + 1;
+        let content_len = match lower_all[content_abs_start..].find("</style") {
+            Some(end) => end,
+            None => html.len() - content_abs_start,
+        };
+        infos.push(StyleElementCsp {
+            nonce: attr_from_open_tag(open_tag, "nonce").filter(|n| !n.is_empty()),
+            content: html[content_abs_start..content_abs_start + content_len].to_string(),
+            content_start: content_abs_start,
+            content_end: content_abs_start + content_len,
+        });
+        cursor = content_abs_start + content_len;
+    }
+    infos
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
         MediaResourceElementKind, PageScript, extract_media_resources, extract_meta_csp_policies,
         extract_page_scripts_indexed, extract_script_csp_info, extract_script_source_positions,
+        extract_style_elements_csp,
     };
 
     #[test]
@@ -834,6 +921,24 @@ mod tests {
             (4, 9),
             "<script> 8 字符 → 内容起点列 9（blockeduri-inline 形态）"
         );
+    }
+
+    /// style 元素 CSP 输入提取（security-hardening M2-s3）：nonce 提取 + 内容 span
+    /// 偏移 + 大小写不敏感闭合标签。
+    #[test]
+    fn extract_style_elements_csp_spans_sh1_m2s3() {
+        let html = "<html><head>\
+            <style nonce=\"ok\">body{color:red}</style>\
+            <STYLE>p { color: blue }</STYLE>\
+            </head><body></body></html>";
+        let infos = extract_style_elements_csp(html);
+        assert_eq!(infos.len(), 2);
+        assert_eq!(infos[0].nonce.as_deref(), Some("ok"));
+        assert_eq!(infos[0].content, "body{color:red}");
+        assert_eq!(&html[infos[0].content_start..infos[0].content_end], "body{color:red}");
+        assert_eq!(infos[1].nonce, None);
+        assert_eq!(infos[1].content, "p { color: blue }");
+        assert_eq!(&html[infos[1].content_start..infos[1].content_end], "p { color: blue }");
     }
 
     /// meta CSP 政策提取（security-hardening M2-s1）：head 内生效、body 内忽略、

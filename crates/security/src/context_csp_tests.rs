@@ -173,3 +173,30 @@ fn check_image_img_src_sh1_m2s2() {
     ctx.set_document_csp(&["script-src 'self'".to_string()]);
     assert!(ctx.check_image("https://evil.test/a.png").is_none());
 }
+
+/// style 元素检查点（security-hardening M2-s3）：inline nonce 放行 + 无 nonce 阻止 +
+/// 外链 URL 源匹配（style-src corpus 形态）。
+#[test]
+fn check_style_style_src_sh1_m2s3() {
+    let mut ctx = SecurityContext::new();
+    ctx.set_page_origin("https://wpt.test/csp/case.html");
+    ctx.set_document_csp(&["style-src 'nonce-ok'".to_string()]);
+    // 无 nonce 内联 → 阻止，effectiveDirective 如实。
+    let v = ctx.check_style(None, None, None).expect("inline must be blocked");
+    assert_eq!(v.effective_directive, "style-src");
+    assert_eq!(v.blocked_uri, "inline");
+    // nonce 匹配内联 → 放行；内容 hash 匹配亦放行。
+    assert!(ctx.check_style(Some("ok"), None, None).is_none());
+    let hash = crate::csp::script_hash_sha256_base64("body{color:red}");
+    ctx.clear_document_csp();
+    ctx.set_document_csp(&[format!("style-src 'sha256-{hash}'")]);
+    assert!(ctx.check_style(None, Some(&hash), None).is_none());
+    // 外链：'self' 源匹配（回退 style-src → default-src 面）。
+    ctx.clear_document_csp();
+    ctx.set_document_csp(&["style-src 'self'".to_string()]);
+    assert!(ctx.check_style(None, None, Some("https://wpt.test/a.css")).is_none());
+    let v = ctx
+        .check_style(None, None, Some("https://evil.test/a.css"))
+        .expect("cross-origin stylesheet must be blocked");
+    assert_eq!(v.blocked_uri, "https://evil.test/a.css");
+}

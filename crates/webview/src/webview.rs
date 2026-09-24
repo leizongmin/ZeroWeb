@@ -10,10 +10,10 @@ use zero_engine::{
     BudgetAdvance, BudgetedRenderSession, DomMutation, MediaType, PipelineTimings, PrefersColorSchemeValue,
     RenderPipeline, RenderResult, extract_css_image_urls, extract_html_style_text, extract_img_srcs,
     extract_meta_csp_policies, extract_page_scripts_indexed, extract_script_csp_info, extract_script_source_positions,
-    extract_stylesheet_hrefs, generate_js_dom_shim, image_resource_key, page_script_error_check,
-    register_dom_callbacks, resolve_document_url, script_clear_current_script, script_dispatch_dom_event,
-    script_dispatch_img_event, script_dispatch_securitypolicyviolation, script_run_classic_page,
-    script_set_current_script,
+    extract_style_elements_csp, extract_stylesheet_hrefs, generate_js_dom_shim, image_resource_key,
+    page_script_error_check, register_dom_callbacks, resolve_document_url, script_clear_current_script,
+    script_dispatch_dom_event, script_dispatch_img_event, script_dispatch_link_event,
+    script_dispatch_securitypolicyviolation, script_run_classic_page, script_set_current_script,
 };
 // R3150（闭合 R3121 latent）：script_dispatch_native_event 唯一用法（dispatch_event native_dom 分支）
 // 受 `#[cfg(feature = "v8")]` 门控——quickjs feature 下 unused import。独立 gated import 消 latent warning。
@@ -325,6 +325,20 @@ pub enum WebViewEvent {
 /// 事件回调函数类型。
 pub type EventCallback = Rc<RefCell<dyn FnMut(&WebViewEvent)>>;
 
+/// security-hardening M2-s3：待派发的 style 面 CSP 违规（元素站 target + 可选 link
+/// error 事件载荷）。
+struct PendingCspStyleViolation {
+    effective_directive: String,
+    blocked_uri: String,
+    original_policy: String,
+    /// 元素站 tag（"style" / "link"——shim getElementsByTagName 解析序号）。
+    target_tag: &'static str,
+    /// 全量同名元素文档序序号。
+    target_ordinal: usize,
+    /// 外链 stylesheet 附带 link error 事件（abs href）。
+    link_error: Option<String>,
+}
+
 /// WebView — 可嵌入的网页渲染表面。
 pub struct WebView {
     /// 配置。
@@ -437,6 +451,10 @@ pub struct WebView {
     /// （load_html）sandbox 未装且页面 listener 未注册，error 事件延后到
     /// run_page_scripts 起点（shim 就绪后）统一派发。
     pending_csp_img_blocks: Vec<String>,
+    /// security-hardening M2-s3：被 CSP 阻止的 style 面（inline `<style>` / 外链
+    /// stylesheet）violation 队列——元素站派发需 shim 就绪 + 页面 listener 注册，
+    /// 延后到 run_page_scripts 页面脚本之后统一派发。
+    pending_csp_style_violations: Vec<PendingCspStyleViolation>,
     /// 来源页 URL（导航前的 current_url；`document.referrer` 读，sync 到 pipeline）。
     referrer: Option<String>,
     /// 页面标题。
@@ -600,6 +618,7 @@ impl WebView {
             focus_owner: None,
             page_scripts_initialized: false,
             pending_csp_img_blocks: Vec::new(),
+            pending_csp_style_violations: Vec::new(),
             referrer: None,
             title: None,
             loading: false,
@@ -760,10 +779,64 @@ impl WebView {
         external_css
     }
 
+    /// security-hardening M2-s3：inline `<style>` 检查（nonce/hash/unsafe-inline）——
+    /// 被阻止元素内容 span 原地置空白（保留字节长度以免影响其余原文偏移消费方）+
+    /// violation 入队（元素站 target = style 元素全量序号）。放行面零改动。
+    fn gate_inline_styles<'a>(&mut self, html: &'a str) -> std::borrow::Cow<'a, str> {
+        let infos = extract_style_elements_csp(html);
+        if infos.is_empty() {
+            return std::borrow::Cow::Borrowed(html);
+        }
+        let mut owned = html.to_string();
+        let mut blocked_spans: Vec<(usize, usize)> = Vec::new();
+        for (ordinal, info) in infos.iter().enumerate() {
+            let content = info.content.trim();
+            let hashes = [
+                zero_security::csp::style_hash_base64("sha256", content),
+                zero_security::csp::style_hash_base64("sha384", content),
+                zero_security::csp::style_hash_base64("sha512", content),
+            ];
+            let violation = self
+                .security_context
+                .check_style_hashes(info.nonce.as_deref(), &hashes, None);
+
+            let Some(violation) = violation else {
+                continue;
+            };
+            blocked_spans.push((info.content_start, info.content_end));
+            self.pending_csp_style_violations.push(PendingCspStyleViolation {
+                effective_directive: violation.effective_directive,
+                blocked_uri: violation.blocked_uri,
+                original_policy: violation.original_policy,
+                target_tag: "style",
+                target_ordinal: ordinal,
+                link_error: None,
+            });
+        }
+        if blocked_spans.is_empty() {
+            return std::borrow::Cow::Borrowed(html);
+        }
+        // 等长空白替换（偏移不受影响；CSS 解析得空样式表）。
+        for (start, end) in blocked_spans {
+            owned.replace_range(start..end, " ".repeat(end - start).as_str());
+        }
+        std::borrow::Cow::Owned(owned)
+    }
+
     /// 加载 HTML 内容。
     pub fn load_html(&mut self, html: &str, css: Option<&str>) -> WebViewRenderResult {
         self.reset_service_worker_document_projection();
         self.remove_current_service_worker_client();
+        // security-hardening M2-s3：inline `<style>` CSP 检查点——被阻止的 style 元素
+        // **原地清空内容**（元素保留：targeting corpus 断言 violation target 为该
+        // style 元素；清空即样式不生效）。装配幂等（fetch_page_images 侧同装）。
+        let html = if self.config.csp_enforcement {
+            let policies = extract_meta_csp_policies(html);
+            self.security_context.set_document_csp(&policies);
+            self.gate_inline_styles(html)
+        } else {
+            std::borrow::Cow::Borrowed(html)
+        };
         self.document_generation = self.document_generation.wrapping_add(1);
         self.service_worker_client_generation
             .store(self.document_generation, Ordering::Relaxed);
@@ -798,7 +871,7 @@ impl WebView {
         self.sync_pipeline_page_state();
         self.pipeline.set_prefers_color_scheme(self.prefers_color_scheme);
         self.pipeline.set_media_type(self.media_type);
-        let result = self.pipeline.render_html(html, css_str);
+        let result = self.pipeline.render_html(&html, css_str);
         let render_result = render_result_to_webview(&result);
         self.last_render = Some(render_result.clone());
         // R150：render 后刷新布局 rect 快照（gBCR 回调读取源）。
@@ -904,18 +977,35 @@ impl WebView {
     /// 负责，DOM 内 link 提取由 `zero_engine::extract_stylesheet_hrefs` 负责，
     /// 保持 engine 不直接耦合网络。任一链接抓取失败仅记录日志、不阻断页面加载
     ///（与浏览器宽松行为一致）。
-    fn resolve_external_css(&self, html: &str, base_url: &str) -> String {
+    fn resolve_external_css(&mut self, html: &str, base_url: &str) -> String {
         let hrefs = extract_stylesheet_hrefs(html);
         if hrefs.is_empty() {
             return String::new();
         }
         let base = url::Url::parse(base_url).ok();
         let mut combined = String::new();
-        for href in &hrefs {
+        for (link_ordinal, href) in hrefs.iter().enumerate() {
             let abs = match base.as_ref().and_then(|b| b.join(href).ok()) {
                 Some(u) => u.to_string(),
                 None => href.clone(),
             };
+            // security-hardening M2-s3：外链 stylesheet CSP 检查点（style-src-elem 源
+            // 匹配）——被阻止 href 不 fetch/不并入 combined；violation 入队（元素站
+            // target = link 元素）+ link error 事件（abs href）随 run 尾统一派发。
+            if self.config.csp_enforcement
+                && self.security_context.has_document_csp()
+                && let Some(violation) = self.security_context.check_style(None, None, Some(&abs))
+            {
+                self.pending_csp_style_violations.push(PendingCspStyleViolation {
+                    effective_directive: violation.effective_directive,
+                    blocked_uri: violation.blocked_uri,
+                    original_policy: violation.original_policy,
+                    target_tag: "link",
+                    target_ordinal: link_ordinal,
+                    link_error: Some(abs.clone()),
+                });
+                continue;
+            }
             // R34xx：headless/testharness 路径外链样式表经 image_source_fetcher 本地提供
             //（wpt-data 文件映射，与图片子资源同款；None → 回退 HTTP 网络）。
             let resp = if let Some(fetcher) = self.image_source_fetcher.as_ref()
@@ -3119,6 +3209,37 @@ impl WebView {
                 .ok_or_else(|| WebViewError::Script("no js sandbox".to_string()))?;
             for url in &csp_img_blocks {
                 let _ = sandbox.execute(&script_dispatch_img_event(url, "error"));
+            }
+        }
+        // security-hardening M2-s3：style 面 CSP violation（元素站）+ link error 事件
+        // 统一派发——页面脚本已执行（listener/测试句柄就位）。
+        let style_violations = std::mem::take(&mut self.pending_csp_style_violations);
+        if !style_violations.is_empty() {
+            let sandbox = self
+                .js_sandbox
+                .as_mut()
+                .ok_or_else(|| WebViewError::Script("no js sandbox".to_string()))?;
+            for item in &style_violations {
+                if let Some(href) = &item.link_error {
+                    let _ = sandbox.execute(&script_dispatch_link_event(href, "error"));
+                }
+                let snippet = script_dispatch_securitypolicyviolation(
+                    usize::MAX,
+                    &self.current_url.clone().unwrap_or_else(|| "about:blank".to_string()),
+                    &item.effective_directive,
+                    &item.original_policy,
+                    &item.blocked_uri,
+                    0,
+                    0,
+                );
+                // 元素站 target 经通用 tag/ordinal 形态传参（scriptOrdinal=usize::MAX
+                // 即「无 script ordinal」哨兵，shim 侧以 targetTag 优先）。
+                let snippet = snippet.replacen(
+                    "scriptOrdinal:18446744073709551615,",
+                    &format!("targetTag:'{}',targetOrdinal:{},", item.target_tag, item.target_ordinal),
+                    1,
+                );
+                let _ = sandbox.execute(&snippet);
             }
         }
         let pending = {

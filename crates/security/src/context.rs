@@ -149,6 +149,73 @@ impl SecurityContext {
         None
     }
 
+    /// style 元素检查点（security-hardening M2-s3）。
+    ///
+    /// 多政策并集语义同 [`Self::check_script`]。inline `<style>`：`nonce` 为元素
+    /// nonce 属性值、`inline_hash` 为内容 sha256-base64（[`script_hash_sha256_base64`]
+    /// 产出——hash 算法族同源）、外链 URL 传 `resolved_url`；`unsafe-inline` /
+    /// nonce / hash 任一命中即放行，外链走 style-src-elem 源匹配。
+    pub fn check_style(
+        &self,
+        nonce: Option<&str>,
+        inline_hash: Option<&str>,
+        resolved_url: Option<&str>,
+    ) -> Option<CspViolation> {
+        for (policy, original) in &self.enforced_csp {
+            let allowed = match resolved_url {
+                Some(url) => {
+                    nonce.is_some_and(|n| policy.is_inline_style_allowed(Some(n), None))
+                        || policy.is_style_element_allowed(url, self.page_origin.as_ref())
+                }
+                None => policy.is_inline_style_allowed(nonce, inline_hash),
+            };
+            if !allowed {
+                return Some(CspViolation {
+                    effective_directive: policy.effective_style_directive().to_string(),
+                    blocked_uri: resolved_url.unwrap_or("inline").to_string(),
+                    original_policy: original.clone(),
+                });
+            }
+        }
+        None
+    }
+
+    /// style 元素检查点——多算法 hash 族形态（security-hardening M2-s3）。
+    ///
+    /// 与 [`Self::check_style`] 同语义，但 inline 判定对 `inline_hashes` 中**任一**
+    /// hash 源命中即放行（sha256/sha384/sha512 并立——spec
+    /// §source-list-hash-matching；style-src-hash-allowed corpus 一政策各算法一枚
+    /// 对应不同元素内容）。
+    pub fn check_style_hashes(
+        &self,
+        nonce: Option<&str>,
+        inline_hashes: &[String],
+        resolved_url: Option<&str>,
+    ) -> Option<CspViolation> {
+        for (policy, original) in &self.enforced_csp {
+            let allowed = match resolved_url {
+                Some(url) => {
+                    nonce.is_some_and(|n| policy.is_inline_style_allowed(Some(n), None))
+                        || policy.is_style_element_allowed(url, self.page_origin.as_ref())
+                }
+                None => {
+                    policy.is_inline_style_allowed(nonce, None)
+                        || inline_hashes
+                            .iter()
+                            .any(|h| policy.is_inline_style_allowed(None, Some(h)))
+                }
+            };
+            if !allowed {
+                return Some(CspViolation {
+                    effective_directive: policy.effective_style_directive().to_string(),
+                    blocked_uri: resolved_url.unwrap_or("inline").to_string(),
+                    original_policy: original.clone(),
+                });
+            }
+        }
+        None
+    }
+
     /// 设置当前页面源（用于混合内容检测和 CSP）。
     pub fn set_page_origin(&mut self, url: &str) {
         self.page_origin = Origin::parse(url).ok();

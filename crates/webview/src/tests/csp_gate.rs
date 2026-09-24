@@ -148,3 +148,51 @@ fn csp_img_gate_blocks_markup_img_and_fires_error_sh1_m2s2() {
         "被阻止 markup img 派发 error（onerror）"
     );
 }
+
+/// inline `<style>` CSP 检查点（security-hardening M2-s3）：`style-src 'none'` 下被
+/// 阻止的 style 元素内容清空（元素保留）+ violation 元素站派发（target = STYLE）。
+#[test]
+fn csp_style_gate_blocks_inline_style_sh1_m2s3() {
+    let mut wv = WebView::new(WebViewConfig {
+        csp_enforcement: true,
+        ..WebViewConfig::default()
+    });
+    wv.prepare_document_state("https://wpt.test/csp/case.html");
+    let html = r#"<html><head>
+<meta http-equiv="Content-Security-Policy" content="style-src 'none'">
+<style>body{color:red}</style>
+</head><body>
+<script>
+globalThis.__vio = [];
+document.addEventListener('securitypolicyviolation', function(e) {
+  globalThis.__vio.push({
+    d: e.effectiveDirective, b: e.blockedURI, p: e.originalPolicy,
+    t: e.target === document ? 'document' : (e.target && e.target.tagName)
+  });
+});
+</script>
+</body></html>"#;
+    let _ = wv.fetch_page_images(html, "https://wpt.test/csp/case.html");
+    wv.load_html(html, None);
+    wv.run_page_scripts().expect("run page scripts");
+    // style 元素保留 + 内容清空（样式不生效面）。
+    assert_eq!(
+        wv.execute_script("document.getElementsByTagName('style').length")
+            .unwrap(),
+        "1",
+        "被阻止 style 元素保留（target 可达）"
+    );
+    assert!(
+        wv.execute_script("document.getElementsByTagName('style')[0].textContent.trim()")
+            .unwrap()
+            .is_empty(),
+        "被阻止 style 内容清空"
+    );
+    let vio = wv.execute_script("JSON.stringify(globalThis.__vio)").unwrap();
+    assert!(
+        vio.contains(r#""d":"style-src""#),
+        "effectiveDirective 如实（政策指令名）: {vio}"
+    );
+    assert!(vio.contains(r#""b":"inline""#), "blockedURI=inline: {vio}");
+    assert!(vio.contains(r#""t":"STYLE""#), "target 为被阻止 style 元素: {vio}");
+}

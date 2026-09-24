@@ -17,6 +17,25 @@ type CspReportCallback = dyn Fn(&str, &str, &str);
 pub fn script_hash_sha256_base64(content: &str) -> String {
     use sha2::{Digest, Sha256};
     let digest = Sha256::digest(content.as_bytes());
+    csp_hash_base64(&digest)
+}
+
+/// 计算 style/script 内容的 CSP hash 源值（security-hardening M2-s3）——多算法族：
+/// `algorithm` ∈ {sha256, sha384, sha512}（spec CSP3 §source-list-hash-matching 三
+/// 算法并立；style-src-hash-allowed corpus 一政策各算法一枚对应不同元素）。
+pub fn style_hash_base64(algorithm: &str, content: &str) -> String {
+    use sha2::{Digest, Sha256, Sha384, Sha512};
+    let bytes = content.as_bytes();
+    let digest: Vec<u8> = match algorithm {
+        "sha384" => Sha384::digest(bytes).to_vec(),
+        "sha512" => Sha512::digest(bytes).to_vec(),
+        _ => Sha256::digest(bytes).to_vec(),
+    };
+    csp_hash_base64(&digest)
+}
+
+/// RFC 4648 §4 base64 编码（sha2 侧无 base64 依赖，本 crate 内联编码器）。
+fn csp_hash_base64(digest: &[u8]) -> String {
     // 标准 base64 编码（sha2 侧无 base64 依赖，本 crate 内联 RFC 4648 §4 编码器）。
     const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut out = String::with_capacity(digest.len().div_ceil(3) * 4);
@@ -513,12 +532,20 @@ impl ContentSecurityPolicy {
             }
         }
 
-        // 检查 hash 匹配（CSP 中格式为 'sha256-<base64>'，含单引号）
+        // 检查 hash 匹配（CSP 格式为 '<alg>-<base64>' 可带单引号；spec CSP3
+        // §source-list-hash-matching 三算法并立——入参 hash 为裸 base64，按算法族
+        // 逐一比对。算法前缀大小写不敏感（style-src-hash-case-insensitive corpus
+        // 'SHA256-'/'sHa256-' 面；hash token 整体 ASCII casefold 比对）。
         if let Some(h) = hash {
-            let hash_quoted = format!("'sha256-{h}'");
-            let hash_bare = format!("sha256-{h}");
-            if values.iter().any(|v| v == &hash_quoted || v == &hash_bare) {
-                return true;
+            for alg in ["sha256", "sha384", "sha512"] {
+                let hash_quoted = format!("'{alg}-{h}'");
+                let hash_bare = format!("{alg}-{h}");
+                if values
+                    .iter()
+                    .any(|v| v.eq_ignore_ascii_case(&hash_quoted) || v.eq_ignore_ascii_case(&hash_bare))
+                {
+                    return true;
+                }
             }
         }
 
@@ -549,12 +576,18 @@ impl ContentSecurityPolicy {
             }
         }
 
-        // 检查 hash 匹配（CSP 中格式为 'sha256-<base64>'，含单引号）
+        // 检查 hash 匹配（同 is_inline_script_allowed：三算法并立 + 算法前缀大小写
+        // 不敏感——spec §source-list-hash-matching；style-src-hash corpus 全覆盖）。
         if let Some(h) = hash {
-            let hash_quoted = format!("'sha256-{h}'");
-            let hash_bare = format!("sha256-{h}");
-            if values.iter().any(|v| v == &hash_quoted || v == &hash_bare) {
-                return true;
+            for alg in ["sha256", "sha384", "sha512"] {
+                let hash_quoted = format!("'{alg}-{h}'");
+                let hash_bare = format!("{alg}-{h}");
+                if values
+                    .iter()
+                    .any(|v| v.eq_ignore_ascii_case(&hash_quoted) || v.eq_ignore_ascii_case(&hash_bare))
+                {
+                    return true;
+                }
             }
         }
 
@@ -872,6 +905,20 @@ impl ContentSecurityPolicy {
     /// 启用时，浏览器自动将 HTTP 请求升级为 HTTPS。
     pub fn has_upgrade_insecure_requests(&self) -> bool {
         self.directives.iter().any(|d| d.name == "upgrade-insecure-requests")
+    }
+
+    /// 返回 style 元素检查实际生效的指令名（security-hardening M2-s3）。
+    ///
+    /// 与 [`Self::is_style_element_allowed`] 的回退顺序一致（style-src-elem →
+    /// style-src → default-src），供违规事件的 `effectiveDirective` 字段如实上报。
+    pub fn effective_style_directive(&self) -> &'static str {
+        if self.find_directive("style-src-elem").is_some() {
+            "style-src-elem"
+        } else if self.find_directive("style-src").is_some() {
+            "style-src"
+        } else {
+            "default-src"
+        }
     }
 
     /// 返回 image 检查实际生效的指令名（security-hardening M2-s2）。

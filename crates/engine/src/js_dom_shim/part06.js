@@ -11572,17 +11572,25 @@
       ev.statusCode = 0;
       ev.lineNumber = f.lineNumber || 0;
       ev.columnNumber = f.columnNumber || 0;
-      // M2-s2 元素站 target（targeting corpus 语义）：scriptOrdinal 对应 script 元素
-      // 持有 key（__zwSelector sel 域 / __zwHandle handle 域）时按元素站派发
+      // M2-s2/s3 元素站 target（targeting corpus 语义）：targetTag+targetOrdinal（s3
+      // 泛化形态——style/link 面）优先，否则 scriptOrdinal（s1 script 面口径）。对应
+      // 元素持有 key（__zwSelector sel 域 / __zwHandle handle 域）时按元素站派发
       //（receiverProxy = 页面持有 proxy——R52 identity 保持），bubble 上行 doc/win
       //（document watcher 双达 + e.target = 被阻止元素）。解析失败/无 key → document 站。
-      var idx = (f.scriptOrdinal === undefined || f.scriptOrdinal === null) ? -1 : Number(f.scriptOrdinal);
       var tgtEl = null;
-      if (idx >= 0) {
+      if (f.targetTag !== undefined && f.targetTag !== null) {
         try {
-          var scripts = document.getElementsByTagName('script');
-          tgtEl = (scripts && scripts[idx]) || null;
-        } catch (_eSpvT) { tgtEl = null; }
+          var els = document.getElementsByTagName(f.targetTag);
+          tgtEl = (els && els[Number(f.targetOrdinal)]) || null;
+        } catch (_eSpvT2) { tgtEl = null; }
+      } else {
+        var idx = (f.scriptOrdinal === undefined || f.scriptOrdinal === null) ? -1 : Number(f.scriptOrdinal);
+        if (idx >= 0) {
+          try {
+            var scripts = document.getElementsByTagName('script');
+            tgtEl = (scripts && scripts[idx]) || null;
+          } catch (_eSpvT) { tgtEl = null; }
+        }
       }
       var tgtSel = null, tgtHandle = null;
       if (tgtEl && tgtEl.nodeType != null) {
