@@ -2,7 +2,7 @@
 
 **入口文档**: [../security-hardening.md](../security-hardening.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-25（R6：M2-s5 connect-src 阻止族 + 外链 css 应用链跨域归因 — 全绿 62→65 零丢失 / subtests 28.9%）
+**最后更新**: 2026-09-25（R7：M2-s6 corpus 第二批扩批 + eval 门禁 — 全绿 65→71（分母 415→445）/ subtests 169=28.0%）
 
 ---
 
@@ -56,7 +56,7 @@
 |---|------|------|
 | P1 | zero-security CSP 现状盘点 | ✅ R1（见上「基线事实」） |
 | P2 | content-security-policy / mixed-content / secure-contexts 三 corpus 导入 + 基线 | ✅ R1（415+2+4 案执行；CSP subtests 16.3% 基线见 evidence/） |
-| P3 | CSP 主要指令引擎完整化 + report-only + 违规报告 | 🔄 M2-s1→s5 ✅（骨架 + 源位置 + 元素站 target + img/style/connect 检查点 + hash 三算法 + 元素面口径 + GET 模板面；全绿 65/415、subtests 28.9%；余 = attr 面/运行时 img/eval，见 evidence/2026-09-25-m2-s5-csp-extensions.md 缺口表） |
+| P3 | CSP 主要指令引擎完整化 + report-only + 违规报告 | 🔄 M2-s1→s6 ✅（骨架 + 源位置 + 元素站 target + img/style/connect/eval 检查点 + hash 三算法 + 元素面口径 + GET 模板面 + corpus 第二批；全绿 71/445、subtests 169；余 = attr 面/运行时 img/eval 位置断言，见 evidence/2026-09-25-m2-s6-csp-extensions.md 缺口表） |
 | P4 | Mixed Content 分级阻止 + HSTS 接线 | ⏳ M3（mixed_content/checkpoint 接入子资源面；HSTS register 接 net 响应） |
 | P5 | Permissions API headless 语义层 + 事件 | ⏳ M4（navigator.permissions JS 面挂 PermissionManager） |
 | P6 | kill-switch + A/B + default-on 决策 | ⏳ M5 |
@@ -77,6 +77,15 @@
     subtests 91/557 = 16.3%；mixed-content 2 案、secure-contexts 4 案 0 绿）。口径
     注记：无强制下「allowed」案天然绿，M2 接线后 blocked/allowed 双向受检——
     blocked 案全红（Timeout × 134 大半）才是真实缺口面。
+- **R7（2026-09-25）M2-s6 corpus 第二批 + eval 门禁**（evidence/2026-09-25-m2-s6-csp-extensions.md）：
+  - 扩批 +5 目录（inheritance/navigation/sandbox/unsafe-eval/wasm-unsafe-eval，
+    分母 415→445）；eval 门禁 shim 层（v8 无 codegen 写入面）——`eval_violation`
+    多政策并集 + eval/Function Proxy 包装 + `__zwCspEvalBlocked` 回调入队。
+  - **per-script 作用域**（关键设计）：持久包装折断 harness/shim 装配链（首跑 −34）
+    ——机制侧 `(0,globalThis.__zwRealEval||eval)` + 非 harness 脚本前后装/卸两段修复；
+    Function Proxy 后置 ensure_js_shim（shim init 经 new Function）。
+  - corpus：全绿 65→71（+7 净，−1 event-handler 案归 attr 面 M2-s7）、subtests
+    165→169；unsafe-eval 簇 5/10。
 - **R6（2026-09-25）M2-s5 connect-src 阻止族**（evidence/2026-09-25-m2-s5-csp-extensions.md）：
   - `check_connect` + `has_directive` pub 面；`__zw_fetch` 统一桥检查点（导航面豁免；
     被阻止 → `__zw_fetch_error:` + Arc 共享队列 run 尾 document 站派发）。
@@ -121,12 +130,18 @@
 
 ## 下一步计划
 
-1. **M2-s6（attr 面 + 运行时 img）**：①script-src-attr（onclick 内联事件处理器——
-   shim 处理器调用检查点）；②运行时 img src-set 钩子（createElement('img') 族——
-   shim 属性写管道）；③eval 检查点（is_eval_allowed 钩 sandbox eval 面）。
-2. **M2-s7**：report-only 政策面走 console 报告（与 cdp-protocol 消费侧协调）+
-   corpus 第二批目录扩批（inheritance/navigation/sandbox/unsafe-eval/
-   wasm-unsafe-eval）+ DC 逐项判定预备。
+1. **M2-s7（attr 面 + 运行时 img + 收口预备）**：①script-src-attr（onclick 处理器
+   门禁——shim 求值改走 `__zwRealFunction` + attr 语义检查 `is_script_attr_allowed`；
+   同修 M2-s6 的 −1 回退案 script-src-event-handler-on-inline-script）；②运行时 img
+   src-set 钩子（createElement('img') 族）；③eval 违例调用点定位（blockeduri-eval
+   15:13）；④M5 DC 逐项判定预备（A/B 零回归 + default-on 决策口径）。
+
+**跨域记账（协调不硬改）**：
+- 外链 stylesheet ID 选择器应用缺口——pipeline/style 面预存（渲染流域 crates 域）。
+- fetch blocked 契约：shim host 错误 wire → resolve(ok:false)（上游期望 reject）。
+- inheritance/sandbox 簇全红（跨文档导航/iframe 管道重入条件）——深多进程面挂账。
+- eval 违例调用点定位（V8 栈面）——v8 crate 无 codegen 回调写入面，shim 层位置捕获
+  需 per-eval 包装传参（M2-s7 评估）。
 
 **跨域记账（协调不硬改）**：
 - 外链 stylesheet ID 选择器应用缺口（stylenonce-blocked allowed.css black）——
@@ -156,7 +171,7 @@
 | 里程碑 | 状态 |
 |--------|------|
 | M1 — 勘察 + WPT 导入与基线 | ✅ R1（2026-09-24，基线 16.3%） |
-| M2 — CSP 指令引擎完整化（接线） | 🔄 s1-s5 ✅（65/415 全绿零丢失，subtests 28.9%；attr 面/运行时 img/eval = s6/s7） |
+| M2 — CSP 指令引擎完整化（接线） | 🔄 s1-s6 ✅（71/445，subtests 169=28.0%；attr 面/运行时 img/eval 位置断言 = s7） |
 | M3 — Mixed Content + HSTS | ⏳ |
 | M4 — Permissions 语义层 | ⏳ |
 | M5 — 收口 | ⏳ |

@@ -2585,6 +2585,13 @@ impl WebView {
             (Vec::new(), Vec::new())
         };
         let csp_active = self.config.csp_enforcement && self.security_context.has_document_csp();
+        // security-hardening M2-s6：eval 门禁快照（v8 crate 无 codegen 写入面——shim 层
+        // eval/Function 包装抛 EvalError + violation 入 connect 共享队列）。
+        let eval_blocked_snapshot = self
+            .config
+            .csp_enforcement
+            .then(|| self.security_context.eval_violation())
+            .flatten();
         let scripts = extract_page_scripts_indexed(&html);
         // M2-s2：无脚页面若仍有被 CSP 阻止的 img 待派发 error，不早退（下方派发点
         // 需 sandbox/shim 就绪；有脚页面照常走全量装配）。
@@ -3196,7 +3203,44 @@ impl WebView {
                     )
                 }
             };
+            // security-hardening M2-s6：eval 门禁 per-script 作用域（非 harness 脚本
+            // 执行前后装/卸 eval/Function 包装——harness/shim 自身经 new Function
+            // 运行，持久包装会折断装配链；violation 入 connect 共享队列——run 尾
+            // document 站派发；v8 crate 无 codegen 写入面，shim 层实现）。
+            let eval_wrap_active =
+                eval_blocked_snapshot.is_some() && !script_csp_info.get(script_index).is_some_and(|i| i.zw_harness);
+            if eval_wrap_active {
+                let _ = sandbox.execute(
+                    "globalThis.__zwRealEval=globalThis.eval;globalThis.__zwRealFunction=globalThis.Function;\
+globalThis.eval=function(code){if(typeof __zwCspEvalBlocked==='function'&&__zwCspEvalBlocked()==='1'){throw new EvalError('EvalError: call to eval() blocked by CSP');}return globalThis.__zwRealEval.apply(this,arguments);};\
+globalThis.Function=new Proxy(globalThis.Function,{construct:function(t,args){if(typeof __zwCspEvalBlocked==='function'&&__zwCspEvalBlocked()==='1'){throw new EvalError('EvalError: call to Function() blocked by CSP');}return Reflect.construct(t,args);},apply:function(t,thisArg,args){if(typeof __zwCspEvalBlocked==='function'&&__zwCspEvalBlocked()==='1'){throw new EvalError('EvalError: call to Function() blocked by CSP');}return Reflect.apply(t,thisArg,args);}});",
+                );
+                // 原生违例回调（包装内每次 eval/Function 尝试触发）。
+                let eval_violations = std::sync::Arc::clone(&self.pending_csp_connect_violations);
+                let violation_for_cb = eval_blocked_snapshot.clone().unwrap();
+                sandbox.register_callback(
+                    "__zwCspEvalBlocked",
+                    Box::new(move |_args: &[String]| -> String {
+                        if let Ok(mut queue) = eval_violations.lock() {
+                            queue.push(PendingCspStyleViolation {
+                                effective_directive: violation_for_cb.effective_directive.clone(),
+                                blocked_uri: violation_for_cb.blocked_uri.clone(),
+                                original_policy: violation_for_cb.original_policy.clone(),
+                                target_tag: "",
+                                target_ordinal: usize::MAX,
+                                link_error: None,
+                            });
+                        }
+                        "1".to_string()
+                    }),
+                );
+            }
             let execution = sandbox.execute(&full).map(|_| ());
+            if eval_wrap_active {
+                let _ = sandbox.execute(
+                    "if(globalThis.__zwRealEval)globalThis.eval=globalThis.__zwRealEval;if(globalThis.__zwRealFunction)globalThis.Function=globalThis.__zwRealFunction;",
+                );
+            }
             let script_error = if strict && !is_module && execution.is_ok() {
                 match sandbox.execute(&page_script_error_check()) {
                     Ok(result) if result.value.is_empty() => None,

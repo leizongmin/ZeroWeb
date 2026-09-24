@@ -735,7 +735,11 @@ pub fn script_run_classic_page(code: &str, script_index: usize) -> String {
         format!("+'{}'", escape_js_string(&format!(";{exports}")))
     };
     format!(
-        "globalThis.__zw_set_current_script&&globalThis.__zw_set_current_script({idx});\nglobalThis.{g}=undefined;\ntry{{(0,eval)({code_literal}{export_suffix});}}catch(__zw_e){{globalThis.{g}=(__zw_e&&__zw_e.message)?String(__zw_e.message):String(__zw_e);}}\nfinally{{globalThis.__zw_clear_current_script&&globalThis.__zw_clear_current_script();}}",
+        // security-hardening M2-s6：`(0,globalThis.__zwRealEval||eval)`——eval 门禁
+        // per-script 包装（webview 侧）会把 globalThis.eval 换成检查包装，本机制自身的
+        // 页面脚本执行必须走**原生 eval**（包装安装片段先捕获 __zwRealEval；无门禁时
+        // 回落 eval，语义同为间接 eval 全局作用域）。
+        "globalThis.__zw_set_current_script&&globalThis.__zw_set_current_script({idx});\nglobalThis.{g}=undefined;\ntry{{(0,globalThis.__zwRealEval||eval)({code_literal}{export_suffix});}}catch(__zw_e){{globalThis.{g}=(__zw_e&&__zw_e.message)?String(__zw_e.message):String(__zw_e);}}\nfinally{{globalThis.__zw_clear_current_script&&globalThis.__zw_clear_current_script();}}",
         idx = script_index,
         g = PAGE_SCRIPT_ERROR_GLOBAL
     )

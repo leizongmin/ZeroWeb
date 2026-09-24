@@ -2955,6 +2955,12 @@ pub const CSP_CORPUS_SUBDIRS: &[&str] = &[
     "content-security-policy/frame-ancestors",
     "content-security-policy/blob",
     "content-security-policy/child-src",
+    // 第二批扩批（security-hardening R7）：政策继承 / 导航 / sandbox 指令 / eval 面。
+    "content-security-policy/inheritance",
+    "content-security-policy/navigation",
+    "content-security-policy/sandbox",
+    "content-security-policy/unsafe-eval",
+    "content-security-policy/wasm-unsafe-eval",
     "content-security-policy/gen/top.meta/script-src-self",
     "content-security-policy/gen/top.meta/script-src-wildcard",
     "content-security-policy/gen/top.meta/worker-src-none",

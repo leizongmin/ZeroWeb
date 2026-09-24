@@ -242,6 +242,27 @@ impl SecurityContext {
         None
     }
 
+    /// eval 面（security-hardening M2-s6）：多政策并集语义——**任一政策禁止 eval
+    /// 即禁止**（spec：eval 需全部政策允许）。全部允许 → None，否则返回首个禁止
+    /// 政策的 [`CspViolation`]（blockedURI="eval" 口径，effectiveDirective 为该政策
+    /// 的 script-src/default-src——eval 面无 -elem 子分）。
+    pub fn eval_violation(&self) -> Option<CspViolation> {
+        for (policy, original) in &self.enforced_csp {
+            if !policy.is_eval_allowed() {
+                return Some(CspViolation {
+                    effective_directive: if policy.has_directive("script-src") {
+                        "script-src".to_string()
+                    } else {
+                        "default-src".to_string()
+                    },
+                    blocked_uri: "eval".to_string(),
+                    original_policy: original.clone(),
+                });
+            }
+        }
+        None
+    }
+
     /// 设置当前页面源（用于混合内容检测和 CSP）。
     pub fn set_page_origin(&mut self, url: &str) {
         self.page_origin = Origin::parse(url).ok();

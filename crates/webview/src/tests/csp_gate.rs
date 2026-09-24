@@ -253,3 +253,91 @@ fetch('/content-security-policy/support/fail.txt')
         "blockedURI 为绝对 URL: {vio}"
     );
 }
+
+/// eval 门禁（security-hardening M2-s6）：`script-src` 缺 unsafe-eval 时 eval()/
+/// new Function 抛 EvalError + violation 入队（document 站 blockedURI="eval"）；
+/// 'unsafe-eval' 存在时 eval 照常（unsafe_eval corpus 形态）。
+#[test]
+fn csp_eval_gate_blocks_eval_and_function_sh1_m2s6() {
+    let mut wv = WebView::new(WebViewConfig {
+        csp_enforcement: true,
+        ..WebViewConfig::default()
+    });
+    wv.prepare_document_state("https://wpt.test/csp/case.html");
+    let html = r#"<html><head>
+<meta http-equiv="Content-Security-Policy" content="script-src 'self' 'unsafe-inline'">
+</head><body>
+<script>
+globalThis.__vio = [];
+document.addEventListener('securitypolicyviolation', function(e) {
+  globalThis.__vio.push({ d: e.effectiveDirective, b: e.blockedURI });
+});
+globalThis.__evalErr = 'no-throw';
+globalThis.__fnErr = 'no-throw';
+try { eval('1+1'); } catch (e) { globalThis.__evalErr = e.name; }
+try { new Function('1+1'); } catch (e) { globalThis.__fnErr = e.name; }
+</script>
+</body></html>"#;
+    wv.load_html(html, None);
+    wv.run_page_scripts().expect("run page scripts");
+    assert_eq!(
+        wv.execute_script("String(globalThis.__evalErr)").unwrap(),
+        "EvalError",
+        "eval() 被 CSP 阻止抛 EvalError"
+    );
+    assert_eq!(
+        wv.execute_script("String(globalThis.__fnErr)").unwrap(),
+        "EvalError",
+        "new Function() 被 CSP 阻止抛 EvalError"
+    );
+    let vio = wv.execute_script("JSON.stringify(globalThis.__vio)").unwrap();
+    assert!(vio.contains(r#""b":"eval""#), "blockedURI=eval: {vio}");
+    assert!(vio.contains(r#""d":"script-src""#), "eval 面无 -elem 子分: {vio}");
+}
+
+/// 'unsafe-eval' 存在 → eval 照常执行、零 violation（零拦截面）。
+#[test]
+fn csp_eval_gate_unsafe_eval_allows_sh1_m2s6() {
+    let mut wv = WebView::new(WebViewConfig {
+        csp_enforcement: true,
+        ..WebViewConfig::default()
+    });
+    wv.load_html(
+        r#"<html><head>
+<meta http-equiv="Content-Security-Policy" content="script-src 'unsafe-eval' 'unsafe-inline'">
+</head><body>
+<script>globalThis.__r = eval('1+1');</script>
+</body></html>"#,
+        None,
+    );
+    wv.run_page_scripts().expect("run page scripts");
+    assert_eq!(wv.execute_script("String(globalThis.__r)").unwrap(), "2");
+}
+
+#[test]
+fn csp_eval_probe_tmp() {
+    let mut wv = WebView::new(WebViewConfig {
+        csp_enforcement: true,
+        ..WebViewConfig::default()
+    });
+    wv.load_html(
+        r#"<html><head>
+<meta http-equiv="Content-Security-Policy" content="script-src 'self' 'unsafe-inline'">
+</head><body><script>globalThis.__x=1;</script></body></html>"#,
+        None,
+    );
+    wv.run_page_scripts().unwrap();
+    let out = wv
+        .execute_script(
+            r#"(function(){
+var out=[];
+out.push('cb:'+(typeof __zwCspEvalBlocked));
+out.push('ret:'+(typeof __zwCspEvalBlocked==='function'?__zwCspEvalBlocked():'n/a'));
+out.push('evalIsNative:'+(eval===globalThis.eval));
+try{eval('1+1');out.push('throw:no');}catch(e){out.push('throw:'+e.name);}
+return out.join('|');
+})()"#,
+        )
+        .unwrap();
+    println!("EVALPROBE: {out}");
+}

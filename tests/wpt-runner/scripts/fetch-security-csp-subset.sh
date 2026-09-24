@@ -12,11 +12,11 @@
 # - content-security-policy — 目标覆盖范围指令目录（default-src/script-src/style-src/
 #   img-src/connect-src/frame-src/font-src/media-src/object-src/base-uri/form-action/
 #   frame-ancestors）+ 违规报告面（securitypolicyviolation）+ meta 解析面（meta）+
-#   generic 矩阵 + gen/top.meta 生成面 + blob/child-src。**首批不拉**：inheritance/
-#   navigation/sandbox/unsafe-eval/wasm-unsafe-eval/inside-worker/reporting*/
-#   embedded-enforcement/nonce-hiding/plugin-types/resource-hints/svg/webrtc/xslt
-#   （worker 执行面 / HTTP server 依赖 / 范围外指令）——M2+ 按簇扩批，master.md
-#   记账。
+#   generic 矩阵 + gen/top.meta 生成面 + blob/child-src。**第二批（R7 扩批）新增**：
+#   inheritance/navigation/sandbox/unsafe-eval/wasm-unsafe-eval。**仍不拉**：
+#   inside-worker/reporting*/embedded-enforcement/nonce-hiding/plugin-types/
+#   resource-hints/svg/webrtc/xslt（worker 执行面 / HTTP server 依赖 / 范围外指令）
+#   ——后续按簇扩批，master.md 记账。
 # - mixed-content — 顶层可执行面（blob.https.sub.html / imageset.https.sub.html）+
 #   resources/。gen/ 为 window.js/iframe 包装形态（runner 无 wrapper，照 observers
 #   先例不拉取），tentative/ 后续按簇评估。
@@ -67,6 +67,11 @@ git -C "${TMP}/wpt" sparse-checkout set --no-cone \
   "content-security-policy/frame-ancestors/**" \
   "content-security-policy/blob/**" \
   "content-security-policy/child-src/**" \
+  "content-security-policy/inheritance/**" \
+  "content-security-policy/navigation/**" \
+  "content-security-policy/sandbox/**" \
+  "content-security-policy/unsafe-eval/**" \
+  "content-security-policy/wasm-unsafe-eval/**" \
   "content-security-policy/gen/top.meta/**" \
   "content-security-policy/resources/**" \
   "content-security-policy/support/**" \
