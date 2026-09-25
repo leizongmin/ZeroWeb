@@ -11578,7 +11578,9 @@
       //（receiverProxy = 页面持有 proxy——R52 identity 保持），bubble 上行 doc/win
       //（document watcher 双达 + e.target = 被阻止元素）。解析失败/无 key → document 站。
       var tgtEl = null;
-      if (f.targetTag !== undefined && f.targetTag !== null) {
+      if (f.targetSelector !== undefined && f.targetSelector !== null) {
+        try { tgtEl = document.querySelector(f.targetSelector) || null; } catch (_eSpvT3) { tgtEl = null; }
+      } else if (f.targetTag !== undefined && f.targetTag !== null) {
         try {
           var els = document.getElementsByTagName(f.targetTag);
           tgtEl = (els && els[Number(f.targetOrdinal)]) || null;

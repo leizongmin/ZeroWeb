@@ -2,7 +2,7 @@
 
 **入口文档**: [../security-hardening.md](../security-hardening.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-25（R8：M2-s7 script-src-attr 检查点 — 全绿 71→72 零丢失 / subtests 172=28.5%；M2-s6 −1 回退案闭合）
+**最后更新**: 2026-09-25（R9：M2-s8 运行时 img src-set 检查点 — 全绿 72→74 零丢失 / subtests 174=28.8%；M2 检查点面收齐，下轮 M5 收口）
 
 ---
 
@@ -56,7 +56,7 @@
 |---|------|------|
 | P1 | zero-security CSP 现状盘点 | ✅ R1（见上「基线事实」） |
 | P2 | content-security-policy / mixed-content / secure-contexts 三 corpus 导入 + 基线 | ✅ R1（415+2+4 案执行；CSP subtests 16.3% 基线见 evidence/） |
-| P3 | CSP 主要指令引擎完整化 + report-only + 违规报告 | 🔄 M2-s1→s7 ✅（骨架 + 源位置 + 元素站 target + img/style/connect/eval/attr 检查点 + hash 三算法 + 元素面口径 + GET 模板面 + corpus 第二批；全绿 72/445、subtests 172；余 = 运行时 img/eval 位置断言，见 evidence/2026-09-25-m2-s7-csp-extensions.md 缺口表） |
+| P3 | CSP 主要指令引擎完整化 + report-only + 违规报告 | 🔄 M2-s1→s8 ✅ 检查点面收齐（script/style/img 元素+运行时+attr/connect/eval 全门禁 + hash 三算法 + 元素面口径 + GET 模板面 + corpus 第二批；全绿 74/445、subtests 174；余项全部记账/挂账，见 evidence/2026-09-25-m2-s8-csp-extensions.md） |
 | P4 | Mixed Content 分级阻止 + HSTS 接线 | ⏳ M3（mixed_content/checkpoint 接入子资源面；HSTS register 接 net 响应） |
 | P5 | Permissions API headless 语义层 + 事件 | ⏳ M4（navigator.permissions JS 面挂 PermissionManager） |
 | P6 | kill-switch + A/B + default-on 决策 | ⏳ M5 |
@@ -77,6 +77,12 @@
     subtests 91/557 = 16.3%；mixed-content 2 案、secure-contexts 4 案 0 绿）。口径
     注记：无强制下「allowed」案天然绿，M2 接线后 blocked/allowed 双向受检——
     blocked 案全红（Timeout × 134 大半）才是真实缺口面。
+- **R9（2026-09-25）M2-s8 运行时 img src-set 检查点**（evidence/2026-09-25-m2-s8-csp-extensions.md）：
+  - shim 双路径门禁（part05 R56h IDL setter fetch 链前判定 + part04 setAttribute
+    路径）+ `__zwCspImgCheck` 回调（violation document 站 + targetSelector 元素站
+    能力就位）+ **注册点迁移无条件区**（首版误落 fetch_handler 条件块——探针修复）。
+  - corpus：全绿 72→74（meta-img-src/meta-modified 翻绿）、subtests 172→174。
+  - img corpus 剩余红点 = `{{location[scheme]}}` location 模板族（记账）+ 位置断言。
 - **R8（2026-09-25）M2-s7 script-src-attr 检查点**（evidence/2026-09-25-m2-s7-csp-extensions.md）：
   - `check_script_attr`（处理器原文 hash，不 trim）+ `effective_script_attr_directive`
     （元素面口径 script-src-attr）；shim 双求值点接门禁（_ensureInlineHandler 编译
@@ -136,10 +142,12 @@
 
 ## 下一步计划
 
-1. **M2-s8（收口前最后检查点）**：①运行时 img src-set 钩子（createElement('img')
-   族——securitypolicyviolation img 4 案）；②eval 违例调用点定位（blockeduri-eval
-   15:13——shim per-eval 传参评估）。此后进入 **M5 收口**：kill-switch default-on
-   决策（A/B 零回归门禁）+ DC-1~4 逐项判定 + 挂账定稿。
+1. **M5 收口（下一轮主战场）**：①DC-1~4 逐项判定（WPT 标尺 74/445 全绿 + 记账/挂账
+   清单核对；make test/clippy/fmt/reftest 门禁记录）；②kill-switch **default-on 决策
+   预备**——A/B 全量零回归门禁（production 默认 off 现状 → on 的行为变更走
+   event-loop-spec ② 先例：runner 实验臂证据已持续积累，A/B 门禁跑 make test 全量
+   对照）；③挂账定稿（fetch blocked 契约 / 外链 css ID 选择器 / report-uri /
+   inheritance/sandbox 深多进程面 / img location 模板族）。
 
 **跨域记账（协调不硬改）**：
 - 外链 stylesheet ID 选择器应用缺口——pipeline/style 面预存（渲染流域 crates 域）。
@@ -176,7 +184,7 @@
 | 里程碑 | 状态 |
 |--------|------|
 | M1 — 勘察 + WPT 导入与基线 | ✅ R1（2026-09-24，基线 16.3%） |
-| M2 — CSP 指令引擎完整化（接线） | 🔄 s1-s7 ✅（72/445，subtests 172=28.5%；运行时 img + eval 位置断言 = M2-s8，此后 M5 收口） |
+| M2 — CSP 指令引擎完整化（接线） | ✅ s1-s8（74/445 零丢失，subtests 174=28.8%；检查点面收齐）→ **M5 收口** |
 | M3 — Mixed Content + HSTS | ⏳ |
 | M4 — Permissions 语义层 | ⏳ |
 | M5 — 收口 | ⏳ |

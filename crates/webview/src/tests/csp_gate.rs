@@ -385,3 +385,46 @@ bad.dispatchEvent(new Event('click'));
         "不匹配处理器阻止 + script-src-attr 口径: {vio}"
     );
 }
+
+/// 运行时 img src-set 检查点（security-hardening M2-s8）：createElement('img') +
+/// src set 在 `img-src 'none'` 下被阻止 + violation 元素站派发（target = IMG）+
+/// onerror。securitypolicyviolation img corpus 形态。
+#[test]
+fn csp_runtime_img_gate_blocks_src_set_sh1_m2s8() {
+    let mut wv = WebView::new(WebViewConfig {
+        csp_enforcement: true,
+        ..WebViewConfig::default()
+    });
+    wv.prepare_document_state("https://wpt.test/csp/case.html");
+    let html = r#"<html><head>
+<meta http-equiv="Content-Security-Policy" content="img-src 'none'">
+</head><body>
+<script>
+globalThis.__vio = [];
+document.addEventListener('securitypolicyviolation', function(e) {
+  globalThis.__vio.push({
+    b: e.blockedURI, d: e.effectiveDirective, p: e.originalPolicy,
+    d: e.effectiveDirective, b: e.blockedURI
+  });
+});
+var i = document.createElement('img');
+i.onerror = function() { globalThis.__errored = 1; };
+i.src = '/content-security-policy/support/fail.png';
+</script>
+</body></html>"#;
+    wv.load_html(html, None);
+    wv.run_page_scripts().expect("run page scripts");
+    let vio = wv.execute_script("JSON.stringify(globalThis.__vio)").unwrap();
+    assert!(
+        vio.contains("https://wpt.test/content-security-policy/support/fail.png"),
+        "blockedURI 为绝对 URL: {vio}"
+    );
+    assert!(vio.contains(r#""d":"img-src""#), "effectiveDirective: {vio}");
+    // 口径注记：violation 走 document 站（corpus img 族不断言 target——
+    // securitypolicyviolation-block-image 断言 documentURI/blockedURI/指令面字段）。
+    assert_eq!(
+        wv.execute_script("String(globalThis.__errored)").unwrap(),
+        "1",
+        "被阻止运行时 img 派发 error"
+    );
+}

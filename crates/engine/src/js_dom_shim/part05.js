@@ -548,6 +548,17 @@
           else __zw_set_attr(sel, 'src', String(value));
           moAttr = 'src';
           var _imSrc = String(value == null ? '' : value);
+          // security-hardening M2-s8：img-src 检查点——`__zwCspImgCheck` 原生回调
+          // （resolve abs → check_image → 阻止 → violation 入共享队列 [document 站] +
+          // 返回 '1'）：跳过 fetch 链、延迟派 error（onerror 语义）。回调未注册
+          //（CSP 关）→ 恒放行零变更。
+          if (_imSrc && typeof __zwCspImgCheck === 'function' && __zwCspImgCheck(_imSrc) === '1') {
+            moAttr = 'src';
+            _defer(function () {
+              _dispatchWithBubble(key, sel, handle, _makeEvent('error', { bubbles: false, cancelable: false }));
+            });
+            _imSrc = undefined;
+          }
           var _imFail = function () {
             _defer(function () {
               _dispatchWithBubble(key, sel, handle, _makeEvent('error', { bubbles: false, cancelable: false }));

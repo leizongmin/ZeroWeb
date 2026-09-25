@@ -325,6 +325,12 @@ pub enum WebViewEvent {
 /// 事件回调函数类型。
 pub type EventCallback = Rc<RefCell<dyn FnMut(&WebViewEvent)>>;
 
+/// security-hardening M2-s8：violation 元素站 selector 的 JS 字符串转义（单引号/
+/// 反斜杠——querySelector 字面量嵌入）。
+fn escape_js_selector(s: &str) -> String {
+    s.replace('\\', "\\\\").replace('\'', "\\'")
+}
+
 /// security-hardening M2-s3：待派发的 style 面 CSP 违规（元素站 target + 可选 link
 /// error 事件载荷）。
 struct PendingCspStyleViolation {
@@ -335,6 +341,9 @@ struct PendingCspStyleViolation {
     target_tag: &'static str,
     /// 全量同名元素文档序序号。
     target_ordinal: usize,
+    /// 元素站 selector（security-hardening M2-s8——运行时 img：createElement 产物
+    /// 携带 `__zwSelector`，querySelector 解析目标元素）。
+    target_selector: Option<String>,
     /// 外链 stylesheet 附带 link error 事件（abs href）。
     link_error: Option<String>,
 }
@@ -814,6 +823,7 @@ impl WebView {
                 original_policy: violation.original_policy,
                 target_tag: "style",
                 target_ordinal: ordinal,
+                target_selector: None,
                 link_error: None,
             });
         }
@@ -1006,6 +1016,7 @@ impl WebView {
                     original_policy: violation.original_policy,
                     target_tag: "link",
                     target_ordinal: link_ordinal,
+                    target_selector: None,
                     link_error: Some(abs.clone()),
                 });
                 continue;
@@ -2716,6 +2727,44 @@ impl WebView {
         // 本地资源（wpt-data 文件映射：/images/*、/fonts/* 等）。None → 不注册（shim typeof-check
         // 落 ok:false stub；浏览器路径由 app 层 FetchBridge 注册异步 __zw_fetch，互斥不重叠）。
         // 回调同步执行 handler 并直接返 fetch_bridge wire（shim R34xx 支持同步返回）。
+        // security-hardening M2-s8：运行时 img src-set 检查点快照（`__zwCspImgCheck`
+        // 原生回调：resolve abs → check_image → 阻止 → violation 入共享队列
+        // [targetSelector 元素站——shim 侧传元素 __zwSelector] + '1'；shim 侧跳过
+        // 加载并派 error）。快照随文档代际更新（同 connect 检查快照口径）。
+        let img_csp_ctx = self.config.csp_enforcement.then(|| self.security_context.clone());
+        let img_page_url = std::sync::Arc::clone(&self.page_url_wire);
+        let img_violations = std::sync::Arc::clone(&self.pending_csp_connect_violations);
+        sandbox.register_callback(
+            "__zwCspImgCheck",
+            Box::new(move |args: &[String]| -> String {
+                let Some(ctx) = img_csp_ctx.as_ref() else {
+                    return "0".to_string();
+                };
+                let src = args.first().cloned().unwrap_or_default();
+                if src.is_empty() {
+                    return "0".to_string();
+                }
+                let page = img_page_url.lock().unwrap_or_else(|e| e.into_inner()).clone();
+                let abs = zero_engine::resolve_document_url(&page, &src);
+                match ctx.check_image(&abs) {
+                    Some(violation) => {
+                        if let Ok(mut queue) = img_violations.lock() {
+                            queue.push(PendingCspStyleViolation {
+                                effective_directive: violation.effective_directive,
+                                blocked_uri: violation.blocked_uri,
+                                original_policy: violation.original_policy,
+                                target_tag: "",
+                                target_ordinal: usize::MAX,
+                                target_selector: args.get(1).cloned(),
+                                link_error: None,
+                            });
+                        }
+                        "1".to_string()
+                    }
+                    None => "0".to_string(),
+                }
+            }),
+        );
         if let Some(fetch_handler) = self.fetch_handler.clone() {
             let sw_manager = self.sw_manager.clone();
             let sw_page_url = self.page_url_wire.clone();
@@ -2822,6 +2871,7 @@ impl WebView {
                                     original_policy: violation.original_policy,
                                     target_tag: "",
                                     target_ordinal: usize::MAX,
+                                    target_selector: None,
                                     link_error: None,
                                 });
                             }
@@ -3228,6 +3278,7 @@ globalThis.Function=new Proxy(globalThis.Function,{construct:function(t,args){if
                                 original_policy: violation_for_cb.original_policy.clone(),
                                 target_tag: "",
                                 target_ordinal: usize::MAX,
+                                target_selector: None,
                                 link_error: None,
                             });
                         }
@@ -3254,6 +3305,7 @@ globalThis.Function=new Proxy(globalThis.Function,{construct:function(t,args){if
                                         original_policy: violation.original_policy,
                                         target_tag: "",
                                         target_ordinal: usize::MAX,
+                                        target_selector: None,
                                         link_error: None,
                                     });
                                 }
@@ -3349,11 +3401,19 @@ globalThis.Function=new Proxy(globalThis.Function,{construct:function(t,args){if
                 );
                 // 元素站 target 经通用 tag/ordinal 形态传参（scriptOrdinal=usize::MAX
                 // 即「无 script ordinal」哨兵，shim 侧以 targetTag 优先）。
-                let snippet = snippet.replacen(
-                    "scriptOrdinal:18446744073709551615,",
-                    &format!("targetTag:'{}',targetOrdinal:{},", item.target_tag, item.target_ordinal),
-                    1,
-                );
+                let snippet = if let Some(selector) = &item.target_selector {
+                    snippet.replacen(
+                        "scriptOrdinal:18446744073709551615,",
+                        &format!("targetSelector:'{}',", escape_js_selector(selector)),
+                        1,
+                    )
+                } else {
+                    snippet.replacen(
+                        "scriptOrdinal:18446744073709551615,",
+                        &format!("targetTag:'{}',targetOrdinal:{},", item.target_tag, item.target_ordinal),
+                        1,
+                    )
+                };
                 let _ = sandbox.execute(&snippet);
             }
         }

@@ -2545,6 +2545,23 @@ return _tplContent;
             // invoke）不触发：本钩子仅挂 setAttribute（HTML ns 无 NS 写法）；NS 变体
             // 走 setAttributeNS 分支（不挂钩）。
             // https://html.spec.whatwg.org/multipage/media.html#concept-media-load-algorithm
+            // security-hardening M2-s8：IMG src setAttribute（HTML ns）→ connect
+            // img-src 检查点（`__zwCspImgCheck` 原生回调：resolve abs → check_image →
+            // 阻止 → violation 入共享队列[targetSelector 元素站] + 返回 '1'；shim 侧
+            // 跳过 media/img 后续加载面并派 error——运行时 createElement('img') 族，
+            // securitypolicyviolation img corpus 断言面）。回调未注册（CSP 关）→ 恒
+            // 放行零变更。
+            if (n === 'src' && typeof _realTag === 'function' && _realTag(sel, handle) === 'IMG') {
+              var _cspSrc = String(v == null ? '' : v);
+              if (_cspSrc && typeof __zwCspImgCheck === 'function' && __zwCspImgCheck(_cspSrc, sel) === '1') {
+                try {
+                  var _cspAbs = _cspSrc;
+                  try { if (typeof _zwResolveFetchUrl === 'function') _cspAbs = _zwResolveFetchUrl(_cspSrc); } catch (_eCspR) {}
+                  if (typeof __zw_dispatch_img_event === 'function') __zw_dispatch_img_event(_cspAbs, 'error');
+                } catch (_eCspE) {}
+                return true;
+              }
+            }
             if (n === 'src' && typeof _realTag === 'function'
                 && (_realTag(sel, handle) === 'AUDIO' || _realTag(sel, handle) === 'VIDEO')) {
               if (typeof _zwMediaScheduleLoad === 'function' && !_resourceStates[_elKey(sel, handle)]) {
