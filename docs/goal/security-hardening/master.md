@@ -2,7 +2,7 @@
 
 **入口文档**: [../security-hardening.md](../security-hardening.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-25（R11：M3/M4 补齐落库 — MC 子资源面接线 + HSTS 响应注册 + navigator.permissions JS 面/change 事件 + 单测；make test 全绿 + reftest 202/202 + clippy/fmt 干净；**余项 = CSP corpus 账册零丢失核验（TIME_LIMIT≥5400）+ MC/SC off 臂全量 evidence + DC-2 翻 ✅ 终判**）
+**最后更新**: 2026-09-25（R11 终判：前会话 M3/M4 补齐落库（`0035219dd` + 控制面 67b88ee9c）→ 本会话收口余项 —— A/B 双臂 19,451/0 同值零 delta + CSP corpus 74/445 / subtests 174 零丢失核验（TIME_LIMIT=7200）+ reftest 691/691 + product-smoke PASS + 一例开关 env 敏感 test 修复；**DC-1~4 全 ✅，goal DONE**，判定 evidence/2026-09-25-r11-gates-and-verdict.md）
 
 ---
 
@@ -56,13 +56,25 @@
 |---|------|------|
 | P1 | zero-security CSP 现状盘点 | ✅ R1（见上「基线事实」） |
 | P2 | content-security-policy / mixed-content / secure-contexts 三 corpus 导入 + 基线 | ✅ R1（415+2+4 案执行；CSP subtests 16.3% 基线见 evidence/） |
-| P3 | CSP 主要指令引擎完整化 + report-only + 违规报告 | 🔄 M2-s1→s8 ✅ 检查点面收齐（script/style/img 元素+运行时+attr/connect/eval 全门禁 + hash 三算法 + 元素面口径 + GET 模板面 + corpus 第二批；全绿 74/445、subtests 174；余项全部记账/挂账，见 evidence/2026-09-25-m2-s8-csp-extensions.md） |
+| P3 | CSP 主要指令引擎完整化 + report-only + 违规报告 | ✅ M2-s1→s8 检查点面收齐（script/style/img 元素+运行时+attr/connect/eval 全门禁 + hash 三算法 + 元素面口径 + GET 模板面 + corpus 第二批；全绿 74/445、subtests 174；余项全部记账/挂账，见 evidence/2026-09-25-m2-s8-csp-extensions.md）+ R11 corpus 账册零丢失核验（74/445、174/604 逐 case 同值） |
 | P4 | Mixed Content 分级阻止 + HSTS 接线 | ✅ R11（kill-switch `mixed_content_enforcement` default-on + env `ZW_MIXED_CONTENT_ENFORCEMENT=0` 回退；stylesheet/img/script 三面接 `check_resource_url`；`note_hsts_response` 挂 fetch_url——见 evidence/2026-09-25-m3-m4-wiring.md） |
 | P5 | Permissions API headless 语义层 + 事件 | ✅ R11（navigator.permissions 单例 status + state 活值 + change 派发 + request headless 语义 + desc 校验；WAB2 既有测试按意图适配——见 evidence/2026-09-25-m3-m4-wiring.md） |
-| P6 | kill-switch + A/B + default-on 决策 | ⏳ M5 |
+| P6 | kill-switch + A/B + default-on 决策 | ✅ R11（CSP：R2→R9 default-off 逐轮零 delta + R10 翻转臂；MC：off 臂 `ZW_MIXED_CONTENT_ENFORCEMENT=0` 全量 19,451/0 与 on 臂同值零 delta） |
 
 ## 已完成切片
 
+- **R11（2026-09-25）M3/M4 门禁收口 + goal 终判 DONE**（evidence/2026-09-25-r11-gates-and-verdict.md）：
+  - A/B 双臂：on（默认全 on）与 off（`ZW_MIXED_CONTENT_ENFORCEMENT=0`）全量
+    `make test` 均 **19,451 passed / 0 failed 同值零 delta**。
+  - **本轮修复**：M3 gate 五用例中四个经 `WebViewConfig::default()` 构造，off 臂
+    环境下随 env 翻转假红——照 csp_gate.rs 口径显式 `mixed_content_enforcement:
+    true`（测试构造修复，产品码零改动；修后双环境定向 5/5 + 双臂全量复跑）。
+  - DC-4 全绿：fmt + clippy `-D warnings` + reftest **691/691** + product-smoke
+    PASS；三 corpus 复核：CSP **74/445 / subtests 174 = 28.8% 逐 case 同值零丢失**，
+    MC/SC 与 M1 基线同失败签名（infra 挂账不变）。
+  - 工程注记：CSP corpus 全量本机 ~65 min，超 `make testharness-csp` 默认 guard
+    3600s——经同款 test-guard 包裹 `--time-limit 7200` 实跑（目标原生支持
+    `TIME_LIMIT` 覆盖，内存阈值未动）。
 - **R11（2026-09-25）M3/M4 补齐**（evidence/2026-09-25-m3-m4-wiring.md）：
   - **M3a Mixed Content 子资源面**：`WebViewConfig::mixed_content_enforcement`
     （default-on；env `ZW_MIXED_CONTENT_ENFORCEMENT=0` 回退，照 `ZW_MO_HOST_TRIGGER`
@@ -165,12 +177,17 @@
 
 ## 下一步计划
 
-1. **M5 终判收口（R12，唯一余项）**：①CSP corpus 全量复跑（`make testharness-csp
-   TIME_LIMIT=5400`）→ 账册对比 m2-s8-final.json（74 全绿/445、subtests 174）零丢失；
-   ②`ZW_MIXED_CONTENT_ENFORCEMENT=0 make test` off 臂全量零 delta evidence（kill-switch
-   实效面，DC-3 letter）；③DC-2 Mixed Content/HSTS/Permissions 翻 ✅ → goal DONE 判定。
-2. **碰撞注意**：同 goal 后继会话已在跑 off 臂/reftest/smoke/corpus 序列
-   （systemd scope zw-r11-*）——接手前先 `git pull` + 查 `/tmp/zw-r11-*.log` 避免重复跑。
+**无——goal 已 DONE（R11 终判，DC-1~4 全 ✅）**。后续守护轮若复跑本 goal 门禁，
+沿用以下既定口径（不再作为推进项）：
+
+- CSP corpus 全量复跑：`make testharness-csp TIME_LIMIT=7200`（本机墙钟 ~65 min，
+  默认 3600s guard 不够；账册对照 `evidence/2026-09-25-r11-csp-final.json`，期望
+  74/445 全绿、subtests 174/604 恒值）。
+- A/B 复核：on 臂 = `make test` 默认；off 臂 = `ZW_MIXED_CONTENT_ENFORCEMENT=0
+  make test`——两臂期望同为 19,451/0 零 delta。
+- 测试写法约定：读 env 的开关族（csp_enforcement / mixed_content_enforcement），
+  其强制面用例一律显式布尔构造（照 csp_gate.rs / mixed_content_gate.rs 口径），
+  不经 `Default::default()` 随环境漂移。
 
 **跨域记账（协调不硬改）**：
 - 外链 stylesheet ID 选择器应用缺口——pipeline/style 面预存（渲染流域 crates 域）。
@@ -178,16 +195,8 @@
 - inheritance/sandbox 簇全红（跨文档导航/iframe 管道重入条件）——深多进程面挂账。
 - eval 违例调用点定位（V8 栈面）——v8 crate 无 codegen 回调写入面，shim 层位置捕获
   需 per-eval 包装传参（M2-s7 评估）。
-
-**跨域记账（协调不硬改）**：
-- 外链 stylesheet ID 选择器应用缺口（stylenonce-blocked allowed.css black）——
-  pipeline/style 面预存（default 无 CSP 同样黑），渲染流域 crates 域。
-- fetch blocked 契约：shim host 错误 wire → resolve(ok:false)（上游期望 reject）——
-  shim 面语义 divergence。
-3. **M3**：Mixed Content 子资源接入 + HSTS net 响应注册（`register_hsts` 挂头解析）。
-4. **M4**：navigator.permissions JS 面（query/state/request headless 语义 + change
-   事件），为 web-api-batch2 Clipboard 供数。
-5. **M5**：A/B 零回归 + default-on 决策（env 开关暴露 + 全量 A/B）+ DC 逐项判定。
+- mixed-content corpus 2 案 / secure-contexts 4 案 infra 红（popup/worker/
+  `{{domains[]}}`/缺 support 文件）——M1 起恒值，移交后续 infra 类 goal。
 
 **R2 实操记录（探针闭环，防复踩）**：
 - document 级事件派发路径：shim doc 槽位独立于 EventTarget 链；native
@@ -210,12 +219,20 @@
 | M2 — CSP 指令引擎完整化（接线） | ✅ s1-s8（74/445 零丢失，subtests 174=28.8%；检查点面收齐） |
 | M3 — Mixed Content + HSTS | ✅ R11（语义+单测 ✅；导航面 ✅；子资源面三检查点 + HSTS 响应注册 ✅——mixed-content corpus 2 案维持 infra 挂账：popups/模板/ResourceTiming） |
 | M4 — Permissions 语义层 | ✅ R11（PermissionManager 语义+单测 ✅；navigator.permissions query/request + 单例 + change 事件 + 活值 state ✅） |
-| M5 — 收口 | ◐ A/B 零回归门禁 ✅ + default-on 落定 ✅ + reftest ✅ + DC 逐项判定 ✅ + 挂账定稿 ✅（evidence/2026-09-25-m5-ab-default-on.md）；**余 = corpus 零丢失核验 + off 臂 evidence → DONE 终判** |
+| M5 — 收口 | ✅ R11 终判（A/B 零回归 ✅ + default-on 落定 ✅ + corpus 零丢失核验 ✅ + off 臂 evidence ✅ + DC-1~4 逐项全 ✅ → **goal DONE**；evidence/2026-09-25-r11-gates-and-verdict.md） |
+
+## goal 终判（R11，2026-09-25）
+
+**DONE**。判定要件：DC-1~4 全 ✅（逐项对照见 evidence/2026-09-25-r11-gates-and-verdict.md）；
+验收基于上游真实 WPT corpus（CSP 445 案逐 subtest JSON 账册持久化，MC/SC infra 恒值
+如实标注挂账）；`cargo build`/`make test`（双臂 19,451/0）/`cargo clippy -D warnings`
+全过；本控制面自洽；evidence 全量持久化。挂账清单（8 项，域外/infra，不阻塞判定）
+见同 evidence「遗留挂账」节。
 
 ## 验证基线
 
-- 测试基线：R1 时点 main 全绿（`make test` 19,402P 口径，c8ada9658 守成轮记录；
-  经 test-guard）
+- 测试基线：R11 终判时点双臂全绿（`make test` 19,451P 口径 = R10 锚 19,440P + M3 5
+  test + M4 1 test；经 test-guard + systemd 24G scope）
 - WPT 标尺：三 corpus 首批导入（WPT 315976933870b34d6ea30e3f6643403edae678ba，
   与 observers/clipboard-apis/fullscreen 同 pin）；通过率基线见 evidence/
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings`

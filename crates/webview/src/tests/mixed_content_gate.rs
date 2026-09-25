@@ -28,7 +28,12 @@ fn script_fetcher_stub(log: FetchLog) -> ScriptSourceFetcher {
 /// HSTS store，后续 `check_resource_url` 强制升级；includeSubDomains 随头传播。
 #[test]
 fn hsts_response_header_registered_and_upgrades_m3() {
-    let mut wv = WebView::new(WebViewConfig::default());
+    // 强制面显式 on（照 csp_gate.rs 口径）：Default 读 `ZW_MIXED_CONTENT_ENFORCEMENT`
+    // env——off 臂 A/B 环境下用例不得随环境漂移。
+    let mut wv = WebView::new(WebViewConfig {
+        mixed_content_enforcement: true,
+        ..WebViewConfig::default()
+    });
     // HTTPS 响应 + includeSubDomains 头 → host 注册。
     wv.note_hsts_response(
         "https://secure.example.com/page",
@@ -81,6 +86,7 @@ fn hsts_response_header_registered_and_upgrades_m3() {
 fn mixed_content_blocks_http_stylesheet_on_https_page_m3() {
     let log: FetchLog = Arc::new(Mutex::new(Vec::new()));
     let mut wv = WebView::new(WebViewConfig {
+        mixed_content_enforcement: true,
         image_source_fetcher: Some(image_fetcher_stub(Arc::clone(&log))),
         ..WebViewConfig::default()
     });
@@ -109,6 +115,7 @@ fn mixed_content_blocks_http_stylesheet_on_https_page_m3() {
 fn mixed_content_upgrades_http_image_on_https_page_m3() {
     let log: FetchLog = Arc::new(Mutex::new(Vec::new()));
     let mut wv = WebView::new(WebViewConfig {
+        mixed_content_enforcement: true,
         image_source_fetcher: Some(image_fetcher_stub(Arc::clone(&log))),
         ..WebViewConfig::default()
     });
@@ -133,6 +140,7 @@ fn mixed_content_upgrades_http_image_on_https_page_m3() {
 fn mixed_content_blocks_http_script_on_https_page_m3() {
     let log: FetchLog = Arc::new(Mutex::new(Vec::new()));
     let mut wv = WebView::new(WebViewConfig {
+        mixed_content_enforcement: true,
         script_source_fetcher: Some(script_fetcher_stub(Arc::clone(&log))),
         ..WebViewConfig::default()
     });
@@ -182,6 +190,7 @@ fn mixed_content_kill_switch_off_and_http_page_inert_m3() {
     // HTTP 页面（非安全上下文）：HTTP 子资源不受检、照常加载。
     let log2: FetchLog = Arc::new(Mutex::new(Vec::new()));
     let mut wv2 = WebView::new(WebViewConfig {
+        mixed_content_enforcement: true,
         image_source_fetcher: Some(image_fetcher_stub(Arc::clone(&log2))),
         ..WebViewConfig::default()
     });
