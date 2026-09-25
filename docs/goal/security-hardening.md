@@ -2,7 +2,7 @@
 
 **版本**: v1.0
 **日期**: 2026-09-12
-**状态**: Active
+**状态**: Done（2026-09-25 R11 终判，DC-1~4 全 ✅——CSP 运行时强制接线 default-on + Mixed Content 分级阻止 default-on + HSTS 响应注册 + `navigator.permissions` 语义层；csp corpus 终态 74/445 案全绿零丢失、subtests 174/604 = 28.8%；运行时控制面见 [master.md](security-hardening/master.md)，判定 evidence/2026-09-25-r11-gates-and-verdict.md）
 **执行模式**: WPT 驱动（上游 content-security-policy corpus 为验收标尺）+ 规范逐条；
 遇深结构（站点隔离等多进程重构）→ 记「待用户决策」→ 跳过 → 继续其他面
 **父目标**: `docs/goal/zero-web.md`（M13 性能优化 + 安全加固；DC Tier 1「安全」深化）

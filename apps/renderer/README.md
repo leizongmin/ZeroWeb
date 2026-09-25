@@ -15,7 +15,7 @@
 - **事件路由** — hit-test（元素 / 链接 / 图片）、键盘 / 鼠标 / 滚动事件派发、CSS 过渡与动画事件（transitionstart/run/end、animationstart/end/iteration）、observer tick
 - **媒体播放泵** — `is_any_playing` 门控的 tick 节拍挂主事件循环（media-playback D4）：有活跃播放时驱动 `VideoPlayer` 时钟推进与媒体事件派发，空闲时零开销
 - **字体管线** — 系统字体加载、@font-face live 加载（`ZW_LIVE_FONTFACE` 可禁用）、`FontFace.load()`、文本度量注入、行度量 map（`ZW_PERFONT_LINEHEIGHT`）
-- **平台集成** — macOS App 支持（dispatch / AppKit）、Windows GUI 子系统、Linux 沙箱（Landlock/seccomp）
+- **平台集成** — macOS App 支持（dispatch / AppKit）、Windows GUI 子系统、Linux 沙箱（seccomp 占位钩子，`ZW_RENDERER_SECCOMP` 默认开）
 
 ## 使用示例
 

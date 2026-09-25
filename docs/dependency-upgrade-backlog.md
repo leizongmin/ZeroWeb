@@ -2,7 +2,7 @@
 
 待升级但存在 **API 破坏性变更** 的依赖项清单，需通过专项逐个处理。
 
-> 最后检查日期：2026-09-14（本轮复核：上表五项版本与本表记载一致，无漂移；2026-09-13 以来唯一依赖变动为 zero-webview 新增 `zero-css-parser`（workspace 内部依赖，外链样式表 URL 绝对化用），非第三方升级项不入积压；此前 2026-09-09～09-13 变动为 apps/android-browser/rust 新增 `tracing`（workspace 既有）与 zero-webview dev-dependencies 新增 `wat 1`（dev-only），均不入积压；另 tests/playwright-matrix 为 Node 测试-only 工程（playwright-core 1.63.0 pin + ws），不属 Rust 依赖积压范畴）
+> 最后检查日期：2026-09-26（本轮复核：上表五项版本与 Cargo.lock 实测一致（winit 0.30.13 / html5ever 0.29.1 / reqwest 0.12.28 / wasmi 0.40.0 / v8 150.2.0），无漂移；2026-09-14 以来唯一依赖变动为 2026-09-24 security-hardening M2-s1 zero-security 接线 `sha2`（workspace 既有依赖，hash 门禁用），非第三方升级项不入积压；另 tests/playwright-matrix 为 Node 测试-only 工程（playwright-core 1.63.0 pin + ws），不属 Rust 依赖积压范畴）
 
 ## 概要
 

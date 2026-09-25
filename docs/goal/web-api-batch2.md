@@ -2,7 +2,7 @@
 
 **版本**: v1.0
 **日期**: 2026-09-12
-**状态**: Active
+**状态**: Done（2026-09-24 M4 收口，DC-1~4 全满足——终态 WPT clipboard-apis 83.6% / fullscreen 88.0%；DnD 因宿主拖拽输入管线深度依赖维持排除挂账；运行时控制面见 [master.md](web-api-batch2/master.md)）
 **执行模式**: WPT 驱动（上游 clipboard-apis / fullscreen corpus 为验收标尺）+ 语义修齐；
 照 event-loop-spec / web-components goal 通用打法
 **父目标**: `docs/goal/zero-web.md`（M12 高级 Web 能力「更多 DOM API」余面）

@@ -34,5 +34,5 @@ let primitives = to_render_primitives(params);
 ## 相关文档
 
 - 协议消息与快照结构：`crates/protocol/src/paint_snapshot.rs`
-- 渲染图元定义：`crates/render-foundation/src/primitive.rs`
+- 渲染图元定义：`crates/render-foundation/src/primitive/mod.rs`
 - 落地记录：`docs/goal/archive/webdriver-screenshot/master.md`

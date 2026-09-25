@@ -3,6 +3,11 @@
 [![docs.rs](https://img.shields.io/docsrs/taffy)](https://docs.rs/taffy)
 ![Crates.io MSRV](https://img.shields.io/crates/msrv/taffy)
 
+> **Note:** This is not a ZeroWeb business crate. It is a vendored local copy of upstream
+> taffy 0.12, wired into the workspace via `[patch.crates-io]` (see the root `Cargo.toml`),
+> carrying one local patch: the `TaffyTree::cached_baselines()` accessor used to extract
+> flex container baselines. The text below is the upstream README, kept as-is.
+
 Taffy is a flexible, high-performance, cross-platform UI layout library written in [Rust](https://www.rust-lang.org).
 
 It currently implements the CSS **Block**, **Flexbox** and **CSS Grid** layout algorithms. Support for other paradigms is planned. For more information on this and other future development plans see the [roadmap issue](https://github.com/DioxusLabs/taffy/issues/345).
